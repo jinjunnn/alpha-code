@@ -13,6 +13,7 @@ import {
   type Platform,
 } from "@opencode-ai/app"
 import type { AsyncStorage } from "@solid-primitives/storage"
+import { MemoryRouter } from "@solidjs/router"
 import { createMemo, createResource, Show } from "solid-js"
 import { render } from "solid-js/web"
 
@@ -162,8 +163,12 @@ render(() => {
               <AppInterface
                 defaultServer={key}
                 servers={servers()}
-                // disableHealthCheck: the embedded server is guaranteed up by the
-                // time creds resolve, so skip the blocking startup probe.
+                // MemoryRouter is REQUIRED in Electron: opencode's app uses
+                // @solidjs/router; without an in-memory router, clicking any nav
+                // button changes the window URL and the Electron window navigates
+                // away / blanks (looks like "the app closed"). Mirrors desktop.
+                router={MemoryRouter}
+                // disableHealthCheck: embedded server is up by the time creds resolve.
                 disableHealthCheck
               />
             )}

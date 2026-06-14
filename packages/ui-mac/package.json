@@ -7,10 +7,10 @@
   "description": "alpha-code self-owned Mac Electron shell. Reuses @opencode-ai/app (Option B: AppInterface + custom Platform + token theme) as a NATIVE member of the opencode fork workspace — no symlink/alias/dedupe hacks; Tailwind + solid resolve natively.",
   "scripts": {
     "predev": "bun ./scripts/predev.ts",
-    "dev": "electron-vite dev",
+    "dev": "bun ./scripts/launch.ts dev",
     "prebuild": "bun ./scripts/prebuild.ts",
     "build": "electron-vite build",
-    "preview": "electron-vite preview",
+    "preview": "bun ./scripts/launch.ts preview",
     "typecheck": "tsgo -b"
   },
   "dependencies": {

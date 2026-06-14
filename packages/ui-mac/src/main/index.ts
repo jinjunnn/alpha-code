@@ -157,22 +157,66 @@ async function start() {
 
   mainWindow = createMainWindow()
 
-  // DEV-only screenshot hook (gated by ALPHA_SCREENSHOT=<path>): after a delay
-  // that lets the embedded server boot + the renderer connect + render, capture
-  // the window's web contents to a PNG and quit. Used to verify the walking
-  // skeleton actually renders. No effect unless the env var is set.
+  // DEV diagnostics: surface renderer console, crashes, failed loads, and any
+  // full-window navigation (the router-less bug) to the terminal.
+  if (mainWindow) {
+    const wc = mainWindow.webContents
+    wc.on("console-message", (_e, level, message, line, source) => {
+      const tag = ["log", "warn", "error", "info"][level] ?? `l${level}`
+      if (level >= 2 || process.env.ALPHA_DEBUG) console.log(`[renderer:${tag}] ${message}${line ? ` (${source}:${line})` : ""}`)
+    })
+    wc.on("render-process-gone", (_e, d) => console.error(`[renderer GONE] reason=${d.reason} exitCode=${d.exitCode ?? "?"}`))
+    wc.on("did-fail-load", (_e, code, desc, url) => console.error(`[did-fail-load] ${code} ${desc} ${url}`))
+    wc.on("will-navigate", (_e, url) => console.warn(`[will-navigate] ${url}  <-- router-less nav?`))
+    wc.setWindowOpenHandler(({ url }) => {
+      console.warn(`[window-open] ${url}`)
+      return { action: "deny" }
+    })
+  }
+
+  // DEV screenshot + interactive click test (gated by ALPHA_SCREENSHOT=<dir>).
+  // With ALPHA_DEBUG also set, it clicks the main nav items and reports the URL
+  // change + any renderer errors after each, plus a screenshot per step.
   if (process.env.ALPHA_SCREENSHOT && mainWindow) {
-    const out = process.env.ALPHA_SCREENSHOT
-    const delayMs = Number.parseInt(process.env.ALPHA_SCREENSHOT_DELAY ?? "12000", 10)
+    const outDir = process.env.ALPHA_SCREENSHOT
+    const delayMs = Number.parseInt(process.env.ALPHA_SCREENSHOT_DELAY ?? "14000", 10)
+    const interactive = Boolean(process.env.ALPHA_DEBUG)
     const win = mainWindow
+    const { writeFile, mkdir } = await import("node:fs/promises")
+    const shot = async (name: string) => {
+      const img = await win.webContents.capturePage()
+      await mkdir(outDir, { recursive: true }).catch(() => {})
+      await writeFile(`${outDir}/${name}.png`, img.toPNG())
+      console.log(`[shot] ${name} ${JSON.stringify(img.getSize())}`)
+    }
     setTimeout(async () => {
       try {
-        const img = await win.webContents.capturePage()
-        const { writeFile } = await import("node:fs/promises")
-        await writeFile(out, img.toPNG())
-        console.log("[screenshot] wrote", out, JSON.stringify(img.getSize()))
+        await win.webContents.executeJavaScript(
+          `window.__err=[];addEventListener('error',e=>__err.push('ERR '+e.message));addEventListener('unhandledrejection',e=>__err.push('REJ '+((e.reason&&e.reason.message)||e.reason)));true`,
+        )
+        await shot("01-home")
+        if (interactive) {
+          const clickable = await win.webContents.executeJavaScript(
+            `Array.from(document.querySelectorAll('button,a,[role=button]')).map(el=>((el.textContent||'').trim().slice(0,24))).filter(Boolean).slice(0,30)`,
+          )
+          console.log("[clickable]", JSON.stringify(clickable))
+          const labels: string[] = await win.webContents.executeJavaScript(
+            `['设置','帮助','项目','Settings','Help','New','+'].filter(l=>[...document.querySelectorAll('button,a,[role=button]')].some(e=>(e.textContent||'').includes(l)))`,
+          )
+          for (const label of labels) {
+            const before = await win.webContents.executeJavaScript(`location.href`)
+            const res = await win.webContents.executeJavaScript(
+              `(()=>{const el=[...document.querySelectorAll('button,a,[role=button]')].find(e=>(e.textContent||'').includes(${JSON.stringify(label)}));if(!el)return'notfound';try{el.click();return'ok'}catch(e){return'throw '+e.message}})()`,
+            )
+            await new Promise((r) => setTimeout(r, 1800))
+            const after = await win.webContents.executeJavaScript(`location.href`)
+            const errs = await win.webContents.executeJavaScript(`window.__err.splice(0)`)
+            console.log(`[click ${label}] ${res} url=${before === after ? "same" : after} errs=${JSON.stringify(errs)}`)
+            await shot(`click-${label.replace(/[^a-zA-Z0-9]/g, "_")}`)
+          }
+        }
       } catch (e) {
-        console.error("[screenshot] failed", e)
+        console.error("[debug] failed", e)
       } finally {
         app.exit(0)
       }

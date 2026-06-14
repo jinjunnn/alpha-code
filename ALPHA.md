@@ -19,15 +19,14 @@
 | `docs/` | 架构理解 + 扩展接缝手册 + opencode code-graph(SVG)。 |
 | `CLAUDE.md` | 速查 + 升级 runbook。 |
 
-## 跑起来
+## 跑起来(开 app)
 ```bash
-bun install                                # 原生 workspace 安装
-bun --cwd packages/ui-mac run dev          # 起 Mac 应用(predev 先构建内嵌 server)
+bun install                          # 一次性:原生 workspace 安装
+cd packages/ui-mac && bun run dev    # 开 Mac 应用窗口
 ```
-electron 二进制若解析失败(workspace 非 hoisted),加:
-```bash
-ELECTRON_EXEC_PATH="$PWD/packages/ui-mac/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"
-```
+- 首次启动较慢:`predev` 先构建内嵌 opencode server(~20MB bundle,约 30–60s),然后弹出 Electron 窗口。
+- 退出:窗口 `Cmd+Q`,或终端 `Ctrl+C`。
+- `bun run dev` 已自动解析 electron 二进制(`scripts/launch.ts`),**无需手动设 `ELECTRON_EXEC_PATH`**。
 
 ## 升级 opencode
 GitHub 网页 **Sync fork**,或 `gh repo sync jinjunnn/alpha-code --branch dev`,或等每日 Action。然后 `git checkout alpha && git merge dev`。详见 `.claude/rules/DECISIONS.md` 的 **ADR-005**。
