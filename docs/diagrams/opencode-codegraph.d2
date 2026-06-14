@@ -1,0 +1,71 @@
+direction: down
+vars: { d2-config: { layout-engine: elk } }
+
+extension: "Extension Layer" {
+  style.fill: "#FFF7E6"
+  plugin: "@opencode-ai/plugin\n(server + TUI hooks, tool())"
+  dotopencode: ".opencode/* authoring\n(agents/cmds/tools/skills/themes)"
+}
+
+shared: "Shared Contract" {
+  style.fill: "#E6F4FF"
+  sdk: "@opencode-ai/sdk\n(generated HTTP client v1/v2)"
+}
+
+backend: "Backend" {
+  style.fill: "#E8F5E9"
+  core: "@opencode-ai/core\n(Effect runtime, sessions,\ntools, context, catalog)"
+  llm: "@opencode-ai/llm\n(provider/AI-SDK orchestration)"
+  server: "@opencode-ai/server\n(Effect HttpApi /api/* groups)"
+  opencode: "opencode\n(runtime + CLI binary, plugin\nloader, config resolution)"
+  cli: "@opencode-ai/cli\n(alt CLI entry)"
+}
+
+frontend: "Frontend" {
+  style.fill: "#F3E8FF"
+  ui: "@opencode-ai/ui\n(SolidJS components + theme tokens)"
+  app: "@opencode-ai/app\n(SolidJS renderer: routes,\nstores, SSE/WS transport)"
+  tui: "@opencode-ai/tui\n(OpenTUI terminal client)"
+  desktop: "@opencode-ai/desktop\n(Electron shell + sidecar)"
+}
+
+infra: "Infra / Persistence" {
+  style.fill: "#F5F5F5"
+  storage: "effect-*-sqlite +\nhttp-recorder\n(DB / drizzle / recorder)"
+}
+
+# backend internal
+backend.llm -> infra.storage: http-recorder
+backend.core -> backend.llm
+backend.core -> infra.storage: db
+backend.server -> backend.core
+backend.opencode -> backend.core
+backend.opencode -> backend.server
+backend.opencode -> backend.llm
+backend.cli -> backend.core
+backend.cli -> backend.server
+
+# extension contract
+extension.plugin -> shared.sdk
+extension.dotopencode -> extension.plugin: authored against
+backend.opencode -> extension.plugin: loads/invokes hooks
+
+# frontend deps
+frontend.ui -> backend.core
+frontend.ui -> shared.sdk
+frontend.app -> frontend.ui
+frontend.app -> backend.core
+frontend.app -> shared.sdk
+frontend.tui -> frontend.ui
+frontend.tui -> backend.core
+frontend.tui -> extension.plugin
+frontend.tui -> shared.sdk
+frontend.desktop -> frontend.app
+frontend.desktop -> frontend.ui
+frontend.opencode_sidecar: "sidecar (build-time)"
+frontend.desktop -> backend.opencode: embeds sidecar
+
+# data flow: clients -> server over HTTP/SSE
+shared.sdk -> backend.server: HTTP / SSE
+backend.opencode -> backend.tui_host: hosts TUI {style.opacity: 0}
+frontend.app -> shared.sdk: REST/SSE/WS

@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en" style="background-color: var(--background-base)">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>alpha-code</title>
+    <link rel="icon" type="image/png" href="./favicon-96x96-v3.png" sizes="96x96" />
+    <meta name="theme-color" content="#131010" />
+    <!-- appPlugin's theme-preload transform inlines oc-theme-preload.js here.
+         publicDir points at opencode/packages/app/public so the file exists. -->
+    <script id="oc-theme-preload-script" src="./oc-theme-preload.js"></script>
+  </head>
+  <body class="antialiased overscroll-none text-12-regular overflow-hidden">
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root" class="flex flex-col h-dvh"></div>
+    <script src="./index.tsx" type="module"></script>
+  </body>
+</html>
