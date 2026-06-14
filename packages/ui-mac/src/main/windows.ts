@@ -183,8 +183,34 @@ export function createMainWindow() {
   if (process.env.ALPHA_SHOT) {
     setTimeout(async () => {
       try {
-        const img = await win.webContents.capturePage()
         const { writeFile } = await import("node:fs/promises")
+        // optional: click the "open project" button so we capture the populated
+        // project view (the picker is short-circuited by ALPHA_OPEN_DIR).
+        if (process.env.ALPHA_OPEN_DIR) {
+          const r = await win.webContents
+            .executeJavaScript(
+              `(()=>{
+                const all=[...document.querySelectorAll('button,[role=button],a,[data-component]')];
+                let el=all.find(e=>/folder-add/i.test(e.outerHTML||''))
+                  || all.find(e=>/打开项目|添加项目|open\\s*project/i.test(e.textContent||''));
+                if(!el){const p=document.elementFromPoint(303,129); el=p&&(p.closest('button,[role=button],a')||p);}
+                if(el){el.click(); return 'clicked '+el.tagName+' "'+(el.textContent||'').trim().slice(0,16)+'"';}
+                return 'notfound';
+              })()`,
+            )
+            .catch((e) => "err:" + e.message)
+          console.log("[alpha-open] folder-add:", JSON.stringify(r))
+          await new Promise((res) => setTimeout(res, 5000))
+          // then start a new session to land on the chat composer
+          const r2 = await win.webContents
+            .executeJavaScript(
+              `(()=>{const b=[...document.querySelectorAll('button,[role=button],a')].find(e=>/新建会话|new\\s*session/i.test(e.textContent||''));if(b){b.click();return 'clicked '+(e=>e.textContent.trim().slice(0,12))(b)}return 'no-new-session'})()`,
+            )
+            .catch((e) => "err:" + e.message)
+          console.log("[alpha-open] new-session:", JSON.stringify(r2))
+          await new Promise((res) => setTimeout(res, 5000))
+        }
+        const img = await win.webContents.capturePage()
         await writeFile(process.env.ALPHA_SHOT as string, img.toPNG())
         console.log("[alpha-shot]", process.env.ALPHA_SHOT, JSON.stringify(img.getSize()))
       } catch (e) {

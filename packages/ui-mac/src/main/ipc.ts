@@ -107,6 +107,12 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle(
     "open-directory-picker",
     async (_event: IpcMainInvokeEvent, opts?: { multiple?: boolean; title?: string; defaultPath?: string }) => {
+      // alpha-code: ALPHA_OPEN_DIR short-circuits the native dialog with a fixed
+      // directory (used to auto-open a default project / for headless verification).
+      if (process.env.ALPHA_OPEN_DIR) {
+        const dir = process.env.ALPHA_OPEN_DIR
+        return opts?.multiple ? [dir] : dir
+      }
       const result = await dialog.showOpenDialog({
         properties: ["openDirectory", ...(opts?.multiple ? ["multiSelections" as const] : []), "createDirectory"],
         title: opts?.title ?? "Choose a folder",
