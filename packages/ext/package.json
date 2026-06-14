@@ -1,0 +1,13 @@
+{
+  "name": "@alpha-code/ext",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "alpha-code backend isolation extension — zero-edit opencode server plugin + tools. Loaded into the embedded server via OPENCODE_CONFIG_CONTENT injected by ui-mac's sidecar (so it applies to every project without touching opencode's own .opencode/).",
+  "exports": {
+    ".": "./src/plugin.ts"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "workspace:*"
+  }
+}

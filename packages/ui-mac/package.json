@@ -1,0 +1,39 @@
+{
+  "name": "ui-mac",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./out/main/index.js",
+  "description": "alpha-code self-owned Mac Electron shell. Reuses @opencode-ai/app (Option B: AppInterface + custom Platform + token theme) as a NATIVE member of the opencode fork workspace — no symlink/alias/dedupe hacks; Tailwind + solid resolve natively.",
+  "scripts": {
+    "predev": "bun ./scripts/predev.ts",
+    "dev": "electron-vite dev",
+    "prebuild": "bun ./scripts/prebuild.ts",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsgo -b"
+  },
+  "dependencies": {
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@lydell/node-pty": "catalog:",
+    "@opencode-ai/app": "workspace:*",
+    "@opencode-ai/ui": "workspace:*",
+    "@solid-primitives/storage": "catalog:",
+    "@solidjs/meta": "catalog:",
+    "@solidjs/router": "0.15.4",
+    "@types/bun": "catalog:",
+    "@types/node": "catalog:",
+    "@typescript/native-preview": "catalog:",
+    "electron": "42.3.3",
+    "electron-vite": "^5",
+    "solid-js": "catalog:",
+    "typescript": "~5.6.2",
+    "vite": "catalog:"
+  },
+  "optionalDependencies": {
+    "@lydell/node-pty-darwin-arm64": "1.2.0-beta.12",
+    "@lydell/node-pty-darwin-x64": "1.2.0-beta.12"
+  }
+}
