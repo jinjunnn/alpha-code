@@ -9,7 +9,6 @@ import { spawnSync } from "node:child_process"
 import { createRequire } from "node:module"
 
 const require = createRequire(import.meta.url)
-// electron's package main exports the absolute path to the Electron binary.
 const ELECTRON_EXEC_PATH = require("electron") as unknown as string
 
 const mode = process.argv[2] ?? "dev"

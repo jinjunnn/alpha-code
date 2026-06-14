@@ -1,19 +1,40 @@
+import { sentryVitePlugin } from "@sentry/vite-plugin"
 import { defineConfig } from "electron-vite"
 import appPlugin from "@opencode-ai/app/vite"
 import * as fs from "node:fs/promises"
 
-// ui-mac is a NATIVE member of the opencode workspace (the fork). @opencode-ai/app
-// and @opencode-ai/ui resolve as real workspace packages, so their `exports` maps
-// and Tailwind's content scan work natively — NO symlink/alias/dedupe hacks (those
-// were only needed when ui-mac lived outside opencode's workspace). Mirrors
-// packages/desktop/electron.vite.config.ts.
 const OPENCODE_SERVER_DIST = "../opencode/dist/node"
+
+const channel = (() => {
+  const raw = process.env.OPENCODE_CHANNEL
+  if (raw === "dev" || raw === "beta" || raw === "prod") return raw
+  if (process.env.OPENCODE_CHANNEL === "latest") return "prod"
+  return "dev"
+})()
+
 const nodePtyPkg = `@lydell/node-pty-${process.platform}-${process.arch}`
+
+const sentry =
+  process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT
+    ? sentryVitePlugin({
+        authToken: process.env.SENTRY_AUTH_TOKEN,
+        org: process.env.SENTRY_ORG,
+        project: process.env.SENTRY_PROJECT,
+        telemetry: false,
+        release: {
+          name: process.env.SENTRY_RELEASE ?? process.env.VITE_SENTRY_RELEASE,
+        },
+        sourcemaps: {
+          assets: "./out/renderer/**",
+          filesToDeleteAfterUpload: "./out/renderer/**/*.map",
+        },
+      })
+    : false
 
 export default defineConfig({
   main: {
     define: {
-      "import.meta.env.OPENCODE_CHANNEL": JSON.stringify("dev"),
+      "import.meta.env.OPENCODE_CHANNEL": JSON.stringify(channel),
     },
     build: {
       rollupOptions: {
@@ -23,25 +44,24 @@ export default defineConfig({
     },
     plugins: [
       {
-        name: "alpha:node-pty-narrower",
+        name: "opencode:node-pty-narrower",
         enforce: "pre",
         resolveId(s) {
           if (s === "@lydell/node-pty") return nodePtyPkg
         },
       },
       {
-        name: "alpha:virtual-server-module",
+        name: "opencode:virtual-server-module",
         enforce: "pre",
         resolveId(id) {
           if (id === "virtual:opencode-server") return this.resolve(`${OPENCODE_SERVER_DIST}/node.js`)
         },
       },
       {
-        name: "alpha:copy-server-assets",
+        name: "opencode:copy-server-assets",
         async writeBundle() {
           for (const l of await fs.readdir(OPENCODE_SERVER_DIST)) {
             if (!l.endsWith(".wasm")) continue
-            await fs.mkdir("./out/main/chunks", { recursive: true })
             await fs.writeFile(`./out/main/chunks/${l}`, await fs.readFile(`${OPENCODE_SERVER_DIST}/${l}`))
           }
         },
@@ -52,18 +72,23 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: { index: "src/preload/index.ts" },
-        output: { format: "cjs", entryFileNames: "[name].js" },
+        output: {
+          format: "cjs",
+          entryFileNames: "[name].js",
+        },
       },
     },
   },
   renderer: {
-    plugins: [appPlugin],
+    plugins: [appPlugin, sentry],
     publicDir: "../../../app/public",
     root: "src/renderer",
     build: {
       sourcemap: true,
       rollupOptions: {
-        input: { main: "src/renderer/index.html" },
+        input: {
+          main: "src/renderer/index.html",
+        },
       },
     },
   },

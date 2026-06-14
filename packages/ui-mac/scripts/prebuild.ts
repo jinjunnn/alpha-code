@@ -1,6 +1,10 @@
 #!/usr/bin/env bun
-// Same as predev: produce dist/node/node.js for the production bundle.
-// packages/opencode is a sibling of packages/ui-mac in the fork workspace.
 import { $ } from "bun"
+
+import { resolveChannel } from "./utils"
+
+const channel = resolveChannel()
+await $`bun ./scripts/copy-icons.ts ${channel}`
+await $`bun ./scripts/copy-metainfo.ts ${channel}`
 
 await $`cd ../opencode && bun script/build-node.ts`

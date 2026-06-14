@@ -2,18 +2,19 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { app, utilityProcess } from "electron"
 import type { Details } from "electron"
+import { getLogger } from "./logging"
+import { getUserShell, loadShellEnv } from "./shell-env"
+import { getStore } from "./store"
+import { DEFAULT_SERVER_URL_KEY } from "./store-keys"
 
-// Trimmed from opencode/packages/desktop/src/main/server.ts. Forks the sidecar
-// utilityProcess (which imports virtual:opencode-server) and waits for it to
-// report ready, then health-checks GET /global/health with Basic auth.
-
-export type SidecarListener = { stop: () => Promise<void> }
 export type HealthCheck = { wait: Promise<void> }
 
 type SidecarMessage =
   | { type: "ready" }
   | { type: "stopped" }
   | { type: "error"; error: { message: string; stack?: string } }
+
+export type SidecarListener = { stop: () => Promise<void> }
 
 const SIDECAR_SERVICE_NAME = "opencode server"
 const SIDECAR_START_STALL_TIMEOUT = 60_000
@@ -26,13 +27,29 @@ type SpawnLocalServerOptions = {
   onExit?: (code: number) => void
 }
 
-function createSidecarEnv(): Record<string, string> {
-  const env = Object.fromEntries(
-    Object.entries(process.env).flatMap(([k, v]) => (v === undefined ? [] : [[k, String(v)]])),
-  )
-  delete env.DEBUG
-  if (!app.isPackaged) env.OPENCODE_DISABLE_CHANNEL_DB = "1"
-  return env
+export function getDefaultServerUrl(): string | null {
+  const value = getStore().get(DEFAULT_SERVER_URL_KEY)
+  return typeof value === "string" ? value : null
+}
+
+export function setDefaultServerUrl(url: string | null) {
+  if (url) {
+    getStore().set(DEFAULT_SERVER_URL_KEY, url)
+    return
+  }
+
+  getStore().delete(DEFAULT_SERVER_URL_KEY)
+}
+
+export function preferAppEnv(userDataPath: string) {
+  const shell = process.platform === "win32" ? null : getUserShell()
+  Object.assign(process.env, {
+    ...(shell ? loadShellEnv(shell, getLogger()) : null),
+    OPENCODE_EXPERIMENTAL_ICON_DISCOVERY: "true",
+    OPENCODE_EXPERIMENTAL_FILEWATCHER: "true",
+    OPENCODE_CLIENT: "desktop",
+    XDG_STATE_HOME: process.env.XDG_STATE_HOME ?? userDataPath,
+  })
 }
 
 export async function spawnLocalServer(
@@ -40,7 +57,7 @@ export async function spawnLocalServer(
   port: number,
   password: string,
   options: SpawnLocalServerOptions,
-): Promise<{ listener: SidecarListener; health: HealthCheck }> {
+) {
   const sidecar = join(dirname(fileURLToPath(import.meta.url)), "sidecar.js")
   const child = utilityProcess.fork(sidecar, [], {
     cwd: process.cwd(),
@@ -48,43 +65,44 @@ export async function spawnLocalServer(
     serviceName: SIDECAR_SERVICE_NAME,
     stdio: "pipe",
   })
-
   let exited = false
   const exit = defer<number>()
 
-  const onProcessGone = (_e: unknown, details: Details) => {
+  const onProcessGone = (_event: unknown, details: Details) => {
     if (details.type !== "Utility" || details.name !== SIDECAR_SERVICE_NAME) return
     options.onStderr?.(`utility process gone reason=${details.reason} exitCode=${details.exitCode}`)
   }
-  app.on("child-process-gone", onProcessGone)
 
+  app.on("child-process-gone", onProcessGone)
   child.once("exit", (code) => {
     exited = true
     app.off("child-process-gone", onProcessGone)
     options.onExit?.(code)
     exit.resolve(code)
   })
-  child.on("error", (err) => options.onStderr?.(`utility process error: ${String(err)}`))
-  child.stdout?.on("data", (c: Buffer) => options.onStdout?.(c.toString("utf8").trimEnd()))
-  child.stderr?.on("data", (c: Buffer) => options.onStderr?.(c.toString("utf8").trimEnd()))
+  child.on("error", (error) => options.onStderr?.(`utility process error: ${serializeError(error).message}`))
+
+  child.stdout?.on("data", (chunk: Buffer) => options.onStdout?.(chunk.toString("utf8").trimEnd()))
+  child.stderr?.on("data", (chunk: Buffer) => options.onStderr?.(chunk.toString("utf8").trimEnd()))
 
   await new Promise<void>((resolve, reject) => {
     let done = false
-    let timeout: ReturnType<typeof setTimeout>
+    let timeout: NodeJS.Timeout
 
-    const fail = (err: Error) => {
+    const fail = (error: Error) => {
       if (done) return
       done = true
       cleanup()
-      reject(err)
+      reject(error)
     }
-    const refresh = () => {
+
+    const refreshTimeout = () => {
       clearTimeout(timeout)
-      timeout = setTimeout(
-        () => fail(new Error(`sidecar did not become ready within ${SIDECAR_START_STALL_TIMEOUT}ms`)),
-        SIDECAR_START_STALL_TIMEOUT,
-      )
+      timeout = setTimeout(() => {
+        fail(new Error(`Sidecar did not become ready within ${SIDECAR_START_STALL_TIMEOUT}ms: ${sidecar}`))
+      }, SIDECAR_START_STALL_TIMEOUT)
     }
+
     const onMessage = (message: SidecarMessage) => {
       if (message.type === "ready") {
         if (done) return
@@ -97,7 +115,9 @@ export async function spawnLocalServer(
         fail(Object.assign(new Error(message.error.message), { stack: message.error.stack }))
       }
     }
-    const onExit = (code: number) => fail(new Error(`sidecar exited before ready with code ${code}`))
+    const onExit = (code: number) => {
+      fail(new Error(`Sidecar exited before ready with code ${code}`))
+    }
     const cleanup = () => {
       clearTimeout(timeout)
       child.off("message", onMessage)
@@ -106,11 +126,17 @@ export async function spawnLocalServer(
 
     child.on("message", onMessage)
     child.on("exit", onExit)
-    refresh()
-    child.postMessage({ type: "start", hostname, port, password, userDataPath: options.userDataPath })
-  }).catch((err) => {
+    refreshTimeout()
+    child.postMessage({
+      type: "start",
+      hostname,
+      port,
+      password,
+      userDataPath: options.userDataPath,
+    })
+  }).catch((error) => {
     if (!exited) child.kill()
-    throw err
+    throw error
   })
 
   const wait = (async () => {
@@ -118,21 +144,24 @@ export async function spawnLocalServer(
     let healthy = false
     const gone = exit.promise.then((code) => {
       if (healthy) return
-      throw new Error(`sidecar exited before health check passed with code ${code}`)
+      throw new Error(`Sidecar exited before health check passed with code ${code}`)
     })
+
     const ready = async () => {
       while (true) {
-        await delay(100)
+        await new Promise((resolve) => setTimeout(resolve, 100))
         if (await checkHealth(url, password)) {
           healthy = true
           return
         }
       }
     }
+
     await Promise.race([ready(), gone])
   })()
 
   let stopping: Promise<void> | undefined
+
   return {
     listener: {
       stop: () => {
@@ -159,26 +188,47 @@ export async function checkHealth(url: string, password?: string | null): Promis
   } catch {
     return false
   }
+
   const headers = new Headers()
   if (password) {
     const auth = Buffer.from(`opencode:${password}`).toString("base64")
     headers.set("authorization", `Basic ${auth}`)
   }
+
   try {
-    const res = await fetch(healthUrl, { method: "GET", headers, signal: AbortSignal.timeout(3000) })
+    const res = await fetch(healthUrl, {
+      method: "GET",
+      headers,
+      signal: AbortSignal.timeout(3000),
+    })
     return res.ok
   } catch {
     return false
   }
 }
 
+function createSidecarEnv(): Record<string, string> {
+  const env = Object.fromEntries(
+    Object.entries(process.env).flatMap(([key, value]) => (value === undefined ? [] : [[key, String(value)]])),
+  )
+  delete env.DEBUG
+  if (process.platform === "linux") delete env.LD_PRELOAD
+  if (!app.isPackaged) env.OPENCODE_DISABLE_CHANNEL_DB = "1"
+  return env
+}
+
 function delay(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
 }
 
+function serializeError(error: unknown) {
+  if (error instanceof Error) return { message: error.message, stack: error.stack }
+  return { message: String(error) }
+}
+
 function defer<T>() {
   let resolve!: (value: T) => void
-  let reject!: (err: Error) => void
+  let reject!: (error: Error) => void
   const promise = new Promise<T>((res, rej) => {
     resolve = res
     reject = rej

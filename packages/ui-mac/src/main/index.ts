@@ -1,238 +1,367 @@
 import { randomUUID } from "node:crypto"
+import { mkdirSync, rmSync } from "node:fs"
+import * as http from "node:http"
 import { createServer } from "node:net"
-import { homedir } from "node:os"
-import { app, BrowserWindow, ipcMain } from "electron"
+import { homedir, tmpdir } from "node:os"
+import { join } from "node:path"
+import { getCACertificates, setDefaultCACertificates } from "node:tls"
+import type { Event } from "electron"
+import { app, BrowserWindow } from "electron"
+
+import { Deferred, Effect, Fiber } from "effect"
+import contextMenu from "electron-context-menu"
 
 import type { ServerReadyData } from "../preload/types"
-import { spawnLocalServer, type SidecarListener } from "./server"
-import { createMainWindow, registerRendererProtocol } from "./windows"
+import { checkAppExists, resolveAppPath } from "./apps"
+import { CHANNEL } from "./constants"
+import { registerIpcHandlers, sendDeepLinks, sendMenuCommand } from "./ipc"
+import { forwardInitializationFailure } from "./initialization"
+import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
+import { parseMarkdown } from "./markdown"
+import { createMenu } from "./menu"
+import {
+  getDefaultServerUrl,
+  preferAppEnv,
+  setDefaultServerUrl,
+  spawnLocalServer,
+  type SidecarListener,
+} from "./server"
+import { setupAutoUpdater, showUpdaterDialog } from "./updater"
+import {
+  createMainWindow,
+  registerRendererProtocol,
+  setRelaunchHandler,
+  setBackgroundColor,
+  setDockIcon,
+} from "./windows"
+import { createWslServersController } from "./wsl/servers"
+import { registerWslIpcHandlers } from "./wsl/ipc"
+import { spawnWslSidecar } from "./wsl/sidecar"
+import { migrate } from "./migrate"
 
-// ---------------------------------------------------------------------------
-// alpha-code ui-mac — minimal Electron main (walking skeleton).
-// Adapted from opencode/packages/desktop/src/main/index.ts but stripped of
-// Effect, WSL, updater, deep-link, logging, and onboarding-test machinery.
-// opencode is a read-only submodule: nothing here edits it; the embedded server
-// is consumed only through the `virtual:opencode-server` bundle alias.
-// ---------------------------------------------------------------------------
+const APP_NAMES: Record<string, string> = {
+  dev: "OpenCode Dev",
+  beta: "OpenCode Beta",
+  prod: "OpenCode",
+}
+const APP_IDS: Record<string, string> = {
+  dev: "ai.opencode.desktop.dev",
+  beta: "ai.opencode.desktop.beta",
+  prod: "ai.opencode.desktop",
+}
+const TEST_ONBOARDING = process.env.OPENCODE_TEST_ONBOARDING === "1"
+const jsCallStackFeature = "DocumentPolicyIncludeJSCallStacksInCrashReports"
 
+let logger: ReturnType<typeof initLogging>
 let mainWindow: BrowserWindow | null = null
 let server: SidecarListener | null = null
 
-// Resolves once the server (embedded sidecar or external) is reachable.
-// The renderer reads this via window.api.awaitInitialization().
-let resolveServerReady!: (data: ServerReadyData) => void
-let rejectServerReady!: (err: unknown) => void
-const serverReady = new Promise<ServerReadyData>((resolve, reject) => {
-  resolveServerReady = resolve
-  rejectServerReady = reject
-})
+const pendingDeepLinks: string[] = []
 
-// In-memory key/value store backing the Platform.storage IPC. The real desktop
-// uses electron-store; a Map is enough for a skeleton (no persistence yet).
-const stores = new Map<string, Map<string, string>>()
-function store(name: string) {
-  let s = stores.get(name)
-  if (!s) stores.set(name, (s = new Map()))
-  return s
-}
-let defaultServerUrl: string | null = null
-
-async function freePort(): Promise<number> {
-  const fromEnv = process.env.OPENCODE_PORT
-  if (fromEnv) {
-    const parsed = Number.parseInt(fromEnv, 10)
-    if (!Number.isNaN(parsed)) return parsed
+function useEnvProxy() {
+  try {
+    // Electron 41.2 runs Node 24.14.1; latest @types/node@24 is 24.12.2.
+    ;(http as any).setGlobalProxyFromEnv()
+  } catch (error) {
+    logger.warn("failed to load proxy environment", error)
   }
-  return await new Promise<number>((resolve, reject) => {
-    const srv = createServer()
-    srv.on("error", reject)
-    srv.listen(0, "127.0.0.1", () => {
-      const addr = srv.address()
-      if (typeof addr !== "object" || !addr) {
-        srv.close()
-        reject(new Error("failed to acquire free port"))
-        return
-      }
-      const port = addr.port
-      srv.close(() => resolve(port))
-    })
-  })
+}
+
+function emitDeepLinks(urls: string[]) {
+  if (urls.length === 0) return
+  pendingDeepLinks.push(...urls)
+  if (mainWindow) sendDeepLinks(mainWindow, urls)
 }
 
 async function killSidecar() {
   if (!server) return
   const current = server
   server = null
-  await current.stop().catch(() => undefined)
+  await current.stop()
 }
 
-function registerIpc() {
-  // --- lifecycle / server discovery ---
-  ipcMain.handle("await-initialization", () => serverReady)
-  ipcMain.handle("kill-sidecar", () => killSidecar())
-  ipcMain.on("relaunch", () => {
-    void killSidecar().finally(() => {
-      app.relaunch()
-      app.exit(0)
-    })
-  })
+function ensureLoopbackNoProxy() {
+  const loopback = ["127.0.0.1", "localhost", "::1"]
+  const upsert = (key: string) => {
+    const items = (process.env[key] ?? "")
+      .split(",")
+      .map((value: string) => value.trim())
+      .filter((value: string) => Boolean(value))
 
-  // --- default server url (Platform.getDefaultServer/setDefaultServer) ---
-  ipcMain.handle("get-default-server-url", () => defaultServerUrl)
-  ipcMain.handle("set-default-server-url", (_e, url: string | null) => {
-    defaultServerUrl = url
-  })
+    for (const host of loopback) {
+      if (items.some((value: string) => value.toLowerCase() === host)) continue
+      items.push(host)
+    }
 
-  // --- storage (Platform.storage) ---
-  ipcMain.handle("store-get", (_e, name: string, key: string) => store(name).get(key) ?? null)
-  ipcMain.handle("store-set", (_e, name: string, key: string, value: string) => void store(name).set(key, value))
-  ipcMain.handle("store-delete", (_e, name: string, key: string) => void store(name).delete(key))
-  ipcMain.handle("store-clear", (_e, name: string) => void store(name).clear())
-  ipcMain.handle("store-keys", (_e, name: string) => [...store(name).keys()])
-  ipcMain.handle("store-length", (_e, name: string) => store(name).size)
+    process.env[key] = items.join(",")
+  }
 
-  // --- misc Platform shims (no-op/minimal for the skeleton) ---
-  ipcMain.handle("get-window-count", () => BrowserWindow.getAllWindows().length)
-  ipcMain.handle("get-window-focused", () => Boolean(BrowserWindow.getFocusedWindow()))
-  ipcMain.handle("set-window-focus", () => mainWindow?.focus())
-  ipcMain.handle("show-window", () => mainWindow?.show())
-  ipcMain.on("open-link", (_e, url: string) => {
-    if (/^https?:\/\//.test(url)) void import("electron").then(({ shell }) => shell.openExternal(url))
-  })
-  ipcMain.handle("open-path", (_e, _path: string) => undefined) // TODO: shell.openPath
-  ipcMain.handle("set-background-color", (_e, color: string) => {
-    if (mainWindow) mainWindow.setBackgroundColor(color)
-  })
+  upsert("NO_PROXY")
+  upsert("no_proxy")
 }
 
-async function start() {
+const main = Effect.gen(function* () {
+  contextMenu({ showSaveImageAs: true, showLookUpSelection: false, showSearchWithGoogle: false })
+
+  // on macOS apps run in `/` which can cause issues with ripgrep
   try {
     process.chdir(homedir())
   } catch {}
 
-  // Disable opencode's bundled web UI inside the embedded server; we ARE the UI.
   process.env.OPENCODE_DISABLE_EMBEDDED_WEB_UI = "true"
+
+  const appId = app.isPackaged ? APP_IDS[CHANNEL] : "ai.opencode.desktop.dev"
+  const onboardingTestRoot = ((): string | undefined => {
+    if (!TEST_ONBOARDING) return
+
+    const root = join(tmpdir(), `opencode-onboarding-${randomUUID()}`)
+    rmSync(root, { recursive: true, force: true })
+    ;["data", "config", "cache", "state", "desktop", "session"].forEach((dir) =>
+      mkdirSync(join(root, dir), { recursive: true }),
+    )
+    process.env.OPENCODE_DB = ":memory:"
+    process.env.XDG_DATA_HOME = join(root, "data")
+    process.env.XDG_CONFIG_HOME = join(root, "config")
+    process.env.XDG_CACHE_HOME = join(root, "cache")
+    process.env.XDG_STATE_HOME = join(root, "state")
+    return root
+  })()
+  app.setName(app.isPackaged ? APP_NAMES[CHANNEL] : "OpenCode Dev")
+  app.setAppUserModelId(appId)
+  app.setPath(
+    "userData",
+    onboardingTestRoot ? join(onboardingTestRoot, "desktop") : join(app.getPath("appData"), appId),
+  )
+  if (onboardingTestRoot) app.setPath("sessionData", join(onboardingTestRoot, "session"))
+  logger = initLogging()
+  initCrashReporter()
+
+  const wslServers = createWslServersController(
+    app.getVersion(),
+    async (distro) => {
+      logger.log("spawning wsl sidecar", { distro })
+      return spawnWslSidecar(distro, {
+        onLine: (line) => logger.log("wsl sidecar", { distro, stream: line.stream, text: line.text }),
+      })
+    },
+    {
+      logger: {
+        log: (message, meta) => logger.log(message, meta),
+        error: (message, meta) => logger.error(message, meta),
+      },
+    },
+  )
+  const stopSidecars = async () => {
+    await killSidecar()
+    wslServers.stopAll()
+  }
+  const relaunch = () => {
+    void stopSidecars().finally(() => {
+      app.relaunch()
+      app.exit(0)
+    })
+  }
+
+  try {
+    setDefaultCACertificates([...new Set([...getCACertificates("default"), ...getCACertificates("system")])])
+  } catch (error) {
+    logger.warn("failed to load system certificates", error)
+  }
+
+  logger.log("app starting", {
+    version: app.getVersion(),
+    packaged: app.isPackaged,
+    onboardingTest: Boolean(onboardingTestRoot),
+  })
+
+  ensureLoopbackNoProxy()
+  useEnvProxy()
+  app.commandLine.appendSwitch("proxy-bypass-list", "<-loopback>")
+  const features = app.commandLine.getSwitchValue("enable-features")
+  app.commandLine.appendSwitch("enable-features", features ? `${jsCallStackFeature},${features}` : jsCallStackFeature)
+  if (!app.isPackaged) app.commandLine.appendSwitch("remote-debugging-port", "9222")
 
   if (!app.requestSingleInstanceLock()) {
     app.quit()
     return
   }
 
-  await app.whenReady()
-  registerRendererProtocol()
-  registerIpc()
+  preferAppEnv(app.getPath("userData"))
 
-  // ESCAPE HATCH: point at an already-running `opencode serve` instead of
-  // embedding the server. Lets the skeleton run before dist/node is built.
-  //   ALPHA_SERVER_URL=http://127.0.0.1:4096 \
-  //   ALPHA_SERVER_PASSWORD=... ALPHA_SERVER_USERNAME=opencode bun run dev
-  const externalUrl = process.env.ALPHA_SERVER_URL
-  if (externalUrl) {
-    resolveServerReady({
-      url: externalUrl,
-      username: process.env.ALPHA_SERVER_USERNAME ?? "opencode",
-      password: process.env.ALPHA_SERVER_PASSWORD ?? null,
+  app.on("second-instance", (_event: Event, argv: string[]) => {
+    const urls = argv.filter((arg: string) => arg.startsWith("opencode://"))
+    if (urls.length) {
+      logger.log("deep link received via second-instance", { urls })
+      emitDeepLinks(urls)
+    }
+    if (mainWindow) {
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  })
+
+  app.on("open-url", (event: Event, url: string) => {
+    event.preventDefault()
+    logger.log("deep link received via open-url", { url })
+    emitDeepLinks([url])
+  })
+
+  app.on("before-quit", () => {
+    void stopSidecars()
+  })
+
+  app.on("will-quit", () => {
+    void stopSidecars()
+  })
+
+  app.on("child-process-gone", (_event, details) => {
+    writeLog("utility", "child process gone", { details }, "error")
+  })
+
+  app.on("render-process-gone", (_event, webContents, details) => {
+    writeLog("window", "app render process gone", { url: webContents.getURL(), details }, "error")
+  })
+
+  setRelaunchHandler(() => {
+    relaunch()
+  })
+
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    process.on(signal, () => {
+      void stopSidecars().finally(() => app.exit(0))
     })
-  } else {
-    // Embedded server path (mirrors desktop): free port + per-launch password.
-    void (async () => {
-      try {
-        const hostname = "127.0.0.1"
-        const port = await freePort()
-        const url = `http://${hostname}:${port}`
-        const password = randomUUID()
-        const { listener } = await spawnLocalServer(hostname, port, password, {
-          userDataPath: app.getPath("userData"),
-          onStderr: (m) => console.warn("[server]", m),
-          onExit: (code) => console.warn("[server] exited", code),
-        })
-        server = listener
-        resolveServerReady({ url, username: "opencode", password })
-      } catch (err) {
-        console.error("[server] failed to start", err)
-        rejectServerReady(err)
-      }
-    })()
   }
+
+  const serverReady = Deferred.makeUnsafe<ServerReadyData, unknown>()
+
+  yield* Effect.promise(() => app.whenReady())
+
+  if (!TEST_ONBOARDING) migrate()
+  app.setAsDefaultProtocolClient("opencode")
+  registerRendererProtocol()
+  setDockIcon()
+  const updater = setupAutoUpdater(stopSidecars)
+  registerIpcHandlers({
+    killSidecar: () => killSidecar(),
+    relaunch,
+    awaitInitialization: Effect.fnUntraced(
+      function* () {
+        logger.log("awaiting server ready")
+        const res = yield* Deferred.await(serverReady)
+        logger.log("server ready", { url: res.url })
+        return res
+      },
+      (e) => Effect.runPromise(e),
+    ),
+    consumeInitialDeepLinks: () => pendingDeepLinks.splice(0),
+    getDefaultServerUrl: () => getDefaultServerUrl(),
+    setDefaultServerUrl: (url) => setDefaultServerUrl(url),
+    getDisplayBackend: async () => null,
+    setDisplayBackend: async () => undefined,
+    parseMarkdown: async (markdown) => parseMarkdown(markdown),
+    checkAppExists: (appName) => checkAppExists(appName),
+    resolveAppPath: async (appName) => resolveAppPath(appName),
+    updater,
+    showUpdater: () => showUpdaterDialog(updater, true),
+    setBackgroundColor: (color) => setBackgroundColor(color),
+    exportDebugLogs: () => exportDebugLogs(),
+    recordFatalRendererError: (error) => writeLog("renderer", "fatal renderer error", { ...error }, "error"),
+  })
+  registerWslIpcHandlers(wslServers)
+  void updater.start()
+  const updateTimer = setInterval(() => void updater.check(), 10 * 60 * 1000)
+  updateTimer.unref()
+  app.once("will-quit", () => clearInterval(updateTimer))
+  yield* Effect.promise(() => startNetLog()).pipe(
+    Effect.catch((error) =>
+      Effect.sync(() => {
+        logger.warn("failed to start net log", error)
+      }),
+    ),
+  )
+
+  const port = yield* Effect.gen(function* () {
+    const fromEnv = process.env.OPENCODE_PORT
+    if (fromEnv) {
+      const parsed = Number.parseInt(fromEnv, 10)
+      if (!Number.isNaN(parsed)) return parsed
+    }
+
+    const res = yield* Deferred.make<number, unknown>()
+    const server = createServer()
+    server.on("error", (e) => Deferred.failSync(res, () => e))
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address()
+      if (typeof address !== "object" || !address) {
+        server.close()
+        Deferred.failSync(res, () => new Error("Failed to get port"))
+        return
+      }
+      const port = address.port
+      server.close(() => Effect.runSync(Deferred.succeed(res, port)))
+    })
+
+    return yield* Deferred.await(res)
+  })
+  const hostname = "127.0.0.1"
+  const url = `http://${hostname}:${port}`
+  const password = randomUUID()
+
+  const loadingTask = yield* Effect.gen(function* () {
+    logger.log("sidecar connection started", { url })
+
+    ensureLoopbackNoProxy()
+    useEnvProxy()
+
+    logger.log("spawning sidecar", { url })
+    const { listener, health } = yield* Effect.promise(() =>
+      spawnLocalServer(hostname, port, password, {
+        userDataPath: app.getPath("userData"),
+        onStdout: (message) => writeLog("server", "stdout", { message }),
+        onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
+        onExit: (code) => writeLog("utility", "sidecar exited", { code }, "warn"),
+      }),
+    )
+    server = listener
+    yield* Deferred.succeed(serverReady, {
+      url,
+      username: "opencode",
+      password,
+    })
+
+    if (process.platform === "win32") {
+      void wslServers.initialize().catch((error) => logger.error("wsl server initialization failed", error))
+    }
+
+    yield* Effect.promise(() => health.wait).pipe(
+      Effect.timeout("30 seconds"),
+      Effect.catch((e) =>
+        Effect.sync(() => {
+          logger.error("sidecar health check failed", e.toString())
+        }),
+      ),
+    )
+
+    logger.log("loading task finished")
+  }).pipe(forwardInitializationFailure(serverReady), Effect.forkChild)
+
+  yield* Fiber.await(loadingTask)
 
   mainWindow = createMainWindow()
-
-  // DEV diagnostics: surface renderer console, crashes, failed loads, and any
-  // full-window navigation (the router-less bug) to the terminal.
   if (mainWindow) {
-    const wc = mainWindow.webContents
-    wc.on("console-message", (_e, level, message, line, source) => {
-      const tag = ["log", "warn", "error", "info"][level] ?? `l${level}`
-      if (level >= 2 || process.env.ALPHA_DEBUG) console.log(`[renderer:${tag}] ${message}${line ? ` (${source}:${line})` : ""}`)
+    createMenu({
+      trigger: (id) => {
+        const win = BrowserWindow.getFocusedWindow() ?? mainWindow
+        if (win) sendMenuCommand(win, id)
+      },
+      checkForUpdates: () => {
+        void showUpdaterDialog(updater, true)
+      },
+      relaunch: () => {
+        relaunch()
+      },
     })
-    wc.on("render-process-gone", (_e, d) => console.error(`[renderer GONE] reason=${d.reason} exitCode=${d.exitCode ?? "?"}`))
-    wc.on("did-fail-load", (_e, code, desc, url) => console.error(`[did-fail-load] ${code} ${desc} ${url}`))
-    wc.on("will-navigate", (_e, url) => console.warn(`[will-navigate] ${url}  <-- router-less nav?`))
-    wc.setWindowOpenHandler(({ url }) => {
-      console.warn(`[window-open] ${url}`)
-      return { action: "deny" }
-    })
   }
+})
 
-  // DEV screenshot + interactive click test (gated by ALPHA_SCREENSHOT=<dir>).
-  // With ALPHA_DEBUG also set, it clicks the main nav items and reports the URL
-  // change + any renderer errors after each, plus a screenshot per step.
-  if (process.env.ALPHA_SCREENSHOT && mainWindow) {
-    const outDir = process.env.ALPHA_SCREENSHOT
-    const delayMs = Number.parseInt(process.env.ALPHA_SCREENSHOT_DELAY ?? "14000", 10)
-    const interactive = Boolean(process.env.ALPHA_DEBUG)
-    const win = mainWindow
-    const { writeFile, mkdir } = await import("node:fs/promises")
-    const shot = async (name: string) => {
-      const img = await win.webContents.capturePage()
-      await mkdir(outDir, { recursive: true }).catch(() => {})
-      await writeFile(`${outDir}/${name}.png`, img.toPNG())
-      console.log(`[shot] ${name} ${JSON.stringify(img.getSize())}`)
-    }
-    setTimeout(async () => {
-      try {
-        await win.webContents.executeJavaScript(
-          `window.__err=[];addEventListener('error',e=>__err.push('ERR '+e.message));addEventListener('unhandledrejection',e=>__err.push('REJ '+((e.reason&&e.reason.message)||e.reason)));true`,
-        )
-        await shot("01-home")
-        if (interactive) {
-          const clickable = await win.webContents.executeJavaScript(
-            `Array.from(document.querySelectorAll('button,a,[role=button]')).map(el=>((el.textContent||'').trim().slice(0,24))).filter(Boolean).slice(0,30)`,
-          )
-          console.log("[clickable]", JSON.stringify(clickable))
-          const labels: string[] = await win.webContents.executeJavaScript(
-            `['设置','帮助','项目','Settings','Help','New','+'].filter(l=>[...document.querySelectorAll('button,a,[role=button]')].some(e=>(e.textContent||'').includes(l)))`,
-          )
-          for (const label of labels) {
-            const before = await win.webContents.executeJavaScript(`location.href`)
-            const res = await win.webContents.executeJavaScript(
-              `(()=>{const el=[...document.querySelectorAll('button,a,[role=button]')].find(e=>(e.textContent||'').includes(${JSON.stringify(label)}));if(!el)return'notfound';try{el.click();return'ok'}catch(e){return'throw '+e.message}})()`,
-            )
-            await new Promise((r) => setTimeout(r, 1800))
-            const after = await win.webContents.executeJavaScript(`location.href`)
-            const errs = await win.webContents.executeJavaScript(`window.__err.splice(0)`)
-            console.log(`[click ${label}] ${res} url=${before === after ? "same" : after} errs=${JSON.stringify(errs)}`)
-            await shot(`click-${label.replace(/[^a-zA-Z0-9]/g, "_")}`)
-          }
-        }
-      } catch (e) {
-        console.error("[debug] failed", e)
-      } finally {
-        app.exit(0)
-      }
-    }, delayMs)
-  }
-
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) mainWindow = createMainWindow()
-  })
-  app.on("window-all-closed", () => {
-    if (process.platform !== "darwin") app.quit()
-  })
-  app.on("before-quit", () => void killSidecar())
-  for (const sig of ["SIGINT", "SIGTERM"] as const) {
-    process.on(sig, () => void killSidecar().finally(() => app.exit(0)))
-  }
-}
-
-void start()
+Effect.runFork(main)

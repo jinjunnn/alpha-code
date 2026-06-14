@@ -1,7 +1,14 @@
-// Runs in an Electron utilityProcess. Imports the embedded opencode server via
-// the `virtual:opencode-server` alias (electron.vite.config.ts -> the submodule
-// dist/node/node.js) and calls Server.listen with Basic auth + loopback CORS.
-// Adapted (trimmed) from opencode/packages/desktop/src/main/sidecar.ts.
+import * as http from "node:http"
+import * as tls from "node:tls"
+
+type NodeHttpWithEnvProxy = typeof http & {
+  setGlobalProxyFromEnv: () => void
+}
+
+type NodeTlsWithSystemCertificates = typeof tls & {
+  getCACertificates: (type: "default" | "system") => string[]
+  setDefaultCACertificates: (certificates: string[]) => void
+}
 
 type StartCommand = {
   type: "start"
@@ -10,6 +17,7 @@ type StartCommand = {
   password: string
   userDataPath: string
 }
+
 type StopCommand = { type: "stop" }
 type SidecarCommand = StartCommand | StopCommand
 
@@ -23,7 +31,9 @@ type ParentPort = {
   on(event: "message", listener: (event: { data: unknown }) => void): void
 }
 
-type Listener = { stop(close?: boolean): void | Promise<void> }
+type Listener = {
+  stop(close?: boolean): void | Promise<void>
+}
 
 const parentPort = getParentPort()
 let listener: Listener | undefined
@@ -41,14 +51,16 @@ parentPort.on("message", (event) => {
 async function start(command: StartCommand) {
   try {
     prepareSidecarEnv(command.password, command.userDataPath)
-    // The embedded server. Resolved at bundle time by the vite alias.
+    ensureLoopbackNoProxy()
+    useSystemCertificates()
+    useEnvProxy()
     const { Server } = await import("virtual:opencode-server")
+
     listener = await Server.listen({
       port: command.port,
       hostname: command.hostname,
       username: "opencode",
       password: command.password,
-      // Must match the renderer's oc:// origin or fetches get CORS-blocked.
       cors: ["oc://renderer"],
     })
     parentPort.postMessage({ type: "ready" })
@@ -73,31 +85,63 @@ function prepareSidecarEnv(password: string, userDataPath: string) {
     OPENCODE_SERVER_USERNAME: "opencode",
     OPENCODE_SERVER_PASSWORD: password,
     XDG_STATE_HOME: process.env.XDG_STATE_HOME ?? userDataPath,
-    // TODO (alpha-code G1): to auto-bundle @alpha-code/ext regardless of cwd,
-    // inject OPENCODE_CONFIG_CONTENT here with an ABSOLUTE plugin path, e.g.
-    //   process.env.OPENCODE_CONFIG_CONTENT = JSON.stringify({
-    //     $schema: "https://opencode.ai/config.json",
-    //     plugin: ["/abs/path/to/packages/ext/src/plugin.ts"],
-    //   })
-    // (relative specs inside OPENCODE_CONFIG_CONTENT are NOT path-resolved.)
   })
+}
+
+function ensureLoopbackNoProxy() {
+  const loopback = ["127.0.0.1", "localhost", "::1"]
+  const upsert = (key: string) => {
+    const items = (process.env[key] ?? "")
+      .split(",")
+      .map((value: string) => value.trim())
+      .filter((value: string) => Boolean(value))
+
+    for (const host of loopback) {
+      if (items.some((value: string) => value.toLowerCase() === host)) continue
+      items.push(host)
+    }
+
+    process.env[key] = items.join(",")
+  }
+
+  upsert("NO_PROXY")
+  upsert("no_proxy")
+}
+
+function useSystemCertificates() {
+  try {
+    const nodeTls = tls as NodeTlsWithSystemCertificates
+    nodeTls.setDefaultCACertificates([
+      ...new Set([...nodeTls.getCACertificates("default"), ...nodeTls.getCACertificates("system")]),
+    ])
+  } catch (error) {
+    console.warn("failed to load system certificates", error)
+  }
+}
+
+function useEnvProxy() {
+  try {
+    ;(http as NodeHttpWithEnvProxy).setGlobalProxyFromEnv()
+  } catch (error) {
+    console.warn("failed to load proxy environment", error)
+  }
 }
 
 function parseCommand(value: unknown): SidecarCommand | undefined {
   if (!value || typeof value !== "object") return
-  const c = value as Partial<StartCommand | StopCommand>
-  if (c.type === "stop") return { type: "stop" }
-  if (c.type !== "start") return
-  if (typeof c.hostname !== "string") return
-  if (typeof c.port !== "number") return
-  if (typeof c.password !== "string") return
-  if (typeof c.userDataPath !== "string") return
+  const command = value as Partial<StartCommand | StopCommand>
+  if (command.type === "stop") return { type: "stop" }
+  if (command.type !== "start") return
+  if (typeof command.hostname !== "string") return
+  if (typeof command.port !== "number") return
+  if (typeof command.password !== "string") return
+  if (typeof command.userDataPath !== "string") return
   return {
     type: "start",
-    hostname: c.hostname,
-    port: c.port,
-    password: c.password,
-    userDataPath: c.userDataPath,
+    hostname: command.hostname,
+    port: command.port,
+    password: command.password,
+    userDataPath: command.userDataPath,
   }
 }
 
@@ -106,8 +150,8 @@ function serializeError(error: unknown) {
   return { message: String(error) }
 }
 
-function getParentPort(): ParentPort {
-  const port = (process as unknown as { parentPort?: ParentPort }).parentPort
+function getParentPort() {
+  const port = process.parentPort as ParentPort | undefined
   if (!port) throw new Error("Sidecar parent port unavailable")
   return port
 }
