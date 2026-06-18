@@ -25,6 +25,7 @@
 ## 明确不引入的技术
 - 与 opencode `catalog`(根 package.json)冲突的 `effect` / `solid-js` / `@opentui/*` 版本 — 理由:版本漂移会让消费侧编译崩。
 - 第二套 agent 框架 / 第二个 LLM 编排层 — 理由:opencode 的 `llm` + `core` 已经是基座。
+- 多 build 渠道 / 多部署环境(dev / beta / staging / prod 区分)— 理由:**只维护单一环境**(app 单一 build、云平台单一部署);降低单人维护面,与既有 ship 偏好一致(无 dev 模式、单一 app 入口)。注:此处"环境"指**运行/部署环境**,与 `dev` git 分支(上游镜像,见 [[ADR-005]])无关——后者不是环境。
 
 ## 撤回条件(什么时候可以把某条从 NON_GOALS 删除)
 - 条款 1/2/3:若决定彻底脱离 opencode upstream(放弃升级继承),整套隔离前提失效,本文件需重写。

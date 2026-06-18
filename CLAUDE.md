@@ -16,6 +16,7 @@
 所有 `/app:*` 命令会先读这些文件;产物若偏离会标 `[DRIFT]`。
 
 ## 分支与同步(ADR-005)
+- **自有代码只在 `alpha`**;`dev` 是上游只读镜像,从不在其上改动。日常只在 `alpha` 工作。**仓库只此两个分支。**
 - `dev` = `anomalyco/opencode:dev` 纯镜像(永远 fast-forward)。
 - `alpha` = `dev` + 自有新增(产品/开发分支)。
 - 自动:`.github/workflows/sync-upstream.yml` 每天同步 dev → merge 进 alpha。
