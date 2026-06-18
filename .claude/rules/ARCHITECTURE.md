@@ -1,7 +1,8 @@
 # 架构约束(ARCHITECTURE)
 
-> 最后更新:2026-06-14
+> 最后更新:2026-06-18
 > 回顾节奏:每次 `/app:retro` 时审视是否仍有效
+> 2026-06-18:产品转多用户/多租户,本文"规模/下游"已据 ADR-010/011 修订。
 
 ## 技术栈
 - **语言**:TypeScript(消费侧),少量 JS。
@@ -18,7 +19,7 @@
 ## 边界与外部依赖
 - **上游(我们依赖)**:opencode @ `anomalyco/opencode` commit `7efade2`(分支 `dev`);契约包 `@opencode-ai/sdk`、`@opencode-ai/plugin` @ `1.17.6`。
   - ⚠️ 关键事实:`@opencode-ai/server` 与 `opencode` 在该仓库是 `private:true` → **复用前端(app/ui)或内嵌 server 必须从 submodule 源码构建,不能纯 npm 装**。`sdk` / `plugin` 是公开 MIT 契约。
-- **下游(依赖我们)**:无(个人工具)。
+- **下游(依赖我们)**:多用户/多租户(本地各跑实例 + 共享云平台);见 [[ADR-010]]/[[ADR-011]]。
 - **外部 API/服务**:LLM provider(经 opencode 配置,不在 alpha-code 重做);自有 sidecar 如接外部服务再列。
 
 ## 禁区(明确不做的架构选择)
@@ -27,15 +28,22 @@
 - 把核心后端行为长期建立在 `experimental.*` hook / `/experimental/*` 路由上(unstable by name)。
 - 引入与 opencode `catalog` 冲突的 `effect` / `solid-js` / `@opentui/*` 版本。
 
-## ADR 列表(详见 DECISIONS.md)
-- ADR-001:opencode 以 pinned submodule 引入,自有代码在其外 → DECISIONS#ADR-001
-- ADR-002:后端走 plugin/tool/MCP/sidecar,绝不 fork server 路由 → DECISIONS#ADR-002
-- ADR-003:前端走 B+A(挂 AppInterface + 自定义 Platform + token 换肤),保留 Electron 复用 desktop → DECISIONS#ADR-003
-- ADR-004:升级隔离纪律(CI 守卫 opencode 源码零改动)→ DECISIONS#ADR-004
+## ADR 列表(索引见 `DECISIONS.md`,每条一个文件在 `adrs/`)
+- ADR-001:opencode pinned submodule 引入(已被 ADR-005 取代)→ adrs/ADR-001-opencode-submodule.md
+- ADR-002:后端走 plugin/tool/MCP/sidecar,绝不 fork server 路由 → adrs/ADR-002-backend-seams.md
+- ADR-003:前端走 B+A(挂 AppInterface + 自定义 Platform + token 换肤)→ adrs/ADR-003-frontend-appinterface.md
+- ADR-004:升级隔离纪律(CI 守卫 opencode 源码零改动)→ adrs/ADR-004-upgrade-isolation-ci.md
+- ADR-005:pivot 到 fork + 只增不改 → adrs/ADR-005-fork-pivot.md
+- ADR-006:两个运行时世界,自有 ext 必须预 bundle → adrs/ADR-006-runtime-worlds.md
+- ADR-007:前端品牌化 build-time transform → adrs/ADR-007-brand-transform.md
+- ADR-008:Codex 风格左边栏 → adrs/ADR-008-sidebar.md
+- ADR-009:websearch 默认放开 + alpha.env → adrs/ADR-009-websearch-default.md
+- ADR-010:云执行平台与派发接缝(proposed)→ adrs/ADR-010-cloud-platform.md
+- ADR-011:云执行分层、运行时与工具注入(proposed)→ adrs/ADR-011-cloud-tiers-tools.md
 
 ## 性能与规模预期
-- **当前规模**:单用户、单机 Mac、个位数并发会话。
-- **6 个月预期**:仍为个人工具;自有代码控制在"薄定制层"(目标 < opencode 自身体量的 5%)。
+- **规模假设(2026-06-18 修订)**:本地 = 多用户各自单机;**云平台 = 多租户共享**,并发不再是个位数,需按租户配额/隔离/容量规划(见 [[ADR-011]]);原"单用户"假设作废。
+- **6 个月预期**:面向多用户的产品 + 云多租户平台;本地自有代码仍守"薄定制层"(目标 < opencode 体量 5%),云平台为独立 codebase、不计入该比例。
 - **性能底线**:前端定制不得使官方屏幕交互明显变慢;sidecar 不阻塞 agent 主回路。
 
 ## D2 架构图索引

@@ -1,6 +1,6 @@
 # alpha-code
 
-基于 **opencode** 的个人定制 Mac 编码 agent。**本仓库是 `anomalyco/opencode` 的 fork**;自有代码以"只增不改 upstream 文件"的纪律,作为**原生 workspace 成员**叠加进来,以便 fork-sync 零冲突地继承上游升级。
+基于 **opencode** 的 Mac 编码 agent 产品(面向多用户分发)。**本仓库是 `anomalyco/opencode` 的 fork**;自有代码以"只增不改 upstream 文件"的纪律,作为**原生 workspace 成员**叠加进来,以便 fork-sync 零冲突地继承上游升级。
 
 > opencode 自带的 `README.md` / `AGENTS.md` / `CONTEXT.md` 等保持上游原样**未改动**。本文件(`ALPHA.md`)是 alpha-code 的入口说明。
 

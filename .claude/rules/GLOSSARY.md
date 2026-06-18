@@ -3,7 +3,7 @@
 > 防 AI 幻觉术语。领域特有 / 项目内部 / 英文缩写 / 易引歧义的词都写这里。
 
 ## 业务域术语
-- **alpha-code** — 本项目。基于 opencode 的个人定制 Mac 编码 agent;薄定制层,opencode 只读。
+- **alpha-code** — 本项目。基于 opencode 的 Mac 编码 agent 产品(面向多用户 + 云多租户);本地薄定制层、opencode 只读,云平台为独立运行时(见 ADR-010/011)。
 - **opencode** — 上游基座(`anomalyco/opencode`),Bun+TS+Effect+SolidJS 的 AI 编码工具 monorepo(27 包)。本仓库以 submodule 钉死 `7efade2` 引入。
 - **隔离接缝(isolation seam)** — opencode 官方提供、可在不改源码下扩展的入口:plugin hooks、`.opencode/*` 文件、MCP、SDK 驱动的前端。
 - **薄定制层** — alpha-code 自有代码应远小于 opencode 体量(目标 < 5%);凡需大改源码即偏离定位。
@@ -26,7 +26,7 @@
 - **B+A** — 前端方案:复用 AppInterface(B)+ token 换肤(A)。
 
 ## 避免使用的词
-- **~~用户~~** → 用具体画像("个人 power user / 作者本人")。
+- **~~用户~~** → 用具体画像("power user 终端 / 租户 / 平台运营者");pivot 后不再特指"作者本人"。
 - **~~改 opencode~~** → 必须明确是"改 `.opencode/` 配置(可)"还是"改 `opencode/packages` 源码(禁)"。
 
 ## 外部术语
