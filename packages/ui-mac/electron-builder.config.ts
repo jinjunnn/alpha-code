@@ -32,6 +32,11 @@ const channel = (() => {
   return "dev"
 })()
 
+// Signing + notarization only happen in CI (where the Apple certs/secrets live).
+// A local `bun run package:mac` produces an unsigned, ad-hoc–signed app you can
+// double-click straight from dist/ — no Developer ID required.
+const isCI = process.env.GITHUB_ACTIONS === "true"
+
 const APP_IDS = {
   dev: "ai.opencode.desktop.dev",
   beta: "ai.opencode.desktop.beta",
@@ -63,15 +68,18 @@ const getBase = (appId: string): Configuration => ({
   mac: {
     category: "public.app-category.developer-tools",
     icon: `resources/icons/icon.icns`,
-    hardenedRuntime: true,
+    hardenedRuntime: isCI,
     gatekeeperAssess: false,
     entitlements: "resources/entitlements.plist",
     entitlementsInherit: "resources/entitlements.plist",
-    notarize: true,
-    target: ["dmg", "zip"],
+    // null => ad-hoc sign locally (no Developer ID); auto-discover certs in CI.
+    identity: isCI ? undefined : null,
+    notarize: isCI,
+    // Local build emits the .app directly (fast, double-clickable); CI builds installers.
+    target: isCI ? ["dmg", "zip"] : ["dir"],
   },
   dmg: {
-    sign: true,
+    sign: isCI,
   },
   protocols: {
     name: "OpenCode",
@@ -115,8 +123,8 @@ function getConfig() {
       return {
         ...base,
         appId,
-        productName: "OpenCode Dev",
-        rpm: { packageName: "opencode-dev" },
+        productName: "alpha-code",
+        rpm: { packageName: "alpha-code" },
       }
     }
     case "beta": {

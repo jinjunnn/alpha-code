@@ -2,6 +2,8 @@ import { sentryVitePlugin } from "@sentry/vite-plugin"
 import { defineConfig } from "electron-vite"
 import appPlugin from "@opencode-ai/app/vite"
 import * as fs from "node:fs/promises"
+import { brandI18nPlugin } from "./scripts/brand-i18n"
+import { patchUpstreamPlugin } from "./scripts/patch-upstream"
 
 const OPENCODE_SERVER_DIST = "../opencode/dist/node"
 
@@ -80,7 +82,9 @@ export default defineConfig({
     },
   },
   renderer: {
-    plugins: [appPlugin, sentry],
+    // brandI18nPlugin rewrites upstream app i18n brand strings at bundle time only —
+    // the on-disk source stays untouched, so upstream sync never conflicts (ADR-005/006).
+    plugins: [brandI18nPlugin(), patchUpstreamPlugin(), appPlugin, sentry],
     publicDir: "../../../app/public",
     root: "src/renderer",
     build: {

@@ -2,6 +2,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { app, utilityProcess } from "electron"
 import type { Details } from "electron"
+import { loadAlphaSecrets } from "./alpha-secrets"
 import { getLogger } from "./logging"
 import { getUserShell, loadShellEnv } from "./shell-env"
 import { getStore } from "./store"
@@ -42,13 +43,22 @@ export function setDefaultServerUrl(url: string | null) {
 }
 
 export function preferAppEnv(userDataPath: string) {
+  const logger = getLogger()
   const shell = process.platform === "win32" ? null : getUserShell()
+  // 1. Login-shell env first -- a real `export` always wins over the secrets file and our defaults.
+  if (shell) Object.assign(process.env, loadShellEnv(shell, logger) ?? {})
+  // 2. Fill missing API keys (EXA_API_KEY, *_API_KEY, ...) from the alpha.env secrets file, so app
+  //    users never have to touch ~/.zshrc. Never overrides anything already set in step 1.
+  loadAlphaSecrets(userDataPath, logger)
+  // 3. Desktop defaults. OPENCODE_ENABLE_EXA defaults ON so websearch is offered to EVERY provider
+  //    (opencode gates it as `providerID==opencode || exa || parallel`). An explicit
+  //    OPENCODE_ENABLE_EXA value, or ALPHA_WEBSEARCH_DISABLE=1, opts back out.
   Object.assign(process.env, {
-    ...(shell ? loadShellEnv(shell, getLogger()) : null),
     OPENCODE_EXPERIMENTAL_ICON_DISCOVERY: "true",
     OPENCODE_EXPERIMENTAL_FILEWATCHER: "true",
     OPENCODE_CLIENT: "desktop",
     XDG_STATE_HOME: process.env.XDG_STATE_HOME ?? userDataPath,
+    ...(process.env.ALPHA_WEBSEARCH_DISABLE ? {} : { OPENCODE_ENABLE_EXA: process.env.OPENCODE_ENABLE_EXA ?? "1" }),
   })
 }
 

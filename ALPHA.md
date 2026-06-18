@@ -15,6 +15,7 @@
 |---|---|
 | `packages/ext/` | `@alpha-code/ext` —— 零改动 opencode 的后端扩展(server plugin + 自定义 tools)。原生 workspace 成员,`@opencode-ai/plugin` 走 `workspace:*`。 |
 | `packages/ui-mac/` | 自有 Electron Mac 外壳:复用 `@opencode-ai/app` 的 `AppInterface` + 自定义 `Platform` + token 换肤(镜像 `packages/desktop` 的原生模式,无任何 symlink hack)。 |
+| `packages/ui-mac/src/renderer/{brand,theme-alpha,logo-alpha}.*` | 品牌层(全部新增,零改 upstream):`brand.ts` 是品牌色单一来源(图标橙 `#F87814` + 奶油 `#FBF4EC`);`theme-alpha.ts` 是 orng 主题的品牌重皮("Alpha" 主题,`registerTheme` 注册进选择器、首启动 `localStorage` 设默认);`logo-alpha.tsx` 是 α 版 Splash(替换我方 `index.tsx` 的 import)。 |
 | `.claude/rules/` | 项目宪法(6 文件,`/app:*` 方法论)。 |
 | `docs/` | 架构理解 + 扩展接缝手册 + opencode code-graph(SVG)。 |
 | `CLAUDE.md` | 速查 + 升级 runbook。 |
@@ -27,6 +28,11 @@ cd packages/ui-mac && bun run dev    # 开 Mac 应用窗口
 - 首次启动较慢:`predev` 先构建内嵌 opencode server(~20MB bundle,约 30–60s),然后弹出 Electron 窗口。
 - 退出:窗口 `Cmd+Q`,或终端 `Ctrl+C`。
 - `bun run dev` 已自动解析 electron 二进制(`scripts/launch.ts`),**无需手动设 `ELECTRON_EXEC_PATH`**。
+
+## 使用须知 / 已知坑
+- **别把 fork 仓库本身当工作项目打开**:`/Users/tide/app/alpha-code`(及 opencode 仓库)带 upstream 维护者的生 TS 工具(`.opencode/tool/*.ts` import `@opencode-ai/plugin`),桌面端 Electron-Node 加载它们会 Die → **聊天无任何反馈**。日常用 `/Users/tide/app` 下的真实项目即可。根因与运行时分裂见 `.claude/rules/DECISIONS.md` 的 **ADR-006**。
+- **免费模型要先登录 opencode**:`opencode` provider(Zen 网关,默认小模型 `big-pickle` 等)走 OAuth 登录;没登录则只有自己配的 provider(如 deepseek)可用。app 选择器或 CLI `opencode auth login` 均可,app/CLI 共用 `~/.local/share/opencode/auth.json`。
+- **自有 `@alpha-code/ext` 必须预 bundle 成自包含 JS**(把 `@opencode-ai/plugin` 内联),否则会撞上同一道 Node 加载生 TS 的墙。见 **ADR-006**。
 
 ## 升级 opencode
 GitHub 网页 **Sync fork**,或 `gh repo sync jinjunnn/alpha-code --branch dev`,或等每日 Action。然后 `git checkout alpha && git merge dev`。详见 `.claude/rules/DECISIONS.md` 的 **ADR-005**。

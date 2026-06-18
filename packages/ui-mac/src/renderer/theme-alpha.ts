@@ -1,0 +1,98 @@
+import type { DesktopTheme } from "@opencode-ai/ui/theme/types"
+import { BRAND } from "./brand"
+
+// The alpha-code brand theme. A faithful re-skin of opencode's shipped "Orng"
+// theme (packages/ui/src/theme/themes/orng.json) onto our exact icon orange,
+// so the whole UI — accents, syntax, markdown — reads as one orange system.
+//
+// Registered at runtime via theme.registerTheme() (see renderer/index.tsx);
+// opencode source is never touched. Appears in the theme picker as "Alpha".
+export const ALPHA_THEME_ID = "alpha"
+
+export const ALPHA_THEME: DesktopTheme = {
+  $schema: "https://opencode.ai/desktop-theme.json",
+  name: "Alpha",
+  id: ALPHA_THEME_ID,
+  light: {
+    palette: {
+      neutral: "#ffffff",
+      ink: "#1a1a1a",
+      primary: BRAND.orange,
+      accent: BRAND.orangeAccent,
+      success: "#0062d1",
+      warning: BRAND.orange,
+      error: "#d1383d",
+      info: "#318795",
+      diffDelete: "#f52a65",
+    },
+    overrides: {
+      "text-weak": "#8a8a8a",
+      "syntax-comment": "#8a8a8a",
+      "syntax-keyword": BRAND.orange,
+      "syntax-string": "#0062d1",
+      "syntax-primitive": BRAND.orangeAccent,
+      "syntax-variable": "#d1383d",
+      "syntax-property": "#318795",
+      "syntax-type": "#b0851f",
+      "syntax-constant": BRAND.orange,
+      "syntax-operator": "#318795",
+      "syntax-punctuation": "#1a1a1a",
+      "syntax-object": "#d1383d",
+      "markdown-heading": BRAND.orange,
+      "markdown-text": "#1a1a1a",
+      "markdown-link": BRAND.orange,
+      "markdown-link-text": "#318795",
+      "markdown-code": "#0062d1",
+      "markdown-block-quote": "#b0851f",
+      "markdown-emph": "#b0851f",
+      "markdown-strong": BRAND.orange,
+      "markdown-horizontal-rule": "#8a8a8a",
+      "markdown-list-item": BRAND.orange,
+      "markdown-list-enumeration": "#318795",
+      "markdown-image": BRAND.orange,
+      "markdown-image-text": "#318795",
+      "markdown-code-block": "#1a1a1a",
+    },
+  },
+  dark: {
+    palette: {
+      neutral: "#0a0a0a",
+      ink: "#eeeeee",
+      primary: BRAND.orange,
+      accent: BRAND.cream,
+      success: "#6ba1e6",
+      warning: BRAND.orange,
+      error: "#e06c75",
+      info: "#56b6c2",
+      diffDelete: "#e26a75",
+    },
+    overrides: {
+      "text-weak": "#808080",
+      "syntax-comment": "#808080",
+      "syntax-keyword": BRAND.orange,
+      "syntax-string": "#6ba1e6",
+      "syntax-primitive": BRAND.orangeLight,
+      "syntax-variable": "#e06c75",
+      "syntax-property": "#56b6c2",
+      "syntax-type": "#e5c07b",
+      "syntax-constant": BRAND.cream,
+      "syntax-operator": "#56b6c2",
+      "syntax-punctuation": "#eeeeee",
+      "syntax-object": "#e06c75",
+      "markdown-heading": BRAND.orange,
+      "markdown-text": "#eeeeee",
+      "markdown-link": BRAND.orange,
+      "markdown-link-text": "#56b6c2",
+      "markdown-code": "#6ba1e6",
+      "markdown-block-quote": BRAND.cream,
+      "markdown-emph": "#e5c07b",
+      "markdown-strong": BRAND.orangeLight,
+      "markdown-horizontal-rule": "#808080",
+      "markdown-list-item": BRAND.orange,
+      "markdown-list-enumeration": "#56b6c2",
+      "markdown-image": BRAND.orange,
+      "markdown-image-text": "#56b6c2",
+      "markdown-code-block": "#eeeeee",
+    },
+  },
+}

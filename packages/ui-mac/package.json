@@ -12,7 +12,9 @@
     "prebuild": "bun ./scripts/prebuild.ts",
     "build": "electron-vite build",
     "preview": "bun ./scripts/launch.ts preview",
-    "package:mac": "electron-builder --mac --config electron-builder.config.ts"
+    "package:mac": "electron-builder --mac --config electron-builder.config.ts",
+    "install:local": "bun ./scripts/install-local.ts",
+    "ship:mac": "bun run build && bun run package:mac && bun run install:local"
   },
   "dependencies": {
     "@zip.js/zip.js": "2.7.62",
@@ -28,6 +30,7 @@
     "@actions/artifact": "4.0.0",
     "@lydell/node-pty": "catalog:",
     "@opencode-ai/app": "workspace:*",
+    "@opencode-ai/sdk": "workspace:*",
     "@opencode-ai/ui": "workspace:*",
     "@sentry/solid": "catalog:",
     "@sentry/vite-plugin": "catalog:",

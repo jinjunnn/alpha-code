@@ -38,11 +38,12 @@ import { createWslServersController } from "./wsl/servers"
 import { registerWslIpcHandlers } from "./wsl/ipc"
 import { spawnWslSidecar } from "./wsl/sidecar"
 import { migrate } from "./migrate"
+import { ensureAlphaLayoutDefault } from "./alpha-defaults"
 
 const APP_NAMES: Record<string, string> = {
-  dev: "OpenCode Dev",
-  beta: "OpenCode Beta",
-  prod: "OpenCode",
+  dev: "alpha-code",
+  beta: "alpha-code Beta",
+  prod: "alpha-code",
 }
 const APP_IDS: Record<string, string> = {
   dev: "ai.opencode.desktop.dev",
@@ -126,7 +127,7 @@ const main = Effect.gen(function* () {
     process.env.XDG_STATE_HOME = join(root, "state")
     return root
   })()
-  app.setName(app.isPackaged ? APP_NAMES[CHANNEL] : "OpenCode Dev")
+  app.setName(app.isPackaged ? APP_NAMES[CHANNEL] : "alpha-code")
   app.setAppUserModelId(appId)
   app.setPath(
     "userData",
@@ -237,6 +238,7 @@ const main = Effect.gen(function* () {
   yield* Effect.promise(() => app.whenReady())
 
   if (!TEST_ONBOARDING) migrate()
+  ensureAlphaLayoutDefault()
   app.setAsDefaultProtocolClient("opencode")
   registerRendererProtocol()
   setDockIcon()

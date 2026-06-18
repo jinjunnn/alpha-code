@@ -26,8 +26,21 @@ import { initializationData, initializationReady } from "./initialization"
 import { resetZoom, setPinchZoomEnabled, webviewZoom, zoomIn, zoomOut } from "./webview-zoom"
 import { availableStartupServer, readyWslConnections } from "./wsl/connections"
 import "./styles.css"
-import { Splash } from "@opencode-ai/ui/logo"
+import "./sidebar/sidebar.css"
+import { AlphaSidebar } from "./sidebar/alpha-sidebar"
+import { Splash } from "./logo-alpha"
 import { useTheme } from "@opencode-ai/ui/theme/context"
+import { ALPHA_THEME, ALPHA_THEME_ID } from "./theme-alpha"
+
+// First-run brand default: ship the orange Alpha theme. The theme context reads
+// `opencode-theme-id` from localStorage before it mounts, so seeding it here (only
+// when unset) makes Alpha the default without touching @opencode-ai/app. Once the
+// user picks any theme, that key is owned by the picker and we never overwrite it.
+try {
+  if (!localStorage.getItem("opencode-theme-id")) {
+    localStorage.setItem("opencode-theme-id", ALPHA_THEME_ID)
+  }
+} catch {}
 
 const root = document.getElementById("root")
 if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
@@ -310,6 +323,10 @@ render(() => {
     menuTrigger = (id) => cmd.trigger(id)
 
     const theme = useTheme()
+    // Make the brand theme known to the store + theme picker (named "Alpha").
+    // The context's load() checks store.themes first, so registering here is
+    // enough for both first-run apply and later re-selection from the picker.
+    theme.registerTheme(ALPHA_THEME)
 
     createEffect(() => {
       theme.themeId()
@@ -352,6 +369,12 @@ render(() => {
       list.push(...readyWslConnections(wslServers.data))
       return list
     })
+    // Connection info for the alpha sidebar's own SDK client (local sidecar server).
+    const sidebarServer = createMemo(() => {
+      const data = initializationData(sidecar)
+      if (!data) return undefined
+      return { baseUrl: data.url, username: data.username ?? undefined, password: data.password ?? undefined }
+    })
     const effectiveDefaultServer = createMemo(() =>
       ServerConnection.Key.make(availableStartupServer(defaultServer.latest, wslServers.data)),
     )
@@ -362,6 +385,7 @@ render(() => {
           {(key) => (
             <AppInterface defaultServer={key} servers={servers()} router={MemoryRouter}>
               <Inner />
+              <AlphaSidebar server={sidebarServer} />
             </AppInterface>
           )}
         </Show>

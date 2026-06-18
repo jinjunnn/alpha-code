@@ -1,5 +1,9 @@
+import * as fs from "node:fs"
 import * as http from "node:http"
+import * as path from "node:path"
 import * as tls from "node:tls"
+import { ALPHA_IDENTITY_MD } from "./alpha-identity"
+import { buildAlphaModelConfig } from "./alpha-models"
 
 type NodeHttpWithEnvProxy = typeof http & {
   setGlobalProxyFromEnv: () => void
@@ -86,6 +90,49 @@ function prepareSidecarEnv(password: string, userDataPath: string) {
     OPENCODE_SERVER_PASSWORD: password,
     XDG_STATE_HOME: process.env.XDG_STATE_HOME ?? userDataPath,
   })
+  injectAlphaConfig(userDataPath)
+}
+
+// Inject alpha-code's customizations into opencode via OPENCODE_CONFIG_CONTENT. This env var is
+// MERGED with the user's global/project config — it does NOT replace it (opencode config.ts
+// loads global config unconditionally and merges this as a "local" source), so untouched fields
+// (auth, other instructions) are preserved. We layer two independent, separately-gated pieces:
+//
+//   1. Brand identity (ALPHA_IDENTITY_DISABLE): a global instruction file written to
+//      userDataPath (stable absolute path in both dev and the packaged .app) added to
+//      `instructions`, so the agent calls itself "alpha-code".
+//   2. Curated model menu (ALPHA_MODELS_DISABLE): provider allowlist + per-provider model
+//      whitelist + custom/ALPHA gateways + default model. See alpha-models.ts for the shape and
+//      the {env:VAR} key story.
+//
+// This is also the seam for loading @alpha-code/ext once it ships inside the .app: add
+// `plugin: [<abs path to ext dist>]` to the same config object. Left out until G1 ships the
+// ext bundle into resources and validates the zod cross-instance path (see ADR-006).
+function injectAlphaConfig(userDataPath: string) {
+  try {
+    const existing = process.env.OPENCODE_CONFIG_CONTENT
+    const config = existing ? JSON.parse(existing) : { $schema: "https://opencode.ai/config.json" }
+
+    if (!process.env.ALPHA_IDENTITY_DISABLE) {
+      const identityPath = path.join(userDataPath, "alpha-identity.md")
+      fs.mkdirSync(userDataPath, { recursive: true })
+      fs.writeFileSync(identityPath, ALPHA_IDENTITY_MD)
+      const instructions: string[] = Array.isArray(config.instructions) ? config.instructions : []
+      if (!instructions.includes(identityPath)) instructions.push(identityPath)
+      config.instructions = instructions
+    }
+
+    const models = buildAlphaModelConfig()
+    if (models) {
+      config.enabled_providers = models.enabled_providers
+      if (models.model) config.model = models.model
+      config.provider = { ...(config.provider ?? {}), ...models.provider }
+    }
+
+    process.env.OPENCODE_CONFIG_CONTENT = JSON.stringify(config)
+  } catch (error) {
+    console.warn("failed to inject alpha config", error)
+  }
 }
 
 function ensureLoopbackNoProxy() {

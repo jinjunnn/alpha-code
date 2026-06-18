@@ -1,0 +1,616 @@
+// The alpha Codex-style left sidebar. Rendered (via Portal) from inside AppInterface's child
+// tree, so it has the router (useNavigate/useLocation) and opencode's command context, while
+// its data comes from the SDK (see use-projects.ts). It replaces opencode's own chrome: the
+// V2 titlebar tab-strip is hidden and the main content is shifted right by CSS in sidebar.css,
+// keyed off body[data-alpha-sidebar]. Single flat column: brand → nav → projects(→sessions),
+// the Codex information architecture.
+
+import { createEffect, createMemo, createSignal, For, onCleanup, Show, type Accessor } from "solid-js"
+import { Portal } from "solid-js/web"
+import { useLocation, useNavigate } from "@solidjs/router"
+import { useCommand } from "@opencode-ai/app"
+import { ProjectAvatar, type ProjectAvatarVariant } from "@opencode-ai/ui/v2/project-avatar-v2"
+import { Icon } from "@opencode-ai/ui/v2/icon"
+import { t } from "../i18n"
+import { Mark } from "../logo-alpha"
+import { base64UrlDecode, homeHref, newSessionHref, projectLabel, sessionHref } from "./route"
+import {
+  clearHiddenProjects,
+  hiddenProjects,
+  hideProject,
+  isProjectExpanded,
+  isProjectHidden,
+  setProjectExpanded,
+  setSidebarAutoCollapsed,
+  sidebarCollapsed,
+  toggleProjectExpanded,
+  toggleSidebar,
+} from "./sidebar-state"
+import { useAlphaProjects, type AlphaProject, type AlphaSession, type ServerInfo } from "./use-projects"
+
+// Replicate opencode's getProjectAvatarVariant (context/layout.tsx) for projects that already
+// have a server-assigned color; otherwise pick a stable variant from the worktree so the
+// avatars are colourful and consistent across launches (opencode assigns randomly + persists;
+// we never render beside its avatars, so a deterministic fallback is fine).
+const FALLBACK_VARIANTS: ProjectAvatarVariant[] = ["orange", "yellow", "cyan", "green", "red", "pink", "blue", "purple"]
+
+function variantForColor(color: string): ProjectAvatarVariant {
+  switch (color) {
+    case "orange":
+      return "orange"
+    case "pink":
+      return "pink"
+    case "cyan":
+      return "cyan"
+    case "purple":
+      return "purple"
+    case "mint":
+      return "cyan"
+    case "lime":
+      return "green"
+    default:
+      return "gray"
+  }
+}
+
+function hashVariant(worktree: string): ProjectAvatarVariant {
+  let h = 0
+  for (let i = 0; i < worktree.length; i++) h = (Math.imul(h, 31) + worktree.charCodeAt(i)) >>> 0
+  return FALLBACK_VARIANTS[h % FALLBACK_VARIANTS.length]
+}
+
+function projectVariant(project: AlphaProject): ProjectAvatarVariant {
+  return project.color ? variantForColor(project.color) : hashVariant(project.worktree)
+}
+
+// opencode folds standalone (non-git) directories into a single sentinel "global" project whose
+// worktree is "/" and whose name is empty — give it a readable label instead of a blank row.
+function projectDisplayName(project: AlphaProject): string {
+  if (project.name) return project.name
+  if (project.worktree === "/") return t("alpha.sidebar.globalProject")
+  return project.worktree
+}
+
+// Eagerly-created sessions carry a "New session - <ISO>" title until the first message retitles
+// them; show a friendly placeholder. "Untitled" is our own empty-title fallback (see toSession).
+function sessionDisplayTitle(title: string): string {
+  if (title === "Untitled" || /^New session - /.test(title)) return t("alpha.sidebar.newChat")
+  return title
+}
+
+export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }) {
+  const { store, createSession } = useAlphaProjects(props.server)
+  const navigate = useNavigate()
+  const location = useLocation()
+  const command = useCommand()
+
+  // Which project's "⋯" menu is open (by worktree), if any, and where to anchor it. The menu is
+  // rendered once at the Portal root with fixed positioning (computed from the trigger button)
+  // rather than inside the project row, so the scroll container can't clip it.
+  const [menuFor, setMenuFor] = createSignal<string | null>(null)
+  const [menuPos, setMenuPos] = createSignal<{ top: number; right: number } | null>(null)
+
+  const openProjectMenu = (e: MouseEvent & { currentTarget: HTMLElement }, worktree: string) => {
+    e.stopPropagation()
+    if (menuFor() === worktree) {
+      setMenuFor(null)
+      return
+    }
+    const r = e.currentTarget.getBoundingClientRect()
+    setMenuPos({ top: r.bottom + 3, right: Math.max(8, window.innerWidth - r.right) })
+    setMenuFor(worktree)
+  }
+
+  // opencode folds EVERY non-git directory into a single "global" project (worktree "/"), so chats
+  // started in different loose folders all collapse into one 全局 bucket — exactly the bug the user
+  // hit ("发起对话全跑到全局，没生成新项目"). But each global session keeps its REAL path in
+  // session.directory (verified live: a chat in /Users/tide/Documents/workspace has directory set to
+  // that path while projectID is "global"). So we split the global bucket back apart by directory at
+  // render time: every distinct real directory becomes its own project group (named by basename),
+  // and only sessions with no real directory (directory "/") remain under 全局. This is purely a
+  // display transform — the data layer still sees opencode's single global project, so nothing
+  // upstream changes and the worktree we synthesize (= the real directory) is what new chats use.
+  const displayProjects = createMemo<AlphaProject[]>(() => {
+    const result: AlphaProject[] = []
+    for (const p of store.projects) {
+      if (p.worktree !== "/") {
+        result.push(p)
+        continue
+      }
+      const groups = new Map<string, AlphaSession[]>()
+      for (const s of p.sessions) {
+        const dir = s.directory && s.directory !== "/" ? s.directory : "/"
+        const list = groups.get(dir)
+        if (list) list.push(s)
+        else groups.set(dir, [s])
+      }
+      // Real directories first (most-recently-active first), then the residual 全局 bucket last.
+      const entries = [...groups.entries()].sort((a, b) => {
+        if (a[0] === "/") return 1
+        if (b[0] === "/") return -1
+        return (b[1][0]?.updated ?? 0) - (a[1][0]?.updated ?? 0)
+      })
+      for (const [dir, sessions] of entries) {
+        if (dir === "/") result.push({ ...p, sessions })
+        else
+          result.push({
+            id: `global:${dir}`,
+            worktree: dir,
+            name: projectLabel(dir),
+            color: undefined,
+            directories: [dir],
+            sessions,
+            loaded: p.loaded,
+          })
+      }
+    }
+    return result
+  })
+
+  // Projects visible in the sidebar = all known projects minus the ones the user archived/removed.
+  const visibleProjects = createMemo(() => displayProjects().filter((p) => !isProjectHidden(p.worktree)))
+  // Known projects that are currently hidden — drives the "Archived (N)" restore affordance, so
+  // archiving is always reversible (no project can be lost).
+  const archivedCount = createMemo(() => {
+    hiddenProjects() // track the hidden set
+    return displayProjects().filter((p) => isProjectHidden(p.worktree)).length
+  })
+
+  // Decode the active project directory + session id from the current route
+  // (/<b64dir>/session/<id?>). Drives the active-row highlight and "new chat" target.
+  const route = createMemo(() => {
+    const parts = location.pathname.split("/").filter(Boolean)
+    if (parts.length === 0 || parts[0] === "new-session") return {}
+    let dir: string | undefined
+    try {
+      dir = base64UrlDecode(parts[0])
+    } catch {
+      dir = undefined
+    }
+    const sessionId = parts[1] === "session" ? parts[2] : undefined
+    return { dir, sessionId }
+  })
+
+  // True whenever we're inside a project workspace (a session OR a new-chat draft), i.e. not the
+  // bare home grid. Drives the top-right terminal/review toolbar's visibility.
+  const inWorkspace = createMemo(() => {
+    const p = location.pathname
+    return p !== "/" && p !== "/index.html"
+  })
+
+  // Reflect sidebar visibility onto <body> so sidebar.css can shift opencode's content.
+  createEffect(() => {
+    document.body.dataset.alphaSidebar = sidebarCollapsed() ? "collapsed" : "open"
+  })
+  onCleanup(() => {
+    delete document.body.dataset.alphaSidebar
+  })
+
+  // Responsive auto-collapse. As the window narrows, the two side panels would otherwise crush the
+  // chat column, so fold them in priority order: the right review panel first, then (narrower still)
+  // our own left sidebar. Crucially this is REVERSIBLE — folding on the downward crossing of a
+  // threshold and restoring on the upward crossing — so a narrow→wide resize never strands a panel
+  // hidden. We only ever undo OUR OWN auto-action: the sidebar override is transient (it leaves the
+  // user's persisted preference alone, see setSidebarAutoCollapsed), and the review panel is only
+  // re-opened if we were the one who closed it (`autoClosedReview`). A panel the user collapsed by
+  // hand therefore stays as they left it.
+  //
+  // The review panel is opencode's; we can't read its store (the @opencode-ai/app export whitelist
+  // blocks deep-importing useLayout — ADR-008), so we read its open state from the ARIA contract on
+  // the header toggle (`[aria-controls="review-panel"][aria-expanded]`) and toggle it via the public
+  // `review.toggle` command. Coupling = that ARIA pair; a rename only disables this nicety.
+  const REVIEW_COLLAPSE_W = 1100 // below this, fold the right review panel
+  const SIDEBAR_COLLAPSE_W = 768 // below this, also collapse the left sidebar (opencode's own
+  // desktop panels disappear under 768 too, so the two breakpoints stay coherent)
+
+  const reviewPanelOpen = () => {
+    for (const el of document.querySelectorAll('[aria-controls="review-panel"][aria-expanded]')) {
+      if (el.getAttribute("aria-expanded") === "true") return true
+    }
+    return false
+  }
+
+  let prevWidth = window.innerWidth
+  let autoClosedReview = false
+  let resizeScheduled = false
+  const onResize = () => {
+    if (resizeScheduled) return
+    resizeScheduled = true
+    requestAnimationFrame(() => {
+      resizeScheduled = false
+      const w = window.innerWidth
+
+      // Right review panel: close on narrow, reopen (only if WE closed it) on wide.
+      if (inWorkspace()) {
+        if (prevWidth >= REVIEW_COLLAPSE_W && w < REVIEW_COLLAPSE_W && reviewPanelOpen()) {
+          command.trigger("review.toggle")
+          autoClosedReview = true
+        } else if (prevWidth < REVIEW_COLLAPSE_W && w >= REVIEW_COLLAPSE_W && autoClosedReview) {
+          if (!reviewPanelOpen()) command.trigger("review.toggle")
+          autoClosedReview = false
+        }
+      }
+
+      // Left sidebar: fold on narrow, restore on wide. The override is transient, so a manual
+      // collapse underneath is preserved and a manual open returns when we clear it.
+      if (prevWidth >= SIDEBAR_COLLAPSE_W && w < SIDEBAR_COLLAPSE_W && !sidebarCollapsed()) {
+        setSidebarAutoCollapsed(true)
+      } else if (prevWidth < SIDEBAR_COLLAPSE_W && w >= SIDEBAR_COLLAPSE_W) {
+        setSidebarAutoCollapsed(false)
+      }
+
+      prevWidth = w
+    })
+  }
+  window.addEventListener("resize", onResize)
+  onCleanup(() => window.removeEventListener("resize", onResize))
+
+  // The project that owns the current route's directory (the directory may be a sandbox, so match
+  // against the full `directories` list, not just the worktree). Drives active-row highlight and
+  // auto-expand — both keyed by worktree.
+  const activeProject = createMemo(() => {
+    const dir = route().dir
+    if (!dir) return undefined
+    return displayProjects().find((p) => p.directories.includes(dir))
+  })
+
+  // Auto-expand the active project (once each) so its highlighted conversation is visible. We track
+  // store.projects so this still fires if navigation precedes the project list loading, but the
+  // `autoExpanded` guard ensures we only force-expand a given project a single time — otherwise a
+  // later session event (which mutates store.projects) would re-expand a project the user just
+  // collapsed.
+  const autoExpanded = new Set<string>()
+  createEffect(() => {
+    const worktree = activeProject()?.worktree
+    if (!worktree || autoExpanded.has(worktree)) return
+    autoExpanded.add(worktree)
+    setProjectExpanded(worktree, true)
+  })
+
+  // The most-recently-active CONCRETE project directory (a real worktree, never the bare global "/"
+  // bucket). This is what the home composer should default to — a draft for "/" renders the wrong
+  // "New project" screen (see newChat). Reads displayProjects so the per-directory split of the
+  // global bucket (e.g. a loose "workspace" folder) is eligible too.
+  const mostRecentConcreteDir = (): string | undefined => {
+    let best: string | undefined
+    let bestTime = -1
+    for (const p of displayProjects()) {
+      if (p.worktree === "/") continue
+      const top = p.sessions[0]?.updated ?? 0
+      if (top > bestTime) {
+        bestTime = top
+        best = p.worktree
+      }
+    }
+    return best
+  }
+
+  // On app launch, land on the home composer (首页, Image #11: ALPHA CODE wordmark + prompt box with
+  // the project switcher BELOW it) — not whatever opencode restores (it reopens the last session),
+  // and not the recent-sessions search grid that bare "/" renders. That composer is opencode's
+  // new-session DRAFT for a concrete project: `newSessionHref(dir)` with `dir` = a real worktree
+  // (verified: this is exactly what opencode's own "新建会话" button produces). Fires once, after the
+  // project list loads (so we have a directory), with `replace` so Back doesn't bounce to the
+  // restored session. Falls back to the home grid only if there is no concrete project at all.
+  let didLaunchNav = false
+  createEffect(() => {
+    if (didLaunchNav || !store.ready) return
+    didLaunchNav = true
+    const dir = mostRecentConcreteDir()
+    navigate(dir ? newSessionHref(dir) : homeHref(), { replace: true })
+  })
+
+  // Mount our chrome INSIDE #root (not <body>). opencode's draggable-region CSS is scoped to
+  // `#root ... [data-tauri-drag-region]`, and its titlebar buttons are clickable only because they
+  // sit inside that system (base.css auto-marks [data-tauri-drag-region] <button> as no-drag).
+  // A <body>-level portal is excluded, so the OS treats our titlebar buttons as drag region and
+  // eats their clicks. A host div appended to #root keeps position:fixed working (no contain there)
+  // while putting us back inside opencode's region system.
+  const portalHost = document.createElement("div")
+  portalHost.setAttribute("data-alpha-chrome", "")
+  document.getElementById("root")?.appendChild(portalHost)
+  onCleanup(() => portalHost.remove())
+
+  // Start a new chat in a project. We eagerly create a real session (not opencode's draft, which
+  // is a tab — the alpha redesign hides the tab strip, so a draft would be invisible in the
+  // sidebar) so the new conversation appears in the project immediately, then navigate into it.
+  // If creation fails we fall back to opencode's draft route.
+  const startChat = async (worktree: string) => {
+    setProjectExpanded(worktree, true)
+    const id = await createSession(worktree)
+    if (id) navigate(sessionHref(worktree, id))
+    else navigate(newSessionHref(worktree))
+  }
+
+  // "新对话" lands on the home composer (Image #11: ALPHA CODE wordmark + prompt box with the project
+  // switcher BELOW it). That is opencode's new-session DRAFT for a CONCRETE project directory —
+  // `newSessionHref(dir)` → SessionRoute → a draft tab → the NewSession composer (exactly what
+  // opencode's own "新建会话" produces). The one hard rule: `dir` must be a real worktree, never the
+  // bare global "/", because a draft for "/" renders the picker INSIDE the box reading "New project"
+  // (Image #9, the screen the user flagged as wrong). Prefer the project the user is currently in,
+  // else the most-recent real directory; with no project at all fall back to the home grid.
+  const newChat = () => {
+    const active = activeProject()?.worktree
+    const dir = active && active !== "/" ? active : mostRecentConcreteDir()
+    navigate(dir ? newSessionHref(dir) : homeHref())
+  }
+
+  const archiveProject = (worktree: string) => {
+    setMenuFor(null)
+    hideProject(worktree)
+  }
+
+  const openSession = (e: MouseEvent, directory: string, id: string) => {
+    e.preventDefault()
+    navigate(sessionHref(directory, id))
+  }
+
+  return (
+    <Portal mount={portalHost}>
+      {/* The open project "⋯" menu (archive / remove) + a transparent full-screen catcher that
+          dismisses it on an outside click. Rendered once at the Portal root, fixed-positioned from
+          the trigger button, so the project scroll container never clips it. */}
+      <Show when={menuFor()}>
+        {(worktree) => (
+          <>
+            <div class="alpha-menu-backdrop" onClick={() => setMenuFor(null)} />
+            <div
+              class="alpha-project-menu"
+              role="menu"
+              style={{ top: `${menuPos()?.top ?? 0}px`, right: `${menuPos()?.right ?? 8}px` }}
+            >
+              <button
+                type="button"
+                class="alpha-project-menu-item"
+                role="menuitem"
+                onClick={() => archiveProject(worktree())}
+              >
+                <svg class="alpha-project-menu-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <rect x="2.25" y="3" width="11.5" height="2.4" rx="0.6" stroke="currentColor" stroke-width="1.2" />
+                  <path d="M3.3 5.6h9.4V12a1 1 0 0 1-1 1H4.3a1 1 0 0 1-1-1V5.6Z" stroke="currentColor" stroke-width="1.2" />
+                  <path d="M6.4 8.4h3.2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+                </svg>
+                <span>{t("alpha.sidebar.archive")}</span>
+              </button>
+              <button
+                type="button"
+                class="alpha-project-menu-item alpha-project-menu-item-danger"
+                role="menuitem"
+                onClick={() => archiveProject(worktree())}
+              >
+                <svg class="alpha-project-menu-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M3 4.5h10M6.5 4.5V3.4a.9.9 0 0 1 .9-.9h1.2a.9.9 0 0 1 .9.9V4.5M11.7 4.5 11.2 12a1 1 0 0 1-1 .95H5.8a1 1 0 0 1-1-.95L4.3 4.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <span>{t("alpha.sidebar.remove")}</span>
+              </button>
+            </div>
+          </>
+        )}
+      </Show>
+
+      {/* Always-visible top-left toolbar: collapse toggle + back/forward. The whole toolbar is
+          no-drag (sidebar.css) and sits over a no-drag area, so the OS never steals its clicks. */}
+      <div class="alpha-topbar">
+        <button
+          type="button"
+          class="alpha-topbar-btn"
+          title={sidebarCollapsed() ? t("alpha.sidebar.show") : t("alpha.sidebar.hide")}
+          aria-label={sidebarCollapsed() ? t("alpha.sidebar.show") : t("alpha.sidebar.hide")}
+          onClick={() => toggleSidebar()}
+        >
+          <Icon name="sidebar-right" />
+        </button>
+        <span class="alpha-topbar-divider" aria-hidden="true" />
+        <button
+          type="button"
+          class="alpha-topbar-btn"
+          title={t("alpha.sidebar.back")}
+          aria-label={t("alpha.sidebar.back")}
+          onClick={() => navigate(-1)}
+        >
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M10 3.5 5.5 8l4.5 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          class="alpha-topbar-btn"
+          title={t("alpha.sidebar.forward")}
+          aria-label={t("alpha.sidebar.forward")}
+          onClick={() => navigate(1)}
+        >
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M6 3.5 10.5 8 6 12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Top-right toolbar (only inside a session): terminal toggle + review/审查 toggle. We render
+          our own pair (wired to opencode's commands) and hide opencode's faint titlebar review
+          toggle below, so both are clearly visible and clickable. */}
+      <Show when={inWorkspace()}>
+        <div class="alpha-topbar-right">
+          <button
+            type="button"
+            class="alpha-topbar-btn"
+            title={t("alpha.sidebar.terminal")}
+            aria-label={t("alpha.sidebar.terminal")}
+            onClick={() => command.trigger("terminal.toggle")}
+          >
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect x="2" y="3" width="12" height="10" rx="1.6" stroke="currentColor" stroke-width="1.3" />
+              <path d="M4.8 6.4 6.8 8.4 4.8 10.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M8.3 10.6h2.7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="alpha-topbar-btn"
+            title={t("alpha.sidebar.review")}
+            aria-label={t("alpha.sidebar.review")}
+            onClick={() => command.trigger("review.toggle")}
+          >
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect x="2" y="3" width="12" height="10" rx="1.6" stroke="currentColor" stroke-width="1.3" />
+              <path d="M10.4 3v10" stroke="currentColor" stroke-width="1.3" />
+            </svg>
+          </button>
+        </div>
+      </Show>
+
+      <Show when={!sidebarCollapsed()}>
+        <aside class="alpha-sidebar" aria-label={t("alpha.sidebar.projects")}>
+          <div class="alpha-sidebar-titlebar" />
+
+          <header class="alpha-sidebar-brand">
+            <button
+              type="button"
+              class="alpha-sidebar-brand-mark"
+              title={t("alpha.sidebar.home")}
+              onClick={() => navigate(homeHref())}
+            >
+              <Mark class="alpha-sidebar-mark" />
+              <span class="alpha-sidebar-wordmark">ALPHA CODE</span>
+            </button>
+          </header>
+
+          <nav class="alpha-sidebar-nav">
+            <button type="button" class="alpha-sidebar-nav-item" onClick={() => newChat()}>
+              <Icon name="plus" class="alpha-sidebar-nav-icon" />
+              <span>{t("alpha.sidebar.newChat")}</span>
+            </button>
+            <button type="button" class="alpha-sidebar-nav-item" onClick={() => command.show()}>
+              <Icon name="magnifying-glass" class="alpha-sidebar-nav-icon" />
+              <span>{t("alpha.sidebar.search")}</span>
+            </button>
+            <button type="button" class="alpha-sidebar-nav-item" onClick={() => command.trigger("mcp.toggle")}>
+              <Icon name="grid-plus" class="alpha-sidebar-nav-icon" />
+              <span>{t("alpha.sidebar.plugins")}</span>
+            </button>
+            <button
+              type="button"
+              class="alpha-sidebar-nav-item"
+              title={t("alpha.sidebar.automationSoon")}
+              onClick={() => {
+                /* placeholder: opencode has no automation surface yet */
+              }}
+            >
+              <Icon name="status" class="alpha-sidebar-nav-icon" />
+              <span>{t("alpha.sidebar.automation")}</span>
+            </button>
+          </nav>
+
+          <div class="alpha-sidebar-section">{t("alpha.sidebar.projects")}</div>
+
+          <div class="alpha-sidebar-scroll">
+            <For each={visibleProjects()}>
+              {(project) => {
+                const expanded = () => isProjectExpanded(project.worktree)
+                const menuOpen = () => menuFor() === project.worktree
+                return (
+                  <div class="alpha-project" data-expanded={expanded() ? "" : undefined}>
+                    <div
+                      class="alpha-project-row"
+                      data-active={activeProject()?.worktree === project.worktree ? "" : undefined}
+                      data-menu={menuOpen() ? "" : undefined}
+                      onClick={() => toggleProjectExpanded(project.worktree)}
+                    >
+                      <Icon
+                        name="chevron-down"
+                        class="alpha-project-chevron"
+                        data-collapsed={expanded() ? undefined : ""}
+                      />
+                      <ProjectAvatar
+                        class="alpha-project-avatar"
+                        variant={projectVariant(project)}
+                        fallback={projectDisplayName(project)}
+                      />
+                      <span class="alpha-project-name" title={project.worktree}>
+                        {projectDisplayName(project)}
+                      </span>
+                      <button
+                        type="button"
+                        class="alpha-project-action"
+                        title={t("alpha.sidebar.more")}
+                        aria-label={t("alpha.sidebar.more")}
+                        aria-haspopup="menu"
+                        aria-expanded={menuOpen()}
+                        onClick={(e) => openProjectMenu(e, project.worktree)}
+                      >
+                        <Icon name="outline-dots" />
+                      </button>
+                      <button
+                        type="button"
+                        class="alpha-project-action alpha-project-add"
+                        title={t("alpha.sidebar.newChat")}
+                        aria-label={t("alpha.sidebar.newChat")}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          void startChat(project.worktree)
+                        }}
+                      >
+                        <Icon name="plus" />
+                      </button>
+                    </div>
+
+                    <Show when={expanded()}>
+                      <div class="alpha-project-sessions">
+                        <For
+                          each={project.sessions}
+                          fallback={
+                            <div class="alpha-sidebar-empty">
+                              {project.loaded ? t("alpha.sidebar.noConversations") : t("alpha.sidebar.loading")}
+                            </div>
+                          }
+                        >
+                          {(session) => (
+                            <a
+                              class="alpha-session"
+                              href={sessionHref(session.directory, session.id)}
+                              data-active={route().sessionId === session.id ? "" : undefined}
+                              onClick={(e) => openSession(e, session.directory, session.id)}
+                            >
+                              <span class="alpha-session-title">{sessionDisplayTitle(session.title)}</span>
+                            </a>
+                          )}
+                        </For>
+                      </div>
+                    </Show>
+                  </div>
+                )
+              }}
+            </For>
+
+            <Show when={store.ready && visibleProjects().length === 0 && archivedCount() === 0}>
+              <div class="alpha-sidebar-empty alpha-sidebar-empty-projects">
+                <p>{t("alpha.sidebar.noProjects")}</p>
+                <button type="button" class="alpha-sidebar-open-project" onClick={() => command.trigger("project.open")}>
+                  {t("alpha.sidebar.openProject")}
+                </button>
+              </div>
+            </Show>
+
+            {/* Archived projects are only hidden (opencode has no server-side project deletion), so
+                always offer a one-click restore — archiving must never strand a project. */}
+            <Show when={archivedCount() > 0}>
+              <button type="button" class="alpha-sidebar-archived" onClick={() => clearHiddenProjects()}>
+                <span>{t("alpha.sidebar.archivedShow", { count: archivedCount() })}</span>
+                <span class="alpha-sidebar-archived-action">{t("alpha.sidebar.unarchiveAll")}</span>
+              </button>
+            </Show>
+          </div>
+
+          {/* Footer = Settings only. Help moved into the settings dialog's own left nav (see
+              ui-mac/scripts/patch-upstream.ts), so it lives one click deeper, beside the rest of
+              the app's configuration. */}
+          <footer class="alpha-sidebar-footer">
+            <button type="button" class="alpha-sidebar-nav-item" onClick={() => command.trigger("settings.open")}>
+              <Icon name="settings-gear" class="alpha-sidebar-nav-icon" />
+              <span>{t("alpha.sidebar.settings")}</span>
+            </button>
+          </footer>
+        </aside>
+      </Show>
+    </Portal>
+  )
+}
