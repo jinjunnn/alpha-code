@@ -17,3 +17,4 @@
 | [ADR-009](adrs/ADR-009-websearch-default.md) | websearch 默认放开 + alpha.env 秘钥落点 | accepted | 2026-06-18 |
 | [ADR-010](adrs/ADR-010-cloud-platform.md) | 云执行平台与派发接缝 | proposed | 2026-06-18 |
 | [ADR-011](adrs/ADR-011-cloud-tiers-tools.md) | 云执行分层、运行时与工具注入 | proposed | 2026-06-18 |
+| [ADR-012](adrs/ADR-012-ui-mac-channel.md) | ui-mac 发布默认 prod 渠道,dev/beta 保留不删 | accepted | 2026-06-18 |
