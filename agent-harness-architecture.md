@@ -2,7 +2,210 @@
 
 Date: 2026-06-19
 
-Status: Draft decision document
+Status: Draft design — under reconciliation review (see Part 0, added 2026-06-22).
+
+> **Review note (2026-06-22):** This document was reviewed against the actual
+> alpha-code / opencode codebase and the project's North Star (upgrade-isolation
+> health = 0 conflict files) and ADRs (esp. ADR-002 / 005 / 010 / 011 and
+> NON_GOALS). The original design (Sections 1–25) is preserved unchanged below.
+> **Part 0 immediately following is the reconciliation layer** — it records what
+> must change before this plan is built. Where a later section conflicts with
+> Part 0, **Part 0 wins.** Read Part 0 first.
+
+## Part 0. Architecture Review & Reconciliation (2026-06-22)
+
+### 0.1 Verdict
+
+This is a strong, internally consistent design — but it is written as if we are
+building Claude Code from zero ("The local harness is the operating system,"
+§25). alpha-code's thesis is the opposite: **do not rebuild the harness; layer
+thin additions onto opencode and inherit every upstream upgrade** (ADR-005,
+NON_GOAL #2/#3).
+
+A source scan (2026-06-22) confirmed that **opencode already provides ~80% of the
+"Local Harness" described here.** So the work is *not* "build this blueprint" — it
+is "wire alpha seams onto existing opencode primitives, and build the three layers
+this document omits: the cloud control plane, identity/billing, and
+web/distribution."
+
+### 0.2 Substrate principle — opencode IS the harness (do not rebuild)
+
+The single biggest correction: Sections 2, 6, 7, 15, 17, 18 describe building a
+harness, tool broker, permission system, provider router, session store, and
+audit log. These are `@opencode-ai/core`'s job. Rebuilding them = the maintenance
+hell ADR-005 and NON_GOAL #2 forbid. Confirmed mapping:
+
+| This document proposes | opencode status | Key files | Correct action |
+|---|---|---|---|
+| §2.1 Local Harness main controller (planning/routing/auth/state/verify/audit) | ✅ already core | `core/src/session.ts`, `core/src/session/runner/` | **Do not build.** This is opencode |
+| §7 Host Tool Broker (register/permission/approve/audit) | ✅ already exists | `plugin/src/tool.ts`, `core/src/permission.ts` + hooks `tool.execute.before/after`, `tool.definition`, `permission.ask` | **Do not build.** Layer policy via hooks |
+| §6 Agent types (subagent / mode / permissions) | ✅ already exists | `core/src/agent.ts` (`mode: subagent/primary/all` + permission ruleset), `.opencode/agent/*.md` | **Reuse.** Do not invent a parallel `AgentSpec` registry |
+| §15 Provider mapping / multi-provider routing | ✅ already exists | `llm/src/provider.ts`, `core/src/provider.ts` + hooks `chat.params`, `chat.headers` | **Do not build.** NON_GOAL: no second LLM orchestration layer |
+| §18 Canonical API / SDK | ✅ OpenAPI auto-generated | `sdk/js/src/client.ts`, `server/src/api.ts` + SSE `/api/event` + PTY WS | **Do not start a new `/v1/*`.** Missing routes go in the sidecar (ADR-002) |
+| §12 Skills / commands / MCP | ✅ full convention | `core/src/skill.ts`, `core/src/command.ts`, `core/src/config/mcp.ts`, `.opencode/{skill,command,agent}` | **Reuse.** Do not define a new skill format |
+| §11 Jobs (local) | ⚠️ local version exists | `core/src/background-job.ts` (in-memory, no durability) | Fine locally; cloud durability is the new build |
+
+Rule going forward: before adding any `type XxxSpec = {...}`, check whether
+opencode already has an equivalent — it usually does.
+
+### 0.3 Terminology fix — retire the overloaded "Cloud Tier"
+
+This document's two scales (`Execution Mode 0–3` in §4 and `Cloud Tier 1–3` in
+§5) collide with the ADRs and with each other:
+
+- ADR-011 **already defines "Tier-1/2/3"** to mean *execution-environment weight*
+  (in-process / ephemeral Box / persistent Box). This document's "Cloud Tier"
+  reuses the same word for a different thing (autonomy/lifecycle). Same name,
+  different meaning → guaranteed confusion.
+- §2.2 claims Mode / Cloud Tier / Agent Type are orthogonal, but `Mode 3 = needs
+  sandbox` and `Cloud Tier 2/3 = uses sandbox` are the same thing — not
+  orthogonal. And "Cloud Tier" itself secretly bundles *autonomy* (advice vs
+  worker) with *environment weight* (no sandbox vs persistent) — the two axes
+  ADR-010/011 deliberately separated.
+
+**Adopt the ADR's cleaner model — three axes, and delete the word "tier":**
+
+| Axis | Values | Replaces |
+|---|---|---|
+| **Autonomy** (who decides the steps; ADR-010 litmus "can you write the steps now?") | `function` / `pipeline` / `bounded-agent` | the autonomy half hidden inside "Cloud Tier" |
+| **Runtime weight** (what machinery) | `none` → `read-tools` → `brokered-tools` → `ephemeral-sandbox` → `persistent-sandbox` | this doc's `Mode 0–3` **+** ADR-011's `Tier-1/2/3`, merged into one axis |
+| **Location** (deployment) | `local` / `cloud` | "cloud tier" as a standalone scale — location is a property, not a tier |
+
+The doc's `Cloud Tier 1/2/3` then becomes *derived*, not foundational:
+`Tier1 ≈ cloud + read-tools`, `Tier2 ≈ cloud + ephemeral-sandbox + bounded-agent`,
+`Tier3 ≈ cloud + persistent-sandbox`. Agent role (research/code/review) stays as a
+fourth, orthogonal specialization axis.
+
+### 0.4 What is genuinely new — keep and invest here
+
+These have no opencode equivalent and match ADR-010/011 closely. They are the
+actual product, and the real work:
+
+1. **Context Pack (§17.1)** — the explicit, auditable, previewable bundle sent to
+   cloud, with redaction / exclusion / token estimate / privacy level. This is the
+   "local-first privacy boundary" made concrete and the superset of ADR-010's task
+   contract. **Top new-build item.**
+2. **Run Ledger (§17.3) + Provenance (§17.5) + Verification Gates (§17.4)** —
+   opencode does not verify results. "Verification is the moat" is correct; this is
+   what you sell over a bare agent.
+3. **Capability tokens (§17.2)** — short-TTL, min-scope, job/tool-bound — matches
+   ADR-011's broker design exactly.
+4. **Local owns final apply/merge/verify; cloud returns only proposals
+   (§2.1/§17.6)** — matches ADR-010 "agency local, determinism cloud."
+5. **Cloud control plane = MCP gateway + dispatch ingress + Upstash orchestration**
+   — the only genuinely new infrastructure (confirmed: `cloud.dispatch` contract,
+   Upstash Workflow/QStash binding, tier router, Box integration, durable ledger
+   are all unbuilt). This is the 6-month main effort, not anything opencode gives.
+
+### 0.5 The missing layers — "web + backend" is THREE backends, not one
+
+The product surface (desktop app + website/download + backend) maps to three
+distinct backends. The document blurs them into one undifferentiated "backend."
+
+| Backend | Runs where | Owns | Status / ADR |
+|---|---|---|---|
+| **A. Local sidecar** | inside ui-mac, Electron `utilityProcess` | local HTTP the desktop UI needs that opencode server lacks; websearch direct; alpha-secrets | ✅ exists (`ui-mac/src/main/server.ts`, `alpha-secrets.ts`), ADR-002/009 |
+| **B. Cloud control plane + MCP tool gateway** | AWS ECS/Fargate | `cloud.dispatch` server-side validation, Upstash Workflow/QStash orchestration, tier router, **central MCP tool gateway (secrets + capability tokens)**, Box sandboxes, run ledger (Redis), **multi-tenant authn/quota/billing** | ❌ new, ADR-010/011 |
+| **C. Distribution / website backend** | Vercel/Netlify + object store | marketing site (static), downloads, **electron auto-update feed**, license/activation, signup/login, billing portal | ❌ new, **not covered anywhere in this doc** |
+
+Two corrections this implies:
+
+- **§18.1 is wrong to define a fresh `127.0.0.1:8765/v1/*`** exposing
+  sessions/tools/events. opencode's server already exposes those via the SDK. The
+  sidecar should add only what opencode lacks: context-pack preview,
+  `cloud.dispatch` ingress, run-ledger views. Everything else goes through
+  `@opencode-ai/sdk` (CLAUDE.md hard constraint ②).
+- **Identity is the missing foundation that spans A/B/C.** The doc has per-job /
+  per-tool capability tokens but **no user/tenant identity layer**. "Pay-per-task
+  outcomes" requires it: C issues identity, B verifies it for quota/billing/
+  isolation. ADR-010 §7 lists these as unresolved (tenant isolation, authn/authz,
+  quota/billing, **LLM key ownership: platform-pays vs BYOK**, abuse prevention).
+  **LLM-key ownership must be decided first** — locally opencode uses the user's
+  own keys, but who pays for the cloud Anthropic calls changes the entire billing
+  architecture and the ledger schema.
+- **Auto-update (C)** is the one non-trivial piece: electron-builder's updater
+  needs a static feed (`latest-mac.yml`); this hangs directly off ADR-012's prod
+  channel and `UPDATER_ENABLED`. Don't underestimate Mac signing/notarization.
+
+### 0.6 Multi-tenant security correction
+
+§10.7/§21 assume the local harness owns the root workflow and the cloud is a
+constrained child that "emits an approval if it wants to exceed bounds." **That
+holds for a single trusted user; it breaks for untrusted multi-tenant.** The cloud
+gateway **cannot trust** the policy (budget/tier/network) the local harness claims
+— the local machine is user-controlled and tamperable. ADR-010 §6/§3 already has
+the right model: **`cloud.dispatch` is hard-validated server-side (skill is soft
+guidance, the schema is the hard gate), and egress control is orthogonal to and
+independent of admission audit.** Rewrite §10.7/§21 so the cloud is an
+**independent trust domain**: policy from the local side is a *request*; the cloud
+gateway *re-enforces* per-tenant quota/scope. Also add the known **Box egress
+limitation** (ADR-011 security section) — the doc never mentions it, and it's why
+the Tier-3 sandbox choice is deliberately *not* locked.
+
+### 0.7 Conflicts with NON_GOALS / scope to cut
+
+- **§19 Embeddability (Cursor/VS Code/JetBrains/Slack/Teams/GitHub/browser/CI)**
+  ⟂ **NON_GOAL #6 (Mac desktop only; do not revive web/tui/console/enterprise
+  forms).** Massive scope expansion that fights "thin customization, single
+  maintainer." → Move the whole section to "Future / Out of Current Scope," or
+  drop it. `[DRIFT]`
+- **§12.3 Pack ecosystem + marketplace + third-party packs** — far future. MVP
+  caps at 2–3 official packs (the doc says so itself); §23 Phase 4 schedules
+  plugin format / pack registry / eval too early.
+- **Ensemble tools + `web.search.ensemble` + multi-provider routing** — over-
+  engineered. opencode already abstracts providers; ADR-009 already opens
+  websearch. One logical `web.search` is enough for MVP; do not build six
+  implementations plus an ensemble first.
+
+### 0.8 Reranked MVP — aligned with G4 (supersedes §23 phases)
+
+§23 Phase 1 = "build harness + broker + workflow engine + context pack + ledger +
+policy + token + sandbox + model adapter." **~80% of that already exists.**
+Rerank around G4 (one real non-coding task, end to end):
+
+| Milestone | Content | New build |
+|---|---|---|
+| **M0** ✅ done | ext plugin + sidecar + alpha-secrets + websearch default on | exists |
+| **M1 — Context Pack** | local builder + preview; one `.opencode/skill` produces a schema-constrained task contract (ADR-010) | small, local, zero upstream change |
+| **M2 — Dispatch ingress** | MCP `cloud.dispatch(contract)` + sidecar Zod validation → returns `job_id` | small |
+| **M3 — Minimal cloud plane** | **Tier-1 (in-process) only**: ECS endpoint + thin Upstash Workflow wrapper + direct Anthropic call; run ledger in Redis; **one real task (deep research)** | large but focused |
+| **M4 — Return path** | `cloud.await/status` via poll first; result lands as a local artifact | small |
+
+Resolve §0.9 (identity/billing/key ownership) **before M3**, or the ledger schema
+gets reworked. Tier-2/3 sandboxes, pack ecosystem, embeddability, eval system, and
+the full verification-gate suite are all **post-MVP**.
+
+### 0.9 Open decisions to resolve before the cloud build (ADR-010 §7)
+
+These are blocking and should be decided first (a one-page decision memo, then a
+new ADR):
+
+1. **LLM key ownership**: platform-pays vs BYOK vs hybrid. Drives billing + ledger.
+2. **Tenant model**: per-user isolation only, or team/shared workspaces?
+   (NON_GOALS leaves team collaboration "另议".)
+3. **Identity system**: what issues/verifies user identity across A/B/C (the
+   foundation under capability tokens).
+4. **Billing unit**: per-task, per-token, subscription, or metered.
+5. **Tier-3 sandbox**: stays deliberately open (Box egress limitation) — confirm
+   v1 ships Tier-1/2 only.
+
+### 0.10 Section-by-section disposition
+
+How to treat each existing section when this draft is revised:
+
+| Sections | Disposition |
+|---|---|
+| §1 Goal; §2.3/2.4 (shared/logical tools); §2.6 (workflow boundary); §8–§10, §13–§14, §16, §22 | **Keep** (workflow durability = Upstash per ADR-011) |
+| §2.1 (main controller); §6 (agent types); §7 (tool broker); §15 (providers); §17 broker/policy parts; §18 (API); §24 (interfaces) | **Remap** onto existing opencode primitives (see 0.2); stop describing them as new |
+| §2.2 (orthogonal dims); §4 (Modes); §5 (Cloud Tiers) | **Supersede** with the three-axis model (0.3); delete "tier" as a standalone scale |
+| §17.1 Context Pack; §17.2 tokens; §17.3 ledger; §17.4 gates; §17.5 provenance | **Keep + prioritize** — the genuinely new value (0.4) |
+| §0.5 backends; identity layer; web/distribution (C) | **Add** — missing from the original (0.5) |
+| §10.7, §20, §21 | **Augment** with multi-tenant re-validation + Box egress (0.6) |
+| §19 Embeddability; §12.3 marketplace; ensemble tools | **Defer / cut** — conflicts with NON_GOALS (0.7) `[DRIFT]` |
+| §23 MVP phases | **Supersede** with the M0–M4 rerank (0.8) |
+| §25 "local harness is the OS" | **Reword**: opencode is the harness; alpha is the control-plane skin + the cloud plane |
+
+---
 
 ## 1. Goal
 
@@ -35,6 +238,9 @@ The local harness owns:
 Cloud agents can advise, execute in isolated sandboxes, or run long jobs, but they should not directly mutate the user's real local workspace.
 
 ### 2.2 Execution Mode, Cloud Tier, and Agent Type Are Orthogonal
+
+> **[Superseded by Part 0.3]** These are not truly orthogonal, and "Cloud Tier"
+> collides with ADR-011's `Tier-1/2/3`. Use the three-axis model in §0.3.
 
 Use three independent dimensions:
 
@@ -270,6 +476,10 @@ Mode is not the same as cloud tier.
 | Mode 3 | Local sandbox, Cloud Tier 2 worker, or Cloud Tier 3 long job |
 
 ## 5. Cloud Tier Model
+
+> **[Superseded by Part 0.3]** Retire the term "Cloud Tier" — it overloads
+> autonomy with environment weight and collides with ADR-011. Tier 1/2/3 here
+> become derived from the `location` + `runtime weight` axes.
 
 Cloud tier answers: if this task should leave the local loop, how autonomous should the remote side be?
 
@@ -1849,6 +2059,10 @@ Each pack should be testable, versioned, permissioned, and evaluable.
 
 ### 18.1 Canonical API
 
+> **[See Part 0.2 / 0.5]** Do not build a fresh `/v1/*` for sessions/tools/events
+> — `@opencode-ai/sdk` already exposes them. The sidecar adds only the missing
+> routes (context-pack preview, `cloud.dispatch` ingress, run-ledger views).
+
 The API is the stable contract between:
 
 - Local harness.
@@ -1921,6 +2135,10 @@ agentctl job watch job_123
 The CLI should call the same API as the SDK and UI.
 
 ## 19. Embeddability and Plugin Distribution
+
+> **[DRIFT — see Part 0.7]** Embedding into Cursor/VS Code/JetBrains/Slack/Teams/
+> GitHub/browser/CI conflicts with NON_GOAL #6 (Mac desktop only). Defer this
+> whole section to "Future / Out of Current Scope."
 
 The harness should not only work through its own UI or CLI. It should be embeddable into other host applications such as Cursor, Workbuddy, VS Code, JetBrains IDEs, Slack, Teams, GitHub, browsers, Raycast, and CI systems.
 
