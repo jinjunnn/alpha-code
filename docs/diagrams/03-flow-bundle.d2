@@ -1,0 +1,49 @@
+direction: right
+
+# 流程② 一键安装套件 — 状态机
+# actor: 主进程安装引擎(BundleInstaller)
+# 套件 = alpha 自建 manifest,扇出 N 个原子安装(MCP/Skill/Plugin 各自独立)
+# 单项失败策略: 继续其余 + 汇总报告(不整体回滚,已成功项保留)
+
+Idle: {
+  shape: rectangle
+  label: "空闲 Idle"
+}
+
+Resolving: {
+  shape: rectangle
+  label: "解析 manifest Resolving"
+}
+
+Installing: {
+  shape: rectangle
+  label: "安装中 i/N Installing"
+}
+
+PartialSuccess: {
+  shape: rectangle
+  label: "部分成功 Partial"
+}
+
+Success: {
+  shape: rectangle
+  label: "全部完成 Success"
+  style.fill: "#d4edda"
+}
+
+Failed: {
+  shape: rectangle
+  label: "全部失败 Failed"
+  style.fill: "#f8d7da"
+}
+
+Idle -> Resolving: "用户点「安装套件」→ window.api.ext.installBundle(id)"
+Resolving -> Installing: "manifest 解析 OK, 原子任务队列建立"
+Resolving -> Failed: "manifest 损坏 / catalog 找不到条目"
+Installing -> Installing: "单项完成(成功或失败) → i++, 继续下一项"
+Installing -> Success: "全部 N 项成功"
+Installing -> PartialSuccess: "队列跑完, 部分项失败 → 汇总报告[成功k/N + 失败列表]"
+Installing -> Failed: "全部 N 项失败"
+PartialSuccess -> Idle: "用户确认报告"
+Success -> Idle: "用户关闭"
+Failed -> Idle: "用户关闭"

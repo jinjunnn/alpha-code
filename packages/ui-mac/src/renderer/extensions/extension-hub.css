@@ -1,0 +1,275 @@
+/* Extension Hub (定制中心) overlay. Centered modal over a backdrop. z-index sits ABOVE opencode's
+ * content area but BELOW the alpha sidebar (sidebar.css `.alpha-sidebar { z-index: 40 }`), so the
+ * sidebar stays visible and clickable while the hub is open. Reuses v2 theme tokens with fallbacks.
+ * Scoped under [data-alpha-ext-hub] / .alpha-ext-* so nothing leaks into opencode chrome. */
+
+[data-alpha-ext-hub] {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+}
+
+.alpha-ext-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(2px);
+}
+
+.alpha-ext-panel {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: min(960px, 92vw);
+  height: min(760px, 86vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--v2-background-bg-base, var(--background-base, #ffffff));
+  color: var(--v2-text-fg-base, var(--text-base, #16150f));
+  border: 1px solid var(--v2-border-border-base, rgba(0, 0, 0, 0.08));
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
+  font-size: 13px;
+}
+
+.alpha-ext-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--v2-border-border-base, rgba(0, 0, 0, 0.07));
+}
+.alpha-ext-title {
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.alpha-ext-search {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--v2-border-border-base, rgba(0, 0, 0, 0.12));
+  background: var(--v2-background-bg-deep, rgba(0, 0, 0, 0.03));
+  color: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.alpha-ext-search:focus {
+  border-color: var(--v2-border-border-strong, rgba(0, 0, 0, 0.3));
+}
+.alpha-ext-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 14px;
+  opacity: 0.7;
+}
+.alpha-ext-close:hover {
+  background: var(--v2-background-bg-deep, rgba(0, 0, 0, 0.06));
+  opacity: 1;
+}
+
+.alpha-ext-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--v2-border-border-base, rgba(0, 0, 0, 0.07));
+  overflow-x: auto;
+}
+.alpha-ext-tab {
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 13px;
+  opacity: 0.66;
+}
+.alpha-ext-tab:hover {
+  background: var(--v2-background-bg-deep, rgba(0, 0, 0, 0.05));
+  opacity: 1;
+}
+.alpha-ext-tab[data-active] {
+  background: var(--v2-background-bg-deep, rgba(0, 0, 0, 0.08));
+  opacity: 1;
+  font-weight: 600;
+}
+
+.alpha-ext-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.alpha-ext-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(248px, 1fr));
+  gap: 12px;
+}
+
+.alpha-ext-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid var(--v2-border-border-base, rgba(0, 0, 0, 0.09));
+  background: var(--v2-background-bg-deep, rgba(0, 0, 0, 0.015));
+}
+.alpha-ext-card-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.alpha-ext-icon {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 14px;
+  background: var(--v2-background-bg-base, rgba(0, 0, 0, 0.06));
+  border: 1px solid var(--v2-border-border-base, rgba(0, 0, 0, 0.08));
+  text-transform: uppercase;
+}
+.alpha-ext-name {
+  font-weight: 600;
+  font-size: 13.5px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.alpha-ext-chip {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--v2-background-bg-base, rgba(0, 0, 0, 0.06));
+  opacity: 0.8;
+}
+.alpha-ext-chip[data-source="official"] {
+  color: #1f7a4d;
+  background: rgba(31, 122, 77, 0.12);
+}
+.alpha-ext-chip[data-source="community"] {
+  color: #8a5a00;
+  background: rgba(138, 90, 0, 0.12);
+}
+.alpha-ext-chip[data-source="alpha"] {
+  color: #6d4bd8;
+  background: rgba(109, 75, 216, 0.14);
+}
+.alpha-ext-desc {
+  font-size: 12px;
+  line-height: 1.45;
+  opacity: 0.74;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.alpha-ext-meta {
+  font-size: 11px;
+  opacity: 0.6;
+}
+.alpha-ext-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+}
+.alpha-ext-btn {
+  height: 28px;
+  padding: 0 14px;
+  border-radius: 7px;
+  border: 1px solid var(--v2-border-border-strong, rgba(0, 0, 0, 0.18));
+  background: var(--v2-background-bg-base, #fff);
+  color: inherit;
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.alpha-ext-btn:hover:not(:disabled) {
+  background: var(--v2-background-bg-deep, rgba(0, 0, 0, 0.05));
+}
+.alpha-ext-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.alpha-ext-btn[data-variant="installed"] {
+  border-color: rgba(31, 122, 77, 0.4);
+  color: #1f7a4d;
+}
+
+.alpha-ext-empty {
+  padding: 48px 16px;
+  text-align: center;
+  opacity: 0.55;
+  font-size: 13px;
+}
+
+.alpha-ext-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 560px;
+}
+.alpha-ext-form-types {
+  display: flex;
+  gap: 6px;
+}
+.alpha-ext-input,
+.alpha-ext-textarea {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--v2-border-border-base, rgba(0, 0, 0, 0.14));
+  background: var(--v2-background-bg-deep, rgba(0, 0, 0, 0.03));
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+}
+.alpha-ext-textarea {
+  min-height: 160px;
+  resize: vertical;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+}
+.alpha-ext-input:focus,
+.alpha-ext-textarea:focus {
+  border-color: var(--v2-border-border-strong, rgba(0, 0, 0, 0.3));
+}
+
+.alpha-ext-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  max-width: 80%;
+  padding: 9px 16px;
+  border-radius: 9px;
+  background: rgba(20, 20, 18, 0.92);
+  color: #fff;
+  font-size: 12.5px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}

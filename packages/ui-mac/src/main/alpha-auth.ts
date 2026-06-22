@@ -1,0 +1,265 @@
+// alpha-code ↔ platform 授权(browser-delegated OAuth/PKCE)。全部落自有 ui-mac 包,零改 opencode
+// 源码(ADR-002/005)。设计与时序见 docs/platform-integration.md §C —— web(alpha-web)是 session
+// 唯一权威,app 只持 token,续期/撤销/设备管理都在 web 侧。
+//
+// 三道接缝:
+//   ① 发起   startAuth(): 生成 PKCE(verifier+state) → shell.openExternal(<ALPHA_WEB_URL>/auth/authorize…)
+//   ② 回调   handleAuthDeepLink(url): alpha-code://auth/callback?code&state → 校验 state → 换 token
+//            → safeStorage 加密存(系统钥匙串,不落明文 alpha.env)。
+//   ③ 消费   applyAuthEnv(): 据 token+mode 写 process.env(ALPHA_BASE_URL/ALPHA_API_KEY →
+//            alpha-models.ts 的模型代理 provider;ALPHA_CLOUD_MCP_URL/ALPHA_CLOUD_TOKEN →
+//            sidecar.ts 的 mcp.cloud)。env 在 sidecar fork 前算一次(server.ts 注释),所以运行时
+//            切 platform-pays 需 relaunch 让新 sidecar 继承(MVP);prod 改 sidecar runtime 转发。
+//
+// dev:DEV_PLATFORM_TOKEN 把"已登录 + platform"静态短路,跳过 ①②(doc §A,不等 web)。
+
+import { createHash, randomBytes, randomUUID } from "node:crypto"
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
+import { safeStorage, shell, type BrowserWindow } from "electron"
+import type { AuthMode, AuthState } from "../preload/types"
+import { getLogger } from "./logging"
+
+type StoredAuth = {
+  mode: AuthMode
+  accessToken?: string
+  refreshToken?: string
+  sessionId?: string
+  expiresAt?: number
+  account?: { email?: string; plan?: string }
+}
+
+type TokenResponse = {
+  access_token: string
+  refresh_token?: string
+  session_id?: string
+  expires_in?: number
+  email?: string
+  plan?: string
+}
+
+const CLIENT_ID = "alpha-code"
+const REDIRECT_URI = "alpha-code://auth/callback"
+const AUTH_FILE = "alpha-auth.json"
+
+// Endpoints default to alphacodeone.com (subdomain split) and are env-overridable for dev/staging.
+// ALPHA_WEB_URL = alpha-web (C, identity authority — login/token); ALPHA_PLATFORM_URL =
+// alpha-platform (B, model proxy at /v1 + MCP gateway at /mcp).
+const webBase = () => (process.env.ALPHA_WEB_URL ?? "https://auth.alphacodeone.com").replace(/\/+$/, "")
+const platformBase = () => (process.env.ALPHA_PLATFORM_URL ?? "https://api.alphacodeone.com").replace(/\/+$/, "")
+
+let userDataPath = ""
+let getWindow: () => BrowserWindow | null = () => null
+let relaunchApp: () => void = () => {}
+let stored: StoredAuth = { mode: "byok" }
+let pkce: { verifier: string; state: string } | null = null
+
+function log(message: string, meta?: unknown) {
+  try {
+    getLogger().log(message, meta)
+  } catch {}
+}
+function warn(message: string, meta?: unknown) {
+  try {
+    getLogger().warn(message, meta)
+  } catch {}
+}
+
+function authFilePath() {
+  return join(userDataPath, AUTH_FILE)
+}
+
+function persist() {
+  try {
+    mkdirSync(userDataPath, { recursive: true })
+    const json = JSON.stringify(stored)
+    if (safeStorage.isEncryptionAvailable()) {
+      const enc = safeStorage.encryptString(json).toString("base64")
+      writeFileSync(authFilePath(), JSON.stringify({ v: 1, enc }), "utf8")
+    } else {
+      // No OS keychain (e.g. headless Linux): tokens are short-lived; flag the fallback loudly.
+      warn("alpha-auth: safeStorage unavailable, persisting auth without encryption")
+      writeFileSync(authFilePath(), JSON.stringify({ v: 1, plain: json }), "utf8")
+    }
+  } catch (error) {
+    warn("alpha-auth: persist failed", error)
+  }
+}
+
+function load() {
+  try {
+    const parsed = JSON.parse(readFileSync(authFilePath(), "utf8")) as { v: number; enc?: string; plain?: string }
+    let json: string | undefined
+    if (parsed.enc && safeStorage.isEncryptionAvailable()) {
+      json = safeStorage.decryptString(Buffer.from(parsed.enc, "base64"))
+    } else if (parsed.plain) {
+      json = parsed.plain
+    }
+    if (json) {
+      const parsed = JSON.parse(json) as StoredAuth
+      stored = { ...parsed, mode: parsed.mode ?? "byok" }
+    }
+  } catch {
+    // No stored auth yet — stay logged-out.
+  }
+}
+
+function deriveState(): AuthState {
+  const loggedIn = Boolean(stored.accessToken) || Boolean(process.env.DEV_PLATFORM_TOKEN)
+  return {
+    status: loggedIn ? "logged-in" : "logged-out",
+    mode: stored.mode ?? "byok",
+    account: stored.account,
+    expiresAt: stored.expiresAt,
+  }
+}
+
+function publish() {
+  const win = getWindow()
+  if (win && !win.isDestroyed()) win.webContents.send("auth-state", deriveState())
+}
+
+// Map the current token + mode onto the env vars the sidecar reads. Only SETS (never deletes):
+// the sidecar is (re)spawned on a fresh launch whose env starts clean from preferAppEnv(), so
+// logged-out / BYOK simply leaves the platform vars unset → provider.alpha + mcp.cloud stay dark.
+// DEV_PLATFORM_TOKEN acts as a static platform login. Never clobbers a value the user exported.
+export function applyAuthEnv() {
+  const devToken = process.env.DEV_PLATFORM_TOKEN
+  const loggedInPlatform = deriveState().status === "logged-in" && (stored.mode === "platform" || Boolean(devToken))
+  const token = devToken || (loggedInPlatform ? stored.accessToken : undefined)
+  const base = platformBase()
+  if (!token || !base) return
+  if (!process.env.ALPHA_BASE_URL) process.env.ALPHA_BASE_URL = `${base}/v1`
+  if (!process.env.ALPHA_API_KEY) process.env.ALPHA_API_KEY = token
+  if (!process.env.ALPHA_CLOUD_MCP_URL) process.env.ALPHA_CLOUD_MCP_URL = `${base}/mcp`
+  if (!process.env.ALPHA_CLOUD_TOKEN) process.env.ALPHA_CLOUD_TOKEN = token
+}
+
+// Called once at startup, AFTER preferAppEnv() and BEFORE the sidecar forks (index.ts), so the
+// derived platform env is present in the sidecar's inherited environment.
+export function initAuthEnv(dataPath: string) {
+  userDataPath = dataPath
+  load()
+  applyAuthEnv()
+}
+
+// Called after the main window exists, so state pushes have a target + login can relaunch.
+export function setAuthDeps(deps: { getWindow: () => BrowserWindow | null; relaunch: () => void }) {
+  getWindow = deps.getWindow
+  relaunchApp = deps.relaunch
+  publish()
+}
+
+export function getAuthState(): AuthState {
+  return deriveState()
+}
+
+function base64url(buf: Buffer) {
+  return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+}
+
+// ① 发起:浏览器代理授权。PKCE(S256) + state,跳到 web 授权页。
+export async function startAuth(): Promise<void> {
+  const verifier = base64url(randomBytes(32))
+  const challenge = base64url(createHash("sha256").update(verifier).digest())
+  const state = randomUUID()
+  pkce = { verifier, state }
+  const url = new URL(`${webBase()}/auth/authorize`)
+  url.searchParams.set("response_type", "code")
+  url.searchParams.set("client_id", CLIENT_ID)
+  url.searchParams.set("redirect_uri", REDIRECT_URI)
+  url.searchParams.set("code_challenge", challenge)
+  url.searchParams.set("code_challenge_method", "S256")
+  url.searchParams.set("state", state)
+  url.searchParams.set("scope", "openid profile platform")
+  log("alpha-auth: opening authorize url", { url: url.origin + url.pathname })
+  await shell.openExternal(url.toString())
+}
+
+// ② 回调:消费任何 alpha-code:// deep link(返回 true = 已吞,不转发给 renderer);只处理
+// auth/callback。其余 alpha-code:// 也吞掉(避免误投 renderer)。
+export function handleAuthDeepLink(url: string): boolean {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return false
+  }
+  if (parsed.protocol !== "alpha-code:") return false
+  const path = `${parsed.host}${parsed.pathname}`.replace(/\/+$/, "").replace(/^\/+/, "")
+  if (path === "auth/callback") {
+    void completeAuth(parsed).catch((error) => warn("alpha-auth: callback failed", error))
+  } else {
+    log("alpha-auth: ignoring non-auth deep link", { path })
+  }
+  return true
+}
+
+async function completeAuth(parsed: URL) {
+  const code = parsed.searchParams.get("code")
+  const state = parsed.searchParams.get("state")
+  const error = parsed.searchParams.get("error")
+  if (error) return warn("alpha-auth: provider returned error", { error })
+  if (!code || !state) return warn("alpha-auth: callback missing code/state")
+  if (!pkce || pkce.state !== state) return warn("alpha-auth: state mismatch — possible CSRF, ignoring")
+  const verifier = pkce.verifier
+  pkce = null
+
+  const tokens = await exchangeCode(code, verifier)
+  stored = {
+    // Login does not flip the mode — the user explicitly toggles platform-pays to activate the
+    // proxy (which relaunches). Logging in just records identity; default stays BYOK.
+    mode: stored.mode ?? "byok",
+    accessToken: tokens.access_token,
+    refreshToken: tokens.refresh_token,
+    sessionId: tokens.session_id,
+    expiresAt: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
+    account: { email: tokens.email, plan: tokens.plan },
+  }
+  persist()
+  applyAuthEnv()
+  publish()
+  log("alpha-auth: login complete", { plan: tokens.plan, mode: stored.mode })
+}
+
+async function exchangeCode(code: string, verifier: string): Promise<TokenResponse> {
+  const res = await fetch(`${webBase()}/auth/token`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      grant_type: "authorization_code",
+      client_id: CLIENT_ID,
+      code,
+      code_verifier: verifier,
+      redirect_uri: REDIRECT_URI,
+    }),
+  })
+  if (!res.ok) throw new Error(`token exchange failed: HTTP ${res.status}`)
+  return (await res.json()) as TokenResponse
+}
+
+export async function logout(): Promise<void> {
+  stored = { mode: "byok" }
+  try {
+    rmSync(authFilePath(), { force: true })
+  } catch {}
+  persist()
+  applyAuthEnv()
+  publish()
+  log("alpha-auth: logged out")
+  // Drop any proxy config out of the running sidecar.
+  relaunchApp()
+}
+
+// Switch BYOK ↔ platform-pays. platform-pays only takes effect after a relaunch (the sidecar reads
+// the proxy env at fork time) — MVP "respawn sidecar" via a full relaunch.
+export async function setAuthMode(mode: AuthMode): Promise<void> {
+  if (mode !== "byok" && mode !== "platform") return
+  if (stored.mode === mode) return
+  stored.mode = mode
+  persist()
+  applyAuthEnv()
+  publish()
+  log("alpha-auth: mode changed", { mode })
+  relaunchApp()
+}

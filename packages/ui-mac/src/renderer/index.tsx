@@ -28,6 +28,8 @@ import { availableStartupServer, readyWslConnections } from "./wsl/connections"
 import "./styles.css"
 import "./sidebar/sidebar.css"
 import { AlphaSidebar } from "./sidebar/alpha-sidebar"
+import { ExtensionHub } from "./extensions/extension-hub"
+import { extHubOpen, setExtHubOpen } from "./extensions/ext-hub-state"
 import { Splash } from "./logo-alpha"
 import { useTheme } from "@opencode-ai/ui/theme/context"
 import { ALPHA_THEME, ALPHA_THEME_ID } from "./theme-alpha"
@@ -386,6 +388,7 @@ render(() => {
             <AppInterface defaultServer={key} servers={servers()} router={MemoryRouter}>
               <Inner />
               <AlphaSidebar server={sidebarServer} />
+              <ExtensionHub server={sidebarServer} open={extHubOpen} onClose={() => setExtHubOpen(false)} />
             </AppInterface>
           )}
         </Show>

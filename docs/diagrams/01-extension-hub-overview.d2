@@ -1,0 +1,54 @@
+# 定制中心(Extension Hub)v2 — 瘦身拓扑 & 零-fork 边界
+# MVP = MCP 连接器优先;零自建安装引擎(直调 SDK + 一个薄持久化 IPC)
+direction: right
+vars: { d2-config: { layout-engine: elk } }
+title: |md
+  # Extension Hub v2 — MCP-first, 零自建引擎, 零-fork 边界
+| { near: top-center; style.font-size: 22 }
+
+renderer: "Renderer (alpha 自有)" {
+  style.fill: "#F3E8FF"
+  hub: "C1 extension-hub.tsx\n(覆盖内容区面板 · 侧栏保持可见\n卡片网格 · ESC/focus trap)"
+  data: "C2 use-extensions.ts\n(SDK 读 status + catalog 合并\n+ live mcp.add/connect + 依赖预检)"
+  hub -> data: "browse / install"
+}
+
+preload: "Preload Bridge" {
+  style.fill: "#FFF7E6"
+  ext: "C4 window.api.ext.persistMcp\n(唯一新增方法 · contextBridge)"
+}
+
+main: "Electron Main (自有 ui-mac)" {
+  style.fill: "#E8F5E9"
+  cfg: "C5 ext-config.ts\n(薄 jsonc append 用户 opencode.jsonc\n复用 CLI addMcpToConfig + 内联校验)"
+}
+
+catalog: "C3 alpha-catalog.json\n(内置 · 小 · 官方源 · 离线)" { style.fill: "#FFF1F0" }
+inject: "injectAlphaConfig (既有接缝)\nOPENCODE_CONFIG_CONTENT merge\n出厂预设 mcp[]" { style.fill: "#FFF1F0" }
+store: "window.api.store (既有)\nHubPreference: activeTab" { style.fill: "#FFF1F0" }
+
+oc: "opencode server (只读 · 零改)" {
+  style.fill: "#E6F4FF"
+  sdk: "@opencode-ai/sdk v2/client\nmcp.status (读) · mcp.add+connect (live)\nmcp.toggle (真停用)"
+  ucfg: "用户 opencode.jsonc\nmcp[name] (持久化目标)\n⚠ 读一次缓存 → 故 live 靠 mcp.add"
+}
+
+# 渲染层:读+live 走 SDK;持久走 IPC
+data -> sdk: "read status + live add/connect/toggle" { style.stroke-dash: 3 }
+data -> ext: "persist (append config)"
+ext -> cfg: "IPC"
+cfg -> ucfg: "jsonc append (原子+校验)"
+
+# 数据 / 偏好 / 预设
+catalog -> data: "getCatalog (内置读)"
+data -> store: "activeTab"
+inject -> oc: "出厂预设 mcp (启动注入)"
+
+boundary: |md
+  ### 零-fork 边界
+  - 左/中 = alpha 自有 (只增不改)
+  - 右 opencode = 只读, 仅经 SDK + 用户 config 文件 + 注入接缝触达
+  - 无新增 HTTP/server 路由 (ADR-002); 特权写走主进程 IPC (ADR-006)
+  - 无新存储层 (复用 SDK 为真相 + 既有 window.api.store)
+  - skill/plugin/套件/create = roadmap (V1/V2), 不在 MVP
+| { near: bottom-center; style.font-size: 13 }
