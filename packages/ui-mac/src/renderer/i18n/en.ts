@@ -69,6 +69,7 @@ export const dict = {
   "alpha.ext.installFailed": "Install failed",
   "alpha.ext.loading": "Loading…",
   "alpha.ext.pluginRestart": "Saved — restart to apply",
+  "alpha.ext.installSlow": "Saved — first connect is slow (downloading deps); finishing in the background",
   "alpha.sidebar.settings": "Settings",
   "alpha.sidebar.help": "Help",
   "alpha.sidebar.more": "More",

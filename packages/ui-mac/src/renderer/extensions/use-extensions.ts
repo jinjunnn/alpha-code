@@ -103,6 +103,15 @@ function toMcpConfig(spec: McpInstallSpec, env: Record<string, string>): McpConf
   }
 }
 
+// Cap how long we wait on the live add/connect. opencode spawns the server synchronously, and a
+// first-run `uvx`/`npx` can download from PyPI/npm (slow, or stalls on a blocked registry). The
+// config is already persisted by then, so on timeout we stop waiting and report "slow" rather than
+// hang the UI forever — the server keeps connecting in the background / on next launch.
+const TIMED_OUT = Symbol("timeout")
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | typeof TIMED_OUT> {
+  return Promise.race([p, new Promise<typeof TIMED_OUT>((r) => setTimeout(() => r(TIMED_OUT), ms))])
+}
+
 export function useExtensions(server: Accessor<ServerInfo | undefined>): ExtensionsApi {
   const [store, setStore] = createStore<ExtensionsStore>({ mcp: {}, ready: false, error: false })
 
@@ -151,9 +160,13 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>): Extensi
     if (!persisted.ok) return { ok: false, reason: persisted.reason }
     // 2. Live: add + connect (no restart). mcp.add registers in-memory and spawns; connect is a
     //    belt-and-braces no-op if already connected.
-    const added = await c.mcp.add({ name: entry.name, config } as any)
-    if (added.error) return { ok: false, reason: "mcp.add failed" }
-    await c.mcp.connect({ name: entry.name } as any).catch(() => {})
+    const added = await withTimeout(c.mcp.add({ name: entry.name, config } as any), 15000)
+    if (added === TIMED_OUT) {
+      void loadStatus()
+      return { ok: true, reason: "slow" } // persisted; connecting in background / on next launch
+    }
+    if ((added as { error?: unknown }).error) return { ok: false, reason: "mcp.add failed" }
+    await withTimeout((c.mcp.connect({ name: entry.name } as any) as Promise<unknown>).catch(() => {}), 10000)
     await loadStatus()
     return { ok: true }
   }
