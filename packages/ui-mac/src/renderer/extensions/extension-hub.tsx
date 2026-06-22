@@ -129,6 +129,8 @@ export function ExtensionHub(props: {
       if (e.type === "mcp") {
         const res = await addMcpEntry(e)
         if (!res.ok) flash(`${t("alpha.ext.installFailed")}${res.reason ? `: ${res.reason}` : ""}`)
+        else if (res.reason === "slow") flash(t("alpha.ext.installSlow"))
+        else flash(t("alpha.ext.added"))
       } else if (e.type === "skill") {
         const res = await ext.installSkill(e)
         flash(res.ok ? t("alpha.ext.added") : `${t("alpha.ext.installFailed")}${res.reason ? `: ${res.reason}` : ""}`)

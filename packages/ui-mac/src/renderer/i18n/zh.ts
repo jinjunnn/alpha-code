@@ -68,6 +68,7 @@ export const dict = {
   "alpha.ext.installFailed": "安装失败",
   "alpha.ext.loading": "加载中…",
   "alpha.ext.pluginRestart": "已写入,重启后生效",
+  "alpha.ext.installSlow": "已写入,首次连接较慢(在下载依赖),稍后或重启后自动连接",
   "alpha.sidebar.settings": "设置",
   "alpha.sidebar.help": "帮助",
   "alpha.sidebar.more": "更多",
