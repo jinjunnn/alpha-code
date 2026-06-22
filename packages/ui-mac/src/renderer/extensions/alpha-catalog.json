@@ -1,0 +1,309 @@
+{
+  "version": "2026-06-22.1",
+  "_note": "alpha-code 内置扩展目录(定制中心)。随渲染层 bundle、离线优先。schema 见 docs/designs/2026-06-22-arch-extension-hub.md(CatalogEntry / InstallSpec / bundleItems)。",
+  "_disclaimers": [
+    "标 _verify 的条目:包名/协议/可用性需落地前手工核实,不得当作已确认事实。",
+    "redistributable=false 的条目不得把其文件内置进 app,只能运行时远程拉或引导用户自装。",
+    "Anthropic document-skills(docx/xlsx/pptx/pdf)源码可见但禁止再分发,故本目录不收。"
+  ],
+  "entries": [
+    {
+      "id": "mcp:markitdown",
+      "type": "mcp",
+      "name": "markitdown",
+      "displayName": "文档读取(markitdown)",
+      "description": "把 PDF/Word/PPT/Excel/图片/HTML 转成 Markdown 供模型读取。Microsoft 官方。",
+      "source": "official",
+      "category": "office",
+      "license": "MIT",
+      "redistributable": true,
+      "installSpec": {
+        "kind": "mcp",
+        "mcpType": "local",
+        "command": ["uvx", "markitdown-mcp"],
+        "requiredEnvVars": [],
+        "runtimeDep": ["uv"]
+      }
+    },
+    {
+      "id": "mcp:filesystem",
+      "type": "mcp",
+      "name": "filesystem",
+      "displayName": "文件系统",
+      "description": "在白名单目录内读写本地文件。modelcontextprotocol 官方参考实现。",
+      "source": "official",
+      "category": "dev",
+      "license": "MIT",
+      "redistributable": true,
+      "installSpec": {
+        "kind": "mcp",
+        "mcpType": "local",
+        "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem", "{workspace}"],
+        "requiredEnvVars": [],
+        "runtimeDep": ["node"],
+        "_note": "{workspace} 安装时替换为当前项目目录;该路径即此 MCP 的可访问白名单。"
+      }
+    },
+    {
+      "id": "mcp:fetch",
+      "type": "mcp",
+      "name": "fetch",
+      "displayName": "网页抓取(fetch)",
+      "description": "抓取 URL 并转 Markdown,供研究/检索。官方参考实现。",
+      "source": "official",
+      "category": "research",
+      "license": "MIT",
+      "redistributable": true,
+      "installSpec": {
+        "kind": "mcp",
+        "mcpType": "local",
+        "command": ["uvx", "mcp-server-fetch"],
+        "requiredEnvVars": [],
+        "runtimeDep": ["uv"]
+      }
+    },
+    {
+      "id": "mcp:git",
+      "type": "mcp",
+      "name": "git",
+      "displayName": "Git 操作",
+      "description": "在仓库内执行 git 读写(status/log/diff/commit 等)。官方参考实现。",
+      "source": "official",
+      "category": "dev",
+      "license": "MIT",
+      "redistributable": true,
+      "installSpec": {
+        "kind": "mcp",
+        "mcpType": "local",
+        "command": ["uvx", "mcp-server-git", "--repository", "{workspace}"],
+        "requiredEnvVars": [],
+        "runtimeDep": ["uv", "git"]
+      }
+    },
+    {
+      "id": "mcp:github",
+      "type": "mcp",
+      "name": "github",
+      "displayName": "GitHub",
+      "description": "查询/操作 GitHub 仓库、PR、issue。需 Personal Access Token。",
+      "source": "official",
+      "category": "dev",
+      "license": "MIT",
+      "redistributable": true,
+      "installSpec": {
+        "kind": "mcp",
+        "mcpType": "local",
+        "command": ["npx", "-y", "@modelcontextprotocol/server-github"],
+        "requiredEnvVars": ["GITHUB_PERSONAL_ACCESS_TOKEN"],
+        "runtimeDep": ["node"],
+        "_verify": "GitHub 官方 MCP 已迁向 Go 二进制及 remote 端点;落地前确认用 npm 包还是 remote+OAuth。token 走 keychain 占位,不硬编码。"
+      }
+    },
+    {
+      "id": "mcp:feishu",
+      "type": "mcp",
+      "name": "feishu-lark",
+      "displayName": "飞书 / Lark",
+      "description": "接入飞书云文档、多维表格、IM、日历(larksuite 官方 MCP)。",
+      "source": "official",
+      "category": "china-office",
+      "license": "MIT",
+      "redistributable": true,
+      "installSpec": {
+        "kind": "mcp",
+        "mcpType": "local",
+        "command": ["npx", "-y", "@larksuiteoapi/lark-mcp"],
+        "requiredEnvVars": ["APP_ID", "APP_SECRET"],
+        "runtimeDep": ["node"],
+        "mirrorCommand": ["npx", "-y", "--registry", "https://registry.npmmirror.com", "@larksuiteoapi/lark-mcp"],
+        "_verify": "确认 larksuite/lark-openapi-mcp 的精确 npm 包名与鉴权字段;凭据走 keychain。"
+      }
+    },
+    {
+      "id": "mcp:yuque",
+      "type": "mcp",
+      "name": "yuque",
+      "displayName": "语雀",
+      "description": "读写语雀知识库文档(yuque 官方,其安装器已声明支持 opencode)。",
+      "source": "official",
+      "category": "china-office",
+      "license": "MIT",
+      "redistributable": true,
+      "installSpec": {
+        "kind": "mcp",
+        "mcpType": "local",
+        "command": ["npx", "-y", "yuque-mcp-server"],
+        "requiredEnvVars": ["YUQUE_TOKEN"],
+        "runtimeDep": ["node"],
+        "mirrorCommand": ["npx", "-y", "--registry", "https://registry.npmmirror.com", "yuque-mcp-server"],
+        "_verify": "确认 yuque/yuque-mcp-server 精确发布名与 token 字段。"
+      }
+    },
+    {
+      "id": "skill:skill-creator",
+      "type": "skill",
+      "name": "skill-creator",
+      "displayName": "技能创建助手",
+      "description": "指导创建/改进/评测 SKILL.md 的工作流(Anthropic example-skills)。",
+      "source": "official",
+      "category": "dev",
+      "license": "Apache-2.0",
+      "redistributable": true,
+      "installSpec": {
+        "kind": "skill",
+        "source": "builtin",
+        "builtinAssetKey": "skills/skill-creator",
+        "targetDir": "alpha-skills",
+        "_verify": "Apache-2.0 可内置;打包前放入 ui-mac 资源并附 NOTICE。"
+      }
+    },
+    {
+      "id": "skill:mcp-builder",
+      "type": "skill",
+      "name": "mcp-builder",
+      "displayName": "MCP 构建指南",
+      "description": "编写高质量 MCP server 的指南(Anthropic example-skills)。",
+      "source": "official",
+      "category": "dev",
+      "license": "Apache-2.0",
+      "redistributable": true,
+      "installSpec": {
+        "kind": "skill",
+        "source": "builtin",
+        "builtinAssetKey": "skills/mcp-builder",
+        "targetDir": "alpha-skills"
+      }
+    },
+    {
+      "id": "skill:canvas-design",
+      "type": "skill",
+      "name": "canvas-design",
+      "displayName": "视觉/海报设计",
+      "description": "用设计哲学产出 .png/.pdf 视觉作品(Anthropic example-skills)。",
+      "source": "official",
+      "category": "design",
+      "license": "Apache-2.0",
+      "redistributable": true,
+      "installSpec": {
+        "kind": "skill",
+        "source": "builtin",
+        "builtinAssetKey": "skills/canvas-design",
+        "targetDir": "alpha-skills"
+      }
+    },
+    {
+      "id": "skill:brand-guidelines",
+      "type": "skill",
+      "name": "brand-guidelines",
+      "displayName": "品牌规范应用",
+      "description": "把品牌色彩/字体规范应用到各类产物(Anthropic example-skills)。",
+      "source": "official",
+      "category": "design",
+      "license": "Apache-2.0",
+      "redistributable": true,
+      "installSpec": {
+        "kind": "skill",
+        "source": "builtin",
+        "builtinAssetKey": "skills/brand-guidelines",
+        "targetDir": "alpha-skills"
+      }
+    },
+    {
+      "id": "plugin:opencode-notify",
+      "type": "plugin",
+      "name": "opencode-notify",
+      "displayName": "完成通知",
+      "description": "任务/会话完成时弹系统通知的 opencode 插件(社区)。",
+      "source": "community",
+      "category": "dev",
+      "license": "MIT",
+      "redistributable": true,
+      "installSpec": {
+        "kind": "plugin",
+        "package": "opencode-notify",
+        "version": "latest",
+        "mirrorRegistry": "https://registry.npmmirror.com",
+        "_verify": "社区插件:确认精确包名/维护状态/与当前 @opencode-ai/plugin 版本兼容。"
+      }
+    },
+    {
+      "id": "bundle:office",
+      "type": "bundle",
+      "name": "office-suite",
+      "displayName": "办公套件",
+      "description": "Word/Excel/PDF 读写与文档处理:markitdown 读取 + 文件系统。",
+      "source": "alpha",
+      "category": "office",
+      "license": "mixed",
+      "redistributable": true,
+      "bundleItems": [
+        { "catalogEntryId": "mcp:markitdown", "optional": false, "installOrder": 1 },
+        { "catalogEntryId": "mcp:filesystem", "optional": false, "installOrder": 2 }
+      ],
+      "_verify": "再补一个 openpyxl 系 Excel-MCP(写 xlsx)+ 一页自写「办公」引导技能后加入。"
+    },
+    {
+      "id": "bundle:research",
+      "type": "bundle",
+      "name": "research-suite",
+      "displayName": "研究套件",
+      "description": "多源检索 + 网页抓取 + 本地资料读写,支撑深度调研。",
+      "source": "alpha",
+      "category": "research",
+      "license": "MIT",
+      "redistributable": true,
+      "bundleItems": [
+        { "catalogEntryId": "mcp:fetch", "optional": false, "installOrder": 1 },
+        { "catalogEntryId": "mcp:filesystem", "optional": false, "installOrder": 2 }
+      ]
+    },
+    {
+      "id": "bundle:design",
+      "type": "bundle",
+      "name": "design-suite",
+      "displayName": "设计套件",
+      "description": "视觉/品牌设计技能组合(Apache-2.0,可内置)。",
+      "source": "alpha",
+      "category": "design",
+      "license": "Apache-2.0",
+      "redistributable": true,
+      "bundleItems": [
+        { "catalogEntryId": "skill:canvas-design", "optional": false, "installOrder": 1 },
+        { "catalogEntryId": "skill:brand-guidelines", "optional": false, "installOrder": 2 }
+      ]
+    },
+    {
+      "id": "bundle:dev",
+      "type": "bundle",
+      "name": "dev-suite",
+      "displayName": "开发套件",
+      "description": "Git + GitHub + MCP/技能构建指南。",
+      "source": "alpha",
+      "category": "dev",
+      "license": "mixed",
+      "redistributable": true,
+      "bundleItems": [
+        { "catalogEntryId": "mcp:git", "optional": false, "installOrder": 1 },
+        { "catalogEntryId": "mcp:github", "optional": true, "installOrder": 2 },
+        { "catalogEntryId": "skill:mcp-builder", "optional": true, "installOrder": 3 },
+        { "catalogEntryId": "skill:skill-creator", "optional": true, "installOrder": 4 }
+      ]
+    },
+    {
+      "id": "bundle:china-office",
+      "type": "bundle",
+      "name": "china-office-suite",
+      "displayName": "中国办公套件",
+      "description": "飞书 + 语雀(+ 钉钉,待补)连接器,贴合国内协作。",
+      "source": "alpha",
+      "category": "china-office",
+      "license": "MIT",
+      "redistributable": true,
+      "bundleItems": [
+        { "catalogEntryId": "mcp:feishu", "optional": false, "installOrder": 1 },
+        { "catalogEntryId": "mcp:yuque", "optional": true, "installOrder": 2 }
+      ],
+      "_verify": "补钉钉(open-dingtalk 官方 MCP)条目后加入。"
+    }
+  ]
+}

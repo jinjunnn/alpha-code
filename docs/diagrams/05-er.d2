@@ -1,0 +1,66 @@
+direction: right
+vars: { d2-config: { layout-engine: elk } }
+title: |md
+  # Extension Hub v2 — 数据模型 (MVP-core 实线 / roadmap 虚线)
+| { near: top-center; style.font-size: 20 }
+
+CatalogEntry: {
+  shape: sql_table
+  id: "string PK (eg mcp:markitdown)"
+  type: "skill|mcp|plugin|bundle"
+  name: string
+  displayName: "string 本地化"
+  description: string
+  source: "official|community|alpha|user"
+  category: "office|research|dev|design|china"
+  license: SPDX
+  redistributable: "boolean 派生自 license"
+  installSpec: "InstallSpec 内嵌 JSON"
+  bundleItems: "string[]? 仅 bundle"
+}
+InstallSpec: {
+  shape: sql_table
+  kind: "mcp|skill|plugin|bundle 判别"
+  "mcp.mcpType": "local|remote"
+  "mcp.command": "string[]? eg [uvx, markitdown-mcp]"
+  "mcp.url": "string? remote"
+  "mcp.headersTemplate": "Record? {env:VAR} 占位"
+  "mcp.requiredEnvVars": "string[]"
+  "mcp.runtimeDep": "string[]? 依赖预检 uv/node"
+  "mcp.mirrorCommand": "string[]? 中国区镜像"
+}
+HubPreference: {
+  shape: sql_table
+  存储: "既有 window.api.store, 非新存储层"
+  activeTab: "recommended|mcp|installed"
+  hiddenCatalogIds: "string[]"
+  disableClaudeCodeSkillsScan: "boolean → env OPENCODE_DISABLE_CLAUDE_CODE_SKILLS"
+}
+CatalogEntry -> InstallSpec: "1→1 内嵌"
+CatalogEntry -> CatalogEntry: "bundleItems 扇出 (roadmap)" { style.stroke-dash: 4 }
+
+SDKStatus: {
+  shape: page
+  label: "已安装真相 = SDK mcp.status (运行时)\n非 alpha 持久; join 键 = name"
+  style.fill: "#E6F4FF"
+}
+CatalogEntry -> SDKStatus: "name 匹配 → 已装/可装" { style.stroke-dash: 3 }
+
+InstalledItem: {
+  shape: sql_table
+  style.stroke-dash: 4
+  label: "InstalledItem (ROADMAP 暂不实现)"
+  id: "string PK"
+  catalogEntryId: "string? FK"
+  type: "skill|plugin|agent|command"
+  enabled: "boolean (skill/plugin 仅 UI 隐藏→诚实话术)"
+  needsRestart: boolean
+}
+InstallJob: {
+  shape: sql_table
+  style.stroke-dash: 4
+  label: "InstallJob (ROADMAP 套件扇出状态机 内存态)"
+  status: "pending|installing|partial|done|failed"
+  bundleSubJobs: "InstallJob[]?"
+}
+CatalogEntry -> InstalledItem: "(roadmap)" { style.stroke-dash: 4 }

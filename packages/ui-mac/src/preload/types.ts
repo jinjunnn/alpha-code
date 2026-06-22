@@ -40,6 +40,17 @@ export type FatalRendererError = {
   os?: string
 }
 
+// alpha-code ↔ platform auth (see main/alpha-auth.ts + docs/platform-integration.md §C). Defined
+// here so main, preload and renderer share one shape (the established cross-bundle type pattern).
+export type AuthMode = "byok" | "platform"
+export type AuthStatus = "logged-out" | "logged-in"
+export type AuthState = {
+  status: AuthStatus
+  mode: AuthMode
+  account?: { email?: string; plan?: string }
+  expiresAt?: number
+}
+
 export type ElectronAPI = {
   killSidecar: () => Promise<void>
   installCli: () => Promise<string>
@@ -98,4 +109,26 @@ export type ElectronAPI = {
   setBackgroundColor: (color: string) => Promise<void>
   exportDebugLogs: () => Promise<string>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void>
+  auth: {
+    getState: () => Promise<AuthState>
+    start: () => Promise<void>
+    logout: () => Promise<void>
+    setMode: (mode: AuthMode) => Promise<void>
+    subscribe: (cb: (state: AuthState) => void) => () => void
+  }
+  // Extension Hub (定制中心): thin privileged operations the renderer can't do itself. persistMcp
+  // writes the user's opencode.jsonc (durable); the live add/connect happens in the renderer over
+  // the SDK. See ADR-014 §4/§8.
+  ext: {
+    persistMcp: (name: string, server: Record<string, unknown>) => Promise<{ ok: true } | { ok: false; reason: string }>
+    removeMcp: (name: string) => Promise<{ ok: true } | { ok: false; reason: string }>
+    checkRuntime: (tool: string) => Promise<{ ok: boolean }>
+    writeSkill: (
+      name: string,
+      description: string,
+      body: string,
+    ) => Promise<{ ok: true } | { ok: false; reason: string }>
+    writeAgent: (name: string, content: string) => Promise<{ ok: true } | { ok: false; reason: string }>
+    installPlugin: (pkg: string) => Promise<{ ok: true } | { ok: false; reason: string }>
+  }
 }

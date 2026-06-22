@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron"
-import type { ElectronAPI, WslServersEvent } from "./types"
+import type { AuthState, ElectronAPI, WslServersEvent } from "./types"
 import type { UpdaterState } from "@opencode-ai/app/updater"
 
 const updaterCallbacks = new Set<(state: UpdaterState) => void>()
@@ -116,6 +116,29 @@ const api: ElectronAPI = {
   setBackgroundColor: (color: string) => ipcRenderer.invoke("set-background-color", color),
   exportDebugLogs: () => ipcRenderer.invoke("export-debug-logs"),
   recordFatalRendererError: (error) => ipcRenderer.invoke("record-fatal-renderer-error", error),
+  auth: {
+    getState: () => ipcRenderer.invoke("auth-get-state"),
+    start: () => ipcRenderer.invoke("auth-start"),
+    logout: () => ipcRenderer.invoke("auth-logout"),
+    setMode: (mode) => ipcRenderer.invoke("auth-set-mode", mode),
+    subscribe: (cb) => {
+      const handler = (_: unknown, state: AuthState) => cb(state)
+      ipcRenderer.on("auth-state", handler)
+      void ipcRenderer
+        .invoke("auth-get-state")
+        .then((state: AuthState) => cb(state))
+        .catch(() => {})
+      return () => ipcRenderer.removeListener("auth-state", handler)
+    },
+  },
+  ext: {
+    persistMcp: (name, server) => ipcRenderer.invoke("ext-persist-mcp", name, server),
+    removeMcp: (name) => ipcRenderer.invoke("ext-remove-mcp", name),
+    checkRuntime: (tool) => ipcRenderer.invoke("ext-check-runtime", tool),
+    writeSkill: (name, description, body) => ipcRenderer.invoke("ext-write-skill", name, description, body),
+    writeAgent: (name, content) => ipcRenderer.invoke("ext-write-agent", name, content),
+    installPlugin: (pkg) => ipcRenderer.invoke("ext-install-plugin", pkg),
+  },
 }
 
 contextBridge.exposeInMainWorld("api", api)

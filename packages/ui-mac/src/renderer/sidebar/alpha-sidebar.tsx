@@ -27,6 +27,8 @@ import {
   toggleSidebar,
 } from "./sidebar-state"
 import { useAlphaProjects, type AlphaProject, type AlphaSession, type ServerInfo } from "./use-projects"
+import type { AuthState } from "../../preload/types"
+import { toggleExtHub } from "../extensions/ext-hub-state"
 
 // Replicate opencode's getProjectAvatarVariant (context/layout.tsx) for projects that already
 // have a server-assigned color; otherwise pick a stable variant from the worktree so the
@@ -83,6 +85,13 @@ export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }
   const navigate = useNavigate()
   const location = useLocation()
   const command = useCommand()
+
+  // Platform auth state, pushed from main (alpha-auth.ts). The footer button reflects it: signed
+  // out → start the browser OAuth flow; signed in → show the account and sign out. web is the
+  // session authority, so this is just a thin view of main's state (see platform-integration.md §C).
+  const [authState, setAuthState] = createSignal<AuthState>({ status: "logged-out", mode: "byok" })
+  onCleanup(window.api.auth.subscribe(setAuthState))
+  const accountLabel = () => authState().account?.email ?? t("alpha.auth.account")
 
   // Which project's "⋯" menu is open (by worktree), if any, and where to anchor it. The menu is
   // rendered once at the Portal root with fixed positioning (computed from the trigger button)
@@ -483,20 +492,9 @@ export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }
               <Icon name="magnifying-glass" class="alpha-sidebar-nav-icon" />
               <span>{t("alpha.sidebar.search")}</span>
             </button>
-            <button type="button" class="alpha-sidebar-nav-item" onClick={() => command.trigger("mcp.toggle")}>
+            <button type="button" class="alpha-sidebar-nav-item" onClick={() => toggleExtHub()}>
               <Icon name="grid-plus" class="alpha-sidebar-nav-icon" />
               <span>{t("alpha.sidebar.plugins")}</span>
-            </button>
-            <button
-              type="button"
-              class="alpha-sidebar-nav-item"
-              title={t("alpha.sidebar.automationSoon")}
-              onClick={() => {
-                /* placeholder: opencode has no automation surface yet */
-              }}
-            >
-              <Icon name="status" class="alpha-sidebar-nav-icon" />
-              <span>{t("alpha.sidebar.automation")}</span>
             </button>
           </nav>
 
@@ -604,6 +602,21 @@ export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }
               ui-mac/scripts/patch-upstream.ts), so it lives one click deeper, beside the rest of
               the app's configuration. */}
           <footer class="alpha-sidebar-footer">
+            <button
+              type="button"
+              class="alpha-sidebar-nav-item"
+              data-auth={authState().status === "logged-in" ? "in" : "out"}
+              title={authState().status === "logged-in" ? t("alpha.auth.signOutHint") : t("alpha.auth.signInHint")}
+              onClick={() =>
+                authState().status === "logged-in" ? void window.api.auth.logout() : void window.api.auth.start()
+              }
+            >
+              <svg class="alpha-sidebar-nav-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <circle cx="8" cy="5.2" r="2.6" stroke="currentColor" stroke-width="1.3" />
+                <path d="M3.2 13c0-2.5 2.1-4 4.8-4s4.8 1.5 4.8 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+              </svg>
+              <span>{authState().status === "logged-in" ? accountLabel() : t("alpha.auth.signIn")}</span>
+            </button>
             <button type="button" class="alpha-sidebar-nav-item" onClick={() => command.trigger("settings.open")}>
               <Icon name="settings-gear" class="alpha-sidebar-nav-icon" />
               <span>{t("alpha.sidebar.settings")}</span>

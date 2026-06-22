@@ -5,7 +5,7 @@ import { app, BrowserWindow, Notification, clipboard, dialog, ipcMain, shell } f
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
 
-import type { FatalRendererError, ServerReadyData, TitlebarTheme } from "../preload/types"
+import type { AuthMode, AuthState, FatalRendererError, ServerReadyData, TitlebarTheme } from "../preload/types"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
 import { getStore } from "./store"
@@ -37,6 +37,12 @@ type Deps = {
   setBackgroundColor: (color: string) => void
   exportDebugLogs: () => Promise<string>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void> | void
+  auth: {
+    getState: () => AuthState
+    start: () => Promise<void>
+    logout: () => Promise<void>
+    setMode: (mode: AuthMode) => Promise<void>
+  }
 }
 
 export function registerIpcHandlers(deps: Deps) {
@@ -76,6 +82,10 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("record-fatal-renderer-error", (_event: IpcMainInvokeEvent, error: FatalRendererError) =>
     deps.recordFatalRendererError(error),
   )
+  ipcMain.handle("auth-get-state", () => deps.auth.getState())
+  ipcMain.handle("auth-start", () => deps.auth.start())
+  ipcMain.handle("auth-logout", () => deps.auth.logout())
+  ipcMain.handle("auth-set-mode", (_event: IpcMainInvokeEvent, mode: AuthMode) => deps.auth.setMode(mode))
   ipcMain.handle("store-get", (_event: IpcMainInvokeEvent, name: string, key: string) => {
     try {
       const store = getStore(name)

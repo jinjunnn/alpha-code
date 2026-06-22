@@ -20,6 +20,11 @@
 - **上游(我们依赖)**:opencode @ `anomalyco/opencode` commit `7efade2`(分支 `dev`);契约包 `@opencode-ai/sdk`、`@opencode-ai/plugin` @ `1.17.6`。
   - ⚠️ 关键事实:`@opencode-ai/server` 与 `opencode` 在该仓库是 `private:true` → **复用前端(app/ui)或内嵌 server 必须从 submodule 源码构建,不能纯 npm 装**。`sdk` / `plugin` 是公开 MIT 契约。
 - **下游(依赖我们)**:多用户/多租户(本地各跑实例 + 共享云平台);见 [[ADR-010]]/[[ADR-011]]。
+- **产品三后端拓扑(2026-06-22 补,见 [[ADR-013]] 与 `agent-harness-architecture.md` §0.5)**:产品面 = **三个独立后端**,运行时/信任域/发布节奏各异,**仅 A 在本仓**:
+  - **A 本地 sidecar** — 本仓 `packages/ui-mac`(Electron `utilityProcess`)。桌面 UI 要、opencode server 没有的本地 HTTP;websearch 直连;alpha-secrets。✅ 已存在,见 [[ADR-002]]/[[ADR-009]]。
+  - **B 云控制面 + MCP 工具网关 + 模型代理** — 独立仓 `alpha-platform`(AWS ECS/Fargate + Upstash)。`cloud.dispatch` 服务端硬校验、host tool 密钥 + capability token、模型代理网关(hybrid 代付,见 [[ADR-013]])、Box 沙箱、run ledger(Redis)、多租户认证/配额/计费。❌ 新建,**不在升级隔离北极星内**(自负安全/计费/运维),见 [[ADR-010]]/[[ADR-011]]。
+  - **C 分发/官网后端** — 独立仓 `alpha-web`(Vercel + 对象存储)。营销/下载页、electron 自动更新 feed(`latest-mac.yml`,挂 [[ADR-012]] prod 渠道)、Mac 签名/公证、注册登录/license/计费门户。❌ 新建。
+  - **依赖方向**:`alpha-code`(A) ──经 provider `baseURL` + `@opencode-ai/sdk` + MCP `cloud.dispatch`──▶ `alpha-platform`(B);`alpha-web`(C)签发身份/license,`alpha-platform`(B)校验之做配额/计费;C 喂自动更新 feed 给 `alpha-code` 的 electron updater。**B/C 共享 identity**;三者契约只走 HTTP/SDK,**绝不源码级耦合**(保 fork-sync 零冲突)。
 - **外部 API/服务**:LLM provider(经 opencode 配置,不在 alpha-code 重做);自有 sidecar 如接外部服务再列。
 
 ## 禁区(明确不做的架构选择)
@@ -38,9 +43,8 @@
 - ADR-007:前端品牌化 build-time transform → adrs/ADR-007-brand-transform.md
 - ADR-008:Codex 风格左边栏 → adrs/ADR-008-sidebar.md
 - ADR-009:websearch 默认放开 + alpha.env → adrs/ADR-009-websearch-default.md
-- ADR-010:云执行平台与派发接缝(proposed)→ adrs/ADR-010-cloud-platform.md
-- ADR-011:云执行分层、运行时与工具注入(proposed)→ adrs/ADR-011-cloud-tiers-tools.md
 - ADR-012:ui-mac 发布默认 prod 渠道,dev/beta 保留不删 → adrs/ADR-012-ui-mac-channel.md
+- ADR-014(proposed):定制中心 — Skills/MCP/Plugins 可视化市场 + alpha 自建套件 + 零-fork 安装 → adrs/ADR-014-extension-hub.md(设计:`docs/designs/extension-hub.md`)
 
 ## 性能与规模预期
 - **规模假设(2026-06-18 修订)**:本地 = 多用户各自单机;**云平台 = 多租户共享**,并发不再是个位数,需按租户配额/隔离/容量规划(见 [[ADR-011]]);原"单用户"假设作废。

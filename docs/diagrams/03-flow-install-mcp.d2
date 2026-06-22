@@ -1,0 +1,17 @@
+shape: sequence_diagram
+
+# 流程① 一键安装 MCP 连接器
+# actors: Renderer(定制中心 UI) / 主进程(ipcMain) / opencode server(经 SDK)
+# 零-fork 边界: 主进程写 user opencode.jsonc;SDK mcp.add+connect 不改 upstream
+
+Renderer -> 主进程: "window.api.ext.installMcp(entry) [entry含 name/type/url/headers?]"
+
+主进程 -> 主进程: "读 ~/.config/opencode/config.jsonc 备份为 .bak(原子写准备)"
+
+主进程 -> 主进程: "jsonc modify → mcp[name]写入 (复刻 CLI addMcpToConfig) 原子替换磁盘文件"
+
+主进程 -> opencode: "sdk.mcp.add(name, entry) + sdk.mcp.connect(name)"
+
+opencode -> 主进程: "{ok:true} 或 {error, needsOAuth:true}"
+
+主进程 -> Renderer: "{status:connected} 或 {status:needs_oauth, oauthUrl} 或 {status:error, message, rolledBack}"

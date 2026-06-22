@@ -210,6 +210,21 @@ export function createMainWindow() {
           console.log("[alpha-open] new-session:", JSON.stringify(r2))
           await new Promise((res) => setTimeout(res, 5000))
         }
+        // optional: click a button by visible text before capture (e.g. open the Extension Hub),
+        // so we can screenshot a surface that needs one interaction. Env-gated, no normal effect.
+        if (process.env.ALPHA_SHOT_CLICK) {
+          const want = process.env.ALPHA_SHOT_CLICK
+          const clicked = await win.webContents
+            .executeJavaScript(
+              `(()=>{const want=${JSON.stringify(want)};` +
+                `const el=[...document.querySelectorAll('button,[role=button],a')]` +
+                `.find(e=>((e.textContent||'').includes(want)));` +
+                `if(el){el.click();return 'clicked:'+want}return 'notfound:'+want})()`,
+            )
+            .catch((e) => "err:" + e.message)
+          console.log("[alpha-shot] click:", JSON.stringify(clicked))
+          await new Promise((res) => setTimeout(res, 1800))
+        }
         const img = await win.webContents.capturePage()
         await writeFile(process.env.ALPHA_SHOT as string, img.toPNG())
         console.log("[alpha-shot]", process.env.ALPHA_SHOT, JSON.stringify(img.getSize()))

@@ -15,6 +15,7 @@ import type { ServerReadyData } from "../preload/types"
 import { checkAppExists, resolveAppPath } from "./apps"
 import { CHANNEL } from "./constants"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand } from "./ipc"
+import { registerExtIpcHandlers } from "./ext-ipc"
 import { forwardInitializationFailure } from "./initialization"
 import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
 import { parseMarkdown } from "./markdown"
@@ -39,6 +40,15 @@ import { registerWslIpcHandlers } from "./wsl/ipc"
 import { spawnWslSidecar } from "./wsl/sidecar"
 import { migrate } from "./migrate"
 import { ensureAlphaLayoutDefault } from "./alpha-defaults"
+import {
+  getAuthState,
+  handleAuthDeepLink,
+  initAuthEnv,
+  logout as authLogout,
+  setAuthDeps,
+  setAuthMode,
+  startAuth,
+} from "./alpha-auth"
 
 const APP_NAMES: Record<string, string> = {
   dev: "alpha-code",
@@ -69,9 +79,12 @@ function useEnvProxy() {
 }
 
 function emitDeepLinks(urls: string[]) {
-  if (urls.length === 0) return
-  pendingDeepLinks.push(...urls)
-  if (mainWindow) sendDeepLinks(mainWindow, urls)
+  // alpha-code://auth/* is consumed by the auth module (PKCE token exchange) and never forwarded
+  // to the renderer; every other deep link flows on as before.
+  const forwarded = urls.filter((url) => !handleAuthDeepLink(url))
+  if (forwarded.length === 0) return
+  pendingDeepLinks.push(...forwarded)
+  if (mainWindow) sendDeepLinks(mainWindow, forwarded)
 }
 
 async function killSidecar() {
@@ -188,9 +201,12 @@ const main = Effect.gen(function* () {
   }
 
   preferAppEnv(app.getPath("userData"))
+  // Derive the platform proxy env (ALPHA_BASE_URL/ALPHA_API_KEY for the model proxy + cloud MCP)
+  // from any stored login or DEV_PLATFORM_TOKEN, BEFORE the sidecar forks so it inherits them.
+  initAuthEnv(app.getPath("userData"))
 
   app.on("second-instance", (_event: Event, argv: string[]) => {
-    const urls = argv.filter((arg: string) => arg.startsWith("opencode://"))
+    const urls = argv.filter((arg: string) => arg.startsWith("opencode://") || arg.startsWith("alpha-code://"))
     if (urls.length) {
       logger.log("deep link received via second-instance", { urls })
       emitDeepLinks(urls)
@@ -240,6 +256,9 @@ const main = Effect.gen(function* () {
   if (!TEST_ONBOARDING) migrate()
   ensureAlphaLayoutDefault()
   app.setAsDefaultProtocolClient("opencode")
+  // Own auth-callback scheme, registered alongside opencode:// (not replacing it), so a co-installed
+  // official opencode desktop can neither hijack nor be hijacked by our alpha-code://auth/callback.
+  app.setAsDefaultProtocolClient("alpha-code")
   registerRendererProtocol()
   setDockIcon()
   const updater = setupAutoUpdater(stopSidecars)
@@ -268,8 +287,15 @@ const main = Effect.gen(function* () {
     setBackgroundColor: (color) => setBackgroundColor(color),
     exportDebugLogs: () => exportDebugLogs(),
     recordFatalRendererError: (error) => writeLog("renderer", "fatal renderer error", { ...error }, "error"),
+    auth: {
+      getState: () => getAuthState(),
+      start: () => startAuth(),
+      logout: () => authLogout(),
+      setMode: (mode) => setAuthMode(mode),
+    },
   })
   registerWslIpcHandlers(wslServers)
+  registerExtIpcHandlers()
   void updater.start()
   const updateTimer = setInterval(() => void updater.check(), 10 * 60 * 1000)
   updateTimer.unref()
@@ -350,6 +376,7 @@ const main = Effect.gen(function* () {
   yield* Fiber.await(loadingTask)
 
   mainWindow = createMainWindow()
+  setAuthDeps({ getWindow: () => mainWindow, relaunch })
   if (mainWindow) {
     createMenu({
       trigger: (id) => {

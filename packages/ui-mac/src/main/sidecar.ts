@@ -129,6 +129,26 @@ function injectAlphaConfig(userDataPath: string) {
       config.provider = { ...(config.provider ?? {}), ...models.provider }
     }
 
+    //   3. Cloud tool gateway (alpha-platform B). Registered only when platform-pays is active —
+    //      the env is derived from the stored login / DEV_PLATFORM_TOKEN by main (alpha-auth.ts §③),
+    //      so logged-out / BYOK leaves it dark. The same bearer fronts the model proxy
+    //      (ALPHA_API_KEY) and this MCP tool gateway (see docs/platform-integration.md). oauth:false
+    //      because we attach our own capability token and must skip OAuth auto-detection.
+    const mcpUrl = process.env.ALPHA_CLOUD_MCP_URL
+    const mcpToken = process.env.ALPHA_CLOUD_TOKEN
+    if (mcpUrl && mcpToken) {
+      config.mcp = {
+        ...(config.mcp ?? {}),
+        cloud: {
+          type: "remote",
+          url: mcpUrl,
+          enabled: true,
+          headers: { Authorization: `Bearer ${mcpToken}` },
+          oauth: false,
+        },
+      }
+    }
+
     process.env.OPENCODE_CONFIG_CONTENT = JSON.stringify(config)
   } catch (error) {
     console.warn("failed to inject alpha config", error)

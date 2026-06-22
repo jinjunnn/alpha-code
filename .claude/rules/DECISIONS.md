@@ -15,6 +15,7 @@
 | [ADR-007](adrs/ADR-007-brand-transform.md) | 品牌化 build-time transform | accepted | 2026-06-15 |
 | [ADR-008](adrs/ADR-008-sidebar.md) | Codex 风格左边栏(Portal + SDK + CSS 接缝) | accepted | 2026-06-17 |
 | [ADR-009](adrs/ADR-009-websearch-default.md) | websearch 默认放开 + alpha.env 秘钥落点 | accepted | 2026-06-18 |
-| [ADR-010](adrs/ADR-010-cloud-platform.md) | 云执行平台与派发接缝 | proposed | 2026-06-18 |
-| [ADR-011](adrs/ADR-011-cloud-tiers-tools.md) | 云执行分层、运行时与工具注入 | proposed | 2026-06-18 |
 | [ADR-012](adrs/ADR-012-ui-mac-channel.md) | ui-mac 发布默认 prod 渠道,dev/beta 保留不删 | accepted | 2026-06-18 |
+| [ADR-014](adrs/ADR-014-extension-hub.md) | 定制中心:Skills/MCP/Plugins 市场 + alpha 自建套件 + 零-fork 安装 | trial | 2026-06-22 |
+
+> 📦 **ADR-010/011/013(云平台内部决策)已迁至 `alpha-platform/.claude/rules/adrs/`**(2026-06-22)。本仓只保留"本地→云派发接缝"(见 [ADR-002](adrs/ADR-002-backend-seams.md));文中其余处对它们的引用视为跨项目引用。

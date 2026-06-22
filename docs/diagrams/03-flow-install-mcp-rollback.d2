@@ -1,0 +1,15 @@
+shape: sequence_diagram
+
+# 流程①-B MCP 安装失败回滚子流程
+# 触发条件: jsonc 写成功但 sdk.mcp.connect 返回错误
+# actors 同主流程
+
+主进程 -> opencode: "sdk.mcp.connect(name) → 超时/认证错"
+
+opencode -> 主进程: "{error: connect_failed / auth_required}"
+
+主进程 -> 主进程: "从 .bak 还原 opencode.jsonc (覆盖写, 删 .bak)"
+
+主进程 -> Renderer: "{status:error, phase:connect, message, rolledBack:true}"
+
+Renderer -> Renderer: "弹 toast 错误 + 保留「重试」和「需要配置 token」入口"
