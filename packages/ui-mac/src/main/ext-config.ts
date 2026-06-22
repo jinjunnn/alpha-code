@@ -55,7 +55,20 @@ function validateServer(server: Record<string, unknown>): ConfigResult {
   }
   const url = (server as { url?: unknown }).url
   if (typeof url === "string") {
-    const ok = url.startsWith("https://") || url.startsWith("http://localhost") || url.startsWith("http://127.0.0.1")
+    // Parse with the WHATWG URL (not a substring prefix) so hosts like http://localhost.evil.com
+    // or http://127.0.0.1@evil.com can't slip past the loopback allowlist. https is allowed for any
+    // host (remote MCP); plain http only for loopback, and never with embedded credentials.
+    let parsed: URL
+    try {
+      parsed = new URL(url)
+    } catch {
+      return { ok: false, reason: "invalid url" }
+    }
+    const loopback =
+      parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "[::1]"
+    const ok =
+      parsed.protocol === "https:" ||
+      (parsed.protocol === "http:" && loopback && !parsed.username && !parsed.password)
     if (!ok) return { ok: false, reason: "only https (or loopback http) URLs are allowed" }
   }
   return { ok: true }
