@@ -9,6 +9,14 @@
   z-index: 30;
 }
 
+/* The sidebar sits at a higher z-index and would cover the centered panel's left edge. The panel
+ * is position:fixed (centred in the viewport via inset:0 + margin:auto), so overriding its `left`
+ * to the sidebar width re-centres it within [sidebar, right] — i.e. in the content area. Collapsed
+ * sidebar → no rule → full-viewport centering. */
+body[data-alpha-sidebar="open"] .alpha-ext-panel {
+  left: var(--alpha-sidebar-w, 260px);
+}
+
 .alpha-ext-backdrop {
   position: fixed;
   inset: 0;
