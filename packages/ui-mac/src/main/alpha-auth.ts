@@ -14,7 +14,7 @@
 // dev:DEV_PLATFORM_TOKEN 把"已登录 + platform"静态短路,跳过 ①②(doc §A,不等 web)。
 
 import { createHash, randomBytes, randomUUID } from "node:crypto"
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { safeStorage, shell, type BrowserWindow } from "electron"
 import type { AuthMode, AuthState } from "../preload/types"
@@ -71,16 +71,20 @@ function authFilePath() {
 
 function persist() {
   try {
-    mkdirSync(userDataPath, { recursive: true })
+    // Credentials → owner-only perms (0o600 file, 0o700 dir). Matters most for the no-keychain
+    // fallback (plaintext tokens), but apply to both so another local account can't read the file.
+    mkdirSync(userDataPath, { recursive: true, mode: 0o700 })
     const json = JSON.stringify(stored)
     if (safeStorage.isEncryptionAvailable()) {
       const enc = safeStorage.encryptString(json).toString("base64")
-      writeFileSync(authFilePath(), JSON.stringify({ v: 1, enc }), "utf8")
+      writeFileSync(authFilePath(), JSON.stringify({ v: 1, enc }), { encoding: "utf8", mode: 0o600 })
     } else {
       // No OS keychain (e.g. headless Linux): tokens are short-lived; flag the fallback loudly.
       warn("alpha-auth: safeStorage unavailable, persisting auth without encryption")
-      writeFileSync(authFilePath(), JSON.stringify({ v: 1, plain: json }), "utf8")
+      writeFileSync(authFilePath(), JSON.stringify({ v: 1, plain: json }), { encoding: "utf8", mode: 0o600 })
     }
+    // mode on writeFileSync only applies when CREATING the file — chmod to tighten a pre-existing one.
+    chmodSync(authFilePath(), 0o600)
   } catch (error) {
     warn("alpha-auth: persist failed", error)
   }

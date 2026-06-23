@@ -69,6 +69,8 @@ export const dict = {
   "alpha.ext.loading": "加载中…",
   "alpha.ext.pluginRestart": "已写入,重启后生效",
   "alpha.ext.installSlow": "已写入,首次连接较慢(在下载依赖),稍后或重启后自动连接",
+  "alpha.ext.pickWorkspace": "选择该连接器可访问的目录",
+  "alpha.ext.cancelled": "已取消",
   "alpha.sidebar.settings": "设置",
   "alpha.sidebar.help": "帮助",
   "alpha.sidebar.more": "更多",

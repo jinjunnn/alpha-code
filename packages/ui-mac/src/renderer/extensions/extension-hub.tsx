@@ -96,7 +96,15 @@ export function ExtensionHub(props: {
     const spec = e.installSpec && e.installSpec.kind === "mcp" ? e.installSpec : undefined
     const rc = await ext.checkRuntime(spec?.runtimeDep)
     if (!rc.ok) return { ok: false, reason: t("alpha.ext.runtimeMissing", { tool: rc.missing }) }
-    return ext.addMcp(e)
+    // Some MCP commands need a {workspace} directory (filesystem/git) — let the user pick one.
+    let workspace: string | undefined
+    if (spec?.command?.some((a) => a.includes("{workspace}"))) {
+      const picked = await window.api.openDirectoryPicker({ title: t("alpha.ext.pickWorkspace") })
+      const dir = Array.isArray(picked) ? picked[0] : picked
+      if (!dir) return { ok: false, reason: t("alpha.ext.cancelled") }
+      workspace = dir
+    }
+    return ext.addMcp(e, undefined, workspace)
   }
 
   // Bundle = alpha-defined manifest: fan out to install each referenced entry by its own type
