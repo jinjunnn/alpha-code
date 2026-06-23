@@ -70,6 +70,8 @@ export const dict = {
   "alpha.ext.loading": "Loading…",
   "alpha.ext.pluginRestart": "Saved — restart to apply",
   "alpha.ext.installSlow": "Saved — first connect is slow (downloading deps); finishing in the background",
+  "alpha.ext.pickWorkspace": "Pick a directory this connector can access",
+  "alpha.ext.cancelled": "Cancelled",
   "alpha.sidebar.settings": "Settings",
   "alpha.sidebar.help": "Help",
   "alpha.sidebar.more": "More",

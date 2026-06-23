@@ -33,7 +33,7 @@ export interface ExtensionsApi {
   store: ExtensionsStore
   refresh(): Promise<void>
   /** Persist (durable) + live add + connect an MCP catalog entry. env fills requiredEnvVars. */
-  addMcp(entry: CatalogEntry, env?: Record<string, string>): Promise<ActionResult>
+  addMcp(entry: CatalogEntry, env?: Record<string, string>, workspace?: string): Promise<ActionResult>
   /** Toggle a known MCP server: connect when shouldConnect, else disconnect. */
   setMcpConnected(name: string, shouldConnect: boolean): Promise<void>
   /** Remove an MCP server from the user config + disconnect. */
@@ -91,15 +91,30 @@ function renderHeaders(
   return out
 }
 
-function toMcpConfig(spec: McpInstallSpec, env: Record<string, string>): McpConfig {
+// China mirrors for first-run package downloads (uvx→PyPI, npx→npm). Applied only for zh locales.
+// Unknown vars are ignored by the other tool, and a wrong mirror merely falls back to the default —
+// never fatal (unlike a bad config key). Users can override in opencode.jsonc.
+const IS_CN = typeof navigator !== "undefined" && /^zh\b/i.test(navigator.language ?? "")
+const CN_MIRROR_ENV: Record<string, string> = IS_CN
+  ? {
+      UV_DEFAULT_INDEX: "https://pypi.tuna.tsinghua.edu.cn/simple",
+      PIP_INDEX_URL: "https://pypi.tuna.tsinghua.edu.cn/simple",
+      npm_config_registry: "https://registry.npmmirror.com",
+    }
+  : {}
+
+function toMcpConfig(spec: McpInstallSpec, env: Record<string, string>, workspace?: string): McpConfig {
   if (spec.mcpType === "remote") {
     const headers = renderHeaders(spec.headersTemplate, env)
     return { type: "remote", url: spec.url ?? "", ...(headers ? { headers } : {}) }
   }
+  // Substitute the {workspace} placeholder — filesystem/git need a real directory the user picked.
+  const command = (spec.command ?? []).map((arg) => (workspace ? arg.split("{workspace}").join(workspace) : arg))
+  const environment = { ...CN_MIRROR_ENV, ...env }
   return {
     type: "local",
-    command: spec.command ?? [],
-    ...(Object.keys(env).length ? { environment: env } : {}),
+    command,
+    ...(Object.keys(environment).length ? { environment } : {}),
   }
 }
 
@@ -148,12 +163,12 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>): Extensi
     }
   }
 
-  async function addMcp(entry: CatalogEntry, env?: Record<string, string>): Promise<ActionResult> {
+  async function addMcp(entry: CatalogEntry, env?: Record<string, string>, workspace?: string): Promise<ActionResult> {
     const c = client
     if (!c) return { ok: false, reason: "no server" }
     const spec = entry.installSpec
     if (!spec || spec.kind !== "mcp") return { ok: false, reason: "not an MCP entry" }
-    const config = toMcpConfig(spec, env ?? {})
+    const config = toMcpConfig(spec, env ?? {}, workspace)
     // 1. Durable: write the user's opencode.jsonc first. If this fails, never touch the live server
     //    — avoids a "live but not persisted" state that vanishes on restart.
     const persisted = await window.api.ext.persistMcp(entry.name, config as unknown as Record<string, unknown>)
