@@ -6,7 +6,7 @@
 
 ## Project Rules(/app:* 方法论)
 
-**定位**:基于 opencode fork 的 Mac 编码 agent 产品(面向多用户 + 云多租户)—— 本地不改 opencode 自身文件,以原生 workspace 成员叠加自有 UI 与后端,fork-sync 零冲突继承上游;云平台为独立运行时(见 ADR-010/011)。
+**定位**:基于 opencode fork 的 Mac 编码 agent 产品(面向多用户 + 云多租户)—— 本地不改 opencode 自身文件,以原生 workspace 成员叠加自有 UI 与后端,fork-sync 零冲突继承上游;云平台为独立运行时(见独立项目 alpha-platform 的 .claude/rules)。
 **北极星**:升级隔离健康度 —— 每次 upstream sync 后冲突文件数 = 0。
 **明确不做**:① 编辑任何 opencode 自身的文件(只新增);② 重写 agent core/session/context 引擎;③ 给 upstream 提 PR(这是个人 fork)。
 **硬约束**:① 只新增文件,绝不改 opencode 既有文件(否则 fork-sync 冲突);② 前后端只走 `@opencode-ai/sdk` 契约;③ 后端走 plugin/tool/MCP,新 HTTP 接口走 sidecar 不改 server。
