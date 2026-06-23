@@ -33,8 +33,18 @@ const SAFE_MCP_FIELDS = new Set([
 const SAFE_COMMAND_HEADS = new Set(["uv", "uvx", "node", "npx", "bun", "bunx", "python", "python3", "git", "deno"])
 const SAFE_ABS_PREFIXES = ["/opt/homebrew/bin/", "/usr/local/bin/", "/usr/bin/"]
 
+function userConfigDir(): string {
+  // Mirror opencode's own resolution (core/global.ts): OPENCODE_CONFIG_DIR wins, else
+  // XDG_CONFIG_HOME/opencode, else ~/.config/opencode. This also isolates writes under
+  // OPENCODE_TEST_ONBOARDING (which redirects XDG_CONFIG_HOME to a temp dir) so test installs
+  // never touch the user's real config.
+  if (process.env.OPENCODE_CONFIG_DIR) return process.env.OPENCODE_CONFIG_DIR
+  if (process.env.XDG_CONFIG_HOME) return path.join(process.env.XDG_CONFIG_HOME, "opencode")
+  return path.join(os.homedir(), ".config", "opencode")
+}
+
 function userConfigPath(): string {
-  const dir = path.join(os.homedir(), ".config", "opencode")
+  const dir = userConfigDir()
   const jsonc = path.join(dir, "opencode.jsonc")
   const json = path.join(dir, "opencode.json")
   if (fs.existsSync(jsonc)) return jsonc
@@ -74,7 +84,13 @@ function validateServer(server: Record<string, unknown>): ConfigResult {
   return { ok: true }
 }
 
+// Top-level keys we've verified against opencode's V1 schema (packages/core/src/v1/config/config.ts).
+// opencode hard-fails its ENTIRE config on any unrecognized top-level key, so a single wrong key
+// breaks every session — this allowlist makes such a regression fail loudly here instead.
+const ALLOWED_TOP_KEYS = new Set(["mcp", "plugin"])
+
 function writeKey(keyPath: string[], value: unknown): ConfigResult {
+  if (!ALLOWED_TOP_KEYS.has(keyPath[0])) return { ok: false, reason: `refused: unknown config key "${keyPath[0]}"` }
   const target = userConfigPath()
   const bak = `${target}.bak`
   const tmp = `${target}.tmp`
@@ -141,9 +157,9 @@ function pkgBase(spec: string): string {
 }
 
 /**
- * Append a plugin package to the config `plugins` array (opencode auto-installs it from npm on the
- * next launch). Idempotent. The caller should prompt for a restart — opencode reads `plugins` at
- * boot only.
+ * Append a plugin package to the config `plugin` array (SINGULAR — the key opencode's V1 schema
+ * accepts; `plugins` would hard-fail the whole config). opencode auto-installs it from npm on next
+ * launch. Idempotent; the caller should prompt for a restart (config is read at boot only).
  */
 export function persistPlugin(pkg: string): ConfigResult {
   if (!SAFE_PACKAGE.test(pkg)) return { ok: false, reason: "invalid package name" }
@@ -155,14 +171,17 @@ export function persistPlugin(pkg: string): ConfigResult {
     return { ok: false, reason: "failed to read config" }
   }
   const errors: ParseError[] = []
-  const parsed = parse(text, errors) as { plugins?: unknown } | undefined
-  const current: unknown[] = Array.isArray(parsed?.plugins) ? (parsed!.plugins as unknown[]) : []
+  // opencode validates opencode.jsonc with its V1 schema, whose key is `plugin` (SINGULAR) —
+  // `plugins` is an unrecognized key and makes opencode hard-fail the ENTIRE config (breaking every
+  // session), see packages/core/src/v1/config/config.ts:56. Element shape is string | [string, opts].
+  const parsed = parse(text, errors) as { plugin?: unknown } | undefined
+  const current: unknown[] = Array.isArray(parsed?.plugin) ? (parsed!.plugin as unknown[]) : []
   const base = pkgBase(pkg)
   const exists = current.some((p) => {
     if (typeof p === "string") return pkgBase(p) === base
-    if (p && typeof p === "object") return pkgBase(String((p as { package?: string }).package ?? "")) === base
+    if (Array.isArray(p) && typeof p[0] === "string") return pkgBase(p[0]) === base
     return false
   })
   if (exists) return { ok: true }
-  return writeKey(["plugins"], [...current, pkg])
+  return writeKey(["plugin"], [...current, pkg])
 }
