@@ -30,3 +30,4 @@ related: [ADR-002, ADR-003, ADR-006, ADR-008, ADR-009]
 - ⚠️ "MCP catalog/镜像感知安装"是净新增维护面(对策:先内置 3-5 条、小而精);plugin 装包需重启 + 中国区 egress(对策:内置资源 + V2 npmmirror);新增主进程 IPC 写 config = 新攻击面(对策:§4 的路径/字段/命令/URL 白名单)。
 - 🔭 待 plan-review 确认:① MVP 是 MCP-first(本设计)还是全量;② Agent/Command 进市场 tab 否;③ F9 串台默认开关;④ 远程 catalog 是否依赖 alpha-web(C)。
 - 修订:2026-06-22 经 design-arch Round1/Round2 瘦身,产出权威设计 `docs/designs/2026-06-22-arch-extension-hub.md`(v2)。
+- 修订:2026-06-23 — 核实实现已超本 ADR 所述 MVP:**create skill/agent 表单 + plugin 安装实际已发**(commit `59c0786`,非"降级 V1+ roadmap")。本次补齐 V1+ roadmap 的 **builtin-skill 安装(E1b)**:`resources/skills/<key>` 资产 + electron-builder `extraResources` + 主进程 `installBuiltinSkill`(按 `builtinAssetKey` 复制进用户 scanned skills 目录,白名单+防逃逸)+ IPC/preload/渲染层全链路;种 2 条 alpha 自写 MIT 技能(`alpha-upstream-sync`/`safe-refactor`)。官方 4 条 Apache-2.0 仍待内容打包(现诚实失败,非占位)。详见 `docs/harness-extension-backlog.md` 的 E1b。

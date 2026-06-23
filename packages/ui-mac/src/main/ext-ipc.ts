@@ -7,7 +7,7 @@ import { ipcMain, type IpcMainInvokeEvent } from "electron"
 import { execFile } from "node:child_process"
 import * as os from "node:os"
 import { persistMcp, persistPlugin, removeMcp } from "./ext-config"
-import { writeAgent, writeSkill } from "./ext-fs-installer"
+import { installBuiltinSkill, writeAgent, writeSkill } from "./ext-fs-installer"
 
 // GUI apps on macOS launch with a minimal PATH (no Homebrew), so augment it before `which` or we'd
 // false-negative tools the user actually has installed.
@@ -46,4 +46,9 @@ export function registerExtIpcHandlers() {
     writeAgent(name, content),
   )
   ipcMain.handle("ext-install-plugin", (_event: IpcMainInvokeEvent, pkg: string) => persistPlugin(pkg))
+  ipcMain.handle(
+    "ext-install-builtin-skill",
+    (_event: IpcMainInvokeEvent, builtinAssetKey: string, name: string) =>
+      installBuiltinSkill(builtinAssetKey, name),
+  )
 }
