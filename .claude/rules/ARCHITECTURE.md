@@ -45,6 +45,7 @@
 - ADR-009:websearch 默认放开 + alpha.env → adrs/ADR-009-websearch-default.md
 - ADR-012:ui-mac 发布默认 prod 渠道,dev/beta 保留不删 → adrs/ADR-012-ui-mac-channel.md
 - ADR-014(proposed):定制中心 — Skills/MCP/Plugins 可视化市场 + alpha 自建套件 + 零-fork 安装 → adrs/ADR-014-extension-hub.md(设计:`docs/designs/extension-hub.md`)
+- ADR-015(accepted):提示词优化策略 — 上游底座只读 + 能力感知 identity(Tier-1)+ 行为层 alpha-behavior(Tier-3)+ 合并验证纪律 → adrs/ADR-015-prompt-optimization-strategy.md
 
 ## 性能与规模预期
 - **规模假设(2026-06-18 修订)**:本地 = 多用户各自单机;**云平台 = 多租户共享**,并发不再是个位数,需按租户配额/隔离/容量规划(见 [[ADR-011]]);原"单用户"假设作废。

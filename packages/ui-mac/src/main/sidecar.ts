@@ -2,7 +2,8 @@ import * as fs from "node:fs"
 import * as http from "node:http"
 import * as path from "node:path"
 import * as tls from "node:tls"
-import { ALPHA_IDENTITY_MD } from "./alpha-identity"
+import { ALPHA_BEHAVIOR_MD } from "./alpha-behavior"
+import { buildAlphaIdentity } from "./alpha-identity"
 import { buildAlphaModelConfig } from "./alpha-models"
 
 type NodeHttpWithEnvProxy = typeof http & {
@@ -100,7 +101,11 @@ function prepareSidecarEnv(password: string, userDataPath: string) {
 //
 //   1. Brand identity (ALPHA_IDENTITY_DISABLE): a global instruction file written to
 //      userDataPath (stable absolute path in both dev and the packaged .app) added to
-//      `instructions`, so the agent calls itself "alpha-code".
+//      `instructions`, so the agent calls itself "alpha-code". Now also carries per-session
+//      capability facts (websearch / cloud dispatch) — see buildAlphaIdentity(caps). Behavior-neutral.
+//   1b. Response guidance (ALPHA_BEHAVIOR_DISABLE): a SEPARATE instruction file (alpha-behavior.ts)
+//      that deliberately tunes agent behavior (Tier-3, ADR-015). Gated independently of identity and
+//      carries a drift caveat — re-validate after every upstream prompt bump.
 //   2. Curated model menu (ALPHA_MODELS_DISABLE): provider allowlist + per-provider model
 //      whitelist + custom/ALPHA gateways + default model. See alpha-models.ts for the shape and
 //      the {env:VAR} key story.
@@ -113,12 +118,30 @@ function injectAlphaConfig(userDataPath: string) {
     const existing = process.env.OPENCODE_CONFIG_CONTENT
     const config = existing ? JSON.parse(existing) : { $schema: "https://opencode.ai/config.json" }
 
-    if (!process.env.ALPHA_IDENTITY_DISABLE) {
-      const identityPath = path.join(userDataPath, "alpha-identity.md")
+    const wantIdentity = !process.env.ALPHA_IDENTITY_DISABLE
+    const wantBehavior = !process.env.ALPHA_BEHAVIOR_DISABLE
+    if (wantIdentity || wantBehavior) {
       fs.mkdirSync(userDataPath, { recursive: true })
-      fs.writeFileSync(identityPath, ALPHA_IDENTITY_MD)
       const instructions: string[] = Array.isArray(config.instructions) ? config.instructions : []
-      if (!instructions.includes(identityPath)) instructions.push(identityPath)
+      const addInstruction = (name: string, body: string) => {
+        const file = path.join(userDataPath, name)
+        fs.writeFileSync(file, body)
+        if (!instructions.includes(file)) instructions.push(file)
+      }
+
+      if (wantIdentity) {
+        // Capability facts the base prompt can't know — purely informational (ADR-009 / ADR-002).
+        const caps = {
+          websearch:
+            process.env.ALPHA_WEBSEARCH_DISABLE !== "1" && process.env.OPENCODE_ENABLE_EXA !== "0",
+          cloudDispatch: Boolean(process.env.ALPHA_CLOUD_MCP_URL && process.env.ALPHA_CLOUD_TOKEN),
+        }
+        addInstruction("alpha-identity.md", buildAlphaIdentity(caps))
+      }
+
+      // Tier-3 behavioral tuning (ADR-015), independently gated. See alpha-behavior.ts for the drift caveat.
+      if (wantBehavior) addInstruction("alpha-behavior.md", ALPHA_BEHAVIOR_MD)
+
       config.instructions = instructions
     }
 
