@@ -266,8 +266,15 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>): Extensi
   }
 
   async function installSkill(entry: CatalogEntry): Promise<ActionResult> {
-    const body = `${entry.description}\n\n> 本技能条目来自${entry.source}(${entry.id})。如需完整脚本/正文,请补充上游内容。`
-    return window.api.ext.writeSkill(entry.name, entry.description, body)
+    const spec = entry.installSpec
+    if (spec?.kind !== "skill") return { ok: false, reason: "not a skill entry" }
+    // Builtin = content shipped in the app's resources/skills; the main process copies the real
+    // SKILL.md (+ assets) into the user's scanned skills dir. Honest failure when this build doesn't
+    // bundle that asset yet (e.g. the Apache-2.0 entries pending content drop) — no placeholder stub.
+    if (spec.source === "builtin" && spec.builtinAssetKey) {
+      return window.api.ext.installBuiltinSkill(spec.builtinAssetKey, entry.name)
+    }
+    return { ok: false, reason: "该技能内容尚未随此版本打包" }
   }
 
   async function installPlugin(entry: CatalogEntry): Promise<ActionResult> {

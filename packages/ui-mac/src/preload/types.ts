@@ -130,5 +130,9 @@ export type ElectronAPI = {
     ) => Promise<{ ok: true } | { ok: false; reason: string }>
     writeAgent: (name: string, content: string) => Promise<{ ok: true } | { ok: false; reason: string }>
     installPlugin: (pkg: string) => Promise<{ ok: true } | { ok: false; reason: string }>
+    installBuiltinSkill: (
+      builtinAssetKey: string,
+      name: string,
+    ) => Promise<{ ok: true } | { ok: false; reason: string }>
   }
 }

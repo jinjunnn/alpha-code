@@ -5,9 +5,11 @@
 // land in agent/<name>.md. Everything is name-validated and confined to ~/.config/opencode
 // (ADR-014 §8) — no path escapes, no writes outside that root.
 
+import { app } from "electron"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
+import { fileURLToPath } from "node:url"
 
 export type FsResult = { ok: true } | { ok: false; reason: string }
 
@@ -72,5 +74,41 @@ export function writeAgent(name: string, content: string): FsResult {
     return { ok: true }
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : "failed to write agent" }
+  }
+}
+
+// Resolve the app's bundled-resources root the same way windows.ts does: process.resourcesPath when
+// packaged, else the in-repo resources/ dir relative to the built main bundle (out/main).
+function resourcesRoot(): string {
+  return app.isPackaged
+    ? process.resourcesPath
+    : path.join(path.dirname(fileURLToPath(import.meta.url)), "../../resources")
+}
+
+// builtinAssetKey is author-controlled (the catalog), but validate it anyway so a bad entry can't
+// escape the resources/skills tree.
+const SAFE_ASSET_KEY = /^skills\/[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
+
+/**
+ * Install a builtin (app-bundled) skill: copy resources/<builtinAssetKey>/ into the user's globally
+ * scanned skills/<name>/. Fails honestly when the asset isn't bundled in this build, rather than
+ * writing a misleading placeholder.
+ */
+export function installBuiltinSkill(builtinAssetKey: string, name: string): FsResult {
+  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid skill name" }
+  if (!SAFE_ASSET_KEY.test(builtinAssetKey)) return { ok: false, reason: "invalid asset key" }
+  const srcDir = path.join(resourcesRoot(), builtinAssetKey)
+  if (!fs.existsSync(path.join(srcDir, "SKILL.md"))) {
+    return { ok: false, reason: "技能内容未随此版本打包" }
+  }
+  const destDir = safeResolve("skills", name)
+  if (!destDir) return { ok: false, reason: "refused: path escapes config dir" }
+  try {
+    fs.mkdirSync(destDir, { recursive: true })
+    // Bundled content is trusted (we authored it); copy the whole skill dir (SKILL.md + any assets).
+    fs.cpSync(srcDir, destDir, { recursive: true })
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "failed to install skill" }
   }
 }

@@ -64,6 +64,12 @@ const getBase = (appId: string): Configuration => ({
       to: "native/",
       filter: ["index.js", "index.d.ts", "build/Release/mac_window.node", "swift-build/**"],
     },
+    {
+      // Bundled builtin skills (Extension Hub E1b): land at process.resourcesPath/skills so the main
+      // process (ext-fs-installer.installBuiltinSkill) can copy them into the user's scanned dir.
+      from: "resources/skills/",
+      to: "skills/",
+    },
   ],
   mac: {
     category: "public.app-category.developer-tools",

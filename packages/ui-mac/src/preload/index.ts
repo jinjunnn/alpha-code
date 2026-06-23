@@ -138,6 +138,8 @@ const api: ElectronAPI = {
     writeSkill: (name, description, body) => ipcRenderer.invoke("ext-write-skill", name, description, body),
     writeAgent: (name, content) => ipcRenderer.invoke("ext-write-agent", name, content),
     installPlugin: (pkg) => ipcRenderer.invoke("ext-install-plugin", pkg),
+    installBuiltinSkill: (builtinAssetKey, name) =>
+      ipcRenderer.invoke("ext-install-builtin-skill", builtinAssetKey, name),
   },
 }
 

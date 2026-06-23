@@ -209,6 +209,40 @@
       }
     },
     {
+      "id": "skill:alpha-upstream-sync",
+      "type": "skill",
+      "name": "alpha-upstream-sync",
+      "displayName": "上游同步 + 覆盖校验",
+      "description": "把 opencode 上游并进 fork,并按 ADR-015 复核 alpha 的 prompt/agent 覆盖是否与新底座矛盾。",
+      "source": "alpha",
+      "category": "dev",
+      "license": "MIT",
+      "redistributable": true,
+      "installSpec": {
+        "kind": "skill",
+        "source": "builtin",
+        "builtinAssetKey": "skills/alpha-upstream-sync",
+        "targetDir": "global"
+      }
+    },
+    {
+      "id": "skill:safe-refactor",
+      "type": "skill",
+      "name": "safe-refactor",
+      "displayName": "安全重构",
+      "description": "不改行为地重构:先固化可观测行为,小步可逆推进,全程保持 observers 为绿。",
+      "source": "alpha",
+      "category": "dev",
+      "license": "MIT",
+      "redistributable": true,
+      "installSpec": {
+        "kind": "skill",
+        "source": "builtin",
+        "builtinAssetKey": "skills/safe-refactor",
+        "targetDir": "global"
+      }
+    },
+    {
       "id": "plugin:opencode-notify",
       "type": "plugin",
       "name": "opencode-notify",
