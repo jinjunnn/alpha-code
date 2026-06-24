@@ -9,6 +9,8 @@ export const ALPHA_ENDPOINTS = {
   web: "https://auth.tidelabs.click",
   /** alpha-platform (B): model proxy (/v1) + MCP gateway (/mcp). */
   platform: "https://api.tidelabs.click",
+  /** alpha-platform (B) account-server (境内 PII/金融): balance / membership / usage ledger. */
+  account: "https://account.tidelabs.click",
 } as const
 
 // Path segments appended to the hosts above — the full alpha↔backend URL contract in one place.
@@ -24,4 +26,8 @@ export const ALPHA_PATHS = {
   modelProxy: "/v1",
   /** platform: MCP tool gateway → ALPHA_CLOUD_MCP_URL. */
   mcpGateway: "/mcp",
+  /** account-server: balance / membership / token-usage summary. */
+  accountSummary: "/v1/account/summary",
+  /** account-server: billing transaction history. */
+  transactions: "/v1/billing/transactions",
 } as const

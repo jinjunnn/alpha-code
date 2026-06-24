@@ -1,0 +1,44 @@
+// alpha account reads (balance / membership / token usage) from the alpha-platform (B) in-region
+// account-server, authed with the JWT alpha-web (C) issued. MAIN-ONLY: the renderer never sees the
+// token, only the resolved summary over IPC (account-ipc.ts).
+//
+// Contract: alpha-platform docs/alpha-code-account-integration.md —
+//   GET {ACCOUNT_BASE}/v1/account/summary   Authorization: Bearer <JWT>   → AccountSummary
+//   GET {ACCOUNT_BASE}/v1/billing/transactions
+//   401 = JWT 失效/缺失 → renderer should trigger re-login.
+// Account reads hit the in-region account-server (PII/金融 must stay in-region), NOT the model
+// gateway. Overridable via ALPHA_ACCOUNT_URL for dev/staging (consistent with ALPHA_WEB_URL /
+// ALPHA_PLATFORM_URL; see shared/alpha-config.ts).
+
+import { ALPHA_ENDPOINTS, ALPHA_PATHS } from "../shared/alpha-config"
+import { getAccessToken } from "./alpha-auth"
+import { getLogger } from "./logging"
+import type { AccountResult, AccountSummary, AccountTransaction } from "../preload/types"
+
+const accountBase = () => (process.env.ALPHA_ACCOUNT_URL ?? ALPHA_ENDPOINTS.account).replace(/\/+$/, "")
+
+async function authedGet<T>(path: string): Promise<AccountResult<T>> {
+  const token = getAccessToken()
+  if (!token) return { error: "not-authenticated" }
+  try {
+    const res = await fetch(`${accountBase()}${path}`, {
+      method: "GET",
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(8000),
+    })
+    if (res.status === 401) return { error: "unauthorized" }
+    if (!res.ok) return { error: `http-${res.status}` }
+    return (await res.json()) as T
+  } catch (error) {
+    getLogger().warn("alpha-account: fetch failed", error)
+    return { error: "network" }
+  }
+}
+
+export const fetchAccountSummary = (): Promise<AccountResult<AccountSummary>> =>
+  authedGet<AccountSummary>(ALPHA_PATHS.accountSummary)
+
+export const fetchTransactions = (limit?: number): Promise<AccountResult<{ transactions: AccountTransaction[] }>> =>
+  authedGet<{ transactions: AccountTransaction[] }>(
+    limit ? `${ALPHA_PATHS.transactions}?limit=${limit}` : ALPHA_PATHS.transactions,
+  )

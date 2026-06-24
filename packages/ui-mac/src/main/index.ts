@@ -16,6 +16,7 @@ import { checkAppExists, resolveAppPath } from "./apps"
 import { CHANNEL } from "./constants"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand } from "./ipc"
 import { registerExtIpcHandlers } from "./ext-ipc"
+import { registerAccountIpcHandlers } from "./account-ipc"
 import { forwardInitializationFailure } from "./initialization"
 import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
 import { parseMarkdown } from "./markdown"
@@ -296,6 +297,7 @@ const main = Effect.gen(function* () {
   })
   registerWslIpcHandlers(wslServers)
   registerExtIpcHandlers()
+  registerAccountIpcHandlers()
   void updater.start()
   const updateTimer = setInterval(() => void updater.check(), 10 * 60 * 1000)
   updateTimer.unref()

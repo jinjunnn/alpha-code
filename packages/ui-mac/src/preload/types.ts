@@ -51,6 +51,39 @@ export type AuthState = {
   expiresAt?: number
 }
 
+// alpha account summary — balance / membership / token usage, read from the alpha-platform (B)
+// in-region account-server using the stored JWT. Shared cross-bundle like AuthState. Contract:
+// alpha-platform docs/alpha-code-account-integration.md (GET /v1/account/summary).
+export type AccountWindow = { usedTokens: number; limitTokens: number; resetsInMin: number }
+export type AccountPlan =
+  | {
+      id: string
+      name: string
+      status: "active"
+      window5h: AccountWindow
+      window7d: AccountWindow
+      renewsAt: string
+      daysLeft: number
+    }
+  | { id: "none"; status: "none" }
+export type AccountSummary = {
+  balanceFen: number
+  walletUsedFen: number
+  plan: AccountPlan
+  usage: { todayTokens: number; weekTokens: number; tasksThisMonth: number }
+  usageSeries: Array<{ date: string; tokens: number }>
+}
+export type AccountTransaction = {
+  id: string
+  type: "recharge" | "subscription" | "usage" | "bonus"
+  title: string
+  amountFen: number
+  createdAt: string
+  status: "success" | "pending"
+}
+/** Result envelope: the payload, or an error code (not-authenticated / unauthorized / http-NNN / network). */
+export type AccountResult<T> = T | { error: string }
+
 export type ElectronAPI = {
   killSidecar: () => Promise<void>
   installCli: () => Promise<string>
@@ -134,5 +167,11 @@ export type ElectronAPI = {
       builtinAssetKey: string,
       name: string,
     ) => Promise<{ ok: true } | { ok: false; reason: string }>
+  }
+  // alpha account (balance / membership / usage) read from the alpha-platform (B) account-server
+  // using the main-held JWT. The renderer gets only the resolved summary, never the token.
+  account: {
+    summary: () => Promise<AccountResult<AccountSummary>>
+    transactions: (limit?: number) => Promise<AccountResult<{ transactions: AccountTransaction[] }>>
   }
 }
