@@ -63,6 +63,25 @@
       }
     },
     {
+      "id": "mcp:playwright",
+      "type": "mcp",
+      "name": "playwright",
+      "displayName": "浏览器自动化(Playwright)",
+      "description": "让 agent 真正操作浏览器:打开网页、点击、填表单、截图、执行 JS——能读 webfetch 抓不动的 JS 动态站点。Microsoft 官方 MCP。",
+      "source": "official",
+      "category": "dev",
+      "license": "Apache-2.0",
+      "redistributable": true,
+      "installSpec": {
+        "kind": "mcp",
+        "mcpType": "local",
+        "command": ["npx", "-y", "@playwright/mcp"],
+        "requiredEnvVars": [],
+        "runtimeDep": ["node"],
+        "_verify": "首次浏览时 Playwright 需浏览器内核:默认下载 Chromium(~150MB,中国区 egress 慢),或在 command 末尾加 \"--browser\",\"chrome\" 复用系统已装 Chrome(免下载但需已装)。runtimeDep 只能 which 到 node,内核下载发生在运行时而非安装时 → A6 必须桌面实测首个 navigate 能否真起浏览器。"
+      }
+    },
+    {
       "id": "mcp:git",
       "type": "mcp",
       "name": "git",
