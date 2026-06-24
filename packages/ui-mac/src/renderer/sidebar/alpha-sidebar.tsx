@@ -143,6 +143,10 @@ export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }
     n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : `${n}`
   const fmtYuan = (fen: number) => `¥${(fen / 100).toFixed(2)}`
   const pendingText = () => (summaryState() === "error" ? "—" : "…")
+  // Membership display prefers the fetched summary (authoritative); falls back to the JWT's coarse
+  // plan claim before the summary lands, so the header chip / footer never contradict the card.
+  const acctIsPro = () => !!activePlan() || isPro()
+  const acctPlanName = () => activePlan()?.name ?? plan()
 
   // Tiny inline sparkline for the 14-day usage series (no chart lib). Empty series → caller shows
   // a placeholder instead of rendering this.
@@ -745,8 +749,8 @@ export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }
                       <div class="alpha-acct-name">你的账户</div>
                       <div class="alpha-acct-email">{accountLabel()}</div>
                     </div>
-                    <span class="alpha-acct-plan" data-pro={isPro() ? "" : undefined}>
-                      {isPro() ? plan().toUpperCase() : "免费版"}
+                    <span class="alpha-acct-plan" data-pro={acctIsPro() ? "" : undefined}>
+                      {acctIsPro() ? acctPlanName().toUpperCase() : "免费版"}
                     </span>
                   </div>
                   <div class="alpha-acct-card">
@@ -791,7 +795,7 @@ export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }
                     </div>
                   </div>
                   <div class="alpha-acct-cta">
-                    <Show when={!isPro()}>
+                    <Show when={!acctIsPro()}>
                       <button class="alpha-acct-btn primary" onClick={() => window.api.openLink(billingUrl)}>
                         升级会员
                       </button>
@@ -799,7 +803,7 @@ export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }
                     <button class="alpha-acct-btn" onClick={() => window.api.openLink(billingUrl)}>
                       充值
                     </button>
-                    <Show when={isPro()}>
+                    <Show when={acctIsPro()}>
                       <button class="alpha-acct-btn" onClick={() => window.api.openLink(billingUrl)}>
                         管理订阅
                       </button>
@@ -833,7 +837,7 @@ export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }
                   {authState().status === "logged-in" ? accountLabel() : t("alpha.auth.signIn")}
                 </span>
                 <span class="alpha-sidebar-account-sub">
-                  {authState().status === "logged-in" ? (isPro() ? plan().toUpperCase() : "免费版") : "点此登录"}
+                  {authState().status === "logged-in" ? (acctIsPro() ? acctPlanName().toUpperCase() : "免费版") : "点此登录"}
                 </span>
               </span>
               <svg class="alpha-acct-chev" viewBox="0 0 12 12" fill="none" aria-hidden="true">
