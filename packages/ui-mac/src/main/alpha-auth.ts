@@ -19,7 +19,7 @@ import { join } from "node:path"
 import { safeStorage, shell, type BrowserWindow } from "electron"
 import type { AuthMode, AuthState } from "../preload/types"
 import { getLogger } from "./logging"
-import { ALPHA_ENDPOINTS } from "../shared/alpha-config"
+import { ALPHA_ENDPOINTS, ALPHA_PATHS } from "../shared/alpha-config"
 
 type StoredAuth = {
   mode: AuthMode
@@ -135,9 +135,9 @@ export function applyAuthEnv() {
   const token = devToken || (loggedInPlatform ? stored.accessToken : undefined)
   const base = platformBase()
   if (!token || !base) return
-  if (!process.env.ALPHA_BASE_URL) process.env.ALPHA_BASE_URL = `${base}/v1`
+  if (!process.env.ALPHA_BASE_URL) process.env.ALPHA_BASE_URL = `${base}${ALPHA_PATHS.modelProxy}`
   if (!process.env.ALPHA_API_KEY) process.env.ALPHA_API_KEY = token
-  if (!process.env.ALPHA_CLOUD_MCP_URL) process.env.ALPHA_CLOUD_MCP_URL = `${base}/mcp`
+  if (!process.env.ALPHA_CLOUD_MCP_URL) process.env.ALPHA_CLOUD_MCP_URL = `${base}${ALPHA_PATHS.mcpGateway}`
   if (!process.env.ALPHA_CLOUD_TOKEN) process.env.ALPHA_CLOUD_TOKEN = token
 }
 
@@ -170,7 +170,7 @@ export async function startAuth(): Promise<void> {
   const challenge = base64url(createHash("sha256").update(verifier).digest())
   const state = randomUUID()
   pkce = { verifier, state }
-  const url = new URL(`${webBase()}/auth/authorize`)
+  const url = new URL(`${webBase()}${ALPHA_PATHS.authorize}`)
   url.searchParams.set("response_type", "code")
   url.searchParams.set("client_id", CLIENT_ID)
   url.searchParams.set("redirect_uri", REDIRECT_URI)
@@ -229,7 +229,7 @@ async function completeAuth(parsed: URL) {
 }
 
 async function exchangeCode(code: string, verifier: string): Promise<TokenResponse> {
-  const res = await fetch(`${webBase()}/auth/token`, {
+  const res = await fetch(`${webBase()}${ALPHA_PATHS.token}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
