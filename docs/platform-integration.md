@@ -49,3 +49,11 @@ renderer「登录」按钮
 - 零改 opencode 源码(ADR-002);**BYOK 路径绝不经平台**(直连,无登录)。
 - `DEV_PLATFORM_TOKEN` 仅 dev、env-gated、不进客户端二进制、**≠ 模型真 key**(见 `alpha-platform/docs/design.md` §12.3)。
 - 代理必须**透明流式**(见 design.md §8.1);云任务进度走 job 事件流、最终结果异步 artifact(§6)。
+
+## 已知问题 / 待办(2026-06-24,账户用量集成 PR #11 后)
+- **用量曲线/今日今周为 0 = 没有模型流量经 B 被计量(非接口缺陷)**。已两头核实:
+  - **B 侧计量链是通的**:`alpha-platform/packages/gateway/src/account.ts` `charge()` → `recordDailyTokens()` → `summary().usageSeries`;prod 经 `worker.ts` 带 `x-reconcile-secret` POST 落 `account-server` 的账本。`/v1/account/summary` 返回结构正常,只是 `usage/usageSeries` 全 0。
+  - **根因在 alpha-code 出口**:走 B gateway 的 `alpha` provider 仅当 `ALPHA_BASE_URL` 存在(= 平台模式登录,`applyAuthEnv` 设)才注册(`alpha-models.ts:52`);BYOK provider(deepseek/zhipuai/…)**直连、绝不过 B**(见上「约束」),所以默认无可计量流量。
+  - **真 gap(待办)**:`alpha-models.ts:60` 的 alpha provider 模型仍是占位 `models: { "alpha-default": … }`(代码内 `// TODO: replace with the real model id(s)`)→ 即便进平台模式,模型选择也没接到 B `/v1/models` 的真实模型 id,平台用量跑不起来。
+  - **让用量出数的条件**:① 平台模式登录 → `ALPHA_BASE_URL` 设 → alpha provider 注册;② 把占位模型接成 B registry 真实模型 id;③ 实际选用 alpha 模型发起调用 → 经 gateway 计量 → summary 出数。
+  - **已验证**:本地起 `alpha-platform/packages/gateway`(dev 租户),`/v1/account/summary` 字段/形状 100% 对上 `AccountSummary` 类型;一旦流量过 gateway,`usageSeries` 当天格即累加。
