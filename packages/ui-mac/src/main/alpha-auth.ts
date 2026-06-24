@@ -42,11 +42,11 @@ const CLIENT_ID = "alpha-code"
 const REDIRECT_URI = "alpha-code://auth/callback"
 const AUTH_FILE = "alpha-auth.json"
 
-// Endpoints default to alphacodeone.com (subdomain split) and are env-overridable for dev/staging.
+// Endpoints: web/identity defaults to auth.tidelabs.click, platform to api.tidelabs.click — env-overridable for dev/staging.
 // ALPHA_WEB_URL = alpha-web (C, identity authority — login/token); ALPHA_PLATFORM_URL =
 // alpha-platform (B, model proxy at /v1 + MCP gateway at /mcp).
-const webBase = () => (process.env.ALPHA_WEB_URL ?? "https://auth.alphacodeone.com").replace(/\/+$/, "")
-const platformBase = () => (process.env.ALPHA_PLATFORM_URL ?? "https://api.alphacodeone.com").replace(/\/+$/, "")
+const webBase = () => (process.env.ALPHA_WEB_URL ?? "https://auth.tidelabs.click").replace(/\/+$/, "")
+const platformBase = () => (process.env.ALPHA_PLATFORM_URL ?? "https://api.tidelabs.click").replace(/\/+$/, "")
 
 let userDataPath = ""
 let getWindow: () => BrowserWindow | null = () => null

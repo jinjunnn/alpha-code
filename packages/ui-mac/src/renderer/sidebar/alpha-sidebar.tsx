@@ -107,7 +107,7 @@ export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }
     { k: "dark", l: "深色" },
     { k: "system", l: "系统" },
   ] as const
-  const billingUrl = "https://auth.alphacodeone.com/billing"
+  const billingUrl = "https://auth.tidelabs.click/billing"
 
   const MenuCommon = () => (
     <>
