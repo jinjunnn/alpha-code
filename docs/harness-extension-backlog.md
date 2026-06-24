@@ -29,9 +29,12 @@
 ### P1 — MCP 连接器扩充(纯命令型,1d 量级)
 | # | 扩展 | 接缝 | 阻塞 | 估时 |
 |---|---|---|---|---|
+| **E14** | **浏览器自动化 MCP(Playwright)** — agent 导航/点击/填表/截图/跑 JS,补 `webfetch` 抓不动 JS 站点的缺口 | MCP local stdio(`npx -y @playwright/mcp`,Apache-2.0,Microsoft 官方) | 运行时浏览器内核(Chromium ~150MB 下载 / 或 `--browser chrome` 复用系统) | catalog 条目**已加**(`mcp:playwright`,`category:dev`,install-only 不进预设),剩 **A6 桌面实测** |
 | E6 | **数据库 MCP**(sqlite/postgres,读 schema + SELECT) | MCP local stdio | 无(命令型,无 OAuth) | 1d |
 | E2 | **钉钉 MCP**(补齐飞书/语雀的国产三件套) | MCP local stdio + npmmirror | 核实官方包名/鉴权字段 | 1d |
 | E11 | **目录筛选 UI**(category/license 过滤,catalog schema 已带元数据) | 定制中心 UI | 无 | 1d |
+
+> **E14 落地记(2026-06-24)**:回应"app 是否有内置网页浏览器 / 该自己加还是等 opencode"。核实:opencode 仅 `webfetch`(只读 HTTP,无 JS 渲染)+ `websearch`(关键词),**无任何浏览器自动化**,且上游无 roadmap 信号(`agent-browser` 是 dev 自测工具,§19 browser embeddability 自标 `[DRIFT]`)→ 决策**自己加,走 MCP 接缝**(ADR-002/014/015-Tier2,零-fork、北极星不破)。决策:① 本地 `npx` 优先(已带 `-y` 防交互挂死);② 仅定制中心可装,**不**做 `injectAlphaConfig` 出厂预设。包名核实 `@playwright/mcp@0.0.76` 真实存在。**唯一未决/待实测**:首次 navigate 时浏览器内核来源——默认下载 Chromium(中国区 egress 慢)vs `--browser chrome` 复用系统已装 Chrome(免下载但需已装);`runtimeDep` 只 which 到 node,内核非安装期可检 → A6 桌面端拍板。**Phase B(给用户的浏览器面板)单独走定位关(`/app:challenge`)后再开。**
 
 ### P2 — 需鉴权扩展(挡 keychain/OAuth UI)
 | # | 扩展 | 接缝 | 阻塞 | 估时 |
@@ -53,5 +56,5 @@
 ## 抽查核实(2026-06-23)
 - ✅ `ext-ipc.ts` 实有 handler:`ext-persist-mcp / ext-remove-mcp / ext-check-runtime / ext-write-skill / ext-write-agent / ext-install-plugin`。
 - ✅ `packages/ext/dist/plugin.js`(410KB)已构建、未装进 .app。
-- ✅ catalog ~7 条 MCP(markitdown/filesystem/fetch/git/github/feishu/yuque)+ skills/plugins/bundles。
+- ✅ catalog 8 条 MCP(markitdown/filesystem/fetch/**playwright**/git/github/feishu/yuque)+ skills/plugins/bundles。
 - ✅ `.opencode/tool/{github-triage,github-pr-search}.ts`、`.opencode/agent/{triage,duplicate-pr}.md`(后者带 per-agent system prompt,正是 ADR-015 Tier-3 的 per-agent 调优落点)。
