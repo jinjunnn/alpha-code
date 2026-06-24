@@ -160,6 +160,13 @@ export function getAuthState(): AuthState {
   return deriveState()
 }
 
+// Raw bearer token for direct authed reads (account-server). Mirrors applyAuthEnv's derivation —
+// the dev short-circuit wins, else the stored platform access token. MAIN-ONLY: never expose this
+// to the renderer; its only callers are main-process clients (alpha-account.ts).
+export function getAccessToken(): string | undefined {
+  return process.env.DEV_PLATFORM_TOKEN || stored.accessToken
+}
+
 function base64url(buf: Buffer) {
   return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
 }

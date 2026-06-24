@@ -29,7 +29,7 @@ import {
   toggleSidebar,
 } from "./sidebar-state"
 import { useAlphaProjects, type AlphaProject, type AlphaSession, type ServerInfo } from "./use-projects"
-import type { AuthState } from "../../preload/types"
+import type { AuthState, AccountSummary } from "../../preload/types"
 import { toggleExtHub } from "../extensions/ext-hub-state"
 
 // Replicate opencode's getProjectAvatarVariant (context/layout.tsx) for projects that already
@@ -109,6 +109,55 @@ export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }
     { k: "system", l: "系统" },
   ] as const
   const billingUrl = `${ALPHA_ENDPOINTS.web}${ALPHA_PATHS.billing}`
+
+  // Account summary (balance / membership / token usage) from alpha-platform B, fetched on login.
+  // Contract: alpha-platform docs/alpha-code-account-integration.md. usageSeries powers the 14-day
+  // sparkline. 401 → main's auth is stale; the footer already reflects logged-out on the next push.
+  const [summary, setSummary] = createSignal<AccountSummary | null>(null)
+  const [summaryState, setSummaryState] = createSignal<"idle" | "loading" | "error">("idle")
+  createEffect(() => {
+    if (authState().status !== "logged-in") {
+      setSummary(null)
+      setSummaryState("idle")
+      return
+    }
+    setSummaryState("loading")
+    window.api.account
+      .summary()
+      .then((r) => {
+        if (r && "error" in r) {
+          setSummary(null)
+          setSummaryState("error")
+        } else {
+          setSummary(r as AccountSummary)
+          setSummaryState("idle")
+        }
+      })
+      .catch(() => setSummaryState("error"))
+  })
+  const activePlan = () => {
+    const s = summary()
+    return s && s.plan.status === "active" ? s.plan : null
+  }
+  const fmtTokens = (n: number) =>
+    n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : `${n}`
+  const fmtYuan = (fen: number) => `¥${(fen / 100).toFixed(2)}`
+  const pendingText = () => (summaryState() === "error" ? "—" : "…")
+
+  // Tiny inline sparkline for the 14-day usage series (no chart lib). Empty series → caller shows
+  // a placeholder instead of rendering this.
+  const Sparkline = (p: { data: number[] }) => {
+    const w = 116
+    const h = 24
+    const max = Math.max(1, ...p.data)
+    const n = p.data.length
+    const pts = p.data.map((v, i) => `${(i / Math.max(1, n - 1)) * w},${(h - 2 - (v / max) * (h - 4) + 2).toFixed(1)}`).join(" ")
+    return (
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-hidden="true">
+        <polyline points={pts} fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round" />
+      </svg>
+    )
+  }
 
   const MenuCommon = () => (
     <>
@@ -703,19 +752,42 @@ export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }
                   <div class="alpha-acct-card">
                     <div class="alpha-acct-row">
                       <span class="alpha-acct-k">会员订阅</span>
-                      <span class="alpha-acct-v">{isPro() ? plan() : "未订阅"}</span>
+                      <span class="alpha-acct-v">{activePlan()?.name ?? (isPro() ? plan() : "未订阅")}</span>
                     </div>
                     <div class="alpha-acct-row">
                       <span class="alpha-acct-k">可用余额</span>
-                      <span class="alpha-acct-v alpha-acct-pending">待接入</span>
+                      <Show when={summary()} fallback={<span class="alpha-acct-pending">{pendingText()}</span>}>
+                        <span class="alpha-acct-v">{fmtYuan(summary()!.balanceFen)}</span>
+                      </Show>
                     </div>
                     <div class="alpha-acct-row">
                       <span class="alpha-acct-k">5 小时额度</span>
-                      <span class="alpha-acct-pending">待接入</span>
+                      <Show when={summary()} fallback={<span class="alpha-acct-pending">{pendingText()}</span>}>
+                        <Show when={activePlan()} fallback={<span class="alpha-acct-pending">按量计费</span>}>
+                          <span class="alpha-acct-v">
+                            {fmtTokens(activePlan()!.window5h.usedTokens)} / {fmtTokens(activePlan()!.window5h.limitTokens)}
+                          </span>
+                        </Show>
+                      </Show>
                     </div>
                     <div class="alpha-acct-row">
                       <span class="alpha-acct-k">7 日额度</span>
-                      <span class="alpha-acct-pending">待接入</span>
+                      <Show when={summary()} fallback={<span class="alpha-acct-pending">{pendingText()}</span>}>
+                        <Show when={activePlan()} fallback={<span class="alpha-acct-pending">按量计费</span>}>
+                          <span class="alpha-acct-v">
+                            {fmtTokens(activePlan()!.window7d.usedTokens)} / {fmtTokens(activePlan()!.window7d.limitTokens)}
+                          </span>
+                        </Show>
+                      </Show>
+                    </div>
+                    <div class="alpha-acct-row">
+                      <span class="alpha-acct-k">近 14 天</span>
+                      <Show
+                        when={summary() && summary()!.usageSeries.length > 0}
+                        fallback={<span class="alpha-acct-pending">{summary() ? "暂无数据" : pendingText()}</span>}
+                      >
+                        <Sparkline data={summary()!.usageSeries.map((p) => p.tokens)} />
+                      </Show>
                     </div>
                   </div>
                   <div class="alpha-acct-cta">

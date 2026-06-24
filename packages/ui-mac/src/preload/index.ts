@@ -141,6 +141,10 @@ const api: ElectronAPI = {
     installBuiltinSkill: (builtinAssetKey, name) =>
       ipcRenderer.invoke("ext-install-builtin-skill", builtinAssetKey, name),
   },
+  account: {
+    summary: () => ipcRenderer.invoke("account-summary"),
+    transactions: (limit) => ipcRenderer.invoke("account-transactions", limit),
+  },
 }
 
 contextBridge.exposeInMainWorld("api", api)
