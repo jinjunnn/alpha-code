@@ -1,9 +1,9 @@
-// The Extension Hub (定制中心) overlay panel. Rendered as a sibling of <AlphaSidebar> inside
-// AppInterface (renderer/index.tsx), so it has the same Provider context; mounted via a dedicated
-// Portal host appended to #root (the alpha-sidebar pattern). z-index sits below the sidebar so the
-// sidebar stays visible (extension-hub.css). Browsable items come from the bundled catalog; install
-// status + actions go through useExtensions (SDK truth + thin persist IPC). MCP install is wired
-// now; skill/plugin/bundle install is gated ("coming soon") until their phase lands.
+// The Extension Hub (定制中心) — a full PAGE (not a modal) covering the content area, rendered as a
+// sibling of <AlphaSidebar> inside AppInterface (renderer/index.tsx) via a dedicated Portal host on
+// #root. Layout matches the approved Codex-style design: sticky tabs → title/subtitle → search+filter
+// → 已添加 row → category list-rows (icon + name/chip/desc + 添加). Only mounted while open, so it can
+// never intercept background clicks. Browsable items come from the bundled catalog; install status +
+// actions go through useExtensions (SDK truth + thin persist IPC).
 
 import { createMemo, createSignal, For, Show, onCleanup, type Accessor } from "solid-js"
 import { Portal } from "solid-js/web"
@@ -79,6 +79,21 @@ export function ExtensionHub(props: {
     else if (tb === "plugins") list = byType("plugin")
     else if (tb === "bundles") list = byType("bundle")
     return list.filter(matches)
+  })
+
+  const sectionLabel = createMemo(() => {
+    switch (tab()) {
+      case "featured":
+        return t("alpha.ext.tabBundles") + " · Featured"
+      case "connectors":
+        return t("alpha.ext.tabConnectors")
+      case "skills":
+        return t("alpha.ext.tabSkills")
+      case "plugins":
+        return t("alpha.ext.tabPlugins")
+      default:
+        return t("alpha.ext.tabBundles")
+    }
   })
 
   // 已安装 = MCP names the running server knows (SDK truth), joined with catalog metadata if known.
@@ -176,49 +191,42 @@ export function ExtensionHub(props: {
     }
   }
 
-  const Card = (cp: { e: CatalogEntry }) => {
+  // A single browsable entry as a horizontal list-row (icon · name/chip/desc · action).
+  const Row = (cp: { e: CatalogEntry }) => {
     const e = cp.e
     const installedNow = createMemo(() => ext.isInstalled(e))
     const isBusy = () => busy() === e.id
-    const wired = true // all four types (mcp / skill / plugin / bundle) now have an install path
     return (
-      <div class="alpha-ext-card">
-        <div class="alpha-ext-card-top">
-          <span class="alpha-ext-icon">{e.displayName.slice(0, 1)}</span>
-          <span class="alpha-ext-name" title={e.name}>
-            {e.displayName}
-          </span>
-          <span class="alpha-ext-chip" data-source={e.source}>
-            {sourceLabel(e.source)}
-          </span>
-        </div>
-        <div class="alpha-ext-desc">{e.description}</div>
-        <Show when={e.type === "bundle" && e.bundleItems}>
-          <div class="alpha-ext-meta">{(e.bundleItems ?? []).length} 项</div>
-        </Show>
-        <div class="alpha-ext-card-actions">
-          <Show
-            when={wired}
-            fallback={
-              <button class="alpha-ext-btn" disabled title={t("alpha.ext.comingSoon")}>
-                {t("alpha.ext.comingSoon")}
-              </button>
-            }
-          >
-            <Show
-              when={!installedNow()}
-              fallback={
-                <button class="alpha-ext-btn" data-variant="installed" disabled>
-                  ✓ {t("alpha.ext.added")}
-                </button>
-              }
-            >
-              <button class="alpha-ext-btn" disabled={isBusy()} onClick={() => void onAdd(e)}>
-                {isBusy() ? t("alpha.ext.adding") : t("alpha.ext.add")}
-              </button>
+      <div class="alpha-ext-row">
+        <span class="alpha-ext-ric">{e.displayName.slice(0, 1)}</span>
+        <div class="alpha-ext-rtext">
+          <div class="alpha-ext-rname">
+            <span class="alpha-ext-rname-t" title={e.name}>
+              {e.displayName}
+            </span>
+            <span class="alpha-ext-chip" data-source={e.source}>
+              {sourceLabel(e.source)}
+            </span>
+          </div>
+          <div class="alpha-ext-rdesc">
+            {e.description}
+            <Show when={e.type === "bundle" && e.bundleItems}>
+              <span class="alpha-ext-rcount"> · {(e.bundleItems ?? []).length} 项</span>
             </Show>
-          </Show>
+          </div>
         </div>
+        <Show
+          when={!installedNow()}
+          fallback={
+            <button class="alpha-ext-add" data-variant="installed" disabled>
+              ✓ {t("alpha.ext.added")}
+            </button>
+          }
+        >
+          <button class="alpha-ext-add" data-variant="primary" disabled={isBusy()} onClick={() => void onAdd(e)}>
+            {isBusy() ? t("alpha.ext.adding") : t("alpha.ext.add")}
+          </button>
+        </Show>
       </div>
     )
   }
@@ -226,33 +234,8 @@ export function ExtensionHub(props: {
   return (
     <Show when={props.open()}>
       <Portal mount={host}>
-        <div class="alpha-ext-backdrop" onClick={() => props.onClose()} />
-        <div
-          class="alpha-ext-panel"
-          role="dialog"
-          aria-modal="true"
-          aria-label={t("alpha.ext.hub")}
-          onClick={(ev) => ev.stopPropagation()}
-        >
-          <header class="alpha-ext-header">
-            <span class="alpha-ext-title">{t("alpha.ext.hub")}</span>
-            <input
-              class="alpha-ext-search"
-              type="search"
-              placeholder={t("alpha.ext.search")}
-              value={query()}
-              onInput={(ev) => setQuery(ev.currentTarget.value)}
-            />
-            <button
-              class="alpha-ext-close"
-              title={t("alpha.ext.close")}
-              aria-label={t("alpha.ext.close")}
-              onClick={() => props.onClose()}
-            >
-              ✕
-            </button>
-          </header>
-
+        <div class="a-ui alpha-ext-page" role="region" aria-label={t("alpha.ext.hub")}>
+          {/* sticky tab bar + close */}
           <nav class="alpha-ext-tabs">
             <For each={TABS}>
               {(item) => (
@@ -265,47 +248,67 @@ export function ExtensionHub(props: {
                 </button>
               )}
             </For>
+            <span class="alpha-ext-tabs-spacer" />
+            <button class="alpha-ext-close" title={t("alpha.ext.close")} aria-label={t("alpha.ext.close")} onClick={() => props.onClose()}>
+              ✕
+            </button>
           </nav>
 
           <div class="alpha-ext-body">
-            {/* Create / import: write a user-authored skill or agent. */}
+            <header class="alpha-ext-hero">
+              <h1 class="alpha-ext-title">{t("alpha.ext.hub")}</h1>
+              <p class="alpha-ext-sub">{t("alpha.ext.heroSub")}</p>
+            </header>
+
+            <div class="alpha-ext-search-row">
+              <div class="alpha-ext-search">
+                <svg class="alpha-ext-search-ic" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.4" />
+                  <path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                </svg>
+                <input
+                  type="search"
+                  placeholder={t("alpha.ext.search")}
+                  value={query()}
+                  onInput={(ev) => setQuery(ev.currentTarget.value)}
+                />
+              </div>
+            </div>
+
+            {/* 已添加 row (installed MCP) */}
+            <Show when={installed().length > 0 && tab() !== "create" && tab() !== "installed"}>
+              <div class="alpha-ext-sec-head">
+                <span class="alpha-ext-sec-t">{t("alpha.ext.tabInstalled")}</span>
+                <button class="alpha-ext-link" onClick={() => setTab("installed")}>
+                  {t("alpha.ext.manage")}
+                </button>
+              </div>
+              <div class="alpha-ext-installed">
+                <For each={installed()}>
+                  {(row) => (
+                    <span class="alpha-ext-ic" data-connected={row.state.connected ? "" : undefined} title={row.state.name}>
+                      {(row.entry?.displayName ?? row.state.name).slice(0, 2)}
+                    </span>
+                  )}
+                </For>
+              </div>
+            </Show>
+
+            {/* Create / import */}
             <Show when={tab() === "create"}>
               <div class="alpha-ext-form">
                 <div class="alpha-ext-form-types">
-                  <button
-                    class="alpha-ext-tab"
-                    data-active={createType() === "skill" ? "" : undefined}
-                    onClick={() => setCreateType("skill")}
-                  >
+                  <button class="alpha-ext-tab" data-active={createType() === "skill" ? "" : undefined} onClick={() => setCreateType("skill")}>
                     {t("alpha.ext.tabSkills")}
                   </button>
-                  <button
-                    class="alpha-ext-tab"
-                    data-active={createType() === "agent" ? "" : undefined}
-                    onClick={() => setCreateType("agent")}
-                  >
+                  <button class="alpha-ext-tab" data-active={createType() === "agent" ? "" : undefined} onClick={() => setCreateType("agent")}>
                     Agent
                   </button>
                 </div>
-                <input
-                  class="alpha-ext-input"
-                  placeholder="name (a-z 0-9 - _)"
-                  value={fName()}
-                  onInput={(e) => setFName(e.currentTarget.value)}
-                />
-                <input
-                  class="alpha-ext-input"
-                  placeholder="description"
-                  value={fDesc()}
-                  onInput={(e) => setFDesc(e.currentTarget.value)}
-                />
+                <input class="alpha-ext-input" placeholder="name (a-z 0-9 - _)" value={fName()} onInput={(e) => setFName(e.currentTarget.value)} />
+                <input class="alpha-ext-input" placeholder="description" value={fDesc()} onInput={(e) => setFDesc(e.currentTarget.value)} />
                 <Show when={createType() === "agent"}>
-                  <input
-                    class="alpha-ext-input"
-                    placeholder="model (optional, e.g. anthropic/claude-opus-4-8)"
-                    value={fModel()}
-                    onInput={(e) => setFModel(e.currentTarget.value)}
-                  />
+                  <input class="alpha-ext-input" placeholder="model (optional, e.g. anthropic/claude-opus-4-8)" value={fModel()} onInput={(e) => setFModel(e.currentTarget.value)} />
                 </Show>
                 <textarea
                   class="alpha-ext-textarea"
@@ -314,53 +317,40 @@ export function ExtensionHub(props: {
                   onInput={(e) => setFBody(e.currentTarget.value)}
                 />
                 <div>
-                  <button
-                    class="alpha-ext-btn"
-                    disabled={busy() === "__create__" || !fName().trim()}
-                    onClick={() => void submitCreate()}
-                  >
+                  <button class="alpha-ext-add" data-variant="primary" disabled={busy() === "__create__" || !fName().trim()} onClick={() => void submitCreate()}>
                     {busy() === "__create__" ? t("alpha.ext.adding") : t("alpha.ext.tabCreate")}
                   </button>
                 </div>
               </div>
             </Show>
 
-            {/* Installed: SDK truth (MCP). */}
+            {/* Installed tab (manage) */}
             <Show when={tab() === "installed"}>
-              <Show
-                when={installed().length > 0}
-                fallback={<div class="alpha-ext-empty">{t("alpha.ext.empty")}</div>}
-              >
-                <div class="alpha-ext-grid">
+              <Show when={installed().length > 0} fallback={<div class="alpha-ext-empty">{t("alpha.ext.empty")}</div>}>
+                <div class="alpha-ext-rows">
                   <For each={installed()}>
                     {(row) => (
-                      <div class="alpha-ext-card">
-                        <div class="alpha-ext-card-top">
-                          <span class="alpha-ext-icon">
-                            {(row.entry?.displayName ?? row.state.name).slice(0, 1)}
-                          </span>
-                          <span class="alpha-ext-name" title={row.state.name}>
-                            {row.entry?.displayName ?? row.state.name}
-                          </span>
-                          <span class="alpha-ext-chip" data-source={row.entry?.source ?? "user"}>
-                            {row.entry ? sourceLabel(row.entry.source) : t("alpha.ext.installedUnknown")}
-                          </span>
+                      <div class="alpha-ext-row">
+                        <span class="alpha-ext-ric">{(row.entry?.displayName ?? row.state.name).slice(0, 1)}</span>
+                        <div class="alpha-ext-rtext">
+                          <div class="alpha-ext-rname">
+                            <span class="alpha-ext-rname-t" title={row.state.name}>
+                              {row.entry?.displayName ?? row.state.name}
+                            </span>
+                            <span class="alpha-ext-chip" data-source={row.entry?.source ?? "user"}>
+                              {row.entry ? sourceLabel(row.entry.source) : t("alpha.ext.installedUnknown")}
+                            </span>
+                          </div>
+                          <Show when={row.state.error} fallback={<div class="alpha-ext-rdesc">{row.state.connected ? t("alpha.ext.enabled") : t("alpha.ext.disabled")}</div>}>
+                            <div class="alpha-ext-rdesc">{row.state.error}</div>
+                          </Show>
                         </div>
-                        <Show when={row.state.error}>
-                          <div class="alpha-ext-meta">{row.state.error}</div>
-                        </Show>
-                        <div class="alpha-ext-card-actions">
-                          <button
-                            class="alpha-ext-btn"
-                            data-variant={row.state.connected ? "installed" : undefined}
-                            onClick={() => void ext.setMcpConnected(row.state.name, !row.state.connected)}
-                          >
-                            {row.state.connected ? t("alpha.ext.enabled") : t("alpha.ext.disabled")}
-                          </button>
-                          <button class="alpha-ext-btn" onClick={() => void ext.removeMcp(row.state.name)}>
-                            {t("alpha.ext.remove")}
-                          </button>
-                        </div>
+                        <button class="alpha-ext-add" data-variant={row.state.connected ? "installed" : undefined} onClick={() => void ext.setMcpConnected(row.state.name, !row.state.connected)}>
+                          {row.state.connected ? t("alpha.ext.enabled") : t("alpha.ext.disabled")}
+                        </button>
+                        <button class="alpha-ext-add" onClick={() => void ext.removeMcp(row.state.name)}>
+                          {t("alpha.ext.remove")}
+                        </button>
                       </div>
                     )}
                   </For>
@@ -368,14 +358,14 @@ export function ExtensionHub(props: {
               </Show>
             </Show>
 
-            {/* Browse: catalog grid for the current type tab. */}
+            {/* Browse (list-rows) */}
             <Show when={tab() !== "create" && tab() !== "installed"}>
-              <Show
-                when={visible().length > 0}
-                fallback={<div class="alpha-ext-empty">{t("alpha.ext.noResults")}</div>}
-              >
-                <div class="alpha-ext-grid">
-                  <For each={visible()}>{(e) => <Card e={e} />}</For>
+              <div class="alpha-ext-sec-head">
+                <span class="alpha-ext-sec-t">{sectionLabel()}</span>
+              </div>
+              <Show when={visible().length > 0} fallback={<div class="alpha-ext-empty">{t("alpha.ext.noResults")}</div>}>
+                <div class="alpha-ext-rows">
+                  <For each={visible()}>{(e) => <Row e={e} />}</For>
                 </div>
               </Show>
             </Show>

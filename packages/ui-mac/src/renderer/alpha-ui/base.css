@@ -1,0 +1,79 @@
+/*
+ * alpha-ui base layer — shared resets, typography defaults, and platform niceties for alpha's own
+ * components. Scoped to the `.a-ui` root so it doesn't leak into opencode chrome during the
+ * transition (once the takeover is complete this wraps the whole app). Imports the token layer.
+ */
+@import "./tokens.css";
+
+.a-ui,
+.a-ui * {
+  box-sizing: border-box;
+}
+
+.a-ui {
+  font-family: var(--a-font-sans);
+  font-size: var(--a-text-base);
+  line-height: var(--a-leading-normal);
+  color: var(--a-text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "cv01", "ss01";
+  accent-color: var(--a-accent);
+}
+
+/* Headings: tight tracking for the refined-minimal register. */
+.a-ui :is(h1, h2, h3, h4) {
+  margin: 0;
+  font-family: var(--a-font-display);
+  font-weight: var(--a-weight-semibold);
+  letter-spacing: var(--a-tracking-tight);
+  line-height: var(--a-leading-tight);
+  color: var(--a-text);
+}
+
+.a-ui code,
+.a-ui kbd,
+.a-ui pre {
+  font-family: var(--a-font-mono);
+}
+
+/* Keyboard focus only — never a mouse-click ring. */
+.a-ui :focus {
+  outline: none;
+}
+.a-ui :focus-visible {
+  outline: none;
+  box-shadow: var(--a-ring-focus);
+}
+
+.a-ui ::selection {
+  background: var(--a-accent-subtle);
+}
+
+/* Quiet, modern scrollbars. */
+.a-ui ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.a-ui ::-webkit-scrollbar-thumb {
+  background: var(--a-border-strong);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: var(--a-radius-full);
+}
+.a-ui ::-webkit-scrollbar-thumb:hover {
+  background: var(--a-text-tertiary);
+  background-clip: padding-box;
+}
+.a-ui ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Overline / small label utility used across screens. */
+.a-overline {
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-semibold);
+  letter-spacing: var(--a-tracking-wide);
+  text-transform: uppercase;
+  color: var(--a-text-tertiary);
+}

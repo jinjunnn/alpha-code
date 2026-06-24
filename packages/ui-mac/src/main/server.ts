@@ -223,7 +223,12 @@ function createSidecarEnv(): Record<string, string> {
   )
   delete env.DEBUG
   if (process.platform === "linux") delete env.LD_PRELOAD
-  if (!app.isPackaged) env.OPENCODE_DISABLE_CHANNEL_DB = "1"
+  // NOTE(alpha): deliberately do NOT disable the channel-suffixed DB in dev. The opencode db
+  // file is `opencode-${InstallationChannel}.db` (e.g. opencode-alpha.db on the alpha branch).
+  // Previously `bun run dev` (!isPackaged) forced the unsuffixed `opencode.db`, so projects/
+  // sessions created while developing landed in a DIFFERENT file than the installed app's
+  // `opencode-alpha.db` — making projects look "lost on restart" when switching between the
+  // two. Sharing one channel DB across dev + packaged keeps a single, consistent project list.
   return env
 }
 

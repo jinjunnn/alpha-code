@@ -27,7 +27,11 @@ import { resetZoom, setPinchZoomEnabled, webviewZoom, zoomIn, zoomOut } from "./
 import { availableStartupServer, readyWslConnections } from "./wsl/connections"
 import "./styles.css"
 import "./sidebar/sidebar.css"
+import "./sidebar/account-popover.css"
+import "./alpha-ui/settings-reskin.css"
 import { AlphaSidebar } from "./sidebar/alpha-sidebar"
+import { AlphaHome } from "./alpha-ui/AlphaHome"
+import { setupSettingsBackButton } from "./alpha-ui/settings-back-button"
 import { ExtensionHub } from "./extensions/extension-hub"
 import { extHubOpen, setExtHubOpen } from "./extensions/ext-hub-state"
 import { Splash } from "./logo-alpha"
@@ -289,6 +293,7 @@ window.api.onMenuCommand((id) => {
   menuTrigger?.(id)
 })
 listenForDeepLinks()
+setupSettingsBackButton()
 
 render(() => {
   const platform = createPlatform()
@@ -388,6 +393,7 @@ render(() => {
             <AppInterface defaultServer={key} servers={servers()} router={MemoryRouter}>
               <Inner />
               <AlphaSidebar server={sidebarServer} />
+              <AlphaHome server={sidebarServer} />
               <ExtensionHub server={sidebarServer} open={extHubOpen} onClose={() => setExtHubOpen(false)} />
             </AppInterface>
           )}

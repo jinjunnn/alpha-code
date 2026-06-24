@@ -1,0 +1,124 @@
+/* alpha-ui Button. Monochrome chrome + indigo primary. Tokens only. */
+
+.a-btn {
+  --_h: 30px;
+  --_px: var(--a-space-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--a-space-2);
+  height: var(--_h);
+  padding: 0 var(--_px);
+  border: 1px solid transparent;
+  border-radius: var(--a-radius-md);
+  font-family: var(--a-font-sans);
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  -webkit-app-region: no-drag;
+  transition:
+    background var(--a-dur-fast) var(--a-ease-out),
+    border-color var(--a-dur-fast) var(--a-ease-out),
+    color var(--a-dur-fast) var(--a-ease-out),
+    transform var(--a-dur-fast) var(--a-ease-out),
+    box-shadow var(--a-dur-fast) var(--a-ease-out);
+}
+.a-btn:active:not(:disabled) {
+  transform: translateY(0.5px) scale(0.99);
+}
+.a-btn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.a-btn[data-block] {
+  display: flex;
+  width: 100%;
+}
+
+/* sizes */
+.a-btn[data-size="sm"] {
+  --_h: 26px;
+  --_px: var(--a-space-2);
+  font-size: var(--a-text-xs);
+}
+.a-btn[data-size="lg"] {
+  --_h: 38px;
+  --_px: var(--a-space-4);
+  font-size: var(--a-text-md);
+}
+
+/* primary — the single accent */
+.a-btn[data-variant="primary"] {
+  background: var(--a-accent);
+  color: var(--a-text-on-accent);
+  box-shadow: var(--a-shadow-xs);
+}
+.a-btn[data-variant="primary"]:hover:not(:disabled) {
+  background: var(--a-accent-hover);
+}
+.a-btn[data-variant="primary"]:active:not(:disabled) {
+  background: var(--a-accent-active);
+}
+
+/* secondary — bordered neutral */
+.a-btn[data-variant="secondary"] {
+  background: var(--a-surface);
+  border-color: var(--a-border);
+  color: var(--a-text);
+  box-shadow: var(--a-shadow-xs);
+}
+.a-btn[data-variant="secondary"]:hover:not(:disabled) {
+  background: var(--a-bg-muted);
+  border-color: var(--a-border-strong);
+}
+
+/* ghost — text only */
+.a-btn[data-variant="ghost"] {
+  background: transparent;
+  color: var(--a-text-secondary);
+}
+.a-btn[data-variant="ghost"]:hover:not(:disabled) {
+  background: var(--a-bg-muted);
+  color: var(--a-text);
+}
+
+/* danger */
+.a-btn[data-variant="danger"] {
+  background: transparent;
+  border-color: var(--a-border);
+  color: var(--a-error);
+}
+.a-btn[data-variant="danger"]:hover:not(:disabled) {
+  background: var(--a-error-subtle);
+  border-color: var(--a-error);
+}
+
+/* loading: dim label, show a spinner */
+.a-btn[data-loading] {
+  color: transparent !important;
+  position: relative;
+  pointer-events: none;
+}
+.a-btn[data-loading]::after {
+  content: "";
+  position: absolute;
+  width: 13px;
+  height: 13px;
+  border-radius: var(--a-radius-full);
+  border: 1.5px solid currentcolor;
+  border-top-color: transparent;
+  color: var(--a-text-on-accent);
+  animation: a-btn-spin 0.6s linear infinite;
+}
+.a-btn[data-variant="secondary"][data-loading]::after,
+.a-btn[data-variant="ghost"][data-loading]::after {
+  color: var(--a-text-secondary);
+}
+@keyframes a-btn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

@@ -1,0 +1,65 @@
+/* alpha-ui Input field. Tokens only. */
+
+.a-field {
+  --_h: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--a-space-2);
+  height: var(--_h);
+  padding: 0 var(--a-space-3);
+  background: var(--a-bg-subtle);
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-md);
+  color: var(--a-text);
+  transition:
+    border-color var(--a-dur-fast) var(--a-ease-out),
+    background var(--a-dur-fast) var(--a-ease-out),
+    box-shadow var(--a-dur-fast) var(--a-ease-out);
+}
+.a-field[data-block] {
+  display: flex;
+  width: 100%;
+}
+.a-field[data-size="sm"] {
+  --_h: 28px;
+  padding: 0 var(--a-space-2);
+}
+
+.a-field:hover {
+  border-color: var(--a-border-strong);
+}
+.a-field:focus-within {
+  background: var(--a-surface);
+  border-color: var(--a-accent);
+  box-shadow: var(--a-ring-focus);
+}
+
+.a-field-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--a-text-tertiary);
+}
+.a-field-icon :is(svg) {
+  width: 15px;
+  height: 15px;
+}
+
+.a-field-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-family: var(--a-font-sans);
+  font-size: var(--a-text-sm);
+  line-height: 1;
+  outline: none;
+  padding: 0;
+}
+.a-field-input::placeholder {
+  color: var(--a-text-tertiary);
+}
+.a-field-input:disabled {
+  cursor: default;
+}

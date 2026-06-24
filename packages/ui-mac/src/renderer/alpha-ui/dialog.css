@@ -1,0 +1,110 @@
+/* alpha-ui Dialog. Tokens only. Mounted only while open, so it can never eat background clicks. */
+@import "./tokens.css";
+
+.a-dialog-root {
+  position: fixed;
+  inset: 0;
+  z-index: var(--a-z-modal);
+  font-family: var(--a-font-sans);
+}
+
+.a-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--a-scrim);
+  backdrop-filter: blur(3px);
+  animation: a-dialog-fade var(--a-dur-base) var(--a-ease-out);
+}
+
+.a-dialog-panel {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 92vw);
+  max-height: 84vh;
+  overflow: hidden;
+  background: var(--a-surface-raised);
+  color: var(--a-text);
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-2xl);
+  box-shadow: var(--a-shadow-overlay);
+  animation: a-dialog-rise var(--a-dur-slow) var(--a-ease-out);
+}
+.a-dialog-panel[data-size="sm"] {
+  width: min(420px, 92vw);
+}
+.a-dialog-panel[data-size="lg"] {
+  width: min(880px, 94vw);
+  height: min(720px, 84vh);
+}
+
+/* Centre within the content area when the sidebar is open. */
+body[data-alpha-sidebar="open"] .a-dialog-root[data-beside-sidebar] .a-dialog-panel {
+  left: var(--alpha-sidebar-w, 260px);
+}
+
+.a-dialog-header {
+  display: flex;
+  align-items: center;
+  gap: var(--a-space-3);
+  padding: var(--a-space-4) var(--a-space-5);
+  border-bottom: 1px solid var(--a-border-faint);
+}
+.a-dialog-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--a-text-lg);
+  font-weight: var(--a-weight-semibold);
+  letter-spacing: var(--a-tracking-tight);
+}
+.a-dialog-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: var(--a-radius-md);
+  background: transparent;
+  color: var(--a-text-tertiary);
+  cursor: pointer;
+  font-size: 15px;
+  transition:
+    background var(--a-dur-fast) var(--a-ease-out),
+    color var(--a-dur-fast) var(--a-ease-out);
+}
+.a-dialog-close:hover {
+  background: var(--a-bg-muted);
+  color: var(--a-text);
+}
+
+.a-dialog-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--a-space-5);
+}
+
+.a-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--a-space-2);
+  padding: var(--a-space-3) var(--a-space-5);
+  border-top: 1px solid var(--a-border-faint);
+}
+
+@keyframes a-dialog-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes a-dialog-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}

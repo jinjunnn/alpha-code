@@ -1,0 +1,202 @@
+/* AlphaHome — covers opencode's home on "/". Sits above opencode content but below the alpha
+ * sidebar (z 40) and modals, so the sidebar stays visible + clickable. Tokens only. */
+@import "./tokens.css";
+@import "./base.css";
+
+.a-home {
+  position: fixed;
+  top: var(--a-home-top, 40px); /* leave opencode's titlebar (window controls) intact */
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  background: var(--a-bg-canvas);
+  overflow: hidden;
+}
+body[data-alpha-sidebar="open"] .a-home {
+  left: var(--alpha-sidebar-w, 260px);
+}
+
+.a-home-scroll {
+  height: 100%;
+  overflow-y: auto;
+}
+.a-home-inner {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: var(--a-space-12) var(--a-space-8) var(--a-space-16);
+}
+
+/* ── Hero ───────────────────────────────────────────────────────────────── */
+.a-home-hero {
+  display: flex;
+  align-items: center;
+  gap: var(--a-space-4);
+  margin-bottom: var(--a-space-10);
+}
+.a-home-mark {
+  width: 34px;
+  height: 42px;
+  color: var(--a-text);
+  flex: 0 0 auto;
+}
+.a-home-title {
+  font-size: var(--a-text-2xl);
+  font-weight: var(--a-weight-bold);
+  letter-spacing: var(--a-tracking-tight);
+}
+.a-home-tagline {
+  margin: 2px 0 0;
+  font-size: var(--a-text-md);
+  color: var(--a-text-secondary);
+}
+
+/* ── Empty state ────────────────────────────────────────────────────────── */
+.a-home-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--a-space-3);
+  padding: var(--a-space-16) var(--a-space-4);
+}
+.a-home-empty-art {
+  display: grid;
+  place-items: center;
+  width: 88px;
+  height: 88px;
+  margin-bottom: var(--a-space-2);
+  border-radius: var(--a-radius-2xl);
+  background: var(--a-bg-subtle);
+  border: 1px solid var(--a-border-faint);
+}
+.a-home-empty-mark {
+  width: 34px;
+  height: 42px;
+  color: var(--a-text-tertiary);
+}
+.a-home-empty-title {
+  font-size: var(--a-text-xl);
+  font-weight: var(--a-weight-semibold);
+}
+.a-home-empty-sub {
+  margin: 0 0 var(--a-space-3);
+  font-size: var(--a-text-md);
+  color: var(--a-text-secondary);
+  max-width: 360px;
+}
+
+/* ── Projects section ───────────────────────────────────────────────────── */
+.a-home-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--a-space-4);
+}
+.a-home-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--a-space-4);
+}
+
+.a-home-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--a-space-3);
+  padding: var(--a-space-4);
+  border-radius: var(--a-radius-lg);
+  border: 1px solid var(--a-border-faint);
+  background: var(--a-surface);
+  transition:
+    border-color var(--a-dur-fast) var(--a-ease-out),
+    box-shadow var(--a-dur-fast) var(--a-ease-out),
+    transform var(--a-dur-fast) var(--a-ease-out);
+}
+.a-home-card:hover {
+  border-color: var(--a-border);
+  box-shadow: var(--a-shadow-md);
+  transform: translateY(-1px);
+}
+.a-home-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--a-space-3);
+}
+.a-home-card-avatar {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--a-radius-md);
+  background: color-mix(in srgb, var(--_c, var(--a-accent)) 16%, transparent);
+  color: var(--_c, var(--a-accent));
+  font-weight: var(--a-weight-bold);
+  font-size: var(--a-text-md);
+}
+.a-home-card-meta {
+  min-width: 0;
+}
+.a-home-card-name {
+  font-weight: var(--a-weight-semibold);
+  font-size: var(--a-text-md);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.a-home-card-path {
+  font-size: var(--a-text-xs);
+  color: var(--a-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+
+.a-home-sessions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.a-home-session {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--a-space-2);
+  width: 100%;
+  padding: var(--a-space-2);
+  border: none;
+  border-radius: var(--a-radius-sm);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--a-dur-fast) var(--a-ease-out);
+}
+.a-home-session:hover {
+  background: var(--a-bg-muted);
+}
+.a-home-session-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--a-text-sm);
+}
+.a-home-session-time {
+  flex: 0 0 auto;
+  font-size: var(--a-text-xs);
+  color: var(--a-text-tertiary);
+}
+.a-home-card-empty {
+  padding: var(--a-space-3) var(--a-space-2);
+  font-size: var(--a-text-sm);
+  color: var(--a-text-tertiary);
+}
+.a-home-card-foot {
+  margin-top: auto;
+}
