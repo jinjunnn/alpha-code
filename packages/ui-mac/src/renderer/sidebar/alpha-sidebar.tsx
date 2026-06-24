@@ -14,6 +14,7 @@ import { Icon } from "@opencode-ai/ui/v2/icon"
 import { useTheme } from "@opencode-ai/ui/theme/context"
 import { t } from "../i18n"
 import { Mark } from "../logo-alpha"
+import { ALPHA_ENDPOINTS } from "../../shared/alpha-config"
 import { base64UrlDecode, homeHref, newSessionHref, projectLabel, sessionHref } from "./route"
 import {
   clearHiddenProjects,
@@ -107,7 +108,7 @@ export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }
     { k: "dark", l: "深色" },
     { k: "system", l: "系统" },
   ] as const
-  const billingUrl = "https://auth.tidelabs.click/billing"
+  const billingUrl = `${ALPHA_ENDPOINTS.web}/billing`
 
   const MenuCommon = () => (
     <>

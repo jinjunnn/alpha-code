@@ -19,6 +19,7 @@ import { join } from "node:path"
 import { safeStorage, shell, type BrowserWindow } from "electron"
 import type { AuthMode, AuthState } from "../preload/types"
 import { getLogger } from "./logging"
+import { ALPHA_ENDPOINTS } from "../shared/alpha-config"
 
 type StoredAuth = {
   mode: AuthMode
@@ -42,11 +43,12 @@ const CLIENT_ID = "alpha-code"
 const REDIRECT_URI = "alpha-code://auth/callback"
 const AUTH_FILE = "alpha-auth.json"
 
-// Endpoints: web/identity defaults to auth.tidelabs.click, platform to api.tidelabs.click — env-overridable for dev/staging.
-// ALPHA_WEB_URL = alpha-web (C, identity authority — login/token); ALPHA_PLATFORM_URL =
-// alpha-platform (B, model proxy at /v1 + MCP gateway at /mcp).
-const webBase = () => (process.env.ALPHA_WEB_URL ?? "https://auth.tidelabs.click").replace(/\/+$/, "")
-const platformBase = () => (process.env.ALPHA_PLATFORM_URL ?? "https://api.tidelabs.click").replace(/\/+$/, "")
+// Endpoint defaults live in shared/alpha-config (single source of truth — change a domain THERE,
+// not here). This layer only adds the env overrides for dev/staging: ALPHA_WEB_URL = alpha-web
+// (C, identity authority — login/token); ALPHA_PLATFORM_URL = alpha-platform (B, model proxy /v1 +
+// MCP gateway /mcp).
+const webBase = () => (process.env.ALPHA_WEB_URL ?? ALPHA_ENDPOINTS.web).replace(/\/+$/, "")
+const platformBase = () => (process.env.ALPHA_PLATFORM_URL ?? ALPHA_ENDPOINTS.platform).replace(/\/+$/, "")
 
 let userDataPath = ""
 let getWindow: () => BrowserWindow | null = () => null
