@@ -11,6 +11,7 @@ import { useLocation, useNavigate } from "@solidjs/router"
 import { useCommand } from "@opencode-ai/app"
 import { ProjectAvatar, type ProjectAvatarVariant } from "@opencode-ai/ui/v2/project-avatar-v2"
 import { Icon } from "@opencode-ai/ui/v2/icon"
+import { useTheme } from "@opencode-ai/ui/theme/context"
 import { t } from "../i18n"
 import { Mark } from "../logo-alpha"
 import { base64UrlDecode, homeHref, newSessionHref, projectLabel, sessionHref } from "./route"
@@ -92,6 +93,66 @@ export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }
   const [authState, setAuthState] = createSignal<AuthState>({ status: "logged-out", mode: "byok" })
   onCleanup(window.api.auth.subscribe(setAuthState))
   const accountLabel = () => authState().account?.email ?? t("alpha.auth.account")
+
+  // Account popover (single footer entry → upward popover). Theme toggle is native; the rest open
+  // opencode's real settings / updater / browser-OAuth. Balance + quotas have no backend yet
+  // (alpha-platform) — shown as "待接入" placeholders, see ADR-016 / cloud topology.
+  const theme = useTheme()
+  const [menuOpen, setMenuOpen] = createSignal(false)
+  const plan = () => authState().account?.plan ?? ""
+  const isPro = () => /pro|plus|team|max|paid/i.test(plan())
+  const acctInitial = () => (authState().account?.email ?? "A").trim().charAt(0).toUpperCase() || "A"
+  const SCHEMES = [
+    { k: "light", l: "浅色" },
+    { k: "dark", l: "深色" },
+    { k: "system", l: "系统" },
+  ] as const
+  const billingUrl = "https://auth.alphacodeone.com/billing"
+
+  const MenuCommon = () => (
+    <>
+      <button
+        class="alpha-acct-item"
+        onClick={() => {
+          setMenuOpen(false)
+          command.trigger("settings.open")
+        }}
+      >
+        <span class="alpha-acct-ic">⚙</span>设置
+      </button>
+      <div class="alpha-acct-item alpha-acct-appearance">
+        <span class="alpha-acct-ic">◐</span>外观
+        <span class="alpha-acct-spacer" />
+        <span class="alpha-acct-seg">
+          <For each={SCHEMES}>
+            {(s) => (
+              <button data-on={theme.colorScheme() === s.k ? "" : undefined} onClick={() => theme.setColorScheme(s.k)}>
+                {s.l}
+              </button>
+            )}
+          </For>
+        </span>
+      </div>
+      <button
+        class="alpha-acct-item"
+        onClick={() => {
+          setMenuOpen(false)
+          command.trigger("settings.open")
+        }}
+      >
+        <span class="alpha-acct-ic">?</span>帮助与反馈
+      </button>
+      <button
+        class="alpha-acct-item"
+        onClick={() => {
+          setMenuOpen(false)
+          void window.api.updater.check()
+        }}
+      >
+        <span class="alpha-acct-ic">↑</span>检查更新
+      </button>
+    </>
+  )
 
   // Which project's "⋯" menu is open (by worktree), if any, and where to anchor it. The menu is
   // rendered once at the Portal root with fixed positioning (computed from the trigger button)
@@ -598,28 +659,113 @@ export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }
             </Show>
           </div>
 
-          {/* Footer = Settings only. Help moved into the settings dialog's own left nav (see
-              ui-mac/scripts/patch-upstream.ts), so it lives one click deeper, beside the rest of
-              the app's configuration. */}
-          <footer class="alpha-sidebar-footer">
+          {/* Footer = ONE account entry → upward popover. Settings / appearance / help / update /
+              membership / sign-in/out all live in this single popover (user request). */}
+          <footer class="alpha-sidebar-footer" data-menu-open={menuOpen() ? "" : undefined}>
+            <Show when={menuOpen()}>
+              <div class="alpha-acct-backdrop" onClick={() => setMenuOpen(false)} />
+              <div class="alpha-acct-pop" role="menu">
+                <Show
+                  when={authState().status === "logged-in"}
+                  fallback={
+                    <>
+                      <div class="alpha-acct-head">
+                        <span class="alpha-acct-av guest">?</span>
+                        <div class="alpha-acct-id">
+                          <div class="alpha-acct-name">未登录</div>
+                          <div class="alpha-acct-email">登录后解锁云端能力</div>
+                        </div>
+                      </div>
+                      <button
+                        class="alpha-acct-login"
+                        onClick={() => {
+                          setMenuOpen(false)
+                          void window.api.auth.start()
+                        }}
+                      >
+                        ⊕ 登录
+                      </button>
+                      <MenuCommon />
+                    </>
+                  }
+                >
+                  <div class="alpha-acct-head">
+                    <span class="alpha-acct-av">{acctInitial()}</span>
+                    <div class="alpha-acct-id">
+                      <div class="alpha-acct-name">你的账户</div>
+                      <div class="alpha-acct-email">{accountLabel()}</div>
+                    </div>
+                    <span class="alpha-acct-plan" data-pro={isPro() ? "" : undefined}>
+                      {isPro() ? plan().toUpperCase() : "免费版"}
+                    </span>
+                  </div>
+                  <div class="alpha-acct-card">
+                    <div class="alpha-acct-row">
+                      <span class="alpha-acct-k">会员订阅</span>
+                      <span class="alpha-acct-v">{isPro() ? plan() : "未订阅"}</span>
+                    </div>
+                    <div class="alpha-acct-row">
+                      <span class="alpha-acct-k">可用余额</span>
+                      <span class="alpha-acct-v alpha-acct-pending">待接入</span>
+                    </div>
+                    <div class="alpha-acct-row">
+                      <span class="alpha-acct-k">5 小时额度</span>
+                      <span class="alpha-acct-pending">待接入</span>
+                    </div>
+                    <div class="alpha-acct-row">
+                      <span class="alpha-acct-k">7 日额度</span>
+                      <span class="alpha-acct-pending">待接入</span>
+                    </div>
+                  </div>
+                  <div class="alpha-acct-cta">
+                    <Show when={!isPro()}>
+                      <button class="alpha-acct-btn primary" onClick={() => window.api.openLink(billingUrl)}>
+                        升级会员
+                      </button>
+                    </Show>
+                    <button class="alpha-acct-btn" onClick={() => window.api.openLink(billingUrl)}>
+                      充值
+                    </button>
+                    <Show when={isPro()}>
+                      <button class="alpha-acct-btn" onClick={() => window.api.openLink(billingUrl)}>
+                        管理订阅
+                      </button>
+                    </Show>
+                  </div>
+                  <MenuCommon />
+                  <div class="alpha-acct-sep" />
+                  <button
+                    class="alpha-acct-item alpha-acct-danger"
+                    onClick={() => {
+                      setMenuOpen(false)
+                      void window.api.auth.logout()
+                    }}
+                  >
+                    <span class="alpha-acct-ic">⎋</span>退出登录
+                  </button>
+                </Show>
+              </div>
+            </Show>
             <button
               type="button"
-              class="alpha-sidebar-nav-item"
+              class="alpha-sidebar-account"
               data-auth={authState().status === "logged-in" ? "in" : "out"}
-              title={authState().status === "logged-in" ? t("alpha.auth.signOutHint") : t("alpha.auth.signInHint")}
-              onClick={() =>
-                authState().status === "logged-in" ? void window.api.auth.logout() : void window.api.auth.start()
-              }
+              onClick={() => setMenuOpen((o) => !o)}
             >
-              <svg class="alpha-sidebar-nav-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <circle cx="8" cy="5.2" r="2.6" stroke="currentColor" stroke-width="1.3" />
-                <path d="M3.2 13c0-2.5 2.1-4 4.8-4s4.8 1.5 4.8 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+              <span class="alpha-acct-av" data-guest={authState().status === "logged-in" ? undefined : ""}>
+                {authState().status === "logged-in" ? acctInitial() : "?"}
+              </span>
+              <span class="alpha-sidebar-account-id">
+                <span class="alpha-sidebar-account-name">
+                  {authState().status === "logged-in" ? accountLabel() : t("alpha.auth.signIn")}
+                </span>
+                <span class="alpha-sidebar-account-sub">
+                  {authState().status === "logged-in" ? (isPro() ? plan().toUpperCase() : "免费版") : "点此登录"}
+                </span>
+              </span>
+              <svg class="alpha-acct-chev" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                <path d="M3 7.5L6 4.5L9 7.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
-              <span>{authState().status === "logged-in" ? accountLabel() : t("alpha.auth.signIn")}</span>
-            </button>
-            <button type="button" class="alpha-sidebar-nav-item" onClick={() => command.trigger("settings.open")}>
-              <Icon name="settings-gear" class="alpha-sidebar-nav-icon" />
-              <span>{t("alpha.sidebar.settings")}</span>
             </button>
           </footer>
         </aside>

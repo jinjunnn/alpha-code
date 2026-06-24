@@ -1,0 +1,296 @@
+/* Account footer entry + upward popover (single bottom entry). Uses the alpha-ui --a-* tokens
+ * (globally defined by alpha-ui/tokens.css, loaded via home/dialog/ext-hub css). Follows light/dark. */
+
+.alpha-sidebar-footer {
+  position: relative;
+}
+
+/* the single footer entry */
+.alpha-sidebar-account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 52px;
+  padding: 0 10px;
+  border: none;
+  background: transparent;
+  border-radius: var(--a-radius-lg, 11px);
+  cursor: pointer;
+  color: var(--a-text);
+  text-align: left;
+  -webkit-app-region: no-drag;
+}
+.alpha-sidebar-account:hover {
+  background: var(--a-bg-muted);
+}
+.alpha-sidebar-account-id {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.alpha-sidebar-account-name {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.alpha-sidebar-account-sub {
+  font-size: 11px;
+  color: var(--a-text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.alpha-acct-chev {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  color: var(--a-text-tertiary);
+}
+
+.alpha-acct-av {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--a-accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13px;
+}
+.alpha-acct-av.guest,
+.alpha-acct-av[data-guest] {
+  background: var(--a-bg-inset);
+  color: var(--a-text-tertiary);
+}
+
+/* popover */
+.alpha-acct-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 48;
+}
+.alpha-acct-pop {
+  /* fixed (not absolute) so it escapes the sidebar's overflow:hidden and can be wider than 256px */
+  position: fixed;
+  left: 10px;
+  width: 312px;
+  bottom: 62px;
+  z-index: 50;
+  max-height: min(580px, calc(100vh - 120px));
+  overflow-y: auto;
+  background: var(--a-surface-raised, var(--a-surface));
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-xl, 14px);
+  box-shadow: var(--a-shadow-overlay);
+  padding-bottom: 6px;
+  animation: alpha-acct-in 160ms var(--a-ease-out, cubic-bezier(0.22, 1, 0.36, 1));
+}
+@keyframes alpha-acct-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+.alpha-acct-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+}
+.alpha-acct-id {
+  flex: 1;
+  min-width: 0;
+}
+.alpha-acct-name {
+  font-weight: 600;
+  font-size: 13.5px;
+}
+.alpha-acct-email {
+  font-size: 11.5px;
+  color: var(--a-text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.alpha-acct-plan {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 3px 8px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-bg-muted);
+  color: var(--a-text-tertiary);
+}
+.alpha-acct-plan[data-pro] {
+  background: var(--a-accent-subtle);
+  color: var(--a-accent);
+}
+
+.alpha-acct-card {
+  margin: 0 14px 12px;
+  padding: 12px;
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-lg);
+  background: var(--a-bg-subtle);
+}
+.alpha-acct-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 0;
+  font-size: 12.5px;
+}
+.alpha-acct-k {
+  color: var(--a-text-secondary);
+}
+.alpha-acct-v {
+  font-weight: 600;
+}
+.alpha-acct-pending {
+  font-weight: 500;
+  color: var(--a-text-tertiary);
+  font-size: 11px;
+}
+
+.alpha-acct-cta {
+  display: flex;
+  gap: 8px;
+  margin: 0 14px 10px;
+}
+.alpha-acct-btn {
+  flex: 1;
+  height: 34px;
+  border-radius: var(--a-radius-md);
+  border: 1px solid var(--a-border);
+  background: var(--a-surface);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--a-text);
+}
+.alpha-acct-btn:hover {
+  background: var(--a-bg-muted);
+}
+.alpha-acct-btn.primary {
+  background: var(--a-accent);
+  border-color: var(--a-accent);
+  color: #fff;
+}
+.alpha-acct-btn.primary:hover {
+  background: var(--a-accent-hover);
+}
+
+.alpha-acct-login {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 14px;
+  width: calc(100% - 28px); /* full width (it's a <button>, which otherwise shrinks to content) */
+  box-sizing: border-box;
+  height: 42px;
+  border-radius: var(--a-radius-md);
+  border: none;
+  background: var(--a-accent);
+  color: #fff;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.alpha-acct-login:hover {
+  background: var(--a-accent-hover);
+}
+.alpha-acct-login:hover {
+  background: var(--a-accent-hover);
+}
+
+.alpha-acct-sep {
+  height: 1px;
+  background: var(--a-border-faint);
+  margin: 6px 0;
+}
+.alpha-acct-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: calc(100% - 12px);
+  margin: 0 6px;
+  height: 34px;
+  padding: 0 10px;
+  border: none;
+  background: transparent;
+  border-radius: var(--a-radius-md);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  color: var(--a-text);
+  text-align: left;
+  white-space: nowrap;
+}
+.alpha-acct-item:hover {
+  background: var(--a-bg-muted);
+}
+/* a divider above the first menu item (after the card/CTA or login) */
+.alpha-acct-cta + .alpha-acct-item,
+.alpha-acct-login + .alpha-acct-item {
+  margin-top: 6px;
+  border-top: 1px solid var(--a-border-faint);
+  border-radius: 0;
+}
+.alpha-acct-ic {
+  width: 18px;
+  text-align: center;
+  color: var(--a-text-tertiary);
+  flex: 0 0 auto;
+}
+.alpha-acct-spacer {
+  flex: 1;
+}
+.alpha-acct-danger {
+  color: var(--a-error);
+}
+.alpha-acct-appearance {
+  cursor: default;
+}
+.alpha-acct-appearance:hover {
+  background: transparent;
+}
+.alpha-acct-seg {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  background: var(--a-bg-muted);
+  border-radius: var(--a-radius-sm);
+}
+.alpha-acct-seg button {
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 4px;
+  color: var(--a-text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.alpha-acct-seg button[data-on] {
+  background: var(--a-surface);
+  color: var(--a-text);
+  box-shadow: var(--a-shadow-xs);
+}

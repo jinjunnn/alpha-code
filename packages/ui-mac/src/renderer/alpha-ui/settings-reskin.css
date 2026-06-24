@@ -1,0 +1,158 @@
+/* Alpha reskin of opencode's NATIVE settings dialog (.settings-v2-dialog) — CSS only, no code touched.
+ * Colors already come from the alpha theme; this restyles LAYOUT/structure toward the Codex look:
+ * grouped cards, clean left-nav, generous spacing. Also LOCKS the app to the alpha skin by hiding the
+ * theme/palette picker (user: 只用 alpha 的皮,隐藏换皮功能 — light/dark stays, theme switching goes).
+ *
+ * COUPLING (cosmetic-only; re-point if an upstream bump renames these): settings-v2-dialog,
+ * tabs-v2-*, settings-v2-row/-list/-row-title/-description/-control. */
+@import "./tokens.css";
+
+/* ── FULL-WINDOW settings (covers the whole window, like Codex) — no modal, no shadow ──── */
+/* The modal wrapper fills the entire viewport with an opaque bg (no scrim, no centering), ABOVE the
+ * sidebar (z 60 > sidebar 40), and the dialog fills it edge-to-edge with NO border/radius/shadow. */
+[data-slot="dialog-container"]:has(> .settings-v2-dialog) {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  background: var(--a-bg-canvas) !important;
+  display: block !important;
+  z-index: 60 !important;
+}
+.settings-v2-dialog {
+  /* fixed to the VIEWPORT (not the modal container) → truly fills the whole window */
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: var(--a-bg-canvas) !important;
+  z-index: 61 !important;
+  overflow: hidden !important;
+}
+/* kill any residual shadow on inner shells */
+.settings-v2-dialog,
+.settings-v2-dialog [data-slot="dialog-body"],
+[data-slot="dialog-container"]:has(.settings-v2-dialog) > * {
+  box-shadow: none !important;
+}
+
+/* ── Left nav ───────────────────────────────────────────────────────────────────────── */
+[data-slot="tabs-v2-list"] {
+  background: var(--a-bg-subtle) !important;
+  border-right: 1px solid var(--a-border-faint) !important;
+  padding: 46px 10px 14px !important; /* top space clears the macOS traffic lights */
+  gap: 1px !important;
+  min-width: 240px !important;
+  -webkit-app-region: drag; /* top of the nav doubles as the window drag strip */
+}
+[data-slot="tabs-v2-list"] * {
+  -webkit-app-region: no-drag;
+}
+[data-slot="tabs-v2-section-title"] {
+  font-size: var(--a-text-2xs) !important;
+  font-weight: var(--a-weight-semibold) !important;
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+  color: var(--a-text-tertiary) !important;
+  padding: 12px 10px 4px !important;
+}
+[data-slot="tabs-v2-trigger"] {
+  height: 34px !important;
+  border-radius: var(--a-radius-md) !important;
+  color: var(--a-text-secondary) !important;
+  font-size: var(--a-text-sm) !important;
+  padding: 0 10px !important;
+}
+[data-slot="tabs-v2-trigger"]:hover {
+  background: var(--a-bg-muted) !important;
+  color: var(--a-text) !important;
+}
+[data-slot="tabs-v2-trigger"][data-state="active"],
+[data-slot="tabs-v2-trigger"][aria-selected="true"],
+[data-slot="tabs-v2-trigger"][data-active] {
+  background: var(--a-bg-muted) !important;
+  color: var(--a-text) !important;
+  font-weight: var(--a-weight-semibold) !important;
+}
+
+/* ── Content area ───────────────────────────────────────────────────────────────────── */
+[data-slot="tabs-v2-content"] {
+  padding: 46px 48px 60px !important; /* top space clears the traffic lights */
+  overflow-x: hidden !important;
+}
+/* constrain the inner content to a readable column so controls are never clipped */
+[data-slot="tabs-v2-content"] > * {
+  max-width: 720px !important;
+}
+
+/* group rows into a hairline card */
+[data-component="settings-v2-list"] {
+  border: 1px solid var(--a-border-faint) !important;
+  border-radius: var(--a-radius-lg) !important;
+  background: var(--a-surface) !important;
+  overflow: hidden !important;
+  margin-bottom: 26px !important;
+  max-width: 720px !important;
+}
+[data-component="settings-v2-row"] {
+  padding: 14px 16px !important;
+  gap: 16px !important;
+}
+[data-component="settings-v2-row"] + [data-component="settings-v2-row"] {
+  border-top: 1px solid var(--a-border-faint) !important;
+}
+[data-slot="settings-v2-row-title"] {
+  font-size: var(--a-text-md) !important;
+  font-weight: var(--a-weight-medium) !important;
+}
+[data-slot="settings-v2-row-description"] {
+  font-size: var(--a-text-sm) !important;
+  color: var(--a-text-tertiary) !important;
+  line-height: var(--a-leading-snug) !important;
+  margin-top: 2px !important;
+}
+
+/* ── Lock to alpha skin: hide the theme/palette picker ──────────────────────────────── */
+/* The "主题" row's control carries data-action="settings-theme" (the Dracula/Nord/Alpha palette
+ * switcher). Hide that row so the app is locked to the alpha skin — while KEEPING "配色方案"
+ * (data-action="settings-color-scheme" = light/dark/system), which the user wants. */
+[data-component="settings-v2-row"]:has([data-action="settings-theme"]) {
+  display: none !important;
+}
+
+/* ── Injected "← 返回应用" back button (top of the nav, below the traffic lights) ─────── */
+.alpha-settings-back {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  width: 100% !important;
+  height: 32px !important;
+  margin: 0 0 14px !important;
+  padding: 0 10px !important;
+  border: none !important;
+  border-radius: var(--a-radius-md) !important;
+  background: transparent !important;
+  color: var(--a-text-secondary) !important;
+  font: inherit !important;
+  font-size: var(--a-text-sm) !important;
+  font-weight: var(--a-weight-medium) !important;
+  cursor: pointer !important;
+  -webkit-app-region: no-drag !important;
+}
+.alpha-settings-back:hover {
+  background: var(--a-bg-muted) !important;
+  color: var(--a-text) !important;
+}
+.alpha-settings-back-arrow {
+  font-size: 15px !important;
+  line-height: 1 !important;
+}
