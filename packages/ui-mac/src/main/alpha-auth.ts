@@ -171,12 +171,40 @@ function base64url(buf: Buffer) {
   return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
 }
 
+// PKCE(verifier+state)落盘,使其跨「app 冷启动/重启」存活:授权回调若把 app 从未运行状态
+// 唤醒(macOS open-url 冷启动),内存里的 pkce 为空会误判 state mismatch。文件短命、单次、用后即删。
+function pkceFilePath() {
+  return join(userDataPath, "alpha-pkce.json")
+}
+function savePkce(p: { verifier: string; state: string }) {
+  try {
+    mkdirSync(userDataPath, { recursive: true, mode: 0o700 })
+    writeFileSync(pkceFilePath(), JSON.stringify(p), { encoding: "utf8", mode: 0o600 })
+  } catch (error) {
+    warn("alpha-auth: pkce persist failed", error)
+  }
+}
+function loadPkce(): { verifier: string; state: string } | null {
+  try {
+    const p = JSON.parse(readFileSync(pkceFilePath(), "utf8")) as { verifier?: string; state?: string }
+    if (typeof p.verifier === "string" && typeof p.state === "string") return { verifier: p.verifier, state: p.state }
+  } catch {}
+  return null
+}
+function clearPkce() {
+  pkce = null
+  try {
+    rmSync(pkceFilePath(), { force: true })
+  } catch {}
+}
+
 // ① 发起:浏览器代理授权。PKCE(S256) + state,跳到 web 授权页。
 export async function startAuth(): Promise<void> {
   const verifier = base64url(randomBytes(32))
   const challenge = base64url(createHash("sha256").update(verifier).digest())
   const state = randomUUID()
   pkce = { verifier, state }
+  savePkce(pkce)
   const url = new URL(`${webBase()}${ALPHA_PATHS.authorize}`)
   url.searchParams.set("response_type", "code")
   url.searchParams.set("client_id", CLIENT_ID)
@@ -214,9 +242,11 @@ async function completeAuth(parsed: URL) {
   const error = parsed.searchParams.get("error")
   if (error) return warn("alpha-auth: provider returned error", { error })
   if (!code || !state) return warn("alpha-auth: callback missing code/state")
-  if (!pkce || pkce.state !== state) return warn("alpha-auth: state mismatch — possible CSRF, ignoring")
-  const verifier = pkce.verifier
-  pkce = null
+  // 内存 pkce 为空(app 被回调冷启动唤醒)时回退读落盘的 pkce。
+  const active = pkce ?? loadPkce()
+  if (!active || active.state !== state) return warn("alpha-auth: state mismatch — possible CSRF, ignoring")
+  const verifier = active.verifier
+  clearPkce()
 
   const tokens = await exchangeCode(code, verifier)
   stored = {

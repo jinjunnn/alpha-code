@@ -222,6 +222,15 @@ const main = Effect.gen(function* () {
     event.preventDefault()
     logger.log("deep link received via open-url", { url })
     emitDeepLinks([url])
+    // Bring the app to the foreground. The auth callback arrives while the browser is focused;
+    // unlike "second-instance", "open-url" does NOT auto-activate the app, so login would otherwise
+    // complete silently in the background. steal:true overrides macOS focus-stealing prevention.
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+    }
+    app.focus({ steal: true })
   })
 
   app.on("before-quit", () => {
