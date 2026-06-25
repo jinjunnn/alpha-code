@@ -2,38 +2,50 @@
  * alpha-ui design tokens — the foundation of alpha's OWN frontend (the full-takeover rebuild).
  *
  * This is alpha's design language, NOT a reskin of opencode's tokens. Own components under
- * renderer/alpha-ui/* consume ONLY these `--a-*` variables. Aesthetic: refined monochrome
- * (black/white neutral spine) + a single restrained indigo accent — premium, quiet, Linear/Vercel
- * register. Light is default; dark applies under [data-alpha-theme="dark"] and via prefers-color-scheme.
+ * renderer/alpha-ui/* consume ONLY these `--a-*` variables. Aesthetic: cool graphite / porcelain
+ * neutral spine (slate-tinted) + a single restrained indigo accent — premium, quiet, Linear/Vercel/
+ * Raycast register. Light is default; dark applies under [data-color-scheme="dark"] and via prefers-color-scheme.
  *
  * Naming: --a-<category>-<role>. Categories: color (bg/surface/text/border/accent/semantic),
  * font, text (size), leading, tracking, weight, space, radius, shadow, dur, ease, z.
  */
 
 :root {
-  /* ── Neutral spine (light) ───────────────────────────────────────────── */
-  --a-bg-canvas: #ffffff;          /* app background */
-  --a-bg-subtle: #f7f7f8;          /* recessed areas, sidebars */
-  --a-bg-muted: #efeff1;           /* hover fills, inset fields */
-  --a-bg-inset: #e9e9ec;           /* pressed / track */
+  /* ── Neutral spine (light) — cool porcelain ──────────────────────────── */
+  --a-bg-canvas: #ffffff;          /* app background / main content */
+  --a-bg-subtle: #f6f7f9;          /* recessed areas, sidebars (cool porcelain) */
+  --a-bg-muted: #eceef1;           /* hover fills, inset fields */
+  --a-bg-inset: #e3e6ea;           /* pressed / track */
   --a-surface: #ffffff;            /* cards, panels, popovers */
   --a-surface-raised: #ffffff;     /* modals (paired with shadow) */
-  --a-scrim: rgba(16, 16, 20, 0.42);
+  --a-scrim: rgba(15, 17, 21, 0.45);
 
-  --a-border-faint: #ececef;       /* hairline dividers */
-  --a-border: #e0e0e4;             /* default control border */
-  --a-border-strong: #c9c9d0;      /* emphasized / focus-adjacent */
+  --a-border-faint: #eef0f3;       /* hairline dividers */
+  --a-border: #e4e6ea;             /* default control border */
+  --a-border-strong: #ced2d9;      /* emphasized / focus-adjacent */
 
   --a-text: #18181b;               /* primary text */
   --a-text-secondary: #52525b;     /* labels, secondary */
-  --a-text-tertiary: #8a8a93;      /* placeholder, meta */
-  --a-text-disabled: #b6b6bd;
+  --a-text-tertiary: #7c7d85;      /* placeholder, meta */
+  --a-text-disabled: #b3b6bd;
   --a-text-on-accent: #ffffff;
+
+  /* Layered-chrome overlays (sidebar / list rows) — translucent so hover/active/selected
+     read clean over any background. Selected = the indigo accent tint. */
+  --a-overlay-hover: rgba(15, 17, 21, 0.05);
+  --a-overlay-active: rgba(15, 17, 21, 0.08);
+  --a-overlay-selected: var(--a-accent-subtle);
 
   /* ── Accent — single restrained indigo ──────────────────────────────── */
   --a-accent: #4f46e5;
   --a-accent-hover: #4338ca;
   --a-accent-active: #3730a3;
+  /* Solid accent for FILLS (button backgrounds). In light it equals the accent; in dark it is
+     kept deep (unlike --a-accent which is a lighter indigo tuned for text/links on dark) so white
+     label text clears WCAG 4.5:1 on the fill. */
+  --a-accent-solid: var(--a-accent);
+  --a-accent-solid-hover: var(--a-accent-hover);
+  --a-accent-solid-active: var(--a-accent-active);
   --a-accent-subtle: rgba(79, 70, 229, 0.10);   /* tinted fills */
   --a-accent-border: rgba(79, 70, 229, 0.35);
   --a-accent-ring: rgba(79, 70, 229, 0.45);      /* focus ring */
@@ -97,11 +109,11 @@
   --a-radius-full: 9999px;
 
   /* ── Elevation (soft, low-spread; tuned for light) ──────────────────── */
-  --a-shadow-xs: 0 1px 2px rgba(16, 16, 20, 0.05);
-  --a-shadow-sm: 0 1px 3px rgba(16, 16, 20, 0.07), 0 1px 2px rgba(16, 16, 20, 0.04);
-  --a-shadow-md: 0 4px 12px rgba(16, 16, 20, 0.08), 0 2px 4px rgba(16, 16, 20, 0.05);
-  --a-shadow-lg: 0 12px 32px rgba(16, 16, 20, 0.12), 0 4px 8px rgba(16, 16, 20, 0.06);
-  --a-shadow-overlay: 0 24px 64px rgba(16, 16, 20, 0.20), 0 8px 16px rgba(16, 16, 20, 0.10);
+  --a-shadow-xs: 0 1px 2px rgba(15, 17, 21, 0.05);
+  --a-shadow-sm: 0 1px 3px rgba(15, 17, 21, 0.07), 0 1px 2px rgba(15, 17, 21, 0.04);
+  --a-shadow-md: 0 4px 12px rgba(15, 17, 21, 0.08), 0 2px 4px rgba(15, 17, 21, 0.05);
+  --a-shadow-lg: 0 12px 32px rgba(15, 17, 21, 0.12), 0 4px 8px rgba(15, 17, 21, 0.06);
+  --a-shadow-overlay: 0 24px 64px rgba(15, 17, 21, 0.20), 0 8px 16px rgba(15, 17, 21, 0.10);
   --a-ring-focus: 0 0 0 3px var(--a-accent-ring);
 
   /* ── Motion ──────────────────────────────────────────────────────────── */
@@ -126,27 +138,36 @@
 /* Keyed off opencode's `document.documentElement.dataset.colorScheme` (= data-color-scheme),
  * set by @opencode-ai/ui's theme context — so alpha-ui follows the app's light/dark toggle. */
 :root[data-color-scheme="dark"] {
-  --a-bg-canvas: #0a0a0b;
-  --a-bg-subtle: #121214;
-  --a-bg-muted: #1a1a1d;
-  --a-bg-inset: #242428;
-  --a-surface: #151517;
-  --a-surface-raised: #1b1b1e;
-  --a-scrim: rgba(0, 0, 0, 0.58);
+  /* ── Neutral spine (dark) — cool graphite ────────────────────────────── */
+  --a-bg-canvas: #0a0b0d;
+  --a-bg-subtle: #0e0f11;
+  --a-bg-muted: #16171a;
+  --a-bg-inset: #1e2024;
+  --a-surface: #121316;
+  --a-surface-raised: #17181b;
+  --a-scrim: rgba(0, 0, 0, 0.60);
 
-  --a-border-faint: #1f1f23;
-  --a-border: #2a2a2f;
-  --a-border-strong: #3a3a42;
+  --a-border-faint: #1b1c20;
+  --a-border: #232428;
+  --a-border-strong: #34363c;
 
   --a-text: #fafafa;
   --a-text-secondary: #a1a1aa;
-  --a-text-tertiary: #71717a;
-  --a-text-disabled: #52525b;
+  --a-text-tertiary: #71727a;
+  --a-text-disabled: #4f5158;
   --a-text-on-accent: #ffffff;
+
+  --a-overlay-hover: rgba(255, 255, 255, 0.055);
+  --a-overlay-active: rgba(255, 255, 255, 0.09);
+  --a-overlay-selected: var(--a-accent-subtle);
 
   --a-accent: #818cf8;
   --a-accent-hover: #6366f1;
   --a-accent-active: #4f46e5;
+  /* Deep solid for dark button fills — white label clears 4.5:1 (bg 6.3:1, hover 5.3:1). */
+  --a-accent-solid: #4f46e5;
+  --a-accent-solid-hover: #5b54ea;
+  --a-accent-solid-active: #4338ca;
   --a-accent-subtle: rgba(129, 140, 248, 0.14);
   --a-accent-border: rgba(129, 140, 248, 0.38);
   --a-accent-ring: rgba(129, 140, 248, 0.45);
@@ -169,23 +190,29 @@
 /* Follow the OS only when the app hasn't pinned a scheme (data-color-scheme set by opencode wins). */
 @media (prefers-color-scheme: dark) {
   :root:not([data-color-scheme="light"]):not([data-color-scheme="dark"]) {
-    --a-bg-canvas: #0a0a0b;
-    --a-bg-subtle: #121214;
-    --a-bg-muted: #1a1a1d;
-    --a-bg-inset: #242428;
-    --a-surface: #151517;
-    --a-surface-raised: #1b1b1e;
-    --a-scrim: rgba(0, 0, 0, 0.58);
-    --a-border-faint: #1f1f23;
-    --a-border: #2a2a2f;
-    --a-border-strong: #3a3a42;
+    --a-bg-canvas: #0a0b0d;
+    --a-bg-subtle: #0e0f11;
+    --a-bg-muted: #16171a;
+    --a-bg-inset: #1e2024;
+    --a-surface: #121316;
+    --a-surface-raised: #17181b;
+    --a-scrim: rgba(0, 0, 0, 0.60);
+    --a-border-faint: #1b1c20;
+    --a-border: #232428;
+    --a-border-strong: #34363c;
     --a-text: #fafafa;
     --a-text-secondary: #a1a1aa;
-    --a-text-tertiary: #71717a;
-    --a-text-disabled: #52525b;
+    --a-text-tertiary: #71727a;
+    --a-text-disabled: #4f5158;
+    --a-overlay-hover: rgba(255, 255, 255, 0.055);
+    --a-overlay-active: rgba(255, 255, 255, 0.09);
+    --a-overlay-selected: var(--a-accent-subtle);
     --a-accent: #818cf8;
     --a-accent-hover: #6366f1;
     --a-accent-active: #4f46e5;
+    --a-accent-solid: #4f46e5;
+    --a-accent-solid-hover: #5b54ea;
+    --a-accent-solid-active: #4338ca;
     --a-accent-subtle: rgba(129, 140, 248, 0.14);
     --a-accent-border: rgba(129, 140, 248, 0.38);
     --a-accent-ring: rgba(129, 140, 248, 0.45);

@@ -56,8 +56,8 @@
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: var(--a-accent);
-  color: #fff;
+  background: var(--a-accent-solid);
+  color: var(--a-text-on-accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -186,12 +186,12 @@
   background: var(--a-bg-muted);
 }
 .alpha-acct-btn.primary {
-  background: var(--a-accent);
-  border-color: var(--a-accent);
-  color: #fff;
+  background: var(--a-accent-solid);
+  border-color: var(--a-accent-solid);
+  color: var(--a-text-on-accent);
 }
 .alpha-acct-btn.primary:hover {
-  background: var(--a-accent-hover);
+  background: var(--a-accent-solid-hover);
 }
 
 .alpha-acct-login {
@@ -205,18 +205,15 @@
   height: 42px;
   border-radius: var(--a-radius-md);
   border: none;
-  background: var(--a-accent);
-  color: #fff;
+  background: var(--a-accent-solid);
+  color: var(--a-text-on-accent);
   font: inherit;
   font-size: 13.5px;
   font-weight: 600;
   cursor: pointer;
 }
 .alpha-acct-login:hover {
-  background: var(--a-accent-hover);
-}
-.alpha-acct-login:hover {
-  background: var(--a-accent-hover);
+  background: var(--a-accent-solid-hover);
 }
 
 .alpha-acct-sep {

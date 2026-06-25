@@ -59,7 +59,7 @@ export const ALPHA_THEME: DesktopTheme = {
   },
   dark: {
     palette: {
-      neutral: "#0a0a0a",
+      neutral: "#0a0b0d",
       ink: "#ededed",
       primary: BRAND.accentDark,
       accent: BRAND.accentDarkHi,
