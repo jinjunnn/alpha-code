@@ -108,7 +108,9 @@ export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }
     { k: "dark", l: "深色" },
     { k: "system", l: "系统" },
   ] as const
-  const billingUrl = `${ALPHA_ENDPOINTS.web}${ALPHA_PATHS.billing}`
+  // 钱包购买页(/wallet)按页签深链:充值 → 钱包充值页签;升级会员/管理订阅 → 会员月卡页签。
+  const rechargeUrl = `${ALPHA_ENDPOINTS.web}${ALPHA_PATHS.wallet}?tab=recharge`
+  const subscribeUrl = `${ALPHA_ENDPOINTS.web}${ALPHA_PATHS.wallet}?tab=subscription`
 
   // Account summary (balance / membership / token usage) from alpha-platform B, fetched on login.
   // Contract: alpha-platform docs/alpha-code-account-integration.md. usageSeries powers the 14-day
@@ -796,15 +798,15 @@ export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }
                   </div>
                   <div class="alpha-acct-cta">
                     <Show when={!acctIsPro()}>
-                      <button class="alpha-acct-btn primary" onClick={() => window.api.openLink(billingUrl)}>
+                      <button class="alpha-acct-btn primary" onClick={() => window.api.openLink(subscribeUrl)}>
                         升级会员
                       </button>
                     </Show>
-                    <button class="alpha-acct-btn" onClick={() => window.api.openLink(billingUrl)}>
+                    <button class="alpha-acct-btn" onClick={() => window.api.openLink(rechargeUrl)}>
                       充值
                     </button>
                     <Show when={acctIsPro()}>
-                      <button class="alpha-acct-btn" onClick={() => window.api.openLink(billingUrl)}>
+                      <button class="alpha-acct-btn" onClick={() => window.api.openLink(subscribeUrl)}>
                         管理订阅
                       </button>
                     </Show>

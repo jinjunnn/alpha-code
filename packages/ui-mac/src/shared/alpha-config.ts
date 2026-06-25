@@ -20,8 +20,10 @@ export const ALPHA_PATHS = {
   authorize: "/auth/authorize",
   /** web: PKCE code → token exchange. */
   token: "/auth/token",
-  /** web: billing portal. */
+  /** web: billing portal(用量 + 流水账单页). */
   billing: "/billing",
+  /** web: 钱包购买页 —— ?tab=recharge(钱包充值)| subscription(会员月卡). */
+  wallet: "/wallet",
   /** platform: model proxy base → ALPHA_BASE_URL. */
   modelProxy: "/v1",
   /** platform: MCP tool gateway → ALPHA_CLOUD_MCP_URL. */
