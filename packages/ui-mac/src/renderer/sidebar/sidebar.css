@@ -6,6 +6,11 @@
  * reappears / content not shifted), never a merge conflict — re-point the two rules below:
  *   1. [data-slot="titlebar-tabs"]            — the V2 titlebar tab-strip (components/titlebar.tsx)
  *   2. .relative.bg-v2-background-bg-deep.flex-1 — the V2 layout shell (pages/layout.tsx fallback)
+ *
+ * COLOR: the sidebar's OWN elements (.alpha-*) consume alpha-ui design tokens (--a-*, see
+ * alpha-ui/tokens.css) — cool graphite / porcelain. The upstream-chrome override rules below
+ * (settings dialog help row, wordmark overlay) keep opencode's --v2-* tokens on purpose, so they
+ * match the opencode surface they are embedded in.
  */
 
 :root {
@@ -87,7 +92,8 @@ body[data-alpha-sidebar] [data-component="dialog-v2"][data-variant="settings"][d
 }
 
 /* The injected Help row — mirrors the settings TabsV2 trigger (28px, 4px radius, muted → base on
-   hover, icon + label, 6px gap) so it reads as a peer of the nav items above it. */
+   hover, icon + label, 6px gap) so it reads as a peer of the nav items above it. Stays on --v2-*
+   because it lives INSIDE opencode's settings dialog and must match that surface. */
 .settings-v2-help-trigger {
   display: flex;
   align-items: center;
@@ -158,9 +164,9 @@ svg[viewBox="0 0 720.002 129.001"] {
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  background: var(--v2-background-bg-deep, var(--background-base, #f7f7f6));
-  border-right: 1px solid var(--border-weak-base, color-mix(in srgb, currentColor 10%, transparent));
-  color: var(--v2-text-text-base, var(--text-base, #1c1c1c));
+  background: var(--a-bg-subtle);
+  border-right: 1px solid var(--a-border);
+  color: var(--a-text);
   font-size: 13px;
   user-select: none;
   overflow: hidden;
@@ -195,7 +201,7 @@ svg[viewBox="0 0 720.002 129.001"] {
   border-radius: 7px;
 }
 .alpha-sidebar-brand-mark:hover {
-  background: color-mix(in srgb, var(--v2-text-text-base, #000) 7%, transparent);
+  background: var(--a-overlay-hover);
 }
 
 .alpha-sidebar-mark {
@@ -208,7 +214,7 @@ svg[viewBox="0 0 720.002 129.001"] {
   font-weight: 680;
   font-size: 12.5px;
   letter-spacing: 0.085em;
-  color: var(--v2-text-text-base, var(--text-strong, #111));
+  color: var(--a-text);
   white-space: nowrap;
 }
 
@@ -233,11 +239,11 @@ svg[viewBox="0 0 720.002 129.001"] {
   width: 26px;
   height: 26px;
   border-radius: 7px;
-  color: var(--v2-text-text-muted, var(--text-weak, #6b6b6b));
+  color: var(--a-text-secondary);
 }
 .alpha-sidebar-icon-btn:hover {
-  background: color-mix(in srgb, var(--v2-text-text-base, #000) 9%, transparent);
-  color: var(--v2-text-text-base, var(--text-base));
+  background: var(--a-overlay-hover);
+  color: var(--a-text);
 }
 
 .alpha-sidebar-nav {
@@ -256,16 +262,16 @@ svg[viewBox="0 0 720.002 129.001"] {
   padding: 7px 9px;
   border-radius: 8px;
   text-align: left;
-  color: var(--v2-text-text-base, var(--text-base));
+  color: var(--a-text);
 }
 .alpha-sidebar-nav-item:hover {
-  background: color-mix(in srgb, var(--v2-text-text-base, #000) 8%, transparent);
+  background: var(--a-overlay-hover);
 }
 .alpha-sidebar-nav-icon {
   width: 16px;
   height: 16px;
   flex: 0 0 auto;
-  color: var(--v2-text-text-muted, var(--text-weak));
+  color: var(--a-text-secondary);
 }
 
 .alpha-sidebar-section {
@@ -274,7 +280,7 @@ svg[viewBox="0 0 720.002 129.001"] {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
-  color: var(--v2-text-text-faint, var(--text-weak, #8a8a8a));
+  color: var(--a-text-tertiary);
 }
 
 .alpha-sidebar-scroll {
@@ -291,7 +297,7 @@ svg[viewBox="0 0 720.002 129.001"] {
   flex-direction: column;
   gap: 1px;
   padding: 6px 8px 10px;
-  border-top: 1px solid var(--border-weak-base, color-mix(in srgb, currentColor 8%, transparent));
+  border-top: 1px solid var(--a-border-faint);
 }
 
 /* ── projects + sessions ─────────────────────────────────────────────────────────────── */
@@ -306,17 +312,17 @@ svg[viewBox="0 0 720.002 129.001"] {
   cursor: pointer;
 }
 .alpha-project-row:hover {
-  background: color-mix(in srgb, var(--v2-text-text-base, #000) 8%, transparent);
+  background: var(--a-overlay-hover);
 }
 .alpha-project-row[data-active] {
-  background: color-mix(in srgb, var(--v2-text-text-base, #000) 6%, transparent);
+  background: var(--a-overlay-hover);
 }
 
 .alpha-project-chevron {
   width: 13px;
   height: 13px;
   flex: 0 0 auto;
-  color: var(--v2-text-text-faint, var(--text-weak));
+  color: var(--a-text-tertiary);
   transition: transform 120ms ease;
 }
 .alpha-project-chevron[data-collapsed] {
@@ -336,7 +342,7 @@ svg[viewBox="0 0 720.002 129.001"] {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--v2-text-text-base, var(--text-base));
+  color: var(--a-text);
 }
 
 /* The per-project hover actions (⋯ more, + new chat). Hidden until the row is hovered (or, for
@@ -349,7 +355,7 @@ svg[viewBox="0 0 720.002 129.001"] {
   height: 20px;
   border-radius: 6px;
   flex: 0 0 auto;
-  color: var(--v2-text-text-muted, var(--text-weak));
+  color: var(--a-text-secondary);
   opacity: 0;
 }
 .alpha-project-action :where(svg) {
@@ -361,8 +367,8 @@ svg[viewBox="0 0 720.002 129.001"] {
   opacity: 1;
 }
 .alpha-project-action:hover {
-  background: color-mix(in srgb, var(--v2-text-text-base, #000) 12%, transparent);
-  color: var(--v2-text-text-base, var(--text-base));
+  background: var(--a-overlay-active);
+  color: var(--a-text);
 }
 
 /* Dropdown opened by the ⋯ button. Fixed-positioned (viewport coords from the trigger rect),
@@ -376,9 +382,9 @@ svg[viewBox="0 0 720.002 129.001"] {
   flex-direction: column;
   gap: 1px;
   border-radius: 10px;
-  background: var(--v2-background-bg-base, var(--background-base, #fff));
-  border: 1px solid var(--v2-border-border-base, color-mix(in srgb, currentColor 12%, transparent));
-  box-shadow: var(--v2-elevation-raised, 0 8px 24px rgba(0, 0, 0, 0.18));
+  background: var(--a-surface-raised);
+  border: 1px solid var(--a-border);
+  box-shadow: var(--a-shadow-lg);
   cursor: default;
 }
 .alpha-project-menu-item {
@@ -390,16 +396,16 @@ svg[viewBox="0 0 720.002 129.001"] {
   border-radius: 7px;
   font-size: 13px;
   text-align: left;
-  color: var(--v2-text-text-base, var(--text-base));
+  color: var(--a-text);
 }
 .alpha-project-menu-item:hover {
-  background: color-mix(in srgb, var(--v2-text-text-base, #000) 9%, transparent);
+  background: var(--a-overlay-hover);
 }
 .alpha-project-menu-item-danger {
-  color: var(--v2-text-text-critical, #c0392b);
+  color: var(--a-error);
 }
 .alpha-project-menu-item-danger:hover {
-  background: color-mix(in srgb, #c0392b 12%, transparent);
+  background: var(--a-error-subtle);
 }
 .alpha-project-menu-icon {
   width: 15px;
@@ -426,13 +432,13 @@ svg[viewBox="0 0 720.002 129.001"] {
   padding: 7px 10px;
   border-radius: 8px;
   font-size: 12px;
-  color: var(--v2-text-text-muted, var(--text-weak));
+  color: var(--a-text-secondary);
 }
 .alpha-sidebar-archived:hover {
-  background: color-mix(in srgb, var(--v2-text-text-base, #000) 7%, transparent);
+  background: var(--a-overlay-hover);
 }
 .alpha-sidebar-archived-action {
-  color: var(--v2-text-text-accent, #2f6fed);
+  color: var(--a-accent);
   flex: 0 0 auto;
 }
 
@@ -447,27 +453,27 @@ svg[viewBox="0 0 720.002 129.001"] {
   display: block;
   padding: 5px 8px 5px 14px;
   margin-left: 5px;
-  border-left: 1px solid var(--border-weak-base, color-mix(in srgb, currentColor 10%, transparent));
+  border-left: 1px solid var(--a-border);
   border-radius: 0 7px 7px 0;
-  color: var(--v2-text-text-muted, var(--text-weak, #555));
+  color: var(--a-text-secondary);
   text-decoration: none;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .alpha-session:hover {
-  background: color-mix(in srgb, var(--v2-text-text-base, #000) 8%, transparent);
-  color: var(--v2-text-text-base, var(--text-base));
+  background: var(--a-overlay-hover);
+  color: var(--a-text);
 }
 .alpha-session[data-active] {
-  background: color-mix(in srgb, var(--v2-text-text-accent, var(--v2-text-text-base, #000)) 14%, transparent);
-  color: var(--v2-text-text-base, var(--text-strong, #111));
+  background: var(--a-overlay-selected);
+  color: var(--a-text);
   font-weight: 560;
 }
 
 .alpha-sidebar-empty {
   padding: 6px 10px 6px 19px;
-  color: var(--v2-text-text-faint, var(--text-weak));
+  color: var(--a-text-tertiary);
   font-size: 12px;
 }
 .alpha-sidebar-empty-projects {
@@ -481,11 +487,11 @@ svg[viewBox="0 0 720.002 129.001"] {
   align-self: center;
   padding: 6px 12px;
   border-radius: 8px;
-  background: var(--v2-background-bg-button-neutral, color-mix(in srgb, var(--v2-text-text-base, #000) 8%, transparent));
-  color: var(--v2-text-text-base, var(--text-base));
+  background: var(--a-bg-muted);
+  color: var(--a-text);
 }
 .alpha-sidebar-open-project:hover {
-  background: color-mix(in srgb, var(--v2-text-text-base, #000) 14%, transparent);
+  background: var(--a-bg-inset);
 }
 
 /* ── top-left toolbar (lives in the native titlebar strip, always visible) ───────────── */
@@ -525,12 +531,12 @@ svg[viewBox="0 0 720.002 129.001"] {
   border: 0;
   border-radius: 7px;
   background: transparent;
-  color: var(--v2-text-text-muted, var(--text-weak, #6b6b6b));
+  color: var(--a-text-secondary);
   cursor: pointer;
 }
 .alpha-topbar-btn:hover {
-  background: color-mix(in srgb, var(--v2-text-text-base, #000) 9%, transparent);
-  color: var(--v2-text-text-base, var(--text-base));
+  background: var(--a-overlay-hover);
+  color: var(--a-text);
 }
 .alpha-topbar-btn :where(svg) {
   width: 16px;
@@ -540,7 +546,7 @@ svg[viewBox="0 0 720.002 129.001"] {
   width: 1px;
   height: 16px;
   margin: 0 4px;
-  background: var(--border-weak-base, color-mix(in srgb, currentColor 16%, transparent));
+  background: var(--a-border);
 }
 
 /* top-RIGHT toolbar (terminal + review toggles), only inside a session */

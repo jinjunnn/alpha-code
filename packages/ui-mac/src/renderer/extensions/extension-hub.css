@@ -301,13 +301,13 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   cursor: default;
 }
 .alpha-ext-add[data-variant="primary"] {
-  background: var(--a-accent);
-  border-color: var(--a-accent);
+  background: var(--a-accent-solid);
+  border-color: var(--a-accent-solid);
   color: var(--a-text-on-accent);
 }
 .alpha-ext-add[data-variant="primary"]:hover:not(:disabled) {
-  background: var(--a-accent-hover);
-  border-color: var(--a-accent-hover);
+  background: var(--a-accent-solid-hover);
+  border-color: var(--a-accent-solid-hover);
 }
 .alpha-ext-add[data-variant="installed"] {
   background: transparent;

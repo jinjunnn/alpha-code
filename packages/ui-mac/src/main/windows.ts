@@ -225,6 +225,18 @@ export function createMainWindow() {
           console.log("[alpha-shot] click:", JSON.stringify(clicked))
           await new Promise((res) => setTimeout(res, 1800))
         }
+        // optional: force the color scheme (light|dark) before capture, so dev verification can
+        // shoot both modes deterministically without toggling the OS appearance. alpha-ui tokens
+        // and opencode's CSS both key off documentElement[data-color-scheme]. Env-gated, no normal effect.
+        if (process.env.ALPHA_SHOT_SCHEME) {
+          await win.webContents
+            .executeJavaScript(
+              `document.documentElement.dataset.colorScheme=${JSON.stringify(process.env.ALPHA_SHOT_SCHEME)};` +
+                `getComputedStyle(document.documentElement).getPropertyValue('--a-bg-subtle');`,
+            )
+            .catch((e) => "err:" + e.message)
+          await new Promise((res) => setTimeout(res, 700))
+        }
         const img = await win.webContents.capturePage()
         await writeFile(process.env.ALPHA_SHOT as string, img.toPNG())
         console.log("[alpha-shot]", process.env.ALPHA_SHOT, JSON.stringify(img.getSize()))

@@ -52,15 +52,15 @@
 
 /* primary — the single accent */
 .a-btn[data-variant="primary"] {
-  background: var(--a-accent);
+  background: var(--a-accent-solid);
   color: var(--a-text-on-accent);
   box-shadow: var(--a-shadow-xs);
 }
 .a-btn[data-variant="primary"]:hover:not(:disabled) {
-  background: var(--a-accent-hover);
+  background: var(--a-accent-solid-hover);
 }
 .a-btn[data-variant="primary"]:active:not(:disabled) {
-  background: var(--a-accent-active);
+  background: var(--a-accent-solid-active);
 }
 
 /* secondary — bordered neutral */
