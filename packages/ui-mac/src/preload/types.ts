@@ -54,7 +54,7 @@ export type AuthState = {
 // alpha account summary — balance / membership / token usage, read from the alpha-platform (B)
 // in-region account-server using the stored JWT. Shared cross-bundle like AuthState. Contract:
 // alpha-platform docs/alpha-code-account-integration.md (GET /v1/account/summary).
-export type AccountWindow = { usedTokens: number; limitTokens: number; resetsInMin: number }
+export type AccountWindow = { usedCredits: number; limitCredits: number; resetsInMin: number }
 export type AccountPlan =
   | {
       id: string

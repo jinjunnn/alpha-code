@@ -771,7 +771,7 @@ export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }
                       <Show when={summary()} fallback={<span class="alpha-acct-pending">{pendingText()}</span>}>
                         <Show when={activePlan()} fallback={<span class="alpha-acct-pending">按量计费</span>}>
                           <span class="alpha-acct-v">
-                            {fmtTokens(activePlan()!.window5h.usedTokens)} / {fmtTokens(activePlan()!.window5h.limitTokens)}
+                            {activePlan()!.window5h.usedCredits.toLocaleString()} / {activePlan()!.window5h.limitCredits.toLocaleString()}
                           </span>
                         </Show>
                       </Show>
@@ -781,7 +781,7 @@ export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }
                       <Show when={summary()} fallback={<span class="alpha-acct-pending">{pendingText()}</span>}>
                         <Show when={activePlan()} fallback={<span class="alpha-acct-pending">按量计费</span>}>
                           <span class="alpha-acct-v">
-                            {fmtTokens(activePlan()!.window7d.usedTokens)} / {fmtTokens(activePlan()!.window7d.limitTokens)}
+                            {activePlan()!.window7d.usedCredits.toLocaleString()} / {activePlan()!.window7d.limitCredits.toLocaleString()}
                           </span>
                         </Show>
                       </Show>
