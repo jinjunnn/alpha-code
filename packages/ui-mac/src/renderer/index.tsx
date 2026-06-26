@@ -39,6 +39,7 @@ import { ModelPickerInject } from "./alpha-ui/model-picker-inject"
 import { TimelineInject } from "./alpha-ui/timeline-inject"
 import { AlphaSidebar } from "./sidebar/alpha-sidebar"
 import { AlphaHome } from "./alpha-ui/AlphaHome"
+import { AlphaOnboarding } from "./alpha-ui/AlphaOnboarding"
 import { setupSettingsBackButton } from "./alpha-ui/settings-back-button"
 import { ExtensionHub } from "./extensions/extension-hub"
 import { extHubOpen, setExtHubOpen } from "./extensions/ext-hub-state"
@@ -402,6 +403,7 @@ render(() => {
               <Inner />
               <AlphaSidebar server={sidebarServer} />
               <AlphaHome server={sidebarServer} />
+              <AlphaOnboarding />
               <ExtensionHub server={sidebarServer} open={extHubOpen} onClose={() => setExtHubOpen(false)} />
               <ComposerInject />
               <ModelPickerInject />
