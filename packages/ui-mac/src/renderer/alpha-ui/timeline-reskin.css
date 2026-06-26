@@ -107,3 +107,36 @@
 [data-component="context-tool-group-trigger"]:hover {
   background: var(--a-bg-subtle);
 }
+
+/* User message → right-aligned accent bubble (timeline.html §.row-user .bubble). opencode renders
+ * the user turn left-aligned plain; we right-align the container and tint the body into a bubble. */
+[data-component="user-message"] {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+[data-slot="user-message-body"] {
+  display: inline-block;
+  max-width: 82%;
+  background: var(--a-accent-subtle) !important;
+  border: 1px solid var(--a-accent-border) !important;
+  border-radius: var(--a-radius-lg) !important;
+  padding: 11px 14px !important;
+  font-size: var(--a-text-md);
+  line-height: var(--a-leading-normal);
+  color: var(--a-text);
+}
+
+/* Assistant text → comfortable reading measure + inline code chips (timeline.html §.ai-md). */
+[data-slot="session-turn-assistant-content"] [data-component="text-part"] {
+  font-size: var(--a-text-md);
+  line-height: var(--a-leading-normal);
+  color: var(--a-text);
+}
+[data-slot="session-turn-assistant-content"] [data-component="text-part"] :not(pre) > code {
+  font-family: var(--a-font-mono);
+  background: var(--a-bg-muted);
+  padding: 1px 5px;
+  border-radius: 5px;
+  font-size: 0.92em;
+}
