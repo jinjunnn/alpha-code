@@ -46,6 +46,11 @@
   --a-accent-solid: var(--a-accent);
   --a-accent-solid-hover: var(--a-accent-hover);
   --a-accent-solid-active: var(--a-accent-active);
+  /* Send button fill — softer indigo (user-chosen; the full-saturation accent read garish as a solid
+     fill). Send-specific so the global accent stays the brand #4f46e5. Single source for both the home
+     and in-session send buttons. */
+  --a-send: #6366f1;
+  --a-send-hover: #4f46e5;
   --a-accent-subtle: rgba(79, 70, 229, 0.10);   /* tinted fills */
   --a-accent-border: rgba(79, 70, 229, 0.35);
   --a-accent-ring: rgba(79, 70, 229, 0.45);      /* focus ring */

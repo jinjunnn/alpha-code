@@ -27,7 +27,7 @@
 
 /* Send → alpha brand indigo affordance (user-approved). Enabled = indigo, disabled = muted track. */
 [data-action="prompt-submit"] {
-  background: var(--a-accent) !important;
+  background: var(--a-send) !important;
   color: var(--a-text-on-accent) !important;
   border-radius: var(--a-radius-full) !important;
   transition:
@@ -35,10 +35,10 @@
     transform var(--a-dur-fast) var(--a-ease-out) !important;
 }
 [data-action="prompt-submit"]:hover:not(:disabled) {
-  background: var(--a-accent-hover) !important;
+  background: var(--a-send-hover) !important;
 }
 [data-action="prompt-submit"]:active:not(:disabled) {
-  background: var(--a-accent-active) !important;
+  background: var(--a-send-hover) !important;
   transform: scale(0.94) !important;
 }
 [data-action="prompt-submit"]:disabled {
@@ -90,4 +90,31 @@
 }
 [data-alpha-composer-inject="effort"] {
   order: 3 !important;
+}
+
+/* Slash/@ autocomplete menu → alpha popover surface (mockup .pop / .menu-item). opencode renders it
+ * Tailwind-classed with no data hook on the container, so we reach it via :has on the stable
+ * [data-slash-id] items. Items get alpha radius + hover; the source badges (skill/mcp) get the alpha
+ * tag look. COUPLING (cosmetic): data-slash-id + the popover being a composer descendant. */
+/* The popover renders OUTSIDE the composer subtree, so we can't scope by composer — but only the slash
+ * popover has DIRECT [data-slash-id] children, so this :has matches exactly that one element. */
+:has(> [data-slash-id]) {
+  background: var(--a-surface-raised) !important;
+  border: 1px solid var(--a-border-faint) !important;
+  border-radius: var(--a-radius-lg) !important;
+  box-shadow: var(--a-shadow-overlay) !important;
+  padding: 6px !important;
+}
+button[data-slash-id] {
+  border-radius: var(--a-radius-md) !important;
+}
+button[data-slash-id]:hover,
+button[data-slash-id][class*="raised-base-hover"] {
+  background: var(--a-bg-muted) !important;
+}
+button[data-slash-id] span[class*="bg-surface-base"] {
+  background: var(--a-accent-subtle) !important;
+  color: var(--a-accent) !important;
+  border-radius: var(--a-radius-full) !important;
+  padding: 1px 7px !important;
 }

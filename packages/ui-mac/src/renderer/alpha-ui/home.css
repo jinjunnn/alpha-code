@@ -398,12 +398,12 @@ body[data-alpha-sidebar="open"] .a-home {
   transition: background var(--a-dur-fast) var(--a-ease-out), transform var(--a-dur-fast) var(--a-ease-out);
 }
 .a-comp-send[data-ready] {
-  background: var(--a-accent-solid);
+  background: var(--a-send);
   color: #fff;
   box-shadow: var(--a-shadow-xs);
 }
 .a-comp-send[data-ready]:hover {
-  background: var(--a-accent-solid-hover);
+  background: var(--a-send-hover);
 }
 .a-comp-send[data-ready]:active {
   transform: scale(0.94);
