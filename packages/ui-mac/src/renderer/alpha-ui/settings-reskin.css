@@ -191,3 +191,58 @@
   padding-bottom: 8px !important;
   margin-bottom: 4px !important;
 }
+
+/* ── Settings scope = 通用 + 快捷键 ONLY (approved 2026-06-26 redesign) ──────────────────
+ * The user wants the settings page reduced to two sections; drop the whole SERVER group
+ * (服务器 / 提供商 / 模型). The General tab already folds appearance/sound/notifications/updates/
+ * display/advanced as sections within it, so "通用 + 快捷键" needs no new component — just hide
+ * the server-side nav. Couples only to stable data-slot / data-value (re-point on an upstream bump,
+ * like the rest of this reskin), never to tailwind classes.
+ *
+ * 1) Hide the entire SERVER nav group — the `div` whose triggers-container holds the providers
+ *    trigger. `:has(> div > …providers)` matches ONLY that group (not its ancestors/container), so
+ *    it removes the 服务器/提供商/模型 triggers AND their "服务器" section overline in one rule. */
+[data-slot="tabs-v2-list"]
+  div:has(> div > [data-slot="tabs-v2-trigger-wrapper"][data-value="providers"]) {
+  display: none !important;
+}
+/* 2) Belt-and-braces: also hide the three server triggers directly, in case the group structure
+ *    shifts on an upstream bump (so a server tab can never leak through). */
+[data-slot="tabs-v2-trigger-wrapper"][data-value="servers"],
+[data-slot="tabs-v2-trigger-wrapper"][data-value="providers"],
+[data-slot="tabs-v2-trigger-wrapper"][data-value="models"] {
+  display: none !important;
+}
+/* 3) Drop the remaining nav section overline (桌面) — alpha lists 通用 / 快捷键 directly under the
+ *    injected 返回应用 back button, matching the approved design. */
+[data-slot="tabs-v2-section-title"] {
+  display: none !important;
+}
+
+/* ── Shortcuts → keycap tokens (shell.html §快捷键) ──────────────────────────────────────
+ * The keybind value button (settings-keybinds.tsx → `.settings-v2-keybind-button`, gets
+ * `--active` while capturing) renders the chord as text. Style it as a mono keycap: inset fill,
+ * 2px bottom border for a pressed-key depth, indigo while capturing. */
+.settings-v2-keybind-button {
+  font-family: var(--a-font-mono) !important;
+  font-size: var(--a-text-xs) !important;
+  font-weight: var(--a-weight-semibold) !important;
+  min-height: 26px !important;
+  padding: 3px 9px !important;
+  background: var(--a-bg-muted) !important;
+  color: var(--a-text-secondary) !important;
+  border: 1px solid var(--a-border) !important;
+  border-bottom-width: 2px !important;
+  border-radius: 7px !important;
+  transition: border-color var(--a-dur-fast) var(--a-ease-out), color var(--a-dur-fast) var(--a-ease-out) !important;
+}
+.settings-v2-keybind-button:hover {
+  border-color: var(--a-border-strong) !important;
+  color: var(--a-text) !important;
+}
+.settings-v2-keybind-button--active {
+  background: var(--a-accent-subtle) !important;
+  border-color: var(--a-accent) !important;
+  border-bottom-width: 1px !important;
+  color: var(--a-accent) !important;
+}
