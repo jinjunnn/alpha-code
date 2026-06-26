@@ -130,6 +130,38 @@
   background: var(--a-bg-subtle);
 }
 
+/* Skill cards → compact inline chip (timeline.html .tool-chip): 「技能 · <name> · 已加载 ›」. opencode
+ * renders skills hideDetails (a title-only chip, no body), so this is a visual reskin: shrink the card
+ * to an inline pill and label it. The orange type icon comes from timeline-inject. */
+[data-component="tool-part-wrapper"]:has(.agent-title) {
+  display: inline-flex;
+  width: auto;
+  max-width: 92%;
+  align-self: flex-start;
+  background: var(--a-bg-subtle);
+}
+[data-component="tool-trigger"]:has(.agent-title) {
+  padding: 7px 12px;
+}
+[data-component="tool-trigger"] .agent-title::before {
+  content: "技能 · ";
+  color: var(--a-text-tertiary);
+  font-weight: var(--a-weight-normal);
+}
+[data-component="tool-trigger"] .agent-title::after {
+  content: " · 已加载";
+  color: var(--a-text-tertiary);
+  font-weight: var(--a-weight-normal);
+  font-size: var(--a-text-xs);
+}
+[data-component="tool-trigger"]:has(.agent-title)::after {
+  content: "›";
+  margin-left: 8px;
+  color: var(--a-text-tertiary);
+  font-size: 17px;
+  line-height: 1;
+}
+
 /* User message → right-aligned accent bubble (timeline.html §.row-user .bubble). opencode renders
  * the user turn left-aligned plain; we right-align the container and tint the body into a bubble. */
 [data-component="user-message"] {
