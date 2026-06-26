@@ -175,3 +175,19 @@
   box-shadow: var(--a-shadow-xs) !important;
   border: 0 !important;
 }
+
+/* ── Sticky section headers (shell.html §C "表头不遮罩") ─────────────────────────────────
+ * The settings content (`tabs-v2-content`) scrolls; its group headers are bare h2 (page title)
+ * / h3 (外观·系统通知…). Pin them with a solid blurred backdrop so rows scroll cleanly BEHIND
+ * them instead of bleeding through a transparent header. */
+[data-slot="tabs-v2-content"] h2,
+[data-slot="tabs-v2-content"] h3 {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 4 !important;
+  background: color-mix(in srgb, var(--a-bg-canvas) 90%, transparent) !important;
+  backdrop-filter: blur(10px) !important;
+  padding-top: 14px !important;
+  padding-bottom: 8px !important;
+  margin-bottom: 4px !important;
+}
