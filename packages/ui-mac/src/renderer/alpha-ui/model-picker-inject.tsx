@@ -29,7 +29,10 @@ function tierOf(modelId: string): Tier {
 function decorate(row: HTMLElement) {
   if (row.hasAttribute("data-alpha-tier")) return
   const key = row.getAttribute("data-key") || ""
-  const modelId = key.includes(":") ? key.slice(key.indexOf(":") + 1) : key
+  // Model rows are keyed `<provider>:<modelId>`. The provider-SELECT dialog reuses the same list with
+  // bare provider keys (no colon) — skip those so providers don't get a spurious tier badge.
+  if (!key.includes(":")) return
+  const modelId = key.slice(key.indexOf(":") + 1)
   if (!modelId) return
   row.setAttribute("data-alpha-tier", "")
   const t = tierOf(modelId)
@@ -124,10 +127,12 @@ export function ModelPickerInject() {
         row.toggleAttribute("data-alpha-locked", locked())
       }
     }
-    // Pin the account banner above the model list (inside the list container, before the scroll area).
+    // Pin the account banner above the model list — ONLY in the model picker (a list with model rows),
+    // not the provider-select dialog (which reuses [data-component=list] with bare provider keys).
     const list = document.querySelector("[data-component='list']")
     const scroll = list?.querySelector("[data-slot='list-scroll']")
-    if (list && scroll) {
+    const hasModels = list?.querySelector("[data-slot='list-item'][data-key*=':']")
+    if (list && scroll && hasModels) {
       let h = list.querySelector(":scope > [data-alpha-acct-banner]") as HTMLElement | null
       if (!h) {
         h = document.createElement("div")
