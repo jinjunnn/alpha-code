@@ -283,6 +283,10 @@ async function exchangeCode(code: string, verifier: string): Promise<TokenRespon
 
 export async function logout(): Promise<void> {
   stored = { mode: "byok" }
+  // deriveState() also treats DEV_PLATFORM_TOKEN as a static platform login, so while it's set an
+  // explicit logout would leave the state pinned to "logged-in" (the user sees nothing happen). Drop
+  // it for this session so the logged-out state actually takes effect; it re-applies on next launch.
+  delete process.env.DEV_PLATFORM_TOKEN
   try {
     rmSync(authFilePath(), { force: true })
   } catch {}
