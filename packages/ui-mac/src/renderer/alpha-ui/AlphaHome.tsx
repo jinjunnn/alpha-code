@@ -13,7 +13,7 @@ import { useLocation, useNavigate } from "@solidjs/router"
 import { useCommand } from "@opencode-ai/app"
 import { useAlphaProjects, type ServerInfo, type AlphaProject } from "../sidebar/use-projects"
 import { sessionHref, newSessionHref, projectLabel } from "../sidebar/route"
-import { PermChip, EffortChip, ModelChip } from "./composer-controls"
+import { PermChip, EffortChip, ModelChip, type PermMode } from "./composer-controls"
 import "./home.css"
 
 function greeting(): string {
@@ -46,7 +46,7 @@ export function AlphaHome(props: { server: Accessor<ServerInfo | undefined> }) {
 
   const [text, setText] = createSignal("")
   const [chosenWs, setChosenWs] = createSignal<string | undefined>(undefined)
-  const [perm, setPerm] = createSignal<"full" | "ask">("ask")
+  const [perm, setPerm] = createSignal<PermMode>("ask")
   const [effort, setEffort] = createSignal<(typeof EFFORTS)[number]>("高")
   const [pop, setPop] = createSignal<Pop>(null)
   const [sending, setSending] = createSignal(false)
@@ -70,7 +70,7 @@ export function AlphaHome(props: { server: Accessor<ServerInfo | undefined> }) {
     navigate(id ? sessionHref(ws, id) : newSessionHref(ws))
   }
 
-  const togglePerm = (mode: "full" | "ask") => {
+  const togglePerm = (mode: PermMode) => {
     setPerm(mode)
     setPop(null)
     try {
