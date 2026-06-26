@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>alpha-code · 对话区换肤 设计稿</title>
+<style>
+:root{
+  --a-bg-canvas:#ffffff;--a-bg-subtle:#f6f7f9;--a-bg-muted:#eceef1;--a-bg-inset:#e3e6ea;
+  --a-surface:#ffffff;--a-surface-raised:#ffffff;--a-scrim:rgba(15,17,21,.45);
+  --a-text:#18181b;--a-text-secondary:#52525b;--a-text-tertiary:#7c7d85;--a-text-disabled:#b3b6bd;--a-text-on-accent:#fff;
+  --a-border-faint:#eef0f3;--a-border:#e4e6ea;--a-border-strong:#ced2d9;
+  --a-overlay-hover:rgba(15,17,21,.05);--a-overlay-active:rgba(15,17,21,.08);
+  --a-accent:#4f46e5;--a-accent-hover:#4338ca;--a-accent-active:#3730a3;
+  --a-accent-solid:#4f46e5;--a-accent-solid-hover:#4338ca;--a-accent-solid-active:#3730a3;
+  --a-accent-subtle:rgba(79,70,229,.10);--a-accent-border:rgba(79,70,229,.35);--a-accent-ring:rgba(79,70,229,.45);
+  --a-success:#16a34a;--a-warning:#d97706;--a-error:#dc2626;--a-info:#2563eb;
+  --a-success-subtle:rgba(22,163,74,.12);--a-warning-subtle:rgba(217,119,6,.12);--a-error-subtle:rgba(220,38,38,.12);
+  --a-radius-xs:4px;--a-radius-sm:6px;--a-radius-md:8px;--a-radius-lg:11px;--a-radius-xl:14px;--a-radius-2xl:18px;--a-radius-full:9999px;
+  --a-space-2:8px;--a-space-3:12px;--a-space-4:16px;
+  --a-font-sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;
+  --a-font-mono:"SF Mono","JetBrains Mono","Menlo",ui-monospace,monospace;
+  --a-text-2xs:10.5px;--a-text-xs:11.5px;--a-text-sm:12.5px;--a-text-base:13px;--a-text-md:14px;--a-text-lg:16px;--a-text-xl:19px;--a-text-2xl:23px;
+  --a-leading-normal:1.55;--a-tracking-tight:-0.014em;--a-tracking-wide:0.04em;
+  --a-weight-normal:400;--a-weight-medium:500;--a-weight-semibold:600;--a-weight-bold:680;
+  --a-shadow-xs:0 1px 2px rgba(15,17,21,.05);
+  --a-shadow-sm:0 1px 3px rgba(15,17,21,.07),0 1px 2px rgba(15,17,21,.04);
+  --a-shadow-md:0 4px 12px rgba(15,17,21,.08),0 2px 4px rgba(15,17,21,.05);
+  --a-shadow-lg:0 12px 32px rgba(15,17,21,.12),0 4px 8px rgba(15,17,21,.06);
+  --a-shadow-overlay:0 24px 64px rgba(15,17,21,.20),0 8px 16px rgba(15,17,21,.10);
+  --a-dur-fast:130ms;--a-ease-out:cubic-bezier(.22,1,.36,1);
+}
+html[data-theme="dark"]{
+  --a-bg-canvas:#0a0b0d;--a-bg-subtle:#0e0f11;--a-bg-muted:#16171a;--a-bg-inset:#1e2024;
+  --a-surface:#121316;--a-surface-raised:#17181b;--a-scrim:rgba(0,0,0,.60);
+  --a-text:#fafafa;--a-text-secondary:#a1a1aa;--a-text-tertiary:#71727a;--a-text-disabled:#4f5158;
+  --a-border-faint:#1b1c20;--a-border:#232428;--a-border-strong:#34363c;
+  --a-overlay-hover:rgba(255,255,255,.055);--a-overlay-active:rgba(255,255,255,.09);
+  --a-accent:#818cf8;--a-accent-hover:#6366f1;--a-accent-active:#4f46e5;
+  --a-accent-solid:#4f46e5;--a-accent-solid-hover:#5b54ea;--a-accent-solid-active:#4338ca;
+  --a-accent-subtle:rgba(129,140,248,.14);--a-accent-border:rgba(129,140,248,.38);
+  --a-success:#4ade80;--a-warning:#fbbf24;--a-error:#f87171;--a-info:#60a5fa;
+  --a-success-subtle:rgba(74,222,128,.14);--a-warning-subtle:rgba(251,191,36,.14);--a-error-subtle:rgba(248,113,113,.14);
+  --a-shadow-md:0 4px 12px rgba(0,0,0,.5),0 2px 4px rgba(0,0,0,.4);
+  --a-shadow-lg:0 12px 32px rgba(0,0,0,.6),0 4px 8px rgba(0,0,0,.4);
+  --a-shadow-overlay:0 24px 64px rgba(0,0,0,.7),0 8px 16px rgba(0,0,0,.5);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--a-bg-subtle);color:var(--a-text);font-family:var(--a-font-sans);font-size:var(--a-text-base);line-height:var(--a-leading-normal);-webkit-font-smoothing:antialiased;font-feature-settings:"cv01","ss01"}
+h1,h2,h3,h4{margin:0;font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight)}
+button{font-family:inherit;cursor:pointer}
+svg{display:block}
+.ic{width:16px;height:16px;stroke:currentColor;stroke-width:1.6;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.ic.sm{width:13px;height:13px}
+.mono{font-family:var(--a-font-mono)}
+
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:16px;padding:12px 22px;background:color-mix(in srgb,var(--a-bg-canvas) 86%,transparent);backdrop-filter:blur(12px);border-bottom:1px solid var(--a-border-faint)}
+.topbar .brand{display:flex;align-items:center;gap:10px;font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight)}
+.topbar .spacer{flex:1}
+.seg{display:inline-flex;padding:2px;background:var(--a-bg-muted);border-radius:var(--a-radius-md);gap:2px}
+.seg button{border:0;background:transparent;color:var(--a-text-secondary);font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);padding:5px 10px;border-radius:6px}
+.seg button.on{background:var(--a-surface);color:var(--a-text);box-shadow:var(--a-shadow-xs)}
+.wrap{max-width:1080px;margin:0 auto;padding:36px 24px 120px}
+.sec-kicker{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary)}
+h2.t{font-size:var(--a-text-2xl);margin:6px 0 0}
+p.lede{margin:8px 0 0;color:var(--a-text-secondary);font-size:var(--a-text-md);max-width:70ch}
+.note{margin:14px 0;padding:12px 14px;background:var(--a-bg-canvas);border:1px solid var(--a-border);border-left:3px solid var(--a-accent);border-radius:var(--a-radius-md);font-size:var(--a-text-sm);color:var(--a-text-secondary)}
+.note b{color:var(--a-text);font-weight:var(--a-weight-semibold)}
+
+/* app frame */
+.frame{position:relative;border:1px solid var(--a-border);border-radius:var(--a-radius-xl);overflow:hidden;background:var(--a-bg-canvas);box-shadow:var(--a-shadow-md);margin-top:18px}
+.sesshead{display:flex;align-items:center;gap:10px;height:46px;padding:0 18px;border-bottom:1px solid var(--a-border-faint)}
+.sesshead .ttl{font-size:var(--a-text-md);font-weight:var(--a-weight-medium)}
+.sesshead .ttl:hover{color:var(--a-accent);cursor:text}
+.sesshead .hint{font-size:var(--a-text-2xs);color:var(--a-text-disabled);margin-left:6px}
+
+/* timeline */
+.tl{padding:26px 28px;display:flex;flex-direction:column;gap:18px;position:relative}
+.row-user{align-self:flex-end;max-width:80%;display:flex;flex-direction:column;align-items:flex-end;gap:7px}
+.bubble{background:var(--a-accent-subtle);border:1px solid var(--a-accent-border);border-radius:var(--a-radius-lg);padding:11px 14px;font-size:var(--a-text-md);line-height:var(--a-leading-normal)}
+.attach-row{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+.attach{display:inline-flex;align-items:center;gap:7px;padding:6px 10px 6px 8px;background:var(--a-surface);border:1px solid var(--a-border);border-radius:var(--a-radius-md);font-size:var(--a-text-sm);color:var(--a-text-secondary);box-shadow:var(--a-shadow-xs)}
+.attach .fi{width:18px;height:18px;border-radius:5px;background:var(--a-accent-subtle);color:var(--a-accent);display:grid;place-items:center;font-size:9px;font-weight:700}
+.attach .ln{color:var(--a-text-tertiary);font-size:var(--a-text-xs)}
+.thumb{width:52px;height:52px;border-radius:var(--a-radius-md);border:1px solid var(--a-border);background:linear-gradient(135deg,#c7d2fe,#a5b4fc);position:relative;overflow:hidden}
+.conn-chip{display:inline-flex;align-items:center;gap:5px;padding:2px 9px 2px 6px;background:var(--a-bg-canvas);border:1px solid var(--a-border);border-radius:var(--a-radius-full);font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);vertical-align:middle;margin-right:5px}
+.conn-chip .d{width:15px;height:15px;border-radius:4px;display:grid;place-items:center;font-size:8px;font-weight:700;color:#fff}
+
+/* assistant */
+.row-ai{max-width:88%;display:flex;flex-direction:column;gap:10px}
+.ai-md{font-size:var(--a-text-md);line-height:var(--a-leading-normal);color:var(--a-text)}
+.ai-md code{font-family:var(--a-font-mono);background:var(--a-bg-muted);padding:1px 5px;border-radius:5px;font-size:.92em}
+.ai-md p{margin:0 0 10px}
+.codeblock{border:1px solid var(--a-border);border-radius:var(--a-radius-md);overflow:hidden;background:var(--a-bg-subtle)}
+.codeblock-head{display:flex;align-items:center;gap:8px;padding:6px 11px;border-bottom:1px solid var(--a-border-faint);font-size:var(--a-text-2xs);color:var(--a-text-tertiary);text-transform:uppercase;letter-spacing:var(--a-tracking-wide)}
+.codeblock-head .copy{margin-left:auto;color:var(--a-text-tertiary);cursor:pointer;display:flex;align-items:center;gap:4px;text-transform:none;letter-spacing:0}
+.codeblock pre{margin:0;padding:11px 14px;font-family:var(--a-font-mono);font-size:var(--a-text-sm);line-height:1.6;overflow-x:auto;color:var(--a-text)}
+.tok-k{color:#7c3aed}.tok-s{color:#16a34a}.tok-c{color:var(--a-text-tertiary)}.tok-f{color:#2563eb}
+html[data-theme="dark"] .tok-k{color:#c4b5fd}html[data-theme="dark"] .tok-s{color:#86efac}html[data-theme="dark"] .tok-f{color:#93c5fd}
+
+/* meta row */
+.meta{display:flex;align-items:center;gap:10px;font-size:var(--a-text-xs);color:var(--a-text-tertiary)}
+.meta .badge{display:inline-flex;align-items:center;gap:5px}
+.meta .dot{width:3px;height:3px;border-radius:50%;background:var(--a-text-disabled)}
+.meta .act{display:flex;gap:2px;margin-left:auto;opacity:0;transition:opacity var(--a-dur-fast)}
+.row-ai:hover .meta .act{opacity:1}
+.meta .act button{width:24px;height:24px;border:0;background:transparent;border-radius:6px;color:var(--a-text-tertiary);display:grid;place-items:center}
+.meta .act button:hover{background:var(--a-bg-muted);color:var(--a-text)}
+
+/* reasoning card */
+.reason{border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);background:var(--a-bg-subtle);overflow:hidden}
+.reason-head{display:flex;align-items:center;gap:9px;padding:9px 12px;cursor:pointer;color:var(--a-text-secondary);font-size:var(--a-text-sm)}
+.reason-head .ic{color:var(--a-accent)}
+.reason-head .lab{font-weight:var(--a-weight-medium)}
+.reason-head .dur{color:var(--a-text-tertiary)}
+.reason-head .chev{margin-left:auto;color:var(--a-text-tertiary);transition:transform var(--a-dur-fast)}
+.reason.open .reason-head .chev{transform:rotate(90deg)}
+.reason-body{display:none;padding:0 14px 12px 35px;font-size:var(--a-text-sm);color:var(--a-text-secondary);line-height:var(--a-leading-normal)}
+.reason.open .reason-body{display:block}
+
+/* TOOL CARD (the core restyle) */
+.tc{border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-surface);overflow:hidden}
+.tc-head{display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer}
+.tc-head:hover{background:var(--a-bg-subtle)}
+.tc-ico{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;flex:none;color:#fff}
+.tc-ico.read{background:#0891b2}.tc-ico.search{background:#7c3aed}.tc-ico.bash{background:#18181b}
+.tc-ico.edit{background:#16a34a}.tc-ico.write{background:#2563eb}.tc-ico.task{background:#d97706}
+.tc-ico.web{background:#0ea5e9}.tc-ico.skill{background:#f6821f}.tc-ico.mcp{background:#7c3aed}
+.tc-tt{display:flex;flex-direction:column;min-width:0;flex:1}
+.tc-tt b{font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tc-tt b .tgt{font-family:var(--a-font-mono);color:var(--a-text-secondary);font-weight:var(--a-weight-normal);font-size:var(--a-text-xs)}
+.tc-tt small{font-size:var(--a-text-2xs);color:var(--a-text-tertiary)}
+.tc-st{display:inline-flex;align-items:center;gap:5px;font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);padding:2px 8px;border-radius:var(--a-radius-full);flex:none}
+.tc-st.ok{background:var(--a-success-subtle);color:var(--a-success)}
+.tc-st.err{background:var(--a-error-subtle);color:var(--a-error)}
+.tc-st.run{background:var(--a-accent-subtle);color:var(--a-accent)}
+.tc-st.run .sp{width:9px;height:9px;border:1.5px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.tc-chev{color:var(--a-text-tertiary);transition:transform var(--a-dur-fast);flex:none}
+.tc.open .tc-chev{transform:rotate(90deg)}
+.tc-body{display:none;border-top:1px solid var(--a-border-faint)}
+.tc.open .tc-body{display:block}
+.tc-out{margin:0;padding:11px 14px;font-family:var(--a-font-mono);font-size:var(--a-text-sm);line-height:1.6;max-height:240px;overflow:auto;color:var(--a-text-secondary);white-space:pre-wrap}
+.stat{display:inline-flex;gap:6px;font-family:var(--a-font-mono);font-size:var(--a-text-2xs)}
+.stat .add{color:var(--a-success)}.stat .del{color:var(--a-error)}
+
+/* terminal output with exit badge */
+.term{padding:11px 14px;font-family:var(--a-font-mono);font-size:var(--a-text-sm);line-height:1.6;background:var(--a-bg-subtle);max-height:240px;overflow:auto}
+.term .pmt{color:var(--a-accent)}
+.term .dim{color:var(--a-text-tertiary)}
+
+/* diff */
+.diff{font-family:var(--a-font-mono);font-size:var(--a-text-sm);line-height:1.55}
+.dl{display:flex;padding:0 12px}
+.dl .gut{width:34px;flex:none;color:var(--a-text-disabled);text-align:right;padding-right:12px;user-select:none}
+.dl.add{background:var(--a-success-subtle)}.dl.add .gut{color:var(--a-success)}
+.dl.del{background:var(--a-error-subtle)}.dl.del .gut{color:var(--a-error)}
+.dl .sign{width:14px;flex:none}
+.dl.add .sign{color:var(--a-success)}.dl.del .sign{color:var(--a-error)}
+
+/* todo */
+.todos{border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-surface);padding:6px}
+.todo-head{display:flex;align-items:center;gap:8px;padding:6px 8px;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium)}
+.todo-head .prog{margin-left:auto;font-size:var(--a-text-2xs);color:var(--a-text-tertiary);font-variant-numeric:tabular-nums}
+.todo{display:flex;align-items:center;gap:10px;padding:6px 8px;font-size:var(--a-text-sm)}
+.todo .box{width:16px;height:16px;border-radius:5px;border:1.5px solid var(--a-border-strong);flex:none;display:grid;place-items:center;color:#fff}
+.todo.done .box{background:var(--a-success);border-color:var(--a-success)}
+.todo.done .tt{color:var(--a-text-tertiary);text-decoration:line-through}
+.todo.now .box{border-color:var(--a-accent)}
+.todo.now .tt{color:var(--a-text);font-weight:var(--a-weight-medium)}
+
+/* question card */
+.qa{border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-surface);overflow:hidden}
+.qa-q{padding:11px 14px;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);border-bottom:1px solid var(--a-border-faint)}
+.qa-opts{padding:8px;display:flex;flex-direction:column;gap:6px}
+.qa-opt{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--a-border);border-radius:var(--a-radius-md);font-size:var(--a-text-sm);cursor:pointer}
+.qa-opt:hover{border-color:var(--a-border-strong);background:var(--a-bg-subtle)}
+.qa-opt.sel{border-color:var(--a-accent);background:var(--a-accent-subtle);color:var(--a-accent)}
+.qa-opt .k{width:18px;height:18px;border-radius:5px;background:var(--a-bg-muted);display:grid;place-items:center;font-size:10px;font-weight:700;color:var(--a-text-secondary);flex:none}
+.qa-opt.sel .k{background:var(--a-accent);color:#fff}
+
+/* skill chip / tool chip (collapsed) */
+.tool-chip{display:inline-flex;align-items:center;gap:9px;align-self:flex-start;max-width:88%;padding:8px 12px;background:var(--a-bg-subtle);border:1px solid var(--a-border);border-radius:var(--a-radius-lg);font-size:var(--a-text-sm);color:var(--a-text-secondary);cursor:pointer}
+.tool-chip:hover{border-color:var(--a-border-strong)}
+.tool-chip .tico{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-size:10px;font-weight:700;color:#fff;flex:none}
+.tool-chip b{color:var(--a-text);font-weight:var(--a-weight-medium)}
+.tool-chip .meta2{color:var(--a-text-tertiary);font-size:var(--a-text-xs)}
+.tool-chip .chev{color:var(--a-text-tertiary)}
+
+/* error card */
+.errcard{border:1px solid var(--a-error);background:var(--a-error-subtle);border-radius:var(--a-radius-lg);overflow:hidden}
+.errcard-head{display:flex;align-items:center;gap:9px;padding:10px 13px;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);color:var(--a-text)}
+.errcard-head .ic{color:var(--a-error)}
+.errcard pre{margin:0;padding:0 14px 12px 36px;font-family:var(--a-font-mono);font-size:var(--a-text-xs);color:var(--a-error);white-space:pre-wrap}
+
+/* permission card */
+.perm-card{border:1px solid var(--a-warning);background:var(--a-warning-subtle);border-radius:var(--a-radius-lg);padding:12px 14px;align-self:flex-start;max-width:88%}
+.perm-card .ph{display:flex;align-items:center;gap:8px;font-size:var(--a-text-sm);font-weight:var(--a-weight-semibold)}
+.perm-card .pb{margin:8px 0 12px;font-size:var(--a-text-sm);color:var(--a-text-secondary)}
+.perm-card .pb code{font-family:var(--a-font-mono);background:var(--a-bg-canvas);padding:2px 6px;border-radius:5px}
+.perm-card .pa{display:flex;gap:8px}
+.btn-primary{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 13px;border:0;border-radius:var(--a-radius-md);background:var(--a-accent-solid);color:#fff;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium)}
+.btn-ghost{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 12px;border:1px solid var(--a-border);border-radius:var(--a-radius-md);background:var(--a-surface);color:var(--a-text);font-size:var(--a-text-sm);font-weight:var(--a-weight-medium)}
+
+/* streaming + scroll-to-bottom */
+.thinking{display:flex;align-items:center;gap:9px;font-size:var(--a-text-sm);color:var(--a-text-tertiary)}
+.shimmer{background:linear-gradient(90deg,var(--a-text-disabled) 25%,var(--a-text) 50%,var(--a-text-disabled) 75%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:sh 1.6s linear infinite;font-weight:var(--a-weight-medium)}
+@keyframes sh{to{background-position:-200% 0}}
+.s2b{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);width:34px;height:34px;border-radius:50%;background:color-mix(in srgb,var(--a-surface) 80%,transparent);backdrop-filter:blur(8px);border:1px solid var(--a-border);box-shadow:var(--a-shadow-md);display:grid;place-items:center;color:var(--a-text-secondary)}
+/* ===== running / working animations ===== */
+.tc.running{border-color:var(--a-accent-border)}
+.tc.running .tc-head{position:relative;overflow:hidden}
+.tc.running .tc-head::after{content:"";position:absolute;left:-40%;top:0;height:2px;width:40%;background:var(--a-accent);border-radius:2px;animation:prog 1.3s ease-in-out infinite}
+@keyframes prog{to{left:100%}}
+.tc.running .tc-ico{animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.workpill{display:inline-flex;align-items:center;gap:9px;align-self:flex-start;padding:8px 13px;background:var(--a-accent-subtle);border:1px solid var(--a-accent-border);border-radius:var(--a-radius-full);font-size:var(--a-text-sm);color:var(--a-accent);font-weight:var(--a-weight-medium)}
+.workpill .ic{animation:pulse 1.6s ease-in-out infinite}
+.workpill .dots{display:inline-flex;gap:3px}
+.workpill .dots i{width:4px;height:4px;border-radius:50%;background:currentColor;animation:bob 1s ease-in-out infinite}
+.workpill .dots i:nth-child(2){animation-delay:.15s}.workpill .dots i:nth-child(3){animation-delay:.3s}
+@keyframes bob{0%,100%{opacity:.3;transform:translateY(1px)}50%{opacity:1;transform:translateY(-2px)}}
+/* ===== artifact → right panel ===== */
+.openp{display:inline-flex;align-items:center;gap:4px;font-size:var(--a-text-2xs);color:var(--a-accent);font-weight:var(--a-weight-medium);cursor:pointer;margin-right:8px}
+.openp .ic{width:12px;height:12px}
+.twopane{display:flex;height:520px}
+.twopane .left{flex:1;min-width:0;border-right:1px solid var(--a-border-faint);padding:22px;overflow:auto;display:flex;flex-direction:column;gap:14px}
+.twopane .right{width:48%;flex:none;display:flex;flex-direction:column;background:var(--a-bg-subtle)}
+.rp-head{display:flex;align-items:center;gap:8px;height:46px;padding:0 14px;border-bottom:1px solid var(--a-border-faint);background:var(--a-bg-canvas)}
+.rp-head .fn{font-family:var(--a-font-mono);font-size:var(--a-text-sm);font-weight:var(--a-weight-medium)}
+.rp-tabs{display:flex;gap:2px;margin-left:auto}
+.rp-tab{padding:4px 10px;border-radius:6px;font-size:var(--a-text-xs);color:var(--a-text-secondary);cursor:pointer}
+.rp-tab.on{background:var(--a-bg-muted);color:var(--a-text)}
+.rp-x{width:28px;height:28px;border:0;background:transparent;border-radius:6px;color:var(--a-text-tertiary);display:grid;place-items:center;cursor:pointer}
+.rp-x:hover{background:var(--a-bg-muted)}
+.rp-body{flex:1;overflow:auto}
+.artifact{display:flex;align-items:center;gap:12px;border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-surface);padding:11px 13px;cursor:pointer}
+.artifact:hover{border-color:var(--a-border-strong);box-shadow:var(--a-shadow-sm)}
+.artifact .aico{width:38px;height:38px;border-radius:var(--a-radius-md);display:grid;place-items:center;color:#fff;font-size:10px;font-weight:700;flex:none}
+.artifact .ab{flex:1;min-width:0}.artifact .ab b{font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);display:block}
+.artifact .ab small{font-size:var(--a-text-xs);color:var(--a-text-tertiary)}
+.artifact .open{display:inline-flex;align-items:center;gap:5px;font-size:var(--a-text-xs);color:var(--a-accent);font-weight:var(--a-weight-medium)}
+
+.divider{display:flex;align-items:center;gap:12px;color:var(--a-text-tertiary);font-size:var(--a-text-2xs);text-transform:uppercase;letter-spacing:var(--a-tracking-wide)}
+.divider::before,.divider::after{content:"";height:1px;background:var(--a-border-faint);flex:1}
+
+.compare{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px}
+.compare .col{border:1px solid var(--a-border);border-radius:var(--a-radius-lg);overflow:hidden}
+.compare .col .lbl{padding:7px 12px;font-size:var(--a-text-2xs);font-weight:600;text-transform:uppercase;letter-spacing:var(--a-tracking-wide);color:var(--a-text-tertiary);border-bottom:1px solid var(--a-border-faint)}
+.compare .col.bad .lbl{color:var(--a-error)}
+.compare .col .pad{padding:14px;background:var(--a-bg-canvas)}
+.rawdump{font-family:var(--a-font-mono);font-size:11px;line-height:1.5;color:var(--a-text-secondary);white-space:pre-wrap;max-height:150px;overflow:hidden}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand"><span style="display:inline-grid;place-items:center;width:22px;height:22px;border-radius:7px;background:var(--a-accent-solid);color:#fff;font-weight:800;font-size:13px">α</span> alpha-code · 对话区换肤</div>
+  <div class="spacer"></div>
+  <div class="seg" id="themeSeg"><button data-theme="light" class="on">浅色</button><button data-theme="dark">深色</button></div>
+</div>
+
+<div class="wrap">
+  <div class="sec-kicker">P0 · 对话时间线</div>
+  <h2 class="t">对话区换肤 — 每个步骤都是一张 alpha 卡片</h2>
+  <p class="lede">把当前「bare 文本糊一起」的时间线,换成统一卡片语言:工具调用 = 图标徽 + 标题 + 状态徽 + 可折叠输出;推理块独立成卡;diff 红绿带行号;bash 带退出码;技能折叠成 chip;错误红卡。全部经 <span class="mono">data-slot/data-component</span> 钩子做 CSS 换肤(复用上游引擎,零改源码);仅技能折叠需新增一层(已批准)。</p>
+
+  <div class="frame">
+    <div class="sesshead"><span class="ttl">为 alpha-ui Button 加 loading 态</span><span class="hint">点标题可改名 · 顶栏不再放用量环/⋯</span></div>
+    <div class="tl">
+
+      <!-- user with attachments + connector -->
+      <div class="row-user">
+        <div class="attach-row"><span class="attach"><span class="fi">TS</span>Button.tsx<span class="ln">L1–80</span></span><span class="thumb"></span></div>
+        <div class="bubble"><span class="conn-chip"><span class="d" style="background:#24292f">GH</span>GitHub</span>给 alpha-ui 的 Button 加一个 loading 态,跑测试,有问题改到过。</div>
+      </div>
+
+      <!-- reasoning collapsed -->
+      <div class="reason" data-toggle>
+        <div class="reason-head"><svg class="ic sm" viewBox="0 0 24 24"><path d="M9.5 2a4.5 4.5 0 0 0-4.3 5.8A4 4 0 0 0 6 15.5a4 4 0 0 0 7 1 4 4 0 0 0 7-1 4 4 0 0 0 .8-7.7A4.5 4.5 0 0 0 14.5 2 4.5 4.5 0 0 0 12 3.3 4.5 4.5 0 0 0 9.5 2z"/></svg><span class="lab">思考</span><span class="dur">8s · 规划改动</span><svg class="ic sm chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div>
+        <div class="reason-body">先看 Button.tsx 现有的 props 与 variant 实现,确认有没有 loading 钩子;再在 button.css 加 spinner 与 data-loading 态,最后跑 vitest 验证。</div>
+      </div>
+
+      <!-- read tool -->
+      <div class="tc open" data-toggle>
+        <div class="tc-head"><span class="tc-ico read"><svg class="ic sm" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="2.5"/></svg></span><div class="tc-tt"><b>读取 <span class="tgt">alpha-ui/Button.tsx</span></b><small>80 行</small></div><span class="tc-st ok"><svg class="ic sm" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>完成</span><svg class="ic sm tc-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div>
+        <div class="tc-body"><pre class="tc-out"><span class="tok-k">export function</span> <span class="tok-f">Button</span>(props) {
+  <span class="tok-k">return</span> &lt;button class=<span class="tok-s">"a-btn"</span> data-variant={props.variant} ... /&gt;
+}</pre></div>
+      </div>
+
+      <!-- grep tool collapsed -->
+      <div class="tc" data-toggle>
+        <div class="tc-head"><span class="tc-ico search"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg></span><div class="tc-tt"><b>检索 <span class="tgt">data-loading</span></b><small>3 处匹配</small></div><span class="tc-st ok"><svg class="ic sm" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg></span><svg class="ic sm tc-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div>
+        <div class="tc-body"><pre class="tc-out">button.css:88  .a-btn[data-loading]{...}
+button.css:94  .a-btn[data-loading]::after{...}
+Button.tsx:12  loading={props.loading}</pre></div>
+      </div>
+
+      <!-- skill chip (collapsed, NOT full dump) -->
+      <div class="tool-chip" title="点开看全文(默认折叠)"><span class="tico" style="background:#f6821f">CF</span><b>技能 · frontend-design</b><span class="meta2">已加载 · 全文折叠</span><svg class="ic sm chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div>
+
+      <!-- assistant markdown + code -->
+      <div class="row-ai">
+        <div class="ai-md"><p>已确认 <code>Button</code> 接受 <code>loading</code> prop,但 CSS 没接上 spinner。我在 <code>button.css</code> 补 <code>[data-loading]</code> 态,并让标签透明、叠一个旋转环:</p></div>
+        <div class="codeblock">
+          <div class="codeblock-head">button.css<span class="copy"><svg class="ic sm" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>复制</span></div>
+          <pre>.a-btn[<span class="tok-f">data-loading</span>]{ <span class="tok-k">color</span>:transparent; <span class="tok-k">pointer-events</span>:none }
+.a-btn[<span class="tok-f">data-loading</span>]::after{ <span class="tok-c">/* spinner */</span> <span class="tok-k">animation</span>:spin .6s linear infinite }</pre>
+        </div>
+        <div class="meta"><span class="badge"><span class="tc-ico read" style="width:14px;height:14px;border-radius:4px;background:#4f46e5;font-size:8px">α</span>Opus 4.8</span><span class="dot"></span><span>高</span><span class="dot"></span><span>12.4s</span><span class="dot"></span><span>3.2k tokens</span>
+          <span class="act"><button title="复制"><svg class="ic sm" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button><button title="重试"><svg class="ic sm" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button></span>
+        </div>
+      </div>
+
+      <!-- edit tool with diff -->
+      <div class="tc open" data-toggle>
+        <div class="tc-head"><span class="tc-ico edit"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></span><div class="tc-tt"><b>编辑 <span class="tgt">alpha-ui/button.css</span></b></div><span class="stat" style="margin-right:8px"><span class="add">+8</span><span class="del">−2</span></span><span class="tc-st ok"><svg class="ic sm" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg></span><svg class="ic sm tc-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div>
+        <div class="tc-body"><div class="diff" style="padding:10px 0">
+          <div class="dl"><span class="gut">86</span><span class="sign"> </span><span>.a-btn{ position:relative }</span></div>
+          <div class="dl del"><span class="gut">87</span><span class="sign">−</span><span>.a-btn .label{ opacity:1 }</span></div>
+          <div class="dl add"><span class="gut">87</span><span class="sign">+</span><span>.a-btn[data-loading]{ color:transparent }</span></div>
+          <div class="dl add"><span class="gut">88</span><span class="sign">+</span><span>.a-btn[data-loading]::after{ content:""; animation:spin .6s }</span></div>
+        </div></div>
+      </div>
+
+      <!-- bash success with exit badge -->
+      <div class="tc open" data-toggle>
+        <div class="tc-head"><span class="tc-ico bash"><svg class="ic sm" viewBox="0 0 24 24"><path d="M4 5h16v14H4z" style="display:none"/><path d="M7 8l3 3-3 3M13 16h4"/></svg></span><div class="tc-tt"><b><span class="tgt">bun test button</span></b></div><span class="tc-st ok">退出 0</span><svg class="ic sm tc-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div>
+        <div class="tc-body"><div class="term"><span class="pmt">$</span> bun test button
+<span class="dim">✓ Button › renders loading spinner (4ms)</span>
+<span class="dim">✓ Button › disables click while loading (2ms)</span>
+<span style="color:var(--a-success)">2 pass</span> <span class="dim">· 0 fail · 9ms</span></div></div>
+      </div>
+
+      <!-- bash fail + error card -->
+      <div class="tc open" data-toggle>
+        <div class="tc-head"><span class="tc-ico bash"><svg class="ic sm" viewBox="0 0 24 24"><path d="M7 8l3 3-3 3M13 16h4"/></svg></span><div class="tc-tt"><b><span class="tgt">bun run typecheck</span></b></div><span class="tc-st err">退出 1</span><svg class="ic sm tc-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div>
+        <div class="tc-body"><div class="term"><span class="pmt">$</span> bun run typecheck
+<span style="color:var(--a-error)">button.tsx(12,7): error TS2322: 'loading' is not assignable...</span></div></div>
+      </div>
+      <div class="errcard"><div class="errcard-head"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>类型错误 · 已自动修复并重跑</div><pre>props 类型缺 loading?: boolean —— 已补,typecheck 通过。</pre></div>
+
+      <!-- todo -->
+      <div class="todos">
+        <div class="todo-head"><svg class="ic sm" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>任务清单<span class="prog">2 / 3</span></div>
+        <div class="todo done"><span class="box"><svg class="ic sm" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg></span><span class="tt">button.css 加 loading 态</span></div>
+        <div class="todo done"><span class="box"><svg class="ic sm" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg></span><span class="tt">补 props 类型</span></div>
+        <div class="todo now"><span class="box"></span><span class="tt">跑全量测试并自检</span></div>
+      </div>
+
+      <!-- task subagent running (animated) -->
+      <div class="tc running"><div class="tc-head"><span class="tc-ico task"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><div class="tc-tt"><b>子任务 · 全量回归</b><small>general agent</small></div><span class="tc-st run"><span class="sp"></span>运行中</span><svg class="ic sm tc-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div></div>
+
+      <!-- websearch -->
+      <div class="tc" data-toggle><div class="tc-head"><span class="tc-ico web"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg></span><div class="tc-tt"><b>联网搜索 <span class="tgt">solid-js loading button a11y</span></b><small>Exa · 5 条</small></div><span class="tc-st ok"><svg class="ic sm" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg></span><svg class="ic sm tc-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div></div>
+
+      <!-- question card -->
+      <div class="qa">
+        <div class="qa-q">spinner 颜色用强调色还是跟随文字色?</div>
+        <div class="qa-opts">
+          <div class="qa-opt sel"><span class="k">A</span>跟随当前文字色(各 variant 自适应)</div>
+          <div class="qa-opt"><span class="k">B</span>固定品牌 indigo</div>
+        </div>
+      </div>
+
+      <!-- permission card -->
+      <div class="perm-card"><div class="ph"><svg class="ic sm" viewBox="0 0 24 24" style="color:var(--a-warning)"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>请求审批 · 工具执行</div><div class="pb">即将运行:<code>git commit -am "feat(ui): button loading"</code></div><div class="pa"><button class="btn-primary">允许一次</button><button class="btn-ghost">总是允许</button><button class="btn-ghost">拒绝</button></div></div>
+
+      <!-- streaming / working indicator (animated) -->
+      <div class="workpill"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4"/></svg>AI 工作中 · 正在整理结果<span class="dots"><i></i><i></i><i></i></span></div>
+
+      <div class="s2b"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12l7 7 7-7"/></svg></div>
+    </div>
+  </div>
+
+  <!-- ARTIFACT → RIGHT PANEL -->
+  <div class="sec-kicker" style="margin-top:42px">P0 · 产物 → 右侧面板</div>
+  <h2 class="t">点击产物 / 改动 → 右侧面板打开</h2>
+  <p class="lede">代码改动、生成的文档 / 表格 / PDF 等「产物」,在对话里是<strong>紧凑卡片 + 「在面板打开」</strong>;点开右侧 review 面板看完整 diff 或文档预览。左侧对话不被长 diff 撑爆,长内容去右面板。</p>
+  <div class="frame">
+    <div class="twopane">
+      <div class="left">
+        <div class="row-ai"><div class="ai-md"><p>已改好 <code>Button</code>,并生成了变更说明文档与改动清单。点卡片在右侧看完整内容。</p></div></div>
+        <div class="tc"><div class="tc-head"><span class="tc-ico edit"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></span><div class="tc-tt"><b>编辑 <span class="tgt">button.css</span></b></div><span class="openp"><svg class="ic" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14L21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>在面板打开</span><span class="stat"><span class="add">+8</span><span class="del">−2</span></span></div></div>
+        <div class="artifact"><span class="aico" style="background:#2563eb">DOC</span><div class="ab"><b>Button 变更说明.md</b><small>文档 · 1.2 KB · 办公套件</small></div><span class="open"><svg class="ic sm" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14L21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>打开</span></div>
+        <div class="artifact"><span class="aico" style="background:#16a34a">XLS</span><div class="ab"><b>组件改动清单.xlsx</b><small>表格 · 3 sheet · 办公套件</small></div><span class="open"><svg class="ic sm" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14L21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>打开</span></div>
+      </div>
+      <div class="right">
+        <div class="rp-head"><svg class="ic sm" viewBox="0 0 24 24" style="color:var(--a-text-tertiary)"><path d="M14.5 4h-9A1.5 1.5 0 0 0 4 5.5v13A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V9.5z"/><path d="M14 4v5h6"/></svg><span class="fn">button.css</span><span class="stat" style="margin-left:2px"><span class="add">+8</span><span class="del">−2</span></span><div class="rp-tabs"><span class="rp-tab on">差异</span><span class="rp-tab">原文</span></div><button class="rp-x"><svg class="ic sm" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+        <div class="rp-body"><div class="diff" style="padding:12px 0">
+          <div class="dl"><span class="gut">85</span><span class="sign"> </span><span>.a-btn{ position:relative }</span></div>
+          <div class="dl"><span class="gut">86</span><span class="sign"> </span><span>.a-btn .label{ transition:opacity .2s }</span></div>
+          <div class="dl del"><span class="gut">87</span><span class="sign">−</span><span>.a-btn .label{ opacity:1 }</span></div>
+          <div class="dl del"><span class="gut">88</span><span class="sign">−</span><span>.a-btn:disabled{ opacity:.5 }</span></div>
+          <div class="dl add"><span class="gut">87</span><span class="sign">+</span><span>.a-btn[data-loading]{ color:transparent; pointer-events:none }</span></div>
+          <div class="dl add"><span class="gut">88</span><span class="sign">+</span><span>.a-btn[data-loading]::after{</span></div>
+          <div class="dl add"><span class="gut">89</span><span class="sign">+</span><span>&nbsp;&nbsp;content:""; width:13px; height:13px;</span></div>
+          <div class="dl add"><span class="gut">90</span><span class="sign">+</span><span>&nbsp;&nbsp;border:1.5px solid currentcolor;</span></div>
+          <div class="dl add"><span class="gut">91</span><span class="sign">+</span><span>&nbsp;&nbsp;border-top-color:transparent;</span></div>
+          <div class="dl add"><span class="gut">92</span><span class="sign">+</span><span>&nbsp;&nbsp;animation:spin .6s linear infinite }</span></div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+  <div class="note"><b>面板内容随产物类型变</b>:代码改动 → diff(差异 / 原文 tab);文档 / 表格 / PDF → 预览(办公套件产物);网页 → 内嵌预览;终端 → ghostty。<b>复用</b> opencode review 面板(顶栏 toggle、ADR-008 已调宽);点卡片 = <span class="mono">review.toggle</span> + 定位该文件。</div>
+  <div class="note"><b>交互完整性自检</b>(回应你):✅ 本次补 —— 工作中动效(running 卡顶部进度条 + 图标脉冲 + 「AI 工作中」bobbing dots)、产物 → 右面板。仍归入 <span class="mono">states.html</span>:工具卡完成后自动折叠(运行=展开 / 完成=收起)、长输出「展开更多」、错误消息 / 中断态、消息「编辑 / 分支」、键盘导航 / Esc 关面板、产物导出 / 撤销(undo)。</div>
+
+  <!-- before/after for the skill dump -->
+  <div class="sec-kicker" style="margin-top:40px">关键对比 · 技能渲染</div>
+  <h2 class="t">技能:从「糊全文」到「折叠 chip」</h2>
+  <div class="compare">
+    <div class="col bad">
+      <div class="lbl">之前 · 全文糊进对话</div>
+      <div class="pad"><div class="rawdump"># Cloudflare Platform Skill
+
+Consolidated skill for building on the Cloudflare platform. Use decision trees below to find the right product...
+
+## Retrieval Sources
+Fetch the latest information before citing specific numbers, API signatures...
+| Source | How to retrieve | Use for |
+|--------|-----------------|---------|
+| Cloudflare docs | cloudflare-docs search tool ...</div></div>
+    </div>
+    <div class="col">
+      <div class="lbl">现在 · 折叠 chip</div>
+      <div class="pad"><div class="tool-chip" style="max-width:none"><span class="tico" style="background:#f6821f">CF</span><b>技能 · cloudflare</b><span class="meta2">已加载 · 点开看全文</span><svg class="ic sm chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div></div>
+    </div>
+  </div>
+  <div class="note"><b>实现</b>:工具卡/推理/diff/bash 等全部经 <span class="mono">[data-component]/[data-slot]</span> 钩子 CSS 换肤(零改 <span class="mono">message-part.tsx</span>)。<b>技能折叠</b>需新增一层:识别「skill 工具 → 紧随的 text part(技能全文)」序列,把 text 收进 chip(已批准)。<b>bash 退出码 / ANSI 颜色 / diff 语法高亮</b>内核在上游组件内,换肤改外壳;退出码徽如上游未给则从结果推断(待实测)。</div>
+</div>
+
+<script>
+document.querySelectorAll('#themeSeg button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#themeSeg button').forEach(x=>x.classList.remove('on'));b.classList.add('on');document.documentElement.setAttribute('data-theme',b.dataset.theme);});
+document.querySelectorAll('[data-toggle]').forEach(el=>el.querySelector('.tc-head,.reason-head')?.addEventListener('click',()=>el.classList.toggle('open')));
+document.querySelectorAll('.tool-chip').forEach(c=>c.onclick=()=>c.querySelector('.chev').style.transform=c.querySelector('.chev').style.transform?'':'rotate(90deg)');
+document.querySelectorAll('.qa-opt').forEach(o=>o.onclick=()=>{o.parentElement.querySelectorAll('.qa-opt').forEach(x=>x.classList.remove('sel'));o.classList.add('sel');});
+</script>
+</body>
+</html>

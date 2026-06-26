@@ -18,6 +18,7 @@
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   font-feature-settings: "cv01", "ss01";
+  font-variant-numeric: tabular-nums;   /* aligned figures everywhere — credits, tokens, line #s, prices */
   accent-color: var(--a-accent);
 }
 
@@ -76,4 +77,50 @@
   letter-spacing: var(--a-tracking-wide);
   text-transform: uppercase;
   color: var(--a-text-tertiary);
+}
+
+/* ── Premium polish utilities (frontend-design pass) ──────────────────────
+   .a-edge   → glass top-highlight on raised/tinted surfaces (compose with own shadow).
+   .a-grain  → faint fractal-noise behind content so flat canvases read "crafted".
+   .a-glow   → ≤4% accent atmosphere behind a hero (home / empty states). */
+.a-edge {
+  box-shadow: var(--a-edge-light);
+}
+.a-grain {
+  position: relative;
+  isolation: isolate;
+}
+.a-grain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--a-grain);
+  background-size: 140px 140px;
+  pointer-events: none;
+  z-index: 0;
+}
+.a-glow {
+  position: relative;
+}
+.a-glow::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--a-glow-accent);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Staggered entrance — one orchestrated reveal beats scattered micro-interactions.
+   Apply .a-rise to siblings and set --a-rise-i (0,1,2…) for the cascade. */
+@keyframes a-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.a-rise {
+  animation: a-rise var(--a-dur-slow) var(--a-ease-out) both;
+  animation-delay: calc(var(--a-rise-i, 0) * 90ms);
+}
+@media (prefers-reduced-motion: reduce) {
+  .a-rise { animation: none; }
 }

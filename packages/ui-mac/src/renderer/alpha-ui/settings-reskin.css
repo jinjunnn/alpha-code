@@ -89,9 +89,10 @@
   padding: 46px 48px 60px !important; /* top space clears the traffic lights */
   overflow-x: hidden !important;
 }
-/* constrain the inner content to a readable column so controls are never clipped */
+/* constrain the inner content to a readable column AND centre it on wide windows */
 [data-slot="tabs-v2-content"] > * {
   max-width: 720px !important;
+  margin-inline: auto !important;
 }
 
 /* group rows into a hairline card */

@@ -194,7 +194,9 @@ const main = Effect.gen(function* () {
   app.commandLine.appendSwitch("proxy-bypass-list", "<-loopback>")
   const features = app.commandLine.getSwitchValue("enable-features")
   app.commandLine.appendSwitch("enable-features", features ? `${jsCallStackFeature},${features}` : jsCallStackFeature)
-  if (!app.isPackaged) app.commandLine.appendSwitch("remote-debugging-port", "9222")
+  // Dev always exposes CDP for the visual-audit harness; ALPHA_CDP=1 also opens it on a
+  // PACKAGED build so the real-data (logged-in) UI can be screenshot-audited via CDP.
+  if (!app.isPackaged || process.env.ALPHA_CDP === "1") app.commandLine.appendSwitch("remote-debugging-port", "9222")
 
   if (!app.requestSingleInstanceLock()) {
     app.quit()

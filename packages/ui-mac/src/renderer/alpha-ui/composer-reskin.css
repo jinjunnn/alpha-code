@@ -1,0 +1,72 @@
+/* Alpha polish for opencode's v2 composer surface — CSS only, via stable data-component hooks.
+ * The FULL alpha composer rebuild (usage ring, effort, premium toolbar, model selector) is Phase 1;
+ * this interim pass lifts the existing v2 composer to alpha depth/edges so it stops reading "v2-gray".
+ * COUPLING (cosmetic; re-point on upstream rename): session-composer / session-new-composer. */
+@import "./tokens.css";
+
+[data-component="session-composer"],
+[data-component="session-new-composer"] {
+  background: var(--a-surface) !important;
+  border: 1px solid var(--a-border) !important;
+  border-radius: var(--a-radius-2xl) !important;
+  box-shadow: var(--a-shadow-md), var(--a-edge-light) !important;
+  transition:
+    box-shadow var(--a-dur-base) var(--a-ease-out),
+    border-color var(--a-dur-base) var(--a-ease-out) !important;
+}
+[data-component="session-composer"]:focus-within,
+[data-component="session-new-composer"]:focus-within {
+  border-color: var(--a-border-strong) !important;
+  box-shadow: var(--a-shadow-lg), var(--a-edge-light) !important;
+}
+
+/* --- toolbar: premium icon buttons + brand-indigo send -----------------------------------------
+ * Stable hooks (verified live via CDP): [data-action="prompt-submit"] = the send button;
+ * [data-slot="icon-button"] = +/attach; [data-slot="button"] = the model chip.
+ * COUPLING (cosmetic): re-point on upstream rename of these slots/actions. */
+
+/* Send → alpha brand indigo affordance (user-approved). Enabled = indigo, disabled = muted track. */
+[data-action="prompt-submit"] {
+  background: var(--a-accent) !important;
+  color: var(--a-text-on-accent) !important;
+  border-radius: var(--a-radius-full) !important;
+  transition:
+    background var(--a-dur-fast) var(--a-ease-out),
+    transform var(--a-dur-fast) var(--a-ease-out) !important;
+}
+[data-action="prompt-submit"]:hover:not(:disabled) {
+  background: var(--a-accent-hover) !important;
+}
+[data-action="prompt-submit"]:active:not(:disabled) {
+  background: var(--a-accent-active) !important;
+  transform: scale(0.94) !important;
+}
+[data-action="prompt-submit"]:disabled {
+  background: var(--a-bg-inset) !important;
+  color: var(--a-text-disabled) !important;
+}
+[data-action="prompt-submit"] svg {
+  color: currentColor !important;
+}
+
+/* +/attach icon buttons → soft alpha hover (never the send button). */
+[data-component="session-composer"] [data-slot="icon-button"]:not([data-action="prompt-submit"]):hover,
+[data-component="session-new-composer"] [data-slot="icon-button"]:not([data-action="prompt-submit"]):hover {
+  background: var(--a-bg-muted) !important;
+  border-radius: var(--a-radius-md) !important;
+}
+
+/* Model chip → soft alpha hover + rounded. */
+[data-component="session-composer"] [data-slot="button"]:hover,
+[data-component="session-new-composer"] [data-slot="button"]:hover {
+  background: var(--a-bg-muted) !important;
+  border-radius: var(--a-radius-md) !important;
+}
+
+/* Injected alpha chips (权限 + effort) inside opencode's in-session composer toolbar — keep them
+ * vertically centred among opencode's own controls. The host is display:contents so these flow in
+ * the toolbar's flex row. See composer-inject.tsx. */
+.a-comp-inject-chip {
+  align-self: center;
+  display: inline-flex;
+}

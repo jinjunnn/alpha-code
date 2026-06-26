@@ -471,6 +471,130 @@ svg[viewBox="0 0 720.002 129.001"] {
   font-weight: 560;
 }
 
+/* Per-session row: the link + a hover-revealed "⋯" actions button (rename/share/delete). */
+.alpha-session-row {
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+/* Unread dot: an agent produced new activity while this session was in the background. Sits in the
+   left gutter (absolute, so it never shifts the title) and clears the moment the session is opened. */
+.alpha-session-unread {
+  position: absolute;
+  left: 1px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--a-accent);
+  box-shadow: 0 0 0 2px var(--a-bg-subtle);
+  pointer-events: none;
+  z-index: 1;
+}
+.alpha-session-row > .alpha-session {
+  flex: 1;
+  min-width: 0;
+}
+.alpha-session-menu-btn {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--a-text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity var(--a-dur-fast) var(--a-ease-out),
+    background var(--a-dur-fast) var(--a-ease-out),
+    color var(--a-dur-fast) var(--a-ease-out);
+}
+.alpha-session-row:hover .alpha-session-menu-btn,
+.alpha-session-row[data-active] .alpha-session-menu-btn {
+  opacity: 1;
+}
+.alpha-session-menu-btn:hover {
+  background: var(--a-overlay-active);
+  color: var(--a-text);
+}
+.alpha-session-rename {
+  flex: 1;
+  min-width: 0;
+  margin-left: 5px;
+  padding: 4px 8px;
+  border: 1px solid var(--a-accent);
+  border-radius: 6px;
+  background: var(--a-surface);
+  color: var(--a-text);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+  box-shadow: var(--a-ring-focus);
+}
+
+/* Sidebar-native search box (filters projects/sessions in place). */
+.alpha-sidebar-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 10px 8px;
+  height: 30px;
+  padding: 0 9px;
+  background: var(--a-surface);
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-md);
+}
+.alpha-sidebar-search:focus-within {
+  border-color: var(--a-accent);
+  box-shadow: var(--a-ring-focus);
+}
+.alpha-sidebar-search-icon {
+  flex: 0 0 auto;
+  color: var(--a-text-tertiary);
+}
+.alpha-sidebar-search-icon svg {
+  width: 14px;
+  height: 14px;
+}
+.alpha-sidebar-search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--a-text);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+.alpha-sidebar-search-input::placeholder {
+  color: var(--a-text-tertiary);
+}
+.alpha-sidebar-search-clear {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--a-text-tertiary);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+}
+.alpha-sidebar-search-clear:hover {
+  background: var(--a-bg-muted);
+  color: var(--a-text);
+}
+
 .alpha-sidebar-empty {
   padding: 6px 10px 6px 19px;
   color: var(--a-text-tertiary);

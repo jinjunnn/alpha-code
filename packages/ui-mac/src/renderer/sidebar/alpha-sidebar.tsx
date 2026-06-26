@@ -13,6 +13,7 @@ import { ProjectAvatar, type ProjectAvatarVariant } from "@opencode-ai/ui/v2/pro
 import { Icon } from "@opencode-ai/ui/v2/icon"
 import { useTheme } from "@opencode-ai/ui/theme/context"
 import { t } from "../i18n"
+import { pushToast } from "../alpha-ui/Toast"
 import { Mark } from "../logo-alpha"
 import { ALPHA_ENDPOINTS, ALPHA_PATHS } from "../../shared/alpha-config"
 import { base64UrlDecode, homeHref, newSessionHref, projectLabel, sessionHref } from "./route"
@@ -22,6 +23,8 @@ import {
   hideProject,
   isProjectExpanded,
   isProjectHidden,
+  isSessionUnread,
+  markSessionViewed,
   setProjectExpanded,
   setSidebarAutoCollapsed,
   sidebarCollapsed,
@@ -30,7 +33,7 @@ import {
 } from "./sidebar-state"
 import { useAlphaProjects, type AlphaProject, type AlphaSession, type ServerInfo } from "./use-projects"
 import type { AuthState, AccountSummary } from "../../preload/types"
-import { toggleExtHub } from "../extensions/ext-hub-state"
+import { extHubOpen, setExtHubOpen, toggleExtHub } from "../extensions/ext-hub-state"
 
 // Replicate opencode's getProjectAvatarVariant (context/layout.tsx) for projects that already
 // have a server-assigned color; otherwise pick a stable variant from the worktree so the
@@ -77,13 +80,47 @@ function projectDisplayName(project: AlphaProject): string {
 
 // Eagerly-created sessions carry a "New session - <ISO>" title until the first message retitles
 // them; show a friendly placeholder. "Untitled" is our own empty-title fallback (see toSession).
+// Robust clipboard write. The async Clipboard API needs transient user activation (and can be
+// blocked); fall back to a hidden-textarea execCommand, which works in the Electron renderer even
+// when the activation heuristic is unhappy. Returns whether the copy landed.
+async function copyText(text: string): Promise<boolean> {
+  // Prefer the Electron main-process clipboard — it needs no transient user activation, so it
+  // succeeds reliably (including under automated clicks). Renderer APIs are the fallback.
+  try {
+    const ok = await (window as unknown as { api?: { writeClipboard?: (t: string) => Promise<boolean> } }).api?.writeClipboard?.(text)
+    if (ok) return true
+  } catch {
+    /* fall through to the renderer clipboard paths */
+  }
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    try {
+      const ta = document.createElement("textarea")
+      ta.value = text
+      ta.style.position = "fixed"
+      ta.style.top = "-1000px"
+      ta.style.opacity = "0"
+      document.body.appendChild(ta)
+      ta.focus()
+      ta.select()
+      const ok = document.execCommand("copy")
+      ta.remove()
+      return ok
+    } catch {
+      return false
+    }
+  }
+}
+
 function sessionDisplayTitle(title: string): string {
   if (title === "Untitled" || /^New session - /.test(title)) return t("alpha.sidebar.newChat")
   return title
 }
 
 export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }) {
-  const { store, createSession } = useAlphaProjects(props.server)
+  const { store, createSession, renameSession, shareSession, deleteSession, copySession } = useAlphaProjects(props.server)
   const navigate = useNavigate()
   const location = useLocation()
   const command = useCommand()
@@ -214,6 +251,25 @@ export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }
   // rendered once at the Portal root with fixed positioning (computed from the trigger button)
   // rather than inside the project row, so the scroll container can't clip it.
   const [menuFor, setMenuFor] = createSignal<string | null>(null)
+  // Per-session "⋯" actions (rename inline / share / delete) — the user asked these move off the
+  // session header into the sidebar row. Position is computed from the trigger, Portal-rendered.
+  const [sessionMenu, setSessionMenu] = createSignal<{ id: string; directory: string; title: string; top: number; right: number } | null>(null)
+  const [editingSession, setEditingSession] = createSignal<string | null>(null)
+  // Sidebar-native search: filters the project/session list in place (distinct from the "搜索"
+  // nav item, which opens opencode's global command palette).
+  const [searchQuery, setSearchQuery] = createSignal("")
+  const openSessionMenu = (e: MouseEvent, session: { id: string; directory: string; title: string }) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    setSessionMenu({
+      id: session.id,
+      directory: session.directory,
+      title: session.title,
+      top: rect.bottom + 4,
+      right: Math.max(8, window.innerWidth - rect.right),
+    })
+  }
   const [menuPos, setMenuPos] = createSignal<{ top: number; right: number } | null>(null)
 
   const openProjectMenu = (e: MouseEvent & { currentTarget: HTMLElement }, worktree: string) => {
@@ -275,6 +331,23 @@ export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }
 
   // Projects visible in the sidebar = all known projects minus the ones the user archived/removed.
   const visibleProjects = createMemo(() => displayProjects().filter((p) => !isProjectHidden(p.worktree)))
+  // Filter visible projects + their sessions by the search query. A project shows if its name
+  // matches (then all its sessions show) or if any of its sessions' titles match (then only those).
+  const searchedProjects = createMemo(() => {
+    const q = searchQuery().trim().toLowerCase()
+    const base = visibleProjects()
+    if (!q) return base
+    const out: typeof base = []
+    for (const p of base) {
+      if (projectLabel(p.worktree).toLowerCase().includes(q)) {
+        out.push(p)
+        continue
+      }
+      const sessions = (p.sessions ?? []).filter((s) => sessionDisplayTitle(s.title).toLowerCase().includes(q))
+      if (sessions.length) out.push({ ...p, sessions })
+    }
+    return out
+  })
   // Known projects that are currently hidden — drives the "Archived (N)" restore affordance, so
   // archiving is always reversible (no project can be lost).
   const archivedCount = createMemo(() => {
@@ -295,6 +368,33 @@ export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }
     }
     const sessionId = parts[1] === "session" ? parts[2] : undefined
     return { dir, sessionId }
+  })
+
+  // The customization hub (定制中心) is a full-content overlay. The user expects the sidebar to
+  // "win": clicking any sidebar item that navigates (a project, a session, new chat, home) should
+  // dismiss the hub and land on that target. We watch the raw pathname (not the reduced route()
+  // memo, which collapses home and new-session to the same value) and close the hub whenever it
+  // changes, guarded so the mount run and same-location re-renders never close a freshly-opened hub.
+  let lastNavPath: string | undefined
+  createEffect(() => {
+    const path = location.pathname
+    if (lastNavPath !== undefined && path !== lastNavPath && extHubOpen()) setExtHubOpen(false)
+    lastNavPath = path
+  })
+
+  // Keep the open session marked "viewed" at its latest activity, so it never shows its own unread
+  // dot and the watermark advances as messages stream in. Re-runs when the active id changes OR when
+  // that session's `updated` bumps (Solid tracks the deep store read).
+  createEffect(() => {
+    const sid = route().sessionId
+    if (!sid) return
+    for (const p of store.projects) {
+      const s = p.sessions.find((x) => x.id === sid)
+      if (s) {
+        markSessionViewed(sid, s.updated)
+        break
+      }
+    }
   })
 
   // True whenever we're inside a project workspace (a session OR a new-chat draft), i.e. not the
@@ -498,16 +598,88 @@ export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }
                 </svg>
                 <span>{t("alpha.sidebar.archive")}</span>
               </button>
+              {/* opencode has no project-delete API (ADR-008): archive = client-side hide, restorable
+                  via the "已归档(N)" row. The former duplicate "remove" button called the SAME
+                  archiveProject() — dropped to avoid two identical actions. */}
+            </div>
+          </>
+        )}
+      </Show>
+
+      <Show when={sessionMenu()}>
+        {(m) => (
+          <>
+            <div class="alpha-menu-backdrop" onClick={() => setSessionMenu(null)} />
+            <div class="alpha-project-menu" role="menu" style={{ top: `${m().top}px`, right: `${m().right}px` }}>
+              <button
+                type="button"
+                class="alpha-project-menu-item"
+                role="menuitem"
+                onClick={() => {
+                  setEditingSession(m().id)
+                  setSessionMenu(null)
+                }}
+              >
+                <svg class="alpha-project-menu-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M11.5 2.5a1.4 1.4 0 0 1 2 2L6 12l-3 .8.8-3 7.7-7.3Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" />
+                </svg>
+                <span>重命名</span>
+              </button>
+              <button
+                type="button"
+                class="alpha-project-menu-item"
+                role="menuitem"
+                onClick={() => {
+                  void shareSession(m().id, m().directory)
+                  setSessionMenu(null)
+                }}
+              >
+                <svg class="alpha-project-menu-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M8 10V2.5M5.5 5 8 2.5 10.5 5M3 9v3.5a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <span>分享</span>
+              </button>
+              <button
+                type="button"
+                class="alpha-project-menu-item"
+                role="menuitem"
+                onClick={() => {
+                  const id = m().id
+                  setSessionMenu(null)
+                  void (async () => {
+                    const text = await copySession(id)
+                    if (!text) {
+                      pushToast({ kind: "error", title: "没有可复制的内容" })
+                      return
+                    }
+                    const ok = await copyText(text)
+                    pushToast(
+                      ok
+                        ? { kind: "success", title: "已复制整段对话" }
+                        : { kind: "error", title: "复制失败" },
+                    )
+                  })()
+                }}
+              >
+                <svg class="alpha-project-menu-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <rect x="5" y="5" width="8" height="9" rx="1.3" stroke="currentColor" stroke-width="1.2" />
+                  <path d="M11 5V3.8a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1V11a1 1 0 0 0 1 1h1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <span>复制对话</span>
+              </button>
               <button
                 type="button"
                 class="alpha-project-menu-item alpha-project-menu-item-danger"
                 role="menuitem"
-                onClick={() => archiveProject(worktree())}
+                onClick={() => {
+                  void deleteSession(m().id)
+                  setSessionMenu(null)
+                }}
               >
                 <svg class="alpha-project-menu-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                   <path d="M3 4.5h10M6.5 4.5V3.4a.9.9 0 0 1 .9-.9h1.2a.9.9 0 0 1 .9.9V4.5M11.7 4.5 11.2 12a1 1 0 0 1-1 .95H5.8a1 1 0 0 1-1-.95L4.3 4.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
-                <span>{t("alpha.sidebar.remove")}</span>
+                <span>删除</span>
               </button>
             </div>
           </>
@@ -615,12 +787,35 @@ export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }
             </button>
           </nav>
 
+          <Show when={visibleProjects().length > 0}>
+            <div class="alpha-sidebar-search">
+              <Icon name="magnifying-glass" class="alpha-sidebar-search-icon" />
+              <input
+                class="alpha-sidebar-search-input"
+                type="text"
+                placeholder="搜索项目 / 会话…"
+                value={searchQuery()}
+                onInput={(e) => setSearchQuery(e.currentTarget.value)}
+              />
+              <Show when={searchQuery() !== ""}>
+                <button
+                  type="button"
+                  class="alpha-sidebar-search-clear"
+                  aria-label="清除搜索"
+                  onClick={() => setSearchQuery("")}
+                >
+                  ×
+                </button>
+              </Show>
+            </div>
+          </Show>
+
           <div class="alpha-sidebar-section">{t("alpha.sidebar.projects")}</div>
 
           <div class="alpha-sidebar-scroll">
-            <For each={visibleProjects()}>
+            <For each={searchedProjects()}>
               {(project) => {
-                const expanded = () => isProjectExpanded(project.worktree)
+                const expanded = () => isProjectExpanded(project.worktree) || searchQuery().trim() !== ""
                 const menuOpen = () => menuFor() === project.worktree
                 return (
                   <div class="alpha-project" data-expanded={expanded() ? "" : undefined}>
@@ -679,14 +874,57 @@ export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }
                           }
                         >
                           {(session) => (
-                            <a
-                              class="alpha-session"
-                              href={sessionHref(session.directory, session.id)}
-                              data-active={route().sessionId === session.id ? "" : undefined}
-                              onClick={(e) => openSession(e, session.directory, session.id)}
-                            >
-                              <span class="alpha-session-title">{sessionDisplayTitle(session.title)}</span>
-                            </a>
+                            <div class="alpha-session-row" data-active={route().sessionId === session.id ? "" : undefined}>
+                              <Show when={isSessionUnread(session.id, session.updated) && route().sessionId !== session.id}>
+                                <span class="alpha-session-unread" aria-hidden="true" />
+                              </Show>
+                              <Show
+                                when={editingSession() === session.id}
+                                fallback={
+                                  <>
+                                    <a
+                                      class="alpha-session"
+                                      href={sessionHref(session.directory, session.id)}
+                                      data-active={route().sessionId === session.id ? "" : undefined}
+                                      onClick={(e) => openSession(e, session.directory, session.id)}
+                                    >
+                                      <span class="alpha-session-title">{sessionDisplayTitle(session.title)}</span>
+                                    </a>
+                                    <button
+                                      type="button"
+                                      class="alpha-session-menu-btn"
+                                      aria-label="会话操作"
+                                      onClick={(e) => openSessionMenu(e, session)}
+                                    >
+                                      <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
+                                        <circle cx="3.4" cy="8" r="1.2" />
+                                        <circle cx="8" cy="8" r="1.2" />
+                                        <circle cx="12.6" cy="8" r="1.2" />
+                                      </svg>
+                                    </button>
+                                  </>
+                                }
+                              >
+                                <input
+                                  class="alpha-session-rename"
+                                  value={session.title}
+                                  autofocus
+                                  onClick={(e) => e.stopPropagation()}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      void renameSession(session.id, e.currentTarget.value)
+                                      setEditingSession(null)
+                                    } else if (e.key === "Escape") {
+                                      setEditingSession(null)
+                                    }
+                                  }}
+                                  onBlur={(e) => {
+                                    void renameSession(session.id, e.currentTarget.value)
+                                    setEditingSession(null)
+                                  }}
+                                />
+                              </Show>
+                            </div>
                           )}
                         </For>
                       </div>
@@ -696,6 +934,9 @@ export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }
               }}
             </For>
 
+            <Show when={searchQuery().trim() !== "" && searchedProjects().length === 0}>
+              <div class="alpha-sidebar-empty">无匹配的项目或会话</div>
+            </Show>
             <Show when={store.ready && visibleProjects().length === 0 && archivedCount() === 0}>
               <div class="alpha-sidebar-empty alpha-sidebar-empty-projects">
                 <p>{t("alpha.sidebar.noProjects")}</p>

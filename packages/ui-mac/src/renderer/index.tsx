@@ -29,6 +29,11 @@ import "./styles.css"
 import "./sidebar/sidebar.css"
 import "./sidebar/account-popover.css"
 import "./alpha-ui/settings-reskin.css"
+import "./alpha-ui/timeline-reskin.css"
+import "./alpha-ui/composer-reskin.css"
+import "./alpha-ui/model-picker-reskin.css"
+import { ToastViewport } from "./alpha-ui/Toast"
+import { ComposerInject } from "./alpha-ui/composer-inject"
 import { AlphaSidebar } from "./sidebar/alpha-sidebar"
 import { AlphaHome } from "./alpha-ui/AlphaHome"
 import { setupSettingsBackButton } from "./alpha-ui/settings-back-button"
@@ -395,6 +400,8 @@ render(() => {
               <AlphaSidebar server={sidebarServer} />
               <AlphaHome server={sidebarServer} />
               <ExtensionHub server={sidebarServer} open={extHubOpen} onClose={() => setExtHubOpen(false)} />
+              <ComposerInject />
+              <ToastViewport />
             </AppInterface>
           )}
         </Show>

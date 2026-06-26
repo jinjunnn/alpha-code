@@ -90,7 +90,8 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   padding: 26px 32px 56px;
 }
 .alpha-ext-body > * {
-  max-width: 960px;
+  max-width: 760px;
+  margin-inline: auto; /* centre the content column on wide windows (was left-pinned → "显空") */
 }
 .alpha-ext-title {
   font-size: var(--a-text-2xl);
@@ -374,4 +375,39 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   font-weight: var(--a-weight-medium);
   box-shadow: var(--a-shadow-lg);
   z-index: 30;
+}
+
+/* Install-confirmation modal body (rendered inside the alpha Dialog, staged by 添加). */
+.alpha-ext-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.alpha-ext-confirm-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.alpha-ext-confirm-type {
+  font-size: var(--a-text-sm);
+  color: var(--a-text-tertiary);
+}
+.alpha-ext-confirm-desc {
+  margin: 0;
+  font-size: var(--a-text-base);
+  line-height: 1.55;
+  color: var(--a-text-secondary);
+}
+.alpha-ext-confirm-line {
+  font-size: var(--a-text-sm);
+  color: var(--a-text-secondary);
+}
+.alpha-ext-confirm-line code {
+  font-family: var(--a-font-mono);
+  font-size: 11.5px;
+  background: var(--a-bg-muted);
+  border: 1px solid var(--a-border-faint);
+  padding: 1px 6px;
+  border-radius: 5px;
+  color: var(--a-text);
 }

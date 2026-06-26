@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>alpha-code · 侧栏 / 定制中心 / 设置 设计稿</title>
+<style>
+/* ===== alpha-ui tokens (exact, from tokens.css) ===== */
+:root{
+  --a-bg-canvas:#ffffff;--a-bg-subtle:#f6f7f9;--a-bg-muted:#eceef1;--a-bg-inset:#e3e6ea;
+  --a-surface:#ffffff;--a-surface-raised:#ffffff;--a-scrim:rgba(15,17,21,.45);
+  --a-text:#18181b;--a-text-secondary:#52525b;--a-text-tertiary:#7c7d85;--a-text-disabled:#b3b6bd;--a-text-on-accent:#fff;
+  --a-border-faint:#eef0f3;--a-border:#e4e6ea;--a-border-strong:#ced2d9;
+  --a-overlay-hover:rgba(15,17,21,.05);--a-overlay-active:rgba(15,17,21,.08);
+  --a-accent:#4f46e5;--a-accent-hover:#4338ca;--a-accent-active:#3730a3;
+  --a-accent-solid:#4f46e5;--a-accent-solid-hover:#4338ca;--a-accent-solid-active:#3730a3;
+  --a-accent-subtle:rgba(79,70,229,.10);--a-accent-border:rgba(79,70,229,.35);--a-accent-ring:rgba(79,70,229,.45);
+  --a-success:#16a34a;--a-warning:#d97706;--a-error:#dc2626;--a-info:#2563eb;
+  --a-success-subtle:rgba(22,163,74,.12);--a-warning-subtle:rgba(217,119,6,.12);--a-error-subtle:rgba(220,38,38,.12);
+  --a-radius-xs:4px;--a-radius-sm:6px;--a-radius-md:8px;--a-radius-lg:11px;--a-radius-xl:14px;--a-radius-2xl:18px;--a-radius-full:9999px;
+  --a-space-1:4px;--a-space-2:8px;--a-space-3:12px;--a-space-4:16px;--a-space-5:20px;--a-space-6:24px;--a-space-8:32px;
+  --a-font-sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;
+  --a-font-mono:"SF Mono","JetBrains Mono","Menlo",ui-monospace,monospace;
+  --a-text-2xs:10.5px;--a-text-xs:11.5px;--a-text-sm:12.5px;--a-text-base:13px;--a-text-md:14px;--a-text-lg:16px;--a-text-xl:19px;--a-text-2xl:23px;
+  --a-leading-tight:1.2;--a-leading-snug:1.4;--a-leading-normal:1.55;--a-tracking-tight:-0.014em;--a-tracking-wide:0.04em;
+  --a-weight-normal:400;--a-weight-medium:500;--a-weight-semibold:600;--a-weight-bold:680;
+  --a-shadow-xs:0 1px 2px rgba(15,17,21,.05);
+  --a-shadow-sm:0 1px 3px rgba(15,17,21,.07),0 1px 2px rgba(15,17,21,.04);
+  --a-shadow-md:0 4px 12px rgba(15,17,21,.08),0 2px 4px rgba(15,17,21,.05);
+  --a-shadow-lg:0 12px 32px rgba(15,17,21,.12),0 4px 8px rgba(15,17,21,.06);
+  --a-shadow-overlay:0 24px 64px rgba(15,17,21,.20),0 8px 16px rgba(15,17,21,.10);
+  --a-ring-focus:0 0 0 3px var(--a-accent-ring);
+  --a-dur-fast:130ms;--a-dur-base:190ms;--a-ease-out:cubic-bezier(.22,1,.36,1);
+}
+html[data-theme="dark"]{
+  --a-bg-canvas:#0a0b0d;--a-bg-subtle:#0e0f11;--a-bg-muted:#16171a;--a-bg-inset:#1e2024;
+  --a-surface:#121316;--a-surface-raised:#17181b;--a-scrim:rgba(0,0,0,.60);
+  --a-text:#fafafa;--a-text-secondary:#a1a1aa;--a-text-tertiary:#71727a;--a-text-disabled:#4f5158;
+  --a-border-faint:#1b1c20;--a-border:#232428;--a-border-strong:#34363c;
+  --a-overlay-hover:rgba(255,255,255,.055);--a-overlay-active:rgba(255,255,255,.09);
+  --a-accent:#818cf8;--a-accent-hover:#6366f1;--a-accent-active:#4f46e5;
+  --a-accent-solid:#4f46e5;--a-accent-solid-hover:#5b54ea;--a-accent-solid-active:#4338ca;
+  --a-accent-subtle:rgba(129,140,248,.14);--a-accent-border:rgba(129,140,248,.38);--a-accent-ring:rgba(129,140,248,.45);
+  --a-success:#4ade80;--a-warning:#fbbf24;--a-error:#f87171;--a-info:#60a5fa;
+  --a-success-subtle:rgba(74,222,128,.14);--a-warning-subtle:rgba(251,191,36,.14);--a-error-subtle:rgba(248,113,113,.14);
+  --a-shadow-xs:0 1px 2px rgba(0,0,0,.4);
+  --a-shadow-sm:0 1px 3px rgba(0,0,0,.5),0 1px 2px rgba(0,0,0,.4);
+  --a-shadow-md:0 4px 12px rgba(0,0,0,.5),0 2px 4px rgba(0,0,0,.4);
+  --a-shadow-lg:0 12px 32px rgba(0,0,0,.6),0 4px 8px rgba(0,0,0,.4);
+  --a-shadow-overlay:0 24px 64px rgba(0,0,0,.7),0 8px 16px rgba(0,0,0,.5);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--a-bg-subtle);color:var(--a-text);font-family:var(--a-font-sans);font-size:var(--a-text-base);line-height:var(--a-leading-normal);-webkit-font-smoothing:antialiased;font-feature-settings:"cv01","ss01"}
+h1,h2,h3,h4{margin:0;font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight);line-height:var(--a-leading-tight)}
+button{font-family:inherit;cursor:pointer}
+svg{display:block}
+.ic{width:16px;height:16px;stroke:currentColor;stroke-width:1.6;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.ic.sm{width:14px;height:14px}
+.mono{font-family:var(--a-font-mono)}
+
+/* chrome */
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:16px;padding:12px 22px;background:color-mix(in srgb,var(--a-bg-canvas) 86%,transparent);backdrop-filter:blur(12px);border-bottom:1px solid var(--a-border-faint)}
+.topbar .brand{display:flex;align-items:center;gap:10px;font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight)}
+.topbar .spacer{flex:1}
+.topbar nav{display:flex;gap:2px}
+.topbar nav a{padding:6px 10px;border-radius:var(--a-radius-md);color:var(--a-text-secondary);text-decoration:none;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium)}
+.topbar nav a:hover{background:var(--a-bg-muted);color:var(--a-text)}
+.seg{display:inline-flex;padding:2px;background:var(--a-bg-muted);border-radius:var(--a-radius-md);gap:2px}
+.seg button{border:0;background:transparent;color:var(--a-text-secondary);font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);padding:5px 10px;border-radius:6px}
+.seg button.on{background:var(--a-surface);color:var(--a-text);box-shadow:var(--a-shadow-xs)}
+.wrap{max-width:1180px;margin:0 auto;padding:40px 24px 120px}
+.sec{margin-bottom:64px;scroll-margin-top:80px}
+.sec-head{margin-bottom:18px}
+.sec-kicker{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary)}
+.sec h2{font-size:var(--a-text-2xl);margin-top:6px}
+.sec p.lede{margin:8px 0 0;color:var(--a-text-secondary);font-size:var(--a-text-md);max-width:70ch}
+.note{margin-top:14px;padding:12px 14px;background:var(--a-bg-canvas);border:1px solid var(--a-border);border-left:3px solid var(--a-accent);border-radius:var(--a-radius-md);font-size:var(--a-text-sm);color:var(--a-text-secondary)}
+.note b{color:var(--a-text);font-weight:var(--a-weight-semibold)}
+.note.warn{border-left-color:var(--a-warning)}
+.frame{position:relative;border:1px solid var(--a-border);border-radius:var(--a-radius-xl);overflow:hidden;background:var(--a-bg-canvas);box-shadow:var(--a-shadow-md)}
+.cap{font-size:var(--a-text-xs);color:var(--a-text-tertiary);margin-top:10px}
+.row{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
+
+/* shared buttons */
+.btn-primary{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 14px;border:0;border-radius:var(--a-radius-md);background:var(--a-accent-solid);color:#fff;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);box-shadow:var(--a-shadow-xs)}
+.btn-primary:hover{background:var(--a-accent-solid-hover)}
+.btn-ghost{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 12px;border:1px solid var(--a-border);border-radius:var(--a-radius-md);background:var(--a-surface);color:var(--a-text);font-size:var(--a-text-sm);font-weight:var(--a-weight-medium)}
+.btn-ghost:hover{background:var(--a-bg-muted);border-color:var(--a-border-strong)}
+.btn-sm{height:28px;padding:0 11px;font-size:var(--a-text-xs)}
+.sw{width:36px;height:21px;border-radius:var(--a-radius-full);background:var(--a-bg-inset);position:relative;transition:background var(--a-dur-fast);flex:none;cursor:pointer}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:var(--a-shadow-xs);transition:left var(--a-dur-fast) var(--a-ease-out)}
+.sw.on{background:var(--a-accent-solid)}.sw.on::after{left:17px}
+
+/* ============================================================ A · SIDEBAR ============================================================ */
+.app{display:flex;height:560px}
+.sb{width:264px;flex:none;background:var(--a-bg-subtle);border-right:1px solid var(--a-border-faint);display:flex;flex-direction:column;overflow:hidden}
+.sb-top{display:flex;align-items:center;gap:10px;padding:14px 14px 10px}
+.sb-mark{width:22px;height:22px;border-radius:7px;background:var(--a-accent-solid);color:#fff;display:grid;place-items:center;font-weight:800;font-size:13px}
+.sb-wordmark{font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight);font-size:var(--a-text-md)}
+.sb-newbtn{margin:2px 10px 8px;display:flex;align-items:center;gap:8px;height:32px;padding:0 11px;border:1px solid var(--a-border);border-radius:var(--a-radius-md);background:var(--a-surface);color:var(--a-text-secondary);font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);box-shadow:var(--a-shadow-xs)}
+.sb-newbtn:hover{border-color:var(--a-border-strong);color:var(--a-text)}
+.sb-newbtn .ic{color:var(--a-text-tertiary)}
+.sb-scroll{flex:1;overflow-y:auto;padding:6px 8px 16px}
+.sb-overline{padding:10px 8px 6px;font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary)}
+/* project header row — clean, NO heavy gray slab */
+.sb-proj{display:flex;align-items:center;gap:8px;height:32px;padding:0 8px;border-radius:var(--a-radius-md);cursor:pointer;color:var(--a-text);position:relative}
+.sb-proj:hover{background:var(--a-overlay-hover)}
+.sb-proj.active{background:transparent}  /* active = bold name only, no gray slab */
+.sb-proj .caret{width:14px;height:14px;color:var(--a-text-tertiary);transition:transform var(--a-dur-fast);flex:none}
+.sb-proj.open .caret{transform:rotate(90deg)}
+.sb-av{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff;flex:none}
+.sb-proj .nm{font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-proj.active .nm{font-weight:var(--a-weight-semibold)}
+.sb-proj .count{margin-left:auto;font-size:var(--a-text-2xs);color:var(--a-text-tertiary)}
+/* sessions — indented; selection = rounded indigo pill, not full-bleed gray */
+.sb-sessions{margin:2px 0 6px;padding-left:14px;position:relative}
+.sb-sessions::before{content:"";position:absolute;left:15px;top:2px;bottom:2px;width:1px;background:var(--a-border-faint)}
+.sb-sess{display:flex;align-items:center;gap:8px;height:30px;margin-left:8px;padding:0 10px;border-radius:var(--a-radius-md);cursor:pointer;color:var(--a-text-secondary);font-size:var(--a-text-sm);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative}
+.sb-sess:hover{background:var(--a-overlay-hover);color:var(--a-text)}
+.sb-sess.sel{background:var(--a-accent-subtle);color:var(--a-accent);font-weight:var(--a-weight-medium)}
+.sb-sess.sel::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:2.5px;border-radius:2px;background:var(--a-accent)}
+.sb-sess .t{overflow:hidden;text-overflow:ellipsis}
+.sb-foot{border-top:1px solid var(--a-border-faint);padding:8px;display:flex;align-items:center;gap:9px}
+.sb-foot .av{width:26px;height:26px;border-radius:var(--a-radius-full);background:var(--a-accent-subtle);color:var(--a-accent);display:grid;place-items:center;font-size:11px;font-weight:700}
+.sb-foot .who{display:flex;flex-direction:column;min-width:0}
+.sb-foot .who b{font-size:var(--a-text-sm);font-weight:var(--a-weight-medium)}
+.sb-foot .who small{font-size:var(--a-text-2xs);color:var(--a-text-tertiary)}
+.sb-foot .gear{margin-left:auto;width:28px;height:28px;border-radius:var(--a-radius-md);border:0;background:transparent;color:var(--a-text-tertiary);display:grid;place-items:center}
+.sb-foot .gear:hover{background:var(--a-bg-muted);color:var(--a-text)}
+.stage-empty{flex:1;display:grid;place-items:center;color:var(--a-text-disabled);font-size:var(--a-text-md);background:var(--a-bg-canvas)}
+
+/* compare strip (before/after selection treatment) */
+.cmp{display:flex;gap:0;background:var(--a-bg-subtle);border:1px solid var(--a-border);border-radius:var(--a-radius-md);overflow:hidden;width:264px}
+.cmp .col{flex:1;padding:8px}
+.cmp .lbl{font-size:var(--a-text-2xs);color:var(--a-text-tertiary);text-transform:uppercase;letter-spacing:var(--a-tracking-wide);font-weight:600;margin-bottom:6px;padding:0 4px}
+.bad-sess{display:flex;align-items:center;height:30px;padding:0 10px;background:var(--a-bg-inset);color:var(--a-text);font-size:var(--a-text-sm);border-radius:2px;margin:0 -8px}
+
+/* ============================================================ B · EXTENSION HUB ============================================================ */
+.hub-frame .app{height:600px}
+.content{flex:1;background:var(--a-bg-canvas);position:relative;overflow:hidden;display:flex;flex-direction:column}
+.hub-close{position:absolute;top:14px;right:16px;width:30px;height:30px;border:0;border-radius:var(--a-radius-md);background:transparent;color:var(--a-text-tertiary);display:grid;place-items:center;z-index:2}
+.hub-close:hover{background:var(--a-bg-muted);color:var(--a-text)}
+.hub-tabbar{border-bottom:1px solid var(--a-border-faint);padding:0 24px;display:flex;justify-content:center}
+.hub-tabs{display:flex;gap:4px;width:100%;max-width:760px}
+.hub-tab{padding:13px 12px 11px;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);color:var(--a-text-tertiary);border-bottom:2px solid transparent;cursor:pointer;margin-bottom:-1px}
+.hub-tab:hover{color:var(--a-text-secondary)}
+.hub-tab.on{color:var(--a-text);border-bottom-color:var(--a-accent)}
+.hub-scroll{flex:1;overflow-y:auto;padding:28px 24px 40px}
+.hub-center{max-width:760px;margin:0 auto}   /* 宽屏居中 */
+.hub-h1{font-size:var(--a-text-2xl)}
+.hub-sub{color:var(--a-text-secondary);font-size:var(--a-text-md);margin-top:6px}
+.hub-search{display:flex;align-items:center;gap:10px;height:40px;padding:0 14px;margin:20px 0 24px;background:var(--a-bg-subtle);border:1px solid var(--a-border);border-radius:var(--a-radius-lg)}
+.hub-search:focus-within{background:var(--a-surface);border-color:var(--a-accent);box-shadow:var(--a-ring-focus)}
+.hub-search .ic{color:var(--a-text-tertiary)}
+.hub-search input{flex:1;border:0;background:transparent;outline:none;font-size:var(--a-text-md);color:var(--a-text);font-family:inherit}
+.hub-search input::placeholder{color:var(--a-text-tertiary)}
+.hub-secrow{display:flex;align-items:center;justify-content:space-between;margin:6px 0 12px}
+.hub-secrow .t{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary)}
+.hub-secrow .act{font-size:var(--a-text-sm);color:var(--a-accent);font-weight:var(--a-weight-medium);cursor:pointer}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:26px}
+.ext-chip{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 12px;background:var(--a-bg-subtle);border:1px solid var(--a-border-faint);border-radius:var(--a-radius-md);font-size:var(--a-text-sm);font-weight:var(--a-weight-medium)}
+.ext-chip .d{width:16px;height:16px;border-radius:5px;display:grid;place-items:center;font-size:9px;font-weight:700;color:#fff}
+.kit{display:flex;align-items:center;gap:14px;padding:16px 4px;border-bottom:1px solid var(--a-border-faint)}
+.kit:last-child{border-bottom:0}
+.kit .ico{width:40px;height:40px;border-radius:var(--a-radius-lg);display:grid;place-items:center;font-size:14px;font-weight:700;flex:none;background:var(--a-bg-muted);color:var(--a-text-secondary)}
+.kit .body{min-width:0;flex:1}
+.kit .ttl{display:flex;align-items:center;gap:8px}
+.kit .ttl b{font-size:var(--a-text-md);font-weight:var(--a-weight-semibold)}
+.kit .tag{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);padding:1px 7px;border-radius:var(--a-radius-full);background:var(--a-accent-subtle);color:var(--a-accent)}
+.kit .desc{font-size:var(--a-text-sm);color:var(--a-text-secondary);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kit .desc .n{color:var(--a-text-tertiary)}
+
+/* add modal (Codex-clean) */
+.modal-stage{position:relative;min-height:520px;background:var(--a-bg-canvas);border:1px solid var(--a-border);border-radius:var(--a-radius-xl);overflow:hidden;display:grid;place-items:center}
+.scrim{position:absolute;inset:0;background:var(--a-scrim);backdrop-filter:blur(3px)}
+.modal{position:relative;width:420px;max-width:92%;background:var(--a-surface-raised);border:1px solid var(--a-border-faint);border-radius:var(--a-radius-2xl);box-shadow:var(--a-shadow-overlay);overflow:hidden}
+.modal .mclose{position:absolute;top:14px;right:14px;width:28px;height:28px;border:0;border-radius:var(--a-radius-md);background:transparent;color:var(--a-text-tertiary);display:grid;place-items:center}
+.modal-hero{display:flex;flex-direction:column;align-items:center;text-align:center;padding:28px 24px 18px}
+.modal-icons{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.modal-icons .big{width:48px;height:48px;border-radius:var(--a-radius-lg);display:grid;place-items:center;font-size:18px;font-weight:700;color:#fff}
+.modal-icons .dots{color:var(--a-text-tertiary);letter-spacing:2px}
+.modal-hero h3{font-size:var(--a-text-xl)}
+.modal-hero .dev{font-size:var(--a-text-sm);color:var(--a-text-tertiary);margin-top:4px}
+.modal-hero .approved{display:inline-flex;align-items:center;gap:5px;margin-top:10px;font-size:var(--a-text-sm);color:var(--a-success);font-weight:var(--a-weight-medium)}
+.modal-body{padding:0 24px 20px}
+.install-box{border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);overflow:hidden}
+.install-row{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--a-border-faint);font-size:var(--a-text-sm)}
+.install-row:last-child{border-bottom:0}
+.install-row .d{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-size:10px;font-weight:700;color:#fff;flex:none}
+.install-row .k{margin-left:auto;font-size:var(--a-text-2xs);color:var(--a-text-tertiary);text-transform:uppercase;letter-spacing:var(--a-tracking-wide)}
+.modal-note{font-size:var(--a-text-xs);color:var(--a-text-tertiary);margin:14px 2px 0;line-height:var(--a-leading-snug)}
+.modal-foot{padding:14px 24px 22px}
+.modal-foot .btn-primary{width:100%;height:40px;justify-content:center;font-size:var(--a-text-md)}
+.modal-foot .alt{display:block;text-align:center;margin-top:10px;font-size:var(--a-text-sm);color:var(--a-text-tertiary);cursor:pointer}
+
+/* ============================================================ C · SETTINGS ============================================================ */
+.set-frame .app{height:600px}
+.set-nav{width:212px;flex:none;background:var(--a-bg-subtle);border-right:1px solid var(--a-border-faint);padding:14px 8px;overflow-y:auto}  /* SAME bg as main sidebar */
+.set-nav .title{padding:6px 8px 12px;font-size:var(--a-text-lg);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight)}
+.set-nav-item{display:flex;align-items:center;gap:10px;height:34px;padding:0 10px;border-radius:var(--a-radius-md);cursor:pointer;color:var(--a-text-secondary);font-size:var(--a-text-sm);font-weight:var(--a-weight-medium)}
+.set-nav-item .ic{color:var(--a-text-tertiary);flex:none}
+.set-nav-item:hover{background:var(--a-overlay-hover);color:var(--a-text)}
+.set-nav-item.on{background:var(--a-accent-subtle);color:var(--a-accent)}
+.set-nav-item.on .ic{color:var(--a-accent)}
+.set-content{flex:1;overflow-y:auto;background:var(--a-bg-canvas)}
+.set-inner{max-width:620px;margin:0 auto;padding:8px 28px 60px}  /* 居中 */
+/* sticky header done right: opaque bg + z-index → never masks content */
+.set-sech{position:sticky;top:0;z-index:3;background:var(--a-bg-canvas);padding:22px 0 10px;font-size:var(--a-text-md);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight);border-bottom:1px solid var(--a-border-faint);margin-bottom:14px}
+.set-sech .sub{font-weight:var(--a-weight-normal);font-size:var(--a-text-xs);color:var(--a-text-tertiary);margin-left:8px}
+.set-card{border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-surface);overflow:hidden;margin-bottom:26px}
+.set-rw{display:flex;align-items:center;gap:14px;padding:13px 15px;border-bottom:1px solid var(--a-border-faint)}
+.set-rw:last-child{border-bottom:0}
+.set-rw .meta{min-width:0;flex:1}
+.set-rw .meta b{font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);display:block}
+.set-rw .meta small{font-size:var(--a-text-xs);color:var(--a-text-tertiary)}
+.set-select{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px;border:1px solid var(--a-border);border-radius:var(--a-radius-md);background:var(--a-surface);font-size:var(--a-text-sm);color:var(--a-text);font-weight:var(--a-weight-medium)}
+.set-select:hover{border-color:var(--a-border-strong);background:var(--a-bg-muted)}
+.set-select .ic{color:var(--a-text-tertiary)}
+/* P1/P2 additions */
+.sb-search{display:flex;align-items:center;gap:8px;margin:0 10px 8px;height:30px;padding:0 10px;background:var(--a-surface);border:1px solid var(--a-border);border-radius:var(--a-radius-md);color:var(--a-text-tertiary);font-size:var(--a-text-sm)}
+.sb-search .ic{color:var(--a-text-tertiary)}
+.unread{width:7px;height:7px;border-radius:50%;background:var(--a-accent);flex:none}
+.smenu{width:208px;background:var(--a-surface-raised);border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);box-shadow:var(--a-shadow-overlay);padding:6px}
+.smenu-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--a-radius-md);font-size:var(--a-text-sm);color:var(--a-text);cursor:pointer}
+.smenu-item:hover{background:var(--a-bg-muted)}
+.smenu-item .ic{color:var(--a-text-secondary)}
+.smenu-item.danger{color:var(--a-error)}.smenu-item.danger .ic{color:var(--a-error)}
+.smenu-sep{height:1px;background:var(--a-border-faint);margin:5px 4px}
+.toast{display:flex;align-items:center;gap:11px;padding:11px 13px;margin-bottom:10px;background:var(--a-surface-raised);border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);box-shadow:var(--a-shadow-lg)}
+.toast b{font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);display:block}
+.toast small{font-size:var(--a-text-xs);color:var(--a-text-tertiary)}
+.toast .t-ico{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;flex:none}
+.toast .t-ico.ok{background:var(--a-success)}.toast .t-ico.err{background:var(--a-error)}
+.toast .t-x{margin-left:auto;color:var(--a-text-tertiary);cursor:pointer}
+.tip{position:absolute;top:6px;left:0;background:var(--a-text);color:var(--a-bg-canvas);font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);padding:5px 9px;border-radius:var(--a-radius-md);box-shadow:var(--a-shadow-md);white-space:nowrap}
+.tip::after{content:"";position:absolute;bottom:-3px;left:16px;width:8px;height:8px;background:var(--a-text);transform:rotate(45deg)}
+.sk-card{display:flex;gap:12px;align-items:center;padding:14px;border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-surface)}
+.sk{background:linear-gradient(90deg,var(--a-bg-muted) 25%,var(--a-bg-inset) 50%,var(--a-bg-muted) 75%);background-size:200% 100%;animation:skl 1.4s linear infinite;border-radius:var(--a-radius-sm)}
+@keyframes skl{to{background-position:-200% 0}}
+.sk-av{width:38px;height:38px;border-radius:50%;flex:none}
+.sk-line{height:10px;margin-bottom:8px}
+.ob-mark{width:56px;height:56px;border-radius:16px;background:var(--a-accent-solid);color:#fff;display:grid;place-items:center;font-weight:800;font-size:28px;margin:0 auto;box-shadow:var(--a-shadow-md)}
+.ob-steps{display:flex;flex-direction:column;gap:10px;max-width:340px;margin:22px auto 24px;text-align:left}
+.ob-step{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--a-border);border-radius:var(--a-radius-lg);font-size:var(--a-text-sm)}
+.ob-step.now{border-color:var(--a-accent);background:var(--a-accent-subtle)}
+.ob-step .n{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;flex:none;background:var(--a-bg-muted);color:var(--a-text-secondary)}
+.ob-step.done .n{background:var(--a-success);color:#fff}
+.ob-step.now .n{background:var(--a-accent);color:#fff}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand"><span style="display:inline-grid;place-items:center;width:22px;height:22px;border-radius:7px;background:var(--a-accent-solid);color:#fff;font-weight:800;font-size:13px">α</span> alpha-code · 应用外壳设计稿</div>
+  <div class="spacer"></div>
+  <nav><a href="#sidebar">左侧栏</a><a href="#hub">定制中心</a><a href="#hubmodal">添加弹框</a><a href="#settings">设置页</a><a href="#primitives">原语</a><a href="#onboarding">引导</a></nav>
+  <div class="seg" id="themeSeg"><button data-theme="light" class="on">浅色</button><button data-theme="dark">深色</button></div>
+</div>
+
+<div class="wrap">
+
+  <!-- ========== A SIDEBAR ========== -->
+  <section class="sec" id="sidebar">
+    <div class="sec-head">
+      <div class="sec-kicker">A · 左侧栏</div>
+      <h2>左侧栏 — 选中用圆角 indigo 胶囊,不再整条灰</h2>
+      <p class="lede">问题:选中时整行/顶部铺一条<strong>厚灰底</strong>,笨重。改法:项目头只在 hover/active 时上极淡 overlay(不是灰板),<strong>会话选中 = 圆角 indigo-subtle 胶囊 + 左侧 2.5px 强调条</strong>;留 8px 内缩呼吸;竖线连接线更细。配色统一 <span class="mono">--a-bg-subtle</span>(冷瓷白)。</p>
+    </div>
+    <div class="row">
+      <div class="frame" style="width:560px">
+        <div class="app">
+          <div class="sb">
+            <div class="sb-top"><span class="sb-mark">α</span><span class="sb-wordmark">ALPHA CODE</span></div>
+            <button class="sb-newbtn"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>新对话</button>
+            <div class="sb-scroll">
+              <div class="sb-overline">项目</div>
+              <div class="sb-proj open active"><svg class="ic caret" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg><span class="sb-av" style="background:#16a34a">W</span><span class="nm">workspace</span></div>
+              <div class="sb-sessions">
+                <div class="sb-sess sel"><span class="t">李彪技能查询</span></div>
+                <div class="sb-sess"><span class="t">Sakana AI 优缺点与模型架构分析</span></div>
+                <div class="sb-sess"><span class="t">你有哪些技能</span></div>
+                <div class="sb-sess"><span class="t">Greeting</span></div>
+              </div>
+              <div class="sb-proj"><svg class="ic caret" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg><span class="sb-av" style="background:#0891b2">I</span><span class="nm">images</span><span class="count">3</span></div>
+              <div class="sb-proj open"><svg class="ic caret" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg><span class="sb-av" style="background:#7c3aed">全</span><span class="nm">全局</span></div>
+              <div class="sb-sessions">
+                <div class="sb-sess"><span class="t">Greeting</span></div>
+                <div class="sb-sess"><span class="t">新对话</span></div>
+                <div class="sb-sess"><span class="t">新对话</span></div>
+              </div>
+              <div class="sb-proj"><svg class="ic caret" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg><span class="sb-av" style="background:#4f46e5">A</span><span class="nm">alpha-code</span><span class="count">8</span></div>
+              <div class="sb-proj"><svg class="ic caret" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg><span class="sb-av" style="background:#0d9488">K</span><span class="nm">kama-bot-local</span><span class="count">6</span></div>
+            </div>
+            <div class="sb-foot">
+              <span class="av">L</span><div class="who"><b>李彪</b><small>Pro 会员 · ¥48.00</small></div>
+              <button class="gear"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+            </div>
+          </div>
+          <div class="stage-empty">会话内容区</div>
+        </div>
+      </div>
+      <div style="flex:1;min-width:280px;display:flex;flex-direction:column;gap:14px">
+        <div class="cmp">
+          <div class="col"><div class="lbl">之前 · 厚灰</div><div class="bad-sess">李彪技能查询</div></div>
+          <div class="col"><div class="lbl">现在 · indigo 胶囊</div><div class="sb-sess sel" style="margin:0"><span class="t">李彪技能查询</span></div></div>
+        </div>
+        <div class="note"><b>选中态</b>:会话 = <span class="mono">--a-accent-subtle</span> 圆角胶囊 + 左 2.5px accent 条 + accent 文字;项目头 active 仅 <span class="mono">--a-overlay-hover</span>(5% 中性),不再厚灰板。</div>
+        <div class="note"><b>底部账户区</b>:头像 + 名 + 会员/余额一行,齿轮进设置。与模型选择器的账号态(会员/余额)同源。</div>
+        <div class="note"><b>新增 · 会话操作移到侧栏</b>(回应你的提议):悬停/右键会话行显「⋯」→ 下面菜单;<strong>顶部标题栏不再放「⋯」与用量环</strong>。另补<strong>侧栏内搜索</strong>与<strong>未读点</strong>。</div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
+          <div style="width:236px;background:var(--a-bg-subtle);border:1px solid var(--a-border);border-radius:var(--a-radius-md);padding:8px 0">
+            <div class="sb-search"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>搜索项目 / 会话…</div>
+            <div class="sb-sess sel" style="margin:0 8px"><span class="t">李彪技能查询</span><span style="margin-left:auto;color:var(--a-accent);font-weight:700">⋯</span></div>
+            <div class="sb-sess" style="margin:0 8px"><span class="t">Sakana 架构分析</span><span class="unread" style="margin-left:auto"></span></div>
+          </div>
+          <div class="smenu">
+            <div class="smenu-item"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>重命名</div>
+            <div class="smenu-item"><svg class="ic sm" viewBox="0 0 24 24"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>归档</div>
+            <div class="smenu-item"><svg class="ic sm" viewBox="0 0 24 24"><path d="M4 12v8h16v-8M16 6l-4-4-4 4M12 2v13"/></svg>分享 / 复制链接</div>
+            <div class="smenu-sep"></div>
+            <div class="smenu-item danger"><svg class="ic sm" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>删除</div>
+          </div>
+        </div>
+        <div class="note warn"><b>项目菜单 bug</b>(实勘发现):现「归档」与「删除」<strong>都调 archiveProject</strong> —— 删除是死的。修:归档 = 客户端隐藏(localStorage);opencode 无项目删除 API → 把「删除」改为「移除」(仅隐藏)并对齐文案,或灰掉。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== B EXTENSION HUB ========== -->
+  <section class="sec" id="hub">
+    <div class="sec-head">
+      <div class="sec-kicker">B · 定制中心</div>
+      <h2>定制中心 — 宽屏内容居中,行更干净</h2>
+      <p class="lede">问题:宽屏内容左对齐铺满、显空;不够干净;点添加无反馈。改法:内容 <strong>max-width 760 居中</strong>;tab 下划线对齐居中列;套件行留白+分隔线;<strong>点「添加」开干净确认弹框</strong>(见下一节);右上 × 关闭。<strong>交互</strong>:在定制中心点左侧栏任意项 → 关闭定制中心并进入该页(下方注明)。</p>
+    </div>
+    <div class="frame hub-frame">
+      <div class="app">
+        <div class="sb" style="width:236px">
+          <div class="sb-top"><span class="sb-mark">α</span><span class="sb-wordmark">ALPHA CODE</span></div>
+          <button class="sb-newbtn"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>新对话</button>
+          <div class="sb-scroll">
+            <div class="sb-overline">项目</div>
+            <div class="sb-proj open"><svg class="ic caret" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg><span class="sb-av" style="background:#16a34a">W</span><span class="nm">workspace</span></div>
+            <div class="sb-sessions"><div class="sb-sess"><span class="t">李彪技能查询</span></div><div class="sb-sess"><span class="t">你有哪些技能</span></div></div>
+            <div class="sb-proj"><svg class="ic caret" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg><span class="sb-av" style="background:#4f46e5">A</span><span class="nm">alpha-code</span><span class="count">8</span></div>
+          </div>
+        </div>
+        <div class="content">
+          <button class="hub-close"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+          <div class="hub-tabbar">
+            <div class="hub-tabs">
+              <div class="hub-tab on">推荐</div><div class="hub-tab">连接器</div><div class="hub-tab">技能</div><div class="hub-tab">插件</div><div class="hub-tab">套件</div><div class="hub-tab">已安装</div><div class="hub-tab">创建</div>
+            </div>
+          </div>
+          <div class="hub-scroll">
+            <div class="hub-center">
+              <div class="hub-h1">定制中心</div>
+              <div class="hub-sub">在你常用的工具中扩展 alpha —— 连接器、技能、套件,一键安装。</div>
+              <div class="hub-search"><svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input placeholder="搜索连接器和技能…"/></div>
+              <div class="hub-secrow"><span class="t">已安装</span><span class="act">管理</span></div>
+              <div class="chips">
+                <span class="ext-chip"><span class="d" style="background:#2563eb">网</span>网页</span>
+                <span class="ext-chip"><span class="d" style="background:#16a34a">文</span>文档</span>
+                <span class="ext-chip"><span class="d" style="background:#00b4d8">飞</span>飞书</span>
+                <span class="ext-chip"><span class="d" style="background:#1f7a4d">语</span>语雀</span>
+                <span class="ext-chip"><span class="d" style="background:#24292f">GH</span>GitHub</span>
+              </div>
+              <div class="hub-secrow"><span class="t">套件 · 精选</span></div>
+              <div class="kit"><div class="ico" style="background:var(--a-accent-subtle);color:var(--a-accent)">办</div><div class="body"><div class="ttl"><b>办公套件</b><span class="tag">自建</span></div><div class="desc">Word/Excel/PDF 读写与文档处理 <span class="n">· 2 项</span></div></div><button class="btn-primary btn-sm" data-add="办公套件">添加</button></div>
+              <div class="kit"><div class="ico">研</div><div class="body"><div class="ttl"><b>研究套件</b><span class="tag">自建</span></div><div class="desc">多源检索 + 网页抓取 + 本地资料读写 <span class="n">· 2 项</span></div></div><button class="btn-primary btn-sm" data-add="研究套件">添加</button></div>
+              <div class="kit"><div class="ico">设</div><div class="body"><div class="ttl"><b>设计套件</b><span class="tag">自建</span></div><div class="desc">视觉/品牌设计技能组合(Apache-2.0) <span class="n">· 2 项</span></div></div><button class="btn-primary btn-sm" data-add="设计套件">添加</button></div>
+              <div class="kit"><div class="ico">开</div><div class="body"><div class="ttl"><b>开发套件</b><span class="tag">自建</span></div><div class="desc">Git + GitHub + MCP / 技能构建指南 <span class="n">· 4 项</span></div></div><button class="btn-primary btn-sm" data-add="开发套件">添加</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note warn"><b>交互修复</b>:当前在定制中心点左侧栏<strong>无反应</strong>。改为:点左侧栏任意项 → <strong>关闭定制中心</strong> + 跳到该会话/项目(定制中心是覆盖内容区的层,挂一个 route-change/sidebar-click 监听即可关闭)。</div>
+  </section>
+
+  <!-- ========== B2 ADD MODAL ========== -->
+  <section class="sec" id="hubmodal">
+    <div class="sec-head">
+      <div class="sec-kicker">B2 · 添加弹框</div>
+      <h2>点「添加」→ 干净确认弹框(对齐 Codex)</h2>
+      <p class="lede">点套件/连接器的「添加」,弹出居中确认框:大图标、名称、开发者、<strong>「将安装」清单</strong>(套件扇出的具体连接器/技能)、隐私说明、主按钮。安装中→完成有态。不再只是按钮转「添加中…」。</p>
+    </div>
+    <div class="modal-stage">
+      <div class="scrim"></div>
+      <div class="modal">
+        <button class="mclose"><svg class="ic sm" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+        <div class="modal-hero">
+          <div class="modal-icons">
+            <span class="big" style="background:var(--a-accent-solid)">α</span>
+            <span class="dots">···</span>
+            <span class="big" style="background:var(--a-accent-subtle);color:var(--a-accent)">办</span>
+          </div>
+          <h3>添加「办公套件」</h3>
+          <div class="dev">开发者:alpha · 自建</div>
+          <div class="approved"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg>已通过运行时预检(uv / node 就绪)</div>
+        </div>
+        <div class="modal-body">
+          <div class="install-box">
+            <div class="install-row"><span class="d" style="background:#16a34a">M</span>markitdown<span class="k">MCP 连接器</span></div>
+            <div class="install-row"><span class="d" style="background:#2563eb">X</span>excel-mcp<span class="k">MCP 连接器</span></div>
+            <div class="install-row"><span class="d" style="background:var(--a-accent)">技</span>文档处理引导<span class="k">技能</span></div>
+          </div>
+          <p class="modal-note">将写入你的 <span class="mono">~/.opencode/opencode.jsonc</span>(仅白名单字段),当场生效、免重启。Key 入钥匙串,不明文存储。</p>
+        </div>
+        <div class="modal-foot">
+          <button class="btn-primary">继续添加(3 项)</button>
+          <span class="alt">取消</span>
+        </div>
+      </div>
+    </div>
+    <div class="cap">注:套件「添加」会<strong>扇出</strong>成多个原子安装(ADR-014:opencode plugin 不能 bundle 其它类型),弹框里逐条列清。连接器单装则只显 1 项 + OAuth/Key 步骤(类似 Codex 的「连接 Gmail」)。</div>
+  </section>
+
+  <!-- ========== C SETTINGS ========== -->
+  <section class="sec" id="settings">
+    <div class="sec-head">
+      <div class="sec-kicker">C · 设置页</div>
+      <h2>设置 — 居中、配色一致、表头不遮罩、现代开关</h2>
+      <p class="lede">逐条修:① 内容 <strong>max-width 620 居中</strong>;② 设置侧栏与主侧栏<strong>同色</strong>(<span class="mono">--a-bg-subtle</span>);③ 换<strong>干净线性 icon</strong>;④ <strong>sticky 表头</strong>用不透明底 + 正确 z 序,滚动绝不遮罩内容;⑤ 现代开关/下拉,卡片化行;⑥ 侧栏 item = 圆角 indigo-subtle 选中。</p>
+    </div>
+    <div class="frame set-frame">
+      <div class="app">
+        <div class="set-nav">
+          <div class="title">设置</div>
+          <div class="set-nav-item on"><svg class="ic" viewBox="0 0 24 24"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="9" cy="7" r="2" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="8" cy="17" r="2" fill="currentColor" stroke="none"/></svg>通用</div>
+          <div class="set-nav-item"><svg class="ic" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="11" rx="2"/><path d="M12 8V4M9 13h0M15 13h0"/></svg>智能体</div>
+          <div class="set-nav-item"><svg class="ic" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/></svg>模型</div>
+          <div class="set-nav-item"><svg class="ic" viewBox="0 0 24 24"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/></svg>音效</div>
+          <div class="set-nav-item"><svg class="ic" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9z"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>通知</div>
+          <div class="set-nav-item"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>外观</div>
+          <div class="set-nav-item"><svg class="ic" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>更新</div>
+          <div class="set-nav-item"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg>显示</div>
+          <div class="set-nav-item"><svg class="ic" viewBox="0 0 24 24"><path d="M7 8l-4 4 4 4M17 8l4 4-4 4M14 4l-4 16"/></svg>高级</div>
+        </div>
+        <div class="set-content">
+          <div class="set-inner">
+            <div class="set-sech">通用<span class="sub">界面与语言</span></div>
+            <div class="set-card">
+              <div class="set-rw"><div class="meta"><b>语言</b><small>界面显示语言</small></div><button class="set-select">简体中文<svg class="ic sm" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></div>
+              <div class="set-rw"><div class="meta"><b>主题</b><small>跟随系统 / 浅色 / 深色</small></div><button class="set-select">跟随系统<svg class="ic sm" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></div>
+              <div class="set-rw"><div class="meta"><b>启动时打开上次项目</b><small>重开 app 回到上次会话</small></div><span class="sw on"></span></div>
+            </div>
+
+            <div class="set-sech">音效</div>
+            <div class="set-card">
+              <div class="set-rw"><div class="meta"><b>智能体</b><small>完成或需要注意时播放</small></div><button class="set-select">轻提示<svg class="ic sm" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></div>
+              <div class="set-rw"><div class="meta"><b>权限</b><small>需要审批时播放</small></div><button class="set-select">叮咚<svg class="ic sm" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></div>
+              <div class="set-rw"><div class="meta"><b>错误</b><small>发生错误时播放</small></div><button class="set-select">关闭<svg class="ic sm" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></div>
+            </div>
+
+            <div class="set-sech">更新</div>
+            <div class="set-card">
+              <div class="set-rw"><div class="meta"><b>发行说明</b><small>更新后显示「新功能」弹窗</small></div><span class="sw on"></span></div>
+              <div class="set-rw"><div class="meta"><b>检查更新</b><small>手动检查并在有更新时安装</small></div><button class="btn-ghost btn-sm">立即检查</button></div>
+            </div>
+
+            <div class="set-sech">显示</div>
+            <div class="set-card">
+              <div class="set-rw"><div class="meta"><b>缩放手势</b><small>允许触控板捏合 / Ctrl 滚轮缩放</small></div><span class="sw"></span></div>
+              <div class="set-rw"><div class="meta"><b>文件树</b><small>会话中显示文件树面板</small></div><span class="sw on"></span></div>
+              <div class="set-rw"><div class="meta"><b>命令面板按钮</b><small>标题栏显示搜索/命令按钮</small></div><span class="sw"></span></div>
+            </div>
+
+            <div class="set-sech">高级</div>
+            <div class="set-card">
+              <div class="set-rw"><div class="meta"><b>自定义智能体</b><small>在输入框显示 agent 选择器</small></div><span class="sw"></span></div>
+              <div class="set-rw"><div class="meta"><b>服务器状态</b><small>标题栏显示 server 状态</small></div><span class="sw"></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note"><b>表头遮罩 bug 的根因</b>:原 sticky 表头背景半透明 + z 序不够,滚动时下层内容透上来像「被遮」。修法见 <span class="mono">.set-sech</span>:<span class="mono">background:var(--a-bg-canvas)</span> 不透明 + <span class="mono">z-index:3</span> + 底部 1px 分隔。可在上方设置页内滚动验证表头始终干净盖住内容。</div>
+    <div class="note"><b>音效 i18n 乱码</b>(顺手修):上游机翻把 Staplebops→「斯泰普博普斯」、Nope→「否 03」。修:加 alpha i18n override 给音效名人话(上方「音效」段的 轻提示 / 叮咚 / 关闭 即修正后)。<span class="mono">brand-i18n</span> 子串改不了,需新增 override 文件。</div>
+  </section>
+
+  <!-- ========== D PRIMITIVES ========== -->
+  <section class="sec" id="primitives">
+    <div class="sec-head">
+      <div class="sec-kicker">D · 缺失原语</div>
+      <h2>Toast · Tooltip · Skeleton —— 补进 alpha-ui</h2>
+      <p class="lede">全局质感的地基:操作反馈用 <strong>Toast</strong>(非内联文字),复杂按钮 <strong>Tooltip</strong>,数据加载用 <strong>Skeleton</strong>(非「…」)。三者当前 alpha-ui 都缺,定制中心安装反馈、账户加载都用得上。</p>
+    </div>
+    <div class="row">
+      <div style="width:300px">
+        <div class="toast"><span class="t-ico ok"><svg class="ic sm" viewBox="0 0 24 24" style="stroke:#fff"><path d="M20 6L9 17l-5-5"/></svg></span><div><b>办公套件已添加</b><small>3 项 · 当场生效</small></div><span class="t-x"><svg class="ic sm" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></span></div>
+        <div class="toast"><span class="t-ico err"><svg class="ic sm" viewBox="0 0 24 24" style="stroke:#fff"><path d="M12 8v5M12 16h.01"/></svg></span><div><b>连接失败</b><small>检查网络后重试</small></div><span class="t-x"><svg class="ic sm" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></span></div>
+      </div>
+      <div style="position:relative;padding-top:42px;width:150px">
+        <span class="tip">复制会话链接</span>
+        <button class="btn-ghost"><svg class="ic sm" viewBox="0 0 24 24"><path d="M4 12v8h16v-8M16 6l-4-4-4 4M12 2v13"/></svg>分享</button>
+      </div>
+      <div style="width:280px">
+        <div class="sk-card"><div class="sk sk-av"></div><div style="flex:1"><div class="sk sk-line" style="width:55%"></div><div class="sk sk-line" style="width:88%"></div><div class="sk sk-line" style="width:70%;margin-bottom:0"></div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== E ONBOARDING ========== -->
+  <section class="sec" id="onboarding">
+    <div class="sec-head">
+      <div class="sec-kicker">E · 首次运行</div>
+      <h2>Onboarding —— 新用户不再直接落空状态</h2>
+      <p class="lede">首启三步:登录(解锁代理节点)→ 选模型(代理 / 自带 Key)→ 打开第一个项目。可随时跳过用 BYOK。补上当前"直接落空状态"的缺口。</p>
+    </div>
+    <div class="frame" style="max-width:560px;margin:0 auto">
+      <div style="padding:40px 40px 34px;text-align:center">
+        <div class="ob-mark">α</div>
+        <h3 style="font-size:var(--a-text-2xl);margin-top:18px">欢迎来到 alpha-code</h3>
+        <p style="color:var(--a-text-secondary);margin:6px 0 0">三步开始你的第一个项目</p>
+        <div class="ob-steps">
+          <div class="ob-step done"><span class="n"><svg class="ic sm" viewBox="0 0 24 24" style="stroke:#fff"><path d="M20 6L9 17l-5-5"/></svg></span>登录账号<span style="margin-left:auto;color:var(--a-text-tertiary);font-size:var(--a-text-xs)">已完成</span></div>
+          <div class="ob-step now"><span class="n">2</span>选择模型<span style="margin-left:auto;color:var(--a-accent);font-size:var(--a-text-xs)">进行中</span></div>
+          <div class="ob-step"><span class="n">3</span>打开第一个项目</div>
+        </div>
+        <button class="btn-primary" style="height:38px;padding:0 20px">继续</button>
+        <div style="margin-top:12px;font-size:var(--a-text-sm);color:var(--a-text-tertiary)">跳过,用自带 Key(BYOK)</div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+document.querySelectorAll('#themeSeg button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#themeSeg button').forEach(x=>x.classList.remove('on'));b.classList.add('on');document.documentElement.setAttribute('data-theme',b.dataset.theme);});
+/* hub tabs */
+document.querySelectorAll('.hub-tab').forEach(t=>t.onclick=()=>{t.parentElement.querySelectorAll('.hub-tab').forEach(x=>x.classList.remove('on'));t.classList.add('on');});
+/* settings nav */
+document.querySelectorAll('.set-nav-item').forEach(t=>t.onclick=()=>{document.querySelectorAll('.set-nav-item').forEach(x=>x.classList.remove('on'));t.classList.add('on');});
+/* switches */
+document.querySelectorAll('.sw').forEach(s=>s.onclick=()=>s.classList.toggle('on'));
+/* sidebar selection demo */
+document.querySelectorAll('.sb-sess').forEach(s=>s.onclick=()=>{const sc=s.closest('.sb-scroll');if(sc)sc.querySelectorAll('.sb-sess').forEach(x=>x.classList.remove('sel'));s.classList.add('sel');});
+</script>
+</body>
+</html>

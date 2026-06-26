@@ -1,0 +1,848 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>alpha-code · 输入框 + 模型选择 设计稿</title>
+<style>
+/* ============================================================
+   alpha-ui tokens  (exact values from packages/ui-mac/src/renderer/alpha-ui/tokens.css)
+   ============================================================ */
+:root{
+  /* neutral spine */
+  --a-bg-canvas:#ffffff; --a-bg-subtle:#f6f7f9; --a-bg-muted:#eceef1; --a-bg-inset:#e3e6ea;
+  --a-surface:#ffffff; --a-surface-raised:#ffffff; --a-scrim:rgba(15,17,21,.45);
+  /* text */
+  --a-text:#18181b; --a-text-secondary:#52525b; --a-text-tertiary:#7c7d85; --a-text-disabled:#b3b6bd; --a-text-on-accent:#fff;
+  /* borders */
+  --a-border-faint:#eef0f3; --a-border:#e4e6ea; --a-border-strong:#ced2d9;
+  /* overlay */
+  --a-overlay-hover:rgba(15,17,21,.05); --a-overlay-active:rgba(15,17,21,.08);
+  /* accent */
+  --a-accent:#4f46e5; --a-accent-hover:#4338ca; --a-accent-active:#3730a3;
+  --a-accent-solid:#4f46e5; --a-accent-solid-hover:#4338ca; --a-accent-solid-active:#3730a3;
+  --a-accent-subtle:rgba(79,70,229,.10); --a-accent-border:rgba(79,70,229,.35); --a-accent-ring:rgba(79,70,229,.45);
+  /* semantic */
+  --a-success:#16a34a; --a-warning:#d97706; --a-error:#dc2626; --a-info:#2563eb;
+  --a-success-subtle:rgba(22,163,74,.12); --a-warning-subtle:rgba(217,119,6,.12); --a-error-subtle:rgba(220,38,38,.12);
+  /* radii */
+  --a-radius-xs:4px; --a-radius-sm:6px; --a-radius-md:8px; --a-radius-lg:11px; --a-radius-xl:14px; --a-radius-2xl:18px; --a-radius-full:9999px;
+  /* spacing */
+  --a-space-1:4px; --a-space-2:8px; --a-space-3:12px; --a-space-4:16px; --a-space-5:20px; --a-space-6:24px; --a-space-8:32px; --a-space-10:40px; --a-space-12:48px; --a-space-16:64px;
+  /* type */
+  --a-font-sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;
+  --a-font-mono:"SF Mono","JetBrains Mono","Menlo",ui-monospace,monospace;
+  --a-text-2xs:10.5px; --a-text-xs:11.5px; --a-text-sm:12.5px; --a-text-base:13px; --a-text-md:14px; --a-text-lg:16px; --a-text-xl:19px; --a-text-2xl:23px; --a-text-3xl:30px;
+  --a-leading-tight:1.2; --a-leading-snug:1.4; --a-leading-normal:1.55;
+  --a-tracking-tight:-0.014em; --a-tracking-wide:0.04em;
+  --a-weight-normal:400; --a-weight-medium:500; --a-weight-semibold:600; --a-weight-bold:680;
+  /* shadow */
+  --a-shadow-xs:0 1px 2px rgba(15,17,21,.05);
+  --a-shadow-sm:0 1px 3px rgba(15,17,21,.07),0 1px 2px rgba(15,17,21,.04);
+  --a-shadow-md:0 4px 12px rgba(15,17,21,.08),0 2px 4px rgba(15,17,21,.05);
+  --a-shadow-lg:0 12px 32px rgba(15,17,21,.12),0 4px 8px rgba(15,17,21,.06);
+  --a-shadow-overlay:0 24px 64px rgba(15,17,21,.20),0 8px 16px rgba(15,17,21,.10);
+  --a-ring-focus:0 0 0 3px var(--a-accent-ring);
+  /* motion */
+  --a-dur-fast:130ms; --a-dur-base:190ms; --a-ease-out:cubic-bezier(.22,1,.36,1);
+}
+html[data-theme="dark"]{
+  --a-bg-canvas:#0a0b0d; --a-bg-subtle:#0e0f11; --a-bg-muted:#16171a; --a-bg-inset:#1e2024;
+  --a-surface:#121316; --a-surface-raised:#17181b; --a-scrim:rgba(0,0,0,.60);
+  --a-text:#fafafa; --a-text-secondary:#a1a1aa; --a-text-tertiary:#71727a; --a-text-disabled:#4f5158;
+  --a-border-faint:#1b1c20; --a-border:#232428; --a-border-strong:#34363c;
+  --a-overlay-hover:rgba(255,255,255,.055); --a-overlay-active:rgba(255,255,255,.09);
+  --a-accent:#818cf8; --a-accent-hover:#6366f1; --a-accent-active:#4f46e5;
+  --a-accent-solid:#4f46e5; --a-accent-solid-hover:#5b54ea; --a-accent-solid-active:#4338ca;
+  --a-accent-subtle:rgba(129,140,248,.14); --a-accent-border:rgba(129,140,248,.38); --a-accent-ring:rgba(129,140,248,.45);
+  --a-success:#4ade80; --a-warning:#fbbf24; --a-error:#f87171; --a-info:#60a5fa;
+  --a-success-subtle:rgba(74,222,128,.14); --a-warning-subtle:rgba(251,191,36,.14); --a-error-subtle:rgba(248,113,113,.14);
+  --a-shadow-xs:0 1px 2px rgba(0,0,0,.4);
+  --a-shadow-sm:0 1px 3px rgba(0,0,0,.5),0 1px 2px rgba(0,0,0,.4);
+  --a-shadow-md:0 4px 12px rgba(0,0,0,.5),0 2px 4px rgba(0,0,0,.4);
+  --a-shadow-lg:0 12px 32px rgba(0,0,0,.6),0 4px 8px rgba(0,0,0,.4);
+  --a-shadow-overlay:0 24px 64px rgba(0,0,0,.7),0 8px 16px rgba(0,0,0,.5);
+}
+
+/* ============================================================ base ============================================================ */
+*{box-sizing:border-box}
+body{margin:0;background:var(--a-bg-subtle);color:var(--a-text);font-family:var(--a-font-sans);font-size:var(--a-text-base);line-height:var(--a-leading-normal);-webkit-font-smoothing:antialiased;font-feature-settings:"cv01","ss01"}
+h1,h2,h3,h4{margin:0;font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight);line-height:var(--a-leading-tight)}
+button{font-family:inherit;cursor:pointer}
+svg{display:block}
+.ic{width:16px;height:16px;stroke:currentColor;stroke-width:1.6;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.ic.sm{width:14px;height:14px}
+.mono{font-family:var(--a-font-mono)}
+
+/* ============================================================ showcase chrome ============================================================ */
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:var(--a-space-4);
+  padding:12px 22px;background:color-mix(in srgb,var(--a-bg-canvas) 86%,transparent);backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--a-border-faint)}
+.topbar .brand{display:flex;align-items:center;gap:10px;font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight)}
+.topbar .spacer{flex:1}
+.topbar nav{display:flex;gap:2px}
+.topbar nav a{padding:6px 10px;border-radius:var(--a-radius-md);color:var(--a-text-secondary);text-decoration:none;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium)}
+.topbar nav a:hover{background:var(--a-bg-muted);color:var(--a-text)}
+.seg{display:inline-flex;padding:2px;background:var(--a-bg-muted);border-radius:var(--a-radius-md);gap:2px}
+.seg button{border:0;background:transparent;color:var(--a-text-secondary);font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);padding:5px 10px;border-radius:6px}
+.seg button.on{background:var(--a-surface);color:var(--a-text);box-shadow:var(--a-shadow-xs)}
+
+.wrap{max-width:1080px;margin:0 auto;padding:40px 24px 120px}
+.sec{margin-bottom:64px;scroll-margin-top:80px}
+.sec-head{margin-bottom:18px}
+.sec-kicker{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary)}
+.sec h2{font-size:var(--a-text-2xl);margin-top:6px}
+.sec p.lede{margin:8px 0 0;color:var(--a-text-secondary);font-size:var(--a-text-md);max-width:64ch}
+.note{margin-top:14px;padding:12px 14px;background:var(--a-bg-canvas);border:1px solid var(--a-border);border-left:3px solid var(--a-accent);border-radius:var(--a-radius-md);font-size:var(--a-text-sm);color:var(--a-text-secondary)}
+.note b{color:var(--a-text);font-weight:var(--a-weight-semibold)}
+.note.warn{border-left-color:var(--a-warning)}
+.row{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
+
+/* app frame — a faux window so components sit in context */
+.frame{position:relative;border:1px solid var(--a-border);border-radius:var(--a-radius-xl);overflow:hidden;background:var(--a-bg-canvas);box-shadow:var(--a-shadow-md)}
+.frame .rail{position:absolute;left:0;top:0;bottom:0;width:52px;background:var(--a-bg-subtle);border-right:1px solid var(--a-border-faint)}
+.frame .rail i{position:absolute;left:14px;width:24px;height:8px;border-radius:5px;background:var(--a-bg-inset)}
+.frame .stage{margin-left:52px;min-height:380px;position:relative}
+.cap{font-size:var(--a-text-xs);color:var(--a-text-tertiary);margin-top:10px}
+
+/* ============================================================ HOME ============================================================ */
+.home{min-height:520px;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;padding:40px}
+.home .ghost{position:absolute;top:34%;left:50%;transform:translate(-50%,-50%);font-size:88px;font-weight:var(--a-weight-bold);letter-spacing:-.03em;color:var(--a-text);opacity:.035;user-select:none;white-space:nowrap}
+.home .greet{font-size:var(--a-text-2xl);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight);margin-bottom:22px;text-align:center}
+.home .greet .dim{color:var(--a-text-tertiary)}
+/* frontend-design pass · atmosphere + staggered entrance */
+.home::before{content:"";position:absolute;inset:0;background:radial-gradient(58% 48% at 50% 40%,color-mix(in srgb,var(--a-accent) 4%,transparent),transparent 72%);pointer-events:none;z-index:0}
+@keyframes a-rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.home .greet{position:relative;z-index:1;animation:a-rise .55s var(--a-ease-out) both}
+.home .home-stack{animation:a-rise .55s var(--a-ease-out) .09s both}
+.home .recents{animation:a-rise .55s var(--a-ease-out) .27s both}
+@media (prefers-reduced-motion:reduce){.home .greet,.home .home-stack,.home .recents{animation:none}}
+.home-stack{width:min(640px,100%);position:relative;z-index:1}
+.recents{display:flex;gap:8px;justify-content:center;margin-top:18px;flex-wrap:wrap}
+.recent-chip{display:inline-flex;align-items:center;gap:7px;padding:6px 11px 6px 7px;background:var(--a-surface);border:1px solid var(--a-border);border-radius:var(--a-radius-full);font-size:var(--a-text-sm);color:var(--a-text-secondary);box-shadow:var(--a-shadow-xs)}
+.recent-chip:hover{border-color:var(--a-border-strong);color:var(--a-text)}
+.recent-chip .av{width:18px;height:18px;border-radius:6px;display:grid;place-items:center;font-size:10px;font-weight:700;color:#fff}
+
+/* ============================================================ COMPOSER (shared) ============================================================ */
+.composer{background:var(--a-surface);border:1px solid var(--a-border);border-radius:var(--a-radius-2xl);box-shadow:var(--a-shadow-md);
+  transition:box-shadow var(--a-dur-base) var(--a-ease-out),border-color var(--a-dur-base) var(--a-ease-out)}
+.composer.focus,.composer:focus-within{border-color:var(--a-border-strong);box-shadow:var(--a-shadow-lg)}
+.composer .input{padding:16px 18px 6px;min-height:54px;font-size:var(--a-text-md);color:var(--a-text);outline:none}
+.composer .input.empty{color:var(--a-text-tertiary)}
+.composer .toolbar{display:flex;align-items:center;gap:6px;height:46px;padding:0 10px 0 8px}
+.composer .toolbar .grow{flex:1}
+
+/* control chips */
+.chip{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 9px;border:1px solid transparent;border-radius:var(--a-radius-md);
+  background:transparent;color:var(--a-text-secondary);font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);white-space:nowrap;
+  transition:background var(--a-dur-fast) var(--a-ease-out),color var(--a-dur-fast) var(--a-ease-out),border-color var(--a-dur-fast) var(--a-ease-out)}
+.chip:hover{background:var(--a-bg-muted);color:var(--a-text)}
+.chip .ic{color:var(--a-text-tertiary)}
+.chip:hover .ic{color:var(--a-text-secondary)}
+.chip.iconbtn{padding:0;width:30px;justify-content:center}
+.chip .chev{width:12px;height:12px;opacity:.6;margin-left:-1px}
+.chip.model{padding-left:6px}
+.chip .pico{width:18px;height:18px;border-radius:5px;display:grid;place-items:center;font-size:10px;font-weight:700;color:#fff;flex:none}
+.chip.perm[data-mode="full"]{color:var(--a-warning)}
+.chip.perm[data-mode="full"] .ic{color:var(--a-warning)}
+.chip.perm[data-mode="ask"]{color:var(--a-text-secondary)}
+.chip.effort .lvl{font-variant-numeric:tabular-nums}
+.chip.usage{padding-left:7px}
+.chip.usage .ring{width:14px;height:14px;border-radius:50%;background:conic-gradient(var(--a-text-tertiary) 38%,var(--a-bg-inset) 0);position:relative;flex:none}/* 中性默认,≥80% 才转 accent/warning */
+.chip.usage .ring::after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--a-surface)}
+/* composer secondary menus */
+.src-tag{margin-left:auto;font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);padding:1px 6px;border-radius:var(--a-radius-full);background:var(--a-bg-muted);color:var(--a-text-secondary)}
+.src-tag.skill{background:var(--a-accent-subtle);color:var(--a-accent)}
+.src-tag.mcp{background:rgba(124,58,237,.14);color:#7c3aed}
+.kbd{margin-left:auto;font-family:var(--a-font-mono);font-size:var(--a-text-2xs);color:var(--a-text-tertiary);background:var(--a-bg-muted);padding:1px 6px;border-radius:5px}
+.menu-item .dim{color:var(--a-text-tertiary)}
+.ctx-chips{display:flex;gap:7px;flex-wrap:wrap;align-items:center;padding:12px 14px 2px}
+.ctx-chip{display:inline-flex;align-items:center;gap:7px;padding:5px 8px;background:var(--a-bg-subtle);border:1px solid var(--a-border-faint);border-radius:var(--a-radius-md);font-size:var(--a-text-xs);color:var(--a-text-secondary)}
+.ctx-chip .fi{width:16px;height:16px;border-radius:4px;background:var(--a-accent-subtle);color:var(--a-accent);display:grid;place-items:center;font-size:8px;font-weight:700}
+.ctx-chip .x{color:var(--a-text-tertiary);cursor:pointer;display:flex}
+.ctx-thumb{width:44px;height:44px;border-radius:var(--a-radius-md);border:1px solid var(--a-border);background:linear-gradient(135deg,#c7d2fe,#a5b4fc);position:relative;flex:none}
+.ctx-thumb .x{position:absolute;top:-6px;right:-6px;width:17px;height:17px;border-radius:50%;background:var(--a-text);color:var(--a-bg-canvas);display:grid;place-items:center;font-size:10px;border:2px solid var(--a-surface);cursor:pointer}
+.chip.disabled{opacity:.45;pointer-events:none}
+
+/* send */
+.send{width:32px;height:32px;border-radius:var(--a-radius-full);border:0;display:grid;place-items:center;flex:none;
+  background:var(--a-bg-inset);color:var(--a-text-tertiary);transition:all var(--a-dur-fast) var(--a-ease-out)}
+.send.ready{background:var(--a-accent-solid);color:#fff;box-shadow:var(--a-shadow-xs)}
+.send.ready:hover{background:var(--a-accent-solid-hover)}
+
+/* workspace picker attached under composer (home) */
+.ws-pick{display:flex;justify-content:flex-start;margin-top:10px;padding:0 4px}
+.ws-chip{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px;background:var(--a-surface);border:1px solid var(--a-border);
+  border-radius:var(--a-radius-full);box-shadow:var(--a-shadow-sm);font-size:var(--a-text-sm);color:var(--a-text-secondary);font-weight:var(--a-weight-medium)}
+.ws-chip:hover{border-color:var(--a-border-strong);color:var(--a-text)}
+.ws-chip .ic{color:var(--a-text-tertiary)}
+
+/* ============================================================ POPOVERS / MENUS ============================================================ */
+.pop-wrap{position:relative;display:inline-flex}
+.pop{position:absolute;z-index:40;min-width:240px;background:var(--a-surface-raised);border:1px solid var(--a-border-faint);
+  border-radius:var(--a-radius-lg);box-shadow:var(--a-shadow-overlay);padding:6px;opacity:0;visibility:hidden;transform:translateY(6px) scale(.98);
+  transform-origin:bottom left;transition:opacity var(--a-dur-fast) var(--a-ease-out),transform var(--a-dur-fast) var(--a-ease-out),visibility var(--a-dur-fast)}
+.pop.up{bottom:calc(100% + 8px);left:0}
+.pop.up-right{bottom:calc(100% + 8px);right:0;transform-origin:bottom right}
+.pop.open{opacity:1;visibility:visible;transform:translateY(0) scale(1)}
+.pop.static{position:static;opacity:1;visibility:visible;transform:none}
+.menu-label{padding:8px 10px 6px;font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary)}
+.menu-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--a-radius-md);font-size:var(--a-text-sm);color:var(--a-text);cursor:pointer}
+.menu-item:hover{background:var(--a-bg-muted)}
+.menu-item .ic{color:var(--a-text-secondary);flex:none}
+.menu-item .desc{color:var(--a-text-tertiary);font-size:var(--a-text-xs);margin-left:auto}
+.menu-item.is-on{color:var(--a-accent)}
+.menu-item.is-on .ic{color:var(--a-accent)}
+.menu-sep{height:1px;background:var(--a-border-faint);margin:6px 4px}
+
+/* effort popover */
+.effort-pop{min-width:180px}
+.effort-opt{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--a-radius-md);cursor:pointer;font-size:var(--a-text-sm)}
+.effort-opt:hover{background:var(--a-bg-muted)}
+.effort-opt .k{width:14px;color:var(--a-accent);flex:none}
+.effort-opt .meta{margin-left:auto;color:var(--a-text-tertiary);font-size:var(--a-text-xs)}
+
+/* ============================================================ MODEL PICKER ============================================================ */
+.mp{width:360px;max-height:460px;display:flex;flex-direction:column;padding:0;overflow:hidden}
+.mp-search{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--a-border-faint)}
+.mp-search .ic{color:var(--a-text-tertiary)}
+.mp-search input{flex:1;border:0;background:transparent;outline:none;color:var(--a-text);font-size:var(--a-text-sm);font-family:inherit}
+.mp-search input::placeholder{color:var(--a-text-tertiary)}
+.mp-body{overflow-y:auto;padding:6px}
+.mp-group{margin:6px 2px 2px}
+.mp-group-head{display:flex;align-items:center;gap:8px;padding:6px 8px 4px}
+.mp-group-head .t{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary)}
+.mp-group-head .badge{font-size:var(--a-text-2xs);padding:1px 6px;border-radius:var(--a-radius-full);background:var(--a-accent-subtle);color:var(--a-accent);font-weight:var(--a-weight-semibold)}
+.mp-group-head .act{margin-left:auto;font-size:var(--a-text-xs);color:var(--a-accent);font-weight:var(--a-weight-medium);cursor:pointer}
+
+.m-row{display:flex;align-items:center;gap:10px;padding:8px 9px;border-radius:var(--a-radius-md);cursor:pointer;position:relative}
+.m-row:hover{background:var(--a-bg-muted)}
+.m-row.sel{background:var(--a-accent-subtle)}
+.m-row .pico{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff;flex:none}
+.m-row .nm{display:flex;flex-direction:column;min-width:0}
+.m-row .nm b{font-weight:var(--a-weight-medium);font-size:var(--a-text-sm);color:var(--a-text)}
+.m-row .nm small{font-size:var(--a-text-2xs);color:var(--a-text-tertiary)}
+.m-row .right{margin-left:auto;display:flex;align-items:center;gap:7px;flex:none}
+.tier{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);padding:2px 7px;border-radius:var(--a-radius-full)}
+.tier.flag{background:rgba(217,119,6,.14);color:var(--a-warning)}  /* 唯一带色的等级 = 旗舰 */
+.tier.pro{background:var(--a-bg-inset);color:var(--a-text-secondary)}
+.tier.std{background:var(--a-bg-muted);color:var(--a-text-tertiary)}
+.mult{font-size:var(--a-text-2xs);color:var(--a-text-tertiary);font-variant-numeric:tabular-nums}
+.m-row .check{color:var(--a-accent)}
+.m-row .reason-dot{width:6px;height:6px;border-radius:50%;background:var(--a-accent);opacity:.7}
+
+/* proxy account states + locks */
+.mp-proxy{position:relative}
+/* locked = readable list (dimmed, non-clickable) + slim top banner CTA — NO big overlay */
+body[data-state="out"] .mp-proxy .m-row,
+body[data-state="empty"] .mp-proxy .m-row{opacity:.6;pointer-events:none;cursor:not-allowed}
+.acct-banner{display:none;align-items:center;gap:8px;margin:0 2px 6px;padding:7px 10px;border-radius:var(--a-radius-md);font-size:var(--a-text-xs);font-weight:var(--a-weight-medium)}
+.acct-banner .ic{flex:none}
+.acct-banner.member{background:var(--a-success-subtle);color:var(--a-success)}
+.acct-banner.balance{background:var(--a-bg-muted);color:var(--a-text-secondary)}
+.acct-banner.empty{color:var(--a-warning)}
+.acct-banner.out{color:var(--a-text-secondary)}
+.acct-banner.lockbar{background:var(--a-bg-muted)}
+.acct-banner .bb{margin-left:auto;height:24px;padding:0 11px;border:0;border-radius:var(--a-radius-md);background:var(--a-accent-solid);color:#fff;font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);display:inline-flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap}
+.acct-banner .bb:hover{background:var(--a-accent-solid-hover)}
+.acct-banner .bbs{margin-left:auto;display:flex;gap:6px}
+.acct-banner .bbs .bb{margin-left:0}
+.acct-banner .bb.ghost{background:transparent;border:1px solid var(--a-border-strong);color:var(--a-text-secondary)}
+.acct-banner .bb .ic{width:12px;height:12px}
+body[data-state="member"] .acct-banner.member{display:flex}
+body[data-state="balance"] .acct-banner.balance{display:flex}
+body[data-state="empty"] .acct-banner.empty{display:flex}
+body[data-state="out"] .acct-banner.out{display:flex}
+.lock-hint{display:none;margin:8px 2px 2px;font-size:var(--a-text-2xs);color:var(--a-text-tertiary);text-align:center}
+body[data-state="out"] .lock-hint,body[data-state="empty"] .lock-hint{display:block}
+.proxy-lock .lk{width:30px;height:30px;border-radius:var(--a-radius-full);background:var(--a-bg-muted);display:grid;place-items:center;color:var(--a-text-secondary)}
+.proxy-lock p{margin:0;font-size:var(--a-text-sm);color:var(--a-text-secondary);max-width:30ch}
+.btn-primary{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 14px;border:0;border-radius:var(--a-radius-md);
+  background:var(--a-accent-solid);color:#fff;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);box-shadow:var(--a-shadow-xs)}
+.btn-primary:hover{background:var(--a-accent-solid-hover)}
+.btn-ghost{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 12px;border:1px solid var(--a-border);border-radius:var(--a-radius-md);
+  background:var(--a-surface);color:var(--a-text);font-size:var(--a-text-sm);font-weight:var(--a-weight-medium)}
+.btn-ghost:hover{background:var(--a-bg-muted);border-color:var(--a-border-strong)}
+
+/* inline "add key" provider rows */
+.prov-row{display:flex;align-items:center;gap:10px;padding:8px 9px;border-radius:var(--a-radius-md)}
+.prov-row:hover{background:var(--a-bg-muted)}
+.prov-row .pico{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff;flex:none}
+.prov-row .nm{font-size:var(--a-text-sm);font-weight:var(--a-weight-medium)}
+.prov-row .st{margin-left:auto;font-size:var(--a-text-xs)}
+.prov-row .st.off{color:var(--a-accent);cursor:pointer;font-weight:var(--a-weight-medium)}
+.prov-row .st.on{color:var(--a-success);display:inline-flex;align-items:center;gap:4px}
+
+/* footer add row */
+.mp-foot{border-top:1px solid var(--a-border-faint);padding:6px}
+.mp-foot .menu-item{color:var(--a-text-secondary)}
+
+/* ============================================================ DIALOG (provider setup) ============================================================ */
+.dlg-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.dlg{background:var(--a-surface-raised);border:1px solid var(--a-border-faint);border-radius:var(--a-radius-2xl);box-shadow:var(--a-shadow-lg);overflow:hidden}
+.dlg-h{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--a-border-faint)}
+.dlg-h h3{font-size:var(--a-text-lg)}
+.dlg-h .x{margin-left:auto;width:28px;height:28px;border-radius:var(--a-radius-md);border:0;background:transparent;color:var(--a-text-tertiary);display:grid;place-items:center}
+.dlg-b{padding:20px;display:flex;flex-direction:column;gap:16px}
+.dlg-f{display:flex;justify-content:flex-end;gap:8px;padding:12px 20px;border-top:1px solid var(--a-border-faint)}
+.field label{display:block;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);margin-bottom:6px;color:var(--a-text)}
+.field .hint{font-size:var(--a-text-xs);color:var(--a-text-tertiary);margin-top:5px}
+.inp{display:flex;align-items:center;gap:8px;height:34px;padding:0 12px;background:var(--a-bg-subtle);border:1px solid var(--a-border);border-radius:var(--a-radius-md)}
+.inp:focus-within{background:var(--a-surface);border-color:var(--a-accent);box-shadow:var(--a-ring-focus)}
+.inp input{flex:1;border:0;background:transparent;outline:none;color:var(--a-text);font-size:var(--a-text-sm);font-family:inherit}
+.inp input::placeholder{color:var(--a-text-tertiary)}
+.inp.locked{background:var(--a-bg-muted);color:var(--a-text-tertiary)}
+.provider-pick{display:flex;gap:8px;flex-wrap:wrap}
+.pp{display:inline-flex;align-items:center;gap:8px;padding:7px 11px;border:1px solid var(--a-border);border-radius:var(--a-radius-md);font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);background:var(--a-surface)}
+.pp.sel{border-color:var(--a-accent);background:var(--a-accent-subtle);color:var(--a-accent)}
+.pp .pico{width:18px;height:18px;border-radius:5px;display:grid;place-items:center;font-size:10px;font-weight:700;color:#fff}
+.seg2{display:inline-flex;padding:3px;background:var(--a-bg-muted);border-radius:var(--a-radius-md);gap:2px}
+.seg2 button{border:0;background:transparent;color:var(--a-text-secondary);font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);padding:6px 14px;border-radius:6px}
+.seg2 button.on{background:var(--a-surface);color:var(--a-text);box-shadow:var(--a-shadow-xs)}
+.toggle{display:inline-flex;align-items:center;gap:9px;font-size:var(--a-text-sm);color:var(--a-text-secondary)}
+.sw{width:36px;height:21px;border-radius:var(--a-radius-full);background:var(--a-bg-inset);position:relative;transition:background var(--a-dur-fast)}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:var(--a-shadow-xs);transition:left var(--a-dur-fast) var(--a-ease-out)}
+.sw.on{background:var(--a-accent-solid)} .sw.on::after{left:17px}
+.added-model{display:flex;align-items:center;gap:10px;padding:9px 11px;background:var(--a-bg-subtle);border:1px solid var(--a-border-faint);border-radius:var(--a-radius-md)}
+.added-model .mono{font-size:var(--a-text-xs);color:var(--a-text-secondary)}
+
+/* ============================================================ CHAT ============================================================ */
+.chat{display:flex;flex-direction:column;height:520px;background:var(--a-bg-canvas)}
+.chat-scroll{flex:1;overflow:auto;padding:28px 32px;display:flex;flex-direction:column;gap:22px}
+.msg{max-width:78%;display:flex;flex-direction:column;gap:6px}
+.msg .who{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary)}
+.msg.user{align-self:flex-end;align-items:flex-end}
+.msg.user .bubble{background:var(--a-accent-subtle);border:1px solid var(--a-accent-border);border-radius:var(--a-radius-lg);padding:11px 14px;font-size:var(--a-text-md)}
+.msg.ai .bubble{font-size:var(--a-text-md);line-height:var(--a-leading-normal)}
+.msg.ai .bubble code{background:var(--a-bg-muted);padding:1px 5px;border-radius:5px;font-size:.92em}
+.perm-card{align-self:flex-start;max-width:78%;border:1px solid var(--a-warning);background:var(--a-warning-subtle);border-radius:var(--a-radius-lg);padding:12px 14px}
+.perm-card .ph{display:flex;align-items:center;gap:8px;font-size:var(--a-text-sm);font-weight:var(--a-weight-semibold);color:var(--a-text)}
+.perm-card .pb{margin:8px 0 12px;font-size:var(--a-text-sm);color:var(--a-text-secondary)}
+.perm-card .pb code{font-family:var(--a-font-mono);background:var(--a-bg-canvas);padding:2px 6px;border-radius:5px}
+.perm-card .pa{display:flex;gap:8px}
+.chat-dock{padding:14px 20px 20px;background:var(--a-bg-canvas);border-top:1px solid var(--a-border-faint)}
+/* tool / skill invocation — collapsed chip, NOT full-text dump */
+.tool-chip{align-self:flex-start;display:inline-flex;align-items:center;gap:9px;max-width:78%;padding:8px 12px;background:var(--a-bg-subtle);border:1px solid var(--a-border);border-radius:var(--a-radius-lg);font-size:var(--a-text-sm);color:var(--a-text-secondary);cursor:pointer;transition:border-color var(--a-dur-fast)}
+.tool-chip:hover{border-color:var(--a-border-strong)}
+.tool-chip .tico{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-size:10px;font-weight:700;color:#fff;flex:none}
+.tool-chip b{color:var(--a-text);font-weight:var(--a-weight-medium)}
+.tool-chip .meta{color:var(--a-text-tertiary);font-size:var(--a-text-xs)}
+.tool-chip .chev{color:var(--a-text-tertiary)}
+.conn-chip{display:inline-flex;align-items:center;gap:5px;padding:2px 9px 2px 6px;background:var(--a-bg-canvas);border:1px solid var(--a-border);border-radius:var(--a-radius-full);font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);vertical-align:middle;margin-right:5px}
+.conn-chip .d{width:15px;height:15px;border-radius:4px;display:grid;place-items:center;font-size:8px;font-weight:700;color:#fff}
+
+/* callouts */
+.anatomy{position:relative}
+.callout{position:absolute;font-size:var(--a-text-xs);color:var(--a-text-secondary);background:var(--a-surface-raised);border:1px solid var(--a-border);
+  border-radius:var(--a-radius-sm);padding:4px 8px;box-shadow:var(--a-shadow-sm);white-space:nowrap}
+.callout b{color:var(--a-accent)}
+.legend{display:flex;flex-wrap:wrap;gap:10px 22px;margin-top:18px;font-size:var(--a-text-sm);color:var(--a-text-secondary)}
+.legend div{display:flex;align-items:center;gap:8px}
+.legend .n{width:18px;height:18px;border-radius:50%;background:var(--a-accent-subtle);color:var(--a-accent);font-size:11px;font-weight:700;display:grid;place-items:center}
+</style>
+</head>
+<body data-state="member">
+
+<div class="topbar">
+  <div class="brand"><span style="display:inline-grid;place-items:center;width:22px;height:22px;border-radius:7px;background:var(--a-accent-solid);color:#fff;font-weight:800;font-size:13px">α</span> alpha-code 设计稿</div>
+  <div class="spacer"></div>
+  <nav>
+    <a href="#home">首页</a><a href="#chat">对话页</a><a href="#anatomy">输入框</a>
+    <a href="#add">+ 菜单</a><a href="#model">模型选择</a><a href="#setup">供应商</a><a href="#perm">权限</a>
+  </nav>
+  <div class="seg" id="stateSeg">
+    <button data-state="member" class="on">会员</button><button data-state="balance">仅余额</button><button data-state="empty">余额不足</button><button data-state="out">未登录</button>
+  </div>
+  <div class="seg" id="themeSeg">
+    <button data-theme="light" class="on">浅色</button><button data-theme="dark">深色</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <!-- ============ 0 概述 ============ -->
+  <section class="sec" id="intro">
+    <div class="sec-head">
+      <div class="sec-kicker">Overview · 设计目标</div>
+      <h2>一套输入框，三层模型，登录即解锁代理节点</h2>
+      <p class="lede">首页与对话页共用<strong>同一个 composer</strong>(纯白、柔和阴影、克制图标);模型选择重做成三层 —— <strong>代理节点(alpha-platform,登录解锁)</strong> · <strong>国内直连(填 Key 即用)</strong> · <strong>自定义节点(Base URL + Key + 自定义模型/等级/effort,即 OpenRouter 场景)</strong>。新增 <strong>effort</strong> 与 <strong>权限(完全访问/请求审批)</strong> 两个控件,均挂在 opencode 已有的真实接缝上。</p>
+    </div>
+    <div class="note"><b>顶部可切换</b>四种账号态「会员 / 仅余额 / 余额不足 / 未登录」,实时观察代理节点的<strong>开放 / 软锁 / 硬锁</strong>差异,以及「浅色 / 深色」。所有颜色取自 <span class="mono">alpha-ui/tokens.css</span> 真值。</div>
+  </section>
+
+  <!-- ============ 1 HOME ============ -->
+  <section class="sec" id="home">
+    <div class="sec-head">
+      <div class="sec-kicker">01 · 首页</div>
+      <h2>首页 — 纯白居中,工作区在下方(带阴影)</h2>
+      <p class="lede">背景为 <span class="mono">--a-bg-canvas #ffffff</span> 纯白(不再发灰);极淡的 ALPHA CODE 字标作背景层;居中放共用 composer;工作区选择器以带阴影的胶囊贴在下方;再下方是最近项目/会话的快捷入口。</p>
+    </div>
+    <div class="frame">
+      <div class="rail"><i style="top:18px"></i><i style="top:40px"></i><i style="top:62px;background:var(--a-accent-subtle)"></i></div>
+      <div class="stage">
+        <div class="home">
+          <div class="ghost">ALPHA CODE</div>
+          <div class="greet">晚上好,<span class="dim">在 workspace 里做点什么?</span></div>
+          <div class="home-stack">
+            <!-- shared composer -->
+            <div class="composer">
+              <div class="input empty">问点什么,輸入 / 调命令,@ 引用上下文…</div>
+              <div class="toolbar">
+                <div class="pop-wrap">
+                  <button class="chip iconbtn" data-pop="addHome" title="添加"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+                  <div class="pop up" id="addHome">
+                    <div class="menu-label">添加</div>
+                    <div class="menu-item"><svg class="ic" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" style="display:none"/><path d="M14.5 4h-9A1.5 1.5 0 0 0 4 5.5v13A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V9.5z"/><path d="M14 4v5h6"/></svg>文件与文件夹<span class="desc">直接打开选择器</span></div>
+                    <div class="menu-item"><svg class="ic" viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M8 9l3 3-3 3M13 15h4"/></svg>附加终端</div>
+                    <div class="menu-item"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></svg>设定目标</div>
+                    <div class="menu-item"><svg class="ic" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></svg>计划模式</div>
+                    <div class="menu-sep"></div>
+                    <div class="menu-label">扩展 · 定制中心</div>
+                    <div class="menu-item"><span class="pico" style="background:#2563eb">文</span>文档 / PDF / 表格</div>
+                    <div class="menu-item"><span class="pico" style="background:#16a34a">MCP</span>连接器…</div>
+                  </div>
+                </div>
+                <div class="pop-wrap">
+                  <button class="chip perm" data-mode="full" data-pop="permHome"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>完全访问<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+                  <div class="pop up perm-menu" id="permHome" style="min-width:230px"></div>
+                </div>
+                <div class="grow"></div>
+                <div class="pop-wrap">
+                  <button class="chip model" data-pop="modelHome"><span class="pico" style="background:#4f46e5">α</span>ALPHA · Opus 4.8<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+                  <div class="pop up mp" id="modelHome"></div>
+                </div>
+                <div class="pop-wrap">
+                  <button class="chip effort" data-pop="effortHome"><svg class="ic sm" viewBox="0 0 24 24"><path d="M13 2L4.5 12.5h6L11 22l8.5-10.5h-6z"/></svg><span class="lvl">高</span><svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+                  <div class="pop up effort-pop" id="effortHome"></div>
+                </div>
+                <button class="send" title="发送(未输入,禁用态)"><svg class="ic" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+              </div>
+            </div>
+            <div class="ws-pick">
+              <button class="ws-chip"><svg class="ic sm" viewBox="0 0 24 24"><path d="M3 7l2-3h5l2 3h7a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/></svg>workspace<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+            </div>
+            <div class="recents">
+              <button class="recent-chip"><span class="av" style="background:#4f46e5">A</span>alpha-code · 重做输入框</button>
+              <button class="recent-chip"><span class="av" style="background:#16a34a">P</span>alpha-platform · 代理网关</button>
+              <button class="recent-chip"><span class="av" style="background:#d97706">W</span>alpha-web · 登录域名迁移</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">注:Codex 首页的 Slack/Gmail/Drive 连接卡是其特有的 MCP 连接器,与 alpha 产品无关,这里替换为 alpha 自己的「最近项目」与「定制中心」入口。如需保留连接卡形态可再议。</div>
+  </section>
+
+  <!-- ============ 2 CHAT ============ -->
+  <section class="sec" id="chat">
+    <div class="sec-head">
+      <div class="sec-kicker">02 · 对话页</div>
+      <h2>对话页 — 同一个 composer,纯白底</h2>
+      <p class="lede">对话区纯白(<span class="mono">#ffffff</span>),消息气泡克制;底部停靠的输入框与首页<strong>完全同款</strong>(解决「不是一套」的问题)。技能 / 命令 / 大段工具输出<strong>折叠成 chip</strong>(点开看全文),不再把技能全文糊进对话(对比 Codex);并演示「请求审批」审批卡片(来自 opencode <span class="mono">permission.asked</span> 事件)。另:顶部标题栏精简(只留标题、可点击改名),<strong>上下文用量环移入输入框</strong>,会话操作(重命名/归档/删除)移到<strong>左侧栏</strong>(见 shell 稿)。</p>
+    </div>
+    <div class="frame">
+      <div class="rail"><i style="top:18px"></i><i style="top:40px"></i><i style="top:62px;background:var(--a-accent-subtle)"></i></div>
+      <div class="stage">
+        <div class="chat">
+          <div class="chat-scroll">
+            <div class="msg user"><div class="who">你</div><div class="bubble"><span class="conn-chip"><span class="d" style="background:#24292f">GH</span>GitHub</span>帮我检查一下 PR #12</div></div>
+            <div class="tool-chip" title="点开看全文"><span class="tico" style="background:#f6821f">CF</span><b>技能 · cloudflare</b><span class="meta">已加载 · 全文折叠</span><svg class="ic sm chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div>
+            <div class="msg user"><div class="who">你</div><div class="bubble">把首页输入框和对话框统一成一套,并加上 effort 选择。</div></div>
+            <div class="msg ai"><div class="who">ALPHA · Opus 4.8 · 高</div><div class="bubble">好的。两处共用同一个 <code>Composer</code> 组件,工具栏含 <code>+</code>、权限、模型、effort、发送。effort 映射到模型的 <code>variants</code>(low/medium/high/xhigh)。我先在 <code>alpha-ui/</code> 下新增组件,不改 opencode 源码。</div></div>
+            <div class="perm-card">
+              <div class="ph"><svg class="ic sm" viewBox="0 0 24 24" style="color:var(--a-warning)"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>请求审批 · 工具执行</div>
+              <div class="pb">即将运行:<code>bun --cwd packages/ui-mac run typecheck</code></div>
+              <div class="pa"><button class="btn-primary">允许一次</button><button class="btn-ghost">总是允许</button><button class="btn-ghost">拒绝</button></div>
+            </div>
+          </div>
+          <div class="chat-dock">
+            <div class="composer">
+              <div class="input">检查一下类型,然后跑构建。</div>
+              <div class="toolbar">
+                <div class="pop-wrap">
+                  <button class="chip iconbtn" data-pop="addChat"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+                  <div class="pop up" id="addChat">
+                    <div class="menu-label">添加</div>
+                    <div class="menu-item"><svg class="ic" viewBox="0 0 24 24"><path d="M14.5 4h-9A1.5 1.5 0 0 0 4 5.5v13A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V9.5z"/><path d="M14 4v5h6"/></svg>文件与文件夹</div>
+                    <div class="menu-item"><svg class="ic" viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M8 9l3 3-3 3M13 15h4"/></svg>附加终端</div>
+                    <div class="menu-item"><svg class="ic" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></svg>计划模式</div>
+                  </div>
+                </div>
+                <div class="pop-wrap">
+                  <button class="chip perm" data-mode="ask" data-pop="permChat"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>请求审批<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+                  <div class="pop up perm-menu" id="permChat" style="min-width:230px"></div>
+                </div>
+                <div class="grow"></div>
+                <button class="chip usage" title="上下文 38% · 点开看用量 / 压缩"><span class="ring"></span>38%</button>
+                <div class="pop-wrap">
+                  <button class="chip model" data-pop="modelChat"><span class="pico" style="background:#4f46e5">α</span>Opus 4.8<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+                  <div class="pop up-right mp" id="modelChat"></div>
+                </div>
+                <div class="pop-wrap">
+                  <button class="chip effort" data-pop="effortChat"><svg class="ic sm" viewBox="0 0 24 24"><path d="M13 2L4.5 12.5h6L11 22l8.5-10.5h-6z"/></svg><span class="lvl">高</span><svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+                  <div class="pop up-right effort-pop" id="effortChat"></div>
+                </div>
+                <button class="send ready"><svg class="ic" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 3 ANATOMY ============ -->
+  <section class="sec" id="anatomy">
+    <div class="sec-head">
+      <div class="sec-kicker">03 · 输入框解剖</div>
+      <h2>Composer 控件构成</h2>
+      <p class="lede">左:<strong>+ 添加</strong>、<strong>权限</strong>;右:<strong>模型</strong>、<strong>effort</strong>、<strong>发送</strong>(沿用 Codex 的左右分布)。聚焦时边框转深、阴影抬升。</p>
+    </div>
+    <div style="max-width:620px;margin:0 auto">
+      <div class="composer focus anatomy">
+        <div class="input">重构 composer 并接入代理节点模型…</div>
+        <div class="toolbar">
+          <button class="chip iconbtn"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+          <button class="chip perm" data-mode="full"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>完全访问<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+          <div class="grow"></div>
+          <button class="chip usage" title="上下文 38%"><span class="ring"></span>38%</button>
+          <button class="chip model"><span class="pico" style="background:#4f46e5">α</span>Opus 4.8<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+          <button class="chip effort"><svg class="ic sm" viewBox="0 0 24 24"><path d="M13 2L4.5 12.5h6L11 22l8.5-10.5h-6z"/></svg><span class="lvl">高</span><svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+          <button class="send ready"><svg class="ic" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+        </div>
+      </div>
+      <div class="legend">
+        <div><span class="n">1</span> + 添加 — 打开「文件/终端/目标/计划/扩展」菜单</div>
+        <div><span class="n">2</span> 权限 — 完全访问 / 请求审批(amber 警示色)</div>
+        <div><span class="n">3</span> 模型 — 三层选择器,带供应商图标</div>
+        <div><span class="n">4</span> effort — 低/中/高/超高(随模型能力启停)</div>
+        <div><span class="n">5</span> 发送 — 有内容时点亮 indigo</div>
+        <div><span class="n">6</span> 用量环 — 上下文占用(从顶栏移入),点开看详情/压缩</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 4 ADD MENU ============ -->
+  <section class="sec" id="add">
+    <div class="sec-head">
+      <div class="sec-kicker">04 · + 菜单</div>
+      <h2>「+」直达文件,菜单对齐 Codex</h2>
+      <p class="lede">点击 <strong>+</strong> 打开菜单,首项<strong>文件与文件夹</strong>直接调起原生选择器;含附加终端、设定目标、计划模式;分隔线下接 alpha 的「定制中心」扩展(文档/PDF/表格/连接器)。</p>
+    </div>
+    <div class="row">
+      <div style="position:relative;width:300px">
+        <div class="pop up static" style="width:300px">
+          <div class="menu-label">添加</div>
+          <div class="menu-item"><svg class="ic" viewBox="0 0 24 24"><path d="M14.5 4h-9A1.5 1.5 0 0 0 4 5.5v13A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V9.5z"/><path d="M14 4v5h6"/></svg>文件与文件夹<span class="desc">⏎</span></div>
+          <div class="menu-item"><svg class="ic" viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M8 9l3 3-3 3M13 15h4"/></svg>附加终端</div>
+          <div class="menu-item"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></svg>设定目标<span class="desc">让 agent 持续推进</span></div>
+          <div class="menu-item"><svg class="ic" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></svg>计划模式</div>
+          <div class="menu-sep"></div>
+          <div class="menu-label">扩展 · 定制中心</div>
+          <div class="menu-item"><span class="pico" style="background:#2563eb">文</span>文档<span class="desc">Documents</span></div>
+          <div class="menu-item"><span class="pico" style="background:#dc2626">PDF</span>PDF</div>
+          <div class="menu-item"><span class="pico" style="background:#16a34a">表</span>表格<span class="desc">Spreadsheets</span></div>
+          <div class="menu-item"><span class="pico" style="background:#7c3aed">MCP</span>连接器…<span class="desc">浏览市场</span></div>
+        </div>
+      </div>
+      <div class="note" style="flex:1;min-width:280px;margin-top:0"><b>真实接缝</b>:文件选择走现有 <span class="mono">prompt-attach</span>;「计划模式」对应 opencode 的 <span class="mono">plan</span> agent;扩展项复用已落地的「定制中心」(ADR-014)。菜单是新增的 alpha 组件,不改 <span class="mono">prompt-input.tsx</span>。</div>
+    </div>
+  </section>
+
+  <!-- ============ 5 MODEL PICKER ============ -->
+  <section class="sec" id="model">
+    <div class="sec-head">
+      <div class="sec-kicker">05 · 模型选择器 ★ 核心</div>
+      <h2>三层模型 · 登录解锁代理节点</h2>
+      <p class="lede">用顶部账号态开关(会员 / 仅余额 / 余额不足 / 未登录)观察差异。<strong>代理节点</strong>来自 alpha-platform(带等级 + 积分倍率),顶部有账号横幅;<strong>未登录</strong>整段硬锁引导登录,<strong>余额不足</strong>软锁引导充值/订阅。<strong>国内直连</strong>填 Key 即用(Base URL 后台托管)。<strong>自定义节点</strong>解决 OpenRouter:一个端点下挂多个自定义模型(只贴模型 ID,等级自动识别)。</p>
+    </div>
+    <div class="row">
+      <div style="width:360px">
+        <div class="pop up static mp" style="width:360px;max-height:520px">
+          <div class="mp-search"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input placeholder="搜索模型…"/></div>
+          <div class="mp-body">
+
+            <!-- proxy -->
+            <div class="mp-group mp-proxy">
+              <div class="mp-group-head"><span class="t">代理节点 · alpha-platform</span><span class="badge">推荐</span></div>
+              <div class="acct-banner member"><svg class="ic sm" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Pro 会员 · 本周期额度充足</div>
+              <div class="acct-banner balance"><svg class="ic sm" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20"/></svg>钱包余额 ¥48.00 · 未订阅,按量扣费</div>
+              <div class="acct-banner empty lockbar"><svg class="ic sm" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20"/></svg>余额不足 · 充值后解锁<span class="bbs"><button class="bb"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>充值</button><button class="bb ghost">订阅</button></span></div>
+              <div class="acct-banner out lockbar"><svg class="ic sm" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>登录解锁代理节点 · 平台计费<button class="bb"><svg class="ic" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5M15 12H3"/></svg>登录</button></div>
+              <div class="m-row sel"><span class="pico" style="background:#4f46e5">α</span><div class="nm"><b>Claude Opus 4.8</b><small>经代理 · 旗舰</small></div><div class="right"><span class="tier flag">旗舰</span><span class="mult">×8</span><svg class="ic sm check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg></div></div>
+              <div class="m-row"><span class="pico" style="background:#4f46e5">α</span><div class="nm"><b>GPT-5.5</b><small>经代理 · 旗舰</small></div><div class="right"><span class="reason-dot" title="支持推理"></span><span class="tier flag">旗舰</span><span class="mult">×8</span></div></div>
+              <div class="m-row"><span class="pico" style="background:#4f46e5">α</span><div class="nm"><b>Claude Sonnet 4.6</b><small>经代理 · 高级</small></div><div class="right"><span class="tier pro">高级</span><span class="mult">×3</span></div></div>
+              <div class="m-row"><span class="pico" style="background:#4f46e5">α</span><div class="nm"><b>Gemini 3 Pro</b><small>经代理 · 高级</small></div><div class="right"><span class="tier pro">高级</span><span class="mult">×3</span></div></div>
+              <div class="m-row"><span class="pico" style="background:#4f46e5">α</span><div class="nm"><b>DeepSeek V3.2</b><small>经代理 · 标准</small></div><div class="right"><span class="tier std">标准</span><span class="mult">×1</span></div></div>
+              <!-- locked states now use the compact top banner (.acct-banner.lockbar) above; model list stays readable -->
+              <p class="lock-hint" data-lockhint>登录 / 充值后可用 · 上方列表为登录后可用模型</p>
+            </div>
+
+            <!-- domestic -->
+            <div class="mp-group">
+              <div class="mp-group-head"><span class="t">国内直连 · 自带 Key</span></div>
+              <div class="prov-row"><span class="pico" style="background:#3b6cf6">D</span><span class="nm">DeepSeek</span><span class="st on"><svg class="ic sm" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>已连接 · 2 个模型</span></div>
+              <div class="m-row" style="margin-left:8px"><span class="pico" style="background:#3b6cf6">D</span><div class="nm"><b>deepseek-chat</b></div><div class="right"><span class="tier std">标准</span></div></div>
+              <div class="m-row" style="margin-left:8px"><span class="pico" style="background:#3b6cf6">D</span><div class="nm"><b>deepseek-reasoner</b></div><div class="right"><span class="reason-dot"></span><span class="tier pro">高级</span></div></div>
+              <div class="prov-row"><span class="pico" style="background:#1f7a4d">智</span><span class="nm">智谱 GLM</span><span class="st off" data-pop2="setupKey">+ 添加 Key</span></div>
+              <div class="prov-row"><span class="pico" style="background:#111">K</span><span class="nm">Kimi (Moonshot)</span><span class="st off" data-pop2="setupKey">+ 添加 Key</span></div>
+              <div class="prov-row"><span class="pico" style="background:#7c3aed">通</span><span class="nm">通义千问 Qwen</span><span class="st off" data-pop2="setupKey">+ 添加 Key</span></div>
+            </div>
+
+            <!-- custom -->
+            <div class="mp-group">
+              <div class="mp-group-head"><span class="t">自定义节点 · Base URL + Key</span><span class="act" data-pop2="setupCustom">+ 添加</span></div>
+              <div class="m-row"><span class="pico" style="background:#0b0b0b">OR</span><div class="nm"><b>OpenRouter · Opus 4.1</b><small class="mono">anthropic/claude-opus-4.1</small></div><div class="right"><span class="reason-dot"></span><span class="tier flag">旗舰</span></div></div>
+              <div class="m-row"><span class="pico" style="background:#0b0b0b">OR</span><div class="nm"><b>OpenRouter · Llama 4</b><small class="mono">meta-llama/llama-4-maverick</small></div><div class="right"><span class="tier std">标准</span></div></div>
+            </div>
+          </div>
+          <div class="mp-foot">
+            <div class="menu-item" data-pop2="setupCustom"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>添加自定义节点 / 供应商</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex:1;min-width:300px;display:flex;flex-direction:column;gap:14px">
+        <div class="note"><b>等级(等级标签)</b>:代理模型由后台给出 <span class="mono">旗舰/高级/标准</span> 与积分倍率(×N);倍率乘进会话消耗(对接 <span class="mono">/v1/account/summary</span> 的 credits)。</div>
+        <div class="note"><b>推理点(蓝点)</b>:标记该模型支持 effort(来自 <span class="mono">model.variants</span>);只有带点的模型,effort 控件才可用。</div>
+        <div class="note warn"><b>四种账号态</b>(顶部切换,对接 <span class="mono">/v1/account/summary</span>):① <strong>会员</strong> 额度充足直接用;② <strong>仅余额</strong> 未订阅、按钱包余额按量扣;③ <strong>余额不足</strong> 软锁,提示充值/订阅;④ <strong>未登录</strong> 硬锁,提示登录。代理段随账号态变,<strong>国内直连 / 自定义始终可用</strong>(BYOK 不受影响)。</div>
+        <div class="note"><b>实现说明</b>:数据来自 <span class="mono">useProviders()/useModels()</span>;代理段需在 <span class="mono">alpha-models.ts</span> 把当前单个 <span class="mono">alpha-default</span> 扩成<strong>带等级的多模型注册</strong>(已知小缺口,属构建项)。弹层为新增 alpha 组件,替换现 <span class="mono">dialog-select-model.tsx</span> 的观感。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 6 PROVIDER SETUP ============ -->
+  <section class="sec" id="setup">
+    <div class="sec-head">
+      <div class="sec-kicker">06 · 供应商接入</div>
+      <h2>两条接入路径 · OpenRouter 的模型怎么管</h2>
+      <p class="lede">左:<strong>国内厂商</strong> —— 选厂商,只填 API Key,Base URL 由 alpha 托管。右:<strong>自定义节点</strong> —— 填 Base URL + Key 后,在该端点下<strong>逐个添加模型,只需贴模型 ID</strong>(等级、是否支持 effort 按 ID 自动识别)。这正是 OpenRouter 的答案:<strong>一个 Key 挂 N 个模型 ID,全进输入框下拉</strong>;<strong>effort 不在这里设,运行时用输入框的 effort 控件调</strong>。</p>
+    </div>
+    <div class="dlg-grid">
+      <!-- domestic -->
+      <div class="dlg">
+        <div class="dlg-h"><span class="pico" style="width:26px;height:26px;border-radius:7px;background:#1f7a4d;color:#fff;display:grid;place-items:center;font-weight:700">智</span><h3>添加国内厂商</h3><button class="x"><svg class="ic sm" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+        <div class="dlg-b">
+          <div class="field">
+            <label>厂商</label>
+            <div class="provider-pick">
+              <span class="pp sel"><span class="pico" style="background:#1f7a4d">智</span>智谱 GLM</span>
+              <span class="pp"><span class="pico" style="background:#3b6cf6">D</span>DeepSeek</span>
+              <span class="pp"><span class="pico" style="background:#111">K</span>Kimi</span>
+              <span class="pp"><span class="pico" style="background:#7c3aed">通</span>Qwen</span>
+            </div>
+          </div>
+          <div class="field">
+            <label>API Key</label>
+            <div class="inp"><svg class="ic sm" viewBox="0 0 24 24"><path d="M7 14a4 4 0 1 1 4-4l9 9-2 2-2-2-2 2-2-2-2 2z" style="display:none"/><circle cx="8" cy="12" r="3"/><path d="M11 12h10l-2 2 2 2"/></svg><input type="password" value="••••••••••••••••" /></div>
+            <div class="hint">仅本机保存,经 sidecar 注入 <span class="mono">{env:GLM_API_KEY}</span>。</div>
+          </div>
+          <div class="field">
+            <label>Base URL</label>
+            <div class="inp locked"><svg class="ic sm" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><input value="由 alpha 托管,无需填写" disabled /></div>
+            <div class="hint">国内厂商的 Base URL 已知,后台自动配置。</div>
+          </div>
+        </div>
+        <div class="dlg-f"><button class="btn-ghost">取消</button><button class="btn-primary">连接</button></div>
+      </div>
+
+      <!-- custom -->
+      <div class="dlg">
+        <div class="dlg-h"><span class="pico" style="width:26px;height:26px;border-radius:7px;background:#0b0b0b;color:#fff;display:grid;place-items:center;font-weight:700">⌘</span><h3>添加自定义节点</h3><button class="x"><svg class="ic sm" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+        <div class="dlg-b">
+          <div class="field">
+            <label>名称</label>
+            <div class="inp"><input value="OpenRouter" /></div>
+          </div>
+          <div class="field">
+            <label>Base URL</label>
+            <div class="inp"><span class="mono" style="color:var(--a-text-tertiary);font-size:11px">https://</span><input value="openrouter.ai/api/v1" /></div>
+            <div class="hint">OpenAI 兼容端点。一个端点可挂多个模型。</div>
+          </div>
+          <div class="field">
+            <label>API Key</label>
+            <div class="inp"><input type="password" value="sk-or-••••••••••" /></div>
+          </div>
+          <div class="menu-sep" style="margin:2px 0"></div>
+          <div class="field">
+            <label>该端点下的模型 <span style="font-weight:var(--a-weight-normal);color:var(--a-text-tertiary);font-size:var(--a-text-xs)">· 一个 Key 可加多个,都会进输入框下拉</span></label>
+            <div class="added-model" style="margin-bottom:8px">
+              <span class="pico" style="width:22px;height:22px;border-radius:6px;background:#0b0b0b;color:#fff;display:grid;place-items:center;font-size:11px;font-weight:700">OR</span>
+              <div style="display:flex;flex-direction:column;min-width:0"><b style="font-size:var(--a-text-sm)">Opus 4.1</b><span class="mono">anthropic/claude-opus-4.1</span></div>
+              <div style="margin-left:auto;display:flex;gap:8px;align-items:center"><span class="tier flag">旗舰</span><span class="reason-dot" title="支持 effort · 运行时在输入框调"></span><span style="font-size:10px;color:var(--a-text-tertiary)">effort ✓</span><button title="移除" style="width:24px;height:24px;border:0;background:transparent;color:var(--a-text-tertiary);border-radius:6px;display:grid;place-items:center"><svg class="ic sm" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+            </div>
+            <div class="added-model" style="margin-bottom:8px">
+              <span class="pico" style="width:22px;height:22px;border-radius:6px;background:#0b0b0b;color:#fff;display:grid;place-items:center;font-size:11px;font-weight:700">OR</span>
+              <div style="display:flex;flex-direction:column;min-width:0"><b style="font-size:var(--a-text-sm)">Sonnet 4</b><span class="mono">anthropic/claude-sonnet-4</span></div>
+              <div style="margin-left:auto;display:flex;gap:8px;align-items:center"><span class="tier pro">高级</span><span class="reason-dot" title="支持 effort · 运行时在输入框调"></span><span style="font-size:10px;color:var(--a-text-tertiary)">effort ✓</span><button title="移除" style="width:24px;height:24px;border:0;background:transparent;color:var(--a-text-tertiary);border-radius:6px;display:grid;place-items:center"><svg class="ic sm" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+            </div>
+            <!-- add model sub-form — 零配置:贴 ID → 自动识别 等级 + 是否支持 effort -->
+            <div style="display:flex;flex-direction:column;gap:10px;padding:12px;background:var(--a-bg-subtle);border:1px solid var(--a-border-faint);border-radius:var(--a-radius-md)">
+              <div class="inp" style="background:var(--a-surface)"><span style="color:var(--a-text-tertiary);font-size:11px;white-space:nowrap">模型 ID</span><input class="mono" placeholder="provider/model-id" value="anthropic/claude-haiku-4"/></div>
+              <div class="inp" style="background:var(--a-surface)"><span style="color:var(--a-text-tertiary);font-size:11px;white-space:nowrap">显示名</span><input placeholder="可留空,自动取" value="Haiku 4"/></div>
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:var(--a-text-xs);color:var(--a-text-tertiary)">
+                <svg class="ic sm" viewBox="0 0 24 24" style="color:var(--a-accent)"><path d="M5 12l5 5L20 7"/></svg>按 ID 自动识别:
+                <span class="tier std">标准</span>
+                <span style="display:inline-flex;align-items:center;gap:4px;opacity:.5"><span class="reason-dot" style="background:var(--a-text-tertiary)"></span>不支持 effort</span>
+                <a style="color:var(--a-accent);cursor:pointer;margin-left:2px">调整</a>
+              </div>
+              <button class="btn-ghost" style="align-self:flex-start"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>添加此模型</button>
+            </div>
+            <div class="hint" style="margin-top:8px">这里不设 effort —— effort 是运行时选择,改在输入框的 effort 控件;注册只记录该模型<b>是否支持</b> effort(自动)。等级按模型 ID 自动识别、只读跟随模型;识别错了才点「调整」。</div>
+          </div>
+        </div>
+        <div class="dlg-f"><button class="btn-ghost">取消</button><button class="btn-primary">保存节点</button></div>
+      </div>
+    </div>
+    <div class="note"><b>回答你的两个问题</b>:① <strong>effort 不在这里配</strong> —— 它是运行时、按任务变的选择,只在输入框的 effort 控件里调;注册表只自动记录「该模型<strong>是否支持</strong> effort」。② <strong>等级不用手填</strong> —— 按模型 ID 自动识别(opus=旗舰、sonnet=高级、其它=标准),绑定该模型、只读;BYOK 自定义的等级只是<strong>标签</strong>(不计费,区别于代理节点)。③ 运行时只做两件事:输入框下拉<strong>换模型</strong>(等级随之带出)+ effort 控件<strong>换强度</strong>;<strong>一个 Key 配多次 = 多个模型 ID</strong>,全进「自定义」分组随点随切。</div>
+    <div class="note" style="max-width:none"><b>落地</b>:写入用户 <span class="mono">opencode.jsonc</span> 的 <span class="mono">provider["openrouter"] = { npm:"@ai-sdk/openai-compatible", options:{ baseURL, apiKey }, models:{…} }</span>(与现有 alpha provider 同机制);每个自定义模型的 effort 写进其 <span class="mono">variants</span>。Key 入 keychain,只读注入。</div>
+  </section>
+
+  <!-- ============ 7 PERMISSION ============ -->
+  <section class="sec" id="perm">
+    <div class="sec-head">
+      <div class="sec-kicker">07 · 权限</div>
+      <h2>完全访问 / 请求审批 — opencode 已有引擎,新增开关</h2>
+      <p class="lede">opencode 后端<strong>已有</strong>权限引擎:<span class="mono">permission:"allow"</span> = 完全访问,规则式 <span class="mono">ask</span> = 请求审批,配 <span class="mono">permission.asked</span> 事件与 once/always/reject 回应 —— 但<strong>没有界面开关</strong>。这里补上工具栏开关 + 审批卡片。</p>
+    </div>
+    <div class="row">
+      <div style="width:240px">
+        <div class="pop up static" style="width:240px">
+          <div class="menu-label">运行权限</div>
+          <div class="menu-item is-on"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>完全访问<span class="desc">允许全部</span></div>
+          <div class="menu-item"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg>请求审批<span class="desc">逐次询问</span></div>
+          <div class="menu-item"><svg class="ic" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="2.5"/></svg>只读<span class="desc">禁止写/执行</span></div>
+        </div>
+      </div>
+      <div style="flex:1;min-width:300px;display:flex;flex-direction:column;gap:14px">
+        <div class="perm-card" style="max-width:none">
+          <div class="ph"><svg class="ic sm" viewBox="0 0 24 24" style="color:var(--a-warning)"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>请求审批 · 工具执行</div>
+          <div class="pb">agent 想运行命令:<code>rm -rf node_modules &amp;&amp; bun install</code></div>
+          <div class="pa"><button class="btn-primary">允许一次</button><button class="btn-ghost">总是允许此类</button><button class="btn-ghost">拒绝</button></div>
+        </div>
+        <div class="note"><b>映射</b>:完全访问 → <span class="mono">permission:"allow"</span>;请求审批 → 规则式 <span class="mono">ask</span>;按钮 → SDK <span class="mono">permission.respond({response:"once|always|reject"})</span>。开关写当前会话 / 项目配置。<b>结论</b>:能力真实存在,我们补的是 UI,不是造功能。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 8 COMPOSER SECONDARY MENUS ============ -->
+  <section class="sec" id="composer-menus">
+    <div class="sec-head">
+      <div class="sec-kicker">08 · 输入框二级菜单</div>
+      <h2>/ · @ · 附件 · agent —— 换上 alpha 皮</h2>
+      <p class="lede">这些功能 opencode 都已完善,只是穿着 <span class="mono">--v2-*</span> 旧皮。统一成 alpha 卡片:命令带来源标签(技能 / MCP / 自定义),@ 分代理与文件,附件成 chip + 缩略图,<strong>agent 选择器从隐形小图标提为正式 chip</strong>(与模型同级)。</p>
+    </div>
+    <div class="row">
+      <div style="width:560px;display:flex;flex-direction:column;gap:16px">
+        <div class="composer">
+          <div class="ctx-chips">
+            <span class="ctx-chip"><span class="fi">TS</span>Button.tsx<span class="x"><svg class="ic sm" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></span></span>
+            <span class="ctx-chip"><span class="fi" style="background:var(--a-bg-inset);color:var(--a-text-secondary)"><svg class="ic sm" viewBox="0 0 24 24" style="width:10px;height:10px"><path d="M3 7l2-3h5l2 3h7v11H3z"/></svg></span>alpha-ui/<span class="x"><svg class="ic sm" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></span></span>
+            <span class="ctx-thumb"><span class="x"><svg class="ic" viewBox="0 0 24 24" style="width:9px;height:9px;stroke-width:2.4"><path d="M6 6l12 12M18 6L6 18"/></svg></span></span>
+          </div>
+          <div class="input">给这些文件加 loading 态…</div>
+          <div class="toolbar">
+            <button class="chip iconbtn"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+            <button class="chip"><svg class="ic sm" viewBox="0 0 24 24"><rect x="3" y="4" width="7" height="7" rx="1.5"/><rect x="14" y="4" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>Build<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+            <div class="grow"></div>
+            <button class="chip usage"><span class="ring"></span>38%</button>
+            <button class="chip model"><span class="pico" style="background:#4f46e5">α</span>Opus 4.8<svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+            <button class="chip effort"><svg class="ic sm" viewBox="0 0 24 24"><path d="M13 2L4.5 12.5h6L11 22l8.5-10.5h-6z"/></svg><span class="lvl">高</span><svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+            <button class="send ready"><svg class="ic" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+          </div>
+        </div>
+        <div class="note"><b>agent 选择器</b>:从「隐形小图标 + 175px 截断」提为<strong>正式 chip</strong>(Build / Plan / 自定义 agent);附件 = chip + 缩略图,× 可移除。</div>
+      </div>
+      <div style="flex:1;min-width:300px;display:flex;flex-direction:column;gap:16px">
+        <div class="pop up static" style="width:100%">
+          <div class="menu-label">/ 命令</div>
+          <div class="menu-item"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2v20M2 12h20"/></svg>init<span class="dim" style="margin-left:4px">初始化项目</span><span class="kbd">⏎</span></div>
+          <div class="menu-item"><svg class="ic" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg>plan<span class="dim" style="margin-left:4px">计划模式</span></div>
+          <div class="menu-item"><svg class="ic" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M8 6h8a2 2 0 0 1 2 2v8"/></svg>graphify<span class="dim" style="margin-left:4px">知识图谱</span><span class="src-tag skill">技能</span></div>
+          <div class="menu-item"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/></svg>excel<span class="dim" style="margin-left:4px">表格读写</span><span class="src-tag mcp">MCP</span></div>
+        </div>
+        <div class="pop up static" style="width:100%">
+          <div class="menu-label">@ 引用</div>
+          <div class="menu-item"><svg class="ic" viewBox="0 0 24 24"><path d="M9.5 2a4.5 4.5 0 0 0-4.3 5.8A4 4 0 0 0 6 15.5a4 4 0 0 0 7 1 4 4 0 0 0 7-1 4 4 0 0 0 .8-7.7A4.5 4.5 0 0 0 12 3.3 4.5 4.5 0 0 0 9.5 2z"/></svg>General<span class="src-tag">agent</span></div>
+          <div class="menu-item"><svg class="ic" viewBox="0 0 24 24"><path d="M14.5 4h-9A1.5 1.5 0 0 0 4 5.5v13A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V9.5z"/><path d="M14 4v5h6"/></svg><span class="dim">alpha-ui/</span>Button.tsx</div>
+          <div class="menu-item"><svg class="ic" viewBox="0 0 24 24"><path d="M14.5 4h-9A1.5 1.5 0 0 0 4 5.5v13A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V9.5z"/><path d="M14 4v5h6"/></svg><span class="dim">main/</span>server.ts</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<!-- shared template content injected by JS into multiple popovers -->
+<template id="tpl-effort">
+  <div class="menu-label">推理强度 · effort</div>
+  <div class="effort-opt" data-e="低">低<span class="meta">更快 / 省积分</span></div>
+  <div class="effort-opt" data-e="中">中<span class="meta">默认</span></div>
+  <div class="effort-opt" data-e="高"><span class="k">✓</span>高<span class="meta">更深推理</span></div>
+  <div class="effort-opt" data-e="超高">超高<span class="meta">最强 · 最慢</span></div>
+</template>
+<template id="tpl-perm">
+  <div class="menu-label">运行权限</div>
+  <div class="menu-item is-on" data-pm="完全访问"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/></svg>完全访问<span class="desc">允许全部</span></div>
+  <div class="menu-item" data-pm="请求审批"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg>请求审批<span class="desc">逐次询问</span></div>
+  <div class="menu-item" data-pm="只读"><svg class="ic" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="2.5"/></svg>只读<span class="desc">禁止写/执行</span></div>
+</template>
+
+<script>
+/* theme + auth toggles */
+function bindSeg(id, attr, target){
+  document.querySelectorAll('#'+id+' button').forEach(b=>{
+    b.onclick=()=>{
+      document.querySelectorAll('#'+id+' button').forEach(x=>x.classList.remove('on'));
+      b.classList.add('on');
+      target.setAttribute(attr, b.dataset[attr.replace('data-','')] || b.getAttribute('data-'+attr.split('-').pop()));
+    };
+  });
+}
+document.querySelectorAll('#themeSeg button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#themeSeg button').forEach(x=>x.classList.remove('on'));b.classList.add('on');document.documentElement.setAttribute('data-theme',b.dataset.theme);});
+document.querySelectorAll('#stateSeg button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#stateSeg button').forEach(x=>x.classList.remove('on'));b.classList.add('on');document.body.setAttribute('data-state',b.dataset.state);});
+
+/* clone shared model-picker markup into the in-composer popovers */
+const mpSource = document.querySelector('#model .mp');
+['modelHome','modelChat'].forEach(id=>{
+  const host=document.getElementById(id); if(!host||!mpSource) return;
+  host.innerHTML = mpSource.innerHTML;
+});
+['effortHome','effortChat'].forEach(id=>{const h=document.getElementById(id);if(h)h.innerHTML=document.getElementById('tpl-effort').innerHTML;});
+['permHome','permChat'].forEach(id=>{const h=document.getElementById(id);if(h)h.innerHTML=document.getElementById('tpl-perm').innerHTML;});
+
+/* popover open/close */
+function closeAll(except){document.querySelectorAll('.pop.open').forEach(p=>{if(p!==except&&!p.classList.contains('static'))p.classList.remove('open');});}
+document.querySelectorAll('[data-pop]').forEach(btn=>{
+  btn.addEventListener('click',e=>{
+    e.stopPropagation();
+    const pop=document.getElementById(btn.dataset.pop);
+    if(!pop) return;
+    const willOpen=!pop.classList.contains('open');
+    closeAll(pop);
+    pop.classList.toggle('open',willOpen);
+  });
+});
+document.addEventListener('click',()=>closeAll(null));
+document.querySelectorAll('.pop').forEach(p=>p.addEventListener('click',e=>e.stopPropagation()));
+
+/* effort selection */
+document.addEventListener('click',e=>{
+  const opt=e.target.closest('.effort-opt'); if(!opt) return;
+  const pop=opt.closest('.pop'); pop.querySelectorAll('.effort-opt .k').forEach(k=>k.remove());
+  const k=document.createElement('span');k.className='k';k.textContent='✓';opt.prepend(k);
+  const chip=pop.closest('.pop-wrap')?.querySelector('.chip.effort .lvl'); if(chip)chip.textContent=opt.dataset.e;
+});
+/* permission selection */
+document.addEventListener('click',e=>{
+  const it=e.target.closest('.perm-menu .menu-item'); if(!it) return;
+  const pop=it.closest('.pop'); pop.querySelectorAll('.menu-item').forEach(m=>m.classList.remove('is-on')); it.classList.add('is-on');
+  const chip=pop.closest('.pop-wrap')?.querySelector('.chip.perm');
+  if(chip){const mode=it.dataset.pm; chip.childNodes[1].nodeValue=mode; chip.setAttribute('data-mode', mode==='完全访问'?'full':'ask');}
+});
+/* seg2 (tier/effort in dialog) */
+document.querySelectorAll('.seg2').forEach(s=>s.querySelectorAll('button').forEach(b=>b.onclick=()=>{s.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');}));
+document.querySelectorAll('[data-sw]').forEach(sw=>sw.onclick=()=>sw.classList.toggle('on'));
+</script>
+</body>
+</html>

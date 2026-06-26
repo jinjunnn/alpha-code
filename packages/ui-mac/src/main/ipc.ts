@@ -200,6 +200,13 @@ export function registerIpcHandlers(deps: Deps) {
     return { buffer, width: size.width, height: size.height }
   })
 
+  // Write text to the system clipboard from the main process. Unlike the renderer's async Clipboard
+  // API, this needs no transient user activation, so alpha actions (e.g. "复制对话") copy reliably.
+  ipcMain.handle("write-clipboard", (_event, text: string) => {
+    clipboard.writeText(typeof text === "string" ? text : String(text ?? ""))
+    return true
+  })
+
   ipcMain.on("show-notification", (_event: IpcMainEvent, title: string, body?: string) => {
     new Notification({ title, body }).show()
   })

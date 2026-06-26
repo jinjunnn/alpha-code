@@ -8,6 +8,8 @@
 import { createMemo, createSignal, For, Show, onCleanup, type Accessor } from "solid-js"
 import { Portal } from "solid-js/web"
 import { t } from "../i18n"
+import { Dialog } from "../alpha-ui/Dialog"
+import { Button } from "../alpha-ui/Button"
 import type { ServerInfo } from "../sidebar/use-projects"
 import { useExtensions } from "./use-extensions"
 import type { Catalog, CatalogEntry, CatalogSource } from "./catalog-types"
@@ -34,6 +36,25 @@ function sourceLabel(source: CatalogSource): string {
   return t("alpha.ext.sourceAlpha")
 }
 
+// Human label for an entry's primitive type, reusing the tab labels (连接器/技能/插件/套件).
+function typeLabel(type: CatalogEntry["type"]): string {
+  if (type === "mcp") return t("alpha.ext.tabConnectors")
+  if (type === "skill") return t("alpha.ext.tabSkills")
+  if (type === "plugin") return t("alpha.ext.tabPlugins")
+  return t("alpha.ext.tabBundles")
+}
+
+// Pre-install disclosure for MCP connectors: which binaries are which-checked, and which secrets
+// the user must supply. Empty string = nothing to disclose (the confirm row is then hidden).
+function runtimeDeps(e: CatalogEntry): string {
+  const spec = e.installSpec && e.installSpec.kind === "mcp" ? e.installSpec : undefined
+  return (spec?.runtimeDep ?? []).join(", ")
+}
+function requiredKeys(e: CatalogEntry): string {
+  const spec = e.installSpec && e.installSpec.kind === "mcp" ? e.installSpec : undefined
+  return (spec?.requiredEnvVars ?? []).join(", ")
+}
+
 export function ExtensionHub(props: {
   server: Accessor<ServerInfo | undefined>
   open: Accessor<boolean>
@@ -43,6 +64,10 @@ export function ExtensionHub(props: {
   const [tab, setTab] = createSignal<Tab>("featured")
   const [query, setQuery] = createSignal("")
   const [busy, setBusy] = createSignal<string | null>(null)
+  // The entry awaiting install confirmation. 添加 stages it here (instead of installing directly), so
+  // the user sees what will be added — type, runtime deps, required keys, bundle fan-out — and can
+  // back out. Confirming runs the original onAdd; the alpha Dialog handles backdrop/Escape dismissal.
+  const [confirming, setConfirming] = createSignal<CatalogEntry | null>(null)
   const [toast, setToast] = createSignal<string | null>(null)
   const [createType, setCreateType] = createSignal<"skill" | "agent">("skill")
   const [fName, setFName] = createSignal("")
@@ -223,7 +248,7 @@ export function ExtensionHub(props: {
             </button>
           }
         >
-          <button class="alpha-ext-add" data-variant="primary" disabled={isBusy()} onClick={() => void onAdd(e)}>
+          <button class="alpha-ext-add" data-variant="primary" disabled={isBusy()} onClick={() => setConfirming(e)}>
             {isBusy() ? t("alpha.ext.adding") : t("alpha.ext.add")}
           </button>
         </Show>
@@ -375,6 +400,61 @@ export function ExtensionHub(props: {
             <div class="alpha-ext-toast">{toast()}</div>
           </Show>
         </div>
+
+        {/* Install confirmation — staged by 添加, run on confirm. Backdrop/Escape cancel (alpha Dialog). */}
+        <Dialog
+          open={!!confirming()}
+          onClose={() => setConfirming(null)}
+          besideSidebar
+          size="sm"
+          title={confirming() ? t("alpha.ext.confirmTitle", { name: confirming()!.displayName }) : ""}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setConfirming(null)}>
+                {t("alpha.ext.cancel")}
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  const e = confirming()
+                  setConfirming(null)
+                  if (e) void onAdd(e)
+                }}
+              >
+                {t("alpha.ext.confirmInstall")}
+              </Button>
+            </>
+          }
+        >
+          <Show when={confirming()}>
+            {(entry) => (
+              <div class="alpha-ext-confirm">
+                <div class="alpha-ext-confirm-meta">
+                  <span class="alpha-ext-chip" data-source={entry().source}>
+                    {sourceLabel(entry().source)}
+                  </span>
+                  <span class="alpha-ext-confirm-type">{typeLabel(entry().type)}</span>
+                </div>
+                <p class="alpha-ext-confirm-desc">{entry().description}</p>
+                <Show when={entry().type === "bundle" && entry().bundleItems}>
+                  <div class="alpha-ext-confirm-line">
+                    {t("alpha.ext.confirmBundle", { count: (entry().bundleItems ?? []).length })}
+                  </div>
+                </Show>
+                <Show when={runtimeDeps(entry())}>
+                  <div class="alpha-ext-confirm-line">
+                    {t("alpha.ext.confirmRuntime")}: <code>{runtimeDeps(entry())}</code>
+                  </div>
+                </Show>
+                <Show when={requiredKeys(entry())}>
+                  <div class="alpha-ext-confirm-line">
+                    {t("alpha.ext.confirmEnv")}: <code>{requiredKeys(entry())}</code>
+                  </div>
+                </Show>
+              </div>
+            )}
+          </Show>
+        </Dialog>
       </Portal>
     </Show>
   )

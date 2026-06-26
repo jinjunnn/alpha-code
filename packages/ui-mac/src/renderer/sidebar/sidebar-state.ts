@@ -8,6 +8,7 @@ import { createSignal } from "solid-js"
 const COLLAPSED_KEY = "alpha.sidebar.collapsed"
 const EXPANDED_KEY = "alpha.sidebar.expanded"
 const HIDDEN_KEY = "alpha.sidebar.hidden"
+const VIEWED_KEY = "alpha.sidebar.viewed"
 
 function readBool(key: string, fallback: boolean): boolean {
   try {
@@ -27,6 +28,17 @@ function readSet(key: string): Set<string> {
     return Array.isArray(parsed) ? new Set(parsed.filter((x): x is string => typeof x === "string")) : new Set()
   } catch {
     return new Set()
+  }
+}
+
+function readMap(key: string): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, number>) : {}
+  } catch {
+    return {}
   }
 }
 
@@ -51,6 +63,10 @@ const [expanded, setExpandedSignal] = createSignal(readSet(EXPANDED_KEY))
 // its first session exists), so "归档/移除" is necessarily a sidebar-local hide: a persisted set
 // of worktrees we filter out of the rendered list. Both menu actions land here.
 const [hidden, setHiddenSignal] = createSignal(readSet(HIDDEN_KEY))
+// Per-session "last viewed" watermark: the session's `updated` timestamp the last time the user had
+// it open. A session shows an unread dot when its `updated` has advanced past this — i.e. an agent
+// produced new activity while the user was looking elsewhere. Persisted so it survives relaunch.
+const [viewed, setViewedSignal] = createSignal<Record<string, number>>(readMap(VIEWED_KEY))
 
 // Effective visibility: hidden if the user collapsed it OR the responsive override is active.
 export function sidebarCollapsed() {
@@ -115,6 +131,23 @@ export function clearHiddenProjects() {
     if (prev.size === 0) return prev
     write(HIDDEN_KEY, JSON.stringify([]))
     return new Set<string>()
+  })
+}
+
+// A session is unread when its activity advanced past the last view. Only sessions seen at least
+// once can be unread — otherwise the whole list would light up on first launch (we'd have no
+// watermark to compare against). The active session is continuously re-marked viewed by the sidebar.
+export function isSessionUnread(id: string, updated: number): boolean {
+  const v = viewed()
+  return id in v && updated > v[id]
+}
+
+export function markSessionViewed(id: string, updated: number) {
+  setViewedSignal((prev) => {
+    if (prev[id] === updated) return prev
+    const next = { ...prev, [id]: updated }
+    write(VIEWED_KEY, JSON.stringify(next))
+    return next
   })
 }
 

@@ -1,0 +1,31 @@
+/* Model-picker reskin — elevates opencode's dialog-select-model (a Kobalte combobox popover) to the
+ * alpha premium-dialog surface, WITHOUT rebuilding it (ADR-016: reuse the heavy engine, restyle).
+ *
+ * Stable hooks (verified live via CDP, not brittle Tailwind classes):
+ *   - [data-popper-positioner]      the Kobalte popover positioner (also used by tooltips →
+ *                                   we scope with :has() so ONLY the model-list popover is touched)
+ *   - [data-slot="list-scroll"]     the scrollable model list inside the panel
+ *   - [data-slot="input-wrapper"]   the 搜索模型 field wrapper
+ * The picker already inherits the graphite/ceramic palette via opencode's themed tokens; this only
+ * lifts radius/shadow/border to match alpha's Dialog so it reads as one design system.
+ */
+
+/* Panel surface: the positioner's child IS the Kobalte content panel. Only the popover that contains
+ * the model list-scroll matches — tooltips/other poppers are untouched. */
+[data-popper-positioner]:has([data-slot="list-scroll"]) > * {
+  border-radius: var(--a-radius-xl) !important;
+  border: 1px solid var(--a-border-faint) !important;
+  box-shadow: var(--a-shadow-overlay), var(--a-edge-light) !important;
+}
+
+/* 搜索模型 field → alpha recessed input. */
+[data-popper-positioner]:has([data-slot="list-scroll"]) [data-slot="input-wrapper"] {
+  border-radius: var(--a-radius-md) !important;
+  background: var(--a-bg-subtle) !important;
+  border: 1px solid var(--a-border-faint) !important;
+}
+
+/* A touch more breathing room around the list so rows aren't cramped against the panel edge. */
+[data-popper-positioner]:has([data-slot="list-scroll"]) [data-slot="list-scroll"] {
+  padding-inline: 2px;
+}

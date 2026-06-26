@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>alpha-code · 状态目录 设计稿</title>
+<style>
+:root{
+  --a-bg-canvas:#ffffff;--a-bg-subtle:#f6f7f9;--a-bg-muted:#eceef1;--a-bg-inset:#e3e6ea;
+  --a-surface:#ffffff;--a-surface-raised:#ffffff;--a-scrim:rgba(15,17,21,.45);
+  --a-text:#18181b;--a-text-secondary:#52525b;--a-text-tertiary:#7c7d85;--a-text-disabled:#b3b6bd;--a-text-on-accent:#fff;
+  --a-border-faint:#eef0f3;--a-border:#e4e6ea;--a-border-strong:#ced2d9;
+  --a-overlay-hover:rgba(15,17,21,.05);--a-overlay-active:rgba(15,17,21,.08);
+  --a-accent:#4f46e5;--a-accent-hover:#4338ca;--a-accent-active:#3730a3;
+  --a-accent-solid:#4f46e5;--a-accent-solid-hover:#4338ca;--a-accent-solid-active:#3730a3;
+  --a-accent-subtle:rgba(79,70,229,.10);--a-accent-border:rgba(79,70,229,.35);--a-accent-ring:rgba(79,70,229,.45);
+  --a-success:#16a34a;--a-warning:#d97706;--a-error:#dc2626;--a-info:#2563eb;
+  --a-success-subtle:rgba(22,163,74,.12);--a-warning-subtle:rgba(217,119,6,.12);--a-error-subtle:rgba(220,38,38,.12);
+  --a-radius-xs:4px;--a-radius-sm:6px;--a-radius-md:8px;--a-radius-lg:11px;--a-radius-xl:14px;--a-radius-2xl:18px;--a-radius-full:9999px;
+  --a-font-sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;
+  --a-font-mono:"SF Mono","JetBrains Mono","Menlo",ui-monospace,monospace;
+  --a-text-2xs:10.5px;--a-text-xs:11.5px;--a-text-sm:12.5px;--a-text-base:13px;--a-text-md:14px;--a-text-lg:16px;--a-text-xl:19px;--a-text-2xl:23px;
+  --a-leading-normal:1.55;--a-tracking-tight:-0.014em;--a-tracking-wide:0.04em;
+  --a-weight-normal:400;--a-weight-medium:500;--a-weight-semibold:600;--a-weight-bold:680;
+  --a-shadow-xs:0 1px 2px rgba(15,17,21,.05);--a-shadow-sm:0 1px 3px rgba(15,17,21,.07),0 1px 2px rgba(15,17,21,.04);
+  --a-shadow-md:0 4px 12px rgba(15,17,21,.08),0 2px 4px rgba(15,17,21,.05);--a-shadow-lg:0 12px 32px rgba(15,17,21,.12),0 4px 8px rgba(15,17,21,.06);
+  --a-shadow-overlay:0 24px 64px rgba(15,17,21,.20),0 8px 16px rgba(15,17,21,.10);--a-ring-focus:0 0 0 3px var(--a-accent-ring);
+  --a-dur-fast:130ms;--a-ease-out:cubic-bezier(.22,1,.36,1);
+}
+html[data-theme="dark"]{
+  --a-bg-canvas:#0a0b0d;--a-bg-subtle:#0e0f11;--a-bg-muted:#16171a;--a-bg-inset:#1e2024;--a-surface:#121316;--a-surface-raised:#17181b;--a-scrim:rgba(0,0,0,.6);
+  --a-text:#fafafa;--a-text-secondary:#a1a1aa;--a-text-tertiary:#71727a;--a-text-disabled:#4f5158;
+  --a-border-faint:#1b1c20;--a-border:#232428;--a-border-strong:#34363c;--a-overlay-hover:rgba(255,255,255,.055);--a-overlay-active:rgba(255,255,255,.09);
+  --a-accent:#818cf8;--a-accent-hover:#6366f1;--a-accent-active:#4f46e5;--a-accent-solid:#4f46e5;--a-accent-solid-hover:#5b54ea;--a-accent-solid-active:#4338ca;
+  --a-accent-subtle:rgba(129,140,248,.14);--a-accent-border:rgba(129,140,248,.38);
+  --a-success:#4ade80;--a-warning:#fbbf24;--a-error:#f87171;--a-info:#60a5fa;--a-success-subtle:rgba(74,222,128,.14);--a-warning-subtle:rgba(251,191,36,.14);--a-error-subtle:rgba(248,113,113,.14);
+  --a-shadow-md:0 4px 12px rgba(0,0,0,.5),0 2px 4px rgba(0,0,0,.4);--a-shadow-lg:0 12px 32px rgba(0,0,0,.6),0 4px 8px rgba(0,0,0,.4);--a-shadow-overlay:0 24px 64px rgba(0,0,0,.7);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--a-bg-subtle);color:var(--a-text);font-family:var(--a-font-sans);font-size:var(--a-text-base);line-height:var(--a-leading-normal);-webkit-font-smoothing:antialiased;font-feature-settings:"cv01","ss01"}
+h1,h2,h3,h4{margin:0;font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight)}
+button{font-family:inherit;cursor:pointer}svg{display:block}
+.ic{width:16px;height:16px;stroke:currentColor;stroke-width:1.6;fill:none;stroke-linecap:round;stroke-linejoin:round}.ic.sm{width:13px;height:13px}
+.mono{font-family:var(--a-font-mono)}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:16px;padding:12px 22px;background:color-mix(in srgb,var(--a-bg-canvas) 86%,transparent);backdrop-filter:blur(12px);border-bottom:1px solid var(--a-border-faint)}
+.topbar .brand{display:flex;align-items:center;gap:10px;font-weight:var(--a-weight-semibold)}
+.topbar .spacer{flex:1}.topbar nav{display:flex;gap:1px;flex-wrap:wrap}
+.topbar nav a{padding:5px 8px;border-radius:var(--a-radius-md);color:var(--a-text-secondary);text-decoration:none;font-size:var(--a-text-xs);font-weight:var(--a-weight-medium)}
+.topbar nav a:hover{background:var(--a-bg-muted);color:var(--a-text)}
+.seg{display:inline-flex;padding:2px;background:var(--a-bg-muted);border-radius:var(--a-radius-md);gap:2px}
+.seg button{border:0;background:transparent;color:var(--a-text-secondary);font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);padding:5px 10px;border-radius:6px}
+.seg button.on{background:var(--a-surface);color:var(--a-text);box-shadow:var(--a-shadow-xs)}
+.wrap{max-width:1180px;margin:0 auto;padding:32px 24px 120px}
+.sec{margin-bottom:48px;scroll-margin-top:72px}
+.sec-h{display:flex;align-items:baseline;gap:12px;margin-bottom:6px}
+.sec-h .k{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary)}
+.sec-h h2{font-size:var(--a-text-xl)}
+.sec>p{margin:0 0 16px;color:var(--a-text-secondary);font-size:var(--a-text-sm);max-width:72ch}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(264px,1fr));gap:14px}
+.tile{border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-bg-canvas);overflow:hidden;display:flex;flex-direction:column}
+.tile-lbl{display:flex;align-items:center;gap:8px;padding:7px 11px;border-bottom:1px solid var(--a-border-faint);font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);color:var(--a-text-secondary);background:var(--a-bg-subtle)}
+.tile-lbl .tag{margin-left:auto;font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);padding:1px 7px;border-radius:var(--a-radius-full)}
+.tag.ok{background:var(--a-success-subtle);color:var(--a-success)}.tag.err{background:var(--a-error-subtle);color:var(--a-error)}.tag.wait{background:var(--a-accent-subtle);color:var(--a-accent)}.tag.warn{background:var(--a-warning-subtle);color:var(--a-warning)}
+.tile-b{padding:16px;flex:1;display:flex;flex-direction:column;justify-content:center;gap:10px;min-height:84px}
+.tile.wide{grid-column:span 2}
+.note{margin:14px 0 0;padding:12px 14px;background:var(--a-bg-canvas);border:1px solid var(--a-border);border-left:3px solid var(--a-accent);border-radius:var(--a-radius-md);font-size:var(--a-text-sm);color:var(--a-text-secondary)}
+.note b{color:var(--a-text);font-weight:var(--a-weight-semibold)}
+
+/* primitives */
+.btn-primary{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:30px;padding:0 13px;border:0;border-radius:var(--a-radius-md);background:var(--a-accent-solid);color:#fff;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);box-shadow:var(--a-shadow-xs)}
+.btn-ghost{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:30px;padding:0 12px;border:1px solid var(--a-border);border-radius:var(--a-radius-md);background:var(--a-surface);color:var(--a-text);font-size:var(--a-text-sm);font-weight:var(--a-weight-medium)}
+.btn-danger{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:30px;padding:0 13px;border:1px solid var(--a-error);border-radius:var(--a-radius-md);background:transparent;color:var(--a-error);font-size:var(--a-text-sm);font-weight:var(--a-weight-medium)}
+.btn-block{width:100%}.dis{opacity:.5;pointer-events:none}
+.sp{width:13px;height:13px;border:1.5px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin .65s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+.sk{background:linear-gradient(90deg,var(--a-bg-muted) 25%,var(--a-bg-inset) 50%,var(--a-bg-muted) 75%);background-size:200% 100%;animation:skl 1.4s linear infinite;border-radius:var(--a-radius-sm)}
+@keyframes skl{to{background-position:-200% 0}}
+.sw{width:34px;height:20px;border-radius:var(--a-radius-full);background:var(--a-bg-inset);position:relative;flex:none}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:var(--a-shadow-xs)}
+.sw.on{background:var(--a-accent-solid)}.sw.on::after{left:16px}
+
+/* form field with states */
+.field-l{font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);color:var(--a-text-secondary);margin-bottom:5px}
+.inp{display:flex;align-items:center;gap:8px;height:32px;padding:0 11px;background:var(--a-bg-subtle);border:1px solid var(--a-border);border-radius:var(--a-radius-md);font-size:var(--a-text-sm)}
+.inp input{flex:1;border:0;background:transparent;outline:none;color:var(--a-text);font-family:inherit;font-size:var(--a-text-sm);min-width:0}
+.inp input::placeholder{color:var(--a-text-tertiary)}
+.inp.focus{background:var(--a-surface);border-color:var(--a-accent);box-shadow:var(--a-ring-focus)}
+.inp.err{border-color:var(--a-error)}
+.inp.ok{border-color:var(--a-success)}
+.inp.dis{background:var(--a-bg-muted);color:var(--a-text-tertiary)}
+.inp .ic{color:var(--a-text-tertiary)}.inp.ok .ic{color:var(--a-success)}.inp.err .ic{color:var(--a-error)}
+.fmsg{font-size:var(--a-text-xs);margin-top:5px}.fmsg.err{color:var(--a-error)}.fmsg.ok{color:var(--a-success)}.fmsg.wait{color:var(--a-accent)}.fmsg.hint{color:var(--a-text-tertiary)}
+
+/* account card */
+.acct{border:1px solid var(--a-border-faint);border-radius:var(--a-radius-xl);background:var(--a-surface);box-shadow:var(--a-shadow-md);overflow:hidden}
+.acct-top{display:flex;align-items:center;gap:11px;padding:13px 14px}
+.acct-av{width:36px;height:36px;border-radius:50%;background:var(--a-accent-subtle);color:var(--a-accent);display:grid;place-items:center;font-weight:700;flex:none}
+.acct-id{min-width:0;flex:1}.acct-id b{font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acct-id small{font-size:var(--a-text-2xs);color:var(--a-text-tertiary)}
+.plan{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);padding:1px 7px;border-radius:var(--a-radius-full);background:var(--a-accent-subtle);color:var(--a-accent)}
+.acct-bal{padding:0 14px 4px;font-size:var(--a-text-lg);font-weight:var(--a-weight-semibold)}.acct-bal small{font-size:var(--a-text-xs);color:var(--a-text-tertiary);font-weight:400}
+.meter{margin:8px 14px 0}
+.meter-row{display:flex;justify-content:space-between;font-size:var(--a-text-2xs);color:var(--a-text-tertiary);margin-bottom:4px}
+.meter-bar{height:6px;border-radius:var(--a-radius-full);background:var(--a-bg-inset);overflow:hidden}
+.meter-fill{height:100%;background:var(--a-accent);border-radius:var(--a-radius-full)}
+.spark{display:block;margin:12px 14px 4px}
+.acct-cta{display:flex;gap:8px;padding:12px 14px;border-top:1px solid var(--a-border-faint)}
+
+/* composer mini */
+.composer{background:var(--a-surface);border:1px solid var(--a-border);border-radius:var(--a-radius-2xl);box-shadow:var(--a-shadow-sm)}
+.composer.focus{border-color:var(--a-border-strong);box-shadow:var(--a-shadow-md)}
+.composer.drag{border:1.5px dashed var(--a-accent);background:var(--a-accent-subtle)}
+.composer .in{padding:12px 14px 4px;font-size:var(--a-text-sm);color:var(--a-text);min-height:24px}
+.composer .in.empty{color:var(--a-text-tertiary)}
+.composer .in.mono{font-family:var(--a-font-mono)}
+.composer .bar{display:flex;align-items:center;gap:6px;padding:6px 8px;height:40px}
+.chip{display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 8px;border-radius:var(--a-radius-md);background:transparent;color:var(--a-text-secondary);font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);border:1px solid transparent}
+.chip .pico{width:15px;height:15px;border-radius:4px;background:#4f46e5;color:#fff;display:grid;place-items:center;font-size:8px;font-weight:700}
+.send{width:28px;height:28px;border-radius:50%;border:0;display:grid;place-items:center;background:var(--a-bg-inset);color:var(--a-text-tertiary);flex:none}
+.send.on{background:var(--a-accent-solid);color:#fff}
+.send.stop{background:var(--a-text);color:var(--a-bg-canvas)}
+.grow{flex:1}
+.cbanner{display:flex;align-items:center;gap:7px;margin:0 0 8px;padding:6px 10px;border-radius:var(--a-radius-md);font-size:var(--a-text-xs);font-weight:var(--a-weight-medium)}
+.cbanner.err{background:var(--a-error-subtle);color:var(--a-error)}
+
+/* session row */
+.srow{display:flex;align-items:center;gap:8px;height:30px;padding:0 10px;border-radius:var(--a-radius-md);font-size:var(--a-text-sm);color:var(--a-text-secondary)}
+.srow.hover{background:var(--a-overlay-hover);color:var(--a-text)}
+.srow.sel{background:var(--a-accent-subtle);color:var(--a-accent);font-weight:var(--a-weight-medium)}
+.srow .more{margin-left:auto;color:var(--a-text-tertiary)}
+.srow .unread{margin-left:auto;width:7px;height:7px;border-radius:50%;background:var(--a-accent)}
+.srow .hl{background:var(--a-warning-subtle);border-radius:3px}
+.srow-edit{display:flex;align-items:center;gap:8px;height:30px;padding:0 6px}
+.srow-edit input{flex:1;height:24px;border:1px solid var(--a-accent);border-radius:6px;padding:0 8px;font-size:var(--a-text-sm);font-family:inherit;outline:none;box-shadow:var(--a-ring-focus);background:var(--a-surface);color:var(--a-text)}
+.empty-state{text-align:center;color:var(--a-text-tertiary);font-size:var(--a-text-sm);padding:8px}
+.empty-state .ei{width:34px;height:34px;border-radius:var(--a-radius-md);background:var(--a-bg-muted);display:grid;place-items:center;margin:0 auto 8px;color:var(--a-text-disabled)}
+.empty-state b{display:block;color:var(--a-text-secondary);font-weight:var(--a-weight-medium);margin-bottom:2px}
+
+/* misc cards */
+.bubble{background:var(--a-accent-subtle);border:1px solid var(--a-accent-border);border-radius:var(--a-radius-lg);padding:9px 12px;font-size:var(--a-text-sm)}
+.errmsg{border:1px solid var(--a-error);background:var(--a-error-subtle);border-radius:var(--a-radius-lg);padding:11px 13px;font-size:var(--a-text-sm)}
+.errmsg .h{display:flex;align-items:center;gap:7px;font-weight:var(--a-weight-medium);color:var(--a-text)}
+.tc{border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-surface);overflow:hidden}
+.tc-head{display:flex;align-items:center;gap:9px;padding:8px 11px;font-size:var(--a-text-sm)}
+.tc-ico{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;color:#fff;font-size:10px;font-weight:700;flex:none}
+.tc-b b{font-weight:var(--a-weight-medium)}.tc-b .tgt{font-family:var(--a-font-mono);font-size:var(--a-text-xs);color:var(--a-text-secondary)}
+.tc-st{margin-left:auto;font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);padding:2px 7px;border-radius:var(--a-radius-full);display:inline-flex;align-items:center;gap:5px}
+.tc-st.ok{background:var(--a-success-subtle);color:var(--a-success)}.tc-st.run{background:var(--a-accent-subtle);color:var(--a-accent)}
+.showmore{padding:7px 11px;border-top:1px solid var(--a-border-faint);font-size:var(--a-text-xs);color:var(--a-accent);font-weight:var(--a-weight-medium);text-align:center}
+.toast{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--a-surface-raised);border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);box-shadow:var(--a-shadow-lg);font-size:var(--a-text-sm)}
+.toast .ti{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;flex:none;color:#fff}
+.toast .ti.ok{background:var(--a-success)}.toast .ti.err{background:var(--a-error)}.toast .ti.info{background:var(--a-info)}
+.ob-step{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--a-border);border-radius:var(--a-radius-lg);font-size:var(--a-text-sm)}
+.ob-step.now{border-color:var(--a-accent);background:var(--a-accent-subtle)}
+.ob-step .n{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;flex:none;background:var(--a-bg-muted);color:var(--a-text-secondary)}
+.ob-step.done .n{background:var(--a-success);color:#fff}.ob-step.now .n{background:var(--a-accent);color:#fff}
+/* interactive states swatch */
+.sw-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.istate{display:flex;flex-direction:column;align-items:center;gap:5px;font-size:var(--a-text-2xs);color:var(--a-text-tertiary)}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand"><span style="display:inline-grid;place-items:center;width:22px;height:22px;border-radius:7px;background:var(--a-accent-solid);color:#fff;font-weight:800;font-size:13px">α</span> alpha-code · 状态目录</div>
+  <div class="spacer"></div>
+  <nav><a href="#acct">账户</a><a href="#form">表单</a><a href="#composer">输入框</a><a href="#sidebar">侧栏</a><a href="#empty">空态</a><a href="#async">异步</a><a href="#chat">对话特殊态</a><a href="#onboard">引导</a><a href="#interactive">交互态</a><a href="#convo">会话操作</a></nav>
+  <div class="seg" id="themeSeg"><button data-theme="light" class="on">浅</button><button data-theme="dark">深</button></div>
+</div>
+<div class="wrap">
+  <p style="margin:0 0 28px;color:var(--a-text-secondary);font-size:var(--a-text-md);max-width:80ch">每个有状态的面都列全状态(登录/未登录、表单校验全档、异步生命周期、空/错误/中断、交互四态),开发照着写。绿=成功 / 红=错误 / 蓝=进行中 / 黄=警告。可切浅/深。</p>
+
+  <!-- ===== 1 ACCOUNT ===== -->
+  <section class="sec" id="acct">
+    <div class="sec-h"><span class="k">P0 · 01</span><h2>账户卡(此前完全没画)</h2></div>
+    <p>侧栏底部账户 popover。登录卡含额度条 + sparkline + 升级/充值/管理。未登录给登录 CTA。加载用骨架,断网给重试。</p>
+    <div class="tiles">
+      <div class="tile"><div class="tile-lbl">已登录 · 会员<span class="tag ok">member</span></div><div class="tile-b" style="padding:0"><div class="acct" style="box-shadow:none;border:0;border-radius:0">
+        <div class="acct-top"><span class="acct-av">L</span><div class="acct-id"><b>李彪</b><small>Creampqk@minister.com</small></div><span class="plan">PRO</span></div>
+        <div class="acct-bal">¥48.00 <small>钱包余额</small></div>
+        <div class="meter"><div class="meter-row"><span>5 小时额度</span><span>1.2k / 5k</span></div><div class="meter-bar"><div class="meter-fill" style="width:24%"></div></div></div>
+        <div class="meter"><div class="meter-row"><span>7 天额度</span><span>18k / 50k</span></div><div class="meter-bar"><div class="meter-fill" style="width:36%"></div></div></div>
+        <svg class="spark" width="240" height="34" viewBox="0 0 240 34"><polyline points="0,28 30,22 60,25 90,14 120,18 150,9 180,16 210,6 240,12" fill="none" stroke="var(--a-accent)" stroke-width="1.6"/></svg>
+        <div class="acct-cta"><button class="btn-ghost" style="flex:1">充值</button><button class="btn-primary" style="flex:1">管理订阅</button></div>
+      </div></div></div>
+      <div class="tile"><div class="tile-lbl">已登录 · 仅余额<span class="tag warn">balance</span></div><div class="tile-b" style="padding:0"><div class="acct" style="box-shadow:none;border:0;border-radius:0">
+        <div class="acct-top"><span class="acct-av">L</span><div class="acct-id"><b>李彪</b><small>未订阅 · 按量计费</small></div><span class="plan" style="background:var(--a-bg-muted);color:var(--a-text-secondary)">FREE</span></div>
+        <div class="acct-bal">¥6.20 <small>余额偏低</small></div>
+        <div class="acct-cta"><button class="btn-primary btn-block">充值 / 订阅会员</button></div>
+      </div></div></div>
+      <div class="tile"><div class="tile-lbl">未登录<span class="tag">out</span></div><div class="tile-b" style="padding:0"><div class="acct" style="box-shadow:none;border:0;border-radius:0">
+        <div class="acct-top"><span class="acct-av" style="background:var(--a-bg-muted);color:var(--a-text-tertiary)">?</span><div class="acct-id"><b>未登录</b><small>登录后解锁代理节点</small></div></div>
+        <div class="acct-cta"><button class="btn-primary btn-block"><svg class="ic sm" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>登录</button></div>
+      </div></div></div>
+      <div class="tile"><div class="tile-lbl">加载中<span class="tag wait">loading</span></div><div class="tile-b"><div style="display:flex;gap:10px;align-items:center"><div class="sk" style="width:36px;height:36px;border-radius:50%"></div><div style="flex:1"><div class="sk" style="height:11px;width:60%;margin-bottom:7px"></div><div class="sk" style="height:9px;width:85%"></div></div></div><div class="sk" style="height:6px;width:100%;margin-top:6px"></div></div></div>
+      <div class="tile"><div class="tile-lbl">断网 / 错误<span class="tag err">error</span></div><div class="tile-b"><div class="empty-state"><div class="ei" style="color:var(--a-error)"><svg class="ic" viewBox="0 0 24 24"><path d="M1 1l22 22M16.7 11.7A6 6 0 0 0 12 10M5 12.5a10 10 0 0 1 4-2.5M8.5 16.5a5 5 0 0 1 7 0"/></svg></div><b>账户信息加载失败</b>检查网络后重试</div><button class="btn-ghost btn-block">重试</button></div></div>
+    </div>
+  </section>
+
+  <!-- ===== 2 FORM ===== -->
+  <section class="sec" id="form">
+    <div class="sec-h"><span class="k">P0 · 02</span><h2>表单状态(供应商接入 / Key 校验)</h2></div>
+    <p>一个字段走完生命周期:空 → 聚焦 → 校验错 → 验证中 → 通过 / 失败;保存按钮随有效性启停;模型 ID 自动识别成功/失败。</p>
+    <div class="tiles">
+      <div class="tile"><div class="tile-lbl">空 / 默认</div><div class="tile-b"><div class="field-l">API Key</div><div class="inp"><input placeholder="sk-…" /></div><div class="fmsg hint">仅本机保存,经 keychain 注入</div></div></div>
+      <div class="tile"><div class="tile-lbl">聚焦<span class="tag wait">focus</span></div><div class="tile-b"><div class="field-l">API Key</div><div class="inp focus"><input value="sk-or-v1-abc" /></div></div></div>
+      <div class="tile"><div class="tile-lbl">校验错<span class="tag err">error</span></div><div class="tile-b"><div class="field-l">Base URL</div><div class="inp err"><input value="htp:/bad-url" /></div><div class="fmsg err">URL 格式不正确,需 https://…</div></div></div>
+      <div class="tile"><div class="tile-lbl">验证中<span class="tag wait">verifying</span></div><div class="tile-b"><div class="field-l">API Key</div><div class="inp"><input value="sk-or-v1-•••" disabled /><span class="sp" style="color:var(--a-accent)"></span></div><div class="fmsg wait">正在验证 Key…</div></div></div>
+      <div class="tile"><div class="tile-lbl">验证通过<span class="tag ok">ok</span></div><div class="tile-b"><div class="field-l">API Key</div><div class="inp ok"><input value="sk-or-v1-•••" disabled /><svg class="ic sm" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg></div><div class="fmsg ok">已连接 · 可用 12 个模型</div></div></div>
+      <div class="tile"><div class="tile-lbl">验证失败<span class="tag err">failed</span></div><div class="tile-b"><div class="field-l">API Key</div><div class="inp err"><input value="sk-bad" disabled /><svg class="ic sm" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></div><div class="fmsg err">Key 无效(401)</div></div></div>
+      <div class="tile"><div class="tile-lbl">禁用</div><div class="tile-b"><div class="field-l">Base URL</div><div class="inp dis"><input value="由 alpha 托管" disabled /></div><div class="fmsg hint">国内厂商无需填</div></div></div>
+      <div class="tile"><div class="tile-lbl">模型 ID 识别<span class="tag ok">auto</span></div><div class="tile-b"><div class="inp"><span style="color:var(--a-text-tertiary);font-size:11px">ID</span><input class="mono" value="anthropic/claude-opus-4.1" disabled /></div><div class="fmsg ok">识别:旗舰 · 支持 effort</div></div></div>
+      <div class="tile"><div class="tile-lbl">ID 无法识别<span class="tag warn">manual</span></div><div class="tile-b"><div class="inp"><span style="color:var(--a-text-tertiary);font-size:11px">ID</span><input class="mono" value="my-org/custom-x" disabled /></div><div class="fmsg hint">未识别,默认 标准 · 可手动改</div></div></div>
+      <div class="tile"><div class="tile-lbl">保存:禁用→可用</div><div class="tile-b"><button class="btn-primary dis btn-block">保存(待校验)</button><button class="btn-primary btn-block">保存节点</button></div></div>
+    </div>
+  </section>
+
+  <!-- ===== 3 COMPOSER ===== -->
+  <section class="sec" id="composer">
+    <div class="sec-h"><span class="k">P0 · 03</span><h2>输入框运行态</h2></div>
+    <p>静息 / 聚焦 / 有内容 / 生成中(stop)/ shell 模式 / 拖拽 / 发送失败 / 多行。</p>
+    <div class="tiles">
+      <div class="tile"><div class="tile-lbl">静息(空)</div><div class="tile-b" style="padding:12px"><div class="composer"><div class="in empty">问点什么…</div><div class="bar"><span class="chip">+</span><div class="grow"></div><span class="chip"><span class="pico">α</span>Opus 4.8</span><button class="send"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></div></div></div></div>
+      <div class="tile"><div class="tile-lbl">聚焦 + 有内容<span class="tag wait">focus</span></div><div class="tile-b" style="padding:12px"><div class="composer focus"><div class="in">给 Button 加 loading</div><div class="bar"><span class="chip">+</span><div class="grow"></div><span class="chip">◷ 38%</span><span class="chip"><span class="pico">α</span>Opus 4.8</span><button class="send on"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></div></div></div></div>
+      <div class="tile"><div class="tile-lbl">生成中(可停)<span class="tag wait">running</span></div><div class="tile-b" style="padding:12px"><div class="composer"><div class="in empty">回复生成中…</div><div class="bar"><span class="chip">+</span><div class="grow"></div><span class="chip" style="color:var(--a-accent)"><span class="sp" style="width:11px;height:11px"></span>工作中</span><button class="send stop"><svg class="ic sm" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/></svg></button></div></div></div></div>
+      <div class="tile"><div class="tile-lbl">Shell 模式(!)<span class="tag">shell</span></div><div class="tile-b" style="padding:12px"><div class="composer"><div class="in mono">git status</div><div class="bar"><span class="chip"><svg class="ic sm" viewBox="0 0 24 24"><path d="M7 8l3 3-3 3M13 16h4"/></svg>Shell</span><div class="grow"></div><button class="send on"><svg class="ic sm" viewBox="0 0 24 24"><path d="M9 10l-5 5 5 5M4 15h11a5 5 0 0 0 5-5V4"/></svg></button></div></div></div></div>
+      <div class="tile"><div class="tile-lbl">拖拽悬停<span class="tag wait">drag</span></div><div class="tile-b" style="padding:12px"><div class="composer drag"><div class="in" style="text-align:center;color:var(--a-accent);padding:18px 14px"><svg class="ic" viewBox="0 0 24 24" style="margin:0 auto 6px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>松开以添加文件 / 图片</div></div></div></div>
+      <div class="tile"><div class="tile-lbl">发送失败<span class="tag err">error</span></div><div class="tile-b" style="padding:12px"><div class="composer"><div style="padding:8px 12px 0"><div class="cbanner err"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>发送失败 · 网络错误<span style="margin-left:auto;cursor:pointer;text-decoration:underline">重试</span></div></div><div class="in">检查类型再跑构建</div><div class="bar"><span class="chip">+</span><div class="grow"></div><button class="send on"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></div></div></div></div>
+      <div class="tile"><div class="tile-lbl">模型未配置<span class="tag warn">setup</span></div><div class="tile-b" style="padding:12px"><div class="composer"><div class="in empty">先连接一个模型…</div><div class="bar"><span class="chip">+</span><div class="grow"></div><span class="chip" style="color:var(--a-accent)"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>连接模型</span><button class="send dis"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></div></div></div></div>
+      <div class="tile"><div class="tile-lbl">多行增高</div><div class="tile-b" style="padding:12px"><div class="composer"><div class="in" style="min-height:60px">第一行<br/>第二行<br/>第三行…(到上限后内部滚动)</div><div class="bar"><span class="chip">+</span><div class="grow"></div><button class="send on"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></div></div></div></div>
+    </div>
+  </section>
+
+  <!-- ===== 4 SIDEBAR ===== -->
+  <section class="sec" id="sidebar">
+    <div class="sec-h"><span class="k">P0 · 04</span><h2>侧栏状态</h2></div>
+    <p>底部登录/未登录 · 空(无项目)· 加载骨架 · 搜索有/无结果 · 重命名 inline · 归档恢复 · 未读。</p>
+    <div class="tiles">
+      <div class="tile"><div class="tile-lbl">底部 · 已登录</div><div class="tile-b"><div style="display:flex;align-items:center;gap:9px"><span class="acct-av" style="width:26px;height:26px;font-size:11px">L</span><div style="flex:1"><b style="font-size:var(--a-text-sm);font-weight:500;display:block">李彪</b><small style="font-size:var(--a-text-2xs);color:var(--a-text-tertiary)">Pro · ¥48.00</small></div><svg class="ic sm" viewBox="0 0 24 24" style="color:var(--a-text-tertiary)"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8M4.6 9a1.6 1.6 0 0 0-.3-1.8"/></svg></div></div></div>
+      <div class="tile"><div class="tile-lbl">底部 · 未登录<span class="tag">out</span></div><div class="tile-b"><button class="btn-primary btn-block"><svg class="ic sm" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>登录解锁云端</button></div></div>
+      <div class="tile"><div class="tile-lbl">空 · 无项目<span class="tag">empty</span></div><div class="tile-b"><div class="empty-state"><div class="ei"><svg class="ic" viewBox="0 0 24 24"><path d="M3 7l2-3h5l2 3h7v11H3z"/></svg></div><b>还没有项目</b>打开一个本地目录开始</div><button class="btn-primary btn-block">打开项目</button></div></div>
+      <div class="tile"><div class="tile-lbl">加载骨架<span class="tag wait">loading</span></div><div class="tile-b"><div class="sk" style="height:11px;width:50%;margin-bottom:9px"></div><div class="sk" style="height:9px;width:80%;margin-bottom:7px"></div><div class="sk" style="height:9px;width:65%;margin-bottom:7px"></div><div class="sk" style="height:9px;width:88%"></div></div></div>
+      <div class="tile"><div class="tile-lbl">搜索 · 有结果</div><div class="tile-b"><div class="srow"><span class="t">李彪<span class="hl">技能</span>查询</span></div><div class="srow"><span class="t">你有哪些<span class="hl">技能</span></span></div></div></div>
+      <div class="tile"><div class="tile-lbl">搜索 · 无结果<span class="tag">empty</span></div><div class="tile-b"><div class="empty-state"><div class="ei"><svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg></div><b>无匹配</b>换个关键词试试</div></div></div>
+      <div class="tile"><div class="tile-lbl">重命名 inline<span class="tag wait">editing</span></div><div class="tile-b"><div class="srow-edit"><input value="Sakana 架构分析" /></div><div style="font-size:var(--a-text-2xs);color:var(--a-text-tertiary);margin-top:4px">⏎ 保存 · Esc 取消</div></div></div>
+      <div class="tile"><div class="tile-lbl">未读 + 归档恢复</div><div class="tile-b"><div class="srow"><span class="t">新消息会话</span><span class="unread"></span></div><div class="srow hover" style="color:var(--a-text-tertiary)"><svg class="ic sm" viewBox="0 0 24 24"><path d="M21 8v13H3V8M1 3h22v5H1z"/></svg><span>已归档(3)· 恢复</span></div></div></div>
+    </div>
+  </section>
+
+  <!-- ===== 5 EMPTY ===== -->
+  <section class="sec" id="empty">
+    <div class="sec-h"><span class="k">P1 · 05</span><h2>空状态合集</h2></div>
+    <p>首页空 · 新会话空 · 模型无结果 · 定制中心空。</p>
+    <div class="tiles">
+      <div class="tile"><div class="tile-lbl">首页 · 无项目</div><div class="tile-b" style="min-height:120px"><div class="empty-state"><div class="ei" style="width:44px;height:44px"><span style="font-weight:800;color:var(--a-accent)">α</span></div><b>还没有项目</b>打开一个本地目录,开始第一个对话</div><button class="btn-primary" style="align-self:center">打开项目</button></div></div>
+      <div class="tile"><div class="tile-lbl">新会话 · 无消息</div><div class="tile-b" style="min-height:120px"><div class="empty-state"><b style="font-size:var(--a-text-md)">开始新对话</b>问代码、跑命令、查文档<div style="display:flex;flex-direction:column;gap:6px;margin-top:10px"><div class="srow hover" style="justify-content:center">/init 初始化项目</div><div class="srow hover" style="justify-content:center">@ 引用文件</div></div></div></div></div>
+      <div class="tile"><div class="tile-lbl">模型 · 搜索无结果</div><div class="tile-b"><div class="empty-state"><div class="ei"><svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg></div><b>没有匹配的模型</b>试试「添加自定义节点」</div></div></div>
+      <div class="tile"><div class="tile-lbl">定制中心 · 空/无结果</div><div class="tile-b"><div class="empty-state"><div class="ei"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg></div><b>未找到连接器</b>从市场浏览或导入</div></div></div>
+    </div>
+  </section>
+
+  <!-- ===== 6 ASYNC ===== -->
+  <section class="sec" id="async">
+    <div class="sec-h"><span class="k">P1 · 06</span><h2>异步生命周期</h2></div>
+    <p>每个动作四态:idle → 进行中 → 成功 → 失败。安装套件 / 连接模型 / 登录 / 充值。</p>
+    <div class="tiles">
+      <div class="tile"><div class="tile-lbl">安装套件 · idle</div><div class="tile-b"><button class="btn-primary btn-block">添加</button></div></div>
+      <div class="tile"><div class="tile-lbl">安装中<span class="tag wait">installing</span></div><div class="tile-b"><button class="btn-primary btn-block dis"><span class="sp"></span>安装中 2/3…</button></div></div>
+      <div class="tile"><div class="tile-lbl">已安装<span class="tag ok">done</span></div><div class="tile-b"><button class="btn-ghost btn-block" style="color:var(--a-success);border-color:var(--a-success-subtle)"><svg class="ic sm" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>已安装</button></div></div>
+      <div class="tile"><div class="tile-lbl">安装失败<span class="tag err">failed</span></div><div class="tile-b"><button class="btn-danger btn-block"><svg class="ic sm" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>失败 · 重试</button><div class="fmsg err" style="text-align:center">缺少运行时 uv</div></div></div>
+      <div class="tile"><div class="tile-lbl">登录中</div><div class="tile-b"><button class="btn-primary btn-block dis"><span class="sp"></span>等待浏览器授权…</button></div></div>
+      <div class="tile"><div class="tile-lbl">登录成功<span class="tag ok">ok</span></div><div class="tile-b"><div class="toast" style="box-shadow:none;border-color:var(--a-success-subtle)"><span class="ti ok"><svg class="ic sm" viewBox="0 0 24 24" style="stroke:#fff"><path d="M20 6L9 17l-5-5"/></svg></span>已登录 · 欢迎回来</div></div></div>
+      <div class="tile"><div class="tile-lbl">登录失败<span class="tag err">err</span></div><div class="tile-b"><div class="toast" style="box-shadow:none;border-color:var(--a-error-subtle)"><span class="ti err"><svg class="ic sm" viewBox="0 0 24 24" style="stroke:#fff"><path d="M12 8v5M12 16h.01"/></svg></span>授权失败 · 重试</div></div></div>
+      <div class="tile"><div class="tile-lbl">充值成功</div><div class="tile-b"><div class="toast" style="box-shadow:none"><span class="ti info"><svg class="ic sm" viewBox="0 0 24 24" style="stroke:#fff"><path d="M12 5v14M5 12h14"/></svg></span>已到账 ¥50.00</div></div></div>
+    </div>
+  </section>
+
+  <!-- ===== 7 CHAT SPECIAL ===== -->
+  <section class="sec" id="chat">
+    <div class="sec-h"><span class="k">P1 · 07</span><h2>对话特殊态(含你新点的)</h2></div>
+    <p>错误消息 · 中断态 · 长输出「展开更多」· 工具卡完成自动折叠 · <b>多 read 折一行摘要(Codex 风)</b> · 消息悬停操作。</p>
+    <div class="tiles">
+      <div class="tile wide"><div class="tile-lbl">错误消息<span class="tag err">error</span></div><div class="tile-b"><div class="errmsg"><div class="h"><svg class="ic sm" viewBox="0 0 24 24" style="color:var(--a-error)"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>模型返回错误</div><div style="color:var(--a-text-secondary);margin:6px 0 10px">upstream 529 · 服务繁忙</div><div style="display:flex;gap:8px"><button class="btn-ghost">重试</button><button class="btn-ghost">换模型</button></div></div></div></div>
+      <div class="tile wide"><div class="tile-lbl">中断态(用户 stop)<span class="tag warn">stopped</span></div><div class="tile-b"><div class="bubble" style="background:var(--a-bg-subtle);border-color:var(--a-border-faint);color:var(--a-text-secondary)">…已生成一半</div><div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:var(--a-text-xs);color:var(--a-text-tertiary)"><svg class="ic sm" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>已由你停止<button class="btn-ghost" style="height:26px;margin-left:auto">继续生成</button></div></div></div>
+      <div class="tile wide"><div class="tile-lbl">长输出「展开更多」</div><div class="tile-b" style="padding:0"><div class="tc" style="border:0;border-radius:0"><div class="tc-head"><span class="tc-ico" style="background:#18181b"><svg class="ic sm" viewBox="0 0 24 24"><path d="M7 8l3 3-3 3M13 16h4"/></svg></span><div class="tc-b"><b><span class="tgt">bun test</span></b></div><span class="tc-st ok">退出 0</span></div><pre style="margin:0;padding:10px 13px;font-family:var(--a-font-mono);font-size:var(--a-text-xs);color:var(--a-text-secondary);max-height:60px;overflow:hidden">✓ test 1
+✓ test 2
+✓ test 3 …(共 142 行)</pre><div class="showmore">展开全部 142 行 ▾</div></div></div></div>
+      <div class="tile"><div class="tile-lbl">工具卡 · 运行=展开</div><div class="tile-b" style="padding:10px"><div class="tc"><div class="tc-head"><span class="tc-ico" style="background:#d97706"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><div class="tc-b"><b>子任务</b></div><span class="tc-st run"><span class="sp" style="width:9px;height:9px"></span>运行中</span></div><pre style="margin:0;padding:8px 12px;border-top:1px solid var(--a-border-faint);font-family:var(--a-font-mono);font-size:var(--a-text-xs);color:var(--a-text-tertiary)">分析中…</pre></div></div></div>
+      <div class="tile"><div class="tile-lbl">工具卡 · 完成=收起</div><div class="tile-b" style="padding:10px"><div class="tc"><div class="tc-head"><span class="tc-ico" style="background:#16a34a"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></span><div class="tc-b"><b>编辑 <span class="tgt">button.css</span></b></div><span class="tc-st ok"><svg class="ic sm" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg></span><svg class="ic sm" viewBox="0 0 24 24" style="color:var(--a-text-tertiary);margin-left:6px"><path d="M9 6l6 6-6 6"/></svg></div></div></div></div>
+      <div class="tile wide"><div class="tile-lbl">多 read/grep 折一行摘要(Codex 风)<span class="tag">new</span></div><div class="tile-b" style="padding:10px"><div class="tc"><div class="tc-head"><span class="tc-ico" style="background:#0891b2"><svg class="ic sm" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="2.5"/></svg></span><div class="tc-b"><b>读取了 5 个文件</b> <span class="tgt">Button.tsx · button.css · Input.tsx · +2</span></div><svg class="ic sm" viewBox="0 0 24 24" style="color:var(--a-text-tertiary)"><path d="M9 6l6 6-6 6"/></svg></div></div><div style="font-size:var(--a-text-2xs);color:var(--a-text-tertiary);margin-top:6px">连发的同类工具合并成一行,点开看明细 —— 避免刷屏。</div></div></div>
+      <div class="tile wide"><div class="tile-lbl">消息悬停操作</div><div class="tile-b"><div style="display:flex;align-items:center;gap:8px;font-size:var(--a-text-xs);color:var(--a-text-tertiary)"><span>Opus 4.8 · 12s · 3.2k</span><span style="margin-left:auto;display:flex;gap:3px">
+        <button class="btn-ghost" style="width:28px;height:28px;padding:0" title="复制"><svg class="ic sm" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+        <button class="btn-ghost" style="width:28px;height:28px;padding:0" title="重试"><svg class="ic sm" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></svg></button>
+        <button class="btn-ghost" style="width:28px;height:28px;padding:0" title="编辑"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>
+        <button class="btn-ghost" style="width:28px;height:28px;padding:0" title="分支"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="9" r="2"/><path d="M6 8v8M18 11a6 6 0 0 1-6 6H8"/></svg></button>
+      </span></div></div></div>
+    </div>
+  </section>
+
+  <!-- ===== 8 ONBOARDING ===== -->
+  <section class="sec" id="onboard">
+    <div class="sec-h"><span class="k">P1 · 08</span><h2>onboarding 三步</h2></div>
+    <div class="tiles">
+      <div class="tile"><div class="tile-lbl">第 1 步 · 登录</div><div class="tile-b"><div class="ob-step now"><span class="n">1</span>登录账号</div><div class="ob-step"><span class="n">2</span>选择模型</div><div class="ob-step"><span class="n">3</span>打开项目</div><button class="btn-primary btn-block" style="margin-top:4px">登录解锁</button></div></div>
+      <div class="tile"><div class="tile-lbl">第 2 步 · 选模型</div><div class="tile-b"><div class="ob-step done"><span class="n"><svg class="ic sm" viewBox="0 0 24 24" style="stroke:#fff"><path d="M20 6L9 17l-5-5"/></svg></span>登录账号</div><div class="ob-step now"><span class="n">2</span>选择模型</div><div class="ob-step"><span class="n">3</span>打开项目</div></div></div>
+      <div class="tile"><div class="tile-lbl">第 3 步 · 开项目</div><div class="tile-b"><div class="ob-step done"><span class="n"><svg class="ic sm" viewBox="0 0 24 24" style="stroke:#fff"><path d="M20 6L9 17l-5-5"/></svg></span>登录账号</div><div class="ob-step done"><span class="n"><svg class="ic sm" viewBox="0 0 24 24" style="stroke:#fff"><path d="M20 6L9 17l-5-5"/></svg></span>选择模型</div><div class="ob-step now"><span class="n">3</span>打开第一个项目</div></div></div>
+      <div class="tile"><div class="tile-lbl">跳过 → BYOK</div><div class="tile-b"><div class="empty-state"><b>不想登录?</b>用自带 Key(BYOK)也能干活,随时再登录解锁代理节点</div><button class="btn-ghost btn-block">跳过,配置 BYOK</button></div></div>
+    </div>
+  </section>
+
+  <!-- ===== 9 INTERACTIVE ===== -->
+  <section class="sec" id="interactive">
+    <div class="sec-h"><span class="k">跨切 · 09</span><h2>交互态参考(每个可点元素的全档)</h2></div>
+    <p>按钮 / chip / 行 / 菜单项的 default · hover · active · selected · disabled · focus。开发对照取色。</p>
+    <div class="tiles">
+      <div class="tile wide"><div class="tile-lbl">按钮 · 主</div><div class="tile-b"><div class="sw-row"><div class="istate"><button class="btn-primary">默认</button>default</div><div class="istate"><button class="btn-primary" style="background:var(--a-accent-solid-hover)">悬停</button>hover</div><div class="istate"><button class="btn-primary" style="background:var(--a-accent-solid-active);transform:translateY(.5px) scale(.99)">按下</button>active</div><div class="istate"><button class="btn-primary" style="box-shadow:var(--a-ring-focus)">聚焦</button>focus</div><div class="istate"><button class="btn-primary dis">禁用</button>disabled</div><div class="istate"><button class="btn-primary"><span class="sp"></span></button>loading</div></div></div></div>
+      <div class="tile wide"><div class="tile-lbl">按钮 · 次 / 危险</div><div class="tile-b"><div class="sw-row"><div class="istate"><button class="btn-ghost">次默认</button>default</div><div class="istate"><button class="btn-ghost" style="background:var(--a-bg-muted);border-color:var(--a-border-strong)">悬停</button>hover</div><div class="istate"><button class="btn-ghost dis">禁用</button>disabled</div><div class="istate"><button class="btn-danger">删除</button>danger</div><div class="istate"><button class="btn-danger" style="background:var(--a-error-subtle)">悬停</button>danger·hover</div></div></div></div>
+      <div class="tile"><div class="tile-lbl">chip</div><div class="tile-b"><div class="sw-row"><div class="istate"><span class="chip" style="border-color:var(--a-border)">默认</span>default</div><div class="istate"><span class="chip" style="background:var(--a-bg-muted);color:var(--a-text)">悬停</span>hover</div><div class="istate"><span class="chip" style="background:var(--a-accent-subtle);color:var(--a-accent)">选中</span>selected</div></div></div></div>
+      <div class="tile"><div class="tile-lbl">列表行</div><div class="tile-b"><div class="srow">默认行</div><div class="srow hover">悬停行</div><div class="srow sel">选中行</div></div></div>
+      <div class="tile"><div class="tile-lbl">菜单项</div><div class="tile-b"><div class="srow">默认项</div><div class="srow hover">悬停项</div><div class="srow" style="color:var(--a-error)"><svg class="ic sm" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>危险项</div></div></div>
+      <div class="tile"><div class="tile-lbl">开关 / switch</div><div class="tile-b"><div class="sw-row"><div class="istate"><span class="sw"></span>off</div><div class="istate"><span class="sw on"></span>on</div><div class="istate"><span class="sw" style="opacity:.5"></span>disabled</div></div></div></div>
+    </div>
+  </section>
+
+  <!-- ===== 10 CONVERSATION ACTIONS ===== -->
+  <section class="sec" id="convo">
+    <div class="sec-h"><span class="k">新增 · 10</span><h2>会话操作:复制整段 / 只读分享</h2></div>
+    <p>你点的:复制整段对话、只读分享。挂在会话「⋯」菜单 + 分享弹框。</p>
+    <div class="tiles">
+      <div class="tile"><div class="tile-lbl">会话菜单(含新增项)</div><div class="tile-b"><div class="srow hover"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>重命名</div><div class="srow hover"><svg class="ic sm" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>复制整段对话</div><div class="srow hover"><svg class="ic sm" viewBox="0 0 24 24"><path d="M4 12v8h16v-8M16 6l-4-4-4 4M12 2v13"/></svg>只读分享</div><div class="srow hover" style="color:var(--a-error)"><svg class="ic sm" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2"/></svg>删除</div></div></div>
+      <div class="tile wide"><div class="tile-lbl">只读分享弹框</div><div class="tile-b"><div style="border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);background:var(--a-surface-raised);box-shadow:var(--a-shadow-md);padding:14px"><b style="font-size:var(--a-text-md)">分享只读链接</b><p style="font-size:var(--a-text-xs);color:var(--a-text-tertiary);margin:4px 0 10px">任何有链接的人可查看(只读)。可随时停用。</p><div class="inp"><input class="mono" value="https://tidelabs.click/s/a8f2…" readonly /><button class="btn-primary" style="height:26px">复制</button></div><div style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:var(--a-text-xs);color:var(--a-text-secondary)"><span class="sw on" style="transform:scale(.85)"></span>允许访问 · <span style="color:var(--a-error);cursor:pointer">停用链接</span></div></div></div></div>
+    </div>
+  </section>
+
+  <div class="note"><b>不是视觉态、但要在实现里办的(你点的两项)</b>:① <b>长 transcript 虚拟滚动</b> —— 复用 opencode timeline 的 virtualizer(已存在),保证千行会话不卡;② <b>滚动锚定</b> —— 流式时自动跟随底部,用户一旦上滚就<b>停止跟随</b>并显「回到底部」按钮(已设计),恢复底部后重新跟随。两者是行为/性能,无独立视觉稿,但写实现时按此。</div>
+  <div class="note"><b>状态目录用法</b>:开发每做一个组件,对照本页把它的全部态都实现(尤其 未登录 / 校验错 / 进行中 / 空)。绿/红/蓝/黄四色语义统一取自 <span class="mono">--a-success/error/accent/warning</span>。</div>
+</div>
+<script>
+document.querySelectorAll('#themeSeg button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#themeSeg button').forEach(x=>x.classList.remove('on'));b.classList.add('on');document.documentElement.setAttribute('data-theme',b.dataset.theme);});
+</script>
+</body>
+</html>

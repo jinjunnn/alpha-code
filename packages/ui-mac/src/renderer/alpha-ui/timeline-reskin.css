@@ -1,0 +1,109 @@
+/* Alpha reskin of opencode's chat message timeline — CSS ONLY, no component code touched.
+ * Gives tool parts / reasoning / bash / outputs the alpha card language via opencode's own
+ * data-hooks. Deliberately GENTLE: color/border/radius/spacing only — no display/position
+ * restructuring — so it can't break the timeline layout. Visual fine-tuning happens in the
+ * Phase 6 CDP screenshot pass.
+ *
+ * COUPLING (cosmetic; re-point if an upstream bump renames these): tool-part-wrapper,
+ * tool-trigger, basic-tool-tool-title, bash-output/bash-pre, tool-output, reasoning-part,
+ * edit-content/write-content, todos, question-answers, task-tool-card, context-tool-group-*.
+ * Targets are timeline-SPECIFIC hooks only (never the generic button/icon/markdown ones). */
+@import "./tokens.css";
+
+/* ── Reasoning / thinking — give it a quiet identity (card + accent edge) ──────────────── */
+[data-component="reasoning-part"] {
+  padding: 10px 13px;
+  border: 1px solid var(--a-border-faint);
+  border-left: 2px solid var(--a-accent-border);
+  border-radius: var(--a-radius-md);
+  background: var(--a-bg-subtle);
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-sm);
+}
+
+/* ── Tool card container — every tool part becomes an alpha card (audit: were bare rows) ── */
+[data-component="tool-part-wrapper"] {
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-lg);
+  background: var(--a-surface);
+  box-shadow: var(--a-edge-light);
+  overflow: hidden;
+}
+/* ── Tool trigger (the clickable header) — padding + clean hover, rounded ───────────────── */
+[data-component="tool-trigger"] {
+  padding: 9px 12px;
+  border-radius: var(--a-radius-md);
+  transition: background var(--a-dur-fast) var(--a-ease-out);
+}
+[data-component="tool-trigger"]:hover {
+  background: var(--a-bg-subtle);
+}
+[data-slot="basic-tool-tool-title"] {
+  font-weight: var(--a-weight-medium);
+  color: var(--a-text);
+}
+[data-slot="basic-tool-tool-arg"],
+[data-slot="basic-tool-tool-subtitle"] {
+  color: var(--a-text-tertiary);
+}
+
+/* ── Tool output / bash — mono on a recessed surface, soft radius ─────────────────────── */
+[data-component="bash-output"],
+[data-component="tool-output"],
+[data-component="exa-tool-output"] {
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-md);
+  background: var(--a-bg-subtle);
+  overflow: hidden;
+}
+[data-slot="bash-pre"] {
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-sm);
+  line-height: 1.6;
+  color: var(--a-text-secondary);
+}
+
+/* ── Edit / write / patch bodies — hairline separation from the trigger ───────────────── */
+[data-component="edit-content"],
+[data-component="write-content"],
+[data-component="apply-patch-file-diff"] {
+  border-top: 1px solid var(--a-border-faint);
+}
+[data-slot="accordion-trigger"] {
+  border-radius: var(--a-radius-md);
+}
+[data-slot="accordion-trigger"]:hover {
+  background: var(--a-bg-subtle);
+}
+
+/* ── Todos — checklist on a soft card ─────────────────────────────────────────────────── */
+[data-component="todos"] {
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-lg);
+  background: var(--a-surface);
+  box-shadow: var(--a-edge-light);
+  padding: 6px;
+}
+
+/* ── Question answers — grouped, legible ──────────────────────────────────────────────── */
+[data-component="question-answers"] {
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-lg);
+  background: var(--a-surface);
+  overflow: hidden;
+}
+[data-slot="answer-text"] {
+  font-size: var(--a-text-sm);
+}
+
+/* ── Task subagent card + the multi-tool group fold — alpha edge + clean trigger ──────── */
+[data-component="task-tool-card"] {
+  box-shadow: var(--a-edge-light);
+}
+[data-component="context-tool-group-trigger"] {
+  border-radius: var(--a-radius-md);
+  transition: background var(--a-dur-fast) var(--a-ease-out);
+}
+[data-component="context-tool-group-trigger"]:hover {
+  background: var(--a-bg-subtle);
+}

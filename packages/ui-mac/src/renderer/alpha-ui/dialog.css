@@ -23,14 +23,19 @@
   display: flex;
   flex-direction: column;
   width: min(560px, 92vw);
+  /* Hug content vertically. With `inset:0; margin:auto`, an *auto* height stretches the panel to
+   * the 84vh cap (top+bottom both pinned); an intrinsic height lets margin:auto center it instead,
+   * so short modals (e.g. the install-confirm) no longer render as a tall sparse box. `lg` overrides
+   * with an explicit height below for scroll-heavy content (settings). */
+  height: max-content;
   max-height: 84vh;
   overflow: hidden;
   background: var(--a-surface-raised);
   color: var(--a-text);
   border: 1px solid var(--a-border-faint);
   border-radius: var(--a-radius-2xl);
-  box-shadow: var(--a-shadow-overlay);
-  animation: a-dialog-rise var(--a-dur-slow) var(--a-ease-out);
+  box-shadow: var(--a-shadow-overlay), var(--a-edge-light);
+  animation: a-dialog-rise var(--a-dur-slow) var(--a-ease-spring);
 }
 .a-dialog-panel[data-size="sm"] {
   width: min(420px, 92vw);
