@@ -60,3 +60,76 @@
   color: var(--a-text-tertiary);
   font-variant-numeric: tabular-nums;
 }
+
+/* Account banner (会员 / 余额 / 余额不足 / 未登录) pinned above the model list by model-picker-inject. */
+.a-acct-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 4px 8px;
+  padding: 7px 10px;
+  border-radius: var(--a-radius-md);
+  font-size: var(--a-text-xs);
+  font-weight: var(--a-weight-medium);
+}
+.a-acct-banner .a-ic {
+  flex: none;
+}
+.a-acct-banner.member {
+  background: var(--a-success-subtle);
+  color: var(--a-success);
+}
+.a-acct-banner.balance {
+  background: var(--a-bg-muted);
+  color: var(--a-text-secondary);
+}
+.a-acct-banner.empty {
+  background: var(--a-bg-muted);
+  color: var(--a-warning);
+}
+.a-acct-banner.out {
+  background: var(--a-bg-muted);
+  color: var(--a-text-secondary);
+}
+.a-acct-bb {
+  margin-left: auto;
+  height: 24px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: var(--a-radius-md);
+  background: var(--a-accent-solid);
+  color: #fff;
+  font-size: var(--a-text-xs);
+  font-weight: var(--a-weight-medium);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.a-acct-bb:hover {
+  background: var(--a-accent-solid-hover);
+}
+.a-acct-bbs {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+.a-acct-bbs .a-acct-bb {
+  margin-left: 0;
+}
+.a-acct-bb.ghost {
+  background: transparent;
+  border: 1px solid var(--a-border-strong);
+  color: var(--a-text-secondary);
+}
+.a-ic-2xs {
+  width: 12px;
+  height: 12px;
+}
+
+/* Soft-lock: alpha proxy rows dim + go non-interactive when logged-out / out of balance. */
+[data-slot="list-item"][data-alpha-locked] {
+  opacity: 0.55;
+  pointer-events: none;
+}

@@ -1,17 +1,24 @@
-// ModelPickerInject — decorates opencode's model picker rows with alpha TIER badges (旗舰/高级/标准)
-// + cost multiplier, per the approved model-redesign mockup (§ three-tier selector). opencode's
-// dialog-select-model can't be edited (ADR-016: reuse the heavy engine, restyle), so we observe the
-// popover and append badge nodes to each row. Stable hook (verified live via CDP): each model row is
-// a `[data-slot="list-item"][data-key="<provider>:<modelId>"]` button. A debounced MutationObserver
-// re-decorates after the list re-renders (search filter recreates rows). Idempotent via a marker attr.
+// ModelPickerInject — decorates opencode's model picker to the approved three-tier mockup, WITHOUT
+// editing dialog-select-model (ADR-016: reuse the heavy engine, restyle). Three additive layers, all
+// hung off stable hooks (verified live via CDP):
+//   1. TIER badges (旗舰/高级/标准) + cost multiplier per row — appended to each
+//      `[data-slot="list-item"][data-key="<provider>:<modelId>"]`.
+//   2. ACCOUNT banner (会员 / 余额 / 余额不足 / 未登录) pinned above the list, from window.api auth +
+//      account summary (same contract the sidebar uses).
+//   3. SOFT-LOCK — when logged-out or out of balance, the alpha proxy rows (data-key `alpha:*`) dim
+//      and stop accepting clicks (they need login/credit), with a hint line.
+// A debounced MutationObserver re-applies after the list re-renders (search filter recreates rows).
 
-import { onCleanup, onMount } from "solid-js"
+import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js"
+import { Portal } from "solid-js/web"
+import type { AccountSummary, AuthState } from "../../preload/types"
+import { ALPHA_ENDPOINTS, ALPHA_PATHS } from "../../shared/alpha-config"
 
 type Tier = { cls: "flag" | "pro" | "std"; label: string; mult: string }
 
-// Tier follows the model id. Flagship = the frontier models (×8); premium = strong mid-tier (×3);
-// everything else = standard (×1). Matches the mockup's Opus/GPT-5.5=旗舰, Sonnet/Gemini=高级,
-// DeepSeek=标准. Heuristic by substring so new gateway models slot in without a hardcoded table.
+// Tier follows the model id. Flagship = frontier (×8); premium = strong mid-tier (×3); else standard
+// (×1). Matches the mockup (Opus/GPT-5.5=旗舰, Sonnet/Gemini=高级, DeepSeek=标准). Substring heuristic
+// so new gateway models slot in without a hardcoded table.
 function tierOf(modelId: string): Tier {
   const id = modelId.toLowerCase()
   if (/opus|gpt-5\.5|gpt-5-pro|grok-4/.test(id)) return { cls: "flag", label: "旗舰", mult: "×8" }
@@ -22,12 +29,10 @@ function tierOf(modelId: string): Tier {
 function decorate(row: HTMLElement) {
   if (row.hasAttribute("data-alpha-tier")) return
   const key = row.getAttribute("data-key") || ""
-  // data-key = "<provider>:<modelId>"; modelId may itself contain ":" so keep everything after the 1st.
   const modelId = key.includes(":") ? key.slice(key.indexOf(":") + 1) : key
   if (!modelId) return
   row.setAttribute("data-alpha-tier", "")
   const t = tierOf(modelId)
-  // The row's first child div is the flex line holding the model name (+ any Free/Latest tags).
   const inner = (row.querySelector(":scope > div") as HTMLElement | null) ?? row
   const badge = document.createElement("span")
   badge.className = `a-mp-tier ${t.cls}`
@@ -38,13 +43,103 @@ function decorate(row: HTMLElement) {
   inner.append(badge, mult)
 }
 
+const fmtYuan = (fen: number) => `¥${(fen / 100).toFixed(2)}`
+
+function AccountBanner(props: { state: "member" | "balance" | "empty" | "out"; summary: AccountSummary | null }) {
+  const rechargeUrl = `${ALPHA_ENDPOINTS.web}${ALPHA_PATHS.wallet}?tab=recharge`
+  const subscribeUrl = `${ALPHA_ENDPOINTS.web}${ALPHA_PATHS.wallet}?tab=subscription`
+  const planName = () => (props.summary?.plan.status === "active" ? props.summary.plan.name : "Pro")
+  return (
+    <>
+      <Show when={props.state === "member"}>
+        <div class="a-acct-banner member">
+          <Check /> {planName()} 会员 · 本周期额度充足
+        </div>
+      </Show>
+      <Show when={props.state === "balance"}>
+        <div class="a-acct-banner balance">
+          <Card /> 钱包余额 {fmtYuan(props.summary?.balanceFen ?? 0)} · 未订阅,按量扣费
+        </div>
+      </Show>
+      <Show when={props.state === "empty"}>
+        <div class="a-acct-banner empty lockbar">
+          <Card /> 余额不足 · 充值后解锁
+          <span class="a-acct-bbs">
+            <button class="a-acct-bb" onClick={() => window.api.openLink(rechargeUrl)}>
+              <Plus /> 充值
+            </button>
+            <button class="a-acct-bb ghost" onClick={() => window.api.openLink(subscribeUrl)}>订阅</button>
+          </span>
+        </div>
+      </Show>
+      <Show when={props.state === "out"}>
+        <div class="a-acct-banner out lockbar">
+          <Lock /> 登录解锁代理节点 · 平台计费
+          <button class="a-acct-bb" onClick={() => void window.api.auth.start()}>
+            <Login /> 登录
+          </button>
+        </div>
+      </Show>
+    </>
+  )
+}
+
 export function ModelPickerInject() {
+  const [auth, setAuth] = createSignal<AuthState>({ status: "logged-out", mode: "byok" })
+  const [summary, setSummary] = createSignal<AccountSummary | null>(null)
+  const [bannerHost, setBannerHost] = createSignal<HTMLElement | null>(null)
+
+  onMount(() => {
+    const unsub = window.api.auth.subscribe(setAuth)
+    onCleanup(unsub)
+  })
+  createEffect(() => {
+    if (auth().status !== "logged-in") {
+      setSummary(null)
+      return
+    }
+    window.api.account
+      .summary()
+      .then((r) => {
+        if (r && !("error" in r)) setSummary(r as AccountSummary)
+      })
+      .catch(() => {})
+  })
+
+  const state = createMemo<"member" | "balance" | "empty" | "out">(() => {
+    if (auth().status !== "logged-in") return "out"
+    const s = summary()
+    if (!s) return "balance" // optimistic until the summary lands — don't flash a lock
+    if (s.plan.status === "active") return "member"
+    return s.balanceFen > 0 ? "balance" : "empty"
+  })
+  const locked = createMemo(() => state() === "out" || state() === "empty")
+
   let mo: MutationObserver | undefined
   let timer: ReturnType<typeof setTimeout> | undefined
   const scan = () => {
-    for (const row of document.querySelectorAll<HTMLElement>("[data-slot='list-item'][data-key]")) decorate(row)
+    for (const row of document.querySelectorAll<HTMLElement>("[data-slot='list-item'][data-key]")) {
+      decorate(row)
+      if ((row.getAttribute("data-key") || "").startsWith("alpha:")) {
+        row.toggleAttribute("data-alpha-locked", locked())
+      }
+    }
+    // Pin the account banner above the model list (inside the list container, before the scroll area).
+    const list = document.querySelector("[data-component='list']")
+    const scroll = list?.querySelector("[data-slot='list-scroll']")
+    if (list && scroll) {
+      let h = list.querySelector(":scope > [data-alpha-acct-banner]") as HTMLElement | null
+      if (!h) {
+        h = document.createElement("div")
+        h.setAttribute("data-alpha-acct-banner", "")
+        list.insertBefore(h, scroll)
+      }
+      if (bannerHost() !== h) setBannerHost(h)
+    } else if (bannerHost()) {
+      setBannerHost(null)
+    }
   }
-  // setTimeout (not rAF — rAF is throttled when headless/backgrounded, which would skip decoration).
+  // setTimeout (not rAF — throttled when headless/backgrounded).
   const schedule = () => {
     if (timer) return
     timer = setTimeout(() => {
@@ -52,6 +147,11 @@ export function ModelPickerInject() {
       scan()
     }, 0)
   }
+  // re-run when lock state flips so already-decorated rows update their lock attribute.
+  createEffect(() => {
+    locked()
+    schedule()
+  })
   onMount(() => {
     scan()
     for (const d of [80, 250, 600]) setTimeout(scan, d)
@@ -62,5 +162,37 @@ export function ModelPickerInject() {
     mo?.disconnect()
     if (timer) clearTimeout(timer)
   })
-  return null
+
+  return <Show when={bannerHost()}>{(h) => <Portal mount={h()}><AccountBanner state={state()} summary={summary()} /></Portal>}</Show>
 }
+
+/* ── icons (1.6 stroke, matching the composer chips) ─────────────────────────── */
+const ico = "0 0 24 24"
+const Check = () => (
+  <svg class="a-ic a-ic-sm" viewBox={ico}>
+    <path d="M20 6L9 17l-5-5" />
+  </svg>
+)
+const Card = () => (
+  <svg class="a-ic a-ic-sm" viewBox={ico}>
+    <rect x="2" y="6" width="20" height="13" rx="2" />
+    <path d="M2 10h20" />
+  </svg>
+)
+const Plus = () => (
+  <svg class="a-ic a-ic-2xs" viewBox={ico}>
+    <path d="M12 5v14M5 12h14" />
+  </svg>
+)
+const Lock = () => (
+  <svg class="a-ic a-ic-sm" viewBox={ico}>
+    <rect x="5" y="11" width="14" height="9" rx="2" />
+    <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+  </svg>
+)
+const Login = () => (
+  <svg class="a-ic a-ic-2xs" viewBox={ico}>
+    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+    <path d="M10 17l5-5-5-5M15 12H3" />
+  </svg>
+)
