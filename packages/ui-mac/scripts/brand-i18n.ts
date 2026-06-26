@@ -20,6 +20,12 @@ import type { Plugin } from "vite"
 // Per-locale [from, to] pairs. `from` must be an exact substring of the upstream source.
 // Keyed by the locale dict path so we only ever touch the intended file.
 const REPLACEMENTS: Record<string, ReadonlyArray<readonly [string, string]>> = {
+  // In-session composer placeholder is a HARDCODED literal (not i18n) in upstream
+  // prompt-input.tsx:designPlaceholder(). Rewrite it to the SAME text the alpha home composer
+  // uses (AlphaHome.tsx) so the two surfaces read as one input. Zero disk edit (ADR-005/007).
+  "app/src/components/prompt-input.tsx": [
+    ['"Ask anything, / for commands, @ for context..."', '"问点什么,输入 / 调命令,@ 引用上下文…"'],
+  ],
   "app/src/i18n/en.ts": [
     ["OpenCode Desktop", "alpha-code"],
     ["Change the display language for OpenCode", "Change the display language for alpha-code"],
@@ -50,6 +56,14 @@ const REPLACEMENTS: Record<string, ReadonlyArray<readonly [string, string]>> = {
     ["你正在使用最新版本的 OpenCode。", "你正在使用最新版本的 alpha-code。"],
     ["OpenCode 有新版本 ({{version}}) 可安装。", "alpha-code 有新版本 ({{version}}) 可安装。"],
     ["OpenCode 提供免费模型，你可以立即开始使用。", "alpha-code 提供免费模型，你可以立即开始使用。"],
+    // Sound option fix: upstream zh machine-transliterated "staplebops" to the garbled "斯泰普博普斯"
+    // (sound.option.staplebops01..07). One substring swap cleans all 7 (the " 01".."07" suffix stays);
+    // "嗒啵" matches the 哔啵 (bipbop) style. Upstream source untouched (ADR-005/007).
+    ["斯泰普博普斯", "嗒啵"],
+  ],
+  "app/src/i18n/zht.ts": [
+    // Traditional-zh has the same garbled staplebops transliteration.
+    ["斯泰普博普斯", "嗒啵"],
   ],
 }
 
