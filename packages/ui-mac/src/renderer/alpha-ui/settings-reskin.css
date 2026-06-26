@@ -157,3 +157,21 @@
   font-size: 15px !important;
   line-height: 1 !important;
 }
+
+/* ── Modern alpha toggle (shell.html §C ".sw") ──────────────────────────────────────────
+ * opencode's Switch (Kobalte) → alpha pill: inset track, indigo when on, soft white thumb.
+ * Hooks (switch-v2.tsx): [data-component=switch] root, [data-slot=switch-control] track,
+ * [data-slot=switch-thumb] knob, [data-checked] on root when on. */
+[data-component="switch"] [data-slot="switch-control"] {
+  background: var(--a-bg-inset) !important;
+  border: 0 !important;
+  transition: background var(--a-dur-fast) var(--a-ease-out) !important;
+}
+[data-component="switch"][data-checked] [data-slot="switch-control"] {
+  background: var(--a-accent-solid) !important;
+}
+[data-component="switch"] [data-slot="switch-thumb"] {
+  background: #ffffff !important;
+  box-shadow: var(--a-shadow-xs) !important;
+  border: 0 !important;
+}
