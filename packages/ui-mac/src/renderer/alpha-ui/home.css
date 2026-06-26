@@ -292,6 +292,14 @@ body[data-alpha-sidebar="open"] .a-home {
   border-color: var(--a-border-strong);
   box-shadow: var(--a-shadow-lg);
 }
+/* The composer owns its focus treatment on .a-comp (subtle border + soft shadow). Suppress the global
+ * 3px indigo :focus-visible ring (base.css --a-ring-focus) on the textarea so focusing the input does
+ * NOT draw that heavy accent box around the composer. */
+.a-comp-input:focus,
+.a-comp-input:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
 .a-comp-input {
   display: block;
   width: 100%;

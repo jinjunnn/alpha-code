@@ -1,65 +1,74 @@
-// ComposerInject — makes opencode's in-session composer consistent with AlphaHome's composer by
-// injecting the same alpha chips (权限 + effort) into its toolbar. opencode's prompt-input.tsx can't
-// be edited (ADR-005), so we mount a host <div> into its toolbar DOM (verified to survive Solid's
-// re-renders, cdp-injecttest2.ts) and Portal the chips in. A debounced MutationObserver re-attaches
-// the host when the composer remounts (route changes / new session). The chips reuse the .a-chip
-// styles from home.css, so the two composers read as one design system.
+// ComposerInject — makes opencode's in-session composer match AlphaHome by Portaling the SAME shared
+// chips (权限 + effort, from composer-controls.tsx — the single source AlphaHome also uses) into its
+// toolbar. opencode's prompt-input.tsx can't be edited (ADR-005), so we mount a host <div> into its
+// toolbar DOM (verified to survive Solid's re-renders) and Portal the chips in. A debounced
+// MutationObserver re-attaches the host when the composer remounts (route changes / new session).
 //
-// Wiring: 权限 → opencode's `permissions.autoaccept.enable/disable` command (real). effort → local
-// (opencode's variant/effort context isn't exported; the chip carries intent and the in-session
-// model still runs at server default — same limitation noted for the home composer).
+// Layout parity with home is done in composer-reskin.css via flex `order` + margin-left:auto on
+// opencode's native model button (权限 left · 模型/effort/发送 right). 权限 wires to opencode's real
+// `permissions.autoaccept.*` command; effort is local intent (opencode's effort context isn't exported).
 
-import { createSignal, onCleanup, onMount, Show, For } from "solid-js"
+import { createSignal, onCleanup, onMount, Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import { useCommand } from "@opencode-ai/app"
-
-const EFFORTS = ["低", "中", "高", "超高"] as const
-const ico = "0 0 24 24"
+import { EffortChip, PermChip, type Effort, type PermMode } from "./composer-controls"
 
 export function ComposerInject() {
   const command = useCommand()
-  const [host, setHost] = createSignal<HTMLElement | null>(null)
-  const [perm, setPerm] = createSignal<"full" | "ask">("ask")
-  const [effort, setEffort] = createSignal<(typeof EFFORTS)[number]>("高")
-  const [pop, setPop] = createSignal<null | "perm" | "effort">(null)
+  // Two mount points so the chips land where AlphaHome puts them: 权限 after the +/attach (LEFT), and
+  // effort right after opencode's model button (RIGHT). One shared host can't do this — opencode keeps
+  // + and the model button in separate sub-containers, so flex `order` can't move effort across them.
+  const [permHost, setPermHost] = createSignal<HTMLElement | null>(null)
+  const [effortHost, setEffortHost] = createSignal<HTMLElement | null>(null)
+  const [perm, setPerm] = createSignal<PermMode>("ask")
+  const [effort, setEffort] = createSignal<Effort>("高")
 
-  // The composer toolbar = the flex row that holds opencode's +/model/send (data-slot icon-button /
-  // button). We inject our host right after the first icon-button (the +), so 权限 sits where the
-  // home composer puts it.
-  // The in-session composer (session-composer) anchors its + on data-action="prompt-attach"; the
-  // new-session one uses data-slot="icon-button". Match either, and treat the +'s parent as the
-  // toolbar row we inject into.
   const PLUS_SEL = "[data-action=prompt-attach], [data-slot=icon-button]"
-  const findToolbar = (): HTMLElement | null => {
-    const composer = document.querySelector(
-      "[data-component=session-composer],[data-component=session-new-composer]",
-    )
-    if (!composer) return null
-    const plus = composer.querySelector(PLUS_SEL) as HTMLElement | null
-    return (plus?.parentElement as HTMLElement) ?? null
+
+  // find-or-create a `display:contents` host (children join the toolbar's flex row).
+  const ensureHost = (name: string): HTMLElement => {
+    let h = document.querySelector(`[data-alpha-composer-inject="${name}"]`) as HTMLElement | null
+    if (!h) {
+      h = document.createElement("div")
+      h.setAttribute("data-alpha-composer-inject", name)
+      // A real flex item (not display:contents) so its CSS `order` actually re-positions it relative to
+      // opencode's model button — display:contents hosts let the child's order be ignored by the flex row.
+      h.style.display = "inline-flex"
+      h.style.alignItems = "center"
+    }
+    return h
+  }
+  // Move `h` to sit immediately after `ref` — but ONLY when it isn't already there. Re-checking each
+  // sync lets effort migrate from its fallback to the model wrapper once the model button mounts; the
+  // identity guard makes the move a no-op afterwards (otherwise the re-insert would loop the observer).
+  const placeAfter = (h: HTMLElement, ref: HTMLElement) => {
+    if (ref.nextSibling !== h) ref.parentElement!.insertBefore(h, ref.nextSibling)
   }
 
   const sync = () => {
-    const bar = findToolbar()
-    if (!bar) {
-      if (host()) setHost(null)
+    const composer = document.querySelector(
+      "[data-component=session-composer],[data-component=session-new-composer]",
+    )
+    const plus = composer?.querySelector(PLUS_SEL) as HTMLElement | null
+    const model = composer?.querySelector("[data-action=prompt-model]") as HTMLElement | null
+    if (!composer || !plus) {
+      if (permHost()) setPermHost(null)
+      if (effortHost()) setEffortHost(null)
       return
     }
-    let h = bar.querySelector(":scope > [data-alpha-composer-inject]") as HTMLElement | null
-    if (!h) {
-      h = document.createElement("div")
-      h.setAttribute("data-alpha-composer-inject", "")
-      h.style.display = "contents" // children join the toolbar's flex row
-      const plus = bar.querySelector(PLUS_SEL)
-      if (plus && plus.nextSibling) bar.insertBefore(h, plus.nextSibling)
-      else bar.appendChild(h)
-    }
-    if (host() !== h) setHost(h)
+    // 权限 → right after the +/attach button (LEFT).
+    const ph = ensureHost("perm")
+    placeAfter(ph, plus)
+    if (permHost() !== ph) setPermHost(ph)
+    // effort → right after the model button's wrapper (RIGHT), so it rides next to 模型/发送. Falls
+    // back next to + until the model button mounts, then migrates.
+    const eh = ensureHost("effort")
+    placeAfter(eh, (model?.parentElement as HTMLElement | null) ?? plus)
+    if (effortHost() !== eh) setEffortHost(eh)
   }
 
-  // Debounce with setTimeout, NOT requestAnimationFrame: rAF is throttled/paused when the window is
-  // backgrounded (or driven headlessly), which would leave the chips un-injected. setTimeout fires
-  // regardless.
+  // Debounce with setTimeout, NOT requestAnimationFrame (rAF is throttled when backgrounded/headless,
+  // which would leave the chips un-injected).
   let timer: ReturnType<typeof setTimeout> | undefined
   const schedule = () => {
     if (timer) return
@@ -71,8 +80,6 @@ export function ComposerInject() {
 
   let mo: MutationObserver | undefined
   onMount(() => {
-    // Initial retries cover the case where the composer mounts slightly after us (no mutation to
-    // observe if it was already mid-render), then the observer keeps it attached across remounts.
     sync()
     for (const d of [80, 250, 600, 1200]) setTimeout(sync, d)
     mo = new MutationObserver(schedule)
@@ -83,9 +90,8 @@ export function ComposerInject() {
     if (timer) clearTimeout(timer)
   })
 
-  const setPermMode = (mode: "full" | "ask") => {
+  const setPermMode = (mode: PermMode) => {
     setPerm(mode)
-    setPop(null)
     try {
       command.trigger(mode === "full" ? "permissions.autoaccept.enable" : "permissions.autoaccept.disable")
     } catch {
@@ -93,96 +99,10 @@ export function ComposerInject() {
     }
   }
 
-  // Close popovers on outside click (target-aware — see AlphaHome for why stopPropagation is not
-  // enough under Solid's document-level event delegation).
-  const onDoc = (e: MouseEvent) => {
-    const t = e.target as Element | null
-    if (t && t.closest(".a-pop-wrap")) return
-    setPop(null)
-  }
-  document.addEventListener("click", onDoc)
-  onCleanup(() => document.removeEventListener("click", onDoc))
-  const stop = (e: Event) => e.stopPropagation()
-
   return (
-    <Show when={host()}>
-      {(h) => (
-        <Portal mount={h()}>
-          {/* 权限 */}
-          <div class="a-pop-wrap a-comp-inject-chip">
-            <button
-              class="a-chip a-chip-perm"
-              data-mode={perm()}
-              onClick={(e) => {
-                stop(e)
-                setPop(pop() === "perm" ? null : "perm")
-              }}
-            >
-              <svg class="a-ic a-ic-sm" viewBox={ico}>
-                <path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" />
-              </svg>
-              {perm() === "full" ? "完全访问" : "请求审批"}
-              <svg class="a-ic a-chev" viewBox={ico}>
-                <path d="M6 9l6 6 6-6" />
-              </svg>
-            </button>
-            <Show when={pop() === "perm"}>
-              <div class="a-pop a-pop-up" onClick={stop} style={{ "min-width": "230px" }}>
-                <div class="a-pop-label">运行权限</div>
-                <button class="a-pop-item" classList={{ "is-on": perm() === "full" }} onClick={() => setPermMode("full")}>
-                  <svg class="a-ic" viewBox={ico}>
-                    <path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" />
-                  </svg>
-                  完全访问 <span class="a-pop-desc">允许全部</span>
-                </button>
-                <button class="a-pop-item" classList={{ "is-on": perm() === "ask" }} onClick={() => setPermMode("ask")}>
-                  <svg class="a-ic" viewBox={ico}>
-                    <path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" />
-                    <path d="M9 12l2 2 4-4" />
-                  </svg>
-                  请求审批 <span class="a-pop-desc">逐次询问</span>
-                </button>
-              </div>
-            </Show>
-          </div>
-
-          {/* effort */}
-          <div class="a-pop-wrap a-comp-inject-chip">
-            <button
-              class="a-chip"
-              onClick={(e) => {
-                stop(e)
-                setPop(pop() === "effort" ? null : "effort")
-              }}
-            >
-              <svg class="a-ic a-ic-sm" viewBox={ico}>
-                <path d="M13 2L4.5 12.5h6L11 22l8.5-10.5h-6z" />
-              </svg>
-              <span class="a-comp-eff">{effort()}</span>
-              <svg class="a-ic a-chev" viewBox={ico}>
-                <path d="M6 9l6 6 6-6" />
-              </svg>
-            </button>
-            <Show when={pop() === "effort"}>
-              <div class="a-pop a-pop-up" onClick={stop} style={{ "min-width": "180px" }}>
-                <div class="a-pop-label">推理强度 · effort</div>
-                <For each={EFFORTS}>
-                  {(lv) => (
-                    <button class="a-pop-item" classList={{ "is-on": effort() === lv }} onClick={() => (setEffort(lv), setPop(null))}>
-                      <Show when={effort() === lv} fallback={<span style={{ width: "16px" }} />}>
-                        <svg class="a-ic a-ic-sm" viewBox={ico} style={{ color: "var(--a-accent)" }}>
-                          <path d="M20 6L9 17l-5-5" />
-                        </svg>
-                      </Show>
-                      {lv}
-                    </button>
-                  )}
-                </For>
-              </div>
-            </Show>
-          </div>
-        </Portal>
-      )}
-    </Show>
+    <>
+      <Show when={permHost()}>{(h) => <Portal mount={h()}><PermChip mode={perm()} onChange={setPermMode} /></Portal>}</Show>
+      <Show when={effortHost()}>{(h) => <Portal mount={h()}><EffortChip value={effort()} onChange={setEffort} /></Portal>}</Show>
+    </>
   )
 }

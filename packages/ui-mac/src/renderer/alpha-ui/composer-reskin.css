@@ -70,3 +70,24 @@
   align-self: center;
   display: inline-flex;
 }
+
+/* Match AlphaHome's split toolbar: [+ · 权限] LEFT, [模型 · effort · 发送] RIGHT.
+ * opencode nests the model button inside a flex-1 left-group (so margin-left:auto on the button itself
+ * is inert). We push the model's WRAPPER right (the flex child that directly holds prompt-model —
+ * verified live: moves it ~750px right) and order the injected chips around it. 权限 stays left (order
+ * 1), the model wrapper floats right (order 2 + margin-left:auto), effort follows it (order 3); the
+ * native send button sits outside the left-group on the far right already.
+ * COUPLING (cosmetic): prompt-model action + the left-group being flex; re-point on upstream rename. */
+[data-component="session-composer"] :has(> [data-action="prompt-model"]),
+[data-component="session-new-composer"] :has(> [data-action="prompt-model"]) {
+  margin-left: auto !important;
+  order: 2 !important;
+}
+/* Order the injected HOSTS (real inline-flex items): 权限 stays just after + (order 1), effort rides
+ * after the model wrapper on the right (order 3). */
+[data-alpha-composer-inject="perm"] {
+  order: 1 !important;
+}
+[data-alpha-composer-inject="effort"] {
+  order: 3 !important;
+}

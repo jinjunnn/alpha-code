@@ -13,6 +13,7 @@ import { useLocation, useNavigate } from "@solidjs/router"
 import { useCommand } from "@opencode-ai/app"
 import { useAlphaProjects, type ServerInfo, type AlphaProject } from "../sidebar/use-projects"
 import { sessionHref, newSessionHref, projectLabel } from "../sidebar/route"
+import { PermChip, EffortChip, ModelChip } from "./composer-controls"
 import "./home.css"
 
 function greeting(): string {
@@ -147,72 +148,13 @@ export function AlphaHome(props: { server: Accessor<ServerInfo | undefined> }) {
                     </Show>
                   </div>
 
-                  {/* permission */}
-                  <div class="a-pop-wrap">
-                    <button
-                      class="a-chip a-chip-perm"
-                      data-mode={perm()}
-                      onClick={(e) => {
-                        stop(e)
-                        setPop(pop() === "perm" ? null : "perm")
-                      }}
-                    >
-                      <Shield />
-                      {perm() === "full" ? "完全访问" : "请求审批"}
-                      <Chevron />
-                    </button>
-                    <Show when={pop() === "perm"}>
-                      <div class="a-pop a-pop-up" onClick={stop} style={{ "min-width": "230px" }}>
-                        <div class="a-pop-label">运行权限</div>
-                        <button class="a-pop-item" classList={{ "is-on": perm() === "full" }} onClick={() => togglePerm("full")}>
-                          <Shield /> 完全访问 <span class="a-pop-desc">允许全部</span>
-                        </button>
-                        <button class="a-pop-item" classList={{ "is-on": perm() === "ask" }} onClick={() => togglePerm("ask")}>
-                          <ShieldCheck /> 请求审批 <span class="a-pop-desc">逐次询问</span>
-                        </button>
-                      </div>
-                    </Show>
-                  </div>
+                  {/* 权限 · 模型 · effort — shared composer-controls (single source, also used in-session) */}
+                  <PermChip mode={perm()} onChange={togglePerm} />
 
                   <div class="a-comp-grow" />
 
-                  {/* model (carries server default; switch models in-session) */}
-                  <button class="a-chip a-chip-model" title="会话内可换模型">
-                    <span class="a-pico" style={{ background: "var(--a-accent)" }}>α</span>
-                    ALPHA
-                    <Chevron />
-                  </button>
-
-                  {/* effort */}
-                  <div class="a-pop-wrap">
-                    <button
-                      class="a-chip"
-                      onClick={(e) => {
-                        stop(e)
-                        setPop(pop() === "effort" ? null : "effort")
-                      }}
-                    >
-                      <Bolt />
-                      <span class="a-comp-eff">{effort()}</span>
-                      <Chevron />
-                    </button>
-                    <Show when={pop() === "effort"}>
-                      <div class="a-pop a-pop-up" onClick={stop} style={{ "min-width": "180px" }}>
-                        <div class="a-pop-label">推理强度 · effort</div>
-                        <For each={EFFORTS}>
-                          {(lv) => (
-                            <button
-                              class="a-pop-item"
-                              classList={{ "is-on": effort() === lv }}
-                              onClick={() => (setEffort(lv), setPop(null))}
-                            >
-                              {effort() === lv ? <Check /> : <span style={{ width: "16px" }} />} {lv}
-                            </button>
-                          )}
-                        </For>
-                      </div>
-                    </Show>
-                  </div>
+                  <ModelChip onClick={() => command.trigger("model.choose")} />
+                  <EffortChip value={effort()} onChange={setEffort} />
 
                   {/* send */}
                   <button class="a-comp-send" data-ready={canSend() ? "" : undefined} disabled={!canSend()} onClick={() => void submit()} title="发送">
@@ -308,30 +250,9 @@ const Chevron = () => (
     <path d="M6 9l6 6 6-6" />
   </svg>
 )
-const Shield = () => (
-  <svg class="a-ic a-ic-sm" viewBox={ico}>
-    <path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" />
-  </svg>
-)
-const ShieldCheck = () => (
-  <svg class="a-ic a-ic-sm" viewBox={ico}>
-    <path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" />
-    <path d="M9 12l2 2 4-4" />
-  </svg>
-)
-const Bolt = () => (
-  <svg class="a-ic a-ic-sm" viewBox={ico}>
-    <path d="M13 2L4.5 12.5h6L11 22l8.5-10.5h-6z" />
-  </svg>
-)
 const ArrowUp = () => (
   <svg class="a-ic" viewBox={ico}>
     <path d="M12 19V5M5 12l7-7 7 7" />
-  </svg>
-)
-const Check = () => (
-  <svg class="a-ic a-ic-sm" viewBox={ico} style={{ color: "var(--a-accent)" }}>
-    <path d="M20 6L9 17l-5-5" />
   </svg>
 )
 const FileIcon = () => (

@@ -34,6 +34,7 @@ import "./alpha-ui/composer-reskin.css"
 import "./alpha-ui/model-picker-reskin.css"
 import { ToastViewport } from "./alpha-ui/Toast"
 import { ComposerInject } from "./alpha-ui/composer-inject"
+import { ModelPickerInject } from "./alpha-ui/model-picker-inject"
 import { AlphaSidebar } from "./sidebar/alpha-sidebar"
 import { AlphaHome } from "./alpha-ui/AlphaHome"
 import { setupSettingsBackButton } from "./alpha-ui/settings-back-button"
@@ -401,6 +402,7 @@ render(() => {
               <AlphaHome server={sidebarServer} />
               <ExtensionHub server={sidebarServer} open={extHubOpen} onClose={() => setExtHubOpen(false)} />
               <ComposerInject />
+              <ModelPickerInject />
               <ToastViewport />
             </AppInterface>
           )}

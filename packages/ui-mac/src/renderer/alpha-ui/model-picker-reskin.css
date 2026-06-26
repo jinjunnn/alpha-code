@@ -29,3 +29,34 @@
 [data-popper-positioner]:has([data-slot="list-scroll"]) [data-slot="list-scroll"] {
   padding-inline: 2px;
 }
+
+/* Tier badges (旗舰/高级/标准) + cost multiplier injected per model row by model-picker-inject.tsx,
+ * styled to the mockup's three-tier selector. Pushed to the right edge of the row. */
+.a-mp-tier {
+  flex: none;
+  margin-left: auto;
+  padding: 2px 7px;
+  border-radius: var(--a-radius-full);
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-semibold);
+  line-height: 1.5;
+}
+.a-mp-tier.flag {
+  background: rgba(217, 119, 6, 0.14);
+  color: var(--a-warning);
+}
+.a-mp-tier.pro {
+  background: var(--a-bg-inset);
+  color: var(--a-text-secondary);
+}
+.a-mp-tier.std {
+  background: var(--a-bg-muted);
+  color: var(--a-text-tertiary);
+}
+.a-mp-mult {
+  flex: none;
+  margin-left: 6px;
+  font-size: var(--a-text-2xs);
+  color: var(--a-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
