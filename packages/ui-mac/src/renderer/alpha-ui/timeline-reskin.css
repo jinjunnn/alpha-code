@@ -180,6 +180,14 @@
   line-height: var(--a-leading-normal);
   color: var(--a-text);
 }
+/* opencode boxes the text again inside [data-slot=user-message-text]; with our accent bubble on the
+ * body that reads as a DOUBLE box (#24/#12). Flatten the inner box → one clean bubble. */
+[data-slot="user-message-text"] {
+  background: transparent !important;
+  border: 0 !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+}
 
 /* Assistant text → comfortable reading measure + inline code chips (timeline.html §.ai-md). */
 [data-slot="session-turn-assistant-content"] [data-component="text-part"] {
@@ -193,4 +201,33 @@
   padding: 1px 5px;
   border-radius: 5px;
   font-size: 0.92em;
+}
+
+/* ── B2 · Reading measure — cap the conversation column so prose, tool cards and result
+ *    blocks stop running edge-to-edge (measured ~1537px → overflowed the window, cutting off
+ *    the right side). Centered ~820px column that AUTO-FITS narrow windows (w-full shrinks
+ *    below the cap), the Codex/mockup chat register (timeline.html). The container is a
+ *    data-SLOT (not data-component). COUPLING (cosmetic): re-point on upstream rename. */
+[data-slot="session-turn-message-container"] {
+  max-width: 820px;
+  margin-inline: auto;
+}
+
+/* ── B2 · Fenced code / command-result blocks in assistant markdown → the mockup .codeblock
+ *    (soft card, mono, scrollable) instead of opencode's bare full-width bordered box (the
+ *    "乱七八糟的框" — #9). Inline code keeps its chip styling above. ─────────────────────── */
+[data-slot="session-turn-assistant-content"] pre {
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-md);
+  background: var(--a-bg-subtle);
+  padding: 11px 14px;
+  overflow-x: auto;
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-sm);
+  line-height: 1.6;
+}
+[data-slot="session-turn-assistant-content"] pre code {
+  background: transparent !important;
+  padding: 0 !important;
+  font-size: inherit;
 }

@@ -13,6 +13,7 @@ import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from
 import { Portal } from "solid-js/web"
 import type { AccountSummary, AuthState } from "../../preload/types"
 import { ALPHA_ENDPOINTS, ALPHA_PATHS } from "../../shared/alpha-config"
+import { setExtHubOpen } from "../extensions/ext-hub-state"
 
 type Tier = { cls: "flag" | "pro" | "std"; label: string; mult: string }
 
@@ -26,17 +27,69 @@ function tierOf(modelId: string): Tier {
   return { cls: "std", label: "标准", mult: "×1" }
 }
 
+// Per-provider pico (mockup #20: every row leads with a colored square + initial; alpha proxy = α).
+const PROV_COLOR: Record<string, string> = {
+  alpha: "#4f46e5",
+  deepseek: "#2563eb",
+  zhipuai: "#16a34a",
+  moonshot: "#18181b",
+  kimi: "#18181b",
+  qwen: "#7c3aed",
+  dashscope: "#7c3aed",
+  openrouter: "#18181b",
+}
+const PROV_LETTER: Record<string, string> = {
+  alpha: "α",
+  deepseek: "D",
+  zhipuai: "智",
+  moonshot: "K",
+  kimi: "K",
+  qwen: "通",
+  dashscope: "通",
+  openrouter: "OR",
+}
+// Reasoning dot = model supports effort (mockup: 蓝点). Heuristic on id (no variants data in the DOM).
+const EFFORT_RE = /reasoner|thinking|-r1|opus|sonnet|gpt-5|gemini|o1|o3|grok-4|glm-4\.6|qwq/i
+
 function decorate(row: HTMLElement) {
   if (row.hasAttribute("data-alpha-tier")) return
   const key = row.getAttribute("data-key") || ""
   // Model rows are keyed `<provider>:<modelId>`. The provider-SELECT dialog reuses the same list with
   // bare provider keys (no colon) — skip those so providers don't get a spurious tier badge.
   if (!key.includes(":")) return
+  const provider = key.slice(0, key.indexOf(":"))
   const modelId = key.slice(key.indexOf(":") + 1)
   if (!modelId) return
   row.setAttribute("data-alpha-tier", "")
   const t = tierOf(modelId)
+  const isAlpha = provider === "alpha"
   const inner = (row.querySelector(":scope > div") as HTMLElement | null) ?? row
+
+  // leading provider/α pico
+  const pico = document.createElement("span")
+  pico.className = "a-mp-pico"
+  pico.style.background = PROV_COLOR[provider] || "#71717a"
+  pico.textContent = PROV_LETTER[provider] || provider.slice(0, 1).toUpperCase()
+
+  // name → two lines (name + "经代理 · 旗舰" / model-id subtitle)
+  const nameSpan = inner.querySelector("span") as HTMLElement | null
+  const col = document.createElement("div")
+  col.className = "a-mp-namecol"
+  const sub = document.createElement("div")
+  sub.className = "a-mp-sub"
+  sub.textContent = isAlpha ? `经代理 · ${t.label}` : modelId
+  if (nameSpan) {
+    nameSpan.replaceWith(col)
+    col.append(nameSpan, sub)
+  }
+  inner.insertBefore(pico, inner.firstChild)
+
+  // right side: reasoning dot · tier badge · cost multiplier
+  if (EFFORT_RE.test(modelId)) {
+    const dot = document.createElement("span")
+    dot.className = "a-mp-dot"
+    inner.append(dot)
+  }
   const badge = document.createElement("span")
   badge.className = `a-mp-tier ${t.cls}`
   badge.textContent = t.label
@@ -44,6 +97,39 @@ function decorate(row: HTMLElement) {
   mult.className = "a-mp-mult"
   mult.textContent = t.mult
   inner.append(badge, mult)
+}
+
+// Relabel the alpha provider's group header → 代理节点 · ALPHA-PLATFORM 推荐 (mockup #20). The header
+// text is the provider display name ("ALPHA"); idempotent via a marker.
+function relabelGroups() {
+  for (const h of document.querySelectorAll<HTMLElement>("[data-slot='list-header']")) {
+    if (h.hasAttribute("data-alpha-grp")) continue
+    const txt = (h.textContent || "").trim()
+    if (txt === "ALPHA" || /alpha-?platform/i.test(txt)) {
+      h.setAttribute("data-alpha-grp", "")
+      h.textContent = "代理节点 · ALPHA-PLATFORM"
+      const tag = document.createElement("span")
+      tag.className = "a-mp-grouptag"
+      tag.textContent = "推荐"
+      h.append(tag)
+    }
+  }
+}
+
+// Footer: "+ 添加自定义节点 / 供应商" → opens the custom-node setup (mockup #20/§06). Appended once to
+// the list, below the scroll. Wired to the Extension Hub for now (the §06 add-node dialog is V1+).
+function ensureFooter() {
+  const list = document.querySelector("[data-component='list']")
+  if (!list || !list.querySelector("[data-slot='list-item'][data-key*=':']")) return
+  if (list.querySelector(":scope > [data-alpha-mp-foot]")) return
+  const foot = document.createElement("button")
+  foot.setAttribute("data-alpha-mp-foot", "")
+  foot.className = "a-mp-foot"
+  foot.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>添加自定义节点 / 供应商</span>`
+  foot.addEventListener("click", () => {
+    setExtHubOpen(true)
+  })
+  list.append(foot)
 }
 
 const fmtYuan = (fen: number) => `¥${(fen / 100).toFixed(2)}`
@@ -127,6 +213,8 @@ export function ModelPickerInject() {
         row.toggleAttribute("data-alpha-locked", locked())
       }
     }
+    relabelGroups()
+    ensureFooter()
     // Pin the account banner above the model list — ONLY in the model picker (a list with model rows),
     // not the provider-select dialog (which reuses [data-component=list] with bare provider keys).
     const list = document.querySelector("[data-component='list']")

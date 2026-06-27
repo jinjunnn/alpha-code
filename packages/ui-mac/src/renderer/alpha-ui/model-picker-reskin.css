@@ -16,6 +16,9 @@
   border-radius: var(--a-radius-xl) !important;
   border: 1px solid var(--a-border-faint) !important;
   box-shadow: var(--a-shadow-overlay), var(--a-edge-light) !important;
+  /* Sized to the design (mockup .mp = 360px wide) — native panel was 288px → cramped rows (#5). */
+  width: 360px !important;
+  max-width: 92vw !important;
 }
 
 /* 搜索模型 field → alpha recessed input. */
@@ -34,12 +37,94 @@
  * styled to the mockup's three-tier selector. Pushed to the right edge of the row. */
 .a-mp-tier {
   flex: none;
-  margin-left: auto;
   padding: 2px 7px;
   border-radius: var(--a-radius-full);
   font-size: var(--a-text-2xs);
   font-weight: var(--a-weight-semibold);
   line-height: 1.5;
+}
+
+/* Row anatomy (mockup #20 .m-row): leading pico · 2-line name/subtitle (flex-1 pushes the right
+ * cluster) · reasoning dot · tier · multiplier. */
+.a-mp-pico {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+}
+.a-mp-namecol {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+}
+.a-mp-namecol > span {
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+  color: var(--a-text);
+  text-align: left;
+  width: 100%;
+}
+.a-mp-sub {
+  font-size: var(--a-text-2xs);
+  color: var(--a-text-tertiary);
+  line-height: 1.3;
+}
+.a-mp-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--a-accent);
+  opacity: 0.7;
+}
+.a-mp-grouptag {
+  margin-left: 6px;
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-semibold);
+  padding: 1px 6px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-accent-subtle);
+  color: var(--a-accent);
+  vertical-align: middle;
+}
+/* selected (chosen) model → indigo-subtle row (mockup .m-row.sel). */
+[data-popper-positioner]:has([data-slot="list-scroll"]) [data-slot="list-item"][data-selected="true"] {
+  background: var(--a-accent-subtle) !important;
+}
+/* footer "+ 添加自定义节点 / 供应商" (mockup .mp-foot). */
+.a-mp-foot {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: calc(100% - 8px);
+  margin: 4px;
+  padding: 9px 10px;
+  border: 0;
+  border-top: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-md);
+  background: transparent;
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-sm);
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.a-mp-foot:hover {
+  background: var(--a-bg-muted);
+  color: var(--a-text);
+}
+.a-mp-foot svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
 }
 .a-mp-tier.flag {
   background: rgba(217, 119, 6, 0.14);

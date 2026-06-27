@@ -39,6 +39,21 @@ body[data-alpha-sidebar] #opencode-titlebar-right [aria-controls="review-panel"]
   display: none !important;
 }
 
+/* opencode's titlebar header is painted bg-v2-background-bg-deep (#ededec) — a flat gray strip that
+ * reads as a jarring bar above the white conversation canvas (#13). Blend it into the canvas so the
+ * top is seamless (the alpha sidebar owns the left; this header floats only over content on the
+ * right). Scoped to `header` so the shared deep-bg shell div is untouched. Cosmetic coupling:
+ * re-point the class fragment on an upstream rename. */
+body[data-alpha-sidebar] header[class*="bg-v2-background-bg-deep"] {
+  background: var(--a-bg-canvas) !important;
+}
+/* …and the deep shell background itself (#ededec) — it shows as a gray band between the white header
+ * and the white conversation content (#22). Whiten the whole content shell so the canvas is seamless
+ * white (alpha design). Scoped to the flex-1 shell so only the main content area is repainted. */
+body[data-alpha-sidebar] .relative.bg-v2-background-bg-deep.flex-1 {
+  background: var(--a-bg-canvas) !important;
+}
+
 /* Hide opencode's floating bottom-right "?" help button (dev-channel, components/help-button.tsx).
    Help now lives in the settings dialog's left nav, so the floating button is redundant. Target the
    fixed wrapper that holds the round Help trigger, plus the trigger itself as a fallback. */
@@ -317,6 +332,10 @@ svg[viewBox="0 0 720.002 129.001"] {
 .alpha-project-row[data-active] {
   background: var(--a-overlay-hover);
 }
+/* Active project = bold name (no heavy gray slab — just a faint overlay + emphasis), shell.html §A. */
+.alpha-project-row[data-active] .alpha-project-name {
+  font-weight: var(--a-weight-semibold);
+}
 
 .alpha-project-chevron {
   width: 13px;
@@ -453,7 +472,8 @@ svg[viewBox="0 0 720.002 129.001"] {
   display: block;
   padding: 5px 8px 5px 14px;
   margin-left: 5px;
-  border-left: 1px solid var(--a-border);
+  /* Thin connector line (design uses --a-border-faint — the prior --a-border read too heavy). */
+  border-left: 1px solid var(--a-border-faint);
   border-radius: 0 7px 7px 0;
   color: var(--a-text-secondary);
   text-decoration: none;
@@ -465,10 +485,15 @@ svg[viewBox="0 0 720.002 129.001"] {
   background: var(--a-overlay-hover);
   color: var(--a-text);
 }
+/* Selected session = indigo-subtle pill + ~2.5px left accent bar + accent text (shell.html §A).
+ * The accent bar = the connector border turned accent (1px) + a 1.5px inset shadow, so it reads as
+ * a single 2.5px bar WITHOUT shifting the row (no layout jump vs the 1px connector). */
 .alpha-session[data-active] {
   background: var(--a-overlay-selected);
-  color: var(--a-text);
-  font-weight: 560;
+  color: var(--a-accent);
+  font-weight: var(--a-weight-medium);
+  border-left-color: var(--a-accent);
+  box-shadow: inset 1.5px 0 0 var(--a-accent);
 }
 
 /* Per-session row: the link + a hover-revealed "⋯" actions button (rename/share/delete). */
