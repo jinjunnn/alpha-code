@@ -162,21 +162,35 @@
    │ ＋ 其他 / 自定义端点  OpenAI · Anthropic 兼容 ›│
    └───────────────────────────────────────┘
 ```
-- **四国内预设**:点任一 → Step 2 表单,**baseURL / model id / 兼容类型预填只读**,用户只需粘贴 API Key。
-- **其他 / 自定义**:点 → Step 2 全字段空表单。
+- **四国内预设(已知供应商)**:点任一 → Step 2,**只需粘贴 API Key**。供应商名 / 兼容类型 / baseURL / **模型 id 全部来自 alpha 内置目录**(provider→model-id 映射),用户**不手输模型 id**。
+- **其他 / 自定义**:点 → Step 2 空表单,**只有这里需要手填 model id**。
+
+> 核心简化(v1.1,据用户提议):已知供应商有内置 `provider→model-id` 目录,填 Key 即用,模型自动列出——避免手输错 id;只有无目录的兼容端点才手填。
 
 ### Step 2 · 配置
-| 字段 | 预设态 | 自定义态 |
-|------|--------|----------|
-| 供应商名称 | 预填只读(如「DeepSeek」) | 必填文本 |
-| 兼容类型 | 预填只读(OpenAI / Anthropic) | 单选(OpenAI 兼容 / Anthropic 兼容) |
-| Base URL | 预填可改 | 必填(校验 https;开发模式允许 localhost) |
-| API Key | 必填(`password` 输入,可切明文) | 必填 |
-| 模型 ID | 预填可增删(chips) | 必填(逗号/回车分隔多个) |
+| 字段 | 已知供应商(预设) | 自定义端点 |
+|------|------------------|-----------|
+| 供应商名称 | 内置只读(如「DeepSeek」) | 必填文本 |
+| 兼容类型 | 内置只读(OpenAI / Anthropic) | 单选(OpenAI / Anthropic 兼容) |
+| Base URL | 内置预填(可改) | 必填(校验 https;开发模式允许 localhost) |
+| **API Key** | **必填**(`password`,可切明文)— 唯一必填项 | 必填 |
+| 模型 ID | **只读预览**「将启用的模型 (N)」,由目录给出,不可手输 | **必填**,手输 chips(回车分隔多个) |
+| 测试连接 | 「测试连接」按钮 → 探活 baseURL+Key+模型,返回 `✓ 已接通 · Nms` / `✗ 失败原因` | 同左 |
 | 默认设为当前 | checkbox | checkbox |
-- **保存** → 写用户 `opencode.jsonc` 的 `provider[]`(经新 IPC,§11)→ 即时 `provider.add`/重载 → 回 Step 0 列表,新端点进组 C「自定义」。
+- **保存** → 写用户 `opencode.jsonc` 的 `provider[]`(经新 IPC,§11)→ 即时 `provider.add`/重载 → 回 Step 1 列表;**该供应商的每个 model id 各成一行**进组 B/C(配 N 个 id → N 行)。
+- **测试连接(已拍板:1-token chat)**:保存前可探活——主进程用 baseURL+Key 对(预设首个 / 自定义首个)模型发一次 `max_tokens:1` 的最小 chat 请求(**验真**,非仅 `/models`),回成功延迟或失败原因,避免「存了却用不了」。走主进程 IPC(Key 不入渲染层)。
 - **校验**:必填、URL 协议白名单(沿用 ADR-014 §8 的 URL/命令/字段白名单纪律);Key 不入渲染层日志。
-- **错误**:保存失败(写盘/连通)内联红字,不静默(承 [[silent-failure]] 纪律)。
+- **错误**:保存 / 测试失败内联红字,不静默(承 [[silent-failure]] 纪律)。
+
+### 7.1 内置模型目录(provider → model-id 映射)
+| 供应商 | 兼容 | 内置 model id(示例) |
+|--------|------|----------------------|
+| DeepSeek | OpenAI | `deepseek-chat`,`deepseek-reasoner` |
+| 智谱 GLM | Anthropic | `glm-5`,`glm-4.5-air` |
+| 通义千问 Qwen | OpenAI(Dashscope) | `qwen-plus`,`qwen3-coder-plus` |
+| Kimi (Moonshot) | OpenAI | `kimi-k2`,`moonshot-v1` |
+- **维护点**:目录存 `alpha-catalog.json`(离线优先,ADR-014;可由 alpha-web C 增量刷新)。上新模型 = 改目录,用户无感升级,无需重配。
+- 目录是「默认全启用」;如需 power user 自选子集,可后续加每模型 toggle(本版默认全列,见 §12)。
 
 ---
 
@@ -205,7 +219,7 @@
 
 ## 10. 视觉规格(全部用 `--a-*` token)
 
-- 容器:宽 `380`,`--a-radius-xl`,`border 1px --a-border-faint`,`--a-shadow-overlay` + `--a-edge-light`,`--a-surface` 底。
+- 容器(尺寸约束,答用户「宽高是否要约束」= **都约束**):宽 **`380` 固定**(dropdown 不随内容回流,行宽稳定可扫读);**`max-height: min(560px, 72vh)`**——超出时**仅模型列表(`.mp-scroll`)内部滚动**,搜索 / banner / 底部按钮 sticky 不动,保证永不超出屏幕。`--a-radius-xl`,`border 1px --a-border-faint`,`--a-shadow-overlay` + `--a-edge-light`,`--a-surface` 底。
 - 搜索框:`--a-bg-subtle` 底,`--a-radius-md`,聚焦 `--a-ring-focus`。
 - chips:未选 `--a-bg-muted`/secondary 文;选中 `--a-accent-subtle`/`--a-accent` 文。
 - 组 header:`--a-text-2xs` 字号 / `--a-tracking-wide` / `--a-text-tertiary`;`推荐` tag = `--a-accent-subtle`。
@@ -224,6 +238,9 @@
 | 代理模型来源 | `alpha-models.ts`(`ALPHA_BASE_URL` 在才有) | 同 + 未登录也展示「占位代理目录」(静态 catalog 兜底) | 代理模型目录抽进 `alpha-catalog.json` / `alpha-models.ts` 常量,未登录用静态目录展示+锁定,登录后用真实可用列表。 |
 | 登录/额度态 | `window.api.auth` + `account.summary`(已具备) | 复用,集中到 `deriveState()` | 无新 IPC。 |
 | 自定义供应商持久化 | **缺**(底部仅开定制中心占位) | 新增 `window.api.providers.add()` IPC,写用户 `opencode.jsonc` 的 `provider[]` | **唯一新增后端接缝**:类比 ADR-014 §4 的 `persistMcp`(路径/字段/命令/URL 白名单 + realpath 防逃逸),改写 `provider[*]` 白名单字段;`provider.add` 即时生效免重启。 |
+| 内置模型目录 | 无(用户手配 model id) | `provider→model-id` 映射,已知供应商填 Key 自动列出(§7.1) | 复用 `alpha-catalog.json`(ADR-014,离线优先 + alpha-web C 可刷新);`alpha-models.ts` 的 whitelist 已是雏形,抽成显式目录。 |
+| 测试连接 | 无 | 配置页「测试连接」探活 baseURL+Key+模型 | 新增主进程 IPC(如 `window.api.providers.test()`):用兼容类型对应的最小请求(OpenAI `/models` 或一次 1-token chat)探活;Key 留主进程不回渲染层。 |
+| 一 id 一行 | 一供应商多 id 挤一行(困惑) | 每个 model id 一行,只显已配置 | 列表数据源 = SDK `config`/provider 已启用模型展开为逐 model 行;未配置供应商不渲染。 |
 | tier 规则 | `tierOf()` 启发式(无文档) | §5.3 文档化 + 仅代理显倍率 | 保留启发式,加单元/回归清单;新增代理模型回归本表。 |
 
 **纪律**:以上全为**新增 alpha 文件 / 新增 IPC**,不改 `packages/opencode/*` 源码,北极星(file-diff 守卫)不破;Tier-3 行为层无关。
@@ -232,8 +249,19 @@
 
 ## 12. 待确认(审计后定)
 
-1. **倍率 ×N 是否对外展示**:计费倍率直接给用户,还是只显 tier 名(旗舰/高级/标准)避免「越用越贵」焦虑?
-2. **代理目录未登录展示来源**:静态内置目录 vs 调用平台「公开目录」端点(后者需 B 侧新接口)。
-3. **组 C 自定义端点**是否也参与 tier/倍率(默认按 BYOK 不计倍率)。
-4. **Kimi 真实 model id**:`kimi-k2` / `moonshot-v1-*` 以接入时官方为准(原型用占位)。
-5. **过滤 chip「推理」** 是否够用,要不要再加「带搜索 / 视觉」维度。
+1. **代理目录未登录展示来源**:静态内置目录 vs 调用平台「公开目录」端点(后者需 B 侧新接口)。
+2. **组 C 自定义端点**是否也参与 tier/倍率(默认按 BYOK 不计倍率)。
+3. **Kimi 真实 model id**:`kimi-k2` / `moonshot-v1-*` 以接入时官方为准(原型用占位)。
+
+### v1.2 已拍板(2026-06-27)
+- ✅ **倍率 ×N 对外展示**:代理行直接显示 ×8/×3/×1(给用户看)。
+- ✅ **内置目录默认全启用**:已知供应商填 Key 后,内置目录的**全部** model id 自动列出(无每模型 toggle)。
+- ✅ **测试连接 = 1-token chat**:用一次 `max_tokens:1` 的最小 chat 请求验真(耗极少额度),非仅 `/models`。
+
+### v1.1 已据审计反馈解决(2026-06-27)
+- ✅ 去掉过滤 chips(分组 + 搜索足够)。
+- ✅ 组标题统一「经 ALPHA 代理」,行内不再重复「经代理」。
+- ✅ 一个 model id 一行;BYOK 只显已配置,未配置去「添加节点」配。
+- ✅ 已知供应商填 Key 即用(内置 `provider→model-id` 目录自动列出),只有自定义端点手输 id。
+- ✅ 配置页加「测试连接」探活。
+- ✅ 去掉与底部按钮重复的组内入口;选择器宽(380 固定)高(`min(560,72vh)` 内滚)都约束。

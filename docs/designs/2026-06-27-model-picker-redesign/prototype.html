@@ -230,6 +230,7 @@ h2.sec .n{font-family:var(--a-font-mono); font-size:13px; color:var(--a-accent);
 .mp-mc{display:inline-flex; align-items:center; gap:5px; font-family:var(--a-font-mono); font-size:var(--a-text-2xs); padding:3px 8px; border-radius:var(--a-radius-full); background:var(--a-bg-inset); color:var(--a-text-secondary)}
 .mp-mc b{cursor:pointer; opacity:.6}
 .mp-mc b:hover{opacity:1}
+.mp-modelnote{margin:6px 0 0; font-size:var(--a-text-2xs); color:var(--a-text-tertiary); line-height:1.45}
 .mp-key-toggle{font-size:var(--a-text-2xs); color:var(--a-accent); cursor:pointer; float:right; font-weight:500}
 .mp-check{display:flex; align-items:center; gap:8px; font-size:var(--a-text-xs); color:var(--a-text-secondary); cursor:pointer; margin:6px 0 4px}
 .mp-check input{accent-color:var(--a-accent-solid)}
@@ -327,7 +328,7 @@ footer.doc{margin-top:80px; padding-top:28px; border-top:1px solid var(--a-borde
 <p class="sec-sub">点上方原型底部「＋ 添加自定义节点 / 供应商」即可体验。四个国内供应商为快速预设(只需粘 Key),「其他 / 自定义」走全字段表单(OpenAI / Anthropic 兼容)。下面是流程要点。</p>
 <div class="legend">
   <div class="lg"><span class="num">1</span><div><b>选供应商</b><p>DeepSeek / 智谱 / 通义千问 / Kimi 四个预设卡片,baseURL 与 model id 已内置;或「其他」自定义任意兼容端点。</p></div></div>
-  <div class="lg"><span class="num">2</span><div><b>填配置 + 测试</b><p>预设态只需 API Key(其余预填可改);自定义态填名称、兼容类型、Base URL、Key、模型 id。Key 支持明文切换;「测试连接」探活后再保存,避免存了用不了。</p></div></div>
+  <div class="lg"><span class="num">2</span><div><b>填配置 + 测试</b><p>已知供应商只填 API Key——模型由 alpha 内置目录(provider→model-id 映射)自动列出,无需手输;只有自定义端点才手填 Base URL + model id。Key 支持明文;「测试连接」探活后再保存。</p></div></div>
   <div class="lg"><span class="num">3</span><div><b>保存即用 · 一 id 一行</b><p>写用户 opencode.jsonc 的 provider[](经白名单 IPC,见 spec §11),provider.add 即时生效免重启;配置的每个 model id 各成一行,方便随时切换。</p></div></div>
 </div>
 
@@ -471,7 +472,7 @@ function pickerHTML(opts){
             <div class="opt" data-compat-val="anthropic" aria-pressed="false">Anthropic 兼容</div></div></div>
           <div class="mp-field"><label>Base URL <span class="req">*</span></label><input class="mp-input mono" data-f="baseURL" placeholder="https://api.example.com/v1"></div>
           <div class="mp-field"><label>API Key <span class="req">*</span><span class="mp-key-toggle" data-act="peekkey">明文</span></label><input class="mp-input mono" type="password" data-f="key" placeholder="sk-..."></div>
-          <div class="mp-field"><label>模型 ID <span class="req">*</span></label><div class="mp-modelchips" data-modelchips></div><input class="mp-input mono" data-f="model" placeholder="回车添加,如 deepseek-chat" style="margin-top:6px"></div>
+          <div class="mp-field"><label data-modellabel>模型 ID <span class="req">*</span></label><div class="mp-modelchips" data-modelchips></div><input class="mp-input mono" data-f="model" placeholder="回车添加,如 deepseek-chat" style="margin-top:6px"><p class="mp-modelnote" data-modelnote></p></div>
           <div class="mp-field mp-testrow"><button class="mp-testbtn" type="button" data-act="test">测试连接</button><span class="mp-teststatus" data-teststatus></span></div>
           <label class="mp-check"><input type="checkbox" data-f="default">保存后设为当前模型</label>
         </div>
@@ -578,26 +579,38 @@ function openForm(mp,idx){
   const ts=mp.querySelector('[data-teststatus]'); if(ts){ts.textContent=''; ts.className='mp-teststatus';}
   const title=mp.querySelector('[data-addtitle]');
   const chips=mp.querySelector('[data-modelchips]');
+  const modelInput=mp.querySelector('[data-f="model"]');
+  const modelLabel=mp.querySelector('[data-modellabel]');
+  const modelNote=mp.querySelector('[data-modelnote]');
   chips.innerHTML='';
   const setRO=(sel,ro)=>{const el=mp.querySelector(sel); el.readOnly=ro;};
   if(idx>=0){
+    // 已知供应商:模型由 alpha 内置目录提供(provider→model-id 映射),用户只填 Key,不手输模型 id
     const p=PRESETS[idx];
     title.textContent=p.name;
     mp.querySelector('[data-f="name"]').value=p.name; setRO('[data-f="name"]',true);
     mp.querySelector('[data-f="baseURL"]').value=p.baseURL; setRO('[data-f="baseURL"]',false);
     mp.querySelectorAll('[data-compat-val]').forEach(o=>o.setAttribute('aria-pressed', o.dataset.compatVal===(p.compat.startsWith('Anthropic')?'anthropic':'openai')));
-    p.models.forEach(m=>addModelChip(mp,m));
+    p.models.forEach(m=>addModelChip(mp,m,false));         // 只读预览,不可删
+    modelInput.style.display='none';
+    modelLabel.innerHTML='将启用的模型 ('+p.models.length+')';
+    modelNote.textContent='该供应商模型由 alpha 内置目录维护,填 Key 即用;保存后自动列出,无需手输。';
     mp.querySelector('[data-f="key"]').focus?.();
   } else {
+    // 自定义端点:只有这里需要手动输入 model id
     title.textContent='自定义端点';
     mp.querySelector('[data-f="name"]').value=''; setRO('[data-f="name"]',false);
     mp.querySelector('[data-f="baseURL"]').value=''; setRO('[data-f="baseURL"]',false);
+    mp.querySelectorAll('[data-compat-val]').forEach((o,i)=>o.setAttribute('aria-pressed', i===0));
+    modelInput.style.display=''; modelInput.value='';
+    modelLabel.innerHTML='模型 ID <span class="req">*</span>';
+    modelNote.textContent='兼容端点无内置目录,请手动添加 model id(回车分隔多个)。';
   }
 }
-function addModelChip(mp,id){
+function addModelChip(mp,id,removable=true){
   const wrap=mp.querySelector('[data-modelchips]');
-  const c=document.createElement('span'); c.className='mp-mc'; c.innerHTML=esc(id)+' <b>×</b>';
-  c.querySelector('b').addEventListener('click',()=>c.remove());
+  const c=document.createElement('span'); c.className='mp-mc'; c.innerHTML=esc(id)+(removable?' <b>×</b>':'');
+  if(removable) c.querySelector('b').addEventListener('click',()=>c.remove());
   wrap.appendChild(c);
 }
 
@@ -643,7 +656,7 @@ document.getElementById('legend').innerHTML=[
   ['③','代理组 · 经 ALPHA 代理','组标题统一表达「这些经 ALPHA 代理」,行内不再重复「经代理」;永远可见,未登录/余额不足时 dim + 点行触发登录/充值。'],
   ['④','国内直连(只显已配置)','一个 model id 一行,便于切换;未配置的供应商不在此显示,经底部入口接入。'],
   ['⑤','tier + 倍率','旗舰×8/高级×3/标准×1 规则化;仅代理显倍率(BYOK 自付不计)。'],
-  ['⑥','自定义 + 测试','二级页:四预设一键(只填 Key)或自定义;支持「测试连接」探活;保存后每个 model id 落成一行。'],
+  ['⑥','自定义 + 测试','已知供应商只填 Key——模型由内置目录(provider→id 映射)自动列出,无需手输;只有自定义端点才手填 model id;支持「测试连接」;保存后每个 id 一行。'],
 ].map(([n,t,d])=>`<div class="lg"><span class="num">${n}</span><div><b>${t}</b><p>${d}</p></div></div>`).join('');
 
 renderLive();

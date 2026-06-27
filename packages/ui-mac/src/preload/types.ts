@@ -1,6 +1,13 @@
 import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
 import type { WslServersPlatform } from "@opencode-ai/app/wsl/types"
 import type { UpdaterState } from "@opencode-ai/app/updater"
+import type {
+  AlphaModelCatalog,
+  ProviderInput,
+  ProviderResult,
+  ProviderTestInput,
+  ProviderTestResult,
+} from "../shared/alpha-model-types"
 export type {
   WslDistroProbe,
   WslInstalledDistro,
@@ -174,5 +181,14 @@ export type ElectronAPI = {
   account: {
     summary: () => Promise<AccountResult<AccountSummary>>
     transactions: (limit?: number) => Promise<AccountResult<{ transactions: AccountTransaction[] }>>
+  }
+  // alpha model catalog (config-driven, from main/alpha-models.json) for the model picker.
+  models: {
+    catalog: () => Promise<AlphaModelCatalog>
+  }
+  // custom provider add/test (writes opencode.jsonc provider[]; 1-token-chat connectivity probe).
+  providers: {
+    add: (input: ProviderInput) => Promise<ProviderResult>
+    test: (input: ProviderTestInput) => Promise<ProviderTestResult>
   }
 }

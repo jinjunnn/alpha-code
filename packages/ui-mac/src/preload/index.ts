@@ -146,6 +146,13 @@ const api: ElectronAPI = {
     summary: () => ipcRenderer.invoke("account-summary"),
     transactions: (limit) => ipcRenderer.invoke("account-transactions", limit),
   },
+  models: {
+    catalog: () => ipcRenderer.invoke("models-catalog"),
+  },
+  providers: {
+    add: (input) => ipcRenderer.invoke("providers-add", input),
+    test: (input) => ipcRenderer.invoke("providers-test", input),
+  },
 }
 
 contextBridge.exposeInMainWorld("api", api)

@@ -12,6 +12,7 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { applyEdits, modify, parse, type ParseError } from "jsonc-parser"
+import type { ProviderInput } from "../shared/alpha-model-types"
 
 export type ConfigResult = { ok: true } | { ok: false; reason: string }
 
@@ -87,7 +88,20 @@ function validateServer(server: Record<string, unknown>): ConfigResult {
 // Top-level keys we've verified against opencode's V1 schema (packages/core/src/v1/config/config.ts).
 // opencode hard-fails its ENTIRE config on any unrecognized top-level key, so a single wrong key
 // breaks every session — this allowlist makes such a regression fail loudly here instead.
-const ALLOWED_TOP_KEYS = new Set(["mcp", "plugin"])
+const ALLOWED_TOP_KEYS = new Set(["mcp", "plugin", "provider"])
+
+// https for any host; plain http only for loopback, never with embedded credentials. WHATWG-parsed
+// (not substring) so http://localhost.evil.com / http://127.0.0.1@evil.com can't slip past.
+function isAllowedUrl(url: string): boolean {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return false
+  }
+  const loopback = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "[::1]"
+  return parsed.protocol === "https:" || (parsed.protocol === "http:" && loopback && !parsed.username && !parsed.password)
+}
 
 function writeKey(keyPath: string[], value: unknown): ConfigResult {
   if (!ALLOWED_TOP_KEYS.has(keyPath[0])) return { ok: false, reason: `refused: unknown config key "${keyPath[0]}"` }
@@ -143,6 +157,44 @@ export function persistMcp(name: string, server: Record<string, unknown>): Confi
 export function removeMcp(name: string): ConfigResult {
   if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid server name" }
   return writeKey(["mcp", name], undefined)
+}
+
+/**
+ * Persist a custom provider under provider[<id>] in the user's opencode config (durable). NOTE: the
+ * id must ALSO be merged into the injected enabled_providers allowlist at sidecar start
+ * (alpha-models.ts → readUserProviderIds) — opencode replaces (doesn't union) the enabled_providers
+ * array on merge, so a provider not in the injected allowlist is dropped (see build.md §6). The user
+ * therefore sees a new custom provider after the next reconnect, not instantly.
+ */
+export function persistProvider(input: ProviderInput): ConfigResult {
+  if (!SAFE_NAME.test(input.id)) return { ok: false, reason: "invalid provider id" }
+  if (!input.name || typeof input.name !== "string") return { ok: false, reason: "missing provider name" }
+  if (input.compat !== "openai" && input.compat !== "anthropic") return { ok: false, reason: "invalid compat" }
+  if (!isAllowedUrl(input.baseURL)) return { ok: false, reason: "only https (or loopback http) base URLs are allowed" }
+  if (!input.apiKey || typeof input.apiKey !== "string") return { ok: false, reason: "missing api key" }
+  const ids = (Array.isArray(input.models) ? input.models : []).map((m) => String(m).trim()).filter(Boolean)
+  if (ids.length === 0) return { ok: false, reason: "at least one model id is required" }
+  const npm = input.compat === "anthropic" ? "@ai-sdk/anthropic" : "@ai-sdk/openai-compatible"
+  const models: Record<string, { name: string }> = {}
+  for (const m of ids) models[m] = { name: m }
+  const block = { npm, name: input.name, options: { baseURL: input.baseURL, apiKey: input.apiKey }, models }
+  return writeKey(["provider", input.id], block)
+}
+
+/**
+ * Provider ids the user has configured in opencode.jsonc. Merged into the injected enabled_providers
+ * allowlist (alpha-models.ts) so user-added custom providers survive the hard allowlist (build.md §6).
+ */
+export function readUserProviderIds(): string[] {
+  try {
+    const target = userConfigPath()
+    if (!fs.existsSync(target)) return []
+    const parsed = parse(fs.readFileSync(target, "utf8")) as { provider?: unknown } | undefined
+    const prov = parsed?.provider
+    return prov && typeof prov === "object" ? Object.keys(prov as Record<string, unknown>) : []
+  } catch {
+    return []
+  }
 }
 
 // npm package name (optional scope), optionally pinned with @version. No shell metacharacters —

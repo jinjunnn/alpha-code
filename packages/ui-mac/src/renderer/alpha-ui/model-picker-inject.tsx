@@ -12,44 +12,60 @@
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import type { AccountSummary, AuthState } from "../../preload/types"
+import type { AlphaModelCatalog, Tier } from "../../shared/alpha-model-types"
 import { ALPHA_ENDPOINTS, ALPHA_PATHS } from "../../shared/alpha-config"
-import { setExtHubOpen } from "../extensions/ext-hub-state"
+import { AddProvider } from "./model-picker-add"
 
-type Tier = { cls: "flag" | "pro" | "std"; label: string; mult: string }
+// Module-level so the footer button (deep in the decorated DOM) and the add-flow overlay share state,
+// and so the catalog (loaded once on mount) is reachable by both the decoration helpers and the flow.
+const [catalogStore, setCatalogStore] = createSignal<AlphaModelCatalog | null>(null)
+const [addOpen, setAddOpen] = createSignal(false)
 
-// Tier follows the model id. Flagship = frontier (×8); premium = strong mid-tier (×3); else standard
-// (×1). Matches the mockup (Opus/GPT-5.5=旗舰, Sonnet/Gemini=高级, DeepSeek=标准). Substring heuristic
-// so new gateway models slot in without a hardcoded table.
-function tierOf(modelId: string): Tier {
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string)
+}
+
+// Catalog-driven metadata (config source: main/alpha-models.json via window.api.models.catalog).
+// Loaded once on mount BEFORE the first decoration so rows never render with stale heuristics.
+// Defaults keep the picker working if the IPC fails.
+let TIERS: AlphaModelCatalog["tiers"] = {
+  flag: { label: "旗舰", mult: "×8" },
+  pro: { label: "高级", mult: "×3" },
+  std: { label: "标准", mult: "×1" },
+}
+let PLATFORM_TIER = new Map<string, Tier>() // modelId → tier class (proxy models only)
+let PLATFORM_REASONING = new Set<string>() // modelId with reasoning (proxy models)
+let PROV_PICO = new Map<string, { letter: string; color: string }>()
+const PLATFORM_ID = "alpha"
+
+function applyCatalog(cat: AlphaModelCatalog) {
+  TIERS = cat.tiers
+  PLATFORM_TIER = new Map(cat.platformModels.map((m) => [m.id, m.tier]))
+  PLATFORM_REASONING = new Set(cat.platformModels.filter((m) => m.reasoning).map((m) => m.id))
+  PROV_PICO = new Map<string, { letter: string; color: string }>()
+  PROV_PICO.set(cat.platformProvider.id, cat.platformProvider.pico)
+  for (const p of cat.byokProviders) PROV_PICO.set(p.id, p.pico)
+  setCatalogStore(cat)
+}
+
+// Tier class falls back to a substring heuristic for non-catalog (BYOK/custom) models so new ids
+// still slot in. Flagship = frontier; premium = strong mid-tier; else standard.
+function heuristicTier(modelId: string): Tier {
   const id = modelId.toLowerCase()
-  if (/opus|gpt-5\.5|gpt-5-pro|grok-4/.test(id)) return { cls: "flag", label: "旗舰", mult: "×8" }
-  if (/sonnet|gemini|gpt-5|grok|reasoner|thinking|-r1|glm-4\.6/.test(id)) return { cls: "pro", label: "高级", mult: "×3" }
-  return { cls: "std", label: "标准", mult: "×1" }
+  if (/opus|gpt-5\.5|gpt-5-pro|grok-4/.test(id)) return "flag"
+  if (/sonnet|gemini|gpt-5|grok|reasoner|thinking|-r1|glm-4\.6/.test(id)) return "pro"
+  return "std"
 }
-
-// Per-provider pico (mockup #20: every row leads with a colored square + initial; alpha proxy = α).
-const PROV_COLOR: Record<string, string> = {
-  alpha: "#4f46e5",
-  deepseek: "#2563eb",
-  zhipuai: "#16a34a",
-  moonshot: "#18181b",
-  kimi: "#18181b",
-  qwen: "#7c3aed",
-  dashscope: "#7c3aed",
-  openrouter: "#18181b",
+function tierFor(modelId: string): { cls: Tier; label: string; mult: string } {
+  const cls = PLATFORM_TIER.get(modelId) ?? heuristicTier(modelId)
+  const meta = TIERS[cls] ?? { label: cls, mult: "" }
+  return { cls, label: meta.label, mult: meta.mult }
 }
-const PROV_LETTER: Record<string, string> = {
-  alpha: "α",
-  deepseek: "D",
-  zhipuai: "智",
-  moonshot: "K",
-  kimi: "K",
-  qwen: "通",
-  dashscope: "通",
-  openrouter: "OR",
-}
-// Reasoning dot = model supports effort (mockup: 蓝点). Heuristic on id (no variants data in the DOM).
+// Reasoning dot: catalog flag for proxy models, else a heuristic on the id (no variants in the DOM).
 const EFFORT_RE = /reasoner|thinking|-r1|opus|sonnet|gpt-5|gemini|o1|o3|grok-4|glm-4\.6|qwq/i
+function isReasoning(modelId: string): boolean {
+  return PLATFORM_REASONING.has(modelId) || EFFORT_RE.test(modelId)
+}
 
 function decorate(row: HTMLElement) {
   if (row.hasAttribute("data-alpha-tier")) return
@@ -61,31 +77,33 @@ function decorate(row: HTMLElement) {
   const modelId = key.slice(key.indexOf(":") + 1)
   if (!modelId) return
   row.setAttribute("data-alpha-tier", "")
-  const t = tierOf(modelId)
-  const isAlpha = provider === "alpha"
+  const t = tierFor(modelId)
+  const isAlpha = provider === PLATFORM_ID
   const inner = (row.querySelector(":scope > div") as HTMLElement | null) ?? row
 
-  // leading provider/α pico
+  // leading provider/α pico (catalog-driven; fallback to provider initial)
+  const picoMeta = PROV_PICO.get(provider)
   const pico = document.createElement("span")
   pico.className = "a-mp-pico"
-  pico.style.background = PROV_COLOR[provider] || "#71717a"
-  pico.textContent = PROV_LETTER[provider] || provider.slice(0, 1).toUpperCase()
+  pico.style.background = picoMeta?.color || "#71717a"
+  pico.textContent = picoMeta?.letter || provider.slice(0, 1).toUpperCase()
 
-  // name → two lines (name + "经代理 · 旗舰" / model-id subtitle)
+  // name → two lines (name + model-id subtitle). The group header now conveys "经 ALPHA 代理", so the
+  // row subtitle is just the model id (no repeated "经代理"), per the 2026-06-27 redesign.
   const nameSpan = inner.querySelector("span") as HTMLElement | null
   const col = document.createElement("div")
   col.className = "a-mp-namecol"
   const sub = document.createElement("div")
   sub.className = "a-mp-sub"
-  sub.textContent = isAlpha ? `经代理 · ${t.label}` : modelId
+  sub.textContent = modelId
   if (nameSpan) {
     nameSpan.replaceWith(col)
     col.append(nameSpan, sub)
   }
   inner.insertBefore(pico, inner.firstChild)
 
-  // right side: reasoning dot · tier badge · cost multiplier
-  if (EFFORT_RE.test(modelId)) {
+  // right side: reasoning dot · tier badge · cost multiplier (倍率 only on proxy rows — BYOK is 自付).
+  if (isReasoning(modelId)) {
     const dot = document.createElement("span")
     dot.className = "a-mp-dot"
     inner.append(dot)
@@ -93,21 +111,24 @@ function decorate(row: HTMLElement) {
   const badge = document.createElement("span")
   badge.className = `a-mp-tier ${t.cls}`
   badge.textContent = t.label
-  const mult = document.createElement("span")
-  mult.className = "a-mp-mult"
-  mult.textContent = t.mult
-  inner.append(badge, mult)
+  inner.append(badge)
+  if (isAlpha && t.mult) {
+    const mult = document.createElement("span")
+    mult.className = "a-mp-mult"
+    mult.textContent = t.mult
+    inner.append(mult)
+  }
 }
 
-// Relabel the alpha provider's group header → 代理节点 · ALPHA-PLATFORM 推荐 (mockup #20). The header
-// text is the provider display name ("ALPHA"); idempotent via a marker.
+// Relabel the alpha provider's group header → 代理节点 · 经 ALPHA 代理 推荐. The header text is the
+// provider display name ("ALPHA"); idempotent via a marker.
 function relabelGroups() {
   for (const h of document.querySelectorAll<HTMLElement>("[data-slot='list-header']")) {
     if (h.hasAttribute("data-alpha-grp")) continue
     const txt = (h.textContent || "").trim()
     if (txt === "ALPHA" || /alpha-?platform/i.test(txt)) {
       h.setAttribute("data-alpha-grp", "")
-      h.textContent = "代理节点 · ALPHA-PLATFORM"
+      h.textContent = "代理节点 · 经 ALPHA 代理"
       const tag = document.createElement("span")
       tag.className = "a-mp-grouptag"
       tag.textContent = "推荐"
@@ -118,18 +139,57 @@ function relabelGroups() {
 
 // Footer: "+ 添加自定义节点 / 供应商" → opens the custom-node setup (mockup #20/§06). Appended once to
 // the list, below the scroll. Wired to the Extension Hub for now (the §06 add-node dialog is V1+).
-function ensureFooter() {
+function ensureFooter(ok: boolean) {
   const list = document.querySelector("[data-component='list']")
-  if (!list || !list.querySelector("[data-slot='list-item'][data-key*=':']")) return
+  if (!list || !ok) return
   if (list.querySelector(":scope > [data-alpha-mp-foot]")) return
   const foot = document.createElement("button")
   foot.setAttribute("data-alpha-mp-foot", "")
   foot.className = "a-mp-foot"
   foot.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>添加自定义节点 / 供应商</span>`
   foot.addEventListener("click", () => {
-    setExtHubOpen(true)
+    setAddOpen(true)
   })
   list.append(foot)
+}
+
+// Logged-out locked preview: when the user isn't logged in, the alpha gateway provider isn't injected
+// so the native list has no `alpha:*` rows. Inject a read-only preview of the proxy models (from the
+// config-driven catalog) so the user SEES what login unlocks (诉求①). Rows route to login; idempotent.
+function ensureLockedPreview(state: string) {
+  const scroll = document.querySelector("[data-component='list'] [data-slot='list-scroll']") as HTMLElement | null
+  const cat = catalogStore()
+  const hasRealAlpha = !!document.querySelector("[data-slot='list-item'][data-key^='alpha:']")
+  const existing = scroll?.querySelector(":scope > [data-alpha-locked-preview]") as HTMLElement | null
+  if (!scroll || !cat || state !== "out" || hasRealAlpha) {
+    existing?.remove()
+    return
+  }
+  if (existing) return
+  const block = document.createElement("div")
+  block.setAttribute("data-alpha-locked-preview", "")
+  const head = document.createElement("div")
+  head.className = "a-mp-prevhead"
+  head.innerHTML = `<span class="gt">代理节点 · 经 ALPHA 代理</span><span class="a-mp-grouptag">推荐</span><span class="a-mp-prevlock">已锁定</span>`
+  block.append(head)
+  const cta = document.createElement("button")
+  cta.className = "a-mp-prevcta"
+  cta.textContent = `登录后解锁 ${cat.platformModels.length}+ 代理模型 →`
+  cta.addEventListener("click", () => void window.api.auth.start())
+  block.append(cta)
+  for (const m of cat.platformModels) {
+    const tierMeta = cat.tiers[m.tier] ?? { label: m.tier, mult: "" }
+    const row = document.createElement("button")
+    row.className = "a-mp-prevrow"
+    row.addEventListener("click", () => void window.api.auth.start())
+    const dot = m.reasoning ? `<span class="a-mp-dot"></span>` : ""
+    row.innerHTML =
+      `<span class="a-mp-pico" style="background:${cat.platformProvider.pico.color}">${cat.platformProvider.pico.letter}</span>` +
+      `<div class="a-mp-namecol"><span>${escapeHtml(m.name)}</span><div class="a-mp-sub">${escapeHtml(m.id)}</div></div>` +
+      `${dot}<span class="a-mp-tier ${m.tier}">${escapeHtml(tierMeta.label)}</span><span class="a-mp-mult">${escapeHtml(tierMeta.mult)}</span>`
+    block.append(row)
+  }
+  scroll.insertBefore(block, scroll.firstChild)
 }
 
 const fmtYuan = (fen: number) => `¥${(fen / 100).toFixed(2)}`
@@ -177,6 +237,7 @@ export function ModelPickerInject() {
   const [auth, setAuth] = createSignal<AuthState>({ status: "logged-out", mode: "byok" })
   const [summary, setSummary] = createSignal<AccountSummary | null>(null)
   const [bannerHost, setBannerHost] = createSignal<HTMLElement | null>(null)
+  const [panelHost, setPanelHost] = createSignal<HTMLElement | null>(null)
 
   onMount(() => {
     const unsub = window.api.auth.subscribe(setAuth)
@@ -214,13 +275,19 @@ export function ModelPickerInject() {
       }
     }
     relabelGroups()
-    ensureFooter()
-    // Pin the account banner above the model list — ONLY in the model picker (a list with model rows),
-    // not the provider-select dialog (which reuses [data-component=list] with bare provider keys).
+    // Distinguish the model picker from the provider-SELECT dialog (both reuse [data-component=list]):
+    // model rows are keyed `<prov>:<model>` (colon); provider rows are bare. A list with items but NO
+    // colon keys is the provider dialog → skip. An empty list is treated as the model picker (the
+    // common empty case is logged-out / no-key), so the banner + locked preview still show.
     const list = document.querySelector("[data-component='list']")
-    const scroll = list?.querySelector("[data-slot='list-scroll']")
-    const hasModels = list?.querySelector("[data-slot='list-item'][data-key*=':']")
-    if (list && scroll && hasModels) {
+    const scroll = (list?.querySelector("[data-slot='list-scroll']") as HTMLElement | null) ?? null
+    const items = list?.querySelectorAll("[data-slot='list-item'][data-key]")
+    const hasColonKeys = !!list?.querySelector("[data-slot='list-item'][data-key*=':']")
+    const isProviderDialog = !!items && items.length > 0 && !hasColonKeys
+    const isModelPicker = !!list && !!scroll && !isProviderDialog
+    ensureFooter(isModelPicker)
+    if (isModelPicker && list && scroll) {
+      ensureLockedPreview(state())
       let h = list.querySelector(":scope > [data-alpha-acct-banner]") as HTMLElement | null
       if (!h) {
         h = document.createElement("div")
@@ -228,8 +295,12 @@ export function ModelPickerInject() {
         list.insertBefore(h, scroll)
       }
       if (bannerHost() !== h) setBannerHost(h)
-    } else if (bannerHost()) {
-      setBannerHost(null)
+      const panel = document.querySelector("[data-popper-positioner]:has([data-slot='list-scroll']) > *") as HTMLElement | null
+      if (panelHost() !== panel) setPanelHost(panel)
+    } else {
+      if (bannerHost()) setBannerHost(null)
+      if (panelHost()) setPanelHost(null)
+      if (addOpen()) setAddOpen(false)
     }
   }
   // setTimeout (not rAF — throttled when headless/backgrounded).
@@ -246,17 +317,39 @@ export function ModelPickerInject() {
     schedule()
   })
   onMount(() => {
-    scan()
-    for (const d of [80, 250, 600]) setTimeout(scan, d)
-    mo = new MutationObserver(schedule)
-    mo.observe(document.body, { childList: true, subtree: true })
+    // Load the config-driven catalog BEFORE the first decoration so tier/倍率/pico come from
+    // alpha-models.json (not the heuristic). Picker opens long after mount, so this always wins.
+    const start = () => {
+      scan()
+      for (const d of [80, 250, 600]) setTimeout(scan, d)
+      mo = new MutationObserver(schedule)
+      mo.observe(document.body, { childList: true, subtree: true })
+    }
+    window.api.models.catalog().then(applyCatalog).catch(() => {}).finally(start)
   })
   onCleanup(() => {
     mo?.disconnect()
     if (timer) clearTimeout(timer)
   })
 
-  return <Show when={bannerHost()}>{(h) => <Portal mount={h()}><AccountBanner state={state()} summary={summary()} /></Portal>}</Show>
+  return (
+    <>
+      <Show when={bannerHost()}>
+        {(h) => (
+          <Portal mount={h()}>
+            <AccountBanner state={state()} summary={summary()} />
+          </Portal>
+        )}
+      </Show>
+      <Show when={addOpen() ? panelHost() : null}>
+        {(h) => (
+          <Portal mount={h()}>
+            <AddProvider catalog={catalogStore()} onClose={() => setAddOpen(false)} />
+          </Portal>
+        )}
+      </Show>
+    </>
+  )
 }
 
 /* ── icons (1.6 stroke, matching the composer chips) ─────────────────────────── */

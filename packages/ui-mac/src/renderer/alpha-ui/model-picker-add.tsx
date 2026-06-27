@@ -1,0 +1,286 @@
+// AddProvider — the "添加自定义节点 / 供应商" two-step flow, rendered as an overlay over the model
+// picker popover (ADR-016: alpha owns this UI). Step 1: pick a known provider (filled from the catalog
+// — user only pastes a Key) or "其他/自定义" (manual model ids). Step 2: configure + 测试连接 (1-token
+// chat) + 保存. Save → window.api.providers.add (writes opencode.jsonc provider[]); the new provider's
+// models appear after the next reconnect (build.md §6). All catalog data is config-driven (no hardcode).
+
+import { createMemo, createSignal, For, Show } from "solid-js"
+import type { AlphaModelCatalog, ByokProvider } from "../../shared/alpha-model-types"
+
+function slug(s: string): string {
+  return (
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 63) || "custom"
+  )
+}
+
+export function AddProvider(props: { catalog: AlphaModelCatalog | null; onClose: () => void; onSaved?: () => void }) {
+  const [sel, setSel] = createSignal<ByokProvider | "custom" | null>(null) // null = step 1 (preset list)
+  const [name, setName] = createSignal("")
+  const [compat, setCompat] = createSignal<"openai" | "anthropic">("openai")
+  const [baseURL, setBaseURL] = createSignal("")
+  const [apiKey, setApiKey] = createSignal("")
+  const [showKey, setShowKey] = createSignal(false)
+  const [models, setModels] = createSignal<string[]>([])
+  const [modelInput, setModelInput] = createSignal("")
+  const [test, setTest] = createSignal<{ s: "idle" | "testing" | "ok" | "err"; msg: string }>({ s: "idle", msg: "" })
+  const [saving, setSaving] = createSignal(false)
+  const [error, setError] = createSignal("")
+
+  const presets = createMemo<ByokProvider[]>(() => {
+    const cat = props.catalog
+    if (!cat) return []
+    const byId = new Map(cat.byokProviders.map((p) => [p.id, p]))
+    return cat.presetIds.map((id) => byId.get(id)).filter((p): p is ByokProvider => Boolean(p))
+  })
+
+  const isCustom = () => sel() === "custom"
+  const inForm = () => sel() !== null
+  const title = () => (sel() === "custom" ? "自定义端点" : sel() ? (sel() as ByokProvider).name : "添加节点 / 供应商")
+
+  function openPreset(p: ByokProvider) {
+    setSel(p)
+    setName(p.name)
+    setCompat(p.compat)
+    setBaseURL(p.baseURL)
+    setModels([...p.models])
+    setApiKey("")
+    setShowKey(false)
+    setTest({ s: "idle", msg: "" })
+    setError("")
+  }
+  function openCustom() {
+    setSel("custom")
+    setName("")
+    setCompat("openai")
+    setBaseURL("")
+    setModels([])
+    setApiKey("")
+    setShowKey(false)
+    setTest({ s: "idle", msg: "" })
+    setError("")
+  }
+  function back() {
+    if (inForm()) {
+      setSel(null)
+      setError("")
+    } else props.onClose()
+  }
+  function addModel() {
+    const v = modelInput().trim()
+    if (v && !models().includes(v)) setModels([...models(), v])
+    setModelInput("")
+  }
+
+  async function runTest() {
+    if (!baseURL() || !apiKey() || models().length === 0) {
+      setTest({ s: "err", msg: "先填 Base URL / Key / 模型" })
+      return
+    }
+    setTest({ s: "testing", msg: "" })
+    const r = await window.api.providers.test({ compat: compat(), baseURL: baseURL(), apiKey: apiKey(), model: models()[0] })
+    if (r.ok) setTest({ s: "ok", msg: `已接通 · ${r.ms}ms` })
+    else setTest({ s: "err", msg: r.reason })
+  }
+
+  async function save() {
+    setError("")
+    if (!name().trim()) {
+      setError("请填写供应商名称")
+      return
+    }
+    if (models().length === 0) {
+      setError("至少需要一个模型 ID")
+      return
+    }
+    const id = isCustom() ? slug(name()) : (sel() as ByokProvider).id
+    setSaving(true)
+    const r = await window.api.providers.add({
+      id,
+      name: name(),
+      compat: compat(),
+      baseURL: baseURL(),
+      apiKey: apiKey(),
+      models: models(),
+    })
+    setSaving(false)
+    if (r.ok) {
+      props.onSaved?.()
+      props.onClose()
+    } else setError(r.reason)
+  }
+
+  return (
+    <div class="a-mpa" onClick={(e) => e.stopPropagation()}>
+      <div class="a-mpa-head">
+        <button class="a-mpa-back" onClick={back} aria-label="返回">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="m15 18-6-6 6-6" />
+          </svg>
+        </button>
+        <span class="a-mpa-title">{title()}</span>
+      </div>
+
+      <div class="a-mpa-body">
+        {/* Step 1 — choose provider */}
+        <Show when={!inForm()}>
+          <p class="a-mpa-hint">选国内供应商一键接入(只填 Key),或自定义任意 OpenAI / Anthropic 兼容端点。</p>
+          <For each={presets()}>
+            {(p) => (
+              <button class="a-mpa-preset" onClick={() => openPreset(p)}>
+                <span class="a-mp-pico" style={{ background: p.pico.color }}>
+                  {p.pico.letter}
+                </span>
+                <span class="a-mpa-pn">
+                  <span class="nm">{p.name}</span>
+                  <span class="sb">{p.compat === "anthropic" ? "Anthropic 兼容" : "OpenAI 兼容"} · 填 Key 即用</span>
+                </span>
+                <Chevron />
+              </button>
+            )}
+          </For>
+          <button class="a-mpa-preset custom" onClick={openCustom}>
+            <span class="a-mpa-plus">+</span>
+            <span class="a-mpa-pn">
+              <span class="nm">其他 / 自定义端点</span>
+              <span class="sb">OpenAI · Anthropic 兼容</span>
+            </span>
+            <Chevron />
+          </button>
+        </Show>
+
+        {/* Step 2 — configure */}
+        <Show when={inForm()}>
+          <div class="a-mpa-field">
+            <label>
+              供应商名称 <span class="req">*</span>
+            </label>
+            <input
+              class="a-mpa-input"
+              value={name()}
+              readOnly={!isCustom()}
+              onInput={(e) => setName(e.currentTarget.value)}
+              placeholder="如 DeepSeek"
+            />
+          </div>
+          <div class="a-mpa-field">
+            <label>兼容类型</label>
+            <div class="a-mpa-compat">
+              <div
+                class="opt"
+                aria-pressed={compat() === "openai"}
+                onClick={() => isCustom() && setCompat("openai")}
+              >
+                OpenAI 兼容
+              </div>
+              <div
+                class="opt"
+                aria-pressed={compat() === "anthropic"}
+                onClick={() => isCustom() && setCompat("anthropic")}
+              >
+                Anthropic 兼容
+              </div>
+            </div>
+          </div>
+          <div class="a-mpa-field">
+            <label>
+              Base URL <span class="req">*</span>
+            </label>
+            <input
+              class="a-mpa-input mono"
+              value={baseURL()}
+              onInput={(e) => setBaseURL(e.currentTarget.value)}
+              placeholder="https://api.example.com/v1"
+            />
+          </div>
+          <div class="a-mpa-field">
+            <label>
+              API Key <span class="req">*</span>
+              <span class="a-mpa-keytoggle" onClick={() => setShowKey((v) => !v)}>
+                {showKey() ? "隐藏" : "明文"}
+              </span>
+            </label>
+            <input
+              class="a-mpa-input mono"
+              type={showKey() ? "text" : "password"}
+              value={apiKey()}
+              onInput={(e) => setApiKey(e.currentTarget.value)}
+              placeholder="sk-..."
+            />
+          </div>
+          <div class="a-mpa-field">
+            <label>
+              <Show when={isCustom()} fallback={`将启用的模型 (${models().length})`}>
+                模型 ID <span class="req">*</span>
+              </Show>
+            </label>
+            <div class="a-mpa-modelchips">
+              <For each={models()}>
+                {(m) => (
+                  <span class="a-mpa-mc">
+                    {m}
+                    <Show when={isCustom()}>
+                      <b onClick={() => setModels(models().filter((x) => x !== m))}>×</b>
+                    </Show>
+                  </span>
+                )}
+              </For>
+            </div>
+            <Show when={isCustom()}>
+              <input
+                class="a-mpa-input mono"
+                value={modelInput()}
+                onInput={(e) => setModelInput(e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault()
+                    addModel()
+                  }
+                }}
+                placeholder="回车添加,如 deepseek-chat"
+                style={{ "margin-top": "6px" }}
+              />
+            </Show>
+            <Show when={!isCustom()}>
+              <p class="a-mpa-note">该供应商模型由 alpha 内置目录维护,填 Key 即用;保存后自动列出,无需手输。</p>
+            </Show>
+          </div>
+          <div class="a-mpa-testrow">
+            <button class="a-mpa-testbtn" disabled={test().s === "testing"} onClick={runTest}>
+              {test().s === "testing" ? "测试中…" : "测试连接"}
+            </button>
+            <Show when={test().s === "ok"}>
+              <span class="a-mpa-teststatus ok">✓ {test().msg}</span>
+            </Show>
+            <Show when={test().s === "err"}>
+              <span class="a-mpa-teststatus err">✗ {test().msg}</span>
+            </Show>
+          </div>
+          <Show when={error()}>
+            <p class="a-mpa-error">{error()}</p>
+          </Show>
+        </Show>
+      </div>
+
+      <Show when={inForm()}>
+        <div class="a-mpa-foot">
+          <button class="a-mpa-cancel" onClick={back}>
+            返回
+          </button>
+          <button class="a-mpa-save" disabled={saving()} onClick={save}>
+            {saving() ? "保存中…" : "保存并启用"}
+          </button>
+        </div>
+      </Show>
+    </div>
+  )
+}
+
+const Chevron = () => (
+  <svg class="a-mpa-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <path d="m9 18 6-6-6-6" />
+  </svg>
+)
