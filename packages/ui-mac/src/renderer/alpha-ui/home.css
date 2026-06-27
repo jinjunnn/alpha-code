@@ -272,7 +272,9 @@ body[data-alpha-sidebar="open"] .a-home {
   font-weight: var(--a-weight-semibold);
   letter-spacing: var(--a-tracking-tight);
   text-align: center;
-  margin-bottom: 22px;
+  /* More breathing room between the greeting and the composer (was 22px — read as cramped).
+   * !important because a non-obvious upstream/reset rule was zeroing it (measured 0px live). */
+  margin-bottom: var(--a-space-10) !important;
   animation: a-rise 0.55s var(--a-ease-out) both;
 }
 .a-home-greet-dim {
@@ -284,13 +286,15 @@ body[data-alpha-sidebar="open"] .a-home {
   background: var(--a-surface);
   border: 1px solid var(--a-border);
   border-radius: var(--a-radius-2xl);
-  box-shadow: var(--a-shadow-md);
+  /* edge-light matches the in-session composer reskin (composer-reskin.css) exactly, so the two shells
+   * are pixel-identical, not just similar. */
+  box-shadow: var(--a-shadow-md), var(--a-edge-light);
   transition: box-shadow var(--a-dur-base) var(--a-ease-out), border-color var(--a-dur-base) var(--a-ease-out);
   animation: a-rise 0.55s var(--a-ease-out) 0.09s both;
 }
 .a-comp:focus-within {
   border-color: var(--a-border-strong);
-  box-shadow: var(--a-shadow-lg);
+  box-shadow: var(--a-shadow-lg), var(--a-edge-light);
 }
 /* The composer owns its focus treatment on .a-comp (subtle border + soft shadow). Suppress the global
  * 3px indigo :focus-visible ring (base.css --a-ring-focus) on the textarea so focusing the input does
@@ -549,6 +553,15 @@ body[data-alpha-sidebar="open"] .a-home {
   margin-left: auto;
   color: var(--a-text-tertiary);
   font-size: var(--a-text-xs);
+}
+.a-pop-kbd {
+  margin-left: auto;
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-2xs);
+  color: var(--a-text-tertiary);
+  background: var(--a-bg-muted);
+  padding: 1px 6px;
+  border-radius: 5px;
 }
 .a-pop-sep {
   height: 1px;

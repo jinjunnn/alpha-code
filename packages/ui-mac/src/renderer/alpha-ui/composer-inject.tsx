@@ -10,18 +10,16 @@
 
 import { createSignal, onCleanup, onMount, Show } from "solid-js"
 import { Portal } from "solid-js/web"
-import { useCommand } from "@opencode-ai/app"
-import { EffortChip, PermChip, type Effort, type PermMode } from "./composer-controls"
+import { AddButton, EffortChip, PermChip, setComposerModelLabel } from "./composer-controls"
 
 export function ComposerInject() {
-  const command = useCommand()
   // Two mount points so the chips land where AlphaHome puts them: 权限 after the +/attach (LEFT), and
   // effort right after opencode's model button (RIGHT). One shared host can't do this — opencode keeps
   // + and the model button in separate sub-containers, so flex `order` can't move effort across them.
+  const [addHost, setAddHost] = createSignal<HTMLElement | null>(null)
   const [permHost, setPermHost] = createSignal<HTMLElement | null>(null)
   const [effortHost, setEffortHost] = createSignal<HTMLElement | null>(null)
-  const [perm, setPerm] = createSignal<PermMode>("ask")
-  const [effort, setEffort] = createSignal<Effort>("高")
+  // perm/effort state now lives in composer-controls (shared with AlphaHome) — the chips are self-contained.
 
   const PLUS_SEL = "[data-action=prompt-attach], [data-slot=icon-button]"
 
@@ -52,10 +50,20 @@ export function ComposerInject() {
     const plus = composer?.querySelector(PLUS_SEL) as HTMLElement | null
     const model = composer?.querySelector("[data-action=prompt-model]") as HTMLElement | null
     if (!composer || !plus) {
+      if (addHost()) setAddHost(null)
       if (permHost()) setPermHost(null)
       if (effortHost()) setEffortHost(null)
       return
     }
+    // publish the live model name (shared with AlphaHome's ModelChip so home shows the SAME model, not
+    // the "ALPHA" placeholder). opencode renders the name in a `.truncate` span inside the model button.
+    const modelName = (model?.querySelector(".truncate")?.textContent ?? model?.textContent)?.trim()
+    if (modelName) setComposerModelLabel(modelName)
+    // alpha + menu → BEFORE opencode's (now hidden) + so it sits at the far left (#31). Same AddButton
+    // as the home composer, so the "+" interaction is identical on both surfaces.
+    const ah = ensureHost("add")
+    if (plus.previousSibling !== ah) plus.parentElement!.insertBefore(ah, plus)
+    if (addHost() !== ah) setAddHost(ah)
     // 权限 → right after the +/attach button (LEFT).
     const ph = ensureHost("perm")
     placeAfter(ph, plus)
@@ -65,6 +73,28 @@ export function ComposerInject() {
     const eh = ensureHost("effort")
     placeAfter(eh, (model?.parentElement as HTMLElement | null) ?? plus)
     if (effortHost() !== eh) setEffortHost(eh)
+
+    // usage ring → MOVE opencode's own context-usage button into the toolbar, left of the model chip
+    // (#21/#25: the design puts the context ring in the composer). We relocate the live node (keeps its
+    // % reactive) since SessionContextUsage isn't exported.
+    //
+    // BUG FIX (rings pile up — one per session-tab click): opencode keeps each visited session's
+    // timeline mounted (tab keep-alive), and every timeline renders its OWN context-usage ring. The old
+    // code `appendChild`'d whatever ring it found into the host on each sync but never removed the prior
+    // one, so each session switch stacked another ○ in the toolbar. Fix = adopt ONLY the *currently
+    // visible* session's ring (hidden keep-alive timelines have offsetParent === null) and
+    // `replaceChildren` so the host holds at most one. Excluding rings already inside an alpha host means
+    // that once the live ring is adopted there's no other candidate → the sync is a stable no-op (no
+    // observer storm), and a session switch surfaces a new visible ring → a single clean swap.
+    if (model) {
+      const uh = ensureHost("usage")
+      const modelWrap = model.parentElement as HTMLElement | null
+      if (modelWrap && uh.nextSibling !== modelWrap) modelWrap.parentElement!.insertBefore(uh, modelWrap)
+      const live = [...document.querySelectorAll('button:has([data-component="progress-circle"])')].find(
+        (b) => !b.closest("[data-alpha-composer-inject]") && (b as HTMLElement).offsetParent !== null,
+      ) as HTMLElement | undefined
+      if (live && uh.firstChild !== live) uh.replaceChildren(live)
+    }
   }
 
   // Debounce with setTimeout, NOT requestAnimationFrame (rAF is throttled when backgrounded/headless,
@@ -90,19 +120,11 @@ export function ComposerInject() {
     if (timer) clearTimeout(timer)
   })
 
-  const setPermMode = (mode: PermMode) => {
-    setPerm(mode)
-    try {
-      command.trigger(mode === "full" ? "permissions.autoaccept.enable" : "permissions.autoaccept.disable")
-    } catch {
-      /* command may be unregistered in some states; chip still reflects intent */
-    }
-  }
-
   return (
     <>
-      <Show when={permHost()}>{(h) => <Portal mount={h()}><PermChip mode={perm()} onChange={setPermMode} /></Portal>}</Show>
-      <Show when={effortHost()}>{(h) => <Portal mount={h()}><EffortChip value={effort()} onChange={setEffort} /></Portal>}</Show>
+      <Show when={addHost()}>{(h) => <Portal mount={h()}><AddButton /></Portal>}</Show>
+      <Show when={permHost()}>{(h) => <Portal mount={h()}><PermChip /></Portal>}</Show>
+      <Show when={effortHost()}>{(h) => <Portal mount={h()}><EffortChip /></Portal>}</Show>
     </>
   )
 }

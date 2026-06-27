@@ -13,7 +13,7 @@ import { useLocation, useNavigate } from "@solidjs/router"
 import { useCommand } from "@opencode-ai/app"
 import { useAlphaProjects, type ServerInfo, type AlphaProject } from "../sidebar/use-projects"
 import { sessionHref, newSessionHref, projectLabel } from "../sidebar/route"
-import { PermChip, EffortChip, ModelChip, type PermMode } from "./composer-controls"
+import { AddButton, PermChip, EffortChip, ModelChip, composerModelLabel } from "./composer-controls"
 import "./home.css"
 
 function greeting(): string {
@@ -26,7 +26,6 @@ function greeting(): string {
 }
 
 type Pop = null | "add" | "perm" | "effort" | "ws"
-const EFFORTS = ["低", "中", "高", "超高"] as const
 
 export function AlphaHome(props: { server: Accessor<ServerInfo | undefined> }) {
   const loc = useLocation()
@@ -46,8 +45,6 @@ export function AlphaHome(props: { server: Accessor<ServerInfo | undefined> }) {
 
   const [text, setText] = createSignal("")
   const [chosenWs, setChosenWs] = createSignal<string | undefined>(undefined)
-  const [perm, setPerm] = createSignal<PermMode>("ask")
-  const [effort, setEffort] = createSignal<(typeof EFFORTS)[number]>("高")
   const [pop, setPop] = createSignal<Pop>(null)
   const [sending, setSending] = createSignal(false)
 
@@ -68,16 +65,6 @@ export function AlphaHome(props: { server: Accessor<ServerInfo | undefined> }) {
     setSending(false)
     setText("")
     navigate(id ? sessionHref(ws, id) : newSessionHref(ws))
-  }
-
-  const togglePerm = (mode: PermMode) => {
-    setPerm(mode)
-    setPop(null)
-    try {
-      command.trigger(mode === "full" ? "permissions.autoaccept.enable" : "permissions.autoaccept.disable")
-    } catch {
-      /* command may not be registered yet; the chip still reflects intent */
-    }
   }
 
   const onKey = (e: KeyboardEvent) => {
@@ -123,38 +110,28 @@ export function AlphaHome(props: { server: Accessor<ServerInfo | undefined> }) {
                   onKeyDown={onKey}
                 />
                 <div class="a-comp-bar">
-                  {/* + add */}
-                  <div class="a-pop-wrap">
-                    <button
-                      class="a-chip a-chip-icon"
-                      title="添加"
-                      onClick={(e) => {
-                        stop(e)
-                        setPop(pop() === "add" ? null : "add")
-                      }}
-                    >
-                      <Plus />
-                    </button>
-                    <Show when={pop() === "add"}>
-                      <div class="a-pop a-pop-up" onClick={stop}>
-                        <div class="a-pop-label">添加</div>
-                        <button class="a-pop-item" onClick={() => (setPop(null), command.trigger("file.attach"))}>
-                          <FileIcon /> 文件与文件夹
-                        </button>
-                        <button class="a-pop-item" onClick={() => (setPop(null), command.trigger("project.open"))}>
-                          <FolderIcon /> 打开项目
-                        </button>
-                      </div>
-                    </Show>
-                  </div>
+                  {/* + add — shared AddButton (same menu home + in-session, #31) */}
+                  <AddButton />
 
-                  {/* 权限 · 模型 · effort — shared composer-controls (single source, also used in-session) */}
-                  <PermChip mode={perm()} onChange={togglePerm} />
+                  {/* 权限 · 模型 · effort — shared composer-controls (single source + shared state, also used in-session) */}
+                  <PermChip />
 
                   <div class="a-comp-grow" />
 
-                  <ModelChip onClick={() => command.trigger("model.choose")} />
-                  <EffortChip value={effort()} onChange={setEffort} />
+                  <ModelChip
+                    label={composerModelLabel()}
+                    onClick={() => {
+                      // The home is an alpha overlay, but opencode's new-session composer IS mounted
+                      // behind it (verified: 1 [data-action=prompt-model] present on "/"). The
+                      // `model.choose` command is a no-op without a focused session composer, so the
+                      // chip read as dead (#10). Forward the click to opencode's real model trigger,
+                      // which opens the same 360px picker. Fallback to the command if the button moves.
+                      const btn = document.querySelector('[data-action="prompt-model"]') as HTMLElement | null
+                      if (btn) btn.click()
+                      else command.trigger("model.choose")
+                    }}
+                  />
+                  <EffortChip />
 
                   {/* send */}
                   <button class="a-comp-send" data-ready={canSend() ? "" : undefined} disabled={!canSend()} onClick={() => void submit()} title="发送">
