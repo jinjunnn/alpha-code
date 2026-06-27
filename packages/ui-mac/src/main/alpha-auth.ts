@@ -283,6 +283,10 @@ async function exchangeCode(code: string, verifier: string): Promise<TokenRespon
 
 export async function logout(): Promise<void> {
   stored = { mode: "byok" }
+  // deriveState() also treats DEV_PLATFORM_TOKEN as a static platform login, so while it's set an
+  // explicit logout would leave the state pinned to "logged-in" (the user sees nothing happen). Drop
+  // it for this session so the logged-out state actually takes effect; it re-applies on next launch.
+  delete process.env.DEV_PLATFORM_TOKEN
   try {
     rmSync(authFilePath(), { force: true })
   } catch {}
@@ -290,8 +294,14 @@ export async function logout(): Promise<void> {
   applyAuthEnv()
   publish()
   log("alpha-auth: logged out")
-  // Drop any proxy config out of the running sidecar.
-  relaunchApp()
+  // Do NOT relaunch the app here. Logout must only clear identity + push the logged-out state — a full
+  // app relaunch (app.relaunch()+exit) closed the whole window (and on ad-hoc-signed builds the relaunch
+  // fails outright, so the app just quit). applyAuthEnv() has already dropped the proxy env for FUTURE
+  // sidecar forks; the running sidecar keeps its forked proxy env until the next restart, and the
+  // logged-out state pushed to the renderer soft-locks the alpha proxy rows so the stale proxy isn't
+  // offered. (A clean "drop the proxy immediately without restarting" needs an in-place sidecar respawn
+  // + renderer reconnect — tracked as a follow-up; see setAuthMode which still relaunches for switching
+  // INTO platform-pays where the sidecar must pick up the proxy env at fork time.)
 }
 
 // Switch BYOK ↔ platform-pays. platform-pays only takes effect after a relaunch (the sidecar reads

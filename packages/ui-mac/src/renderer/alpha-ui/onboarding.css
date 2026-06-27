@@ -1,0 +1,137 @@
+/* AlphaOnboarding — first-run welcome card (mockup shell.html §E). Centered over the content area
+ * (above AlphaHome, respecting the sidebar) so first-run focuses on the 3-step start. Tokens only. */
+@import "./tokens.css";
+@import "./base.css";
+
+.a-ob {
+  position: fixed;
+  top: var(--a-home-top, 40px);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  background: var(--a-bg-canvas);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  overflow: auto;
+}
+body[data-alpha-sidebar="open"] .a-ob {
+  left: var(--alpha-sidebar-w, 260px);
+}
+
+.a-ob-card {
+  width: min(560px, 100%);
+  background: var(--a-surface-raised);
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-2xl);
+  box-shadow: var(--a-shadow-lg), var(--a-edge-light);
+  padding: 40px 40px 34px;
+  text-align: center;
+  animation: a-rise 0.5s var(--a-ease-out) both;
+}
+
+.a-ob-mark {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: var(--a-accent-solid);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 28px;
+  margin: 0 auto;
+  box-shadow: var(--a-shadow-md);
+}
+.a-ob-title {
+  font-size: var(--a-text-2xl);
+  font-weight: var(--a-weight-bold);
+  margin-top: 18px;
+}
+.a-ob-sub {
+  color: var(--a-text-secondary);
+  margin: 6px 0 0;
+  font-size: var(--a-text-md);
+}
+
+.a-ob-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 340px;
+  margin: 22px auto 24px;
+  text-align: left;
+}
+.a-ob-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-lg);
+  font-size: var(--a-text-sm);
+  color: var(--a-text);
+}
+.a-ob-step.now {
+  border-color: var(--a-accent);
+  background: var(--a-accent-subtle);
+}
+.a-ob-n {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex: none;
+  background: var(--a-bg-muted);
+  color: var(--a-text-secondary);
+}
+.a-ob-step.done .a-ob-n {
+  background: var(--a-success);
+  color: #fff;
+}
+.a-ob-step.now .a-ob-n {
+  background: var(--a-accent);
+  color: #fff;
+}
+.a-ob-n .a-ic {
+  width: 13px;
+  height: 13px;
+}
+.a-ob-status {
+  margin-left: auto;
+  font-size: var(--a-text-xs);
+  color: var(--a-text-tertiary);
+}
+.a-ob-status.accent {
+  color: var(--a-accent);
+}
+
+.a-ob-btn {
+  height: 38px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: var(--a-radius-md);
+  background: var(--a-accent-solid);
+  color: #fff;
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+  cursor: pointer;
+  box-shadow: var(--a-shadow-xs);
+  transition: background var(--a-dur-fast) var(--a-ease-out);
+}
+.a-ob-btn:hover {
+  background: var(--a-accent-solid-hover);
+}
+.a-ob-skip {
+  margin-top: 12px;
+  font-size: var(--a-text-sm);
+  color: var(--a-text-tertiary);
+  cursor: pointer;
+}
+.a-ob-skip:hover {
+  color: var(--a-text-secondary);
+}

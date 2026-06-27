@@ -1,0 +1,220 @@
+/* Model-picker reskin — elevates opencode's dialog-select-model (a Kobalte combobox popover) to the
+ * alpha premium-dialog surface, WITHOUT rebuilding it (ADR-016: reuse the heavy engine, restyle).
+ *
+ * Stable hooks (verified live via CDP, not brittle Tailwind classes):
+ *   - [data-popper-positioner]      the Kobalte popover positioner (also used by tooltips →
+ *                                   we scope with :has() so ONLY the model-list popover is touched)
+ *   - [data-slot="list-scroll"]     the scrollable model list inside the panel
+ *   - [data-slot="input-wrapper"]   the 搜索模型 field wrapper
+ * The picker already inherits the graphite/ceramic palette via opencode's themed tokens; this only
+ * lifts radius/shadow/border to match alpha's Dialog so it reads as one design system.
+ */
+
+/* Panel surface: the positioner's child IS the Kobalte content panel. Only the popover that contains
+ * the model list-scroll matches — tooltips/other poppers are untouched. */
+[data-popper-positioner]:has([data-slot="list-scroll"]) > * {
+  border-radius: var(--a-radius-xl) !important;
+  border: 1px solid var(--a-border-faint) !important;
+  box-shadow: var(--a-shadow-overlay), var(--a-edge-light) !important;
+  /* Sized to the design (mockup .mp = 360px wide) — native panel was 288px → cramped rows (#5). */
+  width: 360px !important;
+  max-width: 92vw !important;
+}
+
+/* 搜索模型 field → alpha recessed input. */
+[data-popper-positioner]:has([data-slot="list-scroll"]) [data-slot="input-wrapper"] {
+  border-radius: var(--a-radius-md) !important;
+  background: var(--a-bg-subtle) !important;
+  border: 1px solid var(--a-border-faint) !important;
+}
+
+/* A touch more breathing room around the list so rows aren't cramped against the panel edge. */
+[data-popper-positioner]:has([data-slot="list-scroll"]) [data-slot="list-scroll"] {
+  padding-inline: 2px;
+}
+
+/* Tier badges (旗舰/高级/标准) + cost multiplier injected per model row by model-picker-inject.tsx,
+ * styled to the mockup's three-tier selector. Pushed to the right edge of the row. */
+.a-mp-tier {
+  flex: none;
+  padding: 2px 7px;
+  border-radius: var(--a-radius-full);
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-semibold);
+  line-height: 1.5;
+}
+
+/* Row anatomy (mockup #20 .m-row): leading pico · 2-line name/subtitle (flex-1 pushes the right
+ * cluster) · reasoning dot · tier · multiplier. */
+.a-mp-pico {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+}
+.a-mp-namecol {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+}
+.a-mp-namecol > span {
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+  color: var(--a-text);
+  text-align: left;
+  width: 100%;
+}
+.a-mp-sub {
+  font-size: var(--a-text-2xs);
+  color: var(--a-text-tertiary);
+  line-height: 1.3;
+}
+.a-mp-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--a-accent);
+  opacity: 0.7;
+}
+.a-mp-grouptag {
+  margin-left: 6px;
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-semibold);
+  padding: 1px 6px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-accent-subtle);
+  color: var(--a-accent);
+  vertical-align: middle;
+}
+/* selected (chosen) model → indigo-subtle row (mockup .m-row.sel). */
+[data-popper-positioner]:has([data-slot="list-scroll"]) [data-slot="list-item"][data-selected="true"] {
+  background: var(--a-accent-subtle) !important;
+}
+/* footer "+ 添加自定义节点 / 供应商" (mockup .mp-foot). */
+.a-mp-foot {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: calc(100% - 8px);
+  margin: 4px;
+  padding: 9px 10px;
+  border: 0;
+  border-top: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-md);
+  background: transparent;
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-sm);
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.a-mp-foot:hover {
+  background: var(--a-bg-muted);
+  color: var(--a-text);
+}
+.a-mp-foot svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.a-mp-tier.flag {
+  background: rgba(217, 119, 6, 0.14);
+  color: var(--a-warning);
+}
+.a-mp-tier.pro {
+  background: var(--a-bg-inset);
+  color: var(--a-text-secondary);
+}
+.a-mp-tier.std {
+  background: var(--a-bg-muted);
+  color: var(--a-text-tertiary);
+}
+.a-mp-mult {
+  flex: none;
+  margin-left: 6px;
+  font-size: var(--a-text-2xs);
+  color: var(--a-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Account banner (会员 / 余额 / 余额不足 / 未登录) pinned above the model list by model-picker-inject. */
+.a-acct-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 4px 8px;
+  padding: 7px 10px;
+  border-radius: var(--a-radius-md);
+  font-size: var(--a-text-xs);
+  font-weight: var(--a-weight-medium);
+}
+.a-acct-banner .a-ic {
+  flex: none;
+}
+.a-acct-banner.member {
+  background: var(--a-success-subtle);
+  color: var(--a-success);
+}
+.a-acct-banner.balance {
+  background: var(--a-bg-muted);
+  color: var(--a-text-secondary);
+}
+.a-acct-banner.empty {
+  background: var(--a-bg-muted);
+  color: var(--a-warning);
+}
+.a-acct-banner.out {
+  background: var(--a-bg-muted);
+  color: var(--a-text-secondary);
+}
+.a-acct-bb {
+  margin-left: auto;
+  height: 24px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: var(--a-radius-md);
+  background: var(--a-accent-solid);
+  color: #fff;
+  font-size: var(--a-text-xs);
+  font-weight: var(--a-weight-medium);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.a-acct-bb:hover {
+  background: var(--a-accent-solid-hover);
+}
+.a-acct-bbs {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+.a-acct-bbs .a-acct-bb {
+  margin-left: 0;
+}
+.a-acct-bb.ghost {
+  background: transparent;
+  border: 1px solid var(--a-border-strong);
+  color: var(--a-text-secondary);
+}
+.a-ic-2xs {
+  width: 12px;
+  height: 12px;
+}
+
+/* Soft-lock: alpha proxy rows dim + go non-interactive when logged-out / out of balance. */
+[data-slot="list-item"][data-alpha-locked] {
+  opacity: 0.55;
+  pointer-events: none;
+}

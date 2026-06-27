@@ -29,8 +29,17 @@ import "./styles.css"
 import "./sidebar/sidebar.css"
 import "./sidebar/account-popover.css"
 import "./alpha-ui/settings-reskin.css"
+import "./alpha-ui/timeline-reskin.css"
+import "./alpha-ui/composer-reskin.css"
+import "./alpha-ui/model-picker-reskin.css"
+import "./alpha-ui/dialog-reskin.css"
+import { ToastViewport } from "./alpha-ui/Toast"
+import { ComposerInject } from "./alpha-ui/composer-inject"
+import { ModelPickerInject } from "./alpha-ui/model-picker-inject"
+import { TimelineInject } from "./alpha-ui/timeline-inject"
 import { AlphaSidebar } from "./sidebar/alpha-sidebar"
 import { AlphaHome } from "./alpha-ui/AlphaHome"
+import { AlphaOnboarding } from "./alpha-ui/AlphaOnboarding"
 import { setupSettingsBackButton } from "./alpha-ui/settings-back-button"
 import { ExtensionHub } from "./extensions/extension-hub"
 import { extHubOpen, setExtHubOpen } from "./extensions/ext-hub-state"
@@ -394,7 +403,12 @@ render(() => {
               <Inner />
               <AlphaSidebar server={sidebarServer} />
               <AlphaHome server={sidebarServer} />
+              <AlphaOnboarding />
               <ExtensionHub server={sidebarServer} open={extHubOpen} onClose={() => setExtHubOpen(false)} />
+              <ComposerInject />
+              <ModelPickerInject />
+              <TimelineInject />
+              <ToastViewport />
             </AppInterface>
           )}
         </Show>

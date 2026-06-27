@@ -54,7 +54,23 @@ export function buildAlphaModelConfig(): AlphaModelConfig | undefined {
       npm: "@ai-sdk/openai-compatible",
       name: "ALPHA",
       options: { baseURL: process.env.ALPHA_BASE_URL, apiKey: "{env:ALPHA_API_KEY}" },
-      models: { "alpha-default": { name: "ALPHA" } }, // TODO: replace with the real model id(s)
+      // Real models the alpha-platform gateway serves (alpha-platform packages/gateway/src/
+      // registry.ts → entries with enabled:true). The login token (ALPHA_API_KEY) authorizes them
+      // through the /v1 proxy, so the moment the user is logged in these all appear in the picker.
+      // Ordered flagship → standard; the picker derives 等级 from the id (opus=旗舰, sonnet/search=高级).
+      models: {
+        "claude-opus-4.8": { name: "Claude Opus 4.8" },
+        "claude-opus-4.8-direct": { name: "Claude Opus 4.8 · 直连" },
+        "claude-sonnet-4.6": { name: "Claude Sonnet 4.6" },
+        "claude-haiku-4.5": { name: "Claude Haiku 4.5" },
+        "gpt-5.4-search": { name: "GPT-5.4 · 联网" },
+        "gpt-5.4-mini": { name: "GPT-5.4 Mini" },
+        "gpt-5.4-nano": { name: "GPT-5.4 Nano" },
+        "deepseek-v4-pro": { name: "DeepSeek V4 Pro" },
+        "deepseek-v4-flash": { name: "DeepSeek V4 Flash" },
+        "deepseek-chat": { name: "DeepSeek Chat" },
+        "deepseek-reasoner": { name: "DeepSeek Reasoner" },
+      },
     }
     enabled.unshift("alpha")
   }

@@ -46,6 +46,11 @@
   --a-accent-solid: var(--a-accent);
   --a-accent-solid-hover: var(--a-accent-hover);
   --a-accent-solid-active: var(--a-accent-active);
+  /* Send button fill — softer indigo (user-chosen; the full-saturation accent read garish as a solid
+     fill). Send-specific so the global accent stays the brand #4f46e5. Single source for both the home
+     and in-session send buttons. */
+  --a-send: #6366f1;
+  --a-send-hover: #4f46e5;
   --a-accent-subtle: rgba(79, 70, 229, 0.10);   /* tinted fills */
   --a-accent-border: rgba(79, 70, 229, 0.35);
   --a-accent-ring: rgba(79, 70, 229, 0.45);      /* focus ring */
@@ -116,6 +121,16 @@
   --a-shadow-overlay: 0 24px 64px rgba(15, 17, 21, 0.20), 0 8px 16px rgba(15, 17, 21, 0.10);
   --a-ring-focus: 0 0 0 3px var(--a-accent-ring);
 
+  /* ── Premium polish (frontend-design pass) ───────────────────────────────
+     Quiet depth without color. Edge-light = a 1px "glass" top-highlight for raised /
+     tinted surfaces (composer, cards, modals, popovers) — barely there in light, the
+     signature lit-from-above edge in dark. Glow = an ≤4% accent wash for atmosphere
+     behind hero surfaces (home, empty states). Grain = a faint fractal-noise overlay
+     so the white canvas reads "crafted", not flat (Linear/Vercel register). */
+  --a-edge-light: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  --a-glow-accent: radial-gradient(58% 48% at 50% 38%, color-mix(in srgb, var(--a-accent) 4%, transparent), transparent 72%);
+  --a-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.022'/%3E%3C/svg%3E");
+
   /* ── Motion ──────────────────────────────────────────────────────────── */
   --a-dur-instant: 80ms;
   --a-dur-fast: 130ms;
@@ -185,6 +200,8 @@
   --a-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.4);
   --a-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6), 0 4px 8px rgba(0, 0, 0, 0.4);
   --a-shadow-overlay: 0 24px 64px rgba(0, 0, 0, 0.7), 0 8px 16px rgba(0, 0, 0, 0.5);
+  /* On dark the glass top-highlight is the signature premium edge on graphite surfaces. */
+  --a-edge-light: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 /* Follow the OS only when the app hasn't pinned a scheme (data-color-scheme set by opencode wins). */

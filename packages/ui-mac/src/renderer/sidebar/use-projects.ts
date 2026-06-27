@@ -53,6 +53,14 @@ export interface AlphaProjectsApi {
    *  draft is a *tab*, and the alpha redesign hides the tab strip, so a draft would have no
    *  representation in our sidebar. Creating means the new chat shows immediately. */
   createSession(worktree: string): Promise<string | undefined>
+  /** Create a session AND send the first message (the home composer's submit). */
+  startChat(worktree: string, text: string): Promise<string | undefined>
+  /** Per-session actions via the SDK; the global event stream reconciles the store. */
+  renameSession(id: string, title: string): Promise<void>
+  shareSession(id: string, directory: string): Promise<string | undefined>
+  deleteSession(id: string): Promise<void>
+  /** Fetch the session's messages and format them as markdown text for copy-to-clipboard. */
+  copySession(id: string): Promise<string | undefined>
 }
 
 type Client = ReturnType<typeof createOpencodeClient>
@@ -241,6 +249,86 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
     }
   }
 
+  // Start a chat from the home composer: create a session AND fire the first message, so submitting
+  // on home behaves like Codex/ChatGPT (type → enter → you're in the conversation). The model/agent
+  // default to the server's (we don't have opencode's model context here); promptAsync is the same
+  // call opencode's own composer makes (prompt-input/submit.ts). Returns the new session id.
+  async function startChat(worktree: string, text: string): Promise<string | undefined> {
+    const c = client
+    if (!c) return undefined
+    try {
+      const { data, error } = await c.session.create({ directory: worktree } as any)
+      if (error || !data) return undefined
+      const id = (data as any).id as string
+      if (worktreeIndex(worktree) < 0) await loadProjects()
+      upsertSession(data)
+      const body = text.trim()
+      if (body) {
+        await c.session
+          .promptAsync({ sessionID: id, parts: [{ type: "text", text: body }] } as any)
+          .catch(() => {
+            /* the session still exists; the user can retry from the session composer */
+          })
+      }
+      return id
+    } catch {
+      return undefined
+    }
+  }
+
+  // --- session actions (SDK; the global event stream reconciles the store) -------------------
+  async function renameSession(id: string, title: string) {
+    const c = client
+    if (!c || !title.trim()) return
+    try {
+      await c.session.update({ sessionID: id, title: title.trim() } as any)
+    } catch {
+      /* transient; the session.updated event will reconcile */
+    }
+  }
+  async function shareSession(id: string, directory: string): Promise<string | undefined> {
+    const c = client
+    if (!c) return undefined
+    try {
+      const { data } = await c.session.share({ sessionID: id, directory } as any)
+      return (data as any)?.share?.url ?? (data as any)?.url
+    } catch {
+      return undefined
+    }
+  }
+  async function deleteSession(id: string) {
+    const c = client
+    if (!c) return
+    try {
+      await c.session.delete({ sessionID: id } as any)
+    } catch {
+      /* transient; the session.deleted event will reconcile */
+    }
+  }
+  async function copySession(id: string): Promise<string | undefined> {
+    const c = client
+    if (!c) return undefined
+    try {
+      const { data, error } = await c.session.messages({ sessionID: id } as any)
+      if (error || !data) return undefined
+      const blocks: string[] = []
+      for (const m of data as any[]) {
+        const role = m.info?.role ?? m.role
+        const parts = m.parts ?? m.info?.parts ?? []
+        const text = (parts as any[])
+          .filter((p) => p?.type === "text" && typeof p.text === "string")
+          .map((p) => p.text as string)
+          .join("\n")
+          .trim()
+        if (!text) continue
+        blocks.push(`## ${role === "user" ? "用户" : "助手"}\n${text}`)
+      }
+      return blocks.length > 0 ? blocks.join("\n\n") : undefined
+    } catch {
+      return undefined
+    }
+  }
+
   // --- live updates via the GLOBAL (unfiltered) event stream ---------------------------------
   // The per-instance /api/event stream filters events by the subscribed directory
   // (server handlers/event.ts), so a single global subscription would only ever see events for
@@ -308,5 +396,5 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
     })
   })
 
-  return { store, createSession }
+  return { store, createSession, startChat, renameSession, shareSession, deleteSession, copySession }
 }

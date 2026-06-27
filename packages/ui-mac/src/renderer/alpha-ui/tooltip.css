@@ -1,0 +1,35 @@
+@import "./tokens.css";
+
+/* alpha-ui Tooltip — CSS-only hover/focus label. Zero JS, zero deps. */
+.a-tip-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.a-tip {
+  position: absolute;
+  z-index: var(--a-z-toast);
+  pointer-events: none;
+  white-space: nowrap;
+  padding: 5px 9px;
+  border-radius: var(--a-radius-md);
+  background: var(--a-text);
+  color: var(--a-bg-canvas);
+  font-size: var(--a-text-xs);
+  font-weight: var(--a-weight-medium);
+  box-shadow: var(--a-shadow-md);
+  opacity: 0;
+  transform: translateY(2px) scale(0.97);
+  transition:
+    opacity var(--a-dur-fast) var(--a-ease-out),
+    transform var(--a-dur-fast) var(--a-ease-out);
+}
+.a-tip[data-placement="top"] { bottom: calc(100% + 6px); left: 50%; translate: -50% 0; }
+.a-tip[data-placement="bottom"] { top: calc(100% + 6px); left: 50%; translate: -50% 0; }
+.a-tip[data-placement="left"] { right: calc(100% + 6px); top: 50%; translate: 0 -50%; }
+.a-tip[data-placement="right"] { left: calc(100% + 6px); top: 50%; translate: 0 -50%; }
+.a-tip-wrap:hover .a-tip,
+.a-tip-wrap:focus-within .a-tip {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+@media (prefers-reduced-motion: reduce) { .a-tip { transition: none; } }

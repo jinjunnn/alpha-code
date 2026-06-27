@@ -1,5 +1,7 @@
-/* Extension Hub (定制中心) — full PAGE on the alpha-ui design system (approved Codex-style layout).
- * Covers the content area (right of the sidebar); only mounted while open so it can't eat clicks. */
+/* Extension Hub (定制中心) — full PAGE on the alpha-ui design system.
+ * Approved redesign 2026-06-26 (docs/designs/2026-06-26-hub-settings-redesign): sticky centered tab
+ * bar → centered max-width column (880) → responsive card grid (container-query 2↔1 col). Covers the
+ * content area (right of the sidebar); only mounted while open so it can't eat clicks. */
 @import "../alpha-ui/tokens.css";
 @import "../alpha-ui/base.css";
 
@@ -34,25 +36,60 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   }
 }
 
-/* ── Tabs ───────────────────────────────────────────────────────────────── */
+/* shared inline-icon sizing (paths carry stroke=currentColor) */
+.alpha-ic {
+  width: 16px;
+  height: 16px;
+  display: block;
+  flex: 0 0 auto;
+}
+.alpha-ic-sm {
+  width: 14px;
+  height: 14px;
+}
+.alpha-ic-xs {
+  width: 11px;
+  height: 11px;
+}
+.alpha-mono {
+  font-family: var(--a-font-mono);
+}
+
+/* ── Sticky, centered tab bar + close ───────────────────────────────────────── */
 .alpha-ext-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 4;
   display: flex;
-  align-items: center;
-  gap: 20px;
-  padding: 14px 32px 0;
+  justify-content: center;
+  padding: 0 24px;
   border-bottom: 1px solid var(--a-border-faint);
+  background: color-mix(in srgb, var(--a-bg-canvas) 88%, transparent);
+  backdrop-filter: blur(12px);
+}
+.alpha-ext-tabs-inner {
+  display: flex;
+  gap: 2px;
+  width: 100%;
+  max-width: 880px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.alpha-ext-tabs-inner::-webkit-scrollbar {
+  display: none;
 }
 .alpha-ext-tab {
-  padding: 0 0 12px;
+  padding: 13px 11px 11px;
   border: none;
   background: transparent;
   color: var(--a-text-tertiary);
   font-family: var(--a-font-sans);
   font-size: var(--a-text-sm);
-  font-weight: var(--a-weight-semibold);
+  font-weight: var(--a-weight-medium);
   cursor: pointer;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
+  white-space: nowrap;
   transition: color var(--a-dur-fast) var(--a-ease-out);
 }
 .alpha-ext-tab:hover {
@@ -62,19 +99,19 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   color: var(--a-text);
   border-bottom-color: var(--a-accent);
 }
-.alpha-ext-tabs-spacer {
-  flex: 1;
-}
 .alpha-ext-close {
+  position: absolute;
+  top: 8px;
+  right: 14px;
   width: 30px;
   height: 30px;
-  margin-bottom: 8px;
   border: none;
   border-radius: var(--a-radius-md);
   background: transparent;
   color: var(--a-text-tertiary);
+  display: grid;
+  place-items: center;
   cursor: pointer;
-  font-size: 15px;
   transition: background var(--a-dur-fast) var(--a-ease-out), color var(--a-dur-fast) var(--a-ease-out);
 }
 .alpha-ext-close:hover {
@@ -82,15 +119,21 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   color: var(--a-text);
 }
 
-/* ── Body ───────────────────────────────────────────────────────────────── */
-.alpha-ext-body {
+/* ── Scroll body + centered column (container query drives the grid) ─────────── */
+.alpha-ext-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 26px 32px 56px;
+  padding: 30px 24px 56px;
+  container-type: inline-size;
 }
-.alpha-ext-body > * {
-  max-width: 960px;
+.alpha-ext-center {
+  max-width: 880px;
+  margin-inline: auto;
+}
+
+.alpha-ext-hero {
+  margin-bottom: 4px;
 }
 .alpha-ext-title {
   font-size: var(--a-text-2xl);
@@ -98,25 +141,25 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   letter-spacing: var(--a-tracking-tight);
 }
 .alpha-ext-sub {
-  margin: 4px 0 20px;
+  margin: 6px 0 0;
   color: var(--a-text-secondary);
   font-size: var(--a-text-md);
+  line-height: var(--a-leading-snug);
+  max-width: 72ch;
 }
 
-.alpha-ext-search-row {
-  display: flex;
-  gap: 10px;
-}
+/* ── Search ─────────────────────────────────────────────────────────────────── */
 .alpha-ext-search {
-  flex: 1;
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 40px;
+  height: 42px;
   padding: 0 14px;
+  margin: 20px 0 6px;
   background: var(--a-bg-subtle);
   border: 1px solid var(--a-border);
-  border-radius: var(--a-radius-md);
+  border-radius: var(--a-radius-lg);
+  box-shadow: var(--a-edge-light);
   transition: border-color var(--a-dur-fast) var(--a-ease-out), background var(--a-dur-fast) var(--a-ease-out),
     box-shadow var(--a-dur-fast) var(--a-ease-out);
 }
@@ -126,10 +169,8 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   box-shadow: var(--a-ring-focus);
 }
 .alpha-ext-search-ic {
-  width: 15px;
-  height: 15px;
-  flex: 0 0 auto;
   color: var(--a-text-tertiary);
+  display: flex;
 }
 .alpha-ext-search input {
   flex: 1;
@@ -138,23 +179,30 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   background: transparent;
   color: inherit;
   font-family: var(--a-font-sans);
-  font-size: var(--a-text-sm);
+  font-size: var(--a-text-md);
   outline: none;
 }
 .alpha-ext-search input::placeholder {
   color: var(--a-text-tertiary);
 }
 
-.alpha-ext-sec-head {
+/* ── Section header (overline + optional link) ──────────────────────────────── */
+.alpha-ext-secrow {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 24px 0 10px;
+  margin: 28px 0 12px;
 }
-.alpha-ext-sec-t {
-  font-size: var(--a-text-sm);
+.alpha-ext-overline {
+  font-size: var(--a-text-2xs);
   font-weight: var(--a-weight-semibold);
+  letter-spacing: var(--a-tracking-wide);
+  text-transform: uppercase;
+  color: var(--a-text-tertiary);
+}
+.alpha-ext-overline b {
   color: var(--a-text-secondary);
+  font-weight: var(--a-weight-semibold);
 }
 .alpha-ext-link {
   border: none;
@@ -169,104 +217,21 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   text-decoration: underline;
 }
 
-/* ── 已添加 icon row ────────────────────────────────────────────────────── */
-.alpha-ext-installed {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.alpha-ext-ic {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--a-font-mono);
-  font-weight: var(--a-weight-semibold);
-  font-size: 13px;
-  text-transform: uppercase;
-  color: var(--a-text-secondary);
-  background: var(--a-bg-muted);
-  border: 1px solid var(--a-border-faint);
-}
-.alpha-ext-ic[data-connected] {
-  color: var(--a-accent);
-  background: var(--a-accent-subtle);
-  border-color: transparent;
-}
-
-/* ── List rows ──────────────────────────────────────────────────────────── */
-.alpha-ext-rows {
-  display: flex;
-  flex-direction: column;
-}
-.alpha-ext-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 14px 4px;
-}
-.alpha-ext-row + .alpha-ext-row {
-  border-top: 1px solid var(--a-border-faint);
-}
-.alpha-ext-ric {
-  flex: 0 0 auto;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--a-font-mono);
-  font-weight: var(--a-weight-semibold);
-  font-size: 14px;
-  text-transform: uppercase;
-  color: var(--a-text-secondary);
-  background: var(--a-bg-muted);
-  border: 1px solid var(--a-border-faint);
-}
-.alpha-ext-rtext {
-  flex: 1;
-  min-width: 0;
-}
-.alpha-ext-rname {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.alpha-ext-rname-t {
-  font-size: var(--a-text-md);
-  font-weight: var(--a-weight-semibold);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.alpha-ext-rdesc {
-  font-size: var(--a-text-sm);
-  color: var(--a-text-tertiary);
-  margin-top: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.alpha-ext-rcount {
-  color: var(--a-text-tertiary);
-}
+/* ── Source chips (official=blue · alpha=indigo · community=amber) ──────────── */
 .alpha-ext-chip {
   flex: 0 0 auto;
   font-size: var(--a-text-2xs);
   font-weight: var(--a-weight-semibold);
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  padding: 2px 7px;
+  letter-spacing: 0.01em;
+  padding: 1.5px 7px;
   border-radius: var(--a-radius-full);
   color: var(--a-text-secondary);
   background: var(--a-bg-muted);
+  white-space: nowrap;
 }
 .alpha-ext-chip[data-source="official"] {
-  color: var(--a-success);
-  background: var(--a-success-subtle);
+  color: var(--a-info);
+  background: color-mix(in srgb, var(--a-info) 14%, transparent);
 }
 .alpha-ext-chip[data-source="community"] {
   color: var(--a-warning);
@@ -277,17 +242,150 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   background: var(--a-accent-subtle);
 }
 
-/* ── Add / action buttons ───────────────────────────────────────────────── */
+/* ── Installed chip strip (Featured tab) ────────────────────────────────────── */
+.alpha-ext-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.alpha-ext-chip-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 11px;
+  background: var(--a-bg-subtle);
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-md);
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+}
+.alpha-ext-chip-d {
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+}
+.alpha-ext-chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--a-success);
+}
+
+/* ── Card grid (responsive via container query) ─────────────────────────────── */
+.alpha-ext-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+@container (max-width: 620px) {
+  .alpha-ext-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.alpha-ext-card {
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-lg);
+  background: var(--a-surface);
+  box-shadow: var(--a-edge-light);
+  transition: border-color var(--a-dur-fast) var(--a-ease-out), box-shadow var(--a-dur-fast) var(--a-ease-out),
+    transform var(--a-dur-fast) var(--a-ease-out);
+}
+.alpha-ext-card:hover {
+  border-color: var(--a-border-strong);
+  box-shadow: var(--a-shadow-sm);
+  transform: translateY(-1px);
+}
+.alpha-ext-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+}
+.alpha-ext-card-ic {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--a-radius-md);
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  flex: none;
+  box-shadow: var(--a-shadow-xs);
+}
+.alpha-ext-card-hd {
+  min-width: 0;
+  flex: 1;
+  padding-top: 1px;
+}
+.alpha-ext-card-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.alpha-ext-card-name b {
+  font-size: var(--a-text-md);
+  font-weight: var(--a-weight-semibold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.alpha-ext-card-desc {
+  font-size: var(--a-text-sm);
+  color: var(--a-text-secondary);
+  margin: 9px 0 0;
+  line-height: var(--a-leading-snug);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 34px;
+}
+.alpha-ext-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 13px;
+}
+.alpha-ext-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 21px;
+  padding: 0 7px;
+  border-radius: var(--a-radius-sm);
+  background: var(--a-bg-muted);
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-medium);
+  white-space: nowrap;
+}
+.alpha-ext-card-foot .alpha-ext-add {
+  margin-left: auto;
+}
+
+/* ── Add / action button ────────────────────────────────────────────────────── */
 .alpha-ext-add {
   flex: 0 0 auto;
-  height: 30px;
-  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 13px;
   border: 1px solid var(--a-border);
   border-radius: var(--a-radius-md);
   background: var(--a-surface);
   color: var(--a-text);
   font-family: var(--a-font-sans);
-  font-size: var(--a-text-sm);
+  font-size: var(--a-text-xs);
   font-weight: var(--a-weight-medium);
   cursor: pointer;
   transition: background var(--a-dur-fast) var(--a-ease-out), border-color var(--a-dur-fast) var(--a-ease-out);
@@ -297,70 +395,373 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   border-color: var(--a-border-strong);
 }
 .alpha-ext-add:disabled {
-  opacity: 0.55;
   cursor: default;
 }
 .alpha-ext-add[data-variant="primary"] {
+  border-color: transparent;
   background: var(--a-accent-solid);
-  border-color: var(--a-accent-solid);
   color: var(--a-text-on-accent);
+  box-shadow: var(--a-shadow-xs);
 }
 .alpha-ext-add[data-variant="primary"]:hover:not(:disabled) {
   background: var(--a-accent-solid-hover);
-  border-color: var(--a-accent-solid-hover);
+}
+.alpha-ext-add[data-variant="primary"]:disabled {
+  opacity: 0.5;
 }
 .alpha-ext-add[data-variant="installed"] {
-  background: transparent;
-  border-color: var(--a-border);
+  border-color: transparent;
+  background: var(--a-success-subtle);
   color: var(--a-success);
 }
 
-.alpha-ext-empty {
-  padding: 56px 4px;
-  text-align: center;
-  color: var(--a-text-tertiary);
+/* ── Featured bundle hero rows ──────────────────────────────────────────────── */
+.alpha-ext-kit {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 15px 16px;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-lg);
+  background: var(--a-surface);
+  box-shadow: var(--a-edge-light);
+  margin-bottom: 10px;
+  transition: border-color var(--a-dur-fast) var(--a-ease-out), box-shadow var(--a-dur-fast) var(--a-ease-out);
+}
+.alpha-ext-kit:hover {
+  border-color: var(--a-border-strong);
+  box-shadow: var(--a-shadow-sm);
+}
+.alpha-ext-kit-ic {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--a-radius-lg);
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  flex: none;
+  box-shadow: var(--a-shadow-xs);
+}
+.alpha-ext-kit-body {
+  min-width: 0;
+  flex: 1;
+}
+.alpha-ext-kit-ttl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.alpha-ext-kit-ttl b {
+  font-size: var(--a-text-md);
+  font-weight: var(--a-weight-semibold);
+}
+.alpha-ext-kit-desc {
   font-size: var(--a-text-sm);
+  color: var(--a-text-secondary);
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.alpha-ext-kit-n {
+  color: var(--a-text-tertiary);
 }
 
-/* ── Create form ────────────────────────────────────────────────────────── */
-.alpha-ext-form {
+/* ── Category subheader (connectors) ────────────────────────────────────────── */
+.alpha-ext-grp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 24px 0 11px;
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-semibold);
+  color: var(--a-text-secondary);
+}
+.alpha-ext-grp-ct {
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-medium);
+  color: var(--a-text-tertiary);
+  background: var(--a-bg-muted);
+  padding: 1px 7px;
+  border-radius: var(--a-radius-full);
+}
+
+/* ── Callout (plugin note) ──────────────────────────────────────────────────── */
+.alpha-ext-callout {
+  margin: 18px 0 4px;
+  padding: 11px 14px;
+  background: var(--a-bg-canvas);
+  border: 1px solid var(--a-border);
+  border-left: 3px solid var(--a-warning);
+  border-radius: var(--a-radius-md);
+  font-size: var(--a-text-sm);
+  color: var(--a-text-secondary);
+  line-height: var(--a-leading-snug);
+}
+
+/* ── Empty state ────────────────────────────────────────────────────────────── */
+.alpha-ext-empty-state {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  max-width: 560px;
+  align-items: center;
+  text-align: center;
+  gap: 7px;
+  padding: 56px 20px;
+}
+.alpha-ext-empty-ic {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--a-radius-xl);
+  background: var(--a-bg-muted);
+  color: var(--a-text-tertiary);
+  display: grid;
+  place-items: center;
+  margin-bottom: 6px;
+}
+.alpha-ext-empty-state b {
+  font-size: var(--a-text-md);
+  font-weight: var(--a-weight-semibold);
+}
+.alpha-ext-empty-state p {
+  font-size: var(--a-text-sm);
+  color: var(--a-text-tertiary);
+  margin: 0;
+  max-width: 42ch;
+}
+.alpha-ext-empty-state .alpha-ext-add {
   margin-top: 8px;
 }
-.alpha-ext-form-types {
+
+/* ── Installed manage list ──────────────────────────────────────────────────── */
+.alpha-ext-manage {
   display: flex;
-  gap: 16px;
+  flex-direction: column;
+  gap: 9px;
 }
-.alpha-ext-input,
-.alpha-ext-textarea {
-  width: 100%;
-  padding: 9px 12px;
+.alpha-ext-man {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 13px 15px;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-lg);
+  background: var(--a-surface);
+  box-shadow: var(--a-edge-light);
+}
+.alpha-ext-man-ic {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--a-radius-md);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  flex: none;
+  box-shadow: var(--a-shadow-xs);
+}
+.alpha-ext-man-body {
+  min-width: 0;
+  flex: 1;
+}
+.alpha-ext-man-nm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.alpha-ext-man-nm b {
+  font-size: var(--a-text-md);
+  font-weight: var(--a-weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.alpha-ext-man-st {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--a-text-sm);
+  color: var(--a-text-tertiary);
+  margin-top: 1px;
+}
+.alpha-ext-man-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--a-text-disabled);
+  flex: none;
+}
+.alpha-ext-man-dot[data-on] {
+  background: var(--a-success);
+}
+.alpha-ext-man-dot[data-err] {
+  background: var(--a-error);
+}
+.alpha-ext-iconbtn {
+  width: 30px;
+  height: 30px;
   border-radius: var(--a-radius-md);
   border: 1px solid var(--a-border);
-  background: var(--a-bg-subtle);
-  color: inherit;
+  background: var(--a-surface);
+  color: var(--a-text-tertiary);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex: none;
+  transition: background var(--a-dur-fast) var(--a-ease-out), color var(--a-dur-fast) var(--a-ease-out),
+    border-color var(--a-dur-fast) var(--a-ease-out);
+}
+.alpha-ext-iconbtn:hover {
+  background: var(--a-bg-muted);
+  color: var(--a-error);
+  border-color: var(--a-border-strong);
+}
+
+/* ── Toggle switch (manage rows) ────────────────────────────────────────────── */
+.alpha-ext-sw {
+  width: 36px;
+  height: 21px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-bg-inset);
+  position: relative;
+  border: none;
+  padding: 0;
+  flex: none;
+  cursor: pointer;
+  transition: background var(--a-dur-fast) var(--a-ease-out);
+}
+.alpha-ext-sw::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: var(--a-shadow-xs);
+  transition: left var(--a-dur-fast) var(--a-ease-out);
+}
+.alpha-ext-sw[data-on] {
+  background: var(--a-accent-solid);
+}
+.alpha-ext-sw[data-on]::after {
+  left: 17px;
+}
+
+/* ── Create / import form ───────────────────────────────────────────────────── */
+.alpha-ext-form {
+  max-width: 560px;
+  margin-top: 18px;
+}
+.alpha-ext-seg {
+  display: inline-flex;
+  padding: 3px;
+  background: var(--a-bg-muted);
+  border-radius: var(--a-radius-md);
+  gap: 2px;
+  margin-bottom: 18px;
+}
+.alpha-ext-seg button {
+  border: none;
+  background: transparent;
+  color: var(--a-text-secondary);
   font-family: var(--a-font-sans);
   font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+  padding: 6px 16px;
+  border-radius: var(--a-radius-sm);
+  cursor: pointer;
+}
+.alpha-ext-seg button[data-on] {
+  background: var(--a-surface);
+  color: var(--a-text);
+  box-shadow: var(--a-shadow-xs);
+}
+.alpha-ext-field {
+  display: block;
+  margin-bottom: 15px;
+}
+.alpha-ext-flabel {
+  display: block;
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+  margin-bottom: 6px;
+}
+.alpha-ext-opt {
+  color: var(--a-text-tertiary);
+  font-weight: var(--a-weight-normal);
+  margin-left: 6px;
+}
+.alpha-ext-input {
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-md);
+  background: var(--a-surface);
+  color: var(--a-text);
+  font-family: var(--a-font-sans);
+  font-size: var(--a-text-md);
   outline: none;
   box-sizing: border-box;
 }
-.alpha-ext-textarea {
-  min-height: 160px;
-  resize: vertical;
-  font-family: var(--a-font-mono);
-  line-height: var(--a-leading-snug);
-}
-.alpha-ext-input:focus,
-.alpha-ext-textarea:focus {
-  background: var(--a-surface);
+.alpha-ext-input:focus {
   border-color: var(--a-accent);
   box-shadow: var(--a-ring-focus);
 }
+.alpha-ext-textarea {
+  height: 120px;
+  padding: 10px 12px;
+  resize: vertical;
+  line-height: var(--a-leading-snug);
+}
+.alpha-ext-import {
+  margin-top: 30px;
+  padding-top: 8px;
+  border-top: 1px solid var(--a-border-faint);
+}
+.alpha-ext-import-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.alpha-ext-import-card {
+  flex: 1;
+  min-width: 150px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-lg);
+  background: var(--a-surface);
+  color: var(--a-text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--a-dur-fast) var(--a-ease-out), background var(--a-dur-fast) var(--a-ease-out);
+}
+.alpha-ext-import-card:hover {
+  border-color: var(--a-border-strong);
+  background: var(--a-bg-subtle);
+}
+.alpha-ext-import-card .alpha-ic {
+  color: var(--a-text-tertiary);
+}
+.alpha-ext-import-card b {
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+  display: block;
+}
+.alpha-ext-import-card small {
+  font-size: var(--a-text-2xs);
+  color: var(--a-text-tertiary);
+  display: block;
+}
 
-/* ── Toast ──────────────────────────────────────────────────────────────── */
+/* ── Toast ──────────────────────────────────────────────────────────────────── */
 .alpha-ext-toast {
   position: fixed;
   left: 50%;
@@ -374,4 +775,85 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   font-weight: var(--a-weight-medium);
   box-shadow: var(--a-shadow-lg);
   z-index: 30;
+}
+
+/* ── Install-confirm dialog body (inside the alpha Dialog) ──────────────────── */
+.alpha-ext-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.alpha-ext-confirm-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.alpha-ext-confirm-type {
+  font-size: var(--a-text-sm);
+  color: var(--a-text-tertiary);
+}
+.alpha-ext-confirm-desc {
+  margin: 0;
+  font-size: var(--a-text-base);
+  line-height: var(--a-leading-normal);
+  color: var(--a-text-secondary);
+}
+.alpha-ext-install-box {
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-lg);
+  overflow: hidden;
+}
+.alpha-ext-install-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  font-size: var(--a-text-sm);
+}
+.alpha-ext-install-row + .alpha-ext-install-row {
+  border-top: 1px solid var(--a-border-faint);
+}
+.alpha-ext-install-ic {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  flex: none;
+}
+.alpha-ext-install-nm {
+  font-weight: var(--a-weight-medium);
+}
+.alpha-ext-install-opt {
+  font-size: var(--a-text-2xs);
+  color: var(--a-text-tertiary);
+}
+.alpha-ext-install-k {
+  margin-left: auto;
+  font-size: var(--a-text-2xs);
+  color: var(--a-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: var(--a-tracking-wide);
+}
+.alpha-ext-confirm-line {
+  font-size: var(--a-text-sm);
+  color: var(--a-text-secondary);
+}
+.alpha-ext-confirm-line code {
+  font-family: var(--a-font-mono);
+  font-size: 11.5px;
+  background: var(--a-bg-muted);
+  border: 1px solid var(--a-border-faint);
+  padding: 1px 6px;
+  border-radius: 5px;
+  color: var(--a-text);
+}
+.alpha-ext-confirm-note {
+  font-size: var(--a-text-xs);
+  color: var(--a-text-tertiary);
+  margin: 0;
+  line-height: var(--a-leading-snug);
 }
