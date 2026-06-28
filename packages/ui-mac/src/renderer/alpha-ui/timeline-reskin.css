@@ -85,9 +85,21 @@
   color: var(--a-text-secondary);
 }
 
-/* ── Edit / write / patch bodies — hairline separation from the trigger ───────────────── */
-[data-component="edit-content"],
+/* ── Edit / write — COMPACT card: the inline file body (diff/content) is hidden so the card is
+ *    just the trigger row + 「在面板打开」; full content opens in the review panel. Kills the empty
+ *    white box + nested file frames (audit #7/#15). apply_patch keeps its inline summary. ─────── */
+[data-component="write-tool"] [data-slot="collapsible-content"],
+[data-component="edit-tool"] [data-slot="collapsible-content"],
 [data-component="write-content"],
+[data-component="edit-content"] {
+  display: none !important;
+}
+/* the expanded write/edit collapsible left an empty padded shell on the card — flatten it */
+[data-component="write-tool"] > [data-component="collapsible"],
+[data-component="edit-tool"] > [data-component="collapsible"] {
+  padding: 0 !important;
+  margin: 0 !important;
+}
 [data-component="apply-patch-file-diff"] {
   border-top: 1px solid var(--a-border-faint);
 }
@@ -230,4 +242,288 @@
   background: transparent !important;
   padding: 0 !important;
   font-size: inherit;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════════════════
+ * 2026-06-27 · Timeline audit fixes — 4 pure-CSS gaps from the design doc
+ *   docs/designs/2026-06-25-composer-model-redesign/timeline.html (完整版).
+ * Each maps 1:1 to the seam table there. Source untouched; gentle color/space/overflow only.
+ * COUPLING (cosmetic; re-point on upstream rename): context-tool-group-list/-item,
+ *   .agent-title, [data-kind=tool-error-card] + tool-error-card-icon/-content, user-message-meta*.
+ * ════════════════════════════════════════════════════════════════════════════════════════ */
+
+/* ② Explore / read GROUP — expanded sub-rows were bare text, so a single "已探索 1 次读取" read
+ *    as incomplete (audit #2 / #6). Indent the list and give each item a hover surface + smaller
+ *    sub-item sizing, so the group reads as a tidy nested list. (Header styled above, L125.) */
+[data-component="context-tool-group-list"] {
+  padding: 2px 6px 6px 8px;
+}
+[data-slot="context-tool-group-item"] {
+  border-radius: var(--a-radius-md);
+  transition: background var(--a-dur-fast) var(--a-ease-out);
+}
+[data-slot="context-tool-group-item"]:hover {
+  background: var(--a-bg-subtle);
+}
+[data-slot="context-tool-group-item"] [data-component="tool-trigger"] {
+  padding: 5px 8px;
+}
+[data-slot="context-tool-group-item"] [data-component="tool-trigger"]:hover {
+  background: transparent; /* the item already hovers — avoid a double surface */
+}
+[data-slot="context-tool-group-item"] .a-tc-ico {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+}
+[data-slot="context-tool-group-item"] .a-tc-ico svg {
+  width: 11px;
+  height: 11px;
+}
+
+/* ③ Skill chip — the "· 已加载" suffix was clipped to "已加…" (audit #3): the title slot truncates
+ *    (upstream ellipsis) inside the inline pill. Let the skill title size to content so the full
+ *    「技能 · <name> · 已加载 ›」 shows. (Pill shell + ::before/::after labels defined at L136.) */
+[data-component="tool-part-wrapper"]:has(.agent-title) {
+  max-width: none; /* was 92% — short skill names never need to clip */
+}
+[data-component="tool-trigger"] .agent-title,
+[data-component="tool-part-wrapper"]:has(.agent-title) [data-slot="basic-tool-tool-info"],
+[data-component="tool-part-wrapper"]:has(.agent-title) [data-slot="basic-tool-tool-info-main"] {
+  min-width: 0;
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+/* ④ Error card — opencode renders <Card variant=error data-kind=tool-error-card>; alpha never
+ *    skinned it, so API / tool errors showed as a bare red-left-bar of text (audit #4: Not Found,
+ *    missing Authorization). Promote to the full alpha red card (timeline.html .errcard). */
+[data-kind="tool-error-card"] {
+  border: 1px solid var(--a-error) !important;
+  background: var(--a-error-subtle) !important;
+  border-radius: var(--a-radius-lg) !important;
+  overflow: hidden;
+}
+[data-kind="tool-error-card"] [data-component="tool-trigger"]:hover {
+  background: color-mix(in srgb, var(--a-error) 8%, transparent);
+}
+[data-kind="tool-error-card"] [data-component="tool-error-card-icon"] {
+  color: var(--a-error);
+}
+[data-kind="tool-error-card"] [data-slot="basic-tool-tool-title"] {
+  color: var(--a-text);
+}
+[data-kind="tool-error-card"] [data-slot="basic-tool-tool-subtitle"] {
+  color: var(--a-error);
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-xs);
+}
+[data-slot="tool-error-card-content"] {
+  padding: 0 14px 12px 36px;
+}
+[data-slot="tool-error-card-content"] > :not([data-slot="tool-error-card-copy"]) {
+  color: var(--a-error);
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-xs);
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+/* #4b MODEL / message-level error (data-timeline-row="Error") — opencode renders it as a bare
+ *    <div data-component="card" data-variant="error" class="error-card"> with only a thin accent
+ *    border, so "Header中未收到Authorization…" / "Not Found" read as loose red text (audit #4, the
+ *    REAL case). Distinct from the per-tool tool-error-card above. Promote to the alpha red card. */
+.error-card,
+[data-slot="session-turn-message-container"] [data-component="card"][data-variant="error"] {
+  display: flex !important;
+  align-items: flex-start;
+  gap: 9px;
+  border: 1px solid var(--a-error) !important;
+  background: var(--a-error-subtle) !important;
+  border-radius: var(--a-radius-lg) !important;
+  padding: 11px 14px !important;
+  color: var(--a-error) !important;
+  font-size: var(--a-text-sm);
+  line-height: var(--a-leading-normal);
+}
+.error-card::before,
+[data-slot="session-turn-message-container"] [data-component="card"][data-variant="error"]::before {
+  content: "!";
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--a-error);
+  color: var(--a-bg-canvas);
+  font-weight: 700;
+  font-size: 11px;
+  font-family: var(--a-font-sans);
+}
+
+/* ⑤ User message footer — agent·model·time read as a prominent line under the bubble, stealing
+ *    focus from the answer (audit #5). Demote it: agent+model → faint, timestamp → tertiary, and
+ *    reveal the copy / revert actions on hover only (mirrors the assistant footer hover-actions).
+ *    Scoped to the timeline-specific wrapper — not the global button slot. */
+[data-slot="user-message-meta"] {
+  color: var(--a-text-disabled) !important;
+}
+[data-slot="user-message-meta-sep"],
+[data-slot="user-message-meta-tail"] {
+  color: var(--a-text-tertiary) !important;
+}
+[data-slot="user-message-copy-wrapper"] button {
+  opacity: 0;
+  transition: opacity var(--a-dur-fast) var(--a-ease-out);
+}
+[data-component="user-message"]:hover [data-slot="user-message-copy-wrapper"] button,
+[data-slot="user-message-copy-wrapper"] button:focus-visible {
+  opacity: 1;
+}
+/* #6 the reset/copy icon buttons looked clumsy — make them small, tertiary, clean rounded hover */
+[data-slot="user-message-copy-wrapper"] [data-component="icon-button"] {
+  width: 22px !important;
+  height: 22px !important;
+  padding: 0 !important;
+  border-radius: var(--a-radius-sm) !important;
+  color: var(--a-text-tertiary) !important;
+}
+[data-slot="user-message-copy-wrapper"] [data-component="icon-button"]:hover {
+  background: var(--a-overlay-hover) !important;
+  color: var(--a-text) !important;
+}
+[data-slot="user-message-copy-wrapper"] [data-component="icon"] svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════════════════
+ * 2026-06-27 · Styles for the 3 INJECT fixes (elements created in timeline-inject.tsx).
+ * Class-in-CSS / element-in-inject, same split as .a-tc-ico above.
+ * ════════════════════════════════════════════════════════════════════════════════════════ */
+
+/* ⑥ "在面板打开" pill injected onto edit/write/apply-patch cards → opens opencode's review panel.
+ *    Keeps file products off the left rail (audit #7/#9). */
+.a-openp {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  flex: none;
+  padding: 2px 8px;
+  border-radius: var(--a-radius-full);
+  cursor: pointer;
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-medium);
+  color: var(--a-accent);
+}
+.a-openp:hover {
+  background: var(--a-accent-subtle);
+}
+.a-openp svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* ① Directory listing → file grid injected into a `list`/dir-read tool-output (audit #1: bare
+ *    grid + bilingual "22 entries 共。"). Folder = accent, file = faint, clean "共 N 项" count. */
+.a-dirgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 1px 18px;
+  padding: 10px 12px;
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-sm);
+}
+.a-dirgrid .it {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 0;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--a-text-secondary);
+}
+.a-dirgrid .it svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+.a-dirgrid .it.dir {
+  color: var(--a-text);
+  font-weight: var(--a-weight-medium);
+}
+.a-dirgrid .it.dir svg {
+  color: var(--a-accent);
+}
+.a-dirgrid .it.file svg {
+  color: var(--a-text-disabled);
+}
+.a-dircount {
+  padding: 6px 12px;
+  border-top: 1px solid var(--a-border-faint);
+  font-size: var(--a-text-2xs);
+  color: var(--a-text-tertiary);
+}
+
+/* ⑦ Slash-command chip — a /init send is folded (body hidden) into a compact pill on the right, like a
+ *    connector chip, instead of dumping the expanded prompt (audit #10). Element built in inject. */
+/* once a user message is folded to a chip, keep its full body/attachments hidden via CSS — robust to
+ * Solid re-rendering the body element (inline display:none on the node would be lost on re-render). */
+[data-component="user-message"][data-alpha-cmd] [data-slot="user-message-body"],
+[data-component="user-message"][data-alpha-cmd] [data-slot="user-message-attachments"] {
+  display: none !important;
+}
+.a-cmd-chip {
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 82%;
+  padding: 8px 14px 8px 11px;
+  background: var(--a-bg-subtle);
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-full);
+  font-size: var(--a-text-md);
+  line-height: 1.3;
+}
+.a-cmd-chip .ic {
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--a-accent);
+}
+.a-cmd-chip .ic svg {
+  width: 17px;
+  height: 17px;
+}
+.a-cmd-chip[data-kind="skill"] .ic {
+  color: #f6821f;
+}
+.a-cmd-chip[data-kind="mcp"] .ic {
+  color: #7c3aed;
+}
+.a-cmd-chip .nm {
+  color: var(--a-accent);
+  font-weight: var(--a-weight-medium);
+  white-space: nowrap;
+}
+.a-cmd-chip[data-kind="skill"] .nm {
+  color: #f6821f;
+}
+.a-cmd-chip[data-kind="mcp"] .nm {
+  color: #7c3aed;
+}
+.a-cmd-chip .args {
+  color: var(--a-text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

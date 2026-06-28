@@ -56,6 +56,9 @@ function detect(trigger: HTMLElement): keyof typeof COLORS {
 
 function decorate(trigger: HTMLElement) {
   if (trigger.hasAttribute("data-alpha-tc-ico")) return
+  // Error cards already carry their own ban-sign indicator (tool-error-card-icon); skip so we don't
+  // prepend a redundant second (type-guessed) icon next to it.
+  if (trigger.closest("[data-kind='tool-error-card']")) return
   trigger.setAttribute("data-alpha-tc-ico", "")
   const type = detect(trigger)
   const ico = document.createElement("span")
@@ -77,12 +80,206 @@ function decorateGroup(trigger: HTMLElement) {
   trigger.insertBefore(ico, trigger.firstChild)
 }
 
+const svg = (inner: string, w = 1.8) =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`
+const FOLDER = '<path d="M3 7l2-3h5l2 3h7v11H3z"/>'
+const FILE = '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/>'
+const EXTERNAL = '<path d="M15 3h6v6M10 14L21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/>'
+
+// ① Directory listing → file grid. opencode renders a dir read/list as raw `<Markdown>` inside
+// [data-component=tool-output]: a flat newline list + a "(N entries)" footer (read.ts <entries>).
+// Guarded HARD so glob/grep outputs (which share tool-output but have NO footer) are never touched;
+// non-destructive (hide originals + append) so we don't tear out Solid-owned nodes. Idempotent.
+function decorateDirOutput(out: HTMLElement) {
+  if (out.hasAttribute("data-alpha-dirgrid")) return
+  let entries: string[] = []
+  let total = 0
+  try {
+    const raw = out.textContent || ""
+    const foot = raw.match(/\((?:Showing\s+\d+\s+of\s+)?(\d+)\s+entries/)
+    if (!foot) return // not a directory listing → leave as-is
+    total = parseInt(foot[1], 10)
+    // Prefer the <entries> element (clean, newline-separated). If markdown stripped it, bail safely.
+    const src = out.querySelector("entries")?.textContent || ""
+    if (!src) return
+    entries = src
+      .split("\n")
+      .map((s) => s.trim())
+      .filter((l) => l && !l.startsWith("(")) // drop the "(N entries)" footer line
+    if (!entries.length) return
+  } catch {
+    return
+  }
+  out.setAttribute("data-alpha-dirgrid", "")
+  const grid = document.createElement("div")
+  grid.className = "a-dirgrid"
+  for (const name of entries) {
+    const isDir = name.endsWith("/")
+    const it = document.createElement("span")
+    it.className = "it " + (isDir ? "dir" : "file")
+    it.innerHTML = svg(isDir ? FOLDER : FILE, 1.7)
+    it.appendChild(document.createTextNode(name))
+    grid.appendChild(it)
+  }
+  const count = document.createElement("div")
+  count.className = "a-dircount"
+  count.textContent = `共 ${total} 项`
+  for (const c of Array.from(out.children)) (c as HTMLElement).style.display = "none"
+  out.appendChild(grid)
+  out.appendChild(count)
+}
+
+// ② "在面板打开" pill on file-product cards (edit/write/apply_patch) → opens opencode's review
+// panel by clicking its own header toggle ([aria-controls=review-panel]). File-specific focus is
+// not reachable from the DOM layer (needs Solid view().review.openPath) — opening the panel still
+// moves the product off the left rail (audit #7/#9). Click is isolated from the accordion toggle.
+function openReviewPanel() {
+  const btn = document.querySelector<HTMLElement>('[aria-controls="review-panel"]')
+  if (!btn || btn.getAttribute("aria-expanded") === "true") return
+  btn.click()
+}
+function decorateFileProduct(trigger: HTMLElement) {
+  if (trigger.hasAttribute("data-alpha-openp")) return
+  const wrap = trigger.closest("[data-component='tool-part-wrapper']") ?? trigger
+  if (!wrap.querySelector("[data-component='write-tool'],[data-component='edit-tool'],[data-component='apply-patch-tool']"))
+    return
+  trigger.setAttribute("data-alpha-openp", "")
+  const pill = document.createElement("span")
+  pill.className = "a-openp"
+  pill.setAttribute("role", "button")
+  pill.innerHTML = svg(EXTERNAL) + "在面板打开"
+  pill.addEventListener("click", (e) => {
+    e.stopPropagation()
+    e.preventDefault()
+    openReviewPanel()
+  })
+  const content =
+    (trigger.querySelector("[data-slot='basic-tool-tool-trigger-content']") as HTMLElement | null) ?? trigger
+  content.appendChild(pill)
+}
+
+// ⑦ Slash-command → compact chip (FUTURE commands only — per the user's call). opencode discards the
+// command name when it expands /init server-side (UserMessage carries no `command` field; the rendered
+// DOM has no marker), so a command can't be recovered after the fact. Instead we CAPTURE it at SEND time
+// — the composer text is still "/init" right before opencode expands it — then fold the very next user
+// message that appears into a chip. Reliable for live commands, zero upstream edits (ADR-016 kept).
+type SlashType = "command" | "skill" | "mcp"
+type SlashCmd = { name: string; args: string; type: SlashType }
+let pendingCmd: (SlashCmd & { t: number }) | null = null
+const cmdMsgs = new Map<string, SlashCmd>() // messageID → slash invocation (sticks across re-renders)
+const seenMsgs = new Set<string>() // user messages already present (so we never fold history on load)
+const slashTypeMap = new Map<string, SlashType>() // trigger → type, learned live from the / popover
+
+// Persist folds by messageID so a /command STAYS a chip across reloads / app restarts / reopening the
+// session (it was reverting to full text because the map was memory-only). Keyed on the server msg id.
+const CMD_LS = "alpha-cmd:"
+try {
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i)
+    if (k?.startsWith(CMD_LS)) cmdMsgs.set(k.slice(CMD_LS.length), JSON.parse(localStorage.getItem(k)!) as SlashCmd)
+  }
+} catch {}
+function rememberCmd(id: string, cmd: SlashCmd) {
+  cmdMsgs.set(id, cmd)
+  try {
+    localStorage.setItem(CMD_LS + id, JSON.stringify(cmd))
+  } catch {}
+}
+
+// glyph per slash type (color comes from CSS: command=accent, skill=orange, mcp=purple).
+const CHIP_GLYPH: Record<SlashType, string> = {
+  command: '<path d="M10 4L6 20"/>',
+  skill: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/>',
+  mcp: '<path d="M4 7l8-4 8 4-8 4z"/><path d="M4 7v10l8 4 8-4V7"/><path d="M12 11v10"/>',
+}
+
+// learn each slash item's type from the live "/" popover — items carry a 技能/MCP badge; else command.
+function scanSlashMenu() {
+  for (const it of document.querySelectorAll<HTMLElement>("[data-slash-id]")) {
+    const trig = (it.querySelector("span")?.textContent || it.getAttribute("data-slash-id") || "")
+      .replace(/^\//, "")
+      .trim()
+      .toLowerCase()
+    if (!trig) continue
+    let type: SlashType = "command"
+    for (const s of it.querySelectorAll("span")) {
+      const t = (s.textContent || "").trim()
+      if (t === "技能" || /^skill$/i.test(t)) { type = "skill"; break }
+      if (/^mcp$/i.test(t)) { type = "mcp"; break }
+    }
+    slashTypeMap.set(trig, type)
+  }
+}
+
+// read the composer the instant before a send fires (capture phase, before it clears).
+function captureSend() {
+  const composer = document.querySelector("[data-component=session-composer],[data-component=session-new-composer]")
+  const input = composer?.querySelector("[contenteditable], textarea, input") as HTMLInputElement | null
+  const txt = ((input?.value ?? input?.textContent) || "").trim()
+  const m = txt.match(/^\/([a-z0-9][\w-]*)\s*([\s\S]*)$/i)
+  if (!m) return
+  const name = m[1].toLowerCase()
+  pendingCmd = { name, args: (m[2] || "").trim(), type: slashTypeMap.get(name) || "command", t: Date.now() }
+}
+
+// fold a slash invocation into a chip: [type icon] name + the user's typed prompt. Never the full text.
+// The body is hidden via CSS keyed on the data-alpha-cmd marker (NOT inline display:none) so it stays
+// hidden even when Solid re-renders the body element. The chip is re-inserted if a re-render drops it.
+function foldCommand(um: HTMLElement, cmd: SlashCmd) {
+  const key = `${cmd.type}:${cmd.name}:${cmd.args}`
+  let chip = um.querySelector(":scope > .a-cmd-chip") as HTMLElement | null
+  if (chip && um.getAttribute("data-alpha-cmd") === key) return // already folded correctly
+  um.setAttribute("data-alpha-cmd", key)
+  if (!chip) {
+    chip = document.createElement("div")
+    chip.className = "a-cmd-chip"
+    um.insertBefore(chip, um.firstChild)
+  }
+  chip.setAttribute("data-kind", cmd.type)
+  chip.innerHTML = `<span class="ic">${svg(CHIP_GLYPH[cmd.type] || CHIP_GLYPH.command)}</span><span class="nm"></span>`
+  chip.querySelector(".nm")!.textContent = cmd.name
+  if (cmd.args) {
+    const a = document.createElement("span")
+    a.className = "args"
+    a.textContent = cmd.args
+    chip.appendChild(a)
+  }
+}
+
+function scanCommands() {
+  scanSlashMenu()
+  for (const um of document.querySelectorAll<HTMLElement>("[data-component='user-message']")) {
+    const id =
+      um.closest("[data-message-id]")?.getAttribute("data-message-id") || um.getAttribute("data-timeline-part-id")
+    if (!id) continue
+    if (!seenMsgs.has(id)) {
+      seenMsgs.add(id)
+      // brand-new message right after a slash send → it's that invocation's expansion
+      if (pendingCmd && Date.now() - pendingCmd.t < 8000) {
+        const txt = (um.querySelector("[data-slot='user-message-body']")?.textContent || "").trim()
+        if (!txt.startsWith("/" + pendingCmd.name)) {
+          const { name, args, type } = pendingCmd
+          rememberCmd(id, { name, args, type }) // expanded ⇒ a real slash invocation; persist it
+        }
+        pendingCmd = null
+      }
+    }
+    const cmd = cmdMsgs.get(id)
+    if (cmd) foldCommand(um, cmd)
+  }
+}
+
 export function TimelineInject() {
   let mo: MutationObserver | undefined
   let timer: ReturnType<typeof setTimeout> | undefined
   const scan = () => {
-    for (const t of document.querySelectorAll<HTMLElement>("[data-component='tool-trigger']")) decorate(t)
+    for (const t of document.querySelectorAll<HTMLElement>("[data-component='tool-trigger']")) {
+      decorate(t)
+      decorateFileProduct(t)
+    }
     for (const g of document.querySelectorAll<HTMLElement>("[data-component='context-tool-group-trigger']")) decorateGroup(g)
+    for (const o of document.querySelectorAll<HTMLElement>("[data-component='tool-output']")) decorateDirOutput(o)
+    scanCommands()
   }
   const schedule = () => {
     if (timer) return
@@ -91,15 +288,37 @@ export function TimelineInject() {
       scan()
     }, 0)
   }
+  // capture a slash command at SEND time (Enter without shift, or a click on the send button), before
+  // opencode clears the composer and expands it. scanCommands() then folds the resulting message.
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) captureSend()
+  }
+  const onClick = (e: MouseEvent) => {
+    const t = e.target as HTMLElement
+    const slash = t?.closest?.("[data-slash-id]") // picking a command from the slash popover
+    if (slash) {
+      const name = (slash.querySelector("span")?.textContent || slash.getAttribute("data-slash-id") || "")
+        .replace(/^\//, "")
+        .trim()
+        .toLowerCase()
+      if (name) pendingCmd = { name, args: "", type: slashTypeMap.get(name) || "command", t: Date.now() }
+      return
+    }
+    if (t?.closest?.("[data-action=prompt-submit]")) captureSend()
+  }
   onMount(() => {
     scan()
     for (const d of [120, 400, 900]) setTimeout(scan, d)
     mo = new MutationObserver(schedule)
     mo.observe(document.body, { childList: true, subtree: true })
+    document.addEventListener("keydown", onKey, true)
+    document.addEventListener("click", onClick, true)
   })
   onCleanup(() => {
     mo?.disconnect()
     if (timer) clearTimeout(timer)
+    document.removeEventListener("keydown", onKey, true)
+    document.removeEventListener("click", onClick, true)
   })
   return null
 }
