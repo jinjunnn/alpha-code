@@ -1,58 +1,199 @@
-/* Model-picker reskin — elevates opencode's dialog-select-model (a Kobalte combobox popover) to the
- * alpha premium-dialog surface, WITHOUT rebuilding it (ADR-016: reuse the heavy engine, restyle).
- *
- * Stable hooks (verified live via CDP, not brittle Tailwind classes):
- *   - [data-popper-positioner]      the Kobalte popover positioner (also used by tooltips →
- *                                   we scope with :has() so ONLY the model-list popover is touched)
- *   - [data-slot="list-scroll"]     the scrollable model list inside the panel
- *   - [data-slot="input-wrapper"]   the 搜索模型 field wrapper
- * The picker already inherits the graphite/ceramic palette via opencode's themed tokens; this only
- * lifts radius/shadow/border to match alpha's Dialog so it reads as one design system.
- */
+/* Model-picker FULL TAKEOVER styling (paired with model-picker-inject.tsx). When our [data-alpha-picker]
+ * mounts inside opencode's native dialog-select-model popover, we hide the native content (search +
+ * sliders/+ icons + per-provider list — kept in DOM so its rows stay click-targets) and render our own
+ * picker matching the 2026-06-27 design. Scoped via :has([data-alpha-picker]) so tooltips / the
+ * provider-select dialog are untouched. */
 
-/* Panel surface: the positioner's child IS the Kobalte content panel. Only the popover that contains
- * the model list-scroll matches — tooltips/other poppers are untouched. */
-[data-popper-positioner]:has([data-slot="list-scroll"]) > * {
-  border-radius: var(--a-radius-xl) !important;
-  border: 1px solid var(--a-border-faint) !important;
-  box-shadow: var(--a-shadow-overlay), var(--a-edge-light) !important;
-  /* Sized to the 2026-06-27 redesign (.mp = 380px wide); height capped so the panel never runs off
-   * screen — only the list scrolls (search/banner/footer stay pinned by the native layout). */
+/* Panel: override the native w-72/h-80 (288×320 fixed) → design 380 wide, content-height capped. */
+[data-popper-positioner]:has([data-alpha-picker]) > * {
   width: 380px !important;
   max-width: 92vw !important;
+  height: auto !important;
   max-height: min(560px, 72vh) !important;
-}
-
-/* 搜索模型 field → alpha recessed input, with focus ring (redesign §10). */
-[data-popper-positioner]:has([data-slot="list-scroll"]) [data-slot="input-wrapper"] {
-  border-radius: var(--a-radius-md) !important;
-  background: var(--a-bg-subtle) !important;
-  border: 1px solid transparent !important;
-}
-[data-popper-positioner]:has([data-slot="list-scroll"]) [data-slot="input-wrapper"]:focus-within {
+  padding: 0 !important;
+  overflow: hidden !important;
+  position: relative !important;
+  border-radius: var(--a-radius-xl) !important;
+  border: 1px solid var(--a-border-faint) !important;
   background: var(--a-surface) !important;
-  border-color: var(--a-accent-border) !important;
-  box-shadow: var(--a-ring-focus) !important;
+  box-shadow: var(--a-shadow-overlay), var(--a-edge-light) !important;
+}
+/* hide the entire native list (search row + groups) — kept in DOM for programmatic row clicks. */
+[data-popper-positioner]:has([data-alpha-picker]) [data-component="list"] {
+  display: none !important;
 }
 
-/* A touch more breathing room around the list so rows aren't cramped against the panel edge. */
-[data-popper-positioner]:has([data-slot="list-scroll"]) [data-slot="list-scroll"] {
-  padding-inline: 2px;
+/* ── our picker ─────────────────────────────────────────────────────────────────────────────── */
+.a-mp2 {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: min(560px, 72vh);
+  position: relative;
+  background: var(--a-surface);
 }
-
-/* Tier badges (旗舰/高级/标准) + cost multiplier injected per model row by model-picker-inject.tsx,
- * styled to the mockup's three-tier selector. Pushed to the right edge of the row. */
-.a-mp-tier {
+.a-mp2-search {
   flex: none;
-  padding: 2px 7px;
-  border-radius: var(--a-radius-full);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 12px 0;
+  padding: 0 10px;
+  height: 38px;
+  background: var(--a-bg-subtle);
+  border: 1px solid transparent;
+  border-radius: var(--a-radius-md);
+  transition: border-color var(--a-dur-fast), box-shadow var(--a-dur-fast), background var(--a-dur-fast);
+}
+.a-mp2-search:focus-within {
+  background: var(--a-surface);
+  border-color: var(--a-accent-border);
+  box-shadow: var(--a-ring-focus);
+}
+.a-mp2-search > svg {
+  flex: none;
+  color: var(--a-text-tertiary);
+}
+.a-mp2-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  outline: none;
+  font: inherit;
+  font-size: var(--a-text-base);
+  color: var(--a-text);
+}
+.a-mp2-search input::placeholder {
+  color: var(--a-text-tertiary);
+}
+.a-mp2-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 8px 8px;
+  scrollbar-width: thin;
+}
+.a-mp2-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.a-mp2-scroll::-webkit-scrollbar-thumb {
+  background: var(--a-border);
+  border-radius: 99px;
+  border: 2px solid var(--a-surface);
+}
+.a-mp2-ghead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 8px 5px;
+}
+.a-mp2-ghead .gt {
   font-size: var(--a-text-2xs);
+  letter-spacing: var(--a-tracking-wide);
+  text-transform: uppercase;
+  color: var(--a-text-tertiary);
   font-weight: var(--a-weight-semibold);
-  line-height: 1.5;
+}
+.a-mp2-lock {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--a-text-2xs);
+  color: var(--a-text-tertiary);
+}
+.a-mp2-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  background: transparent;
+  border-radius: var(--a-radius-md);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  position: relative;
+  transition: background var(--a-dur-fast);
+}
+.a-mp2-row:hover {
+  background: var(--a-overlay-hover);
+}
+.a-mp2-row.sel {
+  background: var(--a-accent-subtle);
+}
+.a-mp2-row.sel::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  bottom: 7px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--a-accent);
+}
+.a-mp2-row.locked {
+  opacity: 0.5;
+}
+.a-mp2-row.locked:hover {
+  opacity: 0.62;
+  background: var(--a-warning-subtle);
+}
+.a-mp2-empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-sm);
+  line-height: 1.7;
+}
+.a-mp2-empty a {
+  color: var(--a-accent);
+  cursor: pointer;
+  font-weight: var(--a-weight-medium);
+}
+.a-mp2-foot {
+  flex: none;
+  border-top: 1px solid var(--a-border-faint);
+  padding: 8px;
+}
+.a-mp2-addbtn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border: 0;
+  background: none;
+  border-radius: var(--a-radius-md);
+  cursor: pointer;
+  color: var(--a-text-secondary);
+  font: inherit;
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+  text-align: left;
+}
+.a-mp2-addbtn:hover {
+  background: var(--a-bg-muted);
+  color: var(--a-text);
+}
+.a-mp2-plus {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: var(--a-radius-sm);
+  background: var(--a-bg-muted);
+  color: var(--a-text-secondary);
+}
+.a-mp2-addbtn:hover .a-mp2-plus {
+  background: var(--a-accent-subtle);
+  color: var(--a-accent);
 }
 
-/* Row anatomy (mockup #20 .m-row): leading pico · 2-line name/subtitle (flex-1 pushes the right
- * cluster) · reasoning dot · tier · multiplier. */
+/* ── row pieces (shared) ────────────────────────────────────────────────────────────────────── */
 .a-mp-pico {
   flex: none;
   width: 24px;
@@ -60,9 +201,9 @@
   border-radius: var(--a-radius-sm);
   display: grid;
   place-items: center;
+  color: #fff;
   font-size: 12px;
   font-weight: 700;
-  color: #fff;
   box-shadow: var(--a-edge-light);
 }
 .a-mp-namecol {
@@ -70,20 +211,23 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  text-align: left;
+  gap: 1px;
 }
-.a-mp-namecol > span {
-  font-size: var(--a-text-sm);
+.a-mp-nm {
+  font-size: var(--a-text-base);
   font-weight: var(--a-weight-medium);
   color: var(--a-text);
-  text-align: left;
-  width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .a-mp-sub {
+  font-family: var(--a-font-mono);
   font-size: var(--a-text-2xs);
   color: var(--a-text-tertiary);
-  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .a-mp-dot {
   flex: none;
@@ -91,48 +235,15 @@
   height: 6px;
   border-radius: 50%;
   background: var(--a-accent);
-  opacity: 0.7;
+  opacity: 0.8;
 }
-.a-mp-grouptag {
-  margin-left: 6px;
+.a-mp-tier {
+  flex: none;
   font-size: var(--a-text-2xs);
   font-weight: var(--a-weight-semibold);
-  padding: 1px 6px;
+  padding: 2px 7px;
   border-radius: var(--a-radius-full);
-  background: var(--a-accent-subtle);
-  color: var(--a-accent);
-  vertical-align: middle;
-}
-/* selected (chosen) model → indigo-subtle row (mockup .m-row.sel). */
-[data-popper-positioner]:has([data-slot="list-scroll"]) [data-slot="list-item"][data-selected="true"] {
-  background: var(--a-accent-subtle) !important;
-}
-/* footer "+ 添加自定义节点 / 供应商" (mockup .mp-foot). */
-.a-mp-foot {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: calc(100% - 8px);
-  margin: 4px;
-  padding: 9px 10px;
-  border: 0;
-  border-top: 1px solid var(--a-border-faint);
-  border-radius: var(--a-radius-md);
-  background: transparent;
-  color: var(--a-text-secondary);
-  font-size: var(--a-text-sm);
-  font-family: inherit;
-  cursor: pointer;
-  text-align: left;
-}
-.a-mp-foot:hover {
-  background: var(--a-bg-muted);
-  color: var(--a-text);
-}
-.a-mp-foot svg {
-  width: 16px;
-  height: 16px;
-  flex: none;
+  line-height: 1.5;
 }
 .a-mp-tier.flag {
   background: var(--a-warning-subtle);
@@ -148,25 +259,59 @@
 }
 .a-mp-mult {
   flex: none;
-  margin-left: 6px;
+  min-width: 20px;
+  text-align: right;
+  font-family: var(--a-font-mono);
   font-size: var(--a-text-2xs);
   color: var(--a-text-tertiary);
   font-variant-numeric: tabular-nums;
 }
+.a-mp-grouptag {
+  font-size: 9.5px;
+  font-weight: var(--a-weight-semibold);
+  padding: 2px 6px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-accent-subtle);
+  color: var(--a-accent);
+}
+.a-ic {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.a-ic-sm {
+  width: 15px;
+  height: 15px;
+}
 
-/* Account banner (会员 / 余额 / 余额不足 / 未登录) pinned above the model list by model-picker-inject. */
+/* ── account banner ─────────────────────────────────────────────────────────────────────────── */
 .a-acct-banner {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 2px 4px 8px;
-  padding: 7px 10px;
+  gap: 10px;
+  margin: 10px 12px 2px;
+  padding: 10px 12px;
   border-radius: var(--a-radius-md);
   font-size: var(--a-text-xs);
   font-weight: var(--a-weight-medium);
 }
-.a-acct-banner .a-ic {
+.a-acct-banner .bi {
   flex: none;
+  display: grid;
+  place-items: center;
+}
+.a-acct-banner .bt {
+  flex: 1;
+  line-height: 1.35;
+}
+.a-acct-banner .bt small {
+  display: block;
+  font-weight: 400;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-2xs);
+  margin-top: 1px;
 }
 .a-acct-banner.member {
   background: var(--a-success-subtle);
@@ -184,114 +329,37 @@
   background: var(--a-bg-muted);
   color: var(--a-text-secondary);
 }
+.a-acct-banner.member .bt,
+.a-acct-banner.balance .bt,
+.a-acct-banner.empty .bt,
+.a-acct-banner.out .bt {
+  color: var(--a-text);
+}
 .a-acct-bb {
-  margin-left: auto;
-  height: 24px;
-  padding: 0 11px;
+  flex: none;
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-semibold);
+  padding: 5px 11px;
+  border-radius: var(--a-radius-sm);
   border: 0;
-  border-radius: var(--a-radius-md);
+  cursor: pointer;
   background: var(--a-accent-solid);
   color: #fff;
-  font-size: var(--a-text-xs);
-  font-weight: var(--a-weight-medium);
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  cursor: pointer;
-  white-space: nowrap;
 }
 .a-acct-bb:hover {
   background: var(--a-accent-solid-hover);
 }
-.a-acct-bbs {
-  margin-left: auto;
-  display: flex;
-  gap: 6px;
-}
-.a-acct-bbs .a-acct-bb {
-  margin-left: 0;
-}
 .a-acct-bb.ghost {
   background: transparent;
-  border: 1px solid var(--a-border-strong);
+  border: 1px solid var(--a-border);
   color: var(--a-text-secondary);
 }
-.a-ic-2xs {
-  width: 12px;
-  height: 12px;
+.a-acct-bb.ghost:hover {
+  background: var(--a-overlay-hover);
+  color: var(--a-text);
 }
 
-/* Soft-lock: alpha proxy rows dim + go non-interactive when logged-out / out of balance. */
-[data-slot="list-item"][data-alpha-locked] {
-  opacity: 0.55;
-  pointer-events: none;
-}
-
-/* ── Logged-out locked preview (synthetic proxy rows injected by model-picker-inject) ─────────── */
-[data-alpha-locked-preview] {
-  padding: 2px 4px 6px;
-}
-.a-mp-prevhead {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 8px 5px;
-}
-.a-mp-prevhead .gt {
-  font-size: var(--a-text-2xs);
-  letter-spacing: var(--a-tracking-wide);
-  text-transform: uppercase;
-  color: var(--a-text-tertiary);
-  font-weight: var(--a-weight-semibold);
-}
-.a-mp-prevlock {
-  margin-left: auto;
-  font-size: var(--a-text-2xs);
-  color: var(--a-text-tertiary);
-}
-.a-mp-prevcta {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: calc(100% - 12px);
-  margin: 2px 6px 8px;
-  padding: 7px;
-  border: 0;
-  border-radius: var(--a-radius-sm);
-  background: var(--a-accent-subtle);
-  color: var(--a-accent);
-  font: inherit;
-  font-size: var(--a-text-xs);
-  font-weight: var(--a-weight-semibold);
-  cursor: pointer;
-}
-.a-mp-prevcta:hover {
-  background: color-mix(in srgb, var(--a-accent) 18%, transparent);
-}
-.a-mp-prevrow {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  width: 100%;
-  padding: 8px;
-  border: 0;
-  background: transparent;
-  border-radius: var(--a-radius-md);
-  cursor: pointer;
-  opacity: 0.55;
-  text-align: left;
-  font: inherit;
-}
-.a-mp-prevrow:hover {
-  opacity: 0.72;
-  background: var(--a-warning-subtle);
-}
-
-/* ── Add-provider flow overlay (covers the popover panel; ADR-016 alpha-owned UI) ─────────────── */
-[data-popper-positioner]:has([data-slot="list-scroll"]) > * {
-  position: relative !important;
-}
+/* ── add-provider flow overlay (covers the picker; from model-picker-add.tsx) ────────────────── */
 .a-mpa {
   position: absolute;
   inset: 0;
@@ -328,6 +396,9 @@
 .a-mpa-back svg {
   width: 17px;
   height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
 }
 .a-mpa-title {
   font-size: var(--a-text-md);
@@ -400,6 +471,9 @@
   height: 15px;
   flex: none;
   color: var(--a-text-tertiary);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
 }
 .a-mpa-field {
   margin-bottom: 13px;
