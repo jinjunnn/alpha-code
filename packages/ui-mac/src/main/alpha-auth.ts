@@ -250,9 +250,12 @@ async function completeAuth(parsed: URL) {
 
   const tokens = await exchangeCode(code, verifier)
   stored = {
-    // Login does not flip the mode — the user explicitly toggles platform-pays to activate the
-    // proxy (which relaunches). Logging in just records identity; default stays BYOK.
-    mode: stored.mode ?? "byok",
+    // The ALPHA proxy (代理节点) is the recommended path, so login opts into platform-pays BY DEFAULT
+    // (ADR-016 product direction). applyAuthEnv() below writes the proxy env for the NEXT sidecar fork,
+    // so subsequent launches come up with the proxy live and zero clicks; the CURRENT session activates
+    // via enableProxy() (a controlled relaunch). We deliberately do NOT auto-relaunch on login: a
+    // deep-link callback can cold-start the app, and ad-hoc-signed builds quit on relaunch (see ADR-017).
+    mode: "platform",
     accessToken: tokens.access_token,
     refreshToken: tokens.refresh_token,
     sessionId: tokens.session_id,
@@ -314,5 +317,19 @@ export async function setAuthMode(mode: AuthMode): Promise<void> {
   applyAuthEnv()
   publish()
   log("alpha-auth: mode changed", { mode })
+  relaunchApp()
+}
+
+// One-click "activate the ALPHA proxy in THIS running session". Login already defaults mode → platform
+// and applyAuthEnv() wrote the proxy env, but the sidecar that's currently running forked BEFORE that,
+// so provider.alpha only appears after a fresh fork. Force mode=platform (covers a pre-fix stored
+// "byok") and relaunch so the new sidecar inherits ALPHA_BASE_URL/ALPHA_API_KEY. Later launches pick it
+// up automatically (initAuthEnv runs before the fork), so this is a one-time step after the first login.
+export function enableProxy() {
+  if (stored.mode !== "platform") {
+    stored.mode = "platform"
+    persist()
+  }
+  applyAuthEnv()
   relaunchApp()
 }

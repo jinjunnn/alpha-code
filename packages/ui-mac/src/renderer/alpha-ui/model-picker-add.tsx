@@ -4,8 +4,8 @@
 // chat) + 保存. Save → window.api.providers.add (writes opencode.jsonc provider[]); the new provider's
 // models appear after the next reconnect (build.md §6). All catalog data is config-driven (no hardcode).
 
-import { createMemo, createSignal, For, Show } from "solid-js"
-import type { AlphaModelCatalog, ByokProvider } from "../../shared/alpha-model-types"
+import { createMemo, createSignal, For, onMount, Show } from "solid-js"
+import type { AlphaModelCatalog, ByokProvider, ProviderKeyStatus } from "../../shared/alpha-model-types"
 
 function slug(s: string): string {
   return (
@@ -17,7 +17,15 @@ function slug(s: string): string {
   )
 }
 
-export function AddProvider(props: { catalog: AlphaModelCatalog | null; onClose: () => void; onSaved?: () => void }) {
+export function AddProvider(props: {
+  catalog: AlphaModelCatalog | null
+  onClose: () => void
+  onSaved?: () => void
+  /** When set, open straight into this provider's config form (e.g. clicking a 需 Key BYOK row). */
+  initialId?: string
+  /** Per-provider key state (drives 已配置 / 替换 / 移除 for a provider that already has a key). */
+  keyStatus?: ProviderKeyStatus
+}) {
   const [sel, setSel] = createSignal<ByokProvider | "custom" | null>(null) // null = step 1 (preset list)
   const [name, setName] = createSignal("")
   const [compat, setCompat] = createSignal<"openai" | "anthropic">("openai")
@@ -39,6 +47,12 @@ export function AddProvider(props: { catalog: AlphaModelCatalog | null; onClose:
 
   const isCustom = () => sel() === "custom"
   const inForm = () => sel() !== null
+  // Key state for the provider currently open in the form (preset only; a fresh custom has none yet).
+  const currentStatus = createMemo(() => {
+    const s = sel()
+    if (!s || s === "custom") return undefined
+    return props.keyStatus?.[(s as ByokProvider).id]
+  })
   const title = () => (sel() === "custom" ? "自定义端点" : sel() ? (sel() as ByokProvider).name : "添加节点 / 供应商")
 
   function openPreset(p: ByokProvider) {
@@ -63,6 +77,14 @@ export function AddProvider(props: { catalog: AlphaModelCatalog | null; onClose:
     setTest({ s: "idle", msg: "" })
     setError("")
   }
+
+  // Opened to configure a specific provider (a 需 Key row) → jump straight to its form.
+  onMount(() => {
+    const id = props.initialId
+    if (!id) return
+    const p = props.catalog?.byokProviders.find((x) => x.id === id)
+    if (p) openPreset(p)
+  })
   function back() {
     if (inForm()) {
       setSel(null)
@@ -97,6 +119,17 @@ export function AddProvider(props: { catalog: AlphaModelCatalog | null; onClose:
       return
     }
     const id = isCustom() ? slug(name()) : (sel() as ByokProvider).id
+    // Empty key on an already-configured provider = keep the existing key (don't overwrite). Only
+    // require a key when none is configured yet.
+    if (!apiKey().trim()) {
+      if (currentStatus()?.configured) {
+        props.onSaved?.()
+        props.onClose()
+        return
+      }
+      setError("请填写 API Key")
+      return
+    }
     setSaving(true)
     const r = await window.api.providers.add({
       id,
@@ -106,6 +139,25 @@ export function AddProvider(props: { catalog: AlphaModelCatalog | null; onClose:
       apiKey: apiKey(),
       models: models(),
     })
+    setSaving(false)
+    if (r.ok) {
+      props.onSaved?.()
+      props.onClose()
+    } else setError(r.reason)
+  }
+
+  // Remove the stored key. Config keys are removed via opencode.jsonc; env keys can't be touched from
+  // here (they live in alpha.env) — tell the user where to clear them.
+  async function removeKey() {
+    const s = sel()
+    if (!s || s === "custom") return
+    const p = s as ByokProvider
+    if (currentStatus()?.source === "env") {
+      setError(`该 Key 来自环境变量,请在 alpha.env 中删除 ${p.keyEnv}`)
+      return
+    }
+    setSaving(true)
+    const r = await window.api.providers.remove(p.id)
     setSaving(false)
     if (r.ok) {
       props.onSaved?.()
@@ -138,6 +190,9 @@ export function AddProvider(props: { catalog: AlphaModelCatalog | null; onClose:
                   <span class="nm">{p.name}</span>
                   <span class="sb">{p.compat === "anthropic" ? "Anthropic 兼容" : "OpenAI 兼容"} · 填 Key 即用</span>
                 </span>
+                <Show when={props.keyStatus?.[p.id]?.configured}>
+                  <span class="a-mpa-pstate">已配置</span>
+                </Show>
                 <Chevron />
               </button>
             )}
@@ -198,18 +253,39 @@ export function AddProvider(props: { catalog: AlphaModelCatalog | null; onClose:
           </div>
           <div class="a-mpa-field">
             <label>
-              API Key <span class="req">*</span>
+              API Key
+              <Show when={!currentStatus()?.configured}>
+                {" "}
+                <span class="req">*</span>
+              </Show>
               <span class="a-mpa-keytoggle" onClick={() => setShowKey((v) => !v)}>
                 {showKey() ? "隐藏" : "明文"}
               </span>
             </label>
+            <Show when={currentStatus()?.configured}>
+              <div class="a-mpa-keystate">
+                <span class="ks-badge">已配置 ••••{currentStatus()?.hint ?? ""}</span>
+                <span class="ks-src">{currentStatus()?.source === "env" ? "来源:环境变量" : "来源:配置"}</span>
+                <Show when={currentStatus()?.source === "config"}>
+                  <button class="ks-remove" onClick={removeKey} disabled={saving()}>
+                    移除
+                  </button>
+                </Show>
+              </div>
+            </Show>
             <input
               class="a-mpa-input mono"
               type={showKey() ? "text" : "password"}
               value={apiKey()}
               onInput={(e) => setApiKey(e.currentTarget.value)}
-              placeholder="sk-..."
+              placeholder={currentStatus()?.configured ? "留空 = 保留现有 Key,或粘贴新 Key 替换" : "sk-..."}
             />
+            <Show when={currentStatus()?.configured && currentStatus()?.source === "env"}>
+              <p class="a-mpa-note">
+                该 Key 来自环境变量 {(sel() as ByokProvider).keyEnv}。保存新 Key 将写入配置并以其为准;要清除请删除
+                alpha.env 中该项。
+              </p>
+            </Show>
           </div>
           <div class="a-mpa-field">
             <label>

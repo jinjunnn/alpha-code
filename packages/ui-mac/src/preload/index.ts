@@ -122,6 +122,7 @@ const api: ElectronAPI = {
     start: () => ipcRenderer.invoke("auth-start"),
     logout: () => ipcRenderer.invoke("auth-logout"),
     setMode: (mode) => ipcRenderer.invoke("auth-set-mode", mode),
+    enableProxy: () => ipcRenderer.invoke("auth-enable-proxy"),
     subscribe: (cb) => {
       const handler = (_: unknown, state: AuthState) => cb(state)
       ipcRenderer.on("auth-state", handler)
@@ -152,6 +153,8 @@ const api: ElectronAPI = {
   providers: {
     add: (input) => ipcRenderer.invoke("providers-add", input),
     test: (input) => ipcRenderer.invoke("providers-test", input),
+    keyStatus: () => ipcRenderer.invoke("providers-key-status"),
+    remove: (id) => ipcRenderer.invoke("providers-remove", id),
   },
 }
 

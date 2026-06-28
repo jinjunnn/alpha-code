@@ -103,6 +103,40 @@
   font-size: var(--a-text-2xs);
   color: var(--a-text-tertiary);
 }
+/* "启用代理 · 重启" — shown when logged-in + funded but the proxy isn't live yet (one-time after first
+ * login). A real CTA, unlike the old dead-end that routed healthy accounts to recharge/re-login. */
+.a-mp2-activate {
+  margin-left: auto;
+  flex: none;
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-semibold);
+  padding: 3px 9px;
+  border: 0;
+  border-radius: var(--a-radius-full);
+  cursor: pointer;
+  background: var(--a-accent-solid);
+  color: #fff;
+}
+.a-mp2-activate:hover {
+  background: var(--a-accent-solid-hover);
+}
+/* "管理" — opens the provider flow (now a manage surface: cards show 已配置, drilling in = 替换/移除). */
+.a-mp2-manage {
+  margin-left: auto;
+  flex: none;
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-semibold);
+  padding: 3px 9px;
+  border: 0;
+  border-radius: var(--a-radius-full);
+  background: var(--a-bg-muted);
+  color: var(--a-text-secondary);
+  cursor: pointer;
+}
+.a-mp2-manage:hover {
+  background: var(--a-overlay-hover);
+  color: var(--a-text);
+}
 .a-mp2-row {
   display: flex;
   align-items: center;
@@ -265,6 +299,17 @@
   font-size: var(--a-text-2xs);
   color: var(--a-text-tertiary);
   font-variant-numeric: tabular-nums;
+}
+/* BYOK row with no key — shown instead of the tier pill; the row is locked and clicking opens the
+ * provider's configure form (so we never present a model that 401s at call time). */
+.a-mp-needkey {
+  flex: none;
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-semibold);
+  padding: 2px 7px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-warning-subtle);
+  color: var(--a-warning);
 }
 .a-mp-grouptag {
   font-size: 9.5px;
@@ -439,6 +484,16 @@
   border-style: dashed;
   margin-top: 6px;
 }
+/* "已配置" badge on a provider card in the chooser — turns the add flow into a manage list. */
+.a-mpa-pstate {
+  flex: none;
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-semibold);
+  padding: 2px 7px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-success-subtle);
+  color: var(--a-success);
+}
 .a-mpa-plus {
   width: 24px;
   height: 24px;
@@ -494,6 +549,44 @@
   color: var(--a-accent);
   cursor: pointer;
   font-weight: var(--a-weight-medium);
+}
+/* "已配置 ••••1234 · 来源 · 移除" — shown above the key input when the provider already has a key, so
+ * editing is replace/keep/remove (not blind re-entry). The full key never reaches the renderer. */
+.a-mpa-keystate {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+.a-mpa-keystate .ks-badge {
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-semibold);
+  padding: 3px 8px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-success-subtle);
+  color: var(--a-success);
+}
+.a-mpa-keystate .ks-src {
+  font-size: var(--a-text-2xs);
+  color: var(--a-text-tertiary);
+}
+.a-mpa-keystate .ks-remove {
+  margin-left: auto;
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-medium);
+  color: var(--a-error);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.a-mpa-keystate .ks-remove:hover {
+  text-decoration: underline;
+}
+.a-mpa-keystate .ks-remove:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 .a-mpa-input {
   width: 100%;
