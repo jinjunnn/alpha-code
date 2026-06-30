@@ -748,3 +748,18 @@
   opacity: 0.6;
   cursor: default;
 }
+
+/* ── Home picker anchor override ─────────────────────────────────────────────────────────────────
+ * On the HOME screen, opencode anchors its model popover to the HIDDEN native model button (which sits
+ * ~95px above the visible alpha chip) → floating-ui parks the popover detached/floating above the
+ * composer (user-reported 2026-06-30). ModelPickerInject tags the popover's positioner with
+ * [data-alpha-home-anchor] and feeds it `--a-pick-tf` = a translate computed from the visible chip's
+ * rect. A STYLESHEET !important transform BEATS floating-ui's (non-important) inline transform, so it
+ * can't drift back — no rAF fight. In-session has no alpha ModelChip so the tag is never set. */
+[data-popper-positioner][data-alpha-home-anchor] {
+  position: fixed !important;
+  inset: auto !important;
+  left: 0 !important;
+  bottom: 0 !important;
+  transform: var(--a-pick-tf, none) !important;
+}

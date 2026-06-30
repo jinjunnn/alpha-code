@@ -129,6 +129,36 @@ export function ModelPickerInject() {
     if (timer) clearTimeout(timer)
   })
 
+  // ── home picker anchor (CSS-var driven; see model-picker-reskin.css [data-alpha-home-anchor]) ────
+  // On HOME the popover anchors to opencode's HIDDEN native button (which sits above the visible chip),
+  // so it floats detached above the composer (user-reported 2026-06-30). We tag the positioner and feed
+  // `--a-pick-tf` a translate that pins its BOTTOM 8px above the VISIBLE alpha chip; the stylesheet
+  // !important transform holds it there so floating-ui's inline transform can't drift it back. In-session
+  // there's no `.a-chip-model` → we never tag it, leaving opencode's own (correct) anchoring alone.
+  const anchorToChip = () => {
+    const dlg = panelHost()
+    if (!dlg) return
+    const pos = (dlg.closest("[data-popper-positioner]") as HTMLElement | null) ?? dlg.parentElement
+    if (!pos) return
+    const chip = [...document.querySelectorAll<HTMLElement>(".a-chip-model")].find(
+      (c) => c.offsetParent !== null && c.getBoundingClientRect().width > 0,
+    )
+    if (!chip) {
+      pos.removeAttribute("data-alpha-home-anchor")
+      return // in-session → opencode's native anchor is correct
+    }
+    const r = chip.getBoundingClientRect()
+    pos.style.setProperty("--a-pick-tf", `translate(${Math.round(r.left)}px, ${Math.round(r.top - 8 - window.innerHeight)}px)`)
+    pos.setAttribute("data-alpha-home-anchor", "")
+  }
+  createEffect(() => {
+    if (!panelHost()) return
+    anchorToChip()
+    for (const d of [0, 30, 90, 200]) setTimeout(anchorToChip, d)
+    window.addEventListener("resize", anchorToChip)
+    onCleanup(() => window.removeEventListener("resize", anchorToChip))
+  })
+
   // ── build rows from catalog + native keys ───────────────────────────────────────────────────────
   const picoFor = (prov: string): { letter: string; color: string } => {
     const cat = catalog()
