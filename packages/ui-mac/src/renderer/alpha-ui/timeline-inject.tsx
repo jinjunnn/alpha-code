@@ -4,6 +4,13 @@
 // edit-tool / apply-patch-tool / task-tool-card / bash-output / exa-tool-output) + the skill
 // agent-title class — NO i18n/title coupling. Unknown tools fall back to a neutral glyph. A debounced
 // MutationObserver re-decorates after the timeline streams in; idempotent via a marker attr.
+//
+// The same observer also drives three timeline-overhaul injects (docs/designs/2026-06-28-timeline-
+// overhaul/tasks.md) — TL-05 slash-chip type label + 「查看展开提示词」, TL-17 bash exit-code badge,
+// TL-34 turn divider — each building only DOM elements; their styling is CSS-side (timeline/*.css).
+// FLAG (TL-17): opencode keeps the bash exit code in metadata.exit and never renders it, and does not
+// error on a non-zero exit, so the code is unrecoverable from the DOM — a completed bash is badged
+// 退出 0 (matches the design); a silently non-zero command (grep no-match, `test`) is mislabeled.
 
 import { onCleanup, onMount } from "solid-js"
 
@@ -158,13 +165,59 @@ function decorateFileProduct(trigger: HTMLElement) {
   content.appendChild(pill)
 }
 
+// TL-32 (A) — 本回合改动 card: collapse the inline diff + add 「在面板打开」 → review panel. opencode
+// auto-expands a single-file turn-diff INLINE (~744px), blowing up the left rail against the redesign
+// goal (file products → 紧凑卡 + 面板). CSS (timeline/structure.css) hides the inline diff-view; here we
+// add the panel-open pill on the header. File-specific focus isn't reachable (same limit as
+// decorateFileProduct) — the pill opens opencode's review panel. Idempotent via a marker attr.
+function decorateDiffSummary(group: HTMLElement) {
+  if (group.hasAttribute("data-alpha-diffsum")) return
+  group.setAttribute("data-alpha-diffsum", "")
+  const header = group.querySelector("[data-slot='session-turn-diffs-header']") as HTMLElement | null
+  if (!header) return
+  const pill = document.createElement("span")
+  pill.className = "a-openp"
+  pill.setAttribute("role", "button")
+  pill.innerHTML = svg(EXTERNAL) + "在面板打开"
+  pill.addEventListener("click", (e) => {
+    e.stopPropagation()
+    e.preventDefault()
+    openReviewPanel()
+  })
+  header.appendChild(pill)
+}
+
+// TL-17 — bash exit-code badge. opencode renders NO exit code anywhere in the DOM: shell.ts keeps it
+// in metadata.exit (never printed) and the bash-pre text is only `$ cmd\n\n<output>`. The shell tool
+// also does NOT error on a non-zero exit, so a silently-failing command (grep no-match, `test`)
+// renders as a normal completed bash — DOM-indistinguishable from success. We therefore follow the
+// design + tasks.md heuristic: a COMPLETED non-error bash ⇒ 退出 0 (data-ok=true). Completion is
+// detected by the collapsible arrow, which opencode renders only once the tool is no longer pending
+// (basic-tool.tsx:246). Tool-level failures (timeout/abort/spawn) become error cards with no
+// bash-output — left to opencode's own red error UI, not fabricated here (see header FLAG). The
+// .a-exit styling lives in timeline/tools.css (CSS-side); we only build the element + data-ok.
+function decorateBashExit(trigger: HTMLElement) {
+  if (trigger.hasAttribute("data-alpha-exit")) return
+  const wrap = trigger.closest("[data-component='tool-part-wrapper']") ?? trigger
+  if (!wrap.querySelector("[data-component='bash-output']")) return // not a bash tool
+  if (!trigger.querySelector("[data-slot='collapsible-arrow']")) return // still running → badge later
+  trigger.setAttribute("data-alpha-exit", "")
+  const badge = document.createElement("span")
+  badge.className = "a-exit"
+  badge.setAttribute("data-ok", "true")
+  badge.textContent = "退出 0"
+  const content =
+    (trigger.querySelector("[data-slot='basic-tool-tool-trigger-content']") as HTMLElement | null) ?? trigger
+  content.appendChild(badge)
+}
+
 // ⑦ Slash-command → compact chip (FUTURE commands only — per the user's call). opencode discards the
 // command name when it expands /init server-side (UserMessage carries no `command` field; the rendered
 // DOM has no marker), so a command can't be recovered after the fact. Instead we CAPTURE it at SEND time
 // — the composer text is still "/init" right before opencode expands it — then fold the very next user
 // message that appears into a chip. Reliable for live commands, zero upstream edits (ADR-016 kept).
 type SlashType = "command" | "skill" | "mcp"
-type SlashCmd = { name: string; args: string; type: SlashType }
+type SlashCmd = { name: string; args: string; type: SlashType; body?: string }
 let pendingCmd: (SlashCmd & { t: number }) | null = null
 const cmdMsgs = new Map<string, SlashCmd>() // messageID → slash invocation (sticks across re-renders)
 const seenMsgs = new Set<string>() // user messages already present (so we never fold history on load)
@@ -191,6 +244,14 @@ const CHIP_GLYPH: Record<SlashType, string> = {
   command: '<path d="M10 4L6 20"/>',
   skill: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/>',
   mcp: '<path d="M4 7l8-4 8 4-8 4z"/><path d="M4 7v10l8 4 8-4V7"/><path d="M12 11v10"/>',
+}
+
+// TL-05 — localized type-label prefix shown before the name (timeline.html .cmd-chip .lab). The
+// per-kind COLOR comes from CSS (.a-cmd-chip[data-kind=...]); this only supplies the text.
+const SLASH_LABEL: Record<SlashType, string> = {
+  command: "运行命令 · ",
+  skill: "运行技能 · ",
+  mcp: "MCP · ",
 }
 
 // learn each slash item's type from the live "/" popover — items carry a 技能/MCP badge; else command.
@@ -226,7 +287,9 @@ function captureSend() {
 // The body is hidden via CSS keyed on the data-alpha-cmd marker (NOT inline display:none) so it stays
 // hidden even when Solid re-renders the body element. The chip is re-inserted if a re-render drops it.
 function foldCommand(um: HTMLElement, cmd: SlashCmd) {
-  const key = `${cmd.type}:${cmd.name}:${cmd.args}`
+  // include body-presence in the key so a captured template upgrades an already-folded chip to show
+  // the 「查看展开提示词」 affordance (and old body-less localStorage entries stay stable).
+  const key = `${cmd.type}:${cmd.name}:${cmd.args}:${cmd.body ? "1" : "0"}`
   let chip = um.querySelector(":scope > .a-cmd-chip") as HTMLElement | null
   if (chip && um.getAttribute("data-alpha-cmd") === key) return // already folded correctly
   um.setAttribute("data-alpha-cmd", key)
@@ -236,13 +299,45 @@ function foldCommand(um: HTMLElement, cmd: SlashCmd) {
     um.insertBefore(chip, um.firstChild)
   }
   chip.setAttribute("data-kind", cmd.type)
-  chip.innerHTML = `<span class="ic">${svg(CHIP_GLYPH[cmd.type] || CHIP_GLYPH.command)}</span><span class="nm"></span>`
+  // [type icon] 「运行命令 · 」 name [args] — TL-05 adds the .lab type-label span before .nm.
+  chip.innerHTML =
+    `<span class="ic">${svg(CHIP_GLYPH[cmd.type] || CHIP_GLYPH.command)}</span>` +
+    `<span class="lab"></span><span class="nm"></span>`
+  chip.querySelector(".lab")!.textContent = SLASH_LABEL[cmd.type] || SLASH_LABEL.command
   chip.querySelector(".nm")!.textContent = cmd.name
   if (cmd.args) {
     const a = document.createElement("span")
     a.className = "args"
     a.textContent = cmd.args
     chip.appendChild(a)
+  }
+  // TL-05 — built-in command whose expanded template we captured at send time → 「查看展开提示词 ›」
+  // toggles a collapsible .a-cmd-body (sibling under the user message). Hidden by default via inline
+  // display: we own the node so a Solid re-render of the original body can't clobber it; the chip
+  // carries .open for the chevron. .a-cmd-body / .lab / .more styling lives in timeline/user.css.
+  let body = um.querySelector(":scope > .a-cmd-body") as HTMLElement | null
+  if (cmd.body) {
+    if (!body) {
+      body = document.createElement("div")
+      body.className = "a-cmd-body"
+      body.style.display = "none"
+      um.insertBefore(body, chip.nextSibling)
+    }
+    body.textContent = cmd.body
+    const more = document.createElement("span")
+    more.className = "more"
+    more.innerHTML =
+      '查看展开提示词<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>'
+    more.addEventListener("click", (e) => {
+      e.stopPropagation()
+      e.preventDefault()
+      const opening = body!.style.display === "none"
+      body!.style.display = opening ? "block" : "none"
+      chip!.classList.toggle("open", opening)
+    })
+    chip.appendChild(more)
+  } else if (body) {
+    body.remove() // command has no captured template → never leave a stale body behind
   }
 }
 
@@ -259,7 +354,10 @@ function scanCommands() {
         const txt = (um.querySelector("[data-slot='user-message-body']")?.textContent || "").trim()
         if (!txt.startsWith("/" + pendingCmd.name)) {
           const { name, args, type } = pendingCmd
-          rememberCmd(id, { name, args, type }) // expanded ⇒ a real slash invocation; persist it
+          // the expanded body IS the command's template (built-ins expand server-side; the literal
+          // "/name" is gone) — capture it so TL-05 can offer 「查看展开提示词」. Cap to keep LS sane.
+          const body = txt ? (txt.length > 8000 ? txt.slice(0, 8000) + "\n…" : txt) : undefined
+          rememberCmd(id, { name, args, type, body }) // expanded ⇒ a real slash invocation; persist it
         }
         pendingCmd = null
       }
@@ -269,6 +367,38 @@ function scanCommands() {
   }
 }
 
+// TL-34 — turn divider. opencode renders no separator between rounds. A "新一轮" marks a NEW USER
+// ROUND, not every assistant step. CRITICAL (2026-06-28 视觉复审):[data-component=session-turn] is
+// per-STEP (one session had 22 turns / only 3 user messages), so a divider before every turn produced
+// ~20 spurious 「新一轮」 inside a single answer. Correct rule: insert ONLY before a turn that contains a
+// user message ([data-component=user-message] = the start of a new round), and skip the FIRST round.
+// Self-correcting: removes any stale divider sitting before a non-round (assistant-only) turn. HH:MM
+// from the round's own user-message timestamp. CSS → timeline/structure.css.
+function turnStamp(turn: HTMLElement): string {
+  const t = (turn.querySelector("[data-slot='user-message-meta-tail']")?.textContent || "").trim()
+  return /\d{1,2}[:.]\d{2}/.test(t) ? t : "" // accept only a clock-like string; ignore anything else
+}
+function decorateTurns() {
+  const turns = document.querySelectorAll<HTMLElement>("[data-component='session-turn']")
+  let seenRound = false
+  turns.forEach((turn) => {
+    const startsRound = !!turn.querySelector("[data-component='user-message']")
+    const prev = turn.previousElementSibling
+    const hasDiv = !!(prev && (prev as HTMLElement).classList.contains("a-turn-div"))
+    const wantDiv = startsRound && seenRound // divider only before a non-first user round
+    if (startsRound) seenRound = true
+    if (wantDiv && !hasDiv) {
+      const div = document.createElement("div")
+      div.className = "a-turn-div"
+      const stamp = turnStamp(turn)
+      div.textContent = stamp ? `${stamp} · 新一轮` : "新一轮"
+      turn.parentElement?.insertBefore(div, turn)
+    } else if (!wantDiv && hasDiv) {
+      prev!.remove() // stale divider before an assistant-only step → drop it
+    }
+  })
+}
+
 export function TimelineInject() {
   let mo: MutationObserver | undefined
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -276,9 +406,12 @@ export function TimelineInject() {
     for (const t of document.querySelectorAll<HTMLElement>("[data-component='tool-trigger']")) {
       decorate(t)
       decorateFileProduct(t)
+      decorateBashExit(t)
     }
     for (const g of document.querySelectorAll<HTMLElement>("[data-component='context-tool-group-trigger']")) decorateGroup(g)
     for (const o of document.querySelectorAll<HTMLElement>("[data-component='tool-output']")) decorateDirOutput(o)
+    for (const d of document.querySelectorAll<HTMLElement>("[data-component='session-turn-diffs-group']")) decorateDiffSummary(d)
+    decorateTurns()
     scanCommands()
   }
   const schedule = () => {

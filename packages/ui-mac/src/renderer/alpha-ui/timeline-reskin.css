@@ -9,6 +9,15 @@
  * edit-content/write-content, todos, question-answers, task-tool-card, context-tool-group-*.
  * Targets are timeline-SPECIFIC hooks only (never the generic button/icon/markdown ones). */
 @import "./tokens.css";
+/* Timeline overhaul (2026-06-28) — per-area partials for the 40 atomic tasks (docs/designs/
+ * 2026-06-28-timeline-overhaul/). Parallel-safe: each area owns one file so tasks never collide.
+ * Existing (already-shipped) rules stay below in this entry file; NEW/refined work goes in partials. */
+@import "./timeline/user.css";
+@import "./timeline/assistant.css";
+@import "./timeline/tools.css";
+@import "./timeline/structure.css";
+@import "./timeline/review.css";
+@import "./timeline/misc.css";
 
 /* ── Reasoning / thinking — give it a quiet identity (card + accent edge) ──────────────── */
 [data-component="reasoning-part"] {
