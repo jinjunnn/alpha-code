@@ -45,8 +45,8 @@
 
 ### TL-05 · 斜杠命令 chip 分类 `INJECT` `P1`
 - 钩子:`.a-cmd-chip[data-kind]`(inject 建)+ `slashTypeMap`(从 `[data-slash-id]` 学类型)
-- 改动:按类型输出文案分层 —— 命令「运行命令 · name」(accent)/技能「运行技能 · name」(橙)/MCP「MCP · name」(紫);内置命令附「查看展开提示词 ›」可折叠(模板取自 send 时捕获)。CSS 变体配色在 `.a-cmd-chip[data-kind=command|skill|mcp]`。
-- 验收:三类斜杠发送后折叠成对应配色+文案的 chip;内置命令可展开看提示词。
+- 改动:按类型输出文案分层 —— 命令「运行命令 · name」(accent)/技能「运行技能 · name」(橙)/MCP「MCP · name」(紫);name 后接**用户自己输入的提示词**(args,如「运行命令 · review pr 12」)。**不做「查看展开提示词」/ 不显示命令 .md 模板**(2026-06-30 用户明确否决,见 [[slash-chip-spec]];设计稿里的 查看展开 是错的)。CSS 变体配色在 `.a-cmd-chip[data-kind=command|skill|mcp]`。
+- 验收:三类斜杠发送后折叠成对应配色+文案的 chip,后接用户自己的 args;**chip 上无「查看展开提示词」**。
 - 依赖:无(独立于其它,但属 inject 文件,见 dev-plan 并行说明)。
 - ⚠️ 已知限:冷加载的历史消息(本 session 之前发的)无法回溯命令类型 → 退化为普通命令 chip。可接受。
 

@@ -57,6 +57,27 @@
 [data-action="prompt-submit"] svg {
   color: currentColor !important;
 }
+/* The send icon: opencode renders a chunky FILLED arrow (#opencode-icon-arrow-up); AlphaHome's send uses
+ * a clean STROKED arrow (composer-controls ArrowUp). Swap to the stroked arrow for one consistent send
+ * glyph. Scoped via :has() to the arrow-up state ONLY, so the STOP icon shown during generation (a
+ * different sprite on the same button) is left untouched. */
+[data-action="prompt-submit"]:has(use[href="#opencode-icon-arrow-up"]) {
+  display: inline-grid !important;
+  place-items: center !important;
+}
+[data-action="prompt-submit"]:has(use[href="#opencode-icon-arrow-up"]) svg {
+  display: none !important;
+}
+[data-action="prompt-submit"]:has(use[href="#opencode-icon-arrow-up"])::after {
+  content: "";
+  width: 17px;
+  height: 17px;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 19V5M5 12l7-7 7 7'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 19V5M5 12l7-7 7 7'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+}
 
 /* +/attach icon buttons → soft alpha hover (never the send button). */
 [data-component="session-composer"] [data-slot="icon-button"]:not([data-action="prompt-submit"]):hover,
@@ -114,6 +135,16 @@
 }
 [data-alpha-composer-inject="add"] {
   order: 0 !important;
+}
+
+/* Hide opencode's native reasoning-effort/variant select — alpha injects its own EffortChip
+ * (composer-controls EffortChip → .a-comp-eff "高") in its place. Without this the composer showed
+ * effort TWICE: native "High" (capitalize of "high") + alpha "高" — the double-effort bug the user
+ * kept hitting. COUPLING (cosmetic): [data-component=prompt-variant-control] = opencode's effort select;
+ * re-point on upstream rename. The alpha EffortChip remains the single effort control. */
+[data-component="session-composer"] [data-component="prompt-variant-control"],
+[data-component="session-new-composer"] [data-component="prompt-variant-control"] {
+  display: none !important;
 }
 
 /* Match AlphaHome's split toolbar: [+ · 权限] LEFT, [模型 · effort · 发送] RIGHT.

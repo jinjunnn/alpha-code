@@ -275,23 +275,69 @@
   color: var(--a-text-tertiary);
 }
 
+/* ── 待办面板(session-todo-dock)── opencode docks the ACTIVE todo list above the composer
+ * (session-todo-dock.tsx). Its defaults are loose for the alpha timeline — 14px rows + pb-11 (44px)
+ * bottom padding → it reads oversized ("待办那么大"). Tighten toward the compact design (.todos):
+ * smaller header/rows + trimmed bottom padding. COUPLING (cosmetic): session-todo-dock slots + pb-11. */
+[data-component="session-todo-dock"] [data-action="session-todo-toggle"] {
+  padding: 7px 10px 6px 12px !important;
+}
+[data-component="session-todo-dock"] [data-action="session-todo-toggle"] > span,
+[data-component="session-todo-dock"] [data-slot="session-todo-preview"] {
+  font-size: 13px !important;
+}
+[data-component="session-todo-dock"] [data-slot="session-todo-list"] [class*="pb-11"] {
+  padding-bottom: 14px !important;
+}
+[data-component="session-todo-dock"] [data-slot="session-todo-list"] [data-state] {
+  font-size: 13px !important;
+}
+
 /* ── TL-25 · 子任务卡 ────────────────────────────────────────────────────────────────────────────
  * <div task-tool-card> = info-structured (task-tool-spinner[running] + task-tool-title[agent tone,
  * inline color] + subtitle) + task-tool-action[nav arrow, when clickable]. Title/spinner colors are
  * INLINE (agent tone) — we leave those and style weight/size/spacing + the action arrow + spinner. */
+/* Flatten opencode's task-tool-card: it draws its OWN border+bg+radius → a box-in-box inside the outer
+ * tool card (the "嵌套框" the user flagged). Strip it so the subtask sits flush in ONE card (the
+ * single-card design .task-card). */
+[data-component="task-tool-card"] {
+  border: 0 !important;
+  background: transparent !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+}
+[data-slot="basic-tool-tool-info-main"]:has([data-component="task-tool-title"]) {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+/* agent name (e.g. "Explore") renders in a raw inline "agent tone" (loud salmon) — tame it to a muted
+ * label so the task description is the primary text, matching the design (agent muted · task prominent). */
 [data-component="task-tool-title"] {
   font-size: var(--a-text-sm);
   font-weight: var(--a-weight-medium);
+  color: var(--a-text-secondary) !important;
+  flex: none;
+}
+[data-component="task-tool-card"] [data-slot="basic-tool-tool-subtitle"] {
+  color: var(--a-text);
+  font-size: var(--a-text-sm);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 [data-component="task-tool-spinner"] {
   display: inline-flex;
   align-items: center;
-  margin-right: 6px;
+  margin-right: 0;
   flex: none;
+  color: var(--a-accent) !important;
 }
 [data-component="task-tool-spinner"] svg {
-  width: 13px;
-  height: 13px;
+  width: 12px;
+  height: 12px;
 }
 [data-component="task-tool-action"] {
   margin-left: auto;

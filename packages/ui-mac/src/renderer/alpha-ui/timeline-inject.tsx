@@ -6,8 +6,8 @@
 // MutationObserver re-decorates after the timeline streams in; idempotent via a marker attr.
 //
 // The same observer also drives three timeline-overhaul injects (docs/designs/2026-06-28-timeline-
-// overhaul/tasks.md) — TL-05 slash-chip type label + 「查看展开提示词」, TL-17 bash exit-code badge,
-// TL-34 turn divider — each building only DOM elements; their styling is CSS-side (timeline/*.css).
+// overhaul/tasks.md) — TL-05 slash-chip type label (运行命令 · name + the user's OWN args), TL-17 bash
+// exit-code badge, TL-34 turn divider — each building only DOM elements; styling is CSS-side.
 // FLAG (TL-17): opencode keeps the bash exit code in metadata.exit and never renders it, and does not
 // error on a non-zero exit, so the code is unrecoverable from the DOM — a completed bash is badged
 // 退出 0 (matches the design); a silently non-zero command (grep no-match, `test`) is mislabeled.
@@ -217,7 +217,7 @@ function decorateBashExit(trigger: HTMLElement) {
 // — the composer text is still "/init" right before opencode expands it — then fold the very next user
 // message that appears into a chip. Reliable for live commands, zero upstream edits (ADR-016 kept).
 type SlashType = "command" | "skill" | "mcp"
-type SlashCmd = { name: string; args: string; type: SlashType; body?: string }
+type SlashCmd = { name: string; args: string; type: SlashType }
 let pendingCmd: (SlashCmd & { t: number }) | null = null
 const cmdMsgs = new Map<string, SlashCmd>() // messageID → slash invocation (sticks across re-renders)
 const seenMsgs = new Set<string>() // user messages already present (so we never fold history on load)
@@ -283,13 +283,11 @@ function captureSend() {
   pendingCmd = { name, args: (m[2] || "").trim(), type: slashTypeMap.get(name) || "command", t: Date.now() }
 }
 
-// fold a slash invocation into a chip: [type icon] name + the user's typed prompt. Never the full text.
-// The body is hidden via CSS keyed on the data-alpha-cmd marker (NOT inline display:none) so it stays
-// hidden even when Solid re-renders the body element. The chip is re-inserted if a re-render drops it.
+// fold a slash invocation into a chip: [type icon] 运行命令 · name + the user's OWN typed prompt (args).
+// NEVER the command's expanded .md template — the chip shows what the user wrote (e.g. "review pr 12"),
+// not the doc body. The chip is re-inserted if a Solid re-render drops it; idempotent via the key.
 function foldCommand(um: HTMLElement, cmd: SlashCmd) {
-  // include body-presence in the key so a captured template upgrades an already-folded chip to show
-  // the 「查看展开提示词」 affordance (and old body-less localStorage entries stay stable).
-  const key = `${cmd.type}:${cmd.name}:${cmd.args}:${cmd.body ? "1" : "0"}`
+  const key = `${cmd.type}:${cmd.name}:${cmd.args}`
   let chip = um.querySelector(":scope > .a-cmd-chip") as HTMLElement | null
   if (chip && um.getAttribute("data-alpha-cmd") === key) return // already folded correctly
   um.setAttribute("data-alpha-cmd", key)
@@ -311,34 +309,9 @@ function foldCommand(um: HTMLElement, cmd: SlashCmd) {
     a.textContent = cmd.args
     chip.appendChild(a)
   }
-  // TL-05 — built-in command whose expanded template we captured at send time → 「查看展开提示词 ›」
-  // toggles a collapsible .a-cmd-body (sibling under the user message). Hidden by default via inline
-  // display: we own the node so a Solid re-render of the original body can't clobber it; the chip
-  // carries .open for the chevron. .a-cmd-body / .lab / .more styling lives in timeline/user.css.
-  let body = um.querySelector(":scope > .a-cmd-body") as HTMLElement | null
-  if (cmd.body) {
-    if (!body) {
-      body = document.createElement("div")
-      body.className = "a-cmd-body"
-      body.style.display = "none"
-      um.insertBefore(body, chip.nextSibling)
-    }
-    body.textContent = cmd.body
-    const more = document.createElement("span")
-    more.className = "more"
-    more.innerHTML =
-      '查看展开提示词<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>'
-    more.addEventListener("click", (e) => {
-      e.stopPropagation()
-      e.preventDefault()
-      const opening = body!.style.display === "none"
-      body!.style.display = opening ? "block" : "none"
-      chip!.classList.toggle("open", opening)
-    })
-    chip.appendChild(more)
-  } else if (body) {
-    body.remove() // command has no captured template → never leave a stale body behind
-  }
+  // Strip any stale expand-body / 「查看展开提示词」 left behind by an older build or localStorage entry —
+  // the chip never shows the command's .md template, only the command name + the user's own prompt above.
+  um.querySelector(":scope > .a-cmd-body")?.remove()
 }
 
 function scanCommands() {
@@ -349,15 +322,13 @@ function scanCommands() {
     if (!id) continue
     if (!seenMsgs.has(id)) {
       seenMsgs.add(id)
-      // brand-new message right after a slash send → it's that invocation's expansion
+      // brand-new message right after a slash send → it's that invocation's expansion. Fold it into a
+      // chip showing the command + the user's OWN args; we never capture/show the expanded template.
       if (pendingCmd && Date.now() - pendingCmd.t < 8000) {
         const txt = (um.querySelector("[data-slot='user-message-body']")?.textContent || "").trim()
         if (!txt.startsWith("/" + pendingCmd.name)) {
           const { name, args, type } = pendingCmd
-          // the expanded body IS the command's template (built-ins expand server-side; the literal
-          // "/name" is gone) — capture it so TL-05 can offer 「查看展开提示词」. Cap to keep LS sane.
-          const body = txt ? (txt.length > 8000 ? txt.slice(0, 8000) + "\n…" : txt) : undefined
-          rememberCmd(id, { name, args, type, body }) // expanded ⇒ a real slash invocation; persist it
+          rememberCmd(id, { name, args, type }) // expanded ⇒ a real slash invocation; persist it
         }
         pendingCmd = null
       }
