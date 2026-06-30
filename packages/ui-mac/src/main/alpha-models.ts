@@ -20,39 +20,17 @@
 // Escape hatch: ALPHA_MODELS_DISABLE=1 skips this entirely.
 
 import catalog from "./alpha-models.json"
-import type { AlphaModelCatalog, ProviderKeyStatus } from "../shared/alpha-model-types"
-import { readConfiguredProviderKeys, readUserProviderIds } from "./ext-config"
+import type { AlphaModelCatalog } from "../shared/alpha-model-types"
+import { readUserProviderIds } from "./ext-config"
+// NOTE: this module is loaded by the SIDECAR (utilityProcess) via buildAlphaModelConfig, so it must
+// stay electron-free. getProviderKeyStatus (which reads the safeStorage keychain) lives in the
+// main-only alpha-provider-status.ts for that reason — do NOT import alpha-byok-keys here.
 
 const CATALOG = catalog as unknown as AlphaModelCatalog
 
 /** The full model catalog (for window.api.models.catalog -> renderer picker). */
 export function getModelCatalog(): AlphaModelCatalog {
   return CATALOG
-}
-
-/**
- * Per-provider BYOK key state for the picker (window.api.providers.keyStatus). A builtin provider is
- * "configured" if its keyEnv is set in the (main) process env — which holds alpha.env + shell keys,
- * loaded before the sidecar forks, so this matches exactly what opencode will see — OR if the user's
- * opencode.jsonc has an inline apiKey for it. Custom providers (config-only) are reported too.
- * Limitation: a key stored solely via opencode's native `auth login` is not visible here (P1).
- */
-export function getProviderKeyStatus(): ProviderKeyStatus {
-  const cfgKeyed = readConfiguredProviderKeys()
-  // Masked tail only (never the full key) so the renderer can show WHICH key is set, not its value.
-  const last4 = (k?: string) => (k && k.length >= 4 ? k.slice(-4) : k ? "••" : undefined)
-  const out: ProviderKeyStatus = {}
-  for (const p of CATALOG.byokProviders) {
-    const envVal = p.keyEnv ? process.env[p.keyEnv] : undefined
-    out[p.id] = envVal
-      ? { configured: true, source: "env", hint: last4(envVal) }
-      : cfgKeyed.has(p.id)
-        ? { configured: true, source: "config", hint: last4(cfgKeyed.get(p.id)) }
-        : { configured: false, source: "none" }
-  }
-  // Custom providers (not in the catalog) carry their key inline → always "config".
-  for (const [id, key] of cfgKeyed) if (!out[id]) out[id] = { configured: true, source: "config", hint: last4(key) }
-  return out
 }
 
 export type AlphaModelConfig = {
@@ -67,12 +45,18 @@ export function buildAlphaModelConfig(): AlphaModelConfig | undefined {
   const provider: Record<string, unknown> = {}
   const enabled: string[] = []
 
-  // (1) 国产 built-ins -- in the models.dev catalog, so they only need a model whitelist plus their
-  // key in the env (see byokProviders[].keyEnv). Non-builtin entries (e.g. Kimi) are presets for the
-  // 添加节点 flow and are NOT auto-injected here.
+  // (1) BYOK 直连节点 (方案 C): inject each catalog provider that HAS a key (opt-in) as a FULL custom
+  // provider — npm/baseURL/models come from the catalog (alpha-code defines them, independent of
+  // models.dev), and the apiKey is inlined from the env (fed by the alpha keychain via
+  // injectByokKeysIntoEnv, or a shell/alpha.env export). No key → not injected, so the picker only
+  // shows keyed BYOK nodes. Calls go DIRECT to the provider's baseURL (never via the gateway).
   for (const p of CATALOG.byokProviders) {
-    if (!p.builtin) continue
-    provider[p.id] = { whitelist: p.models }
+    const key = p.keyEnv ? process.env[p.keyEnv] : undefined
+    if (!key) continue
+    const npm = p.compat === "anthropic" ? "@ai-sdk/anthropic" : "@ai-sdk/openai-compatible"
+    const models: Record<string, { name: string }> = {}
+    for (const m of p.models) models[m] = { name: m }
+    provider[p.id] = { npm, name: p.name, options: { baseURL: p.baseURL, apiKey: key }, models }
     enabled.push(p.id)
   }
 

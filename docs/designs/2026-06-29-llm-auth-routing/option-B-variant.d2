@@ -1,0 +1,41 @@
+direction: right
+
+title: "方案 B(变体)— 双轨并存:代理 provider + 全部 BYOK 直连 provider 始终启用" {
+  near: top-center
+  shape: text
+  style.font-size: 24
+  style.bold: true
+}
+
+catalog: "alpha-models.json(目录)\n定义代理 + BYOK 的 provider 与 model id" {
+  style.fill: "#fff7ed"
+  style.bold: true
+}
+
+local: "本机 · alpha-code app" {
+  style.fill: "#f8fafc"
+  login: "alpha 登录 → JWT" { style.fill: "#eef2ff" }
+  byokkey: "BYOK key · alpha 本地存储" { style.fill: "#fef9c3" }
+  seam: "sidecar 注入 · config 接缝" { style.fill: "#e0e7ff" }
+  engine: "opencode 引擎 · provider 层" { style.fill: "#ffffff" }
+  alpha: "provider.alpha · 网关代理" { style.fill: "#c7d2fe" }
+  byok: "provider.deepseek/智谱/... · 原生直连(始终全部启用)" { style.fill: "#fde68a" }
+}
+
+cloud: "alpha-platform 云" {
+  style.fill: "#f0fdf4"
+  gw: "alpha 网关 · 仅平台流量" { style.fill: "#bbf7d0" }
+}
+
+up_platform: "上游 · 平台代付(alpha key)" { style.fill: "#fee2e2" }
+up_byok: "上游 · BYOK 厂商(用户 key)" { style.fill: "#fde68a" }
+
+catalog -> local.seam: "驱动注入"
+local.login -> local.seam: "JWT"
+local.byokkey -> local.seam: "BYOK key"
+local.seam -> local.engine: "启用 alpha + 全部 BYOK provider"
+local.engine -> local.alpha: "平台模型"
+local.engine -> local.byok: "BYOK 模型"
+local.alpha -> cloud.gw
+cloud.gw -> up_platform: "alpha key"
+local.byok -> up_byok: "直连 · 用户 key"

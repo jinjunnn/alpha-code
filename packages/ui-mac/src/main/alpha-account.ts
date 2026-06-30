@@ -10,12 +10,14 @@
 // gateway. Overridable via ALPHA_ACCOUNT_URL for dev/staging (consistent with ALPHA_WEB_URL /
 // ALPHA_PLATFORM_URL; see shared/alpha-config.ts).
 
-import { ALPHA_ENDPOINTS, ALPHA_PATHS } from "../shared/alpha-config"
+import { ALPHA_PATHS } from "../shared/alpha-config"
+import { resolveEndpoints } from "./alpha-endpoints"
 import { getAccessToken } from "./alpha-auth"
 import { getLogger } from "./logging"
 import type { AccountResult, AccountSummary, AccountTransaction } from "../preload/types"
 
-const accountBase = () => (process.env.ALPHA_ACCOUNT_URL ?? ALPHA_ENDPOINTS.account).replace(/\/+$/, "")
+// Resolved by alpha-endpoints (env ALPHA_ACCOUNT_URL > userData pin > login discovery > default).
+const accountBase = () => resolveEndpoints().account
 
 async function authedGet<T>(path: string): Promise<AccountResult<T>> {
   const token = getAccessToken()

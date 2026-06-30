@@ -1,0 +1,40 @@
+direction: right
+
+title: "方案 A(未选)— 全统一网关:BYOK 也走网关,opencode 只见 1 个 provider" {
+  near: top-center
+  shape: text
+  style.font-size: 24
+  style.bold: true
+}
+
+local: "本机 · alpha-code app" {
+  style.fill: "#f8fafc"
+  login: "alpha 登录 → JWT" { style.fill: "#eef2ff" }
+  byokkey: "用户 BYOK key" { style.fill: "#fef9c3" }
+  seam: "sidecar 注入 · config 接缝" { style.fill: "#e0e7ff" }
+  engine: "opencode 引擎 · provider 层" { style.fill: "#ffffff" }
+  alpha: "provider.alpha(唯一)· 平台+BYOK 模型混在一起" { style.fill: "#c7d2fe" }
+}
+
+cloud: "alpha-platform 云" {
+  style.fill: "#f0fdf4"
+  gw: "alpha 网关 · 还要收/转用户 BYOK key(vault 或每请求透传)" { style.fill: "#bbf7d0" }
+}
+
+up_platform: "上游 · 平台代付(alpha key)" { style.fill: "#fee2e2" }
+up_byok: "上游 · BYOK 厂商(用户 key)" { style.fill: "#fde68a" }
+
+cost: "代价:网关成唯一命门(挂=全挂)· 用户 key 过/存在网关 · 复杂度全压平台 · 无直连逃生出口" {
+  near: bottom-center
+  shape: text
+  style.font-color: "#b91c1c"
+  style.bold: true
+}
+
+local.login -> local.seam: "JWT"
+local.byokkey -> local.seam: "BYOK key → header 透传 / 上传 vault"
+local.seam -> local.engine: "只启用 alpha"
+local.engine -> local.alpha
+local.alpha -> cloud.gw: "所有模型"
+cloud.gw -> up_platform: "alpha key"
+cloud.gw -> up_byok: "用户 key(经网关)"

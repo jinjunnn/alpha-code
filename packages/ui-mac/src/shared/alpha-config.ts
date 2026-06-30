@@ -4,11 +4,21 @@
 // process.env). Pure constants only — NO electron/node imports — so both the main and renderer
 // bundles can import this module.
 
+/** Resolved alpha backend endpoints. `mcp` optional (callers derive `${platform}/mcp` when absent).
+ *  The constants below are bootstrap DEFAULTS only — main resolves env > userData pin > login discovery
+ *  > default (see main/alpha-endpoints.ts), and the renderer reads the resolved set over IPC
+ *  (window.api.endpoints). Change a domain HERE only to move the default. */
+export type AlphaEndpoints = { web: string; platform: string; account: string; mcp?: string }
+
 export const ALPHA_ENDPOINTS = {
   /** alpha-web (C): identity / login / token / billing portal. */
   web: "https://auth.tidelabs.click",
-  /** alpha-platform (B): model proxy (/v1) + MCP gateway (/mcp). */
-  platform: "https://api.tidelabs.click",
+  /** alpha-platform (B): model proxy (/v1). The gateway has NO custom domain (unlike account./auth.) —
+   *  it's the raw Worker URL `alpha-gateway.jinjunnm.workers.dev`, confirmed against alpha-platform docs
+   *  (M4-next-steps / design.md / ADR-014) AND a live probe (/health 200, /v1/models 200, /v1/chat
+   *  /completions 401). The previous `api.tidelabs.click` 404'd every /v1 route (no gateway routed
+   *  there). Override per-deploy with ALPHA_PLATFORM_URL once a custom domain is set up. */
+  platform: "https://alpha-gateway.jinjunnm.workers.dev",
   /** alpha-platform (B) account-server (境内 PII/金融): balance / membership / usage ledger. */
   account: "https://account.tidelabs.click",
 } as const

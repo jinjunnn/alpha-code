@@ -1,6 +1,7 @@
 import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
 import type { WslServersPlatform } from "@opencode-ai/app/wsl/types"
 import type { UpdaterState } from "@opencode-ai/app/updater"
+import type { AlphaEndpoints } from "../shared/alpha-config"
 import type {
   AlphaModelCatalog,
   ProviderInput,
@@ -140,6 +141,9 @@ export type ElectronAPI = {
   setWindowFocus: () => Promise<void>
   showWindow: () => Promise<void>
   relaunch: () => void
+  /** Resolved backend endpoints (env > userData pin > login discovery > default). Renderer reads these
+   *  instead of baking the URLs. */
+  endpoints: () => Promise<AlphaEndpoints>
   getZoomFactor: () => Promise<number>
   setZoomFactor: (factor: number) => Promise<void>
   getPinchZoomEnabled: () => Promise<boolean>
@@ -194,7 +198,11 @@ export type ElectronAPI = {
     test: (input: ProviderTestInput) => Promise<ProviderTestResult>
     /** Read-only BYOK key state per provider id (drives the picker's 需 Key / 已配置 gating). */
     keyStatus: () => Promise<ProviderKeyStatus>
-    /** Remove a provider's inline key/definition from opencode.jsonc (env keys untouched). */
+    /** Store a catalog BYOK provider's key in alpha's encrypted keychain (alpha-byok-keys). */
+    setKey: (id: string, key: string) => Promise<ProviderResult>
+    /** Drop a catalog BYOK provider's key from alpha's keychain. */
+    removeKey: (id: string) => Promise<ProviderResult>
+    /** Remove an off-catalog custom provider's inline key/definition from opencode.jsonc (env untouched). */
     remove: (id: string) => Promise<ProviderResult>
   }
 }

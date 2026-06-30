@@ -1,8 +1,8 @@
 // AddProvider — the "添加自定义节点 / 供应商" two-step flow, rendered as an overlay over the model
 // picker popover (ADR-016: alpha owns this UI). Step 1: pick a known provider (filled from the catalog
 // — user only pastes a Key) or "其他/自定义" (manual model ids). Step 2: configure + 测试连接 (1-token
-// chat) + 保存. Save → window.api.providers.add (writes opencode.jsonc provider[]); the new provider's
-// models appear after the next reconnect (build.md §6). All catalog data is config-driven (no hardcode).
+// chat) + 保存. Save → preset keys go to alpha's encrypted keychain (providers.setKey); custom endpoints
+// persist to opencode.jsonc (providers.add). New nodes apply on the next sidecar (re)fork. Config-driven.
 
 import { createMemo, createSignal, For, onMount, Show } from "solid-js"
 import type { AlphaModelCatalog, ByokProvider, ProviderKeyStatus } from "../../shared/alpha-model-types"
@@ -131,14 +131,19 @@ export function AddProvider(props: {
       return
     }
     setSaving(true)
-    const r = await window.api.providers.add({
-      id,
-      name: name(),
-      compat: compat(),
-      baseURL: baseURL(),
-      apiKey: apiKey(),
-      models: models(),
-    })
+    // Catalog presets: the key goes to alpha's encrypted keychain (the catalog already defines
+    // baseURL/models; buildAlphaModelConfig injects the node from keychain→env). Off-catalog custom
+    // endpoints: persist the full definition to opencode.jsonc as before (custom-key migration = Phase 5).
+    const r = isCustom()
+      ? await window.api.providers.add({
+          id,
+          name: name(),
+          compat: compat(),
+          baseURL: baseURL(),
+          apiKey: apiKey(),
+          models: models(),
+        })
+      : await window.api.providers.setKey(id, apiKey())
     setSaving(false)
     if (r.ok) {
       props.onSaved?.()
@@ -152,12 +157,14 @@ export function AddProvider(props: {
     const s = sel()
     if (!s || s === "custom") return
     const p = s as ByokProvider
-    if (currentStatus()?.source === "env") {
+    const src = currentStatus()?.source
+    if (src === "env") {
       setError(`该 Key 来自环境变量,请在 alpha.env 中删除 ${p.keyEnv}`)
       return
     }
     setSaving(true)
-    const r = await window.api.providers.remove(p.id)
+    // keychain is the normal store; "config" is a legacy inline key in opencode.jsonc.
+    const r = src === "config" ? await window.api.providers.remove(p.id) : await window.api.providers.removeKey(p.id)
     setSaving(false)
     if (r.ok) {
       props.onSaved?.()
@@ -265,8 +272,14 @@ export function AddProvider(props: {
             <Show when={currentStatus()?.configured}>
               <div class="a-mpa-keystate">
                 <span class="ks-badge">已配置 ••••{currentStatus()?.hint ?? ""}</span>
-                <span class="ks-src">{currentStatus()?.source === "env" ? "来源:环境变量" : "来源:配置"}</span>
-                <Show when={currentStatus()?.source === "config"}>
+                <span class="ks-src">
+                  {currentStatus()?.source === "keychain"
+                    ? "来源:钥匙串"
+                    : currentStatus()?.source === "env"
+                      ? "来源:环境变量"
+                      : "来源:配置"}
+                </span>
+                <Show when={currentStatus()?.source !== "env"}>
                   <button class="ks-remove" onClick={removeKey} disabled={saving()}>
                     移除
                   </button>

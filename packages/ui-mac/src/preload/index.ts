@@ -98,6 +98,7 @@ const api: ElectronAPI = {
   setWindowFocus: () => ipcRenderer.invoke("set-window-focus"),
   showWindow: () => ipcRenderer.invoke("show-window"),
   relaunch: () => ipcRenderer.send("relaunch"),
+  endpoints: () => ipcRenderer.invoke("alpha-endpoints"),
   getZoomFactor: () => ipcRenderer.invoke("get-zoom-factor"),
   setZoomFactor: (factor) => ipcRenderer.invoke("set-zoom-factor", factor),
   getPinchZoomEnabled: () => ipcRenderer.invoke("get-pinch-zoom-enabled"),
@@ -154,6 +155,8 @@ const api: ElectronAPI = {
     add: (input) => ipcRenderer.invoke("providers-add", input),
     test: (input) => ipcRenderer.invoke("providers-test", input),
     keyStatus: () => ipcRenderer.invoke("providers-key-status"),
+    setKey: (id, key) => ipcRenderer.invoke("providers-set-key", id, key),
+    removeKey: (id) => ipcRenderer.invoke("providers-remove-key", id),
     remove: (id) => ipcRenderer.invoke("providers-remove", id),
   },
 }

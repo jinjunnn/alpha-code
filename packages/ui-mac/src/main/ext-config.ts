@@ -222,9 +222,10 @@ export function readConfiguredProviderKeys(): Map<string, string> {
 }
 
 /**
- * Remove a provider block (definition + inline key) from opencode.jsonc. For a builtin this only drops
- * the user's inline key (alpha re-injects the definition at fork); for a custom provider it removes it
- * entirely. Does NOT touch env keys (those live in alpha.env). Takes effect on the next reconnect.
+ * Remove a custom provider block (definition + inline key) from opencode.jsonc. For a builtin alpha
+ * re-injects the definition at fork, so this just drops a user-set inline key; for an off-catalog
+ * custom provider it removes it entirely. BYOK keys now live in alpha's keychain (alpha-byok-keys),
+ * removed separately via providers.removeKey. Env keys (alpha.env) are untouched. Next reconnect.
  */
 export function removeProvider(id: string): ConfigResult {
   if (!SAFE_NAME.test(id)) return { ok: false, reason: "invalid provider id" }

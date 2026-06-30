@@ -43,6 +43,9 @@ import { registerWslIpcHandlers } from "./wsl/ipc"
 import { spawnWslSidecar } from "./wsl/sidecar"
 import { migrate } from "./migrate"
 import { ensureAlphaLayoutDefault } from "./alpha-defaults"
+import { initEndpoints } from "./alpha-endpoints"
+import { registerEndpointsIpcHandlers } from "./endpoints-ipc"
+import { initByokKeys, injectByokKeysIntoEnv } from "./alpha-byok-keys"
 import {
   enableProxy,
   getAuthState,
@@ -207,9 +210,17 @@ const main = Effect.gen(function* () {
   }
 
   preferAppEnv(app.getPath("userData"))
+  // Load the endpoint resolver (userData pin + persisted login discovery) BEFORE initAuthEnv, so the
+  // proxy URL it derives reflects discovery/pin, not just the hardcoded default. See alpha-endpoints.ts.
+  initEndpoints(app.getPath("userData"))
   // Derive the platform proxy env (ALPHA_BASE_URL/ALPHA_API_KEY for the model proxy + cloud MCP)
   // from any stored login or DEV_PLATFORM_TOKEN, BEFORE the sidecar forks so it inherits them.
   initAuthEnv(app.getPath("userData"))
+  // Load alpha's encrypted BYOK key vault (migrates any key off opencode auth.json once) and bridge
+  // each stored key into its provider's keyEnv BEFORE the sidecar forks, so buildAlphaModelConfig
+  // (sidecar) can inline it as a direct-node apiKey. See alpha-byok-keys.ts.
+  initByokKeys(app.getPath("userData"))
+  injectByokKeysIntoEnv()
 
   app.on("second-instance", (_event: Event, argv: string[]) => {
     const urls = argv.filter((arg: string) => arg.startsWith("opencode://") || arg.startsWith("alpha-code://"))
@@ -315,6 +326,7 @@ const main = Effect.gen(function* () {
   registerAccountIpcHandlers()
   registerModelsIpcHandlers()
   registerProviderIpcHandlers()
+  registerEndpointsIpcHandlers()
   void updater.start()
   const updateTimer = setInterval(() => void updater.check(), 10 * 60 * 1000)
   updateTimer.unref()
@@ -395,7 +407,35 @@ const main = Effect.gen(function* () {
   yield* Fiber.await(loadingTask)
 
   mainWindow = createMainWindow()
-  setAuthDeps({ getWindow: () => mainWindow, relaunch })
+
+  // In-place sidecar respawn — NOT a full app relaunch (ad-hoc-signed builds quit on relaunch, ADR-017).
+  // Re-forks on the SAME host/port/password with freshly-derived env (login set ALPHA_BASE_URL/
+  // ALPHA_API_KEY → buildAlphaModelConfig injects provider.alpha), then reloads the renderer so it
+  // reconnects (url/password unchanged → awaitInitialization stays valid) and re-fetches providers →
+  // the proxy activates with zero clicks and no restart.
+  const respawnSidecar = async () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    try {
+      logger.log("respawning sidecar (proxy activation)")
+      await killSidecar()
+      ensureLoopbackNoProxy()
+      useEnvProxy()
+      const { listener, health } = await spawnLocalServer(hostname, port, password, {
+        userDataPath: app.getPath("userData"),
+        onStdout: (message) => writeLog("server", "stdout", { message }),
+        onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
+        onExit: (code) => writeLog("utility", "sidecar exited", { code }, "warn"),
+      })
+      server = listener
+      await Promise.race([health.wait.catch(() => {}), new Promise((resolve) => setTimeout(resolve, 20000))])
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.reload()
+      logger.log("sidecar respawned + renderer reloaded")
+    } catch (error) {
+      logger.error("sidecar respawn failed", error)
+    }
+  }
+
+  setAuthDeps({ getWindow: () => mainWindow, respawn: respawnSidecar })
   if (mainWindow) {
     createMenu({
       trigger: (id) => {

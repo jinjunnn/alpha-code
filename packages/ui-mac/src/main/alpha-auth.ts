@@ -19,7 +19,8 @@ import { join } from "node:path"
 import { safeStorage, shell, type BrowserWindow } from "electron"
 import type { AuthMode, AuthState } from "../preload/types"
 import { getLogger } from "./logging"
-import { ALPHA_ENDPOINTS, ALPHA_PATHS } from "../shared/alpha-config"
+import { ALPHA_PATHS } from "../shared/alpha-config"
+import { resolveEndpoints, setDiscoveredEndpoints } from "./alpha-endpoints"
 
 type StoredAuth = {
   mode: AuthMode
@@ -37,22 +38,24 @@ type TokenResponse = {
   expires_in?: number
   email?: string
   plan?: string
+  /** ① optional endpoint discovery — alpha-web may tell the app where the gateway/account live, so a
+   *  moved backend updates clients without a release (see alpha-endpoints.ts). Producer side optional. */
+  endpoints?: { web?: string; platform?: string; account?: string; mcp?: string }
 }
 
 const CLIENT_ID = "alpha-code"
 const REDIRECT_URI = "alpha-code://auth/callback"
 const AUTH_FILE = "alpha-auth.json"
 
-// Endpoint defaults live in shared/alpha-config (single source of truth — change a domain THERE,
-// not here). This layer only adds the env overrides for dev/staging: ALPHA_WEB_URL = alpha-web
-// (C, identity authority — login/token); ALPHA_PLATFORM_URL = alpha-platform (B, model proxy /v1 +
-// MCP gateway /mcp).
-const webBase = () => (process.env.ALPHA_WEB_URL ?? ALPHA_ENDPOINTS.web).replace(/\/+$/, "")
-const platformBase = () => (process.env.ALPHA_PLATFORM_URL ?? ALPHA_ENDPOINTS.platform).replace(/\/+$/, "")
+// Endpoints come from the resolver (alpha-endpoints.ts): env override > userData pin > login discovery
+// > shared/alpha-config default. webBase = alpha-web (C, identity/login/token); platformBase =
+// alpha-platform (B, model proxy /v1). Env overrides ALPHA_WEB_URL / ALPHA_PLATFORM_URL still win.
+const webBase = () => resolveEndpoints().web
+const platformBase = () => resolveEndpoints().platform
 
 let userDataPath = ""
 let getWindow: () => BrowserWindow | null = () => null
-let relaunchApp: () => void = () => {}
+let respawnSidecar: () => void = () => {}
 let stored: StoredAuth = { mode: "byok" }
 let pkce: { verifier: string; state: string } | null = null
 
@@ -133,11 +136,14 @@ export function applyAuthEnv() {
   const devToken = process.env.DEV_PLATFORM_TOKEN
   const loggedInPlatform = deriveState().status === "logged-in" && (stored.mode === "platform" || Boolean(devToken))
   const token = devToken || (loggedInPlatform ? stored.accessToken : undefined)
-  const base = platformBase()
+  const ep = resolveEndpoints()
+  const base = ep.platform
   if (!token || !base) return
   if (!process.env.ALPHA_BASE_URL) process.env.ALPHA_BASE_URL = `${base}${ALPHA_PATHS.modelProxy}`
   if (!process.env.ALPHA_API_KEY) process.env.ALPHA_API_KEY = token
-  if (!process.env.ALPHA_CLOUD_MCP_URL) process.env.ALPHA_CLOUD_MCP_URL = `${base}${ALPHA_PATHS.mcpGateway}`
+  // mcp: a discovered/pinned mcp URL wins; else derive from the gateway base (note: the model gateway
+  // worker 404s /mcp — cloud dispatch is a separate worker, so discovery is the real fix for it).
+  if (!process.env.ALPHA_CLOUD_MCP_URL) process.env.ALPHA_CLOUD_MCP_URL = ep.mcp ?? `${base}${ALPHA_PATHS.mcpGateway}`
   if (!process.env.ALPHA_CLOUD_TOKEN) process.env.ALPHA_CLOUD_TOKEN = token
 }
 
@@ -150,9 +156,9 @@ export function initAuthEnv(dataPath: string) {
 }
 
 // Called after the main window exists, so state pushes have a target + login can relaunch.
-export function setAuthDeps(deps: { getWindow: () => BrowserWindow | null; relaunch: () => void }) {
+export function setAuthDeps(deps: { getWindow: () => BrowserWindow | null; respawn: () => void }) {
   getWindow = deps.getWindow
-  relaunchApp = deps.relaunch
+  respawnSidecar = deps.respawn
   publish()
 }
 
@@ -249,6 +255,9 @@ async function completeAuth(parsed: URL) {
   clearPkce()
 
   const tokens = await exchangeCode(code, verifier)
+  // ① learn where the platform's gateway/account live from the token response, so a moved backend
+  // updates clients without a release. No-op until alpha-web adds the `endpoints` field.
+  setDiscoveredEndpoints(tokens.endpoints)
   stored = {
     // The ALPHA proxy (代理节点) is the recommended path, so login opts into platform-pays BY DEFAULT
     // (ADR-016 product direction). applyAuthEnv() below writes the proxy env for the NEXT sidecar fork,
@@ -266,6 +275,11 @@ async function completeAuth(parsed: URL) {
   applyAuthEnv()
   publish()
   log("alpha-auth: login complete", { plan: tokens.plan, mode: stored.mode })
+  // Auto-activate the proxy in THIS session: respawn the sidecar in place (NOT a full app relaunch,
+  // ADR-017) so the new fork inherits ALPHA_BASE_URL/ALPHA_API_KEY → provider.alpha appears with no
+  // "启用代理" click and no restart. Guarded on a live window (no-op on cold-start; the next normal
+  // launch already comes up with the proxy env applied by initAuthEnv).
+  respawnSidecar()
 }
 
 async function exchangeCode(code: string, verifier: string): Promise<TokenResponse> {
@@ -317,7 +331,7 @@ export async function setAuthMode(mode: AuthMode): Promise<void> {
   applyAuthEnv()
   publish()
   log("alpha-auth: mode changed", { mode })
-  relaunchApp()
+  respawnSidecar()
 }
 
 // One-click "activate the ALPHA proxy in THIS running session". Login already defaults mode → platform
@@ -331,5 +345,5 @@ export function enableProxy() {
     persist()
   }
   applyAuthEnv()
-  relaunchApp()
+  respawnSidecar()
 }
