@@ -63,3 +63,11 @@ export type ProviderTestInput = {
 }
 export type ProviderResult = { ok: true } | { ok: false; reason: string }
 export type ProviderTestResult = { ok: true; ms: number } | { ok: false; reason: string }
+
+// Per-provider BYOK key state for the picker. Builtin providers are injected as opencode CONFIG
+// providers (alpha-models.ts), so opencode lists their models whether or not a key exists — the
+// picker can't tell "keyed" from "unkeyed" without this. `source`: "env" = the provider's keyEnv is
+// set in the (main) process env (alpha.env/shell); "config" = an inline apiKey in opencode.jsonc;
+// "none" = no usable key (→ row is locked, click opens the configure form).
+export type ProviderKeyState = { configured: boolean; source: "env" | "config" | "none"; hint?: string }
+export type ProviderKeyStatus = Record<string, ProviderKeyState>

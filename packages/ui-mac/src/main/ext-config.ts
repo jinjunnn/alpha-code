@@ -197,6 +197,40 @@ export function readUserProviderIds(): string[] {
   }
 }
 
+/**
+ * Provider ids in opencode.jsonc that carry an INLINE api key (provider[id].options.apiKey). The
+ * model picker uses this (plus the keyEnv env check) to show "已配置 / 需配置" state — builtin
+ * providers are injected as config-only, so without this they look identical whether keyed or not.
+ */
+export function readConfiguredProviderKeys(): Map<string, string> {
+  const out = new Map<string, string>()
+  try {
+    const target = userConfigPath()
+    if (!fs.existsSync(target)) return out
+    const parsed = parse(fs.readFileSync(target, "utf8")) as { provider?: Record<string, unknown> } | undefined
+    const prov = parsed?.provider
+    if (prov && typeof prov === "object") {
+      for (const [id, def] of Object.entries(prov)) {
+        const key = (def as { options?: { apiKey?: unknown } } | null)?.options?.apiKey
+        if (typeof key === "string" && key.trim().length > 0) out.set(id, key)
+      }
+    }
+  } catch {
+    /* unreadable config → treat as none configured */
+  }
+  return out
+}
+
+/**
+ * Remove a provider block (definition + inline key) from opencode.jsonc. For a builtin this only drops
+ * the user's inline key (alpha re-injects the definition at fork); for a custom provider it removes it
+ * entirely. Does NOT touch env keys (those live in alpha.env). Takes effect on the next reconnect.
+ */
+export function removeProvider(id: string): ConfigResult {
+  if (!SAFE_NAME.test(id)) return { ok: false, reason: "invalid provider id" }
+  return writeKey(["provider", id], undefined)
+}
+
 // npm package name (optional scope), optionally pinned with @version. No shell metacharacters —
 // opencode installs the package itself on next launch (loader.ts resolvePluginTarget), so we never
 // shell out; this only gates what we write into the config.

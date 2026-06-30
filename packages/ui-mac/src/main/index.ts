@@ -44,6 +44,7 @@ import { spawnWslSidecar } from "./wsl/sidecar"
 import { migrate } from "./migrate"
 import { ensureAlphaLayoutDefault } from "./alpha-defaults"
 import {
+  enableProxy,
   getAuthState,
   handleAuthDeepLink,
   initAuthEnv,
@@ -306,6 +307,7 @@ const main = Effect.gen(function* () {
       start: () => startAuth(),
       logout: () => authLogout(),
       setMode: (mode) => setAuthMode(mode),
+      enableProxy: () => enableProxy(),
     },
   })
   registerWslIpcHandlers(wslServers)

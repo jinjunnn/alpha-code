@@ -4,6 +4,7 @@ import type { UpdaterState } from "@opencode-ai/app/updater"
 import type {
   AlphaModelCatalog,
   ProviderInput,
+  ProviderKeyStatus,
   ProviderResult,
   ProviderTestInput,
   ProviderTestResult,
@@ -155,6 +156,7 @@ export type ElectronAPI = {
     start: () => Promise<void>
     logout: () => Promise<void>
     setMode: (mode: AuthMode) => Promise<void>
+    enableProxy: () => Promise<void>
     subscribe: (cb: (state: AuthState) => void) => () => void
   }
   // Extension Hub (定制中心): thin privileged operations the renderer can't do itself. persistMcp
@@ -190,5 +192,9 @@ export type ElectronAPI = {
   providers: {
     add: (input: ProviderInput) => Promise<ProviderResult>
     test: (input: ProviderTestInput) => Promise<ProviderTestResult>
+    /** Read-only BYOK key state per provider id (drives the picker's 需 Key / 已配置 gating). */
+    keyStatus: () => Promise<ProviderKeyStatus>
+    /** Remove a provider's inline key/definition from opencode.jsonc (env keys untouched). */
+    remove: (id: string) => Promise<ProviderResult>
   }
 }

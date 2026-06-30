@@ -20,14 +20,39 @@
 // Escape hatch: ALPHA_MODELS_DISABLE=1 skips this entirely.
 
 import catalog from "./alpha-models.json"
-import type { AlphaModelCatalog } from "../shared/alpha-model-types"
-import { readUserProviderIds } from "./ext-config"
+import type { AlphaModelCatalog, ProviderKeyStatus } from "../shared/alpha-model-types"
+import { readConfiguredProviderKeys, readUserProviderIds } from "./ext-config"
 
 const CATALOG = catalog as unknown as AlphaModelCatalog
 
 /** The full model catalog (for window.api.models.catalog -> renderer picker). */
 export function getModelCatalog(): AlphaModelCatalog {
   return CATALOG
+}
+
+/**
+ * Per-provider BYOK key state for the picker (window.api.providers.keyStatus). A builtin provider is
+ * "configured" if its keyEnv is set in the (main) process env — which holds alpha.env + shell keys,
+ * loaded before the sidecar forks, so this matches exactly what opencode will see — OR if the user's
+ * opencode.jsonc has an inline apiKey for it. Custom providers (config-only) are reported too.
+ * Limitation: a key stored solely via opencode's native `auth login` is not visible here (P1).
+ */
+export function getProviderKeyStatus(): ProviderKeyStatus {
+  const cfgKeyed = readConfiguredProviderKeys()
+  // Masked tail only (never the full key) so the renderer can show WHICH key is set, not its value.
+  const last4 = (k?: string) => (k && k.length >= 4 ? k.slice(-4) : k ? "••" : undefined)
+  const out: ProviderKeyStatus = {}
+  for (const p of CATALOG.byokProviders) {
+    const envVal = p.keyEnv ? process.env[p.keyEnv] : undefined
+    out[p.id] = envVal
+      ? { configured: true, source: "env", hint: last4(envVal) }
+      : cfgKeyed.has(p.id)
+        ? { configured: true, source: "config", hint: last4(cfgKeyed.get(p.id)) }
+        : { configured: false, source: "none" }
+  }
+  // Custom providers (not in the catalog) carry their key inline → always "config".
+  for (const [id, key] of cfgKeyed) if (!out[id]) out[id] = { configured: true, source: "config", hint: last4(key) }
+  return out
 }
 
 export type AlphaModelConfig = {

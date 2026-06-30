@@ -42,6 +42,7 @@ type Deps = {
     start: () => Promise<void>
     logout: () => Promise<void>
     setMode: (mode: AuthMode) => Promise<void>
+    enableProxy: () => void
   }
 }
 
@@ -86,6 +87,7 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("auth-start", () => deps.auth.start())
   ipcMain.handle("auth-logout", () => deps.auth.logout())
   ipcMain.handle("auth-set-mode", (_event: IpcMainInvokeEvent, mode: AuthMode) => deps.auth.setMode(mode))
+  ipcMain.handle("auth-enable-proxy", () => deps.auth.enableProxy())
   ipcMain.handle("store-get", (_event: IpcMainInvokeEvent, name: string, key: string) => {
     try {
       const store = getStore(name)

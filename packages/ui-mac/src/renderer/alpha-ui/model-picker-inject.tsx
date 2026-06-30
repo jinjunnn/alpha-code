@@ -10,7 +10,7 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import type { AccountSummary, AuthState } from "../../preload/types"
-import type { AlphaModelCatalog, ByokProvider, Tier } from "../../shared/alpha-model-types"
+import type { AlphaModelCatalog, ByokProvider, ProviderKeyStatus, Tier } from "../../shared/alpha-model-types"
 import { ALPHA_ENDPOINTS, ALPHA_PATHS } from "../../shared/alpha-config"
 import { AddProvider } from "./model-picker-add"
 
@@ -35,6 +35,8 @@ type Row = {
   mult?: string
   reasoning: boolean
   locked?: boolean
+  /** locked specifically because the BYOK provider has no key → click opens its configure form. */
+  needKey?: boolean
 }
 
 export function ModelPickerInject() {
@@ -44,6 +46,9 @@ export function ModelPickerInject() {
   const [nativeKeys, setNativeKeys] = createSignal<string[]>([])
   const [selectedKey, setSelectedKey] = createSignal<string | null>(null)
   const [query, setQuery] = createSignal("")
+  const [keyStatus, setKeyStatus] = createSignal<ProviderKeyStatus>({})
+  const [configureId, setConfigureId] = createSignal<string | null>(null)
+  const refreshKeyStatus = () => window.api.providers.keyStatus().then(setKeyStatus).catch(() => {})
 
   onMount(() => onCleanup(window.api.auth.subscribe(setAuth)))
   createEffect(() => {
@@ -62,6 +67,15 @@ export function ModelPickerInject() {
     return s.balanceFen > 0 ? "balance" : "empty"
   })
   const accountLocked = createMemo(() => state() === "out" || state() === "empty")
+  // Whether opencode actually registered the ALPHA proxy provider this session (= the proxy env was
+  // present at sidecar fork time). When false, every 代理 row is locked regardless of account standing:
+  // the user can be logged in + funded but the proxy simply isn't live yet and needs one relaunch to
+  // pick up ALPHA_BASE_URL/ALPHA_API_KEY (see window.api.auth.enableProxy). This is the real reason a
+  // healthy PRO account still saw greyed rows — NOT balance/login.
+  const proxyConnected = createMemo(() => {
+    const cat = catalog()
+    return !!cat && nativeKeys().some((k) => k.startsWith(`${cat.platformProvider.id}:`))
+  })
 
   // ── detect the model picker popover + collect native rows ───────────────────────────────────────
   let mo: MutationObserver | undefined
@@ -102,6 +116,11 @@ export function ModelPickerInject() {
       mo.observe(document.body, { childList: true, subtree: true })
     }
     window.api.models.catalog().then(setCatalog).catch(() => {}).finally(start)
+    void refreshKeyStatus()
+  })
+  // Re-read BYOK key state whenever the picker (re)opens, so a key set elsewhere reflects without reload.
+  createEffect(() => {
+    if (panelHost()) void refreshKeyStatus()
   })
   onCleanup(() => {
     mo?.disconnect()
@@ -154,6 +173,7 @@ export function ModelPickerInject() {
       .map((key): Row => {
         const prov = key.slice(0, key.indexOf(":"))
         const id = key.slice(key.indexOf(":") + 1)
+        const configured = keyStatus()[prov]?.configured ?? false
         return {
           key,
           name: id,
@@ -161,6 +181,8 @@ export function ModelPickerInject() {
           pico: picoFor(prov),
           tier: heuristicTier(id),
           reasoning: EFFORT_RE.test(id),
+          locked: !configured,
+          needKey: !configured,
         }
       })
       .filter((r) => {
@@ -175,8 +197,21 @@ export function ModelPickerInject() {
 
   function pick(r: Row) {
     if (r.locked) {
-      if (state() === "empty") window.api.openLink(`${ALPHA_ENDPOINTS.web}${ALPHA_PATHS.wallet}?tab=recharge`)
-      else void window.api.auth.start()
+      const prov = r.key.slice(0, r.key.indexOf(":"))
+      const cat = catalog()
+      if (cat && prov !== cat.platformProvider.id) {
+        // BYOK / custom row with no key → open the configure form for THIS provider (was: a dead
+        // select that 401s at call time). AddProvider opens pre-selected via initialId.
+        setConfigureId(prov)
+        setAddOpen(true)
+        return
+      }
+      // 代理 row: three distinct reasons → three distinct fixes (not the old recharge/re-login dead-end).
+      if (state() === "out")
+        void window.api.auth.start() // not logged in → login (login now opts into the proxy by default)
+      else if (state() === "empty")
+        window.api.openLink(`${ALPHA_ENDPOINTS.web}${ALPHA_PATHS.wallet}?tab=recharge`) // no funds → recharge
+      else void window.api.auth.enableProxy() // logged in + funded, proxy not live → relaunch to activate
       return
     }
     const el = document.querySelector(`[data-slot="list-item"][data-key="${r.key}"]`) as HTMLElement | null
@@ -199,7 +234,9 @@ export function ModelPickerInject() {
       <Show when={props.r.reasoning}>
         <span class="a-mp-dot" />
       </Show>
-      <span class={`a-mp-tier ${props.r.tier}`}>{tierLabel(props.r.tier)}</span>
+      <Show when={props.r.needKey} fallback={<span class={`a-mp-tier ${props.r.tier}`}>{tierLabel(props.r.tier)}</span>}>
+        <span class="a-mp-needkey">需 Key</span>
+      </Show>
       <Show when={props.r.mult}>
         <span class="a-mp-mult">{props.r.mult}</span>
       </Show>
@@ -233,12 +270,26 @@ export function ModelPickerInject() {
                       <Lock /> 已锁定
                     </span>
                   </Show>
+                  <Show when={!accountLocked() && !proxyConnected()}>
+                    <button class="a-mp2-activate" onClick={() => void window.api.auth.enableProxy()}>
+                      启用代理 · 重启
+                    </button>
+                  </Show>
                 </div>
                 <For each={proxyRows()}>{(r) => <RowItem r={r} />}</For>
               </Show>
               <Show when={byokRows().length}>
                 <div class="a-mp2-ghead">
                   <span class="gt">国内直连 · 自带 KEY (BYOK)</span>
+                  <button
+                    class="a-mp2-manage"
+                    onClick={() => {
+                      setConfigureId(null)
+                      setAddOpen(true)
+                    }}
+                  >
+                    管理
+                  </button>
                 </div>
                 <For each={byokRows()}>{(r) => <RowItem r={r} />}</For>
               </Show>
@@ -252,12 +303,25 @@ export function ModelPickerInject() {
                 <div class="a-mp2-empty">
                   无匹配模型
                   <br />
-                  <a onClick={() => setAddOpen(true)}>＋ 添加自定义端点</a>
+                  <a
+                    onClick={() => {
+                      setConfigureId(null)
+                      setAddOpen(true)
+                    }}
+                  >
+                    ＋ 添加自定义端点
+                  </a>
                 </div>
               </Show>
             </div>
             <div class="a-mp2-foot">
-              <button class="a-mp2-addbtn" onClick={() => setAddOpen(true)}>
+              <button
+                class="a-mp2-addbtn"
+                onClick={() => {
+                  setConfigureId(null)
+                  setAddOpen(true)
+                }}
+              >
                 <span class="a-mp2-plus">
                   <Plus />
                 </span>
@@ -265,7 +329,16 @@ export function ModelPickerInject() {
               </button>
             </div>
             <Show when={addOpen()}>
-              <AddProvider catalog={catalog()} onClose={() => setAddOpen(false)} />
+              <AddProvider
+                catalog={catalog()}
+                initialId={configureId() ?? undefined}
+                keyStatus={keyStatus()}
+                onClose={() => {
+                  setAddOpen(false)
+                  setConfigureId(null)
+                }}
+                onSaved={() => void refreshKeyStatus()}
+              />
             </Show>
           </div>
         </Portal>
