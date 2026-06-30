@@ -1,10 +1,37 @@
 import * as fs from "node:fs"
+import { registerHooks } from "node:module"
 import * as http from "node:http"
 import * as path from "node:path"
 import * as tls from "node:tls"
 import { ALPHA_BEHAVIOR_MD } from "./alpha-behavior"
 import { buildAlphaIdentity } from "./alpha-identity"
 import { buildAlphaModelConfig } from "./alpha-models"
+
+// ADR-006 bridge ("two runtime worlds"). opencode's ToolRegistry dynamically imports a project's
+// raw-TS tools (.opencode/tool/*.ts), and packages whose TS entry does `import "./x.js"` (e.g.
+// @opencode-ai/plugin → src/index.ts → import "./tool.js") expect that to resolve to the sibling .ts.
+// bun rewrites `.js`→`.ts`; the packaged Electron-Node sidecar does NOT, so those imports throw
+// ERR_MODULE_NOT_FOUND → prompt_async crashes → the model never replies (looks like "no response").
+// This in-thread resolve hook restores bun's behavior: when a `.js` specifier fails to resolve but the
+// sibling `.ts` exists on disk, use the `.ts`. Alpha-only, zero opencode edits; registered at module
+// load (before the server import) so it covers every runtime tool load.
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    try {
+      return nextResolve(specifier, context)
+    } catch (error) {
+      if (!specifier.endsWith(".js")) throw error
+      let resolved: ReturnType<typeof nextResolve>
+      try {
+        resolved = nextResolve(`${specifier.slice(0, -3)}.ts`, context)
+      } catch {
+        throw error // sibling .ts also unresolvable → surface the original .js error
+      }
+      if (!resolved.url.startsWith("file:") || !fs.existsSync(new URL(resolved.url))) throw error
+      return { ...resolved, shortCircuit: true }
+    }
+  },
+})
 
 type NodeHttpWithEnvProxy = typeof http & {
   setGlobalProxyFromEnv: () => void

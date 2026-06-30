@@ -69,5 +69,12 @@ export type ProviderTestResult = { ok: true; ms: number } | { ok: false; reason:
 // picker can't tell "keyed" from "unkeyed" without this. `source`: "env" = the provider's keyEnv is
 // set in the (main) process env (alpha.env/shell); "config" = an inline apiKey in opencode.jsonc;
 // "none" = no usable key (→ row is locked, click opens the configure form).
-export type ProviderKeyState = { configured: boolean; source: "env" | "config" | "none"; hint?: string }
+export type ProviderKeyState = {
+  configured: boolean
+  /** "keychain" = alpha's encrypted BYOK store (alpha-byok-keys, the source of truth); "env" = keyEnv
+   *  in process env (alpha.env/shell export); "config" = inline apiKey in opencode.jsonc; "none" = no
+   *  key. ("auth" = legacy opencode auth.json — no longer produced; kept in the union pending UI cleanup.) */
+  source: "keychain" | "env" | "config" | "auth" | "none"
+  hint?: string
+}
 export type ProviderKeyStatus = Record<string, ProviderKeyState>

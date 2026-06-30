@@ -4,8 +4,9 @@
 
 import { ipcMain, type IpcMainInvokeEvent } from "electron"
 import type { ProviderInput, ProviderTestInput } from "../shared/alpha-model-types"
-import { getProviderKeyStatus } from "./alpha-models"
+import { getProviderKeyStatus } from "./alpha-provider-status"
 import { persistProvider, removeProvider } from "./ext-config"
+import { removeByokKey, setByokKey } from "./alpha-byok-keys"
 import { testProvider } from "./provider-test"
 
 export function registerProviderIpcHandlers() {
@@ -14,6 +15,10 @@ export function registerProviderIpcHandlers() {
   // Read-only key-state for the picker's "需 Key / 已配置" gating. No secrets cross the boundary —
   // only { configured, source, hint(last4) } per provider id.
   ipcMain.handle("providers-key-status", () => getProviderKeyStatus())
-  // Remove a provider's inline key/definition from opencode.jsonc (env keys are untouched).
+  // Store / drop a catalog BYOK provider's key in alpha's encrypted keychain (alpha-byok-keys).
+  // Applies on the next sidecar (re)fork: keychain → keyEnv → inline custom-provider apiKey.
+  ipcMain.handle("providers-set-key", (_event: IpcMainInvokeEvent, id: string, key: string) => setByokKey(id, key))
+  ipcMain.handle("providers-remove-key", (_event: IpcMainInvokeEvent, id: string) => removeByokKey(id))
+  // Remove an off-catalog custom provider's inline key/definition from opencode.jsonc (env untouched).
   ipcMain.handle("providers-remove", (_event: IpcMainInvokeEvent, id: string) => removeProvider(id))
 }

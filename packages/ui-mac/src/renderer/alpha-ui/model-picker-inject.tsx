@@ -11,7 +11,8 @@ import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show }
 import { Portal } from "solid-js/web"
 import type { AccountSummary, AuthState } from "../../preload/types"
 import type { AlphaModelCatalog, ByokProvider, ProviderKeyStatus, Tier } from "../../shared/alpha-model-types"
-import { ALPHA_ENDPOINTS, ALPHA_PATHS } from "../../shared/alpha-config"
+import { ALPHA_PATHS } from "../../shared/alpha-config"
+import { useAlphaEndpoints } from "../use-alpha-endpoints"
 import { AddProvider } from "./model-picker-add"
 
 const [catalog, setCatalog] = createSignal<AlphaModelCatalog | null>(null)
@@ -49,6 +50,7 @@ export function ModelPickerInject() {
   const [keyStatus, setKeyStatus] = createSignal<ProviderKeyStatus>({})
   const [configureId, setConfigureId] = createSignal<string | null>(null)
   const refreshKeyStatus = () => window.api.providers.keyStatus().then(setKeyStatus).catch(() => {})
+  const endpoints = useAlphaEndpoints()
 
   onMount(() => onCleanup(window.api.auth.subscribe(setAuth)))
   createEffect(() => {
@@ -173,7 +175,6 @@ export function ModelPickerInject() {
       .map((key): Row => {
         const prov = key.slice(0, key.indexOf(":"))
         const id = key.slice(key.indexOf(":") + 1)
-        const configured = keyStatus()[prov]?.configured ?? false
         return {
           key,
           name: id,
@@ -181,14 +182,15 @@ export function ModelPickerInject() {
           pico: picoFor(prov),
           tier: heuristicTier(id),
           reasoning: EFFORT_RE.test(id),
-          locked: !configured,
-          needKey: !configured,
         }
       })
       .filter((r) => {
         const prov = r.key.slice(0, r.key.indexOf(":"))
         const known = !!cat?.byokProviders.some((p) => p.id === prov)
-        return wantBuiltin ? known : !known
+        if (wantBuiltin ? !known : known) return false
+        // Hide providers with no key entirely (an unconfigured provider's whole row shouldn't show).
+        // Add a key via the footer "添加自定义节点 / 供应商" flow (lists every provider + 已配置 state).
+        return keyStatus()[prov]?.configured ?? false
       })
       .filter(matchQ)
   }
@@ -210,8 +212,8 @@ export function ModelPickerInject() {
       if (state() === "out")
         void window.api.auth.start() // not logged in → login (login now opts into the proxy by default)
       else if (state() === "empty")
-        window.api.openLink(`${ALPHA_ENDPOINTS.web}${ALPHA_PATHS.wallet}?tab=recharge`) // no funds → recharge
-      else void window.api.auth.enableProxy() // logged in + funded, proxy not live → relaunch to activate
+        window.api.openLink(`${endpoints().web}${ALPHA_PATHS.wallet}?tab=recharge`) // no funds → recharge
+      else void window.api.auth.enableProxy() // logged in + funded, proxy not live → respawn in place (no restart)
       return
     }
     const el = document.querySelector(`[data-slot="list-item"][data-key="${r.key}"]`) as HTMLElement | null
@@ -272,7 +274,7 @@ export function ModelPickerInject() {
                   </Show>
                   <Show when={!accountLocked() && !proxyConnected()}>
                     <button class="a-mp2-activate" onClick={() => void window.api.auth.enableProxy()}>
-                      启用代理 · 重启
+                      启用代理
                     </button>
                   </Show>
                 </div>
@@ -281,15 +283,6 @@ export function ModelPickerInject() {
               <Show when={byokRows().length}>
                 <div class="a-mp2-ghead">
                   <span class="gt">国内直连 · 自带 KEY (BYOK)</span>
-                  <button
-                    class="a-mp2-manage"
-                    onClick={() => {
-                      setConfigureId(null)
-                      setAddOpen(true)
-                    }}
-                  >
-                    管理
-                  </button>
                 </div>
                 <For each={byokRows()}>{(r) => <RowItem r={r} />}</For>
               </Show>
@@ -348,8 +341,9 @@ export function ModelPickerInject() {
 }
 
 function AccountBanner(props: { state: "member" | "balance" | "empty" | "out"; summary: AccountSummary | null }) {
-  const rechargeUrl = `${ALPHA_ENDPOINTS.web}${ALPHA_PATHS.wallet}?tab=recharge`
-  const subscribeUrl = `${ALPHA_ENDPOINTS.web}${ALPHA_PATHS.wallet}?tab=subscription`
+  const endpoints = useAlphaEndpoints()
+  const rechargeUrl = () => `${endpoints().web}${ALPHA_PATHS.wallet}?tab=recharge`
+  const subscribeUrl = () => `${endpoints().web}${ALPHA_PATHS.wallet}?tab=subscription`
   const planName = () => (props.summary?.plan.status === "active" ? props.summary.plan.name : "Pro")
   return (
     <>
@@ -369,7 +363,7 @@ function AccountBanner(props: { state: "member" | "balance" | "empty" | "out"; s
             钱包余额 {fmtYuan(props.summary?.balanceFen ?? 0)} · 未订阅
             <small>按量扣费</small>
           </span>
-          <button class="a-acct-bb ghost" onClick={() => window.api.openLink(subscribeUrl)}>订阅</button>
+          <button class="a-acct-bb ghost" onClick={() => window.api.openLink(subscribeUrl())}>订阅</button>
         </div>
       </Show>
       <Show when={props.state === "empty"}>
@@ -379,8 +373,8 @@ function AccountBanner(props: { state: "member" | "balance" | "empty" | "out"; s
             余额不足 · 充值后解锁代理
             <small>钱包 ¥0.00</small>
           </span>
-          <button class="a-acct-bb ghost" onClick={() => window.api.openLink(subscribeUrl)}>订阅</button>
-          <button class="a-acct-bb" onClick={() => window.api.openLink(rechargeUrl)}>充值</button>
+          <button class="a-acct-bb ghost" onClick={() => window.api.openLink(subscribeUrl())}>订阅</button>
+          <button class="a-acct-bb" onClick={() => window.api.openLink(rechargeUrl())}>充值</button>
         </div>
       </Show>
       <Show when={props.state === "out"}>

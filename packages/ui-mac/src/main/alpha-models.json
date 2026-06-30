@@ -36,7 +36,7 @@
       "baseURL": "https://api.deepseek.com/v1",
       "keyEnv": "DEEPSEEK_API_KEY",
       "pico": { "letter": "D", "color": "#2563eb" },
-      "models": ["deepseek-chat", "deepseek-reasoner"]
+      "models": ["deepseek-v4-flash", "deepseek-v4-pro"]
     },
     {
       "id": "zhipuai",
@@ -47,7 +47,7 @@
       "baseURL": "https://open.bigmodel.cn/api/anthropic",
       "keyEnv": "ZHIPU_API_KEY",
       "pico": { "letter": "智", "color": "#16a34a" },
-      "models": ["glm-5", "glm-4.5-air"]
+      "models": ["glm-5.2", "glm-4.5-air"]
     },
     {
       "id": "minimax",

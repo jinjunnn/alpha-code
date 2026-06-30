@@ -15,7 +15,8 @@ import { useTheme } from "@opencode-ai/ui/theme/context"
 import { t } from "../i18n"
 import { pushToast } from "../alpha-ui/Toast"
 import { Mark } from "../logo-alpha"
-import { ALPHA_ENDPOINTS, ALPHA_PATHS } from "../../shared/alpha-config"
+import { ALPHA_PATHS } from "../../shared/alpha-config"
+import { useAlphaEndpoints } from "../use-alpha-endpoints"
 import { base64UrlDecode, homeHref, newSessionHref, projectLabel, sessionHref } from "./route"
 import {
   clearHiddenProjects,
@@ -146,8 +147,9 @@ export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }
     { k: "system", l: "系统" },
   ] as const
   // 钱包购买页(/wallet)按页签深链:充值 → 钱包充值页签;升级会员/管理订阅 → 会员月卡页签。
-  const rechargeUrl = `${ALPHA_ENDPOINTS.web}${ALPHA_PATHS.wallet}?tab=recharge`
-  const subscribeUrl = `${ALPHA_ENDPOINTS.web}${ALPHA_PATHS.wallet}?tab=subscription`
+  const endpoints = useAlphaEndpoints()
+  const rechargeUrl = () => `${endpoints().web}${ALPHA_PATHS.wallet}?tab=recharge`
+  const subscribeUrl = () => `${endpoints().web}${ALPHA_PATHS.wallet}?tab=subscription`
 
   // Account summary (balance / membership / token usage) from alpha-platform B, fetched on login.
   // Contract: alpha-platform docs/alpha-code-account-integration.md. usageSeries powers the 14-day
@@ -1039,15 +1041,15 @@ export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }
                   </div>
                   <div class="alpha-acct-cta">
                     <Show when={!acctIsPro()}>
-                      <button class="alpha-acct-btn primary" onClick={() => window.api.openLink(subscribeUrl)}>
+                      <button class="alpha-acct-btn primary" onClick={() => window.api.openLink(subscribeUrl())}>
                         升级会员
                       </button>
                     </Show>
-                    <button class="alpha-acct-btn" onClick={() => window.api.openLink(rechargeUrl)}>
+                    <button class="alpha-acct-btn" onClick={() => window.api.openLink(rechargeUrl())}>
                       充值
                     </button>
                     <Show when={acctIsPro()}>
-                      <button class="alpha-acct-btn" onClick={() => window.api.openLink(subscribeUrl)}>
+                      <button class="alpha-acct-btn" onClick={() => window.api.openLink(subscribeUrl())}>
                         管理订阅
                       </button>
                     </Show>

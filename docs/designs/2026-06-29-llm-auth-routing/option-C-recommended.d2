@@ -1,0 +1,43 @@
+direction: right
+
+title: "方案 C(推荐 · 已选)— 代理单 provider(多 model id) + BYOK 直连节点(目录在 alpha-code 定义)" {
+  near: top-center
+  shape: text
+  style.font-size: 24
+  style.bold: true
+}
+
+catalog: "alpha-models.json(单一目录)\n定义: 代理 model ids + BYOK 支持的 provider 与 model id" {
+  style.fill: "#fff7ed"
+  style.bold: true
+}
+
+local: "本机 · alpha-code app" {
+  style.fill: "#f8fafc"
+  login: "alpha 登录 → JWT" { style.fill: "#eef2ff" }
+  byokkey: "BYOK key · alpha 本地存储(按需)" { style.fill: "#fef9c3" }
+  respawn: "登录/加 key → 原地重启 sidecar(免整 app 重启)" { style.fill: "#fae8ff" }
+  seam: "sidecar 注入 · config 接缝(零改 opencode)" { style.fill: "#e0e7ff" }
+  engine: "opencode 引擎 · provider 层" { style.fill: "#ffffff" }
+  alpha: "provider.alpha(默认唯一)· 多 model id" { style.fill: "#c7d2fe" }
+  byok: "BYOK 直连节点 · 自定义 provider · 按需注入(逃生出口)" { style.fill: "#fde68a"; style.stroke-dash: 4 }
+}
+
+cloud: "alpha-platform 云" {
+  style.fill: "#f0fdf4"
+  gw: "alpha 网关 · JWT 校验 + 路由 + 计费" { style.fill: "#bbf7d0" }
+}
+
+up_platform: "上游 · 平台代付(alpha 服务端 key)" { style.fill: "#fee2e2" }
+up_byok: "上游 · BYOK 厂商(用户 key)" { style.fill: "#fde68a" }
+
+catalog -> local.seam: "驱动注入"
+local.login -> local.respawn
+local.byokkey -> local.respawn
+local.respawn -> local.seam: "重读 env"
+local.seam -> local.engine: "默认只 alpha;加 key 才注入对应 BYOK 节点"
+local.engine -> local.alpha: "默认全部模型"
+local.engine -> local.byok: "选了 BYOK 模型时"
+local.alpha -> cloud.gw: "apiKey = JWT"
+cloud.gw -> up_platform: "alpha key + 计费"
+local.byok -> up_byok: "直连 · 用户 key(绕过网关,网关挂也能用)"
