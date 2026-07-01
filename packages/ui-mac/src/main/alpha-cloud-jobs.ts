@@ -15,7 +15,7 @@ import { ALPHA_PATHS } from "../shared/alpha-config"
 import { resolveEndpoints } from "./alpha-endpoints"
 import { getAccessToken } from "./alpha-auth"
 import { getLogger } from "./logging"
-import type { CloudResult, CloudJobEnvelope, CloudDispatchResult, CloudJobStatus } from "../preload/types"
+import type { CloudResult, CloudJobEnvelope, CloudDispatchResult, CloudJobStatus, CloudArtifactList, CloudArtifactContent } from "../preload/types"
 
 // Resolved by alpha-endpoints (env ALPHA_CLOUD_URL > userData pin > login discovery > default).
 const cloudBase = () => resolveEndpoints().cloud
@@ -49,3 +49,31 @@ export const dispatchCloudJob = (envelope: CloudJobEnvelope): Promise<CloudResul
 
 export const getCloudJobStatus = (jobId: string): Promise<CloudResult<CloudJobStatus>> =>
   authed<CloudJobStatus>(`${ALPHA_PATHS.cloudJobs}/${encodeURIComponent(jobId)}`)
+
+export const listCloudArtifacts = (jobId: string): Promise<CloudResult<CloudArtifactList>> =>
+  authed<CloudArtifactList>(`${ALPHA_PATHS.cloudJobs}/${encodeURIComponent(jobId)}/artifacts`)
+
+// 下载单个 artifact 的二进制内容 → base64(main 取回,bearer 不进 renderer;仿 account 读取)。
+// 大文件经 base64/IPC 传给 renderer 存盘;真部署可改 main 侧 save dialog 直写盘。
+export async function fetchCloudArtifact(artifactId: string): Promise<CloudResult<CloudArtifactContent>> {
+  const token = getAccessToken()
+  if (!token) return { error: "not-authenticated" }
+  const base = cloudBase()
+  if (!base) return { error: "no-cloud-endpoint" }
+  try {
+    const res = await fetch(`${base}${ALPHA_PATHS.cloudArtifacts}/${encodeURIComponent(artifactId)}/content`, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(30000),
+    })
+    if (res.status === 401) return { error: "unauthorized" }
+    if (!res.ok) return { error: `http-${res.status}` }
+    const mime = res.headers.get("content-type") ?? "application/octet-stream"
+    const cd = res.headers.get("content-disposition") ?? ""
+    const name = /filename="?([^"]+)"?/.exec(cd)?.[1] ?? "artifact"
+    const base64 = Buffer.from(await res.arrayBuffer()).toString("base64")
+    return { name, mime, base64 }
+  } catch (error) {
+    getLogger().warn("alpha-cloud-jobs: artifact fetch failed", error)
+    return { error: "network" }
+  }
+}

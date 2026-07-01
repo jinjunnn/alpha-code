@@ -125,6 +125,11 @@ export type CloudJobStatus = {
   result?: unknown
   error: string | null
 }
+export type CloudArtifactMeta = { id: string; name?: string; mime?: string; size?: number; content_url?: string }
+export type CloudArtifactList = { job_id: string; status: string; artifacts: CloudArtifactMeta[]; artifact_ids: string[]; result?: unknown }
+export type CloudArtifactContent = { name: string; mime: string; base64: string }
+/** SSE 进度事件(job.snapshot / job.started / job.running / workflow.step.completed / job.completed|failed|cancelled / error)。 */
+export type CloudJobEvent = { event: string; data: unknown; id?: string }
 /** Same shape as AccountResult; distinct alias for the cloud jobs surface. */
 export type CloudResult<T> = T | { error: string }
 
@@ -229,6 +234,12 @@ export type ElectronAPI = {
   cloud: {
     dispatch: (envelope: CloudJobEnvelope) => Promise<CloudResult<CloudDispatchResult>>
     status: (jobId: string) => Promise<CloudResult<CloudJobStatus>>
+    artifacts: (jobId: string) => Promise<CloudResult<CloudArtifactList>>
+    fetchArtifact: (artifactId: string) => Promise<CloudResult<CloudArtifactContent>>
+    // 订阅 SSE 进度:main 流式 /events → 推 cloud-job-event。onEvent 注册监听,返回取消函数。
+    subscribe: (jobId: string) => Promise<{ ok: boolean }>
+    unsubscribe: (jobId: string) => Promise<{ ok: boolean }>
+    onEvent: (cb: (payload: { jobId: string } & CloudJobEvent) => void) => () => void
   }
   // alpha model catalog (config-driven, from main/alpha-models.json) for the model picker.
   models: {

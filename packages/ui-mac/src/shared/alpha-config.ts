@@ -12,15 +12,15 @@ export type AlphaEndpoints = { web: string; platform: string; account: string; c
 
 export const ALPHA_ENDPOINTS = {
   /** alpha-web (C): identity / login / token / billing portal. */
-  web: "https://auth.tidelabs.click",
-  /** alpha-platform (B): model proxy (/v1). The gateway has NO custom domain (unlike account./auth.) —
+  web: "https://alphacodeone.com",
+  /** alpha-platform (B): model proxy (/v1). The gateway has NO custom domain (unlike web/account.) —
    *  it's the raw Worker URL `alpha-gateway.jinjunnm.workers.dev`, confirmed against alpha-platform docs
    *  (M4-next-steps / design.md / ADR-014) AND a live probe (/health 200, /v1/models 200, /v1/chat
    *  /completions 401). The previous `api.tidelabs.click` 404'd every /v1 route (no gateway routed
    *  there). Override per-deploy with ALPHA_PLATFORM_URL once a custom domain is set up. */
   platform: "https://alpha-gateway.jinjunnm.workers.dev",
   /** alpha-platform (B) account-server (境内 PII/金融): balance / membership / usage ledger. */
-  account: "https://account.tidelabs.click",
+  account: "https://account.alphacodeone.com",
   /** alpha-platform (B) cloud jobs API (ADR-016): unified dispatch/status + MCP facade (/mcp). A
    *  SEPARATE worker from the model gateway (the gateway 404s /mcp) — `alpha-cloud`. Override per-deploy
    *  with ALPHA_CLOUD_URL; alpha-web may also discover it via the token response endpoints{cloud,mcp}. */
@@ -42,8 +42,10 @@ export const ALPHA_PATHS = {
   modelProxy: "/v1",
   /** cloud: MCP facade → ALPHA_CLOUD_MCP_URL (on the `cloud` worker, NOT the model gateway). */
   mcpGateway: "/mcp",
-  /** cloud: unified cloud jobs API (ADR-016) → dispatch POST, status GET {cloudJobs}/{id}. */
+  /** cloud: unified cloud jobs API (ADR-016) → dispatch POST, status GET {cloudJobs}/{id}, SSE {cloudJobs}/{id}/events, list {cloudJobs}/{id}/artifacts. */
   cloudJobs: "/v1/cloud/jobs",
+  /** cloud: authenticated artifact content download → {cloudArtifacts}/{artifactId}/content. */
+  cloudArtifacts: "/v1/cloud/artifacts",
   /** account-server: balance / membership / token-usage summary. */
   accountSummary: "/v1/account/summary",
   /** account-server: billing transaction history. */
