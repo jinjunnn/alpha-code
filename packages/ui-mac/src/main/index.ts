@@ -17,6 +17,7 @@ import { CHANNEL } from "./constants"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand } from "./ipc"
 import { registerExtIpcHandlers } from "./ext-ipc"
 import { registerAccountIpcHandlers } from "./account-ipc"
+import { registerCloudIpcHandlers } from "./cloud-ipc"
 import { registerModelsIpcHandlers } from "./models-ipc"
 import { registerProviderIpcHandlers } from "./provider-ipc"
 import { forwardInitializationFailure } from "./initialization"
@@ -324,6 +325,7 @@ const main = Effect.gen(function* () {
   registerWslIpcHandlers(wslServers)
   registerExtIpcHandlers()
   registerAccountIpcHandlers()
+  registerCloudIpcHandlers()
   registerModelsIpcHandlers()
   registerProviderIpcHandlers()
   registerEndpointsIpcHandlers()

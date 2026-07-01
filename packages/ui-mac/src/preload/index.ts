@@ -148,8 +148,22 @@ const api: ElectronAPI = {
     summary: () => ipcRenderer.invoke("account-summary"),
     transactions: (limit) => ipcRenderer.invoke("account-transactions", limit),
   },
+  cloud: {
+    dispatch: (envelope) => ipcRenderer.invoke("cloud-dispatch", envelope),
+    status: (jobId) => ipcRenderer.invoke("cloud-status", jobId),
+    artifacts: (jobId) => ipcRenderer.invoke("cloud-artifacts", jobId),
+    fetchArtifact: (artifactId) => ipcRenderer.invoke("cloud-artifact-content", artifactId),
+    subscribe: (jobId) => ipcRenderer.invoke("cloud-subscribe", jobId),
+    unsubscribe: (jobId) => ipcRenderer.invoke("cloud-unsubscribe", jobId),
+    onEvent: (cb) => {
+      const h = (_e: unknown, payload: { jobId: string; event: string; data: unknown; id?: string }) => cb(payload)
+      ipcRenderer.on("cloud-job-event", h)
+      return () => ipcRenderer.removeListener("cloud-job-event", h)
+    },
+  },
   models: {
     catalog: () => ipcRenderer.invoke("models-catalog"),
+    platformLive: () => ipcRenderer.invoke("models-platform-live"),
   },
   providers: {
     add: (input) => ipcRenderer.invoke("providers-add", input),

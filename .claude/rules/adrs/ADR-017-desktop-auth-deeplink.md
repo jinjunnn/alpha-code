@@ -15,7 +15,7 @@ related: [ADR-012, ADR-002]
 ## 决策(打包/授权标准流程)
 1. **自定义 scheme 必须在 `electron-builder.config.ts` 的 `protocols.schemes` 声明**,且覆盖**所有渠道**(base + dev/beta/prod 的 override)。运行时 `setAsDefaultProtocolClient` 只是补充,对已打包 macOS app **不充分**——LaunchServices 只读 Info.plist。新增任何桌面深链 scheme,先改打包配置再说。
 2. **PKCE(verifier+state)必须落盘**:`startAuth()` 写 `<userData>/alpha-pkce.json`(0600,短命、单次);`completeAuth()` 内存 `pkce` 为空时回退 `loadPkce()`;消费后 `clearPkce()` 删文件。保证回调跨"冷启动/重装/重启"存活。
-3. **token 兑换地址走默认常量**:`shared/alpha-config.ts` 的 `ALPHA_ENDPOINTS.web` 为唯一真源(当前 `https://auth.tidelabs.click`),不依赖 shell env——否则 Finder 冷启动的 app 无 `ALPHA_WEB_URL` 会打到错域名。
+3. **token 兑换地址走默认常量**:`shared/alpha-config.ts` 的 `ALPHA_ENDPOINTS.web` 为唯一真源(当前 `https://alphacodeone.com`),不依赖 shell env——否则 Finder 冷启动的 app 无 `ALPHA_WEB_URL` 会打到错域名。
 4. **回调到达必须把 app 拉到前台**:macOS 经 `open-url`(非 `second-instance`)投递回调时**不会**自动激活 app,登录会在后台默默完成、用户停在浏览器。`open-url` handler 里补 `mainWindow.show()/focus()` + `app.focus({steal:true})`(steal 覆盖 macOS 防抢焦点),与 `second-instance` 行为对齐。
 
 ## 改 scheme / 重打包后的 verify 清单(必做)
