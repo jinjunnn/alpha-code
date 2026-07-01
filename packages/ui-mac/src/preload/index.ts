@@ -163,6 +163,7 @@ const api: ElectronAPI = {
   },
   models: {
     catalog: () => ipcRenderer.invoke("models-catalog"),
+    platformLive: () => ipcRenderer.invoke("models-platform-live"),
   },
   providers: {
     add: (input) => ipcRenderer.invoke("providers-add", input),

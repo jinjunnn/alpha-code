@@ -132,6 +132,8 @@ export type CloudArtifactContent = { name: string; mime: string; base64: string 
 export type CloudJobEvent = { event: string; data: unknown; id?: string }
 /** Same shape as AccountResult; distinct alias for the cloud jobs surface. */
 export type CloudResult<T> = T | { error: string }
+/** B gateway /v1/models 的一条 live 模型(真相源 allowlist)。 */
+export type PlatformLiveModel = { id: string; provider?: string; minPlan?: string }
 
 export type ElectronAPI = {
   killSidecar: () => Promise<void>
@@ -242,8 +244,10 @@ export type ElectronAPI = {
     onEvent: (cb: (payload: { jobId: string } & CloudJobEvent) => void) => () => void
   }
   // alpha model catalog (config-driven, from main/alpha-models.json) for the model picker.
+  // platformLive: B gateway /v1/models 真相源 allowlist(解静态目录漂移;fork 仍用静态 JSON 作默认)。
   models: {
     catalog: () => Promise<AlphaModelCatalog>
+    platformLive: () => Promise<CloudResult<{ models: PlatformLiveModel[] }>>
   }
   // custom provider add/test (writes opencode.jsonc provider[]; 1-token-chat connectivity probe).
   providers: {

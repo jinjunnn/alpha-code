@@ -3,7 +3,10 @@
 
 import { ipcMain } from "electron"
 import { getModelCatalog } from "./alpha-models"
+import { fetchPlatformModels } from "./alpha-platform-models"
 
 export function registerModelsIpcHandlers() {
   ipcMain.handle("models-catalog", () => getModelCatalog())
+  // 阶段三 step 17:从 B gateway /v1/models 拉 live allowlist(解静态目录漂移)。
+  ipcMain.handle("models-platform-live", () => fetchPlatformModels())
 }
