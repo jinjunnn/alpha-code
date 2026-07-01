@@ -26,7 +26,7 @@ npx wrangler deploy
 ## 2. 治本(择一,§3 验证两者都加)
 
 ### 方案 A(推荐 · 结构性免漂移):JWKS / 非对称签名
-- **alpha-web**:改用**私钥**签(RS256/ES256),暴露 `https://auth.tidelabs.click/.well-known/jwks.json`(公钥集)。
+- **alpha-web**:改用**私钥**签(RS256/ES256),暴露 `https://alphacodeone.com/.well-known/jwks.json`(公钥集)。
 - **网关**:用 `jose` 的 `createRemoteJWKSet(new URL(JWKS_URL))` 验签(自动拉取 + 缓存公钥)。
 - **效果**:**两端不再共享任何密钥** → 漂移在结构上不可能;密钥轮换只在 alpha-web 一处做,网关下次拉 JWKS 自动跟随。这是 OIDC/OAuth 的标准做法,也正是你要的"一处管理"。
 - **成本**:web 改签名 + 加 JWKS 端点;网关把 `jwtVerify(...TextEncoder(JWT_SECRET))` 换成 `jwtVerify(...remoteJWKS)`。一次性、各一处。
@@ -60,13 +60,13 @@ npx wrangler deploy
   - `scripts/gen-jwt-key.mjs`(新):一键生成 ES256 keypair → 打印 `JWT_KID` / `JWT_PUBLIC_JWK` / `JWT_PRIVATE_KEY`。
 - **alpha-platform 网关(验签方,JWKS)**
   - `src/worker.ts` + `src/account.ts`:`jwtVerify(tok, JWT_SECRET)` → `jwtVerify(tok, createRemoteJWKSet(JWKS_URL))`;`Env.JWT_SECRET`→`JWKS_URL`;dev token bypass 保留;`src/` 已无 `JWT_SECRET` 引用。
-  - `wrangler.jsonc` / `.dev.vars` / `.env`:加 `JWKS_URL=https://auth.tidelabs.click/api/jwks`。
+  - `wrangler.jsonc` / `.dev.vars` / `.env`:加 `JWKS_URL=https://alphacodeone.com/api/jwks`。
   - 遗留:`scripts/sign-test-jwt.mjs` 仍 HS256(手动测试用,已被真登录流 + JWKS 取代,可改 ES256 或删);单测走 dev token,不受影响。
 
 ## 部署 runbook(你执行 —— 需 Vercel + CF 账号;部署完代理 401 即消)
 1. **生成密钥**(私钥只留你机器,别贴聊天):`cd alpha-web && node scripts/gen-jwt-key.mjs`
 2. **Vercel 设 alpha-web env(Production)**:`JWT_KID` / `JWT_PUBLIC_JWK` / `JWT_PRIVATE_KEY`(三个都设)。
-3. **部署 alpha-web** → 验证 JWKS:`curl https://auth.tidelabs.click/api/jwks` 应返回 `{"keys":[{"kty":"EC","crv":"P-256",...,"kid":"alpha-web-..."}]}`。
+3. **部署 alpha-web** → 验证 JWKS:`curl https://alphacodeone.com/api/jwks` 应返回 `{"keys":[{"kty":"EC","crv":"P-256",...,"kid":"alpha-web-..."}]}`。
 4. **部署网关**:`cd alpha-platform/packages/gateway && npx wrangler deploy`(`JWKS_URL` 已在 `wrangler.jsonc`)。可选彻底无共享密钥:`npx wrangler secret delete JWT_SECRET`。
 5. **重登 app** → 选代理模型 → 应通(网关经 JWKS 验签;不再有可漂移的共享密钥)。
 > 顺序:alpha-web 先(JWKS 上线 + 开始签 ES256)→ 网关后。当前代理本就 401(无可破坏的好状态),两边部署完重登即好。

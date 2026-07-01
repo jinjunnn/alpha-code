@@ -22,9 +22,9 @@ Include an optional `endpoints` object in the token-exchange JSON response:
   "plan": "pro",
   "endpoints": {                                   // NEW — all optional, absolute https URLs
     "platform": "https://alpha-gateway.jinjunnm.workers.dev",  // model proxy (/v1)
-    "account":  "https://account.tidelabs.click",             // account-server
+    "account":  "https://account.alphacodeone.com",           // account-server
     "mcp":      "https://<cloud-dispatch-worker>/…",          // cloud-dispatch MCP (separate worker)
-    "web":      "https://auth.tidelabs.click"                 // optional; identity/links
+    "web":      "https://alphacodeone.com"                    // optional; identity/links
   }
 }
 ```
