@@ -40,7 +40,7 @@ type TokenResponse = {
   plan?: string
   /** ① optional endpoint discovery — alpha-web may tell the app where the gateway/account live, so a
    *  moved backend updates clients without a release (see alpha-endpoints.ts). Producer side optional. */
-  endpoints?: { web?: string; platform?: string; account?: string; mcp?: string }
+  endpoints?: { web?: string; platform?: string; account?: string; cloud?: string; mcp?: string }
 }
 
 const CLIENT_ID = "alpha-code"
@@ -141,9 +141,10 @@ export function applyAuthEnv() {
   if (!token || !base) return
   if (!process.env.ALPHA_BASE_URL) process.env.ALPHA_BASE_URL = `${base}${ALPHA_PATHS.modelProxy}`
   if (!process.env.ALPHA_API_KEY) process.env.ALPHA_API_KEY = token
-  // mcp: a discovered/pinned mcp URL wins; else derive from the gateway base (note: the model gateway
-  // worker 404s /mcp — cloud dispatch is a separate worker, so discovery is the real fix for it).
-  if (!process.env.ALPHA_CLOUD_MCP_URL) process.env.ALPHA_CLOUD_MCP_URL = ep.mcp ?? `${base}${ALPHA_PATHS.mcpGateway}`
+  // mcp: a discovered/pinned mcp URL wins; else derive from the CLOUD worker base (ADR-016: the MCP
+  // facade lives on `alpha-cloud`, NOT the model gateway which 404s /mcp). ep.cloud always resolves
+  // (has a default), so this points at alpha-cloud/mcp instead of the old gateway/mcp 404.
+  if (!process.env.ALPHA_CLOUD_MCP_URL) process.env.ALPHA_CLOUD_MCP_URL = ep.mcp ?? `${ep.cloud ?? base}${ALPHA_PATHS.mcpGateway}`
   if (!process.env.ALPHA_CLOUD_TOKEN) process.env.ALPHA_CLOUD_TOKEN = token
 }
 

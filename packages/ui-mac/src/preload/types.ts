@@ -93,6 +93,41 @@ export type AccountTransaction = {
 /** Result envelope: the payload, or an error code (not-authenticated / unauthorized / http-NNN / network). */
 export type AccountResult<T> = T | { error: string }
 
+// alpha-platform (B) cloud jobs API (ADR-016) — unified dispatch/status over the `cloud` worker.
+// tier (T1/T2/T3) is invisible here (B routes internally); autonomy discriminates pipeline vs bounded-agent.
+export type CloudJobEnvelope = {
+  autonomy: "pipeline" | "bounded-agent"
+  kind?: string // pipeline: research|code-review|docs|office-report|data-analysis|bugfix|migration
+  input?: Record<string, unknown> // pipeline input
+  objective?: string // bounded-agent objective
+  capabilities?: string[] // bounded-agent: drives B's tier-router (web_search|code_exec|file_mutation)
+  budget?: { max_iter?: number; max_tokens?: number; max_wall_clock_sec?: number }
+  constraints?: { allowed_tools?: string[]; denied_paths?: string[]; network?: "none" | "restricted" | "open" }
+  output_schema?: Record<string, unknown>
+}
+export type CloudDispatchResult = {
+  api_version: string
+  job_id: string
+  status: string
+  autonomy: string
+  kind?: string
+  urls: { status: string; events: string; result: string }
+}
+export type CloudJobStatus = {
+  api_version: string
+  job_id: string
+  status: "queued" | "running" | "blocked" | "completed" | "failed" | "cancelled"
+  autonomy: string
+  kind?: string
+  progress: { phase: string; completed_steps?: number; total_steps?: number }
+  counters?: { model_calls: number; tokens_in: number; tokens_out: number; cost_usd: number }
+  artifact_ids: string[]
+  result?: unknown
+  error: string | null
+}
+/** Same shape as AccountResult; distinct alias for the cloud jobs surface. */
+export type CloudResult<T> = T | { error: string }
+
 export type ElectronAPI = {
   killSidecar: () => Promise<void>
   installCli: () => Promise<string>
@@ -187,6 +222,13 @@ export type ElectronAPI = {
   account: {
     summary: () => Promise<AccountResult<AccountSummary>>
     transactions: (limit?: number) => Promise<AccountResult<{ transactions: AccountTransaction[] }>>
+  }
+  // alpha cloud jobs (ADR-016): dispatch a cloud job + poll status, via the main-held JWT (bearer never
+  // reaches the renderer). The MCP facade path (agent-triggered cloud.* tools) is wired separately via
+  // sidecar.ts mcp.servers.cloud; this HTTP surface is for app-driven dispatch/status.
+  cloud: {
+    dispatch: (envelope: CloudJobEnvelope) => Promise<CloudResult<CloudDispatchResult>>
+    status: (jobId: string) => Promise<CloudResult<CloudJobStatus>>
   }
   // alpha model catalog (config-driven, from main/alpha-models.json) for the model picker.
   models: {

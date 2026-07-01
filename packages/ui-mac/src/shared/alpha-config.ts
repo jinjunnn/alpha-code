@@ -8,7 +8,7 @@
  *  The constants below are bootstrap DEFAULTS only — main resolves env > userData pin > login discovery
  *  > default (see main/alpha-endpoints.ts), and the renderer reads the resolved set over IPC
  *  (window.api.endpoints). Change a domain HERE only to move the default. */
-export type AlphaEndpoints = { web: string; platform: string; account: string; mcp?: string }
+export type AlphaEndpoints = { web: string; platform: string; account: string; cloud: string; mcp?: string }
 
 export const ALPHA_ENDPOINTS = {
   /** alpha-web (C): identity / login / token / billing portal. */
@@ -21,6 +21,10 @@ export const ALPHA_ENDPOINTS = {
   platform: "https://alpha-gateway.jinjunnm.workers.dev",
   /** alpha-platform (B) account-server (境内 PII/金融): balance / membership / usage ledger. */
   account: "https://account.tidelabs.click",
+  /** alpha-platform (B) cloud jobs API (ADR-016): unified dispatch/status + MCP facade (/mcp). A
+   *  SEPARATE worker from the model gateway (the gateway 404s /mcp) — `alpha-cloud`. Override per-deploy
+   *  with ALPHA_CLOUD_URL; alpha-web may also discover it via the token response endpoints{cloud,mcp}. */
+  cloud: "https://alpha-cloud.jinjunnm.workers.dev",
 } as const
 
 // Path segments appended to the hosts above — the full alpha↔backend URL contract in one place.
@@ -36,8 +40,10 @@ export const ALPHA_PATHS = {
   wallet: "/wallet",
   /** platform: model proxy base → ALPHA_BASE_URL. */
   modelProxy: "/v1",
-  /** platform: MCP tool gateway → ALPHA_CLOUD_MCP_URL. */
+  /** cloud: MCP facade → ALPHA_CLOUD_MCP_URL (on the `cloud` worker, NOT the model gateway). */
   mcpGateway: "/mcp",
+  /** cloud: unified cloud jobs API (ADR-016) → dispatch POST, status GET {cloudJobs}/{id}. */
+  cloudJobs: "/v1/cloud/jobs",
   /** account-server: balance / membership / token-usage summary. */
   accountSummary: "/v1/account/summary",
   /** account-server: billing transaction history. */

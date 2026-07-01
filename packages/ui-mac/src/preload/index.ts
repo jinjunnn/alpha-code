@@ -148,6 +148,10 @@ const api: ElectronAPI = {
     summary: () => ipcRenderer.invoke("account-summary"),
     transactions: (limit) => ipcRenderer.invoke("account-transactions", limit),
   },
+  cloud: {
+    dispatch: (envelope) => ipcRenderer.invoke("cloud-dispatch", envelope),
+    status: (jobId) => ipcRenderer.invoke("cloud-status", jobId),
+  },
   models: {
     catalog: () => ipcRenderer.invoke("models-catalog"),
   },

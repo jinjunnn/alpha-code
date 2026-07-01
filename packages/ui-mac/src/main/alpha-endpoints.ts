@@ -19,9 +19,10 @@ const ENV_KEYS: Record<keyof AlphaEndpoints, string> = {
   web: "ALPHA_WEB_URL",
   platform: "ALPHA_PLATFORM_URL",
   account: "ALPHA_ACCOUNT_URL",
+  cloud: "ALPHA_CLOUD_URL",
   mcp: "ALPHA_MCP_URL",
 }
-const KEYS = ["web", "platform", "account", "mcp"] as const
+const KEYS = ["web", "platform", "account", "cloud", "mcp"] as const
 
 let userDataPath = ""
 let override: Partial<AlphaEndpoints> = {} // <userData>/alpha-endpoints.json — manual pin, read at init
@@ -87,6 +88,7 @@ export function resolveEndpoints(): AlphaEndpoints {
     web: pick("web") ?? ALPHA_ENDPOINTS.web,
     platform: pick("platform") ?? ALPHA_ENDPOINTS.platform,
     account: pick("account") ?? ALPHA_ENDPOINTS.account,
+    cloud: pick("cloud") ?? ALPHA_ENDPOINTS.cloud,
     ...(mcp ? { mcp } : {}),
   }
 }
