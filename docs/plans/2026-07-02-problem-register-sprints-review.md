@@ -362,3 +362,23 @@ P0 = 7(A1-A7);P1 = 20(B1-B20);P2 = 22(C1-C22);P3 = 10(D1-D10)。合计 59 条。
 - **C24 CSP** —— 风险:可能断 renderer,需仔细 CSP + 充分验证。
 - **B16 PIPL 同意 / C9 数据边界** —— 产品/法务决策。
 - **B17 测试 / B18 CI gating / B19 sync 修复** —— CI 基建;B19 是一行改但需 bot token `workflows` 权限(仓库设置/PAT,非纯代码),且触发全量 sync = 把 dev 快进 13 天并入 alpha(大动作,撞 C14 耦合面,应你在场再做)。
+
+## 7h 收尾 + 批 7(S7 工程健康与升级守卫,2026-07-02 续会话)
+
+**先补记 §7g 之后已落地(上一轮尾巴,当时 §7g 记为 deferred,实际已发)**:
+- **A8 鉴权/凭证生命周期**(§7b 新增 P0):`applyAuthEnv` 权威化 + `respawnSidecar` 前重导 env + `logout()` 清 `ALPHA_API_KEY` 并停代理 → 重登恢复、跨账号不串台。→ **PR #29 / `9c766b6e`**;登录态 live 验证(driving `window.api.auth.logout()` → 日志见 `respawning sidecar (proxy activation)`,基线 respawn=0)。
+- **UC 协议门控**:`setAsDefaultProtocolClient` 收敛到 `app.isPackaged`(dev 不抢注 `alpha-code://`)。→ `41c10f42`。
+- **docs**:问题分级册(§一~§七)+ 审计 trail 入库。→ PR #28 / `a801cf61`。
+- 上一轮合计 **8 PR(#22–#29)+ 1 UC**;北极星复核 = 上游包零改动(唯一越界仍 `.gitignore`/`bun.lock`)。
+
+**本会话批 7 — S7 升级守卫 + 首批测试(全部纯新增 alpha 文件 / alpha 自有 workflow;零改上游源码)**:
+- **T7.4 首批安全路径单测(B17)** — `bun test`(ui-mac):`ext-config.test.ts`(persistMcp/persistProvider/persistPlugin 的 C2 配置期-RCE 守卫:字段/命令头白名单、`node -e`/`python -c`/`deno eval` inline-eval flag 拒绝、loopback/https-only URL、`NODE_OPTIONS`/`LD_PRELOAD`/`DYLD_*` 危险 env 拒绝、shell-metachar 包名拒绝)、`alpha-endpoints.test.ts`(C26 `strip()` https/host 守卫:env/pin/discovery 三层精度 + 篡改 http 回退默认)、`ext-fs-installer.test.ts`(路径逃逸:name/asset-key 白名单,electron `app` mock)。**71 pass / 0 fail**。`test` 脚本落 ui-mac `package.json`。
+- **T7.3 北极星 CI 守卫(B10)** — 新 `.github/workflows/alpha-ci.yml` job `upstream-guard`:`git diff --diff-filter=DMR origin/dev...HEAD -- packages/{opencode,core,server,app,ui,tui,sdk}` 非空即红。用 merge-base 三点 diff 量"alpha 自身 delta",dev 领先时不误报。**本地实测 clean(guard PASS);仅 `.gitignore`/`bun.lock` 在守卫路径外**。首次机械化守卫 ADR-004 的"冲突文件数=0"。
+- **T7.2 alpha CI gating(B18)** — 同 workflow 另两 job:`typecheck`(ui-mac + ext)、`test`(ui-mac bun test),触发 `push`/`pull_request` → `alpha`。**不编辑上游 `test.yml`/`typecheck.yml`**(编辑即破北极星)——新增 alpha 自有 workflow。required-check 需仓库设置(owner 开)。
+- **T7.5 ADR-015 prompt tripwire** — `sync-upstream.yml` 加一步:sync 触碰 `packages/opencode/src/session/prompt` 或 `.../agent` 时发 `::warning::` + step summary 要求人工复核 `alpha-behavior`/`alpha-identity`/`.opencode/agent`(不阻断同步)。SHA 均自 `git rev-parse`(无注入面)。
+- **C28 全局 ErrorBoundary —— 实测撤回,前提被证伪(重要发现)**:本会话尝试在 alpha 渲染根裹 SolidJS `<ErrorBoundary>`,隔离 dev + CDP 强制注入 throw 核验时发现:**`@opencode-ai/app` 已自带一个更内层的 ErrorBoundary**,先于 alpha 顶层边界捕获 App 树内所有 throw → 我方顶层边界**永不生效**(冗余)。C28 原判"无 ErrorBoundary → throw 静默白屏"**不成立**——上游早有边界、不白屏。故本次**撤回 C28 提交**(`git reset`,零残留),只发 S7。
+  - **↳ 新发现(改 C28 的真问题定义)**:上游那块崩溃屏是 **OpenCode 品牌**——"请将此错误报告给 **OpenCode 团队** 在 **Discord** 上",且**版本显示 `0.0.0`**(A5 版本链 bug 的又一暴露面)。**真正的 C28 应改写为**:① 品牌化/覆盖上游崩溃屏(引流去 OpenCode Discord = C18/C20 品牌外泄);② 若要 alpha 分支型崩溃恢复,须把边界下沉到 `AppInterface` 内、紧裹 alpha children(比上游边界更近才会赢)。二者都需设计 + 二次核验,**降级为独立 UX/品牌任务(deferred)**,不塞进本收尾会话。
+
+**验证**:typecheck(ui-mac + ext)+ `bun test` 71 pass + guard 命令本地 PASS + YAML 解析 OK + 隔离 dev + CDP 冒烟(正常引导页渲染、`hasCrashScreen=false`;强制 throw 暴露上游边界 = 上述发现)。**北极星复核**:`git diff --diff-filter=DMR origin/dev...HEAD -- packages/{opencode,core,server,app,ui,tui,sdk}` = 空。
+
+**清掉的 launch-blocker 代码面**:B10(北极星现有机械守卫)、B18(alpha PR 现跑 CI)、B17(0→71 安全路径单测)。**仍需 owner/仓库设置**:开 required-checks(让守卫真拦 merge)、B19 sync 修复(bot `workflows` 权限)、B7 发版流水线 CI 断言(T2.6,待 S2 打包)。

