@@ -45,6 +45,9 @@ const APP_IDS = {
 
 const getBase = (appId: string): Configuration => ({
   artifactName: "opencode-desktop-${os}-${arch}.${ext}",
+  // MIT requires OpenCode's copyright + permission notice ship with the app (B15 / D10);
+  // full text in resources/NOTICE.txt, also surfaced via app.setAboutPanelOptions.
+  copyright: "© 2025 opencode (MIT). alpha-code fork build.",
   directories: {
     output: "dist",
     buildResources: "resources",
@@ -69,6 +72,12 @@ const getBase = (appId: string): Configuration => ({
       // process (ext-fs-installer.installBuiltinSkill) can copy them into the user's scanned dir.
       from: "resources/skills/",
       to: "skills/",
+    },
+    {
+      // MIT license/attribution shipped inside the app (B15). Also surfaced natively via
+      // app.setAboutPanelOptions in src/main/index.ts.
+      from: "resources/NOTICE.txt",
+      to: "NOTICE.txt",
     },
   ],
   mac: {
