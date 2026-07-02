@@ -44,9 +44,35 @@ jobs:
 
       - name: Fast-forward `dev` mirror from upstream
         run: |
+          old_dev="$(git rev-parse origin/dev)"
           git checkout -B dev origin/dev
           git merge --ff-only upstream/dev
           git push origin dev
+          # SHAs are our own rev-parse output (not untrusted input) — safe to pass via env.
+          echo "OLD_DEV=$old_dev" >> "$GITHUB_ENV"
+          echo "NEW_DEV=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      # ADR-015 合并验证:Tier-3 行为层(alpha-behavior/identity/.opencode/agent)与上游 prompt 底座的
+      # 矛盾不产生 git 冲突 → file-diff 守卫(ADR-004)测不出。当本次 sync 触碰上游 prompt/*.txt 或
+      # agent/* 时,发一条 warning + step summary 要求人工语义复核(不阻断同步)。
+      - name: Prompt/agent tripwire (ADR-015 — human review required)
+        run: |
+          paths="packages/opencode/src/session/prompt packages/opencode/src/agent"
+          touched="$(git diff --name-only "$OLD_DEV".."$NEW_DEV" -- $paths || true)"
+          if [ -n "$touched" ]; then
+            {
+              echo "## ⚠️ 上游 prompt 底座 / agent 本次 sync 有变更"
+              echo ""
+              echo "ADR-015 合并验证:人工复核 \`alpha-behavior.ts\` / \`alpha-identity.ts\` / \`.opencode/agent/*.md\` 是否与新底座**语义**矛盾(非字节),结论记入 \`docs/retros/\`。"
+              echo ""
+              echo '```'
+              echo "$touched"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning title=ADR-015 prompt tripwire::upstream prompt/agent base changed — review alpha behavior/identity layers for semantic conflicts"
+          else
+            echo "No upstream prompt/agent base changes this sync."
+          fi
 
       - name: Merge `dev` into `alpha` (auto-resolve bun.lock only)
         run: |
