@@ -6,7 +6,7 @@
 // event.sender.send("cloud-job-event", …) 推给对应 renderer;订阅按 (webContents, jobId) 记账,窗口销毁自动清。
 
 import { ipcMain, type IpcMainInvokeEvent } from "electron"
-import { dispatchCloudJob, getCloudJobStatus, listCloudArtifacts, fetchCloudArtifact } from "./alpha-cloud-jobs"
+import { dispatchCloudJob, getCloudJobStatus, cancelCloudJob, listCloudArtifacts, fetchCloudArtifact } from "./alpha-cloud-jobs"
 import { subscribeCloudJobEvents } from "./alpha-cloud-events"
 import type { CloudJobEnvelope } from "../preload/types"
 
@@ -16,6 +16,7 @@ const subs = new Map<string, () => void>()
 export function registerCloudIpcHandlers() {
   ipcMain.handle("cloud-dispatch", (_e: IpcMainInvokeEvent, envelope: CloudJobEnvelope) => dispatchCloudJob(envelope))
   ipcMain.handle("cloud-status", (_e: IpcMainInvokeEvent, jobId: string) => getCloudJobStatus(jobId))
+  ipcMain.handle("cloud-cancel", (_e: IpcMainInvokeEvent, jobId: string) => cancelCloudJob(jobId))
   ipcMain.handle("cloud-artifacts", (_e: IpcMainInvokeEvent, jobId: string) => listCloudArtifacts(jobId))
   ipcMain.handle("cloud-artifact-content", (_e: IpcMainInvokeEvent, artifactId: string) => fetchCloudArtifact(artifactId))
 

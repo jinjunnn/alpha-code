@@ -50,6 +50,10 @@ export const dispatchCloudJob = (envelope: CloudJobEnvelope): Promise<CloudResul
 export const getCloudJobStatus = (jobId: string): Promise<CloudResult<CloudJobStatus>> =>
   authed<CloudJobStatus>(`${ALPHA_PATHS.cloudJobs}/${encodeURIComponent(jobId)}`)
 
+// 取消 job(消费 B 的 AR-17 soft-cancel:标记 cancelled + emit 终态事件;status/SSE 随后报 cancelled)。
+export const cancelCloudJob = (jobId: string): Promise<CloudResult<{ job_id: string; status: string }>> =>
+  authed<{ job_id: string; status: string }>(`${ALPHA_PATHS.cloudJobs}/${encodeURIComponent(jobId)}/cancel`, { method: "POST" })
+
 export const listCloudArtifacts = (jobId: string): Promise<CloudResult<CloudArtifactList>> =>
   authed<CloudArtifactList>(`${ALPHA_PATHS.cloudJobs}/${encodeURIComponent(jobId)}/artifacts`)
 

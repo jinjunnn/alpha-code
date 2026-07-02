@@ -236,6 +236,7 @@ export type ElectronAPI = {
   cloud: {
     dispatch: (envelope: CloudJobEnvelope) => Promise<CloudResult<CloudDispatchResult>>
     status: (jobId: string) => Promise<CloudResult<CloudJobStatus>>
+    cancel: (jobId: string) => Promise<CloudResult<{ job_id: string; status: string }>>
     artifacts: (jobId: string) => Promise<CloudResult<CloudArtifactList>>
     fetchArtifact: (artifactId: string) => Promise<CloudResult<CloudArtifactContent>>
     // 订阅 SSE 进度:main 流式 /events → 推 cloud-job-event。onEvent 注册监听,返回取消函数。
