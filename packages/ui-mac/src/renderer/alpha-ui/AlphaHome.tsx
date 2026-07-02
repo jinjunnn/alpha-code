@@ -7,11 +7,11 @@
 // permission contexts are not exported, so the home composer carries server defaults and switches
 // models in-session.
 
-import { createMemo, createSignal, For, Show, onCleanup, type Accessor } from "solid-js"
+import { createMemo, createSignal, For, Show, onCleanup } from "solid-js"
 import { Portal } from "solid-js/web"
 import { useLocation, useNavigate } from "@solidjs/router"
 import { useCommand } from "@opencode-ai/app"
-import { useAlphaProjects, type ServerInfo, type AlphaProject } from "../sidebar/use-projects"
+import { type AlphaProject, type AlphaProjectsApi } from "../sidebar/use-projects"
 import { sessionHref, newSessionHref, projectLabel } from "../sidebar/route"
 import { AddButton, PermChip, EffortChip, ModelChip, composerModelLabel } from "./composer-controls"
 import { pushToast } from "./Toast"
@@ -28,11 +28,11 @@ function greeting(): string {
 
 type Pop = null | "add" | "perm" | "effort" | "ws"
 
-export function AlphaHome(props: { server: Accessor<ServerInfo | undefined> }) {
+export function AlphaHome(props: { projects: AlphaProjectsApi }) {
   const loc = useLocation()
   const navigate = useNavigate()
   const command = useCommand()
-  const { store, startChat } = useAlphaProjects(props.server)
+  const { store, startChat } = props.projects
 
   // The landing path is "/index.html" in the packaged/dev renderer (not "/"), plus "/" and the
   // "new-session" pseudo-route. Match all of them so the alpha home actually covers opencode's
