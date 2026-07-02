@@ -182,6 +182,15 @@ export function registerIpcHandlers(deps: Deps) {
   )
 
   ipcMain.on("open-link", (_event: IpcMainEvent, url: string) => {
+    // Only hand web/mail links to the OS. A renderer-supplied file:// or custom app scheme could
+    // invoke a local protocol handler, so anything else is dropped (C13).
+    let scheme = ""
+    try {
+      scheme = new URL(url).protocol
+    } catch {
+      return
+    }
+    if (scheme !== "https:" && scheme !== "http:" && scheme !== "mailto:") return
     void shell.openExternal(url)
   })
 
