@@ -33,6 +33,19 @@ const SAFE_MCP_FIELDS = new Set([
 // package-manager bin dirs are also accepted (Homebrew / system).
 const SAFE_COMMAND_HEADS = new Set(["uv", "uvx", "node", "npx", "bun", "bunx", "python", "python3", "git", "deno"])
 const SAFE_ABS_PREFIXES = ["/opt/homebrew/bin/", "/usr/local/bin/", "/usr/bin/"]
+// Inline-code flags: a whitelisted head + one of these = arbitrary code execution (`node -e …`,
+// `python -c …`, `deno eval …`). Package runners (`npx -y <pkg>`, `uvx <pkg>`) never need them.
+const EVAL_FLAGS = new Set(["-e", "--eval", "-p", "--print", "-c", "--command", "eval"])
+// Loader/hook env vars that turn a benign command into code execution regardless of its args.
+const DANGEROUS_ENV = new Set([
+  "NODE_OPTIONS",
+  "LD_PRELOAD",
+  "LD_LIBRARY_PATH",
+  "DYLD_INSERT_LIBRARIES",
+  "DYLD_LIBRARY_PATH",
+  "PYTHONSTARTUP",
+  "BUN_INSPECT",
+])
 
 function userConfigDir(): string {
   // Mirror opencode's own resolution (core/global.ts): OPENCODE_CONFIG_DIR wins, else
@@ -63,6 +76,12 @@ function validateServer(server: Record<string, unknown>): ConfigResult {
     const base = path.basename(head)
     const allowed = SAFE_COMMAND_HEADS.has(base) || SAFE_ABS_PREFIXES.some((p) => head.startsWith(p))
     if (!allowed) return { ok: false, reason: `command not allowed: ${head}` }
+    // A whitelisted head with arbitrary args is still config-time RCE — the command-head check alone
+    // doesn't cover `node -e <payload>`. Reject inline-eval flags in the args (C2).
+    for (const arg of command.slice(1)) {
+      if (typeof arg !== "string") return { ok: false, reason: "command args must be strings" }
+      if (EVAL_FLAGS.has(arg)) return { ok: false, reason: `command arg not allowed: ${arg}` }
+    }
   }
   const url = (server as { url?: unknown }).url
   if (typeof url === "string") {
@@ -81,6 +100,25 @@ function validateServer(server: Record<string, unknown>): ConfigResult {
       parsed.protocol === "https:" ||
       (parsed.protocol === "http:" && loopback && !parsed.username && !parsed.password)
     if (!ok) return { ok: false, reason: "only https (or loopback http) URLs are allowed" }
+  }
+  // environment / headers were previously accepted by field-name only — their VALUES were unvalidated
+  // (C2). Require string maps and block loader/hook env vars that achieve code execution.
+  const environment = (server as { environment?: unknown }).environment
+  if (environment !== undefined) {
+    if (typeof environment !== "object" || environment === null || Array.isArray(environment))
+      return { ok: false, reason: "environment must be an object" }
+    for (const [k, v] of Object.entries(environment as Record<string, unknown>)) {
+      if (DANGEROUS_ENV.has(k)) return { ok: false, reason: `env var not allowed: ${k}` }
+      if (typeof v !== "string") return { ok: false, reason: `env value must be a string: ${k}` }
+    }
+  }
+  const headers = (server as { headers?: unknown }).headers
+  if (headers !== undefined) {
+    if (typeof headers !== "object" || headers === null || Array.isArray(headers))
+      return { ok: false, reason: "headers must be an object" }
+    for (const v of Object.values(headers as Record<string, unknown>)) {
+      if (typeof v !== "string") return { ok: false, reason: "header values must be strings" }
+    }
   }
   return { ok: true }
 }

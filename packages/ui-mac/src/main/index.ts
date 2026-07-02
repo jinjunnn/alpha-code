@@ -223,10 +223,21 @@ const main = Effect.gen(function* () {
   initByokKeys(app.getPath("userData"))
   injectByokKeysIntoEnv()
 
+  // Auth callbacks arrive as alpha-code://auth/callback?code=...&state=... — strip the query before
+  // logging so the single-use PKCE code / CSRF state never lands in main.log (exportDebugLogs ships it).
+  const redactDeepLink = (u: string): string => {
+    try {
+      const p = new URL(u)
+      return p.search ? `${p.origin}${p.pathname}?<redacted>` : `${p.origin}${p.pathname}`
+    } catch {
+      return "<invalid-url>"
+    }
+  }
+
   app.on("second-instance", (_event: Event, argv: string[]) => {
     const urls = argv.filter((arg: string) => arg.startsWith("opencode://") || arg.startsWith("alpha-code://"))
     if (urls.length) {
-      logger.log("deep link received via second-instance", { urls })
+      logger.log("deep link received via second-instance", { urls: urls.map(redactDeepLink) })
       emitDeepLinks(urls)
     }
     if (mainWindow) {
@@ -237,7 +248,7 @@ const main = Effect.gen(function* () {
 
   app.on("open-url", (event: Event, url: string) => {
     event.preventDefault()
-    logger.log("deep link received via open-url", { url })
+    logger.log("deep link received via open-url", { url: redactDeepLink(url) })
     emitDeepLinks([url])
     // Bring the app to the foreground. The auth callback arrives while the browser is focused;
     // unlike "second-instance", "open-url" does NOT auto-activate the app, so login would otherwise

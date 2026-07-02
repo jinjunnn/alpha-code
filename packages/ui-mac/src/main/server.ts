@@ -58,6 +58,9 @@ export function preferAppEnv(userDataPath: string) {
     OPENCODE_EXPERIMENTAL_FILEWATCHER: "true",
     OPENCODE_CLIENT: "desktop",
     XDG_STATE_HOME: process.env.XDG_STATE_HOME ?? userDataPath,
+    // models.dev refresh times out / logs ERROR on CN networks; the bundled snapshot suffices. Default
+    // off, env-overridable (set OPENCODE_DISABLE_MODELS_FETCH=0 to re-enable). (T1.7 / C4)
+    OPENCODE_DISABLE_MODELS_FETCH: process.env.OPENCODE_DISABLE_MODELS_FETCH ?? "1",
     ...(process.env.ALPHA_WEBSEARCH_DISABLE ? {} : { OPENCODE_ENABLE_EXA: process.env.OPENCODE_ENABLE_EXA ?? "1" }),
   })
 }

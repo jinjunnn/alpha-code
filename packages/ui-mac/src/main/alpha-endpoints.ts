@@ -30,7 +30,18 @@ let discovered: Partial<AlphaEndpoints> = {} // from the login token response (�
 
 const strip = (u?: string | null): string | undefined => {
   const v = u?.replace(/\/+$/, "")
-  return v ? v : undefined
+  if (!v) return undefined
+  // A pin/discovery/env value resolves into ALPHA_BASE_URL — the bearer-carrying proxy target — so a
+  // tampered plain-http or attacker host would exfil the JWT. Accept https only (loopback http for dev);
+  // anything else falls through to the next precedence tier / hardcoded default (C26).
+  try {
+    const p = new URL(v)
+    const loopback = p.hostname === "localhost" || p.hostname === "127.0.0.1" || p.hostname === "[::1]"
+    if (p.protocol === "https:" || (p.protocol === "http:" && loopback)) return v
+  } catch {
+    /* not a valid URL — reject */
+  }
+  return undefined
 }
 const overrideFile = () => path.join(userDataPath, "alpha-endpoints.json")
 const discoveredFile = () => path.join(userDataPath, "alpha-discovered-endpoints.json")
