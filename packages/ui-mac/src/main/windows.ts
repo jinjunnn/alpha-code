@@ -2,7 +2,7 @@ import windowState from "electron-window-state"
 import { resolveThemeVariant } from "@opencode-ai/ui/theme/resolve"
 import type { DesktopTheme } from "@opencode-ai/ui/theme/types"
 import oc2ThemeJson from "../../../ui/src/theme/themes/oc-2.json"
-import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol } from "electron"
+import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol, shell } from "electron"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import type { TitlebarTheme } from "../preload/types"
@@ -157,6 +157,27 @@ export function createMainWindow() {
 
   allowRendererPermissions(win)
   wireWindowRecovery(win, "main")
+
+  // C1: keep the renderer boxed in our own origin. contextIsolation/sandbox don't gate IPC by origin,
+  // so a navigation or window.open to hostile content would still run with the full preload bridge.
+  // Block off-origin navigations + in-app popups; hand real web/mail links to the OS instead.
+  const externalize = (raw: string) => {
+    try {
+      const p = new URL(raw).protocol
+      if (p === "https:" || p === "http:" || p === "mailto:") void shell.openExternal(raw)
+    } catch {
+      /* ignore unparseable */
+    }
+  }
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    externalize(url)
+    return { action: "deny" as const }
+  })
+  win.webContents.on("will-navigate", (event, navUrl) => {
+    if (isRendererUrl(navUrl)) return
+    event.preventDefault()
+    externalize(navUrl)
+  })
 
   win.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
     const { requestHeaders } = details
