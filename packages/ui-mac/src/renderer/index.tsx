@@ -38,6 +38,7 @@ import { ComposerInject } from "./alpha-ui/composer-inject"
 import { ModelPickerInject } from "./alpha-ui/model-picker-inject"
 import { TimelineInject } from "./alpha-ui/timeline-inject"
 import { AlphaSidebar } from "./sidebar/alpha-sidebar"
+import { useAlphaProjects } from "./sidebar/use-projects"
 import { AlphaHome } from "./alpha-ui/AlphaHome"
 import { AlphaOnboarding } from "./alpha-ui/AlphaOnboarding"
 import { setupSettingsBackButton } from "./alpha-ui/settings-back-button"
@@ -395,14 +396,18 @@ render(() => {
       ServerConnection.Key.make(availableStartupServer(defaultServer.latest, wslServers.data)),
     )
 
+    // A3: one shared projects store for the whole alpha shell — sidebar + home consume the same
+    // instance instead of each running its own (was ×2 project.list / ×2N session.list + an extra SSE).
+    const alphaProjects = useAlphaProjects(sidebarServer)
+
     return (
       <Show when={ready()} fallback={splash}>
         <Show when={effectiveDefaultServer()} keyed>
           {(key) => (
             <AppInterface defaultServer={key} servers={servers()} router={MemoryRouter}>
               <Inner />
-              <AlphaSidebar server={sidebarServer} />
-              <AlphaHome server={sidebarServer} />
+              <AlphaSidebar projects={alphaProjects} />
+              <AlphaHome projects={alphaProjects} />
               <AlphaOnboarding />
               <ExtensionHub server={sidebarServer} open={extHubOpen} onClose={() => setExtHubOpen(false)} />
               <ComposerInject />

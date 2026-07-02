@@ -5,7 +5,7 @@
 // keyed off body[data-alpha-sidebar]. Single flat column: brand → nav → projects(→sessions),
 // the Codex information architecture.
 
-import { createEffect, createMemo, createSignal, For, onCleanup, Show, type Accessor } from "solid-js"
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import { useLocation, useNavigate } from "@solidjs/router"
 import { useCommand } from "@opencode-ai/app"
@@ -32,7 +32,7 @@ import {
   toggleProjectExpanded,
   toggleSidebar,
 } from "./sidebar-state"
-import { useAlphaProjects, type AlphaProject, type AlphaSession, type ServerInfo } from "./use-projects"
+import { type AlphaProject, type AlphaSession, type AlphaProjectsApi } from "./use-projects"
 import type { AuthState, AccountSummary } from "../../preload/types"
 import { extHubOpen, setExtHubOpen, toggleExtHub } from "../extensions/ext-hub-state"
 
@@ -120,8 +120,8 @@ function sessionDisplayTitle(title: string): string {
   return title
 }
 
-export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }) {
-  const { store, reload, createSession, renameSession, shareSession, deleteSession, copySession } = useAlphaProjects(props.server)
+export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
+  const { store, reload, createSession, renameSession, shareSession, deleteSession, copySession } = props.projects
   const navigate = useNavigate()
   const location = useLocation()
   const command = useCommand()
