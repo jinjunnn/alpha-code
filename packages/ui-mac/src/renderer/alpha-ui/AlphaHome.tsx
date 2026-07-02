@@ -14,6 +14,7 @@ import { useCommand } from "@opencode-ai/app"
 import { useAlphaProjects, type ServerInfo, type AlphaProject } from "../sidebar/use-projects"
 import { sessionHref, newSessionHref, projectLabel } from "../sidebar/route"
 import { AddButton, PermChip, EffortChip, ModelChip, composerModelLabel } from "./composer-controls"
+import { pushToast } from "./Toast"
 import "./home.css"
 
 function greeting(): string {
@@ -63,8 +64,14 @@ export function AlphaHome(props: { server: Accessor<ServerInfo | undefined> }) {
     setSending(true)
     const id = await startChat(ws, body)
     setSending(false)
+    if (!id) {
+      // Was silent: the text got cleared and we navigated to an empty draft, losing the message.
+      // Keep the text and tell the user so they can retry (B11).
+      pushToast({ kind: "error", title: "发送失败,请重试" })
+      return
+    }
     setText("")
-    navigate(id ? sessionHref(ws, id) : newSessionHref(ws))
+    navigate(sessionHref(ws, id))
   }
 
   const onKey = (e: KeyboardEvent) => {

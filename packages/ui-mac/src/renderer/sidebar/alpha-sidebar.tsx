@@ -121,7 +121,7 @@ function sessionDisplayTitle(title: string): string {
 }
 
 export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }) {
-  const { store, createSession, renameSession, shareSession, deleteSession, copySession } = useAlphaProjects(props.server)
+  const { store, reload, createSession, renameSession, shareSession, deleteSession, copySession } = useAlphaProjects(props.server)
   const navigate = useNavigate()
   const location = useLocation()
   const command = useCommand()
@@ -939,11 +939,21 @@ export function AlphaSidebar(props: { server: Accessor<ServerInfo | undefined> }
             <Show when={searchQuery().trim() !== "" && searchedProjects().length === 0}>
               <div class="alpha-sidebar-empty">无匹配的项目或会话</div>
             </Show>
-            <Show when={store.ready && visibleProjects().length === 0 && archivedCount() === 0}>
+            <Show when={store.ready && !store.error && visibleProjects().length === 0 && archivedCount() === 0}>
               <div class="alpha-sidebar-empty alpha-sidebar-empty-projects">
                 <p>{t("alpha.sidebar.noProjects")}</p>
                 <button type="button" class="alpha-sidebar-open-project" onClick={() => command.trigger("project.open")}>
                   {t("alpha.sidebar.openProject")}
+                </button>
+              </div>
+            </Show>
+            {/* B11: project.list failure previously left the sidebar silently blank (store.error was
+                never rendered anywhere). Surface it with a retry instead of a dead empty pane. */}
+            <Show when={store.error}>
+              <div class="alpha-sidebar-empty alpha-sidebar-empty-projects">
+                <p>项目加载失败</p>
+                <button type="button" class="alpha-sidebar-open-project" onClick={() => void reload()}>
+                  重试
                 </button>
               </div>
             </Show>
