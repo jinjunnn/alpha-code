@@ -128,10 +128,12 @@ function publish() {
   if (win && !win.isDestroyed()) win.webContents.send("auth-state", deriveState())
 }
 
-// Map the current token + mode onto the env vars the sidecar reads. Only SETS (never deletes):
-// the sidecar is (re)spawned on a fresh launch whose env starts clean from preferAppEnv(), so
-// logged-out / BYOK simply leaves the platform vars unset → provider.alpha + mcp.cloud stay dark.
-// DEV_PLATFORM_TOKEN acts as a static platform login. Never clobbers a value the user exported.
+// Map the current token + mode onto the env vars the sidecar reads. URL vars are set-if-unset (honor a
+// user/dev export). TOKEN vars (ALPHA_API_KEY / ALPHA_CLOUD_TOKEN) are login-derived and written
+// AUTHORITATIVELY (A8): applyAuthEnv also runs before each in-session respawn — which snapshots the
+// CURRENT env, not a clean one — so the old set-if-unset left a STALE token after re-login (the proxy
+// 401'd until a full quit). On logout the token vars are cleared explicitly + the sidecar respawns
+// (see logout). DEV_PLATFORM_TOKEN acts as a static platform login.
 export function applyAuthEnv() {
   const devToken = process.env.DEV_PLATFORM_TOKEN
   const loggedInPlatform = deriveState().status === "logged-in" && (stored.mode === "platform" || Boolean(devToken))
@@ -140,12 +142,13 @@ export function applyAuthEnv() {
   const base = ep.platform
   if (!token || !base) return
   if (!process.env.ALPHA_BASE_URL) process.env.ALPHA_BASE_URL = `${base}${ALPHA_PATHS.modelProxy}`
-  if (!process.env.ALPHA_API_KEY) process.env.ALPHA_API_KEY = token
   // mcp: a discovered/pinned mcp URL wins; else derive from the CLOUD worker base (ADR-016: the MCP
   // facade lives on `alpha-cloud`, NOT the model gateway which 404s /mcp). ep.cloud always resolves
   // (has a default), so this points at alpha-cloud/mcp instead of the old gateway/mcp 404.
   if (!process.env.ALPHA_CLOUD_MCP_URL) process.env.ALPHA_CLOUD_MCP_URL = ep.mcp ?? `${ep.cloud ?? base}${ALPHA_PATHS.mcpGateway}`
-  if (!process.env.ALPHA_CLOUD_TOKEN) process.env.ALPHA_CLOUD_TOKEN = token
+  // Authoritative: the CURRENT login token always wins (fixes the stale-token-after-re-login bug).
+  process.env.ALPHA_API_KEY = token
+  process.env.ALPHA_CLOUD_TOKEN = token
 }
 
 // Called once at startup, AFTER preferAppEnv() and BEFORE the sidecar forks (index.ts), so the
@@ -305,6 +308,11 @@ export async function logout(): Promise<void> {
   // explicit logout would leave the state pinned to "logged-in" (the user sees nothing happen). Drop
   // it for this session so the logged-out state actually takes effect; it re-applies on next launch.
   delete process.env.DEV_PLATFORM_TOKEN
+  // A8: explicitly drop the platform proxy credentials from THIS process's env (applyAuthEnv early-
+  // returns when logged out, so it can't clear them, and set-if-unset never did). Otherwise the live
+  // sidecar kept billing on the old token and a later login could bleed the prior identity.
+  delete process.env.ALPHA_API_KEY
+  delete process.env.ALPHA_CLOUD_TOKEN
   try {
     rmSync(authFilePath(), { force: true })
   } catch {}
@@ -312,14 +320,11 @@ export async function logout(): Promise<void> {
   applyAuthEnv()
   publish()
   log("alpha-auth: logged out")
-  // Do NOT relaunch the app here. Logout must only clear identity + push the logged-out state — a full
-  // app relaunch (app.relaunch()+exit) closed the whole window (and on ad-hoc-signed builds the relaunch
-  // fails outright, so the app just quit). applyAuthEnv() has already dropped the proxy env for FUTURE
-  // sidecar forks; the running sidecar keeps its forked proxy env until the next restart, and the
-  // logged-out state pushed to the renderer soft-locks the alpha proxy rows so the stale proxy isn't
-  // offered. (A clean "drop the proxy immediately without restarting" needs an in-place sidecar respawn
-  // + renderer reconnect — tracked as a follow-up; see setAuthMode which still relaunches for switching
-  // INTO platform-pays where the sidecar must pick up the proxy env at fork time.)
+  // Re-fork the running sidecar IN PLACE so the proxy stops immediately. respawnSidecar is NOT
+  // app.relaunch() (which closed the window / quit on ad-hoc-signed builds — the reason a full relaunch
+  // was ruled out); it re-forks on the same host/port + reloads the renderer, so the new fork inherits
+  // the now-cleared env → provider.alpha goes dark this session, not just on the next launch.
+  respawnSidecar()
 }
 
 // Switch BYOK ↔ platform-pays. platform-pays only takes effect after a relaunch (the sidecar reads
