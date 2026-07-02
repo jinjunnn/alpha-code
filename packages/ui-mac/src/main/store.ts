@@ -10,6 +10,11 @@ const cache = new Map<string, Store>()
 // in index.ts has executed, which would result in files being written to the default directory
 // (e.g. bad: %APPDATA%\@opencode-ai\desktop\opencode.settings vs good: %APPDATA%\ai.opencode.desktop.dev\opencode.settings).
 export function getStore(name = SETTINGS_STORE) {
+  // C1: `name` becomes a filename under userData; a renderer-supplied "../x" (via the store IPC) would
+  // escape it. Reject path separators / traversal — internal callers only pass plain "opencode.*" names.
+  if (!name || name.includes("/") || name.includes("\\") || name.includes("..")) {
+    throw new Error("invalid store name")
+  }
   const cached = cache.get(name)
   if (cached) return cached
   const next = new Store({
