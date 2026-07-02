@@ -151,6 +151,7 @@ const api: ElectronAPI = {
   cloud: {
     dispatch: (envelope) => ipcRenderer.invoke("cloud-dispatch", envelope),
     status: (jobId) => ipcRenderer.invoke("cloud-status", jobId),
+    cancel: (jobId) => ipcRenderer.invoke("cloud-cancel", jobId),
     artifacts: (jobId) => ipcRenderer.invoke("cloud-artifacts", jobId),
     fetchArtifact: (artifactId) => ipcRenderer.invoke("cloud-artifact-content", artifactId),
     subscribe: (jobId) => ipcRenderer.invoke("cloud-subscribe", jobId),
