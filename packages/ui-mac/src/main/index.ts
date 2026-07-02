@@ -150,6 +150,14 @@ const main = Effect.gen(function* () {
   })()
   app.setName(app.isPackaged ? APP_NAMES[CHANNEL] : "alpha-code")
   app.setAppUserModelId(appId)
+  // B15: surface the MIT attribution in the native About panel (opencode is MIT — its copyright +
+  // permission notice must ship with the app; full text in resources/NOTICE.txt).
+  app.setAboutPanelOptions({
+    applicationName: "alpha-code",
+    applicationVersion: app.getVersion(),
+    copyright: "© 2025 opencode (MIT). alpha-code fork build.",
+    credits: "Built on OpenCode (MIT) — https://github.com/anomalyco/opencode",
+  })
   app.setPath(
     "userData",
     onboardingTestRoot ? join(onboardingTestRoot, "desktop") : join(app.getPath("appData"), appId),
