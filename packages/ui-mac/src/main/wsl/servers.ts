@@ -327,16 +327,17 @@ export function createWslServersController(
       })
     },
 
-    async probeDistro(name: string) {
-      await runJob({ kind: "probe-distro", distro: name, startedAt: Date.now() }, async (abort) => {
-        const probe = await probeWslDistro(name, { signal: abort.signal })
-        setState({ distroProbes: { ...state.distroProbes, [name]: probe } })
-      })
-    },
-
-    async probeOpencode(name: string) {
-      await runJob({ kind: "probe-opencode", distro: name, startedAt: Date.now() }, async (abort) => {
-        await refreshOpencodeCheck(name, { signal: abort.signal })
+    // Upstream (opencode dev @ #34254 era) consolidated the per-distro `probeDistro` + `probeOpencode`
+    // methods into a single batch `probeAddable(distros)` (WslServersPlatform / WslJob "probe-addable").
+    // Mirror that here: for each distro, probe it, then refresh its opencode check — the union of the two
+    // old steps, idempotent (renderer's addServerProbePlan only passes distros that still need probing).
+    async probeAddable(distros: string[]) {
+      await runJob({ kind: "probe-addable", distros, startedAt: Date.now() }, async (abort) => {
+        for (const name of distros) {
+          const probe = await probeWslDistro(name, { signal: abort.signal })
+          setState({ distroProbes: { ...state.distroProbes, [name]: probe } })
+          await refreshOpencodeCheck(name, { signal: abort.signal })
+        }
       })
     },
 

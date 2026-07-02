@@ -1013,7 +1013,7 @@
     },
     "packages/ui-mac": {
       "name": "ui-mac",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@zip.js/zip.js": "2.7.62",
         "effect": "catalog:",

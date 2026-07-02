@@ -46,11 +46,10 @@ export function registerWslIpcHandlers(controller: WslServersController) {
   ipcMain.handle("wsl-servers-install-distro", (_event: IpcMainInvokeEvent, name: string) =>
     controller.installDistro(requireWslIpcString("distro", name)),
   )
-  ipcMain.handle("wsl-servers-probe-distro", (_event: IpcMainInvokeEvent, name: string) =>
-    controller.probeDistro(requireWslIpcString("distro", name)),
-  )
-  ipcMain.handle("wsl-servers-probe-opencode", (_event: IpcMainInvokeEvent, name: string) =>
-    controller.probeOpencode(requireWslIpcString("distro", name)),
+  ipcMain.handle("wsl-servers-probe-addable", (_event: IpcMainInvokeEvent, distros: string[]) =>
+    controller.probeAddable(
+      (Array.isArray(distros) ? distros : []).map((name) => requireWslIpcString("distro", name)),
+    ),
   )
   ipcMain.handle("wsl-servers-install-opencode", (_event: IpcMainInvokeEvent, name: string) =>
     controller.installOpencode(requireWslIpcString("distro", name)),
@@ -97,8 +96,7 @@ function registerUnavailableWslIpcHandlers() {
   ipcMain.handle("wsl-servers-refresh-distros", unavailable)
   ipcMain.handle("wsl-servers-install-wsl", unavailable)
   ipcMain.handle("wsl-servers-install-distro", unavailable)
-  ipcMain.handle("wsl-servers-probe-distro", unavailable)
-  ipcMain.handle("wsl-servers-probe-opencode", unavailable)
+  ipcMain.handle("wsl-servers-probe-addable", unavailable)
   ipcMain.handle("wsl-servers-install-opencode", unavailable)
   ipcMain.handle("wsl-servers-open-terminal", unavailable)
   ipcMain.handle("wsl-servers-add", unavailable)
