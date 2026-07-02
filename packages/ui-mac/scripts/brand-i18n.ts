@@ -14,8 +14,12 @@ import type { Plugin } from "vite"
 // CURATED ON PURPOSE: only the app's SELF-references are rebranded. Names of real external
 // things stay verbatim so the UI stays factually correct —
 //   • "OpenCode Zen" (the hosted model gateway)        • the `opencode.json` config filename
-//   • `opencode.ai/zen` (a real URL)                    • "the OpenCode team"
-//   • the `opencode` CLI binary name                    • WSL strings (Windows-only; Mac app)
+//   • `opencode.ai/zen` (a real URL)                    • the `opencode` CLI binary name
+//   • WSL strings (Windows-only; Mac app)
+// EXCEPTION (crash screen, C28): the ErrorBoundary fallback (app/src/pages/error.tsx) previously
+// told users to "report this error to the OpenCode team … on Discord" and its feedback button
+// linked to opencode.ai — user-facing product chrome that leaks upstream identity and routes users
+// to opencode's channels. That IS rebranded below (prefix text + discord wording + href + icon).
 
 // Per-locale [from, to] pairs. `from` must be an exact substring of the upstream source.
 // Keyed by the locale dict path so we only ever touch the intended file.
@@ -25,6 +29,14 @@ const REPLACEMENTS: Record<string, ReadonlyArray<readonly [string, string]>> = {
   // uses (AlphaHome.tsx) so the two surfaces read as one input. Zero disk edit (ADR-005/007).
   "app/src/components/prompt-input.tsx": [
     ['"Ask anything, / for commands, @ for context..."', '"问点什么,输入 / 调命令,@ 引用上下文…"'],
+  ],
+  // Crash screen (C28): rewrite the OpenCode-branded feedback link + Discord icon in the
+  // ErrorBoundary fallback JSX. The visible "report to … team" / "on Discord" TEXT is i18n (below);
+  // the href + icon are hardcoded JSX, rewritten here. Feedback routes to alpha's web root until a
+  // dedicated feedback page exists.
+  "app/src/pages/error.tsx": [
+    ['platform.openLink("https://opencode.ai/desktop-feedback")', 'platform.openLink("https://alphacodeone.com")'],
+    ['<Icon name="discord" class="text-text-interactive-base" />', ""],
   ],
   "app/src/i18n/en.ts": [
     ["OpenCode Desktop", "alpha-code"],
@@ -45,6 +57,9 @@ const REPLACEMENTS: Record<string, ReadonlyArray<readonly [string, string]>> = {
       "OpenCode includes free models so you can start immediately.",
       "alpha-code includes free models so you can start immediately.",
     ],
+    // Crash screen (C28)
+    ["Please report this error to the OpenCode team", "Please report this error to the alpha-code team"],
+    ['"on Discord"', '"on our feedback page"'],
   ],
   "app/src/i18n/zh.ts": [
     ["OpenCode Desktop", "alpha-code"],
@@ -56,12 +71,18 @@ const REPLACEMENTS: Record<string, ReadonlyArray<readonly [string, string]>> = {
     ["你正在使用最新版本的 OpenCode。", "你正在使用最新版本的 alpha-code。"],
     ["OpenCode 有新版本 ({{version}}) 可安装。", "alpha-code 有新版本 ({{version}}) 可安装。"],
     ["OpenCode 提供免费模型，你可以立即开始使用。", "alpha-code 提供免费模型，你可以立即开始使用。"],
+    // Crash screen (C28)
+    ["请将此错误报告给 OpenCode 团队", "请将此错误报告给 alpha-code 团队"],
+    ["在 Discord 上", "在反馈页"],
     // Sound option fix: upstream zh machine-transliterated "staplebops" to the garbled "斯泰普博普斯"
     // (sound.option.staplebops01..07). One substring swap cleans all 7 (the " 01".."07" suffix stays);
     // "嗒啵" matches the 哔啵 (bipbop) style. Upstream source untouched (ADR-005/007).
     ["斯泰普博普斯", "嗒啵"],
   ],
   "app/src/i18n/zht.ts": [
+    // Crash screen (C28)
+    ["請將此錯誤回報給 OpenCode 團隊", "請將此錯誤回報給 alpha-code 團隊"],
+    ["在 Discord 上", "在反饋頁"],
     // Traditional-zh has the same garbled staplebops transliteration.
     ["斯泰普博普斯", "嗒啵"],
   ],

@@ -382,3 +382,17 @@ P0 = 7(A1-A7);P1 = 20(B1-B20);P2 = 22(C1-C22);P3 = 10(D1-D10)。合计 59 条。
 **验证**:typecheck(ui-mac + ext)+ `bun test` 71 pass + guard 命令本地 PASS + YAML 解析 OK + 隔离 dev + CDP 冒烟(正常引导页渲染、`hasCrashScreen=false`;强制 throw 暴露上游边界 = 上述发现)。**北极星复核**:`git diff --diff-filter=DMR origin/dev...HEAD -- packages/{opencode,core,server,app,ui,tui,sdk}` = 空。
 
 **清掉的 launch-blocker 代码面**:B10(北极星现有机械守卫)、B18(alpha PR 现跑 CI)、B17(0→71 安全路径单测)。**仍需 owner/仓库设置**:开 required-checks(让守卫真拦 merge)、B19 sync 修复(bot `workflows` 权限)、B7 发版流水线 CI 断言(T2.6,待 S2 打包)。
+
+## 7i 新增追踪项 + 批 8(第二续会话,2026-07-02)
+
+### 新增 P2 — C29 上游崩溃屏品牌外泄(§7h 发现,升级为一级追踪项)
+- **现象**:`@opencode-ai/app` 的 ErrorBoundary fallback(`packages/app/src/pages/error.tsx:222` `ErrorPage`,挂在 `app.tsx:274`)是**上游自带**、比任何 alpha 顶层边界更内层 → alpha 无法用顶层 ErrorBoundary 接管应用内 throw(C28 顶层方案已实测撤回)。该屏**OpenCode 品牌**:`error.page.report.prefix`="请将此错误报告给 OpenCode 团队"、`error.page.report.discord`="在 Discord 上" + discord 图标,反馈按钮 **hardcoded** `platform.openLink("https://opencode.ai/desktop-feedback")`(`error.tsx:354`),且 `error.page.version` 显示 **`0.0.0`**(= A5)。
+- **归属**:上游文件不可改(ADR-005);唯一 in-rule 出口 = `brand-i18n.ts` build-time transform(ADR-007,i18n 字符串)+ 同 transform 覆盖 `error.tsx` 的 hardcoded href/icon(源串重写)。**关联 A5(版本 0.0.0)、C18/C20(品牌外泄)。**
+- **批 8 已修**:见下。
+
+### 批 8 落地(全部 alpha 自有文件 / API,零改上游源码)
+- **C28→C29 崩溃屏去 OpenCode 化(brand-i18n.ts)**:三语种(en/zh/zht)`report.prefix` "OpenCode 团队"→"alpha-code 团队"、`report.discord` "在 Discord 上"→"反馈页/反饋頁/feedback page";`error.tsx` href `opencode.ai/desktop-feedback`→`alphacodeone.com`、移除 discord 图标。**build-time transform,磁盘上游零改。**
+- **A5 版本显示修(部分)**:`ui-mac/package.json` `0.0.0`→`0.1.0` → 崩溃屏/关于面板/`Platform.version` 不再显 0.0.0。**仅显示层**;深链(`InstallationVersion=local`/A4、updater feed owner=anomalyco/B9、`@opencode-ai/plugin@local`)仍属打包 pass,未动。
+- **B19 sync tee-up**:`sync-upstream.yml` checkout 改用 `secrets.SYNC_TOKEN || github.token`。**根因确诊**:默认 GITHUB_TOKEN 不能 push 触碰 `.github/workflows/*` 的 commit(缺 `workflow` scope),上游 sync 常改 workflow 文件 → 每次 push 失败(连败 11+)。**用户仅剩一步**:建 PAT(classic `workflow` scope 或 fine-grained Contents+Workflows:write)存为 repo secret `SYNC_TOKEN`。注:`origin/dev` 现与 `alpha` 齐平(0 ahead),但**都落后 upstream ~13 天**(sync 死在 dev 推送);secret 加好后自动追平。
+- **required-checks(B10/B18 落地)**:`alpha` 分支保护开启,required checks = 3 个 alpha-ci job(north-star guard / typecheck / unit tests);`enforce_admins=false`(admin/sync PAT 可绕,不锁死;人类 PR 被 gate)。撤销:`gh api -X DELETE repos/jinjunnn/alpha-code/branches/alpha/protection`。
+- **仍未动(诚实)**:discord 图标已移除但反馈 URL 指 web 根(无专用 /feedback 页,待建);A5 深链 = 打包 pass;C18 全局品牌 rebrand(prod 渠道 productName/appId,撞 T2.2 迁移)未动。
