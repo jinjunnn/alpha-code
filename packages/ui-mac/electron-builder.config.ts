@@ -32,19 +32,27 @@ const channel = (() => {
   return "dev"
 })()
 
-// Signing + notarization only happen in CI (where the Apple certs/secrets live).
-// A local `bun run package:mac` produces an unsigned, ad-hoc–signed app you can
-// double-click straight from dist/ — no Developer ID required.
+// Signing + notarization run in CI, OR locally when ALPHA_SIGN=1 (once the Mac "Developer ID
+// Application" cert for team RQX6X6A635 exists in the keychain + notary creds are in env). Otherwise a
+// local `bun run package:mac` produces an ad-hoc–signed app you can double-click from dist/ — no cert
+// needed. See docs/DISTRIBUTION.md.
 const isCI = process.env.GITHUB_ACTIONS === "true"
+const shouldSign = isCI || process.env.ALPHA_SIGN === "1"
+// Apple Developer team for Mac Developer-ID signing + notarization (Beijing yuanyuji Technology Co.,Ltd;
+// same team tideapp signs under). Overridable via env for a different team.
+const APPLE_TEAM_ID = process.env.ALPHA_APPLE_TEAM_ID ?? "RQX6X6A635"
 
+// Own bundle identity (com.tide.*, matching tideapp's convention) — NOT opencode's ai.opencode.desktop.
+// Changing this from the old id is a deliberate one-time reset of the app's stored data (accepted:
+// project FILES on disk are unaffected; only session history + recent-project list + login reset).
 const APP_IDS = {
-  dev: "ai.opencode.desktop.dev",
-  beta: "ai.opencode.desktop.beta",
-  prod: "ai.opencode.desktop",
+  dev: "com.tide.alphacode.dev",
+  beta: "com.tide.alphacode.beta",
+  prod: "com.tide.alphacode",
 } as const
 
 const getBase = (appId: string): Configuration => ({
-  artifactName: "opencode-desktop-${os}-${arch}.${ext}",
+  artifactName: "alpha-code-${os}-${arch}.${ext}",
   // MIT requires OpenCode's copyright + permission notice ship with the app (B15 / D10);
   // full text in resources/NOTICE.txt, also surfaced via app.setAboutPanelOptions.
   copyright: "© 2025 opencode (MIT). alpha-code fork build.",
@@ -83,21 +91,24 @@ const getBase = (appId: string): Configuration => ({
   mac: {
     category: "public.app-category.developer-tools",
     icon: `resources/icons/icon.icns`,
-    hardenedRuntime: isCI,
+    // Notarization requires hardenedRuntime + entitlements; only when actually signing.
+    hardenedRuntime: shouldSign,
     gatekeeperAssess: false,
     entitlements: "resources/entitlements.plist",
     entitlementsInherit: "resources/entitlements.plist",
-    // null => ad-hoc sign locally (no Developer ID); auto-discover certs in CI.
-    identity: isCI ? undefined : null,
-    notarize: isCI,
-    // Local build emits the .app directly (fast, double-clickable); CI builds installers.
-    target: isCI ? ["dmg", "zip"] : ["dir"],
+    // null => ad-hoc sign (no Developer ID, local dev builds). When signing, auto-discover the
+    // "Developer ID Application" cert from the keychain (override with ALPHA_SIGN_IDENTITY).
+    identity: shouldSign ? (process.env.ALPHA_SIGN_IDENTITY ?? undefined) : null,
+    // notarytool with the team; needs APPLE_ID+APPLE_APP_SPECIFIC_PASSWORD or APPLE_API_KEY* in env.
+    notarize: shouldSign ? { teamId: APPLE_TEAM_ID } : false,
+    // Signed builds emit dmg+zip (distributable + updater); plain local builds emit the .app directly.
+    target: shouldSign ? ["dmg", "zip"] : ["dir"],
   },
   dmg: {
-    sign: isCI,
+    sign: shouldSign,
   },
   protocols: {
-    name: "OpenCode",
+    name: "alpha-code",
     schemes: ["opencode", "alpha-code"],
   },
   win: {
@@ -146,21 +157,25 @@ function getConfig() {
       return {
         ...base,
         appId,
-        productName: "OpenCode Beta",
-        protocols: { name: "OpenCode Beta", schemes: ["opencode", "alpha-code"] },
-        publish: { provider: "github", owner: "anomalyco", repo: "opencode-beta", channel: "latest" },
-        rpm: { packageName: "opencode-beta" },
+        productName: "alpha-code Beta",
+        protocols: { name: "alpha-code Beta", schemes: ["opencode", "alpha-code"] },
+        // Own public release repo (jinjunnn/alpha-code) — NOT anomalyco/opencode, which would auto-
+        // download upstream OpenCode over alpha (B9). `beta` channel = pre-release feed.
+        publish: { provider: "github", owner: "jinjunnn", repo: "alpha-code", channel: "beta" },
+        rpm: { packageName: "alpha-code-beta" },
       }
     }
     case "prod": {
       return {
         ...base,
         appId,
-        productName: "OpenCode",
-        protocols: { name: "OpenCode", schemes: ["opencode", "alpha-code"] },
-        publish: { provider: "github", owner: "anomalyco", repo: "opencode", channel: "latest" },
+        productName: "alpha-code",
+        protocols: { name: "alpha-code", schemes: ["opencode", "alpha-code"] },
+        // Own public release repo (jinjunnn/alpha-code) — NOT anomalyco/opencode (B9 wrong-owner feed,
+        // which would auto-download upstream OpenCode over alpha). `latest` = stable feed.
+        publish: { provider: "github", owner: "jinjunnn", repo: "alpha-code", channel: "latest" },
         deb: { fpm: [legacyDesktopEntryFpm] },
-        rpm: { packageName: "opencode", fpm: [legacyDesktopEntryFpm] },
+        rpm: { packageName: "alpha-code", fpm: [legacyDesktopEntryFpm] },
       }
     }
   }

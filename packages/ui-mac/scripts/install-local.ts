@@ -15,10 +15,24 @@ import { fileURLToPath } from "node:url"
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const packageDir = path.resolve(scriptDir, "..")
 
+// Resolve app name + bundle id from the channel, mirroring electron-builder.config.ts so a prod
+// (or beta) ship installs/cleans the RIGHT bundle instead of the hardcoded dev one (ADR-012 fix).
+const channel = (() => {
+  const raw = process.env.OPENCODE_CHANNEL
+  return raw === "prod" || raw === "beta" ? raw : "dev"
+})()
+const PRODUCT_NAMES = { dev: "alpha-code", beta: "alpha-code Beta", prod: "alpha-code" } as const
+const APP_IDS = {
+  dev: "com.tide.alphacode.dev",
+  beta: "com.tide.alphacode.beta",
+  prod: "com.tide.alphacode",
+} as const
+const appName = `${PRODUCT_NAMES[channel]}.app`
+
 const DIST_DIR = path.join(packageDir, "dist")
-const SRC = path.join(DIST_DIR, "mac-arm64", "alpha-code.app")
-const DEST = "/Applications/alpha-code.app"
-const APP_ID = "ai.opencode.desktop.dev"
+const SRC = path.join(DIST_DIR, "mac-arm64", appName)
+const DEST = `/Applications/${appName}`
+const APP_ID = APP_IDS[channel]
 
 const lsregister =
   "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
@@ -29,7 +43,7 @@ if (!existsSync(SRC)) {
 }
 
 // 1. Quit any running instance so we can overwrite it and release the single-instance lock.
-spawnSync("pkill", ["-f", "alpha-code.app/Contents/MacOS"], { stdio: "ignore" })
+spawnSync("pkill", ["-f", `${appName}/Contents/MacOS`], { stdio: "ignore" })
 
 // 2. Clear the single-instance lock (dev and packaged share bundle id → would otherwise
 //    block the next launch). electron-store / chromium singleton files live under userData.
