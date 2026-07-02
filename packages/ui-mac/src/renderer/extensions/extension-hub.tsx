@@ -170,7 +170,7 @@ export function ExtensionHub(props: {
   open: Accessor<boolean>
   onClose: () => void
 }) {
-  const ext = useExtensions(props.server)
+  const ext = useExtensions(props.server, props.open)
   const [tab, setTab] = createSignal<Tab>("featured")
   const [query, setQuery] = createSignal("")
   const [busy, setBusy] = createSignal<string | null>(null)

@@ -127,7 +127,7 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | typeof TIMED_OUT
   return Promise.race([p, new Promise<typeof TIMED_OUT>((r) => setTimeout(() => r(TIMED_OUT), ms))])
 }
 
-export function useExtensions(server: Accessor<ServerInfo | undefined>): ExtensionsApi {
+export function useExtensions(server: Accessor<ServerInfo | undefined>, active?: Accessor<boolean>): ExtensionsApi {
   const [store, setStore] = createStore<ExtensionsStore>({ mcp: {}, ready: false, error: false })
 
   let client: Client | undefined
@@ -237,9 +237,15 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>): Extensi
     }
   }
 
+  // A2 (lazy): stay dormant until the hub is first opened — no mcp.status fetch / 3rd SSE at startup.
+  // `active` (the hub's open accessor) is tracked, so the first open re-runs this effect and connects;
+  // once activated we latch so later closes don't tear down the live connection. Eager if omitted.
+  let activated = false
   createEffect(() => {
     const info = server()
     if (!info) return
+    if (active && !active() && !activated) return
+    activated = true
     const gen = ++generation
     abortRef = new AbortController()
     client = createOpencodeClient({ baseUrl: info.baseUrl, headers: authHeaders(info) })
