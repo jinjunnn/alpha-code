@@ -301,10 +301,17 @@ const main = Effect.gen(function* () {
 
   if (!TEST_ONBOARDING) migrate()
   ensureAlphaLayoutDefault()
-  app.setAsDefaultProtocolClient("opencode")
-  // Own auth-callback scheme, registered alongside opencode:// (not replacing it), so a co-installed
-  // official opencode desktop can neither hijack nor be hijacked by our alpha-code://auth/callback.
-  app.setAsDefaultProtocolClient("alpha-code")
+  // Packaged builds only: on macOS this sets the user-level Launch Services handler pref to the
+  // bundle the process runs from — in dev that is node_modules' bare Electron.app, which then hijacks
+  // the schemes system-wide: auth callbacks cold-start a blank Electron welcome window instead of the
+  // installed app (until the installed app relaunches and re-registers). Dev deep-link testing:
+  // ALPHA_DEV_PROTOCOL=1, and keep the dev instance running so open-url is delivered to it.
+  if (app.isPackaged || process.env.ALPHA_DEV_PROTOCOL === "1") {
+    app.setAsDefaultProtocolClient("opencode")
+    // Own auth-callback scheme, registered alongside opencode:// (not replacing it), so a co-installed
+    // official opencode desktop can neither hijack nor be hijacked by our alpha-code://auth/callback.
+    app.setAsDefaultProtocolClient("alpha-code")
+  }
   registerRendererProtocol()
   setDockIcon()
   const updater = setupAutoUpdater(stopSidecars)
