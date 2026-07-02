@@ -48,6 +48,8 @@ export interface AlphaProjectsStore {
 
 export interface AlphaProjectsApi {
   store: AlphaProjectsStore
+  /** Re-fetch the project list + each project's sessions. Backs the sidebar's error-retry (B11). */
+  reload(): Promise<void>
   /** Eagerly create a real session in a project directory and return its id (or undefined on
    *  failure). We create up front — rather than navigating to opencode's draft — because the
    *  draft is a *tab*, and the alpha redesign hides the tab strip, so a draft would have no
@@ -400,5 +402,5 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
     })
   })
 
-  return { store, createSession, startChat, renameSession, shareSession, deleteSession, copySession }
+  return { store, reload: () => loadProjects(), createSession, startChat, renameSession, shareSession, deleteSession, copySession }
 }
