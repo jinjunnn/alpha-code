@@ -118,7 +118,9 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
       // sandboxes), so new chats created in any of them show up. throwOnError defaults false →
       // a non-2xx resolves with { error, data: undefined }; guard so a transient failure keeps
       // the prior sessions.
-      const { data, error } = await c.session.list({ directory: worktree, scope: "project" } as any)
+      // roots:true → server returns only top-level conversations (we discard children client-side
+      // anyway), shrinking the payload for projects with many sub-agent sessions (A3).
+      const { data, error } = await c.session.list({ directory: worktree, scope: "project", roots: true } as any)
       if (gen !== generation || error || !data) return
       const sessions = sortSessions((data as any[]).map(toSession).filter(Boolean) as AlphaSession[])
       const i = worktreeIndex(worktree)
@@ -169,7 +171,9 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
       })
       setStore("ready", true)
       setStore("error", false)
-      await Promise.all(incoming.map((raw) => loadSessions(raw.worktree)))
+      // Skip the "/" global-convention worktree — the sidebar never renders it, so fetching its
+      // sessions is pure waste (A3 / B4 lever, renderer-side).
+      await Promise.all(incoming.filter((raw) => raw.worktree !== "/").map((raw) => loadSessions(raw.worktree)))
     } catch {
       if (gen === generation) setStore("error", true)
     }

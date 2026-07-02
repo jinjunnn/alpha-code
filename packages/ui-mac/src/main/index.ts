@@ -8,7 +8,7 @@ import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event } from "electron"
 import { app, BrowserWindow } from "electron"
 
-import { Deferred, Effect, Fiber } from "effect"
+import { Deferred, Effect } from "effect"
 import contextMenu from "electron-context-menu"
 
 import type { ServerReadyData } from "../preload/types"
@@ -379,7 +379,7 @@ const main = Effect.gen(function* () {
   const url = `http://${hostname}:${port}`
   const password = randomUUID()
 
-  const loadingTask = yield* Effect.gen(function* () {
+  yield* Effect.gen(function* () {
     logger.log("sidecar connection started", { url })
 
     ensureLoopbackNoProxy()
@@ -417,7 +417,13 @@ const main = Effect.gen(function* () {
     logger.log("loading task finished")
   }).pipe(forwardInitializationFailure(serverReady), Effect.forkChild)
 
-  yield* Fiber.await(loadingTask)
+  // A1 (window-first): open the window as soon as the sidecar has spawned (serverReady settles) rather
+  // than blocking on the health probe (~line 410), which can lag many seconds under a slow sidecar / MCP
+  // storm. The renderer shows a splash and gates on this same serverReady via awaitInitialization; the
+  // forked task finishes health.wait in the background. Awaiting serverReady (not zero-wait) keeps the
+  // forked spawn alive to completion; we ignore its failure so the window still opens to surface the
+  // connection error, matching the prior behavior.
+  yield* Deferred.await(serverReady).pipe(Effect.catch(() => Effect.sync(() => {})))
 
   mainWindow = createMainWindow()
 
