@@ -1,7 +1,7 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { useParams } from "@solidjs/router"
-import { batch, createEffect, createMemo, startTransition } from "solid-js"
+import { batch, createEffect, createMemo } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useModels } from "@/context/models"
 import { useProviders } from "@/hooks/use-providers"
@@ -60,7 +60,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const sdk = useSDK()
     const sync = useSync()
     const serverSDK = useServerSDK()
-    const providers = useProviders(() => sdk().directory)
+    const providers = useProviders()
     const models = useModels()
 
     const id = createMemo(() => params.id || undefined)
@@ -80,7 +80,6 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const [store, setStore] = createStore<{
       current?: string
       draft?: State
-      promoting?: State
       last?: {
         type: "agent" | "model" | "variant"
         agent?: string
@@ -124,7 +123,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
     const scope = createMemo<State | undefined>(() => {
       const session = id()
-      if (!session) return store.draft ?? store.promoting
+      if (!session) return store.draft
       return saved.session[session] ?? handoff.get(handoffKey(serverSDK().scope, sdk().directory, session))
     })
 
@@ -137,13 +136,11 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       if (!next) return
       if (saved.session[session] !== undefined) {
         handoff.delete(key)
-        setStore("promoting", undefined)
         return
       }
 
       setSaved("session", session, clone(next))
       handoff.delete(key)
-      setStore("promoting", undefined)
     })
 
     const configuredModel = () => {
@@ -297,21 +294,19 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         model.set({ providerID: entry.provider.id, modelID: entry.id })
       },
       set(item: ModelKey | undefined, options?: { recent?: boolean }) {
-        startTransition(() =>
-          batch(() => {
-            setStore("last", {
-              type: "model",
-              agent: agent.current()?.name,
-              model: item ?? null,
-              variant: selected(),
-            })
-            write({ model: item })
-            if (!item) return
-            models.setVisibility(item, true)
-            if (!options?.recent) return
-            models.recent.push(item)
-          }),
-        )
+        batch(() => {
+          setStore("last", {
+            type: "model",
+            agent: agent.current()?.name,
+            model: item ?? null,
+            variant: selected(),
+          })
+          write({ model: item })
+          if (!item) return
+          models.setVisibility(item, true)
+          if (!options?.recent) return
+          models.recent.push(item)
+        })
       },
       visible(item: ModelKey) {
         return models.visible(item)
@@ -340,21 +335,19 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           return Object.keys(item.variants)
         },
         set(value: string | undefined) {
-          startTransition(() =>
-            batch(() => {
-              const model = current()
-              setStore("last", {
-                type: "variant",
-                agent: agent.current()?.name,
-                model: model ? { providerID: model.provider.id, modelID: model.id } : null,
-                variant: value ?? null,
-              })
-              write({ variant: value ?? null })
-              if (model) {
-                models.variant.set({ providerID: model.provider.id, modelID: model.id }, value ?? undefined)
-              }
-            }),
-          )
+          batch(() => {
+            const model = current()
+            setStore("last", {
+              type: "variant",
+              agent: agent.current()?.name,
+              model: model ? { providerID: model.provider.id, modelID: model.id } : null,
+              variant: value ?? null,
+            })
+            write({ variant: value ?? null })
+            if (model) {
+              models.variant.set({ providerID: model.provider.id, modelID: model.id }, value ?? undefined)
+            }
+          })
         },
         cycle() {
           const items = this.list()
@@ -376,19 +369,19 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       agent,
       session: {
         reset() {
-          setStore({ draft: undefined, promoting: undefined })
+          setStore("draft", undefined)
         },
         promote(dir: string, session: string) {
           const next = clone(snapshot())
           if (!next) return
-          const key = handoffKey(serverSDK().scope, dir, session)
-          handoff.set(key, next)
 
           if (dir === sdk().directory) {
             setSaved("session", session, next)
+            setStore("draft", undefined)
+            return
           }
 
-          setStore("promoting", next)
+          handoff.set(handoffKey(serverSDK().scope, dir, session), next)
           setStore("draft", undefined)
         },
         restore(msg: { sessionID: string; agent: string; model: ModelKey }) {

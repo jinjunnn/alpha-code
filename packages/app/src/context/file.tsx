@@ -3,7 +3,6 @@ import { createStore, produce, reconcile } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { showToast } from "@/utils/toast"
 import { useParams } from "@solidjs/router"
-import { base64Encode } from "@opencode-ai/core/util/encode"
 import { getFilename } from "@opencode-ai/core/util/path"
 import { useSDK } from "./sdk"
 import { useSync } from "./sync"
@@ -66,7 +65,7 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
     const scope = createMemo(() => sdk().directory)
     const path = createPathHelpers(scope)
     const tabs = layout.tabs(() =>
-      SessionStateKey.from(serverSDK().scope, SessionRouteKey.fromRoute(base64Encode(sdk().directory), params.id)),
+      SessionStateKey.from(serverSDK().scope, SessionRouteKey.fromRoute(params.dir, params.id)),
     )
 
     const inflight = new Map<string, Promise<void>>()

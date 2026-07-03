@@ -18,8 +18,6 @@ bun run test:bench
 The suite contains:
 
 - cold and hot session-tab timing
-- home-session click timing split between content and titlebar-tab paint
-- single-session tab close timing through stable home restoration
 - cached session repaint and mutation tracing
 - streaming timeline throughput, RAF-gap, long-task, geometry, and remount diagnostics
 

@@ -8,7 +8,7 @@
 
 1. **不改 `opencode/packages/**` 源码** — 理由:任何源码改动都会在 upstream 升级时冲突,直接违背北极星。唯一例外:确需新增 `/api/*` HTTP 路由时,走 `patches/` 补丁层并集中到单一插入点(见 DECISIONS ADR-002),且必须显式记录。
 2. **不重写 agent core / session / context / tool 引擎** — 理由:这是 opencode `@opencode-ai/core` 的职责,白嫖即可,重写=自找维护地狱。
-3. **不编辑 opencode 既有的任何文件** — 理由(修订自 ADR-005):本仓库现在**是** opencode 的 fork(不是"避免 fork"),但只能**新增**文件;一旦改动 upstream 既有文件,fork-sync 就会冲突,直接违背北极星。等价于原来的"opencode 只读",只是现在在 fork 内部执行。
+3. **不编辑 opencode 既有的任何文件** — 理由(修订自 ADR-005):本仓库现在**是** opencode 的 fork(不是"避免 fork"),但只能**新增**文件;一旦改动 upstream 既有文件,fork-sync 就会冲突,直接违背北极星。等价于原来的"opencode 只读",只是现在在 fork 内部执行。**ADR-020 例外(2026-07-03)**:`packages/{app,ui}` 已冻结、退出每日同步,其相对 dev 的 diff 是冻结本意非违例;冻结包对 alpha 依然只读(写 = 仅受控 re-freeze)。
 4. **不把核心后端行为长期压在 `experimental.*` plugin hook 上** — 理由:这些 hook 官方标注 unstable、会改签名;可用于过渡,但凡依赖必须在 DECISIONS 标注风险与回退方案。
 5. **不前端绕过 SDK 直连 core 内部模块** — 理由:`@opencode-ai/sdk` 是唯一稳定契约;绕过它=把自己焊死在 opencode 内部实现上。
 6. **不支持非 Mac 平台 / 不复活 web/tui/console/enterprise 形态** — 理由:聚焦,避免被 opencode 的 27 包全形态拖住。

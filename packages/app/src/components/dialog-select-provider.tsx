@@ -1,4 +1,4 @@
-import { type Accessor, Component, Show } from "solid-js"
+import { Component, Show } from "solid-js"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { popularProviders, useProviders } from "@/hooks/use-providers"
 import { Dialog } from "@opencode-ai/ui/dialog"
@@ -11,9 +11,9 @@ import { DialogCustomProvider } from "./dialog-custom-provider"
 
 const CUSTOM_ID = "_custom"
 
-export const DialogSelectProvider: Component<{ directory?: Accessor<string | undefined> }> = (props) => {
+export const DialogSelectProvider: Component = () => {
   const dialog = useDialog()
-  const providers = useProviders(props.directory)
+  const providers = useProviders()
   const language = useLanguage()
 
   const popularGroup = () => language.t("dialog.provider.group.popular")
@@ -56,10 +56,10 @@ export const DialogSelectProvider: Component<{ directory?: Accessor<string | und
         onSelect={(x) => {
           if (!x) return
           if (x.id === CUSTOM_ID) {
-            dialog.show(() => <DialogCustomProvider back="providers" directory={props.directory} />)
+            dialog.show(() => <DialogCustomProvider back="providers" />)
             return
           }
-          dialog.show(() => <DialogConnectProvider provider={x.id} directory={props.directory} />)
+          dialog.show(() => <DialogConnectProvider provider={x.id} />)
         }}
       >
         {(i) => (

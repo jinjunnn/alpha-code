@@ -2,14 +2,12 @@ import { batch, createMemo, createRoot, onCleanup } from "solid-js"
 import { createStore, reconcile, type SetStoreFunction, type Store } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { useParams } from "@solidjs/router"
-import { base64Encode } from "@opencode-ai/core/util/encode"
 import { Persist, persisted } from "@/utils/persist"
 import { useServerSDK } from "./server-sdk"
 import type { ServerScope } from "@/utils/server-scope"
 import { createScopedCache } from "@/utils/scoped-cache"
 import { uuid } from "@/utils/uuid"
 import type { SelectedLineRange } from "@/context/file"
-import { useSDK } from "./sdk"
 
 export type LineComment = {
   id: string
@@ -85,15 +83,7 @@ function createCommentSessionState(store: Store<CommentStore>, setStore: SetStor
     active: null as CommentFocus | null,
   })
 
-  // Reuse the previous array when contents are unchanged so consumers keep a stable
-  // identity; a fresh array per call cascaded into diff annotation re-renders.
-  let lastAll: LineComment[] = []
-  const all = () => {
-    const next = aggregate(store.comments)
-    if (next.length === lastAll.length && next.every((item, index) => item === lastAll[index])) return lastAll
-    lastAll = next
-    return next
-  }
+  const all = () => aggregate(store.comments)
 
   const setRef = (
     key: "focus" | "active",
@@ -212,7 +202,6 @@ export const { use: useComments, provider: CommentsProvider } = createSimpleCont
   gate: false,
   init: () => {
     const params = useParams()
-    const sdk = useSDK()
     const serverSDK = useServerSDK()
     const cache = createScopedCache(
       (key) => {
@@ -239,7 +228,7 @@ export const { use: useComments, provider: CommentsProvider } = createSimpleCont
       return cache.get(key).value
     }
 
-    const session = createMemo(() => load(base64Encode(sdk().directory), params.id))
+    const session = createMemo(() => load(params.dir!, params.id))
 
     return {
       ready: () => session().ready(),

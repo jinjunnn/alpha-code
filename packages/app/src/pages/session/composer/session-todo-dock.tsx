@@ -40,6 +40,7 @@ function dot(status: Todo["status"]) {
 }
 
 export function SessionTodoDock(props: {
+  sessionID?: string
   todos: Todo[]
   collapsed: boolean
   onToggle: () => void
@@ -49,7 +50,7 @@ export function SessionTodoDock(props: {
 }) {
   const language = useLanguage()
   const [store, setStore] = createStore({
-    height: 78,
+    height: 320,
   })
 
   const total = createMemo(() => props.todos.length)
@@ -84,7 +85,7 @@ export function SessionTodoDock(props: {
     const el = contentRef
     if (!el) return
     const update = () => {
-      setStore("height", (height) => Math.max(height, el.scrollHeight))
+      setStore("height", el.getBoundingClientRect().height)
     }
     update()
     createResizeObserver(el, update)
