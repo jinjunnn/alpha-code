@@ -64,9 +64,6 @@ type PlatformBase = {
   /** Storage mechanism, defaults to localStorage */
   storage?: (name?: string) => SyncStorage | AsyncStorage
 
-  /** Stable platform window identity for window-scoped persistence */
-  windowID?: string
-
   /** Application-global desktop updater */
   updater?: UpdaterPlatform
 

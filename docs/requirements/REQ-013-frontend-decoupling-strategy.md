@@ -3,7 +3,7 @@ id: REQ-013
 title: 前端脱耦策略 —— 让 alpha UI 免疫上游前端 churn(选定并落地)
 type: spike
 priority: P1
-status: registered
+status: shipped
 repo: A
 created: 2026-07-03
 sprint: —
@@ -68,6 +68,20 @@ sprint: —
 - 症状批:[[REQ-010]]。上位:ADR-016(可能产出修订或新 ADR)。
 - 决策入口:BACKLOG ⚖️ 待拍板队列「前端换肤 vs 真组件」→ 收编进本需求。
 
-## 验证记录(verify 时补:日期 + 方式 + 结果)
+## 终局拍板(用户 2026-07-03)
+**E 冻结 @ 546 前**(= ADR-020,accepted)。⚖️ 队列「前端脱耦终局路径」行已划掉。
 
-- 待:E 可行性 spike 结论 + 终局路径拍板。
+## 验证记录
+- **E spike(2026-07-03,验收①)**:worktree 实测——`packages/{app,ui}` 干净钉回 `3b638e4a^1`
+  (546 前)+ 引擎用当日 HEAD:`bun install` 零变化、typecheck **上游零错**(唯三错误 = alpha 自己的
+  WSL probeAddable 适配,冻结世界应回退)、完整 electron-vite build 绿(9.7s)。⟹ 546 commits 偏斜
+  仅需 1 处适配,前端↔引擎耦合实证为松,**E 可行**。方法注记:`git checkout ref -- path` 不删新增
+  文件,首轮因此出现冻结树内部不一致假象——冻结/re-freeze 必须 `rm -rf` 后 checkout(已写入 ADR-020 §5)。
+- **落地(验收②③④,PR #45)**:tag `frontend-freeze-base`;app/ui 还原冻结基 + WSL 适配回退;
+  `sync-upstream.yml` restore 步(含上游新增文件清除)+ app/ui 冲突预期化;`alpha-ci.yml` 守卫范围
+  修订;ADR-020 + ARCHITECTURE/NON_GOALS 修订;A 防护网已先行(REQ-012,PR #44);B 适配层在冻结下
+  降级为 re-freeze 工具(见 C14 行)。
+- **回归回放(验收⑤)**:E 路径下 546 类上游改动不再进入 alpha(sync 只进引擎)——同类断裂物理不可能;
+  防护网保留作 re-freeze 体检。
+- **待(verified 门槛)**:冻结态真机视觉核验(→ S9 真机批,兼 REQ-010 验收)+ 首次每日 sync 的
+  restore 步实跑观察。

@@ -3,7 +3,6 @@ import { batch, createEffect, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { useLanguage } from "@/context/language"
 
 type Mem = Performance & {
@@ -52,62 +51,31 @@ const bad = (n: number | undefined, limit: number, low = false) => {
 
 const session = (path: string) => path.includes("/session")
 
-function Cell(props: {
-  bad?: boolean
-  dim?: boolean
-  inline?: boolean
-  label: string
-  tip: string
-  value: string
-  wide?: boolean
-}) {
-  const content = () => (
-    <div
-      classList={{
-        "flex min-w-0 items-center": true,
-        "min-h-[20px] w-fit flex-row justify-start gap-1.5 px-1.5 py-0.5 text-left": !!props.inline,
-        "justify-center text-center": !props.inline,
-        "min-h-[42px] w-full flex-col rounded-[8px] px-0.5 py-1": !props.inline,
-        "col-span-2": !!props.wide && !props.inline,
-      }}
-    >
-      <div
-        classList={{
-          "text-[10px] leading-none font-black uppercase tracking-[0.04em] opacity-70": true,
-        }}
-      >
-        {props.label}
-      </div>
-      <div
-        classList={{
-          "uppercase leading-none font-bold tabular-nums": true,
-          "text-[11px]": !!props.inline,
-          "text-[13px] sm:text-[14px]": !props.inline,
-          "text-text-on-critical-base": !!props.bad,
-          "opacity-70": !!props.dim,
-        }}
-      >
-        {props.value}
-      </div>
-    </div>
-  )
-
-  if (props.inline) {
-    return (
-      <TooltipV2 value={props.tip} placement="top">
-        {content()}
-      </TooltipV2>
-    )
-  }
-
+function Cell(props: { bad?: boolean; dim?: boolean; label: string; tip: string; value: string; wide?: boolean }) {
   return (
     <Tooltip value={props.tip} placement="top">
-      {content()}
+      <div
+        classList={{
+          "flex min-h-[42px] w-full min-w-0 flex-col items-center justify-center rounded-[8px] px-0.5 py-1 text-center": true,
+          "col-span-2": !!props.wide,
+        }}
+      >
+        <div class="text-[10px] leading-none font-black uppercase tracking-[0.04em] opacity-70">{props.label}</div>
+        <div
+          classList={{
+            "text-[13px] leading-none font-bold tabular-nums sm:text-[14px]": true,
+            "text-text-on-critical-base": !!props.bad,
+            "opacity-70": !!props.dim,
+          }}
+        >
+          {props.value}
+        </div>
+      </div>
     </Tooltip>
   )
 }
 
-export function DebugBar(props: { inline?: boolean } = {}) {
+export function DebugBar() {
   const language = useLanguage()
   const location = useLocation()
   const routing = useIsRouting()
@@ -133,7 +101,7 @@ export function DebugBar(props: { inline?: boolean } = {}) {
     },
   })
 
-  const na = () => language.t("debugBar.na").toUpperCase()
+  const na = () => language.t("debugBar.na")
   const heap = () => (state.heap.limit ? (state.heap.used ?? 0) / state.heap.limit : undefined)
   const heapv = () => {
     const value = heap()
@@ -395,30 +363,15 @@ export function DebugBar(props: { inline?: boolean } = {}) {
   return (
     <aside
       aria-label={language.t("debugBar.ariaLabel")}
-      classList={{
-        "pointer-events-auto hidden overflow-hidden text-text-strong md:block": true,
-        "mt-[-6px] w-full shrink-0 px-3 py-1": !!props.inline,
-        "fixed bottom-3 right-3 z-50 w-[308px] max-w-[calc(100vw-1.5rem)] rounded-xl border border-border-base bg-surface-raised-stronger-non-alpha p-0.5 shadow-[var(--shadow-lg-border-base)] sm:bottom-4 sm:right-4 sm:w-[324px]":
-          !props.inline,
-      }}
+      class="pointer-events-auto fixed bottom-3 right-3 z-50 w-[308px] max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-border-base bg-surface-raised-stronger-non-alpha p-0.5 text-text-strong shadow-[var(--shadow-lg-border-base)] sm:bottom-4 sm:right-4 sm:w-[324px]"
     >
-      <div
-        classList={{
-          "font-mono": true,
-          "gap-[9px]": !!props.inline,
-          "gap-px": !props.inline,
-          "flex w-full flex-nowrap items-center justify-start": !!props.inline,
-          "grid-cols-5": !props.inline,
-          grid: !props.inline,
-        }}
-      >
+      <div class="grid grid-cols-5 gap-px font-mono">
         <Cell
           label={language.t("debugBar.nav.label")}
           tip={language.t("debugBar.nav.tip")}
           value={navv()}
           bad={bad(state.nav.dur, 400)}
           dim={state.nav.dur === undefined && !state.nav.pending}
-          inline={props.inline}
         />
         <Cell
           label={language.t("debugBar.fps.label")}
@@ -426,7 +379,6 @@ export function DebugBar(props: { inline?: boolean } = {}) {
           value={state.fps === undefined ? na() : `${Math.round(state.fps)}`}
           bad={bad(state.fps, 50, true)}
           dim={state.fps === undefined}
-          inline={props.inline}
         />
         <Cell
           label={language.t("debugBar.frame.label")}
@@ -434,7 +386,6 @@ export function DebugBar(props: { inline?: boolean } = {}) {
           value={time(state.gap) ?? na()}
           bad={bad(state.gap, 50)}
           dim={state.gap === undefined}
-          inline={props.inline}
         />
         <Cell
           label={language.t("debugBar.jank.label")}
@@ -442,7 +393,6 @@ export function DebugBar(props: { inline?: boolean } = {}) {
           value={state.jank === undefined ? na() : `${state.jank}`}
           bad={bad(state.jank, 8)}
           dim={state.jank === undefined}
-          inline={props.inline}
         />
         <Cell
           label={language.t("debugBar.long.label")}
@@ -450,7 +400,6 @@ export function DebugBar(props: { inline?: boolean } = {}) {
           value={longv()}
           bad={bad(state.long.block, 200)}
           dim={state.long.count === undefined}
-          inline={props.inline}
         />
         <Cell
           label={language.t("debugBar.delay.label")}
@@ -458,7 +407,6 @@ export function DebugBar(props: { inline?: boolean } = {}) {
           value={time(state.delay) ?? na()}
           bad={bad(state.delay, 100)}
           dim={state.delay === undefined}
-          inline={props.inline}
         />
         <Cell
           label={language.t("debugBar.inp.label")}
@@ -466,7 +414,6 @@ export function DebugBar(props: { inline?: boolean } = {}) {
           value={time(state.inp) ?? na()}
           bad={bad(state.inp, 200)}
           dim={state.inp === undefined}
-          inline={props.inline}
         />
         <Cell
           label={language.t("debugBar.cls.label")}
@@ -474,7 +421,6 @@ export function DebugBar(props: { inline?: boolean } = {}) {
           value={state.cls === undefined ? na() : state.cls.toFixed(2)}
           bad={bad(state.cls, 0.1)}
           dim={state.cls === undefined}
-          inline={props.inline}
         />
         <Cell
           label={language.t("debugBar.mem.label")}
@@ -489,7 +435,6 @@ export function DebugBar(props: { inline?: boolean } = {}) {
           value={heapv()}
           bad={bad(heap(), 0.8)}
           dim={state.heap.used === undefined}
-          inline={props.inline}
           wide
         />
       </div>

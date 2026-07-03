@@ -83,21 +83,41 @@ jobs:
       - name: Merge `dev` into `alpha` (auto-resolve bun.lock only)
         run: |
           git checkout alpha
+          # ADR-020 前端冻结:packages/{app,ui} 钉在 frontend-freeze-base tag,上游对它们的改动
+          # 会与冻结版冲突(预期内)——冲突取 ours,合并后统一还原为冻结基(含上游新增文件的清除)。
+          restore_frozen_frontend() {
+            rm -rf packages/app packages/ui
+            git checkout frontend-freeze-base -- packages/app packages/ui
+            git add packages/app packages/ui
+            if ! git diff --cached --quiet -- packages/app packages/ui; then
+              git commit -m "chore(freeze): restore frozen frontend after sync (ADR-020)"
+            fi
+          }
           if git merge --no-edit --no-ff dev -m "chore(sync): merge upstream dev into alpha"; then
+            restore_frozen_frontend
             git push origin alpha
             exit 0
           fi
           conflicts="$(git diff --name-only --diff-filter=U)"
-          if [ "$conflicts" = "bun.lock" ]; then
-            echo "Resolving expected bun.lock conflict by regenerating the lockfile."
-            git checkout --theirs -- bun.lock
+          unexpected="$(echo "$conflicts" | grep -v '^bun.lock$' | grep -v '^packages/app/' | grep -v '^packages/ui/' || true)"
+          if [ -z "$unexpected" ]; then
+            if echo "$conflicts" | grep -q '^bun.lock$'; then
+              echo "Resolving expected bun.lock conflict by regenerating the lockfile."
+              git checkout --theirs -- bun.lock
+            fi
+            # 冻结路径冲突:先随手取 ours 让合并成形,restore_frozen_frontend 会给出精确冻结态。
+            if echo "$conflicts" | grep -qE '^packages/(app|ui)/'; then
+              echo "Resolving frozen-frontend conflicts (ADR-020): keeping ours, then restoring freeze base."
+              git checkout --ours -- packages/app packages/ui || true
+            fi
             bun install
             git add -A
             git commit --no-edit
+            restore_frozen_frontend
             git push origin alpha
           else
             echo "::error::Unexpected merge conflicts — the only-add discipline was broken:"
-            echo "$conflicts"
+            echo "$unexpected"
             git merge --abort
             exit 1
           fi

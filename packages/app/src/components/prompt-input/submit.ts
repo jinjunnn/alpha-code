@@ -4,6 +4,8 @@ import { base64Encode } from "@opencode-ai/core/util/encode"
 import { Binary } from "@opencode-ai/core/util/binary"
 import { useNavigate, useParams, useSearchParams } from "@solidjs/router"
 import { batch, type Accessor } from "solid-js"
+import type { FileSelection } from "@/context/file"
+import { useServer } from "@/context/server"
 import { useTabs } from "@/context/tabs"
 import { useServerSync, type ServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
@@ -19,7 +21,6 @@ import { buildRequestParts } from "./build-request-parts"
 import { setCursorPosition } from "./editor-dom"
 import { formatServerError } from "@/utils/server-errors"
 import { ScopedKey } from "@/utils/server-scope"
-import { createPromptSubmissionState } from "./submission-state"
 
 type PendingPrompt = {
   abort: AbortController
@@ -55,14 +56,16 @@ const draftImages = (prompt: Prompt) => prompt.filter((part): part is ImageAttac
 export async function sendFollowupDraft(input: FollowupSendInput) {
   const text = draftText(input.draft.prompt)
   const images = draftImages(input.draft.prompt)
+  const [, setStore] = input.serverSync.child(input.draft.sessionDirectory)
+
   const setBusy = () => {
     if (!input.optimisticBusy) return
-    input.serverSync.session.set("session_status", input.draft.sessionID, { type: "busy" })
+    setStore("session_status", input.draft.sessionID, { type: "busy" })
   }
 
   const setIdle = () => {
     if (!input.optimisticBusy) return
-    input.serverSync.session.set("session_status", input.draft.sessionID, { type: "idle" })
+    setStore("session_status", input.draft.sessionID, { type: "idle" })
   }
 
   const wait = async () => {
@@ -193,6 +196,15 @@ type PromptSubmitInput = {
   onSubmit?: () => void
 }
 
+type CommentItem = {
+  path: string
+  selection?: FileSelection
+  comment?: string
+  commentID?: string
+  commentOrigin?: "review" | "file"
+  preview?: string
+}
+
 export function createPromptSubmit(input: PromptSubmitInput) {
   const navigate = useNavigate()
   const sdk = useSDK()
@@ -205,6 +217,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const language = useLanguage()
   const params = useParams()
   const [search] = useSearchParams<{ draftId?: string }>()
+  const server = useServer()
   const tabs = useTabs()
   const pendingKey = (sessionID: string) => ScopedKey.from(sdk().scope, sessionID)
 
@@ -221,7 +234,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const sessionID = params.id
     if (!sessionID) return Promise.resolve()
 
-    serverSync().session.set("todo", sessionID, [])
+    serverSync().todo.set(sessionID, [])
+    const [, setStore] = serverSync().child(sdk().directory)
+    setStore("todo", sessionID, [])
 
     input.onAbort?.()
 
@@ -240,12 +255,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       .catch(() => {})
   }
 
-  const restoreCommentItems = (
-    target: ReturnType<ReturnType<typeof usePrompt>["capture"]>,
-    items: (ContextItem & { key: string })[],
-  ) => {
+  const restoreCommentItems = (items: CommentItem[]) => {
     for (const item of items) {
-      target.context.add({
+      prompt.context.add({
         type: "file",
         path: item.path,
         selection: item.selection,
@@ -257,14 +269,19 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
   }
 
-  const clearContext = (target: ReturnType<ReturnType<typeof usePrompt>["capture"]>) => {
-    for (const item of target.context.items()) {
-      target.context.remove(item.key)
+  const removeCommentItems = (items: { key: string }[]) => {
+    for (const item of items) {
+      prompt.context.remove(item.key)
+    }
+  }
+
+  const clearContext = () => {
+    for (const item of prompt.context.items()) {
+      prompt.context.remove(item.key)
     }
   }
 
   const seed = (dir: string, info: Session) => {
-    serverSync().session.remember(info)
     const [, setStore] = serverSync().child(dir)
     setStore("session", (list: Session[]) => {
       const result = Binary.search(list, info.id, (item) => item.id)
@@ -281,14 +298,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const handleSubmit = async (event: Event) => {
     event.preventDefault()
 
-    const target = prompt.capture()
-    const submission = createPromptSubmissionState({
-      target,
-      prompt: target.current(),
-      context: target.context.items().slice(),
-    })
-    const currentPrompt = submission.prompt
-    const context = submission.context
+    const currentPrompt = prompt.current()
     const text = currentPrompt.map((part) => ("content" in part ? part.content : "")).join("")
     const images = input.imageAttachments().slice()
     const mode = input.mode()
@@ -378,9 +388,13 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         local.session.promote(sessionDirectory, session.id)
         layout.handoff.setTabs(base64Encode(sessionDirectory), session.id)
         const draftID = search.draftId
-        if (draftID) tabs.promoteDraft(draftID, { server: tabs.draft(draftID).server, sessionId: session.id })
+        if (draftID)
+          tabs.promoteDraft(draftID, {
+            server: server.key,
+            dirBase64: base64Encode(sessionDirectory),
+            sessionId: session.id,
+          })
         else navigate(`/${base64Encode(sessionDirectory)}/session/${session.id}`)
-        submission.retarget(prompt.capture({ dir: base64Encode(sessionDirectory), id: session.id }))
       }
     }
     if (!session) {
@@ -396,6 +410,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       providerID: currentModel.provider.id,
     }
     const agent = currentAgent.name
+    const context = prompt.context.items().slice()
     const draft: FollowupDraft = {
       sessionID: session.id,
       sessionDirectory,
@@ -407,16 +422,13 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
 
     const clearInput = () => {
-      submission.clear()
+      prompt.reset()
       input.setMode("normal")
       input.setPopover(null)
     }
 
     const restoreInput = () => {
-      const restored = submission.restore()
-      if (!restored) return false
-      restored.target.set(restored.prompt, input.promptLength(restored.prompt))
-      if (!submission.current(prompt.capture())) return true
+      prompt.set(currentPrompt, input.promptLength(currentPrompt))
       input.setMode(mode)
       input.setPopover(null)
       requestAnimationFrame(() => {
@@ -426,12 +438,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         setCursorPosition(editor, input.promptLength(currentPrompt))
         input.queueScroll()
       })
-      return true
     }
 
     if (!isNewSession && mode === "normal" && input.shouldQueue?.()) {
       input.onQueue?.(draft)
-      clearContext(submission.target())
+      clearContext()
       clearInput()
       return
     }
@@ -501,7 +512,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       })
     }
 
-    for (const item of commentItems) submission.target().context.remove(item.key)
+    removeCommentItems(commentItems)
     clearInput()
 
     const waitForWorktree = async () => {
@@ -518,7 +529,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           sync().set("session_status", session.id, { type: "idle" })
         }
         removeOptimisticMessage()
-        if (restoreInput()) restoreCommentItems(submission.target(), commentItems)
+        restoreCommentItems(commentItems)
+        restoreInput()
       }
 
       pending.set(pendingKey(session.id), { abort: controller, cleanup })
@@ -580,7 +592,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         description: errorMessage(err),
       })
       removeOptimisticMessage()
-      if (restoreInput()) restoreCommentItems(submission.target(), commentItems)
+      restoreCommentItems(commentItems)
+      restoreInput()
     })
   }
 

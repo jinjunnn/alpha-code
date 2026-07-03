@@ -1,6 +1,6 @@
 import "@pierre/trees/web-components"
 import { FileTree } from "@pierre/trees"
-import { Dialog, DialogBody, DialogFooter, DialogHeader, DialogTitle } from "@opencode-ai/ui/v2/dialog-v2"
+import { Dialog, DialogFooter } from "@opencode-ai/ui/v2/dialog-v2"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -19,7 +19,6 @@ import {
   pickerMode,
   preloadTreeDirectories,
   cleanPickerInput,
-  createPriorityTaskQueue,
   createDirectorySearch,
   currentPickerSuggestions,
   displayPickerPath,
@@ -27,7 +26,6 @@ import {
   pickerRoot,
 } from "./directory-picker-domain"
 import "./dialog-select-directory-v2.css"
-import { DividerV2 } from "@opencode-ai/ui/v2/divider-v2"
 
 interface DialogSelectDirectoryV2Props {
   title?: string
@@ -40,7 +38,7 @@ interface DialogSelectDirectoryV2Props {
 
 export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
   const global = useGlobal()
-  const { sync, sdk } = global.ensureServerCtx(props.server)
+  const { sync, sdk } = global.createServerCtx(props.server)
   const dialog = useDialog()
   const language = useLanguage()
   const policy = pickerMode(props.mode ?? "directory", props.start)
@@ -57,7 +55,6 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
   const [error, setError] = createSignal(false)
   const [rootValid, setRootValid] = createSignal(false)
   const listings = new Map<string, Promise<Array<{ name: string; type: "file" | "directory" }> | undefined>>()
-  const loads = createPriorityTaskQueue<Array<{ name: string; type: "file" | "directory" }> | undefined>(3)
   const advanced = new Set<string>()
   let tree: FileTree | undefined
   let container: HTMLDivElement | undefined
@@ -105,21 +102,16 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
   })
   const currentSuggestions = createMemo(() => currentPickerSuggestions(suggestions(), input()))
 
-  async function load(path: string, generation: number, eager = false) {
+  async function load(path: string, generation: number, preload = true) {
     const key = path.replace(/\/+$/, "")
     setError(false)
     const absolute = absoluteTreePath(root(), key)
-    const existing = listings.get(key)
-    if (existing && !eager) loads.promote(`${generation}:${key}`)
     const request =
-      existing ??
-      loads.schedule(`${generation}:${key}`, eager ? "background" : "user", () => {
-        if (!activeTreeNavigation(generation, navigation)) return Promise.resolve(undefined)
-        return sdk.client.file
-          .list({ directory: absolute, path: "" })
-          .then((result) => result.data ?? [])
-          .catch(() => undefined)
-      })
+      listings.get(key) ??
+      sdk.client.file
+        .list({ directory: absolute, path: "" })
+        .then((result) => result.data ?? [])
+        .catch(() => undefined)
     listings.set(key, request)
     const nodes = await request
     if (!activeTreeNavigation(generation, navigation)) return false
@@ -129,8 +121,8 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
       return false
     }
     tree?.batch(policy.entries(key, nodes).map((item) => ({ type: "add", path: item })))
-    if (!eager && advanceTreePreload(advanced, key)) {
-      for (const directory of preloadTreeDirectories(key, nodes)) void load(directory, generation, true)
+    if (preload && advanceTreePreload(advanced, key)) {
+      void Promise.all(preloadTreeDirectories(key, nodes).map((directory) => load(directory, generation, false)))
     }
     return true
   }
@@ -267,12 +259,8 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
   onCleanup(() => tree?.cleanUp())
 
   return (
-    <Dialog size="large" class="directory-picker-v2">
-      <DialogHeader>
-        <DialogTitle>{props.title ?? language.t("command.project.open")}</DialogTitle>
-      </DialogHeader>
-      <DividerV2 />
-      <DialogBody class="directory-picker-v2-body pt-4!">
+    <Dialog title={props.title ?? language.t("command.project.open")} size="large" class="directory-picker-v2">
+      <div class="directory-picker-v2-body">
         <div class="directory-picker-v2-path" ref={pathArea}>
           <TextInputV2
             value={input()}
@@ -354,7 +342,7 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
           </Show>
         </div>
         <div class="directory-picker-v2-selection">{policy.result(root(), selected(), rootValid())}</div>
-      </DialogBody>
+      </div>
       <DialogFooter>
         <ButtonV2 variant="neutral" onClick={() => dialog.close()}>
           {language.t("common.cancel")}

@@ -1,7 +1,16 @@
 import type { Page, Route } from "@playwright/test"
 
-const emptyList = new Set(["/skill", "/command", "/lsp", "/formatter", "/vcs/status", "/vcs/diff"])
-const emptyObject = new Set(["/global/config", "/config", "/provider/auth", "/mcp"])
+const emptyList = new Set([
+  "/skill",
+  "/command",
+  "/lsp",
+  "/formatter",
+  "/permission",
+  "/question",
+  "/vcs/status",
+  "/vcs/diff",
+])
+const emptyObject = new Set(["/global/config", "/config", "/provider/auth", "/mcp", "/session/status"])
 
 export interface MockServerConfig {
   provider: unknown
@@ -9,22 +18,13 @@ export interface MockServerConfig {
   project: unknown
   sessions: ({ id: string } & Record<string, unknown>)[]
   pageMessages: (sessionId: string, limit: number, before?: string) => { items: unknown[]; cursor?: string }
-  vcsDiff?: unknown[]
   messageDelay?: number
   onMessages?: (input: { sessionID: string; before?: string; phase: "start" | "end" }) => void
   events?: () => unknown[]
   eventRetry?: number
-  todos?: (sessionID: string) => unknown[]
-  permissions?: unknown[] | (() => unknown[])
-  questions?: unknown[] | (() => unknown[])
-  fileList?: (path: string) => unknown | Promise<unknown>
-  fileContent?: (path: string) => unknown | Promise<unknown>
-  sessionStatus?: unknown
 }
 
 export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
-  const cursors = new Map<string, string>()
-  let nextCursor = 0
   const staticRoutes: Record<string, unknown> = {
     "/provider": config.provider,
     "/path": {
@@ -52,16 +52,6 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
     const path = url.pathname
     if (path === "/global/event" || path === "/event") return sse(route, config.events?.(), config.eventRetry)
     if (path === "/global/health") return json(route, { healthy: true })
-    if (path === "/permission")
-      return json(route, typeof config.permissions === "function" ? config.permissions() : (config.permissions ?? []))
-    if (path === "/question")
-      return json(route, typeof config.questions === "function" ? config.questions() : (config.questions ?? []))
-    if (path === "/session/status") return json(route, config.sessionStatus ?? {})
-    if (path === "/vcs/diff" && config.vcsDiff) return json(route, config.vcsDiff)
-    if (path === "/file" && config.fileList)
-      return json(route, await config.fileList(url.searchParams.get("path") ?? ""))
-    if (path === "/file/content" && config.fileContent)
-      return json(route, await config.fileContent(url.searchParams.get("path") ?? ""))
     if (emptyObject.has(path)) return json(route, {})
     if (emptyList.has(path)) return json(route, [])
     if (path in staticRoutes) return json(route, staticRoutes[path])
@@ -72,24 +62,17 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
       return json(route, session ?? {})
     }
 
-    const todoMatch = path.match(/^\/session\/([^/]+)\/todo$/)
-    if (todoMatch) return json(route, config.todos?.(todoMatch[1]!) ?? [])
-    if (/^\/session\/[^/]+\/(children|diff)$/.test(path)) return json(route, [])
+    if (/^\/session\/[^/]+\/(children|todo|diff)$/.test(path)) return json(route, [])
 
     const messagesMatch = path.match(/^\/session\/([^/]+)\/message$/)
     if (messagesMatch) {
-      const token = url.searchParams.get("before") ?? undefined
-      const before = token ? cursors.get(token) : undefined
-      if (token && !before) return json(route, { error: "Invalid cursor" }, undefined, 400)
+      const before = url.searchParams.get("before") ?? undefined
       config.onMessages?.({ sessionID: messagesMatch[1], before, phase: "start" })
       if (config.messageDelay) await new Promise((resolve) => setTimeout(resolve, config.messageDelay))
       const limit = Number(url.searchParams.get("limit") ?? 80)
       const pageData = config.pageMessages(messagesMatch[1], limit, before)
       config.onMessages?.({ sessionID: messagesMatch[1], before, phase: "end" })
-      if (!pageData.cursor) return json(route, pageData.items)
-      const cursor = `cursor_${++nextCursor}`
-      cursors.set(cursor, pageData.cursor)
-      return json(route, pageData.items, { "x-next-cursor": cursor })
+      return json(route, pageData.items, pageData.cursor ? { "x-next-cursor": pageData.cursor } : undefined)
     }
 
     if (url.port === targetPort && targetPort !== appPort) return json(route, {})
@@ -97,9 +80,9 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
   })
 }
 
-function json(route: Route, body: unknown, headers?: Record<string, string>, status = 200) {
+function json(route: Route, body: unknown, headers?: Record<string, string>) {
   return route.fulfill({
-    status,
+    status: 200,
     contentType: "application/json",
     headers: {
       "access-control-allow-origin": "*",

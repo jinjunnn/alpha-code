@@ -22,8 +22,11 @@ on:
 
 # Upstream dirs whose modification would conflict on the next fork-sync. Keep in sync with
 # .claude/rules/ARCHITECTURE.md 硬约束#1 and ADR-004.
+# ADR-020(2026-07-03,用户拍板):packages/{app,ui} 已冻结为 alpha 管理的前端基线
+# (frontend-freeze-base tag),不再随上游同步,故移出守卫范围——它们相对 origin/dev 的 diff 是
+# 冻结的本意,不是北极星破坏。引擎/契约包(opencode/core/server/tui/sdk + session-ui 等)照旧只读。
 env:
-  UPSTREAM_PATHS: "packages/opencode packages/core packages/server packages/app packages/ui packages/tui packages/sdk"
+  UPSTREAM_PATHS: "packages/opencode packages/core packages/server packages/tui packages/sdk"
 
 concurrency:
   group: alpha-ci-${{ github.ref }}

@@ -15,10 +15,10 @@
   }
 
   [data-slot="diff-changes-additions"] {
-    color: var(--v2-state-fg-success);
+    color: var(--state-fg-success);
   }
 
   [data-slot="diff-changes-deletions"] {
-    color: var(--v2-state-fg-danger);
+    color: var(--state-fg-danger);
   }
 }

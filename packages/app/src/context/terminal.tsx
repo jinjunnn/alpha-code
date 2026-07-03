@@ -4,8 +4,7 @@ import { batch, createEffect, createMemo, createRoot, on, onCleanup } from "soli
 import { useParams } from "@solidjs/router"
 import { useSDK, type DirectorySDK } from "./sdk"
 import type { Platform } from "./platform"
-import { useServerSDK } from "./server-sdk"
-import { base64Encode } from "@opencode-ai/core/util/encode"
+import { useServer } from "./server"
 import { defaultTitle, titleNumber } from "./terminal-title"
 import { Persist, persisted, removePersisted } from "@/utils/persist"
 import { ScopedKey, ServerScope, type ServerScope as ServerScopeValue } from "@/utils/server-scope"
@@ -375,11 +374,10 @@ export const { use: useTerminal, provider: TerminalProvider } = createSimpleCont
   gate: false,
   init: () => {
     const sdk = useSDK()
-    const serverSDK = useServerSDK()
+    const server = useServer()
     const params = useParams()
     const cache = new Map<string, TerminalCacheEntry>()
-    const scope = () => serverSDK().scope
-    const directory = createMemo(() => base64Encode(sdk().directory))
+    const scope = server.scope()
 
     caches.add(cache)
     onCleanup(() => caches.delete(cache))
@@ -423,11 +421,11 @@ export const { use: useTerminal, provider: TerminalProvider } = createSimpleCont
       return entry.value
     }
 
-    const workspace = createMemo(() => loadWorkspace(directory(), params.id, scope()))
+    const workspace = createMemo(() => loadWorkspace(params.dir!, params.id, scope))
 
     createEffect(
       on(
-        () => ({ dir: directory(), id: params.id, scope: scope() }),
+        () => ({ dir: params.dir, id: params.id, scope }),
         (next, prev) => {
           if (!prev?.dir) return
           if (next.dir === prev.dir && next.id === prev.id && next.scope === prev.scope) return
