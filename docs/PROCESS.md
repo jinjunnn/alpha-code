@@ -52,7 +52,7 @@ BACKLOG   P0-P3    REQ 文件            sprints/<date>/   /app:build  /app:revi
 
 ## 3. ready 门槛(两档)
 
-- **快车道**(bug / debt / 卫生,验收自明):登记行即 `ready`,验收标准 = 行内一句话或审计证据本身。
+- **快车道**(bug / debt / 卫生,验收自明):登记行即 `ready`,**验收标准必须存在**——写在行内,或建 `requirements/<ID>-<slug>.md` 小档(2026-07-03 用户要求下,审计存量 A/B/C/D 开放项已全量建档;新小项两种形式任选,但不允许无验收标准的行)。
 - **全流程**(feature / spike / 架构变更):建 `requirements/REQ-NNN-<slug>.md`(模板 §8),**必含可验证的验收标准**;大项先 `/app:challenge` 质疑;要设计的走 `/app:design-*`(产物进 `designs/`,REQ 文件链接之);出现架构决策 → 立 ADR 并与 REQ 互链。
 
 ## 4. Sprint(抽取与执行)
