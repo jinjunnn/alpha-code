@@ -33,4 +33,10 @@ sprint: 2026-07-03-s9-proxy-e2e
 - 前置事实:workers.dev 是唯一路由 `/v1` 的 host,**勿切端点**(R1)。
 
 ## 验证记录
-_verify 时补。_
+- **2026-07-03 核心链 verified**:登录 → platform → 真实模型流式回包 → 计量出数(4 次调用一致累加);
+  修 3 断点:BP-1 网关流式计量 waitUntil(B `6fe49f3` prod)· BP-2 冷启动登录态(PR #36)· BP-3 →
+  REQ-014。证据:[audits/2026-07-03-req002](../audits/2026-07-03-req002-proxy-e2e.md)。
+- **④ token 过期 / logout 路径(2026-07-03 补)**:过期路径由 **B2 落地成型**(7d 寿命 + 自动续期 +
+  invalid_grant 降级登出,见 [B2](B2-refresh-token.md) 采纳方案);logout 链已具备(logout → 清 env →
+  respawn → A6 syncSecretFiles 删密钥文件 = 吊销)。**运行时复验**(短 TTL 实测三场景 + logout 不串台)
+  随真机批执行,通过后本档翻 verified。
