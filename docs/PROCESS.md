@@ -85,9 +85,10 @@ BACKLOG   P0-P3    REQ 文件            sprints/<date>/   /app:build  /app:revi
 **实现 PR 必须同时包含**:
 1. BACKLOG 对应行状态 → `shipped`(+ PR 号);
 2. sprint.md task 勾选;
-3. 用户可见变化 → CHANGELOG `[Unreleased]` 一条(内部债务不写 changelog,只翻 BACKLOG)。
+3. 用户可见变化 → CHANGELOG `[Unreleased]` 一条(内部债务不写 changelog,只翻 BACKLOG);
+4. **有需求档者**:同步翻该 `requirements/<ID>-*.md` 的 frontmatter `status` 与 BACKLOG 一致(→ `shipped`;verify 时 → `verified`)。快车道无档小项跳过。**BACKLOG 仍是唯一真值**——本条只防「打开档案看到 `ready`、实际已 shipped」的误导(2026-07-03 用户拍板补入,ADR-018 §决策6 ④)。
 
-**verify**(shipped → verified):按验收标准**真机 / 截图 / 测试**复验([[visual-verify-required]] 纪律);打版发布时 `[Unreleased]` → `[x.y.z]`。
+**verify**(shipped → verified):按验收标准**真机 / 截图 / 测试**复验([[visual-verify-required]] 纪律);verify 通过时**一并翻需求档 frontmatter → `verified`**(§5.4);打版发布时 `[Unreleased]` → `[x.y.z]`。
 跨会话要记住的非代码事实 → memory;架构决策 → ADR。
 
 ## 6. 归档
@@ -95,7 +96,7 @@ BACKLOG   P0-P3    REQ 文件            sprints/<date>/   /app:build  /app:revi
 `/app:retro` 时:
 - `verified` 行 → BACKLOG Done 分节;Done 过长(> 一季度)移 `archive/backlog-done-YYYYQn.md`;
 - 过时叙事文档:标 superseded 头(被引用的留原地)或 `git mv` 进 `archive/YYYY-MM/`(无引用的);
-- 需求文件**不物理移动**(链接稳定),frontmatter `status` 翻 `archived`;
+- 需求文件**不物理移动**(保 `[[REQ-NNN]]` 引用稳定;2026-07-03 用户确认**不迁归档目录**),retro 时 frontmatter `status` 翻 `archived`(shipped/verified 的 frontmatter 已随实现 PR 翻,见 §5.4,此处只做终态 archived);
 - rules / GOALS / GLOSSARY 反哺照旧(retro 既有职责)。
 
 ## 7. 跨仓(A / B / C)

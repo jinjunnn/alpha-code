@@ -15,8 +15,8 @@ related: [ADR-004, ADR-005, ADR-014, ADR-015]
 3. **状态机**:`registered → ready → in-sprint → shipped → verified → archived`;旁路 `parked / rejected / dup`。shipped = PR 合入;**verified = 按验收标准实测通过**(真机 / 截图 / 测试,见 [[visual-verify-required]])——两态不可合并,本仓多次踩「合了没验」。
 4. **两档流程**:**快车道**(bug / debt / 卫生,验收自明)= 登记行即 ready,证据链到审计文档;**全流程**(feature / spike / 架构)= 建 `docs/requirements/REQ-NNN-<slug>.md`(背景 / 验收标准 / 非目标),大项先过 `/app:challenge`,需设计走 `/app:design-*`;出现架构决策照旧立 ADR 并互链。
 5. **Sprint 契约**:执行批次 = `docs/sprints/YYYY-MM-DD-<slug>/sprint.md`(目标 / 抽取 IDs / task 表 / gates / 结果 / 回写清单)。**抽取规则**:P0 全清 > 发布短名单 > P1 按域聚类 > P2 顺带;**WIP=1**(上一 sprint 未收尾不开新的);上游归属条目只排 alpha 侧杠杆(register R2,NON_GOALS#3)。
-6. **完成同步纪律(反「看着没跟踪」)**:实现 PR 必须同时包含 ① BACKLOG 状态翻 shipped(+PR 号)② sprint.md task 勾选 ③ 用户可见变化写 `docs/CHANGELOG.md` [Unreleased]。verified 由实测翻;retro 时批量 verified→archived 移入 Done 归档。
-7. **目录契约与归档**:真源三件(`BACKLOG/CHANGELOG/PROCESS`)+ `requirements/ sprints/ designs/ audits/ retros/ qa/ debates/ archive/`;顶层散文件仅长期参考。**`docs/plans/` 冻结**——计划 = sprint.md,方案 = designs/,不再新增 plans;过时文档标 superseded 头或移 `docs/archive/YYYY-MM/`。
+6. **完成同步纪律(反「看着没跟踪」)**:实现 PR 必须同时包含 ① BACKLOG 状态翻 shipped(+PR 号)② sprint.md task 勾选 ③ 用户可见变化写 `docs/CHANGELOG.md` [Unreleased] ④ **有需求档者翻其 frontmatter `status` 与 BACKLOG 一致**(2026-07-03 用户拍板补入;防档案 status 滞后误导——BACKLOG 仍**唯一真值**,本条只消除「档案 ready、实已 shipped」的观感,快车道无档小项免)。verified 由实测翻(需求档 frontmatter 一并翻 verified);retro 时批量 verified→archived 移入 Done 归档。
+7. **目录契约与归档**:真源三件(`BACKLOG/CHANGELOG/PROCESS`)+ `requirements/ sprints/ designs/ audits/ retros/ qa/ debates/ archive/`;顶层散文件仅长期参考。**`docs/plans/` 冻结**——计划 = sprint.md,方案 = designs/,不再新增 plans;过时文档标 superseded 头或移 `docs/archive/YYYY-MM/`。**需求档永不物理移动**(2026-07-03 用户确认):归档只把 frontmatter `status` 翻 `archived`、留原路径,保 `[[REQ-NNN]]` 引用稳定;**不设 `requirements/archived/` 子目录**(迁移会断全部引用链接,得不偿失)。
 8. **跨仓**:BACKLOG 是**产品级**真源(A=alpha-code / B=alpha-platform / C=alpha-web 的交付物都登记,`仓` 列标注);B/C 内部实现细节留各仓。跨仓 ADR 引用规范(顺带钉死 C7):`B/ADR-xxx`、`PA-N`(platform)、`WA-N`(web);本仓编号只管本仓。
 
 操作手册与模板:`docs/PROCESS.md`。
