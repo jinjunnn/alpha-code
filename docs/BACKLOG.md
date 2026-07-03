@@ -25,7 +25,6 @@
 |---|---|---|
 | 产品定位 6 连拍:团队协作 / 企业租户 / 用户下沉 / 后端前 2-3 功能 / 前端余项 / G4 优先级 | REQ-008 | rules 三文件收口,排期基准 |
 | ADR-014 未决 4 项:MVP 范围表述 / Agent·Command 进 tab / F9 串台开关 / 远程 catalog 依赖 C 仓 | REQ-006 | 定制中心 roadmap + ADR 转正 |
-| BYOK 目录是否受 edition 白名单约束(国内版是否连 BYOK 也收窄) | REQ-001 验收⑤ | 双版本产品形态 |
 | composer「只读」「effort」控件三选一:真实现 / 改文案 / 移除 | C28 | 用户可见行为 |
 | 关 `OPENCODE_EXPERIMENTAL_FILEWATCHER` 的功能代价是否接受 | B12 | 文件树/diff 刷新体验 vs 内存 |
 | B16 PIPL 同意门重启时机(现 parked;云派发/公开分发前必须) | B16 | 合规,发布节奏 |
@@ -46,7 +45,7 @@
 
 | ID | 标题 | 类 | 仓 | 状态 | 备注 |
 |---|---|---|---|---|---|
-| REQ-001 | 网关 allowed-providers/models 白名单接口 + 客户端按版本显隐(国内版 DeepSeek 系 / 国际版世界模型) | feature | X | in-sprint | **→ [S9](sprints/2026-07-03-s9-proxy-e2e/sprint.md)**;新需求 2026-07-03;详见 [requirements/REQ-001](requirements/REQ-001-gateway-provider-allowlist.md);收编 D2;解 platform-integration 占位模型 id 待办 |
+| REQ-001 | 网关 allowed-providers/models 白名单接口 + 客户端按版本显隐(国内版 DeepSeek 系 / 国际版世界模型) | feature | X | shipped | **B=alpha-platform `e6e90c1`(prod 已部署)· A=PR #41**(→ [S9](sprints/2026-07-03-s9-proxy-e2e/sprint.md));`/v1/models` 返回 edition+byok_providers,`EDITION_CONFIG` env 改配置不发版(dev server 实测生效);A 侧文件桥缓存 + picker/装配收窄 + 降级徽标;**验收⑤已拍板**:BYOK 目录跟随 edition、自定义节点不拦(记录在档);收编 D2、消灭占位 id 漂移;B 215 tests / A 126 tests 绿;**verified 待真机 picker 截图**(与 A6/REQ-002④ 同场);详见 [requirements/REQ-001](requirements/REQ-001-gateway-provider-allowlist.md) |
 | REQ-002 | 平台↔alpha-code 代理联调:E2E 打通并计量出数 | feature | X | shipped | **S9;核心链路 verified**(登录→platform→真实模型流式→计量出数,4 次调用一致累加);修 3 断点:BP-1 网关流式计量 waitUntil 缺位(B,`6fe49f3` prod 部署)· BP-2 冷启动登录态丢失(A,待重打包 verify ④)· BP-3→REQ-014;证据 [audits/2026-07-03-req002](audits/2026-07-03-req002-proxy-e2e.md);④ token 过期(B2)/logout 复验未做 |
 | REQ-003 | 网关 SSE 流式健壮性:卡顿/断连/重连/心跳审查与加固 | debt | X | ready | 新需求;收编 C23;详见 [requirements/REQ-003](requirements/REQ-003-gateway-sse-robustness.md) |
 | REQ-010 | alpha-ui 视觉 + 注入/路由回归修复批(546-sync 后 reskin 耦合面静默失效:背景/用户消息/发送圆环/审查按钮/模型卡误绑/搜索页丢失/新对话侧栏异物,图1–图9) | bug | A | registered | 用户 2026-07-03 截图批;**已确诊**:546-sync 作废 reskin 锚点 192 中 94(见 [audits/2026-07-03-frontend-reskin-regression](audits/2026-07-03-frontend-reskin-regression.md));**非回滚**(无 alpha-ui revert);图8 证组件仍在=改接线非重建;详见 [requirements/REQ-010](requirements/REQ-010-alpha-ui-visual-regression.md) |

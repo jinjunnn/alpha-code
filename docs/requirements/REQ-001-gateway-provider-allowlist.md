@@ -3,7 +3,7 @@ id: REQ-001
 title: 网关 allowed-providers/models 白名单接口 + 客户端按版本显隐
 type: feature
 priority: P1
-status: in-sprint
+status: shipped
 repo: X
 created: 2026-07-03
 sprint: 2026-07-03-s9-proxy-e2e
@@ -32,5 +32,28 @@ sprint: 2026-07-03-s9-proxy-e2e
 - 解决 `docs/platform-integration.md`「已知问题/待办」③(占位模型 id);
 - 关联 REQ-002(联调环境)、C4(models.dev 关闸后目录来源)、memory [[alpha-proxy-activation-chain]]。
 
+## 采纳方案(2026-07-03,B=alpha-platform e6e90c1 · A=PR 见 BACKLOG)
+- **B 侧**:registry.ts 加 EditionConfig 层(运行时中立);`GET /v1/models` 返回 edition-scoped `data`
+  + `edition` + `byok_providers`(null=不限);`POST /v1/chat/completions` 调用时执行(403
+  `edition_forbidden`)。配置 = env `EDITION_CONFIG`(JSON),**改 var 即生效不发代码**;解析
+  fail-open 回代码内默认(intl 不限 / cn=deepseek 系 4 模型 + 国内 BYOK 五家)。edition 解析:
+  JWT `edition` claim(前瞻)> config.tenants > default。契约全文见
+  [platform-endpoint-discovery-contract.md](../platform-endpoint-discovery-contract.md) §②。
+- **A 侧**:`alpha-live-allowlist.ts` 文件桥缓存(main 写 / sidecar 读,复用 A6 模式);装配与 picker
+  目录都按缓存收窄;平台模型以 live 清单为准(真实 registry id,snapshot 名称富化)——**「占位模型 id」
+  漂移问题就此消灭**(platform-integration.md 待办③,其 `alpha-default` 表述系文档滞后,代码此前已
+  是 snapshot);D2 的 platformLive IPC 收编接进 picker(打开即同步)。降级:失败保留 last-known →
+  无缓存回内置 snapshot,picker 永不空白 + 「内置目录」徽标(B20)。
+
+## 决策记录(验收⑤,用户 2026-07-03 拍板)
+**BYOK 目录跟随 edition 收窄,用户自定义添加的节点不受限制**——内置 BYOK 目录(deepseek/zhipuai/
+minimax/alibaba/moonshot)按 `byok_providers` 显隐;「添加自定义节点」(自填 baseURL/key)不拦,
+保留 power user 出口。⚖️ 队列该行已划掉。
+
 ## 验证记录
-_verify 时补。_
+- **2026-07-03(单测/联调级)**:B:typecheck(node+worker)+ 215 tests(+17 edition);prod curl
+  `/v1/models` → `edition:intl, byok_providers:null, 11 models`(向后兼容);dev server 以
+  `EDITION_CONFIG(default=cn)` 实测 → 目录立即收窄为 2 模型 + byok=[deepseek](验收③「改配置不发版」)。
+  A:typecheck + 126 tests(+11:byok 收窄/名称富化/空白名单 fail-open/自定义不拦/损坏缓存降级)。
+- **待(verified 门槛)**:真机 picker 截图核验(验收②,[[visual-verify-required]])——随 S9 收尾
+  真机批(与 A6 env dump、REQ-002④ 同场)。
