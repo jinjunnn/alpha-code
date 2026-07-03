@@ -12,3 +12,7 @@ await $`bun ./scripts/copy-metainfo.ts ${channel}`
 await $`cd ../ext && bun run build`
 
 await $`cd ../opencode && bun script/build-node.ts`
+
+// A4: patch the freshly-built embedded server so InstallationVersion isn't "local"
+// (else @opencode-ai/plugin@local install fails for any .opencode-plugin project). See the script.
+await $`bun ./scripts/patch-server-version.ts`
