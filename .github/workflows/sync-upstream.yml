@@ -101,3 +101,28 @@ jobs:
             git merge --abort
             exit 1
           fi
+
+      # REQ-012 前端锚点 tripwire(镜像上面的 ADR-015 prompt tripwire):reskin 挂的上游 data-* 锚点
+      # 是非公开契约,sync 改名/删除不产生 git 冲突 → file-diff 守卫测不出(546-sync 静默回归实锤,
+      # 见 docs/audits/2026-07-03-frontend-reskin-regression.md)。合并后跑锚点契约测试(纯 node 内建,
+      # 无需 install);断裂 → warning + step summary 要求人工视觉复验(不阻断同步——PR 门禁 alpha-ci
+      # 与发布 runbook 是硬闸)。
+      - name: Frontend anchor tripwire (REQ-012 — human visual review required)
+        run: |
+          if (cd packages/ui-mac && bun test src/renderer/alpha-ui/upstream-anchors.test.ts) > /tmp/anchor-test.log 2>&1; then
+            echo "Anchor contract intact this sync."
+          else
+            {
+              echo "## ⚠️ 上游 sync 破坏了前端 reskin 锚点契约(REQ-012)"
+              echo ""
+              echo "锚点契约测试失败——上游改名/删除/搬包了 reskin 依赖的 data-* 锚点。**发布前必须**:"
+              echo "1. \`cd packages/ui-mac && bun test src/renderer/alpha-ui/upstream-anchors.test.ts\` 看断点;"
+              echo "2. 更新 reskin CSS / 跑 \`bun scripts/gen-upstream-anchors.ts\` 刷新清单;"
+              echo "3. CDP 截图关键屏(首页/会话/模型卡/composer/时间线)视觉复验([[visual-verify-required]])。"
+              echo ""
+              echo '```'
+              tail -40 /tmp/anchor-test.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning title=REQ-012 anchor tripwire::upstream sync broke reskin anchor contract — visual re-verify required before any release"
+          fi

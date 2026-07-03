@@ -54,3 +54,25 @@
 4. **收尾 C14**:把 94+ 分散锚点依赖收敛成单一映射层(ADR-016 待办① 薄 re-export);上游改名只改一处,测试(1)读它。
 
 **结构性取舍(留用户拍板,非本审计裁决)**:根子是 ADR-016 主动耦合了易变的非契约 DOM。长期两条路 —— ⓐ 接受耦合 + 靠 gate(1)-(4)兜;ⓑ 对最高 churn 区(时间线工具卡)从 CSS-reskin 升级为**真 alpha 组件 + SDK 取数**(重,但彻底脱离上游 DOM 耦合,ADR-016 已把它列为 build-order 方向)。
+
+---
+
+## 修正(2026-07-03 晚,REQ-012 防护网建成后的机器化复核 —— append-only)
+
+防护网(`anchor-audit.ts` + `upstream-anchors.json`,PR 见 BACKLOG REQ-012 行)首跑即修正本审计的量化结论:
+
+1. **「94/192 死」高估——多数是搬家不是死亡。** 本审计的对账只扫了 `packages/{app,ui}`;546 后上游把
+   session 组件拆进**新包 `packages/session-ui`**(`user-message`/`tool-output`/`dock-prompt` 等都在,
+   且 `app` 依赖 `@opencode-ai/session-ui`)。跨全包扫描后:**引用 199,存活 195,真死 4** ——
+   `component:session-composer`、`component:session-new-composer`、`slot:button`、`slot:icon-button`。
+2. **真死 4 个与用户症状精确对应**:图8/9 新对话 composer 异常 ↔ `session-composer/session-new-composer`;
+   `slot:button`/`slot:icon-button` 是全局按钮锚点,死亡波及面极大(发送圆环/审查按钮等按钮类症状的
+   更可能根因)。→ REQ-010 的工作清单从「94 处重接线」收敛为「4 锚点 + 运行时结构性选择器核查」。
+3. **v0.1.0 离线回放(验收⑤)**:用今日 alive 集对 v0.1.0 树跑检测器 → 0 死(v0.1.0 已含 session-ui;
+   此前「v0.1.0 无 session-ui」系 cwd 相对路径误查)。⟹ 名字级断裂不是 v0.1.0 可见回归的全部机制,
+   **结构性断裂假说上位**:锚点名活着,但周边 DOM 结构/`:has()` 父链/`data-variant` 值/样式加载顺序变了。
+   运行时视觉核查(真机批)是唯一能定案的手段。
+4. **字面量匹配盲区(诚实记录)**:pre-546 树上游源码**不含** `data-component="user-message"` 字面量
+   (动态拼接),但当时换肤有效——检测器对动态值锚点会漏判;失控再升 AST 级。
+5. **教训的教训**:本审计与其修正之间的差 = 同一类工具错误(扫描范围/相对路径)。锚点体检必须是
+   **提交进仓、CI 常跑**的代码(= REQ-012 交付物),不能是 session 内一次性脚本。
