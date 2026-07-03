@@ -3,7 +3,7 @@ id: REQ-004
 title: ".alpha 项目工作目录:全量收敛方案验证(用户已定向)"
 type: spike
 priority: P2
-status: in-sprint
+status: shipped
 repo: A
 created: 2026-07-03
 sprint: 2026-07-03-s11-cloud-loop
@@ -39,4 +39,5 @@ sprint: 2026-07-03-s11-cloud-loop
 关联:B3/G4(云任务产物是首个真实租户)、ADR-014(定制中心写盘路径)、ADR-006(运行时世界)、ADR-002/005(零改上游)。
 
 ## 验证记录
-_verify 时补。_
+- **2026-07-03(S11 T1,spike 完成)**:桥接三法 verdict = **config 注入 CONFIRMED(生产在用)· symlink 桥 CONFIRMED(引擎同款 glob fixture 6/6 PASS,含整目录链与多跳链;one-hop 假说证伪)· 双写回退不启用**。上游全线 `symlink:true`(`packages/core/src/util/glob.ts:13-20`,glob@13.0.5);约束:tool/plugin 须逐文件链 + 预 bundle JS(ADR-006);skills 备用 `config.skills.paths[]`。schema/gitignore 已回填 [ADR-019 修订](../../.claude/rules/adrs/ADR-019-alpha-workdir.md)。全证据:[audits/2026-07-03-req004-alpha-bridge-spike](../audits/2026-07-03-req004-alpha-bridge-spike.md)。
+- **待(verified 门槛)**:打包态 in-app 桥接冒烟(随 B3 T2 同场:artifact 写 `.alpha/runs/` + 一条桥接 skill 被引擎发现)。
