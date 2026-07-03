@@ -1,0 +1,181 @@
+// Unit tests for the `.alpha/` project workdir writer (ADR-019 / B3 artifact 回流). The module is
+// electron-free and root-parameterized, so unlike ext-fs-installer we exercise REAL writes against a
+// temp dir: scaffold seeding, run persistence, hostile artifact names, escape refusal, size caps.
+
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import * as fs from "node:fs"
+import * as os from "node:os"
+import * as path from "node:path"
+import {
+  ensureAlphaScaffold,
+  isSafeRunId,
+  sanitizeArtifactName,
+  safeResolveInAlpha,
+  saveCloudRun,
+  type SaveRunDeps,
+} from "./alpha-workdir"
+import type { CloudJobStatus } from "../preload/types"
+
+let projectDir: string
+beforeEach(() => {
+  projectDir = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-workdir-"))
+})
+afterEach(() => {
+  fs.rmSync(projectDir, { recursive: true, force: true })
+})
+
+const STATUS: CloudJobStatus = {
+  api_version: "1",
+  job_id: "job-1",
+  status: "completed",
+  autonomy: "pipeline",
+  progress: { phase: "done" },
+  artifact_ids: ["a1"],
+  result: { ok: 1 },
+  error: null,
+}
+
+const b64 = (s: string) => Buffer.from(s).toString("base64")
+
+function deps(overrides: Partial<SaveRunDeps> = {}): SaveRunDeps {
+  return {
+    status: async () => STATUS,
+    artifacts: async () => ({ job_id: "job-1", status: "completed", artifacts: [{ id: "a1", name: "report.md" }], artifact_ids: ["a1"] }),
+    fetchArtifact: async () => ({ name: "report.md", mime: "text/markdown", base64: b64("# hi") }),
+    ...overrides,
+  }
+}
+
+describe("isSafeRunId", () => {
+  test.each([["job-1"], ["A1_b.2-c"]])("accepts %p", (id) => expect(isSafeRunId(id)).toBe(true))
+  test.each([[""], ["../x"], ["a/b"], [".hidden"], ["a".repeat(200)], ["."], [".."]])("rejects %p", (id) =>
+    expect(isSafeRunId(id)).toBe(false))
+})
+
+describe("sanitizeArtifactName", () => {
+  test("strips path structure", () => expect(sanitizeArtifactName("../../etc/passwd", "fb")).toBe("passwd"))
+  test("windows separators too", () => expect(sanitizeArtifactName("..\\..\\evil.exe", "fb")).toBe("evil.exe"))
+  test("dotfile → fallback", () => expect(sanitizeArtifactName(".env", "fb")).toBe("fb"))
+  test("empty/undefined → fallback", () => {
+    expect(sanitizeArtifactName("", "fb")).toBe("fb")
+    expect(sanitizeArtifactName(undefined, "fb")).toBe("fb")
+  })
+  test("control chars removed, length capped", () => {
+    expect(sanitizeArtifactName("a\x00b\x1fc.txt", "fb")).toBe("abc.txt")
+    expect(sanitizeArtifactName("x".repeat(300), "fb")).toHaveLength(128)
+  })
+})
+
+describe("safeResolveInAlpha", () => {
+  test("resolves inside .alpha", () => {
+    expect(safeResolveInAlpha(projectDir, "runs", "r1")).toBe(path.join(projectDir, ".alpha", "runs", "r1"))
+  })
+  test("refuses .. escape", () => {
+    expect(safeResolveInAlpha(projectDir, "..", "outside")).toBeNull()
+    expect(safeResolveInAlpha(projectDir, "runs", "..", "..", "..", "etc")).toBeNull()
+  })
+  test("refuses relative / missing / file-root project dirs", () => {
+    expect(safeResolveInAlpha("relative/dir", "runs")).toBeNull()
+    expect(safeResolveInAlpha(path.join(projectDir, "nope"), "runs")).toBeNull()
+    expect(safeResolveInAlpha(path.parse(projectDir).root, "runs")).toBeNull()
+  })
+  test("refuses symlinked .alpha pointing outside the project", () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-outside-"))
+    try {
+      fs.symlinkSync(outside, path.join(projectDir, ".alpha"))
+      expect(safeResolveInAlpha(projectDir, "runs", "r1")).toBeNull()
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true })
+    }
+  })
+})
+
+describe("ensureAlphaScaffold", () => {
+  test("creates .alpha and seeds self-ignoring .gitignore once", () => {
+    const root = ensureAlphaScaffold(projectDir)!
+    expect(fs.readFileSync(path.join(root, ".gitignore"), "utf8")).toBe("*\n")
+    fs.writeFileSync(path.join(root, ".gitignore"), "custom\n")
+    ensureAlphaScaffold(projectDir) // idempotent — must not clobber user edits
+    expect(fs.readFileSync(path.join(root, ".gitignore"), "utf8")).toBe("custom\n")
+  })
+})
+
+describe("saveCloudRun", () => {
+  test("happy path: status.json + contract.json + artifact bytes land under runs/<id>/", async () => {
+    const res = await saveCloudRun(projectDir, "job-1", deps(), { autonomy: "pipeline", kind: "research" })
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.files.sort()).toEqual(["artifacts/report.md", "contract.json", "status.json"].sort())
+    expect(res.warnings).toEqual([])
+    const runDir = path.join(projectDir, ".alpha", "runs", "job-1")
+    expect(JSON.parse(fs.readFileSync(path.join(runDir, "status.json"), "utf8")).status).toBe("completed")
+    expect(JSON.parse(fs.readFileSync(path.join(runDir, "contract.json"), "utf8")).kind).toBe("research")
+    expect(fs.readFileSync(path.join(runDir, "artifacts", "report.md"), "utf8")).toBe("# hi")
+    expect(fs.existsSync(path.join(projectDir, ".alpha", ".gitignore"))).toBe(true)
+  })
+
+  test("no contract → only status + artifacts", async () => {
+    const res = await saveCloudRun(projectDir, "job-1", deps())
+    expect(res.ok && !res.files.includes("contract.json")).toBe(true)
+  })
+
+  test("rejects bad run id and bad project dir before any I/O", async () => {
+    expect(await saveCloudRun(projectDir, "../evil", deps())).toEqual({ ok: false, reason: "invalid run id" })
+    expect(await saveCloudRun("/nope-not-here", "job-1", deps())).toEqual({ ok: false, reason: "invalid project directory" })
+  })
+
+  test("status error → ok:false, nothing written", async () => {
+    const res = await saveCloudRun(projectDir, "job-1", deps({ status: async () => ({ error: "unauthorized" }) }))
+    expect(res).toEqual({ ok: false, reason: "status: unauthorized" })
+    expect(fs.existsSync(path.join(projectDir, ".alpha", "runs", "job-1", "status.json"))).toBe(false)
+  })
+
+  test("artifact list error degrades to warning; run still ok", async () => {
+    const res = await saveCloudRun(projectDir, "job-1", deps({ artifacts: async () => ({ error: "network" }) }))
+    expect(res.ok).toBe(true)
+    if (res.ok) expect(res.warnings).toEqual(["artifacts: network"])
+  })
+
+  test("hostile artifact name is sanitized into the artifacts dir (no escape)", async () => {
+    const res = await saveCloudRun(
+      projectDir,
+      "job-1",
+      deps({
+        artifacts: async () => ({ job_id: "job-1", status: "completed", artifacts: [{ id: "a1", name: "../../../../pwned" }], artifact_ids: ["a1"] }),
+      }),
+    )
+    expect(res.ok).toBe(true)
+    expect(fs.existsSync(path.join(projectDir, ".alpha", "runs", "job-1", "artifacts", "pwned"))).toBe(true)
+    expect(fs.existsSync(path.join(projectDir, "pwned"))).toBe(false)
+  })
+
+  test("name collision dedups with id prefix", async () => {
+    const res = await saveCloudRun(
+      projectDir,
+      "job-1",
+      deps({
+        artifacts: async () => ({
+          job_id: "job-1",
+          status: "completed",
+          artifacts: [{ id: "a1", name: "out.txt" }, { id: "a2", name: "out.txt" }],
+          artifact_ids: ["a1", "a2"],
+        }),
+      }),
+    )
+    expect(res.ok).toBe(true)
+    if (res.ok) expect(res.files).toContain(path.join("artifacts", "a2-out.txt"))
+  })
+
+  test("oversize artifact skipped with warning (cap injectable)", async () => {
+    const res = await saveCloudRun(
+      projectDir,
+      "job-1",
+      deps({ maxArtifactBytes: 2, fetchArtifact: async () => ({ name: "big.bin", mime: "b", base64: b64("hello") }) }),
+    )
+    expect(res.ok).toBe(true)
+    if (res.ok) {
+      expect(res.warnings.some((w) => w.includes("skipped"))).toBe(true)
+      expect(res.files).toEqual(["status.json"])
+    }
+  })
+})
