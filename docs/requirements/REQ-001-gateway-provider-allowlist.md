@@ -6,7 +6,7 @@ priority: P1
 status: ready
 repo: X
 created: 2026-07-03
-sprint: —
+sprint: 2026-07-03-s9-proxy-e2e
 ---
 
 ## 背景(为什么)

@@ -36,15 +36,15 @@
 
 | ID | 标题 | 类 | 仓 | 状态 | 备注 |
 |---|---|---|---|---|---|
-| A6 | sidecar env 白名单:阻断平台 JWT / BYOK 密钥 / EXA key 继承给第三方 MCP/LSP 子进程 | security | A | ready | 唯一 in-rule 修点=`createSidecarEnv`(server.ts:220,R2);deferred 原因=需登录态 E2E 验证(册 §7g)→ **随 REQ-002 联调 sprint 落地**。**R3 门控 owner(2026-07-03 接管)**——A6 落地前禁止:① A2b 存量配置一键钉迁移 ② 预设注入/推荐位等安装推广 ③ catalog **新增**条目上架(E2/E6);**不在门控内**:既有条目钉版本(A2a,不扩安装面、纯供应链加固,越序已复核认可)、hub 浏览/筛选 UI |
+| A6 | sidecar env 白名单:阻断平台 JWT / BYOK 密钥 / EXA key 继承给第三方 MCP/LSP 子进程 | security | A | in-sprint | **→ [S9](sprints/2026-07-03-s9-proxy-e2e/sprint.md)**;唯一 in-rule 修点=`createSidecarEnv`(server.ts:220,R2);deferred 原因=需登录态 E2E 验证(册 §7g)→ **随 REQ-002 联调 sprint 落地**。**R3 门控 owner(2026-07-03 接管)**——A6 落地前禁止:① A2b 存量配置一键钉迁移 ② 预设注入/推荐位等安装推广 ③ catalog **新增**条目上架(E2/E6);**不在门控内**:既有条目钉版本(A2a,不扩安装面、纯供应链加固,越序已复核认可)、hub 浏览/筛选 UI |
 | A2 | catalog MCP 全部钉精确版本 + 存量配置一键钉版本(T1.5) | security/perf | A | ready | 惰性 hub(PR #23)+ **catalog 全条目已钉版本(2026-07-03,待 PR)**:8 MCP command + 飞书/语雀 2 mirrorCommand + opencode-notify,钉至当日各包 latest(server-filesystem@2026.1.14 / playwright@0.0.77 / markitdown-mcp@0.0.1a4 / server-git@2026.6.16 等),catalog `version`→`2026-07-03.1`,typecheck+97 tests 绿。**剩 = 存量用户配置一键钉迁移**。R3 澄清:catalog 数据钉版本≠推广安装、不扩 A6 面,故先行;迁移/主动推广仍受 A6 门控 |
 
 ## Active — P1
 
 | ID | 标题 | 类 | 仓 | 状态 | 备注 |
 |---|---|---|---|---|---|
-| REQ-001 | 网关 allowed-providers/models 白名单接口 + 客户端按版本显隐(国内版 DeepSeek 系 / 国际版世界模型) | feature | X | ready | 新需求 2026-07-03;详见 [requirements/REQ-001](requirements/REQ-001-gateway-provider-allowlist.md);收编 D2;解 platform-integration 占位模型 id 待办 |
-| REQ-002 | 平台↔alpha-code 代理联调:E2E 打通并计量出数 | feature | X | ready | 新需求;A→B→A 闭环从未整体验证(核查 §5);**联调环境即 A6 的验证环境**;详见 [requirements/REQ-002](requirements/REQ-002-proxy-e2e-integration.md) |
+| REQ-001 | 网关 allowed-providers/models 白名单接口 + 客户端按版本显隐(国内版 DeepSeek 系 / 国际版世界模型) | feature | X | in-sprint | **→ [S9](sprints/2026-07-03-s9-proxy-e2e/sprint.md)**;新需求 2026-07-03;详见 [requirements/REQ-001](requirements/REQ-001-gateway-provider-allowlist.md);收编 D2;解 platform-integration 占位模型 id 待办 |
+| REQ-002 | 平台↔alpha-code 代理联调:E2E 打通并计量出数 | feature | X | in-sprint | **→ [S9](sprints/2026-07-03-s9-proxy-e2e/sprint.md)**;新需求;A→B→A 闭环从未整体验证(核查 §5);**联调环境即 A6 的验证环境**;详见 [requirements/REQ-002](requirements/REQ-002-proxy-e2e-integration.md) |
 | REQ-003 | 网关 SSE 流式健壮性:卡顿/断连/重连/心跳审查与加固 | debt | X | ready | 新需求;收编 C23;详见 [requirements/REQ-003](requirements/REQ-003-gateway-sse-robustness.md) |
 | B1 | 登录 shell 同步探测黑屏 → 异步化 + 缓存(T1.2) | perf | A | ready | R6:最坏 ~5s(非 10s) |
 | B2 | refresh token 续期 + 401 拦截 + 失败降级 BYOK/登出(T3.1 剩余) | feature | A | ready | A8 已修 respawn 重导/logout 清 token;续期本体仍缺;联调(REQ-002)同域 |
@@ -130,7 +130,9 @@
 | E7 | websearch 收编为自有 MCP | 与云端 websearch 撞车 | B3/E12 云线落地后 |
 | E13 | 团队协作多端 workspace 同步 | NON_GOALS〔待补〕未决 | 产品定位决策后 |
 
-## 建议下一 sprint(2026-07-03 拟,待抽取)
+## 建议下一 sprint(2026-07-03 拟)→ **S9 已开工(核心链)**
+
+> **2026-07-03 抽取**:核心链 REQ-002→A6→REQ-001 已进 [sprints/2026-07-03-s9-proxy-e2e](sprints/2026-07-03-s9-proxy-e2e/sprint.md)(用户只批核心链);同域顺带与简单批**未抽取**、留 ready,由用户人工分派并发 session(不设任务锁)。⚠️ B1 与 A6 同文件(server.ts),未分派前勿动。
 
 **S9「代理联调 + 网关白名单 + SSE 健壮」(≈1.5w,跨仓)**
 - **核心(按序)**:REQ-002(搭真实登录+代理联调环境)→ **A6**(在该环境中落 env 白名单并复验代理不破——A6 deferred 的「需登录态验证」条件由 REQ-002 满足)→ REQ-001(白名单接口 + picker 装配)。

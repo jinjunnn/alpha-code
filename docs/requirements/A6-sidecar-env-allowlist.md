@@ -6,7 +6,7 @@ priority: P0
 status: ready
 repo: A
 created: 2026-07-03
-sprint: —
+sprint: 2026-07-03-s9-proxy-e2e
 source: 册 §6.1 / R2 / R3
 ---
 
