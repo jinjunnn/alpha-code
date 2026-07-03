@@ -9,6 +9,7 @@ import { loadAlphaSecrets } from "./alpha-secrets"
 import { getLogger } from "./logging"
 import { createSidecarEnv } from "./sidecar-env"
 import { getUserShell, loadShellEnv } from "./shell-env"
+import { probeShellEnvAsync, readShellEnvCache, writeShellEnvCache } from "./shell-env-cache"
 import { getStore } from "./store"
 import { DEFAULT_SERVER_URL_KEY } from "./store-keys"
 
@@ -50,7 +51,27 @@ export function preferAppEnv(userDataPath: string) {
   const logger = getLogger()
   const shell = process.platform === "win32" ? null : getUserShell()
   // 1. Login-shell env first -- a real `export` always wins over the secrets file and our defaults.
-  if (shell) Object.assign(process.env, loadShellEnv(shell, logger) ?? {})
+  // B1:缓存命中 → 0ms 套用 + 后台异步真探测(成功即更新缓存、按「真 export 赢」套差异,新值下次
+  // fork 生效);未命中(首启/换 shell)→ 同步探测一次(fork 前必须有 PATH 等,宁可首启慢一次)。
+  if (shell) {
+    const cached = readShellEnvCache(userDataPath, shell)
+    if (cached) {
+      Object.assign(process.env, cached)
+      logger.log(`[server] Shell env from cache (${Object.keys(cached).length} vars) — refreshing in background`)
+      void probeShellEnvAsync(shell)
+        .then((fresh) => {
+          if (!fresh) return
+          writeShellEnvCache(userDataPath, shell, fresh)
+          Object.assign(process.env, fresh)
+          logger.log(`[server] Shell env refreshed in background (${Object.keys(fresh).length} vars)`)
+        })
+        .catch(() => {})
+    } else {
+      const probed = loadShellEnv(shell, logger)
+      Object.assign(process.env, probed ?? {})
+      if (probed) writeShellEnvCache(userDataPath, shell, probed)
+    }
+  }
   // 2. Fill missing API keys (EXA_API_KEY, *_API_KEY, ...) from the alpha.env secrets file, so app
   //    users never have to touch ~/.zshrc. Never overrides anything already set in step 1.
   loadAlphaSecrets(userDataPath, logger)
