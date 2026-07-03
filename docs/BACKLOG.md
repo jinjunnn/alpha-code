@@ -4,7 +4,7 @@
 > 状态:`registered / ready / in-sprint / shipped / verified / archived`;旁路 `parked / rejected / dup`。
 > 类:feature / bug / debt / security / perf / ux / docs / spike。仓:A=alpha-code · B=alpha-platform · C=alpha-web · X=跨仓。
 > 证据文档:**册** = [`plans/2026-07-02-problem-register-sprints-review.md`](plans/2026-07-02-problem-register-sprints-review.md)(71 项 + R1-R7 修正 + §7f-7j 实施日志);**核查** = [`audits/2026-07-02-register-verification.md`](audits/2026-07-02-register-verification.md);**E 册** = [`harness-extension-backlog.md`](harness-extension-backlog.md)。
-> 下一个新需求编号:**REQ-014**(新需求一律 REQ-NNN;A/B/C/D/E 为历史审计系列保留原号,用户 2026-07-03 确认)。
+> 下一个新需求编号:**REQ-015**(新需求一律 REQ-NNN;A/B/C/D/E 为历史审计系列保留原号,用户 2026-07-03 确认)。
 > **需求文件全覆盖(2026-07-03)**:全部开放的 A/B/C/D 条目已逐条建档 `requirements/<ID>-<slug>.md`(含验收标准),行内备注为摘要、**文件为验收真源**;E 系列以冻结 E 册为分析文档;parked/dup 项不建档。
 
 ## 发布短名单(launch-blockers,册 §6.8)
@@ -47,7 +47,7 @@
 | ID | 标题 | 类 | 仓 | 状态 | 备注 |
 |---|---|---|---|---|---|
 | REQ-001 | 网关 allowed-providers/models 白名单接口 + 客户端按版本显隐(国内版 DeepSeek 系 / 国际版世界模型) | feature | X | in-sprint | **→ [S9](sprints/2026-07-03-s9-proxy-e2e/sprint.md)**;新需求 2026-07-03;详见 [requirements/REQ-001](requirements/REQ-001-gateway-provider-allowlist.md);收编 D2;解 platform-integration 占位模型 id 待办 |
-| REQ-002 | 平台↔alpha-code 代理联调:E2E 打通并计量出数 | feature | X | in-sprint | **→ [S9](sprints/2026-07-03-s9-proxy-e2e/sprint.md)**;新需求;A→B→A 闭环从未整体验证(核查 §5);**联调环境即 A6 的验证环境**;详见 [requirements/REQ-002](requirements/REQ-002-proxy-e2e-integration.md) |
+| REQ-002 | 平台↔alpha-code 代理联调:E2E 打通并计量出数 | feature | X | shipped | **S9;核心链路 verified**(登录→platform→真实模型流式→计量出数,4 次调用一致累加);修 3 断点:BP-1 网关流式计量 waitUntil 缺位(B,`6fe49f3` prod 部署)· BP-2 冷启动登录态丢失(A,待重打包 verify ④)· BP-3→REQ-014;证据 [audits/2026-07-03-req002](audits/2026-07-03-req002-proxy-e2e.md);④ token 过期(B2)/logout 复验未做 |
 | REQ-003 | 网关 SSE 流式健壮性:卡顿/断连/重连/心跳审查与加固 | debt | X | ready | 新需求;收编 C23;详见 [requirements/REQ-003](requirements/REQ-003-gateway-sse-robustness.md) |
 | REQ-010 | alpha-ui 视觉 + 注入/路由回归修复批(546-sync 后 reskin 耦合面静默失效:背景/用户消息/发送圆环/审查按钮/模型卡误绑/搜索页丢失/新对话侧栏异物,图1–图9) | bug | A | registered | 用户 2026-07-03 截图批;**已确诊**:546-sync 作废 reskin 锚点 192 中 94(见 [audits/2026-07-03-frontend-reskin-regression](audits/2026-07-03-frontend-reskin-regression.md));**非回滚**(无 alpha-ui revert);图8 证组件仍在=改接线非重建;详见 [requirements/REQ-010](requirements/REQ-010-alpha-ui-visual-regression.md) |
 | REQ-012 | 上游同步前端回归防护:锚点契约测试 + sync tripwire + post-sync 视觉冒烟 gate | debt | A | registered | **防复发机制**(用户「回归非常多次」根治);扩 ADR-015 合并验证到前端;并 [[C14]] 收敛层;证据 [audits/2026-07-03-frontend-reskin-regression](audits/2026-07-03-frontend-reskin-regression.md);详见 [requirements/REQ-012](requirements/REQ-012-frontend-sync-regression-guard.md) |
@@ -75,12 +75,13 @@
 | ID | 标题 | 类 | 仓 | 状态 | 备注 |
 |---|---|---|---|---|---|
 | REQ-004 | `.alpha` 项目工作目录:桥接验证 + 回填 ADR-019 | spike | A | ready | **决议已立 ADR-019(accepted,2026-07-03):全部进 `.alpha/`**;spike=实测桥接三法(config 注入/symlink/双写)→ 回填 ADR-019 修订(schema/gitignore);详见 [requirements/REQ-004](requirements/REQ-004-alpha-workdir-spike.md) |
+| REQ-014 | 悬空会话路由致「Not found」白屏 → 路由恢复前校验会话存在 | bug | A | registered | REQ-002 联调 BP-3;`tabs.recent` 指向已删会话 → 冷启动整屏 Not found 无恢复入口;alpha 杠杆=恢复前校验会话存在、失败回退首页;详见 [requirements/REQ-014](requirements/REQ-014-dangling-session-blank-screen.md) |
 | REQ-005 | 前端接管收尾核验:重型引擎换肤(终端/diff/权限流)完成度 + timeline 验收尾项(截图归档/COUPLING 清单/真机验收) | ux | A | ready | ADR-016 待办②;tasks.md 40 项全勾但 dev-plan:98-100 未走完;COUPLING 清单关系 C14;详见 [requirements/REQ-005](requirements/REQ-005-frontend-takeover-closeout.md) |
 | REQ-006 | ADR-014 转正收尾:桌面端验收用例(装 markitdown→免重启可用→卸载→依赖预检)+ 4 个 plan-review 未决项拍板 → trial 转 accepted | docs | A | ready | 事实核查:Phase ④(plugin 装包)实际已发(E 册,commit 59c0786),ADR 前提已满足;设计文档 §C1-C5 未勾系文档滞后,随核验回勾;桌面验收依赖 D5 同场 |
 | REQ-008 | 产品定位〔待补〕决策批:团队协作/企业租户/用户下沉/前 2-3 具体功能/G4 优先级,一次收口 | spike | X | registered | POSITIONING/GOALS/NON_GOALS 三处〔待补〕;详见 [requirements/REQ-008](requirements/REQ-008-positioning-open-decisions.md) |
-| REQ-009 | alpha-ci 提速:guard partial clone + bun 依赖缓存 | debt | A | ready | 每个 PR 都在付的等待税;验收=单轮 ≤2min 且「改上游必红」用例仍红;详见 [requirements/REQ-009](requirements/REQ-009-alpha-ci-speedup.md) |
+| REQ-009 | alpha-ci 提速:guard partial clone + bun 依赖缓存 | debt | A | ready | **真 CI 痛已由 D12 解**(卡的是上游 blacksmith 僵尸 workflow,非 alpha-ci);alpha-ci 本体已 ~30-46s **本就 <2min 目标达标** → REQ-009 降级为**可选打磨**(partial clone + bun cache 再压时间);验收「改上游必红」用例仍需真 CI run;详见 [requirements/REQ-009](requirements/REQ-009-alpha-ci-speedup.md) |
 | REQ-011 | 首页 composer 下方项目/会话 chips 移除 → 预留后续功能入口位 | ux | A | registered | 用户 2026-07-03;非回归=信息架构决策(侧栏已有项目导航,首页去重);只清场留白,「预留位放什么」进⚖️待拍板;详见 [requirements/REQ-011](requirements/REQ-011-composer-project-chips.md) |
-| C3 | 日志治理:opencode.log 145MB 轮转 + netlog 改 opt-in(T2.5) | debt | A | ready | |
+| C3 | 日志治理:opencode.log 145MB 轮转 + netlog 改 opt-in(T2.5) | debt | A | shipped | **PR #35**(→ [s9b](sprints/2026-07-03-s9b-hygiene/sprint.md));`logging.ts`:netlog opt-in(`ALPHA_NETLOG=1` 默认关)+ opencode.log 启动期超限归档(25MB,留最近 3 份);typecheck+97 tests 绿,轮转逻辑合成文件 E2E 6/6 过;**verified 待**运行期首次打包启动真机轮转 |
 | C5 | skills 每 Instance 重复扫描 | perf | A | registered | 上游(R2);杠杆=减 Instance 数(B4/B12) |
 | C8 | ADR-002 sidecar 语义修订:承认 main-IPC 为桌面等价物(T6.4) | docs | A | ready | YAGNI:真 HTTP sidecar 出现需求再立 |
 | C9 | 代码上云数据边界 mini-ADR:diff-only/secrets 过滤/consent/体积上限(T4.5) | security | X | ready | 与 B16 互补(C9=技术边界,B16=法律同意) |
@@ -111,8 +112,8 @@
 | D6 | userData 每启动新建 log 目录 | debt | A | registered | 7 天清理已有,观察 |
 | D8 | DB WAL 周期 TRUNCATE | debt | A | registered | 上游(R2) |
 | D9 | 分支命名 DB 累积 | debt | A | registered | R6:仅 dev 机器关切,prod 单库 |
-| D10 | ui-mac package.json license/author 补全 | docs | A | ready | copyright 已加(PR #27);剩 package.json 字段 |
-| D12 | CI 卫生:上游 cron workflow 在 fork 误触 + lint gate + e2e 范围 | debt | A | ready | Actions 分钟燃烧 + 潜在误发布 |
+| D10 | ui-mac package.json license/author 补全 | docs | A | shipped | **PR #35**(→ [s9b](sprints/2026-07-03-s9b-hygiene/sprint.md));package.json 补 license:MIT/author/repository(jinjunnn/alpha-code),gates 绿;**index.ts:82 陈旧注释子项未做**(与 S9/REQ-002 deep-link 同文件避撞)→ 该子项待 S9 收尾后另修,行保留 |
+| D12 | CI 卫生:上游 cron workflow 在 fork 误触 + lint gate + e2e 范围 | debt | A | verified | **2026-07-03 live 处置**:26 个上游 workflow `gh workflow disable`(仅留 alpha-ci/sync-upstream),清 20 个挂死 queued run;根因=上游 `runs-on: blacksmith-*` runner 本 fork 无 → queued 挂死(=「CI 卡/连不通」真因,非 API);零改 yml(设置层,ADR-005 不破);证据+清单见 [requirements/D12](requirements/D12-ci-hygiene.md) 验证记录 |
 
 ## Active — Harness 扩展(E 系列,证据见 E 册)
 

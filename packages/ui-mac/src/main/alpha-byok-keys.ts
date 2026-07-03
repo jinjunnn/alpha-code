@@ -69,6 +69,12 @@ function load() {
     if (json) {
       const obj = JSON.parse(json) as Record<string, string>
       keys = obj && typeof obj === "object" ? obj : {}
+      // 自愈:历史版本曾在 app ready 前初始化本库(safeStorage 不可用)→ 迁移写走了明文兜底。
+      // 现在钥匙串可用就立即重加密落盘,消掉磁盘上的明文密钥(REQ-002 联调实锤,2026-07-03)。
+      if (parsed.plain && safeStorage.isEncryptionAvailable()) {
+        warn("alpha-byok-keys: re-encrypting legacy plaintext vault")
+        persist()
+      }
     }
   } catch {
     // No store yet, or undecryptable after an app re-sign (see ADR-017) — start empty; user re-enters.

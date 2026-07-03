@@ -222,14 +222,9 @@ const main = Effect.gen(function* () {
   // Load the endpoint resolver (userData pin + persisted login discovery) BEFORE initAuthEnv, so the
   // proxy URL it derives reflects discovery/pin, not just the hardcoded default. See alpha-endpoints.ts.
   initEndpoints(app.getPath("userData"))
-  // Derive the platform proxy env (ALPHA_BASE_URL/ALPHA_API_KEY for the model proxy + cloud MCP)
-  // from any stored login or DEV_PLATFORM_TOKEN, BEFORE the sidecar forks so it inherits them.
-  initAuthEnv(app.getPath("userData"))
-  // Load alpha's encrypted BYOK key vault (migrates any key off opencode auth.json once) and bridge
-  // each stored key into its provider's keyEnv BEFORE the sidecar forks, so buildAlphaModelConfig
-  // (sidecar) can inline it as a direct-node apiKey. See alpha-byok-keys.ts.
-  initByokKeys(app.getPath("userData"))
-  injectByokKeysIntoEnv()
+  // ⚠️ initAuthEnv / initByokKeys 不能在这里调(REQ-002 联调实锤,2026-07-03):它们解密 safeStorage
+  // 凭证,而 macOS 上 app ready 之前 safeStorage 不可用 → 解密静默失败 → 每次冷启动都"未登录"、
+  // BYOK 钥匙库曾因此走明文兜底。已移至 whenReady 之后、sidecar fork 之前(见下)。
 
   // Auth callbacks arrive as alpha-code://auth/callback?code=...&state=... — strip the query before
   // logging so the single-use PKCE code / CSRF state never lands in main.log (exportDebugLogs ships it).
@@ -298,6 +293,16 @@ const main = Effect.gen(function* () {
   const serverReady = Deferred.makeUnsafe<ServerReadyData, unknown>()
 
   yield* Effect.promise(() => app.whenReady())
+
+  // Derive the platform proxy env (ALPHA_BASE_URL/ALPHA_API_KEY for the model proxy + cloud MCP)
+  // from any stored login or DEV_PLATFORM_TOKEN,AFTER app ready(safeStorage 可用)且 BEFORE
+  // sidecar fork(~L400)so it inherits them。修复:冷启动登录态恢复(原 pre-ready 调用解密恒失败)。
+  initAuthEnv(app.getPath("userData"))
+  // Load alpha's encrypted BYOK key vault (migrates any key off opencode auth.json once) and bridge
+  // each stored key into its provider's keyEnv BEFORE the sidecar forks, so buildAlphaModelConfig
+  // (sidecar) can inline it as a direct-node apiKey. See alpha-byok-keys.ts.
+  initByokKeys(app.getPath("userData"))
+  injectByokKeysIntoEnv()
 
   if (!TEST_ONBOARDING) migrate()
   ensureAlphaLayoutDefault()

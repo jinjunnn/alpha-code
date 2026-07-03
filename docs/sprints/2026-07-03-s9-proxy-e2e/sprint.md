@@ -5,8 +5,8 @@
 
 | Task | 内容 | 对应 ID | 模型 | 状态 |
 |---|---|---|---|---|
-| T1 | 真机登录态代理联调:A→B→A 闭环 + 流式回包 + 计量出数(`/v1/account/summary` usageSeries 当日累加);断点逐一入 BACKLOG;结论落 audits/ 或本目录 | REQ-002 | fable | ☐ |
-| T2 | `createSidecarEnv` 改白名单透传;实测第三方 MCP 子进程 env dump 无 `ALPHA_API_KEY`/BYOK/`ALPHA_CLOUD_TOKEN`/`EXA_API_KEY`;T1 环境复验平台代理/BYOK/websearch/cloud MCP 四链路不破;落地后 BACKLOG 记录 R3 门控解除(解锁 A2b、E2/E6) | A6 | fable | ☐ |
+| T1 | 真机登录态代理联调:A→B→A 闭环 + 流式回包 + 计量出数(`/v1/account/summary` usageSeries 当日累加);断点逐一入 BACKLOG;结论落 audits/ 或本目录 | REQ-002 | fable | ✅ 核心链 verified(BP-1/2 修复、BP-3→REQ-014);④token 过期/logout 复验未做。audit + [platform `6fe49f3`] |
+| T2 | `createSidecarEnv` 改白名单透传;实测第三方 MCP 子进程 env dump 无 `ALPHA_API_KEY`/BYOK/`ALPHA_CLOUD_TOKEN`/`EXA_API_KEY`;T1 环境复验平台代理/BYOK/websearch/cloud MCP 四链路不破;落地后 BACKLOG 记录 R3 门控解除(解锁 A2b、E2/E6) | A6 | fable | 🔨 进行中(约束已勘:平台 `{env:ALPHA_API_KEY}` 要求密钥在 sidecar env,MCP/LSP 从同 env 继承 → 白名单需配合 apiKey 注入改造 + `OPENCODE_CONFIG_CONTENT` 泄漏面) |
 | T3 | 网关 edition 白名单接口(B 侧)+ picker 按白名单装配显隐(A 侧,收编 D2、消灭 `alpha-default` 占位)⚠️ 验收⑤「BYOK 是否受 edition 收窄」未拍板 —— 撞到即停,不代替决策 | REQ-001 | fable | ☐ |
 
 **依赖**:T2/T3 依赖 T1 环境;T2 完成前 R3 门控不解除。

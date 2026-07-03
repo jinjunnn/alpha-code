@@ -3,7 +3,7 @@ id: REQ-002
 title: 平台 ↔ alpha-code 代理联调:E2E 打通并计量出数
 type: feature
 priority: P1
-status: ready
+status: shipped
 repo: X
 created: 2026-07-03
 sprint: 2026-07-03-s9-proxy-e2e
