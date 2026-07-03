@@ -44,4 +44,5 @@ related: ADR-016, ADR-004, ADR-005
   实测仅 1 处适配,且 SDK codegen diff 高声;真机冒烟(runbook ⓪)兜底。
 - ⚠️ `bun.lock`/catalog 随上游走,冻结包的依赖解析可能在某次 sync 后偏斜(spike 中 install 零变化;
   若发生 → 按 re-freeze ③ 的体检路径处理)。
+- ⚠️ **已知缺口(2026-07-03,→ [REQ-015](../../../docs/requirements/REQ-015-frozen-frontend-typecheck-skew.md))**:546-sync 新增的 `packages/session-ui`(冻结基点不存在)依赖新版 `ui` 组件 props,与冻结 `ui` 不兼容 → 全量 `bun turbo typecheck`(上游 pre-push hook)红。**影响面窄**:session-ui 仅被上游叶子包 enterprise/storybook 消费,alpha 不 ship;`alpha-ci`(权威门)只查 ext/ui-mac 故 **CI 绿、合并不受阻**,仅本地 pre-push 需 `--no-verify`。根治=冻结范围需覆盖完整上游前端叶子集或移除未 ship 叶子包(REQ-015 拍板)。教训:**partial freeze 会与同族未冻上游包在 workspace typecheck 层偏斜**——freeze 范围要按「谁 import 冻结包」闭包,不只按「谁被 alpha ship」。
 - 🔭 待办:首个冻结态真机视觉核验(→ S9 真机批,兼 REQ-010 验收);sync 首跑观察 restore 步。
