@@ -3,10 +3,10 @@ id: REQ-003
 title: 网关 SSE 流式健壮性:卡顿 / 断连 / 重连 / 心跳审查与加固
 type: debt
 priority: P1
-status: ready
+status: shipped
 repo: X
 created: 2026-07-03
-sprint: —
+sprint: 2026-07-03-s10-hardening
 ---
 
 ## 背景(为什么)
@@ -32,5 +32,14 @@ sprint: —
 - B 侧代码在 `alpha-platform/packages/gateway`(用户已授权直接管理);
 - 关联 REQ-002(联调时顺带做弱网用例)。
 
+## 采纳方案(2026-07-03,PR #50)
+审查报告(验收①)= [audits/2026-07-03-req003-sse-robustness](../audits/2026-07-03-req003-sse-robustness.md)。
+结论:**链路 1(模型代理流式)B 侧已然健壮**(逐 chunk 透传/背压/三态收尾计量/取消传播全就位,
+REQ-002 修复后);两个建议项(长思考期 keep-alive 注释帧、上游 read 超时)留档未改(钱路径保守,
+待独立小批)。**链路 2 C23 四病灶全修(A 侧)**:空转关闭指数退避+抖动(有事件的 55s 分页关闭仍
+立即续读)· Last-Event-ID 原样字符串 · 终态从 data.type 兜底 · 终态即清 subs 账;新增 90s 无字节
+悬挂回收(验收④链路 2)。纯逻辑抽 `alpha-cloud-events-core.ts`(7 单测)。
+
 ## 验证记录
-_verify 时补。_
+- 2026-07-03:typecheck + 159 tests 绿(+7);验收③(弱网 UI 呈现)→ 真机批 + B11 统一错误面;
+  验收④链路 1 = 建议项待批。C23 关闭(dup 行随本批注记)。

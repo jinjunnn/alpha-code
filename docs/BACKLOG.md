@@ -45,7 +45,7 @@
 |---|---|---|---|---|---|
 | REQ-001 | 网关 allowed-providers/models 白名单接口 + 客户端按版本显隐(国内版 DeepSeek 系 / 国际版世界模型) | feature | X | shipped | **B=alpha-platform `e6e90c1`(prod 已部署)· A=PR #41**(→ [S9](sprints/2026-07-03-s9-proxy-e2e/sprint.md));`/v1/models` 返回 edition+byok_providers,`EDITION_CONFIG` env 改配置不发版(dev server 实测生效);A 侧文件桥缓存 + picker/装配收窄 + 降级徽标;**验收⑤已拍板**:BYOK 目录跟随 edition、自定义节点不拦(记录在档);收编 D2、消灭占位 id 漂移;B 215 tests / A 126 tests 绿;**verified 待真机 picker 截图**(与 A6/REQ-002④ 同场);详见 [requirements/REQ-001](requirements/REQ-001-gateway-provider-allowlist.md) |
 | REQ-002 | 平台↔alpha-code 代理联调:E2E 打通并计量出数 | feature | X | shipped | **S9;核心链路 verified**(登录→platform→真实模型流式→计量出数,4 次调用一致累加);修 3 断点:BP-1 网关流式计量 waitUntil 缺位(B,`6fe49f3` prod 部署)· BP-2 冷启动登录态丢失(A,待重打包 verify ④)· BP-3→REQ-014;证据 [audits/2026-07-03-req002](audits/2026-07-03-req002-proxy-e2e.md);④ token 过期(B2)/logout 复验未做 |
-| REQ-003 | 网关 SSE 流式健壮性:卡顿/断连/重连/心跳审查与加固 | debt | X | in-sprint | **→ [S10]**;收编 C23;详见 [requirements/REQ-003](requirements/REQ-003-gateway-sse-robustness.md) |
+| REQ-003 | 网关 SSE 流式健壮性:卡顿/断连/重连/心跳审查与加固 | debt | X | shipped | **PR #50**;审查报告 [audits/2026-07-03-req003](audits/2026-07-03-req003-sse-robustness.md)(链路1 B 侧已健壮,2 建议项留档;链路2 C23 四病灶全修+90s 悬挂回收,7 单测);**C23 随本批关闭**;弱网 UI 呈现 → 真机批+B11;详见 [requirements/REQ-003](requirements/REQ-003-gateway-sse-robustness.md) |
 | REQ-010 | alpha-ui 视觉 + 注入/路由回归修复批(546-sync 后 reskin 耦合面失效,图1–图9) | bug | A | in-sprint | **ADR-020 冻结使名字级断裂蒸发**(app/ui 回到 6/30 reskin 验证态,4 个"死"锚点在冻结树运行时为活);剩余 = **冻结态真机视觉核验**(图1–9 逐屏对照,→ 真机批);若仍有残症才另修;历史诊断见审计及其修正节;详见 [requirements/REQ-010](requirements/REQ-010-alpha-ui-visual-regression.md) |
 | REQ-012 | 上游同步前端回归防护:锚点契约测试 + sync tripwire + post-sync 视觉冒烟 gate | debt | A | shipped | **PR #44**;范围拍板=锚点存在性 only(像素基线不做);清单 195 alive/4 dead + 5 用例契约测试 + sync tripwire + 发版 runbook ⓪ 步;**首跑即修正原审计:94 死→真死 4(session-ui 搬包)+ v0.1.0 回放 0 名字级死→结构性断裂假说上位**(审计修正节);详见 [requirements/REQ-012](requirements/REQ-012-frontend-sync-regression-guard.md) |
 | REQ-013 | 前端脱耦策略:让 alpha UI 免疫上游前端 churn(选定并落地) | spike | A | shipped | **拍板=E 冻结 @ 546 前(用户 2026-07-03)→ ADR-020 落地(PR #45)**:tag `frontend-freeze-base` + sync restore 步 + 守卫范围修订;spike 实证 546 偏斜下 typecheck/build 全绿(唯 3 行 alpha WSL 适配);A 防护网已先行(REQ-012);**上游前端 churn 自此物理隔离**;verified 待冻结态真机视觉核验(→真机批);详见 [requirements/REQ-013](requirements/REQ-013-frontend-decoupling-strategy.md) |
@@ -90,7 +90,7 @@
 | C20 | alpha-ui i18n 断裂:9 组件硬编码简中 + 每语种 OpenCode 残留(zh:19/en:30)(S8) | ux | A | ready | R7:爆炸半径大于初报 |
 | C21 | 无障碍:focus-trap/键盘/Escape/对比度/reduced-motion(S8) | ux | A | ready | |
 | C22 | 依赖漏洞:bun audit 158(2 crit/45 high),多在 dev 工具链 | debt | A | registered | 发布产物暴露面小;定期复扫 |
-| C23 | 云 SSE 退避/重连/终态判定/`subs` 泄漏(NEW-2/3/4) | debt | A | dup | **→ 并入 REQ-003**(其验收含 C23 关闭);respawn 互斥部分与 B5 同批 |
+| C23 | 云 SSE 退避/重连/终态判定/`subs` 泄漏(NEW-2/3/4) | debt | A | dup | **→ REQ-003 已修全部四病灶(PR #50)**;respawn 互斥(NEW-4)已随 B5(PR #48) |
 | C24 | CSP 落地 + 撤 alpha 自注入 `ACAO:*`(exfil 通道) | security | A | ready | 风险:可能断 renderer,需充分验证(册 §7g 告诫) |
 | C25 | `open-path` + `ext-install-plugin` exec 触达面收紧 | security | A | ready | C2 同类配置期触达面,渲染层可达 |
 | C27 | Electron fuses(关 RunAsNode)+ asar-integrity + entitlements 收紧 | security | A | ready | dylib 注入组合;邻接 A7 |

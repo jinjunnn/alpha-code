@@ -7,7 +7,7 @@
 
 import { ipcMain, type IpcMainInvokeEvent } from "electron"
 import { dispatchCloudJob, getCloudJobStatus, cancelCloudJob, listCloudArtifacts, fetchCloudArtifact } from "./alpha-cloud-jobs"
-import { subscribeCloudJobEvents } from "./alpha-cloud-events"
+import { isTerminalCloudEvent, subscribeCloudJobEvents } from "./alpha-cloud-events"
 import type { CloudJobEnvelope } from "../preload/types"
 
 // 活跃订阅:key = `${webContentsId}:${jobId}` → unsubscribe。
@@ -27,6 +27,9 @@ export function registerCloudIpcHandlers() {
     if (subs.has(key)) return { ok: true }
     const unsub = subscribeCloudJobEvents(jobId, (ev) => {
       if (!wc.isDestroyed()) wc.send("cloud-job-event", { jobId, ...ev })
+      // REQ-003(C23/NEW-2 修):终态后流已自停,但账簿条目原本一直留着 → 每个跑完的 job 泄一条。
+      // 终态即清账;renderer 重订已结束的 job 也不空转(新流重放到终态即自停自清)。
+      if (isTerminalCloudEvent(ev)) subs.delete(key)
     })
     subs.set(key, unsub)
     wc.once("destroyed", () => { unsub(); subs.delete(key) })
