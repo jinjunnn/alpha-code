@@ -57,7 +57,7 @@
 | B6 | 装载 `@alpha-code/ext` 主接缝(=G1;T5.1-5.2) | feature | A | shipped | **PR #46**(→ [S10](sprints/2026-07-03-s10-hardening/sprint.md));extraResources alpha-ext/ + StartCommand 传路径 + injectAlphaConfig 合并 V1 `plugin` 数组;ALPHA_EXT_DISABLE 逃生;缺 bundle loud warn;**verified 待真机**(alpha_ping 进工具表且执行 = G1 成功条件 + zod 跨实例证明);详见 [requirements/B6](requirements/B6-ext-seam-activation.md) |
 | B7 | 发布流水线制度化:CI 断言版本/种子资产/断网首启 smoke(T2.6 剩余) | debt | A | ready | 部分:DISTRIBUTION.md 已写 + S7 部分断言 |
 | B8 | 扩展物运行时生命周期:版本/健康/更新三要素(T5.4/T5.6) | feature | A | registered | 系统性条目,症状=A2;终态=定制中心从商店→运行时管理器 |
-| B9 | 更新链完整性:关 `allowDowngrade` + feed 完整性校验 | security | A | in-sprint | **→ [S10](sprints/2026-07-03-s10-hardening/sprint.md)**;部分:feed owner 已修(PR #32) |
+| B9 | 更新链完整性:关 `allowDowngrade` + feed 完整性校验 | security | A | shipped | **PR #47**(→ [S10](sprints/2026-07-03-s10-hardening/sprint.md));降级闸关闭(理由入注释:单 prod 渠道无跨渠道降级需求;旧版逃生=手动 dmg);完整性链文档化(yml sha512 → zip → 签名同 identity → 降级闸);**verified 待下个真实发版**(自动更新实测 + 篡改 yml 拒装用例);详见 [requirements/B9](requirements/B9-update-chain-integrity.md) |
 | B11 | 统一错误/健康呈现面 + 账户 banner(S8 底座) | ux | A | ready | 部分:侧栏 store.error + 首条消息 keep-text 已修(PR #24);含 B23 的呈现面;B20/C20/C21 公共底座 |
 | B12 | Instance 不驱逐 + 递归 watcher 常驻 | perf | A | ready | 上游归属(R2);alpha 杠杆=`server.ts:58` 停强开 `OPENCODE_EXPERIMENTAL_FILEWATCHER` + 垃圾项目治理(B4) |
 | B13 | DB 跨进程并发(SQLITE_BUSY → orDie) | debt | A | registered | 上游归属(R2);R6 降级:busy_timeout=5000 已缓解;alpha 无直接修点 |

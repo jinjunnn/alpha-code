@@ -13,7 +13,10 @@ export function setupAutoUpdater(stop: () => Promise<void>) {
   autoUpdater.logger = logger
   autoUpdater.channel = "latest"
   autoUpdater.allowPrerelease = false
-  autoUpdater.allowDowngrade = true
+  // B9:关降级(上游 desktop 模式遗留 true——它要跨 dev/beta/prod 渠道切换;alpha 单 prod 渠道
+  // 无此需求)。开着 = 降级攻击面:feed 被替换/重放旧版可把用户打回含已修漏洞的版本。要装旧版的
+  // 逃生口 = 手动下载 GitHub Release 的 dmg(有签名+公证),不走自动更新。
+  autoUpdater.allowDowngrade = false
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = false
   logger.log("auto updater configured", {
