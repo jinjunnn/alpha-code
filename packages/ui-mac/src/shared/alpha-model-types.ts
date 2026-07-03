@@ -45,6 +45,21 @@ export type AlphaModelCatalog = {
   presetIds: string[]
 }
 
+// ── REQ-001:edition 白名单(B 网关权威源)──────────────────────────────────────────────────────
+
+/** 目录来源标注(picker 降级提示用,B20):
+ *  "live" = 本次会话内刚从网关同步;"cache" = 用上次成功同步的本地缓存;"static" = 无缓存,内置 snapshot。 */
+export type LiveSyncInfo = {
+  status: "live" | "cache" | "static"
+  fetchedAt?: string
+  edition?: string
+}
+
+/** window.api.models.catalog() 实际返回:catalog 经 edition 白名单过滤后的视图 + 来源标注。
+ *  platformModels 已按网关白名单收窄(真实 registry id);byokProviders 已按 edition 收窄
+ *  (用户自定义节点不经此目录,不受影响)。 */
+export type EffectiveCatalog = AlphaModelCatalog & { liveSync: LiveSyncInfo }
+
 // ── custom-provider add/test IPC (window.api.providers.*) ───────────────────────────────────────
 
 export type ProviderInput = {

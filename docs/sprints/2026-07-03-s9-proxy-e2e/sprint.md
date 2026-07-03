@@ -7,7 +7,7 @@
 |---|---|---|---|---|
 | T1 | 真机登录态代理联调:A→B→A 闭环 + 流式回包 + 计量出数(`/v1/account/summary` usageSeries 当日累加);断点逐一入 BACKLOG;结论落 audits/ 或本目录 | REQ-002 | fable | ✅ 核心链 verified(BP-1/2 修复、BP-3→REQ-014);④token 过期/logout 复验未做。audit + [platform `6fe49f3`] |
 | T2 | `createSidecarEnv` 改白名单透传;实测第三方 MCP 子进程 env dump 无 `ALPHA_API_KEY`/BYOK/`ALPHA_CLOUD_TOKEN`/`EXA_API_KEY`;T1 环境复验平台代理/BYOK/websearch/cloud MCP 四链路不破;落地后 BACKLOG 记录 R3 门控解除(解锁 A2b、E2/E6) | A6 | fable | ✅ shipped(**PR #40**:白名单 `sidecar-env.ts` + `{file:}` 密钥通道 `alpha-secret-files.ts` 联动,115 tests 绿;**真机 env dump + 四链路复验待做**,verified 后解 R3) |
-| T3 | 网关 edition 白名单接口(B 侧)+ picker 按白名单装配显隐(A 侧,收编 D2、消灭 `alpha-default` 占位)⚠️ 验收⑤「BYOK 是否受 edition 收窄」未拍板 —— 撞到即停,不代替决策 | REQ-001 | fable | ☐ |
+| T3 | 网关 edition 白名单接口(B 侧)+ picker 按白名单装配显隐(A 侧,收编 D2、消灭 `alpha-default` 占位)⚠️ 验收⑤「BYOK 是否受 edition 收窄」未拍板 —— 撞到即停,不代替决策 | REQ-001 | fable | ✅ shipped(B=`e6e90c1` prod 已部署 · A=PR #41;**验收⑤已拍板 2026-07-03**:目录跟随 edition、自定义节点不拦;真机 picker 截图待收尾批) |
 
 **依赖**:T2/T3 依赖 T1 环境;T2 完成前 R3 门控不解除。
 **并发纪律(本 sprint)**:不设锁,任务由用户人工分派;B1 与 T2 同文件(`ui-mac/src/main/server.ts`),未分派前其它 session 勿动。

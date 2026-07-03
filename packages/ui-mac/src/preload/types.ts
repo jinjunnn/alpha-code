@@ -4,6 +4,7 @@ import type { UpdaterState } from "@opencode-ai/app/updater"
 import type { AlphaEndpoints } from "../shared/alpha-config"
 import type {
   AlphaModelCatalog,
+  EffectiveCatalog,
   ProviderInput,
   ProviderKeyStatus,
   ProviderResult,
@@ -244,11 +245,11 @@ export type ElectronAPI = {
     unsubscribe: (jobId: string) => Promise<{ ok: boolean }>
     onEvent: (cb: (payload: { jobId: string } & CloudJobEvent) => void) => () => void
   }
-  // alpha model catalog (config-driven, from main/alpha-models.json) for the model picker.
-  // platformLive: B gateway /v1/models 真相源 allowlist(解静态目录漂移;fork 仍用静态 JSON 作默认)。
+  // alpha model catalog for the model picker. REQ-001:catalog = effective 视图(内置 snapshot 按
+  // B 网关 edition 白名单收窄 + liveSync 来源标注);platformLive 拉取顺带刷新本地白名单缓存。
   models: {
-    catalog: () => Promise<AlphaModelCatalog>
-    platformLive: () => Promise<CloudResult<{ models: PlatformLiveModel[] }>>
+    catalog: () => Promise<EffectiveCatalog>
+    platformLive: () => Promise<CloudResult<{ models: PlatformLiveModel[]; edition?: string; byokProviders: string[] | null }>>
   }
   // custom provider add/test (writes opencode.jsonc provider[]; 1-token-chat connectivity probe).
   providers: {
