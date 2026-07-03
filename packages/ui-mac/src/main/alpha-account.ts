@@ -12,14 +12,16 @@
 
 import { ALPHA_PATHS } from "../shared/alpha-config"
 import { resolveEndpoints } from "./alpha-endpoints"
-import { getAccessToken } from "./alpha-auth"
+import { getAccessToken, refreshTokens } from "./alpha-auth"
 import { getLogger } from "./logging"
 import type { AccountResult, AccountSummary, AccountTransaction } from "../preload/types"
 
 // Resolved by alpha-endpoints (env ALPHA_ACCOUNT_URL > userData pin > login discovery > default).
 const accountBase = () => resolveEndpoints().account
 
-async function authedGet<T>(path: string): Promise<AccountResult<T>> {
+// B2:401 拦截 —— access token 失效时先续期一次再重试(单飞在 refreshTokens 内);续期失败(会话
+// revoked → 那边已降级登出)才把 unauthorized 交给 renderer 触发重新登录。
+async function authedGet<T>(path: string, retried = false): Promise<AccountResult<T>> {
   const token = getAccessToken()
   if (!token) return { error: "not-authenticated" }
   try {
@@ -28,7 +30,10 @@ async function authedGet<T>(path: string): Promise<AccountResult<T>> {
       headers: { authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(8000),
     })
-    if (res.status === 401) return { error: "unauthorized" }
+    if (res.status === 401) {
+      if (!retried && (await refreshTokens())) return authedGet<T>(path, true)
+      return { error: "unauthorized" }
+    }
     if (!res.ok) return { error: `http-${res.status}` }
     return (await res.json()) as T
   } catch (error) {
