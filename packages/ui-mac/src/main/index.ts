@@ -50,9 +50,11 @@ import { registerEndpointsIpcHandlers } from "./endpoints-ipc"
 import { initByokKeys, injectByokKeysIntoEnv } from "./alpha-byok-keys"
 import {
   enableProxy,
+  ensureFreshToken,
   getAuthState,
   handleAuthDeepLink,
   initAuthEnv,
+  isStoredTokenExpired,
   logout as authLogout,
   setAuthDeps,
   setAuthMode,
@@ -75,6 +77,12 @@ const jsCallStackFeature = "DocumentPolicyIncludeJSCallStacksInCrashReports"
 let logger: ReturnType<typeof initLogging>
 let mainWindow: BrowserWindow | null = null
 let server: SidecarListener | null = null
+// B2:当前运行的 sidecar 在 fork 时冻住的 access token 的过期时刻(config {file:} 在加载时解析一次,
+// 之后 main 侧刷新传不进去)。整点 tick 据此做「快过期 → 静默 respawn 换血」的备胎。
+let sidecarTokenExpiresAt: number | undefined
+const markSidecarTokenSnapshot = () => {
+  sidecarTokenExpiresAt = getAuthState().expiresAt
+}
 
 const pendingDeepLinks: string[] = []
 
@@ -371,6 +379,21 @@ const main = Effect.gen(function* () {
   const updateTimer = setInterval(() => void updater.check(), 10 * 60 * 1000)
   updateTimer.unref()
   app.once("will-quit", () => clearInterval(updateTimer))
+
+  // B2:token 保活 tick(每小时)。到提前量(7d token 提前 24h,见 alpha-auth-clock.ts)就轮换刷新;
+  // 备胎:运行中 sidecar 在 fork 时冻住的 token 快死(<30min,即 app 连续跑满一个 token 寿命)时,
+  // 续期 + 静默 respawn 换血——7d 寿命下极少发生,发生时接受一次界面重载并留日志。
+  const authTimer = setInterval(() => {
+    void (async () => {
+      await ensureFreshToken().catch(() => {})
+      if (sidecarTokenExpiresAt && sidecarTokenExpiresAt - Date.now() < 30 * 60 * 1000) {
+        logger.log("B2: sidecar's fork-time token near expiry — quiet respawn to rotate")
+        await respawnSidecar()
+      }
+    })()
+  }, 60 * 60 * 1000)
+  authTimer.unref()
+  app.once("will-quit", () => clearInterval(authTimer))
   yield* Effect.promise(() => startNetLog()).pipe(
     Effect.catch((error) =>
       Effect.sync(() => {
@@ -411,6 +434,12 @@ const main = Effect.gen(function* () {
 
     ensureLoopbackNoProxy()
     useEnvProxy()
+
+    // B2:存储的 access token 已过期(app 停机超过 token 寿命)→ fork 前 await 续期一次(fetch 10s
+    // 超时封顶)。死 token fork 出的 sidecar 每次模型调用都 401,先续再 fork 才有意义;仅过期才阻塞
+    // (未过期时的近期续期由整点 tick 异步做,不碰启动路径——B1 纪律)。
+    if (isStoredTokenExpired()) yield* Effect.promise(() => ensureFreshToken().catch(() => {}))
+    markSidecarTokenSnapshot()
 
     logger.log("spawning sidecar", { url })
     const { listener, health } = yield* Effect.promise(() =>
@@ -467,6 +496,7 @@ const main = Effect.gen(function* () {
       // REQ-001:respawn 前刷新 edition 白名单缓存(登录刚建立 → 按租户 edition 收窄;8s 超时内置,
       // 失败保留 last-known/内置 snapshot,不阻断 respawn)。
       await syncLiveAllowlist(app.getPath("userData")).catch(() => {})
+      markSidecarTokenSnapshot() // B2:新 fork 冻住的是当前 token —— 重新打点
       await killSidecar()
       ensureLoopbackNoProxy()
       useEnvProxy()

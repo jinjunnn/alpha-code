@@ -20,6 +20,7 @@ import { safeStorage, shell, type BrowserWindow } from "electron"
 import type { AuthMode, AuthState } from "../preload/types"
 import { getLogger } from "./logging"
 import { ALPHA_PATHS } from "../shared/alpha-config"
+import { isTokenExpired, shouldRefreshToken } from "./alpha-auth-clock"
 import { resolveEndpoints, setDiscoveredEndpoints } from "./alpha-endpoints"
 
 type StoredAuth = {
@@ -28,6 +29,8 @@ type StoredAuth = {
   refreshToken?: string
   sessionId?: string
   expiresAt?: number
+  /** access token 的签发寿命(ms)——B2 刷新提前量按它算(见 alpha-auth-clock.ts);旧凭证可缺。 */
+  lifetimeMs?: number
   account?: { email?: string; plan?: string }
 }
 
@@ -285,6 +288,7 @@ async function completeAuth(parsed: URL) {
     refreshToken: tokens.refresh_token,
     sessionId: tokens.session_id,
     expiresAt: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
+    lifetimeMs: tokens.expires_in ? tokens.expires_in * 1000 : undefined,
     account: { email: tokens.email, plan: tokens.plan },
   }
   persist()
@@ -312,6 +316,91 @@ async function exchangeCode(code: string, verifier: string): Promise<TokenRespon
   })
   if (!res.ok) throw new Error(`token exchange failed: HTTP ${res.status}`)
   return (await res.json()) as TokenResponse
+}
+
+// ── B2:refresh token 续期 ─────────────────────────────────────────────────────────────────────
+// alpha-web grant_type=refresh_token(需 sid + refresh_token;refresh 每次轮换)。桌面 token 寿命
+// 7*24h(用户 2026-07-03 拍板;web 侧 env 可调短供测试),提前量见 alpha-auth-clock.ts。
+// 失败语义(B2「失败降级」):
+//   - HTTP 400(invalid_grant:会话 revoked / refresh 已被轮换)→ 凭证死了,降级登出(logout():
+//     清 env + 删凭证 + respawn 停代理 + 发布 logged-out,renderer 账户面板即显示重新登录);
+//   - 网络/5xx(暂时性)→ 保留现有 token 静默重试下一轮,不打断用户。
+// 单飞:并发触发(整点 tick + 401 拦截同时到)只发一次请求。
+
+let refreshing: Promise<boolean> | null = null
+
+/** 尝试续期一次;true = access token 已更新。并发调用合并为同一在途请求。 */
+export function refreshTokens(): Promise<boolean> {
+  if (refreshing) return refreshing
+  refreshing = doRefresh().finally(() => {
+    refreshing = null
+  })
+  return refreshing
+}
+
+async function doRefresh(): Promise<boolean> {
+  const { refreshToken, sessionId } = stored
+  if (!refreshToken || !sessionId) return false
+  let res: Response
+  try {
+    res = await fetch(`${webBase()}${ALPHA_PATHS.token}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        grant_type: "refresh_token",
+        client_id: CLIENT_ID,
+        refresh_token: refreshToken,
+        sid: sessionId,
+      }),
+      signal: AbortSignal.timeout(10_000),
+    })
+  } catch (error) {
+    warn("alpha-auth: refresh network failure — keeping current tokens", error)
+    return false
+  }
+  if (res.status === 400 || res.status === 401) {
+    // invalid_grant:会话已 revoked,或 refresh 已被别处轮换(可能被盗用)。凭证不可恢复 → 降级登出。
+    warn("alpha-auth: refresh rejected (session revoked / token rotated elsewhere) — degrading to logged-out")
+    await logout()
+    return false
+  }
+  if (!res.ok) {
+    warn(`alpha-auth: refresh failed HTTP ${res.status} — transient, keeping current tokens`)
+    return false
+  }
+  let tokens: TokenResponse
+  try {
+    tokens = (await res.json()) as TokenResponse
+  } catch {
+    warn("alpha-auth: refresh response unparsable — keeping current tokens")
+    return false
+  }
+  setDiscoveredEndpoints(tokens.endpoints)
+  stored = {
+    ...stored,
+    accessToken: tokens.access_token,
+    refreshToken: tokens.refresh_token ?? stored.refreshToken,
+    sessionId: tokens.session_id ?? stored.sessionId,
+    expiresAt: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : stored.expiresAt,
+    lifetimeMs: tokens.expires_in ? tokens.expires_in * 1000 : stored.lifetimeMs,
+  }
+  persist()
+  applyAuthEnv()
+  publish()
+  log("alpha-auth: tokens refreshed", { expiresAt: stored.expiresAt })
+  return true
+}
+
+/** 到点才真的刷(提前量内);给启动路径和整点 tick 用。fork 前若已过期必须 await(死 token fork 无意义)。 */
+export async function ensureFreshToken(): Promise<void> {
+  if (!stored.accessToken || !stored.refreshToken) return
+  if (!shouldRefreshToken(stored.expiresAt, stored.lifetimeMs, Date.now())) return
+  await refreshTokens()
+}
+
+/** 存储的 access token 已过期(启动路径据此决定 fork 前是否 await 续期)。 */
+export function isStoredTokenExpired(): boolean {
+  return Boolean(stored.accessToken) && isTokenExpired(stored.expiresAt, Date.now())
 }
 
 export async function logout(): Promise<void> {
