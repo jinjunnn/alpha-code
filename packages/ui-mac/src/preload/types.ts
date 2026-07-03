@@ -129,6 +129,8 @@ export type CloudJobStatus = {
 export type CloudArtifactMeta = { id: string; name?: string; mime?: string; size?: number; content_url?: string }
 export type CloudArtifactList = { job_id: string; status: string; artifacts: CloudArtifactMeta[]; artifact_ids: string[]; result?: unknown }
 export type CloudArtifactContent = { name: string; mime: string; base64: string }
+/** B3/ADR-019 artifact 回流:写 <projectDir>/.alpha/runs/<runId>/ 的结果清单(main 侧 alpha-workdir.ts)。 */
+export type CloudRunManifest = { ok: true; dir: string; files: string[]; warnings: string[] } | { ok: false; reason: string }
 /** SSE 进度事件(job.snapshot / job.started / job.running / workflow.step.completed / job.completed|failed|cancelled / error)。 */
 export type CloudJobEvent = { event: string; data: unknown; id?: string }
 /** Same shape as AccountResult; distinct alias for the cloud jobs surface. */
@@ -240,6 +242,8 @@ export type ElectronAPI = {
     cancel: (jobId: string) => Promise<CloudResult<{ job_id: string; status: string }>>
     artifacts: (jobId: string) => Promise<CloudResult<CloudArtifactList>>
     fetchArtifact: (artifactId: string) => Promise<CloudResult<CloudArtifactContent>>
+    // B3/ADR-019 回流:终态后把 run(status/contract/artifacts)写进 <directory>/.alpha/runs/<runId>/。
+    saveRun: (directory: string, runId: string, contract?: CloudJobEnvelope) => Promise<CloudRunManifest>
     // 订阅 SSE 进度:main 流式 /events → 推 cloud-job-event。onEvent 注册监听,返回取消函数。
     subscribe: (jobId: string) => Promise<{ ok: boolean }>
     unsubscribe: (jobId: string) => Promise<{ ok: boolean }>

@@ -154,6 +154,7 @@ const api: ElectronAPI = {
     cancel: (jobId) => ipcRenderer.invoke("cloud-cancel", jobId),
     artifacts: (jobId) => ipcRenderer.invoke("cloud-artifacts", jobId),
     fetchArtifact: (artifactId) => ipcRenderer.invoke("cloud-artifact-content", artifactId),
+    saveRun: (directory, runId, contract) => ipcRenderer.invoke("cloud-save-run", directory, runId, contract),
     subscribe: (jobId) => ipcRenderer.invoke("cloud-subscribe", jobId),
     unsubscribe: (jobId) => ipcRenderer.invoke("cloud-unsubscribe", jobId),
     onEvent: (cb) => {
