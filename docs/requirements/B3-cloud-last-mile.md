@@ -6,7 +6,7 @@ priority: P1
 status: in-sprint
 repo: X
 created: 2026-07-03
-sprint: —
+sprint: 2026-07-03-s11-cloud-loop
 source: 册 §一 P1 / T4.1-4.3 / R1
 ---
 

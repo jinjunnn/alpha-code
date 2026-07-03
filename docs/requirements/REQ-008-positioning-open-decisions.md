@@ -18,7 +18,7 @@ sprint: —
 3. **用户下沉**:多用户分发后是否服务「零配置非技术用户」?(POSITIONING)
 4. **后端前 2–3 个具体功能**是什么?(GOALS〔待补〕:自定义 tool / MCP 能力 / sidecar 接口——现有候选:cloud dispatch 快捷 tool、B14 备份导出、E 系列连接器)
 5. **前端优化的具体点**收口(GOALS〔待补〕——ADR-016 后大多已兑现,余项与 REQ-005 对齐)
-6. **G4 优先级**:Sprint 2 headline 还是提进 Top-3?(GOALS 未决)
+6. ~~**G4 优先级**:Sprint 2 headline 还是提进 Top-3?(GOALS 未决)~~ → **已拍板(2026-07-03,S11 开工提案随批)**:G4 提优先、作 S11 headline(Track A:B3+REQ-004+C9);GOALS 的 G4 优先级〔待你定〕就此收口,余 5 条仍待整批拍板。
 
 ## 验收标准
 1. 六条各有明确结论(做/不做/推迟 + 理由),经 `/app:challenge` 或直接决策会话;
