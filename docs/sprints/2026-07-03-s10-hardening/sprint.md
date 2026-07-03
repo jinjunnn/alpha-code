@@ -8,7 +8,7 @@
 |---|---|---|---|
 | T1 | ext bundle 进 app resources + StartCommand 传路径 + injectAlphaConfig 合并 V1 `plugin` 数组;ALPHA_EXT_DISABLE 逃生;缺文件 loud warn;运行时 alpha_ping 证明 → 真机批 | B6(=G1) | ✅ shipped(PR #46;runtime 证明待真机批) |
 | T2 | electron-updater 关 allowDowngrade + feed/产物完整性核查记录 | B9 | ✅ shipped(PR #47;真机更新实测随下个发版) |
-| T3 | respawnSidecar 互斥/合并(多路触发防竞态)+ BYOK 改键/删键即时重注 respawn | B5+B21 | ☐ |
+| T3 | respawnSidecar 互斥/合并(多路触发防竞态)+ BYOK 改键/删键即时重注 respawn | B5+B21 | ✅ shipped(PR #48;B5 崩溃自愈半边留 ready) |
 | T4 | preferAppEnv shell 探测异步化 + userData 缓存(启动不等 login shell) | B1 | ☐ |
 | T5 | 网关流式转发 + A 侧 cloud SSE 健壮性审查加固(退避/重连/终态/subs 泄漏,收编 C23) | REQ-003 | ☐ |
 
