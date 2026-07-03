@@ -3,10 +3,10 @@ id: B20
 title: 弱网降级 UX(中国区核心):超时/重试/状态/骨架/websearch 降级
 type: ux
 priority: P1
-status: ready
+status: in-sprint
 repo: A
 created: 2026-07-03
-sprint: —
+sprint: 2026-07-03-s11-cloud-loop
 source: 册 §6.2 / R2(websearch 上游)
 ---
 

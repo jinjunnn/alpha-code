@@ -3,10 +3,10 @@ id: C14
 title: 升级静默破坏面收敛:薄 re-export 层 + COUPLING 清单机制化
 type: debt
 priority: P2
-status: ready
+status: in-sprint
 repo: A
 created: 2026-07-03
-sprint: —
+sprint: 2026-07-03-s11-cloud-loop
 source: 册 §6.3 / R7(升级:实际 5-6× 于初报)
 ---
 

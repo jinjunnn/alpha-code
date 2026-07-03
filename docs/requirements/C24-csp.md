@@ -3,10 +3,10 @@ id: C24
 title: CSP 落地 + 撤 alpha 自注入 ACAO:*(封 exfil 通道)
 type: security
 priority: P2
-status: ready
+status: in-sprint
 repo: A
 created: 2026-07-03
-sprint: —
+sprint: 2026-07-03-s11-cloud-loop
 source: 册 §7b / 核查 §4
 ---
 

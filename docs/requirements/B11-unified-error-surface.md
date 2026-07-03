@@ -3,10 +3,10 @@ id: B11
 title: 统一错误/健康呈现面 + 账户 banner(静默失败清零底座)
 type: ux
 priority: P1
-status: ready
+status: in-sprint
 repo: A
 created: 2026-07-03
-sprint: —
+sprint: 2026-07-03-s11-cloud-loop
 source: 册 §6.2(32 失败点审计)
 ---
 

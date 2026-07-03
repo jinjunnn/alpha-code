@@ -3,10 +3,10 @@ id: C25
 title: open-path / ext-install-plugin exec 触达面收紧
 type: security
 priority: P2
-status: ready
+status: in-sprint
 repo: A
 created: 2026-07-03
-sprint: —
+sprint: 2026-07-03-s11-cloud-loop
 source: 册 §7b / 核查 §4
 ---
 

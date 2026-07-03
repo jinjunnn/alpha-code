@@ -23,7 +23,7 @@
 
 | 决策点 | 载体 | 影响 |
 |---|---|---|
-| 产品定位 6 连拍:团队协作 / 企业租户 / 用户下沉 / 后端前 2-3 功能 / 前端余项 / G4 优先级 | REQ-008 | rules 三文件收口,排期基准 |
+| 产品定位连拍(剩 5):团队协作 / 企业租户 / 用户下沉 / 后端前 2-3 功能 / 前端余项;~~G4 优先级~~ **已拍板(2026-07-03,S11):G4 提优先、抬为 headline** | REQ-008 | rules 三文件收口,排期基准 |
 | ADR-014 未决 4 项:MVP 范围表述 / Agent·Command 进 tab / F9 串台开关 / 远程 catalog 依赖 C 仓 | REQ-006 | 定制中心 roadmap + ADR 转正 |
 | composer「只读」「effort」控件三选一:真实现 / 改文案 / 移除 | C28 | 用户可见行为 |
 | 关 `OPENCODE_EXPERIMENTAL_FILEWATCHER` 的功能代价是否接受 | B12 | 文件树/diff 刷新体验 vs 内存 |
@@ -51,27 +51,27 @@
 | REQ-013 | 前端脱耦策略:让 alpha UI 免疫上游前端 churn(选定并落地) | spike | A | verified | **拍板=E 冻结 @ 546 前(用户 2026-07-03)→ ADR-020 落地(PR #45)**:tag `frontend-freeze-base` + sync restore 步 + 守卫范围修订;spike 实证 546 偏斜下 typecheck/build 全绿(唯 3 行 alpha WSL 适配);A 防护网已先行(REQ-012);**上游前端 churn 自此物理隔离**;verified 待冻结态真机视觉核验(→真机批);详见 [requirements/REQ-013](requirements/REQ-013-frontend-decoupling-strategy.md) |
 | B1 | 登录 shell 同步探测黑屏 → 异步化 + 缓存(T1.2) | perf | A | shipped | **PR #49**;缓存命中 0ms + 后台异步刷新(shell 键控/空探测不缓存/真 export 赢);首启保持同步(fork 前必须有 PATH);**verified 待真机**(缓存命中启动耗时);详见 [requirements/B1](requirements/B1-shell-probe-async.md) |
 | B2 | refresh token 续期 + 401 拦截 + 失败降级 BYOK/登出(T3.1 剩余) | feature | A | shipped | **PR #42 + alpha-web `a1d4d8a`**;寿命拍板 7*24h(env 可调短测试)+ 提前量续期(整点 tick)+ 401 拦截重试 + invalid_grant 降级登出(明确 UI)+ 冻结 token 快死备胎 respawn;REQ-002④ 过期路径就此成型;134 tests 绿;**verified 待真机**(短 TTL 实测 过期→续期/撤销→降级/logout 不串台);详见 [requirements/B2](requirements/B2-refresh-token.md) |
-| B3 | 云协同最后一公里:cloud MCP 健康 → dispatch → 进度 → artifact 回流(=G4、E12;T4.1-4.3) | feature | X | ready | **R1:勿切端点**(workers.dev 是唯一路由 /v1 的 host);真因更可能 token 注入时序;MCP URL 待 `endpoints.mcp`(见 [platform-endpoint-discovery-contract](platform-endpoint-discovery-contract.md)) |
+| B3 | 云协同最后一公里:cloud MCP 健康 → dispatch → 进度 → artifact 回流(=G4、E12;T4.1-4.3) | feature | X | in-sprint | **→ [S11](sprints/2026-07-03-s11-cloud-loop/sprint.md) T2(headline)**;B 链 prod e2e 已全绿(13/13,见需求档验证记录),剩 in-app 闭环;artifact 落点依赖 REQ-004(T1 先行);**R1:勿切端点**(workers.dev 是唯一路由 /v1 的 host);MCP URL 已由端点发现契约闭环 |
 | B4 | 巨型目录当项目(`/`、`~`、`~/Documents` 建 Instance)治理 | perf | A | ready | 部分上游(R2);alpha 杠杆=垃圾项目引导/隐藏项目不取数;`worktree==="/"` 跳过已做(PR #23) |
-| B5 | sidecar 崩溃自愈 + respawn 竞态/互斥(T2.4 + NEW-4) | debt | A | shipped | **PR #48(互斥半边)**:respawn 单飞+排队合并(六路触发防双 fork/双 reload);**崩溃自愈未做**(与 REQ-003 终态判定同批更顺,行保留继续追);详见 [requirements/B5](requirements/B5-sidecar-self-heal.md) |
+| B5 | sidecar 崩溃自愈 + respawn 竞态/互斥(T2.4 + NEW-4) | debt | A | shipped | **PR #48(互斥半边)**:respawn 单飞+排队合并(六路触发防双 fork/双 reload);**崩溃自愈尾项 → [S11](sprints/2026-07-03-s11-cloud-loop/sprint.md) T5**(REQ-003 已收,解锁);详见 [requirements/B5](requirements/B5-sidecar-self-heal.md) |
 | B6 | 装载 `@alpha-code/ext` 主接缝(=G1;T5.1-5.2) | feature | A | verified | **PR #46**(→ [S10](sprints/2026-07-03-s10-hardening/sprint.md));extraResources alpha-ext/ + StartCommand 传路径 + injectAlphaConfig 合并 V1 `plugin` 数组;ALPHA_EXT_DISABLE 逃生;缺 bundle loud warn;**verified 待真机**(alpha_ping 进工具表且执行 = G1 成功条件 + zod 跨实例证明);详见 [requirements/B6](requirements/B6-ext-seam-activation.md) |
 | B7 | 发布流水线制度化:CI 断言版本/种子资产/断网首启 smoke(T2.6 剩余) | debt | A | ready | 部分:DISTRIBUTION.md 已写 + S7 部分断言 |
 | B8 | 扩展物运行时生命周期:版本/健康/更新三要素(T5.4/T5.6) | feature | A | registered | 系统性条目,症状=A2;终态=定制中心从商店→运行时管理器 |
 | B9 | 更新链完整性:关 `allowDowngrade` + feed 完整性校验 | security | A | shipped | **PR #47**(→ [S10](sprints/2026-07-03-s10-hardening/sprint.md));降级闸关闭(理由入注释:单 prod 渠道无跨渠道降级需求;旧版逃生=手动 dmg);完整性链文档化(yml sha512 → zip → 签名同 identity → 降级闸);**verified 待下个真实发版**(自动更新实测 + 篡改 yml 拒装用例);详见 [requirements/B9](requirements/B9-update-chain-integrity.md) |
-| B11 | 统一错误/健康呈现面 + 账户 banner(S8 底座) | ux | A | ready | 部分:侧栏 store.error + 首条消息 keep-text 已修(PR #24);含 B23 的呈现面;B20/C20/C21 公共底座 |
+| B11 | 统一错误/健康呈现面 + 账户 banner(S8 底座) | ux | A | in-sprint | **→ [S11](sprints/2026-07-03-s11-cloud-loop/sprint.md) T4**;部分:侧栏 store.error + 首条消息 keep-text 已修(PR #24);含 B23 的呈现面;B20/C20/C21 公共底座;本批收编 B20 + B23 呈现半边 |
 | B12 | Instance 不驱逐 + 递归 watcher 常驻 | perf | A | ready | 上游归属(R2);alpha 杠杆=`server.ts:58` 停强开 `OPENCODE_EXPERIMENTAL_FILEWATCHER` + 垃圾项目治理(B4) |
 | B13 | DB 跨进程并发(SQLITE_BUSY → orDie) | debt | A | registered | 上游归属(R2);R6 降级:busy_timeout=5000 已缓解;alpha 无直接修点 |
 | B14 | 会话 DB 备份/导出(损坏恢复) | feature | A | registered | 上游 DB 本体改不了(R2);alpha main 纯文件操作可做备份/导出 |
-| B20 | 弱网降级 UX:超时/重试/splash 状态/真骨架/websearch 优雅降级(S8) | ux | A | ready | 部分⊂B11;websearch orDie 在上游(R2),杠杆=env 关闸或自建 tool;含 ADR-009 🔭 keyless 限流行为运行时实测 |
+| B20 | 弱网降级 UX:超时/重试/splash 状态/真骨架/websearch 优雅降级(S8) | ux | A | in-sprint | **→ [S11](sprints/2026-07-03-s11-cloud-loop/sprint.md) T4(收编入 B11)**;部分⊂B11;websearch orDie 在上游(R2),杠杆=env 关闸或自建 tool;含 ADR-009 🔭 keyless 限流行为运行时实测 |
 | B21 | BYOK 改键/删键即时生效(触发重注 env/respawn) | bug | A | shipped | **PR #48**;根因=env 桥 set-if-unset 滞留旧 key;修=自有注入权威覆盖/清除(用户值永不动,纯逻辑 5 单测)+ 改键回调触发重注+respawn;删键即时吊销;**verified 待真机**(改键→picker 即时反映→新 key 出账);详见 [requirements/B21](requirements/B21-byok-key-live-reload.md) |
 | B22 | message-timeline.tsx:481 会话时间线崩溃 | bug | A | ready | 546-sync 后**先代码复验再修**;疑 timeline-inject DOM 注入扰动上游 virtualizer |
-| B23 | strict-key 配置致瘫:全局 jsonc 解析失败 → 整份配置静默清零 | bug | A | ready | 上游解析行为;alpha 杠杆=写前校验(C2 已有)+ 失败呈现(→B11) |
+| B23 | strict-key 配置致瘫:全局 jsonc 解析失败 → 整份配置静默清零 | bug | A | in-sprint | **→ [S11](sprints/2026-07-03-s11-cloud-loop/sprint.md) T4(呈现半边随 B11)**;上游解析行为;alpha 杠杆=写前校验(C2 已有)+ 失败呈现(→B11) |
 
 ## Active — P2(债务)
 
 | ID | 标题 | 类 | 仓 | 状态 | 备注 |
 |---|---|---|---|---|---|
-| REQ-004 | `.alpha` 项目工作目录:桥接验证 + 回填 ADR-019 | spike | A | ready | **决议已立 ADR-019(accepted,2026-07-03):全部进 `.alpha/`**;spike=实测桥接三法(config 注入/symlink/双写)→ 回填 ADR-019 修订(schema/gitignore);详见 [requirements/REQ-004](requirements/REQ-004-alpha-workdir-spike.md) |
+| REQ-004 | `.alpha` 项目工作目录:桥接验证 + 回填 ADR-019 | spike | A | in-sprint | **→ [S11](sprints/2026-07-03-s11-cloud-loop/sprint.md) T1(B3 前置)**;决议已立 ADR-019(accepted,2026-07-03):全部进 `.alpha/`;spike=实测桥接三法(config 注入/symlink/双写)→ 回填 ADR-019 修订(schema/gitignore);详见 [requirements/REQ-004](requirements/REQ-004-alpha-workdir-spike.md) |
 | REQ-015 | 冻结前端 typecheck 偏斜:session-ui(546 后新增)依赖新版 ui API 与冻结 ui 不兼容 | debt | A | registered | ADR-020 冻结缺口;**CI 绿**(alpha-ci 只查 ext/ui-mac)**只卡本地 pre-push**(上游全量 turbo);影响面窄(session-ui 仅喂上游 enterprise/storybook,alpha 不 ship);方案 移包/补丁/`--no-verify`/扩冻结范围 待拍板;详见 [requirements/REQ-015](requirements/REQ-015-frozen-frontend-typecheck-skew.md) |
 | REQ-016 | 真机验证收尾批:A6 R3 解锁 / B2 短TTL / REQ-002④ logout / B3 in-app(登录门控/破坏性 4 项) | spike | X | registered | S9+S10 真机自动验证已 verified 一批(见 [audits/realmachine-verify](audits/2026-07-03-realmachine-verify.md));剩 4 项登录门控/破坏性/需改 prod 配置,收敛后续统一执行;**A6 verified 解 R3 门控**(A2b/E2/E6);详见 [requirements/REQ-016](requirements/REQ-016-realmachine-verify-batch.md) |
 | REQ-014 | 悬空会话路由致「Not found」白屏 → 路由恢复前校验会话存在 | bug | A | registered | REQ-002 联调 BP-3;`tabs.recent` 指向已删会话 → 冷启动整屏 Not found 无恢复入口;alpha 杠杆=恢复前校验会话存在、失败回退首页;详见 [requirements/REQ-014](requirements/REQ-014-dangling-session-blank-screen.md) |
@@ -83,9 +83,9 @@
 | C3 | 日志治理:opencode.log 145MB 轮转 + netlog 改 opt-in(T2.5) | debt | A | shipped | **PR #35**(→ [s9b](sprints/2026-07-03-s9b-hygiene/sprint.md));`logging.ts`:netlog opt-in(`ALPHA_NETLOG=1` 默认关)+ opencode.log 启动期超限归档(25MB,留最近 3 份);typecheck+97 tests 绿,轮转逻辑合成文件 E2E 6/6 过;**verified 待**运行期首次打包启动真机轮转 |
 | C5 | skills 每 Instance 重复扫描 | perf | A | registered | 上游(R2);杠杆=减 Instance 数(B4/B12) |
 | C8 | ADR-002 sidecar 语义修订:承认 main-IPC 为桌面等价物(T6.4) | docs | A | ready | YAGNI:真 HTTP sidecar 出现需求再立 |
-| C9 | 代码上云数据边界 mini-ADR:diff-only/secrets 过滤/consent/体积上限(T4.5) | security | X | ready | 与 B16 互补(C9=技术边界,B16=法律同意) |
+| C9 | 代码上云数据边界 mini-ADR:diff-only/secrets 过滤/consent/体积上限(T4.5) | security | X | in-sprint | **→ [S11](sprints/2026-07-03-s11-cloud-loop/sprint.md) T3(与 B3 同场)**;与 B16 互补(C9=技术边界,B16=法律同意) |
 | C12 | CORS 过宽(localhost/无 Origin 放行) | security | A | registered | 上游(R2);alpha 杠杆=先撤自己注入的 `ACAO:*`(→C24) |
-| C14 | 升级静默破坏面:232 选择器 / 16 处 `as any`;薄 re-export 收敛层(ADR-016 待办①) | debt | A | ready | R7:实际耦合面 5-6× 于初报;**选择器半边的清单已建**(REQ-012 `upstream-anchors.json` 即收敛载体);适配层(data-alpha-* 重打点)与 provider re-export 随 REQ-013 终局拍板落地 |
+| C14 | 升级静默破坏面:232 选择器 / 16 处 `as any`;薄 re-export 收敛层(ADR-016 待办①) | debt | A | in-sprint | **→ [S11](sprints/2026-07-03-s11-cloud-loop/sprint.md) T8**(REQ-013 已拍板冻结,前置成熟);R7:实际耦合面 5-6× 于初报;选择器清单已建(REQ-012 `upstream-anchors.json` 即收敛载体) |
 | C15 | 运行时 SSE/DOM 浪费:firehose 裸遍历 + body 全子树 MutationObserver 收窄 | perf | A | ready | R6:有去抖,影响弱于字面;含 A3 尾项:`session.idle` 全量 session.list 去抖(册 §7g deferred) |
 | C16 | 卸载残留 ≈0.8GB 含凭证:清理方案 + app 内数据清除入口 | debt | A | ready | |
 | C17 | schema 版本兼容守卫(旧 app × 新 DB) | debt | A | registered | 上游 DB(R2);alpha 可做启动前版本预检 |
@@ -93,9 +93,9 @@
 | C21 | 无障碍:focus-trap/键盘/Escape/对比度/reduced-motion(S8) | ux | A | ready | |
 | C22 | 依赖漏洞:bun audit 158(2 crit/45 high),多在 dev 工具链 | debt | A | registered | 发布产物暴露面小;定期复扫 |
 | C23 | 云 SSE 退避/重连/终态判定/`subs` 泄漏(NEW-2/3/4) | debt | A | dup | **→ REQ-003 已修全部四病灶(PR #50)**;respawn 互斥(NEW-4)已随 B5(PR #48) |
-| C24 | CSP 落地 + 撤 alpha 自注入 `ACAO:*`(exfil 通道) | security | A | ready | 风险:可能断 renderer,需充分验证(册 §7g 告诫) |
-| C25 | `open-path` + `ext-install-plugin` exec 触达面收紧 | security | A | ready | C2 同类配置期触达面,渲染层可达 |
-| C27 | Electron fuses(关 RunAsNode)+ asar-integrity + entitlements 收紧 | security | A | ready | dylib 注入组合;邻接 A7 |
+| C24 | CSP 落地 + 撤 alpha 自注入 `ACAO:*`(exfil 通道) | security | A | in-sprint | **→ [S11](sprints/2026-07-03-s11-cloud-loop/sprint.md) T6**;风险:可能断 renderer,需充分验证(册 §7g 告诫);撤 ACAO 先行、断屏即回退 |
+| C25 | `open-path` + `ext-install-plugin` exec 触达面收紧 | security | A | in-sprint | **→ [S11](sprints/2026-07-03-s11-cloud-loop/sprint.md) T7(随 C27 顺带)**;C2 同类配置期触达面,渲染层可达 |
+| C27 | Electron fuses(关 RunAsNode)+ asar-integrity + entitlements 收紧 | security | A | in-sprint | **→ [S11](sprints/2026-07-03-s11-cloud-loop/sprint.md) T7**;dylib 注入组合;邻接 A7;与 C24 共享打包回归场 |
 | C28 | placebo 控件诚实化(composer 只读/effort)+ 崩溃屏接管设计 | ux | A | registered | 顶层 ErrorBoundary 方案已实测证伪撤回(册 §7h);品牌部分已由 C29 修;剩=控件诚实化 + 边界下沉设计 |
 
 ## Active — P3(卫生)
@@ -137,7 +137,11 @@
 | E7 | websearch 收编为自有 MCP | 与云端 websearch 撞车 | B3/E12 云线落地后 |
 | E13 | 团队协作多端 workspace 同步 | NON_GOALS〔待补〕未决 | 产品定位决策后 |
 
-## 建议下一 sprint(2026-07-03 拟)→ **S9 已开工(核心链)**
+## 当前 sprint → **S11 已开工(2026-07-03,四线全批)**
+
+> **抽取**:B3+REQ-004+C9(A 云线闭环,headline)· B11+B20+B23(B 呈现底座)· C24+C27+C25(C 安全纵深)· C14(D 破坏面收敛);B5 尾项顺带。契约见 [sprints/2026-07-03-s11-cloud-loop](sprints/2026-07-03-s11-cloud-loop/sprint.md)。批准:用户「就按照你刚才的几个」+「abcd」(四 track)。G4 优先级子项就此拍板(划记⚖️队列)。四 track 互不撞文件,可并发 session 分派。
+
+## 上一轮建议(2026-07-03 拟)→ **S9 已开工(核心链)**(历史)
 
 > **2026-07-03 抽取**:核心链 REQ-002→A6→REQ-001 已进 [sprints/2026-07-03-s9-proxy-e2e](sprints/2026-07-03-s9-proxy-e2e/sprint.md)(用户只批核心链);同域顺带与简单批**未抽取**、留 ready,由用户人工分派并发 session(不设任务锁)。⚠️ B1 与 A6 同文件(server.ts),未分派前勿动。
 

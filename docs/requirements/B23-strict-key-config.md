@@ -3,10 +3,10 @@ id: B23
 title: strict-key 配置致瘫:全局 jsonc 失败静默清零的防护与呈现
 type: bug
 priority: P1
-status: ready
+status: in-sprint
 repo: A
 created: 2026-07-03
-sprint: —
+sprint: 2026-07-03-s11-cloud-loop
 source: 册 §7b / memory opencode-config-v1-schema
 ---
 
