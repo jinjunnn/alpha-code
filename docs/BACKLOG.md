@@ -29,7 +29,6 @@
 | 关 `OPENCODE_EXPERIMENTAL_FILEWATCHER` 的功能代价是否接受 | B12 | 文件树/diff 刷新体验 vs 内存 |
 | B16 PIPL 同意门重启时机(现 parked;云派发/公开分发前必须) | B16 | 合规,发布节奏 |
 | **前端脱耦终局路径**(根决策,已收编 REQ-013):A防护网/B单适配层/C高churn自建/D全自有渲染/E冻结上游前端 5 选;**待 E 可行性 spike 结论**后拍板终局(E 冻结 / C→D 重建 / 混合)。推荐=A+B 无悔先落、先验 E、否则 C→D | REQ-013(方案菜单 designs/2026-07-03-frontend-decoupling-options)/ ADR-016 修订 | 每次 upstream sync 的复发成本;是否 ADR-016 修订 |
-| REQ-012 防护网范围:锚点存在性测试 only,还是加全量像素级视觉回归基线(YAGNI 边界) | REQ-012 验收 | 防护网工程量 |
 | REQ-011 首页 composer 下方「预留位」最终放什么(云派发入口 G4/B3 / 定制中心 / 常用命令 / 暂空) | REQ-011 | 首页黄金位信息架构 |
 
 > 拍板即从队列划掉、结论写进对应需求文件;执行中撞到未拍板点 = 停下来问,不代替决策。
@@ -48,8 +47,8 @@
 | REQ-001 | 网关 allowed-providers/models 白名单接口 + 客户端按版本显隐(国内版 DeepSeek 系 / 国际版世界模型) | feature | X | shipped | **B=alpha-platform `e6e90c1`(prod 已部署)· A=PR #41**(→ [S9](sprints/2026-07-03-s9-proxy-e2e/sprint.md));`/v1/models` 返回 edition+byok_providers,`EDITION_CONFIG` env 改配置不发版(dev server 实测生效);A 侧文件桥缓存 + picker/装配收窄 + 降级徽标;**验收⑤已拍板**:BYOK 目录跟随 edition、自定义节点不拦(记录在档);收编 D2、消灭占位 id 漂移;B 215 tests / A 126 tests 绿;**verified 待真机 picker 截图**(与 A6/REQ-002④ 同场);详见 [requirements/REQ-001](requirements/REQ-001-gateway-provider-allowlist.md) |
 | REQ-002 | 平台↔alpha-code 代理联调:E2E 打通并计量出数 | feature | X | shipped | **S9;核心链路 verified**(登录→platform→真实模型流式→计量出数,4 次调用一致累加);修 3 断点:BP-1 网关流式计量 waitUntil 缺位(B,`6fe49f3` prod 部署)· BP-2 冷启动登录态丢失(A,待重打包 verify ④)· BP-3→REQ-014;证据 [audits/2026-07-03-req002](audits/2026-07-03-req002-proxy-e2e.md);④ token 过期(B2)/logout 复验未做 |
 | REQ-003 | 网关 SSE 流式健壮性:卡顿/断连/重连/心跳审查与加固 | debt | X | ready | 新需求;收编 C23;详见 [requirements/REQ-003](requirements/REQ-003-gateway-sse-robustness.md) |
-| REQ-010 | alpha-ui 视觉 + 注入/路由回归修复批(546-sync 后 reskin 耦合面静默失效:背景/用户消息/发送圆环/审查按钮/模型卡误绑/搜索页丢失/新对话侧栏异物,图1–图9) | bug | A | registered | 用户 2026-07-03 截图批;**已确诊**:546-sync 作废 reskin 锚点 192 中 94(见 [audits/2026-07-03-frontend-reskin-regression](audits/2026-07-03-frontend-reskin-regression.md));**非回滚**(无 alpha-ui revert);图8 证组件仍在=改接线非重建;详见 [requirements/REQ-010](requirements/REQ-010-alpha-ui-visual-regression.md) |
-| REQ-012 | 上游同步前端回归防护:锚点契约测试 + sync tripwire + post-sync 视觉冒烟 gate | debt | A | registered | **防复发机制**(用户「回归非常多次」根治);扩 ADR-015 合并验证到前端;并 [[C14]] 收敛层;证据 [audits/2026-07-03-frontend-reskin-regression](audits/2026-07-03-frontend-reskin-regression.md);详见 [requirements/REQ-012](requirements/REQ-012-frontend-sync-regression-guard.md) |
+| REQ-010 | alpha-ui 视觉 + 注入/路由回归修复批(546-sync 后 reskin 耦合面失效:背景/用户消息/发送圆环/审查按钮/模型卡误绑/搜索页丢失/新对话侧栏异物,图1–图9) | bug | A | registered | 用户 2026-07-03 截图批;**工作量已被 REQ-012 防护网修正**:真死锚点仅 4(`session-composer/session-new-composer/slot:button/slot:icon-button`,与图8/9 及按钮类症状精确对应)+ 结构性选择器需**运行时视觉核查**定案(名字级 94 死系对账工具漏扫 session-ui 搬包,见审计修正节);详见 [requirements/REQ-010](requirements/REQ-010-alpha-ui-visual-regression.md) |
+| REQ-012 | 上游同步前端回归防护:锚点契约测试 + sync tripwire + post-sync 视觉冒烟 gate | debt | A | shipped | **PR #44**;范围拍板=锚点存在性 only(像素基线不做);清单 195 alive/4 dead + 5 用例契约测试 + sync tripwire + 发版 runbook ⓪ 步;**首跑即修正原审计:94 死→真死 4(session-ui 搬包)+ v0.1.0 回放 0 名字级死→结构性断裂假说上位**(审计修正节);详见 [requirements/REQ-012](requirements/REQ-012-frontend-sync-regression-guard.md) |
 | REQ-013 | 前端脱耦策略:让 alpha UI 免疫上游前端 churn(选定并落地) | spike | A | registered | 用户诉求「不可能它改一次我跟一次」= 要**免疫**非警报;方案 A防护网/B单适配层/C高churn自建/D全自有渲染/**E 冻结上游前端(先 spike)**;推荐=A+B无悔地基→先验E→否则C→D;可能产出 ADR-016 修订;方案菜单 [designs/2026-07-03-frontend-decoupling-options](designs/2026-07-03-frontend-decoupling-options.md);详见 [requirements/REQ-013](requirements/REQ-013-frontend-decoupling-strategy.md) |
 | B1 | 登录 shell 同步探测黑屏 → 异步化 + 缓存(T1.2) | perf | A | ready | R6:最坏 ~5s(非 10s) |
 | B2 | refresh token 续期 + 401 拦截 + 失败降级 BYOK/登出(T3.1 剩余) | feature | A | shipped | **PR #42 + alpha-web `a1d4d8a`**;寿命拍板 7*24h(env 可调短测试)+ 提前量续期(整点 tick)+ 401 拦截重试 + invalid_grant 降级登出(明确 UI)+ 冻结 token 快死备胎 respawn;REQ-002④ 过期路径就此成型;134 tests 绿;**verified 待真机**(短 TTL 实测 过期→续期/撤销→降级/logout 不串台);详见 [requirements/B2](requirements/B2-refresh-token.md) |
@@ -85,7 +84,7 @@
 | C8 | ADR-002 sidecar 语义修订:承认 main-IPC 为桌面等价物(T6.4) | docs | A | ready | YAGNI:真 HTTP sidecar 出现需求再立 |
 | C9 | 代码上云数据边界 mini-ADR:diff-only/secrets 过滤/consent/体积上限(T4.5) | security | X | ready | 与 B16 互补(C9=技术边界,B16=法律同意) |
 | C12 | CORS 过宽(localhost/无 Origin 放行) | security | A | registered | 上游(R2);alpha 杠杆=先撤自己注入的 `ACAO:*`(→C24) |
-| C14 | 升级静默破坏面:232 选择器 / 16 处 `as any`;薄 re-export 收敛层(ADR-016 待办①) | debt | A | ready | R7:实际耦合面 5-6× 于初报 |
+| C14 | 升级静默破坏面:232 选择器 / 16 处 `as any`;薄 re-export 收敛层(ADR-016 待办①) | debt | A | ready | R7:实际耦合面 5-6× 于初报;**选择器半边的清单已建**(REQ-012 `upstream-anchors.json` 即收敛载体);适配层(data-alpha-* 重打点)与 provider re-export 随 REQ-013 终局拍板落地 |
 | C15 | 运行时 SSE/DOM 浪费:firehose 裸遍历 + body 全子树 MutationObserver 收窄 | perf | A | ready | R6:有去抖,影响弱于字面;含 A3 尾项:`session.idle` 全量 session.list 去抖(册 §7g deferred) |
 | C16 | 卸载残留 ≈0.8GB 含凭证:清理方案 + app 内数据清除入口 | debt | A | ready | |
 | C17 | schema 版本兼容守卫(旧 app × 新 DB) | debt | A | registered | 上游 DB(R2);alpha 可做启动前版本预检 |

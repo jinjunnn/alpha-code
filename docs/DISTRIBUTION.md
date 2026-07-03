@@ -20,6 +20,11 @@
 ## 1. 发一个版本(权威步骤)
 
 ```bash
+# ⓪ 前端合并复验(REQ-012,546-sync 静默回归教训——v0.1.0 就是跳过这步翻的车):
+#    a. cd packages/ui-mac && bun test src/renderer/alpha-ui/upstream-anchors.test.ts   # 锚点契约必须绿
+#    b. CDP 截图关键屏(首页/会话/模型卡/composer/时间线)对上一版基线肉眼比对(visual-verify-required)
+#    上游 sync 后未做过 a+b 的树,禁止打 tag。
+
 # ① 版本号:改 packages/ui-mac/package.json 的 "version"(唯一真源;About/崩溃屏/updater 都读它)
 #    例:0.1.0 → 0.1.1。用真实 semver,别回 0.0.0。
 

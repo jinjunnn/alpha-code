@@ -3,7 +3,7 @@ id: REQ-012
 title: 上游同步前端回归防护:锚点契约测试 + sync tripwire + post-sync 视觉冒烟 gate
 type: debt
 priority: P1
-status: registered
+status: shipped
 repo: A
 created: 2026-07-03
 sprint: —
@@ -45,6 +45,13 @@ ADR-015 已为 prompt 层证明了正确范式(file-diff 测不出的语义漂�
 - 范式来源:ADR-015 合并验证 + `sync-upstream.yml` prompt tripwire;建议产出 **ADR-016 修订**(或新 ADR)把「前端合并验证 gate」正式化。
 - 症状批:[[REQ-010]];收尾核验:[[REQ-005]]。
 
-## 验证记录(verify 时补:日期 + 方式 + 结果)
+## 决策记录(范围,用户 2026-07-03 拍板)
+**锚点存在性契约测试 only,不做像素级视觉回归基线**(YAGNI;关键屏冒烟走 runbook 人工/CDP)。⚖️ 队列该行已划掉。
 
-- 待。
+## 验证记录
+- **2026-07-03(PR #44)**:交付四件——①清单 `upstream-anchors.json`(alive 195 / knownDead 4,
+  gen 脚本再生;= C14 收敛层载体)②契约测试 5 用例全绿(新鲜度/alive 红线/knownDead 双向诚实/
+  故意断言必红/选择器形态防骗)③ `sync-upstream.yml` 前端 tripwire(镜像 ADR-015)④ DISTRIBUTION.md
+  发版步骤 ⓪ 前端合并复验。
+- **验收⑤回放**:防护网首跑即修正原审计量化(94 死 → 真死 4,余为 session-ui 搬包;v0.1.0 回放 0 名字级死
+  → 结构性断裂假说上位)——证明它能捕捉「搬家/复活/死亡」全部三态;详见审计修正节。
