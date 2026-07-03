@@ -86,6 +86,14 @@ const getBase = (appId: string): Configuration => ({
       from: "resources/NOTICE.txt",
       to: "NOTICE.txt",
     },
+    {
+      // B6(=G1):@alpha-code/ext 自包含 ESM bundle(prebuild 已构建)。落点
+      // <resources>/alpha-ext/plugin.js,main 经 alpha-ext-plugin.ts 解析后由 sidecar 注入
+      // OPENCODE_CONFIG_CONTENT 的 `plugin` 数组(零改上游,ADR-002/006)。
+      from: "../ext/dist/",
+      to: "alpha-ext/",
+      filter: ["plugin.js"],
+    },
   ],
   mac: {
     category: "public.app-category.developer-tools",

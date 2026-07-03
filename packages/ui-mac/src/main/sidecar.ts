@@ -49,6 +49,8 @@ type StartCommand = {
   port: number
   password: string
   userDataPath: string
+  /** B6(=G1):@alpha-code/ext 自包含 bundle 的绝对路径(main 解析,见 alpha-ext-plugin.ts);缺省不装载。 */
+  extPluginPath?: string
 }
 
 type StopCommand = { type: "stop" }
@@ -83,7 +85,7 @@ parentPort.on("message", (event) => {
 
 async function start(command: StartCommand) {
   try {
-    prepareSidecarEnv(command.password, command.userDataPath)
+    prepareSidecarEnv(command.password, command.userDataPath, command.extPluginPath)
     ensureLoopbackNoProxy()
     useSystemCertificates()
     useEnvProxy()
@@ -113,13 +115,13 @@ async function stop() {
   }
 }
 
-function prepareSidecarEnv(password: string, userDataPath: string) {
+function prepareSidecarEnv(password: string, userDataPath: string, extPluginPath?: string) {
   Object.assign(process.env, {
     OPENCODE_SERVER_USERNAME: "opencode",
     OPENCODE_SERVER_PASSWORD: password,
     XDG_STATE_HOME: process.env.XDG_STATE_HOME ?? userDataPath,
   })
-  injectAlphaConfig(userDataPath)
+  injectAlphaConfig(userDataPath, extPluginPath)
 }
 
 // Inject alpha-code's customizations into opencode via OPENCODE_CONFIG_CONTENT. This env var is
@@ -138,13 +140,19 @@ function prepareSidecarEnv(password: string, userDataPath: string) {
 //      whitelist + custom/ALPHA gateways + default model. See alpha-models.ts for the shape and
 //      the {env:VAR} key story.
 //
-// This is also the seam for loading @alpha-code/ext once it ships inside the .app: add
-// `plugin: [<abs path to ext dist>]` to the same config object. Left out until G1 ships the
-// ext bundle into resources and validates the zod cross-instance path (see ADR-006).
-function injectAlphaConfig(userDataPath: string) {
+//   4. B6(=G1):@alpha-code/ext 装载 —— main 解析好的自包含 bundle 绝对路径合并进 V1 `plugin`
+//      (单数键,见 opencode-config-v1-schema)数组,保留用户自己的 plugin 列表。zod 跨实例路径
+//      (ADR-006 caveat)的运行时证明 = alpha_ping 出现在工具表且能执行(真机批核验)。
+function injectAlphaConfig(userDataPath: string, extPluginPath?: string) {
   try {
     const existing = process.env.OPENCODE_CONFIG_CONTENT
     const config = existing ? JSON.parse(existing) : { $schema: "https://opencode.ai/config.json" }
+
+    if (extPluginPath) {
+      const plugins: string[] = Array.isArray(config.plugin) ? config.plugin : []
+      if (!plugins.includes(extPluginPath)) plugins.push(extPluginPath)
+      config.plugin = plugins
+    }
 
     const wantIdentity = !process.env.ALPHA_IDENTITY_DISABLE
     const wantBehavior = !process.env.ALPHA_BEHAVIOR_DISABLE
@@ -264,6 +272,7 @@ function parseCommand(value: unknown): SidecarCommand | undefined {
     port: command.port,
     password: command.password,
     userDataPath: command.userDataPath,
+    ...(typeof command.extPluginPath === "string" ? { extPluginPath: command.extPluginPath } : {}),
   }
 }
 
