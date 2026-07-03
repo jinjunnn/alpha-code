@@ -11,34 +11,24 @@
 
 ## 你只需做两件事(需 Apple 账号,我做不了)
 
-Apple 团队 = **RQX6X6A635(Beijing yuanyuji Technology Co.,Ltd)**,即 tideapp 签名的同一个 team。钥匙串里现有的是 iOS 证书(`iPhone Distribution`)——**Mac 直接分发需要另一种证书**:`Developer ID Application`。
+Apple 团队 = **RQX6X6A635(Beijing yuanyuji Technology Co.,Ltd)**,即 tideapp 签名的同一个 team。
 
-### 1. 造 `Developer ID Application` 证书(~2 分钟)
-- Xcode → Settings → Accounts → 选中 team RQX6X6A635 的 Apple ID → **Manage Certificates** → 左下 `+` → **Developer ID Application**。
-- 或 developer.apple.com → Certificates → `+` → Developer ID Application(走 CSR 流程)。
-- 造完 `security find-identity -v -p codesigning` 应出现 `Developer ID Application: Beijing yuanyuji Technology Co.,Ltd (RQX6X6A635)`。配置默认自动发现它(可用 `ALPHA_SIGN_IDENTITY="..."` 覆盖)。
+## ✅ 签名 + 公证凭证已就绪(2026-07-03 设置完成)
 
-### 2. 备好公证凭证(二选一,走环境变量)
-- **App Store Connect API key(推荐)**:developer.apple.com → Users and Access → Integrations → App Store Connect API → 生成 → 下载 `AuthKey_XXXX.p8`。然后:
-  ```
-  export APPLE_API_KEY=/绝对路径/AuthKey_XXXX.p8
-  export APPLE_API_KEY_ID=XXXX
-  export APPLE_API_ISSUER=<issuer-uuid>
-  ```
-- **或 Apple ID + 专用密码**(appleid.apple.com 生成 app-specific password):
-  ```
-  export APPLE_ID=<你的 Apple ID 邮箱>
-  export APPLE_APP_SPECIFIC_PASSWORD=<app 专用密码>
-  export APPLE_TEAM_ID=RQX6X6A635
-  ```
+已经建好并落盘(**不在仓库**,`~/.alpha-code-signing/` 0600):
+- **`Developer ID Application` 证书**已建(经 developer.apple.com,G2 Sub-CA)并装入登录钥匙串 + `codesign` 已授「始终允许」;`security find-identity -v -p codesigning` 见 `Developer ID Application: Beijing yuanyuji Technology Co.,Ltd (RQX6X6A635)`,codesign 全链(→ Developer ID CA → Apple Root)实测 verify 通过。备份:`~/.alpha-code-signing/devid-backup.p12`(口令见该目录 README;**请另存一份离线**,Developer ID 证书每账户上限 5 个、吊销会废掉已签 app)。
+- **App Store Connect API key**(公证用,`开发者` 角色)已建并下载:`~/.alpha-code-signing/AuthKey_Y69LXQA5B4.p8`(**只能下一次**,勿删)。
+- **`~/.alpha-code-signing/signing.env`** 导出 `ALPHA_SIGN=1` + `APPLE_API_KEY/KEY_ID/ISSUER` + `APPLE_TEAM_ID`。
 
 ## 出一个签名+公证的分发包
 ```
-OPENCODE_CHANNEL=prod ALPHA_SIGN=1 bun --cwd packages/ui-mac run ship:mac
+source ~/.alpha-code-signing/signing.env
+OPENCODE_CHANNEL=prod bun --cwd packages/ui-mac run ship:mac
 ```
 产物:`dist/` 下的 `alpha-code-mac-arm64.dmg` / `.zip` + `latest-mac.yml`(更新 feed)。把这三个作为一个 **GitHub Release** 传到 `jinjunnn/alpha-code`,别人下载 dmg 即可安装,装好的 app 会从该 repo 自动检查更新。
 
-> 本地只是想跑不分发:去掉 `ALPHA_SIGN=1`,得到 ad-hoc app(仅本机双击)。
+> 本地只是想跑不分发:不 source signing.env(或 `ALPHA_SIGN=` 空),得到 ad-hoc app(仅本机双击)。
+> 换机 / 重装钥匙串:从 `~/.alpha-code-signing/devid-backup.p12` 重新 `security import`,再 source signing.env 即可。
 
 ## 首个 prod build 需盯的已知项(还没实测)
 - **A5/A4 `@opencode-ai/plugin@local` / `InstallationVersion=local`**:内嵌 opencode server 的依赖打包问题,只在**打包态**暴露(dev 跑不出)。app 显示版本已修为 `0.1.0`(`ui-mac/package.json`),但内嵌 server 的 InstallationVersion 是另一条链,首个 prod 打包时验证是否仍报 `local` 安装失败;若报,需把该依赖预置进 extraResources(见 register S2/T2.3)。
