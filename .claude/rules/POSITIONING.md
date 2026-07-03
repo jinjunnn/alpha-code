@@ -1,6 +1,6 @@
 # 产品定位(POSITIONING)
 
-> 最后更新:2026-06-18
+> 最后更新:2026-07-03(差异化陈述:fork 取代 submodule + 前端接管 ADR-016)
 > 回顾节奏:每次 `/app:retro` 时审视是否仍有效
 > 说明:架构相关条目已确认;标 `〔待补〕` 的是产品层判断,需你确认/修正。
 > 2026-06-18 修订:由"个人工具"转向**面向多用户分发 + 云端多租户**(见 ADR-010/011)。
@@ -29,7 +29,7 @@ alpha-code 是一个**基于 opencode 的 Mac 编码 agent 产品(面向多用�
 - 从零自研编码 agent(放弃 opencode 成熟的 agent core)。
 
 ## 我们的差异化
-**隔离架构**:定制只发生在 opencode 官方设计好的扩展接缝(`@opencode-ai/plugin` hooks、`.opencode/*` 文件、MCP、SDK 驱动的前端)上;opencode 源码作为 pinned submodule **只读**。升级 = 切 submodule ref + bump 两个契约版本。
+**后端隔离架构 + 前端接管**:**后端**定制只发生在 opencode 官方扩展接缝(`@opencode-ai/plugin` hooks、`.opencode/*` 文件、MCP、sidecar)上,守升级隔离;**前端**由 alpha **自有组件全面接管**(ADR-016,经 `@opencode-ai/sdk` 取数,放弃前端升级隔离)。opencode 源码作为 **fork 上游只读**(非 submodule,ADR-005);升级 = `git merge dev` + 两个契约包 diff 适配。
 
 ## 〔待补〕需你确认
 - ~~纯个人工具 vs 对外发布~~ → **已定(2026-06-18):对外发布、面向多用户 + 云端多租户**。连带待定:认证授权、租户隔离边界、配额/计费、LLM key 归属(平台付 vs BYOK)、滥用防护(见 ADR-010/011)。

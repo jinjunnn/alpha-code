@@ -1,26 +1,27 @@
 # 当前目标(GOALS)
 
-> 最后更新:2026-06-18
+> 最后更新:2026-07-03(北极星达标记录 + 前端接管 ADR-016 修订 + 首发 v0.1.0)
 > 回顾节奏:每次 `/app:retro` 时审视是否仍有效
 > 2026-06-18:产品转多用户/多租户,新增云平台目标线(G4),见下。
 
 ## 当前周期(sprint / quarter)
-Sprint 1 — 2026-06-14 起,结束日 〔待补〕(建议 2 周)
+Sprint 1(2026-06-14 起)地基已达标(后端接缝 + 前端接管 + 升级守卫);当前处于**分发就绪 + 工程健康**阶段(register S1–S7:启动性能 / 分发签名 / 升级守卫 / 测试)。里程碑:**首个签名+公证发布 v0.1.0(2026-07-03,`jinjunnn/alpha-code`)**。
 
 ## 北极星指标(1 个)
 **指标名**:升级隔离健康度(Upgrade-Isolation Health)
 **定义**:每次 opencode upstream bump 后,为让 alpha-code 重新跑通所需**改动的自有代码行数**与**冲突文件数**。
-**当前值**:N/A(尚未首次升级)
-**目标值**:**冲突文件数 = 0**;自有代码改动仅限 `@opencode-ai/sdk` / `@opencode-ai/plugin` 契约 diff 的适配。
-**测量方式**:CI 守卫 `git diff opencode/packages` 必须为空;升级时记录适配行数到 `docs/retros/`。
+**当前值**:**已首次升级并达标**——2026-07-03 `merge dev → alpha`(546 commits)**零冲突**,仅 1 处后端契约适配(WSL `probeAddable`);见 `docs/retros/2026-07-02-upstream-sync-546.md`。
+**目标值**:**冲突文件数 = 0**;自有(后端)代码改动仅限 `@opencode-ai/sdk` / `@opencode-ai/plugin` 契约 diff 的适配。
+**测量方式**:CI 守卫(`alpha-ci.yml` north-star guard)`git diff --diff-filter=DMR origin/dev...HEAD -- packages/{opencode,core,server,app,ui,tui,sdk}` 非空即红;升级时记录适配行数到 `docs/retros/`。
+**范围(ADR-016)**:此北极星仅衡量**后端 / 上游源码**升级隔离;**前端已由 ADR-016 全面接管、放弃升级隔离,不计入**。
 
 > 说明:把"升级零摩擦"设为北极星,因为它是你的第一诉求("以便 opencode 升级之后也可以直接使用它的升级能力")。若你更看重"自定义功能覆盖度",可在 `/app:challenge` 时改。
 > ⚠️ 2026-06-18 补充:北极星只衡量**本地 fork** 的升级隔离;**云多租户平台([[ADR-010]]/[[ADR-011]])是独立 codebase**,不在本指标内,需自己的成功度量(见 G4)。别让云线的进度/失败干扰这个本地北极星。
 
 ## 本周期 Top 3 目标(按优先级)
 1. **后端隔离扩展跑通**:落地 `@alpha-code/ext`(server plugin + 自定义 tool + MCP 清单),被 opencode 运行时自动发现并调用,**零改 opencode 源码**。
-2. **独立 Mac 前端骨架跑通**:用 B+A 方案——复用 `AppInterface` + 自定义 `Platform` + token 主题,跑起一个自有 Electron 外壳(复用 `packages/desktop` 模式),连上内嵌 server。
-3. **升级纪律就位**:submodule 钉死 `7efade2` + CI 守卫(opencode 源码 diff 非空即失败)+ SDK/plugin 契约 diff 的 review 流程文档化。
+2. ✅ **独立 Mac 前端跑通**(已超原 B+A/ADR-003 计划):**ADR-016 起 alpha 自有组件全面接管前端**(不再仅 token 换肤),自有 Electron 外壳连内嵌 server;复用重型引擎(终端/diff/流式)+ CSS 换肤。
+3. ✅ **升级纪律就位**:fork + 只增不改(ADR-005,取代 submodule)+ `alpha-ci.yml` **north-star guard**(上游源码 DMR diff 非空即红,ADR-004 已实测)+ 每日 `sync-upstream.yml` + 契约 diff review(见 `docs/retros/` + `DISTRIBUTION.md`)。
 
 ## 新增目标线:云多租户平台 MVP(2026-06-18,pivot 触发)
 > 由"个人工具 → 多用户/多租户"pivot 引入;**依赖 [[ADR-010]]/[[ADR-011]] 从 `proposed` 转 `accepted`**。

@@ -24,4 +24,4 @@ ADR-003 选了 B+A(复用 opencode `AppInterface` + token 换肤 + 自有组件�
 - ⚠️ **升级耦合上移**:复用重型组件 + 借用 opencode 内部 provider(非 public exports)→ 上游重命名内部 context/hook 会在升级时**静默或 loud 失败**。对策:把借用的内部 provider 收敛成 `alpha-ui/providers/*` 薄 re-export(一处断,集中暴露);`data-slot` CSS 换肤是最稳的耦合面。
 - ⚠️ **厚定制层**:自有前端体量将远超原「<5%」目标——这是放弃北极星的直接代价,已被用户接受。
 - ⚠️ 失去「白嫖上游前端升级」:upstream 前端改进不再自动继承;只继承后端/引擎层。
-- 🔭 待办:① 收敛内部 provider 借用为薄 re-export 层;② 继续 build order(composer → 会话页复用 MessageTimeline → 设置/模型选择弹窗 → 重型引擎换肤);③ 据本 ADR 修订 POSITIONING/GOALS/NON_GOALS/ARCHITECTURE 的前端北极星表述(本轮先立 ADR,规则正文随 rebuild 收尾再改)。
+- 🔭 待办:① 收敛内部 provider 借用为薄 re-export 层;② 继续 build order(composer → 会话页复用 MessageTimeline → 设置/模型选择弹窗 → 重型引擎换肤);③ ✅ **已完成(2026-07-03,C6)**——据本 ADR 修订 POSITIONING/GOALS/NON_GOALS/ARCHITECTURE/GLOSSARY 的前端北极星表述:「薄定制层<5%」拆为**后端守 / 前端接管**,submodule 陈述改 fork。

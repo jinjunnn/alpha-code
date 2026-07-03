@@ -1,6 +1,7 @@
 # 理解 opencode(为 alpha-code 制图)
 
 > 产出方式:克隆 `anomalyco/opencode@7efade2` → 10-agent 并行 cartography 工作流(读全部 27 包,105 万 token)+ 主 Claude 独立复核关键文件。
+> ⚠️ 本图谱产出于 `7efade2` 快照;本仓现为 **fork** 并已 `merge dev` 追平上游(ADR-005),下文「submodule / 源码构建依赖」措辞按 fork 理解。分层/接缝模型仍有效。
 > 视觉总图:`docs/diagrams/opencode-codegraph.svg`(D2 源 `opencode-codegraph.d2`)。
 
 ## 一张图看懂:5 层 + 一根脊柱

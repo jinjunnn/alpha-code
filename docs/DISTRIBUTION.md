@@ -1,36 +1,68 @@
-# 分发 / 打包 runbook(Mac 签名 · 公证 · 自动更新)
+# 发版 runbook — alpha-code Mac(签名 · 公证 · 自动更新)
 
-面向:把 alpha(opencode 引擎 + 自有前端/后端)打成一个**你自己**的、可分发给别人 Mac 的签名+公证 app。
+> 权威发版文档。把 alpha(opencode 引擎 + 自有前端/后端)打成**你自己**的、签名+公证、可分发给任意 Mac 的 app,并经 GitHub Release 走自动更新。
+> 首个签名+公证发布:**v0.1.0**(2026-07-03,`jinjunnn/alpha-code`),下述流程即由它验证。
 
-## 一次性:代码侧已就绪(本仓,零改上游)
-`packages/ui-mac/electron-builder.config.ts` + `scripts/install-local.ts` 已改为:
-- **品牌**:prod/beta 渠道 productName = `alpha-code`(不再 "OpenCode");URL scheme name = `alpha-code`;artifact = `alpha-code-*`。
-- **Bundle 身份**:`com.tide.alphacode`(dev/beta 加后缀),沿用 tideapp 的 `com.tide.*` 约定,**不再是** `ai.opencode.desktop`。⚠️ 改 appId = 一次性重置 app 存储(会话历史/最近项目列表/登录);**磁盘上的项目文件不受影响**,重开一次即可。
-- **自动更新源(B9)**:prod → `jinjunnn/alpha-code`(你自己的 **public** repo)`latest` 渠道;beta → 同 repo `beta` 渠道。**不再指 `anomalyco/opencode`**(否则会把上游 OpenCode 当更新覆盖掉 alpha)。
-- **签名**:`ALPHA_SIGN=1` 时启用 Developer ID 签名 + 公证(team `RQX6X6A635`),否则 ad-hoc(本地可双击,不能分发)。
+## 0. 前置(已就绪,一次性)
 
-## 你只需做两件事(需 Apple 账号,我做不了)
+**签名/公证凭证**(**不在仓库**,`~/.alpha-code-signing/` 0600 —— 见该目录 README):
+- `Developer ID Application` 证书(team **RQX6X6A635** = Beijing yuanyuji,与 tideapp 同 team),已装登录钥匙串,`codesign` 已授「始终允许」→ 打包不再弹钥匙串框。全链 verify 通过。备份 `devid-backup.p12`(口令见 README)+ **已另存 iCloud**。
+- `AuthKey_Y69LXQA5B4.p8`(App Store Connect API key,`开发者` 角色,公证用,**只能下一次**)。
+- `signing.env` 导出 `ALPHA_SIGN=1` + `APPLE_API_KEY`/`APPLE_API_KEY_ID`/`APPLE_API_ISSUER` + `APPLE_TEAM_ID`。
 
-Apple 团队 = **RQX6X6A635(Beijing yuanyuji Technology Co.,Ltd)**,即 tideapp 签名的同一个 team。
+**打包配置**(`packages/ui-mac/electron-builder.config.ts` + `scripts/*`,零改上游):
+- prod/beta productName `alpha-code`、appId `com.tide.alphacode`(dev/beta 加后缀)、URL scheme `alpha-code`、artifact `alpha-code-*`。
+- 更新源 = 自有 public repo `jinjunnn/alpha-code`(prod=`latest` 渠道,beta=`beta`),**不是** `anomalyco/opencode`。
+- `ALPHA_SIGN=1` → Developer ID 签名 + 公证;否则 ad-hoc(仅本机双击)。
+- `notarize` 是 boolean(electron-builder 26.x);team/凭证走 env。
+- prebuild 会 `patch-server-version.ts` 把内嵌 server 的 `InstallationVersion` 从 `local` 改成真实版本(A4:否则 `@opencode-ai/plugin@local` 装不上,带 `.opencode` 插件的项目首个请求卡住)。
 
-## ✅ 签名 + 公证凭证已就绪(2026-07-03 设置完成)
+## 1. 发一个版本(权威步骤)
 
-已经建好并落盘(**不在仓库**,`~/.alpha-code-signing/` 0600):
-- **`Developer ID Application` 证书**已建(经 developer.apple.com,G2 Sub-CA)并装入登录钥匙串 + `codesign` 已授「始终允许」;`security find-identity -v -p codesigning` 见 `Developer ID Application: Beijing yuanyuji Technology Co.,Ltd (RQX6X6A635)`,codesign 全链(→ Developer ID CA → Apple Root)实测 verify 通过。备份:`~/.alpha-code-signing/devid-backup.p12`(口令见该目录 README;**请另存一份离线**,Developer ID 证书每账户上限 5 个、吊销会废掉已签 app)。
-- **App Store Connect API key**(公证用,`开发者` 角色)已建并下载:`~/.alpha-code-signing/AuthKey_Y69LXQA5B4.p8`(**只能下一次**,勿删)。
-- **`~/.alpha-code-signing/signing.env`** 导出 `ALPHA_SIGN=1` + `APPLE_API_KEY/KEY_ID/ISSUER` + `APPLE_TEAM_ID`。
+```bash
+# ① 版本号:改 packages/ui-mac/package.json 的 "version"(唯一真源;About/崩溃屏/updater 都读它)
+#    例:0.1.0 → 0.1.1。用真实 semver,别回 0.0.0。
 
-## 出一个签名+公证的分发包
+# ② 打签名+公证包(package:mac,不装机)
+source ~/.alpha-code-signing/signing.env               # ALPHA_SIGN=1 + Apple 凭证
+cd packages/ui-mac
+OPENCODE_CHANNEL=prod bun run build                     # prebuild(含 A4 patch)+ 渲染/主进程
+OPENCODE_CHANNEL=prod bun run package:mac               # 签名 → 上传 Apple 公证(在线,几分钟)→ dmg/zip
+
+# ③ 验证产物真的签名+公证了(必须都过)
+xcrun stapler validate dist/mac-arm64/alpha-code.app    # 期望 "The validate action worked!"
+spctl -a -vvv -t install dist/mac-arm64/alpha-code.app  # 期望 "accepted / source=Notarized Developer ID"
+ls dist/alpha-code-mac-arm64.dmg dist/alpha-code-mac-arm64.zip dist/latest-mac.yml   # 三件齐
+
+# ④ 发 GitHub Release(dmg + zip + 两个 .blockmap + latest-mac.yml 一起传,tag = v<版本>)
+cd dist
+gh release create v0.1.1 \
+  alpha-code-mac-arm64.dmg alpha-code-mac-arm64.zip \
+  alpha-code-mac-arm64.dmg.blockmap alpha-code-mac-arm64.zip.blockmap \
+  latest-mac.yml \
+  --repo jinjunnn/alpha-code --target alpha \
+  --title "alpha-code 0.1.1" --notes "……"
+
+# ⑤ 确认自动更新 feed 通(electron-updater 就读这个 URL)
+curl -sL -o /dev/null -w "%{http_code}\n" \
+  https://github.com/jinjunnn/alpha-code/releases/latest/download/latest-mac.yml   # 期望 200
 ```
-source ~/.alpha-code-signing/signing.env
-OPENCODE_CHANNEL=prod bun --cwd packages/ui-mac run ship:mac
-```
-产物:`dist/` 下的 `alpha-code-mac-arm64.dmg` / `.zip` + `latest-mac.yml`(更新 feed)。把这三个作为一个 **GitHub Release** 传到 `jinjunnn/alpha-code`,别人下载 dmg 即可安装,装好的 app 会从该 repo 自动检查更新。
 
-> 本地只是想跑不分发:不 source signing.env(或 `ALPHA_SIGN=` 空),得到 ad-hoc app(仅本机双击)。
-> 换机 / 重装钥匙串:从 `~/.alpha-code-signing/devid-backup.p12` 重新 `security import`,再 source signing.env 即可。
+**要点**
+- `latest-mac.yml` 里的文件名必须与上传的 asset 名**逐字一致**(electron-builder 自动生成,勿改名)。
+- Release **不能是 draft/prerelease**(否则 `latest` 渠道拉不到)。tag 用 `v<version>`。
+- `--target alpha`:tag 打在自有代码所在分支。
+- 只想本机自己用、不分发 → 用 `bun run ship:mac`(= build + package + 装到 `/Applications`);发布用 `package:mac`(只出产物,不动你在用的 app)。
 
-## 首个 prod build 需盯的已知项(还没实测)
-- **A5/A4 `@opencode-ai/plugin@local` / `InstallationVersion=local`**:内嵌 opencode server 的依赖打包问题,只在**打包态**暴露(dev 跑不出)。app 显示版本已修为 `0.1.0`(`ui-mac/package.json`),但内嵌 server 的 InstallationVersion 是另一条链,首个 prod 打包时验证是否仍报 `local` 安装失败;若报,需把该依赖预置进 extraResources(见 register S2/T2.3)。
-- **公证时长**:Apple 公证是在线步骤,首次可能几分钟。
-- **updater feed**:第一个 Release 传上去前,已装 app 检查更新会「无更新」(正常,不是错误)。
+## 2. 只 Apple Silicon(arm64)
+当前只出 `mac-arm64`。要 Intel(x64)/universal:electron-builder 加 `--x64`/`--universal`(未验证,首个 Intel 包需实测)。
+
+## 3. 排障 / 已知项
+- **打包时弹「codesign 想访问密钥」**:点「**始终允许**」+ 输 Mac 登录密码(不是「允许」——那样每个文件都弹)。授权后长期免弹。若换机后又弹:`security import ~/.alpha-code-signing/devid-backup.p12`(口令 README)。
+- **公证失败**:多为凭证/网络。`signing.env` 的 `APPLE_API_*` 是否正确;`.p8` 文件在否;换机后重新 source。API key 是 `开发者` 角色即够公证。
+- **A4 已修**:`patch-server-version.ts` 已把 InstallationVersion 从 `local` 改真实版本(v0.1.0 打包实测生效)。若 prebuild 日志出现 `[alpha:patch-server-version] … not found`,说明上游改了那行表达式 → 去更新该脚本(否则 A4 复发)。
+- **首个 Release 前**已装 app 检查更新会「无更新」= 正常。
+- **appId 变更**(如从旧 `ai.opencode.desktop.*` 迁到 `com.tide.alphacode.*`)= app 存储一次性重置(会话/最近项目/登录),**磁盘项目文件不受影响**,重开即可。
+
+## 4. 下一个真实版本怎么发(TL;DR)
+改 `package.json` 版本 → `source signing.env && OPENCODE_CHANNEL=prod bun run build && bun run package:mac` → stapler/spctl 验证 → `gh release create v<ver> …` → curl feed 得 200。整条链(签名→公证→feed)v0.1.0 已端到端验证。

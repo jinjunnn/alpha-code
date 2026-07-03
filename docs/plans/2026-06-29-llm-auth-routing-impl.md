@@ -1,5 +1,7 @@
 # 完整实施方案 — 方案 C(LLM 路由 / auth)2026-06-29
 
+> ⚠️ **已完成 / 归档(2026-07-03)** — LLM auth 路由 plumbing 已 merge(见 register「A 侧 plumbing 阶段一~三已 merge」+ ADR-016 step 17)。本文为历史实施计划,**不再是执行指引**,仅存档参考。
+
 > 设计来源:`docs/designs/2026-06-29-llm-auth-routing/design.md`(决策已锁,§0)。
 > 现状已**逐条核实**(读源码 + git diff,非臆测)。
 > 纪律:**零改 opencode 源码;一次只落一个 Phase,真机(打包版)验证通过再下一个。**

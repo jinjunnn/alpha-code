@@ -9,7 +9,7 @@
 | [ADR-001](adrs/ADR-001-opencode-submodule.md) | opencode pinned submodule 引入 | superseded → ADR-005 | 2026-06-14 |
 | [ADR-002](adrs/ADR-002-backend-seams.md) | 后端走 plugin/tool/MCP/sidecar | accepted | 2026-06-14 |
 | [ADR-003](adrs/ADR-003-frontend-appinterface.md) | 前端 B+A(AppInterface + Platform + token) | superseded → ADR-016 | 2026-06-14 |
-| [ADR-004](adrs/ADR-004-upgrade-isolation-ci.md) | 升级隔离 CI 守卫 | trial | 2026-06-14 |
+| [ADR-004](adrs/ADR-004-upgrade-isolation-ci.md) | 升级隔离 CI 守卫 | accepted(2026-07-03 首次 546-commit 同步实测守住,`alpha-ci.yml` guard 已上线) | 2026-06-14 |
 | [ADR-005](adrs/ADR-005-fork-pivot.md) | pivot 到 fork + 只增不改 | accepted | 2026-06-14 |
 | [ADR-006](adrs/ADR-006-runtime-worlds.md) | 两个运行时世界,ext 必须预 bundle | accepted | 2026-06-15 |
 | [ADR-007](adrs/ADR-007-brand-transform.md) | 品牌化 build-time transform | accepted | 2026-06-15 |

@@ -1,7 +1,8 @@
 # opencode 扩展接缝操作手册
 
 > 来源:10-agent cartography 工作流(已逐条核实到文件)+ 主 Claude 独立复核 `plugin/src/index.ts`、`server/src/api.ts`。
-> opencode pin:commit `7efade2`,`@opencode-ai/sdk` / `@opencode-ai/plugin` @ `1.17.6`。
+> opencode:本仓 **fork**(`anomalyco/opencode`,`merge dev → alpha` 追平上游,ADR-005 —— 已取代原 submodule pin `7efade2`);`@opencode-ai/sdk` / `@opencode-ai/plugin` 随上游演进(npm 当前 `1.17.13`)。
+> ⚠️ 本文产出于 submodule/pin 时期,下文若出现「submodule / 钉死 ref / checkout 新 ref」措辞,一律按 **fork + `git merge dev`** 理解(接缝模型本身不变)。
 
 ## A. 后端:零-fork 扩展(自有能力住在 opencode 源码之外)
 

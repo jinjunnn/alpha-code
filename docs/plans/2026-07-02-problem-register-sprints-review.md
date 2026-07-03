@@ -396,3 +396,23 @@ P0 = 7(A1-A7);P1 = 20(B1-B20);P2 = 22(C1-C22);P3 = 10(D1-D10)。合计 59 条。
 - **B19 sync tee-up**:`sync-upstream.yml` checkout 改用 `secrets.SYNC_TOKEN || github.token`。**根因确诊**:默认 GITHUB_TOKEN 不能 push 触碰 `.github/workflows/*` 的 commit(缺 `workflow` scope),上游 sync 常改 workflow 文件 → 每次 push 失败(连败 11+)。**用户仅剩一步**:建 PAT(classic `workflow` scope 或 fine-grained Contents+Workflows:write)存为 repo secret `SYNC_TOKEN`。注:`origin/dev` 现与 `alpha` 齐平(0 ahead),但**都落后 upstream ~13 天**(sync 死在 dev 推送);secret 加好后自动追平。
 - **required-checks(B10/B18 落地)**:`alpha` 分支保护开启,required checks = 3 个 alpha-ci job(north-star guard / typecheck / unit tests);`enforce_admins=false`(admin/sync PAT 可绕,不锁死;人类 PR 被 gate)。撤销:`gh api -X DELETE repos/jinjunnn/alpha-code/branches/alpha/protection`。
 - **仍未动(诚实)**:discord 图标已移除但反馈 URL 指 web 根(无专用 /feedback 页,待建);A5 深链 = 打包 pass;C18 全局品牌 rebrand(prod 渠道 productName/appId,撞 T2.2 迁移)未动。
+
+## 7j 分发闭环 + 文档去漂移(2026-07-03)
+
+**分发就绪三件套落地(C18/B9/A7 + ADR-012 待办)**:
+- **C18 prod 品牌 + appId(PR #32)**:prod/beta `productName` → `alpha-code`;appId → `com.tide.alphacode`(tideapp `com.tide.*` 约定);scheme/artifact rebrand;`install-local.ts` 渠道化。**ADR-012「已知问题/待办」已标记解决**(走待办①,appId 用 com.tide.*)。
+- **B9 updater feed(PR #32)**:prod/beta publish → `jinjunnn/alpha-code`(自有 public repo,不再 anomalyco/opencode)。
+- **A7 签名 + 公证(浏览器 setup)**:Developer ID Application 证书(team RQX6X6A635)建好装钥匙串 + 全链 codesign verify;App Store Connect API key 公证;凭证落 `~/.alpha-code-signing/` + iCloud 备份。`notarize` 修为 boolean(electron-builder 26.x)。
+- **首个签名+公证发布 v0.1.0**:`OPENCODE_CHANNEL=prod ALPHA_SIGN=1 package:mac` → 签名 + Apple 公证(`stapler validate` + `spctl: Notarized Developer ID` 双过)→ dmg/zip/latest-mac.yml 发 GitHub Release `jinjunnn/alpha-code@v0.1.0`;feed URL HTTP 200(自动更新闭环)。runbook:`docs/DISTRIBUTION.md`(已重写为权威发版流程)。
+
+**A4 修复(PR #33)**:内嵌 server `InstallationVersion` 从 `local` → `1.17.13`(`patch-server-version.ts` post-build 补丁,零改上游 build 脚本;drift-tripwire 兜底)。v0.1.0 打包实测 patch 生效。**A4 从"打包态未验证"→ 已修**。
+
+**B17 测试(PR #33)**:71 → **97**(+model 装配 / provider key-status 掩码 / endpoint 契约)。
+
+**B19 夜间自动同步**:`SYNC_TOKEN` secret 已设(gh token,repo+workflow scope);**实测触发 sync-upstream 绿灯并自动合入 10 条上游 commit**(alpha typecheck+97 测试复验通过)。B19 从"坏 11+ 天"→**自愈上线**。
+
+**C6 文档去漂移**:按 ADR-016 修订 ARCHITECTURE/GOALS/NON_GOALS/POSITIONING/GLOSSARY——「薄定制层<5%」拆为**后端守 / 前端接管**;删 submodule/pinned-`7efade2` 陈述(ADR-005 fork,已 merge dev 追平)。ADR-004 trial→accepted;ADR-016 待办③ 完成;ADR-012 待办标记已解决;清理 06-29 陈旧 plan(加 superseded 头)。
+
+**B16 PIPL 同意门** — 按用户指示**暂时搁置**(产品/法务决策)。
+
+**仍开着(诚实)**:B22 会话时间线崩溃(546-sync 后待**代码**复验,非文档项);C24 CSP / C3 日志轮转 / C23 云 SSE 退避(P2-P3 卫生);ADR-014 trial→accepted 待 Mac 像素核验;G4 云闭环 / C9 数据边界(产品线)。
