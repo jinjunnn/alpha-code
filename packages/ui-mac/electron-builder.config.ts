@@ -38,9 +38,8 @@ const channel = (() => {
 // needed. See docs/DISTRIBUTION.md.
 const isCI = process.env.GITHUB_ACTIONS === "true"
 const shouldSign = isCI || process.env.ALPHA_SIGN === "1"
-// Apple Developer team for Mac Developer-ID signing + notarization (Beijing yuanyuji Technology Co.,Ltd;
-// same team tideapp signs under). Overridable via env for a different team.
-const APPLE_TEAM_ID = process.env.ALPHA_APPLE_TEAM_ID ?? "RQX6X6A635"
+// Apple team (Beijing yuanyuji, RQX6X6A635 — same as tideapp) + notary creds are supplied via env at
+// sign time (see docs/DISTRIBUTION.md / ~/.alpha-code-signing/signing.env), not baked into config.
 
 // Own bundle identity (com.tide.*, matching tideapp's convention) — NOT opencode's ai.opencode.desktop.
 // Changing this from the old id is a deliberate one-time reset of the app's stored data (accepted:
@@ -99,8 +98,9 @@ const getBase = (appId: string): Configuration => ({
     // null => ad-hoc sign (no Developer ID, local dev builds). When signing, auto-discover the
     // "Developer ID Application" cert from the keychain (override with ALPHA_SIGN_IDENTITY).
     identity: shouldSign ? (process.env.ALPHA_SIGN_IDENTITY ?? undefined) : null,
-    // notarytool with the team; needs APPLE_ID+APPLE_APP_SPECIFIC_PASSWORD or APPLE_API_KEY* in env.
-    notarize: shouldSign ? { teamId: APPLE_TEAM_ID } : false,
+    // electron-builder 26.x wants a boolean; notarytool creds/team come from env
+    // (APPLE_API_KEY/APPLE_API_KEY_ID/APPLE_API_ISSUER, or APPLE_ID/APPLE_APP_SPECIFIC_PASSWORD/APPLE_TEAM_ID).
+    notarize: shouldSign,
     // Signed builds emit dmg+zip (distributable + updater); plain local builds emit the .app directly.
     target: shouldSign ? ["dmg", "zip"] : ["dir"],
   },
