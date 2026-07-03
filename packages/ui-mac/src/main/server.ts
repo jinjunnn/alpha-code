@@ -1,7 +1,9 @@
+import { existsSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { app, utilityProcess } from "electron"
 import type { Details } from "electron"
+import { resolveExtPluginPath } from "./alpha-ext-plugin"
 import { syncSecretFiles } from "./alpha-secret-files"
 import { loadAlphaSecrets } from "./alpha-secrets"
 import { getLogger } from "./logging"
@@ -84,6 +86,19 @@ export async function spawnLocalServer(
     getLogger()?.error("alpha-secrets sync FAILED — platform/BYOK providers will be missing", error)
   }
 
+  // B6(=G1):解析 @alpha-code/ext bundle 路径,经 StartCommand 传 sidecar(不走 env,免动 A6 白名单)。
+  // 缺文件 loud warn(anti-B11:否则表现为「alpha_ping 工具静默不在」);ALPHA_EXT_DISABLE=1 静默跳过。
+  const ext = resolveExtPluginPath({
+    packaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    moduleDir: dirname(fileURLToPath(import.meta.url)),
+    disabled: process.env.ALPHA_EXT_DISABLE === "1",
+    exists: existsSync,
+  })
+  if (ext.path) getLogger()?.log("alpha-ext: loading plugin bundle", { path: ext.path })
+  else if (ext.reason?.includes("ALPHA_EXT_DISABLE")) getLogger()?.log("alpha-ext: disabled by ALPHA_EXT_DISABLE")
+  else getLogger()?.warn(`alpha-ext: NOT loaded — ${ext.reason}`)
+
   const sidecar = join(dirname(fileURLToPath(import.meta.url)), "sidecar.js")
   const child = utilityProcess.fork(sidecar, [], {
     cwd: process.cwd(),
@@ -159,6 +174,7 @@ export async function spawnLocalServer(
       port,
       password,
       userDataPath: options.userDataPath,
+      extPluginPath: ext.path,
     })
   }).catch((error) => {
     if (!exited) child.kill()

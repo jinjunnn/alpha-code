@@ -45,25 +45,25 @@
 |---|---|---|---|---|---|
 | REQ-001 | 网关 allowed-providers/models 白名单接口 + 客户端按版本显隐(国内版 DeepSeek 系 / 国际版世界模型) | feature | X | shipped | **B=alpha-platform `e6e90c1`(prod 已部署)· A=PR #41**(→ [S9](sprints/2026-07-03-s9-proxy-e2e/sprint.md));`/v1/models` 返回 edition+byok_providers,`EDITION_CONFIG` env 改配置不发版(dev server 实测生效);A 侧文件桥缓存 + picker/装配收窄 + 降级徽标;**验收⑤已拍板**:BYOK 目录跟随 edition、自定义节点不拦(记录在档);收编 D2、消灭占位 id 漂移;B 215 tests / A 126 tests 绿;**verified 待真机 picker 截图**(与 A6/REQ-002④ 同场);详见 [requirements/REQ-001](requirements/REQ-001-gateway-provider-allowlist.md) |
 | REQ-002 | 平台↔alpha-code 代理联调:E2E 打通并计量出数 | feature | X | shipped | **S9;核心链路 verified**(登录→platform→真实模型流式→计量出数,4 次调用一致累加);修 3 断点:BP-1 网关流式计量 waitUntil 缺位(B,`6fe49f3` prod 部署)· BP-2 冷启动登录态丢失(A,待重打包 verify ④)· BP-3→REQ-014;证据 [audits/2026-07-03-req002](audits/2026-07-03-req002-proxy-e2e.md);④ token 过期(B2)/logout 复验未做 |
-| REQ-003 | 网关 SSE 流式健壮性:卡顿/断连/重连/心跳审查与加固 | debt | X | ready | 新需求;收编 C23;详见 [requirements/REQ-003](requirements/REQ-003-gateway-sse-robustness.md) |
+| REQ-003 | 网关 SSE 流式健壮性:卡顿/断连/重连/心跳审查与加固 | debt | X | in-sprint | **→ [S10]**;收编 C23;详见 [requirements/REQ-003](requirements/REQ-003-gateway-sse-robustness.md) |
 | REQ-010 | alpha-ui 视觉 + 注入/路由回归修复批(546-sync 后 reskin 耦合面失效,图1–图9) | bug | A | in-sprint | **ADR-020 冻结使名字级断裂蒸发**(app/ui 回到 6/30 reskin 验证态,4 个"死"锚点在冻结树运行时为活);剩余 = **冻结态真机视觉核验**(图1–9 逐屏对照,→ 真机批);若仍有残症才另修;历史诊断见审计及其修正节;详见 [requirements/REQ-010](requirements/REQ-010-alpha-ui-visual-regression.md) |
 | REQ-012 | 上游同步前端回归防护:锚点契约测试 + sync tripwire + post-sync 视觉冒烟 gate | debt | A | shipped | **PR #44**;范围拍板=锚点存在性 only(像素基线不做);清单 195 alive/4 dead + 5 用例契约测试 + sync tripwire + 发版 runbook ⓪ 步;**首跑即修正原审计:94 死→真死 4(session-ui 搬包)+ v0.1.0 回放 0 名字级死→结构性断裂假说上位**(审计修正节);详见 [requirements/REQ-012](requirements/REQ-012-frontend-sync-regression-guard.md) |
 | REQ-013 | 前端脱耦策略:让 alpha UI 免疫上游前端 churn(选定并落地) | spike | A | shipped | **拍板=E 冻结 @ 546 前(用户 2026-07-03)→ ADR-020 落地(PR #45)**:tag `frontend-freeze-base` + sync restore 步 + 守卫范围修订;spike 实证 546 偏斜下 typecheck/build 全绿(唯 3 行 alpha WSL 适配);A 防护网已先行(REQ-012);**上游前端 churn 自此物理隔离**;verified 待冻结态真机视觉核验(→真机批);详见 [requirements/REQ-013](requirements/REQ-013-frontend-decoupling-strategy.md) |
-| B1 | 登录 shell 同步探测黑屏 → 异步化 + 缓存(T1.2) | perf | A | ready | R6:最坏 ~5s(非 10s) |
+| B1 | 登录 shell 同步探测黑屏 → 异步化 + 缓存(T1.2) | perf | A | in-sprint | **→ [S10]**;server.ts 撞车已解除(A6 合入) |
 | B2 | refresh token 续期 + 401 拦截 + 失败降级 BYOK/登出(T3.1 剩余) | feature | A | shipped | **PR #42 + alpha-web `a1d4d8a`**;寿命拍板 7*24h(env 可调短测试)+ 提前量续期(整点 tick)+ 401 拦截重试 + invalid_grant 降级登出(明确 UI)+ 冻结 token 快死备胎 respawn;REQ-002④ 过期路径就此成型;134 tests 绿;**verified 待真机**(短 TTL 实测 过期→续期/撤销→降级/logout 不串台);详见 [requirements/B2](requirements/B2-refresh-token.md) |
 | B3 | 云协同最后一公里:cloud MCP 健康 → dispatch → 进度 → artifact 回流(=G4、E12;T4.1-4.3) | feature | X | ready | **R1:勿切端点**(workers.dev 是唯一路由 /v1 的 host);真因更可能 token 注入时序;MCP URL 待 `endpoints.mcp`(见 [platform-endpoint-discovery-contract](platform-endpoint-discovery-contract.md)) |
 | B4 | 巨型目录当项目(`/`、`~`、`~/Documents` 建 Instance)治理 | perf | A | ready | 部分上游(R2);alpha 杠杆=垃圾项目引导/隐藏项目不取数;`worktree==="/"` 跳过已做(PR #23) |
-| B5 | sidecar 崩溃自愈 + respawn 竞态/互斥(T2.4 + NEW-4) | debt | A | ready | respawn 无互斥(NEW-4)与 C23 邻接 |
-| B6 | 装载 `@alpha-code/ext` 主接缝(=G1;T5.1-5.2) | feature | A | ready | dist/plugin.js(410KB)已构建未装 .app;ADR-006 预 bundle 纪律;Tier-2 能力扩展的载体 |
+| B5 | sidecar 崩溃自愈 + respawn 竞态/互斥(T2.4 + NEW-4) | debt | A | in-sprint | **→ [S10]**;respawn 触发面因 B2/登录/登出扩大,互斥上调 |
+| B6 | 装载 `@alpha-code/ext` 主接缝(=G1;T5.1-5.2) | feature | A | shipped | **PR #46**(→ [S10](sprints/2026-07-03-s10-hardening/sprint.md));extraResources alpha-ext/ + StartCommand 传路径 + injectAlphaConfig 合并 V1 `plugin` 数组;ALPHA_EXT_DISABLE 逃生;缺 bundle loud warn;**verified 待真机**(alpha_ping 进工具表且执行 = G1 成功条件 + zod 跨实例证明);详见 [requirements/B6](requirements/B6-ext-seam-activation.md) |
 | B7 | 发布流水线制度化:CI 断言版本/种子资产/断网首启 smoke(T2.6 剩余) | debt | A | ready | 部分:DISTRIBUTION.md 已写 + S7 部分断言 |
 | B8 | 扩展物运行时生命周期:版本/健康/更新三要素(T5.4/T5.6) | feature | A | registered | 系统性条目,症状=A2;终态=定制中心从商店→运行时管理器 |
-| B9 | 更新链完整性:关 `allowDowngrade` + feed 完整性校验 | security | A | ready | 部分:feed owner 已修(PR #32 → jinjunnn/alpha-code) |
+| B9 | 更新链完整性:关 `allowDowngrade` + feed 完整性校验 | security | A | in-sprint | **→ [S10](sprints/2026-07-03-s10-hardening/sprint.md)**;部分:feed owner 已修(PR #32) |
 | B11 | 统一错误/健康呈现面 + 账户 banner(S8 底座) | ux | A | ready | 部分:侧栏 store.error + 首条消息 keep-text 已修(PR #24);含 B23 的呈现面;B20/C20/C21 公共底座 |
 | B12 | Instance 不驱逐 + 递归 watcher 常驻 | perf | A | ready | 上游归属(R2);alpha 杠杆=`server.ts:58` 停强开 `OPENCODE_EXPERIMENTAL_FILEWATCHER` + 垃圾项目治理(B4) |
 | B13 | DB 跨进程并发(SQLITE_BUSY → orDie) | debt | A | registered | 上游归属(R2);R6 降级:busy_timeout=5000 已缓解;alpha 无直接修点 |
 | B14 | 会话 DB 备份/导出(损坏恢复) | feature | A | registered | 上游 DB 本体改不了(R2);alpha main 纯文件操作可做备份/导出 |
 | B20 | 弱网降级 UX:超时/重试/splash 状态/真骨架/websearch 优雅降级(S8) | ux | A | ready | 部分⊂B11;websearch orDie 在上游(R2),杠杆=env 关闸或自建 tool;含 ADR-009 🔭 keyless 限流行为运行时实测 |
-| B21 | BYOK 改键/删键即时生效(触发重注 env/respawn) | bug | A | ready | A8 已给 respawn 重导地基;联调(REQ-002)同域 |
+| B21 | BYOK 改键/删键即时生效(触发重注 env/respawn) | bug | A | in-sprint | **→ [S10]**(与 B5 同 task);A8 respawn 地基 + A6 fork 时密钥文件同步已就位 |
 | B22 | message-timeline.tsx:481 会话时间线崩溃 | bug | A | ready | 546-sync 后**先代码复验再修**;疑 timeline-inject DOM 注入扰动上游 virtualizer |
 | B23 | strict-key 配置致瘫:全局 jsonc 解析失败 → 整份配置静默清零 | bug | A | ready | 上游解析行为;alpha 杠杆=写前校验(C2 已有)+ 失败呈现(→B11) |
 
