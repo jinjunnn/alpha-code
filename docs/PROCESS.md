@@ -69,6 +69,13 @@ BACKLOG   P0-P3    REQ 文件            sprints/<date>/   /app:build  /app:revi
 
 **PR 粒度(sprint ≠ PR,2026-07-03 与用户确认)**:sprint 是**计划/执行批次**,PR 是**合入单位**——一个 sprint 通常产出**多个短命 PR**,每个 PR = 1 个需求或一个同域小簇(diff 可审、可独立回退,如 A2a 单文件即单独成审)。**禁止长命 sprint 大分支**(每日 upstream sync 合入 alpha 会使其持续漂移,违背 ADR-005 短命分支纪律);微型 sprint(单一小域)可只有 1 个 PR。sprint.md 的 task 表记录每项落在哪个 PR(§5 三件套随**每个** PR 即时回写,不等 sprint 收尾)。
 
+**模型分层(2026-07-03 与用户确认)**:开工提案时在 sprint.md task 表的「模型」列按 **风险 × 模糊度** 给每个 task 定档(难度是输入之一,非唯一维度);执行时按档**委托子代理**,主会话保持最强模型做编排 / 审查 / 收口:
+- **fable(最强)**:安全类(A6/C24/C25/C27…)、架构与跨仓设计、上游耦合面改动(C14 类)、不可逆动作、模糊需求的方案设计;
+- **opus(中坚)**:验收标准明确的常规 feature / bug 实现(B 系列大部分)、性能修复、联调执行;
+- **sonnet(机械)**:i18n 补全、文档 / 状态回写、测试脚手架、D 系列卫生、批量机械改动。
+
+硬规则:① 安全 / 北极星耦合 / 不可逆 → 一律 fable,**不下放**;② **审查与验收所用模型 ≥ 实现所用模型**(便宜模型写、强模型审;反向禁止);③ 拿不准不标,继承会话默认;④ [[visual-verify-required]] 与模型档位无关,一律执行。
+
 **执行**(对应 `/app:*` 命令):`/app:build`(实现)→ `/app:review`(审查)→ `/app:qa`(需要时)→ `/app:ship`(PR)。全自动串联可用 `/app:sprint`。
 
 **硬 gates(每个实现 PR)**:typecheck + `bun test` + alpha-ci 北极星守卫绿 + §5 回写三件套。
@@ -132,9 +139,9 @@ sprint: —
 **目标**:一句话。
 **抽取**:REQ-xxx、A6、…(BACKLOG 已翻 in-sprint)
 
-| Task | 内容 | 对应 ID | 状态 |
-|---|---|---|---|
-| T1 | … | A6 | ☐ |
+| Task | 内容 | 对应 ID | 模型 | 状态 |
+|---|---|---|---|---|
+| T1 | … | A6 | fable | ☐ |
 
 **Gates**:typecheck ☐ · bun test ☐ · 北极星守卫 ☐ · /app:review ☐ · /app:qa(需要时)☐
 **回写**:BACKLOG ☐ · CHANGELOG ☐ · verify 记录 ☐ · retro 链接:…

@@ -4,7 +4,7 @@
 > 状态:`registered / ready / in-sprint / shipped / verified / archived`;旁路 `parked / rejected / dup`。
 > 类:feature / bug / debt / security / perf / ux / docs / spike。仓:A=alpha-code · B=alpha-platform · C=alpha-web · X=跨仓。
 > 证据文档:**册** = [`plans/2026-07-02-problem-register-sprints-review.md`](plans/2026-07-02-problem-register-sprints-review.md)(71 项 + R1-R7 修正 + §7f-7j 实施日志);**核查** = [`audits/2026-07-02-register-verification.md`](audits/2026-07-02-register-verification.md);**E 册** = [`harness-extension-backlog.md`](harness-extension-backlog.md)。
-> 下一个新需求编号:**REQ-009**(新需求一律 REQ-NNN;A/B/C/D/E 为历史审计系列保留原号,用户 2026-07-03 确认)。
+> 下一个新需求编号:**REQ-010**(新需求一律 REQ-NNN;A/B/C/D/E 为历史审计系列保留原号,用户 2026-07-03 确认)。
 > **需求文件全覆盖(2026-07-03)**:全部开放的 A/B/C/D 条目已逐条建档 `requirements/<ID>-<slug>.md`(含验收标准),行内备注为摘要、**文件为验收真源**;E 系列以冻结 E 册为分析文档;parked/dup 项不建档。
 
 ## 发布短名单(launch-blockers,册 §6.8)
@@ -72,6 +72,7 @@
 | REQ-005 | 前端接管收尾核验:重型引擎换肤(终端/diff/权限流)完成度 + timeline 验收尾项(截图归档/COUPLING 清单/真机验收) | ux | A | ready | ADR-016 待办②;tasks.md 40 项全勾但 dev-plan:98-100 未走完;COUPLING 清单关系 C14;详见 [requirements/REQ-005](requirements/REQ-005-frontend-takeover-closeout.md) |
 | REQ-006 | ADR-014 转正收尾:桌面端验收用例(装 markitdown→免重启可用→卸载→依赖预检)+ 4 个 plan-review 未决项拍板 → trial 转 accepted | docs | A | ready | 事实核查:Phase ④(plugin 装包)实际已发(E 册,commit 59c0786),ADR 前提已满足;设计文档 §C1-C5 未勾系文档滞后,随核验回勾;桌面验收依赖 D5 同场 |
 | REQ-008 | 产品定位〔待补〕决策批:团队协作/企业租户/用户下沉/前 2-3 具体功能/G4 优先级,一次收口 | spike | X | registered | POSITIONING/GOALS/NON_GOALS 三处〔待补〕;详见 [requirements/REQ-008](requirements/REQ-008-positioning-open-decisions.md) |
+| REQ-009 | alpha-ci 提速:guard partial clone + bun 依赖缓存 | debt | A | ready | 每个 PR 都在付的等待税;验收=单轮 ≤2min 且「改上游必红」用例仍红;详见 [requirements/REQ-009](requirements/REQ-009-alpha-ci-speedup.md) |
 | C3 | 日志治理:opencode.log 145MB 轮转 + netlog 改 opt-in(T2.5) | debt | A | ready | |
 | C5 | skills 每 Instance 重复扫描 | perf | A | registered | 上游(R2);杠杆=减 Instance 数(B4/B12) |
 | C8 | ADR-002 sidecar 语义修订:承认 main-IPC 为桌面等价物(T6.4) | docs | A | ready | YAGNI:真 HTTP sidecar 出现需求再立 |
