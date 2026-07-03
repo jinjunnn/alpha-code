@@ -3,7 +3,7 @@ id: C3
 title: 日志治理:opencode.log 轮转 + netlog opt-in
 type: debt
 priority: P2
-status: ready
+status: shipped
 repo: A
 created: 2026-07-03
 sprint: —

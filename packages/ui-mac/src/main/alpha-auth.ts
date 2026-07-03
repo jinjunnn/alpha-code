@@ -96,20 +96,32 @@ function persist() {
 }
 
 function load() {
+  let raw: string
   try {
-    const parsed = JSON.parse(readFileSync(authFilePath(), "utf8")) as { v: number; enc?: string; plain?: string }
+    raw = readFileSync(authFilePath(), "utf8")
+  } catch {
+    return // No stored auth yet — stay logged-out.
+  }
+  // 凭证文件存在但恢复失败必须 loud(B11):曾因 pre-ready 调用 safeStorage 静默失败,
+  // 表现为"每次重启都要重新登录"却无任何日志线索(REQ-002 联调实锤,2026-07-03)。
+  try {
+    const parsed = JSON.parse(raw) as { v: number; enc?: string; plain?: string }
     let json: string | undefined
-    if (parsed.enc && safeStorage.isEncryptionAvailable()) {
+    if (parsed.enc) {
+      if (!safeStorage.isEncryptionAvailable()) {
+        warn("alpha-auth: stored credentials present but safeStorage unavailable — staying logged-out")
+        return
+      }
       json = safeStorage.decryptString(Buffer.from(parsed.enc, "base64"))
     } else if (parsed.plain) {
       json = parsed.plain
     }
     if (json) {
-      const parsed = JSON.parse(json) as StoredAuth
-      stored = { ...parsed, mode: parsed.mode ?? "byok" }
+      const parsedAuth = JSON.parse(json) as StoredAuth
+      stored = { ...parsedAuth, mode: parsedAuth.mode ?? "byok" }
     }
-  } catch {
-    // No stored auth yet — stay logged-out.
+  } catch (e) {
+    warn("alpha-auth: failed to restore stored credentials (corrupt file or keychain change)", e)
   }
 }
 
