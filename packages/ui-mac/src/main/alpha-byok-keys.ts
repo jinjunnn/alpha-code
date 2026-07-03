@@ -4,11 +4,12 @@
 // (design 2026-06-29 §0.4: "opencode auth 出局；auth 全归 alpha").
 //
 // Why a main-process store + env bridge: safeStorage only works in the main process, but the config
-// that embeds the key (buildAlphaModelConfig) runs in the SIDECAR (utilityProcess). So before each
-// sidecar (re)fork, injectByokKeysIntoEnv() decrypts every stored key and writes it into the
-// provider's keyEnv in process.env (NEVER clobbering a value the user exported / set in alpha.env),
-// which the sidecar inherits and buildAlphaModelConfig reads — exactly how applyAuthEnv() feeds the
-// proxy. Changing a key therefore takes effect on the next (re)fork (Phase 4 makes that a respawn).
+// that references the key (buildAlphaModelConfig) runs in the SIDECAR (utilityProcess). So before
+// each sidecar (re)fork, injectByokKeysIntoEnv() decrypts every stored key and writes it into the
+// provider's keyEnv in MAIN's process.env (NEVER clobbering a value the user exported / set in
+// alpha.env). The sidecar does NOT inherit those vars (A6 allowlist) — at fork, syncSecretFiles
+// mirrors them into <userData>/alpha-secrets/<VAR> and the config carries {file:} refs instead.
+// Changing a key therefore takes effect on the next (re)fork (Phase 4 makes that a respawn).
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"

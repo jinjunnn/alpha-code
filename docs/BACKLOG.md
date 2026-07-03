@@ -39,7 +39,7 @@
 
 | ID | 标题 | 类 | 仓 | 状态 | 备注 |
 |---|---|---|---|---|---|
-| A6 | sidecar env 白名单:阻断平台 JWT / BYOK 密钥 / EXA key 继承给第三方 MCP/LSP 子进程 | security | A | in-sprint | **→ [S9](sprints/2026-07-03-s9-proxy-e2e/sprint.md)**;唯一 in-rule 修点=`createSidecarEnv`(server.ts:220,R2);deferred 原因=需登录态 E2E 验证(册 §7g)→ **随 REQ-002 联调 sprint 落地**。**R3 门控 owner(2026-07-03 接管)**——A6 落地前禁止:① A2b 存量配置一键钉迁移 ② 预设注入/推荐位等安装推广 ③ catalog **新增**条目上架(E2/E6);**不在门控内**:既有条目钉版本(A2a,不扩安装面、纯供应链加固,越序已复核认可)、hub 浏览/筛选 UI |
+| A6 | sidecar env 白名单:阻断平台 JWT / BYOK 密钥 / EXA key 继承给第三方 MCP/LSP 子进程 | security | A | shipped | **PR #40**(→ [S9](sprints/2026-07-03-s9-proxy-e2e/sprint.md));方案=白名单(`sidecar-env.ts` default-deny)+ `{file:}` 密钥通道(`alpha-secret-files.ts`,fork 时镜像/吊销)联动——勘察实锤泄漏是**两条通道**(密钥 env 直继承 + `OPENCODE_CONFIG_CONTENT` 内联明文),单做白名单会断平台/BYOK;typecheck+**115 tests** 绿(+18 安全路径);采纳方案/行为变化/残余风险见 [requirements/A6](requirements/A6-sidecar-env-allowlist.md);**verified 待真机**:MCP 子进程 env dump + 四链路复验 + 登出吊销(清单在档)。**R3 门控未解除**(解除随 verified,届时解锁 A2b/E2/E6) |
 | A2 | catalog MCP 全部钉精确版本 + 存量配置一键钉版本(T1.5) | security/perf | A | ready | 惰性 hub(PR #23)+ **catalog 全条目已钉版本(2026-07-03,待 PR)**:8 MCP command + 飞书/语雀 2 mirrorCommand + opencode-notify,钉至当日各包 latest(server-filesystem@2026.1.14 / playwright@0.0.77 / markitdown-mcp@0.0.1a4 / server-git@2026.6.16 等),catalog `version`→`2026-07-03.1`,typecheck+97 tests 绿。**剩 = 存量用户配置一键钉迁移**。R3 澄清:catalog 数据钉版本≠推广安装、不扩 A6 面,故先行;迁移/主动推广仍受 A6 门控 |
 
 ## Active — P1

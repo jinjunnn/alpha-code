@@ -2,8 +2,10 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { app, utilityProcess } from "electron"
 import type { Details } from "electron"
+import { syncSecretFiles } from "./alpha-secret-files"
 import { loadAlphaSecrets } from "./alpha-secrets"
 import { getLogger } from "./logging"
+import { createSidecarEnv } from "./sidecar-env"
 import { getUserShell, loadShellEnv } from "./shell-env"
 import { getStore } from "./store"
 import { DEFAULT_SERVER_URL_KEY } from "./store-keys"
@@ -71,6 +73,17 @@ export async function spawnLocalServer(
   password: string,
   options: SpawnLocalServerOptions,
 ) {
+  // A6: mirror the secret env vars into the {file:} channel on EVERY fork (login/logout/key changes
+  // respawn the sidecar through here, so the files always track the current auth/BYOK state), then
+  // fork with the allowlisted env — secrets never enter the sidecar's process.env. Loud on failure:
+  // without the files, the platform/BYOK providers silently vanish from the picker (anti-B11).
+  try {
+    const sync = syncSecretFiles(options.userDataPath)
+    getLogger()?.log(`alpha-secrets sync: wrote [${sync.written.join(", ")}] removed [${sync.removed.join(", ")}]`)
+  } catch (error) {
+    getLogger()?.error("alpha-secrets sync FAILED — platform/BYOK providers will be missing", error)
+  }
+
   const sidecar = join(dirname(fileURLToPath(import.meta.url)), "sidecar.js")
   const child = utilityProcess.fork(sidecar, [], {
     cwd: process.cwd(),
@@ -220,20 +233,10 @@ export async function checkHealth(url: string, password?: string | null): Promis
   }
 }
 
-function createSidecarEnv(): Record<string, string> {
-  const env = Object.fromEntries(
-    Object.entries(process.env).flatMap(([key, value]) => (value === undefined ? [] : [[key, String(value)]])),
-  )
-  delete env.DEBUG
-  if (process.platform === "linux") delete env.LD_PRELOAD
-  // NOTE(alpha): deliberately do NOT disable the channel-suffixed DB in dev. The opencode db
-  // file is `opencode-${InstallationChannel}.db` (e.g. opencode-alpha.db on the alpha branch).
-  // Previously `bun run dev` (!isPackaged) forced the unsuffixed `opencode.db`, so projects/
-  // sessions created while developing landed in a DIFFERENT file than the installed app's
-  // `opencode-alpha.db` — making projects look "lost on restart" when switching between the
-  // two. Sharing one channel DB across dev + packaged keeps a single, consistent project list.
-  return env
-}
+// createSidecarEnv moved to sidecar-env.ts (A6: allowlist, unit-testable without electron). The
+// OPENCODE_* prefix passes through wholesale, which keeps the channel-suffixed DB behavior intact
+// (`opencode-${InstallationChannel}.db` shared across dev + packaged — see the "lost on restart"
+// note in that file's history / opencode-channel-db-persistence).
 
 function delay(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))

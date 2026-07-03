@@ -296,11 +296,14 @@ const main = Effect.gen(function* () {
 
   // Derive the platform proxy env (ALPHA_BASE_URL/ALPHA_API_KEY for the model proxy + cloud MCP)
   // from any stored login or DEV_PLATFORM_TOKEN,AFTER app ready(safeStorage 可用)且 BEFORE
-  // sidecar fork(~L400)so it inherits them。修复:冷启动登录态恢复(原 pre-ready 调用解密恒失败)。
+  // sidecar fork(~L400)。修复:冷启动登录态恢复(原 pre-ready 调用解密恒失败)。A6:ALPHA_BASE_URL
+  // 过 sidecar env 白名单;密钥不进 sidecar env,由 spawnLocalServer 在 fork 时经 syncSecretFiles
+  // 落入 {file:} 通道(alpha-secret-files.ts)。
   initAuthEnv(app.getPath("userData"))
   // Load alpha's encrypted BYOK key vault (migrates any key off opencode auth.json once) and bridge
-  // each stored key into its provider's keyEnv BEFORE the sidecar forks, so buildAlphaModelConfig
-  // (sidecar) can inline it as a direct-node apiKey. See alpha-byok-keys.ts.
+  // each stored key into its provider's keyEnv in MAIN's env BEFORE the sidecar forks — that's the
+  // source syncSecretFiles mirrors into the {file:} channel that buildAlphaModelConfig (sidecar)
+  // references (A6). See alpha-byok-keys.ts.
   initByokKeys(app.getPath("userData"))
   injectByokKeysIntoEnv()
 
@@ -448,8 +451,9 @@ const main = Effect.gen(function* () {
   mainWindow = createMainWindow()
 
   // In-place sidecar respawn — NOT a full app relaunch (ad-hoc-signed builds quit on relaunch, ADR-017).
-  // Re-forks on the SAME host/port/password with freshly-derived env (login set ALPHA_BASE_URL/
-  // ALPHA_API_KEY → buildAlphaModelConfig injects provider.alpha), then reloads the renderer so it
+  // Re-forks on the SAME host/port/password with freshly-derived state (login set ALPHA_BASE_URL +
+  // ALPHA_API_KEY in main's env → fork-time syncSecretFiles refreshes the {file:} channel →
+  // buildAlphaModelConfig injects provider.alpha), then reloads the renderer so it
   // reconnects (url/password unchanged → awaitInitialization stays valid) and re-fetches providers →
   // the proxy activates with zero clicks and no restart.
   const respawnSidecar = async () => {

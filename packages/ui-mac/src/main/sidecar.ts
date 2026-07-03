@@ -6,6 +6,7 @@ import * as tls from "node:tls"
 import { ALPHA_BEHAVIOR_MD } from "./alpha-behavior"
 import { buildAlphaIdentity } from "./alpha-identity"
 import { buildAlphaModelConfig } from "./alpha-models"
+import { hasSecretFile, secretFileRef } from "./alpha-secret-files"
 
 // ADR-006 bridge ("two runtime worlds"). opencode's ToolRegistry dynamically imports a project's
 // raw-TS tools (.opencode/tool/*.ts), and packages whose TS entry does `import "./x.js"` (e.g.
@@ -158,10 +159,13 @@ function injectAlphaConfig(userDataPath: string) {
 
       if (wantIdentity) {
         // Capability facts the base prompt can't know — purely informational (ADR-009 / ADR-002).
+        // The cloud token lives in the {file:} channel, never in this process's env (A6).
         const caps = {
           websearch:
             process.env.ALPHA_WEBSEARCH_DISABLE !== "1" && process.env.OPENCODE_ENABLE_EXA !== "0",
-          cloudDispatch: Boolean(process.env.ALPHA_CLOUD_MCP_URL && process.env.ALPHA_CLOUD_TOKEN),
+          cloudDispatch: Boolean(
+            process.env.ALPHA_CLOUD_MCP_URL && hasSecretFile(userDataPath, "ALPHA_CLOUD_TOKEN"),
+          ),
         }
         addInstruction("alpha-identity.md", buildAlphaIdentity(caps))
       }
@@ -172,7 +176,7 @@ function injectAlphaConfig(userDataPath: string) {
       config.instructions = instructions
     }
 
-    const models = buildAlphaModelConfig()
+    const models = buildAlphaModelConfig(userDataPath)
     if (models) {
       config.enabled_providers = models.enabled_providers
       if (models.model) config.model = models.model
@@ -180,20 +184,21 @@ function injectAlphaConfig(userDataPath: string) {
     }
 
     //   3. Cloud tool gateway (alpha-platform B). Registered only when platform-pays is active —
-    //      the env is derived from the stored login / DEV_PLATFORM_TOKEN by main (alpha-auth.ts §③),
-    //      so logged-out / BYOK leaves it dark. The same bearer fronts the model proxy
-    //      (ALPHA_API_KEY) and this MCP tool gateway (see docs/platform-integration.md). oauth:false
+    //      main derives the login state (alpha-auth.ts §③) and materializes the bearer into the
+    //      {file:} channel at fork (A6), so logged-out / BYOK leaves it dark. The same bearer fronts
+    //      the model proxy (ALPHA_API_KEY) and this MCP tool gateway (see docs/platform-integration.md).
+    //      The header carries a {file:} ref — resolved by opencode at config load, so neither this
+    //      process's env nor OPENCODE_CONFIG_CONTENT ever contains the token value. oauth:false
     //      because we attach our own capability token and must skip OAuth auto-detection.
     const mcpUrl = process.env.ALPHA_CLOUD_MCP_URL
-    const mcpToken = process.env.ALPHA_CLOUD_TOKEN
-    if (mcpUrl && mcpToken) {
+    if (mcpUrl && hasSecretFile(userDataPath, "ALPHA_CLOUD_TOKEN")) {
       config.mcp = {
         ...(config.mcp ?? {}),
         cloud: {
           type: "remote",
           url: mcpUrl,
           enabled: true,
-          headers: { Authorization: `Bearer ${mcpToken}` },
+          headers: { Authorization: `Bearer ${secretFileRef(userDataPath, "ALPHA_CLOUD_TOKEN")}` },
           oauth: false,
         },
       }
