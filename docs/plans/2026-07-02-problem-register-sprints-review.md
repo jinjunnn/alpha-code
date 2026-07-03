@@ -1,5 +1,7 @@
 # 问题分级册 · Sprint 拆分 · 宏观方案审查(2026-07-02)
 
+> **📌 冻结声明(2026-07-03,ADR-018)**:本册的**状态真源已迁移 [`docs/BACKLOG.md`](../BACKLOG.md)** —— 71 项的开/关/搁置一律以 BACKLOG 为准;本文冻结为**审计证据 + 叙事历史**(§7f–§7j = PR #22–#33 实施日志),不再更新。`docs/plans/` 目录整体冻结,不再新增计划文件(计划=sprint.md,方案=designs/)。
+
 > 输入:`docs/audits/2026-07-02-startup-perf-audit.md`(启动审计)+ 本轮对 `.claude/rules/*`、alpha-platform `DECISIONS.md`(PA-1~26)、`docs/{harness-extension-backlog,platform-integration}.md` 的对照审查。
 > 范围:① 统一问题分级;② sprint/task 拆分;③ rules/GOALS 宏观合理性;④ 云协同愿景评估;⑤ 本地 harness 集成方式评估。
 

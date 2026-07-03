@@ -1,5 +1,7 @@
 # Harness 扩展清单(Tier-2)
 
+> **📌 冻结声明(2026-07-03,ADR-018)**:E 系列**开放项已并入 [`docs/BACKLOG.md`](BACKLOG.md)**(E2/E5/E6/E8/E10/E11 + 归并 G1→B6、E12→B3、E14→D5、E7→parked),状态以 BACKLOG 为准;本文冻结为证据/背景(接缝盘点与落地记仍有效)。
+
 > 生成:2026-06-23,配套 [[ADR-015]](../.claude/rules/adrs/ADR-015-prompt-optimization-strategy.md) Tier-2 决策。
 > 立场:**"提升能力边界"走 harness 接缝(tool/MCP/skill/agent/plugin),不写进提示词。** 见 ADR-002 / ADR-014。
 > 来源:对 `.opencode/`、`packages/ext`、`packages/ui-mac` 的接缝盘点 + 关键事实已抽查核实(见末尾)。
