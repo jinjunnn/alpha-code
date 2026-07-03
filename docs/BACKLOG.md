@@ -29,6 +29,9 @@
 | composer「只读」「effort」控件三选一:真实现 / 改文案 / 移除 | C28 | 用户可见行为 |
 | 关 `OPENCODE_EXPERIMENTAL_FILEWATCHER` 的功能代价是否接受 | B12 | 文件树/diff 刷新体验 vs 内存 |
 | B16 PIPL 同意门重启时机(现 parked;云派发/公开分发前必须) | B16 | 合规,发布节奏 |
+| **前端脱耦终局路径**(根决策,已收编 REQ-013):A防护网/B单适配层/C高churn自建/D全自有渲染/E冻结上游前端 5 选;**待 E 可行性 spike 结论**后拍板终局(E 冻结 / C→D 重建 / 混合)。推荐=A+B 无悔先落、先验 E、否则 C→D | REQ-013(方案菜单 designs/2026-07-03-frontend-decoupling-options)/ ADR-016 修订 | 每次 upstream sync 的复发成本;是否 ADR-016 修订 |
+| REQ-012 防护网范围:锚点存在性测试 only,还是加全量像素级视觉回归基线(YAGNI 边界) | REQ-012 验收 | 防护网工程量 |
+| REQ-011 首页 composer 下方「预留位」最终放什么(云派发入口 G4/B3 / 定制中心 / 常用命令 / 暂空) | REQ-011 | 首页黄金位信息架构 |
 
 > 拍板即从队列划掉、结论写进对应需求文件;执行中撞到未拍板点 = 停下来问,不代替决策。
 
@@ -46,6 +49,9 @@
 | REQ-001 | 网关 allowed-providers/models 白名单接口 + 客户端按版本显隐(国内版 DeepSeek 系 / 国际版世界模型) | feature | X | in-sprint | **→ [S9](sprints/2026-07-03-s9-proxy-e2e/sprint.md)**;新需求 2026-07-03;详见 [requirements/REQ-001](requirements/REQ-001-gateway-provider-allowlist.md);收编 D2;解 platform-integration 占位模型 id 待办 |
 | REQ-002 | 平台↔alpha-code 代理联调:E2E 打通并计量出数 | feature | X | shipped | **S9;核心链路 verified**(登录→platform→真实模型流式→计量出数,4 次调用一致累加);修 3 断点:BP-1 网关流式计量 waitUntil 缺位(B,`6fe49f3` prod 部署)· BP-2 冷启动登录态丢失(A,待重打包 verify ④)· BP-3→REQ-014;证据 [audits/2026-07-03-req002](audits/2026-07-03-req002-proxy-e2e.md);④ token 过期(B2)/logout 复验未做 |
 | REQ-003 | 网关 SSE 流式健壮性:卡顿/断连/重连/心跳审查与加固 | debt | X | ready | 新需求;收编 C23;详见 [requirements/REQ-003](requirements/REQ-003-gateway-sse-robustness.md) |
+| REQ-010 | alpha-ui 视觉 + 注入/路由回归修复批(546-sync 后 reskin 耦合面静默失效:背景/用户消息/发送圆环/审查按钮/模型卡误绑/搜索页丢失/新对话侧栏异物,图1–图9) | bug | A | registered | 用户 2026-07-03 截图批;**已确诊**:546-sync 作废 reskin 锚点 192 中 94(见 [audits/2026-07-03-frontend-reskin-regression](audits/2026-07-03-frontend-reskin-regression.md));**非回滚**(无 alpha-ui revert);图8 证组件仍在=改接线非重建;详见 [requirements/REQ-010](requirements/REQ-010-alpha-ui-visual-regression.md) |
+| REQ-012 | 上游同步前端回归防护:锚点契约测试 + sync tripwire + post-sync 视觉冒烟 gate | debt | A | registered | **防复发机制**(用户「回归非常多次」根治);扩 ADR-015 合并验证到前端;并 [[C14]] 收敛层;证据 [audits/2026-07-03-frontend-reskin-regression](audits/2026-07-03-frontend-reskin-regression.md);详见 [requirements/REQ-012](requirements/REQ-012-frontend-sync-regression-guard.md) |
+| REQ-013 | 前端脱耦策略:让 alpha UI 免疫上游前端 churn(选定并落地) | spike | A | registered | 用户诉求「不可能它改一次我跟一次」= 要**免疫**非警报;方案 A防护网/B单适配层/C高churn自建/D全自有渲染/**E 冻结上游前端(先 spike)**;推荐=A+B无悔地基→先验E→否则C→D;可能产出 ADR-016 修订;方案菜单 [designs/2026-07-03-frontend-decoupling-options](designs/2026-07-03-frontend-decoupling-options.md);详见 [requirements/REQ-013](requirements/REQ-013-frontend-decoupling-strategy.md) |
 | B1 | 登录 shell 同步探测黑屏 → 异步化 + 缓存(T1.2) | perf | A | ready | R6:最坏 ~5s(非 10s) |
 | B2 | refresh token 续期 + 401 拦截 + 失败降级 BYOK/登出(T3.1 剩余) | feature | A | ready | A8 已修 respawn 重导/logout 清 token;续期本体仍缺;联调(REQ-002)同域 |
 | B3 | 云协同最后一公里:cloud MCP 健康 → dispatch → 进度 → artifact 回流(=G4、E12;T4.1-4.3) | feature | X | ready | **R1:勿切端点**(workers.dev 是唯一路由 /v1 的 host);真因更可能 token 注入时序;MCP URL 待 `endpoints.mcp`(见 [platform-endpoint-discovery-contract](platform-endpoint-discovery-contract.md)) |
@@ -74,6 +80,7 @@
 | REQ-006 | ADR-014 转正收尾:桌面端验收用例(装 markitdown→免重启可用→卸载→依赖预检)+ 4 个 plan-review 未决项拍板 → trial 转 accepted | docs | A | ready | 事实核查:Phase ④(plugin 装包)实际已发(E 册,commit 59c0786),ADR 前提已满足;设计文档 §C1-C5 未勾系文档滞后,随核验回勾;桌面验收依赖 D5 同场 |
 | REQ-008 | 产品定位〔待补〕决策批:团队协作/企业租户/用户下沉/前 2-3 具体功能/G4 优先级,一次收口 | spike | X | registered | POSITIONING/GOALS/NON_GOALS 三处〔待补〕;详见 [requirements/REQ-008](requirements/REQ-008-positioning-open-decisions.md) |
 | REQ-009 | alpha-ci 提速:guard partial clone + bun 依赖缓存 | debt | A | ready | **真 CI 痛已由 D12 解**(卡的是上游 blacksmith 僵尸 workflow,非 alpha-ci);alpha-ci 本体已 ~30-46s **本就 <2min 目标达标** → REQ-009 降级为**可选打磨**(partial clone + bun cache 再压时间);验收「改上游必红」用例仍需真 CI run;详见 [requirements/REQ-009](requirements/REQ-009-alpha-ci-speedup.md) |
+| REQ-011 | 首页 composer 下方项目/会话 chips 移除 → 预留后续功能入口位 | ux | A | registered | 用户 2026-07-03;非回归=信息架构决策(侧栏已有项目导航,首页去重);只清场留白,「预留位放什么」进⚖️待拍板;详见 [requirements/REQ-011](requirements/REQ-011-composer-project-chips.md) |
 | C3 | 日志治理:opencode.log 145MB 轮转 + netlog 改 opt-in(T2.5) | debt | A | shipped | **PR #35**(→ [s9b](sprints/2026-07-03-s9b-hygiene/sprint.md));`logging.ts`:netlog opt-in(`ALPHA_NETLOG=1` 默认关)+ opencode.log 启动期超限归档(25MB,留最近 3 份);typecheck+97 tests 绿,轮转逻辑合成文件 E2E 6/6 过;**verified 待**运行期首次打包启动真机轮转 |
 | C5 | skills 每 Instance 重复扫描 | perf | A | registered | 上游(R2);杠杆=减 Instance 数(B4/B12) |
 | C8 | ADR-002 sidecar 语义修订:承认 main-IPC 为桌面等价物(T6.4) | docs | A | ready | YAGNI:真 HTTP sidecar 出现需求再立 |
