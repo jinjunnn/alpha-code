@@ -19,6 +19,7 @@ import { registerExtIpcHandlers } from "./ext-ipc"
 import { registerAccountIpcHandlers } from "./account-ipc"
 import { registerCloudIpcHandlers } from "./cloud-ipc"
 import { registerModelsIpcHandlers } from "./models-ipc"
+import { syncLiveAllowlist } from "./alpha-platform-models"
 import { registerProviderIpcHandlers } from "./provider-ipc"
 import { forwardInitializationFailure } from "./initialization"
 import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
@@ -306,6 +307,9 @@ const main = Effect.gen(function* () {
   // references (A6). See alpha-byok-keys.ts.
   initByokKeys(app.getPath("userData"))
   injectByokKeysIntoEnv()
+  // REQ-001:异步同步 B 网关 edition 白名单缓存(fire-and-forget,不阻塞窗口/首个 fork——B1 纪律)。
+  // 首启无缓存 → 本次 fork 用内置 snapshot;同步成功后 picker 立即收窄,装配随下次 fork/respawn 生效。
+  void syncLiveAllowlist(app.getPath("userData")).catch(() => {})
 
   if (!TEST_ONBOARDING) migrate()
   ensureAlphaLayoutDefault()
@@ -360,7 +364,7 @@ const main = Effect.gen(function* () {
   registerExtIpcHandlers()
   registerAccountIpcHandlers()
   registerCloudIpcHandlers()
-  registerModelsIpcHandlers()
+  registerModelsIpcHandlers(app.getPath("userData"))
   registerProviderIpcHandlers()
   registerEndpointsIpcHandlers()
   void updater.start()
@@ -460,6 +464,9 @@ const main = Effect.gen(function* () {
     if (!mainWindow || mainWindow.isDestroyed()) return
     try {
       logger.log("respawning sidecar (proxy activation)")
+      // REQ-001:respawn 前刷新 edition 白名单缓存(登录刚建立 → 按租户 edition 收窄;8s 超时内置,
+      // 失败保留 last-known/内置 snapshot,不阻断 respawn)。
+      await syncLiveAllowlist(app.getPath("userData")).catch(() => {})
       await killSidecar()
       ensureLoopbackNoProxy()
       useEnvProxy()

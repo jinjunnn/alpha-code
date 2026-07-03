@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
+import { writeLiveAllowlist } from "./alpha-live-allowlist"
 import { buildAlphaModelConfig, getModelCatalog } from "./alpha-models"
 import { secretFilePath, syncSecretFiles } from "./alpha-secret-files"
 
@@ -164,5 +165,68 @@ describe("buildAlphaModelConfig — default model + user providers", () => {
     )
     const cfg = buildAlphaModelConfig(userData)!
     expect(cfg.enabled_providers).toContain("myco")
+  })
+})
+
+describe("buildAlphaModelConfig — REQ-001 edition 白名单(live 缓存)", () => {
+  const liveBase = { fetchedAt: "2026-07-03T00:00:00Z", edition: "cn" }
+
+  test("byokProviders 白名单收窄内置 BYOK:不在名单的 keyed provider 不注入", () => {
+    plantSecret("DEEPSEEK_API_KEY", "sk-1")
+    plantSecret("ZHIPU_API_KEY", "sk-2")
+    writeLiveAllowlist(userData, { ...liveBase, byokProviders: ["deepseek"], models: [] })
+    const cfg = buildAlphaModelConfig(userData)!
+    expect(cfg.enabled_providers).toContain("deepseek")
+    expect(cfg.provider.zhipuai).toBeUndefined()
+    expect(cfg.enabled_providers).not.toContain("zhipuai")
+  })
+
+  test("byokProviders null = 不限制(两个 keyed 都注入)", () => {
+    plantSecret("DEEPSEEK_API_KEY", "sk-1")
+    plantSecret("ZHIPU_API_KEY", "sk-2")
+    writeLiveAllowlist(userData, { ...liveBase, byokProviders: null, models: [] })
+    const cfg = buildAlphaModelConfig(userData)!
+    expect(cfg.enabled_providers).toContain("deepseek")
+    expect(cfg.enabled_providers).toContain("zhipuai")
+  })
+
+  test("平台模型以 live 清单为准:snapshot 名称富化,未知 id 诚实用 id 本名", () => {
+    process.env.ALPHA_BASE_URL = "https://gw.example/v1"
+    plantSecret("ALPHA_API_KEY", "jwt")
+    writeLiveAllowlist(userData, {
+      ...liveBase,
+      byokProviders: null,
+      models: [{ id: "deepseek-chat" }, { id: "brand-new-model" }],
+    })
+    const p = buildAlphaModelConfig(userData)!.provider.alpha as any
+    expect(Object.keys(p.models).sort()).toEqual(["brand-new-model", "deepseek-chat"])
+    const snapshotName = getModelCatalog().platformModels.find((m) => m.id === "deepseek-chat")!.name
+    expect(p.models["deepseek-chat"].name).toBe(snapshotName)
+    expect(p.models["brand-new-model"].name).toBe("brand-new-model")
+  })
+
+  test("live models 空数组 → 回退 snapshot(空白名单按坏配置处理,fail-open 不出空目录)", () => {
+    process.env.ALPHA_BASE_URL = "https://gw.example/v1"
+    plantSecret("ALPHA_API_KEY", "jwt")
+    writeLiveAllowlist(userData, { ...liveBase, byokProviders: null, models: [] })
+    const p = buildAlphaModelConfig(userData)!.provider.alpha as any
+    expect(Object.keys(p.models).length).toBe(getModelCatalog().platformModels.length)
+  })
+
+  test("用户自定义 provider 不受白名单约束(2026-07-03 拍板:目录跟随 edition,自定义不拦)", () => {
+    writeLiveAllowlist(userData, { ...liveBase, byokProviders: ["deepseek"], models: [] })
+    fs.writeFileSync(
+      path.join(tmp, "opencode.jsonc"),
+      JSON.stringify({ provider: { myco: { npm: "@ai-sdk/openai-compatible", options: {} } } }),
+    )
+    expect(buildAlphaModelConfig(userData)!.enabled_providers).toContain("myco")
+  })
+
+  test("缓存损坏 → 视同无缓存(内置 snapshot,不 throw)", () => {
+    process.env.ALPHA_BASE_URL = "https://gw.example/v1"
+    plantSecret("ALPHA_API_KEY", "jwt")
+    fs.writeFileSync(path.join(userData, "alpha-live-models.json"), "{corrupt")
+    const p = buildAlphaModelConfig(userData)!.provider.alpha as any
+    expect(Object.keys(p.models).length).toBe(getModelCatalog().platformModels.length)
   })
 })

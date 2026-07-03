@@ -10,12 +10,12 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import type { AccountSummary, AuthState } from "../../preload/types"
-import type { AlphaModelCatalog, ByokProvider, ProviderKeyStatus, Tier } from "../../shared/alpha-model-types"
+import type { ByokProvider, EffectiveCatalog, ProviderKeyStatus, Tier } from "../../shared/alpha-model-types"
 import { ALPHA_PATHS } from "../../shared/alpha-config"
 import { useAlphaEndpoints } from "../use-alpha-endpoints"
 import { AddProvider } from "./model-picker-add"
 
-const [catalog, setCatalog] = createSignal<AlphaModelCatalog | null>(null)
+const [catalog, setCatalog] = createSignal<EffectiveCatalog | null>(null)
 const [addOpen, setAddOpen] = createSignal(false)
 
 const fmtYuan = (fen: number) => `¥${(fen / 100).toFixed(2)}`
@@ -121,8 +121,15 @@ export function ModelPickerInject() {
     void refreshKeyStatus()
   })
   // Re-read BYOK key state whenever the picker (re)opens, so a key set elsewhere reflects without reload.
+  // REQ-001:同时刷新 B 网关 edition 白名单(platformLive 顺带写缓存 → 重取 effective catalog),
+  // 网关侧改配置后「刷新即生效」不需发版;失败静默保留当前目录(缓存/内置 snapshot,picker 不空白)。
   createEffect(() => {
-    if (panelHost()) void refreshKeyStatus()
+    if (!panelHost()) return
+    void refreshKeyStatus()
+    window.api.models
+      .platformLive()
+      .then(() => window.api.models.catalog().then(setCatalog))
+      .catch(() => {})
   })
   onCleanup(() => {
     mo?.disconnect()
@@ -306,6 +313,11 @@ export function ModelPickerInject() {
                     <button class="a-mp2-activate" onClick={() => void window.api.auth.enableProxy()}>
                       启用代理
                     </button>
+                  </Show>
+                  <Show when={catalog()?.liveSync?.status === "static"}>
+                    <span class="a-mp2-lock" title="网关模型白名单未同步(离线/不可达),当前显示内置目录;联网后打开本面板即自动同步">
+                      内置目录
+                    </span>
                   </Show>
                 </div>
                 <For each={proxyRows()}>{(r) => <RowItem r={r} />}</For>
