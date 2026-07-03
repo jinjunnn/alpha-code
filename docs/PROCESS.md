@@ -59,7 +59,15 @@ BACKLOG   P0-P3    REQ 文件            sprints/<date>/   /app:build  /app:revi
 
 **抽取规则**:P0 全部 > 发布短名单(BACKLOG 顶部)> P1 按域聚类(同子系统 / 同文件的一起做,减上下文切换)> P2 顺带。**WIP = 1**:上一 sprint 未收尾(§5 回写完)不开新的。
 
+**开工协议(每次 session 的标准起手,2026-07-03 与用户确认)**:用户说「按 BACKLOG 开工 / 开 sprint」→
+1. 读 `BACKLOG.md`,过滤**可抽取**项:`status = ready` **且前置已清**(备注中「前置=X」「受 A6 门控(R3)」等未清视为 blocked,自动跳过)**且非 parked**;
+2. 按抽取规则拟 **sprint 提案**(目标、条目清单、预计规模),连同各条的验收标准来源(requirements 文件)一起给出;
+3. **等用户批准提案后**才建 sprint 目录、翻 in-sprint、动代码(用户明说「直接开工不用问」可跳过本 gate);
+4. 执行中遇到**需单独批准类必停**:① 产品/定位决策(spike 拍板项,如 REQ-008、REQ-006 未决项)② 不可逆动作(数据迁移、删用户数据、发布、改 appId/渠道)③ 用户可见默认行为翻转。其余技术实现不逐项请示——**需求文件的验收标准即契约**。
+
 **开 sprint**:建 `sprints/YYYY-MM-DD-<slug>/sprint.md`(模板 §8)——写目标、抽取的 IDs(BACKLOG 同步翻 `in-sprint`)、拆 task(T 表 + checkbox)。
+
+**PR 粒度(sprint ≠ PR,2026-07-03 与用户确认)**:sprint 是**计划/执行批次**,PR 是**合入单位**——一个 sprint 通常产出**多个短命 PR**,每个 PR = 1 个需求或一个同域小簇(diff 可审、可独立回退,如 A2a 单文件即单独成审)。**禁止长命 sprint 大分支**(每日 upstream sync 合入 alpha 会使其持续漂移,违背 ADR-005 短命分支纪律);微型 sprint(单一小域)可只有 1 个 PR。sprint.md 的 task 表记录每项落在哪个 PR(§5 三件套随**每个** PR 即时回写,不等 sprint 收尾)。
 
 **执行**(对应 `/app:*` 命令):`/app:build`(实现)→ `/app:review`(审查)→ `/app:qa`(需要时)→ `/app:ship`(PR)。全自动串联可用 `/app:sprint`。
 
