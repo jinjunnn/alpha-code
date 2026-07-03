@@ -10,7 +10,7 @@
 | T2 | electron-updater 关 allowDowngrade + feed/产物完整性核查记录 | B9 | ✅ shipped(PR #47;真机更新实测随下个发版) |
 | T3 | respawnSidecar 互斥/合并(多路触发防竞态)+ BYOK 改键/删键即时重注 respawn | B5+B21 | ✅ shipped(PR #48;B5 崩溃自愈半边留 ready) |
 | T4 | preferAppEnv shell 探测异步化 + userData 缓存(启动不等 login shell) | B1 | ✅ shipped(PR #49) |
-| T5 | 网关流式转发 + A 侧 cloud SSE 健壮性审查加固(退避/重连/终态/subs 泄漏,收编 C23) | REQ-003 | ☐ |
+| T5 | 网关流式转发 + A 侧 cloud SSE 健壮性审查加固(退避/重连/终态/subs 泄漏,收编 C23) | REQ-003 | ✅ shipped(PR #50;链路1 两建议项留档) |
 
 **Gates**:typecheck ☑ · bun test ☑(逐 PR) · 北极星守卫 ☑ · 真机批(S9+S10 合场)☐
 **回写**:BACKLOG 逐 PR · CHANGELOG 逐 PR · verify 记录随真机批
