@@ -1,0 +1,151 @@
+# BACKLOG — 工作项单一真源
+
+> **状态只在本文件翻转**;流程与模板见 [`PROCESS.md`](PROCESS.md)(权威决策 ADR-018)。
+> 状态:`registered / ready / in-sprint / shipped / verified / archived`;旁路 `parked / rejected / dup`。
+> 类:feature / bug / debt / security / perf / ux / docs / spike。仓:A=alpha-code · B=alpha-platform · C=alpha-web · X=跨仓。
+> 证据文档:**册** = [`plans/2026-07-02-problem-register-sprints-review.md`](plans/2026-07-02-problem-register-sprints-review.md)(71 项 + R1-R7 修正 + §7f-7j 实施日志);**核查** = [`audits/2026-07-02-register-verification.md`](audits/2026-07-02-register-verification.md);**E 册** = [`harness-extension-backlog.md`](harness-extension-backlog.md)。
+> 下一个新需求编号:**REQ-009**。
+
+## 发布短名单(launch-blockers,册 §6.8)
+
+| # | 项 | 现状 |
+|---|---|---|
+| 1 | A7 签名/公证 | ✅ verified(v0.1.0) |
+| 2 | **A6 秘钥继承给第三方 MCP/LSP** | ❌ **唯一剩余硬阻断** |
+| 3 | B19 sync + B18 CI + B10 北极星守卫 | ✅ verified |
+| 4 | B15 NOTICE + C18 品牌 | ✅ shipped / verified |
+| 5 | B16 云派发 PIPL 同意门 | ⏸️ parked(用户搁置) |
+| 6 | B11 系统性静默失败 | ⚠️ 部分(统一错误面未做) |
+| 7 | B9 更新链完整性 | ⚠️ 部分(feed 已修;完整性/downgrade 未做) |
+
+## Active — P0
+
+| ID | 标题 | 类 | 仓 | 状态 | 备注 |
+|---|---|---|---|---|---|
+| A6 | sidecar env 白名单:阻断平台 JWT / BYOK 密钥 / EXA key 继承给第三方 MCP/LSP 子进程 | security | A | ready | 唯一 in-rule 修点=`createSidecarEnv`(server.ts:220,R2);deferred 原因=需登录态 E2E 验证(册 §7g)→ **随 REQ-002 联调 sprint 落地**。**R3 门控 owner(2026-07-03 接管)**——A6 落地前禁止:① A2b 存量配置一键钉迁移 ② 预设注入/推荐位等安装推广 ③ catalog **新增**条目上架(E2/E6);**不在门控内**:既有条目钉版本(A2a,不扩安装面、纯供应链加固,越序已复核认可)、hub 浏览/筛选 UI |
+| A2 | catalog MCP 全部钉精确版本 + 存量配置一键钉版本(T1.5) | security/perf | A | ready | 惰性 hub(PR #23)+ **catalog 全条目已钉版本(2026-07-03,待 PR)**:8 MCP command + 飞书/语雀 2 mirrorCommand + opencode-notify,钉至当日各包 latest(server-filesystem@2026.1.14 / playwright@0.0.77 / markitdown-mcp@0.0.1a4 / server-git@2026.6.16 等),catalog `version`→`2026-07-03.1`,typecheck+97 tests 绿。**剩 = 存量用户配置一键钉迁移**。R3 澄清:catalog 数据钉版本≠推广安装、不扩 A6 面,故先行;迁移/主动推广仍受 A6 门控 |
+
+## Active — P1
+
+| ID | 标题 | 类 | 仓 | 状态 | 备注 |
+|---|---|---|---|---|---|
+| REQ-001 | 网关 allowed-providers/models 白名单接口 + 客户端按版本显隐(国内版 DeepSeek 系 / 国际版世界模型) | feature | X | ready | 新需求 2026-07-03;详见 [requirements/REQ-001](requirements/REQ-001-gateway-provider-allowlist.md);收编 D2;解 platform-integration 占位模型 id 待办 |
+| REQ-002 | 平台↔alpha-code 代理联调:E2E 打通并计量出数 | feature | X | ready | 新需求;A→B→A 闭环从未整体验证(核查 §5);**联调环境即 A6 的验证环境**;详见 [requirements/REQ-002](requirements/REQ-002-proxy-e2e-integration.md) |
+| REQ-003 | 网关 SSE 流式健壮性:卡顿/断连/重连/心跳审查与加固 | debt | X | ready | 新需求;收编 C23;详见 [requirements/REQ-003](requirements/REQ-003-gateway-sse-robustness.md) |
+| B1 | 登录 shell 同步探测黑屏 → 异步化 + 缓存(T1.2) | perf | A | ready | R6:最坏 ~5s(非 10s) |
+| B2 | refresh token 续期 + 401 拦截 + 失败降级 BYOK/登出(T3.1 剩余) | feature | A | ready | A8 已修 respawn 重导/logout 清 token;续期本体仍缺;联调(REQ-002)同域 |
+| B3 | 云协同最后一公里:cloud MCP 健康 → dispatch → 进度 → artifact 回流(=G4、E12;T4.1-4.3) | feature | X | ready | **R1:勿切端点**(workers.dev 是唯一路由 /v1 的 host);真因更可能 token 注入时序;MCP URL 待 `endpoints.mcp`(见 [platform-endpoint-discovery-contract](platform-endpoint-discovery-contract.md)) |
+| B4 | 巨型目录当项目(`/`、`~`、`~/Documents` 建 Instance)治理 | perf | A | ready | 部分上游(R2);alpha 杠杆=垃圾项目引导/隐藏项目不取数;`worktree==="/"` 跳过已做(PR #23) |
+| B5 | sidecar 崩溃自愈 + respawn 竞态/互斥(T2.4 + NEW-4) | debt | A | ready | respawn 无互斥(NEW-4)与 C23 邻接 |
+| B6 | 装载 `@alpha-code/ext` 主接缝(=G1;T5.1-5.2) | feature | A | ready | dist/plugin.js(410KB)已构建未装 .app;ADR-006 预 bundle 纪律;Tier-2 能力扩展的载体 |
+| B7 | 发布流水线制度化:CI 断言版本/种子资产/断网首启 smoke(T2.6 剩余) | debt | A | ready | 部分:DISTRIBUTION.md 已写 + S7 部分断言 |
+| B8 | 扩展物运行时生命周期:版本/健康/更新三要素(T5.4/T5.6) | feature | A | registered | 系统性条目,症状=A2;终态=定制中心从商店→运行时管理器 |
+| B9 | 更新链完整性:关 `allowDowngrade` + feed 完整性校验 | security | A | ready | 部分:feed owner 已修(PR #32 → jinjunnn/alpha-code) |
+| B11 | 统一错误/健康呈现面 + 账户 banner(S8 底座) | ux | A | ready | 部分:侧栏 store.error + 首条消息 keep-text 已修(PR #24);含 B23 的呈现面;B20/C20/C21 公共底座 |
+| B12 | Instance 不驱逐 + 递归 watcher 常驻 | perf | A | ready | 上游归属(R2);alpha 杠杆=`server.ts:58` 停强开 `OPENCODE_EXPERIMENTAL_FILEWATCHER` + 垃圾项目治理(B4) |
+| B13 | DB 跨进程并发(SQLITE_BUSY → orDie) | debt | A | registered | 上游归属(R2);R6 降级:busy_timeout=5000 已缓解;alpha 无直接修点 |
+| B14 | 会话 DB 备份/导出(损坏恢复) | feature | A | registered | 上游 DB 本体改不了(R2);alpha main 纯文件操作可做备份/导出 |
+| B20 | 弱网降级 UX:超时/重试/splash 状态/真骨架/websearch 优雅降级(S8) | ux | A | ready | 部分⊂B11;websearch orDie 在上游(R2),杠杆=env 关闸或自建 tool;含 ADR-009 🔭 keyless 限流行为运行时实测 |
+| B21 | BYOK 改键/删键即时生效(触发重注 env/respawn) | bug | A | ready | A8 已给 respawn 重导地基;联调(REQ-002)同域 |
+| B22 | message-timeline.tsx:481 会话时间线崩溃 | bug | A | ready | 546-sync 后**先代码复验再修**;疑 timeline-inject DOM 注入扰动上游 virtualizer |
+| B23 | strict-key 配置致瘫:全局 jsonc 解析失败 → 整份配置静默清零 | bug | A | ready | 上游解析行为;alpha 杠杆=写前校验(C2 已有)+ 失败呈现(→B11) |
+
+## Active — P2(债务)
+
+| ID | 标题 | 类 | 仓 | 状态 | 备注 |
+|---|---|---|---|---|---|
+| REQ-004 | `.alpha` 项目工作目录:全量收敛方案验证(用户已定向) | spike | A | ready | **用户决定(2026-07-03):全部进 `.alpha/`(乙案)**;私有产物无条件可行,引擎自动发现原语需桥接——spike=实测三法(config 注入/symlink/双写)→ 落 ADR;详见 [requirements/REQ-004](requirements/REQ-004-alpha-workdir-spike.md) |
+| REQ-005 | 前端接管收尾核验:重型引擎换肤(终端/diff/权限流)完成度 + timeline 验收尾项(截图归档/COUPLING 清单/真机验收) | ux | A | ready | ADR-016 待办②;tasks.md 40 项全勾但 dev-plan:98-100 未走完;COUPLING 清单关系 C14;详见 [requirements/REQ-005](requirements/REQ-005-frontend-takeover-closeout.md) |
+| REQ-006 | ADR-014 转正收尾:桌面端验收用例(装 markitdown→免重启可用→卸载→依赖预检)+ 4 个 plan-review 未决项拍板 → trial 转 accepted | docs | A | ready | 事实核查:Phase ④(plugin 装包)实际已发(E 册,commit 59c0786),ADR 前提已满足;设计文档 §C1-C5 未勾系文档滞后,随核验回勾;桌面验收依赖 D5 同场 |
+| REQ-008 | 产品定位〔待补〕决策批:团队协作/企业租户/用户下沉/前 2-3 具体功能/G4 优先级,一次收口 | spike | X | registered | POSITIONING/GOALS/NON_GOALS 三处〔待补〕;详见 [requirements/REQ-008](requirements/REQ-008-positioning-open-decisions.md) |
+| C3 | 日志治理:opencode.log 145MB 轮转 + netlog 改 opt-in(T2.5) | debt | A | ready | |
+| C5 | skills 每 Instance 重复扫描 | perf | A | registered | 上游(R2);杠杆=减 Instance 数(B4/B12) |
+| C8 | ADR-002 sidecar 语义修订:承认 main-IPC 为桌面等价物(T6.4) | docs | A | ready | YAGNI:真 HTTP sidecar 出现需求再立 |
+| C9 | 代码上云数据边界 mini-ADR:diff-only/secrets 过滤/consent/体积上限(T4.5) | security | X | ready | 与 B16 互补(C9=技术边界,B16=法律同意) |
+| C12 | CORS 过宽(localhost/无 Origin 放行) | security | A | registered | 上游(R2);alpha 杠杆=先撤自己注入的 `ACAO:*`(→C24) |
+| C14 | 升级静默破坏面:232 选择器 / 16 处 `as any`;薄 re-export 收敛层(ADR-016 待办①) | debt | A | ready | R7:实际耦合面 5-6× 于初报 |
+| C15 | 运行时 SSE/DOM 浪费:firehose 裸遍历 + body 全子树 MutationObserver 收窄 | perf | A | ready | R6:有去抖,影响弱于字面;含 A3 尾项:`session.idle` 全量 session.list 去抖(册 §7g deferred) |
+| C16 | 卸载残留 ≈0.8GB 含凭证:清理方案 + app 内数据清除入口 | debt | A | ready | |
+| C17 | schema 版本兼容守卫(旧 app × 新 DB) | debt | A | registered | 上游 DB(R2);alpha 可做启动前版本预检 |
+| C20 | alpha-ui i18n 断裂:9 组件硬编码简中 + 每语种 OpenCode 残留(zh:19/en:30)(S8) | ux | A | ready | R7:爆炸半径大于初报 |
+| C21 | 无障碍:focus-trap/键盘/Escape/对比度/reduced-motion(S8) | ux | A | ready | |
+| C22 | 依赖漏洞:bun audit 158(2 crit/45 high),多在 dev 工具链 | debt | A | registered | 发布产物暴露面小;定期复扫 |
+| C24 | CSP 落地 + 撤 alpha 自注入 `ACAO:*`(exfil 通道) | security | A | ready | 风险:可能断 renderer,需充分验证(册 §7g 告诫) |
+| C25 | `open-path` + `ext-install-plugin` exec 触达面收紧 | security | A | ready | C2 同类配置期触达面,渲染层可达 |
+| C27 | Electron fuses(关 RunAsNode)+ asar-integrity + entitlements 收紧 | security | A | ready | dylib 注入组合;邻接 A7 |
+| C28 | placebo 控件诚实化(composer 只读/effort)+ 崩溃屏接管设计 | ux | A | registered | 顶层 ErrorBoundary 方案已实测证伪撤回(册 §7h);品牌部分已由 C29 修;剩=控件诚实化 + 边界下沉设计 |
+
+## Active — P3(卫生)
+
+| ID | 标题 | 类 | 仓 | 状态 | 备注 |
+|---|---|---|---|---|---|
+| REQ-007 | ADR-015 待办①③:per-agent prompt 优化清单 + Tier-3 回答长度校准桌面实测 | docs | A | registered | 待办②(sync tripwire)已随 S7 完成 |
+| D1 | 健康轮询先 sleep 100ms 再首查 | perf | A | ready | |
+| D2 | `/v1/models` live 同步死代码 | debt | A | dup | **→ 并入 REQ-001**(接进 picker 按白名单装配) |
+| D3 | 官方 4 条 Anthropic skills 内容打包 + NOTICE(T5.3) | feature | A | ready | 现诚实失败,非占位 |
+| D4 | 定制中心 skill 卡片「已安装」态(T5.4) | ux | A | ready | |
+| D5 | playwright MCP 浏览器内核来源实测拍板(=E14 遗留;T5.5) | spike | A | ready | 关 ADR-014 `_verify` |
+| D6 | userData 每启动新建 log 目录 | debt | A | registered | 7 天清理已有,观察 |
+| D8 | DB WAL 周期 TRUNCATE | debt | A | registered | 上游(R2) |
+| D9 | 分支命名 DB 累积 | debt | A | registered | R6:仅 dev 机器关切,prod 单库 |
+| D10 | ui-mac package.json license/author 补全 | docs | A | ready | copyright 已加(PR #27);剩 package.json 字段 |
+| D12 | CI 卫生:上游 cron workflow 在 fork 误触 + lint gate + e2e 范围 | debt | A | ready | Actions 分钟燃烧 + 潜在误发布 |
+
+## Active — Harness 扩展(E 系列,证据见 E 册)
+
+| ID | 标题 | 类 | 仓 | 状态 | 备注 |
+|---|---|---|---|---|---|
+| E2 | 钉钉 MCP(补齐飞书/语雀国产三件套) | feature | A | registered | 核实官方包名/鉴权字段;**上架受 A6 门控(R3:新增条目=扩安装面)** |
+| E6 | 数据库 MCP(sqlite/postgres 读 schema + SELECT) | feature | A | registered | 命令型,无 OAuth;**上架受 A6 门控(R3)** |
+| E11 | 定制中心目录筛选 UI(category/license) | ux | A | ready | catalog schema 已带元数据 |
+| E5 | 日历 MCP(Google/macOS) | feature | A | registered | 阻塞:OAuth/凭据存储(keychain TODO,ADR-014 §8) |
+| E8 | Slack/Teams MCP | feature | A | registered | 阻塞同 E5 |
+| E10 | catalog 远程增量同步(alpha-web 端点) | feature | X | registered | C 仓 catalog 端点未建 |
+
+> 别名/归并:G1 → B6;E12 → B3;E14 → D5(剩实测);E1/E1b/E3/E4 已发(见 E 册);C10 → dup(A6);D7/E7/E13 → Parked;D11 → Done(⊂C1)。
+
+## Parked(搁置,含激活条件)
+
+| ID | 标题 | 搁置原因 | 激活条件 |
+|---|---|---|---|
+| B16 | 云派发 PIPL 同意/告知门 | 用户主动搁置(2026-07-03) | **面向公众分发前 / 云派发上线前必须重启**(R7:登录默认 platform-pays = 每条 prompt 持续出境,近硬阻断) |
+| C19 | Sentry opt-out + 告知 | R6:dormant(`VITE_SENTRY_DSN` 全仓无赋值,从不 init) | 发布流水线注入 DSN 时 |
+| D7 | safeStorage 明文兜底告警 | R6:macOS-only 下死分支(钥匙串恒可用) | 跨平台时 |
+| E7 | websearch 收编为自有 MCP | 与云端 websearch 撞车 | B3/E12 云线落地后 |
+| E13 | 团队协作多端 workspace 同步 | NON_GOALS〔待补〕未决 | 产品定位决策后 |
+
+## 建议下一 sprint(2026-07-03 拟,待抽取)
+
+**S9「代理联调 + 网关白名单 + SSE 健壮」(≈1.5w,跨仓)**
+- **核心(按序)**:REQ-002(搭真实登录+代理联调环境)→ **A6**(在该环境中落 env 白名单并复验代理不破——A6 deferred 的「需登录态验证」条件由 REQ-002 满足)→ REQ-001(白名单接口 + picker 装配)。
+- **同域顺带**:REQ-003(SSE 审查+C23)、B2(refresh)、B21(BYOK 改键)。
+- **解锁**:A6 落地后 A2(版本钉)按 R3 解锁,可尾随或下一批。
+- 理由:5 条新需求中 3 条在此域;A6 是唯一 launch-blocker,正需要这个环境安全验证。
+
+## Done(shipped/verified,待 retro 归档)
+
+| ID | 标题 | 落点 | 验证 |
+|---|---|---|---|
+| A1 | 窗口先行(启动不再被健康检查阻塞) | PR #23 | verified(隔离 dev+CDP) |
+| A3 | 双份取数 → 共享 store(+roots:true/跳过全局 worktree) | PR #26(+#23) | verified(boot 无回归) |
+| A4 | `InstallationVersion` local→1.17.13(patch-server-version) | PR #33 | verified(v0.1.0 打包实测) |
+| A5 | 发版元数据链(0.1.0 + C18 + install-local 渠道化) | PR #32 等 | verified(v0.1.0) |
+| A7 | 签名+公证流水线(Developer ID + 公证) | v0.1.0 | verified(stapler+spctl 双过) |
+| A8 | 鉴权生命周期(respawn 重导 env + logout 清 token) | PR #29 | verified(登录态 live) |
+| B10 | 北极星 CI 守卫(alpha-ci.yml)+ alpha 分支保护 | S7 批7/批8 | verified(guard PASS + protection on) |
+| B15 | MIT NOTICE + 关于面板 | PR #27 | shipped(v0.1.0 含;包内逐项复验未做) |
+| B17 | alpha 测试 0→97(安全路径优先) | PR #33(71→97) | verified(97 pass) |
+| B18 | alpha CI gating(typecheck/test 随 PR) | alpha-ci.yml | verified(PR 实跑) |
+| B19 | sync-upstream 自愈(SYNC_TOKEN) | 2026-07-03 | verified(实测绿灯 + 10 commits 合入) |
+| C1 | IPC 导航/store 硬化(setWindowOpenHandler/will-navigate/name 守卫) | PR #25 | shipped |
+| C2 | persistMcp args/env/headers 值校验(反配置期 RCE) | PR #22 + T7.4 单测 | verified(单测) |
+| C4 | models.dev 关闸 + snapshot 兜底 | PR #22 | verified(冒烟) |
+| C6 | 文档去漂移(rules 前端表述 + submodule 陈述修订) | 2026-07-03 | shipped |
+| C7 | 跨仓 ADR 引用规范 | ADR-018 §8 钉死 | shipped(存量文档改写随用随改) |
+| C11 | 深链日志脱敏(授权码不入 log) | PR #22 | shipped |
+| C13 | open-link scheme 白名单 | PR #22 | shipped |
+| C18 | prod 品牌/appId(com.tide.alphacode)/install-local 渠道化 | PR #32 | verified(v0.1.0) |
+| C26 | 端点 https/host 守卫 | PR #22 + 单测 | verified(单测) |
+| C29 | 上游崩溃屏去 OpenCode(brand-i18n 覆盖) | 批8 | shipped |
+| D11 | store name 路径穿越守卫 | PR #25(⊂C1) | shipped |
+| — | T1.7 models fetch 关闸 / T7.1-T7.5(S7 全套)等 task 级条目 | 册 §7f-7j | 随所属 ID 记账,不单列 |
