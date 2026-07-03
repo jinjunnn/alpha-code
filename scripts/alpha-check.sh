@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# alpha-check — run the exact gates alpha-ci enforces, LOCALLY, before you push.
+#
+# Standard: local-first (see docs/CI.md). CI is the enforcing backstop, not the place
+# you first discover a failure. This mirrors alpha-ci's three jobs 1:1 and runs in seconds.
+#
+#   bash scripts/alpha-check.sh
+#
+# Exit 0 = safe to push (CI will mirror this). Non-zero = fix before pushing.
+set -uo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+# Keep in lockstep with .github/workflows/alpha-ci.yml (env.UPSTREAM_PATHS) and ADR-004.
+UPSTREAM_PATHS="packages/opencode packages/core packages/server packages/app packages/ui packages/tui packages/sdk"
+fail=0
+
+echo "▶ [1/3] north-star guard (zero upstream edits)"
+git fetch --no-tags origin dev --quiet 2>/dev/null || echo "    (warn: could not fetch origin/dev — comparing against last-known origin/dev)"
+# committed delta (mirrors CI) ∪ working-tree edits (earlier local feedback)
+committed="$(git diff --diff-filter=DMR --name-only origin/dev...HEAD -- $UPSTREAM_PATHS 2>/dev/null || true)"
+worktree="$(git diff --diff-filter=DMR --name-only HEAD -- $UPSTREAM_PATHS 2>/dev/null || true)"
+changed="$(printf '%s\n%s\n' "$committed" "$worktree" | sed '/^$/d' | sort -u)"
+if [ -n "$changed" ]; then
+  echo "    ✗ upstream files modified/deleted/renamed (fork-sync would conflict):"
+  echo "$changed" | sed 's/^/      /'
+  echo "      → revert; extend via alpha files (packages/ext, packages/ui-mac) or seams (ADR-002/005)."
+  fail=1
+else
+  echo "    ✓ zero upstream package edits"
+fi
+
+echo "▶ [2/3] typecheck (alpha packages: ext + ui-mac)"
+if bun --cwd packages/ext run typecheck && bun --cwd packages/ui-mac run typecheck; then
+  echo "    ✓ typecheck"
+else
+  echo "    ✗ typecheck failed"; fail=1
+fi
+
+echo "▶ [3/3] unit tests (ui-mac)"
+if bun --cwd packages/ui-mac test; then
+  echo "    ✓ tests"
+else
+  echo "    ✗ tests failed"; fail=1
+fi
+
+echo
+if [ "$fail" -eq 0 ]; then
+  echo "✅ all local gates green — safe to push (alpha-ci will mirror this in ~40s)."
+else
+  echo "❌ local gates failed — fix before pushing (alpha-ci would fail the same way)."
+fi
+exit $fail

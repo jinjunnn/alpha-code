@@ -34,4 +34,8 @@
 ```
 bun install
 bun --cwd packages/ui-mac run dev   # electron 解析失败时加 ELECTRON_EXEC_PATH(见 ALPHA.md)
+bash scripts/alpha-check.sh          # push 前自检:北极星守卫 + typecheck + 单测(与 alpha-ci 1:1)
 ```
+
+## CI(规范见 `docs/CI.md`)
+**本地先跑,CI 兜底**。push 前必过 `scripts/alpha-check.sh`。GitHub 上只有 `alpha-ci`(三关,required)+ `sync-upstream` 两个 workflow active;继承的 ~26 个上游 workflow 已禁用(要 Blacksmith runner,本 fork 没有 → 永久 queued,即"CI 卡"真因)。排查手册见 `docs/CI.md` §5。
