@@ -10,7 +10,7 @@
 | Task | 内容 | 对应 ID | 模型 | 状态 |
 |---|---|---|---|---|
 | **Track A —— 云线闭环(G4,headline)** | | | | |
-| T1 | `.alpha` 桥接三法实测(config 注入 / symlink 发现 / 双写)出 verdict + ADR-019 回填(schema/gitignore/桥接选型) | REQ-004 | fable | ☐ |
+| T1 | `.alpha` 桥接三法实测(config 注入 / symlink 发现 / 双写)出 verdict + ADR-019 回填(schema/gitignore/桥接选型) | REQ-004 | fable | ✅ PR #54(verdict:①②双 CONFIRMED,③不启用;证据 [audits/req004-spike](../../audits/2026-07-03-req004-alpha-bridge-spike.md)) |
 | T2 | B3 in-app 闭环:登录态 agent 经 cloud MCP dispatch → 会话内流式进度 → 结构化结果回流;artifact 落 `.alpha/`(依 T1);失败会话内重试 + dispatch 前配额可见(呈现面与 T4 对齐) | B3 | fable | ☐ |
 | T3 | C9 代码上云数据边界 mini-ADR:diff-only / secrets 过滤 / consent / 体积上限(与 T2 同场) | C9 | fable | ☐ |
 | **Track B —— 呈现底座(launch-blocker #6)** | | | | |

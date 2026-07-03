@@ -22,5 +22,17 @@ related: [ADR-002, ADR-005, ADR-006, ADR-014]
 ## 后果
 - ✅ 用户视角单一工作目录、品牌一致(对齐 `.codex`/`.claude` 心智);alpha 产物与上游命名空间彻底隔离,升级绝缘。
 - ✅ B3/G4 云任务 artifact 回流有确定落点;REQ-004 从「三选一」收敛为「验证 + 回填」。
-- ⚠️ 桥接未实测——由 [REQ-004](../../../docs/requirements/REQ-004-alpha-workdir-spike.md) spike 出 verdict 后回填;不通类目按 §3 降级并记录,**不回摆主决策**。
+- ✅ ~~桥接未实测~~ **已实测(见下方修订)**:①② 双通,回退③不启用。
 - ⚠️ 项目根多一个目录;symlink 桥会让 `.opencode/` 出现指针文件(用户可见,需文档说明)。
+
+## 修订(2026-07-03,REQ-004 spike 回填;证据:[audits/2026-07-03-req004-alpha-bridge-spike](../../../docs/audits/2026-07-03-req004-alpha-bridge-spike.md))
+
+1. **§3 桥接 verdict(实测)**:
+   - **config 注入 = CONFIRMED(生产在用)**——`injectAlphaConfig`(`sidecar.ts:146-219`)已用同机制注绝对路径(instructions/plugin/`{file:}`);上游 `plugin[]`/`instructions[]`/`mcp.servers` 均支持绝对路径。
+   - **symlink 桥 = CONFIRMED(fixture 6/6 PASS)**——上游全部 `.opencode/` 扫描传 `symlink:true` → glob@13.0.5 `follow:true`(`packages/core/src/util/glob.ts:13-20`);目录链/文件链/**整 `.opencode` 目录链**/多跳链均被发现(one-hop 假说被运行时证伪,仅防环)。约束:tool/plugin 是单层 `*` + nodir → **须逐文件链**(目录链不可见);`instructions[]` 自身 glob 未传 symlink → 只用纯绝对文件路径形态(alpha 现状即如此)。
+   - **双写同步(回退③)不启用**。
+   - skills 备用通道:`config.skills.paths[]` 支持绝对路径(`skill/index.ts:211-219`),symlink 出平台问题时的免链替代。
+   - **ADR-006 叠加不变**:桥进 `.alpha/` 的 tool/plugin 仍必须预 bundle 自包含 JS(symlink 只解决发现,不解决生 TS 加载)。
+2. **§2 子目录 schema(回填)**:`.alpha/runs/<runId>/`(contract.json · status.json · artifacts/,= B3/G4 回流落点)· `.alpha/prefs.json`(项目偏好)· `.alpha/{skills,tools,agents,commands}/`(桥接真源,`.opencode/` 内放同名 symlink)。identity/behavior/secrets 属**全局级**产物留 userData,不进项目 `.alpha/`。
+3. **§5 gitignore(回填拍板)**:整个 `.alpha/` 建议 ignore(运行时产物);可提交子集暂不引入(YAGNI)。
+4. **写盘守卫**:复用 `safeResolve`(realpath 防逃逸)+ `writeKey` 原子写 + `syncSecretFiles` 0600 模式;`.alpha/` 根须加入路径白名单(实现随 B3 T2)。

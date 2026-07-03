@@ -4,7 +4,7 @@
 > 状态:`registered / ready / in-sprint / shipped / verified / archived`;旁路 `parked / rejected / dup`。
 > 类:feature / bug / debt / security / perf / ux / docs / spike。仓:A=alpha-code · B=alpha-platform · C=alpha-web · X=跨仓。
 > 证据文档:**册** = [`plans/2026-07-02-problem-register-sprints-review.md`](plans/2026-07-02-problem-register-sprints-review.md)(71 项 + R1-R7 修正 + §7f-7j 实施日志);**核查** = [`audits/2026-07-02-register-verification.md`](audits/2026-07-02-register-verification.md);**E 册** = [`harness-extension-backlog.md`](harness-extension-backlog.md)。
-> 下一个新需求编号:**REQ-017**(新需求一律 REQ-NNN;A/B/C/D/E 为历史审计系列保留原号,用户 2026-07-03 确认)。
+> 下一个新需求编号:**REQ-018**(新需求一律 REQ-NNN;A/B/C/D/E 为历史审计系列保留原号,用户 2026-07-03 确认)。
 > **需求文件全覆盖(2026-07-03)**:全部开放的 A/B/C/D 条目已逐条建档 `requirements/<ID>-<slug>.md`(含验收标准),行内备注为摘要、**文件为验收真源**;E 系列以冻结 E 册为分析文档;parked/dup 项不建档。
 
 ## 发布短名单(launch-blockers,册 §6.8)
@@ -71,7 +71,7 @@
 
 | ID | 标题 | 类 | 仓 | 状态 | 备注 |
 |---|---|---|---|---|---|
-| REQ-004 | `.alpha` 项目工作目录:桥接验证 + 回填 ADR-019 | spike | A | in-sprint | **→ [S11](sprints/2026-07-03-s11-cloud-loop/sprint.md) T1(B3 前置)**;决议已立 ADR-019(accepted,2026-07-03):全部进 `.alpha/`;spike=实测桥接三法(config 注入/symlink/双写)→ 回填 ADR-019 修订(schema/gitignore);详见 [requirements/REQ-004](requirements/REQ-004-alpha-workdir-spike.md) |
+| REQ-004 | `.alpha` 项目工作目录:桥接验证 + 回填 ADR-019 | spike | A | shipped | **S11 T1 完成(PR #54)**:config 注入 CONFIRMED(生产在用)+ symlink 桥 CONFIRMED(引擎同款 glob fixture 6/6,整目录链/多跳链均通,one-hop 假说证伪);双写回退不启用;schema/gitignore 已回填 ADR-019 修订;证据 [audits/req004-spike](audits/2026-07-03-req004-alpha-bridge-spike.md);**verified 待 B3 T2 打包态 in-app 冒烟**;详见 [requirements/REQ-004](requirements/REQ-004-alpha-workdir-spike.md) |
 | REQ-015 | 冻结前端 typecheck 偏斜:session-ui(546 后新增)依赖新版 ui API 与冻结 ui 不兼容 | debt | A | registered | ADR-020 冻结缺口;**CI 绿**(alpha-ci 只查 ext/ui-mac)**只卡本地 pre-push**(上游全量 turbo);影响面窄(session-ui 仅喂上游 enterprise/storybook,alpha 不 ship);方案 移包/补丁/`--no-verify`/扩冻结范围 待拍板;详见 [requirements/REQ-015](requirements/REQ-015-frozen-frontend-typecheck-skew.md) |
 | REQ-016 | 真机验证收尾批:A6 R3 解锁 / B2 短TTL / REQ-002④ logout / B3 in-app(登录门控/破坏性 4 项) | spike | X | registered | S9+S10 真机自动验证已 verified 一批(见 [audits/realmachine-verify](audits/2026-07-03-realmachine-verify.md));剩 4 项登录门控/破坏性/需改 prod 配置,收敛后续统一执行;**A6 verified 解 R3 门控**(A2b/E2/E6);详见 [requirements/REQ-016](requirements/REQ-016-realmachine-verify-batch.md) |
 | REQ-014 | 悬空会话路由致「Not found」白屏 → 路由恢复前校验会话存在 | bug | A | registered | REQ-002 联调 BP-3;`tabs.recent` 指向已删会话 → 冷启动整屏 Not found 无恢复入口;alpha 杠杆=恢复前校验会话存在、失败回退首页;详见 [requirements/REQ-014](requirements/REQ-014-dangling-session-blank-screen.md) |
@@ -104,6 +104,7 @@
 |---|---|---|---|---|---|
 | REQ-007 | ADR-015 待办①③:per-agent prompt 优化清单 + Tier-3 回答长度校准桌面实测 | docs | A | registered | 待办②(sync tripwire)已随 S7 完成 |
 | D1 | 健康轮询先 sleep 100ms 再首查 | perf | A | ready | |
+| REQ-017 | `alpha-check.sh` 北极星守卫未跟 ADR-020(仍扫 packages/app → 本地自检恒假红,与 alpha-ci 不再 1:1) | debt | A | ready | 快车道:UPSTREAM_PATHS 对齐 alpha-ci.yml(移出 app/ui);顺带修 `ext-fs-installer.ts:18-20` 硬编码 `~/.config/opencode` 与 `ext-config.ts` XDG 写盘根分叉;发现于 REQ-004 spike([audits/req004-spike](audits/2026-07-03-req004-alpha-bridge-spike.md) §五) |
 | D2 | `/v1/models` live 同步死代码 | debt | A | dup | **→ 并入 REQ-001**(接进 picker 按白名单装配) |
 | D3 | 官方 4 条 Anthropic skills 内容打包 + NOTICE(T5.3) | feature | A | ready | 现诚实失败,非占位 |
 | D4 | 定制中心 skill 卡片「已安装」态(T5.4) | ux | A | ready | |
