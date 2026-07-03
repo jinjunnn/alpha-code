@@ -1,7 +1,7 @@
 import { MainLogger } from "electron-log"
 import log from "electron-log/main.js"
 import { app, crashReporter, netLog, shell } from "electron"
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { ZipWriter, BlobWriter, BlobReader } from "@zip.js/zip.js"
 import { dirname, join } from "node:path"
 import { homedir } from "node:os"
@@ -11,6 +11,8 @@ const TAIL_LINES = 1000
 const EXPORT_WINDOW = 24 * 60 * 60 * 1000
 const MAX_EXPORT_FILE_SIZE = 50 * 1024 * 1024
 const NET_LOG_SIZE = 20 * 1024 * 1024
+const MAX_SERVER_LOG_BYTES = 25 * 1024 * 1024
+const SERVER_LOG_ARCHIVES = 3
 
 let root = ""
 let run = ""
@@ -30,6 +32,7 @@ export function initLogging() {
   log.initialize({ preload: false, spyRendererConsole: true })
   initConsoleTransport()
   cleanup()
+  rotateServerLogs()
   return (logger = log)
 }
 
@@ -42,6 +45,9 @@ export function initCrashReporter() {
 }
 
 export async function startNetLog() {
+  // netlog is opt-in — enable with ALPHA_NETLOG=1. A 20MB capture on every launch is wasteful for the
+  // common case where nobody inspects it; default off keeps long-running installs bounded (C3).
+  if (process.env.ALPHA_NETLOG !== "1") return
   if (netLog.currentlyLogging) return
   netLogPath = join(run, "network.netlog")
   await netLog.startLogging(netLogPath, { captureMode: "default", maxFileSize: NET_LOG_SIZE })
@@ -152,6 +158,35 @@ function manifest() {
 function serverLogRoots() {
   const xdgData = process.env.XDG_DATA_HOME || join(homedir(), ".local", "share")
   return [...new Set([join(xdgData, "opencode", "log"), join(app.getPath("userData"), "opencode", "log")])]
+}
+
+// The opencode server appends to a single fixed-name `opencode.log` that grows unbounded (observed 145MB);
+// the dated per-run `*.log` files self-rotate and are small. On startup — before the embedded server
+// respawns and reopens the file — archive an oversized `opencode.log` and keep only the most recent
+// N archives, so long-running installs stay bounded (C3). Failures are non-fatal (best-effort hygiene).
+function rotateServerLogs() {
+  for (const dir of serverLogRoots()) {
+    if (!existsSync(dir)) continue
+    try {
+      const active = join(dir, "opencode.log")
+      if (existsSync(active) && statSync(active).size > MAX_SERVER_LOG_BYTES) {
+        renameSync(active, join(dir, `opencode.${stamp()}.log`))
+      }
+      pruneServerArchives(dir)
+    } catch {
+      continue
+    }
+  }
+}
+
+function pruneServerArchives(dir: string) {
+  const archives = readdirSync(dir)
+    .filter((entry) => /^opencode\..+\.log$/.test(entry))
+    .map((entry) => join(dir, entry))
+    .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)
+  for (const file of archives.slice(SERVER_LOG_ARCHIVES)) {
+    rmSync(file, { force: true })
+  }
 }
 
 type Entry = { name: string; path?: string; data?: Buffer }
