@@ -3,10 +3,10 @@ id: B21
 title: BYOK 改键/删键即时生效(不达 sidecar 修复)
 type: bug
 priority: P1
-status: ready
+status: shipped
 repo: A
 created: 2026-07-03
-sprint: —
+sprint: 2026-07-03-s10-hardening
 source: 册 §7b
 ---
 
@@ -21,3 +21,13 @@ source: 册 §7b
 
 ## 关联
 A8(地基)、B2(同域)、B5(互斥)、REQ-002(联调实测场)。
+
+## 采纳方案(2026-07-03,PR #48)
+根因:`injectByokKeysIntoEnv` 旧实现 set-if-unset——改键后旧值滞留 main env → syncSecretFiles
+镜像旧 key → 新 fork 仍用旧 key。修:变更计算抽纯逻辑 `alpha-byok-env.ts`(5 单测)——用户提供的
+env 值永不动;本模块注入过的 var 权威可变(改键覆盖 / 删键清除);`setByokKey/removeByokKey`
+持久化成功后经 `setByokKeyDeps.onChanged` 触发「重注 env + respawn(B5 单飞)」→ fork 时 A6
+把新 env 镜像进 {file:} 通道,新 sidecar 即用新 key;删键即时吊销(env 清 + 密钥文件删)。
+
+## 验证记录
+- 2026-07-03:5 单测(用户值不动/改键必覆盖/删键必清/幂等)+ 全量 gates 绿;真机改键即时生效 → 真机批。

@@ -15,6 +15,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync }
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { safeStorage } from "electron"
+import { computeByokEnvMutations } from "./alpha-byok-env"
 import catalog from "./alpha-models.json"
 import type { AlphaModelCatalog } from "../shared/alpha-model-types"
 import { getLogger } from "./logging"
@@ -123,13 +124,26 @@ export function initByokKeys(dataPath: string) {
   migrateFromOpencodeAuth()
 }
 
-/** Decrypt-to-env bridge: set each stored key into its provider's keyEnv, without clobbering an
- *  existing (shell / alpha.env) value. Call before every sidecar (re)fork. */
+/** Decrypt-to-env bridge(B21 修订):用户提供的 env 值(shell/alpha.env)永不动;本模块自己注入的
+ *  var 权威可变——改键覆盖、删键清除(变更计算见 alpha-byok-env.ts,纯逻辑单测)。Call before every
+ *  sidecar (re)fork;key 变更后由 onChanged 触发 respawn → A6 syncSecretFiles 镜像新值。 */
+const injectedEnvVars = new Set<string>()
 export function injectByokKeysIntoEnv() {
+  const desired: Record<string, string> = {}
   for (const [id, key] of Object.entries(keys)) {
     const env = keyEnvFor(id)
-    if (env && !process.env[env]) process.env[env] = key
+    if (env) desired[env] = key
   }
+  const m = computeByokEnvMutations(desired, process.env, injectedEnvVars)
+  for (const name of m.del) delete process.env[name]
+  for (const [name, value] of Object.entries(m.set)) process.env[name] = value
+}
+
+// B21:改键/删键即时生效 —— IPC 层持久化成功后经此回调触发「重注 env + respawn」(index.ts 注入;
+// respawn 后 fork 时 syncSecretFiles 把新 env 镜像进 {file:} 通道,新 sidecar 即用新 key)。
+let onKeysChanged: () => void = () => {}
+export function setByokKeyDeps(deps: { onChanged: () => void }) {
+  onKeysChanged = deps.onChanged
 }
 
 export function getByokKey(id: string): string | undefined {
@@ -146,6 +160,7 @@ export function setByokKey(id: string, key: string): { ok: true } | { ok: false;
   if (typeof key !== "string" || key.length === 0) return { ok: false, reason: "missing api key" }
   keys[id] = key
   persist()
+  onKeysChanged() // B21:即时生效(重注 env + respawn)
   return { ok: true }
 }
 
@@ -153,6 +168,7 @@ export function removeByokKey(id: string): { ok: true } | { ok: false; reason: s
   if (!(id in keys)) return { ok: true }
   delete keys[id]
   persist()
+  onKeysChanged() // B21:即时吊销(清 env + respawn → A6 删密钥文件)
   return { ok: true }
 }
 

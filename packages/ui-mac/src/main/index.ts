@@ -47,7 +47,7 @@ import { migrate } from "./migrate"
 import { ensureAlphaLayoutDefault } from "./alpha-defaults"
 import { initEndpoints } from "./alpha-endpoints"
 import { registerEndpointsIpcHandlers } from "./endpoints-ipc"
-import { initByokKeys, injectByokKeysIntoEnv } from "./alpha-byok-keys"
+import { initByokKeys, injectByokKeysIntoEnv, setByokKeyDeps } from "./alpha-byok-keys"
 import {
   enableProxy,
   ensureFreshToken,
@@ -489,7 +489,7 @@ const main = Effect.gen(function* () {
   // buildAlphaModelConfig injects provider.alpha), then reloads the renderer so it
   // reconnects (url/password unchanged → awaitInitialization stays valid) and re-fetches providers →
   // the proxy activates with zero clicks and no restart.
-  const respawnSidecar = async () => {
+  const doRespawnSidecar = async () => {
     if (!mainWindow || mainWindow.isDestroyed()) return
     try {
       logger.log("respawning sidecar (proxy activation)")
@@ -514,8 +514,35 @@ const main = Effect.gen(function* () {
       logger.error("sidecar respawn failed", error)
     }
   }
+  // B5(NEW-4):respawn 互斥 + 合并。触发面已扩大(登录/登出/enableProxy/setAuthMode/B2 tick/
+  // B21 改键),并发触发会两个 fork 抢同一端口、renderer 双重 reload。单飞:在途时再触发只标记
+  // 一次排队,完成后补跑一轮(拿到最新 env/密钥状态,不会丢最后一次变更)。
+  let respawning: Promise<void> | null = null
+  let respawnQueued = false
+  const respawnSidecar = async (): Promise<void> => {
+    if (respawning) {
+      respawnQueued = true
+      return respawning
+    }
+    respawning = doRespawnSidecar().finally(() => {
+      respawning = null
+      if (respawnQueued) {
+        respawnQueued = false
+        void respawnSidecar()
+      }
+    })
+    return respawning
+  }
 
   setAuthDeps({ getWindow: () => mainWindow, respawn: respawnSidecar })
+  // B21:BYOK 改键/删键即时生效 —— 持久化成功后重注 env(自有注入权威覆盖/清除,用户值不动)+
+  // respawn(fork 时 A6 syncSecretFiles 把新 env 镜像进 {file:} 通道 → 新 sidecar 即用新 key)。
+  setByokKeyDeps({
+    onChanged: () => {
+      injectByokKeysIntoEnv()
+      void respawnSidecar()
+    },
+  })
   if (mainWindow) {
     createMenu({
       trigger: (id) => {

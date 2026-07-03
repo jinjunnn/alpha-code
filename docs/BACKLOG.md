@@ -53,7 +53,7 @@
 | B2 | refresh token 续期 + 401 拦截 + 失败降级 BYOK/登出(T3.1 剩余) | feature | A | shipped | **PR #42 + alpha-web `a1d4d8a`**;寿命拍板 7*24h(env 可调短测试)+ 提前量续期(整点 tick)+ 401 拦截重试 + invalid_grant 降级登出(明确 UI)+ 冻结 token 快死备胎 respawn;REQ-002④ 过期路径就此成型;134 tests 绿;**verified 待真机**(短 TTL 实测 过期→续期/撤销→降级/logout 不串台);详见 [requirements/B2](requirements/B2-refresh-token.md) |
 | B3 | 云协同最后一公里:cloud MCP 健康 → dispatch → 进度 → artifact 回流(=G4、E12;T4.1-4.3) | feature | X | ready | **R1:勿切端点**(workers.dev 是唯一路由 /v1 的 host);真因更可能 token 注入时序;MCP URL 待 `endpoints.mcp`(见 [platform-endpoint-discovery-contract](platform-endpoint-discovery-contract.md)) |
 | B4 | 巨型目录当项目(`/`、`~`、`~/Documents` 建 Instance)治理 | perf | A | ready | 部分上游(R2);alpha 杠杆=垃圾项目引导/隐藏项目不取数;`worktree==="/"` 跳过已做(PR #23) |
-| B5 | sidecar 崩溃自愈 + respawn 竞态/互斥(T2.4 + NEW-4) | debt | A | in-sprint | **→ [S10]**;respawn 触发面因 B2/登录/登出扩大,互斥上调 |
+| B5 | sidecar 崩溃自愈 + respawn 竞态/互斥(T2.4 + NEW-4) | debt | A | shipped | **PR #48(互斥半边)**:respawn 单飞+排队合并(六路触发防双 fork/双 reload);**崩溃自愈未做**(与 REQ-003 终态判定同批更顺,行保留继续追);详见 [requirements/B5](requirements/B5-sidecar-self-heal.md) |
 | B6 | 装载 `@alpha-code/ext` 主接缝(=G1;T5.1-5.2) | feature | A | shipped | **PR #46**(→ [S10](sprints/2026-07-03-s10-hardening/sprint.md));extraResources alpha-ext/ + StartCommand 传路径 + injectAlphaConfig 合并 V1 `plugin` 数组;ALPHA_EXT_DISABLE 逃生;缺 bundle loud warn;**verified 待真机**(alpha_ping 进工具表且执行 = G1 成功条件 + zod 跨实例证明);详见 [requirements/B6](requirements/B6-ext-seam-activation.md) |
 | B7 | 发布流水线制度化:CI 断言版本/种子资产/断网首启 smoke(T2.6 剩余) | debt | A | ready | 部分:DISTRIBUTION.md 已写 + S7 部分断言 |
 | B8 | 扩展物运行时生命周期:版本/健康/更新三要素(T5.4/T5.6) | feature | A | registered | 系统性条目,症状=A2;终态=定制中心从商店→运行时管理器 |
@@ -63,7 +63,7 @@
 | B13 | DB 跨进程并发(SQLITE_BUSY → orDie) | debt | A | registered | 上游归属(R2);R6 降级:busy_timeout=5000 已缓解;alpha 无直接修点 |
 | B14 | 会话 DB 备份/导出(损坏恢复) | feature | A | registered | 上游 DB 本体改不了(R2);alpha main 纯文件操作可做备份/导出 |
 | B20 | 弱网降级 UX:超时/重试/splash 状态/真骨架/websearch 优雅降级(S8) | ux | A | ready | 部分⊂B11;websearch orDie 在上游(R2),杠杆=env 关闸或自建 tool;含 ADR-009 🔭 keyless 限流行为运行时实测 |
-| B21 | BYOK 改键/删键即时生效(触发重注 env/respawn) | bug | A | in-sprint | **→ [S10]**(与 B5 同 task);A8 respawn 地基 + A6 fork 时密钥文件同步已就位 |
+| B21 | BYOK 改键/删键即时生效(触发重注 env/respawn) | bug | A | shipped | **PR #48**;根因=env 桥 set-if-unset 滞留旧 key;修=自有注入权威覆盖/清除(用户值永不动,纯逻辑 5 单测)+ 改键回调触发重注+respawn;删键即时吊销;**verified 待真机**(改键→picker 即时反映→新 key 出账);详见 [requirements/B21](requirements/B21-byok-key-live-reload.md) |
 | B22 | message-timeline.tsx:481 会话时间线崩溃 | bug | A | ready | 546-sync 后**先代码复验再修**;疑 timeline-inject DOM 注入扰动上游 virtualizer |
 | B23 | strict-key 配置致瘫:全局 jsonc 解析失败 → 整份配置静默清零 | bug | A | ready | 上游解析行为;alpha 杠杆=写前校验(C2 已有)+ 失败呈现(→B11) |
 
