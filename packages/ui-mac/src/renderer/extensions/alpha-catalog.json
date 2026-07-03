@@ -1,10 +1,11 @@
 {
-  "version": "2026-06-22.1",
+  "version": "2026-07-03.1",
   "_note": "alpha-code 内置扩展目录(定制中心)。随渲染层 bundle、离线优先。schema 见 docs/designs/2026-06-22-arch-extension-hub.md(CatalogEntry / InstallSpec / bundleItems)。",
   "_disclaimers": [
     "标 _verify 的条目:包名/协议/可用性需落地前手工核实,不得当作已确认事实。",
     "redistributable=false 的条目不得把其文件内置进 app,只能运行时远程拉或引导用户自装。",
-    "Anthropic document-skills(docx/xlsx/pptx/pdf)源码可见但禁止再分发,故本目录不收。"
+    "Anthropic document-skills(docx/xlsx/pptx/pdf)源码可见但禁止再分发,故本目录不收。",
+    "MCP command/version 全部钉精确版本(A2/T1.5):npx `@pkg@x.y.z` / uvx `pkg@x.y.z`,消除每启动在线解析风暴。钉的值 = 更新当日各包 latest,行为与不钉一致、仅冻结确定性。升级 = 手动 bump(见 npm/pypi)。存量用户配置的一键钉版本迁移(T1.5 第二半)仍待做。"
   ],
   "entries": [
     {
@@ -20,7 +21,7 @@
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
-        "command": ["uvx", "markitdown-mcp"],
+        "command": ["uvx", "markitdown-mcp@0.0.1a4"],
         "requiredEnvVars": [],
         "runtimeDep": ["uv"]
       }
@@ -38,7 +39,7 @@
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
-        "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem", "{workspace}"],
+        "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem@2026.1.14", "{workspace}"],
         "requiredEnvVars": [],
         "runtimeDep": ["node"],
         "_note": "{workspace} 安装时替换为当前项目目录;该路径即此 MCP 的可访问白名单。"
@@ -57,7 +58,7 @@
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
-        "command": ["uvx", "mcp-server-fetch"],
+        "command": ["uvx", "mcp-server-fetch@2026.6.4"],
         "requiredEnvVars": [],
         "runtimeDep": ["uv"]
       }
@@ -75,7 +76,7 @@
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
-        "command": ["npx", "-y", "@playwright/mcp"],
+        "command": ["npx", "-y", "@playwright/mcp@0.0.77"],
         "requiredEnvVars": [],
         "runtimeDep": ["node"],
         "_verify": "首次浏览时 Playwright 需浏览器内核:默认下载 Chromium(~150MB,中国区 egress 慢),或在 command 末尾加 \"--browser\",\"chrome\" 复用系统已装 Chrome(免下载但需已装)。runtimeDep 只能 which 到 node,内核下载发生在运行时而非安装时 → A6 必须桌面实测首个 navigate 能否真起浏览器。"
@@ -94,7 +95,7 @@
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
-        "command": ["uvx", "mcp-server-git", "--repository", "{workspace}"],
+        "command": ["uvx", "mcp-server-git@2026.6.16", "--repository", "{workspace}"],
         "requiredEnvVars": [],
         "runtimeDep": ["uv", "git"]
       }
@@ -112,7 +113,7 @@
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
-        "command": ["npx", "-y", "@modelcontextprotocol/server-github"],
+        "command": ["npx", "-y", "@modelcontextprotocol/server-github@2025.4.8"],
         "requiredEnvVars": ["GITHUB_PERSONAL_ACCESS_TOKEN"],
         "runtimeDep": ["node"],
         "_verify": "GitHub 官方 MCP 已迁向 Go 二进制及 remote 端点;落地前确认用 npm 包还是 remote+OAuth。token 走 keychain 占位,不硬编码。"
@@ -131,10 +132,10 @@
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
-        "command": ["npx", "-y", "@larksuiteoapi/lark-mcp"],
+        "command": ["npx", "-y", "@larksuiteoapi/lark-mcp@0.5.1"],
         "requiredEnvVars": ["APP_ID", "APP_SECRET"],
         "runtimeDep": ["node"],
-        "mirrorCommand": ["npx", "-y", "--registry", "https://registry.npmmirror.com", "@larksuiteoapi/lark-mcp"],
+        "mirrorCommand": ["npx", "-y", "--registry", "https://registry.npmmirror.com", "@larksuiteoapi/lark-mcp@0.5.1"],
         "_verify": "确认 larksuite/lark-openapi-mcp 的精确 npm 包名与鉴权字段;凭据走 keychain。"
       }
     },
@@ -151,10 +152,10 @@
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
-        "command": ["npx", "-y", "yuque-mcp-server"],
+        "command": ["npx", "-y", "yuque-mcp-server@1.2.0"],
         "requiredEnvVars": ["YUQUE_TOKEN"],
         "runtimeDep": ["node"],
-        "mirrorCommand": ["npx", "-y", "--registry", "https://registry.npmmirror.com", "yuque-mcp-server"],
+        "mirrorCommand": ["npx", "-y", "--registry", "https://registry.npmmirror.com", "yuque-mcp-server@1.2.0"],
         "_verify": "确认 yuque/yuque-mcp-server 精确发布名与 token 字段。"
       }
     },
@@ -274,7 +275,7 @@
       "installSpec": {
         "kind": "plugin",
         "package": "opencode-notify",
-        "version": "latest",
+        "version": "0.3.1",
         "mirrorRegistry": "https://registry.npmmirror.com",
         "_verify": "社区插件:确认精确包名/维护状态/与当前 @opencode-ai/plugin 版本兼容。"
       }
