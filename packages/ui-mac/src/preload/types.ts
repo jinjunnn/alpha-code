@@ -117,6 +117,14 @@ export type InstallReceipt = {
   configKey?: string
 }
 export type InstallLedgerView = { global: InstallReceipt[]; project: InstallReceipt[]; warnings: string[] }
+/** Legacy installs found in the shared XDG config dir, offered for migration to .alpha (REQ-018 T3). */
+export type LegacyInventory = {
+  root: string
+  skills: string[]
+  agents: string[]
+  mcp: { name: string; config: Record<string, unknown> }[]
+  plugins: string[]
+}
 /** Install destination: global (~/.alpha + ~/.opencode bridge) or a specific project's .alpha. */
 export type InstallTarget = { scope: "global" } | { scope: "project"; projectDir: string }
 /** Catalog provenance recorded into the receipt (id + catalog snapshot version for update checks). */
@@ -273,6 +281,12 @@ export type ElectronAPI = {
     listInstalls: (projectDir?: string) => Promise<InstallLedgerView>
     // REQ-018 T6:按 receipt 精确卸载(删文件/拆桥/去 config 项/吊销密钥/去账)
     uninstall: (receipt: InstallReceipt) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
+    // REQ-018 T3:存量迁移(旧 XDG 根 → .alpha)。scan 报告 legacy 清单 + enabled 门控;removeLegacy 删旧位。
+    migrateScan: () => Promise<{ enabled: boolean; inventory: LegacyInventory }>
+    removeLegacy: (
+      type: "skill" | "agent" | "mcp" | "plugin",
+      name: string,
+    ) => Promise<{ ok: true; removed: string[] } | { ok: false; reason: string }>
   }
   // alpha account (balance / membership / usage) read from the alpha-platform (B) account-server
   // using the main-held JWT. The renderer gets only the resolved summary, never the token.

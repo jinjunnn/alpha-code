@@ -219,6 +219,10 @@ export function ExtensionHub(props: {
   const [fDesc, setFDesc] = createSignal("")
   const [fModel, setFModel] = createSignal("")
   const [fBody, setFBody] = createSignal("")
+  // T3:存量迁移候选(旧 XDG 根里、名字匹配 catalog 的 alpha 安装物)。仅当主进程门控开启
+  // (ALPHA_MIGRATE_ENABLE=1,A6 真机验证后)且有候选时显示迁移条。
+  const [migrateCandidates, setMigrateCandidates] = createSignal<CatalogEntry[]>([])
+  const [migrating, setMigrating] = createSignal(false)
 
   // Dedicated Portal host inside #root (mirrors alpha-sidebar.tsx), kept out of <body> so it stays
   // inside opencode's drag-region system and keeps position:fixed working.
@@ -389,6 +393,56 @@ export function ExtensionHub(props: {
       res.ok ? t("alpha.ext.removed") : `${t("alpha.ext.removeFailed")}${res.reason ? `: ${res.reason}` : ""}`,
       res.ok ? "success" : "error",
     )
+  }
+
+  // T3:开 hub 时扫描旧 XDG 根,匹配 catalog(只迁 alpha 自己装的,不碰用户自建内容,ADR-019 §4)。
+  const scanMigration = async () => {
+    try {
+      const { enabled, inventory } = await window.api.ext.migrateScan()
+      if (!enabled) return setMigrateCandidates([])
+      const skillNames = new Set(inventory.skills)
+      const mcpNames = new Set(inventory.mcp.map((m) => m.name))
+      const pluginBases = new Set(inventory.plugins.map((p) => p.split("@")[0]))
+      const cands = CATALOG.entries.filter((e) => {
+        if (e.type === "skill") return skillNames.has(e.name)
+        if (e.type === "mcp") return mcpNames.has(e.name)
+        if (e.type === "plugin" && e.installSpec?.kind === "plugin") return pluginBases.has(e.installSpec.package.split("@")[0])
+        return false
+      })
+      setMigrateCandidates(cands)
+    } catch {
+      setMigrateCandidates([])
+    }
+  }
+  createEffect(() => {
+    if (props.open()) void scanMigration()
+  })
+
+  // Migrate each candidate: reinstall to .alpha via the existing installer (pins MCP version from
+  // catalog + moves inline secrets to the {file:} channel), then remove the legacy copy.
+  const runMigration = async () => {
+    setMigrating(true)
+    let ok = 0
+    let fail = 0
+    try {
+      for (const e of migrateCandidates()) {
+        let installed: { ok: boolean } = { ok: false }
+        if (e.type === "skill") installed = await ext.installSkill(e)
+        else if (e.type === "mcp") installed = await addMcpEntry(e)
+        else if (e.type === "plugin") installed = await ext.installPlugin(e)
+        if (!installed.ok) {
+          fail++
+          continue
+        }
+        const legacyName = e.type === "plugin" && e.installSpec?.kind === "plugin" ? e.installSpec.package : e.name
+        await window.api.ext.removeLegacy(e.type as "skill" | "mcp" | "plugin", legacyName)
+        ok++
+      }
+      flash(fail ? `${t("alpha.ext.migrated", { count: ok })} · ${fail} 失败` : t("alpha.ext.migrated", { count: ok }), fail ? "error" : "success")
+      await scanMigration()
+    } finally {
+      setMigrating(false)
+    }
   }
 
   const submitCreate = async () => {
@@ -610,6 +664,18 @@ export function ExtensionHub(props: {
               {/* ░░ FEATURED ░░ */}
               <Show when={tab() === "featured"}>
                 <Hero title={t("alpha.ext.hub")} sub={t("alpha.ext.heroSub")} />
+                {/* T3:存量迁移条(仅门控开启且检测到旧安装时;不碰用户自建内容) */}
+                <Show when={migrateCandidates().length > 0}>
+                  <div class="alpha-ext-migrate">
+                    <div class="alpha-ext-migrate-t">
+                      {t("alpha.ext.migrateTitle", { count: migrateCandidates().length })}
+                    </div>
+                    <div class="alpha-ext-migrate-sub">{t("alpha.ext.migrateSub")}</div>
+                    <button class="alpha-ext-add" data-variant="primary" disabled={migrating()} onClick={() => void runMigration()}>
+                      {migrating() ? t("alpha.ext.migrating") : t("alpha.ext.migrateAction")}
+                    </button>
+                  </div>
+                </Show>
                 <SearchBox placeholder={t("alpha.ext.search")} />
                 <Show when={installedAll().length > 0}>
                   <SecRow
