@@ -54,5 +54,8 @@ alpha-ui 换肤常态。**注**:fresh test profile 强制 onboarding 覆盖层 +
 
 - 官方 skill:仅 `skill-creator`(Apache-2.0,真内容+LICENSE)已打包;`mcp-builder`/`canvas-design`/
   `brand-guidelines` 本机无可信来源 → **拒绝伪造**、保持诚实失败(catalog `_disclaimers` 记账)。
+  **安全后随修(PR #73)**:自动安全审查发现 vendored `skill-creator/eval-viewer/generate_review.py`
+  的 `</script>` 突破 XSS(eval 数据含半可信模型输出插进 `<script>`)→ 已转义 `</`+U+2028/9 加固;
+  标注 alpha 安全补丁,re-vendor 须重应用。
 - 项目 scope 卸载 IPC 目前按 global 解析(`ext-uninstall` 的 project fs 卸载走 projectDir 传参待 REQ-019 细化);M1 已安装列表 = global,不受影响。
 - 远程 catalog、详情页、更新通道、导入 = REQ-019/020;不在 M1。
