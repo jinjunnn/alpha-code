@@ -37,7 +37,7 @@
 | **Track ε —— 供给链(2026-07-04 追加,REQ-023)** | | | | |
 | T9 | **官方扩展配置化 + 离线资产通道**:catalog 补 agent 类目 + `vendoredAssetKey`/`downloadUrl` + plugin `hooks[]`;`resources/plugins/` 预打包 opencode-notify(MIT,记 NOTICE)→ 安装=复制入 `~/.alpha/plugins` + plugin[] 写**绝对路径**(零网络,绕引擎 npm 下载);官方 agent 资产 ≥1 条同通道;安装管线状态机(检查中→获取→写入→重载→✓)与 T7 合并落 | REQ-023 | fable | ☑(断网真机走查归 T8 真机批) |
 | **验收** | | | | |
-| T8 | 六类条目详情页逐一 CDP 截图([[visual-verify-required]])+ 三档安装路径各走通一例 + **断网装 vendored plugin 成功(REQ-023 验收①)** + 更新链路走通一例 + 导入本地 skill 走通(含非法 frontmatter 拒绝)+ 依赖缺失详情页可见(卸 uv 实测)+ 失败零裸 toast → 状态回写(BACKLOG/CHANGELOG/REQ-019+REQ-023 frontmatter/ADR-014 v3 checklist 回勾) | REQ-019/023 验收 | fable | ☐ |
+| T8 | 六类条目详情页逐一 CDP 截图([[visual-verify-required]])+ 三档安装路径各走通一例 + **断网装 vendored plugin 成功(REQ-023 验收①)** + 更新链路走通一例 + 导入本地 skill 走通(含非法 frontmatter 拒绝)+ 依赖缺失详情页可见(卸 uv 实测)+ 失败零裸 toast → 状态回写(BACKLOG/CHANGELOG/REQ-019+REQ-023 frontmatter/ADR-014 v3 checklist 回勾) | REQ-019/023 验收 | fable | ☑(真机批递延清单见 acceptance) |
 
 ## 依赖与排序
 
@@ -72,4 +72,5 @@ S12(M1)= shipped,引擎级四步已 verified,真机批残余折进 REQ-016(与 S
 
 ## 结果 / 回写清单
 
-(执行中填)BACKLOG ☐ · CHANGELOG ☐ · REQ-019 frontmatter ☐ · verify ☐ · retro:—
+**S13 完成(2026-07-04)**:实现 PR = #74(T1+T2 横向 IA+详情页+三档分流)/ #75(T3 六类区块+tools[])/ #76(T4+T5+T6 依赖检测+更新+导入)/ #77(T7+T9 筛选/行内反馈+供给链);回写 PR = 本 PR。
+BACKLOG ☑(REQ-019/023 → shipped)· CHANGELOG ☑ · REQ-019/023 frontmatter ☑ · ADR-014 M2 修订 ☑ · PROCESS 增量回写边界 ☑ · 验收汇总 = [audits/2026-07-04-s13-acceptance.md](../../audits/2026-07-04-s13-acceptance.md) · **verified 待真机批**(卸 uv/断网 vendored/git 真克隆/dispose 打断/打包件核验,与 REQ-016 同场)· retro:待 /app:retro

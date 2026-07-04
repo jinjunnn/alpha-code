@@ -147,3 +147,7 @@ sprint: —
 **Gates**:typecheck ☐ · bun test ☐ · 北极星守卫 ☐ · /app:review ☐ · /app:qa(需要时)☐
 **回写**:BACKLOG ☐ · CHANGELOG ☐ · verify 记录 ☐ · retro 链接:…
 ```
+
+## 增量交付的回写边界(2026-07-04 补,S13 实践)
+
+单个 REQ 拆多个实现 PR 时:**sprint.md 任务勾选随各实现 PR**;BACKLOG 状态、需求档 frontmatter、CHANGELOG 在**批次末尾 PR 统一翻转**(需在 sprint.md 的 PR 粒度声明中写明)。ADR-018 §6「每个实现 PR 回写」的单位按此解释为「每批次」,防中间态频繁翻表。
