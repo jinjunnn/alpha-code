@@ -271,6 +271,8 @@ export type ElectronAPI = {
     ) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
     // REQ-018 安装账本:global(~/.alpha)+ project(<dir>/.alpha)receipts 合并只读视图
     listInstalls: (projectDir?: string) => Promise<InstallLedgerView>
+    // REQ-018 T6:按 receipt 精确卸载(删文件/拆桥/去 config 项/吊销密钥/去账)
+    uninstall: (receipt: InstallReceipt) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
   }
   // alpha account (balance / membership / usage) read from the alpha-platform (B) account-server
   // using the main-held JWT. The renderer gets only the resolved summary, never the token.

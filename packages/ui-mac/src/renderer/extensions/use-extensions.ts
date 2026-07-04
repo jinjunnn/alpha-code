@@ -17,6 +17,7 @@ import { createEffect, onCleanup, type Accessor } from "solid-js"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import type { ServerInfo } from "../sidebar/use-projects"
 import type { CatalogEntry, InstalledState, McpConfig, McpInstallSpec, RuntimeCheck } from "./catalog-types"
+import type { InstallReceipt } from "../../preload/types"
 import catalogJson from "./alpha-catalog.json"
 
 // Receipt provenance (REQ-018): catalog snapshot version recorded per install → update checks.
@@ -28,6 +29,9 @@ type Client = ReturnType<typeof createOpencodeClient>
 export interface ExtensionsStore {
   /** MCP servers known to the running opencode server, keyed by name (the SDK truth). */
   mcp: Record<string, InstalledState>
+  /** Install receipts (REQ-018): alpha's record of what we installed — the "installed" truth for
+   *  skill/agent/plugin, which the SDK MCP status can't cover. Global scope for the hub list. */
+  receipts: InstallReceipt[]
   ready: boolean
   error: boolean
 }
@@ -55,7 +59,9 @@ export interface ExtensionsApi {
   setMcpConnected(name: string, shouldConnect: boolean): Promise<void>
   /** Remove an MCP server from the user config + disconnect. */
   removeMcp(name: string): Promise<ActionResult>
-  /** True if this catalog entry is already present on the server (MCP only for now). */
+  /** Uninstall any installed item by its receipt (fs/plugin/mcp) — files/config/secrets + receipt. */
+  uninstall(receipt: InstallReceipt): Promise<ActionResult>
+  /** True if this catalog entry is already installed (MCP via SDK truth; others via receipts). */
   isInstalled(entry: CatalogEntry): boolean
   /** which-check the entry's runtime deps; { ok:false, missing } if a binary is absent. */
   checkRuntime(tools: string[] | undefined): Promise<RuntimeCheck>
@@ -147,11 +153,22 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | typeof TIMED_OUT
 }
 
 export function useExtensions(server: Accessor<ServerInfo | undefined>, active?: Accessor<boolean>): ExtensionsApi {
-  const [store, setStore] = createStore<ExtensionsStore>({ mcp: {}, ready: false, error: false })
+  const [store, setStore] = createStore<ExtensionsStore>({ mcp: {}, receipts: [], ready: false, error: false })
 
   let client: Client | undefined
   let generation = 0
   let abortRef = new AbortController()
+
+  // REQ-018:安装账本(global ~/.alpha)。receipts 覆盖 skill/agent/plugin 的「已安装」真相
+  // (SDK 的 mcp.status 只认 MCP);每次安装/卸载后刷新。
+  async function loadInstalls() {
+    try {
+      const view = await window.api.ext.listInstalls()
+      setStore("receipts", view.global)
+    } catch {
+      /* transient — keep previous */
+    }
+  }
 
   async function loadStatus() {
     const c = client
@@ -215,7 +232,7 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     }
     if ((added as { error?: unknown }).error) return { ok: false, reason: "mcp.add failed" }
     await withTimeout((c.mcp.connect({ name: entry.name } as any) as Promise<unknown>).catch(() => {}), 10000)
-    await loadStatus()
+    await Promise.all([loadStatus(), loadInstalls()])
     return { ok: true }
   }
 
@@ -240,8 +257,28 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
   }
 
   function isInstalled(entry: CatalogEntry): boolean {
-    if (entry.type !== "mcp") return false
-    return entry.name in store.mcp
+    // MCP: live SDK truth (also covers pre-receipt installs). skill/agent/plugin/bundle: receipts,
+    // matched by catalog id (bundle = all its required items present).
+    if (entry.type === "mcp") return entry.name in store.mcp || store.receipts.some((r) => r.id === entry.id)
+    if (entry.type === "bundle") {
+      const required = (entry.bundleItems ?? []).filter((it) => !it.optional).map((it) => it.catalogEntryId)
+      return required.length > 0 && required.every((id) => store.receipts.some((r) => r.id === id) || mcpNameForId(id))
+    }
+    return store.receipts.some((r) => r.id === entry.id)
+  }
+
+  // A catalog id that resolves to a live MCP server name (for bundle completeness against SDK truth).
+  function mcpNameForId(id: string): boolean {
+    return store.receipts.some((r) => r.id === id && r.name in store.mcp)
+  }
+
+  /** Uninstall by receipt: main removes files/config/secrets + drops the receipt; then reload + engine refresh. */
+  async function uninstall(receipt: InstallReceipt): Promise<ActionResult> {
+    const res = await window.api.ext.uninstall(receipt)
+    if (receipt.type === "mcp") await client?.mcp.disconnect({ name: receipt.name } as any).catch(() => {})
+    await Promise.all([loadStatus(), loadInstalls()])
+    if (res.ok && receipt.type !== "mcp") await refreshEngine() // fs/plugin removal needs a rescan
+    return res
   }
 
   // REQ-018 T4(免重启生效):fs 类安装(skill/agent/plugin)写盘后,引擎按目录缓存的实例不会
@@ -299,6 +336,7 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     abortRef = new AbortController()
     client = createOpencodeClient({ baseUrl: info.baseUrl, headers: authHeaders(info) })
     void loadStatus()
+    void loadInstalls()
     void subscribe()
     onCleanup(() => {
       if (gen === generation) client = undefined
@@ -308,7 +346,9 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
 
   async function createSkill(name: string, description: string, body: string): Promise<ActionResult> {
     const r = await window.api.ext.writeSkill(name, description, body)
-    if (r.ok && !(await refreshEngine())) return { ok: true, reason: "reload-pending" }
+    if (!r.ok) return r
+    await loadInstalls()
+    if (!(await refreshEngine())) return { ok: true, reason: "reload-pending" }
     return r
   }
 
@@ -320,7 +360,9 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     if (opts.model) lines.push(`model: ${opts.model}`)
     lines.push("---", "", opts.system, "")
     const r = await window.api.ext.writeAgent(name, lines.join("\n"))
-    if (r.ok && !(await refreshEngine())) return { ok: true, reason: "reload-pending" }
+    if (!r.ok) return r
+    await loadInstalls()
+    if (!(await refreshEngine())) return { ok: true, reason: "reload-pending" }
     return r
   }
 
@@ -332,7 +374,9 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     // bundle that asset yet (e.g. the Apache-2.0 entries pending content drop) — no placeholder stub.
     if (spec.source === "builtin" && spec.builtinAssetKey) {
       const r = await window.api.ext.installBuiltinSkill(spec.builtinAssetKey, entry.name, undefined, metaFor(entry))
-      if (r.ok && !(await refreshEngine())) return { ok: true, reason: "reload-pending" }
+      if (!r.ok) return r
+      await loadInstalls()
+      if (!(await refreshEngine())) return { ok: true, reason: "reload-pending" }
       return r
     }
     return { ok: false, reason: "该技能内容尚未随此版本打包" }
@@ -344,7 +388,10 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     const r = await window.api.ext.installPlugin(spec.package, metaFor(entry))
     // dispose 触发实例重建 → 引擎后台 npm 安装立刻开始(而非等下次启动);失败不降级为错误,
     // config 已落盘、下次重建自然装载。
-    if (r.ok) await refreshEngine()
+    if (r.ok) {
+      await loadInstalls()
+      await refreshEngine()
+    }
     return r
   }
 
@@ -354,6 +401,7 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     addMcp,
     setMcpConnected,
     removeMcp,
+    uninstall,
     isInstalled,
     checkRuntime,
     createSkill,

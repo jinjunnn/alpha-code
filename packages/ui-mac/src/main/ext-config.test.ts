@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { configHealth, persistMcp, persistPlugin, persistProvider, removeMcp } from "./ext-config"
+import { configHealth, persistMcp, persistPlugin, persistProvider, removeMcp, removePlugin } from "./ext-config"
+import { readLedger } from "./alpha-installs"
 
 // REQ-018 T2: mcp/plugin persistence targets the alpha-owned ~/.opencode/opencode.jsonc
 // (ALPHA_OPENCODE_HOME-overridable); provider persistence stays on the shared XDG config
@@ -237,5 +238,29 @@ describe("configHealth", () => {
     } finally {
       delete process.env.ALPHA_CONFIG_HEALTH_DISABLE
     }
+  })
+})
+
+// ── T6:persistMcp/persistPlugin 记账 + removePlugin 卸载 ──────────────────────────────────────
+describe("receipts on persist/remove (T6)", () => {
+  test("persistMcp records a receipt with configKey; removeMcp drops it", () => {
+    expect(persistMcp("markitdown", { type: "local", command: ["uvx", "markitdown-mcp"] }, { catalogId: "mcp:markitdown", version: "1" }).ok).toBe(true)
+    let r = readLedger(alphaTmp).receipts.find((x) => x.type === "mcp" && x.name === "markitdown")
+    expect(r).toMatchObject({ id: "mcp:markitdown", configKey: "mcp.markitdown", version: "1" })
+    expect(removeMcp("markitdown").ok).toBe(true)
+    expect(readLedger(alphaTmp).receipts.find((x) => x.name === "markitdown")).toBeUndefined()
+  })
+
+  test("persistPlugin records a receipt; removePlugin removes from config[] and drops receipt", () => {
+    expect(persistPlugin("opencode-notify@0.3.1", { catalogId: "plugin:opencode-notify" }).ok).toBe(true)
+    expect(readConfig().plugin).toContain("opencode-notify@0.3.1")
+    expect(readLedger(alphaTmp).receipts.some((x) => x.type === "plugin")).toBe(true)
+    expect(removePlugin("opencode-notify@0.3.1").ok).toBe(true)
+    expect(readConfig().plugin ?? []).not.toContain("opencode-notify@0.3.1")
+    expect(readLedger(alphaTmp).receipts.some((x) => x.type === "plugin")).toBe(false)
+  })
+
+  test("removePlugin on an absent package is a no-op success", () => {
+    expect(removePlugin("never-installed").ok).toBe(true)
   })
 })

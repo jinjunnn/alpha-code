@@ -384,6 +384,41 @@ export function persistPlugin(pkg: string, meta?: InstallMeta): ConfigResult {
   return written
 }
 
+/**
+ * Remove a plugin package from config `plugin[]` (alpha-owned file + legacy XDG file, pre-migration)
+ * and drop its receipt. Idempotent — absent package is a no-op success.
+ */
+export function removePlugin(pkg: string): ConfigResult {
+  if (!SAFE_PACKAGE.test(pkg)) return { ok: false, reason: "invalid package name" }
+  const base = pkgBase(pkg)
+  const dropFrom = (file: string): ConfigResult => {
+    let text = "{}"
+    try {
+      if (!fs.existsSync(file)) return { ok: true }
+      text = fs.readFileSync(file, "utf8")
+    } catch {
+      return { ok: false, reason: "failed to read config" }
+    }
+    const parsed = parse(text) as { plugin?: unknown } | undefined
+    const current: unknown[] = Array.isArray(parsed?.plugin) ? (parsed!.plugin as unknown[]) : []
+    const next = current.filter((p) => {
+      if (typeof p === "string") return pkgBase(p) !== base
+      if (Array.isArray(p) && typeof p[0] === "string") return pkgBase(p[0]) !== base
+      return true
+    })
+    if (next.length === current.length) return { ok: true } // not present here
+    return writeKey(file, ["plugin"], next)
+  }
+  const primary = dropFrom(mcpPluginTargetPath())
+  if (!primary.ok) return primary
+  if (mcpPluginTargetPath() !== userConfigPath()) {
+    const legacy = dropFrom(userConfigPath())
+    if (!legacy.ok) return legacy
+  }
+  if (receiptsActive()) removeReceipt(alphaGlobalRoot(), "plugin", base.replace(/^@/, "").replace("/", "__"))
+  return { ok: true }
+}
+
 // ── B11/B23:全局配置健康探测 ─────────────────────────────────────────────────────────────────
 // 上游行为(不可改,ADR-005):opencode 对全局 opencode.jsonc 的 jsonc 语法错误或**任何未识别
 // 顶层 key** 都会让 loadGlobal 失败 → 整份配置被静默清零为 {}(config.ts:281-289,parse.ts

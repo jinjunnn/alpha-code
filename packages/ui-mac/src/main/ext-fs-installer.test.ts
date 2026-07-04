@@ -10,7 +10,7 @@ import * as path from "node:path"
 
 mock.module("electron", () => ({ app: { isPackaged: false } }))
 
-const { installBuiltinSkill, writeAgent, writeSkill } = await import("./ext-fs-installer")
+const { installBuiltinSkill, removeFsInstall, writeAgent, writeSkill } = await import("./ext-fs-installer")
 const { readLedger } = await import("./alpha-installs")
 
 let base = ""
@@ -131,6 +131,34 @@ describe("installBuiltinSkill — name + asset-key guards", () => {
     expect(fs.existsSync(path.join(opencodeDir, "skills", "safe-refactor", "SKILL.md"))).toBe(true)
     const { receipts } = readLedger(alphaDir)
     expect(receipts[0]).toMatchObject({ id: "skill:safe-refactor", origin: "catalog", type: "skill" })
+  })
+})
+
+describe("removeFsInstall — deletes truth, unbridges, drops receipt (T6)", () => {
+  test("uninstalling a skill removes truth dir, .opencode item, and receipt", () => {
+    writeSkill("gone-skill", "d", "b")
+    expect(fs.existsSync(path.join(alphaDir, "skills", "gone-skill", "SKILL.md"))).toBe(true)
+    const r = removeFsInstall("skill", "gone-skill")
+    expect(r.ok).toBe(true)
+    expect(fs.existsSync(path.join(alphaDir, "skills", "gone-skill"))).toBe(false)
+    expect(fs.existsSync(path.join(opencodeDir, "skills", "gone-skill"))).toBe(false)
+    expect(readLedger(alphaDir).receipts.some((x) => x.name === "gone-skill")).toBe(false)
+  })
+
+  test("uninstalling an agent removes the md and receipt", () => {
+    writeAgent("gone-agent", "---\ndescription: d\n---\nsys")
+    const r = removeFsInstall("agent", "gone-agent")
+    expect(r.ok).toBe(true)
+    expect(fs.existsSync(path.join(alphaDir, "agents", "gone-agent.md"))).toBe(false)
+    expect(readLedger(alphaDir).receipts.some((x) => x.name === "gone-agent")).toBe(false)
+  })
+
+  test("uninstalling a missing item is idempotent success", () => {
+    expect(removeFsInstall("skill", "never-installed").ok).toBe(true)
+  })
+
+  test("rejects unsafe name", () => {
+    expect(removeFsInstall("skill", "../evil").ok).toBe(false)
   })
 })
 

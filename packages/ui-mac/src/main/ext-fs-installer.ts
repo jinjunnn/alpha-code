@@ -14,8 +14,8 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { fileURLToPath } from "node:url"
-import { bridgeItem, opencodeHomeDir } from "./alpha-bridge"
-import { addReceipt, alphaGlobalRoot } from "./alpha-installs"
+import { bridgeItem, opencodeHomeDir, unbridgeItem } from "./alpha-bridge"
+import { addReceipt, alphaGlobalRoot, removeReceipt } from "./alpha-installs"
 import { alphaRoot, ensureAlphaScaffold } from "./alpha-workdir"
 import type { InstallMeta, InstallReceipt, InstallTarget } from "../preload/types"
 
@@ -226,4 +226,50 @@ export function installBuiltinSkill(
   const files = [destDir, ...bridge.created]
   recordReceipt(roots, { name, type: "skill", files, meta, origin: "catalog" })
   return { ok: true, files }
+}
+
+// Resolve roots WITHOUT scaffolding — for uninstall (never create dirs we're about to delete from).
+function resolveRootsReadonly(target: InstallTarget | undefined): Roots | { error: string } {
+  const t = target ?? { scope: "global" as const }
+  if (t.scope === "global") return { alphaDir: alphaGlobalRoot(), opencodeDir: opencodeHomeDir(), scope: "global" }
+  if (typeof t.projectDir !== "string") return { error: "invalid project directory" }
+  const root = alphaRoot(t.projectDir)
+  if (!root) return { error: `invalid project directory: ${t.projectDir}` }
+  return { alphaDir: root, opencodeDir: path.join(t.projectDir, ".opencode"), scope: "project" }
+}
+
+/**
+ * Uninstall a skill/agent: remove its truth dir/file under .alpha, unbridge its .opencode link, and
+ * drop the receipt. Legacy installs (ALPHA_LEGACY_INSTALL_ROOT era, no bridge/receipt) are removed
+ * from the old XDG root by name. Missing target = already-gone success (idempotent).
+ */
+export function removeFsInstall(type: "skill" | "agent", name: string, target?: InstallTarget): FsResult {
+  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid name" }
+  const removed: string[] = []
+  // legacy XDG location (best-effort, pre-migration installs)
+  const legacyRoot = opencodeConfigDir()
+  const legacyTarget = type === "skill" ? path.join(legacyRoot, "skills", name) : path.join(legacyRoot, "agent", `${name}.md`)
+  try {
+    if (fs.existsSync(legacyTarget)) {
+      fs.rmSync(legacyTarget, { recursive: true, force: true })
+      removed.push(legacyTarget)
+    }
+  } catch {
+    /* best-effort */
+  }
+  const roots = resolveRootsReadonly(target)
+  if ("error" in roots) return removed.length ? { ok: true, files: removed } : { ok: false, reason: roots.error }
+  const kind = type === "skill" ? "skills" : "agents"
+  const truth = type === "skill" ? path.join(roots.alphaDir, "skills", name) : path.join(roots.alphaDir, "agents", `${name}.md`)
+  try {
+    if (fs.existsSync(truth)) {
+      fs.rmSync(truth, { recursive: true, force: true })
+      removed.push(truth)
+    }
+    unbridgeItem(roots.alphaDir, roots.opencodeDir, kind, name).removed.forEach((r) => removed.push(r))
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "failed to remove" }
+  }
+  removeReceipt(roots.alphaDir, type, name)
+  return { ok: true, files: removed }
 }

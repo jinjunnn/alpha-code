@@ -147,6 +147,7 @@ const api: ElectronAPI = {
     installBuiltinSkill: (builtinAssetKey, name, target, meta) =>
       ipcRenderer.invoke("ext-install-builtin-skill", builtinAssetKey, name, target, meta),
     listInstalls: (projectDir) => ipcRenderer.invoke("ext-list-installs", projectDir),
+    uninstall: (receipt) => ipcRenderer.invoke("ext-uninstall", receipt),
   },
   account: {
     summary: () => ipcRenderer.invoke("account-summary"),

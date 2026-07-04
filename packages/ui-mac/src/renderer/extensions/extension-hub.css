@@ -578,6 +578,23 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* T6:全类型已安装列表的类型 pill + 版本号 */
+.alpha-ext-type-pill {
+  flex: none;
+  font-size: 10.5px;
+  font-weight: var(--a-weight-medium);
+  color: var(--a-text-secondary);
+  background: var(--a-bg-muted);
+  border: 1px solid var(--a-border-faint);
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+.alpha-ext-ver {
+  flex: none;
+  font-family: var(--a-font-mono);
+  font-size: 11px;
+  color: var(--a-text-tertiary);
+}
 .alpha-ext-man-st {
   display: flex;
   align-items: center;

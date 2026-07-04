@@ -6,11 +6,11 @@
 import { ipcMain, type IpcMainInvokeEvent } from "electron"
 import { execFile } from "node:child_process"
 import * as os from "node:os"
-import type { InstallMeta, InstallTarget } from "../preload/types"
+import type { InstallMeta, InstallReceipt, InstallTarget } from "../preload/types"
 import { listInstalls } from "./alpha-installs"
 import { fileifyMcpSecrets, removeMcpServerSecrets } from "./alpha-mcp-secrets"
-import { configHealth, persistMcp, persistPlugin, removeMcp } from "./ext-config"
-import { installBuiltinSkill, writeAgent, writeSkill } from "./ext-fs-installer"
+import { configHealth, persistMcp, persistPlugin, removeMcp, removePlugin } from "./ext-config"
+import { installBuiltinSkill, removeFsInstall, writeAgent, writeSkill } from "./ext-fs-installer"
 
 // GUI apps on macOS launch with a minimal PATH (no Homebrew), so augment it before `which` or we'd
 // false-negative tools the user actually has installed.
@@ -74,4 +74,20 @@ export function registerExtIpcHandlers(userDataPath: string) {
   )
   // REQ-018 安装账本:合并只读视图(global ~/.alpha + 可选 project .alpha)
   ipcMain.handle("ext-list-installs", (_event: IpcMainInvokeEvent, projectDir?: string) => listInstalls(projectDir))
+  // REQ-018 T6:按 receipt 精确卸载(fs 类删文件+拆桥+去账;plugin 从 config[] 删;mcp 走 removeMcp)。
+  ipcMain.handle("ext-uninstall", (_event: IpcMainInvokeEvent, receipt: InstallReceipt) => {
+    const target: InstallTarget | undefined = receipt.scope === "project" && typeof receipt.configKey !== "string"
+      ? undefined // project fs installs pass projectDir via receipt.files[0]'s root — global default otherwise
+      : { scope: "global" }
+    if (receipt.type === "skill" || receipt.type === "agent") return removeFsInstall(receipt.type, receipt.name, target)
+    if (receipt.type === "plugin") {
+      const pkg = receipt.configKey?.startsWith("plugin:") ? receipt.configKey.slice("plugin:".length) : receipt.name
+      return removePlugin(pkg)
+    }
+    if (receipt.type === "mcp") {
+      removeMcpServerSecrets(userDataPath, receipt.name)
+      return removeMcp(receipt.name)
+    }
+    return { ok: false, reason: `cannot uninstall type: ${receipt.type}` }
+  })
 }
