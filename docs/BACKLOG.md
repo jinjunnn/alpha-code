@@ -104,7 +104,7 @@
 |---|---|---|---|---|---|
 | REQ-007 | ADR-015 待办①③:per-agent prompt 优化清单 + Tier-3 回答长度校准桌面实测 | docs | A | registered | 待办②(sync tripwire)已随 S7 完成 |
 | D1 | 健康轮询先 sleep 100ms 再首查 | perf | A | ready | |
-| REQ-017 | `alpha-check.sh` 北极星守卫未跟 ADR-020(仍扫 packages/app → 本地自检恒假红,与 alpha-ci 不再 1:1) | debt | A | ready | 快车道:UPSTREAM_PATHS 对齐 alpha-ci.yml(移出 app/ui);顺带修 `ext-fs-installer.ts:18-20` 硬编码 `~/.config/opencode` 与 `ext-config.ts` XDG 写盘根分叉;发现于 REQ-004 spike([audits/req004-spike](audits/2026-07-03-req004-alpha-bridge-spike.md) §五) |
+| REQ-017 | `alpha-check.sh` 北极星守卫未跟 ADR-020(仍扫 packages/app → 本地自检恒假红,与 alpha-ci 不再 1:1) | debt | A | shipped | **PR #63**:UPSTREAM_PATHS 对齐 alpha-ci.yml(移出 app/ui,本地实跑三关全绿)+ `ext-fs-installer.opencodeConfigDir` 改 XDG-aware(与 ext-config/上游同规则,修写读分叉);verified=本地 alpha-check 实跑绿(记录于行内) |
 | D2 | `/v1/models` live 同步死代码 | debt | A | dup | **→ 并入 REQ-001**(接进 picker 按白名单装配) |
 | D3 | 官方 4 条 Anthropic skills 内容打包 + NOTICE(T5.3) | feature | A | ready | 现诚实失败,非占位 |
 | D4 | 定制中心 skill 卡片「已安装」态(T5.4) | ux | A | ready | |

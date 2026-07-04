@@ -16,6 +16,11 @@ export type FsResult = { ok: true } | { ok: false; reason: string }
 const SAFE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
 
 function opencodeConfigDir(): string {
+  // REQ-017:与 ext-config.userConfigDir / 上游 core/global.ts 同规则(OPENCODE_CONFIG_DIR >
+  // XDG_CONFIG_HOME/opencode > ~/.config/opencode)。此前硬编码 ~/.config → 设 XDG 的用户
+  // skill/agent 写进引擎不扫描的目录(写读分叉)。
+  if (process.env.OPENCODE_CONFIG_DIR) return process.env.OPENCODE_CONFIG_DIR
+  if (process.env.XDG_CONFIG_HOME) return path.join(process.env.XDG_CONFIG_HOME, "opencode")
   return path.join(os.homedir(), ".config", "opencode")
 }
 
