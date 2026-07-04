@@ -1,7 +1,7 @@
 // AlphaHome — the alpha-owned home screen ("/" route), built to the approved mockup
 // (docs/designs/2026-06-25-composer-model-redesign/mockup.html · §01 HOME): a greeting, a centered
-// shared composer with the full toolbar (+ · 权限 · 模型 · effort · 发送), a workspace chip, and
-// recent-project quick-launch pills. Mounted as a route-aware child of AppInterface (same pattern as
+// shared composer with the full toolbar (+ · 权限 · 模型 · effort · 发送) and a workspace chip.
+// Mounted as a route-aware child of AppInterface (same pattern as
 // AlphaSidebar) so it has the router + command context; data + send go through the SDK
 // (useAlphaProjects). The model/permission chips wire through commands/SDK — opencode's model &
 // permission contexts are not exported, so the home composer carries server defaults and switches
@@ -12,7 +12,7 @@ import { Portal } from "solid-js/web"
 import { useLocation, useNavigate } from "@solidjs/router"
 import { useCommand } from "./providers"
 import { type AlphaProject, type AlphaProjectsApi } from "../sidebar/use-projects"
-import { sessionHref, newSessionHref, projectLabel } from "../sidebar/route"
+import { sessionHref, projectLabel } from "../sidebar/route"
 import { AddButton, PermChip, EffortChip, ModelChip, composerModelLabel } from "./composer-controls"
 import { pushToast } from "./Toast"
 import { Banner } from "./Banner"
@@ -45,7 +45,6 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
     return p === "/" || p === "/index.html" || p === "" || p.startsWith("/new-session")
   })
   const visibleProjects = createMemo(() => store.projects.filter((p) => p.worktree !== "/"))
-  const hasProjects = createMemo(() => visibleProjects().length > 0)
 
   const [text, setText] = createSignal("")
   const [chosenWs, setChosenWs] = createSignal<string | undefined>(undefined)
@@ -206,40 +205,11 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
                   </Show>
                 </div>
               </div>
-
-              {/* recent project pills */}
-              <Show when={hasProjects()}>
-                <div class="a-home-recents">
-                  <For each={visibleProjects().slice(0, 6)}>
-                    {(p) => <RecentPill project={p} navigate={navigate} setWs={setChosenWs} />}
-                  </For>
-                </div>
-              </Show>
             </div>
           </div>
         </div>
       </Portal>
     </Show>
-  )
-}
-
-function RecentPill(props: { project: AlphaProject; navigate: (href: string) => void; setWs: (w: string) => void }) {
-  const latest = createMemo(() => props.project.sessions[0])
-  const go = () => {
-    const s = latest()
-    props.setWs(props.project.worktree)
-    props.navigate(s ? sessionHref(s.directory, s.id) : newSessionHref(props.project.worktree))
-  }
-  return (
-    <button class="a-recent-pill" onClick={go} title={props.project.worktree}>
-      <span class="a-pico" style={{ background: props.project.color || "var(--a-accent)" }}>
-        {props.project.name.slice(0, 1).toUpperCase()}
-      </span>
-      <span class="a-recent-name">{props.project.name}</span>
-      <Show when={latest()}>
-        <span class="a-recent-sub"> · {latest()!.title}</span>
-      </Show>
-    </button>
   )
 }
 
