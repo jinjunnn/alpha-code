@@ -4,7 +4,7 @@
 // ConfigV2.MCP (packages/core/src/config/mcp.ts): the discriminant is "local" | "remote"
 // (NOT stdio/sse), local carries `command`+`environment`, remote carries `url`+`headers`.
 
-export type CatalogType = "mcp" | "skill" | "plugin" | "bundle"
+export type CatalogType = "mcp" | "skill" | "plugin" | "bundle" | "agent"
 export type CatalogSource = "official" | "community" | "alpha" | "user"
 
 /** opencode ConfigV2.MCP.Local — the object passed to sdk.mcp.add for a local (stdio) server. */
@@ -53,11 +53,25 @@ export interface PluginInstallSpec {
   version?: string
   options?: Record<string, unknown>
   mirrorRegistry?: string
+  /** REQ-023 T2:随 app 打包的自包含 JS 资产键(resources/plugins/<name>)。存在时安装 =
+   *  复制 + plugin[] 写绝对路径 —— 零网络;npm@钉版仅作无资产条目的 fallback。 */
+  vendoredAssetKey?: string
+  /** REQ-023 T1:V2 远程直链预留字段(下载器不在 M2 实现,占位防 schema churn)。 */
+  downloadUrl?: string
   /** Unverified claim carried from the catalog — surfaced as 「待核实」 on the detail page (D5). */
   _verify?: string
 }
 
-export type InstallSpec = McpInstallSpec | SkillInstallSpec | PluginInstallSpec
+export interface AgentInstallSpec {
+  kind: "agent"
+  source: "builtin"
+  /** resources/agents/<name>.md — vendored md asset (REQ-023 T1). */
+  builtinAssetKey: string
+  /** Unverified claim carried from the catalog — surfaced as 「待核实」 on the detail page (D5). */
+  _verify?: string
+}
+
+export type InstallSpec = McpInstallSpec | SkillInstallSpec | PluginInstallSpec | AgentInstallSpec
 
 export interface BundleItem {
   catalogEntryId: string

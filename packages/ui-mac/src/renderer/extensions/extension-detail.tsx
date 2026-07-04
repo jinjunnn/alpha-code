@@ -58,6 +58,8 @@ export function ExtensionDetail(props: {
   busy: Accessor<string | null>
   /** Breadcrumb root = the section (tab) this detail was opened from; clicking it goes back. */
   crumb: string
+  /** B11:安装失败的行内错误(hub 持有,与卡片同源)。 */
+  errorFor?: (id: string) => string | undefined
   onBack: () => void
   /** Stage the entry in the hub's install-confirm dialog (same flow as the card 添加). */
   onInstall: (e: CatalogEntry) => void
@@ -96,7 +98,15 @@ export function ExtensionDetail(props: {
   // REQ-019 T3:技能详情渲染 SKILL.md 全文。只有 builtin 资产可读(主进程只读 IPC,键校验 +
   // 256KB 帽);未打包的诚实显示原因,不占位。
   const [skillDoc] = createResource(
-    () => (entry() && skillSpec(entry()!)?.builtinAssetKey) || undefined,
+    () => {
+      const e = entry()
+      if (!e) return undefined
+      const spec = e.installSpec
+      // skill 的 SKILL.md 与 agent 的 md 资产共用只读预览通道(REQ-023)。
+      if (spec?.kind === "skill") return spec.builtinAssetKey || undefined
+      if (spec?.kind === "agent") return spec.builtinAssetKey || undefined
+      return undefined
+    },
     (key) => window.api.ext.readBuiltinSkill(key),
   )
 
@@ -239,6 +249,11 @@ export function ExtensionDetail(props: {
         </div>
       </header>
 
+      {/* B11:安装失败行内(与卡片错误同源),不裸 toast */}
+      <Show when={entry() && props.errorFor?.(entry()!.id)}>
+        <p class="alpha-ext-card-err">{props.errorFor!(entry()!.id)}</p>
+      </Show>
+
       {/* ── 简介 ── */}
       <Section title={t("alpha.ext.detailAbout")}>
         <p class="alpha-ext-dabout">{header().desc}</p>
@@ -355,6 +370,25 @@ export function ExtensionDetail(props: {
                     </div>
                   </>
                 )}
+              </Show>
+              {/* Agent 条目(REQ-023):安装位置 + md 资产预览(含权限档 frontmatter,详情页先行档) */}
+              <Show when={e().installSpec?.kind === "agent"}>
+                <FactRow label={t("alpha.ext.detailInstallDir")}>{t("alpha.ext.scopeGlobal")}</FactRow>
+                <div class="alpha-ext-dsub">
+                  <div class="alpha-ext-dsub-t">{t("alpha.ext.detailAgentDoc")}</div>
+                  <Show when={!skillDoc.loading} fallback={<p class="alpha-ext-dnote">{t("alpha.ext.loading")}</p>}>
+                    <Show
+                      when={skillDoc()?.ok && skillDoc()}
+                      fallback={
+                        <p class="alpha-ext-dnote" data-err="">
+                          {(skillDoc() as { reason?: string } | undefined)?.reason ?? t("alpha.ext.skillNoAsset")}
+                        </p>
+                      }
+                    >
+                      {(doc) => <pre class="alpha-ext-ddoc">{(doc() as { content: string }).content}</pre>}
+                    </Show>
+                  </Show>
+                </div>
               </Show>
               {/* 套件:组合清单(序号 + 逐项状态 + 未装项行内安装 = 逐项重试,T3) */}
               <Show when={e().type === "bundle"}>

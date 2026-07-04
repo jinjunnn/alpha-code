@@ -81,6 +81,17 @@ const getBase = (appId: string): Configuration => ({
       to: "skills/",
     },
     {
+      // REQ-023 T2:官方 agent md 资产(installBuiltinAgent 复制入 ~/.alpha/agents)。
+      from: "resources/agents/",
+      to: "agents/",
+    },
+    {
+      // REQ-023 T2:vendored 插件(自包含 plugin.js;installVendoredPlugin 复制入 ~/.alpha/plugins,
+      // plugin[] 写绝对路径 —— 安装零网络)。
+      from: "resources/plugins/",
+      to: "plugins/",
+    },
+    {
       // MIT license/attribution shipped inside the app (B15). Also surfaced natively via
       // app.setAboutPanelOptions in src/main/index.ts.
       from: "resources/NOTICE.txt",

@@ -5,13 +5,15 @@
 
 import { ipcMain, type IpcMainInvokeEvent } from "electron"
 import { execFile } from "node:child_process"
+import * as fs from "node:fs"
 import * as os from "node:os"
+import * as path from "node:path"
 import type { InstallMeta, InstallReceipt, InstallTarget } from "../preload/types"
-import { listInstalls } from "./alpha-installs"
+import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
 import { fileifyMcpSecrets, removeMcpServerSecrets } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy } from "./alpha-migrate"
-import { configHealth, persistMcp, persistPlugin, removeMcp, removePlugin } from "./ext-config"
-import { importSkillFolder, importSkillGit, installBuiltinSkill, readBuiltinSkill, removeFsInstall, writeAgent, writeSkill } from "./ext-fs-installer"
+import { configHealth, persistMcp, persistPlugin, removeMcp, removePlugin, removePluginPath } from "./ext-config"
+import { importSkillFolder, importSkillGit, installBuiltinAgent, installBuiltinSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall, writeAgent, writeSkill } from "./ext-fs-installer"
 
 // GUI apps on macOS launch with a minimal PATH (no Homebrew), so augment it before `which` or we'd
 // false-negative tools the user actually has installed.
@@ -77,6 +79,17 @@ export function registerExtIpcHandlers(userDataPath: string) {
   ipcMain.handle("ext-read-builtin-skill", (_event: IpcMainInvokeEvent, builtinAssetKey: string) =>
     readBuiltinSkill(builtinAssetKey),
   )
+  // REQ-023 T2:vendored 供给链(官方 agent md 资产 + 零网络插件)
+  ipcMain.handle(
+    "ext-install-builtin-agent",
+    (_event: IpcMainInvokeEvent, builtinAssetKey: string, name: string, target?: InstallTarget, meta?: InstallMeta) =>
+      installBuiltinAgent(builtinAssetKey, name, target, meta),
+  )
+  ipcMain.handle(
+    "ext-install-vendored-plugin",
+    (_event: IpcMainInvokeEvent, vendoredAssetKey: string, name: string, meta?: InstallMeta) =>
+      installVendoredPlugin(vendoredAssetKey, name, meta),
+  )
   // REQ-019 T6:导入(folder 校验 frontmatter 复制入 .alpha;git https-only 浅克隆临时目录同校验)
   ipcMain.handle("ext-import-skill-folder", (_event: IpcMainInvokeEvent, srcDir: string, target?: InstallTarget) =>
     importSkillFolder(srcDir, target),
@@ -93,6 +106,20 @@ export function registerExtIpcHandlers(userDataPath: string) {
       : { scope: "global" }
     if (receipt.type === "skill" || receipt.type === "agent") return removeFsInstall(receipt.type, receipt.name, target)
     if (receipt.type === "plugin") {
+      // REQ-023:vendored 插件(plugin-path receipt)= 删配置里的绝对路径 + 删 ~/.alpha/plugins 落盘物
+      if (receipt.configKey?.startsWith("plugin-path:")) {
+        const abs = receipt.configKey.slice("plugin-path:".length)
+        const removed = removePluginPath(receipt.name, abs)
+        if (!removed.ok) return removed
+        for (const f of receipt.files ?? []) {
+          try {
+            if (f.startsWith(path.join(alphaGlobalRoot(), "plugins") + path.sep)) fs.rmSync(f, { recursive: true, force: true })
+          } catch {
+            /* best-effort */
+          }
+        }
+        return { ok: true, files: receipt.files }
+      }
       const pkg = receipt.configKey?.startsWith("plugin:") ? receipt.configKey.slice("plugin:".length) : receipt.name
       return removePlugin(pkg)
     }

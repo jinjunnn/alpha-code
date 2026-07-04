@@ -1352,3 +1352,61 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   opacity: 0.6;
   cursor: default;
 }
+
+/* ── T7:筛选 chips / 卡片行内错误 / 骨架屏 ─────────────────────────────────── */
+.alpha-ext-filters {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin: 14px 0 4px;
+}
+.alpha-ext-filters-l {
+  font-size: 11px;
+  color: var(--a-text-tertiary);
+  margin-right: 2px;
+}
+.alpha-ext-fchip {
+  border: 1px solid var(--a-border);
+  background: var(--a-surface);
+  color: var(--a-text-secondary);
+  font-family: var(--a-font-sans);
+  font-size: var(--a-text-xs);
+  font-weight: var(--a-weight-medium);
+  border-radius: var(--a-radius-full);
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: background var(--a-dur-fast) var(--a-ease-out), color var(--a-dur-fast) var(--a-ease-out);
+}
+.alpha-ext-fchip:hover {
+  background: var(--a-bg-muted);
+}
+.alpha-ext-fchip[data-on] {
+  background: var(--a-accent-subtle);
+  border-color: var(--a-accent-border);
+  color: var(--a-accent);
+}
+.alpha-ext-card-err {
+  margin: 8px 0 0;
+  font-size: var(--a-text-xs);
+  color: var(--a-error);
+  line-height: var(--a-leading-snug);
+}
+.alpha-ext-skel-row {
+  height: 62px;
+  border-radius: var(--a-radius-lg);
+  margin-bottom: 9px;
+  background: linear-gradient(90deg, var(--a-bg-muted) 25%, var(--a-bg-inset) 50%, var(--a-bg-muted) 75%);
+  background-size: 200% 100%;
+  animation: alpha-ext-skl 1.4s linear infinite;
+}
+@keyframes alpha-ext-skl {
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .alpha-ext-skel-row {
+    animation: none;
+  }
+}

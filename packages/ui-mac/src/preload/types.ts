@@ -289,6 +289,19 @@ export type ElectronAPI = {
       url: string,
       target?: InstallTarget,
     ) => Promise<{ ok: true; files?: string[]; name?: string } | { ok: false; reason: string }>
+    // REQ-023 T2:vendored 供给链 —— 官方 agent md 资产安装;vendored 插件零网络安装
+    // (复制 resources/plugins/<key> → ~/.alpha/plugins + plugin[] 绝对路径)。
+    installBuiltinAgent: (
+      builtinAssetKey: string,
+      name: string,
+      target?: InstallTarget,
+      meta?: InstallMeta,
+    ) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
+    installVendoredPlugin: (
+      vendoredAssetKey: string,
+      name: string,
+      meta?: InstallMeta,
+    ) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
     // REQ-018 安装账本:global(~/.alpha)+ project(<dir>/.alpha)receipts 合并只读视图
     listInstalls: (projectDir?: string) => Promise<InstallLedgerView>
     // REQ-018 T6:按 receipt 精确卸载(删文件/拆桥/去 config 项/吊销密钥/去账)

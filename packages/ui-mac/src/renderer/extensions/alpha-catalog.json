@@ -7,7 +7,8 @@
     "Anthropic document-skills(docx/xlsx/pptx/pdf)源码可见但禁止再分发,故本目录不收。",
     "MCP command/version 全部钉精确版本(A2/T1.5):npx `@pkg@x.y.z` / uvx `pkg@x.y.z`,消除每启动在线解析风暴。钉的值 = 更新当日各包 latest,行为与不钉一致、仅冻结确定性。升级 = 手动 bump(见 npm/pypi)。存量用户配置的一键钉版本迁移(T1.5 第二半)仍待做。",
     "内置 skill 资产(builtinAssetKey → resources/skills/):alpha-upstream-sync / safe-refactor(MIT,自写)+ skill-creator(Apache-2.0,Anthropic 官方,S12 T7 已打包,见 NOTICE)。mcp-builder / canvas-design / brand-guidelines 尚无可信来源打包 → 安装时诚实失败(非占位),待授权资产落地后补。",
-    "tools[]/hooks[] 是精选元数据(详情页展示用),非全集;引擎无 tools 查询路由,实时探测为 flag 内 V2(REQ-019 T8)。标 _verify 条目的 tools[] 同属待核实。"
+    "tools[]/hooks[] 是精选元数据(详情页展示用),非全集;引擎无 tools 查询路由,实时探测为 flag 内 V2(REQ-019 T8)。标 _verify 条目的 tools[] 同属待核实。",
+    "agent 类条目 = vendored md 资产(resources/agents/),安装经 writeAgent 同管线(桥+账本);plugin 条目带 vendoredAssetKey 时安装零网络(REQ-023)。"
   ],
   "entries": [
     {
@@ -465,6 +466,22 @@
       }
     },
     {
+      "id": "agent:code-reviewer",
+      "type": "agent",
+      "name": "code-reviewer",
+      "displayName": "代码审查(只读)",
+      "description": "只读代码审查 Agent:审查 diff / 指定文件,产出问题清单与修复建议;edit 拒绝、bash 逐次确认(只读权限档示例)。",
+      "source": "alpha",
+      "category": "dev",
+      "license": "MIT",
+      "redistributable": true,
+      "installSpec": {
+        "kind": "agent",
+        "source": "builtin",
+        "builtinAssetKey": "agents/code-reviewer.md"
+      }
+    },
+    {
       "id": "plugin:opencode-notify",
       "type": "plugin",
       "name": "opencode-notify",
@@ -479,7 +496,8 @@
         "package": "opencode-notify",
         "version": "0.3.1",
         "mirrorRegistry": "https://registry.npmmirror.com",
-        "_verify": "社区插件:确认精确包名/维护状态/与当前 @opencode-ai/plugin 版本兼容。"
+        "_verify": "社区插件:vendored 自 npm 0.3.1(dist 自包含);OpenCodeNotifier.app 未再分发(公证风险),通知走 osascript 回退 —— 真机核实回退通知实际弹出。",
+        "vendoredAssetKey": "plugins/opencode-notify"
       },
       "hooks": [
         {

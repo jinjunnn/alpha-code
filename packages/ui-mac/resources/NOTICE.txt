@@ -40,6 +40,13 @@ text ships alongside it (resources/skills/skill-creator/LICENSE.txt). Source:
 Anthropic's official Claude plugins/skills.
 
 --------------------------------------------------------------------------------
+The "opencode-notify" plugin bundled under resources/plugins/opencode-notify
+(plugin.js, vendored verbatim from npm opencode-notify@0.3.1 dist/index.js,
+with its dependency detect-terminal inlined by the upstream build) is licensed
+under the MIT License. The upstream OpenCodeNotifier.app helper binary is NOT
+redistributed here; the plugin uses its built-in osascript fallback.
+
+--------------------------------------------------------------------------------
 Third-party components
 --------------------------------------------------------------------------------
 Other bundled components (Electron, SolidJS, and the dependencies declared in the

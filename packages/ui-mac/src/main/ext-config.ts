@@ -419,6 +419,69 @@ export function removePlugin(pkg: string): ConfigResult {
   return { ok: true }
 }
 
+// ── REQ-023 T2:vendored 插件的绝对路径持久化(零网络通道) ──────────────────────────────────
+// 引擎 plugin[] 原生接受绝对路径(config/plugin.ts:42-60,与 @alpha-code/ext 注入同机制)。
+// 路径必须位于 ~/.alpha/plugins 树内(装载面收敛:不能把任意本机 JS 喂进引擎进程)。
+
+function underAlphaPlugins(absPath: string): boolean {
+  const root = path.join(alphaGlobalRoot(), "plugins")
+  const resolved = path.resolve(absPath)
+  return resolved.startsWith(root + path.sep)
+}
+
+export function persistPluginPath(name: string, absJsPath: string, files: string[], meta?: InstallMeta): ConfigResult {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(name)) return { ok: false, reason: "invalid plugin name" }
+  if (!path.isAbsolute(absJsPath) || !absJsPath.endsWith(".js") || !underAlphaPlugins(absJsPath))
+    return { ok: false, reason: "refused: plugin path outside ~/.alpha/plugins" }
+  const target = mcpPluginTargetPath()
+  const read = (): unknown[] => {
+    try {
+      if (!fs.existsSync(target)) return []
+      const parsed = parse(fs.readFileSync(target, "utf8")) as { plugin?: unknown } | undefined
+      return Array.isArray(parsed?.plugin) ? (parsed!.plugin as unknown[]) : []
+    } catch {
+      return []
+    }
+  }
+  const current = read()
+  if (current.some((p) => p === absJsPath)) return { ok: true } // idempotent
+  const written = writeKey(target, ["plugin"], [...current, absJsPath])
+  if (written.ok && receiptsActive()) {
+    addReceipt(alphaGlobalRoot(), {
+      id: meta?.catalogId ?? `user:${name}`,
+      name,
+      type: "plugin",
+      scope: "global",
+      version: meta?.version,
+      installedAt: new Date().toISOString(),
+      origin: meta?.catalogId ? "catalog" : "imported",
+      configKey: `plugin-path:${absJsPath}`,
+      files,
+    })
+  }
+  return written
+}
+
+export function removePluginPath(name: string, absJsPath: string): ConfigResult {
+  if (!path.isAbsolute(absJsPath)) return { ok: false, reason: "invalid plugin path" }
+  const target = mcpPluginTargetPath()
+  try {
+    if (fs.existsSync(target)) {
+      const parsed = parse(fs.readFileSync(target, "utf8")) as { plugin?: unknown } | undefined
+      const current: unknown[] = Array.isArray(parsed?.plugin) ? (parsed!.plugin as unknown[]) : []
+      const next = current.filter((p) => p !== absJsPath)
+      if (next.length !== current.length) {
+        const written = writeKey(target, ["plugin"], next)
+        if (!written.ok) return written
+      }
+    }
+  } catch {
+    return { ok: false, reason: "failed to read config" }
+  }
+  if (receiptsActive()) removeReceipt(alphaGlobalRoot(), "plugin", name)
+  return { ok: true }
+}
+
 // ── B11/B23:全局配置健康探测 ─────────────────────────────────────────────────────────────────
 // 上游行为(不可改,ADR-005):opencode 对全局 opencode.jsonc 的 jsonc 语法错误或**任何未识别
 // 顶层 key** 都会让 loadGlobal 失败 → 整份配置被静默清零为 {}(config.ts:281-289,parse.ts
