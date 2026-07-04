@@ -94,6 +94,34 @@ export type AccountTransaction = {
 /** Result envelope: the payload, or an error code (not-authenticated / unauthorized / http-NNN / network). */
 export type AccountResult<T> = T | { error: string }
 
+// Extension-hub install receipts (REQ-018): alpha's record of installed items and the files/config
+// keys each install owns. Engine visibility truth remains the SDK (mcp.status / app.skills / …);
+// receipts ⨝ SDK drives installed/pending-reload UI states, uninstall and update.
+export type InstallReceiptType = "mcp" | "skill" | "agent" | "command" | "plugin" | "bundle" | "cloud"
+export type InstallReceiptScope = "global" | "project"
+export type InstallReceiptOrigin = "catalog" | "created" | "imported"
+export type InstallReceipt = {
+  /** catalog entry id (e.g. "mcp:markitdown") or "user:<name>" for created/imported items */
+  id: string
+  /** install name: mcp server key / skill dir / agent file basename */
+  name: string
+  type: InstallReceiptType
+  scope: InstallReceiptScope
+  version?: string
+  /** ISO timestamp */
+  installedAt: string
+  origin: InstallReceiptOrigin
+  /** absolute paths owned by this install (fs types + bridge symlinks) */
+  files?: string[]
+  /** config ownership, e.g. "mcp.markitdown" / "plugin:opencode-notify@0.3.1" */
+  configKey?: string
+}
+export type InstallLedgerView = { global: InstallReceipt[]; project: InstallReceipt[]; warnings: string[] }
+/** Install destination: global (~/.alpha + ~/.opencode bridge) or a specific project's .alpha. */
+export type InstallTarget = { scope: "global" } | { scope: "project"; projectDir: string }
+/** Catalog provenance recorded into the receipt (id + catalog snapshot version for update checks). */
+export type InstallMeta = { catalogId?: string; version?: string }
+
 // alpha-platform (B) cloud jobs API (ADR-016) — unified dispatch/status over the `cloud` worker.
 // tier (T1/T2/T3) is invisible here (B routes internally); autonomy discriminates pipeline vs bounded-agent.
 export type CloudJobEnvelope = {
@@ -212,7 +240,11 @@ export type ElectronAPI = {
   // writes the user's opencode.jsonc (durable); the live add/connect happens in the renderer over
   // the SDK. See ADR-014 §4/§8.
   ext: {
-    persistMcp: (name: string, server: Record<string, unknown>) => Promise<{ ok: true } | { ok: false; reason: string }>
+    persistMcp: (
+      name: string,
+      server: Record<string, unknown>,
+      meta?: InstallMeta,
+    ) => Promise<{ ok: true } | { ok: false; reason: string }>
     removeMcp: (name: string) => Promise<{ ok: true } | { ok: false; reason: string }>
     checkRuntime: (tool: string) => Promise<{ ok: boolean }>
     // B11/B23:全局配置健康(broken=引擎会整份忽略用户配置)
@@ -221,13 +253,22 @@ export type ElectronAPI = {
       name: string,
       description: string,
       body: string,
-    ) => Promise<{ ok: true } | { ok: false; reason: string }>
-    writeAgent: (name: string, content: string) => Promise<{ ok: true } | { ok: false; reason: string }>
-    installPlugin: (pkg: string) => Promise<{ ok: true } | { ok: false; reason: string }>
+      target?: InstallTarget,
+    ) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
+    writeAgent: (
+      name: string,
+      content: string,
+      target?: InstallTarget,
+    ) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
+    installPlugin: (pkg: string, meta?: InstallMeta) => Promise<{ ok: true } | { ok: false; reason: string }>
     installBuiltinSkill: (
       builtinAssetKey: string,
       name: string,
-    ) => Promise<{ ok: true } | { ok: false; reason: string }>
+      target?: InstallTarget,
+      meta?: InstallMeta,
+    ) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
+    // REQ-018 安装账本:global(~/.alpha)+ project(<dir>/.alpha)receipts 合并只读视图
+    listInstalls: (projectDir?: string) => Promise<InstallLedgerView>
   }
   // alpha account (balance / membership / usage) read from the alpha-platform (B) account-server
   // using the main-held JWT. The renderer gets only the resolved summary, never the token.

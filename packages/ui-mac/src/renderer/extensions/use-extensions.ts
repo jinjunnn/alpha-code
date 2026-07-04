@@ -17,6 +17,11 @@ import { createEffect, onCleanup, type Accessor } from "solid-js"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import type { ServerInfo } from "../sidebar/use-projects"
 import type { CatalogEntry, InstalledState, McpConfig, McpInstallSpec, RuntimeCheck } from "./catalog-types"
+import catalogJson from "./alpha-catalog.json"
+
+// Receipt provenance (REQ-018): catalog snapshot version recorded per install → update checks.
+const CATALOG_VERSION = (catalogJson as { version?: string }).version
+const metaFor = (entry: CatalogEntry) => ({ catalogId: entry.id, version: CATALOG_VERSION })
 
 type Client = ReturnType<typeof createOpencodeClient>
 
@@ -174,7 +179,11 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     const config = toMcpConfig(spec, env ?? {}, workspace)
     // 1. Durable: write the user's opencode.jsonc first. If this fails, never touch the live server
     //    — avoids a "live but not persisted" state that vanishes on restart.
-    const persisted = await window.api.ext.persistMcp(entry.name, config as unknown as Record<string, unknown>)
+    const persisted = await window.api.ext.persistMcp(
+      entry.name,
+      config as unknown as Record<string, unknown>,
+      metaFor(entry),
+    )
     if (!persisted.ok) return { ok: false, reason: persisted.reason }
     // 2. Live: add + connect (no restart). mcp.add registers in-memory and spawns; connect is a
     //    belt-and-braces no-op if already connected.
@@ -281,7 +290,7 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     // SKILL.md (+ assets) into the user's scanned skills dir. Honest failure when this build doesn't
     // bundle that asset yet (e.g. the Apache-2.0 entries pending content drop) — no placeholder stub.
     if (spec.source === "builtin" && spec.builtinAssetKey) {
-      return window.api.ext.installBuiltinSkill(spec.builtinAssetKey, entry.name)
+      return window.api.ext.installBuiltinSkill(spec.builtinAssetKey, entry.name, undefined, metaFor(entry))
     }
     return { ok: false, reason: "该技能内容尚未随此版本打包" }
   }
@@ -289,7 +298,7 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
   async function installPlugin(entry: CatalogEntry): Promise<ActionResult> {
     const spec = entry.installSpec
     if (!spec || spec.kind !== "plugin") return { ok: false, reason: "not a plugin entry" }
-    return window.api.ext.installPlugin(spec.package)
+    return window.api.ext.installPlugin(spec.package, metaFor(entry))
   }
 
   return {

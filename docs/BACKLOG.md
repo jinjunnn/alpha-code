@@ -4,7 +4,7 @@
 > 状态:`registered / ready / in-sprint / shipped / verified / archived`;旁路 `parked / rejected / dup`。
 > 类:feature / bug / debt / security / perf / ux / docs / spike。仓:A=alpha-code · B=alpha-platform · C=alpha-web · X=跨仓。
 > 证据文档:**册** = [`plans/2026-07-02-problem-register-sprints-review.md`](plans/2026-07-02-problem-register-sprints-review.md)(71 项 + R1-R7 修正 + §7f-7j 实施日志);**核查** = [`audits/2026-07-02-register-verification.md`](audits/2026-07-02-register-verification.md);**E 册** = [`harness-extension-backlog.md`](harness-extension-backlog.md)。
-> 下一个新需求编号:**REQ-018**(新需求一律 REQ-NNN;A/B/C/D/E 为历史审计系列保留原号,用户 2026-07-03 确认)。
+> 下一个新需求编号:**REQ-023**(新需求一律 REQ-NNN;A/B/C/D/E 为历史审计系列保留原号,用户 2026-07-03 确认)。
 > **需求文件全覆盖(2026-07-03)**:全部开放的 A/B/C/D 条目已逐条建档 `requirements/<ID>-<slug>.md`(含验收标准),行内备注为摘要、**文件为验收真源**;E 系列以冻结 E 册为分析文档;parked/dup 项不建档。
 
 ## 发布短名单(launch-blockers,册 §6.8)
@@ -24,7 +24,7 @@
 | 决策点 | 载体 | 影响 |
 |---|---|---|
 | 产品定位连拍(剩 5):团队协作 / 企业租户 / 用户下沉 / 后端前 2-3 功能 / 前端余项;~~G4 优先级~~ **已拍板(2026-07-03,S11):G4 提优先、抬为 headline** | REQ-008 | rules 三文件收口,排期基准 |
-| ADR-014 未决 4 项:MVP 范围表述 / Agent·Command 进 tab / F9 串台开关 / 远程 catalog 依赖 C 仓 | REQ-006 | 定制中心 roadmap + ADR 转正 |
+| ADR-014 未决 4 项:MVP 范围表述 / ~~Agent·Command 进 tab~~(**O2 方向已定 2026-07-04:Agent 进 tab、Command 不单列**,随 v3 方案/REQ-018;转正时写入 ADR 修订)/ F9 串台开关 / 远程 catalog 依赖 C 仓 | REQ-006 | 定制中心 roadmap + ADR 转正 |
 | composer「只读」「effort」控件三选一:真实现 / 改文案 / 移除 | C28 | 用户可见行为 |
 | 关 `OPENCODE_EXPERIMENTAL_FILEWATCHER` 的功能代价是否接受 | B12 | 文件树/diff 刷新体验 vs 内存 |
 | B16 PIPL 同意门重启时机(现 parked;云派发/公开分发前必须) | B16 | 合规,发布节奏 |
@@ -37,7 +37,7 @@
 | ID | 标题 | 类 | 仓 | 状态 | 备注 |
 |---|---|---|---|---|---|
 | A6 | sidecar env 白名单:阻断平台 JWT / BYOK 密钥 / EXA key 继承给第三方 MCP/LSP 子进程 | security | A | shipped | **PR #40**(→ [S9](sprints/2026-07-03-s9-proxy-e2e/sprint.md));方案=白名单(`sidecar-env.ts` default-deny)+ `{file:}` 密钥通道(`alpha-secret-files.ts`,fork 时镜像/吊销)联动——勘察实锤泄漏是**两条通道**(密钥 env 直继承 + `OPENCODE_CONFIG_CONTENT` 内联明文),单做白名单会断平台/BYOK;typecheck+**115 tests** 绿(+18 安全路径);采纳方案/行为变化/残余风险见 [requirements/A6](requirements/A6-sidecar-env-allowlist.md);**verified 待真机**:MCP 子进程 env dump + 四链路复验 + 登出吊销(清单在档)。**R3 门控未解除**(解除随 verified,届时解锁 A2b/E2/E6) |
-| A2 | catalog MCP 全部钉精确版本 + 存量配置一键钉版本(T1.5) | security/perf | A | ready | 惰性 hub(PR #23)+ **catalog 全条目已钉版本(2026-07-03,待 PR)**:8 MCP command + 飞书/语雀 2 mirrorCommand + opencode-notify,钉至当日各包 latest(server-filesystem@2026.1.14 / playwright@0.0.77 / markitdown-mcp@0.0.1a4 / server-git@2026.6.16 等),catalog `version`→`2026-07-03.1`,typecheck+97 tests 绿。**剩 = 存量用户配置一键钉迁移**。R3 澄清:catalog 数据钉版本≠推广安装、不扩 A6 面,故先行;迁移/主动推广仍受 A6 门控 |
+| A2 | catalog MCP 全部钉精确版本 + 存量配置一键钉版本(T1.5) | security/perf | A | in-sprint | **S12 顺带(尾项随 T3 迁移弹窗同场;放行门 = T8 解 A6 R3)**;惰性 hub(PR #23)+ **catalog 全条目已钉版本(2026-07-03,待 PR)**:8 MCP command + 飞书/语雀 2 mirrorCommand + opencode-notify,钉至当日各包 latest,catalog `version`→`2026-07-03.1`,typecheck+97 tests 绿。**剩 = 存量用户配置一键钉迁移**。R3 澄清:catalog 数据钉版本≠推广安装、不扩 A6 面,故先行;迁移/主动推广仍受 A6 门控 |
 
 ## Active — P1
 
@@ -49,6 +49,7 @@
 | REQ-010 | alpha-ui 视觉 + 注入/路由回归修复批(546-sync 后 reskin 耦合面失效,图1–图9) | bug | A | verified | **ADR-020 冻结使名字级断裂蒸发**(app/ui 回到 6/30 reskin 验证态,4 个"死"锚点在冻结树运行时为活);剩余 = **冻结态真机视觉核验**(图1–9 逐屏对照,→ 真机批);若仍有残症才另修;历史诊断见审计及其修正节;**冻结态真机核验通过**(prod 包 CDP 截图:首页/会话/picker 全换肤,用户消息气泡等回归元素恢复,[audits/2026-07-03-realmachine-verify](audits/2026-07-03-realmachine-verify.md));详见 [requirements/REQ-010](requirements/REQ-010-alpha-ui-visual-regression.md) |
 | REQ-012 | 上游同步前端回归防护:锚点契约测试 + sync tripwire + post-sync 视觉冒烟 gate | debt | A | shipped | **PR #44**;范围拍板=锚点存在性 only(像素基线不做);清单 195 alive/4 dead + 5 用例契约测试 + sync tripwire + 发版 runbook ⓪ 步;**首跑即修正原审计:94 死→真死 4(session-ui 搬包)+ v0.1.0 回放 0 名字级死→结构性断裂假说上位**(审计修正节);详见 [requirements/REQ-012](requirements/REQ-012-frontend-sync-regression-guard.md) |
 | REQ-013 | 前端脱耦策略:让 alpha UI 免疫上游前端 churn(选定并落地) | spike | A | verified | **拍板=E 冻结 @ 546 前(用户 2026-07-03)→ ADR-020 落地(PR #45)**:tag `frontend-freeze-base` + sync restore 步 + 守卫范围修订;spike 实证 546 偏斜下 typecheck/build 全绿(唯 3 行 alpha WSL 适配);A 防护网已先行(REQ-012);**上游前端 churn 自此物理隔离**;verified 待冻结态真机视觉核验(→真机批);详见 [requirements/REQ-013](requirements/REQ-013-frontend-decoupling-strategy.md) |
+| REQ-018 | 定制中心 v3-M1 通用化地基:安装账本 + 全类型卸载 + **免重启生效(dispose)** + `.alpha` 双层落盘迁移 + MCP 密钥 file 化 + Agent tab | feature | A | in-sprint | **S12 headline(2026-07-04)** → [sprints/s12](sprints/2026-07-04-s12-ext-hub-m1/sprint.md);用户拍板 D1–D5;修 P0×4(装完不生效 placebo/明文密钥/已装态缺失/写盘根跑偏);吸收 D3/D4;方案 [designs/ext-hub-v3](designs/2026-07-04-extension-hub-v3-universal.md);详见 [requirements/REQ-018](requirements/REQ-018-ext-hub-universality.md) |
 | B1 | 登录 shell 同步探测黑屏 → 异步化 + 缓存(T1.2) | perf | A | shipped | **PR #49**;缓存命中 0ms + 后台异步刷新(shell 键控/空探测不缓存/真 export 赢);首启保持同步(fork 前必须有 PATH);**verified 待真机**(缓存命中启动耗时);详见 [requirements/B1](requirements/B1-shell-probe-async.md) |
 | B2 | refresh token 续期 + 401 拦截 + 失败降级 BYOK/登出(T3.1 剩余) | feature | A | shipped | **PR #42 + alpha-web `a1d4d8a`**;寿命拍板 7*24h(env 可调短测试)+ 提前量续期(整点 tick)+ 401 拦截重试 + invalid_grant 降级登出(明确 UI)+ 冻结 token 快死备胎 respawn;REQ-002④ 过期路径就此成型;134 tests 绿;**verified 待真机**(短 TTL 实测 过期→续期/撤销→降级/logout 不串台);详见 [requirements/B2](requirements/B2-refresh-token.md) |
 | B3 | 云协同最后一公里:cloud MCP 健康 → dispatch → 进度 → artifact 回流(=G4、E12;T4.1-4.3) | feature | X | shipped | **S11 T2(PR #55+#58)**:回流全链落地——主进程 `alpha-workdir.ts`(`.alpha/runs/<runId>/`,防逃逸/消毒/体积帽)+ `cloud-save-run` IPC(#55);renderer `CloudRunWatcher`(firehose tool-part 终态检测 → saveRun → toast,worktree 映射,纯解析核 10 单测)+ i18n(#58);呈现=会话内工具调用(验收④,引擎原生);**verified 待真机**:登录态 in-app dispatch 冒烟(兼 REQ-004 verified);配额预估 UI(验收⑥后半)→ T4/B11 账户 banner 一并;**R1:勿切端点** |
@@ -56,13 +57,13 @@
 | B5 | sidecar 崩溃自愈 + respawn 竞态/互斥(T2.4 + NEW-4) | debt | A | verified | **全量完成:PR #48(互斥)+ PR #57(S11 T5 崩溃自愈)**——意外退出指数退避自愈(1s→16s,5 次封顶防风暴,60s 健康在线重置梯子;gen 区分蓄意 kill/迟到 exit)+ 未健康不 reload(竞态修复,验收②);纯逻辑 4 单测;**verified(2026-07-04)**:真机 kill -9 → respawn(pid 更替)+ renderer/登录态完好截图([audits/s11-ship-visual](audits/2026-07-04-s11-ship-visual-verify.md));详见 [requirements/B5](requirements/B5-sidecar-self-heal.md) |
 | B6 | 装载 `@alpha-code/ext` 主接缝(=G1;T5.1-5.2) | feature | A | verified | **PR #46**(→ [S10](sprints/2026-07-03-s10-hardening/sprint.md));extraResources alpha-ext/ + StartCommand 传路径 + injectAlphaConfig 合并 V1 `plugin` 数组;ALPHA_EXT_DISABLE 逃生;缺 bundle loud warn;**verified 待真机**(alpha_ping 进工具表且执行 = G1 成功条件 + zod 跨实例证明);详见 [requirements/B6](requirements/B6-ext-seam-activation.md) |
 | B7 | 发布流水线制度化:CI 断言版本/种子资产/断网首启 smoke(T2.6 剩余) | debt | A | ready | 部分:DISTRIBUTION.md 已写 + S7 部分断言 |
-| B8 | 扩展物运行时生命周期:版本/健康/更新三要素(T5.4/T5.6) | feature | A | registered | 系统性条目,症状=A2;终态=定制中心从商店→运行时管理器 |
+| B8 | 扩展物运行时生命周期:版本/健康/更新三要素(T5.4/T5.6) | feature | A | registered | 系统性条目,症状=A2;终态=定制中心从商店→运行时管理器;**具体实现路径已立 = REQ-018(账本/生效)+ REQ-019(详情/更新),B8 保留为终态验收视角** |
 | B9 | 更新链完整性:关 `allowDowngrade` + feed 完整性校验 | security | A | shipped | **PR #47**(→ [S10](sprints/2026-07-03-s10-hardening/sprint.md));降级闸关闭(理由入注释:单 prod 渠道无跨渠道降级需求;旧版逃生=手动 dmg);完整性链文档化(yml sha512 → zip → 签名同 identity → 降级闸);**verified 待下个真实发版**(自动更新实测 + 篡改 yml 拒装用例);详见 [requirements/B9](requirements/B9-update-chain-integrity.md) |
 | B11 | 统一错误/健康呈现面 + 账户 banner(S8 底座) | ux | A | shipped | **S11 T4(PR #60)**:Banner 基元 + pushToast 唯一出口(hub 私有 toast 收编)+ 首页/hub store.error banner + 账户 error 判别式(#1 误显根治,picker error 态+重试;侧栏会员行不装「未订阅」)+ **B23 configHealth**(语法错/未知顶键 → warning banner,5 单测)+ splash 状态行(B20);复扫矩阵 20 项:✅10/🆗6/⏭4([audits/rescan](audits/2026-07-04-silent-failure-rescan.md));⏭4(会话操作 toast/登录链事件/骨架/连崩呈现)留行内追;**verified 待视觉批**(banner/toast 截图) |
 | B12 | Instance 不驱逐 + 递归 watcher 常驻 | perf | A | ready | 上游归属(R2);alpha 杠杆=`server.ts:58` 停强开 `OPENCODE_EXPERIMENTAL_FILEWATCHER` + 垃圾项目治理(B4) |
 | B13 | DB 跨进程并发(SQLITE_BUSY → orDie) | debt | A | registered | 上游归属(R2);R6 降级:busy_timeout=5000 已缓解;alpha 无直接修点 |
 | B14 | 会话 DB 备份/导出(损坏恢复) | feature | A | registered | 上游 DB 本体改不了(R2);alpha main 纯文件操作可做备份/导出 |
-| B20 | 弱网降级 UX:超时/重试/splash 状态/真骨架/websearch 优雅降级(S8) | ux | A | in-sprint | **S11 T4 部分随 PR #60**(splash 状态行 + banner/重试底座);余项=真骨架(Skeleton 死代码去留)/promptAsync 超时(豁免记录)/websearch(上游 R2 豁免),见 [audits/rescan](audits/2026-07-04-silent-failure-rescan.md) ⏭/🆗 行;行保留 |
+| B20 | 弱网降级 UX:超时/重试/splash 状态/真骨架/websearch 优雅降级(S8) | ux | A | ready | **S11 已收尾,余项转回 ready**;S11 T4 部分随 PR #60(splash 状态行 + banner/重试底座);余项=真骨架(Skeleton 死代码去留)/promptAsync 超时(豁免记录)/websearch(上游 R2 豁免),见 [audits/rescan](audits/2026-07-04-silent-failure-rescan.md) ⏭/🆗 行 |
 | B21 | BYOK 改键/删键即时生效(触发重注 env/respawn) | bug | A | shipped | **PR #48**;根因=env 桥 set-if-unset 滞留旧 key;修=自有注入权威覆盖/清除(用户值永不动,纯逻辑 5 单测)+ 改键回调触发重注+respawn;删键即时吊销;**verified 待真机**(改键→picker 即时反映→新 key 出账);详见 [requirements/B21](requirements/B21-byok-key-live-reload.md) |
 | B22 | message-timeline.tsx:481 会话时间线崩溃 | bug | A | ready | 546-sync 后**先代码复验再修**;疑 timeline-inject DOM 注入扰动上游 virtualizer |
 | B23 | strict-key 配置致瘫:全局 jsonc 解析失败 → 整份配置静默清零 | bug | A | shipped | **S11 T4(PR #60)呈现半边落地**:`configHealth()`(语法错 + 未知顶层 key 双病灶,V1 顶键集自引擎 schema;5 单测)→ AlphaHome warning banner + 打开配置;写前校验(C2)继续挡 alpha 自写;上游清零行为本体不可改(R2);**verified 待视觉批**(故意写坏配置截图) |
@@ -73,13 +74,17 @@
 |---|---|---|---|---|---|
 | REQ-004 | `.alpha` 项目工作目录:桥接验证 + 回填 ADR-019 | spike | A | shipped | **S11 T1 完成(PR #54)**:config 注入 CONFIRMED(生产在用)+ symlink 桥 CONFIRMED(引擎同款 glob fixture 6/6,整目录链/多跳链均通,one-hop 假说证伪);双写回退不启用;schema/gitignore 已回填 ADR-019 修订;证据 [audits/req004-spike](audits/2026-07-03-req004-alpha-bridge-spike.md);**verified 待 B3 T2 打包态 in-app 冒烟**;详见 [requirements/REQ-004](requirements/REQ-004-alpha-workdir-spike.md) |
 | REQ-015 | 冻结前端 typecheck 偏斜:session-ui(546 后新增)依赖新版 ui API 与冻结 ui 不兼容 | debt | A | registered | ADR-020 冻结缺口;**CI 绿**(alpha-ci 只查 ext/ui-mac)**只卡本地 pre-push**(上游全量 turbo);影响面窄(session-ui 仅喂上游 enterprise/storybook,alpha 不 ship);方案 移包/补丁/`--no-verify`/扩冻结范围 待拍板;详见 [requirements/REQ-015](requirements/REQ-015-frozen-frontend-typecheck-skew.md) |
-| REQ-016 | 真机验证收尾批:A6 R3 解锁 / B2 短TTL / REQ-002④ logout / B3 in-app(登录门控/破坏性 4 项) | spike | X | registered | S9+S10 真机自动验证已 verified 一批(见 [audits/realmachine-verify](audits/2026-07-03-realmachine-verify.md));剩 4 项登录门控/破坏性/需改 prod 配置,收敛后续统一执行;**A6 verified 解 R3 门控**(A2b/E2/E6);详见 [requirements/REQ-016](requirements/REQ-016-realmachine-verify-batch.md) |
+| REQ-016 | 真机验证收尾批:A6 R3 解锁 / B2 短TTL / REQ-002④ logout / B3 in-app(登录门控/破坏性 4 项) | spike | X | registered | S9+S10 真机自动验证已 verified 一批(见 [audits/realmachine-verify](audits/2026-07-03-realmachine-verify.md));剩 4 项登录门控/破坏性/需改 prod 配置,收敛后续统一执行;**A6 verified 解 R3 门控**(A2b/E2/E6);**A6 子项随 S12 T8 真机批同场消化**;详见 [requirements/REQ-016](requirements/REQ-016-realmachine-verify-batch.md) |
 | REQ-014 | 悬空会话路由致「Not found」白屏 → 路由恢复前校验会话存在 | bug | A | registered | REQ-002 联调 BP-3;`tabs.recent` 指向已删会话 → 冷启动整屏 Not found 无恢复入口;alpha 杠杆=恢复前校验会话存在、失败回退首页;详见 [requirements/REQ-014](requirements/REQ-014-dangling-session-blank-screen.md) |
 | REQ-005 | 前端接管收尾核验:重型引擎换肤(终端/diff/权限流)完成度 + timeline 验收尾项(截图归档/COUPLING 清单/真机验收) | ux | A | ready | ADR-016 待办②;tasks.md 40 项全勾但 dev-plan:98-100 未走完;COUPLING 清单关系 C14;详见 [requirements/REQ-005](requirements/REQ-005-frontend-takeover-closeout.md) |
-| REQ-006 | ADR-014 转正收尾:桌面端验收用例(装 markitdown→免重启可用→卸载→依赖预检)+ 4 个 plan-review 未决项拍板 → trial 转 accepted | docs | A | ready | 事实核查:Phase ④(plugin 装包)实际已发(E 册,commit 59c0786),ADR 前提已满足;设计文档 §C1-C5 未勾系文档滞后,随核验回勾;桌面验收依赖 D5 同场 |
+| REQ-006 | ADR-014 转正收尾:桌面端验收用例(装 markitdown→免重启可用→卸载→依赖预检)+ 4 个 plan-review 未决项拍板 → trial 转 accepted | docs | A | in-sprint | **S12 顺带(T8 真机批同场)**;事实核查:Phase ④(plugin 装包)实际已发(E 册,commit 59c0786),ADR 前提已满足;设计文档 §C1-C5 未勾系文档滞后,随核验回勾;桌面验收依赖 D5 同场;O2 已定(Agent 进 tab) |
 | REQ-008 | 产品定位〔待补〕决策批:团队协作/企业租户/用户下沉/前 2-3 具体功能/G4 优先级,一次收口 | spike | X | registered | POSITIONING/GOALS/NON_GOALS 三处〔待补〕;详见 [requirements/REQ-008](requirements/REQ-008-positioning-open-decisions.md) |
 | REQ-009 | alpha-ci 提速:guard partial clone + bun 依赖缓存 | debt | A | ready | **真 CI 痛已由 D12 解**(卡的是上游 blacksmith 僵尸 workflow,非 alpha-ci);alpha-ci 本体已 ~30-46s **本就 <2min 目标达标** → REQ-009 降级为**可选打磨**(partial clone + bun cache 再压时间);验收「改上游必红」用例仍需真 CI run;详见 [requirements/REQ-009](requirements/REQ-009-alpha-ci-speedup.md) |
 | REQ-011 | 首页 composer 下方项目/会话 chips 移除 → 预留后续功能入口位 | ux | A | registered | 用户 2026-07-03;非回归=信息架构决策(侧栏已有项目导航,首页去重);只清场留白,「预留位放什么」进⚖️待拍板;详见 [requirements/REQ-011](requirements/REQ-011-composer-project-chips.md) |
+| REQ-019 | 定制中心 v3-M2:hub 左栏 IA + 逐类型详情页(数据边界/实时依赖检测)+ 更新通道 + 导入 folder/git | feature | A | registered | 依赖 REQ-018;吸收 E11;MCP tools 清单=catalog 元数据(引擎无查询路由,已核);详见 [requirements/REQ-019](requirements/REQ-019-ext-hub-detail-lifecycle.md) |
+| REQ-020 | 定制中心 v3-M3:云能力进 hub(登录门控+pipeline 条目)+ **ADR-021 §2 三校验落地** | feature | X | registered | 依赖 REQ-018;§2 校验与 B3 验收⑦ 合账,是 REQ-021 A3 硬前置;E10 客户端半随 C 端点;详见 [requirements/REQ-020](requirements/REQ-020-ext-hub-cloud.md) |
+| REQ-021 | 自动化(定时任务)完整需求:A1 本地只读 MVP → A2 增强 → A3 云档位 | feature | A | registered | **用户拍板 2026-07-04:先完整需求、按优先级分步;MVP 只读档**;侧栏定制中心下方入口;新 ADR-022 随 A1 立;详见 [requirements/REQ-021](requirements/REQ-021-automations.md) |
+| REQ-022 | 云端定时执行(B 侧):CF cron trigger + schedule registry + 到期 dispatch + A 拉回契约 | feature | B | registered | **用户拍板 2026-07-04 立项 B 仓**;B 侧真源 = alpha-platform `designs/2026-07-04-cloud-scheduled-automations.md`(PA-28 proposed);前置 PA-27 P0 整改 + REQ-020 T1;详见 [requirements/REQ-022](requirements/REQ-022-cloud-schedules-platform.md) |
 | C3 | 日志治理:opencode.log 145MB 轮转 + netlog 改 opt-in(T2.5) | debt | A | shipped | **PR #35**(→ [s9b](sprints/2026-07-03-s9b-hygiene/sprint.md));`logging.ts`:netlog opt-in(`ALPHA_NETLOG=1` 默认关)+ opencode.log 启动期超限归档(25MB,留最近 3 份);typecheck+97 tests 绿,轮转逻辑合成文件 E2E 6/6 过;**verified 待**运行期首次打包启动真机轮转 |
 | C5 | skills 每 Instance 重复扫描 | perf | A | registered | 上游(R2);杠杆=减 Instance 数(B4/B12) |
 | C8 | ADR-002 sidecar 语义修订:承认 main-IPC 为桌面等价物(T6.4) | docs | A | ready | YAGNI:真 HTTP sidecar 出现需求再立 |
@@ -106,8 +111,8 @@
 | D1 | 健康轮询先 sleep 100ms 再首查 | perf | A | ready | |
 | REQ-017 | `alpha-check.sh` 北极星守卫未跟 ADR-020(仍扫 packages/app → 本地自检恒假红,与 alpha-ci 不再 1:1) | debt | A | shipped | **PR #63**:UPSTREAM_PATHS 对齐 alpha-ci.yml(移出 app/ui,本地实跑三关全绿)+ `ext-fs-installer.opencodeConfigDir` 改 XDG-aware(与 ext-config/上游同规则,修写读分叉);verified=本地 alpha-check 实跑绿(记录于行内) |
 | D2 | `/v1/models` live 同步死代码 | debt | A | dup | **→ 并入 REQ-001**(接进 picker 按白名单装配) |
-| D3 | 官方 4 条 Anthropic skills 内容打包 + NOTICE(T5.3) | feature | A | ready | 现诚实失败,非占位 |
-| D4 | 定制中心 skill 卡片「已安装」态(T5.4) | ux | A | ready | |
+| D3 | 官方 4 条 Anthropic skills 内容打包 + NOTICE(T5.3) | feature | A | dup | **→ 并入 REQ-018**(T7 官方 skill 资产打包);原状:现诚实失败,非占位 |
+| D4 | 定制中心 skill 卡片「已安装」态(T5.4) | ux | A | dup | **→ 并入 REQ-018**(安装账本 receipts ⨝ SDK 真相,全类型已装态一并解决) |
 | D5 | playwright MCP 浏览器内核来源实测拍板(=E14 遗留;T5.5) | spike | A | ready | 关 ADR-014 `_verify` |
 | D6 | userData 每启动新建 log 目录 | debt | A | registered | 7 天清理已有,观察 |
 | D8 | DB WAL 周期 TRUNCATE | debt | A | registered | 上游(R2) |
@@ -121,7 +126,7 @@
 |---|---|---|---|---|---|
 | E2 | 钉钉 MCP(补齐飞书/语雀国产三件套) | feature | A | registered | 核实官方包名/鉴权字段;**上架受 A6 门控(R3:新增条目=扩安装面)** |
 | E6 | 数据库 MCP(sqlite/postgres 读 schema + SELECT) | feature | A | registered | 命令型,无 OAuth;**上架受 A6 门控(R3)** |
-| E11 | 定制中心目录筛选 UI(category/license) | ux | A | ready | catalog schema 已带元数据 |
+| E11 | 定制中心目录筛选 UI(category/license) | ux | A | dup | **→ 并入 REQ-019**(hub 左栏 IA + 筛选,T7);catalog schema 已带元数据 |
 | E5 | 日历 MCP(Google/macOS) | feature | A | registered | 阻塞:OAuth/凭据存储(keychain TODO,ADR-014 §8) |
 | E8 | Slack/Teams MCP | feature | A | registered | 阻塞同 E5 |
 | E10 | catalog 远程增量同步(alpha-web 端点) | feature | X | registered | C 仓 catalog 端点未建 |
@@ -138,9 +143,13 @@
 | E7 | websearch 收编为自有 MCP | 与云端 websearch 撞车 | B3/E12 云线落地后 |
 | E13 | 团队协作多端 workspace 同步 | NON_GOALS〔待补〕未决 | 产品定位决策后 |
 
-## 当前 sprint → **S11 已开工(2026-07-03,四线全批)**
+## 当前 sprint → **S12 已开工(2026-07-04,定制中心 v3-M1)**
 
-> **抽取**:B3+REQ-004+C9(A 云线闭环,headline)· B11+B20+B23(B 呈现底座)· C24+C27+C25(C 安全纵深)· C14(D 破坏面收敛);B5 尾项顺带。契约见 [sprints/2026-07-03-s11-cloud-loop](sprints/2026-07-03-s11-cloud-loop/sprint.md)。批准:用户「就按照你刚才的几个」+「abcd」(四 track)。G4 优先级子项就此拍板(划记⚖️队列)。四 track 互不撞文件,可并发 session 分派。
+> **抽取**:REQ-018(headline)· 顺带:REQ-006(ADR-014 转正,T8 同场)· A2 尾项(钉版迁移,放行门=A6 R3)· REQ-016 之 A6 真机子项(T8 同场解 R3)。契约见 [sprints/2026-07-04-s12-ext-hub-m1](sprints/2026-07-04-s12-ext-hub-m1/sprint.md)。批准:用户 2026-07-04「制定SPRINT 推进」。**撞点**:`ext-ipc.ts`/`preload/*` 归 Track α 统一持有,β/γ 按接口接入;并发分派时 α 先行。
+
+## 上一 sprint → **S11 已收尾(2026-07-04)**(历史)
+
+> **抽取**:B3+REQ-004+C9(A 云线闭环,headline)· B11+B20+B23(B 呈现底座)· C24+C27+C25(C 安全纵深)· C14(D 破坏面收敛);B5 尾项顺带。契约见 [sprints/2026-07-03-s11-cloud-loop](sprints/2026-07-03-s11-cloud-loop/sprint.md)。批准:用户「就按照你刚才的几个」+「abcd」(四 track)。**收尾**:T1–T8 全完成,12 PR(#53–#64)+ 两轮签名公证 ship + CDP 走查;C24/C27/B5 verified;残余真机项并入 REQ-016。
 
 ## 上一轮建议(2026-07-03 拟)→ **S9 已开工(核心链)**(历史)
 
