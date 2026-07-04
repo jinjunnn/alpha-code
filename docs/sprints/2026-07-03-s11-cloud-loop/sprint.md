@@ -11,7 +11,7 @@
 |---|---|---|---|---|
 | **Track A —— 云线闭环(G4,headline)** | | | | |
 | T1 | `.alpha` 桥接三法实测(config 注入 / symlink 发现 / 双写)出 verdict + ADR-019 回填(schema/gitignore/桥接选型) | REQ-004 | fable | ✅ PR #54(verdict:①②双 CONFIRMED,③不启用;证据 [audits/req004-spike](../../audits/2026-07-03-req004-alpha-bridge-spike.md)) |
-| T2 | B3 in-app 闭环:登录态 agent 经 cloud MCP dispatch → 会话内流式进度 → 结构化结果回流;artifact 落 `.alpha/`(依 T1);失败会话内重试 + dispatch 前配额可见(呈现面与 T4 对齐) | B3 | fable | ◐ 半程 PR #55(主进程回流链路:alpha-workdir + cloud-save-run IPC + preload;剩 renderer 接线/配额 UI/in-app 冒烟) |
+| T2 | B3 in-app 闭环:登录态 agent 经 cloud MCP dispatch → 会话内流式进度 → 结构化结果回流;artifact 落 `.alpha/`(依 T1);失败会话内重试 + dispatch 前配额可见(呈现面与 T4 对齐) | B3 | fable | ✅ PR #55+#58(回流全链:主进程写盘 + CloudRunWatcher 终态检测→saveRun→toast;配额 UI 并入 T4;in-app 冒烟 → 真机/视觉批) |
 | T3 | C9 代码上云数据边界 mini-ADR:diff-only / secrets 过滤 / consent / 体积上限(与 T2 同场) | C9 | fable | ✅ PR #56 = ADR-021(双通道边界 + B16 挂钩;§2 待实现项随 B3 记账) |
 | **Track B —— 呈现底座(launch-blocker #6)** | | | | |
 | T4 | B11 统一错误/健康呈现面 + 账户 banner:store.error 全渲染、统一 toast/错误体系一处定义、32 失败点复扫 ≥90% 有反馈;收编 B20 弱网降级 UX + B23 配置清零显式告警 | B11 / B20 / B23 | opus 实现 · fable 审 | ☐ |

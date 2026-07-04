@@ -37,6 +37,7 @@ import { ToastViewport } from "./alpha-ui/Toast"
 import { ComposerInject } from "./alpha-ui/composer-inject"
 import { ModelPickerInject } from "./alpha-ui/model-picker-inject"
 import { TimelineInject } from "./alpha-ui/timeline-inject"
+import { CloudRunWatcher } from "./alpha-ui/cloud-run-watcher"
 import { AlphaSidebar } from "./sidebar/alpha-sidebar"
 import { useAlphaProjects } from "./sidebar/use-projects"
 import { AlphaHome } from "./alpha-ui/AlphaHome"
@@ -413,6 +414,7 @@ render(() => {
               <ComposerInject />
               <ModelPickerInject />
               <TimelineInject />
+              <CloudRunWatcher server={sidebarServer} projects={alphaProjects} />
               <ToastViewport />
             </AppInterface>
           )}
