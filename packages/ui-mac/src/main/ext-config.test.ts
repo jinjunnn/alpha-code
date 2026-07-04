@@ -9,16 +9,31 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { configHealth, persistMcp, persistPlugin, persistProvider, removeMcp } from "./ext-config"
 
+// REQ-018 T2: mcp/plugin persistence targets the alpha-owned ~/.opencode/opencode.jsonc
+// (ALPHA_OPENCODE_HOME-overridable); provider persistence stays on the shared XDG config
+// (OPENCODE_CONFIG_DIR); receipts land under ALPHA_GLOBAL_DIR. All three are temp dirs here.
 let tmp = ""
+let homeTmp = ""
+let alphaTmp = ""
 const prevConfigDir = process.env.OPENCODE_CONFIG_DIR
+const prevHome = process.env.ALPHA_OPENCODE_HOME
+const prevAlpha = process.env.ALPHA_GLOBAL_DIR
 
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-extcfg-"))
+  homeTmp = path.join(tmp, "opencode-home")
+  alphaTmp = path.join(tmp, "alpha-home")
   process.env.OPENCODE_CONFIG_DIR = tmp
+  process.env.ALPHA_OPENCODE_HOME = homeTmp
+  process.env.ALPHA_GLOBAL_DIR = alphaTmp
 })
 afterEach(() => {
   if (prevConfigDir === undefined) delete process.env.OPENCODE_CONFIG_DIR
   else process.env.OPENCODE_CONFIG_DIR = prevConfigDir
+  if (prevHome === undefined) delete process.env.ALPHA_OPENCODE_HOME
+  else process.env.ALPHA_OPENCODE_HOME = prevHome
+  if (prevAlpha === undefined) delete process.env.ALPHA_GLOBAL_DIR
+  else process.env.ALPHA_GLOBAL_DIR = prevAlpha
   try {
     fs.rmSync(tmp, { recursive: true, force: true })
   } catch {
@@ -26,7 +41,12 @@ afterEach(() => {
   }
 })
 
+// mcp/plugin land in the alpha-owned engine config file
 function readConfig(): Record<string, any> {
+  return JSON.parse(fs.readFileSync(path.join(homeTmp, "opencode.jsonc"), "utf8"))
+}
+// provider stays in the shared XDG config
+function readUserConfig(): Record<string, any> {
   return JSON.parse(fs.readFileSync(path.join(tmp, "opencode.jsonc"), "utf8"))
 }
 
@@ -35,7 +55,7 @@ describe("persistMcp — name validation", () => {
     const r = persistMcp(name, { type: "local", command: ["npx"] })
     expect(r.ok).toBe(false)
     // nothing was written
-    expect(fs.existsSync(path.join(tmp, "opencode.jsonc"))).toBe(false)
+    expect(fs.existsSync(path.join(homeTmp, "opencode.jsonc"))).toBe(false)
   })
 })
 
@@ -174,7 +194,7 @@ describe("persistProvider — baseURL + shape guards", () => {
       models: ["model-a"],
     } as any)
     expect(r).toEqual({ ok: true })
-    const cfg = readConfig()
+    const cfg = readUserConfig()
     expect(cfg.provider.myprov.options.baseURL).toBe("https://api.example.com/v1")
     expect(cfg.provider.myprov.models["model-a"]).toBeDefined()
   })

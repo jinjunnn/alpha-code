@@ -1,29 +1,107 @@
-// Unit tests for the skill/agent file installer's path-escape guards (ADR-014 §8). Everything must be
-// confined to ~/.config/opencode — no `..`, no unsafe names, no asset keys that escape resources/.
-// The module imports electron (`app`), only touched inside resourcesRoot(); we stub it so the pure
-// name/asset validation (which runs first) is testable off-device.
-//
-// NOTE: writeSkill/writeAgent's WRITE target is os.homedir()/.config/opencode, which is NOT
-// env-redirectable under bun (os.homedir() ignores a runtime $HOME change) — so we deliberately only
-// exercise the rejection paths here, which return before any disk I/O. Covering a real write would
-// pollute the developer's actual config; that path is left to integration.
+// Unit tests for the skill/agent installer (REQ-018 T2 rework). Rejection paths (name/asset-key
+// guards) return before disk I/O. Accept paths are now fully testable off-device: the alpha truth
+// root and engine bridge root honor ALPHA_GLOBAL_DIR / ALPHA_OPENCODE_HOME env overrides, so real
+// writes land in throwaway temp dirs — we assert truth files, bridge symlinks AND receipts.
 
-import { describe, expect, mock, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
+import * as fs from "node:fs"
+import * as os from "node:os"
+import * as path from "node:path"
 
 mock.module("electron", () => ({ app: { isPackaged: false } }))
 
 const { installBuiltinSkill, writeAgent, writeSkill } = await import("./ext-fs-installer")
+const { readLedger } = await import("./alpha-installs")
+
+let base = ""
+let alphaDir = ""
+let opencodeDir = ""
+const prevAlpha = process.env.ALPHA_GLOBAL_DIR
+const prevHome = process.env.ALPHA_OPENCODE_HOME
+
+beforeEach(() => {
+  base = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-installer-"))
+  alphaDir = path.join(base, ".alpha")
+  opencodeDir = path.join(base, ".opencode")
+  process.env.ALPHA_GLOBAL_DIR = alphaDir
+  process.env.ALPHA_OPENCODE_HOME = opencodeDir
+})
+afterEach(() => {
+  if (prevAlpha === undefined) delete process.env.ALPHA_GLOBAL_DIR
+  else process.env.ALPHA_GLOBAL_DIR = prevAlpha
+  if (prevHome === undefined) delete process.env.ALPHA_OPENCODE_HOME
+  else process.env.ALPHA_OPENCODE_HOME = prevHome
+  fs.rmSync(base, { recursive: true, force: true })
+})
 
 describe("writeSkill / writeAgent — name validation blocks traversal (no disk I/O on reject)", () => {
   test.each([["../../etc/passwd"], ["a/b"], [""], ["../evil"], [".hidden"]])(
     "writeSkill rejects unsafe name %p",
     (name) => {
       expect(writeSkill(name, "d", "b")).toEqual({ ok: false, reason: "invalid skill name" })
+      expect(fs.existsSync(alphaDir)).toBe(false)
     },
   )
 
   test.each([["../../etc/passwd"], ["a/b"], [""]])("writeAgent rejects unsafe name %p", (name) => {
     expect(writeAgent(name, "content")).toEqual({ ok: false, reason: "invalid agent name" })
+  })
+})
+
+describe("writeSkill — global scope writes truth + bridge + receipt", () => {
+  test("SKILL.md lands in ~/.alpha/skills, engine sees it через .opencode dir-link, receipt recorded", () => {
+    const r = writeSkill("my-skill", "does things", "# body")
+    expect(r.ok).toBe(true)
+    const truth = path.join(alphaDir, "skills", "my-skill", "SKILL.md")
+    expect(fs.readFileSync(truth, "utf8")).toContain("does things")
+    // engine-visible through the bridge
+    expect(fs.readFileSync(path.join(opencodeDir, "skills", "my-skill", "SKILL.md"), "utf8")).toContain("# body")
+    expect(fs.lstatSync(path.join(opencodeDir, "skills")).isSymbolicLink()).toBe(true)
+    // receipt
+    const { receipts } = readLedger(alphaDir)
+    expect(receipts).toHaveLength(1)
+    expect(receipts[0]).toMatchObject({ id: "user:my-skill", type: "skill", scope: "global", origin: "created" })
+    expect(receipts[0]!.files!.length).toBeGreaterThan(0)
+  })
+
+  test("catalog meta flows into the receipt (id/version/origin)", () => {
+    const r = writeSkill("cat-skill", "d", "b", { scope: "global" }, { catalogId: "skill:cat-skill", version: "2026-07-03.1" })
+    expect(r.ok).toBe(true)
+    const { receipts } = readLedger(alphaDir)
+    expect(receipts[0]).toMatchObject({ id: "skill:cat-skill", version: "2026-07-03.1", origin: "catalog" })
+  })
+})
+
+describe("writeAgent — global scope", () => {
+  test("agent md lands in ~/.alpha/agents and bridges as agents/<name>.md", () => {
+    const r = writeAgent("helper", "---\ndescription: h\n---\nsystem")
+    expect(r.ok).toBe(true)
+    expect(fs.readFileSync(path.join(alphaDir, "agents", "helper.md"), "utf8")).toContain("system")
+    expect(fs.readFileSync(path.join(opencodeDir, "agents", "helper.md"), "utf8")).toContain("system")
+    const { receipts } = readLedger(alphaDir)
+    expect(receipts[0]).toMatchObject({ type: "agent", name: "helper" })
+  })
+})
+
+describe("project scope", () => {
+  test("writes under <project>/.alpha + <project>/.opencode bridge + project receipt", () => {
+    const projectDir = path.join(base, "proj")
+    fs.mkdirSync(projectDir, { recursive: true })
+    const r = writeSkill("proj-skill", "d", "b", { scope: "project", projectDir })
+    expect(r.ok).toBe(true)
+    expect(fs.existsSync(path.join(projectDir, ".alpha", "skills", "proj-skill", "SKILL.md"))).toBe(true)
+    expect(fs.existsSync(path.join(projectDir, ".opencode", "skills", "proj-skill", "SKILL.md"))).toBe(true)
+    // .alpha self-ignores (ADR-019 §5)
+    expect(fs.readFileSync(path.join(projectDir, ".alpha", ".gitignore"), "utf8")).toBe("*\n")
+    const { receipts } = readLedger(path.join(projectDir, ".alpha"))
+    expect(receipts[0]).toMatchObject({ scope: "project", name: "proj-skill" })
+    // global ledger untouched
+    expect(readLedger(alphaDir).receipts).toHaveLength(0)
+  })
+
+  test("invalid project dir fails honestly", () => {
+    const r = writeSkill("x", "d", "b", { scope: "project", projectDir: "/" })
+    expect(r.ok).toBe(false)
   })
 })
 
@@ -43,5 +121,33 @@ describe("installBuiltinSkill — name + asset-key guards", () => {
     const r = installBuiltinSkill("skills/definitely-not-bundled", "good")
     expect(r.ok).toBe(false)
     expect((r as any).reason).toContain("未随此版本打包")
+  })
+
+  test("bundled asset installs into .alpha + bridge + catalog receipt", () => {
+    // safe-refactor ships in repo resources/skills (E1b)
+    const r = installBuiltinSkill("skills/safe-refactor", "safe-refactor", { scope: "global" }, { catalogId: "skill:safe-refactor" })
+    expect(r.ok).toBe(true)
+    expect(fs.existsSync(path.join(alphaDir, "skills", "safe-refactor", "SKILL.md"))).toBe(true)
+    expect(fs.existsSync(path.join(opencodeDir, "skills", "safe-refactor", "SKILL.md"))).toBe(true)
+    const { receipts } = readLedger(alphaDir)
+    expect(receipts[0]).toMatchObject({ id: "skill:safe-refactor", origin: "catalog", type: "skill" })
+  })
+})
+
+describe("ALPHA_LEGACY_INSTALL_ROOT=1 escape hatch", () => {
+  test("writes the old XDG root, no bridge, no receipt", () => {
+    const legacyRoot = path.join(base, "xdg-opencode")
+    process.env.OPENCODE_CONFIG_DIR = legacyRoot
+    process.env.ALPHA_LEGACY_INSTALL_ROOT = "1"
+    try {
+      const r = writeSkill("legacy-skill", "d", "b")
+      expect(r.ok).toBe(true)
+      expect(fs.existsSync(path.join(legacyRoot, "skills", "legacy-skill", "SKILL.md"))).toBe(true)
+      expect(fs.existsSync(path.join(alphaDir, "skills"))).toBe(false)
+      expect(readLedger(alphaDir).receipts).toHaveLength(0)
+    } finally {
+      delete process.env.ALPHA_LEGACY_INSTALL_ROOT
+      delete process.env.OPENCODE_CONFIG_DIR
+    }
   })
 })

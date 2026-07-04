@@ -6,6 +6,8 @@
 import { ipcMain, type IpcMainInvokeEvent } from "electron"
 import { execFile } from "node:child_process"
 import * as os from "node:os"
+import type { InstallMeta, InstallTarget } from "../preload/types"
+import { listInstalls } from "./alpha-installs"
 import { configHealth, persistMcp, persistPlugin, removeMcp } from "./ext-config"
 import { installBuiltinSkill, writeAgent, writeSkill } from "./ext-fs-installer"
 
@@ -32,8 +34,10 @@ function checkRuntime(tool: string): Promise<{ ok: boolean }> {
 }
 
 export function registerExtIpcHandlers() {
-  ipcMain.handle("ext-persist-mcp", (_event: IpcMainInvokeEvent, name: string, server: Record<string, unknown>) =>
-    persistMcp(name, server),
+  ipcMain.handle(
+    "ext-persist-mcp",
+    (_event: IpcMainInvokeEvent, name: string, server: Record<string, unknown>, meta?: InstallMeta) =>
+      persistMcp(name, server, meta),
   )
   ipcMain.handle("ext-remove-mcp", (_event: IpcMainInvokeEvent, name: string) => removeMcp(name))
   // B11/B23:全局配置健康探测(语法错/未知顶键 → 引擎会整份清零)
@@ -41,16 +45,22 @@ export function registerExtIpcHandlers() {
   ipcMain.handle("ext-check-runtime", (_event: IpcMainInvokeEvent, tool: string) => checkRuntime(tool))
   ipcMain.handle(
     "ext-write-skill",
-    (_event: IpcMainInvokeEvent, name: string, description: string, body: string) =>
-      writeSkill(name, description, body),
+    (_event: IpcMainInvokeEvent, name: string, description: string, body: string, target?: InstallTarget) =>
+      writeSkill(name, description, body, target),
   )
-  ipcMain.handle("ext-write-agent", (_event: IpcMainInvokeEvent, name: string, content: string) =>
-    writeAgent(name, content),
+  ipcMain.handle(
+    "ext-write-agent",
+    (_event: IpcMainInvokeEvent, name: string, content: string, target?: InstallTarget) =>
+      writeAgent(name, content, target),
   )
-  ipcMain.handle("ext-install-plugin", (_event: IpcMainInvokeEvent, pkg: string) => persistPlugin(pkg))
+  ipcMain.handle("ext-install-plugin", (_event: IpcMainInvokeEvent, pkg: string, meta?: InstallMeta) =>
+    persistPlugin(pkg, meta),
+  )
   ipcMain.handle(
     "ext-install-builtin-skill",
-    (_event: IpcMainInvokeEvent, builtinAssetKey: string, name: string) =>
-      installBuiltinSkill(builtinAssetKey, name),
+    (_event: IpcMainInvokeEvent, builtinAssetKey: string, name: string, target?: InstallTarget, meta?: InstallMeta) =>
+      installBuiltinSkill(builtinAssetKey, name, target, meta),
   )
+  // REQ-018 安装账本:合并只读视图(global ~/.alpha + 可选 project .alpha)
+  ipcMain.handle("ext-list-installs", (_event: IpcMainInvokeEvent, projectDir?: string) => listInstalls(projectDir))
 }

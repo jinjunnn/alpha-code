@@ -13,6 +13,9 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { applyEdits, modify, parse, type ParseError } from "jsonc-parser"
 import type { ProviderInput } from "../shared/alpha-model-types"
+import type { InstallMeta } from "../preload/types"
+import { opencodeHomeDir } from "./alpha-bridge"
+import { addReceipt, alphaGlobalRoot, removeReceipt } from "./alpha-installs"
 
 export type ConfigResult = { ok: true } | { ok: false; reason: string }
 
@@ -64,6 +67,28 @@ function userConfigPath(): string {
   if (fs.existsSync(jsonc)) return jsonc
   if (fs.existsSync(json)) return json
   return jsonc // default to .jsonc (preserves comments)
+}
+
+// REQ-018 T2:定制中心安装物(mcp/plugin)的引擎侧持久化改走 ~/.opencode/opencode.jsonc ——
+// home `.opencode` 本就是引擎的 config 源(上游 config/paths.ts),且是**文件通道**:实例
+// reload(instance.dispose → 重建)会重读它,免重启生效成立;env 注入(OPENCODE_CONFIG_CONTENT)
+// 在 sidecar fork 时冻结,不能承载安装物。provider(BYOK 设置域)仍写共享 XDG 根,不迁。
+function alphaOpencodeConfigPath(): string {
+  const dir = opencodeHomeDir()
+  const jsonc = path.join(dir, "opencode.jsonc")
+  const json = path.join(dir, "opencode.json")
+  if (fs.existsSync(jsonc)) return jsonc
+  if (fs.existsSync(json)) return json
+  return jsonc
+}
+
+// ALPHA_LEGACY_INSTALL_ROOT=1 逃生:回到旧行为(写共享 XDG 根,不记账)。
+function mcpPluginTargetPath(): string {
+  return process.env.ALPHA_LEGACY_INSTALL_ROOT === "1" ? userConfigPath() : alphaOpencodeConfigPath()
+}
+
+function receiptsActive(): boolean {
+  return process.env.ALPHA_LEGACY_INSTALL_ROOT !== "1"
 }
 
 function validateServer(server: Record<string, unknown>): ConfigResult {
@@ -141,9 +166,8 @@ function isAllowedUrl(url: string): boolean {
   return parsed.protocol === "https:" || (parsed.protocol === "http:" && loopback && !parsed.username && !parsed.password)
 }
 
-function writeKey(keyPath: string[], value: unknown): ConfigResult {
+function writeKey(target: string, keyPath: string[], value: unknown): ConfigResult {
   if (!ALLOWED_TOP_KEYS.has(keyPath[0])) return { ok: false, reason: `refused: unknown config key "${keyPath[0]}"` }
-  const target = userConfigPath()
   const bak = `${target}.bak`
   const tmp = `${target}.tmp`
   let text = "{}"
@@ -182,19 +206,50 @@ function writeKey(keyPath: string[], value: unknown): ConfigResult {
   }
 }
 
-/** Persist an MCP server under mcp[<name>] in the user's opencode config (durable). */
-export function persistMcp(name: string, server: Record<string, unknown>): ConfigResult {
+/** Persist an MCP server under mcp[<name>] in the alpha-owned engine config file (durable) + receipt. */
+export function persistMcp(name: string, server: Record<string, unknown>, meta?: InstallMeta): ConfigResult {
   if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid server name" }
   if (!server || typeof server !== "object") return { ok: false, reason: "invalid server config" }
   const valid = validateServer(server)
   if (!valid.ok) return valid
-  return writeKey(["mcp", name], server)
+  const written = writeKey(mcpPluginTargetPath(), ["mcp", name], server)
+  if (written.ok && receiptsActive()) {
+    addReceipt(alphaGlobalRoot(), {
+      id: meta?.catalogId ?? `user:${name}`,
+      name,
+      type: "mcp",
+      scope: "global",
+      version: meta?.version,
+      installedAt: new Date().toISOString(),
+      origin: meta?.catalogId ? "catalog" : "created",
+      configKey: `mcp.${name}`,
+    })
+  }
+  return written
 }
 
-/** Remove mcp[<name>] from the user's opencode config. */
+/**
+ * Remove mcp[<name>] — from the alpha-owned file, and (pre-migration installs, T3) from the legacy
+ * shared XDG config when it still carries the entry. Receipt goes too.
+ */
 export function removeMcp(name: string): ConfigResult {
   if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid server name" }
-  return writeKey(["mcp", name], undefined)
+  const primary = writeKey(mcpPluginTargetPath(), ["mcp", name], undefined)
+  if (!primary.ok) return primary
+  try {
+    const legacy = userConfigPath()
+    if (legacy !== mcpPluginTargetPath() && fs.existsSync(legacy)) {
+      const parsed = parse(fs.readFileSync(legacy, "utf8")) as { mcp?: Record<string, unknown> } | undefined
+      if (parsed?.mcp && typeof parsed.mcp === "object" && name in parsed.mcp) {
+        const legacyResult = writeKey(legacy, ["mcp", name], undefined)
+        if (!legacyResult.ok) return legacyResult
+      }
+    }
+  } catch {
+    /* unreadable legacy config → nothing to remove there */
+  }
+  if (receiptsActive()) removeReceipt(alphaGlobalRoot(), "mcp", name)
+  return { ok: true }
 }
 
 /**
@@ -216,7 +271,7 @@ export function persistProvider(input: ProviderInput): ConfigResult {
   const models: Record<string, { name: string }> = {}
   for (const m of ids) models[m] = { name: m }
   const block = { npm, name: input.name, options: { baseURL: input.baseURL, apiKey: input.apiKey }, models }
-  return writeKey(["provider", input.id], block)
+  return writeKey(userConfigPath(), ["provider", input.id], block)
 }
 
 /**
@@ -267,7 +322,7 @@ export function readConfiguredProviderKeys(): Map<string, string> {
  */
 export function removeProvider(id: string): ConfigResult {
   if (!SAFE_NAME.test(id)) return { ok: false, reason: "invalid provider id" }
-  return writeKey(["provider", id], undefined)
+  return writeKey(userConfigPath(), ["provider", id], undefined)
 }
 
 // npm package name (optional scope), optionally pinned with @version. No shell metacharacters —
@@ -286,29 +341,47 @@ function pkgBase(spec: string): string {
  * accepts; `plugins` would hard-fail the whole config). opencode auto-installs it from npm on next
  * launch. Idempotent; the caller should prompt for a restart (config is read at boot only).
  */
-export function persistPlugin(pkg: string): ConfigResult {
+export function persistPlugin(pkg: string, meta?: InstallMeta): ConfigResult {
   if (!SAFE_PACKAGE.test(pkg)) return { ok: false, reason: "invalid package name" }
-  const target = userConfigPath()
-  let text = "{}"
-  try {
-    if (fs.existsSync(target)) text = fs.readFileSync(target, "utf8")
-  } catch {
-    return { ok: false, reason: "failed to read config" }
+  const target = mcpPluginTargetPath()
+  const readPlugins = (file: string): unknown[] => {
+    try {
+      if (!fs.existsSync(file)) return []
+      const parsed = parse(fs.readFileSync(file, "utf8")) as { plugin?: unknown } | undefined
+      return Array.isArray(parsed?.plugin) ? (parsed!.plugin as unknown[]) : []
+    } catch {
+      return []
+    }
   }
-  const errors: ParseError[] = []
   // opencode validates opencode.jsonc with its V1 schema, whose key is `plugin` (SINGULAR) —
   // `plugins` is an unrecognized key and makes opencode hard-fail the ENTIRE config (breaking every
   // session), see packages/core/src/v1/config/config.ts:56. Element shape is string | [string, opts].
-  const parsed = parse(text, errors) as { plugin?: unknown } | undefined
-  const current: unknown[] = Array.isArray(parsed?.plugin) ? (parsed!.plugin as unknown[]) : []
+  const current = readPlugins(target)
   const base = pkgBase(pkg)
-  const exists = current.some((p) => {
-    if (typeof p === "string") return pkgBase(p) === base
-    if (Array.isArray(p) && typeof p[0] === "string") return pkgBase(p[0]) === base
-    return false
-  })
-  if (exists) return { ok: true }
-  return writeKey(["plugin"], [...current, pkg])
+  const inList = (list: unknown[]) =>
+    list.some((p) => {
+      if (typeof p === "string") return pkgBase(p) === base
+      if (Array.isArray(p) && typeof p[0] === "string") return pkgBase(p[0]) === base
+      return false
+    })
+  // idempotent across BOTH files: an entry still sitting in the legacy XDG config (pre-migration)
+  // must not be duplicated into the alpha file — the engine merges the two plugin arrays.
+  if (inList(current) || (target !== userConfigPath() && inList(readPlugins(userConfigPath()))))
+    return { ok: true }
+  const written = writeKey(target, ["plugin"], [...current, pkg])
+  if (written.ok && receiptsActive()) {
+    addReceipt(alphaGlobalRoot(), {
+      id: meta?.catalogId ?? `user:${pkgBase(pkg)}`,
+      name: pkgBase(pkg).replace(/^@/, "").replace("/", "__"),
+      type: "plugin",
+      scope: "global",
+      version: meta?.version,
+      installedAt: new Date().toISOString(),
+      origin: meta?.catalogId ? "catalog" : "created",
+      configKey: `plugin:${pkg}`,
+    })
+  }
+  return written
 }
 
 // ── B11/B23:全局配置健康探测 ─────────────────────────────────────────────────────────────────

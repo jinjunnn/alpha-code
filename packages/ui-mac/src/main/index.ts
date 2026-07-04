@@ -183,6 +183,10 @@ const main = Effect.gen(function* () {
     process.env.XDG_CONFIG_HOME = join(root, "config")
     process.env.XDG_CACHE_HOME = join(root, "cache")
     process.env.XDG_STATE_HOME = join(root, "state")
+    // REQ-018:安装真源(~/.alpha)与引擎桥根(~/.opencode)不在 XDG 下 → 测试态显式改道,
+    // 否则隔离 test build 的定制中心安装会写进真实 home(os.homedir() 不吃 env 重定向)。
+    process.env.ALPHA_GLOBAL_DIR = join(root, "alpha-home")
+    process.env.ALPHA_OPENCODE_HOME = join(root, "opencode-home")
     return root
   })()
   app.setName(app.isPackaged ? APP_NAMES[CHANNEL] : "alpha-code")
