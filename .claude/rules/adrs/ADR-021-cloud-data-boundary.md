@@ -29,5 +29,5 @@ related: [ADR-002, ADR-019, B/PA-7, B/PA-22]
 ## 后果
 - ✅ 两条通道各有明确定位:显式=硬校验可执行,隐式=诚实告知不装过滤;B16 重启零返工(挂钩点已定义)。
 - ✅ 上行校验落在 main 单点(`dispatchCloudJob`),MCP facade 路径由 B 侧 schema 校验兜底(双层)。
-- ⚠️ §2 的 secrets 扫描/体积帽/denied_paths 默认注入是**待实现项**(随 B3 dispatch skill/app-driven dispatch 落地,B3 验收⑦ 记账);本 ADR 先钉规则防 B3 接线后返工(C9 验收④)。
+- ✅ §2 的 secrets 扫描/体积帽/denied_paths 默认注入**已实现(2026-07-04,S14/REQ-020 T1)**:`ui-mac/src/main/cloud-envelope-guard.ts`(纯函数,单测 12 例覆盖三路径)前置于 `dispatchCloudJob`,错误 loud 回 renderer 行内呈现;B3 验收⑦ 同账,登录态真发被拒的实测归 S14 真机批。
 - ⚠️ secrets 模式扫描有假阴性(新格式 token);定位为纵深一层,非唯一防线(A6 才是密钥主防线)。

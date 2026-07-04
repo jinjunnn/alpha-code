@@ -7,13 +7,27 @@
 
 import { createMemo, createResource, For, Show, type Accessor, type JSX } from "solid-js"
 import { t } from "../i18n"
-import type { CatalogEntry, McpInstallSpec, PluginInstallSpec, SkillInstallSpec } from "./catalog-types"
+import type { CatalogEntry, CloudPipelineSpec, McpInstallSpec, PluginInstallSpec, SkillInstallSpec } from "./catalog-types"
 import type { InstallReceipt } from "../../preload/types"
 import type { ExtensionsApi, HubAgent } from "./use-extensions"
+import { CloudDispatchBox } from "./cloud-dispatch-box"
 import { iconFor, iconForRow, sourceLabel, typeLabel, Svg, LockIc } from "./ext-presentation"
 
-/** What the detail page shows: a catalog entry, or an engine agent (no catalog identity). */
-export type DetailTarget = { kind: "entry"; entry: CatalogEntry } | { kind: "agent"; agent: HubAgent }
+/** What the detail page shows: a catalog entry, an engine agent (no catalog identity), or the
+ *  injected platform cloud connector (REQ-020 T3 — not a catalog entry, not installable). */
+export type DetailTarget =
+  | { kind: "entry"; entry: CatalogEntry }
+  | { kind: "agent"; agent: HubAgent }
+  | { kind: "cloud-connector" }
+
+// mcp.cloud 的 4 个工具(B 侧 MCP facade;alpha-platform docs/alpha-code-cloud-integration.md)。
+// 引擎无 tools 查询路由 → 与 MCP 条目一样用精选元数据展示(REQ-019 T3 同约束)。
+const CLOUD_TOOLS = [
+  { name: "cloud_dispatch", key: "alpha.ext.cloudToolDispatch" },
+  { name: "cloud_status", key: "alpha.ext.cloudToolStatus" },
+  { name: "cloud_await", key: "alpha.ext.cloudToolAwait" },
+  { name: "cloud_artifacts", key: "alpha.ext.cloudToolArtifacts" },
+] as const
 
 function mcpSpec(e: CatalogEntry): McpInstallSpec | undefined {
   return e.installSpec?.kind === "mcp" ? e.installSpec : undefined
@@ -23,6 +37,9 @@ function skillSpec(e: CatalogEntry): SkillInstallSpec | undefined {
 }
 function pluginSpec(e: CatalogEntry): PluginInstallSpec | undefined {
   return e.installSpec?.kind === "plugin" ? e.installSpec : undefined
+}
+function cloudSpec(e: CatalogEntry): CloudPipelineSpec | undefined {
+  return e.installSpec?.kind === "cloud" ? e.installSpec : undefined
 }
 function verifyText(e: CatalogEntry): string | undefined {
   return e._verify ?? e.installSpec?._verify
@@ -66,9 +83,17 @@ export function ExtensionDetail(props: {
   onUninstall: (receipt: InstallReceipt) => void
   /** Navigate the detail page to another entry (bundle item click). */
   onOpenEntry: (e: CatalogEntry) => void
+  /** REQ-020 T2:云门控(登录且 platform 模式)。cloud 条目「启用」与 dispatch 入口据此禁用。 */
+  cloudReady?: Accessor<boolean>
+  /** 未登录时云页的登录 CTA(window.api.auth.start,hub 持有)。 */
+  onLogin?: () => void
 }) {
   const entry = () => (props.target.kind === "entry" ? props.target.entry : undefined)
   const agent = () => (props.target.kind === "agent" ? props.target.agent : undefined)
+  const isCloudConnector = () => props.target.kind === "cloud-connector"
+  const cloudReady = () => props.cloudReady?.() ?? false
+  // 注入的 mcp.cloud 的 SDK 实时态(platform 模式下 sidecar 注入后才存在)。
+  const cloudLive = () => props.ext.store.mcp["cloud"]
 
   // Receipt truth for the shown entry — receipts ⨝ SDK (mirror of the manage list, ADR-014 v3).
   // Live-but-unreceipted MCP gets a synthetic receipt so uninstall still works.
@@ -150,6 +175,17 @@ export function ExtensionDetail(props: {
         desc: e.description,
       }
     }
+    if (isCloudConnector()) {
+      return {
+        ic: iconForRow(undefined, "cloud", "云"),
+        title: t("alpha.ext.cloudConnectorTitle"),
+        name: "cloud",
+        source: "alpha" as const,
+        type: "mcp",
+        license: undefined,
+        desc: t("alpha.ext.cloudConnectorDesc"),
+      }
+    }
     const a = agent()!
     return {
       ic: iconForRow(undefined, "agent", a.name),
@@ -220,14 +256,16 @@ export function ExtensionDetail(props: {
                     class="alpha-ext-add"
                     data-variant="primary"
                     data-size="lg"
-                    disabled={props.busy() === e().id}
+                    disabled={props.busy() === e().id || (e().type === "cloud" && !cloudReady())}
                     onClick={() => props.onInstall(e())}
                   >
                     {props.busy() === e().id
                       ? t("alpha.ext.adding")
                       : e().type === "plugin"
                         ? t("alpha.ext.installPluginBtn")
-                        : t("alpha.ext.add")}
+                        : e().type === "cloud"
+                          ? t("alpha.ext.enableCloud")
+                          : t("alpha.ext.add")}
                   </button>
                 </Show>
                 <Show when={e().type === "mcp" && installed()}>
@@ -390,6 +428,55 @@ export function ExtensionDetail(props: {
                   </Show>
                 </div>
               </Show>
+              {/* 云 pipeline(REQ-020 T4):输入契约 / 预算默认与上限 / 执行层 / 上行数据明细 /
+                  receipts-only 启用语义;code-review 另带 diff-only dispatch 入口 */}
+              <Show when={cloudSpec(e())}>
+                {(spec) => {
+                  const fmtBudget = (b: { max_iter: number; max_tokens: number; max_wall_clock_sec: number }) =>
+                    `${b.max_iter} iter · ${b.max_tokens.toLocaleString()} tokens · ${b.max_wall_clock_sec}s`
+                  return (
+                    <>
+                      <FactRow label={t("alpha.ext.cloudPipelineKind")}>
+                        <code class="alpha-ext-dcode">{spec().pipelineKind}</code>
+                      </FactRow>
+                      <FactRow label={t("alpha.ext.cloudTier")}>{spec().tier}</FactRow>
+                      <FactRow label={t("alpha.ext.cloudBudget")}>{fmtBudget(spec().budgetDefaults)}</FactRow>
+                      <FactRow label={t("alpha.ext.cloudBudgetLimits")}>{fmtBudget(spec().budgetLimits)}</FactRow>
+                      <div class="alpha-ext-dsub">
+                        <div class="alpha-ext-dsub-t">{t("alpha.ext.cloudInputContract")}</div>
+                        <div class="alpha-ext-dtools">
+                          <For each={spec().inputContract}>
+                            {(f) => (
+                              <div class="alpha-ext-dtool">
+                                <code>
+                                  {f.field}
+                                  {f.required ? " *" : ""}
+                                </code>
+                                <span>{f.description}</span>
+                              </div>
+                            )}
+                          </For>
+                        </div>
+                      </div>
+                      <div class="alpha-ext-dsub">
+                        <div class="alpha-ext-dsub-t">{t("alpha.ext.cloudUpstream")}</div>
+                        <ul class="alpha-ext-dlist">
+                          <For each={spec().upstreamData}>{(line) => <li>{line}</li>}</For>
+                        </ul>
+                      </div>
+                      <p class="alpha-ext-dnote">{t("alpha.ext.cloudEnableNote")}</p>
+                      <Show when={!cloudReady()}>
+                        <p class="alpha-ext-dnote" data-err="">
+                          {t("alpha.ext.cloudNeedPlatformNote")}
+                        </p>
+                      </Show>
+                      <Show when={spec().pipelineKind === "code-review"}>
+                        <CloudDispatchBox spec={spec()} ready={cloudReady()} />
+                      </Show>
+                    </>
+                  )
+                }}
+              </Show>
               {/* 套件:组合清单(序号 + 逐项状态 + 未装项行内安装 = 逐项重试,T3) */}
               <Show when={e().type === "bundle"}>
                 <div class="alpha-ext-dbundle">
@@ -500,12 +587,55 @@ export function ExtensionDetail(props: {
             </>
           )}
         </Show>
+        {/* 云连接器(REQ-020 T3):实时连接状态 + 4 工具 + 注入说明(非安装项,mcp.cloud 由
+            sidecar 在 platform 登录态注入 —— 未点亮时不装「即将可用」,说清为什么灰) */}
+        <Show when={isCloudConnector()}>
+          <FactRow label={t("alpha.ext.cloudConnStatus")}>
+            <Show
+              when={cloudReady()}
+              fallback={<span class="alpha-ext-cloudst" data-st="off">{t("alpha.ext.cloudConnNeedLogin")}</span>}
+            >
+              <span class="alpha-ext-cloudst" data-st={cloudLive()?.connected ? "on" : "idle"}>
+                {cloudLive()?.connected ? t("alpha.ext.cloudConnConnected") : t("alpha.ext.cloudConnDisconnected")}
+              </span>
+            </Show>
+          </FactRow>
+          <FactRow label={t("alpha.ext.detailTransport")}>{t("alpha.ext.transportRemote")}</FactRow>
+          <Show when={!cloudReady() && props.onLogin}>
+            <div class="alpha-ext-dsub">
+              <button class="alpha-ext-add" data-variant="primary" onClick={() => props.onLogin!()}>
+                {t("alpha.ext.cloudLoginCta")}
+              </button>
+            </div>
+          </Show>
+          <div class="alpha-ext-dsub">
+            <div class="alpha-ext-dsub-t">{t("alpha.ext.detailTools")}</div>
+            <div class="alpha-ext-dtools">
+              <For each={CLOUD_TOOLS}>
+                {(tool) => (
+                  <div class="alpha-ext-dtool">
+                    <code>{tool.name}</code>
+                    <span>{t(tool.key as never)}</span>
+                  </div>
+                )}
+              </For>
+            </div>
+            <p class="alpha-ext-dnote">{t("alpha.ext.toolsHint")}</p>
+          </div>
+          <div class="alpha-ext-verify-note" data-info="">
+            <b>{t("alpha.ext.cloudInjectTitle")}</b>
+            <p>{t("alpha.ext.cloudInjectNote")}</p>
+          </div>
+        </Show>
       </Section>
 
-      {/* ── 数据边界(T2 基线:remote=目的 host,local=仅本机;T4 补齐 ADR-021 云条目) ── */}
+      {/* ── 数据边界(T2 基线:remote=目的 host,local=仅本机;REQ-020:云条目/连接器引 ADR-021) ── */}
       <Section title={t("alpha.ext.detailBoundary")}>
         <p class="alpha-ext-dboundary">
-          <Show when={entry()} fallback={t("alpha.ext.boundaryLocalOnly")}>
+          <Show
+            when={entry()}
+            fallback={isCloudConnector() ? t("alpha.ext.boundaryCloud") : t("alpha.ext.boundaryLocalOnly")}
+          >
             {(e) => {
               const spec = mcpSpec(e())
               if (spec?.mcpType === "remote") return t("alpha.ext.boundaryRemote", { host: hostOf(spec.url) })
@@ -514,6 +644,7 @@ export function ExtensionDetail(props: {
               if (spec) return t("alpha.ext.boundaryLocalCmd")
               if (e().type === "plugin") return t("alpha.ext.boundaryPluginProc")
               if (e().type === "bundle") return t("alpha.ext.boundaryBundle")
+              if (e().type === "cloud") return t("alpha.ext.boundaryCloud")
               return t("alpha.ext.boundaryLocalOnly")
             }}
           </Show>

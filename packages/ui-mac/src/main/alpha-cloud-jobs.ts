@@ -14,6 +14,7 @@
 import { ALPHA_PATHS } from "../shared/alpha-config"
 import { resolveEndpoints } from "./alpha-endpoints"
 import { getAccessToken } from "./alpha-auth"
+import { guardCloudEnvelope } from "./cloud-envelope-guard"
 import { getLogger } from "./logging"
 import type { CloudResult, CloudJobEnvelope, CloudDispatchResult, CloudJobStatus, CloudArtifactList, CloudArtifactContent } from "../preload/types"
 
@@ -44,8 +45,16 @@ async function authed<T>(path: string, init?: { method?: string; body?: unknown 
   }
 }
 
-export const dispatchCloudJob = (envelope: CloudJobEnvelope): Promise<CloudResult<CloudDispatchResult>> =>
-  authed<CloudDispatchResult>(ALPHA_PATHS.cloudJobs, { method: "POST", body: envelope })
+// ADR-021 §2(REQ-020 T1):上行硬校验单点 —— denied_paths 缺省注入 / 1MB 帽 / secrets 拒发,
+// 全部 loud(错误原样回 renderer 行内呈现)。MCP facade 路径由 B 侧 schema 校验兜底(双层)。
+export const dispatchCloudJob = (envelope: CloudJobEnvelope): Promise<CloudResult<CloudDispatchResult>> => {
+  const guarded = guardCloudEnvelope(envelope)
+  if (!guarded.ok) {
+    getLogger().warn("alpha-cloud-jobs: envelope rejected by ADR-021 guard", guarded.error)
+    return Promise.resolve({ error: guarded.error })
+  }
+  return authed<CloudDispatchResult>(ALPHA_PATHS.cloudJobs, { method: "POST", body: guarded.envelope })
+}
 
 export const getCloudJobStatus = (jobId: string): Promise<CloudResult<CloudJobStatus>> =>
   authed<CloudJobStatus>(`${ALPHA_PATHS.cloudJobs}/${encodeURIComponent(jobId)}`)

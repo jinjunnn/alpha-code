@@ -632,6 +632,77 @@
         }
       ],
       "_verify": "补钉钉(open-dingtalk 官方 MCP)条目后加入。"
+    },
+    {
+      "id": "cloud:code-review",
+      "type": "cloud",
+      "name": "cloud-code-review",
+      "displayName": "云代码审查(code-review)",
+      "description": "把 git diff 派发到云端流水线审查(正确性/安全/性能/风格,必要时联网查库行为与 CVE),结果回流本地 .alpha/runs。diff-only:绝不上传全库。",
+      "source": "alpha",
+      "category": "cloud",
+      "installSpec": {
+        "kind": "cloud",
+        "pipelineKind": "code-review",
+        "inputContract": [
+          { "field": "input.diff", "description": "git diff 文本(diff-only;云侧另截断至 12k 字符)", "required": true }
+        ],
+        "budgetDefaults": { "max_iter": 25, "max_tokens": 300000, "max_wall_clock_sec": 600 },
+        "budgetLimits": { "max_iter": 50, "max_tokens": 500000, "max_wall_clock_sec": 1800 },
+        "tier": "Tier-1(云端流水线,无沙箱)",
+        "upstreamData": [
+          "git diff 文本(input.diff;1MB 信封帽,云侧另截 12k 字符)",
+          "变更意图摘要与审查结论(云侧模型生成,存于任务产物)",
+          "派发信封元数据(预算/约束;denied_paths 缺省注入)"
+        ]
+      }
+    },
+    {
+      "id": "cloud:research",
+      "type": "cloud",
+      "name": "cloud-research",
+      "displayName": "深度调研(research)",
+      "description": "把调研问题派发到云端流水线:拆解子问题、联网检索、带来源综合作答;结果回流本地 .alpha/runs。",
+      "source": "alpha",
+      "category": "cloud",
+      "installSpec": {
+        "kind": "cloud",
+        "pipelineKind": "research",
+        "inputContract": [
+          { "field": "input.question", "description": "调研问题文本", "required": true }
+        ],
+        "budgetDefaults": { "max_iter": 25, "max_tokens": 300000, "max_wall_clock_sec": 600 },
+        "budgetLimits": { "max_iter": 50, "max_tokens": 500000, "max_wall_clock_sec": 1800 },
+        "tier": "Tier-1(云端流水线,无沙箱,联网检索)",
+        "upstreamData": [
+          "调研问题文本(input.question)",
+          "派发信封元数据(预算/约束;denied_paths 缺省注入)"
+        ]
+      }
+    },
+    {
+      "id": "cloud:docs",
+      "type": "cloud",
+      "name": "cloud-docs",
+      "displayName": "文档生成(docs)",
+      "description": "把代码片段派发到云端流水线生成文档(README/API 文档等,先大纲后成文);结果回流本地 .alpha/runs。",
+      "source": "alpha",
+      "category": "cloud",
+      "installSpec": {
+        "kind": "cloud",
+        "pipelineKind": "docs",
+        "inputContract": [
+          { "field": "input.code", "description": "代码片段(云侧截断至 12k 字符;传片段,勿传全库)", "required": true },
+          { "field": "input.type", "description": "文档类型(如 readme / api,默认 readme)" }
+        ],
+        "budgetDefaults": { "max_iter": 25, "max_tokens": 300000, "max_wall_clock_sec": 600 },
+        "budgetLimits": { "max_iter": 50, "max_tokens": 500000, "max_wall_clock_sec": 1800 },
+        "tier": "Tier-1(云端流水线,无沙箱)",
+        "upstreamData": [
+          "代码片段(input.code;云侧截 12k 字符)",
+          "派发信封元数据(预算/约束;denied_paths 缺省注入)"
+        ]
+      }
     }
   ]
 }

@@ -26,7 +26,7 @@ import { Banner } from "../alpha-ui/Banner"
 import type { ServerInfo } from "../sidebar/use-projects"
 import { useExtensions, type HubAgent } from "./use-extensions"
 import type { Catalog, CatalogEntry, InstalledState } from "./catalog-types"
-import type { InstallReceipt, InstallReceiptType } from "../../preload/types"
+import type { AuthState, InstallReceipt, InstallReceiptType } from "../../preload/types"
 import { hubSection, setHubSection, type HubSection } from "./ext-hub-state"
 import { iconFor, iconForRow, sourceLabel, typeLabel, Svg, SearchIc, LockIc } from "./ext-presentation"
 import { ExtensionDetail, type DetailTarget } from "./extension-detail"
@@ -112,6 +112,9 @@ function metaPills(e: CatalogEntry): { text: string; lock?: boolean }[] {
     out.push({ text: t("alpha.ext.metaRestart") })
   } else if (e.type === "bundle") {
     out.push({ text: t("alpha.ext.metaItems", { count: (e.bundleItems ?? []).length }) })
+  } else if (e.type === "cloud") {
+    out.push({ text: t("alpha.ext.metaCloudExec") })
+    if (e.installSpec?.kind === "cloud") out.push({ text: e.installSpec.tier })
   }
   return out
 }
@@ -133,6 +136,12 @@ export function ExtensionHub(props: {
 }) {
   const ext = useExtensions(props.server, props.open)
   const section = hubSection
+  // REQ-020 T2:云门控。subscribe 会立即回放当前态(preload 内置 getState),再跟增量推送。
+  // 云可用 ⟺ 已登录且 platform 模式(mcp.cloud 由 sidecar 在该态注入,ADR-013/ADR-016)。
+  const [authState, setAuthState] = createSignal<AuthState>({ status: "logged-out", mode: "byok" })
+  onCleanup(window.api.auth.subscribe(setAuthState))
+  const cloudReady = () => authState().status === "logged-in" && authState().mode === "platform"
+  const cloudLive = () => ext.store.mcp["cloud"]
   const [query, setQuery] = createSignal("")
   const [busy, setBusy] = createSignal<string | null>(null)
   // T7/T9:安装阶段(粗粒度状态机:checking→installing)与逐条行内错误(B11:失败不裸 toast)。
@@ -285,7 +294,7 @@ export function ExtensionHub(props: {
   const searchGroups = createMemo(() => {
     if (!searching()) return []
     const groups: { label: string; items: CatalogEntry[] }[] = []
-    for (const ty of ["mcp", "skill", "agent", "plugin", "bundle"] as const) {
+    for (const ty of ["mcp", "skill", "agent", "plugin", "bundle", "cloud"] as const) {
       const items = byTypeF(ty).filter(matches)
       if (items.length) groups.push({ label: typeLabel(ty), items })
     }
@@ -468,6 +477,12 @@ export function ExtensionHub(props: {
       } else if (e.type === "bundle") {
         setStageFor(e.id, "installing")
         await installBundle(e)
+      } else if (e.type === "cloud") {
+        // REQ-020 T4:「启用」= receipts-only(账本可用列表);门控在按钮层(!cloudReady 禁用)。
+        setStageFor(e.id, "installing")
+        const res = await ext.enableCloud(e)
+        if (!res.ok) setErrFor(e.id, res.reason ?? t("alpha.ext.installFailed"))
+        else flash(t("alpha.ext.cloudEnabled"), "success")
       }
     } finally {
       setBusy(null)
@@ -481,15 +496,17 @@ export function ExtensionHub(props: {
   //   mcp / bundle → 确认框(密钥采集 / 选目录 / 组合清单)。
   const stageInstall = (e: CatalogEntry) => {
     if (e.type === "skill") return void onAdd(e)
-    // plugin(引擎进程内运行)与 agent(带权限档)= 详情页先行档:先看介绍/权限再装。
-    if (e.type === "plugin" || e.type === "agent") return openEntryDetail(e)
+    // plugin(引擎进程内运行)/ agent(带权限档)/ cloud(数据出境,上行明细在详情页)=
+    // 详情页先行档:先看清楚再启用。
+    if (e.type === "plugin" || e.type === "agent" || e.type === "cloud") return openEntryDetail(e)
     setConfirming(e)
   }
   // Install action coming FROM the detail page: plugin now goes to its risk confirm dialog
   // (the user has just seen the hooks/risk sections); skill stays direct; the rest confirm.
   const stageInstallFromDetail = (e: CatalogEntry) => {
-    // 用户已在详情页看过内容/权限:skill/agent 直装;plugin 仍过风险确认框;MCP/套件过确认框。
-    if (e.type === "skill" || e.type === "agent") return void onAdd(e)
+    // 用户已在详情页看过内容/权限:skill/agent 直装;cloud 直启用(上行明细刚看过);
+    // plugin 仍过风险确认框;MCP/套件过确认框。
+    if (e.type === "skill" || e.type === "agent" || e.type === "cloud") return void onAdd(e)
     setConfirming(e)
   }
 
@@ -716,7 +733,9 @@ export function ExtensionHub(props: {
                 ? t("alpha.ext.stageChecking")
                 : stage()[e.id] === "installing" || isBusy()
                   ? t("alpha.ext.stageInstalling")
-                  : t("alpha.ext.add")}
+                  : e.type === "cloud"
+                    ? t("alpha.ext.enableCloud")
+                    : t("alpha.ext.add")}
             </button>
           </Show>
         </div>
@@ -884,6 +903,8 @@ export function ExtensionHub(props: {
                     onInstall={(e) => stageInstallFromDetail(e)}
                     onUninstall={(r) => void onUninstall(r)}
                     onOpenEntry={(e) => openEntryDetail(e)}
+                    cloudReady={cloudReady}
+                    onLogin={authState().status !== "logged-in" ? () => void window.api.auth.start() : undefined}
                   />
                 }
               >
@@ -1361,10 +1382,84 @@ export function ExtensionHub(props: {
                     </div>
                   </Show>
 
-                  {/* ░░ CLOUD (M2 占位;真内容随 M3/REQ-020,Q4 批:现在挂 tab) ░░ */}
+                  {/* ░░ CLOUD (REQ-020 T2/T4:登录门控 + 连接器卡 + pipeline 条目) ░░ */}
                   <Show when={section() === "cloud"}>
                     <Hero title={t("alpha.ext.tabCloud")} sub={t("alpha.ext.cloudSub")} />
-                    <div class="alpha-ext-callout">{t("alpha.ext.cloudPlaceholder")}</div>
+                    {/* 门控条:未登录 → 登录 CTA;BYOK → 切平台模式说明(诚实:切换/登录后由
+                        sidecar 注入 mcp.cloud,注入发生在启动装配,未点亮时重启完成注入)。 */}
+                    <Show when={!cloudReady()}>
+                      <div class="alpha-ext-cloudgate">
+                        <div class="alpha-ext-cloudgate-t">
+                          {authState().status !== "logged-in"
+                            ? t("alpha.ext.cloudGateTitleLogin")
+                            : t("alpha.ext.cloudGateTitleMode")}
+                        </div>
+                        <div class="alpha-ext-cloudgate-sub">{t("alpha.ext.cloudGateSub")}</div>
+                        <Show
+                          when={authState().status !== "logged-in"}
+                          fallback={
+                            <button
+                              class="alpha-ext-add"
+                              data-variant="primary"
+                              onClick={() => void window.api.auth.setMode("platform")}
+                            >
+                              {t("alpha.ext.cloudSwitchMode")}
+                            </button>
+                          }
+                        >
+                          <button class="alpha-ext-add" data-variant="primary" onClick={() => void window.api.auth.start()}>
+                            {t("alpha.ext.cloudLoginCta")}
+                          </button>
+                        </Show>
+                      </div>
+                    </Show>
+
+                    {/* 平台连接器卡(固定展示;非 catalog 条目,点开专属详情) */}
+                    <SecRow label={t("alpha.ext.cloudConnectorSection")} />
+                    <div
+                      class="alpha-ext-kit"
+                      data-clickable=""
+                      data-dim={cloudReady() ? undefined : ""}
+                      onClick={() => setDetail({ kind: "cloud-connector" })}
+                    >
+                      <span class="alpha-ext-kit-ic" style={{ background: "#5c7cbf" }}>
+                        云
+                      </span>
+                      <div class="alpha-ext-kit-body">
+                        <div class="alpha-ext-kit-ttl">
+                          <b>{t("alpha.ext.cloudConnectorTitle")}</b>
+                          <span class="alpha-ext-chip" data-source="alpha">
+                            {sourceLabel("alpha")}
+                          </span>
+                        </div>
+                        <div class="alpha-ext-kit-desc">
+                          <span class="alpha-ext-cloudst" data-st={cloudReady() ? (cloudLive()?.connected ? "on" : "idle") : "off"}>
+                            {cloudReady()
+                              ? cloudLive()?.connected
+                                ? t("alpha.ext.cloudConnConnected")
+                                : t("alpha.ext.cloudConnDisconnected")
+                              : t("alpha.ext.cloudConnNeedLogin")}
+                          </span>
+                          {" · "}
+                          {t("alpha.ext.cloudConnectorDesc")}
+                        </div>
+                      </div>
+                      <button
+                        class="alpha-ext-add"
+                        onClick={(ev) => {
+                          ev.stopPropagation()
+                          setDetail({ kind: "cloud-connector" })
+                        }}
+                      >
+                        {t("alpha.ext.openDetail")}
+                      </button>
+                    </div>
+
+                    {/* 云 pipeline 条目(灰显 ≠ 隐藏:BYOK/未登录可浏览,启用/派发被门控) */}
+                    <SecRow label={t("alpha.ext.cloudPipelines")} count={byType("cloud").length} />
+                    <div data-dim={cloudReady() ? undefined : ""}>
+                      <Grid items={byType("cloud")} />
+                    </div>
                   </Show>
                 </Show>
               </Show>

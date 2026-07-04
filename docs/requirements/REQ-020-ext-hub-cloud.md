@@ -3,10 +3,10 @@ id: REQ-020
 title: 定制中心 v3-M3:云能力进 hub(登录门控 + pipeline 条目)+ ADR-021 §2 三校验落地
 type: feature
 priority: P2
-status: registered
+status: shipped
 repo: X
 created: 2026-07-04
-sprint: —
+sprint: 2026-07-04-s14-ext-hub-m3
 source: designs/2026-07-04-extension-hub-v3-universal.md(§6、§8 M3)
 ---
 

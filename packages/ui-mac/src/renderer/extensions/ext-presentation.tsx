@@ -16,6 +16,7 @@ export const CAT_COLOR: Record<string, string> = {
   research: "#2563eb",
   "china-office": "#00b4d8",
   design: "#7c3aed",
+  cloud: "#5c7cbf",
 }
 const ICON_COLOR: Record<string, string> = {
   "mcp:playwright": "#7c3aed",
@@ -44,6 +45,9 @@ const ICON_GLYPH: Record<string, string> = {
   "bundle:design": "设",
   "bundle:dev": "开",
   "bundle:china-office": "中",
+  "cloud:code-review": "审",
+  "cloud:research": "研",
+  "cloud:docs": "档",
 }
 export function iconFor(e: CatalogEntry): { color: string; glyph: string } {
   return {

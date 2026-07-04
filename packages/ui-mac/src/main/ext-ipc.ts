@@ -9,7 +9,7 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import type { InstallMeta, InstallReceipt, InstallTarget } from "../preload/types"
-import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
+import { addReceipt, alphaGlobalRoot, listInstalls, removeReceipt } from "./alpha-installs"
 import { fileifyMcpSecrets, removeMcpServerSecrets } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy } from "./alpha-migrate"
 import { configHealth, persistMcp, persistPlugin, removeMcp, removePlugin, removePluginPath } from "./ext-config"
@@ -127,7 +127,23 @@ export function registerExtIpcHandlers(userDataPath: string) {
       removeMcpServerSecrets(userDataPath, receipt.name)
       return removeMcp(receipt.name)
     }
+    // REQ-020 T4:cloud pipeline「启用」只存在于账本(不落文件、不写引擎 config)→ 停用 = 去账。
+    if (receipt.type === "cloud") return removeReceipt(alphaGlobalRoot(), "cloud", receipt.name)
     return { ok: false, reason: `cannot uninstall type: ${receipt.type}` }
+  })
+  // REQ-020 T4:启用云 pipeline = 写 receipts 可用列表(receipts-only 语义,ADR-014 v3 账本真相;
+  // 不写引擎 config —— 云工具本身由 sidecar 的 mcp.cloud 注入,与逐条 pipeline 启用无关)。
+  ipcMain.handle("ext-enable-cloud", (_event: IpcMainInvokeEvent, id: string, name: string, meta?: InstallMeta) => {
+    if (typeof id !== "string" || !id.startsWith("cloud:")) return { ok: false, reason: "invalid cloud entry id" }
+    return addReceipt(alphaGlobalRoot(), {
+      id,
+      name,
+      type: "cloud",
+      scope: "global",
+      installedAt: new Date().toISOString(),
+      origin: "catalog",
+      ...(meta?.version ? { version: meta.version } : {}),
+    })
   })
   // REQ-018 T3:存量迁移(旧 XDG 根 → .alpha)。scan 报告 + removeLegacy 删旧位;新位由 renderer
   // 复用既有 installer 重装(顺带 A2 钉版 + secret file 化)。用户面触发受 ALPHA_MIGRATE_ENABLE 门控

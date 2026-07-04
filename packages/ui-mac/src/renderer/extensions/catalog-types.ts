@@ -4,7 +4,7 @@
 // ConfigV2.MCP (packages/core/src/config/mcp.ts): the discriminant is "local" | "remote"
 // (NOT stdio/sse), local carries `command`+`environment`, remote carries `url`+`headers`.
 
-export type CatalogType = "mcp" | "skill" | "plugin" | "bundle" | "agent"
+export type CatalogType = "mcp" | "skill" | "plugin" | "bundle" | "agent" | "cloud"
 export type CatalogSource = "official" | "community" | "alpha" | "user"
 
 /** opencode ConfigV2.MCP.Local — the object passed to sdk.mcp.add for a local (stdio) server. */
@@ -71,7 +71,26 @@ export interface AgentInstallSpec {
   _verify?: string
 }
 
-export type InstallSpec = McpInstallSpec | SkillInstallSpec | PluginInstallSpec | AgentInstallSpec
+/** REQ-020 T4:云 pipeline 条目(B 侧 gateway pipelines.ts 已 live 的 kind)。「启用」= receipts-only
+ *  (进本机可用列表供会话/自动化选用,不落文件、不写引擎 config)—— 不经任何 installer。 */
+export interface CloudPipelineSpec {
+  kind: "cloud"
+  /** B 侧 pipeline 注册表键(alpha-platform gateway/src/pipelines.ts)。 */
+  pipelineKind: "research" | "code-review" | "docs"
+  /** 输入契约(详情页展示;dispatch 构造与此对齐)。 */
+  inputContract: { field: string; description: string; required?: boolean }[]
+  /** A 侧派发默认预算;上限为 B 侧按租户 clamp 的天花板(policy 永远赢)。 */
+  budgetDefaults: { max_iter: number; max_tokens: number; max_wall_clock_sec: number }
+  budgetLimits: { max_iter: number; max_tokens: number; max_wall_clock_sec: number }
+  /** 执行层描述(仅展示;tier 路由对 A 不可见,ADR-013)。 */
+  tier: string
+  /** 上行数据明细 —— 出境内容如实列举(ADR-021 数据边界)。 */
+  upstreamData: string[]
+  /** Unverified claim carried from the catalog — surfaced as 「待核实」 on the detail page (D5). */
+  _verify?: string
+}
+
+export type InstallSpec = McpInstallSpec | SkillInstallSpec | PluginInstallSpec | AgentInstallSpec | CloudPipelineSpec
 
 export interface BundleItem {
   catalogEntryId: string

@@ -6,10 +6,37 @@
 // event.sender.send("cloud-job-event", …) 推给对应 renderer;订阅按 (webContents, jobId) 记账,窗口销毁自动清。
 
 import { ipcMain, type IpcMainInvokeEvent } from "electron"
+import { execFile } from "node:child_process"
+import * as fs from "node:fs"
 import { dispatchCloudJob, getCloudJobStatus, cancelCloudJob, listCloudArtifacts, fetchCloudArtifact } from "./alpha-cloud-jobs"
 import { isTerminalCloudEvent, subscribeCloudJobEvents } from "./alpha-cloud-events"
 import { saveCloudRun } from "./alpha-workdir"
 import type { CloudJobEnvelope } from "../preload/types"
+
+// REQ-020 T4(ADR-021 §1 diff-only):hub 的 code-review dispatch 入口只送 diff,不送全库。
+// 工作树有变更 → `git diff HEAD`(含 staged);干净 → 回退最近一次 commit 的 diff(e2e 常在干净树上跑)。
+// 只读操作(git diff 无副作用);超 8MB 直接砍 buffer 报错 —— 上限最终由 dispatch 的 1MB 信封帽把关。
+function gitDiff(directory: string): Promise<{ ok: true; diff: string; source: "worktree" | "last-commit" } | { ok: false; reason: string }> {
+  const run = (args: string[]) =>
+    new Promise<{ ok: boolean; out: string }>((resolve) => {
+      execFile("git", args, { cwd: directory, maxBuffer: 8 * 1024 * 1024 }, (err, stdout) =>
+        resolve({ ok: !err, out: stdout ?? "" }),
+      )
+    })
+  return (async () => {
+    try {
+      if (!fs.statSync(directory).isDirectory()) return { ok: false as const, reason: "not a directory" }
+    } catch {
+      return { ok: false as const, reason: "not a directory" }
+    }
+    const worktree = await run(["diff", "HEAD"])
+    if (!worktree.ok) return { ok: false as const, reason: "git diff failed(不是 git 仓库?)" }
+    if (worktree.out.trim()) return { ok: true as const, diff: worktree.out, source: "worktree" as const }
+    const last = await run(["diff", "HEAD~1..HEAD"])
+    if (last.ok && last.out.trim()) return { ok: true as const, diff: last.out, source: "last-commit" as const }
+    return { ok: false as const, reason: "no-diff" }
+  })()
+}
 
 // 活跃订阅:key = `${webContentsId}:${jobId}` → unsubscribe。
 const subs = new Map<string, () => void>()
@@ -20,6 +47,8 @@ export function registerCloudIpcHandlers() {
   ipcMain.handle("cloud-cancel", (_e: IpcMainInvokeEvent, jobId: string) => cancelCloudJob(jobId))
   ipcMain.handle("cloud-artifacts", (_e: IpcMainInvokeEvent, jobId: string) => listCloudArtifacts(jobId))
   ipcMain.handle("cloud-artifact-content", (_e: IpcMainInvokeEvent, artifactId: string) => fetchCloudArtifact(artifactId))
+  ipcMain.handle("cloud-git-diff", (_e: IpcMainInvokeEvent, directory: string) =>
+    typeof directory === "string" && directory ? gitDiff(directory) : { ok: false, reason: "invalid directory" })
 
   // B3/ADR-019:把一个终态 run 回流写进 <directory>/.alpha/runs/<runId>/(status/contract/artifacts)。
   // renderer 提供 directory(main 不知道当前项目目录);字节在 main 侧取,bearer 不进 renderer。

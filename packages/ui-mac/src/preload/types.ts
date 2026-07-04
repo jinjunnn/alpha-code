@@ -312,6 +312,9 @@ export type ElectronAPI = {
       type: "skill" | "agent" | "mcp" | "plugin",
       name: string,
     ) => Promise<{ ok: true; removed: string[] } | { ok: false; reason: string }>
+    // REQ-020 T4:启用云 pipeline = receipts-only(进本机可用列表,不落文件、不写引擎 config);
+    // 停用走 uninstall(type:"cloud" → 去账)。
+    enableCloud: (id: string, name: string, meta?: InstallMeta) => Promise<{ ok: true; warning?: string } | { ok: false; reason: string }>
   }
   // alpha account (balance / membership / usage) read from the alpha-platform (B) account-server
   // using the main-held JWT. The renderer gets only the resolved summary, never the token.
@@ -334,6 +337,11 @@ export type ElectronAPI = {
     subscribe: (jobId: string) => Promise<{ ok: boolean }>
     unsubscribe: (jobId: string) => Promise<{ ok: boolean }>
     onEvent: (cb: (payload: { jobId: string } & CloudJobEvent) => void) => () => void
+    // REQ-020 T4(ADR-021 §1 diff-only):hub code-review dispatch 的 diff 采集。工作树有变更取
+    // `git diff HEAD`,干净树回退最近一次 commit;非 git 仓库/无 diff 诚实报错。
+    gitDiff: (
+      directory: string,
+    ) => Promise<{ ok: true; diff: string; source: "worktree" | "last-commit" } | { ok: false; reason: string }>
   }
   // alpha model catalog for the model picker. REQ-001:catalog = effective 视图(内置 snapshot 按
   // B 网关 edition 白名单收窄 + liveSync 来源标注);platformLive 拉取顺带刷新本地白名单缓存。
