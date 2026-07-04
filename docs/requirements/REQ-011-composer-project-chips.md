@@ -3,7 +3,7 @@ id: REQ-011
 title: 首页 composer 下方项目/会话 chips 移除 —— 预留后续功能入口位
 type: ux
 priority: P2
-status: registered
+status: shipped
 repo: A
 created: 2026-07-03
 sprint: —
@@ -41,4 +41,5 @@ sprint: —
 
 ## 验证记录(verify 时补:日期 + 方式 + 结果)
 
-- 待。
+- **shipped(PR #83,/loop 2026-07-04)**:代码删除完成(`grep` 无 `RecentPill`/`a-home-recents`/`a-recent`/`newSessionHref`/`hasProjects` 残留),验收①②④满足;`alpha-check` 三关绿(322 tests)。
+- **验收③(布局不塌陷/无残留空块)= 待真机视觉核验**:CDP/真机截图首页确认移除后无空块/边距异常([[visual-verify-required]],→ 并入 REQ-016 真机批);离线无法出图故 verified 暂缺。

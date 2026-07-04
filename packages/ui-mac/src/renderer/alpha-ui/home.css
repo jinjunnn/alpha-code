@@ -443,46 +443,6 @@ body[data-alpha-sidebar="open"] .a-home {
   color: var(--a-text-tertiary);
 }
 
-/* recent pills */
-.a-home-recents {
-  display: flex;
-  gap: 8px;
-  justify-content: center;
-  margin-top: 18px;
-  flex-wrap: wrap;
-  animation: a-rise 0.55s var(--a-ease-out) 0.27s both;
-}
-.a-recent-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  max-width: 280px;
-  padding: 6px 12px 6px 7px;
-  background: var(--a-surface);
-  border: 1px solid var(--a-border);
-  border-radius: var(--a-radius-full);
-  font-size: var(--a-text-sm);
-  color: var(--a-text-secondary);
-  box-shadow: var(--a-shadow-xs);
-  transition: border-color var(--a-dur-fast) var(--a-ease-out), color var(--a-dur-fast) var(--a-ease-out);
-}
-.a-recent-pill:hover {
-  border-color: var(--a-border-strong);
-  color: var(--a-text);
-}
-.a-recent-name {
-  font-weight: var(--a-weight-medium);
-  color: var(--a-text);
-  white-space: nowrap;
-}
-.a-recent-sub {
-  color: var(--a-text-tertiary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-
 /* popovers (composer secondary menus) */
 .a-pop-wrap {
   position: relative;
