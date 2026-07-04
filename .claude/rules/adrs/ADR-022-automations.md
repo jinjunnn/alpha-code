@@ -1,0 +1,54 @@
+---
+id: ADR-022
+title: 自动化(定时任务):本地调度器 + 只读 agent 静态权限档 + .alpha 落盘(A1 MVP)
+status: trial
+date: 2026-07-04
+related: [ADR-002, ADR-019, ADR-021, REQ-021, REQ-022]
+---
+
+## 背景
+用户目标:定制中心下方「自动化」——一句话描述 workflow → 定时执行(REQ-021,2026-07-04 拍板:
+完整需求分期 A1 只读 MVP > A2 增强 > A3 云档)。此前为零:侧栏「自动化」是孤儿 i18n key,A/B 两侧
+均无调度设施。引擎事实(已核):v1 config `agent.<name>.permission` 可静态配死全部权限(pattern→action
+对象,agent 级合并)→ 无人值守零 ask 可行;v2 SDK `session.prompt` 阻塞到回复完成 → 执行链无需自建
+流消费。
+
+## 决策(A1,全部 alpha 自有文件,零改上游)
+1. **实体**:`~/.alpha/automations/<id>.json` 一任务一文件(`shared/automation-types.ts`;
+   schedule = cron 5 字段 | interval 分钟 | once)+ `_state.json`(全部暂停 + dailyRunCap 记账)。
+   运行记录写目标项目 `.alpha/runs/auto-<id>-<ts>/`(report.md + status.json,复用 ADR-019 守卫
+   `alpha-workdir.writeRunFiles`)。存储层硬校验(A1 强制 execution:local + readonly,防绕过 UI 直写)。
+2. **调度器 = Electron 主进程**(`automation-scheduler.ts`):每任务单 timer(算下次 → setTimeout
+   分段 → 执行 → 重排);`powerMonitor.resume` + 30min 兜底 tick 全量重排;错过一律 skip 不补
+   (catchUpPolicy;纯逻辑 `shared/automation-schedule.ts` 单测覆盖);全局并发 1 + overlap skip
+   记账;dailyRunCap 默认 24 次/日(跨重启持久)。**应用未运行不执行**(UI 明示,不装后台常驻),
+   配套「登录时启动」开关(`app.setLoginItemSettings`,首个使用点)。
+3. **执行链只走 SDK**(ADR-002;main 内 `@opencode-ai/sdk/v2/client`,凭证复用 serverReady Deferred):
+   `session.create`(标题「⏱ 自动化 · <name>」)→ `session.prompt`(agent=`alpha-automation`,阻塞)
+   → 最终回复落 run 目录;超 `maxDurationMin`(默认 15,上限 120)abort 记 timeout;失败也留痕
+   (status.json)。通知 = Electron `Notification` + 渲染层 `automation-event` 推送(侧栏 badge =
+   失败/超时任务数)。
+4. **readonly agent = config 注入静态权限档**(`sidecar.injectAlphaConfig` 第 5 段,
+   `ALPHA_AUTOMATION_DISABLE` 逃生):read(`*` allow,`*.env*` deny)/glob/grep/list/webfetch/
+   websearch/skill=allow;edit/bash/external_directory/doom_loop/question/task=deny;prompt 内联
+   声明无人值守语义(绝不提问、答复即报告)。**零 ask 是无人值守的硬前提** —— 靠静态配死,不靠
+   运行时兜底。
+5. **一句话解析 = 确定性规则**(`shared/automation-nl.ts`,中英:每天/每周X/每月N日/工作日/周末/
+   每N分钟·小时 + HH:mm/H点半/am·pm):解析不出周期诚实降级手动选;LLM 辅助解析归 A2,不在 A1 引入。
+6. **分期边界**:`standard` 可写档(UI 灰显「即将推出」)与连败熔断/立即运行归 A2;`execution:cloud`
+   (B 侧 cron,REQ-022)归 A3,硬前置 = ADR-021 §2(已落地,S14)+ B16 重启评估。
+
+## 边界与诚实声明
+- tz:实体存 `tz` 字段,A1 计算用**系统本地时区**(跨时区任务不承诺);cron 无秒级。
+- 通知/调度只在 app 存活时发生;睡眠错过 = 跳过(记录可见),不是静默丢失。
+- interval 下限 5 分钟(防打点风暴;dailyRunCap 是第二道)。
+- main 侧通知文案暂为中文硬编码(main 无 i18n 设施;随后续 main-i18n 统一)。
+
+## 后果
+- ✅ 「一句话 → 定时执行」闭环全在本地接缝内:零改上游、零新 HTTP 面、执行只走 SDK。
+- ✅ 调度纯逻辑与解析器可单测(A1 验收⑥);权限档静态可审计。
+- ⚠️ **真机批待验**(转 accepted 的门):到点触发 + 通知实拍;readonly 实测零 ask 且 edit/bash 被
+  deny;重叠/睡眠错过用例;断电重启 next-fire 恢复;历史回跳会话(并入 REQ-016 场次)。
+- ⚠️ `alpha-automation` 以 `mode:"primary"` 注入 → 会出现在引擎 agent 列表/选择器里(描述已注明
+  用途);若上游后续支持对 prompt 直接指派 subagent,可改 subagent+hidden 收干净。
+- 🔭 A2/A3 见 REQ-021;云档位落地时本 ADR 需修订 §6(dispatch 复用 ADR-021 §2 校验)。

@@ -191,6 +191,40 @@ function injectAlphaConfig(userDataPath: string, extPluginPath?: string) {
       config.provider = { ...(config.provider ?? {}), ...models.provider }
     }
 
+    //   5. 自动化 readonly agent(REQ-021 A1.5 / ADR-022)。无人值守执行的硬前提 = 零 ask:
+    //      permission 静态配死(V1 schema:pattern→action 对象,agent 级合并),不依赖运行时弹窗。
+    //      read 全放但 *.env* 保持 deny(密钥文件不进上下文);edit/bash/外部目录一律 deny;
+    //      question deny(无人在场没人答);doom_loop deny(异常循环直接断)。逃生:ALPHA_AUTOMATION_DISABLE。
+    if (!process.env.ALPHA_AUTOMATION_DISABLE) {
+      config.agent = {
+        ...(config.agent ?? {}),
+        "alpha-automation": {
+          description: "alpha 自动化定时任务专用只读 agent(无人值守;不能改文件、不能跑命令)",
+          mode: "primary",
+          prompt:
+            "你是 alpha-code 的自动化任务执行器,在无人值守的定时任务里运行。" +
+            "只读环境:你不能修改文件、不能执行 shell 命令;需要变更时,把建议写进最终答复。" +
+            "没有人会回答追问——绝不提问,基于可得信息直接完成任务。" +
+            "最终答复即任务报告:用 Markdown,先一行结论,再列依据与建议;如实标注做不到的部分。",
+          permission: {
+            read: { "*": "allow", "*.env*": "deny" },
+            glob: "allow",
+            grep: "allow",
+            list: "allow",
+            webfetch: "allow",
+            websearch: "allow",
+            skill: "allow",
+            edit: "deny",
+            bash: "deny",
+            external_directory: "deny",
+            doom_loop: "deny",
+            question: "deny",
+            task: "deny",
+          },
+        },
+      }
+    }
+
     //   3. Cloud tool gateway (alpha-platform B). Registered only when platform-pays is active —
     //      main derives the login state (alpha-auth.ts §③) and materializes the bearer into the
     //      {file:} channel at fork (A6), so logged-out / BYOK leaves it dark. The same bearer fronts

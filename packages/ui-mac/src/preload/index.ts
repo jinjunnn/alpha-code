@@ -179,6 +179,19 @@ const api: ElectronAPI = {
       return () => ipcRenderer.removeListener("cloud-job-event", h)
     },
   },
+  automations: {
+    list: () => ipcRenderer.invoke("automations-list"),
+    save: (task) => ipcRenderer.invoke("automations-save", task),
+    remove: (id) => ipcRenderer.invoke("automations-delete", id),
+    toggle: (id, enabled) => ipcRenderer.invoke("automations-toggle", id, enabled),
+    pauseAll: (paused) => ipcRenderer.invoke("automations-pause-all", paused),
+    loginItem: (open) => ipcRenderer.invoke("automations-login-item", open),
+    onEvent: (cb) => {
+      const h = (_e: unknown, event: Parameters<typeof cb>[0]) => cb(event)
+      ipcRenderer.on("automation-event", h)
+      return () => ipcRenderer.removeListener("automation-event", h)
+    },
+  },
   models: {
     catalog: () => ipcRenderer.invoke("models-catalog"),
     platformLive: () => ipcRenderer.invoke("models-platform-live"),

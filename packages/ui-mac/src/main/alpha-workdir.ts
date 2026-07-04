@@ -93,6 +93,30 @@ export function ensureAlphaScaffold(projectDir: string): string | null {
   return root
 }
 
+/**
+ * 通用 run 目录写入(REQ-021 自动化用;复用 .alpha 守卫 + 原子写)。files = 文件名 → 文本内容;
+ * 文件名过 sanitizeArtifactName(拒路径分隔/dotfile)。失败返回 reason,不抛。
+ */
+export function writeRunFiles(
+  projectDir: string,
+  runId: string,
+  files: Record<string, string>,
+): { ok: true; dir: string } | { ok: false; reason: string } {
+  if (!isSafeRunId(runId)) return { ok: false, reason: "unsafe run id" }
+  if (!ensureAlphaScaffold(projectDir)) return { ok: false, reason: "invalid project dir" }
+  const dir = safeResolveInAlpha(projectDir, "runs", runId)
+  if (!dir) return { ok: false, reason: "path escapes .alpha" }
+  try {
+    fs.mkdirSync(dir, { recursive: true })
+    for (const [name, content] of Object.entries(files)) {
+      writeFileAtomic(path.join(dir, sanitizeArtifactName(name, "file.txt")), content)
+    }
+    return { ok: true, dir }
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : String(error) }
+  }
+}
+
 export type SaveRunDeps = {
   status: (jobId: string) => Promise<CloudResult<CloudJobStatus>>
   artifacts: (jobId: string) => Promise<CloudResult<CloudArtifactList>>
