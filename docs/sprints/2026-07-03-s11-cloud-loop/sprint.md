@@ -15,7 +15,7 @@
 | T3 | C9 代码上云数据边界 mini-ADR:diff-only / secrets 过滤 / consent / 体积上限(与 T2 同场) | C9 | fable | ✅ PR #56 = ADR-021(双通道边界 + B16 挂钩;§2 待实现项随 B3 记账) |
 | **Track B —— 呈现底座(launch-blocker #6)** | | | | |
 | T4 | B11 统一错误/健康呈现面 + 账户 banner:store.error 全渲染、统一 toast/错误体系一处定义、32 失败点复扫 ≥90% 有反馈;收编 B20 弱网降级 UX + B23 配置清零显式告警 | B11 / B20 / B23 | opus 实现 · fable 审 | ☐ |
-| T5 | B5 尾项:sidecar 崩溃自愈(REQ-003 终态判定已收,解锁) | B5(尾项) | opus | ☐ |
+| T5 | B5 尾项:sidecar 崩溃自愈(REQ-003 终态判定已收,解锁) | B5(尾项) | opus | ✅ PR #57(退避自愈 + 未健康不 reload;真机 kill -9 待验) |
 | **Track C —— 安全纵深** | | | | |
 | T6 | C24:先撤 `ACAO:*` 注入(windows.ts)→ renderer CSP 落地(connect-src 收敛)→ 隔离 dev + 打包双态逐屏走查 + exfil 拦截取证;**断 renderer 即回退** | C24 | fable | ☐ |
 | T7 | C27 + C25:fuses(关 RunAsNode,先评估 utilityProcess/sidecar 依赖)+ asar-integrity + entitlements 逐项收紧;`open-path`/`ext-install-plugin` exec 触达面收紧;打包签名+公证复验(stapler/spctl)+ DISTRIBUTION.md 记账 | C27 / C25 | fable | ☐ |
