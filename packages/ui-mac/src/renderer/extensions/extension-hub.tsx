@@ -290,7 +290,9 @@ export function ExtensionHub(props: {
         else flash(t("alpha.ext.added"), "success")
       } else if (e.type === "skill") {
         const res = await ext.installSkill(e)
-        flash(res.ok ? t("alpha.ext.added") : `${t("alpha.ext.installFailed")}${res.reason ? `: ${res.reason}` : ""}`, res.ok ? "success" : "error")
+        if (!res.ok) flash(`${t("alpha.ext.installFailed")}${res.reason ? `: ${res.reason}` : ""}`, "error")
+        else if (res.reason === "reload-pending") flash(t("alpha.ext.addedPendingReload"))
+        else flash(t("alpha.ext.added"), "success")
       } else if (e.type === "plugin") {
         const res = await ext.installPlugin(e)
         flash(res.ok ? t("alpha.ext.pluginRestart") : `${t("alpha.ext.installFailed")}${res.reason ? `: ${res.reason}` : ""}`, res.ok ? "success" : "error")
@@ -312,7 +314,7 @@ export function ExtensionHub(props: {
           ? await ext.createSkill(name, fDesc(), fBody())
           : await ext.createAgent(name, { description: fDesc(), model: fModel() || undefined, system: fBody() })
       if (res.ok) {
-        flash(t("alpha.ext.added"), "success")
+        flash(res.reason === "reload-pending" ? t("alpha.ext.addedPendingReload") : t("alpha.ext.added"), "success")
         setFName("")
         setFDesc("")
         setFModel("")

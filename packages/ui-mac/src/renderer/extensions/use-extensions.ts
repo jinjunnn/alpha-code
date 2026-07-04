@@ -56,6 +56,8 @@ export interface ExtensionsApi {
   createAgent(name: string, opts: { description?: string; model?: string; system: string }): Promise<ActionResult>
   /** Install a catalog skill entry by writing its SKILL.md. */
   installSkill(entry: CatalogEntry): Promise<ActionResult>
+  /** REQ-018 T4:释放全部引擎实例(POST /global/dispose)→ 下一请求惰性重建重扫,免重启生效。 */
+  refreshEngine(): Promise<boolean>
   /** Append a plugin to config `plugins` (opencode auto-installs on next launch; needs restart). */
   installPlugin(entry: CatalogEntry): Promise<ActionResult>
 }
@@ -223,6 +225,22 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     return entry.name in store.mcp
   }
 
+  // REQ-018 T4(免重启生效):fs 类安装(skill/agent/plugin)写盘后,引擎按目录缓存的实例不会
+  // 重扫(上游 InstanceState 无文件监听)——不触发重建就是 placebo 安装。S12 spike 实测:
+  // POST /global/dispose 8ms 返回,下一请求 ~100-300ms 惰性重建并重扫,经 symlink 桥的
+  // skill/agent 立即可见;系统提示与工具集每条消息重组 → 当前会话下一条消息即可用。残余风险
+  // (dispose 打断活跃流)在 T8 真机批验证;失败兜底 =「待重载」态(receipts ⨝ SDK,T6)。
+  async function refreshEngine(): Promise<boolean> {
+    const c = client
+    if (!c) return false
+    try {
+      const r = await withTimeout((c as any).global.dispose() as Promise<unknown>, 5000)
+      return r !== TIMED_OUT
+    } catch {
+      return false
+    }
+  }
+
   async function checkRuntime(tools: string[] | undefined): Promise<RuntimeCheck> {
     if (!tools || tools.length === 0) return { ok: true }
     for (const tool of tools) {
@@ -270,7 +288,9 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
   })
 
   async function createSkill(name: string, description: string, body: string): Promise<ActionResult> {
-    return window.api.ext.writeSkill(name, description, body)
+    const r = await window.api.ext.writeSkill(name, description, body)
+    if (r.ok && !(await refreshEngine())) return { ok: true, reason: "reload-pending" }
+    return r
   }
 
   async function createAgent(
@@ -280,7 +300,9 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     const lines = ["---", `description: ${(opts.description ?? name).replace(/\r?\n/g, " ")}`]
     if (opts.model) lines.push(`model: ${opts.model}`)
     lines.push("---", "", opts.system, "")
-    return window.api.ext.writeAgent(name, lines.join("\n"))
+    const r = await window.api.ext.writeAgent(name, lines.join("\n"))
+    if (r.ok && !(await refreshEngine())) return { ok: true, reason: "reload-pending" }
+    return r
   }
 
   async function installSkill(entry: CatalogEntry): Promise<ActionResult> {
@@ -290,7 +312,9 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     // SKILL.md (+ assets) into the user's scanned skills dir. Honest failure when this build doesn't
     // bundle that asset yet (e.g. the Apache-2.0 entries pending content drop) — no placeholder stub.
     if (spec.source === "builtin" && spec.builtinAssetKey) {
-      return window.api.ext.installBuiltinSkill(spec.builtinAssetKey, entry.name, undefined, metaFor(entry))
+      const r = await window.api.ext.installBuiltinSkill(spec.builtinAssetKey, entry.name, undefined, metaFor(entry))
+      if (r.ok && !(await refreshEngine())) return { ok: true, reason: "reload-pending" }
+      return r
     }
     return { ok: false, reason: "该技能内容尚未随此版本打包" }
   }
@@ -298,7 +322,11 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
   async function installPlugin(entry: CatalogEntry): Promise<ActionResult> {
     const spec = entry.installSpec
     if (!spec || spec.kind !== "plugin") return { ok: false, reason: "not a plugin entry" }
-    return window.api.ext.installPlugin(spec.package, metaFor(entry))
+    const r = await window.api.ext.installPlugin(spec.package, metaFor(entry))
+    // dispose 触发实例重建 → 引擎后台 npm 安装立刻开始(而非等下次启动);失败不降级为错误,
+    // config 已落盘、下次重建自然装载。
+    if (r.ok) await refreshEngine()
+    return r
   }
 
   return {
@@ -312,6 +340,7 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     createSkill,
     createAgent,
     installSkill,
+    refreshEngine,
     installPlugin,
   }
 }
