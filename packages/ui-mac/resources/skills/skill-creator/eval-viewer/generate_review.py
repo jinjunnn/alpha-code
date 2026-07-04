@@ -276,7 +276,16 @@ def generate_html(
     if benchmark:
         embedded["benchmark"] = benchmark
 
-    data_json = json.dumps(embedded)
+    # alpha security patch (2026-07-04, diverges from upstream skill-creator): the embedded data
+    # carries model-produced eval output (semi-untrusted) and is interpolated into a <script> tag, so
+    # a `</script>` sequence in the content would break out and inject. Escape `</` and the JS line
+    # separators before embedding. Re-apply this on any re-vendor of skill-creator.
+    data_json = (
+        json.dumps(embedded)
+        .replace("</", "<\\/")
+        .replace(" ", "\\u2028")
+        .replace(" ", "\\u2029")
+    )
 
     return template.replace("/*__EMBEDDED_DATA__*/", f"const EMBEDDED_DATA = {data_json};")
 
