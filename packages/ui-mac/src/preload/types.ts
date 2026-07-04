@@ -279,6 +279,16 @@ export type ElectronAPI = {
     ) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
     // REQ-019 T3:详情页 SKILL.md 预览(只读,资产键校验 + 256KB 帽;未打包时诚实失败)
     readBuiltinSkill: (builtinAssetKey: string) => Promise<{ ok: true; content: string } | { ok: false; reason: string }>
+    // REQ-019 T6:导入。folder = 校验 SKILL.md frontmatter → 复制入 .alpha + receipt(imported);
+    // git = https-only 浅克隆临时目录 → 同校验。外来内容绝不执行,symlink 不复制。
+    importSkillFolder: (
+      srcDir: string,
+      target?: InstallTarget,
+    ) => Promise<{ ok: true; files?: string[]; name?: string } | { ok: false; reason: string }>
+    importSkillGit: (
+      url: string,
+      target?: InstallTarget,
+    ) => Promise<{ ok: true; files?: string[]; name?: string } | { ok: false; reason: string }>
     // REQ-018 安装账本:global(~/.alpha)+ project(<dir>/.alpha)receipts 合并只读视图
     listInstalls: (projectDir?: string) => Promise<InstallLedgerView>
     // REQ-018 T6:按 receipt 精确卸载(删文件/拆桥/去 config 项/吊销密钥/去账)

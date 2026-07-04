@@ -1340,3 +1340,15 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   opacity: 0.6;
   cursor: default;
 }
+
+/* ── REQ-019 T6:导入反馈 ───────────────────────────────────────────────────── */
+.alpha-ext-import-err {
+  margin: 10px 0 0;
+  font-size: var(--a-text-sm);
+  color: var(--a-error);
+  line-height: var(--a-leading-snug);
+}
+.alpha-ext-import-card:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

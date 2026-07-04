@@ -152,6 +152,45 @@ export function ExtensionHub(props: {
   // (ALPHA_MIGRATE_ENABLE=1,A6 真机验证后)且有候选时显示迁移条。
   const [migrateCandidates, setMigrateCandidates] = createSignal<CatalogEntry[]>([])
   const [migrating, setMigrating] = createSignal(false)
+  // T6:导入状态。importDialog = git/npm 输入弹窗;importBusy/importErr 行内反馈(B11)。
+  const [importDialog, setImportDialog] = createSignal<"git" | "npm" | null>(null)
+  const [importInput, setImportInput] = createSignal("")
+  const [importBusy, setImportBusy] = createSignal(false)
+  const [importErr, setImportErr] = createSignal("")
+
+  const runImportFolder = async () => {
+    setImportErr("")
+    const picked = await window.api.openDirectoryPicker({ title: t("alpha.ext.importFolderPick") })
+    const dir = Array.isArray(picked) ? picked[0] : picked
+    if (!dir) return
+    setImportBusy(true)
+    try {
+      const r = await ext.importSkillFolder(dir)
+      if (r.ok) flash(t("alpha.ext.imported", { name: r.name ?? "" }), "success")
+      else setImportErr(r.reason ?? t("alpha.ext.installFailed"))
+    } finally {
+      setImportBusy(false)
+    }
+  }
+  const runImportDialog = async () => {
+    const kind = importDialog()
+    const value = importInput().trim()
+    if (!kind || !value) return
+    setImportBusy(true)
+    setImportErr("")
+    try {
+      const r = kind === "git" ? await ext.importSkillGit(value) : await ext.importNpmPlugin(value)
+      if (r.ok) {
+        flash(kind === "git" ? t("alpha.ext.imported", { name: (r as { name?: string }).name ?? "" }) : t("alpha.ext.pluginRestart"), "success")
+        setImportDialog(null)
+        setImportInput("")
+      } else {
+        setImportErr(r.reason ?? t("alpha.ext.installFailed"))
+      }
+    } finally {
+      setImportBusy(false)
+    }
+  }
 
   // Tab navigation always leaves the detail page (a detail is a drill-down of its tab).
   const gotoSection = (key: HubSection) => {
@@ -1137,14 +1176,22 @@ export function ExtensionHub(props: {
                       <div class="alpha-ext-import">
                         <SecRow label={t("alpha.ext.importFrom")} />
                         <div class="alpha-ext-import-row">
-                          <button class="alpha-ext-import-card" onClick={comingSoon}>
+                          <button class="alpha-ext-import-card" disabled={importBusy()} onClick={() => void runImportFolder()}>
                             <Svg d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H3z" />
                             <span>
                               <b>{t("alpha.ext.importFolder")}</b>
                               <small>{t("alpha.ext.importFolderSub")}</small>
                             </span>
                           </button>
-                          <button class="alpha-ext-import-card" onClick={comingSoon}>
+                          <button
+                            class="alpha-ext-import-card"
+                            disabled={importBusy()}
+                            onClick={() => {
+                              setImportErr("")
+                              setImportInput("")
+                              setImportDialog("git")
+                            }}
+                          >
                             <svg class="alpha-ic" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                               <circle cx="6" cy="6" r="2.5" stroke="currentColor" stroke-width="1.6" />
                               <circle cx="6" cy="18" r="2.5" stroke="currentColor" stroke-width="1.6" />
@@ -1156,7 +1203,15 @@ export function ExtensionHub(props: {
                               <small>{t("alpha.ext.importGitSub")}</small>
                             </span>
                           </button>
-                          <button class="alpha-ext-import-card" onClick={comingSoon}>
+                          <button
+                            class="alpha-ext-import-card"
+                            disabled={importBusy()}
+                            onClick={() => {
+                              setImportErr("")
+                              setImportInput("")
+                              setImportDialog("npm")
+                            }}
+                          >
                             <Svg d="M3 9l9-5 9 5-9 5zM3 9v6l9 5 9-5V9" />
                             <span>
                               <b>{t("alpha.ext.importNpm")}</b>
@@ -1164,6 +1219,13 @@ export function ExtensionHub(props: {
                             </span>
                           </button>
                         </div>
+                        {/* B11:导入失败行内呈现(folder 路径失败落这里;git/npm 失败落弹窗内) */}
+                        <Show when={importErr() && !importDialog()}>
+                          <p class="alpha-ext-import-err">{importErr()}</p>
+                        </Show>
+                        <Show when={importBusy() && !importDialog()}>
+                          <p class="alpha-ext-dnote">{t("alpha.ext.importing")}</p>
+                        </Show>
                       </div>
                     </div>
                   </Show>
@@ -1279,6 +1341,49 @@ export function ExtensionHub(props: {
               </div>
             )}
           </Show>
+        </Dialog>
+
+        {/* T6:导入输入弹窗(Git URL / npm 包名)。失败行内呈现于弹窗内(B11),成功 toast。 */}
+        <Dialog
+          open={!!importDialog()}
+          onClose={() => {
+            setImportDialog(null)
+            setImportErr("")
+          }}
+          besideSidebar
+          size="sm"
+          title={importDialog() === "git" ? t("alpha.ext.importGitTitle") : t("alpha.ext.importNpmTitle")}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setImportDialog(null)}>
+                {t("alpha.ext.cancel")}
+              </Button>
+              <Button variant="primary" disabled={importBusy() || !importInput().trim()} onClick={() => void runImportDialog()}>
+                {importBusy() ? t("alpha.ext.importing") : t("alpha.ext.importGo")}
+              </Button>
+            </>
+          }
+        >
+          <div class="alpha-ext-confirm">
+            <p class="alpha-ext-confirm-desc">
+              {importDialog() === "git" ? t("alpha.ext.importGitHint") : t("alpha.ext.importNpmHint")}
+            </p>
+            <input
+              class="alpha-ext-input alpha-mono"
+              placeholder={importDialog() === "git" ? "https://github.com/user/skill-repo" : "opencode-notify@0.3.1"}
+              value={importInput()}
+              onInput={(ev) => setImportInput(ev.currentTarget.value)}
+              onKeyDown={(ev) => {
+                if (ev.key === "Enter" && importInput().trim() && !importBusy()) void runImportDialog()
+              }}
+            />
+            <Show when={importDialog() === "npm"}>
+              <p class="alpha-ext-confirm-risk">⚠ {t("alpha.ext.pluginRisk")}</p>
+            </Show>
+            <Show when={importErr()}>
+              <p class="alpha-ext-import-err">{importErr()}</p>
+            </Show>
+          </div>
         </Dialog>
       </Portal>
     </Show>

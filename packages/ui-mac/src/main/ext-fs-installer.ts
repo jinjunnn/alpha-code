@@ -10,6 +10,7 @@
 // realpath anti-escape walk; asset keys confined to resources/skills.
 
 import { app } from "electron"
+import { execFile } from "node:child_process"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
@@ -18,6 +19,7 @@ import { bridgeItem, opencodeHomeDir, unbridgeItem } from "./alpha-bridge"
 import { addReceipt, alphaGlobalRoot, removeReceipt } from "./alpha-installs"
 import { alphaRoot, ensureAlphaScaffold } from "./alpha-workdir"
 import type { InstallMeta, InstallReceipt, InstallTarget } from "../preload/types"
+import { parseSkillFrontmatter, validGitUrl } from "./ext-import-validate"
 
 export type FsResult = { ok: true; files?: string[] } | { ok: false; reason: string }
 
@@ -289,4 +291,124 @@ export function removeFsInstall(type: "skill" | "agent", name: string, target?: 
   }
   removeReceipt(roots.alphaDir, type, name)
   return { ok: true, files: removed }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// REQ-019 T6:导入(folder / git)。外来内容纪律(PR #73 教训):只解析 frontmatter、只复制文件,
+// 绝不执行导入内容;git 先浅克隆到临时目录、校验通过才入 .alpha;symlink 一律不跟随不复制。
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+const IMPORT_MAX_TOTAL = 10 * 1024 * 1024 // 整个技能目录 10MB 帽
+const IMPORT_MAX_ENTRIES = 500
+const SKILL_MD_MAX = 256 * 1024
+
+
+// 递归收集可复制文件(拒 symlink、跳 .git/node_modules、计数与体积帽)。返回相对路径列表。
+function collectImportFiles(srcDir: string): { ok: true; files: string[] } | { ok: false; reason: string } {
+  const files: string[] = []
+  let total = 0
+  const walk = (rel: string): string | null => {
+    const abs = path.join(srcDir, rel)
+    const entries = fs.readdirSync(abs, { withFileTypes: true })
+    for (const entry of entries) {
+      if (entry.name === ".git" || entry.name === "node_modules" || entry.name === "__pycache__") continue
+      const childRel = rel ? path.join(rel, entry.name) : entry.name
+      if (entry.isSymbolicLink()) continue // 不跟随、不复制(防逃逸/防内容偷换)
+      if (entry.isDirectory()) {
+        const err = walk(childRel)
+        if (err) return err
+      } else if (entry.isFile()) {
+        const size = fs.statSync(path.join(srcDir, childRel)).size
+        total += size
+        files.push(childRel)
+        if (files.length > IMPORT_MAX_ENTRIES) return `文件数超过 ${IMPORT_MAX_ENTRIES} 上限`
+        if (total > IMPORT_MAX_TOTAL) return "目录超过 10MB 上限"
+      }
+    }
+    return null
+  }
+  try {
+    const err = walk("")
+    if (err) return { ok: false, reason: err }
+    return { ok: true, files }
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "failed to read folder" }
+  }
+}
+
+/** 导入本地技能文件夹:校验 SKILL.md frontmatter → 逐文件复制入 .alpha + 桥 + receipt(imported)。 */
+export function importSkillFolder(srcDir: string, target?: InstallTarget): FsResult & { name?: string } {
+  if (typeof srcDir !== "string" || !path.isAbsolute(srcDir)) return { ok: false, reason: "invalid folder" }
+  let real: string
+  try {
+    real = fs.realpathSync(srcDir)
+    if (!fs.statSync(real).isDirectory()) return { ok: false, reason: "不是文件夹" }
+  } catch {
+    return { ok: false, reason: "文件夹不存在" }
+  }
+  const skillMd = path.join(real, "SKILL.md")
+  let text: string
+  try {
+    if (fs.statSync(skillMd).size > SKILL_MD_MAX) return { ok: false, reason: "SKILL.md 过大(>256KB)" }
+    text = fs.readFileSync(skillMd, "utf8")
+  } catch {
+    return { ok: false, reason: "文件夹内没有 SKILL.md" }
+  }
+  const fm = parseSkillFrontmatter(text)
+  if (!fm.ok) return fm
+  const name = fm.name
+  const roots = resolveRoots(target)
+  if ("error" in roots) return { ok: false, reason: roots.error }
+  const destDir = safeResolveUnder(roots.alphaDir, "skills", name)
+  if (!destDir) return { ok: false, reason: "refused: path escapes alpha root" }
+  if (fs.existsSync(destDir)) return { ok: false, reason: `同名技能已存在(${name}),请先卸载再导入` }
+  const listed = collectImportFiles(real)
+  if (!listed.ok) return listed
+  try {
+    for (const rel of listed.files) {
+      const destFile = path.join(destDir, rel)
+      fs.mkdirSync(path.dirname(destFile), { recursive: true })
+      fs.copyFileSync(path.join(real, rel), destFile)
+    }
+  } catch (error) {
+    fs.rmSync(destDir, { recursive: true, force: true }) // 半成品不留
+    return { ok: false, reason: error instanceof Error ? error.message : "复制失败" }
+  }
+  const bridge = bridgeItem(roots.alphaDir, roots.opencodeDir, "skills", name)
+  if (!bridge.ok) return { ok: false, reason: `已写入 ${destDir},但引擎桥接失败:${bridge.reason}` }
+  const files = [destDir, ...bridge.created]
+  recordReceipt(roots, { name, type: "skill", files, origin: "imported" })
+  return { ok: true, files, name }
+}
+
+/** 导入 Git 仓库技能:https-only 浅克隆到临时目录 → 定位 SKILL.md(根或唯一子目录)→ 走文件夹导入。 */
+export async function importSkillGit(url: string, target?: InstallTarget): Promise<FsResult & { name?: string }> {
+  if (!validGitUrl(url)) return { ok: false, reason: "仅支持 https Git 地址" }
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-import-git-"))
+  try {
+    await new Promise<void>((resolve, reject) => {
+      execFile(
+        "git",
+        ["clone", "--depth", "1", "--single-branch", "--no-tags", url, tmp],
+        { timeout: 60_000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } },
+        (err, _stdout, stderr) => (err ? reject(new Error(oneLine(String(stderr || err.message)).slice(0, 200))) : resolve()),
+      )
+    })
+    let src = tmp
+    if (!fs.existsSync(path.join(src, "SKILL.md"))) {
+      const dirs = fs
+        .readdirSync(tmp, { withFileTypes: true })
+        .filter((e) => e.isDirectory() && e.name !== ".git")
+        .map((e) => e.name)
+      const candidate = dirs.length === 1 ? path.join(tmp, dirs[0]) : null
+      if (!candidate || !fs.existsSync(path.join(candidate, "SKILL.md")))
+        return { ok: false, reason: "仓库内未找到 SKILL.md(根目录或唯一子目录)" }
+      src = candidate
+    }
+    return importSkillFolder(src, target)
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "克隆失败" }
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
 }
