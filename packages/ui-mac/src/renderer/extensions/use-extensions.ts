@@ -26,13 +26,18 @@ const metaFor = (entry: CatalogEntry) => ({ catalogId: entry.id, version: CATALO
 
 type Client = ReturnType<typeof createOpencodeClient>
 
-/** An agent the engine knows about (SDK app.agents) — built-in (native) or alpha-created. */
+/** An agent the engine knows about (SDK app.agents) — built-in (native) or alpha-created.
+ *  REQ-019 T3:补详情页所需字段(model/variant/prompt/permission),形状 = SDK v2 Agent。 */
 export interface HubAgent {
   name: string
   description?: string
   mode: "subagent" | "primary" | "all"
   native?: boolean
   hidden?: boolean
+  model?: { modelID: string; providerID: string }
+  variant?: string
+  prompt?: string
+  permission?: { permission: string; pattern: string; action: string }[]
 }
 
 export interface ExtensionsStore {

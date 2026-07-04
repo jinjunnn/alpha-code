@@ -198,6 +198,8 @@
     "slot:user-message-text"
   ],
   "knownDead": [
+    "action:allow",
+    "action:deny",
     "component:session-composer",
     "component:session-new-composer",
     "slot:button",

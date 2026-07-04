@@ -188,6 +188,23 @@ function resourcesRoot(): string {
 const SAFE_ASSET_KEY = /^skills\/[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
 
 /**
+ * Read a bundled builtin skill's SKILL.md for the detail page (REQ-019 T3). Read-only, key
+ * validated against the resources/skills tree, size-capped. Fails honestly when the asset isn't
+ * bundled in this build (same wording as install).
+ */
+export function readBuiltinSkill(builtinAssetKey: string): { ok: true; content: string } | { ok: false; reason: string } {
+  if (!SAFE_ASSET_KEY.test(builtinAssetKey)) return { ok: false, reason: "invalid asset key" }
+  const file = path.join(resourcesRoot(), builtinAssetKey, "SKILL.md")
+  try {
+    if (!fs.existsSync(file)) return { ok: false, reason: "技能内容未随此版本打包" }
+    if (fs.statSync(file).size > 256 * 1024) return { ok: false, reason: "SKILL.md 过大,略过预览" }
+    return { ok: true, content: fs.readFileSync(file, "utf8") }
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "failed to read skill" }
+  }
+}
+
+/**
  * Install a builtin (app-bundled) skill: copy resources/<builtinAssetKey>/ into the alpha truth
  * root + bridge + receipt. Fails honestly when the asset isn't bundled in this build, rather than
  * writing a misleading placeholder.

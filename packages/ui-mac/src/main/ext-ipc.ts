@@ -11,7 +11,7 @@ import { listInstalls } from "./alpha-installs"
 import { fileifyMcpSecrets, removeMcpServerSecrets } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy } from "./alpha-migrate"
 import { configHealth, persistMcp, persistPlugin, removeMcp, removePlugin } from "./ext-config"
-import { installBuiltinSkill, removeFsInstall, writeAgent, writeSkill } from "./ext-fs-installer"
+import { installBuiltinSkill, readBuiltinSkill, removeFsInstall, writeAgent, writeSkill } from "./ext-fs-installer"
 
 // GUI apps on macOS launch with a minimal PATH (no Homebrew), so augment it before `which` or we'd
 // false-negative tools the user actually has installed.
@@ -72,6 +72,10 @@ export function registerExtIpcHandlers(userDataPath: string) {
     "ext-install-builtin-skill",
     (_event: IpcMainInvokeEvent, builtinAssetKey: string, name: string, target?: InstallTarget, meta?: InstallMeta) =>
       installBuiltinSkill(builtinAssetKey, name, target, meta),
+  )
+  // REQ-019 T3:详情页 SKILL.md 预览(只读,资产键校验 + 体积帽)
+  ipcMain.handle("ext-read-builtin-skill", (_event: IpcMainInvokeEvent, builtinAssetKey: string) =>
+    readBuiltinSkill(builtinAssetKey),
   )
   // REQ-018 安装账本:合并只读视图(global ~/.alpha + 可选 project .alpha)
   ipcMain.handle("ext-list-installs", (_event: IpcMainInvokeEvent, projectDir?: string) => listInstalls(projectDir))

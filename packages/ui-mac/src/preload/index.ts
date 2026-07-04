@@ -146,6 +146,7 @@ const api: ElectronAPI = {
     installPlugin: (pkg, meta) => ipcRenderer.invoke("ext-install-plugin", pkg, meta),
     installBuiltinSkill: (builtinAssetKey, name, target, meta) =>
       ipcRenderer.invoke("ext-install-builtin-skill", builtinAssetKey, name, target, meta),
+    readBuiltinSkill: (builtinAssetKey) => ipcRenderer.invoke("ext-read-builtin-skill", builtinAssetKey),
     listInstalls: (projectDir) => ipcRenderer.invoke("ext-list-installs", projectDir),
     uninstall: (receipt) => ipcRenderer.invoke("ext-uninstall", receipt),
     migrateScan: () => ipcRenderer.invoke("ext-migrate-scan"),

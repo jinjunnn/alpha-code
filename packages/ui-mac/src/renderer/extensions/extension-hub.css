@@ -1209,3 +1209,102 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   color: var(--a-warning);
   line-height: var(--a-leading-snug);
 }
+
+/* ── REQ-019 T3:详情页类型专属区块 ─────────────────────────────────────────── */
+.alpha-ext-dsub {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.alpha-ext-dsub-t {
+  font-size: 11px;
+  font-weight: var(--a-weight-medium);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--a-text-tertiary);
+}
+.alpha-ext-dtools {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.alpha-ext-dtool {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: var(--a-text-sm);
+}
+.alpha-ext-dtool code {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  font-family: var(--a-font-mono);
+  font-size: 11.5px;
+  background: var(--a-bg-muted);
+  border-radius: 5px;
+  padding: 1px 6px;
+  overflow-wrap: anywhere; /* 超长 pattern(如 external_directory 绝对路径)换行,不许横向撑破 */
+}
+.alpha-ext-dtool span {
+  color: var(--a-text-tertiary);
+  min-width: 0;
+}
+.alpha-ext-dtool span[data-action="deny"] {
+  color: var(--a-error);
+}
+.alpha-ext-dtool span[data-action="allow"] {
+  color: var(--a-success);
+}
+.alpha-ext-ddoc {
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  padding: 12px 14px;
+  background: var(--a-bg-subtle);
+  border: 1px solid var(--a-border-faint);
+  border-radius: 10px;
+  font-family: var(--a-font-mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--a-text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.alpha-ext-dprompt {
+  margin-top: 14px;
+}
+.alpha-ext-dprompt summary {
+  cursor: pointer;
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+  color: var(--a-text-secondary);
+  padding: 4px 0;
+}
+.alpha-ext-dprompt summary:hover {
+  color: var(--a-text);
+}
+.alpha-ext-dprompt[open] summary {
+  margin-bottom: 8px;
+}
+.alpha-ext-dbundle-n {
+  flex: none;
+  width: 18px;
+  font-family: var(--a-font-mono);
+  font-size: 11px;
+  color: var(--a-text-disabled);
+  text-align: right;
+}
+.alpha-ext-dnote[data-err] {
+  color: var(--a-error);
+}
+.alpha-ext-verify-note[data-info] {
+  background: var(--a-accent-subtle);
+  border-color: color-mix(in srgb, var(--a-accent) 25%, transparent);
+}
+.alpha-ext-verify-note[data-info] b {
+  color: var(--a-accent);
+}
+.alpha-ext-dbundle-row .alpha-ext-add {
+  margin-left: 4px;
+}
