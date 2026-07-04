@@ -6,7 +6,8 @@
     "redistributable=false 的条目不得把其文件内置进 app,只能运行时远程拉或引导用户自装。",
     "Anthropic document-skills(docx/xlsx/pptx/pdf)源码可见但禁止再分发,故本目录不收。",
     "MCP command/version 全部钉精确版本(A2/T1.5):npx `@pkg@x.y.z` / uvx `pkg@x.y.z`,消除每启动在线解析风暴。钉的值 = 更新当日各包 latest,行为与不钉一致、仅冻结确定性。升级 = 手动 bump(见 npm/pypi)。存量用户配置的一键钉版本迁移(T1.5 第二半)仍待做。",
-    "内置 skill 资产(builtinAssetKey → resources/skills/):alpha-upstream-sync / safe-refactor(MIT,自写)+ skill-creator(Apache-2.0,Anthropic 官方,S12 T7 已打包,见 NOTICE)。mcp-builder / canvas-design / brand-guidelines 尚无可信来源打包 → 安装时诚实失败(非占位),待授权资产落地后补。"
+    "内置 skill 资产(builtinAssetKey → resources/skills/):alpha-upstream-sync / safe-refactor(MIT,自写)+ skill-creator(Apache-2.0,Anthropic 官方,S12 T7 已打包,见 NOTICE)。mcp-builder / canvas-design / brand-guidelines 尚无可信来源打包 → 安装时诚实失败(非占位),待授权资产落地后补。",
+    "tools[]/hooks[] 是精选元数据(详情页展示用),非全集;引擎无 tools 查询路由,实时探测为 flag 内 V2(REQ-019 T8)。标 _verify 条目的 tools[] 同属待核实。"
   ],
   "entries": [
     {
@@ -22,10 +23,21 @@
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
-        "command": ["uvx", "markitdown-mcp@0.0.1a4"],
+        "command": [
+          "uvx",
+          "markitdown-mcp@0.0.1a4"
+        ],
         "requiredEnvVars": [],
-        "runtimeDep": ["uv"]
-      }
+        "runtimeDep": [
+          "uv"
+        ]
+      },
+      "tools": [
+        {
+          "name": "convert_to_markdown",
+          "description": "把文件 / URL(PDF/Word/PPT/Excel/图片/HTML)转成 Markdown"
+        }
+      ]
     },
     {
       "id": "mcp:filesystem",
@@ -40,11 +52,40 @@
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
-        "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem@2026.1.14", "{workspace}"],
+        "command": [
+          "npx",
+          "-y",
+          "@modelcontextprotocol/server-filesystem@2026.1.14",
+          "{workspace}"
+        ],
         "requiredEnvVars": [],
-        "runtimeDep": ["node"],
+        "runtimeDep": [
+          "node"
+        ],
         "_note": "{workspace} 安装时替换为当前项目目录;该路径即此 MCP 的可访问白名单。"
-      }
+      },
+      "tools": [
+        {
+          "name": "read_text_file",
+          "description": "读取白名单目录内的文件"
+        },
+        {
+          "name": "write_file",
+          "description": "写入 / 覆盖文件"
+        },
+        {
+          "name": "edit_file",
+          "description": "按 diff 编辑文件"
+        },
+        {
+          "name": "list_directory",
+          "description": "列目录"
+        },
+        {
+          "name": "search_files",
+          "description": "按名称递归检索文件"
+        }
+      ]
     },
     {
       "id": "mcp:fetch",
@@ -59,10 +100,21 @@
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
-        "command": ["uvx", "mcp-server-fetch@2026.6.4"],
+        "command": [
+          "uvx",
+          "mcp-server-fetch@2026.6.4"
+        ],
         "requiredEnvVars": [],
-        "runtimeDep": ["uv"]
-      }
+        "runtimeDep": [
+          "uv"
+        ]
+      },
+      "tools": [
+        {
+          "name": "fetch",
+          "description": "抓取 URL 并转 Markdown(可分段续读)"
+        }
+      ]
     },
     {
       "id": "mcp:playwright",
@@ -77,11 +129,43 @@
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
-        "command": ["npx", "-y", "@playwright/mcp@0.0.77"],
+        "command": [
+          "npx",
+          "-y",
+          "@playwright/mcp@0.0.77"
+        ],
         "requiredEnvVars": [],
-        "runtimeDep": ["node"],
+        "runtimeDep": [
+          "node"
+        ],
         "_verify": "首次浏览时 Playwright 需浏览器内核:默认下载 Chromium(~150MB,中国区 egress 慢),或在 command 末尾加 \"--browser\",\"chrome\" 复用系统已装 Chrome(免下载但需已装)。runtimeDep 只能 which 到 node,内核下载发生在运行时而非安装时 → A6 必须桌面实测首个 navigate 能否真起浏览器。"
-      }
+      },
+      "tools": [
+        {
+          "name": "browser_navigate",
+          "description": "打开网页"
+        },
+        {
+          "name": "browser_click",
+          "description": "点击页面元素"
+        },
+        {
+          "name": "browser_type",
+          "description": "输入文本 / 填表单"
+        },
+        {
+          "name": "browser_snapshot",
+          "description": "读取页面可访问性快照(供模型理解页面)"
+        },
+        {
+          "name": "browser_take_screenshot",
+          "description": "截图"
+        },
+        {
+          "name": "browser_evaluate",
+          "description": "在页面内执行 JS"
+        }
+      ]
     },
     {
       "id": "mcp:git",
@@ -96,10 +180,40 @@
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
-        "command": ["uvx", "mcp-server-git@2026.6.16", "--repository", "{workspace}"],
+        "command": [
+          "uvx",
+          "mcp-server-git@2026.6.16",
+          "--repository",
+          "{workspace}"
+        ],
         "requiredEnvVars": [],
-        "runtimeDep": ["uv", "git"]
-      }
+        "runtimeDep": [
+          "uv",
+          "git"
+        ]
+      },
+      "tools": [
+        {
+          "name": "git_status",
+          "description": "工作区状态"
+        },
+        {
+          "name": "git_diff",
+          "description": "查看改动 diff"
+        },
+        {
+          "name": "git_log",
+          "description": "提交历史"
+        },
+        {
+          "name": "git_add",
+          "description": "暂存文件"
+        },
+        {
+          "name": "git_commit",
+          "description": "提交"
+        }
+      ]
     },
     {
       "id": "mcp:github",
@@ -114,11 +228,41 @@
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
-        "command": ["npx", "-y", "@modelcontextprotocol/server-github@2025.4.8"],
-        "requiredEnvVars": ["GITHUB_PERSONAL_ACCESS_TOKEN"],
-        "runtimeDep": ["node"],
+        "command": [
+          "npx",
+          "-y",
+          "@modelcontextprotocol/server-github@2025.4.8"
+        ],
+        "requiredEnvVars": [
+          "GITHUB_PERSONAL_ACCESS_TOKEN"
+        ],
+        "runtimeDep": [
+          "node"
+        ],
         "_verify": "GitHub 官方 MCP 已迁向 Go 二进制及 remote 端点;落地前确认用 npm 包还是 remote+OAuth。token 走 keychain 占位,不硬编码。"
-      }
+      },
+      "tools": [
+        {
+          "name": "search_repositories",
+          "description": "检索仓库"
+        },
+        {
+          "name": "get_file_contents",
+          "description": "读取仓库文件"
+        },
+        {
+          "name": "create_issue",
+          "description": "新建 issue"
+        },
+        {
+          "name": "create_pull_request",
+          "description": "发起 PR"
+        },
+        {
+          "name": "list_issues",
+          "description": "列出 issue"
+        }
+      ]
     },
     {
       "id": "mcp:feishu",
@@ -133,12 +277,41 @@
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
-        "command": ["npx", "-y", "@larksuiteoapi/lark-mcp@0.5.1"],
-        "requiredEnvVars": ["APP_ID", "APP_SECRET"],
-        "runtimeDep": ["node"],
-        "mirrorCommand": ["npx", "-y", "--registry", "https://registry.npmmirror.com", "@larksuiteoapi/lark-mcp@0.5.1"],
+        "command": [
+          "npx",
+          "-y",
+          "@larksuiteoapi/lark-mcp@0.5.1"
+        ],
+        "requiredEnvVars": [
+          "APP_ID",
+          "APP_SECRET"
+        ],
+        "runtimeDep": [
+          "node"
+        ],
+        "mirrorCommand": [
+          "npx",
+          "-y",
+          "--registry",
+          "https://registry.npmmirror.com",
+          "@larksuiteoapi/lark-mcp@0.5.1"
+        ],
         "_verify": "确认 larksuite/lark-openapi-mcp 的精确 npm 包名与鉴权字段;凭据走 keychain。"
-      }
+      },
+      "tools": [
+        {
+          "name": "im.v1.message.create",
+          "description": "发送消息"
+        },
+        {
+          "name": "docx.v1.document.rawContent",
+          "description": "读取云文档内容"
+        },
+        {
+          "name": "bitable.v1.appTableRecord.search",
+          "description": "查询多维表格记录"
+        }
+      ]
     },
     {
       "id": "mcp:yuque",
@@ -153,12 +326,40 @@
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
-        "command": ["npx", "-y", "yuque-mcp-server@1.2.0"],
-        "requiredEnvVars": ["YUQUE_TOKEN"],
-        "runtimeDep": ["node"],
-        "mirrorCommand": ["npx", "-y", "--registry", "https://registry.npmmirror.com", "yuque-mcp-server@1.2.0"],
+        "command": [
+          "npx",
+          "-y",
+          "yuque-mcp-server@1.2.0"
+        ],
+        "requiredEnvVars": [
+          "YUQUE_TOKEN"
+        ],
+        "runtimeDep": [
+          "node"
+        ],
+        "mirrorCommand": [
+          "npx",
+          "-y",
+          "--registry",
+          "https://registry.npmmirror.com",
+          "yuque-mcp-server@1.2.0"
+        ],
         "_verify": "确认 yuque/yuque-mcp-server 精确发布名与 token 字段。"
-      }
+      },
+      "tools": [
+        {
+          "name": "search_docs",
+          "description": "检索知识库文档"
+        },
+        {
+          "name": "get_doc",
+          "description": "读取文档"
+        },
+        {
+          "name": "create_doc",
+          "description": "新建文档"
+        }
+      ]
     },
     {
       "id": "skill:skill-creator",
@@ -279,7 +480,13 @@
         "version": "0.3.1",
         "mirrorRegistry": "https://registry.npmmirror.com",
         "_verify": "社区插件:确认精确包名/维护状态/与当前 @opencode-ai/plugin 版本兼容。"
-      }
+      },
+      "hooks": [
+        {
+          "name": "event(session.idle)",
+          "description": "会话空闲 / 任务完成时发 macOS 系统通知"
+        }
+      ]
     },
     {
       "id": "bundle:office",
@@ -292,8 +499,16 @@
       "license": "mixed",
       "redistributable": true,
       "bundleItems": [
-        { "catalogEntryId": "mcp:markitdown", "optional": false, "installOrder": 1 },
-        { "catalogEntryId": "mcp:filesystem", "optional": false, "installOrder": 2 }
+        {
+          "catalogEntryId": "mcp:markitdown",
+          "optional": false,
+          "installOrder": 1
+        },
+        {
+          "catalogEntryId": "mcp:filesystem",
+          "optional": false,
+          "installOrder": 2
+        }
       ],
       "_verify": "再补一个 openpyxl 系 Excel-MCP(写 xlsx)+ 一页自写「办公」引导技能后加入。"
     },
@@ -308,8 +523,16 @@
       "license": "MIT",
       "redistributable": true,
       "bundleItems": [
-        { "catalogEntryId": "mcp:fetch", "optional": false, "installOrder": 1 },
-        { "catalogEntryId": "mcp:filesystem", "optional": false, "installOrder": 2 }
+        {
+          "catalogEntryId": "mcp:fetch",
+          "optional": false,
+          "installOrder": 1
+        },
+        {
+          "catalogEntryId": "mcp:filesystem",
+          "optional": false,
+          "installOrder": 2
+        }
       ]
     },
     {
@@ -323,8 +546,16 @@
       "license": "Apache-2.0",
       "redistributable": true,
       "bundleItems": [
-        { "catalogEntryId": "skill:canvas-design", "optional": false, "installOrder": 1 },
-        { "catalogEntryId": "skill:brand-guidelines", "optional": false, "installOrder": 2 }
+        {
+          "catalogEntryId": "skill:canvas-design",
+          "optional": false,
+          "installOrder": 1
+        },
+        {
+          "catalogEntryId": "skill:brand-guidelines",
+          "optional": false,
+          "installOrder": 2
+        }
       ]
     },
     {
@@ -338,10 +569,26 @@
       "license": "mixed",
       "redistributable": true,
       "bundleItems": [
-        { "catalogEntryId": "mcp:git", "optional": false, "installOrder": 1 },
-        { "catalogEntryId": "mcp:github", "optional": true, "installOrder": 2 },
-        { "catalogEntryId": "skill:mcp-builder", "optional": true, "installOrder": 3 },
-        { "catalogEntryId": "skill:skill-creator", "optional": true, "installOrder": 4 }
+        {
+          "catalogEntryId": "mcp:git",
+          "optional": false,
+          "installOrder": 1
+        },
+        {
+          "catalogEntryId": "mcp:github",
+          "optional": true,
+          "installOrder": 2
+        },
+        {
+          "catalogEntryId": "skill:mcp-builder",
+          "optional": true,
+          "installOrder": 3
+        },
+        {
+          "catalogEntryId": "skill:skill-creator",
+          "optional": true,
+          "installOrder": 4
+        }
       ]
     },
     {
@@ -355,8 +602,16 @@
       "license": "MIT",
       "redistributable": true,
       "bundleItems": [
-        { "catalogEntryId": "mcp:feishu", "optional": false, "installOrder": 1 },
-        { "catalogEntryId": "mcp:yuque", "optional": true, "installOrder": 2 }
+        {
+          "catalogEntryId": "mcp:feishu",
+          "optional": false,
+          "installOrder": 1
+        },
+        {
+          "catalogEntryId": "mcp:yuque",
+          "optional": true,
+          "installOrder": 2
+        }
       ],
       "_verify": "补钉钉(open-dingtalk 官方 MCP)条目后加入。"
     }

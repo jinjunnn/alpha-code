@@ -80,6 +80,11 @@ export interface CatalogEntry {
   installSpec?: InstallSpec
   /** Present for bundle entries — references other CatalogEntry ids to fan out at install time. */
   bundleItems?: BundleItem[]
+  /** MCP only (REQ-019 T3): curated tools the server provides — detail-page metadata, NOT
+   *  exhaustive (the engine exposes no tools-query route; live probing is a flagged V2). */
+  tools?: { name: string; description: string }[]
+  /** Plugin only (REQ-019 T3): hooks the plugin registers — detail-page metadata. */
+  hooks?: { name: string; description: string }[]
   /** Unverified claim carried from the catalog — surfaced as 「待核实」 on the detail page (D5). */
   _verify?: string
 }

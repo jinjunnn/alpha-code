@@ -5,7 +5,7 @@
 // 运行时依赖 → 所需密钥 → 操作区. T3 fills the type-specific blocks (tools[]/SKILL.md/hooks…);
 // T4 upgrades 数据边界/依赖 to live which-checks.
 
-import { createMemo, For, Show, type Accessor, type JSX } from "solid-js"
+import { createMemo, createResource, For, Show, type Accessor, type JSX } from "solid-js"
 import { t } from "../i18n"
 import type { CatalogEntry, McpInstallSpec, PluginInstallSpec, SkillInstallSpec } from "./catalog-types"
 import type { InstallReceipt } from "../../preload/types"
@@ -92,6 +92,13 @@ export function ExtensionDetail(props: {
     const e = entry()
     return e?.type === "mcp" ? props.ext.store.mcp[e.name] : undefined
   }
+
+  // REQ-019 T3:技能详情渲染 SKILL.md 全文。只有 builtin 资产可读(主进程只读 IPC,键校验 +
+  // 256KB 帽);未打包的诚实显示原因,不占位。
+  const [skillDoc] = createResource(
+    () => (entry() && skillSpec(entry()!)?.builtinAssetKey) || undefined,
+    (key) => window.api.ext.readBuiltinSkill(key),
+  )
 
   const header = createMemo(() => {
     const e = entry()
@@ -222,6 +229,7 @@ export function ExtensionDetail(props: {
         <Show when={entry()}>
           {(e) => (
             <>
+              {/* MCP:transport/命令/范围 + 精选工具列表(T3,catalog tools[];引擎无查询路由) */}
               <Show when={mcpSpec(e())}>
                 {(spec) => (
                   <>
@@ -239,39 +247,112 @@ export function ExtensionDetail(props: {
                       </FactRow>
                     </Show>
                     <FactRow label={t("alpha.ext.detailScope")}>{t("alpha.ext.scopeGlobal")}</FactRow>
-                  </>
-                )}
-              </Show>
-              <Show when={skillSpec(e())}>
-                {(spec) => (
-                  <>
-                    <FactRow label={t("alpha.ext.detailInstallDir")}>{t("alpha.ext.scopeGlobal")}</FactRow>
-                    <Show when={spec().source === "builtin" && !spec().builtinAssetKey}>
-                      <p class="alpha-ext-dnote">{t("alpha.ext.skillNoAsset")}</p>
+                    <Show when={(e().tools ?? []).length > 0}>
+                      <div class="alpha-ext-dsub">
+                        <div class="alpha-ext-dsub-t">{t("alpha.ext.detailTools")}</div>
+                        <div class="alpha-ext-dtools">
+                          <For each={e().tools}>
+                            {(tool) => (
+                              <div class="alpha-ext-dtool">
+                                <code>{tool.name}</code>
+                                <span>{tool.description}</span>
+                              </div>
+                            )}
+                          </For>
+                        </div>
+                        <p class="alpha-ext-dnote">{t("alpha.ext.toolsHint")}</p>
+                      </div>
                     </Show>
                   </>
                 )}
               </Show>
-              <Show when={pluginSpec(e())}>
+              {/* Skill:安装位置 + SKILL.md 全文(T3,builtin 资产只读预览) */}
+              <Show when={skillSpec(e())}>
                 {(spec) => (
-                  <FactRow label={t("alpha.ext.detailPackage")}>
-                    <code class="alpha-ext-dcode">
-                      {spec().package}
-                      {spec().version ? `@${spec().version}` : ""}
-                    </code>
-                  </FactRow>
+                  <>
+                    <FactRow label={t("alpha.ext.detailInstallDir")}>{t("alpha.ext.scopeGlobal")}</FactRow>
+                    <FactRow label={t("alpha.ext.detailTrigger")}>{e().description}</FactRow>
+                    <Show when={spec().builtinAssetKey} fallback={<p class="alpha-ext-dnote">{t("alpha.ext.skillNoAsset")}</p>}>
+                      <div class="alpha-ext-dsub">
+                        <div class="alpha-ext-dsub-t">{t("alpha.ext.detailSkillDoc")}</div>
+                        <Show when={!skillDoc.loading} fallback={<p class="alpha-ext-dnote">{t("alpha.ext.loading")}</p>}>
+                          <Show
+                            when={skillDoc()?.ok && skillDoc()}
+                            fallback={
+                              <p class="alpha-ext-dnote" data-err="">
+                                {(skillDoc() as { reason?: string } | undefined)?.reason ?? t("alpha.ext.skillNoAsset")}
+                              </p>
+                            }
+                          >
+                            {(doc) => <pre class="alpha-ext-ddoc">{(doc() as { content: string }).content}</pre>}
+                          </Show>
+                        </Show>
+                      </div>
+                    </Show>
+                  </>
                 )}
               </Show>
+              {/* Plugin:npm 包 + hooks 清单 + D4 澄清 + 风险与生效方式(T3) */}
+              <Show when={pluginSpec(e())}>
+                {(spec) => (
+                  <>
+                    <FactRow label={t("alpha.ext.detailPackage")}>
+                      <code class="alpha-ext-dcode">
+                        {spec().package}
+                        {spec().version ? `@${spec().version}` : ""}
+                      </code>
+                    </FactRow>
+                    <Show when={(e().hooks ?? []).length > 0}>
+                      <div class="alpha-ext-dsub">
+                        <div class="alpha-ext-dsub-t">{t("alpha.ext.detailHooks")}</div>
+                        <div class="alpha-ext-dtools">
+                          <For each={e().hooks}>
+                            {(h) => (
+                              <div class="alpha-ext-dtool">
+                                <code>{h.name}</code>
+                                <span>{h.description}</span>
+                              </div>
+                            )}
+                          </For>
+                        </div>
+                      </div>
+                    </Show>
+                    <div class="alpha-ext-dsub">
+                      <div class="alpha-ext-dsub-t">{t("alpha.ext.detailRisk")}</div>
+                      <p class="alpha-ext-dboundary">{t("alpha.ext.pluginRisk")}</p>
+                      <p class="alpha-ext-dnote">{t("alpha.ext.pluginEffect")}</p>
+                    </div>
+                    {/* D4 拍板:「插件 ≠ 套件」澄清 */}
+                    <div class="alpha-ext-verify-note" data-info="">
+                      <b>{t("alpha.ext.pluginVsBundleTitle")}</b>
+                      <p>{t("alpha.ext.pluginVsBundle")}</p>
+                    </div>
+                  </>
+                )}
+              </Show>
+              {/* 套件:组合清单(序号 + 逐项状态 + 未装项行内安装 = 逐项重试,T3) */}
               <Show when={e().type === "bundle"}>
                 <div class="alpha-ext-dbundle">
                   <For each={(e().bundleItems ?? []).slice().sort((a, b) => a.installOrder - b.installOrder)}>
-                    {(it) => {
+                    {(it, idx) => {
                       const sub = props.byId(it.catalogEntryId)
                       if (!sub) return null
                       const ic = iconFor(sub)
                       const subInstalled = () => props.ext.isInstalled(sub)
                       return (
-                        <button class="alpha-ext-dbundle-row" onClick={() => props.onOpenEntry(sub)}>
+                        <div
+                          class="alpha-ext-dbundle-row"
+                          role="button"
+                          tabindex="0"
+                          onClick={() => props.onOpenEntry(sub)}
+                          onKeyDown={(ev) => {
+                            if (ev.key === "Enter" || ev.key === " ") {
+                              ev.preventDefault()
+                              props.onOpenEntry(sub)
+                            }
+                          }}
+                        >
+                          <span class="alpha-ext-dbundle-n">{idx() + 1}</span>
                           <span class="alpha-ext-install-ic" style={{ background: ic.color }}>
                             {ic.glyph}
                           </span>
@@ -280,10 +361,24 @@ export function ExtensionDetail(props: {
                             <span class="alpha-ext-install-opt">{t("alpha.ext.optional")}</span>
                           </Show>
                           <span class="alpha-ext-install-k">{typeLabel(sub.type)}</span>
-                          <Show when={subInstalled()}>
+                          <Show
+                            when={subInstalled()}
+                            fallback={
+                              <button
+                                class="alpha-ext-add"
+                                disabled={props.busy() === sub.id}
+                                onClick={(ev) => {
+                                  ev.stopPropagation()
+                                  props.onInstall(sub)
+                                }}
+                              >
+                                {props.busy() === sub.id ? t("alpha.ext.adding") : t("alpha.ext.add")}
+                              </button>
+                            }
+                          >
                             <span class="alpha-ext-dhead-installed">✓</span>
                           </Show>
-                        </button>
+                        </div>
                       )
                     }}
                   </For>
@@ -292,6 +387,7 @@ export function ExtensionDetail(props: {
             </>
           )}
         </Show>
+        {/* Agent:mode/来源/model/variant + 系统提示预览(折叠)+ 权限档摘要(T3) */}
         <Show when={agent()}>
           {(a) => (
             <>
@@ -299,6 +395,48 @@ export function ExtensionDetail(props: {
               <FactRow label={t("alpha.ext.detailSource")}>
                 {a().native ? t("alpha.ext.agentBuiltinNote") : t("alpha.ext.sourceAlpha")}
               </FactRow>
+              <Show when={a().model}>
+                <FactRow label={t("alpha.ext.detailModel")}>
+                  <code class="alpha-ext-dcode">
+                    {a().model!.providerID}/{a().model!.modelID}
+                  </code>
+                </FactRow>
+              </Show>
+              <Show when={a().variant}>
+                <FactRow label={t("alpha.ext.detailVariant")}>{a().variant}</FactRow>
+              </Show>
+              <div class="alpha-ext-dsub">
+                <div class="alpha-ext-dsub-t">{t("alpha.ext.detailPermission")}</div>
+                {/* v2 SDK PermissionRuleset = Array<PermissionRule>(运行时已证);Array.isArray
+                    防御 v1/未来形状漂移 —— 形状不符时诚实落到「随引擎默认」而非崩。 */}
+                <Show
+                  when={Array.isArray(a().permission) && (a().permission ?? []).length > 0}
+                  fallback={<p class="alpha-ext-dnote">{t("alpha.ext.permissionDefault")}</p>}
+                >
+                  <div class="alpha-ext-dtools">
+                    <For each={(a().permission ?? []).slice(0, 10)}>
+                      {(rule) => (
+                        <div class="alpha-ext-dtool">
+                          <code>
+                            {rule.permission}
+                            {rule.pattern && rule.pattern !== "*" ? ` (${rule.pattern})` : ""}
+                          </code>
+                          <span data-action={rule.action}>{rule.action}</span>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                  <Show when={(a().permission ?? []).length > 10}>
+                    <p class="alpha-ext-dnote">+{(a().permission ?? []).length - 10}</p>
+                  </Show>
+                </Show>
+              </div>
+              <Show when={a().prompt}>
+                <details class="alpha-ext-dprompt">
+                  <summary>{t("alpha.ext.detailPrompt")}</summary>
+                  <pre class="alpha-ext-ddoc">{a().prompt}</pre>
+                </details>
+              </Show>
             </>
           )}
         </Show>
