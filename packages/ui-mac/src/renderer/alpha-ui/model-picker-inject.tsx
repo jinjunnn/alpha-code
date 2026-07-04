@@ -53,18 +53,36 @@ export function ModelPickerInject() {
   const endpoints = useAlphaEndpoints()
 
   onMount(() => onCleanup(window.api.auth.subscribe(setAuth)))
-  createEffect(() => {
-    if (auth().status !== "logged-in") return setSummary(null)
+  // B11(#1 误显根治):保留 IPC 的 {error} 判别式 —— 此前任何读取失败都被吞成 summary=null,
+  // 与「真·已登录未订阅」渲染完全一致(误显「钱包按量扣费」)。失败态单独呈现 + 可重试。
+  const [summaryError, setSummaryError] = createSignal<string | null>(null)
+  const fetchSummary = () => {
     window.api.account
       .summary()
-      .then((r) => r && !("error" in r) && setSummary(r as AccountSummary))
-      .catch(() => {})
+      .then((r) => {
+        if (r && typeof r === "object" && "error" in r) {
+          setSummary(null)
+          setSummaryError(String((r as { error: string }).error))
+        } else {
+          setSummary(r as AccountSummary)
+          setSummaryError(null)
+        }
+      })
+      .catch(() => setSummaryError("network"))
+  }
+  createEffect(() => {
+    if (auth().status !== "logged-in") {
+      setSummary(null)
+      setSummaryError(null)
+      return
+    }
+    fetchSummary()
   })
 
-  const state = createMemo<"member" | "balance" | "empty" | "out">(() => {
+  const state = createMemo<"member" | "balance" | "empty" | "out" | "error">(() => {
     if (auth().status !== "logged-in") return "out"
     const s = summary()
-    if (!s) return "balance"
+    if (!s) return summaryError() ? "error" : "balance"
     if (s.plan.status === "active") return "member"
     return s.balanceFen > 0 ? "balance" : "empty"
   })
@@ -298,7 +316,7 @@ export function ModelPickerInject() {
                 onInput={(e) => setQuery(e.currentTarget.value)}
               />
             </div>
-            <AccountBanner state={state()} summary={summary()} />
+            <AccountBanner state={state()} summary={summary()} onRetry={fetchSummary} />
             <div class="a-mp2-scroll">
               <Show when={proxyRows().length}>
                 <div class="a-mp2-ghead">
@@ -382,7 +400,11 @@ export function ModelPickerInject() {
   )
 }
 
-function AccountBanner(props: { state: "member" | "balance" | "empty" | "out"; summary: AccountSummary | null }) {
+function AccountBanner(props: {
+  state: "member" | "balance" | "empty" | "out" | "error"
+  summary: AccountSummary | null
+  onRetry?: () => void
+}) {
   const endpoints = useAlphaEndpoints()
   const rechargeUrl = () => `${endpoints().web}${ALPHA_PATHS.wallet}?tab=recharge`
   const subscribeUrl = () => `${endpoints().web}${ALPHA_PATHS.wallet}?tab=subscription`
@@ -427,6 +449,16 @@ function AccountBanner(props: { state: "member" | "balance" | "empty" | "out"; s
             <small>平台计费 · 旗舰模型直达</small>
           </span>
           <button class="a-acct-bb" onClick={() => void window.api.auth.start()}>登录</button>
+        </div>
+      </Show>
+      <Show when={props.state === "error"}>
+        <div class="a-acct-banner error">
+          <span class="bi"><Lock /></span>
+          <span class="bt">
+            账户信息读取失败
+            <small>网络异常或服务不可达,余额/会员状态未知</small>
+          </span>
+          <button class="a-acct-bb" onClick={() => props.onRetry?.()}>重试</button>
         </div>
       </Show>
     </>

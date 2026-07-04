@@ -1011,7 +1011,13 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                   <div class="alpha-acct-card">
                     <div class="alpha-acct-row">
                       <span class="alpha-acct-k">会员订阅</span>
-                      <span class="alpha-acct-v">{activePlan()?.name ?? (isPro() ? plan() : "未订阅")}</span>
+                      {/* B11:读取失败时不装「未订阅」(状态未知),与其余行一致显示 pending/错误占位 */}
+                      <Show
+                        when={summary() || summaryState() !== "error"}
+                        fallback={<span class="alpha-acct-pending">{pendingText()}</span>}
+                      >
+                        <span class="alpha-acct-v">{activePlan()?.name ?? (isPro() ? plan() : "未订阅")}</span>
+                      </Show>
                     </div>
                     <div class="alpha-acct-row">
                       <span class="alpha-acct-k">可用余额</span>

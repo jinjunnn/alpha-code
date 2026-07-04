@@ -138,6 +138,7 @@ const api: ElectronAPI = {
     persistMcp: (name, server) => ipcRenderer.invoke("ext-persist-mcp", name, server),
     removeMcp: (name) => ipcRenderer.invoke("ext-remove-mcp", name),
     checkRuntime: (tool) => ipcRenderer.invoke("ext-check-runtime", tool),
+    configHealth: () => ipcRenderer.invoke("ext-config-health"),
     writeSkill: (name, description, body) => ipcRenderer.invoke("ext-write-skill", name, description, body),
     writeAgent: (name, content) => ipcRenderer.invoke("ext-write-agent", name, content),
     installPlugin: (pkg) => ipcRenderer.invoke("ext-install-plugin", pkg),

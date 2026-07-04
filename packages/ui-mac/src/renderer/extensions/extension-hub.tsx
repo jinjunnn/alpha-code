@@ -15,6 +15,8 @@ import { Portal } from "solid-js/web"
 import { t } from "../i18n"
 import { Dialog } from "../alpha-ui/Dialog"
 import { Button } from "../alpha-ui/Button"
+import { pushToast } from "../alpha-ui/Toast"
+import { Banner } from "../alpha-ui/Banner"
 import type { ServerInfo } from "../sidebar/use-projects"
 import { useExtensions } from "./use-extensions"
 import type { Catalog, CatalogEntry, CatalogSource } from "./catalog-types"
@@ -177,7 +179,6 @@ export function ExtensionHub(props: {
   // The entry awaiting install confirmation. 添加 stages it here (instead of installing directly), so
   // the user sees the fan-out / runtime deps / required keys and can back out.
   const [confirming, setConfirming] = createSignal<CatalogEntry | null>(null)
-  const [toast, setToast] = createSignal<string | null>(null)
   const [createType, setCreateType] = createSignal<"skill" | "agent">("skill")
   const [fName, setFName] = createSignal("")
   const [fDesc, setFDesc] = createSignal("")
@@ -235,10 +236,8 @@ export function ExtensionHub(props: {
     return Object.values(ext.store.mcp).map((s) => ({ state: s, entry: byName.get(s.name) }))
   })
 
-  const flash = (msg: string) => {
-    setToast(msg)
-    window.setTimeout(() => setToast(null), 2600)
-  }
+  // B11:收编进全局 pushToast(一处定义,各处复用)—— 原私有 .alpha-ext-toast 淘汰。
+  const flash = (msg: string, kind: "info" | "success" | "error" = "info") => pushToast({ kind, title: msg })
   const comingSoon = () => flash(t("alpha.ext.comingSoon"))
 
   const addMcpEntry = async (e: CatalogEntry): Promise<{ ok: boolean; reason?: string }> => {
@@ -275,7 +274,10 @@ export function ExtensionHub(props: {
       if (r.ok) okCount++
       else if (!it.optional) failCount++
     }
-    flash(failCount > 0 ? `${okCount} 成功 · ${failCount} 失败` : t("alpha.ext.metaItems", { count: okCount }) + " · " + t("alpha.ext.added"))
+    flash(
+      failCount > 0 ? `${okCount} 成功 · ${failCount} 失败` : t("alpha.ext.metaItems", { count: okCount }) + " · " + t("alpha.ext.added"),
+      failCount > 0 ? "error" : "success",
+    )
   }
 
   const onAdd = async (e: CatalogEntry) => {
@@ -283,15 +285,15 @@ export function ExtensionHub(props: {
     try {
       if (e.type === "mcp") {
         const res = await addMcpEntry(e)
-        if (!res.ok) flash(`${t("alpha.ext.installFailed")}${res.reason ? `: ${res.reason}` : ""}`)
+        if (!res.ok) flash(`${t("alpha.ext.installFailed")}${res.reason ? `: ${res.reason}` : ""}`, "error")
         else if (res.reason === "slow") flash(t("alpha.ext.installSlow"))
-        else flash(t("alpha.ext.added"))
+        else flash(t("alpha.ext.added"), "success")
       } else if (e.type === "skill") {
         const res = await ext.installSkill(e)
-        flash(res.ok ? t("alpha.ext.added") : `${t("alpha.ext.installFailed")}${res.reason ? `: ${res.reason}` : ""}`)
+        flash(res.ok ? t("alpha.ext.added") : `${t("alpha.ext.installFailed")}${res.reason ? `: ${res.reason}` : ""}`, res.ok ? "success" : "error")
       } else if (e.type === "plugin") {
         const res = await ext.installPlugin(e)
-        flash(res.ok ? t("alpha.ext.pluginRestart") : `${t("alpha.ext.installFailed")}${res.reason ? `: ${res.reason}` : ""}`)
+        flash(res.ok ? t("alpha.ext.pluginRestart") : `${t("alpha.ext.installFailed")}${res.reason ? `: ${res.reason}` : ""}`, res.ok ? "success" : "error")
       } else if (e.type === "bundle") {
         await installBundle(e)
       }
@@ -310,7 +312,7 @@ export function ExtensionHub(props: {
           ? await ext.createSkill(name, fDesc(), fBody())
           : await ext.createAgent(name, { description: fDesc(), model: fModel() || undefined, system: fBody() })
       if (res.ok) {
-        flash(t("alpha.ext.added"))
+        flash(t("alpha.ext.added"), "success")
         setFName("")
         setFDesc("")
         setFModel("")
@@ -507,6 +509,15 @@ export function ExtensionHub(props: {
 
           <div class="alpha-ext-scroll">
             <div class="alpha-ext-center">
+              {/* B11:mcp.status 整表读取失败此前静默空白(per-row error ≠ 整表失败) */}
+              <Show when={ext.store.error}>
+                <Banner
+                  kind="error"
+                  title={t("alpha.ext.loadFailed")}
+                  detail={t("alpha.ext.loadFailedDetail")}
+                  action={{ label: t("alpha.ext.retry"), onClick: () => void ext.refresh() }}
+                />
+              </Show>
               {/* ░░ FEATURED ░░ */}
               <Show when={tab() === "featured"}>
                 <Hero title={t("alpha.ext.hub")} sub={t("alpha.ext.heroSub")} />
@@ -792,9 +803,6 @@ export function ExtensionHub(props: {
             </div>
           </div>
 
-          <Show when={toast()}>
-            <div class="alpha-ext-toast">{toast()}</div>
-          </Show>
         </div>
 
         {/* Install confirmation — staged by 添加, run on confirm. Backdrop/Escape cancel (alpha Dialog). */}

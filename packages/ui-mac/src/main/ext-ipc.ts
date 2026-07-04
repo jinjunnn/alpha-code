@@ -6,7 +6,7 @@
 import { ipcMain, type IpcMainInvokeEvent } from "electron"
 import { execFile } from "node:child_process"
 import * as os from "node:os"
-import { persistMcp, persistPlugin, removeMcp } from "./ext-config"
+import { configHealth, persistMcp, persistPlugin, removeMcp } from "./ext-config"
 import { installBuiltinSkill, writeAgent, writeSkill } from "./ext-fs-installer"
 
 // GUI apps on macOS launch with a minimal PATH (no Homebrew), so augment it before `which` or we'd
@@ -36,6 +36,8 @@ export function registerExtIpcHandlers() {
     persistMcp(name, server),
   )
   ipcMain.handle("ext-remove-mcp", (_event: IpcMainInvokeEvent, name: string) => removeMcp(name))
+  // B11/B23:全局配置健康探测(语法错/未知顶键 → 引擎会整份清零)
+  ipcMain.handle("ext-config-health", () => configHealth())
   ipcMain.handle("ext-check-runtime", (_event: IpcMainInvokeEvent, tool: string) => checkRuntime(tool))
   ipcMain.handle(
     "ext-write-skill",

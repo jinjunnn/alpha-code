@@ -1,0 +1,39 @@
+/* B11 Banner —— 持久/阻断状态条(语义色自 tokens.css)。 */
+
+.a-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--a-space-3, 10px);
+  padding: 8px 12px;
+  border-radius: var(--a-radius-md, 8px);
+  border: 1px solid transparent;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.a-banner.info { background: var(--a-info-subtle); border-color: color-mix(in srgb, var(--a-info) 30%, transparent); }
+.a-banner.success { background: var(--a-success-subtle); border-color: color-mix(in srgb, var(--a-success) 30%, transparent); }
+.a-banner.warning { background: var(--a-warning-subtle); border-color: color-mix(in srgb, var(--a-warning) 30%, transparent); }
+.a-banner.error { background: var(--a-error-subtle); border-color: color-mix(in srgb, var(--a-error) 30%, transparent); }
+
+.a-banner-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.a-banner.info .a-banner-dot { background: var(--a-info); }
+.a-banner.success .a-banner-dot { background: var(--a-success); }
+.a-banner.warning .a-banner-dot { background: var(--a-warning); }
+.a-banner.error .a-banner-dot { background: var(--a-error); }
+
+.a-banner-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.a-banner-title { font-weight: 600; color: var(--a-text-primary, inherit); }
+.a-banner-detail { color: var(--a-text-secondary, inherit); opacity: 0.85; font-size: 12px; }
+
+.a-banner-action {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--a-radius-md, 8px);
+  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.a-banner-action:hover { background: color-mix(in srgb, currentColor 8%, transparent); }

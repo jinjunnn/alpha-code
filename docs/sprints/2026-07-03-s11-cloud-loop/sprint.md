@@ -14,7 +14,7 @@
 | T2 | B3 in-app 闭环:登录态 agent 经 cloud MCP dispatch → 会话内流式进度 → 结构化结果回流;artifact 落 `.alpha/`(依 T1);失败会话内重试 + dispatch 前配额可见(呈现面与 T4 对齐) | B3 | fable | ✅ PR #55+#58(回流全链:主进程写盘 + CloudRunWatcher 终态检测→saveRun→toast;配额 UI 并入 T4;in-app 冒烟 → 真机/视觉批) |
 | T3 | C9 代码上云数据边界 mini-ADR:diff-only / secrets 过滤 / consent / 体积上限(与 T2 同场) | C9 | fable | ✅ PR #56 = ADR-021(双通道边界 + B16 挂钩;§2 待实现项随 B3 记账) |
 | **Track B —— 呈现底座(launch-blocker #6)** | | | | |
-| T4 | B11 统一错误/健康呈现面 + 账户 banner:store.error 全渲染、统一 toast/错误体系一处定义、32 失败点复扫 ≥90% 有反馈;收编 B20 弱网降级 UX + B23 配置清零显式告警 | B11 / B20 / B23 | opus 实现 · fable 审 | ☐ |
+| T4 | B11 统一错误/健康呈现面 + 账户 banner:store.error 全渲染、统一 toast/错误体系一处定义、32 失败点复扫 ≥90% 有反馈;收编 B20 弱网降级 UX + B23 配置清零显式告警 | B11 / B20 / B23 | opus 实现 · fable 审 | ✅ PR #60(Banner+toast 收编+账户#1 根治+B23 configHealth+splash;复扫 20 项 ✅10/🆗6/⏭4;B20 余项留行) |
 | T5 | B5 尾项:sidecar 崩溃自愈(REQ-003 终态判定已收,解锁) | B5(尾项) | opus | ✅ PR #57(退避自愈 + 未健康不 reload;真机 kill -9 待验) |
 | **Track C —— 安全纵深** | | | | |
 | T6 | C24:先撤 `ACAO:*` 注入(windows.ts)→ renderer CSP 落地(connect-src 收敛)→ 隔离 dev + 打包双态逐屏走查 + exfil 拦截取证;**断 renderer 即回退** | C24 | fable | ◐ 代码 PR #59(回环-only CORS + 打包态 CSP + wasm 豁免;走查/取证 → ship 批) |

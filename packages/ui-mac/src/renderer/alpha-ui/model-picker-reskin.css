@@ -370,10 +370,15 @@
   background: var(--a-warning-subtle);
   color: var(--a-warning);
 }
+.a-acct-banner.error {
+  background: var(--a-error-subtle);
+  color: var(--a-error);
+}
 .a-acct-banner.out {
   background: var(--a-bg-muted);
   color: var(--a-text-secondary);
 }
+.a-acct-banner.error .bt,
 .a-acct-banner.member .bt,
 .a-acct-banner.balance .bt,
 .a-acct-banner.empty .bt,

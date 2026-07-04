@@ -15,6 +15,8 @@ import { type AlphaProject, type AlphaProjectsApi } from "../sidebar/use-project
 import { sessionHref, newSessionHref, projectLabel } from "../sidebar/route"
 import { AddButton, PermChip, EffortChip, ModelChip, composerModelLabel } from "./composer-controls"
 import { pushToast } from "./Toast"
+import { Banner } from "./Banner"
+import { useConfigHealth } from "./use-config-health"
 import "./home.css"
 
 function greeting(): string {
@@ -33,6 +35,7 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
   const navigate = useNavigate()
   const command = useCommand()
   const { store, startChat } = props.projects
+  const configHealth = useConfigHealth()
 
   // The landing path is "/index.html" in the packaged/dev renderer (not "/"), plus "/" and the
   // "new-session" pseudo-route. Match all of them so the alpha home actually covers opencode's
@@ -102,6 +105,24 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
             <div class="a-home-ghost" aria-hidden="true">ALPHA CODE</div>
 
             <div class="a-home-center">
+              {/* B11:project.list 失败此前首页静默空白(店面只在侧栏报错);B23:全局配置被引擎
+                  静默清零时给显式告警。 */}
+              <Show when={store.error}>
+                <Banner
+                  kind="error"
+                  title="项目列表加载失败"
+                  detail="引擎连接异常或尚未就绪"
+                  action={{ label: "重试", onClick: () => void props.projects.reload() }}
+                />
+              </Show>
+              <Show when={configHealth().broken}>
+                <Banner
+                  kind="warning"
+                  title="全局配置未生效"
+                  detail={configHealth().reason}
+                  action={{ label: "打开配置", onClick: () => void window.api.openPath(configHealth().path ?? "") }}
+                />
+              </Show>
               <h1 class="a-home-greet">
                 {greeting()},<span class="a-home-greet-dim"> 在 workspace 里做点什么?</span>
               </h1>
