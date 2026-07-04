@@ -8,6 +8,7 @@ import { execFile } from "node:child_process"
 import * as os from "node:os"
 import type { InstallMeta, InstallTarget } from "../preload/types"
 import { listInstalls } from "./alpha-installs"
+import { fileifyMcpSecrets, removeMcpServerSecrets } from "./alpha-mcp-secrets"
 import { configHealth, persistMcp, persistPlugin, removeMcp } from "./ext-config"
 import { installBuiltinSkill, writeAgent, writeSkill } from "./ext-fs-installer"
 
@@ -33,13 +34,23 @@ function checkRuntime(tool: string): Promise<{ ok: boolean }> {
   })
 }
 
-export function registerExtIpcHandlers() {
+export function registerExtIpcHandlers(userDataPath: string) {
   ipcMain.handle(
     "ext-persist-mcp",
-    (_event: IpcMainInvokeEvent, name: string, server: Record<string, unknown>, meta?: InstallMeta) =>
-      persistMcp(name, server, meta),
+    (_event: IpcMainInvokeEvent, name: string, server: Record<string, unknown>, meta?: InstallMeta, secretVars?: string[]) => {
+      // T5:把 requiredEnvVars 的真值(renderer 刚采集,经 IPC 结构化克隆到达此处)搬进
+      // {file:} 密钥通道 → durable config 只落引用,绝不明文。renderer 的 live mcp.add 仍用
+      // 真值(内存态),下次启动引擎按 {file:} 解析。
+      if (secretVars && secretVars.length && server && typeof server === "object") {
+        fileifyMcpSecrets(userDataPath, name, server, secretVars)
+      }
+      return persistMcp(name, server, meta)
+    },
   )
-  ipcMain.handle("ext-remove-mcp", (_event: IpcMainInvokeEvent, name: string) => removeMcp(name))
+  ipcMain.handle("ext-remove-mcp", (_event: IpcMainInvokeEvent, name: string) => {
+    removeMcpServerSecrets(userDataPath, name) // revoke the connector's stored secrets on uninstall
+    return removeMcp(name)
+  })
   // B11/B23:全局配置健康探测(语法错/未知顶键 → 引擎会整份清零)
   ipcMain.handle("ext-config-health", () => configHealth())
   ipcMain.handle("ext-check-runtime", (_event: IpcMainInvokeEvent, tool: string) => checkRuntime(tool))

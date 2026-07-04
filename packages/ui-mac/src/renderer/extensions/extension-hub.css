@@ -857,3 +857,41 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   margin: 0;
   line-height: var(--a-leading-snug);
 }
+
+/* T5:确认弹窗内的 requiredEnvVars 密钥采集(密文输入)。 */
+.alpha-ext-confirm-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.alpha-ext-key-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.alpha-ext-key-name {
+  font-family: var(--a-font-mono);
+  font-size: 11.5px;
+  color: var(--a-text-secondary);
+}
+.alpha-ext-key-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: var(--a-text-sm);
+  font-family: var(--a-font-mono);
+  padding: 6px 9px;
+  background: var(--a-bg-muted);
+  border: 1px solid var(--a-border-faint);
+  border-radius: 6px;
+  color: var(--a-text);
+}
+.alpha-ext-key-input:focus {
+  outline: none;
+  border-color: var(--a-accent);
+}
+.alpha-ext-key-hint {
+  font-size: var(--a-text-xs);
+  color: var(--a-text-tertiary);
+  margin: 0;
+  line-height: var(--a-leading-snug);
+}

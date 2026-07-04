@@ -40,8 +40,17 @@ export interface ActionResult {
 export interface ExtensionsApi {
   store: ExtensionsStore
   refresh(): Promise<void>
-  /** Persist (durable) + live add + connect an MCP catalog entry. env fills requiredEnvVars. */
-  addMcp(entry: CatalogEntry, env?: Record<string, string>, workspace?: string): Promise<ActionResult>
+  /**
+   * Persist (durable) + live add + connect an MCP catalog entry. `secrets` fills requiredEnvVars and
+   * is routed to the {file:} channel on disk (never plaintext); `env` is non-secret substitution
+   * (headers/workspace). Live add uses the real secret values (in-memory, just typed).
+   */
+  addMcp(
+    entry: CatalogEntry,
+    env?: Record<string, string>,
+    workspace?: string,
+    secrets?: Record<string, string>,
+  ): Promise<ActionResult>
   /** Toggle a known MCP server: connect when shouldConnect, else disconnect. */
   setMcpConnected(name: string, shouldConnect: boolean): Promise<void>
   /** Remove an MCP server from the user config + disconnect. */
@@ -173,18 +182,28 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     }
   }
 
-  async function addMcp(entry: CatalogEntry, env?: Record<string, string>, workspace?: string): Promise<ActionResult> {
+  async function addMcp(
+    entry: CatalogEntry,
+    env?: Record<string, string>,
+    workspace?: string,
+    secrets?: Record<string, string>,
+  ): Promise<ActionResult> {
     const c = client
     if (!c) return { ok: false, reason: "no server" }
     const spec = entry.installSpec
     if (!spec || spec.kind !== "mcp") return { ok: false, reason: "not an MCP entry" }
-    const config = toMcpConfig(spec, env ?? {}, workspace)
-    // 1. Durable: write the user's opencode.jsonc first. If this fails, never touch the live server
-    //    — avoids a "live but not persisted" state that vanishes on restart.
+    // Live config carries REAL secret values (in-memory, the user just typed them) so mcp.add can
+    // connect immediately — the /mcp POST payload is NOT run through opencode's {file:} substitution.
+    const config = toMcpConfig(spec, { ...(env ?? {}), ...(secrets ?? {}) }, workspace)
+    const secretVars = secrets ? Object.keys(secrets).filter((k) => (secrets[k] ?? "").length > 0) : undefined
+    // 1. Durable: write the alpha-owned config first. If this fails, never touch the live server —
+    //    avoids a "live but not persisted" state that vanishes on restart. Main file-ifies the
+    //    secretVars → opencode.jsonc gets {file:} refs, never the plaintext secret.
     const persisted = await window.api.ext.persistMcp(
       entry.name,
       config as unknown as Record<string, unknown>,
       metaFor(entry),
+      secretVars,
     )
     if (!persisted.ok) return { ok: false, reason: persisted.reason }
     // 2. Live: add + connect (no restart). mcp.add registers in-memory and spawns; connect is a

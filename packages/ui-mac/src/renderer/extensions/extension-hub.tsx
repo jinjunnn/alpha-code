@@ -143,9 +143,9 @@ function runtimeDeps(e: CatalogEntry): string {
   const spec = e.installSpec && e.installSpec.kind === "mcp" ? e.installSpec : undefined
   return (spec?.runtimeDep ?? []).join(", ")
 }
-function requiredKeys(e: CatalogEntry): string {
+function requiredEnvVarList(e: CatalogEntry): string[] {
   const spec = e.installSpec && e.installSpec.kind === "mcp" ? e.installSpec : undefined
-  return (spec?.requiredEnvVars ?? []).join(", ")
+  return spec?.requiredEnvVars ?? []
 }
 
 // ── tiny inline icons (1.6 stroke, currentColor) ──────────────────────────────────────────────
@@ -179,6 +179,9 @@ export function ExtensionHub(props: {
   // The entry awaiting install confirmation. 添加 stages it here (instead of installing directly), so
   // the user sees the fan-out / runtime deps / required keys and can back out.
   const [confirming, setConfirming] = createSignal<CatalogEntry | null>(null)
+  // T5:确认弹窗采集的 requiredEnvVars 密钥值(仅内存;安装后清空)。经 addMcp → 主进程 {file:}
+  // 通道落盘,绝不明文进 opencode.jsonc。切换/关闭弹窗即重置。
+  const [envValues, setEnvValues] = createSignal<Record<string, string>>({})
   const [createType, setCreateType] = createSignal<"skill" | "agent">("skill")
   const [fName, setFName] = createSignal("")
   const [fDesc, setFDesc] = createSignal("")
@@ -240,7 +243,10 @@ export function ExtensionHub(props: {
   const flash = (msg: string, kind: "info" | "success" | "error" = "info") => pushToast({ kind, title: msg })
   const comingSoon = () => flash(t("alpha.ext.comingSoon"))
 
-  const addMcpEntry = async (e: CatalogEntry): Promise<{ ok: boolean; reason?: string }> => {
+  const addMcpEntry = async (
+    e: CatalogEntry,
+    secrets?: Record<string, string>,
+  ): Promise<{ ok: boolean; reason?: string }> => {
     const spec = e.installSpec && e.installSpec.kind === "mcp" ? e.installSpec : undefined
     const rc = await ext.checkRuntime(spec?.runtimeDep)
     if (!rc.ok) return { ok: false, reason: t("alpha.ext.runtimeMissing", { tool: rc.missing }) }
@@ -251,7 +257,7 @@ export function ExtensionHub(props: {
       if (!dir) return { ok: false, reason: t("alpha.ext.cancelled") }
       workspace = dir
     }
-    return ext.addMcp(e, undefined, workspace)
+    return ext.addMcp(e, undefined, workspace, secrets)
   }
 
   // Bundle = alpha-defined manifest: fan out to install each referenced entry by its own type
@@ -280,11 +286,11 @@ export function ExtensionHub(props: {
     )
   }
 
-  const onAdd = async (e: CatalogEntry) => {
+  const onAdd = async (e: CatalogEntry, secrets?: Record<string, string>) => {
     setBusy(e.id)
     try {
       if (e.type === "mcp") {
-        const res = await addMcpEntry(e)
+        const res = await addMcpEntry(e, secrets)
         if (!res.ok) flash(`${t("alpha.ext.installFailed")}${res.reason ? `: ${res.reason}` : ""}`, "error")
         else if (res.reason === "slow") flash(t("alpha.ext.installSlow"))
         else flash(t("alpha.ext.added"), "success")
@@ -810,21 +816,32 @@ export function ExtensionHub(props: {
         {/* Install confirmation — staged by 添加, run on confirm. Backdrop/Escape cancel (alpha Dialog). */}
         <Dialog
           open={!!confirming()}
-          onClose={() => setConfirming(null)}
+          onClose={() => {
+            setConfirming(null)
+            setEnvValues({})
+          }}
           besideSidebar
           size="sm"
           title={confirming() ? t("alpha.ext.confirmTitle", { name: confirming()!.displayName }) : ""}
           footer={
             <>
-              <Button variant="ghost" onClick={() => setConfirming(null)}>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setConfirming(null)
+                  setEnvValues({})
+                }}
+              >
                 {t("alpha.ext.cancel")}
               </Button>
               <Button
                 variant="primary"
                 onClick={() => {
                   const e = confirming()
+                  const secrets = envValues()
                   setConfirming(null)
-                  if (e) void onAdd(e)
+                  setEnvValues({})
+                  if (e) void onAdd(e, Object.keys(secrets).length ? secrets : undefined)
                 }}
               >
                 {t("alpha.ext.confirmInstall")}
@@ -866,9 +883,26 @@ export function ExtensionHub(props: {
                     {t("alpha.ext.confirmRuntime")}: <code>{runtimeDeps(entry())}</code>
                   </div>
                 </Show>
-                <Show when={requiredKeys(entry())}>
-                  <div class="alpha-ext-confirm-line">
-                    {t("alpha.ext.confirmEnv")}: <code>{requiredKeys(entry())}</code>
+                <Show when={requiredEnvVarList(entry()).length}>
+                  <div class="alpha-ext-confirm-keys">
+                    <div class="alpha-ext-confirm-line">{t("alpha.ext.confirmEnv")}</div>
+                    <For each={requiredEnvVarList(entry())}>
+                      {(varName) => (
+                        <label class="alpha-ext-key-field">
+                          <span class="alpha-ext-key-name">{varName}</span>
+                          <input
+                            class="alpha-ext-key-input"
+                            type="password"
+                            autocomplete="off"
+                            spellcheck={false}
+                            placeholder={t("alpha.ext.keyPlaceholder")}
+                            value={envValues()[varName] ?? ""}
+                            onInput={(ev) => setEnvValues((prev) => ({ ...prev, [varName]: ev.currentTarget.value }))}
+                          />
+                        </label>
+                      )}
+                    </For>
+                    <p class="alpha-ext-key-hint">{t("alpha.ext.keyHint")}</p>
                   </div>
                 </Show>
                 <p class="alpha-ext-confirm-note">{t("alpha.ext.confirmNote")}</p>
