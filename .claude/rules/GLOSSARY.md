@@ -20,7 +20,7 @@
 - **Hooks** — 插件可挂的回调:稳定的 `tool/event/config/auth/provider/chat.*/permission.ask/tool.execute.*/tool.definition/shell.env`,以及 unstable 的 `experimental.*`。
 - **`AppInterface`** — `packages/app/src/app.tsx` 导出的渲染器挂载入口(props:`defaultServer/servers/router/...`)。B 方案的接入点。
 - **`Platform`** — `packages/app/src/context/platform.tsx` 的 host 能力接口(~40 方法:通知/选择器/更新器/存储/剪贴板/fetch…)。自有外壳实现它即可。
-- **sidecar** — 自有的独立 HTTP 进程(Hono/Bun),用于提供 opencode server 没有的接口;内部经 SDK 调 opencode。也指 desktop 内嵌 opencode server 的子进程。
+- **sidecar** — 自有的独立 HTTP 进程(Hono/Bun),用于提供 opencode server 没有的接口;内部经 SDK 调 opencode。也指 desktop 内嵌 opencode server 的子进程。**桌面单机下 Electron main-IPC(`*-ipc.ts` + `window.api`)即其等价物**(承载 alpha 自有 HTTP/RPC 能力的进程边界,免本地端口/鉴权);真 HTTP sidecar 仅在出现非 renderer 客户端需求时才建(见 ADR-002 修订 C8)。
 - **System Context** — opencode 注入给模型的结构化上下文(见 `opencode/CONTEXT.md`);其 registry 不对外开放,自定义注入走 `experimental.chat.*.transform`。
 - **~~submodule pin~~**(已废,ADR-005 fork pivot)— 原"钉死 opencode commit"概念;fork 模型下升级 = `git merge dev`,**无 pin**。
 

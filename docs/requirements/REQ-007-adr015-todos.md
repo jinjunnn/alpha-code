@@ -20,3 +20,6 @@ ADR-015 三条待办:① per-agent prompt 优化的具体清单(随 Tier-2 harne
 
 ## 关联
 ADR-015、E 册(Tier-2 清单)、alpha-behavior.ts / alpha-identity.ts。
+
+## 跳过记录(2026-07-04,/loop 自动批 — deferred)
+本轮跳过(非「决策无关的机械小修」):① per-agent prompt 优化清单 = **行为判断**——改哪些 prompt 属 ADR-015 Tier-3 行为调优,需逐项合并验证 + 用户对目标行为的意图,不宜无人值守代拍;② Tier-3 回答长度校准 = **桌面真机实测**(explain/analyze 回答长度对比,[[visual-verify-required]]),离线不可做;③ 依赖②。→ 并入真机批 + Tier-2 harness 清单排期统一做。
