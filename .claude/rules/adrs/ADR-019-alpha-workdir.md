@@ -36,3 +36,12 @@ related: [ADR-002, ADR-005, ADR-006, ADR-014]
 2. **§2 子目录 schema(回填)**:`.alpha/runs/<runId>/`(contract.json · status.json · artifacts/,= B3/G4 回流落点)· `.alpha/prefs.json`(项目偏好)· `.alpha/{skills,tools,agents,commands}/`(桥接真源,`.opencode/` 内放同名 symlink)。identity/behavior/secrets 属**全局级**产物留 userData,不进项目 `.alpha/`。
 3. **§5 gitignore(回填拍板)**:整个 `.alpha/` 建议 ignore(运行时产物);可提交子集暂不引入(YAGNI)。
 4. **写盘守卫**:复用 `safeResolve`(realpath 防逃逸)+ `writeKey` 原子写 + `syncSecretFiles` 0600 模式;`.alpha/` 根须加入路径白名单(实现随 B3 T2)。
+
+## 修订(2026-07-04,新增全局层 `~/.alpha`;S12/REQ-018 定制中心通用化)
+原 ADR 只定义**项目级** `<项目>/.alpha/`。定制中心 v3(ADR-014 v3)的全局安装物需要**全局层**,故补:
+1. **`~/.alpha/` = alpha 全局自有目录**(`alphaGlobalRoot()`,`ALPHA_GLOBAL_DIR` 可覆盖用于测试)。子目录:`installs.json`(安装账本 receipts)· `{skills,agents,plugins}/`(全局安装真源,`~/.opencode/<类>` 内放同名 symlink 桥,与项目级同构)· `commands/`(预留)。
+2. **桥法拍板(D1)= `~/.alpha` 真源 + `~/.opencode/<类>` symlink 桥**(与项目级同构;原生 CLI 也可见=装一次处处用)。`alpha-bridge.ts`:全新 kind 用整目录链,已存在真实目录退化逐条目链,卸载只拆自有链、不碰用户内容/共享 dir-link。
+3. **MCP/plugin 引擎侧持久化 = `~/.opencode/opencode.jsonc`**(文件通道,非 `.alpha`)——home `.opencode` 是引擎原生 config 源,实例 reload 可见;**不设 `~/.alpha/connectors.json`**(jsonc + receipts 即全部真相,避免双真相)。
+4. **原「全局产物留 userData」限定**:identity/behavior/secrets 等 **alpha 内部**产物仍留 userData;`~/.alpha` 承载**用户可见的全局安装物**。MCP 密钥仍走 userData 的 `{file:}` 通道(`alpha-mcp-secrets/`,A6),不进 `~/.alpha`。
+5. **存量迁移**:T2 之前写进共享 `~/.config/opencode` 的 alpha 安装物 → 一次性迁 `~/.alpha`(`alpha-migrate.ts`,只迁 catalog 名字匹配项、不碰用户自建;门控 `ALPHA_MIGRATE_ENABLE`,A6 真机验证后开);`ALPHA_LEGACY_INSTALL_ROOT=1` 逃生回旧行为。
+6. **§4 边界不变**:用户自建的 `~/.opencode` / `~/.config/opencode` 内容不迁移、不接管。

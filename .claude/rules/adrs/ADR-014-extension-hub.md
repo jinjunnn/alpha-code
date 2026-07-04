@@ -32,3 +32,15 @@ related: [ADR-002, ADR-003, ADR-006, ADR-008, ADR-009]
 - 修订:2026-06-22 经 design-arch Round1/Round2 瘦身,产出权威设计 `docs/designs/2026-06-22-arch-extension-hub.md`(v2)。
 - 修订:2026-06-23 — 核实实现已超本 ADR 所述 MVP:**create skill/agent 表单 + plugin 安装实际已发**(commit `59c0786`,非"降级 V1+ roadmap")。本次补齐 V1+ roadmap 的 **builtin-skill 安装(E1b)**:`resources/skills/<key>` 资产 + electron-builder `extraResources` + 主进程 `installBuiltinSkill`(按 `builtinAssetKey` 复制进用户 scanned skills 目录,白名单+防逃逸)+ IPC/preload/渲染层全链路;种 2 条 alpha 自写 MIT 技能(`alpha-upstream-sync`/`safe-refactor`)。官方 4 条 Apache-2.0 仍待内容打包(现诚实失败,非占位)。详见 `docs/harness-extension-backlog.md` 的 E1b。
 - 修订:2026-06-24 — 新增**浏览器自动化连接器**(backlog E14):catalog 加 `mcp:playwright`(`npx -y @playwright/mcp`,Apache-2.0,Microsoft 官方,`category:dev`),补 `webfetch` 抓不动 JS 动态站点的能力缺口。**零代码新增**——安装/预检/持久/启停链路全复用既有(`npx` 已在命令白名单)。决策:本地 `npx` 优先 + **仅定制中心可装(不进 `injectAlphaConfig` 预设)**。未决项留 `_verify`:首次 navigate 的浏览器内核来源(Chromium 下载 vs `--browser chrome` 复用系统),`runtimeDep` 仅 which node、内核为运行时下载 → 待 A6 桌面实测拍板。**给用户的浏览器面板(Phase B)不在此 ADR,单独走定位关。**
+
+## 修订(2026-07-04,v3 —— 全类型通用化,S12/REQ-018,权威设计 `docs/designs/2026-07-04-extension-hub-v3-universal.md`)
+体检发现 MVP「MCP-first + SDK 唯一真相源」的通用性只对 MCP 成立:skill/agent/plugin **装完不生效**(引擎实例缓存无文件监听)、**装完失管**(mcp.status 只认 MCP)、落盘污染共享 `~/.config/opencode`、MCP 密钥明文进 jsonc。v3 修订本 ADR 的四条核心决策:
+
+1. **安装真相源:SDK → receipts ⨝ SDK**(修订原 §4「已安装真相 = SDK 源」)。新增安装账本 `~/.alpha/installs.json`(alpha-installs.ts),覆盖 skill/agent/plugin 的「已安装/卸载/更新」真相;MCP 仍以 SDK `mcp.status` 为实时态,receipts 记 provenance。**放弃「零持久存储」**(v2 删 electron-store 的理由是不复制 SDK 已有真相;fs 类 SDK 无对应真相,故账本是必要新增,非过度工程)。
+2. **落盘根:`~/.config/opencode` → `.alpha` 双层 + `~/.opencode` 桥**(ADR-019 修订配套)。全局 `~/.alpha/{skills,agents,plugins}` 真源 + `~/.opencode/<类>` symlink 桥(引擎原生扫描,REQ-004 实证);MCP/plugin 引擎侧持久化改写 `~/.opencode/opencode.jsonc`(**文件通道**,env 注入在 fork 冻结、reload 读不到);存量一次性迁移(门控 `ALPHA_MIGRATE_ENABLE`)。
+3. **生效机制:免重启(dispose)**。新增决策——安装/卸载后调上游公开 `POST /instance|global/dispose` → 实例惰性重建重扫,**当前会话下一条消息即可用**(实测 8ms dispose + ~101ms 重建,[audits/s12-verify](../../../docs/audits/2026-07-04-s12-ext-hub-m1-verify.md))。取代 v2「mcp.add 免重启、其余需重启」的不对称。
+4. **MCP 密钥 `{file:}` 化**(补强 §8 安全):requiredEnvVars 密文采集 → `alpha-mcp-secrets/<server>/<VAR>`(0600,A6 同机制),config 只落引用。修正此前「根本没采集密钥值」的缺陷 + 「入钥匙串」失实文案。
+
+**O1–O4 拍板**(REQ-006 未决项,随本修订钉死):O1 MVP 范围=**全类型通用化**(如实取代「MCP-first」表述);**O2 = Agent 进 tab(是)、Command 不单列**(自动由 skill/MCP 生成,详情页说明);O3 F9 串台=不在 M1(维持默认);O4 远程 catalog=依赖 alpha-web(E10,REQ-020,C 端点未建前离线优先内置)。**术语拍板(D4)**:「插件」保名(引擎语义 = hooks+工具的 JS 模块,装不了 skill/agent),tab 副标题 + GLOSSARY 澄清「插件 vs 套件」。
+
+**状态**:仍 `trial`。转 `accepted` 的剩余门 = **桌面真机批**(登录态 in-app 四步 ×4 类 + A6 env dump 解 R3 + 迁移开门,REQ-016 同场);引擎级四步端到端已 PASS(见 audits)。分期后续:M2 详情页/更新/导入(REQ-019)、M3 云能力进 hub(REQ-020)、自动化(REQ-021)。

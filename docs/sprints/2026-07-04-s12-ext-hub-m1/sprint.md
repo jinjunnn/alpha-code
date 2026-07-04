@@ -20,7 +20,7 @@
 | T6 | 全类型已安装列表(类型/名称/scope/版本/状态点/操作)+ 卸载(receipt 驱动)+ plugin 已装态(config `plugin[]` ∪ receipts) | REQ-018 T6+T8 | opus | ✅ **PR #69**:已安装 tab 统一全类型(receipts ⨝ SDK MCP 状态;live-无账 MCP 并入);类型 pill+版本+状态点;卸载 IPC `ext-uninstall`(fs 删文件+拆桥、plugin 从 config[] 删、mcp removeMcp+吊销密钥,均去账+refreshEngine);`isInstalled` 全类型经 receipts(卡片 ✓ 已添加);+7 单测(removeFsInstall 4 / removePlugin 3);258 pass |
 | T7 | Agent tab + composer agent 选择器核实 + 官方 skill 资产打包 `resources/skills/` + NOTICE | REQ-018 T7(吸收 D3) | opus 实现 · fable 审 | ✅ **PR #70**:**Agent tab**(SDK `app.agents()` 真相源,内置 badge / 自建可卸 / 「创建 Agent」内联入口;搜索;创建/卸载后 loadAgents 刷新)· **选择器核实**=alpha 无自有 composer agent 选择器(复用上游,ADR-016),Agent 管理归 hub · **D3 部分兑现**:skill-creator(Apache-2.0,Anthropic 官方,260K 真内容 + LICENSE.txt + NOTICE)已打包;mcp-builder/canvas-design/brand-guidelines **无可信来源、拒绝伪造** → 保持诚实失败(catalog disclaimer 记账);258 pass |
 | **验收批** | | | | |
-| T8 | 真机四步验收:四类各「装→亮(下一条消息可用)→用→卸」录证([[visual-verify-required]])+ REQ-006 四用例(装 markitdown/免重启/卸载/依赖预检)+ **A6 MCP 子进程 env dump(解 R3)**+ 迁移/密钥负向验证(`~/.config/opencode` 零新增写入、config 零明文)→ 状态回写 + ADR 修订 | REQ-018 验收 / REQ-006 / REQ-016(A6 子项) | fable | ☐ |
+| T8 | 真机四步验收:四类各「装→亮→用→卸」+ REQ-006 四用例 + **A6 env dump(解 R3)**+ 负向验证 → 状态回写 + ADR 修订 | REQ-018 验收 / REQ-006 / REQ-016(A6 子项) | fable | ◐ **引擎级四步端到端 PASS**([audits/s12-verify](../../audits/2026-07-04-s12-ext-hub-m1-verify.md):装完不可见→dispose 后可见→卸载净除,证 placebo 根因真实 + 免重启生效);266 单测绿;状态回写 + ADR-014 v3/ADR-019/GLOSSARY 修订完成。**真机批(in-app 四步/A6 env dump 解 R3/迁移开门)pending 用户机器,归 REQ-016 同场** |
 
 ## 依赖与排序
 
@@ -40,10 +40,15 @@ typecheck ☐ · bun test ☐ · 北极星守卫 ☐ · /app:review ☐ · visua
 - ADR-014 修订(v3)+ ADR-019 修订(全局 `~/.alpha` 层)随实现 PR 提交;REQ-006 trial→accepted 随 T8;GLOSSARY 补条(插件 vs 套件 / 安装账本 / dispose 生效)随 T8 回写。
 - B16 维持 parked(本批不公开分发,不触发重启条件)。
 
-## 结果
+## 结果(2026-07-04 收尾)
 
-(待收尾填写)
+- **T1–T7 全部 shipped**,6 个 PR 合入 alpha:T1+T2 地基(#66)· T4 免重启(#67)· T5 密钥 file 化(#68)· T6 全类型生命周期(#69)· T7 Agent tab + skill-creator(#70)· T3 存量迁移门控(#71)。
+- **P0×4 处置**:①装完不生效 placebo → dispose 免重启生效(实测证根因+修复);②MCP 明文密钥 → `{file:}` 通道 + 采集 UI(此前根本没采集);③已装态只覆盖 MCP → receipts ⨝ SDK 全类型 + 卸载;④写盘根跑偏 → `.alpha` 双层 + `~/.opencode` 桥 + 迁移。
+- **验证**:引擎级四步端到端 PASS([audits/s12-verify](../../audits/2026-07-04-s12-ext-hub-m1-verify.md));266 单测绿;CDP 侧栏入口截图。真机批(登录态 in-app 四步 + A6 env dump + 迁移开门)→ REQ-016 同场。
+- **dispose spike 未证伪**:8ms dispose + ~101ms 重建,免重启承诺成立(拍板提醒②未触发)。
+- **A6 R3 门控维持**:迁移代码已合但 `ALPHA_MIGRATE_ENABLE` 默认关,真机 A6 验证后开(拍板提醒①遵守)。
+- gates:每 PR typecheck + tests + 北极星守卫绿;alpha-check 三关绿。
 
 ## 回写清单
 
-BACKLOG ☐ · CHANGELOG ☐ · 需求档 frontmatter ☐ · verify 记录 ☐ · retro 链接:—
+BACKLOG ☑(REQ-018 shipped,D3/D4/E11/A2 尾项/REQ-006 回写)· CHANGELOG ☑([Unreleased])· 需求档 frontmatter ☑(REQ-018 shipped)· verify 记录 ☑([audits/s12-verify](../../audits/2026-07-04-s12-ext-hub-m1-verify.md))· ADR ☑(ADR-014 v3 + ADR-019 全局层 + GLOSSARY)· retro 链接:—
