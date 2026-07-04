@@ -6,6 +6,11 @@
 - **alpha-code** — 本项目。基于 opencode 的 Mac 编码 agent 产品(面向多用户 + 云多租户);**后端**薄定制层 + **前端**全面接管(ADR-016)、opencode 上游源码只读,云平台为独立运行时(见 ADR-010/011)。
 - **opencode** — 上游基座(`anomalyco/opencode`),Bun+TS+Effect+SolidJS 的 AI 编码工具 monorepo(27 包)。本仓库是其 **fork**(非 submodule;ADR-005),经 `merge dev → alpha` 追平上游、无 pinned commit。
 - **隔离接缝(isolation seam)** — opencode 官方提供、可在不改源码下扩展的入口:plugin hooks、`.opencode/*` 文件、MCP、SDK 驱动的前端。
+- **定制中心(Extension Hub)** — alpha 自有的扩展管理界面(`ui-mac` renderer),浏览/安装/管理五类扩展:连接器(MCP)/技能(skill)/Agent/插件(plugin)/套件(bundle),外加云能力与自动化(REQ-020/021,规划中)。v3 起全类型通用化(ADR-014 v3 / REQ-018)。
+- **插件(plugin) vs 套件(bundle)**(易混,D4 拍板澄清)— **插件** = opencode 引擎插件(hooks + 自定义工具的 JS 模块),**装不了** skill/agent;**套件** = alpha 自定义的组合安装清单(可含 MCP+skill+plugin+agent,安装时扇出)。与 Claude Code「plugin=大礼包」心智不同,勿混。
+- **安装账本(install receipts)** — `~/.alpha/installs.json`(全局)/ `<项目>/.alpha/installs.json`(项目)记录 alpha 装了什么(id/type/scope/version/files/configKey)。定制中心「已安装」真相 = **receipts ⨝ SDK**(receipts 说装了什么、SDK 说引擎认了什么);差集 = 待重载态。见 `alpha-installs.ts`。
+- **免重启生效(dispose 重载)** — 安装/卸载 skill/agent/plugin 后,调上游 `POST /instance|global/dispose` 使引擎实例惰性重建重扫,**当前会话下一条消息即可用**,无需重启 app(引擎无文件监听,写盘 ≠ 生效;dispose 是唯一免重启接缝)。见 ADR-014 v3。
+- **`.opencode` 桥(symlink bridge)** — `.alpha` 是 alpha 安装物真源,引擎不扫 `.alpha`,故在引擎原生扫描的 `.opencode/<类>` 放 symlink 指回 `.alpha`;用户视角一切在 `.alpha`,引擎照常发现。REQ-004 实证。见 `alpha-bridge.ts`。
 - **薄定制层** — **仅指后端**:alpha 后端自有代码应远小于 opencode 体量(目标 < 5%),只经接缝叠加、不改上游源码。**前端不再适用**——ADR-016 起前端由 alpha 全面接管(厚定制层),见 [[前端接管]]。
 
 ## 技术栈术语(opencode 侧,会在设计/实现里频繁出现)
