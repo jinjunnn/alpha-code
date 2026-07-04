@@ -10,7 +10,7 @@
 
 import { createSignal, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js"
 import { Portal } from "solid-js/web"
-import { useCommand } from "@opencode-ai/app"
+import { useCommand } from "./providers"
 import { setExtHubOpen } from "../extensions/ext-hub-state"
 
 export const EFFORTS = ["低", "中", "高", "超高"] as const

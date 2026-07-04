@@ -8,7 +8,7 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import { useLocation, useNavigate } from "@solidjs/router"
-import { useCommand } from "@opencode-ai/app"
+import { useCommand } from "../alpha-ui/providers"
 import { ProjectAvatar, type ProjectAvatarVariant } from "@opencode-ai/ui/v2/project-avatar-v2"
 import { Icon } from "@opencode-ai/ui/v2/icon"
 import { useTheme } from "@opencode-ai/ui/theme/context"

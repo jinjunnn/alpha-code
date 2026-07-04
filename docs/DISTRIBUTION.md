@@ -77,3 +77,4 @@ curl -sL -o /dev/null -w "%{http_code}\n" \
 - **entitlements 收紧**(`resources/entitlements.plist`):移除 `disable-executable-page-protection`、`allow-dyld-environment-variables`、`disable-library-validation`(dylib 注入组合);保留 `allow-jit`/`allow-unsigned-executable-memory`(V8)+ `audio-input`。**若签名包 native 模块(node-pty/ghostty)加载失败 → 仅回补 `disable-library-validation` 一项并在此记账。**
 - **打包态 CSP + 回环-only CORS**(C24,`renderer-security.ts`):排障逃生 `ALPHA_CSP_DISABLE=1`。
 - 验证清单(每次签名发版):stapler validate + spctl ✓ → 启动 → 终端(WASM+PTY)→ diff → 流式会话 → 定制中心 → 登录/账户 → 更新器检查。
+- **耦合面复核**(C14):发版/re-freeze 前跑 `upstream-anchors` 契约测试;`providers.ts` 之外不得出现 alpha 组件直 import `@opencode-ai/app`;build 若被 brand/patch strict 拦下 = 上游子串漂移,更新清单而非放行。
