@@ -45,6 +45,7 @@ import { registerWslIpcHandlers } from "./wsl/ipc"
 import { spawnWslSidecar } from "./wsl/sidecar"
 import { migrate } from "./migrate"
 import { ensureAlphaLayoutDefault } from "./alpha-defaults"
+import { initialSelfHealState, noteSpawn, planSelfHeal } from "./sidecar-self-heal"
 import { initEndpoints } from "./alpha-endpoints"
 import { registerEndpointsIpcHandlers } from "./endpoints-ipc"
 import { initByokKeys, injectByokKeysIntoEnv, setByokKeyDeps } from "./alpha-byok-keys"
@@ -109,6 +110,33 @@ async function killSidecar() {
   const current = server
   server = null
   await current.stop()
+}
+
+// B5 crash self-heal(wiring;决策逻辑在 sidecar-self-heal.ts)。gen 区分「本代 child 崩了」与
+// 「上一代 child 的迟到 exit」;蓄意 kill 的信号 = killSidecar 先把 `server` 置 null 再 stop。
+let quittingApp = false
+let sidecarGen = 0
+let selfHeal = initialSelfHealState()
+let selfHealTimer: NodeJS.Timeout | null = null
+let requestSidecarRespawn: (() => Promise<void>) | null = null
+
+function handleSidecarExit(gen: number, code: number) {
+  writeLog("utility", "sidecar exited", { code }, "warn")
+  if (quittingApp) return
+  if (gen !== sidecarGen) return
+  if (!server) return
+  const plan = planSelfHeal(selfHeal, Date.now())
+  selfHeal = plan.state
+  if (plan.action === "give-up") {
+    writeLog("utility", "sidecar crash-loop — self-heal gave up; login/proxy toggles still respawn manually", { attempts: selfHeal.attempts }, "error")
+    return
+  }
+  writeLog("utility", "sidecar self-heal scheduled", { delayMs: plan.delayMs, attempt: selfHeal.attempts }, "warn")
+  if (selfHealTimer) clearTimeout(selfHealTimer)
+  selfHealTimer = setTimeout(() => {
+    selfHealTimer = null
+    void requestSidecarRespawn?.()
+  }, plan.delayMs)
 }
 
 function ensureLoopbackNoProxy() {
@@ -274,10 +302,14 @@ const main = Effect.gen(function* () {
   })
 
   app.on("before-quit", () => {
+    quittingApp = true // B5:退出期的 sidecar exit 不触发自愈
+    if (selfHealTimer) clearTimeout(selfHealTimer)
     void stopSidecars()
   })
 
   app.on("will-quit", () => {
+    quittingApp = true
+    if (selfHealTimer) clearTimeout(selfHealTimer)
     void stopSidecars()
   })
 
@@ -442,12 +474,14 @@ const main = Effect.gen(function* () {
     markSidecarTokenSnapshot()
 
     logger.log("spawning sidecar", { url })
+    const spawnGen = ++sidecarGen
+    selfHeal = noteSpawn(selfHeal, Date.now())
     const { listener, health } = yield* Effect.promise(() =>
       spawnLocalServer(hostname, port, password, {
         userDataPath: app.getPath("userData"),
         onStdout: (message) => writeLog("server", "stdout", { message }),
         onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
-        onExit: (code) => writeLog("utility", "sidecar exited", { code }, "warn"),
+        onExit: (code) => handleSidecarExit(spawnGen, code),
       }),
     )
     server = listener
@@ -490,7 +524,7 @@ const main = Effect.gen(function* () {
   // reconnects (url/password unchanged → awaitInitialization stays valid) and re-fetches providers →
   // the proxy activates with zero clicks and no restart.
   const doRespawnSidecar = async () => {
-    if (!mainWindow || mainWindow.isDestroyed()) return
+    if (quittingApp) return
     try {
       logger.log("respawning sidecar (proxy activation)")
       // REQ-001:respawn 前刷新 edition 白名单缓存(登录刚建立 → 按租户 edition 收窄;8s 超时内置,
@@ -500,16 +534,26 @@ const main = Effect.gen(function* () {
       await killSidecar()
       ensureLoopbackNoProxy()
       useEnvProxy()
+      const spawnGen = ++sidecarGen
+      selfHeal = noteSpawn(selfHeal, Date.now())
       const { listener, health } = await spawnLocalServer(hostname, port, password, {
         userDataPath: app.getPath("userData"),
         onStdout: (message) => writeLog("server", "stdout", { message }),
         onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
-        onExit: (code) => writeLog("utility", "sidecar exited", { code }, "warn"),
+        onExit: (code) => handleSidecarExit(spawnGen, code),
       })
       server = listener
-      await Promise.race([health.wait.catch(() => {}), new Promise((resolve) => setTimeout(resolve, 20000))])
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.reload()
-      logger.log("sidecar respawned + renderer reloaded")
+      // B5 验收②:未健康不 reload —— reload 进死后端只会白屏(REQ-014 同族),留旧 renderer 状态。
+      const healthy = await Promise.race([
+        health.wait.then(() => true, () => false),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 20000)),
+      ])
+      if (healthy && mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.reload()
+        logger.log("sidecar respawned + renderer reloaded")
+      } else if (!healthy) {
+        logger.error("sidecar respawned but health check failed — skipping renderer reload")
+      }
     } catch (error) {
       logger.error("sidecar respawn failed", error)
     }
@@ -534,6 +578,7 @@ const main = Effect.gen(function* () {
     return respawning
   }
 
+  requestSidecarRespawn = respawnSidecar // B5:崩溃自愈复用同一互斥/合并入口
   setAuthDeps({ getWindow: () => mainWindow, respawn: respawnSidecar })
   // B21:BYOK 改键/删键即时生效 —— 持久化成功后重注 env(自有注入权威覆盖/清除,用户值不动)+
   // respawn(fork 时 A6 syncSecretFiles 把新 env 镜像进 {file:} 通道 → 新 sidecar 即用新 key)。
