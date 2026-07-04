@@ -14,7 +14,7 @@
 | T2 | `.alpha` 双层落盘 + 桥:全局 `~/.alpha/{skills,agents,commands,plugins}`、`connectors.json` 真源;`~/.opencode/<类>` symlink 桥(已存在目录退化逐文件链);**全局 MCP/plugin write-through `~/.opencode/opencode.jsonc`(文件通道,免重启前提)**;项目 scope 选择;写路径守卫扩 root;单测 | REQ-018 T3 | fable | ☐ |
 | T3 | 存量迁移弹窗(检测根 A alpha 写入物 → 清单确认 → 搬移+receipt;`ALPHA_LEGACY_INSTALL_ROOT=1` 逃生)+ **A2 存量钉版迁移同场**;⚠️ 弹窗放行门 = T8 解 R3(代码可合、开关后开) | REQ-018 T4 + A2 尾项 | fable | ☐ |
 | **Track β —— 生效与密钥** | | | | |
-| T4 | 免重启生效:先 spike 实测(dispose→重建耗时 / 活跃 PTY·SSE 影响 / MCP 重连风暴)→ 安装/卸载后自动 `instance.dispose`(项目)/`global.dispose`(全局)+ 进行中流式守卫;respawn 降兜底;「重启后生效」文案全清 | REQ-018 T2 | fable | ☐ |
+| T4 | 免重启生效:先 spike 实测(dispose→重建耗时 / 活跃 PTY·SSE 影响 / MCP 重连风暴)→ 安装/卸载后自动 `instance.dispose`(项目)/`global.dispose`(全局)+ 进行中流式守卫;respawn 降兜底;「重启后生效」文案全清 | REQ-018 T2 | fable | ✅ **spike CONFIRMED + 接线 PR #67**:隔离 headless server 实测——写盘后缓存不可见(placebo 实锤)→ `POST /instance/dispose` 8ms → 下一请求 101ms 重建,**经 symlink 桥的 skill/agent 立即可见**;`/global/dispose` 310ms 同验;skill/agent/plugin 安装后自动 `global.dispose`,失败降级「待重载」文案;活跃流打断残险 → T8 真机;PTY/MCP 风暴观察项 → T8 |
 | T5 | MCP 密钥 `{file:}` 化:requiredEnvVars 密文输入 → `alpha-secrets/<VAR>`(0600);config 只落 `{file:}` 引用;文案修正(`~/.opencode` 路径误写、钥匙串误导) | REQ-018 T5 | opus | ☐ |
 | **Track γ —— UI 与内容** | | | | |
 | T6 | 全类型已安装列表(类型/名称/scope/版本/状态点/操作)+ 卸载(receipt 驱动,确认弹窗列将删内容)+ plugin 已装态(config `plugin[]` ∪ receipts) | REQ-018 T6+T8 | opus | ☐ |
