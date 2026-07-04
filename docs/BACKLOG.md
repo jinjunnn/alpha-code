@@ -83,7 +83,7 @@
 | C3 | 日志治理:opencode.log 145MB 轮转 + netlog 改 opt-in(T2.5) | debt | A | shipped | **PR #35**(→ [s9b](sprints/2026-07-03-s9b-hygiene/sprint.md));`logging.ts`:netlog opt-in(`ALPHA_NETLOG=1` 默认关)+ opencode.log 启动期超限归档(25MB,留最近 3 份);typecheck+97 tests 绿,轮转逻辑合成文件 E2E 6/6 过;**verified 待**运行期首次打包启动真机轮转 |
 | C5 | skills 每 Instance 重复扫描 | perf | A | registered | 上游(R2);杠杆=减 Instance 数(B4/B12) |
 | C8 | ADR-002 sidecar 语义修订:承认 main-IPC 为桌面等价物(T6.4) | docs | A | ready | YAGNI:真 HTTP sidecar 出现需求再立 |
-| C9 | 代码上云数据边界 mini-ADR:diff-only/secrets 过滤/consent/体积上限(T4.5) | security | X | in-sprint | **→ [S11](sprints/2026-07-03-s11-cloud-loop/sprint.md) T3(与 B3 同场)**;与 B16 互补(C9=技术边界,B16=法律同意) |
+| C9 | 代码上云数据边界 mini-ADR:diff-only/secrets 过滤/consent/体积上限(T4.5) | security | X | shipped | **S11 T3 完成(PR #56)= [ADR-021](../.claude/rules/adrs/ADR-021-cloud-data-boundary.md)**:显式通道 diff-only+1MB 帽+secrets 拒发(落点 dispatchCloudJob,待实现随 B3 记账)· 隐式通道=告知+BYOK 逃生(不装过滤)· consent 双挂钩留 B16 拍时机;与 B16 分工写明,B16 重启零返工 |
 | C12 | CORS 过宽(localhost/无 Origin 放行) | security | A | registered | 上游(R2);alpha 杠杆=先撤自己注入的 `ACAO:*`(→C24) |
 | C14 | 升级静默破坏面:232 选择器 / 16 处 `as any`;薄 re-export 收敛层(ADR-016 待办①) | debt | A | in-sprint | **→ [S11](sprints/2026-07-03-s11-cloud-loop/sprint.md) T8**(REQ-013 已拍板冻结,前置成熟);R7:实际耦合面 5-6× 于初报;选择器清单已建(REQ-012 `upstream-anchors.json` 即收敛载体) |
 | C15 | 运行时 SSE/DOM 浪费:firehose 裸遍历 + body 全子树 MutationObserver 收窄 | perf | A | ready | R6:有去抖,影响弱于字面;含 A3 尾项:`session.idle` 全量 session.list 去抖(册 §7g deferred) |
