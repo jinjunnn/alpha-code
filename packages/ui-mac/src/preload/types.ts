@@ -244,6 +244,8 @@ export type ElectronAPI = {
       name: string,
       server: Record<string, unknown>,
       meta?: InstallMeta,
+      /** env var names in server.environment whose values are secrets → routed to the {file:} channel */
+      secretVars?: string[],
     ) => Promise<{ ok: true } | { ok: false; reason: string }>
     removeMcp: (name: string) => Promise<{ ok: true } | { ok: false; reason: string }>
     checkRuntime: (tool: string) => Promise<{ ok: boolean }>

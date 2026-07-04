@@ -405,7 +405,7 @@ const main = Effect.gen(function* () {
     },
   })
   registerWslIpcHandlers(wslServers)
-  registerExtIpcHandlers()
+  registerExtIpcHandlers(app.getPath("userData"))
   registerAccountIpcHandlers()
   registerCloudIpcHandlers()
   registerModelsIpcHandlers(app.getPath("userData"))
