@@ -6,6 +6,7 @@ import type { Details } from "electron"
 import { resolveExtPluginPath } from "./alpha-ext-plugin"
 import { syncSecretFiles } from "./alpha-secret-files"
 import { loadAlphaSecrets } from "./alpha-secrets"
+import { pollUntilHealthy } from "./health-poll"
 import { getLogger } from "./logging"
 import { createSidecarEnv } from "./sidecar-env"
 import { getUserShell, loadShellEnv } from "./shell-env"
@@ -211,13 +212,10 @@ export async function spawnLocalServer(
     })
 
     const ready = async () => {
-      while (true) {
-        await new Promise((resolve) => setTimeout(resolve, 100))
-        if (await checkHealth(url, password)) {
-          healthy = true
-          return
-        }
-      }
+      // D1: probe immediately, then back off ~100ms only after a failed check (was sleep-first,
+      // costing every startup an upfront ~100ms). Mirrors wsl/startup.ts `pollWslHealth` ordering.
+      await pollUntilHealthy(() => checkHealth(url, password), 100)
+      healthy = true
     }
 
     await Promise.race([ready(), gone])
