@@ -2,15 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!-- C27 收紧(2026-07-04):V8 JIT 必需的两项保留;以下三项已移除并记录必要性判断——
+         disable-executable-page-protection(Electron 不需要,继承性过宽)、
+         allow-dyld-environment-variables + disable-library-validation(经典 dylib 注入组合;
+         electron-builder 深签所有内嵌二进制为同一 Developer ID → 库校验可开启。若签名包内
+         native 模块(node-pty/ghostty)加载失败,仅回补 disable-library-validation 一项并记账)。 -->
     <key>com.apple.security.cs.allow-jit</key>
     <true/>
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
-    <true/>
-    <key>com.apple.security.cs.disable-executable-page-protection</key>
-    <true/>
-    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
-    <true/>
-    <key>com.apple.security.cs.disable-library-validation</key>
     <true/>
     <key>com.apple.security.device.audio-input</key>
     <true/>
