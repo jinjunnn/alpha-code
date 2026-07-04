@@ -71,3 +71,9 @@ curl -sL -o /dev/null -w "%{http_code}\n" \
 
 ## 4. 下一个真实版本怎么发(TL;DR)
 改 `package.json` 版本 → `source signing.env && OPENCODE_CHANNEL=prod bun run build && bun run package:mac` → stapler/spctl 验证 → `gh release create v<ver> …` → curl feed 得 200。整条链(签名→公证→feed)v0.1.0 已端到端验证。
+
+## 5. 硬化面(C27/C24,2026-07-04,S11 T6/T7)
+- **Electron fuses**(`electron-builder.config.ts` electronFuses):`RunAsNode` / `NODE_OPTIONS` / node-inspect 三注入原语关闭;`EmbeddedAsarIntegrityValidation` + `OnlyLoadAppFromAsar` + `CookieEncryption` 开启。sidecar 走 utilityProcess 不受影响;全仓无 `ELECTRON_RUN_AS_NODE` 用法。
+- **entitlements 收紧**(`resources/entitlements.plist`):移除 `disable-executable-page-protection`、`allow-dyld-environment-variables`、`disable-library-validation`(dylib 注入组合);保留 `allow-jit`/`allow-unsigned-executable-memory`(V8)+ `audio-input`。**若签名包 native 模块(node-pty/ghostty)加载失败 → 仅回补 `disable-library-validation` 一项并在此记账。**
+- **打包态 CSP + 回环-only CORS**(C24,`renderer-security.ts`):排障逃生 `ALPHA_CSP_DISABLE=1`。
+- 验证清单(每次签名发版):stapler validate + spctl ✓ → 启动 → 终端(WASM+PTY)→ diff → 流式会话 → 定制中心 → 登录/账户 → 更新器检查。

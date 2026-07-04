@@ -94,8 +94,8 @@
 | C22 | 依赖漏洞:bun audit 158(2 crit/45 high),多在 dev 工具链 | debt | A | registered | 发布产物暴露面小;定期复扫 |
 | C23 | 云 SSE 退避/重连/终态判定/`subs` 泄漏(NEW-2/3/4) | debt | A | dup | **→ REQ-003 已修全部四病灶(PR #50)**;respawn 互斥(NEW-4)已随 B5(PR #48) |
 | C24 | CSP 落地 + 撤 alpha 自注入 `ACAO:*`(exfil 通道) | security | A | shipped | **S11 T6(PR #59)**:ACAO/ACAH 收敛回环-only(darwin;win32 留旧供 WSL)+ 打包态 renderer CSP(connect-src=self+回环,script=self+wasm-unsafe-eval 供 ghostty,img 放 https 供 markdown 远图;双路径注入 webRequest+protocol.handle;`ALPHA_CSP_DISABLE=1` 逃生);11 单测;**verified 待打包态逐屏走查 + exfil 取证**(→ 本 sprint ship/视觉批) |
-| C25 | `open-path` + `ext-install-plugin` exec 触达面收紧 | security | A | in-sprint | **→ [S11](sprints/2026-07-03-s11-cloud-loop/sprint.md) T7(随 C27 顺带)**;C2 同类配置期触达面,渲染层可达 |
-| C27 | Electron fuses(关 RunAsNode)+ asar-integrity + entitlements 收紧 | security | A | in-sprint | **→ [S11](sprints/2026-07-03-s11-cloud-loop/sprint.md) T7**;dylib 注入组合;邻接 A7;与 C24 共享打包回归场 |
+| C25 | `open-path` + `ext-install-plugin` exec 触达面收紧 | security | A | shipped | **S11 T7(PR #61)**:`open -a` 收紧为编辑器/查看器白名单(白名单外降级系统默认打开,Terminal 类 exec 原语关闭);plugin 半边核实 SAFE_PACKAGE 已挡 URL/路径(无需改);verified 随打包走查 |
+| C27 | Electron fuses(关 RunAsNode)+ asar-integrity + entitlements 收紧 | security | A | shipped | **S11 T7(PR #61)**:fuses 六项(RunAsNode/NODE_OPTIONS/inspect 关 + asar-integrity/OnlyLoadAppFromAsar/CookieEncryption 开)+ entitlements 移除 dylib 注入组合三项(保 JIT 两项+audio;若 native 加载失败仅回补 library-validation 一项);记账 DISTRIBUTION.md §5;**verified 待签名打包全回归**(→ ship 批,stapler/spctl+逐屏) |
 | C28 | placebo 控件诚实化(composer 只读/effort)+ 崩溃屏接管设计 | ux | A | registered | 顶层 ErrorBoundary 方案已实测证伪撤回(册 §7h);品牌部分已由 C29 修;剩=控件诚实化 + 边界下沉设计 |
 
 ## Active — P3(卫生)

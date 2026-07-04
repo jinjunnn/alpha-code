@@ -194,8 +194,22 @@ export function registerIpcHandlers(deps: Deps) {
     void shell.openExternal(url)
   })
 
+  // C25:`open -a <app>` 是渲染层可达的任意应用启动原语(如 app=Terminal 会直接执行 path 参数)。
+  // 收紧为编辑器/查看器白名单;白名单外降级为系统默认打开(不 exec,行为仍可用)。
+  const ALLOWED_OPEN_APPS = new Set([
+    "Visual Studio Code",
+    "Cursor",
+    "Zed",
+    "Sublime Text",
+    "TextEdit",
+    "Xcode",
+    "IntelliJ IDEA",
+    "WebStorm",
+    "PyCharm",
+    "Finder",
+  ])
   ipcMain.handle("open-path", async (_event: IpcMainInvokeEvent, path: string, app?: string) => {
-    if (!app) return shell.openPath(path)
+    if (!app || !ALLOWED_OPEN_APPS.has(app)) return shell.openPath(path)
     await new Promise<void>((resolve, reject) => {
       const [cmd, args] =
         process.platform === "darwin" ? (["open", ["-a", app, path]] as const) : ([app, [path]] as const)

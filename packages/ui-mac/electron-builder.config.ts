@@ -95,6 +95,17 @@ const getBase = (appId: string): Configuration => ({
       filter: ["plugin.js"],
     },
   ],
+  // C27:Electron fuses 纵深防御。RunAsNode/NODE_OPTIONS/inspect 三个注入原语全关(全仓无
+  // ELECTRON_RUN_AS_NODE 用法,sidecar 走 utilityProcess 不受影响;preload 的 install-cli 为无
+  // handler 死通道);asar 完整性校验开启(mac 打包时 electron-builder 自动计算 integrity)。
+  electronFuses: {
+    runAsNode: false,
+    enableNodeOptionsEnvironmentVariable: false,
+    enableNodeCliInspectArguments: false,
+    enableEmbeddedAsarIntegrityValidation: true,
+    onlyLoadAppFromAsar: true,
+    enableCookieEncryption: true,
+  },
   mac: {
     category: "public.app-category.developer-tools",
     icon: `resources/icons/icon.icns`,
