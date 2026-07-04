@@ -55,7 +55,7 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   font-family: var(--a-font-mono);
 }
 
-/* ── Sticky, centered tab bar + close ───────────────────────────────────────── */
+/* ── Sticky, centered horizontal tab bar + close(2026-07-04 拍板:横向导航定稿) ── */
 .alpha-ext-tabs {
   position: sticky;
   top: 0;
@@ -99,10 +99,24 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   color: var(--a-text);
   border-bottom-color: var(--a-accent);
 }
+/* 已安装 tab 上的「可更新」琥珀角标(REQ-019 T1) */
+.alpha-ext-tab-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-warning-subtle);
+  color: var(--a-warning);
+  font-size: 10px;
+  font-weight: var(--a-weight-semibold);
+  font-family: var(--a-font-mono);
+  transform: translateY(-1px);
+}
 .alpha-ext-close {
   position: absolute;
   top: 8px;
   right: 14px;
+  z-index: 5;
   width: 30px;
   height: 30px;
   border: none;
@@ -946,5 +960,252 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   font-size: var(--a-text-xs);
   color: var(--a-text-tertiary);
   margin: 0;
+  line-height: var(--a-leading-snug);
+}
+
+/* ── REQ-019 T2:详情页(hub 内二级页) ─────────────────────────────────────── */
+.alpha-ext-card[data-clickable],
+.alpha-ext-kit[data-clickable],
+.alpha-ext-man[data-clickable] {
+  cursor: pointer;
+}
+.alpha-ext-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  animation: a-ext-in var(--a-dur-base) var(--a-ease-out);
+}
+/* 面包屑(2026-07-04 拍板:「‹ 类目名 / 条目名」,首级可点 = 返回列表) */
+.alpha-ext-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--a-text-sm);
+}
+.alpha-ext-crumb-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 9px 5px 5px;
+  border: none;
+  border-radius: var(--a-radius-md);
+  background: transparent;
+  color: var(--a-text-secondary);
+  font-family: var(--a-font-sans);
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+  cursor: pointer;
+  transition: background var(--a-dur-fast) var(--a-ease-out), color var(--a-dur-fast) var(--a-ease-out);
+}
+.alpha-ext-crumb-link:hover {
+  background: var(--a-bg-muted);
+  color: var(--a-text);
+}
+.alpha-ext-crumb-sep {
+  color: var(--a-text-disabled);
+}
+.alpha-ext-crumb-cur {
+  color: var(--a-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.alpha-ext-dhead {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+/* 详情页头部右侧主操作区(2026-07-04 定稿,参照 ChatGPT 插件详情页) */
+.alpha-ext-dhead-act {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 4px;
+}
+.alpha-ext-add[data-size="lg"] {
+  height: 34px;
+  padding: 0 16px;
+  font-size: var(--a-text-sm);
+}
+.alpha-ext-dhead-ic {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 19px;
+  font-weight: var(--a-weight-bold);
+  flex: none;
+}
+.alpha-ext-dhead-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.alpha-ext-dhead-t {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.alpha-ext-dhead-t h2 {
+  margin: 0;
+  font-size: var(--a-text-xl);
+  font-weight: var(--a-weight-bold);
+  line-height: 1.2;
+}
+.alpha-ext-dhead-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: var(--a-text-sm);
+  color: var(--a-text-tertiary);
+}
+.alpha-ext-dhead-id {
+  font-family: var(--a-font-mono);
+  font-size: 11.5px;
+  background: var(--a-bg-muted);
+  border-radius: 5px;
+  padding: 1px 6px;
+}
+.alpha-ext-dhead-installed {
+  color: var(--a-success);
+  font-weight: var(--a-weight-medium);
+}
+.alpha-ext-verify-chip {
+  font-size: 11px;
+  font-weight: var(--a-weight-medium);
+  color: var(--a-warning, #b45309);
+  background: color-mix(in srgb, var(--a-warning, #f59e0b) 14%, transparent);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.alpha-ext-verify-note {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--a-warning, #f59e0b) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--a-warning, #f59e0b) 25%, transparent);
+  font-size: var(--a-text-sm);
+  line-height: var(--a-leading-snug);
+}
+.alpha-ext-verify-note b {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--a-warning, #b45309);
+  font-size: var(--a-text-xs);
+}
+.alpha-ext-verify-note p {
+  margin: 0;
+  color: var(--a-text-secondary);
+}
+.alpha-ext-dsec {
+  border-top: 1px solid var(--a-border-faint);
+  padding-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.alpha-ext-dsec-t {
+  margin: 0;
+  font-size: 11px;
+  font-weight: var(--a-weight-medium);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--a-text-tertiary);
+}
+.alpha-ext-dabout {
+  margin: 0;
+  font-size: var(--a-text-md);
+  line-height: var(--a-leading-normal);
+  color: var(--a-text-secondary);
+}
+.alpha-ext-dfact {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-size: var(--a-text-sm);
+}
+.alpha-ext-dfact-l {
+  flex: 0 0 96px;
+  color: var(--a-text-tertiary);
+}
+.alpha-ext-dfact-v {
+  min-width: 0;
+  color: var(--a-text);
+  overflow-wrap: anywhere;
+}
+.alpha-ext-dcode {
+  font-family: var(--a-font-mono);
+  font-size: 11.5px;
+  background: var(--a-bg-muted);
+  border-radius: 5px;
+  padding: 2px 6px;
+}
+.alpha-ext-dnote {
+  margin: 0;
+  font-size: var(--a-text-sm);
+  color: var(--a-text-tertiary);
+  line-height: var(--a-leading-snug);
+}
+.alpha-ext-dboundary {
+  margin: 0;
+  font-size: var(--a-text-sm);
+  color: var(--a-text-secondary);
+  line-height: var(--a-leading-snug);
+}
+.alpha-ext-dpills {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.alpha-ext-dbundle {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.alpha-ext-dbundle-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--a-border-faint);
+  border-radius: 10px;
+  background: var(--a-surface);
+  font-family: var(--a-font-sans);
+  font-size: var(--a-text-sm);
+  color: var(--a-text);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--a-dur-fast) var(--a-ease-out), border-color var(--a-dur-fast) var(--a-ease-out);
+}
+.alpha-ext-dbundle-row:hover {
+  background: var(--a-bg-muted);
+  border-color: var(--a-border);
+}
+.alpha-ext-add[data-variant="danger"] {
+  color: var(--a-error);
+  border-color: color-mix(in srgb, var(--a-error) 35%, transparent);
+}
+.alpha-ext-add[data-variant="danger"]:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--a-error) 8%, transparent);
+}
+
+/* 有更新分组标题(琥珀)+ 插件确认框风险行 */
+.alpha-ext-overline[data-warn] {
+  color: var(--a-warning);
+}
+.alpha-ext-overline[data-warn] b {
+  color: var(--a-warning);
+}
+.alpha-ext-confirm-risk {
+  margin: 10px 0 0;
+  font-size: var(--a-text-sm);
+  color: var(--a-warning);
   line-height: var(--a-leading-snug);
 }

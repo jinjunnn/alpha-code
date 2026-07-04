@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>alpha-code · 定制中心 M2 交互设计稿 — 逐类型点击逻辑 + 详情页 + 有更新 (2026-07-04)</title>
+<style>
+/* ════════════════════════════════════════════════════════════════════════
+   alpha-ui tokens — verbatim from 2026-06-26-hub-settings-redesign/design.html
+   本稿 = 6-26 稿的 M2 增量:视觉语言零改动;新增 = 逐类型交互逻辑 + 详情页。
+   ════════════════════════════════════════════════════════════════════════ */
+:root{
+  --a-bg-canvas:#ffffff;--a-bg-subtle:#f6f7f9;--a-bg-muted:#eceef1;--a-bg-inset:#e3e6ea;
+  --a-surface:#ffffff;--a-surface-raised:#ffffff;--a-scrim:rgba(15,17,21,.45);
+  --a-border-faint:#eef0f3;--a-border:#e4e6ea;--a-border-strong:#ced2d9;
+  --a-text:#18181b;--a-text-secondary:#52525b;--a-text-tertiary:#7c7d85;--a-text-disabled:#b3b6bd;
+  --a-overlay-hover:rgba(15,17,21,.05);
+  --a-accent:#4f46e5;--a-accent-solid:#4f46e5;--a-accent-solid-hover:#4338ca;
+  --a-accent-subtle:rgba(79,70,229,.10);--a-accent-ring:rgba(79,70,229,.45);
+  --a-success:#16a34a;--a-warning:#d97706;--a-error:#dc2626;--a-info:#2563eb;
+  --a-success-subtle:rgba(22,163,74,.12);--a-warning-subtle:rgba(217,119,6,.12);--a-error-subtle:rgba(220,38,38,.12);
+  --a-font-sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;
+  --a-font-mono:"SF Mono","JetBrains Mono","Menlo",ui-monospace,monospace;
+  --a-text-2xs:10.5px;--a-text-xs:11.5px;--a-text-sm:12.5px;--a-text-base:13px;--a-text-md:14px;--a-text-lg:16px;--a-text-xl:19px;--a-text-2xl:23px;
+  --a-leading-tight:1.2;--a-leading-snug:1.4;--a-leading-normal:1.55;--a-tracking-tight:-0.014em;--a-tracking-wide:0.04em;
+  --a-weight-normal:400;--a-weight-medium:500;--a-weight-semibold:600;
+  --a-radius-sm:6px;--a-radius-md:8px;--a-radius-lg:11px;--a-radius-xl:14px;--a-radius-2xl:18px;--a-radius-full:9999px;
+  --a-shadow-xs:0 1px 2px rgba(15,17,21,.05);
+  --a-shadow-sm:0 1px 3px rgba(15,17,21,.07),0 1px 2px rgba(15,17,21,.04);
+  --a-shadow-md:0 4px 12px rgba(15,17,21,.08),0 2px 4px rgba(15,17,21,.05);
+  --a-shadow-lg:0 12px 32px rgba(15,17,21,.12),0 4px 8px rgba(15,17,21,.06);
+  --a-shadow-overlay:0 24px 64px rgba(15,17,21,.20),0 8px 16px rgba(15,17,21,.10);
+  --a-ring-focus:0 0 0 3px var(--a-accent-ring);
+  --a-edge-light:inset 0 1px 0 rgba(255,255,255,.65);
+  --a-dur-fast:130ms;--a-dur-base:190ms;--a-ease-out:cubic-bezier(.22,1,.36,1);
+}
+html[data-theme="dark"]{
+  --a-bg-canvas:#0a0b0d;--a-bg-subtle:#0e0f11;--a-bg-muted:#16171a;--a-bg-inset:#1e2024;
+  --a-surface:#121316;--a-surface-raised:#17181b;--a-scrim:rgba(0,0,0,.60);
+  --a-text:#fafafa;--a-text-secondary:#a1a1aa;--a-text-tertiary:#71727a;--a-text-disabled:#4f5158;
+  --a-border-faint:#1b1c20;--a-border:#232428;--a-border-strong:#34363c;
+  --a-overlay-hover:rgba(255,255,255,.055);
+  --a-accent:#818cf8;--a-accent-solid:#4f46e5;--a-accent-solid-hover:#5b54ea;
+  --a-accent-subtle:rgba(129,140,248,.14);--a-accent-ring:rgba(129,140,248,.45);
+  --a-success:#4ade80;--a-warning:#fbbf24;--a-error:#f87171;--a-info:#60a5fa;
+  --a-success-subtle:rgba(74,222,128,.14);--a-warning-subtle:rgba(251,191,36,.14);--a-error-subtle:rgba(248,113,113,.14);
+  --a-shadow-xs:0 1px 2px rgba(0,0,0,.4);
+  --a-shadow-sm:0 1px 3px rgba(0,0,0,.5),0 1px 2px rgba(0,0,0,.4);
+  --a-shadow-md:0 4px 12px rgba(0,0,0,.5),0 2px 4px rgba(0,0,0,.4);
+  --a-shadow-lg:0 12px 32px rgba(0,0,0,.6),0 4px 8px rgba(0,0,0,.4);
+  --a-shadow-overlay:0 24px 64px rgba(0,0,0,.7),0 8px 16px rgba(0,0,0,.5);
+  --a-edge-light:inset 0 1px 0 rgba(255,255,255,.06);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--a-bg-subtle);color:var(--a-text);font-family:var(--a-font-sans);font-size:var(--a-text-base);line-height:var(--a-leading-normal);-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{margin:0;font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight);line-height:var(--a-leading-tight)}
+button{font-family:inherit;cursor:pointer}
+svg{display:block}
+.ic{width:16px;height:16px;stroke:currentColor;stroke-width:1.6;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.ic.sm{width:14px;height:14px}
+.mono{font-family:var(--a-font-mono)}
+
+/* ── doc chrome(同 6-26 稿) ── */
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:16px;padding:12px 22px;background:color-mix(in srgb,var(--a-bg-canvas) 86%,transparent);backdrop-filter:blur(12px);border-bottom:1px solid var(--a-border-faint)}
+.topbar .brand{display:flex;align-items:center;gap:10px;font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight)}
+.topbar .brand .m{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:7px;background:var(--a-accent-solid);color:#fff;font-weight:800;font-size:13px}
+.topbar .spacer{flex:1}
+.topbar nav{display:flex;gap:2px}
+.topbar nav a{padding:6px 10px;border-radius:var(--a-radius-md);color:var(--a-text-secondary);text-decoration:none;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium)}
+.topbar nav a:hover{background:var(--a-bg-muted);color:var(--a-text)}
+.seg{display:inline-flex;padding:2px;background:var(--a-bg-muted);border-radius:var(--a-radius-md);gap:2px}
+.seg button{border:0;background:transparent;color:var(--a-text-secondary);font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);padding:5px 10px;border-radius:6px}
+.seg button.on{background:var(--a-surface);color:var(--a-text);box-shadow:var(--a-shadow-xs)}
+.wrap{max-width:1240px;margin:0 auto;padding:36px 24px 140px}
+.sec{margin-bottom:60px;scroll-margin-top:76px}
+.sec-head{margin-bottom:18px}
+.sec-kicker{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary)}
+.sec h2{font-size:var(--a-text-2xl);margin-top:6px}
+.sec p.lede{margin:8px 0 0;color:var(--a-text-secondary);font-size:var(--a-text-md);max-width:78ch}
+.note{margin-top:14px;padding:12px 14px;background:var(--a-bg-canvas);border:1px solid var(--a-border);border-left:3px solid var(--a-accent);border-radius:var(--a-radius-md);font-size:var(--a-text-sm);color:var(--a-text-secondary)}
+.note b{color:var(--a-text);font-weight:var(--a-weight-semibold)}
+.note.warn{border-left-color:var(--a-warning)}
+.note.ok{border-left-color:var(--a-success)}
+.frame{position:relative;border:1px solid var(--a-border);border-radius:var(--a-radius-xl);overflow:hidden;background:var(--a-bg-canvas);box-shadow:var(--a-shadow-md)}
+.frame-scroll{overflow-x:auto}
+.cap{font-size:var(--a-text-xs);color:var(--a-text-tertiary);margin-top:10px}
+
+/* ── 交互逻辑矩阵表 ── */
+.matrix-scroll{overflow-x:auto;margin-top:8px}
+table.matrix{width:100%;min-width:900px;border-collapse:separate;border-spacing:0;background:var(--a-surface);border:1px solid var(--a-border);border-radius:var(--a-radius-lg);overflow:hidden;font-size:var(--a-text-sm)}
+.matrix th{background:var(--a-bg-subtle);text-align:left;font-weight:var(--a-weight-semibold);font-size:var(--a-text-xs);color:var(--a-text-secondary);padding:10px 14px;border-bottom:1px solid var(--a-border)}
+.matrix td{padding:11px 14px;border-bottom:1px solid var(--a-border-faint);vertical-align:top;color:var(--a-text-secondary);line-height:var(--a-leading-snug)}
+.matrix tr:last-child td{border-bottom:0}
+.matrix td:first-child{white-space:nowrap;font-weight:var(--a-weight-semibold);color:var(--a-text)}
+.matrix .why{color:var(--a-text-tertiary);font-size:var(--a-text-xs);display:block;margin-top:3px}
+.tag{display:inline-block;font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);padding:1.5px 7px;border-radius:var(--a-radius-full);white-space:nowrap}
+.tag.fast{background:var(--a-success-subtle);color:var(--a-success)}
+.tag.confirm{background:var(--a-accent-subtle);color:var(--a-accent)}
+.tag.page{background:var(--a-warning-subtle);color:var(--a-warning)}
+.tag.none{background:var(--a-bg-muted);color:var(--a-text-tertiary)}
+
+/* ── 流程条 ── */
+.flow{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:10px 0 2px}
+.flow .fl-t{flex:0 0 92px;font-size:var(--a-text-xs);font-weight:var(--a-weight-semibold);color:var(--a-text)}
+.fstep{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border:1px solid var(--a-border);border-radius:var(--a-radius-md);background:var(--a-surface);font-size:var(--a-text-xs);color:var(--a-text-secondary);white-space:nowrap}
+.fstep.hi{border-color:var(--a-accent);color:var(--a-accent);background:var(--a-accent-subtle)}
+.fstep.done{border-color:color-mix(in srgb,var(--a-success) 40%,transparent);color:var(--a-success);background:var(--a-success-subtle)}
+.fstep.risk{border-color:color-mix(in srgb,var(--a-warning) 40%,transparent);color:var(--a-warning);background:var(--a-warning-subtle)}
+.farr{color:var(--a-text-disabled);font-size:var(--a-text-xs)}
+.flow-card{background:var(--a-surface);border:1px solid var(--a-border);border-radius:var(--a-radius-lg);padding:14px 16px;margin-top:10px}
+.flow-card>b{font-size:var(--a-text-md);font-weight:var(--a-weight-semibold)}
+.flow-card>p{margin:6px 0 0;font-size:var(--a-text-sm);color:var(--a-text-tertiary)}
+
+/* ── app shell(同 6-26 稿) ── */
+.app{display:flex;height:660px;min-width:1000px}
+.sb{width:236px;flex:none;background:var(--a-bg-subtle);border-right:1px solid var(--a-border-faint);display:flex;flex-direction:column;overflow:hidden}
+.sb-top{display:flex;align-items:center;gap:10px;padding:14px 14px 10px}
+.sb-mark{width:22px;height:22px;border-radius:7px;background:var(--a-accent-solid);color:#fff;display:grid;place-items:center;font-weight:800;font-size:13px}
+.sb-wordmark{font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight);font-size:var(--a-text-md)}
+.sb-scroll{flex:1;overflow-y:auto;padding:6px 8px 16px}
+.sb-overline{padding:10px 8px 6px;font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary)}
+.sb-item{display:flex;align-items:center;gap:8px;height:32px;padding:0 8px;border-radius:var(--a-radius-md);color:var(--a-text-secondary);font-size:var(--a-text-sm);font-weight:var(--a-weight-medium)}
+.sb-item.on{background:var(--a-overlay-hover);color:var(--a-text)}
+
+/* ── hub ── */
+.content{flex:1;background:var(--a-bg-canvas);position:relative;overflow:hidden;display:flex;flex-direction:column}
+.hub-close{position:absolute;top:12px;right:14px;width:30px;height:30px;border:0;border-radius:var(--a-radius-md);background:transparent;color:var(--a-text-tertiary);display:grid;place-items:center;z-index:5}
+.hub-close:hover{background:var(--a-bg-muted);color:var(--a-text)}
+.hub-tabbar{position:sticky;top:0;z-index:4;border-bottom:1px solid var(--a-border-faint);padding:0 24px;display:flex;justify-content:center;background:color-mix(in srgb,var(--a-bg-canvas) 88%,transparent);backdrop-filter:blur(12px)}
+.hub-tabs{display:flex;gap:2px;width:100%;max-width:880px;overflow-x:auto;scrollbar-width:none}
+.hub-tabs::-webkit-scrollbar{display:none}
+.hub-tab{padding:13px 11px 11px;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);color:var(--a-text-tertiary);border-bottom:2px solid transparent;cursor:pointer;margin-bottom:-1px;white-space:nowrap;transition:color var(--a-dur-fast)}
+.hub-tab:hover{color:var(--a-text-secondary)}
+.hub-tab.on{color:var(--a-text);border-bottom-color:var(--a-accent)}
+.hub-tab .bdg{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:var(--a-radius-full);background:var(--a-warning-subtle);color:var(--a-warning);font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);transform:translateY(-1px)}
+.hub-scroll{flex:1;overflow-y:auto;padding:30px 24px 48px;container-type:inline-size}
+.hub-center{max-width:880px;margin:0 auto}
+.hub-h1{font-size:var(--a-text-2xl)}
+.hub-sub{color:var(--a-text-secondary);font-size:var(--a-text-md);margin-top:6px}
+.hub-search{display:flex;align-items:center;gap:10px;height:42px;padding:0 14px;margin:20px 0 26px;background:var(--a-bg-subtle);border:1px solid var(--a-border);border-radius:var(--a-radius-lg);box-shadow:var(--a-edge-light)}
+.hub-search .ic{color:var(--a-text-tertiary)}
+.hub-search input{flex:1;border:0;background:transparent;outline:none;font-size:var(--a-text-md);color:var(--a-text);font-family:inherit}
+.hub-search input::placeholder{color:var(--a-text-tertiary)}
+.hub-secrow{display:flex;align-items:center;justify-content:space-between;margin:28px 0 12px}
+.hub-secrow:first-child{margin-top:6px}
+.hub-secrow .t{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary)}
+.hub-secrow .t b{color:var(--a-text-secondary)}
+.hub-secrow .t.upd{color:var(--a-warning)}
+.hub-secrow .act{font-size:var(--a-text-sm);color:var(--a-accent);font-weight:var(--a-weight-medium);cursor:pointer;background:0;border:0}
+.chip{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);padding:1.5px 7px;border-radius:var(--a-radius-full);letter-spacing:.01em;white-space:nowrap}
+.chip[data-src="official"]{background:color-mix(in srgb,var(--a-info) 14%,transparent);color:var(--a-info)}
+.chip[data-src="alpha"]{background:var(--a-accent-subtle);color:var(--a-accent)}
+.chip[data-src="community"]{background:var(--a-warning-subtle);color:var(--a-warning)}
+.chip[data-src="type"]{background:var(--a-bg-muted);color:var(--a-text-secondary)}
+.chip[data-src="verify"]{background:var(--a-warning-subtle);color:var(--a-warning)}
+.hub-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@container (max-width:620px){.hub-grid{grid-template-columns:1fr}}
+.xcard{display:flex;flex-direction:column;padding:14px;border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-surface);box-shadow:var(--a-edge-light);transition:border-color var(--a-dur-fast),box-shadow var(--a-dur-fast),transform var(--a-dur-fast) var(--a-ease-out);cursor:pointer}
+.xcard:hover{border-color:var(--a-border-strong);box-shadow:var(--a-shadow-sm);transform:translateY(-1px)}
+.xcard-top{display:flex;align-items:flex-start;gap:11px}
+.xcard-ico{width:38px;height:38px;border-radius:var(--a-radius-md);display:grid;place-items:center;font-size:13px;font-weight:700;color:#fff;flex:none;box-shadow:var(--a-shadow-xs)}
+.xcard-hd{min-width:0;flex:1;padding-top:1px}
+.xcard-name{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.xcard-name b{font-size:var(--a-text-md);font-weight:var(--a-weight-semibold)}
+.xcard-desc{font-size:var(--a-text-sm);color:var(--a-text-secondary);margin-top:9px;line-height:var(--a-leading-snug);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:34px}
+.xcard-foot{display:flex;align-items:center;gap:7px;margin-top:13px}
+.meta-pill{display:inline-flex;align-items:center;gap:4px;height:21px;padding:0 7px;border-radius:var(--a-radius-sm);background:var(--a-bg-muted);color:var(--a-text-tertiary);font-size:var(--a-text-2xs);font-weight:var(--a-weight-medium)}
+.xcard-foot .add{margin-left:auto}
+.add{display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 13px;border-radius:var(--a-radius-md);border:0;background:var(--a-accent-solid);color:#fff;font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);box-shadow:var(--a-shadow-xs)}
+.add:hover{background:var(--a-accent-solid-hover)}
+.add[data-variant="ghost"]{background:var(--a-surface);color:var(--a-text);border:1px solid var(--a-border);box-shadow:none}
+.add[data-variant="installed"]{background:var(--a-success-subtle);color:var(--a-success);box-shadow:none}
+.add[data-variant="big"]{height:34px;padding:0 16px;font-size:var(--a-text-sm)}
+.sw{width:36px;height:21px;border-radius:var(--a-radius-full);background:var(--a-bg-inset);position:relative;transition:background var(--a-dur-fast);flex:none;cursor:pointer;border:0;padding:0}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:var(--a-shadow-xs);transition:left var(--a-dur-fast) var(--a-ease-out)}
+.sw.on{background:var(--a-accent-solid)}.sw.on::after{left:17px}
+.man-row{display:flex;align-items:center;gap:13px;padding:13px 15px;border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-surface);margin-bottom:9px;cursor:pointer}
+.man-row:hover{border-color:var(--a-border-strong)}
+.man-row .ico{width:36px;height:36px;border-radius:var(--a-radius-md);display:grid;place-items:center;color:#fff;font-size:12px;font-weight:700;flex:none;box-shadow:var(--a-shadow-xs)}
+.man-row .body{min-width:0;flex:1}
+.man-row .nm{display:flex;align-items:center;gap:8px}
+.man-row .nm b{font-size:var(--a-text-md);font-weight:var(--a-weight-medium)}
+.man-row .st{font-size:var(--a-text-sm);color:var(--a-text-tertiary);margin-top:1px;display:flex;align-items:center;gap:6px}
+.man-row .st .dot{width:6px;height:6px;border-radius:50%}
+.man-row .st .dot.ok{background:var(--a-success)}
+.upd-btn{display:inline-flex;align-items:center;height:28px;padding:0 12px;border-radius:var(--a-radius-md);border:0;background:var(--a-warning-subtle);color:var(--a-warning);font-size:var(--a-text-xs);font-weight:var(--a-weight-semibold)}
+.tabpane{display:none}
+.tabpane.on{display:block;animation:fade .22s var(--a-ease-out)}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.tabpane.on{animation:none}.xcard{transition:none}}
+
+/* ── 详情页(M2 新增;主操作在头部右侧,参照 ChatGPT 插件详情) ── */
+.backrow{display:inline-flex;align-items:center;gap:5px;margin-bottom:16px;padding:5px 10px 5px 4px;border:0;border-radius:var(--a-radius-md);background:transparent;color:var(--a-text-secondary);font-size:var(--a-text-sm);font-weight:var(--a-weight-medium)}
+.backrow:hover{background:var(--a-bg-muted);color:var(--a-text)}
+.dhead{display:flex;gap:14px;margin-bottom:8px;align-items:flex-start}
+.dhead .ico{width:48px;height:48px;border-radius:var(--a-radius-lg);display:grid;place-items:center;font-size:17px;font-weight:700;color:#fff;flex:none;box-shadow:var(--a-shadow-xs)}
+.dhead .hd-body{flex:1;min-width:0}
+.dhead h3{font-size:var(--a-text-xl);display:inline;margin-right:2px}
+.dhead .titleline{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dhead .hd-act{flex:none;display:flex;align-items:center;gap:8px}
+.dmeta{display:flex;gap:12px;flex-wrap:wrap;font-size:var(--a-text-sm);color:var(--a-text-tertiary);margin-top:6px}
+.dmeta code{font-family:var(--a-font-mono);font-size:var(--a-text-xs);background:var(--a-bg-muted);border-radius:5px;padding:1px 6px}
+.dmeta .in{color:var(--a-success);font-weight:var(--a-weight-medium)}
+.dsec{border-top:1px solid var(--a-border-faint);padding:16px 0 18px;margin-top:16px}
+.dsec-t{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary);margin-bottom:10px}
+.dsec p{margin:0;font-size:var(--a-text-sm);color:var(--a-text-secondary);line-height:var(--a-leading-snug)}
+.fact{display:flex;gap:12px;font-size:var(--a-text-sm);margin-bottom:7px}
+.fact .k{flex:0 0 92px;color:var(--a-text-tertiary)}
+.fact .v{min-width:0;color:var(--a-text)}
+.fact code{font-family:var(--a-font-mono);font-size:var(--a-text-xs);background:var(--a-bg-muted);border-radius:5px;padding:1px 6px}
+.vnote{margin-top:12px;padding:10px 13px;border:1px solid color-mix(in srgb,var(--a-warning) 30%,transparent);border-radius:var(--a-radius-md);background:var(--a-warning-subtle);font-size:var(--a-text-sm);color:var(--a-text-secondary)}
+.vnote b{display:block;font-size:var(--a-text-2xs);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-warning);margin-bottom:3px}
+.keypill{display:inline-flex;align-items:center;gap:5px;font-family:var(--a-font-mono);font-size:var(--a-text-xs);background:var(--a-bg-muted);border-radius:var(--a-radius-sm);padding:4px 9px}
+.keypill .ok{color:var(--a-success)}
+.toollist{display:flex;flex-direction:column;gap:6px}
+.toollist .tool{display:flex;gap:10px;align-items:baseline;font-size:var(--a-text-sm)}
+.toollist .tool code{font-family:var(--a-font-mono);font-size:var(--a-text-xs);background:var(--a-bg-muted);border-radius:5px;padding:1px 6px;flex:none}
+.toollist .tool span{color:var(--a-text-tertiary)}
+
+/* ── 确认弹框(同 6-26 稿) + 直装 toast ── */
+.scrim{position:absolute;inset:0;background:var(--a-scrim);backdrop-filter:blur(3px);z-index:8;display:none}
+.scrim.on{display:block}
+.modal{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:430px;max-width:92%;background:var(--a-surface-raised);border:1px solid var(--a-border-faint);border-radius:var(--a-radius-2xl);box-shadow:var(--a-shadow-overlay);overflow:hidden;z-index:9;display:none}
+.modal.on{display:block}
+.modal .mclose{position:absolute;top:14px;right:14px;width:28px;height:28px;border:0;border-radius:var(--a-radius-md);background:transparent;color:var(--a-text-tertiary);display:grid;place-items:center}
+.modal-hero{display:flex;flex-direction:column;align-items:center;text-align:center;padding:28px 24px 14px}
+.modal-icons{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.modal-icons .big{width:48px;height:48px;border-radius:var(--a-radius-lg);display:grid;place-items:center;font-size:18px;font-weight:700;color:#fff;box-shadow:var(--a-shadow-sm)}
+.modal-icons .dots{color:var(--a-text-disabled);letter-spacing:2px}
+.modal-hero h3{font-size:var(--a-text-xl)}
+.modal-hero .dev{font-size:var(--a-text-sm);color:var(--a-text-tertiary);margin-top:5px}
+.modal-hero .approved{display:inline-flex;align-items:center;gap:5px;margin-top:10px;font-size:var(--a-text-sm);color:var(--a-success);font-weight:var(--a-weight-medium)}
+.modal-body{padding:0 24px 4px}
+.install-box{border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);overflow:hidden}
+.install-row{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--a-border-faint);font-size:var(--a-text-sm)}
+.install-row:last-child{border-bottom:0}
+.install-row .d{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-size:10px;font-weight:700;color:#fff;flex:none}
+.install-row .k{margin-left:auto;font-size:var(--a-text-2xs);color:var(--a-text-tertiary);text-transform:uppercase;letter-spacing:var(--a-tracking-wide)}
+.key-field{margin-top:12px}
+.key-field label{display:block;font-family:var(--a-font-mono);font-size:var(--a-text-xs);color:var(--a-text-secondary);margin-bottom:5px}
+.key-field input{width:100%;height:34px;padding:0 11px;border:1px solid var(--a-border);border-radius:var(--a-radius-md);background:var(--a-surface);color:var(--a-text);font-family:var(--a-font-mono);font-size:var(--a-text-sm);outline:none}
+.key-field input:focus{border-color:var(--a-accent);box-shadow:var(--a-ring-focus)}
+.modal-note{font-size:var(--a-text-xs);color:var(--a-text-tertiary);margin:14px 2px 0;line-height:var(--a-leading-snug)}
+.modal-note.risk{color:var(--a-warning)}
+.modal-foot{padding:16px 24px 22px}
+.modal-foot .go{width:100%;height:40px;display:flex;align-items:center;justify-content:center;border:0;border-radius:var(--a-radius-md);background:var(--a-accent-solid);color:#fff;font-size:var(--a-text-md);font-weight:var(--a-weight-medium)}
+.modal-foot .alt{display:block;text-align:center;margin-top:10px;font-size:var(--a-text-sm);color:var(--a-text-tertiary);cursor:pointer;background:0;border:0;width:100%}
+.hub-toast{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:12;display:none}
+.toast{display:flex;align-items:center;gap:11px;padding:11px 13px;background:var(--a-surface-raised);border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);box-shadow:var(--a-shadow-lg);width:300px}
+.toast b{font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);display:block}
+.toast small{font-size:var(--a-text-xs);color:var(--a-text-tertiary)}
+.toast .t-ico{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;flex:none;background:var(--a-success)}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand"><span class="m">α</span> 定制中心 M2 交互设计稿 — 逐类型点击逻辑</div>
+  <div class="spacer"></div>
+  <nav>
+    <a href="#logic">交互逻辑</a>
+    <a href="#hub">交互稿</a>
+    <a href="#qa">待拍板</a>
+  </nav>
+  <div class="seg" id="themeSeg"><button data-theme="light" class="on">浅色</button><button data-theme="dark">深色</button></div>
+</div>
+
+<div class="wrap">
+
+  <!-- ══ A · 逐类型交互逻辑 ══ -->
+  <section class="sec" id="logic">
+    <div class="sec-head">
+      <div class="sec-kicker">S13 / REQ-019 · 基于 6-26 稿的 M2 增量 · 导航 = 横向 tab(左栏方案已否决)</div>
+      <h2>核心:每种类型,点击之后发生什么</h2>
+      <p class="lede">统一约定:<b>卡片主体点击 = 看介绍(详情页)</b>,<b>「添加」按钮 = 走安装路径</b>。安装路径按类型分三档:<span class="tag fast">直装</span>(零配置零风险,点了就装)、<span class="tag confirm">确认框</span>(有写入/密钥/多项,弹框确认后装)、<span class="tag page">详情页先行</span>(高风险,必须先看介绍页,从页内安装)。</p>
+    </div>
+
+    <div class="matrix-scroll">
+    <table class="matrix">
+      <tr><th style="width:110px">类型</th><th style="width:170px">点卡片主体</th><th style="width:220px">点「添加」</th><th>安装路径与理由</th></tr>
+      <tr>
+        <td>技能 Skill</td>
+        <td>详情页(SKILL.md 全文 + 触发说明)</td>
+        <td><span class="tag fast">直装</span> 无弹框,立即安装</td>
+        <td>本机纯文本文件、零配置零密钥、免重启生效、可秒卸 —— 摩擦降到零,装完 toast「已添加 · 当场生效」。<span class="why">失败(如资产未打包)在卡片/详情页行内红字,不静默。</span></td>
+      </tr>
+      <tr>
+        <td>连接器 MCP<br><small style="color:var(--a-text-tertiary)">无密钥/目录</small></td>
+        <td>详情页(工具列表 / 传输 / 数据边界 / 依赖)</td>
+        <td><span class="tag confirm">轻确认框</span> 一行写入说明 → 确认</td>
+        <td>要写引擎配置(~/.opencode/opencode.jsonc)+ 运行时预检 —— 一步确认让用户知道写了什么。markitdown / fetch / playwright 属此档。</td>
+      </tr>
+      <tr>
+        <td>连接器 MCP<br><small style="color:var(--a-text-tertiary)">需密钥/选目录</small></td>
+        <td>详情页(同上 + 所需密钥说明)</td>
+        <td><span class="tag confirm">完整确认框</span> 密文采集密钥 / 选目录 → 确认</td>
+        <td>GitHub / 飞书 / 语雀(密钥)、文件系统 / Git(选目录)。密钥可留空稍后配;密钥存本机安全文件(0600),配置只留引用。</td>
+      </tr>
+      <tr>
+        <td>Agent</td>
+        <td>详情页(模式 / 提示词预览 / 权限档摘要)</td>
+        <td><span class="tag none">无「添加」</span> 内置只读;自建走「创建」表单</td>
+        <td>内置 agent(build/plan)随引擎提供、不可装卸;自建 agent 创建成功后直接跳其详情页。<span class="why">将来目录 agent 上架时,因带权限档,归入「详情页先行」档。</span></td>
+      </tr>
+      <tr>
+        <td>插件 Plugin</td>
+        <td>详情页(hooks / 工具清单 / 风险说明)</td>
+        <td><span class="tag page">详情页先行</span> 点「添加」= 打开详情页,页内「安装插件」→ 带风险行的确认框</td>
+        <td>插件代码<b>运行于引擎进程内</b>(风险最高)+ npm 下载 —— 强制先看介绍页(hooks 挂点、贡献工具、npm 包名),从页内安装。参照 ChatGPT 插件详情页模式。</td>
+      </tr>
+      <tr>
+        <td>套件 Bundle</td>
+        <td>详情页(组合清单逐项状态,子项可点)</td>
+        <td><span class="tag confirm">组合确认框</span> 清单 + 预检状态 → 逐项扇出</td>
+        <td>多项一次装,确认框列出全部子项(即现版弹框);部分失败 → 详情页逐项重试。</td>
+      </tr>
+      <tr>
+        <td>云能力(M3)</td>
+        <td>详情页(输入契约 / 预算 / 上行数据说明)</td>
+        <td><span class="tag none">无「添加」</span> 操作 =「派发」,登录门控</td>
+        <td>不是安装物,是能力入口;M2 仅 tab 占位。</td>
+      </tr>
+    </table>
+    </div>
+
+    <div class="flow-card"><b>三档安装路径(时序)</b>
+      <div class="flow"><span class="fl-t">技能·直装</span><span class="fstep">点「添加」</span><span class="farr">→</span><span class="fstep">写入 ~/.alpha + 账本</span><span class="farr">→</span><span class="fstep">重载引擎(~2s,免重启)</span><span class="farr">→</span><span class="fstep done">✓ toast「已添加 · 当场生效」</span></div>
+      <div class="flow"><span class="fl-t">MCP·确认框</span><span class="fstep">点「添加」</span><span class="farr">→</span><span class="fstep hi">确认框:预检 which → 采集密钥/选目录</span><span class="farr">→</span><span class="fstep">写配置 + 密钥入安全文件</span><span class="farr">→</span><span class="fstep">live 连接</span><span class="farr">→</span><span class="fstep done">✓ 已启用</span></div>
+      <div class="flow"><span class="fl-t">插件·详情页</span><span class="fstep">点「添加」/卡片</span><span class="farr">→</span><span class="fstep hi">详情页:hooks·工具·风险</span><span class="farr">→</span><span class="fstep">页内「安装插件」</span><span class="farr">→</span><span class="fstep risk">确认框(风险行:运行于引擎进程)</span><span class="farr">→</span><span class="fstep">写配置,引擎自动 npm 装载</span><span class="farr">→</span><span class="fstep done">✓ 已安装</span></div>
+      <div class="flow"><span class="fl-t">套件·组合</span><span class="fstep">点「添加」</span><span class="farr">→</span><span class="fstep hi">确认框:清单 + 预检</span><span class="farr">→</span><span class="fstep">按序扇出(密钥项逐个采集)</span><span class="farr">→</span><span class="fstep done">✓ n 项成功</span><span class="farr">/</span><span class="fstep risk">m 项失败 → 详情页逐项重试</span></div>
+      <p>失败一律<b>行内呈现</b>(卡片错误 chip / 详情页 Banner),toast 只报成功 —— 对齐反静默纪律(B11)。</p>
+    </div>
+
+    <div class="note ok"><b>与 6-26 原稿的关系</b>:token / tab 栏 / 卡片 / 确认框 / 管理列表全部沿用;连接器 / 套件 / 创建 tab 的列表页零改动。M2 新增 = 详情页层 + 上表的分档安装逻辑 + 有更新(并入已安装)+ Agent tab(M1 已上线)+ 云能力占位。</div>
+  </section>
+
+  <!-- ══ B · 交互稿 ══ -->
+  <section class="sec" id="hub">
+    <div class="sec-head">
+      <div class="sec-kicker">B · 交互稿(可点击,含弹框与 toast)</div>
+      <h2>点下面的卡片和按钮,走一遍每种类型的路径</h2>
+      <p class="lede">推荐页四张卡对应四档:<b>技能卡「添加」</b>= 直装 toast;<b>GitHub「添加」</b>= 密钥确认框;<b>办公套件「添加」</b>= 组合确认框;<b>完成通知(插件)「添加」</b>= 跳详情页 → 页内安装(风险确认)。卡片主体一律进详情页;Esc 逐级:弹框 → 详情 → 列表 → 关闭。</p>
+    </div>
+    <div class="frame-scroll"><div class="frame">
+      <div class="app">
+        <div class="sb">
+          <div class="sb-top"><span class="sb-mark">α</span><span class="sb-wordmark">ALPHA CODE</span></div>
+          <div class="sb-scroll">
+            <div class="sb-item">＋ 新对话</div>
+            <div class="sb-item">⌕ 搜索</div>
+            <div class="sb-item on">▦ 定制中心</div>
+            <div class="sb-overline">项目</div>
+            <div class="sb-item">workspace</div>
+            <div class="sb-item">alpha-code</div>
+          </div>
+        </div>
+        <div class="content" id="hubContent">
+          <button class="hub-close" title="关闭"><svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+          <div class="hub-tabbar">
+            <div class="hub-tabs" id="hubTabs">
+              <div class="hub-tab on" data-tab="featured">推荐</div>
+              <div class="hub-tab" data-tab="connectors">连接器</div>
+              <div class="hub-tab" data-tab="skills">技能</div>
+              <div class="hub-tab" data-tab="agents">Agent</div>
+              <div class="hub-tab" data-tab="plugins">插件</div>
+              <div class="hub-tab" data-tab="bundles">套件</div>
+              <div class="hub-tab" data-tab="installed">已安装<span class="bdg">1</span></div>
+              <div class="hub-tab" data-tab="create">创建</div>
+              <div class="hub-tab" data-tab="cloud">云能力</div>
+            </div>
+          </div>
+          <div class="hub-scroll">
+            <div class="hub-center">
+
+              <!-- ░░ 推荐:四档演示 ░░ -->
+              <div class="tabpane on" data-pane="featured">
+                <div class="hub-h1">定制中心</div>
+                <div class="hub-sub">连接器、技能、Agent、套件 —— 一键安装、免重启生效。</div>
+                <div class="hub-search"><svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input placeholder="搜索全部扩展…(跨 tab 持久;输入即出跨类目分组结果)"/></div>
+
+                <div class="hub-secrow"><span class="t">四种类型 · 四档路径(点「添加」试)</span></div>
+                <div class="hub-grid">
+                  <div class="xcard" data-open="detail-skill"><div class="xcard-top"><span class="xcard-ico" style="background:#4f46e5">技</span><div class="xcard-hd"><div class="xcard-name"><b>技能创建助手</b><span class="chip" data-src="official">官方</span><span class="chip" data-src="type">技能</span></div></div></div><div class="xcard-desc">指导创建/改进/评测 SKILL.md 的工作流。</div><div class="xcard-foot"><span class="meta-pill">Apache-2.0</span><button class="add" data-act="fast" data-name="技能创建助手">添加</button></div></div>
+                  <div class="xcard" data-open="detail-mcp"><div class="xcard-top"><span class="xcard-ico" style="background:#18181b">GH</span><div class="xcard-hd"><div class="xcard-name"><b>GitHub</b><span class="chip" data-src="official">官方</span><span class="chip" data-src="type">连接器</span><span class="chip" data-src="verify">待核实</span></div></div></div><div class="xcard-desc">查询/操作 GitHub 仓库、PR、issue。需 Personal Access Token。</div><div class="xcard-foot"><span class="meta-pill">需 <span class="mono">node</span></span><span class="meta-pill">密钥</span><button class="add" data-act="modal-mcp">添加</button></div></div>
+                  <div class="xcard" data-open="detail-bundle"><div class="xcard-top"><span class="xcard-ico" style="background:#16a34a">办</span><div class="xcard-hd"><div class="xcard-name"><b>办公套件</b><span class="chip" data-src="alpha">自建</span><span class="chip" data-src="type">套件</span></div></div></div><div class="xcard-desc">Word/Excel/PDF 读写与文档处理:markitdown + 文件系统。</div><div class="xcard-foot"><span class="meta-pill">2 项</span><button class="add" data-act="modal-bundle">添加</button></div></div>
+                  <div class="xcard" data-open="detail-plugin"><div class="xcard-top"><span class="xcard-ico" style="background:#d97706">通</span><div class="xcard-hd"><div class="xcard-name"><b>完成通知</b><span class="chip" data-src="community">社区</span><span class="chip" data-src="type">插件</span></div></div></div><div class="xcard-desc">任务/会话完成时弹系统通知的 opencode 插件。</div><div class="xcard-foot"><span class="meta-pill">MIT</span><button class="add" data-act="goto-detail-plugin">添加</button></div></div>
+                </div>
+                <div class="cap">技能「添加」→ 直装 toast;GitHub → 密钥确认框;办公套件 → 组合确认框;完成通知(插件)→ 详情页先行。</div>
+              </div>
+
+              <!-- ░░ 详情:技能(直装) ░░ -->
+              <div class="tabpane" data-pane="detail-skill">
+                <button class="backrow" data-goto="skills"><svg class="ic sm" viewBox="0 0 24 24"><path d="M14 6l-6 6 6 6"/></svg>技能</button>
+                <div class="dhead">
+                  <span class="ico" style="background:#4f46e5">技</span>
+                  <div class="hd-body">
+                    <div class="titleline"><h3>技能创建助手</h3><span class="chip" data-src="official">官方</span><span class="chip" data-src="type">技能</span></div>
+                    <div class="dmeta"><code>skill-creator</code><span>许可证 Apache-2.0</span><span>版本 2026-07-03.1</span></div>
+                  </div>
+                  <div class="hd-act"><button class="add" data-variant="big" data-act="fast" data-name="技能创建助手">添加</button></div>
+                </div>
+                <div class="dsec"><div class="dsec-t">简介</div><p>指导创建/改进/评测 SKILL.md 的工作流(Anthropic example-skills)。</p></div>
+                <div class="dsec"><div class="dsec-t">技能内容(SKILL.md 渲染,T3)</div><p style="font-family:var(--a-font-mono);font-size:11.5px;background:var(--a-bg-subtle);border:1px solid var(--a-border-faint);border-radius:8px;padding:12px"># Skill Creator<br># When to use: 当你要创建/改进/评测一个 SKILL.md…<br># Steps: 1. 明确触发场景 2. 写 frontmatter …(全文滚动渲染)</p></div>
+                <div class="dsec"><div class="dsec-t">数据边界</div><p>仅本机 —— 定义文件保存在本机,不自行发送数据。</p></div>
+                <div class="dsec"><div class="dsec-t">安装位置</div><p>全局(~/.alpha/skills),免重启生效,可随时移除。</p></div>
+              </div>
+
+              <!-- ░░ 详情:MCP(确认框档) ░░ -->
+              <div class="tabpane" data-pane="detail-mcp">
+                <button class="backrow" data-goto="featured"><svg class="ic sm" viewBox="0 0 24 24"><path d="M14 6l-6 6 6 6"/></svg>推荐</button>
+                <div class="dhead">
+                  <span class="ico" style="background:#18181b">GH</span>
+                  <div class="hd-body">
+                    <div class="titleline"><h3>GitHub</h3><span class="chip" data-src="official">官方</span><span class="chip" data-src="type">连接器</span><span class="chip" data-src="verify">待核实</span></div>
+                    <div class="dmeta"><code>github</code><span>许可证 MIT</span><span>版本 2026-07-03.1</span></div>
+                  </div>
+                  <div class="hd-act"><button class="add" data-variant="big" data-act="modal-mcp">添加</button></div>
+                </div>
+                <div class="dsec"><div class="dsec-t">简介</div><p>查询/操作 GitHub 仓库、PR、issue。需 Personal Access Token。</p>
+                  <div class="vnote"><b>待核实事项</b>GitHub 官方 MCP 已迁向 Go 二进制及 remote 端点;落地前确认用 npm 包还是 remote+OAuth。</div>
+                </div>
+                <div class="dsec"><div class="dsec-t">提供的工具(catalog tools[],T3)</div>
+                  <div class="toollist">
+                    <div class="tool"><code>create_issue</code><span>新建 issue</span></div>
+                    <div class="tool"><code>create_pull_request</code><span>发起 PR</span></div>
+                    <div class="tool"><code>search_repositories</code><span>检索仓库</span></div>
+                    <div class="tool"><code>get_file_contents</code><span>读取仓库文件</span></div>
+                  </div>
+                </div>
+                <div class="dsec"><div class="dsec-t">连接器</div>
+                  <div class="fact"><span class="k">传输方式</span><span class="v">本地命令(stdio)</span></div>
+                  <div class="fact"><span class="k">启动命令</span><span class="v"><code>npx -y @modelcontextprotocol/server-github@2025.4.8</code></span></div>
+                  <div class="fact"><span class="k">启用范围</span><span class="v">全局(~/.alpha)</span></div>
+                </div>
+                <div class="dsec"><div class="dsec-t">数据边界</div><p>本地命令运行于本机;联网行为取决于所连接的服务(GitHub → api.github.com)。</p></div>
+                <div class="dsec"><div class="dsec-t">运行时依赖(进页即实时检测,T4)</div><span class="keypill">node <span class="ok">✓ 已检测</span></span></div>
+                <div class="dsec"><div class="dsec-t">所需密钥</div><span class="keypill">🔒 GITHUB_PERSONAL_ACCESS_TOKEN</span><p style="margin-top:8px">存本机 alpha 安全文件(0600),配置只留引用、绝不明文。</p></div>
+              </div>
+
+              <!-- ░░ 详情:插件(详情页先行档,参照 ChatGPT 插件页) ░░ -->
+              <div class="tabpane" data-pane="detail-plugin">
+                <button class="backrow" data-goto="featured"><svg class="ic sm" viewBox="0 0 24 24"><path d="M14 6l-6 6 6 6"/></svg>插件</button>
+                <div class="dhead">
+                  <span class="ico" style="background:#d97706">通</span>
+                  <div class="hd-body">
+                    <div class="titleline"><h3>完成通知</h3><span class="chip" data-src="community">社区</span><span class="chip" data-src="type">插件</span></div>
+                    <div class="dmeta"><code>opencode-notify@0.3.1</code><span>许可证 MIT</span><span>npm</span></div>
+                  </div>
+                  <div class="hd-act"><button class="add" data-variant="big" data-act="modal-plugin">＋ 安装插件</button></div>
+                </div>
+                <div class="dsec"><div class="dsec-t">简介</div><p>任务/会话完成时弹系统通知的 opencode 插件(社区)。</p>
+                  <div class="vnote"><b>插件 ≠ 套件(D4)</b>插件 = 引擎 hooks + 自定义工具的 JS 模块,装不了技能/Agent;要"一键装一组",用套件。</div>
+                </div>
+                <div class="dsec"><div class="dsec-t">注册的 hooks(catalog 元数据,T3)</div>
+                  <div class="toollist">
+                    <div class="tool"><code>session.idle</code><span>会话空闲时触发系统通知</span></div>
+                    <div class="tool"><code>tool.execute.after</code><span>长任务完成时提醒</span></div>
+                  </div>
+                </div>
+                <div class="dsec"><div class="dsec-t">风险与运行方式</div><p>插件代码<b>运行于引擎进程内</b>,拥有与引擎相同的本机权限;经 npm 安装(首次需下载依赖)。仅安装你信任的插件。</p></div>
+                <div class="dsec"><div class="dsec-t">生效方式</div><p>安装后引擎自动加载(免重启,约 2 秒);移除即刻从配置清除。</p></div>
+              </div>
+
+              <!-- ░░ 详情:套件 ░░ -->
+              <div class="tabpane" data-pane="detail-bundle">
+                <button class="backrow" data-goto="featured"><svg class="ic sm" viewBox="0 0 24 24"><path d="M14 6l-6 6 6 6"/></svg>套件</button>
+                <div class="dhead">
+                  <span class="ico" style="background:#16a34a">办</span>
+                  <div class="hd-body">
+                    <div class="titleline"><h3>办公套件</h3><span class="chip" data-src="alpha">自建</span><span class="chip" data-src="type">套件</span></div>
+                    <div class="dmeta"><code>office-suite</code><span>许可证 mixed</span><span>版本 2026-07-03.1</span></div>
+                  </div>
+                  <div class="hd-act"><button class="add" data-variant="big" data-act="modal-bundle">添加</button></div>
+                </div>
+                <div class="dsec"><div class="dsec-t">简介</div><p>Word/Excel/PDF 读写与文档处理:markitdown 读取 + 文件系统。</p></div>
+                <div class="dsec"><div class="dsec-t">组合清单(逐项可点看子详情)</div>
+                  <div class="man-row" data-open="detail-mcp"><span class="ico" style="background:#16a34a">文</span><div class="body"><div class="nm"><b>文档读取(markitdown)</b><span class="chip" data-src="type">连接器</span></div><div class="st">未安装</div></div><button class="add" data-variant="ghost">详情</button></div>
+                  <div class="man-row" data-open="detail-mcp"><span class="ico" style="background:#4f46e5">FS</span><div class="body"><div class="nm"><b>文件系统</b><span class="chip" data-src="type">连接器</span></div><div class="st"><span class="dot ok"></span>已安装</div></div><button class="add" data-variant="ghost">详情</button></div>
+                </div>
+                <div class="dsec"><div class="dsec-t">数据边界</div><p>以各子项为准(见组合清单)。</p></div>
+              </div>
+
+              <!-- ░░ 已安装(含有更新) ░░ -->
+              <div class="tabpane" data-pane="installed">
+                <div class="hub-h1">已安装</div>
+                <div class="hub-sub">真相 = 安装账本 ⨝ 引擎实时状态;启停当场生效,移除连文件带配置一起清。</div>
+                <div class="hub-secrow"><span class="t upd">有更新 · <b>1</b></span><button class="act">全部更新</button></div>
+                <div class="man-row"><span class="ico" style="background:#16a34a">文</span><div class="body"><div class="nm"><b>文档读取(markitdown)</b><span class="chip" data-src="type">连接器</span></div><div class="st">2026-07-03.1 → 2026-07-10.1</div></div><button class="upd-btn">更新</button></div>
+                <div class="hub-secrow"><span class="t">全部条目 · <b>3</b></span></div>
+                <div class="man-row"><span class="ico" style="background:#16a34a">文</span><div class="body"><div class="nm"><b>文档读取(markitdown)</b><span class="chip" data-src="type">连接器</span></div><div class="st"><span class="dot ok"></span>已启用 · 当场生效</div></div><button class="sw on" aria-label="启停"></button></div>
+                <div class="man-row" data-open="detail-skill"><span class="ico" style="background:#4f46e5">技</span><div class="body"><div class="nm"><b>技能创建助手</b><span class="chip" data-src="type">技能</span></div><div class="st"><span class="dot ok"></span>已安装</div></div></div>
+                <div class="man-row"><span class="ico" style="background:#c08457">A</span><div class="body"><div class="nm"><b>code-reviewer</b><span class="chip" data-src="type">Agent</span></div><div class="st"><span class="dot ok"></span>自建</div></div></div>
+                <div class="cap">行主体可点 → 详情页;开关 / 更新 / 删除不触发下钻。tab 上琥珀角标 = 可更新数。</div>
+              </div>
+
+              <!-- ░░ 云能力(占位) ░░ -->
+              <div class="tabpane" data-pane="cloud">
+                <div class="hub-h1">云能力</div>
+                <div class="hub-sub">把 code-review、深度调研等任务派发到云端执行,结果回流本地 .alpha/runs。</div>
+                <div class="vnote" style="margin-top:16px"><b>M2 占位</b>入口建设中(随 M3 开放)。当前登录平台模式后,可在会话中直接让 agent 使用云派发工具。</div>
+              </div>
+
+              <!-- ░░ 其余 tab:同 6-26 原稿 ░░ -->
+              <div class="tabpane" data-pane="connectors"><div class="hub-h1">连接器</div><div class="note" style="margin-top:16px"><b>同 6-26 原稿</b>:分类分组卡片网格。M2 变化 = 卡片主体可点进详情页(工具列表/数据边界/依赖检测)。</div></div>
+              <div class="tabpane" data-pane="skills"><div class="hub-h1">技能</div><div class="note" style="margin-top:16px"><b>同 6-26 原稿</b>:技能卡片网格。M2 变化 = 卡片主体进详情页(SKILL.md 渲染);「添加」直装(见推荐页演示)。</div></div>
+              <div class="tabpane" data-pane="agents"><div class="hub-h1">Agent</div><div class="note" style="margin-top:16px"><b>M1 已上线</b>:内置 + 自建 agent 卡片。M2 变化 = 卡片进 Agent 详情(模式/来源/提示词预览/权限档摘要);内置无添加,自建可删。</div></div>
+              <div class="tabpane" data-pane="plugins"><div class="hub-h1">插件</div><div class="note" style="margin-top:16px"><b>同 6-26 原稿</b> + 「添加」改为详情页先行(见推荐页「完成通知」演示)+ D4 澄清文案。</div></div>
+              <div class="tabpane" data-pane="bundles"><div class="hub-h1">套件</div><div class="note" style="margin-top:16px"><b>同 6-26 原稿</b>:套件卡片(n 项)。M2 变化 = 卡片进组合清单详情;「添加」仍组合确认框。</div></div>
+              <div class="tabpane" data-pane="create"><div class="hub-h1">创建</div><div class="note" style="margin-top:16px"><b>同 6-26 原稿</b>:技能/Agent 表单 + 「或从已有导入」(文件夹/Git/npm,T6 接真)。创建成功 → 直接跳该条目详情页(取代裸 toast)。</div></div>
+
+            </div>
+          </div>
+
+          <!-- ── 确认框(三种演示复用同一骨架) ── -->
+          <div class="scrim" id="scrim"></div>
+          <div class="modal" id="modal-mcp">
+            <button class="mclose" data-mclose><svg class="ic sm" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+            <div class="modal-hero">
+              <div class="modal-icons"><span class="big" style="background:#4f46e5">α</span><span class="dots">· · ·</span><span class="big" style="background:#18181b">GH</span></div>
+              <h3>添加「GitHub」</h3>
+              <div class="dev">连接器 · 官方 · MIT</div>
+              <div class="approved"><svg class="ic sm" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>已通过运行时预检(node 就绪)</div>
+            </div>
+            <div class="modal-body">
+              <div class="key-field"><label>GITHUB_PERSONAL_ACCESS_TOKEN(可留空,装好后再配)</label><input type="password" placeholder="粘贴密钥…"/></div>
+              <p class="modal-note">密钥存本机 alpha 安全文件(0600),配置只留引用、绝不明文;写入 ~/.opencode/opencode.jsonc 仅白名单字段,当场生效、免重启。</p>
+            </div>
+            <div class="modal-foot"><button class="go" data-act="fast" data-name="GitHub" data-mclose>确认添加</button><button class="alt" data-mclose>取消</button></div>
+          </div>
+          <div class="modal" id="modal-bundle">
+            <button class="mclose" data-mclose><svg class="ic sm" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+            <div class="modal-hero">
+              <div class="modal-icons"><span class="big" style="background:#4f46e5">α</span><span class="dots">· · ·</span><span class="big" style="background:#16a34a">办</span></div>
+              <h3>添加「办公套件」</h3>
+              <div class="dev">套件 · 自建 · 2 项</div>
+              <div class="approved"><svg class="ic sm" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>已通过运行时预检(uv / node 就绪)</div>
+            </div>
+            <div class="modal-body">
+              <div class="install-box">
+                <div class="install-row"><span class="d" style="background:#16a34a">文</span>文档读取(markitdown)<span class="k">连接器</span></div>
+                <div class="install-row"><span class="d" style="background:#4f46e5">FS</span>文件系统 <span style="color:var(--a-text-tertiary);margin-left:6px">需选目录</span><span class="k">连接器</span></div>
+              </div>
+              <p class="modal-note">按顺序扇出安装;需要选目录/密钥的子项会逐个弹出;部分失败可在套件详情页逐项重试。</p>
+            </div>
+            <div class="modal-foot"><button class="go" data-act="fast" data-name="办公套件(2 项)" data-mclose>继续添加(2 项)</button><button class="alt" data-mclose>取消</button></div>
+          </div>
+          <div class="modal" id="modal-plugin">
+            <button class="mclose" data-mclose><svg class="ic sm" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+            <div class="modal-hero">
+              <div class="modal-icons"><span class="big" style="background:#4f46e5">α</span><span class="dots">· · ·</span><span class="big" style="background:#d97706">通</span></div>
+              <h3>安装插件「完成通知」</h3>
+              <div class="dev">opencode-notify@0.3.1 · npm · MIT</div>
+            </div>
+            <div class="modal-body">
+              <p class="modal-note risk">⚠ 插件代码将运行于引擎进程内,拥有与引擎相同的本机权限;经 npm 下载。仅安装你信任的插件。</p>
+              <p class="modal-note">写入配置后引擎自动加载(免重启,首次需下载依赖)。</p>
+            </div>
+            <div class="modal-foot"><button class="go" data-act="fast" data-name="完成通知" data-mclose>确认安装</button><button class="alt" data-mclose>取消</button></div>
+          </div>
+
+          <div class="hub-toast" id="hubToast"></div>
+        </div>
+      </div>
+    </div></div>
+    <div class="cap">键盘:<span class="mono">Esc</span> 弹框打开时 = 只关弹框;详情页 = 回列表;列表 = 关闭定制中心。</div>
+  </section>
+
+  <!-- ══ C · 待拍板 ══ -->
+  <section class="sec" id="qa">
+    <div class="sec-head">
+      <div class="sec-kicker">C · 待你拍板</div>
+      <h2>四个问题</h2>
+    </div>
+    <div class="note"><b>Q1 · 技能直装(无确认框)是否 OK?</b>理由:零配置零密钥、本机文件、可秒卸 —— 弹框纯属摩擦。若你希望所有类型统一都弹确认框,改回也容易。</div>
+    <div class="note"><b>Q2 · 插件「详情页先行」是否 OK?</b>点「添加」不直接装,先进介绍页(hooks/风险),页内再装 —— 参照 ChatGPT 插件详情页。若嫌绕,可改成「添加」直接弹风险确认框、详情页仅供浏览。</div>
+    <div class="note"><b>Q3 · 详情页返回方式</b>:左上「‹ 类目名」轻量返回 + 点 tab 跳走 + Esc。够不够?</div>
+    <div class="note"><b>Q4 · 「云能力」tab 现在就挂(占位文案)还是 M3 做好再加?</b></div>
+  </section>
+
+</div>
+
+<script>
+/* theme */
+document.querySelectorAll('#themeSeg button').forEach(function(b){b.onclick=function(){document.querySelectorAll('#themeSeg button').forEach(function(x){x.classList.remove('on')});b.classList.add('on');document.documentElement.setAttribute('data-theme',b.dataset.theme)}});
+/* tabs + drilldown:详情 pane 的 tab 高亮映射到其来源类目 */
+var OWNER={'detail-skill':'skills','detail-mcp':'connectors','detail-plugin':'plugins','detail-bundle':'bundles'};
+function hubGo(name){
+  var owner=OWNER[name]||name;
+  document.querySelectorAll('#hubTabs .hub-tab').forEach(function(t){t.classList.toggle('on',t.dataset.tab===owner)});
+  document.querySelectorAll('#hubContent .tabpane').forEach(function(p){p.classList.toggle('on',p.dataset.pane===name)});
+  document.querySelector('#hubContent .hub-scroll').scrollTop=0;
+}
+document.querySelectorAll('#hubTabs .hub-tab').forEach(function(t){t.onclick=function(){hubGo(t.dataset.tab)}});
+document.querySelectorAll('[data-goto]').forEach(function(b){b.onclick=function(e){e.stopPropagation();hubGo(b.dataset.goto)}});
+/* 卡片/行主体点击 = 下钻;但按钮(data-act/开关/更新)不触发下钻 —— 注意不能在按钮上
+   stopPropagation,否则 document 级的 data-act 委托收不到事件(实测踩坑)。 */
+document.querySelectorAll('[data-open]').forEach(function(c){c.addEventListener('click',function(e){
+  if(e.target.closest('[data-act],[data-mclose],.sw,.upd-btn'))return;
+  hubGo(c.dataset.open);
+})});
+/* modals + toast */
+function openModal(id){document.getElementById('scrim').classList.add('on');document.getElementById(id).classList.add('on')}
+function closeModals(){document.getElementById('scrim').classList.remove('on');document.querySelectorAll('.modal').forEach(function(m){m.classList.remove('on')})}
+function toast(name){
+  var t=document.getElementById('hubToast');
+  t.innerHTML='<div class="toast"><span class="t-ico"><svg class="ic sm" viewBox="0 0 24 24" style="stroke:#fff"><path d="M20 6L9 17l-5-5"/></svg></span><div><b>已添加「'+name+'」</b><small>当场生效 · 免重启</small></div></div>';
+  t.style.display='block';clearTimeout(window._ht);window._ht=setTimeout(function(){t.style.display='none'},2400);
+}
+document.addEventListener('click',function(e){
+  var btn=e.target.closest('[data-act]');
+  if(btn){
+    var act=btn.dataset.act;
+    if(act==='fast')toast(btn.dataset.name||'');
+    else if(act==='modal-mcp')openModal('modal-mcp');
+    else if(act==='modal-bundle')openModal('modal-bundle');
+    else if(act==='modal-plugin')openModal('modal-plugin');
+    else if(act==='goto-detail-plugin')hubGo('detail-plugin');
+  }
+  if(e.target.closest('[data-mclose]')||e.target.id==='scrim')closeModals();
+});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')closeModals()});
+</script>
+</body>
+</html>
