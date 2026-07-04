@@ -20,3 +20,6 @@ source: 册 §6.3 / R2(上游 DB)
 
 ## 关联
 B13、B14、A4(版本链)、opencode-channel-db-persistence(memory)。
+
+## 跳过记录(2026-07-04,/loop 自动批 — deferred)
+本轮跳过(非干净小修):①「app 内嵌 server 支持的 migration 范围」判定需内省上游 migration 列表 = **上游 DB 内部耦合**(R2),水位读法与「支持范围」需设计;③「新 DB × 旧 app 不再未定义行为」需构造降级场景 = 近真机验证;且与 B14 备份联动。→ 需先定「支持范围探测」设计 + 耦合评估 + 场景测试,非无人值守简单批。
