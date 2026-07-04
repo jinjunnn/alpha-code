@@ -1410,3 +1410,73 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
     animation: none;
   }
 }
+
+/* ── REQ-020 M3:云分区(门控条 / 灰显 / 连接状态 / 派发盒) ─────────────────────── */
+/* 门控条:未登录/BYOK 的诚实说明 + CTA(样式随迁移条 .alpha-ext-migrate 的形制) */
+.alpha-ext-cloudgate {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  background: var(--a-bg-muted);
+  border: 1px solid var(--a-border-faint);
+  border-radius: 10px;
+}
+.alpha-ext-cloudgate-t {
+  font-size: var(--a-text-md);
+  font-weight: var(--a-weight-medium);
+}
+.alpha-ext-cloudgate-sub {
+  font-size: var(--a-text-sm);
+  color: var(--a-text-secondary);
+  line-height: var(--a-leading-snug);
+}
+/* 灰显 = 真实不可用态(REQ-020 T2):整块降透明,仍可点进详情看原因 */
+[data-dim] {
+  opacity: 0.55;
+}
+/* 连接状态字(on=已连接 / idle=注入未连 / off=未注入) */
+.alpha-ext-cloudst {
+  font-weight: var(--a-weight-medium);
+}
+.alpha-ext-cloudst[data-st="on"] {
+  color: var(--a-success, #2f9e63);
+}
+.alpha-ext-cloudst[data-st="idle"] {
+  color: var(--a-text-secondary);
+}
+.alpha-ext-cloudst[data-st="off"] {
+  color: var(--a-text-secondary);
+}
+/* dsub 是 stretch 列容器 —— 内嵌按钮(连接器详情登录 CTA)不拉通栏 */
+.alpha-ext-dsub > .alpha-ext-add {
+  align-self: flex-start;
+}
+/* code-review 派发盒:按钮 + 进度/来源 meta 一行 */
+.alpha-ext-cloudrun {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.alpha-ext-cloudrun .alpha-ext-meta[data-live] {
+  color: var(--a-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+/* 上行数据明细列表(详情页) */
+.alpha-ext-dlist {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: var(--a-text-sm);
+  color: var(--a-text-secondary);
+  line-height: var(--a-leading-normal);
+}
+.alpha-ext-dlist li {
+  margin-bottom: 2px;
+}
+.alpha-ext-dnote[data-ok] {
+  color: var(--a-success, #2f9e63);
+}

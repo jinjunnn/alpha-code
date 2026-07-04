@@ -108,6 +108,9 @@ export interface ExtensionsApi {
   importNpmPlugin(pkg: string): Promise<ActionResult>
   /** REQ-023:安装 catalog 官方 agent(vendored md 资产 → writeAgent 同管线)。 */
   installAgentEntry(entry: CatalogEntry): Promise<ActionResult>
+  /** REQ-020 T4:启用云 pipeline = receipts-only(进本机可用列表;不落文件、不写引擎 config)。
+   *  停用走 uninstall(cloud receipt → 去账)。 */
+  enableCloud(entry: CatalogEntry): Promise<ActionResult>
 }
 
 function authHeaders(info: ServerInfo): Record<string, string> | undefined {
@@ -325,7 +328,8 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     const res = await window.api.ext.uninstall(receipt)
     if (receipt.type === "mcp") await client?.mcp.disconnect({ name: receipt.name } as any).catch(() => {})
     await Promise.all([loadStatus(), loadInstalls()])
-    if (res.ok && receipt.type !== "mcp") await refreshEngine() // fs/plugin removal needs a rescan
+    // fs/plugin removal needs a rescan;cloud 只动账本(引擎无状态)无需 dispose。
+    if (res.ok && receipt.type !== "mcp" && receipt.type !== "cloud") await refreshEngine()
     if (receipt.type === "agent") void loadAgents()
     return res
   }
@@ -487,6 +491,15 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     return r
   }
 
+  /** REQ-020 T4:云 pipeline「启用」= 写安装账本(receipts-only),不触达引擎/文件系统。 */
+  async function enableCloud(entry: CatalogEntry): Promise<ActionResult> {
+    if (entry.type !== "cloud") return { ok: false, reason: "not a cloud entry" }
+    const r = await window.api.ext.enableCloud(entry.id, entry.name, metaFor(entry))
+    if (!r.ok) return { ok: false, reason: r.reason }
+    await loadInstalls()
+    return { ok: true }
+  }
+
   async function updateEntry(entry: CatalogEntry): Promise<ActionResult> {
     if (entry.type === "skill") return installSkill(entry)
     if (entry.type === "plugin") {
@@ -520,5 +533,6 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     importSkillGit,
     importNpmPlugin,
     installAgentEntry,
+    enableCloud,
   }
 }

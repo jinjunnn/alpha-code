@@ -157,6 +157,7 @@ const api: ElectronAPI = {
     uninstall: (receipt) => ipcRenderer.invoke("ext-uninstall", receipt),
     migrateScan: () => ipcRenderer.invoke("ext-migrate-scan"),
     removeLegacy: (type, name) => ipcRenderer.invoke("ext-migrate-remove-legacy", type, name),
+    enableCloud: (id, name, meta) => ipcRenderer.invoke("ext-enable-cloud", id, name, meta),
   },
   account: {
     summary: () => ipcRenderer.invoke("account-summary"),
@@ -171,6 +172,7 @@ const api: ElectronAPI = {
     saveRun: (directory, runId, contract) => ipcRenderer.invoke("cloud-save-run", directory, runId, contract),
     subscribe: (jobId) => ipcRenderer.invoke("cloud-subscribe", jobId),
     unsubscribe: (jobId) => ipcRenderer.invoke("cloud-unsubscribe", jobId),
+    gitDiff: (directory) => ipcRenderer.invoke("cloud-git-diff", directory),
     onEvent: (cb) => {
       const h = (_e: unknown, payload: { jobId: string; event: string; data: unknown; id?: string }) => cb(payload)
       ipcRenderer.on("cloud-job-event", h)
