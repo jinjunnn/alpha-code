@@ -29,11 +29,12 @@ describe("isLoopbackUrl / corsRelaxAllowed", () => {
 })
 
 describe("RENDERER_CSP", () => {
-  test("connect-src 无通配 https(exfil 主通道收死)", () => {
+  test("connect-src 无通配 https(exfil 主通道收死);data: 放行(终端 WASM 加载,无外传面)", () => {
     const connect = RENDERER_CSP.split("; ").find((d) => d.startsWith("connect-src"))!
     expect(connect).not.toContain("https:")
     expect(connect).not.toContain("http: ")
     expect(connect).toContain("'self'")
+    expect(connect).toContain(" data: ")
     expect(connect).toContain("http://127.0.0.1:*")
     expect(connect).toContain("ws://127.0.0.1:*")
   })
