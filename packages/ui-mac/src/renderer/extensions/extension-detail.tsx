@@ -100,6 +100,32 @@ export function ExtensionDetail(props: {
     (key) => window.api.ext.readBuiltinSkill(key),
   )
 
+  // REQ-019 T4:进详情页即实时 which 检测运行时依赖(复用 ext.checkRuntime),不再等点「添加」
+  // 才发现缺依赖;缺失的给安装指引。source 串上 entry id,切换条目即重测。
+  const [depCheck] = createResource(
+    () => {
+      const e = entry()
+      const deps = e && mcpSpec(e)?.runtimeDep
+      return deps?.length ? { id: e!.id, deps } : undefined
+    },
+    async (src) => {
+      const results: { dep: string; ok: boolean }[] = []
+      for (const dep of src.deps) {
+        const r = await window.api.ext.checkRuntime(dep)
+        results.push({ dep, ok: r.ok })
+      }
+      return results
+    },
+  )
+  // 缺失依赖的安装指引(mac,homebrew 优先;uv 官方脚本备选)。
+  const DEP_GUIDE: Record<string, string> = {
+    uv: "brew install uv",
+    node: "brew install node",
+    git: "xcode-select --install",
+    python: "brew install python",
+    bun: "brew install oven-sh/bun/bun",
+  }
+
   const header = createMemo(() => {
     const e = entry()
     if (e) {
@@ -460,7 +486,7 @@ export function ExtensionDetail(props: {
         </p>
       </Section>
 
-      {/* ── 运行时依赖(T2 静态清单;T4 变实时 which 检测) ── */}
+      {/* ── 运行时依赖(T4:进页即实时 which 检测;缺失给安装指引,不等点「添加」才发现) ── */}
       <Show when={entry()}>
         <Section title={t("alpha.ext.detailRuntime")}>
           <Show
@@ -469,9 +495,33 @@ export function ExtensionDetail(props: {
           >
             <div class="alpha-ext-dpills">
               <For each={mcpSpec(entry()!)!.runtimeDep}>
-                {(dep) => <span class="alpha-ext-meta">{dep}</span>}
+                {(dep) => {
+                  const state = () => {
+                    if (depCheck.loading || !depCheck()) return "checking"
+                    const hit = depCheck()!.find((r) => r.dep === dep)
+                    return hit ? (hit.ok ? "ok" : "missing") : "checking"
+                  }
+                  return (
+                    <span class="alpha-ext-meta" data-dep={state()}>
+                      {dep}
+                      {state() === "checking" ? ` · ${t("alpha.ext.depChecking")}` : state() === "ok" ? " ✓" : ` ✗ ${t("alpha.ext.depMissing")}`}
+                    </span>
+                  )
+                }}
               </For>
             </div>
+            <Show when={!depCheck.loading && (depCheck() ?? []).some((r) => !r.ok)}>
+              <div class="alpha-ext-verify-note">
+                <b>{t("alpha.ext.depMissingTitle")}</b>
+                <For each={(depCheck() ?? []).filter((r) => !r.ok)}>
+                  {(r) => (
+                    <p>
+                      {t("alpha.ext.depGuide", { dep: r.dep })} <code class="alpha-ext-dcode">{DEP_GUIDE[r.dep] ?? `brew install ${r.dep}`}</code>
+                    </p>
+                  )}
+                </For>
+              </div>
+            </Show>
           </Show>
         </Section>
 

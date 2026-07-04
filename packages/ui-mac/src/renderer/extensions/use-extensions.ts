@@ -93,6 +93,13 @@ export interface ExtensionsApi {
   reloadAgents(): Promise<void>
   /** Append a plugin to config `plugins` (opencode auto-installs on next launch; needs restart). */
   installPlugin(entry: CatalogEntry): Promise<ActionResult>
+  /**
+   * REQ-019 T5:按 catalog 当前钉版更新已装条目。skill = 覆盖重装(同名 dest,receipt 版本翻新);
+   * plugin = 卸旧配置项再写新钉版(persistPlugin 只会追加,直接重装会留旧版残留)。
+   * MCP 不走此方法 —— persistMcp 是覆盖写,静默重装会丢 {file:} 密钥引用;hub 层用确认框重装
+   * (密钥可重填),见 extension-hub.runUpdate。
+   */
+  updateEntry(entry: CatalogEntry): Promise<ActionResult>
 }
 
 function authHeaders(info: ServerInfo): Record<string, string> | undefined {
@@ -432,6 +439,19 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     return r
   }
 
+  async function updateEntry(entry: CatalogEntry): Promise<ActionResult> {
+    if (entry.type === "skill") return installSkill(entry)
+    if (entry.type === "plugin") {
+      const old = store.receipts.find((r) => r.id === entry.id && r.type === "plugin")
+      if (old) {
+        const removed = await window.api.ext.uninstall(old)
+        if (!removed.ok) return removed
+      }
+      return installPlugin(entry)
+    }
+    return { ok: false, reason: "unsupported type for update" }
+  }
+
   return {
     store,
     refresh: loadStatus,
@@ -447,5 +467,6 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     refreshEngine,
     reloadAgents: loadAgents,
     installPlugin,
+    updateEntry,
   }
 }

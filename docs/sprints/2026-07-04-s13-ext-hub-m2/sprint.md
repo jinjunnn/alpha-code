@@ -28,9 +28,9 @@
 | T2 | **详情页框架**:点卡片主体 → 类目内下钻(tab 栏保持可见+高亮;「‹ 类目名」返回 + Esc 逐级:弹框→详情→列表→关闭,Q3 已批);通用头部(图标/名称/来源/许可证/版本/`_verify` 显式「待核实」+ **主操作在头部右侧**)+ 通用区块骨架(简介 / 类型专属槽 / 数据边界 / 运行时依赖 / 所需密钥) | REQ-019 T2(修订) | opus | ☑ |
 | **Track β —— 类型专属 + 边界** | | | | |
 | T3 | **六类详情专属区块**:MCP=**提供的工具列表**(catalog 新增 `tools[]` 元数据)+transport+启用范围;Skill=SKILL.md 渲染+触发说明;Agent=系统提示预览(折叠)+model+**权限档摘要**+mode;Plugin=hooks/工具清单+npm@版本+**「插件 vs 套件」澄清文案(D4)**+运行于引擎进程风险;套件=组合清单逐项(类型+状态+optional)+顺序+逐项重试;云=输入契约/预算默认/tier/上行数据(占位,随 M3) | REQ-019 T3 | opus 实现 · fable 审 | ☑ |
-| T4 | **数据边界 + 实时依赖检测**:remote MCP 列目的 host、local 命令型标「仅本机」、云条目引 ADR-021;详情页内**实时 which 检测**(复用 `ext.checkRuntime`,不再等点添加才发现缺依赖,缺失给安装指引) | REQ-019 T4 | fable | ☐ |
+| T4 | **数据边界 + 实时依赖检测**:remote MCP 列目的 host、local 命令型标「仅本机」、云条目引 ADR-021;详情页内**实时 which 检测**(复用 `ext.checkRuntime`,不再等点添加才发现缺依赖,缺失给安装指引) | REQ-019 T4 | fable | ☑(缺失分支像素证据随 T8 真机批) |
 | **Track γ —— 生命周期** | | | | |
-| T5 | **更新通道**:receipts.version < catalog.version → 「有更新」分区;逐条/全部更新(fs 类按 receipt.files 精确替换重装、MCP 重持久新钉版);更新前显示版本 diff 摘要;复用 M1 installer + `refreshEngine` | REQ-019 T5 | fable | ☐ |
+| T5 | **更新通道**:receipts.version < catalog.version → 「有更新」分区;逐条/全部更新(fs 类按 receipt.files 精确替换重装、MCP 重持久新钉版);更新前显示版本 diff 摘要;复用 M1 installer + `refreshEngine` | REQ-019 T5 | fable | ☑ |
 | T6 | **导入**:文件夹(校验 SKILL.md/frontmatter → 复制入 `.alpha` + receipt,`origin:"imported"`)、Git URL(浅克隆临时目录 → 同校验);均走 M1 落盘桥;npm 导入并入插件流。替换 M1 的 3 个 `comingSoon` 占位 | REQ-019 T6 | opus | ☐ |
 | **Track δ —— 打磨** | | | | |
 | T7 | **筛选 + 反馈体系**:category/license/来源筛选(吸收 E11);空态每分区 1 句引导 + 1 推荐动作;骨架屏(catalog/状态加载);**失败一律行内**(卡片错误 chip / 详情页 Banner,toast 仅成功,对齐 B11);键盘 Esc 逐级 | REQ-019 T7 + E11 | fable | ☐ |

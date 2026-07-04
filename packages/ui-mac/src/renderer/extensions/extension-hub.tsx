@@ -293,6 +293,28 @@ export function ExtensionHub(props: {
   const flash = (msg: string, kind: "info" | "success" | "error" = "info") => pushToast({ kind, title: msg })
   const comingSoon = () => flash(t("alpha.ext.comingSoon"))
 
+  // REQ-019 T5:更新执行状态(busy = receipt id;失败行内呈现,不裸 toast)。
+  const [updBusy, setUpdBusy] = createSignal<string | null>(null)
+  const [updErr, setUpdErr] = createSignal<Record<string, string>>({})
+  const runUpdate = async (r: InstallReceipt) => {
+    const target = byId(r.id)
+    if (!target) return
+    setUpdErr((prev) => ({ ...prev, [r.id]: "" }))
+    // MCP:persistMcp 为覆盖写,静默重装会丢 {file:} 密钥引用 → 走确认框重装(密钥可重填)。
+    if (target.type === "mcp") return setConfirming(target)
+    setUpdBusy(r.id)
+    try {
+      const res = await ext.updateEntry(target)
+      if (res.ok) flash(t("alpha.ext.updated"), "success")
+      else setUpdErr((prev) => ({ ...prev, [r.id]: res.reason ?? t("alpha.ext.installFailed") }))
+    } finally {
+      setUpdBusy(null)
+    }
+  }
+  const runUpdateAll = async () => {
+    for (const r of updatable()) await runUpdate(r)
+  }
+
   const addMcpEntry = async (
     e: CatalogEntry,
     secrets?: Record<string, string>,
@@ -888,30 +910,51 @@ export function ExtensionHub(props: {
                   <Show when={section() === "installed"}>
                     <Hero title={t("alpha.ext.tabInstalled")} sub={t("alpha.ext.installedSub")} />
                     <Show when={updatable().length > 0}>
-                      <SecRow label={t("alpha.ext.tabUpdates")} count={updatable().length} warn />
+                      <SecRow
+                        label={t("alpha.ext.tabUpdates")}
+                        count={updatable().length}
+                        warn
+                        actionLabel={t("alpha.ext.updateAll")}
+                        onAction={() => void runUpdateAll()}
+                      />
                       <div class="alpha-ext-manage">
                         <For each={updatable()}>
                           {(r) => {
-                            const entry = byId(r.id)
-                            const ic = iconForRow(entry, r.type, r.name)
+                            const target = byId(r.id)
+                            const ic = iconForRow(target, r.type, r.name)
                             return (
                               <div
                                 class="alpha-ext-man"
-                                data-clickable={entry ? "" : undefined}
-                                onClick={() => entry && openEntryDetail(entry)}
+                                data-clickable={target ? "" : undefined}
+                                onClick={() => target && openEntryDetail(target)}
                               >
                                 <span class="alpha-ext-man-ic" style={{ background: ic.color }}>
                                   {ic.glyph}
                                 </span>
                                 <div class="alpha-ext-man-body">
                                   <div class="alpha-ext-man-nm">
-                                    <b title={r.name}>{entry?.displayName ?? r.name}</b>
+                                    <b title={r.name}>{target?.displayName ?? r.name}</b>
                                     <span class="alpha-ext-type-pill">{typeLabel(r.type)}</span>
                                   </div>
                                   <div class="alpha-ext-man-st">
                                     {t("alpha.ext.updateAvailable", { from: r.version ?? "?", to: CATALOG.version })}
                                   </div>
+                                  <Show when={updErr()[r.id]}>
+                                    <div class="alpha-ext-man-st" data-err="">
+                                      {updErr()[r.id]}
+                                    </div>
+                                  </Show>
                                 </div>
+                                <button
+                                  class="alpha-ext-updbtn"
+                                  disabled={updBusy() === r.id}
+                                  onClick={(ev) => {
+                                    ev.stopPropagation()
+                                    void runUpdate(r)
+                                  }}
+                                >
+                                  {updBusy() === r.id ? t("alpha.ext.adding") : t("alpha.ext.update")}
+                                </button>
                               </div>
                             )
                           }}
