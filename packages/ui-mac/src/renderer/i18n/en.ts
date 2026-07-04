@@ -140,4 +140,7 @@ export const dict = {
   "alpha.auth.account": "Account",
   "alpha.auth.signInHint": "Sign in to the alpha platform (opens your browser)",
   "alpha.auth.signOutHint": "Signed in — click to sign out",
+  "alpha.cloud.runSaved": "Cloud run saved to .alpha/runs",
+  "alpha.cloud.runEnded": "Cloud run ended (not successful); record saved",
+  "alpha.cloud.runSaveFailed": "Failed to save cloud run",
 }

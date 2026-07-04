@@ -139,4 +139,7 @@ export const dict = {
   "alpha.auth.account": "账户",
   "alpha.auth.signInHint": "登录 alpha 云平台（将打开浏览器）",
   "alpha.auth.signOutHint": "已登录 —— 点击退出",
+  "alpha.cloud.runSaved": "云任务结果已回流到 .alpha/runs",
+  "alpha.cloud.runEnded": "云任务已结束(未成功),记录已保存",
+  "alpha.cloud.runSaveFailed": "云任务结果回流失败",
 }
