@@ -106,6 +106,8 @@ export interface ExtensionsApi {
   importSkillGit(url: string): Promise<ActionResult & { name?: string }>
   /** REQ-019 T6:npm 插件导入 = 复用 persistPlugin 通道(主进程包名白名单)。 */
   importNpmPlugin(pkg: string): Promise<ActionResult>
+  /** REQ-023:安装 catalog 官方 agent(vendored md 资产 → writeAgent 同管线)。 */
+  installAgentEntry(entry: CatalogEntry): Promise<ActionResult>
 }
 
 function authHeaders(info: ServerInfo): Record<string, string> | undefined {
@@ -435,13 +437,29 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
   async function installPlugin(entry: CatalogEntry): Promise<ActionResult> {
     const spec = entry.installSpec
     if (!spec || spec.kind !== "plugin") return { ok: false, reason: "not a plugin entry" }
-    const r = await window.api.ext.installPlugin(spec.package, metaFor(entry))
-    // dispose 触发实例重建 → 引擎后台 npm 安装立刻开始(而非等下次启动);失败不降级为错误,
+    // REQ-023 T2:有 vendored 资产的官方插件走零网络通道(复制 + 绝对路径),npm 仅 fallback。
+    const r = spec.vendoredAssetKey
+      ? await window.api.ext.installVendoredPlugin(spec.vendoredAssetKey, entry.name, metaFor(entry))
+      : await window.api.ext.installPlugin(spec.package, metaFor(entry))
+    // dispose 触发实例重建 → 引擎立刻装载(vendored=本地即读;npm=后台下载);失败不降级为错误,
     // config 已落盘、下次重建自然装载。
     if (r.ok) {
       await loadInstalls()
       await refreshEngine()
     }
+    return r
+  }
+
+  /** REQ-023:安装 catalog 官方 agent(vendored md 资产 → writeAgent 同管线,桥+账本+dispose)。 */
+  async function installAgentEntry(entry: CatalogEntry): Promise<ActionResult> {
+    const spec = entry.installSpec
+    if (!spec || spec.kind !== "agent") return { ok: false, reason: "not an agent entry" }
+    const r = await window.api.ext.installBuiltinAgent(spec.builtinAssetKey, entry.name, undefined, metaFor(entry))
+    if (!r.ok) return r
+    await loadInstalls()
+    const refreshed = await refreshEngine()
+    void loadAgents()
+    if (!refreshed) return { ok: true, reason: "reload-pending" }
     return r
   }
 
@@ -501,5 +519,6 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     importSkillFolder,
     importSkillGit,
     importNpmPlugin,
+    installAgentEntry,
   }
 }

@@ -20,6 +20,7 @@ import { addReceipt, alphaGlobalRoot, removeReceipt } from "./alpha-installs"
 import { alphaRoot, ensureAlphaScaffold } from "./alpha-workdir"
 import type { InstallMeta, InstallReceipt, InstallTarget } from "../preload/types"
 import { parseSkillFrontmatter, validGitUrl } from "./ext-import-validate"
+import { persistPluginPath } from "./ext-config"
 
 export type FsResult = { ok: true; files?: string[] } | { ok: false; reason: string }
 
@@ -186,8 +187,10 @@ function resourcesRoot(): string {
 }
 
 // builtinAssetKey is author-controlled (the catalog), but validate it anyway so a bad entry can't
-// escape the resources/skills tree.
+// escape the resources tree. skills/<dir> · agents/<name>.md · plugins/<dir>(REQ-023)。
 const SAFE_ASSET_KEY = /^skills\/[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
+const SAFE_AGENT_ASSET_KEY = /^agents\/[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}\.md$/
+const SAFE_PLUGIN_ASSET_KEY = /^plugins\/[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
 
 /**
  * Read a bundled builtin skill's SKILL.md for the detail page (REQ-019 T3). Read-only, key
@@ -195,8 +198,11 @@ const SAFE_ASSET_KEY = /^skills\/[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
  * bundled in this build (same wording as install).
  */
 export function readBuiltinSkill(builtinAssetKey: string): { ok: true; content: string } | { ok: false; reason: string } {
-  if (!SAFE_ASSET_KEY.test(builtinAssetKey)) return { ok: false, reason: "invalid asset key" }
-  const file = path.join(resourcesRoot(), builtinAssetKey, "SKILL.md")
+  const isAgent = SAFE_AGENT_ASSET_KEY.test(builtinAssetKey)
+  if (!isAgent && !SAFE_ASSET_KEY.test(builtinAssetKey)) return { ok: false, reason: "invalid asset key" }
+  const file = isAgent
+    ? path.join(resourcesRoot(), builtinAssetKey)
+    : path.join(resourcesRoot(), builtinAssetKey, "SKILL.md")
   try {
     if (!fs.existsSync(file)) return { ok: false, reason: "技能内容未随此版本打包" }
     if (fs.statSync(file).size > 256 * 1024) return { ok: false, reason: "SKILL.md 过大,略过预览" }
@@ -411,4 +417,59 @@ export async function importSkillGit(url: string, target?: InstallTarget): Promi
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true })
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// REQ-023 T2:vendored 供给链 —— 官方 agent md 资产安装 + vendored 插件零网络安装。
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+/** 安装随 app 打包的官方 agent(md 资产):读文件(体积帽)→ 走 writeAgent 同管线(桥+账本)。 */
+export function installBuiltinAgent(
+  builtinAssetKey: string,
+  name: string,
+  target?: InstallTarget,
+  meta?: InstallMeta,
+): FsResult {
+  if (!SAFE_AGENT_ASSET_KEY.test(builtinAssetKey)) return { ok: false, reason: "invalid asset key" }
+  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid agent name" }
+  const file = path.join(resourcesRoot(), builtinAssetKey)
+  let content: string
+  try {
+    if (!fs.existsSync(file)) return { ok: false, reason: "Agent 内容未随此版本打包" }
+    if (fs.statSync(file).size > 256 * 1024) return { ok: false, reason: "agent md 过大" }
+    content = fs.readFileSync(file, "utf8")
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "failed to read agent asset" }
+  }
+  return writeAgent(name, content, target, meta)
+}
+
+/**
+ * 安装 vendored 插件(零网络):复制 resources/plugins/<key> → ~/.alpha/plugins/<name>/ →
+ * plugin[] 写 plugin.js 绝对路径(persistPluginPath 校验路径必须在 ~/.alpha/plugins 树内)。
+ */
+export function installVendoredPlugin(
+  vendoredAssetKey: string,
+  name: string,
+  meta?: InstallMeta,
+): FsResult {
+  if (!SAFE_PLUGIN_ASSET_KEY.test(vendoredAssetKey)) return { ok: false, reason: "invalid asset key" }
+  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid plugin name" }
+  const srcDir = path.join(resourcesRoot(), vendoredAssetKey)
+  if (!fs.existsSync(path.join(srcDir, "plugin.js"))) return { ok: false, reason: "插件内容未随此版本打包" }
+  const destDir = safeResolveUnder(alphaGlobalRoot(), "plugins", name)
+  if (!destDir) return { ok: false, reason: "refused: path escapes alpha root" }
+  try {
+    fs.mkdirSync(destDir, { recursive: true })
+    fs.cpSync(srcDir, destDir, { recursive: true }) // vendored 内容可信(我方打包),整目录复制
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "failed to copy plugin" }
+  }
+  const jsPath = path.join(destDir, "plugin.js")
+  const persisted = persistPluginPath(name, jsPath, [destDir], meta)
+  if (!persisted.ok) {
+    fs.rmSync(destDir, { recursive: true, force: true }) // 半成品不留
+    return persisted
+  }
+  return { ok: true, files: [destDir] }
 }

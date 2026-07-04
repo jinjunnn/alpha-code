@@ -135,6 +135,33 @@ export function ExtensionHub(props: {
   const section = hubSection
   const [query, setQuery] = createSignal("")
   const [busy, setBusy] = createSignal<string | null>(null)
+  // T7/T9:安装阶段(粗粒度状态机:checking→installing)与逐条行内错误(B11:失败不裸 toast)。
+  const [stage, setStage] = createSignal<Record<string, "checking" | "installing">>({})
+  const [cardErr, setCardErr] = createSignal<Record<string, string>>({})
+  const setStageFor = (id: string, s: "checking" | "installing" | null) =>
+    setStage((prev) => {
+      const next = { ...prev }
+      if (s) next[id] = s
+      else delete next[id]
+      return next
+    })
+  const setErrFor = (id: string, msg: string | null) =>
+    setCardErr((prev) => {
+      const next = { ...prev }
+      if (msg) next[id] = msg
+      else delete next[id]
+      return next
+    })
+  // T7/E11:来源与许可证筛选(浏览区 + 全局搜索共用;清除筛选 = 空态推荐动作)。
+  const [srcFilter, setSrcFilter] = createSignal<"all" | "official" | "community" | "alpha">("all")
+  const [licFilter, setLicFilter] = createSignal<"all" | "MIT" | "Apache-2.0" | "mixed">("all")
+  const filterMatch = (e: CatalogEntry) =>
+    (srcFilter() === "all" || e.source === srcFilter()) && (licFilter() === "all" || e.license === licFilter())
+  const filtersActive = () => srcFilter() !== "all" || licFilter() !== "all"
+  const clearFilters = () => {
+    setSrcFilter("all")
+    setLicFilter("all")
+  }
   // REQ-019 T2:详情页目标(catalog 条目或引擎 agent)。非空 = 当前 tab 内下钻显示详情页。
   const [detail, setDetail] = createSignal<DetailTarget | null>(null)
   // The entry awaiting install confirmation (MCP/bundle/plugin 档). Skill never lands here —
@@ -248,6 +275,8 @@ export function ExtensionHub(props: {
     return `${e.displayName} ${e.name} ${e.description}`.toLowerCase().includes(q)
   }
   const byType = (type: CatalogEntry["type"]) => CATALOG.entries.filter((e) => e.type === type)
+  // 浏览区/搜索共用的筛选视图(T7/E11:来源+许可证)。
+  const byTypeF = (type: CatalogEntry["type"]) => byType(type).filter(filterMatch)
   const byId = (id: string) => CATALOG.entries.find((e) => e.id === id)
 
   // Global search (REQ-019 T1): a non-empty query searches ALL types at once, grouped by type —
@@ -256,8 +285,8 @@ export function ExtensionHub(props: {
   const searchGroups = createMemo(() => {
     if (!searching()) return []
     const groups: { label: string; items: CatalogEntry[] }[] = []
-    for (const ty of ["mcp", "skill", "plugin", "bundle"] as const) {
-      const items = byType(ty).filter(matches)
+    for (const ty of ["mcp", "skill", "agent", "plugin", "bundle"] as const) {
+      const items = byTypeF(ty).filter(matches)
       if (items.length) groups.push({ label: typeLabel(ty), items })
     }
     return groups
@@ -266,7 +295,7 @@ export function ExtensionHub(props: {
 
   // Connectors grouped by category (fixed order) — drives the 连接器 tab subheaders.
   const groupedConnectors = createMemo(() => {
-    const list = byType("mcp")
+    const list = byTypeF("mcp")
     const map = new Map<string, CatalogEntry[]>()
     for (const e of list) {
       const k = (CAT_ORDER as readonly string[]).includes(e.category) ? e.category : "other"
@@ -357,10 +386,13 @@ export function ExtensionHub(props: {
   const addMcpEntry = async (
     e: CatalogEntry,
     secrets?: Record<string, string>,
+    skipCheck?: boolean, // onAdd 已做「检查中」阶段时跳过重复 which
   ): Promise<{ ok: boolean; reason?: string }> => {
     const spec = e.installSpec && e.installSpec.kind === "mcp" ? e.installSpec : undefined
-    const rc = await ext.checkRuntime(spec?.runtimeDep)
-    if (!rc.ok) return { ok: false, reason: t("alpha.ext.runtimeMissing", { tool: rc.missing }) }
+    if (!skipCheck) {
+      const rc = await ext.checkRuntime(spec?.runtimeDep)
+      if (!rc.ok) return { ok: false, reason: t("alpha.ext.runtimeMissing", { tool: rc.missing }) }
+    }
     let workspace: string | undefined
     if (spec?.command?.some((a) => a.includes("{workspace}"))) {
       const picked = await window.api.openDirectoryPicker({ title: t("alpha.ext.pickWorkspace") })
@@ -387,37 +419,59 @@ export function ExtensionHub(props: {
       if (sub.type === "mcp") r = await addMcpEntry(sub)
       else if (sub.type === "skill") r = await ext.installSkill(sub)
       else if (sub.type === "plugin") r = await ext.installPlugin(sub)
+      else if (sub.type === "agent") r = await ext.installAgentEntry(sub)
       else r = { ok: false, reason: "unsupported in bundle" }
       if (r.ok) okCount++
-      else if (!it.optional) failCount++
+      else {
+        setErrFor(sub.id, r.reason ?? t("alpha.ext.installFailed")) // 子项行内(卡片/套件详情)
+        if (!it.optional) failCount++
+      }
     }
-    flash(
-      failCount > 0 ? `${okCount} 成功 · ${failCount} 失败` : t("alpha.ext.metaItems", { count: okCount }) + " · " + t("alpha.ext.added"),
-      failCount > 0 ? "error" : "success",
-    )
+    // B11:toast 只报成功;部分失败 → 套件条目行内错误 + 详情页逐项重试。
+    if (failCount > 0) setErrFor(e.id, t("alpha.ext.bundlePartialFail", { ok: okCount, fail: failCount }))
+    else flash(t("alpha.ext.metaItems", { count: okCount }) + " · " + t("alpha.ext.added"), "success")
   }
 
+  // T7(B11)+T9:失败一律行内(卡片错误行 / 详情页同款),toast 只报成功;安装阶段粗状态机
+  // (MCP:检查中→安装中;其余:安装中)反映在按钮文案上。
   const onAdd = async (e: CatalogEntry, secrets?: Record<string, string>) => {
     setBusy(e.id)
+    setErrFor(e.id, null)
     try {
       if (e.type === "mcp") {
-        const res = await addMcpEntry(e, secrets)
-        if (!res.ok) flash(`${t("alpha.ext.installFailed")}${res.reason ? `: ${res.reason}` : ""}`, "error")
+        setStageFor(e.id, "checking")
+        const spec = e.installSpec && e.installSpec.kind === "mcp" ? e.installSpec : undefined
+        const rc = await ext.checkRuntime(spec?.runtimeDep)
+        if (!rc.ok) return setErrFor(e.id, t("alpha.ext.runtimeMissing", { tool: rc.missing }))
+        setStageFor(e.id, "installing")
+        const res = await addMcpEntry(e, secrets, true)
+        if (!res.ok) setErrFor(e.id, res.reason ?? t("alpha.ext.installFailed"))
         else if (res.reason === "slow") flash(t("alpha.ext.installSlow"))
         else flash(t("alpha.ext.added"), "success")
       } else if (e.type === "skill") {
+        setStageFor(e.id, "installing")
         const res = await ext.installSkill(e)
-        if (!res.ok) flash(`${t("alpha.ext.installFailed")}${res.reason ? `: ${res.reason}` : ""}`, "error")
+        if (!res.ok) setErrFor(e.id, res.reason ?? t("alpha.ext.installFailed"))
+        else if (res.reason === "reload-pending") flash(t("alpha.ext.addedPendingReload"))
+        else flash(t("alpha.ext.addedLive"), "success")
+      } else if (e.type === "agent") {
+        setStageFor(e.id, "installing")
+        const res = await ext.installAgentEntry(e)
+        if (!res.ok) setErrFor(e.id, res.reason ?? t("alpha.ext.installFailed"))
         else if (res.reason === "reload-pending") flash(t("alpha.ext.addedPendingReload"))
         else flash(t("alpha.ext.addedLive"), "success")
       } else if (e.type === "plugin") {
+        setStageFor(e.id, "installing")
         const res = await ext.installPlugin(e)
-        flash(res.ok ? t("alpha.ext.pluginRestart") : `${t("alpha.ext.installFailed")}${res.reason ? `: ${res.reason}` : ""}`, res.ok ? "success" : "error")
+        if (!res.ok) setErrFor(e.id, res.reason ?? t("alpha.ext.installFailed"))
+        else flash(t("alpha.ext.pluginRestart"), "success")
       } else if (e.type === "bundle") {
+        setStageFor(e.id, "installing")
         await installBundle(e)
       }
     } finally {
       setBusy(null)
+      setStageFor(e.id, null)
     }
   }
 
@@ -427,13 +481,15 @@ export function ExtensionHub(props: {
   //   mcp / bundle → 确认框(密钥采集 / 选目录 / 组合清单)。
   const stageInstall = (e: CatalogEntry) => {
     if (e.type === "skill") return void onAdd(e)
-    if (e.type === "plugin") return openEntryDetail(e)
+    // plugin(引擎进程内运行)与 agent(带权限档)= 详情页先行档:先看介绍/权限再装。
+    if (e.type === "plugin" || e.type === "agent") return openEntryDetail(e)
     setConfirming(e)
   }
   // Install action coming FROM the detail page: plugin now goes to its risk confirm dialog
   // (the user has just seen the hooks/risk sections); skill stays direct; the rest confirm.
   const stageInstallFromDetail = (e: CatalogEntry) => {
-    if (e.type === "skill") return void onAdd(e)
+    // 用户已在详情页看过内容/权限:skill/agent 直装;plugin 仍过风险确认框;MCP/套件过确认框。
+    if (e.type === "skill" || e.type === "agent") return void onAdd(e)
     setConfirming(e)
   }
 
@@ -556,6 +612,44 @@ export function ExtensionHub(props: {
     </div>
   )
 
+  // T7/E11:来源 + 许可证筛选 chips(浏览区共用;全局搜索也吃同一组筛选)。
+  const Filters = () => (
+    <div class="alpha-ext-filters">
+      <span class="alpha-ext-filters-l">{t("alpha.ext.filterSource")}</span>
+      <For each={["all", "official", "community", "alpha"] as const}>
+        {(v) => (
+          <button class="alpha-ext-fchip" data-on={srcFilter() === v ? "" : undefined} onClick={() => setSrcFilter(v)}>
+            {v === "all" ? t("alpha.ext.filterAll") : sourceLabel(v)}
+          </button>
+        )}
+      </For>
+      <span class="alpha-ext-filters-l" style={{ "margin-left": "10px" }}>
+        {t("alpha.ext.filterLicense")}
+      </span>
+      <For each={["all", "MIT", "Apache-2.0", "mixed"] as const}>
+        {(v) => (
+          <button class="alpha-ext-fchip" data-on={licFilter() === v ? "" : undefined} onClick={() => setLicFilter(v)}>
+            {v === "all" ? t("alpha.ext.filterAll") : v}
+          </button>
+        )}
+      </For>
+    </div>
+  )
+  // 筛选后空态:一句引导 + 清除筛选推荐动作(T7 空态纪律)。
+  const FilteredEmpty = () => (
+    <EmptyState
+      title={t("alpha.ext.noResults")}
+      sub={filtersActive() ? t("alpha.ext.filteredEmptySub") : undefined}
+      action={
+        filtersActive() ? (
+          <button class="alpha-ext-add" data-variant="primary" onClick={clearFilters}>
+            {t("alpha.ext.clearFilters")}
+          </button>
+        ) : undefined
+      }
+    />
+  )
+
   // One browsable entry as a card (icon · name/chip · desc · meta + action). The card body opens the
   // detail page (drill-down); the foot action runs the per-type install path (stageInstall) — or
   // 打开详情 when already installed.
@@ -618,10 +712,18 @@ export function ExtensionHub(props: {
                 stageInstall(e)
               }}
             >
-              {isBusy() ? t("alpha.ext.adding") : t("alpha.ext.add")}
+              {stage()[e.id] === "checking"
+                ? t("alpha.ext.stageChecking")
+                : stage()[e.id] === "installing" || isBusy()
+                  ? t("alpha.ext.stageInstalling")
+                  : t("alpha.ext.add")}
             </button>
           </Show>
         </div>
+        {/* B11:失败行内(错误 chip 行),不裸 toast */}
+        <Show when={cardErr()[e.id]}>
+          <p class="alpha-ext-card-err">{cardErr()[e.id]}</p>
+        </Show>
       </div>
     )
   }
@@ -777,6 +879,7 @@ export function ExtensionHub(props: {
                     byId={byId}
                     busy={busy}
                     crumb={sectionLabel()}
+                    errorFor={(id) => cardErr()[id]}
                     onBack={() => setDetail(null)}
                     onInstall={(e) => stageInstallFromDetail(e)}
                     onUninstall={(r) => void onUninstall(r)}
@@ -884,6 +987,8 @@ export function ExtensionHub(props: {
                   {/* ░░ CONNECTORS (grouped by category) ░░ */}
                   <Show when={section() === "connectors"}>
                     <Hero title={t("alpha.ext.tabConnectors")} sub={t("alpha.ext.connectorsSub")} />
+                    <Filters />
+                    <Show when={groupedConnectors().length > 0} fallback={<FilteredEmpty />}>
                     <For each={groupedConnectors()}>
                       {(g) => (
                         <>
@@ -895,13 +1000,20 @@ export function ExtensionHub(props: {
                         </>
                       )}
                     </For>
+                    </Show>
                   </Show>
 
                   {/* ░░ SKILLS ░░ */}
                   <Show when={section() === "skills"}>
                     <Hero title={t("alpha.ext.tabSkills")} sub={t("alpha.ext.skillsSub")} />
-                    <SecRow label={t("alpha.ext.allSkills")} count={byType("skill").length} />
-                    <Grid items={byType("skill")} />
+                    <Filters />
+                    <Show
+                      when={byTypeF("skill").length > 0}
+                      fallback={<FilteredEmpty />}
+                    >
+                      <SecRow label={t("alpha.ext.allSkills")} count={byTypeF("skill").length} />
+                      <Grid items={byTypeF("skill")} />
+                    </Show>
                   </Show>
 
                   {/* ░░ AGENTS ░░ (REQ-018 T7 / ADR-014 O2:Agent 作一等原语) */}
@@ -919,6 +1031,10 @@ export function ExtensionHub(props: {
                         {t("alpha.ext.createAgentCta")}
                       </button>
                     </div>
+                    <Show when={byTypeF("agent").length > 0}>
+                      <SecRow label={t("alpha.ext.installableAgents")} count={byTypeF("agent").length} />
+                      <Grid items={byTypeF("agent")} />
+                    </Show>
                     <Show
                       when={ext.store.agents.length > 0}
                       fallback={<EmptyState title={t("alpha.ext.noResults")} />}
@@ -934,15 +1050,21 @@ export function ExtensionHub(props: {
                   <Show when={section() === "plugins"}>
                     <Hero title={t("alpha.ext.tabPlugins")} sub={t("alpha.ext.pluginsSub")} />
                     <div class="alpha-ext-callout">{t("alpha.ext.pluginNote")}</div>
-                    <SecRow label={t("alpha.ext.allPlugins")} count={byType("plugin").length} />
-                    <Grid items={byType("plugin")} />
+                    <Filters />
+                    <Show when={byTypeF("plugin").length > 0} fallback={<FilteredEmpty />}>
+                      <SecRow label={t("alpha.ext.allPlugins")} count={byTypeF("plugin").length} />
+                      <Grid items={byTypeF("plugin")} />
+                    </Show>
                   </Show>
 
                   {/* ░░ BUNDLES ░░ */}
                   <Show when={section() === "bundles"}>
                     <Hero title={t("alpha.ext.tabBundles")} sub={t("alpha.ext.bundlesSub")} />
-                    <SecRow label={t("alpha.ext.allBundles")} count={byType("bundle").length} />
-                    <Grid items={byType("bundle")} />
+                    <Filters />
+                    <Show when={byTypeF("bundle").length > 0} fallback={<FilteredEmpty />}>
+                      <SecRow label={t("alpha.ext.allBundles")} count={byTypeF("bundle").length} />
+                      <Grid items={byTypeF("bundle")} />
+                    </Show>
                   </Show>
 
                   {/* ░░ INSTALLED (manage;顶部 = 有更新分组,T5 接动作) ░░ */}
@@ -1000,9 +1122,17 @@ export function ExtensionHub(props: {
                         </For>
                       </div>
                     </Show>
+                    <Show when={!ext.store.ready && installedAll().length === 0}>
+                      <div class="alpha-ext-manage" aria-hidden="true">
+                        <div class="alpha-ext-skel-row" />
+                        <div class="alpha-ext-skel-row" />
+                        <div class="alpha-ext-skel-row" />
+                      </div>
+                    </Show>
                     <Show
                       when={installedAll().length > 0}
                       fallback={
+                        <Show when={ext.store.ready}>
                         <EmptyState
                           title={t("alpha.ext.empty")}
                           sub={t("alpha.ext.emptySub")}
@@ -1012,6 +1142,7 @@ export function ExtensionHub(props: {
                             </button>
                           }
                         />
+                        </Show>
                       }
                     >
                       <SecRow label={t("alpha.ext.installedSection")} count={installedAll().length} />

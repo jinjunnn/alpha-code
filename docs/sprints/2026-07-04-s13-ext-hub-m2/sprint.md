@@ -33,9 +33,9 @@
 | T5 | **更新通道**:receipts.version < catalog.version → 「有更新」分区;逐条/全部更新(fs 类按 receipt.files 精确替换重装、MCP 重持久新钉版);更新前显示版本 diff 摘要;复用 M1 installer + `refreshEngine` | REQ-019 T5 | fable | ☑ |
 | T6 | **导入**:文件夹(校验 SKILL.md/frontmatter → 复制入 `.alpha` + receipt,`origin:"imported"`)、Git URL(浅克隆临时目录 → 同校验);均走 M1 落盘桥;npm 导入并入插件流。替换 M1 的 3 个 `comingSoon` 占位 | REQ-019 T6 | opus | ☑(git 真克隆留 T8 真机批) |
 | **Track δ —— 打磨** | | | | |
-| T7 | **筛选 + 反馈体系**:category/license/来源筛选(吸收 E11);空态每分区 1 句引导 + 1 推荐动作;骨架屏(catalog/状态加载);**失败一律行内**(卡片错误 chip / 详情页 Banner,toast 仅成功,对齐 B11);键盘 Esc 逐级 | REQ-019 T7 + E11 | fable | ☐ |
+| T7 | **筛选 + 反馈体系**:category/license/来源筛选(吸收 E11);空态每分区 1 句引导 + 1 推荐动作;骨架屏(catalog/状态加载);**失败一律行内**(卡片错误 chip / 详情页 Banner,toast 仅成功,对齐 B11);键盘 Esc 逐级 | REQ-019 T7 + E11 | fable | ☑ |
 | **Track ε —— 供给链(2026-07-04 追加,REQ-023)** | | | | |
-| T9 | **官方扩展配置化 + 离线资产通道**:catalog 补 agent 类目 + `vendoredAssetKey`/`downloadUrl` + plugin `hooks[]`;`resources/plugins/` 预打包 opencode-notify(MIT,记 NOTICE)→ 安装=复制入 `~/.alpha/plugins` + plugin[] 写**绝对路径**(零网络,绕引擎 npm 下载);官方 agent 资产 ≥1 条同通道;安装管线状态机(检查中→获取→写入→重载→✓)与 T7 合并落 | REQ-023 | fable | ☐ |
+| T9 | **官方扩展配置化 + 离线资产通道**:catalog 补 agent 类目 + `vendoredAssetKey`/`downloadUrl` + plugin `hooks[]`;`resources/plugins/` 预打包 opencode-notify(MIT,记 NOTICE)→ 安装=复制入 `~/.alpha/plugins` + plugin[] 写**绝对路径**(零网络,绕引擎 npm 下载);官方 agent 资产 ≥1 条同通道;安装管线状态机(检查中→获取→写入→重载→✓)与 T7 合并落 | REQ-023 | fable | ☑(断网真机走查归 T8 真机批) |
 | **验收** | | | | |
 | T8 | 六类条目详情页逐一 CDP 截图([[visual-verify-required]])+ 三档安装路径各走通一例 + **断网装 vendored plugin 成功(REQ-023 验收①)** + 更新链路走通一例 + 导入本地 skill 走通(含非法 frontmatter 拒绝)+ 依赖缺失详情页可见(卸 uv 实测)+ 失败零裸 toast → 状态回写(BACKLOG/CHANGELOG/REQ-019+REQ-023 frontmatter/ADR-014 v3 checklist 回勾) | REQ-019/023 验收 | fable | ☐ |
 
