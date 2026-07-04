@@ -85,7 +85,7 @@
 | C8 | ADR-002 sidecar 语义修订:承认 main-IPC 为桌面等价物(T6.4) | docs | A | ready | YAGNI:真 HTTP sidecar 出现需求再立 |
 | C9 | 代码上云数据边界 mini-ADR:diff-only/secrets 过滤/consent/体积上限(T4.5) | security | X | shipped | **S11 T3 完成(PR #56)= [ADR-021](../.claude/rules/adrs/ADR-021-cloud-data-boundary.md)**:显式通道 diff-only+1MB 帽+secrets 拒发(落点 dispatchCloudJob,待实现随 B3 记账)· 隐式通道=告知+BYOK 逃生(不装过滤)· consent 双挂钩留 B16 拍时机;与 B16 分工写明,B16 重启零返工 |
 | C12 | CORS 过宽(localhost/无 Origin 放行) | security | A | registered | 上游(R2);alpha 杠杆=先撤自己注入的 `ACAO:*`(→C24) |
-| C14 | 升级静默破坏面:232 选择器 / 16 处 `as any`;薄 re-export 收敛层(ADR-016 待办①) | debt | A | in-sprint | **→ [S11](sprints/2026-07-03-s11-cloud-loop/sprint.md) T8**(REQ-013 已拍板冻结,前置成熟);R7:实际耦合面 5-6× 于初报;选择器清单已建(REQ-012 `upstream-anchors.json` 即收敛载体) |
+| C14 | 升级静默破坏面:232 选择器 / 23 处 `as any`;薄 re-export 收敛层(ADR-016 待办①) | debt | A | shipped | **S11 T8(PR #62)**:① `alpha-ui/providers.ts` 薄层建立(组件不得直 import @opencode-ai/app,复核 grep 在册)③ as any 清点 23 处=同一类 SDK codegen 偏斜,双文件契约锚(逐处手写类型不做=第二耦合面)④ brand/patch transform 默认 strict(打偏 build 红,`ALPHA_PATCH_LENIENT=1` 逃生)② 选择器载体=REQ-012 锚点+重指时机收敛到 re-freeze(ADR-020 §5);data-alpha-* 全量重打点不做(冻结使收益消失);详录 [audits/c14](audits/2026-07-04-c14-coupling-convergence.md) |
 | C15 | 运行时 SSE/DOM 浪费:firehose 裸遍历 + body 全子树 MutationObserver 收窄 | perf | A | ready | R6:有去抖,影响弱于字面;含 A3 尾项:`session.idle` 全量 session.list 去抖(册 §7g deferred) |
 | C16 | 卸载残留 ≈0.8GB 含凭证:清理方案 + app 内数据清除入口 | debt | A | ready | |
 | C17 | schema 版本兼容守卫(旧 app × 新 DB) | debt | A | registered | 上游 DB(R2);alpha 可做启动前版本预检 |

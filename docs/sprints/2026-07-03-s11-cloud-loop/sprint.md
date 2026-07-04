@@ -20,7 +20,7 @@
 | T6 | C24:先撤 `ACAO:*` 注入(windows.ts)→ renderer CSP 落地(connect-src 收敛)→ 隔离 dev + 打包双态逐屏走查 + exfil 拦截取证;**断 renderer 即回退** | C24 | fable | ◐ 代码 PR #59(回环-only CORS + 打包态 CSP + wasm 豁免;走查/取证 → ship 批) |
 | T7 | C27 + C25:fuses(关 RunAsNode,先评估 utilityProcess/sidecar 依赖)+ asar-integrity + entitlements 逐项收紧;`open-path`/`ext-install-plugin` exec 触达面收紧;打包签名+公证复验(stapler/spctl)+ DISTRIBUTION.md 记账 | C27 / C25 | fable | ◐ 代码 PR #61(fuses 六项+entitlements 三删+open -a 白名单;签名打包复验 → ship 批) |
 | **Track D —— 破坏面收敛** | | | | |
-| T8 | C14:借用内部 provider 收敛为 `alpha-ui/providers/*` 薄 re-export(一处断)+ 高频选择器 `data-alpha-*` 重打点(载体 = REQ-012 `upstream-anchors.json`);16 处 `as any` 清点收敛 | C14 | fable | ☐ |
+| T8 | C14:借用内部 provider 收敛为 `alpha-ui/providers/*` 薄 re-export(一处断)+ 高频选择器 `data-alpha-*` 重打点(载体 = REQ-012 `upstream-anchors.json`);16 处 `as any` 清点收敛 | C14 | fable | ✅ PR #62(providers 层+23 处 cast 契约锚+strict transforms;重打点经冻结判定不做,记录在案) |
 
 ## 依赖与排序
 

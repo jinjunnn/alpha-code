@@ -8,6 +8,9 @@
 // once and caches it (core/config.ts), so writing the file alone won't apply live; mcp.add applies
 // live but is in-memory only.
 
+// C14③ 契约锚(sync 时 `grep -n "as any"` 复核本文件):本文件全部 `as any` 都是同一类——
+// SDK v2 生成类型与 server 实际接受/返回形状的已知偏斜(directory/scope/roots 扩展参数、data
+// 数组元素形状、event 信封)。上游 codegen 修齐后应成批删除,不新增其它用途的 as any。
 import { createStore } from "solid-js/store"
 import { createEffect, onCleanup, type Accessor } from "solid-js"
 // CLIENT subpath only — the v2 barrel pulls Node-only deps that break the renderer (see ADR-008).

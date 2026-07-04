@@ -84,7 +84,14 @@ export default defineConfig({
   renderer: {
     // brandI18nPlugin rewrites upstream app i18n brand strings at bundle time only —
     // the on-disk source stays untouched, so upstream sync never conflicts (ADR-005/006).
-    plugins: [brandI18nPlugin(), patchUpstreamPlugin(), appPlugin, sentry],
+    // C14④:冻结(ADR-020)后补丁子串恒应命中,打偏=真漂移 → 默认 strict(build 即红);
+    // 逃生 ALPHA_PATCH_LENIENT=1(re-freeze 体检期临时放行)。
+    plugins: [
+      brandI18nPlugin({ strict: process.env.ALPHA_PATCH_LENIENT !== "1" }),
+      patchUpstreamPlugin({ strict: process.env.ALPHA_PATCH_LENIENT !== "1" }),
+      appPlugin,
+      sentry,
+    ],
     publicDir: "../../../app/public",
     root: "src/renderer",
     build: {

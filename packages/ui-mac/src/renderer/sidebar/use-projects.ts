@@ -4,6 +4,9 @@
 // the SDK is the blessed contract (ADR-002/003). We keep a single read client and a single
 // SSE subscription, and patch a Solid store in place so the sidebar stays live.
 
+// C14③ 契约锚(sync 时 `grep -n "as any"` 复核本文件):本文件全部 `as any` 都是同一类——
+// SDK v2 生成类型与 server 实际接受/返回形状的已知偏斜(directory/scope/roots 扩展参数、data
+// 数组元素形状、event 信封)。上游 codegen 修齐后应成批删除,不新增其它用途的 as any。
 import { createStore, produce } from "solid-js/store"
 import { createEffect, onCleanup, type Accessor } from "solid-js"
 // Import from the CLIENT subpath, not "@opencode-ai/sdk/v2": the v2 barrel re-exports the

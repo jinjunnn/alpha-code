@@ -10,7 +10,7 @@
 import { createMemo, createSignal, For, Show, onCleanup } from "solid-js"
 import { Portal } from "solid-js/web"
 import { useLocation, useNavigate } from "@solidjs/router"
-import { useCommand } from "@opencode-ai/app"
+import { useCommand } from "./providers"
 import { type AlphaProject, type AlphaProjectsApi } from "../sidebar/use-projects"
 import { sessionHref, newSessionHref, projectLabel } from "../sidebar/route"
 import { AddButton, PermChip, EffortChip, ModelChip, composerModelLabel } from "./composer-controls"
