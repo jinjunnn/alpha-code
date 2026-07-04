@@ -11,7 +11,9 @@ set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 # Keep in lockstep with .github/workflows/alpha-ci.yml (env.UPSTREAM_PATHS) and ADR-004.
-UPSTREAM_PATHS="packages/opencode packages/core packages/server packages/app packages/ui packages/tui packages/sdk"
+# ADR-020(REQ-017 修):packages/{app,ui} 已冻结(frontend-freeze-base),相对 dev 的 diff 是冻结本意
+# → 移出守卫,与 alpha-ci.yml env.UPSTREAM_PATHS 恢复 1:1(此前本地恒假红)。
+UPSTREAM_PATHS="packages/opencode packages/core packages/server packages/tui packages/sdk"
 fail=0
 
 echo "▶ [1/3] north-star guard (zero upstream edits)"
