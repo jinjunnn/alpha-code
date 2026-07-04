@@ -63,6 +63,7 @@
   --a-success-subtle: rgba(22, 163, 74, 0.12);
   --a-warning-subtle: rgba(217, 119, 6, 0.12);
   --a-error-subtle: rgba(220, 38, 38, 0.12);
+  --a-info-subtle: rgba(37, 99, 235, 0.12);
 
   /* ── Typography ──────────────────────────────────────────────────────── */
   --a-font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
@@ -194,6 +195,7 @@
   --a-success-subtle: rgba(74, 222, 128, 0.14);
   --a-warning-subtle: rgba(251, 191, 36, 0.14);
   --a-error-subtle: rgba(248, 113, 113, 0.14);
+  --a-info-subtle: rgba(96, 165, 250, 0.14);
 
   --a-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
   --a-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.4);

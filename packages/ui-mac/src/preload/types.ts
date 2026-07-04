@@ -215,6 +215,8 @@ export type ElectronAPI = {
     persistMcp: (name: string, server: Record<string, unknown>) => Promise<{ ok: true } | { ok: false; reason: string }>
     removeMcp: (name: string) => Promise<{ ok: true } | { ok: false; reason: string }>
     checkRuntime: (tool: string) => Promise<{ ok: boolean }>
+    // B11/B23:全局配置健康(broken=引擎会整份忽略用户配置)
+    configHealth: () => Promise<{ broken: boolean; reason?: string; path?: string }>
     writeSkill: (
       name: string,
       description: string,

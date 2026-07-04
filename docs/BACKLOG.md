@@ -58,14 +58,14 @@
 | B7 | 发布流水线制度化:CI 断言版本/种子资产/断网首启 smoke(T2.6 剩余) | debt | A | ready | 部分:DISTRIBUTION.md 已写 + S7 部分断言 |
 | B8 | 扩展物运行时生命周期:版本/健康/更新三要素(T5.4/T5.6) | feature | A | registered | 系统性条目,症状=A2;终态=定制中心从商店→运行时管理器 |
 | B9 | 更新链完整性:关 `allowDowngrade` + feed 完整性校验 | security | A | shipped | **PR #47**(→ [S10](sprints/2026-07-03-s10-hardening/sprint.md));降级闸关闭(理由入注释:单 prod 渠道无跨渠道降级需求;旧版逃生=手动 dmg);完整性链文档化(yml sha512 → zip → 签名同 identity → 降级闸);**verified 待下个真实发版**(自动更新实测 + 篡改 yml 拒装用例);详见 [requirements/B9](requirements/B9-update-chain-integrity.md) |
-| B11 | 统一错误/健康呈现面 + 账户 banner(S8 底座) | ux | A | in-sprint | **→ [S11](sprints/2026-07-03-s11-cloud-loop/sprint.md) T4**;部分:侧栏 store.error + 首条消息 keep-text 已修(PR #24);含 B23 的呈现面;B20/C20/C21 公共底座;本批收编 B20 + B23 呈现半边 |
+| B11 | 统一错误/健康呈现面 + 账户 banner(S8 底座) | ux | A | shipped | **S11 T4(PR #60)**:Banner 基元 + pushToast 唯一出口(hub 私有 toast 收编)+ 首页/hub store.error banner + 账户 error 判别式(#1 误显根治,picker error 态+重试;侧栏会员行不装「未订阅」)+ **B23 configHealth**(语法错/未知顶键 → warning banner,5 单测)+ splash 状态行(B20);复扫矩阵 20 项:✅10/🆗6/⏭4([audits/rescan](audits/2026-07-04-silent-failure-rescan.md));⏭4(会话操作 toast/登录链事件/骨架/连崩呈现)留行内追;**verified 待视觉批**(banner/toast 截图) |
 | B12 | Instance 不驱逐 + 递归 watcher 常驻 | perf | A | ready | 上游归属(R2);alpha 杠杆=`server.ts:58` 停强开 `OPENCODE_EXPERIMENTAL_FILEWATCHER` + 垃圾项目治理(B4) |
 | B13 | DB 跨进程并发(SQLITE_BUSY → orDie) | debt | A | registered | 上游归属(R2);R6 降级:busy_timeout=5000 已缓解;alpha 无直接修点 |
 | B14 | 会话 DB 备份/导出(损坏恢复) | feature | A | registered | 上游 DB 本体改不了(R2);alpha main 纯文件操作可做备份/导出 |
-| B20 | 弱网降级 UX:超时/重试/splash 状态/真骨架/websearch 优雅降级(S8) | ux | A | in-sprint | **→ [S11](sprints/2026-07-03-s11-cloud-loop/sprint.md) T4(收编入 B11)**;部分⊂B11;websearch orDie 在上游(R2),杠杆=env 关闸或自建 tool;含 ADR-009 🔭 keyless 限流行为运行时实测 |
+| B20 | 弱网降级 UX:超时/重试/splash 状态/真骨架/websearch 优雅降级(S8) | ux | A | in-sprint | **S11 T4 部分随 PR #60**(splash 状态行 + banner/重试底座);余项=真骨架(Skeleton 死代码去留)/promptAsync 超时(豁免记录)/websearch(上游 R2 豁免),见 [audits/rescan](audits/2026-07-04-silent-failure-rescan.md) ⏭/🆗 行;行保留 |
 | B21 | BYOK 改键/删键即时生效(触发重注 env/respawn) | bug | A | shipped | **PR #48**;根因=env 桥 set-if-unset 滞留旧 key;修=自有注入权威覆盖/清除(用户值永不动,纯逻辑 5 单测)+ 改键回调触发重注+respawn;删键即时吊销;**verified 待真机**(改键→picker 即时反映→新 key 出账);详见 [requirements/B21](requirements/B21-byok-key-live-reload.md) |
 | B22 | message-timeline.tsx:481 会话时间线崩溃 | bug | A | ready | 546-sync 后**先代码复验再修**;疑 timeline-inject DOM 注入扰动上游 virtualizer |
-| B23 | strict-key 配置致瘫:全局 jsonc 解析失败 → 整份配置静默清零 | bug | A | in-sprint | **→ [S11](sprints/2026-07-03-s11-cloud-loop/sprint.md) T4(呈现半边随 B11)**;上游解析行为;alpha 杠杆=写前校验(C2 已有)+ 失败呈现(→B11) |
+| B23 | strict-key 配置致瘫:全局 jsonc 解析失败 → 整份配置静默清零 | bug | A | shipped | **S11 T4(PR #60)呈现半边落地**:`configHealth()`(语法错 + 未知顶层 key 双病灶,V1 顶键集自引擎 schema;5 单测)→ AlphaHome warning banner + 打开配置;写前校验(C2)继续挡 alpha 自写;上游清零行为本体不可改(R2);**verified 待视觉批**(故意写坏配置截图) |
 
 ## Active — P2(债务)
 

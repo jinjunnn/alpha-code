@@ -310,3 +310,50 @@ export function persistPlugin(pkg: string): ConfigResult {
   if (exists) return { ok: true }
   return writeKey(["plugin"], [...current, pkg])
 }
+
+// ── B11/B23:全局配置健康探测 ─────────────────────────────────────────────────────────────────
+// 上游行为(不可改,ADR-005):opencode 对全局 opencode.jsonc 的 jsonc 语法错误或**任何未识别
+// 顶层 key** 都会让 loadGlobal 失败 → 整份配置被静默清零为 {}(config.ts:281-289,parse.ts
+// unrecognized_keys)。这里在 main 侧用同一份文件做前置探测,给 renderer 一个显式告警入口。
+//
+// 顶键集提取自引擎真 schema `packages/core/src/v1/config/config.ts` Info Struct(2026-07-04);
+// 上游新增顶键会造成误报(banner 多报,不吞真错)→ upstream sync 后如误报,重新提取此表即可;
+// 逃生:ALPHA_CONFIG_HEALTH_DISABLE=1。
+const V1_TOP_KEYS = new Set([
+  "$schema", "shell", "logLevel", "server", "command", "skills", "references", "reference",
+  "watcher", "snapshot", "plugin", "share", "autoshare", "autoupdate", "disabled_providers",
+  "enabled_providers", "model", "small_model", "default_agent", "username", "mode", "agent",
+  "provider", "mcp", "formatter", "lsp", "instructions", "layout", "permission", "tools",
+  "attachment", "enterprise", "tool_output", "compaction", "experimental",
+])
+
+export type ConfigHealth = { broken: boolean; reason?: string; path?: string }
+
+export function configHealth(): ConfigHealth {
+  if (process.env.ALPHA_CONFIG_HEALTH_DISABLE === "1") return { broken: false }
+  const file = userConfigPath()
+  let text: string
+  try {
+    if (!fs.existsSync(file)) return { broken: false, path: file }
+    text = fs.readFileSync(file, "utf8")
+  } catch {
+    return { broken: false, path: file }
+  }
+  if (!text.trim()) return { broken: false, path: file }
+  const errors: ParseError[] = []
+  const obj = parse(text, errors, { allowTrailingComma: true })
+  if (errors.length > 0) {
+    return { broken: true, reason: "配置文件存在语法错误,引擎会忽略整份配置", path: file }
+  }
+  if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+    const unknown = Object.keys(obj).filter((k) => !V1_TOP_KEYS.has(k))
+    if (unknown.length > 0) {
+      return {
+        broken: true,
+        reason: `存在无法识别的配置项(${unknown.slice(0, 3).join(", ")}${unknown.length > 3 ? "…" : ""}),引擎会忽略整份配置`,
+        path: file,
+      }
+    }
+  }
+  return { broken: false, path: file }
+}

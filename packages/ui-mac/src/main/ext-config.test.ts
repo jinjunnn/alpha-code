@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { persistMcp, persistPlugin, persistProvider, removeMcp } from "./ext-config"
+import { configHealth, persistMcp, persistPlugin, persistProvider, removeMcp } from "./ext-config"
 
 let tmp = ""
 const prevConfigDir = process.env.OPENCODE_CONFIG_DIR
@@ -177,5 +177,45 @@ describe("persistProvider — baseURL + shape guards", () => {
     const cfg = readConfig()
     expect(cfg.provider.myprov.options.baseURL).toBe("https://api.example.com/v1")
     expect(cfg.provider.myprov.models["model-a"]).toBeDefined()
+  })
+})
+
+// ── B11/B23:configHealth(探测「引擎会整份清零」的两种病灶) ──────────────────────────────
+describe("configHealth", () => {
+  const write = (text: string) => fs.writeFileSync(path.join(tmp, "opencode.jsonc"), text)
+
+  test("无文件 / 合法配置 → 健康", () => {
+    expect(configHealth().broken).toBe(false)
+    write('{\n  // comment ok\n  "model": "x",\n  "mcp": {},\n}\n')
+    expect(configHealth().broken).toBe(false)
+  })
+
+  test("jsonc 语法坏 → broken(语法)", () => {
+    write('{ "mcp": { broken')
+    const h = configHealth()
+    expect(h.broken).toBe(true)
+    expect(h.reason).toContain("语法")
+  })
+
+  test("未知顶层 key → broken 并点名(B23 主案例)", () => {
+    write('{ "mcp": {}, "strictKey": 1, "another_bad": true }')
+    const h = configHealth()
+    expect(h.broken).toBe(true)
+    expect(h.reason).toContain("strictKey")
+  })
+
+  test("全部 V1 合法顶键不误报", () => {
+    write('{ "$schema": "s", "provider": {}, "plugin": [], "instructions": [], "experimental": {}, "theme_typo_guard": 0 }'.replace(', "theme_typo_guard": 0', ""))
+    expect(configHealth().broken).toBe(false)
+  })
+
+  test("ALPHA_CONFIG_HEALTH_DISABLE=1 → 恒健康", () => {
+    write("{ nope")
+    process.env.ALPHA_CONFIG_HEALTH_DISABLE = "1"
+    try {
+      expect(configHealth().broken).toBe(false)
+    } finally {
+      delete process.env.ALPHA_CONFIG_HEALTH_DISABLE
+    }
   })
 })
