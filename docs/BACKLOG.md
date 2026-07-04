@@ -93,7 +93,7 @@
 | C21 | 无障碍:focus-trap/键盘/Escape/对比度/reduced-motion(S8) | ux | A | ready | |
 | C22 | 依赖漏洞:bun audit 158(2 crit/45 high),多在 dev 工具链 | debt | A | registered | 发布产物暴露面小;定期复扫 |
 | C23 | 云 SSE 退避/重连/终态判定/`subs` 泄漏(NEW-2/3/4) | debt | A | dup | **→ REQ-003 已修全部四病灶(PR #50)**;respawn 互斥(NEW-4)已随 B5(PR #48) |
-| C24 | CSP 落地 + 撤 alpha 自注入 `ACAO:*`(exfil 通道) | security | A | in-sprint | **→ [S11](sprints/2026-07-03-s11-cloud-loop/sprint.md) T6**;风险:可能断 renderer,需充分验证(册 §7g 告诫);撤 ACAO 先行、断屏即回退 |
+| C24 | CSP 落地 + 撤 alpha 自注入 `ACAO:*`(exfil 通道) | security | A | shipped | **S11 T6(PR #59)**:ACAO/ACAH 收敛回环-only(darwin;win32 留旧供 WSL)+ 打包态 renderer CSP(connect-src=self+回环,script=self+wasm-unsafe-eval 供 ghostty,img 放 https 供 markdown 远图;双路径注入 webRequest+protocol.handle;`ALPHA_CSP_DISABLE=1` 逃生);11 单测;**verified 待打包态逐屏走查 + exfil 取证**(→ 本 sprint ship/视觉批) |
 | C25 | `open-path` + `ext-install-plugin` exec 触达面收紧 | security | A | in-sprint | **→ [S11](sprints/2026-07-03-s11-cloud-loop/sprint.md) T7(随 C27 顺带)**;C2 同类配置期触达面,渲染层可达 |
 | C27 | Electron fuses(关 RunAsNode)+ asar-integrity + entitlements 收紧 | security | A | in-sprint | **→ [S11](sprints/2026-07-03-s11-cloud-loop/sprint.md) T7**;dylib 注入组合;邻接 A7;与 C24 共享打包回归场 |
 | C28 | placebo 控件诚实化(composer 只读/effort)+ 崩溃屏接管设计 | ux | A | registered | 顶层 ErrorBoundary 方案已实测证伪撤回(册 §7h);品牌部分已由 C29 修;剩=控件诚实化 + 边界下沉设计 |

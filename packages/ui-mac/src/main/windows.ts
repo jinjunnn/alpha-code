@@ -7,6 +7,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import type { TitlebarTheme } from "../preload/types"
 import { exportDebugLogs, write as writeLog } from "./logging"
+import { corsRelaxAllowed, RENDERER_CSP } from "./renderer-security"
 import { getStore } from "./store"
 import { PINCH_ZOOM_ENABLED_KEY } from "./store-keys"
 import { createUnresponsiveSampler } from "./unresponsive"
@@ -25,6 +26,11 @@ const oc2Background = {
 }
 const documentPolicyHeader = "Document-Policy"
 const jsCallStacksDocumentPolicy = "include-js-call-stacks-in-crash-reports"
+
+// C24:CORS 放宽收敛 + 打包态 CSP(纯逻辑在 renderer-security.ts)。CSP 仅打包态注入(dev 的
+// vite/HMR 需要宽松环境)、仅 darwin(WSL 远端 connect 无法进回环白名单);逃生 ALPHA_CSP_DISABLE=1。
+const rendererCsp = RENDERER_CSP
+const shouldInjectCsp = () => app.isPackaged && process.platform === "darwin" && process.env.ALPHA_CSP_DISABLE !== "1"
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -181,7 +187,7 @@ export function createMainWindow() {
 
   win.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
     const { requestHeaders } = details
-    upsertKeyValue(requestHeaders, "Access-Control-Allow-Origin", ["*"])
+    if (corsRelaxAllowed(details.url)) upsertKeyValue(requestHeaders, "Access-Control-Allow-Origin", ["*"])
     callback({ requestHeaders })
   })
 
@@ -442,6 +448,8 @@ function addDocumentPolicy(response: Response, file: string) {
   if (!file.toLowerCase().endsWith(".html")) return response
   const headers = new Headers(response.headers)
   headers.set(documentPolicyHeader, jsCallStacksDocumentPolicy)
+  // C24:protocol.handle 是文档响应的第二条路径,与 addRendererHeaders 保持一致注入 CSP。
+  if (shouldInjectCsp()) headers.set("Content-Security-Policy", rendererCsp)
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
 }
 
@@ -465,9 +473,14 @@ function isTrustedRendererUrl(value?: string) {
 }
 
 function addRendererHeaders(value: string, headers: Record<string, any>) {
-  upsertKeyValue(headers, "Access-Control-Allow-Origin", ["*"])
-  upsertKeyValue(headers, "Access-Control-Allow-Headers", ["*"])
-  if (isRendererUrl(value, true)) upsertKeyValue(headers, documentPolicyHeader, [jsCallStacksDocumentPolicy])
+  if (corsRelaxAllowed(value)) {
+    upsertKeyValue(headers, "Access-Control-Allow-Origin", ["*"])
+    upsertKeyValue(headers, "Access-Control-Allow-Headers", ["*"])
+  }
+  if (isRendererUrl(value, true)) {
+    upsertKeyValue(headers, documentPolicyHeader, [jsCallStacksDocumentPolicy])
+    if (shouldInjectCsp()) upsertKeyValue(headers, "Content-Security-Policy", [rendererCsp])
+  }
 }
 
 function isRendererUrl(value?: string, html = false) {
