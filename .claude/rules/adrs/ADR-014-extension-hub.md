@@ -44,3 +44,12 @@ related: [ADR-002, ADR-003, ADR-006, ADR-008, ADR-009]
 **O1–O4 拍板**(REQ-006 未决项,随本修订钉死):O1 MVP 范围=**全类型通用化**(如实取代「MCP-first」表述);**O2 = Agent 进 tab(是)、Command 不单列**(自动由 skill/MCP 生成,详情页说明);O3 F9 串台=不在 M1(维持默认);O4 远程 catalog=依赖 alpha-web(E10,REQ-020,C 端点未建前离线优先内置)。**术语拍板(D4)**:「插件」保名(引擎语义 = hooks+工具的 JS 模块,装不了 skill/agent),tab 副标题 + GLOSSARY 澄清「插件 vs 套件」。
 
 **状态**:仍 `trial`。转 `accepted` 的剩余门 = **桌面真机批**(登录态 in-app 四步 ×4 类 + A6 env dump 解 R3 + 迁移开门,REQ-016 同场);引擎级四步端到端已 PASS(见 audits)。分期后续:M2 详情页/更新/导入(REQ-019)、M3 云能力进 hub(REQ-020)、自动化(REQ-021)。
+
+## 修订(2026-07-04 晚,M2 shipped —— REQ-019/REQ-023,PR #74-#77)
+
+1. **IA 终稿 = 横向 9 tab(用户拍板,否决 v3 修订稿的左栏分区)**:推荐/连接器/技能/Agent/插件/套件/已安装(角标=可更新数)/创建/云能力占位;有更新并入已安装、导入并入创建;交互定稿 `docs/designs/2026-07-04-ext-hub-m2/design.html`(视觉语言 = 6-26 稿 token 零改动)。v3 §「IA 从三分法+7 tab 改左栏分区」表述由本条取代。
+2. **详情页(类目内下钻)**:点卡片主体 → 详情(tab 保持高亮,「‹ 类目名」返回,Esc 逐级);通用头部(来源/许可证/版本/`_verify` 显式「待核实」+ 主操作在头部右侧)+ 逐类型区块(MCP tools[] 精选清单/技能 SKILL.md 全文/Agent 权限档+提示词预览/插件 hooks+D4 澄清+风险/套件组合清单逐项安装);数据边界如实(本地命令型不谎称不出网);进页即实时 which 依赖检测。
+3. **「添加」三档分流**:技能=直装(零配置);MCP/套件=确认框(密钥密文采集/组合清单);插件与目录 Agent=详情页先行(插件带「运行于引擎进程」风险确认)。
+4. **生命周期补全**:更新通道(receipts.version < catalog.version → 角标+分组,fs 覆盖重装 / plugin 换钉版 / MCP 确认框重装防丢 {file:} 引用);导入 folder/git/npm(frontmatter 校验、https-only 浅克隆、外来内容不执行,origin=imported)。
+5. **供给链(REQ-023 并入)**:catalog 增 `vendoredAssetKey`/`downloadUrl`/`AgentInstallSpec`/`tools[]`/`hooks[]`;官方 agent(code-reviewer 只读档)与 vendored 插件(opencode-notify 自包含 JS,不再分发原生通知器)随 app 打包;vendored 安装 = 复制 `~/.alpha/plugins` + `plugin[]` 绝对路径(persistPluginPath 限树内)= **零网络**;卸载净除(config+文件+账本)。不自建 CDN(远程 catalog 仍归 E10/REQ-020)。
+6. **状态**:转 `accepted` 的真机批清单更新 = S12 残余 + S13 递延(卸 uv 像素、断网 vendored 走查、git 真克隆、dispose 打断活跃流、打包件含 resources/{agents,plugins} 且公证不受影响),见 `docs/audits/2026-07-04-s13-acceptance.md`。
