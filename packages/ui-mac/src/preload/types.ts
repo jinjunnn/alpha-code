@@ -2,6 +2,7 @@ import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
 import type { WslServersPlatform } from "@opencode-ai/app/wsl/types"
 import type { UpdaterState } from "@opencode-ai/app/updater"
 import type { AlphaEndpoints } from "../shared/alpha-config"
+import type { AutomationEvent, AutomationGlobalState, AutomationTask } from "../shared/automation-types"
 import type {
   AlphaModelCatalog,
   EffectiveCatalog,
@@ -342,6 +343,22 @@ export type ElectronAPI = {
     gitDiff: (
       directory: string,
     ) => Promise<{ ok: true; diff: string; source: "worktree" | "last-commit" } | { ok: false; reason: string }>
+  }
+  // 自动化定时任务(REQ-021 A1/ADR-022):CRUD + 全局暂停 + 登录时启动;调度/执行全在 main,
+  // renderer 只读列表(含 nextFireAt/running 计算态)并订阅 automation-event 推送。
+  automations: {
+    list: () => Promise<{
+      tasks: (AutomationTask & { nextFireAt: number | null; running: boolean })[]
+      state: AutomationGlobalState
+      loginItem: boolean
+    }>
+    save: (task: AutomationTask) => Promise<{ ok: true } | { ok: false; reason: string }>
+    remove: (id: string) => Promise<{ ok: true } | { ok: false; reason: string }>
+    toggle: (id: string, enabled: boolean) => Promise<{ ok: true } | { ok: false; reason: string }>
+    pauseAll: (paused: boolean) => Promise<{ ok: true }>
+    /** 读(无参)/写(带参)「登录时启动」。 */
+    loginItem: (open?: boolean) => Promise<{ openAtLogin: boolean }>
+    onEvent: (cb: (event: AutomationEvent) => void) => () => void
   }
   // alpha model catalog for the model picker. REQ-001:catalog = effective 视图(内置 snapshot 按
   // B 网关 edition 白名单收窄 + liveSync 来源标注);platformLive 拉取顺带刷新本地白名单缓存。

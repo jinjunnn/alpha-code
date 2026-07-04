@@ -35,6 +35,7 @@ import {
 import { type AlphaProject, type AlphaSession, type AlphaProjectsApi } from "./use-projects"
 import type { AuthState, AccountSummary } from "../../preload/types"
 import { extHubOpen, setExtHubOpen, toggleExtHub } from "../extensions/ext-hub-state"
+import { setAutomationOpen, toggleAutomation } from "../automations/automation-state"
 
 // Replicate opencode's getProjectAvatarVariant (context/layout.tsx) for projects that already
 // have a server-assigned color; otherwise pick a stable variant from the worktree so the
@@ -132,6 +133,17 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
   const [authState, setAuthState] = createSignal<AuthState>({ status: "logged-out", mode: "byok" })
   onCleanup(window.api.auth.subscribe(setAuthState))
   const accountLabel = () => authState().account?.email ?? t("alpha.auth.account")
+
+  // 自动化 badge(REQ-021 A1.4):上次运行失败/超时的任务数。跟 automation-event 推送刷新。
+  const [automationFailedCount, setAutomationFailedCount] = createSignal(0)
+  const refreshAutomationBadge = () => {
+    void window.api.automations
+      .list()
+      .then((r) => setAutomationFailedCount(r.tasks.filter((x) => x.lastRun?.status === "failed" || x.lastRun?.status === "timeout").length))
+      .catch(() => {})
+  }
+  refreshAutomationBadge()
+  onCleanup(window.api.automations.onEvent(() => refreshAutomationBadge()))
 
   // Account popover (single footer entry → upward popover). Theme toggle is native; the rest open
   // opencode's real settings / updater / browser-OAuth. Balance + quotas have no backend yet
@@ -783,9 +795,34 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
               <Icon name="magnifying-glass" class="alpha-sidebar-nav-icon" />
               <span>{t("alpha.sidebar.search")}</span>
             </button>
-            <button type="button" class="alpha-sidebar-nav-item" onClick={() => toggleExtHub()}>
+            <button
+              type="button"
+              class="alpha-sidebar-nav-item"
+              onClick={() => {
+                setAutomationOpen(false) // 两个全页面板互斥
+                toggleExtHub()
+              }}
+            >
               <Icon name="grid-plus" class="alpha-sidebar-nav-icon" />
               <span>{t("alpha.sidebar.plugins")}</span>
+            </button>
+            {/* 自动化(REQ-021 A1.1):复活孤儿 key;badge = 上次运行失败/超时的任务数 */}
+            <button
+              type="button"
+              class="alpha-sidebar-nav-item"
+              onClick={() => {
+                setExtHubOpen(false)
+                toggleAutomation()
+              }}
+            >
+              <svg class="alpha-sidebar-nav-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <circle cx="8" cy="8" r="6.2" stroke="currentColor" />
+                <path d="M8 4.8V8l2.4 1.6" stroke="currentColor" stroke-linecap="square" />
+              </svg>
+              <span>{t("alpha.sidebar.automation")}</span>
+              <Show when={automationFailedCount() > 0}>
+                <span class="alpha-auto-badge">{automationFailedCount()}</span>
+              </Show>
             </button>
           </nav>
 

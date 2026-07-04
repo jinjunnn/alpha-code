@@ -18,6 +18,8 @@ import { registerIpcHandlers, sendDeepLinks, sendMenuCommand } from "./ipc"
 import { registerExtIpcHandlers } from "./ext-ipc"
 import { registerAccountIpcHandlers } from "./account-ipc"
 import { registerCloudIpcHandlers } from "./cloud-ipc"
+import { registerAutomationIpcHandlers } from "./automation-ipc"
+import { startAutomationScheduler } from "./automation-scheduler"
 import { registerModelsIpcHandlers } from "./models-ipc"
 import { syncLiveAllowlist } from "./alpha-platform-models"
 import { registerProviderIpcHandlers } from "./provider-ipc"
@@ -408,6 +410,10 @@ const main = Effect.gen(function* () {
   registerExtIpcHandlers(app.getPath("userData"))
   registerAccountIpcHandlers()
   registerCloudIpcHandlers()
+  // 自动化(REQ-021 A1/ADR-022):IPC + 主进程调度器。执行链等 serverReady(与 renderer 同一
+  // Deferred;respawn 后 url/password 不变故一次 await 长期有效)。应用未运行不执行(诚实边界)。
+  registerAutomationIpcHandlers()
+  startAutomationScheduler({ awaitServer: () => Effect.runPromise(Deferred.await(serverReady)) })
   registerModelsIpcHandlers(app.getPath("userData"))
   registerProviderIpcHandlers()
   registerEndpointsIpcHandlers()

@@ -45,6 +45,7 @@ import { AlphaOnboarding } from "./alpha-ui/AlphaOnboarding"
 import { setupSettingsBackButton } from "./alpha-ui/settings-back-button"
 import { ExtensionHub } from "./extensions/extension-hub"
 import { extHubOpen, setExtHubOpen } from "./extensions/ext-hub-state"
+import { AutomationPanel } from "./automations/automation-panel"
 import { Splash } from "./logo-alpha"
 import { useTheme } from "@opencode-ai/ui/theme/context"
 import { ALPHA_THEME, ALPHA_THEME_ID } from "./theme-alpha"
@@ -413,6 +414,7 @@ render(() => {
               <AlphaHome projects={alphaProjects} />
               <AlphaOnboarding />
               <ExtensionHub server={sidebarServer} open={extHubOpen} onClose={() => setExtHubOpen(false)} />
+              <AutomationPanel />
               <ComposerInject />
               <ModelPickerInject />
               <TimelineInject />
