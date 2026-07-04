@@ -9,6 +9,7 @@ import * as os from "node:os"
 import type { InstallMeta, InstallReceipt, InstallTarget } from "../preload/types"
 import { listInstalls } from "./alpha-installs"
 import { fileifyMcpSecrets, removeMcpServerSecrets } from "./alpha-mcp-secrets"
+import { isMigrationEnabled, removeLegacy, scanLegacy } from "./alpha-migrate"
 import { configHealth, persistMcp, persistPlugin, removeMcp, removePlugin } from "./ext-config"
 import { installBuiltinSkill, removeFsInstall, writeAgent, writeSkill } from "./ext-fs-installer"
 
@@ -90,4 +91,12 @@ export function registerExtIpcHandlers(userDataPath: string) {
     }
     return { ok: false, reason: `cannot uninstall type: ${receipt.type}` }
   })
+  // REQ-018 T3:存量迁移(旧 XDG 根 → .alpha)。scan 报告 + removeLegacy 删旧位;新位由 renderer
+  // 复用既有 installer 重装(顺带 A2 钉版 + secret file 化)。用户面触发受 ALPHA_MIGRATE_ENABLE 门控
+  // (A6 真机验证后开,S12 T8)。
+  ipcMain.handle("ext-migrate-scan", () => ({ enabled: isMigrationEnabled(), inventory: scanLegacy() }))
+  ipcMain.handle(
+    "ext-migrate-remove-legacy",
+    (_event: IpcMainInvokeEvent, type: "skill" | "agent" | "mcp" | "plugin", name: string) => removeLegacy(type, name),
+  )
 }

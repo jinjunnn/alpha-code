@@ -595,6 +595,28 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   font-size: 11px;
   color: var(--a-text-tertiary);
 }
+/* T3:存量迁移条 */
+.alpha-ext-migrate {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  background: var(--a-bg-muted);
+  border: 1px solid var(--a-border-faint);
+  border-radius: 10px;
+}
+.alpha-ext-migrate-t {
+  font-size: var(--a-text-md);
+  font-weight: var(--a-weight-medium);
+}
+.alpha-ext-migrate-sub {
+  font-size: var(--a-text-sm);
+  color: var(--a-text-secondary);
+  line-height: var(--a-leading-snug);
+}
+
 /* T7:Agent tab callout 内的「创建 Agent」内联入口 */
 .alpha-ext-inline-cta {
   margin-left: 8px;

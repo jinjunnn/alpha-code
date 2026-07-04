@@ -148,6 +148,8 @@ const api: ElectronAPI = {
       ipcRenderer.invoke("ext-install-builtin-skill", builtinAssetKey, name, target, meta),
     listInstalls: (projectDir) => ipcRenderer.invoke("ext-list-installs", projectDir),
     uninstall: (receipt) => ipcRenderer.invoke("ext-uninstall", receipt),
+    migrateScan: () => ipcRenderer.invoke("ext-migrate-scan"),
+    removeLegacy: (type, name) => ipcRenderer.invoke("ext-migrate-remove-legacy", type, name),
   },
   account: {
     summary: () => ipcRenderer.invoke("account-summary"),
