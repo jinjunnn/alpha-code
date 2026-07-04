@@ -24,8 +24,8 @@
 | Task | 内容 | 对应 | 模型 | 状态 |
 |---|---|---|---|---|
 | **Track α —— IA + 详情页地基** | | | | |
-| T1 | **hub 左栏竖栏 IA**(替代 8 横向 tab):浏览[推荐/连接器/技能/Agent/插件/套件] · 管理[已安装(n)/有更新(n)] · 构建[创建/导入] · 云[云能力,占位];**全局搜索持久**(不随分区清空,修 M1 切 tab 清空);hub 记住上次分区(session 内) | REQ-019 T1 | opus | ☐ |
-| T2 | **详情页框架**:点卡片主体 → hub 内二级页(返回键 + Esc 逐级:详情→列表→关闭);通用头部(图标/名称/来源/许可证/版本/`_verify` 未核显式标「待核实」)+ 通用区块骨架(简介 md / 类型专属槽 / 数据边界 / 运行时依赖 / 所需密钥 / 操作区) | REQ-019 T2 | opus | ☐ |
+| T1 | **hub 横向 tab IA(2026-07-04 拍板修订:否决左栏竖栏——应用侧栏旁叠竖栏=双侧栏;定稿=[designs/2026-07-04-ext-hub-m2](../../designs/2026-07-04-ext-hub-m2/design.html))**:9 tab 一行[推荐/连接器/技能/Agent/插件/套件/已安装(角标=可更新数)/创建/云能力占位];有更新并入已安装、导入并入创建;**全局搜索持久** + 跨类目分组结果;记住上次分区(session 内);**「添加」三档分流**(技能直装 / MCP·套件确认框 / 插件详情页先行,Q1/Q2 已批)| REQ-019 T1(修订) | opus | ☑ |
+| T2 | **详情页框架**:点卡片主体 → 类目内下钻(tab 栏保持可见+高亮;「‹ 类目名」返回 + Esc 逐级:弹框→详情→列表→关闭,Q3 已批);通用头部(图标/名称/来源/许可证/版本/`_verify` 显式「待核实」+ **主操作在头部右侧**)+ 通用区块骨架(简介 / 类型专属槽 / 数据边界 / 运行时依赖 / 所需密钥) | REQ-019 T2(修订) | opus | ☑ |
 | **Track β —— 类型专属 + 边界** | | | | |
 | T3 | **六类详情专属区块**:MCP=**提供的工具列表**(catalog 新增 `tools[]` 元数据)+transport+启用范围;Skill=SKILL.md 渲染+触发说明;Agent=系统提示预览(折叠)+model+**权限档摘要**+mode;Plugin=hooks/工具清单+npm@版本+**「插件 vs 套件」澄清文案(D4)**+运行于引擎进程风险;套件=组合清单逐项(类型+状态+optional)+顺序+逐项重试;云=输入契约/预算默认/tier/上行数据(占位,随 M3) | REQ-019 T3 | opus 实现 · fable 审 | ☐ |
 | T4 | **数据边界 + 实时依赖检测**:remote MCP 列目的 host、local 命令型标「仅本机」、云条目引 ADR-021;详情页内**实时 which 检测**(复用 `ext.checkRuntime`,不再等点添加才发现缺依赖,缺失给安装指引) | REQ-019 T4 | fable | ☐ |
@@ -34,8 +34,10 @@
 | T6 | **导入**:文件夹(校验 SKILL.md/frontmatter → 复制入 `.alpha` + receipt,`origin:"imported"`)、Git URL(浅克隆临时目录 → 同校验);均走 M1 落盘桥;npm 导入并入插件流。替换 M1 的 3 个 `comingSoon` 占位 | REQ-019 T6 | opus | ☐ |
 | **Track δ —— 打磨** | | | | |
 | T7 | **筛选 + 反馈体系**:category/license/来源筛选(吸收 E11);空态每分区 1 句引导 + 1 推荐动作;骨架屏(catalog/状态加载);**失败一律行内**(卡片错误 chip / 详情页 Banner,toast 仅成功,对齐 B11);键盘 Esc 逐级 | REQ-019 T7 + E11 | fable | ☐ |
+| **Track ε —— 供给链(2026-07-04 追加,REQ-023)** | | | | |
+| T9 | **官方扩展配置化 + 离线资产通道**:catalog 补 agent 类目 + `vendoredAssetKey`/`downloadUrl` + plugin `hooks[]`;`resources/plugins/` 预打包 opencode-notify(MIT,记 NOTICE)→ 安装=复制入 `~/.alpha/plugins` + plugin[] 写**绝对路径**(零网络,绕引擎 npm 下载);官方 agent 资产 ≥1 条同通道;安装管线状态机(检查中→获取→写入→重载→✓)与 T7 合并落 | REQ-023 | fable | ☐ |
 | **验收** | | | | |
-| T8 | 六类条目详情页逐一 CDP 截图([[visual-verify-required]])+ 更新链路走通一例 + 导入本地 skill 走通(含非法 frontmatter 拒绝)+ 依赖缺失详情页可见(卸 uv 实测)+ 失败零裸 toast → 状态回写(BACKLOG/CHANGELOG/REQ-019 frontmatter/ADR-014 v3 checklist 回勾) | REQ-019 验收 | fable | ☐ |
+| T8 | 六类条目详情页逐一 CDP 截图([[visual-verify-required]])+ 三档安装路径各走通一例 + **断网装 vendored plugin 成功(REQ-023 验收①)** + 更新链路走通一例 + 导入本地 skill 走通(含非法 frontmatter 拒绝)+ 依赖缺失详情页可见(卸 uv 实测)+ 失败零裸 toast → 状态回写(BACKLOG/CHANGELOG/REQ-019+REQ-023 frontmatter/ADR-014 v3 checklist 回勾) | REQ-019/023 验收 | fable | ☐ |
 
 ## 依赖与排序
 
@@ -48,6 +50,14 @@
 
 typecheck ☐ · bun test ☐ · 北极星守卫 ☐ · /app:review ☐ · **visual-verify(每新详情页 CDP 截图)☐**
 本批附加:失败路径零裸 toast(行内)☐ · 键盘 Esc 逐级返回 ☐
+
+> **T1+T2 PR 已过全部 gates(2026-07-04)**:typecheck ☑ · 266 tests ☑ · alpha-check(北极星守卫)☑ · /app:review 四线 ☑(代码审 1 Important 已修:关闭重开 stale 详情;合规/DRIFT 两黄已修:REQ-019/BACKLOG 文字回填 + CHANGELOG;安全 0 发现)· visual-verify ☑([audits/2026-07-04-s13-t1t2-visual-verify](../../audits/2026-07-04-s13-t1t2-visual-verify/verify.md),7 截图 + 8 DOM 断言)· Esc 逐级 ☑。DRIFT 蓝项(增量 PR 回写边界写进 PROCESS)记 T8 顺带。
+
+## 拍板记录(2026-07-04,用户,经交互设计稿 [designs/2026-07-04-ext-hub-m2](../../designs/2026-07-04-ext-hub-m2/design.html) 审定)
+
+- **导航 = 横向 tab + 详情页面包屑式返回,否决左栏竖栏**(双侧栏叠加交互差);设计稿视觉语言 = 6-26 原稿 token 零改动。
+- **「添加」三档分流批准**:Q1 技能直装(无确认框)✅;Q2 插件详情页先行(页内安装+风险确认)✅;Q3 详情页「‹ 类目名」返回保留 ✅;Q4 云能力 tab 现在挂占位 ✅。
+- **REQ-023 追加**(T9):官方扩展配置化 + vendored 离线通道 + 安装管线状态机;不自建 CDN。
 
 ## 拍板提醒(执行中撞到必停)
 

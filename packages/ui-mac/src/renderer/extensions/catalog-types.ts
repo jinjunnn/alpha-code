@@ -33,6 +33,8 @@ export interface McpInstallSpec {
   runtimeDep?: string[]
   /** China-mirror fallback command when the primary registry is slow/blocked. */
   mirrorCommand?: string[]
+  /** Unverified claim carried from the catalog — surfaced as 「待核实」 on the detail page (D5). */
+  _verify?: string
 }
 
 export interface SkillInstallSpec {
@@ -41,6 +43,8 @@ export interface SkillInstallSpec {
   builtinAssetKey?: string
   remoteIndexUrl?: string
   targetDir: "alpha-skills" | "global"
+  /** Unverified claim carried from the catalog — surfaced as 「待核实」 on the detail page (D5). */
+  _verify?: string
 }
 
 export interface PluginInstallSpec {
@@ -49,6 +53,8 @@ export interface PluginInstallSpec {
   version?: string
   options?: Record<string, unknown>
   mirrorRegistry?: string
+  /** Unverified claim carried from the catalog — surfaced as 「待核实」 on the detail page (D5). */
+  _verify?: string
 }
 
 export type InstallSpec = McpInstallSpec | SkillInstallSpec | PluginInstallSpec
@@ -74,6 +80,8 @@ export interface CatalogEntry {
   installSpec?: InstallSpec
   /** Present for bundle entries — references other CatalogEntry ids to fan out at install time. */
   bundleItems?: BundleItem[]
+  /** Unverified claim carried from the catalog — surfaced as 「待核实」 on the detail page (D5). */
+  _verify?: string
 }
 
 export interface Catalog {
