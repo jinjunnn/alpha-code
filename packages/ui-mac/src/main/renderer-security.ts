@@ -24,7 +24,9 @@ export const RENDERER_CSP = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  "connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* http://[::1]:* ws://[::1]:*",
+  // data: 必须放行:ghostty 终端的 WASM 经 fetch("data:application/wasm;base64,…") 加载,拦掉
+  // 即「连接已丢失/Failed to fetch WASM」(2026-07-04 打包走查实抓);data: 是内联内容,无外传面。
+  "connect-src 'self' data: http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* http://[::1]:* ws://[::1]:*",
   "worker-src 'self' blob:",
   "media-src 'self' data: blob:",
   "object-src 'none'",
