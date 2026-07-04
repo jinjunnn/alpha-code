@@ -81,7 +81,7 @@
 | REQ-008 | 产品定位〔待补〕决策批:团队协作/企业租户/用户下沉/前 2-3 具体功能/G4 优先级,一次收口 | spike | X | registered | POSITIONING/GOALS/NON_GOALS 三处〔待补〕;详见 [requirements/REQ-008](requirements/REQ-008-positioning-open-decisions.md) |
 | REQ-009 | alpha-ci 提速:guard partial clone + bun 依赖缓存 | debt | A | ready | **真 CI 痛已由 D12 解**(卡的是上游 blacksmith 僵尸 workflow,非 alpha-ci);alpha-ci 本体已 ~30-46s **本就 <2min 目标达标** → REQ-009 降级为**可选打磨**(partial clone + bun cache 再压时间);验收「改上游必红」用例仍需真 CI run;详见 [requirements/REQ-009](requirements/REQ-009-alpha-ci-speedup.md) |
 | REQ-011 | 首页 composer 下方项目/会话 chips 移除 → 预留后续功能入口位 | ux | A | registered | 用户 2026-07-03;非回归=信息架构决策(侧栏已有项目导航,首页去重);只清场留白,「预留位放什么」进⚖️待拍板;详见 [requirements/REQ-011](requirements/REQ-011-composer-project-chips.md) |
-| REQ-019 | 定制中心 v3-M2:hub 左栏 IA + 逐类型详情页(数据边界/实时依赖检测)+ 更新通道 + 导入 folder/git | feature | A | registered | 依赖 REQ-018;吸收 E11;MCP tools 清单=catalog 元数据(引擎无查询路由,已核);详见 [requirements/REQ-019](requirements/REQ-019-ext-hub-detail-lifecycle.md) |
+| REQ-019 | 定制中心 v3-M2:hub 左栏 IA + 逐类型详情页(数据边界/实时依赖检测)+ 更新通道 + 导入 folder/git | feature | A | in-sprint | **S13 headline(2026-07-04)** → [sprints/s13](sprints/2026-07-04-s13-ext-hub-m2/sprint.md);依赖 REQ-018(shipped);吸收 E11;MCP tools 清单=catalog 元数据(引擎无查询路由,已核);详见 [requirements/REQ-019](requirements/REQ-019-ext-hub-detail-lifecycle.md) |
 | REQ-020 | 定制中心 v3-M3:云能力进 hub(登录门控+pipeline 条目)+ **ADR-021 §2 三校验落地** | feature | X | registered | 依赖 REQ-018;§2 校验与 B3 验收⑦ 合账,是 REQ-021 A3 硬前置;E10 客户端半随 C 端点;详见 [requirements/REQ-020](requirements/REQ-020-ext-hub-cloud.md) |
 | REQ-021 | 自动化(定时任务)完整需求:A1 本地只读 MVP → A2 增强 → A3 云档位 | feature | A | registered | **用户拍板 2026-07-04:先完整需求、按优先级分步;MVP 只读档**;侧栏定制中心下方入口;新 ADR-022 随 A1 立;详见 [requirements/REQ-021](requirements/REQ-021-automations.md) |
 | REQ-022 | 云端定时执行(B 侧):CF cron trigger + schedule registry + 到期 dispatch + A 拉回契约 | feature | B | registered | **用户拍板 2026-07-04 立项 B 仓**;B 侧真源 = alpha-platform `designs/2026-07-04-cloud-scheduled-automations.md`(PA-28 proposed);前置 PA-27 P0 整改 + REQ-020 T1;详见 [requirements/REQ-022](requirements/REQ-022-cloud-schedules-platform.md) |
@@ -143,9 +143,13 @@
 | E7 | websearch 收编为自有 MCP | 与云端 websearch 撞车 | B3/E12 云线落地后 |
 | E13 | 团队协作多端 workspace 同步 | NON_GOALS〔待补〕未决 | 产品定位决策后 |
 
-## 当前 sprint → **S12 已开工(2026-07-04,定制中心 v3-M1)**
+## 当前 sprint → **S13 已就绪待接手(2026-07-04,定制中心 v3-M2)**
 
-> **抽取**:REQ-018(headline)· 顺带:REQ-006(ADR-014 转正,T8 同场)· A2 尾项(钉版迁移,放行门=A6 R3)· REQ-016 之 A6 真机子项(T8 同场解 R3)。契约见 [sprints/2026-07-04-s12-ext-hub-m1](sprints/2026-07-04-s12-ext-hub-m1/sprint.md)。批准:用户 2026-07-04「制定SPRINT 推进」。**撞点**:`ext-ipc.ts`/`preload/*` 归 Track α 统一持有,β/γ 按接口接入;并发分派时 α 先行。
+> **抽取**:REQ-019(headline)—— hub 左栏 IA + 逐类型详情页 + 更新通道 + 导入 + E11 筛选。契约见 [sprints/2026-07-04-s13-ext-hub-m2](sprints/2026-07-04-s13-ext-hub-m2/sprint.md)(**自含 M1 地基指针,新 session 可直接抽 T1 开工**)。**起手 = T1 IA 重排**(左栏竖栏),T2 详情页框架挂其上,T3/T4 填类型区块+边界,T5/T6 更新+导入并行,T7 打磨,T8 真机截图批。**WIP=1**:S12 收尾达标(shipped+引擎级 verified,真机残余折 REQ-016)。后续 M3(REQ-020 云)/M4(REQ-021 自动化)择一续(设计 §8 序 M2→M3→M4;M4 可提前)。
+
+## 上一 sprint → **S12 已收尾(2026-07-04,定制中心 v3-M1)**
+
+> **抽取**:REQ-018(headline)· 顺带:REQ-006(ADR-014 转正,T8 同场)· A2 尾项(钉版迁移,放行门=A6 R3)· REQ-016 之 A6 真机子项。契约见 [sprints/2026-07-04-s12-ext-hub-m1](sprints/2026-07-04-s12-ext-hub-m1/sprint.md)。**收尾**:T1–T7 shipped(PR #66–#71),修 P0×4;**引擎级四步端到端 PASS**([audits/s12-verify](audits/2026-07-04-s12-ext-hub-m1-verify.md));266 单测;安全后随修 skill-creator XSS(PR #73)。真机批(in-app 四步/A6 env dump/迁移开门)→ REQ-016。
 
 ## 上一 sprint → **S11 已收尾(2026-07-04)**(历史)
 

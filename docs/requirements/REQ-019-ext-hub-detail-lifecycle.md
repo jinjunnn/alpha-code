@@ -3,10 +3,10 @@ id: REQ-019
 title: 定制中心 v3-M2:hub 左栏 IA + 逐类型详情页(数据边界/实时依赖检测)+ 更新通道 + 导入
 type: feature
 priority: P2
-status: registered
+status: in-sprint
 repo: A
 created: 2026-07-04
-sprint: —
+sprint: 2026-07-04-s13-ext-hub-m2
 source: designs/2026-07-04-extension-hub-v3-universal.md(§5、§8 M2)
 ---
 
