@@ -18,7 +18,7 @@
 | T5 | MCP 密钥 `{file:}` 化:requiredEnvVars 密文输入 → `alpha-mcp-secrets/<server>/<VAR>`(0600,独立命名空间不被 syncSecretFiles 清扫);config 只落 `{file:}` 引用;文案修正(钥匙串误导) | REQ-018 T5 | opus | ✅ **PR #68**:根因发现——**确认弹窗此前根本不采集密钥值**(github/feishu/yuque 装了不能用),T5 补密文采集 UI + `alpha-mcp-secrets.ts` file 通道(live add 用真值/durable 只落 ref,9 单测,序列化 config 断言无明文)+ removeMcp 吊销密钥 + 文案修正(删钥匙串误导);251 pass |
 | **Track γ —— UI 与内容** | | | | |
 | T6 | 全类型已安装列表(类型/名称/scope/版本/状态点/操作)+ 卸载(receipt 驱动)+ plugin 已装态(config `plugin[]` ∪ receipts) | REQ-018 T6+T8 | opus | ✅ **PR #69**:已安装 tab 统一全类型(receipts ⨝ SDK MCP 状态;live-无账 MCP 并入);类型 pill+版本+状态点;卸载 IPC `ext-uninstall`(fs 删文件+拆桥、plugin 从 config[] 删、mcp removeMcp+吊销密钥,均去账+refreshEngine);`isInstalled` 全类型经 receipts(卡片 ✓ 已添加);+7 单测(removeFsInstall 4 / removePlugin 3);258 pass |
-| T7 | Agent tab(catalog agent 条目 schema + 安装链路)+ composer agent 选择器核实(缺则最小补,数据源 `app.agents()`)+ 官方 4 skill 资产打包 `resources/skills/` + NOTICE | REQ-018 T7(吸收 D3) | opus 实现 · fable 审 | ☐ |
+| T7 | Agent tab + composer agent 选择器核实 + 官方 skill 资产打包 `resources/skills/` + NOTICE | REQ-018 T7(吸收 D3) | opus 实现 · fable 审 | ✅ **PR #70**:**Agent tab**(SDK `app.agents()` 真相源,内置 badge / 自建可卸 / 「创建 Agent」内联入口;搜索;创建/卸载后 loadAgents 刷新)· **选择器核实**=alpha 无自有 composer agent 选择器(复用上游,ADR-016),Agent 管理归 hub · **D3 部分兑现**:skill-creator(Apache-2.0,Anthropic 官方,260K 真内容 + LICENSE.txt + NOTICE)已打包;mcp-builder/canvas-design/brand-guidelines **无可信来源、拒绝伪造** → 保持诚实失败(catalog disclaimer 记账);258 pass |
 | **验收批** | | | | |
 | T8 | 真机四步验收:四类各「装→亮(下一条消息可用)→用→卸」录证([[visual-verify-required]])+ REQ-006 四用例(装 markitdown/免重启/卸载/依赖预检)+ **A6 MCP 子进程 env dump(解 R3)**+ 迁移/密钥负向验证(`~/.config/opencode` 零新增写入、config 零明文)→ 状态回写 + ADR 修订 | REQ-018 验收 / REQ-006 / REQ-016(A6 子项) | fable | ☐ |
 
