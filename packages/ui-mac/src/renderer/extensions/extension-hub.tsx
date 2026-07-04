@@ -39,12 +39,13 @@ type ManageRow = {
   mcp?: InstalledState // MCP only — live connect/error status from the SDK
 }
 
-type Tab = "featured" | "connectors" | "skills" | "plugins" | "bundles" | "installed" | "create"
+type Tab = "featured" | "connectors" | "skills" | "agents" | "plugins" | "bundles" | "installed" | "create"
 
 const TABS: { key: Tab; labelKey: string }[] = [
   { key: "featured", labelKey: "alpha.ext.tabFeatured" },
   { key: "connectors", labelKey: "alpha.ext.tabConnectors" },
   { key: "skills", labelKey: "alpha.ext.tabSkills" },
+  { key: "agents", labelKey: "alpha.ext.tabAgents" },
   { key: "plugins", labelKey: "alpha.ext.tabPlugins" },
   { key: "bundles", labelKey: "alpha.ext.tabBundles" },
   { key: "installed", labelKey: "alpha.ext.tabInstalled" },
@@ -237,6 +238,13 @@ export function ExtensionHub(props: {
     tab()
     setQuery("")
   })
+
+  // Agent tab search: match name/description against the shared query.
+  const matchesAgent = (a: { name: string; description?: string }) => {
+    const q = query().trim().toLowerCase()
+    if (!q) return true
+    return a.name.toLowerCase().includes(q) || (a.description ?? "").toLowerCase().includes(q)
+  }
 
   const matches = (e: CatalogEntry) => {
     const q = query().trim().toLowerCase()
@@ -677,6 +685,76 @@ export function ExtensionHub(props: {
                 >
                   <SecRow label={t("alpha.ext.allSkills")} count={byType("skill").filter(matches).length} />
                   <Grid items={byType("skill").filter(matches)} />
+                </Show>
+              </Show>
+
+              {/* ░░ AGENTS ░░ (REQ-018 T7 / ADR-014 O2:Agent 作一等原语) */}
+              <Show when={tab() === "agents"}>
+                <Hero title={t("alpha.ext.tabAgents")} sub={t("alpha.ext.agentsSub")} />
+                <div class="alpha-ext-callout">
+                  {t("alpha.ext.agentsNote")}
+                  <button
+                    class="alpha-ext-inline-cta"
+                    onClick={() => {
+                      setCreateType("agent")
+                      setTab("create")
+                    }}
+                  >
+                    {t("alpha.ext.createAgentCta")}
+                  </button>
+                </div>
+                <Show
+                  when={ext.store.agents.filter((a) => matchesAgent(a)).length > 0}
+                  fallback={<EmptyState title={t("alpha.ext.noResults")} />}
+                >
+                  <SecRow label={t("alpha.ext.allAgents")} count={ext.store.agents.filter((a) => matchesAgent(a)).length} />
+                  <div class="alpha-ext-grid">
+                    <For each={ext.store.agents.filter((a) => matchesAgent(a))}>
+                      {(a) => {
+                        const ic = iconForRow(undefined, "agent", a.name)
+                        const receipt = () => ext.store.receipts.find((r) => r.type === "agent" && r.name === a.name)
+                        return (
+                          <div class="alpha-ext-card">
+                            <div class="alpha-ext-card-top">
+                              <span class="alpha-ext-card-ic" style={{ background: ic.color }}>
+                                {ic.glyph}
+                              </span>
+                              <div class="alpha-ext-card-hd">
+                                <div class="alpha-ext-card-name">
+                                  <b title={a.name}>{a.name}</b>
+                                  <span class="alpha-ext-type-pill">
+                                    {a.native ? t("alpha.ext.agentBuiltin") : t("alpha.ext.sourceAlpha")} · {a.mode}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                            <p class="alpha-ext-card-desc">{a.description ?? t("alpha.ext.agentNoDesc")}</p>
+                            <div class="alpha-ext-card-foot">
+                              <Show
+                                when={receipt()}
+                                fallback={<span class="alpha-ext-meta">{t("alpha.ext.agentBuiltinNote")}</span>}
+                              >
+                                <button
+                                  class="alpha-ext-add"
+                                  onClick={() =>
+                                    void onUninstall({
+                                      key: `agent:${a.name}`,
+                                      type: "agent",
+                                      name: a.name,
+                                      displayName: a.name,
+                                      receipt: receipt()!,
+                                    })
+                                  }
+                                >
+                                  {t("alpha.ext.remove")}
+                                </button>
+                              </Show>
+                            </div>
+                          </div>
+                        )
+                      }}
+                    </For>
+                  </div>
                 </Show>
               </Show>
 

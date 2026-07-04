@@ -32,6 +32,14 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 --------------------------------------------------------------------------------
+Bundled skills (Extension Hub)
+--------------------------------------------------------------------------------
+The "skill-creator" skill bundled under resources/skills/skill-creator is
+Copyright Anthropic, licensed under the Apache License 2.0. Its full license
+text ships alongside it (resources/skills/skill-creator/LICENSE.txt). Source:
+Anthropic's official Claude plugins/skills.
+
+--------------------------------------------------------------------------------
 Third-party components
 --------------------------------------------------------------------------------
 Other bundled components (Electron, SolidJS, and the dependencies declared in the

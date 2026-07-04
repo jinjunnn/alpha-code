@@ -26,12 +26,23 @@ const metaFor = (entry: CatalogEntry) => ({ catalogId: entry.id, version: CATALO
 
 type Client = ReturnType<typeof createOpencodeClient>
 
+/** An agent the engine knows about (SDK app.agents) — built-in (native) or alpha-created. */
+export interface HubAgent {
+  name: string
+  description?: string
+  mode: "subagent" | "primary" | "all"
+  native?: boolean
+  hidden?: boolean
+}
+
 export interface ExtensionsStore {
   /** MCP servers known to the running opencode server, keyed by name (the SDK truth). */
   mcp: Record<string, InstalledState>
   /** Install receipts (REQ-018): alpha's record of what we installed — the "installed" truth for
    *  skill/agent/plugin, which the SDK MCP status can't cover. Global scope for the hub list. */
   receipts: InstallReceipt[]
+  /** Agents the engine knows (REQ-018 T7 Agent tab): built-in + alpha-created (via SDK app.agents). */
+  agents: HubAgent[]
   ready: boolean
   error: boolean
 }
@@ -73,6 +84,8 @@ export interface ExtensionsApi {
   installSkill(entry: CatalogEntry): Promise<ActionResult>
   /** REQ-018 T4:释放全部引擎实例(POST /global/dispose)→ 下一请求惰性重建重扫,免重启生效。 */
   refreshEngine(): Promise<boolean>
+  /** REQ-018 T7:刷新引擎已知的 agents(内置 + 自建)供 Agent tab 呈现。 */
+  reloadAgents(): Promise<void>
   /** Append a plugin to config `plugins` (opencode auto-installs on next launch; needs restart). */
   installPlugin(entry: CatalogEntry): Promise<ActionResult>
 }
@@ -153,7 +166,7 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | typeof TIMED_OUT
 }
 
 export function useExtensions(server: Accessor<ServerInfo | undefined>, active?: Accessor<boolean>): ExtensionsApi {
-  const [store, setStore] = createStore<ExtensionsStore>({ mcp: {}, receipts: [], ready: false, error: false })
+  const [store, setStore] = createStore<ExtensionsStore>({ mcp: {}, receipts: [], agents: [], ready: false, error: false })
 
   let client: Client | undefined
   let generation = 0
@@ -165,6 +178,21 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     try {
       const view = await window.api.ext.listInstalls()
       setStore("receipts", view.global)
+    } catch {
+      /* transient — keep previous */
+    }
+  }
+
+  // REQ-018 T7:引擎已知的 agents(内置 + alpha 自建)。SDK 真相源(app.agents);hidden 的过滤掉。
+  async function loadAgents() {
+    const c = client
+    if (!c) return
+    const gen = generation
+    try {
+      const { data, error } = await c.app.agents({} as any)
+      if (gen !== generation || error || !data) return
+      const list = (data as HubAgent[]).filter((a) => !a.hidden)
+      setStore("agents", list)
     } catch {
       /* transient — keep previous */
     }
@@ -278,6 +306,7 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     if (receipt.type === "mcp") await client?.mcp.disconnect({ name: receipt.name } as any).catch(() => {})
     await Promise.all([loadStatus(), loadInstalls()])
     if (res.ok && receipt.type !== "mcp") await refreshEngine() // fs/plugin removal needs a rescan
+    if (receipt.type === "agent") void loadAgents()
     return res
   }
 
@@ -337,6 +366,7 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     client = createOpencodeClient({ baseUrl: info.baseUrl, headers: authHeaders(info) })
     void loadStatus()
     void loadInstalls()
+    void loadAgents()
     void subscribe()
     onCleanup(() => {
       if (gen === generation) client = undefined
@@ -362,7 +392,9 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     const r = await window.api.ext.writeAgent(name, lines.join("\n"))
     if (!r.ok) return r
     await loadInstalls()
-    if (!(await refreshEngine())) return { ok: true, reason: "reload-pending" }
+    const refreshed = await refreshEngine()
+    void loadAgents() // reflect the new agent in the Agent tab (after the rescan)
+    if (!refreshed) return { ok: true, reason: "reload-pending" }
     return r
   }
 
@@ -408,6 +440,7 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     createAgent,
     installSkill,
     refreshEngine,
+    reloadAgents: loadAgents,
     installPlugin,
   }
 }

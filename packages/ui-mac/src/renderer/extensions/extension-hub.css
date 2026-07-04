@@ -595,6 +595,20 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   font-size: 11px;
   color: var(--a-text-tertiary);
 }
+/* T7:Agent tab callout 内的「创建 Agent」内联入口 */
+.alpha-ext-inline-cta {
+  margin-left: 8px;
+  font-size: inherit;
+  font-weight: var(--a-weight-medium);
+  color: var(--a-accent);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.alpha-ext-inline-cta:hover {
+  text-decoration: underline;
+}
 .alpha-ext-man-st {
   display: flex;
   align-items: center;
