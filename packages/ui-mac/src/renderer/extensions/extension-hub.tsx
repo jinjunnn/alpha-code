@@ -19,11 +19,25 @@ import { pushToast } from "../alpha-ui/Toast"
 import { Banner } from "../alpha-ui/Banner"
 import type { ServerInfo } from "../sidebar/use-projects"
 import { useExtensions } from "./use-extensions"
-import type { Catalog, CatalogEntry, CatalogSource } from "./catalog-types"
+import type { Catalog, CatalogEntry, CatalogSource, InstalledState } from "./catalog-types"
+import type { InstallReceipt, InstallReceiptType } from "../../preload/types"
 import catalogJson from "./alpha-catalog.json"
 import "./extension-hub.css"
 
 const CATALOG = catalogJson as unknown as Catalog
+
+// A unified row in the 已安装 manage list (REQ-018 T6): any installed item, whatever its type.
+type ManageRow = {
+  key: string
+  type: InstallReceiptType
+  name: string
+  displayName: string
+  source?: CatalogSource
+  version?: string
+  receipt: InstallReceipt
+  entry?: CatalogEntry
+  mcp?: InstalledState // MCP only — live connect/error status from the SDK
+}
 
 type Tab = "featured" | "connectors" | "skills" | "plugins" | "bundles" | "installed" | "create"
 
@@ -110,12 +124,29 @@ function sourceLabel(source: CatalogSource): string {
   return t("alpha.ext.sourceAlpha")
 }
 
-// Human label for an entry's primitive type, reusing the tab labels (连接器/技能/插件/套件).
-function typeLabel(type: CatalogEntry["type"]): string {
+// Human label for an installed item's type, reusing the tab labels (连接器/技能/Agent/插件/套件/云).
+function typeLabel(type: InstallReceiptType | CatalogEntry["type"]): string {
   if (type === "mcp") return t("alpha.ext.tabConnectors")
   if (type === "skill") return t("alpha.ext.tabSkills")
+  if (type === "agent") return t("alpha.ext.typeAgent")
+  if (type === "command") return t("alpha.ext.typeCommand")
   if (type === "plugin") return t("alpha.ext.tabPlugins")
+  if (type === "cloud") return t("alpha.ext.typeCloud")
   return t("alpha.ext.tabBundles")
+}
+
+// Icon for a manage-list row: catalog metadata when known, else a type-tinted glyph from the name.
+const TYPE_TINT: Record<string, string> = {
+  mcp: "var(--a-accent)",
+  skill: "#7c9c5a",
+  agent: "#c08457",
+  plugin: "#8a6ec0",
+  bundle: "#5a8a9c",
+  cloud: "#5c7cbf",
+}
+function iconForRow(entry: CatalogEntry | undefined, type: string, name: string): { color: string; glyph: string } {
+  if (entry) return iconFor(entry)
+  return { color: TYPE_TINT[type] ?? "var(--a-bg-inset)", glyph: (name[0] ?? "?").toUpperCase() }
 }
 
 // Compact "what this needs" pills shown on a card foot (runtime deps, key requirement, pick-dir,
@@ -233,10 +264,44 @@ export function ExtensionHub(props: {
     FEATURED_CONNECTORS.map((id) => byId(id)).filter((e): e is CatalogEntry => !!e && matches(e)),
   )
 
-  // 已安装 = MCP names the running server knows (SDK truth), joined with catalog metadata if known.
-  const installed = createMemo(() => {
-    const byName = new Map(byType("mcp").map((e) => [e.name, e] as const))
-    return Object.values(ext.store.mcp).map((s) => ({ state: s, entry: byName.get(s.name) }))
+  // 已安装 = 全类型统一视图(REQ-018 T6):receipts(skill/agent/plugin/mcp)⨝ SDK 的 MCP 实时
+  // 状态(connected/error)。live-but-unrecorded 的 MCP(手动加/迁移前)也并入,合成最小 receipt
+  // 以支持卸载。MCP 有开关(connected 真相取 SDK);fs/plugin 只有卸载。
+  const installedAll = createMemo((): ManageRow[] => {
+    const mcpByName = new Map(byType("mcp").map((e) => [e.name, e] as const))
+    const rows: ManageRow[] = []
+    const seenMcp = new Set<string>()
+    for (const r of ext.store.receipts) {
+      const entry = byId(r.id) ?? (r.type === "mcp" ? mcpByName.get(r.name) : undefined)
+      if (r.type === "mcp") seenMcp.add(r.name)
+      rows.push({
+        key: `${r.type}:${r.name}`,
+        type: r.type,
+        name: r.name,
+        displayName: entry?.displayName ?? r.name,
+        source: entry?.source,
+        version: r.version,
+        receipt: r,
+        entry,
+        mcp: r.type === "mcp" ? ext.store.mcp[r.name] : undefined,
+      })
+    }
+    // live MCP the SDK knows but we have no receipt for (manual / pre-migration) — allow uninstall.
+    for (const s of Object.values(ext.store.mcp)) {
+      if (seenMcp.has(s.name)) continue
+      const entry = mcpByName.get(s.name)
+      rows.push({
+        key: `mcp:${s.name}`,
+        type: "mcp",
+        name: s.name,
+        displayName: entry?.displayName ?? s.name,
+        source: entry?.source,
+        receipt: { id: entry?.id ?? `user:${s.name}`, name: s.name, type: "mcp", scope: "global", installedAt: "", origin: "created" },
+        entry,
+        mcp: s,
+      })
+    }
+    return rows
   })
 
   // B11:收编进全局 pushToast(一处定义,各处复用)—— 原私有 .alpha-ext-toast 淘汰。
@@ -308,6 +373,14 @@ export function ExtensionHub(props: {
     } finally {
       setBusy(null)
     }
+  }
+
+  const onUninstall = async (row: ManageRow) => {
+    const res = await ext.uninstall(row.receipt)
+    flash(
+      res.ok ? t("alpha.ext.removed") : `${t("alpha.ext.removeFailed")}${res.reason ? `: ${res.reason}` : ""}`,
+      res.ok ? "success" : "error",
+    )
   }
 
   const submitCreate = async () => {
@@ -530,24 +603,24 @@ export function ExtensionHub(props: {
               <Show when={tab() === "featured"}>
                 <Hero title={t("alpha.ext.hub")} sub={t("alpha.ext.heroSub")} />
                 <SearchBox placeholder={t("alpha.ext.search")} />
-                <Show when={installed().length > 0}>
+                <Show when={installedAll().length > 0}>
                   <SecRow
                     label={t("alpha.ext.tabInstalled")}
-                    count={installed().length}
+                    count={installedAll().length}
                     actionLabel={t("alpha.ext.manage")}
                     onAction={() => setTab("installed")}
                   />
                   <div class="alpha-ext-chips">
-                    <For each={installed()}>
+                    <For each={installedAll()}>
                       {(row) => {
-                        const ic = row.entry ? iconFor(row.entry) : { color: "var(--a-bg-inset)", glyph: row.state.name.slice(0, 1) }
+                        const ic = iconForRow(row.entry, row.type, row.name)
                         return (
-                          <span class="alpha-ext-chip-pill" title={row.state.name}>
+                          <span class="alpha-ext-chip-pill" title={row.name}>
                             <span class="alpha-ext-chip-d" style={{ background: ic.color }}>
                               {ic.glyph}
                             </span>
-                            {row.entry?.displayName ?? row.state.name}
-                            <Show when={row.state.connected}>
+                            {row.displayName}
+                            <Show when={row.mcp?.connected}>
                               <span class="alpha-ext-chip-dot" />
                             </Show>
                           </span>
@@ -638,7 +711,7 @@ export function ExtensionHub(props: {
               <Show when={tab() === "installed"}>
                 <Hero title={t("alpha.ext.tabInstalled")} sub={t("alpha.ext.installedSub")} />
                 <Show
-                  when={installed().length > 0}
+                  when={installedAll().length > 0}
                   fallback={
                     <EmptyState
                       title={t("alpha.ext.empty")}
@@ -651,11 +724,11 @@ export function ExtensionHub(props: {
                     />
                   }
                 >
-                  <SecRow label={t("alpha.ext.installedSection")} count={installed().length} />
+                  <SecRow label={t("alpha.ext.installedSection")} count={installedAll().length} />
                   <div class="alpha-ext-manage">
-                    <For each={installed()}>
+                    <For each={installedAll()}>
                       {(row) => {
-                        const ic = row.entry ? iconFor(row.entry) : { color: "var(--a-bg-inset)", glyph: row.state.name.slice(0, 1) }
+                        const ic = iconForRow(row.entry, row.type, row.name)
                         return (
                           <div class="alpha-ext-man">
                             <span class="alpha-ext-man-ic" style={{ background: ic.color }}>
@@ -663,37 +736,52 @@ export function ExtensionHub(props: {
                             </span>
                             <div class="alpha-ext-man-body">
                               <div class="alpha-ext-man-nm">
-                                <b title={row.state.name}>{row.entry?.displayName ?? row.state.name}</b>
-                                <span class="alpha-ext-chip" data-source={row.entry?.source ?? "user"}>
-                                  {row.entry ? sourceLabel(row.entry.source) : t("alpha.ext.installedUnknown")}
-                                </span>
+                                <b title={row.name}>{row.displayName}</b>
+                                <span class="alpha-ext-type-pill">{typeLabel(row.type)}</span>
+                                <Show when={row.version}>
+                                  <span class="alpha-ext-ver">v{row.version}</span>
+                                </Show>
                               </div>
                               <div class="alpha-ext-man-st">
+                                {/* MCP: live SDK status (connected/error/disabled). fs/plugin: installed. */}
                                 <Show
-                                  when={row.state.error}
+                                  when={row.type === "mcp"}
                                   fallback={
                                     <>
-                                      <span class="alpha-ext-man-dot" data-on={row.state.connected ? "" : undefined} />
-                                      {row.state.connected ? t("alpha.ext.enabledLive") : t("alpha.ext.disabled")}
+                                      <span class="alpha-ext-man-dot" data-on="" />
+                                      {t("alpha.ext.installed")}
                                     </>
                                   }
                                 >
-                                  <span class="alpha-ext-man-dot" data-err="" />
-                                  {row.state.error}
+                                  <Show
+                                    when={row.mcp?.error}
+                                    fallback={
+                                      <>
+                                        <span class="alpha-ext-man-dot" data-on={row.mcp?.connected ? "" : undefined} />
+                                        {row.mcp?.connected ? t("alpha.ext.enabledLive") : t("alpha.ext.disabled")}
+                                      </>
+                                    }
+                                  >
+                                    <span class="alpha-ext-man-dot" data-err="" />
+                                    {row.mcp?.error}
+                                  </Show>
                                 </Show>
                               </div>
                             </div>
-                            <button
-                              class="alpha-ext-sw"
-                              data-on={row.state.connected ? "" : undefined}
-                              aria-label={row.state.connected ? t("alpha.ext.enabled") : t("alpha.ext.disabled")}
-                              onClick={() => void ext.setMcpConnected(row.state.name, !row.state.connected)}
-                            />
+                            {/* Toggle is MCP-only (connect/disconnect); fs/plugin have no live toggle. */}
+                            <Show when={row.type === "mcp"}>
+                              <button
+                                class="alpha-ext-sw"
+                                data-on={row.mcp?.connected ? "" : undefined}
+                                aria-label={row.mcp?.connected ? t("alpha.ext.enabled") : t("alpha.ext.disabled")}
+                                onClick={() => void ext.setMcpConnected(row.name, !row.mcp?.connected)}
+                              />
+                            </Show>
                             <button
                               class="alpha-ext-iconbtn"
                               title={t("alpha.ext.remove")}
                               aria-label={t("alpha.ext.remove")}
-                              onClick={() => void ext.removeMcp(row.state.name)}
+                              onClick={() => void onUninstall(row)}
                             >
                               <Svg class="alpha-ic alpha-ic-sm" d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" />
                             </button>
