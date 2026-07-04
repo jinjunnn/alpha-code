@@ -40,9 +40,13 @@ Track C 附加:打包双态全功能走查 ☐ · stapler validate / spctl 复�
 - C24 有断 renderer 前科告诫(册 §7g):任一屏回归失败即回退,不带病合入。
 - REQ-004 spike 只验证 + 回填 ADR-019 修订,**不回摆主决策**(全部进 `.alpha/`,ADR-019 §3 降级路径逐类记录)。
 
-## 结果(收尾时填)
+## 结果(2026-07-04 收尾)
 
-_待填。_
+- **T1–T8 全部完成**,12 个 PR 合入 alpha(#53–#64):T1 spike(#54)· T2 云回流全链(#55/#58)· T3 ADR-021(#56)· T4 呈现底座(#60)· T5 自愈(#57)· T6 CSP(#59+#64 修复迭代)· T7 fuses/entitlements(#61)· T8 破坏面收敛(#62);顺带 REQ-017(#63)。
+- **ship**:prod 签名+公证包两轮(fuses/紧 entitlements 下公证一次过),装 /Applications。
+- **视觉走查**(CDP 6 屏 + 取证):reskin 全常态、exfil 拦截取证、B5 kill -9 自愈实测;**走查实抓 C24 终端 WASM 断点 → 当场修复复验**(断 renderer 即修的流程按预期工作)。证据 [audits/s11-ship-visual](../../audits/2026-07-04-s11-ship-visual-verify.md)。
+- verified 翻转:C24 / C27 / B5(+此前 REQ-004/B3/C9/B11/B23/C25/C14 = shipped);残余真机项(in-app dispatch、错误态视觉、open-path 实测、终端全交互)并入 REQ-016。
+- gates:每 PR typecheck+tests+北极星守卫绿;打包双态走查 ✓;stapler/spctl ✓;visual-verify ✓。
 
 ## 回写清单
 
