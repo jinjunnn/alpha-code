@@ -93,6 +93,19 @@ export interface ExtensionsApi {
   reloadAgents(): Promise<void>
   /** Append a plugin to config `plugins` (opencode auto-installs on next launch; needs restart). */
   installPlugin(entry: CatalogEntry): Promise<ActionResult>
+  /**
+   * REQ-019 T5:按 catalog 当前钉版更新已装条目。skill = 覆盖重装(同名 dest,receipt 版本翻新);
+   * plugin = 卸旧配置项再写新钉版(persistPlugin 只会追加,直接重装会留旧版残留)。
+   * MCP 不走此方法 —— persistMcp 是覆盖写,静默重装会丢 {file:} 密钥引用;hub 层用确认框重装
+   * (密钥可重填),见 extension-hub.runUpdate。
+   */
+  updateEntry(entry: CatalogEntry): Promise<ActionResult>
+  /** REQ-019 T6:导入本地技能文件夹(主进程校验 frontmatter,origin=imported)。 */
+  importSkillFolder(srcDir: string): Promise<ActionResult & { name?: string }>
+  /** REQ-019 T6:导入 Git 仓库技能(https-only 浅克隆临时目录 → 同校验)。 */
+  importSkillGit(url: string): Promise<ActionResult & { name?: string }>
+  /** REQ-019 T6:npm 插件导入 = 复用 persistPlugin 通道(主进程包名白名单)。 */
+  importNpmPlugin(pkg: string): Promise<ActionResult>
 }
 
 function authHeaders(info: ServerInfo): Record<string, string> | undefined {
@@ -432,6 +445,43 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     return r
   }
 
+  // REQ-019 T6:导入。成功后刷新账本 + dispose 重载(与 createSkill 同节奏);失败原因原样上抛,
+  // 由 hub 行内呈现(B11)。npm 导入 = 复用 persistPlugin 通道(白名单校验在主进程)。
+  async function importSkillFolder(srcDir: string): Promise<ActionResult & { name?: string }> {
+    const r = await window.api.ext.importSkillFolder(srcDir)
+    if (!r.ok) return r
+    await loadInstalls()
+    if (!(await refreshEngine())) return { ok: true, name: r.name, reason: "reload-pending" }
+    return { ok: true, name: r.name }
+  }
+  async function importSkillGit(url: string): Promise<ActionResult & { name?: string }> {
+    const r = await window.api.ext.importSkillGit(url)
+    if (!r.ok) return r
+    await loadInstalls()
+    if (!(await refreshEngine())) return { ok: true, name: r.name, reason: "reload-pending" }
+    return { ok: true, name: r.name }
+  }
+  async function importNpmPlugin(pkg: string): Promise<ActionResult> {
+    const r = await window.api.ext.installPlugin(pkg, undefined)
+    if (!r.ok) return r
+    await loadInstalls()
+    await refreshEngine()
+    return r
+  }
+
+  async function updateEntry(entry: CatalogEntry): Promise<ActionResult> {
+    if (entry.type === "skill") return installSkill(entry)
+    if (entry.type === "plugin") {
+      const old = store.receipts.find((r) => r.id === entry.id && r.type === "plugin")
+      if (old) {
+        const removed = await window.api.ext.uninstall(old)
+        if (!removed.ok) return removed
+      }
+      return installPlugin(entry)
+    }
+    return { ok: false, reason: "unsupported type for update" }
+  }
+
   return {
     store,
     refresh: loadStatus,
@@ -447,5 +497,9 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     refreshEngine,
     reloadAgents: loadAgents,
     installPlugin,
+    updateEntry,
+    importSkillFolder,
+    importSkillGit,
+    importNpmPlugin,
   }
 }

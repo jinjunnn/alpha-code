@@ -1308,3 +1308,47 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
 .alpha-ext-dbundle-row .alpha-ext-add {
   margin-left: 4px;
 }
+
+/* ── REQ-019 T4/T5:实时依赖状态 + 更新通道 ─────────────────────────────────── */
+.alpha-ext-meta[data-dep="ok"] {
+  color: var(--a-success);
+  background: var(--a-success-subtle);
+}
+.alpha-ext-meta[data-dep="missing"] {
+  color: var(--a-error);
+  background: var(--a-error-subtle);
+}
+.alpha-ext-man-st[data-err] {
+  color: var(--a-error);
+}
+.alpha-ext-updbtn {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--a-radius-md);
+  background: var(--a-warning-subtle);
+  color: var(--a-warning);
+  font-family: var(--a-font-sans);
+  font-size: var(--a-text-xs);
+  font-weight: var(--a-weight-semibold);
+  cursor: pointer;
+  flex: none;
+}
+.alpha-ext-updbtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* ── REQ-019 T6:导入反馈 ───────────────────────────────────────────────────── */
+.alpha-ext-import-err {
+  margin: 10px 0 0;
+  font-size: var(--a-text-sm);
+  color: var(--a-error);
+  line-height: var(--a-leading-snug);
+}
+.alpha-ext-import-card:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

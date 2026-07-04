@@ -11,7 +11,7 @@ import { listInstalls } from "./alpha-installs"
 import { fileifyMcpSecrets, removeMcpServerSecrets } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy } from "./alpha-migrate"
 import { configHealth, persistMcp, persistPlugin, removeMcp, removePlugin } from "./ext-config"
-import { installBuiltinSkill, readBuiltinSkill, removeFsInstall, writeAgent, writeSkill } from "./ext-fs-installer"
+import { importSkillFolder, importSkillGit, installBuiltinSkill, readBuiltinSkill, removeFsInstall, writeAgent, writeSkill } from "./ext-fs-installer"
 
 // GUI apps on macOS launch with a minimal PATH (no Homebrew), so augment it before `which` or we'd
 // false-negative tools the user actually has installed.
@@ -76,6 +76,13 @@ export function registerExtIpcHandlers(userDataPath: string) {
   // REQ-019 T3:详情页 SKILL.md 预览(只读,资产键校验 + 体积帽)
   ipcMain.handle("ext-read-builtin-skill", (_event: IpcMainInvokeEvent, builtinAssetKey: string) =>
     readBuiltinSkill(builtinAssetKey),
+  )
+  // REQ-019 T6:导入(folder 校验 frontmatter 复制入 .alpha;git https-only 浅克隆临时目录同校验)
+  ipcMain.handle("ext-import-skill-folder", (_event: IpcMainInvokeEvent, srcDir: string, target?: InstallTarget) =>
+    importSkillFolder(srcDir, target),
+  )
+  ipcMain.handle("ext-import-skill-git", (_event: IpcMainInvokeEvent, url: string, target?: InstallTarget) =>
+    importSkillGit(url, target),
   )
   // REQ-018 安装账本:合并只读视图(global ~/.alpha + 可选 project .alpha)
   ipcMain.handle("ext-list-installs", (_event: IpcMainInvokeEvent, projectDir?: string) => listInstalls(projectDir))
