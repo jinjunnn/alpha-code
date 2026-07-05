@@ -205,6 +205,18 @@ describe("buildAlphaModelConfig — REQ-001 edition 白名单(live 缓存)", () 
     expect(p.models["brand-new-model"].name).toBe("brand-new-model")
   })
 
+  test("REQ-029:variants(推理档)随 snapshot 下发到 provider config(echo 实验实锤 wire 形状)", () => {
+    process.env.ALPHA_BASE_URL = "https://gw.example/v1"
+    plantSecret("ALPHA_API_KEY", "jwt")
+    const p = buildAlphaModelConfig(userData)!.provider.alpha as any
+    const opus = p.models["claude-opus-4.8"]
+    expect(opus.variants["高"]).toEqual({ reasoning: { effort: "high" } }) // OR 统一 reasoning 对象
+    const mini = p.models["gpt-5.4-mini"]
+    expect(mini.variants["低"]).toEqual({ reasoningEffort: "low" }) // 原生 → reasoning_effort
+    expect(p.models["claude-opus-4.8-direct"].variants).toBeUndefined() // anthropic-wire 不映射 → 诚实不定义
+    expect(p.models["deepseek-v4-flash"].variants).toBeUndefined()
+  })
+
   test("live models 空数组 → 回退 snapshot(空白名单按坏配置处理,fail-open 不出空目录)", () => {
     process.env.ALPHA_BASE_URL = "https://gw.example/v1"
     plantSecret("ALPHA_API_KEY", "jwt")

@@ -116,6 +116,35 @@ let prevAgentBeforeReadonly = "build"
 const readAgentDom = () =>
   (document.querySelector('[data-action="prompt-agent"]') as HTMLElement | null)?.textContent?.trim().toLowerCase()
 
+// REQ-029:当前模型 variant(推理档)—— 上游 [data-action=prompt-model-variant] 触发器文本。
+// 控件只在当前模型定义了 variants 时渲染 → 其存在性即「是否支持」的诚实信号。
+const [variantLabel, setVariantLabel] = createSignal<string | undefined>(undefined)
+export const composerVariantLabel = variantLabel
+export const setComposerVariantLabel = (v: string | undefined) => {
+  if (v !== variantLabel()) setVariantLabel(v)
+}
+const readVariantDom = () =>
+  (document.querySelector('[data-action="prompt-model-variant"]') as HTMLElement | null)?.textContent?.trim()
+
+/** cycle 到目标 variant(与 switchAgentTo 同模式:逐步 trigger + 文本判停,转满一圈/无控件 → false)。 */
+async function switchVariantTo(command: { trigger(id: string): void }, target: string): Promise<boolean> {
+  const start = readVariantDom()
+  if (!start) return false
+  if (start === target) return true
+  for (let i = 0; i < 12; i++) {
+    try {
+      command.trigger("model.variant.cycle")
+    } catch {
+      return false
+    }
+    await new Promise((r) => setTimeout(r, 90))
+    const cur = readVariantDom()
+    if (cur === target) return true
+    if (cur === start) return false
+  }
+  return false
+}
+
 /** cycle 到目标 agent:逐步 trigger + 读上游触发器文本判停;转满一圈没命中/控件未渲染 → false(诚实失败)。 */
 async function switchAgentTo(command: { trigger(id: string): void }, target: string): Promise<boolean> {
   const start = readAgentDom()
@@ -283,41 +312,63 @@ export function PermChip() {
 /* ── effort chip ───────────────────────────────────────────────────────────── */
 // Self-contained: reads/writes the shared `effort` signal, so home + in-session always agree. No props.
 export function EffortChip() {
+  const command = useCommand()
   const { isOpen, toggle, close } = useChip()
   let btn: HTMLButtonElement | undefined
+  const [effErr, setEffErr] = createSignal("")
+  // REQ-029:接真 —— 上游 variant 控件存在 = 当前模型定义了 variants(alpha-models.json 配置驱动,
+  // 引擎 request 层 merge 进请求参数;echo 实验实锤 reasoning_effort/reasoning 真上 wire)。
+  // 控件不存在 = 模型不支持 → chip 诚实禁用,绝不假装可选(C28)。
+  const supported = () => !!composerVariantLabel()
+  // 观察源一致性:chip 显示 = 引擎实际 variant(外部 cycle 快捷键切换自动跟随;"default" 显示 中)。
+  const current = (): Effort => {
+    const label = composerVariantLabel()
+    return (EFFORTS as readonly string[]).includes(label ?? "") ? (label as Effort) : effort()
+  }
+  const pick = (lv: Effort) => {
+    void (async () => {
+      setEffErr("")
+      const ok = await switchVariantTo(command, lv)
+      if (!ok) {
+        setEffErr("切换失败(控件未渲染或该档不存在)")
+        return
+      }
+      setEffort(lv)
+      close()
+    })()
+  }
   return (
     <div class="a-pop-wrap a-comp-inject-chip" data-kind="effort">
       <button
         ref={btn}
         class="a-chip"
-        title="推理强度(预设 · 暂未生效)"
+        data-disabled={supported() ? undefined : ""}
+        title={supported() ? "推理强度(逐模型推理参数档)" : "当前模型不支持推理档"}
         onClick={(e) => {
           stop(e)
-          toggle()
+          if (supported()) toggle()
         }}
       >
         <Bolt />
-        <span class="a-comp-eff">{effort()}</span>
+        <span class="a-comp-eff">{supported() ? current() : "—"}</span>
         <Chevron />
       </button>
       <Show when={isOpen()}>
         <ChipPopover anchor={btn} align="right" minWidth={230}>
           <div class="a-pop-label">推理强度 · effort</div>
-          <div class="a-pop-note">预设 · 暂未接入模型推理 —— 当前选择不影响请求(接入随 REQ-029)</div>
-          <For each={EFFORTS}>
+          <For each={EFFORTS.filter((l) => l !== "超高")}>
             {(lv) => (
-              <button
-                class="a-pop-item"
-                classList={{ "is-on": effort() === lv }}
-                onClick={() => (setEffort(lv), close())}
-              >
-                <Show when={effort() === lv} fallback={<span style={{ width: "16px" }} />}>
+              <button class="a-pop-item" classList={{ "is-on": current() === lv }} onClick={() => pick(lv)}>
+                <Show when={current() === lv} fallback={<span style={{ width: "16px" }} />}>
                   <Check />
                 </Show>
                 {lv}
               </button>
             )}
           </For>
+          <Show when={effErr()}>
+            <div class="a-pop-label" style={{ color: "var(--a-danger, #d33)" }}>{effErr()}</div>
+          </Show>
         </ChipPopover>
       </Show>
     </div>

@@ -10,7 +10,7 @@
 
 import { createSignal, onCleanup, onMount, Show } from "solid-js"
 import { Portal } from "solid-js/web"
-import { AddButton, EffortChip, PermChip, setComposerAgentLabel, setComposerModelLabel } from "./composer-controls"
+import { AddButton, EffortChip, PermChip, setComposerAgentLabel, setComposerModelLabel, setComposerVariantLabel } from "./composer-controls"
 
 export function ComposerInject() {
   // Two mount points so the chips land where AlphaHome puts them: 权限 after the +/attach (LEFT), and
@@ -52,6 +52,9 @@ export function ComposerInject() {
     // REQ-028:发布当前 agent 名(PermChip「只读」判停与状态一致性的观察源)
     const agentBtn = composer?.querySelector('[data-action="prompt-agent"]') as HTMLElement | null
     setComposerAgentLabel(agentBtn?.textContent?.trim().toLowerCase() || undefined)
+    // REQ-029:发布 variant 控件状态(存在性=模型支持推理档;文本=当前档)
+    const variantBtn = composer?.querySelector('[data-action="prompt-model-variant"]') as HTMLElement | null
+    setComposerVariantLabel(variantBtn?.textContent?.trim() || undefined)
     if (!composer || !plus) {
       if (addHost()) setAddHost(null)
       if (permHost()) setPermHost(null)

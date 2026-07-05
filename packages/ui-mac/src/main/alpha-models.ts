@@ -83,11 +83,17 @@ export function buildAlphaModelConfig(userDataPath: string): AlphaModelConfig | 
   if (process.env.ALPHA_BASE_URL && hasSecretFile(userDataPath, "ALPHA_API_KEY")) {
     const pp = CATALOG.platformProvider
     const nameById = new Map(CATALOG.platformModels.map((m) => [m.id, m.name]))
+    // REQ-029:variants(推理档)按 snapshot 配置随模型下发 —— 引擎 request 层 merge 进 options
+    // (echo 实验实锤 reasoningEffort→reasoning_effort / reasoning:{effort} 原样透传,网关 spread 透传)。
+    const variantsById = new Map(CATALOG.platformModels.map((m) => [m.id, (m as { variants?: Record<string, Record<string, unknown>> }).variants]))
     const source = live?.models.length
       ? live.models.map((m) => ({ id: m.id, name: nameById.get(m.id) ?? m.id }))
       : CATALOG.platformModels
-    const models: Record<string, { name: string }> = {}
-    for (const m of source) models[m.id] = { name: m.name }
+    const models: Record<string, { name: string; variants?: Record<string, Record<string, unknown>> }> = {}
+    for (const m of source) {
+      const variants = variantsById.get(m.id)
+      models[m.id] = { name: m.name, ...(variants ? { variants } : {}) }
+    }
     provider[pp.id] = {
       npm: pp.npm,
       name: pp.name,
