@@ -53,7 +53,11 @@ export function registerExtIpcHandlers(userDataPath: string) {
       if (secretVars && secretVars.length && server && typeof server === "object") {
         fileifyMcpSecrets(userDataPath, name, server, secretVars)
       }
-      return persistMcp(name, server, meta)
+      const r = persistMcp(name, server, meta)
+      // codex L(REQ-033):persistMcp 拒绝(如 DANGEROUS_ENV)时,fileify 已先落的 secret 文件要撤 ——
+      // 否则残留孤儿密钥文件(无 config 引用但内容在盘)。
+      if (!r.ok && secretVars && secretVars.length) removeMcpServerSecrets(userDataPath, name)
+      return r
     },
   )
   ipcMain.handle("ext-remove-mcp", (_event: IpcMainInvokeEvent, name: string) => {
