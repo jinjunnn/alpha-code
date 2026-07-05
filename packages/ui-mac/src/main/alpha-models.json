@@ -1,28 +1,128 @@
 {
-  "version": "2026-07-05.1",
+  "version": "2026-07-06.1",
   "_note": "Single source of truth for alpha's model catalog (ADR-014 config-driven). Edit here to add/retire models, retune tier/倍率, or change presets — no code change. Consumed by main/alpha-models.ts (opencode config injection) and the renderer model picker (via window.api.models.catalog).",
   "defaultModel": null,
   "tiers": {
-    "flag": { "label": "旗舰", "mult": "×8" },
-    "pro": { "label": "高级", "mult": "×3" },
-    "std": { "label": "标准", "mult": "×1" }
+    "flag": {
+      "label": "旗舰",
+      "mult": "×8"
+    },
+    "pro": {
+      "label": "高级",
+      "mult": "×3"
+    },
+    "std": {
+      "label": "标准",
+      "mult": "×1"
+    }
   },
   "platformProvider": {
     "id": "alpha",
     "name": "ALPHA",
     "npm": "@ai-sdk/openai-compatible",
-    "pico": { "letter": "α", "color": "#4f46e5" }
+    "pico": {
+      "letter": "α",
+      "color": "#4f46e5"
+    }
   },
   "platformModels": [
-    { "id": "claude-opus-4.8", "name": "Claude Opus 4.8", "tier": "flag", "reasoning": true },
-    { "id": "claude-opus-4.8-direct", "name": "Claude Opus 4.8 · 直连", "tier": "flag", "reasoning": true },
-    { "id": "claude-sonnet-4.6", "name": "Claude Sonnet 4.6", "tier": "pro", "reasoning": true },
-    { "id": "claude-haiku-4.5", "name": "Claude Haiku 4.5", "tier": "pro" },
-    { "id": "gpt-5.4-search", "name": "GPT-5.4 · 联网", "tier": "flag", "reasoning": true, "web": true },
-    { "id": "gpt-5.4-mini", "name": "GPT-5.4 Mini", "tier": "pro", "reasoning": true },
-    { "id": "gpt-5.4-nano", "name": "GPT-5.4 Nano", "tier": "std" },
-    { "id": "deepseek-v4-pro", "name": "DeepSeek V4 Pro", "tier": "pro", "reasoning": true },
-    { "id": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "tier": "std" }
+    {
+      "id": "claude-opus-4.8",
+      "name": "Claude Opus 4.8",
+      "tier": "flag",
+      "reasoning": true,
+      "variants": {
+        "低": {
+          "reasoning": {
+            "effort": "low"
+          }
+        },
+        "中": {
+          "reasoning": {
+            "effort": "medium"
+          }
+        },
+        "高": {
+          "reasoning": {
+            "effort": "high"
+          }
+        }
+      }
+    },
+    {
+      "id": "claude-opus-4.8-direct",
+      "name": "Claude Opus 4.8 · 直连",
+      "tier": "flag",
+      "reasoning": true
+    },
+    {
+      "id": "claude-sonnet-4.6",
+      "name": "Claude Sonnet 4.6",
+      "tier": "pro",
+      "reasoning": true,
+      "variants": {
+        "低": {
+          "reasoning": {
+            "effort": "low"
+          }
+        },
+        "中": {
+          "reasoning": {
+            "effort": "medium"
+          }
+        },
+        "高": {
+          "reasoning": {
+            "effort": "high"
+          }
+        }
+      }
+    },
+    {
+      "id": "claude-haiku-4.5",
+      "name": "Claude Haiku 4.5",
+      "tier": "pro"
+    },
+    {
+      "id": "gpt-5.4-search",
+      "name": "GPT-5.4 · 联网",
+      "tier": "flag",
+      "reasoning": true,
+      "web": true
+    },
+    {
+      "id": "gpt-5.4-mini",
+      "name": "GPT-5.4 Mini",
+      "tier": "pro",
+      "reasoning": true,
+      "variants": {
+        "低": {
+          "reasoningEffort": "low"
+        },
+        "中": {
+          "reasoningEffort": "medium"
+        },
+        "高": {
+          "reasoningEffort": "high"
+        }
+      }
+    },
+    {
+      "id": "gpt-5.4-nano",
+      "name": "GPT-5.4 Nano",
+      "tier": "std"
+    },
+    {
+      "id": "deepseek-v4-pro",
+      "name": "DeepSeek V4 Pro",
+      "tier": "pro",
+      "reasoning": true
+    },
+    {
+      "id": "deepseek-v4-flash",
+      "name": "DeepSeek V4 Flash",
+      "tier": "std"
+    }
   ],
   "byokProviders": [
     {
@@ -33,8 +133,14 @@
       "compat": "openai",
       "baseURL": "https://api.deepseek.com/v1",
       "keyEnv": "DEEPSEEK_API_KEY",
-      "pico": { "letter": "D", "color": "#2563eb" },
-      "models": ["deepseek-v4-flash", "deepseek-v4-pro"]
+      "pico": {
+        "letter": "D",
+        "color": "#2563eb"
+      },
+      "models": [
+        "deepseek-v4-flash",
+        "deepseek-v4-pro"
+      ]
     },
     {
       "id": "zhipuai",
@@ -44,8 +150,14 @@
       "compat": "anthropic",
       "baseURL": "https://open.bigmodel.cn/api/anthropic",
       "keyEnv": "ZHIPU_API_KEY",
-      "pico": { "letter": "智", "color": "#16a34a" },
-      "models": ["glm-5.2", "glm-4.5-air"]
+      "pico": {
+        "letter": "智",
+        "color": "#16a34a"
+      },
+      "models": [
+        "glm-5.2",
+        "glm-4.5-air"
+      ]
     },
     {
       "id": "minimax",
@@ -55,8 +167,13 @@
       "compat": "anthropic",
       "baseURL": "https://api.minimax.chat/v1",
       "keyEnv": "MINIMAX_API_KEY",
-      "pico": { "letter": "M", "color": "#dc2626" },
-      "models": ["MiniMax-M2"]
+      "pico": {
+        "letter": "M",
+        "color": "#dc2626"
+      },
+      "models": [
+        "MiniMax-M2"
+      ]
     },
     {
       "id": "alibaba",
@@ -66,8 +183,14 @@
       "compat": "openai",
       "baseURL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
       "keyEnv": "DASHSCOPE_API_KEY",
-      "pico": { "letter": "通", "color": "#7c3aed" },
-      "models": ["qwen-plus", "qwen3-coder-plus"]
+      "pico": {
+        "letter": "通",
+        "color": "#7c3aed"
+      },
+      "models": [
+        "qwen-plus",
+        "qwen3-coder-plus"
+      ]
     },
     {
       "id": "moonshot",
@@ -77,9 +200,20 @@
       "compat": "openai",
       "baseURL": "https://api.moonshot.cn/v1",
       "keyEnv": "MOONSHOT_API_KEY",
-      "pico": { "letter": "K", "color": "#111317" },
-      "models": ["kimi-k2", "moonshot-v1-128k"]
+      "pico": {
+        "letter": "K",
+        "color": "#111317"
+      },
+      "models": [
+        "kimi-k2",
+        "moonshot-v1-128k"
+      ]
     }
   ],
-  "presetIds": ["deepseek", "zhipuai", "alibaba", "moonshot"]
+  "presetIds": [
+    "deepseek",
+    "zhipuai",
+    "alibaba",
+    "moonshot"
+  ]
 }
