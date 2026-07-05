@@ -3,7 +3,7 @@ id: B1
 title: 登录 shell 同步探测黑屏:异步化 + 缓存
 type: perf
 priority: P1
-status: verified
+status: archived
 repo: A
 created: 2026-07-03
 sprint: 2026-07-03-s10-hardening

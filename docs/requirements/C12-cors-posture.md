@@ -3,7 +3,7 @@ id: C12
 title: CORS 过宽(上游)处置:先撤 alpha 自注入 ACAO:*
 type: security
 priority: P2
-status: verified
+status: archived
 repo: A
 created: 2026-07-03
 sprint: —

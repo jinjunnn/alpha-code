@@ -3,7 +3,7 @@ id: D1
 title: 健康轮询先 sleep 100ms 再首查(白加延迟)
 type: perf
 priority: P3
-status: shipped
+status: archived
 repo: A
 created: 2026-07-03
 sprint: —

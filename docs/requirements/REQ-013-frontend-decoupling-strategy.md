@@ -3,7 +3,7 @@ id: REQ-013
 title: 前端脱耦策略 —— 让 alpha UI 免疫上游前端 churn(选定并落地)
 type: spike
 priority: P1
-status: shipped
+status: archived
 repo: A
 created: 2026-07-03
 sprint: —

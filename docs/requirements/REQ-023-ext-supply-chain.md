@@ -3,7 +3,7 @@ id: REQ-023
 title: 扩展安装供给链:官方扩展全配置化 + 离线资产通道(vendored plugin/agent)+ 安装管线状态机
 type: feature
 priority: P2
-status: verified
+status: archived
 repo: A
 created: 2026-07-04
 sprint: 2026-07-04-s13-ext-hub-m2

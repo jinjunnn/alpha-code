@@ -3,7 +3,7 @@ id: REQ-010
 title: alpha-ui 视觉 + 注入/路由回归修复批(546-sync 后 reskin 耦合面静默失效)
 type: bug
 priority: P1
-status: registered
+status: archived
 repo: A
 created: 2026-07-03
 sprint: —
