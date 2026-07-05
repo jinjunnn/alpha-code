@@ -13,7 +13,8 @@ import { addReceipt, alphaGlobalRoot, listInstalls, removeReceipt } from "./alph
 import { fileifyMcpSecrets, removeMcpServerSecrets } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy } from "./alpha-migrate"
 import { configHealth, persistMcp, persistPlugin, removeMcp, removePlugin, removePluginPath } from "./ext-config"
-import { importSkillFolder, importSkillGit, installBuiltinAgent, installBuiltinSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall, writeAgent, writeSkill } from "./ext-fs-installer"
+import { importSkillFolder, importSkillGit, installBuiltinAgent, installBuiltinSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall } from "./ext-fs-installer"
+import { factorySkillIds } from "./factory-skills"
 
 // GUI apps on macOS launch with a minimal PATH (no Homebrew), so augment it before `which` or we'd
 // false-negative tools the user actually has installed.
@@ -57,16 +58,10 @@ export function registerExtIpcHandlers(userDataPath: string) {
   // B11/B23:全局配置健康探测(语法错/未知顶键 → 引擎会整份清零)
   ipcMain.handle("ext-config-health", () => configHealth())
   ipcMain.handle("ext-check-runtime", (_event: IpcMainInvokeEvent, tool: string) => checkRuntime(tool))
-  ipcMain.handle(
-    "ext-write-skill",
-    (_event: IpcMainInvokeEvent, name: string, description: string, body: string, target?: InstallTarget) =>
-      writeSkill(name, description, body, target),
-  )
-  ipcMain.handle(
-    "ext-write-agent",
-    (_event: IpcMainInvokeEvent, name: string, content: string, target?: InstallTarget) =>
-      writeAgent(name, content, target),
-  )
+  // REQ-036:创建表单已移除(创建走技能:skill-creator/agent-creator 出厂注入),原
+  // ext-write-skill / ext-write-agent 渲染层通道随之下线;main 的 writeSkill/writeAgent 保留
+  // (installBuiltinAgent 等 vendored 安装管线内部复用)。
+  ipcMain.handle("ext-factory-skill-ids", () => factorySkillIds())
   ipcMain.handle("ext-install-plugin", (_event: IpcMainInvokeEvent, pkg: string, meta?: InstallMeta) =>
     persistPlugin(pkg, meta),
   )

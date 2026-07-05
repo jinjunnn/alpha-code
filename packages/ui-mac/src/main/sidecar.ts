@@ -51,6 +51,8 @@ type StartCommand = {
   userDataPath: string
   /** B6(=G1):@alpha-code/ext 自包含 bundle 的绝对路径(main 解析,见 alpha-ext-plugin.ts);缺省不装载。 */
   extPluginPath?: string
+  /** REQ-036 出厂技能目录绝对路径(main 解析,见 factory-skills.ts);缺省/空 = 不注入。 */
+  factorySkillPaths?: string[]
 }
 
 type StopCommand = { type: "stop" }
@@ -85,7 +87,7 @@ parentPort.on("message", (event) => {
 
 async function start(command: StartCommand) {
   try {
-    prepareSidecarEnv(command.password, command.userDataPath, command.extPluginPath)
+    prepareSidecarEnv(command.password, command.userDataPath, command.extPluginPath, command.factorySkillPaths)
     ensureLoopbackNoProxy()
     useSystemCertificates()
     useEnvProxy()
@@ -115,13 +117,13 @@ async function stop() {
   }
 }
 
-function prepareSidecarEnv(password: string, userDataPath: string, extPluginPath?: string) {
+function prepareSidecarEnv(password: string, userDataPath: string, extPluginPath?: string, factorySkillPaths?: string[]) {
   Object.assign(process.env, {
     OPENCODE_SERVER_USERNAME: "opencode",
     OPENCODE_SERVER_PASSWORD: password,
     XDG_STATE_HOME: process.env.XDG_STATE_HOME ?? userDataPath,
   })
-  injectAlphaConfig(userDataPath, extPluginPath)
+  injectAlphaConfig(userDataPath, extPluginPath, factorySkillPaths)
 }
 
 // Inject alpha-code's customizations into opencode via OPENCODE_CONFIG_CONTENT. This env var is
@@ -143,7 +145,7 @@ function prepareSidecarEnv(password: string, userDataPath: string, extPluginPath
 //   4. B6(=G1):@alpha-code/ext 装载 —— main 解析好的自包含 bundle 绝对路径合并进 V1 `plugin`
 //      (单数键,见 opencode-config-v1-schema)数组,保留用户自己的 plugin 列表。zod 跨实例路径
 //      (ADR-006 caveat)的运行时证明 = alpha_ping 出现在工具表且能执行(真机批核验)。
-function injectAlphaConfig(userDataPath: string, extPluginPath?: string) {
+function injectAlphaConfig(userDataPath: string, extPluginPath?: string, factorySkillPaths?: string[]) {
   try {
     const existing = process.env.OPENCODE_CONFIG_CONTENT
     const config = existing ? JSON.parse(existing) : { $schema: "https://opencode.ai/config.json" }
@@ -152,6 +154,16 @@ function injectAlphaConfig(userDataPath: string, extPluginPath?: string) {
       const plugins: string[] = Array.isArray(config.plugin) ? config.plugin : []
       if (!plugins.includes(extPluginPath)) plugins.push(extPluginPath)
       config.plugin = plugins
+    }
+
+    //   6. 出厂技能(REQ-036):skill-creator + agent-creator 经 `skills.paths` 注入 —— 零安装,
+    //      「帮我创建一个技能/agent」开箱即可用。路径由 main 解析(factory-skills.ts,含
+    //      ALPHA_FACTORY_SKILLS_DISABLE 逃生),这里只做 merge(保留用户自己的 skills 配置)。
+    if (factorySkillPaths && factorySkillPaths.length > 0) {
+      const skills = typeof config.skills === "object" && config.skills !== null ? config.skills : {}
+      const paths: string[] = Array.isArray(skills.paths) ? skills.paths : []
+      for (const p of factorySkillPaths) if (!paths.includes(p)) paths.push(p)
+      config.skills = { ...skills, paths }
     }
 
     const wantIdentity = !process.env.ALPHA_IDENTITY_DISABLE
@@ -307,6 +319,9 @@ function parseCommand(value: unknown): SidecarCommand | undefined {
     password: command.password,
     userDataPath: command.userDataPath,
     ...(typeof command.extPluginPath === "string" ? { extPluginPath: command.extPluginPath } : {}),
+    ...(Array.isArray(command.factorySkillPaths) && command.factorySkillPaths.every((p) => typeof p === "string")
+      ? { factorySkillPaths: command.factorySkillPaths }
+      : {}),
   }
 }
 

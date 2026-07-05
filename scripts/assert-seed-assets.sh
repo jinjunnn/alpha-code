@@ -25,6 +25,8 @@ need_file() { [ -s "$1" ] || miss "$1"; }
 need_dir() { { [ -d "$1" ] && [ -n "$(ls -A "$1" 2>/dev/null)" ]; } || miss "$1"; }
 
 need_dir "$res/skills"                    # builtin skills (installable via 定制中心)
+need_file "$res/skills/skill-creator/SKILL.md"       # REQ-036 出厂技能(skills.paths 原位引用)
+need_file "$res/factory-skills/agent-creator/SKILL.md" # REQ-036 出厂技能(alpha 自写)
 need_file "$res/agents/code-reviewer.md"  # REQ-023 vendored agent (zero-network install)
 need_dir "$res/plugins/opencode-notify"   # REQ-023 vendored plugin (self-contained JS)
 need_file "$res/NOTICE.txt"               # B15 MIT / third-party attribution — license compliance

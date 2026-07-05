@@ -81,6 +81,12 @@ const getBase = (appId: string): Configuration => ({
       to: "skills/",
     },
     {
+      // REQ-036 出厂技能(alpha 自写,如 agent-creator):经 skills.paths 注入引擎、零安装即用。
+      // skill-creator 不在此目录 —— 它原位在 skills/(catalog 资产)被 factory-skills.ts 直接引用。
+      from: "resources/factory-skills/",
+      to: "factory-skills/",
+    },
+    {
       // REQ-023 T2:官方 agent md 资产(installBuiltinAgent 复制入 ~/.alpha/agents)。
       from: "resources/agents/",
       to: "agents/",

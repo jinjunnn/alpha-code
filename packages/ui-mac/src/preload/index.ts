@@ -140,9 +140,7 @@ const api: ElectronAPI = {
     removeMcp: (name) => ipcRenderer.invoke("ext-remove-mcp", name),
     checkRuntime: (tool) => ipcRenderer.invoke("ext-check-runtime", tool),
     configHealth: () => ipcRenderer.invoke("ext-config-health"),
-    writeSkill: (name, description, body, target) =>
-      ipcRenderer.invoke("ext-write-skill", name, description, body, target),
-    writeAgent: (name, content, target) => ipcRenderer.invoke("ext-write-agent", name, content, target),
+    factorySkillIds: () => ipcRenderer.invoke("ext-factory-skill-ids"),
     installPlugin: (pkg, meta) => ipcRenderer.invoke("ext-install-plugin", pkg, meta),
     installBuiltinSkill: (builtinAssetKey, name, target, meta) =>
       ipcRenderer.invoke("ext-install-builtin-skill", builtinAssetKey, name, target, meta),

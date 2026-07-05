@@ -179,11 +179,7 @@ export function ExtensionHub(props: {
   // T5:确认弹窗采集的 requiredEnvVars 密钥值(仅内存;安装后清空)。经 addMcp → 主进程 {file:}
   // 通道落盘,绝不明文进 opencode.jsonc。切换/关闭弹窗即重置。
   const [envValues, setEnvValues] = createSignal<Record<string, string>>({})
-  const [createType, setCreateType] = createSignal<"skill" | "agent">("skill")
-  const [fName, setFName] = createSignal("")
-  const [fDesc, setFDesc] = createSignal("")
-  const [fModel, setFModel] = createSignal("")
-  const [fBody, setFBody] = createSignal("")
+  // REQ-036:创建表单已移除(创建走技能:skill-creator/agent-creator 出厂注入),原表单 state 随之下线。
   // T3:存量迁移候选(旧 XDG 根里、名字匹配 catalog 的 alpha 安装物)。仅当主进程门控开启
   // (ALPHA_MIGRATE_ENABLE=1,A6 真机验证后)且有候选时显示迁移条。
   const [migrateCandidates, setMigrateCandidates] = createSignal<CatalogEntry[]>([])
@@ -568,29 +564,6 @@ export function ExtensionHub(props: {
     }
   }
 
-  const submitCreate = async () => {
-    const name = fName().trim()
-    if (!name) return
-    setBusy("__create__")
-    try {
-      const res =
-        createType() === "skill"
-          ? await ext.createSkill(name, fDesc(), fBody())
-          : await ext.createAgent(name, { description: fDesc(), model: fModel() || undefined, system: fBody() })
-      if (res.ok) {
-        flash(res.reason === "reload-pending" ? t("alpha.ext.addedPendingReload") : t("alpha.ext.added"), "success")
-        setFName("")
-        setFDesc("")
-        setFModel("")
-        setFBody("")
-      } else {
-        flash(`${t("alpha.ext.installFailed")}${res.reason ? `: ${res.reason}` : ""}`)
-      }
-    } finally {
-      setBusy(null)
-    }
-  }
-
   // Items the confirm dialog lists: a bundle fans out to its referenced entries; everything else is
   // just itself.
   const confirmItems = (e: CatalogEntry): { entry: CatalogEntry; optional: boolean }[] => {
@@ -674,6 +647,9 @@ export function ExtensionHub(props: {
     const e = cp.e
     const ic = iconFor(e)
     const installedNow = createMemo(() => ext.isInstalled(e))
+    // REQ-036 / S18 X1:出厂注入的技能(skills.paths)显示「出厂内置」而非「安装」——已经处处可用,
+    // 再给安装按钮是双重身份混乱;关掉出厂注入(逃生开关)时名单为空,条目自动回到可安装态。
+    const isFactory = createMemo(() => e.type === "skill" && ext.factorySkills().includes(e.name))
     const isBusy = () => busy() === e.id
     return (
       <div class="alpha-ext-card" data-clickable="" onClick={() => openEntryDetail(e)}>
@@ -706,7 +682,7 @@ export function ExtensionHub(props: {
             )}
           </For>
           <Show
-            when={!installedNow()}
+            when={!isFactory()}
             fallback={
               <button
                 class="alpha-ext-add"
@@ -716,27 +692,43 @@ export function ExtensionHub(props: {
                   openEntryDetail(e)
                 }}
               >
-                ✓ {t("alpha.ext.openDetail")}
+                {t("alpha.ext.factoryBuiltin")}
               </button>
             }
           >
-            <button
-              class="alpha-ext-add"
-              data-variant="primary"
-              disabled={isBusy()}
-              onClick={(ev) => {
-                ev.stopPropagation()
-                stageInstall(e)
-              }}
+            <Show
+              when={!installedNow()}
+              fallback={
+                <button
+                  class="alpha-ext-add"
+                  data-variant="installed"
+                  onClick={(ev) => {
+                    ev.stopPropagation()
+                    openEntryDetail(e)
+                  }}
+                >
+                  ✓ {t("alpha.ext.openDetail")}
+                </button>
+              }
             >
-              {stage()[e.id] === "checking"
-                ? t("alpha.ext.stageChecking")
-                : stage()[e.id] === "installing" || isBusy()
-                  ? t("alpha.ext.stageInstalling")
-                  : e.type === "cloud"
-                    ? t("alpha.ext.enableCloud")
-                    : t("alpha.ext.add")}
-            </button>
+              <button
+                class="alpha-ext-add"
+                data-variant="primary"
+                disabled={isBusy()}
+                onClick={(ev) => {
+                  ev.stopPropagation()
+                  stageInstall(e)
+                }}
+              >
+                {stage()[e.id] === "checking"
+                  ? t("alpha.ext.stageChecking")
+                  : stage()[e.id] === "installing" || isBusy()
+                    ? t("alpha.ext.stageInstalling")
+                    : e.type === "cloud"
+                      ? t("alpha.ext.enableCloud")
+                      : t("alpha.ext.add")}
+              </button>
+            </Show>
           </Show>
         </div>
         {/* B11:失败行内(错误 chip 行),不裸 toast */}
@@ -1042,15 +1034,8 @@ export function ExtensionHub(props: {
                     <Hero title={t("alpha.ext.tabAgents")} sub={t("alpha.ext.agentsSub")} />
                     <div class="alpha-ext-callout">
                       {t("alpha.ext.agentsNote")}
-                      <button
-                        class="alpha-ext-inline-cta"
-                        onClick={() => {
-                          setCreateType("agent")
-                          gotoSection("create")
-                        }}
-                      >
-                        {t("alpha.ext.createAgentCta")}
-                      </button>
+                      {/* REQ-036:创建表单已移除;创建 = 会话内经 agent-creator(出厂技能)对话式生成 */}
+                      <span class="alpha-ext-dnote"> {t("alpha.ext.createAgentViaChat")}</span>
                     </div>
                     <Show when={byTypeF("agent").length > 0}>
                       <SecRow label={t("alpha.ext.installableAgents")} count={byTypeF("agent").length} />
@@ -1255,74 +1240,20 @@ export function ExtensionHub(props: {
                     </Show>
                   </Show>
 
-                  {/* ░░ CREATE (含导入,T6 接真实现) ░░ */}
+                  {/* ░░ IMPORT(REQ-036:创建表单已移除 —— 创建走技能;本 tab 语义收敛为导入,
+                      并给「对话式创建」指引卡。X8 挂点:REQ-033 的任意 MCP 添加/agent 导入落这里) ░░ */}
                   <Show when={section() === "create"}>
                     <Hero title={t("alpha.ext.tabCreate")} sub={t("alpha.ext.createSub")} />
                     <div class="alpha-ext-form">
-                      <div class="alpha-ext-seg">
-                        <button data-on={createType() === "skill" ? "" : undefined} onClick={() => setCreateType("skill")}>
-                          {t("alpha.ext.tabSkills")}
-                        </button>
-                        <button data-on={createType() === "agent" ? "" : undefined} onClick={() => setCreateType("agent")}>
-                          Agent
-                        </button>
-                      </div>
-
-                      <label class="alpha-ext-field">
-                        <span class="alpha-ext-flabel">{t("alpha.ext.createName")}</span>
-                        <input
-                          class="alpha-ext-input"
-                          placeholder={t("alpha.ext.createNamePh")}
-                          value={fName()}
-                          onInput={(e) => setFName(e.currentTarget.value)}
-                        />
-                      </label>
-                      <label class="alpha-ext-field">
-                        <span class="alpha-ext-flabel">{t("alpha.ext.createDesc")}</span>
-                        <input
-                          class="alpha-ext-input"
-                          placeholder={t("alpha.ext.createDescPh")}
-                          value={fDesc()}
-                          onInput={(e) => setFDesc(e.currentTarget.value)}
-                        />
-                      </label>
-                      <Show when={createType() === "agent"}>
-                        <label class="alpha-ext-field">
-                          <span class="alpha-ext-flabel">
-                            {t("alpha.ext.createModel")} <span class="alpha-ext-opt">{t("alpha.ext.optional")}</span>
-                          </span>
-                          <input
-                            class="alpha-ext-input alpha-mono"
-                            placeholder={t("alpha.ext.createModelPh")}
-                            value={fModel()}
-                            onInput={(e) => setFModel(e.currentTarget.value)}
-                          />
-                        </label>
-                      </Show>
-                      <label class="alpha-ext-field">
-                        <span class="alpha-ext-flabel">
-                          {createType() === "skill" ? t("alpha.ext.createBodySkill") : t("alpha.ext.createBodyAgent")}
-                        </span>
-                        <textarea
-                          class="alpha-ext-input alpha-ext-textarea alpha-mono"
-                          placeholder={createType() === "skill" ? "# skill\n\n## When to use\n…" : "system prompt…"}
-                          value={fBody()}
-                          onInput={(e) => setFBody(e.currentTarget.value)}
-                        />
-                      </label>
-                      <div>
-                        <button
-                          class="alpha-ext-add"
-                          data-variant="primary"
-                          disabled={busy() === "__create__" || !fName().trim()}
-                          onClick={() => void submitCreate()}
-                        >
-                          {busy() === "__create__"
-                            ? t("alpha.ext.adding")
-                            : createType() === "skill"
-                              ? t("alpha.ext.createSkillBtn")
-                              : t("alpha.ext.createAgentBtn")}
-                        </button>
+                      {/* 对话式创建指引(skill-creator / agent-creator 出厂即有;C28:文案与出厂
+                          注入状态一致 —— 逃生开关关闭时如实降级为「安装 skill-creator 后可用」) */}
+                      <div class="alpha-ext-callout">
+                        <b>{t("alpha.ext.createViaChatTitle")}</b>
+                        <p class="alpha-ext-dnote" style={{ margin: "6px 0 0" }}>
+                          {ext.factorySkills().length > 0
+                            ? t("alpha.ext.createViaChatBody")
+                            : t("alpha.ext.createViaChatBodyDisabled")}
+                        </p>
                       </div>
 
                       <div class="alpha-ext-import">

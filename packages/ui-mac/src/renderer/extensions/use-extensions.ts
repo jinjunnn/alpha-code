@@ -12,7 +12,7 @@
 // SDK v2 生成类型与 server 实际接受/返回形状的已知偏斜(directory/scope/roots 扩展参数、data
 // 数组元素形状、event 信封)。上游 codegen 修齐后应成批删除,不新增其它用途的 as any。
 import { createStore, unwrap } from "solid-js/store"
-import { createEffect, onCleanup, type Accessor } from "solid-js"
+import { createEffect, createSignal, onCleanup, type Accessor } from "solid-js"
 // CLIENT subpath only — the v2 barrel pulls Node-only deps that break the renderer (see ADR-008).
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import type { ServerInfo } from "../sidebar/use-projects"
@@ -81,10 +81,9 @@ export interface ExtensionsApi {
   isInstalled(entry: CatalogEntry): boolean
   /** which-check the entry's runtime deps; { ok:false, missing } if a binary is absent. */
   checkRuntime(tools: string[] | undefined): Promise<RuntimeCheck>
-  /** Write a user-authored skill (SKILL.md) into the globally-scanned config dir. */
-  createSkill(name: string, description: string, body: string): Promise<ActionResult>
-  /** Write a user-authored agent (.md) into the globally-scanned config dir. */
-  createAgent(name: string, opts: { description?: string; model?: string; system: string }): Promise<ActionResult>
+  /** REQ-036 出厂技能名单(skills.paths 注入;逃生开关关闭时为空)——hub 据此把对应 catalog
+   *  条目呈现为「出厂内置」而非可安装(S18 X1)。创建类操作已技能化,不再有表单写入方法。 */
+  factorySkills(): string[]
   /** Install a catalog skill entry by writing its SKILL.md. */
   installSkill(entry: CatalogEntry): Promise<ActionResult>
   /** REQ-018 T4:释放全部引擎实例(POST /global/dispose)→ 下一请求惰性重建重扫,免重启生效。 */
@@ -400,29 +399,12 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     })
   })
 
-  async function createSkill(name: string, description: string, body: string): Promise<ActionResult> {
-    const r = await window.api.ext.writeSkill(name, description, body)
-    if (!r.ok) return r
-    await loadInstalls()
-    if (!(await refreshEngine())) return { ok: true, reason: "reload-pending" }
-    return r
-  }
-
-  async function createAgent(
-    name: string,
-    opts: { description?: string; model?: string; system: string },
-  ): Promise<ActionResult> {
-    const lines = ["---", `description: ${(opts.description ?? name).replace(/\r?\n/g, " ")}`]
-    if (opts.model) lines.push(`model: ${opts.model}`)
-    lines.push("---", "", opts.system, "")
-    const r = await window.api.ext.writeAgent(name, lines.join("\n"))
-    if (!r.ok) return r
-    await loadInstalls()
-    const refreshed = await refreshEngine()
-    void loadAgents() // reflect the new agent in the Agent tab (after the rescan)
-    if (!refreshed) return { ok: true, reason: "reload-pending" }
-    return r
-  }
+  // REQ-036:出厂技能名单(一次取回缓存;失败诚实为空 = 不显「出厂内置」徽标,条目退回可安装态)。
+  const [factoryIds, setFactoryIds] = createSignal<string[]>([])
+  void window.api.ext
+    .factorySkillIds()
+    .then((ids) => setFactoryIds(Array.isArray(ids) ? ids : []))
+    .catch(() => {})
 
   async function installSkill(entry: CatalogEntry): Promise<ActionResult> {
     const spec = entry.installSpec
@@ -524,8 +506,7 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     uninstall,
     isInstalled,
     checkRuntime,
-    createSkill,
-    createAgent,
+    factorySkills: () => factoryIds(),
     installSkill,
     refreshEngine,
     reloadAgents: loadAgents,

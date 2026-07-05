@@ -5,6 +5,7 @@ import { app, utilityProcess } from "electron"
 import type { Details } from "electron"
 import { resolveExtPluginPath } from "./alpha-ext-plugin"
 import { syncSecretFiles } from "./alpha-secret-files"
+import { resolveFactorySkillPaths } from "./factory-skills"
 import { loadAlphaSecrets } from "./alpha-secrets"
 import { pollUntilHealthy } from "./health-poll"
 import { getLogger } from "./logging"
@@ -125,6 +126,15 @@ export async function spawnLocalServer(
   else if (ext.reason?.includes("ALPHA_EXT_DISABLE")) getLogger()?.log("alpha-ext: disabled by ALPHA_EXT_DISABLE")
   else getLogger()?.warn(`alpha-ext: NOT loaded — ${ext.reason}`)
 
+  // REQ-036 出厂技能:main 解析目录(utilityProcess 无 electron app),经 StartCommand 传 sidecar。
+  const factory = resolveFactorySkillPaths({
+    packaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    moduleDir: dirname(fileURLToPath(import.meta.url)),
+  })
+  if (factory.paths.length) getLogger()?.log("factory-skills: injecting", { paths: factory.paths })
+  if (factory.missing.length) getLogger()?.warn("factory-skills: MISSING dirs (packaging?)", { missing: factory.missing })
+
   const sidecar = join(dirname(fileURLToPath(import.meta.url)), "sidecar.js")
   const child = utilityProcess.fork(sidecar, [], {
     cwd: process.cwd(),
@@ -201,6 +211,7 @@ export async function spawnLocalServer(
       password,
       userDataPath: options.userDataPath,
       extPluginPath: ext.path,
+      factorySkillPaths: factory.paths,
     })
   }).catch((error) => {
     if (!exited) child.kill()
