@@ -3,7 +3,7 @@ id: REQ-021
 title: 自动化(定时任务)完整需求:A1 本地只读 MVP → A2 增强 → A3 云档位(按优先级分期实现)
 type: feature
 priority: P2
-status: shipped
+status: verified
 repo: A
 created: 2026-07-04
 sprint: 2026-07-04-s15-automations-a1
@@ -29,14 +29,16 @@ source: designs/2026-07-04-extension-hub-v3-universal.md(§5.7、§7、§8 M4)
 
 **A1 验收**:①「每天 HH:mm」任务真机到点触发并产出 run + 通知([[visual-verify-required]]);② readonly 档实测不弹任何 ask、edit/bash 实调被 deny;③ overlap/catch-up 按策略(构造重叠与睡眠错过用例);④ 历史回跳会话可用;⑤ 断电/重启后任务与 next-fire 恢复正确;⑥ 调度纯逻辑(下次触发计算/错过判定)单测覆盖。
 
-## A2 —— 增强(次优先,A1 verified 后)
+> **拆行(2026-07-05,按 ADR-018 ID 纪律)**:A2/A3 已拆为独立需求 [[REQ-024]](A2 增强)与 [[REQ-025]](A3 云档位,B 侧阻塞中),消除本档「shipped 但有余量」歧义;以下 A2/A3 节保留为原始分期定义,**状态以新档为准**。本档 shipped 语义收窄为 A1。
+
+## A2 —— 增强(次优先,A1 verified 后)→ 已拆 [[REQ-024]]
 1. `standard` 权限档(可写,edit=allow、bash 危险类仍 deny)+ 启用警告与确认;A1 期间该选项灰显「即将推出」。
 2. LLM 辅助解析(规则解析失败/复杂描述时,经当前会话模型一次性抽取 schedule+prompt,预览确认不变)。
 3. 失败连败熔断(连败 3 次自动停用 + 通知)、手动「立即运行」、每任务预算(时长/日次数)UI、历史保留策略(默认保留 30 条/任务)。
 
 **A2 验收**:standard 档写文件真机成功且警告链路完整;连败自动停用可复现;立即运行不干扰排程。
 
-## A3 —— 云档位(最后,前置 REQ-020 §2 校验 + REQ-022 就绪 + B16 重启评估)
+## A3 —— 云档位(最后,前置 REQ-020 §2 校验 + REQ-022 就绪 + B16 重启评估)→ 已拆 [[REQ-025]]
 1. `execution:cloud`:保存时经 REQ-022 契约注册 schedule 到 B(envelope 复用 CloudJobEnvelopeSchema);离线也执行。
 2. 开 app 拉回:按 REQ-022 `jobs?since=` 拉取错过的 run → `cloud_status/artifacts` → `.alpha/runs/`(复用 cloud-save-run 链路)。
 3. 云任务的数据边界提示(ADR-021)在预览卡与详情页强制展示。

@@ -3,7 +3,7 @@ id: REQ-018
 title: 定制中心 v3-M1 通用化地基:安装账本 + 全类型卸载 + 重载引擎 + .alpha 双层落盘迁移 + MCP 密钥 file 化 + Agent tab
 type: feature
 priority: P1
-status: shipped
+status: verified
 repo: A
 created: 2026-07-04
 sprint: 2026-07-04-s12-ext-hub-m1

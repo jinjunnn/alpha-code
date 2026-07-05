@@ -1,10 +1,12 @@
 ---
 id: ADR-022
 title: 自动化(定时任务):本地调度器 + 只读 agent 静态权限档 + .alpha 落盘(A1 MVP)
-status: trial
+status: accepted
 date: 2026-07-04
 related: [ADR-002, ADR-019, ADR-021, REQ-021, REQ-022]
 ---
+
+> **2026-07-05 转 accepted**(REQ-016 S16 真机批,证据 [audits/2026-07-05-req016-realmachine-batch/verify.md](../../../docs/audits/2026-07-05-req016-realmachine-batch/verify.md)):prod 签名包实测 —— E1 once 任务到点触发(+4ms)→ 真会话 → report.md/status.json 落 `.alpha/runs/`;E2 readonly 档实调「创建文件+bash」被 deny 且**全程零 ask**(status=ok 非 timeout,禁止文件零创建);E3 过期任务 catchUpPolicy:skip 未补跑;E4 落盘 `~/.alpha/automations/*.json`+`_state.json`(dailyRunCap 跨重启)机制验证。残余(冷重启往返 / 历史回跳 / 云档位)不阻断转正。下方「真机批待验」门已达成。
 
 ## 背景
 用户目标:定制中心下方「自动化」——一句话描述 workflow → 定时执行(REQ-021,2026-07-04 拍板:

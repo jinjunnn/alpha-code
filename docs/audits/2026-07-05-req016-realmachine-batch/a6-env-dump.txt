@@ -1,0 +1,21 @@
+== A6 验收② env dump 2026-07-05 14:16:16 ==
+--- mcp-server-fetch (python, 3rd-party uvx) (pid 18487) ---
+  env var count: 29
+  sensitive-NAME hits (should be EMPTY for MCP children):
+  OPENCODE_CONFIG_CONTENT present: 1
+  sk-/token VALUE pattern count in env blob: 0
+--- mcp-server-github (node, 3rd-party npx) (pid 19208) ---
+  env var count: 33
+  sensitive-NAME hits (should be EMPTY for MCP children):
+  OPENCODE_CONFIG_CONTENT present: 1
+  sk-/token VALUE pattern count in env blob: 0
+--- uv wrapper (direct sidecar child) (pid 18189) ---
+  env var count: 26
+  sensitive-NAME hits (should be EMPTY for MCP children):
+  OPENCODE_CONFIG_CONTENT present: 1
+  sk-/token VALUE pattern count in env blob: 0
+--- sidecar/opencode server (utilityProcess) (pid 17488) ---
+  env var count: 22
+  sensitive-NAME hits (should be EMPTY for MCP children):
+  OPENCODE_CONFIG_CONTENT present: 0
+  sk-/token VALUE pattern count in env blob: 0
