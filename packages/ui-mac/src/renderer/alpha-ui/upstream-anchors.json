@@ -200,6 +200,7 @@
   "knownDead": [
     "action:allow",
     "action:deny",
+    "action:prompt-agent",
     "component:session-composer",
     "component:session-new-composer",
     "slot:button",
