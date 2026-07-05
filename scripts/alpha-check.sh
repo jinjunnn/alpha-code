@@ -39,14 +39,15 @@ else
 fi
 
 echo "▶ [2/3] typecheck (alpha packages: ext + ui-mac)"
-if bun --cwd packages/ext run typecheck && bun --cwd packages/ui-mac run typecheck; then
+# REQ-027:flag 必须在 `run` 之后 —— `bun --cwd X run Y` 在 bun 1.3.x 打印 usage 后静默退出 0(不执行脚本)。
+if bun run --cwd packages/ext typecheck && bun run --cwd packages/ui-mac typecheck; then
   echo "    ✓ typecheck"
 else
   echo "    ✗ typecheck failed"; fail=1
 fi
 
 echo "▶ [3/3] unit tests (ui-mac)"
-if bun --cwd packages/ui-mac test; then
+if bun run --cwd packages/ui-mac test; then
   echo "    ✓ tests"
 else
   echo "    ✗ tests failed"; fail=1

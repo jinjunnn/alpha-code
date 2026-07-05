@@ -75,10 +75,12 @@ jobs:
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
       - run: bun install
+      # REQ-027: flags must come AFTER `run` — `bun --cwd X run Y` prints usage and
+      # exits 0 WITHOUT executing the script on bun 1.3.x (placebo gate).
       - name: typecheck @alpha-code/ext
-        run: bun --cwd packages/ext run typecheck
+        run: bun run --cwd packages/ext typecheck
       - name: typecheck ui-mac
-        run: bun --cwd packages/ui-mac run typecheck
+        run: bun run --cwd packages/ui-mac typecheck
 
   test:
     name: unit tests (ui-mac)
@@ -96,8 +98,9 @@ jobs:
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
       - run: bun install
+      # REQ-027: same flag-order constraint as the typecheck job.
       - name: bun test (ui-mac)
-        run: bun --cwd packages/ui-mac test
+        run: bun run --cwd packages/ui-mac test
 
   seed-assets:
     name: seed assets present
