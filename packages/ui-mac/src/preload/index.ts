@@ -189,6 +189,8 @@ const api: ElectronAPI = {
     toggle: (id, enabled) => ipcRenderer.invoke("automations-toggle", id, enabled),
     pauseAll: (paused) => ipcRenderer.invoke("automations-pause-all", paused),
     loginItem: (open) => ipcRenderer.invoke("automations-login-item", open),
+    runNow: (id) => ipcRenderer.invoke("automations-run-now", id),
+    nlLlm: (text, projectDir) => ipcRenderer.invoke("automations-nl-llm", text, projectDir),
     onEvent: (cb) => {
       const h = (_e: unknown, event: Parameters<typeof cb>[0]) => cb(event)
       ipcRenderer.on("automation-event", h)

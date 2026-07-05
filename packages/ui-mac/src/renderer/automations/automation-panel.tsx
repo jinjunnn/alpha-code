@@ -121,6 +121,9 @@ export function AutomationPanel() {
   const [fDir, setFDir] = createSignal("")
   const [fForm, setFForm] = createSignal<ScheduleForm>({ ...DEFAULT_FORM })
   const [fMaxMin, setFMaxMin] = createSignal<number>(AUTOMATION_DEFAULTS.maxDurationMin)
+  const [fProfile, setFProfile] = createSignal<"readonly" | "standard">("readonly")
+  const [llmBusy, setLlmBusy] = createSignal(false)
+  const [runNowBusy, setRunNowBusy] = createSignal<string | null>(null)
   const [fNotify, setFNotify] = createSignal(true)
   const [fErr, setFErr] = createSignal("")
   const [saving, setSaving] = createSignal(false)
@@ -182,6 +185,7 @@ export function AutomationPanel() {
         : "",
     )
     setFMaxMin(AUTOMATION_DEFAULTS.maxDurationMin)
+    setFProfile("readonly")
     setFNotify(true)
     setFErr("")
     setView("edit")
@@ -194,6 +198,7 @@ export function AutomationPanel() {
     setFDir(task.target.projectDir)
     setFForm(toForm(task.schedule))
     setFMaxMin(task.budget.maxDurationMin)
+    setFProfile(task.permissionProfile === "standard" ? "standard" : "readonly")
     setFNotify(task.notify.system)
     setParseNote("")
     setFErr("")
@@ -214,15 +219,19 @@ export function AutomationPanel() {
     if (!fPrompt().trim()) return setFErr(t("alpha.auto.errPrompt"))
     if (!fDir()) return setFErr(t("alpha.auto.errDir"))
     const prev = editing()
+    // A2:standard(可写)档启用确认 —— 无人值守可写可执行,风险显式(命令黑名单非穷尽)
+    if (fProfile() === "standard" && prev?.permissionProfile !== "standard") {
+      if (!window.confirm(t("alpha.auto.standardConfirm"))) return
+    }
     const task: AutomationTask = {
       id: prev?.id ?? `auto-${crypto.randomUUID().slice(0, 8)}`,
       name: fName().trim(),
       nlText: prev?.nlText ?? nlInput().trim(),
       schedule,
-      target: { projectDir: fDir(), agent: AUTOMATION_DEFAULTS.agent },
+      target: { projectDir: fDir(), agent: fProfile() === "standard" ? AUTOMATION_DEFAULTS.agentStandard : AUTOMATION_DEFAULTS.agent },
       prompt: fPrompt().trim(),
       execution: "local",
-      permissionProfile: "readonly",
+      permissionProfile: fProfile(),
       budget: { maxDurationMin: fMaxMin() },
       overlapPolicy: "skip",
       catchUpPolicy: "skip",
@@ -358,7 +367,9 @@ export function AutomationPanel() {
                                   ? t("alpha.auto.runningNow")
                                   : task.enabled && !pausedAll()
                                     ? `${t("alpha.auto.next")} ${fmtNext(task.nextFireAt)}`
-                                    : t("alpha.auto.disabled")}
+                                    : task.disabledReason === "consecutive_failures"
+                                      ? t("alpha.auto.disabledBreaker")
+                                      : t("alpha.auto.disabled")}
                                 <Show when={task.lastRun}>
                                   {" · "}
                                   {dot().label}
@@ -366,6 +377,26 @@ export function AutomationPanel() {
                                 </Show>
                               </div>
                             </div>
+                            <button
+                              class="alpha-ext-inline-cta"
+                              disabled={task.running || runNowBusy() === task.id}
+                              title={t("alpha.auto.runNowHint")}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setRunNowBusy(task.id)
+                                void window.api.automations
+                                  .runNow(task.id)
+                                  .then((r) => {
+                                    if (!r.ok) pushToast({ kind: "error", title: r.reason })
+                                  })
+                                  .finally(() => {
+                                    setRunNowBusy(null)
+                                    void refresh()
+                                  })
+                              }}
+                            >
+                              {runNowBusy() === task.id ? t("alpha.auto.runNowBusy") : t("alpha.auto.runNow")}
+                            </button>
                             <button
                               class="alpha-ext-sw"
                               data-on={task.enabled ? "" : undefined}
@@ -385,7 +416,35 @@ export function AutomationPanel() {
 
               <Show when={view() === "edit"}>
                 <Show when={parseNote()}>
-                  <p class="alpha-auto-hint">{parseNote()}</p>
+                  <p class="alpha-auto-hint">
+                    {parseNote()}
+                    {/* A2:规则解析失败 → 用户显式点「用 AI 解析」(需先选项目;临时会话一次抽取即删) */}
+                    <Show when={parseNote() === t("alpha.auto.parseFallback") && !editing()}>
+                      {" "}
+                      <button
+                        class="alpha-ext-inline-cta"
+                        disabled={llmBusy() || !fDir()}
+                        title={fDir() ? undefined : t("alpha.auto.llmNeedsDir")}
+                        onClick={() => {
+                          if (llmBusy()) return
+                          setLlmBusy(true)
+                          void window.api.automations
+                            .nlLlm(nlInput().trim(), fDir())
+                            .then((r) => {
+                              if (!r.ok) return setFErr(r.reason)
+                              setFName(r.name)
+                              setFPrompt(r.prompt)
+                              setFForm(toForm(r.schedule))
+                              setParseNote(t("alpha.auto.parsedLlm", { desc: describeSchedule(r.schedule) }))
+                              setFErr("")
+                            })
+                            .finally(() => setLlmBusy(false))
+                        }}
+                      >
+                        {llmBusy() ? t("alpha.auto.llmParsing") : t("alpha.auto.llmParse")}
+                      </button>
+                    </Show>
+                  </p>
                 </Show>
                 <div class="alpha-auto-form">
                   <label class="alpha-auto-field">
@@ -499,12 +558,16 @@ export function AutomationPanel() {
                     <div class="alpha-auto-field">
                       <span>{t("alpha.auto.fPermission")}</span>
                       <div class="alpha-auto-seg">
-                        <button data-on="">{t("alpha.auto.permReadonly")}</button>
-                        <button disabled title={t("alpha.auto.permStandardSoon")}>
+                        <button data-on={fProfile() === "readonly" ? "" : undefined} onClick={() => setFProfile("readonly")}>
+                          {t("alpha.auto.permReadonly")}
+                        </button>
+                        <button data-on={fProfile() === "standard" ? "" : undefined} onClick={() => setFProfile("standard")}>
                           {t("alpha.auto.permStandard")}
                         </button>
                       </div>
-                      <p class="alpha-auto-preview">{t("alpha.auto.permNote")}</p>
+                      <p class="alpha-auto-preview">
+                        {fProfile() === "standard" ? t("alpha.auto.permStandardNote") : t("alpha.auto.permNote")}
+                      </p>
                     </div>
                     <label class="alpha-auto-mini">
                       {t("alpha.auto.fMaxMin")}

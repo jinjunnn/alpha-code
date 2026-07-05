@@ -21,6 +21,7 @@ import { registerAccountIpcHandlers } from "./account-ipc"
 import { registerCloudIpcHandlers } from "./cloud-ipc"
 import { registerAutomationIpcHandlers } from "./automation-ipc"
 import { startAutomationScheduler } from "./automation-scheduler"
+import { initAutomationLlm } from "./automation-llm"
 import { registerModelsIpcHandlers } from "./models-ipc"
 import { syncLiveAllowlist } from "./alpha-platform-models"
 import { registerProviderIpcHandlers } from "./provider-ipc"
@@ -418,6 +419,7 @@ const main = Effect.gen(function* () {
   // Deferred;respawn 后 url/password 不变故一次 await 长期有效)。应用未运行不执行(诚实边界)。
   registerAutomationIpcHandlers()
   startAutomationScheduler({ awaitServer: () => Effect.runPromise(Deferred.await(serverReady)) })
+  initAutomationLlm({ awaitServer: () => Effect.runPromise(Deferred.await(serverReady)) })
   registerModelsIpcHandlers(app.getPath("userData"))
   registerProviderIpcHandlers()
   registerEndpointsIpcHandlers()

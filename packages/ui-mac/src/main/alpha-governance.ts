@@ -45,7 +45,7 @@ export const DEFAULT_GOVERNANCE: Governance = {
 /** 上游 load-bearing agent:disable 直接拒绝(compaction 必崩;title/summary 为引擎内部消费)。 */
 export const HARD_PROTECTED_AGENTS = ["compaction", "title", "summary"] as const
 /** alpha 注入 agent(S18 X2):disable/hide 都拒绝 —— 治理它们 = 自动化/只读档静默失效。 */
-export const ALPHA_INJECTED_AGENTS = ["alpha-automation", "alpha-readonly"] as const
+export const ALPHA_INJECTED_AGENTS = ["alpha-automation", "alpha-automation-standard", "alpha-readonly"] as const
 /** 引擎兜底 agent:disable 需 confirm(全禁抛错/回退语义见上游 agent.ts:328-340)。 */
 export const CONFIRM_AGENTS = ["build"] as const
 
