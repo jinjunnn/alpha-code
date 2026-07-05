@@ -5,6 +5,7 @@ import { app, utilityProcess } from "electron"
 import type { Details } from "electron"
 import { resolveExtPluginPath } from "./alpha-ext-plugin"
 import { syncSecretFiles } from "./alpha-secret-files"
+import { factorySkillSources, reconcileFactorySkillLinks } from "./factory-skills"
 import { loadAlphaSecrets } from "./alpha-secrets"
 import { pollUntilHealthy } from "./health-poll"
 import { getLogger } from "./logging"
@@ -124,6 +125,23 @@ export async function spawnLocalServer(
   if (ext.path) getLogger()?.log("alpha-ext: loading plugin bundle", { path: ext.path })
   else if (ext.reason?.includes("ALPHA_EXT_DISABLE")) getLogger()?.log("alpha-ext: disabled by ALPHA_EXT_DISABLE")
   else getLogger()?.warn(`alpha-ext: NOT loaded — ${ext.reason}`)
+
+  // REQ-036 出厂技能:每次 fork 前幂等 reconcile `~/.opencode/skill/<name>` symlink 桥(引擎原生
+  // 扫描;实测 OPENCODE_CONFIG_CONTENT.skills.paths 对引擎不生效,故不走 env)。anti-B11:结果落日志。
+  try {
+    const factory = reconcileFactorySkillLinks(
+      factorySkillSources({
+        packaged: app.isPackaged,
+        resourcesPath: process.resourcesPath,
+        moduleDir: dirname(fileURLToPath(import.meta.url)),
+      }),
+    )
+    if (factory.linked.length) getLogger()?.log("factory-skills: linked", { linked: factory.linked })
+    if (factory.removed.length) getLogger()?.log("factory-skills: links removed (disabled)", { removed: factory.removed })
+    for (const s of factory.skipped) getLogger()?.warn(`factory-skills: SKIPPED ${s.name} — ${s.reason}`)
+  } catch (error) {
+    getLogger()?.warn("factory-skills: reconcile failed", error)
+  }
 
   const sidecar = join(dirname(fileURLToPath(import.meta.url)), "sidecar.js")
   const child = utilityProcess.fork(sidecar, [], {

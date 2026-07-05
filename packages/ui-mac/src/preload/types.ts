@@ -260,17 +260,9 @@ export type ElectronAPI = {
     checkRuntime: (tool: string) => Promise<{ ok: boolean }>
     // B11/B23:全局配置健康(broken=引擎会整份忽略用户配置)
     configHealth: () => Promise<{ broken: boolean; reason?: string; path?: string }>
-    writeSkill: (
-      name: string,
-      description: string,
-      body: string,
-      target?: InstallTarget,
-    ) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
-    writeAgent: (
-      name: string,
-      content: string,
-      target?: InstallTarget,
-    ) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
+    /** REQ-036 出厂技能名单(skills.paths 注入的技能名;ALPHA_FACTORY_SKILLS_DISABLE 时为空)——
+     *  hub 用来把对应 catalog 条目标成「出厂内置」而非「可安装」(S18 X1)。 */
+    factorySkillIds: () => Promise<string[]>
     installPlugin: (pkg: string, meta?: InstallMeta) => Promise<{ ok: true } | { ok: false; reason: string }>
     installBuiltinSkill: (
       builtinAssetKey: string,

@@ -41,7 +41,7 @@ S17 清完思考债后,把 2026-07-05 立项的产品需求线(composer 收敛 /
 | Task | REQ | 仓 | 状态 |
 |---|---|---|---|
 | T1 | REQ-038 composer 收敛(首页 `/` 菜单 P0) | A | ☑ PR #98(slash/@/IME/外壳单源/裁切根因修复;[audits/s18-t1](../../audits/2026-07-05-s18-t1-req038/verify.md)) |
-| T2 | REQ-036 创建技能化 | A | ☐ |
+| T2 | REQ-036 创建技能化 | A | ☑ PR #100(symlink 桥通道拍板 + alpha_reload 两段式;[audits/s18-t2](../../audits/2026-07-05-s18-t2-req036/verify.md)) |
 | T3 | REQ-037 上游治理层 | A | ☐ |
 | T4 | REQ-033 开放安装面 | A | ☐ |
 | T5 | REQ-030 模型配置化 + edition 收口 | B(+A 核验) | ☐ |
