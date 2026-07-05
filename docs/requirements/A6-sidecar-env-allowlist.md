@@ -3,7 +3,7 @@ id: A6
 title: sidecar env 白名单:阻断秘钥继承给第三方 MCP/LSP 子进程
 type: security
 priority: P0
-status: verified
+status: archived
 repo: A
 created: 2026-07-03
 sprint: 2026-07-03-s9-proxy-e2e

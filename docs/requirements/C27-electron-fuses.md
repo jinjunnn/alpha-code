@@ -3,7 +3,7 @@ id: C27
 title: Electron fuses + asar-integrity + entitlements 收紧
 type: security
 priority: P2
-status: verified
+status: archived
 repo: A
 created: 2026-07-03
 sprint: 2026-07-03-s11-cloud-loop

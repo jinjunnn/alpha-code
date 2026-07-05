@@ -3,7 +3,7 @@ id: D12
 title: CI 卫生:上游 cron workflow 在 fork 禁用 + lint gate + e2e 范围
 type: debt
 priority: P3
-status: verified
+status: archived
 repo: A
 created: 2026-07-03
 sprint: —

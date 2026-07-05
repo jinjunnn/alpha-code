@@ -3,7 +3,7 @@ id: B5
 title: sidecar 崩溃自愈 + respawn 竞态/互斥
 type: debt
 priority: P1
-status: verified
+status: archived
 repo: A
 created: 2026-07-03
 sprint: 2026-07-03-s10-hardening

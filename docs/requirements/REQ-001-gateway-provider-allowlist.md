@@ -3,7 +3,7 @@ id: REQ-001
 title: 网关 allowed-providers/models 白名单接口 + 客户端按版本显隐
 type: feature
 priority: P1
-status: shipped
+status: archived
 repo: X
 created: 2026-07-03
 sprint: 2026-07-03-s9-proxy-e2e

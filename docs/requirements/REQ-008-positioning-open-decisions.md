@@ -3,7 +3,7 @@ id: REQ-008
 title: 产品定位〔待补〕决策批:一次性收口 rules 里的开放产品判断
 type: spike
 priority: P2
-status: shipped
+status: archived
 repo: X
 created: 2026-07-03
 sprint: 2026-07-05-s17-deep-decisions

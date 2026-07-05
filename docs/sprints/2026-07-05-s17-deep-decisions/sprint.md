@@ -22,7 +22,7 @@ S16 已把真机债清账,本批清**思考债**:⚖️ 待拍板队列整批出
 | T3 | **C17+B14 DB 安全带**:内省 `core/src/database/migration.ts` 水位机制(app 支持面=`migration.gen.ts` 编译期已知)→ 设计:启动只读预检(勿引原生依赖;候选系统 `/usr/bin/sqlite3` 或纯文件读,WAL 语义要过)+ 水位超前诚实拦截 UX + 滚动备份(checkpoint 后复制,N 份)+ DB 打不开指向最近备份;实现+单测+mini 设计文档;降级场景(新 DB × 旧支持面)构造测试 | C17、B14 | ☑ 设计([designs/db-safety-belt](../../designs/2026-07-05-db-safety-belt.md),F1–F7 全实证:含「`-readonly .backup` 静默假成功 → 唯一可靠形态=VACUUM INTO+必验」)→ `db-safety.ts`/`db-safety-boot.ts`/`gen-db-expected.ts`+「数据」菜单;34 单测含真 sqlite3 集成(降级 fixture/损坏签名/恢复往返);原生对话框演练 → 真机批残单 |
 | T4 | **C28 崩溃屏边界下沉**:设计+原型实测(强制 throw;§7h 教训=alpha 边界必须比上游 `@opencode-ai/app` 内层边界更内层才命中)→「下沉边界 / 接受上游边界」二选一记录;控件诚实化:先代码实证「只读/effort」真实接线,再出三选一 brief → 拍板 → 实施 | C28 | ☑ 控件拍板+实施(只读移除→REQ-028 / effort 改文案保留→REQ-029,后者反建议按用户拍板);AlphaBoundary 紧裹 10 注入件 + throw 实测 PASS(CDP 截图 [audits/s17-t4](../../audits/2026-07-05-s17-t4-c28/verify.md));**顺带活捉 REQ-014 复现**(整屏形态+毒源+②修法实证,REQ-014 翻 ready);打包态复验→真机批 |
 | T5 | **B4+B12 治理**:`OPENCODE_EXPERIMENTAL_FILEWATCHER` 关闭的功能影响清单(代码实证)→ 拍板;隐藏/归档项目**数据层**零请求(现仅 `alpha-sidebar.tsx:506` 渲染层 skip)+ 垃圾项目(`~`、`~/Documents` 级)引导/默认不纳入;冷启动 bootstrap 日志复核 | B4、B12 | ☑ 影响清单实证(watcher 只供外部变更感知,agent 自身修改由工具主动发事件不受影响;硬覆盖矛盾抓出)→ 拍板=默认开+可关(set-if-unset);B4 数据层过滤(worktree-filter 谓词+11 测)——"/"+home 默认不纳入、hidden 零请求、事件循环守卫、归档即时生效;冷启动日志复核→真机批 |
-| T6 | **S12–S16 arc 收尾**:retro(质疑证实/证伪、rules 现势)+ Done 区批量 verified→archived + 发布短名单 B9/B11 行修正 + GOALS「当前周期」段刷新 | ADR-018 §6 | ☐ |
+| T6 | **S12–S16 arc 收尾**:retro(质疑证实/证伪、rules 现势)+ Done 区批量 verified→archived + 发布短名单 B9/B11 行修正 + GOALS「当前周期」段刷新 | ADR-018 §6 | ☑ retro [retros/2026-07-05-s12-s17-arc](../../retros/2026-07-05-s12-s17-arc.md)(证实×4/证伪×5,「静默假成功一日三抓」教训入册);21 项 verified→archived(BACKLOG Archived 段+20 档 frontmatter);短名单 B9/B11 陈旧行修正 + 队列过期 ADR-014 行划掉;GOALS 当前周期刷新 |
 
 **Stretch**(顺带才做,不占核心预算):C16 数据清除入口(与 B14 同屏,本批先留挂点)· REQ-024 standard 档安全设计先行。
 
@@ -33,5 +33,9 @@ S16 已把真机债清账,本批清**思考债**:⚖️ 待拍板队列整批出
 - UI 触点遵守 [[visual-verify-required]]:T4 throw 实测、T5 引导 UX 须 CDP 截图才翻状态;本批做不到的如实残单;
 - WIP=1:S16 已收尾(残余=用户批残单在 REQ-016 档)。
 
-## 结果(收尾时回填)
-_待回填。_
+## 结果(2026-07-05 回填)
+- **T1–T6 全 ☑,6 PR**:#88(开批+T1 定位五连拍)· #89(T2 REQ-015 方案5 + **REQ-027 typecheck 双假绿事故修复**)· #90(T3 DB 安全带,C17+B14)· #91(T4 C28 诚实化+AlphaBoundary,throw 实测 PASS)· #92(T5 B4+B12)· #93(T6 retro+归档)。
+- **拍板 9 项**:定位五连拍(D3 反建议:小白正式入画像·分期文档先行)+ 预留位暂空 + C28 只读移除 + C28 effort 改文案保留(反建议)+ B12 默认开可关。
+- **新立**:REQ-026(小白文档)/ REQ-027(已修)/ REQ-028(真只读)/ REQ-029(effort=variants);REQ-014 复现达成翻 ready(整屏形态+②修法实证)。
+- **意外收获(证据纪律产出)**:静默假成功一日三抓——bun `--cwd run` placebo(local+CI 双假绿)、`-readonly .backup` 不写文件、composer placebo 控件;全部修复或诚实化。
+- **残单(→ 下一真机批)**:C17/B14 原生对话框演练 · C28 打包态复验(`__alphaCrashProbe`)· B4 冷启动日志/watcher 数 · B22/REQ-014 · S16 遗留用户批项。**stretch 未抽**:C16、REQ-024 设计(S18 候选)。

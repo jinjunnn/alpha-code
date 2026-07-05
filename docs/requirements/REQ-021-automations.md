@@ -3,7 +3,7 @@ id: REQ-021
 title: 自动化(定时任务)完整需求:A1 本地只读 MVP → A2 增强 → A3 云档位(按优先级分期实现)
 type: feature
 priority: P2
-status: verified
+status: archived
 repo: A
 created: 2026-07-04
 sprint: 2026-07-04-s15-automations-a1
