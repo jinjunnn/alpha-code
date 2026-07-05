@@ -578,6 +578,9 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
   const archiveProject = (worktree: string) => {
     setMenuFor(null)
     hideProject(worktree)
+    // B4(S17 T5):归档即从数据层剔除(use-projects 按 hidden 过滤)——reload 使其立即生效,
+    // 此后该项目零请求(session.list 不再发起,引擎不再为其建 Instance)。
+    void props.projects.reload()
   }
 
   const openSession = (e: MouseEvent, directory: string, id: string) => {

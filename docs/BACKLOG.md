@@ -24,12 +24,10 @@
 | 决策点 | 载体 | 影响 |
 |---|---|---|
 | ADR-014 未决 4 项:MVP 范围表述 / ~~Agent·Command 进 tab~~(**O2 方向已定 2026-07-04:Agent 进 tab、Command 不单列**,随 v3 方案/REQ-018;转正时写入 ADR 修订)/ F9 串台开关 / 远程 catalog 依赖 C 仓 | REQ-006 | 定制中心 roadmap + ADR 转正 |
-| composer「只读」「effort」控件三选一:真实现 / 改文案 / 移除 | C28 | 用户可见行为 |
-| 关 `OPENCODE_EXPERIMENTAL_FILEWATCHER` 的功能代价是否接受 | B12 | 文件树/diff 刷新体验 vs 内存 |
 | B16 PIPL 同意门重启时机(现 parked;云派发/公开分发前必须) | B16 | 合规,发布节奏 |
 
 > 拍板即从队列划掉、结论写进对应需求文件;执行中撞到未拍板点 = 停下来问,不代替决策。
-> **S17 T1(2026-07-05)已拍板划掉**:REQ-008 五连拍 + REQ-011 预留位(结论 → [debates/2026-07-05-req008-positioning-briefs.md](debates/2026-07-05-req008-positioning-briefs.md));剩余 B12 / C28 控件待代码实证后随 T5/T4 问。**B16 提醒**:非技术用户入画像 + 云派发已实际可用 → 重启条件临近,维持 parked 等用户拍重启时机。
+> **S17 已拍板划掉(2026-07-05)**:T1 = REQ-008 五连拍 + REQ-011 预留位([debates/req008](debates/2026-07-05-req008-positioning-briefs.md));T4 = C28 控件三选一(只读移除/effort 改文案,[debates/c28-brief](debates/2026-07-05-c28-honest-controls-brief.md));T5 = B12 filewatcher(默认开+可关,拍板入档)。**B16 提醒**:非技术用户入画像 + 云派发已实际可用 → 重启条件临近,维持 parked 等用户拍重启时机。
 
 ## Active — P0
 
@@ -52,14 +50,14 @@
 | B1 | 登录 shell 同步探测黑屏 → 异步化 + 缓存(T1.2) | perf | A | verified | **verified(2026-07-05,REQ-016 S16)**:prod 包 main.log 实证 `Shell env from cache (52 vars) — refreshing in background`(缓存命中 + 后台异步刷新,非阻塞同步探测)。历史 PR #49;详见 [requirements/B1](requirements/B1-shell-probe-async.md) |
 | B2 | refresh token 续期 + 401 拦截 + 失败降级 BYOK/登出(T3.1 剩余) | feature | A | shipped | **PR #42 + alpha-web `a1d4d8a`**;寿命拍板 7*24h(env 可调短测试)+ 提前量续期(整点 tick)+ 401 拦截重试 + invalid_grant 降级登出(明确 UI)+ 冻结 token 快死备胎 respawn;REQ-002④ 过期路径就此成型;134 tests 绿;**verified 待真机**(短 TTL 实测 过期→续期/撤销→降级/logout 不串台);详见 [requirements/B2](requirements/B2-refresh-token.md) |
 | B3 | 云协同最后一公里:cloud MCP 健康 → dispatch → 进度 → artifact 回流(=G4、E12;T4.1-4.3) | feature | X | shipped | **S11 T2(PR #55+#58)**:回流全链落地——主进程 `alpha-workdir.ts`(`.alpha/runs/<runId>/`,防逃逸/消毒/体积帽)+ `cloud-save-run` IPC(#55);renderer `CloudRunWatcher`(firehose tool-part 终态检测 → saveRun → toast,worktree 映射,纯解析核 10 单测)+ i18n(#58);呈现=会话内工具调用(验收④,引擎原生);**verified 待真机**:登录态 in-app dispatch 冒烟(兼 REQ-004 verified);配额预估 UI(验收⑥后半)→ T4/B11 账户 banner 一并;**R1:勿切端点** |
-| B4 | 巨型目录当项目(`/`、`~`、`~/Documents` 建 Instance)治理 | perf | A | in-sprint | **→ S17 T5**;部分上游(R2);alpha 杠杆=垃圾项目引导/隐藏项目不取数;`worktree==="/"` 跳过已做(PR #23) |
+| B4 | 巨型目录当项目(`/`、`~`、`~/Documents` 建 Instance)治理 | perf | A | shipped | **S17 T5 shipped(2026-07-05)**:数据层过滤(`worktree-filter.ts` 谓词+11 单测)——"/"+macOS home 根默认不纳入、hidden(归档)零请求(不 fetch→引擎不建 Instance);归档即时生效;会话事件循环守卫;~/Documents 级留手动归档;已知限制 unhide 无 UI(记档);**verified 待**冷启动日志复核+watcher 数实测(→真机批);详见 [requirements/B4](requirements/B4-giant-dir-projects.md) |
 | B5 | sidecar 崩溃自愈 + respawn 竞态/互斥(T2.4 + NEW-4) | debt | A | verified | **全量完成:PR #48(互斥)+ PR #57(S11 T5 崩溃自愈)**——意外退出指数退避自愈(1s→16s,5 次封顶防风暴,60s 健康在线重置梯子;gen 区分蓄意 kill/迟到 exit)+ 未健康不 reload(竞态修复,验收②);纯逻辑 4 单测;**verified(2026-07-04)**:真机 kill -9 → respawn(pid 更替)+ renderer/登录态完好截图([audits/s11-ship-visual](audits/2026-07-04-s11-ship-visual-verify.md));详见 [requirements/B5](requirements/B5-sidecar-self-heal.md) |
 | B6 | 装载 `@alpha-code/ext` 主接缝(=G1;T5.1-5.2) | feature | A | shipped | **PR #46**;extraResources alpha-ext/ + StartCommand 传路径 + injectAlphaConfig 合并 V1 `plugin` 数组;ALPHA_EXT_DISABLE 逃生;**bundle 打包态加载已核(2026-07-05,REQ-016 S16)**:main.log `alpha-ext: loading plugin bundle` from Resources/alpha-ext/plugin.js(410KB);**verified 待** alpha_ping in-session 执行(G1 成功条件,残余);详见 [requirements/B6](requirements/B6-ext-seam-activation.md) |
 | B7 | 发布流水线制度化:CI 断言版本/种子资产/断网首启 smoke(T2.6 剩余) | debt | A | ready | **验收② shipped(PR #85)**:`scripts/assert-seed-assets.sh` + advisory `seed-assets` job 断言 extraResources 源资产(vendored agent/plugin·skills·NOTICE.txt/B15·签名)存在,静默删除即红;①版本断言(release-time)③断网首启 smoke⑤注入 0.0.0 验证 = 需 build+launch → 真机批;DISTRIBUTION.md 已写 |
 | B8 | 扩展物运行时生命周期:版本/健康/更新三要素(T5.4/T5.6) | feature | A | registered | 系统性条目,症状=A2;终态=定制中心从商店→运行时管理器;**具体实现路径已立 = REQ-018(账本/生效)+ REQ-019(详情/更新),B8 保留为终态验收视角** |
 | B9 | 更新链完整性:关 `allowDowngrade` + feed 完整性校验 | security | A | shipped | **PR #47**(→ [S10](sprints/2026-07-03-s10-hardening/sprint.md));降级闸关闭(理由入注释:单 prod 渠道无跨渠道降级需求;旧版逃生=手动 dmg);完整性链文档化(yml sha512 → zip → 签名同 identity → 降级闸);**verified 待下个真实发版**(自动更新实测 + 篡改 yml 拒装用例);详见 [requirements/B9](requirements/B9-update-chain-integrity.md) |
 | B11 | 统一错误/健康呈现面 + 账户 banner(S8 底座) | ux | A | shipped | **S11 T4(PR #60)**:Banner 基元 + pushToast 唯一出口(hub 私有 toast 收编)+ 首页/hub store.error banner + 账户 error 判别式(#1 误显根治,picker error 态+重试;侧栏会员行不装「未订阅」)+ **B23 configHealth**(语法错/未知顶键 → warning banner,5 单测)+ splash 状态行(B20);复扫矩阵 20 项:✅10/🆗6/⏭4([audits/rescan](audits/2026-07-04-silent-failure-rescan.md));⏭4(会话操作 toast/登录链事件/骨架/连崩呈现)留行内追;**verified 待视觉批**(banner/toast 截图) |
-| B12 | Instance 不驱逐 + 递归 watcher 常驻 | perf | A | in-sprint | **→ S17 T5**(影响清单代码实证后拍板);上游归属(R2);alpha 杠杆=`server.ts:58` 停强开 `OPENCODE_EXPERIMENTAL_FILEWATCHER` + 垃圾项目治理(B4) |
+| B12 | Instance 不驱逐 + 递归 watcher 常驻 | perf | A | shipped | **S17 T5 拍板+落地(2026-07-05)**:影响清单代码实证(watcher 只供外部变更感知;agent 自身修改不受影响)→ 拍板=默认开+可关——实验 flag 改 set-if-unset(`export =false` 即关,修硬覆盖矛盾);内存主治=B4 减 Instance;上游本体接受(R2);**verified 待**长时内存/watcher 数实测(→真机批);详见 [requirements/B12](requirements/B12-instance-eviction.md) |
 | B13 | DB 跨进程并发(SQLITE_BUSY → orDie) | debt | A | registered | 上游归属(R2);R6 降级:busy_timeout=5000 已缓解;alpha 无直接修点 |
 | B14 | 会话 DB 备份/导出(损坏恢复) | feature | A | shipped | **S17 T3 shipped(2026-07-05)**:备份引擎=readonly `VACUUM INTO`+必验(验不过即删,反 placebo——实证 `-readonly .backup` 静默假成功)+滚动保 5;自动触发=pre-migration 时点;手动入口=「数据」菜单(备份/导出…/打开文件夹,dev 置灰);损坏启动指向最近备份恢复(WAL 残件连带隔离);④ 同屏入口随 C16;**verified 待真机**(菜单实操+原生对话框);设计 [designs/db-safety-belt](designs/2026-07-05-db-safety-belt.md);详见 [requirements/B14](requirements/B14-db-backup-export.md) |
 | B20 | 弱网降级 UX:超时/重试/splash 状态/真骨架/websearch 优雅降级(S8) | ux | A | ready | **S11 已收尾,余项转回 ready**;S11 T4 部分随 PR #60(splash 状态行 + banner/重试底座);余项=真骨架(Skeleton 死代码去留)/promptAsync 超时(豁免记录)/websearch(上游 R2 豁免),见 [audits/rescan](audits/2026-07-04-silent-failure-rescan.md) ⏭/🆗 行 |
