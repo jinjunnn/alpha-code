@@ -281,12 +281,13 @@ export type ElectronAPI = {
       confirmBuildDisable?: boolean,
     ) => Promise<{ ok: boolean; reason?: string; violations: { kind: string; name: string; reason: string }[]; written: number; removedStale: number }>
     govReset: () => Promise<{ ok: boolean; reason?: string }>
-    /** REQ-033:agent 导入两段式 —— preview 解析+显式字段映射(map/不支持逐项),confirm 写入(origin imported)。 */
-    importAgentPreview: (filePath: string) => Promise<
-      | { ok: true; name: string; format: "opencode" | "claude-code"; mapping: Array<{ source: string; value: string; target: string | null; note: string }>; composed: string }
+    /** REQ-033:agent 导入两段式(codex 审计后:preview 经 picker token 授权读,confirm 只收
+     *  previewId —— 写入内容为 main 侧留存的 preview 产物,renderer 不可提供内容)。 */
+    importAgentPreview: (token: string, filePath: string) => Promise<
+      | { ok: true; previewId: string; name: string; format: "opencode" | "claude-code"; mapping: Array<{ source: string; value: string; target: string | null; note: string }>; composed: string }
       | { ok: false; reason: string }
     >
-    importAgentConfirm: (composed: string) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
+    importAgentConfirm: (previewId: string) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
     /** REQ-032:远程 catalog(main 拉取+ed25519 验签+ETag 缓存;source 指示回退层级,renderer 内置兜底)。 */
     remoteCatalog: () => Promise<
       | { source: "remote" | "cache"; catalog: unknown; version: string; fetchedAt: string; error?: string }

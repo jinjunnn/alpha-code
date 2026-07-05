@@ -196,7 +196,7 @@ export function ExtensionHub(props: {
   const [cmSecrets, setCmSecrets] = createSignal("")
   const [cmBusy, setCmBusy] = createSignal(false)
   const [cmErr, setCmErr] = createSignal("")
-  const [agentPreview, setAgentPreview] = createSignal<{ name: string; format: string; mapping: Array<{ source: string; value: string; target: string | null; note: string }>; composed: string } | null>(null)
+  const [agentPreview, setAgentPreview] = createSignal<{ previewId: string; name: string; format: string; mapping: Array<{ source: string; value: string; target: string | null; note: string }>; composed: string } | null>(null)
   const [agentBusy, setAgentBusy] = createSignal(false)
   const [agentErr, setAgentErr] = createSignal("")
   const [importInput, setImportInput] = createSignal("")
@@ -293,12 +293,12 @@ export function ExtensionHub(props: {
   }
   async function runPickAgentFile() {
     setAgentErr("")
+    // openFilePicker 返回 { token, files }(授权注册表);preview 经 token 读(codex H1/M2)
     const picked = await window.api.openFilePicker({ title: t("alpha.ext.importAgentPick"), extensions: ["md"] })
-    const file = Array.isArray(picked) ? picked[0] : picked
-    if (!file) return
+    if (!picked || !picked.files?.length) return
     setAgentBusy(true)
     try {
-      const r = await window.api.ext.importAgentPreview(file)
+      const r = await window.api.ext.importAgentPreview(picked.token, picked.files[0].path)
       if (!r.ok) {
         setAgentErr(r.reason)
         return
@@ -313,7 +313,7 @@ export function ExtensionHub(props: {
     if (!pv || agentBusy()) return
     setAgentBusy(true)
     try {
-      const r = await window.api.ext.importAgentConfirm(pv.composed)
+      const r = await window.api.ext.importAgentConfirm(pv.previewId)
       if (!r.ok) {
         setAgentErr(r.reason)
         return
