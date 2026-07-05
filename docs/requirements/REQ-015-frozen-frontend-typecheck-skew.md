@@ -3,7 +3,7 @@ id: REQ-015
 title: 冻结前端 typecheck 偏斜:session-ui(546 后新增)依赖新版 ui API 与冻结 ui 不兼容
 type: debt
 priority: P2
-status: shipped
+status: verified
 repo: A
 created: 2026-07-03
 sprint: 2026-07-05-s17-deep-decisions
@@ -51,3 +51,4 @@ ADR-020 把 `packages/{app,ui}` 冻结在 `frontend-freeze-base`(546 前)。但 
 
 ## 验证记录
 - 2026-07-03 发现:prod ship 构建使 turbo 缓存失效 → `session-ui#typecheck` 暴露(showClearButton/thumbVisibility)。docs PR #51 经 `--no-verify` 推(CI 权威门绿)。
+- **2026-07-05 实施 + 实测(S17 T2)**:`alpha-check.sh` 运行后 `git config core.hooksPath` 实测 = `.githooks`(自愈重挂生效);本需求交付分支的 push **不带 `--no-verify`** 经 `.githooks/pre-push` → alpha-check 三关(北极星守卫/typecheck/324 tests)绿后放行——此前同类 push 恒被 session-ui 红卡死。验收「`git push` 免 --no-verify 且本地门≡CI」达成(hook 全量输出实录见交付 PR 的第二次 push)。
