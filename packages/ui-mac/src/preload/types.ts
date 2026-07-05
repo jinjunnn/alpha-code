@@ -281,6 +281,17 @@ export type ElectronAPI = {
       confirmBuildDisable?: boolean,
     ) => Promise<{ ok: boolean; reason?: string; violations: { kind: string; name: string; reason: string }[]; written: number; removedStale: number }>
     govReset: () => Promise<{ ok: boolean; reason?: string }>
+    /** REQ-032:远程 catalog(main 拉取+ed25519 验签+ETag 缓存;source 指示回退层级,renderer 内置兜底)。 */
+    remoteCatalog: () => Promise<
+      | { source: "remote" | "cache"; catalog: unknown; version: string; fetchedAt: string; error?: string }
+      | { source: "none"; error: string }
+    >
+    /** REQ-032:远程技能安装(main 下载 + sha256 钉死校验 + builtin 同管线写盘/桥/账本)。 */
+    installRemoteSkill: (
+      name: string,
+      files: Array<{ path: string; sha256: string; bytes: number; url: string }>,
+      meta?: InstallMeta,
+    ) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
     installPlugin: (pkg: string, meta?: InstallMeta) => Promise<{ ok: true } | { ok: false; reason: string }>
     installBuiltinSkill: (
       builtinAssetKey: string,

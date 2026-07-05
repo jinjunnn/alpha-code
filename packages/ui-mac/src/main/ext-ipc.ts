@@ -13,8 +13,9 @@ import { addReceipt, alphaGlobalRoot, listInstalls, removeReceipt } from "./alph
 import { fileifyMcpSecrets, removeMcpServerSecrets } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy } from "./alpha-migrate"
 import { configHealth, persistMcp, persistPlugin, removeMcp, removePlugin, removePluginPath } from "./ext-config"
-import { importSkillFolder, importSkillGit, installBuiltinAgent, installBuiltinSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall } from "./ext-fs-installer"
+import { importSkillFolder, importSkillGit, installBuiltinAgent, installBuiltinSkill, installRemoteSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall } from "./ext-fs-installer"
 import { factorySkillIds } from "./factory-skills"
+import { downloadRemoteAsset, refreshRemoteCatalog, type RemoteAssetFile } from "./remote-catalog"
 import { applyGovernance, normalizeGovernance, protectionInfo, readGovernance, resetGovernance } from "./alpha-governance"
 
 // GUI apps on macOS launch with a minimal PATH (no Homebrew), so augment it before `which` or we'd
@@ -72,6 +73,18 @@ export function registerExtIpcHandlers(userDataPath: string) {
     return applyGovernance(normalizeGovernance(gov), agents, confirmBuildDisable === true)
   })
   ipcMain.handle("gov-reset", () => resetGovernance())
+
+  // REQ-032:远程 catalog(ETag+验签+缓存,回退链 远端→缓存→内置由 renderer 兜底)与远程技能安装
+  // (下载+sha256 校验在 main,写盘走 builtin 同管线:~/.alpha + 桥 + 账本)。
+  ipcMain.handle("ext-remote-catalog", () => refreshRemoteCatalog(userDataPath))
+  ipcMain.handle(
+    "ext-install-remote-skill",
+    async (_event: IpcMainInvokeEvent, name: string, files: RemoteAssetFile[], meta?: InstallMeta) => {
+      const dl = await downloadRemoteAsset(files)
+      if (!dl.ok) return dl
+      return installRemoteSkill(name, dl.contents, undefined, meta)
+    },
+  )
   ipcMain.handle("ext-install-plugin", (_event: IpcMainInvokeEvent, pkg: string, meta?: InstallMeta) =>
     persistPlugin(pkg, meta),
   )

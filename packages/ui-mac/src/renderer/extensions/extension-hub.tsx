@@ -20,6 +20,7 @@ import { createEffect, createMemo, createSignal, For, Show, onCleanup, type Acce
 import { Portal } from "solid-js/web"
 import { t } from "../i18n"
 import { GovernancePanel } from "./governance-panel"
+import { catalog, catalogSource, entryVersion, refreshCatalog } from "./catalog-source"
 import { Dialog } from "../alpha-ui/Dialog"
 import { Button } from "../alpha-ui/Button"
 import { pushToast } from "../alpha-ui/Toast"
@@ -31,10 +32,8 @@ import type { AuthState, InstallReceipt, InstallReceiptType } from "../../preloa
 import { hubSection, setHubSection, type HubSection } from "./ext-hub-state"
 import { iconFor, iconForRow, sourceLabel, typeLabel, Svg, SearchIc, LockIc } from "./ext-presentation"
 import { ExtensionDetail, type DetailTarget } from "./extension-detail"
-import catalogJson from "./alpha-catalog.json"
 import "./extension-hub.css"
 
-const CATALOG = catalogJson as unknown as Catalog
 
 // A unified row in the 已安装 manage list (REQ-018 T6): any installed item, whatever its type.
 type ManageRow = {
@@ -244,6 +243,9 @@ export function ExtensionHub(props: {
     if (!props.open()) {
       setDetail(null)
       setQuery("")
+    } else {
+      // REQ-032:进 hub 时刷新远端 catalog(main 侧 ETag 304 零成本;失败回退缓存/内置,B20 永不空白)
+      void refreshCatalog()
     }
   })
 
@@ -280,10 +282,10 @@ export function ExtensionHub(props: {
     if (!q) return true
     return `${e.displayName} ${e.name} ${e.description}`.toLowerCase().includes(q)
   }
-  const byType = (type: CatalogEntry["type"]) => CATALOG.entries.filter((e) => e.type === type)
+  const byType = (type: CatalogEntry["type"]) => catalog().entries.filter((e) => e.type === type)
   // 浏览区/搜索共用的筛选视图(T7/E11:来源+许可证)。
   const byTypeF = (type: CatalogEntry["type"]) => byType(type).filter(filterMatch)
-  const byId = (id: string) => CATALOG.entries.find((e) => e.id === id)
+  const byId = (id: string) => catalog().entries.find((e) => e.id === id)
 
   // Global search (REQ-019 T1): a non-empty query searches ALL types at once, grouped by type —
   // regardless of which browse tab is active. Clearing the query returns to the tab's list.
@@ -360,7 +362,10 @@ export function ExtensionHub(props: {
   // 有更新(REQ-019 T1:已安装 tab 角标 + 列表顶部分组;T5 接更新动作):receipt 记录的 catalog
   // 快照版本落后于当前 catalog,且条目仍在目录中。created/imported 无版本概念,不参与。
   const updatable = createMemo(() =>
-    ext.store.receipts.filter((r) => !!r.version && !!byId(r.id) && versionLess(r.version, CATALOG.version)),
+    ext.store.receipts.filter(
+      // REQ-032:条目级更新判定(receipt.version vs entry.version;X7:非 catalog 来源不参与角标)
+      (r) => r.origin !== "imported" && r.origin !== "created" && !!r.version && !!byId(r.id) && versionLess(r.version, entryVersion(byId(r.id))),
+    ),
   )
 
   // B11:收编进全局 pushToast(一处定义,各处复用)—— toast 只报成功,失败走行内。
@@ -523,7 +528,7 @@ export function ExtensionHub(props: {
       const skillNames = new Set(inventory.skills)
       const mcpNames = new Set(inventory.mcp.map((m) => m.name))
       const pluginBases = new Set(inventory.plugins.map((p) => p.split("@")[0]))
-      const cands = CATALOG.entries.filter((e) => {
+      const cands = catalog().entries.filter((e) => {
         if (e.type === "skill") return skillNames.has(e.name)
         if (e.type === "mcp") return mcpNames.has(e.name)
         if (e.type === "plugin" && e.installSpec?.kind === "plugin") return pluginBases.has(e.installSpec.package.split("@")[0])
@@ -887,7 +892,7 @@ export function ExtensionHub(props: {
                   <ExtensionDetail
                     target={detail()!}
                     ext={ext}
-                    catalogVersion={CATALOG.version}
+                    catalogVersion={catalog().version}
                     byId={byId}
                     busy={busy}
                     crumb={sectionLabel()}
@@ -1113,7 +1118,7 @@ export function ExtensionHub(props: {
                                     <span class="alpha-ext-type-pill">{typeLabel(r.type)}</span>
                                   </div>
                                   <div class="alpha-ext-man-st">
-                                    {t("alpha.ext.updateAvailable", { from: r.version ?? "?", to: CATALOG.version })}
+                                    {t("alpha.ext.updateAvailable", { from: r.version ?? "?", to: entryVersion(byId(r.id)) })}
                                   </div>
                                   <Show when={updErr()[r.id]}>
                                     <div class="alpha-ext-man-st" data-err="">

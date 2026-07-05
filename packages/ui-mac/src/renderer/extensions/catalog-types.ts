@@ -120,6 +120,10 @@ export interface CatalogEntry {
   hooks?: { name: string; description: string }[]
   /** Unverified claim carried from the catalog — surfaced as 「待核实」 on the detail page (D5). */
   _verify?: string
+  /** REQ-032:条目级版本(远端 catalog 对可安装条目必填;缺失回退全局版本)——更新角标的粒度。 */
+  version?: string
+  /** REQ-032:远程资产清单(phase 1 仅 skill/agent 文本;sha256 钉死,main 下载校验)。 */
+  remoteAsset?: { version: string; files: Array<{ path: string; sha256: string; bytes: number; url: string }> }
 }
 
 export interface Catalog {
