@@ -103,8 +103,12 @@ function governancePathAllowed(p: string[]): boolean {
   return false
 }
 
-/** 一次事务应用全部治理叶子编辑:全部路径过白名单 → 逐条 modify → 解析校验 → 原子写(失败整体回滚)。 */
-export function applyGovernanceEdits(edits: GovernanceEdit[]): ConfigResult {
+export type GovernanceApplyOutcome = { ok: true; applied: string[][] } | { ok: false; reason: string }
+
+/** 一次事务应用全部治理叶子编辑:全部路径过白名单 → 逐条 modify → 解析校验 → 原子写(失败整体回滚)。
+ *  返回**实际写入**的叶子路径(onlyIfAbsent 被跳过的不算 —— codex H1:跳过的键绝不能进记账,
+ *  否则 reset 会删掉用户自有的同名键,如用户预设的 permission.skill."*")。 */
+export function applyGovernanceEdits(edits: GovernanceEdit[]): GovernanceApplyOutcome {
   for (const e of edits) {
     if (!governancePathAllowed(e.path)) return { ok: false, reason: `refused: governance path not allowed: ${e.path.join(".")}` }
   }
@@ -120,25 +124,34 @@ export function applyGovernanceEdits(edits: GovernanceEdit[]): ConfigResult {
   try {
     fs.mkdirSync(path.dirname(target), { recursive: true })
     if (fs.existsSync(target)) fs.writeFileSync(bak, text)
+    const preParsed = (parse(text) as Record<string, unknown> | undefined) ?? {}
+    const nodeAt = (obj: unknown, p: string[]): unknown => {
+      let node: unknown = obj
+      for (const seg of p) node = node && typeof node === "object" ? (node as Record<string, unknown>)[seg] : undefined
+      return node
+    }
+    const applied: string[][] = []
     for (const e of edits) {
       if (e.onlyIfAbsent) {
         const existing = parse(text) as Record<string, unknown> | undefined
-        let node: unknown = existing
-        for (const seg of e.path) node = node && typeof node === "object" ? (node as Record<string, unknown>)[seg] : undefined
-        if (node !== undefined) continue
+        if (nodeAt(existing, e.path) !== undefined) continue // 用户已有 → 跳过且不记账(codex H1)
       }
       const edits2 = modify(text, e.path, e.value, { formattingOptions: { tabSize: 2, insertSpaces: true } })
       text = applyEdits(text, edits2)
+      if (e.value !== undefined) applied.push(e.path)
     }
     // 空壳剪枝:叶子删除后留下的空父对象必须移除 —— `command.<n>: {}` 缺 template 会被引擎
     // schema 硬拒(整份配置作废,memory opencode-config-v1-schema);逐层(深→浅)清空对象。
+    // codex L1:只剪「本事务把它删空」的父级 —— 事务前就为空的对象是用户自有占位,不动。
     const removalPaths = edits.filter((e) => e.value === undefined).map((e) => e.path)
     for (let depth = 2; depth >= 1; depth--) {
       for (const p of removalPaths) {
         const parentPath = p.slice(0, depth)
+        const before = nodeAt(preParsed, parentPath)
+        const wasNonEmpty = before && typeof before === "object" && !Array.isArray(before) && Object.keys(before as object).length > 0
+        if (!wasNonEmpty) continue
         const parsed = parse(text) as Record<string, unknown> | undefined
-        let node: unknown = parsed
-        for (const seg of parentPath) node = node && typeof node === "object" ? (node as Record<string, unknown>)[seg] : undefined
+        const node = nodeAt(parsed, parentPath)
         if (node && typeof node === "object" && !Array.isArray(node) && Object.keys(node as object).length === 0) {
           text = applyEdits(text, modify(text, parentPath, undefined, { formattingOptions: { tabSize: 2, insertSpaces: true } }))
         }
@@ -156,7 +169,7 @@ export function applyGovernanceEdits(edits: GovernanceEdit[]): ConfigResult {
         /* best-effort cleanup */
       }
     }
-    return { ok: true }
+    return { ok: true, applied }
   } catch (error) {
     try {
       if (fs.existsSync(bak)) fs.copyFileSync(bak, target)

@@ -25,3 +25,13 @@
 ## 残单(→ 真机批)
 - hub 治理分组像素([[visual-verify-required]])
 - 会话级:deny 后执行被拒实拍、task 委派 explore 优雅报错、dispose 热生效当会话验证
+
+
+## codex 审计(2 High / 3 Medium / 1 Low)与修复(同 PR)
+- **H1 onlyIfAbsent 记账错误** → `applyGovernanceEdits` 返回**实际写入**叶子;被跳过的用户自有键(如用户预设 `permission.skill."*": "deny"`)绝不入账 → reset 不再误删用户全局 deny(回归测试锁定);
+- **H2 allowlist 漂移环** → 已知面 = 可见 ∪ 上次物化 hidden 名字(声明式收敛;回归测试锁定);
+- **M1 jsonc 与记账非原子** → 记账先行(prev∪desired 超集)再写 jsonc,成功后收敛为精确 applied 集 —— 任一中间态都只是「记账超集」(reset 多删不存在键,无害),孤儿叶子不可能;
+- **M2 UI 并发 clobber** → apply 入口硬闸 `if (busy()) return`;
+- **M3 override 值未校验** → 字段级类型校验(temperature 有限数/steps 正整数/prompt 等字符串/permission 对象),坏值丢弃 —— 防止引擎整份 config 解码失败;
+- **L1 空壳剪枝误删用户空占位** → 只剪「本事务删空」的父级(事务前非空 → 事务后空),用户预置空对象不动。
+12/12 治理单测(新增 H1/H2 回归)。

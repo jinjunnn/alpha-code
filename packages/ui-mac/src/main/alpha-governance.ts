@@ -86,13 +86,25 @@ export function readGovernance(): Governance {
 }
 
 const asNames = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x) => typeof x === "string" && NAME_RE.test(x)) : [])
+// codex M3:字段值按类型校验 —— 坏值(temperature:"hot")进 home jsonc 会让引擎整份 config 解码失败
+const OVERRIDE_FIELD_OK: Record<string, (v: unknown) => boolean> = {
+  prompt: (v) => typeof v === "string",
+  model: (v) => typeof v === "string",
+  description: (v) => typeof v === "string",
+  variant: (v) => typeof v === "string",
+  color: (v) => typeof v === "string",
+  temperature: (v) => typeof v === "number" && Number.isFinite(v),
+  steps: (v) => typeof v === "number" && Number.isInteger(v) && v > 0,
+  permission: (v) => !!v && typeof v === "object" && !Array.isArray(v),
+}
 const asOverrides = (v: unknown): Record<string, Record<string, unknown>> => {
   if (!v || typeof v !== "object") return {}
   const out: Record<string, Record<string, unknown>> = {}
   for (const [name, fields] of Object.entries(v as Record<string, unknown>)) {
     if (!NAME_RE.test(name) || !fields || typeof fields !== "object") continue
     const picked: Record<string, unknown> = {}
-    for (const [f, val] of Object.entries(fields as Record<string, unknown>)) if (AGENT_OVERRIDE_FIELDS.has(f)) picked[f] = val
+    for (const [f, val] of Object.entries(fields as Record<string, unknown>))
+      if (AGENT_OVERRIDE_FIELDS.has(f) && OVERRIDE_FIELD_OK[f]?.(val)) picked[f] = val
     if (Object.keys(picked).length) out[name] = picked
   }
   return out
@@ -184,20 +196,35 @@ export function applyGovernance(gov: Governance, visibleAgents: string[], confir
   const violations = validateGovernance(gov, confirmBuildDisable)
   if (violations.length) return { ok: false, reason: violations.map((v) => v.reason).join("; "), violations, written: 0, removedStale: 0 }
 
-  const desired = materializeEdits(gov, visibleAgents)
   const prev = readMaterialized()
+  // allowlist 漂移环防护:被 allowlist 隐藏的 agent 下次就不在 renderer 的可见列表里 —— 若只按
+  // visibleAgents 计算,重放会把 hidden 叶子当 stale 清掉 → agent 复现 → 再 apply 又隐藏,来回震荡。
+  // 已知面 = 可见 ∪ 上次物化过 hidden 的名字,声明式收敛。
+  const prevHidden = prev.keys.filter((k) => k[0] === "agent" && k[2] === "hidden").map((k) => k[1])
+  const knownAgents = [...new Set([...visibleAgents, ...prevHidden])]
+  const desired = materializeEdits(gov, knownAgents)
   const desiredKeys = new Set(desired.map((e) => e.path.join(" ")))
   const stale: GovernanceEdit[] = prev.keys
     .filter((k) => !desiredKeys.has(k.join(" ")))
     .map((k) => ({ path: k, value: undefined }))
 
-  const r = applyGovernanceEdits([...stale, ...desired])
-  if (!r.ok) return { ok: false, reason: r.reason, violations: [], written: 0, removedStale: 0 }
-
+  // codex M1:记账先行(prev ∪ desired 超集)再写 jsonc —— jsonc 写成功而记账失败的孤儿叶子不可清;
+  // 反向(记账超集 + jsonc 失败)只是 reset 时多删几个不存在的键,无害。成功后再收敛为精确 applied 集。
   fs.mkdirSync(alphaGlobalRoot(), { recursive: true })
+  const superset = [...new Map([...prev.keys, ...desired.map((e) => e.path)].map((k) => [k.join(" "), k])).values()]
+  fs.writeFileSync(materializedPath(), JSON.stringify({ keys: superset }, null, 2))
+
+  const r = applyGovernanceEdits([...stale, ...desired])
+  if (!r.ok) {
+    // 回滚记账到 prev(jsonc 未动,超集记账无害但收敛回去更干净)
+    fs.writeFileSync(materializedPath(), JSON.stringify({ keys: prev.keys }, null, 2))
+    return { ok: false, reason: r.reason, violations: [], written: 0, removedStale: 0 }
+  }
+
+  // codex H1:只记**实际写入**的叶子(onlyIfAbsent 被跳过 = 用户自有键,绝不入账 → reset 不碰)
   fs.writeFileSync(govPath(), JSON.stringify(gov, null, 2))
-  fs.writeFileSync(materializedPath(), JSON.stringify({ keys: desired.map((e) => e.path) }, null, 2))
-  return { ok: true, violations: [], written: desired.length, removedStale: stale.length }
+  fs.writeFileSync(materializedPath(), JSON.stringify({ keys: r.applied }, null, 2))
+  return { ok: true, violations: [], written: r.applied.length, removedStale: stale.length }
 }
 
 /** 重置治理:净除全部受控叶子 + 真源回默认(用户自有 jsonc 内容不动)。 */

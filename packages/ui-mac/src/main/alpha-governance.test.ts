@@ -122,6 +122,28 @@ describe("applyGovernance / resetGovernance — 端到端(叶子写入不破坏�
     expect(cfg.agent.explore.temperature).toBe(0.5)
     expect(cfg.theme).toBe("dark")
   })
+  test("codex H1 回归:用户预设 permission.skill.* 不入账,reset 不删(用户全局 deny 保留)", () => {
+    mkdirSync(join(tmp, "home", ".opencode"), { recursive: true })
+    writeFileSync(jsoncPath(), JSON.stringify({ permission: { skill: { "*": "deny" } } }, null, 2))
+    const g = gov({ skills: { deny: ["customize-opencode"] } })
+    expect(applyGovernance(g, []).ok).toBe(true)
+    let cfg = readJsonc()
+    expect(cfg.permission.skill["*"]).toBe("deny") // onlyIfAbsent 跳过,用户值不动
+    expect(applyGovernance(gov(), []).ok).toBe(true) // 撤 deny → stale 清除
+    cfg = readJsonc()
+    expect(cfg.permission.skill["*"]).toBe("deny") // 用户通配保留(未入账 → 未被当 stale 删)
+    expect(cfg.permission.skill["customize-opencode"]).toBeUndefined()
+  })
+  test("allowlist 漂移环防护:被隐藏 agent 从可见列表消失后,重放不清其 hidden 叶子", () => {
+    const g = gov({ mode: "allowlist", agents: { hide: [], disable: [], allow: ["build"], override: {} } })
+    expect(applyGovernance(g, ["build", "plan"]).ok).toBe(true)
+    let cfg = readJsonc()
+    expect(cfg.agent.plan.hidden).toBe(true)
+    // 第二次 apply:renderer 只报可见的 build(plan 已被隐)—— hidden 叶子必须保留,不得被当 stale 清掉
+    expect(applyGovernance(g, ["build"]).ok).toBe(true)
+    cfg = readJsonc()
+    expect(cfg.agent.plan.hidden).toBe(true)
+  })
   test("保护违规 → apply 整体拒绝,jsonc 不动", () => {
     const g = gov({ agents: { hide: [], disable: ["compaction"], allow: [], override: {} } })
     const r = applyGovernance(g, [])

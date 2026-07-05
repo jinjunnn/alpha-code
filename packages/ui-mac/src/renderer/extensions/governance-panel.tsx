@@ -62,6 +62,7 @@ export function GovernancePanel(props: {
   }
 
   const apply = async (next: AlphaGovernance, confirmBuild = false) => {
+    if (busy()) return // codex M2:硬闸 —— 全量快照式 apply 并发会互相覆盖(last-write-wins 丢改动)
     setBusy(true)
     setErr("")
     try {
