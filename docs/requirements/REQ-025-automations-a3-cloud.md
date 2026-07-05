@@ -3,7 +3,7 @@ id: REQ-025
 title: 自动化 A3 云档位:execution:cloud 注册到 B + 开机拉回 + 数据边界提示(前置 REQ-022/B16)
 type: feature
 priority: P2
-status: registered
+status: in-sprint
 repo: X
 created: 2026-07-05
 sprint: —

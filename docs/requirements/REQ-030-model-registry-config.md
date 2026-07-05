@@ -3,7 +3,7 @@ id: REQ-030
 title: 模型清单单一真源配置化 + 海内外版本收口生效(registry 抽配置文件 / prod EDITION_CONFIG 落地 / 最新代策展)
 type: feature
 priority: P1
-status: registered
+status: in-sprint
 repo: X
 created: 2026-07-05
 ---
@@ -44,6 +44,8 @@ created: 2026-07-05
 ## 决策记录(用户 2026-07-05 拍板)
 
 **prod 默认 edition = `cn`,运营者自己的租户经 `config.tenants` 映射 `intl`**(保留自用全量,含 claude/gpt 代理模型)。⚖️ 队列该行已划掉。实施注意:先确认运营者租户 id 再上 var,避免自锁;`EDITION_CONFIG` 解析 fail-open 回代码默认(intl),故 var JSON 写坏不会误伤,但要在验收①里核实 var 真正生效而非静默回退。
+
+**S18 开批补充拍板(2026-07-05,用户批)**:① B 仓 prod 部署全授权(gateway CF Worker var + account ECS),每步留验证证据;② 运营者租户 = impharaon92@gmail.com 对应租户,从 account DB 查 id;③ schema v1 即含 REQ-031 的 `routes[]`(单 route = 长度 1 数组),一次定型不二次 churn(S18 冲突矩阵 X3)。
 
 ## 方案 / 关联
 

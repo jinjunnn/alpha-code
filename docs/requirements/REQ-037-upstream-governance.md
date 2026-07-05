@@ -3,7 +3,7 @@ id: REQ-037
 title: 上游能力治理层:原生 agent/skill/command 的隐藏/禁用/重写(governance 真源 + home jsonc 物化 + dispose 热生效 + hub「内置」管理分组)
 type: feature
 priority: P1
-status: ready
+status: in-sprint
 repo: A
 created: 2026-07-05
 ---
@@ -51,7 +51,8 @@ created: 2026-07-05
 
 ## 决策记录
 
-- **默认 denylist + allowlist 可切(本档建议,2026-07-05)**:上游可见面小(4 agent + 1 skill + 2 command),逐禁成本低;allowlist 默认拒绝会让每日 sync 新增的引擎 agent 静默隐藏,保护名单外的新隐藏 agent 是否 load-bearing 不可预知。两种模式同一治理文件均可表达,先 denylist 上线。用户如倾向 allowlist 打底,开工前改本条即可(不影响 schema)。
+- **默认 denylist + allowlist 可切(本档建议,2026-07-05)**:上游可见面小(4 agent + 1 skill + 2 command),逐禁成本低;allowlist 默认拒绝会让每日 sync 新增的引擎 agent 静默隐藏,保护名单外的新隐藏 agent 是否 load-bearing 不可预知。两种模式同一治理文件均可表达,先 denylist 上线。~~用户如倾向 allowlist 打底,开工前改本条即可~~ → **用户已拍板(2026-07-05,S18 开批):denylist 默认**。
+- **保护名单扩展(S18 冲突检查 X2,2026-07-05)**:除上游 `compaction/title/summary` 外,**alpha 注入 agent(alpha-automation、后续 REQ-028 readonly / REQ-024 standard)一并纳入保护**——治理 UI 灰显+原因,防止禁掉后自动化/只读档静默失效;env 注入(`OPENCODE_CONFIG_CONTENT`)与 home jsonc 的 merge 优先级实现期实证并记录。
 - 治理动作默认档 = **hidden(软)优先于 disable(硬)**:UI 目标(「不显示」)hidden 即达成且零崩溃风险;disable 供「连模型也不许用」的强诉求。
 
 ## 方案 / 关联

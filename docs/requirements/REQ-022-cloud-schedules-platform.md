@@ -3,7 +3,7 @@ id: REQ-022
 title: 云端定时执行(B 侧):CF cron trigger + schedule registry + 到期 dispatch + A 侧拉回契约
 type: feature
 priority: P2
-status: registered
+status: in-sprint
 repo: B
 created: 2026-07-04
 sprint: —
@@ -32,3 +32,5 @@ REQ-021 A3(自动化云档位)需要「app 不在线也按时执行」。勘探�
 
 ## 依赖/前置
 B 仓 PA-27 P0 整改(计费正确性)先行;REQ-020 T1(ADR-021 §2)是 A 侧发起面的硬前置;B16(PIPL consent)公开开放前重启评估。
+
+**S18 开批拍板(2026-07-05,用户批)**:连带清 B 侧前置——sprint 内顺序 = PA-27 三 P0(AR-1/2/3)→ REQ-030/031(settle/ledger 变更一次做,S18 冲突矩阵 X4)→ PA-28 → 本档契约端点 → REQ-025 A 侧。B16 仅门控公开放量,dev 自用先行。

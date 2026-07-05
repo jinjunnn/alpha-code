@@ -3,7 +3,7 @@ id: REQ-028
 title: composer 真只读档:引擎 plan agent 通道 + 切换 UX
 type: feature
 priority: P2
-status: registered
+status: in-sprint
 repo: A
 created: 2026-07-05
 sprint: —
@@ -17,6 +17,8 @@ C28 实证:原 PermChip「只读」档与「请求审批」引擎行为完全相
 - ❌ 后台 session 级设置:上游 submit 每次显式带 `draft.agent`(frozen 内部 store)→ 被覆盖;
 - ⚠️ `command.trigger("agent.cycle")` 循环切换 + DOM 观察判停:可达但脆——label 文本耦合、受 `settings.visibility.customAgents()` 门控、循环序列含 alpha-automation(ADR-022 primary 注入);
 - 🔭 备选:config 注入 alpha 自有 readonly agent(ADR-022 §4 同款静态权限档)+ 同样的 cycle 切换;或等上游出现直设 agent 命令(sync 时复查命令面)。
+
+**S18 通道选型(2026-07-05,实现方记录)**:采 **config 注入 alpha 自有 readonly agent + cycle 切换**(静态权限档可审计、不依赖上游 plan agent 字段现势);cycle 判停逻辑须对治理层隐藏/禁用后的任意可见 agent 集合鲁棒(S18 冲突矩阵 X4/X6 关联)——故本档排 REQ-037 之后实现;失败态按验收②诚实呈现。该 agent 纳入 REQ-037 保护名单(X2)。
 
 ## 验收标准
 1. 选「只读」后,edit/写类操作在会话中**真被 deny**(实测,非文案);

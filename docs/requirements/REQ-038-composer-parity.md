@@ -3,7 +3,7 @@ id: REQ-038
 title: Composer 一致性收敛:首页/会话页输入框行为对齐(首页斜杠菜单接线为首项)+ 共享层继续收敛(逻辑/CSS 单一来源)+ 换皮层像素走查
 type: ux
 priority: P1
-status: ready
+status: in-sprint
 repo: A
 created: 2026-07-05
 ---
