@@ -33,7 +33,7 @@
 ## 跑起来
 ```
 bun install
-bun --cwd packages/ui-mac run dev   # electron 解析失败时加 ELECTRON_EXEC_PATH(见 ALPHA.md)
+bun run --cwd packages/ui-mac dev   # electron 解析失败时加 ELECTRON_EXEC_PATH(见 ALPHA.md);flag 须在 run 后(REQ-027)
 bash scripts/alpha-check.sh          # push 前自检:北极星守卫 + typecheck + 单测(与 alpha-ci 1:1)
 ```
 

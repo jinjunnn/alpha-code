@@ -4,7 +4,7 @@
 > 状态:`registered / ready / in-sprint / shipped / verified / archived`;旁路 `parked / rejected / dup`。
 > 类:feature / bug / debt / security / perf / ux / docs / spike。仓:A=alpha-code · B=alpha-platform · C=alpha-web · X=跨仓。
 > 证据文档:**册** = [`plans/2026-07-02-problem-register-sprints-review.md`](plans/2026-07-02-problem-register-sprints-review.md)(71 项 + R1-R7 修正 + §7f-7j 实施日志);**核查** = [`audits/2026-07-02-register-verification.md`](audits/2026-07-02-register-verification.md);**E 册** = [`harness-extension-backlog.md`](harness-extension-backlog.md)。
-> 下一个新需求编号:**REQ-027**(新需求一律 REQ-NNN;A/B/C/D/E 为历史审计系列保留原号,用户 2026-07-03 确认)。
+> 下一个新需求编号:**REQ-028**(新需求一律 REQ-NNN;A/B/C/D/E 为历史审计系列保留原号,用户 2026-07-03 确认)。
 > **需求文件全覆盖(2026-07-03)**:全部开放的 A/B/C/D 条目已逐条建档 `requirements/<ID>-<slug>.md`(含验收标准),行内备注为摘要、**文件为验收真源**;E 系列以冻结 E 册为分析文档;parked/dup 项不建档。
 
 ## 发布短名单(launch-blockers,册 §6.8)
@@ -67,13 +67,14 @@
 | B22 | message-timeline.tsx:481 会话时间线崩溃 | bug | A | ready | **代码复验完成(/loop 2026-07-04)**::481 现为 `virtualItemByKey` memo,上游 546-sync 已变现症或已异;疑源收敛=`timeline-inject.decorateDirOutput`(隐藏 Solid 子节点最可疑)>`decorateTurns` divider;**真机复现是修复前置**(崩溃类必须能复现才能证明修好)→ 真机批;详见 [requirements/B22](requirements/B22-timeline-crash.md) |
 | B23 | strict-key 配置致瘫:全局 jsonc 解析失败 → 整份配置静默清零 | bug | A | shipped | **S11 T4(PR #60)呈现半边落地**:`configHealth()`(语法错 + 未知顶层 key 双病灶,V1 顶键集自引擎 schema;5 单测)→ AlphaHome warning banner + 打开配置;写前校验(C2)继续挡 alpha 自写;上游清零行为本体不可改(R2);**verified 待视觉批**(故意写坏配置截图) |
 | REQ-016 | 真机验证收尾批:原 4 项 + S12–S15 全部真机递延 | spike | X | shipped | **主体 shipped(2026-07-05,S16)**:重 ship 签名包 → A6(解 R3)/REQ-018/019/020/021/023/006/011/001/B1/D1/B6 逐项翻 verified;**ADR-014 v3 + ADR-022 转 accepted**;修 P1 卸载静默失败 bug。**残余(留用户批 / 下批)**:B2 短TTL、logout、迁移开门(需 flag 重启)、回流 saveRun、卸 uv 像素、git 真克隆、dispose 打断、B22/REQ-014 复现、banner 冷启动、B6 alpha_ping in-session。证据 [audits/2026-07-05-req016](audits/2026-07-05-req016-realmachine-batch/verify.md);详见 [requirements/REQ-016](requirements/REQ-016-realmachine-verify-batch.md) |
+| REQ-027 | typecheck 关双假绿:`bun --cwd X run Y` 在 bun 1.3.x 打印 usage 后静默退出 0、不执行脚本(alpha-check + alpha-ci 同写法) | bug | A | shipped | **S17 T2 证据纪律顺带发现+同 PR 修复(2026-07-05)**:hook 全量输出暴露 usage dump → 探针实证(植入型错 `--cwd…run` exit 0 vs `cd…run` exit 2;不存在脚本亦 0)+ CI 日志同 dump(run 28733810318);修=flag 移 `run` 后 ×(alpha-check.sh 两处 / alpha-ci.yml 三处 / CLAUDE.md dev 命令);verified=红绿探针在册 + 本 PR CI 日志无 dump 复核;快车道无档 |
 
 ## Active — P2(债务)
 
 | ID | 标题 | 类 | 仓 | 状态 | 备注 |
 |---|---|---|---|---|---|
 | REQ-004 | `.alpha` 项目工作目录:桥接验证 + 回填 ADR-019 | spike | A | shipped | **S11 T1 完成(PR #54)**:config 注入 CONFIRMED(生产在用)+ symlink 桥 CONFIRMED(引擎同款 glob fixture 6/6,整目录链/多跳链均通,one-hop 假说证伪);双写回退不启用;schema/gitignore 已回填 ADR-019 修订;证据 [audits/req004-spike](audits/2026-07-03-req004-alpha-bridge-spike.md);**verified 待 B3 T2 打包态 in-app 冒烟**;详见 [requirements/REQ-004](requirements/REQ-004-alpha-workdir-spike.md) |
-| REQ-015 | 冻结前端 typecheck 偏斜:session-ui(546 后新增)依赖新版 ui API 与冻结 ui 不兼容 | debt | A | in-sprint | **→ S17 T2**(已预核方案5「alpha 自有 hooksPath」候选);ADR-020 冻结缺口;**CI 绿**(alpha-ci 只查 ext/ui-mac)**只卡本地 pre-push**(上游全量 turbo);影响面窄(session-ui 仅喂上游 enterprise/storybook,alpha 不 ship);方案 移包/补丁/`--no-verify`/扩冻结范围 待拍板;详见 [requirements/REQ-015](requirements/REQ-015-frozen-frontend-typecheck-skew.md) |
+| REQ-015 | 冻结前端 typecheck 偏斜:session-ui(546 后新增)依赖新版 ui API 与冻结 ui 不兼容 | debt | A | verified | **S17 T2 方案5 落地+实测(2026-07-05)**:push 门 rewire `.githooks`(=alpha-check,与 CI 1:1)+ husky prepare 重置自愈重挂(根因:每次 bun install 冲掉 hooksPath);hooked push 免 `--no-verify` 实测放行;方案1/2/4 结构性否决(session-ui 在 ADR-020 §3 红线)、方案3 被支配,ADR-020 修订在册;session-ui 全量 turbo 红 = 接受的已知偏斜;详见 [requirements/REQ-015](requirements/REQ-015-frozen-frontend-typecheck-skew.md) |
 | REQ-014 | 悬空会话路由致「Not found」白屏 → 路由恢复前校验会话存在 | bug | A | registered | REQ-002 联调 BP-3;`tabs.recent` 指向已删会话 → 冷启动整屏 Not found 无恢复入口;**(/loop 2026-07-04 调查·deferred)**:原设「alpha 恢复层」杠杆不存在——恢复由上游冻结 `tabs.tsx` 主理;修法 renderer 守卫①vs main 预清 store② 需拍板,取决于 Not found 整屏/布局内(须真机复现)+ ② 触碰 base64 路由编码耦合(ADR-008);→ 并入 [[REQ-016]] 真机复现后定夺;详见 [requirements/REQ-014](requirements/REQ-014-dangling-session-blank-screen.md) 调查记录 |
 | REQ-005 | 前端接管收尾核验:重型引擎换肤(终端/diff/权限流)完成度 + timeline 验收尾项(截图归档/COUPLING 清单/真机验收) | ux | A | ready | ADR-016 待办②;tasks.md 40 项全勾但 dev-plan:98-100 未走完;COUPLING 清单关系 C14;详见 [requirements/REQ-005](requirements/REQ-005-frontend-takeover-closeout.md) |
 | REQ-006 | ADR-014 转正收尾:桌面端验收用例(装 markitdown→免重启可用→卸载→依赖预检)+ 4 个 plan-review 未决项拍板 → trial 转 accepted | docs | A | verified | **verified(2026-07-05,REQ-016 S16)= ADR-014 v3 转 accepted**:桌面真机四类装卸+桥+免重启+依赖预检全通;O1-O4 已拍板(v3 修订);证据 [audits/2026-07-05-req016](audits/2026-07-05-req016-realmachine-batch/verify.md) |
