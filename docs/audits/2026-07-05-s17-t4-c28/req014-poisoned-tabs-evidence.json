@@ -1,0 +1,2274 @@
+{
+  "tabs": [
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_12bdd430cffeTa9NAoIXeDEXS4"
+    },
+    {
+      "type": "draft",
+      "draftID": "110926dc-a521-4161-a6ba-519db7970068",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_13615ad27ffeRrQTI2Fk9oakUS"
+    },
+    {
+      "type": "draft",
+      "draftID": "ba302634-902c-4477-9214-473f3aadeef9",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "72269397-3626-4dae-a3d9-27a2249b325f",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "e726c6fd-bc42-48f9-ad66-7ef3285d1d13",
+      "server": "sidecar",
+      "directory": "/"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2FscGhhLWNvZGU",
+      "sessionId": "ses_12bc46ed2ffe9Prc4VgeHYcG4X"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_12bc34ffcffePggREhauHGD3k7"
+    },
+    {
+      "type": "draft",
+      "draftID": "2e43a5c5-f333-492e-a54d-cf24cceabe59",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "027d3684-2034-49e1-b1b3-424e9b4979cb",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2FscGhhLWNvZGU",
+      "sessionId": "ses_136236f54ffeMbuLDenOotw9j5"
+    },
+    {
+      "type": "draft",
+      "draftID": "6f267710-de8c-4c64-aa69-83ca52faee53",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "f5c8fa0c-fce6-4a34-8b27-9f852d618d3f",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "d96cc764-b4fe-4e61-95f8-e033f2c9eba7",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "5246a8c7-3daf-4e42-b406-0cf132f8d890",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "60ccb2d8-1838-40a3-84ae-0b6740d4fa15",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "f995592b-7b5e-433a-9633-ce6eede5321a",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "cf55c56a-67c6-4eef-816c-829b7c421dce",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "fe84b633-6275-4426-a6c4-2e463881e497",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "f22acc28-1a49-4bcc-aa18-e018ba722273",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "ff4a3d42-ecf4-4dd6-9446-7bac4a38c77e",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "2a9860f0-6984-416f-a80d-002c66074e9e",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "fb4eab6b-67a4-404b-bf0e-dc446274d405",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "cf040545-365d-45af-ad66-c1579afc1555",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "Lw",
+      "sessionId": "ses_12b8c74f6ffe5ma6JwfikczxcO"
+    },
+    {
+      "type": "draft",
+      "draftID": "a9bd005c-0c36-41e3-9f9b-614603a67f70",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "554dec3e-b721-41b9-8350-09fcc4245ee6",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "ec44d608-86a0-4ee8-8716-b192c5459bc3",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "c168501d-90f9-4c79-bde8-acf94e185783",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "cffa0227-16f4-46d9-a952-bc5aad216c40",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "224c531c-2474-47f9-8f9b-046d37a06b32",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents"
+    },
+    {
+      "type": "draft",
+      "draftID": "67e046dc-fce2-4b0b-8e01-074866bc0e88",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "6a546887-f835-4135-be08-df33b74e6d4d",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "40387f69-ce34-4c68-b71e-1b369a1cca20",
+      "server": "sidecar",
+      "directory": "/"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_12b8c312affeKicdbHu20o9i2O"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_12b532a8dffee6gxqDwDGnzng8"
+    },
+    {
+      "type": "draft",
+      "draftID": "47630563-83b3-44c2-8ae1-1fdbe599c281",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "942ed654-51f2-40c4-b9c9-52fc4d92c20e",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_12b52ab69ffeG3raNaMTBxnRio"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_12b51e2fbffeNsO7HfJS6zOGYo"
+    },
+    {
+      "type": "draft",
+      "draftID": "79d2e4d3-8021-4fd2-8407-8126b62627c0",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents"
+    },
+    {
+      "type": "draft",
+      "draftID": "c8d72b2d-3c3d-4756-910a-a07f5e394621",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "b16adfd1-abd4-428b-b0c5-d5e84f270896",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "bb46afc1-00ed-4f44-a5d0-d0a4f0e05ba2",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "8d14e5b7-6866-44d5-b2db-417d59c66a2a",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "0f947894-b177-4080-8e36-e2e235d5f7f9",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "da97ba2d-ab2c-48bd-95c8-8b78d23c7405",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "01a9f5bc-e1f8-4105-a032-434b4f95cbdc",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "7f0a3edf-4498-4618-8698-c49313908309",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "9178398b-b7e4-43ac-b443-c5de47577979",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "f787eadb-976f-4ce8-bfb9-a8bb16d598bc",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "4dadd2a0-fe5f-4ebe-9a70-07d342fa6954",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_12b35ca4bffeHjU5AXg5kRgPg4"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_12784ea69ffeXmul7LJRhJVez5"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL3Nh",
+      "sessionId": "ses_1683183ecffeLsiiY6tb6neVT6"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_12765bcf6ffei2LoeFiLKMIwql"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_12765b613ffevlhui3aswDIi86"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_127659fdbffeHSBbLkmL1xlpGT"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_1276506b9ffe7qsAMSgDIcpuz7"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_1273cdd01ffexK27ukje3WDEQE"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "Lw",
+      "sessionId": "ses_1273c5481ffeoqCEBn6MX7U1iW"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_1272f5516ffeE7VmtRaQfsFksU"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_1272f0491ffehUORL3GdH8w3SF"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_1272efd66ffem16Ez7xlaquZQm"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_1272ef93dffeYn7kKpTr58gj66"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_1272ef60fffe7mjNS1lGEufT5U"
+    },
+    {
+      "type": "draft",
+      "draftID": "e0adde37-0415-44f5-8e44-e5ac2fb808dc",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_1272e0bb4ffe3tKIiZWAqOsJy7"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_1272e0b51ffeNzSSYFtx6QTrTf"
+    },
+    {
+      "type": "draft",
+      "draftID": "42aa06b6-9e4b-45bf-8ee3-c062b227f9e2",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "5e64ed7f-955b-4ddf-9116-4d3a06ea0a40",
+      "server": "sidecar",
+      "directory": "/"
+    },
+    {
+      "type": "draft",
+      "draftID": "4fbee553-3306-49e8-83b1-6fe8d6f1d20a",
+      "server": "sidecar",
+      "directory": "/"
+    },
+    {
+      "type": "draft",
+      "draftID": "5ed0b5ec-115e-4325-a97c-537ebdf8aa3e",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "4c913a0c-7bab-482b-ab3a-46d59a796e82",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "760f8027-ddcc-4924-9f49-88fd25c7d9a5",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "614b7339-eaef-4a9f-9c9d-db86311bbe3e",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "3bfa03c9-80c7-461f-b9cc-b43f277c25a1",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "02dd1f83-b748-4b2e-b449-22695bbbb2a7",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_126cb7574ffefZP9J5WKO0eRul"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvRG9jdW1lbnRzL3dvcmtzcGFjZQ",
+      "sessionId": "ses_126c88572ffeEP8nZD2LM0Zjld"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "Lw",
+      "sessionId": "ses_126c6cf24ffe0CLTgaTj7Bs92O"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "Lw",
+      "sessionId": "ses_126c6c9fcfferYGnzUOgyDVqai"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "Lw",
+      "sessionId": "ses_126c6c646ffeQjg0FuHNmT8CDN"
+    },
+    {
+      "type": "draft",
+      "draftID": "446a21d1-d90b-4e71-9f58-e509fd6d41b4",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "424fe093-4ef7-4c1e-b35a-f701a1e06712",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvRG9jdW1lbnRzL3dvcmtzcGFjZQ",
+      "sessionId": "ses_126bf764cffeCIi5eeKod0ooJe"
+    },
+    {
+      "type": "draft",
+      "draftID": "d08a51ad-0a7e-4f86-8b79-bef3ec58028d",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "20c459a8-4d26-4472-b925-aef11b35ac18",
+      "server": "sidecar",
+      "directory": "/"
+    },
+    {
+      "type": "draft",
+      "draftID": "41236d58-1c94-40ce-911c-059ccbeb338f",
+      "server": "sidecar",
+      "directory": "/"
+    },
+    {
+      "type": "draft",
+      "draftID": "2f0f4abf-e982-4aee-95c5-cf94eefed902",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "b0e4c978-ab0a-4e13-9821-d835d91a17c4",
+      "server": "sidecar",
+      "directory": "/"
+    },
+    {
+      "type": "draft",
+      "draftID": "1857989b-aa89-48a8-abda-a15d376dd8b7",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/workspace"
+    },
+    {
+      "type": "draft",
+      "draftID": "814a00f2-b116-4078-b850-e415487c6f1c",
+      "server": "sidecar",
+      "directory": "/"
+    },
+    {
+      "type": "draft",
+      "draftID": "00c1dedc-cd6b-4344-8876-916c4c0f6f51",
+      "server": "sidecar",
+      "directory": "/"
+    },
+    {
+      "type": "draft",
+      "draftID": "f826c5e9-ebc5-4fa1-a8b7-d997c6e83b78",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/workspace"
+    },
+    {
+      "type": "draft",
+      "draftID": "b1b97796-4970-4a16-af87-e0fd2e414c53",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "c0fcf004-f62f-4c23-8e8a-b8b623015023",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "36f6804d-095e-4037-a5be-6c97ba92c99a",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/workspace"
+    },
+    {
+      "type": "draft",
+      "draftID": "00242ff2-3659-494d-a920-b0ec73306364",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "08896881-7113-4356-8aab-c3ef6373e8ac",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2FscGhhLWNvZGU",
+      "sessionId": "ses_110b9a1f0ffeLFnYmoltiT5uZ0"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvRG9jdW1lbnRzL3dvcmtzcGFjZQ",
+      "sessionId": "ses_110b72ad9fferkGZdCU3DGR31U"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvRG9jdW1lbnRzL3dvcmtzcGFjZQ",
+      "sessionId": "ses_1109504eaffeTZxT6dMDbPm8XG"
+    },
+    {
+      "type": "draft",
+      "draftID": "3d3a911b-7260-44ee-9292-2449707e65c9",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "914f1915-03a5-40c8-8c42-6309f854f963",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/workspace"
+    },
+    {
+      "type": "draft",
+      "draftID": "9d1171d4-9322-4478-b4c0-127bbab516a8",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "a3ec7cd4-4b83-46e1-a68e-0f79b2bd7957",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "9e2dd611-2f2a-40b3-98f2-37fc491251d4",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvRG9jdW1lbnRzL2ltYWdlcw",
+      "sessionId": "ses_10862a443ffecruxygbW6ulWbZ"
+    },
+    {
+      "type": "draft",
+      "draftID": "5421fe26-987b-4146-993a-469369544ae2",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "359e7a65-44a2-443d-9cf8-43cf7be8eed7",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "34f9a001-7f64-4212-a174-0eac9e4bea0f",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "3152161b-8b7a-4f15-baaf-80a6e0df00f5",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/images"
+    },
+    {
+      "type": "draft",
+      "draftID": "e846093f-0f64-44b9-9fe7-fe3ae6432e9d",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/images"
+    },
+    {
+      "type": "draft",
+      "draftID": "2b74b85e-12d6-4f14-ba5b-7e63e3a98423",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/images"
+    },
+    {
+      "type": "draft",
+      "draftID": "83584e09-959e-494d-97c1-7d01615a1678",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/images"
+    },
+    {
+      "type": "draft",
+      "draftID": "c3ead815-de46-4dfc-a460-6c290a8f5a38",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/images"
+    },
+    {
+      "type": "draft",
+      "draftID": "9e5ccce3-903c-4bff-b03e-37723ca2a4a7",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/images"
+    },
+    {
+      "type": "draft",
+      "draftID": "ef0dac46-e9b3-4788-9ff9-2958975094a7",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/images"
+    },
+    {
+      "type": "draft",
+      "draftID": "b00bc03c-1a3f-4641-8241-966010a14411",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/images"
+    },
+    {
+      "type": "draft",
+      "draftID": "bcfa91cb-b6e9-4b20-90ec-b34493baa9a7",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/images"
+    },
+    {
+      "type": "draft",
+      "draftID": "1ec4ea63-d412-4f27-863e-1dbd0efc1c89",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/images"
+    },
+    {
+      "type": "draft",
+      "draftID": "52ce621e-bf06-4537-bae1-7d63415b2cde",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/images"
+    },
+    {
+      "type": "draft",
+      "draftID": "babbc526-9fbc-4178-82a7-c2b2d7243060",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/images"
+    },
+    {
+      "type": "draft",
+      "draftID": "0050ae71-9eb5-433f-b2ba-ef2d9f189a05",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "f2b097ff-c8ff-4e7d-aac7-c9cb7d7a2860",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "80d8a8b7-afc1-4783-b3f3-a3aabf26c77d",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "1bf50b94-cbd5-4396-9430-2f131dd61ac6",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "8ef1e7a5-5e95-4e9f-a81a-5862f961ffae",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "00c10bee-433a-42a1-95b1-08ff77a9c912",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "a5630db9-e6ef-439a-ad28-5863a63f95a3",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "d8eb14ea-fd1f-46e9-9b09-8741b961280f",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "7adf0f6e-2704-400b-b22f-33064cd01026",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "453def5d-0427-4204-9352-cae3c2e3a59c",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "c8f09bf3-9751-45eb-a361-90a4e393c44f",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "b82e6909-2a6f-43b4-bf38-22f80b16eaaa",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "dfb222ab-3913-4fc9-b1c9-b06a8569fbda",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "e7d44250-6d2d-4842-9541-1ea3cda88b42",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/workspace"
+    },
+    {
+      "type": "draft",
+      "draftID": "06b23998-458b-491b-bde4-46bceffc8423",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/workspace"
+    },
+    {
+      "type": "draft",
+      "draftID": "c3bce156-edc0-417d-a720-7d8cd932be9c",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/workspace"
+    },
+    {
+      "type": "draft",
+      "draftID": "62a12eb9-0400-43b9-852d-cab2e3e47a7b",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/workspace"
+    },
+    {
+      "type": "draft",
+      "draftID": "79a27e6d-e234-4164-913b-5da025e6bd9f",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/workspace"
+    },
+    {
+      "type": "draft",
+      "draftID": "d005d8de-7c7c-4c42-9a89-5ba3c65cb2b2",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/workspace"
+    },
+    {
+      "type": "draft",
+      "draftID": "8c2723dd-4e7e-40ab-ad59-26541a60644b",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/workspace"
+    },
+    {
+      "type": "draft",
+      "draftID": "b93f9070-e0ff-49fb-94b5-26887d3c4492",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/workspace"
+    },
+    {
+      "type": "draft",
+      "draftID": "41a468b8-ab4c-4d60-bfa9-ed15c7a67535",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/workspace"
+    },
+    {
+      "type": "draft",
+      "draftID": "3d3614f6-6302-43c7-bb93-bd14818a4ce2",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "343a900a-cccc-4563-bfaf-8fd480bd2ef6",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/images"
+    },
+    {
+      "type": "draft",
+      "draftID": "6ca04f6b-0260-46fb-ad95-8f7f33e5f82a",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "38344e95-231c-4e9b-b83b-2ef914f3ec50",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "24981b64-fabe-4687-97a9-13897f5272ae",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/workspace"
+    },
+    {
+      "type": "draft",
+      "draftID": "ac03b441-d01b-49a0-bf15-20693c292af8",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "cfae82e5-09d5-44a8-af17-442c3b914d82",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvRG9jdW1lbnRzL3dvcmtzcGFjZQ",
+      "sessionId": "ses_1025ad75cffeNGINF2nCZ95rka"
+    },
+    {
+      "type": "draft",
+      "draftID": "2085ce06-1173-40e8-a7f3-5f95ca5ff6b6",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/workspace"
+    },
+    {
+      "type": "draft",
+      "draftID": "e7ff4a34-53de-4a9c-9300-dc3f60035551",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/workspace"
+    },
+    {
+      "type": "draft",
+      "draftID": "7a543c34-db14-4719-8199-c53cadefb393",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "470ede4f-7ecb-48b3-a84c-72c24828da87",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "e6932ca1-3b7b-4b34-9b13-53eca9865d78",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvRG9jdW1lbnRzL2ltYWdlcw",
+      "sessionId": "ses_1017b4c15ffejZX07Y3od6646a"
+    },
+    {
+      "type": "draft",
+      "draftID": "a864ba45-6d7b-45ec-81e2-973ff4dab318",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_101738927ffepS4gPCO5l65y23"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_101704c75ffeG9qcHnCKZodS5K"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_1016ce7e0ffer1L5yj727pJwvh"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_10168e36dffe1hfWZP10Kv92vC"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_10163c6c0ffeeMhUNwvzZgqhV3"
+    },
+    {
+      "type": "draft",
+      "draftID": "043921a4-d477-4803-b949-c3f4b1f3be64",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "dfe4ca87-ba7c-47c7-956a-42243ef2dfdb",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "1eadbe53-208b-433f-910a-ed6fc4989867",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/images"
+    },
+    {
+      "type": "draft",
+      "draftID": "dbab06f3-9538-43ac-a3a8-6758e890e09e",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/images"
+    },
+    {
+      "type": "draft",
+      "draftID": "6e9f746d-4438-44f3-8493-6e7da02bd0f8",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "f67bc37b-4c42-444a-9c10-c61f5c76f5a4",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "035cd761-6911-4a3b-a825-e0b542a1bd30",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "f6cd44bd-ae50-40e2-8dbf-cf372e2da748",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "ff055968-0dc5-4520-8b31-b27fb1a45b6a",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "4203b7a1-8363-4b47-a511-41d737624875",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "0b9175bd-d135-4e4e-93fb-1b20c52e83f0",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "294d98d7-18b0-4d6f-a466-6d213e6ba6f6",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "63cd6c63-b041-42ca-899b-09ef90701c8e",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "a05135d5-ef32-4ecb-9603-be79831d6f5f",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "a34e5478-682d-4fc8-84db-2cd4d6df637c",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "1ce0cf69-3626-426e-8803-4d4ab1e932dd",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "8f6bdf17-4165-4ba0-99a9-541a02f78e97",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "8237a135-c865-48d7-9815-cefd951cccb0",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "62fd1ecd-7a27-47c9-9260-53d9a0d62bf3",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "8fffc96a-707e-46b8-9a31-813c277dbd2a",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/workspace"
+    },
+    {
+      "type": "draft",
+      "draftID": "804e0977-556f-45fa-9ad9-19bf7a8ec6b5",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "41964c1c-1f0c-457d-9dba-8732f3f2e64e",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/images"
+    },
+    {
+      "type": "draft",
+      "draftID": "a01bf814-1fe1-436a-b3d9-84395f6bc7de",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "c1dd4807-33ce-4c0b-aa5d-a3f4d405bab0",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "b966d4ae-3944-4f5b-bc29-dd72f96497cb",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "e8e66d3b-6ad3-4196-9f02-64aa8889e4bf",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "a67dd61c-2e9a-4327-bafc-7e8e517ba17a",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "2a037893-02b7-4efa-a0ea-5c52948a1390",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_0fe103e89ffehApDJMn2DlW9Mu"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_0fe0f2f0cffeXZy7zqYwm6BPHL"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_0fe0d268affe7Bkp2ROECn43X3"
+    },
+    {
+      "type": "draft",
+      "draftID": "c20cacec-3402-4e06-8f01-961c1363b98e",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "edd0396a-d2c1-4c58-ad97-03d2af53153b",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "dd0aacc7-a7cd-4b39-8643-c661db2a26e1",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "f5e0fb45-03ab-4822-8299-08afd03de4c9",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_0fdf9db47ffe6hWxy6jDbvRP9P"
+    },
+    {
+      "type": "draft",
+      "draftID": "351fae89-04b3-4338-8909-b48568964a3b",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_0fdf55503ffeyIdq660phKW1lS"
+    },
+    {
+      "type": "draft",
+      "draftID": "19275d48-323c-4c5f-b4f2-6496caa888a3",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_0fdf02e1affeoMdJlcVyA2kqWX"
+    },
+    {
+      "type": "draft",
+      "draftID": "e2a924e0-2109-4c7f-ac5a-aa0c58d62731",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "5249d4b1-cf0b-4449-b290-09d713e18ffd",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "6790e8d2-9bfa-4938-9452-6be445e1bb4e",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "770f4cd6-4e38-4393-b256-3a04fc572c5e",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "38a71783-b132-4cda-873b-356f9da8b389",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "15b555bc-a41f-4ca8-8b62-fc642dadacdb",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "72c89db4-dd02-4805-b872-85732641d22d",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "067440c7-16a9-49b0-bd6d-95df564e5b58",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "b0f8ca57-63f7-4708-983a-7ede06e3f6e3",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "dce03cda-04a6-458d-a91c-77e9a606e110",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/images"
+    },
+    {
+      "type": "draft",
+      "draftID": "cdc7c04e-8281-45df-98e7-e6efaf2fa6de",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "4cb0f803-7025-4c67-bf6d-ab78a9a9841c",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "b33078ec-8f11-4bd5-b92e-d06bdf499e84",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "45fffb1d-c55d-40b3-aa24-c06d8acd699c",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "13f28d25-2207-45d6-876f-31619c04c849",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "a45e2a34-0db6-4441-b0f7-9090c141ff9b",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "8fc2e426-2f5f-49bf-9194-004528510e16",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "7d2ba1a5-fe37-4fa1-b73b-4fe920068cb6",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "65690980-c119-4c25-922d-57a62ae633bf",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/images"
+    },
+    {
+      "type": "draft",
+      "draftID": "d33b516d-c237-413e-b52f-0dfbcb779175",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "30c58b3c-38af-45b4-a6ed-098b92cbb152",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "82ddd13d-581c-453c-b330-8ddec3abbad9",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "921872be-345a-4813-bef7-d9d949217643",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "8f21b08a-26db-42be-821d-2852a2daea58",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "ba9515f0-7ee4-4acc-9884-9ec3dbb142e9",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "69377911-5c4b-458f-a4ba-a6f5c4dadb54",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "d1e0aa69-1d12-4930-b748-46b685649a92",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "b33c41f6-b853-4ae6-88a0-5ff13ea7d1ec",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "e578f6c5-a35c-444b-93f1-0988cc8ec5bd",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "5ca45095-cf25-4bf4-8af2-32ddf023fe5d",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "3fde35ed-2b0c-48b8-b01f-0a15d60aab8f",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "f2d29f27-be47-4db5-b94d-2b53a8817408",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "96749026-0a07-404f-9cfd-c91dfa41fb29",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "e2a4cee5-02c1-4d39-914c-d9eeddd06c09",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "276e7686-74fb-47cf-aa88-bb4345a09f6c",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "0155c796-4e56-4a66-9ec8-ca1a60eb958a",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "a09883b0-4f08-4e4e-a3f8-9bee4b1cdb3d",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "b251adca-d9cd-4320-be73-b6c715c744b0",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "3253b88f-397a-4928-994c-4f64515c34a6",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "91d94c25-8832-44ae-b17b-9556e7f933c3",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "e10ce081-e016-4121-ae02-3a88aabdd41a",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "19a3e8d5-5ff2-43ea-b5ca-307e8ce51be5",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "ba508519-a6a3-49a2-a350-b9b38a5975fc",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "bada0d5d-746a-453d-865c-88c3d4f4309d",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "416c34c4-6de7-4c12-9f58-4a61e2623b44",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "67d77264-eb05-478f-bb08-450db29701e5",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "9f7e1bf4-4653-4185-bf63-33d9c04a0313",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "85201de4-dfbd-4bab-948b-48a6696a3b99",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "96d585d2-f1eb-483d-8345-f8e5c11bcf33",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_0fc8229f2ffe1kGkztqr0I7mxH"
+    },
+    {
+      "type": "draft",
+      "draftID": "dfd3cc12-5b4e-48fb-8cad-a3ef9d328689",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/images"
+    },
+    {
+      "type": "draft",
+      "draftID": "354a96e1-b1de-457f-8118-929700262d57",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "44db4dca-06f0-4a55-af9c-7b3b0a03fe20",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "2c2e79c0-f1c7-408d-9546-a620d00e116e",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_0fc5afd5dffeChiqQ2WvvmfaVw"
+    },
+    {
+      "type": "draft",
+      "draftID": "bbc3cd78-91d5-480c-b253-3bf3fc58835d",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "7bf582b1-0c6a-48d4-9452-c491e18ad846",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "ad53350e-fde4-40af-8740-0aeea4d988fb",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "bc8b2e34-a746-4fdf-8832-82f1f22d716f",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "6c8e718a-8420-45a0-9749-d6947d04e33a",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "36ebb18c-d4da-479c-a2c4-562c1bb517e5",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "b16c84a5-ad0d-4279-af7f-307f7bbaecc1",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/workspace"
+    },
+    {
+      "type": "draft",
+      "draftID": "2d72a4be-c125-4dfb-8bd3-15443857272e",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "be613f0b-c56a-439b-9a6a-7c70bc3b22b0",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "05d9f47e-3f52-40ba-90fe-aa52846ccbfa",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "7737b416-2d11-4e13-ae4e-4da44b09259d",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "b19686d2-159e-44b4-8801-393a90fd9a32",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/images"
+    },
+    {
+      "type": "draft",
+      "draftID": "96ad26ec-8469-4597-84dd-1b6592809830",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "07f1686c-96ca-4274-bc87-8ee4e65892f1",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "32b579d9-aeb8-4fa3-9b1e-e7a2d6c1e347",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "3b233669-5d58-4b0c-8588-b09cb7699a39",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "5eff6248-490c-4e00-b620-957b1eb2dd03",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "b9bd200a-1df9-494b-a23f-04ed25f38d22",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "6a2ef2c5-3305-4e44-8868-6e1ece987ad8",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "817d4ead-3741-418d-9f14-eb786e91e430",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_0f7208939ffeICxhFl85xy1F8t"
+    },
+    {
+      "type": "draft",
+      "draftID": "864dc168-f824-482b-892d-9b22e717ecf9",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "563467f9-fb51-4c49-8a48-34f09bb62a4e",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_0f2eef1b4ffekgnKaIJM3Hi5Xu"
+    },
+    {
+      "type": "draft",
+      "draftID": "a88c7975-9b57-4c34-82f2-1ecb11c5695a",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "8639cfc0-2bd4-4706-a0ec-39a1799dd479",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs",
+      "sessionId": "ses_0f2bdaf56ffe96Jn2mEblWyq5D"
+    },
+    {
+      "type": "draft",
+      "draftID": "076c8020-7106-4c7a-90ce-fc096065f02e",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/kama-bot-local"
+    },
+    {
+      "type": "draft",
+      "draftID": "f1ab6052-2a32-4633-bd56-6760c61f14ab",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "d9f59eb3-326c-4a99-8044-1e85437cb246",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "a8ff0cbb-6638-484d-8447-a82341ba69e3",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/workspace"
+    },
+    {
+      "type": "draft",
+      "draftID": "4e7b9bca-634b-47b7-8c39-0a499c3c2549",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "9e0019c6-6958-401a-bf5c-a7650fae888b",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2FscGhhLWNvZGU",
+      "sessionId": "ses_0f247e914ffe406Uwj24HD1I6s"
+    },
+    {
+      "type": "draft",
+      "draftID": "a89e6669-b89f-46a2-a83f-21bceee7109c",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "b33b27e0-ff7d-45de-811c-fa301e6ec07d",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "6bba714e-d25f-4d43-8aa3-24deab3d378c",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "e6748b3e-082f-4007-a524-21a2cfc5b7e3",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "1401fc16-8c19-449d-a7e9-884fad35806a",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2FscGhhLWNvZGU",
+      "sessionId": "ses_0eeea7fddffe3v6AYcTLteZotP"
+    },
+    {
+      "type": "draft",
+      "draftID": "25901e62-e85c-4946-9361-7f30d6f8041c",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "b69e298e-caee-4cf7-ad66-864a81aaae17",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "5db8a040-dd5a-4522-8c0c-6ccdd7360fb0",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/images"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2FscGhhLWNvZGU",
+      "sessionId": "ses_0ee8cc85dfferZyvi02l4wVMf4"
+    },
+    {
+      "type": "draft",
+      "draftID": "39477948-3a57-49e9-9add-6ec1a8b04947",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2FscGhhLWNvZGU",
+      "sessionId": "ses_0ee8b331cffe2eXLrxWv4wnz8Q"
+    },
+    {
+      "type": "draft",
+      "draftID": "df86c677-b48c-4f42-87e3-ef8934d0f825",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "4ad27939-9d6e-4779-82df-80cc8633efc4",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/images"
+    },
+    {
+      "type": "draft",
+      "draftID": "bf51447c-dbe1-4a2c-af94-1882db476914",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2FscGhhLWNvZGU",
+      "sessionId": "ses_0eda52485ffe3NzpOOmlxpoKbx"
+    },
+    {
+      "type": "draft",
+      "draftID": "78e0c468-aee4-438c-9cd9-daa5a1076bb8",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/images"
+    },
+    {
+      "type": "draft",
+      "draftID": "6c647128-0627-4b57-b7e2-0ec44ff7f111",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "266a8f9a-5227-4d74-8f9a-18a26fa936f5",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "d022650b-af4f-4143-9819-a380a2eb7827",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "8f6b2f15-fc2a-41ae-8f38-c4a4d634ab9f",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2FscGhhLWNvZGU",
+      "sessionId": "ses_0ed8443d4ffe2Mr7CNzJc4nbcv"
+    },
+    {
+      "type": "draft",
+      "draftID": "3f8a824c-54c3-4d85-a35f-cf177c0a9f78",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "dirBase64": "L1VzZXJzL3RpZGUvYXBwL2FscGhhLWNvZGU",
+      "sessionId": "ses_0e927b1e5ffebgLjNQUNR4ZFKT"
+    },
+    {
+      "type": "draft",
+      "draftID": "d255e58c-607e-4749-805e-fbb07076e1ca",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "de7f6f28-4a67-45b3-8a71-b6a0062154f4",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "853b1f38-ff21-4c3c-bc72-56eaed23402b",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "aadac739-b4e0-4117-960e-016f15993b02",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "73497da1-1a22-4f4d-9411-d5e5f54bd6c8",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "bb83af1d-0baf-499d-bd16-c23573ce9c6b",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "e7816525-0a00-4038-9e3a-146d246a3e42",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "48da086c-4d85-472d-b831-1b383ff191e5",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "22cc3719-aec8-4359-9acf-1da96fdb92cb",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "47de498e-4682-4c8c-9b51-4c56b1e590cf",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "1cdbee91-3bf2-4b8b-a7b1-08c20019fa8b",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "5bb02388-a643-4465-8adf-f376dffe6d4e",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "10f2b485-a1d9-4ee5-b34b-4d71f44e6cda",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "239d7a89-225f-428c-8909-0976b2495a45",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/images"
+    },
+    {
+      "type": "draft",
+      "draftID": "b851f1a3-c24a-44cc-b0c2-0691eb4bff7d",
+      "server": "sidecar",
+      "directory": "/Users/tide/Documents/images"
+    },
+    {
+      "type": "draft",
+      "draftID": "020ce7f0-f140-41db-9d80-3e9b3ada8502",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "c5f495df-f478-457d-b33f-560c1503f9d2",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "a9590cd5-900b-4ccf-86cc-e9a8e400719a",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "eca07f27-1b1a-4148-81e5-64bce763e27f",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "224a7d56-3f67-45ac-8eb4-9c6b28824450",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "d53f0e52-ee4e-4909-ada8-c96d29599655",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "6fc5aa99-6c93-4efd-bfa1-cb460fe5089a",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "fc8cb2f3-d214-49fe-a26b-1581befc5850",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "60190fea-4a17-4e39-84df-9ecb59de14a4",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "ce35953e-e1e9-4135-9b97-14971ecaade1",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "da476714-6420-45d0-8d26-ec29881f6d17",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "4d8ab189-1497-4f1a-9136-c088780844bb",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "3f97d811-dd24-4ca5-a822-2036a868d86f",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "5458bdb4-6b1e-4e0e-89a7-818210f030fc",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "9229f0d7-801d-4166-9ae6-e90415ce67eb",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "80062b80-8bf2-431a-a072-a72eca600421",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "6742db30-7418-4c93-944c-3ab5157eb809",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "fc324422-8fbb-4ede-9c39-a616aadc501d",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "85800709-6722-4a9b-a8f4-c60ef90942fe",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "39b9dd9a-9fb7-4cd8-9451-4012d67fa8d2",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "cf04d6d2-927f-498c-b2ed-c267b2883d6a",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "5c4f73a0-d16c-49dc-b494-b228c3bdc5f7",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "c9b78163-6ca4-4cfa-9ade-8a18b75b5614",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "2f36d97b-7c86-443b-8ffb-ac82c377d78c",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "e2e77c6f-561a-43c5-81c5-3116c40c9bad",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "4feb2fb5-9cc0-48a5-acb9-f7231d589695",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "c0f61ebd-a3be-4045-a087-f87d03118328",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "c8d82b75-9cdb-459f-9a55-9d69dc92a9f4",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "8a5ec3ee-1edc-468d-9e5b-2580cb81a722",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "c99d8ff2-6e65-4a50-9a1c-4a114a26efe5",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "d34e99fa-cab6-4c54-8a40-63cc9db09c1a",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "4910693f-8a75-4be0-a329-2c52e58e2a0e",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "338eedfa-3267-46ba-8c8a-1b84cb2b9366",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "22ccdf85-8e4c-4f45-bd31-440dcab570a7",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "b3ead53f-e2ce-465d-9577-95942083739e",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "4f64ac75-28be-437a-8fe7-44e3821509be",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "ffe8e0b0-bba9-4659-9e80-bab7ddbed732",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "6534e9a2-2bea-45c7-addd-3b9d532311ed",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "46de4fda-cb96-49b2-b406-ba8657b46b64",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "5ff9f612-b1dc-4d78-95fd-af5228121bb3",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "73759185-1c40-41d6-b4d6-90c69fb2d3b4",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "4b86eb3e-8636-455a-8771-b19d0a35094a",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "draft",
+      "draftID": "c20d3b36-3d87-4ab0-bbb3-a6daf9ac4992",
+      "server": "sidecar",
+      "directory": "/Users/tide/app/alpha-code"
+    },
+    {
+      "type": "session",
+      "server": "sidecar",
+      "sessionId": "ses_0d95ffb7fffedPfx3LVPg2xCYQ"
+    }
+  ],
+  "tabs.recent": {
+    "key": "sidecar\n/server/c2lkZWNhcg/session/ses_0d95ffb7fffedPfx3LVPg2xCYQ"
+  }
+}

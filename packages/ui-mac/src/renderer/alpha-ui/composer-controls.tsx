@@ -15,18 +15,15 @@ import { setExtHubOpen } from "../extensions/ext-hub-state"
 
 export const EFFORTS = ["低", "中", "高", "超高"] as const
 export type Effort = (typeof EFFORTS)[number]
-// Right-aligned meta per level (mockup .effort-opt .meta — #28/#29).
-const EFFORT_DESC: Record<Effort, string> = {
-  低: "更快 / 省积分",
-  中: "默认",
-  高: "更深推理",
-  超高: "最强 · 最慢",
-}
-// full = 完全访问 (autoaccept on), ask = 请求审批 (autoaccept off / prompt each time),
-// read = 只读 (禁止写/执行). opencode has no runtime read-only command, so 只读 maps to the strictest
-// available (autoaccept off → prompt before any write/exec); the chip still surfaces the intent.
-export type PermMode = "full" | "ask" | "read"
-const PERM_LABEL: Record<PermMode, string> = { full: "完全访问", ask: "请求审批", read: "只读" }
+// C28 拍板(2026-07-05,S17 T4):effort 尚未接入引擎 —— 真通道 = model variants(llm/request.ts 的
+// options merge),当前 alpha 代理/BYOK 模型均未定义 variants → 任何选择都不影响请求。按用户拍板
+// 「改文案保留」:chip 留作预设骨架,popover 明示「暂未生效」、不再宣称影响推理;真接入 → REQ-029。
+//
+// full = 完全访问 (autoaccept on), ask = 请求审批 (autoaccept off / prompt each time)。
+// C28 拍板(2026-07-05,S17 T4):原第三档「只读」已移除 —— 它与 ask 引擎行为完全相同(opencode 无
+// 运行时只读命令),宣称「禁止写/执行」不成立;真只读载体 = 引擎 plan agent / config 权限档 → REQ-028。
+export type PermMode = "full" | "ask"
+const PERM_LABEL: Record<PermMode, string> = { full: "完全访问", ask: "请求审批" }
 
 const ico = "0 0 24 24"
 
@@ -52,12 +49,6 @@ export const ShieldAsk = () => (
   <svg class="a-ic a-ic-sm" viewBox={ico}>
     <path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" />
     <path d="M9 12l2 2 4-4" />
-  </svg>
-)
-export const Eye = () => (
-  <svg class="a-ic a-ic-sm" viewBox={ico}>
-    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
-    <circle cx="12" cy="12" r="2.5" />
   </svg>
 )
 export const Bolt = () => (
@@ -181,9 +172,6 @@ export function PermChip() {
       <Match when={p.mode === "full"}>
         <ShieldSolid />
       </Match>
-      <Match when={p.mode === "read"}>
-        <Eye />
-      </Match>
     </Switch>
   )
   return (
@@ -210,9 +198,6 @@ export function PermChip() {
           <button class="a-pop-item" classList={{ "is-on": perm() === "ask" }} onClick={() => pick("ask")}>
             <ShieldAsk /> 请求审批 <span class="a-pop-desc">逐次询问</span>
           </button>
-          <button class="a-pop-item" classList={{ "is-on": perm() === "read" }} onClick={() => pick("read")}>
-            <Eye /> 只读 <span class="a-pop-desc">禁止写/执行</span>
-          </button>
         </ChipPopover>
       </Show>
     </div>
@@ -229,6 +214,7 @@ export function EffortChip() {
       <button
         ref={btn}
         class="a-chip"
+        title="推理强度(预设 · 暂未生效)"
         onClick={(e) => {
           stop(e)
           toggle()
@@ -239,8 +225,9 @@ export function EffortChip() {
         <Chevron />
       </button>
       <Show when={isOpen()}>
-        <ChipPopover anchor={btn} align="right" minWidth={210}>
+        <ChipPopover anchor={btn} align="right" minWidth={230}>
           <div class="a-pop-label">推理强度 · effort</div>
+          <div class="a-pop-note">预设 · 暂未接入模型推理 —— 当前选择不影响请求(接入随 REQ-029)</div>
           <For each={EFFORTS}>
             {(lv) => (
               <button
@@ -252,7 +239,6 @@ export function EffortChip() {
                   <Check />
                 </Show>
                 {lv}
-                <span class="a-pop-desc">{EFFORT_DESC[lv]}</span>
               </button>
             )}
           </For>

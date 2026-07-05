@@ -33,6 +33,13 @@ source: REQ-002 联调 BP-3(audits/2026-07-03-req002-proxy-e2e.md)
 ## 验证记录
 _verify 时补。_
 
+## 复现记录(2026-07-05,S17 T4 顺带活捉 —— 拍板输入就绪)
+dev 实例(dev channel store)开局即循环崩溃,全链取证(证据 [audits/2026-07-05-s17-t4-c28/verify.md §2](../audits/2026-07-05-s17-t4-c28/verify.md) + `req014-poisoned-tabs-evidence.json` + store 原件备份):
+- **变体形态 B(本次)**:`tabs.recent` 为**旧格式路由**(`/server/<b64>/session/<id>`,**无 dir 段**)→ 新格式解析 `route.dir=undefined` → 上游 `titlebar.tsx createDirSyncContext(route.dir)` → `pathKey(undefined)` throw → **整屏**上游 ErrorPage 循环(连带盘上有 `opencode.workspace.undefined.*.dat` 历史痕迹)。与原形态 A(悬空会话 id → Not found)同毒源(`opencode.global` 的 `tabs`/`tabs.recent`)。
+- **对调查记录「关键未知」的回答**:整屏形态下 alpha 子组件全部未挂(上游边界吞掉全部 children,AlphaBoundary 也不例外)→ **方案①(renderer 守卫)对形态 B 无效**;**方案②(main 预清 store)实证可达**——删 global store 两键即完全恢复(本次手工执行即①愈)。
+- **建议(待拍板)**:方案② main 预清,分两级:格式级校验(key 无 dir 段/dir 非法即剔,启动同步可做、无需 SDK)+ 存在性校验(sidecar ready 后 SDK session 查证,治形态 A);耦合面 = 上游 tab-key/base64 编码(ADR-008 已标注),须契约锚+失败 fail-open(剔不动就保持原样,绝不越修越坏)。
+- **prod 风险评估待做**:本次是 dev 态旧数据;prod 用户 store 是否携带旧格式 key 待查(store 格式随版本演化,老用户可能命中形态 B)。
+
 ## 调查记录(2026-07-04,/loop 自动批 —— 为何本轮**跳过**,待拍板)
 勘察结论:**本需求预设的「alpha renderer 路由恢复逻辑」杠杆并不存在**,故不是干净的决策无关小修,自动批不代拍。
 - **事实**:alpha `renderer/index.tsx:411` 以 `<AppInterface router={MemoryRouter}>` 挂载,**未传 initialEntries** → MemoryRouter 初始在 `/`。**路由恢复(读 `tabs.recent` → `navigate`)由上游冻结的 `packages/app/src/context/tabs.tsx` 主理**(`useNavigate`/`persisted(tabs.recent)`),alpha 侧无恢复层可插。REQ-014「落点=alpha 路由恢复层」的假设不成立。

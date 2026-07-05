@@ -482,6 +482,14 @@ body[data-alpha-sidebar="open"] .a-home {
   text-transform: uppercase;
   color: var(--a-text-tertiary);
 }
+/* C28(S17 T4):popover 内的诚实说明行(effort「预设 · 暂未生效」等) */
+.a-pop-note {
+  padding: 0 10px 8px;
+  font-size: var(--a-text-2xs);
+  line-height: 1.5;
+  color: var(--a-text-tertiary);
+  max-width: 260px;
+}
 .a-pop-item {
   display: flex;
   align-items: center;

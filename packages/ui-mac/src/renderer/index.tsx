@@ -34,6 +34,7 @@ import "./alpha-ui/composer-reskin.css"
 import "./alpha-ui/model-picker-reskin.css"
 import "./alpha-ui/dialog-reskin.css"
 import { ToastViewport } from "./alpha-ui/Toast"
+import { AlphaBoundary } from "./alpha-ui/alpha-boundary"
 import { ComposerInject } from "./alpha-ui/composer-inject"
 import { ModelPickerInject } from "./alpha-ui/model-picker-inject"
 import { TimelineInject } from "./alpha-ui/timeline-inject"
@@ -409,17 +410,42 @@ render(() => {
         <Show when={effectiveDefaultServer()} keyed>
           {(key) => (
             <AppInterface defaultServer={key} servers={servers()} router={MemoryRouter}>
-              <Inner />
-              <AlphaSidebar projects={alphaProjects} />
-              <AlphaHome projects={alphaProjects} />
-              <AlphaOnboarding />
-              <ExtensionHub server={sidebarServer} open={extHubOpen} onClose={() => setExtHubOpen(false)} />
-              <AutomationPanel />
-              <ComposerInject />
-              <ModelPickerInject />
-              <TimelineInject />
-              <CloudRunWatcher server={sidebarServer} projects={alphaProjects} />
-              <ToastViewport />
+              {/* C28(S17 T4)崩溃边界下沉:上游 ErrorBoundary 在 AppBaseProviders 内包住全部 children,
+                  alpha 任一注入件 throw 会整屏坠成上游 ErrorPage —— 逐个紧裹 AlphaBoundary(更内层先命中)
+                  = 崩溃只降级该区域;TimelineInject(B22 疑源)自此有降落伞。探针 window.__alphaCrashProbe */}
+              <AlphaBoundary name="Inner">
+                <Inner />
+              </AlphaBoundary>
+              <AlphaBoundary name="AlphaSidebar">
+                <AlphaSidebar projects={alphaProjects} />
+              </AlphaBoundary>
+              <AlphaBoundary name="AlphaHome">
+                <AlphaHome projects={alphaProjects} />
+              </AlphaBoundary>
+              <AlphaBoundary name="AlphaOnboarding">
+                <AlphaOnboarding />
+              </AlphaBoundary>
+              <AlphaBoundary name="ExtensionHub">
+                <ExtensionHub server={sidebarServer} open={extHubOpen} onClose={() => setExtHubOpen(false)} />
+              </AlphaBoundary>
+              <AlphaBoundary name="AutomationPanel">
+                <AutomationPanel />
+              </AlphaBoundary>
+              <AlphaBoundary name="ComposerInject">
+                <ComposerInject />
+              </AlphaBoundary>
+              <AlphaBoundary name="ModelPickerInject">
+                <ModelPickerInject />
+              </AlphaBoundary>
+              <AlphaBoundary name="TimelineInject">
+                <TimelineInject />
+              </AlphaBoundary>
+              <AlphaBoundary name="CloudRunWatcher">
+                <CloudRunWatcher server={sidebarServer} projects={alphaProjects} />
+              </AlphaBoundary>
+              <AlphaBoundary name="ToastViewport">
+                <ToastViewport />
+              </AlphaBoundary>
             </AppInterface>
           )}
         </Show>
