@@ -4,7 +4,7 @@
 > 状态:`registered / ready / in-sprint / shipped / verified / archived`;旁路 `parked / rejected / dup`。
 > 类:feature / bug / debt / security / perf / ux / docs / spike。仓:A=alpha-code · B=alpha-platform · C=alpha-web · X=跨仓。
 > 证据文档:**册** = [`plans/2026-07-02-problem-register-sprints-review.md`](plans/2026-07-02-problem-register-sprints-review.md)(71 项 + R1-R7 修正 + §7f-7j 实施日志);**核查** = [`audits/2026-07-02-register-verification.md`](audits/2026-07-02-register-verification.md);**E 册** = [`harness-extension-backlog.md`](harness-extension-backlog.md)。
-> 下一个新需求编号:**REQ-038**(新需求一律 REQ-NNN;A/B/C/D/E 为历史审计系列保留原号,用户 2026-07-03 确认)。
+> 下一个新需求编号:**REQ-039**(新需求一律 REQ-NNN;A/B/C/D/E 为历史审计系列保留原号,用户 2026-07-03 确认)。
 > **需求文件全覆盖(2026-07-03)**:全部开放的 A/B/C/D 条目已逐条建档 `requirements/<ID>-<slug>.md`(含验收标准),行内备注为摘要、**文件为验收真源**;E 系列以冻结 E 册为分析文档;parked/dup 项不建档。
 
 ## 发布短名单(launch-blockers,册 §6.8)
@@ -64,6 +64,7 @@
 | REQ-033 | 开放生态安装面:任意 MCP 手动添加 UI + agent 导入/轻转换 + 兼容性边界诚实文档化 | feature | A | registered | **与 REQ-032 正交互补**(catalog=精选层,本档=开放世界入口):MCP 是跨生态通用主通道但 hub 无手动添加 UI(只能装 catalog 8 条);skill folder/git 与 plugin npm 导入已有;agent 无导入;异构引擎**代码插件**不可装(ADR-023;Claude Code 大礼包可转换→REQ-034,Codex 无插件体系)——诚实文档化+指引走同能力 MCP;详见 [requirements/REQ-033](requirements/REQ-033-open-ecosystem-install.md) |
 | REQ-036 | 创建技能化:移除 hub 交互式创建表单,skill/agent 创建统一走技能(skill-creator 出厂化 + agent-creator + alpha_reload 生效闭环) | feature | A | ready | **用户拍板 2026-07-05:去掉交互式创建,只通过技能创建**。现状=创建 tab 裸表单(手写 markdown,小白不可用);skill-creator 已随包但需手动装 → `skills.paths` 注入出厂即有;新增 agent-creator(对齐上游 `agent/generate.txt` 方法论);缺口=会话内创建无 dispose 手段 → `@alpha-code/ext` 加 `alpha_reload` 工具([[B6]] 接缝);导入(folder/git/npm)保留;详见 [requirements/REQ-036](requirements/REQ-036-creation-via-skills.md) |
 | REQ-037 | 上游能力治理层:原生 agent/skill/command 隐藏/禁用/重写(governance 真源 + home jsonc 物化 + dispose 热生效 + hub「内置」分组) | feature | A | ready | **用户拍板 2026-07-05:上游不改但可禁/白名单/重写,含 command**。机制全代码确证:agent `disable`删除+`hidden`UI过滤+同名覆盖;skill 走全局 `permission.skill` 按名 deny(泄漏=斜杠菜单仍见,占位模板诚实缓解);command 只可重写不可移除(内置 /init /review 同名覆盖);通道=`~/.opencode/opencode.jsonc`(唯一 dispose 重读);**保护名单**:禁 compaction 必崩(`compaction.ts:328-329`)、build 兜底;默认 denylist+allowlist 可切;即 REQ-019 递延 V2 内置管理的实现载体;详见 [requirements/REQ-037](requirements/REQ-037-upstream-governance.md) |
+| REQ-038 | Composer 一致性收敛:首页/会话页行为对齐(首页 `/` 菜单接线为 P0)+ 共享层收敛(逻辑/外壳 CSS 单源)+ 换皮层像素走查 | ux | A | ready | **用户报 bug 2026-07-05(截图)**:首页输入 `/` 无命令菜单(占位文案承诺了不存在的能力)。勘探修正假设:**非双份 CSS 漂移,是两个组件**——chips(+/权限/effort)已单源共享(`composer-controls.tsx`+注入);首页=alpha 裸 textarea(无 slash/@/粘贴/拖拽,IME 守卫弱),会话页=上游冻结 prompt-input 全功能;**全量并轨双向不可行**(provider 栈不可达 / 重写违 ADR-016)→ 采纳行为对齐+共享层收敛;外壳样式两处各写一遍待合单源;发送按钮裁切等入走查;详见 [requirements/REQ-038](requirements/REQ-038-composer-parity.md) |
 
 ## Active — P2(债务)
 
