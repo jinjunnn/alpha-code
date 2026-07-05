@@ -1,0 +1,41 @@
+/* AlphaBoundary 崩溃浮条(C28 下沉边界,S17 T4)。注入件多为 Portal/headless、无布局位 → 统一 fixed
+   右下浮条;多区域同时崩溃时条目重叠(极端情形,可接受 —— 每条都可「重载此区域」逐个恢复)。 */
+.a-boundary {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 440px;
+  padding: 8px 12px;
+  border: 1px solid var(--a-border, rgba(127, 127, 127, 0.35));
+  border-radius: 8px;
+  background: var(--a-surface, #fff);
+  color: var(--a-text, inherit);
+  font-size: var(--a-text-2xs, 12px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+.a-boundary-name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.a-boundary-msg {
+  opacity: 0.75;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.a-boundary-btn {
+  flex: none;
+  padding: 3px 10px;
+  border: 1px solid var(--a-border, rgba(127, 127, 127, 0.35));
+  border-radius: 6px;
+  background: transparent;
+  color: var(--a-accent, #6366f1);
+  cursor: pointer;
+}
+.a-boundary-btn:hover {
+  background: var(--a-bg-muted, rgba(127, 127, 127, 0.12));
+}
