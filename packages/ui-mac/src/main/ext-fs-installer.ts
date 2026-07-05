@@ -262,7 +262,13 @@ export function installRemoteSkill(
   meta?: InstallMeta,
 ): FsResult {
   if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid skill name" }
-  if (!contents.some((c) => c.path === "SKILL.md")) return { ok: false, reason: "asset missing SKILL.md" }
+  const skillMd = contents.find((c) => c.path === "SKILL.md")
+  if (!skillMd) return { ok: false, reason: "asset missing SKILL.md" }
+  // codex M4:引擎以 frontmatter name 为技能真名 —— 必须与 catalog entry.name 一致,否则装进安全
+  // 目录却以另一个名字暴露(可 shadow 既有技能)。不一致拒装(loud)。
+  const fm = parseSkillFrontmatter(skillMd.data.toString("utf8"))
+  if (!fm.ok) return { ok: false, reason: `SKILL.md frontmatter invalid: ${fm.reason}` }
+  if (fm.name !== name) return { ok: false, reason: `frontmatter name "${fm.name}" ≠ catalog entry name "${name}" — refusing to install (name spoofing guard)` }
   const roots = resolveRoots(target)
   if ("error" in roots) return { ok: false, reason: roots.error }
   const destDir = safeResolveUnder(roots.alphaDir, "skills", name)
@@ -282,7 +288,9 @@ export function installRemoteSkill(
   const bridge = bridgeItem(roots.alphaDir, roots.opencodeDir, "skills", name)
   if (!bridge.ok) return { ok: false, reason: `已写入 ${destDir},但引擎桥接失败:${bridge.reason}` }
   const files = [destDir, ...bridge.created]
-  recordReceipt(roots, { name, type: "skill", files, meta, origin: "catalog" })
+  const receiptWarn = recordReceipt(roots, { name, type: "skill", files, meta, origin: "catalog" })
+  // codex L2:账本写失败时文件/桥已落盘 —— 不谎报失败(技能实际可用),但 loud 记录(卸载/更新将失真)。
+  if (receiptWarn) console.error(`[ext-fs-installer] remote skill "${name}" installed but receipt failed: ${receiptWarn}`)
   return { ok: true, files }
 }
 

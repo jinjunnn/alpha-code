@@ -286,12 +286,9 @@ export type ElectronAPI = {
       | { source: "remote" | "cache"; catalog: unknown; version: string; fetchedAt: string; error?: string }
       | { source: "none"; error: string }
     >
-    /** REQ-032:远程技能安装(main 下载 + sha256 钉死校验 + builtin 同管线写盘/桥/账本)。 */
-    installRemoteSkill: (
-      name: string,
-      files: Array<{ path: string; sha256: string; bytes: number; url: string }>,
-      meta?: InstallMeta,
-    ) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
+    /** REQ-032:远程技能安装 —— renderer 只传 catalogId;name/清单/版本由 main 从已验签 catalog
+     *  重新派生(codex H1 信任边界),下载 sha256 钉死 + builtin 同管线写盘/桥/账本。 */
+    installRemoteSkill: (catalogId: string) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
     installPlugin: (pkg: string, meta?: InstallMeta) => Promise<{ ok: true } | { ok: false; reason: string }>
     installBuiltinSkill: (
       builtinAssetKey: string,

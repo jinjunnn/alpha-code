@@ -79,9 +79,22 @@ export function registerExtIpcHandlers(userDataPath: string) {
   ipcMain.handle("ext-remote-catalog", () => refreshRemoteCatalog(userDataPath))
   ipcMain.handle(
     "ext-install-remote-skill",
-    async (_event: IpcMainInvokeEvent, name: string, files: RemoteAssetFile[], meta?: InstallMeta) => {
-      const dl = await downloadRemoteAsset(files)
+    // codex H1:renderer 只传 catalogId —— name/files/meta 全部由 main 从**已验签** catalog 重新派生
+    // (refreshRemoteCatalog 的 remote 与 cache 路径均过 ed25519;renderer/被篡改缓存无法自带 URL+hash 绕签名)。
+    async (_event: IpcMainInvokeEvent, catalogId: string) => {
+      if (typeof catalogId !== "string" || !catalogId) return { ok: false, reason: "invalid catalog id" }
+      const rc = await refreshRemoteCatalog(userDataPath)
+      if (rc.source === "none") return { ok: false, reason: `remote catalog unavailable: ${rc.error}` }
+      const entries = (rc.catalog as { entries?: Array<Record<string, unknown>> }).entries ?? []
+      const entry = entries.find((e) => e.id === catalogId)
+      if (!entry) return { ok: false, reason: `entry not in verified catalog: ${catalogId}` }
+      if (entry.type !== "skill") return { ok: false, reason: `entry is not a skill: ${catalogId}` }
+      const asset = entry.remoteAsset as { version?: string; files?: RemoteAssetFile[] } | undefined
+      if (!asset?.files?.length) return { ok: false, reason: `entry has no remote asset: ${catalogId}` }
+      const name = String(entry.name ?? "")
+      const dl = await downloadRemoteAsset(asset.files)
       if (!dl.ok) return dl
+      const meta: InstallMeta = { catalogId, version: String(entry.version ?? rc.version) }
       return installRemoteSkill(name, dl.contents, undefined, meta)
     },
   )

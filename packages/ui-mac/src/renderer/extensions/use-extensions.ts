@@ -408,9 +408,10 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
   async function installSkill(entry: CatalogEntry): Promise<ActionResult> {
     const spec = entry.installSpec
     if (spec?.kind !== "skill") return { ok: false, reason: "not a skill entry" }
-    // REQ-032:远程资产技能 —— main 下载 + sha256 钉死校验 + builtin 同管线(桥/账本);失败 loud。
+    // REQ-032:远程资产技能 —— renderer 只传 catalogId(codex H1:main 从已验签 catalog 派生
+    // name/清单/版本,renderer 无法自带 URL+hash);下载 sha256 钉死 + builtin 同管线;失败 loud。
     if (spec.source === "remote" && entry.remoteAsset?.files?.length) {
-      const r = await window.api.ext.installRemoteSkill(entry.name, entry.remoteAsset.files, metaFor(entry))
+      const r = await window.api.ext.installRemoteSkill(entry.id)
       if (!r.ok) return r
       await loadInstalls()
       if (!(await refreshEngine())) return { ok: true, reason: "reload-pending" }

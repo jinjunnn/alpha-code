@@ -24,3 +24,15 @@
 - hub 内远程条目安装的像素级走查([[visual-verify-required]];dev 环境事故同 REQ-036 记录)
 - C 侧回滚演练(随首次真实版本迭代)
 - 每日后台静默检查(REQ 可选项)未实现 —— 启动+进 hub 两触点已覆盖主路径,留增强
+
+
+## codex 审计(1 High / 4 Medium / 2 Low)与修复(同 PR)
+- **H1 IPC 信任边界未钉**(renderer 可自带 name/files 绕开 catalog 签名)→ IPC 只收 `catalogId`,name/清单/版本全部由 main 从**已验签** catalog 重新派生;renderer/被篡改缓存无法自带 URL+hash;
+- **M1 缓存不重验签** → 缓存改存 body+sig 原文,**读取时重跑 ed25519**,失败丢弃并 loud(本地篡改缓存失效);
+- **M2 旧签名 catalog 重放/回滚** → 版本单调守卫:远端版本低于缓存版本拒用(`ROLLBACK REJECTED` loud,数值感知段比较);
+- **M3 redirect 降级** → fetch 后校验**最终** URL 仍为 https(catalog/sig/资产三入口统一);
+- **M4 frontmatter name 未绑定**(装安全目录名、以另一名字暴露 shadow 技能)→ 解析 SKILL.md frontmatter,`fm.name ≠ entry.name` 拒装(spoofing guard,e2e 锁定);
+- **L1 详情页持旧 entry** → H1 使 main 始终按 id 从当前已验签 catalog 派生,安装面自然新鲜;展示级旧引用接受;
+- **L2 账本写失败静默 ok** → 保持 ok(技能实际可用,不谎报失败)但 `console.error` loud 记录;与既有 installer 同型系统债,随 B20 线跟踪。
+- Informational(资产任意 https host):内容完整性已由签名内 sha256 钉死;host allowlist 属网络 egress 策略,留 REQ-032 phase 2。
+live e2e 复跑 10/10(含 spoofing 拒装);新缓存格式 304 路径复验。

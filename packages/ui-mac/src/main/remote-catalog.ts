@@ -42,10 +42,30 @@ function saneCatalog(parsed: unknown): parsed is { version: string; entries: unk
   return !!c && typeof c.version === "string" && Array.isArray(c.entries) && c.entries.length > 0
 }
 
+// codex M2:catalog 版本单调比较(段内数值感知:"2026-07-05.10" > "2026-07-05.9")。
+export function catalogVersionLess(a: string, b: string): boolean {
+  const pa = a.split(/[.\-]/), pb = b.split(/[.\-]/)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i] ?? "", y = pb[i] ?? ""
+    const nx = Number(x), ny = Number(y)
+    if (Number.isFinite(nx) && Number.isFinite(ny) && x !== "" && y !== "") {
+      if (nx !== ny) return nx < ny
+    } else if (x !== y) return x < y
+  }
+  return false
+}
+
+// codex M1:缓存**读取时重验签**(缓存文件可被本地篡改;只信 body+sig 过 ed25519 的内容)。
 export function readCachedCatalog(userDataPath: string): { etag?: string; version: string; fetchedAt: string; catalog: unknown } | null {
   try {
     const raw = JSON.parse(fs.readFileSync(cachePath(userDataPath), "utf8"))
-    if (raw && typeof raw.version === "string" && raw.catalog && saneCatalog(raw.catalog)) return raw
+    if (!raw || typeof raw.body !== "string" || typeof raw.sig !== "string") return null
+    if (!verifySignature(Buffer.from(raw.body, "utf8"), raw.sig)) {
+      console.error("[remote-catalog] cached catalog FAILED signature re-verification — discarding (possible local tampering)")
+      return null
+    }
+    const catalog = JSON.parse(raw.body)
+    if (typeof raw.version === "string" && saneCatalog(catalog)) return { etag: raw.etag, version: raw.version, fetchedAt: raw.fetchedAt, catalog }
   } catch {
     /* no cache */
   }
@@ -56,7 +76,10 @@ async function fetchWithTimeout(url: string, headers: Record<string, string> = {
   const ctl = new AbortController()
   const timer = setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS)
   try {
-    return await fetch(url, { headers, signal: ctl.signal, redirect: "follow" })
+    const resp = await fetch(url, { headers, signal: ctl.signal, redirect: "follow" })
+    // codex M3:redirect follow 后校验**最终** URL 仍是 https(防降级到 http/任意 scheme)
+    if (resp.url && !resp.url.startsWith("https://")) throw new Error(`redirected to non-https: ${resp.url}`)
+    return resp
   } finally {
     clearTimeout(timer)
   }
@@ -104,11 +127,17 @@ export async function refreshRemoteCatalog(userDataPath: string): Promise<Remote
   }
   if (!saneCatalog(parsed)) return fallback("catalog shape invalid")
 
+  // codex M2:防签名重放回滚 —— 远端版本低于已缓存版本 = 旧合法 catalog 重放/发布链回滚,拒用(loud)。
+  const version = (parsed as { version: string }).version
+  if (cached && catalogVersionLess(version, cached.version))
+    return fallback(`ROLLBACK REJECTED: remote catalog ${version} older than cached ${cached.version}`)
+
   const record = {
     etag: resp.headers.get("etag") ?? undefined,
-    version: (parsed as { version: string }).version,
+    version,
     fetchedAt: new Date().toISOString(),
-    catalog: parsed,
+    body: body.toString("utf8"),
+    sig: sig.trim(),
   }
   try {
     fs.mkdirSync(userDataPath, { recursive: true })
@@ -116,7 +145,7 @@ export async function refreshRemoteCatalog(userDataPath: string): Promise<Remote
   } catch {
     /* 缓存写失败不阻断本次使用 */
   }
-  return { source: "remote", catalog: parsed, version: record.version, fetchedAt: record.fetchedAt }
+  return { source: "remote", catalog: parsed, version, fetchedAt: record.fetchedAt }
 }
 
 /** 下载远程资产清单(逐文件 https + 体积帽 + sha256 钉死;任一不符全单拒绝,不落半成品)。 */
