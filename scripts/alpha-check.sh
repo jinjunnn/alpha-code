@@ -10,6 +10,13 @@
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
+# REQ-015 self-heal(2026-07-05):husky 的 prepare 在每次 `bun install` 后把 core.hooksPath
+# 重置回 .husky/_(其全量 turbo typecheck 在 ADR-020 冻结偏斜下因 session-ui 恒红)。
+# 此处幂等重挂 alpha 门,使 .githooks/pre-push(= 本脚本)成为默认 push 门。逃生:ALPHA_HOOKS_DISABLE=1。
+if [ "${ALPHA_HOOKS_DISABLE:-}" != "1" ]; then
+  git config core.hooksPath .githooks 2>/dev/null || true
+fi
+
 # Keep in lockstep with .github/workflows/alpha-ci.yml (env.UPSTREAM_PATHS) and ADR-004.
 # ADR-020(REQ-017 修):packages/{app,ui} 已冻结(frontend-freeze-base),相对 dev 的 diff 是冻结本意
 # → 移出守卫,与 alpha-ci.yml env.UPSTREAM_PATHS 恢复 1:1(此前本地恒假红)。

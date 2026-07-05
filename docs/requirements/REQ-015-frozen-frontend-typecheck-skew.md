@@ -3,7 +3,7 @@ id: REQ-015
 title: 冻结前端 typecheck 偏斜:session-ui(546 后新增)依赖新版 ui API 与冻结 ui 不兼容
 type: debt
 priority: P2
-status: in-sprint
+status: shipped
 repo: A
 created: 2026-07-03
 sprint: 2026-07-05-s17-deep-decisions
@@ -29,6 +29,19 @@ ADR-020 把 `packages/{app,ui}` 冻结在 `frontend-freeze-base`(546 前)。但 
 4. **把 ADR-020 冻结范围扩到完整上游前端叶子集**并处理引擎耦合(最正,最重)。
 
 **推荐**:先 spike 方案 1 的引擎耦合影响(enterprise/storybook 冻回 vs 当前 core/sdk);若干净则 1,否则 3 作临时 + 2 收敛。
+
+## 拍板与实施(2026-07-05,S17 T2)
+
+**四方案结构性淘汰/坍缩,采纳档外方案 5**(完整淘汰逻辑落 [ADR-020 修订](../../.claude/rules/adrs/ADR-020-frontend-freeze.md)):
+- 方案1/2 触 ADR-020 §3 红线——session-ui 在引擎零改动集内,删/改 = DMR diff = 北极星守卫红(spike 补证:enterprise/storybook **同时**依赖 session-ui+ui,方案1 连坐三包且每 sync 复发);
+- 方案4 对 session-ui 无解(冻结基点不存在它,「冻结」= 删除 → 坍缩回方案1);
+- 方案3 被方案5 严格支配(方案5 最坏退化态 = 方案3)。
+
+**方案 5 = 本地 push 门 rewire 到 alpha 自有 `.githooks`**(上游零改):
+1. `.githooks/pre-push`(2026-07-03 已存在的可选设施)转**默认**——执行 `scripts/alpha-check.sh`(与 alpha-ci 1:1,含北极星守卫);
+2. **根因对策**:husky `prepare` 每次 `bun install` 后把 `core.hooksPath` 重置回 `.husky/_`(=「配置过又失效」的真因)→ `alpha-check.sh` 开头幂等自愈重挂(逃生 `ALPHA_HOOKS_DISABLE=1`);残余窗口的退化态 = 旧状(撞上游红门),永不更糟;
+3. `docs/CI.md` §6 由「可选」改「默认开启」并写明根因;
+4. 全量 turbo typecheck 的 session-ui 红 = **接受的已知偏斜**(上游叶子,alpha 不 ship;re-freeze 体检时复查)。
 
 ## 非目标
 - 不改上游 `.husky/pre-push`、`turbo.json`(会破北极星或 sync 冲突)。

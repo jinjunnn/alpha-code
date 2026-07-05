@@ -44,5 +44,14 @@ related: ADR-016, ADR-004, ADR-005
   实测仅 1 处适配,且 SDK codegen diff 高声;真机冒烟(runbook ⓪)兜底。
 - ⚠️ `bun.lock`/catalog 随上游走,冻结包的依赖解析可能在某次 sync 后偏斜(spike 中 install 零变化;
   若发生 → 按 re-freeze ③ 的体检路径处理)。
-- ⚠️ **已知缺口(2026-07-03,→ [REQ-015](../../../docs/requirements/REQ-015-frozen-frontend-typecheck-skew.md))**:546-sync 新增的 `packages/session-ui`(冻结基点不存在)依赖新版 `ui` 组件 props,与冻结 `ui` 不兼容 → 全量 `bun turbo typecheck`(上游 pre-push hook)红。**影响面窄**:session-ui 仅被上游叶子包 enterprise/storybook 消费,alpha 不 ship;`alpha-ci`(权威门)只查 ext/ui-mac 故 **CI 绿、合并不受阻**,仅本地 pre-push 需 `--no-verify`。根治=冻结范围需覆盖完整上游前端叶子集或移除未 ship 叶子包(REQ-015 拍板)。教训:**partial freeze 会与同族未冻上游包在 workspace typecheck 层偏斜**——freeze 范围要按「谁 import 冻结包」闭包,不只按「谁被 alpha ship」。
+- ⚠️ **已知缺口(2026-07-03,→ [REQ-015](../../../docs/requirements/REQ-015-frozen-frontend-typecheck-skew.md))**:546-sync 新增的 `packages/session-ui`(冻结基点不存在)依赖新版 `ui` 组件 props,与冻结 `ui` 不兼容 → 全量 `bun turbo typecheck`(上游 pre-push hook)红。**影响面窄**:session-ui 仅被上游叶子包 enterprise/storybook 消费,alpha 不 ship;`alpha-ci`(权威门)只查 ext/ui-mac 故 **CI 绿、合并不受阻**,仅本地 pre-push 需 `--no-verify`。根治=冻结范围需覆盖完整上游前端叶子集或移除未 ship 叶子包(REQ-015 拍板)。教训:**partial freeze 会与同族未冻上游包在 workspace typecheck 层偏斜**——freeze 范围要按「谁 import 冻结包」闭包,不只按「谁被 alpha ship」。**→ 已处置(2026-07-05,REQ-015 方案5,见文末修订)。**
 - 🔭 待办:首个冻结态真机视觉核验(→ S9 真机批,兼 REQ-010 验收);sync 首跑观察 restore 步。
+
+## 修订(2026-07-05,REQ-015 处置 —— 本地 push 门 rewire,冻结偏斜转「接受的已知态」)
+
+REQ-015 档内四方案深析后全部结构性淘汰/坍缩,采纳档外方案 5(S17 T2):
+1. **方案1(移除 session-ui/enterprise/storybook)与方案2(补丁 session-ui)— 否决**:session-ui 在本 ADR §3 引擎红线集内,删/改 = DMR diff = 北极星守卫红,且每次 sync 复发。
+2. **方案4(扩冻结范围)— 对 session-ui 无解**:它在冻结基点不存在、又依赖新版 ui props;「冻结它」要么留新版(与冻结 ui 依旧不兼容)要么等于删除(坍缩回方案1)。
+3. **方案3(`--no-verify` 制度化)— 被方案5 严格支配**(方案5 的最坏退化态即方案3)。
+4. **方案5(采纳)**:本地 push 门 rewire 到 alpha 自有 `.githooks/pre-push`(= `scripts/alpha-check.sh`,与 alpha-ci 1:1;docs/CI.md §6 原「可选」设施转**默认**)。根因「husky `prepare` 在每次 `bun install` 后把 `core.hooksPath` 重置回 `.husky/_`」由 alpha-check **幂等自愈重挂**对策(逃生 `ALPHA_HOOKS_DISABLE=1`);上游文件零改。
+5. **接受的已知偏斜**:全量 `bun turbo typecheck`(即上游 husky 门语义)在冻结世界恒红——session-ui 属上游叶子(仅 enterprise/storybook 消费,NON_GOALS#6),alpha 不 build 不 ship,权威门不含;re-freeze 时按 §5 体检自然复查。上游 hook 附带的 bun 版本对齐检查不进 alpha 门(警示性质,损失接受,需要时可补)。

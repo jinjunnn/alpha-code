@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# alpha pre-push hook — enforce local-first (docs/CI.md).
-# OPT-IN, not installed by default. Enable once with:
-#     git config core.hooksPath .githooks
-# Disable with:  git config --unset core.hooksPath
+# alpha pre-push hook — enforce local-first (docs/CI.md §6).
+# DEFAULT-ON since 2026-07-05 (REQ-015): scripts/alpha-check.sh re-arms
+#   `git config core.hooksPath .githooks` on every run, because husky's `prepare`
+#   resets it back to .husky/_ after each `bun install` — and that upstream hook's
+#   full-turbo typecheck is permanently red under the ADR-020 frozen-frontend skew
+#   (session-ui needs new-ui props; unshipped upstream leaf; see REQ-015).
+# Disable persistently:  git config --unset core.hooksPath  (+ export ALPHA_HOOKS_DISABLE=1)
 # Bypass a single push:  git push --no-verify
 exec bash "$(git rev-parse --show-toplevel)/scripts/alpha-check.sh"

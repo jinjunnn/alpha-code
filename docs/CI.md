@@ -60,14 +60,16 @@ bash scripts/alpha-check.sh
 3. **命令**:`gh run cancel <id>` 取消 · `gh run watch <id>` 盯 · `gh run rerun <id>` 重跑 · `gh run list --workflow=alpha-ci.yml` 只看本仓 CI。
 4. **别被堵**:本地三关已绿 = 代码没问题;required 只有 alpha-ci 三个。真急可 `gh pr merge --admin` 绕过(慎用,别养成习惯)。
 
-## 6. (可选)pre-push 钩子 —— 把 local-first 变强制
+## 6. pre-push 钩子 —— local-first 强制(2026-07-05 REQ-015 起默认开启)
 
-默认**不装**(不打断急活)。想要强约束:
+`.githooks/pre-push` = 跑 `scripts/alpha-check.sh`(与 alpha-ci 1:1)。**默认开启**:`alpha-check.sh` 每次运行都会幂等重挂 `git config core.hooksPath .githooks`。
+
+为什么不能用上游 husky 门(此前「配置过又失效」的根因,REQ-015):
+- `.husky/pre-push` 跑**全量** `bun turbo typecheck`,在 ADR-020 冻结偏斜下 `session-ui` 恒红(上游叶子包,alpha 不 ship,权威门 alpha-ci 不含)→ 逼出 `--no-verify` 习惯;
+- husky 的 `prepare` 在每次 `bun install` 后把 `core.hooksPath` 重置回 `.husky/_` → 手动 `git config` 一次性开启会被静默冲掉。alpha-check 的自愈重挂即对策;残余窗口(install 后、首次 alpha-check 前直接 push)会撞上游红门 → 跑一次 alpha-check 即恢复,**永不劣于旧状**。
 
 ```bash
-git config core.hooksPath .githooks      # 一次性开启;仓库已带 .githooks/pre-push
-# 关闭: git config --unset core.hooksPath
-# 单次绕过: git push --no-verify
+# 逃生:
+git push --no-verify                                # 单次绕过
+git config --unset core.hooksPath                   # 关闭(需配合 export ALPHA_HOOKS_DISABLE=1,否则下次 alpha-check 重挂)
 ```
-
-开启后每次 `git push` 会先跑 `scripts/alpha-check.sh`,不绿不让推。
