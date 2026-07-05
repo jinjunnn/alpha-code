@@ -13,7 +13,10 @@ import { addReceipt, alphaGlobalRoot, listInstalls, removeReceipt } from "./alph
 import { fileifyMcpSecrets, removeMcpServerSecrets } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy } from "./alpha-migrate"
 import { configHealth, persistMcp, persistPlugin, removeMcp, removePlugin, removePluginPath } from "./ext-config"
-import { importSkillFolder, importSkillGit, installBuiltinAgent, installBuiltinSkill, installRemoteSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall } from "./ext-fs-installer"
+import { importSkillFolder, importSkillGit, installBuiltinAgent, installBuiltinSkill, installRemoteSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall, writeAgent } from "./ext-fs-installer"
+import { parseAgentImport } from "./ext-import-validate"
+import { randomUUID } from "node:crypto"
+import { pickedFiles } from "./ipc"
 import { factorySkillIds } from "./factory-skills"
 import { downloadRemoteAsset, refreshRemoteCatalog, type RemoteAssetFile } from "./remote-catalog"
 import { applyGovernance, normalizeGovernance, protectionInfo, readGovernance, resetGovernance } from "./alpha-governance"
@@ -50,7 +53,11 @@ export function registerExtIpcHandlers(userDataPath: string) {
       if (secretVars && secretVars.length && server && typeof server === "object") {
         fileifyMcpSecrets(userDataPath, name, server, secretVars)
       }
-      return persistMcp(name, server, meta)
+      const r = persistMcp(name, server, meta)
+      // codex L(REQ-033):persistMcp 拒绝(如 DANGEROUS_ENV)时,fileify 已先落的 secret 文件要撤 ——
+      // 否则残留孤儿密钥文件(无 config 引用但内容在盘)。
+      if (!r.ok && secretVars && secretVars.length) removeMcpServerSecrets(userDataPath, name)
+      return r
     },
   )
   ipcMain.handle("ext-remove-mcp", (_event: IpcMainInvokeEvent, name: string) => {
@@ -76,6 +83,35 @@ export function registerExtIpcHandlers(userDataPath: string) {
 
   // REQ-032:远程 catalog(ETag+验签+缓存,回退链 远端→缓存→内置由 renderer 兜底)与远程技能安装
   // (下载+sha256 校验在 main,写盘走 builtin 同管线:~/.alpha + 桥 + 账本)。
+  // REQ-033:agent 导入两段式,codex 审计后收紧两条信任边界:
+  //  H1 — preview 读文件必须经 openFilePicker 的授权 token(pickedFiles 注册表:sender 绑定 + 单次
+  //       消费),renderer 无法拿任意路径当读 oracle;
+  //  M1 — confirm 只收 previewId,写入内容取自 main 侧留存的 preview 产物 —— renderer 全程不能
+  //       提供写入内容(任意 agent md/permission 直写面关死)。
+  const issuedAgentImports = new Map<string, { name: string; composed: string }>()
+  ipcMain.handle("ext-import-agent-preview", async (event: IpcMainInvokeEvent, token: string, filePath: string) => {
+    try {
+      if (typeof token !== "string" || typeof filePath !== "string" || !filePath.endsWith(".md"))
+        return { ok: false, reason: "请选择 .md agent 文件" }
+      const bytes = await pickedFiles.read(event.sender.id, token, filePath) // 授权校验 + 单次消费(codex H1)
+      if (bytes.byteLength > 256 * 1024) return { ok: false, reason: "文件过大(>256KB)" }
+      const parsed = parseAgentImport(Buffer.from(bytes).toString("utf8"))
+      if (!parsed.ok) return parsed
+      const previewId = randomUUID()
+      issuedAgentImports.set(previewId, { name: parsed.name, composed: parsed.composed })
+      if (issuedAgentImports.size > 16) issuedAgentImports.delete(issuedAgentImports.keys().next().value!)
+      return { ...parsed, previewId }
+    } catch (error) {
+      return { ok: false, reason: error instanceof Error ? error.message : "读取失败" }
+    }
+  })
+  ipcMain.handle("ext-import-agent-confirm", (_event: IpcMainInvokeEvent, previewId: string) => {
+    const issued = typeof previewId === "string" ? issuedAgentImports.get(previewId) : undefined
+    if (!issued) return { ok: false, reason: "预览已失效,请重新选择文件" }
+    issuedAgentImports.delete(previewId)
+    return writeAgent(issued.name, issued.composed, undefined, undefined, "imported")
+  })
+
   ipcMain.handle("ext-remote-catalog", () => refreshRemoteCatalog(userDataPath))
   ipcMain.handle(
     "ext-install-remote-skill",

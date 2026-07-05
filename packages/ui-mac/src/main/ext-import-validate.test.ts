@@ -55,3 +55,65 @@ describe("validGitUrl", () => {
     }
   })
 })
+
+// ── REQ-033:agent 导入解析/映射(Claude Code → opencode 显式映射,不支持项 loud)──
+import { parseAgentImport } from "./ext-import-validate"
+
+const CLAUDE_AGENT = `---
+name: code-reviewer
+description: Reviews code for quality issues
+tools: Read, Grep, Bash
+model: sonnet
+---
+
+You are a code reviewer. Focus on correctness.
+`
+
+const OC_AGENT = `---
+name: my-agent
+description: opencode native agent
+mode: subagent
+temperature: 0.2
+---
+
+Do things.
+`
+
+describe("parseAgentImport (REQ-033)", () => {
+  test("Claude Code 格式:识别 + description/body 映射 + tools/model 显式不映射", () => {
+    const r = parseAgentImport(CLAUDE_AGENT)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.format).toBe("claude-code")
+    expect(r.name).toBe("code-reviewer")
+    const bySource = new Map(r.mapping.map((m) => [m.source, m]))
+    expect(bySource.get("description")?.target).toBe("description")
+    expect(bySource.get("tools")?.target).toBeNull()
+    expect(bySource.get("tools")?.note).toContain("permission")
+    expect(bySource.get("model")?.target).toBeNull()
+    expect(r.composed).toContain("mode: subagent")
+    expect(r.composed).toContain("You are a code reviewer.")
+    expect(r.composed).not.toContain("tools:") // 不支持字段绝不静默写入
+  })
+  test("opencode 原生格式:直入(composed = 原文)", () => {
+    const r = parseAgentImport(OC_AGENT)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.format).toBe("opencode")
+    expect(r.composed).toBe(OC_AGENT)
+  })
+  test("confirm 重解析防线:Claude 转换产物再 parse 合法且为 opencode 格式", () => {
+    const r = parseAgentImport(CLAUDE_AGENT)
+    if (!r.ok) throw new Error("unexpected")
+    const r2 = parseAgentImport(r.composed)
+    expect(r2.ok).toBe(true)
+    if (!r2.ok) return
+    expect(r2.format).toBe("opencode")
+    expect(r2.name).toBe("code-reviewer")
+  })
+  test("坏输入:缺 frontmatter / 缺 description / 非法 name 全拒", () => {
+    expect(parseAgentImport("no frontmatter").ok).toBe(false)
+    expect(parseAgentImport("---\nname: ok\n---\nbody").ok).toBe(false)
+    expect(parseAgentImport("---\nname: ../evil\ndescription: x\n---\nbody").ok).toBe(false)
+  })
+})

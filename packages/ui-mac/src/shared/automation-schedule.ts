@@ -166,3 +166,13 @@ export function describeSchedule(schedule: AutomationSchedule): string {
     return `cron ${schedule.expr}`
   }
 }
+
+/** A2(REQ-024):连败熔断判定 —— 最近 N 次**真实尝试**(skip 类不算)全为 failed/timeout。 */
+export function shouldTripBreaker(
+  history: Array<{ status: string }> | undefined,
+  threshold: number,
+): boolean {
+  const attempts = (history ?? []).filter((r) => r.status !== "skipped-overlap" && r.status !== "skipped-cap")
+  const recent = attempts.slice(0, threshold)
+  return recent.length >= threshold && recent.every((r) => r.status === "failed" || r.status === "timeout")
+}

@@ -12,7 +12,7 @@ import { BrowserWindow, Notification, powerMonitor } from "electron"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import type { AutomationEvent, AutomationRunRecord, AutomationTask } from "../shared/automation-types"
 import { AUTOMATION_DEFAULTS } from "../shared/automation-types"
-import { nextFire, rescheduleAfterGap } from "../shared/automation-schedule"
+import { rescheduleAfterGap, shouldTripBreaker } from "../shared/automation-schedule"
 import { getAutomation, listAutomations, readAutomationState, saveAutomation, writeAutomationState } from "./alpha-automations"
 import { writeRunFiles } from "./alpha-workdir"
 import { getLogger } from "./logging"
@@ -177,15 +177,9 @@ async function fire(id: string): Promise<void> {
   if (fresh) {
     fresh.lastRun = record
     fresh.history = [record, ...(fresh.history ?? [])].slice(0, AUTOMATION_DEFAULTS.historyKeep)
-    // A2(REQ-024):连败熔断 —— 最近 N 条(不含 skip 类)全为 failed/timeout → 自动停用,
-    // 原因落任务文件(UI 呈现;重新启用清除,见 automation-ipc toggle)。
-    const attempts = fresh.history.filter((r) => r.status !== "skipped-overlap" && r.status !== "skipped-cap")
-    const recent = attempts.slice(0, AUTOMATION_DEFAULTS.failureBreaker)
-    if (
-      fresh.enabled &&
-      recent.length >= AUTOMATION_DEFAULTS.failureBreaker &&
-      recent.every((r) => r.status === "failed" || r.status === "timeout")
-    ) {
+    // A2(REQ-024):连败熔断 —— 判定纯函数在 shared(单测),原因落任务文件(UI 呈现;
+    // 重新启用清除,见 automation-ipc toggle)。
+    if (fresh.enabled && shouldTripBreaker(fresh.history, AUTOMATION_DEFAULTS.failureBreaker)) {
       fresh.enabled = false
       fresh.disabledReason = "consecutive_failures"
       breakerTripped = true
