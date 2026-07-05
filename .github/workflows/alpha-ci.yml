@@ -8,9 +8,13 @@
 #                     root bun.lock (allowlisted) + .gitignore aren't under the guarded paths.
 #   typecheck       — tsgo on the two alpha packages a PR can actually touch.
 #   test            — bun unit tests (security-path guards: persistMcp RCE, endpoint exfil, fs escape).
+#   seed-assets     — B7: asserts electron-builder extraResources (REQ-023 vendored agent/plugin,
+#                     builtin skills, NOTICE.txt/B15, signing assets) exist; a silent deletion ships a
+#                     broken or license-non-compliant app that typecheck/tests never catch.
 #
 # Not a required check by itself — branch protection (required-checks) is a repo setting the owner
-# flips on; until then these report status without blocking.
+# flips on; until then these report status without blocking. (seed-assets is likewise advisory until
+# added to required-checks.)
 name: alpha-ci
 
 on:
@@ -62,6 +66,14 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.14"
+      # REQ-009: reuse bun's global module cache across runs (keyed on the lockfile) so `bun install`
+      # skips re-downloading unchanged deps. A cache miss just falls back to a full install — zero risk.
+      - name: Cache bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
       - run: bun install
       - name: typecheck @alpha-code/ext
         run: bun --cwd packages/ext run typecheck
@@ -76,6 +88,21 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.14"
+      # REQ-009: see typecheck job — same lockfile-keyed bun cache.
+      - name: Cache bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
       - run: bun install
       - name: bun test (ui-mac)
         run: bun --cwd packages/ui-mac test
+
+  seed-assets:
+    name: seed assets present
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert seed/vendored resources present (B7)
+        run: bash scripts/assert-seed-assets.sh
