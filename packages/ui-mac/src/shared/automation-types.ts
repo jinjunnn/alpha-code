@@ -35,7 +35,9 @@ export interface AutomationTask {
     model?: string
   }
   prompt: string
-  execution: "local" | "cloud" // A1 恒 local;cloud 归 A3(REQ-022)
+  execution: "local" | "cloud" // cloud = A3(REQ-025):B 侧 schedule,app 不在线也执行
+  /** A3:B 侧 schedule id(execution:cloud 时存在;删除/启停随任务同步到 B)。 */
+  cloudScheduleId?: string
   permissionProfile: "readonly" | "standard" // A1 恒 readonly;standard 归 A2
   budget: { maxDurationMin: number }
   overlapPolicy: "skip"

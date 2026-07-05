@@ -13,6 +13,7 @@ import {
 } from "./alpha-automations"
 import { getPlannedFireAt, isAutomationRunning, rearmAutomations, runAutomationNow } from "./automation-scheduler"
 import { llmParseAutomation } from "./automation-llm"
+import { deleteCloudSchedule, listCloudSchedules, pullCloudScheduleRuns, setCloudScheduleEnabled, upsertCloudSchedule } from "./alpha-cloud-schedules"
 
 export function registerAutomationIpcHandlers() {
   ipcMain.handle("automations-list", () => ({
@@ -25,23 +26,43 @@ export function registerAutomationIpcHandlers() {
     loginItem: app.getLoginItemSettings().openAtLogin,
   }))
 
-  ipcMain.handle("automations-save", (_e: IpcMainInvokeEvent, task: AutomationTask) => {
+  ipcMain.handle("automations-save", async (_e: IpcMainInvokeEvent, task: AutomationTask) => {
+    // A3(REQ-025):云档 = 先注册/更新 B schedule(失败不落盘,loud);本地档若此前是云档,先删 B 侧。
+    const prev = getAutomation(task?.id)
+    if (task?.execution === "cloud") {
+      const up = await upsertCloudSchedule({ ...task, cloudScheduleId: prev?.cloudScheduleId })
+      if (!up.ok) return { ok: false as const, reason: up.reason }
+      task.cloudScheduleId = up.scheduleId
+    } else if (prev?.cloudScheduleId) {
+      const del = await deleteCloudSchedule(prev.cloudScheduleId)
+      if (!del.ok) return { ok: false as const, reason: del.reason }
+      delete task.cloudScheduleId
+    }
     const res = saveAutomation(task)
     if (res.ok) rearmAutomations()
     return res
   })
 
-  ipcMain.handle("automations-delete", (_e: IpcMainInvokeEvent, id: string) => {
+  ipcMain.handle("automations-delete", async (_e: IpcMainInvokeEvent, id: string) => {
+    const prev = getAutomation(id)
+    if (prev?.cloudScheduleId) {
+      const del = await deleteCloudSchedule(prev.cloudScheduleId)
+      if (!del.ok) return { ok: false as const, reason: del.reason } // 云侧删不掉不静默(否则离线幽灵触发)
+    }
     const res = deleteAutomation(id)
     if (res.ok) rearmAutomations()
     return res
   })
 
-  ipcMain.handle("automations-toggle", (_e: IpcMainInvokeEvent, id: string, enabled: boolean) => {
+  ipcMain.handle("automations-toggle", async (_e: IpcMainInvokeEvent, id: string, enabled: boolean) => {
     const task = getAutomation(id)
     if (!task) return { ok: false as const, reason: "not found" }
     task.enabled = enabled === true
     if (task.enabled) delete task.disabledReason // A2:手动重新启用 = 清熔断态
+    if (task.cloudScheduleId) {
+      const r = await setCloudScheduleEnabled(task.cloudScheduleId, task.enabled)
+      if (!r.ok) return { ok: false as const, reason: r.reason }
+    }
     const res = saveAutomation(task)
     if (res.ok) rearmAutomations()
     return res
@@ -52,6 +73,13 @@ export function registerAutomationIpcHandlers() {
     writeAutomationState({ ...state, pausedAll: paused === true })
     rearmAutomations()
     return { ok: true as const }
+  })
+
+  // A3(REQ-025):云侧状态回读(熔断/停用原因)+ 错过 run 拉回;离线返回 null/error,UI 保持本地态。
+  ipcMain.handle("automations-cloud-sync", async () => {
+    const schedules = await listCloudSchedules()
+    const pulled = await pullCloudScheduleRuns()
+    return { schedules, pulled }
   })
 
   // A2(REQ-024):手动立即运行(不改 next-fire;占并发位;计日 cap)。

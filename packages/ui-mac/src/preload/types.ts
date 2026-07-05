@@ -388,6 +388,11 @@ export type ElectronAPI = {
       | { ok: true; name: string; schedule: AutomationSchedule; prompt: string }
       | { ok: false; reason: string }
     >
+    /** A3:云侧状态回读(schedules=null 即离线)+ 错过 run 拉回。 */
+    cloudSync: () => Promise<{
+      schedules: Array<{ id: string; enabled: boolean; next_fire_at: number; disabled_reason: string | null }> | null
+      pulled: { pulled: number } | { error: string }
+    }>
     /** 读(无参)/写(带参)「登录时启动」。 */
     loginItem: (open?: boolean) => Promise<{ openAtLogin: boolean }>
     onEvent: (cb: (event: AutomationEvent) => void) => () => void

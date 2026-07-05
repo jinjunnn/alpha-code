@@ -3,7 +3,7 @@ id: REQ-022
 title: 云端定时执行(B 侧):CF cron trigger + schedule registry + 到期 dispatch + A 侧拉回契约
 type: feature
 priority: P2
-status: in-sprint
+status: shipped
 repo: B
 created: 2026-07-04
 sprint: —

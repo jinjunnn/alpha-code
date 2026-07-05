@@ -65,6 +65,7 @@ export function rearmAutomations(): void {
   const alive = new Set<string>()
   for (const task of listAutomations()) {
     if (!task.enabled) continue
+    if (task.execution === "cloud") continue // A3:云档由 B 侧 cron 执行,本地不排
     alive.add(task.id)
     armTask(task, now)
   }

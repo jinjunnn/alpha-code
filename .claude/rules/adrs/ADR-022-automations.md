@@ -54,3 +54,8 @@ related: [ADR-002, ADR-019, ADR-021, REQ-021, REQ-022]
 - ⚠️ `alpha-automation` 以 `mode:"primary"` 注入 → 会出现在引擎 agent 列表/选择器里(描述已注明
   用途);若上游后续支持对 prompt 直接指派 subagent,可改 subagent+hidden 收干净。
 - 🔭 A2/A3 见 REQ-021;云档位落地时本 ADR 需修订 §6(dispatch 复用 ADR-021 §2 校验)。
+
+## 修订(2026-07-06,REQ-024/REQ-025 —— A2 全量 + A3 云档落地,§6 分期边界兑现)
+- **A2(REQ-024,PR #106)**:`standard` 可写档上线(注入 `alpha-automation-standard`:edit allow + bash 破坏类模式 deny —— 黑名单诚实非穷尽,UI 启用确认明示;零 ask 语义不变);LLM 辅助解析(规则失败后用户显式触发,临时会话即删);连败 3 熔断(`shouldTripBreaker` 纯函数)+ 立即运行(不改 next-fire,计日 cap)。
+- **A3(REQ-025,PR #108;B=REQ-022/PA-28,alpha-platform #17/#18 已 prod)**:`execution:"cloud"` 上线 —— 保存即注册 B 侧 D1 schedule(cron 化映射,once/超长诚实拒),本地调度器不排;开机按 `jobs?since&origin=schedule` 拉回错过 run 落 `.alpha/runs/`;B 熔断状态回读进列表;数据边界提示(ADR-021)强制展示。**MVP 限 research 管线**(任务文本=调研问题,零项目文件上云);B 端预算硬帽 15 iter/150k tok/300s。
+- §6 原「A2/A3 归后期」边界就此关闭;云档 dispatch 复用 ADR-021 §2 校验前置的承诺由 B 端 schema+预算校验 + A 端仅文本上云共同兑现。

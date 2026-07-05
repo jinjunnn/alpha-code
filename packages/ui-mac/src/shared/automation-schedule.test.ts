@@ -127,3 +127,16 @@ describe("shouldTripBreaker (A2 熔断)", () => {
     expect(shouldTripBreaker(undefined, 3)).toBe(false)
   })
 })
+
+// ── A3(REQ-025):本地 schedule → B 端 cron 映射 ──
+import { scheduleToCron } from "./automation-schedule"
+
+describe("scheduleToCron (A3 云档映射)", () => {
+  test("cron 原样;interval<60 → */N;整小时 → 0 */H;once/超长非整点 → null(诚实拒绝)", () => {
+    expect(scheduleToCron({ kind: "cron", expr: "0 9 * * 1-5" })).toBe("0 9 * * 1-5")
+    expect(scheduleToCron({ kind: "interval", everyMinutes: 15 })).toBe("*/15 * * * *")
+    expect(scheduleToCron({ kind: "interval", everyMinutes: 120 })).toBe("0 */2 * * *")
+    expect(scheduleToCron({ kind: "interval", everyMinutes: 90 })).toBeNull()
+    expect(scheduleToCron({ kind: "once", at: "2026-07-06T00:00:00Z" })).toBeNull()
+  })
+})
