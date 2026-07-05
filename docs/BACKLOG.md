@@ -65,7 +65,7 @@
 | B14 | 会话 DB 备份/导出(损坏恢复) | feature | A | registered | 上游 DB 本体改不了(R2);alpha main 纯文件操作可做备份/导出 |
 | B20 | 弱网降级 UX:超时/重试/splash 状态/真骨架/websearch 优雅降级(S8) | ux | A | ready | **S11 已收尾,余项转回 ready**;S11 T4 部分随 PR #60(splash 状态行 + banner/重试底座);余项=真骨架(Skeleton 死代码去留)/promptAsync 超时(豁免记录)/websearch(上游 R2 豁免),见 [audits/rescan](audits/2026-07-04-silent-failure-rescan.md) ⏭/🆗 行 |
 | B21 | BYOK 改键/删键即时生效(触发重注 env/respawn) | bug | A | shipped | **PR #48**;根因=env 桥 set-if-unset 滞留旧 key;修=自有注入权威覆盖/清除(用户值永不动,纯逻辑 5 单测)+ 改键回调触发重注+respawn;删键即时吊销;**verified 待真机**(改键→picker 即时反映→新 key 出账);详见 [requirements/B21](requirements/B21-byok-key-live-reload.md) |
-| B22 | message-timeline.tsx:481 会话时间线崩溃 | bug | A | ready | 546-sync 后**先代码复验再修**;疑 timeline-inject DOM 注入扰动上游 virtualizer |
+| B22 | message-timeline.tsx:481 会话时间线崩溃 | bug | A | ready | **代码复验完成(/loop 2026-07-04)**::481 现为 `virtualItemByKey` memo,上游 546-sync 已变现症或已异;疑源收敛=`timeline-inject.decorateDirOutput`(隐藏 Solid 子节点最可疑)>`decorateTurns` divider;**真机复现是修复前置**(崩溃类必须能复现才能证明修好)→ 真机批;详见 [requirements/B22](requirements/B22-timeline-crash.md) |
 | B23 | strict-key 配置致瘫:全局 jsonc 解析失败 → 整份配置静默清零 | bug | A | shipped | **S11 T4(PR #60)呈现半边落地**:`configHealth()`(语法错 + 未知顶层 key 双病灶,V1 顶键集自引擎 schema;5 单测)→ AlphaHome warning banner + 打开配置;写前校验(C2)继续挡 alpha 自写;上游清零行为本体不可改(R2);**verified 待视觉批**(故意写坏配置截图) |
 
 ## Active — P2(债务)
@@ -97,7 +97,7 @@
 | C17 | schema 版本兼容守卫(旧 app × 新 DB) | debt | A | registered | 上游 DB(R2);alpha 可做启动前版本预检;**(/loop 2026-07-04 defer)** 需内省上游 migration 支持范围(DB 耦合)+ 降级场景测试设计 → 非简单批,详见档 |
 | C20 | alpha-ui i18n 断裂:9 组件硬编码简中 + 每语种 OpenCode 残留(zh:19/en:30)(S8) | ux | A | ready | R7:爆炸半径大于初报;**(/loop 2026-07-04 defer)** 体量大(9 组件)+ 需双语视觉核验(离线不可做)→ i18n 专项;可先拆 brand-i18n 残留 grep 清零子任务,详见档 |
 | C21 | 无障碍:focus-trap/键盘/Escape/对比度/reduced-motion(S8) | ux | A | ready | |
-| C22 | 依赖漏洞:bun audit 158(2 crit/45 high),多在 dev 工具链 | debt | A | registered | 发布产物暴露面小;定期复扫 |
+| C22 | 依赖漏洞:bun audit 158(2 crit/45 high),多在 dev 工具链 | debt | A | registered | **复扫(/loop 2026-07-04)**:进发布产物的高危面 = 单一包 DOMPurify 3.3.1(moderate/low XSS),在**冻结 `packages/ui`+上游 `session-ui`** → **改不了**(破 ADR-020/北极星);唯一通道=re-freeze 或接受;可利用性推测偏低未证实;定期复扫挂 B7;详见 [requirements/C22](requirements/C22-dep-vulns.md) |
 | C23 | 云 SSE 退避/重连/终态判定/`subs` 泄漏(NEW-2/3/4) | debt | A | dup | **→ REQ-003 已修全部四病灶(PR #50)**;respawn 互斥(NEW-4)已随 B5(PR #48) |
 | C24 | CSP 落地 + 撤 alpha 自注入 `ACAO:*`(exfil 通道) | security | A | verified | **S11 T6(PR #59)**:ACAO/ACAH 收敛回环-only(darwin;win32 留旧供 WSL)+ 打包态 renderer CSP(connect-src=self+回环,script=self+wasm-unsafe-eval 供 ghostty,img 放 https 供 markdown 远图;双路径注入 webRequest+protocol.handle;`ALPHA_CSP_DISABLE=1` 逃生);11 单测;**verified(2026-07-04)**:双态走查 + exfil 取证 + 终端 WASM 断点走查实抓并修复(PR #64,connect-src data:)+ 复验干净;证据 [audits/s11-ship-visual](audits/2026-07-04-s11-ship-visual-verify.md) |
 | C25 | `open-path` + `ext-install-plugin` exec 触达面收紧 | security | A | shipped | **S11 T7(PR #61)**:`open -a` 收紧为编辑器/查看器白名单(白名单外降级系统默认打开,Terminal 类 exec 原语关闭);plugin 半边核实 SAFE_PACKAGE 已挡 URL/路径(无需改);verified 随打包走查 |
@@ -115,7 +115,7 @@
 | D3 | 官方 4 条 Anthropic skills 内容打包 + NOTICE(T5.3) | feature | A | dup | **→ 并入 REQ-018**(T7 官方 skill 资产打包);原状:现诚实失败,非占位 |
 | D4 | 定制中心 skill 卡片「已安装」态(T5.4) | ux | A | dup | **→ 并入 REQ-018**(安装账本 receipts ⨝ SDK 真相,全类型已装态一并解决) |
 | D5 | playwright MCP 浏览器内核来源实测拍板(=E14 遗留;T5.5) | spike | A | ready | 关 ADR-014 `_verify` |
-| D6 | userData 每启动新建 log 目录 | debt | A | registered | 7 天清理已有,观察 |
+| D6 | userData 每启动新建 log 目录 | debt | A | registered | **机制核实(/loop 2026-07-04)**:per-run 目录=有意设计(运行日志隔离),7 天扫除(`logging.ts:126`)已有界,无干净可改点(合并=破隔离);验收「观察≥7天」是真实使用任务,离线不可代跑;详见 [requirements/D6](requirements/D6-userdata-log-dirs.md) |
 | D8 | DB WAL 周期 TRUNCATE | debt | A | registered | 上游(R2) |
 | D9 | 分支命名 DB 累积 | debt | A | registered | R6:仅 dev 机器关切,prod 单库 |
 | D10 | ui-mac package.json license/author 补全 | docs | A | shipped | **PR #35**(→ [s9b](sprints/2026-07-03-s9b-hygiene/sprint.md));package.json 补 license:MIT/author/repository(jinjunnn/alpha-code),gates 绿;**index.ts:82 陈旧注释子项未做**(与 S9/REQ-002 deep-link 同文件避撞)→ 该子项待 S9 收尾后另修,行保留 |
