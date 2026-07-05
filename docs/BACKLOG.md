@@ -127,8 +127,8 @@
 
 | ID | 标题 | 类 | 仓 | 状态 | 备注 |
 |---|---|---|---|---|---|
-| E2 | 钉钉 MCP(补齐飞书/语雀国产三件套) | feature | A | registered | 核实官方包名/鉴权字段;**上架受 A6 门控(R3:新增条目=扩安装面)** |
-| E6 | 数据库 MCP(sqlite/postgres 读 schema + SELECT) | feature | A | registered | 命令型,无 OAuth;**上架受 A6 门控(R3)** |
+| E2 | 钉钉 MCP(补齐飞书/语雀国产三件套) | feature | A | ready | 核实官方包名/鉴权字段;~~R3 门控~~ **已解锁(2026-07-05,A6 verified)** |
+| E6 | 数据库 MCP(sqlite/postgres 读 schema + SELECT) | feature | A | ready | 命令型,无 OAuth;~~R3 门控~~ **已解锁(2026-07-05,A6 verified)** |
 | E11 | 定制中心目录筛选 UI(category/license) | ux | A | dup | **→ 并入 REQ-019**(hub 左栏 IA + 筛选,T7);catalog schema 已带元数据 |
 | E5 | 日历 MCP(Google/macOS) | feature | A | registered | 阻塞:OAuth/凭据存储(keychain TODO,ADR-014 §8) |
 | E8 | Slack/Teams MCP | feature | A | registered | 阻塞同 E5 |
