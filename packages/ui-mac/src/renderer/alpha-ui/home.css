@@ -2,6 +2,7 @@
  * sidebar (z 40) and modals, so the sidebar stays visible + clickable. Tokens only. */
 @import "./tokens.css";
 @import "./base.css";
+@import "./composer-shell.css"; /* shell visuals shared with the in-session composer (REQ-038 目标④) */
 
 .a-home {
   position: fixed;
@@ -281,20 +282,11 @@ body[data-alpha-sidebar="open"] .a-home {
   color: var(--a-text-tertiary);
 }
 
-/* composer */
+/* composer — shell visuals (bg/border/radius/shadow/focus) come from composer-shell.css, the single
+ * source shared with the in-session composer (REQ-038 目标④). Only home-specific bits live here. */
 .a-comp {
-  background: var(--a-surface);
-  border: 1px solid var(--a-border);
-  border-radius: var(--a-radius-2xl);
-  /* edge-light matches the in-session composer reskin (composer-reskin.css) exactly, so the two shells
-   * are pixel-identical, not just similar. */
-  box-shadow: var(--a-shadow-md), var(--a-edge-light);
-  transition: box-shadow var(--a-dur-base) var(--a-ease-out), border-color var(--a-dur-base) var(--a-ease-out);
+  position: relative; /* anchors the slash/@ autocomplete popover (.a-comp-auto) */
   animation: a-rise 0.55s var(--a-ease-out) 0.09s both;
-}
-.a-comp:focus-within {
-  border-color: var(--a-border-strong);
-  box-shadow: var(--a-shadow-lg), var(--a-edge-light);
 }
 /* The composer owns its focus treatment on .a-comp (subtle border + soft shadow). Suppress the global
  * 3px indigo :focus-visible ring (base.css --a-ring-focus) on the textarea so focusing the input does
@@ -535,6 +527,53 @@ body[data-alpha-sidebar="open"] .a-home {
   height: 1px;
   background: var(--a-border-faint);
   margin: 6px 4px;
+}
+
+/* slash / @ autocomplete menu (REQ-038) — an .a-pop anchored to the composer box, opening upward
+ * above the input like the session page's slash popover. */
+.a-comp-auto {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 10px;
+  right: 10px;
+  min-width: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  z-index: 50;
+  transform-origin: bottom left;
+}
+.a-pop-item.is-active {
+  background: var(--a-bg-muted);
+}
+.a-auto-trig {
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-sm);
+  color: var(--a-text);
+  flex: none;
+}
+.a-auto-file {
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-xs);
+  color: var(--a-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.a-auto-badge {
+  flex: none;
+  font-size: var(--a-text-2xs);
+  padding: 1px 7px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-accent-subtle);
+  color: var(--a-accent);
+}
+
+/* workspace-missing hint (REQ-038 验收④ / C28 honest controls): visible reason, not a dead button */
+.a-ws-hint {
+  margin-left: 10px;
+  font-size: var(--a-text-xs);
+  color: var(--a-warning);
+  align-self: center;
 }
 
 /* icons */

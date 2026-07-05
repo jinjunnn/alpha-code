@@ -1,0 +1,29 @@
+/* composer-shell — the ONE definition of the composer outer shell (REQ-038 目标④).
+ *
+ * Before this file the shell (background/border/radius/shadow/focus treatment) was written TWICE and
+ * kept aligned by hand: home.css .a-comp (alpha home composer) and composer-reskin.css
+ * [data-component=session-composer] (upstream in-session composer, CSS-only reskin). Change a radius
+ * in one and the two surfaces drift. Both selectors now consume THIS block; surface-specific layout
+ * (home's entry animation, session's 820px reading measure) stays in the surface files.
+ *
+ * !important is required on the upstream selectors (they fight Tailwind utility classes in the
+ * frozen tree, ADR-020); it is inert-but-harmless on .a-comp. */
+@import "./tokens.css";
+
+.a-comp,
+[data-component="session-composer"],
+[data-component="session-new-composer"] {
+  background: var(--a-surface) !important;
+  border: 1px solid var(--a-border) !important;
+  border-radius: var(--a-radius-2xl) !important;
+  box-shadow: var(--a-shadow-md), var(--a-edge-light) !important;
+  transition:
+    box-shadow var(--a-dur-base) var(--a-ease-out),
+    border-color var(--a-dur-base) var(--a-ease-out) !important;
+}
+.a-comp:focus-within,
+[data-component="session-composer"]:focus-within,
+[data-component="session-new-composer"]:focus-within {
+  border-color: var(--a-border-strong) !important;
+  box-shadow: var(--a-shadow-lg), var(--a-edge-light) !important;
+}
