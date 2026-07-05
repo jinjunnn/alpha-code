@@ -60,8 +60,14 @@ export interface AlphaProjectsApi {
    *  draft is a *tab*, and the alpha redesign hides the tab strip, so a draft would have no
    *  representation in our sidebar. Creating means the new chat shows immediately. */
   createSession(worktree: string): Promise<string | undefined>
-  /** Create a session AND send the first message (the home composer's submit). */
-  startChat(worktree: string, text: string): Promise<string | undefined>
+  /** Create a session AND send the first message (the home composer's submit). `extraParts` are
+   *  additional prompt parts (agent/file mentions from the home @ menu, upstream
+   *  build-request-parts shapes) appended after the text part (REQ-038). */
+  startChat(worktree: string, text: string, extraParts?: unknown[]): Promise<string | undefined>
+  /** The live SDK v2 client (undefined until the server is ready). Exposed so alpha composer
+   *  surfaces (home slash/@ menus, REQ-038) query command/agent/find with the SAME client + auth
+   *  the store uses instead of instantiating a second one. */
+  sdk(): ReturnType<typeof createOpencodeClient> | undefined
   /** Per-session actions via the SDK; the global event stream reconciles the store. */
   renameSession(id: string, title: string): Promise<void>
   shareSession(id: string, directory: string): Promise<string | undefined>
@@ -273,7 +279,12 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
   // on home behaves like Codex/ChatGPT (type → enter → you're in the conversation). The model/agent
   // default to the server's (we don't have opencode's model context here); promptAsync is the same
   // call opencode's own composer makes (prompt-input/submit.ts). Returns the new session id.
-  async function startChat(worktree: string, text: string): Promise<string | undefined> {
+  //
+  // "/name args" parity (REQ-038): the session composer intercepts a leading /command that matches a
+  // CUSTOM command and sends it via session.command (submit.ts:77-100) — plain promptAsync would
+  // deliver the slash line as literal text. Mirror that here so the home slash menu's refilled
+  // commands actually execute.
+  async function startChat(worktree: string, text: string, extraParts?: unknown[]): Promise<string | undefined> {
     const c = client
     if (!c) return undefined
     try {
@@ -284,11 +295,30 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
       upsertSession(data)
       const body = text.trim()
       if (body) {
-        await c.session
-          .promptAsync({ sessionID: id, parts: [{ type: "text", text: body }] } as any)
-          .catch(() => {
-            /* the session still exists; the user can retry from the session composer */
-          })
+        let ranCommand = false
+        const [head, ...tail] = body.split(" ")
+        if (head?.startsWith("/")) {
+          const name = head.slice(1)
+          const { data: cmds, error: cmdErr } = await c.command.list({ directory: worktree } as any)
+          if (!cmdErr && Array.isArray(cmds) && cmds.some((x: any) => x?.name === name)) {
+            ranCommand = true
+            await c.session
+              .command({ sessionID: id, command: name, arguments: tail.join(" ") } as any)
+              .catch(() => {
+                /* the session still exists; the user can retry from the session composer */
+              })
+          }
+        }
+        if (!ranCommand) {
+          await c.session
+            .promptAsync({
+              sessionID: id,
+              parts: [{ type: "text", text: body }, ...(extraParts ?? [])],
+            } as any)
+            .catch(() => {
+              /* the session still exists; the user can retry from the session composer */
+            })
+        }
       }
       return id
     } catch {
@@ -416,5 +446,5 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
     })
   })
 
-  return { store, reload: () => loadProjects(), createSession, startChat, renameSession, shareSession, deleteSession, copySession }
+  return { store, reload: () => loadProjects(), createSession, startChat, sdk: () => client, renameSession, shareSession, deleteSession, copySession }
 }

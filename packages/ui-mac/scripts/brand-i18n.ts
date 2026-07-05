@@ -1,5 +1,6 @@
 import path from "node:path"
 import type { Plugin } from "vite"
+import { COMPOSER_PLACEHOLDER, COMPOSER_PLACEHOLDER_UPSTREAM_LITERAL } from "../src/shared/composer-copy"
 
 // Build-time brand substitution for opencode's shared UI strings.
 //
@@ -26,9 +27,10 @@ import type { Plugin } from "vite"
 const REPLACEMENTS: Record<string, ReadonlyArray<readonly [string, string]>> = {
   // In-session composer placeholder is a HARDCODED literal (not i18n) in upstream
   // prompt-input.tsx:designPlaceholder(). Rewrite it to the SAME text the alpha home composer
-  // uses (AlphaHome.tsx) so the two surfaces read as one input. Zero disk edit (ADR-005/007).
+  // uses — ONE constant serves both surfaces (src/shared/composer-copy.ts, REQ-038 目标⑥).
+  // Zero disk edit (ADR-005/007).
   "app/src/components/prompt-input.tsx": [
-    ['"Ask anything, / for commands, @ for context..."', '"问点什么,输入 / 调命令,@ 引用上下文…"'],
+    [COMPOSER_PLACEHOLDER_UPSTREAM_LITERAL, JSON.stringify(COMPOSER_PLACEHOLDER)],
   ],
   // Crash screen (C28): rewrite the OpenCode-branded feedback link + Discord icon in the
   // ErrorBoundary fallback JSX. The visible "report to … team" / "on Discord" TEXT is i18n (below);

@@ -3,26 +3,17 @@
  * this interim pass lifts the existing v2 composer to alpha depth/edges so it stops reading "v2-gray".
  * COUPLING (cosmetic; re-point on upstream rename): session-composer / session-new-composer. */
 @import "./tokens.css";
+@import "./composer-shell.css"; /* shell visuals shared with the home composer (REQ-038 目标④) */
 
 [data-component="session-composer"],
 [data-component="session-new-composer"] {
-  background: var(--a-surface) !important;
-  border: 1px solid var(--a-border) !important;
-  border-radius: var(--a-radius-2xl) !important;
-  box-shadow: var(--a-shadow-md), var(--a-edge-light) !important;
-  /* Cap the docked composer to the SAME reading-measure column as the conversation content
+  /* Shell visuals (bg/border/radius/shadow/focus) come from composer-shell.css — the single source
+   * shared with AlphaHome's .a-comp. Session-only layout below:
+   * Cap the docked composer to the SAME reading-measure column as the conversation content
    * (820px, see timeline-reskin session-turn-message-container) and centre it, so the input box
    * lines up with the messages above instead of spanning full width (#17). Auto-fits narrow windows. */
   max-width: 820px !important;
   margin-inline: auto !important;
-  transition:
-    box-shadow var(--a-dur-base) var(--a-ease-out),
-    border-color var(--a-dur-base) var(--a-ease-out) !important;
-}
-[data-component="session-composer"]:focus-within,
-[data-component="session-new-composer"]:focus-within {
-  border-color: var(--a-border-strong) !important;
-  box-shadow: var(--a-shadow-lg), var(--a-edge-light) !important;
 }
 
 /* --- toolbar: premium icon buttons + brand-indigo send -----------------------------------------
@@ -64,6 +55,14 @@
 [data-action="prompt-submit"]:has(use[href="#opencode-icon-arrow-up"]) {
   display: inline-grid !important;
   place-items: center !important;
+}
+/* Upstream wraps the sprite svg in a <div>; hiding only the svg leaves that wrapper as a grid item,
+ * which pushed ::after (the alpha arrow) onto a SECOND grid row — the glyph rendered below the 32px
+ * circle and got clipped by the composer edge (the user-reported "发送按钮被裁切", REQ-038 验收⑥).
+ * Stack every child AND ::after into the same 1/1 cell so the arrow always centres. */
+[data-action="prompt-submit"]:has(use[href="#opencode-icon-arrow-up"]) > *,
+[data-action="prompt-submit"]:has(use[href="#opencode-icon-arrow-up"])::after {
+  grid-area: 1 / 1;
 }
 [data-action="prompt-submit"]:has(use[href="#opencode-icon-arrow-up"]) svg {
   display: none !important;

@@ -90,9 +90,24 @@ export function ComposerInject() {
       const uh = ensureHost("usage")
       const modelWrap = model.parentElement as HTMLElement | null
       if (modelWrap && uh.nextSibling !== modelWrap) modelWrap.parentElement!.insertBefore(uh, modelWrap)
+      // Adopt ONLY the real toolbar usage button (ghost icon-button, circle-only). The session side
+      // panel's 「上下文」 TAB TRIGGER also contains a progress-circle (session-side-panel.tsx renders
+      // SessionContextUsage variant=indicator + a text label inside Tabs.Trigger) — the old selector
+      // adopted it whenever that tab was open, which both showed a stray "上下文" label in the toolbar
+      // (user report, REQ-038 walkthrough) AND stole the trigger out of the side panel's tab strip.
+      // Discriminators: not a tab / not inside a tablist, and icon-only (no text).
       const live = [...document.querySelectorAll('button:has([data-component="progress-circle"])')].find(
-        (b) => !b.closest("[data-alpha-composer-inject]") && (b as HTMLElement).offsetParent !== null,
+        (b) =>
+          !b.closest("[data-alpha-composer-inject]") &&
+          !b.closest('[role="tab"], [role="tablist"]') &&
+          (b.textContent ?? "").trim() === "" &&
+          (b as HTMLElement).offsetParent !== null,
       ) as HTMLElement | undefined
+      // Evict a previously mis-adopted tab trigger (pre-fix sessions): a host child with label text
+      // is never the real usage button. Dropping it lets the toolbar heal; the side panel rebuilds
+      // its triggers reactively on the next tabs update.
+      const cur = uh.firstElementChild as HTMLElement | null
+      if (cur && (cur.textContent ?? "").trim() !== "") uh.replaceChildren()
       if (live && uh.firstChild !== live) uh.replaceChildren(live)
     }
   }

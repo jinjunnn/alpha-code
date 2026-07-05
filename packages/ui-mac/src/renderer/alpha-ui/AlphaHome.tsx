@@ -14,6 +14,9 @@ import { useCommand } from "./providers"
 import { type AlphaProject, type AlphaProjectsApi } from "../sidebar/use-projects"
 import { sessionHref, projectLabel } from "../sidebar/route"
 import { AddButton, PermChip, EffortChip, ModelChip, composerModelLabel } from "./composer-controls"
+import { createComposerAutocomplete } from "./composer-autocomplete"
+import { buildMentionParts, type MentionPart } from "./composer-autocomplete-core"
+import { COMPOSER_PLACEHOLDER } from "../../shared/composer-copy"
 import { pushToast } from "./Toast"
 import { Banner } from "./Banner"
 import { useConfigHealth } from "./use-config-health"
@@ -50,6 +53,7 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
   const [chosenWs, setChosenWs] = createSignal<string | undefined>(undefined)
   const [pop, setPop] = createSignal<Pop>(null)
   const [sending, setSending] = createSignal(false)
+  let taRef: HTMLTextAreaElement | undefined
 
   const activeWs = createMemo(() => chosenWs() ?? visibleProjects()[0]?.worktree)
   const activeWsLabel = createMemo(() => {
@@ -58,13 +62,41 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
     return p?.name ?? (w ? projectLabel(w) : "选择工作区")
   })
   const canSend = createMemo(() => text().trim().length > 0 && !!activeWs() && !sending())
+  // Visible cue instead of a silently dead send button (REQ-038 目标③ / 验收④): the user typed but
+  // no workspace is selectable/selected — say so next to the workspace chip.
+  const needsWs = createMemo(() => text().trim().length > 0 && !activeWs())
+
+  // @ mentions picked from the autocomplete are remembered here and sent as REAL agent/file parts
+  // (upstream build-request-parts.ts shapes) — text-only "@name" would be decoration the engine
+  // ignores. At submit we only keep mentions whose token is still present in the text.
+  const [mentions, setMentions] = createSignal<MentionPart[]>([])
+  const auto = createComposerAutocomplete({
+    text,
+    setText,
+    textarea: () => taRef,
+    directory: activeWs,
+    command,
+    sdk: props.projects.sdk,
+    onMention: (m) => setMentions((xs) => [...xs.filter((x) => x.content !== m.content), m]),
+  })
+
+  // IME guard parity with upstream prompt-input.tsx isImeComposing(): isComposing + a composition
+  // signal + the Safari/WebKit keyCode 229 path (REQ-038 目标③ / 验收③). `e.isComposing` alone
+  // misses the Enter that COMMITS the composition in some IME/engine combos.
+  const [composing, setComposing] = createSignal(false)
+  const isImeComposing = (e: KeyboardEvent) => e.isComposing || composing() || e.keyCode === 229
 
   const submit = async () => {
-    if (!canSend()) return
-    const ws = activeWs()!
+    if (!text().trim() || sending()) return
+    const ws = activeWs()
+    if (!ws) {
+      // honest feedback instead of a dead button: point at the workspace chip and open its picker
+      setPop("ws")
+      return
+    }
     const body = text().trim()
     setSending(true)
-    const id = await startChat(ws, body)
+    const id = await startChat(ws, body, buildMentionParts(body, ws, mentions()))
     setSending(false)
     if (!id) {
       // Was silent: the text got cleared and we navigated to an empty draft, losing the message.
@@ -73,11 +105,13 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
       return
     }
     setText("")
+    setMentions([])
     navigate(sessionHref(ws, id))
   }
 
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    if (auto.onKeyDown(e)) return // menu consumed it (navigate/select/dismiss)
+    if (e.key === "Enter" && !e.shiftKey && !isImeComposing(e)) {
       e.preventDefault()
       void submit()
     }
@@ -128,13 +162,20 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
 
               {/* ── shared composer ───────────────────────────────────────────── */}
               <div class="a-comp" data-empty={text().trim() ? undefined : ""} onClick={stop}>
+                <auto.Menu />
                 <textarea
+                  ref={taRef}
                   class="a-comp-input"
                   rows="1"
-                  placeholder="问点什么,输入 / 调命令,@ 引用上下文…"
+                  placeholder={COMPOSER_PLACEHOLDER}
                   value={text()}
-                  onInput={(e) => setText(e.currentTarget.value)}
+                  onInput={(e) => {
+                    setText(e.currentTarget.value)
+                    auto.onInput()
+                  }}
                   onKeyDown={onKey}
+                  onCompositionStart={() => setComposing(true)}
+                  onCompositionEnd={() => setComposing(false)}
                 />
                 <div class="a-comp-bar">
                   {/* + add — shared AddButton (same menu home + in-session, #31) */}
@@ -160,8 +201,16 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
                   />
                   <EffortChip />
 
-                  {/* send */}
-                  <button class="a-comp-send" data-ready={canSend() ? "" : undefined} disabled={!canSend()} onClick={() => void submit()} title="发送">
+                  {/* send — disabled only for empty/sending; a missing workspace keeps the button
+                      live so clicking it surfaces the workspace picker + hint instead of a dead
+                      control (REQ-038 验收④, C28 honest controls) */}
+                  <button
+                    class="a-comp-send"
+                    data-ready={canSend() ? "" : undefined}
+                    disabled={!text().trim() || sending()}
+                    onClick={() => void submit()}
+                    title="发送"
+                  >
                     <ArrowUp />
                   </button>
                 </div>
@@ -180,6 +229,9 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
                     <FolderIcon /> {activeWsLabel()}
                     <Chevron />
                   </button>
+                  <Show when={needsWs()}>
+                    <span class="a-ws-hint">请先选择工作区再发送</span>
+                  </Show>
                   <Show when={pop() === "ws"}>
                     <div class="a-pop a-pop-up" onClick={stop} style={{ "min-width": "240px" }}>
                       <div class="a-pop-label">工作区</div>
