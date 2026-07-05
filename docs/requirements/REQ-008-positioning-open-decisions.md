@@ -3,21 +3,21 @@ id: REQ-008
 title: 产品定位〔待补〕决策批:一次性收口 rules 里的开放产品判断
 type: spike
 priority: P2
-status: registered
+status: shipped
 repo: X
 created: 2026-07-03
-sprint: —
+sprint: 2026-07-05-s17-deep-decisions
 ---
 
 ## 背景(为什么)
 `.claude/rules` 里挂着多处〔待补〕产品决策,自 2026-06-18 pivot 后未收口;它们决定 NON_GOALS 措辞、GOALS 排期与 C 仓形态,拖着会持续产生 [DRIFT] 噪音。
 
-## 决策清单(逐条拍板)
-1. **团队协作**:做「共享 workspace/会话」还是只「多个独立租户共享云」?(POSITIONING〔待补〕+ NON_GOALS#明确不服务)
-2. **企业租户**(合同/SSO/合规)是否纳入 roadmap?(NON_GOALS)
-3. **用户下沉**:多用户分发后是否服务「零配置非技术用户」?(POSITIONING)
-4. **后端前 2–3 个具体功能**是什么?(GOALS〔待补〕:自定义 tool / MCP 能力 / sidecar 接口——现有候选:cloud dispatch 快捷 tool、B14 备份导出、E 系列连接器)
-5. **前端优化的具体点**收口(GOALS〔待补〕——ADR-016 后大多已兑现,余项与 REQ-005 对齐)
+## 决策清单(逐条拍板)——**已全部拍板(2026-07-05,S17 T1;briefs 见 [debates/2026-07-05-req008-positioning-briefs.md](../debates/2026-07-05-req008-positioning-briefs.md))**
+1. **团队协作** → **不做共享 workspace/会话**;多租户 = 多个独立租户共享云执行平台;E13 → rejected(重开 = 真实付费团队需求 + 上游多用户原语)。
+2. **企业租户** → **不纳入**;重评触发 = 真实付费企业线索,或 C 仓 license 体系成熟后主动重评。
+3. **用户下沉** → **正式下沉:非技术用户(小白)明确为目标用户群**;分期执行——当前只做规范文档(→ [[REQ-026]]),新手引导/支持面等大量工作暂不做(用户原话:「正式下沉,但是只规范文档,新手引导支持面等大量工作暂时不做,就是小白用户明确是我们的目标」)。
+4. **后端前 2–3 功能** → **承认事实收口**:① 云派发 pipeline(G4/REQ-020)② 自动化定时任务(ADR-022)③ 扩展供给链/连接器生态(ADR-014 v3);第 4 候补 = B14+C17 DB 安全带。
+5. **前端优化点** → **指向 REQ-005 清单收口**;后续前端新想法走正常 REQ 立项。
 6. ~~**G4 优先级**:Sprint 2 headline 还是提进 Top-3?(GOALS 未决)~~ → **已拍板(2026-07-03,S11 开工提案随批)**:G4 提优先、作 S11 headline(Track A:B3+REQ-004+C9);GOALS 的 G4 优先级〔待你定〕就此收口,余 5 条仍待整批拍板。
 
 ## 验收标准
@@ -32,4 +32,4 @@ sprint: —
 关联:REQ-001(双版本策略是 3 的输入)、B3/G4、REQ-005。
 
 ## 验证记录
-_verify 时补。_
+- **2026-07-05(S17 T1)拍板完成**:六条全收口(粗体结论见上);POSITIONING/GOALS/NON_GOALS/GLOSSARY 已回写、〔待补〕清除;⚖️ 队列划掉 REQ-008/REQ-011 两行;E13 → rejected;新立 [[REQ-026]]。验收①②③满足(直接决策会话形式,验收标准明文允许);随附 B16 重启时机提醒(未代决,维持 parked)。docs 类无真机项,归档随 retro。

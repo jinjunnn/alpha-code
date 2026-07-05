@@ -3,10 +3,10 @@ id: REQ-015
 title: 冻结前端 typecheck 偏斜:session-ui(546 后新增)依赖新版 ui API 与冻结 ui 不兼容
 type: debt
 priority: P2
-status: registered
+status: in-sprint
 repo: A
 created: 2026-07-03
-sprint: —
+sprint: 2026-07-05-s17-deep-decisions
 ---
 
 ## 背景(为什么)
