@@ -26,6 +26,7 @@ import { registerProviderIpcHandlers } from "./provider-ipc"
 import { forwardInitializationFailure } from "./initialization"
 import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
 import { parseMarkdown } from "./markdown"
+import { createDbMenuActions, runDbPreflightBoot } from "./db-safety-boot"
 import { createMenu } from "./menu"
 import {
   getDefaultServerUrl,
@@ -483,6 +484,21 @@ const main = Effect.gen(function* () {
     if (isStoredTokenExpired()) yield* Effect.promise(() => ensureFreshToken().catch(() => {}))
     markSidecarTokenSnapshot()
 
+    // S17 T3(C17+B14)DB 安全带预检:水位比对 → DB 超前阻断 / 将前进先备份 / 损坏走恢复
+    // (设计 docs/designs/2026-07-05-db-safety-belt.md)。只跑初次 spawn(respawn 不重跑——启动已验,
+    // 运行中水位不会倒退);守卫自身故障一律 fail-open 只 log,绝不把启动搞得更糟。
+    const dbPreflight = yield* Effect.promise(() =>
+      runDbPreflightBoot({ userDataPath: app.getPath("userData") }).catch((error) => {
+        logger.error("db-safety preflight crashed — fail-open", error)
+        return { proceed: true as const }
+      }),
+    )
+    if (!dbPreflight.proceed) {
+      logger.log("db-safety: user chose quit at preflight")
+      app.exit(0)
+      return
+    }
+
     logger.log("spawning sidecar", { url })
     const spawnGen = ++sidecarGen
     selfHeal = noteSpawn(selfHeal, Date.now())
@@ -610,6 +626,8 @@ const main = Effect.gen(function* () {
       relaunch: () => {
         relaunch()
       },
+      // S17 T3(B14①②):「数据」菜单 —— DB 手动备份/导出/打开备份文件夹
+      data: createDbMenuActions({ userDataPath: app.getPath("userData"), getWindow: () => mainWindow }),
     })
   }
 })

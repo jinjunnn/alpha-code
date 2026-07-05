@@ -4,6 +4,9 @@ node_modules/
 *.log
 alpha.env
 
+# 构建产物:DB 迁移支持面清单(scripts/gen-db-expected.ts 生成,S17 T3/C17)
+resources/db-expected-migrations.json
+
 # Python bytecode caches (skill-creator eval-viewer tooling)
 __pycache__/
 *.pyc
