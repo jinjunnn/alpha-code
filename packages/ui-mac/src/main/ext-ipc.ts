@@ -13,7 +13,8 @@ import { addReceipt, alphaGlobalRoot, listInstalls, removeReceipt } from "./alph
 import { fileifyMcpSecrets, removeMcpServerSecrets } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy } from "./alpha-migrate"
 import { configHealth, persistMcp, persistPlugin, removeMcp, removePlugin, removePluginPath } from "./ext-config"
-import { importSkillFolder, importSkillGit, installBuiltinAgent, installBuiltinSkill, installRemoteSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall } from "./ext-fs-installer"
+import { importSkillFolder, importSkillGit, installBuiltinAgent, installBuiltinSkill, installRemoteSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall, writeAgent } from "./ext-fs-installer"
+import { parseAgentImport } from "./ext-import-validate"
 import { factorySkillIds } from "./factory-skills"
 import { downloadRemoteAsset, refreshRemoteCatalog, type RemoteAssetFile } from "./remote-catalog"
 import { applyGovernance, normalizeGovernance, protectionInfo, readGovernance, resetGovernance } from "./alpha-governance"
@@ -76,6 +77,24 @@ export function registerExtIpcHandlers(userDataPath: string) {
 
   // REQ-032:远程 catalog(ETag+验签+缓存,回退链 远端→缓存→内置由 renderer 兜底)与远程技能安装
   // (下载+sha256 校验在 main,写盘走 builtin 同管线:~/.alpha + 桥 + 账本)。
+  // REQ-033:agent 导入 —— preview 只解析绝不执行(外来内容纪律 PR #73);confirm 用 preview 的
+  // composed 原文写入(main 重新 parse 校验,不信 renderer 转发内容的一致性)。
+  ipcMain.handle("ext-import-agent-preview", (_event: IpcMainInvokeEvent, filePath: string) => {
+    try {
+      if (typeof filePath !== "string" || !filePath.endsWith(".md")) return { ok: false, reason: "请选择 .md agent 文件" }
+      const stat = fs.statSync(filePath)
+      if (!stat.isFile() || stat.size > 256 * 1024) return { ok: false, reason: "文件不存在或过大(>256KB)" }
+      return parseAgentImport(fs.readFileSync(filePath, "utf8"))
+    } catch (error) {
+      return { ok: false, reason: error instanceof Error ? error.message : "读取失败" }
+    }
+  })
+  ipcMain.handle("ext-import-agent-confirm", (_event: IpcMainInvokeEvent, composed: string) => {
+    const parsed = parseAgentImport(typeof composed === "string" ? composed : "")
+    if (!parsed.ok) return parsed
+    return writeAgent(parsed.name, parsed.composed, undefined, undefined, "imported")
+  })
+
   ipcMain.handle("ext-remote-catalog", () => refreshRemoteCatalog(userDataPath))
   ipcMain.handle(
     "ext-install-remote-skill",

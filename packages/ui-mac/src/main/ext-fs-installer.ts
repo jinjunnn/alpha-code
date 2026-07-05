@@ -150,7 +150,7 @@ export function writeSkill(
 }
 
 /** Write an agent definition (caller composes the markdown) into the alpha truth root + bridge + receipt. */
-export function writeAgent(name: string, content: string, target?: InstallTarget, meta?: InstallMeta): FsResult {
+export function writeAgent(name: string, content: string, target?: InstallTarget, meta?: InstallMeta, origin?: InstallReceipt["origin"]): FsResult {
   if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid agent name" }
   const normalized = content.endsWith("\n") ? content : `${content}\n`
   if (legacyRootActive()) {
@@ -174,7 +174,7 @@ export function writeAgent(name: string, content: string, target?: InstallTarget
   const bridge = bridgeItem(roots.alphaDir, roots.opencodeDir, "agents", name)
   if (!bridge.ok) return { ok: false, reason: `已写入 ${file},但引擎桥接失败:${bridge.reason}` }
   const files = [file, ...bridge.created]
-  recordReceipt(roots, { name, type: "agent", files, meta })
+  recordReceipt(roots, { name, type: "agent", files, meta, origin })
   return { ok: true, files }
 }
 
