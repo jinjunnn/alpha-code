@@ -14,6 +14,8 @@ import { createEffect, onCleanup, type Accessor } from "solid-js"
 // bundle for the renderer. The client subpath is browser-safe (opencode's own app uses it).
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { projectLabel } from "./route"
+import { hiddenProjects } from "./sidebar-state"
+import { isUnderSkippedWorktree, shouldSkipWorktree } from "./worktree-filter"
 
 export interface ServerInfo {
   baseUrl: string
@@ -157,7 +159,12 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
         setStore("error", true)
         return
       }
-      const incoming = (data as any[]).filter((p) => typeof p?.worktree === "string")
+      // B4(S17 T5)数据层过滤:垃圾("/"、macOS home 根)与用户归档(hidden)的 worktree 不进
+      // store —— 渲染与 per-project session.list 双零请求,引擎侧也少建对应 Instance(watcher/git/
+      // skills 扫描随之消失)。谓词与语义见 worktree-filter.ts。
+      const incoming = (data as any[]).filter(
+        (p) => typeof p?.worktree === "string" && !shouldSkipWorktree(p.worktree, hiddenProjects()),
+      )
       // Reconcile: keep existing session lists for projects that persist, add new ones.
       setStore("projects", (prev) => {
         const byID = new Map(prev.map((p) => [p.id, p]))
@@ -176,9 +183,8 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
       })
       setStore("ready", true)
       setStore("error", false)
-      // Skip the "/" global-convention worktree — the sidebar never renders it, so fetching its
-      // sessions is pure waste (A3 / B4 lever, renderer-side).
-      await Promise.all(incoming.filter((raw) => raw.worktree !== "/").map((raw) => loadSessions(raw.worktree)))
+      // "/" 及其它垃圾/hidden worktree 已在 incoming 层剔除(B4)——这里对留下的全量取会话。
+      await Promise.all(incoming.map((raw) => loadSessions(raw.worktree)))
     } catch {
       if (gen === generation) setStore("error", true)
     }
@@ -193,6 +199,9 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
     if (i >= 0) return loadSessions(store.projects[i].worktree)
     const j = indexByDirectory(directory)
     if (j >= 0) return loadSessions(store.projects[j].worktree)
+    // B4:被剔除(垃圾/hidden)项目的会话事件不得触发 loadProjects —— load 会再次剔除,否则每个
+    // 事件都白打一次 project.list(循环)。
+    if (isUnderSkippedWorktree(directory, hiddenProjects())) return
     return loadProjects()
   }
 
@@ -206,6 +215,8 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
     let i = indexByProjectID(session.projectID)
     if (i < 0) i = indexByDirectory(session.directory)
     if (i < 0) {
+      // B4:同 reloadForSession —— 被剔除项目的会话事件直接忽略,防 loadProjects 循环。
+      if (isUnderSkippedWorktree(session.directory, hiddenProjects())) return
       // Session for a project we don't know yet → refetch the project list (new project appears).
       void loadProjects()
       return

@@ -79,9 +79,13 @@ export function preferAppEnv(userDataPath: string) {
   // 3. Desktop defaults. OPENCODE_ENABLE_EXA defaults ON so websearch is offered to EVERY provider
   //    (opencode gates it as `providerID==opencode || exa || parallel`). An explicit
   //    OPENCODE_ENABLE_EXA value, or ALPHA_WEBSEARCH_DISABLE=1, opts back out.
+  // B12 拍板(2026-07-05,S17 T5):实验 flag 改 set-if-unset —— 默认开(filewatcher 供「外部变更
+  // 感知」:外部编辑/外部 git 的文件树/分支刷新;agent 自身修改由工具主动发事件、不受影响),但尊重
+  // 用户显式 export(=false 可关;此前 Object.assign 硬覆盖,与上方「真 export 赢」注释矛盾)。
+  // watcher 内存压力主治 = B4 数据层减 Instance;上游本体(无 TTL/LRU)接受(R2)。
+  process.env.OPENCODE_EXPERIMENTAL_ICON_DISCOVERY ??= "true"
+  process.env.OPENCODE_EXPERIMENTAL_FILEWATCHER ??= "true"
   Object.assign(process.env, {
-    OPENCODE_EXPERIMENTAL_ICON_DISCOVERY: "true",
-    OPENCODE_EXPERIMENTAL_FILEWATCHER: "true",
     OPENCODE_CLIENT: "desktop",
     XDG_STATE_HOME: process.env.XDG_STATE_HOME ?? userDataPath,
     // models.dev refresh times out / logs ERROR on CN networks; the bundled snapshot suffices. Default
