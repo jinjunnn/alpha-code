@@ -19,6 +19,7 @@
 import { createEffect, createMemo, createSignal, For, Show, onCleanup, type Accessor, type JSX } from "solid-js"
 import { Portal } from "solid-js/web"
 import { t } from "../i18n"
+import { GovernancePanel } from "./governance-panel"
 import { Dialog } from "../alpha-ui/Dialog"
 import { Button } from "../alpha-ui/Button"
 import { pushToast } from "../alpha-ui/Toast"
@@ -1076,6 +1077,14 @@ export function ExtensionHub(props: {
                   {/* ░░ INSTALLED (manage;顶部 = 有更新分组,T5 接动作) ░░ */}
                   <Show when={section() === "installed"}>
                     <Hero title={t("alpha.ext.tabInstalled")} sub={t("alpha.ext.installedSub")} />
+                    {/* REQ-037:内置(上游)治理分组 —— REQ-019 递延的 V2 内置管理位落点 */}
+                    <SecRow label={t("alpha.gov.builtinSection")} />
+                    <GovernancePanel
+                      agents={ext.store.agents}
+                      refreshEngine={ext.refreshEngine}
+                      reloadAgents={ext.reloadAgents}
+                      flash={flash}
+                    />
                     <Show when={updatable().length > 0}>
                       <SecRow
                         label={t("alpha.ext.tabUpdates")}

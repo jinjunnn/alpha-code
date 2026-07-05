@@ -15,6 +15,7 @@ import { isMigrationEnabled, removeLegacy, scanLegacy } from "./alpha-migrate"
 import { configHealth, persistMcp, persistPlugin, removeMcp, removePlugin, removePluginPath } from "./ext-config"
 import { importSkillFolder, importSkillGit, installBuiltinAgent, installBuiltinSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall } from "./ext-fs-installer"
 import { factorySkillIds } from "./factory-skills"
+import { applyGovernance, normalizeGovernance, protectionInfo, readGovernance, resetGovernance } from "./alpha-governance"
 
 // GUI apps on macOS launch with a minimal PATH (no Homebrew), so augment it before `which` or we'd
 // false-negative tools the user actually has installed.
@@ -62,6 +63,15 @@ export function registerExtIpcHandlers(userDataPath: string) {
   // ext-write-skill / ext-write-agent 渲染层通道随之下线;main 的 writeSkill/writeAgent 保留
   // (installBuiltinAgent 等 vendored 安装管线内部复用)。
   ipcMain.handle("ext-factory-skill-ids", () => factorySkillIds())
+
+  // REQ-037 上游能力治理:真源 ~/.alpha/governance.json,物化 home jsonc 受控叶子(见 alpha-governance.ts)。
+  // apply 后由 renderer 调 refreshEngine()(dispose)热生效 —— 与安装链路同节奏。
+  ipcMain.handle("gov-read", () => ({ gov: readGovernance(), protection: protectionInfo() }))
+  ipcMain.handle("gov-apply", (_event: IpcMainInvokeEvent, gov: unknown, visibleAgents: unknown, confirmBuildDisable?: boolean) => {
+    const agents = Array.isArray(visibleAgents) ? visibleAgents.filter((a): a is string => typeof a === "string") : []
+    return applyGovernance(normalizeGovernance(gov), agents, confirmBuildDisable === true)
+  })
+  ipcMain.handle("gov-reset", () => resetGovernance())
   ipcMain.handle("ext-install-plugin", (_event: IpcMainInvokeEvent, pkg: string, meta?: InstallMeta) =>
     persistPlugin(pkg, meta),
   )

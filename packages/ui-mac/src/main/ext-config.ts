@@ -87,6 +87,100 @@ function mcpPluginTargetPath(): string {
   return process.env.ALPHA_LEGACY_INSTALL_ROOT === "1" ? userConfigPath() : alphaOpencodeConfigPath()
 }
 
+// ── REQ-037 治理层写入(叶子键事务)────────────────────────────────────────────
+// 与 persistMcp 同一 home jsonc 目标 + 同一 jsonc-parser 修改姿势,但:①一次事务应用多个**叶子**
+// 编辑(agent.<n>.hidden 而非整个 agent.<n> —— 用户同名兄弟字段保留,验收⑥);②独立的路径白名单
+// (只允许治理面的三个受控域,与 MCP/plugin 白名单互不放宽);③value=undefined = 删除该叶子(净除)。
+export type GovernanceEdit = { path: string[]; value: unknown; onlyIfAbsent?: boolean }
+
+const GOV_NAME_RE = /^[a-zA-Z0-9*][a-zA-Z0-9._*-]{0,63}$/
+function governancePathAllowed(p: string[]): boolean {
+  if (p[0] === "agent")
+    return p.length === 3 && GOV_NAME_RE.test(p[1]) &&
+      ["hidden", "disable", "prompt", "model", "permission", "description", "temperature", "steps", "variant", "color"].includes(p[2])
+  if (p[0] === "permission") return p.length === 3 && p[1] === "skill" && GOV_NAME_RE.test(p[2])
+  if (p[0] === "command") return p.length === 3 && GOV_NAME_RE.test(p[1]) && ["template", "description", "agent", "model"].includes(p[2])
+  return false
+}
+
+export type GovernanceApplyOutcome = { ok: true; applied: string[][] } | { ok: false; reason: string }
+
+/** 一次事务应用全部治理叶子编辑:全部路径过白名单 → 逐条 modify → 解析校验 → 原子写(失败整体回滚)。
+ *  返回**实际写入**的叶子路径(onlyIfAbsent 被跳过的不算 —— codex H1:跳过的键绝不能进记账,
+ *  否则 reset 会删掉用户自有的同名键,如用户预设的 permission.skill."*")。 */
+export function applyGovernanceEdits(edits: GovernanceEdit[]): GovernanceApplyOutcome {
+  for (const e of edits) {
+    if (!governancePathAllowed(e.path)) return { ok: false, reason: `refused: governance path not allowed: ${e.path.join(".")}` }
+  }
+  const target = mcpPluginTargetPath()
+  const bak = `${target}.bak`
+  const tmp = `${target}.tmp`
+  let text = "{}"
+  try {
+    if (fs.existsSync(target)) text = fs.readFileSync(target, "utf8")
+  } catch {
+    return { ok: false, reason: "failed to read config" }
+  }
+  try {
+    fs.mkdirSync(path.dirname(target), { recursive: true })
+    if (fs.existsSync(target)) fs.writeFileSync(bak, text)
+    const preParsed = (parse(text) as Record<string, unknown> | undefined) ?? {}
+    const nodeAt = (obj: unknown, p: string[]): unknown => {
+      let node: unknown = obj
+      for (const seg of p) node = node && typeof node === "object" ? (node as Record<string, unknown>)[seg] : undefined
+      return node
+    }
+    const applied: string[][] = []
+    for (const e of edits) {
+      if (e.onlyIfAbsent) {
+        const existing = parse(text) as Record<string, unknown> | undefined
+        if (nodeAt(existing, e.path) !== undefined) continue // 用户已有 → 跳过且不记账(codex H1)
+      }
+      const edits2 = modify(text, e.path, e.value, { formattingOptions: { tabSize: 2, insertSpaces: true } })
+      text = applyEdits(text, edits2)
+      if (e.value !== undefined) applied.push(e.path)
+    }
+    // 空壳剪枝:叶子删除后留下的空父对象必须移除 —— `command.<n>: {}` 缺 template 会被引擎
+    // schema 硬拒(整份配置作废,memory opencode-config-v1-schema);逐层(深→浅)清空对象。
+    // codex L1:只剪「本事务把它删空」的父级 —— 事务前就为空的对象是用户自有占位,不动。
+    const removalPaths = edits.filter((e) => e.value === undefined).map((e) => e.path)
+    for (let depth = 2; depth >= 1; depth--) {
+      for (const p of removalPaths) {
+        const parentPath = p.slice(0, depth)
+        const before = nodeAt(preParsed, parentPath)
+        const wasNonEmpty = before && typeof before === "object" && !Array.isArray(before) && Object.keys(before as object).length > 0
+        if (!wasNonEmpty) continue
+        const parsed = parse(text) as Record<string, unknown> | undefined
+        const node = nodeAt(parsed, parentPath)
+        if (node && typeof node === "object" && !Array.isArray(node) && Object.keys(node as object).length === 0) {
+          text = applyEdits(text, modify(text, parentPath, undefined, { formattingOptions: { tabSize: 2, insertSpaces: true } }))
+        }
+      }
+    }
+    const errors: ParseError[] = []
+    parse(text, errors)
+    if (errors.length > 0) throw new Error("resulting config is not valid jsonc")
+    fs.writeFileSync(tmp, text, "utf8")
+    fs.renameSync(tmp, target)
+    if (fs.existsSync(bak)) {
+      try {
+        fs.unlinkSync(bak)
+      } catch {
+        /* best-effort cleanup */
+      }
+    }
+    return { ok: true, applied }
+  } catch (error) {
+    try {
+      if (fs.existsSync(bak)) fs.copyFileSync(bak, target)
+      if (fs.existsSync(tmp)) fs.unlinkSync(tmp)
+    } catch {
+      /* nothing more we can do */
+    }
+    return { ok: false, reason: error instanceof Error ? error.message : "failed to write config" }
+  }
+}
+
 function receiptsActive(): boolean {
   return process.env.ALPHA_LEGACY_INSTALL_ROOT !== "1"
 }

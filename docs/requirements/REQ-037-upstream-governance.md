@@ -3,7 +3,7 @@ id: REQ-037
 title: 上游能力治理层:原生 agent/skill/command 的隐藏/禁用/重写(governance 真源 + home jsonc 物化 + dispose 热生效 + hub「内置」管理分组)
 type: feature
 priority: P1
-status: in-sprint
+status: shipped
 repo: A
 created: 2026-07-05
 ---

@@ -1480,3 +1480,54 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
 .alpha-ext-dnote[data-ok] {
   color: var(--a-success, #2f9e63);
 }
+
+/* ── REQ-037 治理面板(内置·上游) ─────────────────────────────────────────── */
+.alpha-gov .alpha-gov-mode {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 10px;
+}
+.alpha-gov .alpha-gov-mode button,
+.alpha-gov .alpha-gov-acts button {
+  border: 1px solid var(--a-border);
+  background: var(--a-surface);
+  border-radius: var(--a-radius-md);
+  padding: 2px 9px;
+  font-size: var(--a-text-xs);
+  color: var(--a-text-secondary);
+}
+.alpha-gov .alpha-gov-mode button[data-on],
+.alpha-gov .alpha-gov-acts button:hover {
+  border-color: var(--a-accent);
+  color: var(--a-accent);
+}
+.alpha-gov .alpha-gov-acts {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: auto;
+}
+.alpha-gov [data-gov-dim] .alpha-ext-man-name {
+  opacity: 0.55;
+}
+.alpha-gov .alpha-gov-prot {
+  margin-left: auto;
+  font-size: var(--a-text-xs);
+  color: var(--a-text-tertiary);
+  cursor: help;
+}
+.alpha-gov .alpha-ext-chip[data-warn] {
+  color: var(--a-warning);
+  border-color: var(--a-warning);
+}
+.alpha-gov .alpha-gov-editor {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-lg);
+  background: var(--a-surface);
+}
+.alpha-gov .alpha-gov-editor textarea {
+  min-height: 120px;
+  width: 100%;
+  margin: 8px 0;
+}
