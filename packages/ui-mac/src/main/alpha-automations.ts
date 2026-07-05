@@ -34,9 +34,9 @@ export function validateAutomation(task: AutomationTask): string | null {
   } catch {
     return "projectDir not found"
   }
-  // A1 恒 local+readonly(A2/A3 才放开)——存储层就挡住,防绕过 UI 直写。
+  // A1 恒 local;A2(REQ-024)放开 standard 可写档(cloud 仍归 A3/REQ-025)。
   if (task.execution !== "local") return "execution must be local (cloud = A3)"
-  if (task.permissionProfile !== "readonly") return "permissionProfile must be readonly (standard = A2)"
+  if (task.permissionProfile !== "readonly" && task.permissionProfile !== "standard") return "permissionProfile must be readonly | standard"
   const s = task.schedule
   if (!s || typeof s !== "object") return "invalid schedule"
   if (s.kind === "cron") {

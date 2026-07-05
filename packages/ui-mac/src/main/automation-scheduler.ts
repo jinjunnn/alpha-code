@@ -12,7 +12,7 @@ import { BrowserWindow, Notification, powerMonitor } from "electron"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import type { AutomationEvent, AutomationRunRecord, AutomationTask } from "../shared/automation-types"
 import { AUTOMATION_DEFAULTS } from "../shared/automation-types"
-import { nextFire, rescheduleAfterGap } from "../shared/automation-schedule"
+import { rescheduleAfterGap, shouldTripBreaker } from "../shared/automation-schedule"
 import { getAutomation, listAutomations, readAutomationState, saveAutomation, writeAutomationState } from "./alpha-automations"
 import { writeRunFiles } from "./alpha-workdir"
 import { getLogger } from "./logging"
@@ -107,6 +107,39 @@ function localDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
 }
 
+/** A2(REQ-024):手动「立即运行」—— 不动 timers/plannedAt(不改 next-fire);占用全局并发位;
+ *  计入每日 cap(诚实记账,手动跑也是跑)。 */
+export async function runAutomationNow(id: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const task = getAutomation(id)
+  if (!task) return { ok: false, reason: "任务不存在" }
+  if (runningTaskId) return { ok: false, reason: "另一任务正在运行" }
+  const state = readAutomationState()
+  const today = localDateStr(new Date())
+  const usedToday = state.runCount.date === today ? state.runCount.count : 0
+  if (usedToday >= AUTOMATION_DEFAULTS.dailyRunCap) return { ok: false, reason: `已达每日运行上限(${AUTOMATION_DEFAULTS.dailyRunCap} 次/日)` }
+  writeAutomationState({ ...state, runCount: { date: today, count: usedToday + 1 } })
+  runningTaskId = id
+  const at = new Date().toISOString()
+  broadcast({ type: "run-started", taskId: id, at })
+  let record: AutomationRunRecord
+  try {
+    record = await executeTask(task)
+  } catch (error) {
+    record = { at, status: "failed", summary: error instanceof Error ? error.message : String(error) }
+  } finally {
+    runningTaskId = null
+  }
+  const fresh = getAutomation(id)
+  if (fresh) {
+    fresh.lastRun = record
+    fresh.history = [record, ...(fresh.history ?? [])].slice(0, AUTOMATION_DEFAULTS.historyKeep)
+    const saved = saveAutomation(fresh)
+    if (!saved.ok) getLogger().warn("automation: history write failed", saved.reason)
+  }
+  broadcast({ type: "run-finished", taskId: id, record })
+  return { ok: true }
+}
+
 async function fire(id: string): Promise<void> {
   timers.delete(id)
   plannedAt.delete(id)
@@ -139,12 +172,25 @@ async function fire(id: string): Promise<void> {
   }
 
   // lastRun + 历史(capped)落任务文件;重读避免覆盖执行期间的用户编辑。
+  let breakerTripped = false
   const fresh = getAutomation(id)
   if (fresh) {
     fresh.lastRun = record
     fresh.history = [record, ...(fresh.history ?? [])].slice(0, AUTOMATION_DEFAULTS.historyKeep)
+    // A2(REQ-024):连败熔断 —— 判定纯函数在 shared(单测),原因落任务文件(UI 呈现;
+    // 重新启用清除,见 automation-ipc toggle)。
+    if (fresh.enabled && shouldTripBreaker(fresh.history, AUTOMATION_DEFAULTS.failureBreaker)) {
+      fresh.enabled = false
+      fresh.disabledReason = "consecutive_failures"
+      breakerTripped = true
+    }
     const saved = saveAutomation(fresh)
     if (!saved.ok) getLogger().warn("automation: history write failed", saved.reason)
+  }
+  if (breakerTripped) {
+    getLogger().log("automation: breaker tripped (3 consecutive failures)", { id })
+    new Notification({ title: `⏱ ${task.name}`, body: `连续失败 ${AUTOMATION_DEFAULTS.failureBreaker} 次,已自动停用;修复后可在自动化面板重新启用` }).show()
+    broadcast({ type: "tasks-changed" })
   }
 
   if (task.notify.system && record.status !== "skipped-overlap" && record.status !== "skipped-cap") {

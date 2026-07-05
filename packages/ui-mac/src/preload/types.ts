@@ -2,7 +2,7 @@ import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
 import type { WslServersPlatform } from "@opencode-ai/app/wsl/types"
 import type { UpdaterState } from "@opencode-ai/app/updater"
 import type { AlphaEndpoints } from "../shared/alpha-config"
-import type { AutomationEvent, AutomationGlobalState, AutomationTask } from "../shared/automation-types"
+import type { AutomationEvent, AutomationGlobalState, AutomationTask, AutomationSchedule } from "../shared/automation-types"
 import type {
   AlphaModelCatalog,
   EffectiveCatalog,
@@ -381,6 +381,13 @@ export type ElectronAPI = {
     remove: (id: string) => Promise<{ ok: true } | { ok: false; reason: string }>
     toggle: (id: string, enabled: boolean) => Promise<{ ok: true } | { ok: false; reason: string }>
     pauseAll: (paused: boolean) => Promise<{ ok: true }>
+    /** A2:立即运行(不改 next-fire;占并发位;计日 cap)。 */
+    runNow: (id: string) => Promise<{ ok: true } | { ok: false; reason: string }>
+    /** A2:LLM 辅助解析(规则失败时用户显式触发;临时会话一次抽取即删)。 */
+    nlLlm: (text: string, projectDir: string) => Promise<
+      | { ok: true; name: string; schedule: AutomationSchedule; prompt: string }
+      | { ok: false; reason: string }
+    >
     /** 读(无参)/写(带参)「登录时启动」。 */
     loginItem: (open?: boolean) => Promise<{ openAtLogin: boolean }>
     onEvent: (cb: (event: AutomationEvent) => void) => () => void

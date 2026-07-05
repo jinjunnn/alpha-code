@@ -111,3 +111,19 @@ describe("describeSchedule — 人话周期", () => {
     expect(describeSchedule({ kind: "cron", expr: "*/5 * * * *" })).toBe("cron */5 * * * *")
   })
 })
+
+// ── A2(REQ-024):连败熔断判定 ──
+import { shouldTripBreaker } from "./automation-schedule"
+
+describe("shouldTripBreaker (A2 熔断)", () => {
+  const F = { status: "failed" }, T = { status: "timeout" }, OK = { status: "ok" }, SK = { status: "skipped-overlap" }
+  test("连续 3 次 failed/timeout(skip 不算尝试)→ 触发", () => {
+    expect(shouldTripBreaker([F, T, F], 3)).toBe(true)
+    expect(shouldTripBreaker([F, SK, T, SK, F], 3)).toBe(true) // skip 夹在中间不打断连败
+  })
+  test("最近一次 ok → 不触发;尝试不足 3 次 → 不触发", () => {
+    expect(shouldTripBreaker([OK, F, F, F], 3)).toBe(false)
+    expect(shouldTripBreaker([F, F], 3)).toBe(false)
+    expect(shouldTripBreaker(undefined, 3)).toBe(false)
+  })
+})

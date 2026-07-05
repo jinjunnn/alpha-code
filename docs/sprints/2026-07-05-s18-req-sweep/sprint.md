@@ -47,7 +47,7 @@ S17 清完思考债后,把 2026-07-05 立项的产品需求线(composer 收敛 /
 | T5 | REQ-030 模型配置化 + edition 收口 | B(+A 核验) | ☑ B #15 + prod 部署(edition:cn 实证/旧 id settle 实证)+ A #101 snapshot |
 | T6 | REQ-031 gateway failover | B | ☑ B #16 + prod 部署(route 计价 settle 实证);codex 审计 1P1+4P2 全修 |
 | T7 | REQ-029 effort=variants | X | ☐ |
-| T8 | REQ-024 自动化 A2 | A | ☐ |
+| T8 | REQ-024 自动化 A2 | A | ☑ PR #106(standard 档+LLM 解析+熔断+立即运行) |
 | T9 | REQ-028 真只读档 | A | ☐ |
 | T10 | REQ-032 远程 catalog | X(C+A) | ☑ C #5(端点+签名+不可变资产,prod)+ A #103(验签/回退/远程安装,live e2e 8/8) |
 | T11 | REQ-026 小白文档 | C | ☑ C #6 已部署(getting-started,FAQ×10) |

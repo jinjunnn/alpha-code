@@ -42,6 +42,8 @@ export interface AutomationTask {
   catchUpPolicy: "skip"
   notify: { system: boolean }
   enabled: boolean
+  /** A2:连败熔断自动停用的原因(重新启用时清除;UI 呈现)。 */
+  disabledReason?: "consecutive_failures"
   createdAt: string
   lastRun?: AutomationRunRecord
   /** 运行历史(新在前,capped,默认留 30 条)。 */
@@ -68,4 +70,8 @@ export const AUTOMATION_DEFAULTS = {
   /** interval 下限(防打点风暴;cap 之外的第二道)。 */
   minIntervalMinutes: 5,
   agent: "alpha-automation",
+  /** A2:standard(可写)档 agent。 */
+  agentStandard: "alpha-automation-standard",
+  /** A2:连败熔断阈值(连续 failed/timeout 次数)。 */
+  failureBreaker: 3,
 } as const

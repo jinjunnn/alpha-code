@@ -3,7 +3,7 @@ id: REQ-024
 title: 自动化 A2 增强:standard 可写档 + LLM 辅助解析 + 连败熔断 + 立即运行 + 预算/历史 UI
 type: feature
 priority: P2
-status: in-sprint
+status: shipped
 repo: A
 created: 2026-07-05
 sprint: —

@@ -255,6 +255,56 @@ function injectAlphaConfig(userDataPath: string, extPluginPath?: string) {
       }
     }
 
+    //   2c. REQ-024(自动化 A2):standard 可写档 agent。无人值守语义同 alpha-automation
+    //       (question/task/doom_loop deny,零 ask 硬前提);差异 = edit allow + bash 受限 allow
+    //       (破坏类命令模式 deny —— 模式黑名单**非穷尽**,UI 启用时有显式风险确认,不谎称安全)。
+    if (!process.env.ALPHA_AUTOMATION_DISABLE) {
+      config.agent = {
+        ...(config.agent ?? {}),
+        "alpha-automation-standard": {
+          description: "alpha 自动化 standard 档(可写:能改文件、能执行常规命令;破坏类命令仍被拦)",
+          mode: "primary",
+          prompt:
+            "你是 alpha-code 的自动化任务执行器,在无人值守的定时任务里运行(可写档)。" +
+            "可以修改文件与执行常规命令;破坏性操作(删除大量文件、系统级变更、对外发布)被权限拦截,也不要尝试。" +
+            "没有人会回答追问——绝不提问,基于可得信息直接完成任务。" +
+            "最终答复即任务报告:用 Markdown,先一行结论,再列所做变更与依据;如实标注做不到的部分。",
+          permission: {
+            read: { "*": "allow", "*.env*": "deny" },
+            glob: "allow",
+            grep: "allow",
+            list: "allow",
+            webfetch: "allow",
+            websearch: "allow",
+            skill: "allow",
+            edit: "allow",
+            bash: {
+              "*": "allow",
+              "rm *": "deny",
+              "rm -*": "deny",
+              "sudo *": "deny",
+              "chmod *": "deny",
+              "chown *": "deny",
+              "dd *": "deny",
+              "mkfs*": "deny",
+              "shutdown*": "deny",
+              "reboot*": "deny",
+              "kill *": "deny",
+              "killall *": "deny",
+              "git push*": "deny",
+              "npm publish*": "deny",
+              "curl * | *": "deny",
+              "wget * | *": "deny",
+            },
+            external_directory: "deny",
+            doom_loop: "deny",
+            question: "deny",
+            task: "deny",
+          },
+        },
+      }
+    }
+
     //   3. Cloud tool gateway (alpha-platform B). Registered only when platform-pays is active —
     //      main derives the login state (alpha-auth.ts §③) and materializes the bearer into the
     //      {file:} channel at fork (A6), so logged-out / BYOK leaves it dark. The same bearer fronts

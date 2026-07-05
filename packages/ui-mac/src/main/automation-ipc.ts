@@ -11,7 +11,8 @@ import {
   saveAutomation,
   writeAutomationState,
 } from "./alpha-automations"
-import { getPlannedFireAt, isAutomationRunning, rearmAutomations } from "./automation-scheduler"
+import { getPlannedFireAt, isAutomationRunning, rearmAutomations, runAutomationNow } from "./automation-scheduler"
+import { llmParseAutomation } from "./automation-llm"
 
 export function registerAutomationIpcHandlers() {
   ipcMain.handle("automations-list", () => ({
@@ -40,6 +41,7 @@ export function registerAutomationIpcHandlers() {
     const task = getAutomation(id)
     if (!task) return { ok: false as const, reason: "not found" }
     task.enabled = enabled === true
+    if (task.enabled) delete task.disabledReason // A2:手动重新启用 = 清熔断态
     const res = saveAutomation(task)
     if (res.ok) rearmAutomations()
     return res
@@ -51,6 +53,14 @@ export function registerAutomationIpcHandlers() {
     rearmAutomations()
     return { ok: true as const }
   })
+
+  // A2(REQ-024):手动立即运行(不改 next-fire;占并发位;计日 cap)。
+  ipcMain.handle("automations-run-now", (_e: IpcMainInvokeEvent, id: string) => runAutomationNow(String(id)))
+
+  // A2(REQ-024):LLM 辅助解析(规则解析失败时的兜底;临时会话一次抽取后删除)。
+  ipcMain.handle("automations-nl-llm", (_e: IpcMainInvokeEvent, text: string, projectDir: string) =>
+    llmParseAutomation(String(text ?? ""), String(projectDir ?? "")),
+  )
 
   // 「登录时启动」:应用未运行不执行(诚实边界)→ 给用户把 app 挂开机自启的开关。
   ipcMain.handle("automations-login-item", (_e: IpcMainInvokeEvent, open?: boolean) => {
