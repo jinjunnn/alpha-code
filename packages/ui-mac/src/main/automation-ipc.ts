@@ -2,6 +2,7 @@
 // 「登录时启动」走 app.set/getLoginItemSettings(A1.3 配套设置项)。校验在存储层(loud)。
 
 import { app, ipcMain, type IpcMainInvokeEvent } from "electron"
+import { getLogger } from "./logging"
 import type { AutomationTask } from "../shared/automation-types"
 import {
   deleteAutomation,
@@ -29,11 +30,23 @@ export function registerAutomationIpcHandlers() {
   ipcMain.handle("automations-save", async (_e: IpcMainInvokeEvent, task: AutomationTask) => {
     // A3(REQ-025):云档 = 先注册/更新 B schedule(失败不落盘,loud);本地档若此前是云档,先删 B 侧。
     const prev = getAutomation(task?.id)
+    const wasCloud = !!prev?.cloudScheduleId
     if (task?.execution === "cloud") {
       const up = await upsertCloudSchedule({ ...task, cloudScheduleId: prev?.cloudScheduleId })
       if (!up.ok) return { ok: false as const, reason: up.reason }
       task.cloudScheduleId = up.scheduleId
-    } else if (prev?.cloudScheduleId) {
+      const res = saveAutomation(task)
+      if (!res.ok && !wasCloud) {
+        // codex H2:B 注册成功但本地落盘失败 → 补偿删除,不留孤儿 schedule(否则离线持续触发且本地不可管)。
+        void deleteCloudSchedule(up.scheduleId).then((d) => {
+          if (!d.ok) getLogger().error(`automations: ORPHAN cloud schedule ${up.scheduleId} — local save failed AND compensating delete failed (${d.reason})`)
+        })
+        return { ok: false as const, reason: `${res.reason}(云端注册已回滚)` }
+      }
+      if (res.ok) rearmAutomations()
+      return res
+    }
+    if (prev?.cloudScheduleId) {
       const del = await deleteCloudSchedule(prev.cloudScheduleId)
       if (!del.ok) return { ok: false as const, reason: del.reason }
       delete task.cloudScheduleId

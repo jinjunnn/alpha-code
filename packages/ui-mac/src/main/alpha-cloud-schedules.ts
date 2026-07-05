@@ -11,7 +11,7 @@
 import type { AutomationTask } from "../shared/automation-types"
 import { scheduleToCron } from "../shared/automation-schedule"
 import { fetchCloudArtifact, getCloudJobStatus, listCloudArtifacts } from "./alpha-cloud-jobs"
-import { listAutomations, saveAutomation } from "./alpha-automations"
+import { getAutomation, listAutomations, saveAutomation } from "./alpha-automations"
 import { saveCloudRun } from "./alpha-workdir"
 import { getLogger } from "./logging"
 import { getStore } from "./store"
@@ -98,8 +98,19 @@ export async function listCloudSchedules(): Promise<CloudScheduleView[] | null> 
 
 const LAST_PULL_KEY = "alphaCloudScheduleLastPull"
 
+// codex M1:拉取单飞(startup 与面板 cloudSync 可能并发)—— 复用在飞 promise,不重入。
+let pullInflight: Promise<{ pulled: number } | { error: string }> | null = null
+
 /** 开机拉回:枚举错过的 schedule 触发 job → 终态取结果 → saveCloudRun 落对应任务的项目 .alpha/runs/。 */
-export async function pullCloudScheduleRuns(): Promise<{ pulled: number } | { error: string }> {
+export function pullCloudScheduleRuns(): Promise<{ pulled: number } | { error: string }> {
+  if (pullInflight) return pullInflight
+  pullInflight = doPull().finally(() => {
+    pullInflight = null
+  })
+  return pullInflight
+}
+
+async function doPull(): Promise<{ pulled: number } | { error: string }> {
   const store = getStore()
   const since = Number(store.get(LAST_PULL_KEY) ?? 0) || Date.now() - 7 * 24 * 3600_000
   const r = await authed<{ jobs: Array<{ schedule_id: string; job_id: string; fired_at: number; schedule_name?: string }> }>(
@@ -109,25 +120,32 @@ export async function pullCloudScheduleRuns(): Promise<{ pulled: number } | { er
   const byScheduleId = new Map(listAutomations().filter((t) => t.cloudScheduleId).map((t) => [t.cloudScheduleId!, t]))
   let pulled = 0
   let maxFired = since
+  // codex H1:游标只越过「已终局处理」的 job —— 未终态/状态查询失败的 job 记 pendingMin,
+  // 游标停在它上(since 含等,下次重拉);否则运行中 job 会被游标永久跳过、结果丢失。
+  let pendingMin: number | null = null
   for (const job of r.jobs) {
     maxFired = Math.max(maxFired, job.fired_at)
     const task = byScheduleId.get(job.schedule_id)
     if (!task) {
       getLogger().log("cloud-schedules: run for unknown/deleted local task, skipped", job.schedule_id)
-      continue
+      continue // 本地无主(任务已删)= 终局跳过,游标可越过
     }
-    // 已入本任务历史的 job 不重复拉(以 sessionID 字段代存 job_id 对账)。
-    if ((task.history ?? []).some((h) => h.sessionID === job.job_id)) continue
+    if ((task.history ?? []).some((h) => h.sessionID === job.job_id)) continue // 已对账
     const status = await getCloudJobStatus(job.job_id)
-    if (isErr(status)) continue
-    const st = (status as { status?: string }).status
-    if (!st || !["completed", "failed", "cancelled"].includes(st)) continue // 未终态下次再拉
+    const st = isErr(status) ? null : (status as { status?: string }).status
+    if (!st || !["completed", "failed", "cancelled"].includes(st)) {
+      pendingMin = pendingMin === null ? job.fired_at : Math.min(pendingMin, job.fired_at)
+      continue // 未终态/查询失败:留给下次
+    }
     const saved = await saveCloudRun(
       task.target.projectDir,
       job.job_id,
       { status: getCloudJobStatus, artifacts: listCloudArtifacts, fetchArtifact: fetchCloudArtifact },
       { autonomy: "pipeline", kind: "research", input: { question: task.prompt } } as never,
     ).catch(() => ({ ok: false as const, reason: "save failed" }))
+    // codex M1:落账前重读最新任务(await 期间用户可能已编辑)—— 只叠加历史,不回写旧快照。
+    const fresh = getAutomation(task.id)
+    const target = fresh ?? task
     const record = {
       at: new Date(job.fired_at).toISOString(),
       status: st === "completed" ? ("ok" as const) : ("failed" as const),
@@ -135,12 +153,12 @@ export async function pullCloudScheduleRuns(): Promise<{ pulled: number } | { er
       runDir: (saved as { ok?: boolean; dir?: string }).ok ? (saved as { dir?: string }).dir : undefined,
       summary: st === "completed" ? "云端定时执行完成(结果已拉回)" : `云端执行 ${st}`,
     }
-    task.lastRun = record
-    task.history = [record, ...(task.history ?? [])].slice(0, 30)
-    const w = saveAutomation(task)
+    target.lastRun = record
+    target.history = [record, ...(target.history ?? [])].slice(0, 30)
+    const w = saveAutomation(target)
     if (!w.ok) getLogger().warn("cloud-schedules: history write failed", w.reason)
     pulled++
   }
-  store.set(LAST_PULL_KEY, maxFired + 1)
+  store.set(LAST_PULL_KEY, pendingMin ?? maxFired + 1)
   return { pulled }
 }

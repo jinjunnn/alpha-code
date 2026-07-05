@@ -280,8 +280,22 @@ function injectAlphaConfig(userDataPath: string, extPluginPath?: string) {
             edit: "allow",
             bash: {
               "*": "allow",
+              // 破坏类直呼(codex 审计加固:绝对路径/包装器/嵌套 shell/find -delete/git clean 常见绕法补拦;
+              // 黑名单仍非穷尽 —— UI 风险确认与 agent prompt 如实声明,根治=沙箱化(后续)):
               "rm *": "deny",
-              "rm -*": "deny",
+              "*/rm *": "deny",
+              "command *": "deny",
+              "exec *": "deny",
+              "env *": "deny",
+              "xargs *": "deny",
+              "sh *": "deny",
+              "bash *": "deny",
+              "zsh *": "deny",
+              "eval *": "deny",
+              "find * -delete*": "deny",
+              "find * -exec *": "deny",
+              "git clean*": "deny",
+              "git reset --hard*": "deny",
               "sudo *": "deny",
               "chmod *": "deny",
               "chown *": "deny",
