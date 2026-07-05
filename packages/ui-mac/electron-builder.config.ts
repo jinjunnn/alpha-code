@@ -105,6 +105,12 @@ const getBase = (appId: string): Configuration => ({
       to: "alpha-ext/",
       filter: ["plugin.js"],
     },
+    {
+      // S17 T3(C17):构建期生成的 DB 迁移支持面清单(scripts/gen-db-expected.ts,prebuild 保证新鲜)。
+      // db-safety 预检据此判定「DB 超前(阻断)/ 将前进(pre-migration 备份)」;文件 gitignore(构建产物)。
+      from: "resources/db-expected-migrations.json",
+      to: "db-expected-migrations.json",
+    },
   ],
   // C27:Electron fuses 纵深防御。RunAsNode/NODE_OPTIONS/inspect 三个注入原语全关(全仓无
   // ELECTRON_RUN_AS_NODE 用法,sidecar 走 utilityProcess 不受影响;preload 的 install-cli 为无
