@@ -51,4 +51,35 @@ export function ensureAlphaLayoutDefault() {
   } catch (err) {
     log.warn("alpha: failed to seed new layout default", err)
   }
+
+  // REQ-028:agent 控件可见性(V2 布局下 customAgents 默认隐藏 → agent.cycle 禁用,「只读」档
+  // 无从切换)。同款一次性 sentinel;用户之后在设置里关掉则尊重。
+  try {
+    if (sentinelStore.get("alphaCustomAgentsSeeded")) return
+    const store = getStore(RENDERER_STORE)
+    const raw = store.get(SETTINGS_KEY)
+    let settings: Record<string, unknown> = {}
+    if (typeof raw === "string") {
+      try {
+        settings = JSON.parse(raw) as Record<string, unknown>
+      } catch {
+        settings = {}
+      }
+    } else if (raw && typeof raw === "object") {
+      settings = raw as Record<string, unknown>
+    }
+    const general =
+      settings.general && typeof settings.general === "object"
+        ? (settings.general as Record<string, unknown>)
+        : {}
+    if (general.showCustomAgents !== true) {
+      general.showCustomAgents = true
+      settings.general = general
+      store.set(SETTINGS_KEY, JSON.stringify(settings))
+      log.log("alpha: seeded custom agents visibility (showCustomAgents=true)")
+    }
+    sentinelStore.set("alphaCustomAgentsSeeded", true)
+  } catch (err) {
+    log.warn("alpha: failed to seed new layout default", err)
+  }
 }
