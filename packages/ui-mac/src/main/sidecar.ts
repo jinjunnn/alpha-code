@@ -225,6 +225,36 @@ function injectAlphaConfig(userDataPath: string, extPluginPath?: string) {
       }
     }
 
+    //   2b. REQ-028:交互只读 agent(composer「只读」档的真载体)。与 alpha-automation 的差异:
+    //       交互场景有人在场 → question/task 允许(追问/委托子任务不破只读:子 agent 权限独立,
+    //       且 plan 类子任务本身只读);写/执行仍静态 deny —— 「真被 deny」而非 UI 文案。
+    //       逃生:ALPHA_READONLY_DISABLE。治理保护名单同 alpha-automation(X2,alpha-governance.ts)。
+    if (!process.env.ALPHA_READONLY_DISABLE) {
+      config.agent = {
+        ...(config.agent ?? {}),
+        "alpha-readonly": {
+          description: "只读模式:可读取/检索/联网,不能修改文件、不能执行命令(composer 权限档「只读」)",
+          mode: "primary",
+          prompt:
+            "当前处于用户选择的只读模式:你不能修改文件、不能执行 shell 命令。" +
+            "可以读取、检索、联网调研与分析;需要变更时,给出明确的修改建议(含文件与位置),由用户切回可写模式执行。" +
+            "不要尝试绕过限制;做不到的部分如实说明。",
+          permission: {
+            read: { "*": "allow", "*.env*": "deny" },
+            glob: "allow",
+            grep: "allow",
+            list: "allow",
+            webfetch: "allow",
+            websearch: "allow",
+            skill: "allow",
+            edit: "deny",
+            bash: "deny",
+            external_directory: "deny",
+          },
+        },
+      }
+    }
+
     //   3. Cloud tool gateway (alpha-platform B). Registered only when platform-pays is active —
     //      main derives the login state (alpha-auth.ts §③) and materializes the bearer into the
     //      {file:} channel at fork (A6), so logged-out / BYOK leaves it dark. The same bearer fronts

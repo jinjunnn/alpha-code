@@ -8,7 +8,7 @@
 // (SolidJS delegates events on document, so a chip's stopPropagation can't stop a document listener —
 // we ignore clicks that land inside .a-pop-wrap and close on everything else).
 
-import { createSignal, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js"
+import { createEffect, createSignal, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js"
 import { Portal } from "solid-js/web"
 import { useCommand } from "./providers"
 import { setExtHubOpen } from "../extensions/ext-hub-state"
@@ -22,8 +22,8 @@ export type Effort = (typeof EFFORTS)[number]
 // full = 完全访问 (autoaccept on), ask = 请求审批 (autoaccept off / prompt each time)。
 // C28 拍板(2026-07-05,S17 T4):原第三档「只读」已移除 —— 它与 ask 引擎行为完全相同(opencode 无
 // 运行时只读命令),宣称「禁止写/执行」不成立;真只读载体 = 引擎 plan agent / config 权限档 → REQ-028。
-export type PermMode = "full" | "ask"
-const PERM_LABEL: Record<PermMode, string> = { full: "完全访问", ask: "请求审批" }
+export type PermMode = "full" | "ask" | "readonly"
+const PERM_LABEL: Record<PermMode, string> = { full: "完全访问", ask: "请求审批", readonly: "只读" }
 
 const ico = "0 0 24 24"
 
@@ -49,6 +49,12 @@ export const ShieldAsk = () => (
   <svg class="a-ic a-ic-sm" viewBox={ico}>
     <path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" />
     <path d="M9 12l2 2 4-4" />
+  </svg>
+)
+export const ShieldEye = () => (
+  <svg class="a-ic a-ic-sm" viewBox={ico}>
+    <path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z" />
+    <circle cx="12" cy="11" r="2.4" />
   </svg>
 )
 export const Bolt = () => (
@@ -93,6 +99,40 @@ const [modelLabel, setModelLabel] = createSignal<string | undefined>(undefined)
 export const composerModelLabel = modelLabel
 export const setComposerModelLabel = (v: string | undefined) => {
   if (v && v !== modelLabel()) setModelLabel(v)
+}
+
+// REQ-028:当前 agent 名(composer-inject 从上游 [data-action=prompt-agent] 触发器文本发布)。
+// 「只读」档真载体 = 切到 alpha-readonly agent(静态权限档 edit/bash deny);chip 状态以此为
+// 观察源 —— 引擎实际 agent 与 chip 永远一致(验收④),不靠本地意图假装。
+const [agentLabel, setAgentLabel] = createSignal<string | undefined>(undefined)
+export const composerAgentLabel = agentLabel
+export const setComposerAgentLabel = (v: string | undefined) => {
+  if (v !== agentLabel()) setAgentLabel(v)
+}
+export const READONLY_AGENT = "alpha-readonly"
+// 记住进只读前的 agent,退出只读时切回(拿不到就回 build —— 引擎默认主 agent)。
+let prevAgentBeforeReadonly = "build"
+
+const readAgentDom = () =>
+  (document.querySelector('[data-action="prompt-agent"]') as HTMLElement | null)?.textContent?.trim().toLowerCase()
+
+/** cycle 到目标 agent:逐步 trigger + 读上游触发器文本判停;转满一圈没命中/控件未渲染 → false(诚实失败)。 */
+async function switchAgentTo(command: { trigger(id: string): void }, target: string): Promise<boolean> {
+  const start = readAgentDom()
+  if (!start) return false // agent 控件未渲染(customAgents 可见性关闭等)
+  if (start === target) return true
+  for (let i = 0; i < 24; i++) {
+    try {
+      command.trigger("agent.cycle")
+    } catch {
+      return false
+    }
+    await new Promise((r) => setTimeout(r, 90))
+    const cur = readAgentDom()
+    if (cur === target) return true
+    if (cur === start) return false // 转满一圈(治理隐藏/禁用后集合仍鲁棒:只认文本命中)
+  }
+  return false
 }
 
 function useChip() {
@@ -158,19 +198,49 @@ export function PermChip() {
   const command = useCommand()
   const { isOpen, toggle, close } = useChip()
   let btn: HTMLButtonElement | undefined
+  const [permErr, setPermErr] = createSignal("")
   const pick = (m: PermMode) => {
-    setPerm(m)
-    close()
-    try {
-      command.trigger(m === "full" ? "permissions.autoaccept.enable" : "permissions.autoaccept.disable")
-    } catch {
-      /* command may be unregistered in some states; the chip still reflects intent */
-    }
+    void (async () => {
+      setPermErr("")
+      const before = perm()
+      setPerm(m)
+      try {
+        command.trigger(m === "full" ? "permissions.autoaccept.enable" : "permissions.autoaccept.disable")
+      } catch {
+        /* command may be unregistered in some states; the chip still reflects intent */
+      }
+      // 真只读 = 切 alpha-readonly agent;失败(控件未渲染/agent 被治理隐藏/循环未命中)→ 诚实回退,
+      // 绝不显示「只读」却仍可写(C28 反 placebo)。
+      if (m === "readonly") {
+        const cur = readAgentDom()
+        if (cur && cur !== READONLY_AGENT) prevAgentBeforeReadonly = cur
+        const ok = await switchAgentTo(command, READONLY_AGENT)
+        if (!ok) {
+          setPerm(before === "readonly" ? "ask" : before)
+          setPermErr("无法切换到只读 agent(控件未渲染或档位被隐藏)—— 已回退")
+          return
+        }
+      } else if (readAgentDom() === READONLY_AGENT) {
+        const ok = await switchAgentTo(command, prevAgentBeforeReadonly)
+        if (!ok) setPermErr(`已退出只读权限,但 agent 未能切回 ${prevAgentBeforeReadonly} —— 请手动切换`)
+      }
+      close()
+    })()
   }
+  // 观察源一致性(验收④):引擎 agent 是 alpha-readonly ⟺ chip 显示只读;外部切走(cycle 快捷键等)
+  // chip 自动跟随,不留假状态。
+  createEffect(() => {
+    const label = composerAgentLabel()
+    if (label === READONLY_AGENT && perm() !== "readonly") setPerm("readonly")
+    else if (label && label !== READONLY_AGENT && perm() === "readonly") setPerm("ask")
+  })
   const PermIcon = (p: { mode: PermMode }) => (
     <Switch fallback={<ShieldAsk />}>
       <Match when={p.mode === "full"}>
         <ShieldSolid />
+      </Match>
+      <Match when={p.mode === "readonly"}>
+        <ShieldEye />
       </Match>
     </Switch>
   )
@@ -198,6 +268,12 @@ export function PermChip() {
           <button class="a-pop-item" classList={{ "is-on": perm() === "ask" }} onClick={() => pick("ask")}>
             <ShieldAsk /> 请求审批 <span class="a-pop-desc">逐次询问</span>
           </button>
+          <button class="a-pop-item" classList={{ "is-on": perm() === "readonly" }} onClick={() => pick("readonly")}>
+            <ShieldEye /> 只读 <span class="a-pop-desc">不能改文件/执行命令</span>
+          </button>
+          <Show when={permErr()}>
+            <div class="a-pop-label" style={{ color: "var(--a-danger, #d33)" }}>{permErr()}</div>
+          </Show>
         </ChipPopover>
       </Show>
     </div>
