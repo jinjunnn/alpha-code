@@ -1,0 +1,21 @@
+== OPENCODE_CONFIG_CONTENT 内容检查(MCP 子进程 18487)==
+  length: 174
+  '{file:' ref count: 0
+  plaintext JWT (eyJ) count: 0
+  plaintext sk- count: 0
+  apiKey field shapes: 
+
+== 全 env blob JWT 检查(18487/19208)==
+  pid 18487 eyJ-count: 0
+  pid 19208 eyJ-count: 0
+
+== 正向对照:alpha-secrets 文件通道 ==
+total  
+drwx------@ 160 .
+drwxr-xr-x@ 1696 ..
+-rw-------@ 363 ALPHA_API_KEY
+-rw-------@ 363 ALPHA_CLOUD_TOKEN
+-rw-------@ 35 DEEPSEEK_API_KEY
+  ALPHA_API_KEY: 363 bytes, head-shape: eyJ***
+  ALPHA_CLOUD_TOKEN: 363 bytes, head-shape: eyJ***
+  DEEPSEEK_API_KEY: 35 bytes, head-shape: sk-***

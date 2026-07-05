@@ -1,10 +1,12 @@
 ---
 id: ADR-014
 title: 定制中心 — Skills/MCP/Plugins 可视化市场,采用 Claude 三分法 + alpha 自建套件,零-fork 安装
-status: trial
+status: accepted
 date: 2026-06-22
 related: [ADR-002, ADR-003, ADR-006, ADR-008, ADR-009]
 ---
+
+> **2026-07-05 v3 转 accepted**(REQ-016 S16 桌面真机批,证据 [audits/2026-07-05-req016-realmachine-batch/verify.md](../../../docs/audits/2026-07-05-req016-realmachine-batch/verify.md)):prod 签名+公证包实测 —— skill/MCP/agent/plugin **四类 in-app 安装→免重启桥(`~/.alpha` 真源 + `~/.opencode/<类>` symlink)→已安装态→卸载净除**全通;vendored 插件字节级零网络(与打包资产一致);A6 env dump 证第三方 MCP 子进程零密钥泄漏(解 R3 门控)。**转正过程中发现并修复 P1 真机 bug**:已安装 tab 卸载/更新对账本条目静默失败(Solid store Proxy 未 unwrap 过 contextBridge → 结构化克隆抛错被 void 吞),修复见 `use-extensions.ts` + 回归锁测。剩余真机项(迁移开门/卸 uv 像素/git 真克隆/dispose 打断)为增强验证,不阻断转正。
 
 > 配套设计:`docs/designs/2026-06-22-arch-extension-hub.md`(v2,经 /app:design-arch);build:`docs/sprints/2026-06-22-extension-hub/build.md`。
 > 状态 `trial`(2026-06-22):design-arch 完成 → 用户选 A→design→C(跳过 plan-review)→ MVP 已实现(Phase ①②③⑤⑥,Plugin 门控)并 typecheck+build 通过。**待 Mac 端像素核验 + Phase ④ 后转 `accepted`。**

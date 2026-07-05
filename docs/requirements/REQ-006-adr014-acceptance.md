@@ -3,7 +3,7 @@ id: REQ-006
 title: ADR-014 转正收尾:桌面验收用例 + 未决项拍板 → trial 转 accepted
 type: docs
 priority: P2
-status: in-sprint
+status: verified
 repo: A
 created: 2026-07-03
 sprint: 2026-07-04-s12-ext-hub-m1(T8 真机批同场)

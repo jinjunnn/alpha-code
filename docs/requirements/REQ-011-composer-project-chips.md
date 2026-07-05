@@ -3,7 +3,7 @@ id: REQ-011
 title: 首页 composer 下方项目/会话 chips 移除 —— 预留后续功能入口位
 type: ux
 priority: P2
-status: shipped
+status: verified
 repo: A
 created: 2026-07-03
 sprint: —

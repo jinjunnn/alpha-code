@@ -3,7 +3,7 @@ id: REQ-019
 title: 定制中心 v3-M2:hub 横向 tab IA + 逐类型详情页(数据边界/实时依赖检测)+ 更新通道 + 导入(2026-07-04 拍板:横向导航,否决左栏)
 type: feature
 priority: P2
-status: shipped
+status: verified
 repo: A
 created: 2026-07-04
 sprint: 2026-07-04-s13-ext-hub-m2

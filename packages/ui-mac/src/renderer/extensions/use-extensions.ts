@@ -11,7 +11,7 @@
 // C14③ 契约锚(sync 时 `grep -n "as any"` 复核本文件):本文件全部 `as any` 都是同一类——
 // SDK v2 生成类型与 server 实际接受/返回形状的已知偏斜(directory/scope/roots 扩展参数、data
 // 数组元素形状、event 信封)。上游 codegen 修齐后应成批删除,不新增其它用途的 as any。
-import { createStore } from "solid-js/store"
+import { createStore, unwrap } from "solid-js/store"
 import { createEffect, onCleanup, type Accessor } from "solid-js"
 // CLIENT subpath only — the v2 barrel pulls Node-only deps that break the renderer (see ADR-008).
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
@@ -323,9 +323,11 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     return store.receipts.some((r) => r.id === id && r.name in store.mcp)
   }
 
-  /** Uninstall by receipt: main removes files/config/secrets + drops the receipt; then reload + engine refresh. */
+  /** Uninstall by receipt: main removes files/config/secrets + drops the receipt; then reload + engine refresh.
+   *  receipt 常来自 store.receipts(Solid store 节点 = Proxy),contextBridge 结构化克隆遇 Proxy 抛
+   *  "An object could not be cloned" → IPC 根本发不出去。必须 unwrap 成普通对象再过桥。 */
   async function uninstall(receipt: InstallReceipt): Promise<ActionResult> {
-    const res = await window.api.ext.uninstall(receipt)
+    const res = await window.api.ext.uninstall(unwrap(receipt))
     if (receipt.type === "mcp") await client?.mcp.disconnect({ name: receipt.name } as any).catch(() => {})
     await Promise.all([loadStatus(), loadInstalls()])
     // fs/plugin removal needs a rescan;cloud 只动账本(引擎无状态)无需 dispose。
@@ -505,7 +507,7 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     if (entry.type === "plugin") {
       const old = store.receipts.find((r) => r.id === entry.id && r.type === "plugin")
       if (old) {
-        const removed = await window.api.ext.uninstall(old)
+        const removed = await window.api.ext.uninstall(unwrap(old))
         if (!removed.ok) return removed
       }
       return installPlugin(entry)
