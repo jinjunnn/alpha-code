@@ -18,7 +18,7 @@ const pickerFilters = (ext?: string[]) => {
   return [{ name: "Files", extensions: ext }]
 }
 
-const pickedFiles = createPickedFileAuthorizations()
+export const pickedFiles = createPickedFileAuthorizations() // REQ-033:agent 导入 preview 复用同一授权注册表(codex H1)
 
 type Deps = {
   killSidecar: () => Promise<void> | void

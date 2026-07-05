@@ -186,6 +186,19 @@ export function ExtensionHub(props: {
   const [migrating, setMigrating] = createSignal(false)
   // T6:导入状态。importDialog = git/npm 输入弹窗;importBusy/importErr 行内反馈(B11)。
   const [importDialog, setImportDialog] = createSignal<"git" | "npm" | null>(null)
+  // REQ-033:自定义连接器(catalog 外任意 MCP)+ agent 导入(两段式:预览映射 → 确认)
+  const [customMcpOpen, setCustomMcpOpen] = createSignal(false)
+  const [cmType, setCmType] = createSignal<"local" | "remote">("local")
+  const [cmName, setCmName] = createSignal("")
+  const [cmCommand, setCmCommand] = createSignal("")
+  const [cmUrl, setCmUrl] = createSignal("")
+  const [cmEnv, setCmEnv] = createSignal("")
+  const [cmSecrets, setCmSecrets] = createSignal("")
+  const [cmBusy, setCmBusy] = createSignal(false)
+  const [cmErr, setCmErr] = createSignal("")
+  const [agentPreview, setAgentPreview] = createSignal<{ previewId: string; name: string; format: string; mapping: Array<{ source: string; value: string; target: string | null; note: string }>; composed: string } | null>(null)
+  const [agentBusy, setAgentBusy] = createSignal(false)
+  const [agentErr, setAgentErr] = createSignal("")
   const [importInput, setImportInput] = createSignal("")
   const [importBusy, setImportBusy] = createSignal(false)
   const [importErr, setImportErr] = createSignal("")
@@ -248,6 +261,71 @@ export function ExtensionHub(props: {
       void refreshCatalog()
     }
   })
+
+  const parseEnvLines = (text: string): Record<string, string> => {
+    const out: Record<string, string> = {}
+    for (const line of text.split("\n")) {
+      const i = line.indexOf("=")
+      if (i > 0) out[line.slice(0, i).trim()] = line.slice(i + 1).trim()
+    }
+    return out
+  }
+  async function runAddCustomMcp() {
+    if (cmBusy()) return
+    setCmBusy(true)
+    setCmErr("")
+    try {
+      const input =
+        cmType() === "remote"
+          ? { mcpType: "remote" as const, url: cmUrl().trim() }
+          : { mcpType: "local" as const, command: cmCommand().trim().split(/\s+/).filter(Boolean) }
+      const r = await ext.addCustomMcp(cmName().trim(), input, parseEnvLines(cmEnv()), parseEnvLines(cmSecrets()))
+      if (!r.ok) {
+        setCmErr(r.reason ?? "failed")
+        return
+      }
+      setCustomMcpOpen(false)
+      setCmName(""); setCmCommand(""); setCmUrl(""); setCmEnv(""); setCmSecrets("")
+      flash(r.reason === "slow" ? t("alpha.ext.customMcpSlow") : t("alpha.ext.customMcpDone"), "success")
+    } finally {
+      setCmBusy(false)
+    }
+  }
+  async function runPickAgentFile() {
+    setAgentErr("")
+    // openFilePicker 返回 { token, files }(授权注册表);preview 经 token 读(codex H1/M2)
+    const picked = await window.api.openFilePicker({ title: t("alpha.ext.importAgentPick"), extensions: ["md"] })
+    if (!picked || !picked.files?.length) return
+    setAgentBusy(true)
+    try {
+      const r = await window.api.ext.importAgentPreview(picked.token, picked.files[0].path)
+      if (!r.ok) {
+        setAgentErr(r.reason)
+        return
+      }
+      setAgentPreview(r)
+    } finally {
+      setAgentBusy(false)
+    }
+  }
+  async function runConfirmAgentImport() {
+    const pv = agentPreview()
+    if (!pv || agentBusy()) return
+    setAgentBusy(true)
+    try {
+      const r = await window.api.ext.importAgentConfirm(pv.previewId)
+      if (!r.ok) {
+        setAgentErr(r.reason)
+        return
+      }
+      setAgentPreview(null)
+      await ext.refreshEngine()
+      void ext.reloadAgents()
+      flash(t("alpha.ext.importAgentDone", { name: pv.name }), "success")
+    } finally {
+      setAgentBusy(false)
+    }
+  }
 
   // Dedicated Portal host inside #root (mirrors alpha-sidebar.tsx), kept out of <body> so it stays
   // inside opencode's drag-region system and keeps position:fixed working.
@@ -1315,7 +1393,25 @@ export function ExtensionHub(props: {
                               <small>{t("alpha.ext.importNpmSub")}</small>
                             </span>
                           </button>
+                          <button class="alpha-ext-import-card" disabled={cmBusy()} onClick={() => { setCmErr(""); setCustomMcpOpen(true) }}>
+                            <Svg d="M8 12h8M12 8v8M4 12a8 8 0 1 0 16 0a8 8 0 1 0-16 0" />
+                            <span>
+                              <b>{t("alpha.ext.customMcp")}</b>
+                              <small>{t("alpha.ext.customMcpSub")}</small>
+                            </span>
+                          </button>
+                          <button class="alpha-ext-import-card" disabled={agentBusy()} onClick={() => void runPickAgentFile()}>
+                            <Svg d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" />
+                            <span>
+                              <b>{t("alpha.ext.importAgent")}</b>
+                              <small>{t("alpha.ext.importAgentSub")}</small>
+                            </span>
+                          </button>
                         </div>
+                        <Show when={agentErr()}>
+                          <p class="alpha-ext-import-err">{agentErr()}</p>
+                        </Show>
+                        <p class="alpha-ext-dnote" style={{ margin: "10px 2px 0" }}>{t("alpha.ext.compatNote")}</p>
                         {/* B11:导入失败行内呈现(folder 路径失败落这里;git/npm 失败落弹窗内) */}
                         <Show when={importErr() && !importDialog()}>
                           <p class="alpha-ext-import-err">{importErr()}</p>
@@ -1555,6 +1651,100 @@ export function ExtensionHub(props: {
               <p class="alpha-ext-import-err">{importErr()}</p>
             </Show>
           </div>
+        </Dialog>
+
+        {/* REQ-033:自定义连接器表单(校验主体在 main:命令/URL 白名单、env 值校验、密钥 file 化) */}
+        <Dialog
+          open={customMcpOpen()}
+          onClose={() => setCustomMcpOpen(false)}
+          besideSidebar
+          size="sm"
+          title={t("alpha.ext.customMcpTitle")}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setCustomMcpOpen(false)}>
+                {t("alpha.ext.cancel")}
+              </Button>
+              <Button variant="primary" disabled={cmBusy() || !cmName().trim()} onClick={() => void runAddCustomMcp()}>
+                {cmBusy() ? t("alpha.ext.importing") : t("alpha.ext.customMcpAdd")}
+              </Button>
+            </>
+          }
+        >
+          <div class="alpha-ext-confirm">
+            <p class="alpha-ext-confirm-desc">{t("alpha.ext.customMcpHint")}</p>
+            <label class="alpha-ext-flabel">{t("alpha.ext.customMcpName")}
+              <input class="alpha-ext-input alpha-mono" value={cmName()} onInput={(e) => setCmName(e.currentTarget.value)} placeholder="my-connector" />
+            </label>
+            <div class="alpha-gov-mode" style={{ margin: "8px 0" }}>
+              <button data-on={cmType() === "local" ? "" : undefined} onClick={() => setCmType("local")}>{t("alpha.ext.customMcpTypeLocal")}</button>
+              <button data-on={cmType() === "remote" ? "" : undefined} onClick={() => setCmType("remote")}>{t("alpha.ext.customMcpTypeRemote")}</button>
+            </div>
+            <Show when={cmType() === "local"} fallback={
+              <label class="alpha-ext-flabel">{t("alpha.ext.customMcpUrl")}
+                <input class="alpha-ext-input alpha-mono" value={cmUrl()} onInput={(e) => setCmUrl(e.currentTarget.value)} placeholder="https://mcp.example.com/sse" />
+              </label>
+            }>
+              <label class="alpha-ext-flabel">{t("alpha.ext.customMcpCommand")}
+                <input class="alpha-ext-input alpha-mono" value={cmCommand()} onInput={(e) => setCmCommand(e.currentTarget.value)} placeholder="npx -y @some/mcp-server@1.0.0" />
+              </label>
+            </Show>
+            <label class="alpha-ext-flabel">{t("alpha.ext.customMcpEnv")}
+              <textarea class="alpha-ext-input alpha-ext-textarea alpha-mono" rows="2" value={cmEnv()} onInput={(e) => setCmEnv(e.currentTarget.value)} />
+            </label>
+            <label class="alpha-ext-flabel">{t("alpha.ext.customMcpSecrets")}
+              <textarea class="alpha-ext-input alpha-ext-textarea alpha-mono" rows="2" value={cmSecrets()} onInput={(e) => setCmSecrets(e.currentTarget.value)} />
+            </label>
+            <Show when={cmErr()}>
+              <p class="alpha-ext-import-err">{cmErr()}</p>
+            </Show>
+          </div>
+        </Dialog>
+
+        {/* REQ-033:agent 导入映射预览(显式逐字段;不支持项 loud,确认才写入) */}
+        <Dialog
+          open={!!agentPreview()}
+          onClose={() => setAgentPreview(null)}
+          besideSidebar
+          size="md"
+          title={t("alpha.ext.importAgentTitle")}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setAgentPreview(null)}>
+                {t("alpha.ext.cancel")}
+              </Button>
+              <Button variant="primary" disabled={agentBusy()} onClick={() => void runConfirmAgentImport()}>
+                {agentBusy() ? t("alpha.ext.importing") : t("alpha.ext.importAgentConfirm")}
+              </Button>
+            </>
+          }
+        >
+          <Show when={agentPreview()}>
+            {(pv) => (
+              <div class="alpha-ext-confirm">
+                <p class="alpha-ext-confirm-desc">
+                  <b>{pv().name}</b> · {t("alpha.ext.importAgentFormat")}:{pv().format}
+                </p>
+                <div class="alpha-ext-manage">
+                  <For each={pv().mapping}>
+                    {(m) => (
+                      <div class="alpha-ext-man">
+                        <span class="alpha-ext-man-name">
+                          {m.source}
+                          <span class="alpha-ext-chip">{m.target ?? "不映射"}</span>
+                        </span>
+                        <small style={{ "margin-left": "auto", opacity: 0.7, "max-width": "60%" }}>{m.note}</small>
+                      </div>
+                    )}
+                  </For>
+                </div>
+                <p class="alpha-ext-key-hint">{t("alpha.ext.importAgentMapNote")}</p>
+                <Show when={agentErr()}>
+                  <p class="alpha-ext-import-err">{agentErr()}</p>
+                </Show>
+              </div>
+            )}
+          </Show>
         </Dialog>
       </Portal>
     </Show>

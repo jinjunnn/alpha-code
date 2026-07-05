@@ -43,7 +43,7 @@ S17 清完思考债后,把 2026-07-05 立项的产品需求线(composer 收敛 /
 | T1 | REQ-038 composer 收敛(首页 `/` 菜单 P0) | A | ☑ PR #98(slash/@/IME/外壳单源/裁切根因修复;[audits/s18-t1](../../audits/2026-07-05-s18-t1-req038/verify.md)) |
 | T2 | REQ-036 创建技能化 | A | ☑ PR #100(symlink 桥通道拍板 + alpha_reload 两段式;[audits/s18-t2](../../audits/2026-07-05-s18-t2-req036/verify.md)) |
 | T3 | REQ-037 上游治理层 | A | ☑ PR #102(叶子事务+保护名单+hub 分组;裸引擎四机制实测;[audits/s18-t3](../../audits/2026-07-05-s18-t3-req037/verify.md)) |
-| T4 | REQ-033 开放安装面 | A | ☐ |
+| T4 | REQ-033 开放安装面 | A | ☑ PR #104(自定义连接器+agent 导入映射预览+兼容注记) |
 | T5 | REQ-030 模型配置化 + edition 收口 | B(+A 核验) | ☑ B #15 + prod 部署(edition:cn 实证/旧 id settle 实证)+ A #101 snapshot |
 | T6 | REQ-031 gateway failover | B | ☑ B #16 + prod 部署(route 计价 settle 实证);codex 审计 1P1+4P2 全修 |
 | T7 | REQ-029 effort=variants | X | ☐ |

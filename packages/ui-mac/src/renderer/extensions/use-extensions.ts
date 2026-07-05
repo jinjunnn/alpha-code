@@ -70,6 +70,13 @@ export interface ExtensionsApi {
     workspace?: string,
     secrets?: Record<string, string>,
   ): Promise<ActionResult>
+  /** REQ-033:catalog 外任意 MCP(local command / remote url + env/密钥);白名单校验在 main 不放宽。 */
+  addCustomMcp(
+    name: string,
+    input: { mcpType: "local" | "remote"; command?: string[]; url?: string },
+    env: Record<string, string>,
+    secrets: Record<string, string>,
+  ): Promise<ActionResult>
   /** Toggle a known MCP server: connect when shouldConnect, else disconnect. */
   setMcpConnected(name: string, shouldConnect: boolean): Promise<void>
   /** Remove an MCP server from the user config + disconnect. */
@@ -262,27 +269,54 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     // connect immediately — the /mcp POST payload is NOT run through opencode's {file:} substitution.
     const config = toMcpConfig(spec, { ...(env ?? {}), ...(secrets ?? {}) }, workspace)
     const secretVars = secrets ? Object.keys(secrets).filter((k) => (secrets[k] ?? "").length > 0) : undefined
+    return persistAndConnectMcp(entry.name, config, metaFor(entry), secretVars)
+  }
+
+  // persist(先写盘防「live 未持久」)→ mcp.add → connect 的共享核心(catalog 与自定义连接器同路径)。
+  async function persistAndConnectMcp(
+    name: string,
+    config: McpConfig,
+    meta: { catalogId?: string; version?: string },
+    secretVars?: string[],
+  ): Promise<ActionResult> {
+    const c = client
+    if (!c) return { ok: false, reason: "no server" }
     // 1. Durable: write the alpha-owned config first. If this fails, never touch the live server —
     //    avoids a "live but not persisted" state that vanishes on restart. Main file-ifies the
     //    secretVars → opencode.jsonc gets {file:} refs, never the plaintext secret.
-    const persisted = await window.api.ext.persistMcp(
-      entry.name,
-      config as unknown as Record<string, unknown>,
-      metaFor(entry),
-      secretVars,
-    )
+    const persisted = await window.api.ext.persistMcp(name, config as unknown as Record<string, unknown>, meta, secretVars)
     if (!persisted.ok) return { ok: false, reason: persisted.reason }
     // 2. Live: add + connect (no restart). mcp.add registers in-memory and spawns; connect is a
     //    belt-and-braces no-op if already connected.
-    const added = await withTimeout(c.mcp.add({ name: entry.name, config } as any), 15000)
+    const added = await withTimeout(c.mcp.add({ name, config } as any), 15000)
     if (added === TIMED_OUT) {
       void loadStatus()
       return { ok: true, reason: "slow" } // persisted; connecting in background / on next launch
     }
     if ((added as { error?: unknown }).error) return { ok: false, reason: "mcp.add failed" }
-    await withTimeout((c.mcp.connect({ name: entry.name } as any) as Promise<unknown>).catch(() => {}), 10000)
+    await withTimeout((c.mcp.connect({ name } as any) as Promise<unknown>).catch(() => {}), 10000)
     await Promise.all([loadStatus(), loadInstalls()])
     return { ok: true }
+  }
+
+  // REQ-033:任意 MCP 手动添加(catalog 外;跨生态主通道)。校验主体在 main(persistMcp 的 C2
+  // 命令/URL/env 白名单**不因自定义入口放宽**);meta 无 catalogId → 账本 origin "created"。
+  async function addCustomMcp(
+    name: string,
+    input: { mcpType: "local" | "remote"; command?: string[]; url?: string },
+    env: Record<string, string>,
+    secrets: Record<string, string>,
+  ): Promise<ActionResult> {
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(name)) return { ok: false, reason: "名称只能含字母数字 . _ -(1-64 位)" }
+    const spec: McpInstallSpec =
+      input.mcpType === "remote"
+        ? { kind: "mcp", mcpType: "remote", url: input.url ?? "", requiredEnvVars: [] }
+        : { kind: "mcp", mcpType: "local", command: input.command ?? [], requiredEnvVars: [] }
+    if (input.mcpType === "remote" && !spec.url) return { ok: false, reason: "URL 必填" }
+    if (input.mcpType === "local" && !(spec.command ?? []).length) return { ok: false, reason: "命令必填" }
+    const config = toMcpConfig(spec, { ...env, ...secrets })
+    const secretVars = Object.keys(secrets).filter((k) => (secrets[k] ?? "").length > 0)
+    return persistAndConnectMcp(name, config, {}, secretVars.length ? secretVars : undefined)
   }
 
   async function setMcpConnected(name: string, shouldConnect: boolean) {
@@ -509,6 +543,7 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     store,
     refresh: loadStatus,
     addMcp,
+    addCustomMcp,
     setMcpConnected,
     removeMcp,
     uninstall,
