@@ -1,6 +1,6 @@
 ---
 name: agent-creator
-description: Create a new opencode agent (subagent or primary) from a natural-language description. Use when the user asks to create/add/build an agent, a specialized assistant, a reviewer/researcher persona, or wants to automate a recurring role. Interviews for intent, writes a compliant agent .md, and hot-reloads the engine so the agent is usable in the NEXT message without restarting.
+description: Create a new opencode agent (subagent or primary) from a natural-language description, and know the opencode-specific file locations + hot-reload steps for ANY created extension. Use when the user asks to create/add/build an agent, a reviewer/researcher persona, or a recurring role — and ALSO after creating a skill (e.g. via skill-creator) to place it where opencode discovers it and make it take effect without restarting.
 license: MIT (alpha-code original)
 ---
 
@@ -72,3 +72,16 @@ permission:
 - Never invent permission keys; use only: read/edit/bash/glob/grep/list/webfetch/websearch/skill/
   external_directory/doom_loop/question/task (value: allow/deny/ask, or a pattern→action map).
 - Keep the whole file self-contained — no references to documents the agent won't have at runtime.
+
+## Creating SKILLS (opencode specifics — use together with skill-creator)
+
+skill-creator teaches the generic methodology; these are the opencode-specific rules it doesn't know:
+
+- **Where to write**: default `<project>/.opencode/skill/<name>/SKILL.md` (project-local, auto-discovered).
+  Global (only when asked): `~/.alpha/skills/<name>/` if the `~/.opencode/skill` bridge exists, else
+  `~/.opencode/skill/<name>/` directly — say which one you used.
+- **Frontmatter**: `name` (lowercase-hyphen, ≤64, must equal the folder name) + `description`
+  (write it for the MODEL: concrete "Use when …" triggers decide whether the skill fires).
+- **Take effect**: the engine does NOT watch files — after writing, call the `alpha_reload` tool
+  (it schedules a registry reload right after your reply completes; the skill works from the next
+  message). If `alpha_reload` is unavailable, say honestly that a restart is needed.

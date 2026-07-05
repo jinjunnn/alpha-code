@@ -16,9 +16,16 @@ import { tool } from "@opencode-ai/plugin"
 export const AlphaExt: Plugin = async (input) => {
   // REQ-036 生效闭环,两段式(S18 X9 实测拍板):/instance/dispose 会**打断进行中的流式回复**
   // (实测:流中 dispose → assistant 消息 err 终止、0 字)。因此 alpha_reload 不立即 dispose,
-  // 而是登记「待重载」,由 event 钩子在**本会话 session.idle(回复完成)后**执行 —— 新建的
+  // 而是登记「待重载」,由 event 钩子在**登记会话 session.idle(回复完成)后**执行 —— 新建的
   // skill/agent/command 从下一条消息起可用,且不牺牲当前这条回复。
-  let pendingReload: { sessionID?: string; reason: string } | null = null
+  //
+  // codex 审计修复:① per-session Map(并发会话各自的承诺不被覆盖;任一登记会话 idle 即全局
+  // dispose 一次、清空全表 —— dispose 本就是全局重扫);② 陈旧兜底:登记超 5 分钟后,任何会话的
+  // idle 都可触发(登记会话 error/中断后承诺仍能兑现);③ dispose 失败保留待重试(下一次 idle),
+  // 连败 3 次 loud 放弃(server log)。
+  const pendingReloads = new Map<string, { reason: string; at: number }>()
+  let reloadAttempts = 0
+  const STALE_MS = 5 * 60 * 1000
 
   return {
     // tool map: key === final tool id verbatim (no namespace prefix).
@@ -30,7 +37,7 @@ export const AlphaExt: Plugin = async (input) => {
           reason: tool.schema.string().describe("What was created/changed (for the tool log)").default(""),
         },
         async execute(args, ctx) {
-          pendingReload = { sessionID: ctx.sessionID, reason: args.reason }
+          pendingReloads.set(ctx.sessionID ?? "", { reason: args.reason, at: Date.now() })
           return {
             title: "alpha_reload",
             output:
@@ -72,24 +79,33 @@ export const AlphaExt: Plugin = async (input) => {
         },
       }),
     },
-    // event hook: ① alpha_reload 两段式的执行端 —— 本会话回复完成(session.idle)后才 dispose,
-    // 防止打断自己的流(X9);sessionID 不匹配的 idle 不触发(别的会话仍在跑时先不重载)。
-    // ② liveness proof(ALPHA_EXT_VERBOSE 时打印事件)。
+    // event hook: ① alpha_reload 两段式的执行端 —— 登记会话 idle(或存在陈旧登记时任意 idle)才
+    // dispose,防止打断进行中的流(X9);② liveness proof(ALPHA_EXT_VERBOSE 时打印事件)。
     async event({ event }) {
       if (process.env.ALPHA_EXT_VERBOSE) console.log(`[@alpha-code/ext] event: ${event.type}`)
-      if (pendingReload && event.type === "session.idle") {
-        const sid = (event as { properties?: { sessionID?: string } }).properties?.sessionID
-        if (pendingReload.sessionID && sid && sid !== pendingReload.sessionID) return
-        const reason = pendingReload.reason
-        pendingReload = null
-        try {
-          await input.client.instance.dispose()
-          console.log(`[@alpha-code/ext] alpha_reload executed after idle${reason ? ` (${reason})` : ""}`)
-        } catch (error) {
-          // honest degradation: creation still succeeded on disk; only the hot-reload failed.
-          console.error(
-            `[@alpha-code/ext] alpha_reload dispose FAILED — new skills/agents appear after app restart: ${error instanceof Error ? error.message : String(error)}`,
-          )
+      if (pendingReloads.size === 0 || event.type !== "session.idle") return
+      const sid = (event as { properties?: { sessionID?: string } }).properties?.sessionID
+      const now = Date.now()
+      const hasStale = [...pendingReloads.values()].some((p) => now - p.at > STALE_MS)
+      // 触发条件:idle 的正是某个登记会话(其回复已完成,dispose 不再伤及它),或存在陈旧登记
+      // (登记会话可能已 error/被弃,由任意会话的安全 idle 点兜底兑现)。
+      if (!(sid && pendingReloads.has(sid)) && !hasStale) return
+      const reasons = [...pendingReloads.values()].map((p) => p.reason).filter(Boolean)
+      try {
+        await input.client.instance.dispose()
+        pendingReloads.clear()
+        reloadAttempts = 0
+        console.log(`[@alpha-code/ext] alpha_reload executed after idle${reasons.length ? ` (${reasons.join("; ")})` : ""}`)
+      } catch (error) {
+        // 保留登记,下一次 idle 重试;连败 3 次 loud 放弃(诚实降级:重启后生效)。
+        reloadAttempts += 1
+        const msg = error instanceof Error ? error.message : String(error)
+        if (reloadAttempts >= 3) {
+          pendingReloads.clear()
+          reloadAttempts = 0
+          console.error(`[@alpha-code/ext] alpha_reload dispose FAILED 3x — giving up; new skills/agents appear after app restart: ${msg}`)
+        } else {
+          console.error(`[@alpha-code/ext] alpha_reload dispose failed (attempt ${reloadAttempts}/3, will retry on next idle): ${msg}`)
         }
       }
     },

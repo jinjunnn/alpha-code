@@ -40,3 +40,14 @@
 - hub「导入」tab/出厂徽标/指引卡像素([[visual-verify-required]])
 - 会话内「帮我创建一个技能/agent」端到端(访谈→写盘→alpha_reload→下一条消息可用)
 - 打包态 factory 链指向 `/Applications/...Resources`(reconcile 重指逻辑已单测)
+
+
+## codex 审计(0 Critical / 2 High / 4 Medium / 1 Low)与修复(同 PR)
+- **High-1 接管用户异源链** → 修复:自有链判定收紧为「精确等于当前 src ∥ 同名 + alpha 资源布局(`…/(resources|Resources)/(skills|factory-skills)/<同名>`)」,异源 symlink(哪怕同名)一律 skip + 如实上报;
+- **High-2 禁用清理正则误删** → 同一判定复用于清理路径,宽泛尾部正则移除;
+- **M1 pendingReload 单槽跨会话覆盖** → per-session Map,任一登记会话 idle 即全局 dispose 一次并清表;
+- **M2 无超时/失败重试** → 登记 >5min 后任意 idle 兜底(登记会话 error 也能兑现);dispose 失败保留重试,连败 3 次 loud 放弃;
+- **M3 skill-creator 无 opencode 落点/alpha_reload 收尾** → agent-creator 增「Creating SKILLS (opencode specifics)」节 + description 扩触发(vendored skill-creator 保持 pristine);
+- **M4 出厂徽标只看开关** → `factorySkillIds()` 改返回上次 reconcile 真正就位(active)名单,失败/被用户内容占位 → 条目回到可安装态;
+- **Low TOCTOU** → rm 前重读 readlink 确认未变。
+新增/更新单测:异源链不接管(enabled+disabled 双路径)、active 徽标真相、isAlphaFactoryLink 判定矩阵 —— 10/10 绿。
