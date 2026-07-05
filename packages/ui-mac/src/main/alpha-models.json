@@ -1,5 +1,5 @@
 {
-  "version": "2026-06-27.1",
+  "version": "2026-07-05.1",
   "_note": "Single source of truth for alpha's model catalog (ADR-014 config-driven). Edit here to add/retire models, retune tier/倍率, or change presets — no code change. Consumed by main/alpha-models.ts (opencode config injection) and the renderer model picker (via window.api.models.catalog).",
   "defaultModel": null,
   "tiers": {
@@ -22,9 +22,7 @@
     { "id": "gpt-5.4-mini", "name": "GPT-5.4 Mini", "tier": "pro", "reasoning": true },
     { "id": "gpt-5.4-nano", "name": "GPT-5.4 Nano", "tier": "std" },
     { "id": "deepseek-v4-pro", "name": "DeepSeek V4 Pro", "tier": "pro", "reasoning": true },
-    { "id": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "tier": "std" },
-    { "id": "deepseek-chat", "name": "DeepSeek Chat", "tier": "std" },
-    { "id": "deepseek-reasoner", "name": "DeepSeek Reasoner", "tier": "pro", "reasoning": true }
+    { "id": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "tier": "std" }
   ],
   "byokProviders": [
     {

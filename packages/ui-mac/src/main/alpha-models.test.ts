@@ -196,12 +196,12 @@ describe("buildAlphaModelConfig — REQ-001 edition 白名单(live 缓存)", () 
     writeLiveAllowlist(userData, {
       ...liveBase,
       byokProviders: null,
-      models: [{ id: "deepseek-chat" }, { id: "brand-new-model" }],
+      models: [{ id: "deepseek-v4-flash" }, { id: "brand-new-model" }],
     })
     const p = buildAlphaModelConfig(userData)!.provider.alpha as any
-    expect(Object.keys(p.models).sort()).toEqual(["brand-new-model", "deepseek-chat"])
-    const snapshotName = getModelCatalog().platformModels.find((m) => m.id === "deepseek-chat")!.name
-    expect(p.models["deepseek-chat"].name).toBe(snapshotName)
+    expect(Object.keys(p.models).sort()).toEqual(["brand-new-model", "deepseek-v4-flash"])
+    const snapshotName = getModelCatalog().platformModels.find((m) => m.id === "deepseek-v4-flash")!.name
+    expect(p.models["deepseek-v4-flash"].name).toBe(snapshotName)
     expect(p.models["brand-new-model"].name).toBe("brand-new-model")
   })
 
