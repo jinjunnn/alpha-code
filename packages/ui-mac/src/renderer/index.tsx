@@ -36,6 +36,7 @@ import "./alpha-ui/dialog-reskin.css"
 import { ToastViewport } from "./alpha-ui/Toast"
 import { AlphaBoundary } from "./alpha-ui/alpha-boundary"
 import { ComposerInject } from "./alpha-ui/composer-inject"
+import { SessionSlashInject } from "./alpha-ui/composer-slash-inject"
 import { ModelPickerInject } from "./alpha-ui/model-picker-inject"
 import { TimelineInject } from "./alpha-ui/timeline-inject"
 import { CloudRunWatcher } from "./alpha-ui/cloud-run-watcher"
@@ -433,6 +434,9 @@ render(() => {
               </AlphaBoundary>
               <AlphaBoundary name="ComposerInject">
                 <ComposerInject />
+              </AlphaBoundary>
+              <AlphaBoundary name="SessionSlashInject">
+                <SessionSlashInject projects={alphaProjects} />
               </AlphaBoundary>
               <AlphaBoundary name="ModelPickerInject">
                 <ModelPickerInject />

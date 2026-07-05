@@ -58,6 +58,9 @@ export function createComposerAutocomplete(opts: {
    *  not consume a composition-committing Enter (codex audit: event flags alone miss the case where
    *  only the host's compositionstart signal knows we're composing). */
   isComposing?: (e: KeyboardEvent) => boolean
+  /** Which trigger modes to serve (default both). The SESSION surface uses ["slash"] only — its @
+   *  menu stays upstream (tied to the frozen prompt-input's internal parts state, REQ-038b). */
+  modes?: Array<"slash" | "at">
 }) {
   const [active, setActive] = createSignal(0)
   // Esc dismisses the menu for the CURRENT token only; typing anything re-opens (upstream parity).
@@ -76,6 +79,7 @@ export function createComposerAutocomplete(opts: {
     const caret = ta ? ta.selectionStart ?? t.length : t.length
     const v = detectTrigger(t, caret)
     if (!v) return null
+    if (opts.modes && !opts.modes.includes(v.mode)) return null
     if (dismissed() === triggerSignature(v, t)) return null
     return v
   })
