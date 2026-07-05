@@ -141,6 +141,9 @@ const api: ElectronAPI = {
     checkRuntime: (tool) => ipcRenderer.invoke("ext-check-runtime", tool),
     configHealth: () => ipcRenderer.invoke("ext-config-health"),
     factorySkillIds: () => ipcRenderer.invoke("ext-factory-skill-ids"),
+    govRead: () => ipcRenderer.invoke("gov-read"),
+    govApply: (gov, visibleAgents, confirmBuildDisable) => ipcRenderer.invoke("gov-apply", gov, visibleAgents, confirmBuildDisable),
+    govReset: () => ipcRenderer.invoke("gov-reset"),
     installPlugin: (pkg, meta) => ipcRenderer.invoke("ext-install-plugin", pkg, meta),
     installBuiltinSkill: (builtinAssetKey, name, target, meta) =>
       ipcRenderer.invoke("ext-install-builtin-skill", builtinAssetKey, name, target, meta),

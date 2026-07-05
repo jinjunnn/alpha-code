@@ -98,6 +98,15 @@ export type AccountResult<T> = T | { error: string }
 // Extension-hub install receipts (REQ-018): alpha's record of installed items and the files/config
 // keys each install owns. Engine visibility truth remains the SDK (mcp.status / app.skills / …);
 // receipts ⨝ SDK drives installed/pending-reload UI states, uninstall and update.
+/** REQ-037:治理真源形状(main alpha-governance.ts 与 renderer 共用)。 */
+export interface AlphaGovernance {
+  version: 1
+  mode: "denylist" | "allowlist"
+  agents: { hide: string[]; disable: string[]; allow: string[]; override: Record<string, Record<string, unknown>> }
+  skills: { deny: string[] }
+  commands: { override: Record<string, { template: string; description?: string }> }
+}
+
 export type InstallReceiptType = "mcp" | "skill" | "agent" | "command" | "plugin" | "bundle" | "cloud"
 export type InstallReceiptScope = "global" | "project"
 export type InstallReceiptOrigin = "catalog" | "created" | "imported"
@@ -263,6 +272,15 @@ export type ElectronAPI = {
     /** REQ-036 出厂技能名单(skills.paths 注入的技能名;ALPHA_FACTORY_SKILLS_DISABLE 时为空)——
      *  hub 用来把对应 catalog 条目标成「出厂内置」而非「可安装」(S18 X1)。 */
     factorySkillIds: () => Promise<string[]>
+    /** REQ-037 上游能力治理(真源 ~/.alpha/governance.json;物化 home jsonc 受控叶子,apply 后
+     *  renderer 需自行 refreshEngine() 使 dispose 热生效)。 */
+    govRead: () => Promise<{ gov: AlphaGovernance; protection: { hard: string[]; alphaInjected: string[]; confirm: string[] } }>
+    govApply: (
+      gov: AlphaGovernance,
+      visibleAgents: string[],
+      confirmBuildDisable?: boolean,
+    ) => Promise<{ ok: boolean; reason?: string; violations: { kind: string; name: string; reason: string }[]; written: number; removedStale: number }>
+    govReset: () => Promise<{ ok: boolean; reason?: string }>
     installPlugin: (pkg: string, meta?: InstallMeta) => Promise<{ ok: true } | { ok: false; reason: string }>
     installBuiltinSkill: (
       builtinAssetKey: string,
