@@ -22,3 +22,13 @@
 ## 残单(→ 真机批)
 - 真机中文 IME 组合回车(验收③,Safari/keyCode 229 路径)
 - 空工作区态的 `.a-ws-hint` 像素核验(验收④,需清项目环境)
+
+
+## 追加(2026-07-05 晚,REQ-038b —— 用户拍板「两处用同一个弹框」)
+
+用户实测反馈:会话页 slash 弹层(上游 prompt-input 自带,全宽、密度不同)与首页 alpha 弹层不一致,要求**已有对话使用新对话同款弹框**。CSS 换皮对齐方案被放弃(用户要的是同一个组件,非相似外观),改为**组件级接管**:
+
+- `composer-slash-inject.tsx`:把首页同一套 `createComposerAutocomplete`(同数据源/同样式/同选中语义)Portal 进会话 composer;上游弹层整体 `display:none`;菜单键(↑↓/Enter/Tab)在 window capture 相位拦截防隐藏弹层双选,Esc 放行使上游状态同步关闭;编辑器仍是上游 contenteditable(execCommand 写回,draft 状态经其自身 input 监听同步)——零改上游。
+- @ 菜单不接管(上游 @ 与其内部 parts/draft 状态强耦合,`modes: ["slash"]` 限定)。
+- **实测(dev CDP)**:会话页 `/` → alpha 菜单(12 条,mcp/skill 徽标,active 态),上游弹层不可见;`rev` 过滤 + Enter → 回填 `"/review "`;ArrowDown+Enter 选第二项正确;菜单宽度=composer 宽度、位于其上 8px,与首页一致。截图:[09-session-alpha-slash.png](09-session-alpha-slash.png)。
+- 过程发现:菜单初版挂 composer 内被 overflow 裁切(与 chips 弹层同款问题)→ 改 ChipPopover 同款 body Portal + fixed 锚定。**dev 走查坑**:dev 窗口可能加载 `oc://renderer`(陈旧内置 bundle)而非 vite dev server —— 验证前先核 `location.href`,否则改动看似无效。

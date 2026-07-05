@@ -568,6 +568,14 @@ body[data-alpha-sidebar="open"] .a-home {
   color: var(--a-accent);
 }
 
+/* one-line clamp for item descriptions — long skill descriptions (e.g. customize-opencode) would
+ * otherwise wrap the menu into a wall of text; both surfaces clamp identically (REQ-038b). */
+.a-comp-auto .a-pop-desc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* workspace-missing hint (REQ-038 验收④ / C28 honest controls): visible reason, not a dead button */
 .a-ws-hint {
   margin-left: 10px;

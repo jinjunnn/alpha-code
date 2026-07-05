@@ -172,32 +172,16 @@
   order: 4 !important;
 }
 
-/* Slash/@ autocomplete menu → alpha popover surface (mockup .pop / .menu-item). opencode renders it
- * Tailwind-classed with no data hook on the container, so we reach it via :has on the stable
- * [data-slash-id] items. Items get alpha radius + hover; the source badges (skill/mcp) get the alpha
- * tag look. COUPLING (cosmetic): data-slash-id + the popover being a composer descendant. */
-/* The popover renders OUTSIDE the composer subtree, so we can't scope by composer — but only the slash
- * popover has DIRECT [data-slash-id] children, so this :has matches exactly that one element. */
+/* Slash menu (REQ-038b,用户拍板「两处用同一个弹框」): the in-session slash popover is now the
+ * ALPHA menu — composer-slash-inject.tsx portals the SAME component the home composer uses into the
+ * composer box. upstream's own popover is suppressed entirely (its state machine still runs; the
+ * inject swallows menu keys in capture phase so the hidden popover can't double-select).
+ * COUPLING: [data-slash-id] identifies upstream's popover (only it has DIRECT such children). */
 :has(> [data-slash-id]) {
-  background: var(--a-surface-raised) !important;
-  border: 1px solid var(--a-border-faint) !important;
-  border-radius: var(--a-radius-lg) !important;
-  box-shadow: var(--a-shadow-overlay) !important;
-  padding: 6px !important;
+  display: none !important;
 }
-button[data-slash-id] {
-  border-radius: var(--a-radius-md) !important;
-}
-button[data-slash-id]:hover,
-button[data-slash-id][class*="raised-base-hover"] {
-  background: var(--a-bg-muted) !important;
-}
-button[data-slash-id] span[class*="bg-surface-base"] {
-  background: var(--a-accent-subtle) !important;
-  color: var(--a-accent) !important;
-  border-radius: var(--a-radius-full) !important;
-  padding: 1px 7px !important;
-}
+/* (The injected menu itself is Portaled to <body> with a fixed anchor — the composer box clips
+ * overflow, so an in-tree absolute menu would be invisible. See composer-slash-inject.tsx.) */
 
 /* Permission approval card → amber warning card (mockup .perm-card). Shown when the agent requests
  * permission to run a tool; clean hooks from dock-prompt. 允许一次=primary(accent), 总是/拒绝=neutral.
