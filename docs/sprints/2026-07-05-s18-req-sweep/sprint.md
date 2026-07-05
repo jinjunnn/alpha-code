@@ -46,13 +46,13 @@ S17 清完思考债后,把 2026-07-05 立项的产品需求线(composer 收敛 /
 | T4 | REQ-033 开放安装面 | A | ☑ PR #104(自定义连接器+agent 导入映射预览+兼容注记) |
 | T5 | REQ-030 模型配置化 + edition 收口 | B(+A 核验) | ☑ B #15 + prod 部署(edition:cn 实证/旧 id settle 实证)+ A #101 snapshot |
 | T6 | REQ-031 gateway failover | B | ☑ B #16 + prod 部署(route 计价 settle 实证);codex 审计 1P1+4P2 全修 |
-| T7 | REQ-029 effort=variants | X | ☐ |
+| T7 | REQ-029 effort=variants | X | ☑ B 透传核实 + A PR #107(variants 配置驱动+echo 实锤+chip 接真) |
 | T8 | REQ-024 自动化 A2 | A | ☑ PR #106(standard 档+LLM 解析+熔断+立即运行) |
-| T9 | REQ-028 真只读档 | A | ☐ |
+| T9 | REQ-028 真只读档 | A | ☑ PR #105(readonly agent 注入+chip 三档+诚实回退;[audits/s18-t7](../../audits/2026-07-05-s18-t7-req028/verify.md)) |
 | T10 | REQ-032 远程 catalog | X(C+A) | ☑ C #5(端点+签名+不可变资产,prod)+ A #103(验签/回退/远程安装,live e2e 8/8) |
 | T11 | REQ-026 小白文档 | C | ☑ C #6 已部署(getting-started,FAQ×10) |
 | T12 | PA-27 P0 + PA-28 + REQ-022 云 schedule | B | ☑ PA-27 已在 PR #13+prod(部署核实)/PA-28+REQ-022 B #17#18(prod e2e 三轮+审计 2C2H2M 全修) |
-| T13 | REQ-025 自动化 A3 | A | ☐ |
+| T13 | REQ-025 自动化 A3 | A | ☑ PR #108 + 审计修复 #109(B 生命周期/拉回/边界提示) |
 
 ## Gates
 - **一 REQ 一 PR**(用户指令);每 PR 按 ADR-018 四件套回写(BACKLOG 翻状态 + 本表勾选 + CHANGELOG + 需求档 frontmatter);
@@ -63,3 +63,14 @@ S17 清完思考债后,把 2026-07-05 立项的产品需求线(composer 收敛 /
 
 ## 结果(收尾回填)
 _进行中。_
+
+
+## 结果(2026-07-06 收批)
+
+**13/13 task 全清,S18 目标兑现。** 三仓交付:A(alpha-code)PR #97–#109;B(alpha-platform)PR #15–#18 + prod 部署(gateway/account/alpha-cloud);C(alpha-web)PR #5–#6 + prod 部署(catalog 端点 + 新手指南)。
+
+- **每 REQ 独立 PR + codex 审计**(用户 goal):REQ-038(6 findings)/REQ-036(2H4M1L)/REQ-037(2H3M1L)/REQ-030/031(1P1+4P2)/REQ-032(1H4M2L)/REQ-033(1H2M+1L)/PA-28(2C2H2M)/REQ-024+025(3H1M1L)—— **全部修复后合并**,零遗留 open finding。
+- **prod 已生效**(无需发版):edition 收口(cn 默认两档,运营者 intl)、failover、云 schedule(e2e 三轮准点)、远程 catalog(签名+304)、新手指南页。
+- **需发版生效**(A 侧,下一个签名包):治理层、开放安装面、真只读档、effort 接真、自动化 A2/A3、远程 catalog 客户端、composer 收敛。
+- **新发现登记**:REQ-039(cn 租户云管线默认模型,公开放量前必解)。
+- **真机批残单**(集中):hub 治理/远程安装/自定义连接器像素;readonly 会话实拍;effort BYOK/代理两路;自动化 standard 档+云档登录态 e2e;dev 环境 bundle 事故致像素验证顺延(memory dev-window-stale-bundle-trap)。
