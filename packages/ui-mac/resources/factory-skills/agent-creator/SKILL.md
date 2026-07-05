@@ -35,10 +35,11 @@ architect: translate the user's requirement into a precisely-tuned agent specifi
      global root; the `~/.opencode/agent` bridge makes the engine see it). If `~/.opencode/agent`
      does not exist or is not a symlink/dir you can write through, fall back to
      `~/.opencode/agent/<name>.md` directly and say so.
-4. **Hot-reload**: call the `alpha_reload` tool. This disposes the engine instance so the registry
-   rescans — the new agent is usable from the **next message in this same session**, no app restart.
-   If `alpha_reload` is unavailable, tell the user honestly that the agent takes effect after the
-   app restarts.
+4. **Hot-reload**: call the `alpha_reload` tool. It SCHEDULES an engine registry reload that runs
+   right after your current reply completes (an immediate reload would cut your reply off) — the
+   new agent is usable from the **next message in this same session**, no app restart. If
+   `alpha_reload` is unavailable, tell the user honestly that the agent takes effect after the app
+   restarts.
 5. **Confirm**: show the file path, the frontmatter, and one example of how to invoke it
    (`@<name> …` for subagents / agent switcher for primary).
 

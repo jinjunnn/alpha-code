@@ -14,38 +14,29 @@ import { tool } from "@opencode-ai/plugin"
  *   Plugin = (input: PluginInput, options?) => Promise<Hooks>
  */
 export const AlphaExt: Plugin = async (input) => {
+  // REQ-036 生效闭环,两段式(S18 X9 实测拍板):/instance/dispose 会**打断进行中的流式回复**
+  // (实测:流中 dispose → assistant 消息 err 终止、0 字)。因此 alpha_reload 不立即 dispose,
+  // 而是登记「待重载」,由 event 钩子在**本会话 session.idle(回复完成)后**执行 —— 新建的
+  // skill/agent/command 从下一条消息起可用,且不牺牲当前这条回复。
+  let pendingReload: { sessionID?: string; reason: string } | null = null
+
   return {
     // tool map: key === final tool id verbatim (no namespace prefix).
     tool: {
-      // REQ-036 生效闭环:会话内创建/编辑 skill·agent·command 后,引擎实例不会自动重扫(无文件
-      // 监听)。本工具调上游公开 POST /instance/dispose(ADR-014 v3 的 dispose 语义)使实例惰性
-      // 重建 —— 新建物从「下一条消息」起可用,无需重启 app。对本条流式回复的影响在 S18 X9 实测。
       alpha_reload: tool({
         description:
-          "Reload the opencode engine's extension registry (skills / agents / commands / plugins) without restarting the app. Call this after creating or editing a skill or agent on disk so it becomes available from the NEXT message in this session. Returns whether the reload was accepted.",
+          "Schedule a reload of the opencode engine's extension registry (skills / agents / commands / plugins) without restarting the app. Call this after creating or editing a skill or agent on disk. The reload runs right after the current reply finishes (an immediate reload would cut this reply off), so the new skill/agent is available from the NEXT message in this session.",
         args: {
           reason: tool.schema.string().describe("What was created/changed (for the tool log)").default(""),
         },
         async execute(args, ctx) {
-          try {
-            const res = await input.client.instance.dispose()
-            if ((res as { error?: unknown })?.error) throw new Error(JSON.stringify((res as { error?: unknown }).error))
-            return {
-              title: "alpha_reload",
-              output:
-                "reload accepted — the engine instance rebuilds lazily; newly created skills/agents/commands are available from the next message in this session." +
-                (args.reason ? `\nreason: ${args.reason}` : ""),
-              metadata: { ok: true, directory: ctx.directory },
-            }
-          } catch (error) {
-            // honest degradation: creation still succeeded on disk; only the hot-reload failed
-            return {
-              title: "alpha_reload",
-              output:
-                "reload FAILED — the engine did not accept the dispose request; newly created skills/agents will only appear after the app restarts. " +
-                `(${error instanceof Error ? error.message : String(error)})`,
-              metadata: { ok: false, directory: ctx.directory },
-            }
+          pendingReload = { sessionID: ctx.sessionID, reason: args.reason }
+          return {
+            title: "alpha_reload",
+            output:
+              "reload scheduled — it runs as soon as this reply completes; newly created skills/agents/commands are available from the NEXT message in this session." +
+              (args.reason ? `\nreason: ${args.reason}` : ""),
+            metadata: { ok: true, scheduled: true, directory: ctx.directory, sessionID: ctx.sessionID },
           }
         },
       }),
@@ -81,9 +72,26 @@ export const AlphaExt: Plugin = async (input) => {
         },
       }),
     },
-    // event hook: liveness proof. Gated behind ALPHA_EXT_VERBOSE so it is silent by default.
+    // event hook: ① alpha_reload 两段式的执行端 —— 本会话回复完成(session.idle)后才 dispose,
+    // 防止打断自己的流(X9);sessionID 不匹配的 idle 不触发(别的会话仍在跑时先不重载)。
+    // ② liveness proof(ALPHA_EXT_VERBOSE 时打印事件)。
     async event({ event }) {
       if (process.env.ALPHA_EXT_VERBOSE) console.log(`[@alpha-code/ext] event: ${event.type}`)
+      if (pendingReload && event.type === "session.idle") {
+        const sid = (event as { properties?: { sessionID?: string } }).properties?.sessionID
+        if (pendingReload.sessionID && sid && sid !== pendingReload.sessionID) return
+        const reason = pendingReload.reason
+        pendingReload = null
+        try {
+          await input.client.instance.dispose()
+          console.log(`[@alpha-code/ext] alpha_reload executed after idle${reason ? ` (${reason})` : ""}`)
+        } catch (error) {
+          // honest degradation: creation still succeeded on disk; only the hot-reload failed.
+          console.error(
+            `[@alpha-code/ext] alpha_reload dispose FAILED — new skills/agents appear after app restart: ${error instanceof Error ? error.message : String(error)}`,
+          )
+        }
+      }
     },
   }
 }
