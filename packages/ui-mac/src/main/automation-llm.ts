@@ -77,10 +77,17 @@ export async function llmParseAutomation(text: string, projectDir: string): Prom
   } finally {
     // 临时会话即删(best-effort;失败只留一条日志,不影响结果)
     if (sessionID) {
+      const del = () => (client.session as unknown as { delete(args: unknown): Promise<unknown> }).delete({ sessionID, directory })
       try {
-        await (client.session as unknown as { delete(args: unknown): Promise<unknown> }).delete({ sessionID, directory })
+        await del()
       } catch {
-        getLogger().warn("automation-llm: temp session delete failed", sessionID)
+        // codex L:一次重试;仍失败留 loud 日志(残留会话含用户自动化文本,可手动删)
+        await new Promise((r) => setTimeout(r, 1500))
+        try {
+          await del()
+        } catch {
+          getLogger().warn("automation-llm: temp session delete failed twice — manual cleanup may be needed", sessionID)
+        }
       }
     }
   }
