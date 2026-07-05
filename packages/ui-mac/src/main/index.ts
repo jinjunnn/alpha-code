@@ -16,6 +16,7 @@ import { checkAppExists, resolveAppPath } from "./apps"
 import { CHANNEL } from "./constants"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand } from "./ipc"
 import { registerExtIpcHandlers } from "./ext-ipc"
+import { refreshRemoteCatalog } from "./remote-catalog"
 import { registerAccountIpcHandlers } from "./account-ipc"
 import { registerCloudIpcHandlers } from "./cloud-ipc"
 import { registerAutomationIpcHandlers } from "./automation-ipc"
@@ -409,6 +410,8 @@ const main = Effect.gen(function* () {
   })
   registerWslIpcHandlers(wslServers)
   registerExtIpcHandlers(app.getPath("userData"))
+  // REQ-032:启动预热远端 catalog(ETag 缓存;失败静默回退,进 hub 时再刷)
+  void refreshRemoteCatalog(app.getPath("userData")).catch(() => {})
   registerAccountIpcHandlers()
   registerCloudIpcHandlers()
   // 自动化(REQ-021 A1/ADR-022):IPC + 主进程调度器。执行链等 serverReady(与 renderer 同一

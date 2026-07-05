@@ -13,8 +13,9 @@ import { addReceipt, alphaGlobalRoot, listInstalls, removeReceipt } from "./alph
 import { fileifyMcpSecrets, removeMcpServerSecrets } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy } from "./alpha-migrate"
 import { configHealth, persistMcp, persistPlugin, removeMcp, removePlugin, removePluginPath } from "./ext-config"
-import { importSkillFolder, importSkillGit, installBuiltinAgent, installBuiltinSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall } from "./ext-fs-installer"
+import { importSkillFolder, importSkillGit, installBuiltinAgent, installBuiltinSkill, installRemoteSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall } from "./ext-fs-installer"
 import { factorySkillIds } from "./factory-skills"
+import { downloadRemoteAsset, refreshRemoteCatalog, type RemoteAssetFile } from "./remote-catalog"
 import { applyGovernance, normalizeGovernance, protectionInfo, readGovernance, resetGovernance } from "./alpha-governance"
 
 // GUI apps on macOS launch with a minimal PATH (no Homebrew), so augment it before `which` or we'd
@@ -72,6 +73,31 @@ export function registerExtIpcHandlers(userDataPath: string) {
     return applyGovernance(normalizeGovernance(gov), agents, confirmBuildDisable === true)
   })
   ipcMain.handle("gov-reset", () => resetGovernance())
+
+  // REQ-032:远程 catalog(ETag+验签+缓存,回退链 远端→缓存→内置由 renderer 兜底)与远程技能安装
+  // (下载+sha256 校验在 main,写盘走 builtin 同管线:~/.alpha + 桥 + 账本)。
+  ipcMain.handle("ext-remote-catalog", () => refreshRemoteCatalog(userDataPath))
+  ipcMain.handle(
+    "ext-install-remote-skill",
+    // codex H1:renderer 只传 catalogId —— name/files/meta 全部由 main 从**已验签** catalog 重新派生
+    // (refreshRemoteCatalog 的 remote 与 cache 路径均过 ed25519;renderer/被篡改缓存无法自带 URL+hash 绕签名)。
+    async (_event: IpcMainInvokeEvent, catalogId: string) => {
+      if (typeof catalogId !== "string" || !catalogId) return { ok: false, reason: "invalid catalog id" }
+      const rc = await refreshRemoteCatalog(userDataPath)
+      if (rc.source === "none") return { ok: false, reason: `remote catalog unavailable: ${rc.error}` }
+      const entries = (rc.catalog as { entries?: Array<Record<string, unknown>> }).entries ?? []
+      const entry = entries.find((e) => e.id === catalogId)
+      if (!entry) return { ok: false, reason: `entry not in verified catalog: ${catalogId}` }
+      if (entry.type !== "skill") return { ok: false, reason: `entry is not a skill: ${catalogId}` }
+      const asset = entry.remoteAsset as { version?: string; files?: RemoteAssetFile[] } | undefined
+      if (!asset?.files?.length) return { ok: false, reason: `entry has no remote asset: ${catalogId}` }
+      const name = String(entry.name ?? "")
+      const dl = await downloadRemoteAsset(asset.files)
+      if (!dl.ok) return dl
+      const meta: InstallMeta = { catalogId, version: String(entry.version ?? rc.version) }
+      return installRemoteSkill(name, dl.contents, undefined, meta)
+    },
+  )
   ipcMain.handle("ext-install-plugin", (_event: IpcMainInvokeEvent, pkg: string, meta?: InstallMeta) =>
     persistPlugin(pkg, meta),
   )

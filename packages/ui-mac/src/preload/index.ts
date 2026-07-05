@@ -144,6 +144,8 @@ const api: ElectronAPI = {
     govRead: () => ipcRenderer.invoke("gov-read"),
     govApply: (gov, visibleAgents, confirmBuildDisable) => ipcRenderer.invoke("gov-apply", gov, visibleAgents, confirmBuildDisable),
     govReset: () => ipcRenderer.invoke("gov-reset"),
+    remoteCatalog: () => ipcRenderer.invoke("ext-remote-catalog"),
+    installRemoteSkill: (catalogId) => ipcRenderer.invoke("ext-install-remote-skill", catalogId),
     installPlugin: (pkg, meta) => ipcRenderer.invoke("ext-install-plugin", pkg, meta),
     installBuiltinSkill: (builtinAssetKey, name, target, meta) =>
       ipcRenderer.invoke("ext-install-builtin-skill", builtinAssetKey, name, target, meta),

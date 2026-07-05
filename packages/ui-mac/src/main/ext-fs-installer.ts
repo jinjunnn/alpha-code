@@ -253,6 +253,47 @@ export function installBuiltinSkill(
   return { ok: true, files }
 }
 
+/** REQ-032:安装**已下载并 sha256 校验过**的远程技能内容(main 内存 → 与 builtin 同管线:
+ *  ~/.alpha/skills/<name> + 桥 + 账本;下载与校验在 remote-catalog.downloadRemoteAsset,不在此重复)。 */
+export function installRemoteSkill(
+  name: string,
+  contents: Array<{ path: string; data: Buffer }>,
+  target?: InstallTarget,
+  meta?: InstallMeta,
+): FsResult {
+  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid skill name" }
+  const skillMd = contents.find((c) => c.path === "SKILL.md")
+  if (!skillMd) return { ok: false, reason: "asset missing SKILL.md" }
+  // codex M4:引擎以 frontmatter name 为技能真名 —— 必须与 catalog entry.name 一致,否则装进安全
+  // 目录却以另一个名字暴露(可 shadow 既有技能)。不一致拒装(loud)。
+  const fm = parseSkillFrontmatter(skillMd.data.toString("utf8"))
+  if (!fm.ok) return { ok: false, reason: `SKILL.md frontmatter invalid: ${fm.reason}` }
+  if (fm.name !== name) return { ok: false, reason: `frontmatter name "${fm.name}" ≠ catalog entry name "${name}" — refusing to install (name spoofing guard)` }
+  const roots = resolveRoots(target)
+  if ("error" in roots) return { ok: false, reason: roots.error }
+  const destDir = safeResolveUnder(roots.alphaDir, "skills", name)
+  if (!destDir) return { ok: false, reason: "refused: path escapes alpha root" }
+  try {
+    fs.mkdirSync(destDir, { recursive: true })
+    for (const c of contents) {
+      // 清单路径已在下载层拒绝 .. / 绝对路径;这里再过 safeResolve 双保险
+      const dst = safeResolveUnder(destDir, ...c.path.split("/"))
+      if (!dst) return { ok: false, reason: `refused: asset path escapes skill dir: ${c.path}` }
+      fs.mkdirSync(path.dirname(dst), { recursive: true })
+      fs.writeFileSync(dst, c.data)
+    }
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "failed to write remote skill" }
+  }
+  const bridge = bridgeItem(roots.alphaDir, roots.opencodeDir, "skills", name)
+  if (!bridge.ok) return { ok: false, reason: `已写入 ${destDir},但引擎桥接失败:${bridge.reason}` }
+  const files = [destDir, ...bridge.created]
+  const receiptWarn = recordReceipt(roots, { name, type: "skill", files, meta, origin: "catalog" })
+  // codex L2:账本写失败时文件/桥已落盘 —— 不谎报失败(技能实际可用),但 loud 记录(卸载/更新将失真)。
+  if (receiptWarn) console.error(`[ext-fs-installer] remote skill "${name}" installed but receipt failed: ${receiptWarn}`)
+  return { ok: true, files }
+}
+
 // Resolve roots WITHOUT scaffolding — for uninstall (never create dirs we're about to delete from).
 function resolveRootsReadonly(target: InstallTarget | undefined): Roots | { error: string } {
   const t = target ?? { scope: "global" as const }
