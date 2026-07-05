@@ -3,7 +3,7 @@ id: REQ-030
 title: 模型清单单一真源配置化 + 海内外版本收口生效(registry 抽配置文件 / prod EDITION_CONFIG 落地 / 最新代策展)
 type: feature
 priority: P1
-status: in-sprint
+status: shipped
 repo: X
 created: 2026-07-05
 ---

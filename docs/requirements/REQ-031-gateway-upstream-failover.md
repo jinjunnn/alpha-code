@@ -3,7 +3,7 @@ id: REQ-031
 title: LLM gateway 多上游路由 + 欠费 failover(canonical id → 候选链,原生优先 / OpenRouter 兜底,per-route 计价)
 type: feature
 priority: P1
-status: in-sprint
+status: shipped
 repo: B
 created: 2026-07-05
 ---
