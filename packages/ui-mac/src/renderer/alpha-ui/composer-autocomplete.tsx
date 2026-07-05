@@ -54,6 +54,10 @@ export function createComposerAutocomplete(opts: {
   command: CommandApi
   sdk: () => Client | undefined
   onMention: (m: MentionPart) => void
+  /** Full IME guard from the host (event flags + its composition signal). The menu's Enter/Tab must
+   *  not consume a composition-committing Enter (codex audit: event flags alone miss the case where
+   *  only the host's compositionstart signal knows we're composing). */
+  isComposing?: (e: KeyboardEvent) => boolean
 }) {
   const [active, setActive] = createSignal(0)
   // Esc dismisses the menu for the CURRENT token only; typing anything re-opens (upstream parity).
@@ -108,12 +112,16 @@ export function createComposerAutocomplete(opts: {
     }
     const dir = opts.directory()
     const c = opts.sdk()
-    if (!dir || !c) return
+    if (!dir || !c) {
+      setFileResults([]) // no directory/client → never show stale paths from a previous workspace
+      return
+    }
     const q = v.query
     if (fileTimer) clearTimeout(fileTimer)
     fileTimer = setTimeout(async () => {
-      const { data, error } = await c.find.files({ directory: dir, query: q, limit: 8 })
-      if (!error && Array.isArray(data)) setFileResults(data)
+      const { data, error } = await c.find.files({ directory: dir, query: q, limit: 8 }).catch(() => ({ data: undefined, error: true }) as const)
+      // error → clear rather than leaving a previous query's results selectable (codex audit)
+      setFileResults(!error && Array.isArray(data) ? data : [])
     }, 120)
   })
   onCleanup(() => fileTimer && clearTimeout(fileTimer))
@@ -221,7 +229,7 @@ export function createComposerAutocomplete(opts: {
       return true
     }
     if (e.key === "Enter" || e.key === "Tab") {
-      if (e.isComposing || e.keyCode === 229) return false
+      if (opts.isComposing ? opts.isComposing(e) : e.isComposing || e.keyCode === 229) return false
       e.preventDefault()
       const it = items()[active()]
       if (it) select(it)

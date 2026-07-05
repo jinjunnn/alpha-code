@@ -299,7 +299,10 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
         const [head, ...tail] = body.split(" ")
         if (head?.startsWith("/")) {
           const name = head.slice(1)
-          const { data: cmds, error: cmdErr } = await c.command.list({ directory: worktree } as any)
+          // a transport throw here must NOT abort the send — fall through to promptAsync (codex audit)
+          const { data: cmds, error: cmdErr } = await c.command
+            .list({ directory: worktree } as any)
+            .catch(() => ({ data: undefined, error: true }) as const)
           if (!cmdErr && Array.isArray(cmds) && cmds.some((x: any) => x?.name === name)) {
             ranCommand = true
             await c.session

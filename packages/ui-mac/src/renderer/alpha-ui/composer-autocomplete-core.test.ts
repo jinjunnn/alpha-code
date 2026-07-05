@@ -89,6 +89,11 @@ describe("buildMentionParts", () => {
     expect(parts[0].filename).toBe("a b.ts")
     expect(parts[0].mime).toBe("text/plain")
   })
+  test("path with # / ? is fully encoded (per-segment, not encodeURI)", () => {
+    const mentions: MentionPart[] = [{ type: "file", path: "docs/a#b?c.md", content: "@docs/a#b?c.md" }]
+    const parts = buildMentionParts("see @docs/a#b?c.md", ws, mentions) as any[]
+    expect(parts[0].url).toBe("file:///Users/me/proj/docs/a%23b%3Fc.md")
+  })
   test("mention edited out of the text sends NO part", () => {
     const mentions: MentionPart[] = [{ type: "agent", name: "general", content: "@general" }]
     expect(buildMentionParts("do it yourself", ws, mentions)).toHaveLength(0)

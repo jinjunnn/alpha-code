@@ -69,6 +69,15 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
   // @ mentions picked from the autocomplete are remembered here and sent as REAL agent/file parts
   // (upstream build-request-parts.ts shapes) — text-only "@name" would be decoration the engine
   // ignores. At submit we only keep mentions whose token is still present in the text.
+  // IME guard parity with upstream prompt-input.tsx isImeComposing(): isComposing + a composition
+  // signal + the Safari/WebKit keyCode 229 path (REQ-038 目标③ / 验收③). `e.isComposing` alone
+  // misses the Enter that COMMITS the composition in some IME/engine combos.
+  const [composing, setComposing] = createSignal(false)
+  const isImeComposing = (e: KeyboardEvent) => e.isComposing || composing() || e.keyCode === 229
+
+  // Dedup by content is intentional: mentioning the same @agent/@file twice still needs only ONE
+  // part (the engine consumes the part list, not per-occurrence text); offsets point at the first
+  // occurrence, matching what a single part can express.
   const [mentions, setMentions] = createSignal<MentionPart[]>([])
   const auto = createComposerAutocomplete({
     text,
@@ -78,13 +87,8 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
     command,
     sdk: props.projects.sdk,
     onMention: (m) => setMentions((xs) => [...xs.filter((x) => x.content !== m.content), m]),
+    isComposing: isImeComposing,
   })
-
-  // IME guard parity with upstream prompt-input.tsx isImeComposing(): isComposing + a composition
-  // signal + the Safari/WebKit keyCode 229 path (REQ-038 目标③ / 验收③). `e.isComposing` alone
-  // misses the Enter that COMMITS the composition in some IME/engine combos.
-  const [composing, setComposing] = createSignal(false)
-  const isImeComposing = (e: KeyboardEvent) => e.isComposing || composing() || e.keyCode === 229
 
   const submit = async () => {
     if (!text().trim() || sending()) return

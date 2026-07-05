@@ -54,10 +54,13 @@ export function buildMentionParts(body: string, worktree: string, mentions: Read
       })
     } else {
       const abs = m.path.startsWith("/") ? m.path : `${worktree.replace(/\/$/, "")}/${m.path}`
+      // per-segment encoding (upstream encodeFilePath parity): encodeURI would leave `#`/`?` raw
+      // and truncate such paths into fragment/query (codex audit)
+      const encoded = abs.split("/").map(encodeURIComponent).join("/")
       parts.push({
         type: "file",
         mime: "text/plain",
-        url: `file://${encodeURI(abs)}`,
+        url: `file://${encoded}`,
         filename: m.path.split("/").pop(),
       })
     }
