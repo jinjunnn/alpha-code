@@ -1,6 +1,6 @@
 # 当前目标(GOALS)
 
-> 最后更新:2026-07-05(REQ-008 拍板收口 + S17 T6 retro 刷新「当前周期」)
+> 最后更新:2026-07-05(REQ-008 拍板收口 + S17 T6 retro 刷新「当前周期」+ 新增 G5 多 harness 能力线)
 > 回顾节奏:每次 `/app:retro` 时审视是否仍有效
 > 2026-06-18:产品转多用户/多租户,新增云平台目标线(G4),见下。
 
@@ -29,6 +29,12 @@ S12–S16(2026-07-04~05)完成**定制中心 v3 全量(M1–M4)+ 自动化 A1**�
 > 优先级〔待你定〕:作为 **Sprint 2 headline**,还是**提进本周期 Top-3**(则现 Top-3 须砍一项)?默认按 Sprint 2 排,不抢本周期本地地基。
 
 **G4 — 云作业平台最小闭环跑通**:本地 opencode agent 经 `.opencode/skill` 产出 task contract → MCP `cloud.dispatch` 服务端硬校验 → Upstash Workflow 编排 → Tier-1(ECS + Anthropic API)执行**一个真实非编码任务**(如深度调研)→ 结果回流本地。
+
+## 新增目标线:多 harness 能力(G5,2026-07-05 用户拍板)
+**G5 — alpha-code 背后拥有 opencode / Claude Code / Codex 三个 harness 的能力**,分期演进:
+- **现状**:云侧已双 harness(alpha-platform `harness/{coding-claudecode,noncoding-openai}.ts`,gateway `/v1/messages` Anthropic-wire ingress 即为此建)。
+- **第一阶段 = 本地 harness-as-executor**([[REQ-035]],**parked 待用户启动**):opencode 仍是唯一交互会话引擎,Claude Code / Codex 经 tool/MCP 接缝作被委托执行器,零改上游;委托给 Claude Code 的任务在其体内原生享有其生态内容(与 ADR-023 转换器互补)。
+- **长期目标 = 会话级并轨(UI 直驱三引擎)**:用户已定此为演进方向;**启动硬前置** = `/app:challenge` + POSITIONING/GOALS 修订(定位级变更:「基于 opencode」→「多 harness 编排」)+ 承载方案 spike(翻译 sidecar 实现 opencode SDK 子集 vs 每 harness 独立 UI)+ 独立 ADR。**当前不排期、不计入 Top-3、不影响北极星语义**(北极星仍只衡量 opencode 上游升级隔离)。
 
 ## 每个目标的成功条件(可验证)
 - G1 成功条件:`opencode` 运行时启动后,`alpha-code` 的自定义工具出现在 agent 可用工具列表并能成功 execute;`git diff opencode/packages` 为空。

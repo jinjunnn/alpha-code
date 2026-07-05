@@ -4,7 +4,7 @@
 > 状态:`registered / ready / in-sprint / shipped / verified / archived`;旁路 `parked / rejected / dup`。
 > 类:feature / bug / debt / security / perf / ux / docs / spike。仓:A=alpha-code · B=alpha-platform · C=alpha-web · X=跨仓。
 > 证据文档:**册** = [`plans/2026-07-02-problem-register-sprints-review.md`](plans/2026-07-02-problem-register-sprints-review.md)(71 项 + R1-R7 修正 + §7f-7j 实施日志);**核查** = [`audits/2026-07-02-register-verification.md`](audits/2026-07-02-register-verification.md);**E 册** = [`harness-extension-backlog.md`](harness-extension-backlog.md)。
-> 下一个新需求编号:**REQ-030**(新需求一律 REQ-NNN;A/B/C/D/E 为历史审计系列保留原号,用户 2026-07-03 确认)。
+> 下一个新需求编号:**REQ-036**(新需求一律 REQ-NNN;A/B/C/D/E 为历史审计系列保留原号,用户 2026-07-03 确认)。
 > **需求文件全覆盖(2026-07-03)**:全部开放的 A/B/C/D 条目已逐条建档 `requirements/<ID>-<slug>.md`(含验收标准),行内备注为摘要、**文件为验收真源**;E 系列以冻结 E 册为分析文档;parked/dup 项不建档。
 
 ## 发布短名单(launch-blockers,册 §6.8)
@@ -58,6 +58,10 @@
 | B23 | strict-key 配置致瘫:全局 jsonc 解析失败 → 整份配置静默清零 | bug | A | shipped | **S11 T4(PR #60)呈现半边落地**:`configHealth()`(语法错 + 未知顶层 key 双病灶,V1 顶键集自引擎 schema;5 单测)→ AlphaHome warning banner + 打开配置;写前校验(C2)继续挡 alpha 自写;上游清零行为本体不可改(R2);**verified 待视觉批**(故意写坏配置截图) |
 | REQ-016 | 真机验证收尾批:原 4 项 + S12–S15 全部真机递延 | spike | X | shipped | **主体 shipped(2026-07-05,S16)**:重 ship 签名包 → A6(解 R3)/REQ-018/019/020/021/023/006/011/001/B1/D1/B6 逐项翻 verified;**ADR-014 v3 + ADR-022 转 accepted**;修 P1 卸载静默失败 bug。**残余(留用户批 / 下批)**:B2 短TTL、logout、迁移开门(需 flag 重启)、回流 saveRun、卸 uv 像素、git 真克隆、dispose 打断、B22/REQ-014 复现、banner 冷启动、B6 alpha_ping in-session。证据 [audits/2026-07-05-req016](audits/2026-07-05-req016-realmachine-batch/verify.md);详见 [requirements/REQ-016](requirements/REQ-016-realmachine-verify-batch.md) |
 | REQ-027 | typecheck 关双假绿:`bun --cwd X run Y` 在 bun 1.3.x 打印 usage 后静默退出 0、不执行脚本(alpha-check + alpha-ci 同写法) | bug | A | shipped | **S17 T2 证据纪律顺带发现+同 PR 修复(2026-07-05)**:hook 全量输出暴露 usage dump → 探针实证(植入型错 `--cwd…run` exit 0 vs `cd…run` exit 2;不存在脚本亦 0)+ CI 日志同 dump(run 28733810318);修=flag 移 `run` 后 ×(alpha-check.sh 两处 / alpha-ci.yml 三处 / CLAUDE.md dev 命令);verified=红绿探针在册 + 本 PR CI 日志无 dump 复核;快车道无档 |
+| REQ-030 | 模型清单配置化 + 海内外版本收口生效(registry 抽配置文件 / prod EDITION_CONFIG 落地 / 最新代策展) | feature | X | ready | **现状核查 2026-07-05**:REQ-001 机制在而 prod 未配 `EDITION_CONFIG`(代码默认 intl)→ 海内外混出;registry 硬编码 TS(B `registry.ts:22-144`)需 gateway+account 双部署;**edition 已拍板(2026-07-05):default=cn + 运营者租户映射 intl**(收口动作可先行,改 var 热生效);**不上 DB**(配置文件+部署秒级已够);详见 [requirements/REQ-030](requirements/REQ-030-model-registry-config.md) |
+| REQ-031 | LLM gateway 多上游路由 + 欠费 failover(canonical id→候选链,原生优先/OpenRouter 兜底,per-route 计价) | feature | B | registered | **现状**:单 fetch 零 failover(`worker.ts:342-351`),运营者 provider 欠费=该系服务中断;`upstreamModel` 单值映射已有,扩 `routes[]`(解 openrouter `deepseek/deepseek-v4-pro` vs 原生 `deepseek-v4-pro` 命名);ledger 须记实际上游+按其价目结算;同 wire 限定,与 REQ-030 同文件同期定 schema;详见 [requirements/REQ-031](requirements/REQ-031-gateway-upstream-failover.md) |
+| REQ-032 | catalog 远程分发(收编 E10):C 端点+签名 + A 运行时拉取/缓存/回退 + skill/agent 远程资产通道 + 条目级更新检查 | feature | X | ready | 上架 skill 不再发 app 包;**落点已拍板(2026-07-05)=alpha-web C**(ADR-014 O4,公共静态+境内可达域);**清单远端化≠资产远端化**——phase1 仅 skill/agent 文本资产(downloadUrl+sha256 钉死),plugin 远程=phase2;更新=条目级 version(修全局版本粗粒度)+ 启动/进 hub ETag 检查 + C 侧不可变版本化资产(回滚=指回旧版);回退链=远端→缓存→内置;E10→dup 并入;详见 [requirements/REQ-032](requirements/REQ-032-remote-catalog.md) |
+| REQ-033 | 开放生态安装面:任意 MCP 手动添加 UI + agent 导入/轻转换 + 兼容性边界诚实文档化 | feature | A | registered | **与 REQ-032 正交互补**(catalog=精选层,本档=开放世界入口):MCP 是跨生态通用主通道但 hub 无手动添加 UI(只能装 catalog 8 条);skill folder/git 与 plugin npm 导入已有;agent 无导入;异构引擎**代码插件**不可装(ADR-023;Claude Code 大礼包可转换→REQ-034,Codex 无插件体系)——诚实文档化+指引走同能力 MCP;详见 [requirements/REQ-033](requirements/REQ-033-open-ecosystem-install.md) |
 
 ## Active — P2(债务)
 
@@ -111,7 +115,7 @@
 | E11 | 定制中心目录筛选 UI(category/license) | ux | A | dup | **→ 并入 REQ-019**(hub 左栏 IA + 筛选,T7);catalog schema 已带元数据 |
 | E5 | 日历 MCP(Google/macOS) | feature | A | registered | 阻塞:OAuth/凭据存储(keychain TODO,ADR-014 §8) |
 | E8 | Slack/Teams MCP | feature | A | registered | 阻塞同 E5 |
-| E10 | catalog 远程增量同步(alpha-web 端点) | feature | X | registered | C 仓 catalog 端点未建 |
+| E10 | catalog 远程增量同步(alpha-web 端点) | feature | X | dup | **→ 并入 REQ-032**(2026-07-05:升级为全流程需求——C 端点+验签+资产通道+回退链) |
 
 > 别名/归并:G1 → B6;E12 → B3;E14 → D5(剩实测);E1/E1b/E3/E4 已发(见 E 册);C10 → dup(A6);D7/E7/E13 → Parked;D11 → Done(⊂C1)。
 
@@ -124,6 +128,8 @@
 | D7 | safeStorage 明文兜底告警 | R6:macOS-only 下死分支(钥匙串恒可用) | 跨平台时 |
 | E7 | websearch 收编为自有 MCP | 与云端 websearch 撞车 | B3/E12 云线落地后 |
 | E13 | 团队协作多端 workspace 同步 | **rejected(2026-07-05,REQ-008 D1:不做共享 workspace/会话)** | 重开 = 真实付费团队需求 + 上游多用户原语 |
+| REQ-034 | 外部生态导入转换器:Claude Code plugin 大礼包→套件扇出 + Codex 可共享物导入(安装期转换,[[ADR-023]]) | 用户 2026-07-05:立项但暂不开发,想清楚再启动 | 用户拍板启动(按 ADR-023 执行);详见 [requirements/REQ-034](requirements/REQ-034-ecosystem-import-converter.md) |
+| REQ-035 | 本地 harness-as-executor(claude/codex 委托执行,tool/MCP 接缝);长期演进=会话级并轨(GOALS G5) | 用户 2026-07-05:立项但暂不开发,想清楚再启动 | 第一阶段=用户拍板启动;并轨阶段另有硬前置(challenge+POSITIONING 修订+承载 spike+独立 ADR,见档) |
 
 ## 当前 sprint → **S17 深度决策与设计批 —— 已收尾(2026-07-05)**
 
