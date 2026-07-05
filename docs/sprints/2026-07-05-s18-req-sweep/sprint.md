@@ -51,7 +51,7 @@ S17 清完思考债后,把 2026-07-05 立项的产品需求线(composer 收敛 /
 | T9 | REQ-028 真只读档 | A | ☐ |
 | T10 | REQ-032 远程 catalog | X(C+A) | ☑ C #5(端点+签名+不可变资产,prod)+ A #103(验签/回退/远程安装,live e2e 8/8) |
 | T11 | REQ-026 小白文档 | C | ☑ C #6 已部署(getting-started,FAQ×10) |
-| T12 | PA-27 P0 + PA-28 + REQ-022 云 schedule | B | ☐ |
+| T12 | PA-27 P0 + PA-28 + REQ-022 云 schedule | B | ☑ PA-27 已在 PR #13+prod(部署核实)/PA-28+REQ-022 B #17#18(prod e2e 三轮+审计 2C2H2M 全修) |
 | T13 | REQ-025 自动化 A3 | A | ☐ |
 
 ## Gates

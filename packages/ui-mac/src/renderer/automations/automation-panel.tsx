@@ -122,6 +122,8 @@ export function AutomationPanel() {
   const [fForm, setFForm] = createSignal<ScheduleForm>({ ...DEFAULT_FORM })
   const [fMaxMin, setFMaxMin] = createSignal<number>(AUTOMATION_DEFAULTS.maxDurationMin)
   const [fProfile, setFProfile] = createSignal<"readonly" | "standard">("readonly")
+  const [fExec, setFExec] = createSignal<"local" | "cloud">("local")
+  const [cloudStates, setCloudStates] = createSignal<Map<string, { enabled: boolean; disabled_reason: string | null }>>(new Map())
   const [llmBusy, setLlmBusy] = createSignal(false)
   const [runNowBusy, setRunNowBusy] = createSignal<string | null>(null)
   const [fNotify, setFNotify] = createSignal(true)
@@ -134,6 +136,13 @@ export function AutomationPanel() {
       setTasks(r.tasks)
       setPausedAll(r.state.pausedAll)
       setLoginItem(r.loginItem)
+      // A3:云档存在时回读 B 侧状态(熔断/停用原因)+ 拉回错过 run;离线保持本地态。
+      if (r.tasks.some((t) => t.execution === "cloud")) {
+        void window.api.automations.cloudSync().then((cs) => {
+          if (cs.schedules) setCloudStates(new Map(cs.schedules.map((x) => [x.id, { enabled: x.enabled, disabled_reason: x.disabled_reason }])))
+          if ("pulled" in cs.pulled && cs.pulled.pulled > 0) void window.api.automations.list().then((r2) => setTasks(r2.tasks))
+        })
+      }
     } catch {
       /* transient */
     }
@@ -186,6 +195,7 @@ export function AutomationPanel() {
     )
     setFMaxMin(AUTOMATION_DEFAULTS.maxDurationMin)
     setFProfile("readonly")
+    setFExec("local")
     setFNotify(true)
     setFErr("")
     setView("edit")
@@ -199,6 +209,7 @@ export function AutomationPanel() {
     setFForm(toForm(task.schedule))
     setFMaxMin(task.budget.maxDurationMin)
     setFProfile(task.permissionProfile === "standard" ? "standard" : "readonly")
+    setFExec(task.execution === "cloud" ? "cloud" : "local")
     setFNotify(task.notify.system)
     setParseNote("")
     setFErr("")
@@ -230,7 +241,8 @@ export function AutomationPanel() {
       schedule,
       target: { projectDir: fDir(), agent: fProfile() === "standard" ? AUTOMATION_DEFAULTS.agentStandard : AUTOMATION_DEFAULTS.agent },
       prompt: fPrompt().trim(),
-      execution: "local",
+      execution: fExec(),
+      cloudScheduleId: prev?.cloudScheduleId,
       permissionProfile: fProfile(),
       budget: { maxDurationMin: fMaxMin() },
       overlapPolicy: "skip",
@@ -361,6 +373,9 @@ export function AutomationPanel() {
                                 <span class="alpha-auto-pill" data-muted="">
                                   {projectName(task.target.projectDir)}
                                 </span>
+                                <Show when={task.execution === "cloud"}>
+                                  <span class="alpha-auto-pill">☁ {t("alpha.auto.execCloud")}</span>
+                                </Show>
                               </div>
                               <div class="alpha-auto-row-st">
                                 {task.running
@@ -370,6 +385,12 @@ export function AutomationPanel() {
                                     : task.disabledReason === "consecutive_failures"
                                       ? t("alpha.auto.disabledBreaker")
                                       : t("alpha.auto.disabled")}
+                                <Show when={task.cloudScheduleId && cloudStates().get(task.cloudScheduleId!)?.disabled_reason}>
+                                  {" · "}
+                                  {cloudStates().get(task.cloudScheduleId!)!.disabled_reason === "consecutive_failures"
+                                    ? t("alpha.auto.disabledBreaker")
+                                    : t("alpha.auto.cloudStuck")}
+                                </Show>
                                 <Show when={task.lastRun}>
                                   {" · "}
                                   {dot().label}
@@ -553,6 +574,22 @@ export function AutomationPanel() {
                       onInput={(e) => setFPrompt(e.currentTarget.value)}
                     />
                   </label>
+
+                  <div class="alpha-auto-field">
+                    <span>{t("alpha.auto.fExecution")}</span>
+                    <div class="alpha-auto-seg">
+                      <button data-on={fExec() === "local" ? "" : undefined} onClick={() => setFExec("local")}>
+                        {t("alpha.auto.execLocal")}
+                      </button>
+                      <button data-on={fExec() === "cloud" ? "" : undefined} onClick={() => setFExec("cloud")}>
+                        {t("alpha.auto.execCloud")}
+                      </button>
+                    </div>
+                    <Show when={fExec() === "cloud"}>
+                      {/* A3:数据边界(ADR-021)+ research 管线映射,强制展示不可折叠 */}
+                      <p class="alpha-auto-preview">{t("alpha.auto.cloudBoundary")}</p>
+                    </Show>
+                  </div>
 
                   <div class="alpha-auto-inline">
                     <div class="alpha-auto-field">

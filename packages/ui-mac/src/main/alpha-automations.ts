@@ -35,7 +35,7 @@ export function validateAutomation(task: AutomationTask): string | null {
     return "projectDir not found"
   }
   // A1 恒 local;A2(REQ-024)放开 standard 可写档(cloud 仍归 A3/REQ-025)。
-  if (task.execution !== "local") return "execution must be local (cloud = A3)"
+  if (task.execution !== "local" && task.execution !== "cloud") return "execution must be local | cloud"
   if (task.permissionProfile !== "readonly" && task.permissionProfile !== "standard") return "permissionProfile must be readonly | standard"
   const s = task.schedule
   if (!s || typeof s !== "object") return "invalid schedule"

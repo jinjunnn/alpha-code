@@ -176,3 +176,14 @@ export function shouldTripBreaker(
   const recent = attempts.slice(0, threshold)
   return recent.length >= threshold && recent.every((r) => r.status === "failed" || r.status === "timeout")
 }
+
+/** A3(REQ-025):本地 schedule → B 端 5 字段 cron;不可表达(once / 非整点超长间隔)→ null(诚实拒绝)。 */
+export function scheduleToCron(schedule: import("./automation-types").AutomationSchedule): string | null {
+  if (schedule.kind === "cron") return schedule.expr
+  if (schedule.kind === "interval") {
+    if (schedule.everyMinutes >= 5 && schedule.everyMinutes < 60) return `*/${schedule.everyMinutes} * * * *`
+    if (schedule.everyMinutes % 60 === 0 && schedule.everyMinutes <= 24 * 60) return `0 */${schedule.everyMinutes / 60} * * *`
+    return null
+  }
+  return null // once:云档不支持
+}
