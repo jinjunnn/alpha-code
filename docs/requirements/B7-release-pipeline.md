@@ -22,3 +22,8 @@ source: 册 §一 P1 / T2.6
 
 ## 关联
 A4/A5(其实例)、T2.1-T2.3、B8、DISTRIBUTION.md。
+
+## 部分 shipped(验收②,PR #85,/loop 2026-07-04)
+- **验收②(种子资产完整)= shipped**:`scripts/assert-seed-assets.sh` 断言 `electron-builder` `extraResources` 的**源**资产存在且非空 —— REQ-023 vendored agent(`code-reviewer.md`)/ plugin(`opencode-notify`)、builtin skills、`NOTICE.txt`(B15 许可证合规)、签名 entitlements/icon;新增 advisory `seed-assets` job 调它(与 alpha-ci 既有 job 同模式,加入 required-checks 前不阻塞)。构建产物(`ext/dist`)由 build 自身产出,不在此断言。
+- **递延(需 build+launch,→ 真机批 / release-pipeline)**:验收①版本断言(非 `local`/`0.0.0`,release-time 打包产物才有真版本,不宜 per-PR)、③断网首启 smoke、⑤故意注入 `0.0.0`→CI 红(依赖①);验收④ DISTRIBUTION.md checklist 行随①③一并补。
+- **判断**:seed-asset 守卫是 B7 唯一「CI 可自证、决策无关」的切片,先落;其余属发版流水线/真机验收,不可无人值守做。
