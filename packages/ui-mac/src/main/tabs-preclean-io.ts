@@ -1,22 +1,33 @@
-// REQ-014 tier-2 的真实查询实现(SDK v2,与 automation-scheduler 同款 client 构造)。
-// 与纯逻辑(tabs-preclean.ts)分离,使单测零 SDK 依赖。
-import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
+// REQ-014 tier-2 的真实查询实现。S21 真机实测钉死契约:`GET /api/session/{sessionID}` →
+// 200 = 存活;404 + `_tag:"SessionNotFoundError"` = 悬空;其余一律 null(不确定 → 调用方 fail-open)。
+// (原版按目录 `session.list` 判集合被真机证伪:limit 不生效、每页仅 2 条 → cursor.next 恒在 →
+// 「分页未尽 fail-open」使 tier-2 恒空转;改按 id 直查,语义精确且无分页面。)
+// 纯 fetch 不引 SDK,单测零依赖;每请求 1500ms 超时,总预算由 runner 的 queryBudgetMs 统管。
 
-/** 按目录列会话 id。任何错误 / 分页未尽 = 返回 null(不确定态,调用方 fail-open 不剔)。 */
-export async function fetchSessionIdsViaSdk(
+export async function checkSessionExistsViaFetch(
   server: { url: string; username: string | null; password: string | null },
-  directory: string,
-): Promise<ReadonlySet<string> | null> {
-  const headers =
+  sessionId: string,
+): Promise<boolean | null> {
+  const headers: Record<string, string> =
     server.username || server.password
       ? { Authorization: `Basic ${Buffer.from(`${server.username ?? ""}:${server.password ?? ""}`).toString("base64")}` }
-      : undefined
-  const client = createOpencodeClient({ baseUrl: server.url, headers })
-  const res = (await client.session.list({ directory, limit: 200 } as never)) as {
-    data?: { data?: { id?: string }[]; cursor?: { next?: string } }
-    error?: unknown
+      : {}
+  try {
+    const res = await fetch(`${server.url}/api/session/${encodeURIComponent(sessionId)}`, {
+      headers,
+      signal: AbortSignal.timeout(1500),
+    })
+    if (res.status === 200) return true
+    if (res.status === 404) {
+      try {
+        const body = (await res.json()) as { _tag?: string }
+        return body?._tag === "SessionNotFoundError" ? false : null
+      } catch {
+        return null // 404 但非典型 body → 不确定,fail-open
+      }
+    }
+    return null // 401/5xx/其他 → 不确定
+  } catch {
+    return null // 网络错/超时 → 不确定
   }
-  if (res.error || !res.data?.data) return null
-  if (res.data.cursor?.next) return null // 该目录会话超过一页 → 存在性不确定 → fail-open
-  return new Set(res.data.data.map((s) => s.id).filter((x): x is string => typeof x === "string" && x.length > 0))
 }

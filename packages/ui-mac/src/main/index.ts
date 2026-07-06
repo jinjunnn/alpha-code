@@ -30,7 +30,7 @@ import { forwardInitializationFailure } from "./initialization"
 import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
 import { getStore } from "./store"
 import { GLOBAL_RENDERER_STORE, runTabsPreclean } from "./tabs-preclean"
-import { fetchSessionIdsViaSdk } from "./tabs-preclean-io"
+import { checkSessionExistsViaFetch } from "./tabs-preclean-io"
 import { parseMarkdown } from "./markdown"
 import { createDbMenuActions, runDbPreflightBoot } from "./db-safety-boot"
 import { createMenu } from "./menu"
@@ -391,7 +391,7 @@ const main = Effect.gen(function* () {
     setValue: (key, value) => getStore(GLOBAL_RENDERER_STORE).set(key, value),
     log: (line) => logger.log(line),
     awaitServer: () => Effect.runPromise(Deferred.await(serverReady)).catch(() => null),
-    fetchSessionIds: fetchSessionIdsViaSdk,
+    checkSession: checkSessionExistsViaFetch,
   })
   registerIpcHandlers({
     tabsPrecleanDone: tabsPreclean.done,

@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test"
 import {
-  decodeDirBase64,
   decodeStoreValue,
   dropDanglingSessionTabs,
   runTabsPreclean,
@@ -76,21 +75,21 @@ describe("sanitizeTabsValue(tier-1 格式级)", () => {
   })
 })
 
-describe("dropDanglingSessionTabs(tier-2 存在性)", () => {
-  const ids = (...xs: string[]) => new Set(xs) as ReadonlySet<string>
-
+describe("dropDanglingSessionTabs(tier-2 存在性,按 id 直查)", () => {
   test("悬空 session 被剔(形态 A),存活者与 draft 不动", async () => {
     const dangling = { ...GOOD_SESSION, sessionId: "ses_deleted00000000000000000000" }
-    const res = await dropDanglingSessionTabs([GOOD_SESSION, dangling, GOOD_DRAFT], async () => ids(GOOD_SESSION.sessionId))
+    const res = await dropDanglingSessionTabs([GOOD_SESSION, dangling, GOOD_DRAFT], async (sid) => sid === GOOD_SESSION.sessionId)
     expect(res.tabs).toEqual([GOOD_SESSION, GOOD_DRAFT])
     expect(res.drops.length).toBe(1)
+    expect(res.uncertain).toBe(0)
   })
 
-  test("查询返回 null(失败/分页未尽)→ 该目录 fail-open 全保留", async () => {
+  test("查询返回 null(网络错/超时/非典型响应)→ fail-open 保留并计数", async () => {
     const dangling = { ...GOOD_SESSION, sessionId: "ses_deleted00000000000000000000" }
     const res = await dropDanglingSessionTabs([GOOD_SESSION, dangling], async () => null)
     expect(res.tabs).toEqual([GOOD_SESSION, dangling])
     expect(res.drops).toEqual([])
+    expect(res.uncertain).toBe(2)
   })
 
   test("查询抛错 → fail-open 全保留", async () => {
@@ -98,10 +97,23 @@ describe("dropDanglingSessionTabs(tier-2 存在性)", () => {
       throw new Error("boom")
     })
     expect(res.tabs).toEqual([GOOD_SESSION])
+    expect(res.uncertain).toBe(1)
+  })
+
+  test("同 id 多 tab 只查一次,判定一致", async () => {
+    let calls = 0
+    const dup = { ...GOOD_SESSION }
+    const res = await dropDanglingSessionTabs([GOOD_SESSION, dup], async () => {
+      calls++
+      return false
+    })
+    expect(calls).toBe(1)
+    expect(res.tabs).toEqual([])
+    expect(res.drops.length).toBe(2)
   })
 })
 
-describe("decodeStoreValue / decodeDirBase64", () => {
+describe("decodeStoreValue", () => {
   test("JSON 字符串双向;裸对象直通;垃圾 → null", () => {
     const dec = decodeStoreValue(JSON.stringify([GOOD_SESSION]))!
     expect(dec.value).toEqual([GOOD_SESSION])
@@ -110,11 +122,6 @@ describe("decodeStoreValue / decodeDirBase64", () => {
     expect(raw.reencode(raw.value)).toEqual([GOOD_SESSION])
     expect(decodeStoreValue("not-json{")).toBeNull()
     expect(decodeStoreValue(42)).toBeNull()
-  })
-
-  test("decodeDirBase64:URL-safe 解码;Lw → /", () => {
-    expect(decodeDirBase64("Lw")).toBe("/")
-    expect(decodeDirBase64("L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs")).toBe("/Users/tide/app/kama-bot-local")
   })
 })
 
@@ -144,7 +151,7 @@ describe("runTabsPreclean(编排)", () => {
     const { done } = runTabsPreclean({
       ...s.deps,
       awaitServer: async () => ({ url: "http://127.0.0.1:1", username: null, password: null }),
-      fetchSessionIds: async () => new Set([GOOD_SESSION.sessionId]),
+      checkSession: async (_s, sid) => sid === GOOD_SESSION.sessionId,
       serverWaitMs: 200,
       queryBudgetMs: 200,
     })
@@ -161,7 +168,7 @@ describe("runTabsPreclean(编排)", () => {
     const { done } = runTabsPreclean({
       ...s.deps,
       awaitServer: () => new Promise(() => {}), // 永不 resolve
-      fetchSessionIds: async () => new Set(),
+      checkSession: async () => false,
       serverWaitMs: 50,
       queryBudgetMs: 50,
     })
@@ -176,7 +183,7 @@ describe("runTabsPreclean(编排)", () => {
     const { done } = runTabsPreclean({
       ...s.deps,
       awaitServer: async () => null,
-      fetchSessionIds: async () => null,
+      checkSession: async () => null,
       serverWaitMs: 10,
       queryBudgetMs: 10,
     })
@@ -193,7 +200,7 @@ describe("runTabsPreclean(编排)", () => {
     const { done } = runTabsPreclean({
       ...s.deps,
       awaitServer: async () => ({ url: "http://127.0.0.1:1", username: null, password: null }),
-      fetchSessionIds: async () => new Set([GOOD_SESSION.sessionId]),
+      checkSession: async (_s, sid) => sid === GOOD_SESSION.sessionId,
       serverWaitMs: 200,
       queryBudgetMs: 200,
     })
