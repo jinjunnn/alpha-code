@@ -20,12 +20,8 @@ export function readyWslConnections(state?: WslServersState) {
   })
 }
 
-// REQ-040:「具体端口的本地 sidecar URL」判定。内嵌 sidecar 每次 listen(0) 随机新端口,故任何存下的
-// 127.0.0.1/localhost/[::1]:PORT 默认服务器都必然陈旧 —— 冷启动会连死端口卡「无法连接到 Local Server」。
-// getDefaultServer 用它把陈旧默认丢弃、回退符号性 "sidecar"(始终指向当次 live sidecar)。
-export function isEphemeralLocalServerUrl(url: string): boolean {
-  return /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\]):\d+/i.test(url)
-}
+// REQ-040 谓词本体移 shared(REQ-042:main 侧 getDefaultServerUrl 也要用);re-export 保住既有 import 面与单测。
+export { isEphemeralLocalServerUrl } from "../../shared/ephemeral-server-url"
 
 export function availableStartupServer(defaultServer: string | null | undefined, state?: WslServersState) {
   const key = defaultServer ?? "sidecar"

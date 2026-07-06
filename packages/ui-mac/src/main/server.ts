@@ -14,6 +14,7 @@ import { getUserShell, loadShellEnv } from "./shell-env"
 import { probeShellEnvAsync, readShellEnvCache, writeShellEnvCache } from "./shell-env-cache"
 import { getStore } from "./store"
 import { DEFAULT_SERVER_URL_KEY } from "./store-keys"
+import { isEphemeralLocalServerUrl } from "../shared/ephemeral-server-url"
 
 export type HealthCheck = { wait: Promise<void> }
 
@@ -37,7 +38,17 @@ type SpawnLocalServerOptions = {
 
 export function getDefaultServerUrl(): string | null {
   const value = getStore().get(DEFAULT_SERVER_URL_KEY)
-  return typeof value === "string" ? value : null
+  const url = typeof value === "string" ? value : null
+  if (url && isEphemeralLocalServerUrl(url)) {
+    // REQ-042(REQ-040 收尾):陈旧「具体端口本地 URL」默认的丢弃必须留痕(反静默,B11 纪律)且删键——
+    // 否则该键永留 store、每次开机重判。set-default 写入时不拦(彼时 URL 真活),只在冷启动读取处治理。
+    getLogger().log(
+      `[server] discarding stale local default server url (${url}) — embedded sidecar port is random per launch; falling back to live sidecar (stale key removed)`,
+    )
+    getStore().delete(DEFAULT_SERVER_URL_KEY)
+    return null
+  }
+  return url
 }
 
 export function setDefaultServerUrl(url: string | null) {
