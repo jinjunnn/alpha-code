@@ -182,7 +182,7 @@ const api: ElectronAPI = {
     transactions: (limit) => ipcRenderer.invoke("account-transactions", limit),
   },
   cloud: {
-    dispatch: (envelope) => ipcRenderer.invoke("cloud-dispatch", envelope),
+    dispatch: (envelope, directory) => ipcRenderer.invoke("cloud-dispatch", envelope, directory),
     status: (jobId) => ipcRenderer.invoke("cloud-status", jobId),
     cancel: (jobId) => ipcRenderer.invoke("cloud-cancel", jobId),
     artifacts: (jobId) => ipcRenderer.invoke("cloud-artifacts", jobId),

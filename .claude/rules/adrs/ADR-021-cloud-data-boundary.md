@@ -20,10 +20,10 @@ related: [ADR-002, ADR-019, B/PA-7, B/PA-22]
    - **secrets 内容扫描**:对 `input/objective` 做密钥模式扫描(API key/token/私钥块常见格式),命中即**拒发 + 指出字段**——不做静默改写(改写=送出损坏数据还装没事,违反反 placebo 纪律 C28);
    - **denied_paths 默认加固**:contract 未显式声明时,默认注入 `.env* / *.pem / .alpha/ / .git/` 等 denied_paths。
 3. **隐式通道·定位为「告知 + 逃生」而非过滤**:prompt 内容**不做静默改写/拦截**(会破坏编码任务且给用户虚假安全感)。技术义务已由既有决策覆盖:A6(密钥 env 不出境,`{file:}` 通道)+ BYOK 模式可整体绕开平台代理(逃生门)。剩余义务 = **告知**,归 B16(见 §4)。
-4. **consent 挂钩(B16 重启时直接可用)**:预留两个挂钩点,**时机拍板留给 B16**(parked,不代决):
-   - 显式:**首次云 dispatch(per 项目)** 弹 consent(记录于 `.alpha/prefs.json`,ADR-019);
-   - 隐式:登录选择 platform 模式时的告知文案(alpha-web 登录流内)。
-   - B16 未重启前的现状声明:云 dispatch 仅由登录用户在会话内显式触发,每次 run 落 `.alpha/runs/<runId>/`(ADR-019)形成本地审计痕迹。
+4. **consent 挂钩(B16 已重启落地,2026-07-06 用户 GO,S25)**:两个挂钩点均已实现:
+   - 显式:**首次云 dispatch(per 项目)** 弹 consent(`alpha-cloud-consent.ts` 纯核 + `cloud-ipc.ts` 原生对话框 + `.alpha/prefs.json` 落 `cloudConsent`,ADR-019 落点;写盘失败不静默放行;版本化)。**覆盖面 = hub 派发路径**(`window.api.cloud.dispatch(envelope, directory)`);MCP facade(会话内 agent cloud.* 工具)派发不经 main、不覆盖(会话内显式指令触发 + B 侧 schema 兜底 + 隐式告知已在登录承担)。
+   - 隐式:登录授权页平台代付告知行(alpha-web `DesktopAuthorize`,PR #9)+ 隐私政策出境专章(修正原 §2「不上传源代码」误导)。定位=告知,不阻断(§3)。
+   - 见 [[B16]](../../../docs/requirements/B16-pipl-consent-gate.md,S25 shipped:A PR #123 + alpha-web PR #9)。云 dispatch 每次 run 落 `.alpha/runs/<runId>/`(ADR-019)形成本地审计痕迹不变。
 5. **回流侧(对称边界)**:云 → 本地已由 `alpha-workdir.ts` 落地(PR #55):写盘困在 `.alpha/`、敌意文件名消毒、100MB 体积帽——上行下行两侧都有界。
 
 ## 后果

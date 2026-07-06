@@ -10,6 +10,7 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
 import type { CloudArtifactContent, CloudArtifactList, CloudJobEnvelope, CloudJobStatus, CloudResult } from "../preload/types"
+import { parsePrefs, type ProjectPrefs } from "./alpha-cloud-consent"
 
 export type CloudRunManifest =
   | { ok: true; dir: string; files: string[]; warnings: string[] }
@@ -81,6 +82,32 @@ function writeFileAtomic(file: string, data: string | Buffer): void {
   const tmp = `${file}.tmp-${process.pid}`
   fs.writeFileSync(tmp, data)
   fs.renameSync(tmp, file)
+}
+
+/**
+ * 项目偏好 `.alpha/prefs.json`(ADR-019 落点)读写。B16 云同意等 per-project 偏好的落点;缺失/损坏
+ * 读为 {}(不误判);写走 ensureAlphaScaffold + 守卫 + 原子写。
+ */
+export function readProjectPrefs(projectDir: string): ProjectPrefs {
+  const target = safeResolveInAlpha(projectDir, "prefs.json")
+  if (!target) return {}
+  try {
+    return parsePrefs(fs.readFileSync(target, "utf8"))
+  } catch {
+    return {}
+  }
+}
+
+export function writeProjectPrefs(projectDir: string, prefs: ProjectPrefs): { ok: true } | { ok: false; reason: string } {
+  if (!ensureAlphaScaffold(projectDir)) return { ok: false, reason: "invalid project dir" }
+  const target = safeResolveInAlpha(projectDir, "prefs.json")
+  if (!target) return { ok: false, reason: "path escapes .alpha" }
+  try {
+    writeFileAtomic(target, JSON.stringify(prefs, null, 2) + "\n")
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : String(error) }
+  }
 }
 
 /** Create `.alpha/` and seed its self-ignoring .gitignore (idempotent). */

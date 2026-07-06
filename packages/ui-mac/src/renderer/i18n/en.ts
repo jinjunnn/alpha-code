@@ -408,6 +408,7 @@ export const dict = {
   "alpha.ext.cloudErrAuth": "Not signed in or session expired — sign in to platform and retry",
   "alpha.ext.cloudErrEndpoint": "No cloud endpoint discovered (auto-discovered after sign-in; override with ALPHA_CLOUD_URL)",
   "alpha.ext.cloudErrNetwork": "Network error — cloud endpoint unreachable",
+  "alpha.ext.cloudErrConsentDeclined": "Cloud dispatch cancelled — data-egress consent was declined for this project",
   "alpha.ext.openDetail": "Details",
   "alpha.ext.back": "Back",
   "alpha.ext.detailAbout": "About",
