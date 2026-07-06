@@ -13,11 +13,10 @@ import { Portal } from "solid-js/web"
 import { useCommand } from "./providers"
 import { setExtHubOpen } from "../extensions/ext-hub-state"
 
-export const EFFORTS = ["低", "中", "高", "超高"] as const
-export type Effort = (typeof EFFORTS)[number]
-// C28 拍板(2026-07-05,S17 T4):effort 尚未接入引擎 —— 真通道 = model variants(llm/request.ts 的
-// options merge),当前 alpha 代理/BYOK 模型均未定义 variants → 任何选择都不影响请求。按用户拍板
-// 「改文案保留」:chip 留作预设骨架,popover 明示「暂未生效」、不再宣称影响推理;真接入 → REQ-029。
+import { EFFORTS, type Effort, normalizeVariant } from "./variant-normalize"
+export { EFFORTS, type Effort } from "./variant-normalize"
+// effort chip = model variants(引擎 llm/request.ts options merge)的档位选择。REQ-029 接真(变体存在
+// 即模型支持,不存在则 chip 诚实禁用「—」);REQ-041 规范化英文/中文两套 variant 标签(见 variant-normalize)。
 //
 // full = 完全访问 (autoaccept on), ask = 请求审批 (autoaccept off / prompt each time)。
 // C28 拍板(2026-07-05,S17 T4):原第三档「只读」已移除 —— 它与 ask 引擎行为完全相同(opencode 无
@@ -127,10 +126,12 @@ const readVariantDom = () =>
   (document.querySelector('[data-action="prompt-model-variant"]') as HTMLElement | null)?.textContent?.trim()
 
 /** cycle 到目标 variant(与 switchAgentTo 同模式:逐步 trigger + 文本判停,转满一圈/无控件 → false)。 */
-async function switchVariantTo(command: { trigger(id: string): void }, target: string): Promise<boolean> {
+async function switchVariantTo(command: { trigger(id: string): void }, target: Effort): Promise<boolean> {
   const start = readVariantDom()
   if (!start) return false
-  if (start === target) return true
+  // REQ-041:按规范化档比较(引擎标签可能是英文 low/medium/high)——原文相等仍兜底,规范化命中即停。
+  const hit = (label: string | undefined) => label === target || normalizeVariant(label) === target
+  if (hit(start)) return true
   for (let i = 0; i < 12; i++) {
     try {
       command.trigger("model.variant.cycle")
@@ -139,8 +140,8 @@ async function switchVariantTo(command: { trigger(id: string): void }, target: s
     }
     await new Promise((r) => setTimeout(r, 90))
     const cur = readVariantDom()
-    if (cur === target) return true
-    if (cur === start) return false
+    if (hit(cur)) return true
+    if (cur === start) return false // 转满一圈仍未命中该档 → 该模型无此档,诚实失败
   }
   return false
 }
@@ -320,10 +321,11 @@ export function EffortChip() {
   // 引擎 request 层 merge 进请求参数;echo 实验实锤 reasoning_effort/reasoning 真上 wire)。
   // 控件不存在 = 模型不支持 → chip 诚实禁用,绝不假装可选(C28)。
   const supported = () => !!composerVariantLabel()
-  // 观察源一致性:chip 显示 = 引擎实际 variant(外部 cycle 快捷键切换自动跟随;"default" 显示 中)。
-  const current = (): Effort => {
+  // 观察源一致性:chip 显示 = 引擎实际 variant(外部 cycle 快捷键切换自动跟随)。REQ-041:规范化英文
+  // 标签(low→低…)使显示与选中态对得上;无法识别的档诚实显示原文,绝不假装成默认档。
+  const current = (): string => {
     const label = composerVariantLabel()
-    return (EFFORTS as readonly string[]).includes(label ?? "") ? (label as Effort) : effort()
+    return normalizeVariant(label) ?? label ?? effort()
   }
   const pick = (lv: Effort) => {
     void (async () => {
