@@ -35,5 +35,18 @@
 - ship gate(必询问):PR merge 前问用户,**同场附 B16 go/no-go 决策请求**;
 - 回写:REQ-014 翻 shipped(两级都落地才可;verified 待 B2 复验)· A2/REQ-042/043 等随证据翻 verified。
 
-## 结果(收批回填)
-_待回填。_
+## 结果(2026-07-06 回填)
+
+**Track A(headline)= verified**:REQ-014 冷启动毒键预清两级全做(PR #116 tier-1/tier-2 + PR #117 tier-2 改按 id 直查),真机双 ship 验证:
+- ship1 剔形态 B(缺 dirBase64,S17 原件形状)+ 旧格式 recent;**tier-2 list 版当场证伪**(`session.list?limit` 真机不生效 → 分页未尽 fail-open 恒空转 = placebo,challenge/Skeptic 预警应验)→ 改按 `GET /api/session/{id}` 直查;
+- ship2 剔形态 A(植入毒键 + **顺带一个真实悬空 tab**,`danglingA 1→0`);23 单测(16 preclean + io)。
+
+**真机批 8+ 项**:✅ verified 6(B0 签名公证+资产 · B2 REQ-014 两态 · B4a REQ-042 · B1/M1 迁移开门=A2 P0 收口 · B7① 版本断言 · M2 git 真克隆)· ⚠️ 部分 3(B5 C17 日志级+原生对话框留用户批 · M4 dispose 定性=卸载安全但打断语义未证 · B4b REQ-043 popover CDP 驱不动)· ❌ 1(M3 卸 uv:PATH mask 被 app shell-env 探测绕过)· ⏭ 留用户批(B7③⑤ · B4b/B5 原生像素)。证据 [audits/s21](../../audits/2026-07-06-s21-realmachine-vnext2/verify.md)。
+
+**新发现(不内联修,已登记)**:[[REQ-044]] —— 迁移候选名字匹配把用户自建技能列为候选(替换风险)+ catalog mcp-builder 打包资产缺失。
+
+**verified 翻转**:REQ-014 · REQ-042 · A2(M1 收口)· B7① 版本断言。REQ-043 仍 shipped(popover 像素留真人点选)。
+
+**gate 全绿**:北极星守卫 ✓ typecheck ✓ 448 单测 ✓(Track A)+ tier-2 改后 448 ✓。两线拆分兑现:Track A(PR #116/#117 gate 绿即合)与真机批解耦,真机走查证伪不阻塞代码交付。
+
+**待用户拍板(随 ship gate)**:B16 PIPL 告知门 go/no-go(CEO challenge:GOALS 判定「重启条件临近」,ADR-021 §4 挂钩点已备,不该无限 park)。
