@@ -3,10 +3,10 @@ id: REQ-014
 title: 悬空会话路由致「Not found」白屏 — 路由恢复前校验会话存在
 type: bug
 priority: P2
-status: registered
+status: shipped
 repo: A
 created: 2026-07-03
-sprint: —
+sprint: 2026-07-06-s21-realmachine-vnext2
 source: REQ-002 联调 BP-3(audits/2026-07-03-req002-proxy-e2e.md)
 ---
 
@@ -31,7 +31,15 @@ source: REQ-002 联调 BP-3(audits/2026-07-03-req002-proxy-e2e.md)
 - 关联 [B11](B11-unified-error-surface.md)(呈现面)、REQ-002 audit BP-3。
 
 ## 验证记录
-_verify 时补。_
+_verify 时补(S21 Track B:植形态 B 毒键 + 形态 A 悬空 id → 打包冷启动正常起屏 + main.log 预清留痕;无毒态零回归)。_
+
+## 实现记录(2026-07-06,S21 Track A —— 方案② main 预清,两级全做)
+challenge 裁决:只修格式级 = 对验收①的 placebo(Skeptic),两级全做:
+- **tier-1 格式级(同步,createMainWindow 前)**:`main/tabs-preclean.ts` 清洗 `opencode.global.dat` 的 `tabs`/`tabs.recent`——session 缺 server/dirBase64/sessionId(= S17 形态 B 毒源,旧版序列化)、draft 缺 draftID、非对象条目即剔;**未知 type fail-open 保留**;recent key 不指向任何幸存 tab 即清(与上游 tabs.tsx:102 清理语义一致)。**`worktree "/"`(dirBase64="Lw")shape-only 放行**(ADR-008 全局约定,绝不按解码值剔)。
+- **tier-2 存在性(serverReady 后,治形态 A)**:按 dir 经 SDK `session.list` 查证,悬空 session tab 剔 + recent 联动清;等 server 5s / 查询总预算 2.5s,**超时/查询失败/分页未尽一律 fail-open**(保持原样,绝不越修越坏)。
+- **store-get gate(实现级新决策)**:ipc.ts 对该 store 的 tabs 两键首读 `await` 预清 done(promise 保证 resolve,有硬时限)→ renderer 首读必为清洗后数据;**A1 window-first 不回退**(窗口/splash/语言键不受 gate 影响)。
+- 留痕:每次剔除 `[req014-preclean]` 行入 main.log(B11 反静默);16 单测(毒键样本=S17 证据原件形状/根 worktree 存活/合法态零改动/各 fail-open 路径/编排端到端)。
+- 契约锚(冻结上游面,re-freeze 复查):`GLOBAL_STORAGE`(persist.ts:26)、`tabKey` 形状(tabs.tsx:36-39)、URL-safe base64(core/util/encode.ts)。
 
 ## 复现记录(2026-07-05,S17 T4 顺带活捉 —— 拍板输入就绪)
 dev 实例(dev channel store)开局即循环崩溃,全链取证(证据 [audits/2026-07-05-s17-t4-c28/verify.md §2](../audits/2026-07-05-s17-t4-c28/verify.md) + `req014-poisoned-tabs-evidence.json` + store 原件备份):

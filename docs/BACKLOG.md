@@ -74,7 +74,7 @@
 | ID | 标题 | 类 | 仓 | 状态 | 备注 |
 |---|---|---|---|---|---|
 | REQ-004 | `.alpha` 项目工作目录:桥接验证 + 回填 ADR-019 | spike | A | shipped | **S11 T1 完成(PR #54)**:config 注入 CONFIRMED(生产在用)+ symlink 桥 CONFIRMED(引擎同款 glob fixture 6/6,整目录链/多跳链均通,one-hop 假说证伪);双写回退不启用;schema/gitignore 已回填 ADR-019 修订;证据 [audits/req004-spike](audits/2026-07-03-req004-alpha-bridge-spike.md);**verified 待 B3 T2 打包态 in-app 冒烟**;详见 [requirements/REQ-004](requirements/REQ-004-alpha-workdir-spike.md) |
-| REQ-014 | 悬空会话路由致「Not found」白屏 → 路由恢复前校验会话存在 | bug | A | ready | **复现达成(2026-07-05,S17 T4 顺带活捉)**:变体形态 B——旧格式 `tabs.recent`(无 dir 段)→ route.dir=undefined → 上游 titlebar 崩 → **整屏** ErrorPage 循环;整屏态 alpha 子组件全不挂 → 方案①守卫无效、**方案② main 预清实证可达**(删 global store 毒键即愈);证据+建议 [audits/s17-t4 §2](audits/2026-07-05-s17-t4-c28/verify.md)、档内复现记录;修法拍板就绪。历史:REQ-002 联调 BP-3;`tabs.recent` 指向已删会话 → 冷启动整屏 Not found 无恢复入口;**(/loop 2026-07-04 调查·deferred)**:原设「alpha 恢复层」杠杆不存在——恢复由上游冻结 `tabs.tsx` 主理;修法 renderer 守卫①vs main 预清 store② 需拍板,取决于 Not found 整屏/布局内(须真机复现)+ ② 触碰 base64 路由编码耦合(ADR-008);→ 并入 [[REQ-016]] 真机复现后定夺;详见 [requirements/REQ-014](requirements/REQ-014-dangling-session-blank-screen.md) 调查记录 |
+| REQ-014 | 悬空会话路由致「Not found」白屏 → 路由恢复前校验会话存在 | bug | A | shipped | **S21 Track A shipped(2026-07-06)**:方案② main 预清两级全做(challenge 裁决:只修格式级=placebo)——tier-1 格式级同步清洗(S17 形态 B 毒源;`worktree "/"` shape-only 放行)+ tier-2 存在性 SDK 查证(形态 A;5s/2.5s 时限,失败/分页未尽 fail-open)+ store-get gate(renderer 首读必为清洗后数据,A1 window-first 不回退)+ `[req014-preclean]` 留痕;`main/tabs-preclean.ts` 16 单测;**verified 待 S21 Track B**(植毒打包冷启动复验);实现记录见档。**复现达成(2026-07-05,S17 T4 顺带活捉)**:变体形态 B——旧格式 `tabs.recent`(无 dir 段)→ route.dir=undefined → 上游 titlebar 崩 → **整屏** ErrorPage 循环;整屏态 alpha 子组件全不挂 → 方案①守卫无效、**方案② main 预清实证可达**(删 global store 毒键即愈);证据+建议 [audits/s17-t4 §2](audits/2026-07-05-s17-t4-c28/verify.md)、档内复现记录;修法拍板就绪。历史:REQ-002 联调 BP-3;`tabs.recent` 指向已删会话 → 冷启动整屏 Not found 无恢复入口;**(/loop 2026-07-04 调查·deferred)**:原设「alpha 恢复层」杠杆不存在——恢复由上游冻结 `tabs.tsx` 主理;修法 renderer 守卫①vs main 预清 store② 需拍板,取决于 Not found 整屏/布局内(须真机复现)+ ② 触碰 base64 路由编码耦合(ADR-008);→ 并入 [[REQ-016]] 真机复现后定夺;详见 [requirements/REQ-014](requirements/REQ-014-dangling-session-blank-screen.md) 调查记录 |
 | REQ-005 | 前端接管收尾核验:重型引擎换肤(终端/diff/权限流)完成度 + timeline 验收尾项(截图归档/COUPLING 清单/真机验收) | ux | A | ready | ADR-016 待办②;tasks.md 40 项全勾但 dev-plan:98-100 未走完;COUPLING 清单关系 C14;详见 [requirements/REQ-005](requirements/REQ-005-frontend-takeover-closeout.md) |
 | REQ-009 | alpha-ci 提速:guard partial clone + bun 依赖缓存 | debt | A | shipped | **PR #85(bun 缓存半)**:typecheck/test 两 job 加 `actions/cache`(key=`bun.lock`)→ 复用全局模块缓存,miss 回退全装零风险。**partial-clone 半递延**:`filter:blob:none` 有静默削弱 north-star guard 之虞,须验收③回归用例在真 CI run 确认仍拦上游改动,不可无人值守验;≤2min 实测(验收④)同待真 CI;详见 [requirements/REQ-009](requirements/REQ-009-alpha-ci-speedup.md) |
 | REQ-024 | 自动化 A2 增强:standard 可写档 + LLM 辅助解析 + 连败熔断 + 立即运行 + 预算/历史 UI | feature | A | shipped | **S18 T8 shipped(2026-07-06,PR #106)**:①standard 可写档(alpha-automation-standard agent 注入:edit allow + bash 破坏类模式 deny(黑名单诚实非穷尽)+ 无人值守零 ask;启用确认 + 档位说明;存储层白名单放开)②LLM 辅助解析(规则失败后用户显式触发;临时会话一次抽取即删;产物仍过存储硬校验)③连败熔断(shouldTripBreaker 纯函数单测:3 连 failed/timeout(skip 不算尝试)→ 自动停用+disabledReason+通知;re-enable 清除)④立即运行(不改 next-fire;占并发位;计日 cap)⑤预算 UI 既有 + 历史 30 条 cap 既有(run 目录不自动删,留档说明);审计修复随 PR #109(bash 黑名单加固/LLM 临时会话删除重试);真机 E2E→真机批;详见 [requirements/REQ-024](requirements/REQ-024-automations-a2-enhancements.md) |
@@ -139,9 +139,17 @@
 | REQ-034 | 外部生态导入转换器:Claude Code plugin 大礼包→套件扇出 + Codex 可共享物导入(安装期转换,[[ADR-023]]) | 用户 2026-07-05:立项但暂不开发,想清楚再启动 | 用户拍板启动(按 ADR-023 执行);详见 [requirements/REQ-034](requirements/REQ-034-ecosystem-import-converter.md) |
 | REQ-035 | 本地 harness-as-executor(claude/codex 委托执行,tool/MCP 接缝);长期演进=会话级并轨(GOALS G5) | 用户 2026-07-05:立项但暂不开发,想清楚再启动 | 第一阶段=用户拍板启动;并轨阶段另有硬前置(challenge+POSITIONING 修订+承载 spike+独立 ADR,见档) |
 
-## 当前 sprint → **S18 REQ-022~038 全量清扫批(2026-07-05 开批)**
+## 当前 sprint → **S21 真机批 vNext-2 + REQ-014 修法(2026-07-06 开批)**
 
-> 用户拍板:继续处理 REQ-022~038(除 034/035 parked),一 REQ 一 PR,codex 只审计不改码;待拍板项已前置问清(denylist 默认 / B+C 部署全授权 / REQ-022 连带清 PA-27 前置 / REQ-026 落 alpha-web);需求间冲突检查完成(无互斥,10 处干涉面已消解)。契约+冲突矩阵+执行顺序:[sprints/2026-07-05-s18-req-sweep](sprints/2026-07-05-s18-req-sweep/sprint.md)。抽取 13 项:REQ-022/024/025/026/028/029/030/031/032/033/036/037/038(均翻 in-sprint)。
+> 用户拍板抽取;challenge 四线裁决(两线拆分/REQ-014 两级全做/走查新发现只登记不内联修/B16 决策请求随 ship gate)。Track A = REQ-014 修法代码 PR;Track B = 重 ship 签名包清 S20 残单(M1=A2 P0 收口排第一)。契约:[sprints/2026-07-06-s21-realmachine-vnext2](sprints/2026-07-06-s21-realmachine-vnext2/sprint.md)。抽取:REQ-014(翻 in-sprint)+ 存量 shipped 项的 verified 残单(状态随证据翻,不另改行)。
+
+## 上一 sprint → **S19 静默失败清尾 + S20 真机批 vNext —— 已收尾(2026-07-06)**(历史)
+
+> S19(PR #111/#112):B11 复扫矩阵 ⏭ 清零(T1–T8)+ B20 收口。S20(PR #113):重 ship 走查 8 项 verified 6,挖修 F-1/F-2(REQ-040/041)+ F-3 记 B23;审计收尾(PR #114)回写补正 + REQ-042/043 登记,续批(PR #115)两债务同日修复。契约:[s19](sprints/2026-07-06-s19-easy-wins/sprint.md) / [s20](sprints/2026-07-06-s20-realmachine-vnext/sprint.md)。
+
+## 上一 sprint → **S18 REQ-022~038 全量清扫批 —— 已收尾(2026-07-05/06)**(历史)
+
+> 抽取 13 项(REQ-022/024/025/026/028/029/030/031/032/033/036/037/038)全部 shipped(PR #98–#110,一 REQ 一 PR,codex 只审计不改码);真机递延归真机批。契约+冲突矩阵:[sprints/2026-07-05-s18-req-sweep](sprints/2026-07-05-s18-req-sweep/sprint.md)。
 
 ## 上一 sprint → **S17 深度决策与设计批 —— 已收尾(2026-07-05)**
 
