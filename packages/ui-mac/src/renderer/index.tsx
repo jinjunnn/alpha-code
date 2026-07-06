@@ -24,7 +24,7 @@ import pkg from "../../package.json"
 import { initI18n, t } from "./i18n"
 import { initializationData, initializationReady } from "./initialization"
 import { resetZoom, setPinchZoomEnabled, webviewZoom, zoomIn, zoomOut } from "./webview-zoom"
-import { availableStartupServer, readyWslConnections } from "./wsl/connections"
+import { availableStartupServer, isEphemeralLocalServerUrl, readyWslConnections } from "./wsl/connections"
 import "./styles.css"
 import "./sidebar/sidebar.css"
 import "./sidebar/account-popover.css"
@@ -260,6 +260,11 @@ const createPlatform = (): Platform => {
     getDefaultServer: async () => {
       const url = await window.api.getDefaultServerUrl().catch(() => null)
       if (!url) return null
+      // REQ-040:持久化的默认若是「具体端口的本地 sidecar URL」(127.0.0.1/localhost/[::1]:PORT),
+      // 它必然陈旧 —— 内嵌 sidecar 每次 listen(0) 随机新端口,存下的端口永远对不上,冷启动会连死端口卡
+      // 「无法连接到 Local Server」。丢弃 → 回退符号性 "sidecar"(effectiveDefaultServer 取 null→"sidecar",
+      // 始终指向当次 live sidecar)。alpha 侧栏不暴露服务器选择,故此类值只可能是上游弹窗/旧迁移遗留的陈旧态。
+      if (isEphemeralLocalServerUrl(url)) return null
       return ServerConnection.Key.make(url)
     },
 
