@@ -4,7 +4,7 @@
 > 状态:`registered / ready / in-sprint / shipped / verified / archived`;旁路 `parked / rejected / dup`。
 > 类:feature / bug / debt / security / perf / ux / docs / spike。仓:A=alpha-code · B=alpha-platform · C=alpha-web · X=跨仓。
 > 证据文档:**册** = [`plans/2026-07-02-problem-register-sprints-review.md`](plans/2026-07-02-problem-register-sprints-review.md)(71 项 + R1-R7 修正 + §7f-7j 实施日志);**核查** = [`audits/2026-07-02-register-verification.md`](audits/2026-07-02-register-verification.md);**E 册** = [`harness-extension-backlog.md`](harness-extension-backlog.md)。
-> 下一个新需求编号:**REQ-045**(新需求一律 REQ-NNN;A/B/C/D/E 为历史审计系列保留原号,用户 2026-07-03 确认)。
+> 下一个新需求编号:**REQ-047**(新需求一律 REQ-NNN;A/B/C/D/E 为历史审计系列保留原号,用户 2026-07-03 确认)。
 > **需求文件全覆盖(2026-07-03)**:全部开放的 A/B/C/D 条目已逐条建档 `requirements/<ID>-<slug>.md`(含验收标准),行内备注为摘要、**文件为验收真源**;E 系列以冻结 E 册为分析文档;parked/dup 项不建档。
 
 ## 发布短名单(launch-blockers,册 §6.8)
@@ -66,6 +66,7 @@
 | REQ-037 | 上游能力治理层:原生 agent/skill/command 隐藏/禁用/重写(governance 真源 + home jsonc 物化 + dispose 热生效 + hub「内置」分组) | feature | A | shipped | **S18 T3 shipped(2026-07-05,PR #102)**:真源 ~/.alpha/governance.json + 叶子键事务物化 home jsonc(用户内容保留/空壳剪枝/记账净除)+ 保护名单硬校验(compaction 拒/alpha 注入拒 X2/build confirm)+ hub「内置(上游)」分组(隐/禁/重写/allowlist 切换/重置);**裸引擎实测**:explore 消失/build hidden/init 重写/deny 占位全命中([audits/s18-t3](audits/2026-07-05-s18-t3-req037/verify.md));denylist 默认(开批拍板);像素/会话级→真机批;详见 [requirements/REQ-037](requirements/REQ-037-upstream-governance.md) |
 | REQ-038 | Composer 一致性收敛:首页/会话页行为对齐(首页 `/` 菜单接线为 P0)+ 共享层收敛(逻辑/外壳 CSS 单源)+ 换皮层像素走查 | ux | A | shipped | **S18 T1 shipped(2026-07-05,PR #98)**:首页 slash 菜单+@(agent+文件)接线(数据源与会话页同源:command.list/agent.list/find.files);/name args 命中自定义命令改走 session.command(上游 submit 同语义);IME keyCode 229 三重守卫;外壳 CSS 单源 composer-shell.css;占位文案单常量;**发送按钮裁切根因修复**(上游 svg wrapper 占 grid 行挤掉 ::after 箭头 → grid-area 1/1 叠放);15 新单测,CDP 截图验收在册 [audits/s18-t1](audits/2026-07-05-s18-t1-req038/verify.md);残单=真机 IME/空工作区提示像素 →真机批; 原勘探详情见 [requirements/REQ-038](requirements/REQ-038-composer-parity.md) |
 | REQ-039 | cn 租户云管线默认模型适配:edition 白名单拦掉 pipelines 默认 claude-sonnet(schedule e2e 实锤 edition_forbidden)→ 管线模型按租户 edition 选择或 cn 白名单纳入执行模型 | feature | B | registered | 2026-07-05 schedule e2e 发现;临时处置=dev/运营者映射 intl;公开放量前必须解决(cn 用户云任务必失败) |
+| REQ-046 | catalog 双作者源无同步守卫(A 内置 ↔ C catalog-src):钉死上架流程(上架经 C,内置=离线回退底座)+ CI 一致性守卫 | debt | X | registered | **S23 登记(2026-07-06,用户质询挖出)**:两次实证漂移——S22 撤架只撤 A 侧(联网用户仍看 C 下发的三条恒失败条目,S23 经 alpha-web PR #7 补齐)、S23 上架 E2/E6 先只写 A 侧;流程拍板(单一作者源 vs 双写+守卫)待用户;详见 [requirements/REQ-046](requirements/REQ-046-catalog-dual-source-guard.md) |
 | REQ-040 | 冷启动陈旧 defaultServerUrl 无存活校验 → 连死端口卡「无法连接到 Local Server」 | bug | A | verified | **S20 真机批 finding F-1(2026-07-06)**:`opencode.settings` 存了具体端口本地 URL(52743),sidecar 每次随机端口 → 冷启动连死端口无回退。修=`isEphemeralLocalServerUrl` 判易失本地 URL → `getDefaultServer` 丢弃回退 "sidecar";5 单测(口径修正,S20 审计:原误记 9);零改上游。**verified(重打包签名包)**:植死端口 `59999` → 冷启动正常起窗无「无法连接」(截图 f1-fix-staleboot-ok)。触发面窄(仅手动「设为默认」写入)但无恢复入口(REQ-014 家族);详见 [requirements/REQ-040](requirements/REQ-040-stale-default-server-coldboot.md) |
 | REQ-041 | effort chip 对上游英文 variant 模型失效(deepseek=cn 默认:显示不符+切换失败) | bug | A | verified | **S20 真机批 finding F-2(2026-07-06)**:deepseek variant 来自上游=英文 low/medium/high,REQ-029 只认中文 低/中/高 → 显示回退默认档 + cycle 永不命中「切换失败」。修=`variant-normalize.ts` 双向规范化(纯函数,5 单测;口径修正,S20 审计:原误记 10,两文件合计 +10)+ `current()`/`switchVariantTo` 按规范化比较;零改上游。**verified(重打包签名包·显示一致性)**:deepseek `low→低`、`high→高` 实测(修前 low 错显「高」);switch UI 实拍留残单(Portal/事件委托 CDP 难驱动,机制单测锁定)。cn 默认模型体验 bug;详见 [requirements/REQ-041](requirements/REQ-041-effort-chip-english-variant.md) |
 
@@ -89,7 +90,7 @@
 | C9 | 代码上云数据边界 mini-ADR:diff-only/secrets 过滤/consent/体积上限(T4.5) | security | X | shipped | **S11 T3 完成(PR #56)= [ADR-021](../.claude/rules/adrs/ADR-021-cloud-data-boundary.md)**:显式通道 diff-only+1MB 帽+secrets 拒发(落点 dispatchCloudJob,待实现随 B3 记账)· 隐式通道=告知+BYOK 逃生(不装过滤)· consent 双挂钩留 B16 拍时机;与 B16 分工写明,B16 重启零返工 |
 | C14 | 升级静默破坏面:232 选择器 / 23 处 `as any`;薄 re-export 收敛层(ADR-016 待办①) | debt | A | shipped | **S11 T8(PR #62)**:① `alpha-ui/providers.ts` 薄层建立(组件不得直 import @opencode-ai/app,复核 grep 在册)③ as any 清点 23 处=同一类 SDK codegen 偏斜,双文件契约锚(逐处手写类型不做=第二耦合面)④ brand/patch transform 默认 strict(打偏 build 红,`ALPHA_PATCH_LENIENT=1` 逃生)② 选择器载体=REQ-012 锚点+重指时机收敛到 re-freeze(ADR-020 §5);data-alpha-* 全量重打点不做(冻结使收益消失);详录 [audits/c14](audits/2026-07-04-c14-coupling-convergence.md) |
 | C15 | 运行时 SSE/DOM 浪费:firehose 裸遍历 + body 全子树 MutationObserver 收窄 | perf | A | ready | R6:有去抖,影响弱于字面;含 A3 尾项:`session.idle` 全量 session.list 去抖(册 §7g deferred);**(/loop 2026-07-04 defer)** 触多注入组件+漏更新回归风险,验收④需真机 CPU 对比,ROI 低 → 性能专项,详见档 |
-| C16 | 卸载残留 ≈0.8GB 含凭证:清理方案 + app 内数据清除入口 | debt | A | ready | |
+| C16 | 卸载残留 ≈0.8GB 含凭证:清理方案 + app 内数据清除入口 | debt | A | shipped | **S23 shipped(2026-07-06,PR #120)**:清除引擎 `data-clear.ts`(electron-free,13 单测:分级清单/守卫根 realpath 复核/symlink 不跟随/桥链只摘自有/TOCTOU 拒删/失败不静默)+「数据 ▸ 清除数据…」分级对话框(凭证级=清密钥+登出+respawn 防复活;全部级=仅打包态,先备份提示→红色终确认+引擎数据共享面 checkbox→停引擎→清→退出)+ `docs/UNINSTALL.md`(与引擎清单同源,菜单直达);钥匙串 safeStorage 项无 API 可代删=文档手动法(验收①「钥匙串项」按此收窄);dmg 内嵌指引未做(随下次真实发版评估);**verified 待真机**(对话框实拍/凭证级登出态/全部级 du 复核)→ 下一真机批;详见 [requirements/C16](requirements/C16-uninstall-residue.md) |
 | C17 | schema 版本兼容守卫(旧 app × 新 DB) | debt | A | shipped | **S17 T3 shipped(2026-07-05)**:初次 spawn 前预检——DB 超前(未知迁移)→ 阻断对话框〔退出推荐/备份后继续/直接继续〕,不静默继续;将前进 → pre-migration 自动备份;守卫故障 fail-open;支持面清单=构建期派生 JSON 进包(零运行时 import core,硬约束②);34 单测含真 sqlite3 降级场景 fixture;**verified 待打包态演练**(原生对话框 → 真机批);详见 [requirements/C17](requirements/C17-schema-version-guard.md) |
 | C20 | alpha-ui i18n 断裂:9 组件硬编码简中 + 每语种 OpenCode 残留(zh:19/en:30)(S8) | ux | A | ready | R7:爆炸半径大于初报;**(/loop 2026-07-04 defer)** 体量大(9 组件)+ 需双语视觉核验(离线不可做)→ i18n 专项;可先拆 brand-i18n 残留 grep 清零子任务,详见档 |
 | C21 | 无障碍:focus-trap/键盘/Escape/对比度/reduced-motion(S8) | ux | A | ready | |
@@ -99,12 +100,13 @@
 | C28 | placebo 控件诚实化(composer 只读/effort)+ 崩溃屏接管设计 | ux | A | verified | **S17 T4 shipped(2026-07-05)**:①控件拍板+实施——只读档移除(与 ask 引擎行为完全相同,真只读→REQ-028)/ effort 改文案保留(「预设·暂未接入」,真接入→REQ-029);②AlphaBoundary 下沉边界紧裹 10 注入件(alpha 崩溃=右下浮条局部降级+重载此区域,B22 降落伞);③throw 实测 PASS(dev CDP:浮条命中+app 存活+上游 ErrorPage 未出,截图在册);`__alphaCrashProbe` 探针常驻;brief+拍板 [debates/c28-brief](debates/2026-07-05-c28-honest-controls-brief.md),证据 [audits/s17-t4](audits/2026-07-05-s17-t4-c28/verify.md);**verified(2026-07-06,S20 B1,S20 审计收尾补翻)**:打包态完整闭环——`__alphaCrashProbe("AlphaSidebar")` → 浮条「重载此区域」命中 + 上游全屏 ErrorPage 未出 + composer/首页存活 + 复位重载侧栏复活(截图 b1-crashprobe,[audits/s20 B1](audits/2026-07-06-s20-realmachine-vnext/verify.md)) |
 | REQ-042 | REQ-040 丢弃陈旧默认服务器:静默无日志 + 陈旧键永不清理 | debt | A | verified | S20 审计发现(2026-07-06):`getDefaultServer` 命中易失本地 URL 直接返 null,**零日志**(B11 反静默);陈旧 `defaultServerUrl` 键从不清除。**shipped(同日,S20 审计续批,PR #115)**:治理下沉 main `getDefaultServerUrl`(读取的唯一消费点)——命中即 `main.log` 留痕 + 删键;谓词移 `shared/ephemeral-server-url.ts`(main/renderer 共用,connections re-export 保住既有面);renderer 检查降为纵深兜底(兜到 console.warn 不静默)。set-default 写入时不拦(彼时 URL 真活),只在冷启动读取处治理。**verified(2026-07-06,S21 真机批 B4a)**:植 `defaultServerUrl:http://127.0.0.1:59998` → main.log `[server] discarding stale local default server url … (stale key removed)` + store 键消失 + 冷启动无「无法连接」([audits/s21](audits/2026-07-06-s21-realmachine-vnext2/verify.md))|
 | REQ-043 | variant/agent cycle 的 DOM 轮询竞态:observer 滞后 >90ms 假报「切换失败」 | debt | A | shipped | S20 审计发现(2026-07-06):`switchVariantTo`/`switchAgentTo` 逐步 trigger + 固定 90ms 后读 DOM 判停;S20 verify 实测到一次 observer 滞后。**shipped(同日,S20 审计续批,PR #115)**:新增 `cycle-to.ts` 等待原语(read/step 注入、不引 Solid)——单步「轮询等真实文本变化」判档(变化即返,典型切换更快),单步超时 600ms 无变化=控件无响应诚实 false,转满一圈判定不变;两个 switch 重接,7 单测含滞后 60ms 竞态回归例。**verified 待**真机 popover 点选实拍(S21 B4b:ChipPopover 走 Solid Portal + 事件委托,CDP 原生鼠标点开后 item 不渲染 → 与 REQ-041 同款 CDP 驱不动,留真人点选;机制单测已锁)|
-| REQ-044 | 迁移候选名字匹配把用户自建技能列为候选(替换风险)+ catalog mcp-builder 打包资产缺失(条目安装恒失败) | bug | A | shipped | **S22 shipped(2026-07-06,PR #119)**:① provenance 终审下沉 main(`verifyLegacyProvenance`,electron-free)——skill=旧位与打包资产**逐字节比对**(pre-T2 安装是资产逐字节拷贝,漂移=用户内容→排除);mcp=catalog 形状(runner+包基名去钉版+参数数+无外来键+env⊆requiredEnvVars);plugin=基名等且未钉版∨同钉版;不可证明一律排除(fail-closed,宁漏迁不碰用户内容)+ `[req044-provenance]` main.log 留痕;IPC `ext-migrate-verify` + hub 按裁决过滤;+7 单测(455 全绿)。② catalog 撤 mcp-builder/canvas-design/brand-guidelines 三无资产条目 + 空壳 bundle:design 整撤 + bundle:dev 摘成员;补货正道=远程 catalog(REQ-032)零发版。**verified 待**真实根迁移开门演练(用户自建内容在场验证排除)→ 下一真机批。原始发现:S21 真机批 M1,证据 [audits/s21](audits/2026-07-06-s21-realmachine-vnext2/verify.md) |
+| REQ-044 | 迁移候选名字匹配把用户自建技能列为候选(替换风险)+ catalog mcp-builder 打包资产缺失(条目安装恒失败) | bug | A | shipped | **S22 shipped(2026-07-06,PR #119)**:① provenance 终审下沉 main(`verifyLegacyProvenance`,electron-free)——skill=旧位与打包资产**逐字节比对**(pre-T2 安装是资产逐字节拷贝,漂移=用户内容→排除);mcp=catalog 形状(runner+包基名去钉版+参数数+无外来键+env⊆requiredEnvVars);plugin=基名等且未钉版∨同钉版;不可证明一律排除(fail-closed,宁漏迁不碰用户内容)+ `[req044-provenance]` main.log 留痕;IPC `ext-migrate-verify` + hub 按裁决过滤;+7 单测(455 全绿)。② catalog 撤 mcp-builder/canvas-design/brand-guidelines 三无资产条目 + 空壳 bundle:design 整撤 + bundle:dev 摘成员;补货正道=远程 catalog(REQ-032)零发版。**S23 补(2026-07-06)**:② 只撤了 A 内置半边——C 侧 catalog-src 仍在下发同三条(远端整份替换内置 → 联网用户撤架无效),经 alpha-web PR #7 补齐;根因登记 [[REQ-046]]。**verified 待**真实根迁移开门演练(用户自建内容在场验证排除)→ 下一真机批。原始发现:S21 真机批 M1,证据 [audits/s21](audits/2026-07-06-s21-realmachine-vnext2/verify.md) |
 
 ## Active — P3(卫生)
 
 | ID | 标题 | 类 | 仓 | 状态 | 备注 |
 |---|---|---|---|---|---|
+| REQ-045 | 撤下条目远程补货:mcp-builder/canvas-design/brand-guidelines 三 skill 资产经远程 catalog 上架(来源核验+NOTICE+sha256) | feature | C | registered | **S23 登记(2026-07-06)**:S22(REQ-044 ②)撤三无资产条目时钉死的补货正道;走 REQ-032 远程管线,A 零发版;前置=Apache-2.0 再分发来源核验;详见 [requirements/REQ-045](requirements/REQ-045-remote-catalog-restock.md) |
 | REQ-007 | ADR-015 待办①③:per-agent prompt 优化清单 + Tier-3 回答长度校准桌面实测 | docs | A | registered | 待办②(sync tripwire)已随 S7 完成;**(/loop 2026-07-04 defer)** ① 属 Tier-3 行为判断需拍板、③ 需桌面真机实测 → 并入真机批,详见档 |
 | D2 | `/v1/models` live 同步死代码 | debt | A | dup | **→ 并入 REQ-001**(接进 picker 按白名单装配) |
 | D3 | 官方 4 条 Anthropic skills 内容打包 + NOTICE(T5.3) | feature | A | dup | **→ 并入 REQ-018**(T7 官方 skill 资产打包);原状:现诚实失败,非占位 |
@@ -119,8 +121,8 @@
 
 | ID | 标题 | 类 | 仓 | 状态 | 备注 |
 |---|---|---|---|---|---|
-| E2 | 钉钉 MCP(补齐飞书/语雀国产三件套) | feature | A | ready | 核实官方包名/鉴权字段;~~R3 门控~~ **已解锁(2026-07-05,A6 verified)** |
-| E6 | 数据库 MCP(sqlite/postgres 读 schema + SELECT) | feature | A | ready | 命令型,无 OAuth;~~R3 门控~~ **已解锁(2026-07-05,A6 verified)** |
+| E2 | 钉钉 MCP(补齐飞书/语雀国产三件套) | feature | A | shipped | **S23 shipped(2026-07-06,PR #120 + alpha-web PR #7 双侧上架)**:`dingtalk-mcp@1.1.21`(open-dingtalk 官方发布,MIT 按 npm 元数据;env=DINGTALK_Client_ID/Client_Secret {file:} 化,ACTIVE_PROFILES 可选)+ 入中国办公套件;**供应链警示入 _verify**:官方 org 仓库仅 README、npm 工件无公开源码可审计;官方另有 HTTP+OAuth 网关形态(mcp-gw.dingtalk.com),A 侧无 OAuth 承载暂不接;**verified 待真机**(hub 安装+首调用)|
+| E6 | 数据库 MCP(sqlite/postgres 读 schema + SELECT) | feature | A | shipped | **S23 shipped(2026-07-06,PR #120 + alpha-web PR #7 双侧上架)**:`@bytebase/dbhub@0.12.0 --readonly`(Bytebase 官方,MIT;PG/MySQL/MariaDB/SQLServer/SQLite;DSN 经 env {file:} 采集不落明文);钉 0.12.0=最后支持 --readonly CLI 档版本(0.13.0 起只读需 TOML,安装链无 TOML 通道,理由入 _verify);+ catalog 完整性回归锁单测(id 唯一/bundle 零悬空/钉版本/REQ-044 撤下条目不回流/--readonly 在场);**verified 待真机**(安装+SELECT/写拒绝走查)|
 | E11 | 定制中心目录筛选 UI(category/license) | ux | A | dup | **→ 并入 REQ-019**(hub 左栏 IA + 筛选,T7);catalog schema 已带元数据 |
 | E5 | 日历 MCP(Google/macOS) | feature | A | registered | 阻塞:OAuth/凭据存储(keychain TODO,ADR-014 §8) |
 | E8 | Slack/Teams MCP | feature | A | registered | 阻塞同 E5 |
@@ -140,9 +142,13 @@
 | REQ-034 | 外部生态导入转换器:Claude Code plugin 大礼包→套件扇出 + Codex 可共享物导入(安装期转换,[[ADR-023]]) | 用户 2026-07-05:立项但暂不开发,想清楚再启动 | 用户拍板启动(按 ADR-023 执行);详见 [requirements/REQ-034](requirements/REQ-034-ecosystem-import-converter.md) |
 | REQ-035 | 本地 harness-as-executor(claude/codex 委托执行,tool/MCP 接缝);长期演进=会话级并轨(GOALS G5) | 用户 2026-07-05:立项但暂不开发,想清楚再启动 | 第一阶段=用户拍板启动;并轨阶段另有硬前置(challenge+POSITIONING 修订+承载 spike+独立 ADR,见档) |
 
-## 当前 sprint → **S22 REQ-044 迁移 provenance + catalog 撤无资产条目(2026-07-06 开批)**
+## 当前 sprint → **S23 C16 数据清除入口 + E2/E6 MCP 条目(2026-07-06 开批)**
 
-> S21 收批后顺承抽取(快车道 bug,验收自明,WIP=1 满足)。① 迁移候选加 provenance 判据(打包资产逐字节比对,消除用户自建同名技能被覆盖的风险,落实 ADR-019 §4)② catalog 撤 mcp-builder/canvas-design/brand-guidelines 三个无资产条目 + 空壳 bundle:design(补货正道=REQ-032 远程 catalog)。契约:[sprints/2026-07-06-s22-req044-migration-provenance](sprints/2026-07-06-s22-req044-migration-provenance/sprint.md)。⚖️ 提醒:B16 PIPL go/no-go 仍待用户拍板(随 ship gate 再问)。
+> S22 收批后顺承抽取:P0 空、短名单余项 verified-pending/parked → 抽 ready 池可离线交付项 **C16(headline)+ E2/E6(顺带,供给域聚类)**;真机依赖项(B22 复现/D5/REQ-005 核验/各 verified 残单)攒下一真机批。顺带登记 REQ-045(S22 撤条目补货,唯一漏登记意图)。契约:[sprints/2026-07-06-s23-data-clear](sprints/2026-07-06-s23-data-clear/sprint.md)。⚖️ 提醒:B16 PIPL go/no-go 仍待用户拍板(随 ship gate 再问)。
+
+## 上一 sprint → **S22 REQ-044 迁移 provenance + catalog 撤无资产条目 —— 已收尾(2026-07-06)**(历史)
+
+> 快车道 bug(S21 真机批 M1 发现),PR #119:① 迁移 provenance 终审(逐字节/形状比对,fail-closed 宁漏迁不碰用户内容)② catalog 撤三无资产条目 + 空壳 bundle:design(补货=REQ-045)。契约:[sprints/2026-07-06-s22-req044-migration-provenance](sprints/2026-07-06-s22-req044-migration-provenance/sprint.md)。
 
 ## 上一 sprint → **S21 真机批 vNext-2 + REQ-014 修法 —— 已收尾(2026-07-06)**(历史)
 

@@ -2,6 +2,7 @@
 
 > 权威发版文档。把 alpha(opencode 引擎 + 自有前端/后端)打成**你自己**的、签名+公证、可分发给任意 Mac 的 app,并经 GitHub Release 走自动更新。
 > 首个签名+公证发布:**v0.1.0**(2026-07-03,`jinjunnn/alpha-code`),下述流程即由它验证。
+> 卸载与数据残留:见 [UNINSTALL.md](UNINSTALL.md)(C16;app 内入口 = 数据 ▸ 清除数据…)。
 
 ## 0. 前置(已就绪,一次性)
 

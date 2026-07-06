@@ -33,6 +33,7 @@ import { GLOBAL_RENDERER_STORE, runTabsPreclean } from "./tabs-preclean"
 import { checkSessionExistsViaFetch } from "./tabs-preclean-io"
 import { parseMarkdown } from "./markdown"
 import { createDbMenuActions, runDbPreflightBoot } from "./db-safety-boot"
+import { createDataClearAction } from "./data-clear-boot"
 import { createMenu } from "./menu"
 import {
   getDefaultServerUrl,
@@ -659,6 +660,8 @@ const main = Effect.gen(function* () {
       },
       // S17 T3(B14①②):「数据」菜单 —— DB 手动备份/导出/打开备份文件夹
       data: createDbMenuActions({ userDataPath: app.getPath("userData"), getWindow: () => mainWindow }),
+      // S23(C16):清除数据(分级:仅凭证 / 全部数据)—— B14 同屏(验收④)
+      dataClear: createDataClearAction({ userDataPath: app.getPath("userData"), stopSidecars }),
     })
   }
 })
