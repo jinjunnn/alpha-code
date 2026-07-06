@@ -28,6 +28,9 @@ import { syncLiveAllowlist } from "./alpha-platform-models"
 import { registerProviderIpcHandlers } from "./provider-ipc"
 import { forwardInitializationFailure } from "./initialization"
 import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
+import { getStore } from "./store"
+import { GLOBAL_RENDERER_STORE, runTabsPreclean } from "./tabs-preclean"
+import { fetchSessionIdsViaSdk } from "./tabs-preclean-io"
 import { parseMarkdown } from "./markdown"
 import { createDbMenuActions, runDbPreflightBoot } from "./db-safety-boot"
 import { createMenu } from "./menu"
@@ -380,7 +383,18 @@ const main = Effect.gen(function* () {
   registerRendererProtocol()
   setDockIcon()
   const updater = setupAutoUpdater(stopSidecars)
+  // REQ-014:冷启动 tabs 毒键预清 —— tier-1 格式级同步执行(此刻窗口未建,写回零竞态);tier-2 存在性
+  // 校验等 serverReady(时限 fail-open)。renderer 对 tabs 两键的首读经 store-get gate 等 done(ipc.ts),
+  // 故窗口照常先开(A1 window-first),只有 tabs 路由恢复数据最多晚数秒。
+  const tabsPreclean = runTabsPreclean({
+    getValue: (key) => getStore(GLOBAL_RENDERER_STORE).get(key),
+    setValue: (key, value) => getStore(GLOBAL_RENDERER_STORE).set(key, value),
+    log: (line) => logger.log(line),
+    awaitServer: () => Effect.runPromise(Deferred.await(serverReady)).catch(() => null),
+    fetchSessionIds: fetchSessionIdsViaSdk,
+  })
   registerIpcHandlers({
+    tabsPrecleanDone: tabsPreclean.done,
     killSidecar: () => killSidecar(),
     // B11 复扫行11:停手 banner 的「重试」—— 用户显式动作,阶梯清零重新给满自愈机会;respawn 走
     // 既有互斥/合并入口(requestSidecarRespawn 在窗口建成时赋值;此前调用为 no-op)。

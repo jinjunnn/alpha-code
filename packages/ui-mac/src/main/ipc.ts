@@ -9,6 +9,7 @@ import type { AuthMode, AuthState, FatalRendererError, ServerReadyData, Titlebar
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
 import { getStore } from "./store"
+import { GLOBAL_RENDERER_STORE, TABS_KEY, TABS_RECENT_KEY } from "./tabs-preclean"
 import { getPinchZoomEnabled, setPinchZoomEnabled, setTitlebar, updateTitlebar } from "./windows"
 import type { UpdaterController } from "./updater-controller"
 import { createUpdaterSubscriptions } from "./updater-subscriptions"
@@ -39,6 +40,8 @@ type Deps = {
   setBackgroundColor: (color: string) => void
   exportDebugLogs: () => Promise<string>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void> | void
+  /** REQ-014:tabs 毒键预清的完成信号;store-get 对 tabs 两键首读等它(runTabsPreclean 保证有硬时限)。 */
+  tabsPrecleanDone?: Promise<void>
   auth: {
     getState: () => AuthState
     start: () => Promise<void>
@@ -91,7 +94,12 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("auth-logout", () => deps.auth.logout())
   ipcMain.handle("auth-set-mode", (_event: IpcMainInvokeEvent, mode: AuthMode) => deps.auth.setMode(mode))
   ipcMain.handle("auth-enable-proxy", () => deps.auth.enableProxy())
-  ipcMain.handle("store-get", (_event: IpcMainInvokeEvent, name: string, key: string) => {
+  ipcMain.handle("store-get", async (_event: IpcMainInvokeEvent, name: string, key: string) => {
+    // REQ-014:renderer 恢复 tabs 路由的首读必须拿到预清后的数据(毒键 → 上游整屏崩,alpha 无 renderer
+    // 侧恢复层)。只 gate 这两个键 —— 语言/其他键不受影响,窗口照常先开(A1 window-first 不回退)。
+    if (name === GLOBAL_RENDERER_STORE && (key === TABS_KEY || key === TABS_RECENT_KEY) && deps.tabsPrecleanDone) {
+      await deps.tabsPrecleanDone.catch(() => {})
+    }
     try {
       const store = getStore(name)
       const value = store.get(key)
