@@ -3,7 +3,7 @@ id: REQ-045
 title: 撤下条目远程补货:mcp-builder/canvas-design/brand-guidelines 经远程 catalog 上架
 type: feature
 priority: P3
-status: shipped
+status: verified
 repo: C
 created: 2026-07-06
 sprint: S26
@@ -28,5 +28,5 @@ S22(PR #119)把 catalog 里三个 builtinAssetKey 资产从未随 app 打包、�
 
 ## 结果(2026-07-06,S26 shipped)
 - 验收①②④ 已落(alpha-web PR #10,已部署 prod):来源 = anthropics/skills@`9d2f1ae`,三条 LICENSE.txt 逐条核验 Apache-2.0,NOTICE.md(仓库/钉 commit/改动声明)随资产,canvas-design 字体 SIL OFL 1.1 许可文本随字体;catalog 2026-07-06.2,98 文件 sha256 + ed25519;prod 复验验签 VALID、抽样下载 sha256 全匹配;bundle:design 成员齐回归、bundle:dev 补回 mcp-builder。
-- 验收③(A 零发版链路:刷新→条目出现→安装→账本 origin)= **verified 门,归下一真机批**(联动 REQ-046「C 上架 → hub 安装」演练)。
+- 验收③ **verified(2026-07-06,S27 真机批)**:签名包 hub 三条目远程下发可见 → 安装四要件 + bundle:design 扇出首例全过([audits/vnext3](../audits/2026-07-06-realmachine-vnext3/verify.md))。
 - 细节:[sprints/2026-07-06-s26-req045-restock](../sprints/2026-07-06-s26-req045-restock/sprint.md)。
