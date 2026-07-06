@@ -488,6 +488,25 @@ export function installBuiltinAgent(
 }
 
 /**
+ * 安装远程 agent(REQ-046:补齐零发版最后一类)。资产约定 = 单个 .md 文件(引擎以文件名为 agent 名,
+ * 无 skill 那样的 frontmatter name 通道 → 无 spoof 面);下载层已做 sha256 钉死 + 路径消毒,
+ * 这里再收:单文件 / .md 后缀 / 256KB 帽(与 installBuiltinAgent 同帽)。写盘/桥/账本走 writeAgent 同管线。
+ */
+export function installRemoteAgent(
+  name: string,
+  contents: Array<{ path: string; data: Buffer }>,
+  target?: InstallTarget,
+  meta?: InstallMeta,
+): FsResult {
+  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid agent name" }
+  if (contents.length !== 1) return { ok: false, reason: `agent remote asset must be exactly one .md file (got ${contents.length})` }
+  const file = contents[0]!
+  if (!file.path.endsWith(".md") || file.path.includes("/")) return { ok: false, reason: `agent remote asset must be a top-level .md file (got ${file.path})` }
+  if (file.data.length > 256 * 1024) return { ok: false, reason: "agent md 过大" }
+  return writeAgent(name, file.data.toString("utf8"), target, meta, "catalog")
+}
+
+/**
  * 安装 vendored 插件(零网络):复制 resources/plugins/<key> → ~/.alpha/plugins/<name>/ →
  * plugin[] 写 plugin.js 绝对路径(persistPluginPath 校验路径必须在 ~/.alpha/plugins 树内)。
  */

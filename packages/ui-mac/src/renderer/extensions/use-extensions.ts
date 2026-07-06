@@ -484,7 +484,13 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
   async function installAgentEntry(entry: CatalogEntry): Promise<ActionResult> {
     const spec = entry.installSpec
     if (!spec || spec.kind !== "agent") return { ok: false, reason: "not an agent entry" }
-    const r = await window.api.ext.installBuiltinAgent(spec.builtinAssetKey, entry.name, undefined, metaFor(entry))
+    // REQ-046:远程 agent —— renderer 只传 catalogId(信任边界同远程技能:main 从已验签 catalog 派生)
+    const r =
+      spec.source === "remote" && entry.remoteAsset?.files?.length
+        ? await window.api.ext.installRemoteAgent(entry.id)
+        : spec.builtinAssetKey
+          ? await window.api.ext.installBuiltinAgent(spec.builtinAssetKey, entry.name, undefined, metaFor(entry))
+          : ({ ok: false, reason: "该 Agent 内容尚未随此版本打包" } as const)
     if (!r.ok) return r
     await loadInstalls()
     const refreshed = await refreshEngine()

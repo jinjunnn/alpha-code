@@ -320,6 +320,9 @@ export type ElectronAPI = {
     /** REQ-032:远程技能安装 —— renderer 只传 catalogId;name/清单/版本由 main 从已验签 catalog
      *  重新派生(codex H1 信任边界),下载 sha256 钉死 + builtin 同管线写盘/桥/账本。 */
     installRemoteSkill: (catalogId: string) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
+    /** REQ-046:远程 agent 安装 —— 同 installRemoteSkill 信任边界(main 从已验签 catalog 派生),
+     *  资产约定 = 单个顶层 .md 文件;写盘/桥/账本走 writeAgent 同管线。 */
+    installRemoteAgent: (catalogId: string) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
     installPlugin: (pkg: string, meta?: InstallMeta) => Promise<{ ok: true } | { ok: false; reason: string }>
     installBuiltinSkill: (
       builtinAssetKey: string,

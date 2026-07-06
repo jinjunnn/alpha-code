@@ -64,9 +64,10 @@ export interface PluginInstallSpec {
 
 export interface AgentInstallSpec {
   kind: "agent"
-  source: "builtin"
-  /** resources/agents/<name>.md — vendored md asset (REQ-023 T1). */
-  builtinAssetKey: string
+  /** REQ-046:remote = C 侧远程资产通道(单 .md,sha256 钉死,与 skill 同管线)——新增 agent 零发版。 */
+  source: "builtin" | "remote"
+  /** resources/agents/<name>.md — vendored md asset (REQ-023 T1;source=builtin 必填). */
+  builtinAssetKey?: string
   /** Unverified claim carried from the catalog — surfaced as 「待核实」 on the detail page (D5). */
   _verify?: string
 }
