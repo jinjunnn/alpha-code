@@ -33,4 +33,4 @@
 统一收「**静默失败**」:第一批(T1–T4)= renderer 侧 `void asyncFn()` fire-and-forget 里 **try/finally 缺 catch** 或裸 `.catch(()=>{})`;第二批(T5–T7)= **main 侧只 warn 日志、renderer 无从知晓**的跨进程静默(登录链/连崩停手)+ 最后一个 renderer 静默回退(createSession)。补 catch/事件 → 用户可见反馈(toast/Banner)。T2/T8 = 顺带清死代码与陈旧注释。**复扫矩阵 20 项就此 ⏭ 清零(✅14 + 🆗6 = 100% 有反馈或有意降级)。**
 
 ## 结果
-_T1–T8 代码完成 + 文档回写;gate 全绿(北极星守卫 + typecheck + 415 单测);dev 窗 CDP 冒烟:happy 渲染无回归(侧栏/新 preload API 三件在位)+ **T7 连崩→banner→重试→恢复真实全链 PASS**(见残单节);其余失败态实拍归真机批残单。_
+_T1–T8 全清,**PR #111 合入 alpha(2026-07-06,CI 四关绿)**;gate 全绿(北极星守卫 + typecheck + 415 单测);dev 窗 CDP 冒烟:happy 渲染无回归(侧栏/新 preload API 三件在位)+ **T7 连崩→banner→重试→恢复真实全链 PASS**(见残单节);其余失败态实拍归真机批残单。收批回写(B20 翻 shipped + PR 号入册)随后续 docs 车。_
