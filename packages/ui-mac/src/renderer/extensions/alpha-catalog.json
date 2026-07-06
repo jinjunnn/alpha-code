@@ -1,5 +1,5 @@
 {
-  "version": "2026-07-03.1",
+  "version": "2026-07-06.1",
   "_note": "alpha-code 内置扩展目录(定制中心)。随渲染层 bundle、离线优先。schema 见 docs/designs/2026-06-22-arch-extension-hub.md(CatalogEntry / InstallSpec / bundleItems)。",
   "_disclaimers": [
     "标 _verify 的条目:包名/协议/可用性需落地前手工核实,不得当作已确认事实。",
@@ -266,6 +266,52 @@
       ]
     },
     {
+      "id": "mcp:dbhub",
+      "type": "mcp",
+      "name": "dbhub",
+      "displayName": "数据库(DBHub)",
+      "description": "只读档访问数据库:读库表结构、执行 SELECT 查询(PostgreSQL / MySQL / MariaDB / SQL Server / SQLite;Bytebase 官方)。连接串经 DSN 环境变量密文采集,不落配置文件。",
+      "source": "official",
+      "category": "dev",
+      "license": "MIT",
+      "redistributable": true,
+      "installSpec": {
+        "kind": "mcp",
+        "mcpType": "local",
+        "command": [
+          "npx",
+          "-y",
+          "@bytebase/dbhub@0.12.0",
+          "--transport",
+          "stdio",
+          "--readonly"
+        ],
+        "requiredEnvVars": [
+          "DSN"
+        ],
+        "runtimeDep": [
+          "node"
+        ],
+        "mirrorCommand": [
+          "npx",
+          "-y",
+          "--registry",
+          "https://registry.npmmirror.com",
+          "@bytebase/dbhub@0.12.0",
+          "--transport",
+          "stdio",
+          "--readonly"
+        ],
+        "_verify": "版本钉 0.12.0 的理由(2026-07-06 源码核实,S23/E6):这是最后支持 --readonly CLI 档的版本(0.13.0 起只读改走 TOML 配置文件,catalog 安装链无 TOML 物化通道 → 取零机械只读;0.12.0 未被 npm deprecate,代价=放弃 0.13.0+ 修复)。DSN 支持环境变量注入(src/config/env.ts resolveDSN:--dsn > process.env.DSN),密钥经 {file:} 通道不落盘明文。0.12.0 的 readonly 语义(SELECT 类白名单)与 Node 版本下限未逐项核实 → 真机安装 + SELECT/写拒绝走查待验。"
+      },
+      "tools": [
+        {
+          "name": "execute_sql",
+          "description": "执行 SQL(--readonly 档:仅查询类语句)"
+        }
+      ]
+    },
+    {
       "id": "mcp:feishu",
       "type": "mcp",
       "name": "feishu-lark",
@@ -359,6 +405,55 @@
         {
           "name": "create_doc",
           "description": "新建文档"
+        }
+      ]
+    },
+    {
+      "id": "mcp:dingtalk",
+      "type": "mcp",
+      "name": "dingtalk",
+      "displayName": "钉钉",
+      "description": "接入钉钉开放平台:通讯录、机器人消息、DING、待办、日历等(open-dingtalk 官方发布)。默认启用通讯录/机器人消息/DING 三组工具;需全量 14 组时在定制中心为该连接器补 env ACTIVE_PROFILES=ALL。",
+      "source": "official",
+      "category": "china-office",
+      "license": "MIT",
+      "redistributable": true,
+      "installSpec": {
+        "kind": "mcp",
+        "mcpType": "local",
+        "command": [
+          "npx",
+          "-y",
+          "dingtalk-mcp@1.1.21"
+        ],
+        "requiredEnvVars": [
+          "DINGTALK_Client_ID",
+          "DINGTALK_Client_Secret"
+        ],
+        "runtimeDep": [
+          "node"
+        ],
+        "mirrorCommand": [
+          "npx",
+          "-y",
+          "--registry",
+          "https://registry.npmmirror.com",
+          "dingtalk-mcp@1.1.21"
+        ],
+        "_verify": "供应链警示(2026-07-06 核实,S23/E2):npm 包发布于钉钉官方 open-dingtalk org 名下(维护者 alibaba-inc 邮箱、homepage 指向 open.dingtalk.com 官方文档),但该 GitHub 仓库仅含 README、无 LICENSE 文件 —— npm 工件无公开源码可对照审计,License=MIT 以 npm 元数据为准。环境变量混合大小写为实(DINGTALK_Client_ID / DINGTALK_Client_Secret,取自钉钉开放平台应用凭证);ACTIVE_PROFILES 可选(缺省=通讯录/机器人/DING 三组)。真机安装 + 首调用待走查。"
+      },
+      "tools": [
+        {
+          "name": "contacts.*",
+          "description": "查询通讯录用户与部门(默认启用,6 个工具)"
+        },
+        {
+          "name": "robot-send-message.*",
+          "description": "群机器人发送消息(默认启用,5 个工具)"
+        },
+        {
+          "name": "ding-message.*",
+          "description": "发送 DING 消息(默认启用,2 个工具)"
         }
       ]
     },
@@ -535,7 +630,7 @@
       "type": "bundle",
       "name": "china-office-suite",
       "displayName": "中国办公套件",
-      "description": "飞书 + 语雀(+ 钉钉,待补)连接器,贴合国内协作。",
+      "description": "飞书 + 语雀 + 钉钉连接器,贴合国内协作。",
       "source": "alpha",
       "category": "china-office",
       "license": "MIT",
@@ -550,9 +645,13 @@
           "catalogEntryId": "mcp:yuque",
           "optional": true,
           "installOrder": 2
+        },
+        {
+          "catalogEntryId": "mcp:dingtalk",
+          "optional": true,
+          "installOrder": 3
         }
-      ],
-      "_verify": "补钉钉(open-dingtalk 官方 MCP)条目后加入。"
+      ]
     },
     {
       "id": "cloud:code-review",
