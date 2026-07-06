@@ -123,34 +123,41 @@ export function sanitizeTabsValue(tabsValue: unknown, recentValue: unknown): San
 }
 
 /**
- * tier-2 存在性过滤(纯逻辑,查询注入)。listSessionIds 返回该目录的会话 id 集;返回 null = 查询失败/
- * 分页未尽等不确定态 → 该目录整组 fail-open 保留。只动合法 session tab;draft/未知型不碰。
+ * tier-2 存在性过滤(纯逻辑,查询注入)。checkSession 按 id 直查(`GET /api/session/{id}`,S21 真机
+ * 实测契约:200=存活 / 404+SessionNotFoundError=悬空):true=存活留,false=悬空剔,null=不确定
+ * (网络错/超时/非典型响应)→ fail-open 保留并计数(留痕,B11 反静默)。只动合法 session tab。
+ * (原设计按目录 session.list 判集合,真机实测 limit 不生效、每页仅 2 条 → cursor.next 恒在 →
+ * 「分页未尽 fail-open」使 tier-2 恒空转;S21 走查当场发现并改按 id 直查。)
  */
 export async function dropDanglingSessionTabs(
   tabs: unknown[],
-  listSessionIds: (dirBase64: string) => Promise<ReadonlySet<string> | null>,
-): Promise<{ tabs: unknown[]; drops: PrecleanDrop[] }> {
-  const dirs = new Map<string, ReadonlySet<string> | null>()
+  checkSession: (sessionId: string) => Promise<boolean | null>,
+): Promise<{ tabs: unknown[]; drops: PrecleanDrop[]; uncertain: number }> {
+  const ids = new Map<string, boolean | null>()
   for (const t of tabs) {
     const tab = t as AnyTab
-    if (isValidSessionTab(tab) && !dirs.has(tab.dirBase64 as string)) dirs.set(tab.dirBase64 as string, null)
+    if (isValidSessionTab(tab) && !ids.has(tab.sessionId as string)) ids.set(tab.sessionId as string, null)
   }
   await Promise.all(
-    [...dirs.keys()].map(async (dir) => {
+    [...ids.keys()].map(async (sid) => {
       try {
-        dirs.set(dir, await listSessionIds(dir))
+        ids.set(sid, await checkSession(sid))
       } catch {
-        dirs.set(dir, null)
+        ids.set(sid, null)
       }
     }),
   )
   const drops: PrecleanDrop[] = []
+  let uncertain = 0
   const kept = tabs.filter((t) => {
     const tab = t as AnyTab
     if (!isValidSessionTab(tab)) return true
-    const ids = dirs.get(tab.dirBase64 as string)
-    if (ids === null || ids === undefined) return true // 查询失败/不确定 → fail-open
-    if (ids.has(tab.sessionId as string)) return true
+    const alive = ids.get(tab.sessionId as string)
+    if (alive === true) return true
+    if (alive === null || alive === undefined) {
+      uncertain++
+      return true // 不确定 → fail-open
+    }
     drops.push({
       where: "tabs",
       reason: "dangling session tab (session no longer exists — REQ-014 形态 A)",
@@ -158,7 +165,7 @@ export async function dropDanglingSessionTabs(
     })
     return false
   })
-  return { tabs: kept, drops }
+  return { tabs: kept, drops, uncertain }
 }
 
 // ---------- 编排(依赖注入;index.ts 接线真实 store/logger/SDK) ----------
@@ -173,23 +180,15 @@ export type TabsPrecleanDeps = {
   log: (line: string) => void
   /** serverReady 的 promise 化;调用方不 race,超时由本模块统一管。 */
   awaitServer: () => Promise<{ url: string; username: string | null; password: string | null } | null>
-  /** 按目录列会话 id;null = 不确定(错误/分页未尽)→ fail-open。 */
-  fetchSessionIds: (
+  /** 按 id 查会话存在:true=存活 / false=悬空 / null=不确定 → fail-open。 */
+  checkSession: (
     server: { url: string; username: string | null; password: string | null },
-    directory: string,
-  ) => Promise<ReadonlySet<string> | null>
+    sessionId: string,
+  ) => Promise<boolean | null>
   /** tier-2 等 serverReady 的上限(默认 5000ms);超过 = fail-open 跳过存在性校验。 */
   serverWaitMs?: number
-  /** tier-2 全部目录查询的总预算(默认 2500ms);超过 = 未回目录 fail-open。 */
+  /** tier-2 全部存在性查询的总预算(默认 2500ms);超过 = 未回项 fail-open。 */
   queryBudgetMs?: number
-}
-
-export function decodeDirBase64(dirBase64: string): string | null {
-  try {
-    return Buffer.from(dirBase64, "base64url").toString("utf8")
-  } catch {
-    return null
-  }
 }
 
 /**
@@ -254,12 +253,11 @@ export function runTabsPreclean(deps: TabsPrecleanDeps): { done: Promise<void> }
         return
       }
       const budget = new Promise<null>((r) => setTimeout(r, queryBudgetMs, null))
-      const listSessionIds = async (dirBase64: string): Promise<ReadonlySet<string> | null> => {
-        const directory = decodeDirBase64(dirBase64)
-        if (!directory) return null
-        return Promise.race([deps.fetchSessionIds(server, directory).catch(() => null), budget])
-      }
-      const res = await dropDanglingSessionTabs(tier1Tabs, listSessionIds)
+      const checkSession = async (sessionId: string): Promise<boolean | null> =>
+        Promise.race([deps.checkSession(server, sessionId).catch(() => null), budget])
+      const res = await dropDanglingSessionTabs(tier1Tabs, checkSession)
+      if (res.uncertain > 0)
+        deps.log(`[req014-preclean] tier-2 fail-open: ${res.uncertain} session tab(s) unverifiable (query error/timeout) — kept as-is`)
       if (res.drops.length > 0) {
         writeBack(res, reencodeTabs, null)
         // recent 若指向刚被剔的 tab,一并收敛(重算幸存 key 集)。
