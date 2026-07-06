@@ -16,7 +16,7 @@
 - **根因**:`opencode.settings`(electron-store)持久化了 `defaultServerUrl: http://127.0.0.1:52743`(具体端口);sidecar 每次 `server.listen(0)` 随机新端口(本次 62919)→ `availableStartupServer` 原样返回陈旧 URL → AppInterface 连死端口 52743。日志佐证:`getDefaultServerUrl()` 返回 52743 而 `server ready` 在 62919。
 - **触发面/严重度**:`setDefaultServer` **仅**由手动「服务器选择」弹窗的「设为默认」按钮 + WSL 设置写入(`app/src/components/dialog-select-server.tsx:70`、`wsl/settings.tsx:139`),**无自动持久化路径**;alpha 侧栏隐藏该 chrome → 普通用户不触发。本机 52743 = 历次 dev/prod 实验或旧 Tauri 迁移遗留的**污染态**,非普遍冷启动 bug(与 S16 verified 正常启动一致)。
 - **处置**:备份 `opencode.settings`(工作备份,含用户真实态,未入库)后删 `defaultServerUrl` 键 → 冷启动恢复(P2 截图)。
-- **真实缺口(记一笔)**:持久默认对 sidecar 型 localhost URL **无存活校验、无回退到 `sidecar`**——属 REQ-014「陈旧 store → 冷启动破且无恢复入口」家族。→ **已修(REQ-040,本 PR)**:`wsl/connections.ts` 加纯函数 `isEphemeralLocalServerUrl`(判 `127.0.0.1|localhost|[::1]:PORT`),`getDefaultServer` 读到即返 null → 回退 `sidecar`;9 单测;零改上游。**verified 待**重打包冷启动(植陈旧 key → 回退正常起窗)。
+- **真实缺口(记一笔)**:持久默认对 sidecar 型 localhost URL **无存活校验、无回退到 `sidecar`**——属 REQ-014「陈旧 store → 冷启动破且无恢复入口」家族。→ **已修(REQ-040,本 PR)**:`wsl/connections.ts` 加纯函数 `isEphemeralLocalServerUrl`(判 `127.0.0.1|localhost|[::1]:PORT`),`getDefaultServer` 读到即返 null → 回退 `sidecar`;5 单测(口径修正见文末);零改上游。**verified 待**重打包冷启动(植陈旧 key → 回退正常起窗)。
 
 ## M 组 —— 扩展生命周期(本批未执行,归下批;不阻断)
 
@@ -41,7 +41,7 @@
 - **现象**:deepseek-v4-flash 下 effort chip 启用(title=「推理强度」非「不支持」)且显示「高」,但上游 `[data-action=prompt-model-variant]` 实际值 = 「low」;点选任意档报「切换失败」。
 - **根因**:REQ-029 的 `EffortChip` 假设上游 variant 标签是 alpha 配置的中文 `低/中/高`(alpha-models.json 只给 claude-opus-4.8/claude-sonnet-4.6/gpt-5.4-mini 定义中文 variants)。deepseek 的 variants 来自**上游 opencode 模型定义、是英文 low/medium/high**——不在 `EFFORTS`(低/中/高/超高)集合 → ① `current()` 回退到默认 `effort()`=「高」(与引擎实际 low 不符,破 REQ-029「观察源一致性」)② `switchVariantTo(cmd,"高")` 逐 cycle 读英文标签、中文永不命中 → 转满一圈返 false → 「切换失败」。实证:上游 trigger 起始文本 = `low`;config/providers 含 low/medium/high variant token。
 - **严重度**:中——影响一整类「上游提供 variant 且标签非中文」的模型;deepseek 是 **cn 版默认模型**,cn 用户即见此不一致 + 无法切档。REQ-029 的 echo 实验只测了 3 个 alpha 中文 variant 模型,漏了上游英文 variant 类。
-- **建议**:variant 标签规范化(英文 low/medium/high ↔ 中文 低/中/高 双向映射)。→ **已修(REQ-041,本 PR)**:新增 `variant-normalize.ts`(纯函数 `normalizeVariant`,10 单测),`current()` 显示规范化档、`switchVariantTo` 按规范化命中。**dev 确认显示一致**:deepseek-v4-pro variant=`high` → chip 显示「高」(修前 `high`∉EFFORTS 会回退默认);**switch 切换的打包态实拍**(多档模型 + 真 command 层)→ 重打包批(dev 无法驱动 command 层 + 单档模型)。
+- **建议**:variant 标签规范化(英文 low/medium/high ↔ 中文 低/中/高 双向映射)。→ **已修(REQ-041,本 PR)**:新增 `variant-normalize.ts`(纯函数 `normalizeVariant`,5 单测;口径修正见文末),`current()` 显示规范化档、`switchVariantTo` 按规范化命中。**dev 确认显示一致**:deepseek-v4-pro variant=`high` → chip 显示「高」(修前 `high`∉EFFORTS 会回退默认);**switch 切换的打包态实拍**(多档模型 + 真 command 层)→ 重打包批(dev 无法驱动 command 层 + 单档模型)。
 
 ## B 组 —— 边界/崩溃/呈现
 
@@ -75,5 +75,10 @@ B2 短 TTL · logout→重登 · 真断网 vendored · 真睡眠错过 · REQ-03
 ship2 = alpha HEAD + 两修复,prod 签名+公证(stapler worked / spctl accepted / Notarized Developer ID),装 /Applications。
 
 - **F-1 → verified ✅**:向真实 `opencode.settings` 植入陈旧死端口 `defaultServerUrl: http://127.0.0.1:59999` → 冷启动:侧栏渲染、**无「无法连接到 Local Server」**(`connectFail:false`)、项目加载、登录态 in。修前同一陈旧 key 必卡冷启动。截图 `shots/f1-fix-staleboot-ok.png`。测试 key 已从真实 store 清除。
-- **F-2 → verified ✅(显示一致性)**:deepseek-v4-flash(cn 默认)effort chip 现随引擎 variant 规范化显示 —— 直接驱动上游 variant 触发器观测:`low → 低`、`high → 高`(逐字 CDP eval 实测);**修前 `low`∉EFFORTS 会错显回退默认「高」**。`medium → 中` 走同一 `normalizeVariant` 代码路径(10 单测覆盖;实测有一次读到「低」为 DOM observer 异步滞后,非逻辑错——`high` 稳定后显示正确)。截图 `shots/f2-fix-deepseek-effort.png`。
-- **F-2 switch(切换)残留**:经 popover UI 点选切档的打包态实拍未取到(ChipPopover 走 Solid Portal + 事件委托,CDP `.click()` 未能稳定驱动);`switchVariantTo` 的规范化 `hit()` 比较由 10 单测锁定 + 显示跟随已证 `normalizeVariant` 生效。判定:显示修复 verified;切换机制单测 verified,UI 实拍留残单(真人点选或后续注入 command 层)。
+- **F-2 → verified ✅(显示一致性)**:deepseek-v4-flash(cn 默认)effort chip 现随引擎 variant 规范化显示 —— 直接驱动上游 variant 触发器观测:`low → 低`、`high → 高`(逐字 CDP eval 实测);**修前 `low`∉EFFORTS 会错显回退默认「高」**。`medium → 中` 走同一 `normalizeVariant` 代码路径(单测覆盖;实测有一次读到「低」为 DOM observer 异步滞后,非逻辑错——`high` 稳定后显示正确;该竞态已登记 REQ-043)。截图 `shots/f2-fix-deepseek-effort.png`。
+- **F-2 switch(切换)残留**:经 popover UI 点选切档的打包态实拍未取到(ChipPopover 走 Solid Portal + 事件委托,CDP `.click()` 未能稳定驱动);`switchVariantTo` 的规范化 `hit()` 比较由单测锁定 + 显示跟随已证 `normalizeVariant` 生效。判定:显示修复 verified;切换机制单测 verified,UI 实拍留残单(真人点选或后续注入 command 层)。
+
+## 修正(2026-07-06,S20 审计收尾)
+- **单测口径修正**:原文多处记「F-1 9 单测 / F-2 10 单测」(合计 19)与事实不符——实际新增 **10 个 test / 32 断言**(`connections.test.ts` 5 个:易失判定 2 个 9 断言 + `availableStartupServer` 3 个;`variant-normalize.test.ts` 5 个 17 断言);PR #113 commit 的「+10 新」为准。原「9/10」系把断言数与 test 数混记。
+- **审计发现两条债务已登记**:REQ-042(F-1 静默丢弃无日志 + 陈旧键不清理)、REQ-043(cycle 90ms DOM 轮询竞态,即上文 observer 滞后)。
+- **回写补正**:B6(C2 达成 G1)与 C28(B1 打包态闭环)补翻 verified;B4 不翻原因写明(深层断言未取证);REQ-016 残余清单摘 B6。
