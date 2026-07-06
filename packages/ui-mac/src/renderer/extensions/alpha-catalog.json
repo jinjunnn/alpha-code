@@ -1,6 +1,6 @@
 {
   "version": "2026-07-06.1",
-  "_note": "alpha-code 内置扩展目录(定制中心)。随渲染层 bundle、离线优先。schema 见 docs/designs/2026-06-22-arch-extension-hub.md(CatalogEntry / InstallSpec / bundleItems)。",
+  "_note": "alpha-code 扩展目录 —— 远程分发真源(REQ-032:alphacodeone.com/catalog/v1,ed25519 签名,ETag 缓存;A 侧回退链 远端→缓存→内置)。schema 同 A 侧 alpha-catalog.json + 条目级 version + remoteAsset(下载清单,sha256 钉死)。编辑本文件后跑 scripts/build-catalog.mjs 再 git commit + deploy。",
   "_disclaimers": [
     "标 _verify 的条目:包名/协议/可用性需落地前手工核实,不得当作已确认事实。",
     "redistributable=false 的条目不得把其文件内置进 app,只能运行时远程拉或引导用户自装。",
@@ -38,7 +38,8 @@
           "name": "convert_to_markdown",
           "description": "把文件 / URL(PDF/Word/PPT/Excel/图片/HTML)转成 Markdown"
         }
-      ]
+      ],
+      "version": "2026-07-06.1"
     },
     {
       "id": "mcp:filesystem",
@@ -86,7 +87,8 @@
           "name": "search_files",
           "description": "按名称递归检索文件"
         }
-      ]
+      ],
+      "version": "2026-07-06.1"
     },
     {
       "id": "mcp:fetch",
@@ -115,7 +117,8 @@
           "name": "fetch",
           "description": "抓取 URL 并转 Markdown(可分段续读)"
         }
-      ]
+      ],
+      "version": "2026-07-06.1"
     },
     {
       "id": "mcp:playwright",
@@ -166,7 +169,8 @@
           "name": "browser_evaluate",
           "description": "在页面内执行 JS"
         }
-      ]
+      ],
+      "version": "2026-07-06.1"
     },
     {
       "id": "mcp:git",
@@ -214,7 +218,8 @@
           "name": "git_commit",
           "description": "提交"
         }
-      ]
+      ],
+      "version": "2026-07-06.1"
     },
     {
       "id": "mcp:github",
@@ -263,7 +268,8 @@
           "name": "list_issues",
           "description": "列出 issue"
         }
-      ]
+      ],
+      "version": "2026-07-06.1"
     },
     {
       "id": "mcp:dbhub",
@@ -309,7 +315,8 @@
           "name": "execute_sql",
           "description": "执行 SQL(--readonly 档:仅查询类语句)"
         }
-      ]
+      ],
+      "version": "2026-07-06.1"
     },
     {
       "id": "mcp:feishu",
@@ -358,7 +365,8 @@
           "name": "bitable.v1.appTableRecord.search",
           "description": "查询多维表格记录"
         }
-      ]
+      ],
+      "version": "2026-07-06.1"
     },
     {
       "id": "mcp:yuque",
@@ -406,7 +414,8 @@
           "name": "create_doc",
           "description": "新建文档"
         }
-      ]
+      ],
+      "version": "2026-07-06.1"
     },
     {
       "id": "mcp:dingtalk",
@@ -455,7 +464,8 @@
           "name": "ding-message.*",
           "description": "发送 DING 消息(默认启用,2 个工具)"
         }
-      ]
+      ],
+      "version": "2026-07-06.1"
     },
     {
       "id": "skill:skill-creator",
@@ -473,7 +483,8 @@
         "builtinAssetKey": "skills/skill-creator",
         "targetDir": "alpha-skills",
         "_verify": "Apache-2.0 可内置;打包前放入 ui-mac 资源并附 NOTICE。"
-      }
+      },
+      "version": "2026-07-06.1"
     },
     {
       "id": "skill:alpha-upstream-sync",
@@ -490,7 +501,8 @@
         "source": "builtin",
         "builtinAssetKey": "skills/alpha-upstream-sync",
         "targetDir": "global"
-      }
+      },
+      "version": "2026-07-06.1"
     },
     {
       "id": "skill:safe-refactor",
@@ -507,7 +519,8 @@
         "source": "builtin",
         "builtinAssetKey": "skills/safe-refactor",
         "targetDir": "global"
-      }
+      },
+      "version": "2026-07-06.1"
     },
     {
       "id": "agent:code-reviewer",
@@ -523,7 +536,8 @@
         "kind": "agent",
         "source": "builtin",
         "builtinAssetKey": "agents/code-reviewer.md"
-      }
+      },
+      "version": "2026-07-06.1"
     },
     {
       "id": "plugin:opencode-notify",
@@ -548,7 +562,8 @@
           "name": "event(session.idle)",
           "description": "会话空闲 / 任务完成时发 macOS 系统通知"
         }
-      ]
+      ],
+      "version": "2026-07-06.1"
     },
     {
       "id": "bundle:office",
@@ -572,7 +587,8 @@
           "installOrder": 2
         }
       ],
-      "_verify": "再补一个 openpyxl 系 Excel-MCP(写 xlsx)+ 一页自写「办公」引导技能后加入。"
+      "_verify": "再补一个 openpyxl 系 Excel-MCP(写 xlsx)+ 一页自写「办公」引导技能后加入。",
+      "version": "2026-07-06.1"
     },
     {
       "id": "bundle:research",
@@ -595,7 +611,8 @@
           "optional": false,
           "installOrder": 2
         }
-      ]
+      ],
+      "version": "2026-07-06.1"
     },
     {
       "id": "bundle:dev",
@@ -621,9 +638,10 @@
         {
           "catalogEntryId": "skill:skill-creator",
           "optional": true,
-          "installOrder": 3
+          "installOrder": 4
         }
-      ]
+      ],
+      "version": "2026-07-06.1"
     },
     {
       "id": "bundle:china-office",
@@ -651,7 +669,8 @@
           "optional": true,
           "installOrder": 3
         }
-      ]
+      ],
+      "version": "2026-07-06.1"
     },
     {
       "id": "cloud:code-review",
@@ -665,17 +684,30 @@
         "kind": "cloud",
         "pipelineKind": "code-review",
         "inputContract": [
-          { "field": "input.diff", "description": "git diff 文本(diff-only;云侧另截断至 12k 字符)", "required": true }
+          {
+            "field": "input.diff",
+            "description": "git diff 文本(diff-only;云侧另截断至 12k 字符)",
+            "required": true
+          }
         ],
-        "budgetDefaults": { "max_iter": 25, "max_tokens": 300000, "max_wall_clock_sec": 600 },
-        "budgetLimits": { "max_iter": 50, "max_tokens": 500000, "max_wall_clock_sec": 1800 },
+        "budgetDefaults": {
+          "max_iter": 25,
+          "max_tokens": 300000,
+          "max_wall_clock_sec": 600
+        },
+        "budgetLimits": {
+          "max_iter": 50,
+          "max_tokens": 500000,
+          "max_wall_clock_sec": 1800
+        },
         "tier": "Tier-1(云端流水线,无沙箱)",
         "upstreamData": [
           "git diff 文本(input.diff;1MB 信封帽,云侧另截 12k 字符)",
           "变更意图摘要与审查结论(云侧模型生成,存于任务产物)",
           "派发信封元数据(预算/约束;denied_paths 缺省注入)"
         ]
-      }
+      },
+      "version": "2026-07-06.1"
     },
     {
       "id": "cloud:research",
@@ -689,16 +721,29 @@
         "kind": "cloud",
         "pipelineKind": "research",
         "inputContract": [
-          { "field": "input.question", "description": "调研问题文本", "required": true }
+          {
+            "field": "input.question",
+            "description": "调研问题文本",
+            "required": true
+          }
         ],
-        "budgetDefaults": { "max_iter": 25, "max_tokens": 300000, "max_wall_clock_sec": 600 },
-        "budgetLimits": { "max_iter": 50, "max_tokens": 500000, "max_wall_clock_sec": 1800 },
+        "budgetDefaults": {
+          "max_iter": 25,
+          "max_tokens": 300000,
+          "max_wall_clock_sec": 600
+        },
+        "budgetLimits": {
+          "max_iter": 50,
+          "max_tokens": 500000,
+          "max_wall_clock_sec": 1800
+        },
         "tier": "Tier-1(云端流水线,无沙箱,联网检索)",
         "upstreamData": [
           "调研问题文本(input.question)",
           "派发信封元数据(预算/约束;denied_paths 缺省注入)"
         ]
-      }
+      },
+      "version": "2026-07-06.1"
     },
     {
       "id": "cloud:docs",
@@ -712,15 +757,58 @@
         "kind": "cloud",
         "pipelineKind": "docs",
         "inputContract": [
-          { "field": "input.code", "description": "代码片段(云侧截断至 12k 字符;传片段,勿传全库)", "required": true },
-          { "field": "input.type", "description": "文档类型(如 readme / api,默认 readme)" }
+          {
+            "field": "input.code",
+            "description": "代码片段(云侧截断至 12k 字符;传片段,勿传全库)",
+            "required": true
+          },
+          {
+            "field": "input.type",
+            "description": "文档类型(如 readme / api,默认 readme)"
+          }
         ],
-        "budgetDefaults": { "max_iter": 25, "max_tokens": 300000, "max_wall_clock_sec": 600 },
-        "budgetLimits": { "max_iter": 50, "max_tokens": 500000, "max_wall_clock_sec": 1800 },
+        "budgetDefaults": {
+          "max_iter": 25,
+          "max_tokens": 300000,
+          "max_wall_clock_sec": 600
+        },
+        "budgetLimits": {
+          "max_iter": 50,
+          "max_tokens": 500000,
+          "max_wall_clock_sec": 1800
+        },
         "tier": "Tier-1(云端流水线,无沙箱)",
         "upstreamData": [
           "代码片段(input.code;云侧截 12k 字符)",
           "派发信封元数据(预算/约束;denied_paths 缺省注入)"
+        ]
+      },
+      "version": "2026-07-06.1"
+    },
+    {
+      "id": "skill:conventional-commits",
+      "type": "skill",
+      "name": "conventional-commits",
+      "displayName": "规范化提交信息",
+      "description": "以 Conventional Commits 规范撰写 git 提交信息(type(scope): subject + 破坏性变更脚注)。alpha 自写。",
+      "source": "alpha",
+      "category": "dev",
+      "license": "MIT",
+      "redistributable": true,
+      "version": "1.0.0",
+      "installSpec": {
+        "kind": "skill",
+        "source": "remote"
+      },
+      "remoteAsset": {
+        "version": "1.0.0",
+        "files": [
+          {
+            "path": "SKILL.md",
+            "sha256": "0bce63105eeac8c23c22c1272df6c684fa64166516bc54ab607af9036dcc5dbf",
+            "bytes": 1353,
+            "url": "https://alphacodeone.com/catalog/assets/skill.conventional-commits/1.0.0/SKILL.md"
+          }
         ]
       }
     }

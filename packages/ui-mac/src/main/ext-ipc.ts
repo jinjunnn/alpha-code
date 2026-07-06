@@ -13,7 +13,7 @@ import { addReceipt, alphaGlobalRoot, listInstalls, removeReceipt } from "./alph
 import { fileifyMcpSecrets, removeMcpServerSecrets } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, type ProvenanceRequest } from "./alpha-migrate"
 import { configHealth, persistMcp, persistPlugin, removeMcp, removePlugin, removePluginPath } from "./ext-config"
-import { importSkillFolder, importSkillGit, installBuiltinAgent, installBuiltinSkill, installRemoteSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall, resourcesRoot, writeAgent } from "./ext-fs-installer"
+import { importSkillFolder, importSkillGit, installBuiltinAgent, installBuiltinSkill, installRemoteAgent, installRemoteSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall, resourcesRoot, writeAgent } from "./ext-fs-installer"
 import { parseAgentImport } from "./ext-import-validate"
 import { randomUUID } from "node:crypto"
 import { pickedFiles } from "./ipc"
@@ -133,6 +133,27 @@ export function registerExtIpcHandlers(userDataPath: string) {
       if (!dl.ok) return dl
       const meta: InstallMeta = { catalogId, version: String(entry.version ?? rc.version) }
       return installRemoteSkill(name, dl.contents, undefined, meta)
+    },
+  )
+  ipcMain.handle(
+    "ext-install-remote-agent",
+    // REQ-046(与 ext-install-remote-skill 同信任边界,codex H1):renderer 只传 catalogId,
+    // name/清单/版本由 main 从已验签 catalog 重新派生;资产约定 = 单 .md(installRemoteAgent 复核)。
+    async (_event: IpcMainInvokeEvent, catalogId: string) => {
+      if (typeof catalogId !== "string" || !catalogId) return { ok: false, reason: "invalid catalog id" }
+      const rc = await refreshRemoteCatalog(userDataPath)
+      if (rc.source === "none") return { ok: false, reason: `remote catalog unavailable: ${rc.error}` }
+      const entries = (rc.catalog as { entries?: Array<Record<string, unknown>> }).entries ?? []
+      const entry = entries.find((e) => e.id === catalogId)
+      if (!entry) return { ok: false, reason: `entry not in verified catalog: ${catalogId}` }
+      if (entry.type !== "agent") return { ok: false, reason: `entry is not an agent: ${catalogId}` }
+      const asset = entry.remoteAsset as { version?: string; files?: RemoteAssetFile[] } | undefined
+      if (!asset?.files?.length) return { ok: false, reason: `entry has no remote asset: ${catalogId}` }
+      const name = String(entry.name ?? "")
+      const dl = await downloadRemoteAsset(asset.files)
+      if (!dl.ok) return dl
+      const meta: InstallMeta = { catalogId, version: String(entry.version ?? rc.version) }
+      return installRemoteAgent(name, dl.contents, undefined, meta)
     },
   )
   ipcMain.handle("ext-install-plugin", (_event: IpcMainInvokeEvent, pkg: string, meta?: InstallMeta) =>

@@ -31,3 +31,27 @@ related: [ADR-014, ADR-002, REQ-032, REQ-033, REQ-034, REQ-035]
 - ⚠️ 转换器需跟随外部格式演进(如 Claude Code plugin manifest 变更)——但只影响**导入动作**,存量已转换产物不受影响(它们已是原生原语)。
 - ⚠️ hooks 语义映射覆盖率有限,转换器 phase 1 明确不转(诚实降级,详见 [[REQ-034]])。
 - 🔭 执行载体:[[REQ-034]](导入转换器)、[[REQ-035]](executor)均 **parked**(用户 2026-07-05:暂不开发,想清楚再启动);激活时按本 ADR 执行。
+
+## 修订(2026-07-06,REQ-046 —— catalog 作者真源收敛:C 仓唯一,A 内置改快照)
+
+**背景**:REQ-032 交付了运行时分发链(远端验签 → 缓存 → 内置,远端可达时**整份替换**),但没收敛作者流程 —— A 内置 `alpha-catalog.json` 与 C `catalog-src/catalog.json` 是两份手工双写的作者源。两次实证漂移:S22 撤架只撤 A 侧(联网用户仍看 C 下发的三条恒失败条目,alpha-web PR #7 补齐);S23 上架 E2/E6 先只写 A 侧(用户当场点破)。
+
+**拍板(用户,2026-07-06)**:**C 仓 `catalog-src/catalog.json` 是 agent / skill / command / MCP / plugin 条目的唯一作者真源**;上架/撤架的唯一作者动作 = 改 C → `build-catalog.mjs`(sha256 + ed25519)→ deploy,**A 零动作、联网用户即时生效**。A 仓只保留必须硬编码之物:
+1. **验签公钥**(信任根,`remote-catalog.ts`,唯一常量源);
+2. **离线回退快照底座** —— `alpha-catalog.json` **禁手编**,由 `ui-mac/scripts/sync-catalog-snapshot.mjs` 从已发布端点拉取+验签+**字节原样**快照(meta 落 `alpha-catalog.snapshot.json`);守卫 = `alpha-catalog.test.ts` sha256 断言(手编即红,红绿演练已过);发版 runbook 增「刷新快照」步(DISTRIBUTION.md);
+3. **随包资产本体**(builtinAssetKey / vendoredAssetKey 所指文件 —— 出厂预置件与可执行物必须随包);
+4. **catalog schema / 类型**(`catalog-types.ts`)。
+
+**「新增条目零发版」对四类全部成立,plugin 只是通道例外而非发版例外**:
+
+| 类型 | 条目(metadata) | 内容本体 | 新增是否需发版 A |
+|---|---|---|---|
+| MCP 连接器 | C 下发 | npm 正源(npx@钉版,运行时拉取) | 否 |
+| skill | C 下发 | C 远程资产通道(sha256 逐文件钉死,不可变版本目录) | 否 |
+| agent | C 下发 | 同 skill(单 .md 约定;**REQ-046 补接线** `installRemoteAgent` + `ext-install-remote-agent`,信任边界同远程技能) | 否(本修订起) |
+| command | 不单列(ADR-014 O2:由 skill/MCP 生成) | — | 否 |
+| plugin | C 下发 | **npm 发包**(可执行 JS 红线:不走 C 文本资产通道;C 托管属 phase 2 逐包签名,不抢跑) | 否(发 npm 包 + C 条目) |
+
+仍需发版 A 的仅剩:出厂预置资产本体更新(vendored)、验签公钥更换(重大事件,见 catalog-publish.md)、catalog schema 演进(新 kind/字段;C 上架新形态前须确认存量 app 兼容 —— 向后兼容纪律)。
+
+**后果**:✅ 上架/撤架单侧动作、机械守卫,不再依赖人肉双写;✅ 快照与已发布产物字节一致,diff/审计一一对应;⚠️ 内置底座含 remote-only 条目(断网时这类条目安装诚实失败,与联网用户断网行为一致);⚠️ schema 演进成为 A/C 之间唯一需要协调发布的耦合点(C 保持向后兼容或版本闸)。

@@ -26,6 +26,9 @@
 #    b. CDP 截图关键屏(首页/会话/模型卡/composer/时间线)对上一版基线肉眼比对(visual-verify-required)
 #    上游 sync 后未做过 a+b 的树,禁止打 tag。
 
+# ①′ 刷新内置 catalog 快照(REQ-046):cd packages/ui-mac && node scripts/sync-catalog-snapshot.mjs
+#    (拉已发布 catalog + 验签 + 字节快照;alpha-catalog.json 禁手编 —— 单测守卫,手编即红。
+#     上架/撤架条目一律在 alpha-web catalog-src 操作,联网用户即时生效,发版只是刷新离线底座。)
 # ① 版本号:改 packages/ui-mac/package.json 的 "version"(唯一真源;About/崩溃屏/updater 都读它)
 #    例:0.1.0 → 0.1.1。用真实 semver,别回 0.0.0。
 

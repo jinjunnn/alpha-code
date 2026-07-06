@@ -66,7 +66,7 @@
 | REQ-037 | 上游能力治理层:原生 agent/skill/command 隐藏/禁用/重写(governance 真源 + home jsonc 物化 + dispose 热生效 + hub「内置」分组) | feature | A | shipped | **S18 T3 shipped(2026-07-05,PR #102)**:真源 ~/.alpha/governance.json + 叶子键事务物化 home jsonc(用户内容保留/空壳剪枝/记账净除)+ 保护名单硬校验(compaction 拒/alpha 注入拒 X2/build confirm)+ hub「内置(上游)」分组(隐/禁/重写/allowlist 切换/重置);**裸引擎实测**:explore 消失/build hidden/init 重写/deny 占位全命中([audits/s18-t3](audits/2026-07-05-s18-t3-req037/verify.md));denylist 默认(开批拍板);像素/会话级→真机批;详见 [requirements/REQ-037](requirements/REQ-037-upstream-governance.md) |
 | REQ-038 | Composer 一致性收敛:首页/会话页行为对齐(首页 `/` 菜单接线为 P0)+ 共享层收敛(逻辑/外壳 CSS 单源)+ 换皮层像素走查 | ux | A | shipped | **S18 T1 shipped(2026-07-05,PR #98)**:首页 slash 菜单+@(agent+文件)接线(数据源与会话页同源:command.list/agent.list/find.files);/name args 命中自定义命令改走 session.command(上游 submit 同语义);IME keyCode 229 三重守卫;外壳 CSS 单源 composer-shell.css;占位文案单常量;**发送按钮裁切根因修复**(上游 svg wrapper 占 grid 行挤掉 ::after 箭头 → grid-area 1/1 叠放);15 新单测,CDP 截图验收在册 [audits/s18-t1](audits/2026-07-05-s18-t1-req038/verify.md);残单=真机 IME/空工作区提示像素 →真机批; 原勘探详情见 [requirements/REQ-038](requirements/REQ-038-composer-parity.md) |
 | REQ-039 | cn 租户云管线默认模型适配:edition 白名单拦掉 pipelines 默认 claude-sonnet(schedule e2e 实锤 edition_forbidden)→ 管线模型按租户 edition 选择或 cn 白名单纳入执行模型 | feature | B | registered | 2026-07-05 schedule e2e 发现;临时处置=dev/运营者映射 intl;公开放量前必须解决(cn 用户云任务必失败) |
-| REQ-046 | catalog 双作者源收敛:C 仓唯一作者真源 + A 内置改快照生成 + CI 守卫禁手编 | debt | X | ready | **S23 登记 + 当场拍板(2026-07-06,用户)**:两次实证漂移(S22 撤架只撤 A 侧,alpha-web PR #7 补齐;S23 上架先只写 A 侧)→ 拍板 **C catalog-src = agent/skill/command/mcp/plugin 条目唯一作者真源**,A 仓只留必须硬编码之物(验签公钥/离线快照底座/随包资产本体/schema);实施=快照脚本+CI 守卫+ADR-023 修订;详见 [requirements/REQ-046](requirements/REQ-046-catalog-dual-source-guard.md) |
+| REQ-046 | catalog 双作者源收敛:C 仓唯一作者真源 + A 内置改快照生成 + CI 守卫禁手编 | debt | X | shipped | **S24 shipped(2026-07-06,PR #122 + alpha-web PR #8)**:①快照链——`sync-catalog-snapshot.mjs`(fetch+ed25519 验签(公钥单源)+版本单调拒回退+**字节原样**快照+meta)实跑 prod(2026-07-06.1/23 entries);守卫=`alpha-catalog.test.ts` sha256 断言,**红绿演练 PASS**(手编一字节→红,脚本刷新→绿);②agent 远程通道接线(installRemoteAgent 单 .md 约定+IPC/preload/renderer 全链,信任边界同远程技能,+5 单测)→ **「新增条目零发版」四类全部成立**(plugin=通道例外走 npm 发包,用户裁决);③ADR-023 修订(四类通道表+仍需发版三情形)+ DISTRIBUTION ①′ + C 侧 catalog-publish.md;**verified 待真机**(C 上架远程 agent→hub 安装→会话可用,联动 REQ-045 演练);原拍板/漂移证据见档 [requirements/REQ-046](requirements/REQ-046-catalog-dual-source-guard.md) |
 | REQ-040 | 冷启动陈旧 defaultServerUrl 无存活校验 → 连死端口卡「无法连接到 Local Server」 | bug | A | verified | **S20 真机批 finding F-1(2026-07-06)**:`opencode.settings` 存了具体端口本地 URL(52743),sidecar 每次随机端口 → 冷启动连死端口无回退。修=`isEphemeralLocalServerUrl` 判易失本地 URL → `getDefaultServer` 丢弃回退 "sidecar";5 单测(口径修正,S20 审计:原误记 9);零改上游。**verified(重打包签名包)**:植死端口 `59999` → 冷启动正常起窗无「无法连接」(截图 f1-fix-staleboot-ok)。触发面窄(仅手动「设为默认」写入)但无恢复入口(REQ-014 家族);详见 [requirements/REQ-040](requirements/REQ-040-stale-default-server-coldboot.md) |
 | REQ-041 | effort chip 对上游英文 variant 模型失效(deepseek=cn 默认:显示不符+切换失败) | bug | A | verified | **S20 真机批 finding F-2(2026-07-06)**:deepseek variant 来自上游=英文 low/medium/high,REQ-029 只认中文 低/中/高 → 显示回退默认档 + cycle 永不命中「切换失败」。修=`variant-normalize.ts` 双向规范化(纯函数,5 单测;口径修正,S20 审计:原误记 10,两文件合计 +10)+ `current()`/`switchVariantTo` 按规范化比较;零改上游。**verified(重打包签名包·显示一致性)**:deepseek `low→低`、`high→高` 实测(修前 low 错显「高」);switch UI 实拍留残单(Portal/事件委托 CDP 难驱动,机制单测锁定)。cn 默认模型体验 bug;详见 [requirements/REQ-041](requirements/REQ-041-effort-chip-english-variant.md) |
 
@@ -142,9 +142,13 @@
 | REQ-034 | 外部生态导入转换器:Claude Code plugin 大礼包→套件扇出 + Codex 可共享物导入(安装期转换,[[ADR-023]]) | 用户 2026-07-05:立项但暂不开发,想清楚再启动 | 用户拍板启动(按 ADR-023 执行);详见 [requirements/REQ-034](requirements/REQ-034-ecosystem-import-converter.md) |
 | REQ-035 | 本地 harness-as-executor(claude/codex 委托执行,tool/MCP 接缝);长期演进=会话级并轨(GOALS G5) | 用户 2026-07-05:立项但暂不开发,想清楚再启动 | 第一阶段=用户拍板启动;并轨阶段另有硬前置(challenge+POSITIONING 修订+承载 spike+独立 ADR,见档) |
 
-## 当前 sprint → **S23 C16 数据清除入口 + E2/E6 MCP 条目(2026-07-06 开批)**
+## 当前 sprint → **S24 REQ-046 catalog 作者真源收敛(2026-07-06 开批,用户拍板开工)**
 
-> S22 收批后顺承抽取:P0 空、短名单余项 verified-pending/parked → 抽 ready 池可离线交付项 **C16(headline)+ E2/E6(顺带,供给域聚类)**;真机依赖项(B22 复现/D5/REQ-005 核验/各 verified 残单)攒下一真机批。顺带登记 REQ-045(S22 撤条目补货,唯一漏登记意图)。契约:[sprints/2026-07-06-s23-data-clear](sprints/2026-07-06-s23-data-clear/sprint.md)。⚖️ 提醒:B16 PIPL go/no-go 仍待用户拍板(随 ship gate 再问)。
+> 拍板:C catalog-src 唯一作者真源;四类零发版(plugin=通道例外走 npm 发包,非发版例外)。快照脚本+禁手编守卫+agent 远程接线+ADR-023 修订。契约:[sprints/2026-07-06-s24-req046-catalog-snapshot](sprints/2026-07-06-s24-req046-catalog-snapshot/sprint.md)。⚖️ 提醒:B16 PIPL go/no-go 仍待用户拍板。
+
+## 上一 sprint → **S23 C16 数据清除入口 + E2/E6 MCP 条目 —— 已收尾(2026-07-06)**(历史)
+
+> C16(PR #120:清除引擎+分级对话框+UNINSTALL.md)+ E2/E6 双侧上架 + REQ-044 撤架半边补齐(alpha-web PR #7,已部署实测)+ REQ-045/046 登记(#121 拍板回写)。契约:[sprints/2026-07-06-s23-data-clear](sprints/2026-07-06-s23-data-clear/sprint.md)。
 
 ## 上一 sprint → **S22 REQ-044 迁移 provenance + catalog 撤无资产条目 —— 已收尾(2026-07-06)**(历史)
 

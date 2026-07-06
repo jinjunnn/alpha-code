@@ -10,7 +10,7 @@ import * as path from "node:path"
 
 mock.module("electron", () => ({ app: { isPackaged: false } }))
 
-const { installBuiltinSkill, removeFsInstall, writeAgent, writeSkill } = await import("./ext-fs-installer")
+const { installBuiltinSkill, installRemoteAgent, removeFsInstall, writeAgent, writeSkill } = await import("./ext-fs-installer")
 const { readLedger } = await import("./alpha-installs")
 
 let base = ""
@@ -159,6 +159,48 @@ describe("removeFsInstall — deletes truth, unbridges, drops receipt (T6)", () 
 
   test("rejects unsafe name", () => {
     expect(removeFsInstall("skill", "../evil").ok).toBe(false)
+  })
+})
+
+describe("installRemoteAgent — REQ-046 远程 agent 通道(单 .md 约定 + writeAgent 同管线)", () => {
+  const md = (s = "---\ndescription: remote helper\n---\nsystem prompt") => Buffer.from(s, "utf8")
+
+  test("happy path:单 .md → 真源 + 桥 + 账本(origin=catalog,meta 记版本)", () => {
+    const r = installRemoteAgent("remote-helper", [{ path: "remote-helper.md", data: md() }], undefined, {
+      catalogId: "agent:remote-helper",
+      version: "1.0.0",
+    })
+    expect(r.ok).toBe(true)
+    expect(fs.readFileSync(path.join(alphaDir, "agents", "remote-helper.md"), "utf8")).toContain("system prompt")
+    expect(fs.readFileSync(path.join(opencodeDir, "agents", "remote-helper.md"), "utf8")).toContain("system prompt")
+    const { receipts } = readLedger(alphaDir)
+    expect(receipts[0]).toMatchObject({ type: "agent", name: "remote-helper", origin: "catalog" })
+  })
+
+  test("非法名拒装(无盘写)", () => {
+    expect(installRemoteAgent("../evil", [{ path: "a.md", data: md() }]).ok).toBe(false)
+    expect(fs.existsSync(alphaDir)).toBe(false)
+  })
+
+  test("多文件资产拒装(约定=恰好一个 .md)", () => {
+    const r = installRemoteAgent("x", [
+      { path: "x.md", data: md() },
+      { path: "extra.txt", data: Buffer.from("junk") },
+    ])
+    expect(r).toMatchObject({ ok: false })
+    expect((r as { reason: string }).reason).toContain("exactly one")
+  })
+
+  test("非顶层/非 .md 路径拒装", () => {
+    expect(installRemoteAgent("x", [{ path: "nested/x.md", data: md() }]).ok).toBe(false)
+    expect(installRemoteAgent("x", [{ path: "x.txt", data: md() }]).ok).toBe(false)
+  })
+
+  test("超 256KB 拒装", () => {
+    const big = Buffer.alloc(256 * 1024 + 1, 0x61)
+    const r = installRemoteAgent("x", [{ path: "x.md", data: big }])
+    expect(r).toMatchObject({ ok: false })
+    expect((r as { reason: string }).reason).toContain("过大")
   })
 })
 

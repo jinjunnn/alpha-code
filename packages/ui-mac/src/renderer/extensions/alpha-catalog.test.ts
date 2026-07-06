@@ -1,12 +1,26 @@
 // alpha-catalog 完整性单测(S23 补,E2/E6 上架时立)—— 把 S22 人工核对的「bundle 引用零悬空 /
 // 钉版本纪律(A2)」固化为回归锁。catalog 是 JSON 数据,漂移(悬空引用/漏钉版本)此前只能靠人眼。
+// S24(REQ-046)追加快照守卫:内置 catalog = C 已发布产物的字节级快照,禁手编。
 
+import { createHash } from "node:crypto"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import { describe, expect, test } from "bun:test"
 
 import rawCatalog from "./alpha-catalog.json"
+import snapshotMeta from "./alpha-catalog.snapshot.json"
 import type { Catalog, CatalogEntry, McpInstallSpec } from "./catalog-types"
 
 const catalog = rawCatalog as unknown as Catalog
+
+describe("快照守卫(REQ-046 禁手编)", () => {
+  test("alpha-catalog.json 字节级等于最近一次快照(手编即红;刷新 = bun ui-mac scripts/sync-catalog-snapshot.mjs)", () => {
+    const body = readFileSync(join(import.meta.dir, "alpha-catalog.json"))
+    expect(createHash("sha256").update(body).digest("hex")).toBe(snapshotMeta.sha256)
+    expect(catalog.version).toBe(snapshotMeta.version)
+    expect(catalog.entries.length).toBe(snapshotMeta.entries)
+  })
+})
 
 describe("alpha-catalog 完整性", () => {
   test("entry id 唯一", () => {
