@@ -147,6 +147,8 @@
 
 > 用户拍板「先 REQ-045,再攒真机批」。三条 Anthropic skill(Apache-2.0 核验 + NOTICE 溯源)+ bundle:design 回归经远程管线上架(alpha-web PR #10 已部署);prod 验签 + sha256 复验通过;A 仓零动作 = REQ-046 单侧作者纪律首次真实演练。契约:[sprints/2026-07-06-s26-req045-restock](sprints/2026-07-06-s26-req045-restock/sprint.md)。
 
+> **S27 候选(未开,待抽取)**:**真机批 vNext-3**(S22–S26 递延全量攒单,需签名重 ship;完整清单+批前置=[qa/2026-07-06-realmachine-vnext3-plan.md](qa/2026-07-06-realmachine-vnext3-plan.md):M1 定制中心 REQ-045③/REQ-046 远程 agent(前置=C 侧先上架一条)/REQ-044 迁移开门/E2/E6 + M2 数据凭证 C16/B14/C17/B2/B21 + M3 云线 B16/B3/REQ-024/025 + M4 稳定性顺带项)· B22 崩溃复现(并入 vNext-3 M4)· REQ-005 前端收尾(独立方向)。
+
 ## 上一 sprint → **S25 B16 PIPL 数据出境同意/告知门 —— 已收尾(2026-07-06)**(历史)
 
 > 用户拍板 GO 重启 B16。显式 per-项目派发同意门(A 侧 main gate + .alpha/prefs.json)+ 隐式登录告知(C 侧授权页 + 隐私政策出境专章);ADR-021 §4 挂钩点落地(A PR #123 + alpha-web PR #9)。契约:[sprints/2026-07-06-s25-b16-pipl-consent](sprints/2026-07-06-s25-b16-pipl-consent/sprint.md)。
