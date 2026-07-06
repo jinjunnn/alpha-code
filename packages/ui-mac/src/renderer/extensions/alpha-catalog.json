@@ -6,7 +6,7 @@
     "redistributable=false 的条目不得把其文件内置进 app,只能运行时远程拉或引导用户自装。",
     "Anthropic document-skills(docx/xlsx/pptx/pdf)源码可见但禁止再分发,故本目录不收。",
     "MCP command/version 全部钉精确版本(A2/T1.5):npx `@pkg@x.y.z` / uvx `pkg@x.y.z`,消除每启动在线解析风暴。钉的值 = 更新当日各包 latest,行为与不钉一致、仅冻结确定性。升级 = 手动 bump(见 npm/pypi)。存量用户配置的一键钉版本迁移(T1.5 第二半)仍待做。",
-    "内置 skill 资产(builtinAssetKey → resources/skills/):alpha-upstream-sync / safe-refactor(MIT,自写)+ skill-creator(Apache-2.0,Anthropic 官方,S12 T7 已打包,见 NOTICE)。mcp-builder / canvas-design / brand-guidelines 尚无可信来源打包 → 安装时诚实失败(非占位),待授权资产落地后补。",
+    "内置 skill 资产(builtinAssetKey → resources/skills/):alpha-upstream-sync / safe-refactor(MIT,自写)+ skill-creator(Apache-2.0,Anthropic 官方,S12 T7 已打包,见 NOTICE)。mcp-builder / canvas-design / brand-guidelines 及空壳 bundle:design 已撤(REQ-044:资产从未打包 → 安装恒失败;S21 真机实锤)——资产就绪后经远程 catalog(REQ-032)上架,零发版,不再内置无资产条目。",
     "tools[]/hooks[] 是精选元数据(详情页展示用),非全集;引擎无 tools 查询路由,实时探测为 flag 内 V2(REQ-019 T8)。标 _verify 条目的 tools[] 同属待核实。",
     "agent 类条目 = vendored md 资产(resources/agents/),安装经 writeAgent 同管线(桥+账本);plugin 条目带 vendoredAssetKey 时安装零网络(REQ-023)。"
   ],
@@ -381,57 +381,6 @@
       }
     },
     {
-      "id": "skill:mcp-builder",
-      "type": "skill",
-      "name": "mcp-builder",
-      "displayName": "MCP 构建指南",
-      "description": "编写高质量 MCP server 的指南(Anthropic example-skills)。",
-      "source": "official",
-      "category": "dev",
-      "license": "Apache-2.0",
-      "redistributable": true,
-      "installSpec": {
-        "kind": "skill",
-        "source": "builtin",
-        "builtinAssetKey": "skills/mcp-builder",
-        "targetDir": "alpha-skills"
-      }
-    },
-    {
-      "id": "skill:canvas-design",
-      "type": "skill",
-      "name": "canvas-design",
-      "displayName": "视觉/海报设计",
-      "description": "用设计哲学产出 .png/.pdf 视觉作品(Anthropic example-skills)。",
-      "source": "official",
-      "category": "design",
-      "license": "Apache-2.0",
-      "redistributable": true,
-      "installSpec": {
-        "kind": "skill",
-        "source": "builtin",
-        "builtinAssetKey": "skills/canvas-design",
-        "targetDir": "alpha-skills"
-      }
-    },
-    {
-      "id": "skill:brand-guidelines",
-      "type": "skill",
-      "name": "brand-guidelines",
-      "displayName": "品牌规范应用",
-      "description": "把品牌色彩/字体规范应用到各类产物(Anthropic example-skills)。",
-      "source": "official",
-      "category": "design",
-      "license": "Apache-2.0",
-      "redistributable": true,
-      "installSpec": {
-        "kind": "skill",
-        "source": "builtin",
-        "builtinAssetKey": "skills/brand-guidelines",
-        "targetDir": "alpha-skills"
-      }
-    },
-    {
       "id": "skill:alpha-upstream-sync",
       "type": "skill",
       "name": "alpha-upstream-sync",
@@ -554,29 +503,6 @@
       ]
     },
     {
-      "id": "bundle:design",
-      "type": "bundle",
-      "name": "design-suite",
-      "displayName": "设计套件",
-      "description": "视觉/品牌设计技能组合(Apache-2.0,可内置)。",
-      "source": "alpha",
-      "category": "design",
-      "license": "Apache-2.0",
-      "redistributable": true,
-      "bundleItems": [
-        {
-          "catalogEntryId": "skill:canvas-design",
-          "optional": false,
-          "installOrder": 1
-        },
-        {
-          "catalogEntryId": "skill:brand-guidelines",
-          "optional": false,
-          "installOrder": 2
-        }
-      ]
-    },
-    {
       "id": "bundle:dev",
       "type": "bundle",
       "name": "dev-suite",
@@ -598,14 +524,9 @@
           "installOrder": 2
         },
         {
-          "catalogEntryId": "skill:mcp-builder",
-          "optional": true,
-          "installOrder": 3
-        },
-        {
           "catalogEntryId": "skill:skill-creator",
           "optional": true,
-          "installOrder": 4
+          "installOrder": 3
         }
       ]
     },

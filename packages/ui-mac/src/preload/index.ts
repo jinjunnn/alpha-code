@@ -172,6 +172,7 @@ const api: ElectronAPI = {
     listInstalls: (projectDir) => ipcRenderer.invoke("ext-list-installs", projectDir),
     uninstall: (receipt) => ipcRenderer.invoke("ext-uninstall", receipt),
     migrateScan: () => ipcRenderer.invoke("ext-migrate-scan"),
+    migrateVerify: (requests) => ipcRenderer.invoke("ext-migrate-verify", requests),
     removeLegacy: (type, name) => ipcRenderer.invoke("ext-migrate-remove-legacy", type, name),
     enableCloud: (id, name, meta) => ipcRenderer.invoke("ext-enable-cloud", id, name, meta),
   },

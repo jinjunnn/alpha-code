@@ -137,6 +137,23 @@ export type LegacyInventory = {
   mcp: { name: string; config: Record<string, unknown> }[]
   plugins: string[]
 }
+/** REQ-044:迁移候选的 provenance 校验请求/裁决(main 侧与打包资产/catalog 形状比对;只放行 alpha 自装)。 */
+export type ProvenanceRequest =
+  | { type: "skill"; name: string; builtinAssetKey?: string }
+  | {
+      type: "mcp"
+      name: string
+      spec: {
+        mcpType: "local" | "remote"
+        command?: string[]
+        mirrorCommand?: string[]
+        url?: string
+        requiredEnvVars?: string[]
+        headerNames?: string[]
+      }
+    }
+  | { type: "plugin"; name: string; package: string }
+export type ProvenanceVerdict = { type: "skill" | "mcp" | "plugin"; name: string; verified: boolean; reason: string }
 /** Install destination: global (~/.alpha + ~/.opencode bridge) or a specific project's .alpha. */
 export type InstallTarget = { scope: "global" } | { scope: "project"; projectDir: string }
 /** Catalog provenance recorded into the receipt (id + catalog snapshot version for update checks). */
@@ -341,6 +358,8 @@ export type ElectronAPI = {
     uninstall: (receipt: InstallReceipt) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
     // REQ-018 T3:存量迁移(旧 XDG 根 → .alpha)。scan 报告 legacy 清单 + enabled 门控;removeLegacy 删旧位。
     migrateScan: () => Promise<{ enabled: boolean; inventory: LegacyInventory }>
+    // REQ-044:候选 provenance 终审(排除项 main.log [req044-provenance] 留痕)。
+    migrateVerify: (requests: ProvenanceRequest[]) => Promise<ProvenanceVerdict[]>
     removeLegacy: (
       type: "skill" | "agent" | "mcp" | "plugin",
       name: string,

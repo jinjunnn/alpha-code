@@ -180,7 +180,9 @@ export function writeAgent(name: string, content: string, target?: InstallTarget
 
 // Resolve the app's bundled-resources root the same way windows.ts does: process.resourcesPath when
 // packaged, else the in-repo resources/ dir relative to the built main bundle (out/main).
-function resourcesRoot(): string {
+// Exported for the migration provenance check (REQ-044), which byte-compares legacy skill dirs
+// against these packaged assets.
+export function resourcesRoot(): string {
   return app.isPackaged
     ? process.resourcesPath
     : path.join(path.dirname(fileURLToPath(import.meta.url)), "../../resources")

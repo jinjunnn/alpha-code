@@ -11,15 +11,16 @@ import * as path from "node:path"
 import type { InstallMeta, InstallReceipt, InstallTarget } from "../preload/types"
 import { addReceipt, alphaGlobalRoot, listInstalls, removeReceipt } from "./alpha-installs"
 import { fileifyMcpSecrets, removeMcpServerSecrets } from "./alpha-mcp-secrets"
-import { isMigrationEnabled, removeLegacy, scanLegacy } from "./alpha-migrate"
+import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, type ProvenanceRequest } from "./alpha-migrate"
 import { configHealth, persistMcp, persistPlugin, removeMcp, removePlugin, removePluginPath } from "./ext-config"
-import { importSkillFolder, importSkillGit, installBuiltinAgent, installBuiltinSkill, installRemoteSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall, writeAgent } from "./ext-fs-installer"
+import { importSkillFolder, importSkillGit, installBuiltinAgent, installBuiltinSkill, installRemoteSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall, resourcesRoot, writeAgent } from "./ext-fs-installer"
 import { parseAgentImport } from "./ext-import-validate"
 import { randomUUID } from "node:crypto"
 import { pickedFiles } from "./ipc"
 import { factorySkillIds } from "./factory-skills"
 import { downloadRemoteAsset, refreshRemoteCatalog, type RemoteAssetFile } from "./remote-catalog"
 import { applyGovernance, normalizeGovernance, protectionInfo, readGovernance, resetGovernance } from "./alpha-governance"
+import { getLogger } from "./logging"
 
 // GUI apps on macOS launch with a minimal PATH (no Homebrew), so augment it before `which` or we'd
 // false-negative tools the user actually has installed.
@@ -216,6 +217,16 @@ export function registerExtIpcHandlers(userDataPath: string) {
   // 复用既有 installer 重装(顺带 A2 钉版 + secret file 化)。用户面触发受 ALPHA_MIGRATE_ENABLE 门控
   // (A6 真机验证后开,S12 T8)。
   ipcMain.handle("ext-migrate-scan", () => ({ enabled: isMigrationEnabled(), inventory: scanLegacy() }))
+  // REQ-044:名字匹配只定位候选;这里做 provenance 终审(打包资产逐字节 / catalog 形状)——
+  // 只放行 alpha 自装,同名用户自建被排除并留痕(fail-closed,ADR-019 §4)。
+  ipcMain.handle("ext-migrate-verify", (_event: IpcMainInvokeEvent, requests: unknown) => {
+    if (!Array.isArray(requests) || requests.length === 0 || requests.length > 100) return []
+    const verdicts = verifyLegacyProvenance(requests as ProvenanceRequest[], resourcesRoot())
+    for (const v of verdicts) {
+      if (!v.verified) getLogger().log(`[req044-provenance] excluded ${v.type} "${v.name}" from migration: ${v.reason}`)
+    }
+    return verdicts
+  })
   ipcMain.handle(
     "ext-migrate-remove-legacy",
     (_event: IpcMainInvokeEvent, type: "skill" | "agent" | "mcp" | "plugin", name: string) => removeLegacy(type, name),
