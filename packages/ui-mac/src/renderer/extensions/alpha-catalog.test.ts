@@ -64,10 +64,22 @@ describe("alpha-catalog 完整性", () => {
     }
   })
 
-  test("REQ-044 撤下的三无资产条目不得回流(补货唯一通道=远程 catalog,REQ-045)", () => {
-    const banned = ["skill:mcp-builder", "skill:canvas-design", "skill:brand-guidelines", "bundle:design"]
-    const ids = new Set(catalog.entries.map((e) => e.id))
-    for (const id of banned) expect(ids.has(id), `${id} 不应内置回流`).toBe(false)
+  test("REQ-044 撤下的三条目只允许经远程通道回流(REQ-045 补货,禁 builtin 复活)", () => {
+    // S26 补货后条目合法在场,但必须是 source:"remote"(资产经 C 端点下载 + sha256 钉死);
+    // builtinAssetKey 形态 = 资产未随包的恒失败老路,永不回流。bundle:design 成员必须全为远程技能。
+    const restocked = ["skill:mcp-builder", "skill:canvas-design", "skill:brand-guidelines"]
+    for (const id of restocked) {
+      const e = catalog.entries.find((x) => x.id === id)
+      expect(e, `${id} 应随 REQ-045 补货在场`).toBeTruthy()
+      const spec = e!.installSpec as { source?: string; builtinAssetKey?: string }
+      expect(spec.source, `${id} 只允许远程通道`).toBe("remote")
+      expect(spec.builtinAssetKey, `${id} 不得携带 builtinAssetKey(builtin 复活即回归恒失败)`).toBeUndefined()
+      expect(e!.remoteAsset?.files?.length ?? 0, `${id} 必须带 remoteAsset 清单`).toBeGreaterThan(0)
+    }
+    const design = catalog.entries.find((x) => x.id === "bundle:design")
+    expect(design, "bundle:design 成员齐后回归(REQ-045 验收④)").toBeTruthy()
+    const memberIds = (design!.bundleItems ?? []).map((i) => i.catalogEntryId)
+    expect(memberIds.sort()).toEqual(["skill:brand-guidelines", "skill:canvas-design"])
   })
 
   test("S23 新条目在场:mcp:dingtalk / mcp:dbhub(E2/E6),钉钉入中国办公套件", () => {
