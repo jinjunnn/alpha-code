@@ -68,10 +68,12 @@ export interface AlphaProjectsApi {
    *  surfaces (home slash/@ menus, REQ-038) query command/agent/find with the SAME client + auth
    *  the store uses instead of instantiating a second one. */
   sdk(): ReturnType<typeof createOpencodeClient> | undefined
-  /** Per-session actions via the SDK; the global event stream reconciles the store. */
-  renameSession(id: string, title: string): Promise<void>
+  /** Per-session actions via the SDK; the global event stream reconciles the store. Rename/delete
+   *  resolve `false` on a transport failure so the caller can surface a toast (B11 row 13); a no-op
+   *  (empty title) still resolves `true` — it is a cancel, not a failure to report. */
+  renameSession(id: string, title: string): Promise<boolean>
   shareSession(id: string, directory: string): Promise<string | undefined>
-  deleteSession(id: string): Promise<void>
+  deleteSession(id: string): Promise<boolean>
   /** Fetch the session's messages and format them as markdown text for copy-to-clipboard. */
   copySession(id: string): Promise<string | undefined>
 }
@@ -330,13 +332,16 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
   }
 
   // --- session actions (SDK; the global event stream reconciles the store) -------------------
-  async function renameSession(id: string, title: string) {
+  async function renameSession(id: string, title: string): Promise<boolean> {
     const c = client
-    if (!c || !title.trim()) return
+    if (!c) return false
+    if (!title.trim()) return true // empty = cancel, not a failure to surface
     try {
       await c.session.update({ sessionID: id, title: title.trim() } as any)
+      return true
     } catch {
-      /* transient; the session.updated event will reconcile */
+      // hard failure (transport): the caller toasts; the session.updated event won't fire
+      return false
     }
   }
   async function shareSession(id: string, directory: string): Promise<string | undefined> {
@@ -349,13 +354,15 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
       return undefined
     }
   }
-  async function deleteSession(id: string) {
+  async function deleteSession(id: string): Promise<boolean> {
     const c = client
-    if (!c) return
+    if (!c) return false
     try {
       await c.session.delete({ sessionID: id } as any)
+      return true
     } catch {
-      /* transient; the session.deleted event will reconcile */
+      // hard failure: nothing was deleted and no session.deleted event will reconcile → caller toasts
+      return false
     }
   }
   async function copySession(id: string): Promise<string | undefined> {

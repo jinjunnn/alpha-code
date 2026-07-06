@@ -709,3 +709,8 @@ svg[viewBox="0 0 720.002 129.001"] {
   gap: 1px;
   /* drag handled by base.css via data-tauri-drag-region (buttons auto no-drag) */
 }
+
+/* B11 复扫行11:sidecar 连崩停手的持久呈现位(header 与 nav 之间) */
+.alpha-sidebar-engine-down {
+  padding: 0 8px 6px;
+}

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron"
-import type { AuthState, ElectronAPI, WslServersEvent } from "./types"
+import type { AuthErrorCode, AuthState, ElectronAPI, WslServersEvent } from "./types"
 import type { UpdaterState } from "@opencode-ai/app/updater"
 
 const updaterCallbacks = new Set<(state: UpdaterState) => void>()
@@ -12,6 +12,12 @@ const updaterHandler = (_: unknown, state: UpdaterState) => {
 
 const api: ElectronAPI = {
   killSidecar: () => ipcRenderer.invoke("kill-sidecar"),
+  retrySidecar: () => ipcRenderer.invoke("sidecar-retry"),
+  onSidecarFatal: (cb) => {
+    const handler = (_: unknown, e: { attempts: number }) => cb(e)
+    ipcRenderer.on("sidecar-fatal", handler)
+    return () => ipcRenderer.removeListener("sidecar-fatal", handler)
+  },
   installCli: () => ipcRenderer.invoke("install-cli"),
   awaitInitialization: () => ipcRenderer.invoke("await-initialization"),
   wslServers: {
@@ -132,6 +138,11 @@ const api: ElectronAPI = {
         .then((state: AuthState) => cb(state))
         .catch(() => {})
       return () => ipcRenderer.removeListener("auth-state", handler)
+    },
+    onError: (cb) => {
+      const handler = (_: unknown, e: { code: AuthErrorCode }) => cb(e)
+      ipcRenderer.on("auth-error", handler)
+      return () => ipcRenderer.removeListener("auth-error", handler)
     },
   },
   ext: {

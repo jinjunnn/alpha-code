@@ -17,7 +17,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto"
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { safeStorage, shell, type BrowserWindow } from "electron"
-import type { AuthMode, AuthState } from "../preload/types"
+import type { AuthErrorCode, AuthMode, AuthState } from "../preload/types"
 import { getLogger } from "./logging"
 import { ALPHA_PATHS } from "../shared/alpha-config"
 import { isTokenExpired, shouldRefreshToken } from "./alpha-auth-clock"
@@ -143,6 +143,15 @@ function publish() {
   if (win && !win.isDestroyed()) win.webContents.send("auth-state", deriveState())
 }
 
+// B11 复扫行16:登录整链失败不再只留日志 —— 推 auth-error 给 renderer(sidebar 订阅 → error toast),
+// 用户从浏览器点完授权回到 app 时能看到「为什么没登录上」。main 无 i18n 设施,只送 code,文案在
+// renderer 侧按 code 映射。已知边界:深链冷启动时窗口尚未建成 → 事件丢失(与登录成功路径的
+// 「冷启动不 respawn」同一边界,ADR-017),用户所见 = 停留在未登录态。
+function publishAuthError(code: AuthErrorCode) {
+  const win = getWindow()
+  if (win && !win.isDestroyed()) win.webContents.send("auth-error", { code })
+}
+
 // Map the current token + mode onto the env vars the sidecar reads. URL vars are set-if-unset (honor a
 // user/dev export). TOKEN vars (ALPHA_API_KEY / ALPHA_CLOUD_TOKEN) are login-derived and written
 // AUTHORITATIVELY (A8): applyAuthEnv also runs before each in-session respawn — which snapshots the
@@ -254,7 +263,10 @@ export function handleAuthDeepLink(url: string): boolean {
   if (parsed.protocol !== "alpha-code:") return false
   const path = `${parsed.host}${parsed.pathname}`.replace(/\/+$/, "").replace(/^\/+/, "")
   if (path === "auth/callback") {
-    void completeAuth(parsed).catch((error) => warn("alpha-auth: callback failed", error))
+    void completeAuth(parsed).catch((error) => {
+      warn("alpha-auth: callback failed", error)
+      publishAuthError("exchange_failed")
+    })
   } else {
     log("alpha-auth: ignoring non-auth deep link", { path })
   }
@@ -265,11 +277,20 @@ async function completeAuth(parsed: URL) {
   const code = parsed.searchParams.get("code")
   const state = parsed.searchParams.get("state")
   const error = parsed.searchParams.get("error")
-  if (error) return warn("alpha-auth: provider returned error", { error })
-  if (!code || !state) return warn("alpha-auth: callback missing code/state")
+  if (error) {
+    warn("alpha-auth: provider returned error", { error })
+    return publishAuthError("provider_error")
+  }
+  if (!code || !state) {
+    warn("alpha-auth: callback missing code/state")
+    return publishAuthError("invalid_callback")
+  }
   // 内存 pkce 为空(app 被回调冷启动唤醒)时回退读落盘的 pkce。
   const active = pkce ?? loadPkce()
-  if (!active || active.state !== state) return warn("alpha-auth: state mismatch — possible CSRF, ignoring")
+  if (!active || active.state !== state) {
+    warn("alpha-auth: state mismatch — possible CSRF, ignoring")
+    return publishAuthError("state_mismatch")
+  }
   const verifier = active.verifier
   clearPkce()
 

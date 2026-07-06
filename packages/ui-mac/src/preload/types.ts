@@ -61,6 +61,8 @@ export type AuthState = {
   account?: { email?: string; plan?: string }
   expiresAt?: number
 }
+// B11 复扫行16:登录链失败原因(main 只送 code,文案由 renderer i18n 映射)。
+export type AuthErrorCode = "provider_error" | "invalid_callback" | "state_mismatch" | "exchange_failed"
 
 // alpha account summary — balance / membership / token usage, read from the alpha-platform (B)
 // in-region account-server using the stored JWT. Shared cross-bundle like AuthState. Contract:
@@ -186,6 +188,9 @@ export type PlatformLiveModel = { id: string; provider?: string; minPlan?: strin
 
 export type ElectronAPI = {
   killSidecar: () => Promise<void>
+  /** B11 复扫行11:sidecar 连崩自愈停手 → 侧栏持久 banner;重试重置阶梯并 in-place respawn。 */
+  retrySidecar: () => Promise<void>
+  onSidecarFatal: (cb: (e: { attempts: number }) => void) => () => void
   installCli: () => Promise<string>
   awaitInitialization: () => Promise<ServerReadyData>
   wslServers: WslServersAPI
@@ -253,6 +258,8 @@ export type ElectronAPI = {
     setMode: (mode: AuthMode) => Promise<void>
     enableProxy: () => Promise<void>
     subscribe: (cb: (state: AuthState) => void) => () => void
+    /** B11 复扫行16:登录链失败(provider 拒绝/回调残缺/state 不匹配/兑换失败)→ toast 呈现。 */
+    onError: (cb: (e: { code: AuthErrorCode }) => void) => () => void
   }
   // Extension Hub (定制中心): thin privileged operations the renderer can't do itself. persistMcp
   // writes the user's opencode.jsonc (durable); the live add/connect happens in the renderer over

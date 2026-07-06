@@ -41,7 +41,10 @@ export function GovernancePanel(props: {
     void window.api.ext.govRead().then((r) => {
       setGov(r.gov)
       setProtection(r.protection)
-    }).catch(() => {})
+    }).catch(() => {
+      // load failed → keep the empty DEFAULT_GOV but say so, or the user might apply over real config
+      setErr(t("alpha.gov.loadFailed"))
+    })
   })
 
   // 面板列出的 agent = 引擎可见原生 agent ∪ 治理中已隐藏/禁用的名字(否则藏了就找不回)
@@ -69,12 +72,18 @@ export function GovernancePanel(props: {
       const r = await window.api.ext.govApply(next, visibleAgentNames(), confirmBuild)
       if (!r.ok) {
         setErr(r.reason ?? "apply failed")
+        props.flash(r.reason ?? t("alpha.gov.applyFailed"), "error")
         return
       }
       setGov(next)
       const refreshed = await props.refreshEngine()
       void props.reloadAgents()
       props.flash(refreshed ? t("alpha.gov.applied") : t("alpha.gov.appliedPendingReload"), "success")
+    } catch {
+      // govApply threw (IPC/main error) — callers do `void apply(...)`, so without this catch the
+      // rejection is silent: busy clears but nothing changed and no feedback (silent-failure class).
+      setErr(t("alpha.gov.applyFailed"))
+      props.flash(t("alpha.gov.applyFailed"), "error")
     } finally {
       setBusy(false)
     }
