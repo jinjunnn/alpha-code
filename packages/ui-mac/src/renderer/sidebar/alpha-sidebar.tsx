@@ -14,6 +14,7 @@ import { Icon } from "@opencode-ai/ui/v2/icon"
 import { useTheme } from "@opencode-ai/ui/theme/context"
 import { t } from "../i18n"
 import { pushToast } from "../alpha-ui/Toast"
+import { Banner } from "../alpha-ui/Banner"
 import { Mark } from "../logo-alpha"
 import { ALPHA_PATHS } from "../../shared/alpha-config"
 import { useAlphaEndpoints } from "../use-alpha-endpoints"
@@ -133,6 +134,33 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
   const [authState, setAuthState] = createSignal<AuthState>({ status: "logged-out", mode: "byok" })
   onCleanup(window.api.auth.subscribe(setAuthState))
   const accountLabel = () => authState().account?.email ?? t("alpha.auth.account")
+
+  // B11 复扫行16:登录链失败(main 只 warn 日志 → 用户「点了没反应」)→ error toast,按 code 给原因。
+  onCleanup(
+    window.api.auth.onError((e) => {
+      const detail = {
+        provider_error: t("alpha.auth.errProvider"),
+        invalid_callback: t("alpha.auth.errCallback"),
+        state_mismatch: t("alpha.auth.errState"),
+        exchange_failed: t("alpha.auth.errExchange"),
+      }[e.code]
+      pushToast({ kind: "error", title: t("alpha.auth.failed"), detail })
+    }),
+  )
+
+  // B11 复扫行11:sidecar 连崩自愈停手(main 只留日志 → 引擎死了 UI 却毫无表示)。持久 banner
+  // (Banner=持久态,侧栏常驻位)+ 即时 toast(侧栏收起时也看得见);重试清 banner,再停手会再推。
+  const [engineDown, setEngineDown] = createSignal(false)
+  onCleanup(
+    window.api.onSidecarFatal(() => {
+      setEngineDown(true)
+      pushToast({ kind: "error", title: t("alpha.engine.down"), detail: t("alpha.engine.downDetail") })
+    }),
+  )
+  const retryEngine = () => {
+    setEngineDown(false)
+    void window.api.retrySidecar()
+  }
 
   // 自动化 badge(REQ-021 A1.4):上次运行失败/超时的任务数。跟 automation-event 推送刷新。
   const [automationFailedCount, setAutomationFailedCount] = createSignal(0)
@@ -559,7 +587,11 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
     setProjectExpanded(worktree, true)
     const id = await createSession(worktree)
     if (id) navigate(sessionHref(worktree, id))
-    else navigate(newSessionHref(worktree))
+    else {
+      // B11 复扫行14:创建失败不再静默 —— 草稿回退仍可用(composer 照常),但把失败说出来
+      pushToast({ kind: "error", title: t("alpha.sidebar.newChatFailed") })
+      navigate(newSessionHref(worktree))
+    }
   }
 
   // "新对话" lands on the home composer (Image #11: ALPHA CODE wordmark + prompt box with the project
@@ -647,8 +679,21 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                 class="alpha-project-menu-item"
                 role="menuitem"
                 onClick={() => {
-                  void shareSession(m().id, m().directory)
+                  const session = m()
                   setSessionMenu(null)
+                  void (async () => {
+                    const url = await shareSession(session.id, session.directory)
+                    if (!url) {
+                      pushToast({ kind: "error", title: t("alpha.sidebar.shareFailed") })
+                      return
+                    }
+                    const ok = await copyText(url)
+                    pushToast(
+                      ok
+                        ? { kind: "success", title: t("alpha.sidebar.shareCopied"), detail: url }
+                        : { kind: "success", title: t("alpha.sidebar.shareCreated"), detail: url },
+                    )
+                  })()
                 }}
               >
                 <svg class="alpha-project-menu-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -689,8 +734,12 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                 class="alpha-project-menu-item alpha-project-menu-item-danger"
                 role="menuitem"
                 onClick={() => {
-                  void deleteSession(m().id)
+                  const id = m().id
                   setSessionMenu(null)
+                  void (async () => {
+                    const ok = await deleteSession(id)
+                    if (!ok) pushToast({ kind: "error", title: t("alpha.sidebar.deleteFailed") })
+                  })()
                 }}
               >
                 <svg class="alpha-project-menu-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -788,6 +837,17 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
               <span class="alpha-sidebar-wordmark">ALPHA CODE</span>
             </button>
           </header>
+
+          <Show when={engineDown()}>
+            <div class="alpha-sidebar-engine-down">
+              <Banner
+                kind="error"
+                title={t("alpha.engine.down")}
+                detail={t("alpha.engine.downDetail")}
+                action={{ label: t("alpha.engine.retry"), onClick: retryEngine }}
+              />
+            </div>
+          </Show>
 
           <nav class="alpha-sidebar-nav">
             <button type="button" class="alpha-sidebar-nav-item" onClick={() => newChat()}>
@@ -954,15 +1014,21 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                                   onClick={(e) => e.stopPropagation()}
                                   onKeyDown={(e) => {
                                     if (e.key === "Enter") {
-                                      void renameSession(session.id, e.currentTarget.value)
+                                      const v = e.currentTarget.value
                                       setEditingSession(null)
+                                      void renameSession(session.id, v).then(
+                                        (ok) => ok || pushToast({ kind: "error", title: t("alpha.sidebar.renameFailed") }),
+                                      )
                                     } else if (e.key === "Escape") {
                                       setEditingSession(null)
                                     }
                                   }}
                                   onBlur={(e) => {
-                                    void renameSession(session.id, e.currentTarget.value)
+                                    const v = e.currentTarget.value
                                     setEditingSession(null)
+                                    void renameSession(session.id, v).then(
+                                      (ok) => ok || pushToast({ kind: "error", title: t("alpha.sidebar.renameFailed") }),
+                                    )
                                   }}
                                 />
                               </Show>

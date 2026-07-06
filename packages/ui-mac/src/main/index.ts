@@ -95,7 +95,8 @@ const pendingDeepLinks: string[] = []
 
 function useEnvProxy() {
   try {
-    // Electron 41.2 runs Node 24.14.1; latest @types/node@24 is 24.12.2.
+    // Electron 内置的 Node 领先于已发布的 @types/node —— setGlobalProxyFromEnv 运行时存在但类型
+    // 里没有,故 cast(D10:不再写死版本号,避免注释随升级过期)。
     ;(http as any).setGlobalProxyFromEnv()
   } catch (error) {
     logger.warn("failed to load proxy environment", error)
@@ -135,6 +136,8 @@ function handleSidecarExit(gen: number, code: number) {
   selfHeal = plan.state
   if (plan.action === "give-up") {
     writeLog("utility", "sidecar crash-loop — self-heal gave up; login/proxy toggles still respawn manually", { attempts: selfHeal.attempts }, "error")
+    // B11 复扫行11:停手不再只留日志 —— 推给 renderer(侧栏持久 banner + toast;重试走 sidecar-retry)。
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("sidecar-fatal", { attempts: selfHeal.attempts })
     return
   }
   writeLog("utility", "sidecar self-heal scheduled", { delayMs: plan.delayMs, attempt: selfHeal.attempts }, "warn")
@@ -379,6 +382,12 @@ const main = Effect.gen(function* () {
   const updater = setupAutoUpdater(stopSidecars)
   registerIpcHandlers({
     killSidecar: () => killSidecar(),
+    // B11 复扫行11:停手 banner 的「重试」—— 用户显式动作,阶梯清零重新给满自愈机会;respawn 走
+    // 既有互斥/合并入口(requestSidecarRespawn 在窗口建成时赋值;此前调用为 no-op)。
+    retrySidecar: () => {
+      selfHeal = initialSelfHealState()
+      return requestSidecarRespawn?.() ?? Promise.resolve()
+    },
     relaunch,
     awaitInitialization: Effect.fnUntraced(
       function* () {

@@ -261,13 +261,24 @@ export function AutomationPanel() {
       setNlInput("")
       await refresh()
       backToList()
+    } catch {
+      // save threw (IPC/main) — without this catch the rejection is silent (saving clears, nothing
+      // written, no feedback). Surface it in the form error + a toast.
+      setFErr(t("alpha.auto.saveFailed"))
+      pushToast({ kind: "error", title: t("alpha.auto.saveFailed") })
     } finally {
       setSaving(false)
     }
   }
 
   const remove = async (id: string) => {
-    await window.api.automations.remove(id)
+    try {
+      await window.api.automations.remove(id)
+    } catch {
+      // remove is called from the list (no form error slot) → toast so a failed delete isn't silent
+      pushToast({ kind: "error", title: t("alpha.auto.removeFailed") })
+      return
+    }
     await refresh()
     backToList()
   }

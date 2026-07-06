@@ -24,18 +24,18 @@
 | 8 | B23 全局配置被引擎静默清零 | 静默(32 点外第 33 类) | ✅ configHealth banner(语法错/未知顶键双病灶,B23 主案例=未知顶键) |
 | 9 | splash 等待期零文案(最坏 ~60s 纯 logo,B20) | 静默 | ✅ 「正在启动引擎…」状态行 |
 | 10 | 云任务终态无回执 | (新面) | ✅ CloudRunWatcher toast(PR #58) |
-| 11 | sidecar 崩溃无自愈无提示 | 静默 | ✅ 自愈(PR #57);连崩停手仅日志 → ⏭ 呈现面挂 B11 行 |
+| 11 | sidecar 崩溃无自愈无提示 | 静默 | ✅ 自愈(PR #57);**连崩停手呈现已修(S19,2026-07-06)**:give-up → `sidecar-fatal` 事件 → 侧栏常驻 error Banner(「引擎已停止运行」)+ toast + 「重试」(阶梯清零 + 既有互斥 respawn 入口);**dev 真实全链 E2E PASS**(真杀监听进程 ×6 → give-up 日志 → banner 截图 → 重试恢复,见 S19 sprint 残单节) |
 | 12 | `keyStatus`/`catalog`/`platformLive` 拉取失败(`model-picker-inject:52/120/132`) | 静默 | 🆗 豁免:有意降级到缓存/内置 snapshot(REQ-001 设计),picker 不空白、有「内置目录」徽标 |
-| 13 | 会话 rename/share/delete/copy 失败(`use-projects:291/301/310/333`) | 静默 | ⏭ 后续:统一接 pushToast(机械改动,随下批 UI 触碰时顺带) |
-| 14 | `createSession` 失败返回 undefined(`use-projects:253`) | 静默(调用方不导航) | ⏭ 同上 |
+| 13 | 会话 rename/share/delete/copy 失败(`use-projects:291/301/310/333`) | 静默 | ✅ 已修(S19,2026-07-06):rename/delete 返回 boolean → 调用方失败 toast;share 此前**丢弃 URL**(菜单形同无效)→ 现复制链接到剪贴板 + 成功/失败 toast;copy 早已有 toast |
+| 14 | `createSession` 失败返回 undefined(`use-projects:253`) | 静默(调用方不导航) | ✅ 已修(S19,2026-07-06):侧栏 startChat 失败仍回退草稿(可用),但补 error toast「会话创建失败,已打开草稿」;首页 startChat 早有失败 toast |
 | 15 | firehose `subscribe` 断流(`use-projects:378`/`use-extensions:235`) | 静默 | 🆗 豁免:SDK 自动重连,瞬断呈现反而制造噪音 |
-| 16 | 登录整链失败静默(`alpha-auth.ts:239`,具名锚点#12) | 静默 | ⏭ 后续:main→renderer auth-error 事件 + toast(需跨进程接线,单独小 PR) |
+| 16 | 登录整链失败静默(`alpha-auth.ts:239`,具名锚点#12) | 静默 | ✅ 已修(S19,2026-07-06):main 四失败点(provider error/回调残缺/state 不匹配/兑换失败)推 `auth-error` code → sidebar toast 按 code 给原因;已知边界=深链冷启动窗口未建成时事件丢失(与登录成功路径同界,ADR-017) |
 | 17 | `promptAsync` 无超时(B20,`use-projects:273`) | 挂起无感 | 🆗 豁免(记录):长任务合法,加超时会杀正常流;弱网感知由 splash/banner 承担 |
 | 18 | websearch keyless 限流 `orDie`(上游 core) | 静默 | 🆗 豁免:上游归属(R2),alpha 杠杆=env 关闸;剩余风险已记 ADR-009 |
 | 19 | 启动失败落上游英文崩溃屏(C28 撤回后现状) | 有呈现但未品牌化 | 🆗 豁免:C28 边界下沉设计单列(BACKLOG 在册) |
-| 20 | 骨架组件零引用(`Skeleton.tsx` 死代码,B20) | — | ⏭ 随 B20 余项(真骨架)决定用或删 |
+| 20 | 骨架组件零引用(`Skeleton.tsx` 死代码,B20) | — | ✅ 已决(S19,2026-07-06):**删**——零引用死代码移除(`Skeleton.tsx` + `skeleton.css`);「真骨架」若日后需要属独立 UX 决策,git 历史留存 |
 
-**记账**:20 项 —— ✅ 10 · 🆗 6(豁免有理由)· ⏭ 4(B11/B20 行内继续追)。「有用户可见反馈或有意降级」合计 16/20 = 80%;4 项 ⏭ 全部低频/跨进程接线类,已逐条留痕(验收③口径:原 32 表不存在,以本表为基线,豁免逐条记录)。
+**记账**:20 项 —— ✅ 14 · 🆗 6(豁免有理由)· ⏭ 0。「有用户可见反馈或有意降级」合计 **20/20 = 100%**,本矩阵可落码面全清(失败态实拍归真机批)。**S19(2026-07-06)两批清完**:第一批 = 行13(会话操作 toast)+ 行20(Skeleton 死代码删);第二批 = 行14(createSession 失败 toast)+ 行16(登录链 auth-error 事件→toast)+ 行11 残余(连崩停手 banner+重试)。
 
 ## 关联
 B11(底座)· B20(弱网,⊂B11 部分)· B23(§呈现底座)· C28(崩溃屏,单列)· PR #24/#57/#58/#60。
