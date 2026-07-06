@@ -407,6 +407,7 @@ export const dict = {
   "alpha.ext.cloudErrAuth": "未登录或登录已过期 —— 请登录平台账户后重试",
   "alpha.ext.cloudErrEndpoint": "未发现云端点(登录后自动发现;可用 ALPHA_CLOUD_URL 覆盖)",
   "alpha.ext.cloudErrNetwork": "网络错误 —— 云端点不可达",
+  "alpha.ext.cloudErrConsentDeclined": "已取消云派发 —— 本项目的数据出境告知未获同意",
   "alpha.ext.openDetail": "详情",
   "alpha.ext.back": "返回",
   "alpha.ext.detailAbout": "简介",

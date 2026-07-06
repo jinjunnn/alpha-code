@@ -15,7 +15,7 @@
 | 2 | **A6 秘钥继承给第三方 MCP/LSP** | ✅ **verified(2026-07-05,R3 解除)** |
 | 3 | B19 sync + B18 CI + B10 北极星守卫 | ✅ verified |
 | 4 | B15 NOTICE + C18 品牌 | ✅ shipped / verified |
-| 5 | B16 云派发 PIPL 同意门 | ⏸️ parked(用户搁置) |
+| 5 | B16 云派发 PIPL 同意门 | ✅ **shipped(2026-07-06,S25,用户 GO)**:显式 per-项目派发同意门(A PR #123)+ 隐式登录告知/隐私政策出境专章(alpha-web PR #9);verified 待真机 |
 | 6 | B11 系统性静默失败 | ✅ shipped(统一呈现底座 PR #60 + 复扫 20 项);verified 待视觉批;余项随 B20(2026-07-05 retro 修正陈旧行) |
 | 7 | B9 更新链完整性 | ✅ shipped(PR #47:降级闸关闭 + 完整性链文档化);verified 待下个真实发版实测(2026-07-05 retro 修正陈旧行) |
 
@@ -23,7 +23,7 @@
 
 | 决策点 | 载体 | 影响 |
 |---|---|---|
-| B16 PIPL 同意门重启时机(现 parked;云派发/公开分发前必须) | B16 | 合规,发布节奏 |
+| ~~B16 PIPL 同意门重启时机~~ **已拍板 GO(2026-07-06,S25 落地)** | B16 | ✅ 队列划掉 |
 
 > 拍板即从队列划掉、结论写进对应需求文件;执行中撞到未拍板点 = 停下来问,不代替决策。
 > **S17 已拍板划掉(2026-07-05)**:T1 = REQ-008 五连拍 + REQ-011 预留位([debates/req008](debates/2026-07-05-req008-positioning-briefs.md));T4 = C28 控件三选一(只读移除/effort 改文案,[debates/c28-brief](debates/2026-07-05-c28-honest-controls-brief.md));T5 = B12 filewatcher(默认开+可关,拍板入档)。**B16 提醒**:非技术用户入画像 + 云派发已实际可用 → 重启条件临近,维持 parked 等用户拍重启时机。
@@ -38,6 +38,7 @@
 
 | ID | 标题 | 类 | 仓 | 状态 | 备注 |
 |---|---|---|---|---|---|
+| B16 | 云派发 PIPL 数据出境同意/告知门(显式 per-项目 consent + 隐式登录告知) | security | X | shipped | **S25 shipped(2026-07-06,用户 GO,PR #123 + alpha-web PR #9)**:①显式——hub 云派发 main 侧 gate(`alpha-cloud-consent.ts` 纯核 15 单测 + `cloud-ipc.ts` 原生同意门 + `.alpha/prefs.json` 落 cloudConsent,版本化,写盘失败不静默放行)②隐式——授权页平台代付告知行 + 隐私政策修正 §2 误导+增出境专章。**覆盖面=hub 派发**;MCP facade/云自动化路径不覆盖(残余如实入档)。**verified 待真机**(同意门实拍/拒绝/prefs 落盘/二次不弹);详见 [requirements/B16](requirements/B16-pipl-consent-gate.md) |
 | REQ-002 | 平台↔alpha-code 代理联调:E2E 打通并计量出数 | feature | X | shipped | **S9;核心链路 verified**(登录→platform→真实模型流式→计量出数,4 次调用一致累加);修 3 断点:BP-1 网关流式计量 waitUntil 缺位(B,`6fe49f3` prod 部署)· BP-2 冷启动登录态丢失(A,待重打包 verify ④)· BP-3→REQ-014;证据 [audits/2026-07-03-req002](audits/2026-07-03-req002-proxy-e2e.md);④ token 过期(B2)/logout 复验未做 |
 | REQ-003 | 网关 SSE 流式健壮性:卡顿/断连/重连/心跳审查与加固 | debt | X | shipped | **PR #50**;审查报告 [audits/2026-07-03-req003](audits/2026-07-03-req003-sse-robustness.md)(链路1 B 侧已健壮,2 建议项留档;链路2 C23 四病灶全修+90s 悬挂回收,7 单测);**C23 随本批关闭**;弱网 UI 呈现 → 真机批+B11;详见 [requirements/REQ-003](requirements/REQ-003-gateway-sse-robustness.md) |
 | REQ-012 | 上游同步前端回归防护:锚点契约测试 + sync tripwire + post-sync 视觉冒烟 gate | debt | A | shipped | **PR #44**;范围拍板=锚点存在性 only(像素基线不做);清单 195 alive/4 dead + 5 用例契约测试 + sync tripwire + 发版 runbook ⓪ 步;**首跑即修正原审计:94 死→真死 4(session-ui 搬包)+ v0.1.0 回放 0 名字级死→结构性断裂假说上位**(审计修正节);详见 [requirements/REQ-012](requirements/REQ-012-frontend-sync-regression-guard.md) |
@@ -134,7 +135,7 @@
 
 | ID | 标题 | 搁置原因 | 激活条件 |
 |---|---|---|---|
-| B16 | 云派发 PIPL 同意/告知门 | 用户主动搁置(2026-07-03) | **面向公众分发前 / 云派发上线前必须重启**(R7:登录默认 platform-pays = 每条 prompt 持续出境,近硬阻断) |
+| ~~B16~~ | ~~云派发 PIPL 同意/告知门~~ | **已重启并 shipped(2026-07-06,S25,用户 GO)** → 见 Active-P1 与 [[B16]] | — |
 | C19 | Sentry opt-out + 告知 | R6:dormant(`VITE_SENTRY_DSN` 全仓无赋值,从不 init) | 发布流水线注入 DSN 时 |
 | D7 | safeStorage 明文兜底告警 | R6:macOS-only 下死分支(钥匙串恒可用) | 跨平台时 |
 | E7 | websearch 收编为自有 MCP | 与云端 websearch 撞车 | B3/E12 云线落地后 |
@@ -142,9 +143,13 @@
 | REQ-034 | 外部生态导入转换器:Claude Code plugin 大礼包→套件扇出 + Codex 可共享物导入(安装期转换,[[ADR-023]]) | 用户 2026-07-05:立项但暂不开发,想清楚再启动 | 用户拍板启动(按 ADR-023 执行);详见 [requirements/REQ-034](requirements/REQ-034-ecosystem-import-converter.md) |
 | REQ-035 | 本地 harness-as-executor(claude/codex 委托执行,tool/MCP 接缝);长期演进=会话级并轨(GOALS G5) | 用户 2026-07-05:立项但暂不开发,想清楚再启动 | 第一阶段=用户拍板启动;并轨阶段另有硬前置(challenge+POSITIONING 修订+承载 spike+独立 ADR,见档) |
 
-## 当前 sprint → **S24 REQ-046 catalog 作者真源收敛(2026-07-06 开批,用户拍板开工)**
+## 当前 sprint → **S25 B16 PIPL 数据出境同意/告知门(2026-07-06 开批,用户 GO)**
 
-> 拍板:C catalog-src 唯一作者真源;四类零发版(plugin=通道例外走 npm 发包,非发版例外)。快照脚本+禁手编守卫+agent 远程接线+ADR-023 修订。契约:[sprints/2026-07-06-s24-req046-catalog-snapshot](sprints/2026-07-06-s24-req046-catalog-snapshot/sprint.md)。⚖️ 提醒:B16 PIPL go/no-go 仍待用户拍板。
+> 用户拍板 GO 重启 B16。显式 per-项目派发同意门(A 侧 main gate + .alpha/prefs.json)+ 隐式登录告知(C 侧授权页 + 隐私政策出境专章);ADR-021 §4 挂钩点落地。契约:[sprints/2026-07-06-s25-b16-pipl-consent](sprints/2026-07-06-s25-b16-pipl-consent/sprint.md)。
+
+## 上一 sprint → **S24 REQ-046 catalog 作者真源收敛 —— 已收尾(2026-07-06)**(历史)
+
+> C catalog-src 唯一作者真源;四类零发版(plugin=通道例外走 npm 发包)。快照脚本+禁手编守卫+agent 远程接线+ADR-023 修订(PR #122 + alpha-web PR #8)。契约:[sprints/2026-07-06-s24-req046-catalog-snapshot](sprints/2026-07-06-s24-req046-catalog-snapshot/sprint.md)。
 
 ## 上一 sprint → **S23 C16 数据清除入口 + E2/E6 MCP 条目 —— 已收尾(2026-07-06)**(历史)
 

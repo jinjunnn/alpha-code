@@ -17,6 +17,7 @@ function dispatchError(code: string): string {
   if (code === "not-authenticated" || code === "unauthorized") return t("alpha.ext.cloudErrAuth")
   if (code === "no-cloud-endpoint") return t("alpha.ext.cloudErrEndpoint")
   if (code === "network") return t("alpha.ext.cloudErrNetwork")
+  if (code === "consent-declined") return t("alpha.ext.cloudErrConsentDeclined")
   return code
 }
 
@@ -70,7 +71,7 @@ export function CloudDispatchBox(props: { spec: CloudPipelineSpec; ready: boolea
       // denied_paths 不在此声明 —— 交给 main 侧 guard 缺省注入(ADR-021 §2,单点)。
       constraints: { network: "restricted" },
     }
-    const r = await window.api.cloud.dispatch(envelope)
+    const r = await window.api.cloud.dispatch(envelope, directory)
     if ((r as { error?: string }).error) {
       setErr(dispatchError((r as { error: string }).error))
       setPhase("failed")

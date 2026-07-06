@@ -23,7 +23,7 @@
 | [ADR-018](adrs/ADR-018-req-lifecycle.md) | 需求生命周期与文档流:单一真源 `docs/BACKLOG.md` + 两档流程 + Sprint 契约 + 归档纪律 | accepted | 2026-07-03 |
 | [ADR-019](adrs/ADR-019-alpha-workdir.md) | `.alpha` 项目工作目录:alpha harness 产物全量收敛(桥接细节由 REQ-004 验证回填) | accepted | 2026-07-03 |
 | [ADR-020](adrs/ADR-020-frontend-freeze.md) | 前端冻结:packages/{app,ui} 钉 frontend-freeze-base,每日 sync 只进引擎(E 路径,REQ-013 拍板;修订 ADR-004 守卫范围) | accepted | 2026-07-03 |
-| [ADR-021](adrs/ADR-021-cloud-data-boundary.md) | 代码上云数据边界:diff-only 优先 + secrets 过滤 + 体积上限 + consent 挂钩 B16(C9,S11 T3;§2 三校验已实现,S14) | accepted | 2026-07-04 |
+| [ADR-021](adrs/ADR-021-cloud-data-boundary.md) | 代码上云数据边界:diff-only 优先 + secrets 过滤 + 体积上限 + consent 挂钩 B16(C9,S11 T3;§2 三校验已实现 S14;§4 两挂钩点 B16 落地 S25) | accepted | 2026-07-04 |
 | [ADR-022](adrs/ADR-022-automations.md) | 自动化定时任务:本地调度器 + 只读 agent 静态权限档 + `.alpha` 落盘(REQ-021 A1;A2/A3 分期) | accepted(2026-07-05 真机批 PASS,REQ-016 S16;到点触发+readonly deny 零 ask+错过 skip) | 2026-07-04 |
 | [ADR-023](adrs/ADR-023-external-ecosystem-adaptation.md) | 外部生态适配 = 安装期转换器(不做运行时模拟)+ 插件包分发分层(npm 正源 / C 侧清单与精选资产) | accepted | 2026-07-05 |
 

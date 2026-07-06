@@ -381,7 +381,9 @@ export type ElectronAPI = {
   // reaches the renderer). The MCP facade path (agent-triggered cloud.* tools) is wired separately via
   // sidecar.ts mcp.servers.cloud; this HTTP surface is for app-driven dispatch/status.
   cloud: {
-    dispatch: (envelope: CloudJobEnvelope) => Promise<CloudResult<CloudDispatchResult>>
+    /** directory:B16 显式通道 —— 提供项目目录时,首次派发弹 per-项目 PIPL 同意门(main 侧);
+     *  缺省则跳过 per-项目门(隐式告知由登录流承担)。 */
+    dispatch: (envelope: CloudJobEnvelope, directory?: string) => Promise<CloudResult<CloudDispatchResult>>
     status: (jobId: string) => Promise<CloudResult<CloudJobStatus>>
     cancel: (jobId: string) => Promise<CloudResult<{ job_id: string; status: string }>>
     artifacts: (jobId: string) => Promise<CloudResult<CloudArtifactList>>
