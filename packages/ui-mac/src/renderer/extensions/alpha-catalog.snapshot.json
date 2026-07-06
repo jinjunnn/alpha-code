@@ -1,9 +1,9 @@
 {
   "v": 1,
-  "version": "2026-07-06.3",
+  "version": "2026-07-06.4",
   "entries": 28,
-  "sha256": "324c853eba293838af375ef5419df2912ad3a85915cdb9631fcdef90925171a9",
+  "sha256": "28ff9dac9e31a0767559f20aa2132e7b35596a2d75c8321d173c3242c61622bc",
   "source": "https://alphacodeone.com/catalog/v1/catalog.json",
-  "fetchedAt": "2026-07-06T10:48:37.872Z",
+  "fetchedAt": "2026-07-06T12:24:07.306Z",
   "_note": "由 scripts/sync-catalog-snapshot.mjs 生成;alpha-catalog.json 禁手编(REQ-046),上架/撤架唯一动作在 alpha-web catalog-src。"
 }

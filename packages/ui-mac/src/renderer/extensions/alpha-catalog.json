@@ -1,5 +1,5 @@
 {
-  "version": "2026-07-06.3",
+  "version": "2026-07-06.4",
   "_note": "alpha-code 扩展目录 —— 远程分发真源(REQ-032:alphacodeone.com/catalog/v1,ed25519 签名,ETag 缓存;A 侧回退链 远端→缓存→内置)。schema 同 A 侧 alpha-catalog.json + 条目级 version + remoteAsset(下载清单,sha256 钉死)。编辑本文件后跑 scripts/build-catalog.mjs 再 git commit + deploy。",
   "_disclaimers": [
     "标 _verify 的条目:包名/协议/可用性需落地前手工核实,不得当作已确认事实。",
@@ -21,6 +21,7 @@
       "category": "office",
       "license": "MIT",
       "redistributable": true,
+      "version": "1.0.0",
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
@@ -38,8 +39,7 @@
           "name": "convert_to_markdown",
           "description": "把文件 / URL(PDF/Word/PPT/Excel/图片/HTML)转成 Markdown"
         }
-      ],
-      "version": "2026-07-06.3"
+      ]
     },
     {
       "id": "mcp:filesystem",
@@ -51,6 +51,7 @@
       "category": "dev",
       "license": "MIT",
       "redistributable": true,
+      "version": "1.0.0",
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
@@ -87,8 +88,7 @@
           "name": "search_files",
           "description": "按名称递归检索文件"
         }
-      ],
-      "version": "2026-07-06.3"
+      ]
     },
     {
       "id": "mcp:fetch",
@@ -100,6 +100,7 @@
       "category": "research",
       "license": "MIT",
       "redistributable": true,
+      "version": "1.0.0",
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
@@ -117,8 +118,7 @@
           "name": "fetch",
           "description": "抓取 URL 并转 Markdown(可分段续读)"
         }
-      ],
-      "version": "2026-07-06.3"
+      ]
     },
     {
       "id": "mcp:playwright",
@@ -130,6 +130,7 @@
       "category": "dev",
       "license": "Apache-2.0",
       "redistributable": true,
+      "version": "1.0.0",
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
@@ -169,8 +170,7 @@
           "name": "browser_evaluate",
           "description": "在页面内执行 JS"
         }
-      ],
-      "version": "2026-07-06.3"
+      ]
     },
     {
       "id": "mcp:git",
@@ -182,6 +182,7 @@
       "category": "dev",
       "license": "MIT",
       "redistributable": true,
+      "version": "1.0.0",
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
@@ -218,8 +219,7 @@
           "name": "git_commit",
           "description": "提交"
         }
-      ],
-      "version": "2026-07-06.3"
+      ]
     },
     {
       "id": "mcp:github",
@@ -231,6 +231,7 @@
       "category": "dev",
       "license": "MIT",
       "redistributable": true,
+      "version": "1.0.0",
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
@@ -268,8 +269,7 @@
           "name": "list_issues",
           "description": "列出 issue"
         }
-      ],
-      "version": "2026-07-06.3"
+      ]
     },
     {
       "id": "mcp:dbhub",
@@ -281,6 +281,7 @@
       "category": "dev",
       "license": "MIT",
       "redistributable": true,
+      "version": "1.0.0",
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
@@ -315,8 +316,7 @@
           "name": "execute_sql",
           "description": "执行 SQL(--readonly 档:仅查询类语句)"
         }
-      ],
-      "version": "2026-07-06.3"
+      ]
     },
     {
       "id": "mcp:feishu",
@@ -328,6 +328,7 @@
       "category": "china-office",
       "license": "MIT",
       "redistributable": true,
+      "version": "1.0.0",
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
@@ -365,8 +366,7 @@
           "name": "bitable.v1.appTableRecord.search",
           "description": "查询多维表格记录"
         }
-      ],
-      "version": "2026-07-06.3"
+      ]
     },
     {
       "id": "mcp:yuque",
@@ -378,6 +378,7 @@
       "category": "china-office",
       "license": "MIT",
       "redistributable": true,
+      "version": "1.0.0",
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
@@ -414,8 +415,7 @@
           "name": "create_doc",
           "description": "新建文档"
         }
-      ],
-      "version": "2026-07-06.3"
+      ]
     },
     {
       "id": "mcp:dingtalk",
@@ -427,6 +427,7 @@
       "category": "china-office",
       "license": "MIT",
       "redistributable": true,
+      "version": "1.0.0",
       "installSpec": {
         "kind": "mcp",
         "mcpType": "local",
@@ -464,8 +465,7 @@
           "name": "ding-message.*",
           "description": "发送 DING 消息(默认启用,2 个工具)"
         }
-      ],
-      "version": "2026-07-06.3"
+      ]
     },
     {
       "id": "skill:skill-creator",
@@ -477,14 +477,14 @@
       "category": "dev",
       "license": "Apache-2.0",
       "redistributable": true,
+      "version": "1.0.0",
       "installSpec": {
         "kind": "skill",
         "source": "builtin",
         "builtinAssetKey": "skills/skill-creator",
         "targetDir": "alpha-skills",
         "_verify": "Apache-2.0 可内置;打包前放入 ui-mac 资源并附 NOTICE。"
-      },
-      "version": "2026-07-06.3"
+      }
     },
     {
       "id": "skill:alpha-upstream-sync",
@@ -496,13 +496,13 @@
       "category": "dev",
       "license": "MIT",
       "redistributable": true,
+      "version": "1.0.0",
       "installSpec": {
         "kind": "skill",
         "source": "builtin",
         "builtinAssetKey": "skills/alpha-upstream-sync",
         "targetDir": "global"
-      },
-      "version": "2026-07-06.3"
+      }
     },
     {
       "id": "skill:safe-refactor",
@@ -514,13 +514,13 @@
       "category": "dev",
       "license": "MIT",
       "redistributable": true,
+      "version": "1.0.0",
       "installSpec": {
         "kind": "skill",
         "source": "builtin",
         "builtinAssetKey": "skills/safe-refactor",
         "targetDir": "global"
-      },
-      "version": "2026-07-06.3"
+      }
     },
     {
       "id": "skill:mcp-builder",
@@ -1214,12 +1214,12 @@
       "category": "dev",
       "license": "MIT",
       "redistributable": true,
+      "version": "1.0.0",
       "installSpec": {
         "kind": "agent",
         "source": "builtin",
         "builtinAssetKey": "agents/code-reviewer.md"
-      },
-      "version": "2026-07-06.3"
+      }
     },
     {
       "id": "plugin:opencode-notify",
@@ -1231,6 +1231,7 @@
       "category": "dev",
       "license": "MIT",
       "redistributable": true,
+      "version": "1.0.0",
       "installSpec": {
         "kind": "plugin",
         "package": "opencode-notify",
@@ -1244,8 +1245,7 @@
           "name": "event(session.idle)",
           "description": "会话空闲 / 任务完成时发 macOS 系统通知"
         }
-      ],
-      "version": "2026-07-06.3"
+      ]
     },
     {
       "id": "bundle:office",
@@ -1257,6 +1257,7 @@
       "category": "office",
       "license": "mixed",
       "redistributable": true,
+      "version": "1.0.0",
       "bundleItems": [
         {
           "catalogEntryId": "mcp:markitdown",
@@ -1269,8 +1270,7 @@
           "installOrder": 2
         }
       ],
-      "_verify": "再补一个 openpyxl 系 Excel-MCP(写 xlsx)+ 一页自写「办公」引导技能后加入。",
-      "version": "2026-07-06.3"
+      "_verify": "再补一个 openpyxl 系 Excel-MCP(写 xlsx)+ 一页自写「办公」引导技能后加入。"
     },
     {
       "id": "bundle:research",
@@ -1282,6 +1282,7 @@
       "category": "research",
       "license": "MIT",
       "redistributable": true,
+      "version": "1.0.0",
       "bundleItems": [
         {
           "catalogEntryId": "mcp:fetch",
@@ -1293,8 +1294,7 @@
           "optional": false,
           "installOrder": 2
         }
-      ],
-      "version": "2026-07-06.3"
+      ]
     },
     {
       "id": "bundle:dev",
@@ -1306,6 +1306,7 @@
       "category": "dev",
       "license": "mixed",
       "redistributable": true,
+      "version": "1.0.0",
       "bundleItems": [
         {
           "catalogEntryId": "mcp:git",
@@ -1327,8 +1328,7 @@
           "optional": true,
           "installOrder": 4
         }
-      ],
-      "version": "2026-07-06.3"
+      ]
     },
     {
       "id": "bundle:design",
@@ -1340,6 +1340,7 @@
       "category": "design",
       "license": "Apache-2.0",
       "redistributable": true,
+      "version": "1.0.0",
       "bundleItems": [
         {
           "catalogEntryId": "skill:canvas-design",
@@ -1352,8 +1353,7 @@
           "installOrder": 2
         }
       ],
-      "_provenance": "REQ-045:S22 撤空壳后随成员补货回归(验收④,成员齐才复活)。",
-      "version": "2026-07-06.3"
+      "_provenance": "REQ-045:S22 撤空壳后随成员补货回归(验收④,成员齐才复活)。"
     },
     {
       "id": "bundle:china-office",
@@ -1365,6 +1365,7 @@
       "category": "china-office",
       "license": "MIT",
       "redistributable": true,
+      "version": "1.0.0",
       "bundleItems": [
         {
           "catalogEntryId": "mcp:feishu",
@@ -1381,8 +1382,7 @@
           "optional": true,
           "installOrder": 3
         }
-      ],
-      "version": "2026-07-06.3"
+      ]
     },
     {
       "id": "cloud:code-review",
@@ -1392,6 +1392,7 @@
       "description": "把 git diff 派发到云端流水线审查(正确性/安全/性能/风格,必要时联网查库行为与 CVE),结果回流本地 .alpha/runs。diff-only:绝不上传全库。",
       "source": "alpha",
       "category": "cloud",
+      "version": "1.0.0",
       "installSpec": {
         "kind": "cloud",
         "pipelineKind": "code-review",
@@ -1418,8 +1419,7 @@
           "变更意图摘要与审查结论(云侧模型生成,存于任务产物)",
           "派发信封元数据(预算/约束;denied_paths 缺省注入)"
         ]
-      },
-      "version": "2026-07-06.3"
+      }
     },
     {
       "id": "cloud:research",
@@ -1429,6 +1429,7 @@
       "description": "把调研问题派发到云端流水线:拆解子问题、联网检索、带来源综合作答;结果回流本地 .alpha/runs。",
       "source": "alpha",
       "category": "cloud",
+      "version": "1.0.0",
       "installSpec": {
         "kind": "cloud",
         "pipelineKind": "research",
@@ -1454,8 +1455,7 @@
           "调研问题文本(input.question)",
           "派发信封元数据(预算/约束;denied_paths 缺省注入)"
         ]
-      },
-      "version": "2026-07-06.3"
+      }
     },
     {
       "id": "cloud:docs",
@@ -1465,6 +1465,7 @@
       "description": "把代码片段派发到云端流水线生成文档(README/API 文档等,先大纲后成文);结果回流本地 .alpha/runs。",
       "source": "alpha",
       "category": "cloud",
+      "version": "1.0.0",
       "installSpec": {
         "kind": "cloud",
         "pipelineKind": "docs",
@@ -1494,8 +1495,7 @@
           "代码片段(input.code;云侧截 12k 字符)",
           "派发信封元数据(预算/约束;denied_paths 缺省注入)"
         ]
-      },
-      "version": "2026-07-06.3"
+      }
     },
     {
       "id": "skill:conventional-commits",
