@@ -3,10 +3,10 @@ id: REQ-045
 title: 撤下条目远程补货:mcp-builder/canvas-design/brand-guidelines 经远程 catalog 上架
 type: feature
 priority: P3
-status: registered
+status: shipped
 repo: C
 created: 2026-07-06
-sprint: —
+sprint: S26
 source: S22(REQ-044 ②)撤条目时的补货承诺
 ---
 
@@ -25,3 +25,8 @@ S22(PR #119)把 catalog 里三个 builtinAssetKey 资产从未随 app 打包、�
 
 ## 关联
 [[REQ-044]](撤下动作)· [[REQ-032]](远程分发管线)· D3(历史:官方 skills 打包意图,dup→REQ-018 后未兑现,本条为其远程路线复活)。
+
+## 结果(2026-07-06,S26 shipped)
+- 验收①②④ 已落(alpha-web PR #10,已部署 prod):来源 = anthropics/skills@`9d2f1ae`,三条 LICENSE.txt 逐条核验 Apache-2.0,NOTICE.md(仓库/钉 commit/改动声明)随资产,canvas-design 字体 SIL OFL 1.1 许可文本随字体;catalog 2026-07-06.2,98 文件 sha256 + ed25519;prod 复验验签 VALID、抽样下载 sha256 全匹配;bundle:design 成员齐回归、bundle:dev 补回 mcp-builder。
+- 验收③(A 零发版链路:刷新→条目出现→安装→账本 origin)= **verified 门,归下一真机批**(联动 REQ-046「C 上架 → hub 安装」演练)。
+- 细节:[sprints/2026-07-06-s26-req045-restock](../sprints/2026-07-06-s26-req045-restock/sprint.md)。

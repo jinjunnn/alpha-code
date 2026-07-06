@@ -107,7 +107,7 @@
 
 | ID | 标题 | 类 | 仓 | 状态 | 备注 |
 |---|---|---|---|---|---|
-| REQ-045 | 撤下条目远程补货:mcp-builder/canvas-design/brand-guidelines 三 skill 资产经远程 catalog 上架(来源核验+NOTICE+sha256) | feature | C | registered | **S23 登记(2026-07-06)**:S22(REQ-044 ②)撤三无资产条目时钉死的补货正道;走 REQ-032 远程管线,A 零发版;前置=Apache-2.0 再分发来源核验;详见 [requirements/REQ-045](requirements/REQ-045-remote-catalog-restock.md) |
+| REQ-045 | 撤下条目远程补货:mcp-builder/canvas-design/brand-guidelines 三 skill 资产经远程 catalog 上架(来源核验+NOTICE+sha256) | feature | C | shipped | **S26 shipped(2026-07-06,alpha-web PR #10,已部署 prod)**:三条资产再分发自 anthropics/skills@`9d2f1ae`(LICENSE.txt 逐条核验 Apache-2.0;NOTICE.md 溯源随资产;canvas-design 字体 SIL OFL 1.1 许可随字体)→ `build-catalog.mjs` 发布(catalog 2026-07-06.2,98 文件 sha256 钉死 + ed25519 签名);prod 复验 = 验签 VALID + 抽样下载 sha256 全匹配;`bundle:design` 成员齐回归 + `bundle:dev` 补回 mcp-builder(验收④);**A 仓零动作**(REQ-046 单侧作者纪律首次真实演练);**verified 待真机**(验收③:A 端远程刷新→三条目出现→安装成功→账本 origin 记远程来源 + bundle:design 远程成员扇出一键装,联动 REQ-046 演练);契约 [sprints/s26](sprints/2026-07-06-s26-req045-restock/sprint.md);详见 [requirements/REQ-045](requirements/REQ-045-remote-catalog-restock.md) |
 | REQ-007 | ADR-015 待办①③:per-agent prompt 优化清单 + Tier-3 回答长度校准桌面实测 | docs | A | registered | 待办②(sync tripwire)已随 S7 完成;**(/loop 2026-07-04 defer)** ① 属 Tier-3 行为判断需拍板、③ 需桌面真机实测 → 并入真机批,详见档 |
 | D2 | `/v1/models` live 同步死代码 | debt | A | dup | **→ 并入 REQ-001**(接进 picker 按白名单装配) |
 | D3 | 官方 4 条 Anthropic skills 内容打包 + NOTICE(T5.3) | feature | A | dup | **→ 并入 REQ-018**(T7 官方 skill 资产打包);原状:现诚实失败,非占位 |
@@ -143,9 +143,13 @@
 | REQ-034 | 外部生态导入转换器:Claude Code plugin 大礼包→套件扇出 + Codex 可共享物导入(安装期转换,[[ADR-023]]) | 用户 2026-07-05:立项但暂不开发,想清楚再启动 | 用户拍板启动(按 ADR-023 执行);详见 [requirements/REQ-034](requirements/REQ-034-ecosystem-import-converter.md) |
 | REQ-035 | 本地 harness-as-executor(claude/codex 委托执行,tool/MCP 接缝);长期演进=会话级并轨(GOALS G5) | 用户 2026-07-05:立项但暂不开发,想清楚再启动 | 第一阶段=用户拍板启动;并轨阶段另有硬前置(challenge+POSITIONING 修订+承载 spike+独立 ADR,见档) |
 
-## 当前 sprint → **S25 B16 PIPL 数据出境同意/告知门(2026-07-06 开批,用户 GO)**
+## 当前 sprint → **S26 REQ-045 远程补货上架(纯 C 侧)—— 已收尾(2026-07-06)**
 
-> 用户拍板 GO 重启 B16。显式 per-项目派发同意门(A 侧 main gate + .alpha/prefs.json)+ 隐式登录告知(C 侧授权页 + 隐私政策出境专章);ADR-021 §4 挂钩点落地。契约:[sprints/2026-07-06-s25-b16-pipl-consent](sprints/2026-07-06-s25-b16-pipl-consent/sprint.md)。
+> 用户拍板「先 REQ-045,再攒真机批」。三条 Anthropic skill(Apache-2.0 核验 + NOTICE 溯源)+ bundle:design 回归经远程管线上架(alpha-web PR #10 已部署);prod 验签 + sha256 复验通过;A 仓零动作 = REQ-046 单侧作者纪律首次真实演练。契约:[sprints/2026-07-06-s26-req045-restock](sprints/2026-07-06-s26-req045-restock/sprint.md)。
+
+## 上一 sprint → **S25 B16 PIPL 数据出境同意/告知门 —— 已收尾(2026-07-06)**(历史)
+
+> 用户拍板 GO 重启 B16。显式 per-项目派发同意门(A 侧 main gate + .alpha/prefs.json)+ 隐式登录告知(C 侧授权页 + 隐私政策出境专章);ADR-021 §4 挂钩点落地(A PR #123 + alpha-web PR #9)。契约:[sprints/2026-07-06-s25-b16-pipl-consent](sprints/2026-07-06-s25-b16-pipl-consent/sprint.md)。
 
 ## 上一 sprint → **S24 REQ-046 catalog 作者真源收敛 —— 已收尾(2026-07-06)**(历史)
 
