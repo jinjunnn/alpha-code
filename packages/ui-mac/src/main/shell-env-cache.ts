@@ -10,10 +10,37 @@
 import { spawn } from "node:child_process"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { isNushell, parseShellEnv } from "./shell-env"
+import { isNushell, minimalProbeEnv, parseShellEnv } from "./shell-env"
 
 const FILE = "alpha-shell-env.json"
 const PROBE_TIMEOUT = 5_000
+
+// REQ-047 读侧兜底:这些键重定向 alpha/引擎的数据根、开调试端口、开迁移闸 —— 从缓存套用
+// 永远不是用户本意(真想用请在启动 env 里真 export,那一层「真 export 永远赢」照常生效)。
+// 主修在探针侧(minimalProbeEnv,毒进不来);本 blocklist 专治**存量已毒化**的缓存文件:
+// 修复版首启即剥离危险键,随后干净再探测会整份重写缓存完成自愈。
+const SESSION_CONTROL_KEYS = [
+  "ALPHA_GLOBAL_DIR",
+  "ALPHA_OPENCODE_HOME",
+  "OPENCODE_CONFIG_DIR",
+  "OPENCODE_DB",
+  "ALPHA_MIGRATE_ENABLE",
+  "ALPHA_CDP",
+  "ALPHA_LEGACY_INSTALL_ROOT",
+  "OPENCODE_TEST_ONBOARDING",
+] as const
+
+/** 剥离缓存里的会话级控制键;stripped 非空时调用方应 loud 留痕(B11 反静默)。 */
+export function sanitizeCachedShellEnv(env: Record<string, string>): {
+  env: Record<string, string>
+  stripped: string[]
+} {
+  const stripped = SESSION_CONTROL_KEYS.filter((k) => k in env)
+  if (stripped.length === 0) return { env, stripped }
+  const clean = { ...env }
+  for (const k of stripped) delete clean[k]
+  return { env: clean, stripped }
+}
 
 export type ShellEnvCache = { probedAt: string; shell: string; env: Record<string, string> }
 
@@ -29,7 +56,11 @@ export function readShellEnvCache(userDataPath: string, shell: string): Record<s
     if (!parsed.env || typeof parsed.env !== "object" || Array.isArray(parsed.env)) return null
     if (Object.keys(parsed.env).length === 0) return null
     for (const [k, v] of Object.entries(parsed.env)) if (typeof k !== "string" || typeof v !== "string") return null
-    return parsed.env
+    const { env, stripped } = sanitizeCachedShellEnv(parsed.env)
+    if (stripped.length > 0)
+      console.log(`[server] [req047] stripped session-control keys from cached shell env: ${stripped.join(", ")}`)
+    if (Object.keys(env).length === 0) return null
+    return env
   } catch {
     return null
   }
@@ -47,7 +78,13 @@ export async function probeShellEnvAsync(shell: string): Promise<Record<string, 
   if (isNushell(shell)) return null
   for (const mode of ["-il", "-l"] as const) {
     const env = await new Promise<Record<string, string> | null>((resolve) => {
-      const child = spawn(shell, [mode, "-c", "env -0"], { stdio: ["ignore", "pipe", "ignore"], windowsHide: true })
+      // REQ-047:与同步探测同款最小干净 env —— 裸继承会把 app 自身(可能已被毒缓存污染的)env
+      // 回灌进缓存,构成自续毒化;干净探测使异步刷新真正具备「整份重写自愈」能力。
+      const child = spawn(shell, [mode, "-c", "env -0"], {
+        stdio: ["ignore", "pipe", "ignore"],
+        windowsHide: true,
+        env: minimalProbeEnv(process.env),
+      })
       const chunks: Buffer[] = []
       const timer = setTimeout(() => {
         child.kill()

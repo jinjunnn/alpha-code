@@ -33,11 +33,26 @@ export function parseShellEnv(out: Buffer) {
   return env
 }
 
+// REQ-047:探测子 shell 只给最小干净 env —— 裸继承 app 自身 env 时,登录 shell 会把继承值随
+// `env -0` 原样回吐,被当成「用户 shell 导出的环境」写进缓存并在此后每次启动(含 Finder)套用;
+// 批测/终端启动带的会话级隔离与调试变量(ALPHA_GLOBAL_DIR / OPENCODE_CONFIG_DIR / ALPHA_CDP…)
+// 就此永久腌入,且异步刷新同样继承 → 毒化自续、永不自愈。最小集使缓存语义回归
+// 「登录 shell 自己导出什么」;PATH 给系统底座,登录 shell 自会经 /etc/paths + rc 重建。
+export function minimalProbeEnv(source: Record<string, string | undefined>): Record<string, string> {
+  const env: Record<string, string> = { PATH: "/usr/bin:/bin:/usr/sbin:/sbin" }
+  for (const key of ["HOME", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "TERM", "TMPDIR"]) {
+    const v = source[key]
+    if (typeof v === "string" && v) env[key] = v
+  }
+  return env
+}
+
 function probe(shell: string, mode: "-il" | "-l"): Probe {
   const out = spawnSync(shell, [mode, "-c", "env -0"], {
     stdio: ["ignore", "pipe", "ignore"],
     timeout: TIMEOUT,
     windowsHide: true,
+    env: minimalProbeEnv(process.env),
   })
 
   const err = out.error as NodeJS.ErrnoException | undefined
