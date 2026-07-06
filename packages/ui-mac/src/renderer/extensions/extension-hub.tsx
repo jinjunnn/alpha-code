@@ -28,7 +28,7 @@ import { Banner } from "../alpha-ui/Banner"
 import type { ServerInfo } from "../sidebar/use-projects"
 import { useExtensions, type HubAgent } from "./use-extensions"
 import type { Catalog, CatalogEntry, InstalledState } from "./catalog-types"
-import type { AuthState, InstallReceipt, InstallReceiptType } from "../../preload/types"
+import type { AuthState, InstallReceipt, InstallReceiptType, ProvenanceRequest } from "../../preload/types"
 import { hubSection, setHubSection, type HubSection } from "./ext-hub-state"
 import { iconFor, iconForRow, sourceLabel, typeLabel, Svg, SearchIc, LockIc } from "./ext-presentation"
 import { ExtensionDetail, type DetailTarget } from "./extension-detail"
@@ -599,6 +599,30 @@ export function ExtensionHub(props: {
   }
 
   // T3:开 hub 时扫描旧 XDG 根,匹配 catalog(只迁 alpha 自己装的,不碰用户自建内容,ADR-019 §4)。
+  // REQ-044:名字匹配只定位候选;main 侧 provenance 终审(skill=与打包资产逐字节比对,mcp/plugin=
+  // catalog 形状比对)放行才列入 —— 同名用户自建被排除(fail-closed),排除原因见 main.log
+  // [req044-provenance]。此前名字命中即候选,「迁移」会用 catalog 版覆盖并删除用户自建旧位。
+  const provenanceRequest = (e: CatalogEntry): ProvenanceRequest | null => {
+    if (e.type === "skill")
+      return { type: "skill", name: e.name, builtinAssetKey: e.installSpec?.kind === "skill" ? e.installSpec.builtinAssetKey : undefined }
+    if (e.type === "mcp" && e.installSpec?.kind === "mcp") {
+      const s = e.installSpec
+      return {
+        type: "mcp",
+        name: e.name,
+        spec: {
+          mcpType: s.mcpType,
+          command: s.command,
+          mirrorCommand: s.mirrorCommand,
+          url: s.url,
+          requiredEnvVars: s.requiredEnvVars,
+          headerNames: Object.keys(s.headersTemplate ?? {}),
+        },
+      }
+    }
+    if (e.type === "plugin" && e.installSpec?.kind === "plugin") return { type: "plugin", name: e.name, package: e.installSpec.package }
+    return null
+  }
   const scanMigration = async () => {
     try {
       const { enabled, inventory } = await window.api.ext.migrateScan()
@@ -606,13 +630,16 @@ export function ExtensionHub(props: {
       const skillNames = new Set(inventory.skills)
       const mcpNames = new Set(inventory.mcp.map((m) => m.name))
       const pluginBases = new Set(inventory.plugins.map((p) => p.split("@")[0]))
-      const cands = catalog().entries.filter((e) => {
+      const named = catalog().entries.filter((e) => {
         if (e.type === "skill") return skillNames.has(e.name)
         if (e.type === "mcp") return mcpNames.has(e.name)
         if (e.type === "plugin" && e.installSpec?.kind === "plugin") return pluginBases.has(e.installSpec.package.split("@")[0])
         return false
       })
-      setMigrateCandidates(cands)
+      const requests = named.map(provenanceRequest).filter((r): r is ProvenanceRequest => r !== null)
+      const verdicts = requests.length ? await window.api.ext.migrateVerify(requests) : []
+      const passed = new Set(verdicts.filter((v) => v.verified).map((v) => `${v.type}:${v.name}`))
+      setMigrateCandidates(named.filter((e) => passed.has(`${e.type}:${e.name}`)))
     } catch {
       setMigrateCandidates([])
     }
