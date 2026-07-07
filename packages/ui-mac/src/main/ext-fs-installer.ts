@@ -142,9 +142,9 @@ export function writeSkill(
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : "failed to write skill" }
   }
-  const bridge = bridgeItem(roots.alphaDir, roots.opencodeDir, "skills", name)
-  if (!bridge.ok) return { ok: false, reason: `已写入 ${dir},但引擎桥接失败:${bridge.reason}` }
-  const files = [dir, ...bridge.created]
+  // T3(REQ-059):skills 桥退役 —— 真源 ~/.alpha/skills/<name> 就位即可,引擎经 alpha.jsonc 的
+  // skills.paths 发现,不再往 .opencode 建桥(不变量:.opencode 内零 alpha 痕迹)。
+  const files = [dir]
   recordReceipt(roots, { name, type: "skill", files, meta })
   return { ok: true, files }
 }
@@ -248,9 +248,8 @@ export function installBuiltinSkill(
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : "failed to install skill" }
   }
-  const bridge = bridgeItem(roots.alphaDir, roots.opencodeDir, "skills", name)
-  if (!bridge.ok) return { ok: false, reason: `已写入 ${destDir},但引擎桥接失败:${bridge.reason}` }
-  const files = [destDir, ...bridge.created]
+  // T3(REQ-059):skills 桥退役 —— 真源就位,引擎经 skills.paths 发现。
+  const files = [destDir]
   recordReceipt(roots, { name, type: "skill", files, meta, origin: "catalog" })
   return { ok: true, files }
 }
@@ -287,9 +286,8 @@ export function installRemoteSkill(
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : "failed to write remote skill" }
   }
-  const bridge = bridgeItem(roots.alphaDir, roots.opencodeDir, "skills", name)
-  if (!bridge.ok) return { ok: false, reason: `已写入 ${destDir},但引擎桥接失败:${bridge.reason}` }
-  const files = [destDir, ...bridge.created]
+  // T3(REQ-059):skills 桥退役 —— 真源就位,引擎经 skills.paths 发现。
+  const files = [destDir]
   const receiptWarn = recordReceipt(roots, { name, type: "skill", files, meta, origin: "catalog" })
   // codex L2:账本写失败时文件/桥已落盘 —— 不谎报失败(技能实际可用),但 loud 记录(卸载/更新将失真)。
   if (receiptWarn) console.error(`[ext-fs-installer] remote skill "${name}" installed but receipt failed: ${receiptWarn}`)
@@ -423,9 +421,8 @@ export function importSkillFolder(srcDir: string, target?: InstallTarget): FsRes
     fs.rmSync(destDir, { recursive: true, force: true }) // 半成品不留
     return { ok: false, reason: error instanceof Error ? error.message : "复制失败" }
   }
-  const bridge = bridgeItem(roots.alphaDir, roots.opencodeDir, "skills", name)
-  if (!bridge.ok) return { ok: false, reason: `已写入 ${destDir},但引擎桥接失败:${bridge.reason}` }
-  const files = [destDir, ...bridge.created]
+  // T3(REQ-059):skills 桥退役 —— 真源就位,引擎经 skills.paths 发现。
+  const files = [destDir]
   recordReceipt(roots, { name, type: "skill", files, origin: "imported" })
   return { ok: true, files, name }
 }

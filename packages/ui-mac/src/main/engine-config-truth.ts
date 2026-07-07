@@ -22,6 +22,20 @@ export function alphaJsoncPath(): string {
   return path.join(alphaGlobalRoot(), "alpha.jsonc")
 }
 
+/** Global factory/installed skills truth dir. Engine discovers it via `skills:[...]` in the alpha.jsonc
+ *  FILE channel (factory-skills实测:env skills.paths 不生效、文件 config 生效 → G1 承载,桥退役 T3). */
+export function alphaSkillsDir(): string {
+  return path.join(alphaGlobalRoot(), "skills")
+}
+
+/** Idempotently ensure `config.skills` contains `skillsDir` (absolute). Returns true if it added it. */
+export function ensureSkillsPath(config: Record<string, unknown>, skillsDir: string): boolean {
+  const cur = Array.isArray(config.skills) ? (config.skills as unknown[]) : []
+  if (cur.includes(skillsDir)) return false
+  config.skills = [...cur, skillsDir]
+  return true
+}
+
 /** alpha 会写进 alpha.jsonc 的引擎 config 顶层域。存量文件顶层键越界 = 疑用户手写混入 → 不迁。 */
 export const ALPHA_CONFIG_TOP_KEYS = new Set([
   "$schema",

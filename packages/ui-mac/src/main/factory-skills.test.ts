@@ -48,12 +48,10 @@ describe("reconcileFactorySkillLinks — two-hop (.alpha truth + bridge)", () =>
     const r1 = reconcileFactorySkillLinks(sources, roots)
     expect(r1.linked.sort()).toEqual([...FACTORY_SKILL_IDS].sort())
     expect(r1.active.sort()).toEqual([...FACTORY_SKILL_IDS].sort())
-    // truth = .alpha 内 symlink → app 资源(零拷贝)
+    // truth = .alpha 内 symlink → app 资源(零拷贝);引擎经 skills.paths(alpha.jsonc)发现,无 .opencode 桥
     expect(readlinkSync(truthPath("skill-creator"))).toBe(sources["skill-creator"])
-    // 引擎可见位经桥解析到同一资源(多跳链,REQ-004)
-    expect(realpathSync(enginePath("skill-creator"))).toBe(realpathSync(sources["skill-creator"]))
-    expect(realpathSync(enginePath("agent-creator"))).toBe(realpathSync(sources["agent-creator"]))
-    // 不变量:.opencode 内不再有直链 app 资源的条目(桥指向 .alpha)
+    // T3 不变量:.opencode 内不再建任何 alpha skills 桥
+    expect(existsSync(enginePath("skill-creator"))).toBe(false)
     expect(existsSync(legacyPath("skill-creator"))).toBe(false)
     const r2 = reconcileFactorySkillLinks(sources, roots)
     expect({ ...r2, active: [...r2.active].sort() }).toEqual({
@@ -90,17 +88,9 @@ describe("reconcileFactorySkillLinks — two-hop (.alpha truth + bridge)", () =>
     expect(readlinkSync(truthPath("agent-creator"))).toBe(sources["agent-creator"]) // other link still made
     expect(r.active).toContain("agent-creator")
   })
-  test("NEVER replaces a foreign item link inside a real .opencode/skills dir", () => {
-    mkdirSync(join(home, ".opencode", "skills"), { recursive: true }) // 用户已有真实 skills 目录
-    mkdirSync(join(tmp, "their-skill"), { recursive: true })
-    symlinkSync(join(tmp, "their-skill"), enginePath("skill-creator"))
-    const r = reconcileFactorySkillLinks(sources, roots)
-    expect(r.skipped.some((x) => x.name === "skill-creator" && x.reason.includes("foreign bridge link"))).toBe(true)
-    expect(readlinkSync(enginePath("skill-creator"))).toBe(join(tmp, "their-skill")) // untouched
-    expect(r.active).not.toContain("skill-creator")
-    expect(r.active).toContain("agent-creator") // 另一条经 item-link 正常桥入
-    expect(realpathSync(enginePath("agent-creator"))).toBe(realpathSync(sources["agent-creator"]))
-  })
+  // (T3 REQ-059:桥退役 —— 原「不替换 .opencode/skills 内异源 item 链」测试随桥删除;引擎现经
+  //  skills.paths 发现 .alpha 真源,不再往 .opencode 建任何 skills 链。存量 .opencode/skills 桥由
+  //  reconcileEngineConfigTruth 的 cleanup 拆除,并有独立 boot 单测覆盖异源链保护。)
   test("missing source is reported honestly, not silently skipped", () => {
     rmSync(join(res, "factory-skills"), { recursive: true })
     const r = reconcileFactorySkillLinks(sources, roots)
@@ -112,7 +102,6 @@ describe("reconcileFactorySkillLinks — two-hop (.alpha truth + bridge)", () =>
     const r = reconcileFactorySkillLinks(sources, roots)
     expect(r.removed.sort()).toEqual([...FACTORY_SKILL_IDS].sort())
     expect(existsSync(truthPath("skill-creator"))).toBe(false)
-    expect(existsSync(enginePath("skill-creator"))).toBe(false) // 桥随真源消失而失效
     expect(factorySkillIds()).toEqual([])
   })
   test("escape hatch does not remove a real dir at the truth path", () => {
@@ -143,8 +132,7 @@ describe("legacy migration — REQ-036 初版 ~/.opencode/skill 直链", () => {
     expect(r.active.sort()).toEqual([...FACTORY_SKILL_IDS].sort())
     expect(existsSync(legacyPath("skill-creator"))).toBe(false)
     expect(existsSync(join(home, ".opencode", "skill"))).toBe(false) // 空目录已顺手拆掉
-    expect(readlinkSync(truthPath("skill-creator"))).toBe(sources["skill-creator"])
-    expect(realpathSync(enginePath("skill-creator"))).toBe(realpathSync(sources["skill-creator"]))
+    expect(readlinkSync(truthPath("skill-creator"))).toBe(sources["skill-creator"]) // 真源(引擎经 skills.paths 发现)
   })
   test("a user's real dir at the legacy path blocks the whole item (no duplicate-name double source)", () => {
     mkdirSync(legacyPath("skill-creator"), { recursive: true })

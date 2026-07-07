@@ -15,7 +15,14 @@ import { parse } from "jsonc-parser"
 import { alphaGlobalRoot } from "./alpha-installs"
 import { opencodeHomeDir } from "./alpha-bridge"
 import { readLedger } from "./alpha-installs"
-import { alphaJsoncPath, isAlphaOwnedConfig, planConfigMerge } from "./engine-config-truth"
+import {
+  alphaJsoncPath,
+  alphaSkillsDir,
+  ensureSkillsPath,
+  isAlphaOwnedConfig,
+  isJunkOnlyDir,
+  planConfigMerge,
+} from "./engine-config-truth"
 
 type Logger = { log: (m: string, meta?: unknown) => void; warn: (m: string, meta?: unknown) => void }
 
@@ -91,17 +98,89 @@ export function reconcileEngineConfigTruth(log?: Logger): ReconcileOutcome {
   const xdgProvider = xdg && "provider" in xdg ? { provider: xdg.provider } : undefined
 
   const plan = planConfigMerge(existing, legacy, xdgProvider)
-  if (!plan.changed) return { skipped: false, migrated: false, added: [] }
+  // T3:全局 skills 经 skills.paths(文件通道生效)发现 ~/.alpha/skills —— 恒定注入(非迁移物),
+  // 使桥退役后引擎仍能发现出厂+装的技能。幂等。
+  const skillsAdded = ensureSkillsPath(plan.merged, alphaSkillsDir())
+  const added = [...plan.added, ...(skillsAdded ? ["skills[]"] : [])]
 
+  let migrated = false
+  if (plan.changed || skillsAdded) {
+    try {
+      fs.mkdirSync(path.dirname(truth), { recursive: true })
+      const tmp = `${truth}.tmp`
+      fs.writeFileSync(tmp, JSON.stringify(plan.merged, null, 2) + "\n", "utf8")
+      fs.renameSync(tmp, truth)
+      log?.log(`[req059] engine config truth updated ~/.alpha/alpha.jsonc`, { added })
+      migrated = true
+    } catch (error) {
+      log?.warn(`[req059] failed to write alpha.jsonc during reconcile`, { error: String(error) })
+      return { skipped: false, migrated: false, added: [], bailedOut: "write failed" }
+    }
+  }
+
+  // T3:migration/injection 落定后清理 ~/.opencode —— 拆自有链、删已迁配置,junk-only 则整目录删。
+  // 只在 legacy owned(未 bail-out)时执行:含用户内容的机器保留 + loud(§风险)。
+  cleanupOpencodeHome(log)
+
+  return { skipped: false, migrated, added }
+}
+
+/**
+ * T3 桥退役 + `~/.opencode` 清理:拆 alpha 自有 symlink(指向 ~/.alpha 的 skills/agents/commands 链)、
+ * 删已迁的 opencode.jsonc/.json + `.alpha-bak-*` 残留;剩余仅引擎 junk 白名单 → 整目录删除。
+ * 含用户自建内容(非链、非 junk)→ 保留 + loud(降级共存,ADR-019 §4)。幂等、best-effort。
+ */
+function cleanupOpencodeHome(log?: Logger): void {
+  const dir = opencodeHomeDir()
+  const alphaRoot = alphaGlobalRoot()
   try {
-    fs.mkdirSync(path.dirname(truth), { recursive: true })
-    const tmp = `${truth}.tmp`
-    fs.writeFileSync(tmp, JSON.stringify(plan.merged, null, 2) + "\n", "utf8")
-    fs.renameSync(tmp, truth)
-    log?.log(`[req059] migrated engine config into ~/.alpha/alpha.jsonc`, { added: plan.added })
-    return { skipped: false, migrated: true, added: plan.added }
-  } catch (error) {
-    log?.warn(`[req059] failed to write alpha.jsonc during reconcile`, { error: String(error) })
-    return { skipped: false, migrated: false, added: [], bailedOut: "write failed" }
+    if (!fs.existsSync(dir)) return
+  } catch {
+    return
+  }
+  // 1. 拆 alpha 自有的 skills 类目 symlink(dir-link 指向 ~/.alpha/skills)。用户真实目录/异源链不碰。
+  //    T3 本批只退役 skills 桥(skills.paths 文件通道接管);agents/commands 桥退役 + 条目化 = T3b
+  //    (引擎无 agent/command paths,需读 md 写 config 条目;本机无全局 agent/command 验证物,不阻塞)。
+  for (const kind of ["skills"]) {
+    const p = path.join(dir, kind)
+    try {
+      const st = fs.lstatSync(p)
+      if (st.isSymbolicLink()) {
+        const target = fs.readlinkSync(p)
+        const resolved = path.isAbsolute(target) ? target : path.resolve(dir, target)
+        if (resolved === path.join(alphaRoot, kind) || resolved.startsWith(alphaRoot + path.sep)) {
+          fs.unlinkSync(p)
+          log?.log(`[req059] unbridged ~/.opencode/${kind} (pointed into ~/.alpha)`)
+        }
+      }
+    } catch {
+      /* not present / not a link → nothing to unbridge */
+    }
+  }
+  // 2. 删已迁的 alpha 引擎配置文件 + 会话残留备份(内容已 merge 进真源,幂等安全)。
+  try {
+    for (const f of fs.readdirSync(dir)) {
+      if (f === "opencode.jsonc" || f === "opencode.json" || f.startsWith("opencode.jsonc.alpha-bak") || f.startsWith("opencode.json.alpha-bak")) {
+        try {
+          fs.unlinkSync(path.join(dir, f))
+        } catch {
+          /* best effort */
+        }
+      }
+    }
+  } catch {
+    /* unreadable dir */
+  }
+  // 3. 剩余仅引擎 junk → 整目录删;含用户内容 → 保留 loud。
+  try {
+    const residual = fs.readdirSync(dir)
+    if (isJunkOnlyDir(residual, [])) {
+      fs.rmSync(dir, { recursive: true, force: true })
+      log?.log(`[req059] removed ~/.opencode (only engine junk remained)`)
+    } else if (residual.length > 0) {
+      log?.warn(`[req059] ~/.opencode retained — user-authored content present`, { residual: residual.slice(0, 8) })
+    }
+  } catch {
+    /* best effort */
   }
 }
