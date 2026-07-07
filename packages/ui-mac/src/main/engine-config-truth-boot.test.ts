@@ -68,14 +68,14 @@ describe("reconcile — migration + skills.paths", () => {
     if (!r.skipped) expect(r.migrated).toBe(true)
     const t = readTruth()
     expect(t.mcp.markitdown).toEqual({ type: "local" })
-    expect(t.skills).toContain(path.join(alphaTmp, "skills")) // T3 skills.paths
+    expect((t.skills as any).paths).toContain(path.join(alphaTmp, "skills")) // T3 skills.paths
   })
 
   test("skills.paths injected even with nothing to migrate (truth created)", () => {
     const r = reconcileEngineConfigTruth()
     expect(r.skipped).toBe(false)
     if (!r.skipped) expect(r.migrated).toBe(true) // skills.paths write
-    expect(readTruth().skills).toContain(path.join(alphaTmp, "skills"))
+    expect((readTruth().skills as any).paths).toContain(path.join(alphaTmp, "skills"))
   })
 
   test("XDG provider lifted into alpha.jsonc; XDG file untouched", () => {
@@ -109,7 +109,7 @@ describe("reconcile — ownership bail-out", () => {
     // must not go dark on machines whose legacy mcp lacks a receipt).
     expect(truthExists()).toBe(true)
     const t = readTruth()
-    expect(t.skills).toContain(path.join(alphaTmp, "skills")) // skills.paths injected despite bail
+    expect((t.skills as any).paths).toContain(path.join(alphaTmp, "skills")) // skills.paths injected despite bail
     expect(t.keybinds).toBeUndefined() // legacy stray key NOT migrated
     expect(t.mcp).toBeUndefined()
   })

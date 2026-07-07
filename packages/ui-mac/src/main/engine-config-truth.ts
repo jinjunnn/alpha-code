@@ -28,11 +28,20 @@ export function alphaSkillsDir(): string {
   return path.join(alphaGlobalRoot(), "skills")
 }
 
-/** Idempotently ensure `config.skills` contains `skillsDir` (absolute). Returns true if it added it. */
+/**
+ * Idempotently ensure `config.skills.paths` contains `skillsDir` (absolute). Returns true if changed.
+ * 引擎 config schema:`skills` = { paths: string[] }(OBJECT,不是数组)—— 真机 ConfigInvalidError 实证
+ * "Expected object | undefined, got [...]"。也自愈把早期误写成数组的存量重写成正确形态。
+ */
 export function ensureSkillsPath(config: Record<string, unknown>, skillsDir: string): boolean {
-  const cur = Array.isArray(config.skills) ? (config.skills as unknown[]) : []
-  if (cur.includes(skillsDir)) return false
-  config.skills = [...cur, skillsDir]
+  const s = config.skills
+  const validObj = s && typeof s === "object" && !Array.isArray(s)
+  const cur = validObj && Array.isArray((s as Record<string, unknown>).paths) ? ((s as Record<string, unknown>).paths as unknown[]) : []
+  // 已是正确形态且含目标 → no-op。
+  if (validObj && cur.includes(skillsDir)) return false
+  const rest = validObj ? { ...(s as Record<string, unknown>) } : {}
+  rest.paths = cur.includes(skillsDir) ? cur : [...cur, skillsDir]
+  config.skills = rest
   return true
 }
 

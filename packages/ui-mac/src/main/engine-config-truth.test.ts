@@ -1,11 +1,35 @@
 import { describe, expect, test } from "bun:test"
 import {
   ALPHA_CONFIG_TOP_KEYS,
+  ensureSkillsPath,
   isAlphaOwnedConfig,
   isJunkOnlyDir,
   OPENCODE_JUNK_ENTRIES,
   planConfigMerge,
 } from "./engine-config-truth"
+
+describe("ensureSkillsPath — skills.paths OBJECT form (真机 ConfigInvalidError 回归锁)", () => {
+  test("empty config → skills = { paths: [dir] }(object,非数组)", () => {
+    const c: Record<string, unknown> = {}
+    expect(ensureSkillsPath(c, "/a/.alpha/skills")).toBe(true)
+    expect(c.skills).toEqual({ paths: ["/a/.alpha/skills"] })
+  })
+  test("idempotent when already present in object.paths", () => {
+    const c: Record<string, unknown> = { skills: { paths: ["/a/.alpha/skills"] } }
+    expect(ensureSkillsPath(c, "/a/.alpha/skills")).toBe(false)
+  })
+  test("self-heals legacy ARRAY form → object.paths(真机 bug:引擎 schema 期望 object,拒绝数组)", () => {
+    const c: Record<string, unknown> = { skills: ["/a/.alpha/skills"] }
+    expect(ensureSkillsPath(c, "/a/.alpha/skills")).toBe(true)
+    expect(c.skills).toEqual({ paths: ["/a/.alpha/skills"] })
+  })
+  test("preserves sibling skills fields + appends absent path", () => {
+    const c: Record<string, unknown> = { skills: { paths: ["/other"], disabled: ["x"] } }
+    ensureSkillsPath(c, "/a/.alpha/skills")
+    expect((c.skills as any).paths).toEqual(["/other", "/a/.alpha/skills"])
+    expect((c.skills as any).disabled).toEqual(["x"])
+  })
+})
 
 const mcpNames = (...n: string[]) => new Set(n)
 const pluginKeys = (...n: string[]) => new Set(n)
