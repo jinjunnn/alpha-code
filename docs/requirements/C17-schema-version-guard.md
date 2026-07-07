@@ -3,11 +3,12 @@ id: C17
 title: schema 版本兼容守卫(旧 app × 新 DB 预检)
 type: debt
 priority: P2
-status: shipped
+status: verified
 repo: A
 created: 2026-07-03
 sprint: 2026-07-05-s17-deep-decisions
 source: 册 §6.3 / R2(上游 DB)
+status_note: 2026-07-07 在场批打包态真机 verified(退出路径单列观察);证据 audits/2026-07-07-inperson-batch
 ---
 
 ## 背景/证据

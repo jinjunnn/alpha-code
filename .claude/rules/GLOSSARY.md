@@ -11,6 +11,7 @@
 - **安装账本(install receipts)** — `~/.alpha/installs.json`(全局)/ `<项目>/.alpha/installs.json`(项目)记录 alpha 装了什么(id/type/scope/version/files/configKey)。定制中心「已安装」真相 = **receipts ⨝ SDK**(receipts 说装了什么、SDK 说引擎认了什么);差集 = 待重载态。见 `alpha-installs.ts`。
 - **免重启生效(dispose 重载)** — 安装/卸载 skill/agent/plugin 后,调上游 `POST /instance|global/dispose` 使引擎实例惰性重建重扫,**当前会话下一条消息即可用**,无需重启 app(引擎无文件监听,写盘 ≠ 生效;dispose 是唯一免重启接缝)。见 ADR-014 v3。
 - **`.opencode` 桥(symlink bridge)** — `.alpha` 是 alpha 安装物真源,引擎不扫 `.alpha`,故在引擎原生扫描的 `.opencode/<类>` 放 symlink 指回 `.alpha`;用户视角一切在 `.alpha`,引擎照常发现。REQ-004 实证。见 `alpha-bridge.ts`。
+- **`alpha.jsonc`** — alpha 写入的引擎配置**唯一真源**(全局 `~/.alpha/alpha.jsonc` + 项目 `<项目>/.alpha/alpha.jsonc`:连接器 mcp / 插件 plugin / agent / command / skills 路径 / provider 域),引擎经 alpha 注入通道读取——全局 = `OPENCODE_CONFIG` 原生合并,项目 = ext 插件 `config` hook;**全面零 `.opencode`**(任何层级不再创建,2026-07-07 用户拍板;REQ-059 + designs/2026-07-07-project-alpha-only-extensions.md v3)。用户口径:查/改自己装的东西只看 `.alpha`;**没有 `.mcp.json`**(那是 Claude Code 的私有约定,引擎不读)。
 - **薄定制层** — **仅指后端**:alpha 后端自有代码应远小于 opencode 体量(目标 < 5%),只经接缝叠加、不改上游源码。**前端不再适用**——ADR-016 起前端由 alpha 全面接管(厚定制层),见 [[前端接管]]。
 
 ## 技术栈术语(opencode 侧,会在设计/实现里频繁出现)

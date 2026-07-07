@@ -3,7 +3,7 @@ id: B2
 title: refresh token 续期 + 401 拦截 + 失败降级
 type: feature
 priority: P1
-status: shipped
+status: verified
 repo: A
 created: 2026-07-03
 sprint: —
@@ -37,8 +37,7 @@ source: 册 §一 P1 / T3.1 / platform-integration §C
 ## 验证记录
 - **2026-07-03(单测级)**:typecheck + 134 tests 绿(+8 时钟决策:提前量封顶/短 TTL 等比收缩/旧凭证
   补刷/过期边界);A 侧全链 typecheck。
-- **待(verified 门槛)**:真机批——web 侧 `DESKTOP_ACCESS_TTL_SECONDS` 调短(如 120s)实测:
-  ①过期→自动续期无感 ②撤销会话→降级登出有 UI ③logout 停代理不串台(REQ-002④)。
+- ~~**待(verified 门槛)**:真机批~~ → **verified(2026-07-07 在场批)**:C 仓 ECS 临调 `DESKTOP_ACCESS_TTL_SECONDS=180`(测毕从备份还原 7d、重启、清备份、站点/jwks 200 复验),装机 v0.1.2 CDP 观测:①token 过期调 account.summary→401 自动续期 237ms 无感+TTL 刷新(main.log `tokens refreshed`);②ECS 撤销活跃 session(last_seen_at 精确定位)→续期 invalid_grant→`refresh rejected...degrading to logged-out`→降级 byok+账户面板明确 UI;③登出态 BYOK deepseek 直连 200 独立可用不串台。proactive 提前量续期半(hourly tick×短 TTL 测不到)由 alpha-auth-clock 单测覆盖、如实标注。证据 [audits/2026-07-07-inperson-batch/verify.md](../audits/2026-07-07-inperson-batch/verify.md)。
 
 ## 关联
 A8(已修地基)、B21(同域 key 生效)、REQ-002(联调同域)、B11(失败呈现)。

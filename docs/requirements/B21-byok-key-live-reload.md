@@ -3,7 +3,7 @@ id: B21
 title: BYOK 改键/删键即时生效(不达 sidecar 修复)
 type: bug
 priority: P1
-status: shipped
+status: verified
 repo: A
 created: 2026-07-03
 sprint: 2026-07-03-s10-hardening
@@ -31,3 +31,4 @@ env 值永不动;本模块注入过的 var 权威可变(改键覆盖 / 删键清
 
 ## 验证记录
 - 2026-07-03:5 单测(用户值不动/改键必覆盖/删键必清/幂等)+ 全量 gates 绿;真机改键即时生效 → 真机批。
+- **2026-07-07 verified(装机 v0.1.2+PR#141/142,用户真 key 在场)**:验收①②③④全过——改键 4ms/respawn 2.5s/密钥文件即换新(旧 key 仍有效,文件内容为出账判定面)/真消息 4.6s 回;删键 3ms 即吊销(文件删+picker 需KEY行+引擎 loud 500);复键经真实 UI(需KEY行→测试连接 316ms→保存并启用)。证据 [audits/2026-07-07-b21-byok-realkey/verify.md](../audits/2026-07-07-b21-byok-realkey/verify.md)。场中发现 [[REQ-061]](弹层竞态挡死「已配置行改键」UI 入口;IPC/后端语义不受影响)。

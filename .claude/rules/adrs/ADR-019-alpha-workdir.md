@@ -50,3 +50,19 @@ related: [ADR-002, ADR-005, ADR-006, ADR-014]
 用户点名(环境重建时打开 `~/.opencode/skill/` 见 skill-creator/agent-creator 两条直链 app Resources 的 symlink):出厂技能通道(REQ-036 初版,factory-skills.ts)走了「`.opencode` 直链 app 资源」的零拷贝捷径,跳过 `.alpha`,破坏「用户视角一切在 `.alpha`、`.opencode` 只是引擎发现面」的心智——目录安装链路(alpha-bridge)一直合规,唯此通道漂移。就此成文:
 1. **不变量**:`.opencode`(全局与项目级)内 alpha 自有条目只允许两种形态——① 指向 `.alpha` 真源的 symlink(dir-link 或 item-link);② `opencode.jsonc` 内的 config 条目。**内容本体(包括仅指向 app 打包资产的链)一律先落 `.alpha`**;任何新安装/注入通道(含出厂/vendored 资产)都必须经 `.alpha` 中转一跳。
 2. **出厂技能改两跳桥**(REQ-052):`~/.alpha/skills/<name>` → app 资源(真源,零拷贝保留)+ 复用 alpha-bridge 落 `~/.opencode/skills`(多跳 symlink 引擎可见,REQ-004 spike 实测);启动 reconcile 自动迁移旧直链并顺手拆掉空的 `~/.opencode/skill/`(仅 `isAlphaFactoryLink` 判定为我方的链才拆,用户真实目录/异源链照旧不碰,§4 边界不变)。
+
+## 修订(2026-07-07,REQ-059 —— 引擎配置真源入 `.alpha`:`~/.alpha/alpha.jsonc` + `.opencode` 指针化收官)
+用户拍板(「一会 alpha 一会 opencode,租户都蒙了;最小量改动」,真源命名 `alpha.jsonc`):REQ-052 不变量此前只覆盖**内容本体**(安装物),alpha 写入的**引擎 config 文件本体**(`~/.opencode/opencode.jsonc`:mcp / plugin / REQ-037 治理键)仍是 `.opencode` 内最后一个 alpha 真身——租户查看自己装的连接器必须进 opencode 牌目录。就此收官:
+1. **不变量适用范围扩展**:「内容本体一律先落 `.alpha`」扩到 **config 文件本体** —— alpha 写入的引擎配置唯一真源 = `~/.alpha/alpha.jsonc`,`~/.opencode/opencode.jsonc` 降为指向它的 file symlink。此后全局 `.opencode` 内 alpha 痕迹**只剩指针**;引擎自产物(package.json / node_modules / .gitignore,plugin bootstrap)按目录落于 `~/.opencode`,属引擎所有,不在不变量射程。
+2. **机制依据(源码钉死,2026-07-07)**:上游 `packages/opencode/src/config/paths.ts` `ConfigPaths.directories()` 把 home `.opencode` **无条件**并入每个 instance 的 config 源(start=stop=home 的 walk)→ `~/.opencode/opencode.jsonc` 对全部项目会话生效(S16 真机实证的机制解释),且与 [[REQ-058]] sidecar cwd 改动零耦合;引擎 config 写面只有 XDG 全局与 `.opencode/.gitignore`,从不写本文件(symlink 无被碾风险);引擎的文件名要求(`opencode.json(c)`)由指针满足,真源改名 `alpha.jsonc` 引擎无感(`$schema` 保留,编辑器补全不受影响)。
+3. **迁移** = 启动 reconcile(REQ-052 同款,幂等):存量普通文件过**所有权判定**(顶层键 ⊆ {$schema,mcp,plugin,agent,permission,command} ∧ mcp 名 ⊆ receipts ∧ 治理键 ⊆ 治理面)→ 整文件迁 + 原位换链;疑用户手写 → bail-out 不迁不碰(loud,该机维持旧目标,功能零损失);逃生 `ALPHA_JSONC_TRUTH_DISABLE=1`(回本修订前行为),`ALPHA_LEGACY_INSTALL_ROOT` 语义不变。
+4. **盘点定界**(「还有哪些配置要一起改」的裁定,详表见 [[REQ-059]] 档):provider/BYOK 设置域留共享 XDG(生态互通刻意为之,无 provenance 不可安全迁);项目级 `.opencode` 配置 = 生态位不接管(alpha 从不写);`alpha.env`/receipts/automations/项目 `.alpha` 已合规;`.mcp.json` 不做(Claude Code 私有约定,引擎零处读取,导入归 [[REQ-034]]);**将来**若需 alpha 写项目级引擎配置,同构约定 `<proj>/.alpha/alpha.jsonc` + 指针(本修订只立约定,不实现)。
+5. **后果**:✅ 租户心智一句话成立(「`.alpha` 是你的,`.opencode` 是引擎的」),连接器配置的用户口径统一为 `~/.alpha/alpha.jsonc`;⚠️ 对 home `.opencode` config 源的依赖自 REQ-018 T2 既已存在,本修订未新增上游耦合(paths.ts 变动由 sync 契约 diff 纪律覆盖);⚠️ bail-out 态(用户手写混入)该机维持旧布局,功能零损失、品牌收敛暂缓。
+
+## 修订补充(2026-07-07 晚,用户四连拍板收口 —— **全面零 `.opencode`**,撤销同日上一修订的 symlink 通道)
+用户四连拍板(①项目内五类生成物全落 `.alpha` ②接管 XDG provider 域与项目 config ③每个项目不要出现两个目录 ④用户级一并消灭 `.opencode`、不用 symlink):**alpha 在任何层级不再创建任何 `.opencode`**。
+1. **通道改道**(真源 `~/.alpha/alpha.jsonc` / `<proj>/.alpha/alpha.jsonc` 不变):全局 = `OPENCODE_CONFIG` 原生 additional-config 合并(v1 `config.ts:401` per-instance、dispose 重读、junk 循环不含之;上游文档 `customize-opencode.md:431` 语义背书)+ ext 插件 `config` hook 备援(`plugin/index.ts:240-249`,per-instance,PluginInput 带 directory/worktree);项目 = 同一 hook 注入(项目唯一目录 = `.alpha`,信任门必做:项目自带 mcp/plugin 首次加载 per-project 确认,ADR-021 模式)。per-route 可行性由 T0 spike 对 v1/v2 双装载器逐路裁定;回退 symlink 需用户重拍板。
+2. **provider/BYOK 写入域迁真源**(接管 XDG):alpha 永不再写 `~/.config/opencode`;merge 序(home/OPENCODE_CONFIG 在 XDG 后)压制残留,copy-don't-delete 迁移。
+3. **全局目录桥退役**(修订 2026-07-04 D1 与 REQ-052 两跳桥的 `.opencode` 半跳):skills/agents 等经通道注入;存量 `~/.opencode` reconcile 清理(alpha-owned 拆除;残余仅引擎 junk 白名单则整目录删;含用户内容留 + loud,§4 边界不变)。
+4. **接受的损失(用户指令覆盖)**:原生 opencode CLI 对 alpha 安装物可见性放弃(D1「装一次处处用」作废);⚠️ G2 hook 语义标注 "Notify",变异可见性逐路实测是 GO 前唯一闸门。
+5. 载体:REQ-059(全局,已修订)+ REQ-060(项目级,T0 后立);权威方案 = `docs/designs/2026-07-07-project-alpha-only-extensions.md` v3。

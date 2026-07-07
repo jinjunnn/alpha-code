@@ -55,3 +55,6 @@ related: [ADR-002, ADR-003, ADR-006, ADR-008, ADR-009]
 4. **生命周期补全**:更新通道(receipts.version < catalog.version → 角标+分组,fs 覆盖重装 / plugin 换钉版 / MCP 确认框重装防丢 {file:} 引用);导入 folder/git/npm(frontmatter 校验、https-only 浅克隆、外来内容不执行,origin=imported)。
 5. **供给链(REQ-023 并入)**:catalog 增 `vendoredAssetKey`/`downloadUrl`/`AgentInstallSpec`/`tools[]`/`hooks[]`;官方 agent(code-reviewer 只读档)与 vendored 插件(opencode-notify 自包含 JS,不再分发原生通知器)随 app 打包;vendored 安装 = 复制 `~/.alpha/plugins` + `plugin[]` 绝对路径(persistPluginPath 限树内)= **零网络**;卸载净除(config+文件+账本)。不自建 CDN(远程 catalog 仍归 E10/REQ-020)。
 6. **状态**:转 `accepted` 的真机批清单更新 = S12 残余 + S13 递延(卸 uv 像素、断网 vendored 走查、git 真克隆、dispose 打断活跃流、打包件含 resources/{agents,plugins} 且公证不受影响),见 `docs/audits/2026-07-04-s13-acceptance.md`。
+
+## 修订(2026-07-07,REQ-059 —— 持久化真源改 `~/.alpha/alpha.jsonc`)
+v3 修订①③所述「MCP/plugin 引擎侧持久化 = `~/.opencode/opencode.jsonc`(文件通道)」更新:真源迁 `~/.alpha/alpha.jsonc`;引擎可见通道 = `OPENCODE_CONFIG` 原生 additional-config 合并 / ext 插件 `config` hook(同日晚追加拍板:**全面零 `.opencode`**,不再有任何指针/桥,per-route 由 T0 spike 裁定)。dispose 免重启语义、「receipts ⨝ SDK」真相源不变。机制/迁移/所有权判定见 [[ADR-019]] 同日修订(含补充)与 [[REQ-059]]。
