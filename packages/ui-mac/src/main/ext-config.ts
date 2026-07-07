@@ -16,6 +16,7 @@ import type { ProviderInput } from "../shared/alpha-model-types"
 import type { InstallMeta } from "../preload/types"
 import { opencodeHomeDir } from "./alpha-bridge"
 import { addReceipt, alphaGlobalRoot, removeReceipt } from "./alpha-installs"
+import { alphaJsoncPath } from "./engine-config-truth"
 
 export type ConfigResult = { ok: true } | { ok: false; reason: string }
 
@@ -82,9 +83,45 @@ function alphaOpencodeConfigPath(): string {
   return jsonc
 }
 
-// ALPHA_LEGACY_INSTALL_ROOT=1 逃生:回到旧行为(写共享 XDG 根,不记账)。
+// REQ-059:alpha 写入的引擎配置唯一真源 = ~/.alpha/alpha.jsonc(经 sidecar G1 = OPENCODE_CONFIG
+// 注入,引擎原生「额外配置文件」合并,dispose 重读;T0 spike audits/2026-07-07-req059-060-t0-spike)。
+// 取代 REQ-018 的 ~/.opencode/opencode.jsonc(home walk 发现)。alpha 从此不写 .opencode。
+// alphaJsoncPath 由 engine-config-truth 单一真源导出(sidecar 注入用同一路径)。
+
+// mcp / plugin / 治理键 的写入目标。两级逃生:
+//   ALPHA_JSONC_TRUTH_DISABLE=1 → 回 REQ-018 行为(~/.opencode/opencode.jsonc);
+//   ALPHA_LEGACY_INSTALL_ROOT=1 → 回最旧行为(共享 XDG,不记账)。
 function mcpPluginTargetPath(): string {
-  return process.env.ALPHA_LEGACY_INSTALL_ROOT === "1" ? userConfigPath() : alphaOpencodeConfigPath()
+  if (process.env.ALPHA_LEGACY_INSTALL_ROOT === "1") return userConfigPath()
+  if (process.env.ALPHA_JSONC_TRUTH_DISABLE === "1") return alphaOpencodeConfigPath()
+  return alphaJsoncPath()
+}
+
+// provider / BYOK 设置域的写入目标(REQ-059 §3:接管 XDG 写入域)。alpha 停写 XDG;逃生回 XDG。
+function providerTargetPath(): string {
+  if (process.env.ALPHA_JSONC_TRUTH_DISABLE === "1" || process.env.ALPHA_LEGACY_INSTALL_ROOT === "1")
+    return userConfigPath()
+  return alphaJsoncPath()
+}
+
+// 迁移期:主目标之外仍可能残留 alpha 写入物的历史位置(去重、排除主目标)。REQ-018 mcp/plugin 写
+// ~/.opencode、更早写 XDG;REQ-059 后 provider 从 XDG 迁 ~/.alpha。清除/读取都要覆盖这些兜底位置,
+// 否则存量副本会在下次 reconnect「影子复活」已删条目、或漏读未迁尽的存量。
+function legacyConfigPaths(primary: string): string[] {
+  const out: string[] = []
+  const seen = new Set<string>([primary])
+  for (const p of [alphaJsoncPath(), alphaOpencodeConfigPath(), userConfigPath()]) {
+    if (!seen.has(p)) {
+      seen.add(p)
+      out.push(p)
+    }
+  }
+  return out
+}
+
+// provider 读取:真源优先 + 存量兜底(迁移期不漏读)。返回去重路径列表(主目标在首)。
+function providerReadPaths(): string[] {
+  return [providerTargetPath(), ...legacyConfigPaths(providerTargetPath())]
 }
 
 // ── REQ-037 治理层写入(叶子键事务)────────────────────────────────────────────
@@ -330,17 +367,17 @@ export function removeMcp(name: string): ConfigResult {
   if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid server name" }
   const primary = writeKey(mcpPluginTargetPath(), ["mcp", name], undefined)
   if (!primary.ok) return primary
-  try {
-    const legacy = userConfigPath()
-    if (legacy !== mcpPluginTargetPath() && fs.existsSync(legacy)) {
+  for (const legacy of legacyConfigPaths(mcpPluginTargetPath())) {
+    try {
+      if (!fs.existsSync(legacy)) continue
       const parsed = parse(fs.readFileSync(legacy, "utf8")) as { mcp?: Record<string, unknown> } | undefined
       if (parsed?.mcp && typeof parsed.mcp === "object" && name in parsed.mcp) {
         const legacyResult = writeKey(legacy, ["mcp", name], undefined)
         if (!legacyResult.ok) return legacyResult
       }
+    } catch {
+      /* unreadable legacy config → nothing to remove there */
     }
-  } catch {
-    /* unreadable legacy config → nothing to remove there */
   }
   if (receiptsActive()) removeReceipt(alphaGlobalRoot(), "mcp", name)
   return { ok: true }
@@ -365,7 +402,7 @@ export function persistProvider(input: ProviderInput): ConfigResult {
   const models: Record<string, { name: string }> = {}
   for (const m of ids) models[m] = { name: m }
   const block = { npm, name: input.name, options: { baseURL: input.baseURL, apiKey: input.apiKey }, models }
-  return writeKey(userConfigPath(), ["provider", input.id], block)
+  return writeKey(providerTargetPath(), ["provider", input.id], block)
 }
 
 /**
@@ -373,15 +410,18 @@ export function persistProvider(input: ProviderInput): ConfigResult {
  * allowlist (alpha-models.ts) so user-added custom providers survive the hard allowlist (build.md §6).
  */
 export function readUserProviderIds(): string[] {
-  try {
-    const target = userConfigPath()
-    if (!fs.existsSync(target)) return []
-    const parsed = parse(fs.readFileSync(target, "utf8")) as { provider?: unknown } | undefined
-    const prov = parsed?.provider
-    return prov && typeof prov === "object" ? Object.keys(prov as Record<string, unknown>) : []
-  } catch {
-    return []
+  const ids = new Set<string>()
+  for (const target of providerReadPaths()) {
+    try {
+      if (!fs.existsSync(target)) continue
+      const parsed = parse(fs.readFileSync(target, "utf8")) as { provider?: unknown } | undefined
+      const prov = parsed?.provider
+      if (prov && typeof prov === "object") for (const id of Object.keys(prov as Record<string, unknown>)) ids.add(id)
+    } catch {
+      /* unreadable → skip this source */
+    }
   }
+  return [...ids]
 }
 
 /**
@@ -391,19 +431,22 @@ export function readUserProviderIds(): string[] {
  */
 export function readConfiguredProviderKeys(): Map<string, string> {
   const out = new Map<string, string>()
-  try {
-    const target = userConfigPath()
-    if (!fs.existsSync(target)) return out
-    const parsed = parse(fs.readFileSync(target, "utf8")) as { provider?: Record<string, unknown> } | undefined
-    const prov = parsed?.provider
-    if (prov && typeof prov === "object") {
-      for (const [id, def] of Object.entries(prov)) {
-        const key = (def as { options?: { apiKey?: unknown } } | null)?.options?.apiKey
-        if (typeof key === "string" && key.trim().length > 0) out.set(id, key)
+  // Real source first; existing sources only fill ids not already seen (migration-period fallback).
+  for (const target of providerReadPaths()) {
+    try {
+      if (!fs.existsSync(target)) continue
+      const parsed = parse(fs.readFileSync(target, "utf8")) as { provider?: Record<string, unknown> } | undefined
+      const prov = parsed?.provider
+      if (prov && typeof prov === "object") {
+        for (const [id, def] of Object.entries(prov)) {
+          if (out.has(id)) continue
+          const key = (def as { options?: { apiKey?: unknown } } | null)?.options?.apiKey
+          if (typeof key === "string" && key.trim().length > 0) out.set(id, key)
+        }
       }
+    } catch {
+      /* unreadable config → skip this source */
     }
-  } catch {
-    /* unreadable config → treat as none configured */
   }
   return out
 }
@@ -416,7 +459,23 @@ export function readConfiguredProviderKeys(): Map<string, string> {
  */
 export function removeProvider(id: string): ConfigResult {
   if (!SAFE_NAME.test(id)) return { ok: false, reason: "invalid provider id" }
-  return writeKey(userConfigPath(), ["provider", id], undefined)
+  // Drop from the real source, and from any legacy source (XDG/~/.opencode) still carrying it during
+  // the migration period — otherwise a stale copy would shadow-resurrect the provider on next reconnect.
+  const primary = writeKey(providerTargetPath(), ["provider", id], undefined)
+  if (!primary.ok) return primary
+  for (const legacy of providerReadPaths().slice(1)) {
+    try {
+      if (!fs.existsSync(legacy)) continue
+      const parsed = parse(fs.readFileSync(legacy, "utf8")) as { provider?: Record<string, unknown> } | undefined
+      if (parsed?.provider && typeof parsed.provider === "object" && id in parsed.provider) {
+        const r = writeKey(legacy, ["provider", id], undefined)
+        if (!r.ok) return r
+      }
+    } catch {
+      /* unreadable legacy → nothing to remove there */
+    }
+  }
+  return { ok: true }
 }
 
 // npm package name (optional scope), optionally pinned with @version. No shell metacharacters —
@@ -505,9 +564,9 @@ export function removePlugin(pkg: string): ConfigResult {
   }
   const primary = dropFrom(mcpPluginTargetPath())
   if (!primary.ok) return primary
-  if (mcpPluginTargetPath() !== userConfigPath()) {
-    const legacy = dropFrom(userConfigPath())
-    if (!legacy.ok) return legacy
+  for (const legacy of legacyConfigPaths(mcpPluginTargetPath())) {
+    const r = dropFrom(legacy)
+    if (!r.ok) return r
   }
   if (receiptsActive()) removeReceipt(alphaGlobalRoot(), "plugin", base.replace(/^@/, "").replace("/", "__"))
   return { ok: true }

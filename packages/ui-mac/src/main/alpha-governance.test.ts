@@ -33,7 +33,8 @@ afterEach(() => {
   rmSync(tmp, { recursive: true, force: true })
 })
 
-const jsoncPath = () => join(tmp, "home", ".opencode", "opencode.jsonc")
+// REQ-059:治理键(mcpPluginTargetPath)随 alpha 真源迁 ~/.alpha/alpha.jsonc(默认无逃生)。
+const jsoncPath = () => join(tmp, "alpha-global", "alpha.jsonc")
 const readJsonc = () => JSON.parse(readFileSync(jsoncPath(), "utf8"))
 
 describe("validateGovernance — 保护名单硬校验(验收③)", () => {
@@ -91,7 +92,7 @@ describe("materializeEdits — 物化叶子计算", () => {
 describe("applyGovernance / resetGovernance — 端到端(叶子写入不破坏用户内容,验收⑥)", () => {
   test("apply 写入受控叶子;用户自有兄弟字段保留;重放清 stale;reset 全量净除", () => {
     // 用户已有的 jsonc 内容(同名 agent 的兄弟字段 + 无关顶键)
-    mkdirSync(join(tmp, "home", ".opencode"), { recursive: true })
+    mkdirSync(join(tmp, "alpha-global"), { recursive: true })
     writeFileSync(jsoncPath(), JSON.stringify({ theme: "dark", agent: { explore: { temperature: 0.5 } } }, null, 2))
 
     const g1 = gov({ agents: { hide: [], disable: ["explore"], allow: [], override: {} }, skills: { deny: ["customize-opencode"] } })
@@ -123,7 +124,7 @@ describe("applyGovernance / resetGovernance — 端到端(叶子写入不破坏�
     expect(cfg.theme).toBe("dark")
   })
   test("codex H1 回归:用户预设 permission.skill.* 不入账,reset 不删(用户全局 deny 保留)", () => {
-    mkdirSync(join(tmp, "home", ".opencode"), { recursive: true })
+    mkdirSync(join(tmp, "alpha-global"), { recursive: true })
     writeFileSync(jsoncPath(), JSON.stringify({ permission: { skill: { "*": "deny" } } }, null, 2))
     const g = gov({ skills: { deny: ["customize-opencode"] } })
     expect(applyGovernance(g, []).ok).toBe(true)

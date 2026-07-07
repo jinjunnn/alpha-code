@@ -10,5 +10,6 @@
     "jsxImportSource": "solid-js",
     "types": ["bun"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
 }

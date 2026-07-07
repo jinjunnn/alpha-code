@@ -20,7 +20,7 @@
 
 import * as fs from "node:fs"
 import { join, sep } from "node:path"
-import { bridgeItem, opencodeHomeDir, unbridgeItem } from "./alpha-bridge"
+import { opencodeHomeDir, unbridgeItem } from "./alpha-bridge"
 import { alphaGlobalRoot } from "./alpha-installs"
 
 export const FACTORY_SKILL_IDS = ["skill-creator", "agent-creator"] as const
@@ -72,14 +72,6 @@ function readlinkOrNull(p: string): string | null {
     return fs.readlinkSync(p)
   } catch {
     return null // not a symlink (missing or a real dir/file)
-  }
-}
-
-function realpathOrNull(p: string): string | null {
-  try {
-    return fs.realpathSync(p)
-  } catch {
-    return null
   }
 }
 
@@ -183,23 +175,10 @@ export function reconcileFactorySkillLinks(
       }
     }
 
-    // ── 3. 桥:复用 alpha-bridge(与目录安装同构)。异源 item 链前置挡下,绝不替换。
-    const itemLink = join(opencodeHome, "skills", name)
-    const il = readlinkOrNull(itemLink)
-    if (il !== null) {
-      const real = realpathOrNull(itemLink)
-      const realTruth = realpathOrNull(truth)
-      if (!real || !realTruth || real !== realTruth) {
-        result.skipped.push({ name, reason: `foreign bridge link left alone: → ${il}` })
-        continue
-      }
-    }
-    const bridge = bridgeItem(alphaRoot, opencodeHome, "skills", name)
-    if (!bridge.ok) {
-      result.skipped.push({ name, reason: `bridge failed: ${bridge.reason}` })
-      continue
-    }
-    if (createdTruth || bridge.created.length > 0) result.linked.push(name)
+    // ── 3. T3(REQ-059)桥退役:真源 ~/.alpha/skills/<name> 就位即可 —— 引擎经 alpha.jsonc 的
+    //    `skills:[~/.alpha/skills]`(文件通道,factory-skills 实测生效)扫描发现,不再建 ~/.opencode/skills
+    //    链。存量旧链由 reconcileEngineConfigTruth 的 cleanup 拆除(不变量:.opencode 内零 alpha 痕迹)。
+    if (createdTruth) result.linked.push(name)
     result.active.push(name)
   }
 

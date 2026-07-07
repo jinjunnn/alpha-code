@@ -49,14 +49,13 @@ describe("writeSkill / writeAgent — name validation blocks traversal (no disk 
 })
 
 describe("writeSkill — global scope writes truth + bridge + receipt", () => {
-  test("SKILL.md lands in ~/.alpha/skills, engine sees it через .opencode dir-link, receipt recorded", () => {
+  test("SKILL.md lands in ~/.alpha/skills (T3: engine sees it via skills.paths, no .opencode bridge)", () => {
     const r = writeSkill("my-skill", "does things", "# body")
     expect(r.ok).toBe(true)
     const truth = path.join(alphaDir, "skills", "my-skill", "SKILL.md")
     expect(fs.readFileSync(truth, "utf8")).toContain("does things")
-    // engine-visible through the bridge
-    expect(fs.readFileSync(path.join(opencodeDir, "skills", "my-skill", "SKILL.md"), "utf8")).toContain("# body")
-    expect(fs.lstatSync(path.join(opencodeDir, "skills")).isSymbolicLink()).toBe(true)
+    // T3(REQ-059):skills 桥退役 —— 真源即可,引擎经 alpha.jsonc skills.paths 发现;.opencode 内零 alpha 痕迹
+    expect(fs.existsSync(path.join(opencodeDir, "skills"))).toBe(false)
     // receipt
     const { receipts } = readLedger(alphaDir)
     expect(receipts).toHaveLength(1)
@@ -90,7 +89,7 @@ describe("project scope", () => {
     const r = writeSkill("proj-skill", "d", "b", { scope: "project", projectDir })
     expect(r.ok).toBe(true)
     expect(fs.existsSync(path.join(projectDir, ".alpha", "skills", "proj-skill", "SKILL.md"))).toBe(true)
-    expect(fs.existsSync(path.join(projectDir, ".opencode", "skills", "proj-skill", "SKILL.md"))).toBe(true)
+    expect(fs.existsSync(path.join(projectDir, ".opencode", "skills"))).toBe(false) // T3:skills 桥退役
     // .alpha self-ignores (ADR-019 §5)
     expect(fs.readFileSync(path.join(projectDir, ".alpha", ".gitignore"), "utf8")).toBe("*\n")
     const { receipts } = readLedger(path.join(projectDir, ".alpha"))
@@ -128,7 +127,7 @@ describe("installBuiltinSkill — name + asset-key guards", () => {
     const r = installBuiltinSkill("skills/safe-refactor", "safe-refactor", { scope: "global" }, { catalogId: "skill:safe-refactor" })
     expect(r.ok).toBe(true)
     expect(fs.existsSync(path.join(alphaDir, "skills", "safe-refactor", "SKILL.md"))).toBe(true)
-    expect(fs.existsSync(path.join(opencodeDir, "skills", "safe-refactor", "SKILL.md"))).toBe(true)
+    expect(fs.existsSync(path.join(opencodeDir, "skills"))).toBe(false) // T3:skills 桥退役
     const { receipts } = readLedger(alphaDir)
     expect(receipts[0]).toMatchObject({ id: "skill:safe-refactor", origin: "catalog", type: "skill" })
   })
