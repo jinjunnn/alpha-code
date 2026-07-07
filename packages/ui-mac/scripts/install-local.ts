@@ -58,6 +58,23 @@ for (const f of ["SingletonLock", "SingletonCookie", "SingletonSocket"]) {
 rmSync(DEST, { recursive: true, force: true })
 cpSync(SRC, DEST, { recursive: true })
 
+// 3.5 macOS SIGKILLs unsigned bundles at launch ("Code Signature Invalid" — REQ-057 real-machine
+//    2026-07-07: local channels pack with identity:null → electron-builder skips signing entirely,
+//    leaving the raw linker-signed Electron binary; the installed app then dies silently with no
+//    window). If the installed bundle fails verification, stamp an ad-hoc signature (cert-free,
+//    local-only). A properly signed build (Developer ID prod) passes verification and is untouched.
+//    Loud-fail: never report "installed" for an app that cannot launch.
+const verify = spawnSync("codesign", ["--verify", "--deep", "--strict", DEST], { stdio: "ignore" })
+if (verify.status !== 0) {
+  console.log("  bundle unsigned/invalid — stamping ad-hoc signature (macOS launch requirement)")
+  const sign = spawnSync("codesign", ["--force", "--deep", "--sign", "-", DEST], { stdio: "inherit" })
+  const recheck = sign.status === 0 && spawnSync("codesign", ["--verify", "--deep", "--strict", DEST], { stdio: "ignore" }).status === 0
+  if (!recheck) {
+    console.error("✗ ad-hoc codesign failed — app would be SIGKILLed on launch (Code Signature Invalid). Aborting.")
+    process.exit(1)
+  }
+}
+
 // 4. Drop the redundant build artifact so Spotlight only ever shows ONE
 //    "alpha-code" (the /Applications install). The dist copy is just an
 //    intermediate; /Applications is canonical. Unregister it from
