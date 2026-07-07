@@ -19,13 +19,13 @@
 |---|---|---|
 | T1 | runbook ⓪:锚点契约测试绿(5/5 ✓);⓪b 视觉基线 = S27 场次二截图批(7-6,同树;此后仅 REQ-052 主进程改动,零 renderer diff)+ γ 桶走查将再截关键屏 | ✅ |
 | T2 | runbook ①′:catalog 快照刷新(2026-07-06.4,28 条,无变化 ✓) | ✅ |
-| T3 | runbook ①:版本 0.1.0 → 0.1.1 + CHANGELOG 定版 [0.1.1] | ☐ |
-| T4 | runbook ②③:签名+公证打包 + stapler/spctl 验证 | ☐ |
-| T5 | runbook ④⑤:GitHub Release v0.1.1 + feed 200 | ☐ |
-| T6 | **B9 verified**:装机 0.1.0 updater 检测→下载→重启 = 0.1.1(main.log 状态机全程留痕) | ☐ |
-| T7 | **REQ-052 verified**:首启 main.log `legacy direct links migrated` + `~/.opencode/skill` 旧链消失 + `~/.alpha/skills` 真源就位 + 会话技能可用 | ☐ |
-| T8 | γ 桶走查(0.1.1 上,CDP 截图取证,证据落 audits/2026-07-07-s29-verify/) | ☐ |
-| T9 | 回写:BACKLOG 翻状态 + 矩阵更新 + CHANGELOG 已随 T3 + 本表勾选 | ☐ |
+| T3 | runbook ①:版本 0.1.0 → 0.1.1 + CHANGELOG 定版 [0.1.1] | ✅ PR #134 |
+| T4 | runbook ②③:签名+公证打包 + stapler/spctl 验证 | ✅ 公证成功/三验全过 |
+| T5 | runbook ④⑤:GitHub Release v0.1.1 + feed 200 | ✅ |
+| T6 | **B9 verified**:装机 0.1.0 updater 检测→下载→重启 = 0.1.1(main.log 状态机全程留痕) | ✅ |
+| T7 | **REQ-052 verified**:首启 main.log `legacy direct links migrated` + `~/.opencode/skill` 旧链消失 + `~/.alpha/skills` 真源就位 + 会话技能可用 | ✅ 四要件全过 |
+| T8 | γ 桶走查(0.1.1 上,CDP 截图取证,证据落 audits/2026-07-07-s29-verify/) | ✅ 部分(+3 verified;新发现 REQ-054;余项见 verify.md §六) |
+| T9 | 回写:BACKLOG 翻状态 + 矩阵更新 + CHANGELOG 已随 T3 + 本表勾选 | ✅ |
 
 ## Gates
 
@@ -33,6 +33,10 @@
 - 产物必须 stapler validate + spctl accepted 双过才许 release。
 - verified 只按验收标准实测翻;γ 桶证据 = 截图/日志,落 audits。
 
-## 结果(收尾时回填)
+## 结果(2026-07-07 收尾)
 
-(待回填)
+- **v0.1.1 发布**:签名+公证+Release+feed 200;**首次真实自动更新链走通**(0.1.0 → 0.1.1)。
+- **verified +7**:B9 · REQ-052 · REQ-032 · REQ-036 · REQ-037(γ 桶)+ 批前 α 桶已翻 REQ-004/REQ-027/C8/C9 与 D10/REQ-026(同日累计 verified +13)。
+- **新登记**:REQ-053(C16 悬空引用→引擎死循环事故,现场已处置)· REQ-054(首页 composer 零工作区/隐藏控件两缺陷,用户报障复现)。
+- 证据:[audits/2026-07-07-s29-verify/verify.md](../../audits/2026-07-07-s29-verify/verify.md)(截图 6 张)。
+- 未覆盖残单:verify.md §六(REQ-028/043 复测、B12/B23/B20/B21、C17/B2 用户在场、cn 复验、REQ-033 真提交)。

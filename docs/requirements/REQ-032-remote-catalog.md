@@ -3,7 +3,7 @@ id: REQ-032
 title: 定制中心 catalog 远程分发(收编 E10):C 端点 + 签名验签 + A 运行时拉取/缓存/回退 + skill/agent 远程资产通道
 type: feature
 priority: P1
-status: shipped
+status: verified
 repo: X
 created: 2026-07-05
 ---

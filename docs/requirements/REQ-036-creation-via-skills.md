@@ -3,7 +3,7 @@ id: REQ-036
 title: 创建技能化:移除定制中心交互式创建表单,skill/agent 创建统一走技能(skill-creator 出厂化 + agent-creator 新技能 + alpha_reload 生效闭环)
 type: feature
 priority: P1
-status: shipped
+status: verified
 repo: A
 created: 2026-07-05
 ---
