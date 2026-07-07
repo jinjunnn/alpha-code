@@ -79,8 +79,11 @@ export function reconcileEngineConfigTruth(log?: Logger): ReconcileOutcome {
   const legacy = readJsonc(legacyFile)
   const xdg = readJsonc(xdgFile)
 
-  // Ownership judgement only applies to the legacy ~/.opencode file (alpha wrote it wholesale).
-  // The XDG file is the engine's own home — we only lift its `provider` domain out, never judge/delete it.
+  // Ownership judgement only gates the legacy ~/.opencode MIGRATION (alpha wrote it wholesale) — NOT the
+  // skills.paths injection below. Critical: a bail-out (e.g. an mcp without a receipt) must NOT block
+  // skills.paths, or factory skills would go dark on exactly the machines that keep their legacy config.
+  let bailedOut: string | undefined
+  let legacyToMerge = legacy
   if (legacy) {
     const receipts = readLedger(alphaGlobalRoot()).receipts
     const receiptMcpNames = new Set(receipts.filter((r) => r.type === "mcp").map((r) => r.name))
@@ -89,17 +92,18 @@ export function reconcileEngineConfigTruth(log?: Logger): ReconcileOutcome {
     )
     const verdict = isAlphaOwnedConfig({ parsed: legacy, receiptMcpNames, receiptPluginKeys })
     if (!verdict.owned) {
-      log?.warn(`[req059] legacy ~/.opencode config not alpha-owned — skipping migration (kept in place): ${verdict.reason}`)
-      return { skipped: false, migrated: false, added: [], bailedOut: verdict.reason }
+      log?.warn(`[req059] legacy ~/.opencode config not alpha-owned — skipping MIGRATION (kept in place): ${verdict.reason}`)
+      bailedOut = verdict.reason
+      legacyToMerge = undefined // don't migrate legacy content; skills.paths still injected below
     }
   }
 
-  // Only the provider domain is lifted from XDG (the rest of XDG belongs to the engine).
-  const xdgProvider = xdg && "provider" in xdg ? { provider: xdg.provider } : undefined
+  // XDG provider domain is lifted only when we're not bailing out (bail = leave the legacy world intact).
+  const xdgProvider = !bailedOut && xdg && "provider" in xdg ? { provider: xdg.provider } : undefined
 
-  const plan = planConfigMerge(existing, legacy, xdgProvider)
-  // T3:全局 skills 经 skills.paths(文件通道生效)发现 ~/.alpha/skills —— 恒定注入(非迁移物),
-  // 使桥退役后引擎仍能发现出厂+装的技能。幂等。
+  const plan = planConfigMerge(existing, legacyToMerge, xdgProvider)
+  // T3:全局 skills 经 skills.paths(文件通道生效)发现 ~/.alpha/skills —— 恒定注入(非迁移物,独立于
+  // ownership bail),使桥退役后引擎仍能发现出厂+装的技能。幂等。
   const skillsAdded = ensureSkillsPath(plan.merged, alphaSkillsDir())
   const added = [...plan.added, ...(skillsAdded ? ["skills[]"] : [])]
 
@@ -114,9 +118,13 @@ export function reconcileEngineConfigTruth(log?: Logger): ReconcileOutcome {
       migrated = true
     } catch (error) {
       log?.warn(`[req059] failed to write alpha.jsonc during reconcile`, { error: String(error) })
-      return { skipped: false, migrated: false, added: [], bailedOut: "write failed" }
+      return { skipped: false, migrated: false, added: [], bailedOut: bailedOut ?? "write failed" }
     }
   }
+
+  // Bail-out → leave ~/.opencode fully intact (legacy mcp/plugin still read by the engine). Only clean up
+  // when the legacy world is alpha-owned (or absent) so nothing user-authored is touched.
+  if (bailedOut) return { skipped: false, migrated, added, bailedOut }
 
   // T3:migration/injection 落定后清理 ~/.opencode —— 拆自有链、删已迁配置,junk-only 则整目录删。
   // 只在 legacy owned(未 bail-out)时执行:含用户内容的机器保留 + loud(§风险)。

@@ -105,7 +105,13 @@ describe("reconcile — ownership bail-out", () => {
     if (!r.skipped) expect(r.bailedOut).toContain("keybinds")
     expect(warns.some((w) => w.includes("not alpha-owned"))).toBe(true)
     expect(fs.existsSync(path.join(homeTmp, "opencode.jsonc"))).toBe(true) // legacy kept in place
-    expect(truthExists()).toBe(false) // no truth write on bail-out
+    // T3 fix: bail-out does NOT migrate legacy, but skills.paths IS still injected (factory skills
+    // must not go dark on machines whose legacy mcp lacks a receipt).
+    expect(truthExists()).toBe(true)
+    const t = readTruth()
+    expect(t.skills).toContain(path.join(alphaTmp, "skills")) // skills.paths injected despite bail
+    expect(t.keybinds).toBeUndefined() // legacy stray key NOT migrated
+    expect(t.mcp).toBeUndefined()
   })
 
   test("mcp not in receipts (user-built) → bail-out, legacy kept", () => {
@@ -115,6 +121,8 @@ describe("reconcile — ownership bail-out", () => {
     expect(r.skipped).toBe(false)
     if (!r.skipped) expect(r.bailedOut).toContain("myServer")
     expect(homeExists()).toBe(true)
+    // ~/.opencode fully intact on bail-out (legacy mcp still there for the engine to read)
+    expect(fs.existsSync(path.join(homeTmp, "opencode.jsonc"))).toBe(true)
   })
 })
 
