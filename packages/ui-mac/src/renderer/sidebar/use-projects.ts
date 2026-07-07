@@ -62,8 +62,14 @@ export interface AlphaProjectsApi {
   createSession(worktree: string): Promise<string | undefined>
   /** Create a session AND send the first message (the home composer's submit). `extraParts` are
    *  additional prompt parts (agent/file mentions from the home @ menu, upstream
-   *  build-request-parts shapes) appended after the text part (REQ-038). */
-  startChat(worktree: string, text: string, extraParts?: unknown[]): Promise<string | undefined>
+   *  build-request-parts shapes) appended after the text part (REQ-038). `opts`(REQ-055)是
+   *  AlphaComposer 的显式提交参数(model/agent/variant),未选不传 = 引擎默认。 */
+  startChat(
+    worktree: string,
+    text: string,
+    extraParts?: unknown[],
+    opts?: { model?: { providerID: string; modelID: string }; agent?: string; variant?: string },
+  ): Promise<string | undefined>
   /** The live SDK v2 client (undefined until the server is ready). Exposed so alpha composer
    *  surfaces (home slash/@ menus, REQ-038) query command/agent/find with the SAME client + auth
    *  the store uses instead of instantiating a second one. */
@@ -286,7 +292,12 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
   // CUSTOM command and sends it via session.command (submit.ts:77-100) — plain promptAsync would
   // deliver the slash line as literal text. Mirror that here so the home slash menu's refilled
   // commands actually execute.
-  async function startChat(worktree: string, text: string, extraParts?: unknown[]): Promise<string | undefined> {
+  async function startChat(
+    worktree: string,
+    text: string,
+    extraParts?: unknown[],
+    opts?: { model?: { providerID: string; modelID: string }; agent?: string; variant?: string },
+  ): Promise<string | undefined> {
     const c = client
     if (!c) return undefined
     try {
@@ -318,6 +329,9 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
           await c.session
             .promptAsync({
               sessionID: id,
+              ...(opts?.model ? { model: opts.model } : {}),
+              ...(opts?.agent ? { agent: opts.agent } : {}),
+              ...(opts?.variant ? { variant: opts.variant } : {}),
               parts: [{ type: "text", text: body }, ...(extraParts ?? [])],
             } as any)
             .catch(() => {

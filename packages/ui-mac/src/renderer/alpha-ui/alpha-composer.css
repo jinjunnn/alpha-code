@@ -1,0 +1,262 @@
+/* alpha-composer.css — REQ-055:AlphaComposer 的唯一样式源(用户拍板「一个 CSS 一个完整的组件」)。
+ * 首页与会话页渲染同一组件、吃同一份规则;composer 视觉只许改这里。
+ * 通用原语(.a-pop 弹层 / .a-ic 图标 / .a-comp-auto 自动补全)是全 alpha-ui 共享的,留在 home.css。 */
+
+@import "./composer-shell.css"; /* 外壳(bg/border/radius/shadow/focus)单一来源 */
+
+/* ── 布局骨架 ── */
+.a-comp {
+  position: relative; /* anchors the slash/@ autocomplete popover (.a-comp-auto) */
+}
+.a-comp-input {
+  display: block;
+  width: 100%;
+  min-height: 54px;
+  max-height: 220px;
+  padding: 16px 18px 6px;
+  border: 0;
+  background: transparent;
+  outline: none;
+  resize: none;
+  color: var(--a-text);
+  font-family: inherit;
+  font-size: var(--a-text-md);
+  line-height: var(--a-leading-normal);
+}
+.a-comp-input::placeholder {
+  color: var(--a-text-tertiary);
+}
+/* composer 自己负责焦点观感(外壳细边+柔影);压掉全局 3px 焦点环 */
+.a-comp-input:focus,
+.a-comp-input:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+.a-comp-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 46px;
+  padding: 0 10px 0 8px;
+}
+.a-comp-grow {
+  flex: 1;
+}
+
+/* ── 控制 chips ── */
+.a-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: var(--a-radius-md);
+  background: transparent;
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+  white-space: nowrap;
+  transition: background var(--a-dur-fast) var(--a-ease-out), color var(--a-dur-fast) var(--a-ease-out);
+}
+.a-chip:hover {
+  background: var(--a-bg-muted);
+  color: var(--a-text);
+}
+.a-chip .a-ic {
+  color: var(--a-text-tertiary);
+}
+.a-chip:hover .a-ic {
+  color: var(--a-text-secondary);
+}
+/* 焦点圈治理(用户报障 2026-07-07「一直回归错误的样式」):鼠标/程序化点击留下的 :focus-visible
+ * 肥紫圈在 chips 上永久压掉,键盘可达性改用细描边。 */
+.a-ui .a-chip:focus-visible,
+.a-ui .a-comp-send:focus-visible {
+  box-shadow: none;
+  outline: 1.5px solid var(--a-accent);
+  outline-offset: 1px;
+}
+.a-ui .a-chip:focus:not(:focus-visible),
+.a-ui .a-comp-send:focus:not(:focus-visible) {
+  box-shadow: none;
+  outline: none;
+}
+.a-chip-icon {
+  padding: 0;
+  width: 30px;
+  justify-content: center;
+}
+.a-chip-model {
+  padding-left: 6px;
+}
+.a-chip-perm[data-mode="full"],
+.a-chip-perm[data-mode="full"] .a-ic {
+  color: var(--a-warning);
+}
+.a-chip-perm[data-mode="readonly"],
+.a-chip-perm[data-mode="readonly"] .a-ic {
+  color: var(--a-accent);
+}
+.a-chip[data-disabled] {
+  opacity: 0.55;
+  cursor: default;
+}
+.a-chip[data-disabled]:hover {
+  background: transparent;
+  color: var(--a-text-secondary);
+}
+.a-comp-eff {
+  font-variant-numeric: tabular-nums;
+}
+.a-pico {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  flex: none;
+}
+
+/* ── 上下文用量停靠位(session:takeover 收养上游 progress-circle 按钮进来)── */
+.a-comp-usage {
+  display: inline-flex;
+  align-items: center;
+}
+.a-comp-usage:empty {
+  display: none;
+}
+.a-comp-usage > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  border-radius: var(--a-radius-md);
+}
+.a-comp-usage > button:hover {
+  background: var(--a-bg-muted);
+}
+
+/* ── 发送 / 中止 ── */
+.a-comp-send {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--a-radius-full);
+  border: 0;
+  display: grid;
+  place-items: center;
+  flex: none;
+  background: var(--a-bg-inset);
+  color: var(--a-text-tertiary);
+  transition: background var(--a-dur-fast) var(--a-ease-out), transform var(--a-dur-fast) var(--a-ease-out);
+}
+.a-comp-send[data-ready] {
+  background: var(--a-send);
+  color: #fff;
+  box-shadow: var(--a-shadow-xs);
+}
+.a-comp-send[data-ready]:hover {
+  background: var(--a-send-hover);
+}
+.a-comp-send[data-ready]:active {
+  transform: scale(0.94);
+}
+.a-comp-stop[data-ready] {
+  background: var(--a-danger, #dc2626);
+}
+
+/* ── 会话页接管:上游 composer 隐藏(保留 DOM,不接收输入)── */
+body[data-alpha-composer-takeover] [data-component="session-composer"] {
+  display: none !important;
+}
+[data-alpha-composer-host] {
+  display: block;
+  padding: 0 12px 12px;
+}
+[data-alpha-composer-host] .a-comp {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+/* ── 自建模型弹层 ── */
+.a-mpp {
+  display: flex;
+  flex-direction: column;
+  max-height: 480px;
+  min-width: 360px;
+}
+.a-mpp-search {
+  padding: 4px 4px 8px;
+}
+.a-mpp-search input {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-md);
+  background: var(--a-bg-muted);
+  color: var(--a-text);
+  font-size: var(--a-text-sm);
+  outline: none;
+}
+.a-mpp-scroll {
+  overflow-y: auto;
+  min-height: 0;
+}
+.a-mpp-row {
+  gap: 8px;
+}
+.a-mpp-row.locked {
+  opacity: 0.55;
+}
+.a-mpp-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.a-mpp-name small {
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-2xs);
+  font-family: var(--a-font-mono);
+}
+.a-mpp-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--a-accent);
+  flex: none;
+}
+.a-mpp-empty {
+  padding: 18px;
+  text-align: center;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-sm);
+}
+.a-acct-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 4px 8px;
+  padding: 8px 10px;
+  border-radius: var(--a-radius-md);
+  font-size: var(--a-text-xs);
+}
+.a-acct-banner.member {
+  background: var(--a-success-subtle, #ecfdf5);
+  color: var(--a-success, #047857);
+}
+.a-acct-banner.balance {
+  background: var(--a-bg-muted);
+  color: var(--a-text-secondary);
+}
+.a-acct-banner.empty,
+.a-acct-banner.out {
+  background: var(--a-warning-subtle, #fffbeb);
+  color: var(--a-warning, #b45309);
+}
