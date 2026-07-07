@@ -3,7 +3,7 @@ id: REQ-055
 title: AlphaComposer 单一自建 composer(会话页替换上游注入,SDK 参数化提交)
 type: feature
 priority: P1
-status: in-sprint
+status: verified
 repo: A
 created: 2026-07-07
 related: [REQ-054, REQ-038, REQ-028, REQ-029, REQ-043, ADR-016]
