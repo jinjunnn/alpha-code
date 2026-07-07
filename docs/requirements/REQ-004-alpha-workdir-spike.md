@@ -3,7 +3,7 @@ id: REQ-004
 title: ".alpha 项目工作目录:全量收敛方案验证(用户已定向)"
 type: spike
 priority: P2
-status: shipped
+status: verified
 repo: A
 created: 2026-07-03
 sprint: 2026-07-03-s11-cloud-loop
