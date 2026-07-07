@@ -137,8 +137,9 @@ export async function spawnLocalServer(
   else if (ext.reason?.includes("ALPHA_EXT_DISABLE")) getLogger()?.log("alpha-ext: disabled by ALPHA_EXT_DISABLE")
   else getLogger()?.warn(`alpha-ext: NOT loaded — ${ext.reason}`)
 
-  // REQ-036 出厂技能:每次 fork 前幂等 reconcile `~/.opencode/skill/<name>` symlink 桥(引擎原生
-  // 扫描;实测 OPENCODE_CONFIG_CONTENT.skills.paths 对引擎不生效,故不走 env)。anti-B11:结果落日志。
+  // REQ-036 出厂技能:每次 fork 前幂等 reconcile 两跳桥(REQ-052:真源 `~/.alpha/skills/<name>` →
+  // app 资源,`~/.opencode/skills` 经 alpha-bridge 指回 `.alpha`;旧 `~/.opencode/skill/` 直链自动
+  // 迁移。实测 OPENCODE_CONFIG_CONTENT.skills.paths 对引擎不生效,故不走 env)。anti-B11:结果落日志。
   try {
     const factory = reconcileFactorySkillLinks(
       factorySkillSources({
@@ -148,6 +149,10 @@ export async function spawnLocalServer(
       }),
     )
     if (factory.linked.length) getLogger()?.log("factory-skills: linked", { linked: factory.linked })
+    if (factory.migrated.length)
+      getLogger()?.log("factory-skills: legacy direct links migrated to .alpha two-hop bridge (REQ-052)", {
+        migrated: factory.migrated,
+      })
     if (factory.removed.length) getLogger()?.log("factory-skills: links removed (disabled)", { removed: factory.removed })
     for (const s of factory.skipped) getLogger()?.warn(`factory-skills: SKIPPED ${s.name} — ${s.reason}`)
   } catch (error) {
