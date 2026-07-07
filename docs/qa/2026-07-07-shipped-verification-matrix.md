@@ -59,6 +59,30 @@ REQ-036(对话式创建)· REQ-037(治理层;config 层 deny 已在 `~/.opencode
 
 **38 项累计:verified 15 / 剩 23。** 本轮新翻:REQ-016(冷重启+回跳两腿)· REQ-028(只读真拒写:文件未创建+零 ask)· REQ-029/REQ-043(会话内切档实测;机制已随 REQ-055 升级为 SDK 显式参数,dev 端到端复证)。
 
+## 进度更新(2026-07-07 晚,S29-γ 补批「处理完剩余 23 项」)
+
+**38 项累计:verified 21 / 剩 17。** 本轮新翻 **6 项**(含前置修复两把;E2/B4 诚实未全翻):
+- **前置修复(阻断被清)**:sync-upstream 连败三天根因(husky 门 PR #143 + 冻结 add/add 冲突 PR #144)→ 真实 sync run 28847373458 成功,吸收 75 commits 零冲突。
+- **REQ-009**:用户拍板重划验收(partial-clone ①③④ 划出);②⑤ 达标翻 verified。
+- **REQ-022**:B 侧 prod e2e 三轮在册,A 侧无本项缺口,矩阵 α 桶复核翻 verified。
+- **REQ-012 + C14**:真实 sync 两 tripwire 实跑(prompt「No changes」/ anchor「intact」)+ build strict transform 全绿,双双 verified。
+- **REQ-033**:签名包 CDP 表单端到端真提交(config 落盘 + 密钥 {file:} 0600 + 账本 origin:created),verified。
+- **B4**:数据层验收①②④达成,验收③单个残留 home Instance 移出为 [[REQ-058]];B4 保持 shipped(未翻,诚实)。
+- **E2**:钉钉条目可见(半边 verified),首调用待真凭证。
+- **C25**:非白名单 app 降级、白名单 app exec 二路实测 verified。
+
+**剩 17 项卡点**(全部依赖外部条件,当前会话无法自主推进):
+| 卡点 | 项 |
+|---|---|
+| 需你的凭证/账号 | E2 首调用(钉钉 Client_ID/Secret)· B21(BYOK 改键真 key)· REQ-039/REQ-030 另半(cn 租户账号) |
+| 需你在场(破坏性/长窗) | C17(DB 超前)· B2(短 TTL 过期窗)· B23(全局配置故障注入) |
+| 需网络工况/专项 | B20/B11 弱网批 · REQ-003 弱网 UI 半边 |
+| 需 B 侧演练窗口 | REQ-031(欠费 failover)· REQ-025(云 cron A 侧拉回) |
+| 纯观察积累/后续 | C3(轮转反例入 REQ-053,修复后复核)· B12(watcher 常驻长时观察) |
+| 已翻半边/另半卡上 | REQ-002(核心链 ✅/过期路径=B2)· REQ-030(intl ✅/cn ⏳) |
+
+> 本批 6 项全翻:REQ-009 / REQ-022 / REQ-012 / C14 / REQ-033 / C25。E2(半边)· B4(残留移出为 REQ-058)诚实未翻。上表 17 项 = 38 − 21。
+
 **剩 23 项逐项卡点(能自主做的已做完/在做,以下全部依赖外部条件):**
 
 | 卡点 | 项 |
