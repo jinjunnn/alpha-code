@@ -42,13 +42,17 @@ afterEach(() => {
   }
 })
 
-// mcp/plugin land in the alpha-owned engine config file
-function readConfig(): Record<string, any> {
-  return JSON.parse(fs.readFileSync(path.join(homeTmp, "opencode.jsonc"), "utf8"))
+// REQ-059: mcp/plugin AND provider now all land in the single alpha truth ~/.alpha/alpha.jsonc.
+function readAlphaConfig(): Record<string, any> {
+  return JSON.parse(fs.readFileSync(path.join(alphaTmp, "alpha.jsonc"), "utf8"))
 }
-// provider stays in the shared XDG config
+// mcp/plugin
+function readConfig(): Record<string, any> {
+  return readAlphaConfig()
+}
+// provider (was shared XDG; REQ-059 moved into the alpha truth)
 function readUserConfig(): Record<string, any> {
-  return JSON.parse(fs.readFileSync(path.join(tmp, "opencode.jsonc"), "utf8"))
+  return readAlphaConfig()
 }
 
 describe("persistMcp — name validation", () => {

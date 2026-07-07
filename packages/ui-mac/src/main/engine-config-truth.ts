@@ -8,6 +8,20 @@
 //   4. 迁移合并计划(legacy jsonc + XDG provider → alpha.jsonc,copy-don't-delete + 幂等)。
 // 运行时接线(sidecar 注入 / ext-config 写入切换 / reconcile 落盘)在各消费方,不在此。
 
+import os from "node:os"
+import path from "node:path"
+
+/** `~/.alpha` global root (ALPHA_GLOBAL_DIR-overridable for tests). Mirrors alpha-installs.alphaGlobalRoot;
+ *  kept here so this module stays dependency-light (os/path only) and can be imported by sidecar + ext-config. */
+export function alphaGlobalRoot(): string {
+  return process.env.ALPHA_GLOBAL_DIR || path.join(os.homedir(), ".alpha")
+}
+
+/** The single alpha engine-config truth file (`~/.alpha/alpha.jsonc`). alpha always writes `.jsonc`. */
+export function alphaJsoncPath(): string {
+  return path.join(alphaGlobalRoot(), "alpha.jsonc")
+}
+
 /** alpha 会写进 alpha.jsonc 的引擎 config 顶层域。存量文件顶层键越界 = 疑用户手写混入 → 不迁。 */
 export const ALPHA_CONFIG_TOP_KEYS = new Set([
   "$schema",
