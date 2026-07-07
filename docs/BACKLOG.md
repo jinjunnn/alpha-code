@@ -139,9 +139,13 @@
 > ③ **S29 v0.1.1 真实发版(候选,前置=场次二收尾)**:场次二包走完整发版 runbook → 收 B9 更新链(自动更新+篡改 feed 拒装)+ B7 ①③⑤;快照刷新随 runbook ①′。
 > WIP 注记:S27 场次二用户门控,S28 并行由用户指令豁免(零文件交集)。
 
-## 当前 sprint → **S27 真机批 vNext-3(2026-07-06 开批,场次一已跑,场次二待用户在场)**
+## 当前 sprint → **S29 v0.1.1 发版 + γ 桶真机走查(2026-07-07 开批,用户拍板)**
 
-> 批前置全过(C 上架远程 agent bug-triage=alpha-web PR #11 · A 快照 2026-07-06.3=PR #125 · 签名+公证重 ship);M1 主链全过 → REQ-044/045/046 verified;**新发现 REQ-047(P0 env 毒化)/REQ-048(更新角标 placebo)**。残单(E2 凭证/E6 会话级/M1-6/M2 原生对话框/M3 云线/M4)→ 用户批/下场次。契约:[sprints/2026-07-06-s27-realmachine-vnext3](sprints/2026-07-06-s27-realmachine-vnext3/sprint.md) · 证据:[audits/vnext3](audits/2026-07-06-realmachine-vnext3/verify.md)。
+> 目标:①发版 runbook 全程 → v0.1.1(签名+公证+GitHub Release);②装机 0.1.0(7-6 build)走真实更新链 = **B9 verified**;③新包首启验出厂技能迁移 = **REQ-052 verified**;④0.1.1 上跑 γ 桶 UI 走查(矩阵 ~14 项,**只读+截图,零确认框** —— C16 后新规)。契约:[sprints/2026-07-07-s29-v011-release](sprints/2026-07-07-s29-v011-release/sprint.md)。
+
+## 上一 sprint → **S27 真机批 vNext-3 —— 已收尾(2026-07-06/07)**(历史)
+
+> 批前置全过(C 上架远程 agent bug-triage=alpha-web PR #11 · A 快照 2026-07-06.3=PR #125 · 签名+公证重 ship);M1 主链全过 → REQ-044/045/046 verified;场次二 8 项翻 verified + C16 误执行事故(REQ-050/051 登记);**新发现 REQ-047(P0 env 毒化)/REQ-048(更新角标 placebo)**。残单(E2 凭证/E6 会话级/B2 短TTL/cn 复验等)→ 矩阵 δ 桶。契约:[sprints/2026-07-06-s27-realmachine-vnext3](sprints/2026-07-06-s27-realmachine-vnext3/sprint.md) · 证据:[audits/vnext3](audits/2026-07-06-realmachine-vnext3/verify.md)。
 
 ## 上一 sprint → **S26 REQ-045 远程补货上架(纯 C 侧)—— 已收尾(2026-07-06)**(历史)
 
