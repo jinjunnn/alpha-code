@@ -69,16 +69,23 @@ export type OwnershipInput = {
   receiptPluginKeys: Set<string>
 }
 
-export type OwnershipVerdict = { owned: true } | { owned: false; reason: string }
+export type OwnershipVerdict =
+  | { owned: true; unaccountedMcp?: string[] }
+  | { owned: false; reason: string }
 
 /**
- * 一份存量引擎配置是否「alpha 自有」→ 可整体安全迁进真源。判定(全满足才 owned):
- *   ① 顶层键 ⊆ ALPHA_CONFIG_TOP_KEYS(有越界键 = 用户手写混入);
- *   ② 每个 `mcp.<name>` 的 name ∈ receiptMcpNames(alpha 装过账;非账内 = 用户自建);
- *   ③ 每个 `plugin[]` 条目要么是 alpha 账内 plugin,要么是 alpha 自有树内绝对路径(交调用方以 receipt 兜);
- *   ④ 治理键(agent/permission/command)只是存在性放行(内容治理由 ext-config 白名单在写入时把关,
- *      迁移只搬不改)。
- * 任一不满足 → bail-out(不迁、loud、保留原布局,功能零损失,品牌收敛该机暂缓 —— REQ-059 §风险)。
+ * 一份存量引擎配置是否「alpha 自有」→ 可整体安全迁进真源。
+ *
+ * 关键前提(用户 2026-07-07 拍板「放宽」):`~/.opencode/opencode.jsonc` 是 **alpha 的 REQ-018 专用
+ * 写入领地** —— 用户手写配置在 XDG(`~/.config/opencode`)或项目,不写这里。所以里面的 mcp **都是
+ * alpha 装的**,有无 receipt 只是记账完整性(早期装的 receipt 可能丢),**不是所有权问题**。
+ *
+ * 判定:
+ *   ① 顶层键 ⊆ ALPHA_CONFIG_TOP_KEYS —— 唯一 bail-out 条件(挡住 keybinds/theme/model 等非 alpha 域
+ *      = 疑用户手写混入);
+ *   ② mcp 名不在 receiptMcpNames → **不 bail-out**,记入 unaccountedMcp 供调用方 loud 记账(记账自愈
+ *      由迁移后重建 receipt 处理,不在此)。
+ * 顶层键越界 → bail-out(保留原布局,功能零损失,品牌收敛该机暂缓 —— REQ-059 §风险)。
  */
 export function isAlphaOwnedConfig(input: OwnershipInput): OwnershipVerdict {
   const obj = input.parsed
@@ -91,15 +98,14 @@ export function isAlphaOwnedConfig(input: OwnershipInput): OwnershipVerdict {
   if (stray.length > 0) {
     return { owned: false, reason: `unrecognized top-level keys (user-authored?): ${stray.slice(0, 3).join(", ")}` }
   }
+  // mcp 记账不全 → 仍 owned(.opencode 是 alpha 领地),但把无 receipt 的名字暴露出去供 loud 日志。
   const mcp = obj.mcp
+  let unaccountedMcp: string[] | undefined
   if (mcp && typeof mcp === "object" && !Array.isArray(mcp)) {
-    const foreign = Object.keys(mcp as Record<string, unknown>).filter((n) => !input.receiptMcpNames.has(n))
-    if (foreign.length > 0) {
-      return { owned: false, reason: `mcp servers not in alpha receipts: ${foreign.slice(0, 3).join(", ")}` }
-    }
+    const unaccounted = Object.keys(mcp as Record<string, unknown>).filter((n) => !input.receiptMcpNames.has(n))
+    if (unaccounted.length > 0) unaccountedMcp = unaccounted
   }
-  // agent/permission/command 存在性放行(治理内容不在迁移判定内);provider/plugin 交合并计划处理。
-  return { owned: true }
+  return { owned: true, unaccountedMcp }
 }
 
 /**

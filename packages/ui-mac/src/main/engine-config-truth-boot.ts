@@ -95,6 +95,12 @@ export function reconcileEngineConfigTruth(log?: Logger): ReconcileOutcome {
       log?.warn(`[req059] legacy ~/.opencode config not alpha-owned — skipping MIGRATION (kept in place): ${verdict.reason}`)
       bailedOut = verdict.reason
       legacyToMerge = undefined // don't migrate legacy content; skills.paths still injected below
+    } else if (verdict.unaccountedMcp && verdict.unaccountedMcp.length > 0) {
+      // .opencode 是 alpha 领地 → 迁移;但这些 mcp 无 receipt(早期装的记账丢),loud 留痕(卸载/更新
+      // 对它们会失真,直到 receipt 补齐)。用户拍板「放宽」:记账不全不阻断品牌收敛。
+      log?.warn(`[req059] migrating legacy mcp without receipts (bookkeeping incomplete)`, {
+        unaccounted: verdict.unaccountedMcp.slice(0, 8),
+      })
     }
   }
 

@@ -41,14 +41,17 @@ describe("isAlphaOwnedConfig", () => {
     if (!v.owned) expect(v.reason).toContain("keybinds")
   })
 
-  test("mcp server not in receipts (user-built) = NOT owned", () => {
+  test("mcp not in receipts = STILL owned (.opencode is alpha territory), surfaced as unaccounted", () => {
     const v = isAlphaOwnedConfig({
       parsed: { mcp: { markitdown: { type: "local" }, myOwnServer: { type: "remote" } } },
       receiptMcpNames: mcpNames("markitdown"),
       receiptPluginKeys: pluginKeys(),
     })
-    expect(v.owned).toBe(false)
-    if (!v.owned) expect(v.reason).toContain("myOwnServer")
+    expect(v.owned).toBe(true) // 放宽:.opencode = alpha 写入领地,记账不全不 bail
+    if (v.owned) {
+      expect(v.unaccountedMcp).toContain("myOwnServer")
+      expect(v.unaccountedMcp).not.toContain("markitdown") // 有 receipt 的不列
+    }
   })
 
   test("top-key whitelist covers the alpha write domains", () => {

@@ -114,15 +114,15 @@ describe("reconcile — ownership bail-out", () => {
     expect(t.mcp).toBeUndefined()
   })
 
-  test("mcp not in receipts (user-built) → bail-out, legacy kept", () => {
+  test("mcp not in receipts → STILL migrated (.opencode = alpha territory), loud unaccounted", () => {
     writeLegacy({ mcp: { myServer: { type: "remote" } } })
-    writeLedger([])
-    const r = reconcileEngineConfigTruth()
+    writeLedger([]) // no receipts — but .opencode is alpha's write territory
+    const warns: string[] = []
+    const r = reconcileEngineConfigTruth({ log: () => {}, warn: (m) => warns.push(m) })
     expect(r.skipped).toBe(false)
-    if (!r.skipped) expect(r.bailedOut).toContain("myServer")
-    expect(homeExists()).toBe(true)
-    // ~/.opencode fully intact on bail-out (legacy mcp still there for the engine to read)
-    expect(fs.existsSync(path.join(homeTmp, "opencode.jsonc"))).toBe(true)
+    if (!r.skipped) expect(r.bailedOut).toBeUndefined() // 放宽:不 bail
+    expect(readTruth().mcp.myServer).toBeDefined() // migrated into truth
+    expect(warns.some((w) => w.includes("without receipts"))).toBe(true) // loud bookkeeping note
   })
 })
 
