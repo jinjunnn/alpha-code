@@ -3,7 +3,7 @@ id: REQ-026
 title: 面向非技术用户的规范文档(D3 下沉拍板·分期第一步)
 type: docs
 priority: P2
-status: shipped
+status: verified
 repo: X
 created: 2026-07-05
 sprint: —

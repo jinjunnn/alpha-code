@@ -3,7 +3,7 @@ id: D10
 title: ui-mac package.json license/author 元数据补全
 type: docs
 priority: P3
-status: shipped
+status: verified
 repo: A
 created: 2026-07-03
 sprint: —
