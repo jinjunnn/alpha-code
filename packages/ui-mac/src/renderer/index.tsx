@@ -35,8 +35,7 @@ import "./alpha-ui/model-picker-reskin.css"
 import "./alpha-ui/dialog-reskin.css"
 import { ToastViewport } from "./alpha-ui/Toast"
 import { AlphaBoundary } from "./alpha-ui/alpha-boundary"
-import { ComposerInject } from "./alpha-ui/composer-inject"
-import { SessionSlashInject } from "./alpha-ui/composer-slash-inject"
+import { ComposerTakeover } from "./alpha-ui/composer-takeover"
 import { ModelPickerInject } from "./alpha-ui/model-picker-inject"
 import { TimelineInject } from "./alpha-ui/timeline-inject"
 import { CloudRunWatcher } from "./alpha-ui/cloud-run-watcher"
@@ -441,11 +440,10 @@ render(() => {
               <AlphaBoundary name="AutomationPanel">
                 <AutomationPanel />
               </AlphaBoundary>
-              <AlphaBoundary name="ComposerInject">
-                <ComposerInject />
-              </AlphaBoundary>
-              <AlphaBoundary name="SessionSlashInject">
-                <SessionSlashInject projects={alphaProjects} />
+              {/* REQ-055:会话页 composer = AlphaComposer(与首页同一组件);上游 composer 隐藏。
+                  旧 ComposerInject/SessionSlashInject(chips 移植 + slash 菜单接管)随之退役。 */}
+              <AlphaBoundary name="ComposerTakeover">
+                <ComposerTakeover projects={alphaProjects} />
               </AlphaBoundary>
               <AlphaBoundary name="ModelPickerInject">
                 <ModelPickerInject />

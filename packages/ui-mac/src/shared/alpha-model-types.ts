@@ -30,6 +30,9 @@ export type PlatformModel = {
   tier: Tier
   reasoning?: boolean
   web?: boolean
+  /** 推理档位表(alpha-models.json variants:档名 → 引擎 request 参数)。REQ-055:AlphaComposer 的
+   *  effort chip 以 Object.keys(variants) 为档位真源(本地状态,提交时作 variant 参数)。 */
+  variants?: Record<string, Record<string, unknown>>
 }
 
 export type AlphaModelCatalog = {

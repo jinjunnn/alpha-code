@@ -200,6 +200,8 @@ function injectAlphaConfig(userDataPath: string, extPluginPath?: string) {
         ...(config.agent ?? {}),
         "alpha-automation": {
           description: "alpha 自动化定时任务专用只读 agent(无人值守;不能改文件、不能跑命令)",
+          // REQ-055:对选择器隐藏(上游 agent.ts 原生 hidden 字段,仅影响可见列表;调度器按名 prompt 不受影响)
+          hidden: true,
           mode: "primary",
           prompt:
             "你是 alpha-code 的自动化任务执行器,在无人值守的定时任务里运行。" +
@@ -234,6 +236,8 @@ function injectAlphaConfig(userDataPath: string, extPluginPath?: string) {
         ...(config.agent ?? {}),
         "alpha-readonly": {
           description: "只读模式:可读取/检索/联网,不能修改文件、不能执行命令(composer 权限档「只读」)",
+          // REQ-055:对选择器隐藏;AlphaComposer 只读档改为提交时 agent 参数,不再依赖可见列表轮转
+          hidden: true,
           mode: "primary",
           prompt:
             "当前处于用户选择的只读模式:你不能修改文件、不能执行 shell 命令。" +
@@ -263,6 +267,8 @@ function injectAlphaConfig(userDataPath: string, extPluginPath?: string) {
         ...(config.agent ?? {}),
         "alpha-automation-standard": {
           description: "alpha 自动化 standard 档(可写:能改文件、能执行常规命令;破坏类命令仍被拦)",
+          // REQ-055:对选择器隐藏(同 alpha-automation)
+          hidden: true,
           mode: "primary",
           prompt:
             "你是 alpha-code 的自动化任务执行器,在无人值守的定时任务里运行(可写档)。" +
