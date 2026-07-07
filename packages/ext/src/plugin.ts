@@ -1,5 +1,8 @@
+import { existsSync, readFileSync } from "node:fs"
+import { join } from "node:path"
 import type { Plugin } from "@opencode-ai/plugin"
 import { tool } from "@opencode-ai/plugin"
+import { mergeProjectConfig } from "./project-config"
 
 /**
  * alpha-code backend isolation extension.
@@ -28,6 +31,21 @@ export const AlphaExt: Plugin = async (input) => {
   const STALE_MS = 5 * 60 * 1000
 
   return {
+    // REQ-060 项目级扩展物 `.alpha`-only:config hook 按 instance 读 `<directory>/.alpha/alpha.jsonc`
+    // 并把项目级 mcp / agent / command / skills.paths 合并进 cfg —— 引擎经 config 消费,项目不产生
+    // `.opencode`(零桥)。变异可见性由真机 spike 验(hook "Notify" 语义,T0 gate)。dispose 重建重
+    // 触发 = 免重启。信任门(项目自带 mcp/plugin = 加载可执行物)= T1 后续,当前 spike 只验通道。
+    async config(cfg) {
+      try {
+        const f = join(input.directory, ".alpha", "alpha.jsonc")
+        if (!existsSync(f)) return
+        const added = mergeProjectConfig(cfg as Record<string, unknown>, readFileSync(f, "utf8"))
+        if (process.env.ALPHA_EXT_VERBOSE && added.length)
+          console.log(`[@alpha-code/ext] project config merged from ${f}: ${added.join(", ")}`)
+      } catch (error) {
+        console.error(`[@alpha-code/ext] project config hook failed: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    },
     // tool map: key === final tool id verbatim (no namespace prefix).
     tool: {
       alpha_reload: tool({
