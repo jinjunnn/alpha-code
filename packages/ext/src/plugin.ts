@@ -39,7 +39,16 @@ export const AlphaExt: Plugin = async (input) => {
       try {
         const f = join(input.directory, ".alpha", "alpha.jsonc")
         if (!existsSync(f)) return
-        const added = mergeProjectConfig(cfg as Record<string, unknown>, readFileSync(f, "utf8"))
+        // 信任门:项目自带 mcp(可执行连接器)只在项目已 consent 时加载。consent 落 `.alpha/prefs.json`
+        // 的 extensionsConsent(版本化,ADR-021 模式);未 consent → mcp 被 gated,记 loud 供 renderer 弹窗。
+        const trustExecutable = readProjectExtensionsConsent(input.directory)
+        const { added, gatedExecutable } = mergeProjectConfig(cfg as Record<string, unknown>, readFileSync(f, "utf8"), {
+          trustExecutable,
+        })
+        if (gatedExecutable.length)
+          console.log(
+            `[@alpha-code/ext] project has UNTRUSTED executable extensions (${gatedExecutable.join(", ")}) — not loaded until consent: ${input.directory}`,
+          )
         if (process.env.ALPHA_EXT_VERBOSE && added.length)
           console.log(`[@alpha-code/ext] project config merged from ${f}: ${added.join(", ")}`)
       } catch (error) {
@@ -127,6 +136,19 @@ export const AlphaExt: Plugin = async (input) => {
         }
       }
     },
+  }
+}
+
+/** 项目扩展信任门 consent:`<dir>/.alpha/prefs.json` 的 `extensionsConsent.granted === true`(版本化,
+ *  ADR-021 模式)。缺失/坏/未授 = 不信任(默认拒绝可执行物,安全红线)。 */
+function readProjectExtensionsConsent(dir: string): boolean {
+  try {
+    const p = join(dir, ".alpha", "prefs.json")
+    if (!existsSync(p)) return false
+    const prefs = JSON.parse(readFileSync(p, "utf8")) as { extensionsConsent?: { granted?: unknown } }
+    return prefs?.extensionsConsent?.granted === true
+  } catch {
+    return false
   }
 }
 

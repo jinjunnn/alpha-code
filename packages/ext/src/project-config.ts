@@ -5,18 +5,41 @@
 // 而非「覆盖全局」的语义在此阶段——覆盖策略留 T1 信任门后细化);skills 走 { paths:[] } object 并集
 // (与全局 REQ-059 同一 schema 教训,数组会被引擎拒)。plugin 不在此(走 host fan-out,ADR-006 生 TS 雷)。
 
-/** 合并结果:本次实际补进的顶层域(供 loud 日志/审计;空数组 = 项目无扩展或全已存在)。 */
-export function mergeProjectConfig(cfg: Record<string, unknown>, projectJsoncText: string): string[] {
+export type MergeResult = {
+  /** 本次实际补进 cfg 的顶层域(loud 日志/审计)。 */
+  added: string[]
+  /** 因未信任被跳过的可执行域(如 ["mcp"])→ 上层据此记「项目待 consent」,驱动 UI 弹窗。 */
+  gatedExecutable: string[]
+}
+
+/** 信任门(REQ-060 §3):mcp = 可执行连接器,只在 trustExecutable 时加载;agent/command/skills = 文本注入,恒加载。 */
+export function mergeProjectConfig(
+  cfg: Record<string, unknown>,
+  projectJsoncText: string,
+  opts: { trustExecutable?: boolean } = {},
+): MergeResult {
   let proj: unknown
   try {
     proj = JSON.parse(stripJsonc(projectJsoncText))
   } catch {
-    return [] // 解析失败 = 项目文件坏,不注入(诚实降级,调用方已 try/catch loud)
+    return { added: [], gatedExecutable: [] } // 项目文件坏,不注入(诚实降级,调用方已 loud)
   }
-  if (!isObj(proj)) return []
+  if (!isObj(proj)) return { added: [], gatedExecutable: [] }
   const added: string[] = []
+  const gatedExecutable: string[] = []
+  const trust = opts.trustExecutable ?? false
 
-  for (const key of ["mcp", "agent", "command"] as const) {
+  // mcp = 可执行连接器 → 信任门。未信任:跳过 + 记 gated(不 merge → 引擎发现不到)。
+  if (isObj(proj.mcp) && Object.keys(proj.mcp as Record<string, unknown>).length > 0) {
+    if (trust) {
+      if (mergeNamed(cfg, proj.mcp as Record<string, unknown>, "mcp")) added.push("mcp.*")
+    } else {
+      gatedExecutable.push("mcp")
+    }
+  }
+
+  // agent/command = 文本注入(低风险)→ 恒加载。
+  for (const key of ["agent", "command"] as const) {
     if (isObj(proj[key]) && mergeNamed(cfg, proj[key] as Record<string, unknown>, key)) added.push(`${key}.*`)
   }
 
@@ -37,7 +60,7 @@ export function mergeProjectConfig(cfg: Record<string, unknown>, projectJsoncTex
     }
   }
 
-  return added
+  return { added, gatedExecutable }
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
