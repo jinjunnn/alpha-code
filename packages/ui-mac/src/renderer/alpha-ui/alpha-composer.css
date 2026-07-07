@@ -36,8 +36,17 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 46px;
+  min-height: 46px; /* 窄容器(会话页+审查面板)chips 换行时允许长高 —— 溢出框外=点不到(真机实测) */
+  flex-wrap: wrap;
+  row-gap: 0;
   padding: 0 10px 0 8px;
+}
+/* 模型名先截断省略,尽量保住单行 */
+.a-chip-model .a-chip-label {
+  max-width: 132px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .a-comp-grow {
   flex: 1;
@@ -69,6 +78,14 @@
 .a-chip:hover .a-ic {
   color: var(--a-text-secondary);
 }
+/* 会话页 host 必须复刻上游 composer 的 stacking(relative + z-index:10):timeline 滚动视口是
+ * positioned 且尾部延伸到 composer 下方 —— host 若是 static,视觉在上、hit-test 在下,chips 的
+ * 真实鼠标点击全被视口吃掉(真机实测 2026-07-07:会话页 effort/model「点了没反应」的根因)。 */
+[data-alpha-composer-host] {
+  position: relative;
+  z-index: 10;
+}
+
 /* 焦点圈治理(用户报障 2026-07-07「一直回归错误的样式」):鼠标/程序化点击留下的 :focus-visible
  * 肥紫圈在 chips 上永久压掉,键盘可达性改用细描边。 */
 .a-ui .a-chip:focus-visible,
@@ -105,6 +122,17 @@
 .a-chip[data-disabled]:hover {
   background: transparent;
   color: var(--a-text-secondary);
+}
+/* muted:弱化但**可点**(effort 无档位态 —— 点击弹层解释/就地选模型,不是死件) */
+.a-chip[data-muted] {
+  opacity: 0.55;
+}
+.a-pop-note {
+  padding: 2px 10px 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--a-text-secondary);
+  max-width: 340px;
 }
 .a-comp-eff {
   font-variant-numeric: tabular-nums;
@@ -190,6 +218,15 @@ body[data-alpha-composer-takeover] [data-component="session-composer"] {
   flex-direction: column;
   max-height: 480px;
   min-width: 360px;
+  position: relative; /* AddProvider(.a-mpa,inset:0)以本容器为定位框 */
+}
+.a-mpp-needkey {
+  opacity: 0.75;
+}
+.a-mpp-addrow {
+  border-top: 1px solid var(--a-border-faint);
+  margin-top: 4px;
+  color: var(--a-text-secondary);
 }
 .a-mpp-search {
   padding: 4px 4px 8px;

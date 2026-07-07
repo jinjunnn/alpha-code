@@ -71,6 +71,14 @@ export const composerAgent = agent
 export const composerAgents = agents
 export { setPerm as setComposerPerm, setAgent as setComposerAgent, setAgents as setComposerAgents }
 
+/** 非持久默认模型:登录且代理可用时自动选中 catalog 默认档(用户报障 2026-07-07:「选择模型」
+ *  占位 + effort 无档可点 = 死状态)。只在当前无选择时生效;**不落盘** —— 只有用户显式选择
+ *  (setComposerModel)才持久,下次启动重算默认(catalog 换默认即时跟随)。 */
+export function applyDefaultComposerModel(m: ComposerModel) {
+  if (model()) return
+  setModelSignal(m)
+}
+
 export function setComposerModel(m: ComposerModel | null) {
   setModelSignal(m)
   try {

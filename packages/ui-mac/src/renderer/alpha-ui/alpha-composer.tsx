@@ -7,7 +7,7 @@
 // cycleTo、MutationObserver 标签发布 —— 那一类「驱动隐藏上游控件」的机制全部退役(REQ-054 根除)。
 //
 // v1 诚实边界(见 requirements/REQ-055):附件/拖拽/图片粘贴不迁(+ 菜单沿用);上下文 ring 在会话页
-// 由 takeover 收养上游活节点(纯只读复用);BYOK 模型无档位数据 → effort 诚实禁用。
+// 由 takeover 收养上游活节点(纯只读复用);BYOK 模型无档位数据 → effort 弹层如实说明(始终可点,无死点)。
 
 import { createEffect, createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch, type JSX } from "solid-js"
 import { Portal } from "solid-js/web"
@@ -19,6 +19,7 @@ import { COMPOSER_PLACEHOLDER } from "../../shared/composer-copy"
 import { pushToast } from "./Toast"
 import type { AlphaProjectsApi } from "../sidebar/use-projects"
 import {
+  applyDefaultComposerModel,
   buildPromptRequest,
   composerAgent,
   composerAgents,
@@ -79,7 +80,7 @@ function ChipPopover(props: { anchor: HTMLElement | undefined; align?: "left" | 
   else style.left = `${Math.round(Math.min(Math.max(8, r.left), vw - minW - 8))}px`
   return (
     <Portal>
-      <div class="a-pop a-pop-fixed" style={style} onClick={stop}>
+      <div class="a-ui a-pop a-pop-fixed" style={style} onClick={stop}>
         {props.children}
       </div>
     </Portal>
@@ -325,7 +326,7 @@ function ModelChip(props: { sdk: AlphaProjectsApi["sdk"]; onNeedWorkspace?: () =
         }}
       >
         <span class="a-pico" style={{ background: "var(--a-accent)" }}>α</span>
-        {label()}
+        <span class="a-chip-label" title={label()}>{label()}</span>
         <Chevron />
       </button>
       <Show when={isOpen()}>
@@ -337,8 +338,10 @@ function ModelChip(props: { sdk: AlphaProjectsApi["sdk"]; onNeedWorkspace?: () =
   )
 }
 
-/* ── effort chip:档位真源 = 当前模型的 variants(本地状态,提交时作 variant 参数)── */
-function EffortChip() {
+/* ── effort chip:档位真源 = 当前模型的 variants(本地状态,提交时作 variant 参数)。
+ *    任何状态都可点(REQ-055 验收⑤「无死点」,用户报障 2026-07-07「为什么不可以点击」):
+ *    无模型 → 弹层内嵌模型选择器就地选;有模型无档位 → 弹层如实说明原因。── */
+function EffortChip(props: { sdk: AlphaProjectsApi["sdk"] }) {
   const { isOpen, toggle, close } = useChip()
   let btn: HTMLButtonElement | undefined
   const variants = () => composerModel()?.variants ?? []
@@ -346,7 +349,7 @@ function EffortChip() {
   const current = () => composerEffortSel() ?? "默认"
   const title = () =>
     !composerModel()
-      ? "选择模型后可用"
+      ? "推理强度 — 选择模型后可用"
       : supported()
         ? "推理强度(逐模型推理参数档)"
         : "当前模型不支持推理档"
@@ -355,30 +358,40 @@ function EffortChip() {
       <button
         ref={btn}
         class="a-chip"
-        data-disabled={supported() ? undefined : ""}
+        data-muted={supported() ? undefined : ""}
         title={title()}
-        onClick={(e) => {
-          stop(e)
-          if (supported()) toggle()
-        }}
+        onClick={(e) => (stop(e), toggle())}
       >
         <Bolt />
         <span class="a-comp-eff">{supported() ? current() : "—"}</span>
         <Chevron />
       </button>
       <Show when={isOpen()}>
-        <ChipPopover anchor={btn} align="right" minWidth={170}>
-          <div class="a-pop-label">推理强度 · {composerModel()?.name}</div>
-          <button class="a-pop-item" classList={{ "is-on": composerEffortSel() === null }} onClick={() => (setComposerEffort(null), close())}>
-            默认 <span class="a-pop-desc">引擎默认档</span>
-          </button>
-          <For each={variants()}>
-            {(v) => (
-              <button class="a-pop-item" classList={{ "is-on": composerEffortSel() === v }} onClick={() => (setComposerEffort(v), close())}>
-                {v}
+        <ChipPopover anchor={btn} align="right" minWidth={supported() ? 170 : composerModel() ? 260 : 360}>
+          <Switch>
+            <Match when={supported()}>
+              <div class="a-pop-label">推理强度 · {composerModel()?.name}</div>
+              <button class="a-pop-item" classList={{ "is-on": composerEffortSel() === null }} onClick={() => (setComposerEffort(null), close())}>
+                默认 <span class="a-pop-desc">引擎默认档</span>
               </button>
-            )}
-          </For>
+              <For each={variants()}>
+                {(v) => (
+                  <button class="a-pop-item" classList={{ "is-on": composerEffortSel() === v }} onClick={() => (setComposerEffort(v), close())}>
+                    {v}
+                  </button>
+                )}
+              </For>
+            </Match>
+            <Match when={!composerModel()}>
+              <div class="a-pop-label">推理强度 · 先选择模型</div>
+              <div class="a-pop-note">推理档位随模型而定 —— 选好模型后这里即可调档:</div>
+              <ModelPickPop sdk={props.sdk} onPicked={() => {}} />
+            </Match>
+            <Match when={true}>
+              <div class="a-pop-label">推理强度</div>
+              <div class="a-pop-note">「{composerModel()?.name}」未提供推理档位;换用带档位的模型(如代理节点的 α 系列)即可调节。</div>
+            </Match>
+          </Switch>
         </ChipPopover>
       </Show>
     </div>
@@ -446,6 +459,53 @@ export function AlphaComposer(props: AlphaComposerProps) {
   }
   onMount(startPolling)
   onCleanup(() => statusTimer && clearInterval(statusTimer))
+
+  /* 默认模型:登录 + 代理已注册时自动选 catalog 默认档(claude-sonnet-4.6),effort 点开即
+     高/中/高档位 —— 消灭「选择模型」占位死状态(用户报障 2026-07-07)。显式选择才落盘;
+     未登录/代理未活时保持占位(picker 内有登录/配 KEY 引导),不选锁定模型装可用(C28)。 */
+  onMount(() => {
+    if (composerModel()) return
+    let disposed = false
+    onCleanup(() => (disposed = true))
+    void (async () => {
+      try {
+        const [cat, auth] = await Promise.all([
+          window.api.models.catalog(),
+          window.api.auth.getState().catch(() => null),
+        ])
+        if (!cat || auth?.status !== "logged-in") return
+        // 冷启动引擎/sdk 未就绪是常态:有界重试(≤20s),别一枪打空(否则默认永远不生效)。
+        for (let i = 0; i < 20 && !disposed && !composerModel(); i++) {
+          const c = props.projects.sdk()
+          if (c) {
+            const { data } = await c.config.providers({} as any).catch(() => ({ data: undefined }) as const)
+            const provs = Array.isArray((data as any)?.providers) ? (data as any).providers : Array.isArray(data) ? (data as any) : []
+            if (provs.length) {
+              const proxyLive = provs.some((p: any) => (p?.id ?? p?.providerID) === cat.platformProvider.id)
+              if (!proxyLive || composerModel()) return
+              const hasTiers = (m: (typeof cat.platformModels)[number]) => !!m.variants && Object.keys(m.variants).length > 0
+              // 偏好显式钉死:生效 catalog 的模型顺序随网关 live 清单漂移,不能拿"第一个"当默认。
+              const pick =
+                cat.platformModels.find((m) => m.id === (cat.defaultModel ?? "claude-sonnet-4.6") && hasTiers(m)) ??
+                cat.platformModels.find((m) => m.tier !== "flag" && hasTiers(m)) ?? // 兜底:非旗舰带档位,绝不默认到 ×8
+                cat.platformModels.find(hasTiers)
+              if (pick)
+                applyDefaultComposerModel({
+                  providerID: cat.platformProvider.id,
+                  modelID: pick.id,
+                  name: pick.name,
+                  variants: pick.variants ? Object.keys(pick.variants) : [],
+                })
+              return
+            }
+          }
+          await new Promise((r) => setTimeout(r, 1000))
+        }
+      } catch {
+        /* 默认失败不打扰:保持占位,手选路径完好 */
+      }
+    })()
+  })
 
   const abort = async () => {
     const c = props.projects.sdk()
@@ -535,7 +595,9 @@ export function AlphaComposer(props: AlphaComposerProps) {
   }
 
   return (
-    <div class="a-comp" data-alpha-composer={props.mode} data-empty={text().trim() ? undefined : ""} onClick={stop}>
+    // a-ui 作用域类必须随组件走:session 面经 Portal 挂进上游容器,没有 .a-ui 祖先 —— 缺了它,
+    // 焦点圈治理(.a-ui .a-chip:focus…)与基础排版全部失效,上游肥橙焦点圈漏进来(用户报障 2026-07-07)。
+    <div class="a-ui a-comp" data-alpha-composer={props.mode} data-empty={text().trim() ? undefined : ""} onClick={stop}>
       <auto.Menu />
       <textarea
         ref={taRef}
@@ -561,7 +623,7 @@ export function AlphaComposer(props: AlphaComposerProps) {
           <span class="a-comp-usage" data-alpha-usage-host />
         </Show>
         <ModelChip sdk={props.projects.sdk} onNeedWorkspace={props.onNeedWorkspace} hasWorkspace={hasWorkspace} />
-        <EffortChip />
+        <EffortChip sdk={props.projects.sdk} />
         <Show
           when={props.mode === "session" && busy()}
           fallback={
