@@ -45,3 +45,8 @@ related: [ADR-002, ADR-005, ADR-006, ADR-014]
 4. **原「全局产物留 userData」限定**:identity/behavior/secrets 等 **alpha 内部**产物仍留 userData;`~/.alpha` 承载**用户可见的全局安装物**。MCP 密钥仍走 userData 的 `{file:}` 通道(`alpha-mcp-secrets/`,A6),不进 `~/.alpha`。
 5. **存量迁移**:T2 之前写进共享 `~/.config/opencode` 的 alpha 安装物 → 一次性迁 `~/.alpha`(`alpha-migrate.ts`,只迁 catalog 名字匹配项、不碰用户自建;门控 `ALPHA_MIGRATE_ENABLE`,A6 真机验证后开);`ALPHA_LEGACY_INSTALL_ROOT=1` 逃生回旧行为。
 6. **§4 边界不变**:用户自建的 `~/.opencode` / `~/.config/opencode` 内容不迁移、不接管。
+
+## 修订(2026-07-07,REQ-052 —— 不变量成文:`.opencode` 内 alpha 自有条目只允许指向 `.alpha`)
+用户点名(环境重建时打开 `~/.opencode/skill/` 见 skill-creator/agent-creator 两条直链 app Resources 的 symlink):出厂技能通道(REQ-036 初版,factory-skills.ts)走了「`.opencode` 直链 app 资源」的零拷贝捷径,跳过 `.alpha`,破坏「用户视角一切在 `.alpha`、`.opencode` 只是引擎发现面」的心智——目录安装链路(alpha-bridge)一直合规,唯此通道漂移。就此成文:
+1. **不变量**:`.opencode`(全局与项目级)内 alpha 自有条目只允许两种形态——① 指向 `.alpha` 真源的 symlink(dir-link 或 item-link);② `opencode.jsonc` 内的 config 条目。**内容本体(包括仅指向 app 打包资产的链)一律先落 `.alpha`**;任何新安装/注入通道(含出厂/vendored 资产)都必须经 `.alpha` 中转一跳。
+2. **出厂技能改两跳桥**(REQ-052):`~/.alpha/skills/<name>` → app 资源(真源,零拷贝保留)+ 复用 alpha-bridge 落 `~/.opencode/skills`(多跳 symlink 引擎可见,REQ-004 spike 实测);启动 reconcile 自动迁移旧直链并顺手拆掉空的 `~/.opencode/skill/`(仅 `isAlphaFactoryLink` 判定为我方的链才拆,用户真实目录/异源链照旧不碰,§4 边界不变)。
