@@ -22,6 +22,11 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    # 冲突路径的 `bun install` 会跑 husky prepare 重挂钩子,随后 push 被上游全量
+    # turbo typecheck pre-push 挡死(冻结世界恒红,ADR-020 已知偏斜;2026-07-04~06
+    # 连败三天即此)。权威门是 PR 的 alpha-ci,sync 机器人不走 husky 门。
+    env:
+      HUSKY: "0"
     steps:
       - name: Checkout (full history)
         uses: actions/checkout@v4
@@ -53,7 +58,7 @@ jobs:
           old_dev="$(git rev-parse origin/dev)"
           git checkout -B dev origin/dev
           git merge --ff-only upstream/dev
-          git push origin dev
+          git push --no-verify origin dev
           # SHAs are our own rev-parse output (not untrusted input) — safe to pass via env.
           echo "OLD_DEV=$old_dev" >> "$GITHUB_ENV"
           echo "NEW_DEV=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
@@ -95,7 +100,7 @@ jobs:
           }
           if git merge --no-edit --no-ff dev -m "chore(sync): merge upstream dev into alpha"; then
             restore_frozen_frontend
-            git push origin alpha
+            git push --no-verify origin alpha
             exit 0
           fi
           conflicts="$(git diff --name-only --diff-filter=U)"
@@ -114,7 +119,7 @@ jobs:
             git add -A
             git commit --no-edit
             restore_frozen_frontend
-            git push origin alpha
+            git push --no-verify origin alpha
           else
             echo "::error::Unexpected merge conflicts — the only-add discipline was broken:"
             echo "$unexpected"
