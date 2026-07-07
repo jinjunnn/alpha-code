@@ -3,7 +3,7 @@ id: C28
 title: placebo 控件诚实化 + 崩溃屏接管设计(边界下沉)
 type: ux
 priority: P2
-status: verified
+status: archived
 repo: A
 created: 2026-07-03
 sprint: 2026-07-05-s17-deep-decisions

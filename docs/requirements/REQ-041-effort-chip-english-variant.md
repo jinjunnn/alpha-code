@@ -3,7 +3,7 @@ id: REQ-041
 title: effort chip 对「上游英文 variant」模型失效(deepseek = cn 版默认模型:显示不符 + 切换失败)
 type: bug
 priority: P1
-status: verified
+status: archived
 repo: A
 created: 2026-07-06
 sprint: 2026-07-06-s20-realmachine-vnext

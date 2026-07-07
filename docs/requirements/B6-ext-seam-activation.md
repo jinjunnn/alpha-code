@@ -3,7 +3,7 @@ id: B6
 title: 装载 @alpha-code/ext 主接缝(=G1,ext 休眠激活)
 type: feature
 priority: P1
-status: verified
+status: archived
 repo: A
 created: 2026-07-03
 sprint: 2026-07-03-s10-hardening

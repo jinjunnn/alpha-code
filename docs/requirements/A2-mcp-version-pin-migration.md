@@ -3,7 +3,7 @@ id: A2
 title: MCP 版本钉死收尾:存量配置一键钉迁移(A2b)
 type: security
 priority: P0
-status: ready
+status: archived
 repo: A
 created: 2026-07-03
 sprint: —

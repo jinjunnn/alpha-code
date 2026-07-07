@@ -3,7 +3,7 @@ id: REQ-046
 title: catalog 双作者源无同步守卫(A 内置 ↔ C catalog-src)—— 钉死上架流程 + 一致性守卫
 type: debt
 priority: P1
-status: shipped
+status: archived
 repo: X
 created: 2026-07-06
 sprint: S24(2026-07-06,PR #122 + alpha-web PR #8)

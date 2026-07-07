@@ -3,7 +3,7 @@ id: B14
 title: 会话 DB 备份/导出(损坏恢复路径)
 type: feature
 priority: P1
-status: shipped
+status: archived
 repo: A
 created: 2026-07-03
 sprint: 2026-07-05-s17-deep-decisions
