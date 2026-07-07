@@ -3,7 +3,7 @@ id: C9
 title: 代码上云数据边界 mini-ADR(diff-only / secrets 过滤 / consent / 体积上限)
 type: security
 priority: P2
-status: shipped
+status: verified
 repo: X
 created: 2026-07-03
 sprint: 2026-07-03-s11-cloud-loop
