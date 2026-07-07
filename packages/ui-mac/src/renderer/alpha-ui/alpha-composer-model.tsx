@@ -12,6 +12,7 @@ import { ALPHA_PATHS } from "../../shared/alpha-config"
 import { useAlphaEndpoints } from "../use-alpha-endpoints"
 import { setComposerModel, type ComposerModel } from "./composer-state"
 import type { AlphaProjectsApi } from "../sidebar/use-projects"
+import { AddProvider } from "./model-picker-add"
 
 const fmtYuan = (fen: number) => `¥${(fen / 100).toFixed(2)}`
 
@@ -23,6 +24,9 @@ type Row = {
   mult?: string
   reasoning: boolean
   locked?: boolean
+  /** catalog BYOK 供应商但未配置 KEY:如实显示,点击进配置表单(与旧 picker 同语义;
+   *  此前整行隐藏 = 用户「BYOK 消失了」报障 2026-07-07 的直接根因之一)。 */
+  needKey?: boolean
 }
 
 export function ModelPickPop(props: { sdk: AlphaProjectsApi["sdk"]; onPicked: () => void }) {
@@ -33,7 +37,33 @@ export function ModelPickPop(props: { sdk: AlphaProjectsApi["sdk"]; onPicked: ()
   const [keyStatus, setKeyStatus] = createSignal<ProviderKeyStatus>({})
   const [engineModels, setEngineModels] = createSignal<Array<{ providerID: string; modelID: string }>>([])
   const [query, setQuery] = createSignal("")
+  const [addOpen, setAddOpen] = createSignal(false)
+  const [configureId, setConfigureId] = createSignal<string | null>(null)
   const endpoints = useAlphaEndpoints()
+
+  const loadEngineModels = () => {
+    const c = props.sdk()
+    if (c)
+      void c.config
+        .providers({} as any)
+        .then(({ data }: any) => {
+          const out: Array<{ providerID: string; modelID: string }> = []
+          const provs = Array.isArray(data?.providers) ? data.providers : Array.isArray(data) ? data : []
+          for (const p of provs) {
+            const pid = p?.id ?? p?.providerID
+            const models = p?.models && typeof p.models === "object" ? Object.keys(p.models) : []
+            for (const mid of models) out.push({ providerID: pid, modelID: mid })
+          }
+          setEngineModels(out)
+        })
+        .catch(() => {})
+  }
+  const refreshKeys = () => {
+    window.api.providers.keyStatus().then(setKeyStatus).catch(() => {})
+    // 改键触发 sidecar respawn,引擎模型表随后变化 —— 延迟再拉一次收敛(best-effort)。
+    loadEngineModels()
+    setTimeout(loadEngineModels, 3000)
+  }
 
   onMount(() => {
     window.api.models.catalog().then(setCatalog).catch(() => {})
@@ -50,21 +80,7 @@ export function ModelPickPop(props: { sdk: AlphaProjectsApi["sdk"]; onPicked: ()
       })
       .catch(() => setSummaryError("network"))
     // 引擎实际注册的模型(BYOK/自定义直连;代理模型也在其中 —— 用于 locked 判定)
-    const c = props.sdk()
-    if (c)
-      void c.config
-        .providers({} as any)
-        .then(({ data }: any) => {
-          const out: Array<{ providerID: string; modelID: string }> = []
-          const provs = Array.isArray(data?.providers) ? data.providers : Array.isArray(data) ? data : []
-          for (const p of provs) {
-            const pid = p?.id ?? p?.providerID
-            const models = p?.models && typeof p.models === "object" ? Object.keys(p.models) : []
-            for (const mid of models) out.push({ providerID: pid, modelID: mid })
-          }
-          setEngineModels(out)
-        })
-        .catch(() => {})
+    loadEngineModels()
   })
 
   const state = createMemo<"member" | "balance" | "empty" | "out" | "error">(() => {
@@ -119,7 +135,32 @@ export function ModelPickPop(props: { sdk: AlphaProjectsApi["sdk"]; onPicked: ()
       .filter((r) => matchQ(r.model.name, r.sub))
   })
 
+  /* catalog BYOK 供应商、KEY 未配置 → 如实显示为「需 KEY」行(点击进配置表单)。
+   * 旧 picker(model-picker-inject)一直是这个语义;新 picker 曾整行隐藏 —— 用户填过 KEY 的
+   * DeepSeek 在换 userData(渠道分裂)后"凭空消失",无从发现也无从修复。 */
+  const needKeyRows = createMemo<Row[]>(() => {
+    const cat = catalog()
+    if (!cat) return []
+    return cat.byokProviders
+      .filter((p) => !(keyStatus()[p.id]?.configured ?? false))
+      .map(
+        (p): Row => ({
+          model: { providerID: p.id, modelID: "", name: p.name, variants: [] },
+          sub: "未配置 KEY · 点击配置",
+          pico: p.pico,
+          reasoning: false,
+          needKey: true,
+        }),
+      )
+      .filter((r) => matchQ(r.model.name, r.sub))
+  })
+
   const pick = (r: Row) => {
+    if (r.needKey) {
+      setConfigureId(r.model.providerID)
+      setAddOpen(true)
+      return
+    }
     if (r.locked) {
       if (state() === "out") void window.api.auth.start()
       else if (state() === "empty") window.api.openLink(`${endpoints().web}${ALPHA_PATHS.wallet}?tab=recharge`)
@@ -181,7 +222,7 @@ export function ModelPickPop(props: { sdk: AlphaProjectsApi["sdk"]; onPicked: ()
             )}
           </For>
         </Show>
-        <Show when={otherRows().length}>
+        <Show when={otherRows().length || needKeyRows().length}>
           <div class="a-pop-label">直连 · 自带 KEY</div>
           <For each={otherRows()}>
             {(r) => (
@@ -194,11 +235,44 @@ export function ModelPickPop(props: { sdk: AlphaProjectsApi["sdk"]; onPicked: ()
               </button>
             )}
           </For>
+          <For each={needKeyRows()}>
+            {(r) => (
+              <button class="a-pop-item a-mpp-row a-mpp-needkey" onClick={() => pick(r)}>
+                <span class="a-pico" style={{ background: r.pico.color }}>{r.pico.letter}</span>
+                <span class="a-mpp-name">
+                  {r.model.name}
+                  <small>{r.sub}</small>
+                </span>
+                <span class="a-pop-desc">需 KEY</span>
+              </button>
+            )}
+          </For>
         </Show>
-        <Show when={!proxyRows().length && !otherRows().length}>
+        <Show when={!proxyRows().length && !otherRows().length && !needKeyRows().length}>
           <div class="a-mpp-empty">无匹配模型</div>
         </Show>
       </div>
+      <button
+        class="a-pop-item a-mpp-addrow"
+        onClick={() => {
+          setConfigureId(null)
+          setAddOpen(true)
+        }}
+      >
+        ＋ 添加自定义节点 / 供应商
+      </button>
+      <Show when={addOpen()}>
+        <AddProvider
+          catalog={catalog()}
+          initialId={configureId() ?? undefined}
+          keyStatus={keyStatus()}
+          onClose={() => {
+            setAddOpen(false)
+            setConfigureId(null)
+          }}
+          onSaved={refreshKeys}
+        />
+      </Show>
     </div>
   )
 }
