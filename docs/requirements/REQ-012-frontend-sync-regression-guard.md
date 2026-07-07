@@ -3,7 +3,7 @@ id: REQ-012
 title: 上游同步前端回归防护:锚点契约测试 + sync tripwire + post-sync 视觉冒烟 gate
 type: debt
 priority: P1
-status: shipped
+status: verified
 repo: A
 created: 2026-07-03
 sprint: —

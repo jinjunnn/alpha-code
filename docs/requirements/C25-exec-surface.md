@@ -3,7 +3,7 @@ id: C25
 title: open-path / ext-install-plugin exec 触达面收紧
 type: security
 priority: P2
-status: shipped
+status: verified
 repo: A
 created: 2026-07-03
 sprint: 2026-07-03-s11-cloud-loop

@@ -3,7 +3,7 @@ id: REQ-033
 title: 开放生态安装面:任意 MCP 手动添加 + agent 导入/转换 + 生态兼容性边界诚实文档化(catalog 外内容)
 type: feature
 priority: P1
-status: shipped
+status: verified
 repo: A
 created: 2026-07-05
 ---

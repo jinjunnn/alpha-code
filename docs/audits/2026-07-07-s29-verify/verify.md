@@ -54,4 +54,18 @@ factory-skills: legacy direct links migrated to .alpha two-hop bridge (REQ-052) 
 
 ## 六、未覆盖(留后续批)
 
-REQ-028 三档实测 · REQ-043 in-session 复测 · B12/B23/B20/B21 · REQ-025 A 侧拉回 · REQ-016 残单 · C17/B2(破坏性/长窗,用户在场)· cn 复验(REQ-039/030 另半)· REQ-033 表单真提交。
+REQ-028 三档实测 · REQ-043 in-session 复测 · B12/B23/B20/B21 · REQ-025 A 侧拉回 · REQ-016 残单 · C17/B2(破坏性/长窗,用户在场)· cn 复验(REQ-039/030 另半)· ~~REQ-033 表单真提交~~(下批已收,见七)。
+
+## 七、S29-γ 补批(2026-07-07 下午,v0.1.2 装机后隔离实例走查)
+
+> 环境:sync workflow 修复后本机同步至 upstream(75 commits 零冲突);ui-mac 全量 build 绿(适配上游 esm-shim 修复,见 REQ-058 邻项);走查用 `OPENCODE_TEST_ONBOARDING=1 ALPHA_CDP=1` 隔离实例(XDG/`~/.alpha`/`~/.opencode` 全改道 tmp 根,零碰真实 home),真实鼠标 `Input.dispatchMouseEvent` 驱动,绝不触碰确认/破坏类对话框。
+
+| 项 | 结果 | 证据 |
+|---|---|---|
+| **REQ-033 表单真提交** | ✅ **verified 端到端**:hub「导入」tab 五入口全渲染 → 「添加自定义连接器(MCP)」表单真填真提交(名称+`npx -y @modelcontextprotocol/server-everything`+密钥 DEMO_TOKEN)→ **四项落盘实证**:① `~/.opencode/opencode.jsonc` 落 mcp 条目(白名单命令通过 + npm/pypi 镜像 env 注入)② 密钥 **{file:} 化**(config 只落引用,明文 `secret-abc123` 在 config 零命中)③ secret 文件 **0600** + 内容正确 ④ 账本 `origin:created / type:mcp / scope:global` | req033-import-tab / req033-form-filled / req033-submitted.png + 落盘 dump |
+| **E2 钉钉条目可见** | ✅ verified 半边:连接器 tab「中国办公」组三件套(飞书/语雀/钉钉)条目均可见,钉钉卡片「官方/待核实」+ 需 node + 密钥 chip + 添加按钮俱在;**首调用另半**待真凭证(用户未提供) | e2-dingtalk-connector-visible.png |
+| **C25 open-path 收紧** | ✅ verified:非白名单 app(Terminal)→ `openPath` 降级系统默认打开(TextEdit 起、Terminal **零 exec**);白名单 app(TextEdit)→ `open -a` 正常;二路实测 | c25-home-after-openpath.png |
+| **REQ-012 anchor tripwire** | ✅ verified:真实 sync run 28847373458 anchor tripwire step 实跑输出「Anchor contract intact this sync.」 | CI run log |
+| **C14 strict transform** | ✅ verified:75-commit sync 后 ui-mac 全量 build 绿 = brand/patch strict 子串全命中、冻结耦合面未漂移 | build-fixed.log |
+
+**已知观察(非阻断)**:隔离 onboarding 态下 hub Portal 渲染在 onboarding 覆盖层之下(`a-ob` z-index 在上)——本批为走查 hub 表单临时 CDP 隐藏 onboarding 层达到;真实登录态无此覆盖(onboarding 仅未登录+零项目时出)。记 [[ext-hub-v3-roadmap]] Portal 宿主 z-index 坑同源,不新开单。
