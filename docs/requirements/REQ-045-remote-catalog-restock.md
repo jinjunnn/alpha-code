@@ -3,7 +3,7 @@ id: REQ-045
 title: 撤下条目远程补货:mcp-builder/canvas-design/brand-guidelines 经远程 catalog 上架
 type: feature
 priority: P3
-status: verified
+status: archived
 repo: C
 created: 2026-07-06
 sprint: S26

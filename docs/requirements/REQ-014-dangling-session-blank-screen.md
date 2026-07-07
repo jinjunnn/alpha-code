@@ -3,7 +3,7 @@ id: REQ-014
 title: 悬空会话路由致「Not found」白屏 — 路由恢复前校验会话存在
 type: bug
 priority: P2
-status: verified
+status: archived
 repo: A
 created: 2026-07-03
 sprint: 2026-07-06-s21-realmachine-vnext2

@@ -3,7 +3,7 @@ id: B16
 title: 云派发 PIPL 数据出境同意/告知门(显式 per-项目 consent + 隐式登录告知)
 type: security
 priority: P1
-status: shipped
+status: archived
 repo: X
 created: 2026-07-03
 sprint: S25(2026-07-06,PR #123 + alpha-web PR #9)

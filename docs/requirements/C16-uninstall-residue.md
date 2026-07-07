@@ -3,7 +3,7 @@ id: C16
 title: 卸载残留含凭证清理 + app 内数据清除入口
 type: debt
 priority: P2
-status: shipped
+status: archived
 repo: A
 created: 2026-07-03
 sprint: S23(2026-07-06,PR #120)

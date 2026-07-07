@@ -3,7 +3,7 @@ id: B3
 title: 云协同最后一公里:dispatch → 进度 → artifact 回流(=G4/E12)
 type: feature
 priority: P1
-status: shipped
+status: archived
 repo: X
 created: 2026-07-03
 sprint: 2026-07-03-s11-cloud-loop

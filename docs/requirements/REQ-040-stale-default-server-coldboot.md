@@ -3,7 +3,7 @@ id: REQ-040
 title: 冷启动陈旧 defaultServerUrl 无存活校验 → 连死端口卡「无法连接到 Local Server」
 type: bug
 priority: P1
-status: verified
+status: archived
 repo: A
 created: 2026-07-06
 sprint: 2026-07-06-s20-realmachine-vnext
