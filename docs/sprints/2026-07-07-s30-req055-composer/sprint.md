@@ -19,12 +19,14 @@ REQ-055(本体)· REQ-054(两缺陷随本项根除)。
 | T6 | 内部 agent config `hidden: true` 注入(sidecar.ts ×3)+ ADR-022 修订 | ✅ |
 | T7 | 门禁:alpha-check 三关绿(503 tests;REQ-012 锚点清单再生 alive=195) | ✅ |
 | T8 | dev 实例走查:九条验收全 PASS(端到端:选模型→effort 秒切→SDK 带参发送→Sonnet 7s 回复;agent 列表零泄漏;上游 composer 隐藏;ring 收养) | ✅ |
-| T9 | PR 合入 + v0.1.2 发版(自动更新)+ 真机复核 → verified | ☐ |
+| T9 | PR 合入 + v0.1.2 发版(自动更新)+ 真机复核 → verified | ✅ |
 
 ## Gates
 
 - verified 门 = v0.1.2 真机:两面同构截图、effort 即点即生效、agent 零泄漏、focus 无肥圈、自动化调度/只读档零回归。
 
-## 结果(收尾时回填)
+## 结果(2026-07-07 收尾)
 
-(待 T9)
+- PR #137(实现,+1553/−1323)/ #138(发版 prep)合入;**v0.1.2 发布并经自动更新落到用户真机**(0.1.1→0.1.2,检测→下载→Restart 全自动)。
+- 用户真机复核:首页统一 composer + agent 下拉零内部泄漏 + 会话页接管(上游 display:none)+ 历史完好 → **REQ-055/REQ-054 verified**。
+- 当日全链:用户报障(下拉泄漏/effort 死点)→ 立项 → 实现 → dev 九条验收 → 发版 → 真机复核,单日闭环。
