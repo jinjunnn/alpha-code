@@ -1,8 +1,10 @@
-import { existsSync, readFileSync } from "node:fs"
+import { existsSync, readFileSync, readdirSync } from "node:fs"
 import { join } from "node:path"
+import { pathToFileURL } from "node:url"
 import type { Plugin } from "@opencode-ai/plugin"
 import { tool } from "@opencode-ai/plugin"
 import { mergeProjectConfig } from "./project-config"
+import { loadProjectPlugins, mergeHooks } from "./plugin-fanout"
 
 /**
  * alpha-code backend isolation extension.
@@ -30,7 +32,7 @@ export const AlphaExt: Plugin = async (input) => {
   let reloadAttempts = 0
   const STALE_MS = 5 * 60 * 1000
 
-  return {
+  const ownHooks: Awaited<ReturnType<Plugin>> = {
     // REQ-060 项目级扩展物 `.alpha`-only:config hook 按 instance 读 `<directory>/.alpha/alpha.jsonc`
     // 并把项目级 mcp / agent / command / skills.paths 合并进 cfg —— 引擎经 config 消费,项目不产生
     // `.opencode`(零桥)。变异可见性由真机 spike 验(hook "Notify" 语义,T0 gate)。dispose 重建重
@@ -137,6 +139,22 @@ export const AlphaExt: Plugin = async (input) => {
       }
     },
   }
+
+  // REQ-060 plugin host fan-out:加载项目 `.alpha/plugins/*.js`(信任门:未 consent 不加载可执行物)
+  // 并与 ownHooks 合并 return —— 项目插件的 hook 经引擎照常派发,项目零 `.opencode`/零 config.plugin[]。
+  const trusted = readProjectExtensionsConsent(input.directory)
+  const projectHooks = await loadProjectPlugins(input.directory, input, trusted, {
+    existsSync,
+    readdirSync,
+    importModule: (u) => import(u),
+    pathToFileURL: (p) => pathToFileURL(p).href,
+    join,
+    log: (m) => console.log(m),
+    error: (m) => console.error(m),
+  })
+  return (projectHooks.length ? mergeHooks(ownHooks as Record<string, unknown>, projectHooks) : ownHooks) as Awaited<
+    ReturnType<Plugin>
+  >
 }
 
 /** 项目扩展信任门 consent:`<dir>/.alpha/prefs.json` 的 `extensionsConsent.granted === true`(版本化,
