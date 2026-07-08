@@ -68,7 +68,7 @@ export const AlphaExt: Plugin = async (input) => {
               console.log(`[@alpha-code/ext] project config merged from ${f}: ${added.join(", ")}`)
           }
         }
-        // REQ-062 T3/T6:alpha 内容层 set-if-absent 接管(/init 模板 + general/explore prompt)。
+        // REQ-062 T3/T6:alpha 内容层 set-if-absent 接管(/init /review 模板 + general/explore prompt)。
         // 置于项目 merge 之后 → 项目/全局/治理任何层的同名配置都先落位、alpha 出厂让位(优先级:
         // 用户治理 > alpha 出厂 > 上游内置)。与 T1 转写同一逃生门 = 路线A 一键整体回退。
         if (process.env.ALPHA_PROMPT_REBRAND_DISABLE !== "1") {

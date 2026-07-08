@@ -36,7 +36,7 @@
 - [x] REQ-066 T3 agent 选择器治理守卫测试(PR #149)
 - [x] REQ-061 useChip.onDoc composedPath 判定 + 红绿单测(PR #150)
 - [x] REQ-065 skills.paths 直指 Resources + reconcile 拆存量出厂链(PR #151)
-- [x] REQ-062 T1 transform 转写 · T2 identity · T3 init(review 刻意不覆盖,档案注记)· T4 customize-alpha · T6 general/explore(PR #152;T5 lsp 按档后置)
+- [x] REQ-062 T1 transform 转写 · T2 identity · T3 init+review(review 初版漏接管,用户当日纠正补上)· T4 customize-alpha · T6 general/explore(PR #152 + review 补丁 PR;T5 lsp 按档后置)
 - [x] REQ-063 default-deny flags · 项目导入门 · 导入转换 · 全局迁移门(发布闸)· integrate-project skill(PR #153)
 
 ## 结果
