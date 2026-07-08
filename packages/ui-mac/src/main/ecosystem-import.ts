@@ -17,6 +17,7 @@
 
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { parse as parseJsonc } from "jsonc-parser"
 import { alphaGlobalRoot } from "./alpha-installs"
 import { importSkillFolder } from "./ext-fs-installer"
 import type { InstallTarget } from "../preload/types"
@@ -83,7 +84,10 @@ export type ImportOutcome = {
   claudeMd: "agents-md-created" | "agents-md-exists" | "instructions-file" | "none"
 }
 
-/** skills 转换导入(项目/全局同一管线,只差 target 与 origin)。 */
+/** skills 转换导入(项目/全局同一管线,只差 target 与 origin)。
+ *  项目 scope 成功导入 ≥1 项时,补项目 `alpha.jsonc` 的 skills.paths 注册("./.alpha/skills",
+ *  与 alpha_register type=skill 同形状)—— 引擎经 ext config hook 按此发现项目技能;漏注册 =
+ *  文件落了但引擎永远看不见(2026-07-08 真机验收当场抓到的缺口)。 */
 export function importExternalSkills(
   skills: readonly ExternalSkill[],
   target: InstallTarget,
@@ -95,7 +99,37 @@ export function importExternalSkills(
     if (r.ok) importedSkills.push(r.name ?? s.name)
     else skipped.push({ name: s.name, reason: r.reason })
   }
+  if (target.scope === "project" && importedSkills.length > 0) {
+    try {
+      registerProjectSkillsPath(target.projectDir)
+    } catch (error) {
+      skipped.push({ name: "(skills 注册)", reason: error instanceof Error ? error.message : String(error) })
+    }
+  }
   return { importedSkills, skipped }
+}
+
+/** 项目 `alpha.jsonc`:确保 skills.paths 含 "./.alpha/skills"(相对路径,项目可移动;幂等原子写)。 */
+export function registerProjectSkillsPath(projectDir: string): void {
+  const file = path.join(projectDir, ".alpha", "alpha.jsonc")
+  let cfg: Record<string, unknown> = {}
+  try {
+    const parsed: unknown = parseJsonc(fs.readFileSync(file, "utf8"))
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) cfg = parsed as Record<string, unknown>
+  } catch {
+    /* 不存在/坏 → 新建 */
+  }
+  const skills =
+    cfg.skills && typeof cfg.skills === "object" && !Array.isArray(cfg.skills)
+      ? (cfg.skills as Record<string, unknown>)
+      : ((cfg.skills = {}) as Record<string, unknown>)
+  const paths = Array.isArray(skills.paths) ? (skills.paths as unknown[]) : ((skills.paths = []) as unknown[])
+  if (paths.includes("./.alpha/skills")) return
+  paths.push("./.alpha/skills")
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  const tmp = file + ".tmp"
+  fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2) + "\n")
+  fs.renameSync(tmp, file)
 }
 
 /** 项目 CLAUDE.md → AGENTS.md(引擎原生约定)。已有 AGENTS.md → 不动 + 如实报告(C28)。 */
