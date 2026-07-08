@@ -3,7 +3,7 @@ id: REQ-065
 title: "`.alpha` 纯度反向收口:出厂/系统件退出 `~/.alpha/skills`,`.alpha` 只承载用户自有内容"
 type: debt
 priority: P1
-status: ready
+status: shipped
 repo: A
 created: 2026-07-08
 ---

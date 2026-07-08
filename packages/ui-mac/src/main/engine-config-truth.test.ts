@@ -3,9 +3,11 @@ import {
   ALPHA_CONFIG_TOP_KEYS,
   ensureSkillsPath,
   isAlphaOwnedConfig,
+  isFactoryResourcePath,
   isJunkOnlyDir,
   OPENCODE_JUNK_ENTRIES,
   planConfigMerge,
+  rewriteFactorySkillPaths,
 } from "./engine-config-truth"
 
 describe("ensureSkillsPath — skills.paths OBJECT form (真机 ConfigInvalidError 回归锁)", () => {
@@ -28,6 +30,56 @@ describe("ensureSkillsPath — skills.paths OBJECT form (真机 ConfigInvalidErr
     ensureSkillsPath(c, "/a/.alpha/skills")
     expect((c.skills as any).paths).toEqual(["/other", "/a/.alpha/skills"])
     expect((c.skills as any).disabled).toEqual(["x"])
+  })
+})
+
+// ── REQ-065:出厂技能 skills.paths 组重写(直指 app 资源;.alpha 零出厂件)────────────
+const NAMES = ["skill-creator", "agent-creator"]
+const NEW_DIRS = [
+  "/Applications/alpha-code.app/Contents/Resources/skills/skill-creator",
+  "/Applications/alpha-code.app/Contents/Resources/factory-skills/agent-creator",
+]
+
+describe("isFactoryResourcePath — 布局 + 出厂名单双重判定", () => {
+  test("资源布局 + 名单内命中;名单外同布局(用户自加)不命中", () => {
+    expect(isFactoryResourcePath(NEW_DIRS[0], NAMES)).toBe(true)
+    expect(isFactoryResourcePath("/repo/packages/ui-mac/resources/factory-skills/agent-creator", NAMES)).toBe(true)
+    expect(isFactoryResourcePath("/Users/x/proj/resources/skills/my-own-skill", NAMES)).toBe(false) // 名单外
+    expect(isFactoryResourcePath("/a/.alpha/skills", NAMES)).toBe(false) // 用户安装物目录
+    expect(isFactoryResourcePath("/x/skills/skill-creator", NAMES)).toBe(false) // 异布局
+  })
+})
+
+describe("rewriteFactorySkillPaths — REQ-065 T1(每启动重写出厂组)", () => {
+  test("fresh config: injects factory dirs alongside the user-installs dir", () => {
+    const c: Record<string, unknown> = { skills: { paths: ["/a/.alpha/skills"] } }
+    expect(rewriteFactorySkillPaths(c, NEW_DIRS, NAMES)).toBe(true)
+    expect((c.skills as any).paths).toEqual(["/a/.alpha/skills", ...NEW_DIRS])
+  })
+  test("idempotent when already current", () => {
+    const c: Record<string, unknown> = { skills: { paths: ["/a/.alpha/skills", ...NEW_DIRS] } }
+    expect(rewriteFactorySkillPaths(c, NEW_DIRS, NAMES)).toBe(false)
+  })
+  test("app moved: stale factory paths from the old install are dropped, current ones injected", () => {
+    const c: Record<string, unknown> = {
+      skills: { paths: ["/a/.alpha/skills", "/Applications/old.app/Contents/Resources/skills/skill-creator"] },
+    }
+    expect(rewriteFactorySkillPaths(c, NEW_DIRS, NAMES)).toBe(true)
+    expect((c.skills as any).paths).toEqual(["/a/.alpha/skills", ...NEW_DIRS])
+  })
+  test("disabled ([] dirs): strips factory entries, keeps user entries untouched", () => {
+    const c: Record<string, unknown> = { skills: { paths: ["/users/own/path", NEW_DIRS[0]], disabled: ["x"] } }
+    expect(rewriteFactorySkillPaths(c, [], NAMES)).toBe(true)
+    expect((c.skills as any).paths).toEqual(["/users/own/path"])
+    expect((c.skills as any).disabled).toEqual(["x"]) // 兄弟字段保留
+  })
+  test("no skills key + no dirs = no-op; malformed skills value gets normalized when writing", () => {
+    const empty: Record<string, unknown> = {}
+    expect(rewriteFactorySkillPaths(empty, NEW_DIRS, NAMES)).toBe(true)
+    expect((empty.skills as any).paths).toEqual(NEW_DIRS)
+    const arr: Record<string, unknown> = { skills: ["/legacy-array"] }
+    expect(rewriteFactorySkillPaths(arr, NEW_DIRS, NAMES)).toBe(true)
+    expect((arr.skills as any).paths).toEqual(NEW_DIRS) // 数组形态自愈为 object.paths(引擎 schema)
   })
 })
 
