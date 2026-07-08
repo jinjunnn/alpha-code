@@ -32,11 +32,22 @@ REQ-060 剩余全清(信任门 UI / T2 / T3 / T5)+ REQ-059 T3b(agents 桥退役)
 
 ## 结果
 
-(收口时回填)
+六 task 全完成,一日收口。真机批 12 断言全 PASS(CDP + AppleScript 原生 sheet 实点),证据
+[audits/2026-07-08-s30-req060-realmachine](../../audits/2026-07-08-s30-req060-realmachine/verify.md)。
+
+- REQ-060 → **shipped**(核心链路真机 verified):信任门 UI(同意/拒绝双路径 + 不重复弹 + granted
+  自动 dispose)、alpha_register(项目级注册一条龙)、创建流改稿(零 `.opencode`)、生 TS 拒收 loud、
+  零目录新增全过。**残(会话级)**:模型经真 LLM 会话实调 alpha_register 未演(机制已证)。
+- REQ-059 T3b → **shipped + 真机 verified**:writeAgent 去桥条目化(md 真源 + agentMdToEntry
+  fail-closed 转换 + alpha.jsonc 条目),装全局 agent 零 `~/.opencode`,卸载净除;reconcile 存量桥
+  迁移(单测覆盖,本机无存量验证物)。
+- 场中发现:S30-5 启动时发现无 CDP 的旧实例抢占单实例锁导致 9222 拒连(带 flag 的新实例让位退出)
+  —— 真机验证前须 pgrep 确认无残留实例,已记入验证方法。
+- 单测:ext 24→33,ui-mac 549(全绿);alpha-check 三关绿。
 
 ## 回写清单
 
-- [ ] BACKLOG:REQ-060 → shipped(真机后 verified);REQ-059 T3b 残项关闭
-- [ ] CHANGELOG [Unreleased]:用户可见变化(项目级扩展 + 信任门弹窗)
-- [ ] 需求档 frontmatter:REQ-060 status 同步;REQ-036 修订节
-- [ ] 本 sprint.md task 勾选 + 结果
+- [x] BACKLOG:REQ-060 → shipped(核心真机 verified);REQ-059 T3b 残项关闭
+- [x] CHANGELOG [Unreleased]:用户可见变化(项目级扩展 `.alpha`-only + 信任门弹窗)
+- [x] 需求档 frontmatter:REQ-060 status=shipped;REQ-036 修订节
+- [x] 本 sprint.md task 勾选 + 结果
