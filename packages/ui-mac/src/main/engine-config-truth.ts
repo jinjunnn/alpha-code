@@ -79,6 +79,51 @@ export function rewriteFactorySkillPaths(
   return true
 }
 
+/**
+ * REQ-067:剥离历史版本物化进 alpha.jsonc 的「出厂默认禁」明文(它们改由内存注入,用户配置零痕迹):
+ *   - `permission.skill.<n> === "deny"`(n ∈ 出厂清单)→ 删;
+ *   - 随之 permission.skill 只剩治理打底 `{"*": "allow"}`(引擎默认即 allow,冗余)→ 删整个 skill 键;
+ *     permission 空 → 删 permission;
+ *   - `command.<n>`(n ∈ 出厂清单)且 description 以「(已禁用)」开头(治理占位指纹)→ 删;
+ *     用户自建同名 command(无该指纹)不碰。
+ * 幂等;返回是否有改动。
+ */
+export function stripFactoryGovernanceLeaves(config: Record<string, unknown>, factoryNames: readonly string[]): boolean {
+  let changed = false
+  const permission = config.permission
+  if (permission && typeof permission === "object" && !Array.isArray(permission)) {
+    const perm = permission as Record<string, unknown>
+    const skill = perm.skill
+    if (skill && typeof skill === "object" && !Array.isArray(skill)) {
+      const sk = skill as Record<string, unknown>
+      for (const n of factoryNames) {
+        if (sk[n] === "deny") {
+          delete sk[n]
+          changed = true
+        }
+      }
+      const keys = Object.keys(sk)
+      if (changed && (keys.length === 0 || (keys.length === 1 && keys[0] === "*" && sk["*"] === "allow"))) {
+        delete perm.skill
+        if (Object.keys(perm).length === 0) delete config.permission
+      }
+    }
+  }
+  const command = config.command
+  if (command && typeof command === "object" && !Array.isArray(command)) {
+    const cmd = command as Record<string, unknown>
+    for (const n of factoryNames) {
+      const c = cmd[n]
+      if (c && typeof c === "object" && typeof (c as Record<string, unknown>).description === "string" && ((c as Record<string, unknown>).description as string).startsWith("(已禁用)")) {
+        delete cmd[n]
+        changed = true
+      }
+    }
+    if (changed && Object.keys(cmd).length === 0) delete config.command
+  }
+  return changed
+}
+
 /** alpha 会写进 alpha.jsonc 的引擎 config 顶层域。存量文件顶层键越界 = 疑用户手写混入 → 不迁。 */
 export const ALPHA_CONFIG_TOP_KEYS = new Set([
   "$schema",

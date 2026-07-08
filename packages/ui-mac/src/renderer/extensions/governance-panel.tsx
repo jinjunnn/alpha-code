@@ -15,12 +15,14 @@ import { t } from "../i18n"
 /** 引擎内置 skill / command(REQ-037 机制核实面;上游冻结,变更随 sync retro 复核)。 */
 const BUILTIN_SKILLS = ["customize-opencode"]
 const BUILTIN_COMMANDS = ["init", "review"]
+/** REQ-067:出厂默认禁项(与 main alpha-governance.FACTORY_DENIED_SKILLS 同名单;开关走解禁语义)。 */
+const FACTORY_DENIED_SKILLS = ["customize-opencode"]
 
 const DEFAULT_GOV: AlphaGovernance = {
   version: 1,
   mode: "denylist",
   agents: { hide: [], disable: [], allow: [], override: {} },
-  skills: { deny: [] },
+  skills: { deny: [], allowFactory: [] },
   commands: { override: {} },
 }
 
@@ -108,9 +110,18 @@ export function GovernancePanel(props: {
   }
   const toggleSkillDeny = (name: string) => {
     const g = structuredClone(gov())
-    const i = g.skills.deny.indexOf(name)
-    if (i >= 0) g.skills.deny.splice(i, 1)
-    else g.skills.deny.push(name)
+    // REQ-067:出厂默认禁项的开关操作的是「解禁名单」(allowFactory),不写 deny 明文 ——
+    // 出厂禁是内置行为(env → 引擎内存注入),用户配置里只记录用户的解禁动作。
+    if (FACTORY_DENIED_SKILLS.includes(name)) {
+      g.skills.allowFactory ??= []
+      const i = g.skills.allowFactory.indexOf(name)
+      if (i >= 0) g.skills.allowFactory.splice(i, 1)
+      else g.skills.allowFactory.push(name)
+    } else {
+      const i = g.skills.deny.indexOf(name)
+      if (i >= 0) g.skills.deny.splice(i, 1)
+      else g.skills.deny.push(name)
+    }
     void apply(g)
   }
   const saveCmdOverride = () => {
@@ -235,10 +246,13 @@ export function GovernancePanel(props: {
           }}
         </For>
 
-        {/* builtin skills */}
+        {/* builtin skills(出厂默认禁项:denied = 未被解禁;REQ-067) */}
         <For each={BUILTIN_SKILLS}>
           {(name) => {
-            const denied = () => g().skills.deny.includes(name)
+            const denied = () =>
+              FACTORY_DENIED_SKILLS.includes(name)
+                ? !(g().skills.allowFactory ?? []).includes(name)
+                : g().skills.deny.includes(name)
             return (
               <div class="alpha-ext-man" data-gov-dim={denied() ? "" : undefined}>
                 <span class="alpha-ext-man-name">

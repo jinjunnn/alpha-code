@@ -21,7 +21,7 @@ import { randomUUID } from "node:crypto"
 import { pickedFiles } from "./ipc"
 import { factorySkillIds } from "./factory-skills"
 import { downloadRemoteAsset, refreshRemoteCatalog, type RemoteAssetFile } from "./remote-catalog"
-import { applyGovernance, normalizeGovernance, protectionInfo, readGovernance, resetGovernance } from "./alpha-governance"
+import { applyGovernance, effectiveFactoryDenied, normalizeGovernance, protectionInfo, readGovernance, resetGovernance } from "./alpha-governance"
 import {
   detectExternal,
   ecosystemInheritEnabled,
@@ -85,7 +85,11 @@ export function registerExtIpcHandlers(userDataPath: string) {
 
   // REQ-037 上游能力治理:真源 ~/.alpha/governance.json,物化 home jsonc 受控叶子(见 alpha-governance.ts)。
   // apply 后由 renderer 调 refreshEngine()(dispose)热生效 —— 与安装链路同节奏。
-  ipcMain.handle("gov-read", () => ({ gov: readGovernance(), protection: protectionInfo() }))
+  // REQ-067:factoryDenied = 出厂默认禁的有效名单(出厂清单 − 用户解禁)—— 菜单过滤与治理面板共用
+  ipcMain.handle("gov-read", () => {
+    const gov = readGovernance()
+    return { gov, protection: protectionInfo(), factoryDenied: effectiveFactoryDenied(gov) }
+  })
   ipcMain.handle("gov-apply", (_event: IpcMainInvokeEvent, gov: unknown, visibleAgents: unknown, confirmBuildDisable?: boolean) => {
     const agents = Array.isArray(visibleAgents) ? visibleAgents.filter((a): a is string => typeof a === "string") : []
     return applyGovernance(normalizeGovernance(gov), agents, confirmBuildDisable === true)

@@ -25,8 +25,10 @@ import {
   isJunkOnlyDir,
   planConfigMerge,
   rewriteFactorySkillPaths,
+  stripFactoryGovernanceLeaves,
 } from "./engine-config-truth"
 import { FACTORY_SKILL_IDS } from "./factory-skills"
+import { FACTORY_DENIED_SKILLS } from "./alpha-governance"
 
 type Logger = { log: (m: string, meta?: unknown) => void; warn: (m: string, meta?: unknown) => void }
 
@@ -127,10 +129,18 @@ export function reconcileEngineConfigTruth(log?: Logger, opts?: ReconcileOptions
   const factoryRewritten = opts?.factorySkillDirs
     ? rewriteFactorySkillPaths(plan.merged, opts.factorySkillDirs, FACTORY_SKILL_IDS)
     : false
-  const added = [...plan.added, ...(skillsAdded ? ["skills[]"] : []), ...(factoryRewritten ? ["skills.factory[]"] : [])]
+  // REQ-067:剥离历史物化的「出厂默认禁」明文(permission.skill deny + 占位 command)——
+  // 该行为现由 env → ext hook 内存注入,用户配置零痕迹。幂等,无条件执行(只针对出厂清单名)。
+  const denyStripped = stripFactoryGovernanceLeaves(plan.merged, FACTORY_DENIED_SKILLS)
+  const added = [
+    ...plan.added,
+    ...(skillsAdded ? ["skills[]"] : []),
+    ...(factoryRewritten ? ["skills.factory[]"] : []),
+    ...(denyStripped ? ["factory-deny-stripped"] : []),
+  ]
 
   let migrated = false
-  if (plan.changed || skillsAdded || factoryRewritten) {
+  if (plan.changed || skillsAdded || factoryRewritten || denyStripped) {
     try {
       fs.mkdirSync(path.dirname(truth), { recursive: true })
       const tmp = `${truth}.tmp`

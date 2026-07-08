@@ -117,12 +117,13 @@ export function createComposerAutocomplete(opts: {
       ext.govRead().catch(() => null),
       ext.listInstalls(opts.directory()).catch(() => null),
     ])
-    if (gov?.gov?.skills?.deny) setDeniedSkills(new Set(gov.gov.skills.deny))
+    // REQ-067:有效禁用集 = 用户自禁(deny)∪ 出厂默认禁(factoryDenied,main 已减去用户解禁)
+    if (gov?.gov?.skills?.deny) setDeniedSkills(new Set([...gov.gov.skills.deny, ...(gov.factoryDenied ?? [])]))
     if (installs)
       setImportedSkills(
         new Set(
           [...(installs.global ?? []), ...(installs.project ?? [])]
-            .filter((r) => r.type === "skill" && r.origin === "imported")
+            .filter((r) => r.type === "skill" && r.origin.startsWith("imported")) // imported / imported-claude / imported-agents(REQ-063)
             .map((r) => r.name),
         ),
       )

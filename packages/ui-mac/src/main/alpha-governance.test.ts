@@ -7,6 +7,7 @@ import { join } from "node:path"
 import {
   DEFAULT_GOVERNANCE,
   applyGovernance,
+  effectiveFactoryDenied,
   materializeEdits,
   normalizeGovernance,
   resetGovernance,
@@ -167,5 +168,28 @@ describe("normalizeGovernance — renderer 原始输入清洗", () => {
     expect(g.skills.deny).toEqual(["fine"])
     expect(Object.keys(g.commands.override)).toEqual(["init"])
     expect(normalizeGovernance({ mode: "nope" }).mode).toBe("denylist")
+  })
+})
+
+describe("REQ-067 — 出厂默认禁内置化(deny 零明文)", () => {
+  test("normalize:出厂项从 deny 收敛剔除(历史数据自愈);allowFactory 只认出厂清单内的名字", () => {
+    const g = normalizeGovernance({
+      version: 1,
+      mode: "denylist",
+      agents: { hide: [], disable: [], allow: [], override: {} },
+      skills: { deny: ["customize-opencode", "my-own"], allowFactory: ["customize-opencode", "not-factory"] },
+      commands: { override: {} },
+    })
+    expect(g.skills.deny).toEqual(["my-own"]) // 出厂项不入用户 deny
+    expect(g.skills.allowFactory).toEqual(["customize-opencode"]) // 清单外的解禁无意义,清洗
+  })
+  test("effectiveFactoryDenied:默认全禁;用户解禁后移出(env 注入与菜单过滤共用此口径)", () => {
+    expect(effectiveFactoryDenied(DEFAULT_GOVERNANCE)).toEqual(["customize-opencode"])
+    const g = normalizeGovernance({ ...structuredClone(DEFAULT_GOVERNANCE), skills: { deny: [], allowFactory: ["customize-opencode"] } })
+    expect(effectiveFactoryDenied(g)).toEqual([])
+  })
+  test("materializeEdits:出厂项零物化 —— 空治理不产生任何 permission/command 叶子", () => {
+    const edits = materializeEdits(structuredClone(DEFAULT_GOVERNANCE), [])
+    expect(edits).toEqual([])
   })
 })
