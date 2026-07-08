@@ -450,6 +450,12 @@ body[data-alpha-sidebar="open"] .a-home {
   background: var(--a-accent-subtle);
   color: var(--a-accent);
 }
+/* REQ-066 T2 来源标注:内置/项目降为中性(每行都有徽标,只有用户装入的来源才吃强调色) */
+.a-auto-badge[data-origin="builtin"],
+.a-auto-badge[data-origin="project"] {
+  background: var(--a-bg-muted);
+  color: var(--a-text-tertiary);
+}
 
 /* one-line clamp for item descriptions — long skill descriptions (e.g. customize-opencode) would
  * otherwise wrap the menu into a wall of text; both surfaces clamp identically (REQ-038b). */

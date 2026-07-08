@@ -65,3 +65,16 @@ describe("filterAgents — 内部档永不可见(用户报障 2026-07-07)", () =
     expect(names).toEqual(["build", "plan", "custom-mine"])
   })
 })
+
+describe("filterAgents — 治理口径守卫(REQ-066 T3)", () => {
+  // 治理 hide(REQ-037)物化为引擎 agent.<n>.hidden=true → 列表带 hidden 字段返回;
+  // 治理 disable 则引擎直接删除条目(不出现在 list)。选择器必须尊重 hidden,别只看 mode。
+  test("治理隐藏的上游 agent(hidden=true)不出现在选择器", () => {
+    const raw = [
+      { name: "build", mode: "primary" },
+      { name: "plan", mode: "primary", hidden: true }, // 治理 hide 物化态
+      { name: "custom-mine", mode: "all" },
+    ]
+    expect(filterAgents(raw).map((a) => a.name)).toEqual(["build", "custom-mine"])
+  })
+})
