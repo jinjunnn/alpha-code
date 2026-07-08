@@ -24,7 +24,9 @@ import {
   isAlphaOwnedConfig,
   isJunkOnlyDir,
   planConfigMerge,
+  rewriteFactorySkillPaths,
 } from "./engine-config-truth"
+import { FACTORY_SKILL_IDS } from "./factory-skills"
 
 type Logger = { log: (m: string, meta?: unknown) => void; warn: (m: string, meta?: unknown) => void }
 
@@ -65,11 +67,17 @@ function readJsonc(file: string): Record<string, unknown> | undefined {
   }
 }
 
+export type ReconcileOptions = {
+  /** REQ-065:出厂技能资源目录组(reconcileFactorySkills().paths)。传入即重写 skills.paths 的出厂
+   *  条目组(直指 app 资源,stale 出厂路径移除;[] = 出厂关闭只清不加);不传 = 不动该组(测试兼容)。 */
+  factorySkillDirs?: string[]
+}
+
 /**
  * Migrate legacy engine config into the alpha truth file. Copy-don't-delete + idempotent.
  * Returns an outcome for logging/telemetry (never throws on a migration miss — reconcile is best-effort).
  */
-export function reconcileEngineConfigTruth(log?: Logger): ReconcileOutcome {
+export function reconcileEngineConfigTruth(log?: Logger, opts?: ReconcileOptions): ReconcileOutcome {
   if (process.env.ALPHA_JSONC_TRUTH_DISABLE === "1" || process.env.ALPHA_LEGACY_INSTALL_ROOT === "1") {
     return { skipped: true, reason: "escape hatch set (ALPHA_JSONC_TRUTH_DISABLE / ALPHA_LEGACY_INSTALL_ROOT)" }
   }
@@ -111,12 +119,17 @@ export function reconcileEngineConfigTruth(log?: Logger): ReconcileOutcome {
 
   const plan = planConfigMerge(existing, legacyToMerge, xdgProvider)
   // T3:全局 skills 经 skills.paths(文件通道生效)发现 ~/.alpha/skills —— 恒定注入(非迁移物,独立于
-  // ownership bail),使桥退役后引擎仍能发现出厂+装的技能。幂等。
+  // ownership bail),使桥退役后引擎仍能发现**用户装的**技能。幂等。
   const skillsAdded = ensureSkillsPath(plan.merged, alphaSkillsDir())
-  const added = [...plan.added, ...(skillsAdded ? ["skills[]"] : [])]
+  // REQ-065:出厂技能条目组重写 —— 直指 app 资源(不再经 ~/.alpha/skills 链中转;.alpha 只承载
+  // 用户自有内容)。每启动重写,跟随 app 安装路径/版本变化;stale 出厂路径按名单+布局判定移除。
+  const factoryRewritten = opts?.factorySkillDirs
+    ? rewriteFactorySkillPaths(plan.merged, opts.factorySkillDirs, FACTORY_SKILL_IDS)
+    : false
+  const added = [...plan.added, ...(skillsAdded ? ["skills[]"] : []), ...(factoryRewritten ? ["skills.factory[]"] : [])]
 
   let migrated = false
-  if (plan.changed || skillsAdded) {
+  if (plan.changed || skillsAdded || factoryRewritten) {
     try {
       fs.mkdirSync(path.dirname(truth), { recursive: true })
       const tmp = `${truth}.tmp`

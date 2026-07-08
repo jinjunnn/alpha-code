@@ -5,7 +5,6 @@ import { app, utilityProcess } from "electron"
 import type { Details } from "electron"
 import { resolveExtPluginPath } from "./alpha-ext-plugin"
 import { syncSecretFiles } from "./alpha-secret-files"
-import { factorySkillSources, reconcileFactorySkillLinks } from "./factory-skills"
 import { loadAlphaSecrets } from "./alpha-secrets"
 import { pollUntilHealthy } from "./health-poll"
 import { getLogger } from "./logging"
@@ -137,27 +136,8 @@ export async function spawnLocalServer(
   else if (ext.reason?.includes("ALPHA_EXT_DISABLE")) getLogger()?.log("alpha-ext: disabled by ALPHA_EXT_DISABLE")
   else getLogger()?.warn(`alpha-ext: NOT loaded — ${ext.reason}`)
 
-  // REQ-036 出厂技能:每次 fork 前幂等 reconcile 两跳桥(REQ-052:真源 `~/.alpha/skills/<name>` →
-  // app 资源,`~/.opencode/skills` 经 alpha-bridge 指回 `.alpha`;旧 `~/.opencode/skill/` 直链自动
-  // 迁移。实测 OPENCODE_CONFIG_CONTENT.skills.paths 对引擎不生效,故不走 env)。anti-B11:结果落日志。
-  try {
-    const factory = reconcileFactorySkillLinks(
-      factorySkillSources({
-        packaged: app.isPackaged,
-        resourcesPath: process.resourcesPath,
-        moduleDir: dirname(fileURLToPath(import.meta.url)),
-      }),
-    )
-    if (factory.linked.length) getLogger()?.log("factory-skills: linked", { linked: factory.linked })
-    if (factory.migrated.length)
-      getLogger()?.log("factory-skills: legacy direct links migrated to .alpha two-hop bridge (REQ-052)", {
-        migrated: factory.migrated,
-      })
-    if (factory.removed.length) getLogger()?.log("factory-skills: links removed (disabled)", { removed: factory.removed })
-    for (const s of factory.skipped) getLogger()?.warn(`factory-skills: SKIPPED ${s.name} — ${s.reason}`)
-  } catch (error) {
-    getLogger()?.warn("factory-skills: reconcile failed", error)
-  }
+  // REQ-065:出厂技能 reconcile 已上移至 boot(index.ts,truth reconcile 之前)—— skills.paths
+  // 直指 app 资源、.alpha 不再落出厂链;fork 前无需重复(app 路径仅跨重启变化)。
 
   const sidecar = join(dirname(fileURLToPath(import.meta.url)), "sidecar.js")
   const child = utilityProcess.fork(sidecar, [], {

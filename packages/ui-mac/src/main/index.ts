@@ -3,7 +3,8 @@ import { mkdirSync, rmSync } from "node:fs"
 import * as http from "node:http"
 import { createServer } from "node:net"
 import { homedir, tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event } from "electron"
 import { app, BrowserWindow } from "electron"
@@ -60,6 +61,7 @@ import { initEndpoints } from "./alpha-endpoints"
 import { registerEndpointsIpcHandlers } from "./endpoints-ipc"
 import { initByokKeys, injectByokKeysIntoEnv, setByokKeyDeps } from "./alpha-byok-keys"
 import { reconcileEngineConfigTruth } from "./engine-config-truth-boot"
+import { factorySkillSources, reconcileFactorySkills } from "./factory-skills"
 import {
   enableProxy,
   ensureFreshToken,
@@ -373,9 +375,30 @@ const main = Effect.gen(function* () {
   // REQ-059:存量引擎配置(~/.opencode/opencode.jsonc + XDG provider 域)迁进真源 ~/.alpha/alpha.jsonc
   // (copy-don't-delete,幂等,所有权判定 bail-out loud)。在 migrate() 之后(REQ-018 先把散落迁 ~/.opencode)、
   // 首个 sidecar fork 之前,使第一次 fork 即读到迁移后配置。~/.opencode 清理(拆桥+删目录)属 T3。
+  // REQ-065:出厂技能先行 reconcile(拆存量 .alpha 出厂链 + 计算注入组),注入组随 truth reconcile
+  // 落盘 alpha.jsonc(skills.paths 直指 app 资源;.alpha 只承载用户自有内容)。anti-B11:结果落日志。
   if (!TEST_ONBOARDING) {
+    let factoryDirs: string[] | undefined
     try {
-      const outcome = reconcileEngineConfigTruth(logger)
+      const factory = reconcileFactorySkills(
+        factorySkillSources({
+          packaged: app.isPackaged,
+          resourcesPath: process.resourcesPath,
+          moduleDir: dirname(fileURLToPath(import.meta.url)),
+        }),
+      )
+      factoryDirs = factory.paths
+      if (factory.removed.length)
+        logger.log("[req065] factory-skills: stale .alpha links dismantled (factory content now served from app resources)", {
+          removed: factory.removed,
+        })
+      if (factory.migrated.length) logger.log("[req065] factory-skills: legacy ~/.opencode/skill direct links removed", { migrated: factory.migrated })
+      for (const s of factory.skipped) logger.warn(`[req065] factory-skills: SKIPPED ${s.name} — ${s.reason}`)
+    } catch (error) {
+      logger.warn("[req065] factory-skills reconcile failed (non-fatal; skills.paths group left untouched)", error)
+    }
+    try {
+      const outcome = reconcileEngineConfigTruth(logger, { factorySkillDirs: factoryDirs })
       if (!outcome.skipped && outcome.bailedOut)
         logger.warn("[req059] engine config reconcile bailed out (kept legacy in place)", { reason: outcome.bailedOut })
     } catch (error) {

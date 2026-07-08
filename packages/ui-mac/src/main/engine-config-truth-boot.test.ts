@@ -171,3 +171,38 @@ describe("reconcile — T3 ~/.opencode cleanup", () => {
     expect(fs.existsSync(path.join(homeTmp, "skills"))).toBe(true) // not unbridged
   })
 })
+
+describe("reconcile — REQ-065 factory skills.paths group", () => {
+  test("factorySkillDirs injected into the truth file alongside ~/.alpha/skills", () => {
+    const dirs = ["/App.app/Contents/Resources/skills/skill-creator", "/App.app/Contents/Resources/factory-skills/agent-creator"]
+    const r = reconcileEngineConfigTruth(undefined, { factorySkillDirs: dirs })
+    expect(r.skipped).toBe(false)
+    expect(r.added).toContain("skills.factory[]")
+    const paths = readTruth().skills.paths as string[]
+    expect(paths).toContain(path.join(alphaTmp, "skills"))
+    for (const d of dirs) expect(paths).toContain(d)
+  })
+  test("app moved: stale factory entries rewritten to the current install; user entries kept", () => {
+    fs.writeFileSync(
+      path.join(alphaTmp, "alpha.jsonc"),
+      JSON.stringify({
+        $schema: "https://opencode.ai/config.json",
+        skills: { paths: [path.join(alphaTmp, "skills"), "/users/own/path", "/Old.app/Contents/Resources/skills/skill-creator"] },
+      }),
+    )
+    const dirs = ["/New.app/Contents/Resources/skills/skill-creator"]
+    const r = reconcileEngineConfigTruth(undefined, { factorySkillDirs: dirs })
+    expect(r.added).toContain("skills.factory[]")
+    const paths = readTruth().skills.paths as string[]
+    expect(paths).toEqual([path.join(alphaTmp, "skills"), "/users/own/path", "/New.app/Contents/Resources/skills/skill-creator"])
+  })
+  test("opts omitted (legacy callers/tests): factory group untouched", () => {
+    fs.writeFileSync(
+      path.join(alphaTmp, "alpha.jsonc"),
+      JSON.stringify({ skills: { paths: [path.join(alphaTmp, "skills"), "/Old.app/Contents/Resources/skills/skill-creator"] } }),
+    )
+    reconcileEngineConfigTruth()
+    const paths = readTruth().skills.paths as string[]
+    expect(paths).toContain("/Old.app/Contents/Resources/skills/skill-creator")
+  })
+})

@@ -45,6 +45,40 @@ export function ensureSkillsPath(config: Record<string, unknown>, skillsDir: str
   return true
 }
 
+/** REQ-065:一条 skills.paths 条目是否「出厂资源路径」—— alpha 资源布局段 + **出厂名单内**的
+ *  basename 双重判定(同 isAlphaFactoryLink 精神;名单外的同布局路径视为用户自加,不动)。 */
+export function isFactoryResourcePath(p: string, factoryNames: readonly string[]): boolean {
+  const norm = p.split("\\").join("/").replace(/\/+$/, "")
+  const m = /\/(resources|Resources)\/(skills|factory-skills)\/([^/]+)$/.exec(norm)
+  return !!m && factoryNames.includes(m[3])
+}
+
+/**
+ * REQ-065 T1:重写 skills.paths 里的「出厂技能资源路径」组 —— 移除旧出厂条目(app 路径/版本迁移后
+ * 的 stale 项),追加当前出厂目录(直指 app Resources,不再经 `~/.alpha/skills` 链中转)。
+ * 用户自加路径与 `~/.alpha/skills`(用户安装物目录)一概不动。每启动调用,幂等;返回是否有改动。
+ * factoryDirs 传 [] = 出厂注入关闭(ALPHA_FACTORY_SKILLS_DISABLE)→ 只清不加。
+ */
+export function rewriteFactorySkillPaths(
+  config: Record<string, unknown>,
+  factoryDirs: readonly string[],
+  factoryNames: readonly string[],
+): boolean {
+  const s = config.skills
+  const validObj = !!s && typeof s === "object" && !Array.isArray(s)
+  const cur = validObj && Array.isArray((s as Record<string, unknown>).paths) ? ((s as Record<string, unknown>).paths as unknown[]) : []
+  const next = cur.filter((p) => typeof p !== "string" || !isFactoryResourcePath(p, factoryNames))
+  for (const d of factoryDirs) if (!next.includes(d)) next.push(d)
+  // 无 skills 键(或非法形态)且无可写内容 → no-op(不给从未有 skills 的配置塞空键;
+  // 非法形态的归一由先行的 ensureSkillsPath 负责)。
+  const changed = next.length !== cur.length || next.some((v, i) => v !== cur[i]) || (!validObj && next.length > 0)
+  if (!changed) return false
+  const rest = validObj ? { ...(s as Record<string, unknown>) } : {}
+  rest.paths = next
+  config.skills = rest
+  return true
+}
+
 /** alpha 会写进 alpha.jsonc 的引擎 config 顶层域。存量文件顶层键越界 = 疑用户手写混入 → 不迁。 */
 export const ALPHA_CONFIG_TOP_KEYS = new Set([
   "$schema",

@@ -1,18 +1,21 @@
 // factory-skills — 出厂技能(REQ-036):随 app 打包、零安装即在每个会话可用的技能。
 //
-// 通道拍板(2026-07-05 实测二分):`OPENCODE_CONFIG_CONTENT.skills.paths` 对引擎**不生效**
-// (裸引擎同 env 复现:文件 config 的 skills.paths 生效、env 内容源被忽略 —— 上游行为,只读不修);
-// 走 ADR-019 已实证的 symlink 桥,且(REQ-052)与目录安装**同构的两跳**形态:
-//   `~/.alpha/skills/<name>`  → app 资源目录(真源,零拷贝)
-//   `~/.opencode/skills/…`    → `~/.alpha/skills`(复用 alpha-bridge;dir-link 或逐条 item-link)
-// 不变量(用户 2026-07-07 点名,ADR-019 修订):`.opencode` 内 alpha 自有条目**只允许指向 `.alpha`**;
-// 内容(哪怕只是指向 app 资源的链)一律先落 `.alpha`。旧形态(`~/.opencode/skill/<name>` 直链 app
-// 资源,REQ-036 初版)启动 reconcile 时自动迁移:仅 isAlphaFactoryLink 判定为我方的链才拆。
+// 通道演进:
+//   REQ-036 初版:`~/.opencode/skill/<name>` 直链 app 资源(违反 .alpha 中转不变量,已迁移);
+//   REQ-052:两跳桥 `~/.alpha/skills/<name>` → app 资源 + `~/.opencode/skills` 桥;
+//   REQ-059 T3:桥退役,引擎经 alpha.jsonc `skills.paths:[~/.alpha/skills]`(文件通道)发现;
+//   **REQ-065(现行)**:`.alpha` 纯度反向收口 —— `.alpha` 只承载**用户自有**内容(有用户动作、
+//   receipts 可溯);出厂件(零用户动作预置)不落 `.alpha`,由 `skills.paths` **直指 app 资源目录**
+//   (boot reconcile 每启动重写该组条目,跟随 app 路径/版本变化,见 engine-config-truth 的
+//   rewriteFactorySkillPaths)。本模块职责收敛为:存量清理(拆我方旧链)+ 注入组计算(eligibility)。
 //
-// 所有权纪律(codex 审计 High×2 修复,继续有效):只动**可证明是 alpha 自有**的 symlink —— 判定 =
-// 链目标以 `…/(resources|Resources)/(skills|factory-skills)/<同名>` 结尾(同名硬校验 + alpha
-// 资源布局段校验;历史 app 路径变化时仍可重指)。用户自建的真实目录、异源 symlink(哪怕同名)
-// 一律跳过 + 如实上报(ADR-019 §4);开关关闭时的清理同判定,绝不按宽泛正则误删。
+// 实测约束不变:`OPENCODE_CONFIG_CONTENT.skills.paths` 对引擎不生效(env 内容源忽略 skills.paths),
+// 文件 config 生效 —— 故走 alpha.jsonc 文件通道,不走 env。
+//
+// 所有权纪律(codex 审计 High×2,继续有效):只动**可证明是 alpha 自有**的 symlink —— 判定 =
+// 链目标以 `…/(resources|Resources)/(skills|factory-skills)/<同名>` 结尾。用户自建的真实目录、
+// 异源 symlink(哪怕同名)一律跳过 + 如实上报(ADR-019 §4);同名被用户内容占位时**不注入**该出厂
+// 路径(避免引擎同名双源)。
 //
 // 资产两处(S18 冲突矩阵 X1:skill-creator 的 catalog 条目保持可安装,供关掉出厂注入的用户手动装):
 //   resources/skills/skill-creator(Anthropic,Apache-2.0,catalog 资产原位复用)
@@ -20,7 +23,7 @@
 
 import * as fs from "node:fs"
 import { join, sep } from "node:path"
-import { opencodeHomeDir, unbridgeItem } from "./alpha-bridge"
+import { opencodeHomeDir } from "./alpha-bridge"
 import { alphaGlobalRoot } from "./alpha-installs"
 
 export const FACTORY_SKILL_IDS = ["skill-creator", "agent-creator"] as const
@@ -54,13 +57,15 @@ export function isAlphaFactoryLink(linkTo: string, name: string): boolean {
   )
 }
 
-export type FactoryLinkResult = {
-  linked: string[]
+export type FactoryReconcileResult = {
+  /** REQ-065 T1:本次应注入 alpha.jsonc skills.paths 的出厂资源目录(enabled 且未被用户内容遮蔽)。 */
+  paths: string[]
+  /** REQ-065 T2:拆除的 `~/.alpha/skills/<name>` 存量出厂链(REQ-052 两跳桥遗留)。 */
   removed: string[]
-  /** REQ-052:旧形态 `~/.opencode/skill/<name>` 直链被迁移拆除的技能名 */
+  /** REQ-036 初版 `~/.opencode/skill/<name>` 直链拆除。 */
   migrated: string[]
   skipped: Array<{ name: string; reason: string }>
-  /** 最终处于「我们的链就位」状态的技能名(徽标真相,codex M4:不能只看开关) */
+  /** 最终「出厂通道就位」的技能名(徽标真相,codex M4:不能只看开关)。 */
   active: string[]
 }
 
@@ -80,23 +85,33 @@ function msg(e: unknown): string {
 }
 
 /**
- * 幂等 reconcile 两跳桥。每次启动(fork 前)调用:
- * - 迁移:旧位 `<opencodeHome>/skill/<name>` 是我方直链 → 拆(新形态随后重建);用户内容占位 →
- *   整项跳过(避免引擎单双数目录重名双源);
- * - 开:真源缺失 → 建 `<alphaRoot>/skills/<name>` 链;我方旧路径链 → 重指;真实目录(catalog 装的)
- *   / 异源链 → 跳过;真源就位后经 alpha-bridge 桥进 `<opencodeHome>/skills`(异源 item 链绝不替换);
- * - 关:仅拆我方真源链 + 我方桥内 item 链(共享 dir-link 是桥基础设施,不拆)。
+ * 幂等 reconcile(REQ-065 形态)。boot 时(首个 fork 前)调用一次,产出注入组交给
+ * reconcileEngineConfigTruth 写入 alpha.jsonc:
+ * - 迁移:旧位 `<opencodeHome>/skill/<name>` 是我方直链 → 拆;用户内容占位 → 整项跳过且**不注入**
+ *   (引擎单双数目录都扫,同名会双源);
+ * - T2 拆链:`<alphaRoot>/skills/<name>` 是我方出厂链(REQ-052 遗留)→ 拆;真实目录(catalog 装的
+ *   /用户自建)→ 不接管、不注入(它已是用户内容真源);异源链 → 不碰、不注入;
+ * - 注入组:enabled 且 src 存在且未被遮蔽 → 出厂资源目录进 paths;
+ * - REQ-059 逃生(ALPHA_JSONC_TRUTH_DISABLE / ALPHA_LEGACY_INSTALL_ROOT)→ 全程不拆不改
+ *   (回退 = 保留现两跳态,REQ-065 §风险)。
  */
-export function reconcileFactorySkillLinks(
+export function reconcileFactorySkills(
   sources: Record<string, string>,
   roots: { alphaRoot?: string; opencodeHome?: string } = {},
-): FactoryLinkResult {
+): FactoryReconcileResult {
   const alphaRoot = roots.alphaRoot ?? alphaGlobalRoot()
   const opencodeHome = roots.opencodeHome ?? opencodeHomeDir()
-  const result: FactoryLinkResult = { linked: [], removed: [], migrated: [], skipped: [], active: [] }
+  const result: FactoryReconcileResult = { paths: [], removed: [], migrated: [], skipped: [], active: [] }
   const truthRoot = join(alphaRoot, "skills")
   const legacyRoot = join(opencodeHome, "skill") // REQ-036 初版直链落点(迁移源)
   const enabled = factorySkillsEnabled()
+
+  if (process.env.ALPHA_JSONC_TRUTH_DISABLE === "1" || process.env.ALPHA_LEGACY_INSTALL_ROOT === "1") {
+    // 真源通道关闭 = legacy 世界:注入无处落(boot 不写 alpha.jsonc),拆链会让出厂技能变暗 → 不拆不改。
+    for (const name of FACTORY_SKILL_IDS) result.skipped.push({ name, reason: "REQ-059 escape hatch set — factory state left as-is" })
+    lastActive = []
+    return result
+  }
 
   for (const name of FACTORY_SKILL_IDS) {
     const src = sources[name]
@@ -122,72 +137,52 @@ export function reconcileFactorySkillLinks(
         continue
       }
     } else if (fs.existsSync(legacy)) {
-      // 旧位是用户真实目录:不接管(ADR-019 §4),也不再建同名出厂链(避免引擎双见重名)
+      // 旧位是用户真实目录:不接管(ADR-019 §4),也不注入同名出厂路径(避免引擎双见重名)
       result.skipped.push({ name, reason: "legacy path holds user content (real dir), left alone" })
       continue
     }
 
-    // ── 1. 开关关闭:拆我方真源链 + 桥 item 链
-    if (!enabled) {
-      const t = readlinkOrNull(truth)
-      if (t !== null && (t === src || isAlphaFactoryLink(t, name))) {
+    // ── 1. T2 拆存量 `.alpha` 出厂链(REQ-052 遗留;用户自装真实目录/异源链不碰)
+    const t = readlinkOrNull(truth)
+    if (t !== null) {
+      if (t === src || isAlphaFactoryLink(t, name)) {
         try {
           if (readlinkOrNull(truth) === t) {
             fs.rmSync(truth)
             result.removed.push(name)
           }
         } catch (e) {
-          result.skipped.push({ name, reason: `remove failed: ${msg(e)}` })
+          result.skipped.push({ name, reason: `stale .alpha link remove failed: ${msg(e)}` })
+          continue
         }
-      } else if (t !== null) {
-        result.skipped.push({ name, reason: "foreign symlink left alone (not alpha-owned)" })
+      } else {
+        // 异源链占位:不碰、不注入(目标未知,注入可能与其解析出的同名技能双源)
+        result.skipped.push({ name, reason: `foreign symlink at ~/.alpha/skills left alone: → ${t}` })
+        continue
       }
-      unbridgeItem(alphaRoot, opencodeHome, "skills", name)
+    } else if (fs.existsSync(truth)) {
+      // 真实目录:catalog 安装/用户自建 —— 它是用户内容真源(receipts 可溯),出厂路径让位不注入
+      result.skipped.push({ name, reason: "~/.alpha/skills holds installed/user content (real dir), factory path yields" })
       continue
     }
 
+    // ── 2. 注入组:enabled 且资源在位 → skills.paths 直指 app 资源(写入由 boot reconcile 落盘)
+    if (!enabled) continue
     if (!src || !fs.existsSync(src)) {
       result.skipped.push({ name, reason: `source missing: ${src}` })
       continue
     }
-
-    // ── 2. 真源链:`<alphaRoot>/skills/<name>` → app 资源
-    const t = readlinkOrNull(truth)
-    if (t === null && fs.existsSync(truth)) {
-      // 真实目录:catalog 安装/用户自建占据真源位 —— 它已是 .alpha 真源,不接管、不算出厂就位
-      result.skipped.push({ name, reason: "truth path exists and is not a symlink (installed/user content, left alone)" })
-      continue
-    }
-    if (t !== null && t !== src && !isAlphaFactoryLink(t, name)) {
-      result.skipped.push({ name, reason: `foreign symlink at truth path left alone: → ${t}` })
-      continue
-    }
-    let createdTruth = false
-    if (t !== src) {
-      try {
-        fs.mkdirSync(truthRoot, { recursive: true })
-        if (t !== null && readlinkOrNull(truth) === t) fs.rmSync(truth) // our stale link → re-point(TOCTOU 收窄)
-        fs.symlinkSync(src, truth, "dir")
-        createdTruth = true
-      } catch (e) {
-        result.skipped.push({ name, reason: `truth link failed: ${msg(e)}` })
-        continue
-      }
-    }
-
-    // ── 3. T3(REQ-059)桥退役:真源 ~/.alpha/skills/<name> 就位即可 —— 引擎经 alpha.jsonc 的
-    //    `skills:[~/.alpha/skills]`(文件通道,factory-skills 实测生效)扫描发现,不再建 ~/.opencode/skills
-    //    链。存量旧链由 reconcileEngineConfigTruth 的 cleanup 拆除(不变量:.opencode 内零 alpha 痕迹)。
-    if (createdTruth) result.linked.push(name)
+    result.paths.push(src)
     result.active.push(name)
   }
 
-  // 迁移后旧目录若已空,顺手拆掉(best-effort;只在本次确有迁移时做,绝不动非空目录)
-  if (result.migrated.length > 0) {
+  // 拆链后空目录顺手清(best-effort,只清空目录绝不动内容;legacy 侧同 REQ-052 先例)
+  for (const dir of [result.migrated.length > 0 ? legacyRoot : null, result.removed.length > 0 ? truthRoot : null]) {
+    if (!dir) continue
     try {
-      const stat = fs.lstatSync(legacyRoot)
-      if (stat.isDirectory() && !stat.isSymbolicLink() && fs.readdirSync(legacyRoot).length === 0) {
-        fs.rmdirSync(legacyRoot)
+      const stat = fs.lstatSync(dir)
+      if (stat.isDirectory() && !stat.isSymbolicLink() && fs.readdirSync(dir).length === 0) {
+        fs.rmdirSync(dir)
       }
     } catch {
       // 不存在/非空/权限 —— 均无需处理
