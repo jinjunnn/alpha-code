@@ -376,10 +376,12 @@ const main = Effect.gen(function* () {
   // REQ-059:存量引擎配置(~/.opencode/opencode.jsonc + XDG provider 域)迁进真源 ~/.alpha/alpha.jsonc
   // (copy-don't-delete,幂等,所有权判定 bail-out loud)。在 migrate() 之后(REQ-018 先把散落迁 ~/.opencode)、
   // 首个 sidecar fork 之前,使第一次 fork 即读到迁移后配置。~/.opencode 清理(拆桥+删目录)属 T3。
-  // REQ-065:出厂技能先行 reconcile(拆存量 .alpha 出厂链 + 计算注入组),注入组随 truth reconcile
-  // 落盘 alpha.jsonc(skills.paths 直指 app 资源;.alpha 只承载用户自有内容)。anti-B11:结果落日志。
+  // REQ-065(修订,用户拍板 2026-07-08):出厂技能先行 reconcile(拆存量 .alpha 出厂链 + 计算注入组);
+  // 注入组**不落盘** —— 经 ALPHA_FACTORY_SKILL_DIRS(env,fork 继承)传引擎,由 @alpha-code/ext
+  // config hook 内存注入 skills.paths。alpha.jsonc 只承载用户自己的内容:truth reconcile 传 []
+  // 剥离历史版本写入的出厂条目(布局+名单判定,用户自加路径不动)。anti-B11:结果落日志。
   if (!TEST_ONBOARDING) {
-    let factoryDirs: string[] | undefined
+    let stripFactory: string[] | undefined
     try {
       const factory = reconcileFactorySkills(
         factorySkillSources({
@@ -388,7 +390,8 @@ const main = Effect.gen(function* () {
           moduleDir: dirname(fileURLToPath(import.meta.url)),
         }),
       )
-      factoryDirs = factory.paths
+      process.env.ALPHA_FACTORY_SKILL_DIRS = JSON.stringify(factory.paths)
+      stripFactory = [] // reconcile 成功 → 剥离 alpha.jsonc 里的存量出厂条目(它们改由内存注入)
       if (factory.removed.length)
         logger.log("[req065] factory-skills: stale .alpha links dismantled (factory content now served from app resources)", {
           removed: factory.removed,
@@ -399,7 +402,7 @@ const main = Effect.gen(function* () {
       logger.warn("[req065] factory-skills reconcile failed (non-fatal; skills.paths group left untouched)", error)
     }
     try {
-      const outcome = reconcileEngineConfigTruth(logger, { factorySkillDirs: factoryDirs })
+      const outcome = reconcileEngineConfigTruth(logger, { factorySkillDirs: stripFactory })
       if (!outcome.skipped && outcome.bailedOut)
         logger.warn("[req059] engine config reconcile bailed out (kept legacy in place)", { reason: outcome.bailedOut })
     } catch (error) {

@@ -54,10 +54,10 @@ export function isFactoryResourcePath(p: string, factoryNames: readonly string[]
 }
 
 /**
- * REQ-065 T1:重写 skills.paths 里的「出厂技能资源路径」组 —— 移除旧出厂条目(app 路径/版本迁移后
- * 的 stale 项),追加当前出厂目录(直指 app Resources,不再经 `~/.alpha/skills` 链中转)。
- * 用户自加路径与 `~/.alpha/skills`(用户安装物目录)一概不动。每启动调用,幂等;返回是否有改动。
- * factoryDirs 传 [] = 出厂注入关闭(ALPHA_FACTORY_SKILLS_DISABLE)→ 只清不加。
+ * REQ-065:重写 skills.paths 里的「出厂技能资源路径」组。**修订(用户拍板 2026-07-08)**:出厂路径
+ * 不再写入用户配置(改由 env → ext config hook 内存注入,见 factory-skills.ts),本函数的现役用途
+ * = 传 [] **剥离**历史版本写盘的出厂条目(布局+出厂名单双重判定;用户自加路径与 `~/.alpha/skills`
+ * 用户安装物目录一概不动)。追加分支保留(通用性/测试),生产不再走。幂等;返回是否有改动。
  */
 export function rewriteFactorySkillPaths(
   config: Record<string, unknown>,
