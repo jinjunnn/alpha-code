@@ -48,7 +48,7 @@ created: 2026-07-08
 
 - **T1 通道事实**:transform 到手的 system 是「底座 + environment + 用户 instructions + skills」join 后的**单串**(request.ts:58-66)→ 全局词替换会篡改用户文本,故严格精选子串对(13 条,`packages/ext/src/prompt-rebrand.ts`),含 copilot-gpt-5.txt(盘点补遗,原档只数了 8 底座);残留审计 warn 去重每进程一次。
 - **drift 锁机械化**:`prompt-rebrand.test.ts` 逐条断言 from 子串仍在上游 .txt;ext 测试随本 PR 进 alpha-check + alpha-ci 两道门 —— 上游 sync 改写底座即红,ADR-015 合并验证不再靠人肉。
-- **T3 review 刻意不覆盖**:上游 review.txt 逐字节零品牌痕迹(grep 实证)→ 换芯零收益且丢上游语义演进;init 正常接管。验收④的 review 半边自然成立。
+- **T3 init/review 均已接管**:初版实现曾以「上游 review.txt 零品牌痕迹」为由只换 init —— **执行偏差,用户当日纠正(命令是两个都换,内容层主权归 alpha,不因恰好无品牌字样而豁免)**;review 已随补丁 PR 同名接管(alpha 承载,语义与上游对齐,subtask 行为保留)。代价如实记:上游 review.txt 后续演进不再自动继承,由 alpha 自行维护。
 - **T3/T6 落点**:ext 插件 config hook 尾部 set-if-absent(引擎装配完才通知 → 用户治理/项目/全局任何层同名配置天然优先),非 OPENCODE_CONFIG_CONTENT(该通道最后 merge、会压过治理)。
 - **T5(lsp.txt)后置**:lsp 工具默认实验关闭、量级最小,归下一顺带批(档案原文即允许)。
 - **逃生门**:`ALPHA_PROMPT_REBRAND_DISABLE=1` 统一关 T1+T3+T6(路线A 一键回退);已入 sidecar env 白名单。
