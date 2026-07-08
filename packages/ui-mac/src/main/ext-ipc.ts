@@ -22,6 +22,14 @@ import { pickedFiles } from "./ipc"
 import { factorySkillIds } from "./factory-skills"
 import { downloadRemoteAsset, refreshRemoteCatalog, type RemoteAssetFile } from "./remote-catalog"
 import { applyGovernance, normalizeGovernance, protectionInfo, readGovernance, resetGovernance } from "./alpha-governance"
+import {
+  detectExternal,
+  ecosystemInheritEnabled,
+  hasExternalImportDecision,
+  importExternalSkills,
+  importProjectClaudeMd,
+  withExternalImportDecision,
+} from "./ecosystem-import"
 import { getLogger } from "./logging"
 
 // GUI apps on macOS launch with a minimal PATH (no Homebrew), so augment it before `which` or we'd
@@ -298,6 +306,71 @@ export function registerExtIpcHandlers(userDataPath: string) {
     }
     getLogger().log(`[req060-trust] ${granted ? "granted" : "denied"} for project: ${directory}`)
     return { prompted: true, granted }
+  })
+
+  // REQ-063(ADR-024):外部生态 consent 导入门(项目级)。default-deny 后引擎不再读项目自带的
+  // `.claude`/`.agents` skills 与 CLAUDE.md;首次进入检测到外来内容 → 原生确认 → 「导入」= 安装期
+  // 转换为本项目 `.alpha` 原生扩展(快照、脱钩,ADR-023);两种决策都记 `.alpha/prefs.json` 不再弹。
+  // 逃生 ALPHA_ECOSYSTEM_INHERIT=1 → 全程静默(上游继承已恢复,alpha 不检测不弹窗,ADR-024 §5)。
+  ipcMain.handle("ext-external-check", async (event: IpcMainInvokeEvent, directory: string) => {
+    const none = { prompted: false, imported: false, importedSkills: [] as string[], skipped: [] as Array<{ name: string; reason: string }>, claudeMd: "none" as const }
+    if (typeof directory !== "string" || !directory || ecosystemInheritEnabled()) return none
+    const detected = detectExternal(directory, "project")
+    if (detected.skills.length === 0 && !detected.claudeMd) return none
+    const prefs = readProjectPrefs(directory)
+    if (hasExternalImportDecision(prefs)) return none
+    const items = [
+      ...detected.skills.map((s) => `· 技能:${s.source === "claude" ? ".claude" : ".agents"}/skills/${s.name}`),
+      ...(detected.claudeMd ? [`· 指令文件:${path.relative(directory, detected.claudeMd)}`] : []),
+    ].join("\n")
+    const parent = BrowserWindow.fromWebContents(event.sender) ?? undefined
+    const opts = {
+      type: "info" as const,
+      title: "检测到其它工具的扩展内容(首次)",
+      message: "此项目自带 Claude Code / .agents 生态内容,导入为本项目的 alpha 扩展?",
+      detail:
+        `alpha-code 默认不读取其它工具的目录(防止陌生项目的自带内容未经确认进入模型上下文)。\n发现:\n${items}\n\n` +
+        "「导入」= 转换为本项目 .alpha 下的原生扩展(快照,与原目录脱钩,原文件不动):技能进 .alpha/skills;" +
+        "CLAUDE.md 转为 AGENTS.md(引擎原生约定;已存在 AGENTS.md 时不覆盖、提示手动合并)。\n" +
+        "「忽略」= 保持不可见。本决定按项目记录一次(存于本项目 .alpha/prefs.json),之后不再询问;" +
+        "以后想导入/更新快照,在会话里说「导入这个项目的外部扩展」即可(integrate-project 技能)。",
+      buttons: ["导入", "忽略(保持不可见)"],
+      defaultId: 1,
+      cancelId: 1,
+    }
+    const res = parent ? await dialog.showMessageBox(parent, opts) : await dialog.showMessageBox(opts)
+    const doImport = res.response === 0
+    let importedSkills: string[] = []
+    let skipped: Array<{ name: string; reason: string }> = []
+    let claudeMd: "agents-md-created" | "agents-md-exists" | "none" = "none"
+    if (doImport) {
+      const r = importExternalSkills(detected.skills, { scope: "project", projectDir: directory })
+      importedSkills = r.importedSkills
+      skipped = r.skipped
+      if (detected.claudeMd) {
+        try {
+          claudeMd = importProjectClaudeMd(directory, detected.claudeMd)
+        } catch (error) {
+          skipped.push({ name: "CLAUDE.md", reason: error instanceof Error ? error.message : String(error) })
+        }
+      }
+      for (const s of skipped) getLogger().warn(`[req063] project import skipped ${s.name}: ${s.reason}`)
+    }
+    const written = writeProjectPrefs(
+      directory,
+      withExternalImportDecision(readProjectPrefs(directory), doImport ? "imported" : "declined", new Date().toISOString()),
+    )
+    if (!written.ok) {
+      // 写盘失败不静默放行(反 placebo,trust-check 同款):导入产物已落地的照常生效,但决策未留痕 → 下次仍弹
+      getLogger().error(`[req063] failed to persist decision: ${written.reason}`)
+      return { prompted: true, imported: doImport, importedSkills, skipped, claudeMd, persistError: written.reason }
+    }
+    getLogger().log(`[req063] ${doImport ? "imported" : "declined"} external content for project: ${directory}`, {
+      importedSkills,
+      skipped: skipped.length,
+      claudeMd,
+    })
+    return { prompted: true, imported: doImport, importedSkills, skipped, claudeMd }
   })
 
   ipcMain.handle("ext-migrate-scan", () => ({ enabled: isMigrationEnabled(), inventory: scanLegacy() }))

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url"
 import { app, utilityProcess } from "electron"
 import type { Details } from "electron"
 import { resolveExtPluginPath } from "./alpha-ext-plugin"
+import { applyEcosystemDefaultDeny } from "./ecosystem-import"
 import { syncSecretFiles } from "./alpha-secret-files"
 import { loadAlphaSecrets } from "./alpha-secrets"
 import { pollUntilHealthy } from "./health-poll"
@@ -96,6 +97,11 @@ export function preferAppEnv(userDataPath: string) {
   // watcher 内存压力主治 = B4 数据层减 Instance;上游本体(无 TTL/LRU)接受(R2)。
   process.env.OPENCODE_EXPERIMENTAL_ICON_DISCOVERY ??= "true"
   process.env.OPENCODE_EXPERIMENTAL_FILEWATCHER ??= "true"
+  // REQ-063(ADR-024):外部生态继承 default-deny —— `.claude`/`.agents` skills 与 CLAUDE.md 不再
+  // 静默进上下文(提示注入面 + 破坏 .alpha 单一真源心智)。set-if-unset:shell 显式 export 优先
+  // (B21 同款纪律);ALPHA_ECOSYSTEM_INHERIT=1 = 不注入两 flag,整机恢复上游继承且 alpha 不再
+  // 检测/弹窗(ADR-024 §5)。同意后的进入通道 = 安装期转换导入 .alpha(ecosystem-import.ts),非重开继承。
+  applyEcosystemDefaultDeny(process.env)
   Object.assign(process.env, {
     OPENCODE_CLIENT: "desktop",
     XDG_STATE_HOME: process.env.XDG_STATE_HOME ?? userDataPath,

@@ -3,7 +3,7 @@ id: REQ-063
 title: 外部生态继承 default-deny + 打开项目 consent 导入门(.claude/.agents skills + CLAUDE.md;ADR-024 执行载体)
 type: security
 priority: P1
-status: ready
+status: shipped
 repo: A
 created: 2026-07-08
 ---

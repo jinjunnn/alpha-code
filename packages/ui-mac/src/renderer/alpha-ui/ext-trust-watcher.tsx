@@ -55,6 +55,21 @@ export function ExtTrustWatcher(props: { server: Accessor<ServerInfo | undefined
           await (c as unknown as { global: { dispose(): Promise<unknown> } }).global.dispose().catch(() => {})
           pushToast({ kind: "success", title: t("alpha.ext.trustGranted") })
         }
+        // REQ-063:外部生态导入门(.claude/.agents skills + CLAUDE.md)——信任门之后串行,
+        // 避免两个原生对话框叠弹;导入成功同走 dispose 免重启链。
+        const ext = await window.api.ext.externalCheck(dir)
+        if (ext.persistError) pushToast({ kind: "error", title: t("alpha.ext.trustPersistFailed"), detail: ext.persistError })
+        if (ext.prompted && ext.imported) {
+          const c = createOpencodeClient({ baseUrl: info.baseUrl, headers: authHeaders(info) })
+          await (c as unknown as { global: { dispose(): Promise<unknown> } }).global.dispose().catch(() => {})
+          pushToast({
+            kind: "success",
+            title: t("alpha.ext.externalImported"),
+            detail: ext.importedSkills.length ? ext.importedSkills.map((s) => `/${s}`).join(" · ") : undefined,
+          })
+          if (ext.claudeMd === "agents-md-exists") pushToast({ kind: "error", title: t("alpha.ext.externalClaudeMdConflict") })
+          for (const s of ext.skipped) pushToast({ kind: "error", title: t("alpha.ext.externalSkipped"), detail: `${s.name}: ${s.reason}` })
+        }
       } catch {
         checked.delete(dir) // IPC 瞬时失败允许重查
       }

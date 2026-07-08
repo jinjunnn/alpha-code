@@ -19,11 +19,11 @@ beforeEach(() => {
   home = join(tmp, "home")
   res = join(tmp, "app", "resources")
   mkdirSync(join(res, "skills", "skill-creator"), { recursive: true })
-  mkdirSync(join(res, "factory-skills", "agent-creator"), { recursive: true })
-  mkdirSync(join(res, "factory-skills", "customize-alpha"), { recursive: true })
   writeFileSync(join(res, "skills", "skill-creator", "SKILL.md"), "---\nname: skill-creator\n---\n")
-  writeFileSync(join(res, "factory-skills", "agent-creator", "SKILL.md"), "---\nname: agent-creator\n---\n")
-  writeFileSync(join(res, "factory-skills", "customize-alpha", "SKILL.md"), "---\nname: customize-alpha\n---\n")
+  for (const n of ["agent-creator", "customize-alpha", "integrate-project"]) {
+    mkdirSync(join(res, "factory-skills", n), { recursive: true })
+    writeFileSync(join(res, "factory-skills", n, "SKILL.md"), `---\nname: ${n}\n---\n`)
+  }
   mkdirSync(home, { recursive: true })
   sources = factorySkillSources({ packaged: true, resourcesPath: res, moduleDir: "/nope" })
   roots = { alphaRoot: join(home, ".alpha"), opencodeHome: join(home, ".opencode") }
@@ -80,8 +80,9 @@ describe("reconcileFactorySkills — REQ-065(.alpha 零出厂件 + 注入组)", 
     const r = reconcileFactorySkills(sources, roots)
     expect(r.skipped.some((s) => s.name === "skill-creator" && s.reason.includes("user content"))).toBe(true)
     expect(existsSync(join(truthPath("skill-creator"), "SKILL.md"))).toBe(true) // untouched
-    expect(r.paths.sort()).toEqual([sources["agent-creator"], sources["customize-alpha"]].sort()) // 同名让位:不注入 skill-creator
-    expect(r.active.sort()).toEqual(["agent-creator", "customize-alpha"])
+    const others = Object.entries(sources).filter(([n]) => n !== "skill-creator").map(([, p]) => p).sort()
+    expect(r.paths.sort()).toEqual(others) // 同名让位:不注入 skill-creator
+    expect(r.active).not.toContain("skill-creator")
   })
   test("NEVER removes a FOREIGN symlink at ~/.alpha/skills, even with the same name (codex High-1 精神)", () => {
     mkdirSync(join(home, ".alpha", "skills"), { recursive: true })
@@ -138,8 +139,9 @@ describe("legacy migration — REQ-036 初版 ~/.opencode/skill 直链", () => {
     writeFileSync(join(legacyPath("skill-creator"), "SKILL.md"), "user's own\n")
     const r = reconcileFactorySkills(sources, roots)
     expect(r.skipped.some((s) => s.name === "skill-creator" && s.reason.includes("user content"))).toBe(true)
-    expect(r.paths.sort()).toEqual([sources["agent-creator"], sources["customize-alpha"]].sort())
-    expect(r.active.sort()).toEqual(["agent-creator", "customize-alpha"])
+    const others2 = Object.entries(sources).filter(([n]) => n !== "skill-creator").map(([, p]) => p).sort()
+    expect(r.paths.sort()).toEqual(others2)
+    expect(r.active).not.toContain("skill-creator")
     expect(existsSync(join(home, ".opencode", "skill"))).toBe(true) // 用户目录原样保留
   })
   test("a FOREIGN legacy symlink is left alone and blocks the item", () => {

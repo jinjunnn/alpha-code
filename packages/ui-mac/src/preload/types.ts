@@ -111,7 +111,7 @@ export interface AlphaGovernance {
 
 export type InstallReceiptType = "mcp" | "skill" | "agent" | "command" | "plugin" | "bundle" | "cloud"
 export type InstallReceiptScope = "global" | "project"
-export type InstallReceiptOrigin = "catalog" | "created" | "imported"
+export type InstallReceiptOrigin = "catalog" | "created" | "imported" | "imported-claude" | "imported-agents"
 export type InstallReceipt = {
   /** catalog entry id (e.g. "mcp:markitdown") or "user:<name>" for created/imported items */
   id: string
@@ -372,6 +372,16 @@ export type ElectronAPI = {
     enableCloud: (id: string, name: string, meta?: InstallMeta) => Promise<{ ok: true; warning?: string } | { ok: false; reason: string }>
     /** REQ-060 信任门:项目含可执行扩展且未决策 → main 弹 per-project 确认;granted 后调用方 dispose 生效。 */
     trustCheck: (directory: string) => Promise<{ prompted: boolean; granted: boolean; persistError?: string }>
+    /** REQ-063 外部生态导入门:项目含 .claude/.agents skills / CLAUDE.md 且未决策 → main 弹确认;
+     *  「导入」= 转换落项目 .alpha(imported 后调用方 dispose 生效)。 */
+    externalCheck: (directory: string) => Promise<{
+      prompted: boolean
+      imported: boolean
+      importedSkills: string[]
+      skipped: Array<{ name: string; reason: string }>
+      claudeMd: "agents-md-created" | "agents-md-exists" | "none"
+      persistError?: string
+    }>
   }
   // alpha account (balance / membership / usage) read from the alpha-platform (B) account-server
   // using the main-held JWT. The renderer gets only the resolved summary, never the token.

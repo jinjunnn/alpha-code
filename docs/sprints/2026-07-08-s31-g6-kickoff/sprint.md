@@ -37,8 +37,15 @@
 - [x] REQ-061 useChip.onDoc composedPath 判定 + 红绿单测(PR #150)
 - [x] REQ-065 skills.paths 直指 Resources + reconcile 拆存量出厂链(PR #151)
 - [x] REQ-062 T1 transform 转写 · T2 identity · T3 init(review 刻意不覆盖,档案注记)· T4 customize-alpha · T6 general/explore(PR #152;T5 lsp 按档后置)
-- [ ] REQ-063 default-deny flags · 项目信任门 · 导入转换 · 全局迁移门(发布闸)
+- [x] REQ-063 default-deny flags · 项目导入门 · 导入转换 · 全局迁移门(发布闸)· integrate-project skill(PR #153)
 
 ## 结果
 
-(随 PR 回填)
+全部 5 项 shipped(单日,2026-07-08):
+- REQ-066 → PR #149(菜单治理过滤 + 来源标注;真机截图归下一真机批)
+- REQ-061 → PR #150(composedPath 修;真机走查归 B21 既有承诺批)
+- REQ-065 → PR #151(.alpha 零出厂件;存量拆链留痕真机批验)
+- REQ-062 → PR #152(转写 13 子串 + init/general/explore 内容接管 + customize-alpha;**ext 测试进两道门 = drift 锁机械化**;T5 lsp 后置;review 刻意不覆盖已档案注记)
+- REQ-063 → PR #153(default-deny + 项目/全局导入门 + integrate-project;**发布闸 = T4 迁移门已实现,真机批必须含 ~/.claude/skills 非空首启用例**)
+
+**真机批残单(shipped → verified 的门)**:REQ-062 验收①②③④⑤⑧(双模型自称 / system 审计 / 开关回退 / init 实跑 / task 委托)· REQ-063 验收①②③④⑤⑧(陌生项目 consent 前后 / 全局迁移门 graphify 存量 / 逃生开关 / 项目隔离)· REQ-066 ⑤截图 · REQ-065 ②③存量拆链+app 更新 · REQ-061 真机走查。

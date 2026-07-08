@@ -62,6 +62,7 @@ import { registerEndpointsIpcHandlers } from "./endpoints-ipc"
 import { initByokKeys, injectByokKeysIntoEnv, setByokKeyDeps } from "./alpha-byok-keys"
 import { reconcileEngineConfigTruth } from "./engine-config-truth-boot"
 import { factorySkillSources, reconcileFactorySkills } from "./factory-skills"
+import { runGlobalEcosystemGate } from "./ecosystem-gate"
 import {
   enableProxy,
   ensureFreshToken,
@@ -610,6 +611,14 @@ const main = Effect.gen(function* () {
   yield* Deferred.await(serverReady).pipe(Effect.catch(() => Effect.sync(() => {})))
 
   mainWindow = createMainWindow()
+
+  // REQ-063 T4:全局存量一次性迁移门(发布闸)——default-deny 后 ~/.claude/~/.agents 存量不可见,
+  // 首启必弹防「技能丢了」重演;fire-and-forget,不阻塞窗口;marker 记账不再弹。
+  if (!TEST_ONBOARDING) {
+    void runGlobalEcosystemGate(mainWindow ?? undefined, logger).catch((error) =>
+      logger.warn("[req063] global ecosystem gate failed (non-fatal)", error),
+    )
+  }
 
   // In-place sidecar respawn — NOT a full app relaunch (ad-hoc-signed builds quit on relaunch, ADR-017).
   // Re-forks on the SAME host/port/password with freshly-derived state (login set ALPHA_BASE_URL +
