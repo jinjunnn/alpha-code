@@ -61,6 +61,8 @@ const EXACT = new Set([
   "ALPHA_PROMPT_REBRAND_DISABLE",
   // REQ-065 修订:出厂技能目录(main 启动时算好,ext config hook 内存注入 —— 不落用户配置文件)
   "ALPHA_FACTORY_SKILL_DIRS",
+  // REQ-067:出厂默认禁项(− 用户解禁),同为内存注入、零明文
+  "ALPHA_FACTORY_DENY_SKILLS",
   // the escape hatch itself, so the sidecar can surface it in diagnostics
   "ALPHA_ENV_ALLOWLIST_EXTRA",
 ])

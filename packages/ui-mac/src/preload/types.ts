@@ -105,7 +105,8 @@ export interface AlphaGovernance {
   version: 1
   mode: "denylist" | "allowlist"
   agents: { hide: string[]; disable: string[]; allow: string[]; override: Record<string, Record<string, unknown>> }
-  skills: { deny: string[] }
+  /** REQ-067:deny = 用户自禁;allowFactory = 对「出厂默认禁」项的解禁(出厂禁本身内置、零明文)。 */
+  skills: { deny: string[]; allowFactory: string[] }
   commands: { override: Record<string, { template: string; description?: string }> }
 }
 
@@ -298,7 +299,7 @@ export type ElectronAPI = {
     factorySkillIds: () => Promise<string[]>
     /** REQ-037 上游能力治理(真源 ~/.alpha/governance.json;物化 home jsonc 受控叶子,apply 后
      *  renderer 需自行 refreshEngine() 使 dispose 热生效)。 */
-    govRead: () => Promise<{ gov: AlphaGovernance; protection: { hard: string[]; alphaInjected: string[]; confirm: string[] } }>
+    govRead: () => Promise<{ gov: AlphaGovernance; protection: { hard: string[]; alphaInjected: string[]; confirm: string[] }; factoryDenied: string[] }>
     govApply: (
       gov: AlphaGovernance,
       visibleAgents: string[],
