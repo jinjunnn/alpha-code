@@ -3,7 +3,7 @@ id: REQ-061
 title: 统一 composer 弹层 click-outside 竞态:点击同步卸载被点按钮 → 整层弹窗误关,已配置供应商改键表单入口不可达
 type: bug
 priority: P1
-status: ready
+status: shipped
 repo: A
 created: 2026-07-07
 ---
