@@ -310,6 +310,8 @@ export const dict = {
   "alpha.cloud.runSaved": "云任务结果已回流到 .alpha/runs",
   "alpha.cloud.runEnded": "云任务已结束(未成功),记录已保存",
   "alpha.cloud.runSaveFailed": "云任务结果回流失败",
+  "alpha.ext.trustGranted": "项目扩展已启用——下一条消息起可用",
+  "alpha.ext.trustPersistFailed": "项目扩展决策保存失败",
   "alpha.ext.loadFailed": "已安装列表加载失败",
   "alpha.ext.loadFailedDetail": "引擎连接异常,浏览目录不受影响",
   "alpha.ext.retry": "重试",

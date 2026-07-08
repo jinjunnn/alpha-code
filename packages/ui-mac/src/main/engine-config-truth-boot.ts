@@ -15,6 +15,8 @@ import { parse } from "jsonc-parser"
 import { alphaGlobalRoot } from "./alpha-installs"
 import { opencodeHomeDir } from "./alpha-bridge"
 import { readLedger } from "./alpha-installs"
+import { agentMdToEntry } from "./agent-md-entry"
+import { persistAgentEntry } from "./ext-config"
 import {
   alphaJsoncPath,
   alphaSkillsDir,
@@ -152,10 +154,14 @@ function cleanupOpencodeHome(log?: Logger): void {
   } catch {
     return
   }
-  // 1. 拆 alpha 自有的 skills 类目 symlink(dir-link 指向 ~/.alpha/skills)。用户真实目录/异源链不碰。
-  //    T3 本批只退役 skills 桥(skills.paths 文件通道接管);agents/commands 桥退役 + 条目化 = T3b
-  //    (引擎无 agent/command paths,需读 md 写 config 条目;本机无全局 agent/command 验证物,不阻塞)。
-  for (const kind of ["skills"]) {
+  // 0.(T3b)存量 agents 桥 → 条目化迁移 + 拆链:~/.alpha/agents/*.md → agentMdToEntry → alpha.jsonc
+  //    agent 条目;**全部成功才拆 agents 桥**(任一转换失败 → loud 保留桥 = 该 agent 继续经桥可见,
+  //    诚实降级)。幂等:persistAgentEntry 覆盖写同值;无 agents 目录/无桥 → no-op。
+  migrateAgentBridges(dir, alphaRoot, log)
+  // 1. 拆 alpha 自有的类目 symlink(dir-link 指向 ~/.alpha/<kind>)。用户真实目录/异源链不碰。
+  //    skills = REQ-059 T3(skills.paths 文件通道接管);agents 由上一步全权处理(迁移成功才拆);
+  //    commands = 防御性(无写入方,预留目录,若存在 alpha 链一并拆)。
+  for (const kind of ["skills", "commands"]) {
     const p = path.join(dir, kind)
     try {
       const st = fs.lstatSync(p)
@@ -196,5 +202,82 @@ function cleanupOpencodeHome(log?: Logger): void {
     }
   } catch {
     /* best effort */
+  }
+}
+
+/**
+ * T3b:存量 agents 桥的条目化迁移。桥形态两种(alpha-bridge):目录级 dir-link
+ * `~/.opencode/agents → ~/.alpha/agents`,或真实目录内的逐条目链。逐 md 转换写条目;
+ * **全部成功才拆链**(部分失败 → 保留桥,loud;下次启动重试 —— persistAgentEntry 幂等)。
+ */
+function migrateAgentBridges(opencodeDir: string, alphaRoot: string, log?: Logger): void {
+  const bridged = path.join(opencodeDir, "agents")
+  const alphaAgents = path.join(alphaRoot, "agents")
+  let form: "dir-link" | "item-links" | null = null
+  const itemLinks: string[] = []
+  try {
+    const st = fs.lstatSync(bridged)
+    if (st.isSymbolicLink()) {
+      const target = fs.readlinkSync(bridged)
+      const resolved = path.isAbsolute(target) ? target : path.resolve(opencodeDir, target)
+      if (resolved === alphaAgents || resolved.startsWith(alphaRoot + path.sep)) form = "dir-link"
+    } else if (st.isDirectory()) {
+      for (const f of fs.readdirSync(bridged)) {
+        const p = path.join(bridged, f)
+        try {
+          const ls = fs.lstatSync(p)
+          if (!ls.isSymbolicLink()) continue
+          const target = fs.readlinkSync(p)
+          const resolved = path.isAbsolute(target) ? target : path.resolve(bridged, target)
+          if (resolved.startsWith(alphaRoot + path.sep)) itemLinks.push(p)
+        } catch {
+          /* skip */
+        }
+      }
+      if (itemLinks.length > 0) form = "item-links"
+    }
+  } catch {
+    return // no agents bridge at all
+  }
+  if (!form) return
+
+  // 迁移:真源 md 全部转换成条目(alpha.jsonc);任一失败 → 保留桥 loud。
+  let mds: string[] = []
+  try {
+    mds = fs.existsSync(alphaAgents) ? fs.readdirSync(alphaAgents).filter((f) => f.endsWith(".md")) : []
+  } catch {
+    mds = []
+  }
+  for (const f of mds) {
+    const name = f.slice(0, -3)
+    let content: string
+    try {
+      content = fs.readFileSync(path.join(alphaAgents, f), "utf8")
+    } catch (error) {
+      log?.warn(`[req059-t3b] agent md unreadable — bridge kept`, { file: f, error: String(error) })
+      return
+    }
+    const parsed = agentMdToEntry(content)
+    if (!parsed.ok) {
+      log?.warn(`[req059-t3b] agent "${name}" not convertible (${parsed.reason}) — bridge kept for all agents`)
+      return
+    }
+    const persisted = persistAgentEntry(name, parsed.entry)
+    if (!persisted.ok) {
+      log?.warn(`[req059-t3b] agent "${name}" entry write failed (${persisted.reason}) — bridge kept`)
+      return
+    }
+  }
+  // 全部条目就位 → 拆桥
+  try {
+    if (form === "dir-link") {
+      fs.unlinkSync(bridged)
+    } else {
+      for (const p of itemLinks) fs.unlinkSync(p)
+      if (fs.readdirSync(bridged).length === 0) fs.rmSync(bridged, { recursive: true, force: true })
+    }
+    log?.log(`[req059-t3b] agents bridge retired (${mds.length} agent(s) migrated to alpha.jsonc entries)`)
+  } catch (error) {
+    log?.warn(`[req059-t3b] agents bridge unlink failed`, { error: String(error) })
   }
 }

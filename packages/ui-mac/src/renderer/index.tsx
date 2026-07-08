@@ -39,6 +39,7 @@ import { ComposerTakeover } from "./alpha-ui/composer-takeover"
 import { ModelPickerInject } from "./alpha-ui/model-picker-inject"
 import { TimelineInject } from "./alpha-ui/timeline-inject"
 import { CloudRunWatcher } from "./alpha-ui/cloud-run-watcher"
+import { ExtTrustWatcher } from "./alpha-ui/ext-trust-watcher"
 import { AlphaSidebar } from "./sidebar/alpha-sidebar"
 import { useAlphaProjects } from "./sidebar/use-projects"
 import { AlphaHome } from "./alpha-ui/AlphaHome"
@@ -453,6 +454,10 @@ render(() => {
               </AlphaBoundary>
               <AlphaBoundary name="CloudRunWatcher">
                 <CloudRunWatcher server={sidebarServer} projects={alphaProjects} />
+              </AlphaBoundary>
+              {/* REQ-060 信任门:进入项目会话时检测项目自带可执行扩展 → per-project consent → dispose 生效 */}
+              <AlphaBoundary name="ExtTrustWatcher">
+                <ExtTrustWatcher server={sidebarServer} />
               </AlphaBoundary>
               <AlphaBoundary name="ToastViewport">
                 <ToastViewport />

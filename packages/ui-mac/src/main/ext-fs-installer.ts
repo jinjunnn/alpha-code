@@ -15,7 +15,9 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { fileURLToPath } from "node:url"
-import { bridgeItem, opencodeHomeDir, unbridgeItem } from "./alpha-bridge"
+import { opencodeHomeDir, unbridgeItem } from "./alpha-bridge"
+import { agentMdToEntry } from "./agent-md-entry"
+import { persistAgentEntry, removeAgentEntry } from "./ext-config"
 import { addReceipt, alphaGlobalRoot, removeReceipt } from "./alpha-installs"
 import { alphaRoot, ensureAlphaScaffold } from "./alpha-workdir"
 import type { InstallMeta, InstallReceipt, InstallTarget } from "../preload/types"
@@ -149,7 +151,10 @@ export function writeSkill(
   return { ok: true, files }
 }
 
-/** Write an agent definition (caller composes the markdown) into the alpha truth root + bridge + receipt. */
+/** Write an agent definition (caller composes the markdown) into the alpha truth root + config entry + receipt.
+ *  REQ-059 T3b 桥退役:引擎经 alpha.jsonc 的 `agent.<name>` 条目(md 先过 agentMdToEntry 转换,fail-closed)
+ *  见到 agent,不再造 `.opencode` 桥(不变量:任何层级零 `.opencode`)。md 文件仍写盘 = 内容真源/人读;
+ *  编辑文件不生效(诚实边界:改 agent 走重装/hub)。项目 target 同构(条目写 <proj>/.alpha/alpha.jsonc)。 */
 export function writeAgent(name: string, content: string, target?: InstallTarget, meta?: InstallMeta, origin?: InstallReceipt["origin"]): FsResult {
   if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid agent name" }
   const normalized = content.endsWith("\n") ? content : `${content}\n`
@@ -160,6 +165,8 @@ export function writeAgent(name: string, content: string, target?: InstallTarget
       return file
     })
   }
+  const parsed = agentMdToEntry(normalized)
+  if (!parsed.ok) return { ok: false, reason: `agent frontmatter not convertible: ${parsed.reason}` }
   const roots = resolveRoots(target)
   if ("error" in roots) return { ok: false, reason: roots.error }
   const dir = safeResolveUnder(roots.alphaDir, "agents")
@@ -171,9 +178,17 @@ export function writeAgent(name: string, content: string, target?: InstallTarget
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : "failed to write agent" }
   }
-  const bridge = bridgeItem(roots.alphaDir, roots.opencodeDir, "agents", name)
-  if (!bridge.ok) return { ok: false, reason: `已写入 ${file},但引擎桥接失败:${bridge.reason}` }
-  const files = [file, ...bridge.created]
+  const entryTarget = roots.scope === "project" ? path.join(roots.alphaDir, "alpha.jsonc") : undefined
+  const persisted = persistAgentEntry(name, parsed.entry, entryTarget)
+  if (!persisted.ok) {
+    try {
+      fs.unlinkSync(file) // 条目失败则撤 md,不留「文件在、引擎看不见」的半装态
+    } catch {
+      /* best-effort */
+    }
+    return { ok: false, reason: `agent config entry failed: ${persisted.reason}` }
+  }
+  const files = [file]
   recordReceipt(roots, { name, type: "agent", files, meta, origin })
   return { ok: true, files }
 }
@@ -335,6 +350,12 @@ export function removeFsInstall(type: "skill" | "agent", name: string, target?: 
     unbridgeItem(roots.alphaDir, roots.opencodeDir, kind, name).removed.forEach((r) => removed.push(r))
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : "failed to remove" }
+  }
+  // REQ-059 T3b:agent 条目净除(alpha.jsonc 的 agent.<name>;存量桥装的 agent 无条目 → no-op 幂等)
+  if (type === "agent") {
+    const entryTarget = roots.scope === "project" ? path.join(roots.alphaDir, "alpha.jsonc") : undefined
+    const r = removeAgentEntry(name, entryTarget)
+    if (!r.ok) return { ok: false, reason: `agent config entry removal failed: ${r.reason}` }
   }
   removeReceipt(roots.alphaDir, type, name)
   return { ok: true, files: removed }
