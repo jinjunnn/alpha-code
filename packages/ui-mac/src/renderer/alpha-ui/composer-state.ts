@@ -79,6 +79,37 @@ export function applyDefaultComposerModel(m: ComposerModel) {
   setModelSignal(m)
 }
 
+/* ── REQ-069:持久选择的挂起/恢复 ──────────────────────────────────────────────
+ * 持久化的上次选择在当前状态不可用(登出后残留代理模型 / 账户无会员零余额 / BYOK provider
+ * 已移除)时:**只清内存信号、不动 localStorage** —— 不静默沿用(会撞网关拒绝)也不静默删
+ * (重新登录后冷启动应原样恢复,C28 反 placebo);挂起原因暴露给 picker 如实展示。 */
+
+export type SuspendReason = "needs-login" | "needs-credit" | "provider-gone"
+export type SuspendedModel = { model: ComposerModel; reason: SuspendReason }
+
+const [suspended, setSuspended] = createSignal<SuspendedModel | null>(null)
+export const composerModelSuspended = suspended
+
+export function suspendComposerModel(reason: SuspendReason) {
+  const m = model()
+  if (!m) return
+  setSuspended({ model: m, reason })
+  setModelSignal(null)
+}
+
+/** 挂起条件解除(如登录回来)时还原;当前已有选择则不覆盖。 */
+export function restoreSuspendedModel(): boolean {
+  const s = suspended()
+  if (!s || model()) return false
+  setSuspended(null)
+  setModelSignal(s.model)
+  return true
+}
+
+export function clearSuspendedModel() {
+  setSuspended(null)
+}
+
 export function setComposerModel(m: ComposerModel | null) {
   setModelSignal(m)
   try {

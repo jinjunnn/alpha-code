@@ -5,7 +5,8 @@ type: ux
 priority: P1
 repo: A
 created: 2026-07-08
-sprint: —
+sprint: S32(2026-07-08)
+status: shipped
 source: 用户真机报障(2026-07-08,4 张截图在报障会话)
 ---
 

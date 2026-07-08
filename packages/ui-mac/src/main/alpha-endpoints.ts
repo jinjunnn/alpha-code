@@ -5,8 +5,9 @@
 //   ALPHA_*_URL      <userData>/           token response          shared/alpha-config.ts
 //                    alpha-endpoints.json   { endpoints: {...} }
 //
-// Why this exists (the bug it prevents): `platform` was hardcoded to the wrong host (api.tidelabs.click)
-// and shipped baked-in; the real gateway is alpha-gateway.jinjunnm.workers.dev. The volatile URLs
+// Why this exists (the bug it prevents): `platform` was once hardcoded to a wrong host and shipped
+// baked-in (pre-REQ-070 history: api.tidelabs.click 404 → workers.dev → now the real custom domain
+// alpha-gateway.tidelabs.click). The volatile URLs
 // (gateway/account) now come from discovery/pin so the platform can move clients without a release.
 // The renderer no longer imports the constant directly — it reads the resolved set over IPC
 // (endpoints-ipc.ts → window.api.endpoints). Pure node (fs only); no electron import.

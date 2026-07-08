@@ -1,6 +1,18 @@
 // REQ-055 — composer-state 纯核单测:提交参数构造 / 斜杠路由 / agent 过滤。
 import { describe, expect, test } from "bun:test"
-import { buildPromptRequest, filterAgents, routeSlash, READONLY_AGENT, type ComposerModel } from "./composer-state"
+import {
+  buildPromptRequest,
+  clearSuspendedModel,
+  composerModel,
+  composerModelSuspended,
+  filterAgents,
+  restoreSuspendedModel,
+  routeSlash,
+  setComposerModel,
+  suspendComposerModel,
+  READONLY_AGENT,
+  type ComposerModel,
+} from "./composer-state"
 
 const sonnet: ComposerModel = { providerID: "alpha", modelID: "claude-sonnet-4.6", name: "Claude Sonnet 4.6", variants: ["低", "中", "高"] }
 const flash: ComposerModel = { providerID: "alpha", modelID: "deepseek-v4-flash", name: "DeepSeek V4 Flash", variants: [] }
@@ -76,5 +88,33 @@ describe("filterAgents — 治理口径守卫(REQ-066 T3)", () => {
       { name: "custom-mine", mode: "all" },
     ]
     expect(filterAgents(raw).map((a) => a.name)).toEqual(["build", "custom-mine"])
+  })
+})
+
+describe("suspend/restore — REQ-069:持久选择挂起(不删)与还原", () => {
+  test("挂起清内存信号、记录原因;还原原样恢复", () => {
+    setComposerModel(sonnet)
+    expect(composerModel()).toEqual(sonnet)
+    suspendComposerModel("needs-login")
+    expect(composerModel()).toBeNull()
+    expect(composerModelSuspended()).toEqual({ model: sonnet, reason: "needs-login" })
+    expect(restoreSuspendedModel()).toBe(true)
+    expect(composerModel()).toEqual(sonnet)
+    expect(composerModelSuspended()).toBeNull()
+    setComposerModel(null) // 清场
+  })
+  test("已有新选择时不还原(不覆盖用户当前选择)", () => {
+    setComposerModel(sonnet)
+    suspendComposerModel("needs-credit")
+    setComposerModel(flash) // 用户改选了别的
+    expect(restoreSuspendedModel()).toBe(false)
+    expect(composerModel()).toEqual(flash)
+    clearSuspendedModel()
+    setComposerModel(null)
+  })
+  test("无选择时挂起是 no-op", () => {
+    setComposerModel(null)
+    suspendComposerModel("needs-login")
+    expect(composerModelSuspended()).toBeNull()
   })
 })

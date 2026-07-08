@@ -13,18 +13,20 @@ export type AlphaEndpoints = { web: string; platform: string; account: string; c
 export const ALPHA_ENDPOINTS = {
   /** alpha-web (C): identity / login / token / billing portal. */
   web: "https://alphacodeone.com",
-  /** alpha-platform (B): model proxy (/v1). The gateway has NO custom domain (unlike web/account.) —
-   *  it's the raw Worker URL `alpha-gateway.jinjunnm.workers.dev`, confirmed against alpha-platform docs
-   *  (M4-next-steps / design.md / ADR-014) AND a live probe (/health 200, /v1/models 200, /v1/chat
-   *  /completions 401). The previous `api.tidelabs.click` 404'd every /v1 route (no gateway routed
-   *  there). Override per-deploy with ALPHA_PLATFORM_URL once a custom domain is set up. */
-  platform: "https://alpha-gateway.jinjunnm.workers.dev",
+  /** alpha-platform (B): model proxy (/v1). Custom domain since B PR #20 (REQ-070) — `*.workers.dev`
+   *  is widely DNS-poisoned/TLS-reset in mainland China, and the zone domain unlocks B-side WAF/rate
+   *  limits. Live-probed 2026-07-08: /health 200, /v1/models 200. The old
+   *  `alpha-gateway.jinjunnm.workers.dev` stays online during the migration window (B keeps it until
+   *  A confirms rollout). Override per-deploy with ALPHA_PLATFORM_URL. */
+  platform: "https://alpha-gateway.tidelabs.click",
   /** alpha-platform (B) account-server (境内 PII/金融): balance / membership / usage ledger. */
   account: "https://account.alphacodeone.com",
   /** alpha-platform (B) cloud jobs API (ADR-016): unified dispatch/status + MCP facade (/mcp). A
-   *  SEPARATE worker from the model gateway (the gateway 404s /mcp) — `alpha-cloud`. Override per-deploy
-   *  with ALPHA_CLOUD_URL; alpha-web may also discover it via the token response endpoints{cloud,mcp}. */
-  cloud: "https://alpha-cloud.jinjunnm.workers.dev",
+   *  SEPARATE worker from the model gateway (the gateway 404s /mcp) — `alpha-cloud`. Custom domain
+   *  since B PR #20 (REQ-070; old workers.dev URL online during the migration window). Override
+   *  per-deploy with ALPHA_CLOUD_URL; alpha-web may also discover it via the token response
+   *  endpoints{cloud,mcp}. */
+  cloud: "https://alpha-cloud.tidelabs.click",
 } as const
 
 // Path segments appended to the hosts above — the full alpha↔backend URL contract in one place.
