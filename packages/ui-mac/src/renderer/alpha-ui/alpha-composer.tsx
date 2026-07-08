@@ -16,6 +16,7 @@ import { setExtHubOpen } from "../extensions/ext-hub-state"
 import { createComposerAutocomplete } from "./composer-autocomplete"
 import { buildMentionParts, type MentionPart } from "./composer-autocomplete-core"
 import { COMPOSER_PLACEHOLDER } from "../../shared/composer-copy"
+import { pathHitsPopover } from "./popover-hit"
 import { pushToast } from "./Toast"
 import type { AlphaProjectsApi } from "../sidebar/use-projects"
 import {
@@ -51,8 +52,10 @@ function useChip() {
     if (openChipId() === id) setOpenChipId(null)
   }
   const onDoc = (e: MouseEvent) => {
-    const t = e.target as Element | null
-    if (t && t.closest(".a-pop-wrap, .a-pop")) return
+    // REQ-061:composedPath 在 dispatch 时快照 —— 点击处理器同步重渲染把被点按钮 detach 后,
+    // 旧 e.target.closest(".a-pop") 会返回 null 误判外部点击、误关整层(B21 真机 3 次复现:
+    // 改键表单入口不可达)。判定细节见 popover-hit.ts。
+    if (pathHitsPopover(e.composedPath())) return
     close()
   }
   document.addEventListener("click", onDoc)
