@@ -20,7 +20,8 @@ const LEDGER_VERSION = 1
 const SAFE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
 const RECEIPT_TYPES = new Set(["mcp", "skill", "agent", "command", "plugin", "bundle", "cloud"])
 const RECEIPT_SCOPES = new Set(["global", "project"])
-const RECEIPT_ORIGINS = new Set(["catalog", "created", "imported"])
+// REQ-063:imported-claude / imported-agents = 外部生态(.claude / .agents)转换导入,来源可溯
+const RECEIPT_ORIGINS = new Set(["catalog", "created", "imported", "imported-claude", "imported-agents"])
 
 export type LedgerRead = { receipts: InstallReceipt[]; warning?: string }
 export type LedgerWriteResult = { ok: true } | { ok: false; reason: string }

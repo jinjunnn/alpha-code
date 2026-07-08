@@ -9,7 +9,6 @@
 // Security unchanged (ADR-014 §8): names validated, every path confined to its root via the
 // realpath anti-escape walk; asset keys confined to resources/skills.
 
-import { app } from "electron"
 import { execFile } from "node:child_process"
 import * as fs from "node:fs"
 import * as os from "node:os"
@@ -198,9 +197,12 @@ export function writeAgent(name: string, content: string, target?: InstallTarget
 // Exported for the migration provenance check (REQ-044), which byte-compares legacy skill dirs
 // against these packaged assets.
 export function resourcesRoot(): string {
-  return app.isPackaged
-    ? process.resourcesPath
-    : path.join(path.dirname(fileURLToPath(import.meta.url)), "../../resources")
+  // app.isPackaged 的无 electron-import 等价判定(packaged = electron 运行时且非 defaultApp):
+  // REQ-063 起 ecosystem-import 复用本模块纯 fs 管线,bun test 加载时无 electron 运行时,
+  // 顶层 named import electron 会在 import 期直接炸(Export named 'app' not found)。
+  const p = process as { versions?: { electron?: string }; defaultApp?: boolean }
+  const packaged = !!p.versions?.electron && !p.defaultApp
+  return packaged ? process.resourcesPath : path.join(path.dirname(fileURLToPath(import.meta.url)), "../../resources")
 }
 
 // builtinAssetKey is author-controlled (the catalog), but validate it anyway so a bad entry can't
@@ -404,8 +406,13 @@ function collectImportFiles(srcDir: string): { ok: true; files: string[] } | { o
   }
 }
 
-/** 导入本地技能文件夹:校验 SKILL.md frontmatter → 逐文件复制入 .alpha + 桥 + receipt(imported)。 */
-export function importSkillFolder(srcDir: string, target?: InstallTarget): FsResult & { name?: string } {
+/** 导入本地技能文件夹:校验 SKILL.md frontmatter → 逐文件复制入 .alpha + receipt。
+ *  origin 默认 imported;REQ-063 外部生态转换导入传 imported-claude / imported-agents(hub 可溯源)。 */
+export function importSkillFolder(
+  srcDir: string,
+  target?: InstallTarget,
+  origin: InstallReceipt["origin"] = "imported",
+): FsResult & { name?: string } {
   if (typeof srcDir !== "string" || !path.isAbsolute(srcDir)) return { ok: false, reason: "invalid folder" }
   let real: string
   try {
@@ -444,7 +451,7 @@ export function importSkillFolder(srcDir: string, target?: InstallTarget): FsRes
   }
   // T3(REQ-059):skills 桥退役 —— 真源就位,引擎经 skills.paths 发现。
   const files = [destDir]
-  recordReceipt(roots, { name, type: "skill", files, origin: "imported" })
+  recordReceipt(roots, { name, type: "skill", files, origin })
   return { ok: true, files, name }
 }
 

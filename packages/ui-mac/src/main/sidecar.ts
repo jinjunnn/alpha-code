@@ -7,7 +7,7 @@ import { ALPHA_BEHAVIOR_MD } from "./alpha-behavior"
 import { buildAlphaIdentity } from "./alpha-identity"
 import { buildAlphaModelConfig } from "./alpha-models"
 import { hasSecretFile, secretFileRef } from "./alpha-secret-files"
-import { alphaJsoncPath } from "./engine-config-truth"
+import { alphaGlobalRoot, alphaJsoncPath } from "./engine-config-truth"
 
 // ADR-006 bridge ("two runtime worlds"). opencode's ToolRegistry dynamically imports a project's
 // raw-TS tools (.opencode/tool/*.ts), and packages whose TS entry does `import "./x.js"` (e.g.
@@ -197,6 +197,22 @@ function injectAlphaConfig(userDataPath: string, extPluginPath?: string) {
       if (wantBehavior) addInstruction("alpha-behavior.md", ALPHA_BEHAVIOR_MD)
 
       config.instructions = instructions
+    }
+
+    // REQ-063:`~/.alpha/instructions/*.md` = 用户经导入门转换的全局指令(如 ~/.claude/CLAUDE.md
+    // 快照)。存在即注入 —— 它们只在用户显式「导入」后出现,是 alpha 原生资产(非继承通道)。
+    try {
+      const instrDir = path.join(alphaGlobalRoot(), "instructions")
+      const imported = fs.existsSync(instrDir)
+        ? fs.readdirSync(instrDir).filter((f) => f.endsWith(".md")).sort().map((f) => path.join(instrDir, f))
+        : []
+      if (imported.length) {
+        const instructions: string[] = Array.isArray(config.instructions) ? config.instructions : []
+        for (const f of imported) if (!instructions.includes(f)) instructions.push(f)
+        config.instructions = instructions
+      }
+    } catch {
+      /* unreadable dir → skip (imported instructions simply stay dark this fork) */
     }
 
     const models = buildAlphaModelConfig(userDataPath)

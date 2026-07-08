@@ -177,6 +177,7 @@ const api: ElectronAPI = {
     removeLegacy: (type, name) => ipcRenderer.invoke("ext-migrate-remove-legacy", type, name),
     enableCloud: (id, name, meta) => ipcRenderer.invoke("ext-enable-cloud", id, name, meta),
     trustCheck: (directory) => ipcRenderer.invoke("ext-trust-check", directory),
+    externalCheck: (directory) => ipcRenderer.invoke("ext-external-check", directory),
   },
   account: {
     summary: () => ipcRenderer.invoke("account-summary"),
