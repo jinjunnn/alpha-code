@@ -38,6 +38,43 @@ export function applyMention(text: string, v: TriggerView, content: string): { t
   return { text: next, caret: v.tokenStart + content.length + 1 }
 }
 
+/* ── REQ-066 斜杠菜单卫生:治理过滤 + 来源归类(纯逻辑;composer-autocomplete.tsx 只接线)── */
+
+export type CommandOrigin = "builtin" | "skill" | "project" | "mcp" | "imported"
+
+/** 引擎内置命令名。command.list 里它们 source 恒为 "command"(与 config 命令同源),身份只能按
+ *  名字判;config 同名覆盖(如将来 REQ-062 换 alpha 模板)不改变其内置身份。 */
+export const ENGINE_BUILTIN_COMMANDS: ReadonlySet<string> = new Set(["init", "review"])
+
+/** T1 治理禁用过滤:deny 的 skill 不进菜单 —— 按名字对治理真源 skills.deny 判定,不靠
+ *  「(已禁用)」文案前缀(脆弱)。同一个名字覆盖两种形态:skill 源条目,以及被治理占位
+ *  command 覆盖后的 command 源条目(materializeEdits 写 command.<n>.template → 引擎同名
+ *  覆盖使 source 变 "command")。引擎侧占位 template 保留:手动键入完整命令名仍得到诚实
+ *  说明(纵深不拆)。 */
+export function filterGovernanceDenied<T extends { name: string }>(
+  commands: readonly T[],
+  deniedSkills: ReadonlySet<string>,
+): T[] {
+  return commands.filter((c) => !deniedSkills.has(c.name))
+}
+
+/** T2 来源归类:command.list 的 source 字段 × receipts(skill 且 origin=imported)× 引擎内置
+ *  名单交叉。source 缺省(旧引擎)按 config 命令处理 → "project"。 */
+export function commandOrigin(cmd: { name: string; source?: string }, importedSkills: ReadonlySet<string>): CommandOrigin {
+  if (ENGINE_BUILTIN_COMMANDS.has(cmd.name)) return "builtin"
+  if (cmd.source === "mcp") return "mcp"
+  if (cmd.source === "skill") return importedSkills.has(cmd.name) ? "imported" : "skill"
+  return "project"
+}
+
+export const COMMAND_ORIGIN_LABEL: Record<CommandOrigin, string> = {
+  builtin: "内置",
+  skill: "技能",
+  project: "项目",
+  mcp: "MCP",
+  imported: "导入",
+}
+
 /** Build the REAL prompt parts for the mentions still present in the submitted text (upstream
  *  build-request-parts.ts shapes — agent parts carry source offsets, file parts a file:// url).
  *  Mentions whose token was edited away are dropped. */

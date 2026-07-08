@@ -24,7 +24,17 @@
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show, type Accessor, type JSX } from "solid-js"
 import type { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { useCommand } from "./providers"
-import { applyMention, detectTrigger, triggerSignature, type MentionPart, type TriggerView } from "./composer-autocomplete-core"
+import {
+  applyMention,
+  commandOrigin,
+  COMMAND_ORIGIN_LABEL,
+  detectTrigger,
+  filterGovernanceDenied,
+  triggerSignature,
+  type CommandOrigin,
+  type MentionPart,
+  type TriggerView,
+} from "./composer-autocomplete-core"
 
 type Client = ReturnType<typeof createOpencodeClient>
 type CommandApi = ReturnType<typeof useCommand>
@@ -39,7 +49,7 @@ type SlashItem = {
   title: string
   description?: string
   custom: boolean
-  badge?: string // custom source: skill / mcp
+  origin: CommandOrigin // REQ-066 T2:内置/技能/项目/MCP/导入
 }
 type AtItem =
   | { kind: "agent"; name: string; description?: string }
@@ -86,7 +96,7 @@ export function createComposerAutocomplete(opts: {
 
   // ── data sources ────────────────────────────────────────────────────────────
   // custom commands per directory (config + skill/MCP generated). list() does not throw — check {error}.
-  const [customCmds] = createResource(
+  const [customCmds, { refetch: refetchCmds }] = createResource(
     () => (opts.sdk() ? (opts.directory() ?? "") : undefined),
     async (dir) => {
       const c = opts.sdk()
@@ -95,6 +105,37 @@ export function createComposerAutocomplete(opts: {
       return error || !Array.isArray(data) ? [] : data
     },
   )
+  // REQ-066:治理禁用集(T1)+ 导入技能集(T2 来源标注)。每次斜杠菜单打开时刷新(AgentChip
+  // 同款节奏)—— 治理面板解禁 / 新装技能后免重启恢复(dispose 使引擎侧已重扫,这里拉新即可)。
+  // 读取失败 → 保留上次集合(初始为空 = 不过滤):诚实退化回 REQ-037 占位缓解态,菜单不崩。
+  const [deniedSkills, setDeniedSkills] = createSignal<ReadonlySet<string>>(new Set())
+  const [importedSkills, setImportedSkills] = createSignal<ReadonlySet<string>>(new Set())
+  const refreshGovernance = async () => {
+    const ext = window.api?.ext
+    if (!ext) return
+    const [gov, installs] = await Promise.all([
+      ext.govRead().catch(() => null),
+      ext.listInstalls(opts.directory()).catch(() => null),
+    ])
+    if (gov?.gov?.skills?.deny) setDeniedSkills(new Set(gov.gov.skills.deny))
+    if (installs)
+      setImportedSkills(
+        new Set(
+          [...(installs.global ?? []), ...(installs.project ?? [])]
+            .filter((r) => r.type === "skill" && r.origin === "imported")
+            .map((r) => r.name),
+        ),
+      )
+  }
+  let wasSlash = false
+  createEffect(() => {
+    const isSlash = view()?.mode === "slash"
+    if (isSlash && !wasSlash) {
+      void refreshGovernance()
+      void refetchCmds() // 解禁后的占位残描述 / 新装技能 → 打开菜单即拉新(resource 刷新期间保留旧值,无闪烁)
+    }
+    wasSlash = isSlash
+  })
   const [agents] = createResource(
     () => (opts.sdk() ? (opts.directory() ?? "") : undefined),
     async (dir) => {
@@ -136,7 +177,7 @@ export function createComposerAutocomplete(opts: {
     if (!v) return []
     if (v.mode === "slash") {
       const q = v.query
-      const custom: SlashItem[] = (customCmds() ?? [])
+      const custom: SlashItem[] = filterGovernanceDenied(customCmds() ?? [], deniedSkills())
         .filter((c) => !q || c.name.toLowerCase().includes(q))
         .map((c) => ({
           kind: "slash",
@@ -145,7 +186,7 @@ export function createComposerAutocomplete(opts: {
           title: c.name,
           description: c.description,
           custom: true,
-          badge: c.source === "skill" || c.source === "mcp" ? c.source : undefined,
+          origin: commandOrigin(c, importedSkills()),
         }))
       const builtin: SlashItem[] = opts.command.options
         .filter((o: CommandOption) => !o.disabled && !o.id.startsWith("suggested.") && o.slash)
@@ -157,6 +198,7 @@ export function createComposerAutocomplete(opts: {
           title: o.title,
           description: o.description,
           custom: false,
+          origin: "builtin" as const, // alpha 应用命令面板项 = 内置(与引擎内置同标)
         }))
       return [...custom, ...builtin].slice(0, 12)
     }
@@ -287,9 +329,9 @@ export function createComposerAutocomplete(opts: {
                 }
               >
                 <span class="a-auto-trig">/{(it as SlashItem).trigger}</span>
-                <Show when={(it as SlashItem).badge}>
-                  <span class="a-auto-badge">{(it as SlashItem).badge}</span>
-                </Show>
+                <span class="a-auto-badge" data-origin={(it as SlashItem).origin}>
+                  {COMMAND_ORIGIN_LABEL[(it as SlashItem).origin]}
+                </span>
                 <span class="a-pop-desc">{(it as SlashItem).description || (it as SlashItem).title}</span>
               </Show>
             </button>

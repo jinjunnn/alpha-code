@@ -6,7 +6,10 @@ import { describe, expect, test } from "bun:test"
 import {
   applyMention,
   buildMentionParts,
+  commandOrigin,
+  COMMAND_ORIGIN_LABEL,
   detectTrigger,
+  filterGovernanceDenied,
   triggerSignature,
   type MentionPart,
 } from "./composer-autocomplete-core"
@@ -97,5 +100,49 @@ describe("buildMentionParts", () => {
   test("mention edited out of the text sends NO part", () => {
     const mentions: MentionPart[] = [{ type: "agent", name: "general", content: "@general" }]
     expect(buildMentionParts("do it yourself", ws, mentions)).toHaveLength(0)
+  })
+})
+
+// ── REQ-066 斜杠菜单卫生:治理过滤(T1)+ 来源归类(T2)────────────────────────────
+describe("filterGovernanceDenied — 治理禁用项不进菜单(REQ-066 T1)", () => {
+  const cmds = [
+    { name: "customize-opencode", source: "command", description: "(已禁用)该技能已在 alpha 治理中禁用" }, // 占位覆盖形态
+    { name: "graphify", source: "skill" },
+    { name: "deploy", source: "command" },
+  ]
+  test("deny 的名字两种形态都隐藏:占位 command 源 + skill 源", () => {
+    const denied = new Set(["customize-opencode", "graphify"])
+    expect(filterGovernanceDenied(cmds, denied).map((c) => c.name)).toEqual(["deploy"])
+  })
+  test("解禁(空 deny 集)→ 全部可见 —— 判定依据是治理真源,不是文案前缀", () => {
+    expect(filterGovernanceDenied(cmds, new Set()).map((c) => c.name)).toEqual([
+      "customize-opencode",
+      "graphify",
+      "deploy",
+    ])
+  })
+})
+
+describe("commandOrigin — 来源归类(REQ-066 T2)", () => {
+  const none: ReadonlySet<string> = new Set()
+  test("引擎内置按名字判(source 恒为 command,同名覆盖不改变内置身份)", () => {
+    expect(commandOrigin({ name: "init", source: "command" }, none)).toBe("builtin")
+    expect(commandOrigin({ name: "review", source: "command" }, none)).toBe("builtin")
+  })
+  test("skill 源 = 技能;在 receipts 导入集内 = 导入", () => {
+    expect(commandOrigin({ name: "graphify", source: "skill" }, none)).toBe("skill")
+    expect(commandOrigin({ name: "graphify", source: "skill" }, new Set(["graphify"]))).toBe("imported")
+  })
+  test("mcp 源 = MCP;config/文件命令(含 source 缺省的旧引擎)= 项目", () => {
+    expect(commandOrigin({ name: "context7-docs", source: "mcp" }, none)).toBe("mcp")
+    expect(commandOrigin({ name: "deploy", source: "command" }, none)).toBe("project")
+    expect(commandOrigin({ name: "legacy" }, none)).toBe("project")
+  })
+  test("导入集只对 skill 源生效(同名 config 命令不误标导入)", () => {
+    expect(commandOrigin({ name: "deploy", source: "command" }, new Set(["deploy"]))).toBe("project")
+  })
+  test("五类都有中文标签", () => {
+    for (const k of ["builtin", "skill", "project", "mcp", "imported"] as const)
+      expect(COMMAND_ORIGIN_LABEL[k].length).toBeGreaterThan(0)
   })
 })
