@@ -7,6 +7,8 @@ import { tool } from "@opencode-ai/plugin"
 import { isGlobalAlphaDir, mergeProjectConfig } from "./project-config"
 import { loadProjectPlugins, mergeHooks } from "./plugin-fanout"
 import { applyRegister, type RegisterType } from "./register"
+import { applyPromptTakeover } from "./alpha-prompts"
+import { rebrandSystem } from "./prompt-rebrand"
 
 /**
  * alpha-code backend isolation extension.
@@ -33,6 +35,8 @@ export const AlphaExt: Plugin = async (input) => {
   const pendingReloads = new Map<string, { reason: string; at: number }>()
   let reloadAttempts = 0
   const STALE_MS = 5 * 60 * 1000
+  // REQ-062 T1:转写残留 warning 去重(每进程每签名一次)
+  const rebrandWarned = new Set<string>()
 
   // REQ-060 边界:home 目录实例(`<dir>/.alpha` == 全局 `~/.alpha`)不走项目级通道 —— 全局 alpha.jsonc
   // 已经 G1(OPENCODE_CONFIG)注入,再当项目配置读会把全局 mcp 误 gated,且 ~/.alpha/plugins 有双载风险。
@@ -46,24 +50,55 @@ export const AlphaExt: Plugin = async (input) => {
     // 触发 = 免重启。信任门(项目自带 mcp/plugin = 加载可执行物)= T1 后续,当前 spike 只验通道。
     async config(cfg) {
       try {
-        if (!projectScoped) return
-        const f = join(input.directory, ".alpha", "alpha.jsonc")
-        if (!existsSync(f)) return
-        // 信任门:项目自带 mcp(可执行连接器)只在项目已 consent 时加载。consent 落 `.alpha/prefs.json`
-        // 的 extensionsConsent(版本化,ADR-021 模式);未 consent → mcp 被 gated,记 loud 供 renderer 弹窗。
-        const trustExecutable = readProjectExtensionsConsent(input.directory)
-        const { added, gatedExecutable } = mergeProjectConfig(cfg as Record<string, unknown>, readFileSync(f, "utf8"), {
-          trustExecutable,
-          directory: input.directory,
-        })
-        if (gatedExecutable.length)
-          console.log(
-            `[@alpha-code/ext] project has UNTRUSTED executable extensions (${gatedExecutable.join(", ")}) — not loaded until consent: ${input.directory}`,
-          )
-        if (process.env.ALPHA_EXT_VERBOSE && added.length)
-          console.log(`[@alpha-code/ext] project config merged from ${f}: ${added.join(", ")}`)
+        if (projectScoped) {
+          const f = join(input.directory, ".alpha", "alpha.jsonc")
+          if (existsSync(f)) {
+            // 信任门:项目自带 mcp(可执行连接器)只在项目已 consent 时加载。consent 落 `.alpha/prefs.json`
+            // 的 extensionsConsent(版本化,ADR-021 模式);未 consent → mcp 被 gated,记 loud 供 renderer 弹窗。
+            const trustExecutable = readProjectExtensionsConsent(input.directory)
+            const { added, gatedExecutable } = mergeProjectConfig(cfg as Record<string, unknown>, readFileSync(f, "utf8"), {
+              trustExecutable,
+              directory: input.directory,
+            })
+            if (gatedExecutable.length)
+              console.log(
+                `[@alpha-code/ext] project has UNTRUSTED executable extensions (${gatedExecutable.join(", ")}) — not loaded until consent: ${input.directory}`,
+              )
+            if (process.env.ALPHA_EXT_VERBOSE && added.length)
+              console.log(`[@alpha-code/ext] project config merged from ${f}: ${added.join(", ")}`)
+          }
+        }
+        // REQ-062 T3/T6:alpha 内容层 set-if-absent 接管(/init 模板 + general/explore prompt)。
+        // 置于项目 merge 之后 → 项目/全局/治理任何层的同名配置都先落位、alpha 出厂让位(优先级:
+        // 用户治理 > alpha 出厂 > 上游内置)。与 T1 转写同一逃生门 = 路线A 一键整体回退。
+        if (process.env.ALPHA_PROMPT_REBRAND_DISABLE !== "1") {
+          const takeover = applyPromptTakeover(cfg as Record<string, unknown>)
+          if (process.env.ALPHA_EXT_VERBOSE && takeover.applied.length)
+            console.log(`[@alpha-code/ext] prompt takeover applied: ${takeover.applied.join(", ")}`)
+        }
       } catch (error) {
         console.error(`[@alpha-code/ext] project config hook failed: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    },
+    // REQ-062 T1(路线A):系统提示词品牌转写 —— 精选子串对(见 prompt-rebrand.ts 纪律说明)。
+    // experimental hook(NON_GOALS#4 标注,ADR-015 修订成文):签名漂移/失效最坏退化 = 品牌未转写
+    // (外观级,不伤功能);逃生 ALPHA_PROMPT_REBRAND_DISABLE=1。warning 每进程每签名一次(防刷屏)。
+    "experimental.chat.system.transform": async (_input, output) => {
+      if (process.env.ALPHA_PROMPT_REBRAND_DISABLE === "1") return
+      try {
+        const r = rebrandSystem(output.system)
+        if (r.changed) {
+          output.system.length = 0
+          output.system.push(...r.system)
+        }
+        for (const w of r.warnings) {
+          if (rebrandWarned.has(w)) continue
+          rebrandWarned.add(w)
+          console.warn(`[@alpha-code/ext] prompt-rebrand: ${w}`)
+        }
+      } catch (error) {
+        // 转写失败 = 保底上游原样(外观级退化),绝不让 hook 异常伤及请求主链
+        console.error(`[@alpha-code/ext] prompt-rebrand failed: ${error instanceof Error ? error.message : String(error)}`)
       }
     },
     // tool map: key === final tool id verbatim (no namespace prefix).

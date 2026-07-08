@@ -57,6 +57,8 @@ const EXACT = new Set([
   "ALPHA_IDENTITY_DISABLE",
   "ALPHA_BEHAVIOR_DISABLE",
   "ALPHA_WEBSEARCH_DISABLE",
+  // REQ-062 路线A 逃生门(ext 插件在引擎进程内读:T1 转写 + T3/T6 内容接管一键回退)
+  "ALPHA_PROMPT_REBRAND_DISABLE",
   // the escape hatch itself, so the sidecar can surface it in diagnostics
   "ALPHA_ENV_ALLOWLIST_EXTRA",
 ])

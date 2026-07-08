@@ -46,8 +46,10 @@ else
   echo "    ✗ typecheck failed"; fail=1
 fi
 
-echo "▶ [3/3] unit tests (ui-mac)"
-if bun run --cwd packages/ui-mac test; then
+echo "▶ [3/3] unit tests (ext + ui-mac)"
+# REQ-062:ext 测试入门 —— 其中 prompt-rebrand drift 锁逐条断言转写子串仍在上游底座原文,
+# 上游 sync 改写底座即红(ADR-015 合并验证的机械化)。
+if (cd packages/ext && bun test) && bun run --cwd packages/ui-mac test; then
   echo "    ✓ tests"
 else
   echo "    ✗ tests failed"; fail=1

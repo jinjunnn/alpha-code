@@ -20,8 +20,10 @@ beforeEach(() => {
   res = join(tmp, "app", "resources")
   mkdirSync(join(res, "skills", "skill-creator"), { recursive: true })
   mkdirSync(join(res, "factory-skills", "agent-creator"), { recursive: true })
+  mkdirSync(join(res, "factory-skills", "customize-alpha"), { recursive: true })
   writeFileSync(join(res, "skills", "skill-creator", "SKILL.md"), "---\nname: skill-creator\n---\n")
   writeFileSync(join(res, "factory-skills", "agent-creator", "SKILL.md"), "---\nname: agent-creator\n---\n")
+  writeFileSync(join(res, "factory-skills", "customize-alpha", "SKILL.md"), "---\nname: customize-alpha\n---\n")
   mkdirSync(home, { recursive: true })
   sources = factorySkillSources({ packaged: true, resourcesPath: res, moduleDir: "/nope" })
   roots = { alphaRoot: join(home, ".alpha"), opencodeHome: join(home, ".opencode") }
@@ -67,7 +69,7 @@ describe("reconcileFactorySkills — REQ-065(.alpha 零出厂件 + 注入组)", 
     symlinkSync(sources["skill-creator"], truthPath("skill-creator"))
     symlinkSync("/Applications/old.app/Contents/Resources/factory-skills/agent-creator", truthPath("agent-creator"))
     const r = reconcileFactorySkills(sources, roots)
-    expect(r.removed.sort()).toEqual([...FACTORY_SKILL_IDS].sort())
+    expect(r.removed.sort()).toEqual(["agent-creator", "skill-creator"]) // 只有这两个有存量链
     expect(existsSync(truthPath("skill-creator"))).toBe(false)
     expect(existsSync(join(home, ".alpha", "skills"))).toBe(false) // 空目录顺手清
     expect(r.paths.sort()).toEqual(Object.values(sources).sort()) // 拆后照常注入
@@ -78,8 +80,8 @@ describe("reconcileFactorySkills — REQ-065(.alpha 零出厂件 + 注入组)", 
     const r = reconcileFactorySkills(sources, roots)
     expect(r.skipped.some((s) => s.name === "skill-creator" && s.reason.includes("user content"))).toBe(true)
     expect(existsSync(join(truthPath("skill-creator"), "SKILL.md"))).toBe(true) // untouched
-    expect(r.paths).toEqual([sources["agent-creator"]]) // 同名让位:不注入 skill-creator
-    expect(r.active).toEqual(["agent-creator"])
+    expect(r.paths.sort()).toEqual([sources["agent-creator"], sources["customize-alpha"]].sort()) // 同名让位:不注入 skill-creator
+    expect(r.active.sort()).toEqual(["agent-creator", "customize-alpha"])
   })
   test("NEVER removes a FOREIGN symlink at ~/.alpha/skills, even with the same name (codex High-1 精神)", () => {
     mkdirSync(join(home, ".alpha", "skills"), { recursive: true })
@@ -125,7 +127,7 @@ describe("legacy migration — REQ-036 初版 ~/.opencode/skill 直链", () => {
     symlinkSync(sources["skill-creator"], legacyPath("skill-creator"))
     symlinkSync("/Applications/old.app/Contents/Resources/factory-skills/agent-creator", legacyPath("agent-creator"))
     const r = reconcileFactorySkills(sources, roots)
-    expect(r.migrated.sort()).toEqual([...FACTORY_SKILL_IDS].sort())
+    expect(r.migrated.sort()).toEqual(["agent-creator", "skill-creator"]) // 只有这两个有 legacy 直链
     expect(existsSync(legacyPath("skill-creator"))).toBe(false)
     expect(existsSync(join(home, ".opencode", "skill"))).toBe(false) // 空目录已顺手拆掉
     expect(r.paths.sort()).toEqual(Object.values(sources).sort())
@@ -136,8 +138,8 @@ describe("legacy migration — REQ-036 初版 ~/.opencode/skill 直链", () => {
     writeFileSync(join(legacyPath("skill-creator"), "SKILL.md"), "user's own\n")
     const r = reconcileFactorySkills(sources, roots)
     expect(r.skipped.some((s) => s.name === "skill-creator" && s.reason.includes("user content"))).toBe(true)
-    expect(r.paths).toEqual([sources["agent-creator"]])
-    expect(r.active).toEqual(["agent-creator"])
+    expect(r.paths.sort()).toEqual([sources["agent-creator"], sources["customize-alpha"]].sort())
+    expect(r.active.sort()).toEqual(["agent-creator", "customize-alpha"])
     expect(existsSync(join(home, ".opencode", "skill"))).toBe(true) // 用户目录原样保留
   })
   test("a FOREIGN legacy symlink is left alone and blocks the item", () => {

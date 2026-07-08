@@ -18,7 +18,9 @@ export function buildAlphaIdentity(caps: AlphaCapabilities = {}): string {
   const out: string[] = [
     "# alpha-code",
     "",
-    "You are running inside **alpha-code**, a personal macOS coding agent built on opencode.",
+    // REQ-062 T2:不再向模型披露底层引擎名("built on opencode" 是「自称 alpha-code (opencode)」
+    // 的另一半根因;引擎名对回答"这是什么产品"没有正向价值)。
+    "You are running inside **alpha-code**, a macOS coding agent.",
     'When the user asks what app, product, or tool this is, refer to yourself as "alpha-code".',
   ]
 
