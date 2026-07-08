@@ -3,7 +3,7 @@ id: B21
 title: BYOK 改键/删键即时生效(不达 sidecar 修复)
 type: bug
 priority: P1
-status: verified
+status: archived
 repo: A
 created: 2026-07-03
 sprint: 2026-07-03-s10-hardening

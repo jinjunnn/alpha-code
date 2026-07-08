@@ -3,7 +3,7 @@ id: REQ-060
 title: 项目级扩展物 `.alpha`-only —— 五类(skill/command/agent/mcp/plugin)生成与安装全落 `<项目>/.alpha`,项目不产生 `.opencode`
 type: feature
 priority: P1
-status: shipped
+status: archived
 repo: A
 created: 2026-07-07
 source: 用户拍板(2026-07-07):「项目中生成的 skill command agent mcp 和 plugin 都应该落到 .alpha」「不希望每个项目出现 .alpha .opencode 两个目录」

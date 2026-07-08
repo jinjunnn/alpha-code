@@ -3,7 +3,7 @@ id: B4
 title: 巨型目录当项目治理(/、~、~/Documents 建 Instance)
 type: perf
 priority: P1
-status: shipped
+status: archived
 repo: A
 created: 2026-07-03
 sprint: 2026-07-05-s17-deep-decisions

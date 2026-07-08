@@ -3,7 +3,7 @@ id: B12
 title: Instance 不驱逐 + 递归 watcher 常驻(alpha 侧杠杆)
 type: perf
 priority: P1
-status: shipped
+status: archived
 repo: A
 created: 2026-07-03
 sprint: 2026-07-05-s17-deep-decisions
