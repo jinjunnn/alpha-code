@@ -4,7 +4,7 @@
 > 状态:`registered / ready / in-sprint / shipped / verified / archived`;旁路 `parked / rejected / dup`。
 > 类:feature / bug / debt / security / perf / ux / docs / spike。仓:A=alpha-code · B=alpha-platform · C=alpha-web · X=跨仓。
 > 证据文档:**册** = [`plans/2026-07-02-problem-register-sprints-review.md`](plans/2026-07-02-problem-register-sprints-review.md)(71 项 + R1-R7 修正 + §7f-7j 实施日志);**核查** = [`audits/2026-07-02-register-verification.md`](audits/2026-07-02-register-verification.md);**E 册** = [`harness-extension-backlog.md`](harness-extension-backlog.md)。
-> 下一个新需求编号:**REQ-068**(新需求一律 REQ-NNN;A/B/C/D/E 为历史审计系列保留原号,用户 2026-07-03 确认)。
+> 下一个新需求编号:**REQ-069**(新需求一律 REQ-NNN;A/B/C/D/E 为历史审计系列保留原号,用户 2026-07-03 确认)。
 > **需求文件全覆盖(2026-07-03)**:全部开放的 A/B/C/D 条目已逐条建档 `requirements/<ID>-<slug>.md`(含验收标准),行内备注为摘要、**文件为验收真源**;E 系列以冻结 E 册为分析文档;parked/dup 项不建档。
 
 ## 发布短名单(launch-blockers,册 §6.8)
@@ -54,6 +54,7 @@
 | REQ-039 | cn 租户云管线默认模型适配:edition 白名单拦掉 pipelines 默认 claude-sonnet(schedule e2e 实锤 edition_forbidden)→ 管线模型按租户 edition 选择或 cn 白名单纳入执行模型 | feature | B | shipped | **S28 shipped+prod(2026-07-06,alpha-platform PR #19,用户拍板 c 案)**:勘探发现两闸不对称——`/v1/messages` 闸(REQ-003 R5)早已豁免内部凭证,chat/completions 闸漏同款豁免即根因;修=`editionGateApplies(via)` 单源(jwt/apikey 受闸;job/dev 豁免)接 worker 两闸+dev 镜像,白名单/picker/计费零变;闸 via 分支补 3 单测(此前零覆盖=漏网原因),270/270 绿;dev e2e 绿证=cn 配置下 dev 凭证跑通 claude-sonnet 完整补全 + `/v1/models` 仍只列 v4 两档;prod 部署+smoke(无凭证 401/默认 cn picker 零泄漏)。**verified 待**真实 cn 租户(非运营者账号)prod 云任务复验——放量前执行;a 案(per-edition 选模优化)→ [[REQ-049]];详见 [requirements/REQ-039](requirements/REQ-039-cn-pipeline-model-edition.md) |
 
 | REQ-063 | 外部生态继承 default-deny + 打开项目 consent 导入门(`.claude`/`.agents` skills + CLAUDE.md;[[ADR-024]] 执行载体) | security | A | shipped(PR #153;核心已真机验:deny flag 到引擎/graphify 不可见/全局迁移门弹出记账,见 audits/2026-07-08-g6;**残 = 项目门弹窗+导入转换实测(原生弹窗需人工点击)、逃生开关、项目隔离**) | **用户拍板(2026-07-08)**:sidecar 默认注入 `OPENCODE_DISABLE_EXTERNAL_SKILLS=1` + `OPENCODE_DISABLE_CLAUDE_CODE_PROMPT=1`(set-if-unset;逃生 `ALPHA_ECOSYSTEM_INHERIT=1` 整机恢复上游行为);打开项目检测外来内容 → 信任门 sheet(REQ-060 同款)→ 同意 = 安装期转换导入项目 `.alpha`(ADR-023,receipts origin imported-*),非重开继承;**硬前置/发布闸 = 全局存量一次性迁移门**(~/.claude/skills 等非空首启必弹,防「技能丢了」重演——作者本机 graphify 即存量);consent 载体 = 原生 sheet(主)+ **系统级导入 skill**(对话式补充/重导入通道,2026-07-08 用户补充);呈现半边(来源标注)= [[REQ-066]];详见 [requirements/REQ-063](requirements/REQ-063-ecosystem-inheritance-default-deny.md) |
+| REQ-068 | 「打开项目…」选完目录后工作区不自动切换、无任何反馈(观感=没反应) | ux | A | ready | **用户真机报障(2026-07-08,REQ-063 验收场)**:workspace chip →「打开项目…」走上游 `project.open`(只把项目加进列表);选完 chip 仍显示旧工作区、零提示,用户以为 bug;修 = 选择成功后自动 setChosenWs(新项目 worktree)+ 失败/取消如实提示;顺带查:该场景下新项目未出现在工作区列表(疑对话框未完成选择或列表刷新问题,复现时一并核) |
 
 ## Active — P2(债务)
 
