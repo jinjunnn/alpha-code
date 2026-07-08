@@ -23,11 +23,12 @@ export type MergeResult = {
   gatedExecutable: string[]
 }
 
-/** 信任门(REQ-060 §3):mcp = 可执行连接器,只在 trustExecutable 时加载;agent/command/skills = 文本注入,恒加载。 */
+/** 信任门(REQ-060 §3):mcp = 可执行连接器,只在 trustExecutable 时加载;agent/command/skills = 文本注入,恒加载。
+ *  opts.directory:项目根 —— skills.paths 的相对条目("./…")以此解析为绝对(项目可移动,alpha.jsonc 存相对)。 */
 export function mergeProjectConfig(
   cfg: Record<string, unknown>,
   projectJsoncText: string,
-  opts: { trustExecutable?: boolean } = {},
+  opts: { trustExecutable?: boolean; directory?: string } = {},
 ): MergeResult {
   let proj: unknown
   try {
@@ -54,10 +55,13 @@ export function mergeProjectConfig(
     if (isObj(proj[key]) && mergeNamed(cfg, proj[key] as Record<string, unknown>, key)) added.push(`${key}.*`)
   }
 
-  // skills.paths 并集(object schema;去重,existing 在前)
-  const projPaths = isObj(proj.skills) && Array.isArray((proj.skills as Record<string, unknown>).paths)
+  // skills.paths 并集(object schema;去重,existing 在前);相对条目按项目根解析为绝对
+  const rawPaths = isObj(proj.skills) && Array.isArray((proj.skills as Record<string, unknown>).paths)
     ? ((proj.skills as Record<string, unknown>).paths as unknown[])
     : []
+  const projPaths = rawPaths.map((p) =>
+    typeof p === "string" && p.startsWith("./") && opts.directory ? resolve(opts.directory, p) : p,
+  )
   if (projPaths.length > 0) {
     const cur = isObj(cfg.skills) && Array.isArray((cfg.skills as Record<string, unknown>).paths)
       ? ((cfg.skills as Record<string, unknown>).paths as unknown[])
@@ -91,7 +95,7 @@ function mergeNamed(cfg: Record<string, unknown>, src: Record<string, unknown>, 
 }
 
 /** 极简 jsonc → json:去 // 行注释与 /* *​/ 块注释 + 尾逗号。够用于 alpha 自写的项目 alpha.jsonc。 */
-function stripJsonc(text: string): string {
+export function stripJsonc(text: string): string {
   let out = ""
   let inStr = false
   let strCh = ""

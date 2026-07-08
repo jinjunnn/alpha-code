@@ -3,11 +3,13 @@
 // config (ext-config.ts), and a runtime which-check so the UI can warn before adding a local MCP
 // whose binary (uv/node/…) is missing. All validation lives in ext-config / here — see ADR-014 §8.
 
-import { ipcMain, type IpcMainInvokeEvent } from "electron"
+import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from "electron"
 import { execFile } from "node:child_process"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
+import { extensionsGranted, hasExtensionsDecision, listProjectExecutables, withExtensionsConsent } from "./alpha-ext-trust"
+import { readProjectPrefs, writeProjectPrefs } from "./alpha-workdir"
 import type { InstallMeta, InstallReceipt, InstallTarget } from "../preload/types"
 import { addReceipt, alphaGlobalRoot, listInstalls, removeReceipt } from "./alpha-installs"
 import { fileifyMcpSecrets, removeMcpServerSecrets } from "./alpha-mcp-secrets"
@@ -237,6 +239,67 @@ export function registerExtIpcHandlers(userDataPath: string) {
   // REQ-018 T3:存量迁移(旧 XDG 根 → .alpha)。scan 报告 + removeLegacy 删旧位;新位由 renderer
   // 复用既有 installer 重装(顺带 A2 钉版 + secret file 化)。用户面触发受 ALPHA_MIGRATE_ENABLE 门控
   // (A6 真机验证后开,S12 T8)。
+  // REQ-060 信任门 UI:renderer 打开项目时调用。项目 `.alpha` 含可执行扩展(mcp/plugins)且无当前
+  // 版本决策 → 弹 per-project 原生确认(B16/ADR-021 同款);granted/denied 都写 `.alpha/prefs.json`
+  // 的 extensionsConsent(@alpha-code/ext 信任门读同一字段)。granted 后由 renderer 调 dispose 免重启
+  // 生效(链路已真机证通,audits/2026-07-07-req060-fanout-realmachine)。写盘失败不静默放行(反 placebo):
+  // 不落决策 + 返回 denied,下次仍会弹。
+  ipcMain.handle("ext-trust-check", async (event: IpcMainInvokeEvent, directory: string) => {
+    if (typeof directory !== "string" || !directory) return { prompted: false, granted: false }
+    const alphaDir = path.join(directory, ".alpha")
+    let jsoncText: string | null = null
+    try {
+      jsoncText = fs.readFileSync(path.join(alphaDir, "alpha.jsonc"), "utf8")
+    } catch {
+      /* 无项目配置 */
+    }
+    let pluginFiles: string[] = []
+    try {
+      pluginFiles = fs.readdirSync(path.join(alphaDir, "plugins"))
+    } catch {
+      /* 无 plugins 目录 */
+    }
+    const exec = listProjectExecutables(jsoncText, pluginFiles)
+    if (exec.mcp.length === 0 && exec.plugins.length === 0) return { prompted: false, granted: false }
+    const prefs = readProjectPrefs(directory)
+    if (hasExtensionsDecision(prefs)) return { prompted: false, granted: extensionsGranted(prefs) }
+
+    const items = [
+      ...exec.mcp.map((n) => `· 连接器(MCP):${n}`),
+      ...exec.plugins.map((f) => `· 插件:.alpha/plugins/${f}`),
+    ].join("\n")
+    const parent = BrowserWindow.fromWebContents(event.sender) ?? undefined
+    const opts = {
+      type: "warning" as const,
+      title: "项目自带扩展加载确认(首次)",
+      message: "此项目自带可执行扩展,是否允许加载?",
+      detail:
+        `发现以下可执行扩展:\n${items}\n\n` +
+        "允许加载 = 在本机运行该项目提供的程序代码。若这不是你信任的项目,请选择「仅文本扩展」——\n" +
+        "技能 / Agent / 命令等文本类扩展不受影响,仍正常生效。\n\n" +
+        "本决定按项目记录一次(存于本项目 .alpha/prefs.json),之后不再重复询问。",
+      buttons: ["允许加载", "仅文本扩展(不加载)"],
+      defaultId: 1,
+      cancelId: 1,
+      checkboxLabel: "我了解这会在本机运行该项目提供的代码",
+      checkboxChecked: false,
+    }
+    const res = parent ? await dialog.showMessageBox(parent, opts) : await dialog.showMessageBox(opts)
+    const granted = res.response === 0 && res.checkboxChecked
+    // 「允许」但未勾知情确认 = 未决(不落盘,下次再弹)——落 denied 会把手滑变成永久拒绝。
+    if (res.response === 0 && !res.checkboxChecked) {
+      getLogger().log(`[req060-trust] allow clicked without acknowledgement — treated as undecided: ${directory}`)
+      return { prompted: true, granted: false }
+    }
+    const written = writeProjectPrefs(directory, withExtensionsConsent(readProjectPrefs(directory), granted, new Date().toISOString()))
+    if (!written.ok) {
+      getLogger().error(`[req060-trust] failed to persist decision: ${written.reason}`)
+      return { prompted: true, granted: false, persistError: written.reason }
+    }
+    getLogger().log(`[req060-trust] ${granted ? "granted" : "denied"} for project: ${directory}`)
+    return { prompted: true, granted }
+  })
+
   ipcMain.handle("ext-migrate-scan", () => ({ enabled: isMigrationEnabled(), inventory: scanLegacy() }))
   // REQ-044:名字匹配只定位候选;这里做 provenance 终审(打包资产逐字节 / catalog 形状)——
   // 只放行 alpha 自装,同名用户自建被排除并留痕(fail-closed,ADR-019 §4)。

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
@@ -6,6 +6,7 @@ import type { Plugin } from "@opencode-ai/plugin"
 import { tool } from "@opencode-ai/plugin"
 import { isGlobalAlphaDir, mergeProjectConfig } from "./project-config"
 import { loadProjectPlugins, mergeHooks } from "./plugin-fanout"
+import { applyRegister, type RegisterType } from "./register"
 
 /**
  * alpha-code backend isolation extension.
@@ -53,6 +54,7 @@ export const AlphaExt: Plugin = async (input) => {
         const trustExecutable = readProjectExtensionsConsent(input.directory)
         const { added, gatedExecutable } = mergeProjectConfig(cfg as Record<string, unknown>, readFileSync(f, "utf8"), {
           trustExecutable,
+          directory: input.directory,
         })
         if (gatedExecutable.length)
           console.log(
@@ -80,6 +82,68 @@ export const AlphaExt: Plugin = async (input) => {
               "reload scheduled — it runs as soon as this reply completes; newly created skills/agents/commands are available from the NEXT message in this session." +
               (args.reason ? `\nreason: ${args.reason}` : ""),
             metadata: { ok: true, scheduled: true, directory: ctx.directory, sessionID: ctx.sessionID },
+          }
+        },
+      }),
+      alpha_register: tool({
+        description:
+          "Register a project-scoped extension entry into <project>/.alpha/alpha.jsonc (the ONLY alpha directory in a project — never create .opencode). " +
+          "Use type=agent|command with an entry object (agent: {description,prompt,mode,...}; command: {template,description,...}); " +
+          "type=mcp with the connector config (loading executable connectors additionally requires the user's per-project consent dialog); " +
+          "type=skill takes no entry — it registers the ./.alpha/skills path; write the skill itself to .alpha/skills/<name>/SKILL.md. " +
+          "Plugins are NOT registered here: drop a self-contained ESM .js into .alpha/plugins/ (raw TypeScript is rejected). " +
+          "The change is validated, written atomically, and auto-reloaded after this reply finishes (available from the NEXT message).",
+        args: {
+          type: tool.schema.enum(["mcp", "agent", "command", "skill"]).describe("Extension kind to register"),
+          name: tool.schema.string().describe("Entry name (letters/digits/._- , max 64 chars); ignored for type=skill").default(""),
+          entry: tool.schema
+            .string()
+            .describe("The entry as a JSON object string, e.g. {\"description\":\"...\",\"prompt\":\"...\"}; empty for type=skill")
+            .default(""),
+        },
+        async execute(args, ctx) {
+          if (isGlobalAlphaDir(ctx.directory, globalAlphaRoot))
+            return {
+              title: "alpha_register",
+              output: "refused: this session runs in the home directory — project-scoped registration needs a project. Global installs go through the Extension Hub.",
+              metadata: { ok: false },
+            }
+          let entry: Record<string, unknown> | undefined
+          if (args.entry.trim()) {
+            try {
+              const parsed: unknown = JSON.parse(args.entry)
+              if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not an object")
+              entry = parsed as Record<string, unknown>
+            } catch {
+              return { title: "alpha_register", output: "refused: entry is not a valid JSON object string", metadata: { ok: false } }
+            }
+          }
+          const alphaDir = join(ctx.directory, ".alpha")
+          const file = join(alphaDir, "alpha.jsonc")
+          const current = existsSync(file) ? readFileSync(file, "utf8") : null
+          const r = applyRegister(current, args.type as RegisterType, args.name, entry)
+          if (!r.ok) return { title: "alpha_register", output: `refused: ${r.reason}`, metadata: { ok: false } }
+          try {
+            mkdirSync(alphaDir, { recursive: true })
+            const tmp = file + ".tmp"
+            writeFileSync(tmp, r.next)
+            renameSync(tmp, file)
+          } catch (error) {
+            return {
+              title: "alpha_register",
+              output: `write failed: ${error instanceof Error ? error.message : String(error)}`,
+              metadata: { ok: false },
+            }
+          }
+          pendingReloads.set(ctx.sessionID ?? "", { reason: `alpha_register ${args.type} ${args.name}`.trim(), at: Date.now() })
+          const consentNote =
+            args.type === "mcp" && !readProjectExtensionsConsent(ctx.directory)
+              ? "\nnote: this project has not yet been granted permission to load executable extensions — the connector stays gated until the user confirms the trust dialog (it appears when the project session is opened)."
+              : ""
+          return {
+            title: "alpha_register",
+            output: `${r.summary}\nreload scheduled — available from the NEXT message.${consentNote}`,
+            metadata: { ok: true, type: args.type, name: args.name, directory: ctx.directory },
           }
         },
       }),

@@ -48,3 +48,13 @@ created: 2026-07-05
 
 - 决策依据与机制证据:本轮分析(2026-07-05 会话,三份勘探 + Claude Code 对标);
 - [[REQ-033]](开放安装面:导入通道并存)、[[REQ-037]](上游治理层,同为「上游能力面」孪生档)、[[B6]](ext 接缝,alpha_reload 落点)、ADR-014 v3(dispose 免重启)、ADR-019(`.alpha` 落点与桥)、ADR-015 Tier-2(能力扩展走 harness 接缝,不写提示词)。
+
+## 修订(2026-07-08,S30/REQ-060 —— 创建流落点改造:零 `.opencode` + alpha_register)
+
+REQ-060(项目级扩展物 `.alpha`-only)+ REQ-059 T3b(agents 全局桥退役)使本档**目标3 与验收5 的落点表述作废**,agent-creator 已改稿(同批 PR):
+
+1. **项目 agent(默认)**:不再写 `<proj>/.opencode/agent/*.md` 文件 —— 改调 `alpha_register` ext 工具(type=agent,entry 经字段白名单校验后原子写 `<proj>/.alpha/alpha.jsonc` 条目,自动排程 reload)。项目内零 `.opencode`、零文件手写。
+2. **全局 agent**:`~/.opencode` 桥已退役(T3b);会话内不再直写全局 —— 稿子指引经**定制中心导入**(writeAgent 管线:`~/.alpha/agents/*.md` + alpha.jsonc 条目,受账本管理)。「全局落点走 `~/.alpha` 桥并在 `~/.opencode` 可见」(验收5 后半)不再成立,替代验收 = 条目进 `~/.alpha/alpha.jsonc` 且引擎 /config 可见。
+3. **skill**:项目级落 `<proj>/.alpha/skills/` + `alpha_register`(type=skill,注册 skills.paths 相对路径);全局 `~/.alpha/skills/` 原生可见(REQ-059 T3)。
+4. **command / plugin**:新增会话内指导(command 经 alpha_register;plugin 直落 `.alpha/plugins/*.js` + 信任门告知)。
+5. 「创建 → 发现 → 免重启」核心验收(2/3/4)语义不变,在新落点由 S30 真机批复测。

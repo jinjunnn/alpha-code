@@ -72,13 +72,32 @@ describe("writeSkill — global scope writes truth + bridge + receipt", () => {
 })
 
 describe("writeAgent — global scope", () => {
-  test("agent md lands in ~/.alpha/agents and bridges as agents/<name>.md", () => {
-    const r = writeAgent("helper", "---\ndescription: h\n---\nsystem")
+  test("T3b:agent md 落 ~/.alpha/agents + alpha.jsonc 条目;零 .opencode 桥", () => {
+    const r = writeAgent("helper", "---\ndescription: h\nmode: subagent\n---\nsystem")
     expect(r.ok).toBe(true)
     expect(fs.readFileSync(path.join(alphaDir, "agents", "helper.md"), "utf8")).toContain("system")
-    expect(fs.readFileSync(path.join(opencodeDir, "agents", "helper.md"), "utf8")).toContain("system")
+    // 桥退役:引擎经 alpha.jsonc 的 agent.<name> 条目见到(G1 通道),.opencode 内零 alpha 痕迹
+    expect(fs.existsSync(path.join(opencodeDir, "agents"))).toBe(false)
+    const cfg = JSON.parse(fs.readFileSync(path.join(alphaDir, "alpha.jsonc"), "utf8"))
+    expect(cfg.agent.helper).toMatchObject({ description: "h", mode: "subagent", prompt: "system" })
     const { receipts } = readLedger(alphaDir)
     expect(receipts[0]).toMatchObject({ type: "agent", name: "helper" })
+  })
+
+  test("T3b fail-closed:frontmatter 转换不了(未知键)→ 拒装,零落盘", () => {
+    const r = writeAgent("bad", "---\ndescription: d\nmystery_key: x\n---\nbody")
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("mystery_key")
+    expect(fs.existsSync(path.join(alphaDir, "agents", "bad.md"))).toBe(false)
+  })
+
+  test("T3b:removeFsInstall 净除 alpha.jsonc 条目 + md", () => {
+    expect(writeAgent("gone", "---\ndescription: d\n---\nbody").ok).toBe(true)
+    const r = removeFsInstall("agent", "gone")
+    expect(r.ok).toBe(true)
+    expect(fs.existsSync(path.join(alphaDir, "agents", "gone.md"))).toBe(false)
+    const cfg = JSON.parse(fs.readFileSync(path.join(alphaDir, "alpha.jsonc"), "utf8"))
+    expect(cfg.agent?.gone).toBeUndefined()
   })
 })
 
@@ -164,14 +183,16 @@ describe("removeFsInstall — deletes truth, unbridges, drops receipt (T6)", () 
 describe("installRemoteAgent — REQ-046 远程 agent 通道(单 .md 约定 + writeAgent 同管线)", () => {
   const md = (s = "---\ndescription: remote helper\n---\nsystem prompt") => Buffer.from(s, "utf8")
 
-  test("happy path:单 .md → 真源 + 桥 + 账本(origin=catalog,meta 记版本)", () => {
+  test("happy path:单 .md → 真源 + alpha.jsonc 条目(T3b 零桥)+ 账本(origin=catalog,meta 记版本)", () => {
     const r = installRemoteAgent("remote-helper", [{ path: "remote-helper.md", data: md() }], undefined, {
       catalogId: "agent:remote-helper",
       version: "1.0.0",
     })
     expect(r.ok).toBe(true)
     expect(fs.readFileSync(path.join(alphaDir, "agents", "remote-helper.md"), "utf8")).toContain("system prompt")
-    expect(fs.readFileSync(path.join(opencodeDir, "agents", "remote-helper.md"), "utf8")).toContain("system prompt")
+    expect(fs.existsSync(path.join(opencodeDir, "agents"))).toBe(false)
+    const cfg = JSON.parse(fs.readFileSync(path.join(alphaDir, "alpha.jsonc"), "utf8"))
+    expect(cfg.agent["remote-helper"].prompt).toContain("system prompt")
     const { receipts } = readLedger(alphaDir)
     expect(receipts[0]).toMatchObject({ type: "agent", name: "remote-helper", origin: "catalog" })
   })

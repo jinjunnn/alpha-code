@@ -63,7 +63,14 @@ export async function loadProjectPlugins(
   const hooks: Record<string, unknown>[] = []
   let files: string[]
   try {
-    files = deps.readdirSync(dir).filter((f) => f.endsWith(".js"))
+    const all = deps.readdirSync(dir)
+    // ADR-006 生 TS 雷拒收 loud:桌面运行时(Electron-Node)加载生 TS 必崩,只认自包含 ESM .js。
+    for (const f of all)
+      if (f.endsWith(".ts"))
+        deps.error?.(
+          `[@alpha-code/ext] project plugin ${f} is raw TypeScript — NOT loaded (desktop runtime can't run raw TS, ADR-006). Bundle it to a self-contained ESM .js first.`,
+        )
+    files = all.filter((f) => f.endsWith(".js"))
   } catch {
     return []
   }

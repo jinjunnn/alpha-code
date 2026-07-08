@@ -282,7 +282,7 @@ function validateServer(server: Record<string, unknown>): ConfigResult {
 // Top-level keys we've verified against opencode's V1 schema (packages/core/src/v1/config/config.ts).
 // opencode hard-fails its ENTIRE config on any unrecognized top-level key, so a single wrong key
 // breaks every session — this allowlist makes such a regression fail loudly here instead.
-const ALLOWED_TOP_KEYS = new Set(["mcp", "plugin", "provider"])
+const ALLOWED_TOP_KEYS = new Set(["mcp", "plugin", "provider", "agent"])
 
 // https for any host; plain http only for loopback, never with embedded credentials. WHATWG-parsed
 // (not substring) so http://localhost.evil.com / http://127.0.0.1@evil.com can't slip past.
@@ -357,6 +357,19 @@ export function persistMcp(name: string, server: Record<string, unknown>, meta?:
     })
   }
   return written
+}
+
+/** REQ-059 T3b:agent 条目写 alpha.jsonc 的 agent.<name>(桥退役后引擎经 G1 见到全局 agent)。
+ *  targetPath 可覆盖(项目分支写 <proj>/.alpha/alpha.jsonc);条目由 agent-md-entry 转换器产出。 */
+export function persistAgentEntry(name: string, entry: Record<string, unknown>, targetPath?: string): ConfigResult {
+  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid agent name" }
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) return { ok: false, reason: "invalid agent entry" }
+  return writeKey(targetPath ?? mcpPluginTargetPath(), ["agent", name], entry)
+}
+
+export function removeAgentEntry(name: string, targetPath?: string): ConfigResult {
+  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid agent name" }
+  return writeKey(targetPath ?? mcpPluginTargetPath(), ["agent", name], undefined)
 }
 
 /**

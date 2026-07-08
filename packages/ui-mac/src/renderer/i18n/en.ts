@@ -311,6 +311,8 @@ export const dict = {
   "alpha.cloud.runSaved": "Cloud run saved to .alpha/runs",
   "alpha.cloud.runEnded": "Cloud run ended (not successful); record saved",
   "alpha.cloud.runSaveFailed": "Failed to save cloud run",
+  "alpha.ext.trustGranted": "Project extensions enabled — available from the next message",
+  "alpha.ext.trustPersistFailed": "Failed to save the project-extension decision",
   "alpha.ext.loadFailed": "Installed list failed to load",
   "alpha.ext.loadFailedDetail": "Engine connection issue; browsing the catalog still works",
   "alpha.ext.retry": "Retry",
