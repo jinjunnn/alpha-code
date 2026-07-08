@@ -5,6 +5,17 @@
 // 而非「覆盖全局」的语义在此阶段——覆盖策略留 T1 信任门后细化);skills 走 { paths:[] } object 并集
 // (与全局 REQ-059 同一 schema 教训,数组会被引擎拒)。plugin 不在此(走 host fan-out,ADR-006 生 TS 雷)。
 
+import { join, resolve } from "node:path"
+
+/** REQ-060 边界(真机发现):home 目录实例的 `<dir>/.alpha` 就是全局 `~/.alpha` —— 其 alpha.jsonc 是
+ *  全局引擎配置(已经 G1/OPENCODE_CONFIG 注入),不是项目配置。项目级通道(config hook / plugin
+ *  fan-out)对这种目录必须整体跳过:否则全局 mcp 被信任门误 gated(噪声 loud + 将来 UI 会对 home
+ *  弹「信任你自己的全局配置」的 consent),且 home 侧一旦误授 consent,`~/.alpha/plugins/`(vendored
+ *  全局插件,已走 config.plugin[])会被 fan-out 双重加载。 */
+export function isGlobalAlphaDir(directory: string, globalAlphaRoot: string): boolean {
+  return resolve(join(directory, ".alpha")) === resolve(globalAlphaRoot)
+}
+
 export type MergeResult = {
   /** 本次实际补进 cfg 的顶层域(loud 日志/审计)。 */
   added: string[]

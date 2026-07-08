@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { mergeProjectConfig } from "./project-config"
+import { isGlobalAlphaDir, mergeProjectConfig } from "./project-config"
 
 const j = (o: unknown) => JSON.stringify(o)
 
@@ -86,5 +86,26 @@ describe("mergeProjectConfig — trust gate on executable mcp", () => {
     const cfg: Record<string, any> = {}
     const r = mergeProjectConfig(cfg, j({ mcp: {} }))
     expect(r.gatedExecutable).toEqual([])
+  })
+})
+
+describe("isGlobalAlphaDir — home 目录实例不走项目级通道(REQ-060 真机发现)", () => {
+  test("home dir: <dir>/.alpha == 全局 root → true", () => {
+    expect(isGlobalAlphaDir("/Users/x", "/Users/x/.alpha")).toBe(true)
+  })
+
+  test("普通项目目录 → false", () => {
+    expect(isGlobalAlphaDir("/Users/x/proj", "/Users/x/.alpha")).toBe(false)
+  })
+
+  test("尾斜线/非规范路径容忍(resolve 归一)", () => {
+    expect(isGlobalAlphaDir("/Users/x/", "/Users/x/.alpha/")).toBe(true)
+    expect(isGlobalAlphaDir("/Users/x/proj/..", "/Users/x/.alpha")).toBe(true)
+  })
+
+  test("测试覆盖的全局 root(ALPHA_GLOBAL_DIR 场景):项目目录恰含 .alpha 也不误判", () => {
+    expect(isGlobalAlphaDir("/tmp/proj", "/custom/alpha-global")).toBe(false)
+    expect(isGlobalAlphaDir("/custom", "/custom/alpha-global")).toBe(false)
+    expect(isGlobalAlphaDir("/custom/alpha-global/..", "/custom/alpha-global")).toBe(false)
   })
 })

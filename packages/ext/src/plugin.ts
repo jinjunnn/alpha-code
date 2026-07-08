@@ -1,9 +1,10 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs"
+import { homedir } from "node:os"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import type { Plugin } from "@opencode-ai/plugin"
 import { tool } from "@opencode-ai/plugin"
-import { mergeProjectConfig } from "./project-config"
+import { isGlobalAlphaDir, mergeProjectConfig } from "./project-config"
 import { loadProjectPlugins, mergeHooks } from "./plugin-fanout"
 
 /**
@@ -32,6 +33,11 @@ export const AlphaExt: Plugin = async (input) => {
   let reloadAttempts = 0
   const STALE_MS = 5 * 60 * 1000
 
+  // REQ-060 边界:home 目录实例(`<dir>/.alpha` == 全局 `~/.alpha`)不走项目级通道 —— 全局 alpha.jsonc
+  // 已经 G1(OPENCODE_CONFIG)注入,再当项目配置读会把全局 mcp 误 gated,且 ~/.alpha/plugins 有双载风险。
+  const globalAlphaRoot = process.env.ALPHA_GLOBAL_DIR?.trim() || join(homedir(), ".alpha")
+  const projectScoped = !isGlobalAlphaDir(input.directory, globalAlphaRoot)
+
   const ownHooks: Awaited<ReturnType<Plugin>> = {
     // REQ-060 项目级扩展物 `.alpha`-only:config hook 按 instance 读 `<directory>/.alpha/alpha.jsonc`
     // 并把项目级 mcp / agent / command / skills.paths 合并进 cfg —— 引擎经 config 消费,项目不产生
@@ -39,6 +45,7 @@ export const AlphaExt: Plugin = async (input) => {
     // 触发 = 免重启。信任门(项目自带 mcp/plugin = 加载可执行物)= T1 后续,当前 spike 只验通道。
     async config(cfg) {
       try {
+        if (!projectScoped) return
         const f = join(input.directory, ".alpha", "alpha.jsonc")
         if (!existsSync(f)) return
         // 信任门:项目自带 mcp(可执行连接器)只在项目已 consent 时加载。consent 落 `.alpha/prefs.json`
@@ -142,7 +149,7 @@ export const AlphaExt: Plugin = async (input) => {
 
   // REQ-060 plugin host fan-out:加载项目 `.alpha/plugins/*.js`(信任门:未 consent 不加载可执行物)
   // 并与 ownHooks 合并 return —— 项目插件的 hook 经引擎照常派发,项目零 `.opencode`/零 config.plugin[]。
-  const trusted = readProjectExtensionsConsent(input.directory)
+  const trusted = projectScoped && readProjectExtensionsConsent(input.directory)
   const projectHooks = await loadProjectPlugins(input.directory, input, trusted, {
     existsSync,
     readdirSync,
