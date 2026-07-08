@@ -6,7 +6,6 @@
 import { createMemo, createSignal, For, Show, onCleanup } from "solid-js"
 import { Portal } from "solid-js/web"
 import { useLocation, useNavigate } from "@solidjs/router"
-import { useCommand } from "./providers"
 import { type AlphaProjectsApi } from "../sidebar/use-projects"
 import { sessionHref, projectLabel } from "../sidebar/route"
 import { AlphaComposer } from "./alpha-composer"
@@ -27,7 +26,6 @@ function greeting(): string {
 export function AlphaHome(props: { projects: AlphaProjectsApi }) {
   const loc = useLocation()
   const navigate = useNavigate()
-  const command = useCommand()
   const { store } = props.projects
   const configHealth = useConfigHealth()
 
@@ -131,7 +129,25 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
                         )}
                       </For>
                       <div class="a-pop-sep" />
-                      <button class="a-pop-item" onClick={() => (setWsOpen(false), command.trigger("project.open"))}>
+                      <button
+                        class="a-pop-item"
+                        onClick={() => {
+                          setWsOpen(false)
+                          // REQ-068:不再借上游 project.open —— 它只把目录加进上游 layout 的项目列表,
+                          // 而本工作区列表读引擎 project.list(两套不通),观感=选完没反应。改为 alpha
+                          // 自己选目录并**立即切换工作区**;项目在首条消息 startChat(directory) 时由
+                          // 引擎正式注册(chip 标签对未注册目录有 projectLabel 兜底)。取消 = 静默。
+                          void (async () => {
+                            try {
+                              const dir = await window.api.openDirectoryPicker({ title: "打开项目" })
+                              const picked = Array.isArray(dir) ? dir[0] : dir
+                              if (typeof picked === "string" && picked) setChosenWs(picked)
+                            } catch {
+                              pushToast({ kind: "error", title: "打开项目失败,请重试" })
+                            }
+                          })()
+                        }}
+                      >
                         <Plus /> 打开项目…
                       </button>
                     </div>

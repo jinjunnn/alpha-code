@@ -11,6 +11,7 @@ import {
   importExternalSkills,
   importGlobalClaudeMd,
   importProjectClaudeMd,
+  registerProjectSkillsPath,
   listAlphaInstructionFiles,
   readGlobalGateMarker,
   withExternalImportDecision,
@@ -156,5 +157,30 @@ describe("记账 — 项目 prefs 版本化 + 全局 marker 一次性", () => {
     expect(readGlobalGateMarker()?.decision).toBe("imported")
     fs.writeFileSync(path.join(tmp, ".alpha", "ecosystem-import.json"), "{corrupt")
     expect(readGlobalGateMarker()).toBeNull()
+  })
+})
+
+describe("registerProjectSkillsPath — 项目 skills 注册(2026-07-08 真机缺口回归锁)", () => {
+  test("项目导入 ≥1 技能 → 自动写项目 alpha.jsonc 的 skills.paths(引擎发现链)", () => {
+    const proj = path.join(tmp, "proj-reg")
+    mkSkill(proj, ".claude", "demo")
+    const r = importExternalSkills(detectExternal(proj, "project").skills, { scope: "project", projectDir: proj })
+    expect(r.importedSkills).toEqual(["demo"])
+    const cfg = JSON.parse(fs.readFileSync(path.join(proj, ".alpha", "alpha.jsonc"), "utf8"))
+    expect(cfg.skills.paths).toEqual(["./.alpha/skills"])
+  })
+  test("幂等 + 既有配置(含注释 JSONC)保留", () => {
+    const proj = path.join(tmp, "proj-reg2")
+    fs.mkdirSync(path.join(proj, ".alpha"), { recursive: true })
+    fs.writeFileSync(path.join(proj, ".alpha", "alpha.jsonc"), '{\n  // user comment\n  "mcp": { "x": { "type": "remote", "url": "https://e" } },\n  "skills": { "paths": ["./.alpha/skills"] }\n}\n')
+    registerProjectSkillsPath(proj) // 已含 → no-op(文件不被重写破坏注释)
+    expect(fs.readFileSync(path.join(proj, ".alpha", "alpha.jsonc"), "utf8")).toContain("user comment")
+    const proj3 = path.join(tmp, "proj-reg3")
+    fs.mkdirSync(path.join(proj3, ".alpha"), { recursive: true })
+    fs.writeFileSync(path.join(proj3, ".alpha", "alpha.jsonc"), '{ "mcp": { "x": { "type": "remote", "url": "https://e" } } }')
+    registerProjectSkillsPath(proj3)
+    const cfg3 = JSON.parse(fs.readFileSync(path.join(proj3, ".alpha", "alpha.jsonc"), "utf8"))
+    expect(cfg3.mcp.x.url).toBe("https://e") // 既有条目保留
+    expect(cfg3.skills.paths).toEqual(["./.alpha/skills"])
   })
 })
