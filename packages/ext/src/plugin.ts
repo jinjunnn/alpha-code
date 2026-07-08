@@ -8,6 +8,7 @@ import { isGlobalAlphaDir, mergeProjectConfig } from "./project-config"
 import { loadProjectPlugins, mergeHooks } from "./plugin-fanout"
 import { applyRegister, type RegisterType } from "./register"
 import { applyPromptTakeover } from "./alpha-prompts"
+import { injectFactorySkillPaths } from "./factory-paths"
 import { rebrandSystem } from "./prompt-rebrand"
 
 /**
@@ -68,6 +69,11 @@ export const AlphaExt: Plugin = async (input) => {
               console.log(`[@alpha-code/ext] project config merged from ${f}: ${added.join(", ")}`)
           }
         }
+        // REQ-065 修订:出厂技能路径内存注入(main 经 env 传入;alpha.jsonc 只放用户自己的东西,
+        // 磁盘零系统路径 —— 用户拍板 2026-07-08,对齐 Claude Code「内置能力不进用户配置」心智)。
+        const factoryAdded = injectFactorySkillPaths(cfg as Record<string, unknown>, process.env.ALPHA_FACTORY_SKILL_DIRS)
+        if (process.env.ALPHA_EXT_VERBOSE && factoryAdded.length)
+          console.log(`[@alpha-code/ext] factory skill paths injected in-memory: ${factoryAdded.length}`)
         // REQ-062 T3/T6:alpha 内容层 set-if-absent 接管(/init /review 模板 + general/explore prompt)。
         // 置于项目 merge 之后 → 项目/全局/治理任何层的同名配置都先落位、alpha 出厂让位(优先级:
         // 用户治理 > alpha 出厂 > 上游内置)。与 T1 转写同一逃生门 = 路线A 一键整体回退。

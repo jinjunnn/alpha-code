@@ -68,8 +68,9 @@ function readJsonc(file: string): Record<string, unknown> | undefined {
 }
 
 export type ReconcileOptions = {
-  /** REQ-065:出厂技能资源目录组(reconcileFactorySkills().paths)。传入即重写 skills.paths 的出厂
-   *  条目组(直指 app 资源,stale 出厂路径移除;[] = 出厂关闭只清不加);不传 = 不动该组(测试兼容)。 */
+  /** REQ-065(修订):出厂路径已改内存注入(env → ext config hook),不再写入 alpha.jsonc。
+   *  此参数现用于**剥离**历史版本写盘的出厂条目:传 [](reconcile 成功时的常态)= 只清不加;
+   *  不传 = 不动该组(factory reconcile 失败时的保守态/测试兼容)。 */
   factorySkillDirs?: string[]
 }
 
