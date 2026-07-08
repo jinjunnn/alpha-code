@@ -3,7 +3,7 @@ id: B9
 title: 更新链完整性:关 allowDowngrade + 完整性校验
 type: security
 priority: P1
-status: verified
+status: archived
 repo: A
 created: 2026-07-03
 sprint: 2026-07-03-s10-hardening

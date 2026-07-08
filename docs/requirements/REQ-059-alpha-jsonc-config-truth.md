@@ -3,7 +3,7 @@ id: REQ-059
 title: 全面退役 `.opencode`(全局层)—— 真源 `~/.alpha/alpha.jsonc` + provider 域接管 + 存量 `~/.opencode` 清理
 type: ux
 priority: P1
-status: ready
+status: archived
 repo: A
 created: 2026-07-07
 source: 用户四连拍板(2026-07-07):品牌收敛最小改动 → 接管 XDG/项目 config → 项目单目录 → 全局一并消灭 `.opencode`、不用 symlink

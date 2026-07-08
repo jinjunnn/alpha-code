@@ -1,6 +1,6 @@
 # 当前目标(GOALS)
 
-> 最后更新:2026-07-05(REQ-008 拍板收口 + S17 T6 retro 刷新「当前周期」+ 新增 G5 多 harness 能力线)
+> 最后更新:2026-07-08(新增 G6 去 opencode 化 · 提示词与系统原语主权线;上一版 2026-07-05:REQ-008 收口 + G5)
 > 回顾节奏:每次 `/app:retro` 时审视是否仍有效
 > 2026-06-18:产品转多用户/多租户,新增云平台目标线(G4),见下。
 
@@ -35,6 +35,14 @@ S12–S16(2026-07-04~05)完成**定制中心 v3 全量(M1–M4)+ 自动化 A1**�
 - **现状**:云侧已双 harness(alpha-platform `harness/{coding-claudecode,noncoding-openai}.ts`,gateway `/v1/messages` Anthropic-wire ingress 即为此建)。
 - **第一阶段 = 本地 harness-as-executor**([[REQ-035]],**parked 待用户启动**):opencode 仍是唯一交互会话引擎,Claude Code / Codex 经 tool/MCP 接缝作被委托执行器,零改上游;委托给 Claude Code 的任务在其体内原生享有其生态内容(与 ADR-023 转换器互补)。
 - **长期目标 = 会话级并轨(UI 直驱三引擎)**:用户已定此为演进方向;**启动硬前置** = `/app:challenge` + POSITIONING/GOALS 修订(定位级变更:「基于 opencode」→「多 harness 编排」)+ 承载方案 spike(翻译 sidecar 实现 opencode SDK 子集 vs 每 harness 独立 UI)+ 独立 ADR。**当前不排期、不计入 Top-3、不影响北极星语义**(北极星仍只衡量 opencode 上游升级隔离)。
+
+## 新增目标线:去 opencode 化 · 提示词与系统原语主权(G6,2026-07-08 用户拍板)
+**G6 — 用户可感知面全面「alpha 化」:opencode 只留 plugin/tool/hook 等引擎接缝,系统提示词与系统级 skill/command(及 agent 的内容层)由 alpha 承载**,分期推进(权威决策 = [[ADR-015]] 2026-07-08 修订 + [[ADR-024]]):
+- **第一期(路线A,REQ-062)— 品牌转写 + 轻量内容接管**:ext 插件 `experimental.chat.system.transform` 对 system 段运行时转写 opencode 自指(底座工程内容照旧白嫖,= ADR-007 brand-i18n 的提示词版);identity 删 "built on opencode";`/init` `/review` config 同名覆盖换 alpha 模板;customize-alpha skill 接替已禁的 customize-opencode;**general/explore 子 agent 同名 prompt 重写为 alpha 自写**(单一任务型 prompt,无逐模型负担,直接接管)。A 期收口 = 会话内全部 agent 的 LLM 可见文本零 opencode 痕迹。
+- **第一期并行(REQ-063,ADR-024)— 外部生态继承 default-deny**:`.claude`/`.agents` skills 与 CLAUDE.md 默认不继承(sidecar 注入上游 disable flags);打开项目检测到外来内容 → 信任门弹窗 → 同意 = 安装期转换导入 `.alpha`(非重开继承);全局存量一次性迁移门为发布闸。
+- **第二期(路线B,REQ-064,parked)— 受控替换底座 + 内置 agent 内容全面接管**:config `agent.build.prompt` / `agent.plan.prompt` 整体替换 provider 底座(alpha 自有系统提示词);compaction/title/summary 内部机件 prompt 按质量评估同名覆盖——至此**全部内置 agent 的内容层由 alpha 承载**(用户 2026-07-08 追加拍板);激活条件 = 路线A 稳定 + 自有 prompt 逐模型质量评估过关 + ADR-015 再修订(接管即放弃底座白嫖,等同 ADR-016/020 前端抉择)。
+- **诚实边界(机制事实,已源码钉死)**:内置 command 只能同名换芯、不能移除(schema 无 disable,菜单条目仍在);build/plan 是引擎默认主档、compaction/title/summary 是内部机件(治理 HARD_PROTECTED)——**「重写」一律 = 同名覆盖 prompt/模板内容(名字与引擎接线保留),不走「禁用 + 另建」**(plan 模式切换/task 委托/UI 默认档按名字焊死,禁用后果未验证且无收益);general/explore 子档机制上可禁,但同名重写同样优先;environment 块无 flag 可禁(本就无品牌,不构成障碍)。
+- **G6 成功条件**:真机会话内 agent 稳定自称 alpha-code、system 上下文无 opencode 自指(转写审计可证);新打开含 `.claude`/`.agents` 的项目零静默继承(consent 门实测);全程零改上游文件(北极星守卫不波动);逃生开关(`ALPHA_PROMPT_REBRAND_DISABLE` / `ALPHA_ECOSYSTEM_INHERIT`)各自独立可回退。
 
 ## 每个目标的成功条件(可验证)
 - G1 成功条件:`opencode` 运行时启动后,`alpha-code` 的自定义工具出现在 agent 可用工具列表并能成功 execute;`git diff opencode/packages` 为空。

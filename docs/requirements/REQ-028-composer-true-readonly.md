@@ -3,7 +3,7 @@ id: REQ-028
 title: composer 真只读档:引擎 plan agent 通道 + 切换 UX
 type: feature
 priority: P2
-status: shipped
+status: archived
 repo: A
 created: 2026-07-05
 sprint: —

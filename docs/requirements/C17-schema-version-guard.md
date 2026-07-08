@@ -3,7 +3,7 @@ id: C17
 title: schema 版本兼容守卫(旧 app × 新 DB 预检)
 type: debt
 priority: P2
-status: verified
+status: archived
 repo: A
 created: 2026-07-03
 sprint: 2026-07-05-s17-deep-decisions

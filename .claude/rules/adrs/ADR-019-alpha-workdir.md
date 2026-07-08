@@ -66,3 +66,9 @@ related: [ADR-002, ADR-005, ADR-006, ADR-014]
 3. **全局目录桥退役**(修订 2026-07-04 D1 与 REQ-052 两跳桥的 `.opencode` 半跳):skills/agents 等经通道注入;存量 `~/.opencode` reconcile 清理(alpha-owned 拆除;残余仅引擎 junk 白名单则整目录删;含用户内容留 + loud,§4 边界不变)。
 4. **接受的损失(用户指令覆盖)**:原生 opencode CLI 对 alpha 安装物可见性放弃(D1「装一次处处用」作废);⚠️ G2 hook 语义标注 "Notify",变异可见性逐路实测是 GO 前唯一闸门。
 5. 载体:REQ-059(全局,已修订)+ REQ-060(项目级,T0 后立);权威方案 = `docs/designs/2026-07-07-project-alpha-only-extensions.md` v3。
+
+## 修订(2026-07-08,REQ-065 —— `.alpha` 纯度反向收口:出厂/系统件退出 `.alpha`)
+用户点名:skill-creator/agent-creator 出厂链落 `~/.alpha/skills`(REQ-052 两跳桥的 `.alpha` 半跳遗留),系统级内容出现在用户目录、混淆「`.alpha` 是你的」口径。裁定:**非 bug,是失效不变量的遗留**——REQ-052「内容本体(含仅指 app 资产的链)一律先落 `.alpha` 中转」的目的是保 `.opencode` 内只指 `.alpha`;REQ-059 全面零 `.opencode` 后,该中转对出厂件的存在理由消失。就此修订:
+1. **纯度口径补全(双向)**:`.alpha`(全局与项目级)**只承载用户自有内容**——凡有用户动作(安装/创建/导入)且 receipts/记录可溯者;**出厂/系统件(零用户动作预置)不落 `.alpha`**,经 config 通道(`alpha.jsonc` skills.paths 等)直指 app 随包资源,reconcile 每启动重写以跟随版本/路径变化。alpha 注入的系统级 agent(alpha-automation 系)只存在于 config、本就不落盘,天然合规。
+2. **存量清理**:reconcile 拆除 `~/.alpha/skills` 下 `isAlphaFactoryLink` 判我方的出厂链(用户自装内容不碰,§4 边界不变)。
+3. REQ-052 不变量的其余精神(alpha 自有条目不散落上游命名空间)不变,其「先落 `.alpha` 中转」条款对**出厂件**就此退役。执行载体 [[REQ-065]]。

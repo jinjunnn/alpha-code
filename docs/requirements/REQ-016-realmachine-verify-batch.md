@@ -3,7 +3,7 @@ id: REQ-016
 title: 真机验证收尾批:登录门控/破坏性 4 项 + S12–S15 递延真机项(ADR-014 v3 / ADR-022 转 accepted 唯一门)
 type: spike
 priority: P1
-status: shipped
+status: archived
 repo: X
 created: 2026-07-03
 updated: 2026-07-05

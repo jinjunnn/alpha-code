@@ -3,7 +3,7 @@ id: B2
 title: refresh token 续期 + 401 拦截 + 失败降级
 type: feature
 priority: P1
-status: verified
+status: archived
 repo: A
 created: 2026-07-03
 sprint: —

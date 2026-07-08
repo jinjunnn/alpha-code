@@ -3,7 +3,7 @@ id: C8
 title: ADR-002 sidecar 语义修订:承认 main-IPC 为桌面等价物
 type: docs
 priority: P2
-status: verified
+status: archived
 repo: A
 created: 2026-07-03
 sprint: —

@@ -3,7 +3,7 @@ id: REQ-009
 title: alpha-ci 提速:guard partial clone + bun 依赖缓存
 type: debt
 priority: P2
-status: verified
+status: archived
 repo: A
 created: 2026-07-03
 sprint: —

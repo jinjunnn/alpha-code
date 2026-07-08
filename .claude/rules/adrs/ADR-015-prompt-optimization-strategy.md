@@ -41,4 +41,15 @@ related: [ADR-002, ADR-004, ADR-005, ADR-007, ADR-009, ADR-014]
 - ✅ Tier-1/Tier-3 已落地并 `tsgo` 通过;逃生开关 `ALPHA_IDENTITY_DISABLE` / `ALPHA_BEHAVIOR_DISABLE` 各自独立。
 - ⚠️ **Tier-3 是新增漂移面**:行为矛盾绕过 file-diff 守卫(对策:层保持小 + 合并验证清单 + sync tripwire)。
 - ⚠️ per-agent 调优需**逐个**随升级验证;identity 的能力探测依赖 env 时序(`OPENCODE_ENABLE_EXA` 默认 "1",keyless 仍报"可用"= 与运行时一致,可接受)。
-- 🔭 **待办**:① per-agent prompt 优化的具体清单(随 Tier-2 harness 清单一并排期);② 把合并验证接进 `sync-upstream.yml`(prompt/*.txt 变更 tripwire);③ Tier-3 首个实例上线后做一次桌面端实测(回答长度是否如期校准,见 [[visual-verify-required]] 纪律)。
+- 🔭 **待办**:① per-agent prompt 优化的具体清单(随 Tier-2 harness 清单一并排期);② 把合并验证接进 `sync-upstream.yml`(prompt/*.txt 变更 tripwire)——**已完成(REQ-012,2026-07-07 真实 sync 实跑)**;③ Tier-3 首个实例上线后做一次桌面端实测(回答长度是否如期校准,见 [[visual-verify-required]] 纪律)。
+
+## 修订(2026-07-08,GOALS G6「去 opencode 化」—— 路线A 品牌转写获批,路线B 受控替换列为演进)
+
+用户拍板:项目层级尽量去 opencode,系统提示词由 alpha 承载,先路线A 后评估路线B。源码核查(2026-07-08,证据 = 本日提示词面盘点):**8 个 provider 底座 .txt 首行全部自称 OpenCode**(`anthropic.txt:1` "You are OpenCode, the best coding agent on the planet.",anthropic/default 还带 opencode.ai 文档与 GitHub 仓库指引);instructions 是**纯叠加**语义(`config.ts:47` 并集;`request.ts:58-66` 底座在前同条 system message)→ identity 的 "call yourself alpha-code" 只能软压制,不保证赢;且 `alpha-identity.md` 自己写了 "built on opencode" 一句,是「自称 alpha-code (opencode)」的另一半根因。修订如下:
+
+1. **路线A(批准,[[REQ-062]])= 运行时品牌转写**:`@alpha-code/ext` 挂 `experimental.chat.system.transform`(`packages/plugin/src/index.ts:291-296`,`output.system: string[]` 可原地改写;`request.ts:69` 触发,**唯一能触及底座与 environment 的零-fork 接缝**),对 system 段做精选子串转写:OpenCode 自指 → alpha-code、剔除 opencode.ai / GitHub 指引行。定位 = [[ADR-007]] brand-i18n 的提示词版:**底座的工程内容(工具使用/风格/简洁性,~70% 体量,逐模型调优)照旧白嫖,只转写自指**。Tier 0 ②(不改上游 .txt 文件)**不变**——转写发生在请求时内存中,磁盘一字节不动,北极星无涉。
+   - **NON_GOALS#4 风险标注(强制)**:`experimental.*` hook;逃生开关 `ALPHA_PROMPT_REBRAND_DISABLE`;回退方案 = hook 签名漂移/失效时**最坏退化为品牌未转写**(外观级回退,不伤任何功能);本 ADR 既有合并验证清单 + sync tripwire(已接线)天然覆盖底座变更时的转写子串复核。
+   - **配套五件**(同属 REQ-062):`alpha-identity.md` 删 "built on opencode" 措辞;`/init` `/review` 经 config `command.init/review` 同名覆盖换 alpha 模板(上游 schema 无 disable 字段,换芯即接管——`initialize.txt` 含 3 处 OpenCode 自指);已禁的 customize-opencode 坑位补 **customize-alpha** skill(教 `.alpha/alpha.jsonc`/治理/定制中心约定,接管「定制引导」心智);**general/explore 子 agent 同名 prompt 重写为 alpha 自写**(用户 2026-07-08 追加拍板;`agent.ts:283` config 优先,同名接管保 task 委托接线;单一任务型 prompt 无逐模型负担,故进 A 期不等 B);`tool/lsp.txt:22` 一处经稳定 hook `tool.definition` 顺带转写(量级小,lsp 工具默认实验关闭,可后置)。
+2. **路线B(演进方向,[[REQ-064]] parked)= config `agent.<name>.prompt` 受控替换底座 + 内置 agent 内容全面接管**:`request.ts:60` 实证 agent.prompt 与底座是**二选一**——config 赋 `agent.build.prompt` / `agent.plan.prompt` 即整体替换,纯 config 接缝零改上游;compaction/title/summary 内部机件 prompt 同名覆盖按质量评估纳入(引擎与治理层均允许覆盖,HARD_PROTECTED 只拦 disable/hide)。至此全部内置 agent 内容层由 alpha 承载(用户 2026-07-08 拍板方向);**接管姿势一律同名覆盖、不走禁用+另建**(build/plan/内部三件的引擎接线按名字焊死)。启动硬前置 = 路线A 稳定运行 + alpha 自有 prompt 逐模型质量评估过关 + **本 ADR 再修订**(Tier 0 精神中的「不硬覆盖底座」在路线B 下正式退役——等同前端 ADR-016/020「接管即放弃白嫖」的抉择,接管后 prompt 质量维护面归 alpha)。
+3. **不变项**:Tier 0 ①(不移植 FABLE-5)、③(identity 不塞行为覆盖)不变;Tier 1/2/3 分层不变——路线A 归类为 Tier-3 的**机制升级**(instructions 叠加 → transform 转写),Tier-3「小、克制」的精神对转写子串清单同样适用(精确子串 + 漏改 warn,ADR-007 同款纪律)。
+4. **关联**:外部生态继承 default-deny + consent 导入门同日拍板,独立成 [[ADR-024]](REQ-063)。

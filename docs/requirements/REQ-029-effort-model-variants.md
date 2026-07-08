@@ -3,7 +3,7 @@ id: REQ-029
 title: composer effort 接入 model variants:逐模型参数档 + B 侧透传核实 + chip 驱动
 type: feature
 priority: P2
-status: shipped
+status: archived
 repo: X
 created: 2026-07-05
 sprint: —
