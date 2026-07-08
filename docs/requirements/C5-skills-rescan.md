@@ -3,7 +3,7 @@ id: C5
 title: skills 每 Instance 重复扫描(上游,缓解决策)
 type: perf
 priority: P2
-status: registered
+status: parked
 repo: A
 created: 2026-07-03
 sprint: —

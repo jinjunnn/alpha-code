@@ -3,7 +3,7 @@ id: C15
 title: 运行时 SSE/DOM 浪费收窄(firehose 过滤 + observer 收窄 + idle 去抖)
 type: perf
 priority: P2
-status: ready
+status: parked
 repo: A
 created: 2026-07-03
 sprint: —

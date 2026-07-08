@@ -3,7 +3,7 @@ id: REQ-007
 title: ADR-015 待办收尾:per-agent prompt 优化清单 + Tier-3 桌面实测
 type: docs
 priority: P3
-status: registered
+status: dup
 repo: A
 created: 2026-07-03
 sprint: —

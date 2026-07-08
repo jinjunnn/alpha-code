@@ -3,7 +3,7 @@ id: D9
 title: 分支命名 DB 累积清理(dev 机器关切)
 type: debt
 priority: P3
-status: registered
+status: rejected
 repo: A
 created: 2026-07-03
 sprint: —

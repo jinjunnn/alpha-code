@@ -3,7 +3,7 @@ id: B8
 title: 扩展物运行时生命周期:版本/健康/更新三要素
 type: feature
 priority: P1
-status: registered
+status: dup
 repo: A
 created: 2026-07-03
 sprint: —

@@ -3,7 +3,7 @@ id: D8
 title: DB WAL 周期 TRUNCATE(上游,处置决策)
 type: debt
 priority: P3
-status: registered
+status: rejected
 repo: A
 created: 2026-07-03
 sprint: —

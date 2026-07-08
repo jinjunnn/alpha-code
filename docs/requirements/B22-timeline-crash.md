@@ -3,7 +3,7 @@ id: B22
 title: message-timeline.tsx:481 会话时间线崩溃(先复验再修)
 type: bug
 priority: P1
-status: ready
+status: parked
 repo: A
 created: 2026-07-03
 sprint: —

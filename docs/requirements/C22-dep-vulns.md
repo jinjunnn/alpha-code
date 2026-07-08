@@ -3,7 +3,7 @@ id: C22
 title: 依赖漏洞治理(bun audit 158:2 critical / 45 high)
 type: debt
 priority: P2
-status: registered
+status: parked
 repo: A
 created: 2026-07-03
 sprint: —

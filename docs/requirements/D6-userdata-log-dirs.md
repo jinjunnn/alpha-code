@@ -3,7 +3,7 @@ id: D6
 title: userData 每启动新建 log 目录(增生观察)
 type: debt
 priority: P3
-status: registered
+status: rejected
 repo: A
 created: 2026-07-03
 sprint: —

@@ -3,7 +3,7 @@ id: B13
 title: DB 跨进程并发(SQLITE_BUSY → orDie)处置决策
 type: debt
 priority: P1
-status: registered
+status: rejected
 repo: A
 created: 2026-07-03
 sprint: —
