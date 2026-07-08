@@ -3,7 +3,7 @@ id: REQ-066
 title: 斜杠菜单卫生:治理禁用项不显示 + 命令来源标注(内置/技能/项目/MCP/导入)
 type: ux
 priority: P1
-status: ready
+status: shipped
 repo: A
 created: 2026-07-08
 ---
