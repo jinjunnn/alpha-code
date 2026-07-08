@@ -3,7 +3,7 @@ id: REQ-062
 title: 去 opencode 化·路线A:系统提示词品牌转写(transform hook)+ identity 措辞 + /init /review 同名覆盖 + customize-alpha 接替 + general/explore 子 agent 同名重写
 type: feature
 priority: P1
-status: shipped
+status: archived
 repo: A
 created: 2026-07-08
 ---

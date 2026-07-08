@@ -48,4 +48,8 @@
 - REQ-062 → PR #152(转写 13 子串 + init/general/explore 内容接管 + customize-alpha;**ext 测试进两道门 = drift 锁机械化**;T5 lsp 后置;review 刻意不覆盖已档案注记)
 - REQ-063 → PR #153(default-deny + 项目/全局导入门 + integrate-project;**发布闸 = T4 迁移门已实现,真机批必须含 ~/.claude/skills 非空首启用例**)
 
-**真机批残单(shipped → verified 的门)**:REQ-062 验收①②③④⑤⑧(双模型自称 / system 审计 / 开关回退 / init 实跑 / task 委托)· REQ-063 验收①②③④⑤⑧(陌生项目 consent 前后 / 全局迁移门 graphify 存量 / 逃生开关 / 项目隔离)· REQ-066 ⑤截图 · REQ-065 ②③存量拆链+app 更新 · REQ-061 真机走查。
+**真机批(2026-07-08 当日执行,证据 [audits/2026-07-08-g6-realmachine-batch](../../audits/2026-07-08-g6-realmachine-batch/verify.md))**:
+- **REQ-062/065/066 → verified → archived(用户拍板)**:双模型自称 alpha-code 零 opencode / 存量出厂链拆除 + `.alpha` 全树可溯 / 菜单过滤 + 来源徽标 + 免重启;残项(REQ-062 ②③④⑧、REQ-066 ②)随下批;
+- **REQ-067(场中新增,用户拍板)→ verified → archived**:出厂路径与出厂禁**双双零明文**(PR #155/#156)——`alpha.jsonc` 只剩用户内容,出厂件全部内存注入;
+- **REQ-063 保持 shipped**:deny 生效(graphify 不可见)+ 全局迁移门弹出记账已验;**卡点 = 项目门弹窗与导入转换需人工点击**(原生弹窗自动化点不了);
+- **REQ-061 保持 shipped**:自动化未构造出原复现场景(点「添加供应商」未进 step1),归下批人工走查。
