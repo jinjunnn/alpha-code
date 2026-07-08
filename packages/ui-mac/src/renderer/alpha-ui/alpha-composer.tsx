@@ -19,6 +19,7 @@ import { COMPOSER_PLACEHOLDER } from "../../shared/composer-copy"
 import { pathHitsPopover } from "./popover-hit"
 import { pushToast } from "./Toast"
 import type { AlphaProjectsApi } from "../sidebar/use-projects"
+import type { AuthState } from "../../preload/types"
 import {
   applyDefaultComposerModel,
   buildPromptRequest,
@@ -26,16 +27,20 @@ import {
   composerAgents,
   composerEffortSel,
   composerModel,
+  composerModelSuspended,
   composerPerm,
   filterAgents,
+  restoreSuspendedModel,
   routeSlash,
   setComposerAgent,
   setComposerAgents,
   setComposerEffort,
   setComposerModel,
   setComposerPerm,
+  suspendComposerModel,
   type PermMode,
 } from "./composer-state"
+import { checkPersistedModel, preflightBlockReason, resolveDefaultModel, type EngineModelRef } from "./model-default-core"
 import { ModelPickPop } from "./alpha-composer-model"
 import "./alpha-composer.css"
 
@@ -463,51 +468,110 @@ export function AlphaComposer(props: AlphaComposerProps) {
   onMount(startPolling)
   onCleanup(() => statusTimer && clearInterval(statusTimer))
 
-  /* 默认模型:登录 + 代理已注册时自动选 catalog 默认档(claude-sonnet-4.6),effort 点开即
-     高/中/高档位 —— 消灭「选择模型」占位死状态(用户报障 2026-07-07)。显式选择才落盘;
-     未登录/代理未活时保持占位(picker 内有登录/配 KEY 引导),不选锁定模型装可用(C28)。 */
-  onMount(() => {
-    if (composerModel()) return
-    let disposed = false
-    onCleanup(() => (disposed = true))
-    void (async () => {
-      try {
-        const [cat, auth] = await Promise.all([
-          window.api.models.catalog(),
-          window.api.auth.getState().catch(() => null),
-        ])
-        if (!cat || auth?.status !== "logged-in") return
-        // 冷启动引擎/sdk 未就绪是常态:有界重试(≤20s),别一枪打空(否则默认永远不生效)。
-        for (let i = 0; i < 20 && !disposed && !composerModel(); i++) {
-          const c = props.projects.sdk()
-          if (c) {
-            const { data } = await c.config.providers({} as any).catch(() => ({ data: undefined }) as const)
-            const provs = Array.isArray((data as any)?.providers) ? (data as any).providers : Array.isArray(data) ? (data as any) : []
-            if (provs.length) {
-              const proxyLive = provs.some((p: any) => (p?.id ?? p?.providerID) === cat.platformProvider.id)
-              if (!proxyLive || composerModel()) return
-              const hasTiers = (m: (typeof cat.platformModels)[number]) => !!m.variants && Object.keys(m.variants).length > 0
-              // 偏好显式钉死:生效 catalog 的模型顺序随网关 live 清单漂移,不能拿"第一个"当默认。
-              const pick =
-                cat.platformModels.find((m) => m.id === (cat.defaultModel ?? "claude-sonnet-4.6") && hasTiers(m)) ??
-                cat.platformModels.find((m) => m.tier !== "flag" && hasTiers(m)) ?? // 兜底:非旗舰带档位,绝不默认到 ×8
-                cat.platformModels.find(hasTiers)
-              if (pick)
-                applyDefaultComposerModel({
-                  providerID: cat.platformProvider.id,
-                  modelID: pick.id,
-                  name: pick.name,
-                  variants: pick.variants ? Object.keys(pick.variants) : [],
-                })
-              return
+  /* ── 默认模型解析链(REQ-069;纯核 = model-default-core.ts,REQ-056「登录+代理活自动默认」
+     收编为第②级,语义原样保留)──
+       ① 持久化上次选择:可用性校验;不可用 → 挂起(不删 localStorage,登录回来自动还原,
+          picker 如实展示原因)—— 堵住「登出后残留代理模型 → 发消息撞网关拒绝」(用户报障 2026-07-08);
+       ② 登录 + 账户可用(会员/有余额)+ 代理已注册 → catalog 默认档(非持久);
+       ③ 已配 KEY 的 BYOK provider → 其引擎注册的第一个模型(非持久);
+       ④ 全无 → 保持占位:picker 内登录/配 KEY 双出口,发送前 preflight 拦截。
+     显式选择才落盘;自动默认一律非持久(C28:不选锁定模型装可用)。 */
+  const [lastAuth, setLastAuth] = createSignal<AuthState | null>(null)
+  const [authKnown, setAuthKnown] = createSignal(false)
+  const [platformId, setPlatformId] = createSignal<string | null>(null)
+  const [hasConfiguredByok, setHasConfiguredByok] = createSignal(false)
+  let chainSeq = 0
+  let chainDisposed = false
+
+  // summary 拿不到/网络错 → 疑罪从无(维持 REQ-056 行为,网关是最终裁决);明确空账户才 false。
+  const summaryUsable = (r: unknown): boolean => {
+    if (!r || typeof r !== "object" || "error" in (r as Record<string, unknown>)) return true
+    const s = r as { plan?: { status?: string }; balanceFen?: number }
+    return s.plan?.status === "active" || (s.balanceFen ?? 0) > 0
+  }
+
+  const runModelChain = async () => {
+    const seq = ++chainSeq
+    try {
+      const [cat, auth, summary, keys] = await Promise.all([
+        window.api.models.catalog().catch(() => null),
+        window.api.auth.getState().catch(() => null),
+        window.api.account.summary().catch(() => null),
+        window.api.providers.keyStatus().catch(() => ({}) as Record<string, { configured?: boolean }>),
+      ])
+      if (chainDisposed || seq !== chainSeq) return
+      setLastAuth(auth)
+      setAuthKnown(true)
+      const pid = cat?.platformProvider.id ?? null
+      setPlatformId(pid)
+      const configured = Object.entries(keys ?? {})
+        .filter(([, v]) => (v as { configured?: boolean } | undefined)?.configured)
+        .map(([k]) => k)
+      setHasConfiguredByok(configured.some((id) => id !== pid))
+      const loggedIn = auth?.status === "logged-in"
+      const baseCtx = {
+        loggedIn,
+        accountUsable: loggedIn && summaryUsable(summary),
+        platformProviderId: pid,
+        configuredProviders: configured,
+        catalog: cat ? { defaultModel: cat.defaultModel, platformModels: cat.platformModels } : null,
+      }
+
+      // ① 代理模型的可用性只依赖 auth 侧事实,即刻可判(BYOK 的 provider-gone 需引擎表,在下方循环里判)
+      const current = composerModel()
+      if (current && pid && current.providerID === pid) {
+        const verdict = checkPersistedModel(current, { ...baseCtx, engineModels: [] })
+        if (verdict.ok) return
+        suspendComposerModel(verdict.reason) // 挂起后继续走②③给出替代默认
+      } else if (!current && loggedIn && composerModelSuspended()?.reason === "needs-login") {
+        if (restoreSuspendedModel()) return // 登录回来:还原挂起的上次选择(entitlement 型不自动还原)
+      }
+
+      // ②③ 需要引擎模型表:冷启动引擎/sdk 未就绪是常态,有界重试(≤20s),别一枪打空。
+      for (let i = 0; i < 20 && !chainDisposed && seq === chainSeq; i++) {
+        const c = props.projects.sdk()
+        if (c) {
+          const { data } = await c.config.providers({} as any).catch(() => ({ data: undefined }) as const)
+          const provs = Array.isArray((data as any)?.providers) ? (data as any).providers : Array.isArray(data) ? (data as any) : []
+          const engineModels: EngineModelRef[] = []
+          for (const p of provs) {
+            const ppid = p?.id ?? p?.providerID
+            const models = p?.models && typeof p.models === "object" ? Object.keys(p.models) : []
+            for (const mid of models) engineModels.push({ providerID: ppid, modelID: mid })
+          }
+          const cur = composerModel()
+          if (cur) {
+            // ① 的 BYOK 半边:引擎表非空才可判 provider-gone(空表 = 未就绪,不误杀)
+            if (engineModels.length) {
+              const v = checkPersistedModel(cur, { ...baseCtx, engineModels })
+              if (v.ok) return
+              suspendComposerModel(v.reason)
+            } else {
+              return // 有选择且引擎未就绪:等引擎自己收敛,不抢跑
             }
           }
-          await new Promise((r) => setTimeout(r, 1000))
+          const r = resolveDefaultModel({ ...baseCtx, engineModels })
+          if (r.kind === "model") {
+            applyDefaultComposerModel(r.model)
+            return
+          }
+          if (r.kind === "none") return // ④ 空态:占位 + picker 引导 + preflight 兜底
         }
-      } catch {
-        /* 默认失败不打扰:保持占位,手选路径完好 */
+        await new Promise((res) => setTimeout(res, 1000))
       }
-    })()
+    } catch {
+      /* 默认失败不打扰:保持占位,手选路径完好 */
+    }
+  }
+
+  onMount(() => {
+    void runModelChain()
+    // 登录态变化即重跑链:登出 → 挂起代理选择;登录 → 还原/自动默认(REQ-069)
+    const unsub = window.api.auth.subscribe(() => void runModelChain())
+    onCleanup(() => {
+      chainDisposed = true
+      unsub?.()
+    })
   })
 
   const abort = async () => {
@@ -527,6 +591,23 @@ export function AlphaComposer(props: AlphaComposerProps) {
     if (!dir) {
       props.onNeedWorkspace?.()
       return
+    }
+    // REQ-069 preflight:未登录 + 代理模型(或全无可用)→ 行内引导替代网关拒绝原文。
+    // 网关校验保留为兜底防线;authKnown 未就绪(极早期竞态)不拦,维持旧行为。
+    if (authKnown()) {
+      const block = preflightBlockReason(composerModel(), {
+        loggedIn: lastAuth()?.status === "logged-in",
+        platformProviderId: platformId(),
+        hasConfiguredByok: hasConfiguredByok(),
+      })
+      if (block) {
+        pushToast(
+          block === "platform-needs-login"
+            ? { kind: "info", title: "该模型需登录后使用", detail: "登录后零配置直用;或点右下角模型选择器,换用自己 API KEY 的模型。" }
+            : { kind: "info", title: "还没有可用的模型", detail: "登录即可零配置使用;或在模型选择器里添加自己的 API KEY。" },
+        )
+        return
+      }
     }
     const body = text().trim()
     const req = buildPromptRequest({

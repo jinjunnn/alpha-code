@@ -21,10 +21,17 @@ describe("ALPHA_ENDPOINTS", () => {
     expect(() => new URL(url)).not.toThrow()
   })
 
-  test("platform gateway is NOT the old api.tidelabs.click host (which 404'd every /v1 route)", () => {
-    expect(ALPHA_ENDPOINTS.platform).not.toContain("tidelabs")
-    // it's the raw Worker that actually routes /v1
-    expect(ALPHA_ENDPOINTS.platform).toContain("workers.dev")
+  test("platform/cloud are the REQ-070 custom domains — never the known-bad api.tidelabs.click, no workers.dev regression", () => {
+    // History: api.tidelabs.click 404'd every /v1 route (pre-custom-domain wrong host) → the lock was
+    // "no tidelabs, workers.dev only". Since B PR #20 the gateway/cloud DO have custom domains
+    // (alpha-gateway/alpha-cloud.tidelabs.click, live-probed /health+/v1/models 200 on 2026-07-08) and
+    // workers.dev is the DEPRECATED host (mainland DNS poisoning) kept online only for old clients.
+    expect(ALPHA_ENDPOINTS.platform).toBe("https://alpha-gateway.tidelabs.click")
+    expect(ALPHA_ENDPOINTS.cloud).toBe("https://alpha-cloud.tidelabs.click")
+    for (const url of [ALPHA_ENDPOINTS.platform, ALPHA_ENDPOINTS.cloud]) {
+      expect(url).not.toContain("api.tidelabs.click") // the known-bad host must never come back
+      expect(url).not.toContain("workers.dev") // and neither should the deprecated default
+    }
   })
 })
 

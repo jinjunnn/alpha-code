@@ -10,11 +10,15 @@ import type { AccountSummary, AuthState } from "../../preload/types"
 import type { EffectiveCatalog, ProviderKeyStatus, Tier } from "../../shared/alpha-model-types"
 import { ALPHA_PATHS } from "../../shared/alpha-config"
 import { useAlphaEndpoints } from "../use-alpha-endpoints"
-import { setComposerModel, type ComposerModel } from "./composer-state"
+import { composerModelSuspended, setComposerModel, type ComposerModel, type SuspendReason } from "./composer-state"
 import type { AlphaProjectsApi } from "../sidebar/use-projects"
 import { AddProvider } from "./model-picker-add"
 
 const fmtYuan = (fen: number) => `¥${(fen / 100).toFixed(2)}`
+
+/** REQ-069:挂起原因 → 用户语言(说人话,不出现「预授权/provider」字眼)。 */
+const suspendText = (r: SuspendReason) =>
+  r === "needs-login" ? "需登录后使用,已暂停" : r === "needs-credit" ? "需会员或钱包余额,已暂停" : "对应节点已被移除,已暂停"
 
 type Row = {
   model: ComposerModel
@@ -203,24 +207,48 @@ export function ModelPickPop(props: { sdk: AlphaProjectsApi["sdk"]; onPicked: ()
           <span class="bt">登录解锁代理节点</span>
         </div>
       </Show>
+      {/* REQ-069:上次使用的模型被挂起(登出残留/余额不足/节点移除)→ 如实说明,不静默换不静默删。 */}
+      <Show when={composerModelSuspended()}>
+        <div class="a-pop-note">
+          上次使用的「{composerModelSuspended()!.model.name}」{suspendText(composerModelSuspended()!.reason)};恢复后自动还原,也可直接改选其他模型。
+        </div>
+      </Show>
       <div class="a-mpp-scroll">
-        <Show when={proxyRows().length}>
-          <div class="a-pop-label">代理节点 · 经 ALPHA 代理</div>
-          <For each={proxyRows()}>
-            {(r) => (
-              <button class="a-pop-item a-mpp-row" classList={{ locked: !!r.locked }} onClick={() => pick(r)}>
-                <span class="a-pico" style={{ background: r.pico.color }}>{r.pico.letter}</span>
+        {/* REQ-069:未登录不逐条外显海外 model id(用户拍板 2026-07-08)—— 平台区收敛为登录引导卡
+            (品牌可提、id 不列);登录后恢复全量清单(锁定语义不变)。 */}
+        <Show
+          when={state() !== "out"}
+          fallback={
+            <>
+              <div class="a-pop-label">代理节点 · 经 ALPHA 代理</div>
+              <button class="a-pop-item a-mpp-row" onClick={() => void window.api.auth.start()}>
+                <span class="a-pico" style={{ background: "var(--a-accent)" }}>α</span>
                 <span class="a-mpp-name">
-                  {r.model.name}
-                  <small>{r.sub}</small>
+                  登录后可用 GPT / Claude 等海外模型
+                  <small>零配置 · 登录即用,按量或会员计费</small>
                 </span>
-                <Show when={r.reasoning}>
-                  <span class="a-mpp-dot" />
-                </Show>
-                <span class="a-pop-desc">{tierLabel(r.tier)}{r.mult ? ` ${r.mult}` : ""}</span>
               </button>
-            )}
-          </For>
+            </>
+          }
+        >
+          <Show when={proxyRows().length}>
+            <div class="a-pop-label">代理节点 · 经 ALPHA 代理</div>
+            <For each={proxyRows()}>
+              {(r) => (
+                <button class="a-pop-item a-mpp-row" classList={{ locked: !!r.locked }} onClick={() => pick(r)}>
+                  <span class="a-pico" style={{ background: r.pico.color }}>{r.pico.letter}</span>
+                  <span class="a-mpp-name">
+                    {r.model.name}
+                    <small>{r.sub}</small>
+                  </span>
+                  <Show when={r.reasoning}>
+                    <span class="a-mpp-dot" />
+                  </Show>
+                  <span class="a-pop-desc">{tierLabel(r.tier)}{r.mult ? ` ${r.mult}` : ""}</span>
+                </button>
+              )}
+            </For>
+          </Show>
         </Show>
         <Show when={otherRows().length || needKeyRows().length}>
           <div class="a-pop-label">直连 · 自带 KEY</div>

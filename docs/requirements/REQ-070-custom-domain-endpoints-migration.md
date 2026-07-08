@@ -1,7 +1,20 @@
-# REQ-067 — endpoints/baseURL 迁移到 custom domain(workers.dev → tidelabs.click)
+---
+id: REQ-070
+title: endpoints/baseURL 迁移到 custom domain(workers.dev → tidelabs.click)
+type: feature
+priority: P1
+repo: X
+created: 2026-07-08
+sprint: S32(2026-07-08)
+status: shipped
+source: alpha-platform 2026-07-08 审计 #3
+---
+
+# REQ-070 — endpoints/baseURL 迁移到 custom domain(workers.dev → tidelabs.click)
 
 > 来源:alpha-platform 2026-07-08 审计 #3(B 侧 PR #20 已合并、双域已 live)。
 > 交付形式:跨仓需求文档(不走 GH issue,用户约定)。
+> **改号说明(2026-07-08)**:本档原自编 REQ-067,与 BACKLOG 既有 REQ-067(出厂治理内置化,已 archived)撞号;按 ADR-018「ID 永不复用」改号 REQ-070。
 
 ## 背景(B 侧已就绪,双域并行)
 
