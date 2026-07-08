@@ -3,7 +3,7 @@ id: REQ-062
 title: 去 opencode 化·路线A:系统提示词品牌转写(transform hook)+ identity 措辞 + /init /review 同名覆盖 + customize-alpha 接替 + general/explore 子 agent 同名重写
 type: feature
 priority: P1
-status: ready
+status: shipped
 repo: A
 created: 2026-07-08
 ---
@@ -43,6 +43,15 @@ created: 2026-07-08
 6. 上游 sync 触碰 `prompt/*.txt` 时,转写子串清单复核进 ADR-015 合并验证(tripwire 已接线,REQ-012 verified);北极星守卫零波动(全程零改上游文件);
 7. 单测:转写纯函数——子串清单 × 8 底座真实样本 + 反例集(真实事物名不转);
 8. **T6 验收**:general 经 task 工具真实委托一次 → 走 alpha 自写 prompt(dev 抓 system 证)且委托结果正常回流;explore 恢复启用时同验;agent 列表/选择器无接线回退(名字不变)。
+
+## 实现注记(2026-07-08,PR 实现随记)
+
+- **T1 通道事实**:transform 到手的 system 是「底座 + environment + 用户 instructions + skills」join 后的**单串**(request.ts:58-66)→ 全局词替换会篡改用户文本,故严格精选子串对(13 条,`packages/ext/src/prompt-rebrand.ts`),含 copilot-gpt-5.txt(盘点补遗,原档只数了 8 底座);残留审计 warn 去重每进程一次。
+- **drift 锁机械化**:`prompt-rebrand.test.ts` 逐条断言 from 子串仍在上游 .txt;ext 测试随本 PR 进 alpha-check + alpha-ci 两道门 —— 上游 sync 改写底座即红,ADR-015 合并验证不再靠人肉。
+- **T3 review 刻意不覆盖**:上游 review.txt 逐字节零品牌痕迹(grep 实证)→ 换芯零收益且丢上游语义演进;init 正常接管。验收④的 review 半边自然成立。
+- **T3/T6 落点**:ext 插件 config hook 尾部 set-if-absent(引擎装配完才通知 → 用户治理/项目/全局任何层同名配置天然优先),非 OPENCODE_CONFIG_CONTENT(该通道最后 merge、会压过治理)。
+- **T5(lsp.txt)后置**:lsp 工具默认实验关闭、量级最小,归下一顺带批(档案原文即允许)。
+- **逃生门**:`ALPHA_PROMPT_REBRAND_DISABLE=1` 统一关 T1+T3+T6(路线A 一键回退);已入 sidecar env 白名单。
 
 ## 非目标
 

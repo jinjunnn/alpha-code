@@ -99,6 +99,11 @@ jobs:
           restore-keys: bun-${{ runner.os }}-
       - run: bun install
       # REQ-027: same flag-order constraint as the typecheck job.
+      # REQ-062: ext tests carry the prompt-rebrand drift lock (curated substrings asserted against
+      # the upstream base prompts — a sync that rewrites them turns this red, per ADR-015 合并验证).
+      - name: bun test (ext)
+        working-directory: packages/ext
+        run: bun test
       - name: bun test (ui-mac)
         run: bun run --cwd packages/ui-mac test
 
