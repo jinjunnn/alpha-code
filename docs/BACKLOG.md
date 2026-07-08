@@ -93,7 +93,9 @@
 | E11 | 定制中心目录筛选 UI(category/license) | ux | A | dup | **→ 并入 REQ-019**(hub 左栏 IA + 筛选,T7);catalog schema 已带元数据 |
 | E10 | catalog 远程增量同步(alpha-web 端点) | feature | X | dup | **→ 并入 REQ-032**(2026-07-05:升级为全流程需求——C 端点+验签+资产通道+回退链) |
 
-> 别名/归并:G1 → B6;E12 → B3;E14 → D5(剩实测);E1/E1b/E3/E4 已发(见 E 册);C10 → dup(A6);D7/E7/E13 → Parked;D11 → Done(⊂C1)。
+| E7 | websearch 收编为自有云 MCP(cloud.websearch):平台代付登录态云搜索优先,keyless 引擎 websearch 保留兜底 | feature | X | registered | **激活(2026-07-08,用户委托拍板;原激活条件「云线落地」已满足——B3/REQ-020 verified)**。语义拍板:①**可用性门槛 = 登录代付模式**(复用 cloud MCP facade 既有注入条件,登出/BYOK 自动消失;配额/余额 B 网关计量,余额尽 → 4xx);②**使用策略 = 登录态云优先、keyless 兜底**(keyless 限流是常态降质非偶发错;云搜索单次成本 ≪ 模型 token;优先级经 identity 能力行引导,ADR-015 Tier-1,实现时可零成本翻转);③登出/BYOK 维持现状(keyless / alpha.env 自带 Exa key);④「出错机械回退」不承诺——引擎无工具级 failover 接缝,回退 = 模型中介(云 4xx → 改用 websearch);⑤不整体 `ALPHA_WEBSEARCH_DISABLE`(ADR-009 撞车预案改双工具并存,实现时修订 ADR-009);B 侧配套 = facade 增 websearch 工具 + 计量(alpha-platform 登记 PA 条目) |
+
+> 别名/归并:G1 → B6;E12 → B3;E14 → D5(剩实测);E1/E1b/E3/E4 已发(见 E 册);C10 → dup(A6);D7/E13 → Parked(rejected);E7 → 2026-07-08 激活回本表;D11 → Done(⊂C1)。
 
 ## Parked(搁置,含激活条件)
 
@@ -102,7 +104,6 @@
 | ~~B16~~ | ~~云派发 PIPL 同意/告知门~~ | **已重启并 shipped(2026-07-06,S25,用户 GO)** → 见 Active-P1 与 [[B16]] | — |
 | C19 | Sentry opt-out + 告知 | R6:dormant(`VITE_SENTRY_DSN` 全仓无赋值,从不 init) | 发布流水线注入 DSN 时 |
 | ~~D7~~ | ~~safeStorage 明文兜底告警~~ | **rejected(2026-07-08,过期盘点:原搁置理由「macOS-only 下死分支」+ 激活条件「跨平台时」与 NON_GOALS#6 恒矛盾)** | 重开 = NON_GOALS#6 撤回(做跨平台) |
-| E7 | websearch 收编为自有 MCP | 与云端 websearch 撞车 | B3/E12 云线落地后 |
 | E13 | 团队协作多端 workspace 同步 | **rejected(2026-07-05,REQ-008 D1:不做共享 workspace/会话)** | 重开 = 真实付费团队需求 + 上游多用户原语 |
 | REQ-034 | 外部生态导入转换器:Claude Code plugin 大礼包→套件扇出 + Codex 可共享物导入(安装期转换,[[ADR-023]]) | 用户 2026-07-05:立项但暂不开发,想清楚再启动 | 用户拍板启动(按 ADR-023 执行);详见 [requirements/REQ-034](requirements/REQ-034-ecosystem-import-converter.md) |
 | REQ-035 | 本地 harness-as-executor(claude/codex 委托执行,tool/MCP 接缝);长期演进=会话级并轨(GOALS G5) | 用户 2026-07-05:立项但暂不开发,想清楚再启动 | 第一阶段=用户拍板启动;并轨阶段另有硬前置(challenge+POSITIONING 修订+承载 spike+独立 ADR,见档) |
