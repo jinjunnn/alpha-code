@@ -93,7 +93,7 @@
 | E11 | 定制中心目录筛选 UI(category/license) | ux | A | dup | **→ 并入 REQ-019**(hub 左栏 IA + 筛选,T7);catalog schema 已带元数据 |
 | E10 | catalog 远程增量同步(alpha-web 端点) | feature | X | dup | **→ 并入 REQ-032**(2026-07-05:升级为全流程需求——C 端点+验签+资产通道+回退链) |
 
-| E7 | websearch 收编为自有云 MCP(cloud.websearch):平台代付登录态云搜索优先,keyless 引擎 websearch 保留兜底 | feature | X | registered | **激活(2026-07-08,用户委托拍板;原激活条件「云线落地」已满足——B3/REQ-020 verified)**。语义拍板:①**可用性门槛 = 登录代付模式**(复用 cloud MCP facade 既有注入条件,登出/BYOK 自动消失;配额/余额 B 网关计量,余额尽 → 4xx);②**使用策略 = 登录态云优先、keyless 兜底**(keyless 限流是常态降质非偶发错;云搜索单次成本 ≪ 模型 token;优先级经 identity 能力行引导,ADR-015 Tier-1,实现时可零成本翻转);③登出/BYOK 维持现状(keyless / alpha.env 自带 Exa key);④「出错机械回退」不承诺——引擎无工具级 failover 接缝,回退 = 模型中介(云 4xx → 改用 websearch);⑤不整体 `ALPHA_WEBSEARCH_DISABLE`(ADR-009 撞车预案改双工具并存,实现时修订 ADR-009);B 侧配套 = facade 增 websearch 工具 + 计量(alpha-platform 登记 PA 条目) |
+| E7 | websearch 收编为自有云 MCP(cloud.websearch):平台代付登录态云搜索优先,keyless 引擎 websearch 保留兜底 | feature | X | registered | **激活(2026-07-08;语义①—⑤经用户明确确认「登录态云优先、keyless 兜底,同意」;原激活条件「云线落地」已满足——B3/REQ-020 verified)**。语义拍板:①**可用性门槛 = 登录代付模式**(复用 cloud MCP facade 既有注入条件,登出/BYOK 自动消失;配额/余额 B 网关计量,余额尽 → 4xx);②**使用策略 = 登录态云优先、keyless 兜底**(keyless 限流是常态降质非偶发错;云搜索单次成本 ≪ 模型 token;优先级经 identity 能力行引导,ADR-015 Tier-1,实现时可零成本翻转);③登出/BYOK 维持现状(keyless / alpha.env 自带 Exa key);④「出错机械回退」不承诺——引擎无工具级 failover 接缝,回退 = 模型中介(云 4xx → 改用 websearch);⑤不整体 `ALPHA_WEBSEARCH_DISABLE`(ADR-009 撞车预案改双工具并存,实现时修订 ADR-009);B 侧配套 = facade 增 websearch 工具 + 计量(alpha-platform 登记 PA 条目) |
 
 > 别名/归并:G1 → B6;E12 → B3;E14 → D5(剩实测);E1/E1b/E3/E4 已发(见 E 册);C10 → dup(A6);D7/E13 → Parked(rejected);E7 → 2026-07-08 激活回本表;D11 → Done(⊂C1)。
 
