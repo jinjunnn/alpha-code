@@ -37,6 +37,24 @@ the app and never appears in `.alpha`.
 3. **Creating new skills/agents** — delegate to the factory skills `skill-creator` / `agent-creator`
    (they interview, generate, write to the right place, and hot-reload).
 
+## Connectors (MCP) and bundles
+
+- **Primary path = Extension Hub (定制中心)**: browse the curated catalog, one-click install with
+  dependency preflight (`uv` / `node` checked before install), API keys collected as masked input
+  and stored as `{file:}` references — **never write a connector API key in plaintext into
+  `alpha.jsonc` yourself**; if a connector needs a key, send the user to the Hub install flow.
+- **Project-scoped secondary path** = `alpha_register type=mcp` (config goes to
+  `<project>/.alpha/alpha.jsonc`): executable connectors only load after the user grants the
+  per-project trust dialog — expect that, don't call it a failure.
+- **Runtime note**: catalog connectors run via `uvx`/`npx` pinned versions; first launch downloads
+  from PyPI/npm and can be slow or blocked on restricted networks. A just-installed connector may
+  show "connecting" for a while — that is honest state, not an error.
+- **Bundles (套件)** are alpha's install manifests: one click fans out into several atomic installs
+  (MCP + skills + plugins), each with its own receipt and uninstall. A bundle is not an engine
+  plugin (插件 = JS module with hooks; it cannot contain skills/agents).
+- The Hub's install ledger (receipts) is what makes 「已安装」 accurate — installs done by editing
+  config by hand won't show there; prefer the Hub or `alpha_register` so state stays visible.
+
 ## Governing built-ins
 
 The Extension Hub's governance panel (已安装 → 内置) can hide or disable upstream built-in agents
