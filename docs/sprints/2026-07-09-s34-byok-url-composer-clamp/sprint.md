@@ -14,9 +14,9 @@
 |---|---|---|---|
 | T1 | BACKLOG 登记(074/075,in-sprint)+ sprint 契约 | — | ☑ |
 | T2 | 5 家 BYOK baseURL 全量核查(裸探 401=路径对;唯智谱坏) | 074 | ☑ |
-| T3 | catalog `zhipuai.baseURL` → `…/api/anthropic/v1` + `provider-test.ts` anthropic 分支拼 `/messages` + 添加表单提示语注明 /v1 约定 + 单测 | 074 | ☐ |
-| T4 | `patch-upstream.ts` 会话列 `"max-width":"100%"` 补丁 + 锚点守卫覆盖 | 075 | ☐ |
-| T5 | alpha-check 全绿 → PR → merge → 四件套回写(BACKLOG 翻 shipped + CHANGELOG) | — | ☐ |
+| T3 | catalog `zhipuai.baseURL` → `…/api/anthropic/v1` + MiniMax 迁 `api.minimaxi.com/anthropic/v1` + `provider-test.ts` anthropic 分支拼 `/messages` + 添加表单提示 + 单测锁约定 | 074 | ☑ PR #163 |
+| T4 | `patch-upstream.ts` 会话列 `"max-width":"100%"` 补丁(漂移由 patch 自身 warn 兜底,前端已冻结) | 075 | ☑ PR #163 |
+| T5 | alpha-check 全绿 → PR #163 → merge → 四件套回写(BACKLOG 翻 shipped + CHANGELOG) | — | ☑ |
 | T6 | ship:mac 本机装包 → 真机核验(GLM 会话真跑通 + 中间宽度不溢出,CDP 截图)→ verified→archived(用户已预授权) | — | ☐ |
 
 ## Gates
@@ -34,4 +34,6 @@
 
 ## 结果(随执行回写)
 
-- (待回写)
+- **REQ-074 shipped(PR #163)**:约定统一(baseURL 含 /v1 + 探针/运行时同拼法);zhipuai 与 minimax 双修;**核查修正:MiniMax 也是 anthropic 兼容且旧域双路 404(初核误按 openai 兼容探成 401),T2 原「唯智谱坏」结论修正为「5 家坏 2 家」**;新增 provider-test.test.ts(4 测)+ catalog /v1 结尾断言。
+- **REQ-075 shipped(PR #163)**:patch-upstream 第三条子串补丁 `width: sessionPanelWidth(), "max-width": "100%"`;dev CDP 复验:同带陈旧 1239px 持久宽,1600 档面板照常占余量、1200/1000/850 档列被 clamp(928/728/578)composer 完整在窗内(修复前 1200 档溢出 +291)。
+- 真机批(装包后)= T6,PASS 后翻 verified→archived(用户预授权)。
