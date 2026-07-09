@@ -5,7 +5,7 @@ type: feature
 priority: P1
 repo: A
 created: 2026-07-09
-status: ready
+status: shipped
 source: 用户拍板方向(2026-07-09):「云派发的应该也作为内置提供」;议题⑥裁定 = 扩 customize-alpha 章节、独立安装 skill 暂不立
 ---
 

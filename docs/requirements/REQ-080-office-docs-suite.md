@@ -5,7 +5,7 @@ type: feature
 priority: P1
 repo: X
 created: 2026-07-09
-status: ready
+status: in-sprint
 source: 用户议题④(2026-07-09)+ 生态实查;用户拍板(2026-07-09):①按推荐上架 ②office-docs 引导技能入出厂内置
 ---
 
