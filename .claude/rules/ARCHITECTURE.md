@@ -4,13 +4,14 @@
 > 回顾节奏:每次 `/app:retro` 时审视是否仍有效
 > 2026-06-18:产品转多用户/多租户,本文"规模/下游"已据 ADR-010/011 修订。
 > 2026-07-03(C6 去漂移):删 submodule/pinned-`7efade2` 陈述(ADR-005 fork,已 `merge dev` 追平上游);「薄定制层<5%」拆为**后端守 / 前端接管**(ADR-016)。
+> 2026-07-09(ADR-026):桌面平台扩为 **macOS + Windows**,原「本地 Mac 应用」表述据此更新;平台差异收敛纪律见 ADR-026(platform seam + 路径同构)。
 
 ## 技术栈
 - **语言**:TypeScript(消费侧),少量 JS。
 - **运行时**:Bun 1.3.x(opencode 同款,见根 `package.json` packageManager);Node(经 Electron)。
-- **框架**:SolidJS(前端,复用 `@opencode-ai/app` + `@opencode-ai/ui`)、Effect v4(opencode 内部,我方只消费类型)、Electron(Mac 外壳,复用 `packages/desktop` 模式)、可选 Hono/Bun(自有 sidecar)。
+- **框架**:SolidJS(前端,复用 `@opencode-ai/app` + `@opencode-ai/ui`)、Effect v4(opencode 内部,我方只消费类型)、Electron(桌面外壳,macOS+Windows,复用 `packages/desktop` 模式;ADR-026)、可选 Hono/Bun(自有 sidecar)。
 - **数据存储**:复用 opencode 自带 SQLite(会话/历史),不另起主存储;sidecar 如需自有状态再议。
-- **部署**:本地 Mac 应用,`electron-builder`(`package:mac`)。
+- **部署**:本地桌面应用(macOS 首发 + Windows,ADR-026;Linux 不做),`electron-builder`(`package:mac` / `package:win`)。
 
 ## 硬性约束(不可协商)
 1. **上游源码只读(fork,只增不改)**:本仓库是 `anomalyco/opencode` 的 fork(**非 submodule**,ADR-005 已取代 ADR-001);`packages/{opencode,core,server,tui,sdk}` 等上游文件**只读**,永不修改。升级 = `git merge dev`(`dev` 为上游纯镜像)+ 契约 diff 适配。CI 守卫(`alpha-ci.yml` north-star guard):`git diff --diff-filter=DMR origin/dev...HEAD -- packages/{opencode,core,server,tui,sdk}` 非空即红。**注:此后端只读铁律不受 ADR-016 前端接管影响**(前端接管是**新增** alpha 文件,不改上游源码)。**ADR-020(2026-07-03)修订**:`packages/{app,ui}` 已冻结在 `frontend-freeze-base` tag、不随上游同步,移出守卫范围;冻结包对 alpha 仍**保持只读**(唯一写操作 = 受控 re-freeze,见 ADR-020 §5)。

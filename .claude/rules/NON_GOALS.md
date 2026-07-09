@@ -1,6 +1,7 @@
 # 非目标(NON_GOALS)
 
-> 最后更新:2026-07-05(REQ-008 拍板:用户群三条收口——团队协作/企业租户不做、非技术用户转入目标画像)
+> 最后更新:2026-07-09(用户拍板:条款 6 修订——撤回「不支持非 Mac 平台」的 Windows 部分,桌面 = macOS + Windows;ADR-026 / REQ-076)
+> 上一版:2026-07-05(REQ-008 拍板:用户群三条收口——团队协作/企业租户不做、非技术用户转入目标画像)
 > 回顾节奏:每次 `/app:retro` 时审视是否仍有效
 > 这是 scope creep 的第一道防线。`/app:challenge` 与 `app-drift-detector` 会**主动引用**这里否决偏离。
 
@@ -11,7 +12,7 @@
 3. **不编辑 opencode 既有的任何文件** — 理由(修订自 ADR-005):本仓库现在**是** opencode 的 fork(不是"避免 fork"),但只能**新增**文件;一旦改动 upstream 既有文件,fork-sync 就会冲突,直接违背北极星。等价于原来的"opencode 只读",只是现在在 fork 内部执行。**ADR-020 例外(2026-07-03)**:`packages/{app,ui}` 已冻结、退出每日同步,其相对 dev 的 diff 是冻结本意非违例;冻结包对 alpha 依然只读(写 = 仅受控 re-freeze)。
 4. **不把核心后端行为长期压在 `experimental.*` plugin hook 上** — 理由:这些 hook 官方标注 unstable、会改签名;可用于过渡,但凡依赖必须在 DECISIONS 标注风险与回退方案。
 5. **不前端绕过 SDK 直连 core 内部模块** — 理由:`@opencode-ai/sdk` 是唯一稳定契约;绕过它=把自己焊死在 opencode 内部实现上。
-6. **不支持非 Mac 平台 / 不复活 web/tui/console/enterprise 形态** — 理由:聚焦,避免被 opencode 的 27 包全形态拖住。
+6. **不复活 web/tui/console/enterprise 形态;不做 Linux**(修订 2026-07-09,ADR-026)— 理由:聚焦桌面,避免被 opencode 的 27 包全形态拖住。原「不支持非 Mac 平台」经用户拍板**部分撤回:Windows 纳入支持**(桌面 = macOS 首发 + Windows,载体 REQ-076);Linux 与非桌面形态照旧不做(electron-builder linux 段保留休眠不启用)。连带:Parked D7 的重开条件(「NON_GOALS#6 撤回」)就此触发,其关切并入 REQ-076 T3。
 
 ## 明确不服务的用户群
 > 修订(2026-06-18):产品转向**多用户分发 + 云端多租户**(见 ADR-010/011),原"个人 Mac 工具"前提作废。

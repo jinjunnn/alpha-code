@@ -3,7 +3,7 @@
 > 防 AI 幻觉术语。领域特有 / 项目内部 / 英文缩写 / 易引歧义的词都写这里。
 
 ## 业务域术语
-- **alpha-code** — 本项目。基于 opencode 的 Mac 编码 agent 产品(面向多用户 + 云多租户);**后端**薄定制层 + **前端**全面接管(ADR-016)、opencode 上游源码只读,云平台为独立运行时(见 ADR-010/011)。
+- **alpha-code** — 本项目。基于 opencode 的桌面编码 agent 产品(macOS 首发 + Windows,ADR-026;面向多用户 + 云多租户);**后端**薄定制层 + **前端**全面接管(ADR-016)、opencode 上游源码只读,云平台为独立运行时(见 ADR-010/011)。
 - **opencode** — 上游基座(`anomalyco/opencode`),Bun+TS+Effect+SolidJS 的 AI 编码工具 monorepo(27 包)。本仓库是其 **fork**(非 submodule;ADR-005),经 `merge dev → alpha` 追平上游、无 pinned commit。
 - **隔离接缝(isolation seam)** — opencode 官方提供、可在不改源码下扩展的入口:plugin hooks、`.opencode/*` 文件、MCP、SDK 驱动的前端。
 - **定制中心(Extension Hub)** — alpha 自有的扩展管理界面(`ui-mac` renderer),浏览/安装/管理五类扩展:连接器(MCP)/技能(skill)/Agent/插件(plugin)/套件(bundle),外加云能力与自动化(REQ-020/021,规划中)。v3 起全类型通用化(ADR-014 v3 / REQ-018)。
@@ -24,6 +24,8 @@
 - **Hooks** — 插件可挂的回调:稳定的 `tool/event/config/auth/provider/chat.*/permission.ask/tool.execute.*/tool.definition/shell.env`,以及 unstable 的 `experimental.*`。
 - **`AppInterface`** — `packages/app/src/app.tsx` 导出的渲染器挂载入口(props:`defaultServer/servers/router/...`)。B 方案的接入点。
 - **`Platform`** — `packages/app/src/context/platform.tsx` 的 host 能力接口(~40 方法:通知/选择器/更新器/存储/剪贴板/fetch…)。自有外壳实现它即可。
+- **`ui-mac`** — alpha 桌面外壳包(`packages/ui-mac`,Electron)。**历史名**:立项时 Mac-only;自 ADR-026 起同时承载 Windows,包名保留不改(改名 = 全仓 churn 零收益)。平台差异唯一运行时分叉点 = `src/main/platform/*`(seam,ADR-026)。
+- **platform seam** — ADR-026 引入的平台差异收敛点:`ui-mac/src/main/platform/{index,darwin,win32}.ts` 按 `process.platform` 导出单例适配器(命令探测/DB 安全带/密钥文件保护/应用菜单/编辑器映射/CSP 谓词)。纪律:新代码禁止散落 `process.platform` 分支,一律走 seam;存量守卫渐进收编。
 - **sidecar** — 自有的独立 HTTP 进程(Hono/Bun),用于提供 opencode server 没有的接口;内部经 SDK 调 opencode。也指 desktop 内嵌 opencode server 的子进程。**桌面单机下 Electron main-IPC(`*-ipc.ts` + `window.api`)即其等价物**(承载 alpha 自有 HTTP/RPC 能力的进程边界,免本地端口/鉴权);真 HTTP sidecar 仅在出现非 renderer 客户端需求时才建(见 ADR-002 修订 C8)。
 - **System Context** — opencode 注入给模型的结构化上下文(见 `opencode/CONTEXT.md`);其 registry 不对外开放,自定义注入走 `experimental.chat.*.transform`。
 - **~~submodule pin~~**(已废,ADR-005 fork pivot)— 原"钉死 opencode commit"概念;fork 模型下升级 = `git merge dev`,**无 pin**。
