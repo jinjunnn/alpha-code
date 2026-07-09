@@ -15,7 +15,7 @@ import { useCommand } from "./providers"
 import { setExtHubOpen } from "../extensions/ext-hub-state"
 import { createComposerAutocomplete } from "./composer-autocomplete"
 import { buildMentionParts, type MentionPart } from "./composer-autocomplete-core"
-import { COMPOSER_PLACEHOLDER } from "../../shared/composer-copy"
+import { COMPOSER_PLACEHOLDER, COMPOSER_PLACEHOLDER_PLAN } from "../../shared/composer-copy"
 import { pathHitsPopover } from "./popover-hit"
 import { pushToast } from "./Toast"
 import type { AlphaProjectsApi } from "../sidebar/use-projects"
@@ -24,16 +24,13 @@ import {
   applyDefaultComposerModel,
   buildPromptRequest,
   composerAgent,
-  composerAgents,
   composerEffortSel,
   composerModel,
   composerModelSuspended,
   composerPerm,
-  filterAgents,
   restoreSuspendedModel,
   routeSlash,
   setComposerAgent,
-  setComposerAgents,
   setComposerEffort,
   setComposerModel,
   setComposerPerm,
@@ -139,13 +136,6 @@ const StopSquare = () => (
     <rect x="7" y="7" width="10" height="10" rx="2" />
   </svg>
 )
-const AgentGlyph = () => (
-  <svg class="a-ic a-ic-sm" viewBox={ico}>
-    <path d="M4 8h16M4 16h16" />
-    <circle cx="9" cy="8" r="2" style={{ fill: "var(--a-surface)" }} />
-    <circle cx="15" cy="16" r="2" style={{ fill: "var(--a-surface)" }} />
-  </svg>
-)
 const FileGlyph = () => (
   <svg class="a-ic" viewBox={ico}>
     <path d="M14.5 4h-9A1.5 1.5 0 0 0 4 5.5v13A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V9.5z" />
@@ -158,52 +148,14 @@ const TermGlyph = () => (
   </svg>
 )
 
-/* ── + 添加菜单(与旧 AddButton 同内容;注册表换用本文件的单开注册表)──────────── */
-function AddButton() {
-  const command = useCommand()
-  const { isOpen, toggle, close } = useChip()
-  let btn: HTMLButtonElement | undefined
-  const run = (fn: () => void) => {
-    close()
-    try {
-      fn()
-    } catch {
-      /* command may be unregistered in some states */
-    }
-  }
-  const cmd = (id: string) => run(() => command.trigger(id))
-  const hub = () => run(() => setExtHubOpen(true))
+/* ── + 按钮:打开统一装配弹窗(REQ-073)—— 与 @ 同一弹窗,内容/键盘/分节见
+ * composer-autocomplete(添加/AGENT/文件/扩展);旧 AddButton 的四条「扩展」占位行
+ * (文档/PDF/表格/连接器全是同一个 setExtHubOpen 动作)随之收敛为弹窗单行「扩展市场…」。 */
+function AddButton(props: { onOpen: () => void }) {
   return (
-    <div class="a-pop-wrap" data-kind="add">
-      <button ref={btn} class="a-chip a-chip-icon" title="添加" onClick={(e) => (stop(e), toggle())}>
-        <Plus />
-      </button>
-      <Show when={isOpen()}>
-        <ChipPopover anchor={btn} align="left" minWidth={244}>
-          <div class="a-pop-label">添加</div>
-          <button class="a-pop-item" onClick={() => cmd("file.attach")}>
-            <FileGlyph /> 文件与文件夹 <span class="a-pop-kbd">↵</span>
-          </button>
-          <button class="a-pop-item" onClick={() => cmd("terminal.new")}>
-            <TermGlyph /> 附加终端
-          </button>
-          <div class="a-pop-sep" />
-          <div class="a-pop-label">扩展 · 定制中心</div>
-          <button class="a-pop-item" onClick={hub}>
-            <span class="a-pico" style={{ background: "#2563eb" }}>文</span> 文档 <span class="a-pop-desc">Documents</span>
-          </button>
-          <button class="a-pop-item" onClick={hub}>
-            <span class="a-pico" style={{ background: "#dc2626" }}>PDF</span> PDF
-          </button>
-          <button class="a-pop-item" onClick={hub}>
-            <span class="a-pico" style={{ background: "#16a34a" }}>表</span> 表格 <span class="a-pop-desc">Spreadsheets</span>
-          </button>
-          <button class="a-pop-item" onClick={hub}>
-            <span class="a-pico" style={{ background: "#7c3aed" }}>MCP</span> 连接器… <span class="a-pop-desc">浏览市场</span>
-          </button>
-        </ChipPopover>
-      </Show>
-    </div>
+    <button class="a-chip a-chip-icon" title="装配:引用 · 附加 · 模式(与 @ 同一弹窗)" onClick={(e) => (stop(e), props.onOpen())}>
+      <Plus />
+    </button>
   )
 }
 
@@ -255,60 +207,23 @@ function PermChip() {
   )
 }
 
-/* ── agent chip:SDK /agent 列表(过滤内部档)→ 本地选择,提交时作参数 ─────────── */
-function AgentChip(props: { sdk: AlphaProjectsApi["sdk"]; directory: () => string | undefined }) {
-  const { isOpen, toggle, close } = useChip()
-  let btn: HTMLButtonElement | undefined
-  const label = () => (composerPerm() === "readonly" ? "只读档" : (composerAgent() ?? "build"))
-  const load = async () => {
-    const c = props.sdk()
-    if (!c) return
-    try {
-      const { data } = await c.v2.agent.list({ location: { directory: props.directory() } } as any)
-      if (Array.isArray(data)) setComposerAgents(filterAgents(data as any))
-    } catch {
-      /* 列表加载失败 → 保留上次;chip 仍可用(引擎默认) */
-    }
-  }
-  onMount(() => void load())
-  createEffect(() => {
-    if (isOpen()) void load() // 打开时刷新(装了新 agent 免重启可见)
-  })
+/* ── 计划模式 chip(REQ-073,取代 AgentChip)—— composerAgent 即模式载体:null = 引擎默认
+ * (build,不出控件);"plan"/第三方主档 = chip 呈现,点击关闭;开关入口在统一装配弹窗,
+ * Shift+Tab 快捷切换;perm=readonly 时模式不生效(buildPromptRequest 强制只读档),chip 如实置灰。 */
+function PlanChip() {
+  const label = () => (composerAgent() === "plan" ? "计划" : composerAgent())
   return (
-    <div class="a-pop-wrap" data-kind="agent">
+    <Show when={composerAgent()}>
       <button
-        ref={btn}
-        class="a-chip"
+        class="a-chip a-chip-plan"
         data-disabled={composerPerm() === "readonly" ? "" : undefined}
-        title={composerPerm() === "readonly" ? "只读权限档固定使用只读 agent" : "选择 agent"}
-        onClick={(e) => {
-          stop(e)
-          if (composerPerm() !== "readonly") toggle()
-        }}
+        title={composerPerm() === "readonly" ? "只读权限档下模式不生效(退出只读后恢复)" : "计划模式开启 — 点击关闭(Shift+Tab 切换)"}
+        onClick={(e) => (stop(e), setComposerAgent(null))}
       >
-        <AgentGlyph />
+        <span class="a-chip-x" aria-hidden="true">⊗</span>
         {label()}
-        <Chevron />
       </button>
-      <Show when={isOpen()}>
-        <ChipPopover anchor={btn} align="left" minWidth={220}>
-          <div class="a-pop-label">Agent</div>
-          <button class="a-pop-item" classList={{ "is-on": composerAgent() === null }} onClick={() => (setComposerAgent(null), close())}>
-            build <span class="a-pop-desc">默认</span>
-          </button>
-          <For each={composerAgents().filter((a) => a.name !== "build")}>
-            {(a) => (
-              <button class="a-pop-item" classList={{ "is-on": composerAgent() === a.name }} onClick={() => (setComposerAgent(a.name), close())}>
-                {a.name}
-                <Show when={a.description}>
-                  <span class="a-pop-desc">{(a.description ?? "").slice(0, 18)}</span>
-                </Show>
-              </button>
-            )}
-          </For>
-        </ChipPopover>
-      </Show>
-    </div>
+    </Show>
   )
 }
 
@@ -430,6 +345,11 @@ export function AlphaComposer(props: AlphaComposerProps) {
   const [composing, setComposing] = createSignal(false)
   let taRef: HTMLTextAreaElement | undefined
   const isImeComposing = (e: KeyboardEvent) => e.isComposing || composing() || e.keyCode === 229
+
+  // REQ-073 拍板③:模式是会话级的 —— home 是新会话入口,挂载即回默认(build);会话页不重置。
+  onMount(() => {
+    if (props.mode === "home") setComposerAgent(null)
+  })
 
   const auto = createComposerAutocomplete({
     text,
@@ -672,6 +592,12 @@ export function AlphaComposer(props: AlphaComposerProps) {
 
   const onKey = (e: KeyboardEvent) => {
     if (auto.onKeyDown(e)) return
+    // REQ-073:Shift+Tab 切换计划模式(Codex 同款;readonly 档下不切换 —— 模式本就不生效)
+    if (e.key === "Tab" && e.shiftKey && !isImeComposing(e)) {
+      e.preventDefault()
+      if (composerPerm() !== "readonly") setComposerAgent(composerAgent() === "plan" ? null : "plan")
+      return
+    }
     if (e.key === "Enter" && !e.shiftKey && !isImeComposing(e)) {
       e.preventDefault()
       void submit()
@@ -687,7 +613,7 @@ export function AlphaComposer(props: AlphaComposerProps) {
         ref={taRef}
         class="a-comp-input"
         rows="1"
-        placeholder={COMPOSER_PLACEHOLDER}
+        placeholder={composerAgent() === "plan" ? COMPOSER_PLACEHOLDER_PLAN : COMPOSER_PLACEHOLDER}
         value={text()}
         onInput={(e) => {
           setText(e.currentTarget.value)
@@ -698,9 +624,9 @@ export function AlphaComposer(props: AlphaComposerProps) {
         onCompositionEnd={() => setComposing(false)}
       />
       <div class="a-comp-bar">
-        <AddButton />
+        <AddButton onOpen={() => auto.toggleAssemble()} />
         <PermChip />
-        <AgentChip sdk={props.projects.sdk} directory={props.directory} />
+        <PlanChip />
         <div class="a-comp-grow" />
         {/* 上下文用量 ring 停靠位(session:takeover 把上游活 ring 收养进来;home 无会话无用量,不渲染) */}
         <Show when={props.mode === "session"}>

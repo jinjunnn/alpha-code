@@ -237,3 +237,71 @@ describe("buildSlashList — 无查询分节字母序 / 有查询跨节合并 / 
     expect(buildSlashList(entries, "zzz").flat).toEqual([])
   })
 })
+
+// ── REQ-073:统一装配弹窗分节构建 ────────────────────────────────────────────
+import { buildAssembleRows, SUBAGENT_DESC_ZH } from "./composer-autocomplete-core"
+
+describe("buildAssembleRows — 装配弹窗(添加/AGENT/文件/扩展)", () => {
+  const base = {
+    query: "",
+    planOn: false,
+    readonly: false,
+    activeMode: null as string | null,
+    subAgents: [
+      { name: "general", description: "General-purpose agent for researching complex questions" },
+      { name: "explore", description: "Fast agent specialized for exploring codebases" },
+      { name: "code-reviewer", description: "Reviews code for quality issues" },
+    ],
+    primaries: [] as string[],
+    files: [] as string[],
+  }
+
+  test("默认:添加(3 动作)+ AGENT + 文件提示 + 扩展单行;flat 不含提示行", () => {
+    const { groups, flat } = buildAssembleRows(base)
+    expect(groups.map((g) => g.label)).toEqual(["添加", "AGENT", "文件", "扩展"])
+    expect(groups[0].rows.map((r) => (r.kind === "action" ? r.id : ""))).toEqual(["attach", "terminal", "plan"])
+    expect(groups[2].rows).toEqual([]) // 无查询 = 提示行,不产可选行
+    expect(groups[2].hint).toContain("搜索项目文件")
+    expect(flat).toHaveLength(3 + 3 + 1) // 动作3 + agent3 + 扩展1
+  })
+
+  test("计划模式行随 planOn 变文案;readonly 时禁用并退出 flat(可见不可选)", () => {
+    const on = buildAssembleRows({ ...base, planOn: true })
+    const planRow = on.groups[0].rows.find((r) => r.kind === "action" && r.id === "plan")
+    expect(planRow && planRow.kind === "action" ? planRow.label : "").toBe("关闭计划模式")
+    const ro = buildAssembleRows({ ...base, readonly: true })
+    const roPlan = ro.groups[0].rows.find((r) => r.kind === "action" && r.id === "plan")
+    expect(roPlan && roPlan.kind === "action" ? roPlan.disabled : "").toContain("只读")
+    expect(ro.flat.some((r) => r.kind === "action" && r.id === "plan")).toBe(false) // 不进键盘序
+    expect(ro.groups[0].rows.some((r) => r.kind === "action" && r.id === "plan")).toBe(true) // 仍可见
+  })
+
+  test("内置子 agent 中文降噪 + 内置签;未知 agent 如实原文 + 个人签(拍板⑦)", () => {
+    const { groups } = buildAssembleRows(base)
+    const ag = groups[1].rows.filter((r) => r.kind === "agent")
+    const general = ag.find((r) => r.kind === "agent" && r.name === "general")
+    expect(general && general.kind === "agent" ? general.desc : "").toBe(SUBAGENT_DESC_ZH.general)
+    expect(general && general.kind === "agent" ? general.tag : "").toBe("内置")
+    const reviewer = ag.find((r) => r.kind === "agent" && r.name === "code-reviewer")
+    expect(reviewer && reviewer.kind === "agent" ? reviewer.desc : "").toBe("Reviews code for quality issues")
+    expect(reviewer && reviewer.kind === "agent" ? reviewer.tag : "").toBe("个人")
+  })
+
+  test("第三方主档动态成模式项(拍板⑤);无则不出现", () => {
+    const none = buildAssembleRows(base)
+    expect(none.flat.some((r) => r.kind === "mode")).toBe(false)
+    const withMode = buildAssembleRows({ ...base, primaries: ["architect"], activeMode: "architect" })
+    const mode = withMode.groups[0].rows.find((r) => r.kind === "mode")
+    expect(mode && mode.kind === "mode" ? mode.id : "").toBe("architect")
+    expect(mode && mode.kind === "mode" ? mode.on : false).toBe(true)
+  })
+
+  test("查询跨节过滤(名称+简介,中文可搜);文件只在有查询时成行", () => {
+    const q1 = buildAssembleRows({ ...base, query: "探索" })
+    expect(q1.flat.map((r) => (r.kind === "agent" ? r.name : ""))).toContain("explore")
+    expect(q1.flat.some((r) => r.kind === "action" && r.id === "attach")).toBe(false)
+    const q2 = buildAssembleRows({ ...base, query: "composer", files: ["src/alpha-composer.tsx", "docs/a.md"] })
+    expect(q2.flat.filter((r) => r.kind === "file")).toHaveLength(1)
+    expect(q2.groups.some((g) => g.label === "文件" && g.rows.length === 1)).toBe(true)
+  })
+})

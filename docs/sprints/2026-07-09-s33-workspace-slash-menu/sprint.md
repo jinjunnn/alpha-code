@@ -18,6 +18,7 @@
 | T4 | alpha-workspace 出厂技能 + 每日总结自动化模板(默认不开)+ 云可见副本 Outputs 白名单 | 071-T2 | ☑ PR #160 |
 | T5 | alpha-check 全绿 + 四件套回写 + PR(REQ-071);REQ-072 待设计审核后另批实现 | 071 | ☑ |
 | T6 | REQ-072 实现(T1 行为修复 + T2 按定稿设计 + /agents B 案)| 072 | ☑ PR #161 |
+| T7 | REQ-073 统一装配弹窗(@/+ 合一)+ 模式收编(去 AgentChip / 计划 chip / Shift+Tab)| 073 | ☑ PR #162 |
 
 ## Gates
 
@@ -29,4 +30,5 @@
 
 - **REQ-071 shipped(PR #160,T1+T2 全量)**:新增 `alpha-user-workspace.ts`(lazy 供给仅对默认目录成立 + Outputs 可见副本守卫,12 单测)、IPC/preload 双通道、home chip 回退链 + 弹层常驻入口、use-projects 开会话前供给、目录选择器 defaultPath 单点兜底、自动化默认目录 + save 前供给、出厂技能 `alpha-workspace`、「每日总结」模板(预填不自启)、云任务(即时/定时拉回)与自动化 run 的 Outputs 镜像;factory-skills 测试夹具改名单派生。alpha-check 全绿(698 tests)。
 - **REQ-072 shipped(PR #161)**:设计稿 v1 → 用户拍板(个人签淡 indigo/选中态淡底不加条/混排接受/**B 案 /agents 单条入口**;/ vs @ 语法分工固化 GLOSSARY)→ v2 定稿 → 按稿实现:三根因修复(active 内容签名归零 + 去 12 条帽全量滚动 scrollIntoView + rankSlashMatch 名称前缀>包含>简介中英搜 + 空态)+ 分节/类型 icon/来源四档右缘(出厂技能真源 = ext.factorySkillIds)/中文映射(SLASH_DESC_ZH)/键位页脚;core 新增 20 单测。**CDP 实机核验 6 场景全过**(截图 cdp/):默认分组 21 条全量、↓×3 选中=3(根因①实证修复)、/wr 前缀优先、/审查 中文命中、空态保留、/agents 就位。
-- 残单 → 真机批(打包安装后):~/Alpha 全链路 + 斜杠菜单像素/滚动手感 + REQ-069 复验(用户机器包仍为 7-08 19:23 旧包)。
+- **REQ-073 shipped(PR #162,设计稿 v1 过审 + 7 拍板点全清)**:统一装配弹窗(@ 与 + 同一组件,四节 添加/AGENT/文件/扩展;buildAssembleRows 纯核 5 单测)+ 模式收编(AgentChip 移除、agent 参数缺省=build、计划 chip 左侧簇、Shift+Tab、会话级 home 重置、readonly 联动、第三方主档动态项、扩展节收敛单行)。**顺手根治一个通用 bug**:Chromium 列表重渲染时在光标原地合成 mousemove 会劫持键盘选中(hover 拽回)——坐标校准守卫落 Row 层,/ 菜单同受益。**CDP 实机核验全过**(截图 cdp-073/):四节渲染/键盘含取模回绕/计划行点选→chip+placeholder 切换/重开见「关闭计划模式」/chip 点击关/Shift+Tab 双向/+ 按钮同弹窗/@探索 中文命中/AgentChip 消失。
+- 残单 → 真机批(打包安装后):~/Alpha 全链路 + 斜杠菜单像素/滚动手感 + 装配弹窗/计划 chip 手感 + REQ-069 复验(用户机器包仍为 7-08 19:23 旧包)。

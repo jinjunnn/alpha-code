@@ -523,6 +523,33 @@ body[data-alpha-sidebar="open"] .a-home {
 .a-comp-foot-grow {
   flex: 1;
 }
+/* 装配弹窗(REQ-073):文件节无查询提示行;禁用行可见不可选(如实说明,C28) */
+.a-comp-hint {
+  padding: 4px 10px 8px;
+  font-size: var(--a-text-xs);
+  color: var(--a-text-tertiary);
+}
+.a-auto-row[data-disabled] {
+  opacity: 0.5;
+  cursor: default;
+}
+.a-auto-nm {
+  flex: none;
+  font-weight: var(--a-weight-medium);
+  font-size: var(--a-text-sm);
+}
+/* 计划模式 chip(REQ-073):唯一吃强调色的工具条 chip;⊗ 即关闭 affordance */
+.a-chip-plan {
+  background: var(--a-accent-subtle);
+  color: var(--a-accent);
+  border-color: var(--a-accent-border);
+}
+.a-chip-plan .a-chip-x {
+  font-weight: 600;
+}
+.a-chip-plan[data-disabled] {
+  opacity: 0.55;
+}
 
 /* workspace-missing hint (REQ-038 验收④ / C28 honest controls): visible reason, not a dead button */
 .a-ws-hint {
