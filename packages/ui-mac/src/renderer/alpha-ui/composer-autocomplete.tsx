@@ -80,9 +80,13 @@ export function createComposerAutocomplete(opts: {
    *  not consume a composition-committing Enter (codex audit: event flags alone miss the case where
    *  only the host's compositionstart signal knows we're composing). */
   isComposing?: (e: KeyboardEvent) => boolean
-  /** Which trigger modes to serve (default both). The SESSION surface uses ["slash"] only — its @
-   *  menu stays upstream (tied to the frozen prompt-input's internal parts state, REQ-038b). */
+  /** Which trigger modes to serve (default both). */
   modes?: Array<"slash" | "at">
+  /** 宿主表面:终端行只在 session 出现(home 无 terminal.new 注册,REQ-078 T1 不摆死行)。 */
+  surface?: "home" | "session"
+  /** 「添加附件」行的真通道(宿主打开自己的文件选择器,REQ-078 T2);缺省时该行仍显示但为
+   *  no-op —— 唯一消费方 AlphaComposer 恒传。 */
+  onAttach?: () => void
 }) {
   const [active, setActive] = createSignal(0)
   // Esc dismisses the menu for the CURRENT token only; typing anything re-opens (upstream parity).
@@ -187,12 +191,35 @@ export function createComposerAutocomplete(opts: {
     const q = v.query
     if (fileTimer) clearTimeout(fileTimer)
     fileTimer = setTimeout(async () => {
-      const { data, error } = await c.find.files({ directory: dir, query: q, limit: 8 }).catch(() => ({ data: undefined, error: true }) as const)
+      const { data, error } = await c.find.files({ directory: dir, query: q, limit: 20 }).catch(() => ({ data: undefined, error: true }) as const)
       // error → clear rather than leaving a previous query's results selectable (codex audit)
       setFileResults(!error && Array.isArray(data) ? data : [])
     }, 120)
   })
   onCleanup(() => fileTimer && clearTimeout(fileTimer))
+  // REQ-078 T3:零查询钉「git 变更文件」—— @/+ 弹窗打开瞬间拉一次 vcs.status(refreshGovernance
+  // 同节奏);失败/无目录/非 git → 空(退回纯提示行,不崩不留陈旧路径)。
+  // 注意端点选型:`/file/status` 在上游引擎是恒返 [] 的存根(handlers/file.ts:127-129,SDK 有形
+  // 引擎无实,dev 实测),真实现是 `/vcs/status`(handlers/instance.ts:47-49 → Vcs.Service)。
+  const [changedFiles, setChangedFiles] = createSignal<string[]>([])
+  const refreshChanged = async () => {
+    const dir = opts.directory()
+    const c = opts.sdk()
+    if (!dir || !c) {
+      setChangedFiles([])
+      return
+    }
+    const { data, error } = await c.vcs.status({ directory: dir }).catch(() => ({ data: undefined, error: true }) as const)
+    const base = dir.replace(/\/$/, "")
+    const rel = (p: string) => (p.startsWith(base + "/") ? p.slice(base.length + 1) : p)
+    setChangedFiles(!error && Array.isArray(data) ? data.map((f) => rel(f.file)).slice(0, 10) : [])
+  }
+  let wasAt = false
+  createEffect(() => {
+    const isAt = view()?.mode === "at"
+    if (isAt && !wasAt) void refreshChanged()
+    wasAt = isAt
+  })
 
   // ── item lists ──────────────────────────────────────────────────────────
   // REQ-072 根因②③修复:全量不截断(原 slice(0,12) 使排后技能永不可见);过滤/排序/分组走
@@ -249,6 +276,8 @@ export function createComposerAutocomplete(opts: {
       subAgents: list.filter((a) => a.mode !== "primary").map((a) => ({ name: a.id, description: a.description })),
       primaries: list.filter((a) => a.mode === "primary" && a.id !== "build" && a.id !== "plan").map((a) => a.id),
       files: fileResults(),
+      changedFiles: changedFiles(),
+      terminal: opts.surface === "session",
     })
   })
   const items = createMemo<Item[]>(() => {
@@ -315,8 +344,10 @@ export function createComposerAutocomplete(opts: {
     // ── REQ-073 装配弹窗:动作 / 模式 ────────────────────────────────────────
     if (it.kind === "action") {
       if (it.disabled) return
+      // REQ-078 T1/T2:附件走宿主真通道(此前 runCommand("file.attach") 在 home 静默 no-op、在
+      // session 落进被隐藏的上游 prompt store —— 两处 placebo,已根除)。
       if (it.id === "plan") setComposerAgent(composerAgent() === "plan" ? null : "plan")
-      else if (it.id === "attach") runCommand("file.attach")
+      else if (it.id === "attach") opts.onAttach?.()
       else if (it.id === "terminal") runCommand("terminal.new")
       else if (it.id === "ext-market") setExtHubOpen(true)
       finishAction(v)

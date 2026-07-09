@@ -153,6 +153,9 @@ export type AssembleGroup = { label: string; rows: AssembleRow[]; hint?: string 
 /** 装配弹窗分节:添加(动作)/ AGENT(引用)/ 文件(引用)/ 扩展(动作)。
  *  - 计划模式行随 planOn 变文案;perm=readonly 时禁用并给出如实原因(不静默失效,C28);
  *  - 第三方主档(非 build/plan 的 primary)动态成模式项,无则不出现(拍板⑤);
+ *  - 终端行只在终端命令可用的表面出现(home 未注册 → 整行不摆,不留死行),文案如实 = 打开
+ *    终端面板(引擎无「终端输出 → 上下文」原语,不许诺;REQ-078 T1);
+ *  - 零查询时「文件」节钉 git 变更文件(REQ-078 T3),有查询让位给搜索结果;
  *  - flat = 可键盘选择行(禁用行、提示行不进);query 过滤跨节(名称+简介)。 */
 export function buildAssembleRows(input: {
   query: string
@@ -162,12 +165,16 @@ export function buildAssembleRows(input: {
   subAgents: Array<{ name: string; description?: string }>
   primaries: string[]
   files: string[]
+  /** 零查询钉选的 git 变更文件(相对路径);缺省 = 不钉。 */
+  changedFiles?: string[]
+  /** 终端面板在本表面是否可用(session=true / home=false)。 */
+  terminal?: boolean
 }): { groups: AssembleGroup[]; flat: AssembleRow[] } {
   const q = input.query.toLowerCase()
   const hit = (...texts: Array<string | undefined>) => !q || texts.some((t) => (t ?? "").toLowerCase().includes(q))
   const add: AssembleRow[] = []
-  const attach: AssembleRow = { kind: "action", id: "attach", label: "文件和文件夹", desc: "选择文件作为附件", kbd: "↵" }
-  const term: AssembleRow = { kind: "action", id: "terminal", label: "附加终端", desc: "把终端输出带进上下文" }
+  const attach: AssembleRow = { kind: "action", id: "attach", label: "添加附件", desc: "选择图片 / PDF 作为附件", kbd: "↵" }
+  const term: AssembleRow = { kind: "action", id: "terminal", label: "打开终端", desc: "打开终端面板(输出不会自动进入上下文)" }
   const plan: AssembleRow = {
     kind: "action",
     id: "plan",
@@ -175,7 +182,8 @@ export function buildAssembleRows(input: {
     desc: input.planOn ? "回到默认(build)" : "先出方案再动手(plan 档)",
     disabled: input.readonly ? "只读权限档固定使用只读 agent" : undefined,
   }
-  for (const r of [attach, term, plan]) if (hit(r.kind === "action" ? r.label : "", (r as { desc?: string }).desc)) add.push(r)
+  const actionRows = input.terminal ? [attach, term, plan] : [attach, plan]
+  for (const r of actionRows) if (hit(r.kind === "action" ? r.label : "", (r as { desc?: string }).desc)) add.push(r)
   for (const name of input.primaries) {
     const row: AssembleRow = { kind: "mode", id: name, label: `${name} 模式`, desc: "切换本会话的主档", on: input.activeMode === name }
     if (hit(name, row.label)) add.push(row)
@@ -194,7 +202,12 @@ export function buildAssembleRows(input: {
   if (q) {
     if (files.length) groups.push({ label: "文件", rows: files })
   } else {
-    groups.push({ label: "文件", rows: [], hint: "输入 @关键词 搜索项目文件…" })
+    const pinned: AssembleRow[] = (input.changedFiles ?? []).map((p): AssembleRow => ({ kind: "file", path: p }))
+    groups.push({
+      label: "文件",
+      rows: pinned,
+      hint: pinned.length ? "git 变更文件 · 输入 @关键词 搜索全部项目文件" : "输入 @关键词 搜索项目文件…",
+    })
   }
   const ext: AssembleRow = { kind: "action", id: "ext-market", label: "扩展市场…", desc: "浏览连接器 / 技能 / 插件" }
   if (hit(ext.kind === "action" ? ext.label : "", "连接器 技能 插件 扩展")) groups.push({ label: "扩展", rows: [ext] })

@@ -5,9 +5,14 @@ type: ux
 priority: P1
 repo: A
 created: 2026-07-09
-status: ready
+status: shipped
 source: 用户议题②(2026-07-09 供给面简报)+ @/+ 弹窗全量审计实锤两处 placebo(C28);用户确认「登记即 ready」
 ---
+
+> **shipped(2026-07-09,S37)**:T1/T2/T3 全量落地;dev CDP 核验 3 图 + DOM 断言(证据 [audits/s37](../audits/2026-07-09-s37-req078/verify.md))。
+> **实施发现**:上游 `/file/status` 是恒返 `[]` 的存根(handlers/file.ts:127-129,SDK 有形引擎无实)——T3 改走真实现 `/vcs/status`(handlers/instance.ts:47-49)。
+> **v1 边界(如实)**:附件 = 图片(≤5MB)+ PDF(≤10MB),文本/代码文件由 @ 引用承载(引擎读盘语义,拒收时 toast 指路);斜杠命令不携带附件(session.command 无 parts 通道,诚实拦截);发送仍需正文文本。
+> **真机批残单**:session 表面像素(gating 已单测)、附件真实发送端到端、拖拽 hover 态。
 
 ## 背景(审计钉死,2026-07-09)
 
