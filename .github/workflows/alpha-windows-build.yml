@@ -1,0 +1,78 @@
+# alpha-windows-build(alpha 自有新增;REQ-077,ADR-026 §6)—— Windows 正式包构建通道。
+#
+# 为什么必须在 Windows runner 上打:bun 只安装当前平台的 optionalDependencies,mac 交叉包缺
+# @lydell/node-pty-win32-x64 / @parcel/watcher-win32-x64 等 win32 原生件(S35 T1b 实测;上游
+# publish.yml 同款约束)。runner = GitHub 托管标准池 windows-latest —— 刻意不依赖 Blacksmith
+# (继承的上游 workflow 永久 queued 的真因,docs/CI.md §5)。
+#
+# 签名:上游 script/sign-windows.ps1 在 AZURE_TRUSTED_SIGNING_* 未配置时优雅自跳(exit 0),
+# 故本 workflow 出**未签名**包;Authenticode/Trusted Signing 接线归 REQ-076 T3(证书拍板
+# 「T3 时再定」;上游用 Azure Trusted Signing,可作 T3 采购先例)。
+# 发布:workflow_dispatch 非 tag 且不注入 GH_TOKEN → electron-builder 不 publish,只出 artifact。
+name: alpha-windows-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "打包渠道(ADR-012;内测/真机批默认 dev)"
+        type: choice
+        options: [dev, beta, prod]
+        default: dev
+
+concurrency:
+  group: alpha-windows-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: windows package (${{ inputs.channel }})
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      # REQ-009 同款:lockfile 键的 bun 全局缓存,miss 只是退化为全量安装
+      - name: Cache bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install
+      # REQ-027:flags 必须在 run 之后。bun 自动先跑 prebuild(icons/metainfo/db-expected/
+      # ext bundle/内嵌引擎 build-node)—— fresh runner 上全部产物由此生成,无本地残留依赖。
+      - name: build + package (unsigned NSIS)
+        run: bun run --cwd packages/ui-mac ship:windows
+        env:
+          OPENCODE_CHANNEL: ${{ inputs.channel }}
+      # REQ-077 验收②:win32 原生件必须在包内 —— 缺 = 与 mac 交叉包同病,loud 红,绝不静默出残包
+      - name: assert win32 natives present
+        shell: pwsh
+        run: |
+          $root = "packages/ui-mac/dist/win-unpacked/resources/app.asar.unpacked/node_modules"
+          $must = @("@lydell/node-pty-win32-x64", "@parcel/watcher-win32-x64")
+          $missing = @()
+          foreach ($m in $must) {
+            if (-not (Test-Path "$root/$m")) { $missing += $m }
+          }
+          if ($missing.Count -gt 0) {
+            Write-Error "win32 natives missing from package: $($missing -join ', ') (REQ-077 acceptance-2 RED)"
+            exit 1
+          }
+          if (-not (Test-Path "packages/ui-mac/dist/alpha-code-win-x64.exe")) {
+            Write-Error "installer missing: packages/ui-mac/dist/alpha-code-win-x64.exe"
+            exit 1
+          }
+          Write-Host "OK: win32 natives + installer present"
+      - name: upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: alpha-code-win-x64-${{ inputs.channel }}
+          path: |
+            packages/ui-mac/dist/alpha-code-win-x64.exe
+            packages/ui-mac/dist/alpha-code-win-x64.exe.blockmap
+          if-no-files-found: error
+          retention-days: 14

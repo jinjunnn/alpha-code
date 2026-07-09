@@ -5,8 +5,8 @@ type: feature
 priority: P1
 repo: A
 created: 2026-07-09
-status: ready
-source: S35 T1b 实测发现(2026-07-09):bun 只装当前平台 optionalDeps → mac 交叉包缺 win32 原生件;用户拍板补位处理
+status: shipped
+source: S35 T1b 实测发现(2026-07-09):bun 只装当前平台 optionalDeps → mac 交叉包缺 win32 原生件;用户拍板补位处理;同日 S36 落地
 ---
 
 ## 背景(S35 实测钉死,证据 = [sprints/s35](../sprints/2026-07-09-s35-req076-windows-t1/sprint.md) 残单)
