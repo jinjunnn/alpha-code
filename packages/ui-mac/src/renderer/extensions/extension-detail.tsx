@@ -540,7 +540,7 @@ export function ExtensionDetail(props: {
             <>
               <FactRow label={t("alpha.ext.detailMode")}>{a().mode}</FactRow>
               <FactRow label={t("alpha.ext.detailSource")}>
-                {a().native ? t("alpha.ext.agentBuiltinNote") : t("alpha.ext.sourceAlpha")}
+                {a().native ? t("alpha.ext.agentBuiltinNote") : t("alpha.ext.agentSelf")}
               </FactRow>
               <Show when={a().model}>
                 <FactRow label={t("alpha.ext.detailModel")}>

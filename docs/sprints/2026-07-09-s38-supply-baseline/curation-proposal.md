@@ -1,4 +1,10 @@
-# REQ-079 精选清单提案(2026-07-09,S38 开工提案 —— 待拍板残点)
+# REQ-079 精选清单提案(2026-07-09,S38 开工提案 —— ✅ 已拍板)
+
+> **拍板(用户,2026-07-09 当日)**:三条提案照准 —— ① 保留 code-reviewer / bug-triage 不删减;
+> ② 本批不新增 agent 条目;③ 出厂技能不重复上架 catalog。
+> **连带观察项一并拍板:改文案** —— 精选卡来源 chip「自建」(source="alpha" 复用 sourceAlpha 键)
+> 与用户自建 agent 语义混淆:catalog/云连接器语境改「alpha 出品」(en "By alpha"),用户自建 agent
+> 两处用点(卡片 pill / 详情来源行)拆新键 `agentSelf` 保留「自建」。补丁 PR 见 BACKLOG 行内。
 
 > 背景:BACKLOG 待拍板队列「现有 catalog 条目(code-reviewer/bug-triage)是否删减 / 是否再补充」。
 > 本批已实现的部分不在此列:撤原生平铺(已拍板)、REQ-080 三连 + office-docs、REQ-082 cloud-dispatch(出厂)。
