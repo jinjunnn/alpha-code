@@ -19,8 +19,12 @@ export async function testProvider(input: ProviderTestInput): Promise<ProviderTe
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
   const started = Date.now()
   try {
+    // URL convention (REQ-074): baseURL always INCLUDES /v1 (matching both SDKs' own defaults), and
+    // the probe appends exactly what the runtime SDK appends — anthropic "@ai-sdk/anthropic" does
+    // `${baseURL}/messages`, openai-compatible does `${baseURL}/chat/completions`. The probe passing
+    // must predict the session working; a diverging join here is how "测试通、会话不通" happened.
     const isAnthropic = compat === "anthropic"
-    const url = isAnthropic ? joinUrl(baseURL, "/v1/messages") : joinUrl(baseURL, "/chat/completions")
+    const url = isAnthropic ? joinUrl(baseURL, "/messages") : joinUrl(baseURL, "/chat/completions")
     const headers: Record<string, string> = { "content-type": "application/json" }
     if (isAnthropic) {
       headers["x-api-key"] = apiKey

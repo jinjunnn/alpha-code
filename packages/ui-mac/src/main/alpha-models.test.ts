@@ -105,6 +105,19 @@ describe("buildAlphaModelConfig — BYOK direct nodes (only when the key FILE ex
     expect(p.options.apiKey).toBe(`{file:${secretFilePath(userData, "ZHIPU_API_KEY")}}`)
   })
 
+  // REQ-074 URL convention: every catalog baseURL must already END with /v1 (or a /v1-suffixed
+  // compatible-mode path). Both runtime SDKs append their own suffix to it — "@ai-sdk/anthropic"
+  // appends /messages, "@ai-sdk/openai-compatible" appends /chat/completions — so a baseURL missing
+  // /v1 sends sessions to a non-existent route while the (previously divergent) probe passed.
+  // zhipuai regression: gateway answered HTTP 200 + {"code":500,"msg":"404 NOT_FOUND"} → silent
+  // empty stream, no error anywhere ("测试通、会话不通").
+  test("every catalog BYOK baseURL ends with /v1 (runtime SDKs append the route themselves)", () => {
+    for (const p of getModelCatalog().byokProviders) {
+      // keyed by id so a failure names the offending provider
+      expect({ id: p.id, endsWithV1: /\/v1$/.test(p.baseURL) }).toEqual({ id: p.id, endsWithV1: true })
+    }
+  })
+
   test("an env var ALONE no longer activates a provider (the sidecar env carries no keys, A6)", () => {
     process.env.DEEPSEEK_API_KEY = "sk-deepseek-123"
     const cfg = buildAlphaModelConfig(userData)!

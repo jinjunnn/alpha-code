@@ -257,6 +257,9 @@ export function AddProvider(props: {
               onInput={(e) => setBaseURL(e.currentTarget.value)}
               placeholder="https://api.example.com/v1"
             />
+            <Show when={compat() === "anthropic"}>
+              <p class="a-mpa-hint">填到 /v1 结尾;实际请求 = Base URL + /messages(测试与会话同此规则)。</p>
+            </Show>
           </div>
           <div class="a-mpa-field">
             <label>
