@@ -15,6 +15,13 @@ import { useCommand } from "./providers"
 import { setExtHubOpen } from "../extensions/ext-hub-state"
 import { createComposerAutocomplete } from "./composer-autocomplete"
 import { buildMentionParts, type MentionPart } from "./composer-autocomplete-core"
+import {
+  ATTACH_ACCEPT,
+  buildAttachmentParts,
+  classifyAttachment,
+  mergeAttachments,
+  type ComposerAttachment,
+} from "./composer-attachments-core"
 import { COMPOSER_PLACEHOLDER, COMPOSER_PLACEHOLDER_PLAN } from "../../shared/composer-copy"
 import { pathHitsPopover } from "./popover-hit"
 import { pushToast } from "./Toast"
@@ -346,6 +353,46 @@ export function AlphaComposer(props: AlphaComposerProps) {
   let taRef: HTMLTextAreaElement | undefined
   const isImeComposing = (e: KeyboardEvent) => e.isComposing || composing() || e.keyCode === 229
 
+  /* ── 附件真通道(REQ-078 T2:图片/PDF → dataUrl FilePart;纯核 = composer-attachments-core)──
+     入口三通道:弹窗「添加附件」→ 隐藏 <input type=file>;textarea 粘贴;整框拖拽。
+     不合规(类型/超限)如实 toast 拒绝,绝不静默丢(C28 —— 旧「文件和文件夹」行正是静默吞)。 */
+  const [attachments, setAttachments] = createSignal<ComposerAttachment[]>([])
+  const [dragOver, setDragOver] = createSignal(false)
+  let fileInputRef: HTMLInputElement | undefined
+  let attSeq = 0
+  const readAsDataUrl = (f: File) =>
+    new Promise<string>((resolve, reject) => {
+      const r = new FileReader()
+      r.onload = () => (typeof r.result === "string" ? resolve(r.result) : reject(new Error("read")))
+      r.onerror = () => reject(r.error ?? new Error("read"))
+      r.readAsDataURL(f)
+    })
+  const addFiles = async (list: ArrayLike<File> | null | undefined) => {
+    if (!list || list.length === 0) return
+    const rejected: Array<{ name: string; reason: string }> = []
+    const accepted: ComposerAttachment[] = []
+    for (const f of Array.from(list)) {
+      const name = f.name || `粘贴内容-${attSeq + 1}`
+      const c = classifyAttachment({ name, type: f.type, size: f.size })
+      if (!c.ok) {
+        rejected.push({ name, reason: c.reason })
+        continue
+      }
+      try {
+        const url = await readAsDataUrl(f)
+        accepted.push({ id: `att-${++attSeq}`, name, mime: f.type, kind: c.kind, size: f.size, url })
+      } catch {
+        rejected.push({ name, reason: "读取失败" })
+      }
+    }
+    const merged = mergeAttachments(attachments(), accepted)
+    setAttachments(merged.next)
+    const bad = [...rejected, ...merged.rejected]
+    if (bad.length) pushToast({ kind: "error", title: "部分附件未添加", detail: bad.map((r) => `${r.name}:${r.reason}`).join("；") })
+  }
+  const removeAttachment = (id: string) => setAttachments((xs) => xs.filter((a) => a.id !== id))
+  const hasDragFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files")
+
   // REQ-073 拍板③:模式是会话级的 —— home 是新会话入口,挂载即回默认(build);会话页不重置。
   onMount(() => {
     if (props.mode === "home") setComposerAgent(null)
@@ -360,6 +407,8 @@ export function AlphaComposer(props: AlphaComposerProps) {
     sdk: props.projects.sdk,
     onMention: (m) => setMentions((xs) => [...xs.filter((x) => x.content !== m.content), m]),
     isComposing: isImeComposing,
+    surface: props.mode,
+    onAttach: () => fileInputRef?.click(),
   })
 
   const canSend = createMemo(() => text().trim().length > 0 && !!props.directory() && !sending())
@@ -530,9 +579,14 @@ export function AlphaComposer(props: AlphaComposerProps) {
       }
     }
     const body = text().trim()
+    // 斜杠命令走 session.command,不携带 parts —— 附件会被静默丢弃;如实拦下(C28),不装作发出去了。
+    if (attachments().length > 0 && body.startsWith("/")) {
+      pushToast({ kind: "info", title: "斜杠命令不携带附件", detail: "请先单独发送附件消息,或移除附件后再执行命令。" })
+      return
+    }
     const req = buildPromptRequest({
       text: body,
-      extraParts: buildMentionParts(body, dir, mentions()),
+      extraParts: [...buildMentionParts(body, dir, mentions()), ...buildAttachmentParts(attachments())],
       model: composerModel(),
       effort: composerEffortSel(),
       perm: composerPerm(),
@@ -552,6 +606,7 @@ export function AlphaComposer(props: AlphaComposerProps) {
         }
         setText("")
         setMentions([])
+        setAttachments([])
         props.onSubmitted?.(id)
         return
       }
@@ -584,6 +639,7 @@ export function AlphaComposer(props: AlphaComposerProps) {
       }
       setText("")
       setMentions([])
+      setAttachments([])
       setBusy(true) // 立即反映;轮询随后校准
     } finally {
       setSending(false)
@@ -607,8 +663,59 @@ export function AlphaComposer(props: AlphaComposerProps) {
   return (
     // a-ui 作用域类必须随组件走:session 面经 Portal 挂进上游容器,没有 .a-ui 祖先 —— 缺了它,
     // 焦点圈治理(.a-ui .a-chip:focus…)与基础排版全部失效,上游肥橙焦点圈漏进来(用户报障 2026-07-07)。
-    <div class="a-ui a-comp" data-alpha-composer={props.mode} data-empty={text().trim() ? undefined : ""} onClick={stop}>
+    <div
+      class="a-ui a-comp"
+      data-alpha-composer={props.mode}
+      data-empty={text().trim() ? undefined : ""}
+      data-drag={dragOver() ? "" : undefined}
+      onClick={stop}
+      onDragOver={(e) => {
+        if (!hasDragFiles(e)) return
+        e.preventDefault()
+        setDragOver(true)
+      }}
+      onDragLeave={(e) => {
+        // 只在真正离开 composer 树时熄灭(进入子元素也会触发 dragleave)
+        if (!(e.relatedTarget instanceof Node) || !e.currentTarget.contains(e.relatedTarget)) setDragOver(false)
+      }}
+      onDrop={(e) => {
+        if (!hasDragFiles(e)) return
+        e.preventDefault()
+        setDragOver(false)
+        void addFiles(e.dataTransfer?.files)
+      }}
+    >
       <auto.Menu />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={ATTACH_ACCEPT}
+        multiple
+        style={{ display: "none" }}
+        onChange={(e) => {
+          void addFiles(e.currentTarget.files)
+          e.currentTarget.value = "" // 允许再次选择同一文件
+        }}
+      />
+      <Show when={attachments().length > 0}>
+        <div class="a-comp-atts">
+          <For each={attachments()}>
+            {(a) => (
+              <span class="a-comp-att" data-kind={a.kind}>
+                <Show when={a.kind === "image"} fallback={<FileGlyph />}>
+                  <img src={a.url} alt="" />
+                </Show>
+                <span class="a-comp-att-name" title={`${a.name} · ${(a.size / 1024 / 1024).toFixed(1)}MB`}>
+                  {a.name}
+                </span>
+                <button class="a-comp-att-x" title="移除附件" onClick={() => removeAttachment(a.id)}>
+                  ×
+                </button>
+              </span>
+            )}
+          </For>
+        </div>
+      </Show>
       <textarea
         ref={taRef}
         class="a-comp-input"
@@ -620,6 +727,13 @@ export function AlphaComposer(props: AlphaComposerProps) {
           auto.onInput()
         }}
         onKeyDown={onKey}
+        onPaste={(e) => {
+          const files = e.clipboardData?.files
+          if (files && files.length > 0) {
+            e.preventDefault() // 图片/PDF 粘贴进附件通道;纯文本粘贴不受影响
+            void addFiles(files)
+          }
+        }}
         onCompositionStart={() => setComposing(true)}
         onCompositionEnd={() => setComposing(false)}
       />

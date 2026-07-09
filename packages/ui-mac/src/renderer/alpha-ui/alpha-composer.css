@@ -41,6 +41,59 @@
   row-gap: 0;
   padding: 0 10px 0 8px;
 }
+
+/* ── 附件 chips(REQ-078 T2:图片缩略 / PDF 图标 + 文件名 + 移除)── */
+.a-comp-atts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 14px 0;
+}
+.a-comp-att {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  padding: 3px 4px 3px 6px;
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-md);
+  background: var(--a-bg-muted);
+  font-size: var(--a-text-sm);
+  color: var(--a-text-secondary);
+}
+.a-comp-att img {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+.a-comp-att .a-ic {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+.a-comp-att-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.a-comp-att-x {
+  border: 0;
+  background: none;
+  cursor: pointer;
+  padding: 0 4px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--a-text-tertiary);
+}
+.a-comp-att-x:hover {
+  color: var(--a-text);
+}
+/* 拖拽悬停:整框虚线提示(仅文件拖拽触发) */
+.a-comp[data-drag] {
+  outline: 2px dashed var(--a-accent);
+  outline-offset: -2px;
+}
 /* 模型名先截断省略,尽量保住单行 */
 .a-chip-model .a-chip-label {
   max-width: 132px;

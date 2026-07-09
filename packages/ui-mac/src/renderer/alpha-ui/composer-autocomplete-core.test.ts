@@ -256,13 +256,36 @@ describe("buildAssembleRows — 装配弹窗(添加/AGENT/文件/扩展)", () =>
     files: [] as string[],
   }
 
-  test("默认:添加(3 动作)+ AGENT + 文件提示 + 扩展单行;flat 不含提示行", () => {
+  test("home 默认:添加(附件+计划,无终端死行)+ AGENT + 文件提示 + 扩展单行;flat 不含提示行", () => {
     const { groups, flat } = buildAssembleRows(base)
     expect(groups.map((g) => g.label)).toEqual(["添加", "AGENT", "文件", "扩展"])
-    expect(groups[0].rows.map((r) => (r.kind === "action" ? r.id : ""))).toEqual(["attach", "terminal", "plan"])
-    expect(groups[2].rows).toEqual([]) // 无查询 = 提示行,不产可选行
+    expect(groups[0].rows.map((r) => (r.kind === "action" ? r.id : ""))).toEqual(["attach", "plan"])
+    expect(groups[2].rows).toEqual([]) // 无查询无变更文件 = 提示行,不产可选行
     expect(groups[2].hint).toContain("搜索项目文件")
-    expect(flat).toHaveLength(3 + 3 + 1) // 动作3 + agent3 + 扩展1
+    expect(flat).toHaveLength(2 + 3 + 1) // 动作2 + agent3 + 扩展1
+  })
+
+  test("REQ-078 T1 诚实化:终端行仅 terminal 表面出现,文案不再许诺「带进上下文」;附件行文案如实", () => {
+    expect(buildAssembleRows(base).flat.some((r) => r.kind === "action" && r.id === "terminal")).toBe(false)
+    const sess = buildAssembleRows({ ...base, terminal: true })
+    expect(sess.groups[0].rows.map((r) => (r.kind === "action" ? r.id : ""))).toEqual(["attach", "terminal", "plan"])
+    const term = sess.groups[0].rows.find((r) => r.kind === "action" && r.id === "terminal")
+    expect(term && term.kind === "action" ? term.label : "").toBe("打开终端")
+    expect(term && term.kind === "action" ? term.desc : "").toContain("输出不会自动进入上下文")
+    const att = sess.groups[0].rows.find((r) => r.kind === "action" && r.id === "attach")
+    expect(att && att.kind === "action" ? att.desc : "").toContain("图片 / PDF")
+  })
+
+  test("REQ-078 T3:零查询钉 git 变更文件(进 flat 可键盘选);有查询让位搜索结果", () => {
+    const pinned = buildAssembleRows({ ...base, changedFiles: ["src/a.ts", "docs/b.md"] })
+    const fileGroup = pinned.groups.find((g) => g.label === "文件")
+    expect(fileGroup?.rows.map((r) => (r.kind === "file" ? r.path : ""))).toEqual(["src/a.ts", "docs/b.md"])
+    expect(fileGroup?.hint).toContain("git 变更文件")
+    expect(pinned.flat.filter((r) => r.kind === "file")).toHaveLength(2)
+    const searched = buildAssembleRows({ ...base, changedFiles: ["src/a.ts"], query: "composer", files: ["src/alpha-composer.tsx"] })
+    expect(searched.flat.filter((r) => r.kind === "file").map((r) => (r.kind === "file" ? r.path : ""))).toEqual([
+      "src/alpha-composer.tsx",
+    ])
   })
 
   test("计划模式行随 planOn 变文案;readonly 时禁用并退出 flat(可见不可选)", () => {
