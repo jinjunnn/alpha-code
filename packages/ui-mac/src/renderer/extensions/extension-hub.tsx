@@ -377,7 +377,10 @@ export function ExtensionHub(props: {
     }
     return groups
   })
-  const searchAgents = createMemo(() => (searching() ? ext.store.agents.filter(matchesAgent) : []))
+  // REQ-079 curation:浏览/搜索面只出现「自建」agent;引擎原生内置(build/plan/general/…)
+  // 不再平铺 —— 其查看与管理唯一入口 = 已安装 → 内置 治理面板(governance-panel)。
+  const ownAgents = createMemo(() => ext.store.agents.filter((a) => !a.native))
+  const searchAgents = createMemo(() => (searching() ? ownAgents().filter(matchesAgent) : []))
 
   // Connectors grouped by category (fixed order) — drives the 连接器 tab subheaders.
   const groupedConnectors = createMemo(() => {
@@ -878,7 +881,12 @@ export function ExtensionHub(props: {
         </div>
         <p class="alpha-ext-card-desc">{a.description ?? t("alpha.ext.agentNoDesc")}</p>
         <div class="alpha-ext-card-foot">
-          <Show when={receipt()} fallback={<span class="alpha-ext-meta">{t("alpha.ext.agentBuiltinNote")}</span>}>
+          <Show
+            when={receipt()}
+            fallback={
+              <span class="alpha-ext-meta">{a.native ? t("alpha.ext.agentBuiltinNote") : t("alpha.ext.agentOwnNote")}</span>
+            }
+          >
             <button
               class="alpha-ext-add"
               onClick={(ev) => {
@@ -1152,14 +1160,15 @@ export function ExtensionHub(props: {
                       <SecRow label={t("alpha.ext.installableAgents")} count={byTypeF("agent").length} />
                       <Grid items={byTypeF("agent")} />
                     </Show>
-                    <Show
-                      when={ext.store.agents.length > 0}
-                      fallback={<EmptyState title={t("alpha.ext.noResults")} />}
-                    >
-                      <SecRow label={t("alpha.ext.allAgents")} count={ext.store.agents.length} />
+                    {/* REQ-079:引擎原生内置不再平铺(管理归治理面板);浏览面只剩精选 + 自建 */}
+                    <Show when={ownAgents().length > 0}>
+                      <SecRow label={t("alpha.ext.ownAgents")} count={ownAgents().length} />
                       <div class="alpha-ext-grid">
-                        <For each={ext.store.agents}>{(a) => <AgentCard a={a} />}</For>
+                        <For each={ownAgents()}>{(a) => <AgentCard a={a} />}</For>
                       </div>
+                    </Show>
+                    <Show when={byTypeF("agent").length === 0 && ownAgents().length === 0}>
+                      <EmptyState title={t("alpha.ext.noResults")} />
                     </Show>
                   </Show>
 
