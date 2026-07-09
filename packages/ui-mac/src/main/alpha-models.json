@@ -1,5 +1,6 @@
 {
-  "version": "2026-07-09.1",
+  "version": "2026-07-09.2",
+  "_byokNote": "BYOK 目录一律用 OpenAI 兼容端点(compat:openai)。引擎机制(provider.ts apiNpm 链,S34 真机实锤):models.dev 合并进来的模型保留 models.dev 的 npm(@ai-sdk/openai-compatible),只有本目录 declared 的模型用我们的 npm——若目录配 anthropic 端点,合并模型会以 openai 拼法打 anthropic baseURL(四不像 URL)。anthropic compat 仅供用户自定义节点(自担模型清单)。",
   "_note": "Single source of truth for alpha's model catalog (ADR-014 config-driven). Edit here to add/retire models, retune tier/倍率, or change presets — no code change. Consumed by main/alpha-models.ts (opencode config injection) and the renderer model picker (via window.api.models.catalog).",
   "defaultModel": null,
   "tiers": {
@@ -147,8 +148,8 @@
       "name": "智谱 GLM",
       "builtin": true,
       "preset": true,
-      "compat": "anthropic",
-      "baseURL": "https://open.bigmodel.cn/api/anthropic/v1",
+      "compat": "openai",
+      "baseURL": "https://open.bigmodel.cn/api/paas/v4",
       "keyEnv": "ZHIPU_API_KEY",
       "pico": {
         "letter": "智",
@@ -164,8 +165,8 @@
       "name": "MiniMax",
       "builtin": true,
       "preset": false,
-      "compat": "anthropic",
-      "baseURL": "https://api.minimaxi.com/anthropic/v1",
+      "compat": "openai",
+      "baseURL": "https://api.minimaxi.com/v1",
       "keyEnv": "MINIMAX_API_KEY",
       "pico": {
         "letter": "M",

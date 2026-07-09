@@ -98,23 +98,25 @@ describe("buildAlphaModelConfig — BYOK direct nodes (only when the key FILE ex
     expect(Object.keys(p.models).length).toBeGreaterThan(0)
   })
 
-  test("an anthropic-compat provider uses the anthropic sdk npm", () => {
+  test("zhipuai (catalog BYOK) is openai-compat with the paas/v4 endpoint", () => {
     plantSecret("ZHIPU_API_KEY", "sk-zhipu-xyz")
     const p = buildAlphaModelConfig(userData)!.provider.zhipuai as any
-    expect(p.npm).toBe("@ai-sdk/anthropic")
+    expect(p.npm).toBe("@ai-sdk/openai-compatible")
+    expect(p.options.baseURL).toBe("https://open.bigmodel.cn/api/paas/v4")
     expect(p.options.apiKey).toBe(`{file:${secretFilePath(userData, "ZHIPU_API_KEY")}}`)
   })
 
-  // REQ-074 URL convention: every catalog baseURL must already END with /v1 (or a /v1-suffixed
-  // compatible-mode path). Both runtime SDKs append their own suffix to it — "@ai-sdk/anthropic"
-  // appends /messages, "@ai-sdk/openai-compatible" appends /chat/completions — so a baseURL missing
-  // /v1 sends sessions to a non-existent route while the (previously divergent) probe passed.
-  // zhipuai regression: gateway answered HTTP 200 + {"code":500,"msg":"404 NOT_FOUND"} → silent
-  // empty stream, no error anywhere ("测试通、会话不通").
-  test("every catalog BYOK baseURL ends with /v1 (runtime SDKs append the route themselves)", () => {
+  // REQ-074 URL convention (S34 真机批定稿): catalog BYOK providers must ALL be openai-compat.
+  // Engine mechanism (upstream provider.ts apiNpm chain): models merged from models.dev keep
+  // models.dev's npm (@ai-sdk/openai-compatible) while only models DECLARED in our config get our
+  // provider.npm — so an anthropic-compat catalog entry produces mixed SDKs hitting one baseURL
+  // (openai join on an anthropic URL = dead route; zhipuai glm-5.1 regression, loud 404 / silent
+  // 200-wrapped depending on gateway). anthropic compat stays available for user-added custom
+  // nodes only (their model list is exactly what they declare).
+  test("every catalog BYOK provider is openai-compat with a clean https baseURL", () => {
     for (const p of getModelCatalog().byokProviders) {
-      // keyed by id so a failure names the offending provider
-      expect({ id: p.id, endsWithV1: /\/v1$/.test(p.baseURL) }).toEqual({ id: p.id, endsWithV1: true })
+      expect({ id: p.id, compat: p.compat }).toEqual({ id: p.id, compat: "openai" })
+      expect({ id: p.id, ok: /^https:\/\/.+[^/]$/.test(p.baseURL) }).toEqual({ id: p.id, ok: true })
     }
   })
 
