@@ -20,7 +20,7 @@
     "build": "electron-vite build",
     "preview": "bun ./scripts/launch.ts preview",
     "package:mac": "ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder --mac --config electron-builder.config.ts",
-    "package:win": "ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder --win --x64 --config electron-builder.config.ts",
+    "package:win": "ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder --win --x64 --publish never --config electron-builder.config.ts",
     "install:local": "bun ./scripts/install-local.ts",
     "ship:mac": "bun run build && bun run package:mac && bun run install:local",
     "ship:windows": "bun run build && bun run package:win"
