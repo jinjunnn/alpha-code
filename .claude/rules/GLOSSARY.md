@@ -16,6 +16,7 @@
 
 - **输入语法分工(`/` vs `@`/`+`)**(用户拍板 2026-07-09 两轮:REQ-072 B 案立 v1,REQ-073 拍板修订 v2,**固化规则勿漂移**)— `/` = **显式执行一个动作**:命令 + 技能(技能的手动触发通道;技能另有模型按描述自动装载的路)+ MCP 生成命令 + 单条 `/agents` 管理入口;`@` 与 `+` = **装配本条消息**(同一统一弹窗的两个触发器):引用(指派子 agent / 引用文件)· 附加(文件、终端)· 模式(计划模式等主档切换)。**agent 不逐个平铺进 `/`**;**主档(build/plan)是"模式"、不进 Agent 引用节**;内部档(alpha-automation 系)任何弹窗不可见。一句话:斜杠回答"执行什么",@/+ 回答"这条消息怎么组装——让谁干、带上什么、用什么模式"。
 - **command vs skill**(易混,与 Claude Code 心智一致)— **skill** = SKILL.md 能力包,模型可按描述**自动装载**,引擎同时为其生成同名 command 作显式入口;**command** = 纯模板展开,**只有**显式 `/name` 一条触发路。定制中心不单列 command tab(ADR-014 O2)。
+- **出厂技能(factory skills)基线 = 7 件**(REQ-082 盘点落档,2026-07-09;真源 = `factory-skills.ts:FACTORY_SKILL_IDS`,守卫 = `assert-seed-assets.sh`)— skill-creator(造技能)· agent-creator(造 agent)· customize-alpha(引擎配置/治理/定制中心约定)· integrate-project(外来 `.claude`/`.agents` 导入,ADR-024)· alpha-workspace(`~/Alpha` 目录契约,ADR-025)· cloud-dispatch(云派发契约/预算/数据边界,ADR-021)· office-docs(办公文档连接器选型 + xlsx 惯例 + PDF 缺口补位,REQ-080)。随 app 打包、经 `skills.paths` 直指随包资源(REQ-065 纯度通道,不落 `.alpha`);新增出厂技能三处同改:资源目录 + FACTORY_SKILL_IDS + seed 守卫。
 
 ## 技术栈术语(opencode 侧,会在设计/实现里频繁出现)
 - **`@opencode-ai/sdk`** — 由 server OpenAPI 生成的 HTTP/SSE 客户端(v1 `/…` + v2 `/api/*`)。**前端与外部客户端访问后端的唯一稳定契约**。公开 MIT。
