@@ -24,7 +24,7 @@
 
 - REQ-072 代码 gate = 用户审核通过 HTML 设计稿(T2);
 - push gate = `scripts/alpha-check.sh`(北极星守卫 + typecheck + 单测);
-- 真机 gate = 真机批(chip 默认/目录供给/技能生效/菜单键盘导航截图),verified 由实测翻。
+- 真机 gate = 真机批(chip 默认/目录供给/技能生效/菜单键盘导航截图),verified 由实测翻。**✅ 已过(2026-07-09 下午)**
 
 ## 结果(随执行回写)
 
@@ -32,3 +32,7 @@
 - **REQ-072 shipped(PR #161)**:设计稿 v1 → 用户拍板(个人签淡 indigo/选中态淡底不加条/混排接受/**B 案 /agents 单条入口**;/ vs @ 语法分工固化 GLOSSARY)→ v2 定稿 → 按稿实现:三根因修复(active 内容签名归零 + 去 12 条帽全量滚动 scrollIntoView + rankSlashMatch 名称前缀>包含>简介中英搜 + 空态)+ 分节/类型 icon/来源四档右缘(出厂技能真源 = ext.factorySkillIds)/中文映射(SLASH_DESC_ZH)/键位页脚;core 新增 20 单测。**CDP 实机核验 6 场景全过**(截图 cdp/):默认分组 21 条全量、↓×3 选中=3(根因①实证修复)、/wr 前缀优先、/审查 中文命中、空态保留、/agents 就位。
 - **REQ-073 shipped(PR #162,设计稿 v1 过审 + 7 拍板点全清)**:统一装配弹窗(@ 与 + 同一组件,四节 添加/AGENT/文件/扩展;buildAssembleRows 纯核 5 单测)+ 模式收编(AgentChip 移除、agent 参数缺省=build、计划 chip 左侧簇、Shift+Tab、会话级 home 重置、readonly 联动、第三方主档动态项、扩展节收敛单行)。**顺手根治一个通用 bug**:Chromium 列表重渲染时在光标原地合成 mousemove 会劫持键盘选中(hover 拽回)——坐标校准守卫落 Row 层,/ 菜单同受益。**CDP 实机核验全过**(截图 cdp-073/):四节渲染/键盘含取模回绕/计划行点选→chip+placeholder 切换/重开见「关闭计划模式」/chip 点击关/Shift+Tab 双向/+ 按钮同弹窗/@探索 中文命中/AgentChip 消失。
 - 残单 → 真机批(打包安装后):~/Alpha 全链路 + 斜杠菜单像素/滚动手感 + 装配弹窗/计划 chip 手感 + REQ-069 复验(用户机器包仍为 7-08 19:23 旧包)。
+
+## 真机批收尾(2026-07-09 下午,用户下令「archived 真机验证收尾」)
+
+新包(prod 渠道本地打包 12:19)装机,正式 app + 真实 profile CDP 走查(全只读):**REQ-069/070/071/072/073 五项全 PASS → verified → archived**(用户授权当轮归档)。证据 = [audits/2026-07-09-s33-realmachine/verify.md](../../audits/2026-07-09-s33-realmachine/verify.md)(12 截图)。遗留三条小项(引擎就绪前 / 菜单首开不全的加载态观感、REQ-070 存量 pin 待下次登录刷新、REQ-069 Image#4 未复现关闭)记录在 audit,不阻断。**S33 全部收口。**

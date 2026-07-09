@@ -5,7 +5,7 @@ type: ux
 priority: P1
 repo: A
 created: 2026-07-09
-status: shipped
+status: archived
 source: 用户直提(2026-07-09,5 截图;同日 6 拍板点全同意 + 内置 agent 显示决策,T0 设计稿门进行中)
 ---
 

@@ -6,7 +6,7 @@ priority: P1
 repo: X
 created: 2026-07-08
 sprint: S32(2026-07-08)
-status: shipped
+status: archived
 source: alpha-platform 2026-07-08 审计 #3
 ---
 

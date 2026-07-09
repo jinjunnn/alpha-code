@@ -5,7 +5,7 @@ type: ux
 priority: P1
 repo: A
 created: 2026-07-09
-status: shipped
+status: archived
 source: 用户真机报障(2026-07-09,2 截图:alpha 现状 + Codex 参照稿;同日 3 拍板点全清)
 ---
 

@@ -6,7 +6,7 @@ priority: P1
 repo: A
 created: 2026-07-08
 sprint: S32(2026-07-08)
-status: shipped
+status: archived
 source: 用户真机报障(2026-07-08,4 张截图在报障会话)
 ---
 
