@@ -17,7 +17,7 @@
 | T3 | catalog `zhipuai.baseURL` → `…/api/anthropic/v1` + MiniMax 迁 `api.minimaxi.com/anthropic/v1` + `provider-test.ts` anthropic 分支拼 `/messages` + 添加表单提示 + 单测锁约定 | 074 | ☑ PR #163 |
 | T4 | `patch-upstream.ts` 会话列 `"max-width":"100%"` 补丁(漂移由 patch 自身 warn 兜底,前端已冻结) | 075 | ☑ PR #163 |
 | T5 | alpha-check 全绿 → PR #163 → merge → 四件套回写(BACKLOG 翻 shipped + CHANGELOG) | — | ☑ |
-| T6 | ship:mac 本机装包 → 真机核验(GLM 会话真跑通 + 中间宽度不溢出,CDP 截图)→ verified→archived(用户已预授权) | — | ☐ |
+| T6 | ship:mac 本机装包 → 真机核验(GLM 会话真跑通 + 中间宽度不溢出,CDP 截图)→ verified→archived(用户已预授权) | — | ☑ 两轮 |
 
 ## Gates
 
@@ -37,4 +37,4 @@
 - **REQ-074 shipped(PR #163)**:约定统一(baseURL 含 /v1 + 探针/运行时同拼法);zhipuai 与 minimax 双修;**核查修正:MiniMax 也是 anthropic 兼容且旧域双路 404(初核误按 openai 兼容探成 401),T2 原「唯智谱坏」结论修正为「5 家坏 2 家」**;新增 provider-test.test.ts(4 测)+ catalog /v1 结尾断言。
 - **REQ-075 shipped(PR #163)**:patch-upstream 第三条子串补丁 `width: sessionPanelWidth(), "max-width": "100%"`;dev CDP 复验:同带陈旧 1239px 持久宽,1600 档面板照常占余量、1200/1000/850 档列被 clamp(928/728/578)composer 完整在窗内(修复前 1200 档溢出 +291)。
 - **真机批第一轮(13:12 包)逮出补丁二(REQ-074)**:glm-5.1 发消息 → **loud `Not Found: {"detail":"Not Found"}`**(静默已消,但仍不通)。栈实锤引擎机制:`provider.ts` apiNpm 链对 **models.dev 合并模型保留其 npm(@ai-sdk/openai-compatible)**,仅目录 declared 模型用我们的 provider.npm —— anthropic 端点只对 declared(glm-5.2/4.5-air)成立,合并模型(用户在用的 glm-5.1)以 openai 拼法打 anthropic baseURL = 死路。旧包为何「静默」也随之闭环:网关对 `/api/anthropic/*` 层未知路径回 200 包错误体(双 SDK 均无声),`/api/anthropic/v1/*` 层内未知路由才回真 404(loud)。**终解 = BYOK 目录统一 OpenAI 兼容端点**:zhipuai → `…/api/paas/v4`、minimax → `api.minimaxi.com/v1`(用户 key 实测 glm-5.2/5.1 均通;minimaxi 裸探 401);单测改锁「目录全 openai-compat + https 无尾斜杠」;anthropic compat 保留给自定义节点(模型清单 = 用户自己声明,无合并歧义)。
-- 真机批第二轮(补丁二重装包)= T6,PASS 后翻 verified→archived(用户预授权)。
+- **真机批第二轮(补丁二包)双项 PASS → REQ-074/075 verified→archived(用户预授权)**:glm-5.1 真实回复「你好!我是 alpha-code…」(Build · GLM-5.1 · 7秒,零错误条,标题正常生成);composer 面板开启态 1600/1200/1000 三档全在窗内。证据 = [audits/2026-07-09-s34-realmachine/verify.md](../../audits/2026-07-09-s34-realmachine/verify.md)(4 截图)。**S34 全部收口。**
