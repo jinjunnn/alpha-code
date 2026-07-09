@@ -135,6 +135,74 @@ export function rankSlashMatch(item: { trigger: string; description?: string; ti
   return -1
 }
 
+/* ── REQ-073:统一装配弹窗(@/+ 同一弹窗)的分节构建(纯逻辑)────────────────── */
+
+/** 引擎内置子 agent 的中文一句话简介(拍板⑦:保留但降噪;外来/自装如实原文)。 */
+export const SUBAGENT_DESC_ZH: Record<string, string> = {
+  general: "通用子任务:调研与多步骤执行",
+  explore: "快速探索代码库、按模式找文件",
+}
+
+export type AssembleRow =
+  | { kind: "action"; id: "attach" | "terminal" | "plan" | "ext-market"; label: string; desc: string; disabled?: string; kbd?: string }
+  | { kind: "mode"; id: string; label: string; desc: string; on: boolean }
+  | { kind: "agent"; name: string; desc: string; tag: "内置" | "个人" }
+  | { kind: "file"; path: string }
+export type AssembleGroup = { label: string; rows: AssembleRow[]; hint?: string }
+
+/** 装配弹窗分节:添加(动作)/ AGENT(引用)/ 文件(引用)/ 扩展(动作)。
+ *  - 计划模式行随 planOn 变文案;perm=readonly 时禁用并给出如实原因(不静默失效,C28);
+ *  - 第三方主档(非 build/plan 的 primary)动态成模式项,无则不出现(拍板⑤);
+ *  - flat = 可键盘选择行(禁用行、提示行不进);query 过滤跨节(名称+简介)。 */
+export function buildAssembleRows(input: {
+  query: string
+  planOn: boolean
+  readonly: boolean
+  activeMode: string | null
+  subAgents: Array<{ name: string; description?: string }>
+  primaries: string[]
+  files: string[]
+}): { groups: AssembleGroup[]; flat: AssembleRow[] } {
+  const q = input.query.toLowerCase()
+  const hit = (...texts: Array<string | undefined>) => !q || texts.some((t) => (t ?? "").toLowerCase().includes(q))
+  const add: AssembleRow[] = []
+  const attach: AssembleRow = { kind: "action", id: "attach", label: "文件和文件夹", desc: "选择文件作为附件", kbd: "↵" }
+  const term: AssembleRow = { kind: "action", id: "terminal", label: "附加终端", desc: "把终端输出带进上下文" }
+  const plan: AssembleRow = {
+    kind: "action",
+    id: "plan",
+    label: input.planOn ? "关闭计划模式" : "计划模式",
+    desc: input.planOn ? "回到默认(build)" : "先出方案再动手(plan 档)",
+    disabled: input.readonly ? "只读权限档固定使用只读 agent" : undefined,
+  }
+  for (const r of [attach, term, plan]) if (hit(r.kind === "action" ? r.label : "", (r as { desc?: string }).desc)) add.push(r)
+  for (const name of input.primaries) {
+    const row: AssembleRow = { kind: "mode", id: name, label: `${name} 模式`, desc: "切换本会话的主档", on: input.activeMode === name }
+    if (hit(name, row.label)) add.push(row)
+  }
+  const agents: AssembleRow[] = input.subAgents
+    .map((a): AssembleRow => {
+      const zh = SUBAGENT_DESC_ZH[a.name]
+      return { kind: "agent", name: a.name, desc: zh ?? a.description ?? "Agent", tag: zh ? "内置" : "个人" }
+    })
+    .filter((a) => a.kind === "agent" && hit(a.name, a.desc))
+  const files: AssembleRow[] = input.files.filter((p) => hit(p)).map((p): AssembleRow => ({ kind: "file", path: p }))
+
+  const groups: AssembleGroup[] = []
+  if (add.length) groups.push({ label: "添加", rows: add })
+  if (agents.length) groups.push({ label: "AGENT", rows: agents })
+  if (q) {
+    if (files.length) groups.push({ label: "文件", rows: files })
+  } else {
+    groups.push({ label: "文件", rows: [], hint: "输入 @关键词 搜索项目文件…" })
+  }
+  const ext: AssembleRow = { kind: "action", id: "ext-market", label: "扩展市场…", desc: "浏览连接器 / 技能 / 插件" }
+  if (hit(ext.kind === "action" ? ext.label : "", "连接器 技能 插件 扩展")) groups.push({ label: "扩展", rows: [ext] })
+
+  const flat = groups.flatMap((g) => g.rows).filter((r) => !(r.kind === "action" && r.disabled))
+  return { groups, flat }
+}
+
 export type SlashGroup<T> = { section: SlashSection; label: string; items: T[] }
 
 /** 列表构建:无查询 = 分节 + 节内字母序;有查询 = 跨节合并,命中等级 → 名称序(拍板②)。
