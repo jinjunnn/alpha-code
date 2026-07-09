@@ -127,7 +127,7 @@
 </style>
 
 <div class="wrap">
-  <div class="eyebrow">REQ-072 · S33 设计稿 · 待审核</div>
+  <div class="eyebrow">REQ-072 · S33 设计稿 · v2 定稿(2026-07-09 拍板:个人签淡 indigo / 选中态淡底 / 混排接受 / B 案 /agents 入口)</div>
   <h1>斜杠命令菜单 — 交互与展示重设计</h1>
   <p class="sub">下面第一个弹窗是<b>可操作的实机模拟</b>(数据取自你机器上的真实技能):点进输入框,用 ↑↓ 走一遍、搜 <kbd>wr</kbd>、搜 <kbd>审查</kbd>、搜 <kbd>xyz</kbd>,行为即为实现规格。样式逐值取自 alpha-ui tokens,切系统深浅色可看两套主题。</p>
 
@@ -137,7 +137,7 @@
 
   <div class="pop" id="demoPop">
     <div class="pop-scroll" id="demoList" role="listbox" aria-label="命令"></div>
-    <div class="pop-foot"><span>↑↓ 选择</span><span>↵ 确认</span><span>⇥ 补全</span><span>esc 关闭</span><span class="grow"></span><span id="demoCount"></span></div>
+    <div class="pop-foot"><span>↑↓ 选择</span><span>↵ 确认</span><span>esc 关闭</span><span class="grow"></span><span style="color:var(--a-text-tertiary)">@ 引用 Agent / 文件</span><span id="demoCount"></span></div>
   </div>
   <div class="demo-input"><span style="color:var(--a-text-tertiary)">›</span><input id="demoInput" value="/" aria-label="命令输入" spellcheck="false"></div>
   <div class="hint-chips">
@@ -199,11 +199,9 @@
   <!-- ═══ 5. 审核关注点 ═══ -->
   <h2><span class="no">05</span>请你确认的 3 个小点</h2>
   <div class="ask">
-    <b>a.</b> 「个人」签用淡 indigo 与其他来源区分(如模拟所示)—— 还是四档全灰更安静?<br>
-    <b>b.</b> 选中态 = indigo 淡底(如模拟)—— 是否要再加左缘 2px 指示条?<br>
-    <b>c.</b> 中英文简介混排(出厂中文 + 外来英文并存)是诚实策略的必然观感 —— 接受否?
+    <b>已全部拍板(2026-07-09)</b>:a. 个人签淡 indigo ✓ · b. 选中态淡底、不加指示条 ✓ · c. 中英混排接受 ✓ · 追加:agent 不平铺进 /,仅 <code>/agents</code> 单条管理入口(B 案);@ = 引用/指派,/ = 执行(GLOSSARY 固化)。
   </div>
-  <p class="note" style="margin-top:16px">回复「通过」即按此实现;点名任一处修改我先改稿再动代码。</p>
+  <p class="note" style="margin-top:16px">本稿即实现规格(v2 定稿);实现 = composer-autocomplete{-core,.tsx} + home.css,单测锁排序/分组/归属。</p>
 </div>
 
 <script>
@@ -218,6 +216,7 @@
   var GROUPS = [["builtin","内置命令"],["skill","技能"],["project","项目"],["mcp","MCP"]];
   // 数据取自用户真机技能面(简介語言 = 诚实策略示例:出厂/精选中文,外来原文)
   var DATA = [
+    { n:"agents",  g:"builtin", tag:"内置", d:"打开 Agent 管理(消息内用 @ 指派)" },
     { n:"init",    g:"builtin", tag:"内置", d:"初始化项目说明(生成 AGENTS.md 引导)" },
     { n:"review",  g:"builtin", tag:"内置", d:"审查代码改动(未提交 / 分支 / PR)" },
     { n:"agent-creator", g:"skill", tag:"内置", d:"创建自定义 Agent(出厂技能)" },
