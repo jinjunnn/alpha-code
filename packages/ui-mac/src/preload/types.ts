@@ -237,6 +237,10 @@ export type ElectronAPI = {
     title?: string
     defaultPath?: string
   }) => Promise<string | string[] | null>
+  /** REQ-071/ADR-025:`~/Alpha` 默认用户工作目录路径(只查询,不建目录)。 */
+  workspaceDefaultDir: () => Promise<string>
+  /** lazy 供给:dir 省略或等于默认工作目录时创建并返回;其他路径 no-op(ok:false)。 */
+  workspaceEnsureDefault: (dir?: string) => Promise<{ ok: boolean; dir?: string }>
   openFilePicker: (opts?: {
     multiple?: boolean
     title?: string

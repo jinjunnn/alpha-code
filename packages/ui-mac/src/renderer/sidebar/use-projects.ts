@@ -267,10 +267,21 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
     })
   }
 
+  // REQ-071/ADR-025 lazy 供给:目标是默认工作目录 ~/Alpha 时先建它(main 侧只对默认目录生效,
+  // 其他路径 no-op)。失败不拦——session.create 会对不存在的目录如实报错。
+  async function ensureDefaultWorkspace(worktree: string): Promise<void> {
+    try {
+      await window.api.workspaceEnsureDefault(worktree)
+    } catch {
+      /* 供给是 best-effort;引擎侧错误仍会 loud */
+    }
+  }
+
   async function createSession(worktree: string): Promise<string | undefined> {
     const c = client
     if (!c) return undefined
     try {
+      await ensureDefaultWorkspace(worktree)
       const { data, error } = await c.session.create({ directory: worktree } as any)
       if (error || !data) return undefined
       // Make sure the project is expanded-able / present, then insert immediately (don't wait for
@@ -301,6 +312,7 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
     const c = client
     if (!c) return undefined
     try {
+      await ensureDefaultWorkspace(worktree)
       const { data, error } = await c.session.create({ directory: worktree } as any)
       if (error || !data) return undefined
       const id = (data as any).id as string

@@ -178,6 +178,16 @@ export function AutomationPanel() {
     setFErr("")
   }
 
+  // REQ-071/ADR-025:新建任务目标目录默认 ~/Alpha(用户可改;真正落盘由 main 侧 lazy 供给)。
+  const fillDefaultDir = () => {
+    void window.api
+      .workspaceDefaultDir()
+      .then((d) => {
+        if (!fDir()) setFDir(d)
+      })
+      .catch(() => {})
+  }
+
   const startCreate = () => {
     const text = nlInput().trim()
     const parsed = parseAutomationText(text)
@@ -185,6 +195,7 @@ export function AutomationPanel() {
     setFName(parsed.prompt.slice(0, 24) || t("alpha.auto.untitled"))
     setFPrompt(parsed.prompt)
     setFDir("")
+    fillDefaultDir()
     setFForm(parsed.schedule ? toForm(parsed.schedule) : { ...DEFAULT_FORM })
     setParseNote(
       text
@@ -195,6 +206,24 @@ export function AutomationPanel() {
     )
     setFMaxMin(AUTOMATION_DEFAULTS.maxDurationMin)
     setFProfile("readonly")
+    setFExec("local")
+    setFNotify(true)
+    setFErr("")
+    setView("edit")
+  }
+
+  // REQ-071 T2:预置「每日总结」模板 —— 只预填表单,不自动保存/启用(默认不开,ADR-025);
+  // standard 档(要写 Journal)在保存时照走既有确认门。
+  const startDailyTemplate = () => {
+    setEditing(null)
+    setFName(t("alpha.auto.tplDailyName"))
+    setFPrompt(t("alpha.auto.tplDailyPrompt"))
+    setFDir("")
+    fillDefaultDir()
+    setFForm({ ...DEFAULT_FORM, kind: "daily", time: "21:00" })
+    setParseNote("")
+    setFMaxMin(AUTOMATION_DEFAULTS.maxDurationMin)
+    setFProfile("standard")
     setFExec("local")
     setFNotify(true)
     setFErr("")
@@ -357,6 +386,11 @@ export function AutomationPanel() {
                     {t("alpha.auto.create")}
                   </button>
                 </div>
+
+                {/* REQ-071 T2:每日总结模板(预填表单,保存/启用仍由用户显式完成) */}
+                <button class="alpha-auto-example" onClick={startDailyTemplate}>
+                  {t("alpha.auto.tplDaily")}
+                </button>
 
                 <Show
                   when={tasks().length > 0}

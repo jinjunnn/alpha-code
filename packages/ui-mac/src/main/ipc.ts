@@ -7,6 +7,7 @@ import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
 
 import type { AuthMode, AuthState, FatalRendererError, ServerReadyData, TitlebarTheme } from "../preload/types"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
+import { alphaUserWorkspaceDir, ensureUserWorkspaceDir } from "./alpha-user-workspace"
 import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
 import { getStore } from "./store"
 import { GLOBAL_RENDERER_STORE, TABS_KEY, TABS_RECENT_KEY } from "./tabs-preclean"
@@ -136,15 +137,24 @@ export function registerIpcHandlers(deps: Deps) {
         const dir = process.env.ALPHA_OPEN_DIR
         return opts?.multiple ? [dir] : dir
       }
+      // REQ-071/ADR-025:全部目录选择器统一默认落 ~/Alpha(调用方显式 defaultPath 优先)。
+      // 打开选择器即「首次需要」→ lazy 供给;供给失败(如同名文件占位)退回系统默认,不阻断。
       const result = await dialog.showOpenDialog({
         properties: ["openDirectory", ...(opts?.multiple ? ["multiSelections" as const] : []), "createDirectory"],
         title: opts?.title ?? "Choose a folder",
-        defaultPath: opts?.defaultPath,
+        defaultPath: opts?.defaultPath ?? ensureUserWorkspaceDir() ?? undefined,
       })
       if (result.canceled) return null
       return opts?.multiple ? result.filePaths : result.filePaths[0]
     },
   )
+
+  // REQ-071/ADR-025:~/Alpha 默认工作目录 —— 路径查询(不建)与 lazy 供给(仅对默认目录生效)。
+  ipcMain.handle("alpha-workspace-default", () => alphaUserWorkspaceDir())
+  ipcMain.handle("alpha-workspace-ensure", (_event: IpcMainInvokeEvent, dir?: unknown) => {
+    const ensured = ensureUserWorkspaceDir(typeof dir === "string" ? dir : undefined)
+    return ensured ? { ok: true, dir: ensured } : { ok: false }
+  })
 
   ipcMain.handle(
     "open-file-picker",

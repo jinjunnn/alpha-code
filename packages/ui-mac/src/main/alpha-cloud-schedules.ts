@@ -13,6 +13,7 @@ import { scheduleToCron } from "../shared/automation-schedule"
 import { fetchCloudArtifact, getCloudJobStatus, listCloudArtifacts } from "./alpha-cloud-jobs"
 import { getAutomation, listAutomations, saveAutomation } from "./alpha-automations"
 import { saveCloudRun } from "./alpha-workdir"
+import { mirrorRunArtifacts } from "./alpha-user-workspace"
 import { getLogger } from "./logging"
 import { getStore } from "./store"
 
@@ -143,6 +144,8 @@ async function doPull(): Promise<{ pulled: number } | { error: string }> {
       { status: getCloudJobStatus, artifacts: listCloudArtifacts, fetchArtifact: fetchCloudArtifact },
       { autonomy: "pipeline", kind: "research", input: { question: task.prompt } } as never,
     ).catch(() => ({ ok: false as const, reason: "save failed" }))
+    // REQ-071/ADR-025:~/Alpha 目标任务的交付物镜像到可见区 Outputs(best-effort,真源不变)。
+    if (saved.ok && "files" in saved) mirrorRunArtifacts(task.target.projectDir, job.job_id, saved)
     // codex M1:落账前重读最新任务(await 期间用户可能已编辑)—— 只叠加历史,不回写旧快照。
     const fresh = getAutomation(task.id)
     const target = fresh ?? task

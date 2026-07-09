@@ -7,6 +7,7 @@
 // (agent=alpha-automation readonly 档,阻塞到回复完成)→ 最终回复落 report.md + status.json
 // 进目标项目 .alpha/runs/auto-<id>-<ts>/(alpha-workdir 守卫)。超 maxDurationMin 中断(abort)。
 
+import { join } from "node:path"
 import { BrowserWindow, Notification, powerMonitor } from "electron"
 // CLIENT subpath(纯 fetch,main 的 Node 环境同样适用;v2 barrel 的 Node-only 依赖问题是 renderer 限定)
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
@@ -15,6 +16,7 @@ import { AUTOMATION_DEFAULTS } from "../shared/automation-types"
 import { rescheduleAfterGap, shouldTripBreaker } from "../shared/automation-schedule"
 import { getAutomation, listAutomations, readAutomationState, saveAutomation, writeAutomationState } from "./alpha-automations"
 import { writeRunFiles } from "./alpha-workdir"
+import { saveVisibleOutputs } from "./alpha-user-workspace"
 import { getLogger } from "./logging"
 
 export interface AutomationServerInfo {
@@ -296,6 +298,8 @@ async function executeTask(task: AutomationTask): Promise<AutomationRunRecord> {
       ),
     })
     if (!saved.ok) getLogger().warn("automation: run dir write failed", saved.reason)
+    // REQ-071/ADR-025:目标 = ~/Alpha 的任务,把 report.md 镜像到可见区 Outputs(best-effort)。
+    if (saved.ok) saveVisibleOutputs(directory, runId, [{ name: "report.md", from: join(saved.dir, "report.md") }])
     const firstLine = reply.split("\n").find((l) => l.trim()) ?? ""
     return {
       at,

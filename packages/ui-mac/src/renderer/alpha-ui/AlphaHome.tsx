@@ -3,7 +3,7 @@
 // 页面骨架:问候语、错误横幅、工作区 chip)。Mounted as a route-aware child of AppInterface
 // (same pattern as AlphaSidebar);data + send go through the SDK (useAlphaProjects)。
 
-import { createMemo, createSignal, For, Show, onCleanup } from "solid-js"
+import { createMemo, createResource, createSignal, For, Show, onCleanup } from "solid-js"
 import { Portal } from "solid-js/web"
 import { useLocation, useNavigate } from "@solidjs/router"
 import { type AlphaProjectsApi } from "../sidebar/use-projects"
@@ -38,7 +38,16 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
   const [chosenWs, setChosenWs] = createSignal<string | undefined>(undefined)
   const [wsOpen, setWsOpen] = createSignal(false)
 
-  const activeWs = createMemo(() => chosenWs() ?? visibleProjects()[0]?.worktree)
+  // REQ-071/ADR-025:无项目/未选时默认落 ~/Alpha(路径查询不建目录;lazy 供给在真正开会话时
+  // 由 use-projects 经 workspaceEnsureDefault 触发)。既有用户有项目照旧(仍第一个项目优先)。
+  const [defaultWs] = createResource(async () => {
+    try {
+      return await window.api.workspaceDefaultDir()
+    } catch {
+      return undefined
+    }
+  })
+  const activeWs = createMemo(() => chosenWs() ?? visibleProjects()[0]?.worktree ?? defaultWs())
   const activeWsLabel = createMemo(() => {
     const w = activeWs()
     const p = visibleProjects().find((x) => x.worktree === w)
@@ -114,6 +123,18 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
                   <Show when={wsOpen()}>
                     <div class="a-pop a-pop-up" onClick={stop} style={{ "min-width": "240px" }}>
                       <div class="a-pop-label">工作区</div>
+                      {/* REQ-071:默认工作目录 ~/Alpha 常驻可选(未注册为项目时也在) */}
+                      <Show when={defaultWs() && !visibleProjects().some((p) => p.worktree === defaultWs())}>
+                        <button
+                          class="a-pop-item"
+                          classList={{ "is-on": activeWs() === defaultWs() }}
+                          onClick={() => (setChosenWs(defaultWs()), setWsOpen(false))}
+                        >
+                          <span class="a-pico" style={{ background: "var(--a-accent)" }}>A</span>
+                          Alpha
+                          <span class="a-pop-desc">默认工作区</span>
+                        </button>
+                      </Show>
                       <For each={visibleProjects()}>
                         {(p) => (
                           <button
