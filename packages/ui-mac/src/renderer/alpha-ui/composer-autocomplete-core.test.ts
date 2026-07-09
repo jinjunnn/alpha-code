@@ -6,11 +6,17 @@ import { describe, expect, test } from "bun:test"
 import {
   applyMention,
   buildMentionParts,
+  buildSlashList,
   commandOrigin,
   COMMAND_ORIGIN_LABEL,
   detectTrigger,
+  displayDescription,
   filterGovernanceDenied,
+  rankSlashMatch,
+  slashSection,
+  sourceTag,
   triggerSignature,
+  type CommandOrigin,
   type MentionPart,
 } from "./composer-autocomplete-core"
 
@@ -144,5 +150,90 @@ describe("commandOrigin — 来源归类(REQ-066 T2)", () => {
   test("五类都有中文标签", () => {
     for (const k of ["builtin", "skill", "project", "mcp", "imported"] as const)
       expect(COMMAND_ORIGIN_LABEL[k].length).toBeGreaterThan(0)
+  })
+})
+
+// ── REQ-072:分组 / 来源四档 / 中文映射 / 搜索排序 ─────────────────────────────
+const entry = (trigger: string, origin: CommandOrigin, description?: string, title?: string) => ({
+  trigger,
+  origin,
+  description,
+  title,
+})
+
+describe("slashSection / sourceTag — 类型分节 × 归属四档(拍板①②)", () => {
+  const factory: ReadonlySet<string> = new Set(["alpha-workspace", "skill-creator"])
+  test("分节:builtin/mcp/project 各归其节,skill 与 imported 同入「技能」", () => {
+    expect(slashSection("builtin")).toBe("builtin")
+    expect(slashSection("mcp")).toBe("mcp")
+    expect(slashSection("project")).toBe("project")
+    expect(slashSection("skill")).toBe("skill")
+    expect(slashSection("imported")).toBe("skill")
+  })
+  test("归属:出厂技能在「技能」节但签「内置」;自装/导入 = 个人", () => {
+    expect(sourceTag("skill", "alpha-workspace", factory)).toBe("内置")
+    expect(sourceTag("skill", "wrangler", factory)).toBe("个人")
+    expect(sourceTag("imported", "graphify", factory)).toBe("个人")
+    expect(sourceTag("builtin", "init", factory)).toBe("内置")
+    expect(sourceTag("mcp", "context7", factory)).toBe("MCP")
+    expect(sourceTag("project", "deploy", factory)).toBe("项目")
+  })
+})
+
+describe("displayDescription — 中文映射只覆盖出厂/内置,外来如实原文(拍板③)", () => {
+  test("映射命中 → 中文;未命中 → 原描述;都没有 → title 兜底", () => {
+    expect(displayDescription(entry("init", "builtin", "guided AGENTS.md setup"))).toContain("初始化")
+    expect(displayDescription(entry("wrangler", "skill", "Cloudflare Workers CLI"))).toBe("Cloudflare Workers CLI")
+    expect(displayDescription(entry("bare", "project", undefined, "Bare Title"))).toBe("Bare Title")
+  })
+})
+
+describe("rankSlashMatch — 前缀 > 名称包含 > 简介命中(根因③)", () => {
+  test("等级次序与不中", () => {
+    expect(rankSlashMatch(entry("wrangler", "skill"), "wr")).toBe(0)
+    expect(rankSlashMatch(entry("web-wrangler", "skill"), "wr")).toBe(1)
+    expect(rankSlashMatch(entry("deploy", "skill", "wrangler deploy helper"), "wr")).toBe(2)
+    expect(rankSlashMatch(entry("other", "skill", "nothing"), "wr")).toBe(-1)
+  })
+  test("中文查询命中映射后的中文简介(搜「审查」能找到 /review)", () => {
+    expect(rankSlashMatch(entry("review", "builtin", "review changes"), "审查")).toBe(2)
+  })
+  test("空查询全命中(等级 0)", () => {
+    expect(rankSlashMatch(entry("anything", "project"), "")).toBe(0)
+  })
+})
+
+describe("buildSlashList — 无查询分节字母序 / 有查询跨节合并 / 全量不截断(根因②)", () => {
+  const entries = [
+    entry("review", "builtin"),
+    entry("init", "builtin"),
+    entry("wrangler", "skill"),
+    entry("alpha-workspace", "skill"),
+    entry("deploy", "project"),
+    entry("context7", "mcp"),
+  ]
+  test("无查询:节序 内置→技能→项目→MCP,节内字母序,flat = 节序拼接", () => {
+    const { flat, groups } = buildSlashList(entries, "")
+    expect(groups.map((g) => g.section)).toEqual(["builtin", "skill", "project", "mcp"])
+    expect(groups[0].items.map((e) => e.trigger)).toEqual(["init", "review"])
+    expect(groups[1].items.map((e) => e.trigger)).toEqual(["alpha-workspace", "wrangler"])
+    expect(flat.map((e) => e.trigger)).toEqual(["init", "review", "alpha-workspace", "wrangler", "deploy", "context7"])
+  })
+  test("有查询:groups 清空、跨节按命中等级合并(前缀在前)", () => {
+    const { flat, groups } = buildSlashList([...entries, entry("workspace-tool", "skill", "wrangler helper")], "wr")
+    expect(groups).toEqual([])
+    expect(flat.map((e) => e.trigger)).toEqual(["wrangler", "workspace-tool"]) // 0 级 < 2 级
+  })
+  test("全量:超过 12 条也一条不丢(旧 slice(0,12) 根因回归锁)", () => {
+    const many = Array.from({ length: 30 }, (_, i) => entry(`skill-${String(i).padStart(2, "0")}`, "skill" as const))
+    expect(buildSlashList(many, "").flat).toHaveLength(30)
+    expect(buildSlashList(many, "skill").flat).toHaveLength(30) // 搜索态同样不截断
+    expect(buildSlashList(many, "skill-2").flat.map((e) => e.trigger)).toEqual(
+      Array.from({ length: 10 }, (_, i) => `skill-2${i}`),
+    )
+  })
+  test("空集不产节;无命中返回空 flat(空态由 UI 呈现,不闪没)", () => {
+    expect(buildSlashList([], "").groups).toEqual([])
+    expect(buildSlashList(entries, "zzz").flat).toEqual([])
   })
 })

@@ -412,21 +412,53 @@ body[data-alpha-sidebar="open"] .a-home {
   margin: 6px 4px;
 }
 
-/* slash / @ autocomplete menu (REQ-038) — an .a-pop anchored to the composer box, opening upward
- * above the input like the session page's slash popover. */
+/* slash / @ autocomplete menu (REQ-038;REQ-072 重设计定稿) — an .a-pop anchored to the composer
+ * box, opening upward. 结构:滚动区(全量列表 + sticky 分节)+ 常驻键位页脚。 */
 .a-comp-auto {
   position: absolute;
   bottom: calc(100% + 8px);
   left: 10px;
   right: 10px;
   min-width: 0;
-  max-height: 320px;
-  overflow-y: auto;
+  max-height: 380px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   z-index: 50;
   transform-origin: bottom left;
 }
+.a-comp-auto-scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  min-height: 0;
+}
+/* 分节标题(类型维度,拍板②);sticky 抵消滚动区 padding,滚动中保持可读 */
+.a-comp-sec {
+  position: sticky;
+  top: -6px;
+  z-index: 1;
+  background: var(--a-surface);
+  padding: 8px 10px 4px;
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-semibold);
+  letter-spacing: var(--a-tracking-wide);
+  color: var(--a-text-tertiary);
+}
+/* 选中态 = indigo 淡底(定稿 v1-b:不加左缘指示条) */
 .a-pop-item.is-active {
-  background: var(--a-bg-muted);
+  background: var(--a-accent-subtle);
+}
+.a-pop-item.is-active .a-auto-trig,
+.a-pop-item.is-active .a-auto-ic {
+  color: var(--a-accent);
+}
+.a-auto-ic {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--a-text-tertiary);
 }
 .a-auto-trig {
   font-family: var(--a-font-mono);
@@ -442,27 +474,54 @@ body[data-alpha-sidebar="open"] .a-home {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.a-auto-badge {
-  flex: none;
-  font-size: var(--a-text-2xs);
-  padding: 1px 7px;
-  border-radius: var(--a-radius-full);
-  background: var(--a-accent-subtle);
-  color: var(--a-accent);
-}
-/* REQ-066 T2 来源标注:内置/项目降为中性(每行都有徽标,只有用户装入的来源才吃强调色) */
-.a-auto-badge[data-origin="builtin"],
-.a-auto-badge[data-origin="project"] {
-  background: var(--a-bg-muted);
-  color: var(--a-text-tertiary);
-}
-
-/* one-line clamp for item descriptions — long skill descriptions (e.g. customize-opencode) would
- * otherwise wrap the menu into a wall of text; both surfaces clamp identically (REQ-038b). */
-.a-comp-auto .a-pop-desc {
+/* 简介 = 弹性列单行截断(title 供全文);来源签 = 行尾纯文字右缘对齐(追加拍板④,去胶囊) */
+.a-auto-desc {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: var(--a-text-xs);
+  color: var(--a-text-secondary);
+}
+.a-auto-tag {
+  flex: none;
+  font-size: var(--a-text-2xs);
+  color: var(--a-text-tertiary);
+}
+/* 「个人」= 你装的 —— 唯一吃淡强调色的归属签(定稿 v1-a) */
+.a-auto-tag[data-personal] {
+  color: var(--a-accent);
+  opacity: 0.75;
+}
+/* 空态:无匹配保留弹窗如实说明(根因③,不再闪没) */
+.a-comp-empty {
+  padding: 22px 12px;
+  text-align: center;
+  font-size: var(--a-text-xs);
+  color: var(--a-text-tertiary);
+}
+.a-comp-empty b {
+  display: block;
+  margin-bottom: 2px;
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+  color: var(--a-text-secondary);
+}
+/* 键位页脚:左键位 · 右语法分工提示(/ 执行 vs @ 引用,GLOSSARY 固化规则)+ 结果计数 */
+.a-comp-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+  padding: 6px 12px;
+  border-top: 1px solid var(--a-border-faint);
+  background: var(--a-bg-subtle);
+  font-size: var(--a-text-2xs);
+  color: var(--a-text-tertiary);
+}
+.a-comp-foot-grow {
+  flex: 1;
 }
 
 /* workspace-missing hint (REQ-038 验收④ / C28 honest controls): visible reason, not a dead button */
