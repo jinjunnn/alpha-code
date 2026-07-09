@@ -26,7 +26,7 @@ import { join, sep } from "node:path"
 import { opencodeHomeDir } from "./alpha-bridge"
 import { alphaGlobalRoot } from "./alpha-installs"
 
-export const FACTORY_SKILL_IDS = ["skill-creator", "agent-creator", "customize-alpha", "integrate-project"] as const
+export const FACTORY_SKILL_IDS = ["skill-creator", "agent-creator", "customize-alpha", "integrate-project", "alpha-workspace"] as const
 
 export function factorySkillsEnabled(): boolean {
   return process.env.ALPHA_FACTORY_SKILLS_DISABLE !== "1"
@@ -46,6 +46,8 @@ export function factorySkillSources(input: {
     "customize-alpha": join(root, "factory-skills", "customize-alpha"),
     // REQ-063 T6:外部生态内容的对话式导入/重导入载体(default-deny 的补充入口,ADR-024)
     "integrate-project": join(root, "factory-skills", "integrate-project"),
+    // REQ-071/ADR-025:~/Alpha 目录契约(Journal/Memory/Outputs)的写入约定载体
+    "alpha-workspace": join(root, "factory-skills", "alpha-workspace"),
   }
 }
 

@@ -104,6 +104,10 @@ export const dict = {
   "alpha.auto.errName": "名称不能为空",
   "alpha.auto.errPrompt": "执行内容不能为空",
   "alpha.auto.errDir": "请选择项目目录",
+  "alpha.auto.tplDaily": "模板:每日总结 → Alpha/Journal",
+  "alpha.auto.tplDailyName": "每日总结",
+  "alpha.auto.tplDailyPrompt":
+    "按 alpha-workspace 技能的目录约定,回顾今天在此工作区里的会话与完成事项,用中文写一份当日总结,追加到 Journal/<今天日期 YYYY-MM-DD>.md(文件不存在则创建,已有内容只追加不覆盖)。只写事实:做了什么、结论、遗留;不要编造。",
   "alpha.ext.hub": "定制中心",
   "alpha.ext.tabFeatured": "推荐",
   "alpha.ext.tabSkills": "技能",

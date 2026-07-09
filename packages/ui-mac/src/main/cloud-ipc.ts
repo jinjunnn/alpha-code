@@ -11,6 +11,7 @@ import * as fs from "node:fs"
 import { dispatchCloudJob, getCloudJobStatus, cancelCloudJob, listCloudArtifacts, fetchCloudArtifact } from "./alpha-cloud-jobs"
 import { isTerminalCloudEvent, subscribeCloudJobEvents } from "./alpha-cloud-events"
 import { readProjectPrefs, saveCloudRun, writeProjectPrefs } from "./alpha-workdir"
+import { mirrorRunArtifacts } from "./alpha-user-workspace"
 import { hasCloudConsent, withCloudConsent } from "./alpha-cloud-consent"
 import { getLogger } from "./logging"
 import type { CloudJobEnvelope } from "../preload/types"
@@ -98,8 +99,16 @@ export function registerCloudIpcHandlers() {
 
   // B3/ADR-019:把一个终态 run 回流写进 <directory>/.alpha/runs/<runId>/(status/contract/artifacts)。
   // renderer 提供 directory(main 不知道当前项目目录);字节在 main 侧取,bearer 不进 renderer。
-  ipcMain.handle("cloud-save-run", (_e: IpcMainInvokeEvent, directory: string, runId: string, contract?: CloudJobEnvelope) =>
-    saveCloudRun(directory, runId, { status: getCloudJobStatus, artifacts: listCloudArtifacts, fetchArtifact: fetchCloudArtifact }, contract))
+  ipcMain.handle("cloud-save-run", async (_e: IpcMainInvokeEvent, directory: string, runId: string, contract?: CloudJobEnvelope) => {
+    const saved = await saveCloudRun(directory, runId, { status: getCloudJobStatus, artifacts: listCloudArtifacts, fetchArtifact: fetchCloudArtifact }, contract)
+    // REQ-071/ADR-025:目标项目 = ~/Alpha 时,交付物镜像到可见区 Outputs(best-effort,真源不变)。
+    if (saved.ok) {
+      const mirrored = mirrorRunArtifacts(directory, runId, saved)
+      if (!mirrored.ok && mirrored.reason !== "not the user workspace" && mirrored.reason !== "no files")
+        getLogger().warn(`cloud: outputs mirror failed for ${runId}: ${mirrored.reason}`)
+    }
+    return saved
+  })
 
   // 订阅 job 进度(SSE)→ 推 "cloud-job-event" 给发起的 renderer。幂等(同 wc+job 只订一次)。
   ipcMain.handle("cloud-subscribe", (e: IpcMainInvokeEvent, jobId: string) => {

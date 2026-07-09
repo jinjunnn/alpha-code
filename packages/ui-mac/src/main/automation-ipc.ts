@@ -3,6 +3,7 @@
 
 import { app, ipcMain, type IpcMainInvokeEvent } from "electron"
 import { getLogger } from "./logging"
+import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
 import type { AutomationTask } from "../shared/automation-types"
 import {
   deleteAutomation,
@@ -28,6 +29,9 @@ export function registerAutomationIpcHandlers() {
   }))
 
   ipcMain.handle("automations-save", async (_e: IpcMainInvokeEvent, task: AutomationTask) => {
+    // REQ-071/ADR-025 lazy 供给:目标是默认工作目录 ~/Alpha 时先建它,存储层「必须是目录」校验
+    // 才能在全新机器上通过;其他路径 no-op(不代建任意目录,校验照旧 loud)。
+    ensureUserWorkspaceDir(task?.target?.projectDir)
     // A3(REQ-025):云档 = 先注册/更新 B schedule(失败不落盘,loud);本地档若此前是云档,先删 B 侧。
     const prev = getAutomation(task?.id)
     const wasCloud = !!prev?.cloudScheduleId

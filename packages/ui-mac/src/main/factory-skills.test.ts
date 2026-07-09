@@ -20,7 +20,8 @@ beforeEach(() => {
   res = join(tmp, "app", "resources")
   mkdirSync(join(res, "skills", "skill-creator"), { recursive: true })
   writeFileSync(join(res, "skills", "skill-creator", "SKILL.md"), "---\nname: skill-creator\n---\n")
-  for (const n of ["agent-creator", "customize-alpha", "integrate-project"]) {
+  // 夹具从名单派生(REQ-071 教训:写死清单会在每次新增出厂技能时假红)
+  for (const n of FACTORY_SKILL_IDS.filter((x) => x !== "skill-creator")) {
     mkdirSync(join(res, "factory-skills", n), { recursive: true })
     writeFileSync(join(res, "factory-skills", n, "SKILL.md"), `---\nname: ${n}\n---\n`)
   }

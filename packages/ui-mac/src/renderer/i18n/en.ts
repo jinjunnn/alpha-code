@@ -105,6 +105,10 @@ export const dict = {
   "alpha.auto.errName": "Name is required",
   "alpha.auto.errPrompt": "Task prompt is required",
   "alpha.auto.errDir": "Pick a project directory",
+  "alpha.auto.tplDaily": "Template: daily summary → Alpha/Journal",
+  "alpha.auto.tplDailyName": "Daily summary",
+  "alpha.auto.tplDailyPrompt":
+    "Following the alpha-workspace skill's directory contract, review today's sessions and completed work in this workspace and append a summary to Journal/<today YYYY-MM-DD>.md (create the file if missing; append, never overwrite). Facts only: what was done, conclusions, open items. Do not invent.",
   "alpha.ext.hub": "Extension Hub",
   "alpha.ext.tabFeatured": "Featured",
   "alpha.ext.tabSkills": "Skills",
