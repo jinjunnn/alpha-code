@@ -5,8 +5,8 @@ type: feature
 priority: P1
 repo: X
 created: 2026-07-09
-status: ready
-source: 用户拍板(2026-07-09:「修改宪法,需要支持 win 版本」;同日全量可移植性审计钉死技术底)
+status: shipped
+source: 用户拍板(2026-07-09:「修改宪法,需要支持 win 版本」;同日全量可移植性审计钉死技术底;同日 S35 开工 T1+T2)
 ---
 
 ## 背景/诉求(用户拍板,2026-07-09)
@@ -32,18 +32,18 @@ source: 用户拍板(2026-07-09:「修改宪法,需要支持 win 版本」;同�
 ## 分期与任务
 
 ### T1 — 出包冒烟(先证明「装得上、开得起、能跑会话」)
-- [ ] `package:win` + `ship:windows` 脚本(含 ELECTRON_MIRROR 环境;mac 交叉打未签名 NSIS 供开发)
-- [ ] `@parcel/watcher` win32 optionalDependencies 补齐(或实测上游无原生件降级路径)
-- [ ] 清理 electron-builder 死 `native/` extraResources 配置
-- [ ] Windows 真机/VM 冒烟:安装 → 启动 → 登录 → 跑通一条会话 → 深链 second-instance → 更新器 dry-run
+- [x] `package:win` + `ship:windows` 脚本(含 ELECTRON_MIRROR 环境;mac 交叉打未签名 NSIS 供开发)—— S35,实测出 `alpha-code-win-x64.exe`
+- [x] `@parcel/watcher-win32-x64` optionalDependencies 补齐 —— ⚠️ S35 实测:bun 只装当前平台 optionalDeps,**mac 交叉包不含 win32 原生件**(node-pty/watcher),正式包须 Windows 构建机产出(上游同款约束)
+- [x] 清理 electron-builder 死 `native/` extraResources 配置(S35)
+- [ ] Windows 真机/VM 冒烟:安装 → 启动 → 登录 → 跑通一条会话 → 深链 second-instance → 更新器 dry-run(**残单 → 真机批;用包须 Windows 机打**)
 
 ### T2 — 功能对齐(审计清单逐项清零)
-- [ ] platform seam 落地(`src/main/platform/*`,接口按 ADR-026 §3)
-- [ ] 阻断①:Windows 应用菜单(数据菜单 = DB 备份/导出/清除/卸载说明可达)
-- [ ] 阻断②:工具探测 `which`→`where` + PATH 分隔符/探测路径集平台化(ext-ipc)
-- [ ] db-safety sqlite Windows 方案(捆绑 sqlite3.exe 或 node 内建 sqlite)
-- [ ] CSP 注入守卫扩 win32;open-path 编辑器 app→exe 映射;ext-config 命令白名单补 Windows 形态
-- [ ] About/NOTICE(B15)Windows 替代入口;data-clear 文案平台化
+- [x] platform seam 落地(`src/main/platform/{index,darwin,win32}.ts` + 13 条双平台单测;S35)
+- [x] 阻断①:Windows 应用菜单(数据菜单全量 + 「帮助」关于/NOTICE;frameless 弹菜单 IPC 通道就位,**renderer 顶栏按钮随真机批**)
+- [x] 阻断②:工具探测 seam 化(posix which+补目录逐字保留 / win32 where+原样 PATH)
+- [x] db-safety Windows:明示禁用 + loud(完全等价方案 = T3 拍板捆绑 sqlite3.exe 或 node 内建,gate 不抢跑)
+- [x] CSP 注入守卫扩 win32(WSL 非回环风险注记 + 逃生阀);open-path 编辑器映射(经 apps.resolveAppPath 落 .exe,无 shell);ext-config 白名单 head 归一(npx.cmd→npx)
+- [x] About/NOTICE(B15)Windows 替代入口(帮助菜单);data-clear 文案 DPAPI 分支;密钥 0600 NTFS 降级 loud(server.ts fork 点)
 
 ### T3 — 安全与发布链(verified 的门)
 - [ ] 密钥文件 Windows 保护拍板 + 落地(icacls ACL vs 明示降级;含 D7 明文兜底告警关切)

@@ -69,11 +69,8 @@ const getBase = (appId: string): Configuration => ({
   },
   files: ["out/**/*", "resources/**/*"],
   extraResources: [
-    {
-      from: "native/",
-      to: "native/",
-      filter: ["index.js", "index.d.ts", "build/Release/mac_window.node", "swift-build/**"],
-    },
+    // (REQ-076 T1 清理)原有指向 native/ 的条目为上游 desktop 遗留死配置:alpha 无 native/ 目录
+    // (mac_window.node/swift-build 未克隆),打包时恒为空 no-op,已删。
     {
       // Bundled builtin skills (Extension Hub E1b): land at process.resourcesPath/skills so the main
       // process (ext-fs-installer.installBuiltinSkill) can copy them into the user's scanned dir.

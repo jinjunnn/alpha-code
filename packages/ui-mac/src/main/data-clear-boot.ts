@@ -19,6 +19,15 @@ import { clearByokKeys } from "./alpha-byok-keys"
 import { secretEnvVars } from "./alpha-secret-files"
 import { logout } from "./alpha-auth"
 import * as DataClear from "./data-clear"
+import { safeStorageBackend } from "./platform"
+
+// REQ-076 T2:safeStorage 残留说明按托管后端分叉(darwin=钥匙串可手动清;win32=DPAPI 绑用户
+// 账户,加密文件删除后无独立残留项可清)——文案如实,不给 Windows 用户指一条不存在的「钥匙串」路。
+function safeStorageResidueNote(): string {
+  return safeStorageBackend() === "dpapi"
+    ? "safeStorage 加密密钥由 Windows 用户账户(DPAPI)管理,加密文件删除后无需额外手动清理。"
+    : "钥匙串中的 safeStorage 密钥项由 macOS 管理,可在「钥匙串访问」搜索 alpha-code 手动删除(加密文件删除后该项已无泄密面)。"
+}
 
 const fsDeps: DataClear.FsDeps = {
   exists: existsSync,
@@ -153,7 +162,7 @@ export function createDataClearAction(opts: {
         `· 引擎数据(会话数据库/项目元数据/引擎凭证):${DataClear.formatBytes(sharedBytes)} —— 见下方勾选\n\n` +
         "不会触碰:你的项目文件、各项目内 .alpha/ 目录、~/.opencode 内你自建的内容、" +
         "~/.opencode/opencode.jsonc(如经定制中心装过连接器/插件,建议先在定制中心卸载,或事后手动清理其条目)。\n" +
-        "钥匙串中的 safeStorage 密钥项由 macOS 管理,可在「钥匙串访问」搜索 alpha-code 手动删除(加密文件删除后该项已无泄密面)。",
+        safeStorageResidueNote(),
       checkboxLabel: "同时删除引擎数据(与独立安装的 opencode CLI 共享 —— 若你单独使用 opencode,请勿勾选)",
       checkboxChecked: true,
       buttons: ["永久删除并退出", "取消"],

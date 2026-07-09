@@ -9,11 +9,14 @@
 //     applyOnly 不检查未知 id —— 本守卫存在的原因)
 
 import { join } from "node:path"
+import { sqliteBinary } from "./platform"
 
 export const BACKUP_KEEP = 5
 export const BACKUP_PREFIX = "opencode-backup-"
-// macOS 恒有(SIP 域);固定绝对路径,不走 PATH(防劫持)。产品 Mac-only(NON_GOALS#6)。
-export const SQLITE3 = "/usr/bin/sqlite3"
+// 固定绝对路径,不走 PATH(防劫持):macOS 恒有(SIP 域)= /usr/bin/sqlite3;win32 无系统自带
+// 可信固定路径 → null,安全带诚实不可用(fail-open + loud;REQ-076 T3 拍板捆绑方案后补齐)。
+// 平台策略单点在 seam(platform/index.sqliteBinary,ADR-026)。
+export const SQLITE3 = sqliteBinary()
 
 export type ExecResult = { code: number; stdout: string; stderr: string }
 export type Exec = (args: string[]) => Promise<ExecResult>

@@ -14,6 +14,11 @@ import * as DbSafety from "./db-safety"
 // spawn + 固定绝对路径 + 参数数组(无 shell)—— 无注入面;SQL 内路径由 db-safety.sqlQuote 转义
 const exec: DbSafety.Exec = (args) =>
   new Promise((resolve) => {
+    if (!DbSafety.SQLITE3) {
+      // win32:sqlite 二进制不可用(REQ-076 T3 前),所有调用点已被 preflight/enabled 闸住,此为兜底
+      resolve({ code: 127, stdout: "", stderr: "sqlite3 unavailable on this platform" })
+      return
+    }
     const child = spawn(DbSafety.SQLITE3, args, { stdio: ["ignore", "pipe", "pipe"] })
     let stdout = ""
     let stderr = ""
@@ -44,8 +49,13 @@ function resolveTarget() {
 // ── 启动预检(index.ts 初次 spawn sidecar 前调用;respawn 不重跑)────────────
 export async function runDbPreflightBoot(opts: { userDataPath: string }): Promise<{ proceed: boolean }> {
   const log = getLogger()
-  if (!existsSync(DbSafety.SQLITE3)) {
-    log?.warn("db-safety: /usr/bin/sqlite3 missing — fail-open skip")
+  if (!DbSafety.SQLITE3 || !existsSync(DbSafety.SQLITE3)) {
+    // fail-open 但必须 loud(审计适配级):win32 = 平台策略性不可用(非异常);posix 缺文件 = 异常态
+    log?.warn(
+      DbSafety.SQLITE3
+        ? "db-safety: /usr/bin/sqlite3 missing — fail-open skip"
+        : "db-safety: Windows 暂无可信 sqlite3(REQ-076 T3 捆绑方案待拍板)—— DB 安全带 fail-open 跳过,备份/水位拦截不可用",
+    )
     return { proceed: true }
   }
   const target = resolveTarget()
@@ -205,8 +215,9 @@ export function createDbMenuActions(opts: {
   getWindow: () => BrowserWindow | null
 }): DbMenuActions {
   const backupDir = backupDirOf(opts.userDataPath)
-  // dev 置灰:分支后缀库 + channel 为构建期常量,备错目标风险 > 收益(设计决策 1/6)
-  const enabled = app.isPackaged && existsSync(DbSafety.SQLITE3)
+  // dev 置灰:分支后缀库 + channel 为构建期常量,备错目标风险 > 收益(设计决策 1/6);
+  // win32 置灰:sqlite 不可用(SQLITE3 = null,REQ-076 T3 前诚实禁用而非假可用)
+  const enabled = app.isPackaged && !!DbSafety.SQLITE3 && existsSync(DbSafety.SQLITE3)
 
   const noDbDialog = async (reason: string) => {
     await dialog.showMessageBox({
