@@ -5,7 +5,7 @@ type: feature
 priority: P1
 repo: A
 created: 2026-07-09
-status: ready
+status: shipped
 source: 用户直提(2026-07-09;同日两轮连拍 7 决策点全清,见 ADR-025〔accepted〕)
 ---
 
