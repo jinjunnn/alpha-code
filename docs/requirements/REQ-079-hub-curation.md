@@ -5,7 +5,7 @@ type: ux
 priority: P1
 repo: X
 created: 2026-07-09
-status: ready
+status: shipped
 source: 用户拍板方向(2026-07-09):「内置 agent 不需要显示,只提供一些必要的 agent/skill,让用户自己添加」
 ---
 
