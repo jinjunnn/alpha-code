@@ -16,8 +16,8 @@
 |---|---|---|
 | T1 | workflow 文件(runner/缓存/REQ-027 flag 序/原生件断言/artifact;签名自跳与不 publish 注记) | ✅ |
 | T2 | 机制核查:上游 sign-windows.ps1 无密钥优雅自跳(无需加闸);bun 自动跑 pre 脚本(实测,无需显式 prebuild 步) | ✅ |
-| T3 | PR 合并后 `gh workflow run` 实跑:断言步过 + artifact 产出(验收①②) | ☐(合并后执行,run URL 回填于此) |
-| 收口 | BACKLOG 回写 shipped + 四件套 | ☐ |
+| T3 | PR 合并后 `gh workflow run` 实跑:断言步过 + artifact 产出(验收①②) | ✅(两跑收敛,见结果) |
+| 收口 | BACKLOG 回写 shipped + 四件套 | ✅ |
 
 ## Gates
 
@@ -27,9 +27,19 @@
 3. 不踩已知坑:runner 用 GitHub 托管池(非 Blacksmith);`bun run --cwd X Y` flag 序(REQ-027);
    无 GH_TOKEN 不 publish。
 
-## 结果(收口回填)
+## 结果(收口回填,2026-07-09)
 
-- (T3 后回填 run URL 与断言结果)
+- **PR #167**(workflow 本体)+ **PR #168**(首跑逮出的修:electron-builder v26 在 CI **隐式触发
+  publish**——即使 dev 渠道无 publish 配置也从 package.json repository 推导 github provider,无
+  GH_TOKEN 即红;修 = `package:win` 加 `--publish never`,v26 警告原文亦建议显式指定)。
+- **首跑 run 29000342644(失败但满载证据)**:构建/断言目标链全通——日志实证
+  `app.asar.unpacked/…/node-pty-win32-x64/prebuilds/win32-x64/conpty/OpenConsole.exe` 在包内,
+  missing 列表只剩异平台件(darwin/linux/win32-arm64,正确);仅 publish 步红。
+- **二跑 run 29001275508 全绿(验收①②实证)**:build ✓ → **assert win32 natives present ✓** →
+  artifact `alpha-code-win-x64-dev`(127.7MB,较 mac 交叉包 +1MB = 补上的原生件)。
+  https://github.com/jinjunnn/alpha-code/actions/runs/29001275508
+- **验收③(Windows 真机可装可跑)= 残单 → REQ-076 真机批**(用包从本通道 artifact 下载,
+  channel 按需选);REQ-077 verified 随真机批同场翻。
 
 ## 回写清单
 
