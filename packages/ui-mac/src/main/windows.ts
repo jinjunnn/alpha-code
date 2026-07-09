@@ -7,6 +7,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import type { TitlebarTheme } from "../preload/types"
 import { exportDebugLogs, write as writeLog } from "./logging"
+import { cspPlatformEligible } from "./platform"
 import { corsRelaxAllowed, RENDERER_CSP } from "./renderer-security"
 import { getStore } from "./store"
 import { PINCH_ZOOM_ENABLED_KEY } from "./store-keys"
@@ -28,9 +29,10 @@ const documentPolicyHeader = "Document-Policy"
 const jsCallStacksDocumentPolicy = "include-js-call-stacks-in-crash-reports"
 
 // C24:CORS 放宽收敛 + 打包态 CSP(纯逻辑在 renderer-security.ts)。CSP 仅打包态注入(dev 的
-// vite/HMR 需要宽松环境)、仅 darwin(WSL 远端 connect 无法进回环白名单);逃生 ALPHA_CSP_DISABLE=1。
+// vite/HMR 需要宽松环境);平台资格经 seam(darwin 原状 + win32 纳入,ADR-026 §5 加固面对齐;
+// WSL 非回环地址风险与真机批验证注记见 platform/index.cspPlatformEligible);逃生 ALPHA_CSP_DISABLE=1。
 const rendererCsp = RENDERER_CSP
-const shouldInjectCsp = () => app.isPackaged && process.platform === "darwin" && process.env.ALPHA_CSP_DISABLE !== "1"
+const shouldInjectCsp = () => app.isPackaged && cspPlatformEligible() && process.env.ALPHA_CSP_DISABLE !== "1"
 
 protocol.registerSchemesAsPrivileged([
   {

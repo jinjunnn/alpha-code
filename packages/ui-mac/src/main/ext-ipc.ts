@@ -6,8 +6,8 @@
 import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from "electron"
 import { execFile } from "node:child_process"
 import * as fs from "node:fs"
-import * as os from "node:os"
 import * as path from "node:path"
+import { toolProbe } from "./platform"
 import { extensionsGranted, hasExtensionsDecision, listProjectExecutables, withExtensionsConsent } from "./alpha-ext-trust"
 import { readProjectPrefs, writeProjectPrefs } from "./alpha-workdir"
 import type { InstallMeta, InstallReceipt, InstallTarget } from "../preload/types"
@@ -32,23 +32,17 @@ import {
 } from "./ecosystem-import"
 import { getLogger } from "./logging"
 
-// GUI apps on macOS launch with a minimal PATH (no Homebrew), so augment it before `which` or we'd
-// false-negative tools the user actually has installed.
-const PROBE_PATH = [
-  process.env.PATH ?? "",
-  "/opt/homebrew/bin",
-  "/usr/local/bin",
-  "/usr/bin",
-  `${os.homedir()}/.local/bin`,
-].join(":")
-
+// REQ-076 T2(阻断②):原实现硬编码 `which` + `:` 拼接的 unix PATH,Windows 上恒报「未安装」
+// (MCP 安装预检全线误报)。改经 platform seam:posix = which + 补包管理器目录(原 mac 行为
+// 逐字保留,GUI 启动 PATH 不全);win32 = where + 原样 PATH(ADR-026)。
 function checkRuntime(tool: string): Promise<{ ok: boolean }> {
   return new Promise((resolve) => {
     if (!/^[a-zA-Z0-9._-]+$/.test(tool)) {
       resolve({ ok: false })
       return
     }
-    execFile("which", [tool], { env: { ...process.env, PATH: PROBE_PATH } }, (err, stdout) => {
+    const probe = toolProbe()
+    execFile(probe.cmd, [tool], { env: { ...process.env, PATH: probe.probePath } }, (err, stdout) => {
       resolve({ ok: !err && Boolean(stdout && stdout.trim()) })
     })
   })

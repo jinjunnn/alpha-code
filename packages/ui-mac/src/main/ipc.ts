@@ -8,6 +8,8 @@ import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
 import type { AuthMode, AuthState, FatalRendererError, ServerReadyData, TitlebarTheme } from "../preload/types"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { alphaUserWorkspaceDir, ensureUserWorkspaceDir } from "./alpha-user-workspace"
+import { resolveAppPath } from "./apps"
+import { editorCliName } from "./platform"
 import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
 import { getStore } from "./store"
 import { GLOBAL_RENDERER_STORE, TABS_KEY, TABS_RECENT_KEY } from "./tabs-preclean"
@@ -231,6 +233,18 @@ export function registerIpcHandlers(deps: Deps) {
   ])
   ipcMain.handle("open-path", async (_event: IpcMainInvokeEvent, path: string, app?: string) => {
     if (!app || !ALLOWED_OPEN_APPS.has(app)) return shell.openPath(path)
+    // REQ-076 T2:win32 上 display 名不是可执行名("Visual Studio Code" ≠ code.exe)——
+    // 经 seam 映射 CLI 名 + apps.resolveAppPath(where + .cmd→.exe)落成真实 .exe 后 execFile
+    // (参数数组、无 shell,拒注入面);无对应物/未安装 → shell.openPath 诚实回退(ADR-026)。
+    if (process.platform === "win32") {
+      const cli = editorCliName(app)
+      const exe = cli ? await resolveAppPath(cli) : null
+      if (!exe) return shell.openPath(path)
+      await new Promise<void>((resolve, reject) => {
+        execFile(exe, [path], (err) => (err ? reject(err) : resolve()))
+      })
+      return
+    }
     await new Promise<void>((resolve, reject) => {
       const [cmd, args] =
         process.platform === "darwin" ? (["open", ["-a", app, path]] as const) : ([app, [path]] as const)

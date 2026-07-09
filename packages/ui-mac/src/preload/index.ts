@@ -99,6 +99,7 @@ const api: ElectronAPI = {
   saveFilePicker: (opts) => ipcRenderer.invoke("save-file-picker", opts),
   openLink: (url) => ipcRenderer.send("open-link", url),
   openPath: (path, app) => ipcRenderer.invoke("open-path", path, app),
+  popupAppMenu: () => ipcRenderer.invoke("popup-app-menu"),
   readClipboardImage: () => ipcRenderer.invoke("read-clipboard-image"),
   writeClipboard: (text: string) => ipcRenderer.invoke("write-clipboard", text) as Promise<boolean>,
   showNotification: (title, body) => ipcRenderer.send("show-notification", title, body),

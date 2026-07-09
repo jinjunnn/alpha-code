@@ -252,6 +252,8 @@ export type ElectronAPI = {
   saveFilePicker: (opts?: { title?: string; defaultPath?: string }) => Promise<string | null>
   openLink: (url: string) => void
   openPath: (path: string, app?: string) => Promise<void>
+  /** win32 专用:弹原生应用菜单(frameless 无菜单栏的可见入口;非 win32 无 handler,调用即拒绝)。REQ-076。 */
+  popupAppMenu: () => Promise<void>
   readClipboardImage: () => Promise<{ buffer: ArrayBuffer; width: number; height: number } | null>
   writeClipboard: (text: string) => Promise<boolean>
   showNotification: (title: string, body?: string) => void

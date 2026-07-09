@@ -7,6 +7,7 @@ import { resolveExtPluginPath } from "./alpha-ext-plugin"
 import { applyEcosystemDefaultDeny } from "./ecosystem-import"
 import { syncSecretFiles } from "./alpha-secret-files"
 import { loadAlphaSecrets } from "./alpha-secrets"
+import { posixModesEffective } from "./platform"
 import { pollUntilHealthy } from "./health-poll"
 import { getLogger } from "./logging"
 import { createSidecarEnv } from "./sidecar-env"
@@ -125,6 +126,12 @@ export async function spawnLocalServer(
   try {
     const sync = syncSecretFiles(options.userDataPath)
     getLogger()?.log(`alpha-secrets sync: wrote [${sync.written.join(", ")}] removed [${sync.removed.join(", ")}]`)
+    // REQ-076 T2(ADR-026 §5,C28 反 placebo):0600/0700 在 NTFS 近乎 no-op —— 密钥文件的
+    // owner-only 保证在 Windows 缺位(icacls ACL 待 T3 拍板)。loud,不静默装样子。
+    if (!posixModesEffective())
+      getLogger()?.warn(
+        "alpha-secrets: POSIX 0600/0700 权限位在 Windows(NTFS)不生效 —— 密钥文件暂无 owner-only 保证(icacls ACL 待 REQ-076 T3 拍板)",
+      )
   } catch (error) {
     getLogger()?.error("alpha-secrets sync FAILED — platform/BYOK providers will be missing", error)
   }

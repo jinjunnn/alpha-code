@@ -17,6 +17,7 @@ import type { InstallMeta } from "../preload/types"
 import { opencodeHomeDir } from "./alpha-bridge"
 import { addReceipt, alphaGlobalRoot, removeReceipt } from "./alpha-installs"
 import { alphaJsoncPath } from "./engine-config-truth"
+import { commandHeadBase } from "./platform"
 
 export type ConfigResult = { ok: true } | { ok: false; reason: string }
 
@@ -34,7 +35,9 @@ const SAFE_MCP_FIELDS = new Set([
   "oauth",
 ])
 // Command heads we allow for local (stdio) MCP servers. Absolute paths under the standard mac
-// package-manager bin dirs are also accepted (Homebrew / system).
+// package-manager bin dirs are also accepted (Homebrew / system). REQ-076 T2:win32 上 head 经
+// seam 归一(npx.cmd → npx,反斜杠 basename)后走同一份白名单;绝对路径前缀白名单不扩 Windows
+// (逐机安装路径不可枚举,推荐白名单 head 走 PATH,ADR-026)。
 const SAFE_COMMAND_HEADS = new Set(["uv", "uvx", "node", "npx", "bun", "bunx", "python", "python3", "git", "deno"])
 const SAFE_ABS_PREFIXES = ["/opt/homebrew/bin/", "/usr/local/bin/", "/usr/bin/"]
 // Inline-code flags: a whitelisted head + one of these = arbitrary code execution (`node -e …`,
@@ -229,7 +232,7 @@ function validateServer(server: Record<string, unknown>): ConfigResult {
   const command = (server as { command?: unknown }).command
   if (Array.isArray(command) && command.length > 0) {
     const head = String(command[0])
-    const base = path.basename(head)
+    const base = commandHeadBase(head)
     const allowed = SAFE_COMMAND_HEADS.has(base) || SAFE_ABS_PREFIXES.some((p) => head.startsWith(p))
     if (!allowed) return { ok: false, reason: `command not allowed: ${head}` }
     // A whitelisted head with arbitrary args is still config-time RCE — the command-head check alone
