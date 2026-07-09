@@ -16,7 +16,16 @@ const PATCHES: Record<string, ReadonlyArray<readonly [string, string]>> = {
   // window (packages/app/src/pages/session.tsx ResizeHandle), so the review panel (flex-1, fills
   // the remainder) can never be dragged narrower than ~55% of the window — too wide. Raising the
   // chat max lets the review panel go down to ~30% of the window.
-  "app/src/pages/session.tsx": [["window.innerWidth * 0.45", "window.innerWidth * 0.7"]],
+  "app/src/pages/session.tsx": [
+    ["window.innerWidth * 0.45", "window.innerWidth * 0.7"],
+    // REQ-075: with the review panel open the session column's width is a PERSISTED fixed px
+    // (layout.session.width, only updated by dragging the divider) and upstream never re-clamps it
+    // on window resize; the column is shrink-0 inside an overflow-hidden ancestor, so shrinking the
+    // window clips the composer at the window edge. Our DEFAULT_SESSION_WIDTH patch below (0.64×
+    // boot-time innerWidth) amplifies this on big screens. Clamp the column so it can never exceed
+    // its flex row; the side panel is min-w-0 (+flex-1 when open) and absorbs the difference.
+    ["width: sessionPanelWidth(),", 'width: sessionPanelWidth(), "max-width": "100%",'],
+  ],
 
   // …and make the DEFAULT narrower too. The chat panel defaults to a fixed 600px, so on wide
   // screens the review panel (the remainder) defaults huge. Default the chat to ~64% of the

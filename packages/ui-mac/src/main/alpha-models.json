@@ -1,5 +1,5 @@
 {
-  "version": "2026-07-06.1",
+  "version": "2026-07-09.1",
   "_note": "Single source of truth for alpha's model catalog (ADR-014 config-driven). Edit here to add/retire models, retune tier/倍率, or change presets — no code change. Consumed by main/alpha-models.ts (opencode config injection) and the renderer model picker (via window.api.models.catalog).",
   "defaultModel": null,
   "tiers": {
@@ -148,7 +148,7 @@
       "builtin": true,
       "preset": true,
       "compat": "anthropic",
-      "baseURL": "https://open.bigmodel.cn/api/anthropic",
+      "baseURL": "https://open.bigmodel.cn/api/anthropic/v1",
       "keyEnv": "ZHIPU_API_KEY",
       "pico": {
         "letter": "智",
@@ -165,7 +165,7 @@
       "builtin": true,
       "preset": false,
       "compat": "anthropic",
-      "baseURL": "https://api.minimax.chat/v1",
+      "baseURL": "https://api.minimaxi.com/anthropic/v1",
       "keyEnv": "MINIMAX_API_KEY",
       "pico": {
         "letter": "M",
