@@ -276,6 +276,11 @@ body[data-alpha-composer-takeover] [data-component="session-composer"] {
 .a-mpp-needkey {
   opacity: 0.75;
 }
+/* REQ-083:已配置 KEY、引擎重启窗口内的占位行(如实存在、不可点,引擎连上自动换真模型行) */
+.a-mpp-pending {
+  opacity: 0.55;
+  cursor: default;
+}
 .a-mpp-addrow {
   border-top: 1px solid var(--a-border-faint);
   margin-top: 4px;
