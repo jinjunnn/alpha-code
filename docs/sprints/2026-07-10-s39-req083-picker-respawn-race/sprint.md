@@ -10,7 +10,7 @@
 
 | ID | 状态入 | 状态出 |
 |---|---|---|
-| REQ-083 | ready | shipped |
+| REQ-083 | ready | shipped(PR #173) |
 
 ## Tasks
 
@@ -28,6 +28,6 @@
 
 ## 回写清单
 
-- [ ] BACKLOG REQ-083 → shipped(PR 号)
+- [x] BACKLOG REQ-083 → shipped(PR #173)
 - [x] CHANGELOG [Unreleased] 用户可见条目
 - [x] 证据:audits/2026-07-10-s39-req083/(5 png + verify.md)
