@@ -33,3 +33,10 @@ DOM 断言注记:脚本 `hasBuild` 正则跑在 body 全文上误报 false,以�
 - REQ-082:登录态会话真派发一单 research(contract 过 B 侧 schema)+ 登出态诚实引导实测;
 - REQ-080:hub 一键安装三连 + xlsx 真实创建一例(mac 必测);Windows 随 REQ-076 真机批同场;
 - REQ-079:Agent tab 像素亲验(UI 亲验门,合并前用户 GO)。
+
+## 拍板补丁(PR #172)— 来源 chip 消歧(2026-07-09 当日,用户拍板)
+
+- 07-agents-chip-alpha-made.png:精选两卡 chip =「alpha 出品」(DOM 断言 `["alpha 出品","alpha 出品"]`);
+- 08-connectors-filter-alpha-made.png:来源筛选 = 全部/官方/社区/**alpha 出品**;
+- 「自建」收窄到用户自建 agent 用点(agentSelf 键;AgentCard pill / 详情来源行)。
+- 精选清单提案三条同日照准(curation-proposal.md 拍板记录)。

@@ -874,7 +874,7 @@ export function ExtensionHub(props: {
             <div class="alpha-ext-card-name">
               <b title={a.name}>{a.name}</b>
               <span class="alpha-ext-type-pill">
-                {a.native ? t("alpha.ext.agentBuiltin") : t("alpha.ext.sourceAlpha")} · {a.mode}
+                {a.native ? t("alpha.ext.agentBuiltin") : t("alpha.ext.agentSelf")} · {a.mode}
               </span>
             </div>
           </div>

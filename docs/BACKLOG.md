@@ -28,7 +28,7 @@
 | REQ-076 Windows 三决策:① ~~证书形态~~ **部分拍板(2026-07-09):公司主体(个人形态排除,候选 OV vs EV),采购时机 = T3 时再定,开发期未签名包如实标注** ② 密钥文件 Windows 保护(icacls ACL vs 明示降级,T3 前置)③ Windows on ARM 是否随首发(默认 x64 先行) | REQ-076 / ADR-026 | 影响 T3 发布链与安全基线;T1/T2 不受阻 |
 | ~~G6 路线B(REQ-064)是否开启~~ **已拍板(2026-07-09):维持 parked,B0 评估靶场也不开** | REQ-064 / ADR-015 | ✅ 队列划掉;拍板依据(硬前置 3/4 未满足)与「config 接缝 9 份底座坍缩 1 份通用 prompt」设计题已回填 REQ-064 parked 行激活条件,重提时必读 |
 | ~~REQ-080 办公文档技能选型~~ **已拍板(2026-07-09):①按推荐上架(MCP 三连)②office-docs 引导技能入出厂内置 ③paperjsx 未点名 = 不上架留 watchlist** | REQ-080 | ✅ 队列划掉;结论已写入 [requirements/REQ-080](requirements/REQ-080-office-docs-suite.md) |
-| REQ-079 精选清单残点:撤原生平铺方向已拍板(2026-07-09);新增精选 = REQ-080 三连+office-docs、REQ-082 cloud-dispatch;残余 = 现有 catalog 条目(code-reviewer/bug-triage)是否删减/是否再补充 —— **提案已出([sprints/s38/curation-proposal.md](sprints/2026-07-09-s38-supply-baseline/curation-proposal.md):保留两条、不删不补、出厂件不重复上架;连带观察项 = 精选卡 chip 显示「自建」有歧义),待拍板** | REQ-079 | 不阻塞(实现已 verified) |
+| ~~REQ-079 精选清单残点~~ **已拍板(2026-07-09):提案三条照准(保留 code-reviewer/bug-triage、不删不补、出厂件不重复上架)+ chip 歧义改文案(catalog 语境「自建」→「alpha 出品」,用户自建 agent 拆 agentSelf 键保留「自建」)** | REQ-079 | ✅ 队列划掉;拍板记录入 [curation-proposal](sprints/2026-07-09-s38-supply-baseline/curation-proposal.md),文案补丁 PR 见 REQ-079 行内 |
 
 > 拍板即从队列划掉、结论写进对应需求文件;执行中撞到未拍板点 = 停下来问,不代替决策。
 > **S17 已拍板划掉(2026-07-05)**:T1 = REQ-008 五连拍 + REQ-011 预留位([debates/req008](debates/2026-07-05-req008-positioning-briefs.md));T4 = C28 控件三选一(只读移除/effort 改文案,[debates/c28-brief](debates/2026-07-05-c28-honest-controls-brief.md));T5 = B12 filewatcher(默认开+可关,拍板入档)。**B16 提醒**:非技术用户入画像 + 云派发已实际可用 → 重启条件临近,维持 parked 等用户拍重启时机。
