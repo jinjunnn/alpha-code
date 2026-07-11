@@ -1,6 +1,10 @@
 # Harness 扩展清单(Tier-2)
 
-> **📌 冻结声明(2026-07-03,ADR-018)**:E 系列**开放项已并入 [`docs/BACKLOG.md`](BACKLOG.md)**(E2/E5/E6/E8/E10/E11 + 归并 G1→B6、E12→B3、E14→D5、E7→parked),状态以 BACKLOG 为准;本文冻结为证据/背景(接缝盘点与落地记仍有效)。
+> **📌 冻结声明(2026-07-11 cutover)**:E 系列曾在本地 BACKLOG 对账
+> (E2/E5/E6/E8/E10/E11 + 归并 G1→B6、E12→B3、E14→D5、E7→parked)；
+> 本文仅保留为接缝盘点与历史证据，不再承载状态、优先级或待办。活跃工作以
+> [GitHub Issues](https://github.com/jinjunnn/alpha-code/issues) 与
+> [Alpha Delivery](https://github.com/users/jinjunnn/projects/2) 为准。
 
 > 生成:2026-06-23,配套 [[ADR-015]](../.claude/rules/adrs/ADR-015-prompt-optimization-strategy.md) Tier-2 决策。
 > 立场:**"提升能力边界"走 harness 接缝(tool/MCP/skill/agent/plugin),不写进提示词。** 见 ADR-002 / ADR-014。

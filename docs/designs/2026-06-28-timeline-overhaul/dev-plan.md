@@ -1,6 +1,14 @@
-# Timeline 全面优化 — 开发执行手册(新 session 可直接开干)
+# Timeline 全面优化 — 历史开发执行手册
 
-> 这份文件让一个**全新 session**(无任何上下文)能直接落地 40 条优化。读完本文 + `tasks.md` 即可开工。
+> [!CAUTION]
+> **冻结的历史执行记录(2026-07-11 cutover)。** 40 项实现清单不再由新
+> session 直接执行或回勾；当前 characterization 与验收尾项由
+> [alpha-code#214](https://github.com/jinjunnn/alpha-code/issues/214) 和
+> [Alpha Delivery](https://github.com/users/jinjunnn/projects/2) 承载。历史
+> 实现证据见 alpha-code PR [#15](https://github.com/jinjunnn/alpha-code/pull/15)
+> 与 [#18](https://github.com/jinjunnn/alpha-code/pull/18)。
+
+> 本文件保留 40 条优化的历史实施方法与验证证据；配套 `tasks.md` 同样冻结。
 > 配套:`audit.md`(为什么)· `tasks.md`(做什么,40 条原子任务)· `timeline.html`(长什么样,设计稿)。
 
 ## 0. 一句话目标
