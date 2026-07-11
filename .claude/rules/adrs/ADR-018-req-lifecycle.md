@@ -1,10 +1,16 @@
 ---
 id: ADR-018
 title: 需求生命周期与文档流:单一真源 BACKLOG + 两档流程 + Sprint 契约 + 归档纪律
-status: accepted
+status: superseded
 date: 2026-07-03
+superseded_by: jinjunnn/alpha-work/governance/ADR-001-github-delivery-sot.md
 related: [ADR-004, ADR-005, ADR-014, ADR-015]
 ---
+
+> **Superseded 2026-07-11.** 本 ADR 保留为迁移前流程历史。活跃需求、
+> Issue 状态、优先级和 Sprint 已迁至 GitHub Issues 与 Alpha Delivery;当前规则见
+> `jinjunnn/alpha-work/governance/delivery-standard.md`。以下 BACKLOG 和本地
+> Sprint 决策不得用于新工作。
 
 ## 背景
 截至 2026-07-03,工作项状态散在多处、互不同步:71 项审计登记册(`docs/plans/2026-07-02-problem-register-sprints-review.md`)是 append-only 叙事,进度记在 §7f–§7j 八批日志(PR #22–#33)里,**没有按 ID 的状态矩阵** → 「记了但看着像没跟踪」;E 系列(`harness-extension-backlog.md`)、S/T 系列(sprint/task)、G 系列(GOALS)各自为政;docs/ 顶层真源/证据/历史混杂;需求「登记→分析→排期→开发→测试→同步→归档→changelog」没有标准流程,新需求(如本日 REQ-001~004)无固定落点。

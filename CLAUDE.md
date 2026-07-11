@@ -28,7 +28,7 @@
 - `ui-mac` 镜像 `packages/desktop` 的原生 Electron 模式;Tailwind/CSS/solid 原生解析(实测产物 475KB CSS)。
 - 新增 `/api/*` 路由是唯一会改 upstream 文件的场景 → 用 sidecar 规避。
 - 架构理解见 `docs/UNDERSTANDING.md`;扩展接缝手册见 `docs/architecture/extension-seams.md`;code-graph 见 `docs/diagrams/opencode-codegraph.svg`。
-- **需求 → sprint → 归档流程 = ADR-018**:工作项**单一真源 `docs/BACKLOG.md`**(状态只在此翻转;每个实现 PR 必须回写状态 + CHANGELOG);手册 `docs/PROCESS.md`;用户可见变更 `docs/CHANGELOG.md`。开工先读 BACKLOG 抽 ready 项。
+- **交付治理**:GitHub Issues + [`Alpha Delivery`](https://github.com/users/jinjunnn/projects/2) 是活跃需求、状态、优先级与 Sprint 的唯一真源。单仓工作建在 `jinjunnn/alpha-code`;跨仓父需求建在 `jinjunnn/alpha-work`。`docs/BACKLOG.md`、`docs/requirements/`、`docs/sprints/` 是迁移前历史,不得再翻状态或从中抽取新 Sprint。统一规则见 `jinjunnn/alpha-work/governance/delivery-standard.md`;用户可见发布历史仍写 `docs/CHANGELOG.md`。
 
 ## 跑起来
 ```

@@ -2,11 +2,9 @@
 id: D5
 title: playwright MCP 浏览器内核来源实测拍板(=E14 遗留)
 type: spike
-priority: P3
-status: ready
+github_issue: https://github.com/jinjunnn/alpha-code/issues/222
 repo: A
 created: 2026-07-03
-sprint: —
 source: 册 §一 P3 / T5.5 / ADR-014 修订(E14)
 ---
 
