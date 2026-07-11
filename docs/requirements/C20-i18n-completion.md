@@ -2,11 +2,9 @@
 id: C20
 title: alpha-ui i18n 补全 + 全语种 OpenCode 残留清零
 type: ux
-priority: P2
-status: ready
+github_issue: https://github.com/jinjunnn/alpha-code/issues/220
 repo: A
 created: 2026-07-03
-sprint: —
 source: 册 §6.3 / R7(每语种残留:zh 19 / en 30)
 ---
 

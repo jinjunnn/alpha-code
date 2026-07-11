@@ -1,4 +1,12 @@
-# 开发流程手册(需求 → sprint → 发布 → 归档)
+# 历史开发流程手册(需求 → sprint → 发布 → 归档)
+
+> [!IMPORTANT]
+> **历史流程,已于 2026-07-11 停用。** GitHub Issues 与
+> [Alpha Delivery](https://github.com/users/jinjunnn/projects/2) 现在是活跃需求、
+> 状态、优先级、负责人和 Sprint 的唯一真源。不要执行下文“读 BACKLOG 抽取、
+> 新建本地 sprint、翻 Markdown 状态”的步骤。当前规则见
+> [alpha-work delivery standard](https://github.com/jinjunnn/alpha-work/blob/main/governance/delivery-standard.md)。
+> 本文正文仅为迁移前历史证据。
 
 > 权威决策:[ADR-018](../.claude/rules/adrs/ADR-018-req-lifecycle.md)。本文 = 操作手册 + 模板。
 > 真源:`docs/BACKLOG.md`(工作项状态)· `docs/CHANGELOG.md`(用户可见变更)。**状态只在 BACKLOG 翻转,其余文档一律 append-only 证据。**

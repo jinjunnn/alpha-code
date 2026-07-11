@@ -1,4 +1,11 @@
-# BACKLOG — 工作项单一真源
+# BACKLOG — 历史迁移快照
+
+> [!CAUTION]
+> **只读迁移快照。** 自 2026-07-11 起,本文件不再是工作项真源,不得新增条目、
+> 翻状态或用于 Sprint 抽取。活跃工作以
+> [GitHub Issues](https://github.com/jinjunnn/alpha-code/issues) 和
+> [Alpha Delivery](https://github.com/users/jinjunnn/projects/2) 为准。下方所有
+> 状态与流程说明均为迁移前历史,不再生效。
 
 > **状态只在本文件翻转**;流程与模板见 [`PROCESS.md`](PROCESS.md)(权威决策 ADR-018)。
 > 状态:`registered / ready / in-sprint / shipped / verified / archived`;旁路 `parked / rejected / dup`。

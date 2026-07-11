@@ -2,10 +2,9 @@
 id: REQ-058
 title: sidecar 惰性 cwd — 消除启动期 home Instance 的单次 watcher
 type: perf
-priority: P3
+github_issue: https://github.com/jinjunnn/alpha-code/issues/219
 repo: A
 created: 2026-07-07
-sprint: —
 source: B4 verified 复核时排查发现(2026-07-07)
 ---
 
