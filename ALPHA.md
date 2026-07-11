@@ -26,6 +26,13 @@ Markdown 不再复制活跃 backlog、优先级、负责人或 Sprint 状态。
 - **`alpha` 分支**(产品分支)= `dev` + 自有新增文件。日常开发在 `alpha`。
 - **自动同步**:`.github/workflows/sync-upstream.yml` 每天把 upstream 同步进 `dev`,再 merge 进 `alpha`。
 - **纪律(北极星)**:**只新增文件,从不编辑 opencode 自身的任何文件** → 每次 sync 零冲突。这是 fork 模型能保持干净的唯一要求。
+- **上游 roadmap 不是 Alpha backlog**:`specs/v2/`、
+  `packages/opencode/specs/effect/`、`packages/codemode/` 与
+  `packages/llm/example/` 中的 TODO、Status 和 checklist 随 `dev` 镜像，仅描述
+  upstream 工作，不是 Alpha 的交付状态。不得为治理而改写这些上游文件或把
+  其未完成项批量迁入 Alpha；只有当某项成为 Alpha 发布/采用门槛时，才在
+  `alpha-code` 新建验收 Issue，引用准确的 upstream revision，并纳入 Alpha
+  Delivery。
 
 ## 自有新增(都是新文件/新目录,不碰 upstream)
 | 路径 | 作用 |

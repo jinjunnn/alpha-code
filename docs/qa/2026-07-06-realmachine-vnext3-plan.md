@@ -1,7 +1,23 @@
-# 真机批 vNext-3 · 验证清单(攒单,待开批)
+# 真机批 vNext-3 · 历史验证清单
+
+> [!CAUTION]
+> **冻结的历史批次记录(2026-07-11 cutover)。** 本清单不再用于开批、回勾
+> 或翻转 BACKLOG；其中仍需执行的验证必须由各自 GitHub Issue 承载，并在
+> [Alpha Delivery](https://github.com/users/jinjunnn/projects/2) 的 Iteration
+> 中排期。既有执行证据见
+> [`2026-07-06-realmachine-vnext3/verify.md`](../audits/2026-07-06-realmachine-vnext3/verify.md)；
+> 当前残项分别由 alpha-code
+> [#175](https://github.com/jinjunnn/alpha-code/issues/175)、
+> [#214](https://github.com/jinjunnn/alpha-code/issues/214) 与
+> [#216](https://github.com/jinjunnn/alpha-code/issues/216)、
+> [#217](https://github.com/jinjunnn/alpha-code/issues/217)、
+> [#218](https://github.com/jinjunnn/alpha-code/issues/218)、
+> [#219](https://github.com/jinjunnn/alpha-code/issues/219) 承载。下方 checkbox
+> 仅保留为 2026-07-06 的点时证据。
 
 > 2026-07-06 S26 收尾时汇编(用户指令「先 REQ-045,再攒真机批一次清单」)。
-> 覆盖:S22–S26 新增码面的全部真机递延 + 存量 verified 残单。开批时以本单为底抽取,逐项证据落 `docs/audits/<date>-realmachine-vnext3/verify.md`,BACKLOG 状态随证据翻 verified。
+> 覆盖:S22–S26 新增码面的真机递延 + 存量 verified 残单；原开批和回写
+> BACKLOG 的流程已随 GitHub cutover 退役。
 
 ## 批前置
 

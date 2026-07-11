@@ -7,6 +7,15 @@ related_rules: [POSITIONING, GOALS, NON_GOALS, ARCHITECTURE, ADR-002, ADR-003, A
 
 # 权威设计:定制中心(Extension Hub)— MCP 优先 + 零自建引擎
 
+> [!CAUTION]
+> **不可变设计记录(2026-07-11 cutover)。** 本文保留 2026-06-22 的设计
+> 决策与 alpha-code PR [#2](https://github.com/jinjunnn/alpha-code/pull/2)
+> 的实现验收依据；该 v2 方案已被后续 Extension v3/v2 信任底座演进取代，
+> §17 checklist 不是当前执行清单，不再回勾。活跃后继由 alpha-code
+> [#209](https://github.com/jinjunnn/alpha-code/issues/209)–
+> [#212](https://github.com/jinjunnn/alpha-code/issues/212) 与
+> [Alpha Delivery](https://github.com/users/jinjunnn/projects/2) 承载。
+
 > **状态**:v2(经 `/app:design-arch` Round1/Round2 多轮对抗后最终设计方案)
 > **日期**:2026-06-22
 > **配套决策**:[[ADR-014]](../.claude/rules/adrs/ADR-014-extension-hub.md)
@@ -672,7 +681,7 @@ if (!url.startsWith('https://') && !isDev) {
 
 ---
 
-## 17. 实现检查清单(交付时用)
+## 17. 历史实现检查清单(冻结)
 
 ### 代码清单
 - [ ] C1: `renderer/extensions/extension-hub.tsx`(主 UI)

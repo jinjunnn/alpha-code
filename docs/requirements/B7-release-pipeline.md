@@ -2,13 +2,17 @@
 id: B7
 title: 发布流水线制度化:CI 断言版本/种子资产/断网首启
 type: debt
-priority: P1
-status: ready
+github_issue: https://github.com/jinjunnn/alpha-code/issues/175
 repo: A
 created: 2026-07-03
-sprint: —
 source: 册 §一 P1 / T2.6
 ---
+
+> [!CAUTION]
+> **冻结的验收记录(2026-07-11 cutover)。** 当前状态、优先级、负责人和
+> Iteration 只在 [alpha-code#175](https://github.com/jinjunnn/alpha-code/issues/175)
+> 与 [Alpha Delivery](https://github.com/users/jinjunnn/projects/2) 维护；
+> 本文件不再回填可变交付状态。
 
 ## 背景/证据
 「预 bundle + 种子预置 + 真实版本注入 + 断网首启验收」未固化为流水线守卫;ADR-006「两个运行时世界」已咬人 3 次(raw-TS crash、`@local` 必败安装、resolve hook 补丁),每次逐案救火。已有部分:DISTRIBUTION.md 权威 runbook + S7 部分断言 + A4 的 patch-server-version drift-tripwire。**验收 = 制度存在,而非单点修复。**

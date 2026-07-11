@@ -50,9 +50,13 @@ renderer「登录」按钮
 - `DEV_PLATFORM_TOKEN` 仅 dev、env-gated、不进客户端二进制、**≠ 模型真 key**(见 `alpha-platform/docs/design.md` §12.3)。
 - 代理必须**透明流式**(见 design.md §8.1);云任务进度走 job 事件流、最终结果异步 artifact(§6)。
 
-## 已知问题 / 待办(2026-06-24,账户用量集成 PR #11 后)
+## 历史已知问题(2026-06-24,账户用量集成 PR #11 后)
 
-> **→ 已登记 BACKLOG(2026-07-03)**:占位模型 id / 接真实 `/v1/models` = **REQ-001**;联调计量出数 = **REQ-002**。状态以 [`docs/BACKLOG.md`](BACKLOG.md) 为准,本节保留为证据。
+> **冻结的历史记录(2026-07-11 cutover)。** 占位模型 id / 接真实
+> `/v1/models` 曾登记为 REQ-001，联调计量出数曾登记为 REQ-002；两项均已
+> 交付并作为历史证据保留。本节不再承载待办或状态，活跃工作以
+> [GitHub Issues](https://github.com/jinjunnn/alpha-code/issues) 与
+> [Alpha Delivery](https://github.com/users/jinjunnn/projects/2) 为准。
 - **用量曲线/今日今周为 0 = 没有模型流量经 B 被计量(非接口缺陷)**。已两头核实:
   - **B 侧计量链是通的**:`alpha-platform/packages/gateway/src/account.ts` `charge()` → `recordDailyTokens()` → `summary().usageSeries`;prod 经 `worker.ts` 带 `x-reconcile-secret` POST 落 `account-server` 的账本。`/v1/account/summary` 返回结构正常,只是 `usage/usageSeries` 全 0。
   - **根因在 alpha-code 出口**:走 B gateway 的 `alpha` provider 仅当 `ALPHA_BASE_URL` 存在(= 平台模式登录,`applyAuthEnv` 设)才注册(`alpha-models.ts:52`);BYOK provider(deepseek/zhipuai/…)**直连、绝不过 B**(见上「约束」),所以默认无可计量流量。
