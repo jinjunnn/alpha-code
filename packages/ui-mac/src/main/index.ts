@@ -20,6 +20,7 @@ import { registerExtIpcHandlers } from "./ext-ipc"
 import { refreshRemoteCatalog } from "./remote-catalog"
 import { registerAccountIpcHandlers } from "./account-ipc"
 import { registerCloudIpcHandlers } from "./cloud-ipc"
+import { registerArtifactIpcHandlers } from "./artifact-ipc"
 import { registerAutomationIpcHandlers } from "./automation-ipc"
 import { startAutomationScheduler } from "./automation-scheduler"
 import { initAutomationLlm } from "./automation-llm"
@@ -527,6 +528,8 @@ const main = Effect.gen(function* () {
   void refreshRemoteCatalog(app.getPath("userData")).catch(() => {})
   registerAccountIpcHandlers()
   registerCloudIpcHandlers()
+  // REQ-093(#185):run artifact manifest 只读查询面(artifacts.json + 磁盘 reconcile)。
+  registerArtifactIpcHandlers()
   // 自动化(REQ-021 A1/ADR-022):IPC + 主进程调度器。执行链等 serverReady(与 renderer 同一
   // Deferred;respawn 后 url/password 不变故一次 await 长期有效)。应用未运行不执行(诚实边界)。
   registerAutomationIpcHandlers()

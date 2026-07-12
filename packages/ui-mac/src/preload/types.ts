@@ -2,6 +2,7 @@ import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
 import type { WslServersPlatform } from "@opencode-ai/app/wsl/types"
 import type { UpdaterState } from "@opencode-ai/app/updater"
 import type { AlphaEndpoints } from "../shared/alpha-config"
+import type { ArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
 import type { ResolvedSurfaces, SurfaceId } from "../shared/alpha-surfaces"
 import type { AutomationEvent, AutomationGlobalState, AutomationTask, AutomationSchedule } from "../shared/automation-types"
 import type {
@@ -190,12 +191,25 @@ export type CloudJobStatus = {
   progress: { phase: string; completed_steps?: number; total_steps?: number }
   counters?: { model_calls: number; tokens_in: number; tokens_out: number; cost_usd: number }
   artifact_ids: string[]
+  /** REQ-092:平台 status 现携带 descriptor 数组(schemaVersion=1;旧部署缺省)。 */
+  artifacts?: CloudArtifactDescriptor[]
   result?: unknown
   error: string | null
 }
-export type CloudArtifactMeta = { id: string; name?: string; mime?: string; size?: number; content_url?: string }
+/** REQ-092 跨端 artifact descriptor(镜像真相源 shared/cloud-artifact-descriptor.ts ← 平台 PR #42)。 */
+export type CloudArtifactDescriptor = ArtifactDescriptor
+/** artifacts 列表条目:新平台 = 完整 descriptor + 便利字段(mime/content_url);旧部署 = 纯 meta。
+ *  两种形态都零内容字段 —— 内容唯一经 main 的流式下载 IPC(REQ-092 AC#1/#5)。 */
+export type CloudArtifactMeta = { id: string; name?: string; mime?: string; size?: number; sha256?: string; content_url?: string } & Partial<
+  Omit<CloudArtifactDescriptor, "id" | "name" | "size" | "sha256">
+>
 export type CloudArtifactList = { job_id: string; status: string; artifacts: CloudArtifactMeta[]; artifact_ids: string[]; result?: unknown }
-export type CloudArtifactContent = { name: string; mime: string; base64: string }
+/** REQ-092:下载进度(main 推送;IPC 上只有计数,永远没有内容字节)。 */
+export type CloudArtifactProgress = { runId: string; artifactId: string; bytes: number; total?: number; percent?: number }
+/** REQ-092:下载结果 —— 落盘路径 + 完整性结论,或分类错误码(错误文案已剥 token)。 */
+export type CloudArtifactDownloadResult =
+  | { ok: true; path: string; bytes: number; sha256: string; verification: "verified" | "unverified"; via: "stream" | "inline-compat" }
+  | { ok: false; error: string; detail?: string }
 /** B3/ADR-019 artifact 回流:写 <projectDir>/.alpha/runs/<runId>/ 的结果清单(main 侧 alpha-workdir.ts)。 */
 export type CloudRunManifest = { ok: true; dir: string; files: string[]; warnings: string[] } | { ok: false; reason: string }
 /** SSE 进度事件(job.snapshot / job.started / job.running / workflow.step.completed / job.completed|failed|cancelled / error)。 */
@@ -204,6 +218,31 @@ export type CloudJobEvent = { event: string; data: unknown; id?: string }
 export type CloudResult<T> = T | { error: string }
 /** B gateway /v1/models 的一条 live 模型(真相源 allowlist)。 */
 export type PlatformLiveModel = { id: string; provider?: string; minPlan?: string }
+
+// REQ-093(#185):run artifact manifest 只读查询面的共享形状。真源在 main 侧 electron-free 模块
+// (artifact-manifest / artifact-service);type-only 引入,renderer 拿到 descriptor + 本地状态
+// (savedPath 为 run 目录内相对路径 —— 响应内无绝对路径、无 bearer)。
+import type {
+  ArtifactInspectResult,
+  ProjectUsageResult,
+  RunArtifactsListResult,
+  RunUsageResult,
+} from "../main/artifact-service"
+export type {
+  ArtifactInspectResult,
+  LegacyRunFile,
+  ProjectArtifactUsage,
+  ProjectUsageResult,
+  RunArtifactUsage,
+  RunArtifactsListResult,
+  RunUsageResult,
+} from "../main/artifact-service"
+export type {
+  ArtifactManifestV1,
+  LocalArtifactRecord,
+  LocalArtifactState,
+  ManifestArtifactEntry,
+} from "../main/artifact-manifest"
 
 /** REQ-098:App 运行环境快照(main 启动时由打包状态 + 构建渠道解析后冻结;renderer 只读,无写面)。 */
 export type AlphaEnvironmentInfo = {
@@ -431,7 +470,18 @@ export type ElectronAPI = {
     status: (jobId: string) => Promise<CloudResult<CloudJobStatus>>
     cancel: (jobId: string) => Promise<CloudResult<{ job_id: string; status: string }>>
     artifacts: (jobId: string) => Promise<CloudResult<CloudArtifactList>>
-    fetchArtifact: (artifactId: string) => Promise<CloudResult<CloudArtifactContent>>
+    /** REQ-092:descriptor-only 下载 —— renderer 只送 descriptor/meta,main 流式写入
+     *  <directory>/.alpha/runs/<runId>/artifacts/(bearer 与内容字节都不过 IPC);
+     *  进度经 onArtifactProgress 推回,结果 = 落盘路径或分类错误。 */
+    downloadArtifact: (
+      directory: string,
+      runId: string,
+      artifact: CloudArtifactMeta | CloudArtifactDescriptor,
+    ) => Promise<CloudArtifactDownloadResult>
+    /** 取消本窗口对该 artifact 的进行中下载(main abort → .part 清理,结果回 cancelled)。 */
+    cancelArtifactDownload: (artifactId: string) => Promise<{ ok: boolean }>
+    /** 订阅下载进度(既有事件订阅 preload 模式;返回退订函数)。 */
+    onArtifactProgress: (cb: (p: CloudArtifactProgress) => void) => () => void
     // B3/ADR-019 回流:终态后把 run(status/contract/artifacts)写进 <directory>/.alpha/runs/<runId>/。
     saveRun: (directory: string, runId: string, contract?: CloudJobEnvelope) => Promise<CloudRunManifest>
     // 订阅 SSE 进度:main 流式 /events → 推 cloud-job-event。onEvent 注册监听,返回取消函数。
@@ -443,6 +493,18 @@ export type ElectronAPI = {
     gitDiff: (
       directory: string,
     ) => Promise<{ ok: true; diff: string; source: "worktree" | "last-commit" } | { ok: false; reason: string }>
+  }
+  // REQ-093(#185):run artifact manifest 只读查询(artifacts.json + 磁盘 reconcile)。刻意无写面:
+  // 下载归 cloud artifact 通道(#184),删除/GC 是 main 内部服务钩子(保留策略未定前不暴露)。
+  runArtifacts: {
+    /** manifest + 磁盘 reconcile 列表(missing/mismatch 降级持久化;legacy 文件只读发现)。 */
+    list: (directory: string, runId: string) => Promise<RunArtifactsListResult>
+    /** 按 artifact id 解析 descriptor + 本地状态。 */
+    inspect: (directory: string, runId: string, artifactId: string) => Promise<ArtifactInspectResult>
+    /** 单 run 字节/件数核算(manifest 账面 + 盘上 stat 真相)。 */
+    usage: (directory: string, runId: string) => Promise<RunUsageResult>
+    /** 项目级(managed project)核算 + 集中基线数字(REQ-093 §5;执行策略不在此)。 */
+    projectUsage: (directory: string) => Promise<ProjectUsageResult>
   }
   // 自动化定时任务(REQ-021 A1/ADR-022):CRUD + 全局暂停 + 登录时启动;调度/执行全在 main,
   // renderer 只读列表(含 nextFireAt/running 计算态)并订阅 automation-event 推送。
