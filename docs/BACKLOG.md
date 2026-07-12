@@ -5,14 +5,15 @@
 > 翻状态或用于 Sprint 抽取。活跃工作以
 > [GitHub Issues](https://github.com/jinjunnn/alpha-code/issues) 和
 > [Alpha Delivery](https://github.com/users/jinjunnn/projects/2) 为准。下方所有
-> 状态与流程说明均为迁移前历史,不再生效。
+> 状态、优先级与流程说明均为迁移前历史,只用于一次性本地 ID → GitHub
+> Issue 对账,不再生效或更新。
 
 > **状态只在本文件翻转**;流程与模板见 [`PROCESS.md`](PROCESS.md)(权威决策 ADR-018)。
 > 状态:`registered / ready / in-sprint / shipped / verified / archived`;旁路 `parked / rejected / dup`。
 > 类:feature / bug / debt / security / perf / ux / docs / spike。仓:A=alpha-code · B=alpha-platform · C=alpha-web · X=跨仓。
 > 证据文档:**册** = [`plans/2026-07-02-problem-register-sprints-review.md`](plans/2026-07-02-problem-register-sprints-review.md)(71 项 + R1-R7 修正 + §7f-7j 实施日志);**核查** = [`audits/2026-07-02-register-verification.md`](audits/2026-07-02-register-verification.md);**E 册** = [`harness-extension-backlog.md`](harness-extension-backlog.md)。
-> 下一个新需求编号:**REQ-083**(新需求一律 REQ-NNN;A/B/C/D/E 为历史审计系列保留原号,用户 2026-07-03 确认)。
-> **需求文件全覆盖(2026-07-03)**:全部开放的 A/B/C/D 条目已逐条建档 `requirements/<ID>-<slug>.md`(含验收标准),行内备注为摘要、**文件为验收真源**;E 系列以冻结 E 册为分析文档;parked/dup 项不建档。
+> 下一个新需求编号:**REQ-108**(新需求一律 REQ-NNN;A/B/C/D/E 为历史审计系列保留原号,用户 2026-07-03 确认)。
+> **需求文件全覆盖(2026-07-03)**:全部开放的 A/B/C/D 条目已逐条建档 `requirements/<ID>-<slug>.md`(含验收标准),行内备注为摘要、**文件为验收真源**;E 系列以冻结 E 册为分析文档;历史 parked/dup 审计项可不建档,用户明确登记的终局/高风险 parked REQ 仍须建档。
 
 ## 发布短名单(launch-blockers,册 §6.8)
 
@@ -39,6 +40,40 @@
 
 > 拍板即从队列划掉、结论写进对应需求文件;执行中撞到未拍板点 = 停下来问,不代替决策。
 > **S17 已拍板划掉(2026-07-05)**:T1 = REQ-008 五连拍 + REQ-011 预留位([debates/req008](debates/2026-07-05-req008-positioning-briefs.md));T4 = C28 控件三选一(只读移除/effort 改文案,[debates/c28-brief](debates/2026-07-05-c28-honest-controls-brief.md));T5 = B12 filewatcher(默认开+可关,拍板入档)。**B16 提醒**:非技术用户入画像 + 云派发已实际可用 → 重启条件临近,维持 parked 等用户拍重启时机。
+
+## Registered — 2026-07-10 产品所有权专项拆分
+
+> 用户确认：当日两份核心专项文档都落 REQ，并拆成可独立开发/验收任务。覆盖与依赖索引见 [产品所有权 REQ map](plans/2026-07-10-product-ownership-req-map.md)。当前 S39 仍待用户 GO，遵守 ADR-018 WIP=1：本表只登记，不开新 sprint、不翻 ready。
+
+| ID | 标题 | 类 | 仓 | 优先级 | 状态 | 依赖/备注 |
+|---|---|---|---|---|---|---|
+| REQ-084 | Product Kernel M0：LegacyRouteAbiV1 + AppInterface typed surface seam + 冻结恢复 | feature | A | P1 | registered | 新 ADR-027 + 修订 ADR-016/020；独立第一步 |
+| REQ-085 | Alpha Home 正式 route surface | feature | A | P1 | registered | 依赖 REQ-084 |
+| REQ-086 | Alpha New Session/Draft 正式 route surface | feature | A | P1 | registered | 依赖 REQ-084；锁住 draft/server/remount 语义 |
+| REQ-087 | LayoutController / LegacySessionAdapter 可行性 spike | spike | A | P1 | registered | 依赖 REQ-084；输入含 REQ-005 legacy baseline |
+| REQ-088 | Alpha SessionWorkspace + Workbench 集成 | feature | A | P1 | registered | 依赖 REQ-085/086/087/094 |
+| REQ-089 | Alpha route manifest 与 declaration/semantic ownership | feature | A | P1 | registered | 依赖 REQ-085/086/088/090 |
+| REQ-090 | Alpha Settings/Dialog/Model/Permission/Recovery surfaces | feature | A | P2 | registered | 依赖 REQ-084 |
+| REQ-091 | AlphaRuntime parity 清零与 AppInterface 退役 | feature | A | P2 | parked | 依赖 REQ-089；parity ledger 未清零前不激活 |
+| REQ-092 | Artifact transport：去 base64 状态/MCP/result + descriptor/stream/先限额 | security | X | P0 | registered | 独立 P0 |
+| REQ-093 | Artifact Manifest/Registry：MIME/sha256/quota/retention/provenance | feature | X | P1 | registered | 依赖 REQ-092 |
+| REQ-094 | Artifact Workbench 基座与 run discovery/cards | ux | A | P1 | registered | 依赖 REQ-093；可独立 harness 开发 |
+| REQ-095 | Core Artifact Renderers：文本/结构化/media/PDF | feature | A | P1 | registered | 依赖 REQ-094 |
+| REQ-096 | 隔离 HTML Artifact Preview | security | A | P1 | registered | 依赖 REQ-094；无主 renderer preload bridge |
+| REQ-097 | Office Preview/Validation：OOXML reopen + derivative + golden corpus | feature | X | P1 | registered | 依赖 REQ-093/094/095 |
+| REQ-098 | 扩展环境隔离：prod/beta/dev 分域 + updater + 旧 ~/.alpha 迁移 | security | A | P0 | registered | Extension v2 P0；与 REQ-099 联合评审 |
+| REQ-099 | Manifest/Receipt v2 + strict schema + main-only planner + project scope | feature | A | P0 | registered | 新 ADR-028；与 REQ-098 联合评审 |
+| REQ-100 | 扩展原子事务：Bundle/health/rollback/quarantine | feature | A | P1 | registered | 依赖 REQ-099 |
+| REQ-101 | Signed Channel Metadata v2：晋级/expiry/轮换/撤销 | security | X | P1 | registered | 依赖 REQ-099；不伪称完整 TUF |
+| REQ-102 | 扩展 CAS/离线 seed/release lock/GC | feature | X | P1 | registered | 依赖 REQ-098/099/100/101 |
+| REQ-103 | 五维所有权 + Capability slots + Hub Governance IA | feature | A | P1 | registered | 依赖 REQ-099/100；禁止第三方顶级路由 |
+| REQ-104 | 开源生态准入与精选 Packs | feature | X | P2 | registered | 依赖 REQ-100/101/102/103 |
+| REQ-105 | Office Catalog 安全纠偏：归档 Word/PPT 下架 + Excel 精确锁版 | security | X | P0 | registered | 独立 P0；纠偏 REQ-080，不等待 Extension v2 |
+| REQ-106 | 内置隔离 Browser + session broker + Workbench mode | security | A | P2 | registered | 依赖 REQ-094/096 与 D5 |
+| REQ-107 | Computer Use / Screen Control Labs | security | A | P2 | parked | REQ-106 verified + 用户再次拍板才激活 |
+| REQ-034 | Claude plugin / Codex 生态安装期转换器 | feature | A | P2 | registered | 2026-07-10 重新登记；依赖 REQ-099/100/103，远程稳定源再依赖 REQ-101/104 |
+
+> REQ-080 发货后风险：Word/PPT 上游归档、Excel advisory 已登记为 REQ-105；REQ-105 完成前 REQ-080 不得从 shipped 翻 verified。旧交付历史不改写。
 
 ## Active — P0
 
@@ -75,12 +110,13 @@
 | REQ-080 | 办公文档能力上架:xlsx/docx/pptx 写作 MCP 三连 + alpha 自写 office-docs 引导技能,office 套件收口 | feature | X | shipped(A=PR #170 出厂技能;C=alpha-web PR #17 已部署,线上实证 v2026-07-09.2/27 条/签名 verify=true;三连钉版命令 stdio 握手冒烟 3/3。真机批残单 = hub 安装 + xlsx 真调用(mac 必测)+ Windows 随 REQ-076 同场) | **拍板(2026-07-09):①按推荐上架 ②office-docs 入出厂 ③paperjsx 留 watchlist** · 议题④(2026-07-09)+ 生态实查(GitHub/npm/pypi 逐项核验)**:Anthropic 官方四件(docx/pdf/pptx/xlsx)license 仍为 **Proprietary 禁再分发禁衍生**(anthropics/skills 逐 LICENSE.txt 核验,与 catalog `_disclaimers` 既有判断一致),且假定沙箱预装 LibreOffice/pandoc/python/node 四运行时 → Windows 小白不可行,上架红线维持;生态无可信 Apache/MIT 重实现;**Codex 已有官方 skills 体系**(developers.openai.com/codex/skills,较上次核查的新变化)但无官方文档技能。推荐上架(全 uvx/npx 运行时拉取 = 零再分发负担,单一 bootstrap 与现有 runtimeDep 预检模型匹配):① `excel-mcp-server`(uvx,MIT,4.0k★:创建/编辑/公式/图表/透视,免装 Excel,Windows 文档明示)② `Office-Word-MCP-Server`(uvx,MIT,2.1k★;详情页须如实标注其 PDF 转换工具需本机 MS Word)③ `Office-PowerPoint-MCP-Server`(uvx,MIT,32 工具);PDF 创建生态空缺(可信写 MCP 不存在)→ ④ alpha 自写 `office-docs` 引导技能补位(Apache-2.0:教连接器选型、xlsx 惯例、pypdf/reportlab 片段——底层库 BSD/MIT 可用,Anthropic 技能文本只可重表达不可抄);⑤ bundle:office 补齐(兑现条目内 `_verify` 既有意向:markitdown+filesystem+新三连+引导技能)。watchlist:`@paperjsx/mcp-server`(npx,MIT,全格式 JSON→doc 含 PDF 创建,0★/freemium 待熟)。选型三点已拍板(见上);C 侧上架 + A 侧引导技能随包;详见 [requirements/REQ-080](requirements/REQ-080-office-docs-suite.md) |
 | REQ-081 | 退役中国办公三件套:C 端 catalog 删 feishu/yuque/dingtalk 三连接器 + bundle:china-office | debt | C | **verified**(2026-07-09 当日执行:alpha-web PR #16 合入 + ECS 部署;线上端点实证 = v2026-07-09.1 / 24 条 / 三件套+套件全缺席 / bundle:office 完好 / A 内置公钥对新签名 verify=true。**部署插曲**:ECS→GitHub 当时完全不通(git 端点 000),按 deploy.sh 等价语义走 SSH 直推 git 对象 + reset + npm ci/build + systemd 重启 + 健康检查全绿;ECS root 补了 safe.directory 白名单,下次 deploy.sh 走 GitHub 不受影响) | **用户拍板(2026-07-09):「退役飞书等三件套,注释掉它们」——尚未想清楚如何优雅实现这些 MCP,先下架**。机制(实查):catalog schema 无 hidden/disabled 字段(catalog-types.ts:102-128),且旧 app 会忽略新增字段照常显示 → **「注释」不可行,唯一有效退役 = C 仓 catalog-src/catalog.json 删条目**(git 历史留档,想清楚后可随时重上架);流程 = 删 4 条目(3 连接器 + china-office 套件)+ bump version → build-catalog.mjs(sha256+ed25519 签名)→ deploy(联网用户下次打开 hub 即生效,**A 仓零动作**;A 内置快照禁手编、随下次发版 sync-catalog-snapshot.mjs 刷新,离线用户在此之前仍见旧条目 = ADR-023 已记录取舍)。连带回写:E2(dingtalk,shipped 半验)的「首次真调用待凭证」验收随退役作废;dingtalk 供应链 `_verify`(npm 无可审计公开源码)一并了结。**用户 GO(2026-07-09)——本日执行,回写见状态列** |
 | REQ-082 | 内置技能基线补全:cloud-dispatch 云派发出厂技能(ADR-021 契约模板兑现)+ customize-alpha 增连接器/套件安装章节 | feature | A | shipped(PR #170;真机批残单 = 登录态会话真派发一单 research + 登出态诚实引导实测) | **S38 shipped(2026-07-09 当日,契约 [sprints/s38](sprints/2026-07-09-s38-supply-baseline/sprint.md))**:cloud-dispatch 文案逐项对照 B 侧源码写成(cloud-mcp.ts 八工具 / cloud-contract.ts 预算默认 25·300k·600s 帽 50·500k·1800s / pipelines.ts 七 kind 与 input 字段 / schedules.ts 熔断 3),零想象接口;customize-alpha 连接器/套件章 + GLOSSARY 出厂 7 件基线落档 + seed 守卫收全量(存量 3 件历史漏登一并补)。原案:**用户拍板方向(2026-07-09):「云派发的应该也作为内置提供」;确认 ready 同日**。现状(实查):云派发教学 skill **从未建过**(ADR-021 §1「dispatch skill 的 contract 模板按此写死」为空头承诺,grep resources/ext/catalog 零命中);会话内仅当 `ALPHA_CLOUD_MCP_URL`+token 就位时注入 cloud_* MCP 工具(sidecar.ts:366-370),无任何使用指引。T1 = 新增出厂技能 `cloud-dispatch`(教 diff-only 契约、denied_paths 默认、预算/档位、回流落点 `.alpha/runs/`,ADR-021 数据边界如实声明;经 REQ-065 纯度通道 skills.paths 随包注入,不落 `.alpha`);T2 = customize-alpha 扩「连接器/套件」章节(hub 为主路径 + `alpha_register type=mcp` 项目级次路径 + 密钥/receipts 诚实边界)。**独立安装 skill 暂不立**(用户议题⑥的裁定建议):密钥采集在 main(`{file:}` 通道)、会话内安装绕过 receipts 账本、catalog 未向会话暴露——三个机制缺口补齐前独立 skill 只能半吊子,待「catalog-to-session + receipts 写路径」立项再议。基线盘点:现有出厂 5 件(skill-creator/agent-creator/customize-alpha/integrate-project/alpha-workspace)+ 本项 cloud-dispatch + REQ-080 office-docs = 7 件;详见 [requirements/REQ-082](requirements/REQ-082-builtin-skills-baseline.md) |
+| REQ-083 | 模型选择框 respawn 竞态:引擎重启窗口内取数静默失败 → BYOK 已配置供应商整体消失 + 代理全灰,点灰行再触发 respawn 形成自续循环 | bug | A | shipped(PR #173;dev CDP 五阶段断言全过,待用户 GO 合并 + 签名包顺手复核) | **S39 shipped(2026-07-10 当日,契约 [sprints/s39](sprints/2026-07-10-s39-req083-picker-respawn-race/sprint.md),证据 [audits/s39](audits/2026-07-10-s39-req083/verify.md))**:三点修复全落 ModelPickPop(main 零改动)——load 状态机+退避重试+「正在连接引擎」note+BYOK 占位行 / `lockedPickAction` 纯函数(引擎不可达点灰行 no-op,仅在线且代理缺席才 activate)/ 同一弹窗不重开自愈(实测);真机两类断网场景点灰行**零 respawn**(main.log 复核)。**用户报障(2026-07-10,v0.1.2 真机)+ 日志复盘定根因**:10:37–10:42 五次 sidecar respawn(存 Key/登出/登录/点灰行×N),每次对应 renderer 一波 `Failed to fetch`;ModelPickPop 弹窗打开时**只拉一次** `config.providers` 且 `.catch(()=>{})` 静默吞 → engineModels 空 → ① 已配置 BYOK(deepseek/zhipuai)既不进「需 KEY」也无模型行=整体不可见;② `proxyLive()` 假 → 代理 13 行全 locked(账户横幅走 main IPC 仍显示「PRO 会员」,矛盾画面);③ member/balance 态点 locked 行无条件 `enableProxy()` → 又一次 respawn+renderer reload = 自续循环。**排除项(实证)**:非端点域名切换(tidelabs.click 200 可达、ALPHA_BASE_URL 正确)、非数据丢失(干净重启后引擎注册 deepseek 4 模型/zhipuai 13 模型/alpha 13 模型,CDP 实拍选择框全部正确)。修三点:① 取数诚实+自愈(load 状态机 + 退避重试 + 「引擎连接中」note + 已配置 BYOK 占位行,反 C28 placebo);② 点灰行不再火上浇油(引擎不可达时 locked 点击 no-op,仅「引擎在线且代理节点确实缺席」才 enableProxy);③ respawn 后自动恢复(重试循环覆盖,弹窗不需重开)。快车道,验收=真机 kill sidecar 复现三断言 |
 
 ## Active — P2(债务)
 
 | ID | 标题 | 类 | 仓 | 状态 | 备注 |
 |---|---|---|---|---|---|
-| REQ-005 | 前端接管收尾核验:重型引擎换肤(终端/diff/权限流)完成度 + timeline 验收尾项(截图归档/COUPLING 清单/真机验收) | ux | A | ready | ADR-016 待办②;tasks.md 40 项全勾但 dev-plan:98-100 未走完;COUPLING 清单关系 C14;详见 [requirements/REQ-005](requirements/REQ-005-frontend-takeover-closeout.md) |
+| REQ-005 | legacy 重型界面/时间线 characterization baseline(截图/COUPLING/真机) | ux | A | ready | 只作 REQ-087 输入；不能代表路由所有权，不新增 CSS/DOM takeover；详见 [requirements/REQ-005](requirements/REQ-005-frontend-takeover-closeout.md) |
 | REQ-025 | 自动化 A3 云档位:execution:cloud 注册到 B + 开机拉回 + 数据边界提示 | feature | X | shipped | **S18 T12b shipped(2026-07-06,PR #108)**:execution:cloud 全生命周期(保存=upsert B schedule 失败不落盘 loud/删除=先删 B 防幽灵触发/启停=PATCH 同步)+ 开机拉回(jobs?since&origin=schedule → status → saveCloudRun 落 .alpha/runs,job_id 对账防重)+ 面板 B 状态回读(熔断/停用原因)+ ADR-021 数据边界提示强制展示(仅任务文本上云,零项目文件);本地调度器跳过云档;scheduleToCron 纯函数单测(once/超长诚实拒);MVP=research 管线(表单明示映射);**codex 审计 3H/1M/1L 全修**(游标只越过终局 job/孤儿 schedule 补偿删除/bash 黑名单加固嵌套 shell 与包装器/拉取单飞+fresh 重读/临时会话删除重试);登录态 A↔B 真机 e2e→真机批;详见 [requirements/REQ-025](requirements/REQ-025-automations-a3-cloud.md) |
 | C20 | alpha-ui i18n 断裂:9 组件硬编码简中 + 每语种 OpenCode 残留(zh:19/en:30)(S8) | ux | A | ready | R7:爆炸半径大于初报;**(/loop 2026-07-04 defer)** 体量大(9 组件)+ 需双语视觉核验(离线不可做)→ i18n 专项;可先拆 brand-i18n 残留 grep 清零子任务,详见档 |
 | C21 | 无障碍:focus-trap/键盘/Escape/对比度/reduced-motion(S8) | ux | A | ready | |
@@ -116,7 +152,6 @@
 | C19 | Sentry opt-out + 告知 | R6:dormant(`VITE_SENTRY_DSN` 全仓无赋值,从不 init) | 发布流水线注入 DSN 时 |
 | ~~D7~~ | ~~safeStorage 明文兜底告警~~ | **rejected(2026-07-08,过期盘点:原搁置理由「macOS-only 下死分支」+ 激活条件「跨平台时」与 NON_GOALS#6 恒矛盾)**;**2026-07-09 重开条件触发**(NON_GOALS#6 修订,Windows 纳入,ADR-026)→ 关切**并入 REQ-076 T3**(NTFS 上 0600 无效 + 明文兜底告警一并处置),不单独重开 | ~~重开 = NON_GOALS#6 撤回(做跨平台)~~ 已触发 → dup 入 REQ-076 T3 |
 | E13 | 团队协作多端 workspace 同步 | **rejected(2026-07-05,REQ-008 D1:不做共享 workspace/会话)** | 重开 = 真实付费团队需求 + 上游多用户原语 |
-| REQ-034 | 外部生态导入转换器:Claude Code plugin 大礼包→套件扇出 + Codex 可共享物导入(安装期转换,[[ADR-023]]) | 用户 2026-07-05:立项但暂不开发,想清楚再启动 | 用户拍板启动(按 ADR-023 执行);详见 [requirements/REQ-034](requirements/REQ-034-ecosystem-import-converter.md) |
 | REQ-035 | 本地 harness-as-executor(claude/codex 委托执行,tool/MCP 接缝);长期演进=会话级并轨(GOALS G5) | 用户 2026-07-05:立项但暂不开发,想清楚再启动 | 第一阶段=用户拍板启动;并轨阶段另有硬前置(challenge+POSITIONING 修订+承载 spike+独立 ADR,见档) |
 | REQ-064 | 去 opencode 化·路线B:config `agent.<name>.prompt` 受控替换 provider 底座(build/plan)+ **内置 agent 内容全面接管**(compaction/title/summary 机件 prompt 按质量评估同名覆盖;姿势一律同名接管非禁用+另建,2026-07-08 用户拍板方向)——GOALS G6 第二期;request.ts:60 实证赋 prompt 即整体替换,纯 config 零改上游 | 路线A(REQ-062,含 general/explore 已先行)先行;替换 = 接管 prompt 质量维护面(逐模型调优、放弃底座升级白嫖,等同 ADR-016/020 前端抉择),不轻启 | 路线A 稳定运行 + alpha 自有 prompt 逐模型质量评估过关 + ADR-015 再修订 + 用户拍板。**2026-07-09 用户重申:维持 parked,B0 评估靶场也不开**。激活时必先裁的设计题(本日审计钉死):config `agent.<name>.prompt` 每 agent 一份、不随模型变 → 上游 9 份按模型调优底座(claude→anthropic.txt,BYOK 国产模型全吃 default.txt)会坍缩成 1 份通用 prompt,per-model 替换只能回 experimental `chat.system.transform`(与「纯 config 稳定接缝」卖点矛盾);建议激活序 = B0 评估靶场 → B1 机件(title/summary 先,compaction 爆炸半径最大最后)→ B2 build/plan 底座;command/subagent 层已无剩余工作(init/review/general/explore Route A 已同名接管) |
 | ~~B13~~ | ~~DB 跨进程并发(SQLITE_BUSY → orDie)~~ | **rejected(2026-07-08,过期盘点:上游归属 R2 + busy_timeout=5000 已缓解,alpha 无直接修点)** | 重开 = 真机实际复发且上游未修 |
