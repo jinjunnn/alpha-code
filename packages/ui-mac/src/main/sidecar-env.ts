@@ -63,6 +63,10 @@ const EXACT = new Set([
   "ALPHA_FACTORY_SKILL_DIRS",
   // REQ-067:出厂默认禁项(− 用户解禁),同为内存注入、零明文
   "ALPHA_FACTORY_DENY_SKILLS",
+  // REQ-098:环境 mutable root(main 启动时由唯一环境映射落定,路径非密钥)。sidecar 的
+  // injectAlphaConfig(alpha.jsonc 真源)与 @alpha-code/ext(全局根边界判定)必须与 main 同根,
+  // 否则引擎会读到另一环境的可变状态(AC#1 破)。
+  "ALPHA_GLOBAL_DIR",
   // the escape hatch itself, so the sidecar can surface it in diagnostics
   "ALPHA_ENV_ALLOWLIST_EXTRA",
 ])

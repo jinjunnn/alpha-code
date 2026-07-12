@@ -104,8 +104,18 @@ bun cdp.mjs shot /tmp/after.png
 
 ## 7. 收尾(全部完成后)
 - [ ] 40 条全绿,深浅色 CDP 回归截图归档到 `screenshots/`。
-- [ ] `timeline-reskin.css` 顶部 COUPLING 清单更新(新增 ~36 组选择器),供 sync 重指。
+  ⟨状态 2026-07-12(REQ-005/#214):**未完成**——本目录下无 `screenshots/`;40 条实现已全勾
+  (tasks.md)但深浅色回归截图从未归档。证据落点:视觉取证由 REQ-005 orchestrator 补录到
+  `docs/audits/2026-07-12-req005-legacy-baseline.md` §5,归档位置随之定夺;不在此假勾。⟩
+- [x] `timeline-reskin.css` 顶部 COUPLING 清单更新(新增 ~36 组选择器),供 sync 重指。
+  ⟨完成 2026-07-12(REQ-005/#214):头注全量重建于
+  `packages/ui-mac/src/renderer/alpha-ui/timeline-reskin.css:1-157`——入口 + 6 个 partial
+  约 40 组锚点逐条对照冻结源(tag `frontend-freeze-base-2`)给出上游 file:line;冻结后维护
+  语义改为「re-freeze 时整体重核」,日常以 upstream-anchors.test.ts(REQ-012)红灯为信号。
+  核对记录:`docs/audits/2026-07-12-req005-legacy-baseline.md` §2。⟩
 - [ ] `ship:mac` 真机验收(`ELECTRON_MIRROR=npmmirror` 防 TLS,见 memory)。
+  ⟨状态 2026-07-12(REQ-005/#214):**未完成**——本任务未运行 ship:mac,不假勾。证据落点:
+  REQ-005 的「验证记录」节 + `docs/audits/2026-07-12-req005-legacy-baseline.md` 追加节。⟩
 - [ ] PR → `alpha`(base 必须 alpha,非 dev),merge 后删分支(ADR-005)。
 
 ## 8. Definition of Done(每条)

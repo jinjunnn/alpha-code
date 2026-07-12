@@ -48,6 +48,7 @@ import { AlphaHome } from "./alpha-ui/AlphaHome"
 import { AlphaNewSession } from "./alpha-ui/alpha-new-session"
 import { SurfaceBoundary } from "./alpha-ui/surface-boundary"
 import type { ResolvedSurfaces } from "../shared/alpha-surfaces"
+import { SessionSpikeHost, sessionSpikeSurface } from "./alpha-ui/session-spike/session-spike-host" // REQ-087 spike(默认恒 off)
 import { AlphaOnboarding } from "./alpha-ui/AlphaOnboarding"
 import { setupSettingsBackButton } from "./alpha-ui/settings-back-button"
 import { ExtensionHub } from "./extensions/extension-hub"
@@ -453,6 +454,8 @@ render(() => {
             <AlphaNewSession projects={alphaProjects} draftId={p.draftId} promoteDraft={p.promoteDraft} />
           </SurfaceBoundary>
         )
+      // REQ-087 spike:双闸(ALPHA_SURFACE_SESSION=alpha + localStorage ALPHA_SESSION_SPIKE)未全开时返回 undefined = 上游默认叶,零变化。
+      if (resolved.session.mode === "alpha") surfaces.session = sessionSpikeSurface()
       return surfaces
     })
 
@@ -507,6 +510,8 @@ render(() => {
               <AlphaBoundary name="ToastViewport">
                 <ToastViewport />
               </AlphaBoundary>
+              {/* REQ-087 spike 容器侧探针:flag off ⇒ 恒 null(session-spike/spike-flag.ts) */}
+              <AlphaBoundary name="SessionSpikeHost"><SessionSpikeHost /></AlphaBoundary>
             </AppInterface>
           )}
         </Show>

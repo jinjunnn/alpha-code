@@ -6,6 +6,7 @@ import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
 
 import type { AuthMode, AuthState, FatalRendererError, ServerReadyData, TitlebarTheme } from "../preload/types"
+import { getAlphaEnvironment } from "./alpha-environment"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { alphaUserWorkspaceDir, ensureUserWorkspaceDir } from "./alpha-user-workspace"
 import { resolveAppPath } from "./apps"
@@ -58,6 +59,9 @@ export function registerIpcHandlers(deps: Deps) {
   const updaterSubscriptions = createUpdaterSubscriptions()
   app.once("will-quit", updaterSubscriptions.clear)
 
+  // REQ-098(AC#6):环境快照只读 IPC —— 回调零参数(不读任何 renderer 输入),返回启动时冻结的
+  // 快照;不存在任何对应写面(环境只由 main 的构建事实解析,见 alpha-environment.ts)。
+  ipcMain.handle("alpha-environment", () => getAlphaEnvironment())
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
   ipcMain.handle("sidecar-retry", () => deps.retrySidecar())
   ipcMain.handle("await-initialization", () => deps.awaitInitialization())

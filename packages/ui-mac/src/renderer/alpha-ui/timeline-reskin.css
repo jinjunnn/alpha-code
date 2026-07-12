@@ -4,10 +4,157 @@
  * restructuring — so it can't break the timeline layout. Visual fine-tuning happens in the
  * Phase 6 CDP screenshot pass.
  *
- * COUPLING (cosmetic; re-point if an upstream bump renames these): tool-part-wrapper,
- * tool-trigger, basic-tool-tool-title, bash-output/bash-pre, tool-output, reasoning-part,
- * edit-content/write-content, todos, question-answers, task-tool-card, context-tool-group-*.
- * Targets are timeline-SPECIFIC hooks only (never the generic button/icon/markdown ones). */
+ * ══════════════════════════════════════════════════════════════════════════════════════════
+ * COUPLING 清单(2026-07-12 全量核对,REQ-005 / dev-plan §7)
+ * ══════════════════════════════════════════════════════════════════════════════════════════
+ * 范围:本入口文件 + @import 的 timeline/{user,assistant,tools,structure,review,misc}.css 六个
+ * partial 所耦合的全部上游锚点。逐条对照当前冻结源(tag frontend-freeze-base-2 = 42f14c6,
+ * ADR-020)验证存在;机器红线是 upstream-anchors.json + upstream-anchors.test.ts(REQ-012)。
+ *
+ * 冻结语义:packages/{app,ui} 已冻结,上游选择器只会在 re-freeze(换基线重打 tag)时变化——
+ * 本清单不再需要逐 PR 维护,只需在 re-freeze/上游 sync 时整体重核一次(锚点测试红了 = 该重核)。
+ * 注意:packages/session-ui 是同源组件的平行拷贝,但 packages/app 实际 import 的是
+ * @opencode-ai/ui(见 app/src/pages/session/timeline/message-timeline.tsx:19-55)——引用行号
+ * 一律指 packages/ui / packages/app。写法约定:本注释内锚点一律用不带引号的 [data-x=y] 形式,
+ * 避免被 anchor-audit.ts 的字面量抽取误读为新引用。
+ *
+ * ── 入口文件(本文件)────────────────────────────────────────────────────────────────────
+ * 工具卡壳/头:[data-component=tool-part-wrapper] ui/components/message-part.tsx:1410;
+ *   [data-component=tool-trigger] ui/components/basic-tool.tsx:183;
+ *   [data-slot=basic-tool-tool-title]:195 · -subtitle:205 · -arg:224 · -info:188 ·
+ *   -info-main:193 · -trigger-content:187(均 basic-tool.tsx)。
+ * 思考卡:[data-component=reasoning-part] message-part.tsx:1605。
+ * 输出面:[data-component=bash-output] message-part.tsx:1921 · [data-slot=bash-pre]:1939 ·
+ *   [data-component=tool-output]:1665 · [data-component=exa-tool-output]:824。
+ * edit/write 紧凑卡:[data-component=write-tool]:2065 · edit-tool:1998 · write-content:2093 ·
+ *   edit-content:2037(均 message-part.tsx);[data-component=collapsible] collapsible.tsx:15;
+ *   [data-slot=collapsible-content] basic-tool.tsx:279;[data-component=apply-patch-file-diff]
+ *   message-part.tsx:2225;[data-slot=accordion-trigger] accordion.tsx:60。
+ * todos:[data-component=todos] message-part.tsx:2350。
+ * 问答:[data-component=question-answers]:2396 · [data-slot=answer-text]:2403。
+ * 子任务:[data-component=task-tool-card] message-part.tsx:1844。
+ * 探索分组壳:[data-component=context-tool-group-trigger]:969 · -group-list:1015 ·
+ *   [data-slot=context-tool-group-item]:1023(均 message-part.tsx)。
+ * 技能 chip:.agent-title basic-tool.css:98(类锚点,title 上的 agent 名类)。
+ * 用户消息:[data-component=user-message] message-part.tsx:1131 · [data-slot=user-message-body]
+ *   :1168 · -text:1169 · -meta:1177 · -meta-sep:1182 · -meta-tail:1187 · -copy-wrapper:1173 ·
+ *   -attachments:1133;页脚按钮 [data-component=icon-button] icon-button.tsx:17 ·
+ *   [data-component=icon] icon.tsx:153。
+ * 助手正文:[data-slot=session-turn-assistant-content] ui/components/session-turn.tsx:409 ·
+ *   [data-component=text-part] message-part.tsx:1561;阅读列宽
+ *   [data-slot=session-turn-message-container] session-turn.tsx:397(app 侧同名渲染
+ *   app/pages/session/timeline/message-timeline.tsx:1078)。
+ * 错误卡(工具级):[data-kind=tool-error-card] tool-error-card.tsx:94 ·
+ *   [data-component=tool-error-card-icon]:99 · [data-slot=tool-error-card-content]:127 ·
+ *   [data-slot=tool-error-card-copy]:129。
+ * 错误卡(消息级):.error-card + [data-component=card][data-variant=error]
+ *   session-turn.tsx:529(card 组件 card.tsx:52;基线样式 message-part.css:708)。
+ *
+ * ── timeline/user.css(TL-01..06)──────────────────────────────────────────────────────
+ * 附件:[data-slot=user-message-attachment] message-part.tsx:1141(data-type=file|image、
+ *   [data-clickable=true]:1143)· -attachment-file:1152 · -attachment-image:1158 ·
+ *   -attachment-name:1154。
+ * 内联提及:span[data-highlight=file|agent](高亮 span 渲染 message-part.tsx:1269;
+ *   上游基线色 message-part.css:138/142)。file|agent 之外的 data-highlight 子类为防御式
+ *   预留(今日为空集,TL-06)。
+ *
+ * ── timeline/assistant.css(TL-07..14)─────────────────────────────────────────────────
+ * 脚注:[data-slot=text-part-copy-wrapper] message-part.tsx:1568(含 [data-interrupted])·
+ *   [data-slot=text-part-meta]:1584;[data-component=tooltip-trigger] tooltip.tsx:127;
+ *   [data-component=provider-icon] provider-icon.tsx:15(防御式,当前脚注不渲染)。
+ * markdown 富元素:[data-component=markdown] markdown.tsx:469(table/h1-h4/ul/ol/blockquote/
+ *   hr/a 为其内部原生标签)。
+ * 代码块复制:[data-component=markdown-code] markdown.tsx:257 ·
+ *   [data-slot=markdown-copy-button]:191(含 [data-copied=true],基线 markdown.css:203)·
+ *   [data-slot=icon-svg] icon.tsx:155 · button [data-variant=secondary] button.tsx:18。
+ * thinking:[data-slot=session-turn-thinking] session-turn.tsx:422 ·
+ *   .session-turn-thinking-heading:427 · [data-component=text-shimmer] text-shimmer.tsx:43。
+ * 重试卡:[data-slot=session-turn-retry] session-retry.tsx:55(.error-card 复用:56)·
+ *   -retry-message:60 · -retry-info:67 · [data-component=spinner] spinner.tsx:24。
+ *
+ * ── timeline/tools.css(TL-15..29 + TL-22 共享原语)────────────────────────────────────
+ * 改动徽:[data-component=diff-changes] diff-changes.tsx:96 ·
+ *   [data-slot=diff-changes-additions]:108 · -deletions:109。
+ * 运行态:[data-component=text-shimmer][data-active=true] text-shimmer.tsx:43;
+ *   [data-component=tool-status-title][data-active] tool-status-title.tsx:92 ·
+ *   [data-slot=tool-status-active]:104 · -done:109 · -prefix:117。
+ * 折叠箭头:[data-slot=collapsible-arrow] collapsible.tsx:36 · -arrow-icon:37。
+ * bash 描述:[data-component=shell-submessage] message-part.tsx:103 ·
+ *   [data-slot=shell-submessage-value]:108。
+ * read 行:[data-component=tool-loaded-file] message-part.tsx:1641。
+ * grep/glob:[data-component=tool-output][data-scrollable] message-part.tsx:1665。
+ * edit/write 头:[data-component=edit-trigger] message-part.tsx:2004 · write-trigger:2071 ·
+ *   [data-slot=message-part-title-area]:2005 · -title:2006 · -title-text:2007 ·
+ *   -title-filename:2011 · [data-slot=message-part-directory]:2016。
+ * apply_patch:[data-scope=apply-patch] message-part.tsx:1342 ·
+ *   [data-slot=apply-patch-trigger-content]:1349 · -file-info:1350 · -directory:1354 ·
+ *   -filename:1356 · -trigger-actions:1359 · -change[data-type=added|removed|modified]:2200。
+ * todos 项:[data-slot=message-part-todo-content][data-completed=completed]
+ *   message-part.tsx:2355(data-completed 基线 message-part.css:616)。
+ * 待办 dock(app 侧):[data-component=session-todo-dock]
+ *   app/pages/session/composer/session-todo-dock.tsx:96 ·
+ *   [data-action=session-todo-toggle]:105 · [data-slot=session-todo-preview]:141 ·
+ *   [data-slot=session-todo-list]:182(内部 [class*=pb-11] 与 [data-state] 是 Tailwind/
+ *   Kobalte 内部锚,最脆弱的两条,re-freeze 时优先重核)。
+ * 子任务卡:[data-component=task-tool-title] message-part.tsx:1852 · -spinner:1848 ·
+ *   -action:1861(卡壳 task-tool-card 见入口段)。
+ * 联网:[data-slot=exa-tool-links] message-part.tsx:825 · [data-slot=exa-tool-link]:829;
+ *   webfetch 链接副标题 a[data-slot=basic-tool-tool-subtitle] basic-tool.tsx:205。
+ * 诊断:[data-component=diagnostics] message-part.tsx:141 · [data-slot=diagnostic]:144 ·
+ *   -label:145 · -location:146 · -message:149。
+ *
+ * ── timeline/structure.css(TL-30..34)─────────────────────────────────────────────────
+ * 分组标题:[data-slot=context-tool-group-title] message-part.tsx:971 · -label:974 ·
+ *   -summary:983。
+ * 计数动画:[data-component=tool-count-summary] tool-count-summary.tsx:17 ·
+ *   [data-component=tool-count-label] tool-count-label.tsx:47 ·
+ *   [data-component=animated-number] animated-number.tsx:103。
+ * 本回合改动:[data-component=session-turn-diffs-group] session-turn.tsx:438(app 侧
+ *   message-timeline.tsx:156)· [data-slot=session-turn-diffs-header]:441 · -label:442 ·
+ *   -toggle:448 · [data-component=session-turn-diffs-content]:453 ·
+ *   [data-slot=session-turn-diff-trigger]:488 · -directory:491 · -filename:495 ·
+ *   -chevron:501 · [data-slot=session-turn-diffs-more]:521;
+ *   [data-slot=accordion-content] accordion.tsx:76。
+ * 压缩分隔:[data-component=compaction-part] message-part.tsx:1465 ·
+ *   [data-slot=compaction-part-line]:1467 · -label:1468。
+ *
+ * ── timeline/review.css(TL-35..39,审查面板 + 终端外框)────────────────────────────────
+ * 面板壳:#review-panel(aside id)app/pages/session/session-side-panel.tsx:218(开关按钮
+ *   aria-controls app/components/session/session-header.tsx:472);
+ *   [data-component=session-review] session-review.tsx:340 ·
+ *   [data-slot=session-review-header]:341 · -title:342 · -actions:345 · -container:387。
+ * 审查/终端 tab:[data-component=tabs][data-variant=normal] tabs.tsx:26 ·
+ *   [data-slot=tabs-list]:42 · -trigger-wrapper:63 · -trigger[data-selected]:83。
+ * 统一/拆分:[data-component=radio-group] radio-group.tsx:54 ·
+ *   [data-slot=radio-group-wrapper]:66 · -indicator:67 · -items:68 ·
+ *   -item[data-checked]:71 · -item-label:73。
+ * 视图源 select:[data-component=select] select.tsx:89 ·
+ *   [data-slot=select-select-trigger]:138 · -trigger-value:148 · -trigger-icon:156。
+ * 文件行:[data-slot=accordion-trigger][data-expanded] accordion.tsx:60 ·
+ *   [data-slot=accordion-item][data-selected] accordion.tsx:30 ·
+ *   [data-slot=session-review-trigger-content] session-review.tsx:514 · -file-info:515 ·
+ *   -file-name-container:517 · -directory:519 · -filename:521 · -view-button:525 ·
+ *   -trigger-actions:539 · -change-group:542 · -change[data-type]:543 · -diff-chevron:564;
+ *   [data-component=file-icon] file-icon.tsx:18;button [data-variant=secondary]
+ *   button.tsx:18。
+ * 终端外框(TL-39,ENGINE 只包外框):[data-component=terminal]
+ *   app/components/terminal.tsx:654(ghostty 容器;内核 canvas 不可 CSS 触达)。
+ *
+ * ── timeline/misc.css(TL-40)──────────────────────────────────────────────────────────
+ * 无上游耦合:.a-s2b 为备用类。原生回到底部按钮(message-timeline.tsx:1247)无任何
+ *   data-slot/component 钩子,刻意不耦合其 Tailwind 类(见该 partial 头注)。
+ *
+ * ── alpha 自有(非耦合,列出防混淆)────────────────────────────────────────────────────
+ * timeline-inject.tsx 造的元素/标记:.a-tc-ico · .a-openp · .a-dirgrid/.a-dircount ·
+ *   .a-cmd-chip · .a-exit · .a-turn-div · [data-alpha-*] 幂等标记;这些是 alpha 自渲染,
+ *   不属上游耦合面。inject 侧还读:[data-message-id]/[data-timeline-row]
+ *   message-timeline.tsx:1010-1011 · [data-timeline-part-id] message-part.tsx:1131 ·
+ *   [data-slash-id] app/components/prompt-input/slash-popover.tsx:104 ·
+ *   aria-controls=review-panel(见上)。
+ *
+ * 定位约定:CSS 目标是 timeline 专属钩子(never the generic button/icon/markdown ones);
+ * 通用组件锚(button/icon/markdown/tabs/select/radio-group)只允许出现在带 timeline 专属
+ * 祖先限定的复合选择器里。 */
 @import "./tokens.css";
 /* Timeline overhaul (2026-06-28) — per-area partials for the 40 atomic tasks (docs/designs/
  * 2026-06-28-timeline-overhaul/). Parallel-safe: each area owns one file so tasks never collide.
