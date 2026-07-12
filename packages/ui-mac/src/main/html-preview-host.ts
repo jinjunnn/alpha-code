@@ -30,7 +30,10 @@ import * as path from "node:path"
 import * as electronNs from "electron"
 const { app, BrowserWindow, ipcMain, session } = electronNs
 import type { BrowserWindow as BrowserWindowT, Event as ElectronEvent, IpcMainInvokeEvent, RenderProcessGoneDetails, Session, WebContents } from "electron"
-import { write as writeLog } from "./logging"
+// bun mock.module 跨测试文件泄漏(Linux 执行顺序下他文件的 ./logging mock 无 write 导出),
+// namespace 导入避开 import 期具名绑定校验;运行期本文件测试自带完整 mock。
+import * as logging from "./logging"
+const writeLog: typeof logging.write = (...args) => logging.write(...args)
 import { resolveArtifact } from "./artifact-service"
 import { isSafeSavedPath, RUN_ARTIFACTS_SUBDIR } from "./artifact-manifest"
 import { safeResolveInAlpha, sanitizeArtifactName } from "./alpha-workdir"
