@@ -40,3 +40,4 @@ source: 2026-07-10 路由与扩展生态所有权专项审计；用户要求拆�
 
 - 依赖 REQ-099 的 canonical manifest/target digest 语义。
 - 跨仓实施必须分别在 owning repository 建子 Issue 与 contract gate；GitHub Issues 和 Alpha Delivery 是唯一交付真源。
+- **激活阈值（2026-07-12 评审拍板，用户采纳）**：本项 parked-with-trigger，不随 Wave 顺排启动。触发（任一）：① 出现真实外部分发规模（prod 安装用户显著超出作者自用）；② 出现第二个 publisher / 镜像 / 委派需求（Scope 原「拆仓阈值」前移为启动判据）；③ 现行单钥 ed25519 + 版本单调体系在真实事件中暴露不足（需撤销 / 换钥 / 过期而无机制可用）。触发前该级威胁由现行签名通道覆盖。详见 owning Issue（jinjunnn/alpha-work#4）2026-07-12 评注。

@@ -21,6 +21,11 @@ source: 2026-07-10 产品能力与路由/扩展所有权专项审计；用户要
 5. 定义 `InstallRecordV2`：环境、scope identity、版本、manifest/payload digest、channel sequence、grant digest、desired state、generation、previous digest、transaction 与时间。
 6. Hub 按当前 project context 读取、展示、禁用、更新和卸载项目 receipt；main 根据受控根和 digest 重新派生 owned paths。
 
+## 分期（2026-07-12 评审拍板，用户采纳）
+
+- **Phase 0（可先行，不动 schema）**：把远程 Skill/Agent 已有的「main 按 catalog ID 重新派生安装事实」模式推广到 MCP、npm plugin、builtin/vendored 安装路径；renderer 安装请求收窄为 `id + scope`，main 从已验 catalog 重建 package/command/config/owned paths，忽略 renderer 传入的实际配置。兑现的验收 = 下方 §2 的信任边界子集；不引入 ManifestV2 任何字段。目的：P0 信任暴露面（renderer 可喂安装事实）不等 v2 schema 设计。
+- **Phase 1**：其余全部（ManifestV2 / InstallRecordV2 / 未策展来源入口 / 项目 scope 闭环），照旧走 ADR-028 门 + 与 REQ-098 同场 schema/path 评审。
+
 ## 验收标准
 
 1. 缺字段、未知顶层键、非法 digest、越权 capability、循环依赖、平台不兼容 manifest 均在写盘前拒绝并给出可定位错误。

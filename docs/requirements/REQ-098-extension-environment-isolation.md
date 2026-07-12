@@ -25,7 +25,7 @@ Electron `userData` 已按 App channel 分开，但扩展账本、`alpha.jsonc`�
 ## 验收标准
 
 1. prod 与 beta 分别安装、启用同 ID 不同版本扩展后，config、receipt、grant、secret 和运行进程互不可见；共享 blob 时磁盘只保留一份不可变内容。
-2. beta 只查询 preview feed，prod 只查询 stable feed；测试构造错误 feed 映射时启动/更新 loud 失败。
+2. beta 构建**若发布**则只查询 preview feed，prod 只查询 stable feed；测试构造错误 feed 映射时启动/更新 loud 失败。（措辞收窄依据 = jinjunnn/alpha-code#232 拍板 B，2026-07-12：环境隔离与映射机制照做，但 preview feed 维持 ADR-012 休眠语义、beta 不承诺主动发布，NON_GOALS「多渠道不主动维护」不动；将来需要灰度时再按 #232 选项 A 重议。）
 3. 旧布局迁移执行两次结果相同；中途崩溃可重试；用户手写文件不被覆盖或删除。
 4. 回滚到迁移前版本时，旧布局仍可读；新版本再次启动不会重复复制或丢失状态。
 5. macOS、Windows 的路径与 secret 引用均通过含空格、Unicode、跨盘符 fixture。
