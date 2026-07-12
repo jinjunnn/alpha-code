@@ -55,6 +55,8 @@ import { createWslServersController } from "./wsl/servers"
 import { registerWslIpcHandlers } from "./wsl/ipc"
 import { spawnWslSidecar } from "./wsl/sidecar"
 import { migrate } from "./migrate"
+import { initAlphaEnvironment } from "./alpha-environment"
+import { runEnvMigration } from "./alpha-env-migrate"
 import { ensureAlphaLayoutDefault } from "./alpha-defaults"
 import { initialSelfHealState, noteSpawn, planSelfHeal } from "./sidecar-self-heal"
 import { initEndpoints } from "./alpha-endpoints"
@@ -279,6 +281,16 @@ const main = Effect.gen(function* () {
   }
 
   preferAppEnv(app.getPath("userData"))
+  // REQ-098:唯一环境映射(prod/beta/dev → mutable root / registry channel / updater feed)在任何
+  // alphaGlobalRoot() 消费方(reconcile / 安装 / sidecar fork)之前落定。ALPHA_GLOBAL_DIR 预置
+  // (测试隔离 / 开发者显式 export,含 preferAppEnv 应用的真实 shell export)= 覆盖,不改写。
+  const alphaEnv = initAlphaEnvironment({ isPackaged: app.isPackaged, channel: CHANNEL })
+  logger.log("alpha environment resolved", {
+    environment: alphaEnv.environment,
+    registryChannel: alphaEnv.registryChannel,
+    mutableRoot: alphaEnv.mutableRoot,
+    rootOverridden: alphaEnv.rootOverridden,
+  })
   // Load the endpoint resolver (userData pin + persisted login discovery) BEFORE initAuthEnv, so the
   // proxy URL it derives reflects discovery/pin, not just the hardcoded default. See alpha-endpoints.ts.
   initEndpoints(app.getPath("userData"))
@@ -375,6 +387,37 @@ const main = Effect.gen(function* () {
   void syncLiveAllowlist(app.getPath("userData")).catch(() => {})
 
   if (!TEST_ONBOARDING) migrate()
+  // REQ-098 T3:旧 `~/.alpha` 单根布局 → 当前环境 mutable root 的一次性只读导入(copy-don't-touch,
+  // 幂等 + crash 可重试,receipt = <envRoot>/env-migration-receipt.json,旧根留 rollback 标记)。
+  // dev 环境 root = 旧根 → 天然 skipped-same-root。置于 REQ-059 reconcile 之前:首次 reconcile
+  // 即读到导入后的 alpha.jsonc。失败非致命(环境以空状态启动,旧布局原样,下次启动重试)。
+  if (!TEST_ONBOARDING) {
+    try {
+      const envImport = runEnvMigration({
+        sourceRoot: alphaEnv.legacyRoot,
+        targetRoot: alphaEnv.mutableRoot,
+        userDataPath: app.getPath("userData"),
+        environment: alphaEnv.environment,
+        appVersion: app.getVersion(),
+      })
+      if (envImport.status === "migrated") {
+        logger.log("[req098] legacy ~/.alpha imported into environment root", {
+          environment: alphaEnv.environment,
+          results: envImport.receipt.results,
+          secretRefs: envImport.receipt.secretRefs,
+          pathsRewritten: envImport.receipt.pathsRewritten,
+          warnings: envImport.receipt.warnings,
+        })
+      } else if (envImport.status === "failed") {
+        logger.error("[req098] environment import FAILED (legacy layout untouched; retry next launch)", {
+          reason: envImport.reason,
+          warnings: envImport.warnings,
+        })
+      }
+    } catch (error) {
+      logger.error("[req098] environment import crashed (legacy layout untouched; retry next launch)", error)
+    }
+  }
   // REQ-059:存量引擎配置(~/.opencode/opencode.jsonc + XDG provider 域)迁进真源 ~/.alpha/alpha.jsonc
   // (copy-don't-delete,幂等,所有权判定 bail-out loud)。在 migrate() 之后(REQ-018 先把散落迁 ~/.opencode)、
   // 首个 sidecar fork 之前,使第一次 fork 即读到迁移后配置。~/.opencode 清理(拆桥+删目录)属 T3。

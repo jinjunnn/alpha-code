@@ -205,6 +205,21 @@ export type CloudResult<T> = T | { error: string }
 /** B gateway /v1/models 的一条 live 模型(真相源 allowlist)。 */
 export type PlatformLiveModel = { id: string; provider?: string; minPlan?: string }
 
+/** REQ-098:App 运行环境快照(main 启动时由打包状态 + 构建渠道解析后冻结;renderer 只读,无写面)。 */
+export type AlphaEnvironmentInfo = {
+  environment: "prod" | "beta" | "dev"
+  registryChannel: "stable" | "preview" | "dev"
+  buildChannel: "dev" | "beta" | "prod"
+  packaged: boolean
+  /** 本环境的可变状态根(config/receipts/grants/secret refs/enabled state 的分域落点)。 */
+  mutableRoot: string
+  /** 旧单根布局根(迁移的只读 source;dev 环境下 = mutableRoot)。 */
+  legacyRoot: string
+  /** ALPHA_GLOBAL_DIR 预置覆盖生效(测试隔离/开发者显式 export)。 */
+  rootOverridden: boolean
+  updaterFeedChannel: "latest" | "beta" | null
+}
+
 export type ElectronAPI = {
   killSidecar: () => Promise<void>
   /** B11 复扫行11:sidecar 连崩自愈停手 → 侧栏持久 banner;重试重置阶梯并 in-place respawn。 */
@@ -265,6 +280,9 @@ export type ElectronAPI = {
   /** Resolved backend endpoints (env > userData pin > login discovery > default). Renderer reads these
    *  instead of baking the URLs. */
   endpoints: () => Promise<AlphaEndpoints>
+  /** REQ-098:App 环境快照(只读)。main 启动时解析后冻结;此 IPC 无参数、无对应写面 —— renderer
+   *  既不能伪造环境,也没有任何通道改写环境根(AC#6)。 */
+  environment: () => Promise<AlphaEnvironmentInfo>
   /** REQ-084:启动期 surface 选择。resolve 每次加载读一次(env > pin > 发布默认 + 崩溃降级);
    *  reportFailure 只落盘供下次加载判定 —— 绝不热切换。 */
   surfaces: {

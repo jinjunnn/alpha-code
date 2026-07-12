@@ -108,6 +108,8 @@ const api: ElectronAPI = {
   showWindow: () => ipcRenderer.invoke("show-window"),
   relaunch: () => ipcRenderer.send("relaunch"),
   endpoints: () => ipcRenderer.invoke("alpha-endpoints"),
+  // REQ-098:环境快照只读通道 —— 刻意不传任何参数(环境由 main 从构建事实解析,renderer 零输入)。
+  environment: () => ipcRenderer.invoke("alpha-environment"),
   surfaces: {
     resolve: () => ipcRenderer.invoke("alpha-surfaces-resolve"),
     reportFailure: (payload) => ipcRenderer.invoke("alpha-surface-failure", payload),
