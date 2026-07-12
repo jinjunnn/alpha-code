@@ -36,3 +36,30 @@
 - alpha-check 全绿(北极星守卫 + typecheck + 单测 673/673,新增 model-picker-logic 6 例)
 - 零改上游文件(全部改动落 `packages/ui-mac` 自有文件)
 - UI PR 用户亲验门:dev 已留可用态(登录 PRO + 双 BYOK),待用户 GO 后合并
+
+---
+
+## 2026-07-12 复验(用户委托真机验收)—— FAIL → 补丁 → 全绿
+
+**复跑结果**:stage 0-4 全 PASS;**stage 5(retrySidecar 恢复)FAIL** —— 暴露第四种故障形态「悬挂」:
+respawned 引擎无鉴权请求秒回 401(中间件活着),带鉴权 `/config/providers` **永不返回**(捕获请求挂起数分钟
+无 resolve/reject;新发 6s 超时请求 TimeoutError)。原修复只覆盖 reject,未覆盖 hang → fetch 既不成功也不
+失败 → 状态机进不了 stalled → 无 note 无占位、13 行全灰、BYOK 消失、不自愈(用户当场撞见并截图)。
+
+**补丁(同日)**:
+1. `model-picker-logic.ts` 新增 `ENGINE_FETCH_TIMEOUT_MS = 10_000` + 单测 2 例(超时 > 一切退避间隔;取值窗口);
+2. `alpha-composer-model.tsx` 取数带 `AbortSignal.timeout` —— 悬挂转成可重试失败进既有重试循环,abort 同时
+   关闭底层连接(防 Chromium 连接池复用死套接字);
+3. 验收 harness 固化进仓 `packages/ui-mac/scripts/verify-picker-respawn.ts`(S39 复盘病灶 1):新增 **hang 注入
+   阶段**(尊重 abort signal 的永不返回 fetch)+ 恢复阶段改**收敛轮询**(修 7-10 脚本定时快照把引擎暖机误判
+   为回归的缺陷)+ 断言硬失败退出非零;
+4. `scripts/engine-smoke.sh` + sync-upstream.yml 新步(S39 复盘病灶 2):每日 sync 后无头启动引擎 → 打
+   `/config/providers` → 硬杀 → 同端口重启 → 再打,红 = 引擎运行时冒烟破(本地实跑绿)。
+
+**复验(补丁后,harness 全量)**:14/14 断言 PASS —— 基线 30 可选/19 BYOK;reject 故障态诚实 + 点灰行零
+respawn/reload + 同弹窗自愈;**hang 故障态超时后出诚实 note + 占位(修复盲区闭合)+ 解除后自愈**;真杀
+sidecar 同全过;retrySidecar 恢复后收敛回满基线。证据:`docs/audits/2026-07-12-s39-req083-reverify/`(7 png)。
+
+**残余(单独立项追踪,不阻断本 REQ)**:引擎 respawn 后悬挂为**非确定性竞态**(6 个 kill→retry 循环 1 现),
+判决实验(僵死瞬间带鉴权外部 curl 分辨引擎僵死 vs renderer 连接池僵死)未能复现完成;UI 层超时补丁使其
+用户面退化为「诚实提示 + 自动恢复」,不再是静默全灰。

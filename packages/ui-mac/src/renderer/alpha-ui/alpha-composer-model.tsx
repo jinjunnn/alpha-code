@@ -11,7 +11,7 @@ import type { EffectiveCatalog, ProviderKeyStatus, Tier } from "../../shared/alp
 import { ALPHA_PATHS } from "../../shared/alpha-config"
 import { useAlphaEndpoints } from "../use-alpha-endpoints"
 import { composerModelSuspended, setComposerModel, type ComposerModel, type SuspendReason } from "./composer-state"
-import { lockedPickAction, nextEngineRetryDelay } from "./model-picker-logic"
+import { ENGINE_FETCH_TIMEOUT_MS, lockedPickAction, nextEngineRetryDelay } from "./model-picker-logic"
 import type { AlphaProjectsApi } from "../sidebar/use-projects"
 import { AddProvider } from "./model-picker-add"
 
@@ -76,7 +76,8 @@ export function ModelPickPop(props: { sdk: AlphaProjectsApi["sdk"]; onPicked: ()
       return
     }
     void c.config
-      .providers({} as any)
+      // 悬挂(连接被接受但响应永不来)必须转成可重试失败,否则状态机进不了 stalled(REQ-083 复验盲区)
+      .providers({} as any, { signal: AbortSignal.timeout(ENGINE_FETCH_TIMEOUT_MS) } as any)
       .then(({ data, error }: any) => {
         const provs = Array.isArray(data?.providers) ? data.providers : Array.isArray(data) ? data : null
         if (error || !provs) {

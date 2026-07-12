@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { lockedPickAction, nextEngineRetryDelay } from "./model-picker-logic"
+import { ENGINE_FETCH_TIMEOUT_MS, lockedPickAction, nextEngineRetryDelay } from "./model-picker-logic"
 
 describe("lockedPickAction (REQ-083)", () => {
   test("登出态永远引导登录(与引擎状态无关)", () => {
@@ -37,5 +37,18 @@ describe("nextEngineRetryDelay", () => {
     expect(nextEngineRetryDelay(2)).toBe(4000)
     expect(nextEngineRetryDelay(3)).toBe(8000)
     expect(nextEngineRetryDelay(10)).toBe(8000)
+  })
+})
+
+describe("ENGINE_FETCH_TIMEOUT_MS(2026-07-12 复验盲区:悬挂必须转成可重试失败)", () => {
+  test("超时必须严格大于任何退避间隔 —— 保证「悬挂 → 超时 → 退避 → 重试」链不重叠不空转", () => {
+    for (const attempt of [0, 1, 2, 3, 10]) {
+      expect(ENGINE_FETCH_TIMEOUT_MS).toBeGreaterThan(nextEngineRetryDelay(attempt))
+    }
+  })
+
+  test("取值在诚实窗口内:远大于健康路径首拉(ms 级),不超过用户可忍受的提示延迟上限", () => {
+    expect(ENGINE_FETCH_TIMEOUT_MS).toBeGreaterThanOrEqual(3_000)
+    expect(ENGINE_FETCH_TIMEOUT_MS).toBeLessThanOrEqual(30_000)
   })
 })
