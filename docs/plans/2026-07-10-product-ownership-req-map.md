@@ -1,5 +1,8 @@
 # 2026-07-10 产品所有权专项 → REQ 覆盖与推进图
 
+> [!CAUTION]
+> **冻结的历史记录(2026-07-11 cutover)。** 本文不再承载活跃状态或进度;活跃工作以 GitHub Issues 与 [Alpha Delivery](https://github.com/users/jinjunnn/projects/2) 为准。本文引用的 docs/BACKLOG.md 已同日冻结;所有权映射对应的活跃工作见 alpha-code / alpha-work Issues。
+
 > 冻结的点时设计与依赖索引。活跃状态、优先级和 Sprint 只在 GitHub Issues 与 [Alpha Delivery](https://github.com/users/jinjunnn/projects/2) 维护；本文件不再更新。
 >
 > 来源：工作区级报告 `alpha-product-capability-spec-audit-2026-07-10.md`（Alpha 产品能力、前端接管与定制中心专项审计）与 `alpha-extension-ecosystem-and-route-ownership-spec-2026-07-10.md`（Alpha 路由、页面与扩展生态所有权专项方案）。两份报告是 append-only 证据，不承载状态。

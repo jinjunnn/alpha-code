@@ -12,6 +12,12 @@ source: alpha-platform 2026-07-08 审计 #3
 
 # REQ-070 — endpoints/baseURL 迁移到 custom domain(workers.dev → tidelabs.click)
 
+> [!CAUTION]
+> **冻结的历史需求记录。** 本文不得继续承载交付状态；其中“不走 GH issue”的旧
+> 约定自 2026-07-11 起失效。活跃工作以
+> [alpha-code Issues](https://github.com/jinjunnn/alpha-code/issues) 和
+> [Alpha Delivery](https://github.com/users/jinjunnn/projects/2) 为准。
+
 > 来源:alpha-platform 2026-07-08 审计 #3(B 侧 PR #20 已合并、双域已 live)。
 > 交付形式:跨仓需求文档(不走 GH issue,用户约定)。
 > **改号说明(2026-07-08)**:本档原自编 REQ-067,与 BACKLOG 既有 REQ-067(出厂治理内置化,已 archived)撞号;按 ADR-018「ID 永不复用」改号 REQ-070。
