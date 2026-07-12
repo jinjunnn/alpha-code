@@ -55,3 +55,19 @@ REQ-015 档内四方案深析后全部结构性淘汰/坍缩,采纳档外方案 
 3. **方案3(`--no-verify` 制度化)— 被方案5 严格支配**(方案5 的最坏退化态即方案3)。
 4. **方案5(采纳)**:本地 push 门 rewire 到 alpha 自有 `.githooks/pre-push`(= `scripts/alpha-check.sh`,与 alpha-ci 1:1;docs/CI.md §6 原「可选」设施转**默认**)。根因「husky `prepare` 在每次 `bun install` 后把 `core.hooksPath` 重置回 `.husky/_`」由 alpha-check **幂等自愈重挂**对策(逃生 `ALPHA_HOOKS_DISABLE=1`);上游文件零改。
 5. **接受的已知偏斜**:全量 `bun turbo typecheck`(即上游 husky 门语义)在冻结世界恒红——session-ui 属上游叶子(仅 enterprise/storybook 消费,NON_GOALS#6),alpha 不 build 不 ship,权威门不含;re-freeze 时按 §5 体检自然复查。上游 hook 附带的 bun 版本对齐检查不进 alpha 门(警示性质,损失接受,需要时可补)。
+
+## 修订(2026-07-12,ADR-027 —— 冻结基点升级为 frontend-freeze-base-2,含 typed surface seam)
+
+REQ-084 经 [[ADR-027]] 行使 §5 re-freeze 通道(ADR-029 L3,机制零新增):
+
+1. **新基点** = tag `frontend-freeze-base-2`:内容为原 `frontend-freeze-base` 的
+   `packages/{app,ui}` + ADR-027 中性 typed surface seam(`AppInterface.surfaces` 窄叶
+   override + 同驻 seam 契约测试)。非 seam 部分与原基点逐字节一致——本次 re-freeze
+   不吸收任何上游前端 churn。
+2. **还原步改指新 tag**:`sync-upstream.yml` 的 `restore_frozen_frontend` 检出
+   `frontend-freeze-base-2`,并在还原后校验 seam marker(`AppSurfaces`)存活;marker
+   缺失即 loud-fail 阻断整个 sync,禁止 warning 后继续(防 tag 误指旧基点/误移)。
+3. **§4 纪律不变**:app/ui 依旧只读,唯一写通道仍是受控 re-freeze;seam 属基点的一部分
+   而非补丁面,未来 re-freeze 到更新的上游前端时,须在 §5 ③ 体检中重铸含 seam 的新基点
+   (`frontend-freeze-base-N`)并复跑 seam 契约测试。
+4. 原 tag `frontend-freeze-base` 保留不动,作为整体回退点(ADR-027 §5)。

@@ -18,7 +18,8 @@ import { Banner } from "../alpha-ui/Banner"
 import { Mark } from "../logo-alpha"
 import { ALPHA_PATHS } from "../../shared/alpha-config"
 import { useAlphaEndpoints } from "../use-alpha-endpoints"
-import { base64UrlDecode, homeHref, newSessionHref, projectLabel, sessionHref } from "./route"
+import { homeHref, newSessionHref, projectLabel, sessionHref } from "./route"
+import { parseRoute } from "../../shared/legacy-route-abi"
 import {
   clearHiddenProjects,
   hiddenProjects,
@@ -398,18 +399,12 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
   })
 
   // Decode the active project directory + session id from the current route
-  // (/<b64dir>/session/<id?>). Drives the active-row highlight and "new chat" target.
-  const route = createMemo(() => {
-    const parts = location.pathname.split("/").filter(Boolean)
-    if (parts.length === 0 || parts[0] === "new-session") return {}
-    let dir: string | undefined
-    try {
-      dir = base64UrlDecode(parts[0])
-    } catch {
-      dir = undefined
-    }
-    const sessionId = parts[1] === "session" ? parts[2] : undefined
-    return { dir, sessionId }
+  // (legacy-route-abi parseRoute,REQ-084). Drives the active-row highlight and "new chat" target.
+  const route = createMemo<{ dir?: string; sessionId?: string }>(() => {
+    const r = parseRoute(location.pathname)
+    if (r.kind === "directory") return { dir: r.directory }
+    if (r.kind === "session") return { dir: r.directory, sessionId: r.id }
+    return {}
   })
 
   // The customization hub (定制中心) is a full-content overlay. The user expects the sidebar to
@@ -441,10 +436,7 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
 
   // True whenever we're inside a project workspace (a session OR a new-chat draft), i.e. not the
   // bare home grid. Drives the top-right terminal/review toolbar's visibility.
-  const inWorkspace = createMemo(() => {
-    const p = location.pathname
-    return p !== "/" && p !== "/index.html"
-  })
+  const inWorkspace = createMemo(() => parseRoute(location.pathname).kind !== "home")
 
   // Reflect sidebar visibility onto <body> so sidebar.css can shift opencode's content.
   createEffect(() => {

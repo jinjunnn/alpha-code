@@ -4,6 +4,8 @@ import {
   ACCEPTED_FILE_EXTENSIONS,
   AppBaseProviders,
   AppInterface,
+  type AppSurfaces,
+  type DraftSurfaceProps,
   handleNotificationClick,
   loadLocaleDict,
   normalizeLocale,
@@ -43,6 +45,9 @@ import { ExtTrustWatcher } from "./alpha-ui/ext-trust-watcher"
 import { AlphaSidebar } from "./sidebar/alpha-sidebar"
 import { useAlphaProjects } from "./sidebar/use-projects"
 import { AlphaHome } from "./alpha-ui/AlphaHome"
+import { AlphaNewSession } from "./alpha-ui/alpha-new-session"
+import { SurfaceBoundary } from "./alpha-ui/surface-boundary"
+import type { ResolvedSurfaces } from "../shared/alpha-surfaces"
 import { AlphaOnboarding } from "./alpha-ui/AlphaOnboarding"
 import { setupSettingsBackButton } from "./alpha-ui/settings-back-button"
 import { ExtensionHub } from "./extensions/extension-hub"
@@ -380,8 +385,22 @@ render(() => {
       </div>
     )
 
+    // ADR-027/REQ-084:surface 选择在可信 main 配置进入 renderer 后、route tree 首次挂载前
+    // 一次性完成;解析失败 fail-safe 到全 legacy(升级面故障不能挡住产品)。
+    const [resolvedSurfaces] = createResource<ResolvedSurfaces | null>(() =>
+      window.api.surfaces.resolve().catch((err): null => {
+        console.error("[alpha-surface] resolve failed — falling back to legacy surfaces", err)
+        return null
+      }),
+    )
+
     const ready = createMemo(
-      () => !defaultServer.loading && !sidecar.loading && !windowCount.loading && !locale.loading,
+      () =>
+        !defaultServer.loading &&
+        !sidecar.loading &&
+        !windowCount.loading &&
+        !locale.loading &&
+        !resolvedSurfaces.loading,
     )
     const servers = createMemo(() => {
       const data = initializationData(sidecar)
@@ -415,11 +434,38 @@ render(() => {
     // instance instead of each running its own (was ×2 project.list / ×2N session.list + an extra SSE).
     const alphaProjects = useAlphaProjects(sidebarServer)
 
+    // REQ-085/086:alpha 模式的叶页面经 typed surface seam 注入(单一 page root,upstream 叶
+    // 不挂载);legacy 模式不注入 = 严格 upstream 默认页面。surface 组件经 SurfaceBoundary 兜
+    // 致命 render 错误(记录 + 用户确认 reload 后 auto-fallback 回 legacy)。
+    const surfaceComponents = createMemo<AppSurfaces | undefined>(() => {
+      const resolved = resolvedSurfaces.latest
+      if (!resolved) return undefined
+      const surfaces: AppSurfaces = {}
+      if (resolved.home.mode === "alpha")
+        surfaces.home = () => (
+          <SurfaceBoundary surface="home">
+            <AlphaHome projects={alphaProjects} />
+          </SurfaceBoundary>
+        )
+      if (resolved.newSession.mode === "alpha")
+        surfaces.newSession = (p: DraftSurfaceProps) => (
+          <SurfaceBoundary surface="newSession">
+            <AlphaNewSession projects={alphaProjects} draftId={p.draftId} promoteDraft={p.promoteDraft} />
+          </SurfaceBoundary>
+        )
+      return surfaces
+    })
+
     return (
       <Show when={ready()} fallback={splash}>
         <Show when={effectiveDefaultServer()} keyed>
           {(key) => (
-            <AppInterface defaultServer={key} servers={servers()} router={MemoryRouter}>
+            <AppInterface
+              defaultServer={key}
+              servers={servers()}
+              router={MemoryRouter}
+              surfaces={surfaceComponents()}
+            >
               {/* C28(S17 T4)崩溃边界下沉:上游 ErrorBoundary 在 AppBaseProviders 内包住全部 children,
                   alpha 任一注入件 throw 会整屏坠成上游 ErrorPage —— 逐个紧裹 AlphaBoundary(更内层先命中)
                   = 崩溃只降级该区域;TimelineInject(B22 疑源)自此有降落伞。探针 window.__alphaCrashProbe */}
@@ -429,9 +475,8 @@ render(() => {
               <AlphaBoundary name="AlphaSidebar">
                 <AlphaSidebar projects={alphaProjects} />
               </AlphaBoundary>
-              <AlphaBoundary name="AlphaHome">
-                <AlphaHome projects={alphaProjects} />
-              </AlphaBoundary>
+              {/* REQ-085:AlphaHome 不再作为 children Portal 注入 —— 它是正式 `home` surface
+                  (见上方 surfaceComponents);legacy 模式下 upstream Home 原样呈现。 */}
               <AlphaBoundary name="AlphaOnboarding">
                 <AlphaOnboarding />
               </AlphaBoundary>

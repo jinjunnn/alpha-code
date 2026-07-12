@@ -59,6 +59,7 @@ import { ensureAlphaLayoutDefault } from "./alpha-defaults"
 import { initialSelfHealState, noteSpawn, planSelfHeal } from "./sidecar-self-heal"
 import { initEndpoints } from "./alpha-endpoints"
 import { registerEndpointsIpcHandlers } from "./endpoints-ipc"
+import { registerSurfaceIpc } from "./alpha-surfaces"
 import { initByokKeys, injectByokKeysIntoEnv, setByokKeyDeps } from "./alpha-byok-keys"
 import { reconcileEngineConfigTruth } from "./engine-config-truth-boot"
 import { factorySkillSources, reconcileFactorySkills } from "./factory-skills"
@@ -493,6 +494,8 @@ const main = Effect.gen(function* () {
   registerModelsIpcHandlers(app.getPath("userData"))
   registerProviderIpcHandlers()
   registerEndpointsIpcHandlers()
+  // REQ-084:启动期 surface 选择(env > pin > 发布默认 + 崩溃降级);renderer 挂载路由树前读一次。
+  registerSurfaceIpc(app.getPath("userData"))
   void updater.start()
   const updateTimer = setInterval(() => void updater.check(), 10 * 60 * 1000)
   updateTimer.unref()

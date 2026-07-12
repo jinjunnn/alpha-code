@@ -25,3 +25,16 @@ ADR-003 选了 B+A(复用 opencode `AppInterface` + token 换肤 + 自有组件�
 - ⚠️ **厚定制层**:自有前端体量将远超原「<5%」目标——这是放弃北极星的直接代价,已被用户接受。
 - ⚠️ 失去「白嫖上游前端升级」:upstream 前端改进不再自动继承;只继承后端/引擎层。
 - 🔭 待办:① 收敛内部 provider 借用为薄 re-export 层;② 继续 build order(composer → 会话页复用 MessageTimeline → 设置/模型选择弹窗 → 重型引擎换肤);③ ✅ **已完成(2026-07-03,C6)**——据本 ADR 修订 POSITIONING/GOALS/NON_GOALS/ARCHITECTURE/GLOSSARY 的前端北极星表述:「薄定制层<5%」拆为**后端守 / 前端接管**,submodule 陈述改 fork。
+
+## 修订(2026-07-12,ADR-027 —— 接管接缝升级:typed surface seam 成为正式通道)
+
+§4 的 Strategy A(route-aware children / Portal 叠加)只能把 alpha 屏幕**叠在**上游页面之上,
+双页面生命周期无法证明 upstream 叶页面无隐藏副作用。[[ADR-027]](经 [[ADR-029]] L3 通道)
+在冻结的 `AppInterface` 上开出**中性 typed surface seam**(`home`/`newSession`/`session`
+三个窄叶 override,保留全部既有 Provider 包装):
+
+1. 叶页面所有权诉求(REQ-085/086/088/090)一律走 surface seam,不再新增 Portal/DOM
+   takeover;既有 Portal 形态随各 REQ 迁移逐个退役。
+2. Strategy A 对**非叶区域**(sidebar、children 注入)继续有效;本修订不改变重型引擎
+   复用与 `data-slot` 换肤路径。
+3. 冻结纪律与写通道见 [[ADR-020]] 2026-07-12 修订段(基点更新为 `frontend-freeze-base-2`)。

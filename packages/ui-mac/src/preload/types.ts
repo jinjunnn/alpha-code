@@ -2,6 +2,7 @@ import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
 import type { WslServersPlatform } from "@opencode-ai/app/wsl/types"
 import type { UpdaterState } from "@opencode-ai/app/updater"
 import type { AlphaEndpoints } from "../shared/alpha-config"
+import type { ResolvedSurfaces, SurfaceId } from "../shared/alpha-surfaces"
 import type { AutomationEvent, AutomationGlobalState, AutomationTask, AutomationSchedule } from "../shared/automation-types"
 import type {
   AlphaModelCatalog,
@@ -264,6 +265,12 @@ export type ElectronAPI = {
   /** Resolved backend endpoints (env > userData pin > login discovery > default). Renderer reads these
    *  instead of baking the URLs. */
   endpoints: () => Promise<AlphaEndpoints>
+  /** REQ-084:启动期 surface 选择。resolve 每次加载读一次(env > pin > 发布默认 + 崩溃降级);
+   *  reportFailure 只落盘供下次加载判定 —— 绝不热切换。 */
+  surfaces: {
+    resolve: () => Promise<ResolvedSurfaces>
+    reportFailure: (payload: { surface: SurfaceId; error: string }) => Promise<void>
+  }
   getZoomFactor: () => Promise<number>
   setZoomFactor: (factor: number) => Promise<void>
   getPinchZoomEnabled: () => Promise<boolean>

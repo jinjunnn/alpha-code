@@ -108,6 +108,10 @@ const api: ElectronAPI = {
   showWindow: () => ipcRenderer.invoke("show-window"),
   relaunch: () => ipcRenderer.send("relaunch"),
   endpoints: () => ipcRenderer.invoke("alpha-endpoints"),
+  surfaces: {
+    resolve: () => ipcRenderer.invoke("alpha-surfaces-resolve"),
+    reportFailure: (payload) => ipcRenderer.invoke("alpha-surface-failure", payload),
+  },
   getZoomFactor: () => ipcRenderer.invoke("get-zoom-factor"),
   setZoomFactor: (factor) => ipcRenderer.invoke("set-zoom-factor", factor),
   getPinchZoomEnabled: () => ipcRenderer.invoke("get-pinch-zoom-enabled"),

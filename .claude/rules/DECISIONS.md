@@ -29,8 +29,9 @@
 | [ADR-024](adrs/ADR-024-ecosystem-inheritance-default-deny.md) | 外部生态继承默认拒绝(.claude/.agents/CLAUDE.md)+ 打开项目 consent 导入门(consent = 安装期转换导入 `.alpha`,非重开继承;全局存量一次性迁移门为发布闸) | accepted | 2026-07-08 |
 | [ADR-025](adrs/ADR-025-user-workspace-alpha-dir.md) | `~/Alpha` 用户默认工作目录:可见数据主目录的目录契约与写入治理(lazy 供给 + 无项目态默认落点 + Journal/Memory/Outputs 契约 + 内置技能 `alpha-workspace`;2026-07-09 同日三残点拍板收口) | accepted | 2026-07-09 |
 | [ADR-026](adrs/ADR-026-windows-platform-support.md) | Windows 平台支持:桌面扩为 macOS+Windows(撤回 NON_GOALS#6 Mac-only)+ 平台差异收敛(路径全平台同构零特例 / platform seam 单点分发 / 安全诚实降级 / 发布链分工;审计实证无硬崩点、核心 2–4 人日) | accepted | 2026-07-09 |
+| [ADR-027](adrs/ADR-027-alpha-product-kernel.md) | Alpha Product Kernel:AppInterface typed surface seam(home/newSession/session 窄叶 override)进入冻结前端,基点铸 `frontend-freeze-base-2`(ADR-029 L3 re-freeze,还原步 loud-fail 校验 seam 存活;修订 ADR-016/020) | accepted | 2026-07-12 |
 | [ADR-029](adrs/ADR-029-upstream-sovereignty-ladder.md) | 上游主权阶梯:「零改上游」铁律不修宪,主权升级走四级枚举通道(L0 接缝 → L1 变换 → L2 补丁 loud-fail → L3 冻结接管;逐案 ADR、永不设 L4 直接编辑;既有例外归位记账) | accepted(2026-07-12 同日拍板) | 2026-07-12 |
 
-> 🔒 **编号预留**:ADR-027(Alpha Product Kernel,REQ-084 实施门)与 ADR-028(Extension Package & Registry v2,REQ-099 实施门)已由产品所有权专项(`docs/plans/2026-07-10-product-ownership-req-map.md` §5)预留,落笔时按号使用,勿被新 ADR 占用。
+> 🔒 **编号预留**:ADR-028(Extension Package & Registry v2,REQ-099 实施门)已由产品所有权专项(`docs/plans/2026-07-10-product-ownership-req-map.md` §5)预留,落笔时按号使用,勿被新 ADR 占用;ADR-027 已于 2026-07-12 按号落笔。
 
 > 📦 **ADR-010/011/013(云平台内部决策)已迁至 `alpha-platform/.claude/rules/adrs/`**(2026-06-22)。本仓只保留"本地→云派发接缝"(见 [ADR-002](adrs/ADR-002-backend-seams.md));文中其余处对它们的引用视为跨项目引用。

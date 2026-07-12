@@ -10,14 +10,15 @@
 // 契约锚(上游冻结面,ADR-020 re-freeze 时按 §5 复查):
 //   store = "opencode.global.dat",键 "tabs" / "tabs.recent"(app/src/utils/persist.ts:26 GLOBAL_STORAGE);
 //   tabKey = `${server}\n/${dirBase64}/session/${sessionId}` | `draft:${draftID}`(app/src/context/tabs.tsx:36-39);
-//   dirBase64 = URL-safe base64 无填充(core/src/util/encode.ts);**worktree "/" → "Lw" 是合法全局约定
-//   (ADR-008),校验只看形状、绝不按解码值剔**。
+//   dirBase64 形状 = shared/legacy-route-abi isDirectorySlug(REQ-084 版本化契约,不再本地复刻编码方案);
+//   **worktree "/" → "Lw" 是合法全局约定(ADR-008),校验只看形状、绝不按解码值剔**。
 // 纪律:一切拿不准 = fail-open 保持原样(绝不越修越坏);每次剔除留痕(B11 反静默)。
 // 纯逻辑与编排分离:本文件不 import electron,全部依赖注入 → 可单测。
 
+import { isDirectorySlug } from "../shared/legacy-route-abi"
+
 export type PrecleanDrop = { where: "tabs" | "recent"; reason: string; detail: string }
 
-const B64URL = /^[A-Za-z0-9_-]+$/
 const SESSION_ID = /^[A-Za-z0-9_-]+$/
 
 type AnyTab = Record<string, unknown>
@@ -29,7 +30,7 @@ function isValidSessionTab(t: AnyTab): boolean {
     t.server.length > 0 &&
     !t.server.includes("\n") &&
     typeof t.dirBase64 === "string" &&
-    B64URL.test(t.dirBase64) &&
+    isDirectorySlug(t.dirBase64) &&
     typeof t.sessionId === "string" &&
     SESSION_ID.test(t.sessionId)
   )

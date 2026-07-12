@@ -18,6 +18,19 @@ body[data-alpha-sidebar="open"] .a-home {
   left: var(--alpha-sidebar-w, 260px);
 }
 
+/* REQ-085/ADR-027: routed surface mode —— 正式叶页面在 upstream Layout 内成流布局,
+ * 不再 fixed 覆盖;sidebar 偏移由外层布局负责,此处归零。 */
+.a-home--page {
+  position: relative;
+  top: 0;
+  z-index: auto;
+  width: 100%;
+  height: 100%;
+}
+body[data-alpha-sidebar="open"] .a-home--page {
+  left: 0;
+}
+
 /* Atmosphere: ≤4% accent glow + faint grain behind content (frontend-design pass). */
 .a-home::before {
   content: "";
