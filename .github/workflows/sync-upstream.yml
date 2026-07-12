@@ -155,3 +155,13 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
             echo "::warning title=REQ-012 anchor tripwire::upstream sync broke reskin anchor contract — visual re-verify required before any release"
           fi
+
+      # S39 复盘病灶 2(2026-07-12):ADR-020 预警过「冻结前端 ↔ 新引擎的运行时契约漂移,
+      # typecheck 测不全,真机冒烟兜底」——此前冒烟从未机械化,sync 后引擎行为变化只能等真机撞见
+      # (REQ-083 复验实锤:同一验收脚本 7-10 绿、合 sync 后 stage5 僵死)。本步无头启动合并后的
+      # 引擎 → 打关键端点 → 硬杀 → 同端口重启 → 再打(respawn 族覆盖)。失败 = 本 run 红:
+      # 引擎运行时冒烟破,发布/继续开发前必须人工排查(merge 已推送——红的意义是高声报警)。
+      - name: Engine runtime smoke (S39 — boot/probe/kill/reboot)
+        run: |
+          bun install
+          bash scripts/engine-smoke.sh
