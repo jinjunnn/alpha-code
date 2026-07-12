@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron"
-import type { AuthErrorCode, AuthState, ElectronAPI, WslServersEvent } from "./types"
+import type { AuthErrorCode, AuthState, CloudArtifactProgress, ElectronAPI, WslServersEvent } from "./types"
 import type { UpdaterState } from "@opencode-ai/app/updater"
 
 const updaterCallbacks = new Set<(state: UpdaterState) => void>()
@@ -197,7 +197,14 @@ const api: ElectronAPI = {
     status: (jobId) => ipcRenderer.invoke("cloud-status", jobId),
     cancel: (jobId) => ipcRenderer.invoke("cloud-cancel", jobId),
     artifacts: (jobId) => ipcRenderer.invoke("cloud-artifacts", jobId),
-    fetchArtifact: (artifactId) => ipcRenderer.invoke("cloud-artifact-content", artifactId),
+    // REQ-092:descriptor-only 下载通道(进度=事件订阅;内容字节永不过 IPC)。
+    downloadArtifact: (directory, runId, artifact) => ipcRenderer.invoke("cloud-artifact-download", directory, runId, artifact),
+    cancelArtifactDownload: (artifactId) => ipcRenderer.invoke("cloud-artifact-download-cancel", artifactId),
+    onArtifactProgress: (cb) => {
+      const h = (_e: unknown, p: CloudArtifactProgress) => cb(p)
+      ipcRenderer.on("cloud-artifact-progress", h)
+      return () => ipcRenderer.removeListener("cloud-artifact-progress", h)
+    },
     saveRun: (directory, runId, contract) => ipcRenderer.invoke("cloud-save-run", directory, runId, contract),
     subscribe: (jobId) => ipcRenderer.invoke("cloud-subscribe", jobId),
     unsubscribe: (jobId) => ipcRenderer.invoke("cloud-unsubscribe", jobId),
@@ -207,6 +214,13 @@ const api: ElectronAPI = {
       ipcRenderer.on("cloud-job-event", h)
       return () => ipcRenderer.removeListener("cloud-job-event", h)
     },
+  },
+  // REQ-093(#185):run artifact manifest 只读查询(main 侧 artifact-service;无字节、无绝对路径)。
+  runArtifacts: {
+    list: (directory, runId) => ipcRenderer.invoke("run-artifacts-list", directory, runId),
+    inspect: (directory, runId, artifactId) => ipcRenderer.invoke("run-artifact-inspect", directory, runId, artifactId),
+    usage: (directory, runId) => ipcRenderer.invoke("run-artifacts-usage", directory, runId),
+    projectUsage: (directory) => ipcRenderer.invoke("run-artifacts-usage", directory),
   },
   automations: {
     list: () => ipcRenderer.invoke("automations-list"),

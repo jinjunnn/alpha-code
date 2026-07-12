@@ -9,7 +9,9 @@
 
 import * as fs from "node:fs"
 import * as path from "node:path"
-import type { CloudArtifactContent, CloudArtifactList, CloudJobEnvelope, CloudJobStatus, CloudResult } from "../preload/types"
+import type { CloudArtifactMeta, CloudArtifactList, CloudJobEnvelope, CloudJobStatus, CloudResult } from "../preload/types"
+import type { ArtifactDownloadOutcome } from "./alpha-artifact-download"
+import { validateArtifactDescriptor, type ArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
 import { parsePrefs, type ProjectPrefs } from "./alpha-cloud-consent"
 
 export type CloudRunManifest =
@@ -147,12 +149,18 @@ export function writeRunFiles(
 export type SaveRunDeps = {
   status: (jobId: string) => Promise<CloudResult<CloudJobStatus>>
   artifacts: (jobId: string) => Promise<CloudResult<CloudArtifactList>>
-  fetchArtifact: (artifactId: string) => Promise<CloudResult<CloudArtifactContent>>
-  /** decoded-bytes cap per artifact (disk-bomb guard); oversize is skipped with a warning. */
-  maxArtifactBytes?: number
+  /** REQ-092:artifact 字节唯一入口 —— main 流式写盘(.part + 单遍 sha256 + 原子 rename)。
+   *  限额(100 MiB)与校验都在写入端前置/内联,本模块不再解码、不再全量缓冲。 */
+  download: (artifact: CloudArtifactMeta, targetPath: string, jobId: string) => Promise<ArtifactDownloadOutcome>
+  /** REQ-093:下载成功后的 manifest 登记(由调用方注入 artifact-service;依赖注入是为了
+   *  避开 artifact-service → alpha-workdir 的既有引用成环)。缺省 = 不登记,盘上文件仍经
+   *  legacyFiles 只读发现。 */
+  register?: (input: {
+    descriptor: ArtifactDescriptor
+    savedPath: string
+    verifiedSha256?: string
+  }) => { ok: boolean; reason?: string }
 }
-
-const DEFAULT_MAX_ARTIFACT_BYTES = 100 * 1024 * 1024
 
 /**
  * Persist one cloud run under `<projectDir>/.alpha/runs/<runId>/` — status.json (always),
@@ -198,20 +206,11 @@ export async function saveCloudRun(
   const metas = list && typeof list === "object" && !("error" in list) ? list.artifacts : []
   if (list && typeof list === "object" && "error" in list) warnings.push(`artifacts: ${list.error}`)
 
-  const maxBytes = deps.maxArtifactBytes ?? DEFAULT_MAX_ARTIFACT_BYTES
+  // REQ-092:字节不再进本模块 —— 名字净化 + .alpha 逃逸守卫后,把目标路径交给流式下载器
+  // (.part + 限额前置 + 单遍 sha256 + 原子 rename;失败分类回警告,绝不产出看似成功的最终文件)。
   const used = new Set<string>()
   for (const meta of metas) {
-    const content = await deps.fetchArtifact(meta.id)
-    if (!content || typeof content !== "object" || "error" in content) {
-      warnings.push(`artifact ${meta.id}: ${content && "error" in content ? content.error : "no content"}`)
-      continue
-    }
-    const bytes = Buffer.from(content.base64, "base64")
-    if (bytes.byteLength > maxBytes) {
-      warnings.push(`artifact ${meta.id}: skipped (${bytes.byteLength} bytes > cap ${maxBytes})`)
-      continue
-    }
-    let name = sanitizeArtifactName(meta.name ?? content.name, `artifact-${meta.id}`)
+    let name = sanitizeArtifactName(meta.name, `artifact-${meta.id}`)
     if (used.has(name)) name = `${meta.id}-${name}`
     used.add(name)
     const target = safeResolveInAlpha(projectDir, "runs", runId, "artifacts", name)
@@ -219,11 +218,26 @@ export async function saveCloudRun(
       warnings.push(`artifact ${meta.id}: refused unsafe name`)
       continue
     }
-    try {
-      writeFileAtomic(target, bytes)
-      files.push(path.join("artifacts", name))
-    } catch (error) {
-      warnings.push(`artifact ${meta.id}: ${error instanceof Error ? error.message : "write failed"}`)
+    const got = await deps.download(meta, target, runId)
+    if (!got.ok) {
+      warnings.push(`artifact ${meta.id}: ${got.error}${got.detail ? ` (${got.detail})` : ""}`)
+      continue
+    }
+    files.push(path.join("artifacts", name))
+    // REQ-093 集成缝:完整 descriptor 才入 manifest;legacy meta 不合成假 descriptor,
+    // 由 artifact-service 的 legacyFiles 只读发现兜底。
+    if (deps.register) {
+      const check = validateArtifactDescriptor(meta)
+      if (check.ok) {
+        const reg = deps.register({
+          descriptor: meta as unknown as ArtifactDescriptor,
+          savedPath: `artifacts/${name}`,
+          verifiedSha256: got.sha256,
+        })
+        if (!reg.ok) warnings.push(`artifact ${meta.id}: manifest 登记失败 — ${reg.reason ?? "unknown"}`)
+      } else {
+        warnings.push(`artifact ${meta.id}: legacy meta 未入 manifest(legacyFiles 只读呈现)`)
+      }
     }
   }
 

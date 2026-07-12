@@ -5,12 +5,14 @@
 // 阶段二:+ artifact 列表/下载(alpha-cloud-jobs)+ SSE 进度订阅(alpha-cloud-events)。SSE 事件经
 // event.sender.send("cloud-job-event", …) 推给对应 renderer;订阅按 (webContents, jobId) 记账,窗口销毁自动清。
 
+import { registerDownloadedArtifact } from "./artifact-service"
 import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from "electron"
 import { execFile } from "node:child_process"
 import * as fs from "node:fs"
-import { dispatchCloudJob, getCloudJobStatus, cancelCloudJob, listCloudArtifacts, fetchCloudArtifact } from "./alpha-cloud-jobs"
+import * as path from "node:path"
+import { dispatchCloudJob, getCloudJobStatus, cancelCloudJob, listCloudArtifacts, downloadCloudArtifactTo } from "./alpha-cloud-jobs"
 import { isTerminalCloudEvent, subscribeCloudJobEvents } from "./alpha-cloud-events"
-import { readProjectPrefs, saveCloudRun, writeProjectPrefs } from "./alpha-workdir"
+import { ensureAlphaScaffold, isSafeRunId, readProjectPrefs, safeResolveInAlpha, sanitizeArtifactName, saveCloudRun, writeProjectPrefs } from "./alpha-workdir"
 import { mirrorRunArtifacts } from "./alpha-user-workspace"
 import { hasCloudConsent, withCloudConsent } from "./alpha-cloud-consent"
 import { getLogger } from "./logging"
@@ -43,6 +45,8 @@ function gitDiff(directory: string): Promise<{ ok: true; diff: string; source: "
 
 // 活跃订阅:key = `${webContentsId}:${jobId}` → unsubscribe。
 const subs = new Map<string, () => void>()
+// 进行中的 artifact 下载:key = `${webContentsId}:${artifactId}` → abort(取消 IPC + 窗口销毁自动清)。
+const downloads = new Map<string, AbortController>()
 
 // B16(ADR-021 §4 显式通道):首次云派发 per 项目弹一次 PIPL 同意门。文案中文硬编码(main 无 i18n,
 // ADR-022 先例)。诚实告知:出境内容(diff/任务文本)、去向(平台云)、可拒绝、per-项目记录。
@@ -93,14 +97,70 @@ export function registerCloudIpcHandlers() {
   ipcMain.handle("cloud-status", (_e: IpcMainInvokeEvent, jobId: string) => getCloudJobStatus(jobId))
   ipcMain.handle("cloud-cancel", (_e: IpcMainInvokeEvent, jobId: string) => cancelCloudJob(jobId))
   ipcMain.handle("cloud-artifacts", (_e: IpcMainInvokeEvent, jobId: string) => listCloudArtifacts(jobId))
-  ipcMain.handle("cloud-artifact-content", (_e: IpcMainInvokeEvent, artifactId: string) => fetchCloudArtifact(artifactId))
+
+  // REQ-092:descriptor-only IPC —— renderer 只送 descriptor(或旧部署 meta),main 流式写入
+  // <directory>/.alpha/runs/<runId>/artifacts/(ADR-019 守卫复用:isSafeRunId + sanitizeArtifactName +
+  // safeResolveInAlpha)。进度经 "cloud-artifact-progress" 推回发起窗口;字节永不过 IPC。
+  ipcMain.handle("cloud-artifact-download", async (e: IpcMainInvokeEvent, directory: string, runId: string, artifact: unknown) => {
+    if (typeof directory !== "string" || !directory || typeof runId !== "string" || !isSafeRunId(runId))
+      return { ok: false, error: "invalid-request" }
+    const a = artifact && typeof artifact === "object" ? (artifact as { id?: unknown; name?: unknown }) : null
+    const artifactId = a && typeof a.id === "string" && a.id ? a.id : null
+    if (!artifactId) return { ok: false, error: "invalid-artifact" }
+    if (!ensureAlphaScaffold(directory)) return { ok: false, error: "invalid-directory" }
+    const name = sanitizeArtifactName(typeof a?.name === "string" ? a.name : undefined, `artifact-${artifactId}`)
+    const target = safeResolveInAlpha(directory, "runs", runId, "artifacts", name)
+    if (!target) return { ok: false, error: "unsafe-path" }
+    const wc = e.sender
+    const key = `${wc.id}:${artifactId}`
+    if (downloads.has(key)) return { ok: false, error: "already-downloading" }
+    const ctrl = new AbortController()
+    downloads.set(key, ctrl)
+    const onDestroyed = () => ctrl.abort()
+    wc.once("destroyed", onDestroyed)
+    try {
+      fs.mkdirSync(path.dirname(target), { recursive: true })
+      return await downloadCloudArtifactTo({
+        artifact,
+        targetPath: target,
+        jobId: runId,
+        signal: ctrl.signal,
+        onProgress: (p) => {
+          if (!wc.isDestroyed()) wc.send("cloud-artifact-progress", { runId, artifactId, ...p })
+        },
+      })
+    } catch (error) {
+      // downloadCloudArtifactTo 自身不抛;这里兜底 mkdir 等本地失败(错误文案不含 token)。
+      return { ok: false, error: "disk", detail: error instanceof Error ? error.message : "local failure" }
+    } finally {
+      downloads.delete(key)
+      wc.removeListener("destroyed", onDestroyed)
+    }
+  })
+  ipcMain.handle("cloud-artifact-download-cancel", (e: IpcMainInvokeEvent, artifactId: string) => {
+    const ctrl = typeof artifactId === "string" ? downloads.get(`${e.sender.id}:${artifactId}`) : undefined
+    if (ctrl) ctrl.abort()
+    return { ok: !!ctrl }
+  })
+
   ipcMain.handle("cloud-git-diff", (_e: IpcMainInvokeEvent, directory: string) =>
     typeof directory === "string" && directory ? gitDiff(directory) : { ok: false, reason: "invalid directory" })
 
   // B3/ADR-019:把一个终态 run 回流写进 <directory>/.alpha/runs/<runId>/(status/contract/artifacts)。
   // renderer 提供 directory(main 不知道当前项目目录);字节在 main 侧取,bearer 不进 renderer。
   ipcMain.handle("cloud-save-run", async (_e: IpcMainInvokeEvent, directory: string, runId: string, contract?: CloudJobEnvelope) => {
-    const saved = await saveCloudRun(directory, runId, { status: getCloudJobStatus, artifacts: listCloudArtifacts, fetchArtifact: fetchCloudArtifact }, contract)
+    const saved = await saveCloudRun(
+      directory,
+      runId,
+      {
+        status: getCloudJobStatus,
+        artifacts: listCloudArtifacts,
+        download: (artifact, targetPath, jobId) => downloadCloudArtifactTo({ artifact, targetPath, jobId }),
+        // REQ-093:下载成功即入 manifest(依赖注入,见 SaveRunDeps.register)。
+        register: (input) => registerDownloadedArtifact(directory, runId, input),
+      },
+      contract,
+    )
     // REQ-071/ADR-025:目标项目 = ~/Alpha 时,交付物镜像到可见区 Outputs(best-effort,真源不变)。
     if (saved.ok) {
       const mirrored = mirrorRunArtifacts(directory, runId, saved)

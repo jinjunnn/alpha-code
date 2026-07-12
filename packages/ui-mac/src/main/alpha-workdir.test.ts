@@ -35,13 +35,27 @@ const STATUS: CloudJobStatus = {
   error: null,
 }
 
-const b64 = (s: string) => Buffer.from(s).toString("base64")
+// REQ-092:saveCloudRun 不再见到字节 —— download dep = 流式写入器(alpha-artifact-download),
+// 这里以「把内容写到给定 target」的 mock 模拟其成功落盘副作用。
+const okDownload =
+  (content: string): SaveRunDeps["download"] =>
+  async (_artifact, targetPath) => {
+    fs.writeFileSync(targetPath, content)
+    return {
+      ok: true,
+      path: targetPath,
+      bytes: Buffer.byteLength(content),
+      sha256: "0".repeat(64),
+      verification: "unverified",
+      via: "stream",
+    }
+  }
 
 function deps(overrides: Partial<SaveRunDeps> = {}): SaveRunDeps {
   return {
     status: async () => STATUS,
     artifacts: async () => ({ job_id: "job-1", status: "completed", artifacts: [{ id: "a1", name: "report.md" }], artifact_ids: ["a1"] }),
-    fetchArtifact: async () => ({ name: "report.md", mime: "text/markdown", base64: b64("# hi") }),
+    download: okDownload("# hi"),
     ...overrides,
   }
 }
@@ -166,16 +180,35 @@ describe("saveCloudRun", () => {
     if (res.ok) expect(res.files).toContain(path.join("artifacts", "a2-out.txt"))
   })
 
-  test("oversize artifact skipped with warning (cap injectable)", async () => {
+  test("download failure (e.g. over-limit at the streaming writer) degrades to warning, no file listed", async () => {
     const res = await saveCloudRun(
       projectDir,
       "job-1",
-      deps({ maxArtifactBytes: 2, fetchArtifact: async () => ({ name: "big.bin", mime: "b", base64: b64("hello") }) }),
+      deps({ download: async () => ({ ok: false, error: "over-limit", detail: "descriptor size 5 > max 2" }) }),
     )
     expect(res.ok).toBe(true)
     if (res.ok) {
-      expect(res.warnings.some((w) => w.includes("skipped"))).toBe(true)
+      expect(res.warnings.some((w) => w.includes("over-limit"))).toBe(true)
       expect(res.files).toEqual(["status.json"])
+      // REQ-092 AC#4:失败绝不产出看似成功的最终文件
+      expect(fs.readdirSync(path.join(projectDir, ".alpha", "runs", "job-1", "artifacts"))).toEqual([])
     }
+  })
+
+  test("download dep receives the guarded in-.alpha target path (path-escape guard reuse)", async () => {
+    let seenTarget = ""
+    const res = await saveCloudRun(
+      projectDir,
+      "job-1",
+      deps({
+        download: async (_a, targetPath) => {
+          seenTarget = targetPath
+          fs.writeFileSync(targetPath, "x")
+          return { ok: true, path: targetPath, bytes: 1, sha256: "0".repeat(64), verification: "unverified", via: "stream" }
+        },
+      }),
+    )
+    expect(res.ok).toBe(true)
+    expect(seenTarget).toBe(path.join(projectDir, ".alpha", "runs", "job-1", "artifacts", "report.md"))
   })
 })

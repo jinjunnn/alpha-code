@@ -15,8 +15,9 @@ import { ALPHA_PATHS } from "../shared/alpha-config"
 import { resolveEndpoints } from "./alpha-endpoints"
 import { getAccessToken } from "./alpha-auth"
 import { guardCloudEnvelope } from "./cloud-envelope-guard"
+import { downloadArtifactToFile, type ArtifactDownloadOutcome, type ArtifactDownloadRequest } from "./alpha-artifact-download"
 import { getLogger } from "./logging"
-import type { CloudResult, CloudJobEnvelope, CloudDispatchResult, CloudJobStatus, CloudArtifactList, CloudArtifactContent } from "../preload/types"
+import type { CloudResult, CloudJobEnvelope, CloudDispatchResult, CloudJobStatus, CloudArtifactList } from "../preload/types"
 
 // Resolved by alpha-endpoints (env ALPHA_CLOUD_URL > userData pin > login discovery > default).
 const cloudBase = () => resolveEndpoints().cloud
@@ -66,27 +67,18 @@ export const cancelCloudJob = (jobId: string): Promise<CloudResult<{ job_id: str
 export const listCloudArtifacts = (jobId: string): Promise<CloudResult<CloudArtifactList>> =>
   authed<CloudArtifactList>(`${ALPHA_PATHS.cloudJobs}/${encodeURIComponent(jobId)}/artifacts`)
 
-// 下载单个 artifact 的二进制内容 → base64(main 取回,bearer 不进 renderer;仿 account 读取)。
-// 大文件经 base64/IPC 传给 renderer 存盘;真部署可改 main 侧 save dialog 直写盘。
-export async function fetchCloudArtifact(artifactId: string): Promise<CloudResult<CloudArtifactContent>> {
+// REQ-092:artifact 内容唯一入口 —— descriptor.contentRef 流式下载到磁盘(bearer 仅 main,renderer 零字节)。
+// 旧「arrayBuffer→Buffer→编码→Buffer」全缓冲链已删除;窗口期 legacy 内联回退在 alpha-artifact-download 内部
+// (同 .part 写入器 + 同限额 + 同 sha256 校验,⏰ 2026-08-15 随平台 compat flag 一并移除)。
+// 失败只回分类码 + 净化 detail;此处日志也只落分类码(token 卫生,REQ-092 AC#5)。
+export async function downloadCloudArtifactTo(req: ArtifactDownloadRequest): Promise<ArtifactDownloadOutcome> {
   const token = getAccessToken()
-  if (!token) return { error: "not-authenticated" }
+  if (!token) return { ok: false, error: "not-authenticated" }
   const base = cloudBase()
-  if (!base) return { error: "no-cloud-endpoint" }
-  try {
-    const res = await fetch(`${base}${ALPHA_PATHS.cloudArtifacts}/${encodeURIComponent(artifactId)}/content`, {
-      headers: { authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(30000),
-    })
-    if (res.status === 401) return { error: "unauthorized" }
-    if (!res.ok) return { error: `http-${res.status}` }
-    const mime = res.headers.get("content-type") ?? "application/octet-stream"
-    const cd = res.headers.get("content-disposition") ?? ""
-    const name = /filename="?([^"]+)"?/.exec(cd)?.[1] ?? "artifact"
-    const base64 = Buffer.from(await res.arrayBuffer()).toString("base64")
-    return { name, mime, base64 }
-  } catch (error) {
-    getLogger().warn("alpha-cloud-jobs: artifact fetch failed", error)
-    return { error: "network" }
+  if (!base) return { ok: false, error: "no-cloud-endpoint" }
+  const outcome = await downloadArtifactToFile(req, { token, base })
+  if (!outcome.ok && outcome.error !== "cancelled") {
+    getLogger().warn(`alpha-cloud-jobs: artifact download failed (${outcome.error})`)
   }
+  return outcome
 }
