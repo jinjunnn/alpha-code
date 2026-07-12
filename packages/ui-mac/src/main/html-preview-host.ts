@@ -30,10 +30,18 @@ import * as path from "node:path"
 import * as electronNs from "electron"
 const { app, BrowserWindow, ipcMain, session } = electronNs
 import type { BrowserWindow as BrowserWindowT, Event as ElectronEvent, IpcMainInvokeEvent, RenderProcessGoneDetails, Session, WebContents } from "electron"
-// bun mock.module 跨测试文件泄漏(Linux 执行顺序下他文件的 ./logging mock 无 write 导出),
-// namespace 导入避开 import 期具名绑定校验;运行期本文件测试自带完整 mock。
+// bun mock.module 跨测试文件泄漏(Linux 执行顺序下他文件的 ./logging mock 缺 write 导出),
+// 故日志走依赖注入:默认防御式转发真模块,测试经 __setHtmlPreviewLogSink 确定性捕获。
 import * as logging from "./logging"
-const writeLog: typeof logging.write = (...args) => logging.write(...args)
+type HtmlPreviewLogFn = (name: string, message: string, extra?: Record<string, unknown>, level?: string) => void
+const defaultLogSink: HtmlPreviewLogFn = (...args) => {
+  const w = (logging as { write?: HtmlPreviewLogFn }).write
+  if (typeof w === "function") w(...args)
+}
+let writeLog: HtmlPreviewLogFn = defaultLogSink
+export function __setHtmlPreviewLogSink(fn: HtmlPreviewLogFn | null) {
+  writeLog = fn ?? defaultLogSink
+}
 import { resolveArtifact } from "./artifact-service"
 import { isSafeSavedPath, RUN_ARTIFACTS_SUBDIR } from "./artifact-manifest"
 import { safeResolveInAlpha, sanitizeArtifactName } from "./alpha-workdir"
