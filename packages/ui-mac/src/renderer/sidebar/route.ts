@@ -1,30 +1,24 @@
 // URL helpers for the alpha Codex-style sidebar.
 //
-// opencode's router (packages/app/src/app.tsx) keys directories in the path as URL-safe
-// base64 of the absolute worktree path. We replicate the exact scheme from
-// packages/core/src/util/encode.ts here (a 3-line pure transform) rather than importing it —
-// @opencode-ai/core is not a runtime dependency for us (ADR-002/NON_GOALS#5: the frontend
-// talks to the backend only through @opencode-ai/sdk). Keeping our own copy is intentional:
-// it must stay byte-compatible with opencode's `base64Encode`, so if you ever see routing
-// 404s after an upstream bump, re-check this against core/src/util/encode.ts.
+// 一切路由/目录编解码委托给 shared/legacy-route-abi(REQ-084 版本化契约,唯一事实源);
+// 本文件只保留既有导出名,importers 免改动。上游 bump 后如见路由 404,查 ABI 模块而非这里。
+
+import { decodeDirectory, encodeDirectory, hrefFor } from "../../shared/legacy-route-abi"
 
 export function base64UrlEncode(value: string): string {
-  const bytes = new TextEncoder().encode(value)
-  let binary = ""
-  for (const b of bytes) binary += String.fromCharCode(b)
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
+  return encodeDirectory(value)
 }
 
+/** 解码失败 throw(保持旧 API 语义:调用方自带 try/catch)。 */
 export function base64UrlDecode(value: string): string {
-  const padded = value.replace(/-/g, "+").replace(/_/g, "/")
-  const binary = atob(padded)
-  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0))
-  return new TextDecoder().decode(bytes)
+  const decoded = decodeDirectory(value)
+  if (decoded === undefined) throw new Error("invalid base64url slug")
+  return decoded
 }
 
 /** Route to an existing session inside a project directory. */
 export function sessionHref(directory: string, sessionID: string): string {
-  return `/${base64UrlEncode(directory)}/session/${sessionID}`
+  return hrefFor.session(directory, sessionID)
 }
 
 /**
@@ -32,11 +26,11 @@ export function sessionHref(directory: string, sessionID: string): string {
  * (app.tsx) auto-creates a draft for this directory, i.e. this starts a brand-new chat.
  */
 export function newSessionHref(directory: string): string {
-  return `/${base64UrlEncode(directory)}/session`
+  return hrefFor.directorySession(directory)
 }
 
 export function homeHref(): string {
-  return "/"
+  return hrefFor.home()
 }
 
 /** The basename a project shows in the sidebar (matches opencode's worktree → label). */
@@ -45,4 +39,3 @@ export function projectLabel(worktree: string): string {
   const base = trimmed.split(/[\/\\]/).pop()
   return base && base.length > 0 ? base : trimmed
 }
-

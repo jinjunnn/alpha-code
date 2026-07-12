@@ -12,7 +12,7 @@ import { createEffect, type Accessor } from "solid-js"
 import { useLocation } from "@solidjs/router"
 // CLIENT subpath only — the v2 barrel pulls Node-only deps that break the renderer (see ADR-008).
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
-import { base64UrlDecode } from "../sidebar/route"
+import { parseRoute } from "../../shared/legacy-route-abi"
 import type { ServerInfo } from "../sidebar/use-projects"
 import { pushToast } from "./Toast"
 import { t } from "../i18n"
@@ -23,13 +23,9 @@ function authHeaders(info: ServerInfo): Record<string, string> | undefined {
 }
 
 function routeDirectory(pathname: string): string | null {
-  const m = pathname.match(/^\/([^/]+)\/session\//)
-  if (!m) return null
-  try {
-    return base64UrlDecode(m[1])
-  } catch {
-    return null
-  }
+  // 只认带 id 的会话路由(旧正则要求 "/session/" 后有内容;/:dir/session 无 id 的 draft 页不触发)。
+  const r = parseRoute(pathname)
+  return r.kind === "session" && r.id ? r.directory : null
 }
 
 export function ExtTrustWatcher(props: { server: Accessor<ServerInfo | undefined> }) {

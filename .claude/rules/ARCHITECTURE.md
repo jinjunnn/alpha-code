@@ -14,7 +14,7 @@
 - **部署**:本地桌面应用(macOS 首发 + Windows,ADR-026;Linux 不做),`electron-builder`(`package:mac` / `package:win`)。
 
 ## 硬性约束(不可协商)
-1. **上游源码只读(fork,只增不改)**:本仓库是 `anomalyco/opencode` 的 fork(**非 submodule**,ADR-005 已取代 ADR-001);`packages/{opencode,core,server,tui,sdk}` 等上游文件**只读**,永不修改。升级 = `git merge dev`(`dev` 为上游纯镜像)+ 契约 diff 适配。CI 守卫(`alpha-ci.yml` north-star guard):`git diff --diff-filter=DMR origin/dev...HEAD -- packages/{opencode,core,server,tui,sdk}` 非空即红。**注:此后端只读铁律不受 ADR-016 前端接管影响**(前端接管是**新增** alpha 文件,不改上游源码)。**ADR-020(2026-07-03)修订**:`packages/{app,ui}` 已冻结在 `frontend-freeze-base` tag、不随上游同步,移出守卫范围;冻结包对 alpha 仍**保持只读**(唯一写操作 = 受控 re-freeze,见 ADR-020 §5)。
+1. **上游源码只读(fork,只增不改)**:本仓库是 `anomalyco/opencode` 的 fork(**非 submodule**,ADR-005 已取代 ADR-001);`packages/{opencode,core,server,tui,sdk}` 等上游文件**只读**,永不修改。升级 = `git merge dev`(`dev` 为上游纯镜像)+ 契约 diff 适配。CI 守卫(`alpha-ci.yml` north-star guard):`git diff --diff-filter=DMR origin/dev...HEAD -- packages/{opencode,core,server,tui,sdk}` 非空即红。**注:此后端只读铁律不受 ADR-016 前端接管影响**(前端接管是**新增** alpha 文件,不改上游源码)。**ADR-020(2026-07-03)修订**:`packages/{app,ui}` 已冻结、不随上游同步,移出守卫范围;冻结包对 alpha 仍**保持只读**(唯一写操作 = 受控 re-freeze,见 ADR-020 §5)。**ADR-027(2026-07-12)修订**:冻结基点升级为 `frontend-freeze-base-2`(含 AppInterface typed surface seam;还原步 loud-fail 校验 seam 存活)。
 2. **前后端只走契约**:自有前端与 opencode 后端之间,只经 `@opencode-ai/sdk`(v1 `/…` + v2 `/api/*`)+ 单条 SSE `GET /api/event` + 每终端一条 PTY WS。**禁止**直 import `@opencode-ai/core` 内部模块当运行时用(类型除外)。
 3. **后端只用零-fork 接缝**:自有后端能力只能落在 `.opencode/tool/*`、plugin hooks(`.opencode/plugin(s)/*` 或 config `plugin[]`)、MCP(config `mcp.servers`)、声明式 `.opencode/{agent,command,skill,theme}`。**新增 HTTP 接口走自有 sidecar 进程**,不改 `@opencode-ai/server`。
 

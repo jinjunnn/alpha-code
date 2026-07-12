@@ -8,25 +8,21 @@
 // - 上下文用量 ring:收养上游活的 progress-circle 按钮进 alpha 工具条的 [data-alpha-usage-host]
 //   (纯只读复用,v2 换 SSE 自建 —— 见 requirements/REQ-055 非目标)。
 //
-// 路由解析:/:b64dir/session/:id(与 sidebar/route.sessionHref 对偶)。
+// 路由解析:/:b64dir/session/:id(legacy-route-abi,REQ-084 —— 与 hrefFor.session 对偶)。
 
 import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import { useLocation } from "@solidjs/router"
-import { base64UrlDecode } from "../sidebar/route"
+import { parseRoute } from "../../shared/legacy-route-abi"
 import type { AlphaProjectsApi } from "../sidebar/use-projects"
 import { AlphaComposer } from "./alpha-composer"
 
 const COMPOSER_SEL = "[data-component=session-composer]"
 
 function parseSessionRoute(pathname: string): { directory: string; sessionID: string } | null {
-  const m = pathname.match(/^\/([^/]+)\/session\/([^/]+)/)
-  if (!m) return null
-  try {
-    return { directory: base64UrlDecode(m[1]), sessionID: m[2] }
-  } catch {
-    return null
-  }
+  const r = parseRoute(pathname)
+  if (r.kind !== "session" || !r.id) return null // 只认带 id 的会话页(draft 页走上游 new-session)
+  return { directory: r.directory, sessionID: r.id }
 }
 
 export function ComposerTakeover(props: { projects: AlphaProjectsApi }) {

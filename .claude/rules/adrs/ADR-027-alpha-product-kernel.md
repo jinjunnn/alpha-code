@@ -1,0 +1,67 @@
+---
+id: ADR-027
+title: Alpha Product Kernel:typed surface seam 进入冻结前端 + frontend-freeze-base-2 新基点(L3 re-freeze,REQ-084 实施门)
+status: accepted
+date: 2026-07-12
+related: [ADR-016, ADR-020, ADR-029, REQ-084, REQ-085, REQ-086, REQ-090]
+---
+
+## 背景
+
+1. 产品所有权专项(REQ-084~107)要求 Alpha 拥有用户可见叶页面,而 [[ADR-016]] 的接管
+   目标当前只能靠 route-aware children / Portal / DOM takeover 叠在上游页面之上——
+   双页面生命周期,无法证明 upstream 页面无隐藏副作用(REQ-085 背景实证:AlphaHome
+   Portal 覆盖)。
+2. `packages/app` 被 [[ADR-020]] 冻结于 tag `frontend-freeze-base`,每日 sync 由
+   `restore_frozen_frontend` 步骤还原;任何未进入冻结基点的 seam 修改都会在下一次
+   sync 中蒸发。
+3. [[ADR-029]] 主权阶梯已裁定该诉求的两种合法形态:新冻结基点(L3 既有 re-freeze
+   通道)或恢复后机械 seam patch(新增一台 L2 机器),并预倾向前者(§6,2026-07-12
+   评审拍板已记入 REQ-084 档与 Issue #199)。
+
+## 决策
+
+1. **建立 Product Kernel 最小 seam**:`AppInterface` 新增可选 `surfaces` prop
+   (`home` / `newSession` / `session` 三个叶 surface),每项为窄
+   `MaybePreloadableComponent` 契约(`Component & { preload?(): void }`)。
+   - 未提供 override 时严格使用 upstream 默认页面(lazy/preload 行为等同);
+   - surface 在 route tree 首次挂载前一次性解析,同一 renderer 生命周期内不热换
+     Provider tree(换 surface 必须 reload);
+   - 只替换最内层叶页面;`SelectedServerLayout` / `DraftServerLayout` /
+     `DirectoryDataProvider` / `SessionProviders` / `DraftProviders` 与 `Layout`
+     保持默认生命周期,不导出私有 context;
+   - `@opencode-ai/app` 只新增导出窄类型 `AppSurfaces` / `MaybePreloadableComponent`,
+     不新增对 `context/*` 的批量 public export。
+2. **冻结策略 = 新冻结基点 `frontend-freeze-base-2`(L3)**,采纳 ADR-029 §6 预倾向:
+   - 含中性 seam 的 `packages/{app,ui}` 状态铸为新 tag `frontend-freeze-base-2`,
+     走 ADR-020 §5 既有 re-freeze 通道,机制零新增;
+   - 否决「恢复后机械 seam patch」:它新增一个持续维护的 L2 补丁面,与 ADR-020
+     摆脱逐次跟随的初衷相悖;
+   - `sync-upstream.yml` 的 `restore_frozen_frontend` 改指 `frontend-freeze-base-2`,
+     并在还原后**校验 seam 存活**(marker 检查);校验失败即 loud-fail 阻断,禁止
+     warning 后继续;
+   - seam 契约测试与 seam 同驻 `packages/app/src`,随冻结基点一起被还原,保证
+     restore 后测试仍在且可跑。
+3. **surface 选择权在 Alpha 侧**:发布状态(`alpha | legacy | auto-fallback`)由
+   ui-mac main 进程可信配置决定,在 renderer route tree 挂载前传入;packages/app
+   seam 保持策略中立,不读任何 alpha 配置。致命 surface 错误的记录与 reload 回退
+   由 Alpha 自有 boundary 承担,不吞发送/权限/数据一致性错误。
+4. **修订 ADR-016/020**:ADR-016 的接管路径新增「typed surface seam(本 ADR)」
+   为正式通道;ADR-020 §1 冻结基点更新为 `frontend-freeze-base-2`,§4 纪律不变
+   (app/ui 仍只读,唯一写通道仍是受控 re-freeze)。
+5. **回退方案**:每个 surface 独立回退——flag 置 `legacy` 后 reload 即回上游页面,
+   URL 与持久化状态不变;最坏整体回退 = tag 退回 `frontend-freeze-base`(seam 蒸发,
+   Alpha 页面自动回到 Portal 时代入口,不破坏数据)。
+
+## 后果
+
+- ✅ Alpha 首次获得叶页面真所有权通道;REQ-085/086/087/090 全部经此 seam 激活,
+  不再各自发明接管机制。
+- ✅ 冲突数=0 语义不变:app/ui 不在同步集,seam 随基点还原,机制上不可能与上游冲突。
+- ⚠️ L3 单向门代价延续(ADR-020 已实证):seam 所在前端范围继续放弃上游白嫖;
+  未来吸收上游前端改进时,re-freeze 体检需额外验证 seam 兼容(ADR-020 §5 ③ 的
+  锚点契约测试覆盖)。
+- ⚠️ 每次 re-freeze 必须重铸含 seam 的新基点(seam 是新基点的一部分,不是补丁),
+  操作步骤已并入 ADR-020 §5。
+- 🔭 待办:REQ-091(AlphaRuntime parity、移除 AppInterface)仍 parked;seam 是
+  中间态,不是终局。

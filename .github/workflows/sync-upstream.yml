@@ -88,14 +88,20 @@ jobs:
       - name: Merge `dev` into `alpha` (auto-resolve bun.lock only)
         run: |
           git checkout alpha
-          # ADR-020 前端冻结:packages/{app,ui} 钉在 frontend-freeze-base tag,上游对它们的改动
-          # 会与冻结版冲突(预期内)——冲突取 ours,合并后统一还原为冻结基(含上游新增文件的清除)。
+          # ADR-020/ADR-027 前端冻结:packages/{app,ui} 钉在 frontend-freeze-base-2 tag(含
+          # Alpha typed surface seam),上游对它们的改动会与冻结版冲突(预期内)——冲突取 ours,
+          # 合并后统一还原为冻结基(含上游新增文件的清除)。还原后必须校验 seam 存活:marker
+          # 缺失 = tag 误指/误移,loud-fail 阻断整个 sync(ADR-027,禁止 warning 后继续)。
           restore_frozen_frontend() {
             rm -rf packages/app packages/ui
-            git checkout frontend-freeze-base -- packages/app packages/ui
+            git checkout frontend-freeze-base-2 -- packages/app packages/ui
+            if ! grep -q "AppSurfaces" packages/app/src/app.tsx; then
+              echo "::error::ADR-027 seam marker (AppSurfaces) missing after freeze restore — frontend-freeze-base-2 does not contain the typed surface seam. Aborting sync."
+              exit 1
+            fi
             git add packages/app packages/ui
             if ! git diff --cached --quiet -- packages/app packages/ui; then
-              git commit -m "chore(freeze): restore frozen frontend after sync (ADR-020)"
+              git commit -m "chore(freeze): restore frozen frontend after sync (ADR-020/ADR-027)"
             fi
           }
           if git merge --no-edit --no-ff dev -m "chore(sync): merge upstream dev into alpha"; then
