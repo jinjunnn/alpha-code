@@ -20,7 +20,7 @@
 | [ADR-015](adrs/ADR-015-prompt-optimization-strategy.md) | 提示词优化策略:底座只读 + 能力感知 identity + Tier-3 行为层(含合并验证)(2026-07-08 修订:G6 去 opencode 化——路线A 品牌转写 hook 获批 REQ-062,路线B 受控替换底座 parked REQ-064) | accepted | 2026-06-23 |
 | [ADR-016](adrs/ADR-016-frontend-takeover.md) | 前端全面接管:alpha 自有组件重建前端 + 复用重型引擎 + 放弃前端升级隔离北极星(取代 ADR-003) | accepted | 2026-06-24 |
 | [ADR-017](adrs/ADR-017-desktop-auth-deeplink.md) | 桌面授权深链:scheme 必须进 Info.plist + PKCE 落盘抗冷启动 | accepted | 2026-06-25 |
-| [ADR-018](adrs/ADR-018-req-lifecycle.md) | 需求生命周期与文档流:单一真源 `docs/BACKLOG.md` + 两档流程 + Sprint 契约 + 归档纪律 | accepted | 2026-07-03 |
+| [ADR-018](adrs/ADR-018-req-lifecycle.md) | 历史本地需求流程；已由 `alpha-work/governance/ADR-001-github-delivery-sot.md` 取代 | superseded | 2026-07-03 |
 | [ADR-019](adrs/ADR-019-alpha-workdir.md) | `.alpha` 项目工作目录:alpha harness 产物全量收敛(桥接细节由 REQ-004 验证回填;2026-07-07 REQ-059 修订:引擎配置真源 `~/.alpha/alpha.jsonc`,`.opencode` 指针化收官) | accepted | 2026-07-03 |
 | [ADR-020](adrs/ADR-020-frontend-freeze.md) | 前端冻结:packages/{app,ui} 钉 frontend-freeze-base,每日 sync 只进引擎(E 路径,REQ-013 拍板;修订 ADR-004 守卫范围) | accepted | 2026-07-03 |
 | [ADR-021](adrs/ADR-021-cloud-data-boundary.md) | 代码上云数据边界:diff-only 优先 + secrets 过滤 + 体积上限 + consent 挂钩 B16(C9,S11 T3;§2 三校验已实现 S14;§4 两挂钩点 B16 落地 S25) | accepted | 2026-07-04 |
@@ -29,5 +29,8 @@
 | [ADR-024](adrs/ADR-024-ecosystem-inheritance-default-deny.md) | 外部生态继承默认拒绝(.claude/.agents/CLAUDE.md)+ 打开项目 consent 导入门(consent = 安装期转换导入 `.alpha`,非重开继承;全局存量一次性迁移门为发布闸) | accepted | 2026-07-08 |
 | [ADR-025](adrs/ADR-025-user-workspace-alpha-dir.md) | `~/Alpha` 用户默认工作目录:可见数据主目录的目录契约与写入治理(lazy 供给 + 无项目态默认落点 + Journal/Memory/Outputs 契约 + 内置技能 `alpha-workspace`;2026-07-09 同日三残点拍板收口) | accepted | 2026-07-09 |
 | [ADR-026](adrs/ADR-026-windows-platform-support.md) | Windows 平台支持:桌面扩为 macOS+Windows(撤回 NON_GOALS#6 Mac-only)+ 平台差异收敛(路径全平台同构零特例 / platform seam 单点分发 / 安全诚实降级 / 发布链分工;审计实证无硬崩点、核心 2–4 人日) | accepted | 2026-07-09 |
+| [ADR-029](adrs/ADR-029-upstream-sovereignty-ladder.md) | 上游主权阶梯:「零改上游」铁律不修宪,主权升级走四级枚举通道(L0 接缝 → L1 变换 → L2 补丁 loud-fail → L3 冻结接管;逐案 ADR、永不设 L4 直接编辑;既有例外归位记账) | accepted(2026-07-12 同日拍板) | 2026-07-12 |
+
+> 🔒 **编号预留**:ADR-027(Alpha Product Kernel,REQ-084 实施门)与 ADR-028(Extension Package & Registry v2,REQ-099 实施门)已由产品所有权专项(`docs/plans/2026-07-10-product-ownership-req-map.md` §5)预留,落笔时按号使用,勿被新 ADR 占用。
 
 > 📦 **ADR-010/011/013(云平台内部决策)已迁至 `alpha-platform/.claude/rules/adrs/`**(2026-06-22)。本仓只保留"本地→云派发接缝"(见 [ADR-002](adrs/ADR-002-backend-seams.md));文中其余处对它们的引用视为跨项目引用。

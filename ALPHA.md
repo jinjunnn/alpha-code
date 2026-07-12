@@ -1,14 +1,38 @@
 # alpha-code
 
-基于 **opencode** 的 Mac 编码 agent 产品(面向多用户分发)。**本仓库是 `anomalyco/opencode` 的 fork**;自有代码以"只增不改 upstream 文件"的纪律,作为**原生 workspace 成员**叠加进来,以便 fork-sync 零冲突地继承上游升级。
+基于 **opencode** 的桌面编码 agent 产品(macOS + Windows,面向多用户分发)。**本仓库是 `anomalyco/opencode` 的 fork**;自有代码以"只增不改 upstream 文件"的纪律,作为**原生 workspace 成员**叠加进来,以便 fork-sync 零冲突地继承上游升级。
 
 > opencode 自带的 `README.md` / `AGENTS.md` / `CONTEXT.md` 等保持上游原样**未改动**。本文件(`ALPHA.md`)是 alpha-code 的入口说明。
+
+## 关联仓库与交付治理
+
+`alpha-code` 只拥有桌面产品与本地运行时集成。关联仓库:
+
+- [`alpha-work`](https://github.com/jinjunnn/alpha-work):产品组合目标、跨仓父需求与治理标准;
+- [`alpha-platform`](https://github.com/jinjunnn/alpha-platform):模型网关、云执行、计量与多租户强制;
+- [`alpha-web`](https://github.com/jinjunnn/alpha-web):公共站点、身份、计费体验与 Catalog;
+- [`alpha-code-plugin`](https://github.com/jinjunnn/alpha-code-plugin):Claude Code plugin 包装与分发。
+
+活跃需求、Bug、任务和验收状态只在
+[`alpha-code` Issues](https://github.com/jinjunnn/alpha-code/issues) 与
+[`Alpha Delivery`](https://github.com/users/jinjunnn/projects/2) 管理。跨仓
+Outcome 的父 Issue 在 `alpha-work`;本仓只保留本仓拥有的 Issue。长期目标见
+[`.claude/rules/GOALS.md`](.claude/rules/GOALS.md),统一规范见
+[`alpha-work`](https://github.com/jinjunnn/alpha-work/tree/main/governance)。本地
+Markdown 不再复制活跃 backlog、优先级、负责人或 Sprint 状态。
 
 ## 模型:fork + 只增不改
 - **`dev` 分支** = `anomalyco/opencode:dev` 的纯镜像(永远 fast-forward,Sync fork 零冲突)。
 - **`alpha` 分支**(产品分支)= `dev` + 自有新增文件。日常开发在 `alpha`。
 - **自动同步**:`.github/workflows/sync-upstream.yml` 每天把 upstream 同步进 `dev`,再 merge 进 `alpha`。
 - **纪律(北极星)**:**只新增文件,从不编辑 opencode 自身的任何文件** → 每次 sync 零冲突。这是 fork 模型能保持干净的唯一要求。
+- **上游 roadmap 不是 Alpha backlog**:`specs/v2/`、
+  `packages/opencode/specs/effect/`、`packages/codemode/` 与
+  `packages/llm/example/` 中的 TODO、Status 和 checklist 随 `dev` 镜像，仅描述
+  upstream 工作，不是 Alpha 的交付状态。不得为治理而改写这些上游文件或把
+  其未完成项批量迁入 Alpha；只有当某项成为 Alpha 发布/采用门槛时，才在
+  `alpha-code` 新建验收 Issue，引用准确的 upstream revision，并纳入 Alpha
+  Delivery。
 
 ## 自有新增(都是新文件/新目录,不碰 upstream)
 | 路径 | 作用 |

@@ -1,6 +1,12 @@
 # Timeline 全面优化 — 原子任务清单(1 任务 = 1 优化点)
 
-> 配套:`audit.md`(逐条审计)、`timeline.html`(设计稿)、`dev-plan.md`(新 session 直接开干的执行手册)。
+> [!CAUTION]
+> **冻结的历史任务分解(2026-07-11 cutover)。** 本文件不再回勾、排优先级
+> 或驱动执行；当前 characterization 与验收尾项由
+> [alpha-code#214](https://github.com/jinjunnn/alpha-code/issues/214) 和
+> [Alpha Delivery](https://github.com/users/jinjunnn/projects/2) 承载。
+
+> 配套:`audit.md`(逐条审计)、`timeline.html`(设计稿)、`dev-plan.md`(历史执行手册)。
 > **关于数量**:旧稿 prose 写「~26 项 CSS」是分组估算,与枚举对不上 —— 本表改为**一处优化 = 一条任务**,共 **40 条**,口径与下方枚举**完全一致**:
 >
 > | 接缝 | 数量 | 说明 |

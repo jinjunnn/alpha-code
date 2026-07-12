@@ -1,11 +1,19 @@
-# BACKLOG — 工作项单一真源
+# BACKLOG — 历史迁移快照
+
+> [!CAUTION]
+> **只读迁移快照。** 自 2026-07-11 起,本文件不再是工作项真源,不得新增条目、
+> 翻状态或用于 Sprint 抽取。活跃工作以
+> [GitHub Issues](https://github.com/jinjunnn/alpha-code/issues) 和
+> [Alpha Delivery](https://github.com/users/jinjunnn/projects/2) 为准。下方所有
+> 状态、优先级与流程说明均为迁移前历史,只用于一次性本地 ID → GitHub
+> Issue 对账,不再生效或更新。
 
 > **状态只在本文件翻转**;流程与模板见 [`PROCESS.md`](PROCESS.md)(权威决策 ADR-018)。
 > 状态:`registered / ready / in-sprint / shipped / verified / archived`;旁路 `parked / rejected / dup`。
 > 类:feature / bug / debt / security / perf / ux / docs / spike。仓:A=alpha-code · B=alpha-platform · C=alpha-web · X=跨仓。
 > 证据文档:**册** = [`plans/2026-07-02-problem-register-sprints-review.md`](plans/2026-07-02-problem-register-sprints-review.md)(71 项 + R1-R7 修正 + §7f-7j 实施日志);**核查** = [`audits/2026-07-02-register-verification.md`](audits/2026-07-02-register-verification.md);**E 册** = [`harness-extension-backlog.md`](harness-extension-backlog.md)。
-> 下一个新需求编号:**REQ-084**(新需求一律 REQ-NNN;A/B/C/D/E 为历史审计系列保留原号,用户 2026-07-03 确认)。
-> **需求文件全覆盖(2026-07-03)**:全部开放的 A/B/C/D 条目已逐条建档 `requirements/<ID>-<slug>.md`(含验收标准),行内备注为摘要、**文件为验收真源**;E 系列以冻结 E 册为分析文档;parked/dup 项不建档。
+> 下一个新需求编号:**REQ-108**(新需求一律 REQ-NNN;A/B/C/D/E 为历史审计系列保留原号,用户 2026-07-03 确认)。
+> **需求文件全覆盖(2026-07-03)**:全部开放的 A/B/C/D 条目已逐条建档 `requirements/<ID>-<slug>.md`(含验收标准),行内备注为摘要、**文件为验收真源**;E 系列以冻结 E 册为分析文档;历史 parked/dup 审计项可不建档,用户明确登记的终局/高风险 parked REQ 仍须建档。
 
 ## 发布短名单(launch-blockers,册 §6.8)
 
@@ -32,6 +40,40 @@
 
 > 拍板即从队列划掉、结论写进对应需求文件;执行中撞到未拍板点 = 停下来问,不代替决策。
 > **S17 已拍板划掉(2026-07-05)**:T1 = REQ-008 五连拍 + REQ-011 预留位([debates/req008](debates/2026-07-05-req008-positioning-briefs.md));T4 = C28 控件三选一(只读移除/effort 改文案,[debates/c28-brief](debates/2026-07-05-c28-honest-controls-brief.md));T5 = B12 filewatcher(默认开+可关,拍板入档)。**B16 提醒**:非技术用户入画像 + 云派发已实际可用 → 重启条件临近,维持 parked 等用户拍重启时机。
+
+## Registered — 2026-07-10 产品所有权专项拆分
+
+> 用户确认：当日两份核心专项文档都落 REQ，并拆成可独立开发/验收任务。覆盖与依赖索引见 [产品所有权 REQ map](plans/2026-07-10-product-ownership-req-map.md)。当前 S39 仍待用户 GO，遵守 ADR-018 WIP=1：本表只登记，不开新 sprint、不翻 ready。
+
+| ID | 标题 | 类 | 仓 | 优先级 | 状态 | 依赖/备注 |
+|---|---|---|---|---|---|---|
+| REQ-084 | Product Kernel M0：LegacyRouteAbiV1 + AppInterface typed surface seam + 冻结恢复 | feature | A | P1 | registered | 新 ADR-027 + 修订 ADR-016/020；独立第一步 |
+| REQ-085 | Alpha Home 正式 route surface | feature | A | P1 | registered | 依赖 REQ-084 |
+| REQ-086 | Alpha New Session/Draft 正式 route surface | feature | A | P1 | registered | 依赖 REQ-084；锁住 draft/server/remount 语义 |
+| REQ-087 | LayoutController / LegacySessionAdapter 可行性 spike | spike | A | P1 | registered | 依赖 REQ-084；输入含 REQ-005 legacy baseline |
+| REQ-088 | Alpha SessionWorkspace + Workbench 集成 | feature | A | P1 | registered | 依赖 REQ-085/086/087/094 |
+| REQ-089 | Alpha route manifest 与 declaration/semantic ownership | feature | A | P1 | registered | 依赖 REQ-085/086/088/090 |
+| REQ-090 | Alpha Settings/Dialog/Model/Permission/Recovery surfaces | feature | A | P2 | registered | 依赖 REQ-084 |
+| REQ-091 | AlphaRuntime parity 清零与 AppInterface 退役 | feature | A | P2 | parked | 依赖 REQ-089；parity ledger 未清零前不激活 |
+| REQ-092 | Artifact transport：去 base64 状态/MCP/result + descriptor/stream/先限额 | security | X | P0 | registered | 独立 P0 |
+| REQ-093 | Artifact Manifest/Registry：MIME/sha256/quota/retention/provenance | feature | X | P1 | registered | 依赖 REQ-092 |
+| REQ-094 | Artifact Workbench 基座与 run discovery/cards | ux | A | P1 | registered | 依赖 REQ-093；可独立 harness 开发 |
+| REQ-095 | Core Artifact Renderers：文本/结构化/media/PDF | feature | A | P1 | registered | 依赖 REQ-094 |
+| REQ-096 | 隔离 HTML Artifact Preview | security | A | P1 | registered | 依赖 REQ-094；无主 renderer preload bridge |
+| REQ-097 | Office Preview/Validation：OOXML reopen + derivative + golden corpus | feature | X | P1 | registered | 依赖 REQ-093/094/095 |
+| REQ-098 | 扩展环境隔离：prod/beta/dev 分域 + updater + 旧 ~/.alpha 迁移 | security | A | P0 | registered | Extension v2 P0；与 REQ-099 联合评审 |
+| REQ-099 | Manifest/Receipt v2 + strict schema + main-only planner + project scope | feature | A | P0 | registered | 新 ADR-028；与 REQ-098 联合评审 |
+| REQ-100 | 扩展原子事务：Bundle/health/rollback/quarantine | feature | A | P1 | registered | 依赖 REQ-099 |
+| REQ-101 | Signed Channel Metadata v2：晋级/expiry/轮换/撤销 | security | X | P1 | registered | 依赖 REQ-099；不伪称完整 TUF |
+| REQ-102 | 扩展 CAS/离线 seed/release lock/GC | feature | X | P1 | registered | 依赖 REQ-098/099/100/101 |
+| REQ-103 | 五维所有权 + Capability slots + Hub Governance IA | feature | A | P1 | registered | 依赖 REQ-099/100；禁止第三方顶级路由 |
+| REQ-104 | 开源生态准入与精选 Packs | feature | X | P2 | registered | 依赖 REQ-100/101/102/103 |
+| REQ-105 | Office Catalog 安全纠偏：归档 Word/PPT 下架 + Excel 精确锁版 | security | X | P0 | registered | 独立 P0；纠偏 REQ-080，不等待 Extension v2 |
+| REQ-106 | 内置隔离 Browser + session broker + Workbench mode | security | A | P2 | registered | 依赖 REQ-094/096 与 D5 |
+| REQ-107 | Computer Use / Screen Control Labs | security | A | P2 | parked | REQ-106 verified + 用户再次拍板才激活 |
+| REQ-034 | Claude plugin / Codex 生态安装期转换器 | feature | A | P2 | registered | 2026-07-10 重新登记；依赖 REQ-099/100/103，远程稳定源再依赖 REQ-101/104 |
+
+> REQ-080 发货后风险：Word/PPT 上游归档、Excel advisory 已登记为 REQ-105；REQ-105 完成前 REQ-080 不得从 shipped 翻 verified。旧交付历史不改写。
 
 ## Active — P0
 
@@ -74,7 +116,7 @@
 
 | ID | 标题 | 类 | 仓 | 状态 | 备注 |
 |---|---|---|---|---|---|
-| REQ-005 | 前端接管收尾核验:重型引擎换肤(终端/diff/权限流)完成度 + timeline 验收尾项(截图归档/COUPLING 清单/真机验收) | ux | A | ready | ADR-016 待办②;tasks.md 40 项全勾但 dev-plan:98-100 未走完;COUPLING 清单关系 C14;详见 [requirements/REQ-005](requirements/REQ-005-frontend-takeover-closeout.md) |
+| REQ-005 | legacy 重型界面/时间线 characterization baseline(截图/COUPLING/真机) | ux | A | ready | 只作 REQ-087 输入；不能代表路由所有权，不新增 CSS/DOM takeover；详见 [requirements/REQ-005](requirements/REQ-005-frontend-takeover-closeout.md) |
 | REQ-025 | 自动化 A3 云档位:execution:cloud 注册到 B + 开机拉回 + 数据边界提示 | feature | X | shipped | **S18 T12b shipped(2026-07-06,PR #108)**:execution:cloud 全生命周期(保存=upsert B schedule 失败不落盘 loud/删除=先删 B 防幽灵触发/启停=PATCH 同步)+ 开机拉回(jobs?since&origin=schedule → status → saveCloudRun 落 .alpha/runs,job_id 对账防重)+ 面板 B 状态回读(熔断/停用原因)+ ADR-021 数据边界提示强制展示(仅任务文本上云,零项目文件);本地调度器跳过云档;scheduleToCron 纯函数单测(once/超长诚实拒);MVP=research 管线(表单明示映射);**codex 审计 3H/1M/1L 全修**(游标只越过终局 job/孤儿 schedule 补偿删除/bash 黑名单加固嵌套 shell 与包装器/拉取单飞+fresh 重读/临时会话删除重试);登录态 A↔B 真机 e2e→真机批;详见 [requirements/REQ-025](requirements/REQ-025-automations-a3-cloud.md) |
 | C20 | alpha-ui i18n 断裂:9 组件硬编码简中 + 每语种 OpenCode 残留(zh:19/en:30)(S8) | ux | A | ready | R7:爆炸半径大于初报;**(/loop 2026-07-04 defer)** 体量大(9 组件)+ 需双语视觉核验(离线不可做)→ i18n 专项;可先拆 brand-i18n 残留 grep 清零子任务,详见档 |
 | C21 | 无障碍:focus-trap/键盘/Escape/对比度/reduced-motion(S8) | ux | A | ready | |
@@ -110,7 +152,6 @@
 | C19 | Sentry opt-out + 告知 | R6:dormant(`VITE_SENTRY_DSN` 全仓无赋值,从不 init) | 发布流水线注入 DSN 时 |
 | ~~D7~~ | ~~safeStorage 明文兜底告警~~ | **rejected(2026-07-08,过期盘点:原搁置理由「macOS-only 下死分支」+ 激活条件「跨平台时」与 NON_GOALS#6 恒矛盾)**;**2026-07-09 重开条件触发**(NON_GOALS#6 修订,Windows 纳入,ADR-026)→ 关切**并入 REQ-076 T3**(NTFS 上 0600 无效 + 明文兜底告警一并处置),不单独重开 | ~~重开 = NON_GOALS#6 撤回(做跨平台)~~ 已触发 → dup 入 REQ-076 T3 |
 | E13 | 团队协作多端 workspace 同步 | **rejected(2026-07-05,REQ-008 D1:不做共享 workspace/会话)** | 重开 = 真实付费团队需求 + 上游多用户原语 |
-| REQ-034 | 外部生态导入转换器:Claude Code plugin 大礼包→套件扇出 + Codex 可共享物导入(安装期转换,[[ADR-023]]) | 用户 2026-07-05:立项但暂不开发,想清楚再启动 | 用户拍板启动(按 ADR-023 执行);详见 [requirements/REQ-034](requirements/REQ-034-ecosystem-import-converter.md) |
 | REQ-035 | 本地 harness-as-executor(claude/codex 委托执行,tool/MCP 接缝);长期演进=会话级并轨(GOALS G5) | 用户 2026-07-05:立项但暂不开发,想清楚再启动 | 第一阶段=用户拍板启动;并轨阶段另有硬前置(challenge+POSITIONING 修订+承载 spike+独立 ADR,见档) |
 | REQ-064 | 去 opencode 化·路线B:config `agent.<name>.prompt` 受控替换 provider 底座(build/plan)+ **内置 agent 内容全面接管**(compaction/title/summary 机件 prompt 按质量评估同名覆盖;姿势一律同名接管非禁用+另建,2026-07-08 用户拍板方向)——GOALS G6 第二期;request.ts:60 实证赋 prompt 即整体替换,纯 config 零改上游 | 路线A(REQ-062,含 general/explore 已先行)先行;替换 = 接管 prompt 质量维护面(逐模型调优、放弃底座升级白嫖,等同 ADR-016/020 前端抉择),不轻启 | 路线A 稳定运行 + alpha 自有 prompt 逐模型质量评估过关 + ADR-015 再修订 + 用户拍板。**2026-07-09 用户重申:维持 parked,B0 评估靶场也不开**。激活时必先裁的设计题(本日审计钉死):config `agent.<name>.prompt` 每 agent 一份、不随模型变 → 上游 9 份按模型调优底座(claude→anthropic.txt,BYOK 国产模型全吃 default.txt)会坍缩成 1 份通用 prompt,per-model 替换只能回 experimental `chat.system.transform`(与「纯 config 稳定接缝」卖点矛盾);建议激活序 = B0 评估靶场 → B1 机件(title/summary 先,compaction 爆炸半径最大最后)→ B2 build/plan 底座;command/subagent 层已无剩余工作(init/review/general/explore Route A 已同名接管) |
 | ~~B13~~ | ~~DB 跨进程并发(SQLITE_BUSY → orDie)~~ | **rejected(2026-07-08,过期盘点:上游归属 R2 + busy_timeout=5000 已缓解,alpha 无直接修点)** | 重开 = 真机实际复发且上游未修 |
