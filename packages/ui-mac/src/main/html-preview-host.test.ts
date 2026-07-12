@@ -144,10 +144,33 @@ const {
   openHtmlPreview,
   registerHtmlPreviewIpcHandlers,
   __setHtmlPreviewLogSink,
+  __setHtmlPreviewElectron,
 } = await import("./html-preview-host")
 const { registerDownloadedArtifact } = await import("./artifact-service")
 const { deriveArtifactDescriptors } = await import("../shared/cloud-artifact-descriptor")
 const { HTML_PREVIEW_CSP, HTML_PREVIEW_MAX_CONCURRENT, HTML_PREVIEW_SCHEME } = await import("../shared/html-preview")
+
+// electron 面确定性注入(同款纪律;mock.module 保留以兜 import 期)
+__setHtmlPreviewElectron({
+  app: {
+    get isPackaged() {
+      return appState.packaged
+    },
+  },
+  BrowserWindow: FakeBrowserWindow,
+  session: {
+    fromPartition: (partition) => {
+      const ses = new FakeSession(partition)
+      sessions.push(ses)
+      return ses
+    },
+  },
+  ipcMain: {
+    handle: (channel, handler) => {
+      ipcHandlers.set(channel, handler)
+    },
+  },
+} as never)
 
 // 日志确定性捕获(依赖注入,免受 bun mock.module 跨文件泄漏影响)
 __setHtmlPreviewLogSink((name, message, extra, level) => {

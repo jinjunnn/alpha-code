@@ -25,10 +25,15 @@
 import * as crypto from "node:crypto"
 import * as fs from "node:fs"
 import * as path from "node:path"
-// bun test(Linux CI)对 electron 的 CJS 具名绑定校验不稳定("Export named ...");
-// namespace 导入 + 运行时解构绕开绑定校验,mock.module 语义不变。
+// bun mock.module 跨测试文件泄漏(Linux 执行顺序下他文件的 electron mock 缺 session/
+// BrowserWindow)—— electron 面走依赖注入:默认转发真模块,测试经 __setHtmlPreviewElectron
+// 确定性注入 fake(与日志 sink 同款纪律)。
 import * as electronNs from "electron"
-const { app, BrowserWindow, ipcMain, session } = electronNs
+type ElectronFacade = Pick<typeof electronNs, "app" | "BrowserWindow" | "ipcMain" | "session">
+let electronRef: ElectronFacade = electronNs
+export function __setHtmlPreviewElectron(e: ElectronFacade | null) {
+  electronRef = e ?? electronNs
+}
 import type { BrowserWindow as BrowserWindowT, Event as ElectronEvent, IpcMainInvokeEvent, RenderProcessGoneDetails, Session, WebContents } from "electron"
 // bun mock.module 跨测试文件泄漏(Linux 执行顺序下他文件的 ./logging mock 缺 write 导出),
 // 故日志走依赖注入:默认防御式转发真模块,测试经 __setHtmlPreviewLogSink 确定性捕获。
@@ -214,7 +219,7 @@ function hardenSession(ses: Session, record: PreviewRecord) {
   // 默认零网络:该 partition 上除本协议(+ dev 态 devtools 前端)以外的一切请求直接 cancel。
   ses.webRequest.onBeforeRequest((details, callback) => {
     const allowed =
-      details.url.startsWith(`${HTML_PREVIEW_SCHEME}://`) || (!app.isPackaged && details.url.startsWith("devtools://"))
+      details.url.startsWith(`${HTML_PREVIEW_SCHEME}://`) || (!electronRef.app.isPackaged && details.url.startsWith("devtools://"))
     if (!allowed) {
       recordBlocked(record, safeOrigin(details.url))
       writeLog("html-preview", "blocked request", { previewId: record.previewId, target: safeOrigin(details.url) }, "warn")
@@ -318,7 +323,7 @@ export function openHtmlPreview(
   const previewId = `hp_${crypto.randomBytes(6).toString("hex")}`
   // 一次性 in-memory partition(无 persist: 前缀);名字用 previewId 派生,不含 token。
   const partition = `alpha-html-preview-${previewId}`
-  const ses = session.fromPartition(partition)
+  const ses = electronRef.session.fromPartition(partition)
 
   const record: PreviewRecord = {
     previewId,
@@ -337,7 +342,7 @@ export function openHtmlPreview(
   }
   hardenSession(ses, record)
 
-  const win = new BrowserWindow({
+  const win = new electronRef.BrowserWindow({
     width: 1024,
     height: 768,
     show: true,
@@ -351,7 +356,7 @@ export function openHtmlPreview(
       nodeIntegrationInWorker: false,
       nodeIntegrationInSubFrames: false,
       webviewTag: false,
-      devTools: !app.isPackaged,
+      devTools: !electronRef.app.isPackaged,
       disableDialogs: true,
       safeDialogs: true,
       spellcheck: false,
@@ -405,15 +410,15 @@ export function closeAllHtmlPreviews() {
 const str = (v: unknown): v is string => typeof v === "string" && v.length > 0
 
 export function registerHtmlPreviewIpcHandlers() {
-  ipcMain.handle("html-preview-open", (e: IpcMainInvokeEvent, directory: unknown, runId: unknown, artifactId: unknown) =>
+  electronRef.ipcMain.handle("html-preview-open", (e: IpcMainInvokeEvent, directory: unknown, runId: unknown, artifactId: unknown) =>
     str(directory) && str(runId) && str(artifactId)
       ? openHtmlPreview(directory, runId, artifactId, { sender: e.sender })
       : ({ ok: false, reason: "invalid arguments" } satisfies HtmlPreviewOpenResult),
   )
-  ipcMain.handle("html-preview-close", (_e: IpcMainInvokeEvent, previewId: unknown) =>
+  electronRef.ipcMain.handle("html-preview-close", (_e: IpcMainInvokeEvent, previewId: unknown) =>
     str(previewId) ? closeHtmlPreview(previewId) : { ok: false as const },
   )
-  ipcMain.handle("html-preview-status", (_e: IpcMainInvokeEvent, previewId: unknown) =>
+  electronRef.ipcMain.handle("html-preview-status", (_e: IpcMainInvokeEvent, previewId: unknown) =>
     str(previewId)
       ? htmlPreviewStatus(previewId)
       : ({ ok: false, reason: "invalid arguments" } satisfies HtmlPreviewStatus),
