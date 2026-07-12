@@ -341,11 +341,13 @@ export type AlphaComposerProps = {
   onNeedWorkspace?: () => void
   /** home:创建+首发成功后的跳转。 */
   onSubmitted?: (sessionID: string) => void
+  /** REQ-086:一次性预填文本(deep link `?prompt=`),仅初始化时注入,不覆盖用户后续输入。 */
+  initialText?: string
 }
 
 export function AlphaComposer(props: AlphaComposerProps) {
   const command = useCommand()
-  const [text, setText] = createSignal("")
+  const [text, setText] = createSignal(props.initialText ?? "")
   const [sending, setSending] = createSignal(false)
   const [busy, setBusy] = createSignal(false) // session:引擎侧运行中(status 轮询,见下)
   const [mentions, setMentions] = createSignal<MentionPart[]>([])
