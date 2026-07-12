@@ -55,5 +55,6 @@ source: "Alpha 路由、页面与扩展生态所有权专项方案（2026-07-10�
 ## 依赖与激活条件
 
 - **前置决策**：开工时必须先确认 ADR-020 采用“新冻结基点”还是“恢复后机械 seam patch”；两者都必须满足可复现、可测试、失败即阻断。
+- **预决策倾向（2026-07-12 评审拍板，用户采纳；最终在 ADR-027 门内定）**：倾向**新冻结基点**（含中性 seam 的 `frontend-freeze-base-2`，走 ADR-020 §5 既有 re-freeze 通道，机制零新增）；「恢复后机械 patch」会新增一个持续维护的补丁面，与 ADR-020 摆脱逐次跟随的初衷相悖。分级依据见 [[ADR-029]]《上游主权阶梯》（accepted 2026-07-12）：新基点 = L3 既有通道，恢复后 patch = 新增 L2 机器。
 - **激活条件**：本项 verified 后，REQ-085、REQ-086、REQ-087、REQ-090 才可进入实现。
 - **关联**：[ADR-016](../../.claude/rules/adrs/ADR-016-frontend-takeover.md)、[ADR-020](../../.claude/rules/adrs/ADR-020-frontend-freeze.md)、[ADR-004](../../.claude/rules/adrs/ADR-004-upgrade-isolation-ci.md)、[REQ-012](./REQ-012-frontend-sync-regression-guard.md)。
