@@ -25,8 +25,11 @@
 import * as crypto from "node:crypto"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { app, BrowserWindow, ipcMain, session } from "electron"
-import type { IpcMainInvokeEvent, Session, WebContents } from "electron"
+// bun test(Linux CI)对 electron 的 CJS 具名绑定校验不稳定("Export named ...");
+// namespace 导入 + 运行时解构绕开绑定校验,mock.module 语义不变。
+import * as electronNs from "electron"
+const { app, BrowserWindow, ipcMain, session } = electronNs
+import type { BrowserWindow as BrowserWindowT, Event as ElectronEvent, IpcMainInvokeEvent, RenderProcessGoneDetails, Session, WebContents } from "electron"
 import { write as writeLog } from "./logging"
 import { resolveArtifact } from "./artifact-service"
 import { isSafeSavedPath, RUN_ARTIFACTS_SUBDIR } from "./artifact-manifest"
@@ -91,7 +94,7 @@ type PreviewRecord = {
   rootBytes: number
   partition: string
   ses: Session
-  win: BrowserWindow
+  win: BrowserWindowT
   sender?: WebContents
   closed: boolean
   blockedPaths: string[]
@@ -214,11 +217,11 @@ function hardenWebContents(record: PreviewRecord) {
   const wc = record.win.webContents
   wc.setWindowOpenHandler(() => ({ action: "deny" as const }))
   // loadURL 程序化导航不触发 will-navigate —— 文档内发起的一切导航/重定向/子 frame 导航全拒。
-  wc.on("will-navigate", (event) => event.preventDefault())
-  wc.on("will-redirect", (event) => event.preventDefault())
-  wc.on("will-frame-navigate", (event) => event.preventDefault())
-  wc.on("will-attach-webview", (event) => event.preventDefault())
-  wc.on("render-process-gone", (_event, details) => {
+  wc.on("will-navigate", (event: ElectronEvent) => event.preventDefault())
+  wc.on("will-redirect", (event: ElectronEvent) => event.preventDefault())
+  wc.on("will-frame-navigate", (event: ElectronEvent) => event.preventDefault())
+  wc.on("will-attach-webview", (event: ElectronEvent) => event.preventDefault())
+  wc.on("render-process-gone", (_event: ElectronEvent, details: RenderProcessGoneDetails) => {
     writeLog(
       "html-preview",
       "preview renderer gone",
@@ -316,7 +319,7 @@ export function openHtmlPreview(
     rootBytes: st.size,
     partition,
     ses,
-    win: undefined as unknown as BrowserWindow, // 紧随其后赋值(hardenSession 只用 ses/previewId)
+    win: undefined as unknown as BrowserWindowT, // 紧随其后赋值(hardenSession 只用 ses/previewId)
     sender: opts.sender,
     closed: false,
     blockedPaths: [],
