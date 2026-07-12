@@ -357,6 +357,129 @@ export async function verifyArtifact(projectDir: string, runId: string, artifact
 }
 
 // ---------------------------------------------------------------------------
+// 受控内容读取(REQ-094/095 Workbench 预览面;#186/#187)
+// ---------------------------------------------------------------------------
+//
+// 字节访问模式(决策记录):renderer 侧 Workbench/renderer 不拿 file:// 自由寻径,也不开新
+// protocol —— 全库唯一的本地文件到 renderer 先例是「有界字节过 IPC」(read-picked-file /
+// read-clipboard-image),本表面沿用同款并收得更窄:
+//   · 只可寻址 `.alpha/runs/<runId>/artifacts/` 内的文件(isSafeSavedPath + safeResolveInAlpha,
+//     ADR-019 守卫复用;artifactId 经 manifest 解析,savedPath 直读仅限 legacy 只读发现);
+//   · text 模式:上限 2 MiB,超限截断 + 诚实 truncated 标记(REQ-095 的 range/stream 全量虚拟化
+//     属后续深化,此处先保证「大文件绝不整段进 IPC/store」的硬边界);
+//   · bytes 模式(image 等二进制预览):上限 20 MiB,超限拒绝(fallback 卡片走系统外部打开),
+//     绝不返回部分二进制冒充完整内容。
+
+/** text 预览单次读取上限(2 MiB)。超出 → 截断 + truncated:true(诚实呈现,不静默)。 */
+export const ARTIFACT_TEXT_PREVIEW_MAX_BYTES = 2 * 1024 * 1024
+/** 二进制(image 等)内联预览上限(20 MiB)。超出 → 拒绝(不截断二进制 —— 部分字节没有意义)。 */
+export const ARTIFACT_BINARY_PREVIEW_MAX_BYTES = 20 * 1024 * 1024
+
+/** 读取目标:manifest 内 artifact(按 id)或 legacy 盘上文件(按 run 内相对 savedPath)。 */
+export type ArtifactReadRef = { artifactId: string } | { savedPath: string }
+
+export type ArtifactReadResult =
+  | {
+      ok: true
+      kind: "text"
+      /** UTF-8 lossy 解码(截断边缘可能出现替换符;二进制误判经 binary 标记诊断)。 */
+      text: string
+      totalBytes: number
+      readBytes: number
+      truncated: boolean
+      /** 首 8 KiB 内出现 NUL ⇒ 疑似二进制(诊断标记,消费端据此提示,不静默当文本)。 */
+      binary: boolean
+    }
+  | { ok: true; kind: "bytes"; bytes: Uint8Array; totalBytes: number }
+  | { ok: false; reason: string }
+
+/**
+ * 受控读取 run artifact 内容(Workbench 预览唯一取字节入口)。
+ * 不做 mime 判断、不解码格式 —— 只负责守卫 + 上限 + 诚实截断标记;路由与呈现在 renderer 注册表。
+ */
+export function readArtifactContent(
+  projectDir: string,
+  runId: string,
+  ref: ArtifactReadRef,
+  opts?: { mode?: "text" | "bytes"; maxBytes?: number },
+): ArtifactReadResult {
+  if (!isSafeRunId(runId)) return { ok: false, reason: "invalid run id" }
+
+  let savedPath: string
+  if ("artifactId" in ref) {
+    const read = readArtifactManifest(projectDir, runId)
+    if (!read.ok)
+      return { ok: false, reason: read.reason === "invalid-run" ? "invalid run" : `manifest unreadable (${read.reason})` }
+    const entry = read.manifest?.artifacts.find((e) => e.descriptor.id === ref.artifactId)
+    if (!entry) return { ok: false, reason: "artifact not found" }
+    savedPath = entry.local.savedPath
+  } else {
+    // legacy 只读发现:savedPath 必须满足与 manifest 同一不变量(artifacts/ 内、相对、无穿越)。
+    if (!isSafeSavedPath(ref.savedPath)) return { ok: false, reason: "savedPath violates the relative-path invariant" }
+    savedPath = ref.savedPath
+  }
+
+  const target = safeResolveInAlpha(projectDir, "runs", runId, ...savedPath.split("/"))
+  if (!target) return { ok: false, reason: "path escapes .alpha" }
+  let st: fs.Stats
+  try {
+    st = fs.statSync(target)
+  } catch {
+    return { ok: false, reason: "file missing on disk" }
+  }
+  if (!st.isFile()) return { ok: false, reason: "not a regular file" }
+
+  const mode = opts?.mode ?? "text"
+  if (mode === "bytes") {
+    // 调用方可再收窄上限,但永远不能放宽(min 收敛)。
+    const cap = Math.min(Math.max(1, opts?.maxBytes ?? ARTIFACT_BINARY_PREVIEW_MAX_BYTES), ARTIFACT_BINARY_PREVIEW_MAX_BYTES)
+    if (st.size > cap)
+      return { ok: false, reason: `file too large for inline preview (${st.size} bytes > ${cap} limit)` }
+    try {
+      const buf = fs.readFileSync(target)
+      return { ok: true, kind: "bytes", bytes: new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength), totalBytes: st.size }
+    } catch (error) {
+      return { ok: false, reason: error instanceof Error ? error.message : "read failed" }
+    }
+  }
+
+  const cap = Math.min(Math.max(1, opts?.maxBytes ?? ARTIFACT_TEXT_PREVIEW_MAX_BYTES), ARTIFACT_TEXT_PREVIEW_MAX_BYTES)
+  const readBytes = Math.min(st.size, cap)
+  const buf = Buffer.alloc(readBytes)
+  let fd: number | null = null
+  try {
+    fd = fs.openSync(target, "r")
+    let off = 0
+    while (off < readBytes) {
+      const n = fs.readSync(fd, buf, off, readBytes - off, off)
+      if (n <= 0) break
+      off += n
+    }
+    const sniff = buf.subarray(0, Math.min(off, 8 * 1024))
+    const binary = sniff.includes(0)
+    return {
+      ok: true,
+      kind: "text",
+      text: buf.subarray(0, off).toString("utf8"),
+      totalBytes: st.size,
+      readBytes: off,
+      truncated: st.size > off,
+      binary,
+    }
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "read failed" }
+  } finally {
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd)
+      } catch {
+        /* best-effort close */
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // 删除 / GC 钩子
 // ---------------------------------------------------------------------------
 

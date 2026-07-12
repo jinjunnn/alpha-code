@@ -10,6 +10,7 @@ import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import type { AlphaProjectsApi, ServerInfo } from "../sidebar/use-projects"
 import { extractCloudRunHit, type CloudRunHit } from "./cloud-run-core"
 import { pushToast } from "./Toast"
+import { notifyWorkbenchRunSaved } from "./artifact-workbench/workbench-state"
 import { t } from "../i18n"
 
 type Client = ReturnType<typeof createOpencodeClient>
@@ -38,6 +39,8 @@ export function CloudRunWatcher(props: { server: Accessor<ServerInfo | undefined
     const target = worktreeFor(hit.directory)
     const r = await window.api.cloud.saveRun(target, hit.runId)
     if (r.ok) {
+      // REQ-094 AC#2:发现不抢焦点 —— toast + Workbench badge,绝不自动切换视图。
+      notifyWorkbenchRunSaved()
       pushToast({
         kind: hit.terminal === "completed" ? "success" : "info",
         title: t(hit.terminal === "completed" ? "alpha.cloud.runSaved" : "alpha.cloud.runEnded"),

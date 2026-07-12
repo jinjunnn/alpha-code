@@ -54,6 +54,7 @@ import { setupSettingsBackButton } from "./alpha-ui/settings-back-button"
 import { ExtensionHub } from "./extensions/extension-hub"
 import { extHubOpen, setExtHubOpen } from "./extensions/ext-hub-state"
 import { AutomationPanel } from "./automations/automation-panel"
+import { ArtifactWorkbench } from "./alpha-ui/artifact-workbench/artifact-workbench"
 import { Splash } from "./logo-alpha"
 import { useTheme } from "@opencode-ai/ui/theme/context"
 import { ALPHA_THEME, ALPHA_THEME_ID } from "./theme-alpha"
@@ -488,6 +489,10 @@ render(() => {
               </AlphaBoundary>
               <AlphaBoundary name="AutomationPanel">
                 <AutomationPanel />
+              </AlphaBoundary>
+              {/* REQ-094(#186):Artifact Workbench —— run 发现 + 产物卡片 + renderer registry 预览 */}
+              <AlphaBoundary name="ArtifactWorkbench">
+                <ArtifactWorkbench projects={alphaProjects} />
               </AlphaBoundary>
               {/* REQ-055:会话页 composer = AlphaComposer(与首页同一组件);上游 composer 隐藏。
                   旧 ComposerInject/SessionSlashInject(chips 移植 + slash 菜单接管)随之退役。 */}

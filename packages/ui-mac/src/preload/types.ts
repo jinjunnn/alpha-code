@@ -224,12 +224,16 @@ export type PlatformLiveModel = { id: string; provider?: string; minPlan?: strin
 // (savedPath 为 run 目录内相对路径 —— 响应内无绝对路径、无 bearer)。
 import type {
   ArtifactInspectResult,
+  ArtifactReadRef,
+  ArtifactReadResult,
   ProjectUsageResult,
   RunArtifactsListResult,
   RunUsageResult,
 } from "../main/artifact-service"
 export type {
   ArtifactInspectResult,
+  ArtifactReadRef,
+  ArtifactReadResult,
   LegacyRunFile,
   ProjectArtifactUsage,
   ProjectUsageResult,
@@ -243,6 +247,17 @@ export type {
   LocalArtifactState,
   ManifestArtifactEntry,
 } from "../main/artifact-manifest"
+
+// REQ-096(#188):隔离 HTML preview 控制通道形状(真源 shared/html-preview.ts;host 本体在
+// main/html-preview-host.ts)。renderer 只见 opaque previewId —— 一次性 host 的 URL/token、
+// 文件字节与绝对路径永不过 IPC。
+import type { HtmlPreviewClosedEvent, HtmlPreviewOpenResult, HtmlPreviewStatus } from "../shared/html-preview"
+export type {
+  HtmlPreviewClosedEvent,
+  HtmlPreviewCloseReason,
+  HtmlPreviewOpenResult,
+  HtmlPreviewStatus,
+} from "../shared/html-preview"
 
 /** REQ-098:App 运行环境快照(main 启动时由打包状态 + 构建渠道解析后冻结;renderer 只读,无写面)。 */
 export type AlphaEnvironmentInfo = {
@@ -505,6 +520,29 @@ export type ElectronAPI = {
     usage: (directory: string, runId: string) => Promise<RunUsageResult>
     /** 项目级(managed project)核算 + 集中基线数字(REQ-093 §5;执行策略不在此)。 */
     projectUsage: (directory: string) => Promise<ProjectUsageResult>
+    /** REQ-093 AC#4「打开前复核」钩子(#186):全量 sha256 比对,不符降级持久化。 */
+    verify: (directory: string, runId: string, artifactId: string) => Promise<ArtifactInspectResult>
+    /** REQ-094/095(#186/#187)受控内容读取 —— Workbench 预览唯一取字节入口:
+     *  只可寻址 run artifacts/ 内文件;text ≤2 MiB 截断 + 诚实标记;bytes ≤20 MiB 超限拒绝。 */
+    read: (
+      directory: string,
+      runId: string,
+      ref: ArtifactReadRef,
+      opts?: { mode?: "text" | "bytes"; maxBytes?: number },
+    ) => Promise<ArtifactReadResult>
+  }
+  // REQ-096(#188):隔离 HTML artifact preview 控制通道 —— main-owned 一次性静态 host
+  // (html-preview-host.ts:独立 sandboxed 窗口、零 preload、一次性 partition/token)。
+  // renderer 只拿 opaque previewId;字节/绝对路径/host URL/token 永不过 IPC。
+  htmlPreview: {
+    /** 打开隔离预览(manifest + ADR-019 守卫全过才开窗;并发上限内)。 */
+    open: (directory: string, runId: string, artifactId: string) => Promise<HtmlPreviewOpenResult>
+    /** 关闭预览(窗口销毁 → token 失效 → 一次性 partition 清空;幂等)。 */
+    close: (previewId: string) => Promise<{ ok: boolean }>
+    /** 存活性 + 被阻止资源清单(REQ-096 交付 7 供数;已关闭/未知 id 一律 ok:false)。 */
+    status: (previewId: string) => Promise<HtmlPreviewStatus>
+    /** 预览关闭/崩溃推送(用户直接关窗也会触发;返回退订函数)。 */
+    onClosed: (cb: (e: HtmlPreviewClosedEvent) => void) => () => void
   }
   // 自动化定时任务(REQ-021 A1/ADR-022):CRUD + 全局暂停 + 登录时启动;调度/执行全在 main,
   // renderer 只读列表(含 nextFireAt/running 计算态)并订阅 automation-event 推送。
