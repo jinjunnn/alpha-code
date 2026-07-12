@@ -1,5 +1,12 @@
 import { contextBridge, ipcRenderer } from "electron"
-import type { AuthErrorCode, AuthState, CloudArtifactProgress, ElectronAPI, WslServersEvent } from "./types"
+import type {
+  AuthErrorCode,
+  AuthState,
+  CloudArtifactProgress,
+  ElectronAPI,
+  HtmlPreviewClosedEvent,
+  WslServersEvent,
+} from "./types"
 import type { UpdaterState } from "@opencode-ai/app/updater"
 
 const updaterCallbacks = new Set<(state: UpdaterState) => void>()
@@ -221,6 +228,21 @@ const api: ElectronAPI = {
     inspect: (directory, runId, artifactId) => ipcRenderer.invoke("run-artifact-inspect", directory, runId, artifactId),
     usage: (directory, runId) => ipcRenderer.invoke("run-artifacts-usage", directory, runId),
     projectUsage: (directory) => ipcRenderer.invoke("run-artifacts-usage", directory),
+    // REQ-094/095(#186/#187):打开前复核 + 受控内容读取(text 截断 / bytes 限额;守卫在 main)。
+    verify: (directory, runId, artifactId) => ipcRenderer.invoke("run-artifact-verify", directory, runId, artifactId),
+    read: (directory, runId, ref, opts) => ipcRenderer.invoke("run-artifact-read", directory, runId, ref, opts),
+  },
+  // REQ-096(#188):隔离 HTML preview 控制通道 —— renderer 只拿 opaque previewId;一次性 host
+  // 的 URL/token、文件字节与绝对路径永不过 IPC(host 本体 main/html-preview-host.ts)。
+  htmlPreview: {
+    open: (directory, runId, artifactId) => ipcRenderer.invoke("html-preview-open", directory, runId, artifactId),
+    close: (previewId) => ipcRenderer.invoke("html-preview-close", previewId),
+    status: (previewId) => ipcRenderer.invoke("html-preview-status", previewId),
+    onClosed: (cb) => {
+      const handler = (_: unknown, e: HtmlPreviewClosedEvent) => cb(e)
+      ipcRenderer.on("html-preview-closed", handler)
+      return () => ipcRenderer.removeListener("html-preview-closed", handler)
+    },
   },
   automations: {
     list: () => ipcRenderer.invoke("automations-list"),

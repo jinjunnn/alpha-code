@@ -9,6 +9,7 @@ import type { TitlebarTheme } from "../preload/types"
 import { exportDebugLogs, write as writeLog } from "./logging"
 import { cspPlatformEligible } from "./platform"
 import { corsRelaxAllowed, RENDERER_CSP } from "./renderer-security"
+import { HTML_PREVIEW_SCHEME } from "../shared/html-preview"
 import { getStore } from "./store"
 import { PINCH_ZOOM_ENABLED_KEY } from "./store-keys"
 import { createUnresponsiveSampler } from "./unresponsive"
@@ -43,6 +44,10 @@ protocol.registerSchemesAsPrivileged([
       supportFetchAPI: true,
     },
   },
+  // REQ-096(#188):隔离 HTML preview 的一次性静态 host scheme。registerSchemesAsPrivileged
+  // 全应用只允许调用一次,故在此挂载;仅 standard(host/相对路径解析必需)—— 不给 secure、
+  // 不给 supportFetchAPI,能力面最小化。handler 本体按 preview session 注册于 html-preview-host.ts。
+  { scheme: HTML_PREVIEW_SCHEME, privileges: { standard: true } },
 ])
 
 let backgroundColor: string | undefined

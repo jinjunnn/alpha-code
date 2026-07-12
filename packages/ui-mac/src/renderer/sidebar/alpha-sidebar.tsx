@@ -38,6 +38,7 @@ import { type AlphaProject, type AlphaSession, type AlphaProjectsApi } from "./u
 import type { AuthState, AccountSummary } from "../../preload/types"
 import { extHubOpen, setExtHubOpen, toggleExtHub } from "../extensions/ext-hub-state"
 import { setAutomationOpen, toggleAutomation } from "../automations/automation-state"
+import { setWorkbenchOpen, toggleWorkbench, workbenchBadge } from "../alpha-ui/artifact-workbench/workbench-state"
 
 // Replicate opencode's getProjectAvatarVariant (context/layout.tsx) for projects that already
 // have a server-assigned color; otherwise pick a stable variant from the worktree so the
@@ -854,7 +855,8 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
               type="button"
               class="alpha-sidebar-nav-item"
               onClick={() => {
-                setAutomationOpen(false) // 两个全页面板互斥
+                setAutomationOpen(false) // 全页面板互斥
+                setWorkbenchOpen(false)
                 toggleExtHub()
               }}
             >
@@ -867,6 +869,7 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
               class="alpha-sidebar-nav-item"
               onClick={() => {
                 setExtHubOpen(false)
+                setWorkbenchOpen(false)
                 toggleAutomation()
               }}
             >
@@ -877,6 +880,25 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
               <span>{t("alpha.sidebar.automation")}</span>
               <Show when={automationFailedCount() > 0}>
                 <span class="alpha-auto-badge">{automationFailedCount()}</span>
+              </Show>
+            </button>
+            {/* 产物工作台(REQ-094 #186):badge = 打开前落盘的新 run 数(发现不抢焦点,AC#2) */}
+            <button
+              type="button"
+              class="alpha-sidebar-nav-item"
+              onClick={() => {
+                setExtHubOpen(false)
+                setAutomationOpen(false)
+                toggleWorkbench()
+              }}
+            >
+              <svg class="alpha-sidebar-nav-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <rect x="2.2" y="2.8" width="11.6" height="10.4" rx="1.6" stroke="currentColor" />
+                <path d="M2.2 6.4h11.6M6.4 6.4v6.8" stroke="currentColor" />
+              </svg>
+              <span>{t("alpha.sidebar.workbench")}</span>
+              <Show when={workbenchBadge() > 0}>
+                <span class="alpha-auto-badge">{workbenchBadge()}</span>
               </Show>
             </button>
           </nav>

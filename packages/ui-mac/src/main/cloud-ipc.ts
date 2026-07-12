@@ -6,6 +6,7 @@
 // event.sender.send("cloud-job-event", …) 推给对应 renderer;订阅按 (webContents, jobId) 记账,窗口销毁自动清。
 
 import { registerDownloadedArtifact } from "./artifact-service"
+import { validateArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
 import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from "electron"
 import { execFile } from "node:child_process"
 import * as fs from "node:fs"
@@ -120,7 +121,7 @@ export function registerCloudIpcHandlers() {
     wc.once("destroyed", onDestroyed)
     try {
       fs.mkdirSync(path.dirname(target), { recursive: true })
-      return await downloadCloudArtifactTo({
+      const outcome = await downloadCloudArtifactTo({
         artifact,
         targetPath: target,
         jobId: runId,
@@ -129,6 +130,20 @@ export function registerCloudIpcHandlers() {
           if (!wc.isDestroyed()) wc.send("cloud-artifact-progress", { runId, artifactId, ...p })
         },
       })
+      // REQ-093/#186:单件下载与 saveRun 同纪律 —— 完整 descriptor 才入 manifest(legacy meta 不合成
+      // 假 descriptor,盘上文件由 legacyFiles 只读发现兜底);登记失败只留痕,不推翻已落盘的下载结果。
+      if (outcome.ok) {
+        const check = validateArtifactDescriptor(artifact)
+        if (check.ok) {
+          const reg = registerDownloadedArtifact(directory, runId, {
+            descriptor: check.value,
+            savedPath: `artifacts/${name}`,
+            verifiedSha256: outcome.sha256,
+          })
+          if (!reg.ok) getLogger().warn(`cloud: artifact ${artifactId} downloaded but manifest register failed: ${reg.reason}`)
+        }
+      }
+      return outcome
     } catch (error) {
       // downloadCloudArtifactTo 自身不抛;这里兜底 mkdir 等本地失败(错误文案不含 token)。
       return { ok: false, error: "disk", detail: error instanceof Error ? error.message : "local failure" }
