@@ -23,7 +23,7 @@ related: [ADR-002, ADR-019, B/PA-7, B/PA-22]
 4. **consent 挂钩(B16 已重启落地,2026-07-06 用户 GO,S25)**:两个挂钩点均已实现:
    - 显式:**首次云 dispatch(per 项目)** 弹 consent(`alpha-cloud-consent.ts` 纯核 + `cloud-ipc.ts` 原生对话框 + `.alpha/prefs.json` 落 `cloudConsent`,ADR-019 落点;写盘失败不静默放行;版本化)。**覆盖面 = hub 派发路径**(`window.api.cloud.dispatch(envelope, directory)`);MCP facade(会话内 agent cloud.* 工具)派发不经 main、不覆盖(会话内显式指令触发 + B 侧 schema 兜底 + 隐式告知已在登录承担)。
    - 隐式:登录授权页平台代付告知行(alpha-web `DesktopAuthorize`,PR #9)+ 隐私政策出境专章(修正原 §2「不上传源代码」误导)。定位=告知,不阻断(§3)。
-   - 见 [[B16]](../../../docs/requirements/B16-pipl-consent-gate.md,S25 shipped:A PR #123 + alpha-web PR #9)。云 dispatch 每次 run 落 `.alpha/runs/<runId>/`(ADR-019)形成本地审计痕迹不变。
+   - 见 [[B16]](https://github.com/jinjunnn/alpha-code/issues,S25 shipped:A PR #123 + alpha-web PR #9)。云 dispatch 每次 run 落 `.alpha/runs/<runId>/`(ADR-019)形成本地审计痕迹不变。
 5. **回流侧(对称边界)**:云 → 本地已由 `alpha-workdir.ts` 落地(PR #55):写盘困在 `.alpha/`、敌意文件名消毒、100MB 体积帽——上行下行两侧都有界。
 
 ## 后果

@@ -33,6 +33,6 @@
 | [ADR-028](adrs/ADR-028-extension-registry-v2.md) | Extension Package & Registry v2:ManifestV2/InstallRecordV2 严格 schema + main-only 安装计划(renderer 零安装权)+ 项目作用域闭环 fail-closed(Phase 0 信任修复 / Phase 1 ManifestV2 分期;ADR-029 全 L0;REQ-100 只留窄事务钩子接缝) | accepted | 2026-07-12 |
 | [ADR-029](adrs/ADR-029-upstream-sovereignty-ladder.md) | 上游主权阶梯:「零改上游」铁律不修宪,主权升级走四级枚举通道(L0 接缝 → L1 变换 → L2 补丁 loud-fail → L3 冻结接管;逐案 ADR、永不设 L4 直接编辑;既有例外归位记账) | accepted(2026-07-12 同日拍板) | 2026-07-12 |
 
-> 🔒 **编号预留**:产品所有权专项(`docs/plans/2026-07-10-product-ownership-req-map.md` §5)预留的 ADR-027/ADR-028 均已于 2026-07-12 按号落笔,预留清空;新 ADR 从 ADR-030 起编号。
+> 🔒 **编号预留**:产品所有权专项(见 [GitHub Issues](https://github.com/jinjunnn/alpha-code/issues) 与 [Alpha Delivery](https://github.com/users/jinjunnn/projects/2) §5)预留的 ADR-027/ADR-028 均已于 2026-07-12 按号落笔,预留清空;新 ADR 从 ADR-030 起编号。
 
 > 📦 **ADR-010/011/013(云平台内部决策)已迁至 `alpha-platform/.claude/rules/adrs/`**(2026-06-22)。本仓只保留"本地→云派发接缝"(见 [ADR-002](adrs/ADR-002-backend-seams.md));文中其余处对它们的引用视为跨项目引用。

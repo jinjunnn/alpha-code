@@ -6,7 +6,7 @@ date: 2026-07-12
 related: [ADR-014, ADR-019, ADR-023, ADR-024, ADR-029, REQ-098, REQ-099, REQ-100, REQ-101, REQ-102]
 ---
 
-> **状态:accepted。** 预决策已由需求档 [[REQ-099]](`docs/requirements/REQ-099-extension-manifest-receipt-v2.md`,GitHub SoT `alpha-code#210`/`#191`)与 2026-07-12 产品所有权专项评审支撑:该评审拍板了分期(Phase 0 最小信任修复 / Phase 1 ManifestV2,用户采纳,已记入需求档 §分期)并把本 ADR 立为 REQ-099 的实施门(`docs/plans/2026-07-10-product-ownership-req-map.md` §5 编号预留)。本文件是该预决策的正式落笔,不引入超出需求档的新方向。
+> **状态:accepted。** 预决策已由需求档 [[REQ-099]](https://github.com/jinjunnn/alpha-code/issues,GitHub SoT `alpha-code#210`/`#191`)与 2026-07-12 产品所有权专项评审支撑:该评审拍板了分期(Phase 0 最小信任修复 / Phase 1 ManifestV2,用户采纳,已记入需求档 §分期)并把本 ADR 立为 REQ-099 的实施门([GitHub Issues](https://github.com/jinjunnn/alpha-code/issues) 与 [Alpha Delivery](https://github.com/users/jinjunnn/projects/2) §5 编号预留)。本文件是该预决策的正式落笔,不引入超出需求档的新方向。
 
 ## 背景
 

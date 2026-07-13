@@ -65,7 +65,7 @@ related: [ADR-002, ADR-005, ADR-006, ADR-014]
 2. **provider/BYOK 写入域迁真源**(接管 XDG):alpha 永不再写 `~/.config/opencode`;merge 序(home/OPENCODE_CONFIG 在 XDG 后)压制残留,copy-don't-delete 迁移。
 3. **全局目录桥退役**(修订 2026-07-04 D1 与 REQ-052 两跳桥的 `.opencode` 半跳):skills/agents 等经通道注入;存量 `~/.opencode` reconcile 清理(alpha-owned 拆除;残余仅引擎 junk 白名单则整目录删;含用户内容留 + loud,§4 边界不变)。
 4. **接受的损失(用户指令覆盖)**:原生 opencode CLI 对 alpha 安装物可见性放弃(D1「装一次处处用」作废);⚠️ G2 hook 语义标注 "Notify",变异可见性逐路实测是 GO 前唯一闸门。
-5. 载体:REQ-059(全局,已修订)+ REQ-060(项目级,T0 后立);权威方案 = `docs/designs/2026-07-07-project-alpha-only-extensions.md` v3。
+5. 载体:REQ-059(全局,已修订)+ REQ-060(项目级,T0 后立);权威方案 = `docs/design/2026-07-07-project-alpha-only-extensions.md` v3。
 
 ## 修订(2026-07-08,REQ-065 —— `.alpha` 纯度反向收口:出厂/系统件退出 `.alpha`)
 用户点名:skill-creator/agent-creator 出厂链落 `~/.alpha/skills`(REQ-052 两跳桥的 `.alpha` 半跳遗留),系统级内容出现在用户目录、混淆「`.alpha` 是你的」口径。裁定:**非 bug,是失效不变量的遗留**——REQ-052「内容本体(含仅指 app 资产的链)一律先落 `.alpha` 中转」的目的是保 `.opencode` 内只指 `.alpha`;REQ-059 全面零 `.opencode` 后,该中转对出厂件的存在理由消失。就此修订:

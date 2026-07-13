@@ -27,8 +27,8 @@
 - 自有包是**原生 workspace 成员**(`packages/ext`、`packages/ui-mac`),`@opencode-ai/*` 走 `workspace:*` / `catalog:` —— 无 symlink hack。
 - `ui-mac` 镜像 `packages/desktop` 的原生 Electron 模式;Tailwind/CSS/solid 原生解析(实测产物 475KB CSS)。
 - 新增 `/api/*` 路由是唯一会改 upstream 文件的场景 → 用 sidecar 规避。
-- 架构理解见 `docs/UNDERSTANDING.md`;扩展接缝手册见 `docs/architecture/extension-seams.md`;code-graph 见 `docs/diagrams/opencode-codegraph.svg`。
-- **交付治理**:GitHub Issues + [`Alpha Delivery`](https://github.com/users/jinjunnn/projects/2) 是活跃需求、状态、优先级与 Sprint 的唯一真源。单仓工作建在 `jinjunnn/alpha-code`;跨仓父需求建在 `jinjunnn/alpha-work`。`docs/BACKLOG.md`、`docs/requirements/`、`docs/sprints/` 是迁移前历史,不得再翻状态或从中抽取新 Sprint。统一规则见 `jinjunnn/alpha-work/governance/delivery-standard.md`;用户可见发布历史仍写 `docs/CHANGELOG.md`。
+- 架构理解见 `docs/architecture/understanding.md`;扩展接缝手册见 `docs/architecture/extension-seams.md`;code-graph 见 `docs/architecture/diagrams/opencode-codegraph.svg`。
+- **交付治理**:GitHub Issues + [`Alpha Delivery`](https://github.com/users/jinjunnn/projects/2) 是活跃需求、状态、优先级与 Sprint 的唯一真源。单仓工作建在 `jinjunnn/alpha-code`;跨仓父需求建在 `jinjunnn/alpha-work`。旧交付追踪器(BACKLOG、requirements、sprints,已退役至 `docs/archive/DEPRECATED.md`)是迁移前历史,不得再翻状态或从中抽取新 Sprint。统一规则见 `jinjunnn/alpha-work/governance/delivery-standard.md`;用户可见发布历史仍写 `CHANGELOG.md`。
 
 ## 跑起来
 ```
@@ -37,5 +37,5 @@ bun run --cwd packages/ui-mac dev   # electron 解析失败时加 ELECTRON_EXEC_
 bash scripts/alpha-check.sh          # push 前自检:北极星守卫 + typecheck + 单测(与 alpha-ci 1:1)
 ```
 
-## CI(规范见 `docs/CI.md`)
-**本地先跑,CI 兜底**。push 前必过 `scripts/alpha-check.sh`。GitHub 上只有 `alpha-ci`(三关,required)+ `sync-upstream` 两个 workflow active;继承的 ~26 个上游 workflow 已禁用(要 Blacksmith runner,本 fork 没有 → 永久 queued,即"CI 卡"真因)。排查手册见 `docs/CI.md` §5。
+## CI(规范见 `docs/runbooks/ci.md`)
+**本地先跑,CI 兜底**。push 前必过 `scripts/alpha-check.sh`。GitHub 上只有 `alpha-ci`(三关,required)+ `sync-upstream` 两个 workflow active;继承的 ~26 个上游 workflow 已禁用(要 Blacksmith runner,本 fork 没有 → 永久 queued,即"CI 卡"真因)。排查手册见 `docs/runbooks/ci.md` §5。

@@ -48,7 +48,7 @@ related: [ADR-005, ADR-012, ADR-019, ADR-020, ADR-025, REQ-076]
    - 补 `package:win` + `ship:windows` 脚本;本地 mac 可交叉打**未签名** NSIS 供开发迭代;正式分发前置 = **Authenticode 证书**(采购形态待拍板;无证书期间 SmartScreen 拦截如实标注,不伪装)。
    - 更新链复用 electron-updater + GitHub Releases `latest.yml`(`finalize-latest-yml.ts` 已产 Windows feed);渠道语义(dev/beta/prod,ADR-012)双平台同构。
    - **C 仓(alpha-web)配套**:下载页 + 自动更新 feed 增 Windows 面(跨仓交付物,登记于 REQ-076)。
-   - DISTRIBUTION.md 增 Windows 章(签名/发布 runbook)。
+   - docs/runbooks/distribution.md 增 Windows 章(签名/发布 runbook)。
 
 7. **包名 `ui-mac` 保留**:改名 = 全仓路径/引用 churn,零功能收益;GLOSSARY 补词条澄清「历史名,承载全部桌面平台外壳」。将来仓库 re-org 时机再议(YAGNI)。
 

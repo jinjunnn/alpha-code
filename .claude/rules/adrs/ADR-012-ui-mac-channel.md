@@ -22,7 +22,7 @@ ui-mac 沿用 opencode `packages/desktop` 的三渠道(channel)发版模式:`CHA
 - ⚠️ **代码默认 channel 仍是 `dev`**(`resolveChannel()` 未设 env 时回退 dev)。本 ADR 只定"发布走 prod"的策略,**未改**默认回退;真正发布时须由脚本/env 显式置 prod。若日后想让 prod 成为代码级默认,再单独改 `utils.ts`/`constants.ts` 并记一条修订。
 
 ## ✅ 已解决(2026-07-03,PR #32)—— 原「已知问题 / 待办(2026-06-24)」
-按下方**待办①**落地:prod/beta `productName` → `alpha-code`;appId → **`com.tide.alphacode`**(非原提议的 `ai.opencode.desktop`,改取 tideapp 的 `com.tide.*` 约定);`install-local.ts` 改为按 `OPENCODE_CHANNEL` 解析 app 名/appId(不再写死 dev);updater feed → `jinjunnn/alpha-code`(B9,不再指 anomalyco)。`OPENCODE_CHANNEL=prod ALPHA_SIGN=1 … package:mac` 已端到端出**签名+公证** dmg 并发 **v0.1.0**(见 `docs/DISTRIBUTION.md`)。**现在 ship/package 带 `OPENCODE_CHANNEL=prod` 是正确的**(旧「ship 不要带 prod」告诫作废)。下方保留历史。
+按下方**待办①**落地:prod/beta `productName` → `alpha-code`;appId → **`com.tide.alphacode`**(非原提议的 `ai.opencode.desktop`,改取 tideapp 的 `com.tide.*` 约定);`install-local.ts` 改为按 `OPENCODE_CHANNEL` 解析 app 名/appId(不再写死 dev);updater feed → `jinjunnn/alpha-code`(B9,不再指 anomalyco)。`OPENCODE_CHANNEL=prod ALPHA_SIGN=1 … package:mac` 已端到端出**签名+公证** dmg 并发 **v0.1.0**(见 `docs/runbooks/distribution.md`)。**现在 ship/package 带 `OPENCODE_CHANNEL=prod` 是正确的**(旧「ship 不要带 prod」告诫作废)。下方保留历史。
 
 ### 历史(2026-06-24 实测 ship 暴露,已解决)
 **"发布走 prod"从未接到品牌层,且 install-local 写死 dev 命名 —— 当前能产出 alpha 品牌 app 的反而是 `dev` 渠道。**

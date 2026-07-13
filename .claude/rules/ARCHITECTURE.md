@@ -46,7 +46,7 @@
 - ADR-008:Codex 风格左边栏 → adrs/ADR-008-sidebar.md
 - ADR-009:websearch 默认放开 + alpha.env → adrs/ADR-009-websearch-default.md
 - ADR-012:ui-mac 发布默认 prod 渠道,dev/beta 保留不删 → adrs/ADR-012-ui-mac-channel.md
-- ADR-014(proposed):定制中心 — Skills/MCP/Plugins 可视化市场 + alpha 自建套件 + 零-fork 安装 → adrs/ADR-014-extension-hub.md(设计:`docs/designs/extension-hub.md`)
+- ADR-014(proposed):定制中心 — Skills/MCP/Plugins 可视化市场 + alpha 自建套件 + 零-fork 安装 → adrs/ADR-014-extension-hub.md(设计:`docs/design/extension-hub.md`)
 - ADR-015(accepted):提示词优化策略 — 上游底座只读 + 能力感知 identity(Tier-1)+ 行为层 alpha-behavior(Tier-3)+ 合并验证纪律 → adrs/ADR-015-prompt-optimization-strategy.md
 
 ## 性能与规模预期
@@ -55,5 +55,5 @@
 - **性能底线**:前端定制不得使官方屏幕交互明显变慢;sidecar 不阻塞 agent 主回路。
 
 ## D2 架构图索引
-- `docs/diagrams/opencode-codegraph.d2` / `.svg` — opencode 27 包分层 code-graph(已生成)
-- `docs/diagrams/01-overview.d2` — alpha-code 自有架构俯瞰(`/app:design-arch` 生成,待做)
+- `docs/architecture/diagrams/opencode-codegraph.d2` / `.svg` — opencode 27 包分层 code-graph(已生成)
+- `docs/architecture/diagrams/01-overview.d2` — alpha-code 自有架构俯瞰(`/app:design-arch` 生成,待做)

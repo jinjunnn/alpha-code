@@ -8,7 +8,7 @@ related: [ADR-002, ADR-003, ADR-006, ADR-008, ADR-009]
 
 > **2026-07-05 v3 转 accepted**(REQ-016 S16 桌面真机批,证据 [audits/2026-07-05-req016-realmachine-batch/verify.md](../../../docs/audits/2026-07-05-req016-realmachine-batch/verify.md)):prod 签名+公证包实测 —— skill/MCP/agent/plugin **四类 in-app 安装→免重启桥(`~/.alpha` 真源 + `~/.opencode/<类>` symlink)→已安装态→卸载净除**全通;vendored 插件字节级零网络(与打包资产一致);A6 env dump 证第三方 MCP 子进程零密钥泄漏(解 R3 门控)。**转正过程中发现并修复 P1 真机 bug**:已安装 tab 卸载/更新对账本条目静默失败(Solid store Proxy 未 unwrap 过 contextBridge → 结构化克隆抛错被 void 吞),修复见 `use-extensions.ts` + 回归锁测。剩余真机项(迁移开门/卸 uv 像素/git 真克隆/dispose 打断)为增强验证,不阻断转正。
 
-> 配套设计:`docs/designs/2026-06-22-arch-extension-hub.md`(v2,经 /app:design-arch);build:`docs/sprints/2026-06-22-extension-hub/build.md`。
+> 配套设计:`docs/design/2026-06-22-arch-extension-hub.md`(v2,经 /app:design-arch);build:见 [GitHub Issues](https://github.com/jinjunnn/alpha-code/issues) 与 [Alpha Delivery](https://github.com/users/jinjunnn/projects/2)。
 > 状态 `trial`(2026-06-22):design-arch 完成 → 用户选 A→design→C(跳过 plan-review)→ MVP 已实现(Phase ①②③⑤⑥,Plugin 门控)并 typecheck+build 通过。**待 Mac 端像素核验 + Phase ④ 后转 `accepted`。**
 
 ## 背景
@@ -31,11 +31,11 @@ related: [ADR-002, ADR-003, ADR-006, ADR-008, ADR-009]
 - ✅ **v2 瘦身成果**(经 design-arch Round2):删 electron-store → SDK 真相源;删 InstallJob/queue → UI 临时状态;删自建引擎(C6–C9) → CLI addMcpToConfig 复用;删 skill/plugin/create 进 MVP → 整体降 V1+ roadmap;改全屏 Portal → 覆盖内容区(z 序/focus 冲突化解)。
 - ⚠️ "MCP catalog/镜像感知安装"是净新增维护面(对策:先内置 3-5 条、小而精);plugin 装包需重启 + 中国区 egress(对策:内置资源 + V2 npmmirror);新增主进程 IPC 写 config = 新攻击面(对策:§4 的路径/字段/命令/URL 白名单)。
 - 🔭 待 plan-review 确认:① MVP 是 MCP-first(本设计)还是全量;② Agent/Command 进市场 tab 否;③ F9 串台默认开关;④ 远程 catalog 是否依赖 alpha-web(C)。
-- 修订:2026-06-22 经 design-arch Round1/Round2 瘦身,产出权威设计 `docs/designs/2026-06-22-arch-extension-hub.md`(v2)。
-- 修订:2026-06-23 — 核实实现已超本 ADR 所述 MVP:**create skill/agent 表单 + plugin 安装实际已发**(commit `59c0786`,非"降级 V1+ roadmap")。本次补齐 V1+ roadmap 的 **builtin-skill 安装(E1b)**:`resources/skills/<key>` 资产 + electron-builder `extraResources` + 主进程 `installBuiltinSkill`(按 `builtinAssetKey` 复制进用户 scanned skills 目录,白名单+防逃逸)+ IPC/preload/渲染层全链路;种 2 条 alpha 自写 MIT 技能(`alpha-upstream-sync`/`safe-refactor`)。官方 4 条 Apache-2.0 仍待内容打包(现诚实失败,非占位)。详见 `docs/harness-extension-backlog.md` 的 E1b。
+- 修订:2026-06-22 经 design-arch Round1/Round2 瘦身,产出权威设计 `docs/design/2026-06-22-arch-extension-hub.md`(v2)。
+- 修订:2026-06-23 — 核实实现已超本 ADR 所述 MVP:**create skill/agent 表单 + plugin 安装实际已发**(commit `59c0786`,非"降级 V1+ roadmap")。本次补齐 V1+ roadmap 的 **builtin-skill 安装(E1b)**:`resources/skills/<key>` 资产 + electron-builder `extraResources` + 主进程 `installBuiltinSkill`(按 `builtinAssetKey` 复制进用户 scanned skills 目录,白名单+防逃逸)+ IPC/preload/渲染层全链路;种 2 条 alpha 自写 MIT 技能(`alpha-upstream-sync`/`safe-refactor`)。官方 4 条 Apache-2.0 仍待内容打包(现诚实失败,非占位)。详见 [GitHub Issues](https://github.com/jinjunnn/alpha-code/issues) 的 E1b。
 - 修订:2026-06-24 — 新增**浏览器自动化连接器**(backlog E14):catalog 加 `mcp:playwright`(`npx -y @playwright/mcp`,Apache-2.0,Microsoft 官方,`category:dev`),补 `webfetch` 抓不动 JS 动态站点的能力缺口。**零代码新增**——安装/预检/持久/启停链路全复用既有(`npx` 已在命令白名单)。决策:本地 `npx` 优先 + **仅定制中心可装(不进 `injectAlphaConfig` 预设)**。未决项留 `_verify`:首次 navigate 的浏览器内核来源(Chromium 下载 vs `--browser chrome` 复用系统),`runtimeDep` 仅 which node、内核为运行时下载 → 待 A6 桌面实测拍板。**给用户的浏览器面板(Phase B)不在此 ADR,单独走定位关。**
 
-## 修订(2026-07-04,v3 —— 全类型通用化,S12/REQ-018,权威设计 `docs/designs/2026-07-04-extension-hub-v3-universal.md`)
+## 修订(2026-07-04,v3 —— 全类型通用化,S12/REQ-018,权威设计 `docs/design/2026-07-04-extension-hub-v3-universal.md`)
 体检发现 MVP「MCP-first + SDK 唯一真相源」的通用性只对 MCP 成立:skill/agent/plugin **装完不生效**(引擎实例缓存无文件监听)、**装完失管**(mcp.status 只认 MCP)、落盘污染共享 `~/.config/opencode`、MCP 密钥明文进 jsonc。v3 修订本 ADR 的四条核心决策:
 
 1. **安装真相源:SDK → receipts ⨝ SDK**(修订原 §4「已安装真相 = SDK 源」)。新增安装账本 `~/.alpha/installs.json`(alpha-installs.ts),覆盖 skill/agent/plugin 的「已安装/卸载/更新」真相;MCP 仍以 SDK `mcp.status` 为实时态,receipts 记 provenance。**放弃「零持久存储」**(v2 删 electron-store 的理由是不复制 SDK 已有真相;fs 类 SDK 无对应真相,故账本是必要新增,非过度工程)。
@@ -49,7 +49,7 @@ related: [ADR-002, ADR-003, ADR-006, ADR-008, ADR-009]
 
 ## 修订(2026-07-04 晚,M2 shipped —— REQ-019/REQ-023,PR #74-#77)
 
-1. **IA 终稿 = 横向 9 tab(用户拍板,否决 v3 修订稿的左栏分区)**:推荐/连接器/技能/Agent/插件/套件/已安装(角标=可更新数)/创建/云能力占位;有更新并入已安装、导入并入创建;交互定稿 `docs/designs/2026-07-04-ext-hub-m2/design.html`(视觉语言 = 6-26 稿 token 零改动)。v3 §「IA 从三分法+7 tab 改左栏分区」表述由本条取代。
+1. **IA 终稿 = 横向 9 tab(用户拍板,否决 v3 修订稿的左栏分区)**:推荐/连接器/技能/Agent/插件/套件/已安装(角标=可更新数)/创建/云能力占位;有更新并入已安装、导入并入创建;交互定稿 `docs/design/2026-07-04-ext-hub-m2/design.html`(视觉语言 = 6-26 稿 token 零改动)。v3 §「IA 从三分法+7 tab 改左栏分区」表述由本条取代。
 2. **详情页(类目内下钻)**:点卡片主体 → 详情(tab 保持高亮,「‹ 类目名」返回,Esc 逐级);通用头部(来源/许可证/版本/`_verify` 显式「待核实」+ 主操作在头部右侧)+ 逐类型区块(MCP tools[] 精选清单/技能 SKILL.md 全文/Agent 权限档+提示词预览/插件 hooks+D4 澄清+风险/套件组合清单逐项安装);数据边界如实(本地命令型不谎称不出网);进页即实时 which 依赖检测。
 3. **「添加」三档分流**:技能=直装(零配置);MCP/套件=确认框(密钥密文采集/组合清单);插件与目录 Agent=详情页先行(插件带「运行于引擎进程」风险确认)。
 4. **生命周期补全**:更新通道(receipts.version < catalog.version → 角标+分组,fs 覆盖重装 / plugin 换钉版 / MCP 确认框重装防丢 {file:} 引用);导入 folder/git/npm(frontmatter 校验、https-only 浅克隆、外来内容不执行,origin=imported)。

@@ -38,7 +38,7 @@ related: [ADR-014, ADR-002, REQ-032, REQ-033, REQ-034, REQ-035]
 
 **拍板(用户,2026-07-06)**:**C 仓 `catalog-src/catalog.json` 是 agent / skill / command / MCP / plugin 条目的唯一作者真源**;上架/撤架的唯一作者动作 = 改 C → `build-catalog.mjs`(sha256 + ed25519)→ deploy,**A 零动作、联网用户即时生效**。A 仓只保留必须硬编码之物:
 1. **验签公钥**(信任根,`remote-catalog.ts`,唯一常量源);
-2. **离线回退快照底座** —— `alpha-catalog.json` **禁手编**,由 `ui-mac/scripts/sync-catalog-snapshot.mjs` 从已发布端点拉取+验签+**字节原样**快照(meta 落 `alpha-catalog.snapshot.json`);守卫 = `alpha-catalog.test.ts` sha256 断言(手编即红,红绿演练已过);发版 runbook 增「刷新快照」步(DISTRIBUTION.md);
+2. **离线回退快照底座** —— `alpha-catalog.json` **禁手编**,由 `ui-mac/scripts/sync-catalog-snapshot.mjs` 从已发布端点拉取+验签+**字节原样**快照(meta 落 `alpha-catalog.snapshot.json`);守卫 = `alpha-catalog.test.ts` sha256 断言(手编即红,红绿演练已过);发版 runbook 增「刷新快照」步(docs/runbooks/distribution.md);
 3. **随包资产本体**(builtinAssetKey / vendoredAssetKey 所指文件 —— 出厂预置件与可执行物必须随包);
 4. **catalog schema / 类型**(`catalog-types.ts`)。
 
