@@ -1,0 +1,141 @@
+/*
+ * AlphaSessionWorkspace chrome(REQ-088 T2)。
+ *
+ * 宿主红线(T6 审计 §3,静态钉在 alpha-session-workspace.test.ts):
+ *   R1 —— 活叶包裹(.a-swk / .a-swk-leaf)保持普通文档流:flex 列 + flex:1 + min-height:0,
+ *         禁止隐藏活叶、禁止脱离文档流的定位(takeover 的 offsetParent 可见性口径依赖于此)。
+ *   R2 —— 本文件只使用 alpha 自有类名(a-swk-*)与 data-alpha-* 属性,绝不与上游锚点同名。
+ * 视觉:alpha 设计语言(tokens.css 的 --a-* 变量),chrome 元素挂 .a-ui 作字体/颜色作用域;
+ * 外层与叶包裹**不挂** .a-ui —— 避免 alpha 排版级联进上游叶,破坏 legacy 视觉 parity。
+ */
+@import "../tokens.css";
+@import "../base.css";
+
+/* ── 外框:flex 列,叶占满剩余空间(与 spike 实证形态逐属性一致)────────── */
+.a-swk-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.a-swk-leaf {
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── chrome:header / 上下文条 ──────────────────────────────────────────── */
+.a-swk-chrome {
+  display: flex;
+  align-items: center;
+  gap: var(--a-space-2, 8px);
+  flex: none;
+  height: 30px;
+  padding: 0 var(--a-space-3, 12px);
+  background: var(--a-bg-subtle, #f6f7f9);
+  border-bottom: 1px solid var(--a-border-faint, #eef0f3);
+  font-size: var(--a-text-xs, 11.5px);
+  color: var(--a-text-secondary, #52525b);
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.a-swk-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--a-radius-full, 9999px);
+  background: var(--a-accent, #4f46e5);
+}
+
+.a-swk-project {
+  font-weight: var(--a-weight-medium, 500);
+  color: var(--a-text, #18181b);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.a-swk-sep {
+  color: var(--a-text-tertiary, #7c7d85);
+}
+
+.a-swk-session {
+  font-family: var(--a-font-mono, ui-monospace, monospace);
+  font-size: var(--a-text-2xs, 10.5px);
+  color: var(--a-text-tertiary, #7c7d85);
+}
+
+.a-swk-spacer {
+  flex: 1;
+}
+
+.a-swk-badge {
+  flex: none;
+  padding: 1px 8px;
+  border: 1px solid var(--a-accent-border, rgba(79, 70, 229, 0.35));
+  border-radius: var(--a-radius-full, 9999px);
+  font-size: var(--a-text-2xs, 10.5px);
+  font-weight: var(--a-weight-medium, 500);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--a-accent, #4f46e5);
+}
+
+/* ── 跨 server 会话引导(C4 S5 最小安全解;替代 boundary 崩溃体验)──────── */
+.a-swk-guard {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--a-space-6, 24px);
+}
+
+.a-swk-guard-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--a-space-2, 8px);
+  max-width: 420px;
+  padding: var(--a-space-5, 20px) var(--a-space-6, 24px);
+  border: 1px solid var(--a-border, #e4e6ea);
+  border-radius: var(--a-radius-lg, 11px);
+  background: var(--a-surface, #fff);
+  box-shadow: var(--a-shadow-md, 0 4px 12px rgba(15, 17, 21, 0.08));
+}
+
+.a-swk-guard-title {
+  font-weight: var(--a-weight-semibold, 600);
+  color: var(--a-text, #18181b);
+}
+
+.a-swk-guard-desc {
+  font-size: var(--a-text-xs, 11.5px);
+  line-height: var(--a-leading-normal, 1.5);
+  color: var(--a-text-secondary, #52525b);
+}
+
+.a-swk-guard-actions {
+  display: flex;
+  gap: var(--a-space-2, 8px);
+  margin-top: var(--a-space-2, 8px);
+}
+
+.a-swk-btn {
+  padding: 4px 12px;
+  border: 1px solid var(--a-border, #e4e6ea);
+  border-radius: var(--a-radius-sm, 6px);
+  background: transparent;
+  font-size: var(--a-text-xs, 11.5px);
+  color: var(--a-text, #18181b);
+  cursor: pointer;
+}
+
+.a-swk-btn:hover {
+  background: var(--a-bg-muted, #eceef1);
+}
+
+.a-swk-btn--primary {
+  border-color: var(--a-accent-border, rgba(79, 70, 229, 0.35));
+  color: var(--a-accent, #4f46e5);
+}
