@@ -38,6 +38,7 @@ import type { Catalog } from "../renderer/extensions/catalog-types"
 import { getAlphaEnvironment } from "./alpha-environment"
 import { installCatalog, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
 import { readLedgerV2 } from "./ext-receipt-v2"
+import { readPackagedSeed } from "./ext-seed"
 import { recoverExtensionTransactions } from "./ext-transaction"
 import { getLogger } from "./logging"
 
@@ -421,6 +422,22 @@ export function registerExtIpcHandlers(userDataPath: string) {
     },
     (err) => getLogger().log(`[req100-tx-recovery] failed: ${String(err)}`),
   )
+  // REQ-102(#194):packaged seed 启动期消费 = **纯读** —— 严格解码 + 平台门 + 摘要日志。
+  // 不安装、不启用、零配置写入、零进程、零网络(可获得性 bundled 与激活态正交,parent AC1/AC3);
+  // 浏览面 IPC 与安装编排(planner/事务 + populateFromCas)随 REQ-103(#195)接 Hub UI。
+  try {
+    const seedDir = path.join(resourcesRoot(), "extension-seed")
+    if (fs.existsSync(seedDir)) {
+      const seed = readPackagedSeed(seedDir)
+      if (seed.ok)
+        getLogger().log(
+          `[req102-seed] bundled seed ${seed.seed.lock.catalogVersion}: ${seed.seed.assets.length} assets, ${seed.seed.lock.totalBytes}B (browse-only, not installed)`,
+        )
+      else getLogger().log(`[req102-seed] bundled seed REJECTED (fail closed): ${seed.error}`)
+    }
+  } catch (err) {
+    getLogger().log(`[req102-seed] seed probe failed: ${String(err)}`)
+  }
   const plannerDeps = (): PlannerDeps => {
     // 每次调用解析一次 effective catalog(bundle 会对逐子条目调 resolveEntry —— 不重复打网络)。
     let effective: Promise<{ entries: Catalog["entries"]; channel: "remote" | "cache" | "bundled"; version: string }> | null = null
