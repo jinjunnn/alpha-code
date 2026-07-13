@@ -1,0 +1,29 @@
+{
+  "schema": "alpha.catalog.trust.v1",
+  "sequence": 3,
+  "publishedAt": "2026-07-13T00:00:00.000Z",
+  "expires": "2036-01-01T00:00:00.000Z",
+  "keyId": "e98be50732eb984e5960ae8f26fa39f3152694e447df0271a1d14f28684a7b15",
+  "keys": [
+    {
+      "keyId": "e98be50732eb984e5960ae8f26fa39f3152694e447df0271a1d14f28684a7b15",
+      "publicKey": "MCowBQYDK2VwAyEAOPIxQqYPg5SUGMt3sIhpTkvB4EwdysKlk6ifx2ys0cg=",
+      "status": "active",
+      "notBefore": "2026-07-13T00:00:00.000Z"
+    },
+    {
+      "keyId": "9999999999999999999999999999999999999999999999999999999999999999",
+      "publicKey": "MCowBQYDK2VwAyEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "status": "revoked",
+      "notBefore": "2026-01-01T00:00:00.000Z",
+      "notAfter": "2026-07-13T00:00:00.000Z"
+    }
+  ],
+  "revokedTargets": [
+    {
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "reason": "test vector: compromised payload",
+      "revokedAt": "2026-07-13T00:00:00.000Z"
+    }
+  ]
+}

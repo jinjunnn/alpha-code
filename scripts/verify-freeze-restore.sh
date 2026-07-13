@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # ADR-027/REQ-084 验收 #8:模拟 sync-upstream.yml 的 restore_frozen_frontend 步骤,
 # 证明从冻结 tag 还原后 typed surface seam 及其锚点仍存活。用法:
-#   bash scripts/verify-freeze-restore.sh [tag]   # 默认 frontend-freeze-base-2
+#   bash scripts/verify-freeze-restore.sh [tag]   # 默认 frontend-freeze-base-3
 # 也是未来 re-freeze(ADR-020 §5 ③)体检步骤的一部分。
+# 2026-07-13(REQ-088 C1,ADR-027 修订):基点轮换为 frontend-freeze-base-3,新增
+# `./surface/session` 窄导出锚点;铸完新 tag 后必须复跑本脚本。
 set -euo pipefail
 
-TAG="${1:-frontend-freeze-base-2}"
+TAG="${1:-frontend-freeze-base-3}"
 root="$(git rev-parse --show-toplevel)"
 tmp="$(mktemp -d /tmp/freeze-restore.XXXXXX)"
 cleanup() {
@@ -43,6 +45,16 @@ for anchor in \
     exit 1
   }
 done
+
+# REQ-088 C1 窄导出锚点(ADR-027 修订 2026-07-13;与 surface-seam-contract.test.ts 同一契约)
+grep -qF '"./surface/session": "./src/pages/session.tsx"' packages/app/package.json || {
+  echo "FAIL: narrow session-leaf export (./surface/session) missing after restore from $TAG" >&2
+  exit 1
+}
+grep -qF "export default function Page()" packages/app/src/pages/session.tsx || {
+  echo "FAIL: session leaf default export anchor missing after restore from $TAG" >&2
+  exit 1
+}
 
 # 还原内容必须与当前 HEAD 的冻结集一致(tag 即本基点)
 if ! git diff --quiet HEAD -- packages/app packages/ui; then

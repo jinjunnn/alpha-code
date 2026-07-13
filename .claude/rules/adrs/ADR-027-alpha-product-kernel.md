@@ -65,3 +65,32 @@ related: [ADR-016, ADR-020, ADR-029, REQ-084, REQ-085, REQ-086, REQ-090]
   操作步骤已并入 ADR-020 §5。
 - 🔭 待办:REQ-091(AlphaRuntime parity、移除 AppInterface)仍 parked;seam 是
   中间态,不是终局。
+
+## 修订(2026-07-13,REQ-088 C1 —— 冻结基点轮换 frontend-freeze-base-3:`./surface/session` 窄导出)
+
+REQ-087 spike(`docs/spikes/2026-07-12-req087-legacy-session-adapter.md` §4/§8 C1)裁定:
+LegacySessionAdapter 需要消费上游 session 叶,而合法窄通道不存在(exports map 无 pages 子路径,
+spike 期以「受限 deep import + 锚点收敛」过渡)。按 ADR-029 L3 既有 re-freeze 通道
+(ADR-020 §5,机制零新增)再转一次基点,通道合法化:
+
+1. **新基点** = tag `frontend-freeze-base-3`:内容为 `frontend-freeze-base-2` 的
+   `packages/{app,ui}` + `@opencode-ai/app` package.json exports 新增一条
+   `"./surface/session": "./src/pages/session.tsx"`。除该行外与 base-2 逐字节一致——
+   本次 re-freeze 不吸收任何上游前端 churn,不改任何源码文件。
+2. **窄面逐 export 评审(L3 逐案纪律)**:`./surface/session` 指向的模块仅有
+   `default`(session Page 组件)一个导出——留;不设 `./surface/*` 通配,不新增
+   `./pages/*`/`./context/*` 子路径,不走 index.ts 命名导出(破坏 lazy 分包,spike §4
+   已否决)。窄面由三层机械守卫锁死:`surface-seam-contract.test.ts`(surface 子路径
+   集合 === [`./surface/session`] + session 叶单 default 导出)、
+   `req087-characterization.test.ts` §6(exports map 集合相等 + 唯一消费点)、
+   `scripts/verify-freeze-restore.sh`(restore 后锚点核验)。
+3. **消费面收敛**:窄导出全仓唯一消费点 = `session-spike-host.tsx`(拟议
+   LegacySessionAdapter 边界);spike 期相对路径 deep import 同步废除,锚点测试红线
+   防散射(REQ-087 C3)。
+4. **还原步改指新 tag**:`sync-upstream.yml` `restore_frozen_frontend` 检出
+   `frontend-freeze-base-3`,marker 校验在既有 `AppSurfaces` 之外新增
+   `./surface/session` 导出行;任一 marker 缺失即 loud-fail 阻断整个 sync。
+5. **回退**:tag 退回 `frontend-freeze-base-2`(窄导出蒸发,消费点 typecheck TS2307 +
+   锚点测试先红,不会静默漂移);`frontend-freeze-base`/`frontend-freeze-base-2` 均保留不动。
+6. 本修订与 [[ADR-020]] 同日修订(§1 基点更新为 base-3)配套;`SURFACE_RELEASE_STATES.session`
+   仍为 `legacy`,REQ-088 主实现(T2+)在 C2–C4 全绿前不得升出默认。

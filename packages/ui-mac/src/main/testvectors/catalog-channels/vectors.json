@@ -1,0 +1,34 @@
+{
+  "_note": "机器可读索引:A 侧合同测试按 expected 断言。签名 = ed25519 over exact file bytes。",
+  "signingPublicKeySpkiDerB64": "MCowBQYDK2VwAyEAOPIxQqYPg5SUGMt3sIhpTkvB4EwdysKlk6ifx2ys0cg=",
+  "keyId": "e98be50732eb984e5960ae8f26fa39f3152694e447df0271a1d14f28684a7b15",
+  "payload": {
+    "file": "payload.catalog.json",
+    "sha256": "e6584247bb2b7aa6cd9482ab71284d6b447a7f6fb101e24ce7372d0a6c569717",
+    "bytes": 250,
+    "sigFile": "payload.catalog.json.sig",
+    "expected": "verify=true"
+  },
+  "cases": [
+    {
+      "file": "stable.json",
+      "expected": "verify=true, schema=pass, accept as stable (before 2036-01-01)"
+    },
+    {
+      "file": "stable.tampered.json",
+      "expected": "verify=false — MUST reject"
+    },
+    {
+      "file": "stable.expired.json",
+      "expected": "verify=true, schema=pass, but expired — MUST reject"
+    },
+    {
+      "file": "mixmatch.dev-as-stable.json",
+      "expected": "verify=true, schema=pass, but doc.channel=dev — MUST reject when requested as stable"
+    },
+    {
+      "file": "trust.json",
+      "expected": "verify=true (self key); key 99999999… is revoked; revokedTargets contains dddddddd…"
+    }
+  ]
+}

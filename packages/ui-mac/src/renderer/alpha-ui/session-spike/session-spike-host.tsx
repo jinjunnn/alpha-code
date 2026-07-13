@@ -15,10 +15,10 @@
 //    - 叶在 seam 的 createSessionRoute 内挂载,SessionProviders/DirectoryLayout/
 //      ServerScopedShell 全部保持上游默认生命周期 —— 外框不消费任何 upstream context
 //      (只读路由 ABI),这就是拟议 LegacySessionAdapter 的"窄边界"形态;
-//    - deep import 走相对路径(见下方 UPSTREAM_LEAF 注释):spike 实证它 typecheck+bundle
-//      均可行,但它绕过 @opencode-ai/app exports map,是"机械可行、尚未合法化"的通道 ——
-//      合法化需要 freeze-base 轮换加窄导出(报告 §通道结论);本文件是全仓唯一允许出现
-//      该 import 的位置(req087-characterization.test.ts 锚死)。
+//    - 上游叶经 `@opencode-ai/app/surface/session` 窄导出进入(REQ-088 C1,ADR-027 修订
+//      2026-07-13:freeze-base 轮换 frontend-freeze-base-3 合法化该通道)。此前 spike 期的
+//      相对路径 deep import 已废除;本文件仍是全仓唯一允许消费该窄导出的位置
+//      (req087-characterization.test.ts 锚死)。
 //    - surface override 与默认叶是 XOR(app.tsx `props.surfaces?.session ?? Session`),
 //      结构上不存在双挂载;SurfaceBoundary 兜致命 render 错误 → 记录 + reload 回 legacy。
 
@@ -36,12 +36,11 @@ import {
   type SpikeSummary,
 } from "./spike-probe-core"
 
-// —— deep-import 通道(REQ-087 关键问题的实证载体)——
-// 相对路径解析到 packages/app/src/pages/session.tsx:tsgo -b 经 project reference 通过,
-// vite 侧解析为与上游 lazy("@/pages/session") 相同的绝对模块 id(同一 chunk,零重复打包)。
-// `@opencode-ai/app/pages/session`(exports map 无此子路径,TS2307)与根导出(无 Session
-// 成员,TS2305)均不可用 —— 见报告 §通道结论。
-const upstreamLeafImport = () => import("../../../../../app/src/pages/session")
+// —— 合法窄通道(REQ-088 C1 落地)——
+// `@opencode-ai/app/surface/session` 由 exports map 指向 src/pages/session.tsx(仅 default
+// 一个导出);vite 解析到与上游 lazy("@/pages/session") 相同的绝对模块 id(同一 chunk,零重复
+// 打包)。spike 期的相对路径 deep import(绕过 exports 边界)已随 frontend-freeze-base-3 废除。
+const upstreamLeafImport = () => import("@opencode-ai/app/surface/session")
 const UpstreamSessionLeaf = lazy(upstreamLeafImport)
 
 const MAX_SAMPLES = 50

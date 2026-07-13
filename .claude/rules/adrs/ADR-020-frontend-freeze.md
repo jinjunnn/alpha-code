@@ -71,3 +71,16 @@ REQ-084 经 [[ADR-027]] 行使 §5 re-freeze 通道(ADR-029 L3,机制零新增):
    而非补丁面,未来 re-freeze 到更新的上游前端时,须在 §5 ③ 体检中重铸含 seam 的新基点
    (`frontend-freeze-base-N`)并复跑 seam 契约测试。
 4. 原 tag `frontend-freeze-base` 保留不动,作为整体回退点(ADR-027 §5)。
+
+## 修订(2026-07-13,ADR-027 修订配套 —— 冻结基点升级为 frontend-freeze-base-3,REQ-088 C1 窄导出)
+
+再次行使 §5 re-freeze 通道(ADR-029 L3,机制零新增;详细决策见 [[ADR-027]] 2026-07-13 修订):
+
+1. **新基点** = tag `frontend-freeze-base-3`:= `frontend-freeze-base-2` + `packages/app/package.json`
+   exports 新增 `"./surface/session": "./src/pages/session.tsx"` 一行(LegacySessionAdapter 的
+   合法窄通道,REQ-087 spike C1)。不吸收任何上游前端 churn。
+2. **还原步改指新 tag**,marker 校验 = `AppSurfaces` + `./surface/session` 导出行,缺一即
+   loud-fail 阻断 sync;`scripts/verify-freeze-restore.sh` 默认 tag 与锚点集同步更新,铸新
+   tag 后必须复跑(§5 ③ 体检的机械化部分)。
+3. **§4 纪律不变**:app/ui 只读,唯一写通道仍是受控 re-freeze;`frontend-freeze-base`、
+   `frontend-freeze-base-2` 均保留,分别为整体回退点与本次轮换回退点。
