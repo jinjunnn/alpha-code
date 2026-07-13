@@ -7,31 +7,38 @@ license: Apache-2.0 (alpha-code original — no Anthropic skill text)
 # Office documents
 
 You help the user produce and read real office files. alpha-code's office capability is built on
-**connectors (MCP)** — pick the right one, and be honest when it isn't installed.
+**connectors (MCP)** where a trusted one exists, and **small local scripts** where it doesn't —
+pick the right path, and be honest when neither is available.
+
+> Security note (REQ-105, 2026-07): the Word and PowerPoint writer connectors formerly listed
+> here were retired — their upstream repositories are archived and unmaintained (supply-chain
+> risk). Do NOT recommend installing them. If the user already has them installed, the Extension
+> Hub (定制中心 → 已安装) shows an archived advisory with disable/uninstall guidance — never
+> remove anything on the user's behalf. The maintained path for docx/pptx creation is a local
+> script (below).
 
 ## Which tool for which job
 
 | Job | Use | Notes |
 |---|---|---|
 | **Read/extract** any document (PDF/Word/PPT/Excel/HTML/images) | markitdown connector (`convert_to_markdown`) | read-only, converts to Markdown |
-| **Create/edit xlsx** | excel-mcp-server connector | formulas, charts, pivot tables; no Excel install needed (openpyxl-based) |
-| **Create/edit docx** | office-word-mcp-server connector | styles, tables, footnotes; its *PDF-export tool alone* requires local Microsoft Word — the rest works everywhere |
-| **Create/edit pptx** | office-powerpoint-mcp-server connector | slide creation/editing, template-preserving |
+| **Create/edit xlsx** | excel-mcp-server connector | formulas, charts, pivot tables; no Excel install needed (openpyxl-based). Security-audit pinned to an exact version (0.1.8); local stdio only |
+| **Create/edit docx** | local Python script with `python-docx` | no maintained connector — write a small script (user consent to run code first) |
+| **Create/edit pptx** | local Python script with `python-pptx` | no maintained connector — same script path |
 | **Create/merge/split PDF** | no trusted connector exists (ecosystem gap) | write a small Python script with `reportlab` / `pypdf` (see below) |
 
-All three writer connectors run via `uvx` (Python fetched at first run) — they work the same on
-macOS and Windows, and none of them needs Microsoft Office installed (single exception noted
-above).
+The Excel connector runs via `uvx` (Python fetched at first run) — same on macOS and Windows, no
+Microsoft Office needed. `python-docx` / `python-pptx` / `openpyxl` / `pypdf` / `reportlab` are
+BSD/MIT-licensed and installable with `uv pip` / `pip`.
 
-## If the connector is not installed
+## If the tool is not available
 
 Check your tool list first. If the needed tools are absent:
 
-1. Point the user to the **Extension Hub (定制中心) → 连接器 → 办公**, or the 办公套件 bundle,
-   for one-click install (first run downloads from PyPI — may take a minute).
-2. As a fallback — only with the user's consent to run code — write a local Python script using
-   the same underlying libraries: `openpyxl` (xlsx), `python-docx` (docx), `python-pptx` (pptx).
-   These are BSD/MIT-licensed and installable with `uv pip` / `pip`.
+1. For **xlsx**: point the user to the **Extension Hub (定制中心) → 连接器 → 办公** for the Excel
+   connector, or the 办公套件 bundle (first run downloads from PyPI — may take a minute).
+2. For **docx/pptx** — and as an xlsx fallback, only with the user's consent to run code — write a
+   local Python script using `python-docx` (docx), `python-pptx` (pptx), `openpyxl` (xlsx).
 3. Never fake success: if you can neither use a connector nor run code, say exactly that.
 
 ## Spreadsheet conventions (xlsx)
@@ -47,6 +54,36 @@ When you build workbooks, default to these habits unless the user says otherwise
   edited later; recompute totals when source cells change.
 - Charts and pivots should reference ranges, so they update when data changes.
 - For large data dumps, freeze the header row and add an autofilter.
+- The Excel connector works on **absolute paths inside the user's workspace** — never reach
+  outside the workspace or use `..` path segments.
+
+## docx / pptx script snippets
+
+Create a simple report (`python-docx`, MIT):
+
+```python
+from docx import Document
+
+doc = Document()
+doc.add_heading("Title", level=0)
+doc.add_paragraph("Body text …")
+table = doc.add_table(rows=1, cols=2)
+table.rows[0].cells[0].text = "Item"
+table.rows[0].cells[1].text = "Value"
+doc.save("report.docx")
+```
+
+Create a slide deck (`python-pptx`, MIT):
+
+```python
+from pptx import Presentation
+
+prs = Presentation()
+slide = prs.slides.add_slide(prs.slide_layouts[1])
+slide.shapes.title.text = "Title"
+slide.placeholders[1].text = "First bullet"
+prs.save("deck.pptx")
+```
 
 ## PDF creation/manipulation snippets
 
@@ -80,8 +117,8 @@ with open("merged.pdf", "wb") as f:
 ```
 
 For "document → PDF" requests, prefer generating the document (docx/xlsx) first, then ask how the
-user wants the PDF: local Word conversion (Windows + Word only), printing to PDF manually, or a
-reportlab re-render — each has different fidelity; don't silently pick one.
+user wants the PDF: printing to PDF manually, or a reportlab re-render — each has different
+fidelity; don't silently pick one.
 
 ## Output location
 

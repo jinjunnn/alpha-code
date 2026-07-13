@@ -9,7 +9,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { toolProbe } from "./platform"
 import { extensionsGranted, hasExtensionsDecision, listProjectExecutables, withExtensionsConsent } from "./alpha-ext-trust"
-import { readProjectPrefs, writeProjectPrefs } from "./alpha-workdir"
+import { alphaRoot, readProjectPrefs, writeProjectPrefs } from "./alpha-workdir"
 import type { InstallMeta, InstallReceipt, InstallTarget } from "../preload/types"
 import { addReceipt, alphaGlobalRoot, listInstalls, removeReceipt } from "./alpha-installs"
 import { fileifyMcpSecrets, removeMcpServerSecrets } from "./alpha-mcp-secrets"
@@ -30,6 +30,15 @@ import {
   importProjectClaudeMd,
   withExternalImportDecision,
 } from "./ecosystem-import"
+import { checkExcelMcpSafety } from "../shared/office-advisories"
+// REQ-099(ADR-028):main-only 安装计划 + v2 账本。随包 catalog 快照 = 验签远端/缓存不可用时的
+// 兜底真源(ADR-023 两级真源;与 renderer 的 B20 兜底同一字节)。
+import bundledCatalogJson from "../renderer/extensions/alpha-catalog.json"
+import type { Catalog } from "../renderer/extensions/catalog-types"
+import { getAlphaEnvironment } from "./alpha-environment"
+import { installCatalog, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
+import { readLedgerV2 } from "./ext-receipt-v2"
+import { recoverExtensionTransactions } from "./ext-transaction"
 import { getLogger } from "./logging"
 
 // REQ-076 T2(阻断②):原实现硬编码 `which` + `:` 拼接的 unix PATH,Windows 上恒报「未安装」
@@ -52,6 +61,13 @@ export function registerExtIpcHandlers(userDataPath: string) {
   ipcMain.handle(
     "ext-persist-mcp",
     (_event: IpcMainInvokeEvent, name: string, server: Record<string, unknown>, meta?: InstallMeta, secretVars?: string[]) => {
+      // REQ-105(#197)Excel sandbox 闸口:excel-mcp-server 只放行 local stdio + 审计钉版
+      // (0.1.8)+ 零网络绑定 + workspace 内路径。写盘前拒绝 → renderer 的 live mcp.add 也
+      // 不会发生(persistAndConnectMcp 先持久化后 live);catalog / 自定义添加同闸(校验不放宽)。
+      if (server && typeof server === "object") {
+        const safety = checkExcelMcpSafety(name, server)
+        if (!safety.ok) return safety
+      }
       // T5:把 requiredEnvVars 的真值(renderer 刚采集,经 IPC 结构化克隆到达此处)搬进
       // {file:} 密钥通道 → durable config 只落引用,绝不明文。renderer 的 live mcp.add 仍用
       // 真值(内存态),下次启动引擎按 {file:} 解析。
@@ -386,4 +402,79 @@ export function registerExtIpcHandlers(userDataPath: string) {
     "ext-migrate-remove-legacy",
     (_event: IpcMainInvokeEvent, type: "skill" | "agent" | "mcp" | "plugin", name: string) => removeLegacy(type, name),
   )
+
+  // REQ-099(ADR-028 §1):catalog 安装唯一通道。renderer 意图收窄为 { catalogId, scope, grants },
+  // 全部安装事实(name/config/包名/资产键/owned paths)由 main 从已验 catalog 重新派生
+  // (ext-install-planner);未知意图键 loud 拒绝 —— 伪造 renderer 事实没有通道。卸载/禁用同构:
+  // 只收 { type, name, scope(, projectDir) },receipt 从 main 自己的账本读,项目 identity fail-closed。
+  // 既有 renderer 事实通道(ext-persist-mcp / ext-install-builtin-* / …)的下线随 renderer 切换到
+  // 本通道时收口(同包发布,无跨版本兼容窗口)。
+  // REQ-100:启动期事务恢复,且严格先于任何新事务(旧 switched journal 后到会把替代它的
+  // generation 误移隔离区)。未注入 probe/commitReceipt → 引擎 fail-closed 全回滚,账本零漂移;
+  // 前滚注入随 planner→事务引擎改线一并收口(ADR-028 residual)。journal 目录不存在时为 no-op。
+  const txRecovery = recoverExtensionTransactions(alphaGlobalRoot(), {
+    log: (event, detail) => getLogger().log(`[req100-tx-recovery] ${event} ${JSON.stringify(detail)}`),
+  }).then(
+    (r) => {
+      if (!r.ok) getLogger().log(`[req100-tx-recovery] not clean: ${r.reason}`)
+      else if (r.reports.length) getLogger().log(`[req100-tx-recovery] converged ${r.reports.length} journal(s)`)
+    },
+    (err) => getLogger().log(`[req100-tx-recovery] failed: ${String(err)}`),
+  )
+  const plannerDeps = (): PlannerDeps => {
+    // 每次调用解析一次 effective catalog(bundle 会对逐子条目调 resolveEntry —— 不重复打网络)。
+    let effective: Promise<{ entries: Catalog["entries"]; channel: "remote" | "cache" | "bundled"; version: string }> | null = null
+    const effectiveCatalog = () =>
+      (effective ??= (async () => {
+        const rc = await refreshRemoteCatalog(userDataPath)
+        if (rc.source !== "none") {
+          const cat = rc.catalog as Catalog
+          return { entries: cat.entries ?? [], channel: rc.source, version: String(cat.version ?? rc.version) }
+        }
+        const bundled = bundledCatalogJson as unknown as Catalog
+        return { entries: bundled.entries, channel: "bundled" as const, version: bundled.version }
+      })())
+    return {
+      resolveEntry: async (catalogId) => {
+        const cat = await effectiveCatalog()
+        const entry = cat.entries.find((e) => e.id === catalogId)
+        return entry ? { entry, channel: cat.channel, catalogVersion: cat.version } : null
+      },
+      environment: () => getAlphaEnvironment().environment,
+      platform: () => process.platform,
+      globalRoot: alphaGlobalRoot,
+      installers: {
+        persistMcp,
+        fileifyMcpSecrets: (name, server, secretVars) => void fileifyMcpSecrets(userDataPath, name, server, secretVars),
+        removeMcpSecrets: (name) => removeMcpServerSecrets(userDataPath, name),
+        removeMcp,
+        persistPlugin,
+        removePlugin,
+        installVendoredPlugin,
+        removePluginPath,
+        installBuiltinSkill,
+        installBuiltinAgent,
+        installRemoteSkill,
+        installRemoteAgent,
+        removeFsInstall,
+        downloadRemoteAsset,
+      },
+    }
+  }
+  ipcMain.handle("ext-install-catalog", async (_event: IpcMainInvokeEvent, intent: unknown) => {
+    await txRecovery
+    return installCatalog(intent, plannerDeps())
+  })
+  ipcMain.handle("ext-uninstall-v2", async (_event: IpcMainInvokeEvent, intent: unknown) => {
+    await txRecovery
+    return uninstallByKey(intent, plannerDeps())
+  })
+  ipcMain.handle("ext-set-install-state", (_event: IpcMainInvokeEvent, intent: unknown) => setInstallStateByKey(intent, { globalRoot: alphaGlobalRoot }))
+  // REQ-099(ADR-028 §5):Hub 项目上下文读通道 —— global 与当前项目的 v2 账本分读(物理分域),
+  // records 带 environment/scope identity/desiredState/generation;v1Only 为只读兼容面。
+  ipcMain.handle("ext-list-installs-v2", (_event: IpcMainInvokeEvent, projectDir?: unknown) => {
+    const global = readLedgerV2(alphaGlobalRoot())
+    const projectRoot = typeof projectDir === "string" && projectDir ? alphaRoot(projectDir) : null
+    return { global, project: projectRoot ? readLedgerV2(projectRoot) : null }
+  })
 }

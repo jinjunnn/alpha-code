@@ -1103,6 +1103,18 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   margin: 0;
   color: var(--a-text-secondary);
 }
+/* REQ-105(#197):archived advisory 变体 —— 归档/不再维护用错误色区分「待核实」的警示黄 */
+.alpha-ext-verify-chip[data-archived] {
+  color: var(--a-error);
+  background: color-mix(in srgb, var(--a-error) 14%, transparent);
+}
+.alpha-ext-verify-note[data-archived] {
+  background: color-mix(in srgb, var(--a-error) 8%, transparent);
+  border-color: color-mix(in srgb, var(--a-error) 25%, transparent);
+}
+.alpha-ext-verify-note[data-archived] b {
+  color: var(--a-error);
+}
 .alpha-ext-dsec {
   border-top: 1px solid var(--a-border-faint);
   padding-top: 16px;

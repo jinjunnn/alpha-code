@@ -12,6 +12,7 @@ import type { InstallReceipt } from "../../preload/types"
 import type { ExtensionsApi, HubAgent } from "./use-extensions"
 import { CloudDispatchBox } from "./cloud-dispatch-box"
 import { iconFor, iconForRow, sourceLabel, typeLabel, Svg, LockIc } from "./ext-presentation"
+import { EXCEL_MCP_PIN, officeAdvisoryFor, type OfficeAdvisory } from "../../shared/office-advisories"
 
 /** What the detail page shows: a catalog entry, an engine agent (no catalog identity), or the
  *  injected platform cloud connector (REQ-020 T3 — not a catalog entry, not installable). */
@@ -43,6 +44,14 @@ function cloudSpec(e: CatalogEntry): CloudPipelineSpec | undefined {
 }
 function verifyText(e: CatalogEntry): string | undefined {
   return e._verify ?? e.installSpec?._verify
+}
+/** REQ-105(#197):归档连接器 advisory(Word/PPT 上游 2026-03-03 归档)——详情页显式警示。 */
+function advisoryOf(e: CatalogEntry): OfficeAdvisory | undefined {
+  return officeAdvisoryFor({ id: e.id, name: e.name })
+}
+/** REQ-105:Excel 连接器 = 审计锁定条目 —— 详情页展示锁定版本 + digest 与文件写权限说明。 */
+function isExcelPinned(e: CatalogEntry): boolean {
+  return e.id === EXCEL_MCP_PIN.catalogId || e.name === EXCEL_MCP_PIN.name
 }
 function hostOf(url: string | undefined): string {
   if (!url) return ""
@@ -227,6 +236,9 @@ export function ExtensionDetail(props: {
             <Show when={entry() && verifyText(entry()!)}>
               <span class="alpha-ext-verify-chip">{t("alpha.ext.verifyPending")}</span>
             </Show>
+            <Show when={entry() && advisoryOf(entry()!)}>
+              <span class="alpha-ext-verify-chip" data-archived="">{t("alpha.ext.advArchivedUnsupported")}</span>
+            </Show>
           </div>
           <div class="alpha-ext-dhead-meta">
             <code class="alpha-ext-dhead-id">{header().name}</code>
@@ -295,6 +307,27 @@ export function ExtensionDetail(props: {
       {/* ── 简介 ── */}
       <Section title={t("alpha.ext.detailAbout")}>
         <p class="alpha-ext-dabout">{header().desc}</p>
+        {/* REQ-105(#197):归档警示 —— 已装用户的诚实处置指引(禁用/卸载/替代);永不静默删除。 */}
+        <Show when={entry() && advisoryOf(entry()!)}>
+          {(adv) => (
+            <div class="alpha-ext-verify-note" data-archived="" role="alert">
+              <b>{t("alpha.ext.advArchivedTitle")}</b>
+              <p>{t("alpha.ext.advArchivedDetail", { date: adv().archivedAt })}</p>
+            </div>
+          )}
+        </Show>
+        {/* REQ-105:Excel 审计锁定说明 —— 精确版本 + digest,本地 stdio + 文件写权限如实展示。 */}
+        <Show when={entry() && isExcelPinned(entry()!)}>
+          <div class="alpha-ext-verify-note" data-info="">
+            <b>{t("alpha.ext.excelPinTitle")}</b>
+            <p>
+              {t("alpha.ext.excelPinBody", {
+                version: EXCEL_MCP_PIN.version,
+                hash: EXCEL_MCP_PIN.sdistSha256.slice(0, 12),
+              })}
+            </p>
+          </div>
+        </Show>
         <Show when={entry() && verifyText(entry()!)}>
           <div class="alpha-ext-verify-note">
             <b>{t("alpha.ext.verifyNoteTitle")}</b>

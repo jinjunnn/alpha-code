@@ -36,6 +36,44 @@ need_file "$res/NOTICE.txt"               # B15 MIT / third-party attribution �
 need_file "$res/entitlements.plist"       # mac signing entitlements
 need_file "$res/icons/icon.icns"          # mac app icon
 
+# ── REQ-105 (#197) Office 纠偏守卫 ───────────────────────────────────────────────────────────
+# Word/PPT MCP 上游已归档(2026-03-03,不再维护 → 供应链风险):归档连接器不得以任何形态回流
+# 离线 seed(内置 catalog 快照)或出厂 office-docs 技能的推荐面;Excel 连接器只允许审计锁定的
+# 精确版本(单一真源 = src/shared/office-advisories.ts 的 EXCEL_MCP_PIN,这里机械提取防双写漂移)。
+seed_catalog="$root/packages/ui-mac/src/renderer/extensions/alpha-catalog.json"
+office_skill="$res/factory-skills/office-docs/SKILL.md"
+advisories_ts="$root/packages/ui-mac/src/shared/office-advisories.ts"
+need_file "$seed_catalog"
+need_file "$advisories_ts"
+
+for banned in office-word-mcp-server office-powerpoint-mcp-server '"mcp:word"' '"mcp:powerpoint"'; do
+  if grep -qF -- "$banned" "$seed_catalog"; then
+    echo "::error::REQ-105: archived office connector reappeared in the offline seed catalog: $banned"
+    fail=1
+  fi
+done
+# 出厂技能不得再推荐归档连接器(installed-user 处置在 Hub advisory,不在技能文本)
+if grep -qE 'office-(word|powerpoint)-mcp-server' "$office_skill" 2>/dev/null; then
+  echo "::error::REQ-105: factory skill office-docs recommends an archived connector again"
+  fail=1
+fi
+
+# Excel 精确锁版:seed catalog 里出现的每一处 excel-mcp-server 引用都必须逐字 = 审计钉版。
+# 唯一豁免:`"name"/"displayName": "excel-mcp-server"`(条目名字段本来就不带版本);命令行等
+# 其余一切出现处(uvx 参数、mirrorCommand…)裸包名 = uvx 拉 latest,同样按漂移拒绝。
+excel_pin="$(grep -oE 'pinnedSpec: "excel-mcp-server@[^"]+"' "$advisories_ts" | head -1 | cut -d'"' -f2)"
+if [ -z "$excel_pin" ]; then
+  echo "::error::REQ-105: cannot extract EXCEL_MCP_PIN.pinnedSpec from office-advisories.ts (audit record missing?)"
+  fail=1
+elif grep -q 'excel-mcp-server' "$seed_catalog"; then
+  while IFS= read -r ref; do
+    if [ "$ref" != "$excel_pin" ]; then
+      echo "::error::REQ-105: excel-mcp-server in the seed catalog is not the audited pin ($excel_pin): $ref"
+      fail=1
+    fi
+  done < <(grep -vE '"(name|displayName)"[[:space:]]*:[[:space:]]*"excel-mcp-server"' "$seed_catalog" | grep -oE 'excel-mcp-server[@<>=]?[^" ]*')
+fi
+
 if [ "$fail" = 0 ]; then
   echo "✓ seed/vendored resources present"
 else

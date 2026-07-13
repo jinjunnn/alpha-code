@@ -32,6 +32,7 @@ import type { AuthState, InstallReceipt, InstallReceiptType, ProvenanceRequest }
 import { hubSection, setHubSection, type HubSection } from "./ext-hub-state"
 import { iconFor, iconForRow, sourceLabel, typeLabel, Svg, SearchIc, LockIc } from "./ext-presentation"
 import { ExtensionDetail, type DetailTarget } from "./extension-detail"
+import { officeAdvisoryFor } from "../../shared/office-advisories"
 import "./extension-hub.css"
 
 
@@ -442,11 +443,28 @@ export function ExtensionHub(props: {
 
   // 有更新(REQ-019 T1:已安装 tab 角标 + 列表顶部分组;T5 接更新动作):receipt 记录的 catalog
   // 快照版本落后于当前 catalog,且条目仍在目录中。created/imported 无版本概念,不参与。
+  // REQ-105(#197):归档连接器(上游不再维护)禁自动更新 —— 不进角标/更新组;处置只剩
+  // 禁用/卸载(advisory 分组如实呈现,不静默删除)。
   const updatable = createMemo(() =>
     ext.store.receipts.filter(
       // REQ-032:条目级更新判定(receipt.version vs entry.version;X7:非 catalog 来源不参与角标)
-      (r) => r.origin !== "imported" && r.origin !== "created" && !!r.version && !!byId(r.id) && versionLess(r.version, entryVersion(byId(r.id))),
+      (r) =>
+        r.origin !== "imported" &&
+        r.origin !== "created" &&
+        !officeAdvisoryFor({ id: r.id, name: r.name }) &&
+        !!r.version &&
+        !!byId(r.id) &&
+        versionLess(r.version, entryVersion(byId(r.id))),
     ),
+  )
+
+  // REQ-105:已安装项里命中 archived advisory 的行(receipts + live MCP 都覆盖)——驱动
+  // 已安装 tab 顶部的诚实警示条。用户安装保持原样(不静默删除);卸载走既有 receipts 可审计路径。
+  const advisoryRows = createMemo(() =>
+    installedAll().flatMap((row) => {
+      const adv = officeAdvisoryFor({ id: row.receipt.id, name: row.name })
+      return adv ? [{ row, adv }] : []
+    }),
   )
 
   // B11:收编进全局 pushToast(一处定义,各处复用)—— toast 只报成功,失败走行内。
@@ -507,6 +525,10 @@ export function ExtensionHub(props: {
         if (!it.optional) failCount++
         continue
       }
+      // REQ-105(#197):套件扇出不预装归档连接器 —— 远程/离线 catalog 尚未收口时(alpha-web#21
+      // 之前的旧产物)也不得经 bundle 通道把 archived Word/PPT 重新铺给新用户。跳过不计失败,
+      // 条目本身仍可在带警示的详情页单独安装(legacy optional 语义)。
+      if (officeAdvisoryFor({ id: sub.id, name: sub.name })) continue
       let r: { ok: boolean; reason?: string }
       if (sub.type === "mcp") r = await addMcpEntry(sub)
       else if (sub.type === "skill") r = await ext.installSkill(sub)
@@ -779,6 +801,10 @@ export function ExtensionHub(props: {
               </span>
               <Show when={e._verify ?? e.installSpec?._verify}>
                 <span class="alpha-ext-verify-chip">{t("alpha.ext.verifyPending")}</span>
+              </Show>
+              {/* REQ-105:归档连接器如经远程/缓存 catalog 露出,卡片即带 archived 警示(legacy optional) */}
+              <Show when={officeAdvisoryFor({ id: e.id, name: e.name })}>
+                <span class="alpha-ext-verify-chip" data-archived="">{t("alpha.ext.advArchivedChip")}</span>
               </Show>
             </div>
           </div>
@@ -1196,6 +1222,22 @@ export function ExtensionHub(props: {
                   {/* ░░ INSTALLED (manage;顶部 = 有更新分组,T5 接动作) ░░ */}
                   <Show when={section() === "installed"}>
                     <Hero title={t("alpha.ext.tabInstalled")} sub={t("alpha.ext.installedSub")} />
+                    {/* REQ-105(#197):归档连接器诚实警示 —— 已安装的 Word/PPT 连接器上游已归档,
+                        标注 archived+unsupported、禁自动更新、给出处置指引;绝不静默删除用户安装
+                        (卸载 = 行内既有可审计路径;日期取自 advisory 记录,零硬编码)。 */}
+                    <Show when={advisoryRows().length > 0}>
+                      <div class="alpha-ext-verify-note" data-archived="" role="alert">
+                        <b>{t("alpha.ext.advArchivedTitle")}</b>
+                        <p>
+                          {t("alpha.ext.advArchivedBody", {
+                            names: advisoryRows()
+                              .map(({ row }) => row.displayName)
+                              .join("、"),
+                            date: advisoryRows()[0]!.adv.archivedAt,
+                          })}
+                        </p>
+                      </div>
+                    </Show>
                     {/* REQ-037:内置(上游)治理分组 —— REQ-019 递延的 V2 内置管理位落点 */}
                     <SecRow label={t("alpha.gov.builtinSection")} />
                     <GovernancePanel
@@ -1309,6 +1351,12 @@ export function ExtensionHub(props: {
                                     <span class="alpha-ext-type-pill">{typeLabel(row.type)}</span>
                                     <Show when={row.version}>
                                       <span class="alpha-ext-ver">v{row.version}</span>
+                                    </Show>
+                                    {/* REQ-105:archived + unsupported 徽标(上游归档;禁自动更新) */}
+                                    <Show when={officeAdvisoryFor({ id: row.receipt.id, name: row.name })}>
+                                      <span class="alpha-ext-verify-chip" data-archived="">
+                                        {t("alpha.ext.advArchivedUnsupported")}
+                                      </span>
                                     </Show>
                                   </div>
                                   <div class="alpha-ext-man-st">

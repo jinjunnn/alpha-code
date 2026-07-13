@@ -10,6 +10,7 @@ import { describe, expect, test } from "bun:test"
 import rawCatalog from "./alpha-catalog.json"
 import snapshotMeta from "./alpha-catalog.snapshot.json"
 import type { Catalog, CatalogEntry, McpInstallSpec } from "./catalog-types"
+import { ARCHIVED_OFFICE_ADVISORIES, EXCEL_MCP_PIN, checkExcelMcpSafety } from "../../shared/office-advisories"
 
 const catalog = rawCatalog as unknown as Catalog
 
@@ -93,6 +94,51 @@ describe("alpha-catalog 完整性", () => {
     const spec = dbhub.installSpec as McpInstallSpec
     expect(spec.command).toContain("--readonly")
     expect(spec.mirrorCommand).toContain("--readonly")
+  })
+})
+
+// REQ-105(#197)Office 纠偏守卫:离线 seed(内置快照)是远程 catalog 的回退底座 —— 归档
+// Word/PPT 一旦混进来,离线/回退路径会把不再维护的连接器重新推给新用户。快照刷新走
+// sync-catalog-snapshot.mjs(字节级复制 C 已发布产物),所以这组断言实质上是对「未来快照」的
+// 准入闸:C 端(alpha-web#21)不下架,A 端快照就刷不进来。
+describe("REQ-105 Office 纠偏守卫(归档连接器禁入离线 seed;Excel 锁审计版本)", () => {
+  const rawText = readFileSync(join(import.meta.dir, "alpha-catalog.json"), "utf8")
+
+  test("归档 Word/PPT 连接器不得出现在内置快照(catalog id + pypi 包名逐字扫描)", () => {
+    for (const adv of ARCHIVED_OFFICE_ADVISORIES) {
+      expect(
+        catalog.entries.some((e) => e.id === adv.catalogId),
+        `${adv.catalogId} 已归档(${adv.archivedAt}),不得进离线 seed`,
+      ).toBe(false)
+      expect(rawText.includes(adv.pypiPackage), `${adv.pypiPackage} 已归档,不得以任何形态进离线 seed`).toBe(false)
+    }
+  })
+
+  test("bundle:office 成员不含归档连接器(默认 Office 套件不预缓存)", () => {
+    const office = catalog.entries.find((e) => e.id === "bundle:office")
+    expect(office, "bundle:office 应在场(markitdown+filesystem 底座)").toBeTruthy()
+    const banned = new Set(ARCHIVED_OFFICE_ADVISORIES.map((a) => a.catalogId))
+    for (const item of office!.bundleItems ?? []) {
+      expect(banned.has(item.catalogEntryId), `bundle:office → ${item.catalogEntryId} 已归档`).toBe(false)
+    }
+  })
+
+  test("excel-mcp-server 如在场:必须精确钉审计版本并通过 sandbox 闸口(升级不重审计即红)", () => {
+    // 当前快照(2026-07-06.4)尚无 mcp:excel;C 端纠偏后的快照刷新会带进来 —— 届时本断言生效:
+    // 版本必须逐字 = EXCEL_MCP_PIN.pinnedSpec(0.1.8 审计记录),local stdio、零 host/port 绑定。
+    for (const entry of catalog.entries.filter((e) => e.type === "mcp")) {
+      const spec = entry.installSpec as McpInstallSpec
+      const cmds = [...(spec.command ?? []), ...(spec.mirrorCommand ?? [])]
+      if (!cmds.some((a) => a.includes(EXCEL_MCP_PIN.pypiPackage))) continue
+      expect(spec.mcpType, `${entry.id} 仅允许 local stdio`).toBe("local")
+      expect(spec.command, `${entry.id} 必须钉 ${EXCEL_MCP_PIN.pinnedSpec}`).toContain(EXCEL_MCP_PIN.pinnedSpec)
+      const verdict = checkExcelMcpSafety(entry.name, { type: "local", command: spec.command ?? [] })
+      expect(verdict.ok, `${entry.id} 未通过 REQ-105 Excel sandbox 闸口:${verdict.ok ? "" : verdict.reason}`).toBe(true)
+      if (spec.mirrorCommand) {
+        const mirror = checkExcelMcpSafety(entry.name, { type: "local", command: spec.mirrorCommand })
+        expect(mirror.ok, `${entry.id} mirror 命令未通过闸口`).toBe(true)
+      }
+    }
   })
 })
 

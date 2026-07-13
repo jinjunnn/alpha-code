@@ -115,12 +115,25 @@ function quarantineIfCorrupt(root: string): string | null {
   }
 }
 
+// REQ-099(ADR-028 §4):账本升双格式后,v1 写路径必须原样携带 v2 `records[]`(ext-receipt-v2.ts
+// 拥有其语义;这里只做不透明 carry-through)——否则任何 v1 addReceipt/removeReceipt 都会抹掉 v2 真相。
+function readCarriedRecords(root: string): unknown[] {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(ledgerPath(root), "utf8")) as { records?: unknown }
+    return Array.isArray(parsed?.records) ? parsed.records : []
+  } catch {
+    return []
+  }
+}
+
 function writeLedger(root: string, receipts: InstallReceipt[]): LedgerWriteResult {
   try {
     fs.mkdirSync(root, { recursive: true })
     const file = ledgerPath(root)
     const tmp = `${file}.tmp-${process.pid}`
-    fs.writeFileSync(tmp, JSON.stringify({ v: LEDGER_VERSION, receipts }, null, 2) + "\n", "utf8")
+    const records = readCarriedRecords(root)
+    const payload = records.length > 0 ? { v: 2, receipts, records } : { v: LEDGER_VERSION, receipts }
+    fs.writeFileSync(tmp, JSON.stringify(payload, null, 2) + "\n", "utf8")
     fs.renameSync(tmp, file)
     return { ok: true }
   } catch (error) {
