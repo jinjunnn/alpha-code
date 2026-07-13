@@ -1,0 +1,9 @@
+# NOTICE
+
+本技能内容再分发自 Anthropic example-skills(Apache-2.0)。
+
+- 来源仓库:https://github.com/anthropics/skills
+- 来源路径:skills/mcp-builder
+- 钉定 commit:9d2f1ae187231d8199c64b5b762e1bdf2244733d(2026-07-06 拉取核验)
+- 许可证:Apache License 2.0(完整文本见同目录 LICENSE.txt)
+- 改动声明:除新增本 NOTICE.md 外,内容与上游逐字节一致,无修改。

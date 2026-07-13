@@ -101,6 +101,15 @@ const getBase = (appId: string): Configuration => ({
       to: "NOTICE.txt",
     },
     {
+      // REQ-102(#194):packaged extension seed(只读浏览面)。快照由
+      // scripts/sync-extension-seed.mjs 从 alpha-web 已验签 stable 链交叉复核生成
+      // (alpha-web contracts/extension-seed/CONTRACT.md §6.1),禁手编;落点
+      // <process.resourcesPath>/extension-seed(seed.lock.json + NOTICE.md + blobs CAS 布局),
+      // main 经 ext-seed.readPackagedSeed 消费(不安装、不启用)。
+      from: "resources/extension-seed/",
+      to: "extension-seed/",
+    },
+    {
       // B6(=G1):@alpha-code/ext 自包含 ESM bundle(prebuild 已构建)。落点
       // <resources>/alpha-ext/plugin.js,main 经 alpha-ext-plugin.ts 解析后由 sidecar 注入
       // OPENCODE_CONFIG_CONTENT 的 `plugin` 数组(零改上游,ADR-002/006)。
