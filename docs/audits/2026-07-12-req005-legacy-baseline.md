@@ -5,10 +5,10 @@
 > 静态核对记录。所有 file:line 均指该基线下的工作树
 > (分支 `feat/180-183-184-product-ownership-s41`)。后续变化不改写本档,只在文末追加。
 >
-> - 需求:[REQ-005](../requirements/REQ-005-frontend-takeover-closeout.md) ·
+> - 需求:[REQ-005](https://github.com/jinjunnn/alpha-code/blob/3024732c1e8cbc541df67abeea1f5d7693867023/docs/requirements/REQ-005-frontend-takeover-closeout.md) ·
 >   Issue [jinjunnn/alpha-code#214](https://github.com/jinjunnn/alpha-code/issues/214)
 > - 用途:本档是 **REQ-087 LegacySessionAdapter spike 的声明输入**
->   ([REQ-087](../requirements/REQ-087-legacy-session-adapter-spike.md) 交付物①「依赖拓扑清单」
+>   ([REQ-087](https://github.com/jinjunnn/alpha-code/blob/3024732c1e8cbc541df67abeea1f5d7693867023/docs/requirements/REQ-087-legacy-session-adapter-spike.md) 交付物①「依赖拓扑清单」
 >   的 timeline/diff/terminal/permission 部分)。
 > - 范围校正(REQ-005 2026-07-10 批注):本档只建立 characterization baseline,
 >   **不代表页面/路由/运行时所有权完成**;不新增任何 selector/observer/Portal。
@@ -290,7 +290,7 @@
 ## 4. dev-plan 收尾三项处置(REQ-005 AC#2 对应)
 
 > 注:REQ-005 写的 `dev-plan.md:98-100` 是加 CAUTION 横幅前的行号;当前文件中三项位于
-> `docs/designs/2026-06-28-timeline-overhaul/dev-plan.md` §7(本次核对时为 :106-108)。
+> `docs/archive/assets/design-program/2026-06-28-timeline-overhaul/dev-plan.md` §7(本次核对时为 :106-108)。
 
 | 项 | 本次处置 | 真实状态与证据落点 |
 |----|---------|------------------|

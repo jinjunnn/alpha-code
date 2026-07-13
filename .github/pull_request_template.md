@@ -17,6 +17,14 @@ Please provide a description of the issue, the changes you made to fix it, and w
 
 ### How did you verify your code works?
 
+### Documentation impact
+
+Choose exactly one and provide paths or a reason:
+
+- [ ] Updated canonical docs: `docs/...`
+- [ ] Added or superseded a decision/contract/runbook: `docs/...`
+- [ ] Documentation impact is `none` because:
+
 ### Screenshots / recordings
 
 _If this is a UI change, please include a screenshot or recording._
@@ -25,5 +33,8 @@ _If this is a UI change, please include a screenshot or recording._
 
 - [ ] I have tested my changes locally
 - [ ] I have not included unrelated changes in this PR
+- [ ] I did not add local Issue, requirement, backlog, priority, owner, or Sprint status mirrors
+- [ ] Any retired developer prose was reconciled through `docs/archive/DEPRECATED.md` before removal
+- [ ] I did not delete or rewrite protected knowledge, design, audit, decision, or runtime-rule assets
 
 _If you do not follow this template your PR will be automatically rejected._

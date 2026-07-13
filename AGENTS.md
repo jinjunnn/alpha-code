@@ -3,6 +3,18 @@
 - Keep runtime dependencies directed from Schema to Core and Protocol, then from Core and Protocol to Server. Client runtime code may depend on Schema and Protocol but never Core or Server; `sdk-next` composes Client, Core, and Server.
 - The default branch in this repo is `dev`.
 - Local `main` ref may not exist; use `dev` or `origin/dev` for diffs.
+- GitHub Issues and Alpha Delivery are the only live delivery state.
+- `docs/README.md` is the current documentation entry point. Keep current
+  architecture, contracts, runbooks, selected audits, and release history;
+  delete superseded plans and trackers from the default branch.
+- Knowledge, design, audit, decision, and runtime-rule corpora are protected
+  assets. Documentation maintenance may index and validate them, but must not
+  delete, rewrite, relocate, archive, or deduplicate them without explicit
+  owner approval for that exact mutation.
+- Runtime-loaded `.claude/rules/` is an execution asset, not ordinary docs.
+  Report conflicts with code/contracts; do not silently rewrite the rules.
+- `.remember/` is ignored local state with zero authority and must not be
+  committed. Do not delete a user's local memory unless explicitly requested.
 
 ## Branch Names
 

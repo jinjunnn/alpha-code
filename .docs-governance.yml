@@ -1,0 +1,26 @@
+schema_version: 1
+retained_paths:
+  - path: docs/architecture/understanding.md
+    class: knowledge_asset
+    authority: docs/architecture/overview.md
+    reason: Protected point-in-time upstream cartography; it does not own current package or synchronization facts.
+  - path: docs/architecture/extension-seams.md
+    class: knowledge_asset
+    authority: docs/architecture/upstream-integration.md
+    reason: Protected historical seam handbook; current sovereignty and sync rules outrank its submodule-era language.
+  - path: docs/architecture/diagrams/**
+    class: design_asset
+    authority: docs/architecture/overview.md
+    reason: Protected rendered/source diagrams; code, contracts, and the current overview decide runtime facts.
+  - path: docs/archive/assets/design-program/**
+    class: design_asset
+    authority: docs/design/README.md
+    reason: Owner-protected historical design implementation sources; they do not own current delivery state.
+  - path: docs/archive/**
+    class: historical
+    authority: docs/archive/DEPRECATED.md
+    reason: Single deprecated-developer-doc ledger; retired originals are recoverable from its fixed revision.
+  - path: .claude/**
+    class: rule_asset
+    authority: repository runtime loader and owner
+    reason: Runtime-native rules and plans are protected execution assets outside developer-doc cleanup.

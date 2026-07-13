@@ -1,6 +1,6 @@
 # S38 供给面基线批 — 自验证据(2026-07-09)
 
-> 契约:[sprints/2026-07-09-s38-supply-baseline](../../sprints/2026-07-09-s38-supply-baseline/sprint.md)
+> 契约:[sprints/2026-07-09-s38-supply-baseline](https://github.com/jinjunnn/alpha-code/blob/3024732c1e8cbc541df67abeea1f5d7693867023/docs/sprints/2026-07-09-s38-supply-baseline/sprint.md)
 > 载体:REQ-082(PR #170)· REQ-080(PR #170 + alpha-web PR #17)· REQ-079(PR #171,UI 亲验门待 GO)
 > 环境:dev 窗口(vite localhost:5173,非陈旧 bundle;CDP 9222)+ 线上 catalog 端点 + 本机 uvx
 

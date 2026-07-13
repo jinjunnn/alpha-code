@@ -1,6 +1,6 @@
 # REQ-004 spike:`.alpha/` 桥接三法实测(→ ADR-019 回填)
 
-> 日期:2026-07-03 · sprint:[S11 T1](../sprints/2026-07-03-s11-cloud-loop/sprint.md) · 需求档:[REQ-004](../requirements/REQ-004-alpha-workdir-spike.md)
+> 日期:2026-07-03 · sprint:[S11 T1](https://github.com/jinjunnn/alpha-code/blob/3024732c1e8cbc541df67abeea1f5d7693867023/docs/sprints/2026-07-03-s11-cloud-loop/sprint.md) · 需求档:[REQ-004](https://github.com/jinjunnn/alpha-code/blob/3024732c1e8cbc541df67abeea1f5d7693867023/docs/requirements/REQ-004-alpha-workdir-spike.md)
 > 方法:两路代码勘察(上游扫描机制 / alpha 注入接缝)+ 引擎同款 glob 运行时 fixture 实测。零改上游。
 
 ## 一、总 verdict

@@ -3,7 +3,7 @@
 > 触发:用户问「项目当前在 mac 上构建,转 Windows 版本应该如何做,是否需要全部改写,还是直接 ship:windows」。
 > 方法:逐文件清点 alpha 自有代码(`packages/ui-mac/` 全量 + `packages/ext/` 全量)的平台绑定点;上游包不审计(引用其跨平台事实作背景)。
 > 结论先行:**不需要改写;`ship:windows` 今天不存在(无脚本),自有代码无硬崩溃点,真功能缺口 2 处 + 适配项若干;达到功能基本对齐约 2–4 人日,完全等价再加 2–3 人日。**
-> 载体:[[REQ-076]](../requirements/REQ-076-windows-support.md);方案决策 [[ADR-026]](../../.claude/rules/adrs/ADR-026-windows-platform-support.md)。
+> 载体:[[REQ-076]](https://github.com/jinjunnn/alpha-code/blob/3024732c1e8cbc541df67abeea1f5d7693867023/docs/requirements/REQ-076-windows-support.md);方案决策 [[ADR-026]](../../.claude/rules/adrs/ADR-026-windows-platform-support.md)。
 
 ## 0. 背景事实(推翻两个直觉前提)
 

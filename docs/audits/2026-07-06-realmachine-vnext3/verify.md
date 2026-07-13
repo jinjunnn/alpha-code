@@ -1,6 +1,6 @@
 # 真机批 vNext-3 · 证据记录(S27)
 
-> 契约:[sprints/2026-07-06-s27-realmachine-vnext3/sprint.md](../../sprints/2026-07-06-s27-realmachine-vnext3/sprint.md) · 攒单:[qa/2026-07-06-realmachine-vnext3-plan.md](../../qa/2026-07-06-realmachine-vnext3-plan.md)
+> 契约:[sprints/2026-07-06-s27-realmachine-vnext3/sprint.md](https://github.com/jinjunnn/alpha-code/blob/3024732c1e8cbc541df67abeea1f5d7693867023/docs/sprints/2026-07-06-s27-realmachine-vnext3/sprint.md) · 攒单:[qa/2026-07-06-realmachine-vnext3-plan.md](../../verification/2026-07-06-realmachine-vnext3-plan.md)
 > 包:v0.1.0 prod 签名+公证 build(2026-07-06,含 PR #119/#120/#122/#123/#125)
 > 纪律:[[visual-verify-required]];新发现只登记不内联修(P0 阻断除外);逐项翻 BACKLOG 随证据。
 

@@ -1,6 +1,6 @@
 # S12 定制中心 v3-M1 验证记录(REQ-018 T8)
 
-> 2026-07-04 · sprint [2026-07-04-s12-ext-hub-m1](../sprints/2026-07-04-s12-ext-hub-m1/sprint.md) 收口证据。
+> 2026-07-04 · sprint [2026-07-04-s12-ext-hub-m1](https://github.com/jinjunnn/alpha-code/blob/3024732c1e8cbc541df67abeea1f5d7693867023/docs/sprints/2026-07-04-s12-ext-hub-m1/sprint.md) 收口证据。
 > 结论:M1 六任务(T1–T7)全部 shipped(PR #66–#71,合入 alpha)。核心「装→亮→用→卸」四步的
 > **引擎级**闭环已端到端实测通过;**in-app 真机四步(带 live agent 工具调用)+ A6 env dump 解 R3 +
 > 迁移开门演练**需登录/模型/打包签名 app,归**真机批**(见 §4,与 REQ-016 同场),状态维持 shipped、
