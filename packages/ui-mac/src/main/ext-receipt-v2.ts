@@ -1,0 +1,497 @@
+// InstallRecordV2 (receipt v2) — REQ-099 Phase 1 / ADR-028 §4/§5.
+//
+// Storage: the SAME `<root>/installs.json` as the v1 ledger (alpha-installs.ts), upgraded to a
+// dual-format file `{ v: 2, receipts: InstallReceipt[], records: InstallRecordV2[] }`:
+//   · records[]  — the v2 truth (environment / scope identity / digests / generation chain /
+//                  desired state / transaction seam);
+//   · receipts[] — the v1-compatible view, kept in lockstep for the SAME (kind, name) so a
+//                  rolled-back (older) build still sees every install (AC#6: upgrade & rollback
+//                  lose nothing). alpha-installs.writeLedger carries records[] through opaquely.
+//
+// v1 compat policy (explicit, AC#6): v1-only receipts stay readable and operable (read-only
+// compat — paths re-derived by kind+name exactly as today); migrateV1Ledger() converts them to
+// records (generation 1, `migratedFrom: "v1"`, digest fields honestly absent, project identity
+// bound to the CURRENT project root — the ledger physically lives inside it).
+//
+// Scope closure (ADR-028 §5, fail-closed): project records carry the install-time realpath +
+// sha256 identity. Operations on project scope must re-derive the current realpath and match —
+// a moved/renamed/symlink-swapped project or a corrupt record REFUSES the operation with a
+// locatable reason; it never degrades to a global uninstall.
+//
+// Pure fs module: no electron, no logging imports (repo test discipline) — warnings are returned.
+
+import * as fs from "node:fs"
+import * as path from "node:path"
+import type { InstallReceipt, InstallReceiptOrigin, InstallReceiptType } from "../preload/types"
+import type { AppEnvironment } from "./alpha-environment"
+import { sha256Hex } from "./ext-manifest-v2"
+import { validateReceipt } from "./alpha-installs"
+
+export const RECORD_SCHEMA_VERSION = 2 as const
+
+export type ScopeIdentity =
+  | { kind: "global" }
+  | { kind: "project"; projectPath: string; projectPathHash: string }
+
+export type DesiredState = "enabled" | "disabled"
+export type TransactionState = "committed" | "pending" | "rolled-back"
+
+export interface InstallRecordV2 {
+  schemaVersion: typeof RECORD_SCHEMA_VERSION
+  /** catalog entry id or `user:<name>`(未策展来源恒 user: 前缀,不可自称 catalog)。 */
+  id: string
+  name: string
+  kind: InstallReceiptType
+  /** REQ-098 环境(main 真源;renderer 零输入)。 */
+  environment: AppEnvironment
+  scope: ScopeIdentity
+  version?: string
+  /** 合成 ManifestV2 的 canonical digest(不进 manifest 本体);v1 迁移件如实缺省。 */
+  manifestDigest?: string
+  /** 字节负载 digest(远程资产可得;bundled/npm 负载由 app 签名/npm 通道背书,如实缺省)。 */
+  payloadDigest?: string
+  /** grant 键集 digest(secret 变量名/env 键/workspace 有无 —— 绝不含值)。 */
+  grantDigest?: string
+  /** REQ-101 signed channel metadata 预留。 */
+  channelSequence?: number
+  desiredState: DesiredState
+  /** 单调递增代数;previousDigest 指上一代 manifestDigest,成链。 */
+  generation: number
+  previousDigest?: string
+  origin: InstallReceiptOrigin
+  /** 对账参考;卸载路径一律从受控根 + kind + name 重新派生,绝不以此为删除依据。 */
+  files?: string[]
+  configKey?: string
+  /** REQ-100 事务接缝的落账位(本 REQ 内恒 committed;staging/rollback 机器归 REQ-100)。 */
+  transaction?: { id: string; state: TransactionState }
+  installedAt: string
+  updatedAt?: string
+  migratedFrom?: "v1"
+}
+
+const LEDGER_FILE = "installs.json"
+const KINDS = new Set<string>(["mcp", "skill", "agent", "command", "plugin", "bundle", "cloud"])
+const ORIGINS = new Set<string>(["catalog", "created", "imported", "imported-claude", "imported-agents"])
+const ENVIRONMENTS = new Set<string>(["prod", "beta", "dev"])
+const DESIRED = new Set<string>(["enabled", "disabled"])
+const TX_STATES = new Set<string>(["committed", "pending", "rolled-back"])
+const SAFE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
+const DIGEST_RE = /^sha256:[0-9a-f]{64}$/
+
+const RECORD_KEYS = new Set([
+  "schemaVersion",
+  "id",
+  "name",
+  "kind",
+  "environment",
+  "scope",
+  "version",
+  "manifestDigest",
+  "payloadDigest",
+  "grantDigest",
+  "channelSequence",
+  "desiredState",
+  "generation",
+  "previousDigest",
+  "origin",
+  "files",
+  "configKey",
+  "transaction",
+  "installedAt",
+  "updatedAt",
+  "migratedFrom",
+])
+const SCOPE_KEYS_GLOBAL = new Set(["kind"])
+const SCOPE_KEYS_PROJECT = new Set(["kind", "projectPath", "projectPathHash"])
+const TX_KEYS = new Set(["id", "state"])
+
+function isObj(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === "object" && !Array.isArray(v)
+}
+
+export type RecordDecode = { ok: true; record: InstallRecordV2 } | { ok: false; errors: string[] }
+
+/** STRICT record decoder — 未知键/未知版本 loud 拒绝;损坏 record 不可被操作(fail closed)。 */
+export function decodeRecordV2(input: unknown): RecordDecode {
+  const errors: string[] = []
+  if (!isObj(input)) return { ok: false, errors: ["record: must be an object"] }
+  if (input.schemaVersion !== RECORD_SCHEMA_VERSION) {
+    return { ok: false, errors: [`record.schemaVersion: unsupported version ${JSON.stringify(input.schemaVersion)} — this build only decodes ${RECORD_SCHEMA_VERSION}`] }
+  }
+  for (const key of Object.keys(input)) {
+    if (!RECORD_KEYS.has(key)) errors.push(`record: unknown key "${key}" — refused (strict schema)`)
+  }
+  const str = (v: unknown, at: string, required: boolean, re?: RegExp): string | undefined => {
+    if (v === undefined) {
+      if (required) errors.push(`${at}: required`)
+      return undefined
+    }
+    if (typeof v !== "string" || v.length === 0 || v.length > 512) {
+      errors.push(`${at}: must be a non-empty string`)
+      return undefined
+    }
+    if (re && !re.test(v)) {
+      errors.push(`${at}: invalid format`)
+      return undefined
+    }
+    return v
+  }
+  const id = str(input.id, "record.id", true)
+  const name = str(input.name, "record.name", true, SAFE_NAME)
+  const kind = str(input.kind, "record.kind", true)
+  if (kind && !KINDS.has(kind)) errors.push(`record.kind: "${kind}" not a known kind`)
+  const environment = str(input.environment, "record.environment", true)
+  if (environment && !ENVIRONMENTS.has(environment)) errors.push(`record.environment: "${environment}" not a known environment`)
+
+  let scope: ScopeIdentity | undefined
+  if (!isObj(input.scope)) {
+    errors.push("record.scope: required object")
+  } else if (input.scope.kind === "global") {
+    for (const key of Object.keys(input.scope)) if (!SCOPE_KEYS_GLOBAL.has(key)) errors.push(`record.scope: unknown key "${key}"`)
+    scope = { kind: "global" }
+  } else if (input.scope.kind === "project") {
+    for (const key of Object.keys(input.scope)) if (!SCOPE_KEYS_PROJECT.has(key)) errors.push(`record.scope: unknown key "${key}"`)
+    const projectPath = str(input.scope.projectPath, "record.scope.projectPath", true)
+    const projectPathHash = str(input.scope.projectPathHash, "record.scope.projectPathHash", true, /^[0-9a-f]{64}$/)
+    if (projectPath && !path.isAbsolute(projectPath)) errors.push("record.scope.projectPath: must be absolute")
+    if (projectPath && projectPathHash && path.isAbsolute(projectPath)) scope = { kind: "project", projectPath, projectPathHash }
+  } else {
+    errors.push(`record.scope.kind: ${JSON.stringify(input.scope.kind)} not "global" | "project"`)
+  }
+
+  const version = str(input.version, "record.version", false)
+  const manifestDigest = str(input.manifestDigest, "record.manifestDigest", false, DIGEST_RE)
+  const payloadDigest = str(input.payloadDigest, "record.payloadDigest", false, DIGEST_RE)
+  const grantDigest = str(input.grantDigest, "record.grantDigest", false, DIGEST_RE)
+  if (input.channelSequence !== undefined && (typeof input.channelSequence !== "number" || !Number.isInteger(input.channelSequence) || input.channelSequence < 0))
+    errors.push("record.channelSequence: must be a non-negative integer")
+  const desiredState = str(input.desiredState, "record.desiredState", true)
+  if (desiredState && !DESIRED.has(desiredState)) errors.push(`record.desiredState: "${desiredState}" not enabled|disabled`)
+  if (typeof input.generation !== "number" || !Number.isInteger(input.generation) || input.generation < 1)
+    errors.push("record.generation: must be an integer ≥ 1")
+  const previousDigest = str(input.previousDigest, "record.previousDigest", false, DIGEST_RE)
+  const origin = str(input.origin, "record.origin", true)
+  if (origin && !ORIGINS.has(origin)) errors.push(`record.origin: "${origin}" not a known origin`)
+  if (input.files !== undefined) {
+    if (!Array.isArray(input.files) || input.files.some((f) => typeof f !== "string" || !path.isAbsolute(f)))
+      errors.push("record.files: must be an array of absolute paths")
+  }
+  const configKey = str(input.configKey, "record.configKey", false)
+  let transaction: { id: string; state: TransactionState } | undefined
+  if (input.transaction !== undefined) {
+    if (!isObj(input.transaction)) {
+      errors.push("record.transaction: must be an object")
+    } else {
+      for (const key of Object.keys(input.transaction)) if (!TX_KEYS.has(key)) errors.push(`record.transaction: unknown key "${key}"`)
+      const txId = str(input.transaction.id, "record.transaction.id", true)
+      const txState = str(input.transaction.state, "record.transaction.state", true)
+      if (txState && !TX_STATES.has(txState)) errors.push(`record.transaction.state: "${txState}" not a known state`)
+      if (txId && txState && TX_STATES.has(txState)) transaction = { id: txId, state: txState as TransactionState }
+    }
+  }
+  const installedAt = str(input.installedAt, "record.installedAt", true)
+  if (installedAt && Number.isNaN(Date.parse(installedAt))) errors.push("record.installedAt: not a parseable timestamp")
+  const updatedAt = str(input.updatedAt, "record.updatedAt", false)
+  if (updatedAt && Number.isNaN(Date.parse(updatedAt))) errors.push("record.updatedAt: not a parseable timestamp")
+  if (input.migratedFrom !== undefined && input.migratedFrom !== "v1") errors.push('record.migratedFrom: only "v1" is known')
+
+  if (errors.length > 0) return { ok: false, errors }
+  return {
+    ok: true,
+    record: {
+      schemaVersion: RECORD_SCHEMA_VERSION,
+      id: id!,
+      name: name!,
+      kind: kind as InstallReceiptType,
+      environment: environment as AppEnvironment,
+      scope: scope!,
+      ...(version ? { version } : {}),
+      ...(manifestDigest ? { manifestDigest } : {}),
+      ...(payloadDigest ? { payloadDigest } : {}),
+      ...(grantDigest ? { grantDigest } : {}),
+      ...(typeof input.channelSequence === "number" ? { channelSequence: input.channelSequence } : {}),
+      desiredState: desiredState as DesiredState,
+      generation: input.generation as number,
+      ...(previousDigest ? { previousDigest } : {}),
+      origin: origin as InstallReceiptOrigin,
+      ...(Array.isArray(input.files) ? { files: input.files as string[] } : {}),
+      ...(configKey ? { configKey } : {}),
+      ...(transaction ? { transaction } : {}),
+      installedAt: installedAt!,
+      ...(updatedAt ? { updatedAt } : {}),
+      ...(input.migratedFrom === "v1" ? { migratedFrom: "v1" as const } : {}),
+    },
+  }
+}
+
+// ── scope identity(fail-closed)────────────────────────────────────────────────────────────────
+
+/** 计算项目 scope identity:realpath(符号链接归一)+ NFC 归一后的 sha256。目录不存在/不可达 → 拒绝。 */
+export function projectScopeIdentity(projectDir: string): { ok: true; scope: Extract<ScopeIdentity, { kind: "project" }> } | { ok: false; reason: string } {
+  if (typeof projectDir !== "string" || !path.isAbsolute(projectDir)) return { ok: false, reason: "invalid project directory" }
+  let real: string
+  try {
+    real = fs.realpathSync(projectDir)
+    if (!fs.statSync(real).isDirectory()) return { ok: false, reason: "project directory is not a directory" }
+  } catch {
+    return { ok: false, reason: `project directory unreachable: ${projectDir}` }
+  }
+  return { ok: true, scope: { kind: "project", projectPath: real, projectPathHash: sha256Hex(real.normalize("NFC")) } }
+}
+
+/**
+ * Fail-closed project identity check (AC#4): the current directory's identity must equal the
+ * record's install-time identity. Moved/renamed project, symlink swap or unreachable dir all
+ * REFUSE — the caller must never fall back to global scope.
+ */
+export function verifyProjectScope(record: InstallRecordV2, projectDir: string): { ok: true } | { ok: false; reason: string } {
+  if (record.scope.kind !== "project") return { ok: false, reason: "record is not project-scoped" }
+  const current = projectScopeIdentity(projectDir)
+  if (!current.ok) return { ok: false, reason: `fail closed: ${current.reason}` }
+  if (current.scope.projectPathHash !== record.scope.projectPathHash) {
+    return {
+      ok: false,
+      reason: `fail closed: project identity mismatch — record was installed at "${record.scope.projectPath}", current is "${current.scope.projectPath}" (moved/renamed project?); refusing, NOT falling back to global`,
+    }
+  }
+  return { ok: true }
+}
+
+// ── ledger IO(与 v1 同文件,双视图同步)────────────────────────────────────────────────────────
+
+export type LedgerV2Read = {
+  records: InstallRecordV2[]
+  /** v1-only 存量(有 receipt 无 record)—— 只读兼容面。 */
+  v1Only: InstallReceipt[]
+  warnings: string[]
+}
+
+const ledgerPath = (root: string) => path.join(root, LEDGER_FILE)
+const key = (kind: string, name: string) => `${kind}:${name}`
+
+type ParsedLedger = { receipts: InstallReceipt[]; records: InstallRecordV2[]; recordWarnings: string[]; receiptWarnings: string[] }
+
+function parseLedger(root: string): { parsed: ParsedLedger; corrupt: boolean } {
+  const empty: ParsedLedger = { receipts: [], records: [], recordWarnings: [], receiptWarnings: [] }
+  let text: string
+  try {
+    text = fs.readFileSync(ledgerPath(root), "utf8")
+  } catch {
+    return { parsed: empty, corrupt: false }
+  }
+  let raw: unknown
+  try {
+    raw = JSON.parse(text)
+  } catch {
+    return { parsed: empty, corrupt: true }
+  }
+  if (!isObj(raw)) return { parsed: empty, corrupt: true }
+  const receipts: InstallReceipt[] = []
+  const receiptWarnings: string[] = []
+  if (Array.isArray(raw.receipts)) {
+    for (const entry of raw.receipts) {
+      if (validateReceipt(entry as InstallReceipt) === null) receipts.push(entry as InstallReceipt)
+      else receiptWarnings.push(`invalid v1 receipt ignored in ${ledgerPath(root)}`)
+    }
+  }
+  const records: InstallRecordV2[] = []
+  const recordWarnings: string[] = []
+  if (Array.isArray(raw.records)) {
+    for (const entry of raw.records) {
+      const decoded = decodeRecordV2(entry)
+      if (decoded.ok) records.push(decoded.record)
+      else recordWarnings.push(`corrupt v2 record excluded (fail closed — not operable) in ${ledgerPath(root)}: ${decoded.errors[0]}`)
+    }
+  }
+  return { parsed: { receipts, records, recordWarnings, receiptWarnings }, corrupt: false }
+}
+
+function quarantineCorrupt(root: string): string | null {
+  const file = ledgerPath(root)
+  const quarantined = `${file}.corrupt-${Date.now()}`
+  try {
+    fs.renameSync(file, quarantined)
+    return quarantined
+  } catch {
+    return null
+  }
+}
+
+function writeLedgerFile(root: string, receipts: InstallReceipt[], records: InstallRecordV2[]): { ok: true } | { ok: false; reason: string } {
+  try {
+    fs.mkdirSync(root, { recursive: true })
+    const file = ledgerPath(root)
+    const tmp = `${file}.tmp-${process.pid}`
+    fs.writeFileSync(tmp, JSON.stringify({ v: 2, receipts, records }, null, 2) + "\n", "utf8")
+    fs.renameSync(tmp, file)
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "failed to write ledger" }
+  }
+}
+
+/** Read the dual ledger. Corrupt FILE → empty + warning(写路径会 quarantine);corrupt record → excluded + warning。 */
+export function readLedgerV2(root: string): LedgerV2Read {
+  const { parsed, corrupt } = parseLedger(root)
+  const warnings = [...parsed.recordWarnings, ...parsed.receiptWarnings]
+  if (corrupt) warnings.push(`installs.json unreadable: ${ledgerPath(root)}`)
+  const recordKeys = new Set(parsed.records.map((r) => key(r.kind, r.name)))
+  const v1Only = parsed.receipts.filter((r) => !recordKeys.has(key(r.type, r.name)))
+  return { records: parsed.records, v1Only, warnings }
+}
+
+export function findRecordV2(root: string, kind: InstallReceiptType, name: string): InstallRecordV2 | null {
+  const { records } = readLedgerV2(root)
+  return records.find((r) => r.kind === kind && r.name === name) ?? null
+}
+
+/** v2 record → v1 兼容 receipt(回滚可读视图;字段有损但 v1 语义完整)。 */
+export function toV1Receipt(record: InstallRecordV2): InstallReceipt {
+  return {
+    id: record.id,
+    name: record.name,
+    type: record.kind,
+    scope: record.scope.kind,
+    ...(record.version ? { version: record.version } : {}),
+    installedAt: record.installedAt,
+    origin: record.origin,
+    ...(record.files ? { files: record.files } : {}),
+    ...(record.configKey ? { configKey: record.configKey } : {}),
+  }
+}
+
+export type UpsertInput = Omit<InstallRecordV2, "schemaVersion" | "generation" | "previousDigest"> & {
+  generation?: number
+  previousDigest?: string
+}
+
+export type LedgerV2Write = { ok: true; record: InstallRecordV2; warnings: string[] } | { ok: false; reason: string }
+
+/**
+ * Upsert by (kind, name): generation/previousDigest chain computed from the existing record
+ * (a v1-only predecessor counts as generation 1 → new record is generation 2, `migratedFrom` noted
+ * by the caller if desired). Writes BOTH views in lockstep for this key; other entries untouched.
+ */
+export function upsertRecordV2(root: string, input: UpsertInput): LedgerV2Write {
+  const { parsed, corrupt } = parseLedger(root)
+  const warnings: string[] = [...parsed.recordWarnings, ...parsed.receiptWarnings]
+  if (corrupt) {
+    const q = quarantineCorrupt(root)
+    warnings.push(q ? `corrupt ledger quarantined: ${q}` : "corrupt ledger could not be quarantined")
+  }
+  const k = key(input.kind, input.name)
+  const prev = parsed.records.find((r) => key(r.kind, r.name) === k) ?? null
+  const hadV1 = parsed.receipts.some((r) => key(r.type, r.name) === k)
+  const record: InstallRecordV2 = {
+    ...input,
+    schemaVersion: RECORD_SCHEMA_VERSION,
+    generation: input.generation ?? (prev ? prev.generation + 1 : hadV1 ? 2 : 1),
+    ...(input.previousDigest ? { previousDigest: input.previousDigest } : prev?.manifestDigest ? { previousDigest: prev.manifestDigest } : {}),
+  }
+  const check = decodeRecordV2(record)
+  if (!check.ok) return { ok: false, reason: `refusing to write invalid record: ${check.errors.join("; ")}` }
+  const nextRecords = [...parsed.records.filter((r) => key(r.kind, r.name) !== k), check.record]
+  const nextReceipts = [...parsed.receipts.filter((r) => key(r.type, r.name) !== k), toV1Receipt(check.record)]
+  const written = writeLedgerFile(root, nextReceipts, nextRecords)
+  if (!written.ok) return written
+  return { ok: true, record: check.record, warnings }
+}
+
+/** Remove by (kind, name) from BOTH views. Missing = ok(idempotent), removed record returned for teardown对账。 */
+export function removeRecordV2(root: string, kind: InstallReceiptType, name: string): { ok: true; removed: InstallRecordV2 | null } | { ok: false; reason: string } {
+  const { parsed, corrupt } = parseLedger(root)
+  if (corrupt) quarantineCorrupt(root)
+  const k = key(kind, name)
+  const removed = parsed.records.find((r) => key(r.kind, r.name) === k) ?? null
+  const hadReceipt = parsed.receipts.some((r) => key(r.type, r.name) === k)
+  if (!removed && !hadReceipt && !corrupt) return { ok: true, removed: null }
+  const written = writeLedgerFile(
+    root,
+    parsed.receipts.filter((r) => key(r.type, r.name) !== k),
+    parsed.records.filter((r) => key(r.kind, r.name) !== k),
+  )
+  if (!written.ok) return written
+  return { ok: true, removed }
+}
+
+/** desiredState 翻转(Hub 项目上下文「禁用」的 main 侧真源;引擎生效面由消费方处理)。 */
+export function setDesiredStateV2(root: string, kind: InstallReceiptType, name: string, state: DesiredState): { ok: true } | { ok: false; reason: string } {
+  const { parsed } = parseLedger(root)
+  const k = key(kind, name)
+  const rec = parsed.records.find((r) => key(r.kind, r.name) === k)
+  if (!rec) return { ok: false, reason: `no v2 record for ${k} — fail closed (v1-only installs have no desired-state channel)` }
+  const next: InstallRecordV2 = { ...rec, desiredState: state, updatedAt: new Date().toISOString() }
+  const written = writeLedgerFile(
+    root,
+    parsed.receipts,
+    [...parsed.records.filter((r) => key(r.kind, r.name) !== k), next],
+  )
+  return written.ok ? { ok: true } : written
+}
+
+// ── v1 → v2 显式迁移(AC#6)────────────────────────────────────────────────────────────────────
+
+/** 把一张 v1 receipt 迁为 v2 record(generation 1,digest 字段如实缺省,migratedFrom 标注)。 */
+export function migrateV1Receipt(
+  receipt: InstallReceipt,
+  environment: AppEnvironment,
+  scope: ScopeIdentity,
+): InstallRecordV2 {
+  return {
+    schemaVersion: RECORD_SCHEMA_VERSION,
+    id: receipt.id,
+    name: receipt.name,
+    kind: receipt.type,
+    environment,
+    scope,
+    ...(receipt.version ? { version: receipt.version } : {}),
+    desiredState: "enabled",
+    generation: 1,
+    origin: receipt.origin,
+    ...(receipt.files ? { files: receipt.files } : {}),
+    ...(receipt.configKey ? { configKey: receipt.configKey } : {}),
+    installedAt: receipt.installedAt,
+    migratedFrom: "v1",
+  }
+}
+
+/**
+ * Explicit whole-ledger migration: every v1-only receipt under `root` gets a v2 record. Project
+ * ledgers bind identity to their CURRENT project dir (the ledger physically lives inside it —
+ * this is the adoption moment). Idempotent; never drops a receipt (rollback safety).
+ */
+export function migrateV1Ledger(
+  root: string,
+  environment: AppEnvironment,
+  projectDir?: string,
+): { ok: true; migrated: number; warnings: string[] } | { ok: false; reason: string } {
+  const { parsed, corrupt } = parseLedger(root)
+  const warnings: string[] = [...parsed.recordWarnings, ...parsed.receiptWarnings]
+  if (corrupt) return { ok: false, reason: `installs.json unreadable: ${ledgerPath(root)} — refusing to migrate a corrupt ledger` }
+  const recordKeys = new Set(parsed.records.map((r) => key(r.kind, r.name)))
+  const pending = parsed.receipts.filter((r) => !recordKeys.has(key(r.type, r.name)))
+  if (pending.length === 0) return { ok: true, migrated: 0, warnings }
+  let scope: ScopeIdentity = { kind: "global" }
+  if (projectDir !== undefined) {
+    const identity = projectScopeIdentity(projectDir)
+    if (!identity.ok) return { ok: false, reason: identity.reason }
+    scope = identity.scope
+  }
+  const migrated = pending.map((r) => migrateV1Receipt(r, environment, r.scope === "project" && scope.kind === "project" ? scope : { kind: "global" }))
+  const written = writeLedgerFile(root, parsed.receipts, [...parsed.records, ...migrated])
+  if (!written.ok) return written
+  return { ok: true, migrated: migrated.length, warnings }
+}
+
+// ── grant digest ────────────────────────────────────────────────────────────────────────────────
+
+/** grant 键集 digest:secret 变量名 + env 键 + workspace/cnMirror 布尔 —— 绝不摄入任何值。 */
+export function computeGrantDigest(grants: { secrets?: Record<string, string>; env?: Record<string, string>; workspace?: string; cnMirror?: boolean } | undefined): string {
+  const shape = {
+    secretNames: Object.keys(grants?.secrets ?? {}).sort(),
+    envKeys: Object.keys(grants?.env ?? {}).sort(),
+    workspace: typeof grants?.workspace === "string" && grants.workspace.length > 0,
+    cnMirror: grants?.cnMirror === true,
+  }
+  return `sha256:${sha256Hex(JSON.stringify(shape))}`
+}

@@ -429,6 +429,17 @@ export const dict = {
   "alpha.ext.detailLicense": "许可证",
   "alpha.ext.verifyPending": "待核实",
   "alpha.ext.verifyNoteTitle": "待核实事项",
+  // REQ-105(#197):归档连接器诚实警示 + Excel 审计锁定
+  "alpha.ext.advArchivedChip": "已归档",
+  "alpha.ext.advArchivedUnsupported": "已归档 · 不再维护",
+  "alpha.ext.advArchivedTitle": "上游已归档,不再维护",
+  "alpha.ext.advArchivedBody":
+    "{{names}} 的上游仓库已于 {{date}} 归档(不再维护,存在供应链风险)。已安装内容保持原样,不会被自动更新或删除;建议禁用或卸载。读取文档可继续用 markitdown;创建 docx/pptx 可在会话中用本地脚本(python-docx / python-pptx)。",
+  "alpha.ext.advArchivedDetail":
+    "该连接器的上游仓库已于 {{date}} 归档:不再有安全修复,属于供应链风险。已安装用户不受强制处置 —— 不会被自动更新或删除;建议禁用,或从「已安装」卸载(走可审计的卸载路径)。替代:读取用 markitdown,创建改用本地脚本(python-docx / python-pptx)。",
+  "alpha.ext.excelPinTitle": "安全审计锁定",
+  "alpha.ext.excelPinBody":
+    "已锁定审计版本 {{version}}(修复更早版本的路径遍历/未认证远程读写;pypi sha256 {{hash}}…)。仅允许本地 stdio 运行、禁网络监听;该连接器对工作区文件有写权限。升级必须重新安全审计。",
   "alpha.ext.boundaryLocalOnly": "仅本机 —— 定义文件保存在本机,不自行发送数据。",
   "alpha.ext.boundaryLocalCmd": "本地命令运行于本机;联网行为取决于该连接器所连接的服务。",
   "alpha.ext.detailSource": "来源",

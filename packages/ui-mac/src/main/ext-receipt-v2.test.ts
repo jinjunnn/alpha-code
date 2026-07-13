@@ -1,0 +1,364 @@
+// REQ-099(issue #191 / ADR-028 §4/§5)—— InstallRecordV2 与双格式账本单测:严格 record 解码、
+// generation/previousDigest 链、v1 双视图同步(回滚不丢安装,AC#6)、v1 写路径 carry-through、
+// scope identity fail-closed(项目移动 / 符号链接 / Unicode 路径 / 损坏 record,AC#4)、显式迁移。
+// 全部真盘临时目录;纯模块直测,零 mock.module(仓规)。
+
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import * as fs from "node:fs"
+import * as os from "node:os"
+import * as path from "node:path"
+import { addReceipt, removeReceipt } from "./alpha-installs"
+import type { InstallReceipt } from "../preload/types"
+import { sha256Hex } from "./ext-manifest-v2"
+import {
+  computeGrantDigest,
+  decodeRecordV2,
+  findRecordV2,
+  migrateV1Ledger,
+  projectScopeIdentity,
+  readLedgerV2,
+  removeRecordV2,
+  setDesiredStateV2,
+  toV1Receipt,
+  upsertRecordV2,
+  verifyProjectScope,
+  RECORD_SCHEMA_VERSION,
+  type InstallRecordV2,
+  type UpsertInput,
+} from "./ext-receipt-v2"
+
+let root: string
+beforeEach(() => {
+  root = fs.mkdtempSync(path.join(os.tmpdir(), "ext-receipt-v2-"))
+})
+afterEach(() => {
+  fs.rmSync(root, { recursive: true, force: true })
+})
+
+const DIGEST_A = `sha256:${"a".repeat(64)}`
+const DIGEST_B = `sha256:${"b".repeat(64)}`
+const ledgerFile = (r: string = root) => path.join(r, "installs.json")
+const readRaw = (r: string = root) => JSON.parse(fs.readFileSync(ledgerFile(r), "utf8")) as { v: number; receipts: InstallReceipt[]; records: unknown[] }
+
+function upsertInput(overrides: Partial<UpsertInput> = {}): UpsertInput {
+  return {
+    id: "mcp:markitdown",
+    name: "markitdown",
+    kind: "mcp",
+    environment: "prod",
+    scope: { kind: "global" },
+    version: "1.0.0",
+    manifestDigest: DIGEST_A,
+    desiredState: "enabled",
+    origin: "catalog",
+    configKey: "mcp.markitdown",
+    installedAt: new Date("2026-07-13T08:00:00Z").toISOString(),
+    ...overrides,
+  }
+}
+
+function v1Receipt(overrides: Partial<InstallReceipt> = {}): InstallReceipt {
+  return {
+    id: "mcp:markitdown",
+    name: "markitdown",
+    type: "mcp",
+    scope: "global",
+    installedAt: new Date("2026-07-01T00:00:00Z").toISOString(),
+    origin: "catalog",
+    configKey: "mcp.markitdown",
+    ...overrides,
+  }
+}
+
+describe("decodeRecordV2 — strict, fail closed", () => {
+  const valid = (): unknown => {
+    const w = upsertRecordV2(root, upsertInput())
+    if (!w.ok) throw new Error("fixture write failed")
+    return JSON.parse(JSON.stringify(w.record))
+  }
+
+  test("valid record round-trips", () => {
+    const decoded = decodeRecordV2(valid())
+    expect(decoded.ok).toBe(true)
+  })
+
+  test("unknown key / unknown schemaVersion refused loudly", () => {
+    const rogue = { ...(valid() as Record<string, unknown>), extraField: 1 }
+    const decoded = decodeRecordV2(rogue)
+    expect(decoded.ok).toBe(false)
+    if (!decoded.ok) expect(decoded.errors.some((e) => e.includes('unknown key "extraField"'))).toBe(true)
+    const wrongVersion = { ...(valid() as Record<string, unknown>), schemaVersion: 3 }
+    expect(decodeRecordV2(wrongVersion).ok).toBe(false)
+  })
+
+  test("scope strictness: unknown scope key / relative projectPath / bad hash refused", () => {
+    const base = valid() as Record<string, unknown>
+    expect(decodeRecordV2({ ...base, scope: { kind: "global", extra: 1 } }).ok).toBe(false)
+    expect(decodeRecordV2({ ...base, scope: { kind: "project", projectPath: "relative/x", projectPathHash: "a".repeat(64) } }).ok).toBe(false)
+    expect(decodeRecordV2({ ...base, scope: { kind: "project", projectPath: "/abs/x", projectPathHash: "nothex" } }).ok).toBe(false)
+    expect(decodeRecordV2({ ...base, scope: { kind: "user" } }).ok).toBe(false)
+  })
+
+  test("digest formats / generation / enums / timestamps validated", () => {
+    const base = valid() as Record<string, unknown>
+    expect(decodeRecordV2({ ...base, manifestDigest: "md5:zz" }).ok).toBe(false)
+    expect(decodeRecordV2({ ...base, generation: 0 }).ok).toBe(false)
+    expect(decodeRecordV2({ ...base, desiredState: "paused" }).ok).toBe(false)
+    expect(decodeRecordV2({ ...base, environment: "staging" }).ok).toBe(false)
+    expect(decodeRecordV2({ ...base, origin: "wormhole" }).ok).toBe(false)
+    expect(decodeRecordV2({ ...base, installedAt: "not-a-date" }).ok).toBe(false)
+    expect(decodeRecordV2({ ...base, transaction: { id: "t", state: "exploded" } }).ok).toBe(false)
+    expect(decodeRecordV2({ ...base, transaction: { id: "t", state: "committed", extra: 1 } }).ok).toBe(false)
+    expect(decodeRecordV2({ ...base, files: ["relative/path.md"] }).ok).toBe(false)
+  })
+})
+
+describe("dual-format ledger — generation chain & v1 view lockstep (AC#6)", () => {
+  test("fresh install writes v:2 with BOTH views; generation 1", () => {
+    const w = upsertRecordV2(root, upsertInput())
+    expect(w.ok).toBe(true)
+    if (!w.ok) return
+    expect(w.record.generation).toBe(1)
+    const raw = readRaw()
+    expect(raw.v).toBe(2)
+    expect(raw.receipts).toHaveLength(1)
+    expect(raw.records).toHaveLength(1)
+    expect(raw.receipts[0]!.name).toBe("markitdown")
+    expect(raw.receipts[0]!.type).toBe("mcp")
+  })
+
+  test("upsert same (kind,name) bumps generation and chains previousDigest", () => {
+    upsertRecordV2(root, upsertInput())
+    const w2 = upsertRecordV2(root, upsertInput({ manifestDigest: DIGEST_B, version: "1.1.0" }))
+    expect(w2.ok).toBe(true)
+    if (!w2.ok) return
+    expect(w2.record.generation).toBe(2)
+    expect(w2.record.previousDigest).toBe(DIGEST_A)
+    const { records } = readLedgerV2(root)
+    expect(records).toHaveLength(1)
+    expect(records[0]!.version).toBe("1.1.0")
+  })
+
+  test("v1-only predecessor counts as generation 1 → new record is generation 2", () => {
+    addReceipt(root, v1Receipt())
+    const w = upsertRecordV2(root, upsertInput())
+    expect(w.ok).toBe(true)
+    if (!w.ok) return
+    expect(w.record.generation).toBe(2)
+    // v1 视图被替换为 v2 派生视图,不重复
+    const raw = readRaw()
+    expect(raw.receipts).toHaveLength(1)
+  })
+
+  test("v1 write path (alpha-installs) carries records[] through — v1 ops never erase v2 truth", () => {
+    upsertRecordV2(root, upsertInput())
+    // 旧代码路径写 v1 receipt(另一个 key)
+    addReceipt(root, v1Receipt({ id: "user:legacy", name: "legacy", type: "skill", configKey: undefined, origin: "created" }))
+    let raw = readRaw()
+    expect(raw.records).toHaveLength(1) // v2 真相仍在
+    expect(raw.receipts).toHaveLength(2)
+    // v1 remove 同样不抹 v2
+    removeReceipt(root, "skill", "legacy")
+    raw = readRaw()
+    expect(raw.records).toHaveLength(1)
+    expect(raw.receipts).toHaveLength(1)
+  })
+
+  test("readLedgerV2 exposes v1-only receipts separately (read-only compat)", () => {
+    addReceipt(root, v1Receipt({ id: "user:old", name: "oldie", type: "skill", configKey: undefined }))
+    upsertRecordV2(root, upsertInput())
+    const view = readLedgerV2(root)
+    expect(view.records).toHaveLength(1)
+    expect(view.v1Only).toHaveLength(1)
+    expect(view.v1Only[0]!.name).toBe("oldie")
+  })
+
+  test("corrupt v2 record is excluded with a warning — never operable (fail closed)", () => {
+    upsertRecordV2(root, upsertInput())
+    const raw = readRaw()
+    ;(raw.records[0] as Record<string, unknown>).generation = -5
+    fs.writeFileSync(ledgerFile(), JSON.stringify(raw))
+    const view = readLedgerV2(root)
+    expect(view.records).toHaveLength(0)
+    expect(view.warnings.some((w) => w.includes("fail closed"))).toBe(true)
+    expect(findRecordV2(root, "mcp", "markitdown")).toBeNull()
+  })
+
+  test("corrupt FILE: read warns; write quarantines (loud self-heal, never silent clobber)", () => {
+    fs.writeFileSync(ledgerFile(), "{ not json")
+    const view = readLedgerV2(root)
+    expect(view.records).toHaveLength(0)
+    expect(view.warnings.some((w) => w.includes("unreadable"))).toBe(true)
+    const w = upsertRecordV2(root, upsertInput())
+    expect(w.ok).toBe(true)
+    if (!w.ok) return
+    expect(w.warnings.some((x) => x.includes("quarantined"))).toBe(true)
+    expect(fs.readdirSync(root).some((f) => f.startsWith("installs.json.corrupt-"))).toBe(true)
+  })
+
+  test("removeRecordV2 removes BOTH views and is idempotent", () => {
+    upsertRecordV2(root, upsertInput())
+    const removed = removeRecordV2(root, "mcp", "markitdown")
+    expect(removed.ok && removed.removed?.name === "markitdown").toBe(true)
+    const raw = readRaw()
+    expect(raw.receipts).toHaveLength(0)
+    expect(raw.records).toHaveLength(0)
+    const again = removeRecordV2(root, "mcp", "markitdown")
+    expect(again.ok).toBe(true)
+    if (again.ok) expect(again.removed).toBeNull()
+  })
+
+  test("setDesiredStateV2 flips and persists; no v2 record → fail closed", () => {
+    upsertRecordV2(root, upsertInput())
+    expect(setDesiredStateV2(root, "mcp", "markitdown", "disabled").ok).toBe(true)
+    expect(findRecordV2(root, "mcp", "markitdown")?.desiredState).toBe("disabled")
+    const missing = setDesiredStateV2(root, "skill", "ghost", "disabled")
+    expect(missing.ok).toBe(false)
+  })
+
+  test("upsert refuses to write a record that fails its own strict decode", () => {
+    const w = upsertRecordV2(root, upsertInput({ name: "bad name!" }))
+    expect(w.ok).toBe(false)
+    expect(fs.existsSync(ledgerFile())).toBe(false)
+  })
+
+  test("toV1Receipt preserves v1 semantics (rollback-readable view)", () => {
+    const w = upsertRecordV2(root, upsertInput({ files: ["/abs/a.md"] }))
+    if (!w.ok) throw new Error("fixture")
+    const receipt = toV1Receipt(w.record)
+    expect(receipt).toEqual({
+      id: "mcp:markitdown",
+      name: "markitdown",
+      type: "mcp",
+      scope: "global",
+      version: "1.0.0",
+      installedAt: w.record.installedAt,
+      origin: "catalog",
+      files: ["/abs/a.md"],
+      configKey: "mcp.markitdown",
+    })
+  })
+})
+
+describe("scope identity — fail closed (AC#4)", () => {
+  test("identity = realpath + sha256(NFC); symlinked dir resolves to the same identity", () => {
+    const real = fs.mkdtempSync(path.join(os.tmpdir(), "proj-real-"))
+    const link = path.join(root, "proj-link")
+    fs.symlinkSync(real, link)
+    try {
+      const a = projectScopeIdentity(real)
+      const b = projectScopeIdentity(link)
+      expect(a.ok && b.ok).toBe(true)
+      if (!a.ok || !b.ok) return
+      expect(b.scope.projectPathHash).toBe(a.scope.projectPathHash)
+      expect(a.scope.projectPathHash).toBe(sha256Hex(a.scope.projectPath.normalize("NFC")))
+    } finally {
+      fs.rmSync(real, { recursive: true, force: true })
+    }
+  })
+
+  test("unreachable / relative / non-directory project dir refused", () => {
+    expect(projectScopeIdentity(path.join(root, "no-such-dir")).ok).toBe(false)
+    expect(projectScopeIdentity("relative/dir").ok).toBe(false)
+    const file = path.join(root, "a-file")
+    fs.writeFileSync(file, "x")
+    expect(projectScopeIdentity(file).ok).toBe(false)
+  })
+
+  test("Unicode project path: identity stable across the same dir", () => {
+    const uni = path.join(root, "项目-héllo")
+    fs.mkdirSync(uni)
+    const a = projectScopeIdentity(uni)
+    const b = projectScopeIdentity(uni)
+    expect(a.ok && b.ok).toBe(true)
+    if (a.ok && b.ok) expect(a.scope.projectPathHash).toBe(b.scope.projectPathHash)
+  })
+
+  test("moved/renamed project → verifyProjectScope REFUSES, never falls back to global", () => {
+    const projA = path.join(root, "proj-a")
+    fs.mkdirSync(projA)
+    const identity = projectScopeIdentity(projA)
+    if (!identity.ok) throw new Error("fixture")
+    const record: InstallRecordV2 = {
+      schemaVersion: RECORD_SCHEMA_VERSION,
+      id: "skill:demo",
+      name: "demo",
+      kind: "skill",
+      environment: "prod",
+      scope: identity.scope,
+      desiredState: "enabled",
+      generation: 1,
+      origin: "catalog",
+      installedAt: new Date().toISOString(),
+    }
+    expect(verifyProjectScope(record, projA).ok).toBe(true)
+    const projB = path.join(root, "proj-b")
+    fs.renameSync(projA, projB)
+    const moved = verifyProjectScope(record, projB)
+    expect(moved.ok).toBe(false)
+    if (!moved.ok) expect(moved.reason).toContain("NOT falling back to global")
+    const gone = verifyProjectScope(record, projA)
+    expect(gone.ok).toBe(false)
+    if (!gone.ok) expect(gone.reason).toContain("fail closed")
+  })
+
+  test("global record is not project-verifiable", () => {
+    const w = upsertRecordV2(root, upsertInput())
+    if (!w.ok) throw new Error("fixture")
+    expect(verifyProjectScope(w.record, root).ok).toBe(false)
+  })
+})
+
+describe("v1 → v2 explicit migration (AC#6)", () => {
+  test("migrates v1-only receipts: generation 1, migratedFrom, digests honestly absent; idempotent", () => {
+    addReceipt(root, v1Receipt())
+    addReceipt(root, v1Receipt({ id: "user:mine", name: "mine", type: "skill", origin: "created", configKey: undefined }))
+    const r = migrateV1Ledger(root, "prod")
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.migrated).toBe(2)
+    const { records, v1Only } = readLedgerV2(root)
+    expect(records).toHaveLength(2)
+    expect(v1Only).toHaveLength(0)
+    for (const rec of records) {
+      expect(rec.generation).toBe(1)
+      expect(rec.migratedFrom).toBe("v1")
+      expect(rec.manifestDigest).toBeUndefined()
+    }
+    // 不丢 v1 receipt(回滚安全)
+    expect(readRaw().receipts).toHaveLength(2)
+    const again = migrateV1Ledger(root, "prod")
+    expect(again.ok).toBe(true)
+    if (again.ok) expect(again.migrated).toBe(0)
+  })
+
+  test("project ledger binds identity to the CURRENT project dir", () => {
+    const proj = path.join(root, "proj")
+    const alphaDir = path.join(proj, ".alpha")
+    fs.mkdirSync(alphaDir, { recursive: true })
+    addReceipt(alphaDir, v1Receipt({ scope: "project", type: "skill", name: "psk", id: "skill:psk", configKey: undefined }))
+    const r = migrateV1Ledger(alphaDir, "prod", proj)
+    expect(r.ok).toBe(true)
+    const rec = findRecordV2(alphaDir, "skill", "psk")
+    expect(rec?.scope.kind).toBe("project")
+    if (rec?.scope.kind === "project") expect(rec.scope.projectPath).toBe(fs.realpathSync(proj))
+  })
+
+  test("corrupt ledger refuses migration (no guessing)", () => {
+    fs.writeFileSync(ledgerFile(), "not json at all")
+    const r = migrateV1Ledger(root, "prod")
+    expect(r.ok).toBe(false)
+  })
+})
+
+describe("computeGrantDigest — 键集 digest,绝不摄入值", () => {
+  test("value-independent; key-set sensitive", () => {
+    const a = computeGrantDigest({ secrets: { API_KEY: "topsecret-1" } })
+    const b = computeGrantDigest({ secrets: { API_KEY: "completely-different" } })
+    expect(a).toBe(b)
+    const c = computeGrantDigest({ secrets: { OTHER_KEY: "x" } })
+    expect(c).not.toBe(a)
+    expect(computeGrantDigest(undefined)).toMatch(/^sha256:[0-9a-f]{64}$/)
+    expect(computeGrantDigest({ workspace: "/w" })).not.toBe(computeGrantDigest(undefined))
+  })
+})

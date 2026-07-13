@@ -430,6 +430,17 @@ export const dict = {
   "alpha.ext.detailLicense": "License",
   "alpha.ext.verifyPending": "Unverified",
   "alpha.ext.verifyNoteTitle": "Pending verification",
+  // REQ-105 (#197): archived-connector advisory + Excel audited pin
+  "alpha.ext.advArchivedChip": "Archived",
+  "alpha.ext.advArchivedUnsupported": "Archived · unmaintained",
+  "alpha.ext.advArchivedTitle": "Upstream archived — no longer maintained",
+  "alpha.ext.advArchivedBody":
+    "The upstream repositories of {{names}} were archived on {{date}} (unmaintained — supply-chain risk). Your installs stay untouched: nothing is auto-updated or removed. We recommend disabling or uninstalling them. Keep using markitdown for reading documents; create docx/pptx via local scripts (python-docx / python-pptx) in a session.",
+  "alpha.ext.advArchivedDetail":
+    "This connector's upstream repository was archived on {{date}}: it no longer receives security fixes and is a supply-chain risk. Installed users are never force-handled — nothing is auto-updated or silently removed. We recommend disabling it, or uninstalling from Installed (auditable removal). Alternatives: markitdown for reading; local scripts (python-docx / python-pptx) for creation.",
+  "alpha.ext.excelPinTitle": "Security-audit pinned",
+  "alpha.ext.excelPinBody":
+    "Pinned to audited version {{version}} (fixes path traversal / unauthenticated remote read-write in earlier releases; pypi sha256 {{hash}}…). Local stdio only — no network listener; this connector can write files in your workspace. Upgrades require a new security intake.",
   "alpha.ext.boundaryLocalOnly": "Local only \u2014 definition files stay on this machine and send nothing on their own.",
   "alpha.ext.boundaryLocalCmd": "The command runs locally; network access depends on the service this connector talks to.",
   "alpha.ext.detailSource": "Source",
