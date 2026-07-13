@@ -198,7 +198,7 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
   const subscribeUrl = () => `${endpoints().web}${ALPHA_PATHS.wallet}?tab=subscription`
 
   // Account summary (balance / membership / token usage) from alpha-platform B, fetched on login.
-  // Contract: alpha-platform docs/alpha-code-account-integration.md. usageSeries powers the 14-day
+  // Contract: alpha-platform docs/contracts/account-billing.md. usageSeries powers the 14-day
   // sparkline. 401 → main's auth is stale; the footer already reflects logged-out on the next push.
   const [summary, setSummary] = createSignal<AccountSummary | null>(null)
   const [summaryState, setSummaryState] = createSignal<"idle" | "loading" | "error">("idle")

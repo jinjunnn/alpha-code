@@ -1,5 +1,5 @@
 // db-safety —— DB 安全带逻辑核(C17 版本预检 + B14 备份/恢复/导出;S17 T3)。
-// 设计与实证:docs/designs/2026-07-05-db-safety-belt.md(F1–F7)。
+// Durable behavior is defined by this implementation and its tests.
 // 本文件 electron-free、依赖全注入(exec/fs/now)以便单测;对话框/菜单接线在 db-safety-boot.ts。
 //
 // 契约锚(上游只读,规则镜像,变更时 fail-open 不伤启动):

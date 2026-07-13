@@ -1,6 +1,5 @@
 // Shared types for the Extension Hub (定制中心). Pure types — no runtime, no opencode imports.
-// Mirrors resources/alpha-catalog.json and the v2 data model in
-// docs/designs/2026-06-22-arch-extension-hub.md. The MCP config shape matches opencode's
+// Mirrors resources/alpha-catalog.json. The MCP config shape matches opencode's
 // ConfigV2.MCP (packages/core/src/config/mcp.ts): the discriminant is "local" | "remote"
 // (NOT stdio/sse), local carries `command`+`environment`, remote carries `url`+`headers`.
 

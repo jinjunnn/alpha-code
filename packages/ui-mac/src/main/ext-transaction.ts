@@ -1,4 +1,4 @@
-// REQ-100(issue #192 / 需求档 docs/requirements/REQ-100-extension-atomic-transactions.md)——
+// REQ-100 (GitHub issue #192) —
 // 扩展原子事务执行层:staging → 校验 → materialize generation → health probe → atomic switch →
 // receipt commit,配套 transaction journal、崩溃恢复、rollback 与 quarantine。
 //

@@ -3,7 +3,7 @@
 //
 // 拍板(2026-07-06):C 仓 catalog-src 是 agent/skill/command/mcp/plugin 条目的唯一作者真源;
 // A 内置 alpha-catalog.json 只是离线回退底座,由本脚本从已发布端点快照生成(发版 runbook 步骤,
-// 见 docs/DISTRIBUTION.md)。守卫 = alpha-catalog.test.ts 的快照断言(文件 sha256 必须与
+// 见 docs/runbooks/distribution.md)。守卫 = alpha-catalog.test.ts 的快照断言(文件 sha256 必须与
 // alpha-catalog.snapshot.json meta 一致)—— 手编 catalog 不跑本脚本即红。
 //
 // 流程:fetch catalog.json + .sig → ed25519 验签(公钥单源:从 remote-catalog.ts 提取,不复制常量)

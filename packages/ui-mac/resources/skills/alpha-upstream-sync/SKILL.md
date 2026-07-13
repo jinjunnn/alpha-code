@@ -32,7 +32,8 @@ hand: does any override now contradict, duplicate, or fight the new base? Tighte
 
 ## 4. Typecheck + record
 - `bun turbo typecheck`
-- Record the adapted lines and the override-reconciliation outcome in `docs/retros/`.
+- Record adapted lines and override-reconciliation evidence in the owning PR
+  and GitHub Issue.
 
 ## Done when
 `git diff` of `alpha` vs `dev` contains only added files (plus `bun.lock`); typecheck is green; the

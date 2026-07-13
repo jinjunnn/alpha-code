@@ -1,6 +1,6 @@
 // office-advisories — REQ-105 Office Catalog 安全纠偏,A 侧数据真源(jinjunnn/alpha-code#197)。
 //
-// 背景(2026-07-10 安全复核,详见 docs/requirements/REQ-105-office-catalog-safety.md):
+// 背景：2026-07-10 安全复核，交付记录见 GitHub issue #197。
 //   * REQ-080 上架的 Word/PPT MCP 上游仓库已于 2026-03-03 被作者归档(不再维护 → 供应链风险)。
 //   * Excel MCP(excel-mcp-server)曾有路径遍历 / 未认证远程读写 advisory,0.1.8 修复 —— 必须
 //     精确锁定审计版本,且仅允许 local stdio + workspace sandbox(禁 0.0.0.0 / 远程 transport)。

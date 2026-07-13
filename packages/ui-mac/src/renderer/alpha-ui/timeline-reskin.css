@@ -156,7 +156,7 @@
  * 通用组件锚(button/icon/markdown/tabs/select/radio-group)只允许出现在带 timeline 专属
  * 祖先限定的复合选择器里。 */
 @import "./tokens.css";
-/* Timeline overhaul (2026-06-28) — per-area partials for the 40 atomic tasks (docs/designs/
+/* Timeline overhaul (2026-06-28) — per-area partials for the 40 atomic tasks (docs/design/
  * 2026-06-28-timeline-overhaul/). Parallel-safe: each area owns one file so tasks never collide.
  * Existing (already-shipped) rules stay below in this entry file; NEW/refined work goes in partials. */
 @import "./timeline/user.css";
@@ -402,7 +402,7 @@
 
 /* ════════════════════════════════════════════════════════════════════════════════════════
  * 2026-06-27 · Timeline audit fixes — 4 pure-CSS gaps from the design doc
- *   docs/designs/2026-06-25-composer-model-redesign/timeline.html (完整版).
+ *   docs/design/2026-06-25-composer-model-redesign/timeline.html (完整版).
  * Each maps 1:1 to the seam table there. Source untouched; gentle color/space/overflow only.
  * COUPLING (cosmetic; re-point on upstream rename): context-tool-group-list/-item,
  *   .agent-title, [data-kind=tool-error-card] + tool-error-card-icon/-content, user-message-meta*.

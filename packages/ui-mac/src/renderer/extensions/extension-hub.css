@@ -1,5 +1,5 @@
 /* Extension Hub (定制中心) — full PAGE on the alpha-ui design system.
- * Approved redesign 2026-06-26 (docs/designs/2026-06-26-hub-settings-redesign): sticky centered tab
+ * Approved redesign 2026-06-26 (docs/design/2026-06-26-hub-settings-redesign): sticky centered tab
  * bar → centered max-width column (880) → responsive card grid (container-query 2↔1 col). Covers the
  * content area (right of the sidebar); only mounted while open so it can't eat clicks. */
 @import "../alpha-ui/tokens.css";

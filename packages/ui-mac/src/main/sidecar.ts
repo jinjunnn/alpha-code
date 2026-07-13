@@ -359,7 +359,8 @@ function injectAlphaConfig(userDataPath: string, extPluginPath?: string) {
     //   3. Cloud tool gateway (alpha-platform B). Registered only when platform-pays is active —
     //      main derives the login state (alpha-auth.ts §③) and materializes the bearer into the
     //      {file:} channel at fork (A6), so logged-out / BYOK leaves it dark. The same bearer fronts
-    //      the model proxy (ALPHA_API_KEY) and this MCP tool gateway (see docs/platform-integration.md).
+    //      the model proxy (ALPHA_API_KEY) and this MCP tool gateway
+    //      (see docs/contracts/platform-integration.md).
     //      The header carries a {file:} ref — resolved by opencode at config load, so neither this
     //      process's env nor OPENCODE_CONFIG_CONTENT ever contains the token value. oauth:false
     //      because we attach our own capability token and must skip OAuth auto-detection.

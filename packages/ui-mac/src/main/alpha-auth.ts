@@ -1,5 +1,5 @@
 // alpha-code ↔ platform 授权(browser-delegated OAuth/PKCE)。全部落自有 ui-mac 包,零改 opencode
-// 源码(ADR-002/005)。设计与时序见 docs/platform-integration.md §C —— web(alpha-web)是 session
+// 源码(ADR-002/005)。当前契约与时序见 docs/contracts/platform-integration.md —— web(alpha-web)是 session
 // 唯一权威,app 只持 token,续期/撤销/设备管理都在 web 侧。
 //
 // 三道接缝:
@@ -295,8 +295,8 @@ async function completeAuth(parsed: URL) {
   clearPkce()
 
   const tokens = await exchangeCode(code, verifier)
-  // ① learn where the platform's gateway/account live from the token response, so a moved backend
-  // updates clients without a release. No-op until alpha-web adds the `endpoints` field.
+  // ① Learn gateway/account/cloud locations from alpha-web's current token response so a moved
+  // backend can update clients without a desktop release.
   setDiscoveredEndpoints(tokens.endpoints)
   stored = {
     // The ALPHA proxy (代理节点) is the recommended path, so login opts into platform-pays BY DEFAULT

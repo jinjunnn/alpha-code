@@ -29,7 +29,7 @@ export { catalogVersionLess } // 既有导出面保持(版本比较实现移居 
 
 export const CATALOG_URL = "https://alphacodeone.com/catalog/v1/catalog.json"
 const SIG_URL = `${CATALOG_URL}.sig`
-/** C 侧签名公钥(spki der base64;换钥 = 发版,见 alpha-web docs/catalog-publish.md)。 */
+/** C 侧签名公钥(spki der base64;换钥 = 发版,见 alpha-web docs/runbooks/catalog-publish.md)。 */
 const CATALOG_PUBKEY_B64 = BUILTIN_CATALOG_PUBKEY_B64
 
 const FETCH_TIMEOUT_MS = 8000
