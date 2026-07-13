@@ -1,0 +1,29 @@
+---
+name: conventional-commits
+description: Write git commit messages in Conventional Commits format. Use when the user asks to commit changes, write a commit message, or asks about commit message conventions — produce type(scope) subject lines with proper body/footer structure.
+license: MIT (alpha-code original)
+---
+
+# Conventional Commits
+
+Write commit messages as `type(scope): subject`.
+
+## Types
+
+feat · fix · docs · style · refactor · perf · test · build · ci · chore · revert
+
+## Rules
+
+1. **Subject**: imperative mood, ≤72 chars, no trailing period. The scope is the touched module/package
+   (e.g. `feat(auth): add refresh-token rotation`).
+2. **Body** (optional): explain WHAT changed and WHY — not how. Wrap at 100 chars. Separate from the
+   subject with a blank line.
+3. **Breaking changes**: add `!` after type/scope (`feat(api)!:`) AND a `BREAKING CHANGE:` footer
+   describing the migration.
+4. **Footers**: `Fixes #123`, `Refs #456`, `Co-Authored-By: …` — one per line.
+5. One logical change per commit; if the diff mixes concerns, propose splitting before committing.
+
+## When committing on the user's behalf
+
+- Derive the type from the DIFF, not the request wording (a "quick fix" that adds a feature is `feat`).
+- Never invent issue numbers; only reference issues the user mentioned or the branch name implies.

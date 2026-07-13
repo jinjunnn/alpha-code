@@ -1,0 +1,736 @@
+{
+  "schema": "alpha.extension-seed.lock.v1",
+  "channel": "stable",
+  "catalogVersion": "2026-07-13.1",
+  "catalog": {
+    "sha256": "e1c148c66a107ddca8f71d626ed5af53b639e215b2a328ac502bc87574311b4a",
+    "bytes": 59424,
+    "url": "https://alphacodeone.com/catalog/v1/releases/2026-07-13.1/catalog.json",
+    "sigUrl": "https://alphacodeone.com/catalog/v1/releases/2026-07-13.1/catalog.json.sig"
+  },
+  "supportedPlatforms": [
+    "darwin-arm64",
+    "darwin-x64",
+    "win32-arm64",
+    "win32-x64"
+  ],
+  "budget": {
+    "maxAssetBytes": 16777216,
+    "maxTotalBytes": 67108864,
+    "maxFilesPerAsset": 512
+  },
+  "totalBytes": 5693155,
+  "assets": [
+    {
+      "id": "agent:bug-triage",
+      "type": "agent",
+      "version": "1.0.0",
+      "license": "MIT",
+      "source": "alpha",
+      "redistributable": true,
+      "platforms": [
+        "*"
+      ],
+      "licenseFiles": [],
+      "bytes": 1084,
+      "files": [
+        {
+          "path": "bug-triage.md",
+          "sha256": "645c1a629e10d739881e7301549963a430e5f8ca3d730dc0ebecffe7cabc0542",
+          "bytes": 1084,
+          "url": "https://alphacodeone.com/catalog/assets/agent.bug-triage/1.0.0/bug-triage.md"
+        }
+      ]
+    },
+    {
+      "id": "skill:brand-guidelines",
+      "type": "skill",
+      "version": "1.0.0",
+      "license": "Apache-2.0",
+      "source": "official",
+      "redistributable": true,
+      "platforms": [
+        "*"
+      ],
+      "licenseFiles": [
+        "LICENSE.txt",
+        "NOTICE.md"
+      ],
+      "bytes": 13987,
+      "files": [
+        {
+          "path": "LICENSE.txt",
+          "sha256": "bc6b3af2f331cbc7fb0da1344efb2cbe5877a31498b4d70dbc7000f3405a1362",
+          "bytes": 11345,
+          "url": "https://alphacodeone.com/catalog/assets/skill.brand-guidelines/1.0.0/LICENSE.txt"
+        },
+        {
+          "path": "NOTICE.md",
+          "sha256": "4616b6c35782eabaf142f3df5457ae74496713c2758bf51661e94244c1684280",
+          "bytes": 407,
+          "url": "https://alphacodeone.com/catalog/assets/skill.brand-guidelines/1.0.0/NOTICE.md"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "1120b3769e2985cefb3d25be981b1f914abeba57ae079b83c20c666c164fa9fe",
+          "bytes": 2235,
+          "url": "https://alphacodeone.com/catalog/assets/skill.brand-guidelines/1.0.0/SKILL.md"
+        }
+      ]
+    },
+    {
+      "id": "skill:canvas-design",
+      "type": "skill",
+      "version": "1.0.0",
+      "license": "Apache-2.0",
+      "source": "official",
+      "redistributable": true,
+      "platforms": [
+        "*"
+      ],
+      "licenseFiles": [
+        "LICENSE.txt",
+        "NOTICE.md",
+        "canvas-fonts/ArsenalSC-OFL.txt",
+        "canvas-fonts/BigShoulders-OFL.txt",
+        "canvas-fonts/Boldonse-OFL.txt",
+        "canvas-fonts/BricolageGrotesque-OFL.txt",
+        "canvas-fonts/CrimsonPro-OFL.txt",
+        "canvas-fonts/DMMono-OFL.txt",
+        "canvas-fonts/EricaOne-OFL.txt",
+        "canvas-fonts/GeistMono-OFL.txt",
+        "canvas-fonts/Gloock-OFL.txt",
+        "canvas-fonts/IBMPlexMono-OFL.txt",
+        "canvas-fonts/InstrumentSans-OFL.txt",
+        "canvas-fonts/Italiana-OFL.txt",
+        "canvas-fonts/JetBrainsMono-OFL.txt",
+        "canvas-fonts/Jura-OFL.txt",
+        "canvas-fonts/LibreBaskerville-OFL.txt",
+        "canvas-fonts/Lora-OFL.txt",
+        "canvas-fonts/NationalPark-OFL.txt",
+        "canvas-fonts/NothingYouCouldDo-OFL.txt",
+        "canvas-fonts/Outfit-OFL.txt",
+        "canvas-fonts/PixelifySans-OFL.txt",
+        "canvas-fonts/PoiretOne-OFL.txt",
+        "canvas-fonts/RedHatMono-OFL.txt",
+        "canvas-fonts/Silkscreen-OFL.txt",
+        "canvas-fonts/SmoochSans-OFL.txt",
+        "canvas-fonts/Tektur-OFL.txt",
+        "canvas-fonts/WorkSans-OFL.txt",
+        "canvas-fonts/YoungSerif-OFL.txt"
+      ],
+      "bytes": 5554573,
+      "files": [
+        {
+          "path": "LICENSE.txt",
+          "sha256": "bc6b3af2f331cbc7fb0da1344efb2cbe5877a31498b4d70dbc7000f3405a1362",
+          "bytes": 11345,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/LICENSE.txt"
+        },
+        {
+          "path": "NOTICE.md",
+          "sha256": "450908a9b26b499a22d976cc4937fbc82427e9d57d4e18f06b8e36f4167e3511",
+          "bytes": 570,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/NOTICE.md"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "a1f288079624402f30682753c1d43920b6664785698d21d3e7aa197450a6448b",
+          "bytes": 11939,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/SKILL.md"
+        },
+        {
+          "path": "canvas-fonts/ArsenalSC-OFL.txt",
+          "sha256": "8ddd61b18ba2c0d0dbe4a691cf5f1a0673f473d02fa0546e67ee88c006aeff6e",
+          "bytes": 4373,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/ArsenalSC-OFL.txt"
+        },
+        {
+          "path": "canvas-fonts/ArsenalSC-Regular.ttf",
+          "sha256": "65e6f89df58f68fd905b3add34a79dd6106aa3b3044df0dad9676fff53d504b9",
+          "bytes": 165848,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/ArsenalSC-Regular.ttf"
+        },
+        {
+          "path": "canvas-fonts/BigShoulders-Bold.ttf",
+          "sha256": "b43bcd198b9fdf717dd42aa61a34dba32e01aceaeae659d689afd0ca52c37ea2",
+          "bytes": 94528,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/BigShoulders-Bold.ttf"
+        },
+        {
+          "path": "canvas-fonts/BigShoulders-OFL.txt",
+          "sha256": "fbc746aabf0eb1847dfd92e2efc4596d79fa897d60b8e64062a22f585508fb3f",
+          "bytes": 4397,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/BigShoulders-OFL.txt"
+        },
+        {
+          "path": "canvas-fonts/BigShoulders-Regular.ttf",
+          "sha256": "18a879fc71978a4447150705caf880a9da3860083c259fd29e6dc03057b6842a",
+          "bytes": 94396,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/BigShoulders-Regular.ttf"
+        },
+        {
+          "path": "canvas-fonts/Boldonse-OFL.txt",
+          "sha256": "45cc82ab4032273c0924025ffcf8f0665a68e1a5955e3f7247e5daf1deeb1326",
+          "bytes": 4390,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/Boldonse-OFL.txt"
+        },
+        {
+          "path": "canvas-fonts/Boldonse-Regular.ttf",
+          "sha256": "cc2e540604565c0f90a7d8d46194a2f42fc9c45512cd2e39bf03b50eb68c35a4",
+          "bytes": 77168,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/Boldonse-Regular.ttf"
+        },
+        {
+          "path": "canvas-fonts/BricolageGrotesque-Bold.ttf",
+          "sha256": "a737b146fe0d77ffe8a86e3cd16700dd431d3b1e420d4fd80e142cd68a1cb50d",
+          "bytes": 90952,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/BricolageGrotesque-Bold.ttf"
+        },
+        {
+          "path": "canvas-fonts/BricolageGrotesque-OFL.txt",
+          "sha256": "0e4f4eb8534bc66a76aca13dd19c1f9731b2008866b29ccff182b764649df9b4",
+          "bytes": 4403,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/BricolageGrotesque-OFL.txt"
+        },
+        {
+          "path": "canvas-fonts/BricolageGrotesque-Regular.ttf",
+          "sha256": "972a6d098c9867ae131d0ea99e221e63976b11a19d4b931c2c7ace525674e4f6",
+          "bytes": 90920,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/BricolageGrotesque-Regular.ttf"
+        },
+        {
+          "path": "canvas-fonts/CrimsonPro-Bold.ttf",
+          "sha256": "48f191e38355c8db100eb3ce157c20f9302a3b9a37b44a660f77ecfce3986609",
+          "bytes": 107352,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/CrimsonPro-Bold.ttf"
+        },
+        {
+          "path": "canvas-fonts/CrimsonPro-Italic.ttf",
+          "sha256": "52318db3526b644e6efa60be0b3ca5a50e40fbe8bd026c261e0aa206f0772267",
+          "bytes": 108828,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/CrimsonPro-Italic.ttf"
+        },
+        {
+          "path": "canvas-fonts/CrimsonPro-OFL.txt",
+          "sha256": "35680d14547b6748b6f362a052a46d22764ce5eccf96e18b74f567bb2ee58114",
+          "bytes": 4394,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/CrimsonPro-OFL.txt"
+        },
+        {
+          "path": "canvas-fonts/CrimsonPro-Regular.ttf",
+          "sha256": "48fad08cb1917a7b2f2c6fe5135d6c07743a6663cf7631ec4481108aaf081422",
+          "bytes": 106696,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/CrimsonPro-Regular.ttf"
+        },
+        {
+          "path": "canvas-fonts/DMMono-OFL.txt",
+          "sha256": "bfe7842fcb88323e2981e24710c25202677385a8c75fb6a87217b275a0247ae3",
+          "bytes": 4392,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/DMMono-OFL.txt"
+        },
+        {
+          "path": "canvas-fonts/DMMono-Regular.ttf",
+          "sha256": "f98ada968dc3b6b2c08d3f5caaf266977df0bfe0929372b93df5a06cf2ace450",
+          "bytes": 48852,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/DMMono-Regular.ttf"
+        },
+        {
+          "path": "canvas-fonts/EricaOne-OFL.txt",
+          "sha256": "e0de629968b52255548d5fafcf30b24ff9edae0eda362380755a75816404d0fa",
+          "bytes": 4410,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/EricaOne-OFL.txt"
+        },
+        {
+          "path": "canvas-fonts/EricaOne-Regular.ttf",
+          "sha256": "db1d89e80e33a8a01beaaac7a85df582857d24a43f1e181461aa7ff5d701476a",
+          "bytes": 24872,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/EricaOne-Regular.ttf"
+        },
+        {
+          "path": "canvas-fonts/GeistMono-Bold.ttf",
+          "sha256": "75c0828d5c1ee44b9ef9f4df577bf41595ec362e2ea3f1e558590c9e92c7949d",
+          "bytes": 78304,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/GeistMono-Bold.ttf"
+        },
+        {
+          "path": "canvas-fonts/GeistMono-OFL.txt",
+          "sha256": "6a873c900f584109b13ae0aaf81d6e3cf0a68751a216b03f7b6c68d547057bb4",
+          "bytes": 4388,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/GeistMono-OFL.txt"
+        },
+        {
+          "path": "canvas-fonts/GeistMono-Regular.ttf",
+          "sha256": "a55c1b51cda4afeab9e471e7947b85a20f7c8831d7e6b1470c1b7fbdc0f0f15e",
+          "bytes": 78232,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/GeistMono-Regular.ttf"
+        },
+        {
+          "path": "canvas-fonts/Gloock-OFL.txt",
+          "sha256": "c0a3f3125ac491ef3d1f09f401be4834c646562f647e44f2bcbc49f0466c656d",
+          "bytes": 4381,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/Gloock-OFL.txt"
+        },
+        {
+          "path": "canvas-fonts/Gloock-Regular.ttf",
+          "sha256": "e86b4ce66dbd3f1f83eee8db99ec96e0da1128c3f53df0e9b3b7472025dfe960",
+          "bytes": 95156,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/Gloock-Regular.ttf"
+        },
+        {
+          "path": "canvas-fonts/IBMPlexMono-Bold.ttf",
+          "sha256": "dbd2a2fb024579438d6400a84e57579bfd2dbe67c306c8fd9fde92a61e4f2eea",
+          "bytes": 136008,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/IBMPlexMono-Bold.ttf"
+        },
+        {
+          "path": "canvas-fonts/IBMPlexMono-OFL.txt",
+          "sha256": "5294ce778857e1eb02e830b6ab06435537d38f43055327e73d03a2d4d57d5123",
+          "bytes": 4363,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/IBMPlexMono-OFL.txt"
+        },
+        {
+          "path": "canvas-fonts/IBMPlexMono-Regular.ttf",
+          "sha256": "ab08018ccd276b79fb2c636bb95b9c543598f9d50505fe92506fcb4dae7810cd",
+          "bytes": 133796,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/IBMPlexMono-Regular.ttf"
+        },
+        {
+          "path": "canvas-fonts/IBMPlexSerif-Bold.ttf",
+          "sha256": "b8d294e9b5c5a0940f167c3ced0f7ef2e3f57082ca3ff096ef30e86e26c1c159",
+          "bytes": 161000,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/IBMPlexSerif-Bold.ttf"
+        },
+        {
+          "path": "canvas-fonts/IBMPlexSerif-BoldItalic.ttf",
+          "sha256": "da64b75f4284f53e7b5c71fa190a35b8bf3494fe19f1804c81c3a53340bca570",
+          "bytes": 169840,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/IBMPlexSerif-BoldItalic.ttf"
+        },
+        {
+          "path": "canvas-fonts/IBMPlexSerif-Italic.ttf",
+          "sha256": "b11f1048745e715a55c9d837b3f10226ca3d78867b7db7251ddad8f98dcf0f38",
+          "bytes": 170004,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/IBMPlexSerif-Italic.ttf"
+        },
+        {
+          "path": "canvas-fonts/IBMPlexSerif-Regular.ttf",
+          "sha256": "77cd233a2af8dc6b1022faea3bb3b01f3c75af68bcf530cb6aeb15982ff3dbb7",
+          "bytes": 160380,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/IBMPlexSerif-Regular.ttf"
+        },
+        {
+          "path": "canvas-fonts/InstrumentSans-Bold.ttf",
+          "sha256": "444f85bf1c4b0e1ce1ca624f6be54bcd832207714ccaf4ea99ee531341683bdf",
+          "bytes": 68084,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/InstrumentSans-Bold.ttf"
+        },
+        {
+          "path": "canvas-fonts/InstrumentSans-BoldItalic.ttf",
+          "sha256": "3762f6cef95d6039489ad5ba5787d4c30f17a1ad01e9ac3c816ed69692722a68",
+          "bytes": 70004,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/InstrumentSans-BoldItalic.ttf"
+        },
+        {
+          "path": "canvas-fonts/InstrumentSans-Italic.ttf",
+          "sha256": "78e85858e371b2cb4e18f617c10f0f937c0e12a0887ffee98555b24ed305b3a7",
+          "bytes": 69900,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/InstrumentSans-Italic.ttf"
+        },
+        {
+          "path": "canvas-fonts/InstrumentSans-OFL.txt",
+          "sha256": "bf4dc6d13a8cccd4807133c77a1ee9619a16b92cb23322258725ab6731c2f6e5",
+          "bytes": 4403,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/InstrumentSans-OFL.txt"
+        },
+        {
+          "path": "canvas-fonts/InstrumentSans-Regular.ttf",
+          "sha256": "a22cb26e48fd79bcb01bf2fc92d36785474dce36d9c544ab0a8868c2657c4a87",
+          "bytes": 68028,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/InstrumentSans-Regular.ttf"
+        },
+        {
+          "path": "canvas-fonts/InstrumentSerif-Italic.ttf",
+          "sha256": "9c86e4d5a47b50224a2463a9eca8535835257c8e85c470c2c6b454b1af6f046e",
+          "bytes": 70868,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/InstrumentSerif-Italic.ttf"
+        },
+        {
+          "path": "canvas-fonts/InstrumentSerif-Regular.ttf",
+          "sha256": "56ac3be03ac3ba283196b3e77850ab2ffcf56cfb6fd3212c5620109a972f8c99",
+          "bytes": 69312,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/InstrumentSerif-Regular.ttf"
+        },
+        {
+          "path": "canvas-fonts/Italiana-OFL.txt",
+          "sha256": "8373b11312ace78c4cec2e8f9f6aa9f2330601107dac7bcf899c6f2dbd40c5a5",
+          "bytes": 4394,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/Italiana-OFL.txt"
+        },
+        {
+          "path": "canvas-fonts/Italiana-Regular.ttf",
+          "sha256": "15c4dd6ab8cf4a29ba8826f65edcbe2f6c266c557d34d081f25072dfd5605fd2",
+          "bytes": 27184,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/Italiana-Regular.ttf"
+        },
+        {
+          "path": "canvas-fonts/JetBrainsMono-Bold.ttf",
+          "sha256": "a2349098b9e45419e7bf0e2958d6c4937a049dded37387b08be725be4c7615f3",
+          "bytes": 114828,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/JetBrainsMono-Bold.ttf"
+        },
+        {
+          "path": "canvas-fonts/JetBrainsMono-OFL.txt",
+          "sha256": "a76abf002c49097d146e86740a3105a5d00450b1592e820a1109a8c5680cd697",
+          "bytes": 4399,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/JetBrainsMono-OFL.txt"
+        },
+        {
+          "path": "canvas-fonts/JetBrainsMono-Regular.ttf",
+          "sha256": "b6b1ff4ddefe36d7f2a6174e1d001cab374e594519ee9049af028d577b64c5f5",
+          "bytes": 114904,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/JetBrainsMono-Regular.ttf"
+        },
+        {
+          "path": "canvas-fonts/Jura-Light.ttf",
+          "sha256": "c891a381df056b2c4dfe85841e911bf45da0890fa21a7b2692cbe5ea1f505e1e",
+          "bytes": 154308,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/Jura-Light.ttf"
+        },
+        {
+          "path": "canvas-fonts/Jura-Medium.ttf",
+          "sha256": "c72965cb732a92872643819fd1734128238583cc36b116313859137a51d3368a",
+          "bytes": 154488,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/Jura-Medium.ttf"
+        },
+        {
+          "path": "canvas-fonts/Jura-OFL.txt",
+          "sha256": "eaf9bdb675f6d87e5feb88199ab3ea581d3bd2082f426e384fa9c394576d7260",
+          "bytes": 4380,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/Jura-OFL.txt"
+        },
+        {
+          "path": "canvas-fonts/LibreBaskerville-OFL.txt",
+          "sha256": "55959eef5b0c3b2e3c1c7631b8ff0f9447d75de20f29cfa7db5bcfb026763343",
+          "bytes": 4449,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/LibreBaskerville-OFL.txt"
+        },
+        {
+          "path": "canvas-fonts/LibreBaskerville-Regular.ttf",
+          "sha256": "2101302538d9e88adb679031c04623e4578b5745e89566284fd2c508d79acae0",
+          "bytes": 147584,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/LibreBaskerville-Regular.ttf"
+        },
+        {
+          "path": "canvas-fonts/Lora-Bold.ttf",
+          "sha256": "7d74015e950c2fb66519c7295b8155621d22200ae2ca2a4c6b43ce3c490cac87",
+          "bytes": 133828,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/Lora-Bold.ttf"
+        },
+        {
+          "path": "canvas-fonts/Lora-BoldItalic.ttf",
+          "sha256": "152f87e71f5ddb60d5c57ecd9132807c947e65c42977193c9164e7c5a6690081",
+          "bytes": 140332,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/Lora-BoldItalic.ttf"
+        },
+        {
+          "path": "canvas-fonts/Lora-Italic.ttf",
+          "sha256": "be627e595184e8afe521f08da0607eee613f1997d423bc8dadc5798995581377",
+          "bytes": 139328,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/Lora-Italic.ttf"
+        },
+        {
+          "path": "canvas-fonts/Lora-OFL.txt",
+          "sha256": "62e37a82d3f1ef2a70712885fa8b3144b65fd144d8e748d6196b690a354d792c",
+          "bytes": 4423,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/Lora-OFL.txt"
+        },
+        {
+          "path": "canvas-fonts/Lora-Regular.ttf",
+          "sha256": "7ed00e7c9cdf16ab7e2fd2361fe45d4f0b61263cd60aae398b27b7ee08108827",
+          "bytes": 133888,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/Lora-Regular.ttf"
+        },
+        {
+          "path": "canvas-fonts/NationalPark-Bold.ttf",
+          "sha256": "69ac4c301c4a7233c6e602d12a92c54d7967b575f4449951c45ce773f7acff53",
+          "bytes": 79208,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/NationalPark-Bold.ttf"
+        },
+        {
+          "path": "canvas-fonts/NationalPark-OFL.txt",
+          "sha256": "81c6c71d83b5b45d7344f96df12bb4a2477a5b092a9144757ee1d0f50f855175",
+          "bytes": 4399,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/NationalPark-OFL.txt"
+        },
+        {
+          "path": "canvas-fonts/NationalPark-Regular.ttf",
+          "sha256": "a477338b7e18308d476650dfe31235ef86a883572665e56ffb5fb80f82009b58",
+          "bytes": 76424,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/NationalPark-Regular.ttf"
+        },
+        {
+          "path": "canvas-fonts/NothingYouCouldDo-OFL.txt",
+          "sha256": "7c2a6970584ddad04919816163746f83b378078015899b18468b40f05e9ce128",
+          "bytes": 4363,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/NothingYouCouldDo-OFL.txt"
+        },
+        {
+          "path": "canvas-fonts/NothingYouCouldDo-Regular.ttf",
+          "sha256": "d866f985896d3280f4fce72db7e17302c24a0c1fdb0699b6b5ed3af14f944d57",
+          "bytes": 32020,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/NothingYouCouldDo-Regular.ttf"
+        },
+        {
+          "path": "canvas-fonts/Outfit-Bold.ttf",
+          "sha256": "6654b93d21301ec61887d3cedd6c11d9df1b1dfb63f9cf45ac7995f6e2235ab1",
+          "bytes": 55392,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/Outfit-Bold.ttf"
+        },
+        {
+          "path": "canvas-fonts/Outfit-OFL.txt",
+          "sha256": "1945b62cd76da9a3051a1660dde72afaa64ffc2666d30e7a78356d651653ba2f",
+          "bytes": 4389,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/Outfit-OFL.txt"
+        },
+        {
+          "path": "canvas-fonts/Outfit-Regular.ttf",
+          "sha256": "f24945365147c9e783e91d8649959b59be6b00c9ee4ecd2f6b33afbb2dd871fe",
+          "bytes": 54912,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/Outfit-Regular.ttf"
+        },
+        {
+          "path": "canvas-fonts/PixelifySans-Medium.ttf",
+          "sha256": "38397504f71c122b03d234ea6f55118e3d5bdbddffd82bedddbd7755d3b3be82",
+          "bytes": 51072,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/PixelifySans-Medium.ttf"
+        },
+        {
+          "path": "canvas-fonts/PixelifySans-OFL.txt",
+          "sha256": "7f54d1d9f1ae1ba9f2722f978145f90324fea34ca3c2304b3a29cfa96ac6037e",
+          "bytes": 4395,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/PixelifySans-OFL.txt"
+        },
+        {
+          "path": "canvas-fonts/PoiretOne-OFL.txt",
+          "sha256": "2eaf541f7eb8b512e4c757a5212060abf5b6edfef230e9d7640bf736b315c33a",
+          "bytes": 4366,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/PoiretOne-OFL.txt"
+        },
+        {
+          "path": "canvas-fonts/PoiretOne-Regular.ttf",
+          "sha256": "9cf265b139648b36b6c0afdfeb0bf27f7e66db9a16094bc40f644d8da05bc318",
+          "bytes": 45244,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/PoiretOne-Regular.ttf"
+        },
+        {
+          "path": "canvas-fonts/RedHatMono-Bold.ttf",
+          "sha256": "7ef48353f4be5ddb90f000f6fad48f2b62b3e8c27d9818d8d45ff46c201065e0",
+          "bytes": 34420,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/RedHatMono-Bold.ttf"
+        },
+        {
+          "path": "canvas-fonts/RedHatMono-OFL.txt",
+          "sha256": "435fbfb7e66988b2a06686a4cb966faec733f35d8fe100a1601573c27f3e0bb8",
+          "bytes": 4394,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/RedHatMono-OFL.txt"
+        },
+        {
+          "path": "canvas-fonts/RedHatMono-Regular.ttf",
+          "sha256": "452fe826871b37539f5212b20c87cf30f82f58dd2741f1c96edd1dcbdc0db6b4",
+          "bytes": 34488,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/RedHatMono-Regular.ttf"
+        },
+        {
+          "path": "canvas-fonts/Silkscreen-OFL.txt",
+          "sha256": "6b849745119bbe85ec01fd080c9cd50234da9f52ac6e48b55d1a424a0c4d7ca9",
+          "bytes": 4394,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/Silkscreen-OFL.txt"
+        },
+        {
+          "path": "canvas-fonts/Silkscreen-Regular.ttf",
+          "sha256": "49567408600809e25147e9225ac4f37f410e2df45a750696c45027531fb65f1b",
+          "bytes": 31960,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/Silkscreen-Regular.ttf"
+        },
+        {
+          "path": "canvas-fonts/SmoochSans-Medium.ttf",
+          "sha256": "dd76e6e77cce82f827a8654cd906e9ce58f3aaf78adda63c4a7f655b8ecb41f0",
+          "bytes": 59704,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/SmoochSans-Medium.ttf"
+        },
+        {
+          "path": "canvas-fonts/SmoochSans-OFL.txt",
+          "sha256": "74c9c4eb88e891483e1b7bc54780b452cbf4f4df66d4e71881d7569aa2130749",
+          "bytes": 4396,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/SmoochSans-OFL.txt"
+        },
+        {
+          "path": "canvas-fonts/Tektur-Medium.ttf",
+          "sha256": "52bbe8c9b057b3d2da4eeace31a524b1ea26a1375ae34319cf6900ccc57a4c82",
+          "bytes": 76248,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/Tektur-Medium.ttf"
+        },
+        {
+          "path": "canvas-fonts/Tektur-OFL.txt",
+          "sha256": "3f1466cb5438f31782eeb6e895f3a655bc4d090e24263e331f555357d1cb734e",
+          "bytes": 4385,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/Tektur-OFL.txt"
+        },
+        {
+          "path": "canvas-fonts/Tektur-Regular.ttf",
+          "sha256": "162e1b36c4718c5b051b36c971ad7e50d341944f35618f480422ebbe72988f98",
+          "bytes": 75604,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/Tektur-Regular.ttf"
+        },
+        {
+          "path": "canvas-fonts/WorkSans-Bold.ttf",
+          "sha256": "240d125fc9f8561363dc1ea3f513501253bd70942f41468f48f0b0cafb0c82e2",
+          "bytes": 191304,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/WorkSans-Bold.ttf"
+        },
+        {
+          "path": "canvas-fonts/WorkSans-BoldItalic.ttf",
+          "sha256": "a5b2cad813df0aaa7d16621f2e93b5117c25e9bc788bc9a3ad218e9d6348ce34",
+          "bytes": 175772,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/WorkSans-BoldItalic.ttf"
+        },
+        {
+          "path": "canvas-fonts/WorkSans-Italic.ttf",
+          "sha256": "6b7f7002e0b0c8b261fe878658ef5551e3e59d9f6b609b04efb90dde1e2c1ada",
+          "bytes": 174280,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/WorkSans-Italic.ttf"
+        },
+        {
+          "path": "canvas-fonts/WorkSans-OFL.txt",
+          "sha256": "ace8c22a3326318b54e67c3691857929634205533f454a70ef5a3473ddb2e2ba",
+          "bytes": 4397,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/WorkSans-OFL.txt"
+        },
+        {
+          "path": "canvas-fonts/WorkSans-Regular.ttf",
+          "sha256": "e67985a843df0d3cdee51a3d0f329eb1774a344ad9ff0c9ab923751f1577e2a4",
+          "bytes": 188916,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/WorkSans-Regular.ttf"
+        },
+        {
+          "path": "canvas-fonts/YoungSerif-OFL.txt",
+          "sha256": "cdcb8039606b40a027a6d24586ec62d5fe29c701343d82a048c829cb28a3dd28",
+          "bytes": 4398,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/YoungSerif-OFL.txt"
+        },
+        {
+          "path": "canvas-fonts/YoungSerif-Regular.ttf",
+          "sha256": "f8dc08f77abad753a00670af70756a8ace938e5c3f0b770f4f4c2071c4bd8fc6",
+          "bytes": 105136,
+          "url": "https://alphacodeone.com/catalog/assets/skill.canvas-design/1.0.0/canvas-fonts/YoungSerif-Regular.ttf"
+        }
+      ]
+    },
+    {
+      "id": "skill:conventional-commits",
+      "type": "skill",
+      "version": "1.0.0",
+      "license": "MIT",
+      "source": "alpha",
+      "redistributable": true,
+      "platforms": [
+        "*"
+      ],
+      "licenseFiles": [],
+      "bytes": 1353,
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "0bce63105eeac8c23c22c1272df6c684fa64166516bc54ab607af9036dcc5dbf",
+          "bytes": 1353,
+          "url": "https://alphacodeone.com/catalog/assets/skill.conventional-commits/1.0.0/SKILL.md"
+        }
+      ]
+    },
+    {
+      "id": "skill:mcp-builder",
+      "type": "skill",
+      "version": "1.0.0",
+      "license": "Apache-2.0",
+      "source": "official",
+      "redistributable": true,
+      "platforms": [
+        "*"
+      ],
+      "licenseFiles": [
+        "LICENSE.txt",
+        "NOTICE.md"
+      ],
+      "bytes": 122158,
+      "files": [
+        {
+          "path": "LICENSE.txt",
+          "sha256": "bc6b3af2f331cbc7fb0da1344efb2cbe5877a31498b4d70dbc7000f3405a1362",
+          "bytes": 11345,
+          "url": "https://alphacodeone.com/catalog/assets/skill.mcp-builder/1.0.0/LICENSE.txt"
+        },
+        {
+          "path": "NOTICE.md",
+          "sha256": "49055ac997aff245a6d604a455ba20803e82c5a48b4f87d84838cbaaf546bc3c",
+          "bytes": 402,
+          "url": "https://alphacodeone.com/catalog/assets/skill.mcp-builder/1.0.0/NOTICE.md"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "0f4592dcb53cf2b5d6b7febee6b4152018b565551a1c29e3c612f57b218ab295",
+          "bytes": 9092,
+          "url": "https://alphacodeone.com/catalog/assets/skill.mcp-builder/1.0.0/SKILL.md"
+        },
+        {
+          "path": "reference/evaluation.md",
+          "sha256": "8c99479f8a2d22a636c38e274537aac3610879e26f34e0709825077c4576f427",
+          "bytes": 21663,
+          "url": "https://alphacodeone.com/catalog/assets/skill.mcp-builder/1.0.0/reference/evaluation.md"
+        },
+        {
+          "path": "reference/mcp_best_practices.md",
+          "sha256": "80fb4369a349447cf18ecdd7494fe7938b6065377e9f08c077cec411093a3007",
+          "bytes": 7330,
+          "url": "https://alphacodeone.com/catalog/assets/skill.mcp-builder/1.0.0/reference/mcp_best_practices.md"
+        },
+        {
+          "path": "reference/node_mcp_server.md",
+          "sha256": "c3ba35a4f599dd53be9c6555ae72c19a7bf412cd5426576c2c08d42755482c66",
+          "bytes": 28550,
+          "url": "https://alphacodeone.com/catalog/assets/skill.mcp-builder/1.0.0/reference/node_mcp_server.md"
+        },
+        {
+          "path": "reference/python_mcp_server.md",
+          "sha256": "2da52f77e675191014ca2e146a4b95aa04d0ca7dd7e2b100322df15ade685e80",
+          "bytes": 25099,
+          "url": "https://alphacodeone.com/catalog/assets/skill.mcp-builder/1.0.0/reference/python_mcp_server.md"
+        },
+        {
+          "path": "scripts/connections.py",
+          "sha256": "9403668a2041568772082a8b334122c1f88daf0541fb393af4522d0094a47a6e",
+          "bytes": 4875,
+          "url": "https://alphacodeone.com/catalog/assets/skill.mcp-builder/1.0.0/scripts/connections.py"
+        },
+        {
+          "path": "scripts/evaluation.py",
+          "sha256": "49ed1d17cdce5da101b210197740713f49b935c29d4f339542a14b132658e6f7",
+          "bytes": 12579,
+          "url": "https://alphacodeone.com/catalog/assets/skill.mcp-builder/1.0.0/scripts/evaluation.py"
+        },
+        {
+          "path": "scripts/example_evaluation.xml",
+          "sha256": "9272b348ddcc4b06ba562367ccd0770e018158c0068ac5116d5e34aaeff8777a",
+          "bytes": 1194,
+          "url": "https://alphacodeone.com/catalog/assets/skill.mcp-builder/1.0.0/scripts/example_evaluation.xml"
+        },
+        {
+          "path": "scripts/requirements.txt",
+          "sha256": "d5d7558b2368ecea9dfeed7d1fbc71ee9e0750bebd1282faa527d528a344c3c7",
+          "bytes": 29,
+          "url": "https://alphacodeone.com/catalog/assets/skill.mcp-builder/1.0.0/scripts/requirements.txt"
+        }
+      ]
+    }
+  ]
+}

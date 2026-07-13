@@ -1,0 +1,10 @@
+{
+  "v": 1,
+  "catalogVersion": "2026-07-13.1",
+  "lockSha256": "8d358887b74b9344d5575f8f3263e297570df47042ec3e22cd3785f6a6690405",
+  "noticeSha256": "06e1f0a4483fb1ff23c18ead45f9c7458d0ae93e06673077c46b8d01decc4eb1",
+  "blobCount": 98,
+  "blobBytes": 5670465,
+  "source": "alpha-web-checkout",
+  "_note": "由 scripts/sync-extension-seed.mjs 生成;resources/extension-seed 禁手编(REQ-102 #194)。stable 晋级后必须重跑本脚本 + sync-catalog-snapshot.mjs(extension-seed-snapshot.test.ts 互钉守卫)。"
+}
