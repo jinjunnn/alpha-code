@@ -1,0 +1,315 @@
+{
+  "pre": {
+    "panel": true,
+    "rect": {
+      "x": 1295,
+      "y": 74,
+      "width": 110.96875,
+      "height": 1244,
+      "top": 74,
+      "right": 1405.96875,
+      "bottom": 1318,
+      "left": 1295
+    },
+    "skeleton": {
+      "tag": "aside",
+      "cls": "relative min-w-0 h-full",
+      "h": 1244,
+      "w": 111,
+      "kids": [
+        {
+          "tag": "div",
+          "cls": "size-full flex",
+          "h": 1244,
+          "w": 111,
+          "kids": [
+            {
+              "tag": "div",
+              "cls": "relative min-w-0 h-full",
+              "h": 1244,
+              "w": 111,
+              "kids": [
+                {
+                  "tag": "div",
+                  "cls": "size-full min-w-0 h-full",
+                  "h": 1244,
+                  "w": 111,
+                  "kids": [
+                    {
+                      "tag": "div",
+                      "comp": "tabs",
+                      "h": 1244,
+                      "w": 111
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "fileRows": [
+      {
+        "tag": "BUTTON",
+        "comp": "tabs-trigger",
+        "text": "审查1",
+        "h": 22
+      },
+      {
+        "tag": "BUTTON",
+        "comp": "icon-button",
+        "text": "",
+        "h": 24
+      },
+      {
+        "tag": "BUTTON",
+        "comp": "button",
+        "text": "Git changes",
+        "h": 24
+      },
+      {
+        "tag": "BUTTON",
+        "comp": "button",
+        "text": "全部展开",
+        "h": 24
+      },
+      {
+        "tag": "BUTTON",
+        "comp": "accordion-trigger",
+        "text": "notes.txt+1-1",
+        "h": 32
+      },
+      {
+        "tag": "BUTTON",
+        "comp": "session-review-view-button",
+        "text": "",
+        "h": 20
+      }
+    ],
+    "diffEls": [
+      {
+        "comp": "diff-changes",
+        "h": 21
+      }
+    ],
+    "reviewTabText": "",
+    "ariaExpanded": "true"
+  },
+  "pill": {
+    "ok": true
+  },
+  "stateA": {
+    "panel": true,
+    "rect": {
+      "x": 1295,
+      "y": 74,
+      "width": 110.96875,
+      "height": 1244,
+      "top": 74,
+      "right": 1405.96875,
+      "bottom": 1318,
+      "left": 1295
+    },
+    "skeleton": {
+      "tag": "aside",
+      "cls": "relative min-w-0 h-full",
+      "h": 1244,
+      "w": 111,
+      "kids": [
+        {
+          "tag": "div",
+          "cls": "size-full flex",
+          "h": 1244,
+          "w": 111,
+          "kids": [
+            {
+              "tag": "div",
+              "cls": "relative min-w-0 h-full",
+              "h": 1244,
+              "w": 111,
+              "kids": [
+                {
+                  "tag": "div",
+                  "cls": "size-full min-w-0 h-full",
+                  "h": 1244,
+                  "w": 111,
+                  "kids": [
+                    {
+                      "tag": "div",
+                      "comp": "tabs",
+                      "h": 1244,
+                      "w": 111
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "fileRows": [
+      {
+        "tag": "BUTTON",
+        "comp": "tabs-trigger",
+        "text": "审查1",
+        "h": 22
+      },
+      {
+        "tag": "BUTTON",
+        "comp": "icon-button",
+        "text": "",
+        "h": 24
+      },
+      {
+        "tag": "BUTTON",
+        "comp": "button",
+        "text": "Git changes",
+        "h": 24
+      },
+      {
+        "tag": "BUTTON",
+        "comp": "button",
+        "text": "全部展开",
+        "h": 24
+      },
+      {
+        "tag": "BUTTON",
+        "comp": "accordion-trigger",
+        "text": "notes.txt+1-1",
+        "h": 32
+      },
+      {
+        "tag": "BUTTON",
+        "comp": "session-review-view-button",
+        "text": "",
+        "h": 20
+      }
+    ],
+    "diffEls": [
+      {
+        "comp": "diff-changes",
+        "h": 21
+      }
+    ],
+    "reviewTabText": "",
+    "ariaExpanded": "true"
+  },
+  "rowClick": {
+    "ok": true,
+    "rowText": "notes.txt+1-1"
+  },
+  "stateB": {
+    "panel": true,
+    "rect": {
+      "x": 1295,
+      "y": 74,
+      "width": 110.96875,
+      "height": 1244,
+      "top": 74,
+      "right": 1405.96875,
+      "bottom": 1318,
+      "left": 1295
+    },
+    "skeleton": {
+      "tag": "aside",
+      "cls": "relative min-w-0 h-full",
+      "h": 1244,
+      "w": 111,
+      "kids": [
+        {
+          "tag": "div",
+          "cls": "size-full flex",
+          "h": 1244,
+          "w": 111,
+          "kids": [
+            {
+              "tag": "div",
+              "cls": "relative min-w-0 h-full",
+              "h": 1244,
+              "w": 111,
+              "kids": [
+                {
+                  "tag": "div",
+                  "cls": "size-full min-w-0 h-full",
+                  "h": 1244,
+                  "w": 111,
+                  "kids": [
+                    {
+                      "tag": "div",
+                      "comp": "tabs",
+                      "h": 1244,
+                      "w": 111
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "fileRows": [
+      {
+        "tag": "BUTTON",
+        "comp": "tabs-trigger",
+        "text": "审查1",
+        "h": 22
+      },
+      {
+        "tag": "BUTTON",
+        "comp": "icon-button",
+        "text": "",
+        "h": 24
+      },
+      {
+        "tag": "BUTTON",
+        "comp": "button",
+        "text": "Git changes",
+        "h": 24
+      },
+      {
+        "tag": "BUTTON",
+        "comp": "button",
+        "text": "全部收起",
+        "h": 24
+      },
+      {
+        "tag": "BUTTON",
+        "comp": "accordion-trigger",
+        "text": "notes.txt+1-1",
+        "h": 32
+      },
+      {
+        "tag": "BUTTON",
+        "comp": "session-review-view-button",
+        "text": "",
+        "h": 20
+      }
+    ],
+    "diffEls": [
+      {
+        "comp": "diff-changes",
+        "h": 21
+      }
+    ],
+    "reviewTabText": "",
+    "ariaExpanded": "true"
+  },
+  "diffVisible": {
+    "visible": false,
+    "tallEls": 21,
+    "panelTextSample": "审查1Git changes统一拆分全部收起notes.txt+1-1"
+  },
+  "consoleEvents": [
+    {
+      "kind": "warning",
+      "args": [
+        "%cElectron Security Warning (Insecure Content-Security-Policy)",
+        "font-weight: bold;",
+        "This renderer process has either no Content Security\n  Policy set or a policy with \"unsafe-eval\" enabled. This exposes users of\n  this app to unnecessary security risks.\n\nFor more information and help, consult\nhttps://electronjs.org/docs/tutorial/security.\nThis warning will not show up\nonce the app is packaged."
+      ]
+    }
+  ]
+}

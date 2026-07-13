@@ -1,0 +1,255 @@
+{
+  "before": {
+    "summary": {
+      "samples": 13,
+      "sessionRouteSamples": 9,
+      "singleMountViolations": 1,
+      "commandAccumulation": true,
+      "terminalPanelAccumulation": true
+    },
+    "pty": 1,
+    "tcp": 13,
+    "sampleCount": 13
+  },
+  "after": {
+    "summary": {
+      "samples": 21,
+      "sessionRouteSamples": 17,
+      "singleMountViolations": 1,
+      "commandAccumulation": true,
+      "terminalPanelAccumulation": true
+    },
+    "pty": 1,
+    "tcp": 17,
+    "sampleCount": 21
+  },
+  "samples": [
+    {
+      "at": 1783918021502,
+      "pathname": "/",
+      "composersTotal": 0,
+      "composersVisible": 0,
+      "terminalPanels": 0,
+      "promptDocks": 0,
+      "commandOptions": 92,
+      "sessionScopedCommands": 17
+    },
+    {
+      "at": 1783918021507,
+      "pathname": "/L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs/session",
+      "composersTotal": 0,
+      "composersVisible": 0,
+      "terminalPanels": 0,
+      "promptDocks": 0,
+      "commandOptions": 92,
+      "sessionScopedCommands": 17
+    },
+    {
+      "at": 1783918021575,
+      "pathname": "/new-session",
+      "composersTotal": 0,
+      "composersVisible": 0,
+      "terminalPanels": 0,
+      "promptDocks": 0,
+      "commandOptions": 93,
+      "sessionScopedCommands": 18
+    },
+    {
+      "at": 1783918023021,
+      "pathname": "/new-session",
+      "composersTotal": 0,
+      "composersVisible": 0,
+      "terminalPanels": 0,
+      "promptDocks": 0,
+      "commandOptions": 93,
+      "sessionScopedCommands": 18
+    },
+    {
+      "at": 1783918322476,
+      "pathname": "/L3ByaXZhdGUvdG1wL2NsYXVkZS01MDEvLVVzZXJzLXRpZGUtYXBwLWFscGhhLXdvcmsvZTQ0NWYyMWEtZTdiNS00ZGFhLThlNTEtY2JiNjdkN2QwZjQwL3NjcmF0Y2hwYWQvYzQvcHJvai1h/session/ses_0a63336feffeGAXzDO1m9IirhM",
+      "sessionID": "ses_0a63336feffeGAXzDO1m9IirhM",
+      "composersTotal": 0,
+      "composersVisible": 0,
+      "terminalPanels": 0,
+      "promptDocks": 0,
+      "commandOptions": 92,
+      "sessionScopedCommands": 17
+    },
+    {
+      "at": 1783918324022,
+      "pathname": "/L3ByaXZhdGUvdG1wL2NsYXVkZS01MDEvLVVzZXJzLXRpZGUtYXBwLWFscGhhLXdvcmsvZTQ0NWYyMWEtZTdiNS00ZGFhLThlNTEtY2JiNjdkN2QwZjQwL3NjcmF0Y2hwYWQvYzQvcHJvai1h/session/ses_0a63336feffeGAXzDO1m9IirhM",
+      "sessionID": "ses_0a63336feffeGAXzDO1m9IirhM",
+      "composersTotal": 1,
+      "composersVisible": 0,
+      "terminalPanels": 1,
+      "promptDocks": 1,
+      "commandOptions": 117,
+      "sessionScopedCommands": 40
+    },
+    {
+      "at": 1783918414386,
+      "pathname": "/L3ByaXZhdGUvdG1wL2NsYXVkZS01MDEvLVVzZXJzLXRpZGUtYXBwLWFscGhhLXdvcmsvZTQ0NWYyMWEtZTdiNS00ZGFhLThlNTEtY2JiNjdkN2QwZjQwL3NjcmF0Y2hwYWQvYzQvcHJvai1h/session/ses_0a63336faffe5Qr0u54OOHdMEg",
+      "sessionID": "ses_0a63336faffe5Qr0u54OOHdMEg",
+      "composersTotal": 1,
+      "composersVisible": 0,
+      "terminalPanels": 1,
+      "promptDocks": 1,
+      "commandOptions": 117,
+      "sessionScopedCommands": 40
+    },
+    {
+      "at": 1783918414921,
+      "pathname": "/L3ByaXZhdGUvdG1wL2NsYXVkZS01MDEvLVVzZXJzLXRpZGUtYXBwLWFscGhhLXdvcmsvZTQ0NWYyMWEtZTdiNS00ZGFhLThlNTEtY2JiNjdkN2QwZjQwL3NjcmF0Y2hwYWQvYzQvcHJvai1h/session/ses_0a63336feffeGAXzDO1m9IirhM",
+      "sessionID": "ses_0a63336feffeGAXzDO1m9IirhM",
+      "composersTotal": 1,
+      "composersVisible": 0,
+      "terminalPanels": 1,
+      "promptDocks": 1,
+      "commandOptions": 117,
+      "sessionScopedCommands": 40
+    },
+    {
+      "at": 1783918415388,
+      "pathname": "/L3ByaXZhdGUvdG1wL2NsYXVkZS01MDEvLVVzZXJzLXRpZGUtYXBwLWFscGhhLXdvcmsvZTQ0NWYyMWEtZTdiNS00ZGFhLThlNTEtY2JiNjdkN2QwZjQwL3NjcmF0Y2hwYWQvYzQvcHJvai1h/session/ses_0a63336faffe5Qr0u54OOHdMEg",
+      "sessionID": "ses_0a63336faffe5Qr0u54OOHdMEg",
+      "composersTotal": 1,
+      "composersVisible": 0,
+      "terminalPanels": 1,
+      "promptDocks": 1,
+      "commandOptions": 117,
+      "sessionScopedCommands": 40
+    },
+    {
+      "at": 1783918415850,
+      "pathname": "/L3ByaXZhdGUvdG1wL2NsYXVkZS01MDEvLVVzZXJzLXRpZGUtYXBwLWFscGhhLXdvcmsvZTQ0NWYyMWEtZTdiNS00ZGFhLThlNTEtY2JiNjdkN2QwZjQwL3NjcmF0Y2hwYWQvYzQvcHJvai1h/session/ses_0a63336feffeGAXzDO1m9IirhM",
+      "sessionID": "ses_0a63336feffeGAXzDO1m9IirhM",
+      "composersTotal": 1,
+      "composersVisible": 0,
+      "terminalPanels": 1,
+      "promptDocks": 1,
+      "commandOptions": 117,
+      "sessionScopedCommands": 40
+    },
+    {
+      "at": 1783918416311,
+      "pathname": "/L3ByaXZhdGUvdG1wL2NsYXVkZS01MDEvLVVzZXJzLXRpZGUtYXBwLWFscGhhLXdvcmsvZTQ0NWYyMWEtZTdiNS00ZGFhLThlNTEtY2JiNjdkN2QwZjQwL3NjcmF0Y2hwYWQvYzQvcHJvai1h/session/ses_0a63336faffe5Qr0u54OOHdMEg",
+      "sessionID": "ses_0a63336faffe5Qr0u54OOHdMEg",
+      "composersTotal": 1,
+      "composersVisible": 0,
+      "terminalPanels": 1,
+      "promptDocks": 1,
+      "commandOptions": 117,
+      "sessionScopedCommands": 40
+    },
+    {
+      "at": 1783918416779,
+      "pathname": "/L3ByaXZhdGUvdG1wL2NsYXVkZS01MDEvLVVzZXJzLXRpZGUtYXBwLWFscGhhLXdvcmsvZTQ0NWYyMWEtZTdiNS00ZGFhLThlNTEtY2JiNjdkN2QwZjQwL3NjcmF0Y2hwYWQvYzQvcHJvai1h/session/ses_0a63336feffeGAXzDO1m9IirhM",
+      "sessionID": "ses_0a63336feffeGAXzDO1m9IirhM",
+      "composersTotal": 1,
+      "composersVisible": 0,
+      "terminalPanels": 1,
+      "promptDocks": 1,
+      "commandOptions": 117,
+      "sessionScopedCommands": 40
+    },
+    {
+      "at": 1783918418021,
+      "pathname": "/L3ByaXZhdGUvdG1wL2NsYXVkZS01MDEvLVVzZXJzLXRpZGUtYXBwLWFscGhhLXdvcmsvZTQ0NWYyMWEtZTdiNS00ZGFhLThlNTEtY2JiNjdkN2QwZjQwL3NjcmF0Y2hwYWQvYzQvcHJvai1h/session/ses_0a63336feffeGAXzDO1m9IirhM",
+      "sessionID": "ses_0a63336feffeGAXzDO1m9IirhM",
+      "composersTotal": 1,
+      "composersVisible": 0,
+      "terminalPanels": 1,
+      "promptDocks": 1,
+      "commandOptions": 117,
+      "sessionScopedCommands": 40
+    },
+    {
+      "at": 1783918517853,
+      "pathname": "/L3ByaXZhdGUvdG1wL2NsYXVkZS01MDEvLVVzZXJzLXRpZGUtYXBwLWFscGhhLXdvcmsvZTQ0NWYyMWEtZTdiNS00ZGFhLThlNTEtY2JiNjdkN2QwZjQwL3NjcmF0Y2hwYWQvYzQvcHJvai1h/session/ses_0a63336faffe5Qr0u54OOHdMEg",
+      "sessionID": "ses_0a63336faffe5Qr0u54OOHdMEg",
+      "composersTotal": 1,
+      "composersVisible": 0,
+      "terminalPanels": 1,
+      "promptDocks": 1,
+      "commandOptions": 117,
+      "sessionScopedCommands": 40
+    },
+    {
+      "at": 1783918518566,
+      "pathname": "/L3ByaXZhdGUvdG1wL2NsYXVkZS01MDEvLVVzZXJzLXRpZGUtYXBwLWFscGhhLXdvcmsvZTQ0NWYyMWEtZTdiNS00ZGFhLThlNTEtY2JiNjdkN2QwZjQwL3NjcmF0Y2hwYWQvYzQvcHJvai1h/session/ses_0a63336feffeGAXzDO1m9IirhM",
+      "sessionID": "ses_0a63336feffeGAXzDO1m9IirhM",
+      "composersTotal": 1,
+      "composersVisible": 0,
+      "terminalPanels": 1,
+      "promptDocks": 1,
+      "commandOptions": 117,
+      "sessionScopedCommands": 40
+    },
+    {
+      "at": 1783918519277,
+      "pathname": "/L3ByaXZhdGUvdG1wL2NsYXVkZS01MDEvLVVzZXJzLXRpZGUtYXBwLWFscGhhLXdvcmsvZTQ0NWYyMWEtZTdiNS00ZGFhLThlNTEtY2JiNjdkN2QwZjQwL3NjcmF0Y2hwYWQvYzQvcHJvai1h/session/ses_0a63336faffe5Qr0u54OOHdMEg",
+      "sessionID": "ses_0a63336faffe5Qr0u54OOHdMEg",
+      "composersTotal": 1,
+      "composersVisible": 0,
+      "terminalPanels": 1,
+      "promptDocks": 1,
+      "commandOptions": 117,
+      "sessionScopedCommands": 40
+    },
+    {
+      "at": 1783918520021,
+      "pathname": "/L3ByaXZhdGUvdG1wL2NsYXVkZS01MDEvLVVzZXJzLXRpZGUtYXBwLWFscGhhLXdvcmsvZTQ0NWYyMWEtZTdiNS00ZGFhLThlNTEtY2JiNjdkN2QwZjQwL3NjcmF0Y2hwYWQvYzQvcHJvai1h/session/ses_0a63336faffe5Qr0u54OOHdMEg",
+      "sessionID": "ses_0a63336faffe5Qr0u54OOHdMEg",
+      "composersTotal": 1,
+      "composersVisible": 0,
+      "terminalPanels": 1,
+      "promptDocks": 1,
+      "commandOptions": 117,
+      "sessionScopedCommands": 40
+    },
+    {
+      "at": 1783918521119,
+      "pathname": "/L3ByaXZhdGUvdG1wL2NsYXVkZS01MDEvLVVzZXJzLXRpZGUtYXBwLWFscGhhLXdvcmsvZTQ0NWYyMWEtZTdiNS00ZGFhLThlNTEtY2JiNjdkN2QwZjQwL3NjcmF0Y2hwYWQvYzQvcHJvai1h/session/ses_0a63336feffeGAXzDO1m9IirhM",
+      "sessionID": "ses_0a63336feffeGAXzDO1m9IirhM",
+      "composersTotal": 1,
+      "composersVisible": 0,
+      "terminalPanels": 1,
+      "promptDocks": 1,
+      "commandOptions": 117,
+      "sessionScopedCommands": 40
+    },
+    {
+      "at": 1783918521814,
+      "pathname": "/L3ByaXZhdGUvdG1wL2NsYXVkZS01MDEvLVVzZXJzLXRpZGUtYXBwLWFscGhhLXdvcmsvZTQ0NWYyMWEtZTdiNS00ZGFhLThlNTEtY2JiNjdkN2QwZjQwL3NjcmF0Y2hwYWQvYzQvcHJvai1h/session/ses_0a63336faffe5Qr0u54OOHdMEg",
+      "sessionID": "ses_0a63336faffe5Qr0u54OOHdMEg",
+      "composersTotal": 1,
+      "composersVisible": 0,
+      "terminalPanels": 1,
+      "promptDocks": 1,
+      "commandOptions": 117,
+      "sessionScopedCommands": 40
+    },
+    {
+      "at": 1783918522511,
+      "pathname": "/L3ByaXZhdGUvdG1wL2NsYXVkZS01MDEvLVVzZXJzLXRpZGUtYXBwLWFscGhhLXdvcmsvZTQ0NWYyMWEtZTdiNS00ZGFhLThlNTEtY2JiNjdkN2QwZjQwL3NjcmF0Y2hwYWQvYzQvcHJvai1h/session/ses_0a63336feffeGAXzDO1m9IirhM",
+      "sessionID": "ses_0a63336feffeGAXzDO1m9IirhM",
+      "composersTotal": 1,
+      "composersVisible": 0,
+      "terminalPanels": 1,
+      "promptDocks": 1,
+      "commandOptions": 117,
+      "sessionScopedCommands": 40
+    },
+    {
+      "at": 1783918524021,
+      "pathname": "/L3ByaXZhdGUvdG1wL2NsYXVkZS01MDEvLVVzZXJzLXRpZGUtYXBwLWFscGhhLXdvcmsvZTQ0NWYyMWEtZTdiNS00ZGFhLThlNTEtY2JiNjdkN2QwZjQwL3NjcmF0Y2hwYWQvYzQvcHJvai1h/session/ses_0a63336feffeGAXzDO1m9IirhM",
+      "sessionID": "ses_0a63336feffeGAXzDO1m9IirhM",
+      "composersTotal": 1,
+      "composersVisible": 0,
+      "terminalPanels": 1,
+      "promptDocks": 1,
+      "commandOptions": 117,
+      "sessionScopedCommands": 40
+    }
+  ]
+}

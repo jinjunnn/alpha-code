@@ -1,0 +1,37 @@
+{
+  "afterExpand": {
+    "tcIco": 4,
+    "aExitOk": 0,
+    "turnDiv": 2,
+    "userMessages": 3,
+    "sessionTurns": 10,
+    "dirgrid": false,
+    "cmdChips": 0,
+    "toolOutputs": 0
+  },
+  "readDom": {
+    "toolOutputs": 0,
+    "outputsWithEntries": 0,
+    "firstOutputText": null,
+    "readToolDom": true,
+    "ctxGroupInner": "已探索已探索,012345678901234567890123456789 次读取,012345678901234567890123456789 次搜索,012345678901234567890123456789 个列表"
+  },
+  "o2": {
+    "chipsBefore": 0,
+    "chipsAfter": 0,
+    "userBefore": 3,
+    "userAfter": 4,
+    "lastUserText": "Probe command expansion for O2 forensics. User args: hello-o2-argsBuild · scripted-1 · 18:24",
+    "chipDelta": 0
+  },
+  "final": {
+    "tcIco": 4,
+    "aExitOk": 0,
+    "turnDiv": 3,
+    "userMessages": 4,
+    "sessionTurns": 12,
+    "dirgrid": false,
+    "cmdChips": 0,
+    "toolOutputs": 0
+  }
+}

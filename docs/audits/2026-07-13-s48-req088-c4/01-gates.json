@@ -1,0 +1,17 @@
+{
+  "surfaces": {
+    "home": {
+      "mode": "alpha",
+      "reason": "release-default"
+    },
+    "newSession": {
+      "mode": "alpha",
+      "reason": "release-default"
+    },
+    "session": {
+      "mode": "alpha",
+      "reason": "env-override"
+    }
+  },
+  "spikeFlag": "1"
+}

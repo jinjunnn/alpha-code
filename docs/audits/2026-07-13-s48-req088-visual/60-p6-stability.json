@@ -1,0 +1,55 @@
+{
+  "before": {
+    "samples": 10,
+    "sessionRouteSamples": 6,
+    "pendingSamples": 1,
+    "singleMountViolations": 0,
+    "commandAccumulation": false,
+    "terminalPanelAccumulation": false
+  },
+  "afterSwitch": {
+    "samples": 17,
+    "sessionRouteSamples": 13,
+    "pendingSamples": 1,
+    "singleMountViolations": 0,
+    "commandAccumulation": false,
+    "terminalPanelAccumulation": false
+  },
+  "p1AfterSwitch": {
+    "takeoverFlag": true,
+    "visibleHosts": 1,
+    "upstreamComposerDisplay": "none",
+    "alphaComposerInHost": true
+  },
+  "p1AfterReload": {
+    "takeoverFlag": true,
+    "visibleHosts": 1,
+    "upstreamComposerDisplay": "none",
+    "alphaComposerInHost": true
+  },
+  "probeAfterReload": {
+    "samples": 7,
+    "sessionRouteSamples": 3,
+    "pendingSamples": 1,
+    "singleMountViolations": 0,
+    "commandAccumulation": false,
+    "terminalPanelAccumulation": false
+  },
+  "verdict": {
+    "switchDeltaViolations": 0,
+    "switchAccFlags": {
+      "cmd": false,
+      "panel": false
+    },
+    "p1AfterSwitchPass": true,
+    "p1AfterReloadPass": true,
+    "reloadWindowSummary": {
+      "samples": 7,
+      "sessionRouteSamples": 3,
+      "pendingSamples": 1,
+      "singleMountViolations": 0,
+      "commandAccumulation": false,
+      "terminalPanelAccumulation": false
+    }
+  }
+}

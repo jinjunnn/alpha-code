@@ -7,13 +7,24 @@
 // 作为 REQ-088 adapter 模式的对照基线;AC7 的「vs legacy 基线」在 REQ-088 未交付前只有
 // legacy 半边 —— 本 suite 负责采集并落盘该基线(baselines/legacy-baseline.json),
 // adapter 侧对比在 REQ-088 T4 完成。
+//
+// REQ-088 T3/T4:同一 suite 经 REQ088_HOST/REQ088_SURFACE 双参数跑 adapter 半边(webhost +
+// localStorage 闸,见 harness.ts 头注释)。每个会话页断言点都先过 assertSurfaceMode ——
+// 保证「度量的确实是那半边」;webhost 运行落盘 baselines/req088-<flavor>.json 与
+// req088-<flavor>-facts.json(孤儿 PTY/订阅数原始值),对比判定见
+// docs/audits/2026-07-13-s48-req088-t3t4-live-adapter-comparison.md。
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import type { Page } from "playwright-core"
 import {
+  ADAPTER_SEL,
   ENGINE_PORT,
+  FLAVOR,
+  HOST,
   SEL,
+  SURFACE,
+  assertSurfaceMode,
   bottomGap,
   domCounts,
   partOffsets,
@@ -26,12 +37,22 @@ import {
 } from "./harness"
 
 let world: LiveWorld
+/** webhost 运行的原始事实(孤儿 PTY/订阅数等),afterAll 落盘供 T4 对比表引用。 */
+const runFacts: Record<string, unknown> = {}
 
 beforeAll(async () => {
   world = await startWorld()
 }, 240000)
 
 afterAll(async () => {
+  if (HOST === "webhost") {
+    const dir = join(import.meta.dir, "baselines")
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(
+      join(dir, `req088-${FLAVOR}-facts.json`),
+      JSON.stringify({ capturedAt: new Date().toISOString(), flavor: FLAVOR, ...runFacts }, null, 2) + "\n",
+    )
+  }
   await world?.stop()
 })
 
@@ -39,6 +60,7 @@ async function openSession(sessionID: string, hash?: string) {
   const { context, page } = await world.newPage()
   await page.goto(world.sessionUrl(sessionID, hash), { waitUntil: "domcontentloaded" })
   await waitTimelineStable(page)
+  await assertSurfaceMode(page)
   return { context, page }
 }
 
@@ -206,6 +228,7 @@ describe("REQ-087 C2 live-engine characterization", () => {
       const { context, page } = await world.newPage({ tabSessionIds: [a.id, b.id] })
       await page.goto(world.sessionUrl(a.id), { waitUntil: "domcontentloaded" })
       await waitTimelineStable(page)
+      await assertSurfaceMode(page)
       try {
         // 新建:ctrl+` 打开面板即自动建终端(真实 PTY)
         await page.keyboard.press("Control+`")
@@ -254,6 +277,7 @@ describe("REQ-087 C2 live-engine characterization", () => {
         const switchTo = async (id: string) => {
           await page.click(world.titlebarTab(id))
           await waitTimelineStable(page)
+          await assertSurfaceMode(page) // adapter:切 session 后外框仍在(路由级重挂语义)
           await Bun.sleep(600)
         }
         await switchTo(b.id)
@@ -270,7 +294,8 @@ describe("REQ-087 C2 live-engine characterization", () => {
         expect(afterMoreRoundTrips).toBeLessThanOrEqual(afterFirstRoundTrip)
         await waitFor(tabTitles, (t) => t.length === 2, 15000, "tab set stays 2 across switches")
         const recoveryOrphans = Math.max(0, afterMoreRoundTrips - (ptyBaseline + 2))
-        console.log(`[AC6] legacy recovery-clone orphan PTYs after switches: ${recoveryOrphans}`)
+        runFacts.recoveryOrphanPtys = recoveryOrphans
+        console.log(`[AC6][${FLAVOR}] recovery-clone orphan PTYs after switches: ${recoveryOrphans}`)
 
         // 重启恢复:reload 后恢复既有终端(tab 集不变),不重复 attach、PTY 数不再增长
         await page.reload({ waitUntil: "domcontentloaded" })
@@ -450,6 +475,7 @@ describe("REQ-087 C2 live-engine characterization", () => {
       try {
         await page.goto(world.sessionUrl(a.id), { waitUntil: "domcontentloaded" })
         await waitTimelineStable(page)
+        await assertSurfaceMode(page)
         await Bun.sleep(1000)
         const sseBaseline = sse.open
         const ptyBaseline = await world.ptyCount()
@@ -470,6 +496,7 @@ describe("REQ-087 C2 live-engine characterization", () => {
           expect(s.pty).toBe(ptyBaseline) // 切换不产生 PTY
         }
         const finalOpen = samples.at(-1)!.open
+        runFacts.ac4 = { sseBaseline, samples }
         expect(finalOpen).toBeLessThanOrEqual(sseBaseline) // 订阅数不随切换线性增长
         expect(Math.max(...samples.map((s) => s.open))).toBeLessThanOrEqual(sseBaseline + 1) // 切换瞬间允许一条过渡流
       } finally {
@@ -500,6 +527,7 @@ describe("REQ-087 C2 live-engine characterization", () => {
           await page.waitForSelector(SEL.timelineRow, { timeout: 45000, state: "attached" })
           mounts.push(Date.now() - t0)
           await waitTimelineStable(page)
+          await assertSurfaceMode(page) // 度量点之后:确认这一跑真的是期望半边
           await Bun.sleep(500)
           subscriptions = sse.open
 
@@ -545,7 +573,10 @@ describe("REQ-087 C2 live-engine characterization", () => {
       const pct = (p: number) => sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))] ?? 0
       const baseline = {
         capturedAt: new Date().toISOString(),
-        mode: "legacy (frozen packages/app leaf, real engine, vite dev, headless Chrome)",
+        mode:
+          HOST === "frozen"
+            ? "legacy (frozen packages/app leaf, real engine, vite dev, headless Chrome)"
+            : `${SURFACE} (REQ-088 webhost comparison entry, real engine, vite dev, headless Chrome)`,
         engine: "bun run packages/opencode/src/index.ts serve",
         sessionMessages: 110,
         mountMs: { runs: mounts, median: [...mounts].sort((x, y) => x - y)[1] },
@@ -557,12 +588,16 @@ describe("REQ-087 C2 live-engine characterization", () => {
           p95: pct(95),
           max: sorted.at(-1) ?? 0,
         },
-        adapterComparison: "PENDING REQ-088 T4 — adapter mode does not exist yet; this file IS the legacy baseline",
+        adapterComparison:
+          HOST === "frozen"
+            ? "PENDING REQ-088 T4 — adapter mode does not exist yet; this file IS the legacy baseline"
+            : "REQ-088 T3/T4 dual-run — judgement in docs/audits/2026-07-13-s48-req088-t3t4-live-adapter-comparison.md",
       }
       const dir = join(import.meta.dir, "baselines")
       mkdirSync(dir, { recursive: true })
-      writeFileSync(join(dir, "legacy-baseline.json"), JSON.stringify(baseline, null, 2) + "\n")
-      console.log("[AC7] legacy baseline:", JSON.stringify(baseline))
+      const baselineFile = HOST === "frozen" ? "legacy-baseline.json" : `req088-${FLAVOR}.json`
+      writeFileSync(join(dir, baselineFile), JSON.stringify(baseline, null, 2) + "\n")
+      console.log(`[AC7][${FLAVOR}] baseline:`, JSON.stringify(baseline))
 
       expect(mounts.length).toBe(3)
       expect(Math.min(...mounts)).toBeGreaterThan(0)
@@ -671,5 +706,33 @@ describe("REQ-087 C2 live-engine characterization", () => {
       }
     },
     240000,
+  )
+
+  // T2 §4 注意点 2 的 live 补测(adapter 专属):CrossServerGuard 有界识别引擎 control-plane
+  // 「Session not found: <id>」错误族(C4 S5 跨 server 点击与「本 server 不存在的会话 id」同一
+  // 抛错路径)→ 渲染引导卡,不落 SurfaceBoundary 致命 fallback。非该族错误的 rethrow 链路无法
+  // 经合法通道在真叶上诱发(不 mock 冻结叶),维持 C4 真机实证 + 单测覆盖(证据档 OPEN 项)。
+  test.if(SURFACE === "adapter")(
+    "CrossServerGuard:会话缺失错误族渲染引导卡而非 SurfaceBoundary fallback",
+    async () => {
+      const { context, page } = await world.newPage()
+      try {
+        await page.goto(world.sessionUrl("ses_req088_missing_0000"), { waitUntil: "domcontentloaded" })
+        await page.waitForSelector(ADAPTER_SEL.guard, { timeout: 30000 })
+        // SurfaceBoundary fallback 未出现(错误没有升级为 surface 致命)
+        expect(await page.evaluate(() => document.querySelectorAll("[data-alpha-surface-error]").length)).toBe(0)
+        // 引导卡两个动作在位(重新加载 / 返回首页)
+        const buttons = await page.evaluate(() =>
+          [...document.querySelectorAll("[data-alpha-session-workspace-guard] button")].map(
+            (el) => el.textContent?.trim() ?? "",
+          ),
+        )
+        expect(buttons.length).toBe(2)
+        runFacts.crossServerGuard = { buttons }
+      } finally {
+        await context.close()
+      }
+    },
+    120000,
   )
 })

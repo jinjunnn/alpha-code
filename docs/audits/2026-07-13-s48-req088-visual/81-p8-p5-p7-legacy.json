@@ -1,0 +1,272 @@
+{
+  "gate": {
+    "spike": null,
+    "mode": {
+      "mode": "alpha",
+      "reason": "env-override"
+    },
+    "probe": false
+  },
+  "m": {
+    "window": {
+      "w": 2560,
+      "h": 1410
+    },
+    "sidebarVisible": true,
+    "workspacePresent": false,
+    "main": {
+      "x": 256,
+      "y": 36,
+      "w": 2304,
+      "h": 1374
+    },
+    "mainKids": [
+      {
+        "tag": "div",
+        "cls": "relative size-full overflow-hidden flex",
+        "rect": {
+          "x": 256,
+          "w": 2304
+        },
+        "flex": "0 1 auto"
+      }
+    ],
+    "reviewPanel": {
+      "x": 1295,
+      "y": 44,
+      "w": 1257,
+      "h": 1358
+    },
+    "panelHeader": [
+      "审查1",
+      "Git changes",
+      "全部收起",
+      "notes.txt+1-1"
+    ],
+    "panelEmptyState": false,
+    "composer": {
+      "x": 326,
+      "y": 1276,
+      "w": 900,
+      "h": 102
+    },
+    "deadZoneRight": 0
+  },
+  "p1": {
+    "takeoverFlag": true,
+    "visibleHosts": 1,
+    "upstreamComposerDisplay": "none",
+    "alphaComposerInHost": true
+  },
+  "p3": {
+    "tcIco": 6,
+    "aExitOk": 1,
+    "turnDiv": 4,
+    "userMessages": 5,
+    "sessionTurns": 15,
+    "dirgrid": false,
+    "cmdChips": 0,
+    "toolOutputs": 0
+  },
+  "p4open": {
+    "alphaPicker": true,
+    "rows": [
+      {
+        "key": "zhipuai:glm-4.7-flash",
+        "selected": "false"
+      },
+      {
+        "key": "zhipuai:glm-5",
+        "selected": "false"
+      },
+      {
+        "key": "zhipuai:glm-5.2",
+        "selected": "false"
+      },
+      {
+        "key": "deepseek:deepseek-chat",
+        "selected": "false"
+      },
+      {
+        "key": "deepseek:deepseek-reasoner",
+        "selected": "false"
+      },
+      {
+        "key": "deepseek:deepseek-v4-flash",
+        "selected": "false"
+      },
+      {
+        "key": "deepseek:deepseek-v4-pro",
+        "selected": "false"
+      },
+      {
+        "key": "scripted:scripted-1",
+        "selected": "true"
+      },
+      {
+        "key": "scripted:scripted-2",
+        "selected": "false"
+      },
+      {
+        "key": "alpha:deepseek-v4-flash",
+        "selected": "false"
+      },
+      {
+        "key": "alpha:deepseek-v4-pro",
+        "selected": "false"
+      },
+      {
+        "key": "alpha:glm-5-turbo",
+        "selected": "false"
+      },
+      {
+        "key": "alpha:glm-5.2",
+        "selected": "false"
+      },
+      {
+        "key": "alpha:qwen3.5-397b-a17b",
+        "selected": "false"
+      },
+      {
+        "key": "alpha:qwen3.5-flash",
+        "selected": "false"
+      }
+    ],
+    "homeAnchor": true,
+    "popperPositioners": 0
+  },
+  "p4pick": {
+    "ok": true,
+    "selectedBefore": "scripted:scripted-1",
+    "clicked": "αDeepSeek V4 Flashdeepseek-v4-flash标准×1"
+  },
+  "p4after": {
+    "rows": [
+      {
+        "key": "zhipuai:glm-4.7-flash",
+        "selected": "false"
+      },
+      {
+        "key": "zhipuai:glm-5",
+        "selected": "false"
+      },
+      {
+        "key": "zhipuai:glm-5.2",
+        "selected": "false"
+      },
+      {
+        "key": "deepseek:deepseek-chat",
+        "selected": "false"
+      },
+      {
+        "key": "deepseek:deepseek-reasoner",
+        "selected": "false"
+      },
+      {
+        "key": "deepseek:deepseek-v4-flash",
+        "selected": "false"
+      },
+      {
+        "key": "deepseek:deepseek-v4-pro",
+        "selected": "false"
+      },
+      {
+        "key": "scripted:scripted-1",
+        "selected": "false"
+      },
+      {
+        "key": "scripted:scripted-2",
+        "selected": "false"
+      },
+      {
+        "key": "alpha:deepseek-v4-flash",
+        "selected": "true"
+      },
+      {
+        "key": "alpha:deepseek-v4-pro",
+        "selected": "false"
+      },
+      {
+        "key": "alpha:glm-5-turbo",
+        "selected": "false"
+      },
+      {
+        "key": "alpha:glm-5.2",
+        "selected": "false"
+      },
+      {
+        "key": "alpha:qwen3.5-397b-a17b",
+        "selected": "false"
+      },
+      {
+        "key": "alpha:qwen3.5-flash",
+        "selected": "false"
+      }
+    ]
+  },
+  "review": {
+    "before7": {
+      "panel": true,
+      "rect": {
+        "x": 1295,
+        "w": 1257,
+        "h": 1358
+      },
+      "fileRows": [
+        {
+          "comp": null,
+          "text": "审查1",
+          "h": 22
+        },
+        {
+          "comp": "icon-button",
+          "text": "",
+          "h": 24
+        },
+        {
+          "comp": "button",
+          "text": "Git changes",
+          "h": 24
+        },
+        {
+          "comp": "button",
+          "text": "全部收起",
+          "h": 24
+        },
+        {
+          "comp": null,
+          "text": "notes.txt+1-1",
+          "h": 32
+        },
+        {
+          "comp": null,
+          "text": "",
+          "h": 20
+        }
+      ],
+      "text35": "审查1Git changes统一拆分全部收起notes.txt+1-1"
+    },
+    "rowClick": {
+      "ok": true,
+      "rowText": "notes.txt+1-1"
+    },
+    "diffCheck": {
+      "asides": [
+        {
+          "w": 1257,
+          "hasDiff": false
+        },
+        {
+          "w": 324,
+          "hasDiff": false
+        },
+        {
+          "w": 256,
+          "hasDiff": true
+        }
+      ],
+      "anyDiff": true
+    }
+  },
+  "consoleEvents": []
+}

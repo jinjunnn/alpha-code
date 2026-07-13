@@ -1,32 +1,21 @@
-// REQ-087 LegacySessionAdapter spike 原型(Issue #180;永不默认启用,清理点见 docs/spikes 报告)。
+// REQ-087 spike 容器侧探针(Issue #180;永不默认启用)。
 //
-// 两个原型面,共用 spike-flag 实验闸:
+// SessionSpikeHost —— 作为 AppInterface children 挂载(与 ComposerTakeover 同通道),在
+// session 路由上渲染一条 Alpha 覆盖态计数条,并按路由变化采样:可见 composer 数 /
+// #terminal-panel 数 / 命令注册数 —— 验证单挂载与不累积(REQ-087 AC3/AC4 的可取证部分)。
+// overlay pointer-events:none,不干扰焦点/滚动,这是"验证 scroll/focus/command 仍工作"的
+// 前提。采样挂在 window.__req087Spike;采样口径与判定在 spike-probe-core.ts(含 C4 携带项①
+// 的 pending 口径修正)。
 //
-// 1) SessionSpikeHost —— 容器侧探针(surfaces.session 未注入 = 上游默认叶挂载)。
-//    作为 AppInterface children 挂载(与 ComposerTakeover 同通道),在 session 路由上
-//    渲染一条 Alpha 覆盖态框架条(会话上下文 + 实时计数),并按路由变化采样:
-//    可见 composer 数 / #terminal-panel 数 / 命令注册数 —— 验证单挂载与不累积
-//    (REQ-087 AC3/AC4 的可取证部分)。overlay pointer-events:none,不干扰焦点/滚动,
-//    这是"验证 scroll/focus/command 仍工作"的前提。采样挂在 window.__req087Spike。
-//
-// 2) sessionSpikeSurface —— surface 侧原型(需再叠 ALPHA_SURFACE_SESSION=alpha)。
-//    经 ADR-027 typed surface seam 注入 session 叶:Alpha 自有外框(header 条)+
-//    deep-import 的上游 session 叶。要点:
-//    - 叶在 seam 的 createSessionRoute 内挂载,SessionProviders/DirectoryLayout/
-//      ServerScopedShell 全部保持上游默认生命周期 —— 外框不消费任何 upstream context
-//      (只读路由 ABI),这就是拟议 LegacySessionAdapter 的"窄边界"形态;
-//    - 上游叶经 `@opencode-ai/app/surface/session` 窄导出进入(REQ-088 C1,ADR-027 修订
-//      2026-07-13:freeze-base 轮换 frontend-freeze-base-3 合法化该通道)。此前 spike 期的
-//      相对路径 deep import 已废除;本文件仍是全仓唯一允许消费该窄导出的位置
-//      (req087-characterization.test.ts 锚死)。
-//    - surface override 与默认叶是 XOR(app.tsx `props.surfaces?.session ?? Session`),
-//      结构上不存在双挂载;SurfaceBoundary 兜致命 render 错误 → 记录 + reload 回 legacy。
+// 历史:本文件曾同时承载 surface 侧原型(旧 sessionSpikeSurface,Alpha 外框 + 窄导出叶)。
+// REQ-088 T2 已将其转正为 session-workspace/alpha-session-workspace.tsx —— C1 窄导出
+// (./surface/session)的全仓唯一消费点随之迁移(req087-characterization.test.ts 锚死,
+// 本文件不得再出现该导入)。探针本体保留至 T7(spike 清理)统一裁决。
 
-import { createEffect, createSignal, lazy, on, onCleanup, Show } from "solid-js"
+import { createEffect, createSignal, on, onCleanup, Show } from "solid-js"
 import { useLocation } from "@solidjs/router"
-import { useCommand, type MaybePreloadableComponent } from "@opencode-ai/app"
+import { useCommand } from "@opencode-ai/app"
 import { parseRoute } from "../../../shared/legacy-route-abi"
-import { SurfaceBoundary } from "../surface-boundary"
 import { isSessionSpikeEnabled } from "./spike-flag"
 import {
   countSessionScopedCommands,
@@ -35,13 +24,6 @@ import {
   type SpikeSample,
   type SpikeSummary,
 } from "./spike-probe-core"
-
-// —— 合法窄通道(REQ-088 C1 落地)——
-// `@opencode-ai/app/surface/session` 由 exports map 指向 src/pages/session.tsx(仅 default
-// 一个导出);vite 解析到与上游 lazy("@/pages/session") 相同的绝对模块 id(同一 chunk,零重复
-// 打包)。spike 期的相对路径 deep import(绕过 exports 边界)已随 frontend-freeze-base-3 废除。
-const upstreamLeafImport = () => import("@opencode-ai/app/surface/session")
-const UpstreamSessionLeaf = lazy(upstreamLeafImport)
 
 const MAX_SAMPLES = 50
 
@@ -115,8 +97,9 @@ function SessionSpikeHostInner() {
 
   const route = () => sessionRouteOf(loc.pathname)
   const latest = () => samples()[samples().length - 1]
+  const summary = () => summarizeSamples(samples())
   const ok = () => {
-    const s = summarizeSamples(samples())
+    const s = summary()
     return s.singleMountViolations === 0 && !s.commandAccumulation && !s.terminalPanelAccumulation
   }
 
@@ -149,6 +132,7 @@ function SessionSpikeHostInner() {
               <div>
                 composer {s().composersVisible}/{s().composersTotal} · terminal {s().terminalPanels} · cmd{" "}
                 {s().commandOptions}({s().sessionScopedCommands}) · {ok() ? "OK" : "VIOLATION"}
+                {summary().pendingSamples > 0 ? ` · pend ${summary().pendingSamples}` : ""}
               </div>
             )}
           </Show>
@@ -158,56 +142,4 @@ function SessionSpikeHostInner() {
   )
 }
 
-/** surface 侧原型内部的 Alpha 自有 header 条(零 upstream context,只读路由 ABI)。 */
-function SpikeFrameHeader() {
-  const loc = useLocation()
-  const route = () => sessionRouteOf(loc.pathname)
-  return (
-    <div
-      data-alpha-session-spike-frame-header
-      style={{
-        display: "flex",
-        "align-items": "center",
-        gap: "8px",
-        height: "26px",
-        padding: "0 10px",
-        "flex-shrink": "0",
-        font: "600 11px/1 ui-monospace, monospace",
-        background: "color-mix(in srgb, #f6821f 18%, var(--background-stronger, #1c1c1c))",
-        color: "var(--text-strong, #eee)",
-        "border-bottom": "1px solid rgba(246,130,31,0.45)",
-      }}
-    >
-      <span>ALPHA FRAME(REQ-087 原型)</span>
-      <span style={{ opacity: "0.7", "font-weight": "400" }}>
-        {route()?.directory ?? "?"} · {route()?.id ?? "new session"}
-      </span>
-    </div>
-  )
-}
-
-/**
- * surface 侧原型工厂:双闸(本 flag + 主进程 ALPHA_SURFACE_SESSION=alpha)全开才返回组件,
- * 否则返回 undefined ⇒ surfaces.session 维持未注入,seam 走上游默认叶(严格零变化)。
- */
-export function sessionSpikeSurface(): MaybePreloadableComponent | undefined {
-  if (!isSessionSpikeEnabled()) return undefined
-  const Comp: MaybePreloadableComponent = () => (
-    <SurfaceBoundary surface="session">
-      <div
-        data-alpha-session-spike-frame
-        style={{ display: "flex", "flex-direction": "column", height: "100%", "min-height": "0" }}
-      >
-        <SpikeFrameHeader />
-        <div style={{ flex: "1", "min-height": "0" }}>
-          <UpstreamSessionLeaf />
-        </div>
-      </div>
-    </SurfaceBoundary>
-  )
-  // 与 seam 的 preload 契约对齐(app.tsx `preload: () => Leaf.preload?.()`)。
-  Comp.preload = () => {
-    void upstreamLeafImport()
-  }
-  return Comp
-}
+// (surface 侧原型已于 REQ-088 T2 转正为 session-workspace/alpha-session-workspace.tsx。)

@@ -1,0 +1,64 @@
+{
+  "capturedAt": "2026-07-13T09:36:43.138Z",
+  "flavor": "webhost-adapter",
+  "recoveryOrphanPtys": 1,
+  "ac4": {
+    "sseBaseline": 1,
+    "samples": [
+      {
+        "open": 1,
+        "pty": 0,
+        "composers": 1,
+        "panels": 1
+      },
+      {
+        "open": 1,
+        "pty": 0,
+        "composers": 1,
+        "panels": 1
+      },
+      {
+        "open": 1,
+        "pty": 0,
+        "composers": 1,
+        "panels": 1
+      },
+      {
+        "open": 1,
+        "pty": 0,
+        "composers": 1,
+        "panels": 1
+      },
+      {
+        "open": 1,
+        "pty": 0,
+        "composers": 1,
+        "panels": 1
+      },
+      {
+        "open": 1,
+        "pty": 0,
+        "composers": 1,
+        "panels": 1
+      },
+      {
+        "open": 1,
+        "pty": 0,
+        "composers": 1,
+        "panels": 1
+      },
+      {
+        "open": 1,
+        "pty": 0,
+        "composers": 1,
+        "panels": 1
+      }
+    ]
+  },
+  "crossServerGuard": {
+    "buttons": [
+      "重新加载(回到本地引擎)",
+      "返回首页"
+    ]
+  }
+}

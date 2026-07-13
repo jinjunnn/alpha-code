@@ -6,8 +6,8 @@
 // 明确标注 OPEN 的验收项见文件底部 test.todo —— 它们需要 live engine(真实 PTY/流式/权限流),
 // 不在本 seed 范围内造假通过。
 import { describe, expect, test } from "bun:test"
-import { readFileSync } from "node:fs"
-import { join } from "node:path"
+import { readdirSync, readFileSync } from "node:fs"
+import { join, relative } from "node:path"
 import { SURFACE_RELEASE_STATES } from "../../../shared/alpha-surfaces"
 
 const APP = join(import.meta.dir, "../../../../../app")
@@ -140,14 +140,30 @@ describe("REQ-087 §6 通道结论锁定(REQ-088 C1 合法窄通道,不可静默
     const exportStatements = sessionLeaf.match(/^export .*$/gm) ?? []
     expect(exportStatements).toEqual(["export default function Page() {"])
   })
-  test("窄导出全仓唯一消费点 = session-spike-host.tsx;相对路径 deep import 已废除", () => {
-    const host = readFileSync(join(import.meta.dir, "session-spike-host.tsx"), "utf8")
-    expect(host).toContain(`import("@opencode-ai/app/surface/session")`)
-    expect(host).not.toContain(`app/src/pages`)
-    // index.tsx 本体不得出现任何对 app/src 的 deep import,也不得直接消费窄导出
+  test("窄导出全仓唯一消费点 = session-workspace/alpha-session-workspace.tsx(T2 正式化,spike host 已让渡)", () => {
+    // 收敛点断言不再钉单文件字符串,而是全 renderer 源码步进扫描:恰好一个非测试文件消费窄导出。
+    const rendererDir = join(import.meta.dir, "../..")
+    const importers: string[] = []
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.name === "node_modules" || entry.name.startsWith(".")) continue
+        if (/\.test\.(ts|tsx)$/.test(entry.name)) continue
+        const p = join(dir, entry.name)
+        if (entry.isDirectory()) walk(p)
+        else if (/\.(ts|tsx)$/.test(entry.name) && readFileSync(p, "utf8").includes("@opencode-ai/app/surface/session"))
+          importers.push(p)
+      }
+    }
+    walk(rendererDir)
+    expect(importers.map((p) => relative(rendererDir, p))).toEqual([
+      "alpha-ui/session-workspace/alpha-session-workspace.tsx",
+    ])
+    // 相对路径 deep import 保持废除;index.tsx 只消费工厂,不直接消费窄导出。
+    const workspace = readFileSync(importers[0], "utf8")
+    expect(workspace).toContain(`import("@opencode-ai/app/surface/session")`)
+    expect(workspace).not.toContain(`app/src/pages`)
     const rendererIndex = readFileSync(join(import.meta.dir, "../../index.tsx"), "utf8")
     expect(rendererIndex).not.toContain(`app/src/pages`)
-    expect(rendererIndex).not.toContain(`@opencode-ai/app/surface/session`)
   })
 })
 

@@ -1,0 +1,61 @@
+{
+  "geo": {
+    "chrome": {
+      "x": 256,
+      "y": 36,
+      "width": 1157.96875,
+      "height": 30,
+      "top": 36,
+      "right": 1413.96875,
+      "bottom": 66,
+      "left": 256
+    },
+    "overlay": {
+      "x": 1479.65625,
+      "y": 1276,
+      "width": 704.34375,
+      "height": 40,
+      "top": 1276,
+      "right": 2184,
+      "bottom": 1316,
+      "left": 1479.65625
+    },
+    "intersect": false
+  },
+  "scheme": "light",
+  "darkVia": "root-attr",
+  "chromeDark": {
+    "bg": "rgb(14, 15, 17)",
+    "fg": "rgb(250, 250, 250)"
+  },
+  "trunc": {
+    "scrollW": 586,
+    "clientW": 586,
+    "truncated": false,
+    "text": "req088-visual-project-with-extremely-long-basename-for-chrome-truncation-check-part-two"
+  },
+  "v3": {
+    "chrome": null,
+    "sessionSpan": null,
+    "workspace": false
+  },
+  "v4": {
+    "guard": true,
+    "guardTitle": "此会话不属于当前连接的服务器",
+    "guardButtons": [
+      "重新加载(回到本地引擎)",
+      "返回首页"
+    ],
+    "fallback": false,
+    "bodyHas": 1,
+    "workspace": true
+  },
+  "probeAfter": {
+    "samples": 35,
+    "sessionRouteSamples": 17,
+    "pendingSamples": 4,
+    "singleMountViolations": 0,
+    "commandAccumulation": false,
+    "terminalPanelAccumulation": false
+  }
+}

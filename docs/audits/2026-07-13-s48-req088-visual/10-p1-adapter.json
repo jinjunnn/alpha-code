@@ -1,0 +1,38 @@
+{
+  "state": {
+    "workspace": true,
+    "chrome": "req088-visual-project-with-extremely-long-basename-for-chrome-truncation-check-part-two/dxeJQGMeAlpha",
+    "chromeH": 30,
+    "overlay": "REQ-087 SPIKE · req088-visual-project-with-extremely-long-basename-for-chrome-truncation-check-part-two · dxeJQGMecomposer 0/1 · terminal 1 · cmd 117(40) · OK ·",
+    "p1": {
+      "takeoverFlag": true,
+      "visibleHosts": 1,
+      "upstreamComposerDisplay": "none",
+      "alphaComposerInHost": true
+    }
+  },
+  "probe": {
+    "present": true,
+    "summary": {
+      "samples": 6,
+      "sessionRouteSamples": 2,
+      "pendingSamples": 1,
+      "singleMountViolations": 0,
+      "commandAccumulation": false,
+      "terminalPanelAccumulation": false
+    },
+    "latest": {
+      "at": 1783938148559,
+      "pathname": "/L3ByaXZhdGUvdG1wL2NsYXVkZS01MDEvLVVzZXJzLXRpZGUtYXBwLWFscGhhLXdvcmsvMDg2NTg5YjMtNWQwNi00OTEzLTk4NmQtZjlhYTM4M2UzOTNhL3NjcmF0Y2hwYWQvdmlzdWFsL3JlcTA4OC12aXN1YWwtcHJvamVjdC13aXRoLWV4dHJlbWVseS1sb25nLWJhc2VuYW1lLWZvci1jaHJvbWUtdHJ1bmNhdGlvbi1jaGVjay1wYXJ0LXR3bw/session/ses_0a501e7cfffeKC6O8jdxeJQGMe",
+      "sessionID": "ses_0a501e7cfffeKC6O8jdxeJQGMe",
+      "composersTotal": 1,
+      "composersVisible": 0,
+      "terminalPanels": 1,
+      "promptDocks": 1,
+      "commandOptions": 117,
+      "sessionScopedCommands": 40
+    },
+    "count": 6
+  },
+  "pass": true
+}

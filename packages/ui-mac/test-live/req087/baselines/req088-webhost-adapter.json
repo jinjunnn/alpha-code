@@ -1,0 +1,30 @@
+{
+  "capturedAt": "2026-07-13T09:36:33.984Z",
+  "mode": "adapter (REQ-088 webhost comparison entry, real engine, vite dev, headless Chrome)",
+  "engine": "bun run packages/opencode/src/index.ts serve",
+  "sessionMessages": 110,
+  "mountMs": {
+    "runs": [
+      1056,
+      1087,
+      1097
+    ],
+    "median": 1087
+  },
+  "openEventSubscriptions": 1,
+  "usedJSHeapBytes": {
+    "samples": [
+      83626763,
+      83689127,
+      83749351
+    ],
+    "delta": 122588
+  },
+  "scrollFrameMs": {
+    "frames": 202,
+    "avg": 15.02821782179324,
+    "p95": 27.800000000000182,
+    "max": 41.69999999999982
+  },
+  "adapterComparison": "REQ-088 T3/T4 dual-run — judgement in docs/audits/2026-07-13-s48-req088-t3t4-live-adapter-comparison.md"
+}

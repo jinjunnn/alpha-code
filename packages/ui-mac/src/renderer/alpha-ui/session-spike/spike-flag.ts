@@ -1,8 +1,9 @@
-// REQ-087 spike 实验闸(Issue #180/#202)。原型永不默认启用:
+// REQ-087 spike 实验闸(Issue #180/#202)。永不默认启用:
 //
 //   容器侧探针(SessionSpikeHost):localStorage["ALPHA_SESSION_SPIKE"]="1" + reload
-//   surface 侧原型(sessionSpikeSurface):上面的 localStorage 闸 **且** 主进程
-//     ALPHA_SURFACE_SESSION=alpha(main/alpha-surfaces.ts env 覆盖)—— 双闸全开才生效。
+//   正式外框(session-workspace/alpha-session-workspace.tsx,REQ-088 T2 由 spike 转正):
+//     上面的 localStorage 闸 **且** 主进程 ALPHA_SURFACE_SESSION=alpha
+//     (main/alpha-surfaces.ts env 覆盖)—— 双闸全开才生效;发布态升级归 T5,闸的去留归 T7。
 //
 // 为什么用 localStorage 而不是 env:renderer 没有 process.env,现有 env→renderer 通道只有
 // main 的 surface resolver IPC(不属于本 spike 的可改面)。localStorage 满足「显式 opt-in、

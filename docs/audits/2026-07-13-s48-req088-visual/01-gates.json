@@ -1,0 +1,44 @@
+{
+  "sidecar": "http://127.0.0.1:61609",
+  "before": {
+    "href": "http://localhost:5173/index.html",
+    "spikeFlag": null,
+    "surfaces": {
+      "home": {
+        "mode": "alpha",
+        "reason": "release-default"
+      },
+      "newSession": {
+        "mode": "alpha",
+        "reason": "release-default"
+      },
+      "session": {
+        "mode": "alpha",
+        "reason": "env-override"
+      }
+    },
+    "probe": false,
+    "workspace": false,
+    "colorScheme": "light",
+    "composerModelLs": "{\"providerID\":\"alpha\",\"modelID\":\"claude-opus-4.8\",\"name\":\"Claude Opus 4.8\",\"variants\":[\"低\",\"中\",\"高\"]}"
+  },
+  "after": {
+    "href": "http://localhost:5173/index.html",
+    "spikeFlag": "1",
+    "surfaces": {
+      "home": {
+        "mode": "alpha",
+        "reason": "release-default"
+      },
+      "newSession": {
+        "mode": "alpha",
+        "reason": "release-default"
+      },
+      "session": {
+        "mode": "alpha",
+        "reason": "env-override"
+      }
+    },
+    "probe": true
+  }
+}

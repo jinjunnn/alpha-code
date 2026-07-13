@@ -1,0 +1,16 @@
+{
+  "ws": true,
+  "p1": {
+    "takeoverFlag": true,
+    "visibleHosts": 1,
+    "upstreamComposerDisplay": "none",
+    "alphaComposerInHost": true
+  },
+  "p4": {
+    "alphaPicker": true,
+    "rowCount": 15,
+    "selected": "scripted:scripted-1",
+    "homeAnchor": true,
+    "popperPositioners": 0
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "reopened": {
+    "alphaPicker": true,
+    "rows": [
+      {
+        "key": "scripted:scripted-1",
+        "selected": "true"
+      },
+      {
+        "key": "scripted:scripted-2",
+        "selected": "false"
+      }
+    ],
+    "homeAnchor": true
+  },
+  "closed": true
+}

@@ -1,0 +1,10 @@
+{
+  "restoredTo": "{\"providerID\":\"alpha\",\"modelID\":\"claude-opus-4.8\",\"name\":\"Claude Opus 4.8\",\"variants\":[\"低\",\"中\",\"高\"]}",
+  "check": {
+    "composerModel": "{\"providerID\":\"alpha\",\"modelID\":\"claude-opus-4.8\",\"name\":\"Claude Opus 4.8\",\"variants\":[\"低\",\"中\",\"高\"]}",
+    "scriptedResidue": {
+      "n": 0,
+      "hits": []
+    }
+  }
+}

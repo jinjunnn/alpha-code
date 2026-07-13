@@ -48,7 +48,8 @@ import { AlphaHome } from "./alpha-ui/AlphaHome"
 import { AlphaNewSession } from "./alpha-ui/alpha-new-session"
 import { SurfaceBoundary } from "./alpha-ui/surface-boundary"
 import type { ResolvedSurfaces } from "../shared/alpha-surfaces"
-import { SessionSpikeHost, sessionSpikeSurface } from "./alpha-ui/session-spike/session-spike-host" // REQ-087 spike(默认恒 off)
+import { SessionSpikeHost } from "./alpha-ui/session-spike/session-spike-host" // REQ-087 spike 探针(默认恒 off,T7 清理)
+import { alphaSessionWorkspaceSurface } from "./alpha-ui/session-workspace/alpha-session-workspace" // REQ-088 T2
 import { AlphaOnboarding } from "./alpha-ui/AlphaOnboarding"
 import { setupSettingsBackButton } from "./alpha-ui/settings-back-button"
 import { ExtensionHub } from "./extensions/extension-hub"
@@ -455,8 +456,10 @@ render(() => {
             <AlphaNewSession projects={alphaProjects} draftId={p.draftId} promoteDraft={p.promoteDraft} />
           </SurfaceBoundary>
         )
-      // REQ-087 spike:双闸(ALPHA_SURFACE_SESSION=alpha + localStorage ALPHA_SESSION_SPIKE)未全开时返回 undefined = 上游默认叶,零变化。
-      if (resolved.session.mode === "alpha") surfaces.session = sessionSpikeSurface()
+      // REQ-088 T2:session 叶经 AlphaSessionWorkspace 正式外框注入(SurfaceBoundary + 窄导出叶)。
+      // 发布态本期仍 legacy(T5 才升级);双闸(ALPHA_SURFACE_SESSION=alpha env-override +
+      // localStorage ALPHA_SESSION_SPIKE)未全开时返回 undefined = 上游默认叶,零变化。
+      if (resolved.session.mode === "alpha") surfaces.session = alphaSessionWorkspaceSurface()
       return surfaces
     })
 
