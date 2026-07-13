@@ -1,0 +1,37 @@
+{
+  "state": {
+    "frame": true,
+    "frameHeader": "ALPHA FRAME(REQ-087 原型)/private/tmp/claude-501/-Users-tide-app-alpha-work/e445f21a-e7b5-4daa-8e51-cbb67d7d0f40/scratchpad/c4/proj-a · ses_0a63336feffeGAXzDO1m9IirhM",
+    "overlay": "REQ-087 SPIKE · proj-a · 1m9IirhMcomposer 0/1 · terminal 1 · cmd 117(40) · VIOLATION",
+    "timelineRows": 9,
+    "composersTotal": 1,
+    "terminalPanels": 1
+  },
+  "probe": {
+    "spike": {
+      "present": true,
+      "summary": {
+        "samples": 6,
+        "sessionRouteSamples": 2,
+        "singleMountViolations": 1,
+        "commandAccumulation": false,
+        "terminalPanelAccumulation": false
+      },
+      "latest": {
+        "at": 1783918324022,
+        "pathname": "/L3ByaXZhdGUvdG1wL2NsYXVkZS01MDEvLVVzZXJzLXRpZGUtYXBwLWFscGhhLXdvcmsvZTQ0NWYyMWEtZTdiNS00ZGFhLThlNTEtY2JiNjdkN2QwZjQwL3NjcmF0Y2hwYWQvYzQvcHJvai1h/session/ses_0a63336feffeGAXzDO1m9IirhM",
+        "sessionID": "ses_0a63336feffeGAXzDO1m9IirhM",
+        "composersTotal": 1,
+        "composersVisible": 0,
+        "terminalPanels": 1,
+        "promptDocks": 1,
+        "commandOptions": 117,
+        "sessionScopedCommands": 40
+      },
+      "count": 6
+    },
+    "ptyCount": 0,
+    "ptys": [],
+    "tcpEstablished": 15
+  }
+}

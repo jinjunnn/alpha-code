@@ -1,0 +1,190 @@
+{
+  "sessionR": "ses_0a6096d61ffe2TDTKL3YPeNwNK",
+  "before": {
+    "dom": {
+      "frame": true,
+      "rows": 6,
+      "panels": 1,
+      "composers": 1
+    },
+    "summary": {
+      "samples": 6,
+      "sessionRouteSamples": 2,
+      "singleMountViolations": 1,
+      "commandAccumulation": false,
+      "terminalPanelAccumulation": false
+    },
+    "latest": {
+      "at": 1783920796021,
+      "pathname": "/L3ByaXZhdGUvdG1wL2NsYXVkZS01MDEvLVVzZXJzLXRpZGUtYXBwLWFscGhhLXdvcmsvZTQ0NWYyMWEtZTdiNS00ZGFhLThlNTEtY2JiNjdkN2QwZjQwL3NjcmF0Y2hwYWQvYzQvcHJvai1h/session/ses_0a6096d61ffe2TDTKL3YPeNwNK",
+      "sessionID": "ses_0a6096d61ffe2TDTKL3YPeNwNK",
+      "composersTotal": 1,
+      "composersVisible": 0,
+      "terminalPanels": 1,
+      "promptDocks": 1,
+      "commandOptions": 117,
+      "sessionScopedCommands": 40
+    },
+    "pty": 1,
+    "ptys": [
+      {
+        "id": "pty_f59d2bf940016VjZNISIPeuOPX",
+        "title": "Terminal 1",
+        "command": "/bin/zsh",
+        "args": [
+          "-l"
+        ],
+        "cwd": "/private/tmp/claude-501/-Users-tide-app-alpha-work/e445f21a-e7b5-4daa-8e51-cbb67d7d0f40/scratchpad/c4/proj-a",
+        "status": "running",
+        "pid": 20424
+      }
+    ],
+    "tcp": 9
+  },
+  "afterReload2": {
+    "dom": {
+      "frame": true,
+      "rows": 6,
+      "panels": 1,
+      "composers": 1
+    },
+    "summary": {
+      "samples": 6,
+      "sessionRouteSamples": 2,
+      "singleMountViolations": 1,
+      "commandAccumulation": false,
+      "terminalPanelAccumulation": false
+    },
+    "latest": {
+      "at": 1783920814886,
+      "pathname": "/L3ByaXZhdGUvdG1wL2NsYXVkZS01MDEvLVVzZXJzLXRpZGUtYXBwLWFscGhhLXdvcmsvZTQ0NWYyMWEtZTdiNS00ZGFhLThlNTEtY2JiNjdkN2QwZjQwL3NjcmF0Y2hwYWQvYzQvcHJvai1h/session/ses_0a6096d61ffe2TDTKL3YPeNwNK",
+      "sessionID": "ses_0a6096d61ffe2TDTKL3YPeNwNK",
+      "composersTotal": 1,
+      "composersVisible": 0,
+      "terminalPanels": 1,
+      "promptDocks": 1,
+      "commandOptions": 117,
+      "sessionScopedCommands": 40
+    },
+    "pty": 1,
+    "ptys": [
+      {
+        "id": "pty_f59d2bf940016VjZNISIPeuOPX",
+        "title": "Terminal 1",
+        "command": "/bin/zsh",
+        "args": [
+          "-l"
+        ],
+        "cwd": "/private/tmp/claude-501/-Users-tide-app-alpha-work/e445f21a-e7b5-4daa-8e51-cbb67d7d0f40/scratchpad/c4/proj-a",
+        "status": "running",
+        "pid": 20424
+      }
+    ],
+    "tcp": 17
+  },
+  "afterReload3": {
+    "dom": {
+      "frame": true,
+      "rows": 6,
+      "panels": 1,
+      "composers": 1
+    },
+    "summary": {
+      "samples": 6,
+      "sessionRouteSamples": 2,
+      "singleMountViolations": 1,
+      "commandAccumulation": false,
+      "terminalPanelAccumulation": false
+    },
+    "latest": {
+      "at": 1783920824302,
+      "pathname": "/L3ByaXZhdGUvdG1wL2NsYXVkZS01MDEvLVVzZXJzLXRpZGUtYXBwLWFscGhhLXdvcmsvZTQ0NWYyMWEtZTdiNS00ZGFhLThlNTEtY2JiNjdkN2QwZjQwL3NjcmF0Y2hwYWQvYzQvcHJvai1h/session/ses_0a6096d61ffe2TDTKL3YPeNwNK",
+      "sessionID": "ses_0a6096d61ffe2TDTKL3YPeNwNK",
+      "composersTotal": 1,
+      "composersVisible": 0,
+      "terminalPanels": 1,
+      "promptDocks": 1,
+      "commandOptions": 117,
+      "sessionScopedCommands": 40
+    },
+    "pty": 1,
+    "ptys": [
+      {
+        "id": "pty_f59d2bf940016VjZNISIPeuOPX",
+        "title": "Terminal 1",
+        "command": "/bin/zsh",
+        "args": [
+          "-l"
+        ],
+        "cwd": "/private/tmp/claude-501/-Users-tide-app-alpha-work/e445f21a-e7b5-4daa-8e51-cbb67d7d0f40/scratchpad/c4/proj-a",
+        "status": "running",
+        "pid": 20424
+      }
+    ],
+    "tcp": 13
+  },
+  "samplesFinalWindow": [
+    {
+      "at": 1783920819361,
+      "pathname": "/",
+      "composersTotal": 0,
+      "composersVisible": 0,
+      "terminalPanels": 0,
+      "promptDocks": 0,
+      "commandOptions": 92,
+      "sessionScopedCommands": 17
+    },
+    {
+      "at": 1783920819365,
+      "pathname": "/L1VzZXJzL3RpZGUvYXBwL2thbWEtYm90LWxvY2Fs/session",
+      "composersTotal": 0,
+      "composersVisible": 0,
+      "terminalPanels": 0,
+      "promptDocks": 0,
+      "commandOptions": 92,
+      "sessionScopedCommands": 17
+    },
+    {
+      "at": 1783920819442,
+      "pathname": "/new-session",
+      "composersTotal": 0,
+      "composersVisible": 0,
+      "terminalPanels": 0,
+      "promptDocks": 0,
+      "commandOptions": 93,
+      "sessionScopedCommands": 18
+    },
+    {
+      "at": 1783920820093,
+      "pathname": "/new-session",
+      "composersTotal": 0,
+      "composersVisible": 0,
+      "terminalPanels": 0,
+      "promptDocks": 0,
+      "commandOptions": 93,
+      "sessionScopedCommands": 18
+    },
+    {
+      "at": 1783920823650,
+      "pathname": "/L3ByaXZhdGUvdG1wL2NsYXVkZS01MDEvLVVzZXJzLXRpZGUtYXBwLWFscGhhLXdvcmsvZTQ0NWYyMWEtZTdiNS00ZGFhLThlNTEtY2JiNjdkN2QwZjQwL3NjcmF0Y2hwYWQvYzQvcHJvai1h/session/ses_0a6096d61ffe2TDTKL3YPeNwNK",
+      "sessionID": "ses_0a6096d61ffe2TDTKL3YPeNwNK",
+      "composersTotal": 0,
+      "composersVisible": 0,
+      "terminalPanels": 0,
+      "promptDocks": 0,
+      "commandOptions": 93,
+      "sessionScopedCommands": 18
+    },
+    {
+      "at": 1783920824302,
+      "pathname": "/L3ByaXZhdGUvdG1wL2NsYXVkZS01MDEvLVVzZXJzLXRpZGUtYXBwLWFscGhhLXdvcmsvZTQ0NWYyMWEtZTdiNS00ZGFhLThlNTEtY2JiNjdkN2QwZjQwL3NjcmF0Y2hwYWQvYzQvcHJvai1h/session/ses_0a6096d61ffe2TDTKL3YPeNwNK",
+      "sessionID": "ses_0a6096d61ffe2TDTKL3YPeNwNK",
+      "composersTotal": 1,
+      "composersVisible": 0,
+      "terminalPanels": 1,
+      "promptDocks": 1,
+      "commandOptions": 117,
+      "sessionScopedCommands": 40
+    }
+  ]
+}
