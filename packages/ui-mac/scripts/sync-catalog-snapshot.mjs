@@ -20,14 +20,16 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const extDir = path.resolve(here, "../src/renderer/extensions")
 const catalogPath = path.join(extDir, "alpha-catalog.json")
 const metaPath = path.join(extDir, "alpha-catalog.snapshot.json")
-const remoteCatalogTs = path.resolve(here, "../src/main/remote-catalog.ts")
+// REQ-101-A 后公钥常量移居 catalog-channels.ts(remote-catalog 只是别名引用)——单源提取跟随移居
+// (REQ-102-A 修复:原 remote-catalog.ts 正则已抓不到常量,脚本会在提钥处 die)。
+const catalogChannelsTs = path.resolve(here, "../src/main/catalog-channels.ts")
 
 const CATALOG_URL = "https://alphacodeone.com/catalog/v1/catalog.json"
 
 function pubkeyFromSource() {
-  const src = fs.readFileSync(remoteCatalogTs, "utf8")
-  const m = src.match(/CATALOG_PUBKEY_B64 = "([A-Za-z0-9+/=]+)"/)
-  if (!m) throw new Error(`cannot extract CATALOG_PUBKEY_B64 from ${remoteCatalogTs}`)
+  const src = fs.readFileSync(catalogChannelsTs, "utf8")
+  const m = src.match(/BUILTIN_CATALOG_PUBKEY_B64 = "([A-Za-z0-9+/=]+)"/)
+  if (!m) throw new Error(`cannot extract BUILTIN_CATALOG_PUBKEY_B64 from ${catalogChannelsTs}`)
   return m[1]
 }
 
