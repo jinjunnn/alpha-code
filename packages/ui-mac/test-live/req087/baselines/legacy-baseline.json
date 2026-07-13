@@ -1,0 +1,30 @@
+{
+  "capturedAt": "2026-07-13T04:23:03.782Z",
+  "mode": "legacy (frozen packages/app leaf, real engine, vite dev, headless Chrome)",
+  "engine": "bun run packages/opencode/src/index.ts serve",
+  "sessionMessages": 110,
+  "mountMs": {
+    "runs": [
+      1050,
+      1049,
+      1038
+    ],
+    "median": 1049
+  },
+  "openEventSubscriptions": 1,
+  "usedJSHeapBytes": {
+    "samples": [
+      83896725,
+      83949613,
+      84015849
+    ],
+    "delta": 119124
+  },
+  "scrollFrameMs": {
+    "frames": 203,
+    "avg": 14.740394088664445,
+    "p95": 16,
+    "max": 43.400000000000546
+  },
+  "adapterComparison": "PENDING REQ-088 T4 — adapter mode does not exist yet; this file IS the legacy baseline"
+}

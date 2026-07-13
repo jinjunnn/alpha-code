@@ -125,32 +125,62 @@ describe("REQ-087 §5 timeline 关键机制锚点", () => {
   })
 })
 
-describe("REQ-087 §6 通道结论锁定(deep-import 现状不可静默漂移)", () => {
+describe("REQ-087 §6 通道结论锁定(REQ-088 C1 合法窄通道,不可静默漂移)", () => {
   test("session surface 发布默认仍是 legacy(REQ-088 未交付,flags-off 零变化)", () => {
     expect(SURFACE_RELEASE_STATES.session).toBe("legacy")
   })
-  test("@opencode-ai/app exports map 不含 pages 子路径 —— 合法窄通道尚不存在", () => {
+  test("@opencode-ai/app exports map = 既有六条 + ./surface/session 窄导出(C1,ADR-027 修订)", () => {
     const pkg = JSON.parse(readFileSync(join(APP, "package.json"), "utf8")) as { exports: Record<string, string> }
     expect(Object.keys(pkg.exports).sort()).toEqual(
-      [".", "./desktop-menu", "./index.css", "./updater", "./vite", "./wsl/types"].sort(),
+      [".", "./desktop-menu", "./index.css", "./updater", "./vite", "./wsl/types", "./surface/session"].sort(),
     )
+    // 窄面锁死:该子路径只指向 session 叶源文件,且该模块仅有 default 一个导出(L3 逐案评审结论)。
+    expect(pkg.exports["./surface/session"]).toBe("./src/pages/session.tsx")
+    const sessionLeaf = src("pages/session.tsx")
+    const exportStatements = sessionLeaf.match(/^export .*$/gm) ?? []
+    expect(exportStatements).toEqual(["export default function Page() {"])
   })
-  test("deep import 全仓唯一收敛点 = session-spike-host.tsx(拟议 upstream-adapter 边界的占位)", () => {
+  test("窄导出全仓唯一消费点 = session-spike-host.tsx;相对路径 deep import 已废除", () => {
     const host = readFileSync(join(import.meta.dir, "session-spike-host.tsx"), "utf8")
-    expect(host).toContain(`import("../../../../../app/src/pages/session")`)
-    // index.tsx 本体不得出现任何对 app/src 的 deep import
+    expect(host).toContain(`import("@opencode-ai/app/surface/session")`)
+    expect(host).not.toContain(`app/src/pages`)
+    // index.tsx 本体不得出现任何对 app/src 的 deep import,也不得直接消费窄导出
     const rendererIndex = readFileSync(join(import.meta.dir, "../../index.tsx"), "utf8")
     expect(rendererIndex).not.toContain(`app/src/pages`)
+    expect(rendererIndex).not.toContain(`@opencode-ai/app/surface/session`)
   })
 })
 
-// ———— OPEN:需要 live engine 的验收项,不在源码锚点层造假 ————
-// 以下对应 REQ-087 AC5/AC6/AC7 与交付物 4 的运行时部分;进入 REQ-088 前必须用真实引擎取证。
-describe("REQ-087 OPEN(live-engine characterization,本 spike 不覆盖)", () => {
-  test.todo("AC5 100+ 长 timeline:首屏/stream 更新/上翻历史/跟底与暂停/hash 定位 无跳动不丢锚")
-  test.todo("AC6 terminal 生命周期:新建/关闭/重排/切 session/重启恢复 + PTY 不泄漏")
-  test.todo("AC6 permission once/always/reject 与 abort/重试 流程")
-  test.todo("AC4(运行时半边)event subscription 数与 PTY 数跨切换不线性累积(探针只覆盖 DOM/命令面)")
-  test.todo("AC7 mount time / 订阅数 / 内存趋势 / 长 timeline 滚动 vs legacy 基线")
-  test.todo("streaming / steer / queue / abort / tool card / file-review panel 焦点返回 characterization")
+// ———— live-engine 验收项(REQ-088 C2 已落实,原六项 test.todo → 真测试)————
+// 实现在 test-live/req087/req087-live-characterization.test.ts:真引擎(packages/opencode serve)
+// + 冻结 app renderer(vite dev)+ 真实 Chromium;不进权威门(依赖本机 Chrome、运行分钟级),
+// 入口 scripts/req087-live-characterization.sh。此处锚死套件存在性与六项标题,防静默删除/改名。
+describe("REQ-087 live-engine characterization(C2,实现于 test-live/req087)", () => {
+  const LIVE_ITEMS = [
+    "AC5 100+ 长 timeline:首屏/stream 更新/上翻历史/跟底与暂停/hash 定位 无跳动不丢锚",
+    "AC6 terminal 生命周期:新建/关闭/重排/切 session/重启恢复 + PTY 不泄漏",
+    "AC6 permission once/always/reject 与 abort/重试 流程",
+    "AC4(运行时半边)event subscription 数与 PTY 数跨切换不线性累积(探针只覆盖 DOM/命令面)",
+    "AC7 mount time / 订阅数 / 内存趋势 / 长 timeline 滚动 vs legacy 基线",
+    "streaming / steer / queue / abort / tool card / file-review panel 焦点返回 characterization",
+  ] as const
+  const liveSuite = readFileSync(
+    join(import.meta.dir, "../../../../test-live/req087/req087-live-characterization.test.ts"),
+    "utf8",
+  )
+  test("六项 live 验收项在真引擎套件中逐一存在(标题精确匹配)", () => {
+    for (const item of LIVE_ITEMS) expect(liveSuite).toContain(`"${item}"`)
+  })
+  test("真引擎口径未被偷换:真实 serve 引擎 + 冻结 app renderer + 真实浏览器", () => {
+    const harness = readFileSync(join(import.meta.dir, "../../../../test-live/req087/harness.ts"), "utf8")
+    expect(harness).toContain(`packages/opencode/src/index.ts"), "serve"`)
+    expect(harness).toContain(`cwd: join(REPO_ROOT, "packages/app")`)
+    expect(harness).toContain(`chromium.launch({`)
+    // 权威门不吞本套件:ui-mac 单元门仍是 bun test src(本文件自身就在其中)
+    const pkg = JSON.parse(readFileSync(join(import.meta.dir, "../../../../package.json"), "utf8")) as {
+      scripts: Record<string, string>
+    }
+    expect(pkg.scripts.test).toBe("bun test src")
+    expect(pkg.scripts["test:live:req087"]).toContain("test-live/req087")
+  })
 })

@@ -1,0 +1,15 @@
+{
+  "version": "9.9.9",
+  "entries": [
+    {
+      "id": "skill:vector-demo",
+      "type": "skill",
+      "name": "vector-demo",
+      "version": "1.0.0",
+      "installSpec": {
+        "kind": "skill",
+        "source": "remote"
+      }
+    }
+  ]
+}

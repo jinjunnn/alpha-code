@@ -83,17 +83,21 @@ describe("alpha-catalog 完整性", () => {
     expect(memberIds.sort()).toEqual(["skill:brand-guidelines", "skill:canvas-design"])
   })
 
-  test("S23 新条目在场:mcp:dingtalk / mcp:dbhub(E2/E6),钉钉入中国办公套件", () => {
+  test("S23 存量条目:mcp:dbhub(E6)在场且只读档;中国办公三件套随 REQ-081 退役不在场", () => {
     const ids = new Set(catalog.entries.map((e) => e.id))
-    expect(ids.has("mcp:dingtalk")).toBe(true)
     expect(ids.has("mcp:dbhub")).toBe(true)
-    const china = catalog.entries.find((e) => e.id === "bundle:china-office")!
-    expect(china.bundleItems!.some((i) => i.catalogEntryId === "mcp:dingtalk")).toBe(true)
     // dbhub 只读档:--readonly 必须在命令里(0.12.0 CLI 档;丢失=静默变可写,supply-chain 回归锁)
     const dbhub = catalog.entries.find((e) => e.id === "mcp:dbhub")!
     const spec = dbhub.installSpec as McpInstallSpec
     expect(spec.command).toContain("--readonly")
     expect(spec.mirrorCommand).toContain("--readonly")
+    // S23 同批上架的 dingtalk(E2)及 feishu/yuque/bundle:china-office 已于 2026-07-09 随
+    // REQ-081 从 C 端 catalog 退役(产品拍板「接入形态未想清楚,先下架」,git 留档可重上架);
+    // 2026-07-13.1 快照刷新起不在场是正确现实。未来 conscious 重上架时连同本断言一起更新
+    // (参照上方 REQ-045 补货测试的形态)。
+    for (const retired of ["mcp:dingtalk", "mcp:feishu", "mcp:yuque", "bundle:china-office"]) {
+      expect(ids.has(retired), `${retired} 已随 REQ-081 退役;重上架须显式更新本断言`).toBe(false)
+    }
   })
 })
 
@@ -123,9 +127,14 @@ describe("REQ-105 Office 纠偏守卫(归档连接器禁入离线 seed;Excel 锁
     }
   })
 
-  test("excel-mcp-server 如在场:必须精确钉审计版本并通过 sandbox 闸口(升级不重审计即红)", () => {
-    // 当前快照(2026-07-06.4)尚无 mcp:excel;C 端纠偏后的快照刷新会带进来 —— 届时本断言生效:
-    // 版本必须逐字 = EXCEL_MCP_PIN.pinnedSpec(0.1.8 审计记录),local stdio、零 host/port 绑定。
+  test("excel-mcp-server 在场且精确钉审计版本、通过 sandbox 闸口(升级不重审计即红)", () => {
+    // 2026-07-13.1 快照起 mcp:excel 在场(C 端纠偏 alpha-web 上架后刷入,REQ-105 收口)。
+    // 先锁在场 —— 否则条目静默消失会让下方钉版/闸口断言退化为空转;再对每个引用 excel 包的
+    // 命令断言:版本逐字 = EXCEL_MCP_PIN.pinnedSpec(0.1.8 审计记录),local stdio、零 host/port 绑定。
+    expect(
+      catalog.entries.some((e) => e.id === EXCEL_MCP_PIN.catalogId),
+      `${EXCEL_MCP_PIN.catalogId} 应在场(2026-07-13.1 快照携带审计钉版条目)`,
+    ).toBe(true)
     for (const entry of catalog.entries.filter((e) => e.type === "mcp")) {
       const spec = entry.installSpec as McpInstallSpec
       const cmds = [...(spec.command ?? []), ...(spec.mirrorCommand ?? [])]

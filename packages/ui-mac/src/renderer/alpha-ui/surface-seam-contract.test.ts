@@ -46,4 +46,19 @@ describe("ADR-027 typed surface seam anchors (frozen packages/app)", () => {
     expect(indexTs).toContain("type DraftSurfaceProps")
     expect(indexTs).not.toMatch(/export \* from ["']\.\/context/)
   })
+
+  test("narrow session-leaf channel survives (REQ-088 C1, frontend-freeze-base-3)", () => {
+    // exports map 恰好一条 surface 子路径,指向 session 叶源文件;不得扩成 ./surface/* 通配,
+    // 也不得新增 pages/context 子路径(ADR-027 修订 2026-07-13,ADR-029 L3 逐案纪律)。
+    const pkg = JSON.parse(readFileSync(join(import.meta.dir, "../../../../app/package.json"), "utf8")) as {
+      exports: Record<string, string>
+    }
+    expect(pkg.exports["./surface/session"]).toBe("./src/pages/session.tsx")
+    const surfaceSubpaths = Object.keys(pkg.exports).filter((key) => key.startsWith("./surface/"))
+    expect(surfaceSubpaths).toEqual(["./surface/session"])
+    expect(Object.keys(pkg.exports).some((key) => key.includes("pages") || key.includes("context"))).toBe(false)
+    // 该模块仅有 default 一个导出(session Page 组件)—— 窄面的可机械验证形态。
+    const sessionLeaf = readFileSync(join(APP_SRC, "pages/session.tsx"), "utf8")
+    expect(sessionLeaf).toContain("export default function Page()")
+  })
 })

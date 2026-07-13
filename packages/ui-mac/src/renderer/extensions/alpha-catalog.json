@@ -1,5 +1,5 @@
 {
-  "version": "2026-07-06.4",
+  "version": "2026-07-13.1",
   "_note": "alpha-code 扩展目录 —— 远程分发真源(REQ-032:alphacodeone.com/catalog/v1,ed25519 签名,ETag 缓存;A 侧回退链 远端→缓存→内置)。schema 同 A 侧 alpha-catalog.json + 条目级 version + remoteAsset(下载清单,sha256 钉死)。编辑本文件后跑 scripts/build-catalog.mjs 再 git commit + deploy。",
   "_disclaimers": [
     "标 _verify 的条目:包名/协议/可用性需落地前手工核实,不得当作已确认事实。",
@@ -8,7 +8,8 @@
     "MCP command/version 全部钉精确版本(A2/T1.5):npx `@pkg@x.y.z` / uvx `pkg@x.y.z`,消除每启动在线解析风暴。钉的值 = 更新当日各包 latest,行为与不钉一致、仅冻结确定性。升级 = 手动 bump(见 npm/pypi)。存量用户配置的一键钉版本迁移(T1.5 第二半)仍待做。",
     "内置 skill 资产(builtinAssetKey → resources/skills/):alpha-upstream-sync / safe-refactor(MIT,自写)+ skill-creator(Apache-2.0,Anthropic 官方,S12 T7 已打包,见 NOTICE)。mcp-builder / canvas-design / brand-guidelines 及空壳 bundle:design 已撤(REQ-044:资产从未打包 → 安装恒失败;S21 真机实锤)——资产就绪后经远程 catalog(REQ-032)上架,零发版,不再内置无资产条目。",
     "tools[]/hooks[] 是精选元数据(详情页展示用),非全集;引擎无 tools 查询路由,实时探测为 flag 内 V2(REQ-019 T8)。标 _verify 条目的 tools[] 同属待核实。",
-    "agent 类条目 = vendored md 资产(resources/agents/),安装经 writeAgent 同管线(桥+账本);plugin 条目带 vendoredAssetKey 时安装零网络(REQ-023)。"
+    "agent 类条目 = vendored md 资产(resources/agents/),安装经 writeAgent 同管线(桥+账本);plugin 条目带 vendoredAssetKey 时安装零网络(REQ-023)。",
+    "REQ-105(2026-07-13,alpha-web#21):REQ-080 上架的 Word/PPT 社区连接器上游已于 2026-03-03 归档(不再维护)→ 从 stable catalog 下架。处置 = 条目移除而非 tombstone/archived 标记(A 侧 schema 无此字段,且其快照守卫禁归档包名逐字出现);已装用户由 A 侧随包 advisory 静态表 + receipts 如实警示,不静默删除。Excel 连接器审计钉版 0.1.8、仅 local stdio(详见条目 _provenance);回流/漂移由 tests/catalog-guard.test.mjs 拦截。"
   ],
   "entries": [
     {
@@ -40,6 +41,59 @@
           "description": "把文件 / URL(PDF/Word/PPT/Excel/图片/HTML)转成 Markdown"
         }
       ]
+    },
+    {
+      "id": "mcp:excel",
+      "type": "mcp",
+      "name": "excel-mcp-server",
+      "displayName": "Excel 表格读写(excel-mcp)",
+      "description": "创建/编辑 xlsx:数据、公式、图表、透视表、格式化。免装 Excel(openpyxl 实现),macOS/Windows 通用;仅 local stdio 运行(REQ-105 审计钉版,禁远程监听),文件路径须用绝对路径。",
+      "source": "community",
+      "category": "office",
+      "license": "MIT",
+      "redistributable": true,
+      "version": "1.0.0",
+      "installSpec": {
+        "kind": "mcp",
+        "mcpType": "local",
+        "command": [
+          "uvx",
+          "excel-mcp-server@0.1.8",
+          "stdio"
+        ],
+        "requiredEnvVars": [],
+        "runtimeDep": [
+          "uv"
+        ]
+      },
+      "tools": [
+        {
+          "name": "create_workbook",
+          "description": "新建 xlsx 工作簿"
+        },
+        {
+          "name": "write_data_to_excel",
+          "description": "向工作表写入数据"
+        },
+        {
+          "name": "read_data_from_excel",
+          "description": "读取工作表数据(含元数据)"
+        },
+        {
+          "name": "apply_formula",
+          "description": "写入公式"
+        },
+        {
+          "name": "create_chart",
+          "description": "创建图表"
+        },
+        {
+          "name": "create_pivot_table",
+          "description": "创建透视表"
+        }
+      ],
+      "_verify": "社区包(haris-musa,GitHub ~4.0k★);仓库 LICENSE=MIT,但 pypi license 元数据缺失。",
+      "_provenance": "REQ-105 审计钉版(2026-07-13,与 A 侧 EXCEL_MCP_PIN 逐字一致):version 0.1.8 修复 < 0.1.8 的 path traversal + 未认证远程读写;pypi 工件 sha256(2026-07-12 与 pypi 实测复核)sdist=98f6b25957cc105a0d68d9a98a5830204ab3f3f7a79de27a91ae8d1a9291fdcd,wheel=c75668094697152b9d749939c071ea02ac418635c8a11636396bd9797609f5a5(uvx 无逐工件校验通道,digest 为审计/追溯记录)。政策:command 必须逐字含钉版 spec,仅 stdio 子命令;禁网络 transport 子命令(sse/streamable-http 等)、宿主/端口绑定参数与环境变量、全网卡监听地址。升级 = 重新 intake + 同步 bump A 侧 EXCEL_MCP_PIN 与本仓 tests/catalog-guard.test.mjs。"
     },
     {
       "id": "mcp:filesystem",
@@ -315,155 +369,6 @@
         {
           "name": "execute_sql",
           "description": "执行 SQL(--readonly 档:仅查询类语句)"
-        }
-      ]
-    },
-    {
-      "id": "mcp:feishu",
-      "type": "mcp",
-      "name": "feishu-lark",
-      "displayName": "飞书 / Lark",
-      "description": "接入飞书云文档、多维表格、IM、日历(larksuite 官方 MCP)。",
-      "source": "official",
-      "category": "china-office",
-      "license": "MIT",
-      "redistributable": true,
-      "version": "1.0.0",
-      "installSpec": {
-        "kind": "mcp",
-        "mcpType": "local",
-        "command": [
-          "npx",
-          "-y",
-          "@larksuiteoapi/lark-mcp@0.5.1"
-        ],
-        "requiredEnvVars": [
-          "APP_ID",
-          "APP_SECRET"
-        ],
-        "runtimeDep": [
-          "node"
-        ],
-        "mirrorCommand": [
-          "npx",
-          "-y",
-          "--registry",
-          "https://registry.npmmirror.com",
-          "@larksuiteoapi/lark-mcp@0.5.1"
-        ],
-        "_verify": "确认 larksuite/lark-openapi-mcp 的精确 npm 包名与鉴权字段;凭据走 keychain。"
-      },
-      "tools": [
-        {
-          "name": "im.v1.message.create",
-          "description": "发送消息"
-        },
-        {
-          "name": "docx.v1.document.rawContent",
-          "description": "读取云文档内容"
-        },
-        {
-          "name": "bitable.v1.appTableRecord.search",
-          "description": "查询多维表格记录"
-        }
-      ]
-    },
-    {
-      "id": "mcp:yuque",
-      "type": "mcp",
-      "name": "yuque",
-      "displayName": "语雀",
-      "description": "读写语雀知识库文档(yuque 官方,其安装器已声明支持 opencode)。",
-      "source": "official",
-      "category": "china-office",
-      "license": "MIT",
-      "redistributable": true,
-      "version": "1.0.0",
-      "installSpec": {
-        "kind": "mcp",
-        "mcpType": "local",
-        "command": [
-          "npx",
-          "-y",
-          "yuque-mcp-server@1.2.0"
-        ],
-        "requiredEnvVars": [
-          "YUQUE_TOKEN"
-        ],
-        "runtimeDep": [
-          "node"
-        ],
-        "mirrorCommand": [
-          "npx",
-          "-y",
-          "--registry",
-          "https://registry.npmmirror.com",
-          "yuque-mcp-server@1.2.0"
-        ],
-        "_verify": "确认 yuque/yuque-mcp-server 精确发布名与 token 字段。"
-      },
-      "tools": [
-        {
-          "name": "search_docs",
-          "description": "检索知识库文档"
-        },
-        {
-          "name": "get_doc",
-          "description": "读取文档"
-        },
-        {
-          "name": "create_doc",
-          "description": "新建文档"
-        }
-      ]
-    },
-    {
-      "id": "mcp:dingtalk",
-      "type": "mcp",
-      "name": "dingtalk",
-      "displayName": "钉钉",
-      "description": "接入钉钉开放平台:通讯录、机器人消息、DING、待办、日历等(open-dingtalk 官方发布)。默认启用通讯录/机器人消息/DING 三组工具;需全量 14 组时在定制中心为该连接器补 env ACTIVE_PROFILES=ALL。",
-      "source": "official",
-      "category": "china-office",
-      "license": "MIT",
-      "redistributable": true,
-      "version": "1.0.0",
-      "installSpec": {
-        "kind": "mcp",
-        "mcpType": "local",
-        "command": [
-          "npx",
-          "-y",
-          "dingtalk-mcp@1.1.21"
-        ],
-        "requiredEnvVars": [
-          "DINGTALK_Client_ID",
-          "DINGTALK_Client_Secret"
-        ],
-        "runtimeDep": [
-          "node"
-        ],
-        "mirrorCommand": [
-          "npx",
-          "-y",
-          "--registry",
-          "https://registry.npmmirror.com",
-          "dingtalk-mcp@1.1.21"
-        ],
-        "_verify": "供应链警示(2026-07-06 核实,S23/E2):npm 包发布于钉钉官方 open-dingtalk org 名下(维护者 alibaba-inc 邮箱、homepage 指向 open.dingtalk.com 官方文档),但该 GitHub 仓库仅含 README、无 LICENSE 文件 —— npm 工件无公开源码可对照审计,License=MIT 以 npm 元数据为准。环境变量混合大小写为实(DINGTALK_Client_ID / DINGTALK_Client_Secret,取自钉钉开放平台应用凭证);ACTIVE_PROFILES 可选(缺省=通讯录/机器人/DING 三组)。真机安装 + 首调用待走查。"
-      },
-      "tools": [
-        {
-          "name": "contacts.*",
-          "description": "查询通讯录用户与部门(默认启用,6 个工具)"
-        },
-        {
-          "name": "robot-send-message.*",
-          "description": "群机器人发送消息(默认启用,5 个工具)"
-        },
-        {
-          "name": "ding-message.*",
-          "description": "发送 DING 消息(默认启用,2 个工具)"
         }
       ]
     },
@@ -1252,12 +1157,12 @@
       "type": "bundle",
       "name": "office-suite",
       "displayName": "办公套件",
-      "description": "Word/Excel/PDF 读写与文档处理:markitdown 读取 + 文件系统。",
+      "description": "办公套件:markitdown 读取 + 文件系统 + Excel 表格读写。创建 docx/pptx 由桌面端出厂技能(office-docs,随 app 内置)引导本地脚本完成,无需另装连接器。",
       "source": "alpha",
       "category": "office",
       "license": "mixed",
       "redistributable": true,
-      "version": "1.0.0",
+      "version": "1.2.0",
       "bundleItems": [
         {
           "catalogEntryId": "mcp:markitdown",
@@ -1268,9 +1173,14 @@
           "catalogEntryId": "mcp:filesystem",
           "optional": false,
           "installOrder": 2
+        },
+        {
+          "catalogEntryId": "mcp:excel",
+          "optional": false,
+          "installOrder": 3
         }
       ],
-      "_verify": "再补一个 openpyxl 系 Excel-MCP(写 xlsx)+ 一页自写「办公」引导技能后加入。"
+      "_provenance": "REQ-105(2026-07-13,alpha-web#21):Word/PPT 写作连接器上游 2026-03-03 归档 → 移出本套件与 stable catalog(移除而非 tombstone;已装用户由 A 侧 advisory 静态表如实警示,不静默删除)。成员真变 → 1.1.0 → 1.2.0。"
     },
     {
       "id": "bundle:research",
@@ -1354,35 +1264,6 @@
         }
       ],
       "_provenance": "REQ-045:S22 撤空壳后随成员补货回归(验收④,成员齐才复活)。"
-    },
-    {
-      "id": "bundle:china-office",
-      "type": "bundle",
-      "name": "china-office-suite",
-      "displayName": "中国办公套件",
-      "description": "飞书 + 语雀 + 钉钉连接器,贴合国内协作。",
-      "source": "alpha",
-      "category": "china-office",
-      "license": "MIT",
-      "redistributable": true,
-      "version": "1.0.0",
-      "bundleItems": [
-        {
-          "catalogEntryId": "mcp:feishu",
-          "optional": false,
-          "installOrder": 1
-        },
-        {
-          "catalogEntryId": "mcp:yuque",
-          "optional": true,
-          "installOrder": 2
-        },
-        {
-          "catalogEntryId": "mcp:dingtalk",
-          "optional": true,
-          "installOrder": 3
-        }
-      ]
     },
     {
       "id": "cloud:code-review",

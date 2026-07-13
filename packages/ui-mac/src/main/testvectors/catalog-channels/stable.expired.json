@@ -1,0 +1,15 @@
+{
+  "schema": "alpha.catalog.channel-metadata.v1",
+  "channel": "stable",
+  "sequence": 6,
+  "publishedAt": "2026-01-01T00:00:00.000Z",
+  "expires": "2026-02-01T00:00:00.000Z",
+  "keyId": "e98be50732eb984e5960ae8f26fa39f3152694e447df0271a1d14f28684a7b15",
+  "target": {
+    "catalogVersion": "9.9.9",
+    "sha256": "e6584247bb2b7aa6cd9482ab71284d6b447a7f6fb101e24ce7372d0a6c569717",
+    "bytes": 250,
+    "url": "https://alphacodeone.com/catalog/v1/releases/9.9.9/catalog.json",
+    "sigUrl": "https://alphacodeone.com/catalog/v1/releases/9.9.9/catalog.json.sig"
+  }
+}

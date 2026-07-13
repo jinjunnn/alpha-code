@@ -1,9 +1,14 @@
-// remote-catalog — 定制中心 catalog 的远程分发客户端(REQ-032,收编 E10)。
+// remote-catalog — 定制中心 catalog 的远程分发客户端(REQ-032,收编 E10;REQ-101 A 侧接线)。
 //
 // 端点 = alpha-web(C)静态发布:`https://alphacodeone.com/catalog/v1/catalog.json`(+ .sig)。
 // 流程:ETag 条件请求(304 零成本)→ **ed25519 整体验签**(公钥内置,私钥在 C 侧发布机离线持有)
 // → 形状 sanity → 落 userData 缓存。**回退链 = 远端 → last-known 缓存 → 内置**(B20:永不空白;
 // 验签不过 = 拒用并 loud,绝不静默降级采信未签内容)。
+//
+// REQ-101 A(issue #193)增量:**channel-first** —— 先走 signed channel metadata(stable 指针,
+// 见 catalog-channels.ts,合同 CONTRACT.md §5)取已验 payload;channel 面任一环节不过 → loud →
+// 原样回退现行 v1 兼容面(零破坏)。v1 面同时执行 R11:payload digest 命中 trust 撤销列表 →
+// 拒用(对远端与已缓存内容都生效,离线可判)。
 //
 // 资产通道(phase 1 仅 skill/agent 文本):条目 remoteAsset.files[] 逐文件下载 + **sha256 钉死**,
 // 不匹配拒装(loud);plugin(可执行 JS)不进本通道(REQ-032 非目标,仍走 vendored/npm)。
@@ -11,11 +16,21 @@
 import { createPublicKey, createHash, verify as edVerify } from "node:crypto"
 import * as fs from "node:fs"
 import * as path from "node:path"
+import {
+  BUILTIN_CATALOG_PUBKEY_B64,
+  catalogVersionLess,
+  readRevokedTargets,
+  refreshChannelCatalog,
+  sha256Hex,
+  type ChannelClientDeps,
+} from "./catalog-channels"
+
+export { catalogVersionLess } // 既有导出面保持(版本比较实现移居 catalog-channels,逐字未变)
 
 export const CATALOG_URL = "https://alphacodeone.com/catalog/v1/catalog.json"
 const SIG_URL = `${CATALOG_URL}.sig`
 /** C 侧签名公钥(spki der base64;换钥 = 发版,见 alpha-web docs/catalog-publish.md)。 */
-const CATALOG_PUBKEY_B64 = "MCowBQYDK2VwAyEAqBBmG0mbZ3tZF7Vt8VEWhgm1RQdF2boFU5uUTSmsgHI="
+const CATALOG_PUBKEY_B64 = BUILTIN_CATALOG_PUBKEY_B64
 
 const FETCH_TIMEOUT_MS = 8000
 const MAX_CATALOG_BYTES = 2 * 1024 * 1024 // 2MB 上限(现 ~60KB;防呆)
@@ -23,14 +38,14 @@ const MAX_ASSET_BYTES = 5 * 1024 * 1024 // 单资产文件 5MB 上限(文本技�
 
 export type RemoteAssetFile = { path: string; sha256: string; bytes: number; url: string }
 export type RemoteCatalogResult =
-  | { source: "remote" | "cache"; catalog: unknown; version: string; fetchedAt: string; error?: string }
+  | { source: "remote" | "cache"; catalog: unknown; version: string; fetchedAt: string; error?: string; via?: "channel-stable" | "v1" }
   | { source: "none"; error: string }
 
 const cachePath = (userDataPath: string) => path.join(userDataPath, "remote-catalog.json")
 
-export function verifySignature(body: Buffer, sigB64: string): boolean {
+export function verifySignature(body: Buffer, sigB64: string, pubKeyB64: string = CATALOG_PUBKEY_B64): boolean {
   try {
-    const pub = createPublicKey({ key: Buffer.from(CATALOG_PUBKEY_B64, "base64"), format: "der", type: "spki" })
+    const pub = createPublicKey({ key: Buffer.from(pubKeyB64, "base64"), format: "der", type: "spki" })
     return edVerify(null, body, pub, Buffer.from(sigB64.trim(), "base64"))
   } catch {
     return false
@@ -42,26 +57,23 @@ function saneCatalog(parsed: unknown): parsed is { version: string; entries: unk
   return !!c && typeof c.version === "string" && Array.isArray(c.entries) && c.entries.length > 0
 }
 
-// codex M2:catalog 版本单调比较(段内数值感知:"2026-07-05.10" > "2026-07-05.9")。
-export function catalogVersionLess(a: string, b: string): boolean {
-  const pa = a.split(/[.\-]/), pb = b.split(/[.\-]/)
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const x = pa[i] ?? "", y = pb[i] ?? ""
-    const nx = Number(x), ny = Number(y)
-    if (Number.isFinite(nx) && Number.isFinite(ny) && x !== "" && y !== "") {
-      if (nx !== ny) return nx < ny
-    } else if (x !== y) return x < y
-  }
-  return false
-}
-
 // codex M1:缓存**读取时重验签**(缓存文件可被本地篡改;只信 body+sig 过 ed25519 的内容)。
-export function readCachedCatalog(userDataPath: string): { etag?: string; version: string; fetchedAt: string; catalog: unknown } | null {
+// REQ-101 R11:body digest 命中撤销列表的缓存同样拒用(revocation 对已缓存内容生效)。
+export function readCachedCatalog(
+  userDataPath: string,
+  opts: { pubKeyB64?: string; revoked?: Map<string, string> } = {},
+): { etag?: string; version: string; fetchedAt: string; catalog: unknown } | null {
   try {
     const raw = JSON.parse(fs.readFileSync(cachePath(userDataPath), "utf8"))
     if (!raw || typeof raw.body !== "string" || typeof raw.sig !== "string") return null
-    if (!verifySignature(Buffer.from(raw.body, "utf8"), raw.sig)) {
+    if (!verifySignature(Buffer.from(raw.body, "utf8"), raw.sig, opts.pubKeyB64)) {
       console.error("[remote-catalog] cached catalog FAILED signature re-verification — discarding (possible local tampering)")
+      return null
+    }
+    const digest = sha256Hex(Buffer.from(raw.body, "utf8"))
+    const revokedReason = opts.revoked?.get(digest)
+    if (revokedReason !== undefined) {
+      console.error(`[remote-catalog] cached catalog digest is REVOKED (${revokedReason}) — discarding (R11)`)
       return null
     }
     const catalog = JSON.parse(raw.body)
@@ -72,11 +84,11 @@ export function readCachedCatalog(userDataPath: string): { etag?: string; versio
   return null
 }
 
-async function fetchWithTimeout(url: string, headers: Record<string, string> = {}): Promise<Response> {
+async function fetchWithTimeout(url: string, headers: Record<string, string> = {}, fetchImpl: typeof fetch = fetch): Promise<Response> {
   const ctl = new AbortController()
   const timer = setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS)
   try {
-    const resp = await fetch(url, { headers, signal: ctl.signal, redirect: "follow" })
+    const resp = await fetchImpl(url, { headers, signal: ctl.signal, redirect: "follow" })
     // codex M3:redirect follow 后校验**最终** URL 仍是 https(防降级到 http/任意 scheme)
     if (resp.url && !resp.url.startsWith("https://")) throw new Error(`redirected to non-https: ${resp.url}`)
     return resp
@@ -85,19 +97,42 @@ async function fetchWithTimeout(url: string, headers: Record<string, string> = {
   }
 }
 
-/** 拉取远程 catalog(ETag 条件请求 + 验签 + 缓存);失败按回退链返回。 */
-export async function refreshRemoteCatalog(userDataPath: string): Promise<RemoteCatalogResult> {
-  const cached = readCachedCatalog(userDataPath)
+/**
+ * 拉取远程 catalog:**channel-first(stable 指针,REQ-101)→ 失败 loud → 现行 v1 兼容面**;
+ * v1 面按原回退链(远端 → last-known 缓存),v1 也执行 R11 撤销。deps 仅测试注入,缺省 = 生产。
+ */
+export async function refreshRemoteCatalog(userDataPath: string, deps: ChannelClientDeps = {}): Promise<RemoteCatalogResult> {
+  const ch = await refreshChannelCatalog(userDataPath, "stable", deps)
+  if (ch.source === "remote")
+    return { source: "remote", catalog: ch.catalog, version: ch.version, fetchedAt: ch.fetchedAt, via: "channel-stable", ...(ch.error ? { error: ch.error } : {}) }
+  console.error(`[remote-catalog] stable channel path unavailable (${ch.error ?? "?"}) — falling back to legacy v1 catalog path`)
+
+  const legacy = await refreshRemoteCatalogV1(userDataPath, deps)
+  if (legacy.source !== "none") return legacy
+  // v1 面也失败:channel last-known-good(已全量重验 + R11)仍好于空白。
+  if (ch.source === "cache")
+    return { source: "cache", catalog: ch.catalog, version: ch.version, fetchedAt: ch.fetchedAt, via: "channel-stable", error: ch.error }
+  return legacy
+}
+
+/** 现行 v1 兼容面(REQ-032 语义零改动 + R11 撤销闸);channel 面失败时的回退路径。 */
+async function refreshRemoteCatalogV1(userDataPath: string, deps: ChannelClientDeps = {}): Promise<RemoteCatalogResult> {
+  const fetchImpl = deps.fetchImpl ?? fetch
+  const pubKeyB64 = deps.builtinKeyB64 ?? CATALOG_PUBKEY_B64
+  // R11 撤销视图来自缓存 trust(内置钥重验;离线生效)。无可验 trust → 空集 = 现行为。
+  const revoked = readRevokedTargets(userDataPath, deps)
+  const cached = readCachedCatalog(userDataPath, { pubKeyB64, revoked })
+  const withVia = (r: RemoteCatalogResult): RemoteCatalogResult => (r.source === "none" ? r : { ...r, via: "v1" })
   const fallback = (error: string): RemoteCatalogResult =>
-    cached ? { source: "cache", catalog: cached.catalog, version: cached.version, fetchedAt: cached.fetchedAt, error } : { source: "none", error }
+    withVia(cached ? { source: "cache", catalog: cached.catalog, version: cached.version, fetchedAt: cached.fetchedAt, error } : { source: "none", error })
 
   let resp: Response
   try {
-    resp = await fetchWithTimeout(CATALOG_URL, cached?.etag ? { "if-none-match": cached.etag } : {})
+    resp = await fetchWithTimeout(CATALOG_URL, cached?.etag ? { "if-none-match": cached.etag } : {}, fetchImpl)
   } catch (e) {
     return fallback(`fetch failed: ${e instanceof Error ? e.message : e}`)
   }
-  if (resp.status === 304 && cached) return { source: "remote", catalog: cached.catalog, version: cached.version, fetchedAt: cached.fetchedAt }
+  if (resp.status === 304 && cached) return withVia({ source: "remote", catalog: cached.catalog, version: cached.version, fetchedAt: cached.fetchedAt })
   if (!resp.ok) return fallback(`catalog HTTP ${resp.status}`)
 
   let body: Buffer
@@ -111,13 +146,18 @@ export async function refreshRemoteCatalog(userDataPath: string): Promise<Remote
 
   let sig: string
   try {
-    const sigResp = await fetchWithTimeout(SIG_URL)
+    const sigResp = await fetchWithTimeout(SIG_URL, {}, fetchImpl)
     if (!sigResp.ok) return fallback(`signature HTTP ${sigResp.status}`)
     sig = await sigResp.text()
   } catch (e) {
     return fallback(`signature fetch failed: ${e instanceof Error ? e.message : e}`)
   }
-  if (!verifySignature(body, sig)) return fallback("SIGNATURE INVALID — remote catalog rejected (possible tampering)")
+  if (!verifySignature(body, sig, pubKeyB64)) return fallback("SIGNATURE INVALID — remote catalog rejected (possible tampering)")
+
+  // REQ-101 R11:v1 兼容面与 releases payload 逐字节一致(合同 §7),digest 命中撤销列表 → 拒用。
+  const digest = sha256Hex(body)
+  const revokedReason = revoked.get(digest)
+  if (revokedReason !== undefined) return fallback(`R11 REVOKED target digest ${digest.slice(0, 12)}… (${revokedReason}) — remote catalog rejected`)
 
   let parsed: unknown
   try {
@@ -145,7 +185,7 @@ export async function refreshRemoteCatalog(userDataPath: string): Promise<Remote
   } catch {
     /* 缓存写失败不阻断本次使用 */
   }
-  return { source: "remote", catalog: parsed, version, fetchedAt: record.fetchedAt }
+  return withVia({ source: "remote", catalog: parsed, version, fetchedAt: record.fetchedAt })
 }
 
 /** 下载远程资产清单(逐文件 https + 体积帽 + sha256 钉死;任一不符全单拒绝,不落半成品)。 */
