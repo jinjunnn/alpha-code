@@ -1,0 +1,71 @@
+{
+  "anchored": {
+    "tag": "DIV",
+    "isPopper": false,
+    "rect": {
+      "x": 777,
+      "y": 407,
+      "width": 640,
+      "height": 512,
+      "top": 407,
+      "right": 1417,
+      "bottom": 919,
+      "left": 777
+    },
+    "styleTf": "",
+    "varTf": "translate(979px, -79px)",
+    "computedTf": "none"
+  },
+  "anchoredIsDlgParent": true,
+  "dlgParent": {
+    "tag": "DIV",
+    "isPopper": false,
+    "rect": {
+      "x": 777,
+      "y": 407,
+      "width": 640,
+      "height": 512,
+      "top": 407,
+      "right": 1417,
+      "bottom": 919,
+      "left": 777
+    },
+    "styleTf": "",
+    "varTf": "translate(979px, -79px)",
+    "computedTf": "none"
+  },
+  "popperPositioners": 0,
+  "pickerRect": {
+    "x": 778,
+    "y": 468.796875,
+    "width": 269.8359375,
+    "height": 560,
+    "top": 468.796875,
+    "right": 1047.8359375,
+    "bottom": 1028.796875,
+    "left": 778
+  },
+  "dlgRect": {
+    "x": 777,
+    "y": 407,
+    "width": 640,
+    "height": 512,
+    "top": 407,
+    "right": 1417,
+    "bottom": 919,
+    "left": 777
+  },
+  "visibleChips": [
+    {
+      "x": 979.2265625,
+      "y": 1255,
+      "width": 122.25,
+      "height": 30,
+      "top": 1255,
+      "right": 1101.4765625,
+      "bottom": 1285,
+      "left": 979.2265625
+    }
+  ],
+  "innerH": 1326
+}

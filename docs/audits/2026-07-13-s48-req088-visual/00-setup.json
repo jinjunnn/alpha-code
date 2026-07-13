@@ -1,0 +1,32 @@
+{
+  "proj": "/private/tmp/claude-501/-Users-tide-app-alpha-work/086589b3-5d06-4913-986d-f9aa383e393a/scratchpad/visual/req088-visual-project-with-extremely-long-basename-for-chrome-truncation-check-part-two",
+  "sessionA": "ses_0a501e7cfffeKC6O8jdxeJQGMe",
+  "sessionB": "ses_0a501e7caffeWnbdL2xLntMiRD",
+  "sidecar": "http://127.0.0.1:61609",
+  "commands": [
+    "init",
+    "review",
+    "probe",
+    "customize-opencode",
+    "fetch:fetch",
+    "turnstile-spin",
+    "sandbox-sdk",
+    "web-perf",
+    "wrangler",
+    "durable-objects",
+    "cloudflare-email-service",
+    "workers-best-practices",
+    "mcp-builder",
+    "brand-guidelines",
+    "canvas-design",
+    "agents-sdk",
+    "cloudflare",
+    "skill-creator",
+    "agent-creator",
+    "customize-alpha",
+    "integrate-project",
+    "alpha-workspace",
+    "cloud-dispatch",
+    "office-docs"
+  ]
+}

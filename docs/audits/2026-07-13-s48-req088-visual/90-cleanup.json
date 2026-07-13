@@ -1,0 +1,39 @@
+{
+  "sessionDeletes": {
+    "ses_0a501e7cfffeKC6O8jdxeJQGMe": "deleted",
+    "ses_0a4f30807ffeccsAc29JUhCIEY": "deleted"
+  },
+  "remainingSessions": 0,
+  "ls": {
+    "removed": [
+      "ALPHA_SESSION_SPIKE",
+      "alpha-cmd:msg_f17293323001DEsS7y7mG4fyvi",
+      "alpha-cmd:msg_f0d5d3b27001RUkYXQWtyfq27g"
+    ],
+    "modelV1Hits": [
+      {
+        "key": "alpha.composer.model",
+        "sample": "{\"providerID\":\"scripted\",\"modelID\":\"scripted-2\",\"name\":\"scripted-2\",\"variants\":[]}"
+      }
+    ],
+    "composerModel": "{\"providerID\":\"scripted\",\"modelID\":\"scripted-2\",\"name\":\"scripted-2\",\"variants\":[]}",
+    "keys": []
+  },
+  "scrub": [
+    {
+      "key": "alpha.composer.model",
+      "after": "{\"providerID\":\"scripted\",\"modelID\":\"scripted-2\",\"name\":\"scripted-2\",\"variants\":[]}"
+    }
+  ],
+  "final": {
+    "spike": null,
+    "probe": false,
+    "workspace": false,
+    "mode": {
+      "mode": "alpha",
+      "reason": "env-override"
+    },
+    "scriptedResidue": 1,
+    "composerModel": "{\"providerID\":\"scripted\",\"modelID\":\"scripted-2\",\"name\":\"scripted-2\",\"variants\":["
+  }
+}

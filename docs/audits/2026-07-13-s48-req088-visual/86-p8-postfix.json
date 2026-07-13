@@ -1,0 +1,53 @@
+{
+  "fixCommit": "af894fc8",
+  "measure": {
+    "window": {
+      "w": 2560,
+      "h": 1410
+    },
+    "sidebarVisible": true,
+    "main": {
+      "x": 256,
+      "y": 36,
+      "w": 2304,
+      "h": 1374
+    },
+    "workspace": {
+      "x": 256,
+      "y": 36,
+      "w": 2304,
+      "h": 1374
+    },
+    "workspaceCss": {
+      "width": "2304px",
+      "minWidth": "0px"
+    },
+    "leaf": {
+      "x": 256,
+      "y": 66,
+      "w": 2304,
+      "h": 1344
+    },
+    "reviewPanel": {
+      "x": 1295,
+      "y": 74,
+      "w": 1257,
+      "h": 1328
+    },
+    "panelHeader": [
+      "审查1",
+      "Git changes",
+      "全部收起",
+      "notes.txt+1-1"
+    ],
+    "panelEmptyState": false,
+    "panelDiffInPanelCol": false,
+    "deadZoneRight": 0
+  },
+  "p1": {
+    "takeoverFlag": true,
+    "visibleHosts": 1,
+    "upstreamComposerDisplay": "none",
+    "alphaComposerInHost": true
+  }
+}

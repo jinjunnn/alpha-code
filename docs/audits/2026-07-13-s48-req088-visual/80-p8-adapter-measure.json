@@ -1,0 +1,132 @@
+{
+  "gate": {
+    "spike": "1",
+    "mode": {
+      "mode": "alpha",
+      "reason": "env-override"
+    }
+  },
+  "measure": {
+    "window": {
+      "w": 2560,
+      "h": 1410
+    },
+    "sidebarVisible": true,
+    "body": {
+      "x": 0,
+      "y": 0,
+      "w": 2560,
+      "h": 1410
+    },
+    "workspace": {
+      "x": 256,
+      "y": 36,
+      "w": 1158,
+      "h": 1374
+    },
+    "workspaceCss": {
+      "display": "flex",
+      "flex": "0 1 auto",
+      "width": "1157.97px"
+    },
+    "leaf": {
+      "x": 256,
+      "y": 66,
+      "w": 1158,
+      "h": 1344
+    },
+    "chrome": {
+      "x": 256,
+      "y": 36,
+      "w": 1158,
+      "h": 30
+    },
+    "reviewPanel": {
+      "x": 1295,
+      "y": 74,
+      "w": 111,
+      "h": 1328
+    },
+    "panelHeader": [
+      "审查1",
+      "Git changes",
+      "全部收起",
+      "notes.txt+1-1"
+    ],
+    "panelEmptyState": false,
+    "composer": {
+      "x": 326,
+      "y": 1276,
+      "w": 900,
+      "h": 102
+    },
+    "parentChain": [
+      {
+        "tag": "main",
+        "cls": "flex-1 min-h-0 min-w-0 overflow-x-hidden",
+        "rect": {
+          "x": 256,
+          "y": 36,
+          "w": 2304,
+          "h": 1374
+        },
+        "display": "flex",
+        "flex": "1 1 0%",
+        "width": "2304px"
+      },
+      {
+        "tag": "div",
+        "cls": "relative bg-v2-background-bg-deep flex-1 min-h-0",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 2560,
+          "h": 1410
+        },
+        "display": "flex",
+        "flex": "1 1 0%",
+        "width": "2560px"
+      },
+      {
+        "tag": "div",
+        "cls": "flex flex-col h-dvh",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 2560,
+          "h": 1410
+        },
+        "display": "flex",
+        "flex": "0 1 auto",
+        "width": "2560px"
+      },
+      {
+        "tag": "body",
+        "cls": "antialiased overscroll-none overflow-hidden font-(family-name:--font-family-text)",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 2560,
+          "h": 1410
+        },
+        "display": "block",
+        "flex": "0 1 auto",
+        "width": "2560px"
+      },
+      {
+        "tag": "html",
+        "cls": "",
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "w": 2560,
+          "h": 1410
+        },
+        "display": "block",
+        "flex": "0 1 auto",
+        "width": "2560px"
+      }
+    ],
+    "deadZoneRight": 0
+  }
+}

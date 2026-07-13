@@ -1,0 +1,9 @@
+{
+  "realWindow680": {
+    "scrollW": 586,
+    "clientW": 497,
+    "truncated": true,
+    "winW": 680
+  },
+  "note": "900px 视口下项目名(586px)未触发截断;680px 真窗口下验证 ellipsis"
+}

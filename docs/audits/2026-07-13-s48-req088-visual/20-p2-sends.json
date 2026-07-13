@@ -1,0 +1,56 @@
+{
+  "sends": [
+    {
+      "label": "send1-bash",
+      "before": {
+        "userMsgs": 0,
+        "toolTriggers": 0,
+        "ctxGroups": 0,
+        "busy": false
+      },
+      "after": {
+        "userMsgs": 1,
+        "toolTriggers": 1,
+        "ctxGroups": 0,
+        "busy": false
+      },
+      "focusAfterSend": true,
+      "deltaUser": 1
+    },
+    {
+      "label": "send2-read-dir",
+      "before": {
+        "userMsgs": 1,
+        "toolTriggers": 1,
+        "ctxGroups": 0,
+        "busy": false
+      },
+      "after": {
+        "userMsgs": 2,
+        "toolTriggers": 1,
+        "ctxGroups": 1,
+        "busy": false
+      },
+      "focusAfterSend": true,
+      "deltaUser": 1
+    },
+    {
+      "label": "send3-edit",
+      "before": {
+        "userMsgs": 2,
+        "toolTriggers": 1,
+        "ctxGroups": 1,
+        "busy": false
+      },
+      "after": {
+        "userMsgs": 3,
+        "toolTriggers": 2,
+        "ctxGroups": 1,
+        "busy": false
+      },
+      "focusAfterSend": true,
+      "deltaUser": 1
+    }
+  ],
+  "notesAfterEdit": "REQ-088 visual probe line (edited)\nsecond line untouched\n"
+}

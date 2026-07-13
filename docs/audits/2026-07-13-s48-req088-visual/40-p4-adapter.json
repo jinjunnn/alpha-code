@@ -1,0 +1,50 @@
+{
+  "open": {
+    "dialog": true,
+    "alphaPicker": true,
+    "nativeRows": [
+      {
+        "key": "scripted:scripted-1",
+        "selected": "false"
+      },
+      {
+        "key": "scripted:scripted-2",
+        "selected": "true"
+      }
+    ],
+    "nativeRowCount": 2,
+    "nativeListVisible": true,
+    "homeAnchor": true,
+    "anchorTf": null,
+    "pickerRect": {
+      "x": 778,
+      "y": 468.796875,
+      "width": 269.8359375,
+      "height": 560,
+      "top": 468.796875,
+      "right": 1047.8359375,
+      "bottom": 1028.796875,
+      "left": 778
+    },
+    "chipRect": {
+      "x": 979.2265625,
+      "y": 1255,
+      "width": 122.25,
+      "height": 30,
+      "top": 1255,
+      "right": 1101.4765625,
+      "bottom": 1285,
+      "left": 979.2265625
+    }
+  },
+  "pick": {
+    "ok": true,
+    "selectedBefore": "scripted:scripted-2",
+    "clicked": "Sscripted-1scripted标准"
+  },
+  "after": {
+    "selectedAfter": null,
+    "dialogStillOpen": false
+  },
+  "closed": true
+}

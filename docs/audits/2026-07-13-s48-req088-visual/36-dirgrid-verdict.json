@@ -1,0 +1,22 @@
+{
+  "finding": "dirgrid 在当前冻结上游不可诱发(双模式同现):read/glob/grep/list 一律折叠进 context-tool-group,组内只渲染标题行(packages/ui message-part.tsx:1015-1049),无 tool-output;read 独立渲染器也不渲染 output。live 目录 read 轮次与 DB 种子 legacy list 部件均复现 tool-output=0。",
+  "liveReadTurn": {
+    "toolOutputs": 0,
+    "dirgrid": false
+  },
+  "seededListPart": {
+    "toolOutputs": 0,
+    "dirgrid": false,
+    "note": "35-dirgrid-seed.json 种子;组已展开(data-timeline-part-ids 命中种子 prt id)"
+  },
+  "p3Counts": {
+    "tcIco": 6,
+    "aExitOk": 1,
+    "turnDiv": 4,
+    "userMessages": 5,
+    "sessionTurns": 15,
+    "dirgrid": false,
+    "cmdChips": 0,
+    "toolOutputs": 0
+  }
+}
