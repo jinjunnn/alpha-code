@@ -4,7 +4,7 @@
 // for app-driven dispatch/status; the MCP facade (agent-triggered cloud.* tools) is wired separately in
 // sidecar.ts (mcp.servers.cloud). Both front the SAME bearer + SAME B cloud jobs API (single truth source).
 //
-// Contract: alpha-platform docs/alpha-code-cloud-integration.md —
+// Contract: alpha-platform docs/contracts/cloud-jobs-v1.md —
 //   POST {CLOUD_BASE}/v1/cloud/jobs        Authorization: Bearer <JWT>   → 202 { job_id, urls, status }
 //   GET  {CLOUD_BASE}/v1/cloud/jobs/{id}                                 → public status (tier-invisible)
 //   401 = JWT 失效/缺失 → renderer should trigger re-login.

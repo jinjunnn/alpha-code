@@ -4,7 +4,7 @@
 // process.env). Pure constants only — NO electron/node imports — so both the main and renderer
 // bundles can import this module.
 
-/** Resolved alpha backend endpoints. `mcp` optional (callers derive `${platform}/mcp` when absent).
+/** Resolved alpha backend endpoints. `mcp` is optional; callers derive `${cloud}/mcp` when absent.
  *  The constants below are bootstrap DEFAULTS only — main resolves env > userData pin > login discovery
  *  > default (see main/alpha-endpoints.ts), and the renderer reads the resolved set over IPC
  *  (window.api.endpoints). Change a domain HERE only to move the default. */

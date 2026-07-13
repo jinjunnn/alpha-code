@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # alpha-check — run the exact gates alpha-ci enforces, LOCALLY, before you push.
 #
-# Standard: local-first (see docs/CI.md). CI is the enforcing backstop, not the place
+# Standard: local-first (see docs/runbooks/ci.md). CI is the enforcing backstop, not the place
 # you first discover a failure. This mirrors alpha-ci's three jobs 1:1 and runs in seconds.
 #
 #   bash scripts/alpha-check.sh

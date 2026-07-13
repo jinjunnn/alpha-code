@@ -1,5 +1,5 @@
 /* Timeline overhaul · 用户输入侧 partial (TL-01..06). Parallel-safe: only this area edits this file.
- * Design source: docs/designs/2026-06-28-timeline-overhaul/timeline.html §①. Hooks: see tasks.md.
+ * Design source: docs/design/2026-06-28-timeline-overhaul/timeline.html §①. Hooks: see tasks.md.
  * Vars (--a-*) are global from tokens.css (imported by the entry timeline-reskin.css). CSS-only. */
 
 /* TL-01 文件附件 pill · TL-02 图片缩略图 · TL-03/04 内联提及 · TL-05 斜杠 chip(配色;元素在 inject)

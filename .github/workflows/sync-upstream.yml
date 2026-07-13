@@ -74,7 +74,7 @@ jobs:
             {
               echo "## ⚠️ 上游 prompt 底座 / agent 本次 sync 有变更"
               echo ""
-              echo "ADR-015 合并验证:人工复核 \`alpha-behavior.ts\` / \`alpha-identity.ts\` / \`.opencode/agent/*.md\` 是否与新底座**语义**矛盾(非字节),结论记入 \`docs/retros/\`。"
+              echo "ADR-015 合并验证:人工复核 \`alpha-behavior.ts\` / \`alpha-identity.ts\` / \`.opencode/agent/*.md\` 是否与新底座**语义**矛盾(非字节),结论记入 \`docs/retrospectives/\`。"
               echo ""
               echo '```'
               echo "$touched"

@@ -1,6 +1,6 @@
 // Extension detail page (REQ-019 T2) — the hub's second-level page, rendered in place of the list
 // when a card is clicked. Back button + Escape pop back to the list (the hub owns the Esc chain:
-// detail → list → close). Generic skeleton per docs/designs/2026-07-04-extension-hub-v3-universal §5.3:
+// detail → list → close). Generic skeleton contract:
 // header (icon/name/source/license/version/「待核实」) → 简介 → type-specific slot → 数据边界 →
 // 运行时依赖 → 所需密钥 → 操作区. T3 fills the type-specific blocks (tools[]/SKILL.md/hooks…);
 // T4 upgrades 数据边界/依赖 to live which-checks.
@@ -21,7 +21,7 @@ export type DetailTarget =
   | { kind: "agent"; agent: HubAgent }
   | { kind: "cloud-connector" }
 
-// mcp.cloud 的 4 个工具(B 侧 MCP facade;alpha-platform docs/alpha-code-cloud-integration.md)。
+// mcp.cloud 的 4 个工具(B 侧 MCP facade;alpha-platform docs/contracts/cloud-jobs-v1.md)。
 // 引擎无 tools 查询路由 → 与 MCP 条目一样用精选元数据展示(REQ-019 T3 同约束)。
 const CLOUD_TOOLS = [
   { name: "cloud_dispatch", key: "alpha.ext.cloudToolDispatch" },

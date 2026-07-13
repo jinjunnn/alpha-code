@@ -43,7 +43,7 @@ export function createMenu(deps: Deps) {
   })
 
   // S17 T3(B14①②):alpha 自有「数据」菜单 —— DB 手动备份/导出入口(设计
-  // docs/designs/2026-07-05-db-safety-belt.md 决策 6)。dev 态置灰(分支后缀库,备错目标风险>收益);
+  // dev 态置灰(分支后缀库,备错目标风险>收益);
   // 文案中文硬编码(main 无 i18n,ADR-022 先例)。S23(C16):清除数据入口同屏(B14 验收④)。
   if (deps.data) {
     const data = deps.data
@@ -60,7 +60,7 @@ export function createMenu(deps: Deps) {
         { label: "清除数据…", click: () => dataClear.clearData() },
         {
           label: "卸载与数据残留说明",
-          click: () => shell.openExternal("https://github.com/jinjunnn/alpha-code/blob/alpha/docs/UNINSTALL.md"),
+          click: () => shell.openExternal("https://github.com/jinjunnn/alpha-code/blob/alpha/docs/runbooks/uninstall.md"),
         },
       )
     }

@@ -69,9 +69,10 @@ export function initEndpoints(dataPath: string) {
   discovered = readPartial(discoveredFile())
 }
 
-/** ① The alpha-web /auth/token response MAY carry `{ endpoints: { platform, account, mcp, web } }`.
- *  Persist it so the next sidecar fork resolves the right gateway without a release. No-op when the
- *  platform doesn't send it (the producer side is optional — defaults still apply). */
+/** ① The alpha-web /auth/token response carries
+ *  `{ endpoints: { platform, account, cloud, mcp, web } }`. Persist accepted values so the next
+ *  sidecar fork resolves the right services without a desktop release. Defaults still apply to
+ *  omitted or rejected values. */
 export function setDiscoveredEndpoints(partial: Partial<Record<keyof AlphaEndpoints, unknown>> | undefined) {
   if (!partial || typeof partial !== "object") return
   const next: Partial<AlphaEndpoints> = {}
@@ -90,8 +91,8 @@ export function setDiscoveredEndpoints(partial: Partial<Record<keyof AlphaEndpoi
 }
 
 /** Resolve all endpoints. Precedence (highest first): env override (dev/staging) > userData pin >
- *  login discovery > hardcoded default. `mcp` is omitted unless someone provides it (callers derive
- *  `${platform}/mcp`). */
+ *  login discovery > hardcoded default. `mcp` is omitted unless someone provides it; callers derive
+ *  `${cloud}/mcp`. */
 export function resolveEndpoints(): AlphaEndpoints {
   const pick = (k: keyof AlphaEndpoints): string | undefined =>
     strip(process.env[ENV_KEYS[k]]) ?? override[k] ?? discovered[k]

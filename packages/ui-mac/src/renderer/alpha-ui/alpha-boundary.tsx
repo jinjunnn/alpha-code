@@ -1,4 +1,4 @@
-// AlphaBoundary — C28 崩溃边界下沉(S17 T4;设计+拍板 docs/debates/2026-07-05-c28-honest-controls-brief.md)。
+// AlphaBoundary — C28 crash boundary moved down to the Alpha-owned surface.
 // 上游 AppBaseProviders 的 ErrorBoundary(冻结 app.tsx:274)包住全部 children:alpha 注入件任一 render
 // throw 会把整屏顶成上游 ErrorPage(册 §7h 已证伪「alpha 顶层边界」——永远更外层,永不命中)。本组件
 // 逐个紧裹 alpha 注入件(比上游更内层 → 先命中):崩溃 = 右下角紧凑浮条(局部降级 + 重载此区域),

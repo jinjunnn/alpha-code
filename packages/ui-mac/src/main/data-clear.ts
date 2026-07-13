@@ -41,7 +41,7 @@ export type FsDeps = {
   remove(p: string): void
 }
 
-// ── 清单(单一真源:docs/UNINSTALL.md 的路径清单由此派生,改这里必须同步文档)────────────
+// ── 清单(单一真源:docs/runbooks/uninstall.md 的路径清单由此派生,改这里必须同步文档)────────────
 export type ManifestItem = {
   id: string
   root: keyof ClearRoots

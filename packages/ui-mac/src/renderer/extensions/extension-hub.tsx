@@ -4,7 +4,7 @@
 // from the bundled catalog; install status + actions go through useExtensions (receipts ⨝ SDK truth
 // + thin persist IPC).
 //
-// IA (user-approved 2026-07-04, docs/designs/2026-07-04-ext-hub-m2/design.html — supersedes the
+// IA (user-approved 2026-07-04 — supersedes the
 // left-rail sketch in the v3 design doc §5.1): a single HORIZONTAL tab bar (推荐/连接器/技能/Agent/
 // 插件/套件/已安装[badge=updatable]/创建/云能力). 有更新 lives inside 已安装; 导入 lives inside 创建.
 // The search box is GLOBAL and persistent (survives tab switches); a non-empty query shows

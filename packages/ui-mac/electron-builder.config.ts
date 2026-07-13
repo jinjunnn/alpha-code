@@ -35,11 +35,11 @@ const channel = (() => {
 // Signing + notarization run in CI, OR locally when ALPHA_SIGN=1 (once the Mac "Developer ID
 // Application" cert for team RQX6X6A635 exists in the keychain + notary creds are in env). Otherwise a
 // local `bun run package:mac` produces an ad-hoc–signed app you can double-click from dist/ — no cert
-// needed. See docs/DISTRIBUTION.md.
+// needed. See docs/runbooks/distribution.md.
 const isCI = process.env.GITHUB_ACTIONS === "true"
 const shouldSign = isCI || process.env.ALPHA_SIGN === "1"
 // Apple team (Beijing yuanyuji, RQX6X6A635 — same as tideapp) + notary creds are supplied via env at
-// sign time (see docs/DISTRIBUTION.md / ~/.alpha-code-signing/signing.env), not baked into config.
+// sign time (see docs/runbooks/distribution.md / ~/.alpha-code-signing/signing.env), not baked into config.
 
 // Own bundle identity (com.tide.*, matching tideapp's convention) — NOT opencode's ai.opencode.desktop.
 // Changing this from the old id is a deliberate one-time reset of the app's stored data (accepted:

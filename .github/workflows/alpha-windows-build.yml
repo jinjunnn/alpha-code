@@ -3,7 +3,7 @@
 # 为什么必须在 Windows runner 上打:bun 只安装当前平台的 optionalDependencies,mac 交叉包缺
 # @lydell/node-pty-win32-x64 / @parcel/watcher-win32-x64 等 win32 原生件(S35 T1b 实测;上游
 # publish.yml 同款约束)。runner = GitHub 托管标准池 windows-latest —— 刻意不依赖 Blacksmith
-# (继承的上游 workflow 永久 queued 的真因,docs/CI.md §5)。
+# (继承的上游 workflow 永久 queued 的真因,docs/runbooks/ci.md §5)。
 #
 # 签名:上游 script/sign-windows.ps1 在 AZURE_TRUSTED_SIGNING_* 未配置时优雅自跳(exit 0),
 # 故本 workflow 出**未签名**包;Authenticode/Trusted Signing 接线归 REQ-076 T3(证书拍板

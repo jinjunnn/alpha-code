@@ -5,8 +5,8 @@
 // agent-title class — NO i18n/title coupling. Unknown tools fall back to a neutral glyph. A debounced
 // MutationObserver re-decorates after the timeline streams in; idempotent via a marker attr.
 //
-// The same observer also drives three timeline-overhaul injects (docs/designs/2026-06-28-timeline-
-// overhaul/tasks.md) — TL-05 slash-chip type label (运行命令 · name + the user's OWN args), TL-17 bash
+// The same observer also drives three timeline-overhaul injects: TL-05 slash-chip type label
+// (运行命令 · name + the user's OWN args), TL-17 bash
 // exit-code badge, TL-34 turn divider — each building only DOM elements; styling is CSS-side.
 // FLAG (TL-17): opencode keeps the bash exit code in metadata.exit and never renders it, and does not
 // error on a non-zero exit, so the code is unrecoverable from the DOM — a completed bash is badged

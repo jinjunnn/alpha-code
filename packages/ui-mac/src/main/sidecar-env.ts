@@ -5,7 +5,7 @@
 // BYOK *_API_KEY, DEV_PLATFORM_TOKEN, EXA_API_KEY, …) are simply not in the list; model keys reach
 // opencode through the {file:} channel instead (alpha-secret-files.ts).
 //
-// Known, accepted behavior changes (documented in docs/requirements/A6-sidecar-env-allowlist.md):
+// Known, accepted behavior changes:
 //   - EXA_API_KEY is stripped → websearch falls back to the keyless public endpoint (rate-limited;
 //     keyless is already the ADR-009 default). Upstream reads it straight from env, so the file
 //     channel can't serve it without re-exposing it to children.

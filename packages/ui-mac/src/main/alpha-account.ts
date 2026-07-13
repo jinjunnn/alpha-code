@@ -2,7 +2,7 @@
 // account-server, authed with the JWT alpha-web (C) issued. MAIN-ONLY: the renderer never sees the
 // token, only the resolved summary over IPC (account-ipc.ts).
 //
-// Contract: alpha-platform docs/alpha-code-account-integration.md —
+// Contract: alpha-platform docs/contracts/account-billing.md —
 //   GET {ACCOUNT_BASE}/v1/account/summary   Authorization: Bearer <JWT>   → AccountSummary
 //   GET {ACCOUNT_BASE}/v1/billing/transactions
 //   401 = JWT 失效/缺失 → renderer should trigger re-login.

@@ -612,7 +612,7 @@ const main = Effect.gen(function* () {
     markSidecarTokenSnapshot()
 
     // S17 T3(C17+B14)DB 安全带预检:水位比对 → DB 超前阻断 / 将前进先备份 / 损坏走恢复
-    // (设计 docs/designs/2026-07-05-db-safety-belt.md)。只跑初次 spawn(respawn 不重跑——启动已验,
+    // The DB safety belt runs only on the initial spawn (not respawn: startup already verified,
     // 运行中水位不会倒退);守卫自身故障一律 fail-open 只 log,绝不把启动搞得更糟。
     const dbPreflight = yield* Effect.promise(() =>
       runDbPreflightBoot({ userDataPath: app.getPath("userData") }).catch((error) => {

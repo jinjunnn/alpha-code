@@ -53,7 +53,7 @@ export type FatalRendererError = {
   os?: string
 }
 
-// alpha-code ↔ platform auth (see main/alpha-auth.ts + docs/platform-integration.md §C). Defined
+// alpha-code ↔ platform auth (see main/alpha-auth.ts + docs/contracts/platform-integration.md). Defined
 // here so main, preload and renderer share one shape (the established cross-bundle type pattern).
 export type AuthMode = "byok" | "platform"
 export type AuthStatus = "logged-out" | "logged-in"
@@ -68,7 +68,7 @@ export type AuthErrorCode = "provider_error" | "invalid_callback" | "state_misma
 
 // alpha account summary — balance / membership / token usage, read from the alpha-platform (B)
 // in-region account-server using the stored JWT. Shared cross-bundle like AuthState. Contract:
-// alpha-platform docs/alpha-code-account-integration.md (GET /v1/account/summary).
+// alpha-platform docs/contracts/account-billing.md (GET /v1/account/summary).
 export type AccountWindow = { usedCredits: number; limitCredits: number; resetsInMin: number }
 export type AccountPlan =
   | {

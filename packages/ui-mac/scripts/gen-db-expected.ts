@@ -2,7 +2,7 @@
 // S17 T3(C17):构建期从 core 迁移目录派生 app 支持面清单 → resources/db-expected-migrations.json
 // (extraResources 进包;运行时 db-safety.loadExpectedIds 读取。)
 // 为什么构建期生成而非运行时 import:ARCHITECTURE 硬约束② 禁止运行时 import @opencode-ai/core 内部模块;
-// 文件名 ≡ migration.gen.ts 的 import 清单 ≡ 迁移 id(设计 F2,docs/designs/2026-07-05-db-safety-belt.md)。
+// 文件名 ≡ migration.gen.ts 的 import 清单 ≡ 迁移 id。
 import { mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"

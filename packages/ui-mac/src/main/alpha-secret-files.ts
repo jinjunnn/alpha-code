@@ -16,7 +16,7 @@
 // (2) OPENCODE_CONFIG_CONTENT itself — previously it carried inlined BYOK keys / a Bearer token and
 // is also inherited by children; now it carries only file paths.
 //
-// Residual risk (accepted, see docs/requirements/A6-sidecar-env-allowlist.md): the files are 0600
+// Accepted residual risk: the files are 0600
 // but a same-UID process that goes LOOKING can still read them — same exposure as alpha.env today.
 // A6's target is the passive channel (children dumping/logging their env), which this eliminates.
 //
