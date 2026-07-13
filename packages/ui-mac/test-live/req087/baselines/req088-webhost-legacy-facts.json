@@ -1,0 +1,58 @@
+{
+  "capturedAt": "2026-07-13T09:39:25.012Z",
+  "flavor": "webhost-legacy",
+  "recoveryOrphanPtys": 1,
+  "ac4": {
+    "sseBaseline": 1,
+    "samples": [
+      {
+        "open": 1,
+        "pty": 0,
+        "composers": 1,
+        "panels": 1
+      },
+      {
+        "open": 1,
+        "pty": 0,
+        "composers": 1,
+        "panels": 1
+      },
+      {
+        "open": 1,
+        "pty": 0,
+        "composers": 1,
+        "panels": 1
+      },
+      {
+        "open": 1,
+        "pty": 0,
+        "composers": 1,
+        "panels": 1
+      },
+      {
+        "open": 1,
+        "pty": 0,
+        "composers": 1,
+        "panels": 1
+      },
+      {
+        "open": 1,
+        "pty": 0,
+        "composers": 1,
+        "panels": 1
+      },
+      {
+        "open": 1,
+        "pty": 0,
+        "composers": 1,
+        "panels": 1
+      },
+      {
+        "open": 1,
+        "pty": 0,
+        "composers": 1,
+        "panels": 1
+      }
+    ]
+  }
+}

@@ -1,0 +1,25 @@
+<!doctype html>
+<!-- REQ-088 T3/T4 web host(见 main.tsx 头注释)。骨架逐行复刻冻结 packages/app/index.html:
+     同 head(theme-preload 由 @opencode-ai/app/vite 的 transformIndexHtml 内联)、同 body class、
+     同 #root 结构 —— 唯一差异是入口脚本指向本 host 的 main.tsx。 -->
+<html lang="en" style="background-color: var(--background-base)">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content" />
+    <title>OpenCode (REQ-088 live-comparison web host)</title>
+    <link rel="icon" type="image/png" href="/favicon-96x96-v3.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="/favicon-v3.svg" />
+    <link rel="shortcut icon" href="/favicon-v3.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon-v3.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#F8F7F7" />
+    <meta property="og:image" content="/social-share.png" />
+    <meta property="twitter:image" content="/social-share.png" />
+    <script id="oc-theme-preload-script" src="/oc-theme-preload.js"></script>
+  </head>
+  <body class="antialiased overscroll-none text-12-regular overflow-hidden">
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root" class="flex flex-col h-dvh p-px"></div>
+    <script src="/main.tsx" type="module"></script>
+  </body>
+</html>

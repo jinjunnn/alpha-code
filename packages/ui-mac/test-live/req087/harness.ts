@@ -14,6 +14,16 @@
 // - 仓库已 bun install;
 // - 不在 alpha-check 权威门内(bun test src 不含本目录),按需执行:
 //   bun run --cwd packages/ui-mac test:live:req087
+//
+// REQ-088 T3/T4(adapter 对比)扩展 —— 两个环境参数(默认全关 = C2 原语义,零变化):
+// - REQ088_HOST=webhost:前端改跑 test-live/req087/webhost/(harness 自有 web 入口,复刻冻结
+//   entry.tsx 并经公开 surfaces prop 支持注入;见 webhost/main.tsx 头注释)。默认 frozen =
+//   冻结 packages/app 自身 vite dev(C2 基线运行态)。
+// - REQ088_SURFACE=adapter:每个浏览器 context 预置 localStorage["ALPHA_SESSION_SPIKE"]="1"
+//   (双闸的 renderer 半边)⇒ webhost 注入真 AlphaSessionWorkspace。默认 legacy = 不注入。
+//   adapter 仅在 webhost 下有意义(冻结入口不传 surfaces,结构上无法注入)—— 组合非法时直接 throw。
+// 对比方法论:adapter/legacy 两半边都跑 webhost(同 host、同引擎、同浏览器、同会话数据,唯一
+// 差异 = localStorage 闸);frozen legacy 只作历史锚点(baselines/legacy-baseline.json)的复采参照。
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -25,6 +35,43 @@ const PORT_BASE = Number(process.env.REQ087_LIVE_PORT_BASE ?? 14700)
 export const ENGINE_PORT = PORT_BASE
 export const MODEL_PORT = PORT_BASE + 1
 export const APP_PORT = PORT_BASE + 2
+
+export type Req088Host = "frozen" | "webhost"
+export type Req088Surface = "legacy" | "adapter"
+export const HOST: Req088Host = process.env.REQ088_HOST === "webhost" ? "webhost" : "frozen"
+export const SURFACE: Req088Surface = process.env.REQ088_SURFACE === "adapter" ? "adapter" : "legacy"
+/** 运行风味标识(基线文件名/日志标签):frozen-legacy | webhost-legacy | webhost-adapter。 */
+export const FLAVOR = `${HOST}-${SURFACE}`
+if (SURFACE === "adapter" && HOST !== "webhost") {
+  throw new Error("REQ088_SURFACE=adapter requires REQ088_HOST=webhost (frozen entry cannot inject surfaces)")
+}
+
+/** AlphaSessionWorkspace 的 DOM 锚点(全部 data-alpha-*,R2 红线保证与上游锚点不同名)。 */
+export const ADAPTER_SEL = {
+  workspace: "[data-alpha-session-workspace]",
+  chrome: "[data-alpha-session-workspace-chrome]",
+  leaf: "[data-alpha-session-workspace-leaf]",
+  guard: "[data-alpha-session-workspace-guard]",
+} as const
+
+/**
+ * 断言页面确实运行在期望的 surface 模式 —— 防「闸没生效却当成 adapter 度量」的静默错半边。
+ * adapter:workspace 锚点已挂载且 chrome 可见(高度>0);legacy:workspace 锚点必须为 0。
+ * 只在度量点之后调用(mount 计时窗口内不得插入本等待)。
+ */
+export async function assertSurfaceMode(page: Page, timeoutMs = 20000) {
+  if (SURFACE === "adapter") {
+    await page.waitForSelector(ADAPTER_SEL.workspace, { timeout: timeoutMs, state: "attached" })
+    const chromeHeight = await page.evaluate(() => {
+      const el = document.querySelector<HTMLElement>("[data-alpha-session-workspace-chrome]")
+      return el ? Math.round(el.getBoundingClientRect().height) : -1
+    })
+    if (chromeHeight <= 0) throw new Error(`adapter chrome not visible (height=${chromeHeight})`)
+  } else {
+    const count = await page.evaluate(() => document.querySelectorAll("[data-alpha-session-workspace]").length)
+    if (count !== 0) throw new Error(`legacy run polluted by adapter workspace (count=${count})`)
+  }
+}
 
 export function base64Encode(value: string) {
   const bytes = new TextEncoder().encode(value)
@@ -289,12 +336,39 @@ export async function startWorld(): Promise<LiveWorld> {
   recorder.start()
 
   const appLog = join(root, "app.log")
-  const app = Bun.spawn(["bun", "run", "dev", "--", "--host", "127.0.0.1", "--port", String(APP_PORT)], {
-    cwd: join(REPO_ROOT, "packages/app"),
-    env: { ...process.env, VITE_OPENCODE_SERVER_HOST: "127.0.0.1", VITE_OPENCODE_SERVER_PORT: String(ENGINE_PORT) },
-    stdout: Bun.file(appLog),
-    stderr: Bun.file(appLog),
-  })
+  const appEnv = {
+    ...process.env,
+    VITE_OPENCODE_SERVER_HOST: "127.0.0.1",
+    VITE_OPENCODE_SERVER_PORT: String(ENGINE_PORT),
+  }
+  // webhost:直接以 bun 执行 vite bin(webhost 目录自带 vite.config.ts;--strictPort 防端口漂移
+  // 导致静默连错前端);frozen:冻结 packages/app 自身 dev script(C2 原语义)。
+  const app =
+    HOST === "webhost"
+      ? Bun.spawn(
+          [
+            "bun",
+            // 直接路径而非 Bun.resolveSync:vite 的 exports map 不暴露 ./bin/vite.js
+            join(REPO_ROOT, "packages/app/node_modules/vite/bin/vite.js"),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            String(APP_PORT),
+            "--strictPort",
+          ],
+          {
+            cwd: join(import.meta.dir, "webhost"),
+            env: appEnv,
+            stdout: Bun.file(appLog),
+            stderr: Bun.file(appLog),
+          },
+        )
+      : Bun.spawn(["bun", "run", "dev", "--", "--host", "127.0.0.1", "--port", String(APP_PORT)], {
+          cwd: join(REPO_ROOT, "packages/app"),
+          env: appEnv,
+          stdout: Bun.file(appLog),
+          stderr: Bun.file(appLog),
+        })
   const appUrl = `http://127.0.0.1:${APP_PORT}`
   let appUp = false
   for (let i = 0; i < 120; i++) {
@@ -354,6 +428,13 @@ export async function startWorld(): Promise<LiveWorld> {
     newPage: async (opts?: { tabSessionIds?: string[] }) => {
       // locale 钉死 en-US:aria-label/占位符断言不随宿主机系统语言漂移
       const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en-US" })
+      if (SURFACE === "adapter") {
+        // 双闸 renderer 半边:每个 context(fresh localStorage)都要预置,否则该 context 会
+        // 静默跑成 legacy(assertSurfaceMode 兜底,但预置必须在导航前)。
+        await context.addInitScript(() => {
+          localStorage.setItem("ALPHA_SESSION_SPIKE", "1")
+        })
+      }
       if (opts?.tabSessionIds?.length) {
         // 与上游 e2e/smoke 同一通道:预置 titlebar 会话 tab(新版布局的会话切换入口)。
         // 省略 server 字段 → tabs context 载入时回填当前 server key(context/tabs.tsx fallback)。
