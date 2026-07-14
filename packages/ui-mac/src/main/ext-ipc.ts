@@ -12,7 +12,7 @@ import { extensionsGranted, hasExtensionsDecision, listProjectExecutables, withE
 import { alphaRoot, readProjectPrefs, writeProjectPrefs } from "./alpha-workdir"
 import type { InstallTarget } from "../preload/types"
 import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
-import { fileifyMcpSecrets, fileifyMcpSecretsDeep, removeMcpServerSecrets } from "./alpha-mcp-secrets"
+import { fileifyMcpSecrets, fileifyMcpSecretsDeep, removeMcpServerSecrets, snapshotMcpServerSecrets } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, type ProvenanceRequest } from "./alpha-migrate"
 import { configHealth, persistPlugin, removeMcp, removePlugin, removePluginPath } from "./ext-config"
 import { persistMcpWithPolicy } from "./ext-mcp-policy"
@@ -69,22 +69,24 @@ export function registerExtIpcHandlers(userDataPath: string) {
       // T5:把 requiredEnvVars 的真值(renderer 刚采集,经 IPC 结构化克隆到达此处)搬进
       // {file:} 密钥通道 → durable config 只落引用,绝不明文。renderer 的 live mcp.add 仍用
       // 真值(内存态),下次启动引擎按 {file:} 解析。
-      if (secretVars && secretVars.length && server && typeof server === "object") {
-        fileifyMcpSecrets(userDataPath, name, server, secretVars)
-      }
+      // Codex review #351:失败(含配置写锁 busy)按快照复原 —— 更新场景不得毁掉既有安装仍被
+      // config 引用的密钥;原本无密钥则等价于撤掉新写入(不留孤儿,REQ-033 codex L 语义保留)。
+      const hasSecrets = !!(secretVars && secretVars.length && server && typeof server === "object")
+      const snap = hasSecrets ? snapshotMcpServerSecrets(userDataPath, name) : null
+      if (hasSecrets) fileifyMcpSecrets(userDataPath, name, server, secretVars!)
       // REQ-105 #254:MCP 写盘唯一策略入口。Excel sandbox 闸口(local stdio + 审计钉版 + 零网络
       // 绑定 + 受管 workspace 强制)由 persistMcpWithPolicy 统一执行 —— main 注入固定 EXCEL_FILES_PATH,
       // 结构上消除「调用点忘传 workspace」的 fail-open;planner 的 installers.persistMcp 同走此闸。
       const r = persistMcpWithPolicy(name, server, undefined)
-      // codex L(REQ-033):persistMcp 拒绝(如 DANGEROUS_ENV)时,fileify 已先落的 secret 文件要撤 ——
-      // 否则残留孤儿密钥文件(无 config 引用但内容在盘)。
-      if (!r.ok && secretVars && secretVars.length) removeMcpServerSecrets(userDataPath, name)
+      if (snap) (r.ok ? snap.discard : snap.restore)()
       return r
     },
   )
+  // Codex review #351:先删配置(锁内)、成功才吊销密钥 —— busy 时不得留下「配置还在、密钥已毁」。
   ipcMain.handle("ext-remove-mcp", (_event: IpcMainInvokeEvent, name: string) => {
-    removeMcpServerSecrets(userDataPath, name) // revoke the connector's stored secrets on uninstall
-    return removeMcp(name)
+    const r = removeMcp(name)
+    if (r.ok) removeMcpServerSecrets(userDataPath, name)
+    return r
   })
   // B11/B23:全局配置健康探测(语法错/未知顶键 → 引擎会整份清零)
   ipcMain.handle("ext-config-health", () => configHealth())
@@ -134,8 +136,11 @@ export function registerExtIpcHandlers(userDataPath: string) {
   ipcMain.handle("ext-import-agent-confirm", (_event: IpcMainInvokeEvent, previewId: string) => {
     const issued = typeof previewId === "string" ? issuedAgentImports.get(previewId) : undefined
     if (!issued) return { ok: false, reason: "预览已失效,请重新选择文件" }
-    issuedAgentImports.delete(previewId)
-    return writeAgent(issued.name, issued.composed, undefined, undefined, "imported")
+    // Codex review #351:写成功才消费 preview —— 配置写锁 busy 等可重试失败后,用户重点确认
+    // 不该只能得到「预览已失效」(单次消费语义只对成功写入成立)。
+    const r = writeAgent(issued.name, issued.composed, undefined, undefined, "imported")
+    if (r.ok) issuedAgentImports.delete(previewId)
+    return r
   })
 
   ipcMain.handle("ext-remote-catalog", () => refreshRemoteCatalog(userDataPath))

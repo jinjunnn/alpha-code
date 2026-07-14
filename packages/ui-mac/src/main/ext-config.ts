@@ -11,6 +11,7 @@
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
+import { randomUUID } from "node:crypto"
 import { applyEdits, modify, parse, type ParseError } from "jsonc-parser"
 import type { ProviderInput } from "../shared/alpha-model-types"
 import type { InstallMeta } from "../preload/types"
@@ -18,8 +19,24 @@ import { opencodeHomeDir } from "./alpha-bridge"
 import { addReceipt, alphaGlobalRoot, removeReceipt } from "./alpha-installs"
 import { alphaJsoncPath } from "./engine-config-truth"
 import { commandHeadBase } from "./platform"
+import { tryAcquireBundleLock } from "./ext-bundle-lock"
 
 export type ConfigResult = { ok: true } | { ok: false; reason: string }
+
+// ── REQ-100 #342:配置写锁 —— 与扩展事务共享同一把环境级 bundle 锁(<globalRoot>/ext-tx/tx.lock)。
+// 无锁的并发 read-modify-write 会使在途事务已捕获的 config before-image 过期(恢复/回滚时 digest
+// 不符走 fail-closed,用户看到「回滚未复原」)。覆盖面 = writeKey 汇点(值与现文件无关的键写)+
+// plugin 列表 RMW 整函数 + 治理直写;引擎事务自身走 ext-config-tx 独立通道,不会重入此锁。
+// 非阻塞:事务在途 → 如实 busy(引擎层同约,ext-bundle-lock 不隐式等待)。
+function withConfigWriteLock<T>(fn: () => T): T | { ok: false; reason: string } {
+  const acquired = tryAcquireBundleLock(alphaGlobalRoot(), { txId: `cfg-${randomUUID()}` })
+  if (!acquired.ok) return { ok: false, reason: `config busy: ${acquired.reason} — retry after the in-flight extension transaction` }
+  try {
+    return fn()
+  } finally {
+    acquired.lock.release()
+  }
+}
 
 const SAFE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
 const SAFE_MCP_FIELDS = new Set([
@@ -149,6 +166,9 @@ export type GovernanceApplyOutcome = { ok: true; applied: string[][] } | { ok: f
  *  返回**实际写入**的叶子路径(onlyIfAbsent 被跳过的不算 —— codex H1:跳过的键绝不能进记账,
  *  否则 reset 会删掉用户自有的同名键,如用户预设的 permission.skill."*")。 */
 export function applyGovernanceEdits(edits: GovernanceEdit[]): GovernanceApplyOutcome {
+  return withConfigWriteLock(() => applyGovernanceEditsUnlocked(edits))
+}
+function applyGovernanceEditsUnlocked(edits: GovernanceEdit[]): GovernanceApplyOutcome {
   for (const e of edits) {
     if (!governancePathAllowed(e.path)) return { ok: false, reason: `refused: governance path not allowed: ${e.path.join(".")}` }
   }
@@ -301,6 +321,11 @@ function isAllowedUrl(url: string): boolean {
 }
 
 function writeKey(target: string, keyPath: string[], value: unknown): ConfigResult {
+  return withConfigWriteLock(() => writeKeyUnlocked(target, keyPath, value))
+}
+
+/** 仅供已持配置写锁的调用方(plugin RMW 整函数锁内)使用;其余一律走 writeKey。 */
+function writeKeyUnlocked(target: string, keyPath: string[], value: unknown): ConfigResult {
   if (!ALLOWED_TOP_KEYS.has(keyPath[0])) return { ok: false, reason: `refused: unknown config key "${keyPath[0]}"` }
   const bak = `${target}.bak`
   const tmp = `${target}.tmp`
@@ -380,15 +405,18 @@ export function removeAgentEntry(name: string, targetPath?: string): ConfigResul
  * shared XDG config when it still carries the entry. Receipt goes too.
  */
 export function removeMcp(name: string): ConfigResult {
+  return withConfigWriteLock(() => removeMcpUnlocked(name)) // 主文件+legacy 多写一把锁,不允许中途 busy 半删
+}
+function removeMcpUnlocked(name: string): ConfigResult {
   if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid server name" }
-  const primary = writeKey(mcpPluginTargetPath(), ["mcp", name], undefined)
+  const primary = writeKeyUnlocked(mcpPluginTargetPath(), ["mcp", name], undefined)
   if (!primary.ok) return primary
   for (const legacy of legacyConfigPaths(mcpPluginTargetPath())) {
     try {
       if (!fs.existsSync(legacy)) continue
       const parsed = parse(fs.readFileSync(legacy, "utf8")) as { mcp?: Record<string, unknown> } | undefined
       if (parsed?.mcp && typeof parsed.mcp === "object" && name in parsed.mcp) {
-        const legacyResult = writeKey(legacy, ["mcp", name], undefined)
+        const legacyResult = writeKeyUnlocked(legacy, ["mcp", name], undefined)
         if (!legacyResult.ok) return legacyResult
       }
     } catch {
@@ -474,17 +502,20 @@ export function readConfiguredProviderKeys(): Map<string, string> {
  * removed separately via providers.removeKey. Env keys (alpha.env) are untouched. Next reconnect.
  */
 export function removeProvider(id: string): ConfigResult {
+  return withConfigWriteLock(() => removeProviderUnlocked(id)) // 主文件+legacy 多写一把锁,不允许中途 busy 半删
+}
+function removeProviderUnlocked(id: string): ConfigResult {
   if (!SAFE_NAME.test(id)) return { ok: false, reason: "invalid provider id" }
   // Drop from the real source, and from any legacy source (XDG/~/.opencode) still carrying it during
   // the migration period — otherwise a stale copy would shadow-resurrect the provider on next reconnect.
-  const primary = writeKey(providerTargetPath(), ["provider", id], undefined)
+  const primary = writeKeyUnlocked(providerTargetPath(), ["provider", id], undefined)
   if (!primary.ok) return primary
   for (const legacy of providerReadPaths().slice(1)) {
     try {
       if (!fs.existsSync(legacy)) continue
       const parsed = parse(fs.readFileSync(legacy, "utf8")) as { provider?: Record<string, unknown> } | undefined
       if (parsed?.provider && typeof parsed.provider === "object" && id in parsed.provider) {
-        const r = writeKey(legacy, ["provider", id], undefined)
+        const r = writeKeyUnlocked(legacy, ["provider", id], undefined)
         if (!r.ok) return r
       }
     } catch {
@@ -511,6 +542,9 @@ function pkgBase(spec: string): string {
  * launch. Idempotent; the caller should prompt for a restart (config is read at boot only).
  */
 export function persistPlugin(pkg: string, meta?: InstallMeta): ConfigResult {
+  return withConfigWriteLock(() => persistPluginUnlocked(pkg, meta)) // plugin[] 是跨读写 RMW,整函数持锁
+}
+function persistPluginUnlocked(pkg: string, meta?: InstallMeta): ConfigResult {
   if (!SAFE_PACKAGE.test(pkg)) return { ok: false, reason: "invalid package name" }
   const target = mcpPluginTargetPath()
   const readPlugins = (file: string): unknown[] => {
@@ -537,7 +571,7 @@ export function persistPlugin(pkg: string, meta?: InstallMeta): ConfigResult {
   // must not be duplicated into the alpha file — the engine merges the two plugin arrays.
   if (inList(current) || (target !== userConfigPath() && inList(readPlugins(userConfigPath()))))
     return { ok: true }
-  const written = writeKey(target, ["plugin"], [...current, pkg])
+  const written = writeKeyUnlocked(target, ["plugin"], [...current, pkg])
   if (written.ok && receiptsActive()) {
     addReceipt(alphaGlobalRoot(), {
       id: meta?.catalogId ?? `user:${pkgBase(pkg)}`,
@@ -558,6 +592,9 @@ export function persistPlugin(pkg: string, meta?: InstallMeta): ConfigResult {
  * and drop its receipt. Idempotent — absent package is a no-op success.
  */
 export function removePlugin(pkg: string): ConfigResult {
+  return withConfigWriteLock(() => removePluginUnlocked(pkg))
+}
+function removePluginUnlocked(pkg: string): ConfigResult {
   if (!SAFE_PACKAGE.test(pkg)) return { ok: false, reason: "invalid package name" }
   const base = pkgBase(pkg)
   const dropFrom = (file: string): ConfigResult => {
@@ -576,7 +613,7 @@ export function removePlugin(pkg: string): ConfigResult {
       return true
     })
     if (next.length === current.length) return { ok: true } // not present here
-    return writeKey(file, ["plugin"], next)
+    return writeKeyUnlocked(file, ["plugin"], next)
   }
   const primary = dropFrom(mcpPluginTargetPath())
   if (!primary.ok) return primary
@@ -599,6 +636,9 @@ function underAlphaPlugins(absPath: string): boolean {
 }
 
 export function persistPluginPath(name: string, absJsPath: string, files: string[], meta?: InstallMeta): ConfigResult {
+  return withConfigWriteLock(() => persistPluginPathUnlocked(name, absJsPath, files, meta))
+}
+function persistPluginPathUnlocked(name: string, absJsPath: string, files: string[], meta?: InstallMeta): ConfigResult {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(name)) return { ok: false, reason: "invalid plugin name" }
   if (!path.isAbsolute(absJsPath) || !absJsPath.endsWith(".js") || !underAlphaPlugins(absJsPath))
     return { ok: false, reason: "refused: plugin path outside ~/.alpha/plugins" }
@@ -614,7 +654,7 @@ export function persistPluginPath(name: string, absJsPath: string, files: string
   }
   const current = read()
   if (current.some((p) => p === absJsPath)) return { ok: true } // idempotent
-  const written = writeKey(target, ["plugin"], [...current, absJsPath])
+  const written = writeKeyUnlocked(target, ["plugin"], [...current, absJsPath])
   if (written.ok && receiptsActive()) {
     addReceipt(alphaGlobalRoot(), {
       id: meta?.catalogId ?? `user:${name}`,
@@ -632,6 +672,9 @@ export function persistPluginPath(name: string, absJsPath: string, files: string
 }
 
 export function removePluginPath(name: string, absJsPath: string): ConfigResult {
+  return withConfigWriteLock(() => removePluginPathUnlocked(name, absJsPath))
+}
+function removePluginPathUnlocked(name: string, absJsPath: string): ConfigResult {
   if (!path.isAbsolute(absJsPath)) return { ok: false, reason: "invalid plugin path" }
   const target = mcpPluginTargetPath()
   try {
@@ -640,7 +683,7 @@ export function removePluginPath(name: string, absJsPath: string): ConfigResult 
       const current: unknown[] = Array.isArray(parsed?.plugin) ? (parsed!.plugin as unknown[]) : []
       const next = current.filter((p) => p !== absJsPath)
       if (next.length !== current.length) {
-        const written = writeKey(target, ["plugin"], next)
+        const written = writeKeyUnlocked(target, ["plugin"], next)
         if (!written.ok) return written
       }
     }

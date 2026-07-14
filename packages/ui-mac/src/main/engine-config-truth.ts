@@ -10,10 +10,15 @@
 
 import os from "node:os"
 import path from "node:path"
+import { tryGetAlphaEnvironment } from "./alpha-environment"
 
-/** `~/.alpha` global root (ALPHA_GLOBAL_DIR-overridable for tests). Mirrors alpha-installs.alphaGlobalRoot;
- *  kept here so this module stays dependency-light (os/path only) and can be imported by sidecar + ext-config. */
+/** `~/.alpha` global root. Mirrors alpha-installs.alphaGlobalRoot **including the REQ-098 #301 freeze**:
+ *  冻结后以快照为准 —— 否则运行期 env 漂移会出现「配置写锁锁 A 根、alphaJsoncPath 写 B 根」的
+ *  分根写(Codex review #351);未初始化(纯单测/sidecar)才退回 process.env。
+ *  (alpha-environment 与本模块同为 os/path 级纯模块,不破坏 dependency-light。) */
 export function alphaGlobalRoot(): string {
+  const frozen = tryGetAlphaEnvironment()
+  if (frozen) return frozen.mutableRoot
   return process.env.ALPHA_GLOBAL_DIR || path.join(os.homedir(), ".alpha")
 }
 

@@ -149,7 +149,13 @@ function makeDeps(opts: {
     persistMcp: record("persistMcp", { ok: true as const }),
     fileifyMcpSecrets: (name: string, server: Record<string, unknown>, secrets: Record<string, string>) => {
       calls.push({ fn: "fileifyMcpSecrets", args: [name, server, secrets] })
-      return { fileified: Object.keys(secrets), skipped: [], refs: {} }
+      return {
+        fileified: Object.keys(secrets),
+        skipped: [],
+        refs: {},
+        restore: () => calls.push({ fn: "restoreSecrets", args: [] }),
+        discard: () => calls.push({ fn: "discardSecrets", args: [] }),
+      }
     },
     removeMcpSecrets: record("removeMcpSecrets", undefined),
     removeMcp: record("removeMcp", { ok: true as const }),
@@ -334,7 +340,7 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
             if (env) env[v] = `{file:secrets/${v}}`
             refs[v] = `{file:secrets/${v}}`
           }
-          return { fileified: Object.keys(secrets), skipped: [], refs }
+          return { fileified: Object.keys(secrets), skipped: [], refs, restore() {}, discard() {} }
         },
         // 模拟 persistMcpWithPolicy:main 策略原地注入受管字段(如 Excel EXCEL_FILES_PATH)
         persistMcp: (_name, config) => {
@@ -372,12 +378,18 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
     expect(fs.readFileSync(refPath, "utf8")).toBe("sekret-value") // 密钥文件落位
   })
 
-  test("REQ-099 #305:密钥路由失败(skipped 非空)→ 拒绝落盘 + 吊销已写密钥,绝不明文持久化", async () => {
+  test("REQ-099 #305:密钥路由失败(skipped 非空)→ 拒绝落盘 + 快照复原,绝不明文持久化", async () => {
     const { deps, calls } = makeDeps({
       installers: {
         fileifyMcpSecrets: (name, server, secrets) => {
           calls.push({ fn: "fileifyMcpSecrets", args: [name, server, secrets] })
-          return { fileified: [], skipped: Object.keys(secrets), refs: {} }
+          return {
+            fileified: [],
+            skipped: Object.keys(secrets),
+            refs: {},
+            restore: () => calls.push({ fn: "restoreSecrets", args: [] }),
+            discard: () => calls.push({ fn: "discardSecrets", args: [] }),
+          }
         },
       },
     })
@@ -385,7 +397,30 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toContain("refusing plaintext persist")
     expect(called(calls, "persistMcp")).toHaveLength(0)
-    expect(called(calls, "removeMcpSecrets")).toHaveLength(1)
+    expect(called(calls, "restoreSecrets")).toHaveLength(1) // #351:快照复原(更新不毁既有密钥)
+    expect(called(calls, "removeMcpSecrets")).toHaveLength(0)
+  })
+
+  test("REQ-100 #342(#351 回归锁):persist 失败(如事务在途 busy)→ 密钥按快照复原;卸载先配置后吊销", async () => {
+    const { deps, calls } = makeDeps({ installers: { persistMcp: record2("persistMcp", { ok: false as const, reason: "config busy: bundle lock held" }) } })
+    function record2<T>(fn: string, ret: T) {
+      return (...args: unknown[]): T => {
+        calls.push({ fn, args })
+        return ret
+      }
+    }
+    const r = await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "sekret-value" } } }, deps)
+    expect(r.ok).toBe(false)
+    expect(called(calls, "restoreSecrets")).toHaveLength(1)
+    expect(called(calls, "removeMcpSecrets")).toHaveLength(0)
+    // 卸载顺序:removeMcp 失败 → 不吊销密钥(不留「配置在、密钥毁」半拆态)
+    calls.length = 0
+    const { deps: d2, calls: c2 } = makeDeps({ installers: { removeMcp: () => ({ ok: false as const, reason: "config busy" }) } })
+    await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "sekret-value" } } }, d2)
+    c2.length = 0
+    const u = await uninstallByKey({ type: "mcp", name: "markitdown", scope: "global" }, d2)
+    expect(u.ok).toBe(false)
+    expect(called(c2, "removeMcpSecrets")).toHaveLength(0)
   })
 
   test("REQ-099 #305(高危回归锁):grant 值含 {file:}/{env:} 替换语法 → 派生前拒绝", async () => {
@@ -438,7 +473,7 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
     expect(env.PIP_INDEX_URL).toContain("tuna.tsinghua.edu.cn")
   })
 
-  test("persistMcp failure → orphan secret files revoked + transaction rolled back", async () => {
+  test("persistMcp failure → secret snapshot restored (no orphan, no destroy) + transaction rolled back", async () => {
     const txEvents: string[] = []
     const tx: InstallTransactionHooks = {
       begin: (plan) => {
@@ -451,7 +486,9 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
     const { deps, calls } = makeDeps({ transaction: tx, installers: { persistMcp: () => ({ ok: false, reason: "DANGEROUS_ENV" }) } })
     const r = await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "v" } } }, deps)
     expect(r.ok).toBe(false)
-    expect(called(calls, "removeMcpSecrets")).toHaveLength(1) // 不留孤儿密钥文件
+    // #351:失败按写前快照复原 —— 首装等价于撤新写入(不留孤儿),更新不毁既有密钥
+    expect(called(calls, "restoreSecrets")).toHaveLength(1)
+    expect(called(calls, "removeMcpSecrets")).toHaveLength(0)
     expect(txEvents).toEqual(["begin:install:markitdown", "rollback:tx-1:DANGEROUS_ENV"])
     expect(findRecordV2(globalRoot, "mcp", "markitdown")).toBeNull()
   })

@@ -359,8 +359,9 @@ export type TargetArg = { scope: "global" } | { scope: "project"; projectDir: st
 export type PlannerInstallers = {
   persistMcp(name: string, server: Record<string, unknown>, meta?: InstallMetaArg): ConfigOutcome
   /** REQ-099 #305:密钥深路由(environment 键 + headers 内嵌真值 → {file:} 引用);skipped 非空
-   *  = 有密钥没能进文件通道,调用方必须 fail-closed,绝不明文持久化。refs 供 live 真值回填。 */
-  fileifyMcpSecrets(name: string, server: Record<string, unknown>, secrets: Record<string, string>): { fileified: string[]; skipped: string[]; refs: Record<string, string> }
+   *  = 有密钥没能进文件通道,调用方必须 fail-closed,绝不明文持久化。refs 供 live 真值回填。
+   *  restore/discard = 写前快照(#351:失败复原既有密钥,成功丢弃快照)。 */
+  fileifyMcpSecrets(name: string, server: Record<string, unknown>, secrets: Record<string, string>): { fileified: string[]; skipped: string[]; refs: Record<string, string>; restore(): void; discard(): void }
   removeMcpSecrets(name: string): void
   removeMcp(name: string): ConfigOutcome
   persistPlugin(pkg: string, meta?: InstallMetaArg): ConfigOutcome
@@ -698,10 +699,14 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
     const secretMap: Record<string, string> = {}
     for (const v of derived.secretVars) secretMap[v] = grants.secrets![v]!
     let refs: Record<string, string> = {}
+    // Codex review #351:失败路径(含配置写锁 busy)按写前快照复原 —— 更新场景不得毁掉既有安装
+    // 仍被 config 引用的密钥;首装无快照则等价于清掉新写入(不留孤儿)。
+    let secretFiles: { restore(): void; discard(): void } | null = null
     if (derived.secretVars.length > 0) {
       const f = deps.installers.fileifyMcpSecrets(entry.name, durable, secretMap)
+      secretFiles = f
       if (f.skipped.length > 0) {
-        deps.installers.removeMcpSecrets(entry.name)
+        f.restore()
         rollback(`secrets not routable to {file:} channel: ${f.skipped.join(", ")}`)
         return { ok: false, reason: `secret(s) could not be routed to the {file:} channel: ${f.skipped.join(", ")} — refusing plaintext persist` }
       }
@@ -711,10 +716,11 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
     // live 必须在 persist 之后从 durable 派生,否则 renderer 拿去 sdk.mcp.add 的 live 配置缺策略字段。
     const persisted = deps.installers.persistMcp(entry.name, durable, meta)
     if (!persisted.ok) {
-      if (derived.secretVars.length > 0) deps.installers.removeMcpSecrets(entry.name) // 不留孤儿密钥文件
+      secretFiles?.restore()
       rollback(persisted.reason)
       return persisted
     }
+    secretFiles?.discard()
     configKey = `mcp.${entry.name}`
     // live = 策略后配置 + 密钥真值回填(environment 与 headers 里的 {file:} 引用换回 renderer 刚交
     // 的真值 —— 该值本就来自本次 grants;契约:绝不回传任何 main/keychain 来源的密钥)。
@@ -934,12 +940,14 @@ export async function uninstallByKey(rawIntent: unknown, deps: PlannerDeps): Pro
     }
     removedFiles = r.files
   } else if (intent.type === "mcp") {
-    deps.installers.removeMcpSecrets(intent.name)
+    // Codex review #351:先删配置(锁内)、成功才吊销密钥 —— busy/失败时不得留下
+    // 「配置还在、密钥已毁」的半拆状态。
     const r = deps.installers.removeMcp(intent.name)
     if (!r.ok) {
       rollback(r.reason)
       return r
     }
+    deps.installers.removeMcpSecrets(intent.name)
   } else if (intent.type === "plugin") {
     if (configKey?.startsWith("plugin-path:")) {
       // vendored:owned path 从受控根 + name 重新派生;账本路径必须落在派生目录内,否则 fail closed。
