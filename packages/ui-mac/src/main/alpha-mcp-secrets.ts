@@ -72,6 +72,59 @@ export function removeMcpServerSecrets(userDataPath: string, server: string): vo
  * durable config never carries the plaintext. Values already file-refs are left as-is. Returns the
  * list of vars actually file-ified (for logging by NAME only — never the value).
  */
+/**
+ * REQ-099 #305(catalog/planner 专用):按「变量名 → 真值」把密钥路由进文件通道,同时覆盖
+ * environment(键匹配)与 headers(值内嵌 —— headersTemplate 的 {VAR} 已被替换成真值,按真值
+ * 子串换成 {file:} 引用;引擎 ConfigVariable.substitute 对整份 config 文本做替换,headers 内
+ * 引用同样解析)。真值来自 grants(planner 已拒 {file:}/{env:} 语法),一律按字面密钥写文件 ——
+ * 不承认 renderer 侧「已有引用」。返回 refs 供调用方把 live 配置换回真值;granted 却没落到任何
+ * 字段的密钥进 skipped,由调用方 fail-closed(绝不明文持久化)。
+ */
+export function fileifyMcpSecretsDeep(
+  userDataPath: string,
+  server: string,
+  config: Record<string, unknown>,
+  secrets: Record<string, string>,
+): { fileified: string[]; skipped: string[]; refs: Record<string, string> } {
+  const fileified: string[] = []
+  const skipped: string[] = []
+  const refs: Record<string, string> = {}
+  const env = config.environment && typeof config.environment === "object" && !Array.isArray(config.environment)
+    ? (config.environment as Record<string, unknown>)
+    : null
+  const headers = config.headers && typeof config.headers === "object" && !Array.isArray(config.headers)
+    ? (config.headers as Record<string, unknown>)
+    : null
+  for (const [varName, real] of Object.entries(secrets)) {
+    if (typeof real !== "string" || real.length === 0) continue // 空值 = 无可路由(调用方已过滤)
+    const written = writeMcpSecret(userDataPath, server, varName, real)
+    if (!written.ok) {
+      skipped.push(varName)
+      continue
+    }
+    let replaced = false
+    if (env && env[varName] === real) {
+      env[varName] = written.ref
+      replaced = true
+    }
+    if (headers) {
+      for (const [hk, hv] of Object.entries(headers)) {
+        if (typeof hv === "string" && hv.includes(real)) {
+          headers[hk] = hv.split(real).join(written.ref)
+          replaced = true
+        }
+      }
+    }
+    if (replaced) {
+      fileified.push(varName)
+      refs[varName] = written.ref
+    } else {
+      skipped.push(varName) // granted 但没落到任何 config 字段 —— 视为异常,调用方 fail-closed
+    }
+  }
+  return { fileified, skipped, refs }
+}
+
 export function fileifyMcpSecrets(
   userDataPath: string,
   server: string,

@@ -17,11 +17,9 @@ import { createEffect, createSignal, onCleanup, type Accessor } from "solid-js"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import type { ServerInfo } from "../sidebar/use-projects"
 import type { CatalogEntry, InstalledState, McpConfig, McpInstallSpec, RuntimeCheck } from "./catalog-types"
-import { entryVersion } from "./catalog-source"
 import type { InstallReceipt } from "../../preload/types"
 
 // Receipt provenance (REQ-018): catalog snapshot version recorded per install → update checks.
-const metaFor = (entry: CatalogEntry) => ({ catalogId: entry.id, version: entryVersion(entry) }) // REQ-032:条目级版本(角标粒度)
 
 type Client = ReturnType<typeof createOpencodeClient>
 
@@ -265,29 +263,36 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     if (!c) return { ok: false, reason: "no server" }
     const spec = entry.installSpec
     if (!spec || spec.kind !== "mcp") return { ok: false, reason: "not an MCP entry" }
-    // Live config carries REAL secret values (in-memory, the user just typed them) so mcp.add can
-    // connect immediately — the /mcp POST payload is NOT run through opencode's {file:} substitution.
-    const config = toMcpConfig(spec, { ...(env ?? {}), ...(secrets ?? {}) }, workspace)
-    const secretVars = secrets ? Object.keys(secrets).filter((k) => (secrets[k] ?? "").length > 0) : undefined
-    return persistAndConnectMcp(entry.name, config, metaFor(entry), secretVars)
+    // REQ-099 #305:catalog MCP 切 main-owned installCatalog —— name/config 由 main 从已验签 catalog
+    // 派生,renderer 只交 grants(secrets/env/workspace)+ cnMirror 偏好(镜像 env 值为 main 侧常量,
+    // 顶替此前 renderer 侧的 CN_MIRROR_ENV 注入)。durable 落盘含 {file:} 引用与 main 策略(如 Excel
+    // 受管根);live 配置由 main 回传(策略后 + 密钥真值)再 mcp.add 免重启连接。
+    const secretsClean = secrets ? Object.fromEntries(Object.entries(secrets).filter(([, v]) => (v ?? "").length > 0)) : {}
+    const grants = {
+      ...(Object.keys(secretsClean).length ? { secrets: secretsClean } : {}),
+      ...(env && Object.keys(env).length ? { env } : {}),
+      ...(workspace ? { workspace } : {}),
+      ...(IS_CN ? { cnMirror: true } : {}),
+    }
+    const r = await window.api.ext.installCatalog({
+      catalogId: entry.id,
+      scope: { scope: "global" },
+      ...(Object.keys(grants).length ? { grants } : {}),
+    })
+    if (!r.ok) return r
+    // Codex review #350:MCP 成功结果必须带 liveMcp —— 缺失 = main 已按其它 kind 落盘(catalog
+    // 漂移),静默 ok 会装错类型还报成功;显式失败并如实说明已落盘事实。
+    if (!r.liveMcp) {
+      await Promise.all([loadStatus(), loadInstalls()])
+      return { ok: false, reason: `catalog kind mismatch: expected mcp, got "${r.kind}"(条目已按实际类型落盘,未激活连接)` }
+    }
+    return liveAddAndConnect(r.liveMcp.name, r.liveMcp.config)
   }
 
-  // persist(先写盘防「live 未持久」)→ mcp.add → connect 的共享核心(catalog 与自定义连接器同路径)。
-  async function persistAndConnectMcp(
-    name: string,
-    config: McpConfig,
-    meta: { catalogId?: string; version?: string },
-    secretVars?: string[],
-  ): Promise<ActionResult> {
+  // mcp.add + connect 的共享 live 段(config 已持久化在先;catalog 与自定义连接器同路径)。
+  async function liveAddAndConnect(name: string, config: unknown): Promise<ActionResult> {
     const c = client
     if (!c) return { ok: false, reason: "no server" }
-    // 1. Durable: write the alpha-owned config first. If this fails, never touch the live server —
-    //    avoids a "live but not persisted" state that vanishes on restart. Main file-ifies the
-    //    secretVars → opencode.jsonc gets {file:} refs, never the plaintext secret.
-    const persisted = await window.api.ext.persistMcp(name, config as unknown as Record<string, unknown>, meta, secretVars)
-    if (!persisted.ok) return { ok: false, reason: persisted.reason }
-    // 2. Live: add + connect (no restart). mcp.add registers in-memory and spawns; connect is a
-    //    belt-and-braces no-op if already connected.
     const added = await withTimeout(c.mcp.add({ name, config } as any), 15000)
     if (added === TIMED_OUT) {
       void loadStatus()
@@ -297,6 +302,18 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     await withTimeout((c.mcp.connect({ name } as any) as Promise<unknown>).catch(() => {}), 10000)
     await Promise.all([loadStatus(), loadInstalls()])
     return { ok: true }
+  }
+
+  // 未策展自定义连接器:persist(先写盘防「live 未持久」,不带 meta —— 无 catalog 身份)→ live 段。
+  async function persistAndConnectMcp(name: string, config: McpConfig, secretVars?: string[]): Promise<ActionResult> {
+    const c = client
+    if (!c) return { ok: false, reason: "no server" }
+    // Durable first: write the alpha-owned config. If this fails, never touch the live server —
+    // avoids a "live but not persisted" state that vanishes on restart. Main file-ifies the
+    // secretVars → opencode.jsonc gets {file:} refs, never the plaintext secret.
+    const persisted = await window.api.ext.persistMcp(name, config as unknown as Record<string, unknown>, secretVars)
+    if (!persisted.ok) return { ok: false, reason: persisted.reason }
+    return liveAddAndConnect(name, config)
   }
 
   // REQ-033:任意 MCP 手动添加(catalog 外;跨生态主通道)。校验主体在 main(persistMcp 的 C2
@@ -316,7 +333,7 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     if (input.mcpType === "local" && !(spec.command ?? []).length) return { ok: false, reason: "命令必填" }
     const config = toMcpConfig(spec, { ...env, ...secrets })
     const secretVars = Object.keys(secrets).filter((k) => (secrets[k] ?? "").length > 0)
-    return persistAndConnectMcp(name, config, {}, secretVars.length ? secretVars : undefined)
+    return persistAndConnectMcp(name, config, secretVars.length ? secretVars : undefined)
   }
 
   async function setMcpConnected(name: string, shouldConnect: boolean) {
@@ -460,12 +477,10 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
   async function installPlugin(entry: CatalogEntry): Promise<ActionResult> {
     const spec = entry.installSpec
     if (!spec || spec.kind !== "plugin") return { ok: false, reason: "not a plugin entry" }
-    // REQ-023 T2:有 vendored 资产的官方插件走零网络通道(复制 + 绝对路径),npm 仅 fallback。
-    const r = spec.vendoredAssetKey
-      ? await window.api.ext.installVendoredPlugin(spec.vendoredAssetKey, entry.name, metaFor(entry))
-      : await window.api.ext.installPlugin(spec.package, metaFor(entry))
+    // REQ-099 #305:catalog 插件切 installCatalog(vendored/npm 分支由 planner 从已验签条目裁决)。
     // dispose 触发实例重建 → 引擎立刻装载(vendored=本地即读;npm=后台下载);失败不降级为错误,
     // config 已落盘、下次重建自然装载。
+    const r = await window.api.ext.installCatalog({ catalogId: entry.id, scope: { scope: "global" } })
     if (r.ok) {
       await loadInstalls()
       await refreshEngine()
@@ -473,17 +488,12 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     return r
   }
 
-  /** REQ-023:安装 catalog 官方 agent(vendored md 资产 → writeAgent 同管线,桥+账本+dispose)。 */
+  /** 安装 catalog 官方 agent(REQ-099 #305:切 installCatalog —— remote/builtin 分支与「内容未打包」
+   *  诚实失败均由 planner 从已验签条目裁决;写盘/桥/账本走 writeAgent 同管线)。 */
   async function installAgentEntry(entry: CatalogEntry): Promise<ActionResult> {
     const spec = entry.installSpec
     if (!spec || spec.kind !== "agent") return { ok: false, reason: "not an agent entry" }
-    // REQ-046:远程 agent —— renderer 只传 catalogId(信任边界同远程技能:main 从已验签 catalog 派生)
-    const r =
-      spec.source === "remote" && entry.remoteAsset?.files?.length
-        ? await window.api.ext.installRemoteAgent(entry.id)
-        : spec.builtinAssetKey
-          ? await window.api.ext.installBuiltinAgent(spec.builtinAssetKey, entry.name, undefined, metaFor(entry))
-          : ({ ok: false, reason: "该 Agent 内容尚未随此版本打包" } as const)
+    const r = await window.api.ext.installCatalog({ catalogId: entry.id, scope: { scope: "global" } })
     if (!r.ok) return r
     await loadInstalls()
     const refreshed = await refreshEngine()
@@ -510,17 +520,18 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     return { ok: true, name: r.name }
   }
   async function importNpmPlugin(pkg: string): Promise<ActionResult> {
-    const r = await window.api.ext.installPlugin(pkg, undefined)
+    const r = await window.api.ext.installPlugin(pkg)
     if (!r.ok) return r
     await loadInstalls()
     await refreshEngine()
     return r
   }
 
-  /** REQ-020 T4:云 pipeline「启用」= 写安装账本(receipts-only),不触达引擎/文件系统。 */
+  /** REQ-020 T4 / REQ-099 #305:云 pipeline「启用」= receipts-only,切 installCatalog(planner cloud
+   *  分支同语义:不触达引擎/文件系统,只落账)。 */
   async function enableCloud(entry: CatalogEntry): Promise<ActionResult> {
     if (entry.type !== "cloud") return { ok: false, reason: "not a cloud entry" }
-    const r = await window.api.ext.enableCloud(entry.id, entry.name, metaFor(entry))
+    const r = await window.api.ext.installCatalog({ catalogId: entry.id, scope: { scope: "global" } })
     if (!r.ok) return { ok: false, reason: r.reason }
     await loadInstalls()
     return { ok: true }

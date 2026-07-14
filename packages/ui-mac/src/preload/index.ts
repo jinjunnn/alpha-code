@@ -162,8 +162,8 @@ const api: ElectronAPI = {
     },
   },
   ext: {
-    persistMcp: (name, server, meta, secretVars) =>
-      ipcRenderer.invoke("ext-persist-mcp", name, server, meta, secretVars),
+    persistMcp: (name, server, secretVars) =>
+      ipcRenderer.invoke("ext-persist-mcp", name, server, secretVars),
     removeMcp: (name) => ipcRenderer.invoke("ext-remove-mcp", name),
     checkRuntime: (tool) => ipcRenderer.invoke("ext-check-runtime", tool),
     configHealth: () => ipcRenderer.invoke("ext-config-health"),
@@ -174,16 +174,11 @@ const api: ElectronAPI = {
     importAgentPreview: (token, filePath) => ipcRenderer.invoke("ext-import-agent-preview", token, filePath),
     importAgentConfirm: (previewId) => ipcRenderer.invoke("ext-import-agent-confirm", previewId),
     remoteCatalog: () => ipcRenderer.invoke("ext-remote-catalog"),
-    installRemoteAgent: (catalogId) => ipcRenderer.invoke("ext-install-remote-agent", catalogId),
-    installPlugin: (pkg, meta) => ipcRenderer.invoke("ext-install-plugin", pkg, meta),
+    installPlugin: (pkg) => ipcRenderer.invoke("ext-install-plugin", pkg),
     installCatalog: (intent) => ipcRenderer.invoke("ext-install-catalog", intent),
     readBuiltinSkill: (builtinAssetKey) => ipcRenderer.invoke("ext-read-builtin-skill", builtinAssetKey),
     importSkillFolder: (target) => ipcRenderer.invoke("ext-import-skill-folder", target),
     importSkillGit: (url, target) => ipcRenderer.invoke("ext-import-skill-git", url, target),
-    installBuiltinAgent: (builtinAssetKey, name, target, meta) =>
-      ipcRenderer.invoke("ext-install-builtin-agent", builtinAssetKey, name, target, meta),
-    installVendoredPlugin: (vendoredAssetKey, name, meta) =>
-      ipcRenderer.invoke("ext-install-vendored-plugin", vendoredAssetKey, name, meta),
     listInstalls: (projectDir) => ipcRenderer.invoke("ext-list-installs", projectDir),
     uninstallV2: (intent) => ipcRenderer.invoke("ext-uninstall-v2", intent),
     listGenerations: (intent) => ipcRenderer.invoke("ext-list-generations", intent),
@@ -191,7 +186,6 @@ const api: ElectronAPI = {
     migrateScan: () => ipcRenderer.invoke("ext-migrate-scan"),
     migrateVerify: (requests) => ipcRenderer.invoke("ext-migrate-verify", requests),
     removeLegacy: (type, name) => ipcRenderer.invoke("ext-migrate-remove-legacy", type, name),
-    enableCloud: (id, name, meta) => ipcRenderer.invoke("ext-enable-cloud", id, name, meta),
     trustCheck: (directory) => ipcRenderer.invoke("ext-trust-check", directory),
     externalCheck: (directory) => ipcRenderer.invoke("ext-external-check", directory),
   },
