@@ -11,7 +11,7 @@
 // C14③ 契约锚(sync 时 `grep -n "as any"` 复核本文件):本文件全部 `as any` 都是同一类——
 // SDK v2 生成类型与 server 实际接受/返回形状的已知偏斜(directory/scope/roots 扩展参数、data
 // 数组元素形状、event 信封)。上游 codegen 修齐后应成批删除,不新增其它用途的 as any。
-import { createStore, unwrap } from "solid-js/store"
+import { createStore } from "solid-js/store"
 import { createEffect, createSignal, onCleanup, type Accessor } from "solid-js"
 // CLIENT subpath only — the v2 barrel pulls Node-only deps that break the renderer (see ADR-008).
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
@@ -355,11 +355,15 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     return store.receipts.some((r) => r.id === id && r.name in store.mcp)
   }
 
-  /** Uninstall by receipt: main removes files/config/secrets + drops the receipt; then reload + engine refresh.
-   *  receipt 常来自 store.receipts(Solid store 节点 = Proxy),contextBridge 结构化克隆遇 Proxy 抛
-   *  "An object could not be cloned" → IPC 根本发不出去。必须 unwrap 成普通对象再过桥。 */
+  /** REQ-100 #313:卸载切 key-based v2 —— renderer 只提供 type/name/scope(新构普通对象,顺带消掉
+   *  REQ-016 的 store-Proxy 过桥问题),receipt 事实由 main 账本自查;generation skill 在 main 走
+   *  锁内 journaled teardown。hub 列表 = global 账本视图(loadInstalls 只取 view.global)→ 恒 global。 */
   async function uninstall(receipt: InstallReceipt): Promise<ActionResult> {
-    const res = await window.api.ext.uninstall(unwrap(receipt))
+    // 账本外的 live MCP(手工/迁移前,hub 合成 receipt 行):v2 按账本自查会诚实拒「not installed」,
+    // 这类走既有 name-based removeMcp(config 名单键移除 + live disconnect),与旧行为一致。
+    if (receipt.type === "mcp" && !store.receipts.some((r) => r.type === "mcp" && r.name === receipt.name))
+      return removeMcp(receipt.name)
+    const res = await window.api.ext.uninstallV2({ type: receipt.type, name: receipt.name, scope: "global" })
     if (receipt.type === "mcp") await client?.mcp.disconnect({ name: receipt.name } as any).catch(() => {})
     await Promise.all([loadStatus(), loadInstalls()])
     // fs/plugin removal needs a rescan;cloud 只动账本(引擎无状态)无需 dispose。
@@ -442,26 +446,15 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
   async function installSkill(entry: CatalogEntry): Promise<ActionResult> {
     const spec = entry.installSpec
     if (spec?.kind !== "skill") return { ok: false, reason: "not a skill entry" }
-    // REQ-032:远程资产技能 —— renderer 只传 catalogId(codex H1:main 从已验签 catalog 派生
-    // name/清单/版本,renderer 无法自带 URL+hash);下载 sha256 钉死 + builtin 同管线;失败 loud。
-    if (spec.source === "remote" && entry.remoteAsset?.files?.length) {
-      const r = await window.api.ext.installRemoteSkill(entry.id)
-      if (!r.ok) return r
-      await loadInstalls()
-      if (!(await refreshEngine())) return { ok: true, reason: "reload-pending" }
-      return r
-    }
-    // Builtin = content shipped in the app's resources/skills; the main process copies the real
-    // SKILL.md (+ assets) into the user's scanned skills dir. Honest failure when this build doesn't
-    // bundle that asset yet (e.g. the Apache-2.0 entries pending content drop) — no placeholder stub.
-    if (spec.source === "builtin" && spec.builtinAssetKey) {
-      const r = await window.api.ext.installBuiltinSkill(spec.builtinAssetKey, entry.name, undefined, metaFor(entry))
-      if (!r.ok) return r
-      await loadInstalls()
-      if (!(await refreshEngine())) return { ok: true, reason: "reload-pending" }
-      return r
-    }
-    return { ok: false, reason: "该技能内容尚未随此版本打包" }
+    // REQ-100 #313(补 #310):单装与 bundle 同入口 —— main-owned installCatalog。renderer 仍只传
+    // catalogId(codex H1 信任边界:main 从已验签 catalog 派生 name/清单/版本,remote sha256 钉死、
+    // builtin 同源校验都在 main);skill 落不可变 generation 事务 → 可列代/离线回滚,不再走旧 flat
+    // 通道。「内容未随版本打包」的诚实失败由 planner 原样上抛。
+    const r = await window.api.ext.installCatalog({ catalogId: entry.id, scope: { scope: "global" } })
+    if (!r.ok) return r
+    await loadInstalls()
+    if (!(await refreshEngine())) return { ok: true, reason: "reload-pending" }
+    return r
   }
 
   async function installPlugin(entry: CatalogEntry): Promise<ActionResult> {
@@ -538,7 +531,7 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     if (entry.type === "plugin") {
       const old = store.receipts.find((r) => r.id === entry.id && r.type === "plugin")
       if (old) {
-        const removed = await window.api.ext.uninstall(unwrap(old))
+        const removed = await window.api.ext.uninstallV2({ type: "plugin", name: old.name, scope: "global" })
         if (!removed.ok) return removed
       }
       return installPlugin(entry)

@@ -66,7 +66,17 @@ import {
   type ScopeIdentity,
   type UpsertInput,
 } from "./ext-receipt-v2"
-import { commitInputFromRecord, installSkillGeneration, skillGenerationKey, skillGenerationProbe, skillStorePaths, type SkillPayloadFile } from "./ext-skill-generations"
+import {
+  commitInputFromRecord,
+  installSkillGeneration,
+  listSkillGenerations,
+  rollbackSkillGeneration,
+  skillGenerationKey,
+  skillGenerationProbe,
+  skillStorePaths,
+  type SkillGenerationEntry,
+  type SkillPayloadFile,
+} from "./ext-skill-generations"
 
 // ── renderer intents(严格解码:未知键 = 伪造事实通道,loud 拒绝)─────────────────────────────
 
@@ -932,6 +942,39 @@ export async function uninstallByKey(rawIntent: unknown, deps: PlannerDeps): Pro
   ;(deps.transaction ?? passthroughTx).commit(tx.txId)
   const warning = removed.ok ? undefined : `uninstalled but ledger removal failed: ${removed.reason}`
   return { ok: true, ...(removedFiles ? { files: removedFiles } : {}), ...(warning ? { warning } : {}) }
+}
+
+// ── generation history(REQ-100 #313:列代 + 两版离线回滚;key 面与卸载同一信任边界)─────────────
+
+export type GenerationListOutcome = { ok: true; generations: SkillGenerationEntry[] } | { ok: false; reason: string }
+
+/** 列某 skill 的 generation 历史。只透安全元数据(genId/current/version/digest/installedAt/eligible),
+ *  绝对目录不出 main;generation store 仅 global 域(与 uninstallByKey 的 generation 路径同界)。 */
+export function listGenerationsByKey(rawIntent: unknown, deps: Pick<PlannerDeps, "globalRoot">): GenerationListOutcome {
+  const decoded = decodeUninstallIntent(rawIntent)
+  if (!decoded.ok) return decoded
+  const intent = decoded.intent
+  if (intent.type !== "skill") return { ok: false, reason: `generation history: unsupported type "${intent.type}" — skill only` }
+  if (intent.scope !== "global") return { ok: false, reason: "generation history: global scope only" }
+  return { ok: true, generations: listSkillGenerations(deps.globalRoot(), intent.name) }
+}
+
+export type GenerationRollbackOutcome = { ok: true; previous: string | null } | { ok: false; reason: string }
+
+/** 两版离线回滚:renderer 只提供 key + 目标 genId;健康门/快照校验/锁内翻指针全在引擎侧 fail-closed
+ *  (rollbackGenerationTransaction),任一前置失败零变更。 */
+export async function rollbackGenerationByKey(
+  rawIntent: unknown,
+  rawGenId: unknown,
+  deps: Pick<PlannerDeps, "globalRoot">,
+): Promise<GenerationRollbackOutcome> {
+  const decoded = decodeUninstallIntent(rawIntent)
+  if (!decoded.ok) return decoded
+  const intent = decoded.intent
+  if (intent.type !== "skill") return { ok: false, reason: `rollback: unsupported type "${intent.type}" — skill only` }
+  if (intent.scope !== "global") return { ok: false, reason: "rollback: global scope only" }
+  if (typeof rawGenId !== "string" || rawGenId.length === 0 || rawGenId.length > 64) return { ok: false, reason: "rollback: invalid generation id" }
+  return rollbackSkillGeneration(deps.globalRoot(), intent.name, rawGenId)
 }
 
 // ── desired state(Hub 项目上下文「禁用」;main 侧真源,引擎生效面由消费方处理)──────────────────

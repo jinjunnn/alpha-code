@@ -174,12 +174,9 @@ const api: ElectronAPI = {
     importAgentPreview: (token, filePath) => ipcRenderer.invoke("ext-import-agent-preview", token, filePath),
     importAgentConfirm: (previewId) => ipcRenderer.invoke("ext-import-agent-confirm", previewId),
     remoteCatalog: () => ipcRenderer.invoke("ext-remote-catalog"),
-    installRemoteSkill: (catalogId) => ipcRenderer.invoke("ext-install-remote-skill", catalogId),
     installRemoteAgent: (catalogId) => ipcRenderer.invoke("ext-install-remote-agent", catalogId),
     installPlugin: (pkg, meta) => ipcRenderer.invoke("ext-install-plugin", pkg, meta),
     installCatalog: (intent) => ipcRenderer.invoke("ext-install-catalog", intent),
-    installBuiltinSkill: (builtinAssetKey, name, target, meta) =>
-      ipcRenderer.invoke("ext-install-builtin-skill", builtinAssetKey, name, target, meta),
     readBuiltinSkill: (builtinAssetKey) => ipcRenderer.invoke("ext-read-builtin-skill", builtinAssetKey),
     importSkillFolder: (target) => ipcRenderer.invoke("ext-import-skill-folder", target),
     importSkillGit: (url, target) => ipcRenderer.invoke("ext-import-skill-git", url, target),
@@ -188,7 +185,9 @@ const api: ElectronAPI = {
     installVendoredPlugin: (vendoredAssetKey, name, meta) =>
       ipcRenderer.invoke("ext-install-vendored-plugin", vendoredAssetKey, name, meta),
     listInstalls: (projectDir) => ipcRenderer.invoke("ext-list-installs", projectDir),
-    uninstall: (receipt) => ipcRenderer.invoke("ext-uninstall", receipt),
+    uninstallV2: (intent) => ipcRenderer.invoke("ext-uninstall-v2", intent),
+    listGenerations: (intent) => ipcRenderer.invoke("ext-list-generations", intent),
+    rollback: (intent, genId) => ipcRenderer.invoke("ext-rollback", intent, genId),
     migrateScan: () => ipcRenderer.invoke("ext-migrate-scan"),
     migrateVerify: (requests) => ipcRenderer.invoke("ext-migrate-verify", requests),
     removeLegacy: (type, name) => ipcRenderer.invoke("ext-migrate-remove-legacy", type, name),
