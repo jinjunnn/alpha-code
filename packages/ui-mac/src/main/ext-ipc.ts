@@ -39,7 +39,7 @@ import bundledCatalogJson from "../renderer/extensions/alpha-catalog.json"
 import type { Catalog } from "../renderer/extensions/catalog-types"
 import { getAlphaEnvironment } from "./alpha-environment"
 import { installCatalog, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
-import { readLedgerV2, upsertRecordsV2 } from "./ext-receipt-v2"
+import { readLedgerV2, removeRecordV2, upsertRecordsV2 } from "./ext-receipt-v2"
 import { readPackagedSeed } from "./ext-seed"
 import { recoverExtensionTransactions } from "./ext-transaction"
 import { getLogger } from "./logging"
@@ -431,6 +431,17 @@ export function registerExtIpcHandlers(userDataPath: string) {
     commitReceipt: (recs) => {
       const written = upsertRecordsV2(alphaGlobalRoot(), recs.map((rec) => commitInputFromRecord(rec)))
       if (!written.ok) throw new Error(`recovery receipt commit failed: ${written.reason}`)
+    },
+    // REQ-100 #313:卸载恢复的账本删除(key="skill--<name>" → 幂等去账;去账失败抛错 → 保持
+    // uninstalling 供下次前滚,绝不谎报卸载完成)。
+    commitUninstall: (key) => {
+      const sep = key.indexOf("--")
+      if (sep <= 0) return // 非法 key = 无可去账
+      const kind = key.slice(0, sep)
+      const name = key.slice(sep + 2)
+      if (kind !== "skill" && kind !== "agent" && kind !== "mcp" && kind !== "plugin" && kind !== "cloud") return
+      const rm = removeRecordV2(alphaGlobalRoot(), kind, name)
+      if (!rm.ok) throw new Error(`recovery uninstall ledger removal failed: ${rm.reason}`)
     },
     log: (event, detail) => getLogger().log(`[req100-tx-recovery] ${event} ${JSON.stringify(detail)}`),
   }).then(

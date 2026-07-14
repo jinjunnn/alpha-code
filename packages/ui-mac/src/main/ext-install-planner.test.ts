@@ -16,6 +16,7 @@ import { addReceipt } from "./alpha-installs"
 import { aggregateFilesDigest, computeManifestDigest, decodeManifestV2 } from "./ext-manifest-v2"
 import { computeGrantDigest, findRecordV2, upsertRecordV2, type UpsertInput } from "./ext-receipt-v2"
 import { resolveLiveGenerationDir } from "./ext-transaction"
+import { skillStorePaths } from "./ext-skill-generations"
 import {
   decodeCatalogInstallIntent,
   decodeSetStateIntent,
@@ -560,6 +561,19 @@ describe("scope independence (AC#3) & project closure (AC#4)", () => {
 // ── uninstall:main 从自己账本读事实,owned paths 重新派生 ───────────────────────────────────────
 
 describe("uninstall — facts from main's own ledger", () => {
+  test("REQ-100 #313:generation-backed skill 卸载删 ext-store(不留孤儿)+ 账本,不走 flat removeFsInstall", async () => {
+    const { deps, calls } = makeDeps()
+    await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps) // 建 generation store
+    const store = skillStorePaths(globalRoot, "demo").store
+    expect(fs.existsSync(store)).toBe(true)
+    calls.length = 0
+    const r = await uninstallByKey({ type: "skill", name: "demo", scope: "global" }, deps)
+    expect(r.ok).toBe(true)
+    expect(fs.existsSync(store)).toBe(false) // ext-store 删净 —— 孤儿 bug 修复
+    expect(findRecordV2(globalRoot, "skill", "demo")).toBeNull()
+    expect(called(calls, "removeFsInstall")).toHaveLength(0) // 未走 flat 路径
+  })
+
   test("not installed → refuse (renderer cannot conjure a receipt)", async () => {
     const { deps, calls } = makeDeps()
     const r = await uninstallByKey({ type: "skill", name: "never-installed", scope: "global" }, deps)

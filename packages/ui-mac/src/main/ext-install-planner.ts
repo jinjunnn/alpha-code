@@ -31,6 +31,7 @@ import { alphaRoot } from "./alpha-workdir"
 import { officeAdvisoryFor } from "../shared/office-advisories"
 import {
   runExtensionTransaction,
+  uninstallExtensionTransaction,
   type TxCommitRecord,
   type TxHooks,
   type TxPlan,
@@ -65,7 +66,7 @@ import {
   type ScopeIdentity,
   type UpsertInput,
 } from "./ext-receipt-v2"
-import { commitInputFromRecord, installSkillGeneration, skillGenerationProbe, type SkillPayloadFile } from "./ext-skill-generations"
+import { commitInputFromRecord, installSkillGeneration, skillGenerationKey, skillGenerationProbe, skillStorePaths, type SkillPayloadFile } from "./ext-skill-generations"
 
 // ── renderer intents(严格解码:未知键 = 伪造事实通道,loud 拒绝)─────────────────────────────
 
@@ -865,6 +866,19 @@ export async function uninstallByKey(rawIntent: unknown, deps: PlannerDeps): Pro
   const rollback = (reason: string): void => (deps.transaction ?? passthroughTx).rollback(tx.txId, reason)
 
   let removedFiles: string[] | undefined
+  if (intent.type === "skill" && intent.scope !== "project" && fs.existsSync(skillStorePaths(root, intent.name).store)) {
+    // REQ-100 #313:generation-backed skill 卸载走锁内 journaled store+ledger teardown(store-first),
+    // 不留孤儿 generation,账本删除失败即 fail-closed(不谎报成功)。恢复补偿见 recoverExtensionTransactions。
+    ;(deps.transaction ?? passthroughTx).commit(tx.txId) // 外层通知钩子无副作用;真事务在引擎内
+    const r = await uninstallExtensionTransaction(root, skillGenerationKey(intent.name), {
+      commitLedger: () => {
+        const rm = removeRecordV2(root, "skill", intent.name)
+        if (!rm.ok) throw new Error(rm.reason)
+      },
+    })
+    if (!r.ok) return { ok: false, reason: r.reason }
+    return { ok: true, ...(r.removed.length ? { files: r.removed } : {}) }
+  }
   if (intent.type === "skill" || intent.type === "agent") {
     const r = deps.installers.removeFsInstall(intent.type, intent.name, target)
     if (!r.ok) {

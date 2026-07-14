@@ -5,8 +5,15 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import * as crypto from "node:crypto"
-import { findRecordV2, readLedgerV2, upsertRecordsV2 } from "./ext-receipt-v2"
-import { recoverExtensionTransactions, resolveLiveGenerationDir, runExtensionTransaction, type TxCommitRecord, type TxPlan } from "./ext-transaction"
+import { findRecordV2, readLedgerV2, removeRecordV2, upsertRecordsV2 } from "./ext-receipt-v2"
+import {
+  recoverExtensionTransactions,
+  resolveLiveGenerationDir,
+  runExtensionTransaction,
+  uninstallExtensionTransaction,
+  type TxCommitRecord,
+  type TxPlan,
+} from "./ext-transaction"
 import {
   collectSkillPayloadFromDir,
   commitInputFromRecord,
@@ -14,6 +21,7 @@ import {
   skillGenerationKey,
   skillGenerationLiveDirs,
   skillGenerationProbe,
+  skillStorePaths,
   hasSkillGeneration,
   type SkillPayloadFile,
 } from "./ext-skill-generations"
@@ -185,6 +193,54 @@ describe("#312 崩溃恢复:probe + receipt 模板前滚", () => {
     expect(rec.ok).toBe(true)
     expect(resolveLiveGenerationDir(root, skillGenerationKey("bad"))).toBeNull() // 不健康 → 回滚
     expect(findRecordV2(root, "skill", "bad")).toBeNull()
+  })
+})
+
+describe("#313 卸载:锁内 journaled store+ledger teardown + 恢复补偿", () => {
+  test("卸载删 generation store + 账本(不留孤儿)", async () => {
+    await install("demo")
+    expect(fs.existsSync(skillStorePaths(root, "demo").store)).toBe(true)
+    expect(findRecordV2(root, "skill", "demo")).not.toBeNull()
+    const r = await uninstallExtensionTransaction(root, skillGenerationKey("demo"), {
+      commitLedger: () => {
+        const rm = removeRecordV2(root, "skill", "demo")
+        if (!rm.ok) throw new Error(rm.reason)
+      },
+    })
+    expect(r.ok).toBe(true)
+    expect(fs.existsSync(skillStorePaths(root, "demo").store)).toBe(false) // store 删净(无孤儿)
+    expect(findRecordV2(root, "skill", "demo")).toBeNull() // 账本删净
+    expect(resolveLiveGenerationDir(root, skillGenerationKey("demo"))).toBeNull()
+  })
+
+  test("幂等:卸载已不在的 skill → ok,零副作用", async () => {
+    const r = await uninstallExtensionTransaction(root, skillGenerationKey("ghost"), {})
+    expect(r.ok).toBe(true)
+  })
+
+  test("commitLedger 失败 → 卸载 fail-closed(不谎报);store 已删,恢复前滚补删账", async () => {
+    await install("demo")
+    // commitLedger 抛错 = 账本删除失败(store-first 已删 store)。
+    const r = await uninstallExtensionTransaction(root, skillGenerationKey("demo"), {
+      commitLedger: () => {
+        throw new Error("simulated ledger failure")
+      },
+    })
+    expect(r.ok).toBe(false) // 不谎报成功
+    expect(fs.existsSync(skillStorePaths(root, "demo").store)).toBe(false) // store-first:已删
+    expect(findRecordV2(root, "skill", "demo")).not.toBeNull() // 账本还在(ghost)
+    // 恢复前滚:补删账本 → 终态。
+    const rec = await recoverExtensionTransactions(root, {
+      pidAlive: () => false,
+      log: () => {},
+      commitUninstall: (key) => {
+        const name = key.slice("skill--".length)
+        const rm = removeRecordV2(root, "skill", name)
+        if (!rm.ok) throw new Error(rm.reason)
+      },
+    })
+    expect(rec.ok).toBe(true)
+    expect(findRecordV2(root, "skill", "demo")).toBeNull() // ghost 账本被恢复补删
   })
 })
 
