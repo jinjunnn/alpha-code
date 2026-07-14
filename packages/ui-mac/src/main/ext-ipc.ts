@@ -10,8 +10,8 @@ import * as path from "node:path"
 import { toolProbe } from "./platform"
 import { extensionsGranted, hasExtensionsDecision, listProjectExecutables, withExtensionsConsent } from "./alpha-ext-trust"
 import { alphaRoot, readProjectPrefs, writeProjectPrefs } from "./alpha-workdir"
-import type { InstallMeta, InstallReceipt, InstallTarget } from "../preload/types"
-import { addReceipt, alphaGlobalRoot, listInstalls, removeReceipt } from "./alpha-installs"
+import type { InstallMeta, InstallTarget } from "../preload/types"
+import { addReceipt, alphaGlobalRoot, listInstalls } from "./alpha-installs"
 import { fileifyMcpSecrets, removeMcpServerSecrets } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, type ProvenanceRequest } from "./alpha-migrate"
 import { configHealth, persistPlugin, removeMcp, removePlugin, removePluginPath } from "./ext-config"
@@ -137,27 +137,9 @@ export function registerExtIpcHandlers(userDataPath: string) {
   })
 
   ipcMain.handle("ext-remote-catalog", () => refreshRemoteCatalog(userDataPath))
-  ipcMain.handle(
-    "ext-install-remote-skill",
-    // codex H1:renderer 只传 catalogId —— name/files/meta 全部由 main 从**已验签** catalog 重新派生
-    // (refreshRemoteCatalog 的 remote 与 cache 路径均过 ed25519;renderer/被篡改缓存无法自带 URL+hash 绕签名)。
-    async (_event: IpcMainInvokeEvent, catalogId: string) => {
-      if (typeof catalogId !== "string" || !catalogId) return { ok: false, reason: "invalid catalog id" }
-      const rc = await refreshRemoteCatalog(userDataPath)
-      if (rc.source === "none") return { ok: false, reason: `remote catalog unavailable: ${rc.error}` }
-      const entries = (rc.catalog as { entries?: Array<Record<string, unknown>> }).entries ?? []
-      const entry = entries.find((e) => e.id === catalogId)
-      if (!entry) return { ok: false, reason: `entry not in verified catalog: ${catalogId}` }
-      if (entry.type !== "skill") return { ok: false, reason: `entry is not a skill: ${catalogId}` }
-      const asset = entry.remoteAsset as { version?: string; files?: RemoteAssetFile[] } | undefined
-      if (!asset?.files?.length) return { ok: false, reason: `entry has no remote asset: ${catalogId}` }
-      const name = String(entry.name ?? "")
-      const dl = await downloadRemoteAsset(asset.files)
-      if (!dl.ok) return dl
-      const meta: InstallMeta = { catalogId, version: String(entry.version ?? rc.version) }
-      return installRemoteSkill(name, dl.contents, undefined, meta)
-    },
-  )
+  // REQ-100 #313:旧 ext-install-remote-skill / ext-install-builtin-skill 通道已下线 —— catalog skill
+  // 安装只走 ext-install-catalog(planner 从已验签 catalog 派生事实,落 generation 事务);保留
+  // renderer 可伪造 assetKey/name/meta 的旧面就是保留技能身份伪装通道(Codex review #345)。
   ipcMain.handle(
     "ext-install-remote-agent",
     // REQ-046(与 ext-install-remote-skill 同信任边界,codex H1):renderer 只传 catalogId,
@@ -181,11 +163,6 @@ export function registerExtIpcHandlers(userDataPath: string) {
   )
   ipcMain.handle("ext-install-plugin", (_event: IpcMainInvokeEvent, pkg: string, meta?: InstallMeta) =>
     persistPlugin(pkg, meta),
-  )
-  ipcMain.handle(
-    "ext-install-builtin-skill",
-    (_event: IpcMainInvokeEvent, builtinAssetKey: string, name: string, target?: InstallTarget, meta?: InstallMeta) =>
-      installBuiltinSkill(builtinAssetKey, name, target, meta),
   )
   // REQ-019 T3:详情页 SKILL.md 预览(只读,资产键校验 + 体积帽)
   ipcMain.handle("ext-read-builtin-skill", (_event: IpcMainInvokeEvent, builtinAssetKey: string) =>
@@ -225,38 +202,9 @@ export function registerExtIpcHandlers(userDataPath: string) {
   )
   // REQ-018 安装账本:合并只读视图(global ~/.alpha + 可选 project .alpha)
   ipcMain.handle("ext-list-installs", (_event: IpcMainInvokeEvent, projectDir?: string) => listInstalls(projectDir))
-  // REQ-018 T6:按 receipt 精确卸载(fs 类删文件+拆桥+去账;plugin 从 config[] 删;mcp 走 removeMcp)。
-  ipcMain.handle("ext-uninstall", (_event: IpcMainInvokeEvent, receipt: InstallReceipt) => {
-    const target: InstallTarget | undefined = receipt.scope === "project" && typeof receipt.configKey !== "string"
-      ? undefined // project fs installs pass projectDir via receipt.files[0]'s root — global default otherwise
-      : { scope: "global" }
-    if (receipt.type === "skill" || receipt.type === "agent") return removeFsInstall(receipt.type, receipt.name, target)
-    if (receipt.type === "plugin") {
-      // REQ-023:vendored 插件(plugin-path receipt)= 删配置里的绝对路径 + 删 ~/.alpha/plugins 落盘物
-      if (receipt.configKey?.startsWith("plugin-path:")) {
-        const abs = receipt.configKey.slice("plugin-path:".length)
-        const removed = removePluginPath(receipt.name, abs)
-        if (!removed.ok) return removed
-        for (const f of receipt.files ?? []) {
-          try {
-            if (f.startsWith(path.join(alphaGlobalRoot(), "plugins") + path.sep)) fs.rmSync(f, { recursive: true, force: true })
-          } catch {
-            /* best-effort */
-          }
-        }
-        return { ok: true, files: receipt.files }
-      }
-      const pkg = receipt.configKey?.startsWith("plugin:") ? receipt.configKey.slice("plugin:".length) : receipt.name
-      return removePlugin(pkg)
-    }
-    if (receipt.type === "mcp") {
-      removeMcpServerSecrets(userDataPath, receipt.name)
-      return removeMcp(receipt.name)
-    }
-    // REQ-020 T4:cloud pipeline「启用」只存在于账本(不落文件、不写引擎 config)→ 停用 = 去账。
-    if (receipt.type === "cloud") return removeReceipt(alphaGlobalRoot(), "cloud", receipt.name)
-    return { ok: false, reason: `cannot uninstall type: ${receipt.type}` }
-  })
+  // REQ-100 #313:旧 receipt-based ext-uninstall 通道已下线 —— renderer 提供的 receipt.files/configKey
+  // 直达 rmSync/removePluginPath 是任意路径删除通道(startsWith 前缀挡不住 `..`,Codex review #345
+  // critical);卸载只走 ext-uninstall-v2(key-based,receipt 事实由 main 账本自查,ADR-028 §1)。
   // REQ-020 T4:启用云 pipeline = 写 receipts 可用列表(receipts-only 语义,ADR-014 v3 账本真相;
   // 不写引擎 config —— 云工具本身由 sidecar 的 mcp.cloud 注入,与逐条 pipeline 启用无关)。
   ipcMain.handle("ext-enable-cloud", (_event: IpcMainInvokeEvent, id: string, name: string, meta?: InstallMeta) => {

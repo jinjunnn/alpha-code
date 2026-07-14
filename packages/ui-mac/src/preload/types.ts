@@ -409,10 +409,7 @@ export type ElectronAPI = {
       | { source: "remote" | "cache"; catalog: unknown; version: string; fetchedAt: string; error?: string }
       | { source: "none"; error: string }
     >
-    /** REQ-032:远程技能安装 —— renderer 只传 catalogId;name/清单/版本由 main 从已验签 catalog
-     *  重新派生(codex H1 信任边界),下载 sha256 钉死 + builtin 同管线写盘/桥/账本。 */
-    installRemoteSkill: (catalogId: string) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
-    /** REQ-046:远程 agent 安装 —— 同 installRemoteSkill 信任边界(main 从已验签 catalog 派生),
+    /** REQ-046:远程 agent 安装 —— renderer 只传 catalogId(main 从已验签 catalog 派生),
      *  资产约定 = 单个顶层 .md 文件;写盘/桥/账本走 writeAgent 同管线。 */
     installRemoteAgent: (catalogId: string) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
     installPlugin: (pkg: string, meta?: InstallMeta) => Promise<{ ok: true } | { ok: false; reason: string }>
@@ -425,12 +422,6 @@ export type ElectronAPI = {
       | { ok: true; kind: string; name: string; manifestDigest?: string; installed?: string[]; skipped?: Array<{ id: string; reason: string }>; warning?: string }
       | { ok: false; reason: string }
     >
-    installBuiltinSkill: (
-      builtinAssetKey: string,
-      name: string,
-      target?: InstallTarget,
-      meta?: InstallMeta,
-    ) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
     // REQ-019 T3:详情页 SKILL.md 预览(只读,资产键校验 + 256KB 帽;未打包时诚实失败)
     readBuiltinSkill: (builtinAssetKey: string) => Promise<{ ok: true; content: string } | { ok: false; reason: string }>
     // REQ-019 T6:导入。folder = main 自弹目录选择器,用户实选目录即来源(REQ-098 #255:renderer
@@ -458,8 +449,6 @@ export type ElectronAPI = {
     ) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
     // REQ-018 安装账本:global(~/.alpha)+ project(<dir>/.alpha)receipts 合并只读视图
     listInstalls: (projectDir?: string) => Promise<InstallLedgerView>
-    // REQ-018 T6:按 receipt 精确卸载(删文件/拆桥/去 config 项/吊销密钥/去账)
-    uninstall: (receipt: InstallReceipt) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
     /** REQ-100 #313:key-based v2 卸载 —— renderer 只提供 type/name/scope,receipt 事实由 main
      *  账本自查(ADR-028 §1);generation skill 走锁内 journaled store+ledger teardown。 */
     uninstallV2: (intent: UninstallKeyIntent) => Promise<{ ok: true; files?: string[]; warning?: string } | { ok: false; reason: string }>

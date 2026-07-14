@@ -359,6 +359,10 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
    *  REQ-016 的 store-Proxy 过桥问题),receipt 事实由 main 账本自查;generation skill 在 main 走
    *  锁内 journaled teardown。hub 列表 = global 账本视图(loadInstalls 只取 view.global)→ 恒 global。 */
   async function uninstall(receipt: InstallReceipt): Promise<ActionResult> {
+    // 账本外的 live MCP(手工/迁移前,hub 合成 receipt 行):v2 按账本自查会诚实拒「not installed」,
+    // 这类走既有 name-based removeMcp(config 名单键移除 + live disconnect),与旧行为一致。
+    if (receipt.type === "mcp" && !store.receipts.some((r) => r.type === "mcp" && r.name === receipt.name))
+      return removeMcp(receipt.name)
     const res = await window.api.ext.uninstallV2({ type: receipt.type, name: receipt.name, scope: "global" })
     if (receipt.type === "mcp") await client?.mcp.disconnect({ name: receipt.name } as any).catch(() => {})
     await Promise.all([loadStatus(), loadInstalls()])
