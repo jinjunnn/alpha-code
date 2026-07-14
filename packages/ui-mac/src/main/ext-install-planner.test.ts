@@ -422,14 +422,34 @@ describe("other kinds — derivation & records", () => {
     expect(findRecordV2(globalRoot, "cloud", "research")).not.toBeNull()
   })
 
-  test("bundle: plan validates existence + platform, returns install-order items", async () => {
-    const { deps, calls } = makeDeps()
+  test("bundle: required secret-MCP child → fail-closed(不在原子边界内,REQ-100 #311)", async () => {
+    // bundle:office 的 mcp:markitdown 声明 requiredEnvVars → 首期不支持原子安装 → required 致命 → 整单拒绝。
+    const { deps } = makeDeps()
     const r = await installCatalog({ catalogId: "bundle:office", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("required bundle child")
+  })
+
+  test("bundle: skill(generation)+ 无密钥 MCP(config)一次原子提交(REQ-100 #311)", async () => {
+    const cleanMcp: CatalogEntry = { ...mcpEntry, id: "mcp:clean", name: "clean", installSpec: { kind: "mcp", mcpType: "local", command: ["uvx", "clean-mcp@1.0.0"] } }
+    const cleanBundle: CatalogEntry = { ...bundleEntry, id: "bundle:clean", name: "cleanb", bundleItems: [{ catalogEntryId: "skill:demo", optional: false, installOrder: 1 }, { catalogEntryId: "mcp:clean", optional: false, installOrder: 2 }] }
+    const { deps } = makeDeps({ entries: [...ALL_ENTRIES, cleanMcp, cleanBundle] })
+    const r = await installCatalog({ catalogId: "bundle:clean", scope: { scope: "global" } }, deps)
     expect(r.ok).toBe(true)
     if (!r.ok) return
-    expect(r.bundle?.items).toEqual(["skill:demo", "mcp:markitdown"]) // installOrder 排序
-    expect(r.manifestDigest).toMatch(/^sha256:/)
-    expect(installerCallCount(calls)).toBe(0) // 子项由 renderer 逐项再走本通道
+    expect(r.installed?.sort()).toEqual(["mcp:clean", "skill:demo"])
+    expect(resolveLiveGenerationDir(globalRoot, "skill--demo")).not.toBeNull() // skill 进 generation
+    const cfg = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))
+    expect(cfg.mcp.clean).toEqual({ type: "local", command: ["uvx", "clean-mcp@1.0.0"] }) // MCP 进 config
+    expect(findRecordV2(globalRoot, "skill", "demo")).not.toBeNull()
+    expect(findRecordV2(globalRoot, "mcp", "clean")).not.toBeNull()
+  })
+
+  test("bundle: 项目 scope 拒绝(单 root 原子性,REQ-100 #311)", async () => {
+    const { deps } = makeDeps()
+    const r = await installCatalog({ catalogId: "bundle:office", scope: { scope: "project", projectDir: "/tmp/proj" } }, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("global-scoped only")
   })
 
   test("bundle: dependency cycle refused at plan time (AC#1)", async () => {

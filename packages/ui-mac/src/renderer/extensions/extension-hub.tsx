@@ -514,33 +514,16 @@ export function ExtensionHub(props: {
   // Bundle = alpha-defined manifest: fan out to install each referenced entry by its own type
   // (ADR-014 §2). Required items count toward failure; optional ones don't.
   const installBundle = async (e: CatalogEntry) => {
-    const items = (e.bundleItems ?? []).slice().sort((a, b) => a.installOrder - b.installOrder)
-    let okCount = 0
-    let failCount = 0
-    for (const it of items) {
-      const sub = byId(it.catalogEntryId)
-      if (!sub) {
-        if (!it.optional) failCount++
-        continue
-      }
-      // REQ-105(#197):套件扇出不预装归档连接器 —— 远程/离线 catalog 尚未收口时(alpha-web#21
-      // 之前的旧产物)也不得经 bundle 通道把 archived Word/PPT 重新铺给新用户。跳过不计失败,
-      // 条目本身仍可在带警示的详情页单独安装(legacy optional 语义)。
-      if (officeAdvisoryFor({ id: sub.id, name: sub.name })) continue
-      let r: { ok: boolean; reason?: string }
-      if (sub.type === "mcp") r = await addMcpEntry(sub)
-      else if (sub.type === "skill") r = await ext.installSkill(sub)
-      else if (sub.type === "plugin") r = await ext.installPlugin(sub)
-      else if (sub.type === "agent") r = await ext.installAgentEntry(sub)
-      else r = { ok: false, reason: "unsupported in bundle" }
-      if (r.ok) okCount++
-      else {
-        setErrFor(sub.id, r.reason ?? t("alpha.ext.installFailed")) // 子项行内(卡片/套件详情)
-        if (!it.optional) failCount++
-      }
+    // REQ-100 #311:bundle = 一次 main-owned 原子事务(required 全提交或全回滚),renderer 只发一次
+    // 请求。归档连接器/不支持子项的跳过决策由 main planner 落 skipped(带审计);此处只呈现结果。
+    const r = await window.api.ext.installCatalog({ catalogId: e.id, scope: { scope: "global" } })
+    if (!r.ok) {
+      setErrFor(e.id, r.reason ?? t("alpha.ext.installFailed"))
+      return
     }
-    // B11:toast 只报成功;部分失败 → 套件条目行内错误 + 详情页逐项重试。
-    if (failCount > 0) setErrFor(e.id, t("alpha.ext.bundlePartialFail", { ok: okCount, fail: failCount }))
+    const okCount = r.installed?.length ?? 0
+    const skippedCount = r.skipped?.length ?? 0
+    if (skippedCount > 0) setErrFor(e.id, t("alpha.ext.bundlePartialFail", { ok: okCount, fail: skippedCount }))
     else flash(t("alpha.ext.metaItems", { count: okCount }) + " · " + t("alpha.ext.added"), "success")
   }
 

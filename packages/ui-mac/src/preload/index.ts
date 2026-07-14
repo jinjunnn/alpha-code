@@ -177,6 +177,7 @@ const api: ElectronAPI = {
     installRemoteSkill: (catalogId) => ipcRenderer.invoke("ext-install-remote-skill", catalogId),
     installRemoteAgent: (catalogId) => ipcRenderer.invoke("ext-install-remote-agent", catalogId),
     installPlugin: (pkg, meta) => ipcRenderer.invoke("ext-install-plugin", pkg, meta),
+    installCatalog: (intent) => ipcRenderer.invoke("ext-install-catalog", intent),
     installBuiltinSkill: (builtinAssetKey, name, target, meta) =>
       ipcRenderer.invoke("ext-install-builtin-skill", builtinAssetKey, name, target, meta),
     readBuiltinSkill: (builtinAssetKey) => ipcRenderer.invoke("ext-read-builtin-skill", builtinAssetKey),

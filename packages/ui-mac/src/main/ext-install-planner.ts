@@ -22,11 +22,21 @@
 
 import * as fs from "node:fs"
 import * as path from "node:path"
+import * as crypto from "node:crypto"
 import { randomUUID } from "node:crypto"
 import type { InstallReceiptType } from "../preload/types"
 import type { CatalogEntry, McpInstallSpec } from "../renderer/extensions/catalog-types"
 import type { AppEnvironment } from "./alpha-environment"
 import { alphaRoot } from "./alpha-workdir"
+import { officeAdvisoryFor } from "../shared/office-advisories"
+import {
+  runExtensionTransaction,
+  type TxCommitRecord,
+  type TxHooks,
+  type TxPlan,
+  type TxPlanItem,
+} from "./ext-transaction"
+import { findReceipt } from "./alpha-installs"
 import {
   aggregateFilesDigest,
   computeManifestDigest,
@@ -49,11 +59,13 @@ import {
   removeRecordV2,
   setDesiredStateV2,
   upsertRecordV2,
+  upsertRecordsV2,
   verifyProjectScope,
   type DesiredState,
   type ScopeIdentity,
+  type UpsertInput,
 } from "./ext-receipt-v2"
-import { installSkillGeneration } from "./ext-skill-generations"
+import { installSkillGeneration, type SkillPayloadFile } from "./ext-skill-generations"
 
 // ── renderer intents(严格解码:未知键 = 伪造事实通道,loud 拒绝)─────────────────────────────
 
@@ -83,8 +95,12 @@ export type CatalogInstallOutcome =
       manifestDigest?: string
       /** MCP:renderer 用于 live sdk.mcp.add 的完整配置(含用户刚输入的密钥真值 —— 该值本就来自 renderer)。 */
       liveMcp?: { name: string; config: Record<string, unknown> }
-      /** bundle:main 已验证(存在性/循环依赖/平台)的有序子条目 id —— renderer 逐项再走本通道。 */
+      /** bundle:main 已验证(存在性/循环依赖/平台)的有序子条目 id。 */
       bundle?: { items: string[] }
+      /** bundle:一次原子事务提交的子条目 id(REQ-100 #311)。 */
+      installed?: string[]
+      /** bundle:跳过的子条目(optional 未选 / 首期 fail-closed 排除;journaled 可审计)。 */
+      skipped?: Array<{ id: string; reason: string }>
       warning?: string
     }
   | { ok: false; reason: string }
@@ -386,7 +402,124 @@ function resolveScope(
 
 // ── install ─────────────────────────────────────────────────────────────────────────────────────
 
-async function planBundle(verified: VerifiedCatalogEntry, deps: PlannerDeps): Promise<CatalogInstallOutcome> {
+/** bundle 子条目在原子事务里的形态:generation(skill)/config(mcp)/receipt(cloud),或跳过/致命排除。 */
+type BundleChildPlan =
+  | { status: "install"; id: string; item: TxPlanItem; record: UpsertInput; payload?: SkillPayloadFile[] }
+  | { status: "skip"; id: string; reason: string }
+  | { status: "fatal"; id: string; reason: string }
+
+const bundleKeyFor = (kind: string, name: string): string => `${kind}--${name}`
+
+function txSpecsOf(payload: SkillPayloadFile[]): TxPlanItem["files"] {
+  return payload.map((f) => ({ path: f.path, sha256: crypto.createHash("sha256").update(f.data).digest("hex"), size: f.data.length }))
+}
+
+/**
+ * 把一个 bundle 子条目分类为原子事务里的一项。首期(REQ-100 #311)支持 skill(generation)+ 无密钥
+ * 非-Excel MCP(config)+ cloud(receipt);agent / vendored·npm plugin / 需密钥或 workspace 的 MCP
+ * 一律 fail-closed(它们不在现有 generation/config action 的原子边界内)。 */
+async function classifyBundleChild(
+  child: VerifiedCatalogEntry,
+  environment: AppEnvironment,
+  scope: ScopeIdentity,
+  deps: PlannerDeps,
+): Promise<BundleChildPlan> {
+  const entry = child.entry
+  const id = entry.id
+  const decoded = decodeManifestV2(synthesizeManifest(child))
+  if (!decoded.ok) return { status: "fatal", id, reason: `manifest invalid: ${decoded.errors.join("; ")}` }
+  if (!(decoded.manifest.compatibility.platforms as string[]).includes(deps.platform()))
+    return { status: "skip", id, reason: `platform ${deps.platform()} not supported` }
+  const manifestDigest = computeManifestDigest(decoded.manifest)
+  const baseRecord = {
+    id: entry.id,
+    name: entry.name,
+    environment,
+    scope,
+    version: decoded.manifest.version,
+    manifestDigest,
+    grantDigest: computeGrantDigest({}),
+    desiredState: "enabled" as const,
+    origin: "catalog" as const,
+    installedAt: new Date().toISOString(),
+  }
+
+  if (entry.type === "skill") {
+    const fsSpec = entry.installSpec as { source?: string; builtinAssetKey?: string } | undefined
+    let payload: SkillPayloadFile[]
+    let payloadDigest: string | undefined
+    if (fsSpec?.source === "remote" && entry.remoteAsset?.files?.length) {
+      const dl = await deps.installers.downloadRemoteAsset(entry.remoteAsset.files)
+      if (!dl.ok) return { status: "fatal", id, reason: dl.reason }
+      payload = dl.contents
+      payloadDigest = aggregateFilesDigest(entry.remoteAsset.files)
+    } else if (fsSpec?.source === "builtin" && fsSpec.builtinAssetKey) {
+      const p = deps.installers.collectBuiltinSkillPayload(fsSpec.builtinAssetKey, entry.name)
+      if (!p.ok) return { status: "fatal", id, reason: p.reason }
+      payload = p.files
+    } else {
+      return { status: "fatal", id, reason: "skill declares no installable asset" }
+    }
+    const key = bundleKeyFor("skill", entry.name)
+    return {
+      status: "install",
+      id,
+      payload,
+      item: { key, files: txSpecsOf(payload), manifestDigest },
+      record: { ...baseRecord, kind: "skill", ...(payloadDigest ? { payloadDigest } : {}) },
+    }
+  }
+
+  if (entry.type === "mcp") {
+    const spec = entry.installSpec
+    if (spec?.kind !== "mcp") return { status: "fatal", id, reason: "mcp entry has no mcp installSpec" }
+    // 首期排除需密钥 / workspace / Excel 的 MCP —— 它们的 secret 文件写、workspace 沙箱不在 config
+    // action 的原子边界内(REQ-105 Excel 闸口、fileifyMcpSecrets 独立文件)。fail-closed。
+    if ((spec.requiredEnvVars?.length ?? 0) > 0)
+      return { status: "skip", id, reason: "secret-bearing MCP not supported in atomic bundle (phase 1)" }
+    const derived = deriveMcpConfig(spec, {})
+    if (!derived.ok) return { status: "skip", id, reason: `MCP needs grants not supported in bundle: ${derived.reason}` }
+    // Excel MCP(workspace 沙箱走 REQ-105 闸口,不在 config action 边界内)= fail-closed。
+    const cmd = Array.isArray(derived.config.command) ? (derived.config.command as unknown[]) : []
+    const touchesExcel = entry.name === "excel-mcp-server" || cmd.some((a) => typeof a === "string" && a.includes("excel-mcp-server"))
+    if (derived.secretVars.length > 0 || touchesExcel)
+      return { status: "skip", id, reason: "secret/Excel MCP not supported in atomic bundle (phase 1)" }
+    const key = bundleKeyFor("mcp", entry.name)
+    return {
+      status: "install",
+      id,
+      item: {
+        key,
+        // config target 锚定事务根(= 生产 ~/.alpha/alpha.jsonc;与 staging 同卷,原子替换)。
+        action: "config",
+        config: { target: path.join(deps.globalRoot(), "alpha.jsonc"), edits: [{ keyPath: ["mcp", entry.name], value: derived.config }] },
+        manifestDigest,
+      },
+      record: { ...baseRecord, kind: "mcp", configKey: `mcp.${entry.name}` },
+    }
+  }
+
+  if (entry.type === "cloud") {
+    const key = bundleKeyFor("cloud", entry.name)
+    return { status: "install", id, item: { key, action: "receipt", manifestDigest }, record: { ...baseRecord, kind: "cloud" } }
+  }
+
+  // agent / plugin(vendored·npm)/ 嵌套 bundle:不在首期原子边界内。
+  return { status: "skip", id, reason: `type "${entry.type}" not supported in atomic bundle (phase 1)` }
+}
+
+/**
+ * Bundle 原子安装(REQ-100 #311):把子条目组装成一次异构事务(generation + config + receipt),
+ * required 全提交或全回滚;不支持项按 required→fatal(整单失败)/ optional→skipped(journaled)。
+ * 首期限 global scope(锁/journal 按单 root),项目 bundle 预检拒绝。 */
+async function installBundleAtomic(
+  verified: VerifiedCatalogEntry,
+  intent: CatalogInstallIntent,
+  deps: PlannerDeps,
+): Promise<CatalogInstallOutcome> {
+  if (intent.scope.scope !== "global")
+    return { ok: false, reason: "bundle install is global-scoped only (project bundles rejected — single-root atomicity)" }
+
   // 解析整张(传递闭包)依赖图:存在性 + 循环依赖在计划期拒绝(AC#1)。
   const nodes: DependencyNode[] = []
   const resolved = new Map<string, VerifiedCatalogEntry>([[verified.entry.id, verified]])
@@ -406,22 +539,95 @@ async function planBundle(verified: VerifiedCatalogEntry, deps: PlannerDeps): Pr
   }
   const cycle = findDependencyCycle(nodes)
   if (cycle) return { ok: false, reason: `dependency cycle refused: ${cycle.join(" → ")}` }
-  // bundle 自身 manifest:组件 = 逐子条目 runsIn;capability = 子项并集。写盘前严格校验。
+
+  // bundle 自身 manifest 校验(组件 = 逐子条目 runsIn;capability = 子项并集)。
   const items = (verified.entry.bundleItems ?? []).slice().sort((a, b) => a.installOrder - b.installOrder)
   const subEntries = items.map((it) => resolved.get(it.catalogEntryId)!.entry)
   const caps = [...new Set(subEntries.flatMap((e) => capabilitiesFor(e)))]
   const surfaces = [...new Set(subEntries.flatMap((e) => surfacesFor(e)))]
-  const manifest = {
+  const bundleManifest = {
     ...(synthesizeManifest(verified) as Record<string, unknown>),
     capabilities: caps,
     ownership: { ...(synthesizeManifest(verified) as { ownership: Record<string, unknown> }).ownership, runtimeSurfaces: surfaces },
     components: subEntries.map((e) => ({ name: e.name, runsIn: surfacesFor(e) })),
   }
-  const decoded = decodeManifestV2(manifest)
-  if (!decoded.ok) return { ok: false, reason: `bundle manifest invalid: ${decoded.errors.join("; ")}` }
-  if (!(decoded.manifest.compatibility.platforms as string[]).includes(deps.platform()))
+  const bundleDecoded = decodeManifestV2(bundleManifest)
+  if (!bundleDecoded.ok) return { ok: false, reason: `bundle manifest invalid: ${bundleDecoded.errors.join("; ")}` }
+  if (!(bundleDecoded.manifest.compatibility.platforms as string[]).includes(deps.platform()))
     return { ok: false, reason: `platform ${deps.platform()} not supported by this bundle` }
-  return { ok: true, kind: "bundle", name: verified.entry.name, manifestDigest: computeManifestDigest(decoded.manifest), bundle: { items: items.map((it) => it.catalogEntryId) } }
+
+  const environment = deps.environment()
+  const identity: ScopeIdentity = { kind: "global" }
+
+  // 分类每个 required/optional 子条目 → 事务项 / 跳过。required 致命 = 整单拒绝(零写盘)。
+  const planItems: TxPlanItem[] = []
+  const records = new Map<string, UpsertInput>()
+  const payloads = new Map<string, SkillPayloadFile[]>()
+  const installedIds: string[] = []
+  const skipped: Array<{ id: string; reason: string }> = []
+  for (const it of items) {
+    const child = resolved.get(it.catalogEntryId)!
+    // REQ-105:归档 office 连接器绝不经 bundle 通道重新铺给用户 —— 恒跳过(即使 required),
+    // 条目本身仍可在带警示的详情页单独安装(legacy optional 语义)。跳过决策落 main(非 renderer)。
+    if (officeAdvisoryFor({ id: child.entry.id, name: child.entry.name })) {
+      skipped.push({ id: child.entry.id, reason: "archived office connector (REQ-105)" })
+      continue
+    }
+    const c = await classifyBundleChild(child, environment, identity, deps)
+    if (c.status === "fatal") {
+      if (!it.optional) return { ok: false, reason: `required bundle child "${c.id}" cannot install atomically: ${c.reason}` }
+      skipped.push({ id: c.id, reason: c.reason })
+    } else if (c.status === "skip") {
+      if (!it.optional) return { ok: false, reason: `required bundle child "${c.id}" unsupported: ${c.reason}` }
+      skipped.push({ id: c.id, reason: c.reason })
+    } else {
+      planItems.push(c.item)
+      records.set(c.item.key, c.record)
+      if (c.payload) payloads.set(c.item.key, c.payload)
+      installedIds.push(c.id)
+    }
+  }
+
+  if (planItems.length === 0)
+    return { ok: true, kind: "bundle", name: verified.entry.name, manifestDigest: computeManifestDigest(bundleDecoded.manifest), installed: [], skipped }
+
+  const plan: TxPlan = {
+    items: planItems,
+    skippedOptional: skipped.map((s) => ({ key: s.id, reason: s.reason })),
+  }
+  const hooks: TxHooks = {
+    populate: (item, stagingDir) => {
+      const payload = payloads.get(item.key)
+      if (!payload) return // config/receipt 项无 populate
+      for (const f of payload) {
+        const dst = path.join(stagingDir, ...f.path.split("/"))
+        fs.mkdirSync(path.dirname(dst), { recursive: true })
+        fs.writeFileSync(dst, f.data)
+      }
+    },
+    // 账本写失败即事务失败(#336):bundle 全部 receipt 一次批量落盘,不留半套。
+    commitReceipt: (recs: TxCommitRecord[]) => {
+      const inputs = recs.map((rec) => {
+        const base = records.get(rec.key)
+        if (!base) throw new Error(`no receipt template for committed key ${rec.key}`)
+        return rec.generationDir ? { ...base, files: [rec.generationDir] } : base
+      })
+      const written = upsertRecordsV2(deps.globalRoot(), inputs)
+      if (!written.ok) throw new Error(`bundle receipt commit failed: ${written.reason}`)
+    },
+    log: () => {},
+  }
+
+  const result = await runExtensionTransaction(deps.globalRoot(), plan, hooks)
+  if (!result.ok) return { ok: false, reason: `bundle install failed at ${result.stage}: ${result.reason}` }
+  return {
+    ok: true,
+    kind: "bundle",
+    name: verified.entry.name,
+    manifestDigest: computeManifestDigest(bundleDecoded.manifest),
+    installed: installedIds,
+    skipped,
+  }
 }
 
 /**
@@ -437,7 +643,7 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
   if (!verified) return { ok: false, reason: `entry not in verified catalog: ${intent.catalogId}` }
   const entry = verified.entry
 
-  if (entry.type === "bundle") return planBundle(verified, deps)
+  if (entry.type === "bundle") return installBundleAtomic(verified, intent, deps)
 
   // Phase 1:写盘前 manifest 严格校验(缺字段/未知键/非法 digest/越权 capability/平台不兼容全在此拒)。
   const decoded = decodeManifestV2(synthesizeManifest(verified))

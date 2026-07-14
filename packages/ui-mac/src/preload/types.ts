@@ -410,6 +410,15 @@ export type ElectronAPI = {
      *  资产约定 = 单个顶层 .md 文件;写盘/桥/账本走 writeAgent 同管线。 */
     installRemoteAgent: (catalogId: string) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
     installPlugin: (pkg: string, meta?: InstallMeta) => Promise<{ ok: true } | { ok: false; reason: string }>
+    /** REQ-100 #311:main-owned 原子 catalog 安装(bundle 一次请求 → 一次异构事务;单条/bundle 同入口)。 */
+    installCatalog: (intent: {
+      catalogId: string
+      scope: { scope: "global" } | { scope: "project"; projectDir: string }
+      grants?: { secrets?: Record<string, string>; env?: Record<string, string>; workspace?: string; cnMirror?: boolean }
+    }) => Promise<
+      | { ok: true; kind: string; name: string; manifestDigest?: string; installed?: string[]; skipped?: Array<{ id: string; reason: string }>; warning?: string }
+      | { ok: false; reason: string }
+    >
     installBuiltinSkill: (
       builtinAssetKey: string,
       name: string,
