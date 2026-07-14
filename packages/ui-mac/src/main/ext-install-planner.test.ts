@@ -596,6 +596,49 @@ describe("uninstall — facts from main's own ledger", () => {
     expect(called(calls, "removeFsInstall")).toHaveLength(1)
   })
 
+  // REQ-099 #256:损坏 v2 record 绝不静默回退同账本 v1 receipt 继续卸载。
+  test("corrupt v2 record for the target key blocks v1 fallback (fail closed)", async () => {
+    // 同 key 既有一张 v1 receipt,又有一条损坏的 v2 record(kind/name 可归属但 schema 非法)。
+    addReceipt(globalRoot, {
+      id: "user:dualskill",
+      name: "dualskill",
+      type: "skill",
+      scope: "global",
+      installedAt: new Date().toISOString(),
+      origin: "created",
+    })
+    const ledger = path.join(globalRoot, "installs.json")
+    const raw = JSON.parse(fs.readFileSync(ledger, "utf8"))
+    raw.records = [{ schemaVersion: 999, kind: "skill", name: "dualskill" }] // 版本不支持 = 损坏,但 kind:name 可提取
+    fs.writeFileSync(ledger, JSON.stringify(raw))
+    const { deps, calls } = makeDeps()
+    const r = await uninstallByKey({ type: "skill", name: "dualskill", scope: "global" }, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("fail closed")
+    expect(called(calls, "removeFsInstall")).toHaveLength(0) // 绝不按 v1 字段删文件
+  })
+
+  test("unattributable corrupt v2 record blocks ALL v1 fallback in that ledger (fail closed)", async () => {
+    addReceipt(globalRoot, {
+      id: "user:otherskill",
+      name: "otherskill",
+      type: "skill",
+      scope: "global",
+      installedAt: new Date().toISOString(),
+      origin: "created",
+    })
+    const ledger = path.join(globalRoot, "installs.json")
+    const raw = JSON.parse(fs.readFileSync(ledger, "utf8"))
+    raw.records = [{ schemaVersion: 999, junk: true }] // 连 kind/name 都提不出 = 不可归属
+    fs.writeFileSync(ledger, JSON.stringify(raw))
+    const { deps, calls } = makeDeps()
+    // 目标是另一个 key,但账本存在不可归属损坏项 → 无法证明目标不是它 → 拒绝
+    const r = await uninstallByKey({ type: "skill", name: "otherskill", scope: "global" }, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("fail closed")
+    expect(called(calls, "removeFsInstall")).toHaveLength(0)
+  })
+
   test("transaction hooks: begin/commit on success", async () => {
     const txEvents: string[] = []
     const tx: InstallTransactionHooks = {

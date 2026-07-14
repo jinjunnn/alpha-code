@@ -12,7 +12,7 @@ import { pollUntilHealthy } from "./health-poll"
 import { getLogger } from "./logging"
 import { createSidecarEnv } from "./sidecar-env"
 import { getUserShell, loadShellEnv } from "./shell-env"
-import { probeShellEnvAsync, readShellEnvCache, writeShellEnvCache } from "./shell-env-cache"
+import { probeShellEnvAsync, readShellEnvCache, sanitizeCachedShellEnv, writeShellEnvCache } from "./shell-env-cache"
 import { getStore } from "./store"
 import { DEFAULT_SERVER_URL_KEY } from "./store-keys"
 import { isEphemeralLocalServerUrl } from "../shared/ephemeral-server-url"
@@ -75,9 +75,15 @@ export function preferAppEnv(userDataPath: string) {
       void probeShellEnvAsync(shell)
         .then((fresh) => {
           if (!fresh) return
-          writeShellEnvCache(userDataPath, shell, fresh)
-          Object.assign(process.env, fresh)
-          logger.log(`[server] Shell env refreshed in background (${Object.keys(fresh).length} vars)`)
+          // REQ-098 #301:新鲜异步探测结果同样要剥离会话级控制键(ALPHA_GLOBAL_DIR / OPENCODE_CONFIG_DIR
+          // / ALPHA_OPENCODE_HOME…),否则用户 rc 里的显式 export 会在环境冻结后覆盖 process.env,让根漂移
+          // 并随 fork 传进 sidecar。此前仅缓存读路径净化,fresh 路径漏网(与冻结快照形成双真源)。
+          const { env: cleanFresh, stripped } = sanitizeCachedShellEnv(fresh)
+          if (stripped.length > 0)
+            logger.log(`[server] [req301] stripped session-control keys from refreshed shell env: ${stripped.join(", ")}`)
+          writeShellEnvCache(userDataPath, shell, cleanFresh)
+          Object.assign(process.env, cleanFresh)
+          logger.log(`[server] Shell env refreshed in background (${Object.keys(cleanFresh).length} vars)`)
         })
         .catch(() => {})
     } else {

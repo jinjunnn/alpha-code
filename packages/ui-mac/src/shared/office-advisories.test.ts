@@ -48,6 +48,22 @@ describe("checkExcelMcpSafety(REQ-105 AC3:拒绝 0.0.0.0 / workspace 外 / 遍�
     expect(r).toEqual({ ok: true })
   })
 
+  test("REQ-105 #254:给出策略 workspace 但缺 EXCEL_FILES_PATH → fail-closed(不再放行)", () => {
+    // 生产安装路径总会带策略 workspace;此前缺 EXCEL_FILES_PATH 直接放行 = 沙箱 fail-open。
+    const r = checkExcelMcpSafety("excel-mcp-server", { ...GOOD_EXCEL }, "/Users/x/Alpha/excel-workspace")
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("EXCEL_FILES_PATH")
+  })
+
+  test("REQ-105 #254:策略 workspace 下 EXCEL_FILES_PATH 越界 → 拒绝", () => {
+    const r = checkExcelMcpSafety(
+      "excel-mcp-server",
+      { ...GOOD_EXCEL, environment: { EXCEL_FILES_PATH: "/etc" } },
+      "/Users/x/Alpha/excel-workspace",
+    )
+    expect(r.ok).toBe(false)
+  })
+
   test("非 Excel 配置零干预(markitdown / 任意远程连接器原样放行)", () => {
     expect(checkExcelMcpSafety("markitdown", { type: "local", command: ["uvx", "markitdown-mcp@0.0.1a4"] })).toEqual({ ok: true })
     expect(checkExcelMcpSafety("some-remote", { type: "remote", url: "https://example.com/mcp" })).toEqual({ ok: true })

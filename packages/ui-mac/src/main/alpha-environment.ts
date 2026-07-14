@@ -107,6 +107,12 @@ export function getAlphaEnvironment(): AlphaEnvironmentInfo {
   return current
 }
 
+/** 非抛出变体:main 进程消费者用它读取冻结根;未初始化(纯单测 / sidecar 进程)返回 undefined,
+ *  调用方退回 process.env(REQ-098 #301:冻结快照是 main 的单一真源)。 */
+export function tryGetAlphaEnvironment(): AlphaEnvironmentInfo | undefined {
+  return current
+}
+
 /** 仅测试:重置单例。生产代码不得调用 —— 环境一经解析在进程生命周期内不可变。 */
 export function __resetAlphaEnvironmentForTests(): void {
   current = undefined

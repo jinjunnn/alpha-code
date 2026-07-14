@@ -105,8 +105,8 @@ export interface ExtensionsApi {
    * (密钥可重填),见 extension-hub.runUpdate。
    */
   updateEntry(entry: CatalogEntry): Promise<ActionResult>
-  /** REQ-019 T6:导入本地技能文件夹(主进程校验 frontmatter,origin=imported)。 */
-  importSkillFolder(srcDir: string): Promise<ActionResult & { name?: string }>
+  /** REQ-019 T6 / REQ-098 #255:导入本地技能文件夹(main 自弹选择器,renderer 不传 srcDir)。 */
+  importSkillFolder(): Promise<ActionResult & { name?: string; canceled?: boolean }>
   /** REQ-019 T6:导入 Git 仓库技能(https-only 浅克隆临时目录 → 同校验)。 */
   importSkillGit(url: string): Promise<ActionResult & { name?: string }>
   /** REQ-019 T6:npm 插件导入 = 复用 persistPlugin 通道(主进程包名白名单)。 */
@@ -501,8 +501,9 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
 
   // REQ-019 T6:导入。成功后刷新账本 + dispose 重载(与 createSkill 同节奏);失败原因原样上抛,
   // 由 hub 行内呈现(B11)。npm 导入 = 复用 persistPlugin 通道(白名单校验在主进程)。
-  async function importSkillFolder(srcDir: string): Promise<ActionResult & { name?: string }> {
-    const r = await window.api.ext.importSkillFolder(srcDir)
+  async function importSkillFolder(): Promise<ActionResult & { name?: string; canceled?: boolean }> {
+    // REQ-098 #255:main 自弹目录选择器,renderer 不再传 srcDir。
+    const r = await window.api.ext.importSkillFolder()
     if (!r.ok) return r
     await loadInstalls()
     if (!(await refreshEngine())) return { ok: true, name: r.name, reason: "reload-pending" }

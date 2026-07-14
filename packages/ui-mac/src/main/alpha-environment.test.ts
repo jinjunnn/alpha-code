@@ -18,7 +18,7 @@ import {
   verifyUpdaterFeed,
 } from "./alpha-environment"
 import { createSidecarEnv } from "./sidecar-env"
-import { readLedger, addReceipt, findReceipt } from "./alpha-installs"
+import { readLedger, addReceipt, findReceipt, alphaGlobalRoot } from "./alpha-installs"
 import { persistMcp } from "./ext-config"
 import { writeMcpSecret } from "./alpha-mcp-secrets"
 
@@ -242,6 +242,15 @@ describe("AC#6 renderer 不可伪造环境", () => {
     const info = initAlphaEnvironment({ isPackaged: true, channel: "prod", homeDir: base })
     process.env.ALPHA_GLOBAL_DIR = "/tmp/spoofed"
     expect(getAlphaEnvironment().mutableRoot).toBe(info.mutableRoot)
+  })
+
+  test("REQ-098 #301:消费者(alphaGlobalRoot)读冻结快照,post-init env 漂移不改变其根", () => {
+    const info = initAlphaEnvironment({ isPackaged: true, channel: "prod", homeDir: base })
+    const before = alphaGlobalRoot()
+    expect(before).toBe(info.mutableRoot)
+    // 模拟 shell env 后台刷新在冻结后覆盖 process.env —— 消费者必须仍用冻结根,而非漂移值。
+    process.env.ALPHA_GLOBAL_DIR = "/tmp/drifted-after-freeze"
+    expect(alphaGlobalRoot()).toBe(info.mutableRoot)
   })
 
   test("sidecar env 白名单透传 ALPHA_GLOBAL_DIR(引擎与 main 同根,路径非密钥)", () => {
