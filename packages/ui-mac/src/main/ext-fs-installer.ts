@@ -18,6 +18,9 @@ import { opencodeHomeDir, unbridgeItem } from "./alpha-bridge"
 import { agentMdToEntry } from "./agent-md-entry"
 import { persistAgentEntry, removeAgentEntry } from "./ext-config"
 import { addReceipt, alphaGlobalRoot, removeReceipt } from "./alpha-installs"
+import { tryGetAlphaEnvironment } from "./alpha-environment"
+import { projectScopeIdentity, type ScopeIdentity } from "./ext-receipt-v2"
+import { recordUncuratedInstall, type UncuratedOrigin } from "./ext-uncurated-record"
 import { alphaRoot, ensureAlphaScaffold } from "./alpha-workdir"
 import type { InstallMeta, InstallReceipt, InstallTarget } from "../preload/types"
 import { parseSkillFrontmatter, validGitUrl } from "./ext-import-validate"
@@ -65,36 +68,59 @@ function safeResolveUnder(root: string, ...segments: string[]): string | null {
   return target
 }
 
-type Roots = { alphaDir: string; opencodeDir: string; scope: "global" | "project" }
+// identity:REQ-099 #306 —— 未策展落账要携带安装时点的 scope identity(project = realpath+hash,
+// 不是只有 label;Codex 裁决风险点),resolveRoots 一次算好随 Roots 传递。
+type Roots = { alphaDir: string; opencodeDir: string; scope: "global" | "project"; identity: ScopeIdentity }
 
 function resolveRoots(target: InstallTarget | undefined): Roots | { error: string } {
   const t = target ?? { scope: "global" as const }
   if (t.scope === "global") {
-    return { alphaDir: alphaGlobalRoot(), opencodeDir: opencodeHomeDir(), scope: "global" }
+    return { alphaDir: alphaGlobalRoot(), opencodeDir: opencodeHomeDir(), scope: "global", identity: { kind: "global" } }
   }
   if (typeof t.projectDir !== "string") return { error: "invalid project directory" }
   const root = alphaRoot(t.projectDir)
   if (!root) return { error: `invalid project directory: ${t.projectDir}` }
   if (!ensureAlphaScaffold(t.projectDir)) return { error: "failed to prepare .alpha" }
-  return { alphaDir: root, opencodeDir: path.join(t.projectDir, ".opencode"), scope: "project" }
+  const identity = projectScopeIdentity(t.projectDir)
+  if (!identity.ok) return { error: `fail closed: ${identity.reason}` }
+  return { alphaDir: root, opencodeDir: path.join(t.projectDir, ".opencode"), scope: "project", identity: identity.scope }
 }
 
+type LedgerOutcome = { ok: true; warning?: string } | { ok: false; reason: string }
+
+/** REQ-099 #306:安装落账分流 —— catalog(meta.catalogId)沿用 v1 addReceipt(planner 随后的 v2
+ *  upsert 会整键替换;在 planner 非 generation 提交面仍 fail-open 期间是唯一兜底,见 #354);
+ *  未策展走 recordUncuratedInstall(单次 upsert 双账本,失败 fail-closed 由调用方补偿)。 */
 function recordReceipt(
   roots: Roots,
   entry: { name: string; type: InstallReceipt["type"]; files: string[]; meta?: InstallMeta; origin?: InstallReceipt["origin"] },
-): string | undefined {
-  const receipt: InstallReceipt = {
-    id: entry.meta?.catalogId ?? `user:${entry.name}`,
-    name: entry.name,
-    type: entry.type,
-    scope: roots.scope,
-    version: entry.meta?.version,
-    installedAt: new Date().toISOString(),
-    origin: entry.origin ?? (entry.meta?.catalogId ? "catalog" : "created"),
-    files: entry.files,
+): LedgerOutcome {
+  if (entry.meta?.catalogId) {
+    const receipt: InstallReceipt = {
+      id: entry.meta.catalogId,
+      name: entry.name,
+      type: entry.type,
+      scope: roots.scope,
+      version: entry.meta.version,
+      installedAt: new Date().toISOString(),
+      origin: entry.origin ?? "catalog",
+      files: entry.files,
+    }
+    const written = addReceipt(roots.alphaDir, receipt)
+    return written.ok ? { ok: true, ...(written.warning ? { warning: written.warning } : {}) } : { ok: false, reason: `receipt not recorded: ${written.reason}` }
   }
-  const written = addReceipt(roots.alphaDir, receipt)
-  return written.ok ? written.warning : `receipt not recorded: ${written.reason}`
+  const origin = (entry.origin ?? "created") as UncuratedOrigin
+  const w = recordUncuratedInstall(roots.alphaDir, {
+    kind: entry.type,
+    name: entry.name,
+    origin,
+    environment: tryGetAlphaEnvironment()?.environment ?? "prod",
+    scope: roots.identity,
+    files: entry.files,
+  })
+  if (!w.ok) return { ok: false, reason: w.reason }
+  const warning = w.warnings.join("; ")
+  return { ok: true, ...(warning ? { warning } : {}) }
 }
 
 function oneLine(value: string): string {
@@ -146,7 +172,15 @@ export function writeSkill(
   // T3(REQ-059):skills 桥退役 —— 真源 ~/.alpha/skills/<name> 就位即可,引擎经 alpha.jsonc 的
   // skills.paths 发现,不再往 .opencode 建桥(不变量:.opencode 内零 alpha 痕迹)。
   const files = [dir]
-  recordReceipt(roots, { name, type: "skill", files, meta })
+  const ledger = recordReceipt(roots, { name, type: "skill", files, meta })
+  if (!ledger.ok) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true }) // #306 fail-closed:账本没进,不留无账真源
+    } catch {
+      /* best-effort 补偿 */
+    }
+    return { ok: false, reason: `install ledger write failed: ${ledger.reason}` }
+  }
   return { ok: true, files }
 }
 
@@ -188,7 +222,17 @@ export function writeAgent(name: string, content: string, target?: InstallTarget
     return { ok: false, reason: `agent config entry failed: ${persisted.reason}` }
   }
   const files = [file]
-  recordReceipt(roots, { name, type: "agent", files, meta, origin })
+  const ledger = recordReceipt(roots, { name, type: "agent", files, meta, origin })
+  if (!ledger.ok) {
+    // #306 fail-closed 补偿:撤条目 + 撤 md,不留「引擎可见但无账」的半装态
+    removeAgentEntry(name, entryTarget)
+    try {
+      fs.unlinkSync(file)
+    } catch {
+      /* best-effort */
+    }
+    return { ok: false, reason: `install ledger write failed: ${ledger.reason}` }
+  }
   return { ok: true, files }
 }
 
@@ -305,8 +349,9 @@ export function installRemoteSkill(
   }
   // T3(REQ-059):skills 桥退役 —— 真源就位,引擎经 skills.paths 发现。
   const files = [destDir]
-  const receiptWarn = recordReceipt(roots, { name, type: "skill", files, meta, origin: "catalog" })
+  const receiptLedger = recordReceipt(roots, { name, type: "skill", files, meta, origin: "catalog" })
   // codex L2:账本写失败时文件/桥已落盘 —— 不谎报失败(技能实际可用),但 loud 记录(卸载/更新将失真)。
+  const receiptWarn = receiptLedger.ok ? receiptLedger.warning : receiptLedger.reason
   if (receiptWarn) console.error(`[ext-fs-installer] remote skill "${name}" installed but receipt failed: ${receiptWarn}`)
   return { ok: true, files }
 }
@@ -314,11 +359,13 @@ export function installRemoteSkill(
 // Resolve roots WITHOUT scaffolding — for uninstall (never create dirs we're about to delete from).
 function resolveRootsReadonly(target: InstallTarget | undefined): Roots | { error: string } {
   const t = target ?? { scope: "global" as const }
-  if (t.scope === "global") return { alphaDir: alphaGlobalRoot(), opencodeDir: opencodeHomeDir(), scope: "global" }
+  if (t.scope === "global") return { alphaDir: alphaGlobalRoot(), opencodeDir: opencodeHomeDir(), scope: "global", identity: { kind: "global" } }
   if (typeof t.projectDir !== "string") return { error: "invalid project directory" }
   const root = alphaRoot(t.projectDir)
   if (!root) return { error: `invalid project directory: ${t.projectDir}` }
-  return { alphaDir: root, opencodeDir: path.join(t.projectDir, ".opencode"), scope: "project" }
+  const identity = projectScopeIdentity(t.projectDir)
+  if (!identity.ok) return { error: `fail closed: ${identity.reason}` }
+  return { alphaDir: root, opencodeDir: path.join(t.projectDir, ".opencode"), scope: "project", identity: identity.scope }
 }
 
 /**
@@ -453,7 +500,11 @@ export function importSkillFolder(
   }
   // T3(REQ-059):skills 桥退役 —— 真源就位,引擎经 skills.paths 发现。
   const files = [destDir]
-  recordReceipt(roots, { name, type: "skill", files, origin })
+  const ledger = recordReceipt(roots, { name, type: "skill", files, origin })
+  if (!ledger.ok) {
+    fs.rmSync(destDir, { recursive: true, force: true }) // #306 fail-closed:账本没进,导入不算成功
+    return { ok: false, reason: `install ledger write failed: ${ledger.reason}` }
+  }
   return { ok: true, files, name }
 }
 

@@ -372,15 +372,17 @@ export function persistMcp(name: string, server: Record<string, unknown>, meta?:
   const valid = validateServer(server)
   if (!valid.ok) return valid
   const written = writeKey(mcpPluginTargetPath(), ["mcp", name], server)
-  if (written.ok && receiptsActive()) {
+  // REQ-099 #306:只有 catalog(meta.catalogId)路径在此落 v1 receipt(planner 随后 v2 upsert 整键
+  // 替换);未策展的落账所有权上移到 orchestrator(ext-ipc → recordUncuratedInstall,失败可补偿)。
+  if (written.ok && receiptsActive() && meta?.catalogId) {
     addReceipt(alphaGlobalRoot(), {
-      id: meta?.catalogId ?? `user:${name}`,
+      id: meta.catalogId,
       name,
       type: "mcp",
       scope: "global",
-      version: meta?.version,
+      version: meta.version,
       installedAt: new Date().toISOString(),
-      origin: meta?.catalogId ? "catalog" : "created",
+      origin: "catalog",
       configKey: `mcp.${name}`,
     })
   }
@@ -572,19 +574,25 @@ function persistPluginUnlocked(pkg: string, meta?: InstallMeta): ConfigResult {
   if (inList(current) || (target !== userConfigPath() && inList(readPlugins(userConfigPath()))))
     return { ok: true }
   const written = writeKeyUnlocked(target, ["plugin"], [...current, pkg])
-  if (written.ok && receiptsActive()) {
+  // REQ-099 #306:同 persistMcp —— catalog 才在此落 v1;未策展由 orchestrator 走 coordinator。
+  if (written.ok && receiptsActive() && meta?.catalogId) {
     addReceipt(alphaGlobalRoot(), {
-      id: meta?.catalogId ?? `user:${pkgBase(pkg)}`,
-      name: pkgBase(pkg).replace(/^@/, "").replace("/", "__"),
+      id: meta.catalogId,
+      name: pluginRecordName(pkg),
       type: "plugin",
       scope: "global",
-      version: meta?.version,
+      version: meta.version,
       installedAt: new Date().toISOString(),
-      origin: meta?.catalogId ? "catalog" : "created",
+      origin: "catalog",
       configKey: `plugin:${pkg}`,
     })
   }
   return written
+}
+
+/** plugin 的账本名(包名规范化;未策展 orchestrator 与 catalog 落账共用同一派生,防两套名)。 */
+export function pluginRecordName(pkg: string): string {
+  return pkgBase(pkg).replace(/^@/, "").replace("/", "__")
 }
 
 /**
@@ -655,15 +663,16 @@ function persistPluginPathUnlocked(name: string, absJsPath: string, files: strin
   const current = read()
   if (current.some((p) => p === absJsPath)) return { ok: true } // idempotent
   const written = writeKeyUnlocked(target, ["plugin"], [...current, absJsPath])
-  if (written.ok && receiptsActive()) {
+  // REQ-099 #306:vendored 无未策展生产调用方(Codex 核实),catalog 才落 v1;防未来伪造面同收窄。
+  if (written.ok && receiptsActive() && meta?.catalogId) {
     addReceipt(alphaGlobalRoot(), {
-      id: meta?.catalogId ?? `user:${name}`,
+      id: meta.catalogId,
       name,
       type: "plugin",
       scope: "global",
-      version: meta?.version,
+      version: meta.version,
       installedAt: new Date().toISOString(),
-      origin: meta?.catalogId ? "catalog" : "imported",
+      origin: "catalog",
       configKey: `plugin-path:${absJsPath}`,
       files,
     })

@@ -14,7 +14,8 @@ import type { InstallTarget } from "../preload/types"
 import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
 import { fileifyMcpSecrets, fileifyMcpSecretsDeep, removeMcpServerSecrets, snapshotMcpServerSecrets } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, type ProvenanceRequest } from "./alpha-migrate"
-import { configHealth, persistPlugin, removeMcp, removePlugin, removePluginPath } from "./ext-config"
+import { configHealth, persistPlugin, pluginRecordName, removeMcp, removePlugin, removePluginPath } from "./ext-config"
+import { recordUncuratedInstall } from "./ext-uncurated-record"
 import { persistMcpWithPolicy } from "./ext-mcp-policy"
 import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
 import { importSkillFolder, importSkillGit, installBuiltinAgent, installBuiltinSkill, installRemoteAgent, installRemoteSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall, resourcesRoot, writeAgent } from "./ext-fs-installer"
@@ -78,7 +79,26 @@ export function registerExtIpcHandlers(userDataPath: string) {
       // 绑定 + 受管 workspace 强制)由 persistMcpWithPolicy 统一执行 —— main 注入固定 EXCEL_FILES_PATH,
       // 结构上消除「调用点忘传 workspace」的 fail-open;planner 的 installers.persistMcp 同走此闸。
       const r = persistMcpWithPolicy(name, server, undefined)
-      if (snap) (r.ok ? snap.discard : snap.restore)()
+      if (!r.ok) {
+        snap?.restore()
+        return r
+      }
+      // REQ-099 #306:未策展落账走 coordinator(v2+派生 v1 单次写);失败补偿 = 撤配置 + 复原密钥,
+      // 不谎报成功(#336 语义)。
+      const led = recordUncuratedInstall(alphaGlobalRoot(), {
+        kind: "mcp",
+        name,
+        origin: "created",
+        environment: getAlphaEnvironment().environment,
+        scope: { kind: "global" },
+        configKey: `mcp.${name}`,
+      })
+      if (!led.ok) {
+        removeMcp(name)
+        snap?.restore()
+        return { ok: false, reason: `install ledger write failed: ${led.reason}` }
+      }
+      snap?.discard()
       return r
     },
   )
@@ -151,7 +171,24 @@ export function registerExtIpcHandlers(userDataPath: string) {
   // ext-install-vendored-plugin / ext-enable-cloud 均并入 ext-install-catalog(planner 从已验签 catalog
   // 派生全部事实);ext-install-plugin 仅保留给未策展 npm 导入,且不再收 renderer meta(未策展安装
   // 无 catalog 身份,防伪造 catalog 来源,ADR-028 §5)。
-  ipcMain.handle("ext-install-plugin", (_event: IpcMainInvokeEvent, pkg: string) => persistPlugin(pkg, undefined))
+  ipcMain.handle("ext-install-plugin", (_event: IpcMainInvokeEvent, pkg: string) => {
+    const r = persistPlugin(pkg, undefined)
+    if (!r.ok) return r
+    // REQ-099 #306:未策展 npm 导入落账(coordinator);失败撤配置项,不谎报成功。
+    const led = recordUncuratedInstall(alphaGlobalRoot(), {
+      kind: "plugin",
+      name: pluginRecordName(pkg),
+      origin: "created",
+      environment: getAlphaEnvironment().environment,
+      scope: { kind: "global" },
+      configKey: `plugin:${pkg}`,
+    })
+    if (!led.ok) {
+      removePlugin(pkg)
+      return { ok: false, reason: `install ledger write failed: ${led.reason}` }
+    }
+    return r
+  })
   // REQ-019 T3:详情页 SKILL.md 预览(只读,资产键校验 + 体积帽)
   ipcMain.handle("ext-read-builtin-skill", (_event: IpcMainInvokeEvent, builtinAssetKey: string) =>
     readBuiltinSkill(builtinAssetKey),
