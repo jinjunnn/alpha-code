@@ -19,6 +19,7 @@ import { persistMcpWithPolicy } from "./ext-mcp-policy"
 import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
 import { importSkillFolder, importSkillGit, installBuiltinAgent, installBuiltinSkill, installRemoteAgent, installRemoteSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall, resourcesRoot, writeAgent } from "./ext-fs-installer"
 import { parseAgentImport } from "./ext-import-validate"
+import { collectSkillPayloadFromDir } from "./ext-skill-generations"
 import { randomUUID } from "node:crypto"
 import { pickedFiles } from "./ipc"
 import { factorySkillIds } from "./factory-skills"
@@ -486,6 +487,14 @@ export function registerExtIpcHandlers(userDataPath: string) {
         installRemoteAgent,
         removeFsInstall,
         downloadRemoteAsset,
+        // REQ-100 #310:builtin skill 载荷收集(随包目录 → generation 事务 populate;不落 flat 目录)。
+        collectBuiltinSkillPayload: (builtinAssetKey: string, name: string) => {
+          if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(name)) return { ok: false as const, reason: "invalid skill name" }
+          if (!/^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,127}$/.test(builtinAssetKey)) return { ok: false as const, reason: "invalid asset key" }
+          const srcDir = path.join(resourcesRoot(), builtinAssetKey)
+          if (!fs.existsSync(path.join(srcDir, "SKILL.md"))) return { ok: false as const, reason: "技能内容未随此版本打包" }
+          return collectSkillPayloadFromDir(srcDir)
+        },
       },
     }
   }
