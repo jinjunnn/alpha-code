@@ -9,6 +9,7 @@
 // Electron-free (takes userDataPath) so it is unit-testable; the ext IPC handler passes
 // app.getPath("userData").
 
+import * as crypto from "node:crypto"
 import * as fs from "node:fs"
 import * as path from "node:path"
 
@@ -56,6 +57,43 @@ export function writeMcpSecret(
   }
 }
 
+/**
+ * REQ-100 #342(Codex review #351 高危):更新失败(含事务在途 busy)不得毁掉既有安装的密钥。
+ * 写新密钥前快照该 server 的 secret 目录:失败 restore(原样复原;原本无目录则清掉新写入),
+ * 成功 discard(丢弃快照)。快照放同级 .bak-<rand>(rename 原子,同卷)。
+ */
+export function snapshotMcpServerSecrets(userDataPath: string, server: string): { restore(): void; discard(): void } {
+  const noop = { restore() {}, discard() {} }
+  if (!SAFE_SERVER.test(server)) return noop
+  const dir = serverDir(userDataPath, server)
+  let bak: string | null = null
+  try {
+    if (fs.existsSync(dir)) {
+      bak = `${dir}.bak-${crypto.randomBytes(4).toString("hex")}`
+      fs.cpSync(dir, bak, { recursive: true })
+    }
+  } catch {
+    return noop // 快照失败:退回旧行为(失败路径整目录清除),不阻塞主流程
+  }
+  return {
+    restore() {
+      try {
+        fs.rmSync(dir, { recursive: true, force: true })
+        if (bak) fs.renameSync(bak, dir)
+      } catch {
+        /* best-effort:留 .bak 作证据,不吞主错误 */
+      }
+    },
+    discard() {
+      try {
+        if (bak) fs.rmSync(bak, { recursive: true, force: true })
+      } catch {
+        /* best-effort */
+      }
+    },
+  }
+}
+
 /** Remove a connector's whole secret dir on uninstall (revoke — no stale token resurrection). */
 export function removeMcpServerSecrets(userDataPath: string, server: string): void {
   if (!SAFE_SERVER.test(server)) return
@@ -85,7 +123,9 @@ export function fileifyMcpSecretsDeep(
   server: string,
   config: Record<string, unknown>,
   secrets: Record<string, string>,
-): { fileified: string[]; skipped: string[]; refs: Record<string, string> } {
+): { fileified: string[]; skipped: string[]; refs: Record<string, string>; restore(): void; discard(): void } {
+  // 写前快照:失败路径 restore(更新不毁既有密钥;首装等价清除新写入),成功路径 discard。
+  const snap = snapshotMcpServerSecrets(userDataPath, server)
   const fileified: string[] = []
   const skipped: string[] = []
   const refs: Record<string, string> = {}
@@ -122,7 +162,7 @@ export function fileifyMcpSecretsDeep(
       skipped.push(varName) // granted 但没落到任何 config 字段 —— 视为异常,调用方 fail-closed
     }
   }
-  return { fileified, skipped, refs }
+  return { fileified, skipped, refs, restore: snap.restore, discard: snap.discard }
 }
 
 export function fileifyMcpSecrets(

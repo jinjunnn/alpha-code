@@ -344,6 +344,14 @@ export function removeFsInstall(type: "skill" | "agent", name: string, target?: 
   if ("error" in roots) return removed.length ? { ok: true, files: removed } : { ok: false, reason: roots.error }
   const kind = type === "skill" ? "skills" : "agents"
   const truth = type === "skill" ? path.join(roots.alphaDir, "skills", name) : path.join(roots.alphaDir, "agents", `${name}.md`)
+  // REQ-059 T3b:agent 条目净除(alpha.jsonc 的 agent.<name>;存量桥装的 agent 无条目 → no-op 幂等)。
+  // Codex review #351:配置删除(可因配置写锁 busy 失败)必须在删内容文件**之前**——否则 busy 会把
+  // 操作报失败却已不可逆地拆掉真源文件(半拆态)。
+  if (type === "agent") {
+    const entryTarget = roots.scope === "project" ? path.join(roots.alphaDir, "alpha.jsonc") : undefined
+    const r = removeAgentEntry(name, entryTarget)
+    if (!r.ok) return { ok: false, reason: `agent config entry removal failed: ${r.reason}` }
+  }
   try {
     if (fs.existsSync(truth)) {
       fs.rmSync(truth, { recursive: true, force: true })
@@ -352,12 +360,6 @@ export function removeFsInstall(type: "skill" | "agent", name: string, target?: 
     unbridgeItem(roots.alphaDir, roots.opencodeDir, kind, name).removed.forEach((r) => removed.push(r))
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : "failed to remove" }
-  }
-  // REQ-059 T3b:agent 条目净除(alpha.jsonc 的 agent.<name>;存量桥装的 agent 无条目 → no-op 幂等)
-  if (type === "agent") {
-    const entryTarget = roots.scope === "project" ? path.join(roots.alphaDir, "alpha.jsonc") : undefined
-    const r = removeAgentEntry(name, entryTarget)
-    if (!r.ok) return { ok: false, reason: `agent config entry removal failed: ${r.reason}` }
   }
   removeReceipt(roots.alphaDir, type, name)
   return { ok: true, files: removed }

@@ -405,15 +405,18 @@ export function removeAgentEntry(name: string, targetPath?: string): ConfigResul
  * shared XDG config when it still carries the entry. Receipt goes too.
  */
 export function removeMcp(name: string): ConfigResult {
+  return withConfigWriteLock(() => removeMcpUnlocked(name)) // 主文件+legacy 多写一把锁,不允许中途 busy 半删
+}
+function removeMcpUnlocked(name: string): ConfigResult {
   if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid server name" }
-  const primary = writeKey(mcpPluginTargetPath(), ["mcp", name], undefined)
+  const primary = writeKeyUnlocked(mcpPluginTargetPath(), ["mcp", name], undefined)
   if (!primary.ok) return primary
   for (const legacy of legacyConfigPaths(mcpPluginTargetPath())) {
     try {
       if (!fs.existsSync(legacy)) continue
       const parsed = parse(fs.readFileSync(legacy, "utf8")) as { mcp?: Record<string, unknown> } | undefined
       if (parsed?.mcp && typeof parsed.mcp === "object" && name in parsed.mcp) {
-        const legacyResult = writeKey(legacy, ["mcp", name], undefined)
+        const legacyResult = writeKeyUnlocked(legacy, ["mcp", name], undefined)
         if (!legacyResult.ok) return legacyResult
       }
     } catch {
@@ -499,17 +502,20 @@ export function readConfiguredProviderKeys(): Map<string, string> {
  * removed separately via providers.removeKey. Env keys (alpha.env) are untouched. Next reconnect.
  */
 export function removeProvider(id: string): ConfigResult {
+  return withConfigWriteLock(() => removeProviderUnlocked(id)) // 主文件+legacy 多写一把锁,不允许中途 busy 半删
+}
+function removeProviderUnlocked(id: string): ConfigResult {
   if (!SAFE_NAME.test(id)) return { ok: false, reason: "invalid provider id" }
   // Drop from the real source, and from any legacy source (XDG/~/.opencode) still carrying it during
   // the migration period — otherwise a stale copy would shadow-resurrect the provider on next reconnect.
-  const primary = writeKey(providerTargetPath(), ["provider", id], undefined)
+  const primary = writeKeyUnlocked(providerTargetPath(), ["provider", id], undefined)
   if (!primary.ok) return primary
   for (const legacy of providerReadPaths().slice(1)) {
     try {
       if (!fs.existsSync(legacy)) continue
       const parsed = parse(fs.readFileSync(legacy, "utf8")) as { provider?: Record<string, unknown> } | undefined
       if (parsed?.provider && typeof parsed.provider === "object" && id in parsed.provider) {
-        const r = writeKey(legacy, ["provider", id], undefined)
+        const r = writeKeyUnlocked(legacy, ["provider", id], undefined)
         if (!r.ok) return r
       }
     } catch {

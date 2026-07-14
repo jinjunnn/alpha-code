@@ -351,7 +351,8 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
   async function removeMcp(name: string): Promise<ActionResult> {
     const c = client
     const res = await window.api.ext.removeMcp(name)
-    if (c) await c.mcp.disconnect({ name } as any).catch(() => {})
+    // Codex review #351:失败(含事务在途 busy)不 disconnect —— 否则留下「已装但被断连」的半拆态。
+    if (res.ok && c) await c.mcp.disconnect({ name } as any).catch(() => {})
     await loadStatus()
     return res
   }
@@ -381,7 +382,7 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     if (receipt.type === "mcp" && !store.receipts.some((r) => r.type === "mcp" && r.name === receipt.name))
       return removeMcp(receipt.name)
     const res = await window.api.ext.uninstallV2({ type: receipt.type, name: receipt.name, scope: "global" })
-    if (receipt.type === "mcp") await client?.mcp.disconnect({ name: receipt.name } as any).catch(() => {})
+    if (res.ok && receipt.type === "mcp") await client?.mcp.disconnect({ name: receipt.name } as any).catch(() => {})
     await Promise.all([loadStatus(), loadInstalls()])
     // fs/plugin removal needs a rescan;cloud 只动账本(引擎无状态)无需 dispose。
     if (res.ok && receipt.type !== "mcp" && receipt.type !== "cloud") await refreshEngine()
