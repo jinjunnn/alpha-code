@@ -13,7 +13,10 @@ import * as path from "node:path"
 import type { AppEnvironment } from "./alpha-environment"
 import {
   extensionStorePaths,
+  listGenerations,
+  readGenerationReceiptSnapshot,
   resolveLiveGenerationDir,
+  rollbackGenerationTransaction,
   runExtensionTransaction,
   type HealthProbe,
   type TxCommitRecord,
@@ -21,7 +24,7 @@ import {
   type TxHooks,
   type TxPlan,
 } from "./ext-transaction"
-import { upsertRecordsV2, type ScopeIdentity, type UpsertInput } from "./ext-receipt-v2"
+import { findRecordV2, upsertRecordsV2, upsertRecordV2, type ScopeIdentity, type UpsertInput } from "./ext-receipt-v2"
 import { parseSkillFrontmatter } from "./ext-import-validate"
 import type { InstallReceiptOrigin } from "../preload/types"
 
@@ -48,6 +51,57 @@ export const skillGenerationProbe: HealthProbe = (input) => {
   if (!fm.ok) return { healthy: false, reason: `skill "${name}": ${fm.reason}` }
   if (fm.name !== name) return { healthy: false, reason: `skill frontmatter name "${fm.name}" ≠ key "${name}" (shadowing guard)` }
   return { healthy: true }
+}
+
+/** 列出某 skill 的物理 generation + 快照元数据(REQ-100 #313:两版离线回滚候选。current+保留代)。
+ *  eligible = 有可读快照(能复原 receipt)。dir 不外泄(IPC 层只透安全元数据)。 */
+export type SkillGenerationEntry = { genId: string; current: boolean; version?: string; manifestDigest?: string; installedAt?: string; eligible: boolean }
+export function listSkillGenerations(root: string, name: string): SkillGenerationEntry[] {
+  const key = skillGenerationKey(name)
+  return listGenerations(root, key).map((g) => {
+    const snap = readGenerationReceiptSnapshot(root, key, g.genId)
+    const r = snap?.receipt as Partial<UpsertInput> | undefined
+    return {
+      genId: g.genId,
+      current: g.current,
+      ...(r?.version ? { version: r.version } : {}),
+      ...(r?.manifestDigest ? { manifestDigest: r.manifestDigest } : {}),
+      ...(r?.installedAt ? { installedAt: r.installedAt } : {}),
+      eligible: snap !== null,
+    }
+  })
+}
+
+/**
+ * 两版离线回滚(REQ-100 #313):把某 skill 的 live generation 翻回目标物理 gen。probe 验目标健康 +
+ * 读目标快照构造新 receipt 修订(逻辑 generation 递增、previousDigest 指回滚前、desiredState 用当前策略,
+ * 不被旧快照 clobber)→ 锁内翻指针 + 落新修订。任一前置失败零变更;崩溃恢复从 journal receipt 前滚。 */
+export async function rollbackSkillGeneration(
+  root: string,
+  name: string,
+  targetGenId: string,
+): Promise<{ ok: true; previous: string | null } | { ok: false; reason: string }> {
+  if (!SAFE_NAME.test(name)) return { ok: false, reason: `invalid skill name: ${name}` }
+  const key = skillGenerationKey(name)
+  return rollbackGenerationTransaction(root, key, targetGenId, {
+    probe: skillGenerationProbe,
+    resolveReceipt: (target) => {
+      const snap = readGenerationReceiptSnapshot(root, key, target)
+      if (!snap) return null
+      const base = snap.receipt as UpsertInput
+      const current = findRecordV2(root, "skill", name)
+      return {
+        ...base,
+        generation: (current?.generation ?? base.generation ?? 0) + 1, // 逻辑号递增,不倒退
+        ...(current?.manifestDigest ? { previousDigest: current.manifestDigest } : {}),
+        desiredState: current?.desiredState ?? base.desiredState, // 当前策略优先(旧快照不覆盖)
+      } satisfies UpsertInput
+    },
+    commitReceipt: (rec) => {
+      const w = upsertRecordV2(root, commitInputFromRecord(rec))
+      if (!w.ok) throw new Error(w.reason)
+    },
+  })
 }
 
 /** 从 commit record 的 receipt 模板重建 upsert 输入(forward 与 crash-recovery 前滚同源,REQ-100 #312)。 */
