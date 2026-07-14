@@ -45,6 +45,15 @@ import {
 } from "./ext-atomic-fs"
 import { tryAcquireBundleLock, type BundleLock } from "./ext-bundle-lock"
 import {
+  applyConfigImage,
+  prepareConfigTx,
+  readStagedConfigImage,
+  restoreConfigImage,
+  stageConfigImage,
+  type ConfigEdit,
+  type ConfigTxImage,
+} from "./ext-config-tx"
+import {
   capabilityGrantPath,
   confirmationCovers,
   evaluateBundleAuthorization,
@@ -57,11 +66,24 @@ import {
 
 export type TxFileSpec = { path: string; sha256: string; size?: number }
 
+/** REQ-100 #311:action 判别式。缺省 "generation"(向后兼容:老 plan/journal 无此字段即文件树 generation)。
+ *  - generation:文件树装进不可变 generation 目录 + current.json 指针翻转(skill 等)。
+ *  - config:alpha.jsonc 叶/数组的 journaled 原子替换(mcp/plugin;走 ext-config-tx 适配器)。
+ *  - receipt:无 materialize/switch 副作用,只参加最终 receipt commit(cloud)。 */
+export type TxActionKind = "generation" | "config" | "receipt"
+
+/** config action 载荷:目标文件 + 有序 edit(同一 target 多条 edit 由适配器按序累积)。 */
+export type TxConfigAction = { target: string; edits: ConfigEdit[] }
+
 export type TxPlanItem = {
   /** fs-safe 扩展标识(planner 派生,如 "skill--foo";不含路径分隔符/冒号)。 */
   key: string
-  /** 期望载荷 = receipt 的 digest 集(结构精确匹配:缺一 / 多一 / 哈希不符均拒)。 */
-  files: TxFileSpec[]
+  /** action 类型;缺省 generation。 */
+  action?: TxActionKind
+  /** generation:期望载荷 = receipt 的 digest 集(结构精确匹配:缺一 / 多一 / 哈希不符均拒)。config/receipt 忽略。 */
+  files?: TxFileSpec[]
+  /** config action 的目标叶变更(action==="config" 必填)。 */
+  config?: TxConfigAction
   /** REQ-099 manifest digest,本层不解释、只透传进 journal / commit record。 */
   manifestDigest?: string
   /**
@@ -69,6 +91,11 @@ export type TxPlanItem = {
    * 缺省按空集处理:committed 时授权账落空集,未来任何 capability 出现都构成扩张 → 必须确认。
    */
   capabilities?: string[]
+}
+
+/** 判别式取值(缺省 generation)。 */
+export function actionOf(item: { action?: TxActionKind }): TxActionKind {
+  return item.action ?? "generation"
 }
 
 /** 用户对完整新 capability 集的覆盖式确认(逐 item;展示什么确认什么,防 TOCTOU)。 */
@@ -104,11 +131,18 @@ export type HealthProbe = (input: {
 export type TxCommitRecord = {
   txId: string
   key: string
-  generation: string
-  generationDir: string
-  previousGeneration: string | null
+  /** action 类型(缺省 generation:向后兼容既有 receipt 消费方)。 */
+  action?: TxActionKind
+  /** generation:live 代号;config/receipt 缺省。 */
+  generation?: string
+  /** generation:live 目录;config/receipt 缺省。 */
+  generationDir?: string
+  previousGeneration?: string | null
   manifestDigest?: string
-  files: TxFileSpec[]
+  /** generation:载荷 digest 集;config/receipt 缺省。 */
+  files?: TxFileSpec[]
+  /** config:目标文件(卸载/对账参考)。 */
+  configTarget?: string
   committedAt: string
 }
 
@@ -198,8 +232,14 @@ export type TxState =
 
 export type TxJournalItem = {
   key: string
+  /** action 类型;缺省 generation(向后兼容 v:1 老 journal 无此字段)。 */
+  action?: TxActionKind
+  /** generation:目标代号。config/receipt 恒为占位(不建目录、不翻指针)。 */
   genId: string
+  /** generation:期望载荷 digest 集。config/receipt 为空数组。 */
   files: TxFileSpec[]
+  /** config:目标文件 + staging 里 pre/next image 的 digest(内容在受保护 staging,journal 不落值)。 */
+  config?: { target: string; slot: number; preDigest: string; nextDigest: string }
   manifestDigest?: string
   /** committed 后写授权账用(恢复前滚也要写,故持久化在 journal 里)。 */
   capabilities?: string[]
@@ -389,19 +429,32 @@ function validatePlan(root: string, plan: TxPlan): string | null {
     if (typeof item.key !== "string" || !SAFE_KEY.test(item.key)) return `invalid item key: ${String(item.key)}`
     if (keys.has(item.key)) return `duplicate item key: ${item.key}`
     keys.add(item.key)
-    if (!Array.isArray(item.files) || item.files.length === 0) return `item "${item.key}" has no expected files`
-    if (item.files.length > 4096) return `item "${item.key}" exceeds 4096 files`
-    const paths = new Set<string>()
-    for (const file of item.files) {
-      if (!file || typeof file !== "object") return `item "${item.key}": invalid file spec`
-      if (typeof file.path !== "string" || !isSafeRelPath(file.path))
-        return `item "${item.key}": unsafe file path: ${String(file.path)}`
-      if (paths.has(file.path)) return `item "${item.key}": duplicate file path: ${file.path}`
-      paths.add(file.path)
-      if (typeof file.sha256 !== "string" || !SHA256_RE.test(file.sha256))
-        return `item "${item.key}": invalid sha256 for ${file.path}`
-      if (file.size !== undefined && (!Number.isInteger(file.size) || file.size < 0))
-        return `item "${item.key}": invalid size for ${file.path}`
+    const kind = actionOf(item)
+    // config action:目标绝对路径 + 至少一条 edit(叶白名单由 ext-config-tx 适配器把关);无 files。
+    if (kind === "config") {
+      if (!item.config || typeof item.config !== "object") return `config item "${item.key}" missing config payload`
+      if (typeof item.config.target !== "string" || !path.isAbsolute(item.config.target))
+        return `config item "${item.key}": target must be an absolute path`
+      if (!Array.isArray(item.config.edits) || item.config.edits.length === 0)
+        return `config item "${item.key}": at least one edit required`
+    } else if (kind === "receipt") {
+      // receipt-only:无 files/config 副作用,只参加最终 receipt commit。
+    } else {
+      // generation:期望载荷 digest 集精确匹配。
+      if (!Array.isArray(item.files) || item.files.length === 0) return `item "${item.key}" has no expected files`
+      if (item.files.length > 4096) return `item "${item.key}" exceeds 4096 files`
+      const paths = new Set<string>()
+      for (const file of item.files) {
+        if (!file || typeof file !== "object") return `item "${item.key}": invalid file spec`
+        if (typeof file.path !== "string" || !isSafeRelPath(file.path))
+          return `item "${item.key}": unsafe file path: ${String(file.path)}`
+        if (paths.has(file.path)) return `item "${item.key}": duplicate file path: ${file.path}`
+        paths.add(file.path)
+        if (typeof file.sha256 !== "string" || !SHA256_RE.test(file.sha256))
+          return `item "${item.key}": invalid sha256 for ${file.path}`
+        if (file.size !== undefined && (!Number.isInteger(file.size) || file.size < 0))
+          return `item "${item.key}": invalid size for ${file.path}`
+      }
     }
     if (item.capabilities !== undefined) {
       if (!Array.isArray(item.capabilities) || item.capabilities.length > 32)
@@ -745,6 +798,28 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
   }
   crash("after-authorize")
 
+  // config action 的 image 对在锁内、staging 前一次性 prepare(捕获 live preimage + 计算 nextImage);
+  // 任一失败 = 写盘前 fail-closed。digest 进 journal(内容进受保护 staging),恢复据此判定翻转/回滚。
+  const configImages = new Map<string, ConfigTxImage>()
+  // 同一 target 的多个 config action 链式累积:后一个以前一个的 nextImage 为基线(preImage),否则
+  // switch 时后写覆盖前写。首个 action 从 live 读。
+  const accumulatedText = new Map<string, string>()
+  for (const item of plan.items) {
+    if (actionOf(item) !== "config") continue
+    if (!item.config) {
+      lock.release()
+      return { ok: false, txId, stage: "validate", reason: `config item "${item.key}" missing config payload`, warnings }
+    }
+    const target = item.config.target
+    const prep = prepareConfigTx(target, item.config.edits, accumulatedText.get(target))
+    if (!prep.ok) {
+      lock.release()
+      return { ok: false, txId, stage: "staging", reason: `config prepare failed for "${item.key}": ${prep.reason}`, warnings }
+    }
+    configImages.set(item.key, prep.image)
+    accumulatedText.set(target, prep.image.nextImage)
+  }
+
   const iso = now().toISOString()
   let journal: TxJournal = {
     v: 1,
@@ -752,10 +827,22 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
     state: "staging",
     createdAt: iso,
     updatedAt: iso,
-    items: plan.items.map((item) => ({
+    items: plan.items.map((item, index) => ({
       key: item.key,
-      genId: nextGenId(root, item.key, txId),
-      files: item.files,
+      action: actionOf(item),
+      // generation 才建代号;config/receipt 用占位(不建目录、不翻指针)。
+      genId: actionOf(item) === "generation" ? nextGenId(root, item.key, txId) : "gen-000000-000000",
+      files: item.files ?? [],
+      ...(actionOf(item) === "config" && configImages.has(item.key)
+        ? {
+            config: {
+              target: item.config!.target,
+              slot: index,
+              preDigest: configImages.get(item.key)!.preDigest,
+              nextDigest: configImages.get(item.key)!.nextDigest,
+            },
+          }
+        : {}),
       manifestDigest: item.manifestDigest,
       capabilities: item.capabilities,
     })),
@@ -773,7 +860,20 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
   }
 
   const genEntries = () =>
-    journal.items.map((it) => ({ key: it.key, genId: it.genId, dir: generationDirOf(root, it.key, it.genId) }))
+    journal.items
+      .filter((it) => actionOf(it) === "generation")
+      .map((it) => ({ key: it.key, genId: it.genId, dir: generationDirOf(root, it.key, it.genId) }))
+
+  /** config action 回滚:逆序恢复(仅当 target 仍是 nextImage 才写回 preImage;旁路改写 → fail-closed 留证)。 */
+  const rollbackConfigActions = (): void => {
+    for (const it of [...journal.items].reverse()) {
+      if (actionOf(it) !== "config") continue
+      const image = configImages.get(it.key)
+      if (!image) continue
+      const restored = restoreConfigImage(image)
+      if (!restored.ok) warnings.push(`config rollback for "${it.key}": ${restored.reason}`)
+    }
+  }
 
   /** switch 之前的失败:current 全量不变。quarantineFailed=true(探测失败)→ 隔离;否则删未引用残留。 */
   const abortPreSwitch = (stage: TxStage, reason: string, quarantineFailed = false): TxResult => {
@@ -793,9 +893,11 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
     return { ok: false, txId, stage, reason, quarantined, warnings }
   }
 
-  /** switch 之后的失败:指针回旧(previous 一直保留)+ 失败 generation 隔离(带收据)。 */
+  /** switch 之后的失败:config 逆序恢复 + generation 指针回旧(previous 一直保留)+ 失败 generation 隔离。 */
   const rollbackAll = (stage: TxStage, reason: string): TxResult => {
+    rollbackConfigActions()
     for (const it of journal.items) {
+      if (actionOf(it) !== "generation") continue
       const current = readCurrentGeneration(root, it.key)
       if (current?.genId !== it.genId) continue // 未翻转的不用回
       const prev = it.previousGeneration ?? null
@@ -817,13 +919,19 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
   writeJournalSync(root, journal)
   crash("after-journal")
 
-  // ① staging:一切写入先落 staging(live 零接触)
+  // ① staging:一切写入先落 staging(live 零接触)。generation → populate 文件树;config → 落
+  //    preimage/nextimage(内容进受保护 staging);receipt → 无 staging 副作用。
   try {
     for (let i = 0; i < plan.items.length; i++) {
       const item = plan.items[i]!
-      const dir = path.join(txStagingDir(root, txId), item.key)
-      fs.mkdirSync(dir, { recursive: true })
-      await hooks.populate(item, dir)
+      const kind = actionOf(item)
+      if (kind === "generation") {
+        const dir = path.join(txStagingDir(root, txId), item.key)
+        fs.mkdirSync(dir, { recursive: true })
+        await hooks.populate(item, dir)
+      } else if (kind === "config") {
+        stageConfigImage(txStagingDir(root, txId), i, configImages.get(item.key)!)
+      }
       if (i === 0 && plan.items.length > 1) crash("mid-populate")
     }
   } catch (error) {
@@ -832,18 +940,28 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
   }
   crash("after-populate")
 
-  // ② 校验(哈希/结构精确匹配)
-  for (const item of plan.items) {
-    const verdict = verifyStagedItem(path.join(txStagingDir(root, txId), item.key), item.files)
-    if (!verdict.ok) return abortPreSwitch("verify", `"${item.key}" staging verification failed: ${verdict.reason}`)
+  // ② 校验:generation 逐文件 sha256 + 结构精确匹配;config 复核 staging 里 pre/next image digest 一致。
+  for (let i = 0; i < plan.items.length; i++) {
+    const item = plan.items[i]!
+    const kind = actionOf(item)
+    if (kind === "generation") {
+      const verdict = verifyStagedItem(path.join(txStagingDir(root, txId), item.key), item.files ?? [])
+      if (!verdict.ok) return abortPreSwitch("verify", `"${item.key}" staging verification failed: ${verdict.reason}`)
+    } else if (kind === "config") {
+      const cfg = journal.items.find((j) => j.key === item.key)!.config!
+      const rebuilt = readStagedConfigImage(txStagingDir(root, txId), cfg.slot, cfg.target, cfg.preDigest, cfg.nextDigest)
+      if (!rebuilt.ok) return abortPreSwitch("verify", `"${item.key}" config staging verification failed: ${rebuilt.reason}`)
+    }
   }
   advance("staged")
   crash("after-staged")
 
-  // ③ materialize:staging → generations/<genId>(同卷单次 rename)
+  // ③ materialize:generation → staging 目录单次 rename 进 generations/<genId>;config/receipt 不
+  //    materialize(config 的 next-image 已在 staging 待命,live alpha.jsonc 未动)。
   try {
     for (let i = 0; i < journal.items.length; i++) {
       const it = journal.items[i]!
+      if (actionOf(it) !== "generation") continue
       renameAtomicSync(path.join(txStagingDir(root, txId), it.key), generationDirOf(root, it.key, it.genId))
       if (i === 0 && journal.items.length > 1) crash("mid-materialize")
     }
@@ -871,14 +989,18 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
   }
   crash("after-pre-probe")
 
-  // ⑤ atomic switch:先持久化 previous 指针 + 意图(journal=switching),再逐 item 原子翻转
-  for (const it of journal.items) it.previousGeneration = readCurrentGeneration(root, it.key)?.genId ?? null
+  // ⑤ atomic switch:先持久化 previous 指针 + 意图(journal=switching),再逐 item 翻转 —— generation
+  //    换 current.json 指针,config 原子替换 live alpha.jsonc(next-image),receipt 无副作用。
+  for (const it of journal.items)
+    it.previousGeneration = actionOf(it) === "generation" ? (readCurrentGeneration(root, it.key)?.genId ?? null) : null
   advance("switching")
   crash("after-switching-journal")
   try {
     for (let i = 0; i < journal.items.length; i++) {
       const it = journal.items[i]!
-      writePointerSync(root, it.key, it.genId, txId, now)
+      const kind = actionOf(it)
+      if (kind === "generation") writePointerSync(root, it.key, it.genId, txId, now)
+      else if (kind === "config") applyConfigImage(configImages.get(it.key)!)
       if (i === 0 && journal.items.length > 1) crash("mid-switch")
     }
   } catch (error) {
@@ -907,16 +1029,24 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
 
   // ⑦ receipt commit(REQ-099 接缝;失败 → 回滚,receipt 与 live 永不背离)
   const committedAt = now().toISOString()
-  const records: TxCommitRecord[] = journal.items.map((it) => ({
-    txId,
-    key: it.key,
-    generation: it.genId,
-    generationDir: generationDirOf(root, it.key, it.genId),
-    previousGeneration: it.previousGeneration ?? null,
-    manifestDigest: it.manifestDigest,
-    files: it.files,
-    committedAt,
-  }))
+  const records: TxCommitRecord[] = journal.items.map((it) => {
+    const kind = actionOf(it)
+    if (kind === "generation")
+      return {
+        txId,
+        key: it.key,
+        action: "generation" as const,
+        generation: it.genId,
+        generationDir: generationDirOf(root, it.key, it.genId),
+        previousGeneration: it.previousGeneration ?? null,
+        manifestDigest: it.manifestDigest,
+        files: it.files,
+        committedAt,
+      }
+    if (kind === "config")
+      return { txId, key: it.key, action: "config" as const, ...(it.config ? { configTarget: it.config.target } : {}), manifestDigest: it.manifestDigest, committedAt }
+    return { txId, key: it.key, action: "receipt" as const, manifestDigest: it.manifestDigest, committedAt }
+  })
   if (hooks.commitReceipt) {
     try {
       await hooks.commitReceipt(records)
@@ -931,8 +1061,9 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
   writeCommitAuthorizationSync(root, journal, now, warnings)
   crash("before-gc")
 
-  // ⑧ 有界 GC + staging 清理(均 warnings-only,不影响成功语义)
+  // ⑧ 有界 GC + staging 清理(均 warnings-only,不影响成功语义)。GC 只针对 generation(config 无代数)。
   for (const it of journal.items) {
+    if (actionOf(it) !== "generation") continue
     const gc = gcGenerations(root, it.key, { keep: hooks.keepGenerations ?? KEEP_GENERATIONS_DEFAULT, log })
     warnings.push(...gc.warnings)
   }
@@ -1161,14 +1292,34 @@ async function recoverOne(
     return { txId, state: journal.state, action: "aborted", detail: reason }
   }
 
-  // switching / switched:commit 意图已持久化,health/receipt 未确认
-  const flipped = journal.items.filter((it) => readCurrentGeneration(root, it.key)?.genId === it.genId)
-  const allFlipped = flipped.length === journal.items.length
+  // switching / switched:commit 意图已持久化,health/receipt 未确认。逐 action 判定翻转:
+  //   generation → current.json 指针 === genId;config → live target digest === nextDigest;receipt → 恒真。
+  const sha256Text = (t: string): string => crypto.createHash("sha256").update(t, "utf8").digest("hex")
+  const configTargetDigest = (target: string): string | null => {
+    try {
+      return sha256Text(fs.existsSync(target) ? fs.readFileSync(target, "utf8") : "{}")
+    } catch {
+      return null
+    }
+  }
+  const reconstructConfigImage = (it: TxJournalItem): ConfigTxImage | null => {
+    if (actionOf(it) !== "config" || !it.config) return null
+    const r = readStagedConfigImage(staleStaging, it.config.slot, it.config.target, it.config.preDigest, it.config.nextDigest)
+    return r.ok ? r.image : null
+  }
+  const isFlipped = (it: TxJournalItem): boolean => {
+    const kind = actionOf(it)
+    if (kind === "receipt") return true
+    if (kind === "config") return it.config ? configTargetDigest(it.config.target) === it.config.nextDigest : false
+    return readCurrentGeneration(root, it.key)?.genId === it.genId
+  }
+  const allFlipped = journal.items.every(isFlipped)
 
   if (allFlipped && opts.probe && opts.commitReceipt) {
     let healthy = true
     let probeReason = ""
     for (const it of journal.items) {
+      if (actionOf(it) !== "generation") continue // config/receipt 不做类型化 generation 探测
       const dir = generationDirOf(root, it.key, it.genId)
       try {
         const verdict = await opts.probe({ key: it.key, genId: it.genId, generationDir: dir, phase: "recovery" })
@@ -1185,16 +1336,24 @@ async function recoverOne(
     }
     if (healthy) {
       const committedAt = now().toISOString()
-      const records: TxCommitRecord[] = journal.items.map((it) => ({
-        txId,
-        key: it.key,
-        generation: it.genId,
-        generationDir: generationDirOf(root, it.key, it.genId),
-        previousGeneration: it.previousGeneration ?? null,
-        manifestDigest: it.manifestDigest,
-        files: it.files,
-        committedAt,
-      }))
+      const records: TxCommitRecord[] = journal.items.map((it) => {
+        const kind = actionOf(it)
+        if (kind === "generation")
+          return {
+            txId,
+            key: it.key,
+            action: "generation" as const,
+            generation: it.genId,
+            generationDir: generationDirOf(root, it.key, it.genId),
+            previousGeneration: it.previousGeneration ?? null,
+            manifestDigest: it.manifestDigest,
+            files: it.files,
+            committedAt,
+          }
+        if (kind === "config")
+          return { txId, key: it.key, action: "config" as const, ...(it.config ? { configTarget: it.config.target } : {}), manifestDigest: it.manifestDigest, committedAt }
+        return { txId, key: it.key, action: "receipt" as const, manifestDigest: it.manifestDigest, committedAt }
+      })
       try {
         await opts.commitReceipt(records) // 幂等 upsert(接缝契约)
         removeDirGuarded(root, staleStaging, warnings)
@@ -1213,13 +1372,24 @@ async function recoverOne(
     }
   }
 
-  // 回滚:指针回 previous(翻转前已持久化),失败 generation 全部隔离
+  // 回滚:config 逆序恢复(target 仍是 nextImage 才写回 preImage)+ generation 指针回 previous + 隔离失败代。
   const reasonParts = [
     allFlipped ? "health not confirmed after crash" : "bundle partially switched at crash (atomicity restored)",
     ...warnings,
   ]
   const reason = `crash recovery rollback: ${reasonParts.join("; ")}`
+  for (const it of [...journal.items].reverse()) {
+    if (actionOf(it) !== "config") continue
+    const image = reconstructConfigImage(it)
+    if (!image) {
+      warnings.push(`config recovery: cannot reconstruct image for "${it.key}" — leaving live as-is (fail closed)`)
+      continue
+    }
+    const restored = restoreConfigImage(image)
+    if (!restored.ok) warnings.push(`config recovery rollback for "${it.key}": ${restored.reason}`)
+  }
   for (const it of journal.items) {
+    if (actionOf(it) !== "generation") continue
     const current = readCurrentGeneration(root, it.key)
     if (current?.genId !== it.genId) continue
     const prev = it.previousGeneration ?? null
@@ -1233,7 +1403,7 @@ async function recoverOne(
   quarantineGenerations(
     root,
     txId,
-    journal.items.map((it) => ({ key: it.key, genId: it.genId, dir: generationDirOf(root, it.key, it.genId) })),
+    journal.items.filter((it) => actionOf(it) === "generation").map((it) => ({ key: it.key, genId: it.genId, dir: generationDirOf(root, it.key, it.genId) })),
     reason,
     "crash-recovery",
     now,

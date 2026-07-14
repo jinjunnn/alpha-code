@@ -46,16 +46,28 @@ function readTarget(target: string): { ok: true; text: string; existed: boolean 
 }
 
 /**
- * 从 live 计算 image 对。多条 edit 按序应用到累积文本(不各自从 live 独立算),最终 nextImage 反映全部。
- * 任一 top key 越权或结果非法 jsonc → 拒绝(写盘前 fail-closed)。 */
-export function prepareConfigTx(target: string, edits: ConfigEdit[]): { ok: true; image: ConfigTxImage } | { ok: false; reason: string } {
+ * 计算一个 image 对。多条 edit 按序应用到累积文本(不各自从 live 独立算),最终 nextImage 反映全部。
+ * 任一 top key 越权或结果非法 jsonc → 拒绝(写盘前 fail-closed)。
+ *
+ * baseText:同一 target 多个 config action 链式累积用 —— 第 2+ 个 action 以上一个的 nextImage 为
+ * 基线(而非各自从 live 独立读),否则后写会覆盖前写。缺省(第一个 action)= 从 live 读。 */
+export function prepareConfigTx(
+  target: string,
+  edits: ConfigEdit[],
+  baseText?: string,
+): { ok: true; image: ConfigTxImage } | { ok: false; reason: string } {
   if (edits.length === 0) return { ok: false, reason: "config tx has no edits" }
   for (const e of edits) {
     if (!ALLOWED_TOP_KEYS.has(e.keyPath[0] ?? "")) return { ok: false, reason: `refused: unknown config key "${e.keyPath[0]}"` }
   }
-  const read = readTarget(target)
-  if (!read.ok) return read
-  const preImage = read.text
+  let preImage: string
+  if (baseText !== undefined) {
+    preImage = baseText
+  } else {
+    const read = readTarget(target)
+    if (!read.ok) return read
+    preImage = read.text
+  }
   let text = preImage
   for (const e of edits) {
     const applied = applyEdits(text, modify(text, e.keyPath, e.value, { formattingOptions: { tabSize: 2, insertSpaces: true } }))

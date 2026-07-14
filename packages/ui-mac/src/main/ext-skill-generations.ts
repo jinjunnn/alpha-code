@@ -128,7 +128,7 @@ export async function installSkillGeneration(root: string, spec: SkillGeneration
           ...(spec.grantDigest ? { grantDigest: spec.grantDigest } : {}),
           desiredState: "enabled" as const,
           origin: spec.origin,
-          files: [rec.generationDir],
+          ...(rec.generationDir ? { files: [rec.generationDir] } : {}),
           transaction: { id: rec.txId, state: "committed" as const },
           installedAt: now,
         })),
