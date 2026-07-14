@@ -15,6 +15,7 @@ import type { CatalogEntry } from "../renderer/extensions/catalog-types"
 import { addReceipt } from "./alpha-installs"
 import { aggregateFilesDigest, computeManifestDigest, decodeManifestV2 } from "./ext-manifest-v2"
 import { computeGrantDigest, findRecordV2, upsertRecordV2, type UpsertInput } from "./ext-receipt-v2"
+import { resolveLiveGenerationDir } from "./ext-transaction"
 import {
   decodeCatalogInstallIntent,
   decodeSetStateIntent,
@@ -153,6 +154,10 @@ function makeDeps(opts: {
     },
     removePluginPath: record("removePluginPath", { ok: true as const }),
     installBuiltinSkill: record("installBuiltinSkill", { ok: true as const, files: ["/derived/skill"] }),
+    collectBuiltinSkillPayload: (key: string, name: string) => {
+      calls.push({ fn: "collectBuiltinSkillPayload", args: [key, name] })
+      return { ok: true as const, files: [{ path: "SKILL.md", data: Buffer.from(`---\nname: ${name}\n---\nbody`) }] }
+    },
     installBuiltinAgent: record("installBuiltinAgent", { ok: true as const, files: ["/derived/agent"] }),
     installRemoteSkill: record("installRemoteSkill", { ok: true as const, files: ["/derived/remote-skill"] }),
     installRemoteAgent: record("installRemoteAgent", { ok: true as const, files: ["/derived/remote-agent"] }),
@@ -379,14 +384,18 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
 // ── skill / plugin / cloud / bundle ─────────────────────────────────────────────────────────────
 
 describe("other kinds — derivation & records", () => {
-  test("remote skill: download from catalog manifest; payloadDigest recorded", async () => {
+  test("remote skill: download → 不可变 generation 事务;payloadDigest recorded(REQ-100 #310)", async () => {
     const { deps, calls } = makeDeps()
     const r = await installCatalog({ catalogId: "skill:remote-demo", scope: { scope: "global" } }, deps)
     expect(r.ok).toBe(true)
     expect(called(calls, "downloadRemoteAsset")[0]!.args[0]).toEqual(remoteFiles)
-    expect(called(calls, "installRemoteSkill")).toHaveLength(1)
+    // #310:skill 不再走 flat installRemoteSkill,而是 generation 事务 + commitReceipt。
+    expect(called(calls, "installRemoteSkill")).toHaveLength(0)
     const record = findRecordV2(globalRoot, "skill", "remote-demo")
     expect(record?.payloadDigest).toBe(aggregateFilesDigest(remoteFiles))
+    expect(record?.transaction?.state).toBe("committed")
+    // 物理真源 = generation 目录(current.json live)。
+    expect(resolveLiveGenerationDir(globalRoot, "skill--remote-demo")).not.toBeNull()
   })
 
   test("vendored plugin: asset key from catalog; configKey derived from install result", async () => {

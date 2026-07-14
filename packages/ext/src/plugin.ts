@@ -10,6 +10,7 @@ import { applyRegister, type RegisterType } from "./register"
 import { applyPromptTakeover } from "./alpha-prompts"
 import { applyFactoryDeny } from "./factory-deny"
 import { injectFactorySkillPaths } from "./factory-paths"
+import { injectSkillGenerationPaths } from "./gen-skill-paths"
 import { rebrandSystem } from "./prompt-rebrand"
 
 /**
@@ -75,6 +76,11 @@ export const AlphaExt: Plugin = async (input) => {
         const factoryAdded = injectFactorySkillPaths(cfg as Record<string, unknown>, process.env.ALPHA_FACTORY_SKILL_DIRS)
         if (process.env.ALPHA_EXT_VERBOSE && factoryAdded.length)
           console.log(`[@alpha-code/ext] factory skill paths injected in-memory: ${factoryAdded.length}`)
+        // REQ-100 #310:把 skill generation 的 live 目录(ext-store/skill--*/current.json)投影进
+        // skills.paths —— 从磁盘现读,每次 config 重建反映最新安装,current.json 是唯一原子真源。
+        const genAdded = injectSkillGenerationPaths(cfg as Record<string, unknown>, globalAlphaRoot)
+        if (process.env.ALPHA_EXT_VERBOSE && genAdded.length)
+          console.log(`[@alpha-code/ext] skill generation paths injected in-memory: ${genAdded.length}`)
         // REQ-067:上游默认禁项零明文 —— main 算 effective(出厂清单 − 用户解禁)经 env 传入,内存注入
         // permission.skill deny + 键入兜底占位(同为「出厂内置行为不进用户配置」口径)。
         const denied = applyFactoryDeny(cfg as Record<string, unknown>, process.env.ALPHA_FACTORY_DENY_SKILLS)

@@ -53,6 +53,7 @@ import {
   type DesiredState,
   type ScopeIdentity,
 } from "./ext-receipt-v2"
+import { installSkillGeneration } from "./ext-skill-generations"
 
 // ── renderer intents(严格解码:未知键 = 伪造事实通道,loud 拒绝)─────────────────────────────
 
@@ -334,6 +335,8 @@ export type PlannerInstallers = {
   removePluginPath(name: string, absJsPath: string): ConfigOutcome
   installBuiltinSkill(builtinAssetKey: string, name: string, target?: TargetArg, meta?: InstallMetaArg): FsOutcome
   installBuiltinAgent(builtinAssetKey: string, name: string, target?: TargetArg, meta?: InstallMetaArg): FsOutcome
+  /** REQ-100 #310:收集 builtin skill 随包目录为载荷(generation 事务 populate 用;不落 flat 目录)。 */
+  collectBuiltinSkillPayload(builtinAssetKey: string, name: string): { ok: true; files: Array<{ path: string; data: Buffer }> } | { ok: false; reason: string }
   installRemoteSkill(name: string, contents: Array<{ path: string; data: Buffer }>, target?: TargetArg, meta?: InstallMetaArg): FsOutcome
   installRemoteAgent(name: string, contents: Array<{ path: string; data: Buffer }>, target?: TargetArg, meta?: InstallMetaArg): FsOutcome
   removeFsInstall(type: "skill" | "agent", name: string, target?: TargetArg): FsOutcome
@@ -504,7 +507,50 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       rollback("entry has no plugin package")
       return { ok: false, reason: "entry has no plugin package" }
     }
-  } else if (entry.type === "skill" || entry.type === "agent") {
+  } else if (entry.type === "skill") {
+    // REQ-100 #310:skill 走不可变 generation 事务 —— 纯 staging 填充(去 receipt 化)→ 引擎
+    // staging→verify→materialize→switch → commitReceipt=upsertRecordV2(写失败即事务失败,#336)。
+    // 不再直写 ~/.alpha/skills/<name> + 单独 upsert;本分支自提交并早返回,不落共享 upsert。
+    const fsSpec = spec as { kind?: string; source?: string; builtinAssetKey?: string } | undefined
+    let payload: Array<{ path: string; data: Buffer }>
+    if (fsSpec?.source === "remote" && entry.remoteAsset?.files?.length) {
+      const dl = await deps.installers.downloadRemoteAsset(entry.remoteAsset.files)
+      if (!dl.ok) {
+        rollback(dl.reason)
+        return dl
+      }
+      payload = dl.contents
+      payloadDigest = aggregateFilesDigest(entry.remoteAsset.files)
+    } else if (fsSpec?.source === "builtin" && fsSpec.builtinAssetKey) {
+      const p = deps.installers.collectBuiltinSkillPayload(fsSpec.builtinAssetKey, entry.name)
+      if (!p.ok) {
+        rollback(p.reason)
+        return p
+      }
+      payload = p.files
+    } else {
+      rollback("no installable content")
+      return { ok: false, reason: "该内容尚未随此版本打包(entry declares no installable asset)" }
+    }
+    const gen = await installSkillGeneration(scope.root(deps), {
+      name: entry.name,
+      id: entry.id,
+      environment: deps.environment(),
+      scope: scope.identity,
+      origin: "catalog",
+      files: payload,
+      version: manifest.version,
+      manifestDigest,
+      ...(payloadDigest ? { payloadDigest } : {}),
+      grantDigest: computeGrantDigest(grants),
+    })
+    if (!gen.ok) {
+      rollback(gen.reason)
+      return { ok: false, reason: gen.reason }
+    }
+    ;(deps.transaction ?? passthroughTx).commit(tx.txId)
+    return { ok: true, kind: "skill", name: entry.name, ...(gen.files.length ? { files: gen.files } : {}), manifestDigest }
+  } else if (entry.type === "agent") {
     const fsSpec = spec as { kind?: string; source?: string; builtinAssetKey?: string } | undefined
     if (fsSpec?.source === "remote" && entry.remoteAsset?.files?.length) {
       const dl = await deps.installers.downloadRemoteAsset(entry.remoteAsset.files)
@@ -512,10 +558,7 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
         rollback(dl.reason)
         return dl
       }
-      const r =
-        entry.type === "skill"
-          ? deps.installers.installRemoteSkill(entry.name, dl.contents, scope.target, meta)
-          : deps.installers.installRemoteAgent(entry.name, dl.contents, scope.target, meta)
+      const r = deps.installers.installRemoteAgent(entry.name, dl.contents, scope.target, meta)
       if (!r.ok) {
         rollback(r.reason)
         return r
@@ -523,10 +566,7 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       files = r.files
       payloadDigest = aggregateFilesDigest(entry.remoteAsset.files)
     } else if (fsSpec?.source === "builtin" && fsSpec.builtinAssetKey) {
-      const r =
-        entry.type === "skill"
-          ? deps.installers.installBuiltinSkill(fsSpec.builtinAssetKey, entry.name, scope.target, meta)
-          : deps.installers.installBuiltinAgent(fsSpec.builtinAssetKey, entry.name, scope.target, meta)
+      const r = deps.installers.installBuiltinAgent(fsSpec.builtinAssetKey, entry.name, scope.target, meta)
       if (!r.ok) {
         rollback(r.reason)
         return r
