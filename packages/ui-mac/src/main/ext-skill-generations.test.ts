@@ -46,7 +46,7 @@ const skillMd = (name: string) => `---\nname: ${name}\ndescription: test skill $
 const install = (name: string, extraFiles: Record<string, string> = {}, extra?: Record<string, unknown>) =>
   installSkillGeneration(root, {
     name,
-    id: `catalog:${name}`,
+    id: `skill:${name}`,
     environment: "prod",
     scope: { kind: "global" },
     origin: "catalog",
@@ -90,7 +90,7 @@ describe("installSkillGeneration", () => {
   test("#312:generation 里 SKILL.md 无效(probe 失败)→ pre-switch abort,不切换", async () => {
     const r = await installSkillGeneration(root, {
       name: "bad",
-      id: "catalog:bad",
+      id: "skill:bad",
       environment: "prod",
       scope: { kind: "global" },
       origin: "catalog",
@@ -105,7 +105,7 @@ describe("installSkillGeneration", () => {
   test("#312:frontmatter name 与 key 不符(shadowing)→ probe 失败拒绝", async () => {
     const r = await installSkillGeneration(root, {
       name: "realname",
-      id: "catalog:realname",
+      id: "skill:realname",
       environment: "prod",
       scope: { kind: "global" },
       origin: "catalog",
@@ -167,7 +167,7 @@ describe("#312 崩溃恢复:probe + receipt 模板前滚", () => {
       {
         key: skillGenerationKey(name),
         files: [{ path: "SKILL.md", sha256: sha(body), size: Buffer.byteLength(body) }],
-        receipt: { id: `catalog:${name}`, name, kind: "skill", environment: "prod", scope: { kind: "global" }, desiredState: "enabled", origin: "catalog", installedAt: new Date("2026-07-14T00:00:00Z").toISOString() },
+        receipt: { id: `skill:${name}`, name, kind: "skill", environment: "prod", scope: { kind: "global" }, desiredState: "enabled", origin: "catalog", installedAt: new Date("2026-07-14T00:00:00Z").toISOString() },
       },
     ],
   })
@@ -251,7 +251,7 @@ describe("#313 快照 + 两版离线回滚", () => {
   const installV = (name: string, version: string) =>
     installSkillGeneration(root, {
       name,
-      id: `catalog:${name}`,
+      id: `skill:${name}`,
       environment: "prod",
       scope: { kind: "global" },
       origin: "catalog",
