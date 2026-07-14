@@ -374,10 +374,11 @@ export type ElectronAPI = {
   // writes the user's opencode.jsonc (durable); the live add/connect happens in the renderer over
   // the SDK. See ADR-014 §4/§8.
   ext: {
+    /** 未策展 MCP 通道(catalog 外自定义连接器专用;REQ-099 #305:不收 meta —— 未策展安装
+     *  拿不到 catalog 身份,防伪造 catalog 来源;catalog MCP 走 installCatalog)。 */
     persistMcp: (
       name: string,
       server: Record<string, unknown>,
-      meta?: InstallMeta,
       /** env var names in server.environment whose values are secrets → routed to the {file:} channel */
       secretVars?: string[],
     ) => Promise<{ ok: true } | { ok: false; reason: string }>
@@ -409,17 +410,17 @@ export type ElectronAPI = {
       | { source: "remote" | "cache"; catalog: unknown; version: string; fetchedAt: string; error?: string }
       | { source: "none"; error: string }
     >
-    /** REQ-046:远程 agent 安装 —— renderer 只传 catalogId(main 从已验签 catalog 派生),
-     *  资产约定 = 单个顶层 .md 文件;写盘/桥/账本走 writeAgent 同管线。 */
-    installRemoteAgent: (catalogId: string) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
-    installPlugin: (pkg: string, meta?: InstallMeta) => Promise<{ ok: true } | { ok: false; reason: string }>
-    /** REQ-100 #311:main-owned 原子 catalog 安装(bundle 一次请求 → 一次异构事务;单条/bundle 同入口)。 */
+    /** 未策展 npm 插件通道(REQ-099 #305:不收 meta,同 persistMcp 理由;catalog 插件走 installCatalog)。 */
+    installPlugin: (pkg: string) => Promise<{ ok: true } | { ok: false; reason: string }>
+    /** REQ-100 #311 / REQ-099 #305:main-owned catalog 安装唯一入口(mcp/plugin/skill/agent/cloud/bundle)。
+     *  liveMcp = 策略后配置 + 密钥真值(真值只可能是 renderer 本次 grants 交来的 —— 契约:main 绝不
+     *  经此回传 keychain/main 侧来源的密钥),renderer 拿去 sdk.mcp.add 免重启连接。 */
     installCatalog: (intent: {
       catalogId: string
       scope: { scope: "global" } | { scope: "project"; projectDir: string }
       grants?: { secrets?: Record<string, string>; env?: Record<string, string>; workspace?: string; cnMirror?: boolean }
     }) => Promise<
-      | { ok: true; kind: string; name: string; manifestDigest?: string; installed?: string[]; skipped?: Array<{ id: string; reason: string }>; warning?: string }
+      | { ok: true; kind: string; name: string; manifestDigest?: string; liveMcp?: { name: string; config: Record<string, unknown> }; installed?: string[]; skipped?: Array<{ id: string; reason: string }>; warning?: string }
       | { ok: false; reason: string }
     >
     // REQ-019 T3:详情页 SKILL.md 预览(只读,资产键校验 + 256KB 帽;未打包时诚实失败)
@@ -434,19 +435,6 @@ export type ElectronAPI = {
       url: string,
       target?: InstallTarget,
     ) => Promise<{ ok: true; files?: string[]; name?: string } | { ok: false; reason: string }>
-    // REQ-023 T2:vendored 供给链 —— 官方 agent md 资产安装;vendored 插件零网络安装
-    // (复制 resources/plugins/<key> → ~/.alpha/plugins + plugin[] 绝对路径)。
-    installBuiltinAgent: (
-      builtinAssetKey: string,
-      name: string,
-      target?: InstallTarget,
-      meta?: InstallMeta,
-    ) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
-    installVendoredPlugin: (
-      vendoredAssetKey: string,
-      name: string,
-      meta?: InstallMeta,
-    ) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
     // REQ-018 安装账本:global(~/.alpha)+ project(<dir>/.alpha)receipts 合并只读视图
     listInstalls: (projectDir?: string) => Promise<InstallLedgerView>
     /** REQ-100 #313:key-based v2 卸载 —— renderer 只提供 type/name/scope,receipt 事实由 main
@@ -464,9 +452,6 @@ export type ElectronAPI = {
       type: "skill" | "agent" | "mcp" | "plugin",
       name: string,
     ) => Promise<{ ok: true; removed: string[] } | { ok: false; reason: string }>
-    // REQ-020 T4:启用云 pipeline = receipts-only(进本机可用列表,不落文件、不写引擎 config);
-    // 停用走 uninstall(type:"cloud" → 去账)。
-    enableCloud: (id: string, name: string, meta?: InstallMeta) => Promise<{ ok: true; warning?: string } | { ok: false; reason: string }>
     /** REQ-060 信任门:项目含可执行扩展且未决策 → main 弹 per-project 确认;granted 后调用方 dispose 生效。 */
     trustCheck: (directory: string) => Promise<{ prompted: boolean; granted: boolean; persistError?: string }>
     /** REQ-063 外部生态导入门:项目含 .claude/.agents skills / CLAUDE.md 且未决策 → main 弹确认;

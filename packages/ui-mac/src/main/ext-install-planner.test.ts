@@ -319,6 +319,30 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
     expect(record!.transaction?.state).toBe("committed")
   })
 
+  test("REQ-099 #305:liveMcp = persist 后派生 —— 含 main 策略注入字段,{file:} 引用换回密钥真值", async () => {
+    const { deps } = makeDeps({
+      installers: {
+        // 模拟 fileify:durable 的 env 真值换成 {file:} 引用
+        fileifyMcpSecrets: (_name, config, secretVars) => {
+          const env = (config as { environment?: Record<string, unknown> }).environment
+          if (env) for (const v of secretVars) env[v] = `{file:secrets/${v}}`
+        },
+        // 模拟 persistMcpWithPolicy:main 策略原地注入受管字段(如 Excel EXCEL_FILES_PATH)
+        persistMcp: (_name, config) => {
+          const c = config as { environment?: Record<string, unknown> }
+          c.environment = { ...(c.environment ?? {}), MANAGED_ROOT: "/managed/root" }
+          return { ok: true as const }
+        },
+      },
+    })
+    const r = await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "sekret-value" } } }, deps)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const env = (r.liveMcp?.config as { environment?: Record<string, unknown> }).environment
+    expect(env?.MANAGED_ROOT).toBe("/managed/root") // 策略字段进 live(早克隆会漏)
+    expect(env?.API_KEY).toBe("sekret-value") // {file:} 引用换回 renderer 交来的真值
+  })
+
   test("grant not declared by catalog entry (requiredEnvVars) refused before installers", async () => {
     const { deps, calls } = makeDeps()
     const r = await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { EVIL_VAR: "x" } } }, deps)

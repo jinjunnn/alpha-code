@@ -684,8 +684,9 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       rollback(derived.reason)
       return derived
     }
-    // live 配置(密钥真值,renderer 拿去 sdk.mcp.add);durable 配置经 fileify 变 {file:} 引用后落盘。
-    const live = JSON.parse(JSON.stringify(derived.config)) as Record<string, unknown>
+    // durable 配置经 fileify 变 {file:} 引用后落盘;persistMcp(=persistMcpWithPolicy)会**原地**注入
+    // main 策略(如 Excel 受管 EXCEL_FILES_PATH)。live 必须在 persist 之后从 durable 派生,否则
+    // renderer 拿去 sdk.mcp.add 的 live 配置缺策略字段(REQ-099 #305,Codex 裁决风险点)。
     const durable = JSON.parse(JSON.stringify(derived.config)) as Record<string, unknown>
     if (derived.secretVars.length > 0) deps.installers.fileifyMcpSecrets(entry.name, durable, derived.secretVars)
     const persisted = deps.installers.persistMcp(entry.name, durable, meta)
@@ -695,7 +696,18 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       return persisted
     }
     configKey = `mcp.${entry.name}`
-    liveMcp = { name: entry.name, config: live }
+    // live = 策略后配置 + 密钥真值回填(把 environment 里的 {file:} 引用换回 renderer 刚交的真值 ——
+    // 该值本就来自 renderer grants;契约:绝不回传任何 main/keychain 来源的密钥)。
+    const liveCfg = JSON.parse(JSON.stringify(durable)) as Record<string, unknown>
+    const liveEnv = liveCfg.environment
+    const realEnv = (derived.config as Record<string, unknown>).environment
+    if (liveEnv && typeof liveEnv === "object" && !Array.isArray(liveEnv) && realEnv && typeof realEnv === "object") {
+      for (const v of derived.secretVars) {
+        const real = (realEnv as Record<string, unknown>)[v]
+        if (typeof real === "string") (liveEnv as Record<string, unknown>)[v] = real
+      }
+    }
+    liveMcp = { name: entry.name, config: liveCfg }
   } else if (entry.type === "plugin") {
     if (spec?.kind !== "plugin") {
       rollback("entry has no plugin installSpec")

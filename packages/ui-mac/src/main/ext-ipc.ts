@@ -10,8 +10,8 @@ import * as path from "node:path"
 import { toolProbe } from "./platform"
 import { extensionsGranted, hasExtensionsDecision, listProjectExecutables, withExtensionsConsent } from "./alpha-ext-trust"
 import { alphaRoot, readProjectPrefs, writeProjectPrefs } from "./alpha-workdir"
-import type { InstallMeta, InstallTarget } from "../preload/types"
-import { addReceipt, alphaGlobalRoot, listInstalls } from "./alpha-installs"
+import type { InstallTarget } from "../preload/types"
+import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
 import { fileifyMcpSecrets, removeMcpServerSecrets } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, type ProvenanceRequest } from "./alpha-migrate"
 import { configHealth, persistPlugin, removeMcp, removePlugin, removePluginPath } from "./ext-config"
@@ -23,7 +23,7 @@ import { collectSkillPayloadFromDir, commitInputFromRecord, skillGenerationProbe
 import { randomUUID } from "node:crypto"
 import { pickedFiles } from "./ipc"
 import { factorySkillIds } from "./factory-skills"
-import { downloadRemoteAsset, refreshRemoteCatalog, type RemoteAssetFile } from "./remote-catalog"
+import { downloadRemoteAsset, refreshRemoteCatalog } from "./remote-catalog"
 import { applyGovernance, effectiveFactoryDenied, normalizeGovernance, protectionInfo, readGovernance, resetGovernance } from "./alpha-governance"
 import {
   detectExternal,
@@ -63,7 +63,9 @@ function checkRuntime(tool: string): Promise<{ ok: boolean }> {
 export function registerExtIpcHandlers(userDataPath: string) {
   ipcMain.handle(
     "ext-persist-mcp",
-    (_event: IpcMainInvokeEvent, name: string, server: Record<string, unknown>, meta?: InstallMeta, secretVars?: string[]) => {
+    // REQ-099 #305:未策展自定义 MCP 专用通道(catalog MCP 走 ext-install-catalog);不收 renderer
+    // meta —— 未策展安装拿不到 catalog 身份,防伪造 catalog 来源/版本(ADR-028 §5)。
+    (_event: IpcMainInvokeEvent, name: string, server: Record<string, unknown>, secretVars?: string[]) => {
       // T5:把 requiredEnvVars 的真值(renderer 刚采集,经 IPC 结构化克隆到达此处)搬进
       // {file:} 密钥通道 → durable config 只落引用,绝不明文。renderer 的 live mcp.add 仍用
       // 真值(内存态),下次启动引擎按 {file:} 解析。
@@ -73,7 +75,7 @@ export function registerExtIpcHandlers(userDataPath: string) {
       // REQ-105 #254:MCP 写盘唯一策略入口。Excel sandbox 闸口(local stdio + 审计钉版 + 零网络
       // 绑定 + 受管 workspace 强制)由 persistMcpWithPolicy 统一执行 —— main 注入固定 EXCEL_FILES_PATH,
       // 结构上消除「调用点忘传 workspace」的 fail-open;planner 的 installers.persistMcp 同走此闸。
-      const r = persistMcpWithPolicy(name, server, meta)
+      const r = persistMcpWithPolicy(name, server, undefined)
       // codex L(REQ-033):persistMcp 拒绝(如 DANGEROUS_ENV)时,fileify 已先落的 secret 文件要撤 ——
       // 否则残留孤儿密钥文件(无 config 引用但内容在盘)。
       if (!r.ok && secretVars && secretVars.length) removeMcpServerSecrets(userDataPath, name)
@@ -140,44 +142,14 @@ export function registerExtIpcHandlers(userDataPath: string) {
   // REQ-100 #313:旧 ext-install-remote-skill / ext-install-builtin-skill 通道已下线 —— catalog skill
   // 安装只走 ext-install-catalog(planner 从已验签 catalog 派生事实,落 generation 事务);保留
   // renderer 可伪造 assetKey/name/meta 的旧面就是保留技能身份伪装通道(Codex review #345)。
-  ipcMain.handle(
-    "ext-install-remote-agent",
-    // REQ-046(与 ext-install-remote-skill 同信任边界,codex H1):renderer 只传 catalogId,
-    // name/清单/版本由 main 从已验签 catalog 重新派生;资产约定 = 单 .md(installRemoteAgent 复核)。
-    async (_event: IpcMainInvokeEvent, catalogId: string) => {
-      if (typeof catalogId !== "string" || !catalogId) return { ok: false, reason: "invalid catalog id" }
-      const rc = await refreshRemoteCatalog(userDataPath)
-      if (rc.source === "none") return { ok: false, reason: `remote catalog unavailable: ${rc.error}` }
-      const entries = (rc.catalog as { entries?: Array<Record<string, unknown>> }).entries ?? []
-      const entry = entries.find((e) => e.id === catalogId)
-      if (!entry) return { ok: false, reason: `entry not in verified catalog: ${catalogId}` }
-      if (entry.type !== "agent") return { ok: false, reason: `entry is not an agent: ${catalogId}` }
-      const asset = entry.remoteAsset as { version?: string; files?: RemoteAssetFile[] } | undefined
-      if (!asset?.files?.length) return { ok: false, reason: `entry has no remote asset: ${catalogId}` }
-      const name = String(entry.name ?? "")
-      const dl = await downloadRemoteAsset(asset.files)
-      if (!dl.ok) return dl
-      const meta: InstallMeta = { catalogId, version: String(entry.version ?? rc.version) }
-      return installRemoteAgent(name, dl.contents, undefined, meta)
-    },
-  )
-  ipcMain.handle("ext-install-plugin", (_event: IpcMainInvokeEvent, pkg: string, meta?: InstallMeta) =>
-    persistPlugin(pkg, meta),
-  )
+  // REQ-099 #305:旧 catalog 事实通道全部下线 —— ext-install-remote-agent / ext-install-builtin-agent /
+  // ext-install-vendored-plugin / ext-enable-cloud 均并入 ext-install-catalog(planner 从已验签 catalog
+  // 派生全部事实);ext-install-plugin 仅保留给未策展 npm 导入,且不再收 renderer meta(未策展安装
+  // 无 catalog 身份,防伪造 catalog 来源,ADR-028 §5)。
+  ipcMain.handle("ext-install-plugin", (_event: IpcMainInvokeEvent, pkg: string) => persistPlugin(pkg, undefined))
   // REQ-019 T3:详情页 SKILL.md 预览(只读,资产键校验 + 体积帽)
   ipcMain.handle("ext-read-builtin-skill", (_event: IpcMainInvokeEvent, builtinAssetKey: string) =>
     readBuiltinSkill(builtinAssetKey),
-  )
-  // REQ-023 T2:vendored 供给链(官方 agent md 资产 + 零网络插件)
-  ipcMain.handle(
-    "ext-install-builtin-agent",
-    (_event: IpcMainInvokeEvent, builtinAssetKey: string, name: string, target?: InstallTarget, meta?: InstallMeta) =>
-      installBuiltinAgent(builtinAssetKey, name, target, meta),
-  )
-  ipcMain.handle(
-    "ext-install-vendored-plugin",
-    (_event: IpcMainInvokeEvent, vendoredAssetKey: string, name: string, meta?: InstallMeta) =>
-      installVendoredPlugin(vendoredAssetKey, name, meta),
   )
   // REQ-019 T6 / REQ-098 #255:folder 导入 = main 自弹目录选择器,用户实选目录即来源 —— renderer
   // 不再传入任意绝对 srcDir(此前被攻陷 renderer 可直接调 bridge 读任意目录并复制入当前根,picker
@@ -205,20 +177,6 @@ export function registerExtIpcHandlers(userDataPath: string) {
   // REQ-100 #313:旧 receipt-based ext-uninstall 通道已下线 —— renderer 提供的 receipt.files/configKey
   // 直达 rmSync/removePluginPath 是任意路径删除通道(startsWith 前缀挡不住 `..`,Codex review #345
   // critical);卸载只走 ext-uninstall-v2(key-based,receipt 事实由 main 账本自查,ADR-028 §1)。
-  // REQ-020 T4:启用云 pipeline = 写 receipts 可用列表(receipts-only 语义,ADR-014 v3 账本真相;
-  // 不写引擎 config —— 云工具本身由 sidecar 的 mcp.cloud 注入,与逐条 pipeline 启用无关)。
-  ipcMain.handle("ext-enable-cloud", (_event: IpcMainInvokeEvent, id: string, name: string, meta?: InstallMeta) => {
-    if (typeof id !== "string" || !id.startsWith("cloud:")) return { ok: false, reason: "invalid cloud entry id" }
-    return addReceipt(alphaGlobalRoot(), {
-      id,
-      name,
-      type: "cloud",
-      scope: "global",
-      installedAt: new Date().toISOString(),
-      origin: "catalog",
-      ...(meta?.version ? { version: meta.version } : {}),
-    })
-  })
   // REQ-018 T3:存量迁移(旧 XDG 根 → .alpha)。scan 报告 + removeLegacy 删旧位;新位由 renderer
   // 复用既有 installer 重装(顺带 A2 钉版 + secret file 化)。用户面触发受 ALPHA_MIGRATE_ENABLE 门控
   // (A6 真机验证后开,S12 T8)。
