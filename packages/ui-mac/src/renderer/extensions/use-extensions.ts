@@ -280,9 +280,11 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
       ...(Object.keys(grants).length ? { grants } : {}),
     })
     if (!r.ok) return r
+    // Codex review #350:MCP 成功结果必须带 liveMcp —— 缺失 = main 已按其它 kind 落盘(catalog
+    // 漂移),静默 ok 会装错类型还报成功;显式失败并如实说明已落盘事实。
     if (!r.liveMcp) {
       await Promise.all([loadStatus(), loadInstalls()])
-      return { ok: true }
+      return { ok: false, reason: `catalog kind mismatch: expected mcp, got "${r.kind}"(条目已按实际类型落盘,未激活连接)` }
     }
     return liveAddAndConnect(r.liveMcp.name, r.liveMcp.config)
   }

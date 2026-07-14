@@ -13,6 +13,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 import type { CatalogEntry } from "../renderer/extensions/catalog-types"
 import { addReceipt } from "./alpha-installs"
+import { fileifyMcpSecretsDeep } from "./alpha-mcp-secrets"
 import { aggregateFilesDigest, computeManifestDigest, decodeManifestV2 } from "./ext-manifest-v2"
 import { computeGrantDigest, findRecordV2, upsertRecordV2, type UpsertInput } from "./ext-receipt-v2"
 import { resolveLiveGenerationDir } from "./ext-transaction"
@@ -146,7 +147,10 @@ function makeDeps(opts: {
   }
   const installers: PlannerInstallers = {
     persistMcp: record("persistMcp", { ok: true as const }),
-    fileifyMcpSecrets: record("fileifyMcpSecrets", undefined),
+    fileifyMcpSecrets: (name: string, server: Record<string, unknown>, secrets: Record<string, string>) => {
+      calls.push({ fn: "fileifyMcpSecrets", args: [name, server, secrets] })
+      return { fileified: Object.keys(secrets), skipped: [], refs: {} }
+    },
     removeMcpSecrets: record("removeMcpSecrets", undefined),
     removeMcp: record("removeMcp", { ok: true as const }),
     persistPlugin: record("persistPlugin", { ok: true as const }),
@@ -302,7 +306,7 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
     expect(r.liveMcp?.config).toEqual({ type: "local", command: ["uvx", "markitdown-mcp@0.0.1a4"], environment: { API_KEY: "sekret-value" } })
     const fileify = called(calls, "fileifyMcpSecrets")
     expect(fileify).toHaveLength(1)
-    expect(fileify[0]!.args[2]).toEqual(["API_KEY"])
+    expect(fileify[0]!.args[2]).toEqual({ API_KEY: "sekret-value" })
     const persist = called(calls, "persistMcp")
     expect(persist).toHaveLength(1)
     expect(persist[0]!.args[0]).toBe("markitdown") // 名字来自 catalog,不来自 renderer
@@ -323,9 +327,14 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
     const { deps } = makeDeps({
       installers: {
         // 模拟 fileify:durable 的 env 真值换成 {file:} 引用
-        fileifyMcpSecrets: (_name, config, secretVars) => {
+        fileifyMcpSecrets: (_name, config, secrets) => {
           const env = (config as { environment?: Record<string, unknown> }).environment
-          if (env) for (const v of secretVars) env[v] = `{file:secrets/${v}}`
+          const refs: Record<string, string> = {}
+          for (const v of Object.keys(secrets)) {
+            if (env) env[v] = `{file:secrets/${v}}`
+            refs[v] = `{file:secrets/${v}}`
+          }
+          return { fileified: Object.keys(secrets), skipped: [], refs }
         },
         // 模拟 persistMcpWithPolicy:main 策略原地注入受管字段(如 Excel EXCEL_FILES_PATH)
         persistMcp: (_name, config) => {
@@ -341,6 +350,53 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
     const env = (r.liveMcp?.config as { environment?: Record<string, unknown> }).environment
     expect(env?.MANAGED_ROOT).toBe("/managed/root") // 策略字段进 live(早克隆会漏)
     expect(env?.API_KEY).toBe("sekret-value") // {file:} 引用换回 renderer 交来的真值
+  })
+
+  test("REQ-099 #305(阻断项回归锁):remote MCP header 密钥走 {file:} 通道 —— durable 无明文,live 带真值", async () => {
+    const userData = path.join(tmp, "userdata-headers")
+    fs.mkdirSync(userData, { recursive: true })
+    const { deps, calls } = makeDeps({
+      installers: {
+        fileifyMcpSecrets: (name, server, secrets) => fileifyMcpSecretsDeep(userData, name, server, secrets),
+      },
+    })
+    const r = await installCatalog({ catalogId: "mcp:linear", scope: { scope: "global" }, grants: { secrets: { API_KEY: "sekret-value" } } }, deps)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const durable = called(calls, "persistMcp")[0]!.args[1] as { headers?: Record<string, string> }
+    expect(durable.headers?.Authorization).toMatch(/^Bearer \{file:.+API_KEY\}$/) // 引用,非明文
+    expect(JSON.stringify(durable)).not.toContain("sekret-value")
+    const liveHeaders = (r.liveMcp?.config as { headers?: Record<string, string> }).headers
+    expect(liveHeaders?.Authorization).toBe("Bearer sekret-value") // live 真值(renderer 拿去 mcp.add)
+    const refPath = durable.headers!.Authorization.replace(/^Bearer \{file:/, "").replace(/\}$/, "")
+    expect(fs.readFileSync(refPath, "utf8")).toBe("sekret-value") // 密钥文件落位
+  })
+
+  test("REQ-099 #305:密钥路由失败(skipped 非空)→ 拒绝落盘 + 吊销已写密钥,绝不明文持久化", async () => {
+    const { deps, calls } = makeDeps({
+      installers: {
+        fileifyMcpSecrets: (name, server, secrets) => {
+          calls.push({ fn: "fileifyMcpSecrets", args: [name, server, secrets] })
+          return { fileified: [], skipped: Object.keys(secrets), refs: {} }
+        },
+      },
+    })
+    const r = await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "sekret-value" } } }, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("refusing plaintext persist")
+    expect(called(calls, "persistMcp")).toHaveLength(0)
+    expect(called(calls, "removeMcpSecrets")).toHaveLength(1)
+  })
+
+  test("REQ-099 #305(高危回归锁):grant 值含 {file:}/{env:} 替换语法 → 派生前拒绝", async () => {
+    const { deps, calls } = makeDeps()
+    const viaFile = await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "{file:/etc/passwd}" } } }, deps)
+    expect(viaFile.ok).toBe(false)
+    if (!viaFile.ok) expect(viaFile.reason).toContain("substitution syntax")
+    const viaEnv = await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { env: { API_KEY: "x{env:AWS_SECRET_ACCESS_KEY}y" } } }, deps)
+    expect(viaEnv.ok).toBe(false)
+    if (!viaEnv.ok) expect(viaEnv.reason).toContain("substitution syntax")
+    expect(installerCallCount(calls)).toBe(0)
   })
 
   test("grant not declared by catalog entry (requiredEnvVars) refused before installers", async () => {

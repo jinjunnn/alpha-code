@@ -12,7 +12,7 @@ import { extensionsGranted, hasExtensionsDecision, listProjectExecutables, withE
 import { alphaRoot, readProjectPrefs, writeProjectPrefs } from "./alpha-workdir"
 import type { InstallTarget } from "../preload/types"
 import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
-import { fileifyMcpSecrets, removeMcpServerSecrets } from "./alpha-mcp-secrets"
+import { fileifyMcpSecrets, fileifyMcpSecretsDeep, removeMcpServerSecrets } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, type ProvenanceRequest } from "./alpha-migrate"
 import { configHealth, persistPlugin, removeMcp, removePlugin, removePluginPath } from "./ext-config"
 import { persistMcpWithPolicy } from "./ext-mcp-policy"
@@ -397,7 +397,7 @@ export function registerExtIpcHandlers(userDataPath: string) {
       globalRoot: alphaGlobalRoot,
       installers: {
         persistMcp: persistMcpWithPolicy, // REQ-105 #254:planner 生产安装同走 Excel workspace 闸口
-        fileifyMcpSecrets: (name, server, secretVars) => void fileifyMcpSecrets(userDataPath, name, server, secretVars),
+        fileifyMcpSecrets: (name, server, secrets) => fileifyMcpSecretsDeep(userDataPath, name, server, secrets),
         removeMcpSecrets: (name) => removeMcpServerSecrets(userDataPath, name),
         removeMcp,
         persistPlugin,

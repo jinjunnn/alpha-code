@@ -314,6 +314,11 @@ export function deriveMcpConfig(
   for (const k of Object.keys(grants.env ?? {})) {
     if (!declared.has(k)) return { ok: false, reason: `grant "${k}" not declared by the catalog entry (requiredEnvVars) — refused` }
   }
+  // REQ-099 #305(Codex review 高危):引擎 ConfigVariable.substitute 对整份 config 文本替换
+  // {file:}/{env:} —— renderer 值含该语法即等于任意本地文件读 / main 进程 env 外泄通道,一律拒绝。
+  for (const [k, v] of Object.entries({ ...(grants.env ?? {}), ...(grants.secrets ?? {}) })) {
+    if (/\{(file|env):/.test(v)) return { ok: false, reason: `grant "${k}" contains config substitution syntax ({file:}/{env:}) — refused` }
+  }
   const subst: Record<string, string> = { ...(grants.env ?? {}), ...(grants.secrets ?? {}) }
   if (spec.mcpType === "remote") {
     if (typeof spec.url !== "string" || !spec.url) return { ok: false, reason: "catalog entry has no url" }
@@ -353,7 +358,9 @@ export type TargetArg = { scope: "global" } | { scope: "project"; projectDir: st
 
 export type PlannerInstallers = {
   persistMcp(name: string, server: Record<string, unknown>, meta?: InstallMetaArg): ConfigOutcome
-  fileifyMcpSecrets(name: string, server: Record<string, unknown>, secretVars: string[]): void
+  /** REQ-099 #305:密钥深路由(environment 键 + headers 内嵌真值 → {file:} 引用);skipped 非空
+   *  = 有密钥没能进文件通道,调用方必须 fail-closed,绝不明文持久化。refs 供 live 真值回填。 */
+  fileifyMcpSecrets(name: string, server: Record<string, unknown>, secrets: Record<string, string>): { fileified: string[]; skipped: string[]; refs: Record<string, string> }
   removeMcpSecrets(name: string): void
   removeMcp(name: string): ConfigOutcome
   persistPlugin(pkg: string, meta?: InstallMetaArg): ConfigOutcome
@@ -684,11 +691,24 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       rollback(derived.reason)
       return derived
     }
-    // durable 配置经 fileify 变 {file:} 引用后落盘;persistMcp(=persistMcpWithPolicy)会**原地**注入
-    // main 策略(如 Excel 受管 EXCEL_FILES_PATH)。live 必须在 persist 之后从 durable 派生,否则
-    // renderer 拿去 sdk.mcp.add 的 live 配置缺策略字段(REQ-099 #305,Codex 裁决风险点)。
+    // durable 配置先把密钥(environment 键 + headers 内嵌真值)全部路由进 {file:} 通道再落盘;
+    // 任一密钥没能转换(写文件失败 / granted 却没落到任何字段)即 fail-closed —— 绝不明文持久化
+    // (Codex review #350 阻断项:此前 remote MCP 的 header 密钥明文进 alpha.jsonc)。
     const durable = JSON.parse(JSON.stringify(derived.config)) as Record<string, unknown>
-    if (derived.secretVars.length > 0) deps.installers.fileifyMcpSecrets(entry.name, durable, derived.secretVars)
+    const secretMap: Record<string, string> = {}
+    for (const v of derived.secretVars) secretMap[v] = grants.secrets![v]!
+    let refs: Record<string, string> = {}
+    if (derived.secretVars.length > 0) {
+      const f = deps.installers.fileifyMcpSecrets(entry.name, durable, secretMap)
+      if (f.skipped.length > 0) {
+        deps.installers.removeMcpSecrets(entry.name)
+        rollback(`secrets not routable to {file:} channel: ${f.skipped.join(", ")}`)
+        return { ok: false, reason: `secret(s) could not be routed to the {file:} channel: ${f.skipped.join(", ")} — refusing plaintext persist` }
+      }
+      refs = f.refs
+    }
+    // persistMcp(=persistMcpWithPolicy)会**原地**注入 main 策略(如 Excel 受管 EXCEL_FILES_PATH),
+    // live 必须在 persist 之后从 durable 派生,否则 renderer 拿去 sdk.mcp.add 的 live 配置缺策略字段。
     const persisted = deps.installers.persistMcp(entry.name, durable, meta)
     if (!persisted.ok) {
       if (derived.secretVars.length > 0) deps.installers.removeMcpSecrets(entry.name) // 不留孤儿密钥文件
@@ -696,15 +716,20 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       return persisted
     }
     configKey = `mcp.${entry.name}`
-    // live = 策略后配置 + 密钥真值回填(把 environment 里的 {file:} 引用换回 renderer 刚交的真值 ——
-    // 该值本就来自 renderer grants;契约:绝不回传任何 main/keychain 来源的密钥)。
+    // live = 策略后配置 + 密钥真值回填(environment 与 headers 里的 {file:} 引用换回 renderer 刚交
+    // 的真值 —— 该值本就来自本次 grants;契约:绝不回传任何 main/keychain 来源的密钥)。
     const liveCfg = JSON.parse(JSON.stringify(durable)) as Record<string, unknown>
-    const liveEnv = liveCfg.environment
-    const realEnv = (derived.config as Record<string, unknown>).environment
-    if (liveEnv && typeof liveEnv === "object" && !Array.isArray(liveEnv) && realEnv && typeof realEnv === "object") {
-      for (const v of derived.secretVars) {
-        const real = (realEnv as Record<string, unknown>)[v]
-        if (typeof real === "string") (liveEnv as Record<string, unknown>)[v] = real
+    for (const [varName, ref] of Object.entries(refs)) {
+      const real = secretMap[varName]!
+      const liveEnv = liveCfg.environment
+      if (liveEnv && typeof liveEnv === "object" && !Array.isArray(liveEnv) && (liveEnv as Record<string, unknown>)[varName] === ref)
+        (liveEnv as Record<string, unknown>)[varName] = real
+      const liveHeaders = liveCfg.headers
+      if (liveHeaders && typeof liveHeaders === "object" && !Array.isArray(liveHeaders)) {
+        const h = liveHeaders as Record<string, unknown>
+        for (const [hk, hv] of Object.entries(h)) {
+          if (typeof hv === "string" && hv.includes(ref)) h[hk] = hv.split(ref).join(real)
+        }
       }
     }
     liveMcp = { name: entry.name, config: liveCfg }
