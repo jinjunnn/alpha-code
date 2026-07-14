@@ -195,6 +195,21 @@ export function decodeRecordV2(input: unknown): RecordDecode {
   if (updatedAt && Number.isNaN(Date.parse(updatedAt))) errors.push("record.updatedAt: not a parseable timestamp")
   if (input.migratedFrom !== undefined && input.migratedFrom !== "v1") errors.push('record.migratedFrom: only "v1" is known')
 
+  // REQ-099 #306:catalog 语义防混用(durable 不变量 —— 读与 upsert 全走本 decoder,一处兜底):
+  // 非 catalog 来源:id 恒 "user:<name>",不得携带任何供给链字段(digest 族/channelSequence);
+  // catalog 来源:id 必须带与 kind 匹配的保留前缀;command 不是 ManifestV2 kind,禁 catalog 来源。
+  if (id && name && kind && KINDS.has(kind) && origin && ORIGINS.has(origin)) {
+    if (origin === "catalog") {
+      if (kind === "command") errors.push('record.origin: "catalog" not allowed for kind "command" (not a ManifestV2 kind)')
+      else if (!id.startsWith(`${kind}:`)) errors.push(`record.id: catalog-origin record requires the reserved "${kind}:" prefix — got "${id}"`)
+    } else {
+      if (id !== `user:${name}`) errors.push(`record.id: non-catalog origin requires "user:${name}" — got "${id}" (catalog identity is not forgeable)`)
+      if (manifestDigest || payloadDigest || grantDigest || previousDigest)
+        errors.push("record: non-catalog origin must not carry supply-chain digests (manifest/payload/grant/previousDigest)")
+      if (input.channelSequence !== undefined) errors.push("record.channelSequence: catalog-only field — refused for non-catalog origin")
+    }
+  }
+
   if (errors.length > 0) return { ok: false, errors }
   return {
     ok: true,
