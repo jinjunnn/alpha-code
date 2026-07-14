@@ -14,7 +14,7 @@ import type { InstallTarget } from "../preload/types"
 import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
 import { fileifyMcpSecrets, fileifyMcpSecretsDeep, removeMcpServerSecrets, snapshotMcpServerSecrets } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, type ProvenanceRequest } from "./alpha-migrate"
-import { configHealth, persistPlugin, pluginRecordName, removeMcp, removePlugin, removePluginPath } from "./ext-config"
+import { configHealth, persistPlugin, pluginRecordName, readMcpLeaf, removeMcp, removePlugin, removePluginEntryExact, removePluginPath, restoreMcpLeaf } from "./ext-config"
 import { recordUncuratedInstall } from "./ext-uncurated-record"
 import { persistMcpWithPolicy } from "./ext-mcp-policy"
 import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
@@ -74,6 +74,9 @@ export function registerExtIpcHandlers(userDataPath: string) {
       // config 引用的密钥;原本无密钥则等价于撤掉新写入(不留孤儿,REQ-033 codex L 语义保留)。
       const hasSecrets = !!(secretVars && secretVars.length && server && typeof server === "object")
       const snap = hasSecrets ? snapshotMcpServerSecrets(userDataPath, name) : null
+      // Codex review #355:补偿必须是精确叶子 before-image —— removeMcp 全量卸载会连既有配置/
+      // legacy/receipt 一起误删(更新场景毁掉本次写入前就存在的安装)。
+      const before = typeof name === "string" ? readMcpLeaf(name) : undefined
       if (hasSecrets) fileifyMcpSecrets(userDataPath, name, server, secretVars!)
       // REQ-105 #254:MCP 写盘唯一策略入口。Excel sandbox 闸口(local stdio + 审计钉版 + 零网络
       // 绑定 + 受管 workspace 强制)由 persistMcpWithPolicy 统一执行 —— main 注入固定 EXCEL_FILES_PATH,
@@ -94,7 +97,7 @@ export function registerExtIpcHandlers(userDataPath: string) {
         configKey: `mcp.${name}`,
       })
       if (!led.ok) {
-        removeMcp(name)
+        restoreMcpLeaf(name, before) // 只复原本次目标叶子(before=undefined 即删本次写入)
         snap?.restore()
         return { ok: false, reason: `install ledger write failed: ${led.reason}` }
       }
@@ -174,7 +177,11 @@ export function registerExtIpcHandlers(userDataPath: string) {
   ipcMain.handle("ext-install-plugin", (_event: IpcMainInvokeEvent, pkg: string) => {
     const r = persistPlugin(pkg, undefined)
     if (!r.ok) return r
-    // REQ-099 #306:未策展 npm 导入落账(coordinator);失败撤配置项,不谎报成功。
+    // Codex review #355:恰同钉版重装 = 真幂等 → 跳过落账(不虚增 generation);
+    // 同 base 不同钉版已在 persistPlugin 内显式拒绝(不许「配置不变、账本记新版」)。
+    if (!r.changed) return { ok: true }
+    // REQ-099 #306:未策展 npm 导入落账(coordinator);失败只撤本次新增的数组元素(精确补偿,
+    // 不碰 legacy/receipt/同 base 其他条目)。
     const led = recordUncuratedInstall(alphaGlobalRoot(), {
       kind: "plugin",
       name: pluginRecordName(pkg),
@@ -184,10 +191,10 @@ export function registerExtIpcHandlers(userDataPath: string) {
       configKey: `plugin:${pkg}`,
     })
     if (!led.ok) {
-      removePlugin(pkg)
+      removePluginEntryExact(pkg)
       return { ok: false, reason: `install ledger write failed: ${led.reason}` }
     }
-    return r
+    return { ok: true }
   })
   // REQ-019 T3:详情页 SKILL.md 预览(只读,资产键校验 + 体积帽)
   ipcMain.handle("ext-read-builtin-skill", (_event: IpcMainInvokeEvent, builtinAssetKey: string) =>

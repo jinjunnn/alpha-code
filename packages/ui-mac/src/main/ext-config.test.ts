@@ -167,12 +167,15 @@ describe("persistPlugin — package-name guard", () => {
   )
 
   test.each([["@scope/pkg@1.2.3"], ["some-plugin"], ["@a/b"]])("accepts clean package %p", (pkg) => {
-    expect(persistPlugin(pkg)).toEqual({ ok: true })
+    expect(persistPlugin(pkg)).toEqual({ ok: true, changed: true })
   })
 
-  test("is idempotent on the same base package", () => {
-    persistPlugin("dup-plugin@1.0.0")
-    persistPlugin("dup-plugin@2.0.0")
+  test("Codex #355:恰同钉版 = changed:false;同 base 不同钉版显式拒绝(不许配置不变账本记新版)", () => {
+    expect(persistPlugin("dup-plugin@1.0.0")).toEqual({ ok: true, changed: true })
+    expect(persistPlugin("dup-plugin@1.0.0")).toEqual({ ok: true, changed: false }) // 真幂等
+    const mismatch = persistPlugin("dup-plugin@2.0.0")
+    expect(mismatch.ok).toBe(false)
+    if (!mismatch.ok) expect(mismatch.reason).toContain("version mismatch")
     expect(readConfig().plugin.filter((p: string) => String(p).startsWith("dup-plugin")).length).toBe(1)
   })
 })

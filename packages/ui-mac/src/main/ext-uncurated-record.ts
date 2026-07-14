@@ -11,7 +11,7 @@
 
 import { findReceipt } from "./alpha-installs"
 import { hasSkillGeneration } from "./ext-skill-generations"
-import { findRecordV2, upsertRecordV2, type LedgerV2Write, type ScopeIdentity } from "./ext-receipt-v2"
+import { lookupForUninstall, upsertRecordV2, type LedgerV2Write, type ScopeIdentity } from "./ext-receipt-v2"
 import type { AppEnvironment } from "./alpha-environment"
 import type { InstallReceiptOrigin, InstallReceiptType } from "../preload/types"
 
@@ -28,18 +28,31 @@ export type UncuratedInstallInput = {
   files?: string[]
 }
 
+/**
+ * 冲突预检(Codex review #355 high):用 lookupForUninstall 做损坏可见的账本查询 —— findRecordV2
+ * 会静默排除损坏 record,「损坏 catalog v2」不能成为未策展覆盖的通道(fail-closed);v1 catalog
+ * receipt 无论 v2 在不在都查(v1/v2 错位 = 异常态,同样拒绝)。fs 安装方写盘前也调本预检,
+ * 免得复制/覆盖后才被拒(补偿面最小化)。检查与 upsert 之间无 await(main 单事件循环内同步),
+ * 无 TOCTOU 交错窗口。
+ */
+export function checkUncuratedConflict(root: string, kind: InstallReceiptType, name: string): { ok: true } | { ok: false; reason: string } {
+  const found = lookupForUninstall(root, kind, name)
+  if (found.status === "corrupt-match" || found.status === "ledger-corrupt")
+    return { ok: false, reason: `refusing uncurated record: ledger state for ${kind}:${name} is corrupt (fail closed)` }
+  if (found.status === "valid" && found.record.origin === "catalog")
+    return { ok: false, reason: `refusing uncurated record: ${kind}:${name} is a catalog install — uninstall it first` }
+  const v1 = findReceipt(root, kind, name)
+  if (v1?.origin === "catalog")
+    return { ok: false, reason: `refusing uncurated record: ${kind}:${name} has a catalog v1 receipt — uninstall it first` }
+  if (kind === "skill" && hasSkillGeneration(root, name))
+    return { ok: false, reason: `refusing uncurated record: skill "${name}" is generation-managed (catalog) — uninstall it first` }
+  return { ok: true }
+}
+
 /** 未策展安装落账(id 恒 `user:<name>`,desiredState=enabled;generation 由 upsert 计算)。 */
 export function recordUncuratedInstall(root: string, input: UncuratedInstallInput): LedgerV2Write {
-  const existing = findRecordV2(root, input.kind, input.name)
-  if (existing?.origin === "catalog")
-    return { ok: false, reason: `refusing uncurated record: ${input.kind}:${input.name} is a catalog install — uninstall it first` }
-  if (!existing) {
-    const v1 = findReceipt(root, input.kind, input.name)
-    if (v1?.origin === "catalog")
-      return { ok: false, reason: `refusing uncurated record: ${input.kind}:${input.name} has a catalog v1 receipt — uninstall it first` }
-  }
-  if (input.kind === "skill" && hasSkillGeneration(root, input.name))
-    return { ok: false, reason: `refusing uncurated record: skill "${input.name}" is generation-managed (catalog) — uninstall it first` }
+  const conflict = checkUncuratedConflict(root, input.kind, input.name)
+  if (!conflict.ok) return conflict
   return upsertRecordV2(root, {
     id: `user:${input.name}`,
     name: input.name,
