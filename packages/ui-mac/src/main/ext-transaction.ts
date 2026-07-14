@@ -270,8 +270,8 @@ export type TxJournalAuthorization = {
 export type TxJournal = {
   v: 1
   txId: string
-  /** 事务类型;缺省 install(向后兼容旧 journal 无此字段)。uninstall 走独立恢复补偿(REQ-100 #313)。 */
-  op?: "install" | "uninstall"
+  /** 事务类型;缺省 install(向后兼容旧 journal 无此字段)。uninstall/rollback 各走独立恢复补偿(REQ-100 #313)。 */
+  op?: "install" | "uninstall" | "rollback"
   state: TxState
   createdAt: string
   updatedAt: string

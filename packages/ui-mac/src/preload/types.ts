@@ -132,6 +132,12 @@ export type InstallReceipt = {
   configKey?: string
 }
 export type InstallLedgerView = { global: InstallReceipt[]; project: InstallReceipt[]; warnings: string[] }
+/** REQ-100 #313:key-based 卸载/列代/回滚意图 —— renderer 不供 receipt/绝对路径(ADR-028 §1)。 */
+export type UninstallKeyIntent =
+  | { type: InstallReceiptType; name: string; scope: "global" }
+  | { type: InstallReceiptType; name: string; scope: "project"; projectDir: string }
+/** REQ-100 #313:generation 历史条目(安全元数据面;eligible = 有可读快照可离线回滚)。 */
+export type SkillGenerationInfo = { genId: string; current: boolean; version?: string; manifestDigest?: string; installedAt?: string; eligible: boolean }
 /** Legacy installs found in the shared XDG config dir, offered for migration to .alpha (REQ-018 T3). */
 export type LegacyInventory = {
   root: string
@@ -454,6 +460,13 @@ export type ElectronAPI = {
     listInstalls: (projectDir?: string) => Promise<InstallLedgerView>
     // REQ-018 T6:按 receipt 精确卸载(删文件/拆桥/去 config 项/吊销密钥/去账)
     uninstall: (receipt: InstallReceipt) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
+    /** REQ-100 #313:key-based v2 卸载 —— renderer 只提供 type/name/scope,receipt 事实由 main
+     *  账本自查(ADR-028 §1);generation skill 走锁内 journaled store+ledger teardown。 */
+    uninstallV2: (intent: UninstallKeyIntent) => Promise<{ ok: true; files?: string[]; warning?: string } | { ok: false; reason: string }>
+    /** REQ-100 #313:某 skill 的 generation 历史(current + 保留代)。只透安全元数据,不外泄绝对路径。 */
+    listGenerations: (intent: UninstallKeyIntent) => Promise<{ ok: true; generations: SkillGenerationInfo[] } | { ok: false; reason: string }>
+    /** REQ-100 #313:两版离线回滚 —— 目标 gen 健康门 + 锁内翻指针 + receipt 修订;任一前置失败零变更。 */
+    rollback: (intent: UninstallKeyIntent, genId: string) => Promise<{ ok: true; previous: string | null } | { ok: false; reason: string }>
     // REQ-018 T3:存量迁移(旧 XDG 根 → .alpha)。scan 报告 legacy 清单 + enabled 门控;removeLegacy 删旧位。
     migrateScan: () => Promise<{ enabled: boolean; inventory: LegacyInventory }>
     // REQ-044:候选 provenance 终审(排除项 main.log [req044-provenance] 留痕)。

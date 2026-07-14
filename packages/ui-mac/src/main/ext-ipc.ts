@@ -38,7 +38,7 @@ import {
 import bundledCatalogJson from "../renderer/extensions/alpha-catalog.json"
 import type { Catalog } from "../renderer/extensions/catalog-types"
 import { getAlphaEnvironment } from "./alpha-environment"
-import { installCatalog, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
+import { installCatalog, listGenerationsByKey, rollbackGenerationByKey, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
 import { readLedgerV2, removeRecordV2, upsertRecordsV2 } from "./ext-receipt-v2"
 import { readPackagedSeed } from "./ext-seed"
 import { recoverExtensionTransactions } from "./ext-transaction"
@@ -522,6 +522,15 @@ export function registerExtIpcHandlers(userDataPath: string) {
   ipcMain.handle("ext-uninstall-v2", async (_event: IpcMainInvokeEvent, intent: unknown) => {
     await txRecovery
     return uninstallByKey(intent, plannerDeps())
+  })
+  // REQ-100 #313:generation 历史读 + 两版离线回滚(key-based,同卸载信任边界;先等崩溃恢复收敛)。
+  ipcMain.handle("ext-list-generations", async (_event: IpcMainInvokeEvent, intent: unknown) => {
+    await txRecovery
+    return listGenerationsByKey(intent, { globalRoot: alphaGlobalRoot })
+  })
+  ipcMain.handle("ext-rollback", async (_event: IpcMainInvokeEvent, intent: unknown, genId: unknown) => {
+    await txRecovery
+    return rollbackGenerationByKey(intent, genId, { globalRoot: alphaGlobalRoot })
   })
   ipcMain.handle("ext-set-install-state", (_event: IpcMainInvokeEvent, intent: unknown) => setInstallStateByKey(intent, { globalRoot: alphaGlobalRoot }))
   // REQ-099(ADR-028 §5):Hub 项目上下文读通道 —— global 与当前项目的 v2 账本分读(物理分域),

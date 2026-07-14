@@ -23,6 +23,8 @@ import {
   decodeUninstallIntent,
   deriveMcpConfig,
   installCatalog,
+  listGenerationsByKey,
+  rollbackGenerationByKey,
   setInstallStateByKey,
   synthesizeManifest,
   uninstallByKey,
@@ -702,6 +704,59 @@ describe("uninstall — facts from main's own ledger", () => {
 })
 
 // ── deriveMcpConfig 独立面(补充边界)───────────────────────────────────────────────────────────
+
+describe("generation history — list + offline rollback (REQ-100 #313)", () => {
+  test("列代:两次安装 → 两个物理 gen(恰一 current、均 eligible),绝对目录不外泄", async () => {
+    const { deps } = makeDeps()
+    await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
+    await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
+    const r = listGenerationsByKey({ type: "skill", name: "demo", scope: "global" }, deps)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.generations).toHaveLength(2)
+    expect(r.generations.filter((g) => g.current)).toHaveLength(1)
+    for (const g of r.generations) {
+      expect(g.eligible).toBe(true) // 快照在 → 可离线回滚
+      expect((g as Record<string, unknown>).dir).toBeUndefined()
+      expect((g as Record<string, unknown>).generationDir).toBeUndefined()
+    }
+  })
+
+  test("回滚:翻回旧 gen(previous=回滚前 current),指针切换 + 逻辑 generation 只增不倒退", async () => {
+    const { deps } = makeDeps()
+    await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
+    await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
+    const before = listGenerationsByKey({ type: "skill", name: "demo", scope: "global" }, deps)
+    if (!before.ok) throw new Error(before.reason)
+    const current = before.generations.find((g) => g.current)
+    const target = before.generations.find((g) => !g.current)
+    if (!current || !target) throw new Error("expected two generations")
+    const recBefore = findRecordV2(globalRoot, "skill", "demo")
+    const r = await rollbackGenerationByKey({ type: "skill", name: "demo", scope: "global" }, target.genId, deps)
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.previous).toBe(current.genId)
+    const after = listGenerationsByKey({ type: "skill", name: "demo", scope: "global" }, deps)
+    if (!after.ok) throw new Error(after.reason)
+    expect(after.generations.find((g) => g.current)?.genId).toBe(target.genId)
+    const recAfter = findRecordV2(globalRoot, "skill", "demo")
+    expect(recAfter).not.toBeNull()
+    expect(recAfter?.generation ?? 0).toBeGreaterThan(recBefore?.generation ?? 0) // receipt 不分叉:同一记录递增修订
+  })
+
+  test("fail-closed:伪造 genId / 非 skill 类型 / project 域全拒,拒后零变更", async () => {
+    const { deps } = makeDeps()
+    await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
+    const bad = await rollbackGenerationByKey({ type: "skill", name: "demo", scope: "global" }, "gen-../../escape", deps)
+    expect(bad.ok).toBe(false)
+    const mcp = listGenerationsByKey({ type: "mcp", name: "markitdown", scope: "global" }, deps)
+    expect(mcp.ok).toBe(false)
+    const proj = listGenerationsByKey({ type: "skill", name: "demo", scope: "project", projectDir: makeProject("p-genhist") }, deps)
+    expect(proj.ok).toBe(false)
+    const still = listGenerationsByKey({ type: "skill", name: "demo", scope: "global" }, deps)
+    if (!still.ok) throw new Error(still.reason)
+    expect(still.generations.filter((g) => g.current)).toHaveLength(1)
+  })
+})
 
 describe("deriveMcpConfig — boundary cases", () => {
   test("empty command / missing url refused", () => {
