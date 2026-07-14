@@ -20,7 +20,7 @@ import {
   type TxHooks,
   type TxPlan,
 } from "./ext-transaction"
-import { upsertRecordV2, type ScopeIdentity } from "./ext-receipt-v2"
+import { upsertRecordsV2, type ScopeIdentity } from "./ext-receipt-v2"
 import type { InstallReceiptOrigin } from "../preload/types"
 
 const SAFE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
@@ -112,26 +112,28 @@ export async function installSkillGeneration(root: string, spec: SkillGeneration
       }
     },
     // 账本是事务的提交证据:写失败必须抛错,引擎据此 rollback+quarantine(#336),receipt 与 live 永不背离。
+    // 批量单写(#311):多条 record 一次读全校验一次落盘,不留半套 receipt(单 skill 时退化为一条)。
     commitReceipt: (records: TxCommitRecord[]) => {
-      for (const rec of records) {
-        const written = upsertRecordV2(root, {
+      const written = upsertRecordsV2(
+        root,
+        records.map((rec) => ({
           id: spec.id,
           name: spec.name,
-          kind: "skill",
+          kind: "skill" as const,
           environment: spec.environment,
           scope: spec.scope,
           ...(spec.version ? { version: spec.version } : {}),
           ...(rec.manifestDigest ? { manifestDigest: rec.manifestDigest } : {}),
           ...(spec.payloadDigest ? { payloadDigest: spec.payloadDigest } : {}),
           ...(spec.grantDigest ? { grantDigest: spec.grantDigest } : {}),
-          desiredState: "enabled",
+          desiredState: "enabled" as const,
           origin: spec.origin,
-          files: [rec.generationDir],
-          transaction: { id: rec.txId, state: "committed" },
+          ...(rec.generationDir ? { files: [rec.generationDir] } : {}),
+          transaction: { id: rec.txId, state: "committed" as const },
           installedAt: now,
-        })
-        if (!written.ok) throw new Error(`receipt commit failed for skill ${spec.name}: ${written.reason}`)
-      }
+        })),
+      )
+      if (!written.ok) throw new Error(`receipt commit failed for skill ${spec.name}: ${written.reason}`)
     },
   }
 
