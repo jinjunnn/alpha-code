@@ -372,19 +372,56 @@ export function persistMcp(name: string, server: Record<string, unknown>, meta?:
   const valid = validateServer(server)
   if (!valid.ok) return valid
   const written = writeKey(mcpPluginTargetPath(), ["mcp", name], server)
-  if (written.ok && receiptsActive()) {
+  // REQ-099 #306:只有 catalog(meta.catalogId)路径在此落 v1 receipt(planner 随后 v2 upsert 整键
+  // 替换);未策展的落账所有权上移到 orchestrator(ext-ipc → recordUncuratedInstall,失败可补偿)。
+  if (written.ok && receiptsActive() && meta?.catalogId) {
     addReceipt(alphaGlobalRoot(), {
-      id: meta?.catalogId ?? `user:${name}`,
+      id: meta.catalogId,
       name,
       type: "mcp",
       scope: "global",
-      version: meta?.version,
+      version: meta.version,
       installedAt: new Date().toISOString(),
-      origin: meta?.catalogId ? "catalog" : "created",
+      origin: "catalog",
       configKey: `mcp.${name}`,
     })
   }
   return written
+}
+
+/** 读 mcp.<name> 当前叶子(Codex review #355:orchestrator 失败补偿用精确 before-image ——
+ *  不得用 removeMcp 全量卸载,那会误删既有配置/legacy/receipt)。不存在或不可读 → undefined。 */
+export function readMcpLeaf(name: string): Record<string, unknown> | undefined {
+  if (!SAFE_NAME.test(name)) return undefined
+  try {
+    const target = mcpPluginTargetPath()
+    if (!fs.existsSync(target)) return undefined
+    const parsed = parse(fs.readFileSync(target, "utf8")) as { mcp?: Record<string, unknown> } | undefined
+    const v = parsed?.mcp?.[name]
+    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** 恢复 mcp.<name> 到给定 before-image(undefined = 删除本次写入)。只动主配置该叶子。 */
+export function restoreMcpLeaf(name: string, value: Record<string, unknown> | undefined): ConfigResult {
+  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid server name" }
+  return writeKey(mcpPluginTargetPath(), ["mcp", name], value)
+}
+
+/** 读 agent.<name> 当前条目(writeAgent 覆盖/补偿用 before-image)。 */
+export function readAgentEntry(name: string, targetPath?: string): Record<string, unknown> | undefined {
+  if (!SAFE_NAME.test(name)) return undefined
+  try {
+    const target = targetPath ?? mcpPluginTargetPath()
+    if (!fs.existsSync(target)) return undefined
+    const parsed = parse(fs.readFileSync(target, "utf8")) as { agent?: Record<string, unknown> } | undefined
+    const v = parsed?.agent?.[name]
+    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined
+  } catch {
+    return undefined
+  }
 }
 
 /** REQ-059 T3b:agent 条目写 alpha.jsonc 的 agent.<name>(桥退役后引擎经 G1 见到全局 agent)。
@@ -541,10 +578,14 @@ function pkgBase(spec: string): string {
  * accepts; `plugins` would hard-fail the whole config). opencode auto-installs it from npm on next
  * launch. Idempotent; the caller should prompt for a restart (config is read at boot only).
  */
-export function persistPlugin(pkg: string, meta?: InstallMeta): ConfigResult {
+/** Codex review #355:persist 必须回报真实变更 —— changed=false(恰同钉版已在)时调用方跳过落账
+ *  (免虚增 generation);同 base 不同钉版一律显式拒绝(不许「配置不变、账本记新版」的谎)。 */
+export type PersistPluginResult = { ok: true; changed: boolean } | { ok: false; reason: string }
+
+export function persistPlugin(pkg: string, meta?: InstallMeta): PersistPluginResult {
   return withConfigWriteLock(() => persistPluginUnlocked(pkg, meta)) // plugin[] 是跨读写 RMW,整函数持锁
 }
-function persistPluginUnlocked(pkg: string, meta?: InstallMeta): ConfigResult {
+function persistPluginUnlocked(pkg: string, meta?: InstallMeta): PersistPluginResult {
   if (!SAFE_PACKAGE.test(pkg)) return { ok: false, reason: "invalid package name" }
   const target = mcpPluginTargetPath()
   const readPlugins = (file: string): unknown[] => {
@@ -561,30 +602,58 @@ function persistPluginUnlocked(pkg: string, meta?: InstallMeta): ConfigResult {
   // session), see packages/core/src/v1/config/config.ts:56. Element shape is string | [string, opts].
   const current = readPlugins(target)
   const base = pkgBase(pkg)
-  const inList = (list: unknown[]) =>
-    list.some((p) => {
-      if (typeof p === "string") return pkgBase(p) === base
-      if (Array.isArray(p) && typeof p[0] === "string") return pkgBase(p[0]) === base
-      return false
-    })
+  const findIn = (list: unknown[]): string | undefined => {
+    for (const p of list) {
+      if (typeof p === "string" && pkgBase(p) === base) return p
+      if (Array.isArray(p) && typeof p[0] === "string" && pkgBase(p[0] as string) === base) return p[0] as string
+    }
+    return undefined
+  }
   // idempotent across BOTH files: an entry still sitting in the legacy XDG config (pre-migration)
   // must not be duplicated into the alpha file — the engine merges the two plugin arrays.
-  if (inList(current) || (target !== userConfigPath() && inList(readPlugins(userConfigPath()))))
-    return { ok: true }
+  const existing = findIn(current) ?? (target !== userConfigPath() ? findIn(readPlugins(userConfigPath())) : undefined)
+  if (existing !== undefined) {
+    if (existing === pkg) return { ok: true, changed: false } // 恰同钉版 → 真幂等,调用方跳过落账
+    return { ok: false, reason: `plugin "${base}" already configured as "${existing}" — refusing silent version mismatch (requested "${pkg}")` }
+  }
   const written = writeKeyUnlocked(target, ["plugin"], [...current, pkg])
-  if (written.ok && receiptsActive()) {
+  // REQ-099 #306:同 persistMcp —— catalog 才在此落 v1;未策展由 orchestrator 走 coordinator。
+  if (written.ok && receiptsActive() && meta?.catalogId) {
     addReceipt(alphaGlobalRoot(), {
-      id: meta?.catalogId ?? `user:${pkgBase(pkg)}`,
-      name: pkgBase(pkg).replace(/^@/, "").replace("/", "__"),
+      id: meta.catalogId,
+      name: pluginRecordName(pkg),
       type: "plugin",
       scope: "global",
-      version: meta?.version,
+      version: meta.version,
       installedAt: new Date().toISOString(),
-      origin: meta?.catalogId ? "catalog" : "created",
+      origin: "catalog",
       configKey: `plugin:${pkg}`,
     })
   }
-  return written
+  return written.ok ? { ok: true, changed: true } : written
+}
+
+/** plugin 的账本名(包名规范化;未策展 orchestrator 与 catalog 落账共用同一派生,防两套名)。 */
+export function pluginRecordName(pkg: string): string {
+  return pkgBase(pkg).replace(/^@/, "").replace("/", "__")
+}
+
+/** Codex review #355:只撤销恰为本次写入的 plugin[] 元素(orchestrator 落账失败补偿)——
+ *  不碰 legacy 文件、不碰 receipt、不碰同 base 其他元素(removePlugin 全量卸载会误删既有安装)。 */
+export function removePluginEntryExact(pkg: string): ConfigResult {
+  return withConfigWriteLock(() => {
+    const target = mcpPluginTargetPath()
+    try {
+      if (!fs.existsSync(target)) return { ok: true }
+      const parsed = parse(fs.readFileSync(target, "utf8")) as { plugin?: unknown } | undefined
+      const current: unknown[] = Array.isArray(parsed?.plugin) ? (parsed!.plugin as unknown[]) : []
+      const next = current.filter((p) => p !== pkg)
+      if (next.length === current.length) return { ok: true }
+      return writeKeyUnlocked(target, ["plugin"], next)
+    } catch {
+      return { ok: false, reason: "failed to read config" }
+    }
+  })
 }
 
 /**
@@ -655,15 +724,16 @@ function persistPluginPathUnlocked(name: string, absJsPath: string, files: strin
   const current = read()
   if (current.some((p) => p === absJsPath)) return { ok: true } // idempotent
   const written = writeKeyUnlocked(target, ["plugin"], [...current, absJsPath])
-  if (written.ok && receiptsActive()) {
+  // REQ-099 #306:vendored 无未策展生产调用方(Codex 核实),catalog 才落 v1;防未来伪造面同收窄。
+  if (written.ok && receiptsActive() && meta?.catalogId) {
     addReceipt(alphaGlobalRoot(), {
-      id: meta?.catalogId ?? `user:${name}`,
+      id: meta.catalogId,
       name,
       type: "plugin",
       scope: "global",
-      version: meta?.version,
+      version: meta.version,
       installedAt: new Date().toISOString(),
-      origin: meta?.catalogId ? "catalog" : "imported",
+      origin: "catalog",
       configKey: `plugin-path:${absJsPath}`,
       files,
     })

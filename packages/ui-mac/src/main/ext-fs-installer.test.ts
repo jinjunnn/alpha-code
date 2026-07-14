@@ -241,3 +241,40 @@ describe("ALPHA_LEGACY_INSTALL_ROOT=1 escape hatch", () => {
     }
   })
 })
+
+// ── REQ-099 #306:未策展 fs 安装的落账所有权 → coordinator(v2 record + 派生 v1 receipt)──────
+
+describe("uncurated fs installs land v2 records (#306)", () => {
+  test("writeAgent(imported,无 meta)→ v2 record:id user:<name>、origin imported、无供给链字段", async () => {
+    const { findRecordV2 } = await import("./ext-receipt-v2")
+    const r = writeAgent("imp-agent", "---\ndescription: d\nmode: subagent\n---\nsys", undefined, undefined, "imported")
+    expect(r.ok).toBe(true)
+    const rec = findRecordV2(alphaDir, "agent", "imp-agent")
+    expect(rec?.id).toBe("user:imp-agent")
+    expect(rec?.origin).toBe("imported")
+    expect(rec?.manifestDigest).toBeUndefined()
+    // 派生 v1 receipt 同键在账(降级可读)
+    expect(readLedger(alphaDir).receipts.some((x) => x.name === "imp-agent" && x.type === "agent")).toBe(true)
+  })
+
+  test("writeAgent 落账被 catalog 同键拒绝 → fail-closed 补偿(md 与 config 条目都不留)", async () => {
+    const { upsertRecordV2 } = await import("./ext-receipt-v2")
+    // 预置同键 catalog record(模拟 catalog agent 在账)
+    expect(
+      upsertRecordV2(alphaDir, {
+        id: "agent:pm",
+        name: "pm",
+        kind: "agent",
+        environment: "prod",
+        scope: { kind: "global" },
+        desiredState: "enabled",
+        origin: "catalog",
+        installedAt: new Date().toISOString(),
+      }).ok,
+    ).toBe(true)
+    const r = writeAgent("pm", "---\ndescription: d\nmode: subagent\n---\nsys", undefined, undefined, "imported")
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("catalog install")
+    expect(fs.existsSync(path.join(alphaDir, "agents", "pm.md"))).toBe(false) // 补偿:md 已撤
+  })
+})
