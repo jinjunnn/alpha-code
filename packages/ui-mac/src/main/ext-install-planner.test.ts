@@ -156,7 +156,8 @@ function makeDeps(opts: {
     installBuiltinSkill: record("installBuiltinSkill", { ok: true as const, files: ["/derived/skill"] }),
     collectBuiltinSkillPayload: (key: string, name: string) => {
       calls.push({ fn: "collectBuiltinSkillPayload", args: [key, name] })
-      return { ok: true as const, files: [{ path: "SKILL.md", data: Buffer.from(`---\nname: ${name}\n---\nbody`) }] }
+      // 有效 frontmatter(name 匹配 + description)= 类型化 probe(#312)通过。
+      return { ok: true as const, files: [{ path: "SKILL.md", data: Buffer.from(`---\nname: ${name}\ndescription: test ${name}\n---\nbody`) }] }
     },
     installBuiltinAgent: record("installBuiltinAgent", { ok: true as const, files: ["/derived/agent"] }),
     installRemoteSkill: record("installRemoteSkill", { ok: true as const, files: ["/derived/remote-skill"] }),
@@ -164,7 +165,8 @@ function makeDeps(opts: {
     removeFsInstall: record("removeFsInstall", { ok: true as const, files: [] }),
     downloadRemoteAsset: async (files) => {
       calls.push({ fn: "downloadRemoteAsset", args: [files] })
-      return { ok: true, contents: [{ path: "SKILL.md", data: Buffer.from("body") }] }
+      // 唯一走 remote 的 skill fixture = remote-demo;有效 frontmatter 供 #312 probe。
+      return { ok: true, contents: [{ path: "SKILL.md", data: Buffer.from("---\nname: remote-demo\ndescription: test\n---\nbody") }] }
     },
     ...opts.installers,
   }

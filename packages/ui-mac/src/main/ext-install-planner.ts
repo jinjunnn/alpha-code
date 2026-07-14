@@ -65,7 +65,7 @@ import {
   type ScopeIdentity,
   type UpsertInput,
 } from "./ext-receipt-v2"
-import { installSkillGeneration, type SkillPayloadFile } from "./ext-skill-generations"
+import { commitInputFromRecord, installSkillGeneration, skillGenerationProbe, type SkillPayloadFile } from "./ext-skill-generations"
 
 // ── renderer intents(严格解码:未知键 = 伪造事实通道,loud 拒绝)─────────────────────────────
 
@@ -561,7 +561,6 @@ async function installBundleAtomic(
 
   // 分类每个 required/optional 子条目 → 事务项 / 跳过。required 致命 = 整单拒绝(零写盘)。
   const planItems: TxPlanItem[] = []
-  const records = new Map<string, UpsertInput>()
   const payloads = new Map<string, SkillPayloadFile[]>()
   const installedIds: string[] = []
   const skipped: Array<{ id: string; reason: string }> = []
@@ -581,8 +580,8 @@ async function installBundleAtomic(
       if (!it.optional) return { ok: false, reason: `required bundle child "${c.id}" unsupported: ${c.reason}` }
       skipped.push({ id: c.id, reason: c.reason })
     } else {
-      planItems.push(c.item)
-      records.set(c.item.key, c.record)
+      // receipt 模板嵌进 plan item(持久化进 journal)→ crash-recovery 前滚可自足落账(#312)。
+      planItems.push({ ...c.item, receipt: c.record })
       if (c.payload) payloads.set(c.item.key, c.payload)
       installedIds.push(c.id)
     }
@@ -605,14 +604,12 @@ async function installBundleAtomic(
         fs.writeFileSync(dst, f.data)
       }
     },
-    // 账本写失败即事务失败(#336):bundle 全部 receipt 一次批量落盘,不留半套。
+    // 类型化健康探测(#312):skill generation 落地后验 SKILL.md 可发现;非 generation 直接健康。
+    probe: skillGenerationProbe,
+    // 账本写失败即事务失败(#336):bundle 全部 receipt 一次批量落盘,不留半套。从 rec.receipt 模板
+    // 重建(与恢复前滚同源,#312)。
     commitReceipt: (recs: TxCommitRecord[]) => {
-      const inputs = recs.map((rec) => {
-        const base = records.get(rec.key)
-        if (!base) throw new Error(`no receipt template for committed key ${rec.key}`)
-        return rec.generationDir ? { ...base, files: [rec.generationDir] } : base
-      })
-      const written = upsertRecordsV2(deps.globalRoot(), inputs)
+      const written = upsertRecordsV2(deps.globalRoot(), recs.map((rec) => commitInputFromRecord(rec)))
       if (!written.ok) throw new Error(`bundle receipt commit failed: ${written.reason}`)
     },
     log: () => {},
