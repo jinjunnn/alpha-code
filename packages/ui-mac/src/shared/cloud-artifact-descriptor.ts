@@ -115,7 +115,7 @@ export const PUBLIC_RESULT_MAX_BYTES = 512 * 1024;
 // 窗口机制:HTTP status / artifacts 路由接受 `?compat=inline-artifacts-v0` 或 `x-alpha-compat: inline-artifacts-v0`
 //   → 恢复 legacy 内联 result(含 result.artifacts[].base64 /* REQ-092-compat:此行描述 legacy 字段,非重新引入 */)。
 // MCP / 模型 transcript 路径**无兼容开关**(兼容路径不得把 base64 转发给模型,REQ-092 交付 6)。
-// ⏰ 移除日期:**2026-08-15** 后删除该 flag 与 legacy 分支(见 docs/cloud-artifact-transport.md 记录)。
+// ⏰ 移除日期:**2026-08-15** 后删除该 flag 与 legacy 分支(见 docs/contracts/cloud-artifact-transport.md 记录)。
 export const INLINE_ARTIFACT_COMPAT_FLAG = "inline-artifacts-v0";
 export const INLINE_ARTIFACT_COMPAT_REMOVAL = "2026-08-15";
 
