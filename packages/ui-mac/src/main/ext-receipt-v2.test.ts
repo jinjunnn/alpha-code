@@ -21,6 +21,7 @@ import {
   setDesiredStateV2,
   toV1Receipt,
   upsertRecordV2,
+  upsertRecordsV2,
   verifyProjectScope,
   RECORD_SCHEMA_VERSION,
   type InstallRecordV2,
@@ -348,6 +349,36 @@ describe("v1 → v2 explicit migration (AC#6)", () => {
     fs.writeFileSync(ledgerFile(), "not json at all")
     const r = migrateV1Ledger(root, "prod")
     expect(r.ok).toBe(false)
+  })
+})
+
+describe("upsertRecordsV2 — 批量单写(REQ-100 #311)", () => {
+  test("多条 record 一次落盘;各自 generation 独立", () => {
+    const w = upsertRecordsV2(root, [
+      upsertInput({ id: "skill:a", name: "a", kind: "skill", configKey: undefined }),
+      upsertInput({ id: "mcp:b", name: "b", kind: "mcp", configKey: "mcp.b" }),
+    ])
+    expect(w.ok).toBe(true)
+    if (!w.ok) return
+    expect(w.records).toHaveLength(2)
+    const { records } = readLedgerV2(root)
+    expect(records.map((r) => r.name).sort()).toEqual(["a", "b"])
+  })
+
+  test("任一 record 非法 → 整批拒绝,不留半套", () => {
+    const w = upsertRecordsV2(root, [
+      upsertInput({ id: "skill:ok", name: "ok", kind: "skill", configKey: undefined }),
+      upsertInput({ name: "" }), // 非法 name
+    ])
+    expect(w.ok).toBe(false)
+    expect(readLedgerV2(root).records).toHaveLength(0) // 半套都不落
+  })
+
+  test("同 key 更新走递增 generation", () => {
+    upsertRecordsV2(root, [upsertInput({ manifestDigest: DIGEST_A })])
+    const w = upsertRecordsV2(root, [upsertInput({ manifestDigest: DIGEST_B, version: "1.1.0" })])
+    expect(w.ok).toBe(true)
+    if (w.ok) expect(w.records[0]!.generation).toBe(2)
   })
 })
 
