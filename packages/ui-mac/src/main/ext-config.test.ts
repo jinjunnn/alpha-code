@@ -8,6 +8,7 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { configHealth, persistMcp, persistPlugin, persistProvider, removeMcp, removePlugin } from "./ext-config"
+import { tryAcquireBundleLock } from "./ext-bundle-lock"
 import { readLedger } from "./alpha-installs"
 
 // REQ-018 T2: mcp/plugin persistence targets the alpha-owned ~/.opencode/opencode.jsonc
@@ -266,5 +267,45 @@ describe("receipts on persist/remove (T6)", () => {
 
   test("removePlugin on an absent package is a no-op success", () => {
     expect(removePlugin("never-installed").ok).toBe(true)
+  })
+})
+
+// ── REQ-100 #342:配置写锁 —— 所有 alpha-owned 写方与扩展事务共享环境级 bundle 锁 ──────────────
+
+describe("config write lock — serialized with the extension bundle lock (REQ-100 #342)", () => {
+  test("事务在途(锁被持有)→ 写方如实 busy 拒绝,零写入;释放后同一调用成功", () => {
+    const held = tryAcquireBundleLock(alphaTmp, { txId: "tx-in-flight" })
+    expect(held.ok).toBe(true)
+    if (!held.ok) return
+    const server = { type: "local", command: ["npx", "-y", "demo-mcp"] }
+    const mcp = persistMcp("demo", server)
+    expect(mcp.ok).toBe(false)
+    if (!mcp.ok) expect(mcp.reason).toContain("config busy")
+    const plug = persistPlugin("@alpha/np")
+    expect(plug.ok).toBe(false)
+    expect(fs.existsSync(path.join(alphaTmp, "alpha.jsonc"))).toBe(false) // 拒后零写入
+    held.lock.release()
+    expect(persistMcp("demo", server).ok).toBe(true)
+    expect(persistPlugin("@alpha/np").ok).toBe(true)
+    expect(readConfig().mcp.demo).toBeDefined()
+  })
+
+  test("锁被持有时删除路径同样拒绝(update/uninstall 写方全在锁面内)", () => {
+    expect(persistMcp("demo", { type: "local", command: ["npx", "-y", "demo-mcp"] }).ok).toBe(true)
+    const held = tryAcquireBundleLock(alphaTmp, { txId: "tx-in-flight-2" })
+    expect(held.ok).toBe(true)
+    if (!held.ok) return
+    const r = removeMcp("demo")
+    expect(r.ok).toBe(false)
+    held.lock.release()
+    expect(removeMcp("demo").ok).toBe(true)
+    expect(readConfig().mcp?.demo).toBeUndefined()
+  })
+
+  test("写方成功后锁已释放(不留残锁阻塞后续事务)", () => {
+    expect(persistMcp("demo", { type: "local", command: ["npx", "-y", "demo-mcp"] }).ok).toBe(true)
+    const acquire = tryAcquireBundleLock(alphaTmp, { txId: "after-write" })
+    expect(acquire.ok).toBe(true) // 写方 finally 释放,事务可立即获取
+    if (acquire.ok) acquire.lock.release()
   })
 })
