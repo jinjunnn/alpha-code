@@ -397,6 +397,52 @@ export function upsertRecordV2(root: string, input: UpsertInput): LedgerV2Write 
   return { ok: true, record: check.record, warnings }
 }
 
+export type LedgerV2BatchWrite = { ok: true; records: InstallRecordV2[]; warnings: string[] } | { ok: false; reason: string }
+
+/**
+ * 批量 upsert 单次写盘(REQ-100 #311):bundle 的多条 receipt 一次读、全校验、一次 rename 落盘 ——
+ * 任一 record 非法即整批拒绝(不留半套 receipt)。同一账本内解析一次,按输入顺序累积(同 key 后写覆盖)。 */
+export function upsertRecordsV2(root: string, inputs: UpsertInput[]): LedgerV2BatchWrite {
+  if (inputs.length === 0) return { ok: false, reason: "batch upsert has no records" }
+  const { parsed, corrupt } = parseLedger(root)
+  const warnings: string[] = [...parsed.recordWarnings, ...parsed.receiptWarnings]
+  if (corrupt) {
+    const q = quarantineCorrupt(root)
+    warnings.push(q ? `corrupt ledger quarantined: ${q}` : "corrupt ledger could not be quarantined")
+  }
+  const recordsByKey = new Map(parsed.records.map((r) => [key(r.kind, r.name), r]))
+  const receiptKeys = new Set(parsed.receipts.map((r) => key(r.type, r.name)))
+  const committed: InstallRecordV2[] = []
+  for (const input of inputs) {
+    const k = key(input.kind, input.name)
+    const prev = recordsByKey.get(k) ?? null
+    const hadV1 = receiptKeys.has(k)
+    const record: InstallRecordV2 = {
+      ...input,
+      schemaVersion: RECORD_SCHEMA_VERSION,
+      generation: input.generation ?? (prev ? prev.generation + 1 : hadV1 ? 2 : 1),
+      ...(input.previousDigest ? { previousDigest: input.previousDigest } : prev?.manifestDigest ? { previousDigest: prev.manifestDigest } : {}),
+    }
+    const check = decodeRecordV2(record)
+    if (!check.ok) return { ok: false, reason: `refusing to write invalid record ${k}: ${check.errors.join("; ")}` }
+    recordsByKey.set(k, check.record) // 后续同 key 基于已累积态派生 generation
+    committed.push(check.record)
+  }
+  // 用累积后的最终态重建两视图(committed 里同 key 只保留最后一条 = recordsByKey 的值)。
+  const committedKeys = new Set(committed.map((r) => key(r.kind, r.name)))
+  const finalRecords = [
+    ...parsed.records.filter((r) => !committedKeys.has(key(r.kind, r.name))),
+    ...committedKeys.size ? [...committedKeys].map((k) => recordsByKey.get(k)!) : [],
+  ]
+  const finalReceipts = [
+    ...parsed.receipts.filter((r) => !committedKeys.has(key(r.type, r.name))),
+    ...[...committedKeys].map((k) => toV1Receipt(recordsByKey.get(k)!)),
+  ]
+  const written = writeLedgerFile(root, finalReceipts, finalRecords)
+  if (!written.ok) return written
+  return { ok: true, records: committed, warnings }
+}
+
 /** Remove by (kind, name) from BOTH views. Missing = ok(idempotent), removed record returned for teardown对账。 */
 export function removeRecordV2(root: string, kind: InstallReceiptType, name: string): { ok: true; removed: InstallRecordV2 | null } | { ok: false; reason: string } {
   const { parsed, corrupt } = parseLedger(root)
