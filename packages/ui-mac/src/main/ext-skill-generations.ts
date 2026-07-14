@@ -15,12 +15,14 @@ import {
   extensionStorePaths,
   resolveLiveGenerationDir,
   runExtensionTransaction,
+  type HealthProbe,
   type TxCommitRecord,
   type TxFileSpec,
   type TxHooks,
   type TxPlan,
 } from "./ext-transaction"
-import { upsertRecordsV2, type ScopeIdentity } from "./ext-receipt-v2"
+import { upsertRecordsV2, type ScopeIdentity, type UpsertInput } from "./ext-receipt-v2"
+import { parseSkillFrontmatter } from "./ext-import-validate"
 import type { InstallReceiptOrigin } from "../preload/types"
 
 const SAFE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
@@ -29,6 +31,33 @@ const STORE_DIR = "ext-store"
 /** fs-safe 扩展 key(引擎按此建 generation 目录)。 */
 export function skillGenerationKey(name: string): string {
   return `skill--${name}`
+}
+
+/** 类型化 skill 健康探测(REQ-100 #312):generation 目录里 SKILL.md 必须可发现且 frontmatter name
+ *  与 key 匹配(防 shadowing)。pre-switch 失败 → abort+隔离;post-switch/recovery 失败 → 回滚+隔离。 */
+export const skillGenerationProbe: HealthProbe = (input) => {
+  if (input.action !== "generation") return { healthy: true } // 非 generation 由各自路径管
+  const name = input.key.startsWith("skill--") ? input.key.slice("skill--".length) : input.key
+  let text: string
+  try {
+    text = fs.readFileSync(path.join(input.generationDir, "SKILL.md"), "utf8")
+  } catch {
+    return { healthy: false, reason: `skill "${name}": SKILL.md not discoverable in generation ${input.genId}` }
+  }
+  const fm = parseSkillFrontmatter(text)
+  if (!fm.ok) return { healthy: false, reason: `skill "${name}": ${fm.reason}` }
+  if (fm.name !== name) return { healthy: false, reason: `skill frontmatter name "${fm.name}" ≠ key "${name}" (shadowing guard)` }
+  return { healthy: true }
+}
+
+/** 从 commit record 的 receipt 模板重建 upsert 输入(forward 与 crash-recovery 前滚同源,REQ-100 #312)。 */
+export function commitInputFromRecord(rec: TxCommitRecord): UpsertInput {
+  const template = (rec.receipt ?? {}) as UpsertInput
+  return {
+    ...template,
+    ...(rec.generationDir ? { files: [rec.generationDir] } : {}),
+    transaction: { id: rec.txId, state: "committed" },
+  }
 }
 
 /** 单个 skill 的载荷:POSIX 相对路径 + 内容。builtin(读 srcDir)与 remote(内存 buffer)都归一到此。 */
@@ -100,8 +129,23 @@ export async function installSkillGeneration(root: string, spec: SkillGeneration
   const key = skillGenerationKey(spec.name)
   const now = new Date().toISOString()
 
+  // receipt 模板持久化进 plan/journal(REQ-100 #312):forward 与 crash-recovery 前滚同源落账。
+  const receiptTemplate: UpsertInput = {
+    id: spec.id,
+    name: spec.name,
+    kind: "skill",
+    environment: spec.environment,
+    scope: spec.scope,
+    ...(spec.version ? { version: spec.version } : {}),
+    ...(spec.manifestDigest ? { manifestDigest: spec.manifestDigest } : {}),
+    ...(spec.payloadDigest ? { payloadDigest: spec.payloadDigest } : {}),
+    ...(spec.grantDigest ? { grantDigest: spec.grantDigest } : {}),
+    desiredState: "enabled",
+    origin: spec.origin,
+    installedAt: now,
+  }
   const plan: TxPlan = {
-    items: [{ key, files: specsOf(spec.files), ...(spec.manifestDigest ? { manifestDigest: spec.manifestDigest } : {}) }],
+    items: [{ key, files: specsOf(spec.files), receipt: receiptTemplate, ...(spec.manifestDigest ? { manifestDigest: spec.manifestDigest } : {}) }],
   }
   const hooks: TxHooks = {
     populate: (_item, stagingDir) => {
@@ -111,28 +155,12 @@ export async function installSkillGeneration(root: string, spec: SkillGeneration
         fs.writeFileSync(dst, f.data)
       }
     },
-    // 账本是事务的提交证据:写失败必须抛错,引擎据此 rollback+quarantine(#336),receipt 与 live 永不背离。
-    // 批量单写(#311):多条 record 一次读全校验一次落盘,不留半套 receipt(单 skill 时退化为一条)。
+    // 类型化健康探测(REQ-100 #312):generation 落地后、切换前后验 SKILL.md 可发现 + frontmatter name 匹配。
+    probe: skillGenerationProbe,
+    // 账本是事务的提交证据:写失败必须抛错,引擎据此 rollback+quarantine(#336)。批量单写(#311),
+    // 从 rec.receipt 模板重建(与恢复前滚同源,#312):补 files(generationDir)+ committed 事务标记。
     commitReceipt: (records: TxCommitRecord[]) => {
-      const written = upsertRecordsV2(
-        root,
-        records.map((rec) => ({
-          id: spec.id,
-          name: spec.name,
-          kind: "skill" as const,
-          environment: spec.environment,
-          scope: spec.scope,
-          ...(spec.version ? { version: spec.version } : {}),
-          ...(rec.manifestDigest ? { manifestDigest: rec.manifestDigest } : {}),
-          ...(spec.payloadDigest ? { payloadDigest: spec.payloadDigest } : {}),
-          ...(spec.grantDigest ? { grantDigest: spec.grantDigest } : {}),
-          desiredState: "enabled" as const,
-          origin: spec.origin,
-          ...(rec.generationDir ? { files: [rec.generationDir] } : {}),
-          transaction: { id: rec.txId, state: "committed" as const },
-          installedAt: now,
-        })),
-      )
+      const written = upsertRecordsV2(root, records.map((rec) => commitInputFromRecord(rec)))
       if (!written.ok) throw new Error(`receipt commit failed for skill ${spec.name}: ${written.reason}`)
     },
   }

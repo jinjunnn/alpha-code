@@ -19,7 +19,7 @@ import { persistMcpWithPolicy } from "./ext-mcp-policy"
 import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
 import { importSkillFolder, importSkillGit, installBuiltinAgent, installBuiltinSkill, installRemoteAgent, installRemoteSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall, resourcesRoot, writeAgent } from "./ext-fs-installer"
 import { parseAgentImport } from "./ext-import-validate"
-import { collectSkillPayloadFromDir } from "./ext-skill-generations"
+import { collectSkillPayloadFromDir, commitInputFromRecord, skillGenerationProbe } from "./ext-skill-generations"
 import { randomUUID } from "node:crypto"
 import { pickedFiles } from "./ipc"
 import { factorySkillIds } from "./factory-skills"
@@ -39,7 +39,7 @@ import bundledCatalogJson from "../renderer/extensions/alpha-catalog.json"
 import type { Catalog } from "../renderer/extensions/catalog-types"
 import { getAlphaEnvironment } from "./alpha-environment"
 import { installCatalog, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
-import { readLedgerV2 } from "./ext-receipt-v2"
+import { readLedgerV2, upsertRecordsV2 } from "./ext-receipt-v2"
 import { readPackagedSeed } from "./ext-seed"
 import { recoverExtensionTransactions } from "./ext-transaction"
 import { getLogger } from "./logging"
@@ -423,9 +423,15 @@ export function registerExtIpcHandlers(userDataPath: string) {
   // 既有 renderer 事实通道(ext-persist-mcp / ext-install-builtin-* / …)的下线随 renderer 切换到
   // 本通道时收口(同包发布,无跨版本兼容窗口)。
   // REQ-100:启动期事务恢复,且严格先于任何新事务(旧 switched journal 后到会把替代它的
-  // generation 误移隔离区)。未注入 probe/commitReceipt → 引擎 fail-closed 全回滚,账本零漂移;
-  // 前滚注入随 planner→事务引擎改线一并收口(ADR-028 residual)。journal 目录不存在时为 no-op。
+  // generation 误移隔离区)。REQ-100 #312:注入类型化 probe + commitReceipt —— switched-未提交的
+  // 事务在恢复期用同一 probe 重验健康(而非 health-by-assumption),健康则从 journal 的 receipt 模板
+  // 前滚落账,不健康/账本写失败则 fail-closed 全回滚(账本零漂移)。journal 目录不存在时为 no-op。
   const txRecovery = recoverExtensionTransactions(alphaGlobalRoot(), {
+    probe: skillGenerationProbe,
+    commitReceipt: (recs) => {
+      const written = upsertRecordsV2(alphaGlobalRoot(), recs.map((rec) => commitInputFromRecord(rec)))
+      if (!written.ok) throw new Error(`recovery receipt commit failed: ${written.reason}`)
+    },
     log: (event, detail) => getLogger().log(`[req100-tx-recovery] ${event} ${JSON.stringify(detail)}`),
   }).then(
     (r) => {

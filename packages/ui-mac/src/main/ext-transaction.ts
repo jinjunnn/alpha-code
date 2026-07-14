@@ -91,6 +91,9 @@ export type TxPlanItem = {
    * 缺省按空集处理:committed 时授权账落空集,未来任何 capability 出现都构成扩张 → 必须确认。
    */
   capabilities?: string[]
+  /** receipt 模板(不透明透传:本层不解释)。持久化进 journal + commit record,使崩溃恢复能自足
+   *  前滚提交 receipt(REQ-100 #312:recovery 用同一 probe 判健康后落账,而非 health-by-assumption)。 */
+  receipt?: unknown
 }
 
 /** 判别式取值(缺省 generation)。 */
@@ -121,8 +124,12 @@ export type TxPlan = {
 
 export type HealthVerdict = { healthy: true } | { healthy: false; reason: string }
 export type HealthProbePhase = "pre-switch" | "post-switch" | "recovery"
+/** 类型化健康探测(REQ-100 #312):按 action + key 做 kind-appropriate 校验(如 skill 验 SKILL.md
+ *  可发现/frontmatter name 匹配)。pre-switch 失败 → abort+隔离;post-switch/recovery 失败 → 回滚+隔离。 */
 export type HealthProbe = (input: {
   key: string
+  /** action 类型(缺省 generation);typed probe 据此 dispatch。 */
+  action: TxActionKind
   genId: string
   generationDir: string
   phase: HealthProbePhase
@@ -143,6 +150,8 @@ export type TxCommitRecord = {
   files?: TxFileSpec[]
   /** config:目标文件(卸载/对账参考)。 */
   configTarget?: string
+  /** receipt 模板(不透明透传;commitReceipt 消费方据此落账,恢复前滚同源)。 */
+  receipt?: unknown
   committedAt: string
 }
 
@@ -240,6 +249,8 @@ export type TxJournalItem = {
   files: TxFileSpec[]
   /** config:目标文件 + staging 里 pre/next image 的 digest(内容在受保护 staging,journal 不落值)。 */
   config?: { target: string; slot: number; preDigest: string; nextDigest: string }
+  /** receipt 模板(不透明透传;恢复前滚据此重建 InstallRecordV2,无需 caller 上下文)。 */
+  receipt?: unknown
   manifestDigest?: string
   /** committed 后写授权账用(恢复前滚也要写,故持久化在 journal 里)。 */
   capabilities?: string[]
@@ -292,6 +303,28 @@ const quarantineRoot = (root: string) => path.join(root, TX_DIR, "quarantine")
 const authzReceiptPath = (root: string, txId: string) => path.join(root, TX_DIR, "authz", `${txId}.json`)
 const generationDirOf = (root: string, key: string, genId: string) =>
   path.join(extensionStorePaths(root, key).generations, genId)
+
+/** 从 journal item 构造 commit record(主提交与恢复前滚同源;透传 receipt 模板 REQ-100 #312)。 */
+function buildCommitRecord(root: string, txId: string, it: TxJournalItem, committedAt: string): TxCommitRecord {
+  const receipt = it.receipt !== undefined ? { receipt: it.receipt } : {}
+  const kind = actionOf(it)
+  if (kind === "generation")
+    return {
+      txId,
+      key: it.key,
+      action: "generation",
+      generation: it.genId,
+      generationDir: generationDirOf(root, it.key, it.genId),
+      previousGeneration: it.previousGeneration ?? null,
+      manifestDigest: it.manifestDigest,
+      files: it.files,
+      ...receipt,
+      committedAt,
+    }
+  if (kind === "config")
+    return { txId, key: it.key, action: "config", ...(it.config ? { configTarget: it.config.target } : {}), manifestDigest: it.manifestDigest, ...receipt, committedAt }
+  return { txId, key: it.key, action: "receipt", manifestDigest: it.manifestDigest, ...receipt, committedAt }
+}
 
 function newTxId(): string {
   return `tx-${Date.now().toString(36)}-${crypto.randomBytes(4).toString("hex")}`
@@ -844,6 +877,7 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
           }
         : {}),
       manifestDigest: item.manifestDigest,
+      ...(item.receipt !== undefined ? { receipt: item.receipt } : {}),
       capabilities: item.capabilities,
     })),
     authorization: {
@@ -977,7 +1011,7 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
     for (const g of genEntries()) {
       let verdict: HealthVerdict
       try {
-        verdict = await hooks.probe({ key: g.key, genId: g.genId, generationDir: g.dir, phase: "pre-switch" })
+        verdict = await hooks.probe({ key: g.key, action: "generation", genId: g.genId, generationDir: g.dir, phase: "pre-switch" })
       } catch (error) {
         if (error instanceof ExtTxCrashError) throw error
         verdict = { healthy: false, reason: error instanceof Error ? error.message : "probe threw" }
@@ -1015,7 +1049,7 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
     for (const g of genEntries()) {
       let verdict: HealthVerdict
       try {
-        verdict = await hooks.probe({ key: g.key, genId: g.genId, generationDir: g.dir, phase: "post-switch" })
+        verdict = await hooks.probe({ key: g.key, action: "generation", genId: g.genId, generationDir: g.dir, phase: "post-switch" })
       } catch (error) {
         if (error instanceof ExtTxCrashError) throw error
         verdict = { healthy: false, reason: error instanceof Error ? error.message : "probe threw" }
@@ -1029,24 +1063,7 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
 
   // ⑦ receipt commit(REQ-099 接缝;失败 → 回滚,receipt 与 live 永不背离)
   const committedAt = now().toISOString()
-  const records: TxCommitRecord[] = journal.items.map((it) => {
-    const kind = actionOf(it)
-    if (kind === "generation")
-      return {
-        txId,
-        key: it.key,
-        action: "generation" as const,
-        generation: it.genId,
-        generationDir: generationDirOf(root, it.key, it.genId),
-        previousGeneration: it.previousGeneration ?? null,
-        manifestDigest: it.manifestDigest,
-        files: it.files,
-        committedAt,
-      }
-    if (kind === "config")
-      return { txId, key: it.key, action: "config" as const, ...(it.config ? { configTarget: it.config.target } : {}), manifestDigest: it.manifestDigest, committedAt }
-    return { txId, key: it.key, action: "receipt" as const, manifestDigest: it.manifestDigest, committedAt }
-  })
+  const records: TxCommitRecord[] = journal.items.map((it) => buildCommitRecord(root, txId, it, committedAt))
   if (hooks.commitReceipt) {
     try {
       await hooks.commitReceipt(records)
@@ -1322,7 +1339,7 @@ async function recoverOne(
       if (actionOf(it) !== "generation") continue // config/receipt 不做类型化 generation 探测
       const dir = generationDirOf(root, it.key, it.genId)
       try {
-        const verdict = await opts.probe({ key: it.key, genId: it.genId, generationDir: dir, phase: "recovery" })
+        const verdict = await opts.probe({ key: it.key, action: actionOf(it), genId: it.genId, generationDir: dir, phase: "recovery" })
         if (!verdict.healthy) {
           healthy = false
           probeReason = `health probe failed for "${it.key}": ${verdict.reason}`
@@ -1336,24 +1353,7 @@ async function recoverOne(
     }
     if (healthy) {
       const committedAt = now().toISOString()
-      const records: TxCommitRecord[] = journal.items.map((it) => {
-        const kind = actionOf(it)
-        if (kind === "generation")
-          return {
-            txId,
-            key: it.key,
-            action: "generation" as const,
-            generation: it.genId,
-            generationDir: generationDirOf(root, it.key, it.genId),
-            previousGeneration: it.previousGeneration ?? null,
-            manifestDigest: it.manifestDigest,
-            files: it.files,
-            committedAt,
-          }
-        if (kind === "config")
-          return { txId, key: it.key, action: "config" as const, ...(it.config ? { configTarget: it.config.target } : {}), manifestDigest: it.manifestDigest, committedAt }
-        return { txId, key: it.key, action: "receipt" as const, manifestDigest: it.manifestDigest, committedAt }
-      })
+      const records: TxCommitRecord[] = journal.items.map((it) => buildCommitRecord(root, txId, it, committedAt))
       try {
         await opts.commitReceipt(records) // 幂等 upsert(接缝契约)
         removeDirGuarded(root, staleStaging, warnings)
