@@ -17,6 +17,7 @@ import {
   putCasBlobFromFile,
   readCasBlobVerified,
   readCasPins,
+  readCasPinsStrict,
   unpinCasBlob,
 } from "./ext-cas"
 
@@ -149,6 +150,37 @@ describe("pins", () => {
     expect(unpinCasBlob(base, digest)).toBeTrue()
     expect(Object.keys(readCasPins(base).pins)).toHaveLength(0)
     expect(pinCasBlob(base, "not-a-digest", "x")).toBeFalse()
+  })
+
+  test("readCasPinsStrict distinguishes missing / valid / invalid (REQ-102 #333)", () => {
+    const { pinsPath } = casPaths(base)
+    // 无文件 = 合法空集
+    expect(readCasPinsStrict(base).status).toBe("missing")
+    // 合法
+    const digest = sha("strict pin")
+    expect(pinCasBlob(base, digest, "keep")).toBeTrue()
+    const valid = readCasPinsStrict(base)
+    expect(valid.status).toBe("valid")
+    if (valid.status === "valid") expect(valid.pins[digest]?.reason).toBe("keep")
+    // JSON 损坏 = invalid,绝不降级空集
+    fs.writeFileSync(pinsPath, "{broken")
+    expect(readCasPinsStrict(base).status).toBe("invalid")
+    // readCasPins 便利读遇损坏必须抛错(不静默空集)
+    expect(() => readCasPins(base)).toThrow()
+    // 条目 schema 非法(digest key 非法)= invalid
+    fs.writeFileSync(pinsPath, JSON.stringify({ v: 1, pins: { "bad-key": { reason: "x", pinnedAt: "t" } } }))
+    expect(readCasPinsStrict(base).status).toBe("invalid")
+  })
+
+  test("pin/unpin refuse to overwrite a corrupt pins ledger (REQ-102 #333)", () => {
+    const { pinsPath } = casPaths(base)
+    const digest = sha("do not clobber")
+    fs.mkdirSync(path.dirname(pinsPath), { recursive: true })
+    fs.writeFileSync(pinsPath, "{corrupt")
+    // 损坏账本不得被「空集 + 本次一条」覆盖 —— 否则已有保护标记永久丢失
+    expect(pinCasBlob(base, digest, "x")).toBeFalse()
+    expect(unpinCasBlob(base, digest)).toBeFalse()
+    expect(fs.readFileSync(pinsPath, "utf8")).toBe("{corrupt")
   })
 })
 

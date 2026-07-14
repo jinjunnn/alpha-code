@@ -13,6 +13,7 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import type { InstallLedgerView, InstallReceipt } from "../preload/types"
+import { tryGetAlphaEnvironment } from "./alpha-environment"
 import { alphaRoot } from "./alpha-workdir"
 
 const LEDGER_FILE = "installs.json"
@@ -32,6 +33,10 @@ export type LedgerWriteResult = { ok: true } | { ok: false; reason: string }
  * (os.homedir() is not env-redirectable under bun).
  */
 export function alphaGlobalRoot(): string {
+  // REQ-098 #301:main 已冻结环境根 → 以冻结快照为单一真源,运行期 process.env 漂移(如 shell env
+  // 后台刷新)不再改变消费者看到的根。未初始化(纯单测 / sidecar 进程)才退回 process.env。
+  const frozen = tryGetAlphaEnvironment()
+  if (frozen) return frozen.mutableRoot
   return process.env.ALPHA_GLOBAL_DIR || path.join(os.homedir(), ".alpha")
 }
 

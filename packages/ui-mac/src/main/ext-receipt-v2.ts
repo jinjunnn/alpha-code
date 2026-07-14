@@ -269,10 +269,38 @@ export type LedgerV2Read = {
 const ledgerPath = (root: string) => path.join(root, LEDGER_FILE)
 const key = (kind: string, name: string) => `${kind}:${name}`
 
-type ParsedLedger = { receipts: InstallReceipt[]; records: InstallRecordV2[]; recordWarnings: string[]; receiptWarnings: string[] }
+/** 损坏(解码失败)v2 record 的按 key 归属尝试。`corruptKeys` 收集能可靠提取 `kind:name` 的损坏项;
+ *  `unattributable` = 至少一条损坏 record 连安全的 kind/name 都提不出 —— 无法证明卸载目标不是它,
+ *  因此该账本内所有 v1 fallback 都必须拒绝(REQ-099 #256 fail-closed)。 */
+type CorruptRecords = { corruptKeys: Set<string>; unattributable: boolean }
+
+type ParsedLedger = {
+  receipts: InstallReceipt[]
+  records: InstallRecordV2[]
+  recordWarnings: string[]
+  receiptWarnings: string[]
+  corruptRecords: CorruptRecords
+}
+
+/** 从损坏 record 原始对象里独立提取 kind:name(不经严格 decoder)。两者都是合法字符串且 kind 已知
+ *  才算可归属;否则返回 null(该损坏项无法安全归属到某个 key)。 */
+function attemptCorruptKey(entry: unknown): string | null {
+  if (!isObj(entry)) return null
+  const rawKind = entry.kind
+  const rawName = entry.name
+  if (typeof rawKind !== "string" || !KINDS.has(rawKind)) return null
+  if (typeof rawName !== "string" || rawName.length === 0 || rawName.length > 512 || !SAFE_NAME.test(rawName)) return null
+  return key(rawKind, rawName)
+}
 
 function parseLedger(root: string): { parsed: ParsedLedger; corrupt: boolean } {
-  const empty: ParsedLedger = { receipts: [], records: [], recordWarnings: [], receiptWarnings: [] }
+  const empty: ParsedLedger = {
+    receipts: [],
+    records: [],
+    recordWarnings: [],
+    receiptWarnings: [],
+    corruptRecords: { corruptKeys: new Set(), unattributable: false },
+  }
   let text: string
   try {
     text = fs.readFileSync(ledgerPath(root), "utf8")
@@ -296,14 +324,25 @@ function parseLedger(root: string): { parsed: ParsedLedger; corrupt: boolean } {
   }
   const records: InstallRecordV2[] = []
   const recordWarnings: string[] = []
+  const corruptKeys = new Set<string>()
+  let unattributable = false
   if (Array.isArray(raw.records)) {
     for (const entry of raw.records) {
       const decoded = decodeRecordV2(entry)
-      if (decoded.ok) records.push(decoded.record)
-      else recordWarnings.push(`corrupt v2 record excluded (fail closed — not operable) in ${ledgerPath(root)}: ${decoded.errors[0]}`)
+      if (decoded.ok) {
+        records.push(decoded.record)
+        continue
+      }
+      recordWarnings.push(`corrupt v2 record excluded (fail closed — not operable) in ${ledgerPath(root)}: ${decoded.errors[0]}`)
+      const attributed = attemptCorruptKey(entry)
+      if (attributed) corruptKeys.add(attributed)
+      else unattributable = true
     }
   }
-  return { parsed: { receipts, records, recordWarnings, receiptWarnings }, corrupt: false }
+  return {
+    parsed: { receipts, records, recordWarnings, receiptWarnings, corruptRecords: { corruptKeys, unattributable } },
+    corrupt: false,
+  }
 }
 
 function quarantineCorrupt(root: string): string | null {
@@ -343,6 +382,37 @@ export function readLedgerV2(root: string): LedgerV2Read {
 export function findRecordV2(root: string, kind: InstallReceiptType, name: string): InstallRecordV2 | null {
   const { records } = readLedgerV2(root)
   return records.find((r) => r.kind === kind && r.name === name) ?? null
+}
+
+/** 卸载前的单次解析、单次决策查询。REQ-099 #256:损坏 v2 record 绝不静默回退同账本 v1 receipt。
+ *  - `valid`  该 key 有合法 v2 record → 按 record 卸载
+ *  - `v1`     真正 v1-only(无配套 v2 record,且账本无归属歧义)→ 兼容卸载
+ *  - `corrupt-match`  该 key 有损坏 v2 record 被排除 → 拒绝(禁止回退 v1)
+ *  - `ledger-corrupt` 账本文件级损坏 / 存在不可归属的损坏 record → 拒绝该账本全部 v1 fallback
+ *  - `absent` 该 key 无任何记录 */
+export type UninstallLookup =
+  | { status: "valid"; record: InstallRecordV2 }
+  | { status: "v1"; receipt: InstallReceipt }
+  | { status: "corrupt-match"; reason: string }
+  | { status: "ledger-corrupt"; reason: string }
+  | { status: "absent" }
+
+export function lookupForUninstall(root: string, kind: InstallReceiptType, name: string): UninstallLookup {
+  const { parsed, corrupt } = parseLedger(root)
+  if (corrupt) return { status: "ledger-corrupt", reason: `installs.json unreadable: ${ledgerPath(root)}` }
+  const k = key(kind, name)
+  const record = parsed.records.find((r) => r.kind === kind && r.name === name)
+  if (record) return { status: "valid", record }
+  // 该 key 恰有损坏 v2 record 被排除 → 精确阻断,禁止回退 v1(损坏账本可诱导按错误字段删文件)。
+  if (parsed.corruptRecords.corruptKeys.has(k))
+    return { status: "corrupt-match", reason: `refusing uninstall: v2 record for ${k} is corrupt (fail closed — will not fall back to v1 receipt)` }
+  // 账本里有连 key 都提不出的损坏 record → 无法证明目标不是它 → 阻断该账本所有 v1 fallback。
+  if (parsed.corruptRecords.unattributable)
+    return { status: "ledger-corrupt", reason: `refusing uninstall: ledger contains an unattributable corrupt v2 record (fail closed — no v1 fallback)` }
+  const recordKeys = new Set(parsed.records.map((r) => key(r.kind, r.name)))
+  const receipt = parsed.receipts.find((r) => r.type === kind && r.name === name && !recordKeys.has(key(r.type, r.name)))
+  if (receipt) return { status: "v1", receipt }
+  return { status: "absent" }
 }
 
 /** v2 record → v1 兼容 receipt(回滚可读视图;字段有损但 v1 语义完整)。 */

@@ -183,6 +183,24 @@ describe("collectCasGarbage — fail closed", () => {
     expect(!r2.ok && r2.reason!.includes("fail closed")).toBeTrue()
     expect(hasCasBlob(base, garbage)).toBeTrue()
   })
+
+  test("corrupt pins.json aborts the round — a protected-then-corrupted blob is never swept (REQ-102 #333)", () => {
+    // 真实场景:先 pin 保护一个 blob,随后 pin 账损坏(部分写/磁盘错)。GC 绝不能把损坏 pin 账
+    // 当空集继续 sweep,否则受保护 blob 被误删(数据丢失)。
+    const protectedBlob = putOldBlob("protected by pin then ledger corrupts")
+    pinCasBlob(base, protectedBlob, "release baseline")
+    const { pinsPath } = casPaths(base)
+    // ① JSON 直接损坏
+    fs.writeFileSync(pinsPath, "{not: valid json")
+    const r1 = collectCasGarbage(base, { envRoots: [envRoot] })
+    expect(!r1.ok && r1.reason!.includes("fail closed")).toBeTrue()
+    expect(hasCasBlob(base, protectedBlob)).toBeTrue()
+    // ② JSON 合法但条目 schema 非法(pinnedAt 缺失)——同样 fail-closed,不逐项静默丢弃
+    fs.writeFileSync(pinsPath, JSON.stringify({ v: 1, pins: { [protectedBlob]: { reason: "x" } } }))
+    const r2 = collectCasGarbage(base, { envRoots: [envRoot] })
+    expect(!r2.ok && r2.reason!.includes("fail closed")).toBeTrue()
+    expect(hasCasBlob(base, protectedBlob)).toBeTrue()
+  })
 })
 
 describe("collectCasGarbage — user data is untouchable", () => {

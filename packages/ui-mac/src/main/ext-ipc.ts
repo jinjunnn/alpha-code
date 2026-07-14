@@ -14,7 +14,9 @@ import type { InstallMeta, InstallReceipt, InstallTarget } from "../preload/type
 import { addReceipt, alphaGlobalRoot, listInstalls, removeReceipt } from "./alpha-installs"
 import { fileifyMcpSecrets, removeMcpServerSecrets } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, type ProvenanceRequest } from "./alpha-migrate"
-import { configHealth, persistMcp, persistPlugin, removeMcp, removePlugin, removePluginPath } from "./ext-config"
+import { configHealth, persistPlugin, removeMcp, removePlugin, removePluginPath } from "./ext-config"
+import { persistMcpWithPolicy } from "./ext-mcp-policy"
+import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
 import { importSkillFolder, importSkillGit, installBuiltinAgent, installBuiltinSkill, installRemoteAgent, installRemoteSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall, resourcesRoot, writeAgent } from "./ext-fs-installer"
 import { parseAgentImport } from "./ext-import-validate"
 import { randomUUID } from "node:crypto"
@@ -30,7 +32,6 @@ import {
   importProjectClaudeMd,
   withExternalImportDecision,
 } from "./ecosystem-import"
-import { checkExcelMcpSafety } from "../shared/office-advisories"
 // REQ-099(ADR-028):main-only 安装计划 + v2 账本。随包 catalog 快照 = 验签远端/缓存不可用时的
 // 兜底真源(ADR-023 两级真源;与 renderer 的 B20 兜底同一字节)。
 import bundledCatalogJson from "../renderer/extensions/alpha-catalog.json"
@@ -62,20 +63,16 @@ export function registerExtIpcHandlers(userDataPath: string) {
   ipcMain.handle(
     "ext-persist-mcp",
     (_event: IpcMainInvokeEvent, name: string, server: Record<string, unknown>, meta?: InstallMeta, secretVars?: string[]) => {
-      // REQ-105(#197)Excel sandbox 闸口:excel-mcp-server 只放行 local stdio + 审计钉版
-      // (0.1.8)+ 零网络绑定 + workspace 内路径。写盘前拒绝 → renderer 的 live mcp.add 也
-      // 不会发生(persistAndConnectMcp 先持久化后 live);catalog / 自定义添加同闸(校验不放宽)。
-      if (server && typeof server === "object") {
-        const safety = checkExcelMcpSafety(name, server)
-        if (!safety.ok) return safety
-      }
       // T5:把 requiredEnvVars 的真值(renderer 刚采集,经 IPC 结构化克隆到达此处)搬进
       // {file:} 密钥通道 → durable config 只落引用,绝不明文。renderer 的 live mcp.add 仍用
       // 真值(内存态),下次启动引擎按 {file:} 解析。
       if (secretVars && secretVars.length && server && typeof server === "object") {
         fileifyMcpSecrets(userDataPath, name, server, secretVars)
       }
-      const r = persistMcp(name, server, meta)
+      // REQ-105 #254:MCP 写盘唯一策略入口。Excel sandbox 闸口(local stdio + 审计钉版 + 零网络
+      // 绑定 + 受管 workspace 强制)由 persistMcpWithPolicy 统一执行 —— main 注入固定 EXCEL_FILES_PATH,
+      // 结构上消除「调用点忘传 workspace」的 fail-open;planner 的 installers.persistMcp 同走此闸。
+      const r = persistMcpWithPolicy(name, server, meta)
       // codex L(REQ-033):persistMcp 拒绝(如 DANGEROUS_ENV)时,fileify 已先落的 secret 文件要撤 ——
       // 否则残留孤儿密钥文件(无 config 引用但内容在盘)。
       if (!r.ok && secretVars && secretVars.length) removeMcpServerSecrets(userDataPath, name)
@@ -204,10 +201,24 @@ export function registerExtIpcHandlers(userDataPath: string) {
     (_event: IpcMainInvokeEvent, vendoredAssetKey: string, name: string, meta?: InstallMeta) =>
       installVendoredPlugin(vendoredAssetKey, name, meta),
   )
-  // REQ-019 T6:导入(folder 校验 frontmatter 复制入 .alpha;git https-only 浅克隆临时目录同校验)
-  ipcMain.handle("ext-import-skill-folder", (_event: IpcMainInvokeEvent, srcDir: string, target?: InstallTarget) =>
-    importSkillFolder(srcDir, target),
-  )
+  // REQ-019 T6 / REQ-098 #255:folder 导入 = main 自弹目录选择器,用户实选目录即来源 —— renderer
+  // 不再传入任意绝对 srcDir(此前被攻陷 renderer 可直接调 bridge 读任意目录并复制入当前根,picker
+  // 非安全边界)。合并「弹窗+导入」为一个 IPC,renderer 全程拿不到可回传的授权路径。
+  ipcMain.handle("ext-import-skill-folder", async (_event: IpcMainInvokeEvent, target?: InstallTarget) => {
+    let srcDir: string | undefined
+    if (process.env.ALPHA_OPEN_DIR) {
+      srcDir = process.env.ALPHA_OPEN_DIR // headless/测试短路(main 控制的 env,非 renderer 输入)
+    } else {
+      const result = await dialog.showOpenDialog({
+        properties: ["openDirectory"],
+        title: "选择要导入的技能文件夹",
+        defaultPath: ensureUserWorkspaceDir() ?? undefined,
+      })
+      if (result.canceled || result.filePaths.length === 0) return { ok: false as const, canceled: true, reason: "已取消" }
+      srcDir = result.filePaths[0]
+    }
+    return importSkillFolder(srcDir!, target)
+  })
   ipcMain.handle("ext-import-skill-git", (_event: IpcMainInvokeEvent, url: string, target?: InstallTarget) =>
     importSkillGit(url, target),
   )
@@ -461,7 +472,7 @@ export function registerExtIpcHandlers(userDataPath: string) {
       platform: () => process.platform,
       globalRoot: alphaGlobalRoot,
       installers: {
-        persistMcp,
+        persistMcp: persistMcpWithPolicy, // REQ-105 #254:planner 生产安装同走 Excel workspace 闸口
         fileifyMcpSecrets: (name, server, secretVars) => void fileifyMcpSecrets(userDataPath, name, server, secretVars),
         removeMcpSecrets: (name) => removeMcpServerSecrets(userDataPath, name),
         removeMcp,

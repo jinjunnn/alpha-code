@@ -206,14 +206,12 @@ export function ExtensionHub(props: {
 
   const runImportFolder = async () => {
     setImportErr("")
-    const picked = await window.api.openDirectoryPicker({ title: t("alpha.ext.importFolderPick") })
-    const dir = Array.isArray(picked) ? picked[0] : picked
-    if (!dir) return
     setImportBusy(true)
     try {
-      const r = await ext.importSkillFolder(dir)
+      // REQ-098 #255:main 自弹目录选择器并直接以用户实选目录为来源;renderer 不再传 srcDir。
+      const r = await ext.importSkillFolder()
       if (r.ok) flash(t("alpha.ext.imported", { name: r.name ?? "" }), "success")
-      else setImportErr(r.reason ?? t("alpha.ext.installFailed"))
+      else if (!r.canceled) setImportErr(r.reason ?? t("alpha.ext.installFailed"))
     } finally {
       setImportBusy(false)
     }

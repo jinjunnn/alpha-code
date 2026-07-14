@@ -161,20 +161,29 @@ export function checkExcelMcpSafety(
     return { ok: false, reason: `excel-mcp-server 配置含 0.0.0.0(全网卡监听),拒绝(REQ-105)` }
   }
 
-  // ⑤ workspace sandbox:EXCEL_FILES_PATH(该包的文件根)必须是绝对路径、零遍历段;
-  //    已知 workspace 时必须落在其内。
+  // ⑤ workspace sandbox:EXCEL_FILES_PATH(该包的文件根)必须绝对、零遍历段、落在 workspace 内。
+  //    REQ-105 #254 修:当调用方给出策略 workspace 根(生产安装路径必给)时,EXCEL_FILES_PATH
+  //    **强制存在**——缺失即拒绝(此前缺失直接放行 = fail-open,恶意/误配 catalog 可让 Excel MCP
+  //    读写任意目录)。无 workspace 的裸校验面(遗留/非策略调用)保留「present 才校验」。
   const filesPath = env.EXCEL_FILES_PATH
-  if (typeof filesPath === "string" && filesPath.length > 0) {
-    if (!isAbsolutePath(filesPath)) {
-      return { ok: false, reason: `EXCEL_FILES_PATH 必须是绝对路径(REQ-105 workspace sandbox)` }
+  if (workspace) {
+    if (typeof filesPath !== "string" || filesPath.length === 0) {
+      return { ok: false, reason: `excel-mcp-server 必须设置 EXCEL_FILES_PATH 并锁进受管 workspace(REQ-105 #254 fail-closed)` }
     }
-    if (hasTraversal(filesPath)) {
-      return { ok: false, reason: `EXCEL_FILES_PATH 含路径遍历段(..),拒绝(REQ-105)` }
-    }
-    if (workspace && !isInside(filesPath, workspace)) {
-      return { ok: false, reason: `EXCEL_FILES_PATH 超出 workspace 边界,拒绝(REQ-105)` }
-    }
+    if (!isAbsolutePath(filesPath)) return { ok: false, reason: `EXCEL_FILES_PATH 必须是绝对路径(REQ-105 workspace sandbox)` }
+    if (hasTraversal(filesPath)) return { ok: false, reason: `EXCEL_FILES_PATH 含路径遍历段(..),拒绝(REQ-105)` }
+    if (!isInside(filesPath, workspace)) return { ok: false, reason: `EXCEL_FILES_PATH 超出 workspace 边界,拒绝(REQ-105)` }
+  } else if (typeof filesPath === "string" && filesPath.length > 0) {
+    if (!isAbsolutePath(filesPath)) return { ok: false, reason: `EXCEL_FILES_PATH 必须是绝对路径(REQ-105 workspace sandbox)` }
+    if (hasTraversal(filesPath)) return { ok: false, reason: `EXCEL_FILES_PATH 含路径遍历段(..),拒绝(REQ-105)` }
   }
 
   return { ok: true }
+}
+
+/** persistMcp 前置识别:该 server 是否触及 Excel MCP(名字点名或命令含审计包)。main 侧策略
+ *  包装器用它决定是否注入受管 workspace 根(REQ-105 #254)。 */
+export function isExcelMcp(name: string, server: Record<string, unknown>): boolean {
+  const command = Array.isArray(server.command) ? (server.command as unknown[]).filter((a): a is string => typeof a === "string") : []
+  return name === EXCEL_MCP_PIN.name || isExcelCommand(command)
 }

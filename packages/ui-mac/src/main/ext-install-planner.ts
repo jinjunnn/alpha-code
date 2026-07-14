@@ -27,7 +27,6 @@ import type { InstallReceiptType } from "../preload/types"
 import type { CatalogEntry, McpInstallSpec } from "../renderer/extensions/catalog-types"
 import type { AppEnvironment } from "./alpha-environment"
 import { alphaRoot } from "./alpha-workdir"
-import { findReceipt } from "./alpha-installs"
 import {
   aggregateFilesDigest,
   computeManifestDigest,
@@ -45,6 +44,7 @@ import {
 import {
   computeGrantDigest,
   findRecordV2,
+  lookupForUninstall,
   projectScopeIdentity,
   removeRecordV2,
   setDesiredStateV2,
@@ -603,15 +603,19 @@ export async function uninstallByKey(rawIntent: unknown, deps: PlannerDeps): Pro
     target = { scope: "global" }
   }
 
-  // main 自己的账本才是事实源;renderer 只提供了 key。
-  const record = findRecordV2(root, intent.type, intent.name)
+  // main 自己的账本才是事实源;renderer 只提供了 key。单次解析、单次决策:损坏 v2 record 绝不
+  // 静默回退同账本 v1 receipt(REQ-099 #256 fail-closed)。
+  const lookup = lookupForUninstall(root, intent.type, intent.name)
+  if (lookup.status === "corrupt-match" || lookup.status === "ledger-corrupt") return { ok: false, reason: lookup.reason }
+  if (lookup.status === "absent")
+    return { ok: false, reason: `not installed: ${intent.type}:${intent.name} (no receipt in this scope's ledger)` }
+  const record = lookup.status === "valid" ? lookup.record : null
+  const v1 = lookup.status === "v1" ? lookup.receipt : null
   if (record && record.scope.kind === "project") {
     if (intent.scope !== "project") return { ok: false, reason: "fail closed: record is project-scoped but intent is global" }
     const verified = verifyProjectScope(record, intent.projectDir)
     if (!verified.ok) return verified // 项目被移动/identity 不符 → 拒绝,绝不退化为 global 卸载(AC#4)
   }
-  const v1 = record ? null : findReceipt(root, intent.type, intent.name)
-  if (!record && !v1) return { ok: false, reason: `not installed: ${intent.type}:${intent.name} (no receipt in this scope's ledger)` }
   const configKey = record?.configKey ?? v1?.configKey
 
   const tx = (deps.transaction ?? passthroughTx).begin({ op: "uninstall", kind: intent.type, name: intent.name, scope: intent.scope })

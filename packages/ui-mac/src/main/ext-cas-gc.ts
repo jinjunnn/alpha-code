@@ -25,7 +25,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { confinedExistingPath, sha256FileSync } from "./ext-atomic-fs"
 import { tryAcquireBundleLock, type BundleLock } from "./ext-bundle-lock"
-import { CAS_SHA256_RE, casPaths, readCasPins } from "./ext-cas"
+import { CAS_SHA256_RE, casPaths, readCasPinsStrict } from "./ext-cas"
 import { decodeSeedLock } from "./ext-seed"
 import { listGenerations, readTransactionJournal, type TxLog } from "./ext-transaction"
 import { environmentMutableRoot } from "./alpha-environment"
@@ -108,8 +108,10 @@ function markJournals(envRoot: string, marked: Set<string>): void {
   let names: string[]
   try {
     names = fs.readdirSync(dir).filter((n) => n.endsWith(".json"))
-  } catch {
-    return // 无 journal 目录 = 无事务史
+  } catch (error) {
+    // 仅「目录不存在」= 无事务史;权限/IO 等其它错误 = mark 根不可信 → fail closed。
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return
+    throw new Error(`journal dir unreadable ${dir} — refusing to GC (fail closed): ${error instanceof Error ? error.message : String(error)}`)
   }
   for (const name of names) {
     if (name.includes(".corrupt-")) continue // 恢复机移开留证的坏 journal,不构成 mark 根
@@ -125,8 +127,10 @@ function markGenerations(envRoot: string, marked: Set<string>, warnings: string[
   let keys: fs.Dirent[]
   try {
     keys = fs.readdirSync(storeRoot, { withFileTypes: true })
-  } catch {
-    return // 无安装
+  } catch (error) {
+    // 仅「目录不存在」= 无安装;权限/IO 等其它错误 = 可达 generation 不可枚举 → fail closed。
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return
+    throw new Error(`ext-store unreadable ${storeRoot} — refusing to GC (fail closed): ${error instanceof Error ? error.message : String(error)}`)
   }
   for (const key of keys) {
     if (!key.isDirectory()) continue
@@ -204,10 +208,15 @@ export function collectCasGarbage(baseRoot: string, opts: CasGcOptions): CasGcRe
         markGenerations(envRoot, marked, warnings)
       }
       for (const seedLockPath of opts.seedLockPaths ?? []) markSeedLock(seedLockPath, marked)
+      // pin 账是 mark 根之一:损坏(存在但不可读/JSON/结构非法)必须 fail-closed,绝不当空集
+      // 继续 sweep —— 否则受保护 blob 会被误删(REQ-102 #333)。仅「无 pin 文件」= 合法空集。
+      const pinsRead = readCasPinsStrict(baseRoot)
+      if (pinsRead.status === "invalid")
+        throw new Error(`corrupt pins ledger — refusing to GC (fail closed): ${pinsRead.reason}`)
+      for (const digest of Object.keys(pinsRead.pins)) marked.add(digest)
     } catch (error) {
       return report({ ok: false, reason: error instanceof Error ? error.message : String(error) })
     }
-    for (const digest of Object.keys(readCasPins(baseRoot).pins)) marked.add(digest)
 
     // ── sweep ───────────────────────────────────────────────────────────────────────────────
     const sweepable: Array<{ sha256: string; bytes: number }> = []

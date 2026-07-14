@@ -162,35 +162,70 @@ export function readCasBlobVerified(
 
 export type CasPins = { v: 1; pins: Record<string, { reason: string; pinnedAt: string }> }
 
-export function readCasPins(baseRoot: string): CasPins {
+/** 严格读取结果:`missing`=无 pin 文件(合法空集);`valid`=文件存在且结构全部合法;
+ *  `invalid`=文件存在但不可读/JSON 失败/根或任一条目非法。REQ-102(#333):pin 账是 GC 的
+ *  mark 根之一,损坏时**绝不**降级为「无保护项」——否则受保护 blob 会被 GC 当垃圾清除。 */
+export type CasPinsRead =
+  | { status: "missing"; pins: CasPins["pins"] }
+  | { status: "valid"; pins: CasPins["pins"] }
+  | { status: "invalid"; reason: string }
+
+export function readCasPinsStrict(baseRoot: string): CasPinsRead {
+  const pinsPath = casPaths(baseRoot).pinsPath
+  let text: string
   try {
-    const parsed = JSON.parse(fs.readFileSync(casPaths(baseRoot).pinsPath, "utf8")) as CasPins
-    if (parsed && typeof parsed === "object" && parsed.pins && typeof parsed.pins === "object") {
-      const pins: CasPins["pins"] = {}
-      for (const [k, v] of Object.entries(parsed.pins)) {
-        if (CAS_SHA256_RE.test(k) && v && typeof v === "object" && typeof v.reason === "string") pins[k] = v
-      }
-      return { v: 1, pins }
-    }
-  } catch {
-    /* 无 pin 账 = 空集 */
+    text = fs.readFileSync(pinsPath, "utf8")
+  } catch (error) {
+    // 仅「文件不存在」= 合法空集;权限/IO/是目录等其它错误一律 fail-closed。
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { status: "missing", pins: {} }
+    return { status: "invalid", reason: `pins unreadable: ${error instanceof Error ? error.message : String(error)}` }
   }
-  return { v: 1, pins: {} }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch (error) {
+    return { status: "invalid", reason: `pins JSON parse failed: ${error instanceof Error ? error.message : String(error)}` }
+  }
+  if (!parsed || typeof parsed !== "object") return { status: "invalid", reason: "pins root is not an object" }
+  const raw = (parsed as { pins?: unknown }).pins
+  if (!raw || typeof raw !== "object") return { status: "invalid", reason: "pins.pins missing or not an object" }
+  const pins: CasPins["pins"] = {}
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!CAS_SHA256_RE.test(k)) return { status: "invalid", reason: `invalid pin digest key: ${k.slice(0, 16)}…` }
+    if (!v || typeof v !== "object") return { status: "invalid", reason: `invalid pin entry for ${k.slice(0, 12)}…` }
+    const entry = v as { reason?: unknown; pinnedAt?: unknown }
+    if (typeof entry.reason !== "string" || typeof entry.pinnedAt !== "string")
+      return { status: "invalid", reason: `invalid pin entry fields for ${k.slice(0, 12)}…` }
+    pins[k] = { reason: entry.reason, pinnedAt: entry.pinnedAt }
+  }
+  return { status: "valid", pins }
+}
+
+/** 便利读取(仅 missing|valid 语义);损坏 pin 账 **抛错**,绝不静默返回空集。 */
+export function readCasPins(baseRoot: string): CasPins {
+  const read = readCasPinsStrict(baseRoot)
+  if (read.status === "invalid") throw new Error(`refusing to treat corrupt pins ledger as empty: ${read.reason}`)
+  return { v: 1, pins: read.pins }
 }
 
 export function pinCasBlob(baseRoot: string, sha256: string, reason: string, now: () => Date = () => new Date()): boolean {
   if (!CAS_SHA256_RE.test(sha256)) return false
-  const pins = readCasPins(baseRoot)
-  pins.pins[sha256] = { reason, pinnedAt: now().toISOString() }
-  writeFileAtomicSync(casPaths(baseRoot).pinsPath, JSON.stringify(pins, null, 2) + "\n")
+  // 损坏 pin 账不得被「空集 + 本次一条」覆盖 —— 否则已有保护标记会永久丢失。
+  const read = readCasPinsStrict(baseRoot)
+  if (read.status === "invalid") return false
+  const pins = read.pins
+  pins[sha256] = { reason, pinnedAt: now().toISOString() }
+  writeFileAtomicSync(casPaths(baseRoot).pinsPath, JSON.stringify({ v: 1, pins }, null, 2) + "\n")
   return true
 }
 
 export function unpinCasBlob(baseRoot: string, sha256: string): boolean {
-  const pins = readCasPins(baseRoot)
-  if (!(sha256 in pins.pins)) return false
-  delete pins.pins[sha256]
-  writeFileAtomicSync(casPaths(baseRoot).pinsPath, JSON.stringify(pins, null, 2) + "\n")
+  const read = readCasPinsStrict(baseRoot)
+  if (read.status === "invalid") return false
+  const pins = read.pins
+  if (!(sha256 in pins)) return false
+  delete pins[sha256]
+  writeFileAtomicSync(casPaths(baseRoot).pinsPath, JSON.stringify({ v: 1, pins }, null, 2) + "\n")
   return true
 }
 
