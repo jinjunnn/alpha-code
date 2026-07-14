@@ -7,6 +7,7 @@ import * as path from "node:path"
 import * as crypto from "node:crypto"
 import { findRecordV2, readLedgerV2, removeRecordV2, upsertRecordsV2 } from "./ext-receipt-v2"
 import {
+  readGenerationReceiptSnapshot,
   recoverExtensionTransactions,
   resolveLiveGenerationDir,
   runExtensionTransaction,
@@ -18,6 +19,8 @@ import {
   collectSkillPayloadFromDir,
   commitInputFromRecord,
   installSkillGeneration,
+  listSkillGenerations,
+  rollbackSkillGeneration,
   skillGenerationKey,
   skillGenerationLiveDirs,
   skillGenerationProbe,
@@ -241,6 +244,96 @@ describe("#313 卸载:锁内 journaled store+ledger teardown + 恢复补偿", ()
     })
     expect(rec.ok).toBe(true)
     expect(findRecordV2(root, "skill", "demo")).toBeNull() // ghost 账本被恢复补删
+  })
+})
+
+describe("#313 快照 + 两版离线回滚", () => {
+  const installV = (name: string, version: string) =>
+    installSkillGeneration(root, {
+      name,
+      id: `catalog:${name}`,
+      environment: "prod",
+      scope: { kind: "global" },
+      origin: "catalog",
+      version,
+      manifestDigest: `sha256:${crypto.createHash("sha256").update(name + version).digest("hex")}`,
+      files: payload({ "SKILL.md": skillMd(name) }),
+    })
+
+  test("install 写 generation receipt 快照(receipts/<genId>.json)", async () => {
+    await install("demo")
+    const genId = listSkillGenerations(root, "demo")[0]!.genId
+    const snap = readGenerationReceiptSnapshot(root, skillGenerationKey("demo"), genId)
+    expect(snap).not.toBeNull()
+    expect((snap!.receipt as { name: string }).name).toBe("demo")
+  })
+
+  test("回滚到上一版:pointer + receipt 都回到目标版本;逻辑 generation 递增不倒退", async () => {
+    await installV("demo", "1.0.0")
+    const gen1 = listSkillGenerations(root, "demo")[0]!.genId
+    await installV("demo", "2.0.0")
+    expect(findRecordV2(root, "skill", "demo")!.version).toBe("2.0.0")
+    const gens = listSkillGenerations(root, "demo")
+    expect(gens).toHaveLength(2)
+    expect(gens.every((g) => g.eligible)).toBe(true) // 两版均有快照 = 可回滚
+
+    const r = await rollbackSkillGeneration(root, "demo", gen1)
+    expect(r.ok).toBe(true)
+    expect(resolveLiveGenerationDir(root, skillGenerationKey("demo"))).toContain(gen1) // pointer 回 gen1
+    const rec = findRecordV2(root, "skill", "demo")!
+    expect(rec.version).toBe("1.0.0") // receipt 元数据回到目标版本(不分叉)
+    expect(rec.generation).toBe(3) // 逻辑号递增:装2 + 回滚1(不倒退)
+  })
+
+  test("回滚目标 probe 不健康 → 零变更", async () => {
+    await installV("demo", "1.0.0")
+    const gen1 = listSkillGenerations(root, "demo")[0]!.genId
+    await installV("demo", "2.0.0")
+    // 破坏目标 gen 的 SKILL.md → probe 失败
+    const gen1Dir = path.join(skillStorePaths(root, "demo").generations, gen1)
+    fs.writeFileSync(path.join(gen1Dir, "SKILL.md"), "corrupted no frontmatter")
+    const beforeVer = findRecordV2(root, "skill", "demo")!.version
+    const r = await rollbackSkillGeneration(root, "demo", gen1)
+    expect(r.ok).toBe(false)
+    expect(findRecordV2(root, "skill", "demo")!.version).toBe(beforeVer) // 零变更
+    expect(resolveLiveGenerationDir(root, skillGenerationKey("demo"))).not.toContain(gen1) // 指针未翻
+  })
+
+  test("回滚崩溃在翻指针与落账之间 → 恢复从 journal receipt 前滚补账", async () => {
+    await installV("demo", "1.0.0")
+    const gen1 = listSkillGenerations(root, "demo")[0]!.genId
+    await installV("demo", "2.0.0")
+    // 逼 commitReceipt 失败(installs.json 变目录)→ 指针已翻,账未落,journal=switched。
+    const ledger = path.join(root, "installs.json")
+    const saved = fs.readFileSync(ledger, "utf8")
+    fs.rmSync(ledger)
+    fs.mkdirSync(ledger)
+    const r = await rollbackSkillGeneration(root, "demo", gen1)
+    expect(r.ok).toBe(false)
+    expect(resolveLiveGenerationDir(root, skillGenerationKey("demo"))).toContain(gen1) // 指针已翻(live=目标)
+    // 修复账本后恢复前滚补账。
+    fs.rmdirSync(ledger)
+    fs.writeFileSync(ledger, saved)
+    const rec = await recoverExtensionTransactions(root, {
+      pidAlive: () => false,
+      log: () => {},
+      commitReceipt: (recs) => {
+        const w = upsertRecordsV2(root, recs.map((x) => commitInputFromRecord(x)))
+        if (!w.ok) throw new Error(w.reason)
+      },
+    })
+    expect(rec.ok).toBe(true)
+    expect(findRecordV2(root, "skill", "demo")!.version).toBe("1.0.0") // 前滚补账 → receipt 与 live 一致
+  })
+
+  test("卸载删 receipts/ 快照目录(owned path)", async () => {
+    await install("demo")
+    const snapDir = path.join(skillStorePaths(root, "demo").store, "receipts")
+    expect(fs.existsSync(snapDir)).toBe(true)
+    const un = await uninstallExtensionTransaction(root, skillGenerationKey("demo"), {})
+    expect(un.ok).toBe(true)
+    expect(fs.existsSync(snapDir)).toBe(false) // receipts/ 随 store 删净
+    expect(fs.existsSync(skillStorePaths(root, "demo").store)).toBe(false)
   })
 })
 

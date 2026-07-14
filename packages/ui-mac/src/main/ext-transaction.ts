@@ -308,6 +308,41 @@ const authzReceiptPath = (root: string, txId: string) => path.join(root, TX_DIR,
 const generationDirOf = (root: string, key: string, genId: string) =>
   path.join(extensionStorePaths(root, key).generations, genId)
 
+// ── generation receipt descriptor 快照(REQ-100 #313 契约 a):每物理 generation 一份账本描述符,
+//    使离线回滚能把 receipt 复原到目标 generation 的元数据(receipt 与 live 不分叉)。落 store 下的
+//    receipts/ 子目录,与 generation 一一配对(GC/quarantine/uninstall 联动删除)。 ────────────────
+const receiptSnapshotDir = (root: string, key: string) => path.join(extensionStorePaths(root, key).store, "receipts")
+const receiptSnapshotPath = (root: string, key: string, genId: string) => path.join(receiptSnapshotDir(root, key), `${genId}.json`)
+
+export type GenerationReceiptSnapshot = { v: 1; key: string; genId: string; receipt: unknown; committedAt: string }
+
+/** 提交阶段幂等写 generation 快照(receipt 不透明;无 receipt 模板 = 不写)。 */
+function writeReceiptSnapshot(root: string, key: string, genId: string, receipt: unknown, committedAt: string): void {
+  if (receipt === undefined) return
+  const snap: GenerationReceiptSnapshot = { v: 1, key, genId, receipt, committedAt }
+  writeFileAtomicSync(receiptSnapshotPath(root, key, genId), JSON.stringify(snap, null, 2) + "\n")
+}
+
+/** 严格读取目标 generation 快照(key/genId 必须匹配);缺失/损坏 → null。 */
+export function readGenerationReceiptSnapshot(root: string, key: string, genId: string): GenerationReceiptSnapshot | null {
+  if (!SAFE_KEY.test(key) || !GEN_NAME.test(genId)) return null
+  try {
+    const parsed = JSON.parse(fs.readFileSync(receiptSnapshotPath(root, key, genId), "utf8")) as GenerationReceiptSnapshot
+    if (parsed && parsed.v === 1 && parsed.key === key && parsed.genId === genId && parsed.receipt !== undefined) return parsed
+  } catch {
+    /* 缺失/损坏 */
+  }
+  return null
+}
+
+function removeReceiptSnapshot(root: string, key: string, genId: string): void {
+  try {
+    fs.unlinkSync(receiptSnapshotPath(root, key, genId))
+  } catch {
+    /* 已无 */
+  }
+}
+
 /** 从 journal item 构造 commit record(主提交与恢复前滚同源;透传 receipt 模板 REQ-100 #312)。 */
 function buildCommitRecord(root: string, txId: string, it: TxJournalItem, committedAt: string): TxCommitRecord {
   const receipt = it.receipt !== undefined ? { receipt: it.receipt } : {}
@@ -604,6 +639,7 @@ function quarantineGenerations(
     try {
       renameAtomicSync(entry.dir, dest)
       moved.push({ key: entry.key, genId: entry.genId, movedTo: dest })
+      removeReceiptSnapshot(root, entry.key, entry.genId) // #313:隔离的失败 generation 其快照无效,联动清除
     } catch (error) {
       warnings.push(`quarantine move failed for ${entry.dir}: ${error instanceof Error ? error.message : String(error)}`)
     }
@@ -739,7 +775,10 @@ export function gcGenerations(
     if (keepSet.has(name)) continue
     const dir = path.join(generations, name)
     if (current && name === current.genId) continue // 双保险:live 永不删
-    if (removeDirGuarded(root, dir, warnings)) deleted.push(dir)
+    if (removeDirGuarded(root, dir, warnings)) {
+      deleted.push(dir)
+      removeReceiptSnapshot(root, key, name) // #313:generation 删 → 联动删其 receipt 快照
+    }
   }
   return { deleted, warnings }
 }
@@ -1076,6 +1115,9 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
       return rollbackAll("receipt-commit", `receipt commit failed: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
+  // generation receipt descriptor 快照(#313):与 receipt commit 同阶段落盘,供离线回滚复原元数据。
+  for (const it of journal.items)
+    if (actionOf(it) === "generation") writeReceiptSnapshot(root, it.key, it.genId, it.receipt, committedAt)
   crash("after-receipt-commit")
   advance("committed")
   // 授权账只在 committed 后落盘(与恢复前滚共用;此前任何失败路径都不触碰授权账)
@@ -1188,6 +1230,16 @@ function deleteOwnedGenerationStore(root: string, key: string, removed: string[]
       /* non-empty → retained */
     }
   }
+  // #313:receipts/(generation 描述符快照)是事务拥有路径 —— 卸载一并删,否则 rmdir store 失败。
+  const snapDir = receiptSnapshotDir(root, key)
+  if (fs.existsSync(snapDir)) {
+    try {
+      fs.rmSync(snapDir, { recursive: true, force: true })
+      removed.push(snapDir)
+    } catch (error) {
+      warnings.push(`receipts dir removal failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
   try {
     fs.rmdirSync(store)
   } catch {
@@ -1247,6 +1299,76 @@ export async function uninstallExtensionTransaction(
   } catch (error) {
     warnings.push(`ledger removal failed (store already removed) — recovery will complete: ${error instanceof Error ? error.message : String(error)}`)
     return { ok: false, reason: `uninstall ledger commit failed: ${error instanceof Error ? error.message : String(error)}`, warnings }
+  } finally {
+    acquired.lock.release()
+  }
+}
+
+export type RollbackHooks = {
+  /** 锁内回调:据目标 gen 快照 + 当前账本构造回滚 receipt(不透明;逻辑 generation 递增、
+   *  previousDigest 指回滚前 live、desiredState 用当前策略)。返回 null = 快照缺失/损坏 → abort 零变更。 */
+  resolveReceipt: (targetGenId: string) => unknown | null
+  probe?: HealthProbe
+  commitReceipt: (record: TxCommitRecord) => void | Promise<void>
+  log?: TxLog
+  now?: () => Date
+  pidAlive?: (pid: number) => boolean
+  lockStaleMs?: number
+}
+
+/**
+ * 两版离线回滚(REQ-100 #313):**锁内** journaled —— probe 验目标 gen 健康 + 严格读快照构造新 receipt
+ * 修订 → 翻 current.json 指针 → commitReceipt 落新修订。任一前置失败(目录缺失/probe/快照)= 零变更。
+ * 崩溃在翻指针与落账之间 → recoverExtensionTransactions 从 journal receipt 前滚补账(receipt 与 live 不分叉)。 */
+export async function rollbackGenerationTransaction(
+  root: string,
+  key: string,
+  targetGenId: string,
+  hooks: RollbackHooks,
+): Promise<{ ok: true; previous: string | null } | { ok: false; reason: string }> {
+  if (!path.isAbsolute(root)) return { ok: false, reason: `root must be absolute: ${root}` }
+  if (!SAFE_KEY.test(key)) return { ok: false, reason: `invalid key: ${key}` }
+  if (!GEN_NAME.test(targetGenId)) return { ok: false, reason: `invalid generation id: ${targetGenId}` }
+  const now = hooks.now ?? (() => new Date())
+  const log = hooks.log ?? defaultLog
+  const txId = newTxId()
+  const acquired = tryAcquireBundleLock(root, { txId, now, log, pidAlive: hooks.pidAlive, staleMs: hooks.lockStaleMs })
+  if (!acquired.ok) return { ok: false, reason: acquired.reason }
+  try {
+    const dir = generationDirOf(root, key, targetGenId)
+    if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return { ok: false, reason: `generation not on disk: ${targetGenId}` }
+    const previous = readCurrentGeneration(root, key)?.genId ?? null
+    if (previous === targetGenId) return { ok: true, previous } // 已是目标
+    // 健康门:目标 gen 必须通过类型化 probe(零变更前置)。
+    if (hooks.probe) {
+      const verdict = await hooks.probe({ key, action: "generation", genId: targetGenId, generationDir: dir, phase: "pre-switch" })
+      if (!verdict.healthy) return { ok: false, reason: `rollback target unhealthy: ${verdict.reason}` }
+    }
+    const receipt = hooks.resolveReceipt(targetGenId)
+    if (receipt === null || receipt === undefined) return { ok: false, reason: `rollback receipt unavailable for ${targetGenId} (snapshot missing/corrupt)` }
+    const iso = now().toISOString()
+    let journal: TxJournal = {
+      v: 1,
+      txId,
+      op: "rollback",
+      state: "switching",
+      createdAt: iso,
+      updatedAt: iso,
+      items: [{ key, genId: targetGenId, files: [], receipt, previousGeneration: previous }],
+    }
+    writeJournalSync(root, journal)
+    writePointerSync(root, key, targetGenId, txId, now) // 原子翻指针
+    journal = { ...journal, state: "switched", updatedAt: now().toISOString() }
+    writeJournalSync(root, journal)
+    const record = buildCommitRecord(root, txId, journal.items[0]!, now().toISOString())
+    await hooks.commitReceipt(record) // 落新 receipt 修订
+    journal = { ...journal, state: "committed", updatedAt: now().toISOString() }
+    writeJournalSync(root, journal)
+    log("tx-rolled-forward", { txId, key, target: targetGenId, previous })
+    return { ok: true, previous }
+  } catch (error) {
+    if (error instanceof ExtTxCrashError) throw error
+    return { ok: false, reason: `rollback failed: ${error instanceof Error ? error.message : String(error)}` }
   } finally {
     acquired.lock.release()
   }
@@ -1329,7 +1451,9 @@ export async function recoverExtensionTransactions(
       reports.push(
         journal.op === "uninstall"
           ? await recoverUninstall(root, journal, opts, now, log)
-          : await recoverOne(root, journal, opts, now, log),
+          : journal.op === "rollback"
+            ? await recoverRollback(root, journal, opts, now, log)
+            : await recoverOne(root, journal, opts, now, log),
       )
     }
     // 有界清理:quarantine + 终态 journal
@@ -1371,6 +1495,32 @@ async function recoverUninstall(
   for (const w of warnings) log("recovery-uninstall-warning", { txId, warning: w })
   log("recovery-uninstalled", { txId, key })
   return { txId, state: journal.state, action: "resumed-committed", detail: "uninstall forward-completed" }
+}
+
+/** 回滚恢复补偿(REQ-100 #313):前滚 —— 确保指针翻到目标 gen,并从 journal receipt 补落新修订。
+ *  receipt commit 仍失败 → 保持非终态供下次前滚。在恢复锁内运行。 */
+async function recoverRollback(
+  root: string,
+  journal: TxJournal,
+  opts: RecoverOptions,
+  now: () => Date,
+  log: TxLog,
+): Promise<TxRecoveryReport> {
+  const txId = journal.txId
+  const it = journal.items[0]
+  if (!it || journal.state === "committed") return { txId, state: journal.state, action: "none", detail: "already terminal" }
+  if (readCurrentGeneration(root, it.key)?.genId !== it.genId) writePointerSync(root, it.key, it.genId, txId, now) // 幂等翻指针
+  if (opts.commitReceipt && it.receipt !== undefined) {
+    try {
+      await opts.commitReceipt([buildCommitRecord(root, txId, it, now().toISOString())])
+    } catch (error) {
+      log("recovery-rollback-pending", { txId, key: it.key, warning: error instanceof Error ? error.message : String(error) })
+      return { txId, state: journal.state, action: "none", detail: "receipt commit still failing — retained for retry" }
+    }
+  }
+  writeJournalSync(root, { ...journal, state: "committed", updatedAt: now().toISOString() })
+  log("recovery-rolled-forward", { txId, key: it.key, target: it.genId })
+  return { txId, state: journal.state, action: "resumed-committed", detail: "rollback forward-completed" }
 }
 
 async function recoverOne(
@@ -1457,6 +1607,8 @@ async function recoverOne(
       const records: TxCommitRecord[] = journal.items.map((it) => buildCommitRecord(root, txId, it, committedAt))
       try {
         await opts.commitReceipt(records) // 幂等 upsert(接缝契约)
+        for (const it of journal.items)
+          if (actionOf(it) === "generation") writeReceiptSnapshot(root, it.key, it.genId, it.receipt, committedAt) // #313 快照前滚
         removeDirGuarded(root, staleStaging, warnings)
         finish("committed", "crash recovery: switch verified healthy — receipt replayed")
         // 前滚 = committed:授权账与授权收据同样落位(幂等;主路径同一 helper)
