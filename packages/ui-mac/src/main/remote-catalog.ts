@@ -23,6 +23,7 @@ import {
   refreshChannelCatalog,
   sha256Hex,
   type ChannelClientDeps,
+  type ChannelName,
 } from "./catalog-channels"
 
 export { catalogVersionLess } // 既有导出面保持(版本比较实现移居 catalog-channels,逐字未变)
@@ -38,7 +39,17 @@ const MAX_ASSET_BYTES = 5 * 1024 * 1024 // 单资产文件 5MB 上限(文本技�
 
 export type RemoteAssetFile = { path: string; sha256: string; bytes: number; url: string }
 export type RemoteCatalogResult =
-  | { source: "remote" | "cache"; catalog: unknown; version: string; fetchedAt: string; error?: string; via?: "channel-stable" | "v1" }
+  | {
+      source: "remote" | "cache"
+      catalog: unknown
+      version: string
+      fetchedAt: string
+      error?: string
+      /** 传输面:channel 指针链或 legacy v1(freshness/来源维度)。成功分支恒有(review #364)。 */
+      via: `channel-${ChannelName}` | "v1"
+      /** 内容通道(REQ-098 #302 结构化字段,不要解析 via 字符串):v1 面恒为 stable。成功分支恒有。 */
+      channel: ChannelName
+    }
   | { source: "none"; error: string }
 
 const cachePath = (userDataPath: string) => path.join(userDataPath, "remote-catalog.json")
@@ -97,21 +108,48 @@ async function fetchWithTimeout(url: string, headers: Record<string, string> = {
   }
 }
 
-/**
- * 拉取远程 catalog:**channel-first(stable 指针,REQ-101)→ 失败 loud → 现行 v1 兼容面**;
- * v1 面按原回退链(远端 → last-known 缓存),v1 也执行 R11 撤销。deps 仅测试注入,缺省 = 生产。
- */
-export async function refreshRemoteCatalog(userDataPath: string, deps: ChannelClientDeps = {}): Promise<RemoteCatalogResult> {
-  const ch = await refreshChannelCatalog(userDataPath, "stable", deps)
-  if (ch.source === "remote")
-    return { source: "remote", catalog: ch.catalog, version: ch.version, fetchedAt: ch.fetchedAt, via: "channel-stable", ...(ch.error ? { error: ch.error } : {}) }
-  console.error(`[remote-catalog] stable channel path unavailable (${ch.error ?? "?"}) — falling back to legacy v1 catalog path`)
+// singleflight(REQ-098 #302,Codex 裁决 E):启动预热 / IPC / planner 可能并发触发同一拉取 ——
+// 按 (userDataPath, channel) 合并在途请求,防重复网络往返与旧 sequence 晚写。settle 即清。
+const inflightRefresh = new Map<string, Promise<RemoteCatalogResult>>()
 
+/**
+ * 拉取远程 catalog(REQ-098 #302:channel 由冻结环境快照经 composition root 显式注入,**必填无
+ * 缺省** —— 缺省值会让新调用方静默重现「恒请求 stable」缺陷):
+ * - stable:channel-first(REQ-101)→ 失败 loud → 现行 v1 兼容面(v1 = stable-only 遗产,
+ *   原回退链 远端 → last-known 缓存,R11 撤销同样生效)→ channel LKG。
+ * - preview/dev:channel remote → 同通道 LKG → none,**绝不访问 v1**(越级降 stable 内容 =
+ *   通道语义混淆,会进一步污染安装与 receipt;要复用内容应由发布侧签发指向同 payload 的
+ *   channel doc)。deps 仅测试注入,缺省 = 生产。
+ */
+export async function refreshRemoteCatalog(userDataPath: string, channel: ChannelName, deps: ChannelClientDeps = {}): Promise<RemoteCatalogResult> {
+  const key = JSON.stringify([userDataPath, channel])
+  const existing = inflightRefresh.get(key)
+  if (existing) return existing
+  const p = refreshRemoteCatalogUncoalesced(userDataPath, channel, deps).finally(() => inflightRefresh.delete(key))
+  inflightRefresh.set(key, p)
+  return p
+}
+
+async function refreshRemoteCatalogUncoalesced(userDataPath: string, channel: ChannelName, deps: ChannelClientDeps): Promise<RemoteCatalogResult> {
+  const via = `channel-${channel}` as const
+  const ch = await refreshChannelCatalog(userDataPath, channel, deps)
+  if (ch.source === "remote")
+    return { source: "remote", catalog: ch.catalog, version: ch.version, fetchedAt: ch.fetchedAt, via, channel, ...(ch.error ? { error: ch.error } : {}) }
+
+  if (channel !== "stable") {
+    // fail-closed:非 stable 通道没有 v1 等价物 —— 同通道 LKG(已全量重验 + R11)或如实 none。
+    console.error(`[remote-catalog] ${channel} channel unavailable (${ch.error ?? "?"}) — no v1 fallback for non-stable channels (fail closed)`)
+    if (ch.source === "cache")
+      return { source: "cache", catalog: ch.catalog, version: ch.version, fetchedAt: ch.fetchedAt, via, channel, error: ch.error }
+    return { source: "none", error: ch.error ?? `channel ${channel} unavailable` }
+  }
+
+  console.error(`[remote-catalog] stable channel path unavailable (${ch.error ?? "?"}) — falling back to legacy v1 catalog path`)
   const legacy = await refreshRemoteCatalogV1(userDataPath, deps)
-  if (legacy.source !== "none") return legacy
+  if (legacy.source !== "none") return legacy // v1 面已带 via=v1 + channel=stable
   // v1 面也失败:channel last-known-good(已全量重验 + R11)仍好于空白。
   if (ch.source === "cache")
-    return { source: "cache", catalog: ch.catalog, version: ch.version, fetchedAt: ch.fetchedAt, via: "channel-stable", error: ch.error }
+    return { source: "cache", catalog: ch.catalog, version: ch.version, fetchedAt: ch.fetchedAt, via, channel, error: ch.error }
   return legacy
 }
 
@@ -122,7 +160,9 @@ async function refreshRemoteCatalogV1(userDataPath: string, deps: ChannelClientD
   // R11 撤销视图来自缓存 trust(内置钥重验;离线生效)。无可验 trust → 空集 = 现行为。
   const revoked = readRevokedTargets(userDataPath, deps)
   const cached = readCachedCatalog(userDataPath, { pubKeyB64, revoked })
-  const withVia = (r: RemoteCatalogResult): RemoteCatalogResult => (r.source === "none" ? r : { ...r, via: "v1" })
+  type V1Partial = { source: "remote" | "cache"; catalog: unknown; version: string; fetchedAt: string; error?: string } | { source: "none"; error: string }
+  // v1 面 = stable-only 遗产:传输 via=v1,内容通道恒 stable(成功分支必带,review #364 类型收紧)。
+  const withVia = (r: V1Partial): RemoteCatalogResult => (r.source === "none" ? r : { ...r, via: "v1", channel: "stable" })
   const fallback = (error: string): RemoteCatalogResult =>
     withVia(cached ? { source: "cache", catalog: cached.catalog, version: cached.version, fetchedAt: cached.fetchedAt, error } : { source: "none", error })
 

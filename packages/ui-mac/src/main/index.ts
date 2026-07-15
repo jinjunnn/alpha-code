@@ -57,7 +57,7 @@ import { createWslServersController } from "./wsl/servers"
 import { registerWslIpcHandlers } from "./wsl/ipc"
 import { spawnWslSidecar } from "./wsl/sidecar"
 import { migrate } from "./migrate"
-import { initAlphaEnvironment } from "./alpha-environment"
+import { catalogRegistryChannel, initAlphaEnvironment } from "./alpha-environment"
 import { runEnvMigration } from "./alpha-env-migrate"
 import { ensureAlphaLayoutDefault } from "./alpha-defaults"
 import { initialSelfHealState, noteSpawn, planSelfHeal } from "./sidecar-self-heal"
@@ -525,9 +525,13 @@ const main = Effect.gen(function* () {
   })
   registerWslIpcHandlers(wslServers)
   // #309:extLedgerReady = recovery→v1→v2 迁移 barrier;启动期账本写方(ecosystem gate)在其后。
-  const extLedgerReady = registerExtIpcHandlers(app.getPath("userData"))
+  // REQ-098 #302:catalog 读取通道经唯一权威取值点(catalogRegistryChannel = 冻结快照
+  // registryChannel,prod→stable/beta→preview/dev→dev,已单测钉死映射),composition root
+  // 一次注入,IPC/planner/预热同一份。
+  const registryChannel = catalogRegistryChannel()
+  const extLedgerReady = registerExtIpcHandlers(app.getPath("userData"), registryChannel)
   // REQ-032:启动预热远端 catalog(ETag 缓存;失败静默回退,进 hub 时再刷)
-  void refreshRemoteCatalog(app.getPath("userData")).catch(() => {})
+  void refreshRemoteCatalog(app.getPath("userData"), registryChannel).catch(() => {})
   registerAccountIpcHandlers()
   registerCloudIpcHandlers()
   // REQ-093(#185):run artifact manifest 只读查询面(artifacts.json + 磁盘 reconcile)。

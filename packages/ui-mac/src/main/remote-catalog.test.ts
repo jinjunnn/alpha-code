@@ -11,6 +11,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { refreshChannelCatalog, sha256Hex, type ChannelClientDeps } from "./catalog-channels"
 import { readCachedCatalog, refreshRemoteCatalog } from "./remote-catalog"
+import { registryChannelFor } from "./alpha-environment"
 
 const NOW = Date.parse("2026-07-13T12:00:00.000Z")
 const CH_BASE = "https://channels.test/catalog/v1"
@@ -89,15 +90,15 @@ function channelBody(signer: TestKey, payloadBody: string, over: Record<string, 
 const payloadOf = (version: string, marker = "m") =>
   JSON.stringify({ version, entries: [{ id: `skill:${marker}` }] }, null, 2)
 
-function channelRoutes(k: TestKey, payloadBody: string, trustOver: Record<string, unknown> = {}): Record<string, string> {
+function channelRoutes(k: TestKey, payloadBody: string, trustOver: Record<string, unknown> = {}, channel = "stable"): Record<string, string> {
   const trust = trustBody(k, trustOver)
-  const doc = channelBody(k, payloadBody)
+  const doc = channelBody(k, payloadBody, { channel })
   const version = (JSON.parse(payloadBody) as { version: string }).version
   return {
     [`${CH_BASE}/channels/trust.json`]: trust,
     [`${CH_BASE}/channels/trust.json.sig`]: signB64(trust, k),
-    [`${CH_BASE}/channels/stable.json`]: doc,
-    [`${CH_BASE}/channels/stable.json.sig`]: signB64(doc, k),
+    [`${CH_BASE}/channels/${channel}.json`]: doc,
+    [`${CH_BASE}/channels/${channel}.json.sig`]: signB64(doc, k),
     [`${CH_BASE}/releases/${version}/catalog.json`]: payloadBody,
     [`${CH_BASE}/releases/${version}/catalog.json.sig`]: signB64(payloadBody, k),
   }
@@ -115,7 +116,7 @@ describe("refreshRemoteCatalog 接线(channel-first + v1 零破坏)", () => {
     const k = genKey()
     const payload = payloadOf("2026-07-13.1")
     const { fetchImpl } = serve(channelRoutes(k, payload))
-    const r = await refreshRemoteCatalog(dir, depsOf(fetchImpl, k))
+    const r = await refreshRemoteCatalog(dir, "stable", depsOf(fetchImpl, k))
     expect(r.source).toBe("remote")
     if (r.source === "none") throw new Error("unreachable")
     expect(r.via).toBe("channel-stable")
@@ -129,14 +130,14 @@ describe("refreshRemoteCatalog 接线(channel-first + v1 零破坏)", () => {
       [V1_URL]: v1,
       [`${V1_URL}.sig`]: signB64(v1, k),
     })
-    const r = await refreshRemoteCatalog(dir, depsOf(fetchImpl, k))
+    const r = await refreshRemoteCatalog(dir, "stable", depsOf(fetchImpl, k))
     expect(r.source).toBe("remote")
     if (r.source === "none") throw new Error("unreachable")
     expect(r.via).toBe("v1")
     expect(r.version).toBe("2026-07-13.1")
     // v1 缓存语义不变:断网 → cache 回退(loud)
     const { fetchImpl: dead } = serve({})
-    const r2 = await refreshRemoteCatalog(dir, depsOf(dead, k))
+    const r2 = await refreshRemoteCatalog(dir, "stable", depsOf(dead, k))
     expect(r2.source).toBe("cache")
     if (r2.source === "none") throw new Error("unreachable")
     expect(r2.via).toBe("v1")
@@ -151,13 +152,13 @@ describe("refreshRemoteCatalog 接线(channel-first + v1 零破坏)", () => {
       [V1_URL]: () => new Response(v1, { headers: { etag: '"abc"' } }),
       [`${V1_URL}.sig`]: sig,
     })
-    expect((await refreshRemoteCatalog(dir, depsOf(first.fetchImpl, k))).source).toBe("remote")
+    expect((await refreshRemoteCatalog(dir, "stable", depsOf(first.fetchImpl, k))).source).toBe("remote")
     const second = serve({
       [V1_URL]: (headers) =>
         headers["if-none-match"] === '"abc"' ? new Response(null, { status: 304 }) : new Response(v1, { headers: { etag: '"abc"' } }),
       [`${V1_URL}.sig`]: sig,
     })
-    const r = await refreshRemoteCatalog(dir, depsOf(second.fetchImpl, k))
+    const r = await refreshRemoteCatalog(dir, "stable", depsOf(second.fetchImpl, k))
     expect(r.source).toBe("remote")
     if (r.source === "none") throw new Error("unreachable")
     expect(r.via).toBe("v1")
@@ -171,7 +172,7 @@ describe("refreshRemoteCatalog 接线(channel-first + v1 零破坏)", () => {
       [V1_URL]: v1,
       [`${V1_URL}.sig`]: signB64("tampered bytes", k),
     })
-    const r = await refreshRemoteCatalog(dir, depsOf(fetchImpl, k))
+    const r = await refreshRemoteCatalog(dir, "stable", depsOf(fetchImpl, k))
     expect(r.source).toBe("none")
     if (r.source !== "none") throw new Error("unreachable")
     expect(r.error).toContain("SIGNATURE INVALID")
@@ -194,7 +195,7 @@ describe("refreshRemoteCatalog 接线(channel-first + v1 零破坏)", () => {
       [V1_URL]: v1,
       [`${V1_URL}.sig`]: signB64(v1, k),
     })
-    const r = await refreshRemoteCatalog(dir, depsOf(fetchImpl, k))
+    const r = await refreshRemoteCatalog(dir, "stable", depsOf(fetchImpl, k))
     expect(r.source).toBe("none")
     if (r.source !== "none") throw new Error("unreachable")
     expect(r.error).toContain("R11")
@@ -217,13 +218,72 @@ describe("refreshRemoteCatalog 接线(channel-first + v1 零破坏)", () => {
     const k = genKey()
     const payload = payloadOf("2026-07-13.1")
     const seed = serve(channelRoutes(k, payload))
-    expect((await refreshRemoteCatalog(dir, depsOf(seed.fetchImpl, k))).source).toBe("remote")
+    expect((await refreshRemoteCatalog(dir, "stable", depsOf(seed.fetchImpl, k))).source).toBe("remote")
     const { fetchImpl: dead } = serve({})
-    const r = await refreshRemoteCatalog(dir, depsOf(dead, k))
+    const r = await refreshRemoteCatalog(dir, "stable", depsOf(dead, k))
     expect(r.source).toBe("cache")
     if (r.source === "none") throw new Error("unreachable")
     expect(r.via).toBe("channel-stable")
     expect(r.version).toBe("2026-07-13.1")
     expect(r.error ?? "").not.toBe("")
+  })
+})
+
+// ── REQ-098 #302:环境通道路由(冻结 registryChannel → catalog 拉取)──────────────────────────
+
+describe("#302 环境通道路由", () => {
+  test("三环境映射驱动拉取 URL:prod→stable / beta→preview / dev→dev(全链验签过)", async () => {
+    for (const [env, channel] of [["prod", "stable"], ["beta", "preview"], ["dev", "dev"]] as const) {
+      const d = fs.mkdtempSync(path.join(os.tmpdir(), `rc-route-${channel}-`))
+      const k = genKey()
+      const payload = payloadOf("2026-07-13.1", channel)
+      const { fetchImpl, calls } = serve(channelRoutes(k, payload, {}, channel))
+      const r = await refreshRemoteCatalog(d, registryChannelFor(env), depsOf(fetchImpl, k))
+      expect(r.source).toBe("remote")
+      if (r.source === "none") throw new Error("unreachable")
+      expect(r.via).toBe(`channel-${channel}`)
+      expect(r.channel).toBe(channel)
+      expect(calls.some((u) => u.endsWith(`/channels/${channel}.json`))).toBe(true)
+      expect(calls.some((u) => u === V1_URL)).toBe(false)
+      fs.rmSync(d, { recursive: true, force: true })
+    }
+  })
+
+  test("非 stable 通道失败绝不访问 v1(fail closed):无 LKG → none,V1 URL 零请求", async () => {
+    const k = genKey()
+    const v1 = payloadOf("2026-07-13.9", "legacy")
+    // 只有 v1 端点可用;preview 通道全 404。
+    const { fetchImpl, calls } = serve({ [V1_URL]: v1, [`${V1_URL}.sig`]: signB64(v1, k) })
+    const r = await refreshRemoteCatalog(dir, "preview", depsOf(fetchImpl, k))
+    expect(r.source).toBe("none")
+    expect(calls.some((u) => u === V1_URL || u === `${V1_URL}.sig`)).toBe(false)
+  })
+
+  test("非 stable 通道失败退同通道 LKG(已验缓存),仍不打 v1", async () => {
+    const k = genKey()
+    const payload = payloadOf("2026-07-13.1", "pv")
+    const good = serve(channelRoutes(k, payload, {}, "preview"))
+    expect((await refreshRemoteCatalog(dir, "preview", depsOf(good.fetchImpl, k))).source).toBe("remote")
+    const v1 = payloadOf("2026-07-13.9", "legacy")
+    const bad = serve({ [V1_URL]: v1, [`${V1_URL}.sig`]: signB64(v1, k) })
+    const r = await refreshRemoteCatalog(dir, "preview", depsOf(bad.fetchImpl, k))
+    expect(r.source).toBe("cache")
+    if (r.source === "none") throw new Error("unreachable")
+    expect(r.channel).toBe("preview")
+    expect(r.version).toBe("2026-07-13.1") // preview LKG,不是 stable v1 的 2026-07-13.9
+    expect(bad.calls.some((u) => u === V1_URL || u === `${V1_URL}.sig`)).toBe(false)
+  })
+
+  test("singleflight:同 (dir, channel) 并发合并为一次拉取,结果一致", async () => {
+    const k = genKey()
+    const payload = payloadOf("2026-07-13.1")
+    const { fetchImpl, calls } = serve(channelRoutes(k, payload))
+    const deps = depsOf(fetchImpl, k)
+    const [a, b] = await Promise.all([refreshRemoteCatalog(dir, "stable", deps), refreshRemoteCatalog(dir, "stable", deps)])
+    expect(a.source).toBe("remote")
+    expect(b.source).toBe("remote")
+    if (a.source === "none" || b.source === "none") throw new Error("unreachable")
+    expect(a.version).toBe(b.version)
+    expect(calls.filter((u) => u.endsWith("/channels/trust.json")).length).toBe(1)
   })
 })
