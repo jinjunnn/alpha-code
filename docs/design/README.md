@@ -24,7 +24,7 @@ checklists, line numbers, and rollout phases remain authored-time history.
 
 | Family | Design history | Current authority |
 | --- | --- | --- |
-| Extension Hub | `extension-hub.md` → `2026-06-22-arch-extension-hub.md` → `2026-07-04-extension-hub-v3-universal.md` | current extension code/tests and ADR-014/ADR-028 |
+| Extension Hub | `extension-hub.md` → `2026-06-22-arch-extension-hub.md` → `2026-07-04-extension-hub-v3-universal.md` → `2026-07-15-capability-authorize-dialog/` (authorize 确认框增量) | current extension code/tests and ADR-014/ADR-028 |
 | Product visual language | `2026-06-25-cool-graphite-visual-system.md` plus protected prototypes under `docs/archive/assets/design-program/` | current UI tokens, components, and visual tests |
 | Frontend/upstream boundary | `2026-07-03-frontend-decoupling-options.md` | `docs/architecture/upstream-integration.md`, sync workflows, ADR-020/ADR-029 |
 | Alpha extension storage | `2026-07-07-project-alpha-only-extensions.md` | current installer/config code and ADR-019 |
