@@ -76,6 +76,16 @@ function putVerifiedBytes(baseRoot: string, data: Buffer, sha256: string, warnin
       return { ok: false, reason: `existing CAS entry is not a regular file (refusing): ${dest}` }
     }
     if (sha256FileSync(dest) === sha256) {
+      // REQ-102 #318(Codex 裁决 E1):复用 cold blob 时刷新 mtime —— 「promote 成功但事务尚未持锁
+      // 写 journal」的窗口里,出-grace 旧 blob 会被 GC 扫掉导致安装 materialize abort。刷新把暴露
+      // 从任意时长缩到 GC 单轮 lstat→unlink 的微秒级;残余竞态的后果 = fail-closed 安装失败,可
+      // 重试(promote 幂等重放),无损坏。best-effort:刷新失败退化为原 grace 语义,不阻断幂等成功。
+      try {
+        const now = new Date()
+        fs.utimesSync(dest, now, now)
+      } catch {
+        /* 见上:退化不阻断 */
+      }
       return { ok: true, path: dest, sha256, bytes: data.length, existed: true, warnings }
     }
     warnings.push(`existing blob ${sha256.slice(0, 12)}… was CORRUPT on disk — replaced with verified bytes`)

@@ -94,7 +94,20 @@ CAS 补充语义:
   任一环境有活事务 → 整轮如实跳过(非阻塞);陈旧锁走 `ext-bundle-lock` 既有 stale 恢复。
   sweep 期间新事务无法启动;blob 彼此独立 ⇒ 任意崩溃点后 store 自洽,下一轮从头 mark。
 - **可观测**:`dryRun` 返回完整 sweep 计划(逐 digest/bytes)与 `keptByGrace` 计数,零删除。
-- 生产触发时机(启动器/定时/Hub 操作)归 REQ-103 编排;当前仅模块面 + 测试面。
+- **生产触发(REQ-102 #318,`ext-cas-gc-scheduler.ts`)**:启动后 5 分钟首跑,此后 24 小时一轮
+  (单次 schedule → run → finally 链式 rearm,不重叠、异常不断链;睡眠错过的周期由下一 timer
+  自然补一轮,无 catch-up storm);锁忙 / mark 根损坏 = 本轮如实记录等下轮,零重试风暴。配置经
+  唯一权威取值点 `productionCasGcConfig`(已单测):冻结共享 CAS 基根 + dev/prod/beta 三环境根
+  (固定顺序)+ **当前 package 的 seed lock 无条件传入**(缺失 = 整轮 fail-closed,不静默退化;
+  seed mark = 本进程 package 的 seed,不是同机全部 app 版本的并集)+ 显式非零 grace(6h)。
+  每轮写结构化计数摘要(outcome = success / busy-skip / fail-closed / exception;不落完整
+  swept 路径)。多实例(prod/beta 同机)由共享 CAS 跨进程 GC 锁串行化,busy-skip ≠ 漏跑,无需
+  错峰。**「running-lease」保护的机械形态** = GC 在整个 mark+sweep 期间持有各环境根同一把
+  `tx.lock`(活事务占锁 → 整轮零删除;stale 锁留证恢复后才允许 GC)+ 获准事务的 journal digest
+  为 durable mark root —— 锁是互斥屏障,journal 才是 mark 数据。**promote 窗口**:复用出-grace
+  cold blob 的 put 会刷新其 mtime(残余竞态 = GC 单轮 lstat→unlink 微秒级;后果为安装
+  materialize fail-closed abort,可重试、无损坏)。**project scope 根尚未参与 mark**(无
+  project 根枚举来源;生命周期裁决 → #362,结论回写 #318 完成矩阵后才可判该 AC PASS)。
 
 ## 4. 兼容红线
 
@@ -114,3 +127,4 @@ CAS 补充语义:
 | GC mark 根/互斥/宽限/用户数据不可触 | `packages/ui-mac/src/main/ext-cas-gc.test.ts` |
 | 快照漂移(S13 A 侧)+ catalog 互钉 + 真链冒烟 | `packages/ui-mac/src/main/extension-seed-snapshot.test.ts` |
 | seed 安装生产链(#317:e2e / 双真源漂移拒绝矩阵 / CAS 注错 abort / XOR / downgrade 门) | `packages/ui-mac/src/main/ext-seed-install.test.ts` |
+| GC 生产触发(#318:调度语义 / 权威配置取值点 / outcome 分类;promote 窗口 mtime 回归在 gc.test) | `packages/ui-mac/src/main/ext-cas-gc-scheduler.test.ts` |

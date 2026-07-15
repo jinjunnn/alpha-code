@@ -127,6 +127,19 @@ describe("collectCasGarbage — mark roots", () => {
     expect(hasCasBlob(base, cold)).toBeFalse()
   })
 
+  test("#318 promote-window regression: reusing a cold blob refreshes its mtime → kept by grace, not swept", () => {
+    const content = "cold blob about to be reused by a promote"
+    const cold = putOldBlob(content) // 出宽限窗的旧 blob
+    // catalog promote 复用同 digest(putCasBlobFromBuffer existed 分支)→ mtime 必须刷新,
+    // 否则「promote 成功、事务未持锁写 journal」窗口内 GC 会把它按出-grace 扫掉(裁决 E1)。
+    const put = putCasBlobFromBuffer(base, Buffer.from(content), cold)
+    expect(put.ok && put.existed).toBeTrue()
+    const r = collectCasGarbage(base, { envRoots: [envRoot] })
+    expect(r.ok).toBeTrue()
+    expect(r.keptByGrace).toBe(1)
+    expect(hasCasBlob(base, cold)).toBeTrue()
+  })
+
   test("dry-run reports the full sweep plan and deletes nothing", () => {
     const garbage = putOldBlob("dry-run victim")
     const r = collectCasGarbage(base, { envRoots: [envRoot], dryRun: true })
