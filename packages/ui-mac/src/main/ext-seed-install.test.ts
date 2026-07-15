@@ -234,12 +234,12 @@ describe("seed install via installCatalog (REQ-102 #317)", () => {
     expect(fs.readFileSync(blob, "utf8")).toBe(SKILL_MD)
   })
 
-  test("refuses non-global scope (phase boundary)", async () => {
+  test("refuses non-global scope (ADR-030 统一收回合同,先于 seed 通道)", async () => {
     buildSeed([{ id: "skill:hello", files: skillFiles }])
     const r = await installCatalog({ source: "seed", assetId: "skill:hello", scope: { scope: "project", projectDir: tmp } }, makeSeedDeps())
     expect(r.ok).toBe(false)
     if (r.ok) return
-    expect(r.reason).toContain("global-only")
+    expect(r.reason).toContain("project-scoped catalog/seed installation is unsupported")
   })
 
   test("refuses unknown keys / grants / non-seed source on the seed intent form", async () => {
