@@ -4,7 +4,7 @@ kind: contract
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-13
+last_reviewed: 2026-07-15
 review_after: 2026-10-13
 ---
 
@@ -51,11 +51,21 @@ CAS 补充语义:
    = 降级混淆,拒绝)、S10 预算按 lock 记录同值再执行、S9 平台门(当前平台 ∉
    `supportedPlatforms` → 整个 seed 拒绝);产出可浏览资产视图(availability 恒 `bundled`,
    与激活态正交)。**不安装、不启用、零配置写入、零进程、零网络**(parent AC1/AC3)。
-3. **安装提升(用户显式动作)**:`verifySeedAsset` 两遍式 —— 先零写入全量验证(S6
-   symlink/realpath、S9、S10、S11 逐文件 sha256/bytes,**展开前拒绝**),后
-   `promoteSeedAssetToCas` 把**所选资产**的 blob 原子提升进用户 CAS(不复制整个 seed);
-   安装仍走 REQ-099 planner + REQ-100 事务 + 权限确认链 —— 接缝:
-   `seedAssetTxFiles`(TxPlan 文件清单)+ `populateFromCas`(事务 populate hook)。
+3. **安装提升(用户显式动作;#317 起为生产链路)**:入口 = `ext.installCatalog` 的 seed
+   判别意图(`{source:"seed", assetId, scope}`,与 catalog 意图互斥、未知键拒;seedDir/CAS
+   根/清单/版本/receipt 语义全 main-owned)。序:`readPackagedSeed` 严格读 → **回表同包
+   bundled catalog entry**(绝不 effective remote/cache;id/type/version/逐文件
+   path+sha256+bytes/聚合 payloadDigest/lock.catalogVersion 逐项交叉一致,任一漂移
+   fail-closed)→ `verifySeedAsset` 两遍式(S6 symlink/realpath、S9、S10、S11 逐文件
+   sha256/bytes,**展开前拒绝**)→ `promoteSeedAssetToCas` 把**所选资产**的 blob 原子提升
+   进共享 CAS(不复制整个 seed)→ REQ-100 generation 事务从 CAS 物化(`populateFromCas`,
+   读取重验,缺失/篡改 = staging abort:零 live/staging/generation 残留,终态 aborted
+   journal 按引擎语义保留作恢复/审计证据)→ receipt v2 落账(语义派生自 bundled
+   entry;`ownership.distributed` 如实记 `bundled`)。边界:**skill + global-only 首期**
+   (agent → #358,mcp/plugin → #359);版本门在**引擎 Bundle 锁内**经 precondition hook
+   执行(锁外判定有 TOCTOU):账本 strict 四态,损坏/已装无版本/不可比/更高已装一律
+   fail-closed 拒,同版本重装幂等;安装**不 pin**(generation content rehash 即 GC mark
+   root,#318)。
 4. `url` 字段仅传输提示;任何来源的字节一律以 digest 为唯一权威。
 
 ## 3. mark/sweep GC(`ext-cas-gc.collectCasGarbage`)
@@ -92,3 +102,4 @@ CAS 补充语义:
 | seed 严格解码 + S5–S11 负向 + 提升两遍式 | `packages/ui-mac/src/main/ext-seed.test.ts` |
 | GC mark 根/互斥/宽限/用户数据不可触 | `packages/ui-mac/src/main/ext-cas-gc.test.ts` |
 | 快照漂移(S13 A 侧)+ catalog 互钉 + 真链冒烟 | `packages/ui-mac/src/main/extension-seed-snapshot.test.ts` |
+| seed 安装生产链(#317:e2e / 双真源漂移拒绝矩阵 / CAS 注错 abort / XOR / downgrade 门) | `packages/ui-mac/src/main/ext-seed-install.test.ts` |
