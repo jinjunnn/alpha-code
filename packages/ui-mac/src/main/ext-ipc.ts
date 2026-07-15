@@ -489,14 +489,16 @@ export function registerExtIpcHandlers(userDataPath: string) {
           return collectSkillPayloadFromDir(srcDir)
         },
       },
-      // REQ-102 #317:seed 安装通道 —— seedDir/CAS 根/回表 catalog 全部 main-owned。回表只用随包
+      // REQ-098 #303:共享 CAS 基根 = main 冻结环境快照(renderer 无路径通道);skill 内容一律
+      // 先提升进验证 CAS 再由事务物化。
+      casBaseRoot: () => getAlphaEnvironment().casBaseRoot,
+      // REQ-102 #317:seed 安装通道 —— seedDir/回表 catalog 全部 main-owned。回表只用随包
       // bundled catalog 快照(绝不 effective remote/cache:远端更新会让 seed 字节配错安装语义)。
       seed: {
         seedDir: () => {
           const dir = path.join(resourcesRoot(), "extension-seed")
           return fs.existsSync(dir) ? dir : null
         },
-        casBaseRoot: () => getAlphaEnvironment().casBaseRoot,
         resolveBundledEntry: (catalogId) => {
           const bundled = bundledCatalogJson as unknown as Catalog
           const entry = (bundled.entries ?? []).find((e) => e.id === catalogId)

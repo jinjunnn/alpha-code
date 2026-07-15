@@ -31,8 +31,10 @@ import { alphaRoot } from "./alpha-workdir"
 import { officeAdvisoryFor } from "../shared/office-advisories"
 import {
   runExtensionTransaction,
+  actionOf,
   uninstallExtensionTransaction,
   type TxCommitRecord,
+  type TxFileSpec,
   type TxHooks,
   type TxPlan,
   type TxPlanItem,
@@ -43,6 +45,7 @@ import {
   computeManifestDigest,
   decodeManifestV2,
   findDependencyCycle,
+  sha256Hex,
   MANIFEST_SCHEMA_VERSION,
   type DependencyNode,
   type DistributionChannel,
@@ -78,6 +81,8 @@ import {
   type SkillPayloadFile,
 } from "./ext-skill-generations"
 import { promoteSeedAssetToCas, readPackagedSeed, type SeedAsset } from "./ext-seed"
+import { materializeFilesFromCas, putCasBlobFromBuffer } from "./ext-cas"
+import { isSafeRelPath } from "./ext-atomic-fs"
 
 // ── renderer intents(严格解码:未知键 = 伪造事实通道,loud 拒绝)─────────────────────────────
 
@@ -114,7 +119,8 @@ export type CatalogInstallOutcome =
       bundle?: { items: string[] }
       /** bundle:一次原子事务提交的子条目 id(REQ-100 #311)。 */
       installed?: string[]
-      /** bundle:跳过的子条目(optional 未选 / 首期 fail-closed 排除;journaled 可审计)。 */
+      /** bundle:跳过的子条目(optional 未选 / 首期 fail-closed 排除)。含安装项的 bundle 会把
+       *  skip 记进事务 journal;全 skip 的 bundle 零状态变更、不开事务,审计面 = 本 outcome。 */
       skipped?: Array<{ id: string; reason: string }>
       warning?: string
     }
@@ -416,16 +422,80 @@ export type PlannerDeps = {
   installers: PlannerInstallers
   transaction?: InstallTransactionHooks
   now?(): string
+  /** 共享 CAS 基根(CAS 落 <casBaseRoot>/cas;prod/beta/dev 共享,覆盖态 = 覆盖根)。main 注入
+   *  冻结环境快照(REQ-098 #303);renderer 无路径通道。 */
+  casBaseRoot(): string
   /** seed 安装通道(REQ-102 #317)。缺席 = 通道不可用,seed 意图 fail-closed 拒。 */
   seed?: {
     /** 随包 seed 目录(main 从 resourcesPath 派生;renderer 无输入权)。null = 未打包/无 seed。 */
     seedDir(): string | null
-    /** 共享 CAS 基根(CAS 落 <casBaseRoot>/cas;prod/beta/dev 共享,覆盖态 = 覆盖根)。 */
-    casBaseRoot(): string
     /** 回表同包 bundled catalog 快照 —— 绝不走 effective remote/cache(远端可能比随包 seed 新,
      *  语义漂移会让 seed 字节配错安装事实)。 */
     resolveBundledEntry(catalogId: string): VerifiedCatalogEntry | null
   }
+}
+
+/** 目标卷可移植的路径碰撞键(Codex review #363 Major 2):darwin/win32 常见大小写不敏感 +
+ *  Unicode normalization 折叠 —— 折叠后相同即视为同一物理落点,清单歧义直接拒。 */
+const portablePathKey = (p: string): string => p.normalize("NFC").toLowerCase()
+const WINDOWS_RESERVED_RE = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i
+
+/** 段级可移植性拒绝:Windows 保留名、尾随点/空格(NTFS 折叠)。isSafeRelPath 只管结构,这里管卷语义。 */
+function portablePathProblem(p: string): string | null {
+  for (const seg of p.split("/")) {
+    if (WINDOWS_RESERVED_RE.test(seg)) return `reserved filename segment "${seg}"`
+    if (seg !== seg.trimEnd() || seg.endsWith(".")) return `trailing dot/space in segment "${seg}"`
+  }
+  return null
+}
+
+/** 载荷 → 验证共享 CAS(REQ-098 #303):严格两遍式 —— 第一遍全量结构校验(载荷与清单按 path 精确
+ *  一一对应且不靠数组序、拒重复/缺项/多项/不安全路径/可移植性碰撞、bytes 精确),全部通过后第二遍
+ *  才逐文件 putCasBlobFromBuffer(下载/收集层已验一次 digest,put 内再验一次)——校验失败时 CAS
+ *  零写入。put 失败 = 整装 fail-closed;已写入 blob 不逆删(可能已被并发/他环境引用),交 GC
+ *  grace(#318)。put 自愈损坏在店 blob 的 warnings loud 透传。 */
+function promotePayloadToCas(
+  casBaseRoot: string,
+  payload: Array<{ path: string; data: Buffer }>,
+  manifest: Array<{ path: string; sha256: string; bytes: number }>,
+): { ok: true; specs: TxFileSpec[]; warnings: string[] } | { ok: false; reason: string } {
+  // ── 第一遍:纯校验,零写入 ──
+  if (payload.length !== manifest.length)
+    return { ok: false, reason: `payload/manifest file count mismatch: ${payload.length} ≠ ${manifest.length} — refusing before CAS write` }
+  const byPath = new Map<string, { path: string; sha256: string; bytes: number }>()
+  const portable = new Set<string>()
+  for (const m of manifest) {
+    if (!isSafeRelPath(m.path)) return { ok: false, reason: `unsafe manifest path: ${String(m.path)} — refused` }
+    const problem = portablePathProblem(m.path)
+    if (problem) return { ok: false, reason: `non-portable manifest path ${m.path}: ${problem} — refused` }
+    if (byPath.has(m.path)) return { ok: false, reason: `duplicate manifest path: ${m.path} — refused` }
+    const folded = portablePathKey(m.path)
+    if (portable.has(folded))
+      return { ok: false, reason: `manifest path collision under case/unicode folding: ${m.path} — refused (ambiguous on darwin/win32 volumes)` }
+    portable.add(folded)
+    byPath.set(m.path, m)
+  }
+  const seen = new Set<string>()
+  const toPut: Array<{ path: string; data: Buffer; sha256: string; bytes: number }> = []
+  for (const f of payload) {
+    const m = byPath.get(f.path)
+    if (!m) return { ok: false, reason: `payload file ${f.path} not in manifest — refused` }
+    if (seen.has(f.path)) return { ok: false, reason: `duplicate payload path: ${f.path} — refused` }
+    seen.add(f.path)
+    if (f.data.length !== m.bytes)
+      return { ok: false, reason: `size mismatch for ${f.path}: ${f.data.length} ≠ ${m.bytes} — refusing before CAS write` }
+    toPut.push({ path: f.path, data: f.data, sha256: m.sha256, bytes: m.bytes })
+  }
+  // ── 第二遍:全部校验通过后才写 CAS ──
+  const specs: TxFileSpec[] = []
+  const warnings: string[] = []
+  for (const f of toPut) {
+    const put = putCasBlobFromBuffer(casBaseRoot, f.data, f.sha256)
+    if (!put.ok) return { ok: false, reason: `CAS promotion failed for ${f.path}: ${put.reason}` }
+    warnings.push(...put.warnings)
+    specs.push({ path: f.path, sha256: f.sha256, size: f.bytes })
+  }
+  return { ok: true, specs, warnings }
 }
 
 // ── scope 解析(项目闭环:identity fail-closed;mcp/plugin/cloud 不进项目 scope)─────────────────
@@ -450,15 +520,11 @@ function resolveScope(
 
 /** bundle 子条目在原子事务里的形态:generation(skill)/config(mcp)/receipt(cloud),或跳过/致命排除。 */
 type BundleChildPlan =
-  | { status: "install"; id: string; item: TxPlanItem; record: UpsertInput; payload?: SkillPayloadFile[] }
+  | { status: "install"; id: string; item: TxPlanItem; record: UpsertInput; warnings?: string[] }
   | { status: "skip"; id: string; reason: string }
   | { status: "fatal"; id: string; reason: string }
 
 const bundleKeyFor = (kind: string, name: string): string => `${kind}--${name}`
-
-function txSpecsOf(payload: SkillPayloadFile[]): TxPlanItem["files"] {
-  return payload.map((f) => ({ path: f.path, sha256: crypto.createHash("sha256").update(f.data).digest("hex"), size: f.data.length }))
-}
 
 /**
  * 把一个 bundle 子条目分类为原子事务里的一项。首期(REQ-100 #311)支持 skill(generation)+ 无密钥
@@ -491,28 +557,36 @@ async function classifyBundleChild(
   }
 
   if (entry.type === "skill") {
+    // REQ-098 #303:child 载荷在 classify/计划期提升进验证共享 CAS(锁外可接受 —— CAS 是可重建
+    // 缓存层,不属 bundle 安装态原子边界;失败按 required=fatal / optional=skip 既有语义归置)。
     const fsSpec = entry.installSpec as { source?: string; builtinAssetKey?: string } | undefined
     let payload: SkillPayloadFile[]
+    let manifestFiles: Array<{ path: string; sha256: string; bytes: number }>
     let payloadDigest: string | undefined
     if (fsSpec?.source === "remote" && entry.remoteAsset?.files?.length) {
       const dl = await deps.installers.downloadRemoteAsset(entry.remoteAsset.files)
       if (!dl.ok) return { status: "fatal", id, reason: dl.reason }
       payload = dl.contents
+      manifestFiles = entry.remoteAsset.files
       payloadDigest = aggregateFilesDigest(entry.remoteAsset.files)
     } else if (fsSpec?.source === "builtin" && fsSpec.builtinAssetKey) {
       const p = deps.installers.collectBuiltinSkillPayload(fsSpec.builtinAssetKey, entry.name)
       if (!p.ok) return { status: "fatal", id, reason: p.reason }
       payload = p.files
+      manifestFiles = payload.map((f) => ({ path: f.path, sha256: sha256Hex(f.data), bytes: f.data.length }))
+      payloadDigest = aggregateFilesDigest(manifestFiles)
     } else {
       return { status: "fatal", id, reason: "skill declares no installable asset" }
     }
+    const promoted = promotePayloadToCas(deps.casBaseRoot(), payload, manifestFiles)
+    if (!promoted.ok) return { status: "fatal", id, reason: promoted.reason }
     const key = bundleKeyFor("skill", entry.name)
     return {
       status: "install",
       id,
-      payload,
-      item: { key, files: txSpecsOf(payload), manifestDigest },
+      item: { key, files: promoted.specs, manifestDigest },
       record: { ...baseRecord, kind: "skill", ...(payloadDigest ? { payloadDigest } : {}) },
+      ...(promoted.warnings.length ? { warnings: promoted.warnings } : {}),
     }
   }
 
@@ -605,11 +679,12 @@ async function installBundleAtomic(
   const environment = deps.environment()
   const identity: ScopeIdentity = { kind: "global" }
 
-  // 分类每个 required/optional 子条目 → 事务项 / 跳过。required 致命 = 整单拒绝(零写盘)。
+  // 分类每个 required/optional 子条目 → 事务项 / 跳过。required 致命 = 整单拒绝(环境态零写盘;
+  // 已提升的 CAS blob 是可重建缓存,交 GC grace,不参加 bundle 回滚)。
   const planItems: TxPlanItem[] = []
-  const payloads = new Map<string, SkillPayloadFile[]>()
   const installedIds: string[] = []
   const skipped: Array<{ id: string; reason: string }> = []
+  const bundleWarnings: string[] = []
   for (const it of items) {
     const child = resolved.get(it.catalogEntryId)!
     // REQ-105:归档 office 连接器绝不经 bundle 通道重新铺给用户 —— 恒跳过(即使 required),
@@ -628,27 +703,29 @@ async function installBundleAtomic(
     } else {
       // receipt 模板嵌进 plan item(持久化进 journal)→ crash-recovery 前滚可自足落账(#312)。
       planItems.push({ ...c.item, receipt: c.record })
-      if (c.payload) payloads.set(c.item.key, c.payload)
+      if (c.warnings?.length) bundleWarnings.push(...c.warnings)
       installedIds.push(c.id)
     }
   }
 
+  // 全 skip:零状态变更 → 不开事务、无 journal(journal 审计的是状态变更);skip 审计随 outcome 返回。
   if (planItems.length === 0)
     return { ok: true, kind: "bundle", name: verified.entry.name, manifestDigest: computeManifestDigest(bundleDecoded.manifest), installed: [], skipped }
 
   const plan: TxPlan = {
     items: planItems,
-    skippedOptional: skipped.map((s) => ({ key: s.id, reason: s.reason })),
+    // journal 的 skippedOptional.key 必须 fs-safe 且有界(引擎 validatePlan 拒冒号/超长/重复)。
+    // catalog id 不受 fs-safe 约束(仅非空/无控制字符/≤200),朴素替换非单射(review #363 Major 1:
+    // "skill:a:b--c" 与 "skill:a--b:c" 碰撞会被判 duplicate 拒整单)。取 injective-by-hash 编码,
+    // 原始 id 保留在 reason 里供审计;该 key 无查找语义(只进 journal/授权收据)。
+    skippedOptional: skipped.map((s) => ({ key: `skipped--${sha256Hex(s.id).slice(0, 24)}`, reason: `${s.id}: ${s.reason}` })),
   }
   const hooks: TxHooks = {
+    // REQ-098 #303:generation 项统一从验证共享 CAS 物化(读取重验;blob 被 GC/外部删除 → 抛错 =
+    // 事务 abort,绝不回退 buffer 直填)。config/receipt 项无 populate。
     populate: (item, stagingDir) => {
-      const payload = payloads.get(item.key)
-      if (!payload) return // config/receipt 项无 populate
-      for (const f of payload) {
-        const dst = path.join(stagingDir, ...f.path.split("/"))
-        fs.mkdirSync(path.dirname(dst), { recursive: true })
-        fs.writeFileSync(dst, f.data)
-      }
+      if (actionOf(item) !== "generation") return
+      materializeFilesFromCas(deps.casBaseRoot(), item.files ?? [], stagingDir)
     },
     // 类型化健康探测(#312):skill generation 落地后验 SKILL.md 可发现;非 generation 直接健康。
     probe: skillGenerationProbe,
@@ -670,6 +747,7 @@ async function installBundleAtomic(
     manifestDigest: computeManifestDigest(bundleDecoded.manifest),
     installed: installedIds,
     skipped,
+    ...(bundleWarnings.length ? { warning: bundleWarnings.join("; ") } : {}),
   }
 }
 
@@ -793,26 +871,40 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       return { ok: false, reason: "entry has no plugin package" }
     }
   } else if (entry.type === "skill") {
-    // REQ-100 #310:skill 走不可变 generation 事务 —— 纯 staging 填充(去 receipt 化)→ 引擎
-    // staging→verify→materialize→switch → commitReceipt=upsertRecordV2(写失败即事务失败,#336)。
-    // 不再直写 ~/.alpha/skills/<name> + 单独 upsert;本分支自提交并早返回,不落共享 upsert。
+    // REQ-100 #310:skill 走不可变 generation 事务 —— staging→verify→materialize→switch →
+    // commitReceipt=upsertRecordV2(写失败即事务失败,#336)。REQ-098 #303:内容一律先提升进
+    // 验证共享 CAS(remote 用 catalog 清单钉死,builtin 自算内容地址 —— 摄取后完整性,不主张
+    // 上游真实性),staging 由 populateFromCas 物化(读取重验,纵深)。本分支自提交并早返回。
     const fsSpec = spec as { kind?: string; source?: string; builtinAssetKey?: string } | undefined
-    let payload: Array<{ path: string; data: Buffer }>
+    let promoted: { specs: TxFileSpec[]; warnings: string[] }
     if (fsSpec?.source === "remote" && entry.remoteAsset?.files?.length) {
       const dl = await deps.installers.downloadRemoteAsset(entry.remoteAsset.files)
       if (!dl.ok) {
         rollback(dl.reason)
         return dl
       }
-      payload = dl.contents
-      payloadDigest = aggregateFilesDigest(entry.remoteAsset.files)
-    } else if (fsSpec?.source === "builtin" && fsSpec.builtinAssetKey) {
-      const p = deps.installers.collectBuiltinSkillPayload(fsSpec.builtinAssetKey, entry.name)
+      const p = promotePayloadToCas(deps.casBaseRoot(), dl.contents, entry.remoteAsset.files)
       if (!p.ok) {
         rollback(p.reason)
-        return p
+        return { ok: false, reason: p.reason }
       }
-      payload = p.files
+      promoted = p
+      payloadDigest = aggregateFilesDigest(entry.remoteAsset.files)
+    } else if (fsSpec?.source === "builtin" && fsSpec.builtinAssetKey) {
+      const c = deps.installers.collectBuiltinSkillPayload(fsSpec.builtinAssetKey, entry.name)
+      if (!c.ok) {
+        rollback(c.reason)
+        return c
+      }
+      const builtinManifest = c.files.map((f) => ({ path: f.path, sha256: sha256Hex(f.data), bytes: f.data.length }))
+      const p = promotePayloadToCas(deps.casBaseRoot(), c.files, builtinManifest)
+      if (!p.ok) {
+        rollback(p.reason)
+        return { ok: false, reason: p.reason }
+      }
+      promoted = p
+      // builtin 也落 payloadDigest(Codex 裁决 #303 B):摄取时内容地址的聚合,补齐安装事实。
+      payloadDigest = aggregateFilesDigest(builtinManifest)
     } else {
       rollback("no installable content")
       return { ok: false, reason: "该内容尚未随此版本打包(entry declares no installable asset)" }
@@ -823,7 +915,7 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       environment: deps.environment(),
       scope: scope.identity,
       origin: "catalog",
-      files: payload,
+      casFiles: { specs: promoted.specs, casBaseRoot: deps.casBaseRoot() },
       version: manifest.version,
       manifestDigest,
       ...(payloadDigest ? { payloadDigest } : {}),
@@ -834,7 +926,14 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       return { ok: false, reason: gen.reason }
     }
     ;(deps.transaction ?? passthroughTx).commit(tx.txId)
-    return { ok: true, kind: "skill", name: entry.name, ...(gen.files.length ? { files: gen.files } : {}), manifestDigest }
+    return {
+      ok: true,
+      kind: "skill",
+      name: entry.name,
+      ...(gen.files.length ? { files: gen.files } : {}),
+      manifestDigest,
+      ...(promoted.warnings.length ? { warning: promoted.warnings.join("; ") } : {}),
+    }
   } else if (entry.type === "agent") {
     const fsSpec = spec as { kind?: string; source?: string; builtinAssetKey?: string } | undefined
     if (fsSpec?.source === "remote" && entry.remoteAsset?.files?.length) {
@@ -1019,7 +1118,7 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
 
   // verify-all-then-promote:任一文件校验不过在展开前拒;成功后 blob 进共享 CAS(幂等,失败残留由
   // GC 语义处理 —— 仍属当前 seed 的 digest 本就是 mark root,#318)。
-  const casBaseRoot = seedDeps.casBaseRoot()
+  const casBaseRoot = deps.casBaseRoot()
   const promoted = promoteSeedAssetToCas(seedDir, view.lock, asset.id, casBaseRoot)
   if (!promoted.ok) {
     rollback(promoted.reason)

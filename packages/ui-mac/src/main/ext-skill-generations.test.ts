@@ -13,8 +13,10 @@ import {
   runExtensionTransaction,
   uninstallExtensionTransaction,
   type TxCommitRecord,
+  type TxFileSpec,
   type TxPlan,
 } from "./ext-transaction"
+import { putCasBlobFromBuffer } from "./ext-cas"
 import {
   collectSkillPayloadFromDir,
   commitInputFromRecord,
@@ -30,8 +32,10 @@ import {
 } from "./ext-skill-generations"
 
 let root: string
+let casBase: string
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-skillgen-"))
+  casBase = path.join(root, "cas-base")
 })
 afterEach(() => {
   fs.rmSync(root, { recursive: true, force: true })
@@ -39,6 +43,18 @@ afterEach(() => {
 
 const payload = (files: Record<string, string>): SkillPayloadFile[] =>
   Object.entries(files).map(([p, data]) => ({ path: p, data: Buffer.from(data) }))
+
+/** REQ-098 #303 CAS-only:测试载荷 = 先提升进临时共享 CAS,再交 casFiles。 */
+const casFilesFor = (files: Record<string, string>): { specs: TxFileSpec[]; casBaseRoot: string } => {
+  const specs = Object.entries(files).map(([p, content]) => {
+    const data = Buffer.from(content)
+    const digest = crypto.createHash("sha256").update(data).digest("hex")
+    const put = putCasBlobFromBuffer(casBase, data, digest)
+    if (!put.ok) throw new Error(put.reason)
+    return { path: p, sha256: digest, size: data.length }
+  })
+  return { specs, casBaseRoot: casBase }
+}
 
 // 有效 SKILL.md(frontmatter name/description)= 类型化 probe(#312)通过的前提。
 const skillMd = (name: string) => `---\nname: ${name}\ndescription: test skill ${name}\n---\nbody`
@@ -50,7 +66,7 @@ const install = (name: string, extraFiles: Record<string, string> = {}, extra?: 
     environment: "prod",
     scope: { kind: "global" },
     origin: "catalog",
-    files: payload({ "SKILL.md": skillMd(name), ...extraFiles }),
+    casFiles: casFilesFor({ "SKILL.md": skillMd(name), ...extraFiles }),
     ...extra,
   })
 
@@ -94,7 +110,7 @@ describe("installSkillGeneration", () => {
       environment: "prod",
       scope: { kind: "global" },
       origin: "catalog",
-      files: payload({ "SKILL.md": "no frontmatter here" }), // probe 拒绝
+      casFiles: casFilesFor({ "SKILL.md": "no frontmatter here" }), // probe 拒绝
     })
     expect(r.ok).toBe(false)
     if (r.ok) return
@@ -109,7 +125,7 @@ describe("installSkillGeneration", () => {
       environment: "prod",
       scope: { kind: "global" },
       origin: "catalog",
-      files: payload({ "SKILL.md": skillMd("otherskill") }), // name 冒充
+      casFiles: casFilesFor({ "SKILL.md": skillMd("otherskill") }), // name 冒充
     })
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.stage).toBe("pre-switch-probe")
@@ -257,7 +273,7 @@ describe("#313 快照 + 两版离线回滚", () => {
       origin: "catalog",
       version,
       manifestDigest: `sha256:${crypto.createHash("sha256").update(name + version).digest("hex")}`,
-      files: payload({ "SKILL.md": skillMd(name) }),
+      casFiles: casFilesFor({ "SKILL.md": skillMd(name) }),
     })
 
   test("install 写 generation receipt 快照(receipts/<genId>.json)", async () => {

@@ -162,10 +162,10 @@ function makeSeedDeps(opts: { bundledEntries?: CatalogEntry[]; bundledVersion?: 
     environment: () => "prod",
     platform: () => "darwin",
     globalRoot: () => globalRoot,
+    casBaseRoot: () => casBase,
     installers: forbiddenInstallers(),
     seed: {
       seedDir: () => (opts.seedDirOverride !== undefined ? opts.seedDirOverride : seedDir),
-      casBaseRoot: () => casBase,
       resolveBundledEntry: (catalogId): VerifiedCatalogEntry | null => {
         const entry = entries.find((e) => e.id === catalogId)
         return entry ? { entry, channel: "bundled", catalogVersion: opts.bundledVersion ?? CATALOG_VERSION } : null
@@ -435,16 +435,10 @@ describe("installSkillGeneration CAS content source (REQ-102 #317)", () => {
   }
   const specsFor = (files: FileFixture[]) => files.map((f) => ({ path: f.path, sha256: sha(f.content), size: Buffer.byteLength(f.content) }))
 
-  test("refuses ambiguous or missing content sources (files XOR casFiles)", async () => {
-    const both = await installSkillGeneration(globalRoot, {
-      ...baseSpec,
-      files: [{ path: "SKILL.md", data: Buffer.from(SKILL_MD) }],
-      casFiles: { specs: specsFor(skillFiles), casBaseRoot: casBase },
-    } as never)
-    expect(both.ok).toBe(false)
-    if (!both.ok) expect(both.reason).toContain("XOR")
+  test("refuses a missing content source (CAS-only: casFiles is the sole channel)", async () => {
     const neither = await installSkillGeneration(globalRoot, { ...baseSpec } as never)
     expect(neither.ok).toBe(false)
+    if (!neither.ok) expect(neither.reason).toContain("invalid casFiles")
   })
 
   test("aborts the transaction when a CAS blob is missing — no generation, no receipt", async () => {
@@ -469,10 +463,16 @@ describe("installSkillGeneration CAS content source (REQ-102 #317)", () => {
   })
 
   test("runs the precondition inside the bundle lock; refusal leaves zero residue", async () => {
+    // 先把合法 blob 放进店(precondition 拒绝发生在 populate 之前,但 casFiles 必须结构合法)。
+    for (const f of skillFiles) {
+      const data = Buffer.from(f.content)
+      fs.mkdirSync(path.dirname(casBlobPath(casBase, sha(f.content))!), { recursive: true })
+      fs.writeFileSync(casBlobPath(casBase, sha(f.content))!, data)
+    }
     let lockHeldDuringPrecondition: boolean | null = null
     const r = await installSkillGeneration(globalRoot, {
       ...baseSpec,
-      files: [{ path: "SKILL.md", data: Buffer.from(SKILL_MD) }],
+      casFiles: { specs: specsFor(skillFiles), casBaseRoot: casBase },
       precondition: () => {
         const attempt = tryAcquireBundleLock(globalRoot, { txId: "probe" })
         lockHeldDuringPrecondition = !attempt.ok

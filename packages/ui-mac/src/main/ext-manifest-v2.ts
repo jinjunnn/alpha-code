@@ -331,7 +331,9 @@ export function computeManifestDigest(manifest: ExtensionManifestV2): string {
   return `sha256:${sha256Hex(canonicalJson(manifest))}`
 }
 
-/** 远程资产清单的聚合 payload digest(逐文件 sha256 已由下载层钉死;此处聚合为单一可比对值)。 */
+/** 文件清单的聚合 payload digest(路径+sha256 排序聚合为单一可比对值)。信任语义随输入来源:
+ *  remote = 已验 catalog 清单(逐文件 sha256 由下载层钉死);builtin = 摄取时自算内容地址
+ *  (REQ-098 #303,一致性标识而非上游真实性证明)。 */
 export function aggregateFilesDigest(files: Array<{ path: string; sha256: string }>): string {
   const lines = files
     .map((f) => `${f.path} ${f.sha256}`)
