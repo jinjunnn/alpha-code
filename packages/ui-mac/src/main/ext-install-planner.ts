@@ -28,7 +28,7 @@ import type { InstallReceiptType } from "../preload/types"
 import type { CatalogEntry, McpInstallSpec } from "../renderer/extensions/catalog-types"
 import type { AppEnvironment } from "./alpha-environment"
 import { alphaRoot } from "./alpha-workdir"
-import { officeAdvisoryFor } from "../shared/office-advisories"
+import type { AdvisoryGate } from "./ext-advisory-gate"
 import {
   runExtensionTransaction,
   actionOf,
@@ -425,6 +425,9 @@ export type PlannerDeps = {
   /** 共享 CAS 基根(CAS 落 <casBaseRoot>/cas;prod/beta/dev 共享,覆盖态 = 覆盖根)。main 注入
    *  冻结环境快照(REQ-098 #303);renderer 无路径通道。 */
   casBaseRoot(): string
+  /** #315:advisory 激活闸(每操作冻结视图;main 组合根 makeAdvisoryGate 注入,必填 ——
+   *  可选缺省 = fail-open 陷阱)。 */
+  advisoryGate: AdvisoryGate
   /** seed 安装通道(REQ-102 #317)。缺席 = 通道不可用,seed 意图 fail-closed 拒。 */
   seed?: {
     /** 随包 seed 目录(main 从 resourcesPath 派生;renderer 无输入权)。null = 未打包/无 seed。 */
@@ -432,6 +435,21 @@ export type PlannerDeps = {
     /** 回表同包 bundled catalog 快照 —— 绝不走 effective remote/cache(远端可能比随包 seed 新,
      *  语义漂移会让 seed 字节配错安装事实)。 */
     resolveBundledEntry(catalogId: string): VerifiedCatalogEntry | null
+  }
+}
+
+/** #315:catalog entry → advisory gate 输入(digest 双域:file-sha256 逐文件、aggregate-files 聚合)。 */
+function advisoryInputOf(
+  entry: { id: string; name?: string; remoteAsset?: { files: Array<{ path: string; sha256: string }> } },
+  provenance: "remote" | "cache" | "bundled" | "seed",
+) {
+  const files = entry.remoteAsset?.files
+  return {
+    catalogId: entry.id,
+    name: entry.name,
+    fileDigests: files?.map((f) => f.sha256),
+    payloadDigest: files && files.length ? aggregateFilesDigest(files) : undefined,
+    provenance,
   }
 }
 
@@ -687,10 +705,11 @@ async function installBundleAtomic(
   const bundleWarnings: string[] = []
   for (const it of items) {
     const child = resolved.get(it.catalogEntryId)!
-    // REQ-105:归档 office 连接器绝不经 bundle 通道重新铺给用户 —— 恒跳过(即使 required),
-    // 条目本身仍可在带警示的详情页单独安装(legacy optional 语义)。跳过决策落 main(非 renderer)。
-    if (officeAdvisoryFor({ id: child.entry.id, name: child.entry.name })) {
-      skipped.push({ id: child.entry.id, reason: "archived office connector (REQ-105)" })
+    // #315(并入 REQ-105 静态基线):advisory 命中的子条目绝不经 bundle 通道铺给用户 ——
+    // 恒跳过(即使 required,沿用 REQ-105 语义);跳过决策落 main(非 renderer)。
+    const childAdv = deps.advisoryGate(advisoryInputOf(child.entry, verified.channel))
+    if (!childAdv.allowed) {
+      skipped.push({ id: child.entry.id, reason: `advisory ${childAdv.advisoryId}: ${childAdv.reason}` })
       continue
     }
     const c = await classifyBundleChild(child, environment, identity, deps)
@@ -764,6 +783,10 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
   const verified = await deps.resolveEntry(intent.catalogId)
   if (!verified) return { ok: false, reason: `entry not in verified catalog: ${intent.catalogId}` }
   const entry = verified.entry
+
+  // #315:advisory 激活闸(bundle 本体 id 也在此过;children 在 fan-out 内逐个过)。
+  const adv = deps.advisoryGate(advisoryInputOf(entry, verified.channel))
+  if (!adv.allowed) return { ok: false, reason: `advisory ${adv.advisoryId}: ${adv.reason} — activation refused (R14)` }
 
   if (entry.type === "bundle") return installBundleAtomic(verified, intent, deps)
 
@@ -1100,6 +1123,9 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
   const entry = verified.entry
   const drift = crossCheckSeedAssetAgainstEntry(asset, entry)
   if (drift) return { ok: false, reason: `seed/catalog drift for ${asset.id}: ${drift} — refused` }
+  // #315:seed(离线随包)激活同样过闸(office 静态基线 + 已验公示若在场)。
+  const seedAdv = deps.advisoryGate(advisoryInputOf(entry, "seed"))
+  if (!seedAdv.allowed) return { ok: false, reason: `advisory ${seedAdv.advisoryId}: ${seedAdv.reason} — activation refused (R14)` }
 
   // manifest 合成/严格校验与 catalog 安装同源;交付介质是随包 seed → ownership.distributed 如实记
   // bundled(digest 语义 = 安装时刻 manifest 快照,与 remote 安装的 digest 不同是诚实差异)。
@@ -1282,7 +1308,7 @@ export type GenerationRollbackOutcome = { ok: true; previous: string | null } | 
 export async function rollbackGenerationByKey(
   rawIntent: unknown,
   rawGenId: unknown,
-  deps: Pick<PlannerDeps, "globalRoot">,
+  deps: Pick<PlannerDeps, "globalRoot" | "advisoryGate">,
 ): Promise<GenerationRollbackOutcome> {
   const decoded = decodeUninstallIntent(rawIntent)
   if (!decoded.ok) return decoded
@@ -1290,6 +1316,17 @@ export async function rollbackGenerationByKey(
   if (intent.type !== "skill") return { ok: false, reason: `rollback: unsupported type "${intent.type}" — skill only` }
   if (intent.scope !== "global") return { ok: false, reason: "rollback: global scope only" }
   if (typeof rawGenId !== "string" || rawGenId.length === 0 || rawGenId.length > 64) return { ok: false, reason: "rollback: invalid generation id" }
+  // #315:rollback = 激活旧内容,同样过闸(按账本 record 的 catalogId/payloadDigest)。
+  const record = findRecordV2(deps.globalRoot(), intent.type, intent.name)
+  if (record) {
+    const adv = deps.advisoryGate({
+      catalogId: record.id,
+      name: record.name,
+      payloadDigest: record.payloadDigest,
+      provenance: record.origin === "catalog" ? "cache" : "bundled",
+    })
+    if (!adv.allowed) return { ok: false, reason: `advisory ${adv.advisoryId}: ${adv.reason} — rollback activation refused (R14)` }
+  }
   return rollbackSkillGeneration(deps.globalRoot(), intent.name, rawGenId)
 }
 
@@ -1308,7 +1345,10 @@ export function decodeSetStateIntent(input: unknown): { ok: true; intent: SetSta
 }
 
 /** desiredState 翻转:scope 独立(global/各项目账本物理分域),项目 identity fail-closed 同卸载。 */
-export function setInstallStateByKey(rawIntent: unknown, deps: Pick<PlannerDeps, "globalRoot">): { ok: true } | { ok: false; reason: string } {
+export function setInstallStateByKey(
+  rawIntent: unknown,
+  deps: Pick<PlannerDeps, "globalRoot" | "advisoryGate">,
+): { ok: true } | { ok: false; reason: string } {
   const decoded = decodeSetStateIntent(rawIntent)
   if (!decoded.ok) return decoded
   const intent = decoded.intent
@@ -1329,6 +1369,17 @@ export function setInstallStateByKey(rawIntent: unknown, deps: Pick<PlannerDeps,
     if (intent.scope !== "project") return { ok: false, reason: "fail closed: record is project-scoped but intent is global" }
     const verified = verifyProjectScope(record, intent.projectDir)
     if (!verified.ok) return verified
+  }
+  // #315:「禁止再启用」的核心位点 —— disabled→enabled 过闸(catalog 来源要求新鲜公示;
+  // created/imported 来源按离线基线,catalogId 命中仍拦)。
+  if (intent.state === "enabled") {
+    const adv = deps.advisoryGate({
+      catalogId: record.id,
+      name: record.name,
+      payloadDigest: record.payloadDigest,
+      provenance: record.origin === "catalog" ? "cache" : "bundled",
+    })
+    if (!adv.allowed) return { ok: false, reason: `advisory ${adv.advisoryId}: ${adv.reason} — re-enable refused (R14)` }
   }
   return setDesiredStateV2(root, intent.type, intent.name, intent.state)
 }

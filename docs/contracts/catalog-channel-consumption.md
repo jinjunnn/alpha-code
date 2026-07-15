@@ -54,9 +54,22 @@ review_after: 2026-10-15
   stable 内容,正确做法是签发指向同一 payload 的合法 channel doc。
 - per-channel LKG(`catalog-channel-state.json` 按通道键)+ R3 mix-and-match 守卫
   (`doc.channel !== 请求通道` 拒)防通道串读。
-- **部署顺序前置**:A 侧本语义 fail-closed 依赖 B 侧已发布 `channels/snapshot.json`
-  (alpha-web #35,main@6a11567)——**A 发版前必须先完成 alpha-web 生产部署**,并由其
-  deploy [7/7] 公网一致性探针确认。
+- **advisory 消费(#315,R14)**:advisories 是**强制成员**(snapshot entry 必在,
+  validateSnapshotDoc R2 拒缺);验证链 trust → snapshot → **advisories**(R10/R1/R2/R4 +
+  R14 内部一致性 + R13 钉合 + R5 序列/等序字节)→ channel doc;任一失败 = security。
+  已验 advisories **立即持久化**(deny-list 安全前移,同 trust;不等 channel 结果)。
+- **激活闸(ext-advisory-gate)**:拦**新激活** —— install(catalog/seed/bundle child,
+  bundle 子项命中恒跳过即使 required)、disabled→enabled、generation rollback;已运行
+  存量不强杀、不改 receipt。匹配:catalogId 精确授权;记录带 sha256 按 digestDomain 收窄
+  (aggregate-files→payloadDigest、file-sha256→任一文件 digest;上下文缺该域 digest 保守拦);
+  name 不授权;withdrawn 永不拦;任一 active 命中即拦。新鲜度:remote/cache 来源要求已验
+  advisories LKG 在场且未过 expires(最大 stale 窗口),否则拦 —— **绝不退空集**;
+  bundled/seed 离线来源由随包静态 office 表兜底(LKG 在场含 stale 的命中照拦)。每操作
+  冻结一份视图(makeAdvisoryGate;bundle fan-out 共享)。非目标(票面注记):启动/重连
+  对已启用存量的再生效(告警面)、事务 crash recovery 前滚(授权时点已过闸)。
+- **部署顺序前置**:A 侧本语义 fail-closed 依赖 B 侧已发布 `channels/snapshot.json` **与
+  `channels/advisories.json`**(alpha-web #35/#36,main@21ebbe1)——**A 发版前必须先完成
+  alpha-web 生产部署**,并由其 deploy [7/7] 公网一致性探针确认。
 
 ## 3. 结果标注与 bundled 基线
 

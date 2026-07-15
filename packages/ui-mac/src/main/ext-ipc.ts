@@ -3,6 +3,7 @@
 // config (ext-config.ts), and a runtime which-check so the UI can warn before adding a local MCP
 // whose binary (uv/node/…) is missing. All validation lives in ext-config / here — see ADR-014 §8.
 
+import { makeAdvisoryGate } from "./ext-advisory-gate"
 import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from "electron"
 import { execFile } from "node:child_process"
 import * as fs from "node:fs"
@@ -467,7 +468,10 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
         const bundled = bundledCatalogJson as unknown as Catalog
         return { entries: bundled.entries, channel: "bundled" as const, version: bundled.version }
       })())
+    // #315:每操作冻结一份 advisory 视图(gate 内含随包 office 静态基线 + 已验公示 LKG)。
+    const advisoryGate = makeAdvisoryGate(userDataPath)
     return {
+      advisoryGate,
       resolveEntry: async (catalogId) => {
         const cat = await effectiveCatalog()
         const entry = cat.entries.find((e) => e.id === catalogId)
@@ -533,11 +537,11 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   })
   ipcMain.handle("ext-rollback", async (_event: IpcMainInvokeEvent, intent: unknown, genId: unknown) => {
     await ledgerReady
-    return rollbackGenerationByKey(intent, genId, { globalRoot: alphaGlobalRoot })
+    return rollbackGenerationByKey(intent, genId, { globalRoot: alphaGlobalRoot, advisoryGate: makeAdvisoryGate(userDataPath) })
   })
   ipcMain.handle("ext-set-install-state", async (_event: IpcMainInvokeEvent, intent: unknown) => {
     await ledgerReady // #309:账本写方等 recovery+迁移收敛
-    return setInstallStateByKey(intent, { globalRoot: alphaGlobalRoot })
+    return setInstallStateByKey(intent, { globalRoot: alphaGlobalRoot, advisoryGate: makeAdvisoryGate(userDataPath) })
   })
   // REQ-099(ADR-028 §5):Hub 项目上下文读通道 —— global 与当前项目的 v2 账本分读(物理分域),
   // records 带 environment/scope identity/desiredState/generation;v1Only 为只读兼容面。
