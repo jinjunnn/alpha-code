@@ -275,6 +275,8 @@ export type AlphaEnvironmentInfo = {
   mutableRoot: string
   /** 旧单根布局根(迁移的只读 source;dev 环境下 = mutableRoot)。 */
   legacyRoot: string
+  /** 共享 CAS 基根(REQ-102:CAS 落 <casBaseRoot>/cas,prod/beta/dev 共享去重;覆盖态 = 覆盖根)。 */
+  casBaseRoot: string
   /** ALPHA_GLOBAL_DIR 预置覆盖生效(测试隔离/开发者显式 export)。 */
   rootOverridden: boolean
   updaterFeedChannel: "latest" | "beta" | null
@@ -415,11 +417,16 @@ export type ElectronAPI = {
     /** REQ-100 #311 / REQ-099 #305:main-owned catalog 安装唯一入口(mcp/plugin/skill/agent/cloud/bundle)。
      *  liveMcp = 策略后配置 + 密钥真值(真值只可能是 renderer 本次 grants 交来的 —— 契约:main 绝不
      *  经此回传 keychain/main 侧来源的密钥),renderer 拿去 sdk.mcp.add 免重启连接。 */
-    installCatalog: (intent: {
-      catalogId: string
-      scope: { scope: "global" } | { scope: "project"; projectDir: string }
-      grants?: { secrets?: Record<string, string>; env?: Record<string, string>; workspace?: string; cnMirror?: boolean }
-    }) => Promise<
+    installCatalog: (intent:
+      | {
+          catalogId: string
+          scope: { scope: "global" } | { scope: "project"; projectDir: string }
+          grants?: { secrets?: Record<string, string>; env?: Record<string, string>; workspace?: string; cnMirror?: boolean }
+        }
+      /** REQ-102 #317:选中随包 seed 资产安装(skill/global-only 首期);字节从共享 CAS 事务物化,
+       *  seedDir/清单/版本/receipt 语义全 main-owned。 */
+      | { source: "seed"; assetId: string; scope: { scope: "global" } }
+    ) => Promise<
       | { ok: true; kind: string; name: string; manifestDigest?: string; liveMcp?: { name: string; config: Record<string, unknown> }; installed?: string[]; skipped?: Array<{ id: string; reason: string }>; warning?: string }
       | { ok: false; reason: string }
     >

@@ -489,6 +489,20 @@ export function registerExtIpcHandlers(userDataPath: string) {
           return collectSkillPayloadFromDir(srcDir)
         },
       },
+      // REQ-102 #317:seed 安装通道 —— seedDir/CAS 根/回表 catalog 全部 main-owned。回表只用随包
+      // bundled catalog 快照(绝不 effective remote/cache:远端更新会让 seed 字节配错安装语义)。
+      seed: {
+        seedDir: () => {
+          const dir = path.join(resourcesRoot(), "extension-seed")
+          return fs.existsSync(dir) ? dir : null
+        },
+        casBaseRoot: () => getAlphaEnvironment().casBaseRoot,
+        resolveBundledEntry: (catalogId) => {
+          const bundled = bundledCatalogJson as unknown as Catalog
+          const entry = (bundled.entries ?? []).find((e) => e.id === catalogId)
+          return entry ? { entry, channel: "bundled" as const, catalogVersion: String(bundled.version) } : null
+        },
+      },
     }
   }
   ipcMain.handle("ext-install-catalog", async (_event: IpcMainInvokeEvent, intent: unknown) => {

@@ -77,6 +77,7 @@ import {
   type SkillGenerationEntry,
   type SkillPayloadFile,
 } from "./ext-skill-generations"
+import { promoteSeedAssetToCas, readPackagedSeed, type SeedAsset } from "./ext-seed"
 
 // ── renderer intents(严格解码:未知键 = 伪造事实通道,loud 拒绝)─────────────────────────────
 
@@ -92,6 +93,9 @@ export type InstallGrants = {
   cnMirror?: boolean
 }
 export type CatalogInstallIntent = { catalogId: string; scope: InstallScope; grants?: InstallGrants }
+/** seed 安装意图(REQ-102 #317):renderer 只表达「选中哪个随包资产」;seedDir/CAS 根/文件清单/版本/
+ *  receipt 元数据全部 main-owned。与 catalog 意图判别互斥(source 键在场 = seed 形态)。 */
+export type SeedInstallIntent = { source: "seed"; assetId: string; scope: InstallScope }
 
 export type UninstallIntent =
   | { type: InstallReceiptType; name: string; scope: "global" }
@@ -147,9 +151,22 @@ function decodeScope(v: unknown): { ok: true; scope: InstallScope } | { ok: fals
   return { ok: false, reason: `intent.scope.scope: ${JSON.stringify(v.scope)} not "global" | "project"` }
 }
 
-/** 严格解码 renderer 安装意图:catalogId + scope + grants,一个多余键都不收(伪造安装事实无通道)。 */
-export function decodeCatalogInstallIntent(input: unknown): { ok: true; intent: CatalogInstallIntent } | { ok: false; reason: string } {
+/** 严格解码 renderer 安装意图:catalog 形态(catalogId + scope + grants)XOR seed 形态(source:"seed"
+ *  + assetId + scope),判别互斥、未知键一个都不收(伪造安装事实无通道)。 */
+export function decodeCatalogInstallIntent(input: unknown): { ok: true; intent: CatalogInstallIntent | SeedInstallIntent } | { ok: false; reason: string } {
   if (!isObj(input)) return { ok: false, reason: "intent: must be an object" }
+  if (input.source !== undefined) {
+    if (input.source !== "seed") return { ok: false, reason: `intent.source: ${JSON.stringify(input.source)} not "seed"` }
+    for (const key of Object.keys(input)) {
+      if (key !== "source" && key !== "assetId" && key !== "scope")
+        return { ok: false, reason: `seed intent: unknown key "${key}" — renderer-supplied install facts are refused (ADR-028 §1)` }
+    }
+    if (typeof input.assetId !== "string" || input.assetId.length === 0 || input.assetId.length > 200)
+      return { ok: false, reason: "intent.assetId: required non-empty string" }
+    const scope = decodeScope(input.scope)
+    if (!scope.ok) return scope
+    return { ok: true, intent: { source: "seed", assetId: input.assetId, scope: scope.scope } }
+  }
   for (const key of Object.keys(input)) {
     if (key !== "catalogId" && key !== "scope" && key !== "grants")
       return { ok: false, reason: `intent: unknown key "${key}" — renderer-supplied install facts are refused (ADR-028 §1)` }
@@ -399,6 +416,16 @@ export type PlannerDeps = {
   installers: PlannerInstallers
   transaction?: InstallTransactionHooks
   now?(): string
+  /** seed 安装通道(REQ-102 #317)。缺席 = 通道不可用,seed 意图 fail-closed 拒。 */
+  seed?: {
+    /** 随包 seed 目录(main 从 resourcesPath 派生;renderer 无输入权)。null = 未打包/无 seed。 */
+    seedDir(): string | null
+    /** 共享 CAS 基根(CAS 落 <casBaseRoot>/cas;prod/beta/dev 共享,覆盖态 = 覆盖根)。 */
+    casBaseRoot(): string
+    /** 回表同包 bundled catalog 快照 —— 绝不走 effective remote/cache(远端可能比随包 seed 新,
+     *  语义漂移会让 seed 字节配错安装事实)。 */
+    resolveBundledEntry(catalogId: string): VerifiedCatalogEntry | null
+  }
 }
 
 // ── scope 解析(项目闭环:identity fail-closed;mcp/plugin/cloud 不进项目 scope)─────────────────
@@ -653,6 +680,7 @@ async function installBundleAtomic(
 export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Promise<CatalogInstallOutcome> {
   const decodedIntent = decodeCatalogInstallIntent(rawIntent)
   if (!decodedIntent.ok) return decodedIntent
+  if ("source" in decodedIntent.intent) return installSeedAsset(decodedIntent.intent, deps)
   const intent = decodedIntent.intent
 
   const verified = await deps.resolveEntry(intent.catalogId)
@@ -875,6 +903,131 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
     ...(liveMcp ? { liveMcp } : {}),
     ...(warning ? { warning } : {}),
   }
+}
+
+// ── seed install(REQ-102 #317:选中 skill seed 经共享 CAS 事务物化;skill/global-only 首期)────
+
+const SEMVER3_RE = /^(\d+)\.(\d+)\.(\d+)$/
+
+/** 严格三段 semver 双方都可解析才可比(返回 <0 / 0 / >0);任一侧不可解析 = null(调用方 fail-closed)。 */
+function compareVersionsSafe(a: string, b: string): number | null {
+  const ma = SEMVER3_RE.exec(a)
+  const mb = SEMVER3_RE.exec(b)
+  if (!ma || !mb) return null
+  for (let i = 1; i <= 3; i++) {
+    const d = Number(ma[i]) - Number(mb[i])
+    if (d !== 0) return d
+  }
+  return 0
+}
+
+/** 双真源交叉验证(Codex 裁决 C,#317 AC2):seed lock 权威「离线字节」,bundled entry 权威安装语义;
+ *  id/type/version/逐文件 path+sha256+bytes/聚合 digest 任一不合 = 漂移,返回原因(调用方 fail-closed)。 */
+function crossCheckSeedAssetAgainstEntry(asset: SeedAsset, entry: CatalogEntry): string | null {
+  if (entry.id !== asset.id) return `entry id ${entry.id} ≠ asset id ${asset.id}`
+  if (entry.type !== asset.type) return `entry type ${entry.type} ≠ asset type ${asset.type}`
+  if (typeof entry.version !== "string" || entry.version !== asset.version)
+    return `entry version ${String(entry.version)} ≠ asset version ${asset.version}`
+  const files = entry.remoteAsset?.files
+  if (!files?.length) return "bundled entry declares no remoteAsset files"
+  if (files.length !== asset.files.length) return `file manifest size ${files.length} ≠ ${asset.files.length}`
+  const byPath = new Map(files.map((f) => [f.path, f]))
+  for (const f of asset.files) {
+    const e = byPath.get(f.path)
+    if (!e) return `file ${f.path} not in bundled entry remoteAsset`
+    if (e.sha256 !== f.sha256) return `sha256 mismatch for ${f.path}`
+    if (e.bytes !== f.bytes) return `bytes mismatch for ${f.path}`
+  }
+  if (aggregateFilesDigest(asset.files) !== aggregateFilesDigest(files)) return "aggregate payload digest mismatch"
+  return null
+}
+
+/**
+ * 选中 seed 资产安装(REQ-102 #317):严格意图 → 随包 seed 读取 → 回表同包 bundled catalog(绝不
+ * 用 effective remote/cache)→ 双真源交叉验证 → blob 提升进共享 CAS → generation 事务从 CAS 物化
+ * (populateFromCas)。skill-only + global-only 首期(agent → #358,mcp/plugin → #359);不 pin
+ * (generation content rehash 即 GC mark root);已装更高/不可比版本 fail-closed 拒(downgrade 无
+ * 偶然通道)。互斥:CAS promotion 在事务锁前(不可变、幂等、同 digest 原子写);写互斥由
+ * runExtensionTransaction 的引擎锁承担 —— 此处不得先拿 bundle 锁(非重入会自锁)。
+ */
+async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): Promise<CatalogInstallOutcome> {
+  if (intent.scope.scope !== "global")
+    return { ok: false, reason: "seed install is global-only in this phase (project generation lifecycle is not closed yet) — refused" }
+  const seedDeps = deps.seed
+  if (!seedDeps) return { ok: false, reason: "seed install channel not available" }
+  const seedDir = seedDeps.seedDir()
+  if (!seedDir) return { ok: false, reason: "no packaged seed available" }
+
+  const read = readPackagedSeed(seedDir)
+  if (!read.ok) return { ok: false, reason: `packaged seed rejected (fail closed): ${read.error}` }
+  const view = read.seed
+  const asset = view.assets.find((a) => a.id === intent.assetId)
+  if (!asset) return { ok: false, reason: `asset not in packaged seed: ${intent.assetId}` }
+  if (asset.type !== "skill")
+    return { ok: false, reason: `seed install for type "${asset.type}" is not wired (skill-only phase; agent → #358, mcp/plugin → #359) — refused` }
+  if (!asset.platformCompatible) return { ok: false, reason: `asset ${asset.id} is not built for this platform — refused` }
+
+  const verified = seedDeps.resolveBundledEntry(asset.id)
+  if (!verified) return { ok: false, reason: `asset ${asset.id} not in bundled catalog — refusing (seed/catalog drift)` }
+  if (verified.channel !== "bundled")
+    return { ok: false, reason: "seed install must resolve against the bundled catalog snapshot — refused" }
+  if (view.lock.catalogVersion !== verified.catalogVersion)
+    return { ok: false, reason: `seed lock catalogVersion ${view.lock.catalogVersion} ≠ bundled catalog ${verified.catalogVersion} — refusing (drift)` }
+  const entry = verified.entry
+  const drift = crossCheckSeedAssetAgainstEntry(asset, entry)
+  if (drift) return { ok: false, reason: `seed/catalog drift for ${asset.id}: ${drift} — refused` }
+
+  // manifest 合成/严格校验与 catalog 安装同源;交付介质是随包 seed → ownership.distributed 如实记
+  // bundled(digest 语义 = 安装时刻 manifest 快照,与 remote 安装的 digest 不同是诚实差异)。
+  const synthesized = synthesizeManifest(verified) as Record<string, unknown>
+  const ownership = synthesized.ownership as Record<string, unknown>
+  const decoded = decodeManifestV2({ ...synthesized, ownership: { ...ownership, distributed: "bundled" } })
+  if (!decoded.ok) return { ok: false, reason: `manifest invalid — refusing before any disk write: ${decoded.errors.join("; ")}` }
+  const manifest = decoded.manifest
+  if (!(manifest.compatibility.platforms as string[]).includes(deps.platform()))
+    return { ok: false, reason: `platform ${deps.platform()} not supported by this entry — refusing before any disk write` }
+  const manifestDigest = computeManifestDigest(manifest)
+  const payloadDigest = aggregateFilesDigest(entry.remoteAsset!.files)
+
+  // downgrade 门:同版本重装 = 幂等允许(generation 追加,可回滚);更高已装或版本不可比 → 拒。
+  const existing = findRecordV2(deps.globalRoot(), "skill", entry.name)
+  if (existing?.version && existing.version !== manifest.version) {
+    const cmp = compareVersionsSafe(manifest.version, existing.version)
+    if (cmp === null)
+      return { ok: false, reason: `installed version ${existing.version} not comparable to seed ${manifest.version} — refusing (no accidental downgrade channel)` }
+    if (cmp < 0) return { ok: false, reason: `installed version ${existing.version} is newer than seed ${manifest.version} — refusing downgrade` }
+  }
+
+  const tx = (deps.transaction ?? passthroughTx).begin({ op: "install", kind: "skill", name: entry.name, scope: "global", manifestDigest })
+  const rollback = (reason: string): void => (deps.transaction ?? passthroughTx).rollback(tx.txId, reason)
+
+  // verify-all-then-promote:任一文件校验不过在展开前拒;成功后 blob 进共享 CAS(幂等,失败残留由
+  // GC 语义处理 —— 仍属当前 seed 的 digest 本就是 mark root,#318)。
+  const casBaseRoot = seedDeps.casBaseRoot()
+  const promoted = promoteSeedAssetToCas(seedDir, view.lock, asset.id, casBaseRoot)
+  if (!promoted.ok) {
+    rollback(promoted.reason)
+    return { ok: false, reason: promoted.reason }
+  }
+
+  const gen = await installSkillGeneration(deps.globalRoot(), {
+    name: entry.name,
+    id: entry.id,
+    environment: deps.environment(),
+    scope: { kind: "global" },
+    origin: "catalog",
+    casFiles: { specs: promoted.files, casBaseRoot },
+    version: manifest.version,
+    manifestDigest,
+    payloadDigest,
+    grantDigest: computeGrantDigest({}),
+  })
+  if (!gen.ok) {
+    rollback(gen.reason)
+    return { ok: false, reason: gen.reason }
+  }
+  ;(deps.transaction ?? passthroughTx).commit(tx.txId)
+  return { ok: true, kind: "skill", name: entry.name, ...(gen.files.length ? { files: gen.files } : {}), manifestDigest }
 }
 
 // ── uninstall(main 从自己账本读事实;owned paths 从受控根重新派生)──────────────────────────────

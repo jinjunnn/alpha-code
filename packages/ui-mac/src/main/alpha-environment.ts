@@ -96,6 +96,10 @@ export function initAlphaEnvironment(input: InitEnvironmentInput): AlphaEnvironm
     packaged: input.isPackaged,
     mutableRoot,
     legacyRoot,
+    // 共享 CAS 基根(REQ-102 #317):CAS 落 <casBaseRoot>/cas,prod/beta/dev 共享去重(blob 不可变、
+    // 按 digest 寻址,跨环境共享无污染面);语义独立于 legacyRoot(迁移只读 source)——当前同值是
+    // 布局事实,不是耦合契约。覆盖态(测试隔离)一切进覆盖根。
+    casBaseRoot: override || baseRoot,
     rootOverridden: Boolean(override),
     updaterFeedChannel: updaterFeedChannelFor(environment),
   })
