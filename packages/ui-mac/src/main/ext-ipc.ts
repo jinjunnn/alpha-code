@@ -40,9 +40,9 @@ import bundledCatalogJson from "../renderer/extensions/alpha-catalog.json"
 import type { Catalog } from "../renderer/extensions/catalog-types"
 import { getAlphaEnvironment } from "./alpha-environment"
 import { installCatalog, listGenerationsByKey, rollbackGenerationByKey, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
-import { readLedgerV2, removeRecordV2, upsertRecordsV2 } from "./ext-receipt-v2"
+import { migrateV1Ledger, readLedgerV2, removeRecordV2, upsertRecordsV2 } from "./ext-receipt-v2"
 import { readPackagedSeed } from "./ext-seed"
-import { recoverExtensionTransactions } from "./ext-transaction"
+import { recoverExtensionTransactions, recoveryClean } from "./ext-transaction"
 import { getLogger } from "./logging"
 
 // REQ-076 T2(阻断②):原实现硬编码 `which` + `:` 拼接的 unix PATH,Windows 上恒报「未安装」
@@ -399,13 +399,34 @@ export function registerExtIpcHandlers(userDataPath: string) {
       if (!rm.ok) throw new Error(`recovery uninstall ledger removal failed: ${rm.reason}`)
     },
     log: (event, detail) => getLogger().log(`[req100-tx-recovery] ${event} ${JSON.stringify(detail)}`),
-  }).then(
-    (r) => {
-      if (!r.ok) getLogger().log(`[req100-tx-recovery] not clean: ${r.reason}`)
-      else if (r.reports.length) getLogger().log(`[req100-tx-recovery] converged ${r.reports.length} journal(s)`)
-    },
-    (err) => getLogger().log(`[req100-tx-recovery] failed: ${String(err)}`),
-  )
+  })
+  // REQ-099 #309:统一账本就绪 barrier —— recovery(结果不吞)→ 仅在恢复干净时跑 v1→v2 迁移。
+  // recovery 不干净(锁被占/journal 未收敛)或迁移被拒:loud 记录但 barrier 正常结束,不阻断启动
+  // (v2 消费面对结构有效的 v1-only 有 fallback;文件级损坏本就被 lookup fail-closed)。
+  // 所有读写全局账本的 v2 IPC 与启动期 ecosystem 导入(index.ts)都 await 本 barrier。
+  const ledgerReady: Promise<void> = txRecovery
+    .then((r) => {
+      if (!r.ok) {
+        getLogger().log(`[req100-tx-recovery] not clean: ${r.reason} — skipping v1→v2 migration this launch`)
+        return
+      }
+      if (r.reports.length) getLogger().log(`[req100-tx-recovery] converged ${r.reports.length} journal(s)`)
+      // Codex review #357 major:ok:true ≠ 干净(aborted/rolled-back/待重试非终态也 ok)——
+      // 账本本次启动动过手术或仍有在途 journal 就不迁,下次干净的启动再迁。
+      if (!recoveryClean(r)) {
+        getLogger().log(`[req099-migrate] recovery not clean (${r.reports.map((x) => `${x.txId}:${x.state}/${x.action}`).join(", ")}) — skipping migration this launch`)
+        return
+      }
+      const env = getAlphaEnvironment()
+      const m = migrateV1Ledger(env.mutableRoot, env.environment)
+      if (!m.ok) {
+        getLogger().log(`[req099-migrate] refused: ${m.reason}`)
+        return
+      }
+      if (m.migrated || m.retained) getLogger().log(`[req099-migrate] adopted ${m.migrated}, retained ${m.retained} v1-only`)
+      for (const w of m.warnings) getLogger().log(`[req099-migrate] ${w}`)
+    })
+    .catch((err) => getLogger().log(`[req100-tx-recovery] failed: ${String(err)} — skipping v1→v2 migration this launch`))
   // REQ-102(#194):packaged seed 启动期消费 = **纯读** —— 严格解码 + 平台门 + 摘要日志。
   // 不安装、不启用、零配置写入、零进程、零网络(可获得性 bundled 与激活态正交,parent AC1/AC3);
   // 浏览面 IPC 与安装编排(planner/事务 + populateFromCas)随 REQ-103(#195)接 Hub UI。
@@ -471,28 +492,34 @@ export function registerExtIpcHandlers(userDataPath: string) {
     }
   }
   ipcMain.handle("ext-install-catalog", async (_event: IpcMainInvokeEvent, intent: unknown) => {
-    await txRecovery
+    await ledgerReady
     return installCatalog(intent, plannerDeps())
   })
   ipcMain.handle("ext-uninstall-v2", async (_event: IpcMainInvokeEvent, intent: unknown) => {
-    await txRecovery
+    await ledgerReady
     return uninstallByKey(intent, plannerDeps())
   })
   // REQ-100 #313:generation 历史读 + 两版离线回滚(key-based,同卸载信任边界;先等崩溃恢复收敛)。
   ipcMain.handle("ext-list-generations", async (_event: IpcMainInvokeEvent, intent: unknown) => {
-    await txRecovery
+    await ledgerReady
     return listGenerationsByKey(intent, { globalRoot: alphaGlobalRoot })
   })
   ipcMain.handle("ext-rollback", async (_event: IpcMainInvokeEvent, intent: unknown, genId: unknown) => {
-    await txRecovery
+    await ledgerReady
     return rollbackGenerationByKey(intent, genId, { globalRoot: alphaGlobalRoot })
   })
-  ipcMain.handle("ext-set-install-state", (_event: IpcMainInvokeEvent, intent: unknown) => setInstallStateByKey(intent, { globalRoot: alphaGlobalRoot }))
+  ipcMain.handle("ext-set-install-state", async (_event: IpcMainInvokeEvent, intent: unknown) => {
+    await ledgerReady // #309:账本写方等 recovery+迁移收敛
+    return setInstallStateByKey(intent, { globalRoot: alphaGlobalRoot })
+  })
   // REQ-099(ADR-028 §5):Hub 项目上下文读通道 —— global 与当前项目的 v2 账本分读(物理分域),
   // records 带 environment/scope identity/desiredState/generation;v1Only 为只读兼容面。
-  ipcMain.handle("ext-list-installs-v2", (_event: IpcMainInvokeEvent, projectDir?: unknown) => {
+  ipcMain.handle("ext-list-installs-v2", async (_event: IpcMainInvokeEvent, projectDir?: unknown) => {
+    await ledgerReady // #309:读方同 barrier(迁移中途的半程视图不外泄)
     const global = readLedgerV2(alphaGlobalRoot())
     const projectRoot = typeof projectDir === "string" && projectDir ? alphaRoot(projectDir) : null
     return { global, project: projectRoot ? readLedgerV2(projectRoot) : null }
   })
+  // #309:启动期账本消费方(index.ts 的 global ecosystem gate)await 此 barrier 后再写账本。
+  return ledgerReady
 }

@@ -524,7 +524,8 @@ const main = Effect.gen(function* () {
     },
   })
   registerWslIpcHandlers(wslServers)
-  registerExtIpcHandlers(app.getPath("userData"))
+  // #309:extLedgerReady = recovery→v1→v2 迁移 barrier;启动期账本写方(ecosystem gate)在其后。
+  const extLedgerReady = registerExtIpcHandlers(app.getPath("userData"))
   // REQ-032:启动预热远端 catalog(ETag 缓存;失败静默回退,进 hub 时再刷)
   void refreshRemoteCatalog(app.getPath("userData")).catch(() => {})
   registerAccountIpcHandlers()
@@ -673,9 +674,9 @@ const main = Effect.gen(function* () {
   // REQ-063 T4:全局存量一次性迁移门(发布闸)——default-deny 后 ~/.claude/~/.agents 存量不可见,
   // 首启必弹防「技能丢了」重演;fire-and-forget,不阻塞窗口;marker 记账不再弹。
   if (!TEST_ONBOARDING) {
-    void runGlobalEcosystemGate(mainWindow ?? undefined, logger).catch((error) =>
-      logger.warn("[req063] global ecosystem gate failed (non-fatal)", error),
-    )
+    void extLedgerReady
+      .then(() => runGlobalEcosystemGate(mainWindow ?? undefined, logger))
+      .catch((error) => logger.warn("[req063] global ecosystem gate failed (non-fatal)", error))
   }
 
   // In-place sidecar respawn — NOT a full app relaunch (ad-hoc-signed builds quit on relaunch, ADR-017).

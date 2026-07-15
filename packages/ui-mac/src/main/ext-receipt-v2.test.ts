@@ -14,6 +14,7 @@ import {
   computeGrantDigest,
   decodeRecordV2,
   findRecordV2,
+  lookupForUninstall,
   migrateV1Ledger,
   projectScopeIdentity,
   readLedgerV2,
@@ -349,6 +350,94 @@ describe("v1 → v2 explicit migration (AC#6)", () => {
     fs.writeFileSync(ledgerFile(), "not json at all")
     const r = migrateV1Ledger(root, "prod")
     expect(r.ok).toBe(false)
+  })
+
+  // ── #309 adoption 规则(Codex 裁决)────────────────────────────────────────────────────────────
+
+  test("adoption:非 catalog 怪 id 规范化为 user:<name>;receipts 原样(降级视图不变)", () => {
+    addReceipt(root, v1Receipt({ id: "weird-legacy-id", name: "mytool", type: "plugin", origin: "created", configKey: "plugin:mytool" }))
+    const before = JSON.parse(JSON.stringify(readRaw().receipts))
+    const r = migrateV1Ledger(root, "prod")
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.migrated).toBe(1)
+    expect(findRecordV2(root, "plugin", "mytool")?.id).toBe("user:mytool") // v2 身份规范化
+    expect(readRaw().receipts).toEqual(before) // v1 视图逐字不变(旧 id 仍可被 v1 reader 读到)
+  })
+
+  test("adoption 拒绝面:catalog 缺 kind 前缀 / command+catalog / 超长字段 → retained + 可定位 warning,文件仅在有 adopted 时才写", () => {
+    addReceipt(root, v1Receipt({ id: "legacy-weird", name: "svc", type: "mcp", origin: "catalog", configKey: "mcp.svc" })) // catalog 身份不可重建
+    addReceipt(root, v1Receipt({ id: "command:x", name: "x", type: "command", origin: "catalog", configKey: undefined })) // command 禁 catalog
+    addReceipt(root, v1Receipt({ id: "user:big", name: "big", type: "skill", origin: "created", configKey: "k".repeat(600) })) // v2 字段上限
+    const bytesBefore = fs.readFileSync(ledgerFile(), "utf8")
+    const r = migrateV1Ledger(root, "prod")
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.migrated).toBe(0)
+    expect(r.retained).toBe(3)
+    expect(r.warnings.some((w) => w.includes("mcp:svc") && w.includes(ledgerFile()))).toBe(true) // 可定位
+    expect(fs.readFileSync(ledgerFile(), "utf8")).toBe(bytesBefore) // adopted=0 → 零写盘
+  })
+
+  test("scope 与账本物理域不符 → retained(不再降级成 global);同键重复 receipt → 全部 retained", () => {
+    addReceipt(root, v1Receipt({ id: "user:psk", name: "psk", type: "skill", scope: "project", origin: "created", configKey: undefined }))
+    const raw = readRaw()
+    raw.receipts.push({ ...raw.receipts[0]!, id: "user:psk" }) // 手工造同键重复(addReceipt 会去重)
+    raw.receipts.push({ ...raw.receipts[0]!, id: "user:psk2" })
+    fs.writeFileSync(ledgerFile(), JSON.stringify(raw))
+    const r = migrateV1Ledger(root, "prod")
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.migrated).toBe(0)
+    expect(r.retained).toBe(3)
+    expect(r.warnings.some((w) => w.includes("duplicate"))).toBe(true)
+  })
+
+  test("#357 Blocker 回归锁:未来版本/未知顶层键/非数组集合 → 拒迁移,原文件字节零改动", () => {
+    const cases = [
+      { v: 3, receipts: [] }, // 未来版本
+      { v: 1, receipts: [], futureKey: {} }, // 未知顶层键
+      { v: 1, receipts: {} }, // receipts 非数组(parseLedger 会静默当空 → 重写即丢数据)
+      { v: 2, receipts: [], records: "oops" }, // records 非数组
+    ]
+    for (const c of cases) {
+      fs.writeFileSync(ledgerFile(), JSON.stringify(c))
+      const bytes = fs.readFileSync(ledgerFile(), "utf8")
+      const r = migrateV1Ledger(root, "prod")
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.reason).toContain("refusing migration")
+      expect(fs.readFileSync(ledgerFile(), "utf8")).toBe(bytes)
+    }
+    // v:1 纯 receipts 信封(v1 writer 真实形状)照常可迁
+    fs.writeFileSync(ledgerFile(), JSON.stringify({ v: 1, receipts: [v1Receipt()] }))
+    const ok = migrateV1Ledger(root, "prod")
+    expect(ok.ok).toBe(true)
+    if (ok.ok) expect(ok.migrated).toBe(1)
+  })
+
+  test("parser 有排除项(非法 receipt)→ 整次拒绝,原文件字节零改动", () => {
+    addReceipt(root, v1Receipt())
+    const raw = readRaw()
+    ;(raw.receipts as unknown[]).push({ id: "no-name" }) // 非法条目(parser 会排除并 warning)
+    fs.writeFileSync(ledgerFile(), JSON.stringify(raw))
+    const bytesBefore = fs.readFileSync(ledgerFile(), "utf8")
+    const r = migrateV1Ledger(root, "prod")
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("excluded/corrupt")
+    expect(fs.readFileSync(ledgerFile(), "utf8")).toBe(bytesBefore)
+  })
+
+  test("幂等二跑:migrated=0 且文件内容不变;migrated record 可 lookup/set-state(消费面无 migratedFrom 分支)", () => {
+    addReceipt(root, v1Receipt())
+    expect(migrateV1Ledger(root, "prod").ok).toBe(true)
+    const bytes = fs.readFileSync(ledgerFile(), "utf8")
+    const again = migrateV1Ledger(root, "prod")
+    expect(again.ok).toBe(true)
+    if (again.ok) expect(again.migrated).toBe(0)
+    expect(fs.readFileSync(ledgerFile(), "utf8")).toBe(bytes)
+    const found = lookupForUninstall(root, "mcp", "markitdown")
+    expect(found.status).toBe("valid") // migrated record 走正常 v2 操作面
+    expect(setDesiredStateV2(root, "mcp", "markitdown", "disabled").ok).toBe(true)
   })
 })
 
