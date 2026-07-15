@@ -485,6 +485,23 @@ export type ElectronAPI = {
       claudeMd: "agents-md-created" | "agents-md-exists" | "none"
       persistError?: string
     }>
+    /** ADR-030(#372):收回的 project 受管安装 —— 残留只读检测(项目打开位点另有 loud 日志)。 */
+    projectResidualsCheck: (projectDir: string) => Promise<
+      | {
+          ok: true
+          projectPath: string
+          catalogRecords: Array<{ type: string; name: string; hasStore: boolean }>
+          ghostStoreKeys: string[]
+          openJournals: Array<{ txId: string; op: string; state: string; terminal: boolean }>
+          warnings: string[]
+        }
+      | { ok: false; reason: string }
+    >
+    /** ADR-030(#372):显式清理(journal 在场 fail-closed;删受控 ext-store + 对应账本)。 */
+    projectResidualsClean: (projectDir: string) => Promise<
+      | { ok: true; cleaned: string[]; failed: Array<{ item: string; reason: string }> }
+      | { ok: false; reason: string }
+    >
   }
   // alpha account (balance / membership / usage) read from the alpha-platform (B) account-server
   // using the main-held JWT. The renderer gets only the resolved summary, never the token.

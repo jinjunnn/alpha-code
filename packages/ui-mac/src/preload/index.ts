@@ -189,6 +189,8 @@ const api: ElectronAPI = {
     removeLegacy: (type, name) => ipcRenderer.invoke("ext-migrate-remove-legacy", type, name),
     trustCheck: (directory) => ipcRenderer.invoke("ext-trust-check", directory),
     externalCheck: (directory) => ipcRenderer.invoke("ext-external-check", directory),
+    projectResidualsCheck: (projectDir) => ipcRenderer.invoke("ext-project-residuals-check", projectDir),
+    projectResidualsClean: (projectDir) => ipcRenderer.invoke("ext-project-residuals-clean", projectDir),
   },
   account: {
     summary: () => ipcRenderer.invoke("account-summary"),

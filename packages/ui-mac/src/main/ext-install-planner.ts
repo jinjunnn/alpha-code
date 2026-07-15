@@ -517,22 +517,26 @@ function promotePayloadToCas(
   return { ok: true, specs, warnings }
 }
 
-// ── scope 解析(项目闭环:identity fail-closed;mcp/plugin/cloud 不进项目 scope)─────────────────
+// ── scope 解析(项目闭环:identity fail-closed)──────────────────────────────────────────────────
 
-const PROJECT_SCOPED_KINDS = new Set<string>(["skill", "agent"])
+/** ADR-030(#372):新增 project-scope catalog/seed 受管安装已收回 —— 稳定拒绝 reason(wire 形状
+ *  保留,decode 不拒;语义层统一拒)。项目本地技能走 `<project>/.alpha/skills` + project config
+ *  hook 的非 generation 路径(importExternalSkills / registerProjectSkillsPath)。 */
+export const PROJECT_INSTALL_UNSUPPORTED_REASON =
+  "project-scoped catalog/seed installation is unsupported — use project-local import/register"
+
+/** ADR-030:遗留可管理 kind(历史残留的卸载/禁用/清理通道)。这是**管理面**的 allowlist,
+ *  与「新增安装策略 = 无 project kind」分离 —— 清空它会封死残留清理,绝不与安装策略共用。 */
+const LEGACY_PROJECT_MANAGEABLE_KINDS = new Set<string>(["skill", "agent"])
 
 function resolveScope(
   scope: InstallScope,
-  kind: string,
+  _kind: string,
 ): { ok: true; root: (deps: PlannerDeps) => string; identity: ScopeIdentity; target: TargetArg } | { ok: false; reason: string } {
   if (scope.scope === "global") return { ok: true, root: (d) => d.globalRoot(), identity: { kind: "global" }, target: { scope: "global" } }
-  if (!PROJECT_SCOPED_KINDS.has(kind))
-    return { ok: false, reason: `kind "${kind}" cannot be project-scoped (engine config is global; project executables go through the project trust gate, REQ-060)` }
-  const identity = projectScopeIdentity(scope.projectDir)
-  if (!identity.ok) return { ok: false, reason: `fail closed: ${identity.reason}` }
-  const root = alphaRoot(identity.scope.projectPath)
-  if (!root) return { ok: false, reason: `fail closed: invalid project root: ${scope.projectDir}` }
-  return { ok: true, root: () => root, identity: identity.scope, target: { scope: "project", projectDir: identity.scope.projectPath } }
+  // ADR-030 防御性拒绝:权威拒绝点在 installCatalog 的 decode 后 policy guard(seed/bundle 分支
+  // 不经过本函数,不能只靠这里);任何 kind 一律拒,不再有 project 安装根。
+  return { ok: false, reason: PROJECT_INSTALL_UNSUPPORTED_REASON }
 }
 
 // ── install ─────────────────────────────────────────────────────────────────────────────────────
@@ -778,6 +782,9 @@ async function installBundleAtomic(
 export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Promise<CatalogInstallOutcome> {
   const decodedIntent = decodeCatalogInstallIntent(rawIntent)
   if (!decodedIntent.ok) return decodedIntent
+  // ADR-030(#372)权威拒绝点:decode 后、resolveEntry/seed 分流与任何副作用之前 —— catalog、
+  // seed、bundle 三形态同一合同,任何 catalog 拉取/CAS promotion/事务/写盘都不会为 project 发生。
+  if (decodedIntent.intent.scope.scope === "project") return { ok: false, reason: PROJECT_INSTALL_UNSUPPORTED_REASON }
   if ("source" in decodedIntent.intent) return installSeedAsset(decodedIntent.intent, deps)
   const intent = decodedIntent.intent
 
@@ -1185,7 +1192,8 @@ export async function uninstallByKey(rawIntent: unknown, deps: PlannerDeps): Pro
   let root: string
   let target: TargetArg
   if (intent.scope === "project") {
-    if (!PROJECT_SCOPED_KINDS.has(intent.type))
+    // ADR-030:遗留管理面(卸载不受新增安装拒绝影响)—— allowlist 与安装策略分离。
+    if (!LEGACY_PROJECT_MANAGEABLE_KINDS.has(intent.type))
       return { ok: false, reason: `kind "${intent.type}" cannot be project-scoped` }
     const identity = projectScopeIdentity(intent.projectDir)
     if (!identity.ok) return { ok: false, reason: `fail closed: ${identity.reason}` }
@@ -1217,9 +1225,11 @@ export async function uninstallByKey(rawIntent: unknown, deps: PlannerDeps): Pro
   const rollback = (reason: string): void => (deps.transaction ?? passthroughTx).rollback(tx.txId, reason)
 
   let removedFiles: string[] | undefined
-  if (intent.type === "skill" && intent.scope !== "project" && fs.existsSync(skillStorePaths(root, intent.name).store)) {
+  if (intent.type === "skill" && fs.existsSync(skillStorePaths(root, intent.name).store)) {
     // REQ-100 #313:generation-backed skill 卸载走锁内 journaled store+ledger teardown(store-first),
     // 不留孤儿 generation,账本删除失败即 fail-closed(不谎报成功)。恢复补偿见 recoverExtensionTransactions。
+    // ADR-030(#372):project 根同路 —— 历史 project generation 残留必须删受控 ext-store + 对应账本,
+    // 不得落到 flat removeFsInstall(那会去账留店)。
     ;(deps.transaction ?? passthroughTx).commit(tx.txId) // 外层通知钩子无副作用;真事务在引擎内
     const r = await uninstallExtensionTransaction(root, skillGenerationKey(intent.name), {
       commitLedger: () => {
@@ -1358,7 +1368,7 @@ export function setInstallStateByKey(
   const intent = decoded.intent
   let root: string
   if (intent.scope === "project") {
-    if (!PROJECT_SCOPED_KINDS.has(intent.type)) return { ok: false, reason: `kind "${intent.type}" cannot be project-scoped` }
+    if (!LEGACY_PROJECT_MANAGEABLE_KINDS.has(intent.type)) return { ok: false, reason: `kind "${intent.type}" cannot be project-scoped` }
     const identity = projectScopeIdentity(intent.projectDir)
     if (!identity.ok) return { ok: false, reason: `fail closed: ${identity.reason}` }
     const projectRoot = alphaRoot(identity.scope.projectPath)

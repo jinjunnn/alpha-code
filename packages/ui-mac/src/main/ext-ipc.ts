@@ -21,6 +21,7 @@ import { persistMcpWithPolicy } from "./ext-mcp-policy"
 import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
 import { importSkillFolder, importSkillGit, installBuiltinAgent, installBuiltinSkill, installRemoteAgent, installRemoteSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall, resourcesRoot, writeAgent } from "./ext-fs-installer"
 import { parseAgentImport } from "./ext-import-validate"
+import { cleanProjectCatalogResiduals, detectProjectCatalogResiduals } from "./ext-project-residuals"
 import { collectSkillPayloadFromDir, commitInputFromRecord, skillGenerationProbe } from "./ext-skill-generations"
 import { randomUUID } from "node:crypto"
 import { pickedFiles } from "./ipc"
@@ -305,6 +306,21 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   // 逃生 ALPHA_ECOSYSTEM_INHERIT=1 → 全程静默(上游继承已恢复,alpha 不检测不弹窗,ADR-024 §5)。
   ipcMain.handle("ext-external-check", async (event: IpcMainInvokeEvent, directory: string) => {
     const none = { prompted: false, imported: false, importedSkills: [] as string[], skipped: [] as Array<{ name: string; reason: string }>, claudeMd: "none" as const }
+    // ADR-030(#372):项目打开位点的残留报告 —— 只读、best-effort、loud;清理只走显式通道
+    // (ext-project-residuals-clean),这里零写入零弹窗。
+    if (typeof directory === "string" && directory) {
+      try {
+        const res = detectProjectCatalogResiduals(directory)
+        if (res.ok && (res.catalogRecords.length > 0 || res.ghostStoreKeys.length > 0 || res.openJournals.length > 0))
+          getLogger().warn(
+            `[req098-372] recalled project-managed install residuals in ${directory}: ` +
+              `${res.catalogRecords.length} catalog record(s), ${res.ghostStoreKeys.length} ghost store(s), ` +
+              `${res.openJournals.length} open journal(s) — inspect via ext-project-residuals-check`,
+          )
+      } catch {
+        /* 报告面绝不影响项目打开 */
+      }
+    }
     if (typeof directory !== "string" || !directory || ecosystemInheritEnabled()) return none
     const detected = detectExternal(directory, "project")
     if (detected.skills.length === 0 && !detected.claudeMd) return none
@@ -554,6 +570,16 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   ipcMain.handle("ext-set-install-state", async (_event: IpcMainInvokeEvent, intent: unknown) => {
     await ledgerReady // #309:账本写方等 recovery+迁移收敛
     return setInstallStateByKey(intent, { globalRoot: alphaGlobalRoot, advisoryGate: makeAdvisoryGate(userDataPath) })
+  })
+  // ADR-030(#372):收回路径的残留检测(只读)与显式清理(journal 在场 fail-closed;
+  // generation-aware —— 删受控 ext-store + 对应账本,绝不落 flat 删除)。
+  ipcMain.handle("ext-project-residuals-check", async (_event: IpcMainInvokeEvent, projectDir: unknown) => {
+    await ledgerReady
+    return detectProjectCatalogResiduals(projectDir)
+  })
+  ipcMain.handle("ext-project-residuals-clean", async (_event: IpcMainInvokeEvent, projectDir: unknown) => {
+    await ledgerReady
+    return cleanProjectCatalogResiduals(projectDir, plannerDeps())
   })
   // REQ-099(ADR-028 §5):Hub 项目上下文读通道 —— global 与当前项目的 v2 账本分读(物理分域),
   // records 带 environment/scope identity/desiredState/generation;v1Only 为只读兼容面。

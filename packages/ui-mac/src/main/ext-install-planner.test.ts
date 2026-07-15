@@ -17,7 +17,7 @@ import { addReceipt } from "./alpha-installs"
 import { fileifyMcpSecretsDeep } from "./alpha-mcp-secrets"
 import { aggregateFilesDigest, computeManifestDigest, decodeManifestV2 } from "./ext-manifest-v2"
 import { hasCasBlob } from "./ext-cas"
-import { computeGrantDigest, findRecordV2, upsertRecordV2, type UpsertInput } from "./ext-receipt-v2"
+import { computeGrantDigest, findRecordV2, projectScopeIdentity, upsertRecordV2, type UpsertInput } from "./ext-receipt-v2"
 import { resolveLiveGenerationDir } from "./ext-transaction"
 import { skillStorePaths } from "./ext-skill-generations"
 import {
@@ -27,6 +27,7 @@ import {
   deriveMcpConfig,
   installCatalog,
   listGenerationsByKey,
+  PROJECT_INSTALL_UNSUPPORTED_REASON,
   rollbackGenerationByKey,
   setInstallStateByKey,
   synthesizeManifest,
@@ -508,12 +509,12 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
     expect(findRecordV2(globalRoot, "mcp", "markitdown")).toBeNull()
   })
 
-  test("mcp cannot be project-scoped (engine config is global)", async () => {
+  test("mcp cannot be project-scoped (ADR-030 recall guard fires first)", async () => {
     const proj = makeProject("proj-mcp")
     const { deps, calls } = makeDeps()
     const r = await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "project", projectDir: proj } }, deps)
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("cannot be project-scoped")
+    if (!r.ok) expect(r.reason).toBe(PROJECT_INSTALL_UNSUPPORTED_REASON)
     expect(installerCallCount(calls)).toBe(0)
   })
 })
@@ -719,11 +720,11 @@ describe("other kinds — derivation & records", () => {
     expect(findRecordV2(globalRoot, "skill", "remote-demo")).toBeNull()
   })
 
-  test("bundle: 项目 scope 拒绝(单 root 原子性,REQ-100 #311)", async () => {
+  test("bundle: 项目 scope 拒绝(ADR-030 统一合同;此前为 #311 单 root 原子性拒)", async () => {
     const { deps } = makeDeps()
     const r = await installCatalog({ catalogId: "bundle:office", scope: { scope: "project", projectDir: "/tmp/proj" } }, deps)
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("global-scoped only")
+    if (!r.ok) expect(r.reason).toBe(PROJECT_INSTALL_UNSUPPORTED_REASON)
   })
 
   test("bundle: dependency cycle refused at plan time (AC#1)", async () => {
@@ -744,18 +745,69 @@ describe("other kinds — derivation & records", () => {
   })
 })
 
-// ── scope 独立管理(AC#3)+ 项目闭环 fail-closed(AC#4)─────────────────────────────────────────
+// ── ADR-030(#372):新增 project 安装收回(fail-closed)+ 遗留管理面(AC#3/AC#4 语义保留)────────
 
-describe("scope independence (AC#3) & project closure (AC#4)", () => {
-  test("same skill in global + two projects: three independent records; per-scope ops don't leak", async () => {
+/** 直接落一条 project catalog 残留账(模拟收回前的历史安装;identity 走真 projectScopeIdentity)。 */
+function seedProjectCatalogRecord(projDir: string, name = "demo", kind: UpsertInput["kind"] = "skill"): string {
+  const identity = projectScopeIdentity(projDir)
+  if (!identity.ok) throw new Error(identity.reason)
+  const root = path.join(identity.scope.projectPath, ".alpha")
+  const w = upsertRecordV2(root, {
+    id: `${kind}:${name}`,
+    name,
+    kind,
+    environment: "prod",
+    scope: identity.scope,
+    desiredState: "enabled",
+    origin: "catalog",
+    installedAt: new Date().toISOString(),
+  })
+  if (!w.ok) throw new Error(w.reason)
+  return root
+}
+
+describe("ADR-030 (#372): project catalog/seed install recalled — refused before any side effect", () => {
+  test("skill/agent symmetric: refused with the stable reason before resolveEntry", async () => {
+    const proj = makeProject("proj-recall")
+    const { deps, calls } = makeDeps()
+    let resolveCalls = 0
+    const spied: PlannerDeps = { ...deps, resolveEntry: async (id) => (resolveCalls++, deps.resolveEntry(id)) }
+    for (const catalogId of ["skill:demo", "agent:whatever", "skill:remote-demo"]) {
+      const r = await installCatalog({ catalogId, scope: { scope: "project", projectDir: proj } }, spied)
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.reason).toBe(PROJECT_INSTALL_UNSUPPORTED_REASON)
+    }
+    expect(resolveCalls).toBe(0)
+    expect(installerCallCount(calls)).toBe(0)
+    // 零状态变更:项目根没有任何事务/账本落盘
+    expect(fs.existsSync(path.join(proj, ".alpha"))).toBe(false)
+  })
+
+  test("seed intent with project scope: same stable refusal before the seed channel", async () => {
+    const proj = makeProject("proj-seed-recall")
+    const { deps, calls } = makeDeps()
+    const r = await installCatalog({ source: "seed", assetId: "skills/foo", scope: { scope: "project", projectDir: proj } }, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toBe(PROJECT_INSTALL_UNSUPPORTED_REASON)
+    expect(installerCallCount(calls)).toBe(0)
+  })
+
+  test("global install behavior unchanged by the guard", async () => {
+    const { deps } = makeDeps()
+    const r = await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(true)
+    expect(findRecordV2(globalRoot, "skill", "demo")?.scope.kind).toBe("global")
+  })
+})
+
+describe("legacy project manage (AC#3/AC#4 semantics kept for residuals)", () => {
+  test("residual records in global + two projects stay independently manageable", async () => {
     const projA = makeProject("proj-a")
     const projB = makeProject("proj-b")
     const { deps } = makeDeps()
     expect((await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)).ok).toBe(true)
-    expect((await installCatalog({ catalogId: "skill:demo", scope: { scope: "project", projectDir: projA } }, deps)).ok).toBe(true)
-    expect((await installCatalog({ catalogId: "skill:demo", scope: { scope: "project", projectDir: projB } }, deps)).ok).toBe(true)
-    const rootA = path.join(projA, ".alpha")
-    const rootB = path.join(projB, ".alpha")
+    const rootA = seedProjectCatalogRecord(projA)
+    const rootB = seedProjectCatalogRecord(projB)
     expect(findRecordV2(globalRoot, "skill", "demo")?.scope.kind).toBe("global")
     const recA = findRecordV2(rootA, "skill", "demo")
     expect(recA?.scope.kind).toBe("project")
@@ -776,13 +828,28 @@ describe("scope independence (AC#3) & project closure (AC#4)", () => {
     expect(findRecordV2(globalRoot, "skill", "demo")).not.toBeNull()
   })
 
+  test("project skill residual WITH generation store → journaled store+ledger teardown, no flat removal (#372)", async () => {
+    const projA = makeProject("proj-gen-residual")
+    const rootA = seedProjectCatalogRecord(projA)
+    const sp = skillStorePaths(rootA, "demo")
+    const genDir = path.join(sp.generations, "gen-000001-abcdef12")
+    fs.mkdirSync(genDir, { recursive: true })
+    fs.writeFileSync(path.join(genDir, "SKILL.md"), "---\nname: demo\ndescription: t\n---\nbody")
+    fs.writeFileSync(sp.pointer, JSON.stringify({ genId: "gen-000001-abcdef12" }))
+    const { deps, calls } = makeDeps()
+    const r = await uninstallByKey({ type: "skill", name: "demo", scope: "project", projectDir: projA }, deps)
+    expect(r.ok).toBe(true)
+    expect(fs.existsSync(sp.store)).toBe(false) // 受控 ext-store 删除
+    expect(findRecordV2(rootA, "skill", "demo")).toBeNull() // 账本删除
+    expect(called(calls, "removeFsInstall")).toHaveLength(0) // 绝不落 flat 删除
+  })
+
   test("moved project → uninstall REFUSES (fail closed), record intact, no fs removal, never global fallback", async () => {
     const projA = makeProject("proj-move")
+    seedProjectCatalogRecord(projA)
     const { deps, calls } = makeDeps()
-    await installCatalog({ catalogId: "skill:demo", scope: { scope: "project", projectDir: projA } }, deps)
     const projMoved = path.join(tmp, "proj-moved")
     fs.renameSync(projA, projMoved)
-    calls.length = 0
     const r = await uninstallByKey({ type: "skill", name: "demo", scope: "project", projectDir: projMoved }, deps)
     expect(r.ok).toBe(false)
     if (!r.ok) {
@@ -798,8 +865,7 @@ describe("scope independence (AC#3) & project closure (AC#4)", () => {
 
   test("set-state on moved project fails closed too", async () => {
     const projA = makeProject("proj-move-state")
-    const { deps } = makeDeps()
-    await installCatalog({ catalogId: "skill:demo", scope: { scope: "project", projectDir: projA } }, deps)
+    seedProjectCatalogRecord(projA)
     const projMoved = path.join(tmp, "proj-moved-state")
     fs.renameSync(projA, projMoved)
     const r = setInstallStateByKey({ type: "skill", name: "demo", scope: "project", projectDir: projMoved, state: "disabled" }, { globalRoot: () => globalRoot, advisoryGate: () => ({ allowed: true }) })

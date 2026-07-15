@@ -109,8 +109,10 @@ CAS 补充语义:
   staleMs(15min)被其它进程按 stale 接管;续租粒度 = 单段操作时长(单 key 巨型 store 的
   rehash 超阈值是已知粒度限制,如实记录)。**promote 窗口**:复用出-grace
   cold blob 的 put 会刷新其 mtime(残余竞态 = GC 单轮 lstat→unlink 微秒级;后果为安装
-  materialize fail-closed abort,可重试、无损坏)。**project scope 根尚未参与 mark**(无
-  project 根枚举来源;生命周期裁决 → #362,结论回写 #318 完成矩阵后才可判该 AC PASS)。
+  materialize fail-closed abort,可重试、无损坏)。**project 根不参与 mark = 合同行为**
+  (ADR-030 / #362 裁决:project-scoped catalog/seed generation 已收回,受支持的 catalog
+  generation 仅存在于 dev/prod/beta 环境根 —— 见 §6;#318 完成矩阵的 project 项由验收
+  owner 按该措辞修订)。
 
 ## 4. 兼容红线
 
@@ -131,3 +133,21 @@ CAS 补充语义:
 | 快照漂移(S13 A 侧)+ catalog 互钉 + 真链冒烟 | `packages/ui-mac/src/main/extension-seed-snapshot.test.ts` |
 | seed 安装生产链(#317:e2e / 双真源漂移拒绝矩阵 / CAS 注错 abort / XOR / downgrade 门) | `packages/ui-mac/src/main/ext-seed-install.test.ts` |
 | GC 生产触发(#318:调度语义 / 权威配置取值点 / outcome 分类;promote 窗口 mtime 回归在 gc.test) | `packages/ui-mac/src/main/ext-cas-gc-scheduler.test.ts` |
+| project 收回:catalog/seed/bundle 统一拒绝 + 遗留管理面 + generation teardown(#372) | `packages/ui-mac/src/main/ext-install-planner.test.ts` |
+| project 残留检测/显式清理(journal 在场 fail-closed / 幂等 / 移动项目单项拒) | `packages/ui-mac/src/main/ext-project-residuals.test.ts` |
+| 第一方六动作 wiring:installCatalog intent 恒 scope=global | `packages/ui-mac/src/renderer/extensions/install-scope-wiring.test.ts` |
+
+## 6. project scope 收回(ADR-030,REQ-098 #362/#372)
+
+- **新增安装**:`installCatalog` 在 decode 后、resolveEntry/seed 分流与任何副作用之前统一拒绝
+  `scope=project`(catalog / seed / bundle 三形态同一合同),稳定 reason:
+  `project-scoped catalog/seed installation is unsupported — use project-local import/register`;
+  wire/decode 形状保留(协议不破坏),`resolveScope` 另有防御性拒绝。项目本地技能能力
+  不受影响 —— 走 `<project>/.alpha/skills` + project config hook 的非 generation 路径。
+- **遗留管理面独立**:卸载/禁用的 project allowlist(skill/agent)与安装策略分离,
+  绝不因收回而封死残留清理;project skill 残留带 generation store 时,卸载走 journaled
+  store+ledger teardown(删受控 `ext-store` + 对应账本),不落 flat 删除。
+- **残留处置**:项目打开位点(`ext-external-check`)只读 loud 报告;
+  `ext-project-residuals-check`(只读)/`ext-project-residuals-clean`(显式)双通道;
+  任何非终态/不可读 journal 在场 = 清理整单 fail-closed,零自动删除、零全盘扫描;
+  identity 不符(项目移动)单项 fail-closed。
