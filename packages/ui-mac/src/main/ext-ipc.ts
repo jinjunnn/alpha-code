@@ -41,10 +41,12 @@ import {
 import bundledCatalogJson from "../renderer/extensions/alpha-catalog.json"
 import type { Catalog } from "../renderer/extensions/catalog-types"
 import { getAlphaEnvironment } from "./alpha-environment"
-import { installCatalog, listGenerationsByKey, rollbackGenerationByKey, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
-import { lookupForUninstall, migrateV1Ledger, parseUninstallLedgerKey, readLedgerV2, removeRecordV2, upsertRecordsV2 } from "./ext-receipt-v2"
+import { decodeSetStateIntent, decodeUninstallIntent, installCatalog, listGenerationsByKey, rollbackGenerationByKey, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
+import { gatedWriteHandler, makeRecoveryGate } from "./ext-recovery-gate"
+import { tryAcquireBundleLock } from "./ext-bundle-lock"
+import { lookupForUninstall, migrateV1Ledger, parseUninstallLedgerKey, projectScopeIdentity, readLedgerV2, removeRecordV2, upsertRecordsV2 } from "./ext-receipt-v2"
 import { packagedSeedBrowseView, readPackagedSeed } from "./ext-seed"
-import { recoverExtensionTransactions, recoveryClean } from "./ext-transaction"
+import { recoverExtensionTransactions, recoveryClean, type RecoverOptions } from "./ext-transaction"
 import { getLogger } from "./logging"
 
 // REQ-076 T2(阻断②):原实现硬编码 `which` + `:` 拼接的 unix PATH,Windows 上恒报「未安装」
@@ -114,12 +116,15 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   // ledger-backed 卸载必须走 journaled 的 ext-uninstall-v2,否则这里就是绕开 journal 的活旁路。
   ipcMain.handle("ext-remove-mcp", async (_event: IpcMainInvokeEvent, name: string) => {
     await ledgerReady
-    const lk = lookupForUninstall(alphaGlobalRoot(), "mcp", String(name))
-    if (lk.status !== "absent")
-      return { ok: false, reason: `ledger-backed MCP (${lk.status}) — use the journaled uninstall channel (ext-uninstall-v2)` }
-    const r = removeMcp(name)
-    if (r.ok) removeMcpServerSecrets(userDataPath, name)
-    return r
+    // #347:无账通道同样过写方恢复 gate(闭包在调用期取 recoveryGate,注册序无 TDZ)。
+    return recoveryGate.withRecoveredWrite(alphaGlobalRoot(), async () => {
+      const lk = lookupForUninstall(alphaGlobalRoot(), "mcp", String(name))
+      if (lk.status !== "absent")
+        return { ok: false, reason: `ledger-backed MCP (${lk.status}) — use the journaled uninstall channel (ext-uninstall-v2)` }
+      const r = removeMcp(name)
+      if (r.ok) removeMcpServerSecrets(userDataPath, name)
+      return r
+    })
   })
   // B11/B23:全局配置健康探测(语法错/未知顶键 → 引擎会整份清零)
   ipcMain.handle("ext-config-health", () => configHealth())
@@ -419,27 +424,27 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   // generation 误移隔离区)。REQ-100 #312:注入类型化 probe + commitReceipt —— switched-未提交的
   // 事务在恢复期用同一 probe 重验健康(而非 health-by-assumption),健康则从 journal 的 receipt 模板
   // 前滚落账,不健康/账本写失败则 fail-closed 全回滚(账本零漂移)。journal 目录不存在时为 no-op。
-  const txRecovery = recoverExtensionTransactions(alphaGlobalRoot(), {
+  // #347:恢复参数按 root 构造 —— startup 与写方 gate 三处共用;commitReceipt/commitUninstall
+  // 全部写**传入的 root**(此前硬编码全局根,Codex 裁决点名);MCP artifact seam 只允许全局根
+  // (mcp 不进 project scope,项目根 journal 里出现 mcp-- key = 异常,保持非终态待诊断)。
+  const recoveryOpts = (root: string): RecoverOptions => ({
     probe: skillGenerationProbe,
     commitReceipt: (recs) => {
-      const written = upsertRecordsV2(alphaGlobalRoot(), recs.map((rec) => commitInputFromRecord(rec)))
+      const written = upsertRecordsV2(root, recs.map((rec) => commitInputFromRecord(rec)))
       if (!written.ok) throw new Error(`recovery receipt commit failed: ${written.reason}`)
     },
-    // REQ-100 #313:卸载恢复的账本删除(key="skill--<name>" → 幂等去账;去账失败抛错 → 保持
-    // uninstalling 供下次前滚,绝不谎报卸载完成)。
+    // REQ-100 #313:卸载恢复的账本删除(幂等去账;去账失败抛错 → 保持 uninstalling 供下次前滚)。
+    // review #374 Major:非法/未知 key 必须抛错(journal 保持非终态待诊断),绝不静默假终态。
     commitUninstall: (key) => {
-      // review #374 Major:非法/未知 key 必须抛错(journal 保持非终态待诊断)—— 此前静默 return
-      // 会让「账本操作从未发生」的卸载被写成 uninstalled。
       const parsed = parseUninstallLedgerKey(key)
       if (!parsed) throw new Error(`unrecognized uninstall ledger key "${key}" — retained for diagnosis`)
-      const rm = removeRecordV2(alphaGlobalRoot(), parsed.kind, parsed.name)
+      const rm = removeRecordV2(root, parsed.kind, parsed.name)
       if (!rm.ok) throw new Error(`recovery uninstall ledger removal failed: ${rm.reason}`)
     },
-    // #346:config 卸载恢复的 artifact seam(恢复锁内 —— 只用 in-lock/strict 原语,绝不重取锁):
-    // mcp--<name> → 配置副本全净除(legacy 不可读 fail-closed)+ 密钥严格吊销;失败抛错 →
-    // journal 保持非终态供下次前滚。未知 key 前缀 = 无 seam,抛错保持非终态(绝不假终态)。
+    // #346:config 卸载恢复的 artifact seam(恢复锁内 —— 只用 in-lock/strict 原语,绝不重取锁)。
     uninstallArtifacts: (key) => {
       if (!key.startsWith("mcp--")) throw new Error(`no artifact seam for uninstall key: ${key}`)
+      if (root !== alphaGlobalRoot()) throw new Error(`mcp artifact seam is global-only — refused for root: ${root}`)
       const name = key.slice("mcp--".length)
       const cfg = removeMcpConfigInLock(name)
       if (!cfg.ok) throw new Error(cfg.reason)
@@ -448,6 +453,10 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
     },
     log: (event, detail) => getLogger().log(`[req100-tx-recovery] ${event} ${JSON.stringify(detail)}`),
   })
+  const txRecovery = recoverExtensionTransactions(alphaGlobalRoot(), recoveryOpts(alphaGlobalRoot()))
+  // #347:写方事务准入 gate —— 每次写操作前恢复收敛 + 终态探测放行(进程内 per-root mutex
+  // 把恢复→探测→操作链成一条所有权链;拒绝语义与 busy 一致,如实返回 reason)。
+  const recoveryGate = makeRecoveryGate(recoveryOpts)
   // REQ-099 #309:统一账本就绪 barrier —— recovery(结果不吞)→ 仅在恢复干净时跑 v1→v2 迁移。
   // recovery 不干净(锁被占/journal 未收敛)或迁移被拒:loud 记录但 barrier 正常结束,不阻断启动
   // (v2 消费面对结构有效的 v1-only 有 fallback;文件级损坏本就被 lookup fail-closed)。
@@ -574,26 +583,65 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
       },
     }
   }
+  // #347 root 解析:global 写方恒全局根;uninstall/set-state 由严格 intent 解码定根(project
+  // identity fail-closed,与 planner 同口径);解析失败原样返回、零副作用、不进 gate。
+  const globalWriteRoot = (..._args: unknown[]) => ({ ok: true as const, root: alphaGlobalRoot() })
+  const projectRootOf = (projectDir: string): { ok: true; root: string } | { ok: false; reason: string } => {
+    const identity = projectScopeIdentity(projectDir)
+    if (!identity.ok) return { ok: false, reason: `fail closed: ${identity.reason}` }
+    const root = alphaRoot(identity.scope.projectPath)
+    if (!root) return { ok: false, reason: `fail closed: invalid project root: ${projectDir}` }
+    return { ok: true, root }
+  }
+  const uninstallIntentRoot = (rawIntent: unknown): { ok: true; root: string } | { ok: false; reason: string } => {
+    const d = decodeUninstallIntent(rawIntent)
+    if (!d.ok) return d
+    return d.intent.scope === "project" ? projectRootOf(d.intent.projectDir) : globalWriteRoot()
+  }
+  const setStateIntentRoot = (rawIntent: unknown): { ok: true; root: string } | { ok: false; reason: string } => {
+    const d = decodeSetStateIntent(rawIntent)
+    if (!d.ok) return d
+    return d.intent.scope === "project" ? projectRootOf(d.intent.projectDir) : globalWriteRoot()
+  }
+
+  const installCatalogGated = gatedWriteHandler(recoveryGate, globalWriteRoot, (intent: unknown) => installCatalog(intent, plannerDeps()))
   ipcMain.handle("ext-install-catalog", async (_event: IpcMainInvokeEvent, intent: unknown) => {
     await ledgerReady
-    return installCatalog(intent, plannerDeps())
+    return installCatalogGated(intent)
   })
+  const uninstallGated = gatedWriteHandler(recoveryGate, uninstallIntentRoot, (intent: unknown) => uninstallByKey(intent, plannerDeps()))
   ipcMain.handle("ext-uninstall-v2", async (_event: IpcMainInvokeEvent, intent: unknown) => {
     await ledgerReady
-    return uninstallByKey(intent, plannerDeps())
+    return uninstallGated(intent)
   })
   // REQ-100 #313:generation 历史读 + 两版离线回滚(key-based,同卸载信任边界;先等崩溃恢复收敛)。
   ipcMain.handle("ext-list-generations", async (_event: IpcMainInvokeEvent, intent: unknown) => {
     await ledgerReady
     return listGenerationsByKey(intent, { globalRoot: alphaGlobalRoot })
   })
+  const rollbackGated = gatedWriteHandler(recoveryGate, globalWriteRoot, (intent: unknown, genId: unknown) =>
+    rollbackGenerationByKey(intent, genId, { globalRoot: alphaGlobalRoot, advisoryGate: makeAdvisoryGate(userDataPath) }),
+  )
   ipcMain.handle("ext-rollback", async (_event: IpcMainInvokeEvent, intent: unknown, genId: unknown) => {
     await ledgerReady
-    return rollbackGenerationByKey(intent, genId, { globalRoot: alphaGlobalRoot, advisoryGate: makeAdvisoryGate(userDataPath) })
+    return rollbackGated(intent, genId)
+  })
+  // #347(Codex 裁决 d):set-state 虽不建 journal,但对同一 installs.json 做 read-modify-write ——
+  // 必须过 gate 且与账本写同一锁临界区(持文件锁执行,防与并发 receipt commit 互踩)。
+  const setStateGated = gatedWriteHandler(recoveryGate, setStateIntentRoot, async (intent: unknown) => {
+    const resolved = setStateIntentRoot(intent)
+    if (!resolved.ok) return resolved
+    const held = tryAcquireBundleLock(resolved.root, { txId: `set-state-${randomUUID()}` })
+    if (!held.ok) return { ok: false as const, reason: `ledger busy: ${held.reason} — retry after the in-flight transaction` }
+    try {
+      return setInstallStateByKey(intent, { globalRoot: alphaGlobalRoot, advisoryGate: makeAdvisoryGate(userDataPath) })
+    } finally {
+      held.lock.release()
+    }
   })
   ipcMain.handle("ext-set-install-state", async (_event: IpcMainInvokeEvent, intent: unknown) => {
     await ledgerReady // #309:账本写方等 recovery+迁移收敛
-    return setInstallStateByKey(intent, { globalRoot: alphaGlobalRoot, advisoryGate: makeAdvisoryGate(userDataPath) })
+    return setStateGated(intent)
   })
   // ADR-030(#372):收回路径的残留检测(只读)与显式清理(journal 在场 fail-closed;
   // generation-aware —— 删受控 ext-store + 对应账本,绝不落 flat 删除)。
@@ -601,9 +649,19 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
     await ledgerReady
     return detectProjectCatalogResiduals(projectDir)
   })
+  // #347:清理前先经 gate 对项目根做显式恢复收敛(ADR-030 的「先显式恢复再清理」);clean 自身的
+  // openJournals fail-closed 仍在(纵深)。
+  const residualsCleanGated = gatedWriteHandler(
+    recoveryGate,
+    (projectDir: unknown) =>
+      typeof projectDir === "string" && path.isAbsolute(projectDir)
+        ? projectRootOf(projectDir)
+        : { ok: false as const, reason: "projectDir: required absolute path" },
+    (projectDir: unknown) => cleanProjectCatalogResiduals(projectDir, plannerDeps()),
+  )
   ipcMain.handle("ext-project-residuals-clean", async (_event: IpcMainInvokeEvent, projectDir: unknown) => {
     await ledgerReady
-    return cleanProjectCatalogResiduals(projectDir, plannerDeps())
+    return residualsCleanGated(projectDir)
   })
   // REQ-099(ADR-028 §5):Hub 项目上下文读通道 —— global 与当前项目的 v2 账本分读(物理分域),
   // records 带 environment/scope identity/desiredState/generation;v1Only 为只读兼容面。

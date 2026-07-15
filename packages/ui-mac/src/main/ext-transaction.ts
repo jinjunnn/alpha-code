@@ -1433,7 +1433,9 @@ export async function rollbackGenerationTransaction(
 // ── 崩溃恢复 ─────────────────────────────────────────────────────────────────────────────────
 
 export type TxRecoveryAction = "none" | "cleaned" | "aborted" | "rolled-back" | "resumed-committed"
-export type TxRecoveryReport = { txId: string; state: TxState; action: TxRecoveryAction; detail: string }
+/** corrupt=true:本轮遇到不可解析 journal(已移 .corrupt-* 留证)—— 写方 gate 必须把该轮判为
+ *  阻断(不能仅因 .json 已移走就判安全,#347 Codex 裁决);下轮无 corrupt 即可放行。 */
+export type TxRecoveryReport = { txId: string; state: TxState; action: TxRecoveryAction; detail: string; corrupt?: boolean }
 
 const TERMINAL_TX_STATES = new Set<TxState>(["committed", "rolled-back", "aborted", "uninstalled"])
 
@@ -1540,7 +1542,7 @@ export async function recoverExtensionTransactions(
           /* best-effort */
         }
         log("recovery-journal-corrupt", { txId, movedTo: to })
-        reports.push({ txId, state: "aborted", action: "cleaned", detail: `unreadable journal moved to ${to}` })
+        reports.push({ txId, state: "aborted", action: "cleaned", detail: `unreadable journal moved to ${to}`, corrupt: true })
         continue
       }
       reports.push(
