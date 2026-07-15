@@ -38,24 +38,35 @@ pathsRewritten/warnings)。#304 变更:
 | 字段 | 语义 |
 | --- | --- |
 | `baseline` / `baselineAt` / `bootstrap` | 首个可信观察,**不可变**。观察 = 每条目 `ItemObservation`:配置文件记内容 sha256(可表示 `absent`);目录记子条目「名字 + 类型 + 树指纹」(指纹 = 排序遍历 rel/kind/叶哈希,symlink 记原始 target,确定性) |
-| `lastObserved` | 最近一次旧根观察 = 增量判定锚。曾出现于此的名字永久定序;导入失败的子条目**不定序**(剔除,下轮重试) |
+| `lastObserved` | **单调** anchor = 增量判定锚:当前观察为主,曾定序但本轮旧根缺席的子条目带旧条目沿列(消失一轮→重现不复活);目录项整体消失时定序集不缩水。导入失败的子条目**不定序**(剔除,下轮重试) |
 | `lastReconcile` | 最近一次有导入的轮次(at/appVersion/imported) |
 | `legacyOnly` | 当前报告:旧根有、环境根无(bootstrap 前差异 / 环境侧删除 / 别名碰撞)—— 只报告不导入 |
 | `conflicts` | 当前报告:两侧同名且指纹不同(env wins,不覆盖不告警轰炸) |
-| `rejected` | 被拒引用(symlink/special/导入失败),带指纹 —— 源形态变化后重新评估 |
+| `rejected` | 被拒引用(symlink/special/导入失败),带指纹;失败 reason 只用稳定错误码(不携带随机 staging 路径等易变文本,保证失败态字节稳定)。名字本轮缺席时沿列(重现凭 fp 记忆重评);重评仅当「rej.fp ≠ 当前 fp **且** anchor.fp = rej.fp」(anchor 已推进则说明该形态已定序,crash 残留的旧 rejection 不得再触发导入) |
 | `unresolvedDrift` | 配置文件相对 **baseline** 的漂移(检测 ≠ 解决;基线不被漂移覆盖) |
 
 - 读取校验:结构(v/environment/roots/results)+ **身份匹配**(environment、sourceRoot、
   targetRoot 与当前输入一致)。不匹配/损坏 → 按缺失处理,重跑迁移(逐条 already-present 自愈)。
+- `reconcile` 块**嵌套结构校验**:可解析但残缺(如 `{}`、观察缺项、rejected 条目缺字段)→
+  按缺块处理,走 bootstrap 报告式自愈并原子重建有效块 —— 绝不进永久 reconcile-failed 循环。
+- **恢复路径防复活**:receipt 丢失/损坏/身份不匹配、但旧根 rollback 标记证明「本环境此前已迁移
+  到此根」→ 重跑迁移时**禁用** child 级合并(定序史已失,合并会复活环境侧删除),旧根独有
+  子条目交由后续 bootstrap 对账只报告;无此证据才视作真·首迁,child 级合并合法。
 
 ## 3. rollback 期对账(每次启动,receipt 在场时)
 
 1. 观察旧根五件套(指纹级)。
 2. **目录子条目增量导入**:相对 `lastObserved` 新出现、且环境根无同名/无别名
    (NFC + 大小写归一,防大小写不敏感文件系统碰撞)的 file/dir 子条目 → 随机私有 staging
-   (`<targetRoot>/.alpha-env-migrating/`,轮始轮末清理)守卫拷贝 → lstat 复核 → 原子 rename。
-   **每成功一个子条目即原子提交一次 receipt**(resurrection 窗口收束到单个子条目:rename 与
-   receipt 提交之间崩溃 + 用户恰好删除 = 已知残余窗口,记录于此)。
+   (`<targetRoot>/.alpha-env-migrating/`,轮始轮末清理)守卫拷贝 → **发布前 staged 树重验**
+   (每个节点必须是 file/dir 或圈禁于 stage 内的相对链;不符 = 篡改/竞态,拒发布)+ **载荷
+   fsync**(文件逐个 + 目录树;receipt 的持久化绝不允许跑在载荷持久化前面)→ lstat 复核 →
+   原子 rename(fsync 目的父目录)。**每成功一个子条目即原子提交一次自洽 checkpoint**
+   (anchor 推进 + 该名字的既往 rejection 同步剔除;resurrection 窗口收束到单个子条目:
+   rename 与 receipt 提交之间崩溃 + 用户恰好删除 = 已知残余窗口,记录于此)。
+   已声明残余:同用户本地进程在 lstat 复核与 rename 之间的微秒级竞态(POSIX rename 可替换
+   同名文件)不在威胁模型内 —— 能在此窗口竞态的主体已拥有该账户,与 ext-fs-installer 先例
+   同口径。
 3. **配置文件不自动合并**:相对 baseline 漂移只记 `unresolvedDrift` + loud 日志;环境文件不动;
    旧根保持可读,用户可手工取回。
 4. 状态未变 → `clean`,receipt 字节不重写(同一事实不重复告警)。

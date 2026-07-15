@@ -378,6 +378,7 @@ describe("AC#4 回滚:旧布局仍可读;再升级不重复复制、不丢状态
     // 同样状态第二轮 → clean(不重复告警、不重写)
     const bytes = fs.readFileSync(path.join(targetRoot, ENV_MIGRATION_RECEIPT_FILE), "utf8")
     const again = runEnvMigration(runOpts())
+    expect(again.status).toBe("already-migrated")
     if (again.status !== "already-migrated") return
     expect(again.reconcile.status).toBe("clean")
     expect(fs.readFileSync(path.join(targetRoot, ENV_MIGRATION_RECEIPT_FILE), "utf8")).toBe(bytes)
@@ -390,6 +391,7 @@ describe("AC#4 回滚:旧布局仍可读;再升级不重复复制、不丢状态
     fs.appendFileSync(path.join(sourceRoot, "alpha.jsonc"), "\n// rollback 期追加\n")
 
     const next = runEnvMigration(runOpts())
+    expect(next.status).toBe("already-migrated")
     if (next.status !== "already-migrated") return
     expect(next.reconcile.status).toBe("reconciled")
     if (next.reconcile.status !== "reconciled") return
@@ -401,6 +403,7 @@ describe("AC#4 回滚:旧布局仍可读;再升级不重复复制、不丢状态
     expect(receipt?.reconcile?.baseline["alpha.jsonc"]).toEqual(receipt?.reconcile?.unresolvedDrift[0]!.baseline)
     // 漂移未处理但状态未变 → 第二轮 clean 不重复告警
     const again = runEnvMigration(runOpts())
+    expect(again.status).toBe("already-migrated")
     if (again.status !== "already-migrated") return
     expect(again.reconcile.status).toBe("clean")
   })
@@ -412,6 +415,7 @@ describe("AC#4 回滚:旧布局仍可读;再升级不重复复制、不丢状态
     fs.writeFileSync(path.join(sourceRoot, "alpha.jsonc"), `{"theme":"rollback"}`)
 
     const next = runEnvMigration(runOpts())
+    expect(next.status).toBe("already-migrated")
     if (next.status !== "already-migrated") return
     expect(next.reconcile.status).toBe("reconciled")
     if (next.reconcile.status !== "reconciled") return
@@ -426,6 +430,7 @@ describe("AC#4 回滚:旧布局仍可读;再升级不重复复制、不丢状态
     fs.mkdirSync(path.join(sourceRoot, "agents"), { recursive: true })
     fs.writeFileSync(path.join(sourceRoot, "agents", "新代理.md"), "rollback agent")
     const more = runEnvMigration(runOpts())
+    expect(more.status).toBe("already-migrated")
     if (more.status !== "already-migrated") return
     expect(more.reconcile.status).toBe("reconciled")
     if (more.reconcile.status !== "reconciled") return
@@ -463,6 +468,7 @@ describe("AC#4 回滚:旧布局仍可读;再升级不重复复制、不丢状态
     // 基线就位后:旧根再新增 → 自动导入
     fs.writeFileSync(path.join(sourceRoot, "skills", "基线后新增.md"), "post-baseline")
     const next = runEnvMigration(runOpts())
+    expect(next.status).toBe("already-migrated")
     if (next.status !== "already-migrated") return
     expect(next.reconcile.status).toBe("reconciled")
     if (next.reconcile.status !== "reconciled") return
@@ -555,6 +561,7 @@ describe("#304 symlink/非常规类型拒绝矩阵(迁移与对账共用守卫)"
     fs.mkdirSync(path.join(sourceRoot, "skills"), { recursive: true })
     fs.writeFileSync(path.join(sourceRoot, "skills", "转正.md"), "now real")
     const next = runEnvMigration(runOpts())
+    expect(next.status).toBe("already-migrated")
     if (next.status !== "already-migrated") return
     expect(next.reconcile.status).toBe("reconciled")
     if (next.reconcile.status !== "reconciled") return
@@ -566,6 +573,7 @@ describe("#304 symlink/非常规类型拒绝矩阵(迁移与对账共用守卫)"
     runEnvMigration(runOpts())
     fs.symlinkSync(path.join(sourceRoot, "alpha.jsonc"), path.join(sourceRoot, "skills", "指旧根.md"))
     const r1 = runEnvMigration(runOpts())
+    expect(r1.status).toBe("already-migrated")
     if (r1.status !== "already-migrated") return
     expect(fs.existsSync(path.join(targetRoot, "skills", "指旧根.md"))).toBe(false)
     let receipt = readEnvMigrationReceipt(targetRoot)
@@ -574,6 +582,7 @@ describe("#304 symlink/非常规类型拒绝矩阵(迁移与对账共用守卫)"
     fs.rmSync(path.join(sourceRoot, "skills", "指旧根.md"))
     fs.writeFileSync(path.join(sourceRoot, "skills", "指旧根.md"), "转正内容")
     const r2 = runEnvMigration(runOpts())
+    expect(r2.status).toBe("already-migrated")
     if (r2.status !== "already-migrated") return
     expect(r2.reconcile.status).toBe("reconciled")
     if (r2.reconcile.status !== "reconciled") return
@@ -591,6 +600,7 @@ describe("#304 symlink/非常规类型拒绝矩阵(迁移与对账共用守卫)"
     fs.writeFileSync(path.join(sourceRoot, "skills", "占位.md"), "rollback content")
 
     const next = runEnvMigration(runOpts())
+    expect(next.status).toBe("already-migrated")
     if (next.status !== "already-migrated") return
     expect(fs.lstatSync(path.join(targetRoot, "skills", "占位.md")).isSymbolicLink()).toBe(true) // 用户对象未被覆盖
     expect(next.reconcile.status).toBe("reconciled")
@@ -613,6 +623,7 @@ describe("#304 symlink/非常规类型拒绝矩阵(迁移与对账共用守卫)"
     }
 
     const next = runEnvMigration(runOpts())
+    expect(next.status).toBe("already-migrated")
     if (next.status !== "already-migrated") return
     expect(fs.readFileSync(path.join(targetRoot, "skills", "Readme.md"), "utf8")).toBe("env case")
     const receipt = readEnvMigrationReceipt(targetRoot)
@@ -684,5 +695,138 @@ describe("变换核的守边界行为", () => {
     const r = transformInstallsJsonForEnv(garbage, { sourceRoot: "/s", targetRoot: "/t" })
     expect(r.text).toBe(garbage)
     expect(r.warnings).toHaveLength(1)
+  })
+})
+
+describe("#304 review 回归:单调定序 / 恢复路径防复活 / checkpoint 自洽 / 残缺块自愈 / 失败态字节稳定", () => {
+  test("定序名在旧根消失一轮后重现 → 仍不导入(anchor 单调,不因缺席遗忘)", () => {
+    buildLegacyLayout()
+    runEnvMigration(runOpts())
+    // 用户在环境侧删除 my-skill;rollback 版本把旧根的 my-skill 也删掉一轮
+    fs.rmSync(path.join(targetRoot, "skills", "my-skill"), { recursive: true })
+    fs.rmSync(path.join(sourceRoot, "skills", "my-skill"), { recursive: true })
+    const r1 = runEnvMigration(runOpts())
+    expect(r1.status).toBe("already-migrated")
+    // 旧根重现同名条目 → 相对单调 anchor 不是"新出现",不得复活
+    fs.mkdirSync(path.join(sourceRoot, "skills", "my-skill"), { recursive: true })
+    fs.writeFileSync(path.join(sourceRoot, "skills", "my-skill", "SKILL.md"), "重现内容")
+    const r2 = runEnvMigration(runOpts())
+    expect(r2.status).toBe("already-migrated")
+    if (r2.status !== "already-migrated") return
+    expect(fs.existsSync(path.join(targetRoot, "skills", "my-skill"))).toBe(false)
+    const receipt = readEnvMigrationReceipt(targetRoot)
+    expect(receipt?.reconcile?.legacyOnly.some((i) => i.item === "skills" && i.name === "my-skill")).toBe(true)
+  })
+
+  test("receipt 丢失但旧根标记证明迁移过 → 恢复路径禁 child 级合并,不复活环境侧删除", () => {
+    buildLegacyLayout()
+    runEnvMigration(runOpts())
+    fs.rmSync(path.join(targetRoot, "skills", "my-skill"), { recursive: true }) // 用户有意删除
+    fs.rmSync(path.join(targetRoot, ENV_MIGRATION_RECEIPT_FILE)) // receipt 丢失
+    const retry = runEnvMigration(runOpts())
+    expect(retry.status).toBe("migrated")
+    if (retry.status !== "migrated") return
+    expect(retry.receipt.warnings.some((w) => w.includes("child-level merge disabled"))).toBe(true)
+    expect(fs.existsSync(path.join(targetRoot, "skills", "my-skill"))).toBe(false) // 未被合并复活
+    // 后续对账也只报告
+    const next = runEnvMigration(runOpts())
+    expect(next.status).toBe("already-migrated")
+    expect(fs.existsSync(path.join(targetRoot, "skills", "my-skill"))).toBe(false)
+    const receipt = readEnvMigrationReceipt(targetRoot)
+    expect(receipt?.reconcile?.legacyOnly.some((i) => i.name === "my-skill")).toBe(true)
+  })
+
+  test("crash 后的 checkpoint 残留旧 rejection(anchor 已推进)→ 不再当作形态变化重导", () => {
+    buildLegacyLayout()
+    runEnvMigration(runOpts())
+    // 手工构造 crash 后状态:child 已进位定序(anchor fp = 当前),但旧 rejection 残留
+    const receiptPath = path.join(targetRoot, ENV_MIGRATION_RECEIPT_FILE)
+    fs.writeFileSync(path.join(sourceRoot, "skills", "曾被拒.md"), "现真身")
+    const probe = runEnvMigration(runOpts()) // 正常导入并定序
+    expect(probe.status).toBe("already-migrated")
+    const committed = JSON.parse(fs.readFileSync(receiptPath, "utf8"))
+    const anchorChild = committed.reconcile.lastObserved.skills.children.find((c: { name: string }) => c.name === "曾被拒.md")
+    expect(anchorChild).toBeDefined()
+    // 注入残留 rejection(旧 fp ≠ anchor fp)+ 用户删除环境侧副本
+    committed.reconcile.rejected.push({ item: "skills", name: "曾被拒.md", kind: "symlink", reason: "top-level child is symlink", fp: "旧指纹" })
+    fs.writeFileSync(receiptPath, JSON.stringify(committed, null, 2) + "\n")
+    fs.rmSync(path.join(targetRoot, "skills", "曾被拒.md"))
+    const after = runEnvMigration(runOpts())
+    expect(after.status).toBe("already-migrated")
+    expect(fs.existsSync(path.join(targetRoot, "skills", "曾被拒.md"))).toBe(false) // 不复活
+  })
+
+  test("reconcile 块可解析但残缺(如 {})→ bootstrap 自愈重建,不进永久 reconcile-failed", () => {
+    buildLegacyLayout()
+    runEnvMigration(runOpts())
+    const receiptPath = path.join(targetRoot, ENV_MIGRATION_RECEIPT_FILE)
+    const raw = JSON.parse(fs.readFileSync(receiptPath, "utf8"))
+    raw.reconcile = {}
+    fs.writeFileSync(receiptPath, JSON.stringify(raw, null, 2) + "\n")
+    fs.rmSync(path.join(targetRoot, "skills", "my-skill"), { recursive: true }) // 环境侧删除
+
+    const heal = runEnvMigration(runOpts())
+    expect(heal.status).toBe("already-migrated")
+    if (heal.status !== "already-migrated") return
+    expect(heal.reconcile.status).not.toBe("reconcile-failed")
+    expect(fs.existsSync(path.join(targetRoot, "skills", "my-skill"))).toBe(false) // 自愈 = 报告式,不导入
+    const healed = readEnvMigrationReceipt(targetRoot)
+    expect(healed?.reconcile?.bootstrap).toBe(true)
+    expect(healed?.reconcile?.legacyOnly.some((i) => i.name === "my-skill")).toBe(true)
+    // 自愈后回到稳态
+    const again = runEnvMigration(runOpts())
+    expect(again.status).toBe("already-migrated")
+    if (again.status !== "already-migrated") return
+    expect(again.reconcile.status).toBe("clean")
+  })
+
+  test("持续失败的导入跨两次启动字节稳定(reason 无易变路径,不每轮重写 receipt)", () => {
+    buildLegacyLayout()
+    runEnvMigration(runOpts())
+    // 旧根新增一个不可读子条目 → 导入失败(EACCES),失败不定序
+    fs.mkdirSync(path.join(sourceRoot, "skills", "不可读技能"), { recursive: true })
+    fs.writeFileSync(path.join(sourceRoot, "skills", "不可读技能", "SKILL.md"), "内容")
+    fs.chmodSync(path.join(sourceRoot, "skills", "不可读技能", "SKILL.md"), 0o000)
+    try {
+      const r1 = runEnvMigration(runOpts())
+      expect(r1.status).toBe("already-migrated")
+      if (r1.status !== "already-migrated") return
+      expect(r1.reconcile.status).toBe("reconciled")
+      const bytes1 = fs.readFileSync(path.join(targetRoot, ENV_MIGRATION_RECEIPT_FILE), "utf8")
+      expect(bytes1).not.toContain(".alpha-env-migrating") // reason 不携带随机 staging 路径
+      const r2 = runEnvMigration(runOpts())
+      expect(r2.status).toBe("already-migrated")
+      if (r2.status !== "already-migrated") return
+      expect(r2.reconcile.status).toBe("clean") // 同样失败 → 同样 state → 不重写
+      expect(fs.readFileSync(path.join(targetRoot, ENV_MIGRATION_RECEIPT_FILE), "utf8")).toBe(bytes1)
+      // 修好后可重试成功
+      fs.chmodSync(path.join(sourceRoot, "skills", "不可读技能", "SKILL.md"), 0o644)
+      const r3 = runEnvMigration(runOpts())
+      expect(r3.status).toBe("already-migrated")
+      if (r3.status !== "already-migrated") return
+      expect(r3.reconcile.status).toBe("reconciled")
+      if (r3.reconcile.status !== "reconciled") return
+      expect(r3.reconcile.imported).toEqual(["skills/不可读技能"])
+    } finally {
+      try {
+        fs.chmodSync(path.join(sourceRoot, "skills", "不可读技能", "SKILL.md"), 0o644)
+      } catch {
+        /* 清理尽力 */
+      }
+    }
+  })
+
+  test("旧根目录项整体消失一轮再重现 → 定序集不缩水,不复活", () => {
+    buildLegacyLayout()
+    runEnvMigration(runOpts())
+    fs.rmSync(path.join(targetRoot, "agents", "代理 agent.md")) // 环境侧删除
+    fs.rmSync(path.join(sourceRoot, "agents"), { recursive: true }) // 旧根整项消失一轮
+    const r1 = runEnvMigration(runOpts())
+    expect(r1.status).toBe("already-migrated")
+    fs.mkdirSync(path.join(sourceRoot, "agents"), { recursive: true })
+    fs.writeFileSync(path.join(sourceRoot, "agents", "代理 agent.md"), "# agent") // 重现
+    const r2 = runEnvMigration(runOpts())
+    expect(r2.status).toBe("already-migrated")
+    expect(fs.existsSync(path.join(targetRoot, "agents", "代理 agent.md"))).toBe(false)
   })
 })

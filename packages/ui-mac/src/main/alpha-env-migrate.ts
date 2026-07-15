@@ -33,7 +33,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { applyEdits, modify, parse } from "jsonc-parser"
 import { writeMcpSecret } from "./alpha-mcp-secrets"
-import { writeFileAtomicSync } from "./ext-atomic-fs"
+import { fsyncDirTreeSync, fsyncFileSync, renameAtomicSync, writeFileAtomicSync } from "./ext-atomic-fs"
 
 export const ENV_MIGRATION_VERSION = 1
 export const ENV_MIGRATION_RECEIPT_FILE = "env-migration-receipt.json"
@@ -524,6 +524,23 @@ export function readEnvMigrationReceipt(targetRoot: string): EnvMigrationReceipt
   }
 }
 
+/**
+ * 旧根 rollback 标记是否证明「本环境此前已迁移到此根」—— receipt 丢失/损坏/身份不匹配的恢复
+ * 路径用它判别:有此证据 → 不得做首迁 child 级合并(定序史已失,合并会复活环境侧删除),
+ * 转报告式(后续 bootstrap 对账只报告);无此证据 → 视作真·首次迁移,child 级合并合法。
+ */
+function markerShowsPriorMigration(sourceRoot: string, environment: string, targetRoot: string): boolean {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(path.join(sourceRoot, ENV_ROLLBACK_MARKER_FILE), "utf8")) as {
+      environments?: Record<string, { targetRoot?: unknown }>
+    }
+    const rec = parsed?.environments?.[environment]
+    return !!rec && typeof rec.targetRoot === "string" && isSamePath(rec.targetRoot, targetRoot)
+  } catch {
+    return false
+  }
+}
+
 /** rollback 标记(旧根内 additive 新文件):告知旧布局仍是降级版本的真源;read-modify-write + 原子替换。 */
 function writeRollbackMarker(sourceRoot: string, environment: string, receipt: EnvMigrationReceipt, warnings: string[]): void {
   const file = path.join(sourceRoot, ENV_ROLLBACK_MARKER_FILE)
@@ -606,10 +623,42 @@ function listEnvChildren(targetRoot: string, item: EnvMigrationItem): { names: S
   return { names, aliases }
 }
 
+/** 稳定错误码(reason 进 receipt state,禁止携带随机 staging 路径等易变文本 —— 防每轮启动重写 receipt)。 */
+function stableErrCode(error: unknown): string {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code
+  return typeof code === "string" && code.length > 0 ? code : "unknown"
+}
+
 /**
- * 随机私有 staging 下守卫拷贝单个子条目,lstat 复核后原子 rename 进位。
- * 子树内的嵌套拒绝(链/非常规类型)只进 warnings(导入本体照常落位;下轮 state 重算只看
- * 顶层子条目,嵌套记录若进 state 会造成 receipt 两轮抖动)。
+ * staged 树发布前重验 + 落盘:每个节点必须是 file/dir,或「相对 + 词法/canonical 双圈禁于
+ * stage 内」的 symlink(守卫拷贝只会产出这些;不符 = staging 被篡改/竞态,fail-closed 拒发布);
+ * 文件逐个 fsync(receipt 的持久化绝不允许跑在载荷持久化前面)。
+ */
+function revalidateAndSyncStaged(stage: string): void {
+  const walk = (cur: string) => {
+    const st = fs.lstatSync(cur)
+    if (st.isSymbolicLink()) {
+      const raw = fs.readlinkSync(cur)
+      const lexTarget = path.resolve(path.dirname(cur), raw)
+      if (path.isAbsolute(raw) || !isPathUnder(lexTarget, stage)) throw new Error("staged tree tampered: escaping symlink")
+      return
+    }
+    if (st.isDirectory()) {
+      for (const e of fs.readdirSync(cur)) walk(path.join(cur, e))
+      return
+    }
+    if (!st.isFile()) throw new Error("staged tree tampered: non-regular entry")
+    fsyncFileSync(cur)
+  }
+  walk(stage)
+  const rootSt = fs.lstatSync(stage)
+  if (rootSt.isDirectory()) fsyncDirTreeSync(stage)
+}
+
+/**
+ * 随机私有 staging 下守卫拷贝单个子条目 → 发布前重验 + fsync → lstat 复核 → 原子 rename
+ * (fsync 目的父目录)。子树内的嵌套拒绝(链/非常规类型)只进 warnings(导入本体照常落位;
+ * 下轮 state 重算只看顶层子条目,嵌套记录若进 state 会造成 receipt 两轮抖动)。
  */
 function importChildGuarded(
   sourceRoot: string,
@@ -623,7 +672,7 @@ function importChildGuarded(
   try {
     realRoot = fs.realpathSync(src)
   } catch (error) {
-    return { ok: false, reason: `source unreadable: ${error instanceof Error ? error.message : String(error)}` }
+    return { ok: false, reason: `source unreadable (${stableErrCode(error)})` }
   }
   const stagingBase = path.join(targetRoot, RECONCILE_STAGING_DIR)
   const stage = path.join(stagingBase, crypto.randomBytes(8).toString("hex"))
@@ -636,13 +685,14 @@ function importChildGuarded(
       // 顶层即被拒(理论上调用方已过滤 symlink/special;防御性兜底)
       return { ok: false, reason: "rejected at top level" }
     }
+    revalidateAndSyncStaged(stage)
     fs.mkdirSync(path.join(targetRoot, item), { recursive: true })
     const final = path.join(targetRoot, item, name)
     if (isLstatPresent(final)) {
       fs.rmSync(stage, { recursive: true, force: true })
       return { ok: false, reason: "target appeared during import (not overwriting)" }
     }
-    fs.renameSync(stage, final)
+    renameAtomicSync(stage, final)
     return { ok: true }
   } catch (error) {
     try {
@@ -650,7 +700,7 @@ function importChildGuarded(
     } catch {
       /* staging 残骸由下轮 pass 起始清理 */
     }
-    return { ok: false, reason: error instanceof Error ? error.message : String(error) }
+    return { ok: false, reason: `import failed (${stableErrCode(error)})` }
   }
 }
 
@@ -717,6 +767,75 @@ function statesEqual(a: EnvReconcileState, b: EnvReconcileState | undefined): bo
   return b !== undefined && JSON.stringify(a) === JSON.stringify(b)
 }
 
+// ── reconcile 块结构校验(可解析但残缺的块若被采信,会造成永久 reconcile-failed 循环)────────
+
+function isItemObservation(v: unknown): v is ItemObservation {
+  if (!v || typeof v !== "object") return false
+  const kind = (v as { kind?: unknown }).kind
+  if (kind === "absent" || kind === "symlink" || kind === "special") return true
+  if (kind === "file") return typeof (v as { sha256?: unknown }).sha256 === "string"
+  if (kind === "dir") {
+    const children = (v as { children?: unknown }).children
+    return (
+      Array.isArray(children) &&
+      children.every(
+        (c) =>
+          c &&
+          typeof c === "object" &&
+          typeof (c as ChildObservation).name === "string" &&
+          typeof (c as ChildObservation).kind === "string" &&
+          typeof (c as ChildObservation).fp === "string",
+      )
+    )
+  }
+  return false
+}
+
+/** 无效(缺字段/残缺观察)→ undefined:走 bootstrap 报告式自愈重建,绝不进永久失败循环。 */
+function validReconcileState(v: EnvReconcileState | undefined): EnvReconcileState | undefined {
+  if (!v || typeof v !== "object") return undefined
+  if (typeof v.baselineAt !== "string" || typeof v.bootstrap !== "boolean") return undefined
+  const obsOk = (rec: unknown) =>
+    !!rec && typeof rec === "object" && ENV_MIGRATION_ITEMS.every((n) => isItemObservation((rec as Record<string, unknown>)[n]))
+  if (!obsOk(v.baseline) || !obsOk(v.lastObserved)) return undefined
+  if (!Array.isArray(v.legacyOnly) || !Array.isArray(v.conflicts) || !Array.isArray(v.unresolvedDrift)) return undefined
+  if (!Array.isArray(v.rejected) || !v.rejected.every((r) => r && typeof r.item === "string" && typeof r.name === "string" && typeof r.fp === "string")) {
+    return undefined
+  }
+  if (!v.lastReconcile || typeof v.lastReconcile !== "object" || !Array.isArray(v.lastReconcile.imported)) return undefined
+  return v
+}
+
+/**
+ * 单调 anchor(防「定序名消失一轮→重现」复活):当前观察为主;曾定序但本轮缺席的子条目
+ * 带旧条目沿列;目录项在旧根整体消失时保留旧定序集不缩水。合并后按名排序保证确定性。
+ */
+function mergeMonotonicAnchor(
+  prior: Record<EnvMigrationItem, ItemObservation>,
+  current: Record<EnvMigrationItem, ItemObservation>,
+): Record<EnvMigrationItem, ItemObservation> {
+  const out = {} as Record<EnvMigrationItem, ItemObservation>
+  for (const name of ENV_MIGRATION_ITEMS) {
+    const cur = current[name]
+    const old = prior[name]
+    if (old?.kind !== "dir") {
+      out[name] = cur
+      continue
+    }
+    if (cur.kind !== "dir") {
+      out[name] = old // 旧根整项缺席:定序记忆保留
+      continue
+    }
+    const curNames = new Set(cur.children.map((c) => c.name))
+    const carried = old.children.filter((c) => !curNames.has(c.name))
+    out[name] = {
+      kind: "dir",
+      children: [...cur.children, ...carried].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)),
+    }
+  }
+  return out
+}
+
 function writeReceiptAtomic(targetRoot: string, receipt: EnvMigrationReceipt): void {
   writeFileAtomicSync(envMigrationReceiptPath(targetRoot), JSON.stringify(receipt, null, 2) + "\n")
 }
@@ -733,10 +852,11 @@ function reconcileRollbackEra(receipt: EnvMigrationReceipt, input: RunEnvMigrati
   try {
     fs.rmSync(path.join(targetRoot, RECONCILE_STAGING_DIR), { recursive: true, force: true })
     const observed = observeAllItems(sourceRoot)
-    const prior = receipt.reconcile
+    const prior = validReconcileState(receipt.reconcile)
 
     if (!prior) {
-      // bootstrap(裁决①):无可信基线,无法区分「rollback 新增」vs「环境侧删除」→ 只报告不导入。
+      // bootstrap(裁决①):无可信基线(缺块或块残缺),无法区分「rollback 新增」vs「环境侧
+      // 删除」→ 只报告不导入,并原子重建有效状态块(残缺块自愈,不进永久失败循环)。
       const { legacyOnly, conflicts } = computeReports(observed, targetRoot)
       const state: EnvReconcileState = {
         baselineAt: at,
@@ -765,13 +885,20 @@ function reconcileRollbackEra(receipt: EnvMigrationReceipt, input: RunEnvMigrati
     const imported: string[] = []
     const failedImports: RejectedRef[] = []
     const nestedWarnings: string[] = []
-    // 增量导入:每成功一个子条目,把它补进 anchor 并提交 receipt(resurrection 窗口 = 单个子条目)。
+    // 增量导入:每成功一个子条目,把它补进 anchor、剔除其既往 rejection(自洽 checkpoint,
+    // crash 后不会把「已进位的前被拒项」再评估)并提交 receipt(resurrection 窗口 = 单个子条目)。
     const workingAnchor = JSON.parse(JSON.stringify(prior.lastObserved)) as Record<EnvMigrationItem, ItemObservation>
     const commitProgress = () => {
+      const importedKeys = new Set(imported)
       writeReceiptAtomic(targetRoot, {
         ...receipt,
         warnings: [...receipt.warnings, ...nestedWarnings],
-        reconcile: { ...prior, lastObserved: workingAnchor, lastReconcile: { at, appVersion: input.appVersion, imported } },
+        reconcile: {
+          ...prior,
+          lastObserved: workingAnchor,
+          rejected: prior.rejected.filter((r) => !importedKeys.has(`${r.item}/${r.name}`)),
+          lastReconcile: { at, appVersion: input.appVersion, imported },
+        },
       })
     }
 
@@ -789,8 +916,10 @@ function reconcileRollbackEra(receipt: EnvMigrationReceipt, input: RunEnvMigrati
       for (const child of obs.children) {
         const anc = anchorChildren.get(child.name)
         const rej = priorRejected.get(child.name)
-        // 定序规则:曾观察过且不是「被拒后形态已变」→ 不再评估(防复活环境侧删除)。
-        if (anc && !(rej && rej.fp !== child.fp)) continue
+        // 定序规则:曾观察过 → 不再评估(防复活环境侧删除)。唯一例外 = 被拒项形态已变,且
+        // anchor 仍停留在被拒时的形态(anc.fp === rej.fp;若 anchor 已推进说明该形态已定序,
+        // 残留的旧 rejection 不得再触发导入 —— crash checkpoint 防护)。
+        if (anc && !(rej && rej.fp !== child.fp && anc.fp === rej.fp)) continue
         if (child.kind === "symlink" || child.kind === "special") continue // state 重算时统一进 rejected
         if (env.names.has(child.name) || env.aliases.has(aliasKey(child.name))) continue // 同名/别名占用:env wins
         const r = importChildGuarded(sourceRoot, targetRoot, item, child.name, nestedWarnings)
@@ -810,13 +939,23 @@ function reconcileRollbackEra(receipt: EnvMigrationReceipt, input: RunEnvMigrati
     }
 
     const { legacyOnly, conflicts } = computeReports(observed, targetRoot)
-    // lastObserved 剔除导入失败的子条目 → 它们下一轮仍是「新出现」候选(可重试),且失败态本身稳定
-    // (同样的失败 → 同样的 state → clean 不重写 receipt)。
-    const settled = JSON.parse(JSON.stringify(observed)) as Record<EnvMigrationItem, ItemObservation>
+    // anchor 单调合并(缺席名沿列防复活),再剔除导入失败的子条目 → 它们下一轮仍是「新出现」
+    // 候选(可重试),且失败态本身稳定(同样的失败 → 同样的 state → clean 不重写 receipt)。
+    const settled = mergeMonotonicAnchor(prior.lastObserved, observed)
     for (const f of failedImports) {
       const it = settled[f.item]
       if (it.kind === "dir") it.children = it.children.filter((c) => c.name !== f.name)
     }
+    // rejected 同样沿列:本轮旧根观察不到的既往被拒名保留旧记录(重现时凭 fp 记忆重评)。
+    const currentNames = (item: EnvMigrationItem) => {
+      const o = observed[item]
+      return new Set(o.kind === "dir" ? o.children.map((c) => c.name) : [])
+    }
+    const rejected = [
+      ...failedImports,
+      ...collectRejectedFromObservation(observed),
+      ...prior.rejected.filter((r) => !currentNames(r.item).has(r.name)),
+    ].filter((r, i, all) => all.findIndex((x) => x.item === r.item && x.name === r.name) === i)
     const state: EnvReconcileState = {
       baselineAt: prior.baselineAt,
       bootstrap: prior.bootstrap,
@@ -825,7 +964,7 @@ function reconcileRollbackEra(receipt: EnvMigrationReceipt, input: RunEnvMigrati
       lastReconcile: imported.length > 0 ? { at, appVersion: input.appVersion, imported } : prior.lastReconcile,
       legacyOnly,
       conflicts,
-      rejected: [...failedImports, ...collectRejectedFromObservation(observed)],
+      rejected,
       unresolvedDrift: computeDrift(prior.baseline, observed),
     }
     if (statesEqual(state, prior)) return { status: "clean" }
@@ -877,6 +1016,11 @@ export function runEnvMigration(input: RunEnvMigrationInput): EnvMigrationOutcom
       `receipt identity mismatch (env "${existing.environment}" → "${input.environment}") — re-running migration (already-present self-heal)`,
     )
   }
+  // receipt 缺失/无效/身份不匹配,但旧根标记证明本环境此前迁移过 → 恢复路径禁用 child 级合并。
+  const priorMigrationEvidence = markerShowsPriorMigration(sourceRoot, input.environment, targetRoot)
+  if (priorMigrationEvidence) {
+    warnings.push("prior migration evidenced by rollback marker — child-level merge disabled (report-only recovery)")
+  }
   const source: SourceInventoryEntry[] = []
   const results: ItemOutcome[] = []
   const rederived: SecretRefRecord[] = []
@@ -911,6 +1055,11 @@ export function runEnvMigration(input: RunEnvMigrationInput): EnvMigrationOutcom
       // 上次 rename 之后崩溃(或用户先建)→ 不覆盖(用户/既有内容红线),记 already-present。
       // #304:目标目录已存在时做 child 级不覆盖合并 —— 旧根独有子条目不再静默漏掉。
       results.push({ name, outcome: "already-present" })
+      if (priorMigrationEvidence) {
+        // receipt 丢失/身份不匹配但标记证明此前迁移过:定序史已失,child 级合并会复活环境侧
+        // 删除 —— 跳过合并,旧根独有子条目交给后续 bootstrap 对账只报告(防复活优先)。
+        continue
+      }
       if (inv.kind === "dir" && (ENV_MIGRATION_DIR_ITEMS as readonly string[]).includes(name)) {
         const env = listEnvChildren(targetRoot, name)
         if (env !== null) {
@@ -965,13 +1114,15 @@ export function runEnvMigration(input: RunEnvMigrationInput): EnvMigrationOutcom
           warnings.push(...t.warnings)
         }
         fs.writeFileSync(tmp, text, "utf8")
+        fsyncFileSync(tmp)
       } else {
         const src = path.join(sourceRoot, name)
         copyTreeGuarded(src, tmp, src, fs.realpathSync(src), name, (rel, kind, reason) => {
           warnings.push(`"${name}/${rel}" rejected: ${reason} (${kind})`)
         })
+        revalidateAndSyncStaged(tmp)
       }
-      fs.renameSync(tmp, final)
+      renameAtomicSync(tmp, final)
       results.push({ name, outcome: "imported" })
       importedAny = true
     } catch (error) {
