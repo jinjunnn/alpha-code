@@ -73,7 +73,8 @@ describe("withRecoveredWrite — 准入判据", () => {
       return { ok: true as const }
     })
     expect(ran).toBe(false)
-    expect((r as { ok: false; reason: string }).reason).toContain("non-terminal transaction journal remains")
+    if (r.ok) throw new Error("expected refusal")
+    expect(r.reason).toContain("non-terminal transaction journal remains")
   })
 
   test("活锁(bundle 锁被活 pid 持有)→ 拒且 op 不执行(不抢活锁)", async () => {
@@ -87,7 +88,8 @@ describe("withRecoveredWrite — 准入判据", () => {
         return { ok: true as const }
       })
       expect(ran).toBe(false)
-      expect((r as { ok: false; reason: string }).reason).toContain("recovery incomplete")
+      if (r.ok) throw new Error("expected refusal")
+      expect(r.reason).toContain("recovery incomplete")
     } finally {
       held.lock.release()
     }
@@ -103,7 +105,8 @@ describe("withRecoveredWrite — 准入判据", () => {
       return { ok: true as const }
     })
     expect(ran).toBe(false)
-    expect((first as { ok: false; reason: string }).reason).toContain("corrupt transaction journal quarantined")
+    if (first.ok) throw new Error("expected refusal")
+    expect(first.reason).toContain("corrupt transaction journal quarantined")
     // 证据保留(.corrupt-* 文件),原 .json 已移走
     const entries = fs.readdirSync(journalDir())
     expect(entries.some((n) => n.includes(".corrupt-"))).toBe(true)
@@ -124,10 +127,25 @@ describe("withRecoveredWrite — 准入判据", () => {
         return { ok: true as const }
       })
       expect(ran).toBe(false)
-      expect((r as { ok: false; reason: string }).reason.length).toBeGreaterThan(0)
+      if (r.ok) throw new Error("expected refusal")
+      expect(r.reason.length).toBeGreaterThan(0)
     } finally {
       fs.chmodSync(journalDir(), 0o755)
     }
+  })
+
+  test("journal 位置被普通文件占据(ENOTDIR)→ 拒且 op 零调用(review #376 Blocker 回归)", async () => {
+    fs.mkdirSync(path.join(root, "ext-tx"), { recursive: true })
+    fs.writeFileSync(path.join(root, "ext-tx", "journal"), "i am a file, not a directory")
+    const gate = gateWith(fullOpts)
+    let ran = false
+    const r = await gate.withRecoveredWrite(root, async () => {
+      ran = true
+      return { ok: true as const }
+    })
+    expect(ran).toBe(false)
+    if (r.ok) throw new Error("expected refusal")
+    expect(r.reason).toContain("cannot be enumerated")
   })
 
   test("进程内 mutex:同根并发写方严格串行(恢复→探测→操作同链,无窗口)", async () => {

@@ -1452,8 +1452,10 @@ export function probeTransactionJournals(root: string): { entries: TxJournalProb
   try {
     names = fs.readdirSync(dir).filter((n) => n.endsWith(".json"))
   } catch (error) {
+    // review #376 Blocker:只有 ENOENT 可解释为「目录不存在且确无 journal」;ENOTDIR
+    // (journal 位置被普通文件占据)与其它枚举失败一律失据 → 调用方必须 fail-closed。
     const code = (error as NodeJS.ErrnoException).code
-    return { entries: [], unreadableDir: code !== "ENOENT" && code !== "ENOTDIR" }
+    return { entries: [], unreadableDir: code !== "ENOENT" }
   }
   const entries = names.sort().map((name) => {
     const txId = name.slice(0, -".json".length)
