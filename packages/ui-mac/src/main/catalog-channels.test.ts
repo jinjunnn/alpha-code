@@ -762,3 +762,43 @@ describe("#314 snapshot 一致性与 fail-closed 分类", () => {
     fs.rmSync(d, { recursive: true, force: true })
   })
 })
+
+describe("#314 review 回归:三态 grandfather / 等序空白字节 replacement", () => {
+  test("缓存 snapshot 被破坏(invalid)→ LKG 拒;被删除且高水位已达 2 → LKG 拒", async () => {
+    const k1 = genKey()
+    const { trust } = await seedLkg(k1)
+    const trustDocParsed = JSON.parse(trust.body) as TrustDoc
+    // invalid:snapshot 位在场但字节被改(验签失败)
+    let st = JSON.parse(fs.readFileSync(channelStatePath(dir), "utf8"))
+    expect(st.stateVersion).toBe(2)
+    const goodSnapshot = st.channels.stable.snapshot
+    st.channels.stable.snapshot = { body: goodSnapshot.body.replace("alpha.catalog.snapshot.v1", "alpha.catalog.snapshot.vX"), sig: goodSnapshot.sig }
+    fs.writeFileSync(channelStatePath(dir), JSON.stringify(st))
+    expect(readChannelLastKnownGood(dir, "stable", trustDocParsed, NOW)).toBeNull()
+    // absent + 高水位:删除 snapshot 位伪装 legacy → 拒
+    st = JSON.parse(fs.readFileSync(channelStatePath(dir), "utf8"))
+    delete st.channels.stable.snapshot
+    fs.writeFileSync(channelStatePath(dir), JSON.stringify(st))
+    expect(readChannelLastKnownGood(dir, "stable", trustDocParsed, NOW)).toBeNull()
+    // absent + 真 pre-#314(stateVersion 1)→ grandfather 放行
+    st = JSON.parse(fs.readFileSync(channelStatePath(dir), "utf8"))
+    st.stateVersion = 1
+    fs.writeFileSync(channelStatePath(dir), JSON.stringify(st))
+    expect(readChannelLastKnownGood(dir, "stable", trustDocParsed, NOW)).not.toBeNull()
+  })
+
+  test("R5(snapshot):等序、JSON 语义相同但仅空白/序列化不同的签名 snapshot → replacement 拒", async () => {
+    const k1 = genKey()
+    const { trust, payload, doc } = await seedLkg(k1)
+    const cachedSnapBody = (JSON.parse(fs.readFileSync(channelStatePath(dir), "utf8")).channels.stable.snapshot as { body: string }).body
+    // 同一 JSON 语义,不同字节(压缩序列化)+ 合法签名
+    const compact = JSON.stringify(JSON.parse(cachedSnapBody))
+    expect(compact).not.toBe(cachedSnapBody)
+    const replaced = { body: compact, sig: signB64(compact, k1) }
+    const { fetchImpl } = serve(worldRoutes(trust, doc, payload, k1, { snapshot: replaced }))
+    const r = await refreshChannelCatalog(dir, "stable", depsOf(fetchImpl, k1))
+    expect(r.source).toBe("cache")
+    if (r.source !== "cache") throw new Error("unreachable")
+    expect(r.error ?? "").toContain("R5 snapshot")
+  })
+})

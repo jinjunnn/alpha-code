@@ -76,39 +76,33 @@ function saneCatalog(parsed: unknown): parsed is { version: string; entries: unk
 
 // codex M1:缓存**读取时重验签**(缓存文件可被本地篡改;只信 body+sig 过 ed25519 的内容)。
 // REQ-101 R11:body digest 命中撤销列表的缓存同样拒用(revocation 对已缓存内容生效)。
+// #314 review M3:单次读取 —— body/digest/version/catalog 全部派生自**同一份已验字节**
+// (version 取自签名 body,缓存元数据 raw.version 不进任何判断;消除两次读盘的 TOCTOU 解绑)。
 export function readCachedCatalog(
   userDataPath: string,
   opts: { pubKeyB64?: string; revoked?: Map<string, string> } = {},
-): { etag?: string; version: string; fetchedAt: string; catalog: unknown } | null {
+): { etag?: string; version: string; fetchedAt: string; catalog: unknown; body: Buffer; digest: string } | null {
   try {
     const raw = JSON.parse(fs.readFileSync(cachePath(userDataPath), "utf8"))
     if (!raw || typeof raw.body !== "string" || typeof raw.sig !== "string") return null
-    if (!verifySignature(Buffer.from(raw.body, "utf8"), raw.sig, opts.pubKeyB64)) {
+    const body = Buffer.from(raw.body, "utf8")
+    if (!verifySignature(body, raw.sig, opts.pubKeyB64)) {
       console.error("[remote-catalog] cached catalog FAILED signature re-verification — discarding (possible local tampering)")
       return null
     }
-    const digest = sha256Hex(Buffer.from(raw.body, "utf8"))
+    const digest = sha256Hex(body)
     const revokedReason = opts.revoked?.get(digest)
     if (revokedReason !== undefined) {
       console.error(`[remote-catalog] cached catalog digest is REVOKED (${revokedReason}) — discarding (R11)`)
       return null
     }
-    const catalog = JSON.parse(raw.body)
-    if (typeof raw.version === "string" && saneCatalog(catalog)) return { etag: raw.etag, version: raw.version, fetchedAt: raw.fetchedAt, catalog }
+    const catalog = JSON.parse(body.toString("utf8"))
+    if (saneCatalog(catalog))
+      return { etag: raw.etag, version: catalog.version, fetchedAt: raw.fetchedAt, catalog, body, digest }
   } catch {
     /* no cache */
   }
   return null
-}
-
-/** 缓存的已签 body 原始字节(身份/digest 判断只能针对签名覆盖的字节,不用缓存元数据)。 */
-function readCachedCatalogBody(userDataPath: string): Buffer | null {
-  try {
-    const raw = JSON.parse(fs.readFileSync(cachePath(userDataPath), "utf8")) as { body?: unknown }
-    return typeof raw.body === "string" ? Buffer.from(raw.body, "utf8") : null
-  } catch {
-    return null
-  }
 }
 
 async function fetchWithTimeout(url: string, headers: Record<string, string> = {}, fetchImpl: typeof fetch = fetch): Promise<Response> {
@@ -220,11 +214,10 @@ async function refreshRemoteCatalogV1(
     r.source === "none" ? { ...r, reasonClass: "availability" } : { ...r, via: "v1", channel: "stable" }
   const fallback = (error: string): RemoteCatalogResult => {
     if (!cached) return withVia({ source: "none", error })
-    // 身份校验针对缓存的**已签 body**(readCachedCatalog 已完成验签 + R11)。
-    const raw = readCachedCatalogBody(userDataPath)
-    const idv = raw ? matchesIdentity(raw) : ({ ok: false, error: "v1 cache body unreadable" } as const)
+    // 身份校验针对 readCachedCatalog 返回的**同一份已验 body**(单次读取,无 TOCTOU)。
+    const idv = matchesIdentity(cached.body)
     if (!idv.ok) return withVia({ source: "none", error: `${error}; ${idv.error}` })
-    return withVia({ source: "cache", catalog: cached.catalog, version: idv.version, fetchedAt: cached.fetchedAt, error })
+    return { source: "cache", catalog: cached.catalog, version: idv.version, fetchedAt: cached.fetchedAt, error, via: "v1", channel: "stable", reasonClass: "availability" }
   }
 
   let resp: Response
@@ -234,8 +227,7 @@ async function refreshRemoteCatalogV1(
     return fallback(`fetch failed: ${e instanceof Error ? e.message : e}`)
   }
   if (resp.status === 304 && cached) {
-    const raw = readCachedCatalogBody(userDataPath)
-    const idv = raw ? matchesIdentity(raw) : ({ ok: false, error: "v1 cache body unreadable" } as const)
+    const idv = matchesIdentity(cached.body) // 同一份已验 body(单次读取)
     if (!idv.ok) return withVia({ source: "none", error: idv.error })
     return withVia({ source: "remote", catalog: cached.catalog, version: idv.version, fetchedAt: cached.fetchedAt })
   }

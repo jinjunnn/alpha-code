@@ -112,22 +112,25 @@ function snapshotBody(signer: TestKey, members: Record<string, string>, over: Re
 const payloadOf = (version: string, marker = "m") =>
   JSON.stringify({ version, entries: [{ id: `skill:${marker}` }] }, null, 2)
 
+type Route = string | ((headers: Record<string, string>) => Response)
 type RouteOpts = {
   channel?: string
   trustOver?: Record<string, unknown>
   docOver?: Record<string, unknown>
-  /** 不 serve payload 路由(availability 失败注入)。 */
+  /** 不 serve payload 路由 → 404 = security(被钉资源缺失)。 */
   omitPayload?: boolean
+  /** payload 路由回 5xx → availability(纯服务故障)。 */
+  failPayload500?: boolean
   /** 不 serve snapshot 路由(#314:缺失 = security)。 */
   omitSnapshot?: boolean
 }
-function channelRoutes(k: TestKey, payloadBody: string, opts: RouteOpts = {}): Record<string, string> {
+function channelRoutes(k: TestKey, payloadBody: string, opts: RouteOpts = {}): Record<string, Route> {
   const channel = opts.channel ?? "stable"
   const trust = trustBody(k, opts.trustOver)
   const doc = channelBody(k, payloadBody, { channel, ...opts.docOver })
   const snap = snapshotBody(k, { trust, [channel]: doc })
   const version = (JSON.parse(payloadBody) as { version: string }).version
-  const routes: Record<string, string> = {
+  const routes: Record<string, Route> = {
     [`${CH_BASE}/channels/trust.json`]: trust,
     [`${CH_BASE}/channels/trust.json.sig`]: signB64(trust, k),
     [`${CH_BASE}/channels/${channel}.json`]: doc,
@@ -137,7 +140,10 @@ function channelRoutes(k: TestKey, payloadBody: string, opts: RouteOpts = {}): R
     routes[`${CH_BASE}/channels/snapshot.json`] = snap
     routes[`${CH_BASE}/channels/snapshot.json.sig`] = signB64(snap, k)
   }
-  if (!opts.omitPayload) {
+  if (opts.failPayload500) {
+    routes[`${CH_BASE}/releases/${version}/catalog.json`] = () => new Response("boom", { status: 503 })
+    routes[`${CH_BASE}/releases/${version}/catalog.json.sig`] = () => new Response("boom", { status: 503 })
+  } else if (!opts.omitPayload) {
     routes[`${CH_BASE}/releases/${version}/catalog.json`] = payloadBody
     routes[`${CH_BASE}/releases/${version}/catalog.json.sig`] = signB64(payloadBody, k)
   }
@@ -226,12 +232,9 @@ describe("refreshRemoteCatalog 接线(channel-first + #314 fail-closed before v1
     const k = genKey()
     const payload = payloadOf("2026-07-13.1")
     await seedStableLkg(k, payload)
-    // 清掉 channel LKG payload 复用面:构造新一轮 doc(seq 6)指向**同一** payload,但 payload 路由缺席
-    // → reuse 命中(digest 相同)… 为真正触发 availability,改用不同 bytes 的同版本会撞 R7。
-    // 因此用:trust/snapshot/doc 全 404 以外的纯网络故障面 —— 这里选 payload 缺席 + LKG digest 不同:
-    // 新版本 2026-07-13.2 的 payload 路由缺席 → payload fetch failed(availability)。
+    // availability 注入 = 新版本 payload 路由回 5xx(纯服务故障;404 属 security,另有用例)。
     const payload2 = payloadOf("2026-07-13.2")
-    const routes = channelRoutes(k, payload2, { docOver: { sequence: 6 }, omitPayload: true })
+    const routes = channelRoutes(k, payload2, { docOver: { sequence: 6 }, failPayload500: true })
     // v1 = LKG 身份(version 2026-07-13.1 的同一字节)→ 镜像放行
     routes[V1_URL] = payload
     routes[`${V1_URL}.sig`] = signB64(payload, k)
@@ -248,7 +251,7 @@ describe("refreshRemoteCatalog 接线(channel-first + #314 fail-closed before v1
     const payload = payloadOf("2026-07-13.1")
     await seedStableLkg(k, payload)
     const payload2 = payloadOf("2026-07-13.2")
-    const routes = channelRoutes(k, payload2, { docOver: { sequence: 6 }, omitPayload: true })
+    const routes = channelRoutes(k, payload2, { docOver: { sequence: 6 }, failPayload500: true })
     const v1Newer = payloadOf("2026-07-13.9", "newer") // 合法签名但身份 ≠ 已验证 stable
     routes[V1_URL] = v1Newer
     routes[`${V1_URL}.sig`] = signB64(v1Newer, k)
@@ -265,7 +268,7 @@ describe("refreshRemoteCatalog 接线(channel-first + #314 fail-closed before v1
     const payload = payloadOf("2026-07-13.1")
     await seedStableLkg(k, payload)
     const payload2 = payloadOf("2026-07-13.2")
-    const routes = channelRoutes(k, payload2, { docOver: { sequence: 6 }, omitPayload: true })
+    const routes = channelRoutes(k, payload2, { docOver: { sequence: 6 }, failPayload500: true })
     routes[V1_URL] = payload
     routes[`${V1_URL}.sig`] = signB64("tampered bytes", k)
     const { fetchImpl } = serve(routes)
@@ -273,6 +276,65 @@ describe("refreshRemoteCatalog 接线(channel-first + #314 fail-closed before v1
     expect(r.source).toBe("cache")
     if (r.source === "none") throw new Error("unreachable")
     expect(r.via).toBe("channel-stable")
+  })
+
+  test("payload 404(被钉资源缺失)= security:零 v1 请求,LKG 兜底", async () => {
+    const k = genKey()
+    const payload = payloadOf("2026-07-13.1")
+    await seedStableLkg(k, payload)
+    const payload2 = payloadOf("2026-07-13.2")
+    const routes = channelRoutes(k, payload2, { docOver: { sequence: 6 }, omitPayload: true })
+    const v1 = payloadOf("2026-07-13.1", "legacy")
+    routes[V1_URL] = v1
+    routes[`${V1_URL}.sig`] = signB64(v1, k)
+    const { fetchImpl, calls } = serve(routes)
+    const r = await refreshRemoteCatalog(dir, "stable", depsOf(fetchImpl, k))
+    expect(r.source).toBe("cache")
+    if (r.source === "none") throw new Error("unreachable")
+    expect(r.reasonClass).toBe("security")
+    expect(v1Hit(calls)).toBe(false)
+  })
+
+  test("availability + v1 网络失败 → v1 缓存作身份镜像(同一已验 body;cache 带 reasonClass)", async () => {
+    const k = genKey()
+    const payload = payloadOf("2026-07-13.1")
+    await seedStableLkg(k, payload)
+    // 先经一次 availability 镜像把 v1 缓存落盘
+    const payload2 = payloadOf("2026-07-13.2")
+    const routes1 = channelRoutes(k, payload2, { docOver: { sequence: 6 }, failPayload500: true })
+    routes1[V1_URL] = payload
+    routes1[`${V1_URL}.sig`] = signB64(payload, k)
+    expect((await refreshRemoteCatalog(dir, "stable", depsOf(serve(routes1).fetchImpl, k))).source).toBe("remote")
+    // 第二轮:payload 仍 5xx,v1 远端也 5xx → v1 缓存(身份匹配)兜底
+    const routes2 = channelRoutes(k, payload2, { docOver: { sequence: 7 }, failPayload500: true })
+    routes2[V1_URL] = () => new Response("boom", { status: 503 })
+    routes2[`${V1_URL}.sig`] = () => new Response("boom", { status: 503 })
+    const r = await refreshRemoteCatalog(dir, "stable", depsOf(serve(routes2).fetchImpl, k))
+    expect(r.source).toBe("cache")
+    if (r.source === "none") throw new Error("unreachable")
+    expect(r.via).toBe("v1")
+    expect(r.version).toBe("2026-07-13.1")
+    expect(r.reasonClass).toBe("availability")
+  })
+
+  test("availability + v1 304 → 缓存身份镜像(同一已验 body)", async () => {
+    const k = genKey()
+    const payload = payloadOf("2026-07-13.1")
+    await seedStableLkg(k, payload)
+    const payload2 = payloadOf("2026-07-13.2")
+    const routes1 = channelRoutes(k, payload2, { docOver: { sequence: 6 }, failPayload500: true })
+    routes1[V1_URL] = (headers) => new Response(payload, { headers: { etag: '"e1"' } })
+    routes1[`${V1_URL}.sig`] = signB64(payload, k)
+    expect((await refreshRemoteCatalog(dir, "stable", depsOf(serve(routes1).fetchImpl, k))).source).toBe("remote")
+    const routes2 = channelRoutes(k, payload2, { docOver: { sequence: 7 }, failPayload500: true })
+    routes2[V1_URL] = (headers) =>
+      headers["if-none-match"] === '"e1"' ? new Response(null, { status: 304 }) : new Response(payload, { headers: { etag: '"e1"' } })
+    routes2[`${V1_URL}.sig`] = signB64(payload, k)
+    const r = await refreshRemoteCatalog(dir, "stable", depsOf(serve(routes2).fetchImpl, k))
+    expect(r.source).toBe("remote")
+    if (r.source === "none") throw new Error("unreachable")
+    expect(r.via).toBe("v1")
+    expect(r.version).toBe("2026-07-13.1")
   })
 
   test("R11 对 v1 已缓存内容生效:readCachedCatalog 命中撤销 digest → 丢弃", async () => {

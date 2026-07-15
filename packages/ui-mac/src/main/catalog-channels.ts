@@ -413,6 +413,12 @@ type PersistedDoc = { body: string; sig: string }
  */
 type ChannelStateEntry = { doc: PersistedDoc; payload: PersistedDoc; snapshot?: PersistedDoc; fetchedAt: string }
 type StateFile = {
+  /**
+   * #314 review M1:R13 高水位。首次成功写入 coherent set 时置 2 且**永不回退** ——
+   * stateVersion>=2 后,任何 channel entry 缺 snapshot 位 = 篡改/撕裂(拒),不再享受
+   * pre-#314 grandfather;删除 snapshot 字段伪装 legacy state 的降级路径被封死。
+   */
+  stateVersion?: number
   /** 最新已验 trust(可能是链上钥签的,§6 轮换中)。 */
   trust?: PersistedDoc & { fetchedAt?: string }
   /** 锚:最近一份**内置钥直验**的 trust;重启后经它单级链重验 state.trust(撤销离线持久)。 */
@@ -472,20 +478,35 @@ export function readCachedTrust(userDataPath: string, builtinKeyB64: string, now
   return { doc: anchor.doc, body: anchor.persisted.body, sig: anchor.persisted.sig }
 }
 
-/** #314:本 channel 缓存 snapshot 重验(签名/schema 相对 trust;R4/窗口放宽同 LKG 纪律)→ R5 基线 + R13-on-cache。 */
-export function readCachedSnapshot(userDataPath: string, channel: ChannelName, trust: TrustDoc, nowMs: number): SnapshotDoc | null {
+/**
+ * #314:本 channel 缓存 snapshot 重验(签名/schema 相对 trust;R4/窗口放宽同 LKG 纪律)
+ * → R5 基线 + R13-on-cache。三态(review M1):absent(无 snapshot 位)≠ invalid(在场但
+ * 验签/schema 失败 = 篡改)—— invalid 必须拒 LKG,absent 仅在 stateVersion<2 时 grandfather。
+ */
+export type CachedSnapshot =
+  | { status: "valid"; doc: SnapshotDoc; body: string }
+  | { status: "absent" }
+  | { status: "invalid" }
+export function readCachedSnapshot(userDataPath: string, channel: ChannelName, trust: TrustDoc, nowMs: number): CachedSnapshot {
   const st = readStateFile(userDataPath)
   const persisted = st.channels?.[channel]?.snapshot
-  if (!persistedDocOk(persisted)) return null
+  if (persisted === undefined) return { status: "absent" }
+  if (!persistedDocOk(persisted)) return { status: "invalid" }
   const v = verifySnapshotBytes(Buffer.from(persisted.body, "utf8"), persisted.sig, trust, nowMs, {
     requireUnexpired: false,
     requireWindow: false,
   })
   if (!v.ok) {
-    console.error(`[catalog-channels] cached ${channel} snapshot FAILED re-verification — discarding (${v.error})`)
-    return null
+    console.error(`[catalog-channels] cached ${channel} snapshot FAILED re-verification — INVALID (${v.error})`)
+    return { status: "invalid" }
   }
-  return v.doc
+  return { status: "valid", doc: v.doc, body: persisted.body }
+}
+
+/** stateVersion 高水位读取(缺省 1 = pre-#314)。 */
+export function channelStateVersion(userDataPath: string): number {
+  const v = readStateFile(userDataPath).stateVersion
+  return Number.isInteger(v) && (v as number) >= 1 ? (v as number) : 1
 }
 
 export type ChannelLastKnownGood = {
@@ -525,11 +546,19 @@ export function readChannelLastKnownGood(
     console.error(`[catalog-channels] cached ${channel} payload FAILED re-verification — discarding (${payloadV.error})`)
     return null
   }
-  // #314 R13-on-cache:缓存 snapshot 在场则缓存 doc 必须命中其 entry(coherent set 的本地防篡改
-  // 交叉验证);snapshot 缺席 = pre-#314 存量 state,放行(下次成功刷新即补齐)。
+  // #314 R13-on-cache(review M1 三态):valid → doc 必须命中 entry;invalid(在场但坏)→ 拒;
+  // absent → 仅 stateVersion<2(真 pre-#314 存量)grandfather,高水位已达 2 则 absent = 篡改/撕裂,拒。
   const cachedSnap = readCachedSnapshot(userDataPath, channel, trust, nowMs)
-  if (cachedSnap) {
-    const pin = cachedSnap.entries[channel]
+  if (cachedSnap.status === "invalid") {
+    console.error(`[catalog-channels] cached ${channel} snapshot INVALID — discarding LKG (local tampering or torn state)`)
+    return null
+  }
+  if (cachedSnap.status === "absent" && channelStateVersion(userDataPath) >= 2) {
+    console.error(`[catalog-channels] cached ${channel} entry lacks snapshot but stateVersion>=2 — discarding LKG (R13 high-water)`)
+    return null
+  }
+  if (cachedSnap.status === "valid") {
+    const pin = cachedSnap.doc.entries[channel]
     if (!pin || pin.sha256 !== sha256Hex(Buffer.from(entry.doc.body, "utf8")) || pin.sequence !== docV.doc.sequence) {
       console.error(`[catalog-channels] cached ${channel} doc FAILS R13 against cached snapshot — discarding (local tampering or torn state)`)
       return null
@@ -552,7 +581,10 @@ function writeState(userDataPath: string, mutate: (st: StateFile) => void): void
     const st = readStateFile(userDataPath)
     mutate(st)
     fs.mkdirSync(userDataPath, { recursive: true })
-    fs.writeFileSync(channelStatePath(userDataPath), JSON.stringify(st))
+    const target = channelStatePath(userDataPath)
+    const tmp = `${target}.tmp-${process.pid}`
+    fs.writeFileSync(tmp, JSON.stringify(st))
+    fs.renameSync(tmp, target) // 原子替换:中断不留截断 state(coherent set 可用性)
   } catch {
     /* 缓存写失败不阻断本次使用(同 remote-catalog) */
   }
@@ -560,24 +592,52 @@ function writeState(userDataPath: string, mutate: (st: StateFile) => void): void
 
 // ── 网络(注入 fetch;https 重定向终点强制;体积帽)────────────────────────────────────────────
 
+/**
+ * 结构化取数错误(#314 review:失败分类不得依赖错误字符串)。
+ * 分类契约:availability = 纯网络故障(超时/断网/5xx);security = 4xx(含 404/403,被钉
+ * 资源缺失与选择性阻断不可区分)、HTTPS 降级重定向、体积违规 —— 服务端"在但不给对的东西"。
+ */
+export class FetchFailure extends Error {
+  readonly reasonClass: FailureClass
+  constructor(message: string, reasonClass: FailureClass) {
+    super(message)
+    this.reasonClass = reasonClass
+  }
+}
+export const failureClassOf = (e: unknown): FailureClass => (e instanceof FetchFailure ? e.reasonClass : "availability")
+
 async function fetchBytes(fetchImpl: typeof fetch, url: string, maxBytes: number): Promise<Buffer> {
   const ctl = new AbortController()
   const timer = setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS)
   try {
-    const resp = await fetchImpl(url, { signal: ctl.signal, redirect: "follow" })
-    if (resp.url && !resp.url.startsWith("https://")) throw new Error(`redirected to non-https: ${resp.url}`)
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${url}`)
-    const ab = await resp.arrayBuffer()
-    if (ab.byteLength > maxBytes) throw new Error(`too large (${ab.byteLength}B > ${maxBytes}B): ${url}`)
+    let resp: Response
+    try {
+      resp = await fetchImpl(url, { signal: ctl.signal, redirect: "follow" })
+    } catch (e) {
+      throw new FetchFailure(`fetch failed: ${e instanceof Error ? e.message : e}: ${url}`, "availability")
+    }
+    if (resp.url && !resp.url.startsWith("https://")) throw new FetchFailure(`redirected to non-https: ${resp.url}`, "security")
+    if (!resp.ok) throw new FetchFailure(`HTTP ${resp.status}: ${url}`, resp.status >= 500 ? "availability" : "security")
+    const ab = await resp.arrayBuffer().catch((e) => {
+      throw new FetchFailure(`read failed: ${e instanceof Error ? e.message : e}: ${url}`, "availability")
+    })
+    if (ab.byteLength > maxBytes) throw new FetchFailure(`too large (${ab.byteLength}B > ${maxBytes}B): ${url}`, "security")
     return Buffer.from(ab)
   } finally {
     clearTimeout(timer)
   }
 }
 
+/** body 与 .sig 并行取;任一失败按**最严分类**聚合(security 优先),不受响应时序影响。 */
 async function fetchDocPair(fetchImpl: typeof fetch, url: string, sigUrl: string, maxBytes: number): Promise<{ body: Buffer; sig: string }> {
-  const [body, sigBuf] = await Promise.all([fetchBytes(fetchImpl, url, maxBytes), fetchBytes(fetchImpl, sigUrl, MAX_SIG_BYTES)])
-  return { body, sig: sigBuf.toString("utf8") }
+  const [b, g] = await Promise.allSettled([fetchBytes(fetchImpl, url, maxBytes), fetchBytes(fetchImpl, sigUrl, MAX_SIG_BYTES)])
+  if (b.status === "rejected" || g.status === "rejected") {
+    const errs = [b, g].filter((r): r is PromiseRejectedResult => r.status === "rejected").map((r) => r.reason as unknown)
+    const cls: FailureClass = errs.some((e) => failureClassOf(e) === "security") ? "security" : "availability"
+    const msg = errs.map((e) => (e instanceof Error ? e.message : String(e))).join("; ")
+    throw new FetchFailure(msg, cls)
+  }
+  return { body: b.value, sig: g.value.toString("utf8") }
 }
 
 // ── 编排:refreshChannelCatalog ───────────────────────────────────────────────────────────────
@@ -664,20 +724,20 @@ export async function refreshChannelCatalog(
     snapBody = pair.body
     snapSig = pair.sig
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    // HTTP 404 = 发布面没有 snapshot(半发布/降级服务/阻断)→ security;纯网络失败 → availability。
-    const cls: FailureClass = /HTTP 404/.test(msg) ? "security" : "availability"
-    return fallback(`R13 snapshot fetch failed: ${msg}`, cls)
+    // 结构化分类:4xx(含 404 = 半发布/选择性阻断)/降级/超限 → security;纯网络故障 → availability。
+    return fallback(`R13 snapshot fetch failed: ${e instanceof Error ? e.message : e}`, failureClassOf(e))
   }
   const snapV = verifySnapshotBytes(snapBody, snapSig, trust, nowMs, { requireUnexpired: true, requireWindow: true })
   if (!snapV.ok) return fallback(snapV.error, "security")
   const snap = snapV.doc
-  // R5(snapshot 自身序列,对本 channel 的缓存基线):
+  // R5(snapshot 自身序列,对本 channel 的缓存基线;等序比**精确字节**,review M4):
   const cachedSnap = readCachedSnapshot(userDataPath, channel, trust, nowMs)
-  if (cachedSnap && snap.sequence < cachedSnap.sequence)
-    return fallback(`R5 snapshot sequence regression: ${snap.sequence} < cached ${cachedSnap.sequence}`, "security")
-  if (cachedSnap && snap.sequence === cachedSnap.sequence && JSON.stringify(snap) !== JSON.stringify(cachedSnap))
-    return fallback(`R5 snapshot replaced at same sequence ${snap.sequence} (replay/replacement)`, "security")
+  if (cachedSnap.status === "valid") {
+    if (snap.sequence < cachedSnap.doc.sequence)
+      return fallback(`R5 snapshot sequence regression: ${snap.sequence} < cached ${cachedSnap.doc.sequence}`, "security")
+    if (snap.sequence === cachedSnap.doc.sequence && !snapBody.equals(Buffer.from(cachedSnap.body, "utf8")))
+      return fallback(`R5 snapshot replaced at same sequence ${snap.sequence} (replay/replacement)`, "security")
+  }
   // R13:snapshot 必须钉住**本轮采信的 trust 的精确字节 + sequence**(trust/snapshot 偏斜 = 拒)。
   if (snap.entries.trust.sha256 !== sha256Hex(trustBody) || snap.entries.trust.sequence !== trust.sequence)
     return fallback(`R13 snapshot does not pin the trusted trust doc (trust/snapshot skew)`, "security")
@@ -733,7 +793,7 @@ export async function refreshChannelCatalog(
       payloadBody = pair.body
       payloadSig = pair.sig
     } catch (e) {
-      return fallback(`payload fetch failed: ${e instanceof Error ? e.message : e}`, "availability")
+      return fallback(`payload fetch failed: ${e instanceof Error ? e.message : e}`, failureClassOf(e))
     }
   }
   const payloadV = verifyPayloadBytes(payloadBody, payloadSig, doc.target, trust, nowMs, { requireUnexpired: true, requireWindow: true })
@@ -742,6 +802,7 @@ export async function refreshChannelCatalog(
   // 5) 全过 → coherent set 一次原子落缓存(doc/payload/snapshot 同写;trust 已先行持久化)。
   const fetchedAt = new Date(nowMs).toISOString()
   writeState(userDataPath, (st) => {
+    st.stateVersion = Math.max(st.stateVersion ?? 1, 2) // R13 高水位:只升不降(review M1)
     st.channels = st.channels ?? {}
     st.channels[channel] = {
       doc: { body: docBody.toString("utf8"), sig: docSig.trim() },
