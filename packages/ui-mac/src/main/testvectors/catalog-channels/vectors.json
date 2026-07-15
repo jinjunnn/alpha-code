@@ -1,11 +1,11 @@
 {
-  "_note": "机器可读索引:A 侧合同测试按 expected 断言。签名 = ed25519 over exact file bytes。",
-  "signingPublicKeySpkiDerB64": "MCowBQYDK2VwAyEAOPIxQqYPg5SUGMt3sIhpTkvB4EwdysKlk6ifx2ys0cg=",
-  "keyId": "e98be50732eb984e5960ae8f26fa39f3152694e447df0271a1d14f28684a7b15",
+  "_note": "机器可读索引:A 侧合同测试按 expected 断言。签名 = ed25519 over exact file bytes。由 scripts/gen-channel-testvectors.mjs 生成,勿手工编辑。",
+  "signingPublicKeySpkiDerB64": "MCowBQYDK2VwAyEARJUbF68xyKLgDI2op2s9zK5Of893QZu34fOLFFfrhNw=",
+  "keyId": "fb0dc5a3f0721e5eb595488a6f5592a59069cdaf39208dd7024794307aa09bff",
   "payload": {
     "file": "payload.catalog.json",
-    "sha256": "e6584247bb2b7aa6cd9482ab71284d6b447a7f6fb101e24ce7372d0a6c569717",
-    "bytes": 250,
+    "sha256": "a2588c51381553b3769c4f85e9aead550bae25250d5c8c47159c340603d0064c",
+    "bytes": 251,
     "sigFile": "payload.catalog.json.sig",
     "expected": "verify=true"
   },
@@ -29,6 +29,22 @@
     {
       "file": "trust.json",
       "expected": "verify=true (self key); key 99999999… is revoked; revokedTargets contains dddddddd…"
+    },
+    {
+      "file": "snapshot.json",
+      "expected": "verify=true, schema=pass; entries pin trust.json/stable.json exact bytes+sequence (R13 positive)"
+    },
+    {
+      "file": "snapshot.member-mismatch.json",
+      "expected": "verify=true, schema=pass, but entries.stable.sha256 != actual stable.json bytes — MUST reject stable (R13)"
+    },
+    {
+      "file": "snapshot.entry-missing.json",
+      "expected": "verify=true, schema=pass, but stable.json exists with no snapshot entry — MUST reject stable (R13)"
+    },
+    {
+      "file": "snapshot.sequence-mismatch.json",
+      "expected": "verify=true, schema=pass, hash pins bytes but entries.stable.sequence=999 != doc sequence — MUST reject stable (R13)"
     }
   ]
 }

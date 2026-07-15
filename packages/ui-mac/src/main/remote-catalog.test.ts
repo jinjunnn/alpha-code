@@ -1,15 +1,16 @@
-// REQ-101 A 侧接线测试 —— refreshRemoteCatalog 的 channel-first + v1 零破坏回退(issue #193)。
+// REQ-101 A 侧接线测试 —— refreshRemoteCatalog 的 channel-first + #314 fail-closed 语义。
 //
-// 断言面:① channel(stable)全链路过 → 走 channel;② channel 面不可用 → 现行 v1 语义
-// (验签/ETag/缓存回退)逐项不变;③ R11 撤销对 v1 远端与 v1 缓存同样生效(离线可判);
-// ④ v1 也失败时 channel last-known-good 兜底。纪律:无 mock.module,fetch/now/信任根 DI。
+// 断言面:① channel(stable)全链路过 → 走 channel;② **security 失败绝不碰 v1**(零 V1 请求),
+// LKG 或如实 none;③ availability 失败时 v1 仅可作**已验证 stable 身份的字节级镜像**(精确相等,
+// 否则弃用);无已验证身份(fresh install)禁 v1;④ snapshot 缺失(404)= security;⑤ R11 对
+// v1 缓存生效;⑥ 非 stable 通道恒不碰 v1;⑦ singleflight。纪律:无 mock.module,DI 全注入。
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as crypto from "node:crypto"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { refreshChannelCatalog, sha256Hex, type ChannelClientDeps } from "./catalog-channels"
+import { sha256Hex, type ChannelClientDeps } from "./catalog-channels"
 import { readCachedCatalog, refreshRemoteCatalog } from "./remote-catalog"
 import { registryChannelFor } from "./alpha-environment"
 
@@ -87,21 +88,60 @@ function channelBody(signer: TestKey, payloadBody: string, over: Record<string, 
   )
 }
 
+let snapSeq = 100 // 单调:等序异字节 = R5 replacement
+function snapshotBody(signer: TestKey, members: Record<string, string>, over: Record<string, unknown> = {}): string {
+  const entries: Record<string, { sequence: number; sha256: string }> = {}
+  for (const [name, body] of Object.entries(members)) {
+    entries[name] = { sequence: (JSON.parse(body) as { sequence: number }).sequence, sha256: sha256Hex(body) }
+  }
+  return JSON.stringify(
+    {
+      schema: "alpha.catalog.snapshot.v1",
+      sequence: ++snapSeq,
+      publishedAt: "2026-07-13T00:00:00.000Z",
+      expires: "2026-08-12T00:00:00.000Z",
+      keyId: signer.keyId,
+      entries,
+      ...over,
+    },
+    null,
+    2,
+  )
+}
+
 const payloadOf = (version: string, marker = "m") =>
   JSON.stringify({ version, entries: [{ id: `skill:${marker}` }] }, null, 2)
 
-function channelRoutes(k: TestKey, payloadBody: string, trustOver: Record<string, unknown> = {}, channel = "stable"): Record<string, string> {
-  const trust = trustBody(k, trustOver)
-  const doc = channelBody(k, payloadBody, { channel })
+type RouteOpts = {
+  channel?: string
+  trustOver?: Record<string, unknown>
+  docOver?: Record<string, unknown>
+  /** 不 serve payload 路由(availability 失败注入)。 */
+  omitPayload?: boolean
+  /** 不 serve snapshot 路由(#314:缺失 = security)。 */
+  omitSnapshot?: boolean
+}
+function channelRoutes(k: TestKey, payloadBody: string, opts: RouteOpts = {}): Record<string, string> {
+  const channel = opts.channel ?? "stable"
+  const trust = trustBody(k, opts.trustOver)
+  const doc = channelBody(k, payloadBody, { channel, ...opts.docOver })
+  const snap = snapshotBody(k, { trust, [channel]: doc })
   const version = (JSON.parse(payloadBody) as { version: string }).version
-  return {
+  const routes: Record<string, string> = {
     [`${CH_BASE}/channels/trust.json`]: trust,
     [`${CH_BASE}/channels/trust.json.sig`]: signB64(trust, k),
     [`${CH_BASE}/channels/${channel}.json`]: doc,
     [`${CH_BASE}/channels/${channel}.json.sig`]: signB64(doc, k),
-    [`${CH_BASE}/releases/${version}/catalog.json`]: payloadBody,
-    [`${CH_BASE}/releases/${version}/catalog.json.sig`]: signB64(payloadBody, k),
   }
+  if (!opts.omitSnapshot) {
+    routes[`${CH_BASE}/channels/snapshot.json`] = snap
+    routes[`${CH_BASE}/channels/snapshot.json.sig`] = signB64(snap, k)
+  }
+  if (!opts.omitPayload) {
+    routes[`${CH_BASE}/releases/${version}/catalog.json`] = payloadBody
+    routes[`${CH_BASE}/releases/${version}/catalog.json.sig`] = signB64(payloadBody, k)
+  }
+  return routes
 }
 
 const depsOf = (fetchImpl: typeof fetch, k: TestKey): ChannelClientDeps => ({
@@ -111,94 +151,128 @@ const depsOf = (fetchImpl: typeof fetch, k: TestKey): ChannelClientDeps => ({
   builtinKeyB64: k.publicKeyB64,
 })
 
-describe("refreshRemoteCatalog 接线(channel-first + v1 零破坏)", () => {
+const v1Hit = (calls: string[]) => calls.some((u) => u === V1_URL || u === `${V1_URL}.sig`)
+
+/** 先经 channel 面建立健康 LKG(version 2026-07-13.1)。 */
+async function seedStableLkg(k: TestKey, payload: string) {
+  const seed = serve(channelRoutes(k, payload))
+  const r = await refreshRemoteCatalog(dir, "stable", depsOf(seed.fetchImpl, k))
+  expect(r.source).toBe("remote")
+}
+
+describe("refreshRemoteCatalog 接线(channel-first + #314 fail-closed before v1)", () => {
   test("channel(stable)全链路过 → via=channel-stable,采信已验 payload", async () => {
     const k = genKey()
     const payload = payloadOf("2026-07-13.1")
-    const { fetchImpl } = serve(channelRoutes(k, payload))
+    const { fetchImpl, calls } = serve(channelRoutes(k, payload))
     const r = await refreshRemoteCatalog(dir, "stable", depsOf(fetchImpl, k))
     expect(r.source).toBe("remote")
     if (r.source === "none") throw new Error("unreachable")
     expect(r.via).toBe("channel-stable")
     expect(r.version).toBe("2026-07-13.1")
+    expect(v1Hit(calls)).toBe(false)
   })
 
-  test("channel 面不可用(端点 404)→ loud 回退现行 v1 路径:验签采信 + 落缓存", async () => {
+  test("fresh install + channel 面全 404 + 合法 v1 在线 → none(security),v1 零请求", async () => {
     const k = genKey()
     const v1 = payloadOf("2026-07-13.1", "legacy")
-    const { fetchImpl } = serve({
-      [V1_URL]: v1,
-      [`${V1_URL}.sig`]: signB64(v1, k),
-    })
+    const { fetchImpl, calls } = serve({ [V1_URL]: v1, [`${V1_URL}.sig`]: signB64(v1, k) })
+    const r = await refreshRemoteCatalog(dir, "stable", depsOf(fetchImpl, k))
+    expect(r.source).toBe("none")
+    if (r.source !== "none") throw new Error("unreachable")
+    expect(r.reasonClass).toBe("security") // 无可验 trust
+    expect(v1Hit(calls)).toBe(false)
+  })
+
+  test("security 失败(channel doc 被篡改)+ 合法 v1 在线 → 绝不碰 v1,LKG 兜底", async () => {
+    const k = genKey()
+    const payload = payloadOf("2026-07-13.1")
+    await seedStableLkg(k, payload)
+    // 第二世界:doc 字节被改(签名失效),v1 完全合法可用
+    const routes = channelRoutes(k, payload)
+    const tampered = routes[`${CH_BASE}/channels/stable.json`].replace('"sequence": 5', '"sequence": 6')
+    routes[`${CH_BASE}/channels/stable.json`] = tampered
+    // snapshot 重钉篡改后的字节(攻击者可自建 snapshot?不能 —— 无签名钥;这里保持旧 snapshot = R13/R1 双杀)
+    const v1 = payloadOf("2026-07-13.1", "legacy")
+    routes[V1_URL] = v1
+    routes[`${V1_URL}.sig`] = signB64(v1, k)
+    const { fetchImpl, calls } = serve(routes)
+    const r = await refreshRemoteCatalog(dir, "stable", depsOf(fetchImpl, k))
+    expect(r.source).toBe("cache")
+    if (r.source === "none") throw new Error("unreachable")
+    expect(r.via).toBe("channel-stable")
+    expect(r.reasonClass).toBe("security")
+    expect(v1Hit(calls)).toBe(false)
+  })
+
+  test("snapshot 缺失(404)= security:LKG 兜底,v1 零请求", async () => {
+    const k = genKey()
+    const payload = payloadOf("2026-07-13.1")
+    await seedStableLkg(k, payload)
+    const routes = channelRoutes(k, payload, { omitSnapshot: true })
+    const v1 = payloadOf("2026-07-13.1", "legacy")
+    routes[V1_URL] = v1
+    routes[`${V1_URL}.sig`] = signB64(v1, k)
+    const { fetchImpl, calls } = serve(routes)
+    const r = await refreshRemoteCatalog(dir, "stable", depsOf(fetchImpl, k))
+    expect(r.source).toBe("cache")
+    if (r.source === "none") throw new Error("unreachable")
+    expect(r.error ?? "").toContain("R13")
+    expect(r.reasonClass).toBe("security")
+    expect(v1Hit(calls)).toBe(false)
+  })
+
+  test("availability(payload 拉取失败)+ 已验身份 + v1 同身份 → v1 作字节级镜像(via=v1)", async () => {
+    const k = genKey()
+    const payload = payloadOf("2026-07-13.1")
+    await seedStableLkg(k, payload)
+    // 清掉 channel LKG payload 复用面:构造新一轮 doc(seq 6)指向**同一** payload,但 payload 路由缺席
+    // → reuse 命中(digest 相同)… 为真正触发 availability,改用不同 bytes 的同版本会撞 R7。
+    // 因此用:trust/snapshot/doc 全 404 以外的纯网络故障面 —— 这里选 payload 缺席 + LKG digest 不同:
+    // 新版本 2026-07-13.2 的 payload 路由缺席 → payload fetch failed(availability)。
+    const payload2 = payloadOf("2026-07-13.2")
+    const routes = channelRoutes(k, payload2, { docOver: { sequence: 6 }, omitPayload: true })
+    // v1 = LKG 身份(version 2026-07-13.1 的同一字节)→ 镜像放行
+    routes[V1_URL] = payload
+    routes[`${V1_URL}.sig`] = signB64(payload, k)
+    const { fetchImpl } = serve(routes)
     const r = await refreshRemoteCatalog(dir, "stable", depsOf(fetchImpl, k))
     expect(r.source).toBe("remote")
     if (r.source === "none") throw new Error("unreachable")
     expect(r.via).toBe("v1")
-    expect(r.version).toBe("2026-07-13.1")
-    // v1 缓存语义不变:断网 → cache 回退(loud)
-    const { fetchImpl: dead } = serve({})
-    const r2 = await refreshRemoteCatalog(dir, "stable", depsOf(dead, k))
-    expect(r2.source).toBe("cache")
-    if (r2.source === "none") throw new Error("unreachable")
-    expect(r2.via).toBe("v1")
-    expect(r2.error ?? "").not.toBe("")
+    expect(r.version).toBe("2026-07-13.1") // 镜像 = 已验证身份,不是 v1 自称的任何新内容
   })
 
-  test("v1 ETag 304 语义不变(channel 面缺席时)", async () => {
+  test("availability + v1 身份不符(更新版本)→ 拒 v1,LKG 兜底(via=channel-stable)", async () => {
     const k = genKey()
-    const v1 = payloadOf("2026-07-13.1", "legacy")
-    const sig = signB64(v1, k)
-    const first = serve({
-      [V1_URL]: () => new Response(v1, { headers: { etag: '"abc"' } }),
-      [`${V1_URL}.sig`]: sig,
-    })
-    expect((await refreshRemoteCatalog(dir, "stable", depsOf(first.fetchImpl, k))).source).toBe("remote")
-    const second = serve({
-      [V1_URL]: (headers) =>
-        headers["if-none-match"] === '"abc"' ? new Response(null, { status: 304 }) : new Response(v1, { headers: { etag: '"abc"' } }),
-      [`${V1_URL}.sig`]: sig,
-    })
-    const r = await refreshRemoteCatalog(dir, "stable", depsOf(second.fetchImpl, k))
-    expect(r.source).toBe("remote")
+    const payload = payloadOf("2026-07-13.1")
+    await seedStableLkg(k, payload)
+    const payload2 = payloadOf("2026-07-13.2")
+    const routes = channelRoutes(k, payload2, { docOver: { sequence: 6 }, omitPayload: true })
+    const v1Newer = payloadOf("2026-07-13.9", "newer") // 合法签名但身份 ≠ 已验证 stable
+    routes[V1_URL] = v1Newer
+    routes[`${V1_URL}.sig`] = signB64(v1Newer, k)
+    const { fetchImpl } = serve(routes)
+    const r = await refreshRemoteCatalog(dir, "stable", depsOf(fetchImpl, k))
+    expect(r.source).toBe("cache")
     if (r.source === "none") throw new Error("unreachable")
-    expect(r.via).toBe("v1")
+    expect(r.via).toBe("channel-stable")
     expect(r.version).toBe("2026-07-13.1")
   })
 
-  test("v1 验签不过仍拒(SIGNATURE INVALID,现行语义)", async () => {
+  test("availability + v1 验签不过 → 拒 v1,LKG 兜底", async () => {
     const k = genKey()
-    const v1 = payloadOf("2026-07-13.1", "legacy")
-    const { fetchImpl } = serve({
-      [V1_URL]: v1,
-      [`${V1_URL}.sig`]: signB64("tampered bytes", k),
-    })
+    const payload = payloadOf("2026-07-13.1")
+    await seedStableLkg(k, payload)
+    const payload2 = payloadOf("2026-07-13.2")
+    const routes = channelRoutes(k, payload2, { docOver: { sequence: 6 }, omitPayload: true })
+    routes[V1_URL] = payload
+    routes[`${V1_URL}.sig`] = signB64("tampered bytes", k)
+    const { fetchImpl } = serve(routes)
     const r = await refreshRemoteCatalog(dir, "stable", depsOf(fetchImpl, k))
-    expect(r.source).toBe("none")
-    if (r.source !== "none") throw new Error("unreachable")
-    expect(r.error).toContain("SIGNATURE INVALID")
-  })
-
-  test("R11 对 v1 远端生效:trust 撤销的 digest 即便签名有效也拒(离线用缓存 trust 判)", async () => {
-    const k = genKey()
-    const v1 = payloadOf("2026-07-13.1", "legacy")
-    // 先经 channel 机器缓存一份撤销 v1 digest 的 trust(channel 指针缺席 → channel 面本身失败,但 trust 已先行落盘)
-    const trust = trustBody(k, {
-      revokedTargets: [{ sha256: sha256Hex(v1), reason: "supply-chain pull", revokedAt: "2026-07-13T00:00:00.000Z" }],
-    })
-    const seed = serve({
-      [`${CH_BASE}/channels/trust.json`]: trust,
-      [`${CH_BASE}/channels/trust.json.sig`]: signB64(trust, k),
-    })
-    expect((await refreshChannelCatalog(dir, "stable", depsOf(seed.fetchImpl, k))).source).toBe("none")
-    // channel 面仍不可用;v1 远端给出被撤销的 payload(签名完全有效)→ 必须拒,fail closed
-    const { fetchImpl } = serve({
-      [V1_URL]: v1,
-      [`${V1_URL}.sig`]: signB64(v1, k),
-    })
-    const r = await refreshRemoteCatalog(dir, "stable", depsOf(fetchImpl, k))
-    expect(r.source).toBe("none")
-    if (r.source !== "none") throw new Error("unreachable")
-    expect(r.error).toContain("R11")
+    expect(r.source).toBe("cache")
+    if (r.source === "none") throw new Error("unreachable")
+    expect(r.via).toBe("channel-stable")
   })
 
   test("R11 对 v1 已缓存内容生效:readCachedCatalog 命中撤销 digest → 丢弃", async () => {
@@ -214,18 +288,20 @@ describe("refreshRemoteCatalog 接线(channel-first + v1 零破坏)", () => {
     expect(readCachedCatalog(dir, { ...opts, revoked: new Map([[sha256Hex(v1), "pulled"]]) })).toBeNull()
   })
 
-  test("channel 与 v1 双双拉取失败 → channel last-known-good 兜底(loud)", async () => {
+  test("channel 全断(availability)→ channel last-known-good 兜底(loud),身份未知不碰 v1", async () => {
     const k = genKey()
     const payload = payloadOf("2026-07-13.1")
-    const seed = serve(channelRoutes(k, payload))
-    expect((await refreshRemoteCatalog(dir, "stable", depsOf(seed.fetchImpl, k))).source).toBe("remote")
-    const { fetchImpl: dead } = serve({})
-    const r = await refreshRemoteCatalog(dir, "stable", depsOf(dead, k))
+    await seedStableLkg(k, payload)
+    // 全 404:trust 走缓存,snapshot 404 = security → LKG;v1 不碰
+    const v1 = payloadOf("2026-07-13.9", "legacy")
+    const { fetchImpl, calls } = serve({ [V1_URL]: v1, [`${V1_URL}.sig`]: signB64(v1, k) })
+    const r = await refreshRemoteCatalog(dir, "stable", depsOf(fetchImpl, k))
     expect(r.source).toBe("cache")
     if (r.source === "none") throw new Error("unreachable")
     expect(r.via).toBe("channel-stable")
     expect(r.version).toBe("2026-07-13.1")
     expect(r.error ?? "").not.toBe("")
+    expect(v1Hit(calls)).toBe(false)
   })
 })
 
@@ -237,14 +313,14 @@ describe("#302 环境通道路由", () => {
       const d = fs.mkdtempSync(path.join(os.tmpdir(), `rc-route-${channel}-`))
       const k = genKey()
       const payload = payloadOf("2026-07-13.1", channel)
-      const { fetchImpl, calls } = serve(channelRoutes(k, payload, {}, channel))
+      const { fetchImpl, calls } = serve(channelRoutes(k, payload, { channel }))
       const r = await refreshRemoteCatalog(d, registryChannelFor(env), depsOf(fetchImpl, k))
       expect(r.source).toBe("remote")
       if (r.source === "none") throw new Error("unreachable")
       expect(r.via).toBe(`channel-${channel}`)
       expect(r.channel).toBe(channel)
       expect(calls.some((u) => u.endsWith(`/channels/${channel}.json`))).toBe(true)
-      expect(calls.some((u) => u === V1_URL)).toBe(false)
+      expect(v1Hit(calls)).toBe(false)
       fs.rmSync(d, { recursive: true, force: true })
     }
   })
@@ -252,17 +328,18 @@ describe("#302 环境通道路由", () => {
   test("非 stable 通道失败绝不访问 v1(fail closed):无 LKG → none,V1 URL 零请求", async () => {
     const k = genKey()
     const v1 = payloadOf("2026-07-13.9", "legacy")
-    // 只有 v1 端点可用;preview 通道全 404。
     const { fetchImpl, calls } = serve({ [V1_URL]: v1, [`${V1_URL}.sig`]: signB64(v1, k) })
     const r = await refreshRemoteCatalog(dir, "preview", depsOf(fetchImpl, k))
     expect(r.source).toBe("none")
-    expect(calls.some((u) => u === V1_URL || u === `${V1_URL}.sig`)).toBe(false)
+    if (r.source !== "none") throw new Error("unreachable")
+    expect(r.reasonClass).toBe("security")
+    expect(v1Hit(calls)).toBe(false)
   })
 
   test("非 stable 通道失败退同通道 LKG(已验缓存),仍不打 v1", async () => {
     const k = genKey()
     const payload = payloadOf("2026-07-13.1", "pv")
-    const good = serve(channelRoutes(k, payload, {}, "preview"))
+    const good = serve(channelRoutes(k, payload, { channel: "preview" }))
     expect((await refreshRemoteCatalog(dir, "preview", depsOf(good.fetchImpl, k))).source).toBe("remote")
     const v1 = payloadOf("2026-07-13.9", "legacy")
     const bad = serve({ [V1_URL]: v1, [`${V1_URL}.sig`]: signB64(v1, k) })
@@ -271,7 +348,7 @@ describe("#302 环境通道路由", () => {
     if (r.source === "none") throw new Error("unreachable")
     expect(r.channel).toBe("preview")
     expect(r.version).toBe("2026-07-13.1") // preview LKG,不是 stable v1 的 2026-07-13.9
-    expect(bad.calls.some((u) => u === V1_URL || u === `${V1_URL}.sig`)).toBe(false)
+    expect(v1Hit(bad.calls)).toBe(false)
   })
 
   test("singleflight:同 (dir, channel) 并发合并为一次拉取,结果一致", async () => {

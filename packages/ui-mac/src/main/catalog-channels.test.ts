@@ -1,8 +1,8 @@
 // REQ-101 A 侧单测/合同测试 —— signed channel metadata 验证机器(catalog-channels.ts,issue #193)。
 //
 // 两部分:
-//   1. B 侧 testvectors 合同测试(testvectors/catalog-channels/,来源 alpha-web@9cb6057,见 SOURCE.md):
-//      vectors.json 的 expected 逐条断言;三个负向(tampered/expired/mix-and-match)必须拒绝。
+//   1. B 侧 testvectors 合同测试(testvectors/catalog-channels/,来源 alpha-web@6a11567,见 SOURCE.md):
+//      vectors.json 的 expected 逐条断言;负向(tampered/expired/mix-and-match + snapshot 三型)必须拒绝。
 //   2. 合成宇宙拒绝矩阵:测试内生成 ed25519 钥,覆盖 R1/R4/R5/R6/R7/R8/R9/R10/R11 + keyId 绑定 +
 //      轮换窗口 + revoked 钥对缓存生效 + last-known-good(loud)+ 缓存重验签。
 //
@@ -124,17 +124,45 @@ function channelDoc(
   return { body, sig: signB64(body, signer) }
 }
 
-/** 全套端点路由:trust + stable 指针 + payload(payload 签名者可与指针签名者不同,轮换用)。 */
+/** #314:签名 snapshot,精确钉住给定成员文档的字节 + sequence(R13 一致性)。 */
+let snapSeq = 100 // 单调:等序异字节 = R5 replacement,连续世界必须逐份递增
+function snapshotDoc(signer: TestKey, members: Record<string, { body: string }>, over: Record<string, unknown> = {}) {
+  const entries: Record<string, { sequence: number; sha256: string }> = {}
+  for (const [name, m] of Object.entries(members)) {
+    entries[name] = { sequence: (JSON.parse(m.body) as { sequence: number }).sequence, sha256: sha256Hex(m.body) }
+  }
+  const body = JSON.stringify(
+    {
+      schema: "alpha.catalog.snapshot.v1",
+      sequence: ++snapSeq,
+      publishedAt: "2026-07-13T00:00:00.000Z",
+      expires: "2026-08-12T00:00:00.000Z",
+      keyId: signer.keyId,
+      entries,
+      ...over,
+    },
+    null,
+    2,
+  )
+  return { body, sig: signB64(body, signer) }
+}
+
+/** 全套端点路由:trust + snapshot(#314,钉住 trust/stable)+ stable 指针 + payload
+ *  (payload 签名者可与指针签名者不同,轮换用;snapshot 签名者可显式覆盖)。 */
 function worldRoutes(
   trust: { body: string; sig: string },
   doc: { body: string; sig: string },
   payloadBody: string,
   payloadSigner: TestKey,
+  opts: { snapshot?: { body: string; sig: string }; snapshotSigner?: TestKey } = {},
 ): Record<string, string> {
   const version = (JSON.parse(payloadBody) as { version: string }).version
+  const snap = opts.snapshot ?? snapshotDoc(opts.snapshotSigner ?? payloadSigner, { trust, stable: doc })
   return {
     [`${BASE}/channels/trust.json`]: trust.body,
     [`${BASE}/channels/trust.json.sig`]: trust.sig,
+    [`${BASE}/channels/snapshot.json`]: snap.body,
+    [`${BASE}/channels/snapshot.json.sig`]: snap.sig,
     [`${BASE}/channels/stable.json`]: doc.body,
     [`${BASE}/channels/stable.json.sig`]: doc.sig,
     [`${BASE}/releases/${version}/catalog.json`]: payloadBody,
@@ -160,7 +188,7 @@ async function seedLkg(k1: TestKey, over: Record<string, unknown> = {}) {
   return { trust, payload, doc }
 }
 
-// ══ Part 1:B 侧 testvectors 合同测试(来源 alpha-web@9cb6057)═══════════════════════════════
+// ══ Part 1:B 侧 testvectors 合同测试(来源 alpha-web@6a11567,#35 snapshot 向量集)═══════════════════════════════
 
 const VEC_DIR = path.join(import.meta.dir, "testvectors", "catalog-channels")
 const vecStr = (f: string) => fs.readFileSync(path.join(VEC_DIR, f), "utf8")
@@ -173,10 +201,12 @@ const VEC_KEY_B64 = vecStr("signing-key.pub.b64").trim()
 
 /** vectors 宇宙:channels 面挂在 VEC_BASE;payload 面按 stable.json.target.url 的**绝对地址**路由。 */
 const VEC_BASE = "https://vectors.test/catalog/v1"
-function vectorRoutes(stableFile: string): Record<string, string> {
+function vectorRoutes(stableFile: string, snapshotFile = "snapshot.json"): Record<string, string> {
   return {
     [`${VEC_BASE}/channels/trust.json`]: vecStr("trust.json"),
     [`${VEC_BASE}/channels/trust.json.sig`]: vecStr("trust.json.sig"),
+    [`${VEC_BASE}/channels/snapshot.json`]: vecStr(snapshotFile),
+    [`${VEC_BASE}/channels/snapshot.json.sig`]: vecStr(`${snapshotFile}.sig`),
     [`${VEC_BASE}/channels/stable.json`]: vecStr(stableFile),
     [`${VEC_BASE}/channels/stable.json.sig`]: vecStr(`${stableFile}.sig`),
     "https://alphacodeone.com/catalog/v1/releases/9.9.9/catalog.json": vecStr("payload.catalog.json"),
@@ -190,7 +220,7 @@ const vecDeps = (fetchImpl: typeof fetch): ChannelClientDeps => ({
   builtinKeyB64: VEC_KEY_B64,
 })
 
-describe("testvectors 合同(B 侧 @9cb6057)", () => {
+describe("testvectors 合同(B 侧 @6a11567,含 snapshot)", () => {
   test("keyId 推导 = 公钥 SPKI DER 的 sha256(vectors.json 钉住)", () => {
     expect(vectors.signingPublicKeySpkiDerB64).toBe(VEC_KEY_B64)
     expect(keyIdOfSpkiDerB64(VEC_KEY_B64)).toBe(vectors.keyId)
@@ -255,13 +285,17 @@ describe("testvectors 合同(B 侧 @9cb6057)", () => {
     expect(r.source).toBe("none")
     if (r.source !== "none") throw new Error("unreachable")
     expect(r.error).toContain("R3")
-    // 同一份文档按它自述的 dev 请求则可采信(证明拒的是 mix-and-match 不是文档本身)
+    // #314:同一份文档按它自述的 dev 请求 —— 向量 snapshot 只钉 trust+stable,dev entry 缺失
+    // = R13 拒(entry-less channel 一律拒,裁决语义);"文档本身可采信"由合成宇宙 dev 用例证明。
     const routes = vectorRoutes("stable.json")
     routes[`${VEC_BASE}/channels/dev.json`] = vecStr("mixmatch.dev-as-stable.json")
     routes[`${VEC_BASE}/channels/dev.json.sig`] = vecStr("mixmatch.dev-as-stable.json.sig")
     const { fetchImpl: f2 } = serve(routes)
     const asDev = await refreshChannelCatalog(dir, "dev", vecDeps(f2))
-    expect(asDev.source).toBe("remote")
+    expect(asDev.source).toBe("none")
+    if (asDev.source !== "none") throw new Error("unreachable")
+    expect(asDev.error).toContain("R13")
+    expect(asDev.reasonClass).toBe("security")
   })
 
   test("last-known-good(向量):先采信 stable.json,再遇 tampered → 回退缓存且 loud", async () => {
@@ -548,9 +582,12 @@ describe("拒绝矩阵(合成 ed25519 宇宙)", () => {
     const selfRevoked = trustDoc(k1, { sequence: 2, keys: [keyEntry(k1, { status: "revoked" })] })
     const { fetchImpl } = serve(worldRoutes(selfRevoked, doc, payload, k1))
     const r = await refreshChannelCatalog(dir, "stable", depsOf(fetchImpl, k1))
-    expect(r.source).toBe("remote") // 缓存 trust(seq 1)仍锚定;新 trust 被拒只是 loud notice
-    if (r.source !== "remote") throw new Error("unreachable")
-    expect(r.error ?? "").toContain("trust")
+    // #314:自锁 trust 被拒 → 沿用缓存 trust;但服务端 snapshot 钉的是被拒 trust = 偏斜,
+    // R13 security → LKG(fail-closed:偏斜集合不采信新指针)。
+    expect(r.source).toBe("cache")
+    if (r.source !== "cache") throw new Error("unreachable")
+    expect(r.error ?? "").toContain("R13")
+    expect(r.reasonClass).toBe("security")
   })
 
   test("R5(trust):trust sequence 回退 → 拒新 trust,沿用缓存,loud notice", async () => {
@@ -561,9 +598,12 @@ describe("拒绝矩阵(合成 ed25519 宇宙)", () => {
     const doc = channelDoc(k1, payload, { sequence: 6 })
     const { fetchImpl } = serve(worldRoutes(older, doc, payload, k1))
     const r = await refreshChannelCatalog(dir, "stable", depsOf(fetchImpl, k1))
-    expect(r.source).toBe("remote")
-    if (r.source !== "remote") throw new Error("unreachable")
-    expect(r.error ?? "").toContain("R5 trust")
+    // #314:旧 trust 被拒(R5,loud notice 保留)→ 沿用缓存 trust;snapshot 钉旧 trust = 偏斜
+    // → R13 security → LKG。
+    expect(r.source).toBe("cache")
+    if (r.source !== "cache") throw new Error("unreachable")
+    expect(r.error ?? "").toContain("R13")
+    expect(r.reasonClass).toBe("security")
   })
 
   test("R4(trust):缓存 trust 已过期 → 不锚定新状态,只回退 last-known-good,loud", async () => {
@@ -628,5 +668,97 @@ describe("基础件", () => {
     const t3 = structuredClone(good)
     t3.channel = "nightly"
     expect(validateChannelDoc(t3).ok).toBe(false)
+  })
+})
+
+// ══ Part 3:#314 snapshot 一致性(R13)+ 失败分类 ═══════════════════════════════════════════════
+
+describe("#314 snapshot 一致性与 fail-closed 分类", () => {
+  test("向量三负向:member-mismatch / entry-missing / sequence-mismatch → stable 拒(R13,security)", async () => {
+    for (const snapFile of ["snapshot.member-mismatch.json", "snapshot.entry-missing.json", "snapshot.sequence-mismatch.json"]) {
+      const d = fs.mkdtempSync(path.join(os.tmpdir(), "snap-neg-"))
+      const { fetchImpl } = serve(vectorRoutes("stable.json", snapFile))
+      const r = await refreshChannelCatalog(d, "stable", vecDeps(fetchImpl))
+      expect(r.source).toBe("none")
+      if (r.source !== "none") throw new Error("unreachable")
+      expect(r.error).toContain("R13")
+      expect(r.reasonClass).toBe("security")
+      fs.rmSync(d, { recursive: true, force: true })
+    }
+  })
+
+  test("snapshot 缺失(404)→ security 拒;LKG 在场则回 LKG 并保留 R13 error", async () => {
+    const k1 = genKey()
+    const { trust, payload, doc } = await seedLkg(k1)
+    const routes = worldRoutes(trust, doc, payload, k1)
+    delete routes[`${BASE}/channels/snapshot.json`]
+    delete routes[`${BASE}/channels/snapshot.json.sig`]
+    const { fetchImpl } = serve(routes)
+    const r = await refreshChannelCatalog(dir, "stable", depsOf(fetchImpl, k1))
+    expect(r.source).toBe("cache")
+    if (r.source !== "cache") throw new Error("unreachable")
+    expect(r.error ?? "").toContain("R13")
+    expect(r.reasonClass).toBe("security")
+  })
+
+  test("R5(snapshot):序列低于本 channel 缓存基线 → 拒;等序异字节(replacement)也拒", async () => {
+    const k1 = genKey()
+    const { trust, payload, doc } = await seedLkg(k1) // 缓存 snapshot seq = N
+    const cachedSeq = (JSON.parse(fs.readFileSync(channelStatePath(dir), "utf8")).channels.stable.snapshot &&
+      (JSON.parse(JSON.parse(fs.readFileSync(channelStatePath(dir), "utf8")).channels.stable.snapshot.body) as { sequence: number })
+        .sequence) as number
+    expect(Number.isInteger(cachedSeq)).toBe(true)
+    // 序列回退
+    const older = snapshotDoc(k1, { trust, stable: doc }, { sequence: cachedSeq - 1 })
+    const r1 = await refreshChannelCatalog(dir, "stable", depsOf(serve(worldRoutes(trust, doc, payload, k1, { snapshot: older })).fetchImpl, k1))
+    expect(r1.source).toBe("cache")
+    if (r1.source !== "cache") throw new Error("unreachable")
+    expect(r1.error ?? "").toContain("R5 snapshot")
+    // 等序异字节(publishedAt 改动)
+    const replaced = snapshotDoc(k1, { trust, stable: doc }, { sequence: cachedSeq, publishedAt: "2026-07-13T00:00:01.000Z" })
+    const r2 = await refreshChannelCatalog(dir, "stable", depsOf(serve(worldRoutes(trust, doc, payload, k1, { snapshot: replaced })).fetchImpl, k1))
+    expect(r2.source).toBe("cache")
+    if (r2.source !== "cache") throw new Error("unreachable")
+    expect(r2.error ?? "").toContain("R5 snapshot")
+  })
+
+  test("R13-on-cache:本地篡改缓存 doc(换成另一份合法签名文档)→ LKG 因与缓存 snapshot 失配被弃", async () => {
+    const k1 = genKey()
+    const { trust, payload } = await seedLkg(k1)
+    // 用同钥签一份 seq 6 的合法 doc 换进缓存(签名有效,但 snapshot 钉的是 seq 5 的字节)
+    const swapped = channelDoc(k1, payload, { sequence: 6 })
+    const st = JSON.parse(fs.readFileSync(channelStatePath(dir), "utf8"))
+    st.channels.stable.doc = { body: swapped.body, sig: swapped.sig }
+    fs.writeFileSync(channelStatePath(dir), JSON.stringify(st))
+    const lkg = readChannelLastKnownGood(dir, "stable", (JSON.parse(trust.body) as TrustDoc), NOW)
+    expect(lkg).toBeNull()
+  })
+
+  test("dev 文档在 snapshot 钉住 dev entry 时可采信(证明 R3 拒的是 mix-and-match,不是文档本身)", async () => {
+    const k1 = genKey()
+    const trust = trustDoc(k1)
+    const payload = payloadOf("2.0.0", "dev")
+    const devDoc = channelDoc(k1, payload, { channel: "dev" })
+    const snap = snapshotDoc(k1, { trust, dev: devDoc })
+    const version = "2.0.0"
+    const { fetchImpl } = serve({
+      [`${BASE}/channels/trust.json`]: trust.body,
+      [`${BASE}/channels/trust.json.sig`]: trust.sig,
+      [`${BASE}/channels/snapshot.json`]: snap.body,
+      [`${BASE}/channels/snapshot.json.sig`]: snap.sig,
+      [`${BASE}/channels/dev.json`]: devDoc.body,
+      [`${BASE}/channels/dev.json.sig`]: devDoc.sig,
+      [`${BASE}/releases/${version}/catalog.json`]: payload,
+      [`${BASE}/releases/${version}/catalog.json.sig`]: signB64(payload, k1),
+    })
+    const r = await refreshChannelCatalog(dir, "dev", depsOf(fetchImpl, k1))
+    expect(r.source).toBe("remote")
+  })
+
+  test("readRevokedTargets:无可验 trust → null(撤销状态未知,不是空集)", () => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), "rvk-null-"))
+    const k = genKey()
+    expect(readRevokedTargets(d, { now: () => NOW, builtinKeyB64: k.publicKeyB64 })).toBeNull()
+    fs.rmSync(d, { recursive: true, force: true })
   })
 })

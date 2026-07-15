@@ -6,9 +6,12 @@
 // 验签不过 = 拒用并 loud,绝不静默降级采信未签内容)。
 //
 // REQ-101 A(issue #193)增量:**channel-first** —— 先走 signed channel metadata(stable 指针,
-// 见 catalog-channels.ts,合同 CONTRACT.md §5)取已验 payload;channel 面任一环节不过 → loud →
-// 原样回退现行 v1 兼容面(零破坏)。v1 面同时执行 R11:payload digest 命中 trust 撤销列表 →
-// 拒用(对远端与已缓存内容都生效,离线可判)。
+// 见 catalog-channels.ts,合同 CONTRACT.md §5)取已验 payload。
+// #314 fail-closed(裁决语义,取代"失败即回退 v1"):
+//   - security 类失败(R1-R13/撤销/过期/无 trust/snapshot 缺失)→ **绝不碰 v1**,LKG 或如实 none;
+//   - availability 类失败 → v1 仅可作**已验证 stable 身份的字节级镜像**(version+digest 与
+//     channel LKG 精确相等,否则弃用);无已验证身份(fresh install/清态)→ 禁 v1;
+//   - R11 撤销集不可验(无可验 trust)→ v1 整面拒用;v1 一切版本判断取自已签 body。
 //
 // 资产通道(phase 1 仅 skill/agent 文本):条目 remoteAsset.files[] 逐文件下载 + **sha256 钉死**,
 // 不匹配拒装(loud);plugin(可执行 JS)不进本通道(REQ-032 非目标,仍走 vendored/npm)。
@@ -24,6 +27,7 @@ import {
   sha256Hex,
   type ChannelClientDeps,
   type ChannelName,
+  type FailureClass,
 } from "./catalog-channels"
 
 export { catalogVersionLess } // 既有导出面保持(版本比较实现移居 catalog-channels,逐字未变)
@@ -49,8 +53,10 @@ export type RemoteCatalogResult =
       via: `channel-${ChannelName}` | "v1"
       /** 内容通道(REQ-098 #302 结构化字段,不要解析 via 字符串):v1 面恒为 stable。成功分支恒有。 */
       channel: ChannelName
+      /** #314:非 remote 结果的失败类(security 失败绝不借道 v1;消费方据此决定激活面,#315)。 */
+      reasonClass?: FailureClass
     }
-  | { source: "none"; error: string }
+  | { source: "none"; error: string; reasonClass: FailureClass }
 
 const cachePath = (userDataPath: string) => path.join(userDataPath, "remote-catalog.json")
 
@@ -95,6 +101,16 @@ export function readCachedCatalog(
   return null
 }
 
+/** 缓存的已签 body 原始字节(身份/digest 判断只能针对签名覆盖的字节,不用缓存元数据)。 */
+function readCachedCatalogBody(userDataPath: string): Buffer | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(cachePath(userDataPath), "utf8")) as { body?: unknown }
+    return typeof raw.body === "string" ? Buffer.from(raw.body, "utf8") : null
+  } catch {
+    return null
+  }
+}
+
 async function fetchWithTimeout(url: string, headers: Record<string, string> = {}, fetchImpl: typeof fetch = fetch): Promise<Response> {
   const ctl = new AbortController()
   const timer = setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS)
@@ -136,35 +152,80 @@ async function refreshRemoteCatalogUncoalesced(userDataPath: string, channel: Ch
   if (ch.source === "remote")
     return { source: "remote", catalog: ch.catalog, version: ch.version, fetchedAt: ch.fetchedAt, via, channel, ...(ch.error ? { error: ch.error } : {}) }
 
+  const cls: FailureClass = ch.reasonClass ?? "security" // 未分类按最严处理
+  const serveLkg = (): RemoteCatalogResult =>
+    ch.source === "cache"
+      ? { source: "cache", catalog: ch.catalog, version: ch.version, fetchedAt: ch.fetchedAt, via, channel, error: ch.error, reasonClass: cls }
+      : { source: "none", error: ch.error ?? `channel ${channel} unavailable`, reasonClass: cls }
+
   if (channel !== "stable") {
     // fail-closed:非 stable 通道没有 v1 等价物 —— 同通道 LKG(已全量重验 + R11)或如实 none。
-    console.error(`[remote-catalog] ${channel} channel unavailable (${ch.error ?? "?"}) — no v1 fallback for non-stable channels (fail closed)`)
-    if (ch.source === "cache")
-      return { source: "cache", catalog: ch.catalog, version: ch.version, fetchedAt: ch.fetchedAt, via, channel, error: ch.error }
-    return { source: "none", error: ch.error ?? `channel ${channel} unavailable` }
+    console.error(`[remote-catalog] ${channel} channel unavailable (${ch.error ?? "?"}) [${cls}] — no v1 fallback for non-stable channels (fail closed)`)
+    return serveLkg()
   }
 
-  console.error(`[remote-catalog] stable channel path unavailable (${ch.error ?? "?"}) — falling back to legacy v1 catalog path`)
-  const legacy = await refreshRemoteCatalogV1(userDataPath, deps)
-  if (legacy.source !== "none") return legacy // v1 面已带 via=v1 + channel=stable
-  // v1 面也失败:channel last-known-good(已全量重验 + R11)仍好于空白。
-  if (ch.source === "cache")
-    return { source: "cache", catalog: ch.catalog, version: ch.version, fetchedAt: ch.fetchedAt, via, channel, error: ch.error }
-  return legacy
+  // #314 fail-closed before legacy v1(裁决):
+  //   security 失败(R1-R13/撤销/过期/无 trust/snapshot 缺失)→ **绝不碰 v1**,LKG 或如实 none;
+  //   availability 失败 → v1 仅可作为**已验证 stable 身份的字节级镜像**(version+digest 精确相等,
+  //   身份来自本轮 LKG);无已验证身份(fresh install / 状态被清)→ 禁 v1,如实 none。
+  if (cls === "security") {
+    console.error(`[remote-catalog] stable channel SECURITY failure (${ch.error ?? "?"}) — legacy v1 fallback FORBIDDEN (fail closed)`)
+    return serveLkg()
+  }
+  if (ch.source !== "cache") {
+    console.error(`[remote-catalog] stable channel unavailable with NO verified identity (${ch.error ?? "?"}) — legacy v1 forbidden without a verified stable identity`)
+    return serveLkg()
+  }
+  // availability + 已验证身份:v1 允许作可用性镜像(内容身份必须与 LKG 精确相等,否则弃用)。
+  console.error(`[remote-catalog] stable channel unavailable (${ch.error ?? "?"}) [availability] — trying legacy v1 as identity-pinned mirror`)
+  const legacy = await refreshRemoteCatalogV1(userDataPath, deps, { version: ch.version, sha256: ch.sha256 })
+  if (legacy.source !== "none") return legacy // v1 面已带 via=v1 + channel=stable(身份已钉死)
+  return serveLkg()
 }
 
-/** 现行 v1 兼容面(REQ-032 语义零改动 + R11 撤销闸);channel 面失败时的回退路径。 */
-async function refreshRemoteCatalogV1(userDataPath: string, deps: ChannelClientDeps = {}): Promise<RemoteCatalogResult> {
+/**
+ * 现行 v1 兼容面 —— #314 起收紧为**身份钉死的可用性镜像**:调用方必须传入已验证的 stable
+ * 身份(version + payload sha256,来自 channel LKG),v1 内容(远端或缓存)与之不精确相等
+ * 一律拒用;R11 撤销集不可验(无可验 trust)时整面拒用。版本一律从**已签 body** 解析
+ * (缓存元数据 raw.version 不进入任何安全判断)。
+ */
+async function refreshRemoteCatalogV1(
+  userDataPath: string,
+  deps: ChannelClientDeps,
+  identity: { version: string; sha256: string },
+): Promise<RemoteCatalogResult> {
   const fetchImpl = deps.fetchImpl ?? fetch
   const pubKeyB64 = deps.builtinKeyB64 ?? CATALOG_PUBKEY_B64
-  // R11 撤销视图来自缓存 trust(内置钥重验;离线生效)。无可验 trust → 空集 = 现行为。
+  // R11 撤销视图来自缓存 trust(内置钥重验;离线生效)。#314:无可验 trust → 撤销状态未知,拒用 v1。
   const revoked = readRevokedTargets(userDataPath, deps)
+  if (revoked === null) return { source: "none", error: "v1 refused: revocation state unverifiable (no verifiable trust)", reasonClass: "security" }
+  const matchesIdentity = (body: Buffer): { ok: true; version: string } | { ok: false; error: string } => {
+    const digest = sha256Hex(body)
+    if (digest !== identity.sha256)
+      return { ok: false, error: `v1 identity MISMATCH: payload sha256 ${digest.slice(0, 12)}… != verified stable ${identity.sha256.slice(0, 12)}…` }
+    let version = ""
+    try {
+      version = String((JSON.parse(body.toString("utf8")) as { version?: unknown }).version ?? "")
+    } catch {
+      return { ok: false, error: "v1 payload is not valid JSON" }
+    }
+    if (version !== identity.version)
+      return { ok: false, error: `v1 identity MISMATCH: version ${version} != verified stable ${identity.version}` }
+    return { ok: true, version }
+  }
   const cached = readCachedCatalog(userDataPath, { pubKeyB64, revoked })
   type V1Partial = { source: "remote" | "cache"; catalog: unknown; version: string; fetchedAt: string; error?: string } | { source: "none"; error: string }
   // v1 面 = stable-only 遗产:传输 via=v1,内容通道恒 stable(成功分支必带,review #364 类型收紧)。
-  const withVia = (r: V1Partial): RemoteCatalogResult => (r.source === "none" ? r : { ...r, via: "v1", channel: "stable" })
-  const fallback = (error: string): RemoteCatalogResult =>
-    withVia(cached ? { source: "cache", catalog: cached.catalog, version: cached.version, fetchedAt: cached.fetchedAt, error } : { source: "none", error })
+  const withVia = (r: V1Partial): RemoteCatalogResult =>
+    r.source === "none" ? { ...r, reasonClass: "availability" } : { ...r, via: "v1", channel: "stable" }
+  const fallback = (error: string): RemoteCatalogResult => {
+    if (!cached) return withVia({ source: "none", error })
+    // 身份校验针对缓存的**已签 body**(readCachedCatalog 已完成验签 + R11)。
+    const raw = readCachedCatalogBody(userDataPath)
+    const idv = raw ? matchesIdentity(raw) : ({ ok: false, error: "v1 cache body unreadable" } as const)
+    if (!idv.ok) return withVia({ source: "none", error: `${error}; ${idv.error}` })
+    return withVia({ source: "cache", catalog: cached.catalog, version: idv.version, fetchedAt: cached.fetchedAt, error })
+  }
 
   let resp: Response
   try {
@@ -172,7 +233,12 @@ async function refreshRemoteCatalogV1(userDataPath: string, deps: ChannelClientD
   } catch (e) {
     return fallback(`fetch failed: ${e instanceof Error ? e.message : e}`)
   }
-  if (resp.status === 304 && cached) return withVia({ source: "remote", catalog: cached.catalog, version: cached.version, fetchedAt: cached.fetchedAt })
+  if (resp.status === 304 && cached) {
+    const raw = readCachedCatalogBody(userDataPath)
+    const idv = raw ? matchesIdentity(raw) : ({ ok: false, error: "v1 cache body unreadable" } as const)
+    if (!idv.ok) return withVia({ source: "none", error: idv.error })
+    return withVia({ source: "remote", catalog: cached.catalog, version: idv.version, fetchedAt: cached.fetchedAt })
+  }
   if (!resp.ok) return fallback(`catalog HTTP ${resp.status}`)
 
   let body: Buffer
@@ -207,10 +273,11 @@ async function refreshRemoteCatalogV1(userDataPath: string, deps: ChannelClientD
   }
   if (!saneCatalog(parsed)) return fallback("catalog shape invalid")
 
-  // codex M2:防签名重放回滚 —— 远端版本低于已缓存版本 = 旧合法 catalog 重放/发布链回滚,拒用(loud)。
-  const version = (parsed as { version: string }).version
-  if (cached && catalogVersionLess(version, cached.version))
-    return fallback(`ROLLBACK REJECTED: remote catalog ${version} older than cached ${cached.version}`)
+  // #314:身份钉死(取代此前的版本回滚比较 —— 精确相等是更强的约束):v1 只可作已验证
+  // stable 身份的字节级镜像;版本取自已签 body(matchesIdentity 内解析,不信缓存元数据)。
+  const idv = matchesIdentity(body)
+  if (!idv.ok) return fallback(idv.error)
+  const version = idv.version
 
   const record = {
     etag: resp.headers.get("etag") ?? undefined,
