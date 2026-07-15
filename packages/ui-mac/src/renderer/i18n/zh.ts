@@ -255,6 +255,7 @@ export const dict = {
   "alpha.ext.authz.titleEscalation": "能力变更需确认",
   "alpha.ext.authz.introFirst": "「{{name}}」首次安装,请求以下能力:",
   "alpha.ext.authz.introEscalation": "「{{name}}」的能力请求发生变化,请重新确认完整能力集:",
+  "alpha.ext.authz.introUpdate": "更新「{{name}}」需要授权以下能力:",
   "alpha.ext.authz.introBundle": "「{{name}}」中 {{n}} 项需要能力授权:",
   "alpha.ext.authz.chipNew": "新增",
   "alpha.ext.authz.chipGranted": "已授权",

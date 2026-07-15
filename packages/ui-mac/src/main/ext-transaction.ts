@@ -34,6 +34,7 @@
 import * as crypto from "node:crypto"
 import * as fs from "node:fs"
 import * as path from "node:path"
+import type { TxStageNonAuthorizeWire } from "../shared/ext-capability-authorization"
 import {
   confinedExistingPath,
   fsyncDirTreeSync,
@@ -206,18 +207,8 @@ export type TxHooks = {
   crashAt?: TxCrashPoint
 }
 
-export type TxStage =
-  | "validate"
-  | "lock"
-  | "authorize"
-  | "precondition"
-  | "staging"
-  | "verify"
-  | "materialize"
-  | "pre-switch-probe"
-  | "switch"
-  | "post-switch-probe"
-  | "receipt-commit"
+/** #348:非 authorize 阶段枚举定义在 shared wire 模块(preload/renderer 判别联合共用同一真源)。 */
+export type TxStage = "authorize" | TxStageNonAuthorizeWire
 
 export type TxResult =
   | { ok: true; txId: string; committed: TxCommitRecord[]; warnings: string[] }

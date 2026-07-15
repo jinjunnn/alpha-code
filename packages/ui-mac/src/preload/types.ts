@@ -2,7 +2,7 @@ import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
 import type { WslServersPlatform } from "@opencode-ai/app/wsl/types"
 import type { UpdaterState } from "@opencode-ai/app/updater"
 import type { AlphaEndpoints } from "../shared/alpha-config"
-import type { AuthorizationConfirmationWire, CapabilityDiffWire } from "../shared/ext-capability-authorization"
+import type { AuthorizationConfirmationWire, CapabilityDiffWire, TxStageNonAuthorizeWire } from "../shared/ext-capability-authorization"
 import type { ArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
 import type { ResolvedSurfaces, SurfaceId } from "../shared/alpha-surfaces"
 import type { AutomationEvent, AutomationGlobalState, AutomationTask, AutomationSchedule } from "../shared/automation-types"
@@ -445,9 +445,10 @@ export type ElectronAPI = {
       | { source: "seed"; assetId: string; scope: { scope: "global" }; authorization?: AuthorizationConfirmationWire }
     ) => Promise<
       | { ok: true; kind: string; name: string; manifestDigest?: string; liveMcp?: { name: string; config: Record<string, unknown> }; installed?: string[]; skipped?: Array<{ id: string; reason: string }>; warning?: string }
-      /** #348:capability 授权闸 —— 零权威副作用暂停,带逐 item diff;确认后带 authorization 重驱同一通道。 */
+      /** #348:capability 授权闸 —— 零权威副作用暂停,带逐 item diff;确认后带 authorization 重驱同一通道。
+       *  真判别联合(review minor):非 authorize 分支的 stage 类型排除 "authorize",中间层丢 diff 过不了类型检查。 */
       | { ok: false; stage: "authorize"; reason: string; authorization: CapabilityDiffWire[] }
-      | { ok: false; reason: string; stage?: string }
+      | { ok: false; reason: string; stage?: TxStageNonAuthorizeWire }
     >
     // REQ-019 T3:详情页 SKILL.md 预览(只读,资产键校验 + 256KB 帽;未打包时诚实失败)
     readBuiltinSkill: (builtinAssetKey: string) => Promise<{ ok: true; content: string } | { ok: false; reason: string }>

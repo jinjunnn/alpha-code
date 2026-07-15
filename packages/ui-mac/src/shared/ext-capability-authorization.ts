@@ -21,3 +21,18 @@ export type CapabilityDiffWire = {
 export type AuthorizationConfirmationWire = {
   confirmed: Record<string, string[]>
 }
+
+/** 事务阶段(authorize 之外)的 wire 枚举 —— 本模块是唯一定义点,`ext-transaction.TxStage`
+ *  由此拼装("authorize" | 本类型),preload/renderer 失败分支据此成为**真**判别联合:
+ *  `stage:"authorize"` 只可能出现在强制携带 diff 的分支上,中间层折叠丢字段过不了类型检查。 */
+export type TxStageNonAuthorizeWire =
+  | "validate"
+  | "lock"
+  | "precondition"
+  | "staging"
+  | "verify"
+  | "materialize"
+  | "pre-switch-probe"
+  | "switch"
+  | "post-switch-probe"
+  | "receipt-commit"

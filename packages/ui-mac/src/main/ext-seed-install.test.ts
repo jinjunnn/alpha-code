@@ -524,3 +524,22 @@ describe("installSkillGeneration CAS content source (REQ-102 #317)", () => {
     expect(findRecordV2(globalRoot, "skill", "hello")).toBeNull()
   })
 })
+
+// ── #348:seed 路径的 authorize 闸显式锁定(capabilities 漏传即此测试失败)────────────────────────
+describe("seed capability authorize gate (REQ-100 #348)", () => {
+  test("seed 首装零权威副作用停在 authorize,requested = manifest.capabilities", async () => {
+    buildSeed([{ id: "skill:hello", files: skillFiles }])
+    const deps = makeSeedDeps()
+    const first = await installCatalog(seedIntent, deps)
+    expect(first.ok).toBe(false)
+    if (first.ok) throw new Error("unreachable")
+    expect(first.stage).toBe("authorize")
+    if (first.stage !== "authorize") throw new Error("unreachable")
+    expect(first.authorization).toHaveLength(1)
+    expect(first.authorization[0]!.key).toBe(skillGenerationKey("hello"))
+    expect(first.authorization[0]!.requested).toEqual(["prompt:context"])
+    expect(first.authorization[0]!.previous).toBeNull()
+    expect(resolveLiveGenerationDir(globalRoot, skillGenerationKey("hello"))).toBeNull()
+    expect(findRecordV2(globalRoot, "skill", "hello")).toBeNull()
+  })
+})

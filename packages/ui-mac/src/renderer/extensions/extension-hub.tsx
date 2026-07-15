@@ -355,7 +355,9 @@ export function ExtensionHub(props: {
   // hub. While the confirm dialog is up, Dialog's own listener closes it — the hub must not also act.
   const onKey = (e: KeyboardEvent) => {
     if (e.key !== "Escape" || !props.open()) return
-    if (confirming()) return
+    // #348(review Major 1):授权框在场(独立宿主)或驱动/重驱进行中,hub 层绝不消费 Esc ——
+    // 否则外层先关掉整个 hub,Dialog 的 dismissible=false 拦不住,IPC 会在隐藏状态下提交。
+    if (confirming() || authz() || confirmBusy() || authzBusy()) return
     if (detail()) {
       setDetail(null)
       return
@@ -490,21 +492,26 @@ export function ExtensionHub(props: {
   // REQ-019 T5:更新执行状态(busy = receipt id;失败行内呈现,不裸 toast)。
   const [updBusy, setUpdBusy] = createSignal<string | null>(null)
   const [updErr, setUpdErr] = createSignal<Record<string, string>>({})
-  const runUpdate = async (r: InstallReceipt): Promise<"authz" | undefined> => {
+  // #348(review Major 2):更新路径单飞 + 模态互斥 —— 任何进行中的更新/确认框/授权框在场时,
+  // 单行更新与「全部更新」一律 no-op;批量循环遇到任何弹框(authorize / MCP 确认)立即停止。
+  // 否则并发 setAuthz 互相覆盖 diff、单值 updBusy 被先完成者错误清空、双模态同屏。
+  const [updFlight, setUpdFlight] = createSignal(false)
+  const updateBlocked = () => updFlight() || !!confirming() || !!authz() || confirmBusy() || authzBusy()
+  const runUpdateOne = async (r: InstallReceipt): Promise<"authz" | "mcp-confirm" | undefined> => {
     const target = byId(r.id)
     if (!target) return
     setUpdErr((prev) => ({ ...prev, [r.id]: "" }))
     // MCP:persistMcp 为覆盖写,静默重装会丢 {file:} 密钥引用 → 走确认框重装(密钥可重填)。
     if (target.type === "mcp") {
       setConfirming(target)
-      return
+      return "mcp-confirm"
     }
     setUpdBusy(r.id)
     try {
       const res = await ext.updateEntry(target)
       if (res.ok) flash(t("alpha.ext.updated"), "success")
       else if (isAuthzRequired(res)) {
-        // #348:扩权 → 授权框(mode=update,场景化文案);调用方据 "authz" 中止批量循环。
+        // #348:扩权 → 授权框(mode=update,场景化文案);调用方据返回值中止批量循环。
         setAuthz({ entry: target, mode: "update", host: "standalone", diffs: res.authorization })
         return "authz"
       } else setUpdErr((prev) => ({ ...prev, [r.id]: res.reason ?? t("alpha.ext.installFailed") }))
@@ -512,7 +519,17 @@ export function ExtensionHub(props: {
       setUpdBusy(null)
     }
   }
-  /** #348:授权确认后的更新重驱(与 runUpdate 同反馈面;再次 authorize 返回最新 diff 原地刷新)。 */
+  const runUpdate = async (r: InstallReceipt) => {
+    if (updateBlocked()) return
+    setUpdFlight(true)
+    try {
+      await runUpdateOne(r)
+    } finally {
+      setUpdFlight(false)
+    }
+  }
+  /** #348:授权确认后的更新重驱(与 runUpdate 同反馈面;再次 authorize 返回最新 diff 原地刷新)。
+   *  由 confirmAuthz 持 authzBusy 调用,天然被 updateBlocked 与其它入口互斥。 */
   const runUpdateRedrive = async (target: CatalogEntry, authorization: AuthorizationConfirmationWire): Promise<CapabilityDiffWire[] | null> => {
     setUpdBusy(target.id)
     try {
@@ -529,14 +546,22 @@ export function ExtensionHub(props: {
     }
   }
   const runUpdateAll = async () => {
-    // #348(Codex 裁决 D2):遇 authorize 必须停 —— 不能一边开授权框一边继续更新其它条目。
-    for (const r of updatable()) if ((await runUpdate(r)) === "authz") break
+    // #348(Codex 裁决 D2 + review Major 2):遇任何弹框(authorize / MCP 确认)必须停 ——
+    // 不能一边开着弹框一边继续更新其它条目;整个批量持 updFlight 单飞。
+    if (updateBlocked()) return
+    setUpdFlight(true)
+    try {
+      for (const r of updatable()) if ((await runUpdateOne(r)) !== undefined) break
+    } finally {
+      setUpdFlight(false)
+    }
   }
 
   const addMcpEntry = async (
     e: CatalogEntry,
     secrets?: Record<string, string>,
     skipCheck?: boolean, // onAdd 已做「检查中」阶段时跳过重复 which
+    authorization?: AuthorizationConfirmationWire,
   ): Promise<ActionResult> => {
     const spec = e.installSpec && e.installSpec.kind === "mcp" ? e.installSpec : undefined
     if (!skipCheck) {
@@ -550,7 +575,7 @@ export function ExtensionHub(props: {
       if (!dir) return { ok: false, reason: t("alpha.ext.cancelled") }
       workspace = dir
     }
-    return ext.addMcp(e, undefined, workspace, secrets)
+    return ext.addMcp(e, undefined, workspace, secrets, authorization)
   }
 
   // Bundle = alpha-defined manifest: fan out to install each referenced entry by its own type
@@ -599,7 +624,7 @@ export function ExtensionHub(props: {
           return null
         }
         setStageFor(e.id, "installing")
-        const res = await addMcpEntry(e, secrets, true)
+        const res = await addMcpEntry(e, secrets, true, authorization)
         if (!res.ok) return failOr(res)
         if (res.reason === "slow") flash(t("alpha.ext.installSlow"))
         else flash(t("alpha.ext.added"), "success")
@@ -611,13 +636,13 @@ export function ExtensionHub(props: {
         else flash(t("alpha.ext.addedLive"), "success")
       } else if (e.type === "agent") {
         setStageFor(e.id, "installing")
-        const res = await ext.installAgentEntry(e)
+        const res = await ext.installAgentEntry(e, authorization)
         if (!res.ok) return failOr(res)
         if (res.reason === "reload-pending") flash(t("alpha.ext.addedPendingReload"))
         else flash(t("alpha.ext.addedLive"), "success")
       } else if (e.type === "plugin") {
         setStageFor(e.id, "installing")
-        const res = await ext.installPlugin(e)
+        const res = await ext.installPlugin(e, authorization)
         if (!res.ok) return failOr(res)
         flash(t("alpha.ext.pluginRestart"), "success")
       } else if (e.type === "bundle") {
@@ -627,7 +652,7 @@ export function ExtensionHub(props: {
       } else if (e.type === "cloud") {
         // REQ-020 T4:「启用」= receipts-only(账本可用列表);门控在按钮层(!cloudReady 禁用)。
         setStageFor(e.id, "installing")
-        const res = await ext.enableCloud(e)
+        const res = await ext.enableCloud(e, authorization)
         if (!res.ok) return failOr(res)
         flash(t("alpha.ext.cloudEnabled"), "success")
       }
@@ -1740,7 +1765,7 @@ export function ExtensionHub(props: {
           }
         >
           <Show when={authz()?.host === "confirm"}>
-            <ExtAuthzView name={authz()!.entry.displayName} isBundle={authz()!.entry.type === "bundle"} diffs={authz()!.diffs} />
+            <ExtAuthzView name={authz()!.entry.displayName} isBundle={authz()!.entry.type === "bundle"} mode={authz()!.mode} diffs={authz()!.diffs} />
           </Show>
           <Show when={authz()?.host !== "confirm" && confirming()}>
             {(entry) => (
@@ -1819,7 +1844,7 @@ export function ExtensionHub(props: {
           footer={authzFooter()}
         >
           <Show when={authz()?.host === "standalone"}>
-            <ExtAuthzView name={authz()!.entry.displayName} isBundle={authz()!.entry.type === "bundle"} diffs={authz()!.diffs} />
+            <ExtAuthzView name={authz()!.entry.displayName} isBundle={authz()!.entry.type === "bundle"} mode={authz()!.mode} diffs={authz()!.diffs} />
           </Show>
         </Dialog>
 

@@ -33,10 +33,14 @@ describe("#348 confirmed 构造与场景判定(纯函数)", () => {
     expect(authzIsEscalation([diff({})])).toBe(false)
     expect(authzIsEscalation([diff({ previous: ["prompt:context"], added: ["process:spawn"] })])).toBe(true)
   })
-  test("高风险判定只看需确认项的 added(engine:plugin / process:spawn)", () => {
+  test("高风险判定看需确认项的完整 requested 集(已授权高风险 + 新增低风险仍须警示)", () => {
     expect(authzHasHighRisk([diff({})])).toBe(false)
     expect(authzHasHighRisk([diff({ added: ["process:spawn"], requested: ["process:spawn"] })])).toBe(true)
     expect(authzHasHighRisk([diff({ added: ["engine:plugin"], requested: ["engine:plugin"], requiresConfirmation: false })])).toBe(false)
+    // review minor:added 只有低风险,但完整确认集合仍含高风险 → 必须警示。
+    expect(
+      authzHasHighRisk([diff({ previous: ["process:spawn"], added: ["prompt:context"], requested: ["process:spawn", "prompt:context"] })]),
+    ).toBe(true)
   })
 })
 
@@ -55,9 +59,16 @@ describe("#348 wiring:renderer 承接结构(源文本合同)", () => {
     // 重复 authorize:重驱结果非空 → 最新 diff 原地替换(不能只拦第一次)。
     expect(src).toContain("setAuthz({ ...a, diffs: next })")
   })
-  test("extension-hub.tsx:runUpdateAll 遇 authorize 停止批量循环", () => {
+  test("extension-hub.tsx:runUpdateAll 遇任何弹框停止批量;更新路径单飞 + 模态互斥(review Major 2)", () => {
     const src = read("extension-hub.tsx")
-    expect(src).toMatch(/for \(const r of updatable\(\)\) if \(\(await runUpdate\(r\)\) === "authz"\) break/)
+    expect(src).toMatch(/for \(const r of updatable\(\)\) if \(\(await runUpdateOne\(r\)\) !== undefined\) break/)
+    // 单行与批量入口都过 updateBlocked(进行中的更新/确认框/授权框在场一律 no-op)。
+    expect(src).toContain("const updateBlocked = () => updFlight() || !!confirming() || !!authz() || confirmBusy() || authzBusy()")
+    expect((src.match(/if \(updateBlocked\(\)\) return/g) ?? []).length).toBeGreaterThanOrEqual(2)
+  })
+  test("extension-hub.tsx:hub 全局 Esc 不越过授权框/busy(review Major 1)", () => {
+    const src = read("extension-hub.tsx")
+    expect(src).toContain("if (confirming() || authz() || confirmBusy() || authzBusy()) return")
   })
   test("extension-hub.tsx:busy 期间 Dialog 不可关(driving/redriving 无取消通道)", () => {
     const src = read("extension-hub.tsx")

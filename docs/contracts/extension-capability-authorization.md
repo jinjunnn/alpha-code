@@ -20,8 +20,9 @@ diff 与暂停、renderer 如何确认与重驱、授权账/收据如何落盘�
 - **进闸路径** = 进入 `runExtensionTransaction` 的生产安装:单装 skill(catalog 与
   packaged seed)与 atomic bundle(其 skill / 无密钥 MCP-config / cloud-receipt 子项)。
 - **未进闸**:单装 MCP / plugin / agent / cloud 走非事务 legacy 写入路径,当前没有
-  authorize 阶段可言 —— 这不是本契约的豁免而是缺口,由后续 CODE 票(挂父 #211)把这些
-  类型拉进事务后自动获得同一闸口。renderer 拦截按类型无关写法实现,接入即生效。
+  authorize 阶段可言 —— 这不是本契约的豁免而是缺口,由后续 CODE 票(#378,挂父 #211)
+  把这些类型拉进事务后自动获得同一闸口。renderer 侧的拦截**与重驱参数透传**已对全部
+  安装动作(mcp/skill/agent/plugin/bundle/cloud)落地,类型入事务即生效,无需再动 UI。
 
 ## 2. 能力声明(planner → plan)
 

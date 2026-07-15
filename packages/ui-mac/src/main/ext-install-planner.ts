@@ -607,11 +607,13 @@ function tryReuseCasPayload(
   const now = new Date()
   for (const m of manifest) {
     const p = casBlobPath(casBaseRoot, m.sha256)
-    if (!p) continue
+    if (!p) return { hit: false }
     try {
       fs.utimesSync(p, now, now)
-    } catch {
-      /* mtime 续命是 best-effort;失败最坏 = GC 提前回收后下次重新下载 */
+    } catch (error) {
+      // review minor:读取与 touch 之间 blob 被 GC 删除(ENOENT)= 已知缺失,必须转 cache miss
+      // 回下载路径,不得报 hit 让 materialize 晚点才炸;其它失败(权限等)才是 best-effort 续命。
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { hit: false }
     }
   }
   return { hit: true, specs }

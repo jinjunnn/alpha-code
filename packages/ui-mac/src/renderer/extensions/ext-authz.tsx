@@ -39,7 +39,9 @@ export function buildAuthzConfirmation(diffs: CapabilityDiffWire[]): Authorizati
 }
 
 export function authzHasHighRisk(diffs: CapabilityDiffWire[]): boolean {
-  return diffs.some((d) => d.requiresConfirmation && d.added.some((c) => HIGH_RISK.has(c)))
+  // review minor:按需确认项的**完整 requested 集**判(不只 added)—— 已授权 process:spawn、
+  // 本次只新增低风险,确认的完整集合仍含高风险,警示不可少。
+  return diffs.some((d) => d.requiresConfirmation && d.requested.some((c) => HIGH_RISK.has(c)))
 }
 
 /** 是否扩权场景(任一需确认项已有授权基线)——决定标题/intro/主按钮文案(Q1 场景化)。 */
@@ -67,7 +69,8 @@ function itemLabel(key: string): string {
 
 function CapRow(props: { cap: string; kind: CapRowKind }) {
   const vocab = () => CAP_VOCAB[props.cap]
-  const tier = () => (props.kind === "new" ? (vocab()?.tier ?? "mid") : "low")
+  // 风险标识跟随能力本身(新增与已授权都标;将收回不标)—— review minor:高风险不因「已授权」而隐身。
+  const tier = () => (props.kind === "removed" ? "low" : (vocab()?.tier ?? "mid"))
   const chipKey = () =>
     props.kind === "new" ? "alpha.ext.authz.chipNew" : props.kind === "granted" ? "alpha.ext.authz.chipGranted" : "alpha.ext.authz.chipRemoved"
   return (
@@ -88,7 +91,7 @@ function CapRow(props: { cap: string; kind: CapRowKind }) {
         </Show>
       </span>
       <span class="alpha-ext-authz-id">{props.cap}</span>
-      <Show when={props.kind === "new" && HIGH_RISK.has(props.cap)}>
+      <Show when={props.kind !== "removed" && HIGH_RISK.has(props.cap)}>
         <span class="alpha-ext-authz-chip" data-kind="risk">
           {t("alpha.ext.authz.riskHigh")}
         </span>
@@ -101,22 +104,29 @@ function CapRow(props: { cap: string; kind: CapRowKind }) {
 }
 
 /** 授权视图 body(宿主 Dialog 由 hub 提供:独立弹出或既有确认框第二阶段)。 */
-export function ExtAuthzView(props: { name: string; isBundle: boolean; diffs: CapabilityDiffWire[] }) {
+export function ExtAuthzView(props: { name: string; isBundle: boolean; mode: "install" | "update"; diffs: CapabilityDiffWire[] }) {
   const confirmDiffs = () => props.diffs.filter((d) => d.requiresConfirmation)
-  const restCount = () => props.diffs.length - confirmDiffs().length
+  // review minor:纯收缩项(无需确认但 removed 非空)也展开 —— 「将收回」是用户该看到的事实,
+  // 不得计进「能力无变化」;折叠行只数真正无任何变化的项。
+  const shownDiffs = () => props.diffs.filter((d) => d.requiresConfirmation || d.removed.length > 0)
+  const restCount = () => props.diffs.length - shownDiffs().length
   const escalation = () => authzIsEscalation(props.diffs)
+  // review minor:escalation 只由 diff 判(previous 非 null);更新但盘上无基线(旧安装普遍无
+  // grants.json)不是「首次安装」—— 按 mode 给中性文案,避免与「授权并更新」按钮自相矛盾。
   const intro = () =>
     props.isBundle
       ? t("alpha.ext.authz.introBundle", { name: props.name, n: String(confirmDiffs().length) })
       : escalation()
         ? t("alpha.ext.authz.introEscalation", { name: props.name })
-        : t("alpha.ext.authz.introFirst", { name: props.name })
+        : props.mode === "update"
+          ? t("alpha.ext.authz.introUpdate", { name: props.name })
+          : t("alpha.ext.authz.introFirst", { name: props.name })
   // 阶段切换用 aria-live 通告(内容非纯色分层:chip 均带文字,收回项另有删除线)。
   return (
     <div class="alpha-ext-authz" aria-live="polite">
       <p class="alpha-ext-authz-intro">{intro()}</p>
       <div class="alpha-ext-authz-box">
-        <For each={confirmDiffs()}>
+        <For each={shownDiffs()}>
           {(diff) => (
             <>
               <Show when={props.isBundle}>

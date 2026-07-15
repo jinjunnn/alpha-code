@@ -18,7 +18,7 @@ import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import type { ServerInfo } from "../sidebar/use-projects"
 import type { CatalogEntry, InstalledState, McpConfig, McpInstallSpec, RuntimeCheck } from "./catalog-types"
 import type { InstallReceipt } from "../../preload/types"
-import type { AuthorizationConfirmationWire, CapabilityDiffWire } from "../../shared/ext-capability-authorization"
+import type { AuthorizationConfirmationWire, CapabilityDiffWire, TxStageNonAuthorizeWire } from "../../shared/ext-capability-authorization"
 
 // Receipt provenance (REQ-018): catalog snapshot version recorded per install → update checks.
 
@@ -50,11 +50,12 @@ export interface ExtensionsStore {
   error: boolean
 }
 
-/** #348:判别联合 —— 失败分支透传 stage/authorization,中间包装层不得再折叠丢 authorize 数据
- *  (Codex 裁决 D1)。stage === "authorize" 时 authorization 为引擎锁内评估的逐 item diff。 */
+/** #348:真判别联合(Codex 裁决 D1 + review minor)—— authorize 分支强制携带 diff,
+ *  非 authorize 分支的 stage 类型排除 "authorize":中间包装层折叠丢数据过不了类型检查。 */
 export type ActionResult =
   | { ok: true; reason?: string }
-  | { ok: false; reason?: string; stage?: string; authorization?: CapabilityDiffWire[] }
+  | { ok: false; stage: "authorize"; authorization: CapabilityDiffWire[]; reason?: string }
+  | { ok: false; reason?: string; stage?: TxStageNonAuthorizeWire }
 
 /** stage="authorize" 拦截守卫:diff 在场才算(引擎契约保证成对出现)。 */
 export function isAuthzRequired(res: ActionResult): res is { ok: false; stage: "authorize"; authorization: CapabilityDiffWire[]; reason?: string } {
@@ -74,6 +75,7 @@ export interface ExtensionsApi {
     env?: Record<string, string>,
     workspace?: string,
     secrets?: Record<string, string>,
+    authorization?: AuthorizationConfirmationWire,
   ): Promise<ActionResult>
   /** REQ-033:catalog 外任意 MCP(local command / remote url + env/密钥);白名单校验在 main 不放宽。 */
   addCustomMcp(
@@ -102,7 +104,7 @@ export interface ExtensionsApi {
   /** REQ-018 T7:刷新引擎已知的 agents(内置 + 自建)供 Agent tab 呈现。 */
   reloadAgents(): Promise<void>
   /** Append a plugin to config `plugins` (opencode auto-installs on next launch; needs restart). */
-  installPlugin(entry: CatalogEntry): Promise<ActionResult>
+  installPlugin(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult>
   /**
    * REQ-019 T5:按 catalog 当前钉版更新已装条目。skill = 覆盖重装(同名 dest,receipt 版本翻新);
    * plugin = 卸旧配置项再写新钉版(persistPlugin 只会追加,直接重装会留旧版残留)。
@@ -117,10 +119,10 @@ export interface ExtensionsApi {
   /** REQ-019 T6:npm 插件导入 = 复用 persistPlugin 通道(主进程包名白名单)。 */
   importNpmPlugin(pkg: string): Promise<ActionResult>
   /** REQ-023:安装 catalog 官方 agent(vendored md 资产 → writeAgent 同管线)。 */
-  installAgentEntry(entry: CatalogEntry): Promise<ActionResult>
+  installAgentEntry(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult>
   /** REQ-020 T4:启用云 pipeline = receipts-only(进本机可用列表;不落文件、不写引擎 config)。
    *  停用走 uninstall(cloud receipt → 去账)。 */
-  enableCloud(entry: CatalogEntry): Promise<ActionResult>
+  enableCloud(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult>
 }
 
 function authHeaders(info: ServerInfo): Record<string, string> | undefined {
@@ -265,6 +267,7 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     env?: Record<string, string>,
     workspace?: string,
     secrets?: Record<string, string>,
+    authorization?: AuthorizationConfirmationWire,
   ): Promise<ActionResult> {
     const c = client
     if (!c) return { ok: false, reason: "no server" }
@@ -285,6 +288,7 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
       catalogId: entry.id,
       scope: { scope: "global" },
       ...(Object.keys(grants).length ? { grants } : {}),
+      ...(authorization ? { authorization } : {}),
     })
     if (!r.ok) return r
     // Codex review #350:MCP 成功结果必须带 liveMcp —— 缺失 = main 已按其它 kind 落盘(catalog
@@ -488,13 +492,13 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     return r
   }
 
-  async function installPlugin(entry: CatalogEntry): Promise<ActionResult> {
+  async function installPlugin(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult> {
     const spec = entry.installSpec
     if (!spec || spec.kind !== "plugin") return { ok: false, reason: "not a plugin entry" }
     // REQ-099 #305:catalog 插件切 installCatalog(vendored/npm 分支由 planner 从已验签条目裁决)。
     // dispose 触发实例重建 → 引擎立刻装载(vendored=本地即读;npm=后台下载);失败不降级为错误,
     // config 已落盘、下次重建自然装载。
-    const r = await window.api.ext.installCatalog({ catalogId: entry.id, scope: { scope: "global" } })
+    const r = await window.api.ext.installCatalog({ catalogId: entry.id, scope: { scope: "global" }, ...(authorization ? { authorization } : {}) })
     if (r.ok) {
       await loadInstalls()
       await refreshEngine()
@@ -504,10 +508,10 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
 
   /** 安装 catalog 官方 agent(REQ-099 #305:切 installCatalog —— remote/builtin 分支与「内容未打包」
    *  诚实失败均由 planner 从已验签条目裁决;写盘/桥/账本走 writeAgent 同管线)。 */
-  async function installAgentEntry(entry: CatalogEntry): Promise<ActionResult> {
+  async function installAgentEntry(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult> {
     const spec = entry.installSpec
     if (!spec || spec.kind !== "agent") return { ok: false, reason: "not an agent entry" }
-    const r = await window.api.ext.installCatalog({ catalogId: entry.id, scope: { scope: "global" } })
+    const r = await window.api.ext.installCatalog({ catalogId: entry.id, scope: { scope: "global" }, ...(authorization ? { authorization } : {}) })
     if (!r.ok) return r
     await loadInstalls()
     const refreshed = await refreshEngine()
@@ -543,9 +547,9 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
 
   /** REQ-020 T4 / REQ-099 #305:云 pipeline「启用」= receipts-only,切 installCatalog(planner cloud
    *  分支同语义:不触达引擎/文件系统,只落账)。 */
-  async function enableCloud(entry: CatalogEntry): Promise<ActionResult> {
+  async function enableCloud(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult> {
     if (entry.type !== "cloud") return { ok: false, reason: "not a cloud entry" }
-    const r = await window.api.ext.installCatalog({ catalogId: entry.id, scope: { scope: "global" } })
+    const r = await window.api.ext.installCatalog({ catalogId: entry.id, scope: { scope: "global" }, ...(authorization ? { authorization } : {}) })
     if (!r.ok) return r // #348:不折叠 —— stage/authorization 原样透传(cloud 未来入事务时自然接上)
     await loadInstalls()
     return { ok: true }

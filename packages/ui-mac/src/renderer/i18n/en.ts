@@ -256,6 +256,7 @@ export const dict = {
   "alpha.ext.authz.titleEscalation": "Capability change needs confirmation",
   "alpha.ext.authz.introFirst": "\"{{name}}\" is being installed for the first time and requests:",
   "alpha.ext.authz.introEscalation": "\"{{name}}\"'s requested capabilities changed; re-confirm the full set:",
+  "alpha.ext.authz.introUpdate": "Updating \"{{name}}\" needs authorization for:",
   "alpha.ext.authz.introBundle": "{{n}} items in \"{{name}}\" need capability authorization:",
   "alpha.ext.authz.chipNew": "New",
   "alpha.ext.authz.chipGranted": "Granted",

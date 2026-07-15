@@ -1412,3 +1412,19 @@ describe("capability authorize gate via installCatalog (REQ-100 #348)", () => {
     expect(bad.ok).toBe(false)
   })
 })
+
+// ── #348 补:bundle remote 子项的重驱缓存(classify 分支独立于单装路径)──────────────────────────
+describe("bundle remote child redrive cache (REQ-100 #348)", () => {
+  test("bundle 内 remote skill:authorize 确认重驱零下载(classifyBundleChild CAS 命中)", async () => {
+    const remoteBundle: CatalogEntry = { ...bundleEntry, id: "bundle:remote", name: "remoteb", bundleItems: [{ catalogEntryId: "skill:remote-demo", optional: false, installOrder: 1 }] }
+    const { deps, calls } = makeDeps({ entries: [...ALL_ENTRIES, remoteBundle] })
+    const first = await installCatalog({ catalogId: "bundle:remote", scope: { scope: "global" } }, deps)
+    if (first.ok || first.stage !== "authorize") throw new Error("expected authorize pause")
+    expect(called(calls, "downloadRemoteAsset")).toHaveLength(1)
+    const confirmed = Object.fromEntries(first.authorization.map((d) => [d.key, d.requested]))
+    const second = await installCatalog({ catalogId: "bundle:remote", scope: { scope: "global" }, authorization: { confirmed } }, deps)
+    expect(second.ok).toBe(true)
+    expect(called(calls, "downloadRemoteAsset")).toHaveLength(1) // 重驱零网络(bundle classify 分支)
+    expect(resolveLiveGenerationDir(globalRoot, "skill--remote-demo")).not.toBeNull()
+  })
+})
