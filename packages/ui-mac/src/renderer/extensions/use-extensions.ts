@@ -18,6 +18,7 @@ import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import type { ServerInfo } from "../sidebar/use-projects"
 import type { CatalogEntry, InstalledState, McpConfig, McpInstallSpec, RuntimeCheck } from "./catalog-types"
 import type { InstallReceipt } from "../../preload/types"
+import type { AuthorizationConfirmationWire, CapabilityDiffWire, TxStageNonAuthorizeWire } from "../../shared/ext-capability-authorization"
 
 // Receipt provenance (REQ-018): catalog snapshot version recorded per install → update checks.
 
@@ -49,9 +50,16 @@ export interface ExtensionsStore {
   error: boolean
 }
 
-export interface ActionResult {
-  ok: boolean
-  reason?: string
+/** #348:真判别联合(Codex 裁决 D1 + review minor)—— authorize 分支强制携带 diff,
+ *  非 authorize 分支的 stage 类型排除 "authorize":中间包装层折叠丢数据过不了类型检查。 */
+export type ActionResult =
+  | { ok: true; reason?: string }
+  | { ok: false; stage: "authorize"; authorization: CapabilityDiffWire[]; reason?: string }
+  | { ok: false; reason?: string; stage?: TxStageNonAuthorizeWire }
+
+/** stage="authorize" 拦截守卫:diff 在场才算(引擎契约保证成对出现)。 */
+export function isAuthzRequired(res: ActionResult): res is { ok: false; stage: "authorize"; authorization: CapabilityDiffWire[]; reason?: string } {
+  return !res.ok && res.stage === "authorize" && Array.isArray(res.authorization) && res.authorization.length > 0
 }
 
 export interface ExtensionsApi {
@@ -67,6 +75,7 @@ export interface ExtensionsApi {
     env?: Record<string, string>,
     workspace?: string,
     secrets?: Record<string, string>,
+    authorization?: AuthorizationConfirmationWire,
   ): Promise<ActionResult>
   /** REQ-033:catalog 外任意 MCP(local command / remote url + env/密钥);白名单校验在 main 不放宽。 */
   addCustomMcp(
@@ -89,20 +98,20 @@ export interface ExtensionsApi {
    *  条目呈现为「出厂内置」而非可安装(S18 X1)。创建类操作已技能化,不再有表单写入方法。 */
   factorySkills(): string[]
   /** Install a catalog skill entry by writing its SKILL.md. */
-  installSkill(entry: CatalogEntry): Promise<ActionResult>
+  installSkill(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult>
   /** REQ-018 T4:释放全部引擎实例(POST /global/dispose)→ 下一请求惰性重建重扫,免重启生效。 */
   refreshEngine(): Promise<boolean>
   /** REQ-018 T7:刷新引擎已知的 agents(内置 + 自建)供 Agent tab 呈现。 */
   reloadAgents(): Promise<void>
   /** Append a plugin to config `plugins` (opencode auto-installs on next launch; needs restart). */
-  installPlugin(entry: CatalogEntry): Promise<ActionResult>
+  installPlugin(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult>
   /**
    * REQ-019 T5:按 catalog 当前钉版更新已装条目。skill = 覆盖重装(同名 dest,receipt 版本翻新);
    * plugin = 卸旧配置项再写新钉版(persistPlugin 只会追加,直接重装会留旧版残留)。
    * MCP 不走此方法 —— persistMcp 是覆盖写,静默重装会丢 {file:} 密钥引用;hub 层用确认框重装
    * (密钥可重填),见 extension-hub.runUpdate。
    */
-  updateEntry(entry: CatalogEntry): Promise<ActionResult>
+  updateEntry(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult>
   /** REQ-019 T6 / REQ-098 #255:导入本地技能文件夹(main 自弹选择器,renderer 不传 srcDir)。 */
   importSkillFolder(): Promise<ActionResult & { name?: string; canceled?: boolean }>
   /** REQ-019 T6:导入 Git 仓库技能(https-only 浅克隆临时目录 → 同校验)。 */
@@ -110,10 +119,10 @@ export interface ExtensionsApi {
   /** REQ-019 T6:npm 插件导入 = 复用 persistPlugin 通道(主进程包名白名单)。 */
   importNpmPlugin(pkg: string): Promise<ActionResult>
   /** REQ-023:安装 catalog 官方 agent(vendored md 资产 → writeAgent 同管线)。 */
-  installAgentEntry(entry: CatalogEntry): Promise<ActionResult>
+  installAgentEntry(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult>
   /** REQ-020 T4:启用云 pipeline = receipts-only(进本机可用列表;不落文件、不写引擎 config)。
    *  停用走 uninstall(cloud receipt → 去账)。 */
-  enableCloud(entry: CatalogEntry): Promise<ActionResult>
+  enableCloud(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult>
 }
 
 function authHeaders(info: ServerInfo): Record<string, string> | undefined {
@@ -258,6 +267,7 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     env?: Record<string, string>,
     workspace?: string,
     secrets?: Record<string, string>,
+    authorization?: AuthorizationConfirmationWire,
   ): Promise<ActionResult> {
     const c = client
     if (!c) return { ok: false, reason: "no server" }
@@ -278,6 +288,7 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
       catalogId: entry.id,
       scope: { scope: "global" },
       ...(Object.keys(grants).length ? { grants } : {}),
+      ...(authorization ? { authorization } : {}),
     })
     if (!r.ok) return r
     // Codex review #350:MCP 成功结果必须带 liveMcp —— 缺失 = main 已按其它 kind 落盘(catalog
@@ -461,27 +472,33 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     .then((ids) => setFactoryIds(Array.isArray(ids) ? ids : []))
     .catch(() => {})
 
-  async function installSkill(entry: CatalogEntry): Promise<ActionResult> {
+  async function installSkill(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult> {
     const spec = entry.installSpec
     if (spec?.kind !== "skill") return { ok: false, reason: "not a skill entry" }
     // REQ-100 #313(补 #310):单装与 bundle 同入口 —— main-owned installCatalog。renderer 仍只传
     // catalogId(codex H1 信任边界:main 从已验签 catalog 派生 name/清单/版本,remote sha256 钉死、
     // builtin 同源校验都在 main);skill 落不可变 generation 事务 → 可列代/离线回滚,不再走旧 flat
     // 通道。「内容未随版本打包」的诚实失败由 planner 原样上抛。
-    const r = await window.api.ext.installCatalog({ catalogId: entry.id, scope: { scope: "global" } })
+    // #348:首驱可返回 stage="authorize" + diff(原样透传给 hub 弹授权框);确认后带 authorization
+    // 重驱同一意图 —— 引擎按整集覆盖判定,decidedAt 由 main 打戳。
+    const r = await window.api.ext.installCatalog({
+      catalogId: entry.id,
+      scope: { scope: "global" },
+      ...(authorization ? { authorization } : {}),
+    })
     if (!r.ok) return r
     await loadInstalls()
     if (!(await refreshEngine())) return { ok: true, reason: "reload-pending" }
     return r
   }
 
-  async function installPlugin(entry: CatalogEntry): Promise<ActionResult> {
+  async function installPlugin(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult> {
     const spec = entry.installSpec
     if (!spec || spec.kind !== "plugin") return { ok: false, reason: "not a plugin entry" }
     // REQ-099 #305:catalog 插件切 installCatalog(vendored/npm 分支由 planner 从已验签条目裁决)。
     // dispose 触发实例重建 → 引擎立刻装载(vendored=本地即读;npm=后台下载);失败不降级为错误,
     // config 已落盘、下次重建自然装载。
-    const r = await window.api.ext.installCatalog({ catalogId: entry.id, scope: { scope: "global" } })
+    const r = await window.api.ext.installCatalog({ catalogId: entry.id, scope: { scope: "global" }, ...(authorization ? { authorization } : {}) })
     if (r.ok) {
       await loadInstalls()
       await refreshEngine()
@@ -491,10 +508,10 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
 
   /** 安装 catalog 官方 agent(REQ-099 #305:切 installCatalog —— remote/builtin 分支与「内容未打包」
    *  诚实失败均由 planner 从已验签条目裁决;写盘/桥/账本走 writeAgent 同管线)。 */
-  async function installAgentEntry(entry: CatalogEntry): Promise<ActionResult> {
+  async function installAgentEntry(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult> {
     const spec = entry.installSpec
     if (!spec || spec.kind !== "agent") return { ok: false, reason: "not an agent entry" }
-    const r = await window.api.ext.installCatalog({ catalogId: entry.id, scope: { scope: "global" } })
+    const r = await window.api.ext.installCatalog({ catalogId: entry.id, scope: { scope: "global" }, ...(authorization ? { authorization } : {}) })
     if (!r.ok) return r
     await loadInstalls()
     const refreshed = await refreshEngine()
@@ -530,16 +547,17 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
 
   /** REQ-020 T4 / REQ-099 #305:云 pipeline「启用」= receipts-only,切 installCatalog(planner cloud
    *  分支同语义:不触达引擎/文件系统,只落账)。 */
-  async function enableCloud(entry: CatalogEntry): Promise<ActionResult> {
+  async function enableCloud(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult> {
     if (entry.type !== "cloud") return { ok: false, reason: "not a cloud entry" }
-    const r = await window.api.ext.installCatalog({ catalogId: entry.id, scope: { scope: "global" } })
-    if (!r.ok) return { ok: false, reason: r.reason }
+    const r = await window.api.ext.installCatalog({ catalogId: entry.id, scope: { scope: "global" }, ...(authorization ? { authorization } : {}) })
+    if (!r.ok) return r // #348:不折叠 —— stage/authorization 原样透传(cloud 未来入事务时自然接上)
     await loadInstalls()
     return { ok: true }
   }
 
-  async function updateEntry(entry: CatalogEntry): Promise<ActionResult> {
-    if (entry.type === "skill") return installSkill(entry)
+  async function updateEntry(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult> {
+    // #348:skill 更新 = 同一事务入口,扩权时同样被 authorize 闸拦下(确认后带 authorization 重入)。
+    if (entry.type === "skill") return installSkill(entry, authorization)
     if (entry.type === "plugin") {
       const old = store.receipts.find((r) => r.id === entry.id && r.type === "plugin")
       if (old) {

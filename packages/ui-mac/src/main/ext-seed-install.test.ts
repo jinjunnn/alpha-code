@@ -28,6 +28,17 @@ import {
   type VerifiedCatalogEntry,
 } from "./ext-install-planner"
 
+// #348:authorize 闸生效后首装零副作用停在 stage="authorize";按生产同路重驱(确认完整 requested
+// 集)。非 authorize 失败原样透传 —— downgrade/损坏账本等 fail-closed 语义不受影响。
+async function installAuthorized(intent: unknown, deps: Parameters<typeof installCatalog>[1]): ReturnType<typeof installCatalog> {
+  const first = await installCatalog(intent, deps)
+  if (first.ok || first.stage !== "authorize") return first
+  const confirmed = Object.fromEntries(
+    first.authorization.filter((d) => d.requiresConfirmation).map((d) => [d.key, d.requested]),
+  )
+  return installCatalog({ ...(intent as Record<string, unknown>), authorization: { confirmed } }, deps)
+}
+
 let tmp: string
 let seedDir: string
 let casBase: string
@@ -181,7 +192,7 @@ describe("seed install via installCatalog (REQ-102 #317)", () => {
   test("installs a selected skill seed asset through shared-CAS transactional materialization", async () => {
     buildSeed([{ id: "skill:hello", files: skillFiles }])
     const deps = makeSeedDeps()
-    const r = await installCatalog(seedIntent, deps)
+    const r = await installAuthorized(seedIntent, deps)
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.kind).toBe("skill")
@@ -218,25 +229,25 @@ describe("seed install via installCatalog (REQ-102 #317)", () => {
   test("same-version reinstall is idempotent (generation append, no refusal)", async () => {
     buildSeed([{ id: "skill:hello", files: skillFiles }])
     const deps = makeSeedDeps()
-    expect((await installCatalog(seedIntent, deps)).ok).toBe(true)
-    const again = await installCatalog(seedIntent, deps)
+    expect((await installAuthorized(seedIntent, deps)).ok).toBe(true)
+    const again = await installAuthorized(seedIntent, deps)
     expect(again.ok).toBe(true)
   })
 
   test("self-heals a corrupted in-store CAS blob on reinstall (put replaces, install still verifies)", async () => {
     buildSeed([{ id: "skill:hello", files: skillFiles }])
     const deps = makeSeedDeps()
-    expect((await installCatalog(seedIntent, deps)).ok).toBe(true)
+    expect((await installAuthorized(seedIntent, deps)).ok).toBe(true)
     const blob = casBlobPath(casBase, sha(SKILL_MD))!
     fs.writeFileSync(blob, "tampered bytes")
-    const again = await installCatalog(seedIntent, deps)
+    const again = await installAuthorized(seedIntent, deps)
     expect(again.ok).toBe(true)
     expect(fs.readFileSync(blob, "utf8")).toBe(SKILL_MD)
   })
 
   test("refuses non-global scope (ADR-030 统一收回合同,先于 seed 通道)", async () => {
     buildSeed([{ id: "skill:hello", files: skillFiles }])
-    const r = await installCatalog({ source: "seed", assetId: "skill:hello", scope: { scope: "project", projectDir: tmp } }, makeSeedDeps())
+    const r = await installAuthorized({ source: "seed", assetId: "skill:hello", scope: { scope: "project", projectDir: tmp } }, makeSeedDeps())
     expect(r.ok).toBe(false)
     if (r.ok) return
     expect(r.reason).toContain("project-scoped catalog/seed installation is unsupported")
@@ -245,21 +256,21 @@ describe("seed install via installCatalog (REQ-102 #317)", () => {
   test("refuses unknown keys / grants / non-seed source on the seed intent form", async () => {
     buildSeed([{ id: "skill:hello", files: skillFiles }])
     const deps = makeSeedDeps()
-    const withGrants = await installCatalog({ ...seedIntent, grants: {} }, deps)
+    const withGrants = await installAuthorized({ ...seedIntent, grants: {} }, deps)
     expect(withGrants.ok).toBe(false)
     if (!withGrants.ok) expect(withGrants.reason).toContain('unknown key "grants"')
-    const badSource = await installCatalog({ source: "catalog", assetId: "skill:hello", scope: { scope: "global" } }, deps)
+    const badSource = await installAuthorized({ source: "catalog", assetId: "skill:hello", scope: { scope: "global" } }, deps)
     expect(badSource.ok).toBe(false)
-    const mixed = await installCatalog({ ...seedIntent, catalogId: "skill:hello" }, deps)
+    const mixed = await installAuthorized({ ...seedIntent, catalogId: "skill:hello" }, deps)
     expect(mixed.ok).toBe(false)
   })
 
   test("refuses when the seed channel or packaged seed is unavailable", async () => {
     buildSeed([{ id: "skill:hello", files: skillFiles }])
     const noChannel: PlannerDeps = { ...makeSeedDeps(), seed: undefined }
-    const r1 = await installCatalog(seedIntent, noChannel)
+    const r1 = await installAuthorized(seedIntent, noChannel)
     expect(r1.ok).toBe(false)
-    const r2 = await installCatalog(seedIntent, makeSeedDeps({ seedDirOverride: null }))
+    const r2 = await installAuthorized(seedIntent, makeSeedDeps({ seedDirOverride: null }))
     expect(r2.ok).toBe(false)
     if (!r2.ok) expect(r2.reason).toContain("no packaged seed")
   })
@@ -267,14 +278,14 @@ describe("seed install via installCatalog (REQ-102 #317)", () => {
   test("refuses a corrupt seed lock (fail closed, loud)", async () => {
     buildSeed([{ id: "skill:hello", files: skillFiles }])
     fs.writeFileSync(path.join(seedDir, "seed.lock.json"), "{ not json")
-    const r = await installCatalog(seedIntent, makeSeedDeps())
+    const r = await installAuthorized(seedIntent, makeSeedDeps())
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toContain("packaged seed rejected")
   })
 
   test("refuses an asset that is not in the packaged seed", async () => {
     buildSeed([{ id: "skill:hello", files: skillFiles }])
-    const r = await installCatalog({ ...seedIntent, assetId: "skill:missing" }, makeSeedDeps())
+    const r = await installAuthorized({ ...seedIntent, assetId: "skill:missing" }, makeSeedDeps())
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toContain("not in packaged seed")
   })
@@ -284,7 +295,7 @@ describe("seed install via installCatalog (REQ-102 #317)", () => {
       { id: "agent:bug-triage", files: [{ path: "AGENT.md", content: "agent body" }] },
       { id: "skill:hello", files: skillFiles },
     ])
-    const r = await installCatalog({ ...seedIntent, assetId: "agent:bug-triage" }, makeSeedDeps())
+    const r = await installAuthorized({ ...seedIntent, assetId: "agent:bug-triage" }, makeSeedDeps())
     expect(r.ok).toBe(false)
     if (!r.ok) {
       expect(r.reason).toContain('type "agent"')
@@ -294,7 +305,7 @@ describe("seed install via installCatalog (REQ-102 #317)", () => {
 
   test("refuses when the bundled catalog has no matching entry (seed/catalog drift)", async () => {
     buildSeed([{ id: "skill:hello", files: skillFiles }])
-    const r = await installCatalog(seedIntent, makeSeedDeps({ bundledEntries: [] }))
+    const r = await installAuthorized(seedIntent, makeSeedDeps({ bundledEntries: [] }))
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toContain("not in bundled catalog")
   })
@@ -309,7 +320,7 @@ describe("seed install via installCatalog (REQ-102 #317)", () => {
       { label: "changed bytes", files: files().map((f) => (f.path === "SKILL.md" ? { ...f, bytes: f.bytes + 1 } : f)) },
     ]
     for (const v of variants) {
-      const r = await installCatalog(
+      const r = await installAuthorized(
         seedIntent,
         makeSeedDeps({ bundledEntries: [bundledSkillEntry({ remoteAsset: { version: "1.0.0", files: v.files } })] }),
       )
@@ -320,18 +331,18 @@ describe("seed install via installCatalog (REQ-102 #317)", () => {
 
   test("refuses catalogVersion / version / file-digest drift between seed lock and bundled entry", async () => {
     buildSeed([{ id: "skill:hello", files: skillFiles }])
-    const catVer = await installCatalog(seedIntent, makeSeedDeps({ bundledVersion: "2026-07-14.1" }))
+    const catVer = await installAuthorized(seedIntent, makeSeedDeps({ bundledVersion: "2026-07-14.1" }))
     expect(catVer.ok).toBe(false)
     if (!catVer.ok) expect(catVer.reason).toContain("catalogVersion")
 
-    const verDrift = await installCatalog(seedIntent, makeSeedDeps({ bundledEntries: [bundledSkillEntry({ version: "1.0.1" })] }))
+    const verDrift = await installAuthorized(seedIntent, makeSeedDeps({ bundledEntries: [bundledSkillEntry({ version: "1.0.1" })] }))
     expect(verDrift.ok).toBe(false)
     if (!verDrift.ok) expect(verDrift.reason).toContain("drift")
 
     const driftedFiles = lockFileEntries(skillFiles, { writeBlobs: false }).map((f) =>
       f.path === "SKILL.md" ? { ...f, sha256: "d".repeat(64) } : f,
     )
-    const shaDrift = await installCatalog(
+    const shaDrift = await installAuthorized(
       seedIntent,
       makeSeedDeps({ bundledEntries: [bundledSkillEntry({ remoteAsset: { version: "1.0.0", files: driftedFiles } })] }),
     )
@@ -353,12 +364,12 @@ describe("seed install via installCatalog (REQ-102 #317)", () => {
       installedAt: new Date().toISOString(),
     }
     expect(upsertRecordV2(globalRoot, installed).ok).toBe(true)
-    const down = await installCatalog(seedIntent, makeSeedDeps())
+    const down = await installAuthorized(seedIntent, makeSeedDeps())
     expect(down.ok).toBe(false)
     if (!down.ok) expect(down.reason).toContain("refusing downgrade")
 
     expect(upsertRecordV2(globalRoot, { ...installed, version: "weird-tag" }).ok).toBe(true)
-    const weird = await installCatalog(seedIntent, makeSeedDeps())
+    const weird = await installAuthorized(seedIntent, makeSeedDeps())
     expect(weird.ok).toBe(false)
     if (!weird.ok) expect(weird.reason).toContain("not comparable")
   })
@@ -376,7 +387,7 @@ describe("seed install via installCatalog (REQ-102 #317)", () => {
       installedAt: new Date().toISOString(),
     }
     expect(upsertRecordV2(globalRoot, noVersion).ok).toBe(true)
-    const r = await installCatalog(seedIntent, makeSeedDeps())
+    const r = await installAuthorized(seedIntent, makeSeedDeps())
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toContain("no recorded version")
   })
@@ -384,7 +395,7 @@ describe("seed install via installCatalog (REQ-102 #317)", () => {
   test("refuses when the target v2 record is corrupt or the ledger file is unreadable", async () => {
     buildSeed([{ id: "skill:hello", files: skillFiles }])
     const deps = makeSeedDeps()
-    expect((await installCatalog(seedIntent, deps)).ok).toBe(true)
+    expect((await installAuthorized(seedIntent, deps)).ok).toBe(true)
 
     // 损坏目标 record(schemaVersion 变异 → decode 拒 → corrupt-match):seed 重装必须拒,不得借机重建。
     const ledger = path.join(globalRoot, "installs.json")
@@ -397,13 +408,13 @@ describe("seed install via installCatalog (REQ-102 #317)", () => {
       }
     }
     fs.writeFileSync(ledger, JSON.stringify(parsed))
-    const corruptRecord = await installCatalog(seedIntent, deps)
+    const corruptRecord = await installAuthorized(seedIntent, deps)
     expect(corruptRecord.ok).toBe(false)
     if (!corruptRecord.ok) expect(corruptRecord.reason).toContain("refusing seed install")
 
     // 账本文件级损坏:同样 fail-closed。
     fs.writeFileSync(ledger, "{ not json")
-    const corruptLedger = await installCatalog(seedIntent, deps)
+    const corruptLedger = await installAuthorized(seedIntent, deps)
     expect(corruptLedger.ok).toBe(false)
     if (!corruptLedger.ok) expect(corruptLedger.reason).toContain("refusing seed install")
   })
@@ -509,6 +520,25 @@ describe("installSkillGeneration CAS content source (REQ-102 #317)", () => {
       casFiles: { specs: specsFor(skillFiles), casBaseRoot: casBase },
     })
     expect(r.ok).toBe(false)
+    expect(resolveLiveGenerationDir(globalRoot, skillGenerationKey("hello"))).toBeNull()
+    expect(findRecordV2(globalRoot, "skill", "hello")).toBeNull()
+  })
+})
+
+// ── #348:seed 路径的 authorize 闸显式锁定(capabilities 漏传即此测试失败)────────────────────────
+describe("seed capability authorize gate (REQ-100 #348)", () => {
+  test("seed 首装零权威副作用停在 authorize,requested = manifest.capabilities", async () => {
+    buildSeed([{ id: "skill:hello", files: skillFiles }])
+    const deps = makeSeedDeps()
+    const first = await installCatalog(seedIntent, deps)
+    expect(first.ok).toBe(false)
+    if (first.ok) throw new Error("unreachable")
+    expect(first.stage).toBe("authorize")
+    if (first.stage !== "authorize") throw new Error("unreachable")
+    expect(first.authorization).toHaveLength(1)
+    expect(first.authorization[0]!.key).toBe(skillGenerationKey("hello"))
+    expect(first.authorization[0]!.requested).toEqual(["prompt:context"])
+    expect(first.authorization[0]!.previous).toBeNull()
     expect(resolveLiveGenerationDir(globalRoot, skillGenerationKey("hello"))).toBeNull()
     expect(findRecordV2(globalRoot, "skill", "hello")).toBeNull()
   })

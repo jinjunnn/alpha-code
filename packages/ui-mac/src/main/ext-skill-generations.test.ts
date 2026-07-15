@@ -373,3 +373,29 @@ describe("collectSkillPayloadFromDir", () => {
     expect(r.ok).toBe(false)
   })
 })
+
+// ── #348:capabilities/authorization 直连事务引擎的适配层契约 ─────────────────────────────────────
+describe("capability threading (REQ-100 #348)", () => {
+  test("capabilities 非空 + 无 authorization → 判别分支带 diff;确认重驱落 grants", async () => {
+    const first = await install("capdemo", {}, { capabilities: ["prompt:context"] })
+    expect(first.ok).toBe(false)
+    if (first.ok) throw new Error("unreachable")
+    expect(first.stage).toBe("authorize")
+    if (first.stage !== "authorize") throw new Error("unreachable")
+    expect(first.authorization).toHaveLength(1)
+    expect(first.authorization[0]!.key).toBe(skillGenerationKey("capdemo"))
+    expect(first.authorization[0]!.requested).toEqual(["prompt:context"])
+    expect(resolveLiveGenerationDir(root, skillGenerationKey("capdemo"))).toBeNull() // 零权威副作用
+    const second = await install("capdemo", {}, {
+      capabilities: ["prompt:context"],
+      authorization: { confirmed: { [skillGenerationKey("capdemo")]: ["prompt:context"] }, decidedAt: new Date().toISOString() },
+    })
+    expect(second.ok).toBe(true)
+    expect(resolveLiveGenerationDir(root, skillGenerationKey("capdemo"))).not.toBeNull()
+  })
+
+  test("capabilities 空集 → 闸静默通过(显式空集是合法选择,非遗漏)", async () => {
+    const r = await install("nocap", {}, { capabilities: [] })
+    expect(r.ok).toBe(true)
+  })
+})

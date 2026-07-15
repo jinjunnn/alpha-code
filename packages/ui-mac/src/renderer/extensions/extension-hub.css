@@ -1543,3 +1543,127 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   width: 100%;
   margin: 8px 0;
 }
+
+/* ── #348:能力授权确认视图 .alpha-ext-authz(stage="authorize";设计稿
+      docs/design/2026-07-15-capability-authorize-dialog,视觉零改动:全部 --a-* token)────── */
+.alpha-ext-authz {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* 两阶段原地切换的滑入;--a-dur-* 在 prefers-reduced-motion 下为 0(tokens.css)。 */
+  animation: alpha-ext-authz-in var(--a-dur-base) var(--a-ease-out);
+}
+@keyframes alpha-ext-authz-in {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+}
+.alpha-ext-authz-intro {
+  margin: 0;
+  font-size: var(--a-text-base);
+  line-height: var(--a-leading-normal);
+  color: var(--a-text-secondary);
+}
+.alpha-ext-authz-box {
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-lg);
+  overflow: hidden;
+}
+.alpha-ext-authz-cap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  font-size: var(--a-text-sm);
+}
+.alpha-ext-authz-cap + .alpha-ext-authz-cap,
+.alpha-ext-authz-item + .alpha-ext-authz-cap,
+.alpha-ext-authz-cap + .alpha-ext-authz-item,
+.alpha-ext-authz-item + .alpha-ext-authz-item {
+  border-top: 1px solid var(--a-border-faint);
+}
+.alpha-ext-authz-cap[data-muted] {
+  opacity: 0.62;
+}
+.alpha-ext-authz-ic {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  background: var(--a-bg-muted);
+  color: var(--a-text-secondary);
+}
+.alpha-ext-authz-ic[data-tier="high"] {
+  background: var(--a-warning-subtle);
+  color: var(--a-warning);
+}
+.alpha-ext-authz-ic svg {
+  width: 13px;
+  height: 13px;
+}
+.alpha-ext-authz-nm {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.alpha-ext-authz-nm b {
+  font-weight: var(--a-weight-medium);
+  font-size: var(--a-text-sm);
+}
+.alpha-ext-authz-nm small {
+  font-size: var(--a-text-2xs);
+  color: var(--a-text-tertiary);
+}
+.alpha-ext-authz-id {
+  margin-left: auto;
+  font-family: var(--a-font-mono);
+  font-size: 10.5px;
+  color: var(--a-text-tertiary);
+  background: var(--a-bg-muted);
+  border: 1px solid var(--a-border-faint);
+  padding: 1px 6px;
+  border-radius: 5px;
+  flex: none;
+}
+.alpha-ext-authz-chip {
+  flex: none;
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-medium);
+  padding: 2px 7px;
+  border-radius: var(--a-radius-full);
+  letter-spacing: var(--a-tracking-wide);
+}
+.alpha-ext-authz-chip[data-kind="new"],
+.alpha-ext-authz-chip[data-kind="risk"] {
+  background: var(--a-warning-subtle);
+  color: var(--a-warning);
+}
+.alpha-ext-authz-chip[data-kind="granted"] {
+  background: var(--a-bg-muted);
+  color: var(--a-text-tertiary);
+}
+.alpha-ext-authz-chip[data-kind="removed"] {
+  background: var(--a-success-subtle);
+  color: var(--a-success);
+}
+.alpha-ext-authz-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--a-bg-subtle);
+  font-size: var(--a-text-xs);
+  font-weight: var(--a-weight-medium);
+  color: var(--a-text-secondary);
+}
+.alpha-ext-authz-rest {
+  padding: 9px 14px;
+  font-size: var(--a-text-xs);
+  color: var(--a-text-tertiary);
+  border-top: 1px solid var(--a-border-faint);
+  background: var(--a-bg-subtle);
+}

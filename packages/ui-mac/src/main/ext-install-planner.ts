@@ -34,12 +34,16 @@ import {
   runExtensionTransaction,
   actionOf,
   uninstallExtensionTransaction,
+  type TxAuthorizationDecision,
   type TxCommitRecord,
   type TxFileSpec,
   type TxHooks,
   type TxPlan,
   type TxPlanItem,
+  type TxStage,
 } from "./ext-transaction"
+import { isSafeCapability, type CapabilityDiff } from "./ext-capability-grants"
+import type { AuthorizationConfirmationWire } from "../shared/ext-capability-authorization"
 import { findReceipt } from "./alpha-installs"
 import {
   aggregateFilesDigest,
@@ -82,7 +86,7 @@ import {
   type SkillPayloadFile,
 } from "./ext-skill-generations"
 import { promoteSeedAssetToCas, readPackagedSeed, type SeedAsset } from "./ext-seed"
-import { materializeFilesFromCas, putCasBlobFromBuffer } from "./ext-cas"
+import { casBlobPath, materializeFilesFromCas, putCasBlobFromBuffer, readCasBlobVerified } from "./ext-cas"
 import { isSafeRelPath } from "./ext-atomic-fs"
 
 // ── renderer intents(严格解码:未知键 = 伪造事实通道,loud 拒绝)─────────────────────────────
@@ -98,10 +102,16 @@ export type InstallGrants = {
   /** 中国镜像 env(值为 main 侧常量,renderer 只表达偏好)。 */
   cnMirror?: boolean
 }
-export type CatalogInstallIntent = { catalogId: string; scope: InstallScope; grants?: InstallGrants }
+export type CatalogInstallIntent = {
+  catalogId: string
+  scope: InstallScope
+  grants?: InstallGrants
+  /** #348:authorize 重驱确认(renderer 只交 confirmed;decidedAt 审计戳由 main 生成)。 */
+  authorization?: AuthorizationConfirmationWire
+}
 /** seed 安装意图(REQ-102 #317):renderer 只表达「选中哪个随包资产」;seedDir/CAS 根/文件清单/版本/
  *  receipt 元数据全部 main-owned。与 catalog 意图判别互斥(source 键在场 = seed 形态)。 */
-export type SeedInstallIntent = { source: "seed"; assetId: string; scope: InstallScope }
+export type SeedInstallIntent = { source: "seed"; assetId: string; scope: InstallScope; authorization?: AuthorizationConfirmationWire }
 
 export type UninstallIntent =
   | { type: InstallReceiptType; name: string; scope: "global" }
@@ -125,7 +135,10 @@ export type CatalogInstallOutcome =
       skipped?: Array<{ id: string; reason: string }>
       warning?: string
     }
-  | { ok: false; reason: string }
+  /** #348:authorize 暂停判别分支 —— 零权威副作用,携带逐 item diff 等确认后带 authorization
+   *  重驱同一入口(Codex 裁决 C1:强制携带 diff,不允许折叠成裸 reason 字符串)。 */
+  | { ok: false; stage: "authorize"; reason: string; authorization: CapabilityDiff[] }
+  | { ok: false; reason: string; stage?: Exclude<TxStage, "authorize"> }
 
 export type UninstallOutcome = { ok: true; files?: string[]; warning?: string } | { ok: false; reason: string }
 
@@ -142,6 +155,41 @@ function decodeStringMap(v: unknown, at: string): { ok: true; map: Record<string
     map[k] = val
   }
   return { ok: true, map }
+}
+
+/** #348:authorize 确认的严格解码(Codex 裁决 B2 分界:解码层管结构 + 资源边界,引擎管语义 ——
+ *  confirmed key ∈ 本次 plan、锁内最新 grants、requested ⊆ confirmed 整集覆盖都在引擎)。
+ *  key 用引擎事务 item key 规则(SAFE_KEY/128),不沿用 catalog id 的 200 上限;decidedAt 无通道
+ *  (审计戳 main 生成);重建全新 Record,不保留 renderer 对象引用。 */
+const TX_ITEM_KEY = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/
+const MAX_CONFIRMED_ITEMS = 64 // 对齐引擎单事务 item 规模;超界 = 伪造面,整体拒绝
+function decodeAuthorizationConfirmation(
+  v: unknown,
+): { ok: true; authorization: AuthorizationConfirmationWire } | { ok: false; reason: string } {
+  if (!isObj(v)) return { ok: false, reason: "intent.authorization: must be an object" }
+  for (const key of Object.keys(v)) {
+    if (key !== "confirmed") return { ok: false, reason: `intent.authorization: unknown key "${key}" — refused` }
+  }
+  if (!isObj(v.confirmed)) return { ok: false, reason: "intent.authorization.confirmed: required object" }
+  const entries = Object.entries(v.confirmed)
+  if (entries.length > MAX_CONFIRMED_ITEMS)
+    return { ok: false, reason: `intent.authorization.confirmed: too many items (${entries.length} > ${MAX_CONFIRMED_ITEMS})` }
+  const confirmed: Record<string, string[]> = {}
+  for (const [key, caps] of entries) {
+    if (!TX_ITEM_KEY.test(key)) return { ok: false, reason: `intent.authorization.confirmed: invalid item key "${key}"` }
+    if (!Array.isArray(caps) || caps.length > 32)
+      return { ok: false, reason: `intent.authorization.confirmed["${key}"]: must be an array of ≤32 capabilities` }
+    const seen = new Set<string>()
+    const clean: string[] = []
+    for (const cap of caps) {
+      if (!isSafeCapability(cap)) return { ok: false, reason: `intent.authorization.confirmed["${key}"]: unsafe capability` }
+      if (seen.has(cap)) return { ok: false, reason: `intent.authorization.confirmed["${key}"]: duplicate capability "${cap}"` }
+      seen.add(cap)
+      clean.push(cap)
+    }
+    confirmed[key] = clean
+  }
+  return { ok: true, authorization: { confirmed } }
 }
 
 function decodeScope(v: unknown): { ok: true; scope: InstallScope } | { ok: false; reason: string } {
@@ -165,17 +213,23 @@ export function decodeCatalogInstallIntent(input: unknown): { ok: true; intent: 
   if (input.source !== undefined) {
     if (input.source !== "seed") return { ok: false, reason: `intent.source: ${JSON.stringify(input.source)} not "seed"` }
     for (const key of Object.keys(input)) {
-      if (key !== "source" && key !== "assetId" && key !== "scope")
+      if (key !== "source" && key !== "assetId" && key !== "scope" && key !== "authorization")
         return { ok: false, reason: `seed intent: unknown key "${key}" — renderer-supplied install facts are refused (ADR-028 §1)` }
     }
     if (typeof input.assetId !== "string" || input.assetId.length === 0 || input.assetId.length > 200)
       return { ok: false, reason: "intent.assetId: required non-empty string" }
     const scope = decodeScope(input.scope)
     if (!scope.ok) return scope
-    return { ok: true, intent: { source: "seed", assetId: input.assetId, scope: scope.scope } }
+    let seedAuthz: AuthorizationConfirmationWire | undefined
+    if (input.authorization !== undefined) {
+      const a = decodeAuthorizationConfirmation(input.authorization)
+      if (!a.ok) return a
+      seedAuthz = a.authorization
+    }
+    return { ok: true, intent: { source: "seed", assetId: input.assetId, scope: scope.scope, ...(seedAuthz ? { authorization: seedAuthz } : {}) } }
   }
   for (const key of Object.keys(input)) {
-    if (key !== "catalogId" && key !== "scope" && key !== "grants")
+    if (key !== "catalogId" && key !== "scope" && key !== "grants" && key !== "authorization")
       return { ok: false, reason: `intent: unknown key "${key}" — renderer-supplied install facts are refused (ADR-028 §1)` }
   }
   if (typeof input.catalogId !== "string" || input.catalogId.length === 0 || input.catalogId.length > 200)
@@ -210,7 +264,16 @@ export function decodeCatalogInstallIntent(input: unknown): { ok: true; intent: 
       grants.cnMirror = input.grants.cnMirror
     }
   }
-  return { ok: true, intent: { catalogId: input.catalogId, scope: scope.scope, ...(grants ? { grants } : {}) } }
+  let authorization: AuthorizationConfirmationWire | undefined
+  if (input.authorization !== undefined) {
+    const a = decodeAuthorizationConfirmation(input.authorization)
+    if (!a.ok) return a
+    authorization = a.authorization
+  }
+  return {
+    ok: true,
+    intent: { catalogId: input.catalogId, scope: scope.scope, ...(grants ? { grants } : {}), ...(authorization ? { authorization } : {}) },
+  }
 }
 
 /** 严格解码卸载意图:type + name + scope(+ projectDir)。绝对路径/receipt 字段没有通道(ADR-028 §1)。 */
@@ -520,6 +583,51 @@ function promotePayloadToCas(
   return { ok: true, specs, warnings }
 }
 
+/** #348(Codex 必改 5):remote 载荷的 CAS 复用探测 —— 首驱已把 blob 提升进共享 CAS,authorize
+ *  确认重驱不得再次访问网络。逐 blob **读取重验**(readCasBlobVerified:防盘上篡改)+ bytes 精确,
+ *  且清单结构过与 promotePayloadToCas 第一遍同源的路径守卫;全部命中才复用,并 touch mtime
+ *  (GC #318 的 grace 以 mtime 计,复用即续命);任一缺失/损坏 → cache miss,回下载路径
+ *  (下载层继续按清单 digest 验证)。manifest/digest 变化自然 miss。 */
+function tryReuseCasPayload(
+  casBaseRoot: string,
+  manifest: Array<{ path: string; sha256: string; bytes: number }>,
+): { hit: true; specs: TxFileSpec[] } | { hit: false } {
+  if (manifest.length === 0) return { hit: false }
+  const portable = new Set<string>()
+  const specs: TxFileSpec[] = []
+  for (const m of manifest) {
+    if (!isSafeRelPath(m.path) || portablePathProblem(m.path)) return { hit: false }
+    const folded = portablePathKey(m.path)
+    if (portable.has(folded)) return { hit: false }
+    portable.add(folded)
+    const read = readCasBlobVerified(casBaseRoot, m.sha256)
+    if (!read.ok || read.data.length !== m.bytes) return { hit: false }
+    specs.push({ path: m.path, sha256: m.sha256, size: m.bytes })
+  }
+  const now = new Date()
+  for (const m of manifest) {
+    const p = casBlobPath(casBaseRoot, m.sha256)
+    if (!p) return { hit: false }
+    try {
+      fs.utimesSync(p, now, now)
+    } catch (error) {
+      // review minor:读取与 touch 之间 blob 被 GC 删除(ENOENT)= 已知缺失,必须转 cache miss
+      // 回下载路径,不得报 hit 让 materialize 晚点才炸;其它失败(权限等)才是 best-effort 续命。
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { hit: false }
+    }
+  }
+  return { hit: true, specs }
+}
+
+/** #348:renderer 只交 confirmed;decidedAt 是授权收据的审计事实,由 main 在此打戳(Codex 裁决 B1)。 */
+function stampAuthorization(
+  wire: AuthorizationConfirmationWire | undefined,
+  now: () => string,
+): TxAuthorizationDecision | undefined {
+  if (!wire) return undefined
+  return { confirmed: wire.confirmed, decidedAt: now() }
+}
+
 // ── scope 解析(项目闭环:identity fail-closed)──────────────────────────────────────────────────
 
 /** ADR-030(#372):新增 project-scope catalog/seed 受管安装已收回 —— 稳定拒绝 reason(wire 形状
@@ -590,6 +698,17 @@ async function classifyBundleChild(
     let manifestFiles: Array<{ path: string; sha256: string; bytes: number }>
     let payloadDigest: string | undefined
     if (fsSpec?.source === "remote" && entry.remoteAsset?.files?.length) {
+      // #348:与单装同源的重驱缓存 —— CAS 逐 blob 重验命中即免下载(authorize 确认重驱零网络)。
+      const cached = tryReuseCasPayload(deps.casBaseRoot(), entry.remoteAsset.files)
+      if (cached.hit) {
+        const key = bundleKeyFor("skill", entry.name)
+        return {
+          status: "install",
+          id,
+          item: { key, files: cached.specs, manifestDigest, capabilities: decoded.manifest.capabilities },
+          record: { ...baseRecord, kind: "skill", payloadDigest: aggregateFilesDigest(entry.remoteAsset.files) },
+        }
+      }
       const dl = await deps.installers.downloadRemoteAsset(entry.remoteAsset.files)
       if (!dl.ok) return { status: "fatal", id, reason: dl.reason }
       payload = dl.contents
@@ -610,7 +729,9 @@ async function classifyBundleChild(
     return {
       status: "install",
       id,
-      item: { key, files: promoted.specs, manifestDigest },
+      // #348:capabilities = 本子项严格解码 manifest 的能力集(逐子项,绝不把 bundle 并集复制给
+      // 每个子项 —— grants key 与能力归属必须一一对应)。
+      item: { key, files: promoted.specs, manifestDigest, capabilities: decoded.manifest.capabilities },
       record: { ...baseRecord, kind: "skill", ...(payloadDigest ? { payloadDigest } : {}) },
       ...(promoted.warnings.length ? { warnings: promoted.warnings } : {}),
     }
@@ -640,6 +761,7 @@ async function classifyBundleChild(
         action: "config",
         config: { target: path.join(deps.globalRoot(), "alpha.jsonc"), edits: [{ keyPath: ["mcp", entry.name], value: derived.config }] },
         manifestDigest,
+        capabilities: decoded.manifest.capabilities,
       },
       record: { ...baseRecord, kind: "mcp", configKey: `mcp.${entry.name}` },
     }
@@ -647,7 +769,12 @@ async function classifyBundleChild(
 
   if (entry.type === "cloud") {
     const key = bundleKeyFor("cloud", entry.name)
-    return { status: "install", id, item: { key, action: "receipt", manifestDigest }, record: { ...baseRecord, kind: "cloud" } }
+    return {
+      status: "install",
+      id,
+      item: { key, action: "receipt", manifestDigest, capabilities: decoded.manifest.capabilities },
+      record: { ...baseRecord, kind: "cloud" },
+    }
   }
 
   // agent / plugin(vendored·npm)/ 嵌套 bundle:不在首期原子边界内。
@@ -741,6 +868,10 @@ async function installBundleAtomic(
 
   const plan: TxPlan = {
     items: planItems,
+    // #348:bundle 一次展示、一次授权、一次 commit —— 确认重驱带回的整集决定进引擎 plan。
+    ...(intent.authorization
+      ? { authorization: stampAuthorization(intent.authorization, () => deps.now?.() ?? new Date().toISOString())! }
+      : {}),
     // journal 的 skippedOptional.key 必须 fs-safe 且有界(引擎 validatePlan 拒冒号/超长/重复)。
     // catalog id 不受 fs-safe 约束(仅非空/无控制字符/≤200),朴素替换非单射(review #363 Major 1:
     // "skill:a:b--c" 与 "skill:a--b:c" 碰撞会被判 duplicate 拒整单)。取 injective-by-hash 编码,
@@ -766,7 +897,16 @@ async function installBundleAtomic(
   }
 
   const result = await runExtensionTransaction(deps.globalRoot(), plan, hooks)
-  if (!result.ok) return { ok: false, reason: `bundle install failed at ${result.stage}: ${result.reason}` }
+  if (!result.ok) {
+    // #348:authorize 结构化透传(reason 保留 bundle 上下文,但 stage 不再折叠进字符串)。
+    if (result.stage === "authorize") {
+      if (result.authorization)
+        return { ok: false, stage: "authorize", reason: `bundle "${verified.entry.name}": ${result.reason}`, authorization: result.authorization }
+      // 引擎契约保证 authorize 必带 diff;万一缺失按无 stage 的诚实失败返回,绝不谎标其它 stage。
+      return { ok: false, reason: `bundle install failed at authorize: ${result.reason}` }
+    }
+    return { ok: false, reason: `bundle install failed at ${result.stage}: ${result.reason}`, stage: result.stage }
+  }
   return {
     ok: true,
     kind: "bundle",
@@ -912,17 +1052,23 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
     const fsSpec = spec as { kind?: string; source?: string; builtinAssetKey?: string } | undefined
     let promoted: { specs: TxFileSpec[]; warnings: string[] }
     if (fsSpec?.source === "remote" && entry.remoteAsset?.files?.length) {
-      const dl = await deps.installers.downloadRemoteAsset(entry.remoteAsset.files)
-      if (!dl.ok) {
-        rollback(dl.reason)
-        return dl
+      // #348:authorize 确认重驱不得二次下载 —— 首驱已提升进 CAS,逐 blob 读取重验命中即复用。
+      const cached = tryReuseCasPayload(deps.casBaseRoot(), entry.remoteAsset.files)
+      if (cached.hit) {
+        promoted = { specs: cached.specs, warnings: [] }
+      } else {
+        const dl = await deps.installers.downloadRemoteAsset(entry.remoteAsset.files)
+        if (!dl.ok) {
+          rollback(dl.reason)
+          return dl
+        }
+        const p = promotePayloadToCas(deps.casBaseRoot(), dl.contents, entry.remoteAsset.files)
+        if (!p.ok) {
+          rollback(p.reason)
+          return { ok: false, reason: p.reason }
+        }
+        promoted = p
       }
-      const p = promotePayloadToCas(deps.casBaseRoot(), dl.contents, entry.remoteAsset.files)
-      if (!p.ok) {
-        rollback(p.reason)
-        return { ok: false, reason: p.reason }
-      }
-      promoted = p
       payloadDigest = aggregateFilesDigest(entry.remoteAsset.files)
     } else if (fsSpec?.source === "builtin" && fsSpec.builtinAssetKey) {
       const c = deps.installers.collectBuiltinSkillPayload(fsSpec.builtinAssetKey, entry.name)
@@ -950,14 +1096,21 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       scope: scope.identity,
       origin: "catalog",
       casFiles: { specs: promoted.specs, casBaseRoot: deps.casBaseRoot() },
+      // #348:能力集取严格解码后的 manifest.capabilities(单一事实,不再二次派生);authorize
+      // 重驱决定由 main 打戳 decidedAt(renderer 无审计戳通道)。
+      capabilities: manifest.capabilities,
+      ...(intent.authorization ? { authorization: stampAuthorization(intent.authorization, () => deps.now?.() ?? new Date().toISOString())! } : {}),
       version: manifest.version,
       manifestDigest,
       ...(payloadDigest ? { payloadDigest } : {}),
       grantDigest: computeGrantDigest(grants),
     })
     if (!gen.ok) {
+      // authorize 暂停 = 本次 planner attempt 结束且未 commit(rollback 配对 begin,非引擎写后回滚
+      // —— Codex 裁决 C2);判别分支携带 diff 供确认框渲染,其余失败原样透传 stage。
       rollback(gen.reason)
-      return { ok: false, reason: gen.reason }
+      if (gen.stage === "authorize") return { ok: false, stage: "authorize", reason: gen.reason, authorization: gen.authorization }
+      return { ok: false, reason: gen.reason, ...(gen.stage ? { stage: gen.stage } : {}) }
     }
     ;(deps.transaction ?? passthroughTx).commit(tx.txId)
     return {
@@ -1171,6 +1324,9 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
     scope: { kind: "global" },
     origin: "catalog",
     casFiles: { specs: promoted.files, casBaseRoot },
+    // #348:seed 与 catalog 单装同一 authorize 契约(能力集 = 严格解码 manifest;重驱决定 main 打戳)。
+    capabilities: manifest.capabilities,
+    ...(intent.authorization ? { authorization: stampAuthorization(intent.authorization, () => deps.now?.() ?? new Date().toISOString())! } : {}),
     version: manifest.version,
     manifestDigest,
     payloadDigest,
@@ -1179,7 +1335,8 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
   })
   if (!gen.ok) {
     rollback(gen.reason)
-    return { ok: false, reason: gen.reason }
+    if (gen.stage === "authorize") return { ok: false, stage: "authorize", reason: gen.reason, authorization: gen.authorization }
+    return { ok: false, reason: gen.reason, ...(gen.stage ? { stage: gen.stage } : {}) }
   }
   ;(deps.transaction ?? passthroughTx).commit(tx.txId)
   return { ok: true, kind: "skill", name: entry.name, ...(gen.files.length ? { files: gen.files } : {}), manifestDigest }

@@ -18,6 +18,7 @@
 
 import * as fs from "node:fs"
 import * as path from "node:path"
+import type { CapabilityDiffWire } from "../shared/ext-capability-authorization"
 import { writeFileAtomicSync } from "./ext-atomic-fs"
 
 export type CapabilityGrant = {
@@ -30,15 +31,9 @@ export type CapabilityGrant = {
   grantedAt: string
 }
 
-export type CapabilityDiff = {
-  key: string
-  /** null = 无授权记录(全新安装 / v1 遗留 / 授权账不可读)—— fail closed,任何非空请求都要确认。 */
-  previous: string[] | null
-  requested: string[]
-  added: string[]
-  removed: string[]
-  requiresConfirmation: boolean
-}
+/** #348:与 IPC wire DTO 同一定义(shared 是形状真源,语义仍在本模块)——
+ *  previous null = 无授权记录(全新安装 / v1 遗留 / 授权账不可读),fail closed,任何非空请求都要确认。 */
+export type CapabilityDiff = CapabilityDiffWire
 
 const SAFE_KEY = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/
 const CAPABILITY_RE = /^[a-z][a-z0-9:._-]{0,63}$/i
