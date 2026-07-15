@@ -42,7 +42,7 @@ import bundledCatalogJson from "../renderer/extensions/alpha-catalog.json"
 import type { Catalog } from "../renderer/extensions/catalog-types"
 import { getAlphaEnvironment } from "./alpha-environment"
 import { installCatalog, listGenerationsByKey, rollbackGenerationByKey, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
-import { lookupForUninstall, migrateV1Ledger, readLedgerV2, removeRecordV2, upsertRecordsV2 } from "./ext-receipt-v2"
+import { lookupForUninstall, migrateV1Ledger, parseUninstallLedgerKey, readLedgerV2, removeRecordV2, upsertRecordsV2 } from "./ext-receipt-v2"
 import { packagedSeedBrowseView, readPackagedSeed } from "./ext-seed"
 import { recoverExtensionTransactions, recoveryClean } from "./ext-transaction"
 import { getLogger } from "./logging"
@@ -428,12 +428,11 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
     // REQ-100 #313:卸载恢复的账本删除(key="skill--<name>" → 幂等去账;去账失败抛错 → 保持
     // uninstalling 供下次前滚,绝不谎报卸载完成)。
     commitUninstall: (key) => {
-      const sep = key.indexOf("--")
-      if (sep <= 0) return // 非法 key = 无可去账
-      const kind = key.slice(0, sep)
-      const name = key.slice(sep + 2)
-      if (kind !== "skill" && kind !== "agent" && kind !== "mcp" && kind !== "plugin" && kind !== "cloud") return
-      const rm = removeRecordV2(alphaGlobalRoot(), kind, name)
+      // review #374 Major:非法/未知 key 必须抛错(journal 保持非终态待诊断)—— 此前静默 return
+      // 会让「账本操作从未发生」的卸载被写成 uninstalled。
+      const parsed = parseUninstallLedgerKey(key)
+      if (!parsed) throw new Error(`unrecognized uninstall ledger key "${key}" — retained for diagnosis`)
+      const rm = removeRecordV2(alphaGlobalRoot(), parsed.kind, parsed.name)
       if (!rm.ok) throw new Error(`recovery uninstall ledger removal failed: ${rm.reason}`)
     },
     // #346:config 卸载恢复的 artifact seam(恢复锁内 —— 只用 in-lock/strict 原语,绝不重取锁):

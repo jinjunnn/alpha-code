@@ -172,6 +172,15 @@ describe("persistMcp — accept paths write mcp[name]", () => {
     expect(findReceipt(alphaTmp, "mcp", "demo")).not.toBeNull()
   })
 
+  test("#346 removeMcpConfigInLock:legacy 文件可读但不可解析(malformed JSONC)→ fail-closed(review #374:jsonc-parser 不抛异常)", () => {
+    persistMcp("demo", { type: "local", command: ["npx", "-y", "demo-mcp"] })
+    fs.mkdirSync(homeTmp, { recursive: true })
+    fs.writeFileSync(path.join(homeTmp, "opencode.jsonc"), '{ "mcp": { "demo": {')
+    const r = removeMcpConfigInLock("demo")
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("unparsable")
+  })
+
   test("#346 removeMcpConfigInLock:legacy 文件存在但不可读 → fail-closed(不吞错继续)", () => {
     persistMcp("demo", { type: "local", command: ["npx", "-y", "demo-mcp"] })
     // legacy 路径之一:ALPHA_OPENCODE_HOME 下的旧 config(legacyConfigPaths 经 opencodeHomeDir 派生)

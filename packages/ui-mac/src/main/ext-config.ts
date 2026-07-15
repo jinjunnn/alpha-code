@@ -464,7 +464,12 @@ export function removeMcpConfigInLock(name: string): ConfigResult {
     if (!exists) continue
     let parsed: { mcp?: Record<string, unknown> } | undefined
     try {
-      parsed = parse(fs.readFileSync(legacy, "utf8")) as { mcp?: Record<string, unknown> } | undefined
+      // review #374 Major:jsonc-parser 对语法错误不抛异常而是返回部分对象 —— 必须收集 errors[],
+      // 任何解析错误 = 无法证明该文件不含此 MCP,fail-closed(损坏 legacy 影子复活的通道)。
+      const errors: ParseError[] = []
+      parsed = parse(fs.readFileSync(legacy, "utf8"), errors) as { mcp?: Record<string, unknown> } | undefined
+      if (errors.length > 0)
+        return { ok: false, reason: `legacy config unparsable (fail closed): ${legacy}: ${errors.length} parse error(s)` }
     } catch (error) {
       return { ok: false, reason: `legacy config unreadable (fail closed): ${legacy}: ${error instanceof Error ? error.message : String(error)}` }
     }

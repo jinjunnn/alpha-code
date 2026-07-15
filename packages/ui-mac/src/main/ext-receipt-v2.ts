@@ -532,6 +532,19 @@ export function upsertRecordsV2(root: string, inputs: UpsertInput[]): LedgerV2Ba
 }
 
 /** Remove by (kind, name) from BOTH views. Missing = ok(idempotent), removed record returned for teardown对账。 */
+/** #346(review #374 Major):卸载 journal key(`<kind>--<name>`)的严格解析 —— 未知 kind /
+ *  无分隔 / 空名一律 null。恢复期的账本删除对 null **必须抛错**(journal 保持非终态待诊断),
+ *  绝不静默返回把「未删账」写成 uninstalled。 */
+export function parseUninstallLedgerKey(key: string): { kind: InstallReceiptType; name: string } | null {
+  const sep = key.indexOf("--")
+  if (sep <= 0) return null
+  const kind = key.slice(0, sep)
+  const name = key.slice(sep + 2)
+  if (kind !== "skill" && kind !== "agent" && kind !== "mcp" && kind !== "plugin" && kind !== "cloud") return null
+  if (!name) return null
+  return { kind, name }
+}
+
 export function removeRecordV2(root: string, kind: InstallReceiptType, name: string): { ok: true; removed: InstallRecordV2 | null } | { ok: false; reason: string } {
   const { parsed, corrupt } = parseLedger(root)
   if (corrupt) quarantineCorrupt(root)

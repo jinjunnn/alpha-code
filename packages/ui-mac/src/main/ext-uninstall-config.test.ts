@@ -11,6 +11,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
+import { parseUninstallLedgerKey } from "./ext-receipt-v2"
 import {
   probeTransactionJournals,
   recoverExtensionTransactions,
@@ -163,7 +164,7 @@ describe("recoverUninstall / recoverRollback — 缺 seam 与畸形 journal 绝�
     expect(journalStates()).toEqual(["uninstall:uninstalling"])
   })
 
-  test("未知 action / 空 items / 多 items → 保持非终态待人工诊断", async () => {
+  test("未知 action / 空 items / 多 items / 畸形 key / 畸形 genId → 保持非终态待人工诊断(review #374)", async () => {
     writeRawJournal({ txId: "tx-bad-1", items: [{ key: "x--y", action: "receipt" as never, genId: "gen-000000-000000", files: [] }] })
     writeRawJournal({ txId: "tx-bad-2", items: [] })
     writeRawJournal({
@@ -173,9 +174,36 @@ describe("recoverUninstall / recoverRollback — 缺 seam 与畸形 journal 绝�
         { key: "c--d", genId: "gen-000000-000000", files: [] },
       ],
     })
+    // review #374 确定性反例:key="bogus"(无 kind 分隔)此前按 generation 分派 + 空 store 视已删 → 假终态
+    writeRawJournal({ txId: "tx-bad-4", items: [{ key: "bogus", genId: "gen-000000-000000", files: [] }] })
+    writeRawJournal({ txId: "tx-bad-5", items: [{ key: "skill--demo", genId: "not-a-gen", files: [] }] })
     const rec = await recoverExtensionTransactions(root, { uninstallArtifacts: () => {}, commitUninstall: () => {} })
     expect(rec.ok).toBe(true)
-    expect(journalStates().sort()).toEqual(["uninstall:uninstalling", "uninstall:uninstalling", "uninstall:uninstalling"])
+    expect(journalStates().every((s) => s === "uninstall:uninstalling")).toBe(true)
+    expect(journalStates()).toHaveLength(5)
+  })
+
+  test("合法形状但生产 commitUninstall 不识别的 kind → 抛错保持非终态(review #374:静默 return 假终态)", async () => {
+    writeRawJournal({ txId: "tx-weird-1", items: [{ key: "weird--name", genId: "gen-000000-000000", files: [] }] })
+    // 生产 seam 同构:parseUninstallLedgerKey null → 抛错
+    const rec = await recoverExtensionTransactions(root, {
+      uninstallArtifacts: () => {},
+      commitUninstall: (key) => {
+        if (parseUninstallLedgerKey(key) === null) throw new Error(`unrecognized uninstall ledger key "${key}"`)
+      },
+    })
+    expect(rec.ok).toBe(true)
+    expect(rec.reports[0]!.detail).toContain("ledger removal still failing")
+    expect(journalStates()).toEqual(["uninstall:uninstalling"])
+  })
+
+  test("parseUninstallLedgerKey:五 kind 通过;未知 kind / 无分隔 / 空名 = null", () => {
+    expect(parseUninstallLedgerKey("mcp--markitdown")).toEqual({ kind: "mcp", name: "markitdown" })
+    expect(parseUninstallLedgerKey("skill--a--b")).toEqual({ kind: "skill", name: "a--b" })
+    expect(parseUninstallLedgerKey("weird--name")).toBeNull()
+    expect(parseUninstallLedgerKey("bogus")).toBeNull()
+    expect(parseUninstallLedgerKey("mcp--")).toBeNull()
+    expect(parseUninstallLedgerKey("--name")).toBeNull()
   })
 
   test("恢复 seam 在恢复锁内运行:seam 内重取 bundle 锁必 busy", async () => {
@@ -210,6 +238,22 @@ describe("recoverUninstall / recoverRollback — 缺 seam 与畸形 journal 绝�
 })
 
 describe("generation 卸载 owned-path 删除失败 → journal 保留(#346 相邻缺口加固)", () => {
+  test("store 仅含不可删除 current.json(pointer EACCES)→ 非终态;修复后前滚收敛(review #374 M1)", async () => {
+    const store = path.join(root, "ext-store", "skill--demo")
+    fs.mkdirSync(store, { recursive: true })
+    fs.writeFileSync(path.join(store, "current.json"), JSON.stringify({ v: 1, generation: "gen-000001-abcdef12" }))
+    fs.chmodSync(store, 0o555) // 目录只读 → unlink current.json 必 EACCES(此前被 clearPointerSync 吞掉 → 假终态)
+    const r = await uninstallExtensionTransaction(root, "skill--demo", { commitLedger: () => {} })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("store removal incomplete")
+    expect(journalStates()).toEqual(["uninstall:uninstalling"])
+    fs.chmodSync(store, 0o755)
+    const rec = await recoverExtensionTransactions(root, { commitUninstall: () => {} })
+    expect(rec.ok).toBe(true)
+    expect(journalStates()).toEqual(["uninstall:uninstalled"])
+    expect(fs.existsSync(store)).toBe(false)
+  })
+
   test("generation 目录不可删(真实 EACCES)→ 非终态;修复后前滚收敛", async () => {
     const genDir = path.join(root, "ext-store", "skill--demo", "generations", "gen-000001-abcdef12")
     fs.mkdirSync(genDir, { recursive: true })

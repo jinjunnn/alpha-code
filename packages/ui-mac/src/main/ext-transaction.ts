@@ -422,12 +422,15 @@ function writePointerSync(root: string, key: string, genId: string, txId: string
   writeFileAtomicSync(pointer, JSON.stringify(record, null, 2) + "\n")
 }
 
+/** 只吞 ENOENT(幂等:已经不在);其余错误抛出 —— EACCES/EBUSY 下静默会让卸载/回滚谎报
+ *  指针已清(review #374 Major:pointer-only 失败曾被计入 removed 并终态化)。 */
 function clearPointerSync(root: string, key: string): void {
   const { pointer } = extensionStorePaths(root, key)
   try {
     fs.unlinkSync(pointer)
-  } catch {
-    /* already gone */
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return
+    throw error
   }
 }
 
@@ -996,7 +999,11 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
         writePointerSync(root, it.key, prev, txId, now)
       } else {
         if (prev) warnings.push(`previous generation ${prev} missing for "${it.key}" — pointer cleared (fail closed)`)
-        clearPointerSync(root, it.key)
+        try {
+          clearPointerSync(root, it.key)
+        } catch (error) {
+          warnings.push(`pointer clear failed for "${it.key}": ${error instanceof Error ? error.message : String(error)}`)
+        }
       }
     }
     const quarantined = quarantineGenerations(root, txId, genEntries(), reason, "post-switch-rollback", now, warnings)
@@ -1568,11 +1575,19 @@ async function recoverUninstall(
 ): Promise<TxRecoveryReport> {
   const txId = journal.txId
   if (journal.state === "uninstalled") return { txId, state: journal.state, action: "none", detail: "already terminal" }
-  // #346:空/多 item、未知 action、缺 seam —— 一律保持非终态(绝不静默终态化;gate 依据终态放行)。
+  // #346:空/多 item、畸形 item(key/genId/files/state)、未知 action、缺 seam —— 一律保持非终态
+  // (绝不静默终态化;gate 依据终态放行)。review #374 Major:只校数量不校形状会让 key="bogus"
+  // 走 generation 分派 + 空 store 视为已删 → 假终态。
   const item = journal.items[0]
   if (!item || journal.items.length !== 1)
     return { txId, state: journal.state, action: "none", detail: "malformed uninstall journal (items) — retained for manual diagnosis" }
+  if (journal.state !== "uninstalling")
+    return { txId, state: journal.state, action: "none", detail: `unexpected state "${journal.state}" for op=uninstall — retained for manual diagnosis` }
   const key = item.key
+  if (typeof key !== "string" || !SAFE_KEY.test(key) || key.indexOf("--") <= 0)
+    return { txId, state: journal.state, action: "none", detail: `malformed uninstall journal (key "${String(key)}") — retained for manual diagnosis` }
+  if (!Array.isArray(item.files) || typeof item.genId !== "string" || (item.genId !== "gen-000000-000000" && !GEN_NAME.test(item.genId)))
+    return { txId, state: journal.state, action: "none", detail: "malformed uninstall journal (item shape) — retained for manual diagnosis" }
   const action = actionOf(item)
   const warnings: string[] = []
   const removed: string[] = []
@@ -1766,7 +1781,11 @@ async function recoverOne(
       writePointerSync(root, it.key, prev, txId, now)
     } else {
       if (prev) warnings.push(`previous generation ${prev} missing for "${it.key}" — pointer cleared (fail closed)`)
-      clearPointerSync(root, it.key)
+      try {
+        clearPointerSync(root, it.key)
+      } catch (error) {
+        warnings.push(`pointer clear failed for "${it.key}": ${error instanceof Error ? error.message : String(error)}`)
+      }
     }
   }
   quarantineGenerations(
