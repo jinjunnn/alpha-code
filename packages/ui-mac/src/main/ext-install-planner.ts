@@ -907,18 +907,43 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
 
 // ── seed install(REQ-102 #317:选中 skill seed 经共享 CAS 事务物化;skill/global-only 首期)────
 
-const SEMVER3_RE = /^(\d+)\.(\d+)\.(\d+)$/
+const SEMVER_SEGMENT_RE = /^(0|[1-9]\d*)$/
 
-/** 严格三段 semver 双方都可解析才可比(返回 <0 / 0 / >0);任一侧不可解析 = null(调用方 fail-closed)。 */
-function compareVersionsSafe(a: string, b: string): number | null {
-  const ma = SEMVER3_RE.exec(a)
-  const mb = SEMVER3_RE.exec(b)
-  if (!ma || !mb) return null
-  for (let i = 1; i <= 3; i++) {
-    const d = Number(ma[i]) - Number(mb[i])
-    if (d !== 0) return d
+/** 严格三段 semver 双方都可解析才可比(返回 <0 / 0 / >0);任一侧不可解析 = null(调用方 fail-closed)。
+ *  BigInt 逐段比较(Number 会在 2^53 后精度丢失把真 downgrade 判相等,Codex review #360)+ 拒前导零
+ *  (SemVer 不允许,且 "01" 与 "1" 判等会造成身份歧义)。 */
+export function compareVersionsSafe(a: string, b: string): number | null {
+  const pa = a.split(".")
+  const pb = b.split(".")
+  if (pa.length !== 3 || pb.length !== 3) return null
+  for (const seg of [...pa, ...pb]) if (!SEMVER_SEGMENT_RE.test(seg)) return null
+  for (let i = 0; i < 3; i++) {
+    const da = BigInt(pa[i]!)
+    const db = BigInt(pb[i]!)
+    if (da !== db) return da > db ? 1 : -1
   }
   return 0
+}
+
+/** seed 安装版本门(Codex review #360 两 Blocker 的修复;必须在引擎 Bundle 锁内经 precondition 执行,
+ *  锁外判定可被并发安装绕过):账本 strict 四态 —— 损坏 fail-closed;已装(v2 或 v1-only)但无版本 =
+ *  不可比 = 拒;可比且 seed 更低 = 拒;absent / 同版本 / seed 更高 = 放行。 */
+function seedInstallVersionGate(root: string, name: string, seedVersion: string): { ok: true } | { ok: false; reason: string } {
+  const lookup = lookupForUninstall(root, "skill", name)
+  if (lookup.status === "corrupt-match" || lookup.status === "ledger-corrupt")
+    return { ok: false, reason: `refusing seed install: ${lookup.reason}` }
+  let installedVersion: string | undefined
+  if (lookup.status === "valid") installedVersion = lookup.record.version
+  else if (lookup.status === "v1") installedVersion = lookup.receipt.version
+  else return { ok: true }
+  if (installedVersion === undefined)
+    return { ok: false, reason: `installed skill "${name}" has no recorded version — not comparable to seed ${seedVersion}, refusing (fail closed)` }
+  if (installedVersion === seedVersion) return { ok: true }
+  const cmp = compareVersionsSafe(seedVersion, installedVersion)
+  if (cmp === null)
+    return { ok: false, reason: `installed version ${installedVersion} not comparable to seed ${seedVersion} — refusing (no accidental downgrade channel)` }
+  if (cmp < 0) return { ok: false, reason: `installed version ${installedVersion} is newer than seed ${seedVersion} — refusing downgrade` }
+  return { ok: true }
 }
 
 /** 双真源交叉验证(Codex 裁决 C,#317 AC2):seed lock 权威「离线字节」,bundled entry 权威安装语义;
@@ -989,15 +1014,6 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
   const manifestDigest = computeManifestDigest(manifest)
   const payloadDigest = aggregateFilesDigest(entry.remoteAsset!.files)
 
-  // downgrade 门:同版本重装 = 幂等允许(generation 追加,可回滚);更高已装或版本不可比 → 拒。
-  const existing = findRecordV2(deps.globalRoot(), "skill", entry.name)
-  if (existing?.version && existing.version !== manifest.version) {
-    const cmp = compareVersionsSafe(manifest.version, existing.version)
-    if (cmp === null)
-      return { ok: false, reason: `installed version ${existing.version} not comparable to seed ${manifest.version} — refusing (no accidental downgrade channel)` }
-    if (cmp < 0) return { ok: false, reason: `installed version ${existing.version} is newer than seed ${manifest.version} — refusing downgrade` }
-  }
-
   const tx = (deps.transaction ?? passthroughTx).begin({ op: "install", kind: "skill", name: entry.name, scope: "global", manifestDigest })
   const rollback = (reason: string): void => (deps.transaction ?? passthroughTx).rollback(tx.txId, reason)
 
@@ -1010,6 +1026,8 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
     return { ok: false, reason: promoted.reason }
   }
 
+  // downgrade 门作为锁内 precondition:持 Bundle 锁后、写盘前重读账本判定(同版本重装 = 幂等允许,
+  // generation 追加可回滚)。锁外判定有确定 TOCTOU(并发 catalog 安装可在窗口内提交更高版本)。
   const gen = await installSkillGeneration(deps.globalRoot(), {
     name: entry.name,
     id: entry.id,
@@ -1021,6 +1039,7 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
     manifestDigest,
     payloadDigest,
     grantDigest: computeGrantDigest({}),
+    precondition: () => seedInstallVersionGate(deps.globalRoot(), entry.name, manifest.version),
   })
   if (!gen.ok) {
     rollback(gen.reason)

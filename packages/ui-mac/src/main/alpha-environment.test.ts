@@ -97,6 +97,23 @@ describe("initAlphaEnvironment — root 落定与覆盖语义", () => {
     expect(info.rootOverridden).toBe(true)
     expect(process.env.ALPHA_GLOBAL_DIR).toBe(override)
   })
+
+  test("casBaseRoot(REQ-102 #317):无覆盖 = 各环境共享 <home>/.alpha;覆盖态 = 覆盖根(隔离)", () => {
+    const prod = initAlphaEnvironment({ isPackaged: true, channel: "prod", homeDir: base })
+    expect(prod.casBaseRoot).toBe(path.join(base, ".alpha"))
+    expect(prod.casBaseRoot).not.toBe(prod.mutableRoot) // prod 状态分域,CAS 共享基根
+
+    __resetAlphaEnvironmentForTests()
+    delete process.env.ALPHA_GLOBAL_DIR
+    const beta = initAlphaEnvironment({ isPackaged: true, channel: "beta", homeDir: base })
+    expect(beta.casBaseRoot).toBe(prod.casBaseRoot) // prod/beta 共享同一 CAS 基根(blob 去重)
+
+    __resetAlphaEnvironmentForTests()
+    const override = path.join(base, "覆盖 cas root")
+    process.env.ALPHA_GLOBAL_DIR = override
+    const overridden = initAlphaEnvironment({ isPackaged: true, channel: "prod", homeDir: base })
+    expect(overridden.casBaseRoot).toBe(override) // 覆盖态一切进覆盖根;初始化后快照冻结不可漂移
+  })
 })
 
 describe("AC#1 跨环境隔离:同 ID 不同版本互不可见(config/receipt/secret)", () => {

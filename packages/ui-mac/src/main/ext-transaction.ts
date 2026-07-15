@@ -191,6 +191,9 @@ export type TxHooks = {
   populate: (item: TxPlanItem, stagingDir: string) => void | Promise<void>
   /** 类型化健康探测(可注入):pre-switch 失败 → abort+隔离(current 不动);post-switch 失败 → 回滚+隔离。 */
   probe?: HealthProbe
+  /** 锁内业务前置(REQ-102 #317:如 downgrade 门):持 Bundle 锁后、任何写盘(journal/staging)前
+   *  执行,失败 = 零副作用拒绝 —— 判定与并发提交串行化,封死锁外读账本的 TOCTOU。 */
+  precondition?: () => { ok: true } | { ok: false; reason: string }
   /** receipt 提交接缝(REQ-099 InstallRecordV2 写入方)。必须幂等 upsert —— 恢复会重放。 */
   commitReceipt?: (records: TxCommitRecord[]) => void | Promise<void>
   log?: TxLog
@@ -207,6 +210,7 @@ export type TxStage =
   | "validate"
   | "lock"
   | "authorize"
+  | "precondition"
   | "staging"
   | "verify"
   | "materialize"
@@ -873,6 +877,16 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
     }
   }
   crash("after-authorize")
+
+  // 锁内业务前置(如 seed downgrade 门):此刻已与并发提交串行化,失败零副作用(未写 journal/staging)。
+  if (hooks.precondition) {
+    const pre = hooks.precondition()
+    if (!pre.ok) {
+      lock.release()
+      log("tx-precondition-refused", { txId, reason: pre.reason })
+      return { ok: false, txId, stage: "precondition", reason: pre.reason, warnings }
+    }
+  }
 
   // config action 的 image 对在锁内、staging 前一次性 prepare(捕获 live preimage + 计算 nextImage);
   // 任一失败 = 写盘前 fail-closed。digest 进 journal(内容进受保护 staging),恢复据此判定翻转/回滚。

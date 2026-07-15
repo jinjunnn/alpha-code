@@ -59,10 +59,13 @@ CAS 补充语义:
    fail-closed)→ `verifySeedAsset` 两遍式(S6 symlink/realpath、S9、S10、S11 逐文件
    sha256/bytes,**展开前拒绝**)→ `promoteSeedAssetToCas` 把**所选资产**的 blob 原子提升
    进共享 CAS(不复制整个 seed)→ REQ-100 generation 事务从 CAS 物化(`populateFromCas`,
-   读取重验,缺失/篡改 = staging abort 零残留)→ receipt v2 落账(语义派生自 bundled
+   读取重验,缺失/篡改 = staging abort:零 live/staging/generation 残留,终态 aborted
+   journal 按引擎语义保留作恢复/审计证据)→ receipt v2 落账(语义派生自 bundled
    entry;`ownership.distributed` 如实记 `bundled`)。边界:**skill + global-only 首期**
-   (agent → #358,mcp/plugin → #359);已装更高/不可比版本 fail-closed 拒(downgrade 无
-   偶然通道);安装**不 pin**(generation content rehash 即 GC mark root,#318)。
+   (agent → #358,mcp/plugin → #359);版本门在**引擎 Bundle 锁内**经 precondition hook
+   执行(锁外判定有 TOCTOU):账本 strict 四态,损坏/已装无版本/不可比/更高已装一律
+   fail-closed 拒,同版本重装幂等;安装**不 pin**(generation content rehash 即 GC mark
+   root,#318)。
 4. `url` 字段仅传输提示;任何来源的字节一律以 digest 为唯一权威。
 
 ## 3. mark/sweep GC(`ext-cas-gc.collectCasGarbage`)

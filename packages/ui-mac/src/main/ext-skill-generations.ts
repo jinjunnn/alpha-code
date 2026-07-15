@@ -172,6 +172,9 @@ export type SkillGenerationInstall = {
   manifestDigest?: string
   payloadDigest?: string
   grantDigest?: string
+  /** 锁内业务前置(透传引擎 TxHooks.precondition):持 Bundle 锁后、写盘前执行(REQ-102 #317
+   *  downgrade 门在此重读账本判定,封死锁外 TOCTOU)。 */
+  precondition?: () => { ok: true } | { ok: false; reason: string }
 } & SkillGenerationContentSource
 
 export type SkillGenerationResult =
@@ -184,10 +187,22 @@ export type SkillGenerationResult =
  */
 export async function installSkillGeneration(root: string, spec: SkillGenerationInstall): Promise<SkillGenerationResult> {
   if (!SAFE_NAME.test(spec.name)) return { ok: false, reason: `invalid skill name: ${spec.name}` }
-  // 内容源 XOR(REQ-102 #317):恰好一个,双给 = 事实来源歧义、双缺 = 无内容,均 fail-closed。
+  // 内容源 XOR(REQ-102 #317):恰好一个,双给 = 事实来源歧义、双缺 = 无内容,均 fail-closed;
+  // casFiles 畸形(null / specs 非数组 / casBaseRoot 非法)= 结构化拒绝,不抛未捕获异常。
   const hasBuffers = Array.isArray(spec.files)
   const hasCas = spec.casFiles !== undefined
   if (hasBuffers === hasCas) return { ok: false, reason: "exactly one content source required (files XOR casFiles)" }
+  if (hasCas) {
+    const cas = spec.casFiles as unknown
+    if (
+      !cas ||
+      typeof cas !== "object" ||
+      !Array.isArray((cas as { specs?: unknown }).specs) ||
+      typeof (cas as { casBaseRoot?: unknown }).casBaseRoot !== "string" ||
+      !path.isAbsolute((cas as { casBaseRoot: string }).casBaseRoot)
+    )
+      return { ok: false, reason: "invalid casFiles content source (specs array + absolute casBaseRoot required)" }
+  }
   const txFiles: TxFileSpec[] = hasCas ? spec.casFiles!.specs : specsOf(spec.files!)
   if (txFiles.length === 0) return { ok: false, reason: "skill payload is empty" }
   const key = skillGenerationKey(spec.name)
@@ -215,6 +230,7 @@ export async function installSkillGeneration(root: string, spec: SkillGeneration
   // buffer 源:内存直填。两路之后引擎 verify 都对 staging 做结构精确校验(纵深)。
   const casPopulate = hasCas ? populateFromCas(spec.casFiles!.casBaseRoot) : null
   const hooks: TxHooks = {
+    ...(spec.precondition ? { precondition: spec.precondition } : {}),
     populate: (_item, stagingDir) => {
       if (casPopulate) {
         casPopulate({ files: txFiles }, stagingDir)

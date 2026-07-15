@@ -18,7 +18,9 @@ import { findRecordV2, upsertRecordV2, type UpsertInput } from "./ext-receipt-v2
 import { resolveLiveGenerationDir } from "./ext-transaction"
 import { installSkillGeneration, skillGenerationKey } from "./ext-skill-generations"
 import { seedBlobPath, type SeedLock } from "./ext-seed"
+import { tryAcquireBundleLock } from "./ext-bundle-lock"
 import {
+  compareVersionsSafe,
   installCatalog,
   synthesizeManifest,
   type PlannerDeps,
@@ -296,6 +298,25 @@ describe("seed install via installCatalog (REQ-102 #317)", () => {
     if (!r.ok) expect(r.reason).toContain("not in bundled catalog")
   })
 
+  test("refuses file-manifest drift: missing file, extra file, renamed path, changed bytes", async () => {
+    buildSeed([{ id: "skill:hello", files: skillFiles }])
+    const files = () => lockFileEntries(skillFiles, { writeBlobs: false })
+    const variants: Array<{ label: string; files: ReturnType<typeof files> }> = [
+      { label: "missing file", files: files().slice(0, 1) },
+      { label: "extra file", files: [...files(), { path: "extra.md", sha256: "e".repeat(64), bytes: 4, url: "https://alphacodeone.com/x" }] },
+      { label: "renamed path", files: files().map((f) => (f.path === "docs/usage.md" ? { ...f, path: "docs/renamed.md" } : f)) },
+      { label: "changed bytes", files: files().map((f) => (f.path === "SKILL.md" ? { ...f, bytes: f.bytes + 1 } : f)) },
+    ]
+    for (const v of variants) {
+      const r = await installCatalog(
+        seedIntent,
+        makeSeedDeps({ bundledEntries: [bundledSkillEntry({ remoteAsset: { version: "1.0.0", files: v.files } })] }),
+      )
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.reason).toContain("drift")
+    }
+  })
+
   test("refuses catalogVersion / version / file-digest drift between seed lock and bundled entry", async () => {
     buildSeed([{ id: "skill:hello", files: skillFiles }])
     const catVer = await installCatalog(seedIntent, makeSeedDeps({ bundledVersion: "2026-07-14.1" }))
@@ -340,6 +361,68 @@ describe("seed install via installCatalog (REQ-102 #317)", () => {
     expect(weird.ok).toBe(false)
     if (!weird.ok) expect(weird.reason).toContain("not comparable")
   })
+
+  test("refuses when an install record exists without a version (fail closed, not fall-through)", async () => {
+    buildSeed([{ id: "skill:hello", files: skillFiles }])
+    const noVersion: UpsertInput = {
+      id: "skill:hello",
+      name: "hello",
+      kind: "skill",
+      environment: "prod",
+      scope: { kind: "global" },
+      desiredState: "enabled",
+      origin: "catalog",
+      installedAt: new Date().toISOString(),
+    }
+    expect(upsertRecordV2(globalRoot, noVersion).ok).toBe(true)
+    const r = await installCatalog(seedIntent, makeSeedDeps())
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("no recorded version")
+  })
+
+  test("refuses when the target v2 record is corrupt or the ledger file is unreadable", async () => {
+    buildSeed([{ id: "skill:hello", files: skillFiles }])
+    const deps = makeSeedDeps()
+    expect((await installCatalog(seedIntent, deps)).ok).toBe(true)
+
+    // 损坏目标 record(schemaVersion 变异 → decode 拒 → corrupt-match):seed 重装必须拒,不得借机重建。
+    const ledger = path.join(globalRoot, "installs.json")
+    const parsed = JSON.parse(fs.readFileSync(ledger, "utf8")) as Record<string, unknown>
+    for (const v of Object.values(parsed)) {
+      if (!Array.isArray(v)) continue
+      for (const rec of v) {
+        if (rec && typeof rec === "object" && (rec as Record<string, unknown>).kind === "skill" && (rec as Record<string, unknown>).name === "hello")
+          (rec as Record<string, unknown>).schemaVersion = 99
+      }
+    }
+    fs.writeFileSync(ledger, JSON.stringify(parsed))
+    const corruptRecord = await installCatalog(seedIntent, deps)
+    expect(corruptRecord.ok).toBe(false)
+    if (!corruptRecord.ok) expect(corruptRecord.reason).toContain("refusing seed install")
+
+    // 账本文件级损坏:同样 fail-closed。
+    fs.writeFileSync(ledger, "{ not json")
+    const corruptLedger = await installCatalog(seedIntent, deps)
+    expect(corruptLedger.ok).toBe(false)
+    if (!corruptLedger.ok) expect(corruptLedger.reason).toContain("refusing seed install")
+  })
+})
+
+describe("compareVersionsSafe (REQ-102 #317 · Codex review #360)", () => {
+  test("compares big segments exactly (no Number precision loss)", () => {
+    expect(compareVersionsSafe("1.9007199254740993.0", "1.9007199254740992.0")).toBe(1)
+    expect(compareVersionsSafe("1.9007199254740992.0", "1.9007199254740993.0")).toBe(-1)
+    expect(compareVersionsSafe("2.0.0", "10.0.0")).toBe(-1)
+    expect(compareVersionsSafe("1.2.3", "1.2.3")).toBe(0)
+  })
+  test("refuses leading zeros, wrong arity and non-numeric segments", () => {
+    expect(compareVersionsSafe("1.01.0", "1.1.0")).toBeNull()
+    expect(compareVersionsSafe("01.0.0", "1.0.0")).toBeNull()
+    expect(compareVersionsSafe("1.0", "1.0.0")).toBeNull()
+    expect(compareVersionsSafe("1.0.0.0", "1.0.0")).toBeNull()
+    expect(compareVersionsSafe("1.a.0", "1.0.0")).toBeNull()
+    expect(compareVersionsSafe("", "1.0.0")).toBeNull()
+  })
 })
 
 describe("installSkillGeneration CAS content source (REQ-102 #317)", () => {
@@ -372,6 +455,42 @@ describe("installSkillGeneration CAS content source (REQ-102 #317)", () => {
     expect(r.ok).toBe(false)
     expect(resolveLiveGenerationDir(globalRoot, skillGenerationKey("hello"))).toBeNull()
     expect(findRecordV2(globalRoot, "skill", "hello")).toBeNull()
+  })
+
+  test("refuses malformed casFiles shapes with a structured failure (no uncaught throw)", async () => {
+    const asNever = (v: unknown) => v as never
+    const nullCas = await installSkillGeneration(globalRoot, asNever({ ...baseSpec, casFiles: null }))
+    expect(nullCas.ok).toBe(false)
+    if (!nullCas.ok) expect(nullCas.reason).toContain("invalid casFiles")
+    const noSpecs = await installSkillGeneration(globalRoot, asNever({ ...baseSpec, casFiles: { casBaseRoot: casBase } }))
+    expect(noSpecs.ok).toBe(false)
+    const relRoot = await installSkillGeneration(globalRoot, asNever({ ...baseSpec, casFiles: { specs: specsFor(skillFiles), casBaseRoot: "rel/root" } }))
+    expect(relRoot.ok).toBe(false)
+  })
+
+  test("runs the precondition inside the bundle lock; refusal leaves zero residue", async () => {
+    let lockHeldDuringPrecondition: boolean | null = null
+    const r = await installSkillGeneration(globalRoot, {
+      ...baseSpec,
+      files: [{ path: "SKILL.md", data: Buffer.from(SKILL_MD) }],
+      precondition: () => {
+        const attempt = tryAcquireBundleLock(globalRoot, { txId: "probe" })
+        lockHeldDuringPrecondition = !attempt.ok
+        if (attempt.ok) attempt.lock.release()
+        return { ok: false, reason: "refused by test precondition" }
+      },
+    })
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.reason).toContain("refused by test precondition")
+      expect(r.stage).toBe("precondition")
+    }
+    expect(lockHeldDuringPrecondition).toBe(true)
+    // 零副作用:无 generation、无 receipt、无 journal/staging 残留(precondition 在任何写盘之前)。
+    expect(resolveLiveGenerationDir(globalRoot, skillGenerationKey("hello"))).toBeNull()
+    expect(findRecordV2(globalRoot, "skill", "hello")).toBeNull()
+    const store = path.join(globalRoot, "ext-store", skillGenerationKey("hello"))
+    expect(fs.existsSync(store)).toBe(false)
   })
 
   test("aborts when an in-store CAS blob fails read-back verification (tampered)", async () => {
