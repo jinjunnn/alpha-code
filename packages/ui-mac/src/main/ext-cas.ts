@@ -79,16 +79,21 @@ function putVerifiedBytes(baseRoot: string, data: Buffer, sha256: string, warnin
       // REQ-102 #318(Codex 裁决 E1):复用 cold blob 时刷新 mtime —— 「promote 成功但事务尚未持锁
       // 写 journal」的窗口里,出-grace 旧 blob 会被 GC 扫掉导致安装 materialize abort。刷新把暴露
       // 从任意时长缩到 GC 单轮 lstat→unlink 的微秒级;残余竞态的后果 = fail-closed 安装失败,可
-      // 重试(promote 幂等重放),无损坏。best-effort:刷新失败退化为原 grace 语义,不阻断幂等成功。
+      // 重试(promote 幂等重放),无损坏。ENOENT = verify 与 touch 之间 blob 已被删(GC 竞态实锤)
+      // → 不谎报复用,落到下方原子重写;其它失败 best-effort 退化为原 grace 语义 + warning 可观测。
+      let vanished = false
       try {
-        const now = new Date()
-        fs.utimesSync(dest, now, now)
-      } catch {
-        /* 见上:退化不阻断 */
+        const nowTs = new Date()
+        fs.utimesSync(dest, nowTs, nowTs)
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") vanished = true
+        else warnings.push(`mtime refresh failed for reused blob ${sha256.slice(0, 12)}… (${String(err)}) — grace semantics degrade to original`)
       }
-      return { ok: true, path: dest, sha256, bytes: data.length, existed: true, warnings }
+      if (!vanished) return { ok: true, path: dest, sha256, bytes: data.length, existed: true, warnings }
+      warnings.push(`existing blob ${sha256.slice(0, 12)}… vanished during reuse (GC race) — rewriting`)
+    } else {
+      warnings.push(`existing blob ${sha256.slice(0, 12)}… was CORRUPT on disk — replaced with verified bytes`)
     }
-    warnings.push(`existing blob ${sha256.slice(0, 12)}… was CORRUPT on disk — replaced with verified bytes`)
   } catch {
     /* 不在店 → 正常写入 */
   }

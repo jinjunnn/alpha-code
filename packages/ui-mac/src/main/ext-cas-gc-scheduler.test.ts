@@ -6,11 +6,13 @@
 //  · 结构化摘要日志的 outcome 分类(success / busy-skip / fail-closed / exception)。
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import * as crypto from "node:crypto"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { __resetAlphaEnvironmentForTests, environmentMutableRoot, initAlphaEnvironment } from "./alpha-environment"
 import { CAS_GC_GRACE_MS_DEFAULT, type CasGcReport } from "./ext-cas-gc"
+import { putCasBlobFromBuffer } from "./ext-cas"
 import { resourcesRoot } from "./ext-fs-installer"
 import {
   CAS_GC_INITIAL_DELAY_MS,
@@ -22,14 +24,17 @@ import {
 } from "./ext-cas-gc-scheduler"
 
 let base: string
+let savedGlobalDir: string | undefined
 beforeEach(() => {
   base = fs.mkdtempSync(path.join(os.tmpdir(), "cas-gc-sched-"))
+  savedGlobalDir = process.env.ALPHA_GLOBAL_DIR // before-image(review #366:不污染同进程后续测试)
   __resetAlphaEnvironmentForTests()
   delete process.env.ALPHA_GLOBAL_DIR
 })
 afterEach(() => {
   __resetAlphaEnvironmentForTests()
-  delete process.env.ALPHA_GLOBAL_DIR
+  if (savedGlobalDir === undefined) delete process.env.ALPHA_GLOBAL_DIR
+  else process.env.ALPHA_GLOBAL_DIR = savedGlobalDir
   fs.rmSync(base, { recursive: true, force: true })
 })
 
@@ -124,6 +129,29 @@ describe("startCasGcScheduler(#318)", () => {
     expect(scheduled).toHaveLength(1) // 未 rearm
   })
 
+  test("tick 执行中 stop(run 内部触发)→ finally 不 rearm", () => {
+    const { timer, scheduled } = fakeTimer()
+    let s: { stop(): void } | null = null
+    const run = (() => {
+      s!.stop()
+      return okReport()
+    }) as never
+    s = startCasGcScheduler(config, { timer, run, log: () => {} })
+    scheduled[0]!.cb()
+    expect(scheduled).toHaveLength(1) // stop 已置位,finally 的 arm 被拒
+  })
+
+  test("注入 logger 连续抛错不逃出 timer callback(调度链完整)", () => {
+    const { timer, scheduled } = fakeTimer()
+    const run = (() => okReport()) as never
+    const log = () => {
+      throw new Error("logger boom")
+    }
+    startCasGcScheduler(config, { timer, run, log })
+    expect(() => scheduled[0]!.cb()).not.toThrow()
+    expect(scheduled).toHaveLength(2) // 仍链式 rearm
+  })
+
   test("摘要日志 outcome 分类:success / busy-skip / fail-closed", () => {
     const cases: Array<{ report: CasGcReport; expected: string }> = [
       { report: okReport(), expected: "gc-success" },
@@ -141,6 +169,39 @@ describe("startCasGcScheduler(#318)", () => {
       expect(Object.keys(events[0]!.detail)).toContain("keptByGrace")
       expect(JSON.stringify(events[0]!.detail).includes("/cas/v1/sha256/")).toBe(false)
     }
+  })
+})
+
+describe("集成冒烟:fake timer → 真 collectCasGarbage(#318)", () => {
+  test("一轮真实 sweep:cold blob 被扫,outcome=gc-success,配置透传", () => {
+    const casBase = path.join(base, "cas-int")
+    const envRoot = path.join(base, "env-int")
+    fs.mkdirSync(envRoot, { recursive: true })
+    const content = "integration cold victim"
+    const digest = crypto.createHash("sha256").update(content).digest("hex")
+    const put = putCasBlobFromBuffer(casBase, Buffer.from(content), digest)
+    if (!put.ok) throw new Error(put.reason)
+    fs.utimesSync(put.path, new Date("2026-01-01T00:00:00Z"), new Date("2026-01-01T00:00:00Z"))
+
+    const { timer, scheduled } = fakeTimer()
+    const events: Array<{ event: string; detail: Record<string, unknown> }> = []
+    startCasGcScheduler(
+      {
+        casBaseRoot: casBase,
+        envRoots: [envRoot],
+        seedLockPaths: [], // 冒烟不带 seed(空集合法;缺失 fail-closed 由 gc.test 的 seed 矩阵覆盖)
+        graceMs: CAS_GC_GRACE_MS_DEFAULT,
+        dryRun: false,
+        initialDelayMs: 1,
+        intervalMs: 2,
+      },
+      { timer, log: (event, detail) => events.push({ event, detail }) }, // run 用真 collectCasGarbage
+    )
+    scheduled[0]!.cb()
+    expect(events[0]!.event).toBe("gc-success")
+    expect(events[0]!.detail.swept).toBe(1)
+    expect(fs.existsSync(put.path)).toBe(false) // cold blob 真被扫
+    expect(scheduled).toHaveLength(2) // 链式 rearm
   })
 })
 

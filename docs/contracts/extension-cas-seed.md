@@ -104,7 +104,10 @@ CAS 补充语义:
   swept 路径)。多实例(prod/beta 同机)由共享 CAS 跨进程 GC 锁串行化,busy-skip ≠ 漏跑,无需
   错峰。**「running-lease」保护的机械形态** = GC 在整个 mark+sweep 期间持有各环境根同一把
   `tx.lock`(活事务占锁 → 整轮零删除;stale 锁留证恢复后才允许 GC)+ 获准事务的 journal digest
-  为 durable mark root —— 锁是互斥屏障,journal 才是 mark 数据。**promote 窗口**:复用出-grace
+  为 durable mark root —— 锁是互斥屏障,journal 才是 mark 数据。**锁心跳按进度续租**(每
+  journal 段 / 每 generation key rehash 后 / sweep 每 64 blob):长轮 GC 不会因心跳超
+  staleMs(15min)被其它进程按 stale 接管;续租粒度 = 单段操作时长(单 key 巨型 store 的
+  rehash 超阈值是已知粒度限制,如实记录)。**promote 窗口**:复用出-grace
   cold blob 的 put 会刷新其 mtime(残余竞态 = GC 单轮 lstat→unlink 微秒级;后果为安装
   materialize fail-closed abort,可重试、无损坏)。**project scope 根尚未参与 mark**(无
   project 根枚举来源;生命周期裁决 → #362,结论回写 #318 完成矩阵后才可判该 AC PASS)。

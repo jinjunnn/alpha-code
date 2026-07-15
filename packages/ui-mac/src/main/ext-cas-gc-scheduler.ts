@@ -18,15 +18,15 @@ export const CAS_GC_INITIAL_DELAY_MS = 5 * 60 * 1000
 export const CAS_GC_INTERVAL_MS = 24 * 60 * 60 * 1000
 
 export type CasGcSchedulerConfig = {
-  casBaseRoot: string
-  envRoots: string[]
+  readonly casBaseRoot: string
+  readonly envRoots: readonly string[]
   /** 无条件传入(缺失 = collector 整轮 fail-closed 拒):packaged seed 是强制 mark root,
    *  缺包不得静默退化为「无 seed 根」继续 sweep。 */
-  seedLockPaths: string[]
-  graceMs: number
-  dryRun: boolean
-  initialDelayMs: number
-  intervalMs: number
+  readonly seedLockPaths: readonly string[]
+  readonly graceMs: number
+  readonly dryRun: boolean
+  readonly initialDelayMs: number
+  readonly intervalMs: number
 }
 
 /** 生产配置的唯一权威取值点(review #364 教训:composition root 缝必须可单测)。
@@ -34,15 +34,15 @@ export type CasGcSchedulerConfig = {
  *  + 显式非零 grace + dryRun=false。未初始化环境即抛(fail-fast)。 */
 export function productionCasGcConfig(): CasGcSchedulerConfig {
   const casBaseRoot = getAlphaEnvironment().casBaseRoot
-  return {
+  return Object.freeze({
     casBaseRoot,
-    envRoots: defaultCasGcEnvRoots(casBaseRoot),
-    seedLockPaths: [path.join(resourcesRoot(), "extension-seed", "seed.lock.json")],
+    envRoots: Object.freeze(defaultCasGcEnvRoots(casBaseRoot)),
+    seedLockPaths: Object.freeze([path.join(resourcesRoot(), "extension-seed", "seed.lock.json")]),
     graceMs: CAS_GC_GRACE_MS_DEFAULT,
     dryRun: false,
     initialDelayMs: CAS_GC_INITIAL_DELAY_MS,
     intervalMs: CAS_GC_INTERVAL_MS,
-  }
+  })
 }
 
 /** 最小计时器接缝(测试注入,保存 callback 手动执行;生产缺省 = setTimeout + unref)。 */
@@ -74,7 +74,19 @@ export type CasGcSchedulerDeps = {
 export function startCasGcScheduler(config: CasGcSchedulerConfig, deps: CasGcSchedulerDeps = {}): { stop(): void } {
   const timer = deps.timer ?? defaultTimer
   const run = deps.run ?? collectCasGarbage
-  const log = deps.log ?? ((event, detail) => console.error(`[cas-gc-scheduler] ${event} ${JSON.stringify(detail)}`))
+  const rawLog = deps.log ?? ((event, detail) => console.error(`[cas-gc-scheduler] ${event} ${JSON.stringify(detail)}`))
+  // 日志绝不抛(review #366:注入 logger 连抛会逃出 timer callback 打死 main 进程;注入契约不保证不抛)。
+  const log: typeof rawLog = (event, detail) => {
+    try {
+      rawLog(event, detail)
+    } catch {
+      try {
+        console.error(`[cas-gc-scheduler] logger threw while reporting ${event}`)
+      } catch {
+        /* 最后手段:静默 —— 调度链完整性优先 */
+      }
+    }
+  }
   let stopped = false
   let handle: unknown
 
@@ -106,8 +118,9 @@ export function startCasGcScheduler(config: CasGcSchedulerConfig, deps: CasGcSch
     const startedAt = Date.now()
     try {
       const report = run(config.casBaseRoot, {
-        envRoots: config.envRoots,
-        seedLockPaths: config.seedLockPaths,
+        // 复制数组:config 冻结(readonly),collector 参数面要求可变形状;顺带隔离 collector 变异。
+        envRoots: [...config.envRoots],
+        seedLockPaths: [...config.seedLockPaths],
         graceMs: config.graceMs,
         dryRun: config.dryRun,
       })
