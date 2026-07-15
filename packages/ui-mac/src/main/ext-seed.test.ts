@@ -10,6 +10,7 @@ import * as path from "node:path"
 import { casPaths, hasCasBlob } from "./ext-cas"
 import {
   decodeSeedLock,
+  packagedSeedBrowseView,
   promoteSeedAssetToCas,
   readPackagedSeed,
   seedAssetTxFiles,
@@ -302,5 +303,36 @@ describe("verifySeedAsset / promoteSeedAssetToCas — import face", () => {
     expect(files).toHaveLength(2)
     expect(files![0]).toEqual({ path: "SKILL.md", sha256: sha("# demo"), size: 6 })
     expect(seedAssetTxFiles(lock, "skill:none")).toBeNull()
+  })
+})
+
+// ── REQ-102 #316:浏览面 IPC 投影(纯读、零路径外泄)──────────────────────────────────────────
+
+describe("packagedSeedBrowseView(#316)", () => {
+  test("合法 seed → 安全投影:元数据齐全,零绝对路径/blob 布局/url 外泄", () => {
+    writeLock(buildLock(baseAssets))
+    const v = packagedSeedBrowseView(seedDir)
+    expect(v.ok).toBe(true)
+    if (!v.ok) return
+    expect(v.catalogVersion).toBe("2026-07-13.1")
+    expect(v.assets.length).toBeGreaterThan(0)
+    for (const a of v.assets) {
+      expect(a.availability).toBe("bundled")
+      expect(typeof a.fileCount).toBe("number")
+      expect(a.fileCount).toBeGreaterThan(0)
+    }
+    const wire = JSON.stringify(v)
+    expect(wire.includes(seedDir)).toBe(false) // 零绝对路径
+    expect(wire.includes("blobs")).toBe(false) // 零 blob 布局
+    expect(wire.includes("https://")).toBe(false) // 零 url
+  })
+
+  test("无 packaged seed(null)与 lock 损坏 → 结构化拒绝(fail closed)", () => {
+    const none = packagedSeedBrowseView(null)
+    expect(none.ok).toBe(false)
+    if (!none.ok) expect(none.reason).toContain("no packaged seed")
+    fs.writeFileSync(path.join(seedDir, "seed.lock.json"), "{ corrupt")
+    const corrupt = packagedSeedBrowseView(seedDir)
+    expect(corrupt.ok).toBe(false)
   })
 })

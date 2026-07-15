@@ -414,6 +414,18 @@ export type ElectronAPI = {
       | { source: "remote" | "cache"; catalog: unknown; version: string; fetchedAt: string; error?: string; via: string; channel: "stable" | "preview" | "dev" }
       | { source: "none"; error: string }
     >
+    /** REQ-102 #316:packaged seed 浏览(main-owned 纯读安全投影 —— 零绝对路径/blob 布局/url;
+     *  availability=bundled 与激活态正交;选装走 installCatalog 的 seed 意图,UI 归 REQ-103)。 */
+    browseSeed: () => Promise<
+      | {
+          ok: true
+          catalogVersion: string
+          totalBytes: number
+          hasNotice: boolean
+          assets: Array<{ id: string; type: string; version: string; license: string; source: string; bytes: number; fileCount: number; availability: "bundled"; platformCompatible: boolean }>
+        }
+      | { ok: false; reason: string }
+    >
     /** 未策展 npm 插件通道(REQ-099 #305:不收 meta,同 persistMcp 理由;catalog 插件走 installCatalog)。 */
     installPlugin: (pkg: string) => Promise<{ ok: true } | { ok: false; reason: string }>
     /** REQ-100 #311 / REQ-099 #305:main-owned catalog 安装唯一入口(mcp/plugin/skill/agent/cloud/bundle)。
