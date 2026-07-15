@@ -422,12 +422,15 @@ function writePointerSync(root: string, key: string, genId: string, txId: string
   writeFileAtomicSync(pointer, JSON.stringify(record, null, 2) + "\n")
 }
 
+/** 只吞 ENOENT(幂等:已经不在);其余错误抛出 —— EACCES/EBUSY 下静默会让卸载/回滚谎报
+ *  指针已清(review #374 Major:pointer-only 失败曾被计入 removed 并终态化)。 */
 function clearPointerSync(root: string, key: string): void {
   const { pointer } = extensionStorePaths(root, key)
   try {
     fs.unlinkSync(pointer)
-  } catch {
-    /* already gone */
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return
+    throw error
   }
 }
 
@@ -996,7 +999,11 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
         writePointerSync(root, it.key, prev, txId, now)
       } else {
         if (prev) warnings.push(`previous generation ${prev} missing for "${it.key}" — pointer cleared (fail closed)`)
-        clearPointerSync(root, it.key)
+        try {
+          clearPointerSync(root, it.key)
+        } catch (error) {
+          warnings.push(`pointer clear failed for "${it.key}": ${error instanceof Error ? error.message : String(error)}`)
+        }
       }
     }
     const quarantined = quarantineGenerations(root, txId, genEntries(), reason, "post-switch-rollback", now, warnings)
@@ -1212,12 +1219,21 @@ export function uninstallExtension(
 
 /** 删 owned generation store(pointer/grants/generations/store dir),幂等,只删 generation-named 目录
  *  (未知条目保留 + loud)。REQ-100 #313:卸载与恢复补偿共用,store-first 顺序的删除原语。 */
-function deleteOwnedGenerationStore(root: string, key: string, removed: string[], warnings: string[]): void {
+/** 返回 hardFailure:**已知 owned path 删除失败**(指针/授权账/generation 目录/receipts 快照)——
+ *  调用方必须保持 journal 非终态供恢复前滚(#346 Codex 裁决:删不掉 ≠ 删完了)。「未知条目保留」
+ *  是设计行为(warning loud,不算 hard)。 */
+function deleteOwnedGenerationStore(root: string, key: string, removed: string[], warnings: string[]): { hardFailure: boolean } {
   const { store, generations, pointer } = extensionStorePaths(root, key)
-  if (!fs.existsSync(store)) return // 幂等:已经不在
+  if (!fs.existsSync(store)) return { hardFailure: false } // 幂等:已经不在
+  let hardFailure = false
   if (fs.existsSync(pointer)) {
-    clearPointerSync(root, key)
-    removed.push(pointer)
+    try {
+      clearPointerSync(root, key)
+      removed.push(pointer)
+    } catch (error) {
+      warnings.push(`pointer clear failed: ${error instanceof Error ? error.message : String(error)}`)
+      hardFailure = true
+    }
   }
   // 授权账是事务拥有的路径(grants.json)—— 卸载一并清除,幂等
   const grantFile = capabilityGrantPath(root, key)
@@ -1227,6 +1243,7 @@ function deleteOwnedGenerationStore(root: string, key: string, removed: string[]
       removed.push(grantFile)
     } catch (error) {
       warnings.push(`grant removal failed: ${error instanceof Error ? error.message : String(error)}`)
+      hardFailure = true
     }
   }
   if (fs.existsSync(generations)) {
@@ -1237,6 +1254,7 @@ function deleteOwnedGenerationStore(root: string, key: string, removed: string[]
         continue
       }
       if (removeDirGuarded(root, child, warnings)) removed.push(child)
+      else hardFailure = true
     }
     try {
       fs.rmdirSync(generations) // 只在空时成功;有未知条目则保留 + 上面的 warning 已 loud
@@ -1252,6 +1270,7 @@ function deleteOwnedGenerationStore(root: string, key: string, removed: string[]
       removed.push(snapDir)
     } catch (error) {
       warnings.push(`receipts dir removal failed: ${error instanceof Error ? error.message : String(error)}`)
+      hardFailure = true
     }
   }
   try {
@@ -1259,12 +1278,19 @@ function deleteOwnedGenerationStore(root: string, key: string, removed: string[]
   } catch {
     if (fs.existsSync(store)) warnings.push(`uninstall kept non-empty store dir (unknown entries): ${store}`)
   }
+  return { hardFailure }
 }
 
 export type UninstallHooks = {
-  /** 账本删除接缝(store 删完、锁内调用):REQ-100 #313 store-first, ledger-second。抛错 → journal
+  /** 账本删除接缝(artifact 删完、锁内调用):REQ-100 #313 store-first, ledger-second。抛错 → journal
    *  保持 uninstalling,恢复据此前滚补删账。 */
   commitLedger?: () => void | Promise<void>
+  /** #346 action 判别:generation(缺省,删 ext-store)| config(锁内调用 removeArtifacts 删配置面)。 */
+  action?: "generation" | "config"
+  /** #346 config 卸载的 artifact 删除接缝(**锁内调用**,只准用 in-lock 原语,绝不重取 bundle 锁):
+   *  config-leaf 删除 + 密钥吊销,必须幂等、失败必须抛错(→ journal 保持 uninstalling 前滚)。
+   *  action=config 时必填 —— 缺失在写 journal 前就拒绝。 */
+  removeArtifacts?: () => void | Promise<void>
   log?: TxLog
   now?: () => Date
   pidAlive?: (pid: number) => boolean
@@ -1284,6 +1310,10 @@ export async function uninstallExtensionTransaction(
   const removed: string[] = []
   if (!path.isAbsolute(root)) return { ok: false, reason: `root must be absolute: ${root}`, warnings }
   if (!SAFE_KEY.test(key)) return { ok: false, reason: `invalid key: ${key}`, warnings }
+  const action = hooks.action ?? "generation"
+  // #346:config 卸载缺 artifact 接缝 = 无法执行也无法恢复 —— 写 journal 前就拒(零副作用)。
+  if (action === "config" && !hooks.removeArtifacts)
+    return { ok: false, reason: "config uninstall requires a removeArtifacts hook — refused before journaling", warnings }
   const now = hooks.now ?? (() => new Date())
   const log = hooks.log ?? defaultLog
   const txId = newTxId()
@@ -1291,7 +1321,7 @@ export async function uninstallExtensionTransaction(
   if (!acquired.ok) return { ok: false, reason: acquired.reason, warnings }
   try {
     const iso = now().toISOString()
-    // journal 先记 intent(op=uninstall);item.key 承载被卸载 key,供恢复补偿识别。
+    // journal 先记 intent(op=uninstall);item.key + action 供恢复补偿识别与分派。
     let journal: TxJournal = {
       v: 1,
       txId,
@@ -1299,19 +1329,31 @@ export async function uninstallExtensionTransaction(
       state: "uninstalling",
       createdAt: iso,
       updatedAt: iso,
-      items: [{ key, genId: "gen-000000-000000", files: [] }],
+      items: [{ key, action, genId: "gen-000000-000000", files: [] }],
     }
     writeJournalSync(root, journal)
-    // store-first:清 pointer + 删 owned store(幂等)。
-    deleteOwnedGenerationStore(root, key, removed, warnings)
+    // artifact-first(store/config)→ ledger-second。任一失败:journal 保持 uninstalling,恢复前滚。
+    if (action === "config") {
+      try {
+        await hooks.removeArtifacts!()
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error)
+        warnings.push(`artifact removal failed — journal retained for recovery: ${msg}`)
+        return { ok: false, reason: `uninstall artifact removal failed (will forward-complete on recovery): ${msg}`, warnings }
+      }
+    } else {
+      const { hardFailure } = deleteOwnedGenerationStore(root, key, removed, warnings)
+      if (hardFailure)
+        return { ok: false, reason: `uninstall store removal incomplete (journal retained for recovery): ${warnings.join("; ")}`, warnings }
+    }
     // ledger-second:锁内删账。抛错 → 不 mark 终态,恢复前滚补删。
     if (hooks.commitLedger) await hooks.commitLedger()
     journal = { ...journal, state: "uninstalled", updatedAt: now().toISOString() }
     writeJournalSync(root, journal)
-    log("tx-uninstalled", { txId, key, removed: removed.length })
+    log("tx-uninstalled", { txId, key, action, removed: removed.length })
     return { ok: true, removed, warnings }
   } catch (error) {
-    warnings.push(`ledger removal failed (store already removed) — recovery will complete: ${error instanceof Error ? error.message : String(error)}`)
+    warnings.push(`ledger removal failed (artifacts already removed) — recovery will complete: ${error instanceof Error ? error.message : String(error)}`)
     return { ok: false, reason: `uninstall ledger commit failed: ${error instanceof Error ? error.message : String(error)}`, warnings }
   } finally {
     acquired.lock.release()
@@ -1431,8 +1473,12 @@ export function recoveryClean(r: { ok: boolean; reports: TxRecoveryReport[] }): 
 export type RecoverOptions = {
   probe?: HealthProbe
   commitReceipt?: (records: TxCommitRecord[]) => void | Promise<void>
-  /** REQ-100 #313:卸载恢复的账本删除接缝(按 key 幂等去账;缺省 → 只清 store,账本待下次前滚)。 */
+  /** REQ-100 #313:卸载恢复的账本删除接缝(按 key 幂等去账)。缺失时卸载 journal **保持非终态**
+   *  (#346 修正:此前缺 seam 仍标 uninstalled = 假终态)。 */
   commitUninstall?: (key: string) => void | Promise<void>
+  /** #346:config 卸载恢复的 artifact 删除接缝(config-leaf + 密钥,幂等)。**恢复锁内调用** ——
+   *  实现只准用 in-lock 原语,绝不重取 bundle 锁。缺失时 config 卸载 journal 保持非终态。 */
+  uninstallArtifacts?: (key: string) => void | Promise<void>
   log?: TxLog
   now?: () => Date
   pidAlive?: (pid: number) => boolean
@@ -1528,13 +1574,46 @@ async function recoverUninstall(
   log: TxLog,
 ): Promise<TxRecoveryReport> {
   const txId = journal.txId
-  const key = journal.items[0]?.key ?? ""
   if (journal.state === "uninstalled") return { txId, state: journal.state, action: "none", detail: "already terminal" }
+  // #346:空/多 item、畸形 item(key/genId/files/state)、未知 action、缺 seam —— 一律保持非终态
+  // (绝不静默终态化;gate 依据终态放行)。review #374 Major:只校数量不校形状会让 key="bogus"
+  // 走 generation 分派 + 空 store 视为已删 → 假终态。
+  const item = journal.items[0]
+  if (!item || journal.items.length !== 1)
+    return { txId, state: journal.state, action: "none", detail: "malformed uninstall journal (items) — retained for manual diagnosis" }
+  if (journal.state !== "uninstalling")
+    return { txId, state: journal.state, action: "none", detail: `unexpected state "${journal.state}" for op=uninstall — retained for manual diagnosis` }
+  const key = item.key
+  if (typeof key !== "string" || !SAFE_KEY.test(key) || key.indexOf("--") <= 0)
+    return { txId, state: journal.state, action: "none", detail: `malformed uninstall journal (key "${String(key)}") — retained for manual diagnosis` }
+  if (!Array.isArray(item.files) || typeof item.genId !== "string" || (item.genId !== "gen-000000-000000" && !GEN_NAME.test(item.genId)))
+    return { txId, state: journal.state, action: "none", detail: "malformed uninstall journal (item shape) — retained for manual diagnosis" }
+  const action = actionOf(item)
   const warnings: string[] = []
   const removed: string[] = []
-  deleteOwnedGenerationStore(root, key, removed, warnings) // 幂等:store 可能已删
+  if (action === "config") {
+    if (!opts.uninstallArtifacts)
+      return { txId, state: journal.state, action: "none", detail: "missing uninstallArtifacts seam — retained for retry" }
+    try {
+      await opts.uninstallArtifacts(key) // 恢复锁内;幂等重放 config-leaf + 密钥净除
+    } catch (error) {
+      warnings.push(`recovery artifact removal failed: ${error instanceof Error ? error.message : String(error)}`)
+      log("recovery-uninstall-pending", { txId, key, warnings })
+      return { txId, state: journal.state, action: "none", detail: "artifact removal still failing — retained for retry" }
+    }
+  } else if (action === "generation") {
+    const { hardFailure } = deleteOwnedGenerationStore(root, key, removed, warnings) // 幂等:store 可能已删
+    if (hardFailure) {
+      log("recovery-uninstall-pending", { txId, key, warnings })
+      return { txId, state: journal.state, action: "none", detail: "store removal still failing — retained for retry" }
+    }
+  } else {
+    return { txId, state: journal.state, action: "none", detail: `unknown uninstall action "${action}" — retained for manual diagnosis` }
+  }
+  if (!opts.commitUninstall)
+    return { txId, state: journal.state, action: "none", detail: "missing commitUninstall seam — retained for retry" }
   try {
-    if (opts.commitUninstall) await opts.commitUninstall(key)
+    await opts.commitUninstall(key)
   } catch (error) {
     warnings.push(`recovery uninstall ledger removal failed: ${error instanceof Error ? error.message : String(error)}`)
     log("recovery-uninstall-pending", { txId, key, warnings })
@@ -1542,7 +1621,7 @@ async function recoverUninstall(
   }
   writeJournalSync(root, { ...journal, state: "uninstalled", updatedAt: now().toISOString() })
   for (const w of warnings) log("recovery-uninstall-warning", { txId, warning: w })
-  log("recovery-uninstalled", { txId, key })
+  log("recovery-uninstalled", { txId, key, action })
   return { txId, state: journal.state, action: "resumed-committed", detail: "uninstall forward-completed" }
 }
 
@@ -1559,6 +1638,9 @@ async function recoverRollback(
   const it = journal.items[0]
   if (!it || journal.state === "committed") return { txId, state: journal.state, action: "none", detail: "already terminal" }
   if (readCurrentGeneration(root, it.key)?.genId !== it.genId) writePointerSync(root, it.key, it.genId, txId, now) // 幂等翻指针
+  // #346 修正:receipt 在而 commitReceipt seam 缺 → 保持非终态(此前会跳过落账仍标 committed = 假终态)。
+  if (it.receipt !== undefined && !opts.commitReceipt)
+    return { txId, state: journal.state, action: "none", detail: "missing commitReceipt seam — retained for retry" }
   if (opts.commitReceipt && it.receipt !== undefined) {
     try {
       await opts.commitReceipt([buildCommitRecord(root, txId, it, now().toISOString())])
@@ -1699,7 +1781,11 @@ async function recoverOne(
       writePointerSync(root, it.key, prev, txId, now)
     } else {
       if (prev) warnings.push(`previous generation ${prev} missing for "${it.key}" — pointer cleared (fail closed)`)
-      clearPointerSync(root, it.key)
+      try {
+        clearPointerSync(root, it.key)
+      } catch (error) {
+        warnings.push(`pointer clear failed for "${it.key}": ${error instanceof Error ? error.message : String(error)}`)
+      }
     }
   }
   quarantineGenerations(

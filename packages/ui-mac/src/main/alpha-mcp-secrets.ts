@@ -104,6 +104,18 @@ export function removeMcpServerSecrets(userDataPath: string, server: string): vo
   }
 }
 
+/** #346:严格版密钥吊销 —— journaled 卸载事务/恢复期用。失败必须可观察(吞错会让「密钥已净除」
+ *  不可证明,journal 无法据实保持非终态)。目录不存在 = 幂等成功。 */
+export function removeMcpServerSecretsStrict(userDataPath: string, server: string): { ok: true } | { ok: false; reason: string } {
+  if (!SAFE_SERVER.test(server)) return { ok: false, reason: `invalid server name: ${server}` }
+  try {
+    fs.rmSync(serverDir(userDataPath, server), { recursive: true, force: true })
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, reason: `secret revocation failed for ${server}: ${error instanceof Error ? error.message : String(error)}` }
+  }
+}
+
 /**
  * In-place: for each secret VAR in `secretVars`, move server.environment[VAR] (a real value the
  * renderer just collected) into the file channel and replace it with a `{file:}` ref — so the

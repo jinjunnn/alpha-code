@@ -13,9 +13,9 @@ import { extensionsGranted, hasExtensionsDecision, listProjectExecutables, withE
 import { alphaRoot, readProjectPrefs, writeProjectPrefs } from "./alpha-workdir"
 import type { InstallTarget } from "../preload/types"
 import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
-import { fileifyMcpSecrets, fileifyMcpSecretsDeep, removeMcpServerSecrets, snapshotMcpServerSecrets } from "./alpha-mcp-secrets"
+import { fileifyMcpSecrets, fileifyMcpSecretsDeep, removeMcpServerSecrets, removeMcpServerSecretsStrict, snapshotMcpServerSecrets } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, type ProvenanceRequest } from "./alpha-migrate"
-import { configHealth, persistPlugin, pluginRecordName, readMcpLeaf, removeMcp, removePlugin, removePluginEntryExact, removePluginPath, restoreMcpLeaf } from "./ext-config"
+import { configHealth, persistPlugin, pluginRecordName, readMcpLeaf, removeMcp, removeMcpConfigInLock, removePlugin, removePluginEntryExact, removePluginPath, restoreMcpLeaf } from "./ext-config"
 import { recordUncuratedInstall } from "./ext-uncurated-record"
 import { persistMcpWithPolicy } from "./ext-mcp-policy"
 import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
@@ -42,7 +42,7 @@ import bundledCatalogJson from "../renderer/extensions/alpha-catalog.json"
 import type { Catalog } from "../renderer/extensions/catalog-types"
 import { getAlphaEnvironment } from "./alpha-environment"
 import { installCatalog, listGenerationsByKey, rollbackGenerationByKey, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
-import { migrateV1Ledger, readLedgerV2, removeRecordV2, upsertRecordsV2 } from "./ext-receipt-v2"
+import { lookupForUninstall, migrateV1Ledger, parseUninstallLedgerKey, readLedgerV2, removeRecordV2, upsertRecordsV2 } from "./ext-receipt-v2"
 import { packagedSeedBrowseView, readPackagedSeed } from "./ext-seed"
 import { recoverExtensionTransactions, recoveryClean } from "./ext-transaction"
 import { getLogger } from "./logging"
@@ -110,7 +110,13 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
     },
   )
   // Codex review #351:先删配置(锁内)、成功才吊销密钥 —— busy 时不得留下「配置还在、密钥已毁」。
-  ipcMain.handle("ext-remove-mcp", (_event: IpcMainInvokeEvent, name: string) => {
+  // #346(Codex 裁决旁路封堵):本通道只服务**无账 live MCP**;有账(v2/v1/损坏)一律拒 ——
+  // ledger-backed 卸载必须走 journaled 的 ext-uninstall-v2,否则这里就是绕开 journal 的活旁路。
+  ipcMain.handle("ext-remove-mcp", async (_event: IpcMainInvokeEvent, name: string) => {
+    await ledgerReady
+    const lk = lookupForUninstall(alphaGlobalRoot(), "mcp", String(name))
+    if (lk.status !== "absent")
+      return { ok: false, reason: `ledger-backed MCP (${lk.status}) — use the journaled uninstall channel (ext-uninstall-v2)` }
     const r = removeMcp(name)
     if (r.ok) removeMcpServerSecrets(userDataPath, name)
     return r
@@ -422,13 +428,23 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
     // REQ-100 #313:卸载恢复的账本删除(key="skill--<name>" → 幂等去账;去账失败抛错 → 保持
     // uninstalling 供下次前滚,绝不谎报卸载完成)。
     commitUninstall: (key) => {
-      const sep = key.indexOf("--")
-      if (sep <= 0) return // 非法 key = 无可去账
-      const kind = key.slice(0, sep)
-      const name = key.slice(sep + 2)
-      if (kind !== "skill" && kind !== "agent" && kind !== "mcp" && kind !== "plugin" && kind !== "cloud") return
-      const rm = removeRecordV2(alphaGlobalRoot(), kind, name)
+      // review #374 Major:非法/未知 key 必须抛错(journal 保持非终态待诊断)—— 此前静默 return
+      // 会让「账本操作从未发生」的卸载被写成 uninstalled。
+      const parsed = parseUninstallLedgerKey(key)
+      if (!parsed) throw new Error(`unrecognized uninstall ledger key "${key}" — retained for diagnosis`)
+      const rm = removeRecordV2(alphaGlobalRoot(), parsed.kind, parsed.name)
       if (!rm.ok) throw new Error(`recovery uninstall ledger removal failed: ${rm.reason}`)
+    },
+    // #346:config 卸载恢复的 artifact seam(恢复锁内 —— 只用 in-lock/strict 原语,绝不重取锁):
+    // mcp--<name> → 配置副本全净除(legacy 不可读 fail-closed)+ 密钥严格吊销;失败抛错 →
+    // journal 保持非终态供下次前滚。未知 key 前缀 = 无 seam,抛错保持非终态(绝不假终态)。
+    uninstallArtifacts: (key) => {
+      if (!key.startsWith("mcp--")) throw new Error(`no artifact seam for uninstall key: ${key}`)
+      const name = key.slice("mcp--".length)
+      const cfg = removeMcpConfigInLock(name)
+      if (!cfg.ok) throw new Error(cfg.reason)
+      const sec = removeMcpServerSecretsStrict(userDataPath, name)
+      if (!sec.ok) throw new Error(sec.reason)
     },
     log: (event, detail) => getLogger().log(`[req100-tx-recovery] ${event} ${JSON.stringify(detail)}`),
   })
@@ -518,8 +534,9 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
       installers: {
         persistMcp: persistMcpWithPolicy, // REQ-105 #254:planner 生产安装同走 Excel workspace 闸口
         fileifyMcpSecrets: (name, server, secrets) => fileifyMcpSecretsDeep(userDataPath, name, server, secrets),
-        removeMcpSecrets: (name) => removeMcpServerSecrets(userDataPath, name),
-        removeMcp,
+        // #346:journaled MCP 卸载的两个 in-lock/strict 原语(引擎事务锁内调用)。
+        removeMcpConfigInLock,
+        removeMcpSecretsStrict: (name) => removeMcpServerSecretsStrict(userDataPath, name),
         persistPlugin,
         removePlugin,
         installVendoredPlugin,

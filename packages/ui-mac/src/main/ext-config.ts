@@ -444,6 +444,42 @@ export function removeAgentEntry(name: string, targetPath?: string): ConfigResul
 export function removeMcp(name: string): ConfigResult {
   return withConfigWriteLock(() => removeMcpUnlocked(name)) // 主文件+legacy 多写一把锁,不允许中途 busy 半删
 }
+
+/** #346(ADR:Codex 裁决):**仅**删除 MCP 配置副本(主文件 + 全部 legacy 路径),零账本副作用
+ *  —— 账本删除只归事务的 commitLedger(ledger-second 边界)。**锁契约:调用方必须已持有全局根
+ *  bundle 锁**(journaled 卸载事务/恢复期内调用;绝不在此重取锁,否则自死锁)。与
+ *  removeMcpUnlocked 的两点差异:① 不做 removeReceipt;② legacy 文件存在但不可读/不可解析时
+ *  fail-closed 返回失败(吞错继续会让「配置已净除」不可证明,后续密钥吊销/删账都失据)。 */
+export function removeMcpConfigInLock(name: string): ConfigResult {
+  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid server name" }
+  const primary = writeKeyUnlocked(mcpPluginTargetPath(), ["mcp", name], undefined)
+  if (!primary.ok) return primary
+  for (const legacy of legacyConfigPaths(mcpPluginTargetPath())) {
+    let exists = false
+    try {
+      exists = fs.existsSync(legacy)
+    } catch (error) {
+      return { ok: false, reason: `legacy config unreadable (fail closed): ${legacy}: ${error instanceof Error ? error.message : String(error)}` }
+    }
+    if (!exists) continue
+    let parsed: { mcp?: Record<string, unknown> } | undefined
+    try {
+      // review #374 Major:jsonc-parser 对语法错误不抛异常而是返回部分对象 —— 必须收集 errors[],
+      // 任何解析错误 = 无法证明该文件不含此 MCP,fail-closed(损坏 legacy 影子复活的通道)。
+      const errors: ParseError[] = []
+      parsed = parse(fs.readFileSync(legacy, "utf8"), errors) as { mcp?: Record<string, unknown> } | undefined
+      if (errors.length > 0)
+        return { ok: false, reason: `legacy config unparsable (fail closed): ${legacy}: ${errors.length} parse error(s)` }
+    } catch (error) {
+      return { ok: false, reason: `legacy config unreadable (fail closed): ${legacy}: ${error instanceof Error ? error.message : String(error)}` }
+    }
+    if (parsed?.mcp && typeof parsed.mcp === "object" && name in parsed.mcp) {
+      const legacyResult = writeKeyUnlocked(legacy, ["mcp", name], undefined)
+      if (!legacyResult.ok) return legacyResult
+    }
+  }
+  return { ok: true }
+}
 function removeMcpUnlocked(name: string): ConfigResult {
   if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid server name" }
   const primary = writeKeyUnlocked(mcpPluginTargetPath(), ["mcp", name], undefined)
