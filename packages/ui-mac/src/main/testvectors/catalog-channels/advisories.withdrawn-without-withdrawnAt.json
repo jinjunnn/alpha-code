@@ -1,0 +1,16 @@
+{
+  "schema": "alpha.catalog.advisories.v1",
+  "sequence": 5,
+  "publishedAt": "2026-07-13T00:00:00.000Z",
+  "expires": "2036-01-01T00:00:00.000Z",
+  "keyId": "7866aa47792b362e76318c60a08af2caa565cfef90360370ccb211241feb24ac",
+  "records": [
+    {
+      "advisoryId": "adv-x",
+      "catalogId": "skill:vector-demo",
+      "reason": "x",
+      "publishedAt": "2026-07-13T00:00:00.000Z",
+      "status": "withdrawn"
+    }
+  ]
+}

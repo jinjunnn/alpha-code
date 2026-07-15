@@ -88,6 +88,23 @@ function channelBody(signer: TestKey, payloadBody: string, over: Record<string, 
   )
 }
 
+let advSeq = 200
+function advisoriesBody(signer: TestKey, records: Record<string, unknown>[] = [], over: Record<string, unknown> = {}): string {
+  return JSON.stringify(
+    {
+      schema: "alpha.catalog.advisories.v1",
+      sequence: ++advSeq,
+      publishedAt: "2026-07-13T00:00:00.000Z",
+      expires: "2026-12-31T00:00:00.000Z",
+      keyId: signer.keyId,
+      records,
+      ...over,
+    },
+    null,
+    2,
+  )
+}
+
 let snapSeq = 100 // 单调:等序异字节 = R5 replacement
 function snapshotBody(signer: TestKey, members: Record<string, string>, over: Record<string, unknown> = {}): string {
   const entries: Record<string, { sequence: number; sha256: string }> = {}
@@ -123,16 +140,21 @@ type RouteOpts = {
   failPayload500?: boolean
   /** 不 serve snapshot 路由(#314:缺失 = security)。 */
   omitSnapshot?: boolean
+  /** advisory 记录(#315)。 */
+  advisoryRecords?: Record<string, unknown>[]
 }
 function channelRoutes(k: TestKey, payloadBody: string, opts: RouteOpts = {}): Record<string, Route> {
   const channel = opts.channel ?? "stable"
   const trust = trustBody(k, opts.trustOver)
   const doc = channelBody(k, payloadBody, { channel, ...opts.docOver })
-  const snap = snapshotBody(k, { trust, [channel]: doc })
+  const adv = advisoriesBody(k, opts.advisoryRecords ?? [])
+  const snap = snapshotBody(k, { trust, [channel]: doc, advisories: adv })
   const version = (JSON.parse(payloadBody) as { version: string }).version
   const routes: Record<string, Route> = {
     [`${CH_BASE}/channels/trust.json`]: trust,
     [`${CH_BASE}/channels/trust.json.sig`]: signB64(trust, k),
+    [`${CH_BASE}/channels/advisories.json`]: adv,
+    [`${CH_BASE}/channels/advisories.json.sig`]: signB64(adv, k),
     [`${CH_BASE}/channels/${channel}.json`]: doc,
     [`${CH_BASE}/channels/${channel}.json.sig`]: signB64(doc, k),
   }

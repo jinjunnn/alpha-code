@@ -1,0 +1,18 @@
+{
+  "schema": "alpha.catalog.advisories.v1",
+  "sequence": 7,
+  "publishedAt": "2026-07-13T00:00:00.000Z",
+  "expires": "2036-01-01T00:00:00.000Z",
+  "keyId": "7866aa47792b362e76318c60a08af2caa565cfef90360370ccb211241feb24ac",
+  "records": [
+    {
+      "advisoryId": "adv-vector-active",
+      "catalogId": "skill:vector-demo",
+      "name": "vector demo skill",
+      "reason": "test vector: unsafe behaviour — do not re-enable",
+      "publishedAt": "2026-07-13T00:00:00.000Z",
+      "status": "active",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ]
+}

@@ -197,6 +197,7 @@ function makeDeps(opts: {
   }
   const entries = opts.entries ?? ALL_ENTRIES
   const deps: PlannerDeps = {
+    advisoryGate: () => ({ allowed: true }), // #315:harness 缺省放行;闸语义在专项测试注入
     resolveEntry: async (catalogId) => {
       const entry = entries.find((e) => e.id === catalogId)
       return entry ? { entry, channel: "remote", catalogVersion: "2026-07-13.1" } : null
@@ -762,7 +763,7 @@ describe("scope independence (AC#3) & project closure (AC#4)", () => {
     expect(findRecordV2(rootB, "skill", "demo")).not.toBeNull()
 
     // 禁用 A 项目的 → global 与 B 不动
-    expect(setInstallStateByKey({ type: "skill", name: "demo", scope: "project", projectDir: projA, state: "disabled" }, { globalRoot: () => globalRoot }).ok).toBe(true)
+    expect(setInstallStateByKey({ type: "skill", name: "demo", scope: "project", projectDir: projA, state: "disabled" }, { globalRoot: () => globalRoot, advisoryGate: () => ({ allowed: true }) }).ok).toBe(true)
     expect(findRecordV2(rootA, "skill", "demo")?.desiredState).toBe("disabled")
     expect(findRecordV2(globalRoot, "skill", "demo")?.desiredState).toBe("enabled")
     expect(findRecordV2(rootB, "skill", "demo")?.desiredState).toBe("enabled")
@@ -801,7 +802,7 @@ describe("scope independence (AC#3) & project closure (AC#4)", () => {
     await installCatalog({ catalogId: "skill:demo", scope: { scope: "project", projectDir: projA } }, deps)
     const projMoved = path.join(tmp, "proj-moved-state")
     fs.renameSync(projA, projMoved)
-    const r = setInstallStateByKey({ type: "skill", name: "demo", scope: "project", projectDir: projMoved, state: "disabled" }, { globalRoot: () => globalRoot })
+    const r = setInstallStateByKey({ type: "skill", name: "demo", scope: "project", projectDir: projMoved, state: "disabled" }, { globalRoot: () => globalRoot, advisoryGate: () => ({ allowed: true }) })
     expect(r.ok).toBe(false)
     expect(findRecordV2(path.join(projMoved, ".alpha"), "skill", "demo")?.desiredState).toBe("enabled")
   })
@@ -1035,5 +1036,94 @@ describe("deriveMcpConfig — boundary cases", () => {
     const r = deriveMcpConfig({ kind: "mcp", mcpType: "local", command: ["x"], requiredEnvVars: ["A", "B"] }, { secrets: { A: "v", B: "" } })
     expect(r.ok).toBe(true)
     if (r.ok) expect(r.secretVars).toEqual(["A"])
+  })
+})
+
+// ── REQ-101 #315:advisory 激活闸接线(planner 五位点;闸语义本体见 ext-advisory-gate.test.ts)──
+
+describe("#315 advisory 激活闸接线", () => {
+  const denyGate = (advisoryId = "adv-test-1") => (input: { catalogId: string }) =>
+    ({ allowed: false as const, advisoryId, reason: `blocked ${input.catalogId}` })
+
+  test("installCatalog:resolveEntry 后过闸,命中即拒(零安装器调用)", async () => {
+    const { deps, calls } = makeDeps({})
+    const gated: PlannerDeps = { ...deps, advisoryGate: denyGate() }
+    const r = await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" } }, gated)
+    expect(r.ok).toBe(false)
+    if (r.ok) throw new Error("unreachable")
+    expect(r.reason).toContain("adv-test-1")
+    expect(r.reason).toContain("R14")
+    expect(calls.filter((c) => c.fn !== "downloadRemoteAsset").length).toBe(0) // 任何安装器都未被触达
+  })
+
+  test("bundle child:命中 advisory 的子条目恒跳过(即使 required;REQ-105 语义并入统一闸)", async () => {
+    const cleanMcp: CatalogEntry = { ...mcpEntry, id: "mcp:clean", name: "clean", installSpec: { kind: "mcp", mcpType: "local", command: ["uvx", "clean-mcp@1.0.0"] } }
+    const cleanBundle: CatalogEntry = { ...bundleEntry, id: "bundle:clean", name: "cleanb", bundleItems: [{ catalogEntryId: "skill:demo", optional: false, installOrder: 1 }, { catalogEntryId: "mcp:clean", optional: false, installOrder: 2 }] }
+    const { deps } = makeDeps({ entries: [...ALL_ENTRIES, cleanMcp, cleanBundle] })
+    // 只拦 child(mcp:clean,required),bundle 本体放行
+    const gate = (input: { catalogId: string }) =>
+      input.catalogId === "mcp:clean"
+        ? ({ allowed: false as const, advisoryId: "adv-child", reason: "child blocked" })
+        : ({ allowed: true as const })
+    const gated: PlannerDeps = { ...deps, advisoryGate: gate }
+    const r = await installCatalog({ catalogId: "bundle:clean", scope: { scope: "global" } }, gated)
+    expect(r.ok).toBe(true)
+    if (!r.ok) throw new Error("unreachable")
+    expect(r.installed?.sort()).toEqual(["skill:demo"]) // 命中子项被跳过,其余照常
+    const skipped = (r as unknown as { skipped?: Array<{ id: string; reason: string }> }).skipped ?? []
+    expect(skipped.some((x) => x.id === "mcp:clean" && x.reason.includes("adv-child"))).toBe(true)
+  })
+
+  test("enable(disabled→enabled)被拦;disable 不受闸", async () => {
+    const { deps } = makeDeps({})
+    const globalRoot = deps.globalRoot()
+    const ok = await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
+    expect(ok.ok).toBe(true)
+    expect(setInstallStateByKey({ type: "skill", name: "demo", scope: "global", state: "disabled" }, { globalRoot: () => globalRoot, advisoryGate: denyGate() }).ok).toBe(true)
+    const re = setInstallStateByKey({ type: "skill", name: "demo", scope: "global", state: "enabled" }, { globalRoot: () => globalRoot, advisoryGate: denyGate() })
+    expect(re.ok).toBe(false)
+    if (re.ok) throw new Error("unreachable")
+    expect(re.reason).toContain("re-enable refused")
+  })
+
+  test("generation rollback 过闸:按**目标代 receipt 快照**身份评估;快照缺失 fail-closed(review M1/M2)", async () => {
+    const { deps } = makeDeps({})
+    expect((await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)).ok).toBe(true)
+    expect((await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)).ok).toBe(true)
+    const gens = listGenerationsByKey({ type: "skill", name: "demo", scope: "global" }, deps)
+    if (!gens.ok) throw new Error(gens.reason)
+    const target = gens.generations.find((g) => !g.current)!
+    // ① 记录 gate 收到的输入:必须来自目标代快照(id/payloadDigest 在场,provenance=cache)
+    const seen: Array<{ catalogId: string; payloadDigest?: string; provenance: string }> = []
+    const recording = (input: { catalogId: string; payloadDigest?: string; provenance: "remote" | "cache" | "bundled" | "seed" }) => {
+      seen.push(input)
+      return { allowed: true as const }
+    }
+    const ok = await rollbackGenerationByKey({ type: "skill", name: "demo", scope: "global" }, target.genId, {
+      globalRoot: deps.globalRoot,
+      advisoryGate: recording,
+    })
+    expect(ok.ok).toBe(true)
+    expect(seen).toHaveLength(1)
+    expect(seen[0]!.catalogId).toBe("skill:demo")
+    expect(typeof seen[0]!.payloadDigest).toBe("string") // 目标代 receipt 快照携带的聚合 digest
+    expect(seen[0]!.provenance).toBe("cache")
+    // ② 命中即拒(回滚被闸)
+    const back = gens.generations.find((g) => g.current)! // 现在的旧 current
+    const refused = await rollbackGenerationByKey({ type: "skill", name: "demo", scope: "global" }, back.genId, {
+      globalRoot: deps.globalRoot,
+      advisoryGate: denyGate(),
+    })
+    expect(refused.ok).toBe(false)
+    if (refused.ok) throw new Error("unreachable")
+    expect(refused.reason).toContain("rollback activation refused")
+    // ③ 目标快照缺失(伪 genId)→ 无论闸放不放行都 fail-closed(闸无法评估目标身份)
+    const noSnap = await rollbackGenerationByKey({ type: "skill", name: "demo", scope: "global" }, "gen-000099-deadbeef", {
+      globalRoot: deps.globalRoot,
+      advisoryGate: recording,
+    })
+    expect(noSnap.ok).toBe(false)
+    if (noSnap.ok) throw new Error("unreachable")
+    expect(noSnap.reason).toContain("receipt snapshot unavailable")
   })
 })

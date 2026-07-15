@@ -155,6 +155,7 @@ function forbiddenInstallers(): PlannerInstallers {
 function makeSeedDeps(opts: { bundledEntries?: CatalogEntry[]; bundledVersion?: string; seedDirOverride?: string | null } = {}): PlannerDeps {
   const entries = opts.bundledEntries ?? [bundledSkillEntry()]
   return {
+    advisoryGate: () => ({ allowed: true }),
     // seed 分支绝不许咨询 effective remote/cache catalog(可能比随包 seed 新)。
     resolveEntry: async () => {
       throw new Error("effective catalog must not be consulted for seed installs")

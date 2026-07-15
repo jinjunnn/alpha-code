@@ -77,8 +77,30 @@ export type SnapshotDoc = {
   entries: { trust: SnapshotEntry } & Partial<Record<ChannelName | "advisories", SnapshotEntry>>
 }
 
+/** #315(R14):advisory 公示 —— 允许缓存但禁止再启用;记录 append-only、rationale 保留。 */
+export type AdvisoryRecord = {
+  advisoryId: string
+  catalogId: string
+  name?: string
+  sha256?: string
+  digestDomain?: "file-sha256" | "aggregate-files"
+  reason: string
+  publishedAt: string
+  status: "active" | "withdrawn"
+  withdrawnAt?: string
+  supersededBy?: string
+}
+export type AdvisoriesDoc = {
+  schema: "alpha.catalog.advisories.v1"
+  sequence: number
+  publishedAt: string
+  expires: string
+  keyId: string
+  records: AdvisoryRecord[]
+}
+
 /**
- * 失败类(#314 裁决):security = R1-R13/撤销/过期/无可验 trust/snapshot 缺失 —— 选择性阻断
+ * 失败类(#314 裁决):security = R1-R14/撤销/过期/无可验 trust/snapshot 缺失 —— 选择性阻断
  * 不可与部署偏斜区分,绝不借道更弱回退面;availability = 纯网络失败(超时/断网/5xx)。
  */
 export type FailureClass = "availability" | "security"
@@ -222,10 +244,11 @@ export function validateSnapshotDoc(v: unknown): { ok: true; doc: SnapshotDoc } 
   if (typeof v.keyId !== "string" || !HEX64.test(v.keyId)) return bad("keyId")
   const entries = v.entries
   if (!isObj(entries)) return bad("entries")
-  // advisories = #36/W2 前向兼容位(B 侧先发新 entry 不得砸本版客户端)
   const ee = onlyKeys(entries, ["trust", "stable", "preview", "dev", "advisories"])
   if (ee) return bad(`entries ${ee}`)
   if (!isObj(entries.trust)) return bad("entries.trust required")
+  // #315:advisories 是强制成员(#36 起;缺 entry = 删除公示面的绕过路径,R13/R2 拒)
+  if (!isObj(entries.advisories)) return bad("entries.advisories required (mandatory since #36)")
   for (const [name, entry] of Object.entries(entries)) {
     if (!isObj(entry)) return bad(`entries.${name} not object`)
     const ke = onlyKeys(entry, ["sequence", "sha256"])
@@ -368,6 +391,102 @@ export function verifySnapshotBytes(
   return { ok: true, doc: v.doc }
 }
 
+const ADVISORY_ID_RE = /^adv-[0-9a-z][0-9a-z-]{0,63}$/
+const ENTRY_ID_RE = /^(mcp|skill|plugin|bundle|agent|cloud):[a-z0-9][a-z0-9-]*$/
+
+export function validateAdvisoriesDoc(v: unknown): { ok: true; doc: AdvisoriesDoc } | { ok: false; error: string } {
+  const bad = (error: string): { ok: false; error: string } => ({ ok: false, error: `R2 advisories schema: ${error}` })
+  if (!isObj(v)) return bad("not an object")
+  const extra = onlyKeys(v, ["schema", "sequence", "publishedAt", "expires", "keyId", "records"])
+  if (extra) return bad(extra)
+  if (v.schema !== "alpha.catalog.advisories.v1") return bad(`schema=${String(v.schema)}`)
+  if (typeof v.sequence !== "number" || !Number.isInteger(v.sequence) || v.sequence < 1) return bad("sequence")
+  if (!isDateTime(v.publishedAt)) return bad("publishedAt")
+  if (!isDateTime(v.expires)) return bad("expires")
+  if (typeof v.keyId !== "string" || !HEX64.test(v.keyId)) return bad("keyId")
+  if (!Array.isArray(v.records)) return bad("records")
+  for (const r of v.records) {
+    if (!isObj(r)) return bad("records[] not object")
+    const e = onlyKeys(r, ["advisoryId", "catalogId", "name", "sha256", "digestDomain", "reason", "publishedAt", "status", "withdrawnAt", "supersededBy"])
+    if (e) return bad(`records[] ${e}`)
+    if (typeof r.advisoryId !== "string" || !ADVISORY_ID_RE.test(r.advisoryId)) return bad("records[].advisoryId")
+    if (typeof r.catalogId !== "string" || !ENTRY_ID_RE.test(r.catalogId)) return bad("records[].catalogId")
+    if (r.name !== undefined && (typeof r.name !== "string" || r.name.length < 1 || r.name.length > 200)) return bad("records[].name")
+    if (r.sha256 !== undefined && (typeof r.sha256 !== "string" || !HEX64.test(r.sha256))) return bad("records[].sha256")
+    if (r.digestDomain !== undefined && r.digestDomain !== "file-sha256" && r.digestDomain !== "aggregate-files") return bad("records[].digestDomain")
+    if (typeof r.reason !== "string" || r.reason.length < 1 || r.reason.length > 500) return bad("records[].reason")
+    if (!isDateTime(r.publishedAt)) return bad("records[].publishedAt")
+    if (r.status !== "active" && r.status !== "withdrawn") return bad("records[].status")
+    if (r.withdrawnAt !== undefined && !isDateTime(r.withdrawnAt)) return bad("records[].withdrawnAt")
+    if (r.supersededBy !== undefined && (typeof r.supersededBy !== "string" || !ADVISORY_ID_RE.test(r.supersededBy))) return bad("records[].supersededBy")
+  }
+  return { ok: true, doc: v as unknown as AdvisoriesDoc }
+}
+
+/**
+ * R14 演进纪律(review M4,消费端对齐 B 侧 assertAdvisoriesRetention):相对已采信基线,
+ * 记录不得删除、不可变字段(catalogId/name/sha256/digestDomain/reason/publishedAt)不得改写、
+ * withdraw 不可逆且 withdrawnAt/supersededBy 定格 —— 高序文档抹除 active 公示 = 拒。
+ */
+export function advisoriesRetentionError(prev: AdvisoriesDoc, next: AdvisoriesDoc): string | null {
+  const nextById = new Map(next.records.map((r) => [r.advisoryId, r]))
+  for (const p of prev.records) {
+    const n = nextById.get(p.advisoryId)
+    if (!n) return `R14 retention: advisory ${p.advisoryId} removed (append-only)`
+    for (const f of ["catalogId", "name", "sha256", "digestDomain", "reason", "publishedAt"] as const) {
+      if (JSON.stringify(p[f]) !== JSON.stringify(n[f])) return `R14 retention: advisory ${p.advisoryId} field "${f}" rewritten`
+    }
+    if (p.status === "withdrawn" && n.status !== "withdrawn") return `R14 retention: advisory ${p.advisoryId} un-withdrawn`
+    if (p.status === "withdrawn" && (p.withdrawnAt !== n.withdrawnAt || JSON.stringify(p.supersededBy) !== JSON.stringify(n.supersededBy)))
+      return `R14 retention: advisory ${p.advisoryId} withdrawal record rewritten`
+  }
+  return null
+}
+
+/** R14 内部一致性(与 B 侧 assertAdvisoriesInternallyConsistent 同规则);违反 → 整份拒。 */
+export function advisoriesConsistencyError(doc: AdvisoriesDoc): string | null {
+  const ids = new Set<string>()
+  for (const r of doc.records) {
+    if (ids.has(r.advisoryId)) return `R14 duplicate advisoryId ${r.advisoryId}`
+    ids.add(r.advisoryId)
+    if (r.status === "active" && r.withdrawnAt !== undefined) return `R14 ${r.advisoryId} active with withdrawnAt`
+    if (r.status === "withdrawn" && r.withdrawnAt === undefined) return `R14 ${r.advisoryId} withdrawn without withdrawnAt`
+    if (r.sha256 !== undefined && r.digestDomain === undefined) return `R14 ${r.advisoryId} sha256 without digestDomain`
+  }
+  for (const r of doc.records) {
+    if (r.supersededBy !== undefined && !ids.has(r.supersededBy)) return `R14 ${r.advisoryId} supersededBy unknown ${r.supersededBy}`
+  }
+  return null
+}
+
+/** advisories 文档(#315):keyId 路由(R10)→ 验字节(R1)→ schema(R2)→ R4 → R14 一致性。 */
+export function verifyAdvisoriesBytes(
+  body: Buffer,
+  sig: string,
+  trust: TrustDoc,
+  nowMs: number,
+  policy: DocPolicy,
+): { ok: true; doc: AdvisoriesDoc } | { ok: false; error: string } {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(body.toString("utf8"))
+  } catch {
+    return { ok: false, error: "R2 advisories doc is not valid JSON" }
+  }
+  const claimedKeyId = isObj(parsed) && typeof parsed.keyId === "string" ? parsed.keyId : ""
+  const key = lookupSigningKey(trust, claimedKeyId, nowMs, { requireWindow: policy.requireWindow })
+  if (!key.ok) return key
+  if (!verifyEd25519(body, sig, key.key.publicKey))
+    return { ok: false, error: `R1 advisories signature INVALID (keyId ${claimedKeyId.slice(0, 12)}…)` }
+  const v = validateAdvisoriesDoc(parsed)
+  if (!v.ok) return v
+  const inconsistent = advisoriesConsistencyError(v.doc)
+  if (inconsistent) return { ok: false, error: inconsistent }
+  if (policy.requireUnexpired && Date.parse(v.doc.expires) <= nowMs)
+    return { ok: false, error: `R4 advisories doc EXPIRED at ${v.doc.expires}` }
+  return { ok: true, doc: v.doc }
+}
+
 const saneCatalog = (parsed: unknown): parsed is { version: string; entries: unknown[] } => {
   const c = parsed as { version?: unknown; entries?: unknown }
   return !!c && typeof c.version === "string" && Array.isArray(c.entries) && c.entries.length > 0
@@ -423,6 +542,11 @@ type StateFile = {
   trust?: PersistedDoc & { fetchedAt?: string }
   /** 锚:最近一份**内置钥直验**的 trust;重启后经它单级链重验 state.trust(撤销离线持久)。 */
   trustAnchor?: PersistedDoc & { fetchedAt?: string }
+  /** #315:最新已验 advisories(全局;deny-list 安全前移 —— 验证通过即持久,不等 channel 结果)。 */
+  advisories?: PersistedDoc & { fetchedAt?: string }
+  /** #315(review M5):advisories 独立高水位(sequence + body sha256)—— 换钥/撤签导致 LKG
+   *  不可重验时仍存续,防「撤旧签名钥 → 低序新签文档重置基线」。只升不降。 */
+  advisoriesHighWater?: { sequence: number; sha256: string }
   channels?: Partial<Record<ChannelName, ChannelStateEntry>>
 }
 
@@ -503,6 +627,28 @@ export function readCachedSnapshot(userDataPath: string, channel: ChannelName, t
   return { status: "valid", doc: v.doc, body: persisted.body }
 }
 
+/**
+ * #315:缓存 advisories 重验(签名/schema/R14 相对 trust;R4 放宽但回报 stale —— 激活策略
+ * 对 stale 的处置见 ext-advisory-gate:过期即阻断新激活,绝不退空集)。invalid → null(loud)。
+ */
+export function readAdvisoriesLKG(
+  userDataPath: string,
+  trust: TrustDoc,
+  nowMs: number,
+): { doc: AdvisoriesDoc; stale: boolean } | null {
+  const st = readStateFile(userDataPath)
+  if (!persistedDocOk(st.advisories)) return null
+  const v = verifyAdvisoriesBytes(Buffer.from(st.advisories.body, "utf8"), st.advisories.sig, trust, nowMs, {
+    requireUnexpired: false,
+    requireWindow: false,
+  })
+  if (!v.ok) {
+    console.error(`[catalog-channels] cached advisories FAILED re-verification — discarding (${v.error})`)
+    return null
+  }
+  return { doc: v.doc, stale: Date.parse(v.doc.expires) <= nowMs }
+}
+
 /** stateVersion 高水位读取(缺省 1 = pre-#314)。 */
 export function channelStateVersion(userDataPath: string): number {
   const v = readStateFile(userDataPath).stateVersion
@@ -576,7 +722,7 @@ export function readChannelLastKnownGood(
   }
 }
 
-function writeState(userDataPath: string, mutate: (st: StateFile) => void): void {
+function writeState(userDataPath: string, mutate: (st: StateFile) => void): boolean {
   try {
     const st = readStateFile(userDataPath)
     mutate(st)
@@ -585,8 +731,10 @@ function writeState(userDataPath: string, mutate: (st: StateFile) => void): void
     const tmp = `${target}.tmp-${process.pid}`
     fs.writeFileSync(tmp, JSON.stringify(st))
     fs.renameSync(tmp, target) // 原子替换:中断不留截断 state(coherent set 可用性)
+    return true
   } catch {
-    /* 缓存写失败不阻断本次使用(同 remote-catalog) */
+    /* 一般缓存写失败不阻断本次使用(同 remote-catalog);advisories 持久化是例外,调用方检查 */
+    return false
   }
 }
 
@@ -741,6 +889,48 @@ export async function refreshChannelCatalog(
   // R13:snapshot 必须钉住**本轮采信的 trust 的精确字节 + sequence**(trust/snapshot 偏斜 = 拒)。
   if (snap.entries.trust.sha256 !== sha256Hex(trustBody) || snap.entries.trust.sequence !== trust.sequence)
     return fallback(`R13 snapshot does not pin the trusted trust doc (trust/snapshot skew)`, "security")
+
+  // 2b) advisories(#315):强制成员(validateSnapshotDoc 已保证 entry 在场)。取 → 验
+  //    (R10/R1/R2/R4/R14)→ R13 钉合 → R5(全局缓存基线;等序异字节拒)→ **立即持久化**
+  //    (deny-list 安全前移,同 trust 纪律;不等 channel 结果)。失败 = 集合不完整 → security。
+  {
+    let advBody: Buffer
+    let advSig: string
+    try {
+      const pair = await fetchDocPair(fetchImpl, `${baseUrl}/channels/advisories.json`, `${baseUrl}/channels/advisories.json.sig`, MAX_DOC_BYTES)
+      advBody = pair.body
+      advSig = pair.sig
+    } catch (e) {
+      return fallback(`R14 advisories fetch failed (pinned by snapshot): ${e instanceof Error ? e.message : e}`, "security")
+    }
+    const advV = verifyAdvisoriesBytes(advBody, advSig, trust, nowMs, { requireUnexpired: true, requireWindow: true })
+    if (!advV.ok) return fallback(advV.error, "security")
+    const advPin = snap.entries.advisories
+    if (!advPin || advPin.sha256 !== sha256Hex(advBody) || advPin.sequence !== advV.doc.sequence)
+      return fallback(`R13 advisories doc does not match snapshot entry`, "security")
+    // R5 基线 = 独立高水位(review M5:不依赖旧文档签名钥仍可验;换钥/撤签后基线不重置)。
+    const hw = readStateFile(userDataPath).advisoriesHighWater
+    if (hw) {
+      if (advV.doc.sequence < hw.sequence)
+        return fallback(`R5 advisories sequence regression: ${advV.doc.sequence} < high-water ${hw.sequence}`, "security")
+      if (advV.doc.sequence === hw.sequence && sha256Hex(advBody) !== hw.sha256)
+        return fallback(`R5 advisories replaced at same sequence ${advV.doc.sequence}`, "security")
+    }
+    // R14 演进纪律(review M4):对可重验的缓存基线执行保留规则(高序删改 active 公示 = 拒)。
+    const cachedAdv = readAdvisoriesLKG(userDataPath, trust, nowMs)
+    if (cachedAdv) {
+      const retention = advisoriesRetentionError(cachedAdv.doc, advV.doc)
+      if (retention) return fallback(retention, "security")
+    }
+    // 持久化必须成功(review M6):deny-list 写不进去却继续采信新内容 = 旧公示视图配新内容。
+    const persisted = writeState(userDataPath, (st) => {
+      st.advisories = { body: advBody.toString("utf8"), sig: advSig.trim(), fetchedAt: new Date(nowMs).toISOString() }
+      const seq = advV.doc.sequence
+      const digest = sha256Hex(advBody)
+      if (!st.advisoriesHighWater || seq > st.advisoriesHighWater.sequence) st.advisoriesHighWater = { sequence: seq, sha256: digest }
+    })
+    if (!persisted) return fallback(`advisories persistence FAILED — refusing to serve content newer than the effective deny-list`, "security")
+  }
 
   // 3) channel 指针文档:R13 entry 先行(entry 缺失 = 拒,免拉取)→ R10 → R1 → R2 → R3 → R4
   //    → R13 钉合 → R5 → R6/R7 → R11。被 snapshot 钉住的成员拉取失败 = 半发布/选择性阻断

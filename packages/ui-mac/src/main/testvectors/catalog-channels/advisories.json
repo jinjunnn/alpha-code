@@ -1,0 +1,34 @@
+{
+  "schema": "alpha.catalog.advisories.v1",
+  "sequence": 2,
+  "publishedAt": "2026-07-13T00:00:00.000Z",
+  "expires": "2036-01-01T00:00:00.000Z",
+  "keyId": "7866aa47792b362e76318c60a08af2caa565cfef90360370ccb211241feb24ac",
+  "records": [
+    {
+      "advisoryId": "adv-vector-active",
+      "catalogId": "skill:vector-demo",
+      "name": "vector demo skill",
+      "reason": "test vector: unsafe behaviour — do not re-enable",
+      "publishedAt": "2026-07-13T00:00:00.000Z",
+      "status": "active"
+    },
+    {
+      "advisoryId": "adv-vector-withdrawn",
+      "catalogId": "mcp:vector-mcp",
+      "reason": "test vector: false alarm (rationale retained after withdraw)",
+      "publishedAt": "2026-07-01T00:00:00.000Z",
+      "status": "withdrawn",
+      "withdrawnAt": "2026-07-13T00:00:00.000Z"
+    },
+    {
+      "advisoryId": "adv-vector-digest-scoped",
+      "catalogId": "skill:vector-demo",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "digestDomain": "aggregate-files",
+      "reason": "test vector: digest-scoped — blocks ONLY payloadDigest aaaa…, other versions of skill:vector-demo unaffected",
+      "publishedAt": "2026-07-13T00:00:00.000Z",
+      "status": "active"
+    }
+  ]
+}
