@@ -386,8 +386,11 @@ export type PlannerInstallers = {
    *  = 有密钥没能进文件通道,调用方必须 fail-closed,绝不明文持久化。refs 供 live 真值回填。
    *  restore/discard = 写前快照(#351:失败复原既有密钥,成功丢弃快照)。 */
   fileifyMcpSecrets(name: string, server: Record<string, unknown>, secrets: Record<string, string>): { fileified: string[]; skipped: string[]; refs: Record<string, string>; restore(): void; discard(): void }
-  removeMcpSecrets(name: string): void
-  removeMcp(name: string): ConfigOutcome
+  /** #346:journaled MCP 卸载的 in-lock 原语 —— 仅删配置副本(主+legacy),零账本副作用,
+   *  失败如实返回(legacy 不可读也算失败)。**只在 uninstallExtensionTransaction 锁内调用**。 */
+  removeMcpConfigInLock(name: string): ConfigOutcome
+  /** #346:严格密钥吊销 —— 失败可观察(journal 据此保持非终态);目录缺失 = 幂等成功。 */
+  removeMcpSecretsStrict(name: string): { ok: true } | { ok: false; reason: string }
   persistPlugin(pkg: string, meta?: InstallMetaArg): ConfigOutcome
   removePlugin(pkg: string): ConfigOutcome
   installVendoredPlugin(vendoredAssetKey: string, name: string, meta?: InstallMetaArg): FsOutcome
@@ -1248,14 +1251,25 @@ export async function uninstallByKey(rawIntent: unknown, deps: PlannerDeps): Pro
     }
     removedFiles = r.files
   } else if (intent.type === "mcp") {
-    // Codex review #351:先删配置(锁内)、成功才吊销密钥 —— busy/失败时不得留下
-    // 「配置还在、密钥已毁」的半拆状态。
-    const r = deps.installers.removeMcp(intent.name)
-    if (!r.ok) {
-      rollback(r.reason)
-      return r
-    }
-    deps.installers.removeMcpSecrets(intent.name)
+    // #346:journaled 单锁序列 config→secrets→ledger(Codex 裁决:配置先消失,残留密钥不可达;
+    // 反序会复现 #351 规避的「配置在、密钥毁」)。任一步失败 = journal 保持 uninstalling,
+    // recoverExtensionTransactions 经 uninstallArtifacts seam 幂等前滚 —— 绝不谎报卸载完成。
+    ;(deps.transaction ?? passthroughTx).commit(tx.txId) // 外层通知钩子无副作用;真事务在引擎内
+    const r = await uninstallExtensionTransaction(root, `mcp--${intent.name}`, {
+      action: "config",
+      removeArtifacts: () => {
+        const cfg = deps.installers.removeMcpConfigInLock(intent.name)
+        if (!cfg.ok) throw new Error(cfg.reason)
+        const sec = deps.installers.removeMcpSecretsStrict(intent.name)
+        if (!sec.ok) throw new Error(sec.reason)
+      },
+      commitLedger: () => {
+        const rm = removeRecordV2(root, "mcp", intent.name)
+        if (!rm.ok) throw new Error(rm.reason)
+      },
+    })
+    if (!r.ok) return { ok: false, reason: r.reason }
+    return { ok: true }
   } else if (intent.type === "plugin") {
     if (configKey?.startsWith("plugin-path:")) {
       // vendored:owned path 从受控根 + name 重新派生;账本路径必须落在派生目录内,否则 fail closed。

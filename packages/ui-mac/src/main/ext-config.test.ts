@@ -7,9 +7,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { configHealth, persistMcp, persistPlugin, persistProvider, removeMcp, removePlugin } from "./ext-config"
+import { configHealth, persistMcp, persistPlugin, persistProvider, removeMcp, removeMcpConfigInLock, removePlugin } from "./ext-config"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
-import { readLedger } from "./alpha-installs"
+import { findReceipt, readLedger } from "./alpha-installs"
 
 // REQ-018 T2: mcp/plugin persistence targets the alpha-owned ~/.opencode/opencode.jsonc
 // (ALPHA_OPENCODE_HOME-overridable); provider persistence stays on the shared XDG config
@@ -154,6 +154,38 @@ describe("persistMcp — accept paths write mcp[name]", () => {
     const cfg = readConfig()
     expect(cfg.mcp.a).toBeUndefined()
     expect(cfg.mcp.b).toBeDefined()
+  })
+
+  test("#346 removeMcpConfigInLock:锁被持有时照常工作(in-lock 原语不重取锁)、只删配置零账本副作用", () => {
+    persistMcp("demo", { type: "local", command: ["npx", "-y", "demo-mcp"] }, { catalogId: "mcp:demo", version: "1.0.0" })
+    const held = tryAcquireBundleLock(alphaTmp, { txId: "tx-uninstall-346" })
+    expect(held.ok).toBe(true)
+    if (!held.ok) return
+    try {
+      const r = removeMcpConfigInLock("demo")
+      expect(r).toEqual({ ok: true })
+    } finally {
+      held.lock.release()
+    }
+    expect(readConfig().mcp?.demo).toBeUndefined()
+    // 零账本副作用:receipt 仍在(账本删除只归事务 commitLedger,ledger-second 边界)
+    expect(findReceipt(alphaTmp, "mcp", "demo")).not.toBeNull()
+  })
+
+  test("#346 removeMcpConfigInLock:legacy 文件存在但不可读 → fail-closed(不吞错继续)", () => {
+    persistMcp("demo", { type: "local", command: ["npx", "-y", "demo-mcp"] })
+    // legacy 路径之一:ALPHA_OPENCODE_HOME 下的旧 config(legacyConfigPaths 经 opencodeHomeDir 派生)
+    fs.mkdirSync(homeTmp, { recursive: true })
+    const legacyFile = path.join(homeTmp, "opencode.jsonc")
+    fs.writeFileSync(legacyFile, JSON.stringify({ mcp: { demo: { type: "local" } } }))
+    fs.chmodSync(legacyFile, 0o000)
+    try {
+      const r = removeMcpConfigInLock("demo")
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.reason).toContain("legacy config unreadable")
+    } finally {
+      fs.chmodSync(legacyFile, 0o644)
+    }
   })
 })
 

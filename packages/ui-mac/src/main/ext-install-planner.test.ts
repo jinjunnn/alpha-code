@@ -18,7 +18,7 @@ import { fileifyMcpSecretsDeep } from "./alpha-mcp-secrets"
 import { aggregateFilesDigest, computeManifestDigest, decodeManifestV2 } from "./ext-manifest-v2"
 import { hasCasBlob } from "./ext-cas"
 import { computeGrantDigest, findRecordV2, projectScopeIdentity, upsertRecordV2, type UpsertInput } from "./ext-receipt-v2"
-import { resolveLiveGenerationDir } from "./ext-transaction"
+import { probeTransactionJournals, resolveLiveGenerationDir } from "./ext-transaction"
 import { skillStorePaths } from "./ext-skill-generations"
 import {
   decodeCatalogInstallIntent,
@@ -169,8 +169,8 @@ function makeDeps(opts: {
         discard: () => calls.push({ fn: "discardSecrets", args: [] }),
       }
     },
-    removeMcpSecrets: record("removeMcpSecrets", undefined),
-    removeMcp: record("removeMcp", { ok: true as const }),
+    removeMcpConfigInLock: record("removeMcpConfigInLock", { ok: true as const }),
+    removeMcpSecretsStrict: record("removeMcpSecretsStrict", { ok: true as const }),
     persistPlugin: record("persistPlugin", { ok: true as const }),
     removePlugin: record("removePlugin", { ok: true as const }),
     installVendoredPlugin: (key, name) => {
@@ -429,14 +429,14 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
     expect(r.ok).toBe(false)
     expect(called(calls, "restoreSecrets")).toHaveLength(1)
     expect(called(calls, "removeMcpSecrets")).toHaveLength(0)
-    // 卸载顺序:removeMcp 失败 → 不吊销密钥(不留「配置在、密钥毁」半拆态)
+    // 卸载顺序(#346 journaled 同语义):config 删除失败 → 不吊销密钥(不留「配置在、密钥毁」半拆态)
     calls.length = 0
-    const { deps: d2, calls: c2 } = makeDeps({ installers: { removeMcp: () => ({ ok: false as const, reason: "config busy" }) } })
+    const { deps: d2, calls: c2 } = makeDeps({ installers: { removeMcpConfigInLock: () => ({ ok: false as const, reason: "config busy" }) } })
     await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "sekret-value" } } }, d2)
     c2.length = 0
     const u = await uninstallByKey({ type: "mcp", name: "markitdown", scope: "global" }, d2)
     expect(u.ok).toBe(false)
-    expect(called(c2, "removeMcpSecrets")).toHaveLength(0)
+    expect(called(c2, "removeMcpSecretsStrict")).toHaveLength(0)
   })
 
   test("REQ-099 #305(高危回归锁):grant 值含 {file:}/{env:} 替换语法 → 派生前拒绝", async () => {
@@ -926,15 +926,56 @@ describe("uninstall — facts from main's own ledger", () => {
     expect(installerCallCount(calls)).toBe(0)
   })
 
-  test("mcp uninstall: secrets revoked + config removed + record dropped", async () => {
+  test("mcp uninstall(#346): journaled 单锁序列 config→secrets→ledger,journal 终态", async () => {
     const { deps, calls } = makeDeps()
     await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" } }, deps)
     calls.length = 0
     const r = await uninstallByKey({ type: "mcp", name: "markitdown", scope: "global" }, deps)
     expect(r.ok).toBe(true)
-    expect(called(calls, "removeMcpSecrets")).toHaveLength(1)
-    expect(called(calls, "removeMcp")).toHaveLength(1)
+    expect(called(calls, "removeMcpConfigInLock")).toHaveLength(1)
+    expect(called(calls, "removeMcpSecretsStrict")).toHaveLength(1)
     expect(findRecordV2(globalRoot, "mcp", "markitdown")).toBeNull()
+    // journal 落盘且终态(op=uninstall/action=config)
+    const probe = probeTransactionJournals(globalRoot)
+    expect(probe.unreadableDir).toBe(false)
+    const un = probe.entries.filter((j) => j.op === "uninstall")
+    expect(un).toHaveLength(1)
+    expect(un[0]!.state).toBe("uninstalled")
+  })
+
+  test("mcp uninstall(#346): config 删除失败 → journal 保持非终态、密钥不吊销、账本不动", async () => {
+    const { deps } = makeDeps()
+    await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" } }, deps)
+    const { deps: d2, calls: c2 } = makeDeps({ installers: { removeMcpConfigInLock: () => ({ ok: false as const, reason: "primary write failed" }) } })
+    const r = await uninstallByKey({ type: "mcp", name: "markitdown", scope: "global" }, d2)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("artifact removal failed")
+    expect(called(c2, "removeMcpSecretsStrict")).toHaveLength(0) // config 未净除 → 不碰密钥
+    expect(findRecordV2(globalRoot, "mcp", "markitdown")).not.toBeNull() // ledger-second:账本未动
+    const probe = probeTransactionJournals(globalRoot)
+    expect(probe.entries.some((j) => j.op === "uninstall" && j.state === "uninstalling")).toBe(true) // 前滚待恢复
+  })
+
+  test("mcp uninstall(#346): 账本删除失败 → artifacts 已净除、journal 非终态待前滚", async () => {
+    const { deps } = makeDeps()
+    await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" } }, deps)
+    // 预热 journal 目录(锁与 journal 都在 ext-tx/ 内,不受根目录只读影响),再把根目录设只读:
+    // 账本原子写的 tmp 文件落根目录 → commitLedger 必炸;读账本不受影响。
+    fs.mkdirSync(path.join(globalRoot, "ext-tx", "journal"), { recursive: true })
+    fs.chmodSync(globalRoot, 0o555)
+    const { deps: d3, calls: c3 } = makeDeps()
+    let r: Awaited<ReturnType<typeof uninstallByKey>>
+    try {
+      r = await uninstallByKey({ type: "mcp", name: "markitdown", scope: "global" }, d3)
+    } finally {
+      fs.chmodSync(globalRoot, 0o755)
+    }
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("ledger")
+    expect(called(c3, "removeMcpConfigInLock")).toHaveLength(1)
+    expect(called(c3, "removeMcpSecretsStrict")).toHaveLength(1)
+    const probe = probeTransactionJournals(globalRoot)
+    expect(probe.entries.some((j) => j.op === "uninstall" && j.state === "uninstalling")).toBe(true)
   })
 
   test("vendored plugin: ledger path outside derived root → fail closed", async () => {
