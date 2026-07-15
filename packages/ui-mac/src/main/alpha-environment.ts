@@ -117,6 +117,13 @@ export function tryGetAlphaEnvironment(): AlphaEnvironmentInfo | undefined {
   return current
 }
 
+/** catalog 拉取通道的**唯一权威取值点**(REQ-098 #302,review #364 接线缝):恒等于冻结快照的
+ *  registryChannel。composition root 必须经此取值传给 refreshRemoteCatalog —— 不得另行推导或
+ *  写死字面量;未初始化即抛(fail-fast,catalog 拉取不允许发生在环境解析之前)。 */
+export function catalogRegistryChannel(): RegistryChannel {
+  return getAlphaEnvironment().registryChannel
+}
+
 /** 仅测试:重置单例。生产代码不得调用 —— 环境一经解析在进程生命周期内不可变。 */
 export function __resetAlphaEnvironmentForTests(): void {
   current = undefined

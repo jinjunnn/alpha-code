@@ -8,6 +8,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 import {
   __resetAlphaEnvironmentForTests,
+  catalogRegistryChannel,
   environmentMutableRoot,
   getAlphaEnvironment,
   initAlphaEnvironment,
@@ -96,6 +97,20 @@ describe("initAlphaEnvironment — root 落定与覆盖语义", () => {
     expect(info.mutableRoot).toBe(override)
     expect(info.rootOverridden).toBe(true)
     expect(process.env.ALPHA_GLOBAL_DIR).toBe(override)
+  })
+
+  test("catalogRegistryChannel(REQ-098 #302):唯一权威取值点 = 冻结快照映射;未初始化抛(fail-fast)", () => {
+    expect(() => catalogRegistryChannel()).toThrow() // 环境未解析前 catalog 拉取不允许发生
+    initAlphaEnvironment({ isPackaged: true, channel: "prod", homeDir: base })
+    expect(catalogRegistryChannel()).toBe("stable")
+    __resetAlphaEnvironmentForTests()
+    delete process.env.ALPHA_GLOBAL_DIR
+    initAlphaEnvironment({ isPackaged: true, channel: "beta", homeDir: base })
+    expect(catalogRegistryChannel()).toBe("preview")
+    __resetAlphaEnvironmentForTests()
+    delete process.env.ALPHA_GLOBAL_DIR
+    initAlphaEnvironment({ isPackaged: false, channel: "dev", homeDir: base })
+    expect(catalogRegistryChannel()).toBe("dev")
   })
 
   test("casBaseRoot(REQ-102 #317):无覆盖 = 各环境共享 <home>/.alpha;覆盖态 = 覆盖根(隔离)", () => {

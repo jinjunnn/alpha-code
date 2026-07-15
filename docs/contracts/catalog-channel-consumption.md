@@ -44,7 +44,9 @@ review_after: 2026-10-15
   `channel-<name>` | `v1`)—— 消费方**不得解析 `via` 字符串推断通道**。
 - 全链 `none` 后的随包 bundled catalog 是**离线基线**(当前 = 构建期 stable 快照,与
   packaged seed 互钉):它不代表所选 registry 通道的当前内容,不得宣称 preview/dev
-  freshness;planner 落账保留 `bundled` provenance。
+  freshness;planner 落账保留 `bundled` provenance。**该保底仅指 planner 与启动路径**:
+  renderer(`catalog-source.ts`)对 `none` 的行为是保留上一次成功信号(remote/cache 或
+  内置初值),不主动切换回 bundled。
 
 ## 4. 守卫测试索引
 
