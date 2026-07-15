@@ -47,6 +47,9 @@ export type CasGcOptions = {
   pidAlive?: (pid: number) => boolean
   lockStaleMs?: number
   log?: TxLog
+  /** 测试注入面:每次锁心跳续租(refreshHeld)后回调 —— 用于「长轮 GC 不被 stale 接管」的
+   *  时钟推进断言(review #366 Blocker 回归)。生产不传。 */
+  onMarkProgress?: () => void
 }
 
 export type CasGcReport = {
@@ -122,7 +125,7 @@ function markJournals(envRoot: string, marked: Set<string>): void {
 }
 
 /** ext-store 全部 key 的全部 generation 内容重哈希(receipts/current/previous 可达性)。 */
-function markGenerations(envRoot: string, marked: Set<string>, warnings: string[]): void {
+function markGenerations(envRoot: string, marked: Set<string>, warnings: string[], onKeyDone?: () => void): void {
   const storeRoot = path.join(envRoot, "ext-store")
   let keys: fs.Dirent[]
   try {
@@ -136,6 +139,8 @@ function markGenerations(envRoot: string, marked: Set<string>, warnings: string[
     if (!key.isDirectory()) continue
     // 布局所有权在 ext-transaction;listGenerations 是权威枚举面(非法 key/非 generation 目录自滤)。
     for (const gen of listGenerations(envRoot, key.name)) markDirContents(gen.dir, marked, warnings)
+    // 每 key 全量重哈希后续租锁心跳(单 key 大 store 也无 15 分钟上界,review #366 Blocker)。
+    onKeyDone?.()
   }
 }
 
@@ -173,7 +178,8 @@ export function collectCasGarbage(baseRoot: string, opts: CasGcOptions): CasGcRe
   })
   if (!path.isAbsolute(baseRoot)) return report({ ok: false, reason: `baseRoot must be absolute: ${baseRoot}` })
   const { root: casRoot, blobsDir } = casPaths(baseRoot)
-  if (!fs.existsSync(blobsDir)) return report({ ok: true, reason: "empty store" })
+  // 注:empty-store 快返放在锁 + mark 根校验**之后**(review #366:seed/pins 等强制 mark 根损坏
+  // 必须在空店时同样整轮 fail-closed 暴露,不得静默 ok)。
 
   // ── 互斥:CAS 级锁(GC 对 GC)+ 全部环境根 Bundle 锁(GC 对事务引擎)。任一活占用 → 跳过。
   const held: BundleLock[] = []
@@ -199,15 +205,27 @@ export function collectCasGarbage(baseRoot: string, opts: CasGcOptions): CasGcRe
     held.push(acquired.lock)
   }
 
+  // 锁续租(review #366 Blocker):mark 的 generation 全量重哈希与 sweep 没有 15 分钟上界,
+  // 不续租则心跳超 staleMs 后锁会被其它进程按 stale 接管(rename 留证)→ GC↔GC / GC↔事务并行,
+  // 互斥保证被破坏。整轮期间按进度定期刷新全部持有锁的心跳。
+  const refreshHeld = (): void => {
+    for (const lock of held) lock.refresh()
+    opts.onMarkProgress?.()
+  }
+
   try {
     // ── mark ────────────────────────────────────────────────────────────────────────────────
     const marked = new Set<string>()
     try {
       for (const envRoot of opts.envRoots) {
         markJournals(envRoot, marked)
-        markGenerations(envRoot, marked, warnings)
+        refreshHeld()
+        markGenerations(envRoot, marked, warnings, refreshHeld)
       }
-      for (const seedLockPath of opts.seedLockPaths ?? []) markSeedLock(seedLockPath, marked)
+      for (const seedLockPath of opts.seedLockPaths ?? []) {
+        markSeedLock(seedLockPath, marked)
+        refreshHeld()
+      }
       // pin 账是 mark 根之一:损坏(存在但不可读/JSON/结构非法)必须 fail-closed,绝不当空集
       // 继续 sweep —— 否则受保护 blob 会被误删(REQ-102 #333)。仅「无 pin 文件」= 合法空集。
       const pinsRead = readCasPinsStrict(baseRoot)
@@ -219,10 +237,15 @@ export function collectCasGarbage(baseRoot: string, opts: CasGcOptions): CasGcRe
     }
 
     // ── sweep ───────────────────────────────────────────────────────────────────────────────
+    if (!fs.existsSync(blobsDir)) {
+      log("cas-gc", { dryRun, marked: marked.size, blobsTotal: 0, sweepable: 0, swept: 0, keptByGrace: 0, reason: "empty store" })
+      return report({ ok: true, marked: marked.size, reason: "empty store" })
+    }
     const sweepable: Array<{ sha256: string; bytes: number }> = []
     const swept: string[] = []
     let blobsTotal = 0
     let keptByGrace = 0
+    let sinceRefresh = 0
     const cutoffMs = now().getTime() - graceMs
     let shards: fs.Dirent[]
     try {
@@ -244,6 +267,11 @@ export function collectCasGarbage(baseRoot: string, opts: CasGcOptions): CasGcRe
         continue
       }
       for (const entry of entries) {
+        // 续租节流:每 64 个条目刷新一次全部持有锁的心跳(sweep 无时长上界)。
+        if (++sinceRefresh >= 64) {
+          sinceRefresh = 0
+          refreshHeld()
+        }
         const abs = path.join(shardAbs, entry.name)
         // 严格 blob 命名双守卫:64hex + 分片一致;symlink/目录/异名一律保留 + loud。
         if (entry.isSymbolicLink() || !entry.isFile() || !CAS_SHA256_RE.test(entry.name) || !entry.name.startsWith(shard.name)) {

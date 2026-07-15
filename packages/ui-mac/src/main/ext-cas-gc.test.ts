@@ -127,6 +127,44 @@ describe("collectCasGarbage — mark roots", () => {
     expect(hasCasBlob(base, cold)).toBeFalse()
   })
 
+  test("#318 lease renewal: a long GC round refreshes held locks — no stale takeover past staleMs", () => {
+    // 可推进时钟:每段 mark 耗时 10min(< 15min 缺省 stale 阈值 —— 续租保证的是「段间」心跳
+    // 新鲜,单段超阈值是固有粒度限制)。累计推进远超 15min:心跳若不续租,「另一进程」(同一
+    // 推进时钟的 intruder)早已可按 stale 接管环境锁 → 互斥破坏(review #366 Blocker)。
+    let clock = Date.parse("2026-07-15T00:00:00Z")
+    const now = () => new Date(clock)
+    putOldBlob("lease victim")
+    writeGeneration(envRoot, "skill--a", "gen-000001-aaaaaaaa", { "SKILL.md": "a" })
+    writeGeneration(envRoot, "skill--b", "gen-000001-bbbbbbbb", { "SKILL.md": "b" })
+    const takeovers: boolean[] = []
+    const r = collectCasGarbage(base, {
+      envRoots: [envRoot],
+      now,
+      onMarkProgress: () => {
+        clock += 10 * 60_000
+        const attempt = tryAcquireBundleLock(envRoot, { txId: "intruder", now, log: () => {} })
+        takeovers.push(attempt.ok)
+        if (attempt.ok) attempt.lock.release()
+      },
+    })
+    expect(r.ok).toBeTrue()
+    expect(takeovers.length).toBeGreaterThan(0)
+    expect(takeovers.every((t) => t === false)).toBeTrue() // 全程持锁不可接管
+  })
+
+  test("#318 promote-window regression: reusing a cold blob refreshes its mtime → kept by grace, not swept", () => {
+    const content = "cold blob about to be reused by a promote"
+    const cold = putOldBlob(content) // 出宽限窗的旧 blob
+    // catalog promote 复用同 digest(putCasBlobFromBuffer existed 分支)→ mtime 必须刷新,
+    // 否则「promote 成功、事务未持锁写 journal」窗口内 GC 会把它按出-grace 扫掉(裁决 E1)。
+    const put = putCasBlobFromBuffer(base, Buffer.from(content), cold)
+    expect(put.ok && put.existed).toBeTrue()
+    const r = collectCasGarbage(base, { envRoots: [envRoot] })
+    expect(r.ok).toBeTrue()
+    expect(r.keptByGrace).toBe(1)
+    expect(hasCasBlob(base, cold)).toBeTrue()
+  })
+
   test("dry-run reports the full sweep plan and deletes nothing", () => {
     const garbage = putOldBlob("dry-run victim")
     const r = collectCasGarbage(base, { envRoots: [envRoot], dryRun: true })

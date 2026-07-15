@@ -58,6 +58,7 @@ import { registerWslIpcHandlers } from "./wsl/ipc"
 import { spawnWslSidecar } from "./wsl/sidecar"
 import { migrate } from "./migrate"
 import { catalogRegistryChannel, initAlphaEnvironment } from "./alpha-environment"
+import { productionCasGcConfig, startCasGcScheduler } from "./ext-cas-gc-scheduler"
 import { runEnvMigration } from "./alpha-env-migrate"
 import { ensureAlphaLayoutDefault } from "./alpha-defaults"
 import { initialSelfHealState, noteSpawn, planSelfHeal } from "./sidecar-self-heal"
@@ -532,6 +533,11 @@ const main = Effect.gen(function* () {
   const extLedgerReady = registerExtIpcHandlers(app.getPath("userData"), registryChannel)
   // REQ-032:启动预热远端 catalog(ETag 缓存;失败静默回退,进 hub 时再刷)
   void refreshRemoteCatalog(app.getPath("userData"), registryChannel).catch(() => {})
+  // REQ-102 #318:CAS GC 生产触发(5min 首跑 + 24h 链式周期;锁忙/mark 根损坏 = 本轮跳过等下轮)。
+  // 配置经唯一权威取值点 productionCasGcConfig(冻结共享 CAS 根 + 三环境根 + 无条件 seed lock +
+  // 显式非零 grace,已单测钉死)。
+  const casGc = startCasGcScheduler(productionCasGcConfig())
+  app.once("will-quit", () => casGc.stop())
   registerAccountIpcHandlers()
   registerCloudIpcHandlers()
   // REQ-093(#185):run artifact manifest 只读查询面(artifacts.json + 磁盘 reconcile)。
