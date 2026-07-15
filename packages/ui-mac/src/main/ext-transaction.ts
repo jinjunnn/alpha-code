@@ -1433,7 +1433,9 @@ export async function rollbackGenerationTransaction(
 // ── 崩溃恢复 ─────────────────────────────────────────────────────────────────────────────────
 
 export type TxRecoveryAction = "none" | "cleaned" | "aborted" | "rolled-back" | "resumed-committed"
-export type TxRecoveryReport = { txId: string; state: TxState; action: TxRecoveryAction; detail: string }
+/** corrupt=true:本轮遇到不可解析 journal(已移 .corrupt-* 留证)—— 写方 gate 必须把该轮判为
+ *  阻断(不能仅因 .json 已移走就判安全,#347 Codex 裁决);下轮无 corrupt 即可放行。 */
+export type TxRecoveryReport = { txId: string; state: TxState; action: TxRecoveryAction; detail: string; corrupt?: boolean }
 
 const TERMINAL_TX_STATES = new Set<TxState>(["committed", "rolled-back", "aborted", "uninstalled"])
 
@@ -1450,8 +1452,10 @@ export function probeTransactionJournals(root: string): { entries: TxJournalProb
   try {
     names = fs.readdirSync(dir).filter((n) => n.endsWith(".json"))
   } catch (error) {
+    // review #376 Blocker:只有 ENOENT 可解释为「目录不存在且确无 journal」;ENOTDIR
+    // (journal 位置被普通文件占据)与其它枚举失败一律失据 → 调用方必须 fail-closed。
     const code = (error as NodeJS.ErrnoException).code
-    return { entries: [], unreadableDir: code !== "ENOENT" && code !== "ENOTDIR" }
+    return { entries: [], unreadableDir: code !== "ENOENT" }
   }
   const entries = names.sort().map((name) => {
     const txId = name.slice(0, -".json".length)
@@ -1540,7 +1544,7 @@ export async function recoverExtensionTransactions(
           /* best-effort */
         }
         log("recovery-journal-corrupt", { txId, movedTo: to })
-        reports.push({ txId, state: "aborted", action: "cleaned", detail: `unreadable journal moved to ${to}` })
+        reports.push({ txId, state: "aborted", action: "cleaned", detail: `unreadable journal moved to ${to}`, corrupt: true })
         continue
       }
       reports.push(
