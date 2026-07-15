@@ -1,0 +1,17 @@
+{
+  "schema": "alpha.catalog.snapshot.v1",
+  "sequence": 5,
+  "publishedAt": "2026-07-13T00:00:00.000Z",
+  "expires": "2036-01-01T00:00:00.000Z",
+  "keyId": "fb0dc5a3f0721e5eb595488a6f5592a59069cdaf39208dd7024794307aa09bff",
+  "entries": {
+    "trust": {
+      "sequence": 3,
+      "sha256": "9d3fab38acc640f07bbf36e840031cca930a8f6c673c7d751d34cd100e7b2770"
+    },
+    "stable": {
+      "sequence": 7,
+      "sha256": "fdc38ed833bac3719a513bed708843679eece3d16ca5fc23931020106911bf35"
+    }
+  }
+}

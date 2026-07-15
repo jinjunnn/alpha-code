@@ -461,6 +461,9 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
           const cat = rc.catalog as Catalog
           return { entries: cat.entries ?? [], channel: rc.source, version: String(cat.version ?? rc.version) }
         }
+        // #314:security 类失败落到 bundled 只用于**浏览**;激活面的 advisory 基线闸随 #315 落地。
+        if (rc.reasonClass === "security")
+          console.error(`[ext-ipc] catalog SECURITY failure (${rc.error}) — serving bundled catalog for browse only (activation gating: #315)`)
         const bundled = bundledCatalogJson as unknown as Catalog
         return { entries: bundled.entries, channel: "bundled" as const, version: bundled.version }
       })())

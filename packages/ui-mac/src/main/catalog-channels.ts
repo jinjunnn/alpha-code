@@ -1,15 +1,21 @@
-// catalog-channels — signed channel metadata 消费端验证机器(REQ-101 A 侧,issue #193)。
+// catalog-channels — signed channel metadata 消费端验证机器(REQ-101 A 侧,issue #193;#314 snapshot)。
 //
-// 合同:alpha-web `contracts/catalog-channels/CONTRACT.md` @ 9cb6057(§4 拒绝矩阵 R1–R12,§5 校验顺序)。
+// 合同:alpha-web `contracts/catalog-channels/CONTRACT.md` @ 6a11567(§4 拒绝矩阵 R1–R13,§5 校验顺序)。
 // 端点:`{base}/channels/{stable,preview,dev}.json`(+.sig)、`{base}/channels/trust.json`(+.sig)、
-// payload = `target.url`(+`target.sigUrl`,digest 是唯一权威,url 只是传输提示)。
+// `{base}/channels/snapshot.json`(+.sig,#314 集合一致性)、payload = `target.url`(+`target.sigUrl`,
+// digest 是唯一权威,url 只是传输提示)。
 //
-// 校验顺序(§5,fail closed,任一不过 → 拒用回退 last-known-good,loud):
+// 校验顺序(§5,fail closed,任一不过 → 拒用回退 last-known-good,loud;失败分 security /
+// availability 两类,security 绝不借道更弱回退面 —— 见 FailureClass):
 //   1. trust.json 验字节(内置公钥或缓存 trust 链上 active 钥)→ schema → R4/R5;
-//   2. <channel>.json 以 trust 中 doc.keyId 对应钥验字节(R10)→ schema(R2)→ R3/R4/R5;
-//   3. payload 按 target.url 取 → R8(sha256+bytes)/R9(版本绑定)→ payload 验签(R1);
-//   4. R6/R7 对照本地 last-known;R11 对照 trust 撤销列表(**含已缓存内容,离线生效**);
-//   5. 全过 → 落缓存(缓存读取时重验签,同 remote-catalog 纪律)。
+//   2. snapshot.json 以 trust 钥验字节(R10/R1)→ schema → R4/R5 → R13(必须钉住本轮采信
+//      trust 的精确字节+sequence;**缺失(404)= security**);
+//   3. <channel>.json:R13 entry 先行(缺失=拒)→ 以 trust 中 doc.keyId 对应钥验字节(R10)
+//      → schema(R2)→ R3/R4 → R13 钉合(精确字节+sequence)→ R5;
+//   4. payload 按 target.url 取 → R8(sha256+bytes)/R9(版本绑定)→ payload 验签(R1);
+//   5. R6/R7 对照本地 last-known;R11 对照 trust 撤销列表(**含已缓存内容,离线生效**);
+//   6. 全过 → doc/payload/snapshot 作 coherent set 一次原子落缓存(per-channel;绝不先落
+//      snapshot 再验成员 —— 防基线投毒;缓存读取时重验签 + R13-on-cache)。
 //
 // 信任根与轮换(§6):信任根 = 内置公钥;trust.json 引入的 active/retiring 钥(轮换窗口
 // [notBefore, notAfter))可验后续文档;revoked 钥签的一切文档(含缓存)失效;单级链(§8):
@@ -59,6 +65,23 @@ export type ChannelDoc = {
   keyId: string
   target: ChannelTarget
 }
+/** #314(R13):集合一致性快照 —— 钉住 trust/channel 文档的精确文件字节 + sequence。 */
+export type SnapshotEntry = { sequence: number; sha256: string }
+export type SnapshotDoc = {
+  schema: "alpha.catalog.snapshot.v1"
+  sequence: number
+  publishedAt: string
+  expires: string
+  keyId: string
+  /** trust 必有;channel 成员在场才有 entry;advisories 为 #36/W2 前向兼容位。 */
+  entries: { trust: SnapshotEntry } & Partial<Record<ChannelName | "advisories", SnapshotEntry>>
+}
+
+/**
+ * 失败类(#314 裁决):security = R1-R13/撤销/过期/无可验 trust/snapshot 缺失 —— 选择性阻断
+ * 不可与部署偏斜区分,绝不借道更弱回退面;availability = 纯网络失败(超时/断网/5xx)。
+ */
+export type FailureClass = "availability" | "security"
 
 export type ChannelClientDeps = {
   fetchImpl?: typeof fetch
@@ -77,8 +100,10 @@ export type ChannelCatalogResult =
       sha256: string
       fetchedAt: string
       error?: string
+      /** source="cache" 时:本轮落到 LKG 的失败类(#314;remote 成功分支无此字段)。 */
+      reasonClass?: FailureClass
     }
-  | { source: "none"; channel: ChannelName; error: string }
+  | { source: "none"; channel: ChannelName; error: string; reasonClass: FailureClass }
 
 // ── 基础密码学 ────────────────────────────────────────────────────────────────────────────────
 
@@ -183,6 +208,32 @@ export function validateChannelDoc(v: unknown): { ok: true; doc: ChannelDoc } | 
   if (typeof t.url !== "string" || !t.url.startsWith("https://")) return bad("target.url")
   if (typeof t.sigUrl !== "string" || !t.sigUrl.startsWith("https://")) return bad("target.sigUrl")
   return { ok: true, doc: v as unknown as ChannelDoc }
+}
+
+export function validateSnapshotDoc(v: unknown): { ok: true; doc: SnapshotDoc } | { ok: false; error: string } {
+  const bad = (error: string): { ok: false; error: string } => ({ ok: false, error: `R2 snapshot schema: ${error}` })
+  if (!isObj(v)) return bad("not an object")
+  const extra = onlyKeys(v, ["schema", "sequence", "publishedAt", "expires", "keyId", "entries"])
+  if (extra) return bad(extra)
+  if (v.schema !== "alpha.catalog.snapshot.v1") return bad(`schema=${String(v.schema)}`)
+  if (typeof v.sequence !== "number" || !Number.isInteger(v.sequence) || v.sequence < 1) return bad("sequence")
+  if (!isDateTime(v.publishedAt)) return bad("publishedAt")
+  if (!isDateTime(v.expires)) return bad("expires")
+  if (typeof v.keyId !== "string" || !HEX64.test(v.keyId)) return bad("keyId")
+  const entries = v.entries
+  if (!isObj(entries)) return bad("entries")
+  // advisories = #36/W2 前向兼容位(B 侧先发新 entry 不得砸本版客户端)
+  const ee = onlyKeys(entries, ["trust", "stable", "preview", "dev", "advisories"])
+  if (ee) return bad(`entries ${ee}`)
+  if (!isObj(entries.trust)) return bad("entries.trust required")
+  for (const [name, entry] of Object.entries(entries)) {
+    if (!isObj(entry)) return bad(`entries.${name} not object`)
+    const ke = onlyKeys(entry, ["sequence", "sha256"])
+    if (ke) return bad(`entries.${name} ${ke}`)
+    if (typeof entry.sequence !== "number" || !Number.isInteger(entry.sequence) || entry.sequence < 1) return bad(`entries.${name}.sequence`)
+    if (typeof entry.sha256 !== "string" || !HEX64.test(entry.sha256)) return bad(`entries.${name}.sha256`)
+  }
+  return { ok: true, doc: v as unknown as SnapshotDoc }
 }
 
 // ── key registry(R10:unknown / revoked / 窗口外拒绝;keyId↔publicKey 绑定在取用时强制)────────
@@ -291,6 +342,32 @@ export function verifyChannelBytes(
   return { ok: true, doc }
 }
 
+/** snapshot 文档(#314):keyId 路由(R10)→ 验字节(R1)→ schema(R2)→ R4 过期。 */
+export function verifySnapshotBytes(
+  body: Buffer,
+  sig: string,
+  trust: TrustDoc,
+  nowMs: number,
+  policy: DocPolicy,
+): { ok: true; doc: SnapshotDoc } | { ok: false; error: string } {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(body.toString("utf8"))
+  } catch {
+    return { ok: false, error: "R2 snapshot doc is not valid JSON" }
+  }
+  const claimedKeyId = isObj(parsed) && typeof parsed.keyId === "string" ? parsed.keyId : ""
+  const key = lookupSigningKey(trust, claimedKeyId, nowMs, { requireWindow: policy.requireWindow })
+  if (!key.ok) return key
+  if (!verifyEd25519(body, sig, key.key.publicKey))
+    return { ok: false, error: `R1 snapshot signature INVALID (keyId ${claimedKeyId.slice(0, 12)}…)` }
+  const v = validateSnapshotDoc(parsed)
+  if (!v.ok) return v
+  if (policy.requireUnexpired && Date.parse(v.doc.expires) <= nowMs)
+    return { ok: false, error: `R4 snapshot doc EXPIRED at ${v.doc.expires}` }
+  return { ok: true, doc: v.doc }
+}
+
 const saneCatalog = (parsed: unknown): parsed is { version: string; entries: unknown[] } => {
   const c = parsed as { version?: unknown; entries?: unknown }
   return !!c && typeof c.version === "string" && Array.isArray(c.entries) && c.entries.length > 0
@@ -329,8 +406,19 @@ export function verifyPayloadBytes(
 // ── 缓存(真盘 userData;读取时全量重验签,同 remote-catalog 纪律)──────────────────────────────
 
 type PersistedDoc = { body: string; sig: string }
-type ChannelStateEntry = { doc: PersistedDoc; payload: PersistedDoc; fetchedAt: string }
+/**
+ * #314:snapshot 随本 channel 的 doc/payload 同一次原子写(coherent set;绝不先于成员验证
+ * 单独落盘 —— 防基线投毒)。per-channel 存放:两个 channel 各自刷新节奏不同,全局单槽会让
+ * 先刷新者的新 snapshot 错杀后者的合法旧 LKG。缺席 = pre-#314 存量 state。
+ */
+type ChannelStateEntry = { doc: PersistedDoc; payload: PersistedDoc; snapshot?: PersistedDoc; fetchedAt: string }
 type StateFile = {
+  /**
+   * #314 review M1:R13 高水位。首次成功写入 coherent set 时置 2 且**永不回退** ——
+   * stateVersion>=2 后,任何 channel entry 缺 snapshot 位 = 篡改/撕裂(拒),不再享受
+   * pre-#314 grandfather;删除 snapshot 字段伪装 legacy state 的降级路径被封死。
+   */
+  stateVersion?: number
   /** 最新已验 trust(可能是链上钥签的,§6 轮换中)。 */
   trust?: PersistedDoc & { fetchedAt?: string }
   /** 锚:最近一份**内置钥直验**的 trust;重启后经它单级链重验 state.trust(撤销离线持久)。 */
@@ -390,6 +478,37 @@ export function readCachedTrust(userDataPath: string, builtinKeyB64: string, now
   return { doc: anchor.doc, body: anchor.persisted.body, sig: anchor.persisted.sig }
 }
 
+/**
+ * #314:本 channel 缓存 snapshot 重验(签名/schema 相对 trust;R4/窗口放宽同 LKG 纪律)
+ * → R5 基线 + R13-on-cache。三态(review M1):absent(无 snapshot 位)≠ invalid(在场但
+ * 验签/schema 失败 = 篡改)—— invalid 必须拒 LKG,absent 仅在 stateVersion<2 时 grandfather。
+ */
+export type CachedSnapshot =
+  | { status: "valid"; doc: SnapshotDoc; body: string }
+  | { status: "absent" }
+  | { status: "invalid" }
+export function readCachedSnapshot(userDataPath: string, channel: ChannelName, trust: TrustDoc, nowMs: number): CachedSnapshot {
+  const st = readStateFile(userDataPath)
+  const persisted = st.channels?.[channel]?.snapshot
+  if (persisted === undefined) return { status: "absent" }
+  if (!persistedDocOk(persisted)) return { status: "invalid" }
+  const v = verifySnapshotBytes(Buffer.from(persisted.body, "utf8"), persisted.sig, trust, nowMs, {
+    requireUnexpired: false,
+    requireWindow: false,
+  })
+  if (!v.ok) {
+    console.error(`[catalog-channels] cached ${channel} snapshot FAILED re-verification — INVALID (${v.error})`)
+    return { status: "invalid" }
+  }
+  return { status: "valid", doc: v.doc, body: persisted.body }
+}
+
+/** stateVersion 高水位读取(缺省 1 = pre-#314)。 */
+export function channelStateVersion(userDataPath: string): number {
+  const v = readStateFile(userDataPath).stateVersion
+  return Number.isInteger(v) && (v as number) >= 1 ? (v as number) : 1
+}
+
 export type ChannelLastKnownGood = {
   doc: ChannelDoc
   catalog: { version: string; entries: unknown[] }
@@ -427,6 +546,24 @@ export function readChannelLastKnownGood(
     console.error(`[catalog-channels] cached ${channel} payload FAILED re-verification — discarding (${payloadV.error})`)
     return null
   }
+  // #314 R13-on-cache(review M1 三态):valid → doc 必须命中 entry;invalid(在场但坏)→ 拒;
+  // absent → 仅 stateVersion<2(真 pre-#314 存量)grandfather,高水位已达 2 则 absent = 篡改/撕裂,拒。
+  const cachedSnap = readCachedSnapshot(userDataPath, channel, trust, nowMs)
+  if (cachedSnap.status === "invalid") {
+    console.error(`[catalog-channels] cached ${channel} snapshot INVALID — discarding LKG (local tampering or torn state)`)
+    return null
+  }
+  if (cachedSnap.status === "absent" && channelStateVersion(userDataPath) >= 2) {
+    console.error(`[catalog-channels] cached ${channel} entry lacks snapshot but stateVersion>=2 — discarding LKG (R13 high-water)`)
+    return null
+  }
+  if (cachedSnap.status === "valid") {
+    const pin = cachedSnap.doc.entries[channel]
+    if (!pin || pin.sha256 !== sha256Hex(Buffer.from(entry.doc.body, "utf8")) || pin.sequence !== docV.doc.sequence) {
+      console.error(`[catalog-channels] cached ${channel} doc FAILS R13 against cached snapshot — discarding (local tampering or torn state)`)
+      return null
+    }
+  }
   return {
     doc: docV.doc,
     catalog: payloadV.catalog,
@@ -444,7 +581,10 @@ function writeState(userDataPath: string, mutate: (st: StateFile) => void): void
     const st = readStateFile(userDataPath)
     mutate(st)
     fs.mkdirSync(userDataPath, { recursive: true })
-    fs.writeFileSync(channelStatePath(userDataPath), JSON.stringify(st))
+    const target = channelStatePath(userDataPath)
+    const tmp = `${target}.tmp-${process.pid}`
+    fs.writeFileSync(tmp, JSON.stringify(st))
+    fs.renameSync(tmp, target) // 原子替换:中断不留截断 state(coherent set 可用性)
   } catch {
     /* 缓存写失败不阻断本次使用(同 remote-catalog) */
   }
@@ -452,24 +592,52 @@ function writeState(userDataPath: string, mutate: (st: StateFile) => void): void
 
 // ── 网络(注入 fetch;https 重定向终点强制;体积帽)────────────────────────────────────────────
 
+/**
+ * 结构化取数错误(#314 review:失败分类不得依赖错误字符串)。
+ * 分类契约:availability = 纯网络故障(超时/断网/5xx);security = 4xx(含 404/403,被钉
+ * 资源缺失与选择性阻断不可区分)、HTTPS 降级重定向、体积违规 —— 服务端"在但不给对的东西"。
+ */
+export class FetchFailure extends Error {
+  readonly reasonClass: FailureClass
+  constructor(message: string, reasonClass: FailureClass) {
+    super(message)
+    this.reasonClass = reasonClass
+  }
+}
+export const failureClassOf = (e: unknown): FailureClass => (e instanceof FetchFailure ? e.reasonClass : "availability")
+
 async function fetchBytes(fetchImpl: typeof fetch, url: string, maxBytes: number): Promise<Buffer> {
   const ctl = new AbortController()
   const timer = setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS)
   try {
-    const resp = await fetchImpl(url, { signal: ctl.signal, redirect: "follow" })
-    if (resp.url && !resp.url.startsWith("https://")) throw new Error(`redirected to non-https: ${resp.url}`)
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${url}`)
-    const ab = await resp.arrayBuffer()
-    if (ab.byteLength > maxBytes) throw new Error(`too large (${ab.byteLength}B > ${maxBytes}B): ${url}`)
+    let resp: Response
+    try {
+      resp = await fetchImpl(url, { signal: ctl.signal, redirect: "follow" })
+    } catch (e) {
+      throw new FetchFailure(`fetch failed: ${e instanceof Error ? e.message : e}: ${url}`, "availability")
+    }
+    if (resp.url && !resp.url.startsWith("https://")) throw new FetchFailure(`redirected to non-https: ${resp.url}`, "security")
+    if (!resp.ok) throw new FetchFailure(`HTTP ${resp.status}: ${url}`, resp.status >= 500 ? "availability" : "security")
+    const ab = await resp.arrayBuffer().catch((e) => {
+      throw new FetchFailure(`read failed: ${e instanceof Error ? e.message : e}: ${url}`, "availability")
+    })
+    if (ab.byteLength > maxBytes) throw new FetchFailure(`too large (${ab.byteLength}B > ${maxBytes}B): ${url}`, "security")
     return Buffer.from(ab)
   } finally {
     clearTimeout(timer)
   }
 }
 
+/** body 与 .sig 并行取;任一失败按**最严分类**聚合(security 优先),不受响应时序影响。 */
 async function fetchDocPair(fetchImpl: typeof fetch, url: string, sigUrl: string, maxBytes: number): Promise<{ body: Buffer; sig: string }> {
-  const [body, sigBuf] = await Promise.all([fetchBytes(fetchImpl, url, maxBytes), fetchBytes(fetchImpl, sigUrl, MAX_SIG_BYTES)])
-  return { body, sig: sigBuf.toString("utf8") }
+  const [b, g] = await Promise.allSettled([fetchBytes(fetchImpl, url, maxBytes), fetchBytes(fetchImpl, sigUrl, MAX_SIG_BYTES)])
+  if (b.status === "rejected" || g.status === "rejected") {
+    const errs = [b, g].filter((r): r is PromiseRejectedResult => r.status === "rejected").map((r) => r.reason as unknown)
+    const cls: FailureClass = errs.some((e) => failureClassOf(e) === "security") ? "security" : "availability"
+    const msg = errs.map((e) => (e instanceof Error ? e.message : String(e))).join("; ")
+    throw new FetchFailure(msg, cls)
+  }
+  return { body: b.value, sig: g.value.toString("utf8") }
 }
 
 // ── 编排:refreshChannelCatalog ───────────────────────────────────────────────────────────────
@@ -494,6 +662,7 @@ export async function refreshChannelCatalog(
   // 1) trust:缓存重验(内置钥)→ 拉新(内置钥 or 缓存链上可用钥)→ R2/R4/R5。
   const cachedTrust = readCachedTrust(userDataPath, builtinKeyB64, nowMs)
   let trust: TrustDoc | null = cachedTrust?.doc ?? null
+  let trustBodyUsed: Buffer = Buffer.from(cachedTrust?.body ?? "", "utf8")
   try {
     const pair = await fetchDocPair(fetchImpl, `${baseUrl}/channels/trust.json`, `${baseUrl}/channels/trust.json.sig`, MAX_DOC_BYTES)
     const candidates = [builtin, ...(cachedTrust ? usableTrustKeys(cachedTrust.doc, nowMs, { requireWindow: true }) : [])]
@@ -506,7 +675,9 @@ export async function refreshChannelCatalog(
       loud(`R5 trust sequence regression (${v.doc.sequence} <= ${cachedTrust.doc.sequence}) — keeping cached trust`)
     } else {
       trust = v.doc
+      trustBodyUsed = pair.body
       // 立即持久化(不等 channel 结果):撤销/轮换必须离线生效(R10/R11),即便本轮 channel 被拒。
+      // (#314 裁决:trust 安全前移 ≠ snapshot 前移 —— snapshot 只随 coherent set 提交。)
       const persist = { body: pair.body.toString("utf8"), sig: pair.sig.trim(), fetchedAt: new Date(nowMs).toISOString() }
       writeState(userDataPath, (st) => {
         st.trust = persist
@@ -519,14 +690,16 @@ export async function refreshChannelCatalog(
   if (!trust) {
     const error = `no verifiable trust (${notices.join("; ") || "no cache, no network"}) — fail closed`
     loud(error)
-    return { source: "none", channel, error }
+    return { source: "none", channel, error, reasonClass: "security" }
   }
+  // trust 的精确字节(R13 entries.trust 绑定用):优先本轮新验的,否则缓存的。
+  const trustBody = trustBodyUsed
 
   // last-known-good(对照基线 + 回退目标;读取即全量重验,revoked 钥/撤销 digest 的缓存已被剔除)。
   const lkg = readChannelLastKnownGood(userDataPath, channel, trust, nowMs)
-  const fallback = (error: string): ChannelCatalogResult => {
-    loud(`${error} — ${lkg ? "falling back to last-known-good" : "NO last-known-good available"}`)
-    if (!lkg) return { source: "none", channel, error }
+  const fallback = (error: string, reasonClass: FailureClass): ChannelCatalogResult => {
+    loud(`${error} [${reasonClass}] — ${lkg ? "falling back to last-known-good" : "NO last-known-good available"}`)
+    if (!lkg) return { source: "none", channel, error, reasonClass }
     return {
       source: "cache",
       channel,
@@ -535,13 +708,45 @@ export async function refreshChannelCatalog(
       sha256: lkg.doc.target.sha256,
       fetchedAt: lkg.fetchedAt,
       error: `${error}${lkg.stale ? " (WARNING: last-known-good is past its expires — stale)" : ""}`,
+      reasonClass,
     }
   }
 
-  // 采信新状态需要未过期的 trust(R4 防冻结);过期 trust 只够撑 LKG。
-  if (Date.parse(trust.expires) <= nowMs) return fallback(`R4 trust EXPIRED at ${trust.expires} — cannot anchor new channel state`)
+  // 采信新状态需要未过期的 trust(R4 防冻结,security:冻结攻击面);过期 trust 只够撑 LKG。
+  if (Date.parse(trust.expires) <= nowMs)
+    return fallback(`R4 trust EXPIRED at ${trust.expires} — cannot anchor new channel state`, "security")
 
-  // 2) channel 指针文档:R10 → R1 → R2 → R3 → R4 → R5 → R6/R7 → R11。
+  // 2) snapshot(#314,R13):缺失(404)= security(选择性阻断不可与部署偏斜区分,合同 §5)。
+  let snapBody: Buffer
+  let snapSig: string
+  try {
+    const pair = await fetchDocPair(fetchImpl, `${baseUrl}/channels/snapshot.json`, `${baseUrl}/channels/snapshot.json.sig`, MAX_DOC_BYTES)
+    snapBody = pair.body
+    snapSig = pair.sig
+  } catch (e) {
+    // 结构化分类:4xx(含 404 = 半发布/选择性阻断)/降级/超限 → security;纯网络故障 → availability。
+    return fallback(`R13 snapshot fetch failed: ${e instanceof Error ? e.message : e}`, failureClassOf(e))
+  }
+  const snapV = verifySnapshotBytes(snapBody, snapSig, trust, nowMs, { requireUnexpired: true, requireWindow: true })
+  if (!snapV.ok) return fallback(snapV.error, "security")
+  const snap = snapV.doc
+  // R5(snapshot 自身序列,对本 channel 的缓存基线;等序比**精确字节**,review M4):
+  const cachedSnap = readCachedSnapshot(userDataPath, channel, trust, nowMs)
+  if (cachedSnap.status === "valid") {
+    if (snap.sequence < cachedSnap.doc.sequence)
+      return fallback(`R5 snapshot sequence regression: ${snap.sequence} < cached ${cachedSnap.doc.sequence}`, "security")
+    if (snap.sequence === cachedSnap.doc.sequence && !snapBody.equals(Buffer.from(cachedSnap.body, "utf8")))
+      return fallback(`R5 snapshot replaced at same sequence ${snap.sequence} (replay/replacement)`, "security")
+  }
+  // R13:snapshot 必须钉住**本轮采信的 trust 的精确字节 + sequence**(trust/snapshot 偏斜 = 拒)。
+  if (snap.entries.trust.sha256 !== sha256Hex(trustBody) || snap.entries.trust.sequence !== trust.sequence)
+    return fallback(`R13 snapshot does not pin the trusted trust doc (trust/snapshot skew)`, "security")
+
+  // 3) channel 指针文档:R13 entry 先行(entry 缺失 = 拒,免拉取)→ R10 → R1 → R2 → R3 → R4
+  //    → R13 钉合 → R5 → R6/R7 → R11。被 snapshot 钉住的成员拉取失败 = 半发布/选择性阻断
+  //    (与 snapshot 一致性互斥),归 security。
+  const pin = snap.entries[channel]
+  if (!pin) return fallback(`R13 snapshot has no entry for channel "${channel}"`, "security")
   let docBody: Buffer
   let docSig: string
   try {
@@ -549,22 +754,25 @@ export async function refreshChannelCatalog(
     docBody = pair.body
     docSig = pair.sig
   } catch (e) {
-    return fallback(`channel doc fetch failed: ${e instanceof Error ? e.message : e}`)
+    return fallback(`channel doc fetch failed (pinned by snapshot): ${e instanceof Error ? e.message : e}`, "security")
   }
   const docV = verifyChannelBytes(docBody, docSig, channel, trust, nowMs, { requireUnexpired: true, requireWindow: true })
-  if (!docV.ok) return fallback(docV.error)
+  if (!docV.ok) return fallback(docV.error, "security")
   const doc = docV.doc
+  // R13:channel 文档必须命中 snapshot entry(精确字节 + sequence)。
+  if (pin.sha256 !== sha256Hex(docBody) || pin.sequence !== doc.sequence)
+    return fallback(`R13 channel doc does not match snapshot entry (seq ${doc.sequence} vs pinned ${pin.sequence})`, "security")
   const sameBytesAsLkg = !!lkg && docBody.toString("utf8") === lkg.docBody
   if (lkg && !sameBytesAsLkg) {
     if (doc.sequence <= lkg.doc.sequence)
-      return fallback(`R5 sequence regression/replay: ${doc.sequence} <= last-known ${lkg.doc.sequence}`)
+      return fallback(`R5 sequence regression/replay: ${doc.sequence} <= last-known ${lkg.doc.sequence}`, "security")
     if (catalogVersionLess(doc.target.catalogVersion, lkg.doc.target.catalogVersion))
-      return fallback(`R6 ROLLBACK: target ${doc.target.catalogVersion} older than last-known ${lkg.doc.target.catalogVersion}`)
+      return fallback(`R6 ROLLBACK: target ${doc.target.catalogVersion} older than last-known ${lkg.doc.target.catalogVersion}`, "security")
     if (doc.target.catalogVersion === lkg.doc.target.catalogVersion && doc.target.sha256 !== lkg.doc.target.sha256)
-      return fallback(`R7 content REPLACED for ${doc.target.catalogVersion} (sha256 ${lkg.doc.target.sha256.slice(0, 12)}… -> ${doc.target.sha256.slice(0, 12)}…)`)
+      return fallback(`R7 content REPLACED for ${doc.target.catalogVersion} (sha256 ${lkg.doc.target.sha256.slice(0, 12)}… -> ${doc.target.sha256.slice(0, 12)}…)`, "security")
   }
   const revoked = revokedTargetEntry(trust, doc.target.sha256)
-  if (revoked) return fallback(`R11 target digest REVOKED (${revoked.reason})`)
+  if (revoked) return fallback(`R11 target digest REVOKED (${revoked.reason})`, "security")
 
   // 3) payload:digest 命中 LKG 且旧签名仍可验 → 免拉;否则按 target.url 取(digest 是唯一权威)。
   let payloadBody: Buffer
@@ -585,19 +793,21 @@ export async function refreshChannelCatalog(
       payloadBody = pair.body
       payloadSig = pair.sig
     } catch (e) {
-      return fallback(`payload fetch failed: ${e instanceof Error ? e.message : e}`)
+      return fallback(`payload fetch failed: ${e instanceof Error ? e.message : e}`, failureClassOf(e))
     }
   }
   const payloadV = verifyPayloadBytes(payloadBody, payloadSig, doc.target, trust, nowMs, { requireUnexpired: true, requireWindow: true })
-  if (!payloadV.ok) return fallback(payloadV.error)
+  if (!payloadV.ok) return fallback(payloadV.error, "security")
 
-  // 4) 全过 → 落缓存(trust 已在验证通过时先行持久化)。
+  // 5) 全过 → coherent set 一次原子落缓存(doc/payload/snapshot 同写;trust 已先行持久化)。
   const fetchedAt = new Date(nowMs).toISOString()
   writeState(userDataPath, (st) => {
+    st.stateVersion = Math.max(st.stateVersion ?? 1, 2) // R13 高水位:只升不降(review M1)
     st.channels = st.channels ?? {}
     st.channels[channel] = {
       doc: { body: docBody.toString("utf8"), sig: docSig.trim() },
       payload: { body: payloadBody.toString("utf8"), sig: payloadSig.trim() },
+      snapshot: { body: snapBody.toString("utf8"), sig: snapSig.trim() },
       fetchedAt,
     }
   })
@@ -613,14 +823,16 @@ export async function refreshChannelCatalog(
 }
 
 /**
- * 给 v1 兼容路径用的撤销视图(R11 对已缓存内容离线生效):
- * 从缓存 trust(内置钥重验)读 revokedTargets;无可验 trust → 空集(v1 面维持现行为)。
+ * 给 v1 兼容路径用的撤销视图(R11 对已缓存内容离线生效):从缓存 trust(内置钥重验)读
+ * revokedTargets。#314:无可验 trust → **null(撤销状态未知)**,调用方必须拒用 v1 ——
+ * 不可采信从不可验 trust 派生的空撤销集(审计 AC2 缺口)。
  */
-export function readRevokedTargets(userDataPath: string, deps: ChannelClientDeps = {}): Map<string, string> {
+export function readRevokedTargets(userDataPath: string, deps: ChannelClientDeps = {}): Map<string, string> | null {
   const nowMs = (deps.now ?? Date.now)()
   const builtinKeyB64 = deps.builtinKeyB64 ?? BUILTIN_CATALOG_PUBKEY_B64
   const cached = readCachedTrust(userDataPath, builtinKeyB64, nowMs)
+  if (!cached) return null
   const out = new Map<string, string>()
-  for (const r of cached?.doc.revokedTargets ?? []) out.set(r.sha256, r.reason)
+  for (const r of cached.doc.revokedTargets) out.set(r.sha256, r.reason)
   return out
 }
