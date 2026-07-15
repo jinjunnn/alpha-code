@@ -829,3 +829,19 @@ describe("recovery misc", () => {
     expect(fs.readdirSync(dir).some((n) => n.includes(".corrupt-"))).toBe(true)
   })
 })
+
+// ── REQ-099 #309(Codex review #357 major):recoveryClean —— ok:true ≠ 干净 ─────────────────────
+
+describe("recoveryClean — 迁移等敏感动作的收敛判定", () => {
+  const rep = (state: string, action: string) => ({ txId: "t", state, action, detail: "" }) as import("./ext-transaction").TxRecoveryReport
+  test("ok:false / aborted / rolled-back / 非终态待重试 → 不干净;前滚完成与良性终态 → 干净", async () => {
+    const { recoveryClean } = await import("./ext-transaction")
+    expect(recoveryClean({ ok: false, reports: [] })).toBe(false)
+    expect(recoveryClean({ ok: true, reports: [rep("aborted", "aborted")] })).toBe(false)
+    expect(recoveryClean({ ok: true, reports: [rep("rolled-back", "rolled-back")] })).toBe(false)
+    expect(recoveryClean({ ok: true, reports: [rep("uninstalling", "none")] })).toBe(false) // retained for retry
+    expect(recoveryClean({ ok: true, reports: [] })).toBe(true)
+    expect(recoveryClean({ ok: true, reports: [rep("committed", "resumed-committed")] })).toBe(true)
+    expect(recoveryClean({ ok: true, reports: [rep("uninstalled", "none"), rep("committed", "cleaned")] })).toBe(true)
+  })
+})

@@ -42,7 +42,7 @@ import { getAlphaEnvironment } from "./alpha-environment"
 import { installCatalog, listGenerationsByKey, rollbackGenerationByKey, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
 import { migrateV1Ledger, readLedgerV2, removeRecordV2, upsertRecordsV2 } from "./ext-receipt-v2"
 import { readPackagedSeed } from "./ext-seed"
-import { recoverExtensionTransactions } from "./ext-transaction"
+import { recoverExtensionTransactions, recoveryClean } from "./ext-transaction"
 import { getLogger } from "./logging"
 
 // REQ-076 T2(阻断②):原实现硬编码 `which` + `:` 拼接的 unix PATH,Windows 上恒报「未安装」
@@ -411,6 +411,12 @@ export function registerExtIpcHandlers(userDataPath: string) {
         return
       }
       if (r.reports.length) getLogger().log(`[req100-tx-recovery] converged ${r.reports.length} journal(s)`)
+      // Codex review #357 major:ok:true ≠ 干净(aborted/rolled-back/待重试非终态也 ok)——
+      // 账本本次启动动过手术或仍有在途 journal 就不迁,下次干净的启动再迁。
+      if (!recoveryClean(r)) {
+        getLogger().log(`[req099-migrate] recovery not clean (${r.reports.map((x) => `${x.txId}:${x.state}/${x.action}`).join(", ")}) — skipping migration this launch`)
+        return
+      }
       const env = getAlphaEnvironment()
       const m = migrateV1Ledger(env.mutableRoot, env.environment)
       if (!m.ok) {

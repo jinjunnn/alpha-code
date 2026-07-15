@@ -620,6 +620,23 @@ export function migrateV1Ledger(
 ): { ok: true; migrated: number; retained: number; warnings: string[] } | { ok: false; reason: string } {
   const { parsed, corrupt } = parseLedger(root)
   if (corrupt) return { ok: false, reason: `installs.json unreadable: ${ledgerPath(root)} — refusing to migrate a corrupt ledger` }
+  // Codex review #357 Blocker:信封严格校验 —— parseLedger 对顶层是宽容读(缺 v/未知键/非数组
+  // 集合都静默当空),迁移的「解析→重写」会把未来版本或畸形账本改写成本构建形状并丢数据。
+  // 合法信封 = { v: 1|2, receipts?: [], records?: [] }(v1 writer 落 {v:1,receipts},v2 落 {v:2,…})。
+  try {
+    const raw = JSON.parse(fs.readFileSync(ledgerPath(root), "utf8")) as Record<string, unknown>
+    for (const k of Object.keys(raw))
+      if (k !== "v" && k !== "receipts" && k !== "records")
+        return { ok: false, reason: `refusing migration: unknown ledger envelope key "${k}" — not this build's ledger shape (file left untouched)` }
+    if (raw.v !== 1 && raw.v !== 2)
+      return { ok: false, reason: `refusing migration: unsupported ledger version ${JSON.stringify(raw.v)} (file left untouched)` }
+    if (raw.receipts !== undefined && !Array.isArray(raw.receipts))
+      return { ok: false, reason: "refusing migration: ledger receipts is not an array (file left untouched)" }
+    if (raw.records !== undefined && !Array.isArray(raw.records))
+      return { ok: false, reason: "refusing migration: ledger records is not an array (file left untouched)" }
+  } catch {
+    /* 文件不存在 → 无账可迁(走 pending=0);JSON 损坏已被上面 corrupt 分支拦下 */
+  }
   if (parsed.receiptWarnings.length > 0 || parsed.recordWarnings.length > 0 || parsed.corruptRecords.corruptKeys.size > 0 || parsed.corruptRecords.unattributable) {
     const detail = [...parsed.receiptWarnings, ...parsed.recordWarnings].join("; ")
     return { ok: false, reason: `refusing migration: ledger has excluded/corrupt entries — rewriting would drop them (file left untouched): ${detail}` }

@@ -393,6 +393,28 @@ describe("v1 → v2 explicit migration (AC#6)", () => {
     expect(r.warnings.some((w) => w.includes("duplicate"))).toBe(true)
   })
 
+  test("#357 Blocker 回归锁:未来版本/未知顶层键/非数组集合 → 拒迁移,原文件字节零改动", () => {
+    const cases = [
+      { v: 3, receipts: [] }, // 未来版本
+      { v: 1, receipts: [], futureKey: {} }, // 未知顶层键
+      { v: 1, receipts: {} }, // receipts 非数组(parseLedger 会静默当空 → 重写即丢数据)
+      { v: 2, receipts: [], records: "oops" }, // records 非数组
+    ]
+    for (const c of cases) {
+      fs.writeFileSync(ledgerFile(), JSON.stringify(c))
+      const bytes = fs.readFileSync(ledgerFile(), "utf8")
+      const r = migrateV1Ledger(root, "prod")
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.reason).toContain("refusing migration")
+      expect(fs.readFileSync(ledgerFile(), "utf8")).toBe(bytes)
+    }
+    // v:1 纯 receipts 信封(v1 writer 真实形状)照常可迁
+    fs.writeFileSync(ledgerFile(), JSON.stringify({ v: 1, receipts: [v1Receipt()] }))
+    const ok = migrateV1Ledger(root, "prod")
+    expect(ok.ok).toBe(true)
+    if (ok.ok) expect(ok.migrated).toBe(1)
+  })
+
   test("parser 有排除项(非法 receipt)→ 整次拒绝,原文件字节零改动", () => {
     addReceipt(root, v1Receipt())
     const raw = readRaw()

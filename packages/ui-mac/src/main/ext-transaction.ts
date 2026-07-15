@@ -1379,6 +1379,16 @@ export async function rollbackGenerationTransaction(
 export type TxRecoveryAction = "none" | "cleaned" | "aborted" | "rolled-back" | "resumed-committed"
 export type TxRecoveryReport = { txId: string; state: TxState; action: TxRecoveryAction; detail: string }
 
+const TERMINAL_TX_STATES = new Set<TxState>(["committed", "rolled-back", "aborted", "uninstalled"])
+
+/** REQ-099 #309(Codex review #357 major):`ok:true` ≠ 恢复干净 —— aborted/rolled-back 报告、
+ *  以及「still failing — retained for retry」类非终态 journal 都返回 ok:true。迁移等只该在
+ *  账本无在途手术时进行的动作,用本谓词判定;不干净只损失一次启动窗口,下次干净再做。 */
+export function recoveryClean(r: { ok: boolean; reports: TxRecoveryReport[] }): boolean {
+  if (!r.ok) return false
+  return r.reports.every((rep) => rep.action !== "aborted" && rep.action !== "rolled-back" && TERMINAL_TX_STATES.has(rep.state))
+}
+
 export type RecoverOptions = {
   probe?: HealthProbe
   commitReceipt?: (records: TxCommitRecord[]) => void | Promise<void>
