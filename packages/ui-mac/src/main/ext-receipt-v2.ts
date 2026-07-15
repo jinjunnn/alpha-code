@@ -562,15 +562,24 @@ export function setDesiredStateV2(root: string, kind: InstallReceiptType, name: 
 
 // ── v1 → v2 显式迁移(AC#6)────────────────────────────────────────────────────────────────────
 
-/** 把一张 v1 receipt 迁为 v2 record(generation 1,digest 字段如实缺省,migratedFrom 标注)。 */
+/** #309 adoption 判别:一张 v1 receipt 要么安全迁为 v2 record,要么保留 v1-only(带可定位原因)。 */
+export type MigrateReceiptOutcome = { status: "adopted"; record: InstallRecordV2 } | { status: "retained"; reason: string }
+
+/**
+ * 把一张 v1 receipt 迁为 v2 record(generation 1,digest 字段如实缺省,migratedFrom 标注)。
+ * Codex #309 裁决:构造后必须过 decodeRecordV2(#306 catalog 语义不变量);非 catalog 来源且
+ * id ≠ user:<name> 时做**单次**规范化重试(v2 id 是身份声明;v1 receipt 原样保留原 id,降级视图
+ * 不变)。catalog 身份不可重建(缺 kind 前缀 / command+catalog)或仍不过 → retained,绝不丢条目。
+ * environment 语义 = 本次 adoption 时点的运行环境(记录归属),不是历史安装渠道证据。
+ */
 export function migrateV1Receipt(
   receipt: InstallReceipt,
   environment: AppEnvironment,
   scope: ScopeIdentity,
-): InstallRecordV2 {
-  return {
+): MigrateReceiptOutcome {
+  const build = (id: string): InstallRecordV2 => ({
     schemaVersion: RECORD_SCHEMA_VERSION,
-    id: receipt.id,
+    id,
     name: receipt.name,
     kind: receipt.type,
     environment,
@@ -583,35 +592,76 @@ export function migrateV1Receipt(
     ...(receipt.configKey ? { configKey: receipt.configKey } : {}),
     installedAt: receipt.installedAt,
     migratedFrom: "v1",
+  })
+  const first = decodeRecordV2(build(receipt.id))
+  if (first.ok) return { status: "adopted", record: first.record }
+  if (receipt.origin !== "catalog" && receipt.id !== `user:${receipt.name}`) {
+    const retry = decodeRecordV2(build(`user:${receipt.name}`))
+    if (retry.ok) return { status: "adopted", record: retry.record }
+    return { status: "retained", reason: retry.errors.join("; ") }
   }
+  return { status: "retained", reason: first.errors.join("; ") }
 }
 
 /**
- * Explicit whole-ledger migration: every v1-only receipt under `root` gets a v2 record. Project
- * ledgers bind identity to their CURRENT project dir (the ledger physically lives inside it —
- * this is the adoption moment). Idempotent; never drops a receipt (rollback safety).
+ * Explicit whole-ledger migration (#309): every SAFELY-adoptable v1-only receipt under `root` gets a
+ * v2 record; the rest stay v1-only with a locatable warning (`<ledger> <kind>:<name>: <reason>`).
+ * Project ledgers bind identity to their CURRENT project dir (the ledger physically lives inside it —
+ * this is the adoption moment). Idempotent; never drops a receipt (rollback safety);
+ * receipts[] 原样保留 = 降级可读。
+ * fail-closed 面(Codex #309):parser 有排除项(非法 receipt / 损坏或不可归属 v2 record)时整次
+ * 拒绝写盘 —— 「解析→重写」会把被排除的原始条目丢掉,原文件必须零改动;scope 与账本物理域不符、
+ * 同 (kind,name) 重复 receipt 均 retained(绝不降级成 global / 任选一条冒充身份)。
  */
 export function migrateV1Ledger(
   root: string,
   environment: AppEnvironment,
   projectDir?: string,
-): { ok: true; migrated: number; warnings: string[] } | { ok: false; reason: string } {
+): { ok: true; migrated: number; retained: number; warnings: string[] } | { ok: false; reason: string } {
   const { parsed, corrupt } = parseLedger(root)
-  const warnings: string[] = [...parsed.recordWarnings, ...parsed.receiptWarnings]
   if (corrupt) return { ok: false, reason: `installs.json unreadable: ${ledgerPath(root)} — refusing to migrate a corrupt ledger` }
+  if (parsed.receiptWarnings.length > 0 || parsed.recordWarnings.length > 0 || parsed.corruptRecords.corruptKeys.size > 0 || parsed.corruptRecords.unattributable) {
+    const detail = [...parsed.receiptWarnings, ...parsed.recordWarnings].join("; ")
+    return { ok: false, reason: `refusing migration: ledger has excluded/corrupt entries — rewriting would drop them (file left untouched): ${detail}` }
+  }
   const recordKeys = new Set(parsed.records.map((r) => key(r.kind, r.name)))
   const pending = parsed.receipts.filter((r) => !recordKeys.has(key(r.type, r.name)))
-  if (pending.length === 0) return { ok: true, migrated: 0, warnings }
+  if (pending.length === 0) return { ok: true, migrated: 0, retained: 0, warnings: [] }
   let scope: ScopeIdentity = { kind: "global" }
   if (projectDir !== undefined) {
     const identity = projectScopeIdentity(projectDir)
     if (!identity.ok) return { ok: false, reason: identity.reason }
     scope = identity.scope
   }
-  const migrated = pending.map((r) => migrateV1Receipt(r, environment, r.scope === "project" && scope.kind === "project" ? scope : { kind: "global" }))
-  const written = writeLedgerFile(root, parsed.receipts, [...parsed.records, ...migrated])
+  const expectedScope = projectDir !== undefined ? "project" : "global"
+  const dup = new Map<string, number>()
+  for (const r of pending) dup.set(key(r.type, r.name), (dup.get(key(r.type, r.name)) ?? 0) + 1)
+  const warnings: string[] = []
+  const adopted: InstallRecordV2[] = []
+  let retained = 0
+  const at = (r: InstallReceipt) => `${ledgerPath(root)} ${r.type}:${r.name}`
+  for (const r of pending) {
+    if (dup.get(key(r.type, r.name))! > 1) {
+      retained++
+      warnings.push(`${at(r)}: duplicate v1 receipts for one key — retained as v1-only (cannot pick an identity)`)
+      continue
+    }
+    if (r.scope !== expectedScope) {
+      retained++
+      warnings.push(`${at(r)}: receipt scope "${r.scope}" does not match this ${expectedScope} ledger — retained as v1-only`)
+      continue
+    }
+    const out = migrateV1Receipt(r, environment, scope)
+    if (out.status === "adopted") adopted.push(out.record)
+    else {
+      retained++
+      warnings.push(`${at(r)}: ${out.reason} — retained as v1-only`)
+    }
+  }
+  if (adopted.length === 0) return { ok: true, migrated: 0, retained, warnings }
+  const written = writeLedgerFile(root, parsed.receipts, [...parsed.records, ...adopted])
   if (!written.ok) return written
-  return { ok: true, migrated: migrated.length, warnings }
+  return { ok: true, migrated: adopted.length, retained, warnings }
 }
 
 // ── grant digest ────────────────────────────────────────────────────────────────────────────────
