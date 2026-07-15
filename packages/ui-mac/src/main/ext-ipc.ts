@@ -61,7 +61,9 @@ function checkRuntime(tool: string): Promise<{ ok: boolean }> {
   })
 }
 
-export function registerExtIpcHandlers(userDataPath: string) {
+/** registryChannel:冻结环境快照的 registry 通道(REQ-098 #302),由 composition root(index.ts)
+ *  注入 —— IPC handler 与 planner 的 catalog 拉取共用同一份,类型必填(无缺省可静默回落 stable)。 */
+export function registerExtIpcHandlers(userDataPath: string, registryChannel: "stable" | "preview" | "dev") {
   ipcMain.handle(
     "ext-persist-mcp",
     // REQ-099 #305:未策展自定义 MCP 专用通道(catalog MCP 走 ext-install-catalog);不收 renderer
@@ -166,7 +168,7 @@ export function registerExtIpcHandlers(userDataPath: string) {
     return r
   })
 
-  ipcMain.handle("ext-remote-catalog", () => refreshRemoteCatalog(userDataPath))
+  ipcMain.handle("ext-remote-catalog", () => refreshRemoteCatalog(userDataPath, registryChannel))
   // REQ-100 #313:旧 ext-install-remote-skill / ext-install-builtin-skill 通道已下线 —— catalog skill
   // 安装只走 ext-install-catalog(planner 从已验签 catalog 派生事实,落 generation 事务);保留
   // renderer 可伪造 assetKey/name/meta 的旧面就是保留技能身份伪装通道(Codex review #345)。
@@ -448,7 +450,7 @@ export function registerExtIpcHandlers(userDataPath: string) {
     let effective: Promise<{ entries: Catalog["entries"]; channel: "remote" | "cache" | "bundled"; version: string }> | null = null
     const effectiveCatalog = () =>
       (effective ??= (async () => {
-        const rc = await refreshRemoteCatalog(userDataPath)
+        const rc = await refreshRemoteCatalog(userDataPath, registryChannel)
         if (rc.source !== "none") {
           const cat = rc.catalog as Catalog
           return { entries: cat.entries ?? [], channel: rc.source, version: String(cat.version ?? rc.version) }
