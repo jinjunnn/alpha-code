@@ -8,6 +8,7 @@
 // 依赖注入假 installer(仓规:零 mock.module);账本走真盘临时目录。
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import * as crypto from "node:crypto"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
@@ -15,6 +16,7 @@ import type { CatalogEntry } from "../renderer/extensions/catalog-types"
 import { addReceipt } from "./alpha-installs"
 import { fileifyMcpSecretsDeep } from "./alpha-mcp-secrets"
 import { aggregateFilesDigest, computeManifestDigest, decodeManifestV2 } from "./ext-manifest-v2"
+import { hasCasBlob } from "./ext-cas"
 import { computeGrantDigest, findRecordV2, upsertRecordV2, type UpsertInput } from "./ext-receipt-v2"
 import { resolveLiveGenerationDir } from "./ext-transaction"
 import { skillStorePaths } from "./ext-skill-generations"
@@ -82,7 +84,16 @@ const skillBuiltinEntry: CatalogEntry = {
   version: "1.0.0",
   installSpec: { kind: "skill", source: "builtin", builtinAssetKey: "skills/demo", targetDir: "alpha-skills" },
 }
-const remoteFiles = [{ path: "SKILL.md", sha256: "c".repeat(64), bytes: 5, url: "https://assets.example/SKILL.md" }]
+// REQ-098 #303:清单 digest/bytes 必须与下载 stub 的真实内容一致(promote 前结构校验 + CAS put 再验)。
+const REMOTE_SKILL_MD = "---\nname: remote-demo\ndescription: test\n---\nbody"
+const remoteFiles = [
+  {
+    path: "SKILL.md",
+    sha256: crypto.createHash("sha256").update(REMOTE_SKILL_MD).digest("hex"),
+    bytes: Buffer.byteLength(REMOTE_SKILL_MD),
+    url: "https://assets.example/SKILL.md",
+  },
+]
 const skillRemoteEntry: CatalogEntry = {
   id: "skill:remote-demo",
   type: "skill",
@@ -178,8 +189,9 @@ function makeDeps(opts: {
     removeFsInstall: record("removeFsInstall", { ok: true as const, files: [] }),
     downloadRemoteAsset: async (files) => {
       calls.push({ fn: "downloadRemoteAsset", args: [files] })
-      // 唯一走 remote 的 skill fixture = remote-demo;有效 frontmatter 供 #312 probe。
-      return { ok: true, contents: [{ path: "SKILL.md", data: Buffer.from("---\nname: remote-demo\ndescription: test\n---\nbody") }] }
+      // 唯一走 remote 的 skill fixture = remote-demo;内容与 remoteFiles 清单 digest/bytes 一致
+      //(#303 promote 前结构校验),有效 frontmatter 供 #312 probe。
+      return { ok: true, contents: [{ path: "SKILL.md", data: Buffer.from(REMOTE_SKILL_MD) }] }
     },
     ...opts.installers,
   }
@@ -192,6 +204,8 @@ function makeDeps(opts: {
     environment: () => "prod",
     platform: () => opts.platform ?? "darwin",
     globalRoot: () => globalRoot,
+    // REQ-098 #303:共享 CAS 基根(≠ 环境根)—— 测试断言 blob 落这里而非 globalRoot。
+    casBaseRoot: () => path.join(tmp, "cas-base"),
     installers,
     ...(opts.transaction ? { transaction: opts.transaction } : {}),
   }
@@ -520,6 +534,51 @@ describe("other kinds — derivation & records", () => {
     expect(resolveLiveGenerationDir(globalRoot, "skill--remote-demo")).not.toBeNull()
   })
 
+  // ── REQ-098 #303:catalog skill 内容一律经验证共享 CAS ────────────────────────────────────────
+  test("#303 remote skill: blobs land in the shared CAS base (not the env root); generation matches", async () => {
+    const { deps } = makeDeps()
+    const r = await installCatalog({ catalogId: "skill:remote-demo", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(true)
+    const digest = remoteFiles[0]!.sha256
+    expect(hasCasBlob(path.join(tmp, "cas-base"), digest)).toBe(true) // 共享 CAS 基根
+    expect(hasCasBlob(globalRoot, digest)).toBe(false) // 不落环境根
+    const live = resolveLiveGenerationDir(globalRoot, "skill--remote-demo")!
+    expect(fs.readFileSync(path.join(live, "SKILL.md"), "utf8")).toBe(REMOTE_SKILL_MD)
+  })
+
+  test("#303 builtin skill: content-addressed into CAS; self-computed payloadDigest recorded", async () => {
+    const { deps } = makeDeps()
+    const r = await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(true)
+    const body = "---\nname: demo\ndescription: test demo\n---\nbody"
+    const digest = crypto.createHash("sha256").update(body).digest("hex")
+    expect(hasCasBlob(path.join(tmp, "cas-base"), digest)).toBe(true)
+    const record = findRecordV2(globalRoot, "skill", "demo")
+    expect(record?.payloadDigest).toBe(aggregateFilesDigest([{ path: "SKILL.md", sha256: digest }]))
+  })
+
+  test("#303 refuses payload/manifest drift before any CAS write (extra/missing/renamed/size/digest)", async () => {
+    const contents = (files: Array<{ path: string; data: string }>) => async () => ({
+      ok: true as const,
+      contents: files.map((f) => ({ path: f.path, data: Buffer.from(f.data) })),
+    })
+    const variants: Array<{ label: string; dl: ReturnType<typeof contents>; expects: string }> = [
+      { label: "extra file", dl: contents([{ path: "SKILL.md", data: REMOTE_SKILL_MD }, { path: "sneak.md", data: "x" }]), expects: "file count mismatch" },
+      { label: "missing file", dl: contents([]), expects: "file count mismatch" },
+      { label: "renamed path", dl: contents([{ path: "OTHER.md", data: REMOTE_SKILL_MD }]), expects: "not in manifest" },
+      { label: "size mismatch", dl: contents([{ path: "SKILL.md", data: REMOTE_SKILL_MD + "!" }]), expects: "size mismatch" },
+      { label: "digest mismatch", dl: contents([{ path: "SKILL.md", data: "---\nname: remote-demo\ndescription: test\n---\nEVIL" }]), expects: "" },
+    ]
+    for (const v of variants) {
+      const { deps } = makeDeps({ installers: { downloadRemoteAsset: v.dl } })
+      const r = await installCatalog({ catalogId: "skill:remote-demo", scope: { scope: "global" } }, deps)
+      expect(r.ok).toBe(false)
+      if (!r.ok && v.expects) expect(r.reason).toContain(v.expects)
+      expect(findRecordV2(globalRoot, "skill", "remote-demo")).toBeNull()
+      expect(resolveLiveGenerationDir(globalRoot, "skill--remote-demo")).toBeNull()
+    }
+  })
+
   test("vendored plugin: asset key from catalog; configKey derived from install result", async () => {
     const { deps, calls } = makeDeps()
     const r = await installCatalog({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
@@ -565,6 +624,33 @@ describe("other kinds — derivation & records", () => {
     expect(cfg.mcp.clean).toEqual({ type: "local", command: ["uvx", "clean-mcp@1.0.0"] }) // MCP 进 config
     expect(findRecordV2(globalRoot, "skill", "demo")).not.toBeNull()
     expect(findRecordV2(globalRoot, "mcp", "clean")).not.toBeNull()
+  })
+
+  test("#303 bundle: skill child blobs go through shared CAS; populate materializes from CAS", async () => {
+    const casBundle: CatalogEntry = { ...bundleEntry, id: "bundle:cas", name: "casb", bundleItems: [{ catalogEntryId: "skill:remote-demo", optional: false, installOrder: 1 }] }
+    const { deps } = makeDeps({ entries: [...ALL_ENTRIES, casBundle] })
+    const r = await installCatalog({ catalogId: "bundle:cas", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(true)
+    expect(hasCasBlob(path.join(tmp, "cas-base"), remoteFiles[0]!.sha256)).toBe(true)
+    const live = resolveLiveGenerationDir(globalRoot, "skill--remote-demo")!
+    expect(fs.readFileSync(path.join(live, "SKILL.md"), "utf8")).toBe(REMOTE_SKILL_MD)
+  })
+
+  test("#303 bundle: required child CAS promotion failure refuses the whole bundle; optional → skipped", async () => {
+    const badDl = async () => ({ ok: true as const, contents: [{ path: "SKILL.md", data: Buffer.from("---\nname: remote-demo\ndescription: test\n---\nEVIL") }] })
+    const reqBundle: CatalogEntry = { ...bundleEntry, id: "bundle:req", name: "reqb", bundleItems: [{ catalogEntryId: "skill:remote-demo", optional: false, installOrder: 1 }] }
+    const { deps: reqDeps } = makeDeps({ entries: [...ALL_ENTRIES, reqBundle], installers: { downloadRemoteAsset: badDl } })
+    const rq = await installCatalog({ catalogId: "bundle:req", scope: { scope: "global" } }, reqDeps)
+    expect(rq.ok).toBe(false)
+    if (!rq.ok) expect(rq.reason).toContain("required bundle child")
+
+    const optBundle: CatalogEntry = { ...bundleEntry, id: "bundle:opt", name: "optb", bundleItems: [{ catalogEntryId: "skill:remote-demo", optional: true, installOrder: 1 }, { catalogEntryId: "cloud:research", optional: false, installOrder: 2 }] }
+    const { deps: optDeps } = makeDeps({ entries: [...ALL_ENTRIES, optBundle], installers: { downloadRemoteAsset: badDl } })
+    const ro = await installCatalog({ catalogId: "bundle:opt", scope: { scope: "global" } }, optDeps)
+    expect(ro.ok).toBe(true)
+    if (!ro.ok) return
+    expect(ro.installed).toEqual(["cloud:research"])
+    expect(ro.skipped?.some((s) => s.id === "skill:remote-demo")).toBe(true)
   })
 
   test("bundle: 项目 scope 拒绝(单 root 原子性,REQ-100 #311)", async () => {

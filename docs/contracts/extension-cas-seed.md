@@ -31,6 +31,14 @@ CAS 补充语义:
 - 写入 = 先全量 digest 校验(不符 → 零副作用拒绝)→ tmp → fsync → rename(`ext-atomic-fs`
   原语,与事务 staging 同纪律);读取重验,损坏 loud 拒绝(本地篡改不静默采信)。
 - 显式 pin 账 `<base>/cas/v1/pins.json`(GC mark 根之一)。
+- **catalog skill 安装同走 CAS(REQ-098 #303)**:remote(下载层逐文件 sha256 对 catalog 清单钉死)
+  与 builtin(摄取时自算内容地址 —— 完整性/一致性,不主张独立上游真实性;聚合 payloadDigest 落
+  receipt)及 bundle skill children,一律 put 前结构校验(载荷↔清单按 path 一一对应、拒重复/缺/
+  多/不安全路径、bytes 精确)→ 提升进共享 CAS → generation staging 由 `populateFromCas` 物化
+  (读取重验)。`installSkillGeneration` 内容源收紧为 **CAS-only**(buffer 直填旁路移除;journal
+  只存 TxFileSpec 与来源无关,恢复语义不变)。bundle 的 promotion 在 classify/计划期锁外执行
+  (CAS 是可重建缓存层,不属 bundle 安装态原子边界):required child 失败 = 整 bundle 拒,
+  optional = skipped;blob 被外部删除 → materialize abort(无 buffer 回退通道)。
 
 ## 2. packaged seed 消费顺序(B 合同 §6 的 A 侧规范实现)
 

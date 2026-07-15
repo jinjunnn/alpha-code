@@ -6,7 +6,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
+import * as crypto from "node:crypto"
 import { addReceipt } from "./alpha-installs"
+import { putCasBlobFromBuffer } from "./ext-cas"
 import { findRecordV2, removeRecordV2, upsertRecordV2, type UpsertInput } from "./ext-receipt-v2"
 import { installSkillGeneration } from "./ext-skill-generations"
 import { recordUncuratedInstall } from "./ext-uncurated-record"
@@ -106,13 +108,17 @@ describe("recordUncuratedInstall — 未策展唯一落账入口(#306)", () => {
   })
 
   test("同名 skill 有 generation store(catalog 管辖)→ 拒绝(防卸载拆代际留 flat 孤儿)", async () => {
+    const body = Buffer.from("---\nname: demo\ndescription: t\n---\nbody")
+    const digest = crypto.createHash("sha256").update(body).digest("hex")
+    const casBase = path.join(root, "cas-base")
+    expect(putCasBlobFromBuffer(casBase, body, digest).ok).toBe(true)
     const gen = await installSkillGeneration(root, {
       name: "demo",
       id: "skill:demo",
       environment: "prod",
       scope: { kind: "global" },
       origin: "catalog",
-      files: [{ path: "SKILL.md", data: Buffer.from("---\nname: demo\ndescription: t\n---\nbody") }],
+      casFiles: { specs: [{ path: "SKILL.md", sha256: digest, size: body.length }], casBaseRoot: casBase },
       version: "1.0.0",
       manifestDigest: DIGEST_A,
       grantDigest: DIGEST_A,
