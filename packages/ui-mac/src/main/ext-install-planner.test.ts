@@ -1086,15 +1086,44 @@ describe("#315 advisory 激活闸接线", () => {
     expect(re.reason).toContain("re-enable refused")
   })
 
-  test("generation rollback 过闸(激活旧内容同属再启用面)", async () => {
+  test("generation rollback 过闸:按**目标代 receipt 快照**身份评估;快照缺失 fail-closed(review M1/M2)", async () => {
     const { deps } = makeDeps({})
     expect((await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)).ok).toBe(true)
-    const r = await rollbackGenerationByKey({ type: "skill", name: "demo", scope: "global" }, "gen-x", {
+    expect((await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)).ok).toBe(true)
+    const gens = listGenerationsByKey({ type: "skill", name: "demo", scope: "global" }, deps)
+    if (!gens.ok) throw new Error(gens.reason)
+    const target = gens.generations.find((g) => !g.current)!
+    // ① 记录 gate 收到的输入:必须来自目标代快照(id/payloadDigest 在场,provenance=cache)
+    const seen: Array<{ catalogId: string; payloadDigest?: string; provenance: string }> = []
+    const recording = (input: { catalogId: string; payloadDigest?: string; provenance: "remote" | "cache" | "bundled" | "seed" }) => {
+      seen.push(input)
+      return { allowed: true as const }
+    }
+    const ok = await rollbackGenerationByKey({ type: "skill", name: "demo", scope: "global" }, target.genId, {
+      globalRoot: deps.globalRoot,
+      advisoryGate: recording,
+    })
+    expect(ok.ok).toBe(true)
+    expect(seen).toHaveLength(1)
+    expect(seen[0]!.catalogId).toBe("skill:demo")
+    expect(typeof seen[0]!.payloadDigest).toBe("string") // 目标代 receipt 快照携带的聚合 digest
+    expect(seen[0]!.provenance).toBe("cache")
+    // ② 命中即拒(回滚被闸)
+    const back = gens.generations.find((g) => g.current)! // 现在的旧 current
+    const refused = await rollbackGenerationByKey({ type: "skill", name: "demo", scope: "global" }, back.genId, {
       globalRoot: deps.globalRoot,
       advisoryGate: denyGate(),
     })
-    expect(r.ok).toBe(false)
-    if (r.ok) throw new Error("unreachable")
-    expect(r.reason).toContain("rollback activation refused")
+    expect(refused.ok).toBe(false)
+    if (refused.ok) throw new Error("unreachable")
+    expect(refused.reason).toContain("rollback activation refused")
+    // ③ 目标快照缺失(伪 genId)→ 无论闸放不放行都 fail-closed(闸无法评估目标身份)
+    const noSnap = await rollbackGenerationByKey({ type: "skill", name: "demo", scope: "global" }, "gen-000099-deadbeef", {
+      globalRoot: deps.globalRoot,
+      advisoryGate: recording,
+    })
+    expect(noSnap.ok).toBe(false)
+    if (noSnap.ok) throw new Error("unreachable")
+    expect(noSnap.reason).toContain("receipt snapshot unavailable")
   })
 })

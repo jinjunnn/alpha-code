@@ -45,6 +45,9 @@ export type AdvisoryGateResult =
 
 export type AdvisoryGate = (input: AdvisoryGateInput) => AdvisoryGateResult
 
+/** advisory 的 catalogId 规范形(与 B 侧 ENTRY_ID_RE / advisories schema 同源)。 */
+const CANONICAL_ENTRY_ID_RE = /^(mcp|skill|plugin|bundle|agent|cloud):[a-z0-9][a-z0-9-]*$/
+
 function recordBlocks(r: AdvisoryRecord, input: AdvisoryGateInput): boolean {
   if (r.status !== "active") return false
   if (r.catalogId !== input.catalogId) return false
@@ -71,6 +74,16 @@ export function evaluateAdvisoryGate(
   const officeHit = officeAdvisoryFor({ id: input.catalogId, name: input.name })
   if (officeHit) {
     return { allowed: false, advisoryId: `office:${officeHit.catalogId}`, reason: "archived office connector (REQ-105 bundled baseline)" }
+  }
+  // review M3:catalog 发布面(remote/cache/seed)的 id 必须是规范形 —— 非规范 id(大写/
+  // 未归一)无法被 advisory 表达,精确匹配会静默失配 → 保守拦(fail closed)。
+  // bundled 来源覆盖 created/imported(user: 前缀等非 catalog id),不适用此规则。
+  if (input.provenance !== "bundled" && !CANONICAL_ENTRY_ID_RE.test(input.catalogId)) {
+    return {
+      allowed: false,
+      advisoryId: "advisory-uncanonical-id",
+      reason: `catalog id "${input.catalogId}" is not in canonical form — advisories cannot express it, refusing activation (fail closed)`,
+    }
   }
   if (input.provenance === "remote" || input.provenance === "cache") {
     if (!verified)

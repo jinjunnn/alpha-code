@@ -57,10 +57,17 @@ review_after: 2026-10-15
 - **advisory 消费(#315,R14)**:advisories 是**强制成员**(snapshot entry 必在,
   validateSnapshotDoc R2 拒缺);验证链 trust → snapshot → **advisories**(R10/R1/R2/R4 +
   R14 内部一致性 + R13 钉合 + R5 序列/等序字节)→ channel doc;任一失败 = security。
-  已验 advisories **立即持久化**(deny-list 安全前移,同 trust;不等 channel 结果)。
+  已验 advisories **立即持久化**且**持久化必须成功**(失败 = security 回退,绝不配着旧
+  deny-list 采信新内容);消费端同样执行 **R14 演进纪律**(高序文档不得删除/抹改既有记录、
+  不得逆转 withdraw —— 对可重验缓存基线断言)+ **独立高水位**(sequence+body sha256,
+  换钥/撤签导致 LKG 不可重验时仍存续,低序回放拒)。
 - **激活闸(ext-advisory-gate)**:拦**新激活** —— install(catalog/seed/bundle child,
-  bundle 子项命中恒跳过即使 required)、disabled→enabled、generation rollback;已运行
-  存量不强杀、不改 receipt。匹配:catalogId 精确授权;记录带 sha256 按 digestDomain 收窄
+  bundle 子项命中恒跳过即使 required)、disabled→enabled、generation rollback(闸按
+  **目标代 receipt 快照**的身份评估,快照缺失/损坏 = fail closed);已运行存量不强杀、
+  不改 receipt。视图**懒冻结**:首次取用发生在本操作的 catalog 刷新之后(刷新可能落盘
+  新公示),随后操作内共享不变。security 类 catalog 失败下 bundled 仅供浏览:激活面的
+  条目解析直接拒绝(browse-only 不是修辞)。catalog 发布面(remote/cache/seed)的非规范
+  id(大写/未归一,advisory 无法表达)保守拦。匹配:catalogId 精确授权;记录带 sha256 按 digestDomain 收窄
   (aggregate-files→payloadDigest、file-sha256→任一文件 digest;上下文缺该域 digest 保守拦);
   name 不授权;withdrawn 永不拦;任一 active 命中即拦。新鲜度:remote/cache 来源要求已验
   advisories LKG 在场且未过 expires(最大 stale 窗口),否则拦 —— **绝不退空集**;

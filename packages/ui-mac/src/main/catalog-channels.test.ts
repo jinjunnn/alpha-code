@@ -873,3 +873,90 @@ describe("#315 advisories 消费链", () => {
     expect(lkg!.stale).toBe(false)
   })
 })
+
+describe("#315 review 回归:advisories 演进纪律 / 高水位 / 持久化失败", () => {
+  const advisoriesDocWith = (signer: TestKey, records: Record<string, unknown>[], seq: number) =>
+    advisoriesDoc(signer, records, { sequence: seq })
+  const REC = (id: string, status = "active", extra: Record<string, unknown> = {}) => ({
+    advisoryId: id,
+    catalogId: "skill:demo",
+    reason: "r",
+    publishedAt: "2026-07-13T00:00:00.000Z",
+    status,
+    ...extra,
+  })
+
+  async function seedWithAdvisories(k1: TestKey, records: Record<string, unknown>[], seq: number) {
+    const trust = trustDoc(k1)
+    const payload = payloadOf("2.0.0")
+    const doc = channelDoc(k1, payload)
+    const adv = advisoriesDocWith(k1, records, seq)
+    const { fetchImpl } = serve(worldRoutes(trust, doc, payload, k1, { advisories: adv }))
+    const r = await refreshChannelCatalog(dir, "stable", depsOf(fetchImpl, k1))
+    expect(r.source).toBe("remote")
+    return { trust, payload, doc }
+  }
+
+  test("高序文档删除/抹改 active 公示 → R14 retention 拒(security)", async () => {
+    const k1 = genKey()
+    const { trust, payload } = await seedWithAdvisories(k1, [REC("adv-keep-1")], 10)
+    const doc2 = channelDoc(k1, payload, { sequence: 6 })
+    // 高序但删光记录
+    const evil = advisoriesDocWith(k1, [], 11)
+    const r = await refreshChannelCatalog(dir, "stable", depsOf(serve(worldRoutes(trust, doc2, payload, k1, { advisories: evil })).fetchImpl, k1))
+    expect(r.source).toBe("cache")
+    if (r.source !== "cache") throw new Error("unreachable")
+    expect(r.error ?? "").toContain("R14 retention")
+    expect(r.reasonClass).toBe("security")
+    // 高序但改写 reason
+    const rewritten = advisoriesDocWith(k1, [{ ...REC("adv-keep-1"), reason: "changed" }], 12)
+    const r2 = await refreshChannelCatalog(dir, "stable", depsOf(serve(worldRoutes(trust, channelDoc(k1, payload, { sequence: 7 }), payload, k1, { advisories: rewritten })).fetchImpl, k1))
+    expect(r2.source).toBe("cache")
+    if (r2.source !== "cache") throw new Error("unreachable")
+    expect(r2.error ?? "").toContain("R14 retention")
+  })
+
+  test("换钥撤旧签者后,低序新签公示 → 高水位(独立于 LKG 可验性)拒回放", async () => {
+    const k1 = genKey(),
+      k2 = genKey()
+    // T1:k1 世界,公示 seq 20
+    await seedWithAdvisories(k1, [REC("adv-hw-1")], 20)
+    // T2:trust 换 k2 签(链上),k1 revoked → 缓存公示(k1 签)不可重验 = LKG null
+    const trust2 = trustDoc(k1, { sequence: 2, keys: [keyEntry(k1, { status: "retiring", notAfter: "2026-09-01T00:00:00.000Z" }), keyEntry(k2)] })
+    // T2 换新版本 payload(2.1.0)= 轮换后全套 k2 签名进缓存(等价 resign --payload 语义)
+    const payload = payloadOf("2.1.0")
+    const doc2 = channelDoc(k2, payload, { sequence: 6 })
+    const trust3over = { sequence: 3, keyId: k2.keyId, keys: [keyEntry(k1, { status: "revoked" }), keyEntry(k2)] }
+    // 先经 T2 引入 k2(公示随轮换重签为 seq 21,k2)
+    const advT2 = advisoriesDocWith(k2, [REC("adv-hw-1")], 21)
+    const rT2 = await refreshChannelCatalog(dir, "stable", depsOf(serve(worldRoutes(trust2, doc2, payload, k2, { advisories: advT2 })).fetchImpl, k1))
+    expect(rT2.source).toBe("remote")
+    // T3:k1 revoked;攻击者以 k2 合法签一份**低序**(seq 5)公示试图重置基线
+    const trust3 = trustDoc(k2, trust3over)
+    const doc3 = channelDoc(k2, payload, { sequence: 7 })
+    const lowSeq = advisoriesDocWith(k2, [], 5)
+    const r = await refreshChannelCatalog(dir, "stable", depsOf(serve(worldRoutes(trust3, doc3, payload, k2, { advisories: lowSeq })).fetchImpl, k1))
+    expect(r.source).toBe("cache")
+    if (r.source !== "cache") throw new Error("unreachable")
+    expect(r.error ?? "").toContain("R5 advisories sequence regression")
+    expect(r.error ?? "").toContain("high-water")
+  })
+
+  test("advisories 持久化失败 → security 回退(不采信配着旧 deny-list 的新内容)", async () => {
+    const k1 = genKey()
+    await seedWithAdvisories(k1, [REC("adv-p-1")], 30)
+    // 让 state 原子写失败:预置同名 tmp 目录(writeFileSync 对目录报错)
+    const tmp = `${channelStatePath(dir)}.tmp-${process.pid}`
+    fs.mkdirSync(tmp, { recursive: true })
+    const trust = trustDoc(k1)
+    const payload = payloadOf("2.0.0")
+    const doc2 = channelDoc(k1, payload, { sequence: 6 })
+    const adv2 = advisoriesDocWith(k1, [REC("adv-p-1"), REC("adv-p-2")], 31)
+    const r = await refreshChannelCatalog(dir, "stable", depsOf(serve(worldRoutes(trust, doc2, payload, k1, { advisories: adv2 })).fetchImpl, k1))
+    fs.rmSync(tmp, { recursive: true, force: true })
+    expect(r.source).toBe("cache")
+    if (r.source !== "cache") throw new Error("unreachable")
+    expect(r.error ?? "").toContain("persistence FAILED")
+    expect(r.reasonClass).toBe("security")
+  })
+})

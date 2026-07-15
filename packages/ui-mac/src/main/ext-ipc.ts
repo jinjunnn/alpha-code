@@ -462,18 +462,30 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
           const cat = rc.catalog as Catalog
           return { entries: cat.entries ?? [], channel: rc.source, version: String(cat.version ?? rc.version) }
         }
-        // #314:security 类失败落到 bundled 只用于**浏览**;激活面的 advisory 基线闸随 #315 落地。
-        if (rc.reasonClass === "security")
-          console.error(`[ext-ipc] catalog SECURITY failure (${rc.error}) — serving bundled catalog for browse only (activation gating: #315)`)
+        // #314/#315:security 类失败落到 bundled 只用于**浏览**;激活解析拒绝(review B2)。
+        if (rc.reasonClass === "security") {
+          securityBlocked = true
+          console.error(`[ext-ipc] catalog SECURITY failure (${rc.error}) — bundled catalog is browse-only; activation resolution REFUSED`)
+        }
         const bundled = bundledCatalogJson as unknown as Catalog
         return { entries: bundled.entries, channel: "bundled" as const, version: bundled.version }
       })())
-    // #315:每操作冻结一份 advisory 视图(gate 内含随包 office 静态基线 + 已验公示 LKG)。
-    const advisoryGate = makeAdvisoryGate(userDataPath)
+    // #315(review B1):advisory 视图**懒冻结** —— 首次取用发生在 resolveEntry 的 await
+    // 刷新(可能持久化更新公示)之后,保证本操作用的是刷新后的视图;冻结后 bundle fan-out
+    // 与后续位点共享同一份(操作内不再变)。
+    let gateMemo: ReturnType<typeof makeAdvisoryGate> | null = null
+    const advisoryGate: ReturnType<typeof makeAdvisoryGate> = (input) => (gateMemo ??= makeAdvisoryGate(userDataPath))(input)
+    // #315(review B2):security 类失败下 bundled 只许浏览 —— 激活面的条目解析直接拒绝,
+    // 不得借道随包 catalog 完成安装(合同「browse-only」不是修辞)。
+    let securityBlocked = false
     return {
       advisoryGate,
       resolveEntry: async (catalogId) => {
         const cat = await effectiveCatalog()
+        if (securityBlocked) {
+          console.error(`[ext-ipc] resolveEntry(${catalogId}) refused: catalog in security-failure state (browse-only)`)
+          return null
+        }
         const entry = cat.entries.find((e) => e.id === catalogId)
         return entry ? { entry, channel: cat.channel, catalogVersion: cat.version } : null
       },

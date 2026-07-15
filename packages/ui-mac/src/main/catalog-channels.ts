@@ -423,6 +423,26 @@ export function validateAdvisoriesDoc(v: unknown): { ok: true; doc: AdvisoriesDo
   return { ok: true, doc: v as unknown as AdvisoriesDoc }
 }
 
+/**
+ * R14 演进纪律(review M4,消费端对齐 B 侧 assertAdvisoriesRetention):相对已采信基线,
+ * 记录不得删除、不可变字段(catalogId/name/sha256/digestDomain/reason/publishedAt)不得改写、
+ * withdraw 不可逆且 withdrawnAt/supersededBy 定格 —— 高序文档抹除 active 公示 = 拒。
+ */
+export function advisoriesRetentionError(prev: AdvisoriesDoc, next: AdvisoriesDoc): string | null {
+  const nextById = new Map(next.records.map((r) => [r.advisoryId, r]))
+  for (const p of prev.records) {
+    const n = nextById.get(p.advisoryId)
+    if (!n) return `R14 retention: advisory ${p.advisoryId} removed (append-only)`
+    for (const f of ["catalogId", "name", "sha256", "digestDomain", "reason", "publishedAt"] as const) {
+      if (JSON.stringify(p[f]) !== JSON.stringify(n[f])) return `R14 retention: advisory ${p.advisoryId} field "${f}" rewritten`
+    }
+    if (p.status === "withdrawn" && n.status !== "withdrawn") return `R14 retention: advisory ${p.advisoryId} un-withdrawn`
+    if (p.status === "withdrawn" && (p.withdrawnAt !== n.withdrawnAt || JSON.stringify(p.supersededBy) !== JSON.stringify(n.supersededBy)))
+      return `R14 retention: advisory ${p.advisoryId} withdrawal record rewritten`
+  }
+  return null
+}
+
 /** R14 内部一致性(与 B 侧 assertAdvisoriesInternallyConsistent 同规则);违反 → 整份拒。 */
 export function advisoriesConsistencyError(doc: AdvisoriesDoc): string | null {
   const ids = new Set<string>()
@@ -524,6 +544,9 @@ type StateFile = {
   trustAnchor?: PersistedDoc & { fetchedAt?: string }
   /** #315:最新已验 advisories(全局;deny-list 安全前移 —— 验证通过即持久,不等 channel 结果)。 */
   advisories?: PersistedDoc & { fetchedAt?: string }
+  /** #315(review M5):advisories 独立高水位(sequence + body sha256)—— 换钥/撤签导致 LKG
+   *  不可重验时仍存续,防「撤旧签名钥 → 低序新签文档重置基线」。只升不降。 */
+  advisoriesHighWater?: { sequence: number; sha256: string }
   channels?: Partial<Record<ChannelName, ChannelStateEntry>>
 }
 
@@ -699,7 +722,7 @@ export function readChannelLastKnownGood(
   }
 }
 
-function writeState(userDataPath: string, mutate: (st: StateFile) => void): void {
+function writeState(userDataPath: string, mutate: (st: StateFile) => void): boolean {
   try {
     const st = readStateFile(userDataPath)
     mutate(st)
@@ -708,8 +731,10 @@ function writeState(userDataPath: string, mutate: (st: StateFile) => void): void
     const tmp = `${target}.tmp-${process.pid}`
     fs.writeFileSync(tmp, JSON.stringify(st))
     fs.renameSync(tmp, target) // 原子替换:中断不留截断 state(coherent set 可用性)
+    return true
   } catch {
-    /* 缓存写失败不阻断本次使用(同 remote-catalog) */
+    /* 一般缓存写失败不阻断本次使用(同 remote-catalog);advisories 持久化是例外,调用方检查 */
+    return false
   }
 }
 
@@ -883,17 +908,28 @@ export async function refreshChannelCatalog(
     const advPin = snap.entries.advisories
     if (!advPin || advPin.sha256 !== sha256Hex(advBody) || advPin.sequence !== advV.doc.sequence)
       return fallback(`R13 advisories doc does not match snapshot entry`, "security")
-    const cachedAdv = readAdvisoriesLKG(userDataPath, trust, nowMs)
-    if (cachedAdv) {
-      if (advV.doc.sequence < cachedAdv.doc.sequence)
-        return fallback(`R5 advisories sequence regression: ${advV.doc.sequence} < cached ${cachedAdv.doc.sequence}`, "security")
-      const cachedBody = readStateFile(userDataPath).advisories
-      if (advV.doc.sequence === cachedAdv.doc.sequence && cachedBody && !advBody.equals(Buffer.from(cachedBody.body, "utf8")))
+    // R5 基线 = 独立高水位(review M5:不依赖旧文档签名钥仍可验;换钥/撤签后基线不重置)。
+    const hw = readStateFile(userDataPath).advisoriesHighWater
+    if (hw) {
+      if (advV.doc.sequence < hw.sequence)
+        return fallback(`R5 advisories sequence regression: ${advV.doc.sequence} < high-water ${hw.sequence}`, "security")
+      if (advV.doc.sequence === hw.sequence && sha256Hex(advBody) !== hw.sha256)
         return fallback(`R5 advisories replaced at same sequence ${advV.doc.sequence}`, "security")
     }
-    writeState(userDataPath, (st) => {
+    // R14 演进纪律(review M4):对可重验的缓存基线执行保留规则(高序删改 active 公示 = 拒)。
+    const cachedAdv = readAdvisoriesLKG(userDataPath, trust, nowMs)
+    if (cachedAdv) {
+      const retention = advisoriesRetentionError(cachedAdv.doc, advV.doc)
+      if (retention) return fallback(retention, "security")
+    }
+    // 持久化必须成功(review M6):deny-list 写不进去却继续采信新内容 = 旧公示视图配新内容。
+    const persisted = writeState(userDataPath, (st) => {
       st.advisories = { body: advBody.toString("utf8"), sig: advSig.trim(), fetchedAt: new Date(nowMs).toISOString() }
+      const seq = advV.doc.sequence
+      const digest = sha256Hex(advBody)
+      if (!st.advisoriesHighWater || seq > st.advisoriesHighWater.sequence) st.advisoriesHighWater = { sequence: seq, sha256: digest }
     })
+    if (!persisted) return fallback(`advisories persistence FAILED — refusing to serve content newer than the effective deny-list`, "security")
   }
 
   // 3) channel 指针文档:R13 entry 先行(entry 缺失 = 拒,免拉取)→ R10 → R1 → R2 → R3 → R4

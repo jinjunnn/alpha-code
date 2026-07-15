@@ -29,6 +29,7 @@ import type { CatalogEntry, McpInstallSpec } from "../renderer/extensions/catalo
 import type { AppEnvironment } from "./alpha-environment"
 import { alphaRoot } from "./alpha-workdir"
 import type { AdvisoryGate } from "./ext-advisory-gate"
+import { readGenerationReceiptSnapshot } from "./ext-transaction"
 import {
   runExtensionTransaction,
   actionOf,
@@ -1316,17 +1317,20 @@ export async function rollbackGenerationByKey(
   if (intent.type !== "skill") return { ok: false, reason: `rollback: unsupported type "${intent.type}" — skill only` }
   if (intent.scope !== "global") return { ok: false, reason: "rollback: global scope only" }
   if (typeof rawGenId !== "string" || rawGenId.length === 0 || rawGenId.length > 64) return { ok: false, reason: "rollback: invalid generation id" }
-  // #315:rollback = 激活旧内容,同样过闸(按账本 record 的 catalogId/payloadDigest)。
-  const record = findRecordV2(deps.globalRoot(), intent.type, intent.name)
-  if (record) {
-    const adv = deps.advisoryGate({
-      catalogId: record.id,
-      name: record.name,
-      payloadDigest: record.payloadDigest,
-      provenance: record.origin === "catalog" ? "cache" : "bundled",
-    })
-    if (!adv.allowed) return { ok: false, reason: `advisory ${adv.advisoryId}: ${adv.reason} — rollback activation refused (R14)` }
-  }
+  // #315(review M1/M2):rollback = 激活**目标代**内容 —— 闸必须按目标代 receipt 快照的
+  // 身份(id/payloadDigest)评估,不是当前 record(当前代可能是不同 id/digest);快照缺失/
+  // 损坏 = fail closed(rollbackGenerationTransaction 反正也需要它,先闸后动)。
+  const snap = readGenerationReceiptSnapshot(deps.globalRoot(), skillGenerationKey(intent.name), rawGenId)
+  if (!snap) return { ok: false, reason: `rollback: target generation receipt snapshot unavailable — refusing (advisory gate cannot evaluate the target identity)` }
+  const target = snap.receipt as { id?: string; name?: string; payloadDigest?: string; origin?: string }
+  if (typeof target.id !== "string") return { ok: false, reason: "rollback: target receipt snapshot lacks identity — refusing" }
+  const adv = deps.advisoryGate({
+    catalogId: target.id,
+    name: target.name,
+    payloadDigest: target.payloadDigest,
+    provenance: target.origin === "catalog" ? "cache" : "bundled",
+  })
+  if (!adv.allowed) return { ok: false, reason: `advisory ${adv.advisoryId}: ${adv.reason} — rollback activation refused (R14)` }
   return rollbackSkillGeneration(deps.globalRoot(), intent.name, rawGenId)
 }
 
