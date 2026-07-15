@@ -119,7 +119,8 @@ export type CatalogInstallOutcome =
       bundle?: { items: string[] }
       /** bundle:一次原子事务提交的子条目 id(REQ-100 #311)。 */
       installed?: string[]
-      /** bundle:跳过的子条目(optional 未选 / 首期 fail-closed 排除;journaled 可审计)。 */
+      /** bundle:跳过的子条目(optional 未选 / 首期 fail-closed 排除)。含安装项的 bundle 会把
+       *  skip 记进事务 journal;全 skip 的 bundle 零状态变更、不开事务,审计面 = 本 outcome。 */
       skipped?: Array<{ id: string; reason: string }>
       warning?: string
     }
@@ -434,26 +435,48 @@ export type PlannerDeps = {
   }
 }
 
-/** 载荷 → 验证共享 CAS(REQ-098 #303):put 前结构校验 —— 载荷与清单按 path 精确一一对应(不靠
- *  数组序)、拒重复/缺项/多项/不安全路径、bytes 精确;再逐文件 putCasBlobFromBuffer(下载/收集层
- *  已验一次 digest,put 内再验一次)。任一失败 = 整装 fail-closed;已写入 blob 不逆删(可能已被
- *  并发/他环境引用),交 GC grace(#318)。put 自愈损坏在店 blob 的 warnings loud 透传。 */
+/** 目标卷可移植的路径碰撞键(Codex review #363 Major 2):darwin/win32 常见大小写不敏感 +
+ *  Unicode normalization 折叠 —— 折叠后相同即视为同一物理落点,清单歧义直接拒。 */
+const portablePathKey = (p: string): string => p.normalize("NFC").toLowerCase()
+const WINDOWS_RESERVED_RE = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i
+
+/** 段级可移植性拒绝:Windows 保留名、尾随点/空格(NTFS 折叠)。isSafeRelPath 只管结构,这里管卷语义。 */
+function portablePathProblem(p: string): string | null {
+  for (const seg of p.split("/")) {
+    if (WINDOWS_RESERVED_RE.test(seg)) return `reserved filename segment "${seg}"`
+    if (seg !== seg.trimEnd() || seg.endsWith(".")) return `trailing dot/space in segment "${seg}"`
+  }
+  return null
+}
+
+/** 载荷 → 验证共享 CAS(REQ-098 #303):严格两遍式 —— 第一遍全量结构校验(载荷与清单按 path 精确
+ *  一一对应且不靠数组序、拒重复/缺项/多项/不安全路径/可移植性碰撞、bytes 精确),全部通过后第二遍
+ *  才逐文件 putCasBlobFromBuffer(下载/收集层已验一次 digest,put 内再验一次)——校验失败时 CAS
+ *  零写入。put 失败 = 整装 fail-closed;已写入 blob 不逆删(可能已被并发/他环境引用),交 GC
+ *  grace(#318)。put 自愈损坏在店 blob 的 warnings loud 透传。 */
 function promotePayloadToCas(
   casBaseRoot: string,
   payload: Array<{ path: string; data: Buffer }>,
   manifest: Array<{ path: string; sha256: string; bytes: number }>,
 ): { ok: true; specs: TxFileSpec[]; warnings: string[] } | { ok: false; reason: string } {
+  // ── 第一遍:纯校验,零写入 ──
   if (payload.length !== manifest.length)
     return { ok: false, reason: `payload/manifest file count mismatch: ${payload.length} ≠ ${manifest.length} — refusing before CAS write` }
   const byPath = new Map<string, { path: string; sha256: string; bytes: number }>()
+  const portable = new Set<string>()
   for (const m of manifest) {
     if (!isSafeRelPath(m.path)) return { ok: false, reason: `unsafe manifest path: ${String(m.path)} — refused` }
+    const problem = portablePathProblem(m.path)
+    if (problem) return { ok: false, reason: `non-portable manifest path ${m.path}: ${problem} — refused` }
     if (byPath.has(m.path)) return { ok: false, reason: `duplicate manifest path: ${m.path} — refused` }
+    const folded = portablePathKey(m.path)
+    if (portable.has(folded))
+      return { ok: false, reason: `manifest path collision under case/unicode folding: ${m.path} — refused (ambiguous on darwin/win32 volumes)` }
+    portable.add(folded)
     byPath.set(m.path, m)
   }
   const seen = new Set<string>()
-  const specs: TxFileSpec[] = []
-  const warnings: string[] = []
+  const toPut: Array<{ path: string; data: Buffer; sha256: string; bytes: number }> = []
   for (const f of payload) {
     const m = byPath.get(f.path)
     if (!m) return { ok: false, reason: `payload file ${f.path} not in manifest — refused` }
@@ -461,10 +484,16 @@ function promotePayloadToCas(
     seen.add(f.path)
     if (f.data.length !== m.bytes)
       return { ok: false, reason: `size mismatch for ${f.path}: ${f.data.length} ≠ ${m.bytes} — refusing before CAS write` }
-    const put = putCasBlobFromBuffer(casBaseRoot, f.data, m.sha256)
+    toPut.push({ path: f.path, data: f.data, sha256: m.sha256, bytes: m.bytes })
+  }
+  // ── 第二遍:全部校验通过后才写 CAS ──
+  const specs: TxFileSpec[] = []
+  const warnings: string[] = []
+  for (const f of toPut) {
+    const put = putCasBlobFromBuffer(casBaseRoot, f.data, f.sha256)
     if (!put.ok) return { ok: false, reason: `CAS promotion failed for ${f.path}: ${put.reason}` }
     warnings.push(...put.warnings)
-    specs.push({ path: f.path, sha256: m.sha256, size: m.bytes })
+    specs.push({ path: f.path, sha256: f.sha256, size: f.bytes })
   }
   return { ok: true, specs, warnings }
 }
@@ -679,14 +708,17 @@ async function installBundleAtomic(
     }
   }
 
+  // 全 skip:零状态变更 → 不开事务、无 journal(journal 审计的是状态变更);skip 审计随 outcome 返回。
   if (planItems.length === 0)
     return { ok: true, kind: "bundle", name: verified.entry.name, manifestDigest: computeManifestDigest(bundleDecoded.manifest), installed: [], skipped }
 
   const plan: TxPlan = {
     items: planItems,
-    // journal 的 skippedOptional.key 必须 fs-safe(引擎 validatePlan 拒冒号)—— catalog id 转 key 形态。
-    // 修复既有缺陷:此前任何 optional/advisory skip 都会让整个 bundle 在 validate 阶段被拒。
-    skippedOptional: skipped.map((s) => ({ key: s.id.replace(/:/g, "--"), reason: s.reason })),
+    // journal 的 skippedOptional.key 必须 fs-safe 且有界(引擎 validatePlan 拒冒号/超长/重复)。
+    // catalog id 不受 fs-safe 约束(仅非空/无控制字符/≤200),朴素替换非单射(review #363 Major 1:
+    // "skill:a:b--c" 与 "skill:a--b:c" 碰撞会被判 duplicate 拒整单)。取 injective-by-hash 编码,
+    // 原始 id 保留在 reason 里供审计;该 key 无查找语义(只进 journal/授权收据)。
+    skippedOptional: skipped.map((s) => ({ key: `skipped--${sha256Hex(s.id).slice(0, 24)}`, reason: `${s.id}: ${s.reason}` })),
   }
   const hooks: TxHooks = {
     // REQ-098 #303:generation 项统一从验证共享 CAS 物化(读取重验;blob 被 GC/外部删除 → 抛错 =

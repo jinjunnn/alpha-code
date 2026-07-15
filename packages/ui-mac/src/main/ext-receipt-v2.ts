@@ -48,7 +48,10 @@ export interface InstallRecordV2 {
   version?: string
   /** 合成 ManifestV2 的 canonical digest(不进 manifest 本体);v1 迁移件如实缺省。 */
   manifestDigest?: string
-  /** 字节负载 digest(远程资产可得;bundled/npm 负载由 app 签名/npm 通道背书,如实缺省)。 */
+  /** 字节负载聚合 digest(aggregateFilesDigest)。信任语义随来源:remote = 已验 catalog 清单聚合;
+   *  builtin(REQ-098 #303 起)= 摄取时自算内容地址(一致性标识,不是独立上游真实性证明,该证明
+   *  由 app 包签名承担);npm 负载由 npm 通道背书,如实缺省。digest 本身不编码来源 —— 消费方不得
+   *  从有无/取值推断信任级别。 */
   payloadDigest?: string
   /** grant 键集 digest(secret 变量名/env 键/workspace 有无 —— 绝不含值)。 */
   grantDigest?: string

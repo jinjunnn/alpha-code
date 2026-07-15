@@ -576,7 +576,41 @@ describe("other kinds — derivation & records", () => {
       if (!r.ok && v.expects) expect(r.reason).toContain(v.expects)
       expect(findRecordV2(globalRoot, "skill", "remote-demo")).toBeNull()
       expect(resolveLiveGenerationDir(globalRoot, "skill--remote-demo")).toBeNull()
+      // 严格两遍式:结构校验失败时 CAS 零写入(review #363 Minor 1)—— digest 变体除外
+      //(它恰在 put 内被拒,合法文件先行 put 不适用:单文件清单)。
+      if (v.label !== "digest mismatch") expect(hasCasBlob(path.join(tmp, "cas-base"), remoteFiles[0]!.sha256)).toBe(false)
     }
+  })
+
+  test("#303 refuses manifests colliding under case/unicode folding and non-portable segments", async () => {
+    const twoFile = (files: Array<{ path: string; data: string }>): CatalogEntry => ({
+      ...skillRemoteEntry,
+      id: "skill:fold",
+      name: "fold",
+      remoteAsset: {
+        version: "1.2.0",
+        files: files.map((f) => ({ path: f.path, sha256: crypto.createHash("sha256").update(f.data).digest("hex"), bytes: Buffer.byteLength(f.data), url: `https://assets.example/${f.path}` })),
+      },
+    })
+    const dlFor = (files: Array<{ path: string; data: string }>) => async () => ({ ok: true as const, contents: files.map((f) => ({ path: f.path, data: Buffer.from(f.data) })) })
+
+    const folded = [{ path: "Docs/A.md", data: "one" }, { path: "docs/a.md", data: "two" }]
+    const { deps: foldDeps } = makeDeps({ entries: [twoFile(folded)], installers: { downloadRemoteAsset: dlFor(folded) } })
+    const rf = await installCatalog({ catalogId: "skill:fold", scope: { scope: "global" } }, foldDeps)
+    expect(rf.ok).toBe(false)
+    if (!rf.ok) expect(rf.reason).toContain("collision under case/unicode folding")
+
+    const reserved = [{ path: "CON.md", data: "x" }]
+    const { deps: resDeps } = makeDeps({ entries: [twoFile(reserved)], installers: { downloadRemoteAsset: dlFor(reserved) } })
+    const rr = await installCatalog({ catalogId: "skill:fold", scope: { scope: "global" } }, resDeps)
+    expect(rr.ok).toBe(false)
+    if (!rr.ok) expect(rr.reason).toContain("reserved filename")
+
+    const trailingDot = [{ path: "notes./SKILL.md", data: "x" }]
+    const { deps: dotDeps } = makeDeps({ entries: [twoFile(trailingDot)], installers: { downloadRemoteAsset: dlFor(trailingDot) } })
+    const rd = await installCatalog({ catalogId: "skill:fold", scope: { scope: "global" } }, dotDeps)
+    expect(rd.ok).toBe(false)
+    if (!rd.ok) expect(rd.reason).toContain("trailing dot/space")
   })
 
   test("vendored plugin: asset key from catalog; configKey derived from install result", async () => {
@@ -651,6 +685,37 @@ describe("other kinds — derivation & records", () => {
     if (!ro.ok) return
     expect(ro.installed).toEqual(["cloud:research"])
     expect(ro.skipped?.some((s) => s.id === "skill:remote-demo")).toBe(true)
+  })
+
+  test("#303 bundle: colliding skip ids no longer refuse the bundle (injective journal keys)", async () => {
+    // 朴素 replace(":","--") 下这两个 id 会碰撞成同一 journal key → validatePlan 判 duplicate 拒整单。
+    const ghostA: CatalogEntry = { ...skillBuiltinEntry, id: "skill:a:b--c", name: "ghost-a", installSpec: { kind: "skill", source: "remote", targetDir: "alpha-skills" } }
+    const ghostB: CatalogEntry = { ...skillBuiltinEntry, id: "skill:a--b:c", name: "ghost-b", installSpec: { kind: "skill", source: "remote", targetDir: "alpha-skills" } }
+    const collideBundle: CatalogEntry = { ...bundleEntry, id: "bundle:collide", name: "collideb", bundleItems: [
+      { catalogEntryId: "skill:a:b--c", optional: true, installOrder: 1 },
+      { catalogEntryId: "skill:a--b:c", optional: true, installOrder: 2 },
+      { catalogEntryId: "cloud:research", optional: false, installOrder: 3 },
+    ] }
+    const { deps } = makeDeps({ entries: [...ALL_ENTRIES, ghostA, ghostB, collideBundle] })
+    const r = await installCatalog({ catalogId: "bundle:collide", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.installed).toEqual(["cloud:research"])
+    expect(r.skipped?.map((s) => s.id).sort()).toEqual(["skill:a--b:c", "skill:a:b--c"])
+  })
+
+  test("#303 bundle: all-optional promotion failure → ok, nothing installed, no transaction/journal", async () => {
+    const badDl = async () => ({ ok: true as const, contents: [{ path: "SKILL.md", data: Buffer.from("---\nname: remote-demo\ndescription: test\n---\nEVIL") }] })
+    const allOpt: CatalogEntry = { ...bundleEntry, id: "bundle:allopt", name: "alloptb", bundleItems: [{ catalogEntryId: "skill:remote-demo", optional: true, installOrder: 1 }] }
+    const { deps } = makeDeps({ entries: [...ALL_ENTRIES, allOpt], installers: { downloadRemoteAsset: badDl } })
+    const r = await installCatalog({ catalogId: "bundle:allopt", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.installed).toEqual([])
+    expect(r.skipped?.some((s) => s.id === "skill:remote-demo")).toBe(true)
+    // 零状态变更:不开事务(无 ext-tx 目录/journal),账本无记录。
+    expect(fs.existsSync(path.join(globalRoot, "ext-tx"))).toBe(false)
+    expect(findRecordV2(globalRoot, "skill", "remote-demo")).toBeNull()
   })
 
   test("bundle: 项目 scope 拒绝(单 root 原子性,REQ-100 #311)", async () => {
