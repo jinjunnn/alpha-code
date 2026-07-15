@@ -50,11 +50,23 @@ describe("ADR-030 wiring: 第一方 installCatalog 调用全部 scope=global", (
     expect(calls[0]).not.toContain(`"project"`)
   })
 
-  test("extensions 目录无其它 installCatalog 调用文件(第 7 个入口必须显式登记)", () => {
-    const files = fs
-      .readdirSync(here)
-      .filter((f) => (f.endsWith(".ts") || f.endsWith(".tsx")) && !f.endsWith(".test.ts") && !f.endsWith(".test.tsx"))
-    const withCalls = files.filter((f) => installCatalogCallArgs(read(f)).length > 0).sort()
-    expect(withCalls).toEqual(["extension-hub.tsx", "use-extensions.ts"])
+  test("整个 renderer 树无其它 installCatalog 调用文件(第 7 个入口必须显式登记)", () => {
+    const rendererRoot = path.resolve(here, "..")
+    const withCalls: string[] = []
+    const walk = (dir: string): void => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const abs = path.join(dir, e.name)
+        if (e.isDirectory()) walk(abs)
+        else if (
+          (e.name.endsWith(".ts") || e.name.endsWith(".tsx")) &&
+          !e.name.endsWith(".test.ts") &&
+          !e.name.endsWith(".test.tsx") &&
+          installCatalogCallArgs(fs.readFileSync(abs, "utf8")).length > 0
+        )
+          withCalls.push(path.relative(rendererRoot, abs))
+      }
+    }
+    walk(rendererRoot)
+    expect(withCalls.sort()).toEqual(["extensions/extension-hub.tsx", "extensions/use-extensions.ts"])
   })
 })

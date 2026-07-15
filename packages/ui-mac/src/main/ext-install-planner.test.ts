@@ -786,10 +786,17 @@ describe("ADR-030 (#372): project catalog/seed install recalled — refused befo
   test("seed intent with project scope: same stable refusal before the seed channel", async () => {
     const proj = makeProject("proj-seed-recall")
     const { deps, calls } = makeDeps()
-    const r = await installCatalog({ source: "seed", assetId: "skills/foo", scope: { scope: "project", projectDir: proj } }, deps)
+    let seedTouched = 0
+    const withSeed: PlannerDeps = {
+      ...deps,
+      seed: { seedDir: () => (seedTouched++, null), resolveBundledEntry: () => (seedTouched++, null) },
+    }
+    const r = await installCatalog({ source: "seed", assetId: "skills/foo", scope: { scope: "project", projectDir: proj } }, withSeed)
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toBe(PROJECT_INSTALL_UNSUPPORTED_REASON)
+    expect(seedTouched).toBe(0) // 拒绝先于 seed 通道的任何触碰
     expect(installerCallCount(calls)).toBe(0)
+    expect(fs.existsSync(path.join(proj, ".alpha"))).toBe(false) // 零项目根变更
   })
 
   test("global install behavior unchanged by the guard", async () => {

@@ -148,6 +148,11 @@ CAS 补充语义:
   绝不因收回而封死残留清理;project skill 残留带 generation store 时,卸载走 journaled
   store+ledger teardown(删受控 `ext-store` + 对应账本),不落 flat 删除。
 - **残留处置**:项目打开位点(`ext-external-check`)只读 loud 报告;
-  `ext-project-residuals-check`(只读)/`ext-project-residuals-clean`(显式)双通道;
-  任何非终态/不可读 journal 在场 = 清理整单 fail-closed,零自动删除、零全盘扫描;
-  identity 不符(项目移动)单项 fail-closed。
+  `ext-project-residuals-check`(只读)/`ext-project-residuals-clean`(显式)双通道。
+  清理的可证明性前提(任一失据即**整单拒**,零自动删除、零全盘扫描):账本文件可读、
+  相关 key 无损坏 record、无不可归属损坏 record(`lookupForUninstall` 四态)、journal 目录
+  可枚举且无非终态/不可读 journal(清理起步前重巡检一次)。可清理面 **只有两类**:
+  ① project-identity 的 catalog record(identity 不符单项 fail-closed);② 账本判 absent 且
+  形状为 `skill--<safe>`、具 generation-store 结构的 ghost 店。其余一律只报告:非该形状的
+  ext-store 条目、误置(非 project scope)record、v1 占位、以及 orphan agent 面
+  (`.alpha/agents/*.md`、`alpha.jsonc` agent 条目)—— 永不自动清。

@@ -485,21 +485,26 @@ export type ElectronAPI = {
       claudeMd: "agents-md-created" | "agents-md-exists" | "none"
       persistError?: string
     }>
-    /** ADR-030(#372):收回的 project 受管安装 —— 残留只读检测(项目打开位点另有 loud 日志)。 */
+    /** ADR-030(#372):收回的 project 受管安装 —— 残留只读检测(项目打开位点另有 loud 日志)。
+     *  unknown 店 / orphan agent 面 = 只报告;cleanBlockers = 账本失据,清理会整单拒。 */
     projectResidualsCheck: (projectDir: string) => Promise<
       | {
           ok: true
           projectPath: string
           catalogRecords: Array<{ type: string; name: string; hasStore: boolean }>
           ghostStoreKeys: string[]
+          unknownStoreEntries: string[]
+          orphanAgentFiles: string[]
+          orphanAgentConfigEntries: string[]
           openJournals: Array<{ txId: string; op: string; state: string; terminal: boolean }>
+          cleanBlockers: string[]
           warnings: string[]
         }
       | { ok: false; reason: string }
     >
-    /** ADR-030(#372):显式清理(journal 在场 fail-closed;删受控 ext-store + 对应账本)。 */
+    /** ADR-030(#372):显式清理(journal/账本失据 fail-closed;只删账本可证明的受控面)。 */
     projectResidualsClean: (projectDir: string) => Promise<
-      | { ok: true; cleaned: string[]; failed: Array<{ item: string; reason: string }> }
+      | { ok: true; cleaned: string[]; failed: Array<{ item: string; reason: string }>; reported: string[] }
       | { ok: false; reason: string }
     >
   }

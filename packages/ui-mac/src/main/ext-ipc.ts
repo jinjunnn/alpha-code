@@ -311,11 +311,18 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
     if (typeof directory === "string" && directory) {
       try {
         const res = detectProjectCatalogResiduals(directory)
-        if (res.ok && (res.catalogRecords.length > 0 || res.ghostStoreKeys.length > 0 || res.openJournals.length > 0))
+        if (
+          res.ok &&
+          (res.catalogRecords.length > 0 || res.ghostStoreKeys.length > 0 || res.openJournals.length > 0 ||
+            res.unknownStoreEntries.length > 0 || res.orphanAgentFiles.length > 0 ||
+            res.orphanAgentConfigEntries.length > 0 || res.cleanBlockers.length > 0)
+        )
           getLogger().warn(
             `[req098-372] recalled project-managed install residuals in ${directory}: ` +
               `${res.catalogRecords.length} catalog record(s), ${res.ghostStoreKeys.length} ghost store(s), ` +
-              `${res.openJournals.length} open journal(s) — inspect via ext-project-residuals-check`,
+              `${res.openJournals.length} open journal(s), ${res.unknownStoreEntries.length} unknown store entr(ies), ` +
+              `${res.orphanAgentFiles.length + res.orphanAgentConfigEntries.length} orphan agent surface(s), ` +
+              `${res.cleanBlockers.length} clean blocker(s) — inspect via ext-project-residuals-check`,
           )
       } catch {
         /* 报告面绝不影响项目打开 */

@@ -1396,23 +1396,28 @@ export type TxRecoveryReport = { txId: string; state: TxState; action: TxRecover
 const TERMINAL_TX_STATES = new Set<TxState>(["committed", "rolled-back", "aborted", "uninstalled"])
 
 /** ADR-030(#372)只读巡检:列出根下全部 journal 的 {txId, op, state};不可解析的 journal 以
- *  state:"unreadable" 报告(调用方必须视同在途 —— 无法证明它不是)。零写入、不持锁:仅用于
- *  残留报告与「清理前有无在途手术」判定,真正的收敛仍归 recoverExtensionTransactions。 */
+ *  state:"unreadable" 报告(调用方必须视同在途 —— 无法证明它不是)。`unreadableDir` 区分
+ *  「journal 目录不存在 = 确无 journal」与「目录在但枚举失败 = 失据,调用方必须 fail-closed」
+ *  (Codex review PR#373 M2:枚举错误不得静默当作零)。零写入、不持锁:仅用于残留报告与
+ *  「清理前有无在途手术」判定,真正的收敛仍归 recoverExtensionTransactions。 */
 export type TxJournalProbe = { txId: string; op: "install" | "uninstall" | "rollback"; state: TxState | "unreadable"; terminal: boolean }
-export function probeTransactionJournals(root: string): TxJournalProbe[] {
-  if (!path.isAbsolute(root)) return []
+export function probeTransactionJournals(root: string): { entries: TxJournalProbe[]; unreadableDir: boolean } {
+  if (!path.isAbsolute(root)) return { entries: [], unreadableDir: true }
+  const dir = journalDir(root)
   let names: string[] = []
   try {
-    names = fs.readdirSync(journalDir(root)).filter((n) => n.endsWith(".json"))
-  } catch {
-    return []
+    names = fs.readdirSync(dir).filter((n) => n.endsWith(".json"))
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    return { entries: [], unreadableDir: code !== "ENOENT" && code !== "ENOTDIR" }
   }
-  return names.sort().map((name) => {
+  const entries = names.sort().map((name) => {
     const txId = name.slice(0, -".json".length)
     const journal = readTransactionJournal(root, txId)
     if (!journal) return { txId, op: "install" as const, state: "unreadable" as const, terminal: false }
     return { txId, op: journal.op ?? "install", state: journal.state, terminal: TERMINAL_TX_STATES.has(journal.state) }
   })
+  return { entries, unreadableDir: false }
 }
 
 /** REQ-099 #309(Codex review #357 major):`ok:true` ≠ 恢复干净 —— aborted/rolled-back 报告、
