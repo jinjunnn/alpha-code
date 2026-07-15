@@ -2,7 +2,7 @@
 type: design
 slug: capability-authorize-dialog
 date: 2026-07-15
-status: approved(2026-07-15 用户批准:Q1 场景化文案、Q2 首装必弹、Q3 bundle 全有或全无均接受)
+status: accepted(2026-07-15 用户批准:Q1 场景化文案、Q2 首装必弹、Q3 bundle 全有或全无均接受;实现落 PR 见 #348)
 relates:
   - jinjunnn/alpha-code#348(REQ-100 capability→authorize 闸口,UI 部分)
   - 2026-07-04-extension-hub-v3-universal.md(approved-direction 基线)
@@ -65,8 +65,10 @@ relates:
   项头 + 能力行);自动通过项折叠为一行「其余 N 项能力无变化,无需确认」。
   确认 = 为**所有**需确认项按各自 `requested` 全集生成 `confirmed`(引擎无
   按项拒绝语义,部分拒绝 = 取消整个安装)。
-- **D6 取消零副作用、静默**(F5+F9):关框回到原状态(卡片回「未安装」/
-  「可更新」),不弹错误、不弹 toast。确认后重驱期间主按钮 loading;
+- **D6 取消零权威副作用、静默**(F5+F9;Codex 裁决修正:首驱在 authorize 前可能已把
+  已验证载荷提升进可回收共享 CAS,故承诺口径是「不安装扩展、不切换 current、不写
+  config/receipt/grants/授权收据」,而非字面「任何文件都不改」):关框回到原状态
+  (卡片回「未安装」/「可更新」),不弹错误、不弹 toast。确认后重驱期间主按钮 loading;
   重驱成功走既有路径(成功 toast / 失败 inline)。
 
 ## 4. 交互流程
@@ -124,7 +126,7 @@ relates:
 | `chipNew` / `chipGranted` / `chipRemoved` | 新增 / 已授权 / 将收回 | New / Granted / Revoked |
 | `riskHigh` | 高风险 | High risk |
 | `bundleRest` | 其余 {n} 项能力无变化,无需确认 | {n} more items unchanged, no confirmation needed |
-| `note` | 确认即授权上述完整能力集;授权仅在安装成功提交后生效,取消不会改动任何文件。 | Confirming grants the full set above; grants take effect only after a committed install. Cancel changes nothing. |
+| `note` | 确认即授权上述完整能力集;授权仅在安装成功提交后生效。取消不会安装扩展或授予能力。 | Confirming grants the full set above; grants take effect only after a committed install. Cancel installs nothing and grants nothing. |
 | `riskLine` | ⚠ 含高风险能力:该扩展将能在本机运行程序/在引擎进程内执行代码。 | ⚠ High-risk capabilities: this can run local programs / execute code inside the engine process. |
 | `confirmInstall` / `confirmUpdate` | 授权并安装 / 授权并更新 | Authorize & install / Authorize & update |
 

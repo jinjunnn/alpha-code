@@ -26,7 +26,9 @@ import { Button } from "../alpha-ui/Button"
 import { pushToast } from "../alpha-ui/Toast"
 import { Banner } from "../alpha-ui/Banner"
 import type { ServerInfo } from "../sidebar/use-projects"
-import { useExtensions, type HubAgent } from "./use-extensions"
+import { useExtensions, isAuthzRequired, type ActionResult, type HubAgent } from "./use-extensions"
+import { ExtAuthzView, buildAuthzConfirmation, authzIsEscalation } from "./ext-authz"
+import type { AuthorizationConfirmationWire, CapabilityDiffWire } from "../../shared/ext-capability-authorization"
 import type { Catalog, CatalogEntry, InstalledState } from "./catalog-types"
 import type { AuthState, InstallReceipt, InstallReceiptType, ProvenanceRequest } from "../../preload/types"
 import { hubSection, setHubSection, type HubSection } from "./ext-hub-state"
@@ -180,6 +182,22 @@ export function ExtensionHub(props: {
   // T5:确认弹窗采集的 requiredEnvVars 密钥值(仅内存;安装后清空)。经 addMcp → 主进程 {file:}
   // 通道落盘,绝不明文进 opencode.jsonc。切换/关闭弹窗即重置。
   const [envValues, setEnvValues] = createSignal<Record<string, string>>({})
+  // #348:capability 授权两阶段状态机(设计稿 D1 + Codex 裁决 D2)。
+  //   idle → confirming-install(既有确认框)→ driving(confirmBusy)→ authorizing(authz 非空)
+  //        → redriving(authzBusy)→ success | failure | canceled
+  //   host="confirm" = 既有确认框原地切第二阶段(MCP/plugin/bundle);host="standalone" = skill
+  //   直装/更新扩权时独立弹出。busy(driving/redriving)期间 Dialog dismissible=false ——
+  //   IPC 无取消能力,放任关闭 = 「用户以为取消,main 已提交」竞态。
+  type AuthzState = {
+    entry: CatalogEntry
+    mode: "install" | "update"
+    host: "standalone" | "confirm"
+    secrets?: Record<string, string>
+    diffs: CapabilityDiffWire[]
+  }
+  const [authz, setAuthz] = createSignal<AuthzState | null>(null)
+  const [confirmBusy, setConfirmBusy] = createSignal(false)
+  const [authzBusy, setAuthzBusy] = createSignal(false)
   // REQ-036:创建表单已移除(创建走技能:skill-creator/agent-creator 出厂注入),原表单 state 随之下线。
   // T3:存量迁移候选(旧 XDG 根里、名字匹配 catalog 的 alpha 安装物)。仅当主进程门控开启
   // (ALPHA_MIGRATE_ENABLE=1,A6 真机验证后)且有候选时显示迁移条。
@@ -472,30 +490,54 @@ export function ExtensionHub(props: {
   // REQ-019 T5:更新执行状态(busy = receipt id;失败行内呈现,不裸 toast)。
   const [updBusy, setUpdBusy] = createSignal<string | null>(null)
   const [updErr, setUpdErr] = createSignal<Record<string, string>>({})
-  const runUpdate = async (r: InstallReceipt) => {
+  const runUpdate = async (r: InstallReceipt): Promise<"authz" | undefined> => {
     const target = byId(r.id)
     if (!target) return
     setUpdErr((prev) => ({ ...prev, [r.id]: "" }))
     // MCP:persistMcp 为覆盖写,静默重装会丢 {file:} 密钥引用 → 走确认框重装(密钥可重填)。
-    if (target.type === "mcp") return setConfirming(target)
+    if (target.type === "mcp") {
+      setConfirming(target)
+      return
+    }
     setUpdBusy(r.id)
     try {
       const res = await ext.updateEntry(target)
       if (res.ok) flash(t("alpha.ext.updated"), "success")
-      else setUpdErr((prev) => ({ ...prev, [r.id]: res.reason ?? t("alpha.ext.installFailed") }))
+      else if (isAuthzRequired(res)) {
+        // #348:扩权 → 授权框(mode=update,场景化文案);调用方据 "authz" 中止批量循环。
+        setAuthz({ entry: target, mode: "update", host: "standalone", diffs: res.authorization })
+        return "authz"
+      } else setUpdErr((prev) => ({ ...prev, [r.id]: res.reason ?? t("alpha.ext.installFailed") }))
+    } finally {
+      setUpdBusy(null)
+    }
+  }
+  /** #348:授权确认后的更新重驱(与 runUpdate 同反馈面;再次 authorize 返回最新 diff 原地刷新)。 */
+  const runUpdateRedrive = async (target: CatalogEntry, authorization: AuthorizationConfirmationWire): Promise<CapabilityDiffWire[] | null> => {
+    setUpdBusy(target.id)
+    try {
+      const res = await ext.updateEntry(target, authorization)
+      if (res.ok) {
+        flash(t("alpha.ext.updated"), "success")
+        return null
+      }
+      if (isAuthzRequired(res)) return res.authorization
+      setUpdErr((prev) => ({ ...prev, [target.id]: res.reason ?? t("alpha.ext.installFailed") }))
+      return null
     } finally {
       setUpdBusy(null)
     }
   }
   const runUpdateAll = async () => {
-    for (const r of updatable()) await runUpdate(r)
+    // #348(Codex 裁决 D2):遇 authorize 必须停 —— 不能一边开授权框一边继续更新其它条目。
+    for (const r of updatable()) if ((await runUpdate(r)) === "authz") break
   }
 
   const addMcpEntry = async (
     e: CatalogEntry,
     secrets?: Record<string, string>,
     skipCheck?: boolean, // onAdd 已做「检查中」阶段时跳过重复 which
-  ): Promise<{ ok: boolean; reason?: string }> => {
+  ): Promise<ActionResult> => {
     const spec = e.installSpec && e.installSpec.kind === "mcp" ? e.installSpec : undefined
     if (!skipCheck) {
       const rc = await ext.checkRuntime(spec?.runtimeDep)
@@ -513,75 +555,145 @@ export function ExtensionHub(props: {
 
   // Bundle = alpha-defined manifest: fan out to install each referenced entry by its own type
   // (ADR-014 §2). Required items count toward failure; optional ones don't.
-  const installBundle = async (e: CatalogEntry) => {
+  const installBundle = async (e: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult> => {
     // REQ-100 #311:bundle = 一次 main-owned 原子事务(required 全提交或全回滚),renderer 只发一次
     // 请求。归档连接器/不支持子项的跳过决策由 main planner 落 skipped(带审计);此处只呈现结果。
-    const r = await window.api.ext.installCatalog({ catalogId: e.id, scope: { scope: "global" } })
-    if (!r.ok) {
-      setErrFor(e.id, r.reason ?? t("alpha.ext.installFailed"))
-      return
-    }
+    // #348:一次展示、一次授权、一次 commit —— authorize 失败原样上抛给 onAdd 统一拦截。
+    const r = await window.api.ext.installCatalog({
+      catalogId: e.id,
+      scope: { scope: "global" },
+      ...(authorization ? { authorization } : {}),
+    })
+    if (!r.ok) return r
     const okCount = r.installed?.length ?? 0
     const skippedCount = r.skipped?.length ?? 0
     if (skippedCount > 0) setErrFor(e.id, t("alpha.ext.bundlePartialFail", { ok: okCount, fail: skippedCount }))
     else flash(t("alpha.ext.metaItems", { count: okCount }) + " · " + t("alpha.ext.added"), "success")
+    return { ok: true }
   }
 
   // T7(B11)+T9:失败一律行内(卡片错误行 / 详情页同款),toast 只报成功;安装阶段粗状态机
   // (MCP:检查中→安装中;其余:安装中)反映在按钮文案上。
-  const onAdd = async (e: CatalogEntry, secrets?: Record<string, string>) => {
+  // #348:返回值 = stage="authorize" 时的逐 item diff(调用方开授权框;null = 已按 B11 反馈完毕)。
+  // authorization = 授权确认后的重驱决定,原样进 install intent(引擎整集覆盖判定)。
+  const onAdd = async (
+    e: CatalogEntry,
+    secrets?: Record<string, string>,
+    authorization?: AuthorizationConfirmationWire,
+  ): Promise<CapabilityDiffWire[] | null> => {
     setBusy(e.id)
     setErrFor(e.id, null)
+    // authorize 拦截:diff 上抛给授权框;其余失败保持行内(B11)。
+    const failOr = (res: ActionResult): CapabilityDiffWire[] | null => {
+      if (isAuthzRequired(res)) return res.authorization
+      setErrFor(e.id, res.reason ?? t("alpha.ext.installFailed"))
+      return null
+    }
     try {
       if (e.type === "mcp") {
         setStageFor(e.id, "checking")
         const spec = e.installSpec && e.installSpec.kind === "mcp" ? e.installSpec : undefined
         const rc = await ext.checkRuntime(spec?.runtimeDep)
-        if (!rc.ok) return setErrFor(e.id, t("alpha.ext.runtimeMissing", { tool: rc.missing }))
+        if (!rc.ok) {
+          setErrFor(e.id, t("alpha.ext.runtimeMissing", { tool: rc.missing }))
+          return null
+        }
         setStageFor(e.id, "installing")
         const res = await addMcpEntry(e, secrets, true)
-        if (!res.ok) setErrFor(e.id, res.reason ?? t("alpha.ext.installFailed"))
-        else if (res.reason === "slow") flash(t("alpha.ext.installSlow"))
+        if (!res.ok) return failOr(res)
+        if (res.reason === "slow") flash(t("alpha.ext.installSlow"))
         else flash(t("alpha.ext.added"), "success")
       } else if (e.type === "skill") {
         setStageFor(e.id, "installing")
-        const res = await ext.installSkill(e)
-        if (!res.ok) setErrFor(e.id, res.reason ?? t("alpha.ext.installFailed"))
-        else if (res.reason === "reload-pending") flash(t("alpha.ext.addedPendingReload"))
+        const res = await ext.installSkill(e, authorization)
+        if (!res.ok) return failOr(res)
+        if (res.reason === "reload-pending") flash(t("alpha.ext.addedPendingReload"))
         else flash(t("alpha.ext.addedLive"), "success")
       } else if (e.type === "agent") {
         setStageFor(e.id, "installing")
         const res = await ext.installAgentEntry(e)
-        if (!res.ok) setErrFor(e.id, res.reason ?? t("alpha.ext.installFailed"))
-        else if (res.reason === "reload-pending") flash(t("alpha.ext.addedPendingReload"))
+        if (!res.ok) return failOr(res)
+        if (res.reason === "reload-pending") flash(t("alpha.ext.addedPendingReload"))
         else flash(t("alpha.ext.addedLive"), "success")
       } else if (e.type === "plugin") {
         setStageFor(e.id, "installing")
         const res = await ext.installPlugin(e)
-        if (!res.ok) setErrFor(e.id, res.reason ?? t("alpha.ext.installFailed"))
-        else flash(t("alpha.ext.pluginRestart"), "success")
+        if (!res.ok) return failOr(res)
+        flash(t("alpha.ext.pluginRestart"), "success")
       } else if (e.type === "bundle") {
         setStageFor(e.id, "installing")
-        await installBundle(e)
+        const res = await installBundle(e, authorization)
+        if (!res.ok) return failOr(res)
       } else if (e.type === "cloud") {
         // REQ-020 T4:「启用」= receipts-only(账本可用列表);门控在按钮层(!cloudReady 禁用)。
         setStageFor(e.id, "installing")
         const res = await ext.enableCloud(e)
-        if (!res.ok) setErrFor(e.id, res.reason ?? t("alpha.ext.installFailed"))
-        else flash(t("alpha.ext.cloudEnabled"), "success")
+        if (!res.ok) return failOr(res)
+        flash(t("alpha.ext.cloudEnabled"), "success")
       }
+      return null
     } finally {
       setBusy(null)
       setStageFor(e.id, null)
     }
   }
 
+  // #348:授权框动作(两宿主共用)。取消 = 零权威副作用、静默(B11:取消非失败,不 toast 不行内)。
+  const closeAuthz = () => {
+    setAuthz(null)
+    setConfirming(null)
+    setEnvValues({})
+  }
+  const cancelAuthz = () => {
+    if (authzBusy() || confirmBusy()) return
+    closeAuthz()
+  }
+  const confirmAuthz = async () => {
+    const a = authz()
+    if (!a || authzBusy()) return
+    const decision = buildAuthzConfirmation(a.diffs)
+    setAuthzBusy(true)
+    try {
+      const next =
+        a.mode === "update" ? await runUpdateRedrive(a.entry, decision) : await onAdd(a.entry, a.secrets, decision)
+      // 重驱再遇 authorize(授权与重驱之间 grants/catalog 变化)→ 最新 diff 原地替换,不只拦第一次。
+      if (next) {
+        setAuthz({ ...a, diffs: next })
+        return
+      }
+      closeAuthz()
+    } finally {
+      setAuthzBusy(false)
+    }
+  }
+  /** skill 直装(无确认框)路径:authorize → 独立授权框。 */
+  const addDirect = async (e: CatalogEntry) => {
+    const diffs = await onAdd(e)
+    if (diffs) setAuthz({ entry: e, mode: "install", host: "standalone", diffs })
+  }
+  // 标题/footer 两宿主共用(Q1 场景化:首装「授权能力/授权并安装」,扩权「能力变更需确认/授权并更新」)。
+  const authzTitle = () => {
+    const a = authz()
+    if (!a) return ""
+    return authzIsEscalation(a.diffs) ? t("alpha.ext.authz.titleEscalation") : t("alpha.ext.authz.titleFirst")
+  }
+  const authzFooter = () => (
+    <>
+      <Button variant="ghost" disabled={authzBusy()} onClick={cancelAuthz}>
+        {t("alpha.ext.cancel")}
+      </Button>
+      <Button variant="primary" loading={authzBusy()} onClick={() => void confirmAuthz()}>
+        {authz()?.mode === "update" ? t("alpha.ext.authz.confirmUpdate") : t("alpha.ext.authz.confirmInstall")}
+      </Button>
+    </>
+  )
+
   // 「添加」三档分流(2026-07-04 拍板,Q1/Q2):
   //   skill  → 直装(零配置零密钥,免确认框);
   //   plugin → 详情页先行(风险最高:运行于引擎进程 + npm 下载),页内安装再过风险确认框;
   //   mcp / bundle → 确认框(密钥采集 / 选目录 / 组合清单)。
   const stageInstall = (e: CatalogEntry) => {
-    if (e.type === "skill") return void onAdd(e)
+    if (e.type === "skill") return void addDirect(e)
     // plugin(引擎进程内运行)/ agent(带权限档)/ cloud(数据出境,上行明细在详情页)=
     // 详情页先行档:先看清楚再启用。
     if (e.type === "plugin" || e.type === "agent" || e.type === "cloud") return openEntryDetail(e)
@@ -592,7 +704,7 @@ export function ExtensionHub(props: {
   const stageInstallFromDetail = (e: CatalogEntry) => {
     // 用户已在详情页看过内容/权限:skill/agent 直装;cloud 直启用(上行明细刚看过);
     // plugin 仍过风险确认框;MCP/套件过确认框。
-    if (e.type === "skill" || e.type === "agent" || e.type === "cloud") return void onAdd(e)
+    if (e.type === "skill" || e.type === "agent" || e.type === "cloud") return void addDirect(e)
     setConfirming(e)
   }
 
@@ -1577,40 +1689,60 @@ export function ExtensionHub(props: {
             Escape cancel (alpha Dialog). Plugin confirms carry an explicit risk line (Q2). */}
         <Dialog
           open={!!confirming()}
-          onClose={() => {
-            setConfirming(null)
-            setEnvValues({})
-          }}
+          onClose={closeAuthz}
+          dismissible={!confirmBusy() && !authzBusy()}
           besideSidebar
           size="sm"
-          title={confirming() ? t("alpha.ext.confirmTitle", { name: confirming()!.displayName }) : ""}
+          title={
+            authz()?.host === "confirm"
+              ? authzTitle()
+              : confirming()
+                ? t("alpha.ext.confirmTitle", { name: confirming()!.displayName })
+                : ""
+          }
           footer={
-            <>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setConfirming(null)
-                  setEnvValues({})
-                }}
-              >
-                {t("alpha.ext.cancel")}
-              </Button>
-              <Button
-                variant="primary"
-                onClick={() => {
-                  const e = confirming()
-                  const secrets = envValues()
-                  setConfirming(null)
-                  setEnvValues({})
-                  if (e) void onAdd(e, Object.keys(secrets).length ? secrets : undefined)
-                }}
-              >
-                {t("alpha.ext.confirmInstall")}
-              </Button>
-            </>
+            authz()?.host === "confirm" ? (
+              authzFooter()
+            ) : (
+              <>
+                <Button variant="ghost" disabled={confirmBusy()} onClick={closeAuthz}>
+                  {t("alpha.ext.cancel")}
+                </Button>
+                <Button
+                  variant="primary"
+                  loading={confirmBusy()}
+                  onClick={() => {
+                    const e = confirming()
+                    if (!e || confirmBusy()) return
+                    const raw = envValues()
+                    const secretsArg = Object.keys(raw).length ? raw : undefined
+                    // #348 两阶段(设计稿 D1):主按钮 await 首驱 —— stage="authorize" 时同框原地
+                    // 切第二阶段(标题/body/footer 换为授权视图),成功或普通失败才关框;不再点击即关。
+                    void (async () => {
+                      setConfirmBusy(true)
+                      try {
+                        const diffs = await onAdd(e, secretsArg)
+                        if (diffs) {
+                          setAuthz({ entry: e, mode: "install", host: "confirm", secrets: secretsArg, diffs })
+                          return
+                        }
+                        closeAuthz()
+                      } finally {
+                        setConfirmBusy(false)
+                      }
+                    })()
+                  }}
+                >
+                  {t("alpha.ext.confirmInstall")}
+                </Button>
+              </>
+            )
           }
         >
-          <Show when={confirming()}>
+          <Show when={authz()?.host === "confirm"}>
+            <ExtAuthzView name={authz()!.entry.displayName} isBundle={authz()!.entry.type === "bundle"} diffs={authz()!.diffs} />
+          </Show>
+          <Show when={authz()?.host !== "confirm" && confirming()}>
             {(entry) => (
               <div class="alpha-ext-confirm">
                 <div class="alpha-ext-confirm-meta">
@@ -1672,6 +1804,22 @@ export function ExtensionHub(props: {
                 <p class="alpha-ext-confirm-note">{t("alpha.ext.confirmNote")}</p>
               </div>
             )}
+          </Show>
+        </Dialog>
+
+        {/* #348:独立授权框 —— skill 直装 / 更新扩权(无前置确认框的宿主)。busy 期间不可关
+            (dismissible=false:IPC 无取消能力);取消零权威副作用、静默。 */}
+        <Dialog
+          open={authz()?.host === "standalone"}
+          onClose={cancelAuthz}
+          dismissible={!authzBusy()}
+          besideSidebar
+          size="sm"
+          title={authzTitle()}
+          footer={authzFooter()}
+        >
+          <Show when={authz()?.host === "standalone"}>
+            <ExtAuthzView name={authz()!.entry.displayName} isBundle={authz()!.entry.type === "bundle"} diffs={authz()!.diffs} />
           </Show>
         </Dialog>
 

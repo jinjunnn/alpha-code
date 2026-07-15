@@ -19,11 +19,14 @@ import {
   rollbackGenerationTransaction,
   runExtensionTransaction,
   type HealthProbe,
+  type TxAuthorizationDecision,
   type TxCommitRecord,
   type TxFileSpec,
   type TxHooks,
   type TxPlan,
+  type TxStage,
 } from "./ext-transaction"
+import type { CapabilityDiff } from "./ext-capability-grants"
 import { populateFromCas } from "./ext-cas"
 import { findRecordV2, upsertRecordsV2, upsertRecordV2, type ScopeIdentity, type UpsertInput } from "./ext-receipt-v2"
 import { parseSkillFrontmatter } from "./ext-import-validate"
@@ -159,6 +162,11 @@ export type SkillGenerationInstall = {
    *  载荷提升进验证共享 CAS,staging 由 populateFromCas 物化(读取重验)。journal 只存 TxFileSpec,
    *  与来源无关 —— buffer 时代 journal 的恢复语义不受影响(恢复不重 populate)。 */
   casFiles: { specs: TxFileSpec[]; casBaseRoot: string }
+  /** #348:进入事务引擎的能力集(已验 manifest.capabilities)。**必填** —— 可选字段被安静遗漏
+   *  正是本票修的缺口(Codex 裁决 A1);真正无能力也要显式传 []。空集 = authorize 闸静默通过。 */
+  capabilities: string[]
+  /** #348:authorize 重驱决定(main 打戳 decidedAt 后透传引擎 plan.authorization)。 */
+  authorization?: TxAuthorizationDecision
   version?: string
   manifestDigest?: string
   payloadDigest?: string
@@ -170,7 +178,10 @@ export type SkillGenerationInstall = {
 
 export type SkillGenerationResult =
   | { ok: true; generationDir: string; files: string[] }
-  | { ok: false; reason: string; stage?: string }
+  /** #348:authorize 暂停不是失败 —— 零权威副作用,携带逐 item diff 等确认重驱(Codex 裁决 C1:
+   *  判别分支强制携带 diff,不允许 stage 折叠成裸字符串丢数据)。 */
+  | { ok: false; stage: "authorize"; reason: string; authorization: CapabilityDiff[] }
+  | { ok: false; reason: string; stage?: Exclude<TxStage, "authorize"> }
 
 /**
  * 把一个 skill 装进不可变 generation。commitReceipt 写失败 → 抛错 → 引擎 rollbackAll+quarantine
@@ -210,7 +221,18 @@ export async function installSkillGeneration(root: string, spec: SkillGeneration
     installedAt: now,
   }
   const plan: TxPlan = {
-    items: [{ key, files: txFiles, receipt: receiptTemplate, ...(spec.manifestDigest ? { manifestDigest: spec.manifestDigest } : {}) }],
+    // #348:capabilities 进 plan item → 引擎 authorize 闸在锁内评估 diff;authorization 是重驱
+    // 决定(引擎按 requested ⊆ confirmed[key] 整集覆盖判定,journal 持久化供崩溃前滚落收据)。
+    items: [
+      {
+        key,
+        files: txFiles,
+        receipt: receiptTemplate,
+        capabilities: spec.capabilities,
+        ...(spec.manifestDigest ? { manifestDigest: spec.manifestDigest } : {}),
+      },
+    ],
+    ...(spec.authorization ? { authorization: spec.authorization } : {}),
   }
   // staging 由 populateFromCas 物化(读取重验 digest,缺失/篡改抛错 = 事务 abort);
   // 引擎 verify 随后对 staging 做结构精确校验(纵深)。
@@ -229,7 +251,14 @@ export async function installSkillGeneration(root: string, spec: SkillGeneration
   }
 
   const result = await runExtensionTransaction(root, plan, hooks)
-  if (!result.ok) return { ok: false, reason: result.reason, stage: result.stage }
+  if (!result.ok) {
+    // #348:authorize 判别分支必须带 diff(此前折叠丢弃正是本票缺陷);其余 stage 原样透传。
+    if (result.stage === "authorize") {
+      if (result.authorization) return { ok: false, stage: "authorize", reason: result.reason, authorization: result.authorization }
+      return { ok: false, reason: result.reason } // 引擎契约保证带 diff;缺失时诚实降级,不谎标 stage
+    }
+    return { ok: false, reason: result.reason, stage: result.stage }
+  }
 
   // supersede:清除本 skill 的旧 flat 安装(我们上一版直写的 ~/.alpha/skills/<name>),防与 generation
   // 双真源(重名 skill 静默覆盖)。只删同名——即我们自己拥有的先前安装,不碰其它内容。best-effort。

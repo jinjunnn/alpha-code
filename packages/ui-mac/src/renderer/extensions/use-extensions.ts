@@ -18,6 +18,7 @@ import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import type { ServerInfo } from "../sidebar/use-projects"
 import type { CatalogEntry, InstalledState, McpConfig, McpInstallSpec, RuntimeCheck } from "./catalog-types"
 import type { InstallReceipt } from "../../preload/types"
+import type { AuthorizationConfirmationWire, CapabilityDiffWire } from "../../shared/ext-capability-authorization"
 
 // Receipt provenance (REQ-018): catalog snapshot version recorded per install → update checks.
 
@@ -49,9 +50,15 @@ export interface ExtensionsStore {
   error: boolean
 }
 
-export interface ActionResult {
-  ok: boolean
-  reason?: string
+/** #348:判别联合 —— 失败分支透传 stage/authorization,中间包装层不得再折叠丢 authorize 数据
+ *  (Codex 裁决 D1)。stage === "authorize" 时 authorization 为引擎锁内评估的逐 item diff。 */
+export type ActionResult =
+  | { ok: true; reason?: string }
+  | { ok: false; reason?: string; stage?: string; authorization?: CapabilityDiffWire[] }
+
+/** stage="authorize" 拦截守卫:diff 在场才算(引擎契约保证成对出现)。 */
+export function isAuthzRequired(res: ActionResult): res is { ok: false; stage: "authorize"; authorization: CapabilityDiffWire[]; reason?: string } {
+  return !res.ok && res.stage === "authorize" && Array.isArray(res.authorization) && res.authorization.length > 0
 }
 
 export interface ExtensionsApi {
@@ -89,7 +96,7 @@ export interface ExtensionsApi {
    *  条目呈现为「出厂内置」而非可安装(S18 X1)。创建类操作已技能化,不再有表单写入方法。 */
   factorySkills(): string[]
   /** Install a catalog skill entry by writing its SKILL.md. */
-  installSkill(entry: CatalogEntry): Promise<ActionResult>
+  installSkill(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult>
   /** REQ-018 T4:释放全部引擎实例(POST /global/dispose)→ 下一请求惰性重建重扫,免重启生效。 */
   refreshEngine(): Promise<boolean>
   /** REQ-018 T7:刷新引擎已知的 agents(内置 + 自建)供 Agent tab 呈现。 */
@@ -102,7 +109,7 @@ export interface ExtensionsApi {
    * MCP 不走此方法 —— persistMcp 是覆盖写,静默重装会丢 {file:} 密钥引用;hub 层用确认框重装
    * (密钥可重填),见 extension-hub.runUpdate。
    */
-  updateEntry(entry: CatalogEntry): Promise<ActionResult>
+  updateEntry(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult>
   /** REQ-019 T6 / REQ-098 #255:导入本地技能文件夹(main 自弹选择器,renderer 不传 srcDir)。 */
   importSkillFolder(): Promise<ActionResult & { name?: string; canceled?: boolean }>
   /** REQ-019 T6:导入 Git 仓库技能(https-only 浅克隆临时目录 → 同校验)。 */
@@ -461,14 +468,20 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     .then((ids) => setFactoryIds(Array.isArray(ids) ? ids : []))
     .catch(() => {})
 
-  async function installSkill(entry: CatalogEntry): Promise<ActionResult> {
+  async function installSkill(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult> {
     const spec = entry.installSpec
     if (spec?.kind !== "skill") return { ok: false, reason: "not a skill entry" }
     // REQ-100 #313(补 #310):单装与 bundle 同入口 —— main-owned installCatalog。renderer 仍只传
     // catalogId(codex H1 信任边界:main 从已验签 catalog 派生 name/清单/版本,remote sha256 钉死、
     // builtin 同源校验都在 main);skill 落不可变 generation 事务 → 可列代/离线回滚,不再走旧 flat
     // 通道。「内容未随版本打包」的诚实失败由 planner 原样上抛。
-    const r = await window.api.ext.installCatalog({ catalogId: entry.id, scope: { scope: "global" } })
+    // #348:首驱可返回 stage="authorize" + diff(原样透传给 hub 弹授权框);确认后带 authorization
+    // 重驱同一意图 —— 引擎按整集覆盖判定,decidedAt 由 main 打戳。
+    const r = await window.api.ext.installCatalog({
+      catalogId: entry.id,
+      scope: { scope: "global" },
+      ...(authorization ? { authorization } : {}),
+    })
     if (!r.ok) return r
     await loadInstalls()
     if (!(await refreshEngine())) return { ok: true, reason: "reload-pending" }
@@ -533,13 +546,14 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
   async function enableCloud(entry: CatalogEntry): Promise<ActionResult> {
     if (entry.type !== "cloud") return { ok: false, reason: "not a cloud entry" }
     const r = await window.api.ext.installCatalog({ catalogId: entry.id, scope: { scope: "global" } })
-    if (!r.ok) return { ok: false, reason: r.reason }
+    if (!r.ok) return r // #348:不折叠 —— stage/authorization 原样透传(cloud 未来入事务时自然接上)
     await loadInstalls()
     return { ok: true }
   }
 
-  async function updateEntry(entry: CatalogEntry): Promise<ActionResult> {
-    if (entry.type === "skill") return installSkill(entry)
+  async function updateEntry(entry: CatalogEntry, authorization?: AuthorizationConfirmationWire): Promise<ActionResult> {
+    // #348:skill 更新 = 同一事务入口,扩权时同样被 authorize 闸拦下(确认后带 authorization 重入)。
+    if (entry.type === "skill") return installSkill(entry, authorization)
     if (entry.type === "plugin") {
       const old = store.receipts.find((r) => r.id === entry.id && r.type === "plugin")
       if (old) {

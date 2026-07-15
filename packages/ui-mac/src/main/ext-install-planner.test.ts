@@ -18,8 +18,21 @@ import { fileifyMcpSecretsDeep } from "./alpha-mcp-secrets"
 import { aggregateFilesDigest, computeManifestDigest, decodeManifestV2 } from "./ext-manifest-v2"
 import { hasCasBlob } from "./ext-cas"
 import { computeGrantDigest, findRecordV2, projectScopeIdentity, upsertRecordV2, type UpsertInput } from "./ext-receipt-v2"
+import { readCapabilityGrant, writeCapabilityGrantSync } from "./ext-capability-grants"
 import { probeTransactionJournals, resolveLiveGenerationDir } from "./ext-transaction"
 import { skillStorePaths } from "./ext-skill-generations"
+
+// #348:capability→authorize 闸生效后,首装会零副作用停在 stage="authorize"。本 helper 按生产
+// 同路重驱(确认展示的完整 requested 集);非 authorize 失败原样透传,不掩盖任何拒绝语义。
+// 需要断言首驱行为(authorize 暂停本身/attempt 生命周期)的测试直接调 installCatalog。
+async function installAuthorized(intent: unknown, deps: Parameters<typeof installCatalog>[1]): ReturnType<typeof installCatalog> {
+  const first = await installCatalog(intent, deps)
+  if (first.ok || first.stage !== "authorize") return first
+  const confirmed = Object.fromEntries(
+    first.authorization.filter((d) => d.requiresConfirmation).map((d) => [d.key, d.requested]),
+  )
+  return installCatalog({ ...(intent as Record<string, unknown>), authorization: { confirmed } }, deps)
+}
 import {
   decodeCatalogInstallIntent,
   decodeSetStateIntent,
@@ -291,7 +304,7 @@ describe("manifest synthesis & pre-disk refusal (AC#1)", () => {
   test("invalid synthesized manifest refused BEFORE any installer call", async () => {
     const badEntry: CatalogEntry = { ...mcpEntry, id: "mcp:bad", name: "bad name!" }
     const { deps, calls } = makeDeps({ entries: [badEntry] })
-    const r = await installCatalog({ catalogId: "mcp:bad", scope: { scope: "global" } }, deps)
+    const r = await installAuthorized({ catalogId: "mcp:bad", scope: { scope: "global" } }, deps)
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toContain("refusing before any disk write")
     expect(installerCallCount(calls)).toBe(0)
@@ -300,7 +313,7 @@ describe("manifest synthesis & pre-disk refusal (AC#1)", () => {
 
   test("platform incompatibility refused before any installer call", async () => {
     const { deps, calls } = makeDeps({ platform: "linux" })
-    const r = await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" } }, deps)
+    const r = await installAuthorized({ catalogId: "mcp:markitdown", scope: { scope: "global" } }, deps)
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toContain("platform linux not supported")
     expect(installerCallCount(calls)).toBe(0)
@@ -308,7 +321,7 @@ describe("manifest synthesis & pre-disk refusal (AC#1)", () => {
 
   test("entry not in verified catalog refused; zero side effects", async () => {
     const { deps, calls } = makeDeps()
-    const r = await installCatalog({ catalogId: "mcp:ghost", scope: { scope: "global" } }, deps)
+    const r = await installAuthorized({ catalogId: "mcp:ghost", scope: { scope: "global" } }, deps)
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toContain("not in verified catalog")
     expect(installerCallCount(calls)).toBe(0)
@@ -321,7 +334,7 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
   test("happy path: config derived from CATALOG command; secrets fileified; record written", async () => {
     const { deps, calls } = makeDeps()
     const grants = { secrets: { API_KEY: "sekret-value" } }
-    const r = await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants }, deps)
+    const r = await installAuthorized({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants }, deps)
     expect(r.ok).toBe(true)
     if (!r.ok) return
     // live config(renderer 拿去 sdk.mcp.add)含密钥真值 —— 该值本就来自 renderer
@@ -366,7 +379,7 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
         },
       },
     })
-    const r = await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "sekret-value" } } }, deps)
+    const r = await installAuthorized({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "sekret-value" } } }, deps)
     expect(r.ok).toBe(true)
     if (!r.ok) return
     const env = (r.liveMcp?.config as { environment?: Record<string, unknown> }).environment
@@ -382,7 +395,7 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
         fileifyMcpSecrets: (name, server, secrets) => fileifyMcpSecretsDeep(userData, name, server, secrets),
       },
     })
-    const r = await installCatalog({ catalogId: "mcp:linear", scope: { scope: "global" }, grants: { secrets: { API_KEY: "sekret-value" } } }, deps)
+    const r = await installAuthorized({ catalogId: "mcp:linear", scope: { scope: "global" }, grants: { secrets: { API_KEY: "sekret-value" } } }, deps)
     expect(r.ok).toBe(true)
     if (!r.ok) return
     const durable = called(calls, "persistMcp")[0]!.args[1] as { headers?: Record<string, string> }
@@ -409,7 +422,7 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
         },
       },
     })
-    const r = await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "sekret-value" } } }, deps)
+    const r = await installAuthorized({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "sekret-value" } } }, deps)
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toContain("refusing plaintext persist")
     expect(called(calls, "persistMcp")).toHaveLength(0)
@@ -425,14 +438,14 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
         return ret
       }
     }
-    const r = await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "sekret-value" } } }, deps)
+    const r = await installAuthorized({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "sekret-value" } } }, deps)
     expect(r.ok).toBe(false)
     expect(called(calls, "restoreSecrets")).toHaveLength(1)
     expect(called(calls, "removeMcpSecrets")).toHaveLength(0)
     // 卸载顺序(#346 journaled 同语义):config 删除失败 → 不吊销密钥(不留「配置在、密钥毁」半拆态)
     calls.length = 0
     const { deps: d2, calls: c2 } = makeDeps({ installers: { removeMcpConfigInLock: () => ({ ok: false as const, reason: "config busy" }) } })
-    await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "sekret-value" } } }, d2)
+    await installAuthorized({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "sekret-value" } } }, d2)
     c2.length = 0
     const u = await uninstallByKey({ type: "mcp", name: "markitdown", scope: "global" }, d2)
     expect(u.ok).toBe(false)
@@ -441,10 +454,10 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
 
   test("REQ-099 #305(高危回归锁):grant 值含 {file:}/{env:} 替换语法 → 派生前拒绝", async () => {
     const { deps, calls } = makeDeps()
-    const viaFile = await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "{file:/etc/passwd}" } } }, deps)
+    const viaFile = await installAuthorized({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "{file:/etc/passwd}" } } }, deps)
     expect(viaFile.ok).toBe(false)
     if (!viaFile.ok) expect(viaFile.reason).toContain("substitution syntax")
-    const viaEnv = await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { env: { API_KEY: "x{env:AWS_SECRET_ACCESS_KEY}y" } } }, deps)
+    const viaEnv = await installAuthorized({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { env: { API_KEY: "x{env:AWS_SECRET_ACCESS_KEY}y" } } }, deps)
     expect(viaEnv.ok).toBe(false)
     if (!viaEnv.ok) expect(viaEnv.reason).toContain("substitution syntax")
     expect(installerCallCount(calls)).toBe(0)
@@ -452,7 +465,7 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
 
   test("grant not declared by catalog entry (requiredEnvVars) refused before installers", async () => {
     const { deps, calls } = makeDeps()
-    const r = await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { EVIL_VAR: "x" } } }, deps)
+    const r = await installAuthorized({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { EVIL_VAR: "x" } } }, deps)
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toContain('grant "EVIL_VAR" not declared')
     expect(called(calls, "persistMcp")).toHaveLength(0)
@@ -461,20 +474,20 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
 
   test("workspace grant: required when declared, refused when not declared", async () => {
     const { deps } = makeDeps()
-    const missing = await installCatalog({ catalogId: "mcp:excel", scope: { scope: "global" } }, deps)
+    const missing = await installAuthorized({ catalogId: "mcp:excel", scope: { scope: "global" } }, deps)
     expect(missing.ok).toBe(false)
     if (!missing.ok) expect(missing.reason).toContain("workspace grant required")
-    const undeclared = await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { workspace: "/ws" } }, deps)
+    const undeclared = await installAuthorized({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { workspace: "/ws" } }, deps)
     expect(undeclared.ok).toBe(false)
     const { deps: deps2, calls: calls2 } = makeDeps()
-    const ok = await installCatalog({ catalogId: "mcp:excel", scope: { scope: "global" }, grants: { workspace: "/ws/excel" } }, deps2)
+    const ok = await installAuthorized({ catalogId: "mcp:excel", scope: { scope: "global" }, grants: { workspace: "/ws/excel" } }, deps2)
     expect(ok.ok).toBe(true)
     expect((called(calls2, "persistMcp")[0]!.args[1] as { command: string[] }).command).toEqual(["uvx", "excel-mcp-server@0.1.8", "/ws/excel"])
   })
 
   test("remote MCP: url from catalog, headers from template + granted secret", async () => {
     const { deps } = makeDeps()
-    const r = await installCatalog({ catalogId: "mcp:linear", scope: { scope: "global" }, grants: { secrets: { API_KEY: "tok" } } }, deps)
+    const r = await installAuthorized({ catalogId: "mcp:linear", scope: { scope: "global" }, grants: { secrets: { API_KEY: "tok" } } }, deps)
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.liveMcp?.config).toEqual({ type: "remote", url: "https://mcp.linear.app/sse", headers: { Authorization: "Bearer tok" } })
@@ -482,7 +495,7 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
 
   test("cnMirror env values are main-side constants (renderer only expresses the preference)", async () => {
     const { deps, calls } = makeDeps()
-    const r = await installCatalog({ catalogId: "mcp:excel", scope: { scope: "global" }, grants: { workspace: "/ws", cnMirror: true } }, deps)
+    const r = await installAuthorized({ catalogId: "mcp:excel", scope: { scope: "global" }, grants: { workspace: "/ws", cnMirror: true } }, deps)
     expect(r.ok).toBe(true)
     const env = (called(calls, "persistMcp")[0]!.args[1] as { environment: Record<string, string> }).environment
     expect(env.npm_config_registry).toBe("https://registry.npmmirror.com")
@@ -500,7 +513,7 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
       rollback: (id, reason) => void txEvents.push(`rollback:${id}:${reason}`),
     }
     const { deps, calls } = makeDeps({ transaction: tx, installers: { persistMcp: () => ({ ok: false, reason: "DANGEROUS_ENV" }) } })
-    const r = await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "v" } } }, deps)
+    const r = await installAuthorized({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "v" } } }, deps)
     expect(r.ok).toBe(false)
     // #351:失败按写前快照复原 —— 首装等价于撤新写入(不留孤儿),更新不毁既有密钥
     expect(called(calls, "restoreSecrets")).toHaveLength(1)
@@ -512,7 +525,7 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
   test("mcp cannot be project-scoped (ADR-030 recall guard fires first)", async () => {
     const proj = makeProject("proj-mcp")
     const { deps, calls } = makeDeps()
-    const r = await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "project", projectDir: proj } }, deps)
+    const r = await installAuthorized({ catalogId: "mcp:markitdown", scope: { scope: "project", projectDir: proj } }, deps)
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toBe(PROJECT_INSTALL_UNSUPPORTED_REASON)
     expect(installerCallCount(calls)).toBe(0)
@@ -524,7 +537,7 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
 describe("other kinds — derivation & records", () => {
   test("remote skill: download → 不可变 generation 事务;payloadDigest recorded(REQ-100 #310)", async () => {
     const { deps, calls } = makeDeps()
-    const r = await installCatalog({ catalogId: "skill:remote-demo", scope: { scope: "global" } }, deps)
+    const r = await installAuthorized({ catalogId: "skill:remote-demo", scope: { scope: "global" } }, deps)
     expect(r.ok).toBe(true)
     expect(called(calls, "downloadRemoteAsset")[0]!.args[0]).toEqual(remoteFiles)
     // #310:skill 不再走 flat installRemoteSkill,而是 generation 事务 + commitReceipt。
@@ -539,7 +552,7 @@ describe("other kinds — derivation & records", () => {
   // ── REQ-098 #303:catalog skill 内容一律经验证共享 CAS ────────────────────────────────────────
   test("#303 remote skill: blobs land in the shared CAS base (not the env root); generation matches", async () => {
     const { deps } = makeDeps()
-    const r = await installCatalog({ catalogId: "skill:remote-demo", scope: { scope: "global" } }, deps)
+    const r = await installAuthorized({ catalogId: "skill:remote-demo", scope: { scope: "global" } }, deps)
     expect(r.ok).toBe(true)
     const digest = remoteFiles[0]!.sha256
     expect(hasCasBlob(path.join(tmp, "cas-base"), digest)).toBe(true) // 共享 CAS 基根
@@ -550,7 +563,7 @@ describe("other kinds — derivation & records", () => {
 
   test("#303 builtin skill: content-addressed into CAS; self-computed payloadDigest recorded", async () => {
     const { deps } = makeDeps()
-    const r = await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
+    const r = await installAuthorized({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
     expect(r.ok).toBe(true)
     const body = "---\nname: demo\ndescription: test demo\n---\nbody"
     const digest = crypto.createHash("sha256").update(body).digest("hex")
@@ -573,7 +586,7 @@ describe("other kinds — derivation & records", () => {
     ]
     for (const v of variants) {
       const { deps } = makeDeps({ installers: { downloadRemoteAsset: v.dl } })
-      const r = await installCatalog({ catalogId: "skill:remote-demo", scope: { scope: "global" } }, deps)
+      const r = await installAuthorized({ catalogId: "skill:remote-demo", scope: { scope: "global" } }, deps)
       expect(r.ok).toBe(false)
       if (!r.ok && v.expects) expect(r.reason).toContain(v.expects)
       expect(findRecordV2(globalRoot, "skill", "remote-demo")).toBeNull()
@@ -598,26 +611,26 @@ describe("other kinds — derivation & records", () => {
 
     const folded = [{ path: "Docs/A.md", data: "one" }, { path: "docs/a.md", data: "two" }]
     const { deps: foldDeps } = makeDeps({ entries: [twoFile(folded)], installers: { downloadRemoteAsset: dlFor(folded) } })
-    const rf = await installCatalog({ catalogId: "skill:fold", scope: { scope: "global" } }, foldDeps)
+    const rf = await installAuthorized({ catalogId: "skill:fold", scope: { scope: "global" } }, foldDeps)
     expect(rf.ok).toBe(false)
     if (!rf.ok) expect(rf.reason).toContain("collision under case/unicode folding")
 
     const reserved = [{ path: "CON.md", data: "x" }]
     const { deps: resDeps } = makeDeps({ entries: [twoFile(reserved)], installers: { downloadRemoteAsset: dlFor(reserved) } })
-    const rr = await installCatalog({ catalogId: "skill:fold", scope: { scope: "global" } }, resDeps)
+    const rr = await installAuthorized({ catalogId: "skill:fold", scope: { scope: "global" } }, resDeps)
     expect(rr.ok).toBe(false)
     if (!rr.ok) expect(rr.reason).toContain("reserved filename")
 
     const trailingDot = [{ path: "notes./SKILL.md", data: "x" }]
     const { deps: dotDeps } = makeDeps({ entries: [twoFile(trailingDot)], installers: { downloadRemoteAsset: dlFor(trailingDot) } })
-    const rd = await installCatalog({ catalogId: "skill:fold", scope: { scope: "global" } }, dotDeps)
+    const rd = await installAuthorized({ catalogId: "skill:fold", scope: { scope: "global" } }, dotDeps)
     expect(rd.ok).toBe(false)
     if (!rd.ok) expect(rd.reason).toContain("trailing dot/space")
   })
 
   test("vendored plugin: asset key from catalog; configKey derived from install result", async () => {
     const { deps, calls } = makeDeps()
-    const r = await installCatalog({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
+    const r = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
     expect(r.ok).toBe(true)
     expect(called(calls, "installVendoredPlugin")[0]!.args).toEqual(["plugins/vp", "vp"])
     const record = findRecordV2(globalRoot, "plugin", "vp")
@@ -626,14 +639,14 @@ describe("other kinds — derivation & records", () => {
 
   test("npm plugin: package pinned from catalog spec", async () => {
     const { deps, calls } = makeDeps()
-    const r = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
+    const r = await installAuthorized({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
     expect(r.ok).toBe(true)
     expect(called(calls, "persistPlugin")[0]!.args[0]).toBe("@alpha/np@2.3.4")
   })
 
   test("cloud: receipts-only — record written, zero installer calls", async () => {
     const { deps, calls } = makeDeps()
-    const r = await installCatalog({ catalogId: "cloud:research", scope: { scope: "global" } }, deps)
+    const r = await installAuthorized({ catalogId: "cloud:research", scope: { scope: "global" } }, deps)
     expect(r.ok).toBe(true)
     expect(installerCallCount(calls)).toBe(0)
     expect(findRecordV2(globalRoot, "cloud", "research")).not.toBeNull()
@@ -642,7 +655,7 @@ describe("other kinds — derivation & records", () => {
   test("bundle: required secret-MCP child → fail-closed(不在原子边界内,REQ-100 #311)", async () => {
     // bundle:office 的 mcp:markitdown 声明 requiredEnvVars → 首期不支持原子安装 → required 致命 → 整单拒绝。
     const { deps } = makeDeps()
-    const r = await installCatalog({ catalogId: "bundle:office", scope: { scope: "global" } }, deps)
+    const r = await installAuthorized({ catalogId: "bundle:office", scope: { scope: "global" } }, deps)
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toContain("required bundle child")
   })
@@ -651,7 +664,7 @@ describe("other kinds — derivation & records", () => {
     const cleanMcp: CatalogEntry = { ...mcpEntry, id: "mcp:clean", name: "clean", installSpec: { kind: "mcp", mcpType: "local", command: ["uvx", "clean-mcp@1.0.0"] } }
     const cleanBundle: CatalogEntry = { ...bundleEntry, id: "bundle:clean", name: "cleanb", bundleItems: [{ catalogEntryId: "skill:demo", optional: false, installOrder: 1 }, { catalogEntryId: "mcp:clean", optional: false, installOrder: 2 }] }
     const { deps } = makeDeps({ entries: [...ALL_ENTRIES, cleanMcp, cleanBundle] })
-    const r = await installCatalog({ catalogId: "bundle:clean", scope: { scope: "global" } }, deps)
+    const r = await installAuthorized({ catalogId: "bundle:clean", scope: { scope: "global" } }, deps)
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.installed?.sort()).toEqual(["mcp:clean", "skill:demo"])
@@ -665,7 +678,7 @@ describe("other kinds — derivation & records", () => {
   test("#303 bundle: skill child blobs go through shared CAS; populate materializes from CAS", async () => {
     const casBundle: CatalogEntry = { ...bundleEntry, id: "bundle:cas", name: "casb", bundleItems: [{ catalogEntryId: "skill:remote-demo", optional: false, installOrder: 1 }] }
     const { deps } = makeDeps({ entries: [...ALL_ENTRIES, casBundle] })
-    const r = await installCatalog({ catalogId: "bundle:cas", scope: { scope: "global" } }, deps)
+    const r = await installAuthorized({ catalogId: "bundle:cas", scope: { scope: "global" } }, deps)
     expect(r.ok).toBe(true)
     expect(hasCasBlob(path.join(tmp, "cas-base"), remoteFiles[0]!.sha256)).toBe(true)
     const live = resolveLiveGenerationDir(globalRoot, "skill--remote-demo")!
@@ -676,13 +689,13 @@ describe("other kinds — derivation & records", () => {
     const badDl = async () => ({ ok: true as const, contents: [{ path: "SKILL.md", data: Buffer.from("---\nname: remote-demo\ndescription: test\n---\nEVIL") }] })
     const reqBundle: CatalogEntry = { ...bundleEntry, id: "bundle:req", name: "reqb", bundleItems: [{ catalogEntryId: "skill:remote-demo", optional: false, installOrder: 1 }] }
     const { deps: reqDeps } = makeDeps({ entries: [...ALL_ENTRIES, reqBundle], installers: { downloadRemoteAsset: badDl } })
-    const rq = await installCatalog({ catalogId: "bundle:req", scope: { scope: "global" } }, reqDeps)
+    const rq = await installAuthorized({ catalogId: "bundle:req", scope: { scope: "global" } }, reqDeps)
     expect(rq.ok).toBe(false)
     if (!rq.ok) expect(rq.reason).toContain("required bundle child")
 
     const optBundle: CatalogEntry = { ...bundleEntry, id: "bundle:opt", name: "optb", bundleItems: [{ catalogEntryId: "skill:remote-demo", optional: true, installOrder: 1 }, { catalogEntryId: "cloud:research", optional: false, installOrder: 2 }] }
     const { deps: optDeps } = makeDeps({ entries: [...ALL_ENTRIES, optBundle], installers: { downloadRemoteAsset: badDl } })
-    const ro = await installCatalog({ catalogId: "bundle:opt", scope: { scope: "global" } }, optDeps)
+    const ro = await installAuthorized({ catalogId: "bundle:opt", scope: { scope: "global" } }, optDeps)
     expect(ro.ok).toBe(true)
     if (!ro.ok) return
     expect(ro.installed).toEqual(["cloud:research"])
@@ -699,7 +712,7 @@ describe("other kinds — derivation & records", () => {
       { catalogEntryId: "cloud:research", optional: false, installOrder: 3 },
     ] }
     const { deps } = makeDeps({ entries: [...ALL_ENTRIES, ghostA, ghostB, collideBundle] })
-    const r = await installCatalog({ catalogId: "bundle:collide", scope: { scope: "global" } }, deps)
+    const r = await installAuthorized({ catalogId: "bundle:collide", scope: { scope: "global" } }, deps)
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.installed).toEqual(["cloud:research"])
@@ -710,7 +723,7 @@ describe("other kinds — derivation & records", () => {
     const badDl = async () => ({ ok: true as const, contents: [{ path: "SKILL.md", data: Buffer.from("---\nname: remote-demo\ndescription: test\n---\nEVIL") }] })
     const allOpt: CatalogEntry = { ...bundleEntry, id: "bundle:allopt", name: "alloptb", bundleItems: [{ catalogEntryId: "skill:remote-demo", optional: true, installOrder: 1 }] }
     const { deps } = makeDeps({ entries: [...ALL_ENTRIES, allOpt], installers: { downloadRemoteAsset: badDl } })
-    const r = await installCatalog({ catalogId: "bundle:allopt", scope: { scope: "global" } }, deps)
+    const r = await installAuthorized({ catalogId: "bundle:allopt", scope: { scope: "global" } }, deps)
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.installed).toEqual([])
@@ -722,7 +735,7 @@ describe("other kinds — derivation & records", () => {
 
   test("bundle: 项目 scope 拒绝(ADR-030 统一合同;此前为 #311 单 root 原子性拒)", async () => {
     const { deps } = makeDeps()
-    const r = await installCatalog({ catalogId: "bundle:office", scope: { scope: "project", projectDir: "/tmp/proj" } }, deps)
+    const r = await installAuthorized({ catalogId: "bundle:office", scope: { scope: "project", projectDir: "/tmp/proj" } }, deps)
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toBe(PROJECT_INSTALL_UNSUPPORTED_REASON)
   })
@@ -731,7 +744,7 @@ describe("other kinds — derivation & records", () => {
     const bundleA: CatalogEntry = { ...bundleEntry, id: "bundle:a", name: "a", bundleItems: [{ catalogEntryId: "bundle:b", optional: false, installOrder: 1 }] }
     const bundleB: CatalogEntry = { ...bundleEntry, id: "bundle:b", name: "b", bundleItems: [{ catalogEntryId: "bundle:a", optional: false, installOrder: 1 }] }
     const { deps } = makeDeps({ entries: [bundleA, bundleB] })
-    const r = await installCatalog({ catalogId: "bundle:a", scope: { scope: "global" } }, deps)
+    const r = await installAuthorized({ catalogId: "bundle:a", scope: { scope: "global" } }, deps)
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toContain("dependency cycle refused")
   })
@@ -739,7 +752,7 @@ describe("other kinds — derivation & records", () => {
   test("bundle: missing item refused", async () => {
     const broken: CatalogEntry = { ...bundleEntry, id: "bundle:broken", bundleItems: [{ catalogEntryId: "skill:ghost", optional: false, installOrder: 1 }] }
     const { deps } = makeDeps({ entries: [broken] })
-    const r = await installCatalog({ catalogId: "bundle:broken", scope: { scope: "global" } }, deps)
+    const r = await installAuthorized({ catalogId: "bundle:broken", scope: { scope: "global" } }, deps)
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toContain("bundle item not in verified catalog")
   })
@@ -773,7 +786,7 @@ describe("ADR-030 (#372): project catalog/seed install recalled — refused befo
     let resolveCalls = 0
     const spied: PlannerDeps = { ...deps, resolveEntry: async (id) => (resolveCalls++, deps.resolveEntry(id)) }
     for (const catalogId of ["skill:demo", "agent:whatever", "skill:remote-demo"]) {
-      const r = await installCatalog({ catalogId, scope: { scope: "project", projectDir: proj } }, spied)
+      const r = await installAuthorized({ catalogId, scope: { scope: "project", projectDir: proj } }, spied)
       expect(r.ok).toBe(false)
       if (!r.ok) expect(r.reason).toBe(PROJECT_INSTALL_UNSUPPORTED_REASON)
     }
@@ -791,7 +804,7 @@ describe("ADR-030 (#372): project catalog/seed install recalled — refused befo
       ...deps,
       seed: { seedDir: () => (seedTouched++, null), resolveBundledEntry: () => (seedTouched++, null) },
     }
-    const r = await installCatalog({ source: "seed", assetId: "skills/foo", scope: { scope: "project", projectDir: proj } }, withSeed)
+    const r = await installAuthorized({ source: "seed", assetId: "skills/foo", scope: { scope: "project", projectDir: proj } }, withSeed)
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toBe(PROJECT_INSTALL_UNSUPPORTED_REASON)
     expect(seedTouched).toBe(0) // 拒绝先于 seed 通道的任何触碰
@@ -801,7 +814,7 @@ describe("ADR-030 (#372): project catalog/seed install recalled — refused befo
 
   test("global install behavior unchanged by the guard", async () => {
     const { deps } = makeDeps()
-    const r = await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
+    const r = await installAuthorized({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
     expect(r.ok).toBe(true)
     expect(findRecordV2(globalRoot, "skill", "demo")?.scope.kind).toBe("global")
   })
@@ -812,7 +825,7 @@ describe("legacy project manage (AC#3/AC#4 semantics kept for residuals)", () =>
     const projA = makeProject("proj-a")
     const projB = makeProject("proj-b")
     const { deps } = makeDeps()
-    expect((await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)).ok).toBe(true)
+    expect((await installAuthorized({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)).ok).toBe(true)
     const rootA = seedProjectCatalogRecord(projA)
     const rootB = seedProjectCatalogRecord(projB)
     expect(findRecordV2(globalRoot, "skill", "demo")?.scope.kind).toBe("global")
@@ -907,7 +920,7 @@ describe("legacy project manage (AC#3/AC#4 semantics kept for residuals)", () =>
 describe("uninstall — facts from main's own ledger", () => {
   test("REQ-100 #313:generation-backed skill 卸载删 ext-store(不留孤儿)+ 账本,不走 flat removeFsInstall", async () => {
     const { deps, calls } = makeDeps()
-    await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps) // 建 generation store
+    await installAuthorized({ catalogId: "skill:demo", scope: { scope: "global" } }, deps) // 建 generation store
     const store = skillStorePaths(globalRoot, "demo").store
     expect(fs.existsSync(store)).toBe(true)
     calls.length = 0
@@ -928,7 +941,7 @@ describe("uninstall — facts from main's own ledger", () => {
 
   test("mcp uninstall(#346): journaled 单锁序列 config→secrets→ledger,journal 终态", async () => {
     const { deps, calls } = makeDeps()
-    await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" } }, deps)
+    await installAuthorized({ catalogId: "mcp:markitdown", scope: { scope: "global" } }, deps)
     calls.length = 0
     const r = await uninstallByKey({ type: "mcp", name: "markitdown", scope: "global" }, deps)
     expect(r.ok).toBe(true)
@@ -945,7 +958,7 @@ describe("uninstall — facts from main's own ledger", () => {
 
   test("mcp uninstall(#346): config 删除失败 → journal 保持非终态、密钥不吊销、账本不动", async () => {
     const { deps } = makeDeps()
-    await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" } }, deps)
+    await installAuthorized({ catalogId: "mcp:markitdown", scope: { scope: "global" } }, deps)
     const { deps: d2, calls: c2 } = makeDeps({ installers: { removeMcpConfigInLock: () => ({ ok: false as const, reason: "primary write failed" }) } })
     const r = await uninstallByKey({ type: "mcp", name: "markitdown", scope: "global" }, d2)
     expect(r.ok).toBe(false)
@@ -958,7 +971,7 @@ describe("uninstall — facts from main's own ledger", () => {
 
   test("mcp uninstall(#346): 账本删除失败 → artifacts 已净除、journal 非终态待前滚", async () => {
     const { deps } = makeDeps()
-    await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" } }, deps)
+    await installAuthorized({ catalogId: "mcp:markitdown", scope: { scope: "global" } }, deps)
     // 预热 journal 目录(锁与 journal 都在 ext-tx/ 内,不受根目录只读影响),再把根目录设只读:
     // 账本原子写的 tmp 文件落根目录 → commitLedger 必炸;读账本不受影响。
     fs.mkdirSync(path.join(globalRoot, "ext-tx", "journal"), { recursive: true })
@@ -1000,7 +1013,7 @@ describe("uninstall — facts from main's own ledger", () => {
 
   test("vendored plugin: matching derived path → removed via re-derived owned path", async () => {
     const { deps, calls } = makeDeps()
-    await installCatalog({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
+    await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
     calls.length = 0
     const r = await uninstallByKey({ type: "plugin", name: "vp", scope: "global" }, deps)
     expect(r.ok).toBe(true)
@@ -1080,9 +1093,15 @@ describe("uninstall — facts from main's own ledger", () => {
       rollback: (_, reason) => void txEvents.push(`rollback:${reason}`),
     }
     const { deps } = makeDeps({ transaction: tx })
-    await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
+    await installAuthorized({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
     await uninstallByKey({ type: "skill", name: "demo", scope: "global" }, deps)
-    expect(txEvents).toEqual(["begin:install", "commit", "begin:uninstall", "commit"])
+    // #348(Codex 裁决 C2):首驱停在 authorize = 本次 attempt 以 rollback 结束(配对 begin,
+    // 非引擎写后回滚);确认重驱是新 attempt → begin/commit。
+    expect(txEvents).toHaveLength(6)
+    expect(txEvents[0]).toBe("begin:install")
+    expect(txEvents[1]).toStartWith("rollback:")
+    expect(txEvents[1]).toContain("re-confirmation")
+    expect(txEvents.slice(2)).toEqual(["begin:install", "commit", "begin:uninstall", "commit"])
   })
 })
 
@@ -1091,8 +1110,8 @@ describe("uninstall — facts from main's own ledger", () => {
 describe("generation history — list + offline rollback (REQ-100 #313)", () => {
   test("列代:两次安装 → 两个物理 gen(恰一 current、均 eligible),绝对目录不外泄", async () => {
     const { deps } = makeDeps()
-    await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
-    await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
+    await installAuthorized({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
+    await installAuthorized({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
     const r = listGenerationsByKey({ type: "skill", name: "demo", scope: "global" }, deps)
     expect(r.ok).toBe(true)
     if (!r.ok) return
@@ -1107,8 +1126,8 @@ describe("generation history — list + offline rollback (REQ-100 #313)", () => 
 
   test("回滚:翻回旧 gen(previous=回滚前 current),指针切换 + 逻辑 generation 只增不倒退", async () => {
     const { deps } = makeDeps()
-    await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
-    await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
+    await installAuthorized({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
+    await installAuthorized({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
     const before = listGenerationsByKey({ type: "skill", name: "demo", scope: "global" }, deps)
     if (!before.ok) throw new Error(before.reason)
     const current = before.generations.find((g) => g.current)
@@ -1128,7 +1147,7 @@ describe("generation history — list + offline rollback (REQ-100 #313)", () => 
 
   test("fail-closed:伪造 genId / 非 skill 类型 / project 域全拒,拒后零变更", async () => {
     const { deps } = makeDeps()
-    await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
+    await installAuthorized({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
     const bad = await rollbackGenerationByKey({ type: "skill", name: "demo", scope: "global" }, "gen-../../escape", deps)
     expect(bad.ok).toBe(false)
     const mcp = listGenerationsByKey({ type: "mcp", name: "markitdown", scope: "global" }, deps)
@@ -1162,7 +1181,7 @@ describe("#315 advisory 激活闸接线", () => {
   test("installCatalog:resolveEntry 后过闸,命中即拒(零安装器调用)", async () => {
     const { deps, calls } = makeDeps({})
     const gated: PlannerDeps = { ...deps, advisoryGate: denyGate() }
-    const r = await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" } }, gated)
+    const r = await installAuthorized({ catalogId: "mcp:markitdown", scope: { scope: "global" } }, gated)
     expect(r.ok).toBe(false)
     if (r.ok) throw new Error("unreachable")
     expect(r.reason).toContain("adv-test-1")
@@ -1180,7 +1199,7 @@ describe("#315 advisory 激活闸接线", () => {
         ? ({ allowed: false as const, advisoryId: "adv-child", reason: "child blocked" })
         : ({ allowed: true as const })
     const gated: PlannerDeps = { ...deps, advisoryGate: gate }
-    const r = await installCatalog({ catalogId: "bundle:clean", scope: { scope: "global" } }, gated)
+    const r = await installAuthorized({ catalogId: "bundle:clean", scope: { scope: "global" } }, gated)
     expect(r.ok).toBe(true)
     if (!r.ok) throw new Error("unreachable")
     expect(r.installed?.sort()).toEqual(["skill:demo"]) // 命中子项被跳过,其余照常
@@ -1191,7 +1210,7 @@ describe("#315 advisory 激活闸接线", () => {
   test("enable(disabled→enabled)被拦;disable 不受闸", async () => {
     const { deps } = makeDeps({})
     const globalRoot = deps.globalRoot()
-    const ok = await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
+    const ok = await installAuthorized({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
     expect(ok.ok).toBe(true)
     expect(setInstallStateByKey({ type: "skill", name: "demo", scope: "global", state: "disabled" }, { globalRoot: () => globalRoot, advisoryGate: denyGate() }).ok).toBe(true)
     const re = setInstallStateByKey({ type: "skill", name: "demo", scope: "global", state: "enabled" }, { globalRoot: () => globalRoot, advisoryGate: denyGate() })
@@ -1202,8 +1221,8 @@ describe("#315 advisory 激活闸接线", () => {
 
   test("generation rollback 过闸:按**目标代 receipt 快照**身份评估;快照缺失 fail-closed(review M1/M2)", async () => {
     const { deps } = makeDeps({})
-    expect((await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)).ok).toBe(true)
-    expect((await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)).ok).toBe(true)
+    expect((await installAuthorized({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)).ok).toBe(true)
+    expect((await installAuthorized({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)).ok).toBe(true)
     const gens = listGenerationsByKey({ type: "skill", name: "demo", scope: "global" }, deps)
     if (!gens.ok) throw new Error(gens.reason)
     const target = gens.generations.find((g) => !g.current)!
@@ -1239,5 +1258,157 @@ describe("#315 advisory 激活闸接线", () => {
     expect(noSnap.ok).toBe(false)
     if (noSnap.ok) throw new Error("unreachable")
     expect(noSnap.reason).toContain("receipt snapshot unavailable")
+  })
+})
+
+// ── #348:capability→authorize 闸接线(生产入口端到端)────────────────────────────────────────────
+describe("capability authorize gate via installCatalog (REQ-100 #348)", () => {
+  const authzReceiptDir = () => path.join(globalRoot, "ext-tx", "authz")
+
+  test("首装(builtin skill):首驱零权威副作用停在 authorize,带逐 item diff", async () => {
+    const { deps } = makeDeps()
+    const r = await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(false)
+    if (r.ok) throw new Error("unreachable")
+    expect(r.stage).toBe("authorize")
+    if (r.stage !== "authorize") throw new Error("unreachable")
+    expect(r.authorization).toHaveLength(1)
+    const diff = r.authorization[0]!
+    expect(diff.key).toBe("skill--demo")
+    expect(diff.previous).toBeNull()
+    expect(diff.requested).toEqual(["prompt:context"])
+    expect(diff.added).toEqual(["prompt:context"])
+    expect(diff.requiresConfirmation).toBe(true)
+    // 零权威副作用:无 generation/receipt/grants/授权收据(CAS blob 是可回收缓存,允许残留)。
+    expect(resolveLiveGenerationDir(globalRoot, "skill--demo")).toBeNull()
+    expect(findRecordV2(globalRoot, "skill", "demo")).toBeNull()
+    expect(readCapabilityGrant(globalRoot, "skill--demo")).toBeNull()
+    expect(fs.existsSync(authzReceiptDir())).toBe(false)
+  })
+
+  test("确认重驱:grants/授权收据/receipt 落账;decidedAt 由 main 打戳(renderer 无通道)", async () => {
+    const { deps } = makeDeps()
+    const first = await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
+    if (first.ok || first.stage !== "authorize") throw new Error("expected authorize pause")
+    const confirmed = Object.fromEntries(first.authorization.map((d) => [d.key, d.requested]))
+    const second = await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" }, authorization: { confirmed } }, deps)
+    expect(second.ok).toBe(true)
+    const grant = readCapabilityGrant(globalRoot, "skill--demo")
+    expect(grant?.capabilities).toEqual(["prompt:context"])
+    expect(findRecordV2(globalRoot, "skill", "demo")).not.toBeNull()
+    const receipts = fs.readdirSync(authzReceiptDir())
+    expect(receipts).toHaveLength(1)
+    const receipt = JSON.parse(fs.readFileSync(path.join(authzReceiptDir(), receipts[0]!), "utf8")) as {
+      decidedAt: string
+      items: Array<{ key: string }>
+    }
+    expect(typeof receipt.decidedAt).toBe("string")
+    expect(receipt.decidedAt.length).toBeGreaterThan(0)
+    expect(receipt.items.map((i) => i.key)).toEqual(["skill--demo"])
+    // renderer 若尝试自带 decidedAt → 严格解码整体拒绝(审计戳只能 main 生成)。
+    const forged = await installCatalog(
+      { catalogId: "skill:demo", scope: { scope: "global" }, authorization: { confirmed, decidedAt: "2020-01-01T00:00:00Z" } },
+      deps,
+    )
+    expect(forged.ok).toBe(false)
+    if (!forged.ok) expect(forged.reason).toContain('unknown key "decidedAt"')
+  })
+
+  test("已授权后重装不再弹确认(基线覆盖);扩权(基线为子集)重新弹并标 added", async () => {
+    const { deps } = makeDeps()
+    const first = await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
+    if (first.ok || first.stage !== "authorize") throw new Error("expected authorize pause")
+    const confirmed = Object.fromEntries(first.authorization.map((d) => [d.key, d.requested]))
+    expect((await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" }, authorization: { confirmed } }, deps)).ok).toBe(true)
+    // 基线覆盖 → 静默通过,不需要 authorization。
+    const again = await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
+    expect(again.ok).toBe(true)
+    // 扩权:把基线改写为空集(committed 授权收缩)→ 下次请求 prompt:context = expansion,重新确认。
+    writeCapabilityGrantSync(globalRoot, { v: 1, key: "skill--demo", capabilities: [], txId: "t-shrink", grantedAt: new Date().toISOString() })
+    const esc = await installCatalog({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
+    expect(esc.ok).toBe(false)
+    if (esc.ok || esc.stage !== "authorize") throw new Error("expected escalation authorize")
+    expect(esc.authorization[0]!.previous).toEqual([])
+    expect(esc.authorization[0]!.added).toEqual(["prompt:context"])
+  })
+
+  test("remote skill:authorize 确认重驱走 CAS 复用,绝不二次下载(Codex 必改 5)", async () => {
+    const { deps, calls } = makeDeps()
+    const first = await installCatalog({ catalogId: "skill:remote-demo", scope: { scope: "global" } }, deps)
+    if (first.ok || first.stage !== "authorize") throw new Error("expected authorize pause")
+    expect(called(calls, "downloadRemoteAsset")).toHaveLength(1)
+    const confirmed = Object.fromEntries(first.authorization.map((d) => [d.key, d.requested]))
+    const second = await installCatalog({ catalogId: "skill:remote-demo", scope: { scope: "global" }, authorization: { confirmed } }, deps)
+    expect(second.ok).toBe(true)
+    expect(called(calls, "downloadRemoteAsset")).toHaveLength(1) // 重驱零网络
+    const live = resolveLiveGenerationDir(globalRoot, "skill--remote-demo")!
+    expect(fs.readFileSync(path.join(live, "SKILL.md"), "utf8")).toBe(REMOTE_SKILL_MD)
+  })
+
+  test("bundle:逐子项 diff(能力归属不并集化)→ 一次授权一次 commit,逐项 grants + 完整收据", async () => {
+    const cleanMcp: CatalogEntry = { ...mcpEntry, id: "mcp:clean", name: "clean", installSpec: { kind: "mcp", mcpType: "local", command: ["uvx", "clean-mcp@1.0.0"] } }
+    const authzBundle: CatalogEntry = { ...bundleEntry, id: "bundle:authz", name: "authzb", bundleItems: [
+      { catalogEntryId: "skill:demo", optional: false, installOrder: 1 },
+      { catalogEntryId: "mcp:clean", optional: false, installOrder: 2 },
+      { catalogEntryId: "cloud:research", optional: false, installOrder: 3 },
+    ] }
+    const { deps } = makeDeps({ entries: [...ALL_ENTRIES, cleanMcp, authzBundle] })
+    const first = await installCatalog({ catalogId: "bundle:authz", scope: { scope: "global" } }, deps)
+    expect(first.ok).toBe(false)
+    if (first.ok || first.stage !== "authorize") throw new Error("expected authorize pause")
+    const byKey = Object.fromEntries(first.authorization.map((d) => [d.key, d]))
+    expect(byKey["skill--demo"]!.requested).toEqual(["prompt:context"])
+    expect(byKey["mcp--clean"]!.requested.slice().sort()).toEqual(["engine:config", "process:spawn"])
+    expect(byKey["cloud--research"]!.requested).toEqual(["cloud:dispatch"])
+    expect(first.authorization.every((d) => d.requiresConfirmation && d.previous === null)).toBe(true)
+    // 零权威副作用(bundle 同样)。
+    expect(fs.existsSync(path.join(globalRoot, "alpha.jsonc"))).toBe(false)
+    const confirmed = Object.fromEntries(first.authorization.map((d) => [d.key, d.requested]))
+    const second = await installCatalog({ catalogId: "bundle:authz", scope: { scope: "global" }, authorization: { confirmed } }, deps)
+    expect(second.ok).toBe(true)
+    if (!second.ok) return
+    expect(second.installed?.slice().sort()).toEqual(["cloud:research", "mcp:clean", "skill:demo"])
+    expect(readCapabilityGrant(globalRoot, "skill--demo")?.capabilities).toEqual(["prompt:context"])
+    expect(readCapabilityGrant(globalRoot, "mcp--clean")?.capabilities?.slice().sort()).toEqual(["engine:config", "process:spawn"])
+    expect(readCapabilityGrant(globalRoot, "cloud--research")?.capabilities).toEqual(["cloud:dispatch"])
+    const receipts = fs.readdirSync(authzReceiptDir())
+    expect(receipts).toHaveLength(1)
+    const receipt = JSON.parse(fs.readFileSync(path.join(authzReceiptDir(), receipts[0]!), "utf8")) as { items: Array<{ key: string }> }
+    expect(receipt.items.map((i) => i.key).sort()).toEqual(["cloud--research", "mcp--clean", "skill--demo"])
+  })
+
+  test("authorization 严格解码:结构/资源边界违规整体拒绝;合法确认重建全新对象", () => {
+    const base = { catalogId: "skill:demo", scope: { scope: "global" } }
+    const bad = (authorization: unknown) => {
+      const d = decodeCatalogInstallIntent({ ...base, authorization })
+      expect(d.ok).toBe(false)
+      return d.ok ? "" : d.reason
+    }
+    expect(bad("yes")).toContain("must be an object")
+    expect(bad({ confirmed: {}, extra: 1 })).toContain('unknown key "extra"')
+    expect(bad({ confirmed: {}, decidedAt: "2026-01-01" })).toContain('unknown key "decidedAt"')
+    expect(bad({})).toContain("confirmed: required object")
+    expect(bad({ confirmed: [] })).toContain("confirmed: required object")
+    expect(bad({ confirmed: { "bad key!": ["prompt:context"] } })).toContain("invalid item key")
+    expect(bad({ confirmed: { [`k${"x".repeat(128)}`]: [] } })).toContain("invalid item key") // >128
+    expect(bad({ confirmed: { k: "prompt:context" } })).toContain("array of ≤32")
+    expect(bad({ confirmed: { k: Array.from({ length: 33 }, (_, i) => `cap:${i}`) } })).toContain("array of ≤32")
+    expect(bad({ confirmed: { k: ["prompt:context", "prompt:context"] } })).toContain("duplicate capability")
+    expect(bad({ confirmed: { k: ["bad cap with spaces"] } })).toContain("unsafe capability")
+    expect(bad({ confirmed: Object.fromEntries(Array.from({ length: 65 }, (_, i) => [`k${i}`, []])) })).toContain("too many items")
+    const source = { confirmed: { "skill--demo": ["prompt:context"] } }
+    const good = decodeCatalogInstallIntent({ ...base, authorization: source })
+    expect(good.ok).toBe(true)
+    if (!good.ok || !("authorization" in good.intent)) throw new Error("unreachable")
+    expect(good.intent.authorization).toEqual({ confirmed: { "skill--demo": ["prompt:context"] } })
+    expect(good.intent.authorization === source).toBe(false) // 重建,不保留 renderer 对象引用
+    expect(good.intent.authorization!.confirmed["skill--demo"] === source.confirmed["skill--demo"]).toBe(false)
+  })
+
+  test("seed 意图同样接受 authorization 字段(解码面),拒绝未知键不变", () => {
+    const ok = decodeCatalogInstallIntent({ source: "seed", assetId: "skill:hello", scope: { scope: "global" }, authorization: { confirmed: {} } })
+    expect(ok.ok).toBe(true)
+    const bad = decodeCatalogInstallIntent({ source: "seed", assetId: "skill:hello", scope: { scope: "global" }, authorization: { confirmed: {}, decidedAt: "x" } })
+    expect(bad.ok).toBe(false)
   })
 })

@@ -254,7 +254,7 @@ const CAPS = {
   "network:remote":{nm:"连接远程服务",ds:"与外部服务通信(远程 MCP)",tier:"mid",ic:IC.globe},
   "cloud:dispatch":{nm:"派发云端任务",ds:"将任务发往云端管线(数据边界见 ADR-021)",tier:"mid",ic:IC.cloud}
 };
-const NOTE = "确认即授权上述完整能力集;授权仅在安装成功提交后生效,取消不会改动任何文件。";
+const NOTE = "确认即授权上述完整能力集;授权仅在安装成功提交后生效。取消不会安装扩展或授予能力。";
 const RISK = "⚠ 含高风险能力:该扩展将能在本机运行程序/在引擎进程内执行代码。";
 
 function capRow(id, kind, ref){ // kind: new | granted | removed
@@ -389,7 +389,7 @@ function render(phase){
   stage.querySelectorAll("[data-cancel]").forEach(el=>el.addEventListener("click",()=>{
     closed = true; render();
     stage.insertAdjacentHTML("beforeend",
-      `<div class="replay"><button id="replay">▶ 重新演示</button><div class="hint">已取消 —— 零副作用,静默关闭(不弹错误/不弹 toast),卡片回原状态</div></div>`);
+      `<div class="replay"><button id="replay">▶ 重新演示</button><div class="hint">已取消 —— 零权威副作用(不装/不授权;已验载荷可留在可回收 CAS),静默关闭,卡片回原状态</div></div>`);
     document.getElementById("replay").onclick = ()=>{ closed=false; render(); };
   }));
   const cta = document.getElementById("cta");
