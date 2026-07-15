@@ -411,6 +411,16 @@ const main = Effect.gen(function* () {
           pathsRewritten: envImport.receipt.pathsRewritten,
           warnings: envImport.receipt.warnings,
         })
+      } else if (envImport.status === "already-migrated" && envImport.reconcile.status === "reconciled") {
+        // #304:rollback 期状态对账(新导入/仅报告的 legacyOnly/冲突/被拒引用/配置漂移)。
+        logger.log("[req098] rollback-era state reconciled against legacy ~/.alpha", {
+          environment: alphaEnv.environment,
+          ...envImport.reconcile,
+        })
+      } else if (envImport.status === "already-migrated" && envImport.reconcile.status === "reconcile-failed") {
+        logger.error("[req098] rollback-era reconcile FAILED (migration receipt intact; retry next launch)", {
+          reason: envImport.reconcile.reason,
+        })
       } else if (envImport.status === "failed") {
         logger.error("[req098] environment import FAILED (legacy layout untouched; retry next launch)", {
           reason: envImport.reason,
