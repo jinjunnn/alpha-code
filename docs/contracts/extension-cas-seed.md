@@ -59,6 +59,9 @@ CAS 补充语义:
    = 降级混淆,拒绝)、S10 预算按 lock 记录同值再执行、S9 平台门(当前平台 ∉
    `supportedPlatforms` → 整个 seed 拒绝);产出可浏览资产视图(availability 恒 `bundled`,
    与激活态正交)。**不安装、不启用、零配置写入、零进程、零网络**(parent AC1/AC3)。
+   浏览面 IPC(#316):`ext-seed-browse` → `packagedSeedBrowseView` 安全投影 —— 只透元数据
+   (id/type/version/license/source/bytes/fileCount/platformCompatible),**零绝对路径、零
+   blob 布局、零 url**;seedDir 由 main 派生,renderer 无输入;Hub UI 归 REQ-103。
 3. **安装提升(用户显式动作;#317 起为生产链路)**:入口 = `ext.installCatalog` 的 seed
    判别意图(`{source:"seed", assetId, scope}`,与 catalog 意图互斥、未知键拒;seedDir/CAS
    根/清单/版本/receipt 语义全 main-owned)。序:`readPackagedSeed` 严格读 → **回表同包

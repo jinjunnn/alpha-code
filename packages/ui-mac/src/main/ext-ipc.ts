@@ -41,7 +41,7 @@ import type { Catalog } from "../renderer/extensions/catalog-types"
 import { getAlphaEnvironment } from "./alpha-environment"
 import { installCatalog, listGenerationsByKey, rollbackGenerationByKey, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
 import { migrateV1Ledger, readLedgerV2, removeRecordV2, upsertRecordsV2 } from "./ext-receipt-v2"
-import { readPackagedSeed } from "./ext-seed"
+import { packagedSeedBrowseView, readPackagedSeed } from "./ext-seed"
 import { recoverExtensionTransactions, recoveryClean } from "./ext-transaction"
 import { getLogger } from "./logging"
 
@@ -169,6 +169,12 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   })
 
   ipcMain.handle("ext-remote-catalog", () => refreshRemoteCatalog(userDataPath, registryChannel))
+  // REQ-102 #316:packaged seed 浏览面 —— 纯读安全投影(零绝对路径/blob 布局/url;seedDir 由
+  // main 派生,renderer 无输入)。选装走 ext-install-catalog 的 seed 意图(#317);UI 归 REQ-103。
+  ipcMain.handle("ext-seed-browse", () => {
+    const dir = path.join(resourcesRoot(), "extension-seed")
+    return packagedSeedBrowseView(fs.existsSync(dir) ? dir : null)
+  })
   // REQ-100 #313:旧 ext-install-remote-skill / ext-install-builtin-skill 通道已下线 —— catalog skill
   // 安装只走 ext-install-catalog(planner 从已验签 catalog 派生事实,落 generation 事务);保留
   // renderer 可伪造 assetKey/name/meta 的旧面就是保留技能身份伪装通道(Codex review #345)。
@@ -431,7 +437,7 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
     .catch((err) => getLogger().log(`[req100-tx-recovery] failed: ${String(err)} — skipping v1→v2 migration this launch`))
   // REQ-102(#194):packaged seed 启动期消费 = **纯读** —— 严格解码 + 平台门 + 摘要日志。
   // 不安装、不启用、零配置写入、零进程、零网络(可获得性 bundled 与激活态正交,parent AC1/AC3);
-  // 浏览面 IPC 与安装编排(planner/事务 + populateFromCas)随 REQ-103(#195)接 Hub UI。
+  // 浏览面 IPC(#316 ext-seed-browse)与安装编排(#317 installCatalog seed 意图)已落;Hub UI 归 REQ-103(#195)。
   try {
     const seedDir = path.join(resourcesRoot(), "extension-seed")
     if (fs.existsSync(seedDir)) {

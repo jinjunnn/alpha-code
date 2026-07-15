@@ -275,6 +275,52 @@ export function readPackagedSeed(
   }
 }
 
+// ── 浏览面 IPC 投影(REQ-102 #316):renderer 可安全消费的只读视图 ───────────────────────────
+
+export type SeedBrowseAsset = {
+  id: string
+  type: string
+  version: string
+  license: string
+  source: string
+  bytes: number
+  /** 文件数(清单路径不外透 —— 浏览面最小暴露;安装事实由 main 在选装时重新派生)。 */
+  fileCount: number
+  availability: "bundled"
+  platformCompatible: boolean
+}
+export type SeedBrowseView =
+  | { ok: true; catalogVersion: string; totalBytes: number; hasNotice: boolean; assets: SeedBrowseAsset[] }
+  | { ok: false; reason: string }
+
+/**
+ * packaged seed 的浏览投影(REQ-102 #316):严格读(readPackagedSeed 同一 fail-closed 门)后
+ * 只透安全元数据 —— 零绝对路径、零 blob 布局、零 url;纯读零副作用。seedDir null = 未打包。
+ */
+export function packagedSeedBrowseView(seedDir: string | null, opts: { platformToken?: string } = {}): SeedBrowseView {
+  if (!seedDir) return { ok: false, reason: "no packaged seed available" }
+  const read = readPackagedSeed(seedDir, opts)
+  if (!read.ok) return { ok: false, reason: read.error }
+  const view = read.seed
+  return {
+    ok: true,
+    catalogVersion: view.lock.catalogVersion,
+    totalBytes: view.lock.totalBytes,
+    hasNotice: view.noticePath !== null,
+    assets: view.assets.map((a) => ({
+      id: a.id,
+      type: a.type,
+      version: a.version,
+      license: a.license,
+      source: a.source,
+      bytes: a.bytes,
+      fileCount: a.files.length,
+      availability: a.availability,
+      platformCompatible: a.platformCompatible,
+    })),
+  }
+}
+
 // ── 导入面:blob 提升进用户 CAS(用户显式选装时;逐资产,两遍式先验后写) ─────────────────────
 
 /** 打包 seed 的 blob 布局(与用户 CAS 同构:sha256 分片寻址,媒体类型中立)。 */
