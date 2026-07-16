@@ -481,6 +481,9 @@ export function collectLegacyMcpRefPathsStrict(name: string): { ok: true; refs: 
       if (errors.length > 0) return { ok: false, reason: `legacy config unparseable: ${file}` }
       if (parsed !== undefined && !isRec(parsed)) return { ok: false, reason: `legacy config root is not an object: ${file}` }
       const mcpMap = isRec(parsed) ? parsed.mcp : undefined
+      // r11 Major:mcp 值形状非法(数组/标量)不得折叠成「无引用」—— 修好形状后引用复活而
+      // 密钥已被按零引用清理,strict 合同一致性。
+      if (mcpMap !== undefined && !isRec(mcpMap)) return { ok: false, reason: `legacy config mcp key has unexpected shape: ${file}` }
       const legacyLeaf = isRec(mcpMap) ? mcpMap[name] : undefined
       if (legacyLeaf === undefined) continue
       const legacyDir = path.dirname(file)

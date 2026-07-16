@@ -2147,6 +2147,14 @@ async function recoverOne(
     const r = readStagedFileImage(staleStaging, it.file.slot, path.join(root, it.file.relTarget), it.file.preDigest, it.file.nextDigest, it.file.preAbsent)
     return r.ok ? r.image : null
   }
+  // #378 r11 Major:同 target 多 config item 是链式 image —— live 完整提交后只会等于链上
+  // **最后一条**的 nextDigest;逐 item 用各自(中间)nextDigest 会让链首永判未翻转,完整
+  // 提交的异构 bundle 在恢复期被错误整体回滚。翻转判定按链尾 digest。
+  const chainLastNextDigest = new Map<string, string>()
+  for (const it of journal.items) {
+    if (actionOf(it) !== "config" || !it.config) continue
+    chainLastNextDigest.set(path.resolve(it.config.target), it.config.nextDigest)
+  }
   const isFlipped = (it: TxJournalItem): boolean => {
     const kind = actionOf(it)
     if (kind === "receipt") return true
@@ -2156,7 +2164,8 @@ async function recoverOne(
       // 即便 reconstructConfigImage 从不写盘。未圈禁 = 判未翻转(强制走回滚 → reconstruct 返 null
       // → 保留态)。与 file 段的圈禁对称。
       if (!it.config || !configTargetConfined(it.config.target)) return false
-      return configTargetDigest(it.config.target) === it.config.nextDigest
+      const lastNext = chainLastNextDigest.get(path.resolve(it.config.target)) ?? it.config.nextDigest
+      return configTargetDigest(it.config.target) === lastNext
     }
     // file(r5 Blocker):翻转 = **本事务已 apply(journal 进度)∧ live digest 命中** —— 只看
     // digest 会把旁路植入的同 digest 文件误认本事务输出(前滚落账 = 认领外部内容)。

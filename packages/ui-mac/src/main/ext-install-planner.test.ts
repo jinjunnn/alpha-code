@@ -1974,6 +1974,19 @@ describe("single-install transactionalization exit criteria (REQ-100 #378)", () 
     expect(fs.existsSync(path.join(globalRoot, "installs.json"))).toBe(false)
   })
 
+  test("r11:escape-hatch 真源路由 → bundle MCP child 同拒(fatal,整单 fail-closed)", async () => {
+    const cleanMcp = { ...mcpEntry, id: "mcp:clean2", name: "clean2", installSpec: { kind: "mcp", mcpType: "local", command: ["uvx", "clean-mcp@1.0.0"] } } as CatalogEntry
+    const cleanBundle = { ...bundleEntry, id: "bundle:clean2", name: "cleanb2", bundleItems: [{ catalogEntryId: "mcp:clean2", optional: false, installOrder: 1 }] } as CatalogEntry
+    const { deps } = makeDeps({
+      entries: [...ALL_ENTRIES, cleanMcp, cleanBundle],
+      installers: { mcpConfigTruthPath: () => "/elsewhere/opencode.jsonc" },
+    })
+    const r = await installCatalog({ catalogId: "bundle:clean2", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("escape-hatch")
+    expect(fs.existsSync(path.join(globalRoot, "installs.json"))).toBe(false)
+  })
+
   test("r6:vendored 内容身份交叉在分发前 —— 配错 vendoredAssetKey 的 replace/fresh 一律拒", async () => {
     const { deps } = makeDeps()
     const v1 = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
@@ -2036,6 +2049,27 @@ describe("single-install transactionalization exit criteria (REQ-100 #378)", () 
     const upd = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, d2)
     expect(upd.ok).toBe(true) // 不再按原始条目数误判 drift
     expect(pluginArrayOnDisk()).toHaveLength(1) // 等价重复收敛为单条
+    // r11:收敛保留**最后一条**的形态/options(引擎 later-wins)—— 前条纯字符串 + 后条带
+    // options 的元组,置换后 options 必须存活。
+    const v2Js = strOf((() => { const a = pluginArrayOnDisk()[0]; return Array.isArray(a) ? a[0] : a })())
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [v2Js, [`./${path.relative(globalRoot, v2Js)}`, { lazy: true }]] }))
+    const v3Entry = { ...pluginVendoredEntry, version: "1.0.2" } as CatalogEntry
+    const { deps: dOpts } = makeDeps({
+      entries: [...ALL_ENTRIES.filter((e) => e.id !== "plugin:vp"), v3Entry],
+      installers: {
+        collectVendoredPluginPayload: (_key: string, name: string) => ({
+          ok: true as const,
+          files: [{ path: "plugin.js", data: Buffer.from(`// vendored ${name} v1.0.2`) }],
+        }),
+      },
+    })
+    const upd3 = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, dOpts)
+    expect(upd3.ok).toBe(true)
+    const after3 = pluginArrayOnDisk()
+    expect(after3).toHaveLength(1)
+    expect(Array.isArray(after3[0])).toBe(true) // 保留后条元组形态
+    const tup = after3[0]
+    if (Array.isArray(tup)) expect(tup[1]).toEqual({ lazy: true }) // options 存活
     // npm:同包兄弟 pin 在场 → 置换歧义拒
     fs.rmSync(path.join(globalRoot, "installs.json"), { force: true })
     fs.rmSync(path.join(globalRoot, "alpha.jsonc"), { force: true })
@@ -2049,6 +2083,17 @@ describe("single-install transactionalization exit criteria (REQ-100 #378)", () 
     const npUpd = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, d4)
     expect(npUpd.ok).toBe(false)
     if (!npUpd.ok) expect(npUpd.reason).toContain("other pins")
+    // r11:legacy 源的同包 pin 同样拒(引擎合并去重可能加载 legacy 版本)
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: cur }))
+    const { deps: d5 } = makeDeps({
+      entries: [...ALL_ENTRIES.filter((e) => e.id !== "plugin:np"), npV2],
+      installers: {
+        readLegacyPluginArrayStrict: () => ({ ok: true as const, sources: [{ value: ["@alpha/np@9.9.9"], configDir: path.join(tmp, "legacy") }] }),
+      },
+    })
+    const npUpd2 = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, d5)
+    expect(npUpd2.ok).toBe(false)
+    if (!npUpd2.ok) expect(npUpd2.reason).toContain("legacy config contains pin")
   })
 
   test("r9:vendored 条目被等价改写为相对形态 → dispatch/replace 按引擎语义仍可更新", async () => {

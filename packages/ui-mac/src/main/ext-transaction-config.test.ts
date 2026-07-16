@@ -112,6 +112,33 @@ describe("config action", () => {
     expect(fs.readFileSync(cfg, "utf8")).toBe(before)
   })
 
+  test("#378 r11:同 target 双 config 链完整提交(after-switched 崩溃)→ 恢复前滚 committed(不整体回滚)", async () => {
+    writeCfg({ mcp: { seed: { type: "local" } } })
+    const plan: TxPlan = { items: [configItem("mcp--a", "a", { type: "local" }), configItem("mcp--b", "b", { type: "remote", url: "https://x/sse" })] }
+    let crashed = false
+    try {
+      await runExtensionTransaction(root, plan, { populate: noop, commitReceipt: noop, log: noop, crashAt: "after-switched" })
+    } catch {
+      crashed = true
+    }
+    expect(crashed).toBe(true)
+    expect(readCfg().mcp.a).toEqual({ type: "local" })
+    expect(readCfg().mcp.b).toEqual({ type: "remote", url: "https://x/sse" }) // 链已完整生效
+    const received: TxCommitRecord[][] = []
+    const rec = await recoverExtensionTransactions(root, {
+      probe: () => ({ healthy: true }),
+      commitReceipt: (r) => void received.push(r),
+      pidAlive: () => false,
+      log: noop,
+    })
+    expect(rec.ok).toBe(true)
+    // r11 前:链首 item 用中间 nextDigest 判翻转恒 false → 完整提交的事务被整体回滚
+    expect(rec.reports[0]?.action).toBe("resumed-committed")
+    expect(readCfg().mcp.a).toEqual({ type: "local" })
+    expect(readCfg().mcp.b).toEqual({ type: "remote", url: "https://x/sse" })
+    expect(received.flat().map((r) => r.key).sort()).toEqual(["mcp--a", "mcp--b"])
+  })
+
   test("#378 r10:同 target 链中途 apply 停摆(live=中间 next)→ 恢复写回链首前像", async () => {
     writeCfg({ mcp: { seed: { type: "local" } } })
     const before = fs.readFileSync(cfg, "utf8")

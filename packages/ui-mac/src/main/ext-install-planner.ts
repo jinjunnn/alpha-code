@@ -781,6 +781,9 @@ function resolvePluginDispatch(
   entry: CatalogEntry,
   spec: { package?: string; vendoredAssetKey?: string } | undefined,
   readPluginArrayStrict: () => { ok: true; value: unknown[] } | { ok: false; reason: string },
+  // #378 r11 Major:npm 兄弟 pin 检查必须覆盖 legacy 源(引擎合并后按包名去重,legacy 的
+  // 同包 pin 可能胜出 —— 置换后账本与实际加载版本背离)。strict:读不出即拒。
+  readLegacyPluginArray: () => { ok: true; sources: Array<{ value: unknown[]; configDir: string }> } | { ok: false; reason: string },
 ): PluginDispatch {
   const names = [entry.name]
   if (typeof spec?.package === "string" && spec.package) {
@@ -831,6 +834,14 @@ function resolvePluginDispatch(
       return { mode: "refuse", reason: `ledger configKey "${configKey}" not found in config plugin[] — ledger/config drift, refusing replace` }
     if (sameBase.length !== exact.length)
       return { mode: "refuse", reason: `config plugin[] contains other pins of "${base}" besides the ledger pin — ambiguous engine load identity, refusing replace` }
+    // r11 Major:legacy 源的同包任何 pin 在场同拒(引擎合并去重时 later 源可能胜出)。
+    const legacy = readLegacyPluginArray()
+    if (!legacy.ok) return { mode: "refuse", reason: legacy.reason }
+    for (const src of legacy.sources) {
+      const legacyHit = src.value.map(pluginSpecOf).find((x): x is string => x !== null && pkgBaseOf(x) === base)
+      if (legacyHit !== undefined)
+        return { mode: "refuse", reason: `legacy config contains pin "${legacyHit}" of "${base}" — engine dedup may load it instead of the replacement, refusing (clean the legacy entry first)` }
+    }
     return { mode: "replace", facts: { record, form: { kind: "npm", oldPinned } } }
   }
   if (configKey.startsWith("plugin-path:")) {
@@ -1040,15 +1051,16 @@ async function replacePluginViaTransaction(args: {
     rollback("legacy plugin conflict")
     return replaceLegacyGate
   }
-  let replacedOnce = false
+  // r10/r11:等价重复收敛为单条;保留**最后一条**匹配的形态/options —— 引擎对重复解析身份
+  // 取后者为准(config/plugin.ts later-wins),保首条会丢弃真正生效的 options。
+  const lastMatchIdx = snapshot.value.reduce((acc, x, i) => (matchesOld(x) ? i : acc), -1)
   const nextArray: unknown[] = []
-  for (const x of snapshot.value) {
+  for (const [i, x] of snapshot.value.entries()) {
     if (!matchesOld(x)) {
       nextArray.push(x)
       continue
     }
-    if (replacedOnce) continue // r10:等价重复条目收敛为单条(引擎同一 load 身份)
-    replacedOnce = true
+    if (i !== lastMatchIdx) continue
     nextArray.push(Array.isArray(x) ? [newElem, x[1]] : newElem)
   }
   const snapshotCanon = JSON.stringify(snapshot.value)
@@ -1273,6 +1285,10 @@ async function classifyBundleChild(
   if (entry.type === "mcp") {
     const spec = entry.installSpec
     if (spec?.kind !== "mcp") return { status: "fatal", id, reason: "mcp entry has no mcp installSpec" }
+    // r11 Major:bundle MCP child 与单装同一真源门 —— escape-hatch 路由下写 root/alpha.jsonc
+    // 会「账本记 active、引擎读不到」。fatal(required 子项拒整单,与单装一致 fail-closed)。
+    const bundleTruth = configTruthInRootGate(deps.globalRoot(), deps.installers.mcpConfigTruthPath())
+    if (!bundleTruth.ok) return { status: "fatal", id, reason: bundleTruth.reason }
     // 首期排除需密钥 / workspace / Excel 的 MCP —— 它们的 secret 文件写、workspace 沙箱不在 config
     // action 的原子边界内(REQ-105 Excel 闸口、fileifyMcpSecrets 独立文件)。fail-closed。
     if ((spec.requiredEnvVars?.length ?? 0) > 0)
@@ -1512,6 +1528,7 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       entry,
       spec?.kind === "plugin" ? spec : undefined,
       deps.installers.readPluginArrayStrict,
+      () => deps.installers.readLegacyPluginArrayStrict(),
     )
     if (dispatch.mode === "refuse") {
       rollback(dispatch.reason)
@@ -1900,7 +1917,7 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
         precondition: () => {
           const ledger = probeLedgerForWrite(npmRoot)
           if (!ledger.ok) return { ok: false, reason: `refusing plugin install: ${ledger.reason}` }
-          const redispatch = resolvePluginDispatch(npmRoot, entry, spec, deps.installers.readPluginArrayStrict)
+          const redispatch = resolvePluginDispatch(npmRoot, entry, spec, deps.installers.readPluginArrayStrict, () => deps.installers.readLegacyPluginArrayStrict())
           if (redispatch.mode !== "fresh") return { ok: false, reason: "plugin ledger changed since plan — retry the install" }
           const re = deps.installers.findPluginBaseConflictStrict(pinned)
           if (!re.ok) return re
@@ -3007,7 +3024,7 @@ async function installPluginFromCas(args: {
   const configTarget = path.join(root, "alpha.jsonc")
   const readPluginArray = () => readPluginArrayStrictAt(configTarget)
   // #352 三态分发(main 从自己账本裁决;refuse ≠ fresh,模糊态绝不当首装装)。
-  const dispatch = resolvePluginDispatch(root, entry, spec, readPluginArray)
+  const dispatch = resolvePluginDispatch(root, entry, spec, readPluginArray, () => deps.installers.readLegacyPluginArrayStrict())
   if (dispatch.mode === "refuse") {
     rollback(dispatch.reason)
     return { ok: false, reason: dispatch.reason }
@@ -3123,7 +3140,7 @@ async function installPluginFromCas(args: {
     precondition: () => {
       const ledgerProbe = probeLedgerForWrite(root)
       if (!ledgerProbe.ok) return { ok: false, reason: `refusing plugin install: ${ledgerProbe.reason}` }
-      const redispatch = resolvePluginDispatch(root, entry, spec, readPluginArray)
+      const redispatch = resolvePluginDispatch(root, entry, spec, readPluginArray, () => deps.installers.readLegacyPluginArrayStrict())
       if (redispatch.mode !== "fresh") return { ok: false, reason: "plugin ledger changed since plan — retry the install" }
       const cur = readPluginArray()
       if (!cur.ok) return cur
