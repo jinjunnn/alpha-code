@@ -5,7 +5,7 @@ status: active
 owners:
   - alpha-code maintainers
 last_reviewed: 2026-07-16
-review_after: 2026-10-16
+review_after: 2026-10-14
 ---
 
 # 发版 runbook — alpha-code Mac(签名 · 公证 · 自动更新)
