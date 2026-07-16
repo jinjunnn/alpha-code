@@ -176,7 +176,21 @@ CAS 补充语义:
   staleMs(15min)被其它进程按 stale 接管;续租粒度 = 单段操作时长(单 key 巨型 store 的
   rehash 超阈值是已知粒度限制,如实记录)。**promote 窗口**:复用出-grace
   cold blob 的 put 会刷新其 mtime(残余竞态 = GC 单轮 lstat→unlink 微秒级;后果为安装
-  materialize fail-closed abort,可重试、无损坏)。**project 根不参与 mark = 合同行为**
+  materialize fail-closed abort,可重试、无损坏)。
+- **worker 拓扑(REQ-102 #367,2026-07-16 Codex 裁决;实测数据在票面)**:单轮 GC 在
+  `worker_threads` 内执行(入口 `ext-cas-gc-worker.ts` → 构建第三入口
+  `out/main/ext-cas-gc-worker.js`),main 线程零阻塞 —— heavy 档单轮实测 363-499ms、
+  extreme 1.7-2.0s(mark 全量重哈希主导),超 100ms 阈值。跨线程线格:入参 workerData
+  纯 JSON(worker 侧严格解码 fail-closed),出参 = **紧凑摘要**(ok/reason/dryRun +
+  六计数;不回传完整 report —— sweepable/swept/warnings 可达上万条,structured clone
+  过重)。事件合同:message 严格解码 / error / messageerror / exit≠0 / **exit=0 无消息**
+  全部按失败结算,Promise 只结算一次。**失败无同步回退**:spawn 失败/worker 异常 =
+  gc-exception + 24h rearm(空间回收延迟一轮无害,绝不重新引入主线程阻塞)。stop()/quit
+  不 terminate 在途 worker(创建即 unref):应用退出致本轮中断 = 既有崩溃安全合同(blob
+  独立无序删,下一轮从头 mark)。**pid 残余差异(如实留痕)**:worker 与 main 同进程共享
+  pid,锁记录与 pidAlive 语义不变;但 worker 致命终止绕过 finally 而 main 存活时,锁内
+  pid 仍判活,最长等心跳超 staleMs(15min)后由 stale 恢复机接管。
+- **project 根不参与 mark = 合同行为**
   (ADR-030 / #362 裁决:project-scoped catalog/seed generation 已收回,受支持的 catalog
   generation 仅存在于 dev/prod/beta 环境根 —— 见 §6;#318 完成矩阵的 project 项由验收
   owner 按该措辞修订)。

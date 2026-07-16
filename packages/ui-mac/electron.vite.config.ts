@@ -40,7 +40,8 @@ export default defineConfig({
     },
     build: {
       rollupOptions: {
-        input: { index: "src/main/index.ts", sidecar: "src/main/sidecar.ts" },
+        // #367:ext-cas-gc-worker = CAS GC worker_threads 入口(调度器按 import.meta.url 同目录解析)。
+        input: { index: "src/main/index.ts", sidecar: "src/main/sidecar.ts", "ext-cas-gc-worker": "src/main/ext-cas-gc-worker.ts" },
         // Keep this identical to electron-vite's Node 20.11+ shim. Its regex insertion can
         // corrupt bundled TypeScript, while a Rollup banner places the shim safely.
         // (镜像上游 desktop 修复 f63a451b/#35270;2026-07-07 sync 后 ui-mac build 实锤同款损坏)
