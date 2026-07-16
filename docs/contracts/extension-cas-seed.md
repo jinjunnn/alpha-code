@@ -149,7 +149,10 @@ CAS 补充语义:
 ## 3. mark/sweep GC(`ext-cas-gc.collectCasGarbage`)
 
 - **mark 根**(任一不可读 → 整轮拒绝,fail closed):
-  1. 各环境根事务 journal(全状态;未完成事务的期望清单即在其中);
+  1. 各环境根 **active 事务 journal(`ext-tx/journal/*.json`,全状态)**;#375 起被显式
+     retire 的 journal(移入 `ext-tx/journal-retired/`)**不再是 mark 根** —— 其独占引用的
+     blob 出宽限窗后可回收(宽限窗按 blob mtime,不从 retire 时刻重起算;retire 通道强制
+     调用方显式确认该后果);
   2. 各环境根 `ext-store` 全部 generation 内容重哈希(current/previous/pinned generation ⇒
      receipts 可达性的机器形态);
   3. packaged seed lock(seed target 保留 —— 离线重装/修复可用);

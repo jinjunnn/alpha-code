@@ -318,6 +318,10 @@ const JOURNAL_KEEP_DEFAULT = 100
 const SAFE_KEY = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/
 const GEN_NAME = /^gen-\d{6}-[a-f0-9]{8}$/
 const TX_ID_RE = /^tx-[a-z0-9]{1,20}-[a-f0-9]{8}$/
+/** #375:txId 作为单路径段的安全判据(recovery/staging/journalPath 构造前置)——
+ *  无分隔符/NUL、非 "."/".."、有界。合法引擎名(TX_ID_RE)是其真子集。 */
+const isSafeTxIdSegment = (t: string): boolean =>
+  t.length > 0 && t.length <= 128 && t !== "." && t !== ".." && !t.includes("/") && !t.includes("\\") && !t.includes("\0")
 const SHA256_RE = /^[a-f0-9]{64}$/
 
 // ── 目录布局 ─────────────────────────────────────────────────────────────────────────────────
@@ -446,6 +450,10 @@ export function resolveLiveGenerationDir(root: string, key: string): string | nu
 }
 
 function writePointerSync(root: string, key: string, genId: string, txId: string, now: () => Date): void {
+  // #375 review r1 Blocker:key 圈禁前置 —— pointer 走 writeFileAtomicSync 无路径守卫,畸形
+  // key(如 "../../victim")会写出 store 树外;唯一逃逸点在此收口(其余 store 路径构造函数
+  // 都已 SAFE_KEY 守卫)。recover 主循环也拦畸形 key,此处为纵深。
+  if (!SAFE_KEY.test(key)) throw new Error(`refusing to write pointer for unsafe key "${key}"`)
   const { pointer } = extensionStorePaths(root, key)
   const record: GenPointer = { v: 1, generation: genId, txId, switchedAt: now().toISOString() }
   writeFileAtomicSync(pointer, JSON.stringify(record, null, 2) + "\n")
@@ -856,17 +864,36 @@ export function gcQuarantine(root: string, opts: { keep?: number } = {}): { dele
 }
 
 function gcTerminalJournals(root: string, keep: number, warnings: string[]): void {
-  const journals = listTransactionJournals(root)
-    .filter((j) => j.state === "committed" || j.state === "rolled-back" || j.state === "aborted" || j.state === "uninstalled")
-    .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
-  for (const journal of journals.slice(Math.max(0, keep))) {
+  // #375 review r1 Blocker:删除面按**文件名派生 txId**定位,绝不用 body txId(body 逃逸/
+  // 错配会 unlink 另一张 journal,甚至经 "../" 出树)。文件名须过 TX_ID_RE(引擎自产格式),
+  // 且 body txId 与文件名一致才纳入 GC —— 不一致 = 可疑件,留给诊断/recovery,不静默删。
+  let names: string[]
+  try {
+    names = fs.readdirSync(journalDir(root)).filter((n) => n.endsWith(".json"))
+  } catch {
+    return
+  }
+  const eligible: Array<{ txId: string; updatedAt: string }> = []
+  for (const name of names) {
+    const txId = name.slice(0, -".json".length)
+    if (!TX_ID_RE.test(txId)) continue
+    const journal = readTransactionJournal(root, txId)
+    if (!journal || journal.txId !== txId) continue
+    // review r3 Major:staging 未清则不删 journal —— 否则删 journal 留孤儿敏感 staging
+    //(cleanTerminalStaging 删 staging 失败正是此态;下轮恢复重试清 staging 后才 GC journal)。
+    if (fs.existsSync(txStagingDir(root, txId))) continue
+    if (journal.state === "committed" || journal.state === "rolled-back" || journal.state === "aborted" || journal.state === "uninstalled")
+      eligible.push({ txId, updatedAt: journal.updatedAt })
+  }
+  eligible.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
+  for (const { txId } of eligible.slice(Math.max(0, keep))) {
     try {
-      fs.unlinkSync(journalPath(root, journal.txId))
+      fs.unlinkSync(journalPath(root, txId))
     } catch (error) {
-      warnings.push(`journal gc failed for ${journal.txId}: ${error instanceof Error ? error.message : String(error)}`)
+      warnings.push(`journal gc failed for ${txId}: ${error instanceof Error ? error.message : String(error)}`)
     }
     try {
-      fs.unlinkSync(authzReceiptPath(root, journal.txId)) // 授权收据随 journal 同界清理
+      fs.unlinkSync(authzReceiptPath(root, txId)) // 授权收据随 journal 同界清理
     } catch {
       /* 无收据 = 无事可清 */
     }
@@ -1632,15 +1659,91 @@ export async function rollbackGenerationTransaction(
 export type TxRecoveryAction = "none" | "cleaned" | "aborted" | "rolled-back" | "resumed-committed"
 /** corrupt=true:本轮遇到不可解析 journal(已移 .corrupt-* 留证)—— 写方 gate 必须把该轮判为
  *  阻断(不能仅因 .json 已移走就判安全,#347 Codex 裁决);下轮无 corrupt 即可放行。 */
-export type TxRecoveryReport = { txId: string; state: TxState; action: TxRecoveryAction; detail: string; corrupt?: boolean }
+/** retained=true:journal 未被自动收敛(非法名/txId 错配/结构畸形/dispatch 抛错),保留供人工
+ *  诊断 —— recoveryClean **必须**据此返回 false(#375 review r4:此前这些报告用 state:"aborted"
+ *  伪装成已清洁终态,会让 v1→v2 迁移在未收敛账本上继续)。 */
+export type TxRecoveryReport = { txId: string; state: TxState; action: TxRecoveryAction; detail: string; corrupt?: boolean; retained?: boolean }
 
-const TERMINAL_TX_STATES = new Set<TxState>(["committed", "rolled-back", "aborted", "uninstalled"])
+const TERMINAL_TX_STATES: ReadonlySet<string> = new Set(["committed", "rolled-back", "aborted", "uninstalled"])
+
+/** #375:终态判定的公开谓词(诊断/retire 通道与 probe 同一真源;未知 state 字符串 = 非终态)。 */
+export function isTerminalTxState(state: string): boolean {
+  return TERMINAL_TX_STATES.has(state)
+}
 
 /** ADR-030(#372)只读巡检:列出根下全部 journal 的 {txId, op, state};不可解析的 journal 以
  *  state:"unreadable" 报告(调用方必须视同在途 —— 无法证明它不是)。`unreadableDir` 区分
  *  「journal 目录不存在 = 确无 journal」与「目录在但枚举失败 = 失据,调用方必须 fail-closed」
  *  (Codex review PR#373 M2:枚举错误不得静默当作零)。零写入、不持锁:仅用于残留报告与
  *  「清理前有无在途手术」判定,真正的收敛仍归 recoverExtensionTransactions。 */
+/** #375:journal 管理面的布局真源(诊断/retire 通道用)。retired 目录是 journal/ 的 sibling ——
+ *  全部 journal 枚举面(listTransactionJournals / probeTransactionJournals / recovery 自身 /
+ *  CAS markJournals)只看 journal/ 下 *.json,retired 件天然不可见。 */
+export function transactionJournalLayout(root: string): { journalDir: string; retiredDir: string; stagingDir: string } {
+  return { journalDir: journalDir(root), retiredDir: path.join(root, TX_DIR, "journal-retired"), stagingDir: txStagingRoot(root) }
+}
+
+export type TxJournalDiagnosis = { verdict: "malformed"; reason: string } | { verdict: "shape-ok" }
+
+/** #375:诊断入参的最弱结构面 —— 允许把 JSON.parse 的产物(经 txId 判据后)直接送诊,
+ *  不需要任何 cast;TxJournal 结构性满足本形状。 */
+export type TxJournalShape = { txId?: unknown; op?: unknown; state?: unknown; items?: unknown }
+
+const isRecShape = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
+
+/** #375(裁决 Q1/Q3):journal 的**纯结构诊断** —— recovery 的保留分支与只读诊断面共用同一
+ *  分类真源(reason 字符串以此为准)。只判结构(items/state/key/genId/files 形状),不判运行期
+ *  依赖(seam 缺失/权限);结构不动 = recovery 绝不 dispatch(封「items 非数组即抛错」类事故,
+ *  抛错会把整轮恢复炸掉并封死 retire 通道)。 */
+export function diagnoseTransactionJournal(journal: TxJournalShape): TxJournalDiagnosis {
+  if (typeof journal.state !== "string") return { verdict: "malformed", reason: "malformed journal (state missing)" }
+  if (!Array.isArray(journal.items)) return { verdict: "malformed", reason: "malformed journal (items is not an array)" }
+  const items: unknown[] = journal.items
+  if (journal.op === "uninstall") {
+    const item = items[0]
+    if (!isRecShape(item) || items.length !== 1) return { verdict: "malformed", reason: "malformed uninstall journal (items)" }
+    if (journal.state !== "uninstalling" && journal.state !== "uninstalled")
+      return { verdict: "malformed", reason: `unexpected state "${journal.state}" for op=uninstall` }
+    const key = item.key
+    if (typeof key !== "string" || !SAFE_KEY.test(key) || key.indexOf("--") <= 0)
+      return { verdict: "malformed", reason: `malformed uninstall journal (key "${String(key)}")` }
+    if (!Array.isArray(item.files) || typeof item.genId !== "string" || (item.genId !== "gen-000000-000000" && !GEN_NAME.test(item.genId)))
+      return { verdict: "malformed", reason: "malformed uninstall journal (item shape)" }
+    return { verdict: "shape-ok" }
+  }
+  for (const item of items) {
+    // install/rollback item.key 与 uninstall 同级校验 SAFE_KEY(review r1 Blocker:仅验
+    // 字符串会放行 "../.." 类 key,recoverRollback 的 writePointerSync 据此逃逸写盘)。
+    // validatePlan 写入时即强制 SAFE_KEY,合法件必过 —— 此判据零回归。
+    if (!isRecShape(item) || typeof item.key !== "string" || !SAFE_KEY.test(item.key))
+      return { verdict: "malformed", reason: "malformed journal (item key)" }
+    // review r2 Blocker(纵深):按 action 校验载荷形状 —— 与 validatePlan 写入判据一致
+    //(config.target 绝对字符串;file.relTarget 受限相对),合法件零回归。真正的越界写防线
+    // 在恢复路径(reconstructConfigImage 相对化圈禁 root 内、reconstructFileImage 同款),
+    // 此处让畸形 config/file item 在 diagnose 阶段即判 malformed → 保留态,不进 dispatch。
+    if (item.action !== undefined && typeof item.action !== "string")
+      return { verdict: "malformed", reason: "malformed journal (item action)" }
+    const kind = item.action === undefined ? "generation" : item.action
+    // review r3 Major:action 必须是已知枚举 —— 未知 action 会被 isFlipped 当 generation-like
+    // 跳过 probe、经 rollback 路径终态化;白名单收口(与引擎 TxActionKind 一致)。
+    if (kind !== "generation" && kind !== "config" && kind !== "file" && kind !== "receipt")
+      return { verdict: "malformed", reason: `malformed journal (unknown item action "${String(kind)}")` }
+    if (kind === "config" && (!isRecShape(item.config) || typeof item.config.target !== "string" || !item.config.target.startsWith("/")))
+      return { verdict: "malformed", reason: "malformed journal (config item target)" }
+    if (kind === "file" && (!isRecShape(item.file) || typeof item.file.relTarget !== "string"))
+      return { verdict: "malformed", reason: "malformed journal (file item relTarget)" }
+    // genId 进 writePointerSync/generationDirOf 构造路径(rollback 前滚也用):generation item
+    // **必须**带合法 gen 名或零代(review r4 Major:缺失/数字/对象此前放行,畸形 generation item
+    // 会进恢复流程做完部分补偿才抛错;合法件恒有效,零回归)。非 generation 项若带 genId 也须合法。
+    const genOk = (g: unknown): boolean => typeof g === "string" && (g === "gen-000000-000000" || GEN_NAME.test(g))
+    if (kind === "generation" && !genOk(item.genId))
+      return { verdict: "malformed", reason: `malformed journal (generation item genId type ${typeof item.genId})` }
+    if (item.genId !== undefined && !genOk(item.genId))
+      return { verdict: "malformed", reason: `malformed journal (item genId type ${typeof item.genId})` }
+  }
+  return { verdict: "shape-ok" }
+}
+
 export type TxJournalProbe = { txId: string; op: "install" | "uninstall" | "rollback"; state: TxState | "unreadable"; terminal: boolean }
 export function probeTransactionJournals(root: string): { entries: TxJournalProbe[]; unreadableDir: boolean } {
   if (!path.isAbsolute(root)) return { entries: [], unreadableDir: true }
@@ -1668,7 +1771,9 @@ export function probeTransactionJournals(root: string): { entries: TxJournalProb
  *  账本无在途手术时进行的动作,用本谓词判定;不干净只损失一次启动窗口,下次干净再做。 */
 export function recoveryClean(r: { ok: boolean; reports: TxRecoveryReport[] }): boolean {
   if (!r.ok) return false
-  return r.reports.every((rep) => rep.action !== "aborted" && rep.action !== "rolled-back" && TERMINAL_TX_STATES.has(rep.state))
+  // retained(未收敛保留态)/ corrupt(不可解析,rename 失败时原件甚至仍在)一律判不干净 ——
+  // 迁移/清理等只该在账本无在途手术时进行的动作据此跳过(r4/r5 Major)。
+  return r.reports.every((rep) => !rep.retained && !rep.corrupt && rep.action !== "aborted" && rep.action !== "rolled-back" && TERMINAL_TX_STATES.has(rep.state))
 }
 
 export type RecoverOptions = {
@@ -1686,6 +1791,10 @@ export type RecoverOptions = {
   lockStaleMs?: number
   keepQuarantine?: number
   keepJournals?: number
+  /** #375 review r1 Major:锁续租钩子 —— 每张 journal 处理后回调。retire 在已持锁临界区内
+   *  调 InHeldLock 时传 `() => lock.refresh()`,防长恢复(遍历任意多 journal)期间锁被
+   *  15min stale 接管而失互斥。公共入口自持锁,不需传。 */
+  onProgress?: () => void
 }
 
 /**
@@ -1722,15 +1831,53 @@ export async function recoverExtensionTransactions(
   const lock = acquired.lock
 
   try {
-    // 不可解析的 journal:移开留证(loud),绝不静默删
-    let names: string[] = []
+    // review r2 Major:公共入口自持锁,同样注入续租 —— 生产 recoveryOpts 无 onProgress,
+    // 长恢复(遍历任意多 journal + probe/seam)不续租则会被 15min stale 接管而失互斥。
+    // 若调用方已给 onProgress(不常见),链式调用两者。
+    const callerProgress = opts.onProgress
+    return await recoverExtensionTransactionsInHeldLock(root, {
+      ...opts,
+      onProgress: () => {
+        lock.refresh()
+        callerProgress?.()
+      },
+    })
+  } finally {
+    lock.release()
+  }
+}
+
+/** #375(裁决 Q1):**已持 root Bundle 锁**的恢复核心 —— retire 通道在自己的临界区内做最后
+ *  收敛时调用(公共入口 recoverExtensionTransactions 自行取锁;文件锁非重入,锁内再调公共
+ *  入口必然 busy-skip)。除 retire 与公共入口外不得调用。 */
+export async function recoverExtensionTransactionsInHeldLock(
+  root: string,
+  opts: RecoverOptions = {},
+): Promise<{ ok: boolean; reason?: string; reports: TxRecoveryReport[] }> {
+  const log = opts.log ?? defaultLog
+  const now = opts.now ?? (() => new Date())
+  const reports: TxRecoveryReport[] = []
+  const warnings: string[] = []
+  // 不可解析的 journal:移开留证(loud),绝不静默删
+  let names: string[] = []
+  try {
+    names = fs.readdirSync(journalDir(root)).filter((n) => n.endsWith(".json"))
+  } catch {
+    /* no journals */
+  }
+  for (const name of names.sort()) {
+    // review r2 Major:onProgress 覆盖**每张 journal 的所有出口**(含全部 continue),锁续租
+    // 不因不可解析/txId 不符/畸形分支被跳过 → 长恢复不被 15min stale 接管而失互斥。
     try {
-      names = fs.readdirSync(journalDir(root)).filter((n) => n.endsWith(".json"))
-    } catch {
-      /* no journals */
-    }
-    for (const name of names.sort()) {
       const txId = name.slice(0, -".json".length)
+      // #375 review r3 Blocker:文件名派生 txId 必须是**安全单路径段** —— 否则 ".."/含分隔符的
+      // 名会让 txStagingDir(root, "..") 解析成整个 ext-tx 目录,cleanTerminalStaging 递归删除它
+      // (removeDirGuarded 因仍在 root 内而放行)= 抹掉全部 journal/staging/锁。绝不据非法名
+      // 构造任何路径(staging/journalPath 都不碰)。合法引擎名(TX_ID_RE)是其真子集,零回归。
+      if (!isSafeTxIdSegment(txId)) {
+        reports.push({ txId, state: "aborted", action: "none", detail: `journal filename txId "${txId}" is not a safe path segment — retained for manual diagnosis`, retained: true })
+        continue
+      }
       const journal = readTransactionJournal(root, txId)
       if (!journal) {
         const from = journalPath(root, txId)
@@ -1744,25 +1891,80 @@ export async function recoverExtensionTransactions(
         reports.push({ txId, state: "aborted", action: "cleaned", detail: `unreadable journal moved to ${to}`, corrupt: true })
         continue
       }
-      reports.push(
-        journal.op === "uninstall"
-          ? await recoverUninstall(root, journal, opts, now, log)
-          : journal.op === "rollback"
-            ? await recoverRollback(root, journal, opts, now, log)
-            : await recoverOne(root, journal, opts, now, log),
-      )
+      // #375 review r1 Blocker:body txId 不可信 —— 一律以文件名派生的 txId 为准(recover*
+      // 内部用 journal.txId 构造 staging 路径;terminal GC 也据此,body 逃逸/错配会删/写错件)。
+      // 不一致 = 畸形,保留供人工诊断(不 dispatch)。
+      if (journal.txId !== txId) {
+        reports.push({ txId, state: journal.state, action: "none", detail: `journal body txId "${journal.txId}" ≠ filename txId — retained for manual diagnosis`, retained: true })
+        continue
+      }
+      // #375 review r2 Major:**终态件统一走 staging 清理,绝不 dispatch 到 recover***
+      // —— 各 recover* 只认自己 op 的部分终态(如 recoverRollback 会把 rolled-back 重新翻指针
+      // 改回 committed;recoverUninstall 对 committed 保留但不清 staging → terminal GC 删 journal
+      // 后残留敏感前像)。终态件唯一该做的就是清 staging 残留,与 op 无关。
+      if (isTerminalTxState(journal.state)) {
+        reports.push(cleanTerminalStaging(root, txId, journal.state, warnings))
+        continue
+      }
+      // #375(裁决 Q1):结构诊断先行 —— 畸形**非终态** journal 转 retained diagnosis,绝不
+      // dispatch(items 非数组等结构错误进 dispatch 会抛错炸掉整轮恢复,连带封死 retire 通道)。
+      const diag = diagnoseTransactionJournal(journal)
+      if (diag.verdict === "malformed") {
+        reports.push({ txId, state: journal.state, action: "none", detail: `${diag.reason} — retained for manual diagnosis`, retained: true })
+        continue
+      }
+      try {
+        reports.push(
+          journal.op === "uninstall"
+            ? await recoverUninstall(root, journal, opts, now, log)
+            : journal.op === "rollback"
+              ? await recoverRollback(root, journal, opts, now, log)
+              : await recoverOne(root, journal, opts, now, log),
+        )
+      } catch (error) {
+        // 兜底(#375):单张 journal 的恢复抛错不得炸整轮 —— 如实转保留态,其余 journal 继续收敛。
+        log("recovery-journal-exception", { txId, error: error instanceof Error ? error.message : String(error) })
+        reports.push({
+          txId,
+          state: journal.state,
+          action: "none",
+          detail: `recovery dispatch threw (${error instanceof Error ? error.message : String(error)}) — retained for manual diagnosis`,
+          retained: true,
+        })
+      }
+    } finally {
+      opts.onProgress?.() // 每张 journal 后续租(所有出口都经此)
     }
-    // 有界清理:quarantine + 终态 journal
-    const warnings: string[] = []
-    gcQuarantine(root, { keep: opts.keepQuarantine ?? QUARANTINE_KEEP_DEFAULT }).warnings.forEach((w) =>
-      warnings.push(w),
-    )
-    gcTerminalJournals(root, opts.keepJournals ?? JOURNAL_KEEP_DEFAULT, warnings)
-    for (const w of warnings) log("recovery-gc-warning", { warning: w })
-    return { ok: true, reports }
-  } finally {
-    lock.release()
   }
+  // 有界清理:quarantine + 终态 journal(GC 前后各续租一次,长 GC 前后锁都不失效)。
+  // 残余(如实):单张 journal 内的单个 seam(probe / config·file image 重建 / 账本删除)
+  // 若耗时超过 staleMs(15min)会在该 seam 内无心跳 —— 与 GC「单 key rehash 超阈值」同类的
+  // 已知粒度限制(#366),生产 fs seam 为毫秒级,不构成实际触发面。
+  opts.onProgress?.()
+  gcQuarantine(root, { keep: opts.keepQuarantine ?? QUARANTINE_KEEP_DEFAULT }).warnings.forEach((w) =>
+    warnings.push(w),
+  )
+  opts.onProgress?.() // review r4 Major:两 GC 阶段之间续租 —— 前者接近 staleMs、后者越界时,第二阶段不被接管
+  gcTerminalJournals(root, opts.keepJournals ?? JOURNAL_KEEP_DEFAULT, warnings)
+  opts.onProgress?.()
+  for (const w of warnings) log("recovery-gc-warning", { warning: w })
+  return { ok: true, reports }
+}
+
+/** #375 review r2 Major:终态 journal 的统一处置 —— 只清 staging 残留(可含 0600 敏感前像),
+ *  绝不重放任何 op 逻辑。terminal GC 随后按有界策略删 journal;先清 staging 保证 GC 后无孤儿。 */
+function cleanTerminalStaging(root: string, txId: string, state: TxState, warnings: string[]): TxRecoveryReport {
+  const staging = txStagingDir(root, txId)
+  if (fs.existsSync(staging)) {
+    // review r3 Major:必须尊重 removeDirGuarded 布尔 —— 圈禁/删除失败绝不谎报 "cleaned"
+    //(否则 terminal GC 仍删 journal,留孤儿敏感 staging;gcTerminalJournals 另有 staging 未清
+    // 则不删 journal 的兜底)。
+    const removed = removeDirGuarded(root, staging, warnings)
+    return removed
+      ? { txId, state, action: "cleaned", detail: "removed leftover staging dir (terminal)" }
+      : { txId, state, action: "none", detail: "terminal but staging removal failed — retained (journal GC skips it)", retained: true }
+  }
+  return { txId, state, action: "none", detail: "already terminal" }
 }
 
 /** 卸载恢复补偿(REQ-100 #313):前滚 —— 幂等完成 store 删除 + 账本删除,直到终态。账本删除仍失败
@@ -1776,19 +1978,16 @@ async function recoverUninstall(
 ): Promise<TxRecoveryReport> {
   const txId = journal.txId
   if (journal.state === "uninstalled") return { txId, state: journal.state, action: "none", detail: "already terminal" }
-  // #346:空/多 item、畸形 item(key/genId/files/state)、未知 action、缺 seam —— 一律保持非终态
-  // (绝不静默终态化;gate 依据终态放行)。review #374 Major:只校数量不校形状会让 key="bogus"
-  // 走 generation 分派 + 空 store 视为已删 → 假终态。
+  // #346:空/多 item、畸形 item(key/genId/files/state)—— 一律保持非终态(绝不静默终态化;
+  // gate 依据终态放行)。#375 起结构检查归 diagnoseTransactionJournal 单一真源,恢复主循环
+  // 已在 dispatch 前拦截(此处仅防御性复核 + 类型收窄,不再重复报详情)。未知 action、缺 seam
+  // 等运行期依赖仍在本函数内如实保留。
+  const diag = diagnoseTransactionJournal(journal)
+  if (diag.verdict === "malformed")
+    return { txId, state: journal.state, action: "none", detail: `${diag.reason} — retained for manual diagnosis`, retained: true }
   const item = journal.items[0]
-  if (!item || journal.items.length !== 1)
-    return { txId, state: journal.state, action: "none", detail: "malformed uninstall journal (items) — retained for manual diagnosis" }
-  if (journal.state !== "uninstalling")
-    return { txId, state: journal.state, action: "none", detail: `unexpected state "${journal.state}" for op=uninstall — retained for manual diagnosis` }
+  if (!item) return { txId, state: journal.state, action: "none", detail: "malformed uninstall journal (items) — retained for manual diagnosis", retained: true }
   const key = item.key
-  if (typeof key !== "string" || !SAFE_KEY.test(key) || key.indexOf("--") <= 0)
-    return { txId, state: journal.state, action: "none", detail: `malformed uninstall journal (key "${String(key)}") — retained for manual diagnosis` }
-  if (!Array.isArray(item.files) || typeof item.genId !== "string" || (item.genId !== "gen-000000-000000" && !GEN_NAME.test(item.genId)))
-    return { txId, state: journal.state, action: "none", detail: "malformed uninstall journal (item shape) — retained for manual diagnosis" }
   const action = actionOf(item)
   const warnings: string[] = []
   const removed: string[] = []
@@ -1809,7 +2008,7 @@ async function recoverUninstall(
       return { txId, state: journal.state, action: "none", detail: "store removal still failing — retained for retry" }
     }
   } else {
-    return { txId, state: journal.state, action: "none", detail: `unknown uninstall action "${action}" — retained for manual diagnosis` }
+    return { txId, state: journal.state, action: "none", detail: `unknown uninstall action "${action}" — retained for manual diagnosis`, retained: true }
   }
   if (!opts.commitUninstall)
     return { txId, state: journal.state, action: "none", detail: "missing commitUninstall seam — retained for retry" }
@@ -1911,8 +2110,17 @@ async function recoverOne(
       return null
     }
   }
+  // #375 review Blocker/r5:config.target 是 journal 里的**绝对路径**,恢复路径对它的任何采信
+  //(isFlipped digest 读、reconstruct、restore 写)都必须先圈禁 root 内 —— 否则畸形/恶意
+  // journal 把 root 外绝对 target 带进 restoreConfigImage 越界写盘,或让前滚认领 root 外目标。
+  // 与 file 段的 relTarget 圈禁对称。单一真源,两处采信共用。
+  const configTargetConfined = (target: unknown): boolean => {
+    if (typeof target !== "string" || !path.isAbsolute(target)) return false
+    const relTarget = path.relative(root, target)
+    return isSafeRelPath(relTarget) && confineFileTarget(root, relTarget).ok
+  }
   const reconstructConfigImage = (it: TxJournalItem): ConfigTxImage | null => {
-    if (actionOf(it) !== "config" || !it.config) return null
+    if (actionOf(it) !== "config" || !it.config || !configTargetConfined(it.config.target)) return null
     const r = readStagedConfigImage(staleStaging, it.config.slot, it.config.target, it.config.preDigest, it.config.nextDigest)
     return r.ok ? r.image : null
   }
@@ -1927,7 +2135,14 @@ async function recoverOne(
   const isFlipped = (it: TxJournalItem): boolean => {
     const kind = actionOf(it)
     if (kind === "receipt") return true
-    if (kind === "config") return it.config ? configTargetDigest(it.config.target) === it.config.nextDigest : false
+    if (kind === "config") {
+      // r5 Major:config.target 圈禁必须前置到 isFlipped —— 否则 root 外目标 digest 命中会让
+      // allFlipped 成立、跳过 probe、前滚落账(把 root 外目标认定为成功切换,写账本/授权),
+      // 即便 reconstructConfigImage 从不写盘。未圈禁 = 判未翻转(强制走回滚 → reconstruct 返 null
+      // → 保留态)。与 file 段的圈禁对称。
+      if (!it.config || !configTargetConfined(it.config.target)) return false
+      return configTargetDigest(it.config.target) === it.config.nextDigest
+    }
     // file(r5 Blocker):翻转 = **本事务已 apply(journal 进度)∧ live digest 命中** —— 只看
     // digest 会把旁路植入的同 digest 文件误认本事务输出(前滚落账 = 认领外部内容)。
     // r6 Blocker(持久化兼容):#358 时代的 legacy file journal 无 requireAbsent/applied 字段
@@ -1949,7 +2164,7 @@ async function recoverOne(
     if (!it.file || typeof it.file.relTarget !== "string" || !isSafeRelPath(it.file.relTarget) || !confineFileTarget(root, it.file.relTarget).ok) {
       const detail = `file target validation failed for "${it.key}" (shape/confinement) — retained for manual diagnosis`
       log("recovery-file-retained", { txId, key: it.key, detail })
-      return { txId, state: journal.state, action: "none", detail }
+      return { txId, state: journal.state, action: "none", detail, retained: true }
     }
   }
   const allFlipped = journal.items.every(isFlipped)
@@ -2021,12 +2236,20 @@ async function recoverOne(
     ...warnings,
   ]
   const reason = `crash recovery rollback: ${reasonParts.join("; ")}`
-  let fileRestoreBlocked: string | null = null
+  let restoreBlocked: string | null = null
   for (const it of [...journal.items].reverse()) {
     const kind = actionOf(it)
     if (kind === "config") {
+      // r6 Major:config.target 圈禁不过(root 外/畸形)= 现场需人工核对 —— **保留非终态**,
+      // 绝不静默 warn+continue 后终态化为 rolled-back(那会让恶意/畸形 config journal 被当作
+      // 正常回滚完成)。与 file 段的 restore-blocked 同款证据保留语义。
+      if (!it.config || !configTargetConfined(it.config.target)) {
+        restoreBlocked = `config recovery rollback for "${it.key}": target failed confinement — retained as evidence`
+        continue
+      }
       const image = reconstructConfigImage(it)
       if (!image) {
+        // 圈禁已过但 staging 丢失/digest 不符:live 保持不动(fail closed),幂等,下轮 noop。
         warnings.push(`config recovery: cannot reconstruct image for "${it.key}" — leaving live as-is (fail closed)`)
         continue
       }
@@ -2036,25 +2259,26 @@ async function recoverOne(
       // r3 Blocker:预扫与此处之间仍有 config 恢复等异步间隙 —— restore 前紧邻再重验一次圈禁。
       const confined = it.file ? confineFileTarget(root, it.file.relTarget) : { ok: false as const, reason: "missing file journal segment" }
       if (!confined.ok) {
-        fileRestoreBlocked = `file recovery rollback for "${it.key}": ${confined.reason}`
+        restoreBlocked = `file recovery rollback for "${it.key}": ${confined.reason}`
         continue
       }
       // r5 Blocker:崩溃前未 apply 的 requireAbsent item —— live 在场(同/异 digest 皆然)=
       // 窗口植入,绝不 unlink,保留非终态留证;缺席 = 无事可回。
       if (it.file?.requireAbsent && it.file.applied !== true) {
         if (fs.existsSync(path.join(root, it.file.relTarget)))
-          fileRestoreBlocked = `file recovery rollback for "${it.key}": bypass-planted content at an unapplied target — retained as evidence`
+          restoreBlocked = `file recovery rollback for "${it.key}": bypass-planted content at an unapplied target — retained as evidence`
         continue
       }
       const restored = restoreFileImage(reconstructFileImage(it)!) // 上方预扫已证明可重建
-      if (!restored.ok) fileRestoreBlocked = `file recovery rollback for "${it.key}": ${restored.reason}`
+      if (!restored.ok) restoreBlocked = `file recovery rollback for "${it.key}": ${restored.reason}`
     }
   }
   // #358 review Blocker 3:file 恢复被旁路改写挡住(target 既非 pre 也非 next)= 现场需人工核对 ——
   // 保留非终态 + staging(证据与重试依据),不隔离、不终态化。已完成的 config 恢复幂等(下轮 noop)。
-  if (fileRestoreBlocked) {
-    log("recovery-file-retained", { txId, detail: fileRestoreBlocked })
-    return { txId, state: journal.state, action: "none", detail: `${fileRestoreBlocked} — retained for manual diagnosis` }
+  if (restoreBlocked) {
+    // r7 Minor:事件名中性化 —— restoreBlocked 现覆盖 config + file 两类,不再固定 file 分类。
+    log("recovery-restore-retained", { txId, detail: restoreBlocked })
+    return { txId, state: journal.state, action: "none", detail: `${restoreBlocked} — retained for manual diagnosis`, retained: true }
   }
   for (const it of journal.items) {
     if (actionOf(it) !== "generation") continue
