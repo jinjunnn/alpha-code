@@ -99,14 +99,24 @@ CAS 补充语义:
    无账 config 叶拒认领 + 形状异常 fail-closed。成功 outcome 返回 `liveMcp`(renderer 据此
    live `sdk.mcp.add`;无密钥 → live = durable 原样)。事务内绝不触 `persistMcp`/
    `withConfigWriteLock`(非重入自锁)。
-   **plugin seed(#359)**:CAS 字节 = 离线运行载荷(payload 必含顶层 `plugin.js`;npm plugin
-   显式拒 —— 无 seed blob 保证的离线运行语义)。staging 为**确定性内容寻址**目录
-   `plugins/<name>@<payloadDigest 前 12 位>`(temp 物化逐 blob 重验 → 原子 rename;同 digest
-   命中 = 逐文件重验后复用,缺失/篡改 fail-closed 拒;非提交返回路径 best-effort 清理,崩溃
-   残留至多一个同 digest 无引用目录,识别/清理见 runbook)。安装**接 #352 三态**:absent →
-   fresh(config action 追加 plugin[] 元素,锁内 precondition 重读账本/config/bare 目录);
-   有效 catalog 旧账 → journaled replace(与 #352 同一事务,staging 源换 CAS);v1-only/损坏/
-   双键/账配漂移 → 拒;same-version healthy 幂等早退;更高已装拒 downgrade。
+   **plugin seed(#359,r1 review 结构性修正)**:CAS 字节 = 离线运行载荷(payload 必含顶层
+   `plugin.js`;npm plugin 显式拒 —— 无 seed blob 保证的离线运行语义;名称含 `--` 拒,同 agent
+   key 方案纪律)。载荷**不做锁外 staging** —— 每个载荷文件是同一事务里的 **file action item**
+   (#358 引擎:锁内前像、staging 0600、digest 校验、圈禁双位点重验、原子 apply + fsync、崩溃
+   恢复按 journal digest 判翻转、失据/旁路改写保留非终态),落点 = 内容寻址目录
+   `plugins/<name>@<payloadDigest 剥 sha256: 前缀后前 16 hex>`;由此并发清理误删、tmp 孤儿、
+   fsync 缺口、恢复前滚不验载荷在构造上不存在。载荷文件数 ≤63(引擎单事务 64 item 上限,
+   与 seed 预算 maxFilesPerAsset=512 的差距是本阶段诚实边界)。capabilities/receipt 只挂
+   config 逻辑主 item(`plugin--<name>`);载荷 item(`plugin--<name>--f<i>`)由
+   `seedPluginFileProbe` 类型化探测(digest 走 journal 真源),生产恢复接线按 key 前缀路由
+   agent/plugin 探针,未知 file item 仍 fail-closed。安装**接 #352 三态**:absent → fresh
+   (config action 追加 plugin[] 元素;锁内 precondition **整体重跑三态分发**(含 catalog id
+   的历史名/v1-only 兜底扫描)+ config canon 对比 + 在场目录重查;fresh 时 bare 目录或内容
+   寻址目录已在场 = 无账在场,一律拒不认领);有效 catalog 旧账 → journaled replace(与 #352
+   同一事务,seedPayload 挂点;precondition 增 desiredState 漂移检查 —— plan 与加锁间的合法
+   启停不被旧快照覆盖;同 payload 仅版本变化时新旧目录相同,提交后 GC 跳过);v1-only/损坏/
+   双键/账配漂移 → 拒;same-version healthy 幂等早退;更高已装拒 downgrade。失败路径只收
+   空壳目录(引擎已逐文件恢复缺席态;含文件的现场 = 非终态证据,绝不删)。
    **卸载授权账合同(#358/#359)**:经事务授权闸安装的类型(agent/mcp/plugin)卸载联动清除
    `ext-store/<key>/grants.json`,且为成功前置(mcp 在 journaled artifact seam 内,失败保持
    非终态前滚;agent/plugin 在 flat 通道,失败 = 卸载失败且账本不动)。

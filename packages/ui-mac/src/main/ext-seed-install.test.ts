@@ -980,7 +980,8 @@ function bundledPluginEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry
 }
 const pluginSeedIntent = { source: "seed", assetId: "plugin:demo-plugin", scope: { scope: "global" } }
 const pluginDeps = (overrides: Partial<CatalogEntry> = {}) => makeSeedDeps({ bundledEntries: [bundledPluginEntry(overrides)] })
-const pluginDigest12 = (files: FileFixture[]) => aggregateFilesDigest(lockFileEntries(files, { writeBlobs: false })).slice(0, 12)
+// 目录名 = payloadDigest 剥 `sha256:` 前缀后前 16 hex(review #383:带前缀切片只剩 20 bit 且含 `:`)。
+const pluginDigest16 = (files: FileFixture[]) => aggregateFilesDigest(lockFileEntries(files, { writeBlobs: false })).replace(/^sha256:/, "").slice(0, 16)
 
 describe("plugin seed install via installCatalog (REQ-102 #359)", () => {
   test("fresh:确定性内容寻址目录 + config 事务 + 账本/授权账落位", async () => {
@@ -989,7 +990,7 @@ describe("plugin seed install via installCatalog (REQ-102 #359)", () => {
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.kind).toBe("plugin")
-    const dir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest12(PLUGIN_FILES)}`)
+    const dir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
     expect(r.files).toEqual([dir])
     expect(fs.readFileSync(path.join(dir, "plugin.js"), "utf8")).toBe(PLUGIN_FILES[0].content)
     expect(fs.readFileSync(path.join(dir, "lib", "util.js"), "utf8")).toBe(PLUGIN_FILES[1].content)
@@ -1022,22 +1023,39 @@ describe("plugin seed install via installCatalog (REQ-102 #359)", () => {
     expect(again.ok).toBe(true)
     if (again.ok) expect(again.warning).toContain("nothing to replace")
     const dirs = fs.readdirSync(path.join(globalRoot, "plugins")).filter((n) => !n.startsWith("."))
-    expect(dirs).toEqual([`demo-plugin@${pluginDigest12(PLUGIN_FILES)}`])
+    expect(dirs).toEqual([`demo-plugin@${pluginDigest16(PLUGIN_FILES)}`])
   })
 
   test("旧版在装 → journaled replace(staging 源 = CAS):config 换元、旧目录 GC、账本更新", async () => {
     buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
     expect((await installAuthorized(pluginSeedIntent, pluginDeps())).ok).toBe(true)
-    const oldDir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest12(PLUGIN_FILES)}`)
+    const oldDir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
 
     buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES_V2, version: "1.1.0" }])
     const v2Entry = bundledPluginEntry({ version: "1.1.0", remoteAsset: { version: "1.1.0", files: lockFileEntries(PLUGIN_FILES_V2, { writeBlobs: false }) } })
     const r = await installAuthorized(pluginSeedIntent, makeSeedDeps({ bundledEntries: [v2Entry] }))
     expect(r.ok).toBe(true)
-    const newDir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest12(PLUGIN_FILES_V2)}`)
+    const newDir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES_V2)}`)
     expect(fs.readFileSync(path.join(newDir, "plugin.js"), "utf8")).toBe(PLUGIN_FILES_V2[0].content)
     expect(readCfg().plugin).toEqual([path.join(newDir, "plugin.js")]) // 精确换元
     expect(fs.existsSync(oldDir)).toBe(false) // 旧目录提交成功后 GC
+    const rec = findRecordV2(globalRoot, "plugin", "demo-plugin")
+    expect(rec!.version).toBe("1.1.0")
+  })
+
+  test("同 payload 仅版本变化的 replace:新旧目录相同,GC 不得删掉刚提交的运行目录(review #383)", async () => {
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
+    expect((await installAuthorized(pluginSeedIntent, pluginDeps())).ok).toBe(true)
+    const dir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
+    const jsPath = path.join(dir, "plugin.js")
+
+    // 同字节、版本 1.0.0 → 1.1.0:dispatch=replace(manifest/version 变化,vendoredHealthy 不成立)。
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES, version: "1.1.0" }])
+    const bumped = bundledPluginEntry({ version: "1.1.0", remoteAsset: { version: "1.1.0", files: lockFileEntries(PLUGIN_FILES, { writeBlobs: false }) } })
+    const r = await installAuthorized(pluginSeedIntent, makeSeedDeps({ bundledEntries: [bumped] }))
+    expect(r.ok).toBe(true)
+    expect(fs.readFileSync(jsPath, "utf8")).toBe(PLUGIN_FILES[0].content) // 运行目录仍在且完好
+    expect(readCfg().plugin).toEqual([jsPath])
     const rec = findRecordV2(globalRoot, "plugin", "demo-plugin")
     expect(rec!.version).toBe("1.1.0")
   })
@@ -1066,12 +1084,14 @@ describe("plugin seed install via installCatalog (REQ-102 #359)", () => {
     if (!missing.ok) expect(missing.reason).toContain("plugin.js")
 
     buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
-    const stagedDir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest12(PLUGIN_FILES)}`)
+    // fresh 时内容寻址目录已在场 = 无账在场(外部放置/历史残留)—— 未策展不认领,journaled
+    // 覆盖也不做(review #383 结构性修正后语义)。
+    const stagedDir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
     fs.mkdirSync(stagedDir, { recursive: true })
     fs.writeFileSync(path.join(stagedDir, "plugin.js"), "tampered")
     const tampered = await installAuthorized(pluginSeedIntent, pluginDeps())
     expect(tampered.ok).toBe(false)
-    if (!tampered.ok) expect(tampered.reason).toContain("re-verification")
+    if (!tampered.ok) expect(tampered.reason).toContain("without a ledger record")
     fs.rmSync(stagedDir, { recursive: true, force: true })
 
     fs.mkdirSync(path.join(globalRoot, "plugins", "demo-plugin"), { recursive: true })
@@ -1084,7 +1104,7 @@ describe("plugin seed install via installCatalog (REQ-102 #359)", () => {
     buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
     const deps = pluginDeps()
     expect((await installAuthorized(pluginSeedIntent, deps)).ok).toBe(true)
-    const jsPath = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest12(PLUGIN_FILES)}`, "plugin.js")
+    const jsPath = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`, "plugin.js")
 
     const installers: PlannerInstallers = {
       ...forbiddenInstallers(),

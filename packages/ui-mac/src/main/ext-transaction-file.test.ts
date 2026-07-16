@@ -11,6 +11,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { parse } from "jsonc-parser"
 import { agentFileProbe, recoveryReceiptInputs } from "./ext-agent-install"
+import { seedPluginFileProbe } from "./ext-install-planner"
 import { applyFileImage, prepareFileTx, restoreFileImage } from "./ext-file-tx"
 import { findRecordV2, upsertRecordsV2 } from "./ext-receipt-v2"
 import { skillGenerationProbe } from "./ext-skill-generations"
@@ -359,6 +360,82 @@ describe("file action in runExtensionTransaction (REQ-102 #358)", () => {
     )
     expect(dup.ok).toBe(false)
     if (!dup.ok) expect(dup.reason).toContain("duplicate file target")
+  })
+})
+
+describe("plugin seed 形状的崩溃恢复(REQ-102 #359:载荷 file items + config 单事务)", () => {
+  const PJS = "export const Demo = async () => ({})"
+  const LIB = "export const u = 1"
+  const pluginPlan = (): TxPlan => {
+    const iso = new Date().toISOString()
+    const dir = join(root, "plugins", "demo@abcdef0123456789")
+    return {
+      items: [
+        { key: "plugin--demo--f0", action: "file", file: { relTarget: "plugins/demo@abcdef0123456789/plugin.js", next: Buffer.from(PJS) } },
+        { key: "plugin--demo--f1", action: "file", file: { relTarget: "plugins/demo@abcdef0123456789/lib/util.js", next: Buffer.from(LIB) } },
+        {
+          key: "plugin--demo",
+          action: "config",
+          config: { target: cfgTarget, edits: [{ keyPath: ["plugin"], value: [join(dir, "plugin.js")] }] },
+          receipt: {
+            id: "plugin:demo",
+            name: "demo",
+            kind: "plugin",
+            environment: "prod",
+            scope: { kind: "global" },
+            desiredState: "enabled",
+            origin: "catalog",
+            installedAt: iso,
+            configKey: `plugin-path:${join(dir, "plugin.js")}`,
+            files: [dir],
+          },
+        },
+      ],
+    }
+  }
+  const routerProbe = (): HealthProbe => {
+    const agentProbe = agentFileProbe(root)
+    const pluginProbe = seedPluginFileProbe()
+    return async (input) => {
+      const gen = await skillGenerationProbe(input)
+      if (!gen.healthy) return gen
+      if (input.action !== "file") return { healthy: true }
+      return input.key.startsWith("agent--") ? agentProbe(input) : pluginProbe(input)
+    }
+  }
+
+  test("crash after-switched → 生产路由探针验载荷 digest 后前滚,receipt 过滤重放落单条账", async () => {
+    await expect(
+      runExtensionTransaction(root, pluginPlan(), { populate: noop, probe: seedPluginFileProbe(), commitReceipt: noop, log: noop, crashAt: "after-switched" }),
+    ).rejects.toThrow(ExtTxCrashError)
+    const rec = await recoverExtensionTransactions(root, {
+      probe: routerProbe(),
+      commitReceipt: (recs) => {
+        const written = upsertRecordsV2(root, recoveryReceiptInputs(recs))
+        if (!written.ok) throw new Error(written.reason)
+      },
+      pidAlive: () => false,
+      log: noop,
+    })
+    expect(rec.ok).toBe(true)
+    expect(rec.reports[0].action).toBe("resumed-committed")
+    const dir = join(root, "plugins", "demo@abcdef0123456789")
+    expect(readFileSync(join(dir, "plugin.js"), "utf8")).toBe(PJS)
+    expect(readFileSync(join(dir, "lib", "util.js"), "utf8")).toBe(LIB)
+    expect(findRecordV2(root, "plugin", "demo")).not.toBeNull()
+  })
+
+  test("crash after-switched + 载荷被篡改 → digest 判未翻转 → 回滚(文件恢复缺席、config 回旧)", async () => {
+    await expect(
+      runExtensionTransaction(root, pluginPlan(), { populate: noop, probe: seedPluginFileProbe(), commitReceipt: noop, log: noop, crashAt: "after-switched" }),
+    ).rejects.toThrow(ExtTxCrashError)
+    const dir = join(root, "plugins", "demo@abcdef0123456789")
+    writeFileSync(join(dir, "lib", "util.js"), "tampered payload")
+    const rec = await recoverExtensionTransactions(root, { probe: routerProbe(), commitReceipt: noop, pidAlive: () => false, log: noop })
+    expect(rec.ok).toBe(true)
+    // 篡改文件 digest ≠ next → 部分翻转 → 回滚;被篡改文件 diverged fail-closed 保留非终态。
+    expect(rec.reports[0].action).toBe("none")
+    expect(findRecordV2(root, "plugin", "demo")).toBeNull() // 绝不为篡改载荷落账
   })
 })
 

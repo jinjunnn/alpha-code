@@ -90,13 +90,16 @@ agent seed 安装 = 双 item 单事务:file item(`agent--<name>`,action=file,写
   目录),安装功能不受影响;出现于 `plugins/` 下 `<name>`(旧式)或 `<name>@<hex>`(versioned)
   且不被当前 config/账本引用的目录即孤儿,可安全删除。
 
-## plugin seed 确定性 staging 的残留形态(REQ-102 #359)
+## plugin seed 的残留形态(REQ-102 #359)
 
-seed plugin 的 staging 目录是**内容寻址**的 `plugins/<name>@<payloadDigest 前 12 位>`
-(#352 的随机后缀 stager 不用于 seed)。残留识别与处置:
+seed plugin 的载荷是同一事务里的 file items,落点 = 内容寻址目录
+`plugins/<name>@<digest16>`(#352 的随机后缀 stager 不用于 seed;无锁外 staging → 无 tmp
+目录残留)。残留识别与处置:
 
-- **孤儿判定**:目录不被当前 `alpha.jsonc` `plugin[]` 与账本 `configKey` 引用即孤儿
-  (崩溃/authorize 取消后的残留至多一个同 digest 目录,不随重试累积 —— 重驱按同名复用或
-  重建),可安全删除;它不在 #318 CAS GC 的删除面上,不会被自动回收。
-- **同 digest 目录被篡改**:下次安装重验失败会 fail-closed 拒并指名目录 —— 按提示手工删除
-  该目录后重试(绝不静默重建覆盖)。
+- **孤儿判定**:目录不被当前 `alpha.jsonc` `plugin[]` 与账本 `configKey` 引用即孤儿(来源
+  只有两类:replace 提交成功后旧目录 GC 失败 warning 留下的旧目录;回滚后未收干净的空壳
+  子目录),可安全删除;它不在 #318 CAS GC 的删除面上,不会被自动回收。
+- **含文件的目录 + 非终态 journal 在场**:那是失据/旁路改写保留的现场证据 —— 按顶部保留态
+  流程处理,**不要**先删目录。
+- **fresh 安装被「exists without a ledger record」拒**:目标内容寻址目录被外部放置/历史残留
+  占用 —— 核对无账后手工删除该目录再重试(未策展不认领,绝不静默覆盖)。
