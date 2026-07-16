@@ -1,6 +1,5 @@
 import "@/index.css"
 import * as Sentry from "@sentry/solid"
-import { base64Encode } from "@opencode-ai/core/util/encode"
 import { I18nProvider } from "@opencode-ai/ui/context"
 import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 import { FileComponentProvider } from "@opencode-ai/ui/context/file"
@@ -56,60 +55,32 @@ const HomeRoute = lazy(() => import("@/pages/home"))
 const Session = lazy(() => import("@/pages/session"))
 const NewSession = lazy(() => import("@/pages/new-session"))
 
-// Alpha typed surface seam (ADR-027 / REQ-084). A surface is a narrow leaf-page
-// override: the host may replace the innermost page component while every existing
-// provider wrapper (SelectedServerLayout / DraftServerLayout / DirectoryDataProvider /
-// SessionProviders / DraftProviders) keeps its default lifecycle. Surfaces are read
-// once when AppInterface mounts; swapping them afterwards requires a reload — the
-// provider tree must never hot-swap within one renderer lifetime.
-export type MaybePreloadableComponent = Component & { preload?: () => void }
+const SessionRoute = Object.assign(
+  () => {
+    const settings = useSettings()
+    const params = useParams()
+    const [search] = useSearchParams<{ draftId?: string; prompt?: string }>()
+    const sdk = useSDK()
+    const server = useServer()
+    const tabs = useTabs()
 
-// The newSession leaf owns the draft page UI but not the draft lifecycle: the wrapper
-// keeps tab/draft semantics (target server, tab swap, persisted-draft cleanup) and
-// hands the leaf this narrow, context-free contract.
-export interface DraftSurfaceProps {
-  draftId: string
-  promoteDraft: (session: { directory: string; sessionId: string }) => void
-}
+    // When the new layout is enabled, the legacy new-session route (/:dir/session with no id)
+    // is replaced by a draft at /new-session?draftId=…
+    createEffect(() => {
+      if (!settings.general.newLayoutDesigns()) return
+      if (params.id || search.draftId) return
+      if (!tabs.ready() || !sdk().directory) return
+      tabs.newDraft({ server: server.key, directory: sdk().directory }, search.prompt)
+    })
 
-export type DraftSurfaceComponent = Component<DraftSurfaceProps> & { preload?: () => void }
-
-export interface AppSurfaces {
-  home?: MaybePreloadableComponent
-  newSession?: DraftSurfaceComponent
-  session?: MaybePreloadableComponent
-}
-
-function createSessionRoute(Leaf: MaybePreloadableComponent) {
-  return Object.assign(
-    () => {
-      const settings = useSettings()
-      const params = useParams()
-      const [search] = useSearchParams<{ draftId?: string; prompt?: string }>()
-      const sdk = useSDK()
-      const server = useServer()
-      const tabs = useTabs()
-
-      // When the new layout is enabled, the legacy new-session route (/:dir/session with no id)
-      // is replaced by a draft at /new-session?draftId=…
-      createEffect(() => {
-        if (!settings.general.newLayoutDesigns()) return
-        if (params.id || search.draftId) return
-        if (!tabs.ready() || !sdk().directory) return
-        tabs.newDraft({ server: server.key, directory: sdk().directory }, search.prompt)
-      })
-
-      return (
-        <SessionProviders>
-          <Leaf />
-        </SessionProviders>
-      )
-    },
-    // Preload only the effective leaf: the default and an injected surface must never
-    // be preloaded together.
-    { preload: () => Leaf.preload?.() },
-  )
-}
+    return (
+      <SessionProviders>
+        <Session />
+      </SessionProviders>
+    )
+  },
+  { preload: Session.preload },
+)
 
 // Wraps the non-draft routes. They are gated on (and keyed to) the globally selected
 // server via ServerKey, then provide the server-scoped shell (Permission/Layout/
@@ -150,55 +121,43 @@ function DraftServerLayout(props: ParentProps) {
   )
 }
 
-function createDraftRoute(Leaf: DraftSurfaceComponent) {
-  function ResolvedDraftRoute(props: { draftID: string }) {
-    const tabs = useTabs()
-    const draft = createMemo(() =>
-      tabs.store.find((tab): tab is DraftTab => tab.type === "draft" && tab.draftID === props.draftID),
-    )
-
-    // Key on the directory so retargeting the draft's project re-instantiates the
-    // directory-scoped providers while keeping the same draft id. The draft's target
-    // server is provided by DraftServerLayout, so changing only the server updates the
-    // SDK/sync hooks without remounting the composer.
-    const directory = () => draft()?.directory
-
-    const promoteDraft: DraftSurfaceProps["promoteDraft"] = (session) => {
-      const current = draft()
-      if (!current) return
-      tabs.promoteDraft(props.draftID, {
-        server: current.server,
-        dirBase64: base64Encode(session.directory),
-        sessionId: session.sessionId,
-      })
-    }
-
-    return (
-      <Show when={directory()} keyed>
-        {(dir) => (
-          <SDKProvider directory={dir}>
-            <DirectoryDataProvider directory={dir} draftID={props.draftID}>
-              <DraftProviders>
-                <Leaf draftId={props.draftID} promoteDraft={promoteDraft} />
-              </DraftProviders>
-            </DirectoryDataProvider>
-          </SDKProvider>
-        )}
+function DraftRoute() {
+  const [search] = useSearchParams<{ draftId?: string }>()
+  const tabs = useTabs()
+  return (
+    <Show when={tabs.ready()}>
+      <Show when={search.draftId} keyed fallback={<Navigate href="/" />}>
+        {(draftID) => <ResolvedDraftRoute draftID={draftID} />}
       </Show>
-    )
-  }
+    </Show>
+  )
+}
 
-  return function DraftRoute() {
-    const [search] = useSearchParams<{ draftId?: string }>()
-    const tabs = useTabs()
-    return (
-      <Show when={tabs.ready()}>
-        <Show when={search.draftId} keyed fallback={<Navigate href="/" />}>
-          {(draftID) => <ResolvedDraftRoute draftID={draftID} />}
-        </Show>
-      </Show>
-    )
-  }
+function ResolvedDraftRoute(props: { draftID: string }) {
+  const tabs = useTabs()
+  const draft = createMemo(() =>
+    tabs.store.find((tab): tab is DraftTab => tab.type === "draft" && tab.draftID === props.draftID),
+  )
+
+  // Key on the directory so retargeting the draft's project re-instantiates the
+  // directory-scoped providers while keeping the same draft id. The draft's target
+  // server is provided by DraftServerLayout, so changing only the server updates the
+  // SDK/sync hooks without remounting the composer.
+  const directory = () => draft()?.directory
+
+  return (
+    <Show when={directory()} keyed>
+      {(dir) => (
+        <SDKProvider directory={dir}>
+          <DirectoryDataProvider directory={dir} draftID={props.draftID}>
+            <DraftProviders>
+              <NewSession />
+            </DraftProviders>
+          </DirectoryDataProvider>
+        </SDKProvider>
+      )}
+    </Show>
+  )
 }
 
 function UiI18nBridge(props: ParentProps) {
@@ -458,15 +417,7 @@ export function AppInterface(props: {
   servers?: Array<ServerConnection.Any>
   router?: Component<BaseRouterProps>
   disableHealthCheck?: boolean
-  surfaces?: AppSurfaces
 }) {
-  // Surfaces are resolved exactly once, before the route tree first mounts. Absent
-  // overrides fall back to the upstream defaults with identical lazy/preload behavior.
-  const HomeLeaf = props.surfaces?.home ?? HomeRoute
-  const SessionRoute = createSessionRoute(props.surfaces?.session ?? Session)
-  // The upstream draft page reads its state from context and ignores the narrow
-  // surface props, so it satisfies the contract without changes.
-  const DraftRoute = createDraftRoute(props.surfaces?.newSession ?? (NewSession as unknown as DraftSurfaceComponent))
   // The shared shell holds only server-agnostic providers (QueryClient + Settings/
   // Command/Highlights) and stays mounted across every route. The server-scoped
   // providers and the visual Layout live in the per-route layouts below, so they
@@ -498,7 +449,7 @@ export function AppInterface(props: {
             )}
           >
             <Route component={SelectedServerLayout}>
-              <Route path="/" component={HomeLeaf} />
+              <Route path="/" component={HomeRoute} />
               <Route path="/:dir" component={DirectoryLayout}>
                 <Route path="/" component={() => <Navigate href="session" />} />
                 <Route path="/session/:id?" component={SessionRoute} />
