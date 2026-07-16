@@ -926,11 +926,16 @@ async function replacePluginViaTransaction(args: {
   const spec = entry.installSpec as { kind?: string; package?: string; version?: string; vendoredAssetKey?: string }
 
   // 新目标派生 + 幂等早退(同钉版/同 digest = 无事可做,零副作用)。
+  // r20 Major:载荷分支按**新 entry 的 spec** 选(vendoredAssetKey 在场 = bundled 通道装
+  // vendored 载荷),不按旧账形态 —— npm→vendored 迁移否则会继续钉 npm,实际加载源与已验
+  // bundled manifest/账本声明持续背离(且错态账本下次被 npmHealthy 当已完成)。旧形态
+  // (facts.form)只用于旧条目匹配/清除与旧目录 GC。
+  const newFormVendored = Boolean(args.seedPayload) || (typeof spec.vendoredAssetKey === "string" && spec.vendoredAssetKey.length > 0)
   let newElem: string
   let newConfigKey: string
   let replacePayloadDigest = args.payloadDigest
   let stagedDir: string | null = null
-  if (facts.form.kind === "npm") {
+  if (!newFormVendored) {
     if (typeof spec.package !== "string" || !spec.package) {
       rollback("entry has no plugin package")
       return { ok: false, reason: "entry has no plugin package" }
@@ -939,6 +944,7 @@ async function replacePluginViaTransaction(args: {
     // review #381 Major:幂等早退必须证明目标安装**完整**(digest 相等只证身份)—— receipt 版本、
     // 事务终态任一不符即走完整替换(替换本身就是修复路径),绝不把坏状态报成功。
     const npmHealthy =
+      facts.form.kind === "npm" &&
       pinned === facts.form.oldPinned &&
       facts.record.manifestDigest === manifestDigest &&
       facts.record.version === manifest.version &&
@@ -950,8 +956,9 @@ async function replacePluginViaTransaction(args: {
     newElem = pinned
     newConfigKey = `plugin:${pinned}`
     // r13 Major:换包名置换(新 base ≠ 旧 base)时,legacy 源已有**新 base** pin 同样拒 ——
-    // dispatch 只查旧 base;引擎按包名去重,legacy 新 base pin 可能胜出。
-    if (pkgBaseOf(pinned) !== pkgBaseOf(facts.form.oldPinned)) {
+    // dispatch 只查旧 base;引擎按包名去重,legacy 新 base pin 可能胜出。r20:vendored→npm
+    // 迁移(旧形态非 npm)没有旧 base,新 base 一律查。
+    if (facts.form.kind !== "npm" || pkgBaseOf(pinned) !== pkgBaseOf(facts.form.oldPinned)) {
       // npm form 无 staging(cleanupStaged 定义在后且无事可清)。
       const legacyPre = deps.installers.readLegacyPluginArrayStrict()
       if (!legacyPre.ok) {
@@ -981,7 +988,7 @@ async function replacePluginViaTransaction(args: {
       // seed 幂等早退(review r2 Major + r3 收紧):必须**持 bundle 锁**做实物严格逐文件校验 +
       // 账本锁内重读 —— 锁外验证可被并发替换骗过(TOCTOU),existsSync 只证存在不证内容。
       // 锁忙或任一不健康 = 不早退,落完整 journaled replace(修复路径;引擎锁内串行化)。
-      if (recordHealthy && facts.form.oldDir === args.seedPayload.dir) {
+      if (recordHealthy && facts.form.kind === "vendored" && facts.form.oldDir === args.seedPayload.dir) {
         const held = tryAcquireBundleLock(root, { txId: `tx-pluginidem-${crypto.randomBytes(4).toString("hex")}` })
         if (held.ok) {
           try {
@@ -1022,7 +1029,9 @@ async function replacePluginViaTransaction(args: {
       // 必须落修复(staging + 完整 replace),不得「nothing to replace」空转。镜像 seed 幂等早退:
       // 持 bundle 锁逐文件精确校验 + 账本锁内重读(锁外验证可被并发替换骗过);锁忙/任一不健康 =
       // 不早退,走修复路径。
-      if (recordHealthy) {
+      // r20:同版本幂等早退只对「旧形态同为 vendored」有意义(npm→vendored 迁移 digest 必变,
+      // recordHealthy 恒 false,此处的窄化守卫只是类型与语义双保险)。
+      if (recordHealthy && facts.form.kind === "vendored") {
         const held = tryAcquireBundleLock(root, { txId: `tx-pluginidem-${crypto.randomBytes(4).toString("hex")}` })
         if (held.ok) {
           try {
@@ -1149,7 +1158,8 @@ async function replacePluginViaTransaction(args: {
   // r14 Major:换包名置换(新 base ≠ 旧 base)时,**主配置**未策展的新 base 同包条目同样拒 ——
   // 置换后 [newpkg@2, newpkg@9] 引擎 later-wins 加载未策展 pin 而账本记新 pin(旧 base 兄弟
   // 已由 dispatch sameBase 检查拒;锁内 canon 快照等值保证本检查在计划后持续有效)。
-  if (facts.form.kind === "npm" && pkgBaseOf(newElem) !== pkgBaseOf(facts.form.oldPinned)) {
+  // r20:vendored→npm 迁移(旧形态非 npm)没有旧 base,新 base 一律查。
+  if (!newFormVendored && (facts.form.kind !== "npm" || pkgBaseOf(newElem) !== pkgBaseOf(facts.form.oldPinned))) {
     const newBase = pkgBaseOf(newElem)
     const mainHit = snapshot.value.map(pluginSpecOf).find((x): x is string => x !== null && pkgBaseOf(x) === newBase)
     if (mainHit !== undefined) {
@@ -1236,14 +1246,17 @@ async function replacePluginViaTransaction(args: {
       // 会让引擎 later-wins 加载 legacy 版本而账本记新 pin。
       const legacyGateNow = legacySameNamePluginGate(() => deps.installers.readLegacyPluginArrayStrict(), root, entry.name)
       if (!legacyGateNow.ok) return legacyGateNow
-      if (facts.form.kind === "npm") {
+      // r13 Major:catalog 更新可换包名(同 entry 名)—— 旧/新两个 base 都要复核,否则
+      // 计划后写入 legacy 的 pin 会在引擎 later-wins 时胜出而账本记新事实。r20:base 集按
+      // 新旧形态各自取(npm→vendored 迁移仍须守旧 base;vendored→npm 守新 base)。
+      const recheckBases = new Set<string>()
+      if (facts.form.kind === "npm") recheckBases.add(pkgBaseOf(facts.form.oldPinned))
+      if (!newFormVendored) recheckBases.add(pkgBaseOf(newElem))
+      if (recheckBases.size > 0) {
         const legacyNow = deps.installers.readLegacyPluginArrayStrict()
         if (!legacyNow.ok) return legacyNow
-        // r13 Major:catalog 更新可换包名(同 entry 名)—— 旧/新两个 base 都要复核,否则
-        // 计划后写入 legacy 的**新 base** pin 会在引擎 later-wins 时胜出而账本记新 pin。
-        const bases = new Set([pkgBaseOf(facts.form.oldPinned), pkgBaseOf(newElem)])
         for (const src of legacyNow.sources) {
-          const hit = src.value.map(pluginSpecOf).find((x): x is string => x !== null && bases.has(pkgBaseOf(x)))
+          const hit = src.value.map(pluginSpecOf).find((x): x is string => x !== null && recheckBases.has(pkgBaseOf(x)))
           if (hit !== undefined) return { ok: false, reason: `legacy config gained pin "${hit}" since plan — retry the update` }
         }
       }
@@ -3342,6 +3355,24 @@ async function installPluginFromCas(args: {
   if (seedDirBlocksInstall(root, `plugins/${dirName}`)) {
     rollback("unregistered plugin dir present")
     return { ok: false, reason: `plugin dir "plugins/${dirName}" exists without a ledger record — refusing to overwrite or adopt unregistered content (remove it and retry)` }
+  }
+  // r20 Major:同包 base 的未策展 npm 条目(主/legacy)与 vendored 首装双载 —— 引擎按包名与
+  // file URL 各自去重,两份都会加载。catalog vendored 条目常并存 package 发行元数据,分发进
+  // 本通道会绕过 npm 分支的 findPluginBaseConflictStrict,这里对称补门(路径形态由下方同名
+  // 扫描负责)。
+  if (typeof spec.package === "string" && spec.package) {
+    const conflict = deps.installers.findPluginBaseConflictStrict(spec.package)
+    if (!conflict.ok) {
+      rollback(conflict.reason)
+      return conflict
+    }
+    if (conflict.existing) {
+      rollback("plugin base already configured")
+      return {
+        ok: false,
+        reason: `plugin package "${spec.package}" already configured as "${conflict.existing.spec}" in the ${conflict.existing.source} config without a matching catalog record — refusing to adopt or double-install`,
+      }
+    }
   }
   const snapshot = readPluginArray()
   if (!snapshot.ok) {

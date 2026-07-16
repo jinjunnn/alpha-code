@@ -2558,6 +2558,38 @@ describe("plugin replace r15 —— 同版本精确校验与别名身份对账",
     expect(r.warning ?? "").not.toContain("nothing to replace")
   })
 
+  test("r20:vendored 首装遇同包 base 未策展 npm 条目 → 拒(引擎按包名与 file URL 各自去重,两份都会加载)", async () => {
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: ["@alpha/vp@0.9.9"] }, null, 2))
+    const { deps } = makeDeps()
+    const r = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("refusing to adopt or double-install")
+    expect(fs.existsSync(path.join(globalRoot, "plugins", "vp@feed1234"))).toBe(false) // 未 staging
+    const cfgAfter = pluginArrayOnDisk()
+    expect(cfgAfter).toEqual(["@alpha/vp@0.9.9"]) // 原条目原封
+  })
+
+  test("r20:npm→vendored 迁移 —— 载荷分支按新 spec 选,npm 钉版被换成 vendored 路径(不再账实背离)", async () => {
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: ["@alpha/vp@0.9.0"] }, null, 2))
+    const w = upsertRecordV2(globalRoot, {
+      id: "plugin:vp", name: "vp", kind: "plugin", environment: "prod", scope: { kind: "global" },
+      version: "0.9.0", desiredState: "enabled", origin: "catalog",
+      configKey: "plugin:@alpha/vp@0.9.0", transaction: { id: "tx-npm-old", state: "committed" },
+      installedAt: "2026-07-15T00:00:00.000Z",
+    })
+    if (!w.ok) throw new Error(w.reason)
+    const { deps } = makeDeps()
+    const r = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.warning ?? "").not.toContain("nothing to replace")
+    const stagedJs = path.join(globalRoot, "plugins", "vp@feed1234", "plugin.js")
+    expect(pluginArrayOnDisk()).toEqual([stagedJs]) // r20 前:继续钉 npm,加载源与 bundled manifest 背离
+    const rec = recOf(findRecordV2(globalRoot, "plugin", "vp"))
+    expect(rec.configKey).toBe(`plugin-path:${stagedJs}`)
+    expect(strOf(rec.payloadDigest)).toMatch(/^sha256:/)
+  })
+
   test("config 条目经 symlink 别名指向账本路径 → 身份对账不误判 drift,置换收敛为单条", async () => {
     const oldDir = path.join(globalRoot, "plugins", "vp")
     const oldJs = path.join(oldDir, "plugin.js")
