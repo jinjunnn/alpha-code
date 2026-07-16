@@ -25,6 +25,7 @@ import {
   probeTransactionJournals,
   recoverExtensionTransactions,
   recoverExtensionTransactionsInHeldLock,
+  recoveryClean,
   transactionJournalLayout,
 } from "./ext-transaction"
 
@@ -322,6 +323,37 @@ describe("recovery 自守(#375:畸形 journal 不炸整轮)", () => {
     const r = rec.reports.find((rep) => rep.txId === "tx-ua")
     expect(r?.action).toBe("none")
     expect(r?.detail).toContain("unknown item action")
+  })
+
+  test("review r4 Major:保留态报告(非法名/畸形)使 recoveryClean=false(迁移不在未收敛账本上进行)", async () => {
+    const ref = mkRoot("recclean")
+    writeJournal(ref, "tx-bad.json", { txId: "tx-bad", op: "install", state: "switching", items: {} }) // 结构畸形 → retained
+    const rec = await recoverExtensionTransactions(ref.root, { log: silentLog })
+    expect(rec.ok).toBe(true)
+    expect(recoveryClean(rec)).toBe(false) // 有保留态 → 不干净
+    const r = rec.reports.find((rep) => rep.txId === "tx-bad")
+    expect(r?.retained).toBe(true)
+  })
+
+  test("review r4 Major:非法文件名报告 retained=true(不伪装成已清洁终态)", async () => {
+    const ref = mkRoot("recclean2")
+    const layout = transactionJournalLayout(ref.root)
+    writeFileSync(join(layout.journalDir, "...json"), JSON.stringify({ txId: "..", op: "install", state: "switching", items: [] }))
+    const rec = await recoverExtensionTransactions(ref.root, { log: silentLog })
+    expect(recoveryClean(rec)).toBe(false)
+    expect(rec.reports.find((r) => r.txId === "..")?.retained).toBe(true)
+  })
+
+  test("review r4 Major:generation item 的畸形 genId(数字/缺失)→ diagnose malformed 保留", async () => {
+    const ref = mkRoot("badgenid")
+    // 数字 genId
+    writeJournal(ref, "tx-g1.json", { txId: "tx-g1", op: "install", state: "switching", items: [{ key: "skill--demo", action: "generation", genId: 42 }] })
+    // 缺失 genId(generation kind)
+    writeJournal(ref, "tx-g2.json", { txId: "tx-g2", op: "install", state: "switching", items: [{ key: "skill--demo", action: "generation" }] })
+    const rec = await recoverExtensionTransactions(ref.root, { log: silentLog })
+    expect(rec.reports.find((r) => r.txId === "tx-g1")?.detail).toContain("genId")
+    expect(rec.reports.find((r) => r.txId === "tx-g2")?.detail).toContain("genId")
+    expect(recoveryClean(rec)).toBe(false)
   })
 
   test("review r3 Major:staging 删除失败(圈禁不过)→ 终态件不谎报 cleaned,terminal GC 不删该 journal", async () => {

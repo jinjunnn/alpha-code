@@ -879,6 +879,9 @@ function gcTerminalJournals(root: string, keep: number, warnings: string[]): voi
     if (!TX_ID_RE.test(txId)) continue
     const journal = readTransactionJournal(root, txId)
     if (!journal || journal.txId !== txId) continue
+    // review r3 Major:staging 未清则不删 journal —— 否则删 journal 留孤儿敏感 staging
+    //(cleanTerminalStaging 删 staging 失败正是此态;下轮恢复重试清 staging 后才 GC journal)。
+    if (fs.existsSync(txStagingDir(root, txId))) continue
     if (journal.state === "committed" || journal.state === "rolled-back" || journal.state === "aborted" || journal.state === "uninstalled")
       eligible.push({ txId, updatedAt: journal.updatedAt })
   }
@@ -1656,7 +1659,10 @@ export async function rollbackGenerationTransaction(
 export type TxRecoveryAction = "none" | "cleaned" | "aborted" | "rolled-back" | "resumed-committed"
 /** corrupt=true:本轮遇到不可解析 journal(已移 .corrupt-* 留证)—— 写方 gate 必须把该轮判为
  *  阻断(不能仅因 .json 已移走就判安全,#347 Codex 裁决);下轮无 corrupt 即可放行。 */
-export type TxRecoveryReport = { txId: string; state: TxState; action: TxRecoveryAction; detail: string; corrupt?: boolean }
+/** retained=true:journal 未被自动收敛(非法名/txId 错配/结构畸形/dispatch 抛错),保留供人工
+ *  诊断 —— recoveryClean **必须**据此返回 false(#375 review r4:此前这些报告用 state:"aborted"
+ *  伪装成已清洁终态,会让 v1→v2 迁移在未收敛账本上继续)。 */
+export type TxRecoveryReport = { txId: string; state: TxState; action: TxRecoveryAction; detail: string; corrupt?: boolean; retained?: boolean }
 
 const TERMINAL_TX_STATES: ReadonlySet<string> = new Set(["committed", "rolled-back", "aborted", "uninstalled"])
 
@@ -1726,10 +1732,14 @@ export function diagnoseTransactionJournal(journal: TxJournalShape): TxJournalDi
       return { verdict: "malformed", reason: "malformed journal (config item target)" }
     if (kind === "file" && (!isRecShape(item.file) || typeof item.file.relTarget !== "string"))
       return { verdict: "malformed", reason: "malformed journal (file item relTarget)" }
-    // generation item 的 genId 进 writePointerSync/generationDirOf 构造路径(rollback 前滚也用):
-    // 若存在必须是合法 gen 名或零代;缺席由各恢复分支自处(不强制存在,避免误伤无 genId 的项)。
-    if (typeof item.genId === "string" && item.genId !== "gen-000000-000000" && !GEN_NAME.test(item.genId))
-      return { verdict: "malformed", reason: `malformed journal (item genId "${item.genId}")` }
+    // genId 进 writePointerSync/generationDirOf 构造路径(rollback 前滚也用):generation item
+    // **必须**带合法 gen 名或零代(review r4 Major:缺失/数字/对象此前放行,畸形 generation item
+    // 会进恢复流程做完部分补偿才抛错;合法件恒有效,零回归)。非 generation 项若带 genId 也须合法。
+    const genOk = (g: unknown): boolean => typeof g === "string" && (g === "gen-000000-000000" || GEN_NAME.test(g))
+    if (kind === "generation" && !genOk(item.genId))
+      return { verdict: "malformed", reason: `malformed journal (generation item genId type ${typeof item.genId})` }
+    if (item.genId !== undefined && !genOk(item.genId))
+      return { verdict: "malformed", reason: `malformed journal (item genId type ${typeof item.genId})` }
   }
   return { verdict: "shape-ok" }
 }
@@ -1761,7 +1771,8 @@ export function probeTransactionJournals(root: string): { entries: TxJournalProb
  *  账本无在途手术时进行的动作,用本谓词判定;不干净只损失一次启动窗口,下次干净再做。 */
 export function recoveryClean(r: { ok: boolean; reports: TxRecoveryReport[] }): boolean {
   if (!r.ok) return false
-  return r.reports.every((rep) => rep.action !== "aborted" && rep.action !== "rolled-back" && TERMINAL_TX_STATES.has(rep.state))
+  // retained(未收敛保留态)一律判不干净 —— 迁移/清理等只该在账本无在途手术时进行的动作据此跳过。
+  return r.reports.every((rep) => !rep.retained && rep.action !== "aborted" && rep.action !== "rolled-back" && TERMINAL_TX_STATES.has(rep.state))
 }
 
 export type RecoverOptions = {
@@ -1863,7 +1874,7 @@ export async function recoverExtensionTransactionsInHeldLock(
       // (removeDirGuarded 因仍在 root 内而放行)= 抹掉全部 journal/staging/锁。绝不据非法名
       // 构造任何路径(staging/journalPath 都不碰)。合法引擎名(TX_ID_RE)是其真子集,零回归。
       if (!isSafeTxIdSegment(txId)) {
-        reports.push({ txId, state: "aborted", action: "none", detail: `journal filename txId "${txId}" is not a safe path segment — retained for manual diagnosis` })
+        reports.push({ txId, state: "aborted", action: "none", detail: `journal filename txId "${txId}" is not a safe path segment — retained for manual diagnosis`, retained: true })
         continue
       }
       const journal = readTransactionJournal(root, txId)
@@ -1883,7 +1894,7 @@ export async function recoverExtensionTransactionsInHeldLock(
       // 内部用 journal.txId 构造 staging 路径;terminal GC 也据此,body 逃逸/错配会删/写错件)。
       // 不一致 = 畸形,保留供人工诊断(不 dispatch)。
       if (journal.txId !== txId) {
-        reports.push({ txId, state: journal.state, action: "none", detail: `journal body txId "${journal.txId}" ≠ filename txId — retained for manual diagnosis` })
+        reports.push({ txId, state: journal.state, action: "none", detail: `journal body txId "${journal.txId}" ≠ filename txId — retained for manual diagnosis`, retained: true })
         continue
       }
       // #375 review r2 Major:**终态件统一走 staging 清理,绝不 dispatch 到 recover***
@@ -1898,7 +1909,7 @@ export async function recoverExtensionTransactionsInHeldLock(
       // dispatch(items 非数组等结构错误进 dispatch 会抛错炸掉整轮恢复,连带封死 retire 通道)。
       const diag = diagnoseTransactionJournal(journal)
       if (diag.verdict === "malformed") {
-        reports.push({ txId, state: journal.state, action: "none", detail: `${diag.reason} — retained for manual diagnosis` })
+        reports.push({ txId, state: journal.state, action: "none", detail: `${diag.reason} — retained for manual diagnosis`, retained: true })
         continue
       }
       try {
@@ -1917,6 +1928,7 @@ export async function recoverExtensionTransactionsInHeldLock(
           state: journal.state,
           action: "none",
           detail: `recovery dispatch threw (${error instanceof Error ? error.message : String(error)}) — retained for manual diagnosis`,
+          retained: true,
         })
       }
     } finally {
@@ -1931,6 +1943,7 @@ export async function recoverExtensionTransactionsInHeldLock(
   gcQuarantine(root, { keep: opts.keepQuarantine ?? QUARANTINE_KEEP_DEFAULT }).warnings.forEach((w) =>
     warnings.push(w),
   )
+  opts.onProgress?.() // review r4 Major:两 GC 阶段之间续租 —— 前者接近 staleMs、后者越界时,第二阶段不被接管
   gcTerminalJournals(root, opts.keepJournals ?? JOURNAL_KEEP_DEFAULT, warnings)
   opts.onProgress?.()
   for (const w of warnings) log("recovery-gc-warning", { warning: w })
@@ -1942,8 +1955,13 @@ export async function recoverExtensionTransactionsInHeldLock(
 function cleanTerminalStaging(root: string, txId: string, state: TxState, warnings: string[]): TxRecoveryReport {
   const staging = txStagingDir(root, txId)
   if (fs.existsSync(staging)) {
-    removeDirGuarded(root, staging, warnings)
-    return { txId, state, action: "cleaned", detail: "removed leftover staging dir (terminal)" }
+    // review r3 Major:必须尊重 removeDirGuarded 布尔 —— 圈禁/删除失败绝不谎报 "cleaned"
+    //(否则 terminal GC 仍删 journal,留孤儿敏感 staging;gcTerminalJournals 另有 staging 未清
+    // 则不删 journal 的兜底)。
+    const removed = removeDirGuarded(root, staging, warnings)
+    return removed
+      ? { txId, state, action: "cleaned", detail: "removed leftover staging dir (terminal)" }
+      : { txId, state, action: "none", detail: "terminal but staging removal failed — retained (journal GC skips it)" }
   }
   return { txId, state, action: "none", detail: "already terminal" }
 }
@@ -1965,9 +1983,9 @@ async function recoverUninstall(
   // 等运行期依赖仍在本函数内如实保留。
   const diag = diagnoseTransactionJournal(journal)
   if (diag.verdict === "malformed")
-    return { txId, state: journal.state, action: "none", detail: `${diag.reason} — retained for manual diagnosis` }
+    return { txId, state: journal.state, action: "none", detail: `${diag.reason} — retained for manual diagnosis`, retained: true }
   const item = journal.items[0]
-  if (!item) return { txId, state: journal.state, action: "none", detail: "malformed uninstall journal (items) — retained for manual diagnosis" }
+  if (!item) return { txId, state: journal.state, action: "none", detail: "malformed uninstall journal (items) — retained for manual diagnosis", retained: true }
   const key = item.key
   const action = actionOf(item)
   const warnings: string[] = []
@@ -1989,7 +2007,7 @@ async function recoverUninstall(
       return { txId, state: journal.state, action: "none", detail: "store removal still failing — retained for retry" }
     }
   } else {
-    return { txId, state: journal.state, action: "none", detail: `unknown uninstall action "${action}" — retained for manual diagnosis` }
+    return { txId, state: journal.state, action: "none", detail: `unknown uninstall action "${action}" — retained for manual diagnosis`, retained: true }
   }
   if (!opts.commitUninstall)
     return { txId, state: journal.state, action: "none", detail: "missing commitUninstall seam — retained for retry" }
@@ -2093,6 +2111,12 @@ async function recoverOne(
   }
   const reconstructConfigImage = (it: TxJournalItem): ConfigTxImage | null => {
     if (actionOf(it) !== "config" || !it.config) return null
+    // #375 review Blocker:config.target 是 journal 里的**绝对路径**,恢复路径此前无圈禁 —— 畸形/
+    // 恶意 journal 可把 root 外绝对 target 带进 restoreConfigImage 越界写盘(#358 给 file 的
+    // relTarget 加了圈禁,config 遗漏)。target 相对化后必须落在 root 内(与 file 对称)。
+    if (typeof it.config.target !== "string" || !path.isAbsolute(it.config.target)) return null
+    const relTarget = path.relative(root, it.config.target)
+    if (!isSafeRelPath(relTarget) || !confineFileTarget(root, relTarget).ok) return null
     const r = readStagedConfigImage(staleStaging, it.config.slot, it.config.target, it.config.preDigest, it.config.nextDigest)
     return r.ok ? r.image : null
   }
@@ -2129,7 +2153,7 @@ async function recoverOne(
     if (!it.file || typeof it.file.relTarget !== "string" || !isSafeRelPath(it.file.relTarget) || !confineFileTarget(root, it.file.relTarget).ok) {
       const detail = `file target validation failed for "${it.key}" (shape/confinement) — retained for manual diagnosis`
       log("recovery-file-retained", { txId, key: it.key, detail })
-      return { txId, state: journal.state, action: "none", detail }
+      return { txId, state: journal.state, action: "none", detail, retained: true }
     }
   }
   const allFlipped = journal.items.every(isFlipped)
@@ -2234,7 +2258,7 @@ async function recoverOne(
   // 保留非终态 + staging(证据与重试依据),不隔离、不终态化。已完成的 config 恢复幂等(下轮 noop)。
   if (fileRestoreBlocked) {
     log("recovery-file-retained", { txId, detail: fileRestoreBlocked })
-    return { txId, state: journal.state, action: "none", detail: `${fileRestoreBlocked} — retained for manual diagnosis` }
+    return { txId, state: journal.state, action: "none", detail: `${fileRestoreBlocked} — retained for manual diagnosis`, retained: true }
   }
   for (const it of journal.items) {
     if (actionOf(it) !== "generation") continue
