@@ -676,6 +676,21 @@ describe("agent seed install via installCatalog (REQ-102 #358)", () => {
     expect(ok.ok).toBe(true)
   })
 
+  test("refuses agent names containing '--' (transaction key scheme ambiguity, review r2)", async () => {
+    const files = [{ path: "foo.md", content: AGENT_MD }]
+    buildSeed([{ id: "agent:foo--config", files }])
+    const r = await installAuthorized(
+      { source: "seed", assetId: "agent:foo--config", scope: { scope: "global" } },
+      makeSeedDeps({
+        bundledEntries: [
+          bundledAgentEntry({ id: "agent:foo--config", name: "foo--config", remoteAsset: { version: "1.0.0", files: lockFileEntries(files, { writeBlobs: false }) } }),
+        ],
+      }),
+    )
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain('"--"')
+  })
+
   test("refuses identity drift between entry id and entry name", async () => {
     buildSeed([{ id: "agent:bug-triage", files: agentFiles }])
     const r = await installAuthorized(agentSeedIntent, makeSeedDeps({ bundledEntries: [bundledAgentEntry({ name: "other" })] }))

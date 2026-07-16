@@ -151,6 +151,10 @@ export type AgentSeedResult =
  */
 export async function installAgentFromCas(root: string, spec: AgentSeedInstall): Promise<AgentSeedResult> {
   if (!SAFE_NAME.test(spec.name)) return { ok: false, reason: `invalid agent name: ${spec.name}` }
+  // review r2 Minor:名称含 "--" 与事务 key 方案(agent--<name>[--config])歧义 —— 如名为
+  // "foo--config" 的主 key 恰为 "foo" 的 config 副 item key,generic probe 无法区分。显式拒。
+  if (spec.name.includes("--"))
+    return { ok: false, reason: `agent name "${spec.name}" contains "--" — ambiguous with the transaction key scheme (agent--<name>[--config]); refused` }
   // casFile 畸形(调用方绕类型)= 结构化拒绝,不抛未捕获异常(与 installSkillGeneration 同纪律)。
   const casFile: unknown = spec.casFile
   if (!isObj(casFile) || !isObj(casFile.spec) || typeof casFile.casBaseRoot !== "string" || !isAbsolute(casFile.casBaseRoot))

@@ -63,9 +63,11 @@ agent seed 安装 = 双 item 单事务:file item(`agent--<name>`,action=file,写
   `agentMdToEntry` 可解析 + config 叶与 md 严格一致)∧ receipt 可重放 → 前滚 committed;
   部分翻转或健康未知 → 双向回滚(file 恢复**缺席态或旧字节** —— `preAbsent` 区分缺席与
   零字节,config 整文件 before-image 回旧)。
-- **旁路改写**(live md 既非 pre 也非 next):恢复 fail-closed 保留现状,**journal 保持
-  非终态**(写方 gate 继续阻断相关写操作),绝不盲目覆盖也绝不宣称 rolled-back;config
-  项已幂等回旧(下轮 noop)。人工核对后经卸载通道重放收敛,或按顶部保留态流程移档。
+- **旁路改写**(live md 既非 pre 也非 next;在线回滚与崩溃恢复同语义):恢复 fail-closed
+  保留现状,**journal 保持非终态**(写方 gate 继续阻断相关写操作,**包括卸载**),绝不
+  盲目覆盖也绝不宣称 rolled-back;config 项已幂等回旧(下轮 noop)。处置顺序:先人工核对
+  live md / config 叶 / 账本三面,把该 journal 移出 `journal/` 目录留档(解除 gate 阻断),
+  **之后**才能经卸载通道重放收敛。
 - **staging 丢失 / journal file 段非法 / 圈禁不过**(恢复期无法重建 file image)= 失据:
   **零改动、journal 保持非终态**供重试或人工处置 —— 失据时不做任何回滚(盲回滚可能毁掉
   唯一的完好侧),也不终态化(终态化会同时留下半装态并解除写方 gate 的阻断)。

@@ -1041,8 +1041,10 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
       .filter((it) => actionOf(it) === "file" && it.file)
       .map((it) => ({ key: it.key, target: path.join(root, it.file!.relTarget), slot: it.file!.slot, nextDigest: it.file!.nextDigest }))
 
-  /** config/file action 回滚:逆序恢复(仅当 target 仍是 next 态才恢复前像;旁路改写 → fail-closed 留证)。 */
-  const rollbackImageActions = (): void => {
+  /** config/file action 回滚:逆序恢复(仅当 target 仍是 next 态才恢复前像;旁路改写 → fail-closed 留证)。
+   *  返回 fileBlocked:file 恢复被旁路改写/读失败挡住 —— 调用方**不得终态化**(review r2 Blocker)。 */
+  const rollbackImageActions = (): { fileBlocked: string | null } => {
+    let fileBlocked: string | null = null
     for (const it of [...journal.items].reverse()) {
       const kind = actionOf(it)
       if (kind === "config") {
@@ -1054,9 +1056,10 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
         const image = fileImages.get(it.key)
         if (!image) continue
         const restored = restoreFileImage(image)
-        if (!restored.ok) warnings.push(`file rollback for "${it.key}": ${restored.reason}`)
+        if (!restored.ok) fileBlocked = `file rollback for "${it.key}": ${restored.reason}`
       }
     }
+    return { fileBlocked }
   }
 
   /** switch 之前的失败:current 全量不变。quarantineFailed=true(探测失败)→ 隔离;否则删未引用残留。 */
@@ -1077,9 +1080,17 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
     return { ok: false, txId, stage, reason, quarantined, warnings }
   }
 
-  /** switch 之后的失败:config/file 逆序恢复 + generation 指针回旧(previous 一直保留)+ 失败 generation 隔离。 */
+  /** switch 之后的失败:config/file 逆序恢复 + generation 指针回旧(previous 一直保留)+ 失败 generation 隔离。
+   *  file 恢复被旁路改写挡住 → **保留非终态**(不删 staging、不隔离、不 advance):终态化会同时
+   *  留下部分回滚态、销毁恢复依据并解除 recovery gate 的阻断(review r2 Blocker)。 */
   const rollbackAll = (stage: TxStage, reason: string): TxResult => {
-    rollbackImageActions()
+    const { fileBlocked } = rollbackImageActions()
+    if (fileBlocked) {
+      const detail = `${reason}; ${fileBlocked} — transaction retained non-terminal for recovery/manual diagnosis`
+      log("tx-file-restore-blocked", { txId, stage, detail })
+      lock.release()
+      return { ok: false, txId, stage, reason: detail, warnings }
+    }
     for (const it of journal.items) {
       if (actionOf(it) !== "generation") continue
       const current = readCurrentGeneration(root, it.key)
@@ -1873,6 +1884,17 @@ async function recoverOne(
     if (kind === "config") return it.config ? configTargetDigest(it.config.target) === it.config.nextDigest : false
     if (kind === "file") return it.file ? fileTargetDigest(path.join(root, it.file.relTarget)) === it.file.nextDigest : false
     return readCurrentGeneration(root, it.key)?.genId === it.genId
+  }
+  // #358 review r2 Blocker:对 journal file 段的**任何**采信(isFlipped digest 读、probe、
+  // receipt replay 前滚)都必须先过形状 + 圈禁 —— 否则 `<root>/agents` 被换成 root 外 symlink
+  // 且外部文件恰好匹配 nextDigest 时,前滚会为逃逸 root 的文件落账并解除 recovery gate。
+  for (const it of journal.items) {
+    if (actionOf(it) !== "file") continue
+    if (!it.file || typeof it.file.relTarget !== "string" || !isSafeRelPath(it.file.relTarget) || !confineFileTarget(root, it.file.relTarget).ok) {
+      const detail = `file target validation failed for "${it.key}" (shape/confinement) — retained for manual diagnosis`
+      log("recovery-file-retained", { txId, key: it.key, detail })
+      return { txId, state: journal.state, action: "none", detail }
+    }
   }
   const allFlipped = journal.items.every(isFlipped)
 

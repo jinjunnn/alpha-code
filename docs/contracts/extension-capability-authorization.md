@@ -26,8 +26,11 @@ diff 与暂停、renderer 如何确认与重驱、授权账/收据如何落盘�
   #211)把这些类型拉进事务后自动获得同一闸口。renderer 侧的拦截**与重驱参数透传**已对全部
   安装动作(mcp/skill/agent/plugin/bundle/cloud)落地,类型入事务即生效,无需再动 UI。
 - **一个逻辑扩展一个授权 key**(#358 裁决):多 item 事务里 capabilities 只挂逻辑主 item
-  (agent seed = file item `agent--<name>`;config 副 item 空集,不弹第二次)。
-  卸载联动清除该扩展全部 item key 的 `grants.json` —— 残留 grant 会让重装静默继承授权。
+  (agent seed = file item `agent--<name>`)。副 item **不声明** `capabilities`(undefined)
+  —— 未声明 = 不参与授权评估、不出现在 diff、不落授权账;这与「已授权空集」判然有别,
+  后续代码不得为副 item 写入空 grant。卸载联动清除该扩展全部 item key 的 `grants.json`
+  (grant 删除失败 = 卸载失败且账本不动,可重试)—— 残留 grant 会让重装静默继承授权。
+  key 方案约束:agent 名含 `--` 与 `agent--<name>[--config]` 方案歧义,seed 安装显式拒。
 
 ## 2. 能力声明(planner → plan)
 

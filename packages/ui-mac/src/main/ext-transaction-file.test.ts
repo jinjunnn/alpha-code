@@ -208,6 +208,50 @@ describe("file action in runExtensionTransaction (REQ-102 #358)", () => {
     }
   })
 
+  test("恢复前滚同样过圈禁:agents 目录被换 symlink → 保留非终态,绝不落账(review r2 Blocker)", async () => {
+    await expect(runExtensionTransaction(root, planFor(MD), hooksFor({ crashAt: "after-switched" }))).rejects.toThrow(ExtTxCrashError)
+    // 崩溃后把真实 agents 目录换成指向 root 外的 symlink,外部文件内容恰与 nextDigest 一致 ——
+    // 若前滚不重验圈禁,会为逃逸 root 的文件 probe + 落账并解除 recovery gate。
+    const outside = mkdtempSync(join(tmpdir(), "ext-tx-outside-"))
+    try {
+      writeFileSync(join(outside, "demo.md"), MD)
+      rmSync(join(root, "agents"), { recursive: true, force: true })
+      symlinkSync(outside, join(root, "agents"))
+      const records: TxCommitRecord[] = []
+      const rec = await recoverExtensionTransactions(root, {
+        probe: fileProbe(MD),
+        commitReceipt: (recs) => records.push(...recs),
+        pidAlive: () => false,
+        log: noop,
+      })
+      expect(rec.ok).toBe(true)
+      expect(rec.reports[0].action).toBe("none")
+      expect(records).toHaveLength(0) // 零落账
+      const j = listTransactionJournals(root)[0]
+      expect(j.state).toBe("switched") // 非终态保留 → gate 继续阻断
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  test("在线回滚遇 file 旁路改写 → 保留非终态、不删 staging 证据(review r2 Blocker)", async () => {
+    // post-switch 探针先旁路改写 live md 再判不健康 → 触发在线 rollbackAll 的 file diverged 分支。
+    const sabotage: HealthProbe = (input) => {
+      if (input.action !== "file" || input.phase !== "post-switch") return { healthy: true }
+      writeFileSync(input.fileTarget!, "bypass while switched")
+      return { healthy: false, reason: "sabotaged (test)" }
+    }
+    const r = await runExtensionTransaction(root, planFor(MD), hooksFor({ probe: sabotage }))
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reason).toContain("retained non-terminal")
+    expect(readFileSync(MD_PATH(), "utf8")).toBe("bypass while switched") // 绝不盲目覆盖旁路内容
+    expect(agentLeaf()).toBeUndefined() // config 已幂等回旧
+    const j = listTransactionJournals(root)[0]
+    expect(j.state).toBe("switched") // 不终态化(终态化会解除写方 gate 阻断)
+    expect(readdirSync(join(root, "ext-tx", "staging")).length).toBeGreaterThan(0) // 证据保留
+  })
+
   test("生产恢复接线语义:composed probe + 过滤 receipt 前滚(review Blocker 1)", async () => {
     const iso = new Date().toISOString()
     const receipt = {
