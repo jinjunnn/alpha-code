@@ -371,6 +371,7 @@ describe("recovery 自守(#375:畸形 journal 不炸整轮)", () => {
     // switching + config item 的 target 在 root 外,且外部文件 digest 恰等于 nextDigest(伪造命中)。
     const nextDigest = createHash("sha256").update("{}", "utf8").digest("hex") // 空对象 digest
     writeFileSync(external, "{}") // digest = nextDigest
+    const externalBefore = readFileSync(external)
     writeJournal(ref, "tx-cf.json", {
       txId: "tx-cf",
       op: "install",
@@ -384,7 +385,8 @@ describe("recovery 自守(#375:畸形 journal 不炸整轮)", () => {
     expect(r?.retained).toBe(true)
     expect(r?.detail).toContain("confinement")
     expect(recoveryClean(rec)).toBe(false)
-    expect(existsSync(external)).toBe(true) // root 外文件绝不被写
+    expect(existsSync(external)).toBe(true) // root 外文件绝不被删
+    expect(readFileSync(external).equals(externalBefore)).toBe(true) // 也绝不被覆写(内容逐字节不变)
   })
 
   test("review r3 Major:staging 删除失败(圈禁不过)→ 终态件不谎报 cleaned,terminal GC 不删该 journal", async () => {

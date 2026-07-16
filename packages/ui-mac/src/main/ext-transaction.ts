@@ -2276,7 +2276,8 @@ async function recoverOne(
   // #358 review Blocker 3:file 恢复被旁路改写挡住(target 既非 pre 也非 next)= 现场需人工核对 ——
   // 保留非终态 + staging(证据与重试依据),不隔离、不终态化。已完成的 config 恢复幂等(下轮 noop)。
   if (restoreBlocked) {
-    log("recovery-file-retained", { txId, detail: restoreBlocked })
+    // r7 Minor:事件名中性化 —— restoreBlocked 现覆盖 config + file 两类,不再固定 file 分类。
+    log("recovery-restore-retained", { txId, detail: restoreBlocked })
     return { txId, state: journal.state, action: "none", detail: `${restoreBlocked} — retained for manual diagnosis`, retained: true }
   }
   for (const it of journal.items) {
