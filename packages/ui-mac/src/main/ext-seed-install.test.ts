@@ -317,17 +317,14 @@ describe("seed install via installCatalog (REQ-102 #317)", () => {
     if (!r.ok) expect(r.reason).toContain("not in packaged seed")
   })
 
-  test("refuses mcp/plugin seed assets explicitly (→ #359)", async () => {
+  test("refuses non-installable seed types (bundle/cloud)", async () => {
     buildSeed([
-      { id: "mcp:demo", files: [{ path: "server.json", content: "{}" }] },
+      { id: "bundle:kit", files: [{ path: "kit.md", content: "kit" }] },
       { id: "skill:hello", files: skillFiles },
     ])
-    const r = await installAuthorized({ ...seedIntent, assetId: "mcp:demo" }, makeSeedDeps())
+    const r = await installAuthorized({ ...seedIntent, assetId: "bundle:kit" }, makeSeedDeps())
     expect(r.ok).toBe(false)
-    if (!r.ok) {
-      expect(r.reason).toContain('type "mcp"')
-      expect(r.reason).toContain("#359")
-    }
+    if (!r.ok) expect(r.reason).toContain("not installable from seed")
   })
 
   test("refuses when the bundled catalog has no matching entry (seed/catalog drift)", async () => {
@@ -804,6 +801,477 @@ describe("agent seed install via installCatalog (REQ-102 #358)", () => {
     const retry = await uninstallByKey({ type: "agent", name: "bug-triage", scope: "global" }, uninstallDeps)
     expect(retry.ok).toBe(true)
     expect(findRecordV2(globalRoot, "agent", "bug-triage")).toBeNull()
+  })
+})
+
+// ── #359:mcp seed 走 config 适配事务(裁决见 issue #359 评论)──────────────────────────────────
+const MCP_FILES = [{ path: "server-info.md", content: "# demo mcp — offline carry bytes (not a runtime payload)" }]
+
+function bundledMcpEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
+  return {
+    id: "mcp:demo",
+    type: "mcp",
+    name: "demo",
+    ...entryBase,
+    version: "1.0.0",
+    installSpec: { kind: "mcp", mcpType: "local", command: ["npx", "-y", "demo-mcp"] },
+    remoteAsset: { version: "1.0.0", files: lockFileEntries(MCP_FILES, { writeBlobs: false }) },
+    ...overrides,
+  } as CatalogEntry
+}
+const mcpSeedIntent = { source: "seed", assetId: "mcp:demo", scope: { scope: "global" } }
+const mcpDeps = (overrides: Partial<CatalogEntry> = {}) => makeSeedDeps({ bundledEntries: [bundledMcpEntry(overrides)] })
+const readCfg = (): Record<string, unknown> => {
+  const cfg: unknown = parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))
+  if (!isRec(cfg)) throw new Error("config root not an object")
+  return cfg
+}
+
+describe("mcp seed install via installCatalog (REQ-102 #359)", () => {
+  const EXPECTED_MCP = { type: "local", command: ["npx", "-y", "demo-mcp"] }
+
+  test("installs the mcp seed asset as a config-action transaction (liveMcp returned)", async () => {
+    buildSeed([{ id: "mcp:demo", files: MCP_FILES }])
+    const r = await installAuthorized(mcpSeedIntent, mcpDeps())
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.kind).toBe("mcp")
+    expect(r.liveMcp).toEqual({ name: "demo", config: EXPECTED_MCP })
+    // config 叶 = installSpec 派生语义(CAS blob 只是离线携带字节)。
+    const mcpMap = readCfg().mcp
+    if (!isRec(mcpMap)) throw new Error("mcp section missing")
+    expect(mcpMap["demo"]).toEqual(EXPECTED_MCP)
+    expect(hasCasBlob(casBase, sha(MCP_FILES[0].content))).toBe(true)
+    const rec = findRecordV2(globalRoot, "mcp", "demo")
+    expect(rec).not.toBeNull()
+    expect(rec!.configKey).toBe("mcp.demo")
+    expect(rec!.version).toBe("1.0.0")
+    expect(rec!.payloadDigest).toBe(aggregateFilesDigest(lockFileEntries(MCP_FILES, { writeBlobs: false })))
+    expect(fs.existsSync(capabilityGrantPath(globalRoot, "mcp--demo"))).toBe(true)
+  })
+
+  test("首装停在 authorize(requested = 严格解码 manifest 能力集),零权威副作用", async () => {
+    buildSeed([{ id: "mcp:demo", files: MCP_FILES }])
+    const first = await installCatalog(mcpSeedIntent, mcpDeps())
+    expect(first.ok).toBe(false)
+    if (first.ok) throw new Error("unreachable")
+    expect(first.stage).toBe("authorize")
+    if (first.stage !== "authorize") throw new Error("unreachable")
+    expect(first.authorization).toHaveLength(1)
+    expect(first.authorization[0].key).toBe("mcp--demo")
+    expect(first.authorization[0].requested).toEqual(["engine:config", "process:spawn"])
+    expect(fs.existsSync(path.join(globalRoot, "alpha.jsonc"))).toBe(false)
+    expect(findRecordV2(globalRoot, "mcp", "demo")).toBeNull()
+  })
+
+  test("phase-1 fail-closed:secret-bearing / workspace / Excel 一律拒(seed intent 无 grants 通道)", async () => {
+    buildSeed([{ id: "mcp:demo", files: MCP_FILES }])
+    const secret = await installAuthorized(mcpSeedIntent, mcpDeps({ installSpec: { kind: "mcp", mcpType: "local", command: ["npx", "x"], requiredEnvVars: ["API_KEY"] } }))
+    expect(secret.ok).toBe(false)
+    if (!secret.ok) expect(secret.reason).toContain("secret-bearing")
+
+    const ws = await installAuthorized(mcpSeedIntent, mcpDeps({ installSpec: { kind: "mcp", mcpType: "local", command: ["npx", "{workspace}/x"] } }))
+    expect(ws.ok).toBe(false)
+    if (!ws.ok) expect(ws.reason).toContain("workspace")
+
+    const excelFiles = [{ path: "x.md", content: "excel" }]
+    buildSeed([{ id: "mcp:excel-mcp-server", files: excelFiles }])
+    const excel = await installAuthorized(
+      { source: "seed", assetId: "mcp:excel-mcp-server", scope: { scope: "global" } },
+      makeSeedDeps({
+        bundledEntries: [
+          bundledMcpEntry({ id: "mcp:excel-mcp-server", name: "excel-mcp-server", remoteAsset: { version: "1.0.0", files: lockFileEntries(excelFiles, { writeBlobs: false }) } }),
+        ],
+      }),
+    )
+    expect(excel.ok).toBe(false)
+    if (!excel.ok) expect(excel.reason).toContain("Excel")
+  })
+
+  test("纯 validator 在 plan 生成前拦危险配置(inline-eval / 非白名单命令头)", async () => {
+    buildSeed([{ id: "mcp:demo", files: MCP_FILES }])
+    const evalFlag = await installAuthorized(mcpSeedIntent, mcpDeps({ installSpec: { kind: "mcp", mcpType: "local", command: ["node", "-e", "evil()"] } }))
+    expect(evalFlag.ok).toBe(false)
+    if (!evalFlag.ok) expect(evalFlag.reason).toContain("failed validation")
+    const badHead = await installAuthorized(mcpSeedIntent, mcpDeps({ installSpec: { kind: "mcp", mcpType: "local", command: ["rm", "-rf", "/"] } }))
+    expect(badHead.ok).toBe(false)
+    if (!badHead.ok) expect(badHead.reason).toContain("failed validation")
+    // 零副作用:config 未创建。
+    expect(fs.existsSync(path.join(globalRoot, "alpha.jsonc"))).toBe(false)
+  })
+
+  test("锁内门:无账 config 叶拒认领;downgrade 拒;同版本重装幂等", async () => {
+    buildSeed([{ id: "mcp:demo", files: MCP_FILES }])
+    // 无账叶。
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ mcp: { demo: { type: "local", command: ["npx", "mine"] } } }))
+    const unregistered = await installAuthorized(mcpSeedIntent, mcpDeps())
+    expect(unregistered.ok).toBe(false)
+    if (!unregistered.ok) expect(unregistered.reason).toContain("without a ledger record")
+    fs.rmSync(path.join(globalRoot, "alpha.jsonc"), { force: true })
+
+    // downgrade。
+    const newer: UpsertInput = {
+      id: "mcp:demo",
+      name: "demo",
+      kind: "mcp",
+      environment: "prod",
+      scope: { kind: "global" },
+      version: "2.0.0",
+      desiredState: "enabled",
+      origin: "catalog",
+      installedAt: new Date().toISOString(),
+    }
+    expect(upsertRecordV2(globalRoot, newer).ok).toBe(true)
+    const down = await installAuthorized(mcpSeedIntent, mcpDeps())
+    expect(down.ok).toBe(false)
+    if (!down.ok) expect(down.reason).toContain("refusing downgrade")
+    fs.rmSync(path.join(globalRoot, "installs.json"), { force: true })
+
+    // 同版本重装幂等(先正常装一次,再装一次)。
+    expect((await installAuthorized(mcpSeedIntent, mcpDeps())).ok).toBe(true)
+    expect((await installAuthorized(mcpSeedIntent, mcpDeps())).ok).toBe(true)
+  })
+
+  test("journaled 卸载联动清授权账,重装重新弹 authorize", async () => {
+    buildSeed([{ id: "mcp:demo", files: MCP_FILES }])
+    const deps = mcpDeps()
+    expect((await installAuthorized(mcpSeedIntent, deps)).ok).toBe(true)
+    expect(fs.existsSync(capabilityGrantPath(globalRoot, "mcp--demo"))).toBe(true)
+
+    const installers: PlannerInstallers = {
+      ...forbiddenInstallers(),
+      removeMcpConfigInLock: (_name) => {
+        fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), "{}\n")
+        return { ok: true }
+      },
+      removeMcpSecretsStrict: (_name) => ({ ok: true }),
+    }
+    const un = await uninstallByKey({ type: "mcp", name: "demo", scope: "global" }, { ...deps, installers })
+    expect(un.ok).toBe(true)
+    expect(findRecordV2(globalRoot, "mcp", "demo")).toBeNull()
+    expect(fs.existsSync(capabilityGrantPath(globalRoot, "mcp--demo"))).toBe(false)
+    const again = await installCatalog(mcpSeedIntent, deps)
+    expect(again.ok).toBe(false)
+    if (!again.ok) expect(again.stage).toBe("authorize")
+  })
+})
+
+// ── #359:plugin seed 走确定性 CAS staging + config 事务(接 #352 三态)────────────────────────────
+const PLUGIN_FILES = [
+  { path: "plugin.js", content: "export const Demo = async () => ({})" },
+  { path: "lib/util.js", content: "export const u = 1" },
+]
+const PLUGIN_FILES_V2 = [
+  { path: "plugin.js", content: "export const Demo = async () => ({ v: 2 })" },
+  { path: "lib/util.js", content: "export const u = 2" },
+]
+
+function bundledPluginEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
+  return {
+    id: "plugin:demo-plugin",
+    type: "plugin",
+    name: "demo-plugin",
+    ...entryBase,
+    version: "1.0.0",
+    installSpec: { kind: "plugin", vendoredAssetKey: "seed-demo-plugin" },
+    remoteAsset: { version: "1.0.0", files: lockFileEntries(PLUGIN_FILES, { writeBlobs: false }) },
+    ...overrides,
+  } as CatalogEntry
+}
+const pluginSeedIntent = { source: "seed", assetId: "plugin:demo-plugin", scope: { scope: "global" } }
+const pluginDeps = (overrides: Partial<CatalogEntry> = {}) => makeSeedDeps({ bundledEntries: [bundledPluginEntry(overrides)] })
+// 目录名 = payloadDigest 剥 `sha256:` 前缀后前 16 hex(review #383:带前缀切片只剩 20 bit 且含 `:`)。
+const pluginDigest16 = (files: FileFixture[]) => aggregateFilesDigest(lockFileEntries(files, { writeBlobs: false })).replace(/^sha256:/, "").slice(0, 16)
+
+describe("plugin seed install via installCatalog (REQ-102 #359)", () => {
+  test("fresh:确定性内容寻址目录 + config 事务 + 账本/授权账落位", async () => {
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
+    const r = await installAuthorized(pluginSeedIntent, pluginDeps())
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.kind).toBe("plugin")
+    const dir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
+    expect(r.files).toEqual([dir])
+    expect(fs.readFileSync(path.join(dir, "plugin.js"), "utf8")).toBe(PLUGIN_FILES[0].content)
+    expect(fs.readFileSync(path.join(dir, "lib", "util.js"), "utf8")).toBe(PLUGIN_FILES[1].content)
+    const pluginArr = readCfg().plugin
+    expect(pluginArr).toEqual([path.join(dir, "plugin.js")])
+    const rec = findRecordV2(globalRoot, "plugin", "demo-plugin")
+    expect(rec).not.toBeNull()
+    expect(rec!.configKey).toBe(`plugin-path:${path.join(dir, "plugin.js")}`)
+    expect(rec!.files).toEqual([dir])
+    expect(fs.existsSync(capabilityGrantPath(globalRoot, "plugin--demo-plugin"))).toBe(true)
+  })
+
+  test("首装停在 authorize:零权威副作用,staging 不留目录(内容寻址,重驱重 staging)", async () => {
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
+    const first = await installCatalog(pluginSeedIntent, pluginDeps())
+    expect(first.ok).toBe(false)
+    if (first.ok) throw new Error("unreachable")
+    expect(first.stage).toBe("authorize")
+    // 非提交路径已清理(plugins/ 空壳父目录可留,零条目)。
+    const leftover = fs.existsSync(path.join(globalRoot, "plugins")) ? fs.readdirSync(path.join(globalRoot, "plugins")) : []
+    expect(leftover).toEqual([])
+    expect(fs.existsSync(path.join(globalRoot, "alpha.jsonc"))).toBe(false)
+    expect(findRecordV2(globalRoot, "plugin", "demo-plugin")).toBeNull()
+  })
+
+  test("same-version healthy 幂等早退:重装零副作用,目录不累积", async () => {
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
+    expect((await installAuthorized(pluginSeedIntent, pluginDeps())).ok).toBe(true)
+    const again = await installAuthorized(pluginSeedIntent, pluginDeps())
+    expect(again.ok).toBe(true)
+    if (again.ok) expect(again.warning).toContain("nothing to replace")
+    const dirs = fs.readdirSync(path.join(globalRoot, "plugins")).filter((n) => !n.startsWith("."))
+    expect(dirs).toEqual([`demo-plugin@${pluginDigest16(PLUGIN_FILES)}`])
+  })
+
+  test("旧版在装 → journaled replace(staging 源 = CAS):config 换元、旧目录 GC、账本更新", async () => {
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
+    expect((await installAuthorized(pluginSeedIntent, pluginDeps())).ok).toBe(true)
+    const oldDir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
+
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES_V2, version: "1.1.0" }])
+    const v2Entry = bundledPluginEntry({ version: "1.1.0", remoteAsset: { version: "1.1.0", files: lockFileEntries(PLUGIN_FILES_V2, { writeBlobs: false }) } })
+    const r = await installAuthorized(pluginSeedIntent, makeSeedDeps({ bundledEntries: [v2Entry] }))
+    expect(r.ok).toBe(true)
+    const newDir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES_V2)}`)
+    expect(fs.readFileSync(path.join(newDir, "plugin.js"), "utf8")).toBe(PLUGIN_FILES_V2[0].content)
+    expect(readCfg().plugin).toEqual([path.join(newDir, "plugin.js")]) // 精确换元
+    expect(fs.existsSync(oldDir)).toBe(false) // 旧目录提交成功后 GC
+    const rec = findRecordV2(globalRoot, "plugin", "demo-plugin")
+    expect(rec!.version).toBe("1.1.0")
+  })
+
+  test("同 payload 仅版本变化的 replace:新旧目录相同,GC 不得删掉刚提交的运行目录(review #383)", async () => {
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
+    expect((await installAuthorized(pluginSeedIntent, pluginDeps())).ok).toBe(true)
+    const dir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
+    const jsPath = path.join(dir, "plugin.js")
+
+    // 同字节、版本 1.0.0 → 1.1.0:dispatch=replace(manifest/version 变化,vendoredHealthy 不成立)。
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES, version: "1.1.0" }])
+    const bumped = bundledPluginEntry({ version: "1.1.0", remoteAsset: { version: "1.1.0", files: lockFileEntries(PLUGIN_FILES, { writeBlobs: false }) } })
+    const r = await installAuthorized(pluginSeedIntent, makeSeedDeps({ bundledEntries: [bumped] }))
+    expect(r.ok).toBe(true)
+    expect(fs.readFileSync(jsPath, "utf8")).toBe(PLUGIN_FILES[0].content) // 运行目录仍在且完好
+    expect(readCfg().plugin).toEqual([jsPath])
+    const rec = findRecordV2(globalRoot, "plugin", "demo-plugin")
+    expect(rec!.version).toBe("1.1.0")
+  })
+
+  test("replace 异 payload:新内容寻址目录在场 = 无账在场,锁内拒不认领(review r2 Blocker)", async () => {
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
+    expect((await installAuthorized(pluginSeedIntent, pluginDeps())).ok).toBe(true)
+    // 目标 v2 目录被外部占用(含垃圾)。
+    const d2 = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES_V2)}`)
+    fs.mkdirSync(d2, { recursive: true })
+    fs.writeFileSync(path.join(d2, "junk.js"), "junk")
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES_V2, version: "1.1.0" }])
+    const v2Entry = bundledPluginEntry({ version: "1.1.0", remoteAsset: { version: "1.1.0", files: lockFileEntries(PLUGIN_FILES_V2, { writeBlobs: false }) } })
+    const r = await installAuthorized(pluginSeedIntent, makeSeedDeps({ bundledEntries: [v2Entry] }))
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("without a ledger record")
+    expect(fs.readFileSync(path.join(d2, "junk.js"), "utf8")).toBe("junk") // 现场不动
+  })
+
+  test("同版本重装遇实物被篡改 → 走修复路径(完整 journaled replace 重写清单文件,review r2 Major)", async () => {
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
+    const deps = pluginDeps()
+    expect((await installAuthorized(pluginSeedIntent, deps)).ok).toBe(true)
+    const jsPath = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`, "plugin.js")
+    fs.writeFileSync(jsPath, "tampered live payload")
+    const repair = await installAuthorized(pluginSeedIntent, deps)
+    expect(repair.ok).toBe(true)
+    if (repair.ok) expect(repair.warning ?? "").not.toContain("nothing to replace") // 不是幂等早退
+    expect(fs.readFileSync(jsPath, "utf8")).toBe(PLUGIN_FILES[0].content) // 修复回清单字节
+  })
+
+  test("载荷路径大小写折叠碰撞 fail-closed(review r2 Major)", async () => {
+    const collide = [
+      { path: "plugin.js", content: "export const Demo = 1" },
+      { path: "Lib.js", content: "A" },
+      { path: "lib.js", content: "b" },
+    ]
+    buildSeed([{ id: "plugin:demo-plugin", files: collide }])
+    const r = await installAuthorized(
+      pluginSeedIntent,
+      pluginDeps({ remoteAsset: { version: "1.0.0", files: lockFileEntries(collide, { writeBlobs: false }) } }),
+    )
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("colliding")
+  })
+
+  test("recovery 回滚遗留的纯空目录树不阻断重试(review r3 Major 4:壳容忍)", async () => {
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
+    const dir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
+    fs.mkdirSync(path.join(dir, "lib"), { recursive: true }) // 模拟 recovery unlink 后的空壳
+    const r = await installAuthorized(pluginSeedIntent, pluginDeps())
+    expect(r.ok).toBe(true)
+    expect(fs.readFileSync(path.join(dir, "plugin.js"), "utf8")).toBe(PLUGIN_FILES[0].content)
+  })
+
+  test("同目录 repair 遇清单外文件:锁内分类 blocked 拒,不假装收敛(review r4 Major)", async () => {
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
+    const deps = pluginDeps()
+    expect((await installAuthorized(pluginSeedIntent, deps)).ok).toBe(true)
+    const dir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
+    // 同时篡改清单文件(触发不健康 → 走 replace)并植入清单外文件(修复不可收敛)。
+    fs.writeFileSync(path.join(dir, "plugin.js"), "tampered")
+    fs.writeFileSync(path.join(dir, "extra.js"), "unmanifested")
+    const r = await installAuthorized(pluginSeedIntent, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("unmanifested content")
+    expect(fs.readFileSync(path.join(dir, "extra.js"), "utf8")).toBe("unmanifested") // 现场不动
+    expect(fs.readFileSync(path.join(dir, "plugin.js"), "utf8")).toBe("tampered") // 篡改文件也不动(r5)
+  })
+
+  test("清单文件被换成同名目录:repair 不可收敛 → blocked 拒(review r5 Major)", async () => {
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
+    const deps = pluginDeps()
+    expect((await installAuthorized(pluginSeedIntent, deps)).ok).toBe(true)
+    const dir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
+    fs.rmSync(path.join(dir, "plugin.js"), { force: true })
+    fs.mkdirSync(path.join(dir, "plugin.js")) // 同名空目录:prepareFileTx 无法覆盖成文件
+    const r = await installAuthorized(pluginSeedIntent, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("unmanifested content")
+    expect(fs.statSync(path.join(dir, "plugin.js")).isDirectory()).toBe(true) // 现场不动
+  })
+
+  test("同版本重装遇目录被换 symlink:不得误判 healthy,也不得经 symlink 写入(review r3 Major 5)", async () => {
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
+    const deps = pluginDeps()
+    expect((await installAuthorized(pluginSeedIntent, deps)).ok).toBe(true)
+    const dir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
+    // 把目录换成指向内容完全一致副本的 symlink。
+    const copy = path.join(tmp, "plugin-copy")
+    fs.cpSync(dir, copy, { recursive: true })
+    fs.rmSync(dir, { recursive: true, force: true })
+    fs.symlinkSync(copy, dir)
+    const again = await installAuthorized(pluginSeedIntent, deps)
+    expect(again.ok).toBe(false) // 既非幂等早退成功,也不落 symlink 写入
+    expect(fs.readFileSync(path.join(copy, "plugin.js"), "utf8")).toBe(PLUGIN_FILES[0].content) // 树外零写
+  })
+
+  test("旧目录 GC 持锁重读引用(review r2 Blocker):被引用/锁忙保留,无引用才删", async () => {
+    const { gcVendoredPluginDirLocked } = await import("./ext-install-planner")
+    const oldDir = path.join(globalRoot, "plugins", "demo-plugin@aaaabbbbccccdddd")
+    fs.mkdirSync(oldDir, { recursive: true })
+    fs.writeFileSync(path.join(oldDir, "plugin.js"), "x")
+    const oldJs = path.join(oldDir, "plugin.js")
+    // 被 config 重新引用 → 保留。
+    const referenced = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [oldJs] }))
+    expect(referenced.removed).toBe(false)
+    expect(fs.existsSync(oldDir)).toBe(true)
+    // 锁忙 → 保留。
+    const held = tryAcquireBundleLock(globalRoot, { txId: "probe" })
+    expect(held.ok).toBe(true)
+    if (held.ok) {
+      const busy = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [] }))
+      expect(busy.removed).toBe(false)
+      held.lock.release()
+    }
+    // 圈禁外 → 保留。
+    const outside = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", path.join(globalRoot, "evil"), () => ({ ok: true, value: [] }))
+    expect(outside.removed).toBe(false)
+    // 账本损坏 → fail-closed 保留(review r3:读不出记录 ≠ 无引用)。
+    fs.writeFileSync(path.join(globalRoot, "installs.json"), "{ not json")
+    const corrupt = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [] }))
+    expect(corrupt.removed).toBe(false)
+    expect(fs.existsSync(oldDir)).toBe(true)
+    fs.rmSync(path.join(globalRoot, "installs.json"), { force: true })
+    // 合法 JSON 但含不可解码记录(warnings)→ 同样 fail-closed 保留(review r4)。
+    const broken: UpsertInput = {
+      id: "plugin:other",
+      name: "other",
+      kind: "plugin",
+      environment: "prod",
+      scope: { kind: "global" },
+      desiredState: "enabled",
+      origin: "catalog",
+      installedAt: new Date().toISOString(),
+    }
+    expect(upsertRecordV2(globalRoot, broken).ok).toBe(true)
+    const ledgerPath2 = path.join(globalRoot, "installs.json")
+    const parsedLedger: unknown = JSON.parse(fs.readFileSync(ledgerPath2, "utf8"))
+    if (!isRec(parsedLedger)) throw new Error("ledger not an object")
+    for (const v of Object.values(parsedLedger)) {
+      if (!Array.isArray(v)) continue
+      for (const rec of v) if (isRec(rec) && rec.kind === "plugin") rec.schemaVersion = 99
+    }
+    fs.writeFileSync(ledgerPath2, JSON.stringify(parsedLedger))
+    const undecodable = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [] }))
+    expect(undecodable.removed).toBe(false)
+    expect(fs.existsSync(oldDir)).toBe(true)
+    fs.rmSync(ledgerPath2, { force: true })
+    // 无引用 + 拿到锁 → 删。
+    const removed = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [] }))
+    expect(removed.removed).toBe(true)
+    expect(fs.existsSync(oldDir)).toBe(false)
+  })
+
+  test("downgrade 拒:已装更高版本时 seed 不提供降级通道", async () => {
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES_V2, version: "2.0.0" }])
+    const v2Entry = bundledPluginEntry({ version: "2.0.0", remoteAsset: { version: "2.0.0", files: lockFileEntries(PLUGIN_FILES_V2, { writeBlobs: false }) } })
+    expect((await installAuthorized(pluginSeedIntent, makeSeedDeps({ bundledEntries: [v2Entry] }))).ok).toBe(true)
+
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
+    const down = await installAuthorized(pluginSeedIntent, pluginDeps())
+    expect(down.ok).toBe(false)
+    if (!down.ok) expect(down.reason).toContain("refusing downgrade")
+  })
+
+  test("npm plugin / 缺 plugin.js / 篡改的同 digest 目录 / 无账 bare 目录:一律 fail-closed 拒", async () => {
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
+    const npm = await installAuthorized(pluginSeedIntent, pluginDeps({ installSpec: { kind: "plugin", package: "demo-pkg" } }))
+    expect(npm.ok).toBe(false)
+    if (!npm.ok) expect(npm.reason).toContain("npm plugin is not seed-installable")
+
+    const noJs = [{ path: "index.js", content: "x" }]
+    buildSeed([{ id: "plugin:demo-plugin", files: noJs }])
+    const missing = await installAuthorized(pluginSeedIntent, pluginDeps({ remoteAsset: { version: "1.0.0", files: lockFileEntries(noJs, { writeBlobs: false }) } }))
+    expect(missing.ok).toBe(false)
+    if (!missing.ok) expect(missing.reason).toContain("plugin.js")
+
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
+    // fresh 时内容寻址目录已在场 = 无账在场(外部放置/历史残留)—— 未策展不认领,journaled
+    // 覆盖也不做(review #383 结构性修正后语义)。
+    const stagedDir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
+    fs.mkdirSync(stagedDir, { recursive: true })
+    fs.writeFileSync(path.join(stagedDir, "plugin.js"), "tampered")
+    const tampered = await installAuthorized(pluginSeedIntent, pluginDeps())
+    expect(tampered.ok).toBe(false)
+    if (!tampered.ok) expect(tampered.reason).toContain("without a ledger record")
+    fs.rmSync(stagedDir, { recursive: true, force: true })
+
+    fs.mkdirSync(path.join(globalRoot, "plugins", "demo-plugin"), { recursive: true })
+    const bare = await installAuthorized(pluginSeedIntent, pluginDeps())
+    expect(bare.ok).toBe(false)
+    if (!bare.ok) expect(bare.reason).toContain("without a ledger record")
+  })
+
+  test("卸载联动清授权账(vendored 落点),重装重新弹 authorize", async () => {
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
+    const deps = pluginDeps()
+    expect((await installAuthorized(pluginSeedIntent, deps)).ok).toBe(true)
+    const jsPath = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`, "plugin.js")
+
+    const installers: PlannerInstallers = {
+      ...forbiddenInstallers(),
+      removePluginPath: (_name, _absJsPath) => {
+        fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), "{}\n")
+        return { ok: true }
+      },
+    }
+    const un = await uninstallByKey({ type: "plugin", name: "demo-plugin", scope: "global" }, { ...deps, installers })
+    expect(un.ok).toBe(true)
+    expect(findRecordV2(globalRoot, "plugin", "demo-plugin")).toBeNull()
+    expect(fs.existsSync(capabilityGrantPath(globalRoot, "plugin--demo-plugin"))).toBe(false)
+    expect(fs.existsSync(path.dirname(jsPath))).toBe(false) // 卸载删除 vendored 目录
+    const again = await installCatalog(pluginSeedIntent, deps)
+    expect(again.ok).toBe(false)
+    if (!again.ok) expect(again.stage).toBe("authorize")
   })
 })
 

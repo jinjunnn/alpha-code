@@ -88,8 +88,11 @@ export type TxActionKind = "generation" | "config" | "receipt" | "file"
 export type TxConfigAction = { target: string; edits: ConfigEdit[] }
 
 /** file action 载荷(REQ-102 #358):目标 = **root 内受控相对路径**(引擎自 root 派生绝对路径 ——
- *  调用方绝对路径无通道,Codex 裁决 #358 B 圈禁要求)+ 完整新内容字节。前像由引擎在锁内捕获。 */
-export type TxFileAction = { relTarget: string; next: Buffer }
+ *  调用方绝对路径无通道,Codex 裁决 #358 B 圈禁要求)+ 完整新内容字节。前像由引擎在锁内捕获。
+ *  requireAbsent(#359 review r3):锁内前像必须缺席,否则结构化拒绝 —— 把 planner 的「未策展
+ *  不认领」从锁外 existsSync 检查升级为执行引擎断言(检查与捕获之间被旁路建文件时,拒绝而不是
+ *  带前像覆盖认领)。 */
+export type TxFileAction = { relTarget: string; next: Buffer; requireAbsent?: boolean }
 
 /** file action 内容上界(引擎级防线;业务上界如 agent 的 256KB 由 planner 把关)。 */
 const FILE_ACTION_MAX_BYTES = 16 * 1024 * 1024
@@ -275,8 +278,10 @@ export type TxJournalItem = {
   files: TxFileSpec[]
   /** config:目标文件 + staging 里 pre/next image 的 digest(内容在受保护 staging,journal 不落值)。 */
   config?: { target: string; slot: number; preDigest: string; nextDigest: string }
-  /** file:root 内相对目标 + pre/next digest + 前像缺席标记(缺席 ≠ 零字节,#358;内容在受保护 staging)。 */
-  file?: { relTarget: string; slot: number; preDigest: string; nextDigest: string; preAbsent: boolean }
+  /** file:root 内相对目标 + pre/next digest + 前像缺席标记(缺席 ≠ 零字节,#358;内容在受保护
+   *  staging)。requireAbsent/applied(#359 r5):requireAbsent 意图与**逐 item apply 进度**持久化
+   *  —— 恢复据 applied 区分「本事务已写」与「旁路植入同 digest 内容」,后者绝不 unlink/前滚认领。 */
+  file?: { relTarget: string; slot: number; preDigest: string; nextDigest: string; preAbsent: boolean; requireAbsent: boolean; applied?: boolean }
   /** receipt 模板(不透明透传;恢复前滚据此重建 InstallRecordV2,无需 caller 上下文)。 */
   receipt?: unknown
   manifestDigest?: string
@@ -549,6 +554,8 @@ function validatePlan(root: string, plan: TxPlan): string | null {
         return `file item "${item.key}": next content must be a non-empty Buffer`
       if (item.file.next.length > FILE_ACTION_MAX_BYTES)
         return `file item "${item.key}": next content exceeds ${FILE_ACTION_MAX_BYTES} bytes`
+      if (item.file.requireAbsent !== undefined && typeof item.file.requireAbsent !== "boolean")
+        return `file item "${item.key}": requireAbsent must be a boolean`
     } else if (kind === "receipt") {
       // receipt-only:无 files/config 副作用,只参加最终 receipt commit。
     } else {
@@ -953,6 +960,7 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
   // file action 的 image 对同样在锁内、staging 前一次性 prepare(捕获 live 前像含缺席态,#358)。
   // 同一 target 的多个 file item 无累积语义(整文件替换,后写覆盖前写)—— 直接拒。
   const fileImages = new Map<string, FileTxImage>()
+  const fileRequireAbsent = new Set<string>()
   const fileTargets = new Set<string>()
   for (const item of plan.items) {
     if (actionOf(item) !== "file") continue
@@ -977,6 +985,12 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
       lock.release()
       return { ok: false, txId, stage: "staging", reason: `file prepare failed for "${item.key}": ${prep.reason}`, warnings }
     }
+    // #359 review r3:requireAbsent = 锁内执行断言 —— 前像在场即拒(零写盘),绝不带前像覆盖认领。
+    if (item.file.requireAbsent && !prep.image.preAbsent) {
+      lock.release()
+      return { ok: false, txId, stage: "staging", reason: `file target for "${item.key}" must be absent (unregistered content is not adopted) — refused`, warnings }
+    }
+    if (item.file.requireAbsent) fileRequireAbsent.add(item.key)
     fileImages.set(item.key, prep.image)
   }
 
@@ -1011,6 +1025,7 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
               preDigest: fileImages.get(item.key)!.preDigest,
               nextDigest: fileImages.get(item.key)!.nextDigest,
               preAbsent: fileImages.get(item.key)!.preAbsent,
+              requireAbsent: item.file!.requireAbsent === true,
             },
           }
         : {}),
@@ -1060,6 +1075,14 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
         const confined = it.file ? confineFileTarget(root, it.file.relTarget) : { ok: false as const, reason: "missing file journal segment" }
         if (!confined.ok) {
           fileBlocked = `file rollback for "${it.key}": ${confined.reason}`
+          continue
+        }
+        // r5 Blocker:本事务从未 apply(applied ≠ true)的 requireAbsent item —— live 在场
+        // 只能是窗口内的旁路植入,**即使内容恰等于 nextDigest 也不 unlink**(那是别人的字节,
+        // 不是本事务输出),保留非终态留证;缺席 = 无事可回。
+        if (it.file?.requireAbsent && it.file.applied !== true) {
+          if (fs.existsSync(path.join(root, it.file.relTarget)))
+            fileBlocked = `file rollback for "${it.key}": bypass-planted content at an unapplied target — retained as evidence`
           continue
         }
         const restored = restoreFileImage(image)
@@ -1241,6 +1264,15 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
         // 残余窗口收窄为 lstat→单次原子写的微秒级(契约记录,与 GC promote 窗口同类)。
         const confined = confineFileTarget(root, it.file!.relTarget)
         if (!confined.ok) throw new Error(`file confinement re-check failed for "${it.key}": ${confined.reason}`)
+        // #359 review r4 Blocker:requireAbsent 只在 prepare 断言会被 prepare→apply 的异步窗口
+        // 绕过(旁路植入计划内文件被覆盖)—— apply 前**紧邻**重断言缺席;在场即抛 → rollbackAll。
+        if (fileRequireAbsent.has(it.key) && fs.existsSync(path.join(root, it.file!.relTarget)))
+          throw new Error(`file target for "${it.key}" appeared before switch (must be absent) — refused`)
+        // #359 review r5 Blocker:apply 前把逐 item 进度持久化(applied)—— 恢复/回滚据此区分
+        // 「本事务已写」与「旁路植入的同 digest 内容」;后者(未 applied 而 live 在场)绝不
+        // unlink、绝不前滚认领,保留非终态留证。
+        it.file!.applied = true
+        writeJournalSync(root, journal)
         applyFileImage(fileImages.get(it.key)!)
       }
       if (i === 0 && journal.items.length > 1) crash("mid-switch")
@@ -1896,7 +1928,17 @@ async function recoverOne(
     const kind = actionOf(it)
     if (kind === "receipt") return true
     if (kind === "config") return it.config ? configTargetDigest(it.config.target) === it.config.nextDigest : false
-    if (kind === "file") return it.file ? fileTargetDigest(path.join(root, it.file.relTarget)) === it.file.nextDigest : false
+    // file(r5 Blocker):翻转 = **本事务已 apply(journal 进度)∧ live digest 命中** —— 只看
+    // digest 会把旁路植入的同 digest 文件误认本事务输出(前滚落账 = 认领外部内容)。
+    // r6 Blocker(持久化兼容):#358 时代的 legacy file journal 无 requireAbsent/applied 字段
+    // (以 requireAbsent === undefined 判别)—— 按其发布时语义退回纯 digest 判定,否则升级后
+    // 在途 already-switched journal 会被误判未翻转而错误回滚(receipt 已提交时即双真源分叉)。
+    if (kind === "file") {
+      if (!it.file) return false
+      const digestHit = fileTargetDigest(path.join(root, it.file.relTarget)) === it.file.nextDigest
+      const legacy = it.file.requireAbsent === undefined
+      return legacy ? digestHit : it.file.applied === true && digestHit
+    }
     return readCurrentGeneration(root, it.key)?.genId === it.genId
   }
   // #358 review r2 Blocker:对 journal file 段的**任何**采信(isFlipped digest 读、probe、
@@ -1995,6 +2037,13 @@ async function recoverOne(
       const confined = it.file ? confineFileTarget(root, it.file.relTarget) : { ok: false as const, reason: "missing file journal segment" }
       if (!confined.ok) {
         fileRestoreBlocked = `file recovery rollback for "${it.key}": ${confined.reason}`
+        continue
+      }
+      // r5 Blocker:崩溃前未 apply 的 requireAbsent item —— live 在场(同/异 digest 皆然)=
+      // 窗口植入,绝不 unlink,保留非终态留证;缺席 = 无事可回。
+      if (it.file?.requireAbsent && it.file.applied !== true) {
+        if (fs.existsSync(path.join(root, it.file.relTarget)))
+          fileRestoreBlocked = `file recovery rollback for "${it.key}": bypass-planted content at an unapplied target — retained as evidence`
         continue
       }
       const restored = restoreFileImage(reconstructFileImage(it)!) // 上方预扫已证明可重建

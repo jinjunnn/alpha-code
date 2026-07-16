@@ -55,14 +55,18 @@ journal 收敛到终态;收敛不了的**如实保留**,绝不静默终态化(#3
 
 agent seed 安装 = 双 item 单事务:file item(`agent--<name>`,action=file,写
 `<root>/agents/<name>.md`)+ config item(`agent--<name>--config`,action=config,写
-`agent.<name>` 叶)。journal 的 file 段只记 `relTarget/slot/pre-next digest/preAbsent`
-(内容在受保护 staging 0600)。崩溃窗口与处置:
+`agent.<name>` 叶)。journal 的 file 段记
+`relTarget/slot/pre-next digest/preAbsent/requireAbsent/applied`(内容在受保护 staging
+0600;`applied` 在 apply 前紧邻持久化 = 逐 item 进度)。崩溃窗口与处置:
 
-- **switching/switched 中断**:恢复按逐 item 翻转判定(file = live 目标存在且 digest ==
-  nextDigest;config = live digest == nextDigest)—— 全翻转 ∧ probe 健康(live md digest +
+- **switching/switched 中断**:恢复按逐 item 翻转判定(file = **本事务已 applied ∧** live
+  digest == nextDigest —— 只看 digest 会把旁路植入的同 digest 文件误认本事务输出;#358 时代
+  的 legacy journal 无 requireAbsent/applied 字段,按其发布时语义退回纯 digest 判定;
+  config = live digest == nextDigest)—— 全翻转 ∧ probe 健康(live md digest +
   `agentMdToEntry` 可解析 + config 叶与 md 严格一致)∧ receipt 可重放 → 前滚 committed;
   部分翻转或健康未知 → 双向回滚(file 恢复**缺席态或旧字节** —— `preAbsent` 区分缺席与
-  零字节,config 整文件 before-image 回旧)。
+  零字节,config 整文件 before-image 回旧;`requireAbsent` 且未 applied 的目标若 live 在场
+  = 窗口植入证据,不 unlink,保留非终态)。
 - **旁路改写**(live md 既非 pre 也非 next;在线回滚与崩溃恢复同语义):恢复 fail-closed
   保留现状,**journal 保持非终态**(写方 gate 继续阻断相关写操作,**包括卸载**),绝不
   盲目覆盖也绝不宣称 rolled-back;config 项已幂等回旧(下轮 noop)。处置顺序:先人工核对
@@ -89,3 +93,17 @@ agent seed 安装 = 双 item 单事务:file item(`agent--<name>`,action=file,写
 - **提交成功、旧 vendored 目录 GC 前崩溃**:旧目录成为无引用孤儿(config 已指向新 versioned
   目录),安装功能不受影响;出现于 `plugins/` 下 `<name>`(旧式)或 `<name>@<hex>`(versioned)
   且不被当前 config/账本引用的目录即孤儿,可安全删除。
+
+## plugin seed 的残留形态(REQ-102 #359)
+
+seed plugin 的载荷是同一事务里的 file items,落点 = 内容寻址目录
+`plugins/<name>@<digest16>`(#352 的随机后缀 stager 不用于 seed;无锁外 staging → 无 tmp
+目录残留)。残留识别与处置:
+
+- **孤儿判定**:目录不被当前 `alpha.jsonc` `plugin[]` 与账本 `configKey` 引用即孤儿(来源
+  只有两类:replace 提交成功后旧目录 GC 失败 warning 留下的旧目录;回滚后未收干净的空壳
+  子目录),可安全删除;它不在 #318 CAS GC 的删除面上,不会被自动回收。
+- **含文件的目录 + 非终态 journal 在场**:那是失据/旁路改写保留的现场证据 —— 按顶部保留态
+  流程处理,**不要**先删目录。
+- **fresh 安装被「exists without a ledger record」拒**:目标内容寻址目录被外部放置/历史残留
+  占用 —— 核对无账后手工删除该目录再重试(未策展不认领,绝不静默覆盖)。

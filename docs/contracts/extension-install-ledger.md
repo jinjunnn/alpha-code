@@ -22,11 +22,13 @@ review_after: 2026-10-14
   fail-open 一并**下线**——不存在「v2 失败但 v1 已写」的合法状态。
 - **未策展安装**归 orchestrator(`recordUncuratedInstall`,#306):mutate → 单次账本写 →
   失败补偿并 fail-closed。
-- **generation/bundle/agent-seed** 归事务引擎 `commitReceipt`(写失败即事务失败 → 引擎
-  回滚,#336/#310/#311/#358)。agent seed(#358)的账本形态:**单条** v2 record(kind
-  `agent`,`configKey: agent.<name>`,`files: [<root>/agents/<name>.md]`),receipt 模板
-  只挂事务的 file 主 item —— config 副 item 不落账,`commitReceipt` 按 `receipt !== undefined`
-  过滤。
+- **generation/bundle/seed(agent/mcp/plugin)** 归事务引擎 `commitReceipt`(写失败即事务
+  失败 → 引擎回滚,#336/#310/#311/#358/#359)。agent seed(#358)的账本形态:**单条** v2
+  record(kind `agent`,`configKey: agent.<name>`,`files: [<root>/agents/<name>.md]`),
+  receipt 模板只挂事务的 file 主 item —— config 副 item 不落账,`commitReceipt` 经
+  `recoveryReceiptInputs` 按 `receipt !== undefined` 过滤(恢复前滚同源)。mcp seed(#359):
+  单条 record(`configKey: mcp.<name>`);plugin seed:单条 record(`configKey:
+  plugin-path:<jsPath>`,`files: [plugins/<name>@<digest16>]`),replace 复用 #352 语义。
 
 ## 2. 提交面 fail-closed(#336 残留收口)
 

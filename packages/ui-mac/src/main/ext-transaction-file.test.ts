@@ -11,6 +11,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { parse } from "jsonc-parser"
 import { agentFileProbe, recoveryReceiptInputs } from "./ext-agent-install"
+import { seedPluginFileProbe } from "./ext-install-planner"
 import { applyFileImage, prepareFileTx, restoreFileImage } from "./ext-file-tx"
 import { findRecordV2, upsertRecordsV2 } from "./ext-receipt-v2"
 import { skillGenerationProbe } from "./ext-skill-generations"
@@ -326,6 +327,120 @@ describe("file action in runExtensionTransaction (REQ-102 #358)", () => {
     expect(record!.configKey).toBe("agent.demo")
   })
 
+  test("requireAbsent:锁内前像在场即结构化拒(#359 r3 —— 未策展不认领的执行层断言)", async () => {
+    mkdirSync(join(root, "agents"), { recursive: true })
+    writeFileSync(MD_PATH(), "bypass-planted content")
+    const r = await runExtensionTransaction(
+      root,
+      { items: [{ key: "agent--demo", action: "file", file: { relTarget: "agents/demo.md", next: Buffer.from(MD), requireAbsent: true } }] },
+      hooksFor(),
+    )
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.stage).toBe("staging")
+    expect(r.reason).toContain("must be absent")
+    expect(readFileSync(MD_PATH(), "utf8")).toBe("bypass-planted content") // 零覆盖
+  })
+
+  test("requireAbsent 在 switch 前紧邻重断言:prepare→apply 窗口内旁路植入 → 拒且保留非终态(#359 r4)", async () => {
+    // pre-switch 探针窗口(prepare 之后、switch 之前)植入计划内目标文件。
+    const plantProbe: HealthProbe = (input) => {
+      if (input.action === "file" && input.phase === "pre-switch") {
+        mkdirSync(join(root, "agents"), { recursive: true })
+        writeFileSync(MD_PATH(), "planted in the async window")
+      }
+      return { healthy: true }
+    }
+    const r = await runExtensionTransaction(
+      root,
+      { items: [{ key: "agent--demo", action: "file", file: { relTarget: "agents/demo.md", next: Buffer.from(MD), requireAbsent: true } }] },
+      { populate: noop, probe: plantProbe, commitReceipt: noop, log: noop },
+    )
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reason).toContain("appeared before switch")
+    expect(r.reason).toContain("retained non-terminal") // 植入内容 diverged → 保留非终态留证
+    expect(readFileSync(MD_PATH(), "utf8")).toBe("planted in the async window") // 零覆盖
+    const j = listTransactionJournals(root)[0]
+    expect(j.state).toBe("switching")
+  })
+
+  test("同 digest 植入(在线):未 applied 的 requireAbsent 目标绝不 unlink,保留非终态留证(#359 r5)", async () => {
+    // 窗口内植入的内容**恰等于** nextDigest —— 只看 digest 会把它误认本事务输出而在回滚时 unlink。
+    const plantSame: HealthProbe = (input) => {
+      if (input.action === "file" && input.phase === "pre-switch") {
+        mkdirSync(join(root, "agents"), { recursive: true })
+        writeFileSync(MD_PATH(), MD)
+      }
+      return { healthy: true }
+    }
+    const r = await runExtensionTransaction(
+      root,
+      { items: [{ key: "agent--demo", action: "file", file: { relTarget: "agents/demo.md", next: Buffer.from(MD), requireAbsent: true } }] },
+      { populate: noop, probe: plantSame, commitReceipt: noop, log: noop },
+    )
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reason).toContain("retained non-terminal")
+    expect(readFileSync(MD_PATH(), "utf8")).toBe(MD) // 植入文件原样保留(不是我们的输出,不 unlink)
+    expect(listTransactionJournals(root)[0].state).toBe("switching")
+  })
+
+  test("同 digest 植入(崩溃恢复):未 applied → 不前滚落账、不 unlink,保留非终态(#359 r5)", async () => {
+    // 崩溃在 switching journal 落盘后、任何 apply 之前;随后旁路植入同 digest 内容。
+    await expect(
+      runExtensionTransaction(
+        root,
+        { items: [{ key: "agent--demo", action: "file", file: { relTarget: "agents/demo.md", next: Buffer.from(MD), requireAbsent: true }, receipt: { id: "agent:demo" } }] },
+        { populate: noop, probe: fileProbe(MD), commitReceipt: noop, log: noop, crashAt: "after-switching-journal" },
+      ),
+    ).rejects.toThrow(ExtTxCrashError)
+    mkdirSync(join(root, "agents"), { recursive: true })
+    writeFileSync(MD_PATH(), MD) // 同 digest 植入
+    const records: TxCommitRecord[] = []
+    const rec = await recoverExtensionTransactions(root, {
+      probe: fileProbe(MD),
+      commitReceipt: (recs) => records.push(...recs),
+      pidAlive: () => false,
+      log: noop,
+    })
+    expect(rec.ok).toBe(true)
+    expect(rec.reports[0].action).toBe("none") // 未 applied → 不判翻转 → 不前滚
+    expect(records).toHaveLength(0) // 零落账(绝不认领外部字节)
+    expect(readFileSync(MD_PATH(), "utf8")).toBe(MD) // 植入文件原样保留
+    expect(listTransactionJournals(root)[0].state).toBe("switching")
+  })
+
+  test("legacy #358 journal(无 requireAbsent/applied)按发布时语义前滚,不误回滚(#359 r6 兼容)", async () => {
+    // 用新引擎制造 after-switched 崩溃,再从盘上剥掉新字段 = 忠实模拟升级前遗留的在途 journal。
+    await expect(runExtensionTransaction(root, planFor(MD), hooksFor({ crashAt: "after-switched" }))).rejects.toThrow(ExtTxCrashError)
+    const jDir = join(root, "ext-tx", "journal")
+    const jName = readdirSync(jDir).find((n) => n.endsWith(".json"))
+    if (!jName) throw new Error("journal missing")
+    const jFile = join(jDir, jName)
+    const legacy: unknown = parse(readFileSync(jFile, "utf8"))
+    if (!isRec(legacy) || !Array.isArray(legacy.items)) throw new Error("journal shape")
+    for (const it of legacy.items) {
+      if (isRec(it) && isRec(it.file)) {
+        delete it.file.requireAbsent
+        delete it.file.applied
+      }
+    }
+    writeFileSync(jFile, JSON.stringify(legacy))
+    const records: TxCommitRecord[] = []
+    const rec = await recoverExtensionTransactions(root, {
+      probe: fileProbe(MD),
+      commitReceipt: (recs) => records.push(...recs),
+      pidAlive: () => false,
+      log: noop,
+    })
+    expect(rec.ok).toBe(true)
+    expect(rec.reports[0].action).toBe("resumed-committed") // already-switched 的遗留事务前滚,绝不误回滚
+    expect(readFileSync(MD_PATH(), "utf8")).toBe(MD)
+    expect(agentLeaf()).toEqual({ description: "demo agent", prompt: "body" })
+    expect(records.length).toBeGreaterThan(0) // receipt 重放发生
+  })
+
   test("validatePlan refuses missing payload / unsafe relTarget / empty content / duplicate targets", async () => {
     const missing = await runExtensionTransaction(root, { items: [{ key: "a", action: "file" }] }, hooksFor())
     expect(missing.ok).toBe(false)
@@ -359,6 +474,82 @@ describe("file action in runExtensionTransaction (REQ-102 #358)", () => {
     )
     expect(dup.ok).toBe(false)
     if (!dup.ok) expect(dup.reason).toContain("duplicate file target")
+  })
+})
+
+describe("plugin seed 形状的崩溃恢复(REQ-102 #359:载荷 file items + config 单事务)", () => {
+  const PJS = "export const Demo = async () => ({})"
+  const LIB = "export const u = 1"
+  const pluginPlan = (): TxPlan => {
+    const iso = new Date().toISOString()
+    const dir = join(root, "plugins", "demo@abcdef0123456789")
+    return {
+      items: [
+        { key: "plugin--demo--f0", action: "file", file: { relTarget: "plugins/demo@abcdef0123456789/plugin.js", next: Buffer.from(PJS) } },
+        { key: "plugin--demo--f1", action: "file", file: { relTarget: "plugins/demo@abcdef0123456789/lib/util.js", next: Buffer.from(LIB) } },
+        {
+          key: "plugin--demo",
+          action: "config",
+          config: { target: cfgTarget, edits: [{ keyPath: ["plugin"], value: [join(dir, "plugin.js")] }] },
+          receipt: {
+            id: "plugin:demo",
+            name: "demo",
+            kind: "plugin",
+            environment: "prod",
+            scope: { kind: "global" },
+            desiredState: "enabled",
+            origin: "catalog",
+            installedAt: iso,
+            configKey: `plugin-path:${join(dir, "plugin.js")}`,
+            files: [dir],
+          },
+        },
+      ],
+    }
+  }
+  const routerProbe = (): HealthProbe => {
+    const agentProbe = agentFileProbe(root)
+    const pluginProbe = seedPluginFileProbe()
+    return async (input) => {
+      const gen = await skillGenerationProbe(input)
+      if (!gen.healthy) return gen
+      if (input.action !== "file") return { healthy: true }
+      return input.key.startsWith("agent--") ? agentProbe(input) : pluginProbe(input)
+    }
+  }
+
+  test("crash after-switched → 生产路由探针验载荷 digest 后前滚,receipt 过滤重放落单条账", async () => {
+    await expect(
+      runExtensionTransaction(root, pluginPlan(), { populate: noop, probe: seedPluginFileProbe(), commitReceipt: noop, log: noop, crashAt: "after-switched" }),
+    ).rejects.toThrow(ExtTxCrashError)
+    const rec = await recoverExtensionTransactions(root, {
+      probe: routerProbe(),
+      commitReceipt: (recs) => {
+        const written = upsertRecordsV2(root, recoveryReceiptInputs(recs))
+        if (!written.ok) throw new Error(written.reason)
+      },
+      pidAlive: () => false,
+      log: noop,
+    })
+    expect(rec.ok).toBe(true)
+    expect(rec.reports[0].action).toBe("resumed-committed")
+    const dir = join(root, "plugins", "demo@abcdef0123456789")
+    expect(readFileSync(join(dir, "plugin.js"), "utf8")).toBe(PJS)
+    expect(readFileSync(join(dir, "lib", "util.js"), "utf8")).toBe(LIB)
+    expect(findRecordV2(root, "plugin", "demo")).not.toBeNull()
+  })
+
+  test("crash after-switched + 载荷被篡改 → digest 判未翻转 → 回滚(文件恢复缺席、config 回旧)", async () => {
+    await expect(
+      runExtensionTransaction(root, pluginPlan(), { populate: noop, probe: seedPluginFileProbe(), commitReceipt: noop, log: noop, crashAt: "after-switched" }),
+    ).rejects.toThrow(ExtTxCrashError)
+    const dir = join(root, "plugins", "demo@abcdef0123456789")
+    writeFileSync(join(dir, "lib", "util.js"), "tampered payload")
+    const rec = await recoverExtensionTransactions(root, { probe: routerProbe(), commitReceipt: noop, pidAlive: () => false, log: noop })
+    expect(rec.ok).toBe(true)
+    // 篡改文件 digest ≠ next → 部分翻转 → 回滚;被篡改文件 diverged fail-closed 保留非终态。
+    expect(rec.reports[0].action).toBe("none")
+    expect(findRecordV2(root, "plugin", "demo")).toBeNull() // 绝不为篡改载荷落账
   })
 })
 

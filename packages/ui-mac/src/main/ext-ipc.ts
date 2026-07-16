@@ -42,7 +42,7 @@ import {
 import bundledCatalogJson from "../renderer/extensions/alpha-catalog.json"
 import type { Catalog } from "../renderer/extensions/catalog-types"
 import { getAlphaEnvironment } from "./alpha-environment"
-import { decodeSetStateIntent, decodeUninstallIntent, installCatalog, listGenerationsByKey, rollbackGenerationByKey, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
+import { decodeSetStateIntent, decodeUninstallIntent, installCatalog, listGenerationsByKey, removeInstallGrants, rollbackGenerationByKey, seedPluginFileProbe, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
 import { makeRecoveryGate } from "./ext-recovery-gate"
 import { adoptProjectLedger } from "./ext-project-adopt"
 import { buildGatedWriteChannels, GATED_WRITE_CHANNELS } from "./ext-write-channels"
@@ -437,12 +437,16 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   // 前滚经 recoveryReceiptInputs 过滤无 receipt 的副 item(与安装路径同一过滤;裸 map 会让
   // config 副 item 缺 kind/name 导致重放永久失败 → 回滚却留下已写 receipt 的双真源分叉)。
   const recoveryOpts = (root: string): RecoverOptions => {
-    const fileProbe = agentFileProbe(root)
+    const agentProbe = agentFileProbe(root)
+    const pluginProbe = seedPluginFileProbe()
     return {
+    // file item 按 key 路由到各自类型化探针(#358 agent / #359 plugin payload);两者对
+    // 各自方案外的 key 均 fail-closed —— 未知 file item 绝不静默放行。
     probe: async (input) => {
       const gen = await skillGenerationProbe(input)
       if (!gen.healthy) return gen
-      return fileProbe(input)
+      if (input.action !== "file") return { healthy: true }
+      return input.key.startsWith("agent--") ? agentProbe(input) : pluginProbe(input)
     },
     commitReceipt: (recs) => {
       const written = upsertRecordsV2(root, recoveryReceiptInputs(recs))
@@ -465,6 +469,9 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
       if (!cfg.ok) throw new Error(cfg.reason)
       const sec = removeMcpServerSecretsStrict(userDataPath, name)
       if (!sec.ok) throw new Error(sec.reason)
+      // #359:与主卸载路径同语义 —— 授权账随 artifact 清,失败保持非终态前滚。
+      const grants = removeInstallGrants(root, [key])
+      if (!grants.ok) throw new Error(grants.reason)
     },
     log: (event, detail) => getLogger().log(`[req100-tx-recovery] ${event} ${JSON.stringify(detail)}`),
     }
