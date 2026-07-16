@@ -51,9 +51,24 @@ MCP 重装是产品流(确认框重装),走前像复原而非拒绝;plugin 更�
 「先卸后装」两步 IPC)的崩溃窗口与原子替换归 #352 —— 本契约的写前门管的是 overwrite-install,
 不覆盖该两步链;agent 的覆盖更新在产品上不存在(`updateEntry` 不支持 agent),故拒绝无回归。
 
-## 4. 证据
+## 4. project 账本共享与 environment 归因不变量(REQ-099 #356,Codex 裁决 A+C)
+
+- project `.alpha` 跨 app channel(prod/beta/dev)共用,**不做**环境分根(env 隔离只作用于
+  全局根);`InstallRecordV2.environment` 对 project 记录是 **adoption/安装时点的归因字段**
+  ——先到先得,如实固化,后到 channel 不重写。
+- **消费不变量**:environment 不是可见性、操作资格或 channel namespace —— 所有 channel 读同
+  一本项目账本,任何读方(`readLedgerV2` / `findRecordV2` / `lookupForUninstall` /
+  `ext-list-installs-v2`)不得按 environment 过滤或授权;新增读方必须遵守。
+- adoption 触发面 = 项目 lifecycle(`ext-trust-check`),在「无 executable / 已有信任决策」
+  两个早退**之前**;顺序 = realpath 身份 → `ledgerReady` → project recovery gate →
+  project bundle 锁 → `migrateV1Ledger`(迁移器自身不持锁);无 `.alpha` 存量零写副作用;
+  拒绝 loud log 零改动,busy/transient 下次打开自然重试(幂等)。
+
+## 5. 证据
 
 `ext-install-planner.test.ts`(fail-closed non-generation ledger commit:逐类型写前门/
-补偿/成功路径 discard 时序/账本前像拒绝/cloud 零补偿/v1 锁步派生)、
-`ext-config.test.ts` / `ext-fs-installer.test.ts` / `alpha-environment.test.ts`
-(eager v1 下线后的层级契约)。
+补偿/成功路径 discard 时序/损坏账本写前拒绝/v1-only 双查/补偿失败可观察/cloud 零补偿/
+v1 锁步派生)、`ext-config.test.ts` / `ext-fs-installer.test.ts` / `alpha-environment.test.ts`
+(eager v1 下线后的层级契约 + strict 读真实实现)、`ext-project-adopt.test.ts`
+(adoption 矩阵:纯文本收编/幂等不重写 env/scope 不符 retained/损坏零改动/busy 可重试/
+零存量零副作用/触发面源文本合同)。
