@@ -19,6 +19,7 @@ import { aggregateFilesDigest, computeManifestDigest, decodeManifestV2 } from ".
 import { hasCasBlob } from "./ext-cas"
 import { computeGrantDigest, findRecordV2, projectScopeIdentity, upsertRecordV2, type UpsertInput } from "./ext-receipt-v2"
 import { readCapabilityGrant, writeCapabilityGrantSync } from "./ext-capability-grants"
+import { setDesiredStateV2, upsertRecordsV2 } from "./ext-receipt-v2"
 import { probeTransactionJournals, resolveLiveGenerationDir } from "./ext-transaction"
 import { skillStorePaths } from "./ext-skill-generations"
 
@@ -1722,7 +1723,7 @@ describe("atomic plugin replace via installCatalog (REQ-099 #352)", () => {
     if (!d.ok) throw new Error("fixture manifest invalid")
     return computeManifestDigest(d.manifest)
   }
-  const seedNpmOld = (over: { pinned?: string; digest?: string; desiredState?: "enabled" | "disabled"; name?: string; id?: string } = {}) => {
+  const seedNpmOld = (over: { pinned?: string; digest?: string; desiredState?: "enabled" | "disabled"; name?: string; id?: string; version?: string } = {}) => {
     const pinned = over.pinned ?? "@alpha/np@2.0.0"
     fs.mkdirSync(globalRoot, { recursive: true })
     fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [pinned] }, null, 2))
@@ -1732,7 +1733,7 @@ describe("atomic plugin replace via installCatalog (REQ-099 #352)", () => {
       kind: "plugin",
       environment: "prod",
       scope: { kind: "global" },
-      version: "2.0.0",
+      version: over.version ?? "2.0.0",
       ...(over.digest ? { manifestDigest: over.digest } : {}),
       desiredState: over.desiredState ?? "enabled",
       origin: "catalog",
@@ -1762,7 +1763,7 @@ describe("atomic plugin replace via installCatalog (REQ-099 #352)", () => {
   })
 
   test("同钉版同 digest → 幂等早退(零副作用,warning 说明)", async () => {
-    seedNpmOld({ pinned: "@alpha/np@2.3.4", digest: npDigest() })
+    seedNpmOld({ pinned: "@alpha/np@2.3.4", digest: npDigest(), version: "2.3.4" })
     const before = fs.readFileSync(path.join(globalRoot, "installs.json"))
     const { deps } = makeDeps()
     const r = await installAuthorized({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
@@ -1858,5 +1859,89 @@ describe("atomic plugin replace via installCatalog (REQ-099 #352)", () => {
     expect(u.ok).toBe(true)
     expect(fs.existsSync(stagedDir)).toBe(false)
     expect(findRecordV2(globalRoot, "plugin", "vp")).toBeNull()
+  })
+})
+
+// ── #352 review #381 回归锁 ────────────────────────────────────────────────────────────────────────
+describe("plugin replace hardening (review #381)", () => {
+  test("vendored:账本路径树外(形状合法但漂移)→ 拒绝 replace,绝不作为删除目标", async () => {
+    const evilJs = path.join(tmp, "Documents", "plugin.js")
+    fs.mkdirSync(path.dirname(evilJs), { recursive: true })
+    fs.writeFileSync(evilJs, "// user data")
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [evilJs] }, null, 2))
+    const w = upsertRecordV2(globalRoot, {
+      id: "plugin:vp", name: "vp", kind: "plugin", environment: "prod", scope: { kind: "global" },
+      version: "0.9.0", desiredState: "enabled", origin: "catalog",
+      configKey: `plugin-path:${evilJs}`, transaction: { id: "tx-evil", state: "committed" },
+      installedAt: "2026-07-15T00:00:00.000Z",
+    })
+    if (!w.ok) throw new Error(w.reason)
+    const { deps } = makeDeps()
+    const r = await installCatalog({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("uncontrolled removal target")
+    expect(fs.existsSync(evilJs)).toBe(true) // 树外目标毫发无损
+  })
+
+  test("改名史:同 catalog id 的 v1-only 历史名(当前 spec 重建不出)→ 拒绝,不误走 fresh", async () => {
+    addReceipt(globalRoot, { id: "plugin:np", name: "old__np", type: "plugin", scope: "global", installedAt: new Date().toISOString(), origin: "catalog", configKey: "plugin:@old/np@1.0.0" })
+    const { deps, calls } = makeDeps()
+    const r = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("historical package name")
+    expect(called(calls, "persistPlugin")).toHaveLength(0)
+  })
+
+  test("幂等早退须证完整:同 digest 但 plugin.js 丢失(vendored)→ 走完整替换修复,不谎报成功", async () => {
+    const oldDir = path.join(globalRoot, "plugins", "vp")
+    const oldJs = path.join(oldDir, "plugin.js")
+    fs.mkdirSync(oldDir, { recursive: true }) // 目录在、plugin.js 丢失
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [oldJs] }, null, 2))
+    const d = decodeManifestV2(synthesizeManifest({ entry: pluginVendoredEntry, channel: "remote", catalogVersion: "2026-07-13.1" }))
+    if (!d.ok) throw new Error("fixture manifest invalid")
+    const w = upsertRecordV2(globalRoot, {
+      id: "plugin:vp", name: "vp", kind: "plugin", environment: "prod", scope: { kind: "global" },
+      version: d.manifest.version, manifestDigest: computeManifestDigest(d.manifest),
+      desiredState: "enabled", origin: "catalog",
+      configKey: `plugin-path:${oldJs}`, transaction: { id: "tx-old-vp2", state: "committed" },
+      installedAt: "2026-07-15T00:00:00.000Z",
+    })
+    if (!w.ok) throw new Error(w.reason)
+    const { deps } = makeDeps()
+    const r = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.warning ?? "").not.toContain("nothing to replace") // 修复路径,非早退
+    const cfg = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8")) as { plugin: string[] }
+    expect(cfg.plugin[0]).toContain("vp@feed1234") // 新 versioned 路径已接管
+  })
+
+  test("replay:可变归属字段(desiredState)漂移不算冲突 —— 重放保留后到变更;纯重放批零写盘", async () => {
+    const base = {
+      id: "plugin:np", name: "np", kind: "plugin" as const, environment: "prod" as const,
+      scope: { kind: "global" as const }, version: "2.3.4", desiredState: "enabled" as const,
+      origin: "catalog" as const, configKey: "plugin:@alpha/np@2.3.4",
+      transaction: { id: "tx-rp", state: "committed" as const }, installedAt: "2026-07-16T00:00:00.000Z",
+    }
+    expect(upsertRecordV2(globalRoot, base).ok).toBe(true)
+    // 模拟 setInstallState 后到变更(真实写方:保留 transaction.id,只翻 desiredState)…
+    const flipped = setDesiredStateV2(globalRoot, "plugin", "np", "disabled")
+    expect(flipped.ok).toBe(true)
+    // …随后崩溃恢复重放原 tx(desiredState=enabled 的 journal 模板):不冲突、不回翻、不递增。
+    const replay = upsertRecordsV2(globalRoot, [base])
+    expect(replay.ok).toBe(true)
+    if (!replay.ok) return
+    expect(replay.records[0]!.desiredState).toBe("disabled") // 后到合法变更保留
+    expect(replay.records[0]!.generation).toBe(1) // 不递增(重放非新代)
+    // 纯重放批 = 零写盘:账本只读也能成功(root CI 跳过)。
+    if (!(typeof process.getuid === "function" && process.getuid() === 0)) {
+      fs.chmodSync(globalRoot, 0o555)
+      try {
+        const ro = upsertRecordsV2(globalRoot, [base])
+        expect(ro.ok).toBe(true)
+      } finally {
+        fs.chmodSync(globalRoot, 0o755)
+      }
+    }
   })
 })

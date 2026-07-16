@@ -426,8 +426,11 @@ export function readPluginArrayStrict(): { ok: true; value: unknown[] } | { ok: 
     if (errors.length > 0) return { ok: false, reason: `config unparseable (${errors.length} syntax error(s)) — refusing plugin replace` }
     const v = parsed?.plugin
     if (v === undefined) return { ok: true, value: [] }
-    if (Array.isArray(v)) return { ok: true, value: v }
-    return { ok: false, reason: "config plugin key is not an array — refusing plugin replace" }
+    if (!Array.isArray(v)) return { ok: false, reason: "config plugin key is not an array — refusing plugin replace" }
+    // review #381 minor:元素必须全为字符串 —— 非法成员(object/null)不许被替换流原样保留。
+    if (!v.every((x) => typeof x === "string"))
+      return { ok: false, reason: "config plugin[] contains non-string entries — refusing plugin replace (fix the config first)" }
+    return { ok: true, value: v }
   } catch (error) {
     return { ok: false, reason: `config unreadable: ${error instanceof Error ? error.message : String(error)}` }
   }

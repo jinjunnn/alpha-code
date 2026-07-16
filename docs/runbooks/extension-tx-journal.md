@@ -59,8 +59,12 @@ journal 收敛到终态;收敛不了的**如实保留**,绝不静默终态化(#3
   账本未动;vendored 情况下已 staging 的 `plugins/<name>@<hex>` 新目录成为无引用孤儿(无害,
   可手工清理;它不在 GC mark 根上)。
 - **journal 已 committed、receipt 前滚**:恢复重放 `commitReceipt` —— `upsertRecordsV2` 对同
-  `transaction.id` 且事实一致的重放**幂等**(不递增 generation);同 id 但事实不一致 = 账本被
-  外力改写,前滚显式失败并保持 journal 非终态,按本 runbook 顶部的损坏处置流程人工核对。
+  `transaction.id` 且**身份事实**一致的重放**幂等**(纯重放批零写盘、不递增 generation;
+  `desiredState/updatedAt` 是合法可变归属字段,不算冲突,重放保留后到变更)。同 id 但身份
+  事实(版本/digest/configKey 等)不一致 = 账本被外力改写:前滚 `commitReceipt` 显式失败,
+  **引擎按回滚路径终态化该 journal(rolled-back,config 回旧)**,而被改写的 receipt 会
+  保留在账 —— 此时 config 与账本分叉,不会再自动收敛,按本 runbook 顶部的损坏处置流程
+  人工核对(这是「txId 被冲突重用」的防伪保守面,预期极罕见)。
 - **提交成功、旧 vendored 目录 GC 前崩溃**:旧目录成为无引用孤儿(config 已指向新 versioned
   目录),安装功能不受影响;出现于 `plugins/` 下 `<name>`(旧式)或 `<name>@<hex>`(versioned)
   且不被当前 config/账本引用的目录即孤儿,可安全删除。

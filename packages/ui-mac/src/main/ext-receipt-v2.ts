@@ -482,16 +482,25 @@ export type UpsertInput = Omit<InstallRecordV2, "schemaVersion" | "generation" |
 export type LedgerV2Write = { ok: true; record: InstallRecordV2; warnings: string[] } | { ok: false; reason: string }
 
 /** #352(Codex 裁决必改 4):transaction exact-replay 幂等 —— 崩溃恢复会重放 commitReceipt,
- *  同 transaction.id 且全部事实一致时必须直接返回已有记录(绝不递增 generation/previous 链);
- *  同 id 但事实冲突 = txId 重用,显式拒绝(重用是伪造面)。非重放(无 prev / 无 txId / id 不同)
- *  返回 fresh 走正常新写。比较基准 = 「按 prev 的 generation/previousDigest 对齐后本会写出的记录」
- *  与 prev 的 canonical 等值(installedAt 等事实字段来自 journal 模板,重放时逐字节相同)。 */
+ *  同 transaction.id 且**身份事实**一致时必须直接返回已有记录(绝不递增 generation/previous 链);
+ *  同 id 但身份事实冲突 = txId 重用,显式拒绝(重用是伪造面)。非重放(无 prev / 无 txId / id 不同)
+ *  返回 fresh 走正常新写。
+ *  比较基准 = 「按 prev 的 generation/previousDigest 对齐后本会写出的记录」与 prev 的 canonical
+ *  等值,**剔除可变归属字段 desiredState/updatedAt**(review #381:receipt 落盘后、journal 终态前,
+ *  用户合法的启停/更新戳写方可以改这两个字段 —— 把它们算进冲突会让恢复前滚误判、事务回滚终态化,
+ *  config/账本永久分叉;重放返回 prev 原样,后到的合法变更得以保留)。 */
 function replayVerdict(
   prev: InstallRecordV2 | null,
   input: UpsertInput,
 ): { kind: "fresh" } | { kind: "replay"; record: InstallRecordV2 } | { kind: "conflict"; reason: string } {
   const txId = input.transaction?.id
   if (!prev || !txId || prev.transaction?.id !== txId) return { kind: "fresh" }
+  const identity = (r: Record<string, unknown>): string => {
+    const clone: Record<string, unknown> = { ...r }
+    delete clone.desiredState
+    delete clone.updatedAt
+    return canonicalJson(clone)
+  }
   const candidate = {
     ...input,
     schemaVersion: RECORD_SCHEMA_VERSION,
@@ -499,7 +508,7 @@ function replayVerdict(
     ...(prev.previousDigest ? { previousDigest: prev.previousDigest } : {}),
   }
   if (!prev.previousDigest) delete (candidate as { previousDigest?: string }).previousDigest
-  if (canonicalJson(candidate) === canonicalJson(prev)) return { kind: "replay", record: prev }
+  if (identity(candidate) === identity(prev as unknown as Record<string, unknown>)) return { kind: "replay", record: prev }
   return {
     kind: "conflict",
     reason: `transaction id ${txId} reused for ${key(input.kind, input.name)} with conflicting facts — refusing (exact replay only)`,
@@ -555,6 +564,7 @@ export function upsertRecordsV2(root: string, inputs: UpsertInput[]): LedgerV2Ba
   const recordsByKey = new Map(parsed.records.map((r) => [key(r.kind, r.name), r]))
   const receiptKeys = new Set(parsed.receipts.map((r) => key(r.type, r.name)))
   const committed: InstallRecordV2[] = []
+  let freshWrites = 0
   for (const input of inputs) {
     const k = key(input.kind, input.name)
     const prev = recordsByKey.get(k) ?? null
@@ -564,6 +574,7 @@ export function upsertRecordsV2(root: string, inputs: UpsertInput[]): LedgerV2Ba
       committed.push(verdict.record) // 幂等:重放件原样计入,不递增 generation
       continue
     }
+    freshWrites++
     const hadV1 = receiptKeys.has(k)
     const record: InstallRecordV2 = {
       ...input,
@@ -576,6 +587,9 @@ export function upsertRecordsV2(root: string, inputs: UpsertInput[]): LedgerV2Ba
     recordsByKey.set(k, check.record) // 后续同 key 基于已累积态派生 generation
     committed.push(check.record)
   }
+  // review #381:纯重放批(恢复期常态)= 真 no-op —— 账本已含全部目标记录,零写盘直接返回;
+  // 否则「账本暂时不可写」会让完全一致的前滚失败、引擎回滚 config,与已在账的 receipt 永久分叉。
+  if (freshWrites === 0) return { ok: true, records: committed, warnings }
   // 用累积后的最终态重建两视图(committed 里同 key 只保留最后一条 = recordsByKey 的值)。
   const committedKeys = new Set(committed.map((r) => key(r.kind, r.name)))
   const finalRecords = [

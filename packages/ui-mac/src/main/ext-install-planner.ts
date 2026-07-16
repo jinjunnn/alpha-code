@@ -68,6 +68,7 @@ import {
   removeRecordV2,
   setDesiredStateV2,
   probeLedgerForWrite,
+  readLedgerV2,
   upsertRecordV2,
   upsertRecordsV2,
   verifyProjectScope,
@@ -682,6 +683,16 @@ function resolvePluginDispatch(
       return { mode: "refuse", reason: `plugin "${n}" has a v1-only record — cannot atomically replace; uninstall explicitly, then reinstall` }
     if (lk.status === "valid") hits.push({ name: n, lookup: lk })
   }
+  // review #381 Major:名字集合重建不了历史 —— package 改名前的 eager-v1 名无法从当前 spec 派生。
+  // 按 catalog **id** 扫全账兜底:同 id 的 v2 record 名不在集合 = 名变更(拒);同 id 的 v1-only
+  // receipt = 历史遗物(拒),绝不误走 fresh 造成新旧并存。
+  const ledger = readLedgerV2(root)
+  const strayRecord = ledger.records.find((r) => r.kind === "plugin" && r.id === entry.id && !names.includes(r.name))
+  if (strayRecord)
+    return { mode: "refuse", reason: `installed plugin record name "${strayRecord.name}" ≠ catalog entry name "${entry.name}" — name changes are refused in this phase` }
+  const strayV1 = ledger.v1Only.find((r) => r.type === "plugin" && r.id === entry.id && !names.includes(r.name))
+  if (strayV1)
+    return { mode: "refuse", reason: `plugin "${strayV1.name}" (same catalog id, historical package name) has a v1-only record — cannot atomically replace; uninstall explicitly, then reinstall` }
   if (hits.length === 0) return { mode: "fresh" }
   if (hits.length > 1) return { mode: "refuse", reason: `plugin has records under both "${hits[0]!.name}" and "${hits[1]!.name}" — duplicate keys, refusing (resolve manually)` }
   const hit = hits[0]!
@@ -701,10 +712,22 @@ function resolvePluginDispatch(
     return { mode: "replace", facts: { record, form: { kind: "npm", oldPinned } } }
   }
   if (configKey.startsWith("plugin-path:")) {
-    const oldJsPath = configKey.slice("plugin-path:".length)
+    // review #381 Major:configKey 只作对账参考,删除路径必须重新圈禁 —— 与卸载同一约束:
+    // 必须恰为 <root>/plugins/<name 或 name@suffix>/plugin.js,否则后续旧目录 GC 的递归删除
+    // 会被漂移账本导向任意目录。圈禁失败 = 拒绝(不是 fresh)。
+    const oldJsPath = path.resolve(configKey.slice("plugin-path:".length))
+    const pluginsRoot = path.join(root, "plugins")
+    const oldDir = path.dirname(oldJsPath)
+    const dirBase = path.basename(oldDir)
+    const confined =
+      path.basename(oldJsPath) === "plugin.js" &&
+      path.dirname(oldDir) === pluginsRoot &&
+      (dirBase === entry.name || dirBase.startsWith(`${entry.name}@`))
+    if (!confined)
+      return { mode: "refuse", reason: `ledger plugin path "${oldJsPath}" is not under "${pluginsRoot}/${entry.name}[@…]" — refusing replace (uncontrolled removal target)` }
     if (cfg.value.filter((x) => x === oldJsPath).length !== 1)
       return { mode: "refuse", reason: `ledger configKey "${configKey}" not matched exactly once in config plugin[] — ledger/config drift, refusing replace` }
-    return { mode: "replace", facts: { record, form: { kind: "vendored", oldJsPath, oldDir: path.dirname(oldJsPath) } } }
+    return { mode: "replace", facts: { record, form: { kind: "vendored", oldJsPath, oldDir } } }
   }
   return { mode: "refuse", reason: `installed plugin record has no recognizable configKey ("${configKey}") — refusing replace` }
 }
@@ -737,7 +760,14 @@ async function replacePluginViaTransaction(args: {
       return { ok: false, reason: "entry has no plugin package" }
     }
     const pinned = spec.version && spec.package.indexOf("@", 1) === -1 ? `${spec.package}@${spec.version}` : spec.package
-    if (pinned === facts.form.oldPinned && facts.record.manifestDigest === manifestDigest) {
+    // review #381 Major:幂等早退必须证明目标安装**完整**(digest 相等只证身份)—— receipt 版本、
+    // 事务终态任一不符即走完整替换(替换本身就是修复路径),绝不把坏状态报成功。
+    const npmHealthy =
+      pinned === facts.form.oldPinned &&
+      facts.record.manifestDigest === manifestDigest &&
+      facts.record.version === manifest.version &&
+      facts.record.transaction?.state === "committed"
+    if (npmHealthy) {
       rollback("already at target version")
       return { ok: true, kind: "plugin", name: entry.name, manifestDigest, warning: `already pinned at ${pinned} — nothing to replace` }
     }
@@ -748,7 +778,13 @@ async function replacePluginViaTransaction(args: {
       rollback("entry has no vendored asset")
       return { ok: false, reason: "entry has no vendored asset" }
     }
-    if (facts.record.manifestDigest === manifestDigest) {
+    // vendored 另须实物在场(plugin.js 实存)—— 目录丢失时同 digest 也要重 staging(修复)。
+    const vendoredHealthy =
+      facts.record.manifestDigest === manifestDigest &&
+      facts.record.version === manifest.version &&
+      facts.record.transaction?.state === "committed" &&
+      fs.existsSync(facts.form.oldJsPath)
+    if (vendoredHealthy) {
       rollback("already at target version")
       return { ok: true, kind: "plugin", name: entry.name, manifestDigest, warning: "already at this version — nothing to replace" }
     }
