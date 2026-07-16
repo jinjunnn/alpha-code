@@ -400,11 +400,34 @@ export function readMcpLeafStrict(
   const target = mcpPluginTargetPath()
   try {
     if (!fs.existsSync(target)) return { ok: true, value: undefined }
-    const parsed = parse(fs.readFileSync(target, "utf8")) as { mcp?: Record<string, unknown> } | undefined
+    // review #379 Major:jsonc-parser 容错解析不抛错(损坏文本静默给部分对象)—— 必须收集
+    // ParseError[],语法损坏 = 前像不可信,写前拒绝。
+    const errors: ParseError[] = []
+    const parsed = parse(fs.readFileSync(target, "utf8"), errors) as { mcp?: Record<string, unknown> } | undefined
+    if (errors.length > 0) return { ok: false, reason: `config unparseable (${errors.length} syntax error(s)) — refusing before any side effect` }
     const v = parsed?.mcp?.[name]
     if (v === undefined) return { ok: true, value: undefined }
     if (v && typeof v === "object" && !Array.isArray(v)) return { ok: true, value: v as Record<string, unknown> }
     return { ok: false, reason: `mcp.${name} has unexpected shape — refusing to snapshot (compensation would destroy it)` }
+  } catch (error) {
+    return { ok: false, reason: `config unreadable: ${error instanceof Error ? error.message : String(error)}` }
+  }
+}
+
+/** #354(review #379 Blocker):agent 写前在场检查的**配置项**面 —— agents/<name>.md 缺席不代表
+ *  不在场,手工 `agent.<name>` 配置同样是既有安装事实;不可读/语法损坏按在场处理(fail-closed)。 */
+export function readAgentEntryStrict(
+  name: string,
+  targetPath?: string,
+): { ok: true; present: boolean } | { ok: false; reason: string } {
+  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid agent name" }
+  const target = targetPath ?? mcpPluginTargetPath()
+  try {
+    if (!fs.existsSync(target)) return { ok: true, present: false }
+    const errors: ParseError[] = []
+    const parsed = parse(fs.readFileSync(target, "utf8"), errors) as { agent?: Record<string, unknown> } | undefined
+    if (errors.length > 0) return { ok: false, reason: `config unparseable (${errors.length} syntax error(s))` }
+    return { ok: true, present: parsed?.agent?.[name] !== undefined }
   } catch (error) {
     return { ok: false, reason: `config unreadable: ${error instanceof Error ? error.message : String(error)}` }
   }

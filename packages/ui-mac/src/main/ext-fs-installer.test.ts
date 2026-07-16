@@ -10,7 +10,7 @@ import * as path from "node:path"
 
 mock.module("electron", () => ({ app: { isPackaged: false } }))
 
-const { installBuiltinSkill, installRemoteAgent, removeFsInstall, writeAgent, writeSkill } = await import("./ext-fs-installer")
+const { agentInstallPresent, installBuiltinSkill, installRemoteAgent, removeFsInstall, writeAgent, writeSkill } = await import("./ext-fs-installer")
 const { readLedger } = await import("./alpha-installs")
 
 let base = ""
@@ -276,5 +276,24 @@ describe("uncurated fs installs land v2 records (#306)", () => {
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toContain("catalog install")
     expect(fs.existsSync(path.join(alphaDir, "agents", "pm.md"))).toBe(false) // 补偿:md 已撤
+  })
+})
+
+// ── #354(review #379 Blocker):agent 在场检查必须覆盖手工 `agent.<name>` 配置项 ──────────────────
+describe("agentInstallPresent (REQ-100 #354)", () => {
+  test("md 在场 / 手工配置项在场 / 语法损坏配置 → 一律 true;全净 → false", () => {
+    expect(agentInstallPresent("helper", { scope: "global" })).toBe(false)
+    // 手工 agent.<name> 配置(无 md、无账)= 既有安装事实,覆盖它会造成用户数据丢失。
+    fs.mkdirSync(alphaDir, { recursive: true })
+    fs.writeFileSync(path.join(alphaDir, "alpha.jsonc"), JSON.stringify({ agent: { helper: { prompt: "hand written" } } }))
+    expect(agentInstallPresent("helper", { scope: "global" })).toBe(true)
+    // 语法损坏 → fail-closed 在场。
+    fs.writeFileSync(path.join(alphaDir, "alpha.jsonc"), '{ "agent": { broken')
+    expect(agentInstallPresent("helper", { scope: "global" })).toBe(true)
+    // md 在场(无配置项)。
+    fs.writeFileSync(path.join(alphaDir, "alpha.jsonc"), "{}")
+    fs.mkdirSync(path.join(alphaDir, "agents"), { recursive: true })
+    fs.writeFileSync(path.join(alphaDir, "agents", "helper.md"), "---\ndescription: d\n---\nbody")
+    expect(agentInstallPresent("helper", { scope: "global" })).toBe(true)
   })
 })

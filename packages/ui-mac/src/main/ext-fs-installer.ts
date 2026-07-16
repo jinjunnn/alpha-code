@@ -16,7 +16,7 @@ import * as path from "node:path"
 import { fileURLToPath } from "node:url"
 import { opencodeHomeDir, unbridgeItem } from "./alpha-bridge"
 import { agentMdToEntry } from "./agent-md-entry"
-import { persistAgentEntry, readAgentEntry, removeAgentEntry } from "./ext-config"
+import { persistAgentEntry, readAgentEntry, readAgentEntryStrict, removeAgentEntry } from "./ext-config"
 import { alphaGlobalRoot, removeReceipt } from "./alpha-installs"
 import { tryGetAlphaEnvironment } from "./alpha-environment"
 import { projectScopeIdentity, type ScopeIdentity } from "./ext-receipt-v2"
@@ -571,7 +571,14 @@ export function agentInstallPresent(name: string, target?: InstallTarget): boole
   if ("error" in roots) return true
   const dir = safeResolveUnder(roots.alphaDir, "agents")
   if (!dir) return true
-  return fs.existsSync(path.join(dir, `${name}.md`))
+  if (fs.existsSync(path.join(dir, `${name}.md`))) return true
+  // review #379 Blocker:md 缺席不代表不在场 —— 手工 `agent.<name>` 配置(无 md、无账)同样是
+  // 既有安装事实,writeAgent 会覆盖它、失败补偿 removeFsInstall 会删掉它 = 用户数据丢失。
+  // 配置项检查走 strict(不可读/语法损坏按在场处理,fail-closed);target 派生与 writeAgent 同源。
+  const entryTarget = roots.scope === "project" ? path.join(roots.alphaDir, "alpha.jsonc") : undefined
+  const entry = readAgentEntryStrict(name, entryTarget)
+  if (!entry.ok) return true
+  return entry.present
 }
 
 export function installBuiltinAgent(

@@ -179,7 +179,10 @@ function makeDeps(opts: {
         fileified: Object.keys(secrets),
         skipped: [],
         refs: {},
-        restore: () => calls.push({ fn: "restoreSecrets", args: [] }),
+        restore: () => {
+          calls.push({ fn: "restoreSecrets", args: [] })
+          return { ok: true as const }
+        },
         discard: () => calls.push({ fn: "discardSecrets", args: [] }),
       }
     },
@@ -1471,11 +1474,13 @@ describe("fail-closed non-generation ledger commit (REQ-100 #354)", () => {
     version: "1.0.0",
     installSpec: { kind: "agent", source: "builtin", builtinAssetKey: "agents/helper" },
   } as CatalogEntry
+  const runningAsRoot = () => typeof process.getuid === "function" && process.getuid() === 0
   const lockRoot = () => fs.chmodSync(globalRoot, 0o555)
   const unlockRoot = () => fs.chmodSync(globalRoot, 0o755)
 
   test("mcp:账本写失败 → 叶前像复原 + 密钥快照复原(discard 不触发)+ ok:false 并入补偿事实", async () => {
     const { deps, calls } = makeDeps()
+    if (runningAsRoot()) return // root 下 0o555 仍可写(review minor:假红而非假绿)
     lockRoot()
     try {
       const r = await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "sekret" } } }, deps)
@@ -1534,6 +1539,7 @@ describe("fail-closed non-generation ledger commit (REQ-100 #354)", () => {
 
   test("plugin(npm):账本写失败 → 只撤本次写入的精确元素(changed:true 已证明新增)", async () => {
     const { deps, calls } = makeDeps()
+    if (runningAsRoot()) return // root 下 0o555 仍可写(review minor:假红而非假绿)
     lockRoot()
     try {
       const r = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
@@ -1553,6 +1559,7 @@ describe("fail-closed non-generation ledger commit (REQ-100 #354)", () => {
     fs.rmSync(path.join(globalRoot, "plugins", "vp"), { recursive: true, force: true })
 
     const { deps: d2, calls: c2 } = makeDeps()
+    if (runningAsRoot()) return // root 下 0o555 仍可写(review minor:假红而非假绿)
     lockRoot()
     try {
       const r2 = await installCatalog({ catalogId: "plugin:vp", scope: { scope: "global" } }, d2)
@@ -1580,6 +1587,7 @@ describe("fail-closed non-generation ledger commit (REQ-100 #354)", () => {
 
   test("agent:账本写失败 → 整撤本次 fresh 安装(md + 条目)", async () => {
     const { deps, calls } = makeDeps({ entries: [...ALL_ENTRIES, agentEntry] })
+    if (runningAsRoot()) return // root 下 0o555 仍可写(review minor:假红而非假绿)
     lockRoot()
     try {
       const r = await installCatalog({ catalogId: "agent:helper", scope: { scope: "global" } }, deps)
@@ -1595,12 +1603,84 @@ describe("fail-closed non-generation ledger commit (REQ-100 #354)", () => {
 
   test("cloud:账本写失败 → ok:false(零副作用类型,无补偿调用)", async () => {
     const { deps, calls } = makeDeps()
+    if (runningAsRoot()) return // root 下 0o555 仍可写(review minor:假红而非假绿)
     lockRoot()
     try {
       const r = await installCatalog({ catalogId: "cloud:research", scope: { scope: "global" } }, deps)
       expect(r.ok).toBe(false)
       if (!r.ok) expect(r.reason).toContain("install ledger write failed")
       expect(installerCallCount(calls)).toBe(0)
+    } finally {
+      unlockRoot()
+    }
+  })
+
+  test("损坏账本(garbage JSON)→ 写前拒绝且原文件不动(quarantine 不是提交路径)", async () => {
+    fs.writeFileSync(path.join(globalRoot, "installs.json"), "{ definitely not json")
+    const before = fs.readFileSync(path.join(globalRoot, "installs.json"))
+    const { deps, calls } = makeDeps()
+    const r = await installCatalog({ catalogId: "cloud:research", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("install ledger corrupt")
+    expect(fs.readFileSync(path.join(globalRoot, "installs.json")).equals(before)).toBe(true)
+    expect(fs.existsSync(path.join(globalRoot, "ext-tx"))).toBe(false) // 无 quarantine 触发
+    expect(installerCallCount(calls)).toBe(0)
+  })
+
+  test("v1-only receipt 同样触发写前拒绝(历史 eager v1 遗物;npm 按规范化名双查)", async () => {
+    // npm 插件历史 eager v1 名 = pluginRecordName("@alpha/np") = "alpha__np"(≠ entry.name "np")。
+    addReceipt(globalRoot, { id: "plugin:np", name: "alpha__np", type: "plugin", scope: "global", installedAt: new Date().toISOString(), origin: "catalog", configKey: "plugin:@alpha/np@2.3.4" })
+    const { deps, calls } = makeDeps()
+    const r = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("#352")
+    expect(called(calls, "persistPlugin")).toHaveLength(0)
+
+    addReceipt(globalRoot, { id: "agent:helper", name: "helper", type: "agent", scope: "global", installedAt: new Date().toISOString(), origin: "catalog" })
+    const { deps: d2, calls: c2 } = makeDeps({ entries: [...ALL_ENTRIES, agentEntry] })
+    const r2 = await installCatalog({ catalogId: "agent:helper", scope: { scope: "global" } }, d2)
+    expect(r2.ok).toBe(false)
+    expect(called(c2, "installBuiltinAgent")).toHaveLength(0)
+  })
+
+  test("补偿失败可观察(review #379):config 撤销失败与密钥恢复失败并入 compensation incomplete", async () => {
+    if (runningAsRoot()) return
+    const { deps, calls } = makeDeps({
+      installers: {
+        removePluginEntryExact: () => ({ ok: false as const, reason: "config busy: lock held" }),
+      },
+    })
+    lockRoot()
+    try {
+      const r = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
+      expect(r.ok).toBe(false)
+      if (r.ok) throw new Error("unreachable")
+      expect(r.reason).toContain("compensation incomplete")
+      expect(r.reason).toContain("config busy")
+    } finally {
+      unlockRoot()
+    }
+    expect(called(calls, "persistPlugin")).toHaveLength(1)
+
+    const { deps: d2 } = makeDeps({
+      installers: {
+        fileifyMcpSecrets: (name, server, secrets) => ({
+          ok: true as const,
+          fileified: Object.keys(secrets),
+          skipped: [],
+          refs: {},
+          restore: () => ({ ok: false as const, reason: "secret restore failed for markitdown — backup kept" }),
+          discard: () => {},
+        }),
+      },
+    })
+    lockRoot()
+    try {
+      const r2 = await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "s" } } }, d2)
+      expect(r2.ok).toBe(false)
+      if (r2.ok) throw new Error("unreachable")
+      expect(r2.reason).toContain("compensation incomplete")
+      expect(r2.reason).toContain("secret restore failed")
     } finally {
       unlockRoot()
     }

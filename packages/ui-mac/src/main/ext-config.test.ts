@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { configHealth, persistMcp, persistPlugin, persistProvider, removeMcp, removeMcpConfigInLock, removePlugin } from "./ext-config"
+import { configHealth, persistMcp, persistPlugin, persistProvider, removeMcp, removeMcpConfigInLock, removePlugin, readMcpLeafStrict, readAgentEntryStrict } from "./ext-config"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
 import { addReceipt, findReceipt, readLedger } from "./alpha-installs"
 
@@ -356,5 +356,34 @@ describe("config write lock — serialized with the extension bundle lock (REQ-1
     const acquire = tryAcquireBundleLock(alphaTmp, { txId: "after-write" })
     expect(acquire.ok).toBe(true) // 写方 finally 释放,事务可立即获取
     if (acquire.ok) acquire.lock.release()
+  })
+})
+
+// ── #354(review #379):strict 读的真实实现 —— jsonc 容错解析必须收 ParseError ────────────────────
+describe("readMcpLeafStrict / readAgentEntryStrict (REQ-100 #354)", () => {
+  const cfgPath = () => path.join(alphaTmp, "alpha.jsonc")
+  test("缺失文件 = 合法空前像;健康文件返回精确叶子", () => {
+    expect(readMcpLeafStrict("demo")).toEqual({ ok: true, value: undefined })
+    fs.mkdirSync(alphaTmp, { recursive: true })
+    fs.writeFileSync(cfgPath(), JSON.stringify({ mcp: { demo: { type: "local", command: ["npx"] } } }))
+    const r = readMcpLeafStrict("demo")
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.value).toEqual({ type: "local", command: ["npx"] })
+  })
+  test("语法损坏(jsonc-parser 容错不抛错)→ strict 拒绝,绝不当作「叶不存在」", () => {
+    fs.mkdirSync(alphaTmp, { recursive: true })
+    fs.writeFileSync(cfgPath(), '{ "mcp": { broken')
+    const r = readMcpLeafStrict("demo")
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("unparseable")
+  })
+  test("readAgentEntryStrict:手工 agent 条目在场可见;语法损坏拒绝(fail-closed)", () => {
+    fs.mkdirSync(alphaTmp, { recursive: true })
+    fs.writeFileSync(cfgPath(), JSON.stringify({ agent: { helper: { prompt: "hand written" } } }))
+    const ok = readAgentEntryStrict("helper")
+    expect(ok).toEqual({ ok: true, present: true })
+    expect(readAgentEntryStrict("other")).toEqual({ ok: true, present: false })
+    fs.writeFileSync(cfgPath(), '{ "agent": { oops')
+    expect(readAgentEntryStrict("helper").ok).toBe(false)
   })
 })

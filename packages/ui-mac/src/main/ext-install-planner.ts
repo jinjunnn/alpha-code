@@ -67,6 +67,7 @@ import {
   projectScopeIdentity,
   removeRecordV2,
   setDesiredStateV2,
+  probeLedgerForWrite,
   upsertRecordV2,
   upsertRecordsV2,
   verifyProjectScope,
@@ -87,7 +88,8 @@ import {
 } from "./ext-skill-generations"
 import { promoteSeedAssetToCas, readPackagedSeed, type SeedAsset } from "./ext-seed"
 import { casBlobPath, materializeFilesFromCas, putCasBlobFromBuffer, readCasBlobVerified } from "./ext-cas"
-import { isSafeRelPath, writeFileAtomicSync } from "./ext-atomic-fs"
+import { isSafeRelPath } from "./ext-atomic-fs"
+import { pluginRecordName } from "./ext-config"
 
 // ── renderer intents(严格解码:未知键 = 伪造事实通道,loud 拒绝)─────────────────────────────
 
@@ -453,7 +455,14 @@ export type PlannerInstallers = {
     server: Record<string, unknown>,
     secrets: Record<string, string>,
   ):
-    | { ok: true; fileified: string[]; skipped: string[]; refs: Record<string, string>; restore(): void; discard(): void }
+    | {
+        ok: true
+        fileified: string[]
+        skipped: string[]
+        refs: Record<string, string>
+        restore(): { ok: true } | { ok: false; reason: string }
+        discard(): void
+      }
     | { ok: false; reason: string }
   /** #354(必改 2):可失败的严格 leaf 前像读 —— 「不存在」= 合法 undefined,「不可读/形状异常」
    *  必须写前拒绝(否则失败补偿会把未知内容当 undefined 删掉)。 */
@@ -635,37 +644,6 @@ function tryReuseCasPayload(
     }
   }
   return { hit: true, specs }
-}
-
-/** #354(Codex 裁决必改 5):账本整文件前像 —— upsertRecordV2 对损坏账本会先 quarantine 再重写,
- *  若随后写失败旧账已被移走;提交面失败必须整文件复原(只复原目标 record 保护不了其它条目)。
- *  非 ENOENT 的读失败 = 前像取不到,调用方写前拒绝(零副作用)。 */
-function captureLedgerImage(
-  root: string,
-): { ok: true; restore(): { ok: true } | { ok: false; reason: string } } | { ok: false; reason: string } {
-  const file = path.join(root, "installs.json")
-  let before: Buffer | null = null
-  try {
-    before = fs.readFileSync(file)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT")
-      return {
-        ok: false,
-        reason: `install ledger unreadable (${error instanceof Error ? error.message : String(error)}) — refusing before any side effect`,
-      }
-  }
-  return {
-    ok: true,
-    restore() {
-      try {
-        if (before !== null) writeFileAtomicSync(file, before)
-        else fs.rmSync(file, { force: true })
-        return { ok: true }
-      } catch (error) {
-        return { ok: false, reason: `ledger restore failed: ${error instanceof Error ? error.message : String(error)}` }
-      }
-    },
-  }
 }
 
 /** #348:renderer 只交 confirmed;decidedAt 是授权收据的审计事实,由 main 在此打戳(Codex 裁决 B1)。 */
@@ -1011,16 +989,22 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
   let liveMcp: { name: string; config: Record<string, unknown> } | undefined
   // #354:非 generation 提交面的失败补偿(按类型在各分支登记;密钥快照只在账本提交成功后 discard)。
   let compensate: (() => { ok: true } | { ok: false; reason: string }) | null = null
-  let mcpSecretSnap: { restore(): void; discard(): void } | null = null
+  let mcpSecretSnap: { restore(): { ok: true } | { ok: false; reason: string }; discard(): void } | null = null
 
   const spec = entry.installSpec
 
-  // ── #354 写前门(Codex 裁决必改 1/3):补偿必须可证明 —— 没有可靠前像的覆盖更新一律显式拒绝,
-  //    不静默覆盖、不把无账在场认领为 catalog(plugin 更新链 = #352 原子替换;agent 无更新链)。
+  // ── #354 写前门(Codex 裁决必改 1/3 + review #379 Major):补偿必须可证明 —— 没有可靠前像的
+  //    覆盖更新一律显式拒绝,不静默覆盖、不把无账在场认领为 catalog(plugin 更新链 = #352 原子
+  //    替换;agent 无更新链)。在场检查覆盖 v2 record **与 v1-only receipt**(历史 eager v1 遗物),
+  //    npm 插件另按历史规范化名 pluginRecordName(pkg) 查(review:同 catalog ID 双键/ghost)。
   if (entry.type === "plugin") {
-    if (findRecordV2(scope.root(deps), "plugin", entry.name)) {
-      rollback("existing plugin install")
-      return { ok: false, reason: `plugin "${entry.name}" already installed — update must go through atomic replace (#352), not overwrite-install` }
+    const pluginNames = new Set([entry.name])
+    if (spec?.kind === "plugin" && typeof spec.package === "string" && spec.package) pluginNames.add(pluginRecordName(spec.package))
+    for (const n of pluginNames) {
+      if (findRecordV2(scope.root(deps), "plugin", n) || findReceipt(scope.root(deps), "plugin", n)) {
+        rollback("existing plugin install")
+        return { ok: false, reason: `plugin "${n}" already on the ledger — update must go through atomic replace (#352), not overwrite-install` }
+      }
     }
     if (spec?.kind === "plugin" && spec.vendoredAssetKey && fs.existsSync(path.join(deps.globalRoot(), "plugins", entry.name))) {
       rollback("unregistered plugin dir present")
@@ -1028,17 +1012,22 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
     }
   }
   if (entry.type === "agent") {
-    if (findRecordV2(scope.root(deps), "agent", entry.name) || deps.installers.agentPresent(entry.name, scope.target)) {
+    if (
+      findRecordV2(scope.root(deps), "agent", entry.name) ||
+      findReceipt(scope.root(deps), "agent", entry.name) ||
+      deps.installers.agentPresent(entry.name, scope.target)
+    ) {
       rollback("existing agent install")
       return { ok: false, reason: `agent "${entry.name}" already present — agents have no update path; refusing overwrite (unregistered content is not adopted)` }
     }
   }
-  // #354(必改 5):账本整文件前像 —— upsert 对损坏账本会先 quarantine 再重写,提交面失败必须能
-  // 整文件复原;前像取不到(非 ENOENT)= 写前拒绝,零副作用。
-  const ledgerImage = captureLedgerImage(scope.root(deps))
-  if (!ledgerImage.ok) {
-    rollback(ledgerImage.reason)
-    return { ok: false, reason: ledgerImage.reason }
+  // #354(必改 5,review #379 收敛到拒绝分支):损坏/不可读账本**写前拒绝且原文件不动** ——
+  // 不给 upsert 的 quarantine 触发机会。由此健康账本 + 原子写失败 = 磁盘零变化,提交面无需
+  // 整文件恢复(恢复步骤才是跨进程竞态与「恢复后补偿再改账」的来源)。
+  const ledgerProbe = probeLedgerForWrite(scope.root(deps))
+  if (!ledgerProbe.ok) {
+    rollback(ledgerProbe.reason)
+    return { ok: false, reason: ledgerProbe.reason }
   }
 
   if (entry.type === "mcp") {
@@ -1076,10 +1065,13 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       }
       mcpSecretSnap = f
       if (f.skipped.length > 0) {
-        f.restore()
+        const sr = f.restore() // 复原失败可观察(review #379),并入拒绝原因
         mcpSecretSnap = null
         rollback(`secrets not routable to {file:} channel: ${f.skipped.join(", ")}`)
-        return { ok: false, reason: `secret(s) could not be routed to the {file:} channel: ${f.skipped.join(", ")} — refusing plaintext persist` }
+        return {
+          ok: false,
+          reason: `secret(s) could not be routed to the {file:} channel: ${f.skipped.join(", ")} — refusing plaintext persist${sr.ok ? "" : `; ${sr.reason}`}`,
+        }
       }
       refs = f.refs
     }
@@ -1087,17 +1079,21 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
     // live 必须在 persist 之后从 durable 派生,否则 renderer 拿去 sdk.mcp.add 的 live 配置缺策略字段。
     const persisted = deps.installers.persistMcp(entry.name, durable, meta)
     if (!persisted.ok) {
-      mcpSecretSnap?.restore()
+      const sr = mcpSecretSnap?.restore()
       mcpSecretSnap = null
       rollback(persisted.reason)
-      return persisted
+      return sr && !sr.ok ? { ok: false, reason: `${persisted.reason}; ${sr.reason}` } : persisted
     }
     configKey = `mcp.${entry.name}`
     compensate = () => {
+      const failures: string[] = []
       const lr = deps.installers.restoreMcpLeaf(entry.name, leafBefore.value)
-      mcpSecretSnap?.restore()
+      if (!lr.ok) failures.push(`mcp leaf restore: ${lr.reason}`)
+      // review #379:密钥恢复失败必须可观察(.bak 留证)—— 吞掉 = 谎报补偿完整。
+      const sr = mcpSecretSnap?.restore()
+      if (sr && !sr.ok) failures.push(sr.reason)
       mcpSecretSnap = null
-      return lr.ok ? { ok: true } : { ok: false, reason: `mcp leaf restore: ${lr.reason}` }
+      return failures.length ? { ok: false, reason: failures.join("; ") } : { ok: true }
     }
     // live = 策略后配置 + 密钥真值回填(environment 与 headers 里的 {file:} 引用换回 renderer 刚交
     // 的真值 —— 该值本就来自本次 grants;契约:绝不回传任何 main/keychain 来源的密钥)。
@@ -1133,13 +1129,16 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       const vendoredDir = files?.[0]
       compensate = () => {
         if (!vendoredDir) return { ok: false, reason: "vendored dir unknown — cannot compensate" }
+        const failures: string[] = []
         const rem = deps.installers.removePluginPath(entry.name, path.join(vendoredDir, "plugin.js"))
+        if (!rem.ok) failures.push(`vendored plugin config restore: ${rem.reason}`)
         try {
           fs.rmSync(vendoredDir, { recursive: true, force: true })
-        } catch {
-          /* 目录残留如实并入 reason 之外的账面(config 已撤,残目录无配置引用) */
+        } catch (error) {
+          // review #379:目录删除失败同样并入 compensation incomplete(权限/竞态残目录如实可见)。
+          failures.push(`vendored dir removal: ${error instanceof Error ? error.message : String(error)}`)
         }
-        return rem.ok ? { ok: true } : { ok: false, reason: `vendored plugin config restore: ${rem.reason}` }
+        return failures.length ? { ok: false, reason: failures.join("; ") } : { ok: true }
       }
     } else if (typeof spec.package === "string" && spec.package) {
       const pinned = spec.version && spec.package.indexOf("@", 1) === -1 ? `${spec.package}@${spec.version}` : spec.package
@@ -1299,12 +1298,11 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
     installedAt: now,
   })
   if (!written.ok) {
-    // #354(#336 残留收口):账本写失败 = 安装失败 —— 整文件复原账本 + 按类型补偿副作用
-    //(#306 orchestrator 同形);补偿结果并入原因(必改 6:即便补偿不完整仍 ok:false,
-    // 留下可诊断事实,绝不吞掉)。commit 只发生在账本提交成功后。
+    // #354(#336 残留收口):账本写失败 = 安装失败 —— 按类型补偿副作用(#306 orchestrator 同形);
+    // 账本本身无需恢复:写前探测已拒损坏账,健康账 + 原子写失败 = 磁盘零变化(review #379:
+    // 整文件恢复反而制造跨进程覆盖与「恢复后补偿再改账」)。补偿结果并入原因(必改 6:即便
+    // 补偿不完整仍 ok:false,留下可诊断事实,绝不吞掉)。commit 只发生在账本提交成功后。
     const failures: string[] = []
-    const led = ledgerImage.restore()
-    if (!led.ok) failures.push(led.reason)
     if (compensate) {
       const c = compensate()
       if (!c.ok) failures.push(c.reason)

@@ -66,7 +66,8 @@ export function snapshotMcpServerSecrets(userDataPath: string, server: string): 
   const noop = { restore() {}, discard() {} }
   const strict = snapshotMcpServerSecretsStrict(userDataPath, server)
   // 快照失败:退回旧行为(失败路径整目录清除),不阻塞主流程 —— 未策展 orchestrator(#306)语义。
-  return strict.ok ? strict : noop
+  if (!strict.ok) return noop
+  return { restore: () => void strict.restore(), discard: strict.discard }
 }
 
 /** #354(Codex 裁决必改 2):可失败的严格快照 —— catalog 提交面前像取不到必须**写前拒绝**,
@@ -74,7 +75,7 @@ export function snapshotMcpServerSecrets(userDataPath: string, server: string): 
 export function snapshotMcpServerSecretsStrict(
   userDataPath: string,
   server: string,
-): { ok: true; restore(): void; discard(): void } | { ok: false; reason: string } {
+): { ok: true; restore(): { ok: true } | { ok: false; reason: string }; discard(): void } | { ok: false; reason: string } {
   if (!SAFE_SERVER.test(server)) return { ok: false, reason: `invalid server name: ${server}` }
   const dir = serverDir(userDataPath, server)
   let bak: string | null = null
@@ -88,12 +89,18 @@ export function snapshotMcpServerSecretsStrict(
   }
   return {
     ok: true,
+    // review #379 Major:恢复失败必须可观察 —— 调用方要把「旧密钥未复原(.bak 留证)」并入
+    // compensation incomplete 事实,吞掉就违背契约。
     restore() {
       try {
         fs.rmSync(dir, { recursive: true, force: true })
         if (bak) fs.renameSync(bak, dir)
-      } catch {
-        /* best-effort:留 .bak 作证据,不吞主错误 */
+        return { ok: true }
+      } catch (error) {
+        return {
+          ok: false,
+          reason: `secret restore failed for ${server} (${error instanceof Error ? error.message : String(error)}) — backup kept at ${bak ?? "<none>"}`,
+        }
       }
     },
     discard() {
@@ -148,7 +155,14 @@ export function fileifyMcpSecretsDeep(
   config: Record<string, unknown>,
   secrets: Record<string, string>,
 ):
-  | { ok: true; fileified: string[]; skipped: string[]; refs: Record<string, string>; restore(): void; discard(): void }
+  | {
+      ok: true
+      fileified: string[]
+      skipped: string[]
+      refs: Record<string, string>
+      restore(): { ok: true } | { ok: false; reason: string }
+      discard(): void
+    }
   | { ok: false; reason: string } {
   // 写前快照(#354 必改 2:严格 —— 快照失败即写前拒绝,绝不带 noop 快照继续写):
   // 失败路径 restore(更新不毁既有密钥;首装等价清除新写入),成功路径 discard。
