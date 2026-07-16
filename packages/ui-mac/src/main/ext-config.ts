@@ -430,9 +430,13 @@ export function readPluginArrayStrict(): { ok: true; value: unknown[] } | { ok: 
     const v = parsed?.plugin
     if (v === undefined) return { ok: true, value: [] }
     if (!Array.isArray(v)) return { ok: false, reason: "config plugin key is not an array — refusing plugin replace" }
-    // review #381 minor:元素必须全为字符串 —— 非法成员(object/null)不许被替换流原样保留。
-    if (!v.every((x) => typeof x === "string"))
-      return { ok: false, reason: "config plugin[] contains non-string entries — refusing plugin replace (fix the config first)" }
+    // review #381 minor + #378 r4:引擎 V1 schema 的合法成员 = string 或 [spec, options] 元组
+    // (config/plugin.ts pluginSpecifier)—— 元组不许再被误拒(否则任何带 options 的既有插件
+    // 会让不相干的新安装假阳性失败);object/null 等真非法成员仍拒(不许被写流原样保留)。
+    const legalEntry = (x: unknown): boolean =>
+      typeof x === "string" || (Array.isArray(x) && x.length >= 1 && typeof x[0] === "string")
+    if (!v.every(legalEntry))
+      return { ok: false, reason: "config plugin[] contains invalid entries (neither string nor [spec, options]) — refusing (fix the config first)" }
     return { ok: true, value: v }
   } catch (error) {
     return { ok: false, reason: `config unreadable: ${error instanceof Error ? error.message : String(error)}` }
@@ -477,7 +481,11 @@ export function gcMcpSecretsAgainstConfig(userDataPath: string, name: string): {
     if (!leaf.ok) return { removed: [], warnings: [`secret gc skipped for ${name}: ${leaf.reason}`] }
     if (leaf.value === undefined)
       return { removed: [], warnings: [`secret gc skipped for ${name}: mcp leaf absent — refusing a zero-reference sweep`] }
-    return gcMcpSecretVersionsLocked(userDataPath, name, collectMcpFileRefPaths(leaf.value))
+    // r4 Major:引擎对 {file:相对路径} 按 **config 文件所在目录**解析(config/variable.ts)——
+    // 引用集必须按同一基准 resolve,否则等价相对形态被误判未引用而删掉在用密钥。
+    const configDir = path.dirname(mcpPluginTargetPath())
+    const referenced = collectMcpFileRefPaths(leaf.value).map((p) => path.resolve(configDir, p))
+    return gcMcpSecretVersionsLocked(userDataPath, name, referenced)
   })
   return "removed" in r ? r : { removed: [], warnings: [r.reason] }
 }

@@ -61,8 +61,10 @@ function mcpRefPathOf(ref: string): string | null {
  *  **config 文件所在目录**解析;词法 `includes`/CWD `resolve` 会漏等价形态(`./plugins/...`、
  *  `file://.../plugin.js`、`/a/./b`)。非路径形态(npm 包名)= null。 */
 function resolvePluginEntryPath(entry: unknown, configDir: string): string | null {
-  if (typeof entry !== "string" || entry.length === 0) return null
-  let p = entry
+  // r4:元组成员([spec, options])取 spec 头(引擎 pluginSpecifier 同判)。
+  const spec = Array.isArray(entry) && typeof entry[0] === "string" ? entry[0] : entry
+  if (typeof spec !== "string" || spec.length === 0) return null
+  let p = spec
   if (p.startsWith("file://")) {
     try {
       p = fileURLToPath(p)
@@ -83,14 +85,13 @@ function resolvePluginEntryPath(entry: unknown, configDir: string): string | nul
 function findSameNamePluginPathEntry(list: unknown[], root: string, name: string): string | null {
   const pluginsRoot = path.join(root, "plugins")
   for (const p of list) {
-    if (typeof p !== "string") continue
-    const resolved = resolvePluginEntryPath(p, root)
+    const resolved = resolvePluginEntryPath(p, root) // r4:元组成员取 spec 头,同样参与扫描
     if (resolved === null) continue
     if (path.basename(resolved) !== "plugin.js") continue
     const dir = path.dirname(resolved)
     if (path.dirname(dir) !== pluginsRoot) continue
     const base = path.basename(dir)
-    if (base === name || base.startsWith(`${name}@`)) return p
+    if (base === name || base.startsWith(`${name}@`)) return resolved
   }
   return null
 }
@@ -1592,12 +1593,13 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       if (verId) {
         const leafNow = deps.installers.readMcpLeafStrict(entry.name)
         // leaf 缺席(fresh 的 authorize 暂停/失败)= 确定零引用,可删;只有**不可读**才保守不删。
-        // r3 Major:两侧都 path.resolve 规范化 —— 旁路把 {file:/a/v/TOKEN} 改写成等价
-        // {file:/a/v/./TOKEN} 时,原字符串比较会误判「未引用」而删掉 live 仍指向的密钥。
+        // r3/r4 Major:两侧按**引擎解析语义**规范化(config/variable.ts 对 {file:相对路径} 按
+        // config 文件所在目录解析,非 CWD)—— 旁路等价改写({file:/a/v/./TOKEN}、相对形态)
+        // 不再被误判「未引用」而删掉 live 仍指向的密钥。
         const liveRefs = leafNow.ok
-          ? new Set((leafNow.value !== undefined ? collectMcpFileRefPaths(leafNow.value) : []).map((p) => path.resolve(p)))
+          ? new Set((leafNow.value !== undefined ? collectMcpFileRefPaths(leafNow.value) : []).map((p) => path.resolve(mcpRoot, p)))
           : null
-        const stillReferenced = liveRefs === null || refPaths.some((p) => liveRefs.has(path.resolve(p)))
+        const stillReferenced = liveRefs === null || refPaths.some((p) => liveRefs.has(path.resolve(mcpRoot, p)))
         if (!stillReferenced) {
           const rm = deps.installers.removeMcpSecretVersionDir(entry.name, verId)
           if (!rm.ok) console.error(`[ext-install-planner] mcp ${entry.name}: secret version cleanup failed: ${rm.reason}`)
@@ -2121,8 +2123,12 @@ function readPluginArrayStrictAt(configTarget: string): { ok: true; value: unkno
     const v = isObj(parsed) ? parsed.plugin : undefined
     if (v === undefined) return { ok: true, value: [] }
     if (!Array.isArray(v)) return { ok: false, reason: "config plugin key is not an array — refusing (fail closed)" }
-    if (!v.every((x) => typeof x === "string"))
-      return { ok: false, reason: "config plugin[] contains non-string entries — refusing (fix the config first)" }
+    // #378 r4:与 ext-config.readPluginArrayStrict 同判 —— 引擎合法成员 = string 或
+    // [spec, options] 元组;元组不许误拒(假阳性回归),真非法成员仍拒。
+    const legalEntry = (x: unknown): boolean =>
+      typeof x === "string" || (Array.isArray(x) && x.length >= 1 && typeof x[0] === "string")
+    if (!v.every(legalEntry))
+      return { ok: false, reason: "config plugin[] contains invalid entries (neither string nor [spec, options]) — refusing (fix the config first)" }
     return { ok: true, value: v }
   } catch (error) {
     return { ok: false, reason: `config unreadable: ${error instanceof Error ? error.message : String(error)}` }

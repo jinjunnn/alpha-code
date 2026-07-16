@@ -2267,11 +2267,17 @@ async function recoverOne(
       }
       const image = reconstructConfigImage(it)
       if (!image) {
-        // #378 r3 Major:config image 失据(staging 丢失/digest 不符)同样**冻结保留** ——
-        // 此时无从判定 live config 是否仍指向本事务的 file 载荷;继续 unlink file items 并
-        // 终态化 rolled-back 会留下「live config 指向已删载荷」且 journal 终态阻断幂等重试。
-        // 与 file 段「失据 → 保留非终态零改动」同款(#358 Blocker 3)。
-        restoreBlocked = `config recovery rollback for "${it.key}": cannot reconstruct image (staging lost/corrupt) — retained`
+        // #378 r4 Major:失据但 live 可**证明**已处于 pre 态(digest 相等)= 该 item 的回滚是
+        // 安全 no-op —— 不冻结,让 file items 正常回滚、journal 正常终态化(否则「file 已翻转、
+        // config 未翻转 + 仅 config staging 丢失」这类可安全收敛的现场被永久卡死,阻断后续写)。
+        if (it.config && configTargetDigest(it.config.target) === it.config.preDigest) {
+          warnings.push(`config recovery: staged image lost but live already at pre-digest for "${it.key}" — safe no-op`)
+          continue
+        }
+        // #378 r3 Major:live 非 pre 态(已翻转/已漂移)且失据 → **冻结保留** —— 无从判定
+        // live config 是否仍指向本事务的 file 载荷;继续 unlink file items 并终态化会留下
+        // 「live config 指向已删载荷」且 journal 终态阻断幂等重试(与 file 段 #358 B3 同款)。
+        restoreBlocked = `config recovery rollback for "${it.key}": cannot reconstruct image (staging lost/corrupt) and live is not at pre-digest — retained`
         continue
       }
       const restored = restoreConfigImage(image)

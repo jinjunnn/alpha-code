@@ -65,28 +65,37 @@ export function writeMcpSecret(
   }
 }
 
-/** #378 r3(Major):历史快照实现把备份放在 **server 目录的兄弟级**(`<server>.bak-<hex>`,
- *  见已退役的 snapshotMcpServerSecretsStrict)—— 吊销/GC 都必须覆盖这一层,否则含密钥的旧备份
- *  在卸载与成功重装后永久残留。枚举失败按调用方语义处置(strict 报错 / best-effort 静默)。 */
-function listSiblingBackupDirs(userDataPath: string, server: string): string[] {
+/** #378 r3(Major):历史快照实现把备份放在 **server 目录的兄弟级**(已退役的
+ *  snapshotMcpServerSecretsStrict:`${dir}.bak-${randomBytes(4).hex}` = 恰 `<server>.bak-<hex8>`)
+ *  —— 吊销/GC 都必须覆盖这一层,否则含密钥的旧备份在卸载与成功重装后永久残留。
+ *  r4(Major):后缀按历史实现**精确匹配** `.bak-<hex8>` —— 裸前缀会把碰巧叫
+ *  `<server>.bak-live` 的另一个合法 server(SAFE_SERVER 允许点与连字符)的**在用密钥目录**
+ *  误判成备份删除。枚举失败走结果通道(strict 调用方必须失败,best-effort 调用方静默);
+ *  ENOENT = 空。 */
+const SIBLING_BAK_SUFFIX = /^\.bak-[a-f0-9]{8}$/
+function listSiblingBackupDirs(userDataPath: string, server: string): { ok: true; dirs: string[] } | { ok: false; reason: string } {
   const base = path.join(userDataPath, MCP_SECRET_DIR)
   try {
-    return fs
+    const dirs = fs
       .readdirSync(base, { withFileTypes: true })
-      .filter((e) => e.isDirectory() && e.name.startsWith(`${server}.bak-`))
+      .filter((e) => e.isDirectory() && e.name.startsWith(server) && SIBLING_BAK_SUFFIX.test(e.name.slice(server.length)))
       .map((e) => path.join(base, e.name))
-  } catch {
-    return []
+    return { ok: true, dirs }
+  } catch (error) {
+    const code = error && typeof error === "object" && "code" in error ? error.code : undefined
+    if (code === "ENOENT") return { ok: true, dirs: [] }
+    return { ok: false, reason: `secret backup enumeration failed for ${server}: ${error instanceof Error ? error.message : String(error)}` }
   }
 }
 
 /** Remove a connector's whole secret dir on uninstall (revoke — no stale token resurrection).
- *  #378 r3:连同历史兄弟级 `<server>.bak-*` 快照残留一并吊销。 */
+ *  #378 r3:连同历史兄弟级 `<server>.bak-<hex8>` 快照残留一并吊销。 */
 export function removeMcpServerSecrets(userDataPath: string, server: string): void {
   if (!SAFE_SERVER.test(server)) return
   try {
     fs.rmSync(serverDir(userDataPath, server), { recursive: true, force: true })
-    for (const bak of listSiblingBackupDirs(userDataPath, server)) fs.rmSync(bak, { recursive: true, force: true })
+    const baks = listSiblingBackupDirs(userDataPath, server)
+    if (baks.ok) for (const bak of baks.dirs) fs.rmSync(bak, { recursive: true, force: true })
   } catch {
     /* best-effort */
   }
@@ -94,12 +103,15 @@ export function removeMcpServerSecrets(userDataPath: string, server: string): vo
 
 /** #346:严格版密钥吊销 —— journaled 卸载事务/恢复期用。失败必须可观察(吞错会让「密钥已净除」
  *  不可证明,journal 无法据实保持非终态)。目录不存在 = 幂等成功。
- *  #378 r3:兄弟级 `<server>.bak-*` 历史快照残留同吊销(同 strict 语义)。 */
+ *  #378 r3/r4:兄弟级 `<server>.bak-<hex8>` 历史快照残留同吊销;**枚举失败 = 吊销失败**
+ *  (静默折叠成功会让卸载终态化而旧凭证备份仍在盘上)。 */
 export function removeMcpServerSecretsStrict(userDataPath: string, server: string): { ok: true } | { ok: false; reason: string } {
   if (!SAFE_SERVER.test(server)) return { ok: false, reason: `invalid server name: ${server}` }
   try {
     fs.rmSync(serverDir(userDataPath, server), { recursive: true, force: true })
-    for (const bak of listSiblingBackupDirs(userDataPath, server)) fs.rmSync(bak, { recursive: true, force: true })
+    const baks = listSiblingBackupDirs(userDataPath, server)
+    if (!baks.ok) return { ok: false, reason: `secret revocation incomplete for ${server}: ${baks.reason}` }
+    for (const bak of baks.dirs) fs.rmSync(bak, { recursive: true, force: true })
     return { ok: true }
   } catch (error) {
     return { ok: false, reason: `secret revocation failed for ${server}: ${error instanceof Error ? error.message : String(error)}` }
@@ -351,19 +363,22 @@ export function gcMcpSecretVersionsLocked(
       return false // 读不到 mtime = 不删(fail-safe)
     }
   }
-  // #378 r3(Major):历史快照实现的备份在 **server 目录兄弟级**(`<server>.bak-<hex>`)——
+  // #378 r3(Major):历史快照实现的备份在 **server 目录兄弟级**(`<server>.bak-<hex8>`)——
   // 只扫 server 目录内层永远看不见它们,含密钥旧备份会在成功重装后永久残留。过宽限即收
-  // (备份从不被 config 引用)。与 server 目录是否存在无关。
-  for (const bak of listSiblingBackupDirs(userDataPath, server)) {
-    try {
-      if (olderThanGrace(bak)) {
-        fs.rmSync(bak, { recursive: true, force: true })
-        removed.push(bak)
+  // (备份从不被 config 引用)。与 server 目录是否存在无关;枚举失败入 warnings(best-effort)。
+  const baks = listSiblingBackupDirs(userDataPath, server)
+  if (!baks.ok) warnings.push(baks.reason)
+  else
+    for (const bak of baks.dirs) {
+      try {
+        if (olderThanGrace(bak)) {
+          fs.rmSync(bak, { recursive: true, force: true })
+          removed.push(bak)
+        }
+      } catch (error) {
+        warnings.push(`secret gc failed for ${bak}: ${error instanceof Error ? error.message : String(error)}`)
       }
-    } catch (error) {
-      warnings.push(`secret gc failed for ${bak}: ${error instanceof Error ? error.message : String(error)}`)
     }
-  }
   let entries: fs.Dirent[]
   try {
     entries = fs.readdirSync(sDir, { withFileTypes: true })
@@ -380,11 +395,6 @@ export function gcMcpSecretVersionsLocked(
         const files = fs.readdirSync(full)
         const inUse = files.some((f) => referenced.has(path.resolve(path.join(full, f))))
         if (!inUse && olderThanGrace(full)) {
-          fs.rmSync(full, { recursive: true, force: true })
-          removed.push(full)
-        }
-      } else if (entry.isDirectory() && entry.name.startsWith(".bak-")) {
-        if (olderThanGrace(full)) {
           fs.rmSync(full, { recursive: true, force: true })
           removed.push(full)
         }

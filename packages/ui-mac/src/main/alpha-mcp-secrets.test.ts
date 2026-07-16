@@ -185,9 +185,9 @@ describe("gcMcpSecretVersionsLocked — 引用对账 + 宽限", () => {
     writeMcpSecretVersioned(userData, "s", vFresh, "TOK", "fresh")
     writeMcpSecret(userData, "s", "LEGACY_FLAT", "legacy") // flat 布局残留
     const sDir = path.join(userData, "alpha-mcp-secrets", "s")
-    fs.mkdirSync(path.join(sDir, ".bak-deadbeef"), { recursive: true })
+    fs.mkdirSync(`${sDir}.bak-deadbeef`, { recursive: true }) // 历史快照 = 兄弟级(r3/r4)
     fs.writeFileSync(path.join(sDir, "unknown.file!"), "x") // 未知名(不匹配 SAFE_VAR/版本)
-    for (const p of [path.join(sDir, vKeep), path.join(sDir, vDrop), path.join(sDir, "LEGACY_FLAT"), path.join(sDir, ".bak-deadbeef")]) age(p)
+    for (const p of [path.join(sDir, vKeep), path.join(sDir, vDrop), path.join(sDir, "LEGACY_FLAT"), `${sDir}.bak-deadbeef`]) age(p)
     const referenced = [verFile("s", vKeep, "TOK")]
     const r = gcMcpSecretVersionsLocked(userData, "s", referenced)
     expect(r.warnings).toEqual([])
@@ -195,7 +195,7 @@ describe("gcMcpSecretVersionsLocked — 引用对账 + 宽限", () => {
     expect(fs.existsSync(path.join(sDir, vDrop))).toBe(false) // 未引用 + 过宽限 → 收
     expect(fs.existsSync(verFile("s", vFresh, "TOK"))).toBe(true) // 宽限内(在途安装保护)
     expect(fs.existsSync(path.join(sDir, "LEGACY_FLAT"))).toBe(false) // flat 残留 → 收
-    expect(fs.existsSync(path.join(sDir, ".bak-deadbeef"))).toBe(false) // 历史快照残留 → 收
+    expect(fs.existsSync(`${sDir}.bak-deadbeef`)).toBe(false) // 兄弟级历史快照残留 → 收
     expect(fs.existsSync(path.join(sDir, "unknown.file!"))).toBe(true) // 未知形态零接触
   })
 
@@ -218,9 +218,14 @@ describe("gcMcpSecretVersionsLocked — 引用对账 + 宽限", () => {
     // 卸载吊销覆盖兄弟级
     const bak2 = path.join(base, "s.bak-cafebabe")
     fs.mkdirSync(bak2, { recursive: true })
+    // r4:恰巧叫 <server>.bak-live 的**另一个合法 server** 绝不能被前缀误伤(后缀须恰 .bak-<hex8>)
+    const decoy = path.join(base, "s.bak-live")
+    const vidDecoy = newMcpSecretVersionId()
+    writeMcpSecretVersioned(userData, "s.bak-live", vidDecoy, "TOK", "decoy-live")
     removeMcpServerSecrets(userData, "s")
     expect(fs.existsSync(bak2)).toBe(false)
     expect(fs.existsSync(path.join(base, "s"))).toBe(false)
+    expect(fs.readFileSync(path.join(decoy, vidDecoy, "TOK"), "utf8")).toBe("decoy-live") // 另一 server 零接触
   })
 
   test("目录缺席 = 无事;版本目录内任一文件被引用即整目录保留", () => {
