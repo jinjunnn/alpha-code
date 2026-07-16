@@ -531,11 +531,26 @@ export async function importSkillGit(url: string, target?: InstallTarget): Promi
   if (!validGitUrl(url)) return { ok: false, reason: "仅支持 https Git 地址" }
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-import-git-"))
   try {
+    // #335 review r1 Blocker:allowlist 校验的 URL 若被 git 配置改写就形同虚设 ——
+    // 全局/系统 gitconfig 的 `url.<base>.insteadOf` 能把 github.com URL 重写到内网,
+    // `http.<url>.*` 能改重定向行为。隔离全部配置源:GLOBAL/SYSTEM config 指向 devNull,
+    // 清 env 注入的配置(GIT_CONFIG_PARAMETERS / GIT_CONFIG_COUNT + KEY/VALUE 对)——
+    // 公网 forge 的匿名 https clone 不需要任何用户配置。
+    const gitEnv: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_CONFIG_GLOBAL: os.devNull, GIT_CONFIG_SYSTEM: os.devNull }
+    delete gitEnv.GIT_CONFIG_PARAMETERS
+    const count = Number.parseInt(gitEnv.GIT_CONFIG_COUNT ?? "", 10)
+    if (Number.isFinite(count)) for (let i = 0; i < count; i++) {
+      delete gitEnv[`GIT_CONFIG_KEY_${i}`]
+      delete gitEnv[`GIT_CONFIG_VALUE_${i}`]
+    }
+    delete gitEnv.GIT_CONFIG_COUNT
     await new Promise<void>((resolve, reject) => {
       execFile(
         "git",
-        ["clone", "--depth", "1", "--single-branch", "--no-tags", url, tmp],
-        { timeout: 60_000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } },
+        // http.followRedirects=false —— allowlist 只校验原 URL,禁重定向防 clone 被可信 forge 的
+        // 开放重定向/被攻陷响应导向私网或禁端口(SSRF 纵深)。
+        ["-c", "http.followRedirects=false", "clone", "--depth", "1", "--single-branch", "--no-tags", url, tmp],
+        { timeout: 60_000, env: gitEnv },
         (err, _stdout, stderr) => (err ? reject(new Error(oneLine(String(stderr || err.message)).slice(0, 200))) : resolve()),
       )
     })

@@ -35,23 +35,80 @@ describe("parseSkillFrontmatter (T6 导入校验)", () => {
   })
 })
 
-describe("validGitUrl", () => {
-  test("https 仓库地址 → 通过", () => {
-    expect(validGitUrl("https://github.com/user/repo")).toBe(true)
-    expect(validGitUrl("https://github.com/user/repo.git")).toBe(true)
+describe("validGitUrl(#335 SSRF allowlist)", () => {
+  test("allowlist forge(exact + dot-boundary 子域 + .git)→ 通过", () => {
+    for (const good of [
+      "https://github.com/user/repo",
+      "https://github.com/user/repo.git",
+      "https://gitlab.com/group/sub/repo",
+      "https://bitbucket.org/user/repo",
+      "https://codeberg.org/user/repo",
+      "https://git.sr.ht/~user/repo",
+      "https://gist.github.com/user/id", // dot-boundary 子域(forge 自控,非 SSRF)
+      "https://github.com/user/repo.git/", // 尾斜杠仍是合法路径段
+    ]) {
+      expect(validGitUrl(good)).toBe(true)
+    }
   })
   test("非 https / ssh / file / 注入形状 → 拒绝", () => {
     for (const bad of [
       "http://github.com/user/repo",
       "git@github.com:user/repo.git",
       "file:///etc/passwd",
-      "https://host/repo;rm -rf ~",
-      "https://host/repo $(x)",
-      "ftp://host/repo",
+      "https://github.com/repo;rm -rf ~", // 注入字符不在路径 charset
+      "https://github.com/repo $(x)",
+      "ftp://github.com/repo",
       123,
       undefined,
     ]) {
       expect(validGitUrl(bad as never)).toBe(false)
+    }
+  })
+  test("SSRF 面:localhost / 回环 / 私网 / link-local / IP 各编码 / IPv6 → 拒绝", () => {
+    for (const bad of [
+      "https://localhost/user/repo",
+      "https://localhost./user/repo", // 尾点绕过
+      "https://localhost.localdomain/user/repo",
+      "https://127.0.0.1/user/repo",
+      "https://127.0.0.1:443/user/repo",
+      "https://0x7f000001/user/repo", // 十六进制 IPv4
+      "https://2130706433/user/repo", // 十进制 IPv4
+      "https://0177.0.0.1/user/repo", // 八进制 IPv4
+      "https://10.0.0.5/user/repo", // RFC1918
+      "https://192.168.1.1/user/repo",
+      "https://172.16.0.1/user/repo",
+      "https://169.254.169.254/latest/meta-data", // 云元数据 link-local
+      "https://100.64.0.1/user/repo", // CGNAT
+      "https://[::1]/user/repo", // IPv6 loopback
+      "https://[fe80::1]/user/repo", // IPv6 link-local
+      "https://[fc00::1]/user/repo", // IPv6 ULA
+      "https://[::ffff:127.0.0.1]/user/repo", // IPv4-mapped IPv6
+      "https://0.0.0.0/user/repo",
+    ]) {
+      expect(validGitUrl(bad)).toBe(false)
+    }
+  })
+  test("非 allowlist forge / 单标签 / 子域伪装 / 非 443 端口 / userinfo / query·fragment / 裸 host → 拒绝", () => {
+    for (const bad of [
+      "https://evil.com/user/repo", // 非 allowlist
+      "https://gitea.example.com/user/repo",
+      "https://internalgit/user/repo", // 单标签(无点)
+      "https://notgithub.com/user/repo", // Xgithub.com 非 dot-boundary
+      "https://evilgithub.com/user/repo",
+      "https://github.com.evil.com/user/repo", // 后缀伪装
+      "https://github.com:8080/user/repo", // 非 443 端口
+      "https://github.com:22/user/repo",
+      "https://user:pass@github.com/user/repo", // userinfo
+      "https://user@github.com/user/repo",
+      "https://github.com/user/repo?x=1", // query
+      "https://github.com/user/repo#frag", // fragment
+      "https://github.com/user/repo?", // 空 query 分隔符(review r1 Minor)
+      "https://github.com/user/repo#", // 空 fragment 分隔符
+      "https://github.com", // 裸 host,路径规范化为 "/"
+      "https://github.com/", // 无 repo 路径段
+      "https://github.com//", // 仅斜杠无段(review r1 Minor)
+    ]) {
+      expect(validGitUrl(bad)).toBe(false)
     }
   })
 })
