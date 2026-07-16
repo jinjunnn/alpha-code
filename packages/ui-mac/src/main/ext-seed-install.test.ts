@@ -23,10 +23,14 @@ import {
   compareVersionsSafe,
   installCatalog,
   synthesizeManifest,
+  uninstallByKey,
   type PlannerDeps,
   type PlannerInstallers,
   type VerifiedCatalogEntry,
 } from "./ext-install-planner"
+import { agentConfigItemKey, agentInstallKey } from "./ext-agent-install"
+import { capabilityGrantPath } from "./ext-capability-grants"
+import { parse } from "jsonc-parser"
 
 // #348:authorize 闸生效后首装零副作用停在 stage="authorize";按生产同路重驱(确认完整 requested
 // 集)。非 authorize 失败原样透传 —— downgrade/损坏账本等 fail-closed 语义不受影响。
@@ -135,6 +139,27 @@ function bundledSkillEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry 
     version: "1.0.0",
     installSpec: { kind: "skill", source: "remote", targetDir: "alpha-skills" },
     remoteAsset: { version: "1.0.0", files: lockFileEntries(skillFiles, { writeBlobs: false }) },
+    ...overrides,
+  } as CatalogEntry
+}
+
+/** cast-free 对象窄化(oxlint no-unsafe-type-assertion:新增代码不引入断言)。 */
+const isRec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
+
+// ── agent seed fixtures(#358:单顶层 .md,agentMdToEntry 可解析)────────────────────────────────
+const AGENT_MD = "---\ndescription: seed fixture agent\nmode: subagent\n---\nlocate the bug"
+const AGENT_ENTRY = { description: "seed fixture agent", mode: "subagent", prompt: "locate the bug" }
+const agentFiles = [{ path: "bug-triage.md", content: AGENT_MD }]
+
+function bundledAgentEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
+  return {
+    id: "agent:bug-triage",
+    type: "agent",
+    name: "bug-triage",
+    ...entryBase,
+    version: "1.0.0",
+    installSpec: { kind: "agent", source: "remote" },
+    remoteAsset: { version: "1.0.0", files: lockFileEntries(agentFiles, { writeBlobs: false }) },
     ...overrides,
   } as CatalogEntry
 }
@@ -290,16 +315,16 @@ describe("seed install via installCatalog (REQ-102 #317)", () => {
     if (!r.ok) expect(r.reason).toContain("not in packaged seed")
   })
 
-  test("refuses non-skill seed assets explicitly (agent → #358)", async () => {
+  test("refuses mcp/plugin seed assets explicitly (→ #359)", async () => {
     buildSeed([
-      { id: "agent:bug-triage", files: [{ path: "AGENT.md", content: "agent body" }] },
+      { id: "mcp:demo", files: [{ path: "server.json", content: "{}" }] },
       { id: "skill:hello", files: skillFiles },
     ])
-    const r = await installAuthorized({ ...seedIntent, assetId: "agent:bug-triage" }, makeSeedDeps())
+    const r = await installAuthorized({ ...seedIntent, assetId: "mcp:demo" }, makeSeedDeps())
     expect(r.ok).toBe(false)
     if (!r.ok) {
-      expect(r.reason).toContain('type "agent"')
-      expect(r.reason).toContain("#358")
+      expect(r.reason).toContain('type "mcp"')
+      expect(r.reason).toContain("#359")
     }
   })
 
@@ -522,6 +547,191 @@ describe("installSkillGeneration CAS content source (REQ-102 #317)", () => {
     expect(r.ok).toBe(false)
     expect(resolveLiveGenerationDir(globalRoot, skillGenerationKey("hello"))).toBeNull()
     expect(findRecordV2(globalRoot, "skill", "hello")).toBeNull()
+  })
+})
+
+// ── #358:agent seed 走事务安装链(file md + config 叶单事务;裁决见 issue #358 评论)──────────────
+const agentSeedIntent = { source: "seed", assetId: "agent:bug-triage", scope: { scope: "global" } }
+const agentDeps = () => makeSeedDeps({ bundledEntries: [bundledAgentEntry(), bundledSkillEntry()] })
+
+describe("agent seed install via installCatalog (REQ-102 #358)", () => {
+  test("installs the agent seed asset through the transactional install chain", async () => {
+    buildSeed([{ id: "agent:bug-triage", files: agentFiles }, { id: "skill:hello", files: skillFiles }])
+    const r = await installAuthorized(agentSeedIntent, agentDeps())
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.kind).toBe("agent")
+    expect(r.name).toBe("bug-triage")
+
+    // 字节真源:blob 落共享 CAS 基根;md 落 <root>/agents/<name>.md,内容 byte-exact(不归一行尾)。
+    expect(hasCasBlob(casBase, sha(AGENT_MD))).toBe(true)
+    const mdPath = path.join(globalRoot, "agents", "bug-triage.md")
+    expect(fs.readFileSync(mdPath, "utf8")).toBe(AGENT_MD)
+
+    // config 叶与 md 同事务落位:agent.<name> 严格等于 agentMdToEntry 解析结果。
+    const cfg: unknown = parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))
+    if (!isRec(cfg) || !isRec(cfg.agent)) throw new Error("alpha.jsonc missing agent map")
+    expect(cfg.agent["bug-triage"]).toEqual(AGENT_ENTRY)
+
+    // receipt 语义回表 bundled entry:kind/version/origin/configKey/files/payloadDigest。
+    const rec = findRecordV2(globalRoot, "agent", "bug-triage")
+    expect(rec).not.toBeNull()
+    expect(rec!.kind).toBe("agent")
+    expect(rec!.version).toBe("1.0.0")
+    expect(rec!.origin).toBe("catalog")
+    expect(rec!.configKey).toBe("agent.bug-triage")
+    expect(rec!.files).toContain(mdPath)
+    expect(rec!.payloadDigest).toBe(aggregateFilesDigest(lockFileEntries(agentFiles, { writeBlobs: false })))
+
+    // manifestDigest = bundled 交付语义的 manifest 快照(distributed 如实记 bundled)。
+    const synthesized: unknown = synthesizeManifest({ entry: bundledAgentEntry(), channel: "bundled", catalogVersion: CATALOG_VERSION })
+    if (!isRec(synthesized) || !isRec(synthesized.ownership)) throw new Error("synthesized manifest malformed")
+    const decoded = decodeManifestV2({ ...synthesized, ownership: { ...synthesized.ownership, distributed: "bundled" } })
+    expect(decoded.ok).toBe(true)
+    if (!decoded.ok) return
+    expect(r.manifestDigest).toBe(computeManifestDigest(decoded.manifest))
+    expect(rec!.manifestDigest).toBe(r.manifestDigest)
+
+    // 授权账落主 item key(committed 后才写)。
+    expect(fs.existsSync(capabilityGrantPath(globalRoot, agentInstallKey("bug-triage")))).toBe(true)
+  })
+
+  test("首装零副作用停在 authorize;授权 key 归主 item(config 副 item 不再弹)", async () => {
+    buildSeed([{ id: "agent:bug-triage", files: agentFiles }])
+    const first = await installCatalog(agentSeedIntent, agentDeps())
+    expect(first.ok).toBe(false)
+    if (first.ok) throw new Error("unreachable")
+    expect(first.stage).toBe("authorize")
+    if (first.stage !== "authorize") throw new Error("unreachable")
+    expect(first.authorization).toHaveLength(2)
+    const main = first.authorization.find((d) => d.key === agentInstallKey("bug-triage"))!
+    expect(main.requested).toEqual(["engine:config", "prompt:context"])
+    expect(main.previous).toBeNull()
+    expect(main.requiresConfirmation).toBe(true)
+    const cfgItem = first.authorization.find((d) => d.key === agentConfigItemKey("bug-triage"))!
+    expect(cfgItem.requiresConfirmation).toBe(false)
+    // 零权威副作用:无 md、无 config 叶、无账、无授权账。
+    expect(fs.existsSync(path.join(globalRoot, "agents", "bug-triage.md"))).toBe(false)
+    expect(fs.existsSync(path.join(globalRoot, "alpha.jsonc"))).toBe(false)
+    expect(findRecordV2(globalRoot, "agent", "bug-triage")).toBeNull()
+    expect(fs.existsSync(capabilityGrantPath(globalRoot, agentInstallKey("bug-triage")))).toBe(false)
+  })
+
+  test("fresh-only(锁内 precondition):有账 / 无账 md / 无账 config 叶在场一律拒", async () => {
+    buildSeed([{ id: "agent:bug-triage", files: agentFiles }])
+    // A:已有 v2 record。
+    const installed: UpsertInput = {
+      id: "agent:bug-triage",
+      name: "bug-triage",
+      kind: "agent",
+      environment: "prod",
+      scope: { kind: "global" },
+      version: "1.0.0",
+      desiredState: "enabled",
+      origin: "catalog",
+      installedAt: new Date().toISOString(),
+    }
+    expect(upsertRecordV2(globalRoot, installed).ok).toBe(true)
+    const withRecord = await installAuthorized(agentSeedIntent, agentDeps())
+    expect(withRecord.ok).toBe(false)
+    if (!withRecord.ok) expect(withRecord.reason).toContain("already present")
+    fs.rmSync(path.join(globalRoot, "installs.json"), { force: true })
+
+    // B:无账 md 在场(未策展内容不认领)。
+    fs.mkdirSync(path.join(globalRoot, "agents"), { recursive: true })
+    fs.writeFileSync(path.join(globalRoot, "agents", "bug-triage.md"), "---\ndescription: local\n---\nmine")
+    const withMd = await installAuthorized(agentSeedIntent, agentDeps())
+    expect(withMd.ok).toBe(false)
+    if (!withMd.ok) expect(withMd.reason).toContain("without a ledger record")
+    fs.rmSync(path.join(globalRoot, "agents", "bug-triage.md"), { force: true })
+
+    // C:无账 config 叶在场。
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ agent: { "bug-triage": { description: "x", prompt: "y" } } }))
+    const withLeaf = await installAuthorized(agentSeedIntent, agentDeps())
+    expect(withLeaf.ok).toBe(false)
+    if (!withLeaf.ok) expect(withLeaf.reason).toContain('config entry "agent.bug-triage"')
+  })
+
+  test("refuses identity drift between entry id and entry name", async () => {
+    buildSeed([{ id: "agent:bug-triage", files: agentFiles }])
+    const r = await installAuthorized(agentSeedIntent, makeSeedDeps({ bundledEntries: [bundledAgentEntry({ name: "other" })] }))
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("identity drift")
+  })
+
+  test("refuses multi-file / non-md / unparsable agent seed assets (fail closed, zero residue)", async () => {
+    // 多文件:双真源一致地声明两个文件 → 走到 agent 装约定门再拒。
+    const twoFiles = [...agentFiles, { path: "extra.md", content: "extra" }]
+    buildSeed([{ id: "agent:bug-triage", files: twoFiles }])
+    const multi = await installAuthorized(
+      agentSeedIntent,
+      makeSeedDeps({ bundledEntries: [bundledAgentEntry({ remoteAsset: { version: "1.0.0", files: lockFileEntries(twoFiles, { writeBlobs: false }) } })] }),
+    )
+    expect(multi.ok).toBe(false)
+    if (!multi.ok) expect(multi.reason).toContain("exactly one file")
+
+    // 非 .md。
+    const txtFiles = [{ path: "bug-triage.txt", content: AGENT_MD }]
+    buildSeed([{ id: "agent:bug-triage", files: txtFiles }])
+    const txt = await installAuthorized(
+      agentSeedIntent,
+      makeSeedDeps({ bundledEntries: [bundledAgentEntry({ remoteAsset: { version: "1.0.0", files: lockFileEntries(txtFiles, { writeBlobs: false }) } })] }),
+    )
+    expect(txt.ok).toBe(false)
+    if (!txt.ok) expect(txt.reason).toContain("top-level .md")
+
+    // frontmatter 不可解析(agentMdToEntry fail-closed,不装出字段静默丢失的 agent)。
+    const badFiles = [{ path: "bug-triage.md", content: "no frontmatter at all" }]
+    buildSeed([{ id: "agent:bug-triage", files: badFiles }])
+    const bad = await installAuthorized(
+      agentSeedIntent,
+      makeSeedDeps({ bundledEntries: [bundledAgentEntry({ remoteAsset: { version: "1.0.0", files: lockFileEntries(badFiles, { writeBlobs: false }) } })] }),
+    )
+    expect(bad.ok).toBe(false)
+    if (!bad.ok) expect(bad.reason).toContain("not convertible")
+    // 零残留:无 md、无账。
+    expect(fs.existsSync(path.join(globalRoot, "agents", "bug-triage.md"))).toBe(false)
+    expect(findRecordV2(globalRoot, "agent", "bug-triage")).toBeNull()
+  })
+
+  test("refuses an oversized agent md (256KB cap, install convention)", async () => {
+    const bigFiles = [{ path: "bug-triage.md", content: `---\ndescription: big\n---\n${"x".repeat(256 * 1024)}` }]
+    buildSeed([{ id: "agent:bug-triage", files: bigFiles }])
+    const r = await installAuthorized(
+      agentSeedIntent,
+      makeSeedDeps({ bundledEntries: [bundledAgentEntry({ remoteAsset: { version: "1.0.0", files: lockFileEntries(bigFiles, { writeBlobs: false }) } })] }),
+    )
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("过大")
+  })
+
+  test("uninstall 清除 md/config/账本/授权账;重装重新弹 authorize(#348 合同)", async () => {
+    buildSeed([{ id: "agent:bug-triage", files: agentFiles }])
+    const deps = agentDeps()
+    expect((await installAuthorized(agentSeedIntent, deps)).ok).toBe(true)
+    expect(fs.existsSync(capabilityGrantPath(globalRoot, agentInstallKey("bug-triage")))).toBe(true)
+
+    // 测试代:真 removeFsInstall 行为(删 md + 清条目)已有自己的测试;此处专测 planner 的
+    // 授权账清理与账本删除编排。
+    const installers: PlannerInstallers = {
+      ...forbiddenInstallers(),
+      removeFsInstall: (_type, name) => {
+        fs.rmSync(path.join(globalRoot, "agents", `${name}.md`), { force: true })
+        fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), "{}\n")
+        return { ok: true, files: [] }
+      },
+    }
+    const uninstallDeps: PlannerDeps = { ...deps, installers }
+    const un = await uninstallByKey({ type: "agent", name: "bug-triage", scope: "global" }, uninstallDeps)
+    expect(un.ok).toBe(true)
+    expect(findRecordV2(globalRoot, "agent", "bug-triage")).toBeNull()
+    expect(fs.existsSync(capabilityGrantPath(globalRoot, agentInstallKey("bug-triage")))).toBe(false)
+    expect(fs.existsSync(capabilityGrantPath(globalRoot, agentConfigItemKey("bug-triage")))).toBe(false)
+
+    // 重装必须重新确认(残留 grant = 静默继承,违反 #348)。
+    const again = await installCatalog(agentSeedIntent, deps)
+    expect(again.ok).toBe(false)
+    if (!again.ok) expect(again.stage).toBe("authorize")
   })
 })
 

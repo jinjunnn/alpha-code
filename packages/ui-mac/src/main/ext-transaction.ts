@@ -55,6 +55,15 @@ import {
   type ConfigTxImage,
 } from "./ext-config-tx"
 import {
+  applyFileImage,
+  fileStagePaths,
+  prepareFileTx,
+  readStagedFileImage,
+  restoreFileImage,
+  stageFileImage,
+  type FileTxImage,
+} from "./ext-file-tx"
+import {
   capabilityGrantPath,
   confirmationCovers,
   evaluateBundleAuthorization,
@@ -70,11 +79,19 @@ export type TxFileSpec = { path: string; sha256: string; size?: number }
 /** REQ-100 #311:action 判别式。缺省 "generation"(向后兼容:老 plan/journal 无此字段即文件树 generation)。
  *  - generation:文件树装进不可变 generation 目录 + current.json 指针翻转(skill 等)。
  *  - config:alpha.jsonc 叶/数组的 journaled 原子替换(mcp/plugin;走 ext-config-tx 适配器)。
+ *  - file:根内单文件的 journaled 原子替换(agent md;走 ext-file-tx 适配器,REQ-102 #358)。
  *  - receipt:无 materialize/switch 副作用,只参加最终 receipt commit(cloud)。 */
-export type TxActionKind = "generation" | "config" | "receipt"
+export type TxActionKind = "generation" | "config" | "receipt" | "file"
 
 /** config action 载荷:目标文件 + 有序 edit(同一 target 多条 edit 由适配器按序累积)。 */
 export type TxConfigAction = { target: string; edits: ConfigEdit[] }
+
+/** file action 载荷(REQ-102 #358):目标 = **root 内受控相对路径**(引擎自 root 派生绝对路径 ——
+ *  调用方绝对路径无通道,Codex 裁决 #358 B 圈禁要求)+ 完整新内容字节。前像由引擎在锁内捕获。 */
+export type TxFileAction = { relTarget: string; next: Buffer }
+
+/** file action 内容上界(引擎级防线;业务上界如 agent 的 256KB 由 planner 把关)。 */
+const FILE_ACTION_MAX_BYTES = 16 * 1024 * 1024
 
 export type TxPlanItem = {
   /** fs-safe 扩展标识(planner 派生,如 "skill--foo";不含路径分隔符/冒号)。 */
@@ -85,6 +102,8 @@ export type TxPlanItem = {
   files?: TxFileSpec[]
   /** config action 的目标叶变更(action==="config" 必填)。 */
   config?: TxConfigAction
+  /** file action 的目标文件变更(action==="file" 必填)。 */
+  file?: TxFileAction
   /** REQ-099 manifest digest,本层不解释、只透传进 journal / commit record。 */
   manifestDigest?: string
   /**
@@ -134,6 +153,10 @@ export type HealthProbe = (input: {
   genId: string
   generationDir: string
   phase: HealthProbePhase
+  /** file action(#358):live 目标绝对路径(pre-switch 时尚未翻转;post-switch/recovery 为已落内容)。 */
+  fileTarget?: string
+  /** file action(#358):pre-switch 阶段的 staged next 内容路径(候选内容语义校验用)。 */
+  stagedFile?: string
 }) => HealthVerdict | Promise<HealthVerdict>
 
 export type TxCommitRecord = {
@@ -151,6 +174,8 @@ export type TxCommitRecord = {
   files?: TxFileSpec[]
   /** config:目标文件(卸载/对账参考)。 */
   configTarget?: string
+  /** file:目标文件绝对路径(卸载/对账参考;#358)。 */
+  fileTarget?: string
   /** receipt 模板(不透明透传;commitReceipt 消费方据此落账,恢复前滚同源)。 */
   receipt?: unknown
   committedAt: string
@@ -246,6 +271,8 @@ export type TxJournalItem = {
   files: TxFileSpec[]
   /** config:目标文件 + staging 里 pre/next image 的 digest(内容在受保护 staging,journal 不落值)。 */
   config?: { target: string; slot: number; preDigest: string; nextDigest: string }
+  /** file:root 内相对目标 + pre/next digest + 前像缺席标记(缺席 ≠ 零字节,#358;内容在受保护 staging)。 */
+  file?: { relTarget: string; slot: number; preDigest: string; nextDigest: string; preAbsent: boolean }
   /** receipt 模板(不透明透传;恢复前滚据此重建 InstallRecordV2,无需 caller 上下文)。 */
   receipt?: unknown
   manifestDigest?: string
@@ -357,6 +384,8 @@ function buildCommitRecord(root: string, txId: string, it: TxJournalItem, commit
     }
   if (kind === "config")
     return { txId, key: it.key, action: "config", ...(it.config ? { configTarget: it.config.target } : {}), manifestDigest: it.manifestDigest, ...receipt, committedAt }
+  if (kind === "file")
+    return { txId, key: it.key, action: "file", ...(it.file ? { fileTarget: path.join(root, it.file.relTarget) } : {}), manifestDigest: it.manifestDigest, ...receipt, committedAt }
   return { txId, key: it.key, action: "receipt", manifestDigest: it.manifestDigest, ...receipt, committedAt }
 }
 
@@ -507,6 +536,15 @@ function validatePlan(root: string, plan: TxPlan): string | null {
         return `config item "${item.key}": target must be an absolute path`
       if (!Array.isArray(item.config.edits) || item.config.edits.length === 0)
         return `config item "${item.key}": at least one edit required`
+    } else if (kind === "file") {
+      // file action(#358):root 内受控相对路径 + 有界内容字节;无 files 清单。
+      if (!item.file || typeof item.file !== "object") return `file item "${item.key}" missing file payload`
+      if (typeof item.file.relTarget !== "string" || !isSafeRelPath(item.file.relTarget))
+        return `file item "${item.key}": unsafe relTarget: ${item.file.relTarget}`
+      if (!Buffer.isBuffer(item.file.next) || item.file.next.length === 0)
+        return `file item "${item.key}": next content must be a non-empty Buffer`
+      if (item.file.next.length > FILE_ACTION_MAX_BYTES)
+        return `file item "${item.key}": next content exceeds ${FILE_ACTION_MAX_BYTES} bytes`
     } else if (kind === "receipt") {
       // receipt-only:无 files/config 副作用,只参加最终 receipt commit。
     } else {
@@ -904,6 +942,30 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
     accumulatedText.set(target, prep.image.nextImage)
   }
 
+  // file action 的 image 对同样在锁内、staging 前一次性 prepare(捕获 live 前像含缺席态,#358)。
+  // 同一 target 的多个 file item 无累积语义(整文件替换,后写覆盖前写)—— 直接拒。
+  const fileImages = new Map<string, FileTxImage>()
+  const fileTargets = new Set<string>()
+  for (const item of plan.items) {
+    if (actionOf(item) !== "file") continue
+    if (!item.file) {
+      lock.release()
+      return { ok: false, txId, stage: "validate", reason: `file item "${item.key}" missing file payload`, warnings }
+    }
+    const target = path.join(root, item.file.relTarget)
+    if (fileTargets.has(target)) {
+      lock.release()
+      return { ok: false, txId, stage: "validate", reason: `duplicate file target across items: ${item.file.relTarget}`, warnings }
+    }
+    fileTargets.add(target)
+    const prep = prepareFileTx(target, item.file.next)
+    if (!prep.ok) {
+      lock.release()
+      return { ok: false, txId, stage: "staging", reason: `file prepare failed for "${item.key}": ${prep.reason}`, warnings }
+    }
+    fileImages.set(item.key, prep.image)
+  }
+
   const iso = now().toISOString()
   let journal: TxJournal = {
     v: 1,
@@ -924,6 +986,17 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
               slot: index,
               preDigest: configImages.get(item.key)!.preDigest,
               nextDigest: configImages.get(item.key)!.nextDigest,
+            },
+          }
+        : {}),
+      ...(actionOf(item) === "file" && fileImages.has(item.key)
+        ? {
+            file: {
+              relTarget: item.file!.relTarget,
+              slot: index,
+              preDigest: fileImages.get(item.key)!.preDigest,
+              nextDigest: fileImages.get(item.key)!.nextDigest,
+              preAbsent: fileImages.get(item.key)!.preAbsent,
             },
           }
         : {}),
@@ -949,14 +1022,26 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
       .filter((it) => actionOf(it) === "generation")
       .map((it) => ({ key: it.key, genId: it.genId, dir: generationDirOf(root, it.key, it.genId) }))
 
-  /** config action 回滚:逆序恢复(仅当 target 仍是 nextImage 才写回 preImage;旁路改写 → fail-closed 留证)。 */
-  const rollbackConfigActions = (): void => {
+  const fileEntries = () =>
+    journal.items
+      .filter((it) => actionOf(it) === "file" && it.file)
+      .map((it) => ({ key: it.key, target: path.join(root, it.file!.relTarget), slot: it.file!.slot }))
+
+  /** config/file action 回滚:逆序恢复(仅当 target 仍是 next 态才恢复前像;旁路改写 → fail-closed 留证)。 */
+  const rollbackImageActions = (): void => {
     for (const it of [...journal.items].reverse()) {
-      if (actionOf(it) !== "config") continue
-      const image = configImages.get(it.key)
-      if (!image) continue
-      const restored = restoreConfigImage(image)
-      if (!restored.ok) warnings.push(`config rollback for "${it.key}": ${restored.reason}`)
+      const kind = actionOf(it)
+      if (kind === "config") {
+        const image = configImages.get(it.key)
+        if (!image) continue
+        const restored = restoreConfigImage(image)
+        if (!restored.ok) warnings.push(`config rollback for "${it.key}": ${restored.reason}`)
+      } else if (kind === "file") {
+        const image = fileImages.get(it.key)
+        if (!image) continue
+        const restored = restoreFileImage(image)
+        if (!restored.ok) warnings.push(`file rollback for "${it.key}": ${restored.reason}`)
+      }
     }
   }
 
@@ -978,9 +1063,9 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
     return { ok: false, txId, stage, reason, quarantined, warnings }
   }
 
-  /** switch 之后的失败:config 逆序恢复 + generation 指针回旧(previous 一直保留)+ 失败 generation 隔离。 */
+  /** switch 之后的失败:config/file 逆序恢复 + generation 指针回旧(previous 一直保留)+ 失败 generation 隔离。 */
   const rollbackAll = (stage: TxStage, reason: string): TxResult => {
-    rollbackConfigActions()
+    rollbackImageActions()
     for (const it of journal.items) {
       if (actionOf(it) !== "generation") continue
       const current = readCurrentGeneration(root, it.key)
@@ -1020,6 +1105,8 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
         await hooks.populate(item, dir)
       } else if (kind === "config") {
         stageConfigImage(txStagingDir(root, txId), i, configImages.get(item.key)!)
+      } else if (kind === "file") {
+        stageFileImage(txStagingDir(root, txId), i, fileImages.get(item.key)!)
       }
       if (i === 0 && plan.items.length > 1) crash("mid-populate")
     }
@@ -1040,6 +1127,10 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
       const cfg = journal.items.find((j) => j.key === item.key)!.config!
       const rebuilt = readStagedConfigImage(txStagingDir(root, txId), cfg.slot, cfg.target, cfg.preDigest, cfg.nextDigest)
       if (!rebuilt.ok) return abortPreSwitch("verify", `"${item.key}" config staging verification failed: ${rebuilt.reason}`)
+    } else if (kind === "file") {
+      const fl = journal.items.find((j) => j.key === item.key)!.file!
+      const rebuilt = readStagedFileImage(txStagingDir(root, txId), fl.slot, path.join(root, fl.relTarget), fl.preDigest, fl.nextDigest, fl.preAbsent)
+      if (!rebuilt.ok) return abortPreSwitch("verify", `"${item.key}" file staging verification failed: ${rebuilt.reason}`)
     }
   }
   advance("staged")
@@ -1075,6 +1166,27 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
         return abortPreSwitch("pre-switch-probe", `health probe failed for "${g.key}": ${verdict.reason}`, true)
       }
     }
+    // file action(#358):pre-switch 验 staged candidate(语义健康;digest 已由 verify 阶段把关)。
+    for (const f of fileEntries()) {
+      let verdict: HealthVerdict
+      try {
+        verdict = await hooks.probe({
+          key: f.key,
+          action: "file",
+          genId: "gen-000000-000000",
+          generationDir: "",
+          phase: "pre-switch",
+          fileTarget: f.target,
+          stagedFile: fileStagePaths(txStagingDir(root, txId), f.slot).next,
+        })
+      } catch (error) {
+        if (error instanceof ExtTxCrashError) throw error
+        verdict = { healthy: false, reason: error instanceof Error ? error.message : "probe threw" }
+      }
+      if (!verdict.healthy) {
+        return abortPreSwitch("pre-switch-probe", `health probe failed for "${f.key}": ${verdict.reason}`)
+      }
+    }
   }
   crash("after-pre-probe")
 
@@ -1090,6 +1202,7 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
       const kind = actionOf(it)
       if (kind === "generation") writePointerSync(root, it.key, it.genId, txId, now)
       else if (kind === "config") applyConfigImage(configImages.get(it.key)!)
+      else if (kind === "file") applyFileImage(fileImages.get(it.key)!)
       if (i === 0 && journal.items.length > 1) crash("mid-switch")
     }
   } catch (error) {
@@ -1111,6 +1224,26 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
       }
       if (!verdict.healthy) {
         return rollbackAll("post-switch-probe", `health probe failed for "${g.key}": ${verdict.reason}`)
+      }
+    }
+    // file action(#358):post-switch 验 live 落点(内容 + 关联 config 叶一致性由 typed probe 判)。
+    for (const f of fileEntries()) {
+      let verdict: HealthVerdict
+      try {
+        verdict = await hooks.probe({
+          key: f.key,
+          action: "file",
+          genId: "gen-000000-000000",
+          generationDir: "",
+          phase: "post-switch",
+          fileTarget: f.target,
+        })
+      } catch (error) {
+        if (error instanceof ExtTxCrashError) throw error
+        verdict = { healthy: false, reason: error instanceof Error ? error.message : "probe threw" }
+      }
+      if (!verdict.healthy) {
+        return rollbackAll("post-switch-probe", `health probe failed for "${f.key}": ${verdict.reason}`)
       }
     }
   }
@@ -1687,11 +1820,20 @@ async function recoverOne(
   }
 
   // switching / switched:commit 意图已持久化,health/receipt 未确认。逐 action 判定翻转:
-  //   generation → current.json 指针 === genId;config → live target digest === nextDigest;receipt → 恒真。
+  //   generation → current.json 指针 === genId;config → live target digest === nextDigest;
+  //   file → live target 存在且 digest === nextDigest(#358;next 恒非空,缺席即未翻转);receipt → 恒真。
   const sha256Text = (t: string): string => crypto.createHash("sha256").update(t, "utf8").digest("hex")
   const configTargetDigest = (target: string): string | null => {
     try {
       return sha256Text(fs.existsSync(target) ? fs.readFileSync(target, "utf8") : "{}")
+    } catch {
+      return null
+    }
+  }
+  const fileTargetDigest = (target: string): string | null => {
+    try {
+      if (!fs.existsSync(target)) return null
+      return crypto.createHash("sha256").update(fs.readFileSync(target)).digest("hex")
     } catch {
       return null
     }
@@ -1701,10 +1843,16 @@ async function recoverOne(
     const r = readStagedConfigImage(staleStaging, it.config.slot, it.config.target, it.config.preDigest, it.config.nextDigest)
     return r.ok ? r.image : null
   }
+  const reconstructFileImage = (it: TxJournalItem): FileTxImage | null => {
+    if (actionOf(it) !== "file" || !it.file) return null
+    const r = readStagedFileImage(staleStaging, it.file.slot, path.join(root, it.file.relTarget), it.file.preDigest, it.file.nextDigest, it.file.preAbsent)
+    return r.ok ? r.image : null
+  }
   const isFlipped = (it: TxJournalItem): boolean => {
     const kind = actionOf(it)
     if (kind === "receipt") return true
     if (kind === "config") return it.config ? configTargetDigest(it.config.target) === it.config.nextDigest : false
+    if (kind === "file") return it.file ? fileTargetDigest(path.join(root, it.file.relTarget)) === it.file.nextDigest : false
     return readCurrentGeneration(root, it.key)?.genId === it.genId
   }
   const allFlipped = journal.items.every(isFlipped)
@@ -1713,10 +1861,18 @@ async function recoverOne(
     let healthy = true
     let probeReason = ""
     for (const it of journal.items) {
-      if (actionOf(it) !== "generation") continue // config/receipt 不做类型化 generation 探测
-      const dir = generationDirOf(root, it.key, it.genId)
+      const kind = actionOf(it)
+      if (kind !== "generation" && kind !== "file") continue // config/receipt 不做类型化探测
+      const dir = kind === "generation" ? generationDirOf(root, it.key, it.genId) : ""
       try {
-        const verdict = await opts.probe({ key: it.key, action: actionOf(it), genId: it.genId, generationDir: dir, phase: "recovery" })
+        const verdict = await opts.probe({
+          key: it.key,
+          action: kind,
+          genId: it.genId,
+          generationDir: dir,
+          phase: "recovery",
+          ...(kind === "file" && it.file ? { fileTarget: path.join(root, it.file.relTarget) } : {}),
+        })
         if (!verdict.healthy) {
           healthy = false
           probeReason = `health probe failed for "${it.key}": ${verdict.reason}`
@@ -1758,14 +1914,24 @@ async function recoverOne(
   ]
   const reason = `crash recovery rollback: ${reasonParts.join("; ")}`
   for (const it of [...journal.items].reverse()) {
-    if (actionOf(it) !== "config") continue
-    const image = reconstructConfigImage(it)
-    if (!image) {
-      warnings.push(`config recovery: cannot reconstruct image for "${it.key}" — leaving live as-is (fail closed)`)
-      continue
+    const kind = actionOf(it)
+    if (kind === "config") {
+      const image = reconstructConfigImage(it)
+      if (!image) {
+        warnings.push(`config recovery: cannot reconstruct image for "${it.key}" — leaving live as-is (fail closed)`)
+        continue
+      }
+      const restored = restoreConfigImage(image)
+      if (!restored.ok) warnings.push(`config recovery rollback for "${it.key}": ${restored.reason}`)
+    } else if (kind === "file") {
+      const image = reconstructFileImage(it)
+      if (!image) {
+        warnings.push(`file recovery: cannot reconstruct image for "${it.key}" — leaving live as-is (fail closed)`)
+        continue
+      }
+      const restored = restoreFileImage(image)
+      if (!restored.ok) warnings.push(`file recovery rollback for "${it.key}": ${restored.reason}`)
     }
-    const restored = restoreConfigImage(image)
-    if (!restored.ok) warnings.push(`config recovery rollback for "${it.key}": ${restored.reason}`)
   }
   for (const it of journal.items) {
     if (actionOf(it) !== "generation") continue

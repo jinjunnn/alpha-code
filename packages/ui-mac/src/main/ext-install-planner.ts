@@ -42,7 +42,9 @@ import {
   type TxPlanItem,
   type TxStage,
 } from "./ext-transaction"
-import { isSafeCapability, type CapabilityDiff } from "./ext-capability-grants"
+import { capabilityGrantPath, isSafeCapability, type CapabilityDiff } from "./ext-capability-grants"
+import { agentConfigItemKey, agentInstallKey, installAgentFromCas } from "./ext-agent-install"
+import { parse, type ParseError } from "jsonc-parser"
 import type { AuthorizationConfirmationWire } from "../shared/ext-capability-authorization"
 import { findReceipt } from "./alpha-installs"
 import {
@@ -1639,6 +1641,39 @@ function seedInstallVersionGate(root: string, name: string, seedVersion: string)
   return { ok: true }
 }
 
+/** agent seed 的 fresh-only 门(REQ-102 #358,Codex 裁决 Q3:agent 无更新链)。**必须在引擎 Bundle
+ *  锁内经 precondition 执行**:账本 strict(损坏 fail-closed;v2 或 v1-only 在场 = 拒)+ 写前账本
+ *  健康探测 + md 文件(含 legacy 单数目录)/ config `agent.<name>` 叶在场检查 —— 同名任何在场都拒
+ *  (未策展内容不认领),config 不可读同样 fail-closed。 */
+function agentSeedFreshGate(root: string, name: string, configTarget: string): { ok: true } | { ok: false; reason: string } {
+  const ledgerProbe = probeLedgerForWrite(root)
+  if (!ledgerProbe.ok) return { ok: false, reason: `refusing seed install: ${ledgerProbe.reason}` }
+  const lookup = lookupForUninstall(root, "agent", name)
+  if (lookup.status === "corrupt-match" || lookup.status === "ledger-corrupt")
+    return { ok: false, reason: `refusing seed install: ${lookup.reason}` }
+  if (lookup.status === "valid" || lookup.status === "v1")
+    return { ok: false, reason: `agent "${name}" already present — agents have no update path; refusing overwrite` }
+  for (const dir of ["agents", "agent"]) {
+    if (fs.existsSync(path.join(root, dir, `${name}.md`)))
+      return { ok: false, reason: `agent md "${dir}/${name}.md" exists without a ledger record — refusing to overwrite or adopt unregistered content` }
+  }
+  if (fs.existsSync(configTarget)) {
+    let text: string
+    try {
+      text = fs.readFileSync(configTarget, "utf8")
+    } catch {
+      return { ok: false, reason: `refusing seed install: config ${configTarget} unreadable (fail closed)` }
+    }
+    const errors: ParseError[] = []
+    const cfg: unknown = parse(text, errors)
+    if (errors.length > 0) return { ok: false, reason: `refusing seed install: config ${configTarget} is not valid jsonc (fail closed)` }
+    const agentMap = isObj(cfg) ? cfg.agent : undefined
+    if (isObj(agentMap) && agentMap[name] !== undefined)
+      return { ok: false, reason: `config entry "agent.${name}" exists without a ledger record — refusing to overwrite or adopt unregistered content` }
+  }
+  return { ok: true }
+}
+
 /** 双真源交叉验证(Codex 裁决 C,#317 AC2):seed lock 权威「离线字节」,bundled entry 权威安装语义;
  *  id/type/version/逐文件 path+sha256+bytes/聚合 digest 任一不合 = 漂移,返回原因(调用方 fail-closed)。 */
 function crossCheckSeedAssetAgainstEntry(asset: SeedAsset, entry: CatalogEntry): string | null {
@@ -1681,8 +1716,8 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
   const view = read.seed
   const asset = view.assets.find((a) => a.id === intent.assetId)
   if (!asset) return { ok: false, reason: `asset not in packaged seed: ${intent.assetId}` }
-  if (asset.type !== "skill")
-    return { ok: false, reason: `seed install for type "${asset.type}" is not wired (skill-only phase; agent → #358, mcp/plugin → #359) — refused` }
+  if (asset.type !== "skill" && asset.type !== "agent")
+    return { ok: false, reason: `seed install for type "${asset.type}" is not wired (skill+agent phase; mcp/plugin → #359) — refused` }
   if (!asset.platformCompatible) return { ok: false, reason: `asset ${asset.id} is not built for this platform — refused` }
 
   const verified = seedDeps.resolveBundledEntry(asset.id)
@@ -1710,7 +1745,7 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
   const manifestDigest = computeManifestDigest(manifest)
   const payloadDigest = aggregateFilesDigest(entry.remoteAsset!.files)
 
-  const tx = (deps.transaction ?? passthroughTx).begin({ op: "install", kind: "skill", name: entry.name, scope: "global", manifestDigest })
+  const tx = (deps.transaction ?? passthroughTx).begin({ op: "install", kind: entry.type, name: entry.name, scope: "global", manifestDigest })
   const rollback = (reason: string): void => (deps.transaction ?? passthroughTx).rollback(tx.txId, reason)
 
   // verify-all-then-promote:任一文件校验不过在展开前拒;成功后 blob 进共享 CAS(幂等,失败残留由
@@ -1720,6 +1755,45 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
   if (!promoted.ok) {
     rollback(promoted.reason)
     return { ok: false, reason: promoted.reason }
+  }
+
+  // ── agent seed(REQ-102 #358):file(md)+ config(agent.<name> 叶)双 item 单事务 ——
+  //    落盘路径/授权闸/fresh-only 语义按 2026-07-16 Codex 裁决(issue #358 评论)执行。
+  if (asset.type === "agent") {
+    // 裁决 B:agent 主键由 bundled entry 决定,且必须校验 id/name 一致(双真源交叉不查 id 后缀)。
+    if (entry.id !== `agent:${entry.name}`)
+      return { ok: false, reason: `bundled entry id "${entry.id}" ≠ "agent:${entry.name}" — refusing (identity drift)` }
+    const [casSpec] = promoted.files
+    if (promoted.files.length !== 1 || !casSpec) {
+      rollback("agent seed asset must contain exactly one file")
+      return { ok: false, reason: `agent seed asset must contain exactly one file (got ${promoted.files.length}) — refused` }
+    }
+    const configTarget = path.join(deps.globalRoot(), "alpha.jsonc")
+    const agentGen = await installAgentFromCas(deps.globalRoot(), {
+      name: entry.name,
+      id: entry.id,
+      environment: deps.environment(),
+      scope: { kind: "global" },
+      origin: "catalog",
+      casFile: { spec: casSpec, casBaseRoot },
+      configTarget,
+      capabilities: manifest.capabilities,
+      ...(intent.authorization ? { authorization: stampAuthorization(intent.authorization, () => deps.now?.() ?? new Date().toISOString())! } : {}),
+      version: manifest.version,
+      manifestDigest,
+      payloadDigest,
+      grantDigest: computeGrantDigest({}),
+      // fresh-only 门作为锁内 precondition(裁决 Q3:agent 无更新链,同名任何在场即 fail-closed;
+      // 锁内重读封死锁外判定的 TOCTOU)。
+      precondition: () => agentSeedFreshGate(deps.globalRoot(), entry.name, configTarget),
+    })
+    if (!agentGen.ok) {
+      rollback(agentGen.reason)
+      if (agentGen.stage === "authorize") return { ok: false, stage: "authorize", reason: agentGen.reason, authorization: agentGen.authorization }
+      return { ok: false, reason: agentGen.reason, ...(agentGen.stage ? { stage: agentGen.stage } : {}) }
+    }
+    ;(deps.transaction ?? passthroughTx).commit(tx.txId)
+    return { ok: true, kind: "agent", name: entry.name, files: agentGen.files, manifestDigest }
   }
 
   // downgrade 门作为锁内 precondition:持 Bundle 锁后、写盘前重读账本判定(同版本重装 = 幂等允许,
@@ -1807,6 +1881,7 @@ export async function uninstallByKey(rawIntent: unknown, deps: PlannerDeps): Pro
     if (!r.ok) return { ok: false, reason: r.reason }
     return { ok: true, ...(r.removed.length ? { files: r.removed } : {}) }
   }
+  const grantWarnings: string[] = []
   if (intent.type === "skill" || intent.type === "agent") {
     const r = deps.installers.removeFsInstall(intent.type, intent.name, target)
     if (!r.ok) {
@@ -1814,6 +1889,26 @@ export async function uninstallByKey(rawIntent: unknown, deps: PlannerDeps): Pro
       return r
     }
     removedFiles = r.files
+    // #358:事务安装的 agent 授权账(ext-store/agent--<name>[--config]/grants.json)随卸载清除 ——
+    // 残留 grant 会让重装按旧授权静默继承,违反 #348 重确认合同。幂等;失败并入 warning(loud)。
+    if (intent.type === "agent") {
+      for (const key of [agentInstallKey(intent.name), agentConfigItemKey(intent.name)]) {
+        const grantFile = capabilityGrantPath(root, key)
+        try {
+          if (fs.existsSync(grantFile)) {
+            fs.unlinkSync(grantFile)
+            removedFiles = [...(removedFiles ?? []), grantFile]
+          }
+        } catch (error) {
+          grantWarnings.push(`grant removal failed for "${key}": ${error instanceof Error ? error.message : String(error)}`)
+        }
+        try {
+          fs.rmdirSync(path.dirname(grantFile)) // 只在空时成功;非空/不存在都不算失败
+        } catch {
+          /* 幂等 */
+        }
+      }
+    }
   } else if (intent.type === "mcp") {
     // #346:journaled 单锁序列 config→secrets→ledger(Codex 裁决:配置先消失,残留密钥不可达;
     // 反序会复现 #351 规避的「配置在、密钥毁」)。任一步失败 = journal 保持 uninstalling,
@@ -1875,7 +1970,11 @@ export async function uninstallByKey(rawIntent: unknown, deps: PlannerDeps): Pro
 
   const removed = removeRecordV2(root, intent.type, intent.name)
   ;(deps.transaction ?? passthroughTx).commit(tx.txId)
-  const warning = removed.ok ? undefined : `uninstalled but ledger removal failed: ${removed.reason}`
+  const warningParts = [
+    ...(removed.ok ? [] : [`uninstalled but ledger removal failed: ${removed.reason}`]),
+    ...grantWarnings,
+  ]
+  const warning = warningParts.length ? warningParts.join("; ") : undefined
   return { ok: true, ...(removedFiles ? { files: removedFiles } : {}), ...(warning ? { warning } : {}) }
 }
 
