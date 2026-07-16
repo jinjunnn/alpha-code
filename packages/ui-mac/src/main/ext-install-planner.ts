@@ -1114,6 +1114,20 @@ async function replacePluginViaTransaction(args: {
         return { ok: false, reason: "plugin ledger changed since plan — retry the update" }
       if (rec.desiredState !== facts.record.desiredState)
         return { ok: false, reason: "plugin desired state changed since plan — retry the update" }
+      // r12 Major:legacy 源不在主 canon 快照覆盖内 —— 锁内重跑两个 legacy 门(同名派生路径 +
+      // npm 同包 pin),与「计划前 + 锁内双查」合同一致;否则计划后写入 retained 源的同包 pin
+      // 会让引擎 later-wins 加载 legacy 版本而账本记新 pin。
+      const legacyGateNow = legacySameNamePluginGate(() => deps.installers.readLegacyPluginArrayStrict(), root, entry.name)
+      if (!legacyGateNow.ok) return legacyGateNow
+      if (facts.form.kind === "npm") {
+        const legacyNow = deps.installers.readLegacyPluginArrayStrict()
+        if (!legacyNow.ok) return legacyNow
+        const base = pkgBaseOf(facts.form.oldPinned)
+        for (const src of legacyNow.sources) {
+          const hit = src.value.map(pluginSpecOf).find((x): x is string => x !== null && pkgBaseOf(x) === base)
+          if (hit !== undefined) return { ok: false, reason: `legacy config gained pin "${hit}" of "${base}" since plan — retry the update` }
+        }
+      }
       // review r2 Blocker:异 payload 的新内容寻址目录必须缺席(锁内判;r3:壳容忍 —— recovery
       // 回滚遗留的纯空目录树不阻断重试,文件/symlink 在场才拒;preAbsent 的最终强制在引擎
       // file prepare 的 requireAbsent 断言 + switch 前紧邻重断言)。
