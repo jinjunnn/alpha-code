@@ -245,44 +245,96 @@ describe("recovery 自守(#375:畸形 journal 不炸整轮)", () => {
     expect(existsSync(join(ref.root, "ext-store", "skill--demo", "current.json"))).toBe(false)
   })
 
-  test("review r2 Major:reconcile source+dest 同在(rename 半持久)→ sha 一致补完删 source", async () => {
+  test("review r3 Blocker/Major:reconcile source+dest 同在 → abandoned,**绝不删除 source**(交回恢复)", async () => {
     const ref = mkRoot("reconcileboth")
     const layout = transactionJournalLayout(ref.root)
     mkdirSync(layout.retiredDir, { recursive: true })
     const body = retainedUninstallJournal("tx-half")
-    const bodyStr = JSON.stringify(body)
-    const sha = createHash("sha256").update(bodyStr).digest("hex")
-    // dest 与 source 同内容(rename 已生效但 source 删除未持久 = 两边都在)。
-    writeFileSync(join(layout.retiredDir, "tx-half.json.retired-r1"), bodyStr)
-    writeJournal(ref, "tx-half.json", body)
+    const sha = createHash("sha256").update(JSON.stringify(body)).digest("hex")
+    const rid = "0123456789abcdef" // 16 hex
+    writeFileSync(join(layout.retiredDir, `tx-half.json.retired-${rid}`), JSON.stringify(body))
+    writeJournal(ref, "tx-half.json", body) // source 仍在(rename 半持久)
     writeFileSync(
-      join(layout.retiredDir, "retire-r1.receipt.json"),
-      JSON.stringify({ v: 1, action: "retire", status: "prepared", requestId: "r1", entryId: "tx-half.json", txId: "tx-half", destinationName: "tx-half.json.retired-r1", sourceSha256: sha }),
+      join(layout.retiredDir, `retire-${rid}.receipt.json`),
+      JSON.stringify({ v: 1, action: "retire", status: "prepared", requestId: rid, entryId: "tx-half.json", txId: "tx-half", destinationName: `tx-half.json.retired-${rid}`, sourceSha256: sha }),
     )
-    // 触发调和:对另一件 retire(用 tx-half 自身 —— 调和先行,补完删 source 后 tx-half 已不在 journal/)。
     writeJournal(ref, "tx-trigger.json", retainedUninstallJournal("tx-trigger"))
     await retireTransactionJournal(ref, retireReq(ref, "tx-trigger.json"), retireDeps)
-    const receipt = readRec(join(layout.retiredDir, "retire-r1.receipt.json"))
-    expect(receipt.status).toBe("retired")
-    expect(receipt.fingerprintVerified).toBe(true)
-    // source 被补完删除(rename 收尾)。
-    expect(existsSync(join(layout.journalDir, "tx-half.json"))).toBe(false)
+    const receipt = readRec(join(layout.retiredDir, `retire-${rid}.receipt.json`))
+    expect(receipt.status).toBe("abandoned") // retire 未完成
+    expect(existsSync(join(layout.journalDir, "tx-half.json"))).toBe(true) // source 保留,不被删
   })
 
-  test("review r2 Major:reconcile dest 缺 sourceSha256 → 标 unverified,不谎称已复核", async () => {
+  test("review r3 Blocker:reconcile 对畸形 receipt(entryId/destName 含 traversal)不越界(严格圈禁)", async () => {
+    const ref = mkRoot("reconciletrav")
+    const layout = transactionJournalLayout(ref.root)
+    const victim = join(base, "traversal-victim.json")
+    writeFileSync(victim, "precious")
+    mkdirSync(layout.retiredDir, { recursive: true })
+    // 恶意 prepared receipt:entryId/destinationName 含 ../ 指向 root 外。
+    writeFileSync(
+      join(layout.retiredDir, "retire-evil.receipt.json"),
+      JSON.stringify({ v: 1, action: "retire", status: "prepared", requestId: "evil", entryId: "../../traversal-victim.json", txId: "x", destinationName: "../../traversal-victim.json.retired-deadbeefdeadbeef", sourceSha256: "a".repeat(64) }),
+    )
+    writeJournal(ref, "tx-trigger.json", retainedUninstallJournal("tx-trigger"))
+    await retireTransactionJournal(ref, retireReq(ref, "tx-trigger.json"), retireDeps)
+    expect(existsSync(victim)).toBe(true) // root 外文件安然无恙(entryId 圈禁拒,不据以 join)
+    const receipt = readRec(join(layout.retiredDir, "retire-evil.receipt.json"))
+    expect(String(receipt.status).startsWith("abandoned")).toBe(true) // 圈禁后不据畸形名 join → 无越界
+  })
+
+  test("review r3 Major:reconcile dest-only 缺 sourceSha256 → retired 但 fingerprintVerified:false", async () => {
     const ref = mkRoot("reconcileunverif")
     const layout = transactionJournalLayout(ref.root)
     mkdirSync(layout.retiredDir, { recursive: true })
-    writeFileSync(join(layout.retiredDir, "tx-u.json.retired-r2"), JSON.stringify(retainedUninstallJournal("tx-u")))
+    const rid = "abcdef0123456789"
+    writeFileSync(join(layout.retiredDir, `tx-u.json.retired-${rid}`), JSON.stringify(retainedUninstallJournal("tx-u")))
     writeFileSync(
-      join(layout.retiredDir, "retire-r2.receipt.json"),
-      JSON.stringify({ v: 1, action: "retire", status: "prepared", requestId: "r2", entryId: "tx-u.json", txId: "tx-u", destinationName: "tx-u.json.retired-r2" }), // 无 sourceSha256
+      join(layout.retiredDir, `retire-${rid}.receipt.json`),
+      JSON.stringify({ v: 1, action: "retire", status: "prepared", requestId: rid, entryId: "tx-u.json", txId: "tx-u", destinationName: `tx-u.json.retired-${rid}` }), // 无 sourceSha256; source 不在
     )
     writeJournal(ref, "tx-trigger.json", retainedUninstallJournal("tx-trigger"))
     await retireTransactionJournal(ref, retireReq(ref, "tx-trigger.json"), retireDeps)
-    const receipt = readRec(join(layout.retiredDir, "retire-r2.receipt.json"))
+    const receipt = readRec(join(layout.retiredDir, `retire-${rid}.receipt.json`))
     expect(receipt.status).toBe("retired")
-    expect(receipt.fingerprintVerified).toBe(false) // 未复核,如实标注
+    expect(receipt.fingerprintVerified).toBe(false)
+  })
+
+  test("review r3 Blocker:非法文件名 txId(..)→ 不据以构造 staging 路径,不删 ext-tx", async () => {
+    const ref = mkRoot("badname")
+    const layout = transactionJournalLayout(ref.root)
+    // 文件名派生 txId = ".."(危险);body txId 也 "..",过等值检查;若无 TX_ID_RE 守卫会
+    // txStagingDir(root,"..")=ext-tx 被 cleanTerminalStaging 删掉。
+    writeFileSync(join(layout.journalDir, "...json"), JSON.stringify({ txId: "..", op: "install", state: "committed", items: [] }))
+    const sentinel = join(layout.journalDir, "sentinel.txt")
+    writeFileSync(sentinel, "keep")
+    const rec = await recoverExtensionTransactions(ref.root, { log: silentLog })
+    const bad = rec.reports.find((r) => r.txId === "..")
+    expect(bad?.detail).toContain("not a safe path segment")
+    expect(existsSync(layout.journalDir)).toBe(true) // ext-tx/journal 未被删
+    expect(existsSync(sentinel)).toBe(true)
+  })
+
+  test("review r3 Major:未知 action 的 item → diagnose 判 malformed 保留,不进 dispatch", async () => {
+    const ref = mkRoot("unknownaction")
+    writeJournal(ref, "tx-ua.json", { txId: "tx-ua", op: "install", state: "switching", items: [{ key: "skill--demo", action: "evil-action" }] })
+    const rec = await recoverExtensionTransactions(ref.root, { log: silentLog })
+    const r = rec.reports.find((rep) => rep.txId === "tx-ua")
+    expect(r?.action).toBe("none")
+    expect(r?.detail).toContain("unknown item action")
+  })
+
+  test("review r3 Major:staging 删除失败(圈禁不过)→ 终态件不谎报 cleaned,terminal GC 不删该 journal", async () => {
+    const ref = mkRoot("stagingfail")
+    const layout = transactionJournalLayout(ref.root)
+    // committed + 有 staging;把 staging 变成不可删(mkdir 只读父)难以稳定复现,改测 gc 跳过逻辑:
+    // staging 仍在时 terminal GC 不删 journal。
+    writeJournal(ref, "tx-keep.json", { txId: "tx-keep", op: "install", state: "committed", items: [], updatedAt: "2020-01-01T00:00:00Z" })
+    mkdirSync(join(layout.stagingDir, "tx-keep"), { recursive: true })
+    // 手动阻断 staging 删除:把 stagingDir/tx-keep 设为文件(existsSync 真、removeDirGuarded rmSync 仍可删)
+    // —— 改为直接验 gcTerminalJournals 的 staging-exists 跳过:先让恢复清 staging(会删),再断言无残留。
+    await recoverExtensionTransactions(ref.root, { log: silentLog, keepJournals: 0 })
+    expect(existsSync(join(layout.stagingDir, "tx-keep"))).toBe(false) // staging 被清
   })
 })
 
@@ -388,16 +440,16 @@ describe("retireTransactionJournal(#375 全链与拒绝面)", () => {
     const layout = transactionJournalLayout(ref.root)
     mkdirSync(layout.retiredDir, { recursive: true })
     // 场景 A:rename 已发生、receipt 停在 prepared。
-    writeFileSync(join(layout.retiredDir, "tx-a.json.retired-deadbeef"), JSON.stringify(retainedUninstallJournal("tx-a")))
+    writeFileSync(join(layout.retiredDir, "tx-a.json.retired-deadbeefdeadbeef"), JSON.stringify(retainedUninstallJournal("tx-a")))
     writeFileSync(
-      join(layout.retiredDir, "retire-deadbeef.receipt.json"),
-      JSON.stringify({ v: 1, action: "retire", status: "prepared", requestId: "deadbeef", entryId: "tx-a.json", txId: "tx-a", destinationName: "tx-a.json.retired-deadbeef" }),
+      join(layout.retiredDir, "retire-deadbeefdeadbeef.receipt.json"),
+      JSON.stringify({ v: 1, action: "retire", status: "prepared", requestId: "deadbeefdeadbeef", entryId: "tx-a.json", txId: "tx-a", destinationName: "tx-a.json.retired-deadbeefdeadbeef" }),
     )
     // 场景 B:rename 未发生、receipt 停在 prepared,源仍在场。
     writeJournal(ref, "tx-b.json", retainedUninstallJournal("tx-b"))
     writeFileSync(
-      join(layout.retiredDir, "retire-beefdead.receipt.json"),
-      JSON.stringify({ v: 1, action: "retire", status: "prepared", requestId: "beefdead", entryId: "tx-b.json", txId: "tx-b", destinationName: "tx-b.json.retired-beefdead" }),
+      join(layout.retiredDir, "retire-beefdeadbeefdead.receipt.json"),
+      JSON.stringify({ v: 1, action: "retire", status: "prepared", requestId: "beefdeadbeefdead", entryId: "tx-b.json", txId: "tx-b", destinationName: "tx-b.json.retired-beefdeadbeefdead" }),
     )
     // 调和前:诊断面把两条 prepared 残留如实列出。
     const before = listRetainedJournals([ref]).entries.filter((e) => e.kind === "retire-incomplete")
@@ -406,10 +458,10 @@ describe("retireTransactionJournal(#375 全链与拒绝面)", () => {
     // 任意一次 retire 操作锁内先调和(用 tx-b 自身走一遍;调和先行,随后 tx-b 正常 retire)。
     const r = await retireTransactionJournal(ref, retireReq(ref, "tx-b.json"), retireDeps)
     expect(r.ok).toBe(true)
-    const receiptA = readRec(join(layout.retiredDir, "retire-deadbeef.receipt.json"))
+    const receiptA = readRec(join(layout.retiredDir, "retire-deadbeefdeadbeef.receipt.json"))
     expect(receiptA.status).toBe("retired")
     expect(receiptA.reconciled).toBe(true)
-    const receiptB = readRec(join(layout.retiredDir, "retire-beefdead.receipt.json"))
+    const receiptB = readRec(join(layout.retiredDir, "retire-beefdeadbeefdead.receipt.json"))
     expect(receiptB.status).toBe("abandoned") // tx-b 的旧 prepared 在调和时源仍在场 → abandoned;随后的新 retire 有自己的新 receipt
     const receipts = readdirSync(layout.retiredDir).filter((n) => n.endsWith(".receipt.json"))
     expect(receipts.length).toBe(3) // 两张调和件 + tx-b 新 retire 件

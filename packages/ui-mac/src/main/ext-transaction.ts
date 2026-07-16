@@ -318,6 +318,10 @@ const JOURNAL_KEEP_DEFAULT = 100
 const SAFE_KEY = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/
 const GEN_NAME = /^gen-\d{6}-[a-f0-9]{8}$/
 const TX_ID_RE = /^tx-[a-z0-9]{1,20}-[a-f0-9]{8}$/
+/** #375:txId 作为单路径段的安全判据(recovery/staging/journalPath 构造前置)——
+ *  无分隔符/NUL、非 "."/".."、有界。合法引擎名(TX_ID_RE)是其真子集。 */
+const isSafeTxIdSegment = (t: string): boolean =>
+  t.length > 0 && t.length <= 128 && t !== "." && t !== ".." && !t.includes("/") && !t.includes("\\") && !t.includes("\0")
 const SHA256_RE = /^[a-f0-9]{64}$/
 
 // ── 目录布局 ─────────────────────────────────────────────────────────────────────────────────
@@ -1713,11 +1717,19 @@ export function diagnoseTransactionJournal(journal: TxJournalShape): TxJournalDi
     // 此处让畸形 config/file item 在 diagnose 阶段即判 malformed → 保留态,不进 dispatch。
     if (item.action !== undefined && typeof item.action !== "string")
       return { verdict: "malformed", reason: "malformed journal (item action)" }
-    const kind = typeof item.action === "string" ? item.action : "generation"
+    const kind = item.action === undefined ? "generation" : item.action
+    // review r3 Major:action 必须是已知枚举 —— 未知 action 会被 isFlipped 当 generation-like
+    // 跳过 probe、经 rollback 路径终态化;白名单收口(与引擎 TxActionKind 一致)。
+    if (kind !== "generation" && kind !== "config" && kind !== "file" && kind !== "receipt")
+      return { verdict: "malformed", reason: `malformed journal (unknown item action "${String(kind)}")` }
     if (kind === "config" && (!isRecShape(item.config) || typeof item.config.target !== "string" || !item.config.target.startsWith("/")))
       return { verdict: "malformed", reason: "malformed journal (config item target)" }
     if (kind === "file" && (!isRecShape(item.file) || typeof item.file.relTarget !== "string"))
       return { verdict: "malformed", reason: "malformed journal (file item relTarget)" }
+    // generation item 的 genId 进 writePointerSync/generationDirOf 构造路径(rollback 前滚也用):
+    // 若存在必须是合法 gen 名或零代;缺席由各恢复分支自处(不强制存在,避免误伤无 genId 的项)。
+    if (typeof item.genId === "string" && item.genId !== "gen-000000-000000" && !GEN_NAME.test(item.genId))
+      return { verdict: "malformed", reason: `malformed journal (item genId "${item.genId}")` }
   }
   return { verdict: "shape-ok" }
 }
@@ -1846,6 +1858,14 @@ export async function recoverExtensionTransactionsInHeldLock(
     // 不因不可解析/txId 不符/畸形分支被跳过 → 长恢复不被 15min stale 接管而失互斥。
     try {
       const txId = name.slice(0, -".json".length)
+      // #375 review r3 Blocker:文件名派生 txId 必须是**安全单路径段** —— 否则 ".."/含分隔符的
+      // 名会让 txStagingDir(root, "..") 解析成整个 ext-tx 目录,cleanTerminalStaging 递归删除它
+      // (removeDirGuarded 因仍在 root 内而放行)= 抹掉全部 journal/staging/锁。绝不据非法名
+      // 构造任何路径(staging/journalPath 都不碰)。合法引擎名(TX_ID_RE)是其真子集,零回归。
+      if (!isSafeTxIdSegment(txId)) {
+        reports.push({ txId, state: "aborted", action: "none", detail: `journal filename txId "${txId}" is not a safe path segment — retained for manual diagnosis` })
+        continue
+      }
       const journal = readTransactionJournal(root, txId)
       if (!journal) {
         const from = journalPath(root, txId)
@@ -1903,7 +1923,11 @@ export async function recoverExtensionTransactionsInHeldLock(
       opts.onProgress?.() // 每张 journal 后续租(所有出口都经此)
     }
   }
-  // 有界清理:quarantine + 终态 journal(清理后再续租一次,长 GC 后锁不失效)
+  // 有界清理:quarantine + 终态 journal(GC 前后各续租一次,长 GC 前后锁都不失效)。
+  // 残余(如实):单张 journal 内的单个 seam(probe / config·file image 重建 / 账本删除)
+  // 若耗时超过 staleMs(15min)会在该 seam 内无心跳 —— 与 GC「单 key rehash 超阈值」同类的
+  // 已知粒度限制(#366),生产 fs seam 为毫秒级,不构成实际触发面。
+  opts.onProgress?.()
   gcQuarantine(root, { keep: opts.keepQuarantine ?? QUARANTINE_KEEP_DEFAULT }).warnings.forEach((w) =>
     warnings.push(w),
   )
