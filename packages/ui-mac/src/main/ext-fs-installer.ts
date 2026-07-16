@@ -633,8 +633,12 @@ export function collectBuiltinAgentPayload(
     let pathSt: fs.BigIntStats
     try {
       pathSt = fs.statSync(realFile, { bigint: true })
-    } catch {
-      return { ok: false, reason: "agent asset changed identity during read (symlink race) — refusing" }
+    } catch (error) {
+      // 只把路径身份变化类 errno 归为换链竞态(r4:EACCES/EIO 等真实故障保留原始原因,不误诊)。
+      const code = errnoOf(error)
+      if (code === "ENOENT" || code === "ELOOP" || code === "ENOTDIR")
+        return { ok: false, reason: "agent asset changed identity during read (symlink race) — refusing" }
+      return { ok: false, reason: error instanceof Error ? error.message : "failed to read agent asset" }
     }
     if (st.dev !== pathSt.dev || st.ino !== pathSt.ino)
       return { ok: false, reason: "agent asset changed identity during read (symlink race) — refusing" }
