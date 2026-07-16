@@ -242,6 +242,21 @@ describe("gcMcpSecretVersionsLocked — 引用对账 + 宽限", () => {
     expect(fs.readFileSync(path.join(liveHex, vidLiveHex, "TOK"), "utf8")).toBe("live-hex-server") // 在册活体零接触
   })
 
+  test("r13:引用经 symlink 别名到达版本文件 → realpath 身份对账保留(词法不等也不删)", () => {
+    const vid = newMcpSecretVersionId()
+    writeMcpSecretVersioned(userData, "s", vid, "TOK", "v")
+    const old2 = new Date(Date.now() - 3600_000)
+    fs.utimesSync(path.join(userData, "alpha-mcp-secrets", "s", vid), old2, old2)
+    // 别名链:引用指向 symlink,symlink 指向真实版本文件
+    const aliasDir = path.join(userData, "alias")
+    fs.mkdirSync(aliasDir, { recursive: true })
+    const alias = path.join(aliasDir, "TOK-link")
+    fs.symlinkSync(verFile("s", vid, "TOK"), alias)
+    const r = gcMcpSecretVersionsLocked(userData, "s", [alias])
+    expect(r.removed).toEqual([]) // realpath 命中 → 保留
+    expect(fs.existsSync(verFile("s", vid, "TOK"))).toBe(true)
+  })
+
   test("目录缺席 = 无事;版本目录内任一文件被引用即整目录保留", () => {
     expect(gcMcpSecretVersionsLocked(userData, "absent", []).removed).toEqual([])
     const vid = newMcpSecretVersionId()

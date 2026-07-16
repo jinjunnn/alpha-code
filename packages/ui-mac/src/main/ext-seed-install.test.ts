@@ -1201,6 +1201,19 @@ describe("plugin seed install via installCatalog (REQ-102 #359)", () => {
     const tupleRef = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [[oldJs, { opt: true }]] }), () => ({ ok: true as const, sources: [] as Array<{ value: unknown[]; configDir: string }> }))
     expect(tupleRef.removed).toBe(false)
     expect(fs.existsSync(oldDir)).toBe(true)
+    // #378 r13:引用经 symlink 别名指向旧目录 → realpath 身份对账保留。
+    const aliasBase = path.join(globalRoot, "alias-plug")
+    fs.symlinkSync(oldDir, aliasBase)
+    const symRef = gcVendoredPluginDirLocked(
+      globalRoot,
+      "demo-plugin",
+      oldDir,
+      () => ({ ok: true, value: [path.join(aliasBase, "plugin.js")] }),
+      () => ({ ok: true as const, sources: [] as Array<{ value: unknown[]; configDir: string }> }),
+    )
+    expect(symRef.removed).toBe(false)
+    expect(fs.existsSync(oldDir)).toBe(true)
+    fs.rmSync(aliasBase, { force: true })
     // #378 r6 Blocker:legacy XDG 源仍引用旧目录 → 保留;legacy 不可读 → fail-closed 保留。
     const legacyRef = gcVendoredPluginDirLocked(
       globalRoot,

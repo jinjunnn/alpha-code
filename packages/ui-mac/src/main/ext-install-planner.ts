@@ -923,6 +923,24 @@ async function replacePluginViaTransaction(args: {
     }
     newElem = pinned
     newConfigKey = `plugin:${pinned}`
+    // r13 Major:换包名置换(新 base ≠ 旧 base)时,legacy 源已有**新 base** pin 同样拒 ——
+    // dispatch 只查旧 base;引擎按包名去重,legacy 新 base pin 可能胜出。
+    if (pkgBaseOf(pinned) !== pkgBaseOf(facts.form.oldPinned)) {
+      // npm form 无 staging(cleanupStaged 定义在后且无事可清)。
+      const legacyPre = deps.installers.readLegacyPluginArrayStrict()
+      if (!legacyPre.ok) {
+        rollback(legacyPre.reason)
+        return legacyPre
+      }
+      const newBase = pkgBaseOf(pinned)
+      for (const src of legacyPre.sources) {
+        const hit = src.value.map(pluginSpecOf).find((x): x is string => x !== null && pkgBaseOf(x) === newBase)
+        if (hit !== undefined) {
+          rollback("legacy pin of the new package base present")
+          return { ok: false, reason: `legacy config contains pin "${hit}" of "${newBase}" — engine dedup may load it instead of the replacement, refusing (clean the legacy entry first)` }
+        }
+      }
+    }
   } else {
     if (!args.seedPayload && !spec.vendoredAssetKey) {
       rollback("entry has no vendored asset")
@@ -1122,10 +1140,12 @@ async function replacePluginViaTransaction(args: {
       if (facts.form.kind === "npm") {
         const legacyNow = deps.installers.readLegacyPluginArrayStrict()
         if (!legacyNow.ok) return legacyNow
-        const base = pkgBaseOf(facts.form.oldPinned)
+        // r13 Major:catalog 更新可换包名(同 entry 名)—— 旧/新两个 base 都要复核,否则
+        // 计划后写入 legacy 的**新 base** pin 会在引擎 later-wins 时胜出而账本记新 pin。
+        const bases = new Set([pkgBaseOf(facts.form.oldPinned), pkgBaseOf(newElem)])
         for (const src of legacyNow.sources) {
-          const hit = src.value.map(pluginSpecOf).find((x): x is string => x !== null && pkgBaseOf(x) === base)
-          if (hit !== undefined) return { ok: false, reason: `legacy config gained pin "${hit}" of "${base}" since plan — retry the update` }
+          const hit = src.value.map(pluginSpecOf).find((x): x is string => x !== null && bases.has(pkgBaseOf(x)))
+          if (hit !== undefined) return { ok: false, reason: `legacy config gained pin "${hit}" since plan — retry the update` }
         }
       }
       // review r2 Blocker:异 payload 的新内容寻址目录必须缺席(锁内判;r3:壳容忍 —— recovery
@@ -2599,9 +2619,24 @@ export function gcVendoredPluginDirLocked(
     // r5 Blocker:引用扫描按引擎语义解析(元组 spec 头/相对/file://)—— 词法「绝对字符串前缀」
     // 会漏等价形态,把 live config 仍引用的旧目录当孤儿递归删除(插件启动即失败)。
     const oldDirResolved = path.resolve(oldDir)
+    // r13 Major:引用可能经 symlink 别名指向旧目录 —— 词法前缀之外补 realpath 身份比较
+    // (任一侧解析失败即回退词法,宁保守)。
+    const oldDirForms = [oldDirResolved]
+    try {
+      oldDirForms.push(fs.realpathSync(oldDirResolved))
+    } catch {
+      /* 目录缺席:词法形态已入 */
+    }
     const refsDirFrom = (baseDir: string) => (x: unknown): boolean => {
       const resolved = resolvePluginEntryPath(x, baseDir)
-      return resolved !== null && (resolved === oldDirResolved || resolved.startsWith(oldDirResolved + path.sep))
+      if (resolved === null) return false
+      const forms = [resolved]
+      try {
+        forms.push(fs.realpathSync(resolved))
+      } catch {
+        /* 引用目标缺席:词法形态已入 */
+      }
+      return forms.some((f) => oldDirForms.some((o) => f === o || f.startsWith(o + path.sep)))
     }
     const refsDir = refsDirFrom(root)
     if (cfg.value.some(refsDir)) return { removed: false, warning: "old plugin dir re-referenced by config — retained (concurrent update)" }

@@ -75,6 +75,23 @@ describe("config action", () => {
     }
   })
 
+  test("#378 r13:同一物理文件的别名 config target(sub/../)在 validate 期拒绝", async () => {
+    const aliased = `${root}${path.sep}sub${path.sep}..${path.sep}alpha.jsonc` // 不经 join 归一的原始别名
+    const r = await runExtensionTransaction(
+      root,
+      {
+        items: [
+          configItem("mcp--a", "a", { type: "local" }),
+          { key: "mcp--b", action: "config" as const, config: { target: aliased, edits: [{ keyPath: ["mcp", "b"], value: { type: "local" } }] }, manifestDigest: `sha256:${sha("b")}` },
+        ],
+      },
+      { populate: noop, commitReceipt: noop, log: noop },
+    )
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("aliased config target")
+    expect(fs.existsSync(cfg)).toBe(false) // 零写盘
+  })
+
   test("#378 r2:restore preimage 写失败(目录只读)走结果通道,不抛 —— 引擎按 blocked 保留而非 reject 悬锁", () => {
     if (typeof process.getuid === "function" && process.getuid() === 0) return // root 下 0o555 仍可写
     const sub = path.join(root, "ro")

@@ -386,7 +386,26 @@ export function gcMcpSecretVersionsLocked(
   const warnings: string[] = []
   if (!SAFE_SERVER.test(server)) return { removed, warnings: [`invalid server name: ${server}`] }
   const sDir = serverDir(userDataPath, server)
-  const referenced = new Set(referencedPaths.map((p) => path.resolve(p)))
+  // r13 Major:引用可能经 symlink 别名到达版本文件 —— 词法 resolve 不够,补文件系统身份
+  // (realpath;引用目标缺席时保留词法形态)。候选文件比较时同样双形态查询。
+  const referenced = new Set<string>()
+  for (const rp of referencedPaths) {
+    const lex = path.resolve(rp)
+    referenced.add(lex)
+    try {
+      referenced.add(fs.realpathSync(lex))
+    } catch {
+      /* 引用目标缺席:词法形态已入集 */
+    }
+  }
+  const isReferencedFile = (abs: string): boolean => {
+    if (referenced.has(path.resolve(abs))) return true
+    try {
+      return referenced.has(fs.realpathSync(abs))
+    } catch {
+      return false
+    }
+  }
   const cutoff = Date.now() - SECRET_GC_GRACE_MS
   const olderThanGrace = (p: string): boolean => {
     try {
@@ -425,13 +444,13 @@ export function gcMcpSecretVersionsLocked(
     try {
       if (entry.isDirectory() && SAFE_SECRET_VER.test(entry.name)) {
         const files = fs.readdirSync(full)
-        const inUse = files.some((f) => referenced.has(path.resolve(path.join(full, f))))
+        const inUse = files.some((f) => isReferencedFile(path.join(full, f)))
         if (!inUse && olderThanGrace(full)) {
           fs.rmSync(full, { recursive: true, force: true })
           removed.push(full)
         }
       } else if (entry.isFile() && SAFE_VAR.test(entry.name)) {
-        if (!referenced.has(path.resolve(full)) && olderThanGrace(full)) {
+        if (!isReferencedFile(full) && olderThanGrace(full)) {
           fs.rmSync(full, { force: true })
           removed.push(full)
         }

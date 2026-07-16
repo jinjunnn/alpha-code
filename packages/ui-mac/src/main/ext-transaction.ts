@@ -540,6 +540,10 @@ function validatePlan(root: string, plan: TxPlan): string | null {
   if (plan.items.length === 0) return "plan has no items"
   if (plan.items.length > 64) return "plan exceeds 64 items"
   const keys = new Set<string>()
+  // #378 r13 Major:同一物理 config 文件的**别名 target**(/a/alpha.jsonc 与 /a/sub/../alpha.jsonc)
+  // 在 prepare 期按原始字符串各自成链(第二条覆盖第一条的写),恢复期按 resolve 归一又当同一条
+  // 链 —— 语义分叉,fail-closed 拒(合法消费方都用单一构造路径;同一 raw target 多 item = 合法链)。
+  const configTargetByResolved = new Map<string, string>()
   for (const item of plan.items) {
     if (!item || typeof item !== "object") return "invalid plan item"
     if (typeof item.key !== "string" || !SAFE_KEY.test(item.key)) return `invalid item key: ${String(item.key)}`
@@ -557,6 +561,11 @@ function validatePlan(root: string, plan: TxPlan): string | null {
       const relTarget = path.relative(root, item.config.target)
       if (!isSafeRelPath(relTarget) || !confineFileTarget(root, relTarget).ok)
         return `config item "${item.key}": target escapes the transaction root — refused`
+      const resolvedTarget = path.resolve(item.config.target)
+      const priorRaw = configTargetByResolved.get(resolvedTarget)
+      if (priorRaw !== undefined && priorRaw !== item.config.target)
+        return `config item "${item.key}": aliased config target (same file via different paths) — refused`
+      configTargetByResolved.set(resolvedTarget, item.config.target)
       if (!Array.isArray(item.config.edits) || item.config.edits.length === 0)
         return `config item "${item.key}": at least one edit required`
     } else if (kind === "file") {
