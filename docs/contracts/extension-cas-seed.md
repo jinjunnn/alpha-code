@@ -89,6 +89,27 @@ CAS 补充语义:
    `agent--<name>`;config 副 item **不声明** capabilities,不参与授权评估也不落授权账)。
    卸载(flat 通道)联动清除 `ext-store/agent--<name>[--config]/grants.json`(删除失败 =
    卸载失败且账本不动),重装重新弹确认。
+   **mcp seed(#359,2026-07-16 Codex 裁决)**:共享回表/交叉/CAS promote 后分派 config action
+   单事务(`mcp--<name>` item 写 `mcp.<name>` 叶)—— 安装语义派生自 bundled entry 的
+   `installSpec`,**CAS blob 只是离线携带字节,不是运行载荷**:本通道只承诺「离线完成配置
+   安装」,local npm/uvx MCP 首次运行仍可能联网(诚实边界)。phase-1 fail-closed:seed intent
+   无 grants 通道 —— secret-bearing(requiredEnvVars)/ workspace 占位 / Excel 族一律拒;
+   纯 validator(`validateServer`,零写盘)在 plan 生成前跑命令头/inline-eval/URL/危险 env
+   安全门。锁内门 = 账本写前探测 + 版本门(kind 泛化:downgrade/不可比拒,同版本幂等)+
+   无账 config 叶拒认领 + 形状异常 fail-closed。成功 outcome 返回 `liveMcp`(renderer 据此
+   live `sdk.mcp.add`;无密钥 → live = durable 原样)。事务内绝不触 `persistMcp`/
+   `withConfigWriteLock`(非重入自锁)。
+   **plugin seed(#359)**:CAS 字节 = 离线运行载荷(payload 必含顶层 `plugin.js`;npm plugin
+   显式拒 —— 无 seed blob 保证的离线运行语义)。staging 为**确定性内容寻址**目录
+   `plugins/<name>@<payloadDigest 前 12 位>`(temp 物化逐 blob 重验 → 原子 rename;同 digest
+   命中 = 逐文件重验后复用,缺失/篡改 fail-closed 拒;非提交返回路径 best-effort 清理,崩溃
+   残留至多一个同 digest 无引用目录,识别/清理见 runbook)。安装**接 #352 三态**:absent →
+   fresh(config action 追加 plugin[] 元素,锁内 precondition 重读账本/config/bare 目录);
+   有效 catalog 旧账 → journaled replace(与 #352 同一事务,staging 源换 CAS);v1-only/损坏/
+   双键/账配漂移 → 拒;same-version healthy 幂等早退;更高已装拒 downgrade。
+   **卸载授权账合同(#358/#359)**:经事务授权闸安装的类型(agent/mcp/plugin)卸载联动清除
+   `ext-store/<key>/grants.json`,且为成功前置(mcp 在 journaled artifact seam 内,失败保持
+   非终态前滚;agent/plugin 在 flat 通道,失败 = 卸载失败且账本不动)。
    **file 落盘圈禁与残余竞态(r3 裁决)**:`confineFileTarget` 逐段 lstat 拒 symlink,在
    prepare、`applyFileImage` 前、每次 `restoreFileImage` 前(在线回滚与崩溃恢复)以及恢复
    期任何对 journal file 段的采信(isFlipped/probe/receipt replay)之前**紧邻重验**;重验
@@ -149,7 +170,7 @@ CAS 补充语义:
 | seed 严格解码 + S5–S11 负向 + 提升两遍式 | `packages/ui-mac/src/main/ext-seed.test.ts` |
 | GC mark 根/互斥/宽限/用户数据不可触 | `packages/ui-mac/src/main/ext-cas-gc.test.ts` |
 | 快照漂移(S13 A 侧)+ catalog 互钉 + 真链冒烟 | `packages/ui-mac/src/main/extension-seed-snapshot.test.ts` |
-| seed 安装生产链(#317:e2e / 双真源漂移拒绝矩阵 / CAS 注错 abort / XOR / downgrade 门;#358:agent e2e / authorize 单 key / fresh-only 三态 / 装约定拒绝矩阵 / 卸载清授权账) | `packages/ui-mac/src/main/ext-seed-install.test.ts` |
+| seed 安装生产链(#317:e2e / 双真源漂移拒绝矩阵 / CAS 注错 abort / XOR / downgrade 门;#358:agent e2e / authorize 单 key / fresh-only 三态 / 装约定拒绝矩阵 / 卸载清授权账;#359:mcp e2e+liveMcp / 纯 validator 负测 / secret·workspace·Excel 拒 / plugin 确定性 staging / #352 三态矩阵 / npm 拒 / 篡改拒) | `packages/ui-mac/src/main/ext-seed-install.test.ts` |
 | file action 引擎语义(#358:file+config 原子 / 缺席≠零字节 / 崩溃恢复前滚·回滚 / 旁路改写 fail-closed) | `packages/ui-mac/src/main/ext-transaction-file.test.ts` |
 | GC 生产触发(#318:调度语义 / 权威配置取值点 / outcome 分类;promote 窗口 mtime 回归在 gc.test) | `packages/ui-mac/src/main/ext-cas-gc-scheduler.test.ts` |
 | project 收回:catalog/seed/bundle 统一拒绝 + 遗留管理面 + generation teardown(#372) | `packages/ui-mac/src/main/ext-install-planner.test.ts` |

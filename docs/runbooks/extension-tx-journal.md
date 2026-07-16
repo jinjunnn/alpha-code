@@ -89,3 +89,14 @@ agent seed 安装 = 双 item 单事务:file item(`agent--<name>`,action=file,写
 - **提交成功、旧 vendored 目录 GC 前崩溃**:旧目录成为无引用孤儿(config 已指向新 versioned
   目录),安装功能不受影响;出现于 `plugins/` 下 `<name>`(旧式)或 `<name>@<hex>`(versioned)
   且不被当前 config/账本引用的目录即孤儿,可安全删除。
+
+## plugin seed 确定性 staging 的残留形态(REQ-102 #359)
+
+seed plugin 的 staging 目录是**内容寻址**的 `plugins/<name>@<payloadDigest 前 12 位>`
+(#352 的随机后缀 stager 不用于 seed)。残留识别与处置:
+
+- **孤儿判定**:目录不被当前 `alpha.jsonc` `plugin[]` 与账本 `configKey` 引用即孤儿
+  (崩溃/authorize 取消后的残留至多一个同 digest 目录,不随重试累积 —— 重驱按同名复用或
+  重建),可安全删除;它不在 #318 CAS GC 的删除面上,不会被自动回收。
+- **同 digest 目录被篡改**:下次安装重验失败会 fail-closed 拒并指名目录 —— 按提示手工删除
+  该目录后重试(绝不静默重建覆盖)。

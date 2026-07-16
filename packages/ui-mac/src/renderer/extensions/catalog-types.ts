@@ -122,7 +122,9 @@ export interface CatalogEntry {
   _verify?: string
   /** REQ-032:条目级版本(远端 catalog 对可安装条目必填;缺失回退全局版本)——更新角标的粒度。 */
   version?: string
-  /** REQ-032:远程资产清单(phase 1 仅 skill/agent 文本;sha256 钉死,main 下载校验)。 */
+  /** REQ-032:远程资产清单(sha256 钉死,main 下载校验)。skill/agent = 安装载荷本体;
+   *  REQ-102 #359 起 mcp/plugin 的 seed 条目也必须声明(双真源交叉验证输入):plugin = 离线
+   *  运行载荷(plugin.js 等),mcp = 离线携带字节(安装语义仍派生自 installSpec,非运行载荷)。 */
   remoteAsset?: { version: string; files: Array<{ path: string; sha256: string; bytes: number; url: string }> }
 }
 

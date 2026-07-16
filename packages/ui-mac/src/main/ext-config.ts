@@ -245,7 +245,9 @@ function receiptsActive(): boolean {
   return process.env.ALPHA_LEGACY_INSTALL_ROOT !== "1"
 }
 
-function validateServer(server: Record<string, unknown>): ConfigResult {
+/** 纯校验(零写盘;REQ-102 #359 裁决 B:seed MCP 走 config action 时在 plan 生成前复用本门 ——
+ *  ext-config-tx 只保证 JSONC/顶层键,命令头/inline-eval/URL/危险 env 的安全门在此)。 */
+export function validateServer(server: Record<string, unknown>): ConfigResult {
   for (const key of Object.keys(server)) {
     if (!SAFE_MCP_FIELDS.has(key)) return { ok: false, reason: `field not allowed: ${key}` }
   }

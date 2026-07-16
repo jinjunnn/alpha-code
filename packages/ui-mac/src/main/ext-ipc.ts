@@ -42,7 +42,7 @@ import {
 import bundledCatalogJson from "../renderer/extensions/alpha-catalog.json"
 import type { Catalog } from "../renderer/extensions/catalog-types"
 import { getAlphaEnvironment } from "./alpha-environment"
-import { decodeSetStateIntent, decodeUninstallIntent, installCatalog, listGenerationsByKey, rollbackGenerationByKey, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
+import { decodeSetStateIntent, decodeUninstallIntent, installCatalog, listGenerationsByKey, removeInstallGrants, rollbackGenerationByKey, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
 import { makeRecoveryGate } from "./ext-recovery-gate"
 import { adoptProjectLedger } from "./ext-project-adopt"
 import { buildGatedWriteChannels, GATED_WRITE_CHANNELS } from "./ext-write-channels"
@@ -465,6 +465,9 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
       if (!cfg.ok) throw new Error(cfg.reason)
       const sec = removeMcpServerSecretsStrict(userDataPath, name)
       if (!sec.ok) throw new Error(sec.reason)
+      // #359:与主卸载路径同语义 —— 授权账随 artifact 清,失败保持非终态前滚。
+      const grants = removeInstallGrants(root, [key])
+      if (!grants.ok) throw new Error(grants.reason)
     },
     log: (event, detail) => getLogger().log(`[req100-tx-recovery] ${event} ${JSON.stringify(detail)}`),
     }

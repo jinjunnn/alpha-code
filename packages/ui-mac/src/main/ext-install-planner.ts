@@ -43,7 +43,7 @@ import {
   type TxStage,
 } from "./ext-transaction"
 import { capabilityGrantPath, isSafeCapability, type CapabilityDiff } from "./ext-capability-grants"
-import { agentConfigItemKey, agentInstallKey, installAgentFromCas } from "./ext-agent-install"
+import { agentConfigItemKey, agentInstallKey, installAgentFromCas, recoveryReceiptInputs } from "./ext-agent-install"
 import { parse, type ParseError } from "jsonc-parser"
 import type { AuthorizationConfirmationWire } from "../shared/ext-capability-authorization"
 import { findReceipt } from "./alpha-installs"
@@ -92,8 +92,8 @@ import {
 } from "./ext-skill-generations"
 import { promoteSeedAssetToCas, readPackagedSeed, type SeedAsset } from "./ext-seed"
 import { casBlobPath, materializeFilesFromCas, putCasBlobFromBuffer, readCasBlobVerified } from "./ext-cas"
-import { isSafeRelPath } from "./ext-atomic-fs"
-import { pluginRecordName } from "./ext-config"
+import { isSafeRelPath, renameAtomicSync, sha256FileSync } from "./ext-atomic-fs"
+import { pluginRecordName, validateServer } from "./ext-config"
 
 // ── renderer intents(严格解码:未知键 = 伪造事实通道,loud 拒绝)─────────────────────────────
 
@@ -743,12 +743,18 @@ async function replacePluginViaTransaction(args: {
   entry: CatalogEntry
   manifest: ExtensionManifestV2
   manifestDigest: string
-  intent: CatalogInstallIntent
+  /** catalog 全意图或 seed 意图的授权/grants 子集(seed 无 grants 通道)。 */
+  intent: Pick<CatalogInstallIntent, "grants" | "authorization">
   facts: PluginReplaceFacts
   rollback: (reason: string) => void
   txId: string
+  /** #359:seed 通道的内容源覆盖 —— staging 从 CAS 而非 resources(缺省 = catalog 的
+   *  installers.stageVendoredPluginVersioned);config 读器同覆盖(seed 路径不触 installers)。 */
+  stageVendored?: () => { ok: true; dir: string; jsPath: string } | { ok: false; reason: string }
+  readPluginArray?: () => { ok: true; value: unknown[] } | { ok: false; reason: string }
 }): Promise<CatalogInstallOutcome> {
   const { deps, entry, manifest, manifestDigest, intent, facts, rollback } = args
+  const readPluginArray = args.readPluginArray ?? (() => deps.installers.readPluginArrayStrict())
   const root = deps.globalRoot()
   const spec = entry.installSpec as { kind?: string; package?: string; version?: string; vendoredAssetKey?: string }
 
@@ -776,7 +782,7 @@ async function replacePluginViaTransaction(args: {
     newElem = pinned
     newConfigKey = `plugin:${pinned}`
   } else {
-    if (!spec.vendoredAssetKey) {
+    if (!args.stageVendored && !spec.vendoredAssetKey) {
       rollback("entry has no vendored asset")
       return { ok: false, reason: "entry has no vendored asset" }
     }
@@ -790,7 +796,9 @@ async function replacePluginViaTransaction(args: {
       rollback("already at target version")
       return { ok: true, kind: "plugin", name: entry.name, manifestDigest, warning: "already at this version — nothing to replace" }
     }
-    const staged = deps.installers.stageVendoredPluginVersioned(spec.vendoredAssetKey, entry.name)
+    const staged = args.stageVendored
+      ? args.stageVendored()
+      : deps.installers.stageVendoredPluginVersioned(spec.vendoredAssetKey!, entry.name)
     if (!staged.ok) {
       rollback(staged.reason)
       return staged
@@ -809,7 +817,7 @@ async function replacePluginViaTransaction(args: {
   }
 
   // plan 快照(锁外)+ 锁内 precondition 重读钉死 TOCTOU:config 与账本旧事实任一漂移即拒,用户重试。
-  const snapshot = deps.installers.readPluginArrayStrict()
+  const snapshot = readPluginArray()
   if (!snapshot.ok) {
     cleanupStaged()
     rollback(snapshot.reason)
@@ -859,7 +867,7 @@ async function replacePluginViaTransaction(args: {
     populate: () => {}, // config action 无 staging 载荷
     // 锁内前置(TOCTOU 钉死):config 数组与账本旧事实必须仍如 plan 时,任一漂移 = 拒绝重试。
     precondition: () => {
-      const cur = deps.installers.readPluginArrayStrict()
+      const cur = readPluginArray()
       if (!cur.ok) return cur
       if (JSON.stringify(cur.value) !== snapshotCanon) return { ok: false, reason: "plugin config changed since plan — retry the update" }
       const rec = findRecordV2(root, "plugin", entry.name)
@@ -1622,9 +1630,10 @@ export function compareVersionsSafe(a: string, b: string): number | null {
 
 /** seed 安装版本门(Codex review #360 两 Blocker 的修复;必须在引擎 Bundle 锁内经 precondition 执行,
  *  锁外判定可被并发安装绕过):账本 strict 四态 —— 损坏 fail-closed;已装(v2 或 v1-only)但无版本 =
- *  不可比 = 拒;可比且 seed 更低 = 拒;absent / 同版本 / seed 更高 = 放行。 */
-function seedInstallVersionGate(root: string, name: string, seedVersion: string): { ok: true } | { ok: false; reason: string } {
-  const lookup = lookupForUninstall(root, "skill", name)
+ *  不可比 = 拒;可比且 seed 更低 = 拒;absent / 同版本 / seed 更高 = 放行。
+ *  #359 裁决 B:按 kind 泛化(skill 之外 mcp 同用;plugin 走 #352 三态,agent 走 fresh-only 门)。 */
+function seedInstallVersionGate(root: string, kind: InstallReceiptType, name: string, seedVersion: string): { ok: true } | { ok: false; reason: string } {
+  const lookup = lookupForUninstall(root, kind, name)
   if (lookup.status === "corrupt-match" || lookup.status === "ledger-corrupt")
     return { ok: false, reason: `refusing seed install: ${lookup.reason}` }
   let installedVersion: string | undefined
@@ -1632,7 +1641,7 @@ function seedInstallVersionGate(root: string, name: string, seedVersion: string)
   else if (lookup.status === "v1") installedVersion = lookup.receipt.version
   else return { ok: true }
   if (installedVersion === undefined)
-    return { ok: false, reason: `installed skill "${name}" has no recorded version — not comparable to seed ${seedVersion}, refusing (fail closed)` }
+    return { ok: false, reason: `installed ${kind} "${name}" has no recorded version — not comparable to seed ${seedVersion}, refusing (fail closed)` }
   if (installedVersion === seedVersion) return { ok: true }
   const cmp = compareVersionsSafe(seedVersion, installedVersion)
   if (cmp === null)
@@ -1680,6 +1689,131 @@ function agentSeedFreshGate(root: string, name: string, configTarget: string): {
   return { ok: true }
 }
 
+/** target 参数化的 strict plugin[] 读(#359 seed 路径专用 —— 不触 installers;语义对齐
+ *  ext-config.readPluginArrayStrict,外加根形状 fail-closed)。 */
+function readPluginArrayStrictAt(configTarget: string): { ok: true; value: unknown[] } | { ok: false; reason: string } {
+  try {
+    if (!fs.existsSync(configTarget)) return { ok: true, value: [] }
+    const errors: ParseError[] = []
+    const parsed: unknown = parse(fs.readFileSync(configTarget, "utf8"), errors)
+    if (errors.length > 0) return { ok: false, reason: `config unparseable (${errors.length} syntax error(s)) — refusing (fail closed)` }
+    if (parsed !== undefined && !isObj(parsed)) return { ok: false, reason: "config root is not an object — refusing (fail closed)" }
+    const v = isObj(parsed) ? parsed.plugin : undefined
+    if (v === undefined) return { ok: true, value: [] }
+    if (!Array.isArray(v)) return { ok: false, reason: "config plugin key is not an array — refusing (fail closed)" }
+    if (!v.every((x) => typeof x === "string"))
+      return { ok: false, reason: "config plugin[] contains non-string entries — refusing (fix the config first)" }
+    return { ok: true, value: v }
+  } catch (error) {
+    return { ok: false, reason: `config unreadable: ${error instanceof Error ? error.message : String(error)}` }
+  }
+}
+
+/** mcp seed 的锁内门(#359 裁决 B/E):账本写前探测 + 版本门(kind 泛化,downgrade/不可比拒)+
+ *  无账 config 叶拒认领 + 形状异常 fail-closed(根/mcp 段非对象 —— 合法 jsonc 也可能形状异常,
+ *  与 agent 门同款,否则 jsonc modify 会在锁内抛异常)。 */
+function mcpSeedGate(root: string, name: string, configTarget: string, seedVersion: string): { ok: true } | { ok: false; reason: string } {
+  const ledgerProbe = probeLedgerForWrite(root)
+  if (!ledgerProbe.ok) return { ok: false, reason: `refusing seed install: ${ledgerProbe.reason}` }
+  const gate = seedInstallVersionGate(root, "mcp", name, seedVersion)
+  if (!gate.ok) return gate
+  if (fs.existsSync(configTarget)) {
+    let text: string
+    try {
+      text = fs.readFileSync(configTarget, "utf8")
+    } catch {
+      return { ok: false, reason: `refusing seed install: config ${configTarget} unreadable (fail closed)` }
+    }
+    const errors: ParseError[] = []
+    const cfg: unknown = parse(text, errors)
+    if (errors.length > 0) return { ok: false, reason: `refusing seed install: config ${configTarget} is not valid jsonc (fail closed)` }
+    if (cfg !== undefined && !isObj(cfg))
+      return { ok: false, reason: `refusing seed install: config ${configTarget} root is not an object (fail closed)` }
+    const mcpMap = isObj(cfg) ? cfg.mcp : undefined
+    if (mcpMap !== undefined && !isObj(mcpMap))
+      return { ok: false, reason: `refusing seed install: config "mcp" section is not an object (fail closed)` }
+    if (isObj(mcpMap) && mcpMap[name] !== undefined && lookupForUninstall(root, "mcp", name).status === "absent")
+      return { ok: false, reason: `config entry "mcp.${name}" exists without a ledger record — refusing to overwrite or adopt unregistered content` }
+  }
+  return { ok: true }
+}
+
+/** 本地结构精确校验(#359 staged plugin 目录 vs 期望清单:缺一/多一/哈希·尺寸不符/symlink 均拒;
+ *  语义对齐引擎 verifyStagedItem,复用于同 digest 命中的重验)。 */
+function verifyStagedTreeExact(dir: string, specs: TxFileSpec[]): { ok: true } | { ok: false; reason: string } {
+  const expected = new Map(specs.map((f) => [f.path, f]))
+  const seen = new Set<string>()
+  const walk = (relDir: string): string | null => {
+    const abs = relDir ? path.join(dir, relDir) : dir
+    for (const entry of fs.readdirSync(abs, { withFileTypes: true })) {
+      const rel = relDir ? `${relDir}/${entry.name}` : entry.name
+      if (entry.isSymbolicLink()) return `symlink not allowed: ${rel}`
+      if (entry.isDirectory()) {
+        const err = walk(rel)
+        if (err) return err
+      } else if (entry.isFile()) {
+        const fileSpec = expected.get(rel)
+        if (!fileSpec) return `unexpected file: ${rel}`
+        if (fileSpec.size !== undefined && fs.statSync(path.join(dir, rel)).size !== fileSpec.size) return `size mismatch: ${rel}`
+        if (sha256FileSync(path.join(dir, rel)) !== fileSpec.sha256) return `sha256 mismatch: ${rel}`
+        seen.add(rel)
+      } else {
+        return `unsupported entry: ${rel}`
+      }
+    }
+    return null
+  }
+  try {
+    const err = walk("")
+    if (err) return { ok: false, reason: err }
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "failed to read staged dir" }
+  }
+  for (const p of expected.keys()) if (!seen.has(p)) return { ok: false, reason: `missing expected file: ${p}` }
+  return { ok: true }
+}
+
+/** #359 裁决 D(vendored staging 重写版,替代随机后缀 resources-only stager):内容寻址目标目录
+ *  `plugins/<name>@<payloadDigest 前 12 位>`(确定性、幂等)—— temp 物化(CAS 读取重验)→
+ *  原子 rename;同 digest 命中 = 逐文件重验后复用(缺失/篡改 fail-closed 拒,不静默重建);
+ *  非提交返回路径由调用方 best-effort 清理;崩溃残留至多一个同 digest 无引用目录(不受 #318
+ *  CAS GC 管理,runbook 有识别/清理方式)。 */
+function stageSeedPluginFromCas(
+  root: string,
+  name: string,
+  specs: TxFileSpec[],
+  casBaseRoot: string,
+  payloadDigest: string,
+): { ok: true; dir: string; jsPath: string; reused: boolean } | { ok: false; reason: string } {
+  const dirName = `${name}@${payloadDigest.slice(0, 12)}`
+  const dir = path.join(root, "plugins", dirName)
+  const jsPath = path.join(dir, "plugin.js")
+  if (fs.existsSync(dir)) {
+    const verdict = verifyStagedTreeExact(dir, specs)
+    if (!verdict.ok)
+      return { ok: false, reason: `staged plugin dir "${dirName}" failed re-verification: ${verdict.reason} — refusing (remove it and retry)` }
+    return { ok: true, dir, jsPath, reused: true }
+  }
+  const tmp = path.join(root, "plugins", `.${dirName}.tmp-${process.pid}-${crypto.randomBytes(4).toString("hex")}`)
+  try {
+    materializeFilesFromCas(casBaseRoot, specs, tmp) // 逐 blob 读取重验(缺失/篡改抛错)
+    renameAtomicSync(tmp, dir)
+  } catch (error) {
+    try {
+      fs.rmSync(tmp, { recursive: true, force: true })
+    } catch {
+      /* best-effort */
+    }
+    if (fs.existsSync(dir)) {
+      // rename 输给并发同 digest staging → 重验复用(内容寻址,谁先到都一样)。
+      const verdict = verifyStagedTreeExact(dir, specs)
+      if (verdict.ok) return { ok: true, dir, jsPath, reused: true }
+    }
+    return { ok: false, reason: `plugin staging failed: ${error instanceof Error ? error.message : String(error)}` }
+  }
+  return { ok: true, dir, jsPath, reused: false }
+}
+
 /** 双真源交叉验证(Codex 裁决 C,#317 AC2):seed lock 权威「离线字节」,bundled entry 权威安装语义;
  *  id/type/version/逐文件 path+sha256+bytes/聚合 digest 任一不合 = 漂移,返回原因(调用方 fail-closed)。 */
 function crossCheckSeedAssetAgainstEntry(asset: SeedAsset, entry: CatalogEntry): string | null {
@@ -1722,8 +1856,8 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
   const view = read.seed
   const asset = view.assets.find((a) => a.id === intent.assetId)
   if (!asset) return { ok: false, reason: `asset not in packaged seed: ${intent.assetId}` }
-  if (asset.type !== "skill" && asset.type !== "agent")
-    return { ok: false, reason: `seed install for type "${asset.type}" is not wired (skill+agent phase; mcp/plugin → #359) — refused` }
+  if (asset.type !== "skill" && asset.type !== "agent" && asset.type !== "mcp" && asset.type !== "plugin")
+    return { ok: false, reason: `seed install for type "${asset.type}" is not installable from seed — refused` }
   if (!asset.platformCompatible) return { ok: false, reason: `asset ${asset.id} is not built for this platform — refused` }
 
   const verified = seedDeps.resolveBundledEntry(asset.id)
@@ -1801,6 +1935,23 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
     return { ok: true, kind: "agent", name: entry.name, files: agentGen.files, manifestDigest }
   }
 
+  // ── mcp / plugin seed(REQ-102 #359,2026-07-16 Codex 裁决,见 issue 评论)────────────────────
+  if (asset.type === "mcp")
+    return installSeedMcp({ deps, entry, manifest, manifestDigest, payloadDigest, intent, rollback, txId: tx.txId })
+  if (asset.type === "plugin")
+    return installSeedPlugin({
+      deps,
+      entry,
+      manifest,
+      manifestDigest,
+      payloadDigest,
+      promotedSpecs: promoted.files,
+      casBaseRoot,
+      intent,
+      rollback,
+      txId: tx.txId,
+    })
+
   // downgrade 门作为锁内 precondition:持 Bundle 锁后、写盘前重读账本判定(同版本重装 = 幂等允许,
   // generation 追加可回滚)。锁外判定有确定 TOCTOU(并发 catalog 安装可在窗口内提交更高版本)。
   const gen = await installSkillGeneration(deps.globalRoot(), {
@@ -1817,7 +1968,7 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
     manifestDigest,
     payloadDigest,
     grantDigest: computeGrantDigest({}),
-    precondition: () => seedInstallVersionGate(deps.globalRoot(), entry.name, manifest.version),
+    precondition: () => seedInstallVersionGate(deps.globalRoot(), "skill", entry.name, manifest.version),
   })
   if (!gen.ok) {
     rollback(gen.reason)
@@ -1826,6 +1977,307 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
   }
   ;(deps.transaction ?? passthroughTx).commit(tx.txId)
   return { ok: true, kind: "skill", name: entry.name, ...(gen.files.length ? { files: gen.files } : {}), manifestDigest }
+}
+
+/**
+ * mcp seed 安装(REQ-102 #359):config action 单事务 —— 安装语义派生自 bundled entry 的
+ * installSpec(CAS blob 只是离线携带字节,**不是运行载荷**:本通道只承诺「离线完成配置安装」,
+ * local npm/uvx MCP 首次运行仍可能联网)。phase-1 fail-closed(裁决 Q1):seed intent 无 grants
+ * 通道 —— 需密钥/workspace/Excel 的一律拒;纯 validator(validateServer)在 plan 生成前跑安全门
+ * (ext-config-tx 只保证 JSONC/顶层键)。事务内绝不触 persistMcp/withConfigWriteLock(自锁)。
+ */
+async function installSeedMcp(args: {
+  deps: PlannerDeps
+  entry: CatalogEntry
+  manifest: ExtensionManifestV2
+  manifestDigest: string
+  payloadDigest: string
+  intent: SeedInstallIntent
+  rollback: (reason: string) => void
+  txId: string
+}): Promise<CatalogInstallOutcome> {
+  const { deps, entry, manifest, manifestDigest, payloadDigest, intent, rollback } = args
+  const root = deps.globalRoot()
+  const spec = entry.installSpec
+  if (spec?.kind !== "mcp") {
+    rollback("entry has no mcp installSpec")
+    return { ok: false, reason: "entry has no mcp installSpec" }
+  }
+  if ((spec.requiredEnvVars?.length ?? 0) > 0) {
+    rollback("secret-bearing MCP")
+    return { ok: false, reason: "secret-bearing MCP is not seed-installable (seed intent has no grants channel, phase 1) — refused" }
+  }
+  const derived = deriveMcpConfig(spec, {})
+  if (!derived.ok) {
+    rollback(derived.reason)
+    return derived
+  }
+  if (derived.secretVars.length > 0) {
+    rollback("secret-bearing MCP")
+    return { ok: false, reason: "secret-bearing MCP is not seed-installable (phase 1) — refused" }
+  }
+  const cmd = Array.isArray(derived.config.command) ? (derived.config.command as unknown[]) : []
+  const touchesExcel = entry.name === "excel-mcp-server" || cmd.some((a) => typeof a === "string" && a.includes("excel-mcp-server"))
+  if (touchesExcel) {
+    rollback("Excel MCP")
+    return { ok: false, reason: "Excel MCP is not seed-installable (REQ-105 managed workspace is outside the config-action boundary) — refused" }
+  }
+  // 纯 validator(裁决 B):命令头/inline-eval/URL/危险 env 安全门,零写盘。
+  const valid = validateServer(derived.config)
+  if (!valid.ok) {
+    rollback(valid.reason)
+    return { ok: false, reason: `seed MCP config failed validation: ${valid.reason} — refused` }
+  }
+  const configTarget = path.join(root, "alpha.jsonc")
+  const now = deps.now?.() ?? new Date().toISOString()
+  const receiptTemplate: UpsertInput = {
+    id: entry.id,
+    name: entry.name,
+    kind: "mcp",
+    environment: deps.environment(),
+    scope: { kind: "global" },
+    version: manifest.version,
+    manifestDigest,
+    payloadDigest,
+    grantDigest: computeGrantDigest({}),
+    desiredState: "enabled",
+    origin: "catalog",
+    configKey: `mcp.${entry.name}`,
+    installedAt: now,
+  }
+  const plan: TxPlan = {
+    items: [
+      {
+        key: `mcp--${entry.name}`,
+        action: "config",
+        config: { target: configTarget, edits: [{ keyPath: ["mcp", entry.name], value: derived.config }] },
+        manifestDigest,
+        capabilities: manifest.capabilities,
+        receipt: receiptTemplate,
+      },
+    ],
+    ...(intent.authorization ? { authorization: stampAuthorization(intent.authorization, () => deps.now?.() ?? new Date().toISOString())! } : {}),
+  }
+  const hooks: TxHooks = {
+    populate: () => {}, // config action 无 staging 载荷
+    precondition: () => mcpSeedGate(root, entry.name, configTarget, manifest.version),
+    commitReceipt: (records: TxCommitRecord[]) => {
+      const written = upsertRecordsV2(root, recoveryReceiptInputs(records))
+      if (!written.ok) throw new Error(`seed mcp receipt commit failed: ${written.reason}`)
+    },
+  }
+  const result = await runExtensionTransaction(root, plan, hooks)
+  if (!result.ok) {
+    rollback(result.reason)
+    if (result.stage === "authorize") {
+      if (result.authorization) return { ok: false, stage: "authorize", reason: result.reason, authorization: result.authorization }
+      return { ok: false, reason: result.reason }
+    }
+    return { ok: false, reason: result.reason, ...(result.stage ? { stage: result.stage } : {}) }
+  }
+  ;(deps.transaction ?? passthroughTx).commit(args.txId)
+  // liveMcp(裁决 B):renderer 据此 live sdk.mcp.add;seed 无密钥 → live = durable 原样。
+  return { ok: true, kind: "mcp", name: entry.name, manifestDigest, liveMcp: { name: entry.name, config: derived.config } }
+}
+
+/**
+ * plugin seed 安装(REQ-102 #359):CAS 字节 = 离线运行载荷 —— 确定性内容寻址 staging
+ * (stageSeedPluginFromCas)+ config action 单事务;**接入 #352 三态**(裁决 Q4):absent →
+ * fresh;有效 catalog 旧账 → journaled replace(staging 源换 CAS,其余复用 #352 事务);
+ * v1-only/损坏/双键/漂移 → 拒;same-version healthy 幂等早退;更高已装拒 downgrade。
+ * npm plugin seed 显式拒(无 seed blob 保证的离线运行语义,裁决 E)。
+ */
+async function installSeedPlugin(args: {
+  deps: PlannerDeps
+  entry: CatalogEntry
+  manifest: ExtensionManifestV2
+  manifestDigest: string
+  payloadDigest: string
+  promotedSpecs: TxFileSpec[]
+  casBaseRoot: string
+  intent: SeedInstallIntent
+  rollback: (reason: string) => void
+  txId: string
+}): Promise<CatalogInstallOutcome> {
+  const { deps, entry, manifest, manifestDigest, payloadDigest, intent, rollback } = args
+  const root = deps.globalRoot()
+  const spec = entry.installSpec as { kind?: string; package?: string; vendoredAssetKey?: string } | undefined
+  if (spec?.kind !== "plugin") {
+    rollback("entry has no plugin installSpec")
+    return { ok: false, reason: "entry has no plugin installSpec" }
+  }
+  if (typeof spec.package === "string" && spec.package) {
+    rollback("npm plugin seed")
+    return { ok: false, reason: "npm plugin is not seed-installable (no offline runtime payload guaranteed by seed blobs) — refused" }
+  }
+  if (!args.promotedSpecs.some((f) => f.path === "plugin.js")) {
+    rollback("no plugin.js entrypoint")
+    return { ok: false, reason: "seed plugin payload must include a top-level plugin.js entrypoint — refused" }
+  }
+  const configTarget = path.join(root, "alpha.jsonc")
+  const readPluginArray = () => readPluginArrayStrictAt(configTarget)
+  const stageVendored = () => {
+    const staged = stageSeedPluginFromCas(root, entry.name, args.promotedSpecs, args.casBaseRoot, payloadDigest)
+    return staged.ok ? { ok: true as const, dir: staged.dir, jsPath: staged.jsPath } : staged
+  }
+  // #352 三态分发(main 从自己账本裁决;refuse ≠ fresh,模糊态绝不当首装装)。
+  const dispatch = resolvePluginDispatch(root, entry, spec, readPluginArray)
+  if (dispatch.mode === "refuse") {
+    rollback(dispatch.reason)
+    return { ok: false, reason: dispatch.reason }
+  }
+  if (dispatch.mode === "replace") {
+    // 裁决 Q4:same-version healthy 由 replace 的幂等早退处理;更高已装拒 downgrade、不可比拒
+    // (无偶然降级通道)。并发漂移由 replace 事务的锁内 precondition(record generation/digest
+    // 重读)兜底。
+    const installedVersion = dispatch.facts.record.version
+    if (installedVersion !== manifest.version) {
+      if (installedVersion === undefined) {
+        rollback("installed plugin has no recorded version")
+        return { ok: false, reason: `installed plugin "${entry.name}" has no recorded version — not comparable to seed ${manifest.version}, refusing (fail closed)` }
+      }
+      const cmp = compareVersionsSafe(manifest.version, installedVersion)
+      if (cmp === null) {
+        rollback("version not comparable")
+        return { ok: false, reason: `installed version ${installedVersion} not comparable to seed ${manifest.version} — refusing (no accidental downgrade channel)` }
+      }
+      if (cmp < 0) {
+        rollback("downgrade refused")
+        return { ok: false, reason: `installed version ${installedVersion} is newer than seed ${manifest.version} — refusing downgrade` }
+      }
+    }
+    return replacePluginViaTransaction({
+      deps,
+      entry,
+      manifest,
+      manifestDigest,
+      intent: intent.authorization ? { authorization: intent.authorization } : {},
+      facts: dispatch.facts,
+      rollback,
+      txId: args.txId,
+      stageVendored,
+      readPluginArray,
+    })
+  }
+  // fresh:无账 bare 目录拒(#354 同款,未策展不认领;content-addressed 目录是本通道自有落点)。
+  if (fs.existsSync(path.join(root, "plugins", entry.name))) {
+    rollback("unregistered plugin dir present")
+    return { ok: false, reason: `plugin dir "plugins/${entry.name}" exists without a ledger record — refusing to overwrite or adopt unregistered content` }
+  }
+  const staged = stageSeedPluginFromCas(root, entry.name, args.promotedSpecs, args.casBaseRoot, payloadDigest)
+  if (!staged.ok) {
+    rollback(staged.reason)
+    return { ok: false, reason: staged.reason }
+  }
+  const cleanupStaged = () => {
+    try {
+      fs.rmSync(staged.dir, { recursive: true, force: true })
+    } catch {
+      /* 残留 = 同 digest 无引用目录(内容寻址,不累积;runbook 有识别方式) */
+    }
+  }
+  const snapshot = readPluginArray()
+  if (!snapshot.ok) {
+    cleanupStaged()
+    rollback(snapshot.reason)
+    return snapshot
+  }
+  if (snapshot.value.includes(staged.jsPath)) {
+    cleanupStaged()
+    rollback("unregistered plugin config present")
+    return { ok: false, reason: `config already contains "${staged.jsPath}" without a ledger record — refusing to adopt an unregistered install as catalog` }
+  }
+  const nextArray = [...snapshot.value, staged.jsPath]
+  const snapshotCanon = JSON.stringify(snapshot.value)
+  const now = deps.now?.() ?? new Date().toISOString()
+  const receiptTemplate: UpsertInput = {
+    id: entry.id,
+    name: entry.name,
+    kind: "plugin",
+    environment: deps.environment(),
+    scope: { kind: "global" },
+    version: manifest.version,
+    manifestDigest,
+    payloadDigest,
+    grantDigest: computeGrantDigest({}),
+    desiredState: "enabled",
+    origin: "catalog",
+    files: [staged.dir],
+    configKey: `plugin-path:${staged.jsPath}`,
+    installedAt: now,
+  }
+  const plan: TxPlan = {
+    items: [
+      {
+        key: `plugin--${entry.name}`,
+        action: "config",
+        config: { target: configTarget, edits: [{ keyPath: ["plugin"], value: nextArray }] },
+        manifestDigest,
+        capabilities: manifest.capabilities,
+        receipt: receiptTemplate,
+      },
+    ],
+    ...(intent.authorization ? { authorization: stampAuthorization(intent.authorization, () => deps.now?.() ?? new Date().toISOString())! } : {}),
+  }
+  const hooks: TxHooks = {
+    populate: () => {},
+    // 锁内前置(TOCTOU 钉死):账本仍 absent(并发装了 → 拒重试)+ config 数组未漂移 + bare 目录仍无。
+    precondition: () => {
+      const ledgerProbe = probeLedgerForWrite(root)
+      if (!ledgerProbe.ok) return { ok: false, reason: `refusing seed install: ${ledgerProbe.reason}` }
+      const lookup = lookupForUninstall(root, "plugin", entry.name)
+      if (lookup.status !== "absent") return { ok: false, reason: "plugin ledger changed since plan — retry the install" }
+      const cur = readPluginArray()
+      if (!cur.ok) return cur
+      if (JSON.stringify(cur.value) !== snapshotCanon) return { ok: false, reason: "plugin config changed since plan — retry the install" }
+      if (fs.existsSync(path.join(root, "plugins", entry.name)))
+        return { ok: false, reason: `plugin dir "plugins/${entry.name}" appeared without a ledger record — refusing` }
+      return { ok: true }
+    },
+    commitReceipt: (records: TxCommitRecord[]) => {
+      const written = upsertRecordsV2(root, recoveryReceiptInputs(records))
+      if (!written.ok) throw new Error(`seed plugin receipt commit failed: ${written.reason}`)
+    },
+  }
+  const result = await runExtensionTransaction(root, plan, hooks)
+  if (!result.ok) {
+    cleanupStaged() // 非提交返回路径清理(裁决 D;authorize 重驱按内容寻址重 staging,零累积)
+    rollback(result.reason)
+    if (result.stage === "authorize") {
+      if (result.authorization) return { ok: false, stage: "authorize", reason: result.reason, authorization: result.authorization }
+      return { ok: false, reason: result.reason }
+    }
+    return { ok: false, reason: result.reason, ...(result.stage ? { stage: result.stage } : {}) }
+  }
+  ;(deps.transaction ?? passthroughTx).commit(args.txId)
+  return { ok: true, kind: "plugin", name: entry.name, manifestDigest, files: [staged.dir] }
+}
+
+/** #348 合同推论(#358/#359):经事务授权闸安装的类型(agent/mcp/plugin),卸载必须联动清授权账
+ *  —— 删除失败 = 卸载失败且**账本不动**(可重试收敛);残留 grant 会让下一次 fresh install 把旧
+ *  capability 集判为已授权(requiresConfirmation=false),静默继承授权。幂等(existsSync 门)。 */
+export function removeInstallGrants(root: string, keys: string[]): { ok: true; removed: string[] } | { ok: false; reason: string } {
+  const removed: string[] = []
+  for (const key of keys) {
+    const grantFile = capabilityGrantPath(root, key)
+    try {
+      if (fs.existsSync(grantFile)) {
+        fs.unlinkSync(grantFile)
+        removed.push(grantFile)
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        reason: `authorization grant removal failed for "${key}": ${error instanceof Error ? error.message : String(error)} — uninstall not completed (ledger retained; fix and retry)`,
+      }
+    }
+    try {
+      fs.rmdirSync(path.dirname(grantFile)) // 只在空时成功;非空/不存在都不算失败
+    } catch {
+      /* 幂等 */
+    }
+  }
+  return { ok: true, removed }
 }
 
 // ── uninstall(main 从自己账本读事实;owned paths 从受控根重新派生)──────────────────────────────
@@ -1893,30 +2345,16 @@ export async function uninstallByKey(rawIntent: unknown, deps: PlannerDeps): Pro
       return r
     }
     removedFiles = r.files
-    // #358(review Major 4 收紧):事务安装的 agent 授权账(ext-store/agent--<name>[--config]/
-    // grants.json)随卸载清除,且是**成功前置** —— 残留 grant 会让下一次 fresh install 把旧
-    // capability 集判为已授权(requiresConfirmation=false),静默继承授权,违反 #348 重确认合同。
-    // 删除失败 = 卸载失败且**账本不动**(record 仍在场 → 重试幂等收敛:removeFsInstall 幂等、
+    // #358(review Major 4 收紧):事务安装的 agent 授权账随卸载清除,且是**成功前置** ——
+    // 删除失败 = 卸载失败且账本不动(record 仍在场 → 重试幂等收敛:removeFsInstall 幂等、
     // grant 删除 existsSync 门、去账最后);崩溃窗口同理由「账本仍在」保证可重试,不谎报完成。
     if (intent.type === "agent") {
-      for (const key of [agentInstallKey(intent.name), agentConfigItemKey(intent.name)]) {
-        const grantFile = capabilityGrantPath(root, key)
-        try {
-          if (fs.existsSync(grantFile)) {
-            fs.unlinkSync(grantFile)
-            removedFiles = [...(removedFiles ?? []), grantFile]
-          }
-        } catch (error) {
-          const reason = `agent uninstall: authorization grant removal failed for "${key}": ${error instanceof Error ? error.message : String(error)} — uninstall not completed (ledger retained; fix and retry)`
-          rollback(reason)
-          return { ok: false, reason }
-        }
-        try {
-          fs.rmdirSync(path.dirname(grantFile)) // 只在空时成功;非空/不存在都不算失败
-        } catch {
-          /* 幂等 */
-        }
+      const grants = removeInstallGrants(root, [agentInstallKey(intent.name), agentConfigItemKey(intent.name)])
+      if (!grants.ok) {
+        rollback(grants.reason)
+        return { ok: false, reason: `agent uninstall: ${grants.reason}` }
       }
+      if (grants.removed.length) removedFiles = [...(removedFiles ?? []), ...grants.removed]
     }
   } else if (intent.type === "mcp") {
     // #346:journaled 单锁序列 config→secrets→ledger(Codex 裁决:配置先消失,残留密钥不可达;
@@ -1930,6 +2368,10 @@ export async function uninstallByKey(rawIntent: unknown, deps: PlannerDeps): Pro
         if (!cfg.ok) throw new Error(cfg.reason)
         const sec = deps.installers.removeMcpSecretsStrict(intent.name)
         if (!sec.ok) throw new Error(sec.reason)
+        // #359:seed/bundle 事务安装过授权闸的 MCP,授权账随 artifact 一并清(失败抛错 →
+        // journal 保持 uninstalling 前滚;恢复 seam 同步此语义)。
+        const grants = removeInstallGrants(root, [`mcp--${intent.name}`])
+        if (!grants.ok) throw new Error(grants.reason)
       },
       commitLedger: () => {
         const rm = removeRecordV2(root, "mcp", intent.name)
@@ -1970,6 +2412,13 @@ export async function uninstallByKey(rawIntent: unknown, deps: PlannerDeps): Pro
         return r
       }
     }
+    // #359:经事务授权闸的 plugin(seed 安装 / #352 替换)授权账随卸载清除,成功前置同 agent。
+    const grants = removeInstallGrants(root, [`plugin--${intent.name}`])
+    if (!grants.ok) {
+      rollback(grants.reason)
+      return { ok: false, reason: `plugin uninstall: ${grants.reason}` }
+    }
+    if (grants.removed.length) removedFiles = [...(removedFiles ?? []), ...grants.removed]
   } else if (intent.type === "cloud") {
     // receipts-only:去账即卸载。
   } else {
