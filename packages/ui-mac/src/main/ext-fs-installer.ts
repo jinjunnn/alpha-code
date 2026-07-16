@@ -585,10 +585,10 @@ export function agentInstallPresent(name: string, target?: InstallTarget): boole
 /** #361:收集随包官方 agent md 为原始载荷(catalog agent 事务安装的 CAS 摄取源)。只读零副作用;
  *  返回原始 Buffer 保持 byte-exact(installAgentFromCas 的 CAS digest 语义,不做字符串归一)。
  *  SAFE key 校验 + **内容身份交叉**(key 必须恰为 agents/<name>.md,review r1 Major 1:已验签
- *  但配错的 entry 不得把别的资产按本 agent 身份装入)、末段 O_NOFOLLOW 读 + **realpath 圈禁**
- *  (r1 Minor 4 + r2:词法正则不防 symlink;O_NOFOLLOW 只管末段,父目录链接与 win32 无该位
- *  的退化面由 realpath 全路径等值判定兜住)、256KB 帽 fd 上 fstat 判 + 读后 Buffer 复核
- *  (r1 Minor 5:封 stat/read 窗口增长)。 */
+ *  但配错的 entry 不得把别的资产按本 agent 身份装入)、**realpath 圈禁 → O_NOFOLLOW 开已解析
+ *  路径 → fd/path dev+ino 身份绑定**(r1 Minor 4 + r2 + r3:词法正则不防 symlink,O_NOFOLLOW
+ *  只管末段,父目录链接/win32 退化面/相邻 syscall 换链竞态由三重检查逐层缩窗)、256KB 帽
+ *  fd 上 fstat 判 + 读后 Buffer 复核(r1 Minor 5:封 stat/read 窗口增长)。 */
 export function collectBuiltinAgentPayload(
   builtinAssetKey: string,
   name: string,
@@ -598,27 +598,48 @@ export function collectBuiltinAgentPayload(
   if (builtinAssetKey !== `agents/${name}.md`)
     return { ok: false, reason: `asset key "${builtinAssetKey}" ≠ "agents/${name}.md" — refusing (content identity drift)` }
   const file = path.join(resourcesRoot(), builtinAssetKey)
+  const errnoOf = (error: unknown): string | undefined =>
+    typeof error === "object" && error !== null && "code" in error && typeof error.code === "string" ? error.code : undefined
+  // realpath 圈禁先行(review #384 r2:末段 O_NOFOLLOW 不防父目录 symlink,win32 无该位时
+  // 完全退化)—— 解析后的真实路径必须恰为 <realpath(resources)>/agents/<name>.md,任何组件
+  // 是链接都会导致不等式,拒绝;随后 open 的是已解析路径。
+  let realFile: string
+  try {
+    realFile = fs.realpathSync(file)
+    const expected = path.join(fs.realpathSync(resourcesRoot()), "agents", `${name}.md`)
+    if (realFile !== expected)
+      return { ok: false, reason: "agent asset escapes the resources tree (symlinked path) — refusing" }
+  } catch (error) {
+    if (errnoOf(error) === "ENOENT") return { ok: false, reason: "Agent 内容未随此版本打包" }
+    return { ok: false, reason: error instanceof Error ? error.message : "failed to read agent asset" }
+  }
   const noFollow = typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0
   let fd: number
   try {
-    fd = fs.openSync(file, fs.constants.O_RDONLY | noFollow)
+    fd = fs.openSync(realFile, fs.constants.O_RDONLY | noFollow)
   } catch (error) {
-    const code = typeof error === "object" && error !== null && "code" in error && typeof error.code === "string" ? error.code : undefined
+    const code = errnoOf(error)
     if (code === "ENOENT") return { ok: false, reason: "Agent 内容未随此版本打包" }
     if (code === "ELOOP") return { ok: false, reason: "agent asset is a symlink — refusing (must be a regular bundled file)" }
     return { ok: false, reason: error instanceof Error ? error.message : "failed to read agent asset" }
   }
   try {
-    // realpath 圈禁(review #384 r2:末段 O_NOFOLLOW 不防父目录 symlink,win32 无该位时
-    // 完全退化)—— 解析后的真实路径必须恰为 <realpath(resources)>/agents/<name>.md,
-    // 任何组件是链接都会导致不等式,拒绝。
-    const realFile = fs.realpathSync(file)
-    const expected = path.join(fs.realpathSync(resourcesRoot()), "agents", `${name}.md`)
-    if (realFile !== expected)
-      return { ok: false, reason: "agent asset escapes the resources tree (symlinked path) — refusing" }
-    const st = fs.fstatSync(fd)
+    // fd/path 身份绑定(review #384 r3):realpath 校验与 open 是相邻 syscall,父目录在其间
+    // 被换链再换回时 fd 可能已指向树外文件 —— 复核「验证过的路径当前指向的文件」与 fd 同
+    // dev/ino。Node 无 openat 原语,多重检查缩窗属纵深(能写 resources 树者本就等价于资产
+    // 作者):要骗过 O_NOFOLLOW + realpath 等值 + 身份绑定,需在多个相邻 syscall 间各完成
+    // 一次精确换向。
+    const st = fs.fstatSync(fd, { bigint: true })
+    let pathSt: fs.BigIntStats
+    try {
+      pathSt = fs.statSync(realFile, { bigint: true })
+    } catch {
+      return { ok: false, reason: "agent asset changed identity during read (symlink race) — refusing" }
+    }
+    if (st.dev !== pathSt.dev || st.ino !== pathSt.ino)
+      return { ok: false, reason: "agent asset changed identity during read (symlink race) — refusing" }
     if (!st.isFile()) return { ok: false, reason: "agent asset is not a regular file — refusing" }
-    if (st.size > 256 * 1024) return { ok: false, reason: "agent md 过大" }
+    if (st.size > 256n * 1024n) return { ok: false, reason: "agent md 过大" }
     const data = fs.readFileSync(fd)
     if (data.length > 256 * 1024) return { ok: false, reason: "agent md 过大" }
     return { ok: true, files: [{ path: `${name}.md`, data }] }

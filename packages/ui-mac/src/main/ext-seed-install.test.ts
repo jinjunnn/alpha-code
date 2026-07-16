@@ -167,13 +167,15 @@ function bundledAgentEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry 
 }
 
 /** seed 路径的完成定义之一:planner installers 一个都不许被触碰。
- *  review #384 r2:全量覆盖现行 PlannerInstallers 且不 as unknown 关闭结构检查 ——
- *  接口增删会让本 fixture 编译失败,新增成员默认 forbid(seed 想用必须显式豁免)。 */
+ *  review #384 r2/r3:对象字面量按 PlannerInstallers 全量成员书写、不 as unknown ——
+ *  结构偏差在编辑器/类型感知 lint 层可见(CI 的 tsgo 不含测试文件,tsconfig exclude,
+ *  存量债不在本票开线);运行时另加 Proxy 拦截:访问表外成员(接口新增后未同步、或
+ *  条件式探测旁路)一律 loud 抛错,不给 undefined 静默通过的机会。 */
 function forbiddenInstallers(): PlannerInstallers {
   const forbid = (fn: string) => (): never => {
     throw new Error(`installer ${fn} must not be called on the seed path`)
   }
-  return {
+  const table: PlannerInstallers = {
     persistMcp: forbid("persistMcp"),
     fileifyMcpSecrets: forbid("fileifyMcpSecrets"),
     readMcpLeafStrict: forbid("readMcpLeafStrict"),
@@ -195,6 +197,13 @@ function forbiddenInstallers(): PlannerInstallers {
     agentPresent: forbid("agentPresent"),
     downloadRemoteAsset: forbid("downloadRemoteAsset"),
   }
+  return new Proxy(table, {
+    get(t, prop) {
+      if (typeof prop === "string" && !(prop in t))
+        throw new Error(`installer "${prop}" accessed on the seed path but missing from the forbidden table — extend the fixture`)
+      return Reflect.get(t, prop)
+    },
+  })
 }
 
 function makeSeedDeps(opts: { bundledEntries?: CatalogEntry[]; bundledVersion?: string; seedDirOverride?: string | null } = {}): PlannerDeps {
