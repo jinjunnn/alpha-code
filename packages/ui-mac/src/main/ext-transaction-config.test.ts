@@ -156,6 +156,25 @@ describe("config action", () => {
     expect(received.flat().map((r) => r.key).sort()).toEqual(["mcp--a", "mcp--b"])
   })
 
+  test("#378 r19:同 target 链前向回滚(receipt 失败)→ 干净 rolled-back,不被陈旧中间前像误冻结", async () => {
+    writeCfg({ mcp: { seed: { type: "local" } } })
+    const before = fs.readFileSync(cfg, "utf8")
+    const plan: TxPlan = { items: [configItem("mcp--a", "a", { type: "local" }), configItem("mcp--b", "b", { type: "remote", url: "https://x/sse" })] }
+    const r = await runExtensionTransaction(root, plan, {
+      populate: noop,
+      commitReceipt: () => {
+        throw new Error("receipt boom")
+      },
+      log: noop,
+    })
+    expect(r.ok).toBe(false)
+    if (r.ok || !r.txId) throw new Error("expected failed tx with txId")
+    // r19 前:逆序恢复把中间前像 B 与链首前像 A 双记账,终态重验拿 live=A 对比陈旧 B →
+    // 误判旁路漂移,成功回滚被永久冻结成非终态(fileBlocked)。
+    expect(readTransactionJournal(root, r.txId)?.state).toBe("rolled-back")
+    expect(fs.readFileSync(cfg, "utf8")).toBe(before) // 链首前像完整复原
+  })
+
   test("#378 r10:同 target 链中途 apply 停摆(live=中间 next)→ 恢复写回链首前像", async () => {
     writeCfg({ mcp: { seed: { type: "local" } } })
     const before = fs.readFileSync(cfg, "utf8")

@@ -437,4 +437,3 @@ describe("removePluginPath — 主+legacy 全源净除,引擎语义匹配,strict
     expect(removePluginPath("vp", target).ok).toBe(false)
   })
 })
-

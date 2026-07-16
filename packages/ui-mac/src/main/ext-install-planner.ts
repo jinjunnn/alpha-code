@@ -3593,12 +3593,36 @@ export async function uninstallByKey(rawIntent: unknown, deps: PlannerDeps): Pro
       }
     }
     // #359:经事务授权闸的 plugin(seed 安装 / #352 替换)授权账随卸载清除,成功前置同 agent。
-    const grants = removeInstallGrants(root, [`plugin--${intent.name}`])
-    if (!grants.ok) {
-      rollback(grants.reason)
-      return { ok: false, reason: `plugin uninstall: ${grants.reason}` }
+    // r19 Major:grants+record 双删持 bundle 锁,且锁内重读钉 configKey 未漂移 —— 快照与此处
+    // 之间的并发替换(#352 持同一锁)已让账本指向新载荷,继续双删会把**新装插件**清成
+    // 「已配置但无账无授权」;漂移 = 拒(旧实物已删无妨,本就被替换淘汰),如实报重试。
+    const heldPl = tryAcquireBundleLock(root, { txId: `plugin-uninstall-${randomUUID()}` })
+    if (!heldPl.ok) {
+      rollback(heldPl.reason)
+      return { ok: false, reason: `ledger busy: ${heldPl.reason} — retry after the in-flight extension transaction` }
     }
-    if (grants.removed.length) removedFiles = [...(removedFiles ?? []), ...grants.removed]
+    try {
+      const recNow = findRecordV2(root, "plugin", intent.name)
+      if ((recNow?.configKey ?? v1?.configKey ?? null) !== (configKey ?? null)) {
+        rollback("plugin record drifted during uninstall")
+        return { ok: false, reason: `plugin "${intent.name}" changed while uninstalling (concurrent replace?) — ledger/grants untouched; retry` }
+      }
+      const grants = removeInstallGrants(root, [`plugin--${intent.name}`])
+      if (!grants.ok) {
+        rollback(grants.reason)
+        return { ok: false, reason: `plugin uninstall: ${grants.reason}` }
+      }
+      if (grants.removed.length) removedFiles = [...(removedFiles ?? []), ...grants.removed]
+      const removedPl = removeRecordV2(root, "plugin", intent.name)
+      if (!removedPl.ok) {
+        rollback(removedPl.reason)
+        return { ok: false, reason: `plugin uninstall: ledger removal failed: ${removedPl.reason} — artifacts already removed; retry (idempotent)` }
+      }
+      ;(deps.transaction ?? passthroughTx).commit(tx.txId)
+      return { ok: true, ...(removedFiles ? { files: removedFiles } : {}) }
+    } finally {
+      heldPl.lock.release()
+    }
   } else if (intent.type === "cloud") {
     // #378(Codex 裁决 D4):receipts-only 去账即卸载 —— 经授权闸的 cloud 授权账随卸载清除
     // (成功前置,同 agent/mcp/plugin);且 **ledger 删除失败 = 卸载失败 ok:false**(cloud 无

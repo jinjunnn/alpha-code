@@ -505,6 +505,23 @@ describe("#378 r17 Blocker —— 损坏记录原文保全 + 同 key/unattributa
     expect(fs.readFileSync(ledgerFile(), "utf8")).toContain("garbage") // 原文未动
   })
 
+  test("r19:账本读失败(EACCES)≠ 空账 —— 写/删/翻转/卸载查询一律拒,不 no-op 谎报;恢复后照常", () => {
+    if (typeof process.getuid === "function" && process.getuid() === 0) return
+    upsertRecordV2(root, upsertInput())
+    fs.chmodSync(ledgerFile(), 0o000)
+    try {
+      expect(removeRecordV2(root, "mcp", "markitdown").ok).toBe(false) // r19 前:no-op「成功」
+      expect(upsertRecordV2(root, upsertInput({ id: "skill:x", name: "x", kind: "skill", configKey: undefined })).ok).toBe(false)
+      expect(setDesiredStateV2(root, "mcp", "markitdown", "disabled").ok).toBe(false)
+      expect(lookupForUninstall(root, "mcp", "markitdown").status).toBe("ledger-corrupt")
+    } finally {
+      fs.chmodSync(ledgerFile(), 0o644)
+    }
+    const rm = removeRecordV2(root, "mcp", "markitdown")
+    expect(rm.ok).toBe(true)
+    if (rm.ok) expect(rm.removed?.name).toBe("markitdown")
+  })
+
   test("r18:字节级 evidence 侧写(同损坏集只落一份);setDesiredStateV2 同款损坏闸", () => {
     seedWithCorrupt({ kind: "plugin", name: "px", generation: -5 })
     const before = fs.readFileSync(ledgerFile(), "utf8")

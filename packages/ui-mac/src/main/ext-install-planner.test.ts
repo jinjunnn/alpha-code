@@ -1084,6 +1084,35 @@ describe("uninstall — facts from main's own ledger", () => {
     expect(called(calls, "removeFsInstall")).toHaveLength(0) // 未走 flat 路径
   })
 
+  test("r19:卸载与并发替换竞争 —— 锁内 configKey 漂移即拒,新装插件的账/授权不被误清", async () => {
+    const oldDir = path.join(globalRoot, "plugins", "vp")
+    const oldJs = path.join(oldDir, "plugin.js")
+    fs.mkdirSync(oldDir, { recursive: true })
+    fs.writeFileSync(oldJs, "// old")
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [oldJs] }, null, 2))
+    const base = {
+      id: "plugin:vp", name: "vp", kind: "plugin" as const, environment: "prod" as const, scope: { kind: "global" as const },
+      version: "0.9.0", desiredState: "enabled" as const, origin: "catalog" as const,
+      configKey: `plugin-path:${oldJs}`, transaction: { id: "tx-u1", state: "committed" as const }, installedAt: "2026-07-15T00:00:00.000Z",
+    }
+    expect(upsertRecordV2(globalRoot, base).ok).toBe(true)
+    const newJs = path.join(globalRoot, "plugins", "vp@feed9999", "plugin.js")
+    const { deps } = makeDeps({
+      installers: {
+        // 模拟实物净除与锁获取之间的并发替换:账本已指向新载荷
+        removePluginPath: (_name: string, _p: string) => {
+          const w = upsertRecordV2(globalRoot, { ...base, version: "1.0.0", configKey: `plugin-path:${newJs}`, transaction: { id: "tx-u2", state: "committed" as const } })
+          if (!w.ok) throw new Error(w.reason)
+          return { ok: true as const }
+        },
+      },
+    })
+    const r = await uninstallByKey({ type: "plugin", name: "vp", scope: "global" }, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("changed while uninstalling")
+    expect(recOf(findRecordV2(globalRoot, "plugin", "vp")).configKey).toBe(`plugin-path:${newJs}`) // 新账原封不动
+  })
+
   test("r18:账本删除失败(同 key 损坏记录拒删)→ 卸载如实报失败,不折叠 warning 谎报成功", async () => {
     const { deps } = makeDeps()
     await installAuthorized({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)

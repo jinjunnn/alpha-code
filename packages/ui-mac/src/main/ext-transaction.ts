@@ -1117,7 +1117,10 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
     // #378 r17 Major:config 恢复成功与后续 file 恢复之间存在旁路写窗口 —— 绕锁写方可在其间
     // 重写 config 引用本事务载荷,继续 unlink 即制造悬空。已恢复的 config 记账,每次 file
     // 恢复前紧邻重验仍在前像态;漂移即冻结(与 recovery 的 recheckLostPre 同款缩窗语义)。
-    const restoredPreConfigs: Array<{ key: string; target: string; preDigest: string }> = []
+    // r19 Major:同 target 链(A→B→C)逆序会先后恢复 B、A —— 按 target 键控,**后到覆盖**
+    // (最终 live 应等于最后一次恢复的前像);数组式双记账会拿陈旧 B 对比 A 误判旁路漂移,
+    // 把本已成功的回滚永久冻结成非终态。
+    const restoredPreConfigs = new Map<string, { key: string; preDigest: string }>()
     const liveConfigDigest = (target: string): string | null => {
       try {
         return crypto.createHash("sha256").update(fs.existsSync(target) ? fs.readFileSync(target, "utf8") : "{}", "utf8").digest("hex")
@@ -1126,8 +1129,8 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
       }
     }
     const recheckRestoredPre = (): string | null => {
-      for (const c of restoredPreConfigs) {
-        if (liveConfigDigest(c.target) !== c.preDigest) return `config "${c.key}" drifted after restore — a bypass writer may reference this payload; retained`
+      for (const [target, c] of restoredPreConfigs) {
+        if (liveConfigDigest(target) !== c.preDigest) return `config "${c.key}" drifted after restore — a bypass writer may reference this payload; retained`
       }
       return null
     }
@@ -1146,7 +1149,7 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
         // 否则「配置已切换 + receipt 未落 + journal rolled-back」被当作干净回滚,调用方按失败
         // 清理(如删密钥版本)会制造悬空引用,且 recovery 不再重试。
         if (!restored.ok) fileBlocked = `config rollback for "${it.key}": ${restored.reason}`
-        else restoredPreConfigs.push({ key: it.key, target: image.target, preDigest: image.preDigest })
+        else restoredPreConfigs.set(image.target, { key: it.key, preDigest: image.preDigest })
       } else if (kind === "file") {
         const image = fileImages.get(it.key)
         if (!image) continue

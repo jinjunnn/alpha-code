@@ -342,7 +342,10 @@ export function probeLedgerForWrite(root: string): { ok: true } | { ok: false; r
   return { ok: true }
 }
 
-function parseLedger(root: string): { parsed: ParsedLedger; corrupt: boolean } {
+/** r19 Major:readError = 文件在场但读失败(EIO/EACCES 等瞬时故障)—— 绝不折叠成「健康空账」,
+ *  否则 removeRecordV2 会 no-op 成功、卸载在记录仍在的情况下谎报完成。缺席(ENOENT/ENOTDIR)
+ *  才是合法空账。 */
+function parseLedger(root: string): { parsed: ParsedLedger; corrupt: boolean; readError?: string } {
   const empty: ParsedLedger = {
     receipts: [],
     records: [],
@@ -355,8 +358,10 @@ function parseLedger(root: string): { parsed: ParsedLedger; corrupt: boolean } {
   let text: string
   try {
     text = fs.readFileSync(ledgerPath(root), "utf8")
-  } catch {
-    return { parsed: empty, corrupt: false }
+  } catch (error) {
+    const code = error instanceof Error && "code" in error && typeof error.code === "string" ? error.code : null
+    if (code === "ENOENT" || code === "ENOTDIR") return { parsed: empty, corrupt: false }
+    return { parsed: empty, corrupt: false, readError: `install ledger unreadable (${error instanceof Error ? error.message : String(error)}): ${ledgerPath(root)}` }
   }
   let raw: unknown
   try {
@@ -442,8 +447,8 @@ function writeLedgerFile(root: string, receipts: readonly unknown[], records: re
 
 /** Read the dual ledger. Corrupt FILE → empty + warning(写路径会 quarantine);corrupt record → excluded + warning。 */
 export function readLedgerV2(root: string): LedgerV2Read {
-  const { parsed, corrupt } = parseLedger(root)
-  const warnings = [...parsed.recordWarnings, ...parsed.receiptWarnings]
+  const { parsed, corrupt, readError } = parseLedger(root)
+  const warnings = [...(readError ? [readError] : []), ...parsed.recordWarnings, ...parsed.receiptWarnings]
   if (corrupt) warnings.push(`installs.json unreadable: ${ledgerPath(root)}`)
   const recordKeys = new Set(parsed.records.map((r) => key(r.kind, r.name)))
   const v1Only = parsed.receipts.filter((r) => !recordKeys.has(key(r.type, r.name)))
@@ -469,7 +474,8 @@ export type UninstallLookup =
   | { status: "absent" }
 
 export function lookupForUninstall(root: string, kind: InstallReceiptType, name: string): UninstallLookup {
-  const { parsed, corrupt } = parseLedger(root)
+  const { parsed, corrupt, readError } = parseLedger(root)
+  if (readError) return { status: "ledger-corrupt", reason: readError }
   if (corrupt) return { status: "ledger-corrupt", reason: `installs.json unreadable: ${ledgerPath(root)}` }
   const k = key(kind, name)
   const record = parsed.records.find((r) => r.kind === kind && r.name === name)
@@ -548,7 +554,8 @@ function replayVerdict(
  * by the caller if desired). Writes BOTH views in lockstep for this key; other entries untouched.
  */
 export function upsertRecordV2(root: string, input: UpsertInput): LedgerV2Write {
-  const { parsed, corrupt } = parseLedger(root)
+  const { parsed, corrupt, readError } = parseLedger(root)
+  if (readError) return { ok: false, reason: `${readError} — refusing to write` }
   const warnings: string[] = [...parsed.recordWarnings, ...parsed.receiptWarnings]
   if (corrupt) {
     const q = quarantineCorrupt(root)
@@ -588,7 +595,8 @@ export type LedgerV2BatchWrite = { ok: true; records: InstallRecordV2[]; warning
  * 任一 record 非法即整批拒绝(不留半套 receipt)。同一账本内解析一次,按输入顺序累积(同 key 后写覆盖)。 */
 export function upsertRecordsV2(root: string, inputs: UpsertInput[]): LedgerV2BatchWrite {
   if (inputs.length === 0) return { ok: false, reason: "batch upsert has no records" }
-  const { parsed, corrupt } = parseLedger(root)
+  const { parsed, corrupt, readError } = parseLedger(root)
+  if (readError) return { ok: false, reason: `${readError} — refusing to write` }
   const warnings: string[] = [...parsed.recordWarnings, ...parsed.receiptWarnings]
   if (corrupt) {
     const q = quarantineCorrupt(root)
@@ -661,7 +669,9 @@ export function parseUninstallLedgerKey(key: string): { kind: InstallReceiptType
 }
 
 export function removeRecordV2(root: string, kind: InstallReceiptType, name: string): { ok: true; removed: InstallRecordV2 | null } | { ok: false; reason: string } {
-  const { parsed, corrupt } = parseLedger(root)
+  const { parsed, corrupt, readError } = parseLedger(root)
+  // r19 Major:读失败 ≠ 空账 —— 折叠成 no-op 成功会让卸载在记录仍在的情况下谎报完成。
+  if (readError) return { ok: false, reason: `${readError} — refusing to remove` }
   if (corrupt) quarantineCorrupt(root)
   const k = key(kind, name)
   // r17(Blocker):同 key 损坏记录在场 = 无法证明删除目标不是它(lookupForUninstall 已挡装载面,
@@ -684,7 +694,8 @@ export function removeRecordV2(root: string, kind: InstallReceiptType, name: str
 
 /** desiredState 翻转(Hub 项目上下文「禁用」的 main 侧真源;引擎生效面由消费方处理)。 */
 export function setDesiredStateV2(root: string, kind: InstallReceiptType, name: string, state: DesiredState): { ok: true } | { ok: false; reason: string } {
-  const { parsed } = parseLedger(root)
+  const { parsed, readError } = parseLedger(root)
+  if (readError) return { ok: false, reason: `${readError} — refusing to write` }
   const k = key(kind, name)
   // r18:与 upsert/remove 同款损坏闸 —— 同 key 损坏所有权不明、unattributable 无从自证,
   // desiredState 翻转同为写路径,一律拒(原文保全依旧带回,见下方重建)。
@@ -761,7 +772,8 @@ export function migrateV1Ledger(
   environment: AppEnvironment,
   projectDir?: string,
 ): { ok: true; migrated: number; retained: number; warnings: string[] } | { ok: false; reason: string } {
-  const { parsed, corrupt } = parseLedger(root)
+  const { parsed, corrupt, readError } = parseLedger(root)
+  if (readError) return { ok: false, reason: `${readError} — refusing to migrate` }
   if (corrupt) return { ok: false, reason: `installs.json unreadable: ${ledgerPath(root)} — refusing to migrate a corrupt ledger` }
   // Codex review #357 Blocker:信封严格校验 —— parseLedger 对顶层是宽容读(缺 v/未知键/非数组
   // 集合都静默当空),迁移的「解析→重写」会把未来版本或畸形账本改写成本构建形状并丢数据。
