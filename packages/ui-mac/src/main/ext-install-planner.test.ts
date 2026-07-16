@@ -237,6 +237,11 @@ function makeDeps(opts: {
       calls.push({ fn: "readMcpLeafStrict", args: [name] })
       return { ok: true as const, value: undefined }
     },
+    // #378 r6:legacy XDG strict 读(缺省空;legacy 冲突语义在专项测试注入)。
+    readLegacyPluginArrayStrict: () => {
+      calls.push({ fn: "readLegacyPluginArrayStrict", args: [] })
+      return { ok: true as const, value: [] as unknown[], configDir: path.join(tmp, "legacy") }
+    },
     // #378(裁决 Q5):跨源同 base 检查 —— 镜像真实 alpha.jsonc 的 plugin[](legacy 缺省无冲突)。
     findPluginBaseConflictStrict: (pkg: string) => {
       calls.push({ fn: "findPluginBaseConflictStrict", args: [pkg] })
@@ -1945,8 +1950,47 @@ describe("single-install transactionalization exit criteria (REQ-100 #378)", () 
     expect(first.ok).toBe(false)
     if (first.ok) throw new Error("unreachable")
     expect(first.stage).toBeUndefined() // 不冒充干净的 authorize 暂停
-    expect(first.reason).toContain("secret version cleanup failed")
+    expect(first.reason).toContain("cleanup is not proven")
     expect(first.reason).toContain("plaintext")
+  })
+
+  test("r6:vendored 内容身份交叉在分发前 —— 配错 vendoredAssetKey 的 replace/fresh 一律拒", async () => {
+    const { deps } = makeDeps()
+    const v1 = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
+    expect(v1.ok).toBe(true)
+    // 已有 victim 记录 + 配错 key 的高版本 entry:replace 分支不得绕过身份绑定
+    const drifted = {
+      ...pluginVendoredEntry,
+      version: "1.0.1",
+      installSpec: { kind: "plugin", package: "@alpha/vp", vendoredAssetKey: "plugins/other" },
+    } as CatalogEntry
+    const { deps: d2 } = makeDeps({ entries: [...ALL_ENTRIES.filter((e) => e.id !== "plugin:vp"), drifted] })
+    const upd = await installCatalog({ catalogId: "plugin:vp", scope: { scope: "global" } }, d2)
+    expect(upd.ok).toBe(false)
+    if (!upd.ok) expect(upd.reason).toContain("content identity drift")
+  })
+
+  test("r6:legacy XDG 源 —— 同名派生路径拒(vendored/npm 双入口);legacy 非法/不可读 fail-closed", async () => {
+    const legacyPath = path.join(globalRoot, "plugins", "vp@1111222233334444", "plugin.js")
+    const withLegacy = (value: unknown[], fail = false) => ({
+      installers: {
+        readLegacyPluginArrayStrict: () =>
+          fail ? { ok: false as const, reason: "legacy config plugin[] contains invalid entries" } : { ok: true as const, value, configDir: path.join(tmp, "legacy") },
+      },
+    })
+    const { deps } = makeDeps(withLegacy([legacyPath]))
+    const r = await installCatalog({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("legacy config contains")
+    const { deps: dNp } = makeDeps(withLegacy([path.join(globalRoot, "plugins", "np@5555666677778888", "plugin.js")]))
+    const r2 = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, dNp)
+    expect(r2.ok).toBe(false)
+    if (!r2.ok) expect(r2.reason).toContain("legacy config contains")
+    // legacy 非法成员/不可读 → fail-closed(引擎会拒整份合并配置,不得落账谎报成功)
+    const { deps: dBad } = makeDeps(withLegacy([], true))
+    const r3 = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, dBad)
+    expect(r3.ok).toBe(false)
+    if (!r3.ok) expect(r3.reason).toContain("invalid entries")
   })
 
   test("r5:元组 [spec, options] —— 合法元组可被 replace 换首项保留 options;非法形状拒", async () => {

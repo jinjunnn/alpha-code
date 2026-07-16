@@ -15,7 +15,7 @@ import type { InstallTarget } from "../preload/types"
 import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
 import { claimMcpSecretVersionDir, fileifyMcpSecretsVersioned, mcpSecretVersionedRef, newMcpSecretVersionId, removeMcpSecretVersionDir, removeMcpServerSecrets, removeMcpServerSecretsStrict, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, type ProvenanceRequest } from "./alpha-migrate"
-import { configHealth, findPluginBaseConflictStrict, gcMcpSecretsAgainstConfig, persistPlugin, pluginRecordName, readMcpLeaf, readMcpLeafStrict, readPluginArrayStrict, removeMcp, removeMcpConfigInLock, removePlugin, removePluginEntryExact, removePluginPath, restoreMcpLeaf } from "./ext-config"
+import { configHealth, findPluginBaseConflictStrict, gcMcpSecretsAgainstConfig, persistPlugin, pluginRecordName, readLegacyPluginArrayStrict, readMcpLeaf, readMcpLeafStrict, readPluginArrayStrict, removeMcp, removeMcpConfigInLock, removePlugin, removePluginEntryExact, removePluginPath, restoreMcpLeaf } from "./ext-config"
 import { recordUncuratedInstall } from "./ext-uncurated-record"
 import { applyMcpWritePolicy, persistMcpWithPolicy } from "./ext-mcp-policy"
 import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
@@ -103,8 +103,9 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
       // 结构上消除「调用点忘传 workspace」的 fail-open。
       const r = persistMcpWithPolicy(name, server, undefined)
       if (!r.ok) {
-        if (verId) removeMcpSecretVersionDir(userDataPath, name, verId)
-        return r
+        // r6 Major:清理失败不许吞 —— 0600 明文残留位置如实并入错误(GC 兜底,用户可定位)。
+        const rm = verId ? removeMcpSecretVersionDir(userDataPath, name, verId) : { ok: true as const }
+        return rm.ok ? r : { ok: false, reason: `${r.reason}; secret version cleanup failed (${rm.reason}) — plaintext may remain in version "${verId}" pending gc` }
       }
       // REQ-099 #306:未策展落账走 coordinator(v2+派生 v1 单次写);失败补偿 = 撤配置 + 删本次
       // 密钥版本,不谎报成功(#336 语义)。
@@ -120,11 +121,13 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
         const lr = restoreMcpLeaf(name, before) // 只复原本次目标叶子(before=undefined 即删本次写入)
         // r1 Major:复原失败 = config 仍引用本次版本 —— 此时删版本目录会制造悬空 {file:} 引用,
         // 保留目录(功能上配置仍可用)并把两个失败一并上报;复原成功才清理本次版本。
-        if (verId && lr.ok) removeMcpSecretVersionDir(userDataPath, name, verId)
-        return {
-          ok: false,
-          reason: `install ledger write failed: ${led.reason}${lr.ok ? "" : `; config restore failed: ${lr.reason} — secret version kept (still referenced)`}`,
-        }
+        // r6 Major:清理失败同样不许吞,残留位置如实并入错误。
+        const rm = verId && lr.ok ? removeMcpSecretVersionDir(userDataPath, name, verId) : { ok: true as const }
+        const tails = [
+          ...(lr.ok ? [] : [`config restore failed: ${lr.reason} — secret version kept (still referenced)`]),
+          ...(rm.ok ? [] : [`secret version cleanup failed (${rm.reason}) — plaintext may remain in version "${verId}" pending gc`]),
+        ]
+        return { ok: false, reason: `install ledger write failed: ${led.reason}${tails.length ? `; ${tails.join("; ")}` : ""}` }
       }
       // 成功:收未被当前 leaf 引用且过宽限的旧版本/flat/快照残留(锁内对账;busy 跳过,best-effort)。
       const gc = gcMcpSecretsAgainstConfig(userDataPath, name)
@@ -599,6 +602,8 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
         // #378(裁决 Q5):npm plugin 跨源(主 + legacy XDG)同 base 严格检查。
         findPluginBaseConflictStrict,
         readPluginArrayStrict,
+        // #378 r6:legacy XDG plugin[] strict 读(同名路径冲突/旧目录 GC 引用对账覆盖合并视图)。
+        readLegacyPluginArrayStrict,
         stageVendoredPluginVersioned,
         agentPresent: (name, target) => agentInstallPresent(name, target),
         removePlugin,

@@ -433,10 +433,7 @@ export function readPluginArrayStrict(): { ok: true; value: unknown[] } | { ok: 
     // review #381 minor + #378 r4/r5:引擎 V1 schema 的合法成员 = string 或**恰** [string, Record]
     // 元组(core/v1/config/plugin.ts Spec)—— 元组不许被误拒(带 options 的既有插件让无关新装
     // 假阳性失败),但 ["x"]/["x", null]/多余元素这类引擎非法形状同样拒(不许被写流原样保留)。
-    const legalEntry = (x: unknown): boolean =>
-      typeof x === "string" ||
-      (Array.isArray(x) && x.length === 2 && typeof x[0] === "string" && !!x[1] && typeof x[1] === "object" && !Array.isArray(x[1]))
-    if (!v.every(legalEntry))
+    if (!v.every(legalPluginEntry))
       return { ok: false, reason: "config plugin[] contains invalid entries (neither string nor [spec, options]) — refusing (fix the config first)" }
     return { ok: true, value: v }
   } catch (error) {
@@ -743,42 +740,61 @@ export function pluginRecordName(pkg: string): string {
   return pkgBase(pkg).replace(/^@/, "").replace("/", "__")
 }
 
+/** plugin[] 成员的引擎合法形状(V1 schema:string 或恰 [string, Record])。 */
+function legalPluginEntry(x: unknown): boolean {
+  return (
+    typeof x === "string" ||
+    (Array.isArray(x) && x.length === 2 && typeof x[0] === "string" && !!x[1] && typeof x[1] === "object" && !Array.isArray(x[1]))
+  )
+}
+
+/** #378 r6(Blocker/Major):legacy XDG plugin[] 的 strict 读 —— 引擎合并两源,fresh 冲突检查、
+ *  旧目录 GC 引用对账都必须看得见它。成员形状与主配置同判(**非法成员 fail-closed**:引擎会因
+ *  schema 非法拒整份合并配置,安装侧不得当作可安装状态继续落账);缺失/与主配置同文件 = ok []。
+ *  configDir 随值返回 —— legacy 相对条目按 legacy 文件所在目录解析,不是主配置目录。 */
+export function readLegacyPluginArrayStrict(): { ok: true; value: unknown[]; configDir: string } | { ok: false; reason: string } {
+  const file = userConfigPath()
+  const configDir = path.dirname(file)
+  if (mcpPluginTargetPath() === file) return { ok: true, value: [], configDir }
+  try {
+    if (!fs.existsSync(file)) return { ok: true, value: [], configDir }
+    const errors: ParseError[] = []
+    const parsed: unknown = parse(fs.readFileSync(file, "utf8"), errors)
+    if (errors.length > 0) return { ok: false, reason: `legacy config unparseable (${errors.length} syntax error(s)) — refusing plugin install` }
+    const v = parsed && typeof parsed === "object" && !Array.isArray(parsed) && "plugin" in parsed ? parsed.plugin : undefined
+    if (v === undefined) return { ok: true, value: [], configDir }
+    if (!Array.isArray(v)) return { ok: false, reason: "legacy config plugin key is not an array — refusing plugin install" }
+    if (!v.every(legalPluginEntry))
+      return { ok: false, reason: "legacy config plugin[] contains invalid entries — the engine would reject the merged config; refusing (fix the legacy config first)" }
+    return { ok: true, value: v, configDir }
+  } catch (error) {
+    return { ok: false, reason: `legacy config unreadable: ${error instanceof Error ? error.message : String(error)}` }
+  }
+}
+
 /** #378(Codex 裁决 Q5):npm plugin fresh 的跨配置源同 base 严格检查 —— 引擎合并主配置与
  *  legacy XDG 两份 plugin 数组,任一侧同 base 在场都不是 fresh(persistPlugin 的跨源幂等语义,
- *  此处 strict 化:任一侧不可读/语法损坏即拒,不能当不存在)。tuple 形态([pkg, opts])的头
- *  元素同样计入(与 persistPlugin findIn 一致)。计划前与锁内 precondition 都必须调用。 */
+ *  此处 strict 化:任一侧不可读/语法损坏/**成员形状非法**(r6)即拒,不能当不存在)。tuple 形态
+ *  的头元素同样计入。计划前与锁内 precondition 都必须调用。 */
 export function findPluginBaseConflictStrict(
   pkg: string,
 ): { ok: true; existing: { spec: string; source: "main" | "legacy" } | undefined } | { ok: false; reason: string } {
   if (!SAFE_PACKAGE.test(pkg)) return { ok: false, reason: "invalid package name" }
   const base = pkgBase(pkg)
-  const scan = (
-    file: string,
-    source: "main" | "legacy",
-  ): { ok: true; existing: { spec: string; source: "main" | "legacy" } | undefined } | { ok: false; reason: string } => {
-    try {
-      if (!fs.existsSync(file)) return { ok: true, existing: undefined }
-      const errors: ParseError[] = []
-      const parsed: unknown = parse(fs.readFileSync(file, "utf8"), errors)
-      if (errors.length > 0)
-        return { ok: false, reason: `${source} config unparseable (${errors.length} syntax error(s)) — refusing plugin install` }
-      const list = parsed && typeof parsed === "object" && !Array.isArray(parsed) && "plugin" in parsed ? parsed.plugin : undefined
-      if (list === undefined) return { ok: true, existing: undefined }
-      if (!Array.isArray(list)) return { ok: false, reason: `${source} config plugin key is not an array — refusing plugin install` }
-      for (const p of list) {
-        if (typeof p === "string" && pkgBase(p) === base) return { ok: true, existing: { spec: p, source } }
-        if (Array.isArray(p) && typeof p[0] === "string" && pkgBase(p[0]) === base) return { ok: true, existing: { spec: p[0], source } }
-      }
-      return { ok: true, existing: undefined }
-    } catch (error) {
-      return { ok: false, reason: `${source} config unreadable: ${error instanceof Error ? error.message : String(error)}` }
+  const findIn = (list: unknown[], source: "main" | "legacy"): { spec: string; source: "main" | "legacy" } | undefined => {
+    for (const p of list) {
+      if (typeof p === "string" && pkgBase(p) === base) return { spec: p, source }
+      if (Array.isArray(p) && typeof p[0] === "string" && pkgBase(p[0]) === base) return { spec: p[0], source }
     }
+    return undefined
   }
-  const main = scan(mcpPluginTargetPath(), "main")
-  if (!main.ok || main.existing) return main
-  const target = mcpPluginTargetPath()
-  if (target !== userConfigPath()) return scan(userConfigPath(), "legacy")
-  return { ok: true, existing: undefined }
+  const main = readPluginArrayStrict()
+  if (!main.ok) return main
+  const hitMain = findIn(main.value, "main")
+  if (hitMain) return { ok: true, existing: hitMain }
+  const legacy = readLegacyPluginArrayStrict()
+  if (!legacy.ok) return legacy
+  return { ok: true, existing: findIn(legacy.value, "legacy") }
 }
 
 /** Codex review #355:只撤销恰为本次写入的 plugin[] 元素(orchestrator 落账失败补偿)——

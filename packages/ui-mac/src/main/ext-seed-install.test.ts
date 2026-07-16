@@ -176,18 +176,25 @@ function forbiddenInstallers(): PlannerInstallers {
     throw new Error(`installer ${fn} must not be called on the seed path`)
   }
   const table: PlannerInstallers = {
-    persistMcp: forbid("persistMcp"),
-    fileifyMcpSecrets: forbid("fileifyMcpSecrets"),
+    // #378:直写 seam(persistMcp/fileifyMcpSecrets/restoreMcpLeaf/persistPlugin/
+    // removePluginEntryExact/installVendoredPlugin)已随事务化退役,表随接口同步。
+    applyMcpWritePolicy: forbid("applyMcpWritePolicy"),
+    mcpSecretRefFor: forbid("mcpSecretRefFor"),
+    claimMcpSecretVersionDir: forbid("claimMcpSecretVersionDir"),
+    writeMcpSecretVersioned: forbid("writeMcpSecretVersioned"),
+    removeMcpSecretVersionDir: forbid("removeMcpSecretVersionDir"),
+    gcMcpSecrets: forbid("gcMcpSecrets"),
     readMcpLeafStrict: forbid("readMcpLeafStrict"),
-    restoreMcpLeaf: forbid("restoreMcpLeaf"),
     removeMcpConfigInLock: forbid("removeMcpConfigInLock"),
     removeMcpSecretsStrict: forbid("removeMcpSecretsStrict"),
-    persistPlugin: forbid("persistPlugin"),
-    removePluginEntryExact: forbid("removePluginEntryExact"),
+    findPluginBaseConflictStrict: forbid("findPluginBaseConflictStrict"),
     readPluginArrayStrict: forbid("readPluginArrayStrict"),
+    // #378 r6:legacy XDG 合并视图检查是 seed plugin 路径的**合法只读消费**(同名路径双载门 +
+    // 旧目录 GC 引用对账)—— 给良性空 stub 而非 forbid;真实实现归 ext-config(环境派生)。
+    readLegacyPluginArrayStrict: () => ({ ok: true, value: [], configDir: "/nonexistent-legacy" }),
     stageVendoredPluginVersioned: forbid("stageVendoredPluginVersioned"),
     removePlugin: forbid("removePlugin"),
-    installVendoredPlugin: forbid("installVendoredPlugin"),
+    collectVendoredPluginPayload: forbid("collectVendoredPluginPayload"),
     removePluginPath: forbid("removePluginPath"),
     installBuiltinSkill: forbid("installBuiltinSkill"),
     collectBuiltinSkillPayload: forbid("collectBuiltinSkillPayload"),
@@ -1177,32 +1184,53 @@ describe("plugin seed install via installCatalog (REQ-102 #359)", () => {
     fs.writeFileSync(path.join(oldDir, "plugin.js"), "x")
     const oldJs = path.join(oldDir, "plugin.js")
     // 被 config 重新引用 → 保留。
-    const referenced = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [oldJs] }))
+    const referenced = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [oldJs] }), () => ({ ok: true as const, value: [] as unknown[], configDir: "/legacy" }))
     expect(referenced.removed).toBe(false)
     expect(fs.existsSync(oldDir)).toBe(true)
     // #378 r5 Blocker:等价形态引用同样保留 —— 相对路径(引擎按 config 目录解析)与元组 spec 头。
-    const relRef = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({
-      ok: true,
-      value: ["./plugins/demo-plugin@aaaabbbbccccdddd/plugin.js"],
-    }))
+    const relRef = gcVendoredPluginDirLocked(
+      globalRoot,
+      "demo-plugin",
+      oldDir,
+      () => ({ ok: true, value: ["./plugins/demo-plugin@aaaabbbbccccdddd/plugin.js"] }),
+      () => ({ ok: true as const, value: [] as unknown[], configDir: "/legacy" }),
+    )
     expect(relRef.removed).toBe(false)
-    const tupleRef = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [[oldJs, { opt: true }]] }))
+    const tupleRef = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [[oldJs, { opt: true }]] }), () => ({ ok: true as const, value: [] as unknown[], configDir: "/legacy" }))
     expect(tupleRef.removed).toBe(false)
+    expect(fs.existsSync(oldDir)).toBe(true)
+    // #378 r6 Blocker:legacy XDG 源仍引用旧目录 → 保留;legacy 不可读 → fail-closed 保留。
+    const legacyRef = gcVendoredPluginDirLocked(
+      globalRoot,
+      "demo-plugin",
+      oldDir,
+      () => ({ ok: true, value: [] }),
+      () => ({ ok: true as const, value: [oldJs] as unknown[], configDir: "/legacy" }),
+    )
+    expect(legacyRef.removed).toBe(false)
+    const legacyBad = gcVendoredPluginDirLocked(
+      globalRoot,
+      "demo-plugin",
+      oldDir,
+      () => ({ ok: true, value: [] }),
+      () => ({ ok: false as const, reason: "legacy unreadable" }),
+    )
+    expect(legacyBad.removed).toBe(false)
     expect(fs.existsSync(oldDir)).toBe(true)
     // 锁忙 → 保留。
     const held = tryAcquireBundleLock(globalRoot, { txId: "probe" })
     expect(held.ok).toBe(true)
     if (held.ok) {
-      const busy = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [] }))
+      const busy = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [] }), () => ({ ok: true as const, value: [] as unknown[], configDir: "/legacy" }))
       expect(busy.removed).toBe(false)
       held.lock.release()
     }
     // 圈禁外 → 保留。
-    const outside = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", path.join(globalRoot, "evil"), () => ({ ok: true, value: [] }))
+    const outside = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", path.join(globalRoot, "evil"), () => ({ ok: true, value: [] }), () => ({ ok: true as const, value: [] as unknown[], configDir: "/legacy" }))
     expect(outside.removed).toBe(false)
     // 账本损坏 → fail-closed 保留(review r3:读不出记录 ≠ 无引用)。
     fs.writeFileSync(path.join(globalRoot, "installs.json"), "{ not json")
-    const corrupt = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [] }))
+    const corrupt = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [] }), () => ({ ok: true as const, value: [] as unknown[], configDir: "/legacy" }))
     expect(corrupt.removed).toBe(false)
     expect(fs.existsSync(oldDir)).toBe(true)
     fs.rmSync(path.join(globalRoot, "installs.json"), { force: true })
@@ -1226,12 +1254,12 @@ describe("plugin seed install via installCatalog (REQ-102 #359)", () => {
       for (const rec of v) if (isRec(rec) && rec.kind === "plugin") rec.schemaVersion = 99
     }
     fs.writeFileSync(ledgerPath2, JSON.stringify(parsedLedger))
-    const undecodable = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [] }))
+    const undecodable = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [] }), () => ({ ok: true as const, value: [] as unknown[], configDir: "/legacy" }))
     expect(undecodable.removed).toBe(false)
     expect(fs.existsSync(oldDir)).toBe(true)
     fs.rmSync(ledgerPath2, { force: true })
     // 无引用 + 拿到锁 → 删。
-    const removed = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [] }))
+    const removed = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [] }), () => ({ ok: true as const, value: [] as unknown[], configDir: "/legacy" }))
     expect(removed.removed).toBe(true)
     expect(fs.existsSync(oldDir)).toBe(false)
   })

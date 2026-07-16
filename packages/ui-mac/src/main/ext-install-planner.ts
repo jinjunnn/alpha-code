@@ -89,10 +89,11 @@ function resolvePluginEntryPath(entry: unknown, configDir: string): string | nul
  *  都算在场:无账不认领(有账早被三态分发送去 replace);只查恰好的本次 jsPath 会漏掉其他
  *  内容寻址版本的未策展残留 —— 追加第二条同名路径后引擎会把两份 plugin 都加载。
  *  r3:解析走 resolvePluginEntryPath(相对/file:// 等价形态同样命中);树外条目不误伤。 */
-function findSameNamePluginPathEntry(list: unknown[], root: string, name: string): string | null {
+function findSameNamePluginPathEntry(list: unknown[], root: string, name: string, entryBaseDir: string = root): string | null {
   const pluginsRoot = path.join(root, "plugins")
   for (const p of list) {
-    const resolved = resolvePluginEntryPath(p, root) // r4:元组成员取 spec 头,同样参与扫描
+    // r4:元组成员取 spec 头;r6:legacy 源的相对条目按 **legacy 文件所在目录** 解析(entryBaseDir)。
+    const resolved = resolvePluginEntryPath(p, entryBaseDir)
     if (resolved === null) continue
     if (path.basename(resolved) !== "plugin.js") continue
     const dir = path.dirname(resolved)
@@ -101,6 +102,21 @@ function findSameNamePluginPathEntry(list: unknown[], root: string, name: string
     if (base === name || base.startsWith(`${name}@`)) return resolved
   }
   return null
+}
+
+/** #378 r6(Major):fresh/replace 的同名派生路径检查必须覆盖 **legacy XDG 源**(引擎合并两份
+ *  plugin 数组)—— legacy 里指向 <root>/plugins/<name>[@…] 的条目在场时,继续安装/置换会双载。
+ *  legacy 不可读/形状非法 = fail-closed 拒(引擎会拒整份合并配置)。 */
+function legacySameNamePluginGate(
+  readLegacy: () => { ok: true; value: unknown[]; configDir: string } | { ok: false; reason: string },
+  root: string,
+  name: string,
+): { ok: true } | { ok: false; reason: string } {
+  const legacy = readLegacy()
+  if (!legacy.ok) return legacy
+  const hit = findSameNamePluginPathEntry(legacy.value, root, name, legacy.configDir)
+  if (hit) return { ok: false, reason: `legacy config contains "${hit}" without a ledger record — refusing to double-load an unregistered plugin` }
+  return { ok: true }
 }
 
 /** #378 r1(Major):cloud 重装的锁内 desiredState 漂移门 —— plan 快照在锁外读,锁内重读
@@ -549,6 +565,9 @@ export type PlannerInstallers = {
   findPluginBaseConflictStrict(pkg: string): { ok: true; existing: { spec: string; source: "main" | "legacy" } | undefined } | { ok: false; reason: string }
   /** #352:plugin[] 的 strict 快照读(替换的 plan 快照 + 锁内 precondition 重读)。 */
   readPluginArrayStrict(): { ok: true; value: unknown[] } | { ok: false; reason: string }
+  /** #378 r6:legacy XDG plugin[] 的 strict 读(引擎合并两源;同名路径冲突/GC 引用对账必须
+   *  看得见;成员形状非法 fail-closed)。configDir = legacy 相对条目的解析基准。 */
+  readLegacyPluginArrayStrict(): { ok: true; value: unknown[]; configDir: string } | { ok: false; reason: string }
   /** #352:vendored 替换的纯 staging —— 新内容落 versioned 目录,零 config/账本副作用。 */
   stageVendoredPluginVersioned(vendoredAssetKey: string, name: string): { ok: true; dir: string; jsPath: string } | { ok: false; reason: string }
   removePlugin(pkg: string): ConfigOutcome
@@ -959,6 +978,13 @@ async function replacePluginViaTransaction(args: {
     rollback("unregistered plugin path present")
     return { ok: false, reason: `config also contains "${strayEntry}" without a ledger record — refusing to update into a double-load` }
   }
+  // r6 Major:legacy XDG 源的同名派生路径同判(置换后 legacy 旧路径仍被引擎合并加载 = 双载)。
+  const replaceLegacyGate = legacySameNamePluginGate(() => deps.installers.readLegacyPluginArrayStrict(), root, entry.name)
+  if (!replaceLegacyGate.ok) {
+    cleanupStaged()
+    rollback("legacy plugin conflict")
+    return replaceLegacyGate
+  }
   const nextArray = snapshot.value.map((x) => {
     if (!matchesOld(x)) return x
     return Array.isArray(x) ? [newElem, x[1]] : newElem
@@ -1050,7 +1076,7 @@ async function replacePluginViaTransaction(args: {
   // 引用 = 保留(孤儿有 runbook 处置),绝不误删已提交运行载荷。
   let warning: string | undefined
   if (facts.form.kind === "vendored" && facts.form.oldDir !== stagedDir) {
-    const gc = gcVendoredPluginDirLocked(root, entry.name, facts.form.oldDir, readPluginArray)
+    const gc = gcVendoredPluginDirLocked(root, entry.name, facts.form.oldDir, readPluginArray, () => deps.installers.readLegacyPluginArrayStrict())
     if (!gc.removed) warning = gc.warning
   }
   ;(deps.transaction ?? passthroughTx).commit(args.txId)
@@ -1410,6 +1436,13 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
   //    拒绝,不静默覆盖、不把无账在场认领为 catalog(plugin 更新链 = #352 原子替换;agent 无
   //    更新链)。在场检查覆盖 v2 record **与 v1-only receipt**(历史 eager v1 遗物)。
   if (entry.type === "plugin") {
+    // #378 r6(Major):vendored 内容身份交叉在**分发之前**(fresh 收集器的绑定会被 replace
+    // 分支绕过 —— 已有 victim 记录 + 配错 vendoredAssetKey 的新 entry 会把别的资产按 victim
+    // 的名称/账本/授权身份置换进运行)。与 collectVendoredPluginPayload/#361 agent 同一合同。
+    if (spec?.kind === "plugin" && spec.vendoredAssetKey && spec.vendoredAssetKey !== `plugins/${entry.name}`) {
+      rollback("plugin content identity drift")
+      return { ok: false, reason: `catalog entry vendoredAssetKey "${spec.vendoredAssetKey}" ≠ "plugins/${entry.name}" — refusing (content identity drift)` }
+    }
     // #352:fresh / replace / refuse 三态分发(main 从自己账本裁决,复用同一 catalog 通道)——
     // 有效 catalog 旧账 → journaled 原子替换;v1-only/损坏/双键/漂移 → 显式拒绝;absent → fresh。
     const dispatch = resolvePluginDispatch(
@@ -1614,24 +1647,30 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
           ? new Set((leafNow.value !== undefined ? collectMcpFileRefPaths(leafNow.value) : []).map((p) => resolveMcpRefPath(p, mcpRoot)))
           : null
         const stillReferenced = liveRefs === null || refPaths.some((p) => liveRefs.has(resolveMcpRefPath(p, mcpRoot)))
-        let cleanupFailed: string | null = null
-        if (!stillReferenced) {
+        // r5/r6 Major:authorize 暂停承诺「零权威副作用 + 零明文残留」—— 清理必须**可证明**完成
+        // (leaf 可读 + 未引用本次版本 + 删除成功)才允许照常返回 authorize;任何一环不成立
+        // (不可读无从对账 / 出现引用 = 有旁路写方 / 删除失败)都降级为普通失败,原因如实入
+        // reason(明文 0600,GC 兜底),用户处理后重试。非 authorize 失败保持原语义(保守不删
+        // 留给 GC,不污染引擎失败原因)。
+        let cleanupUnproven: string | null = null
+        if (liveRefs === null) {
+          cleanupUnproven = `config unreadable — cannot prove the secret version is unreferenced`
+          console.error(`[ext-install-planner] mcp ${entry.name}: secret version ${verId} kept — config unreadable`)
+        } else if (stillReferenced) {
+          cleanupUnproven = `live config references this attempt's secret version (bypass write?)`
+          console.error(`[ext-install-planner] mcp ${entry.name}: secret version ${verId} kept — live config still references it (rollback retained?)`)
+        } else {
           const rm = deps.installers.removeMcpSecretVersionDir(entry.name, verId)
           if (!rm.ok) {
-            cleanupFailed = rm.reason
+            cleanupUnproven = rm.reason
             console.error(`[ext-install-planner] mcp ${entry.name}: secret version cleanup failed: ${rm.reason}`)
           }
-        } else if (liveRefs !== null) {
-          console.error(`[ext-install-planner] mcp ${entry.name}: secret version ${verId} kept — live config still references it (rollback retained?)`)
         }
-        // r5 Major:authorize 暂停承诺「零权威副作用 + 零明文残留」—— 本次版本清理失败破坏
-        // 该承诺时不得照常返回 authorize(调用方会当作干净暂停继续确认流);降级为普通失败,
-        // 明文残留位置如实入 reason(0600,GC 兜底),用户处理后重试。
-        if (cleanupFailed !== null && result.stage === "authorize") {
+        if (cleanupUnproven !== null && result.stage === "authorize") {
           rollback(result.reason)
           return {
             ok: false,
-            reason: `authorization pause aborted: this attempt's secret version cleanup failed (${cleanupFailed}) — plaintext may remain in version "${verId}" pending gc; resolve and retry`,
+            reason: `authorization pause aborted: this attempt's secret version cleanup is not proven (${cleanupUnproven}) — plaintext may remain in version "${verId}" pending gc; resolve and retry`,
           }
         }
       }
@@ -1738,6 +1777,12 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
         rollback("unregistered plugin path present")
         return { ok: false, reason: `config already contains "${sameNamePath}" without a ledger record — refusing to adopt or double-install an unregistered plugin` }
       }
+      // r6 Major:legacy XDG 源的同名派生路径同样拒(引擎合并两源)。
+      const npmLegacyGate = legacySameNamePluginGate(() => deps.installers.readLegacyPluginArrayStrict(), npmRoot, entry.name)
+      if (!npmLegacyGate.ok) {
+        rollback("legacy plugin conflict")
+        return npmLegacyGate
+      }
       const npmConfigTarget = path.join(npmRoot, "alpha.jsonc")
       const npmCanon = JSON.stringify(npmSnapshot.value)
       const npmNow = deps.now?.() ?? new Date().toISOString()
@@ -1779,6 +1824,8 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
           const re = deps.installers.findPluginBaseConflictStrict(pinned)
           if (!re.ok) return re
           if (re.existing) return { ok: false, reason: `plugin base appeared in the ${re.existing.source} config since plan — retry the install` }
+          const legacyRe = legacySameNamePluginGate(() => deps.installers.readLegacyPluginArrayStrict(), npmRoot, entry.name)
+          if (!legacyRe.ok) return legacyRe
           const cur = deps.installers.readPluginArrayStrict()
           if (!cur.ok) return cur
           if (JSON.stringify(cur.value) !== npmCanon) return { ok: false, reason: "plugin config changed since plan — retry the install" }
@@ -2424,6 +2471,9 @@ export function gcVendoredPluginDirLocked(
   name: string,
   oldDir: string,
   readPluginArray: () => { ok: true; value: unknown[] } | { ok: false; reason: string },
+  // #378 r6 Blocker:引擎合并 legacy XDG plugin[] —— 引用对账必须覆盖它,否则 legacy 仍引用的
+  // 旧目录被当孤儿递归删除(下一次加载即悬空)。legacy 相对条目按其 configDir 解析。
+  readLegacyPluginArray: () => { ok: true; value: unknown[]; configDir: string } | { ok: false; reason: string },
 ): { removed: boolean; warning?: string } {
   const pluginsRoot = path.join(root, "plugins")
   const dirBase = path.basename(oldDir)
@@ -2437,11 +2487,17 @@ export function gcVendoredPluginDirLocked(
     // r5 Blocker:引用扫描按引擎语义解析(元组 spec 头/相对/file://)—— 词法「绝对字符串前缀」
     // 会漏等价形态,把 live config 仍引用的旧目录当孤儿递归删除(插件启动即失败)。
     const oldDirResolved = path.resolve(oldDir)
-    const refsDir = (x: unknown): boolean => {
-      const resolved = resolvePluginEntryPath(x, root)
+    const refsDirFrom = (baseDir: string) => (x: unknown): boolean => {
+      const resolved = resolvePluginEntryPath(x, baseDir)
       return resolved !== null && (resolved === oldDirResolved || resolved.startsWith(oldDirResolved + path.sep))
     }
+    const refsDir = refsDirFrom(root)
     if (cfg.value.some(refsDir)) return { removed: false, warning: "old plugin dir re-referenced by config — retained (concurrent update)" }
+    // r6 Blocker:legacy XDG 源同判;不可读/形状非法 = 无法证明无引用 = 保留(fail-closed)。
+    const legacy = readLegacyPluginArray()
+    if (!legacy.ok) return { removed: false, warning: `old plugin dir retained (legacy config not provably reference-free: ${legacy.reason})` }
+    if (legacy.value.some(refsDirFrom(legacy.configDir)))
+      return { removed: false, warning: "old plugin dir re-referenced by the legacy config — retained" }
     // 账本引用 fail-closed:损坏账本 = 无法证明无引用 = 保留。
     const ledgerProbe = probeLedgerForWrite(root)
     if (!ledgerProbe.ok) return { removed: false, warning: `old plugin dir retained (ledger not provably reference-free: ${ledgerProbe.reason})` }
@@ -2924,6 +2980,12 @@ async function installPluginFromCas(args: {
     rollback("unregistered plugin config present")
     return { ok: false, reason: `config already contains "${sameNameEntry}" without a ledger record — refusing to adopt or double-install an unregistered plugin` }
   }
+  // r6 Major:legacy XDG 源同判(引擎合并两源;legacy 同名路径在场时 fresh 落账会双载)。
+  const freshLegacyGate = legacySameNamePluginGate(() => deps.installers.readLegacyPluginArrayStrict(), root, entry.name)
+  if (!freshLegacyGate.ok) {
+    rollback("legacy plugin conflict")
+    return freshLegacyGate
+  }
   const nextArray = [...snapshot.value, jsPath]
   const snapshotCanon = JSON.stringify(snapshot.value)
   const now = deps.now?.() ?? new Date().toISOString()
@@ -2971,6 +3033,8 @@ async function installPluginFromCas(args: {
       const cur = readPluginArray()
       if (!cur.ok) return cur
       if (JSON.stringify(cur.value) !== snapshotCanon) return { ok: false, reason: "plugin config changed since plan — retry the install" }
+      const legacyRe = legacySameNamePluginGate(() => deps.installers.readLegacyPluginArrayStrict(), root, entry.name) // r6
+      if (!legacyRe.ok) return legacyRe
       if (fs.existsSync(path.join(root, "plugins", entry.name)) || seedDirBlocksInstall(root, `plugins/${dirName}`))
         return { ok: false, reason: `plugin dir appeared without a ledger record — refusing` }
       return { ok: true }
