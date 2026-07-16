@@ -199,7 +199,9 @@ export async function installAgentFromCas(root: string, spec: AgentSeedInstall):
       {
         key: agentInstallKey(spec.name),
         action: "file",
-        file: { relTarget, next: blob.data },
+        // requireAbsent(#359 r3 同款):fresh-only 语义钉进引擎锁内断言 —— 锁外门与锁内捕获
+        // 之间被旁路建文件时,拒绝而不是带前像覆盖认领。
+        file: { relTarget, next: blob.data, requireAbsent: true },
         capabilities: spec.capabilities,
         receipt: receiptTemplate,
         ...(spec.manifestDigest ? { manifestDigest: spec.manifestDigest } : {}),

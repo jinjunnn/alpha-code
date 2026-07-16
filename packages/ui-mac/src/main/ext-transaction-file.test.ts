@@ -327,6 +327,21 @@ describe("file action in runExtensionTransaction (REQ-102 #358)", () => {
     expect(record!.configKey).toBe("agent.demo")
   })
 
+  test("requireAbsent:锁内前像在场即结构化拒(#359 r3 —— 未策展不认领的执行层断言)", async () => {
+    mkdirSync(join(root, "agents"), { recursive: true })
+    writeFileSync(MD_PATH(), "bypass-planted content")
+    const r = await runExtensionTransaction(
+      root,
+      { items: [{ key: "agent--demo", action: "file", file: { relTarget: "agents/demo.md", next: Buffer.from(MD), requireAbsent: true } }] },
+      hooksFor(),
+    )
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.stage).toBe("staging")
+    expect(r.reason).toContain("must be absent")
+    expect(readFileSync(MD_PATH(), "utf8")).toBe("bypass-planted content") // 零覆盖
+  })
+
   test("validatePlan refuses missing payload / unsafe relTarget / empty content / duplicate targets", async () => {
     const missing = await runExtensionTransaction(root, { items: [{ key: "a", action: "file" }] }, hooksFor())
     expect(missing.ok).toBe(false)

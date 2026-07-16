@@ -88,8 +88,11 @@ export type TxActionKind = "generation" | "config" | "receipt" | "file"
 export type TxConfigAction = { target: string; edits: ConfigEdit[] }
 
 /** file action 载荷(REQ-102 #358):目标 = **root 内受控相对路径**(引擎自 root 派生绝对路径 ——
- *  调用方绝对路径无通道,Codex 裁决 #358 B 圈禁要求)+ 完整新内容字节。前像由引擎在锁内捕获。 */
-export type TxFileAction = { relTarget: string; next: Buffer }
+ *  调用方绝对路径无通道,Codex 裁决 #358 B 圈禁要求)+ 完整新内容字节。前像由引擎在锁内捕获。
+ *  requireAbsent(#359 review r3):锁内前像必须缺席,否则结构化拒绝 —— 把 planner 的「未策展
+ *  不认领」从锁外 existsSync 检查升级为执行引擎断言(检查与捕获之间被旁路建文件时,拒绝而不是
+ *  带前像覆盖认领)。 */
+export type TxFileAction = { relTarget: string; next: Buffer; requireAbsent?: boolean }
 
 /** file action 内容上界(引擎级防线;业务上界如 agent 的 256KB 由 planner 把关)。 */
 const FILE_ACTION_MAX_BYTES = 16 * 1024 * 1024
@@ -549,6 +552,8 @@ function validatePlan(root: string, plan: TxPlan): string | null {
         return `file item "${item.key}": next content must be a non-empty Buffer`
       if (item.file.next.length > FILE_ACTION_MAX_BYTES)
         return `file item "${item.key}": next content exceeds ${FILE_ACTION_MAX_BYTES} bytes`
+      if (item.file.requireAbsent !== undefined && typeof item.file.requireAbsent !== "boolean")
+        return `file item "${item.key}": requireAbsent must be a boolean`
     } else if (kind === "receipt") {
       // receipt-only:无 files/config 副作用,只参加最终 receipt commit。
     } else {
@@ -976,6 +981,11 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
     if (!prep.ok) {
       lock.release()
       return { ok: false, txId, stage: "staging", reason: `file prepare failed for "${item.key}": ${prep.reason}`, warnings }
+    }
+    // #359 review r3:requireAbsent = 锁内执行断言 —— 前像在场即拒(零写盘),绝不带前像覆盖认领。
+    if (item.file.requireAbsent && !prep.image.preAbsent) {
+      lock.release()
+      return { ok: false, txId, stage: "staging", reason: `file target for "${item.key}" must be absent (unregistered content is not adopted) — refused`, warnings }
     }
     fileImages.set(item.key, prep.image)
   }

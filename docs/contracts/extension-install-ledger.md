@@ -28,7 +28,7 @@ review_after: 2026-10-14
   receipt 模板只挂事务的 file 主 item —— config 副 item 不落账,`commitReceipt` 经
   `recoveryReceiptInputs` 按 `receipt !== undefined` 过滤(恢复前滚同源)。mcp seed(#359):
   单条 record(`configKey: mcp.<name>`);plugin seed:单条 record(`configKey:
-  plugin-path:<jsPath>`,`files: [plugins/<name>@<digest12>]`),replace 复用 #352 语义。
+  plugin-path:<jsPath>`,`files: [plugins/<name>@<digest16>]`),replace 复用 #352 语义。
 
 ## 2. 提交面 fail-closed(#336 残留收口)
 

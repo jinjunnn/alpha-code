@@ -1102,6 +1102,30 @@ describe("plugin seed install via installCatalog (REQ-102 #359)", () => {
     if (!r.ok) expect(r.reason).toContain("colliding")
   })
 
+  test("recovery 回滚遗留的纯空目录树不阻断重试(review r3 Major 4:壳容忍)", async () => {
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
+    const dir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
+    fs.mkdirSync(path.join(dir, "lib"), { recursive: true }) // 模拟 recovery unlink 后的空壳
+    const r = await installAuthorized(pluginSeedIntent, pluginDeps())
+    expect(r.ok).toBe(true)
+    expect(fs.readFileSync(path.join(dir, "plugin.js"), "utf8")).toBe(PLUGIN_FILES[0].content)
+  })
+
+  test("同版本重装遇目录被换 symlink:不得误判 healthy,也不得经 symlink 写入(review r3 Major 5)", async () => {
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
+    const deps = pluginDeps()
+    expect((await installAuthorized(pluginSeedIntent, deps)).ok).toBe(true)
+    const dir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
+    // 把目录换成指向内容完全一致副本的 symlink。
+    const copy = path.join(tmp, "plugin-copy")
+    fs.cpSync(dir, copy, { recursive: true })
+    fs.rmSync(dir, { recursive: true, force: true })
+    fs.symlinkSync(copy, dir)
+    const again = await installAuthorized(pluginSeedIntent, deps)
+    expect(again.ok).toBe(false) // 既非幂等早退成功,也不落 symlink 写入
+    expect(fs.readFileSync(path.join(copy, "plugin.js"), "utf8")).toBe(PLUGIN_FILES[0].content) // 树外零写
+  })
+
   test("旧目录 GC 持锁重读引用(review r2 Blocker):被引用/锁忙保留,无引用才删", async () => {
     const { gcVendoredPluginDirLocked } = await import("./ext-install-planner")
     const oldDir = path.join(globalRoot, "plugins", "demo-plugin@aaaabbbbccccdddd")
@@ -1123,6 +1147,12 @@ describe("plugin seed install via installCatalog (REQ-102 #359)", () => {
     // 圈禁外 → 保留。
     const outside = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", path.join(globalRoot, "evil"), () => ({ ok: true, value: [] }))
     expect(outside.removed).toBe(false)
+    // 账本损坏 → fail-closed 保留(review r3:读不出记录 ≠ 无引用)。
+    fs.writeFileSync(path.join(globalRoot, "installs.json"), "{ not json")
+    const corrupt = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [] }))
+    expect(corrupt.removed).toBe(false)
+    expect(fs.existsSync(oldDir)).toBe(true)
+    fs.rmSync(path.join(globalRoot, "installs.json"), { force: true })
     // 无引用 + 拿到锁 → 删。
     const removed = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [] }))
     expect(removed.removed).toBe(true)
