@@ -931,6 +931,9 @@ async function replacePluginViaTransaction(args: {
   // bundled manifest/账本声明持续背离(且错态账本下次被 npmHealthy 当已完成)。旧形态
   // (facts.form)只用于旧条目匹配/清除与旧目录 GC。
   const newFormVendored = Boolean(args.seedPayload) || (typeof spec.vendoredAssetKey === "string" && spec.vendoredAssetKey.length > 0)
+  // r21 Major:vendored 形态下 entry 的 package 发行元数据 —— 主/legacy 未策展同包 npm 条目
+  // 不会被换元(matchesOld 只匹配旧形态),置换后与新路径双载,须对称守门。
+  const newPkgBase = typeof spec.package === "string" && spec.package ? pkgBaseOf(spec.package) : null
   let newElem: string
   let newConfigKey: string
   let replacePayloadDigest = args.payloadDigest
@@ -1168,6 +1171,31 @@ async function replacePluginViaTransaction(args: {
       return { ok: false, reason: `config already contains pin "${mainHit}" of "${newBase}" — engine dedup may load it instead of the replacement, refusing (clean it first)` }
     }
   }
+  // r21 Major:新形态 vendored 且带 package 元数据 —— 主/legacy 未策展同包 npm 条目在场即拒
+  // (排除将被本次换元的旧条目:npm→vendored 迁移的旧 pin 合法)。fresh 的 r20 门只挡首装,
+  // vendored→vendored 更新否则原样保留同包 pin,引擎按包名与 file URL 各自去重 = 双载。
+  if (newFormVendored && newPkgBase !== null) {
+    const mainPkgHit = snapshot.value.filter((x) => !matchesOld(x)).map(pluginSpecOf).find((x): x is string => x !== null && pkgBaseOf(x) === newPkgBase)
+    if (mainPkgHit !== undefined) {
+      cleanupStaged()
+      rollback("unregistered pin of the plugin package present")
+      return { ok: false, reason: `config already contains pin "${mainPkgHit}" of "${newPkgBase}" without a ledger record — engine loads it alongside the vendored payload, refusing (clean it first)` }
+    }
+    const legacyPkg = deps.installers.readLegacyPluginArrayStrict()
+    if (!legacyPkg.ok) {
+      cleanupStaged()
+      rollback(legacyPkg.reason)
+      return legacyPkg
+    }
+    for (const src of legacyPkg.sources) {
+      const hit = src.value.map(pluginSpecOf).find((x): x is string => x !== null && pkgBaseOf(x) === newPkgBase)
+      if (hit !== undefined) {
+        cleanupStaged()
+        rollback("legacy pin of the plugin package present")
+        return { ok: false, reason: `legacy config contains pin "${hit}" of "${newPkgBase}" — engine loads it alongside the vendored payload, refusing (clean the legacy entry first)` }
+      }
+    }
+  }
   // r6 Major:legacy XDG 源的同名派生路径同判(置换后 legacy 旧路径仍被引擎合并加载 = 双载)。
   const replaceLegacyGate = legacySameNamePluginGate(() => deps.installers.readLegacyPluginArrayStrict(), root, entry.name)
   if (!replaceLegacyGate.ok) {
@@ -1252,6 +1280,7 @@ async function replacePluginViaTransaction(args: {
       const recheckBases = new Set<string>()
       if (facts.form.kind === "npm") recheckBases.add(pkgBaseOf(facts.form.oldPinned))
       if (!newFormVendored) recheckBases.add(pkgBaseOf(newElem))
+      if (newFormVendored && newPkgBase !== null) recheckBases.add(newPkgBase) // r21:vendored 形态守 package 元数据 base
       if (recheckBases.size > 0) {
         const legacyNow = deps.installers.readLegacyPluginArrayStrict()
         if (!legacyNow.ok) return legacyNow
@@ -3440,6 +3469,14 @@ async function installPluginFromCas(args: {
       if (JSON.stringify(cur.value) !== snapshotCanon) return { ok: false, reason: "plugin config changed since plan — retry the install" }
       const legacyRe = legacySameNamePluginGate(() => deps.installers.readLegacyPluginArrayStrict(), root, entry.name) // r6
       if (!legacyRe.ok) return legacyRe
+      // r21:同包 base 冲突门锁内复核(r20 只有计划期)—— 计划后写入 legacy 源的同包 npm 条目
+      // 否则穿过前置,重新引入双载。
+      if (typeof spec.package === "string" && spec.package) {
+        const conflictNow = deps.installers.findPluginBaseConflictStrict(spec.package)
+        if (!conflictNow.ok) return conflictNow
+        if (conflictNow.existing)
+          return { ok: false, reason: `plugin package "${spec.package}" gained pin "${conflictNow.existing.spec}" in the ${conflictNow.existing.source} config since plan — retry the install` }
+      }
       if (fs.existsSync(path.join(root, "plugins", entry.name)) || seedDirBlocksInstall(root, `plugins/${dirName}`))
         return { ok: false, reason: `plugin dir appeared without a ledger record — refusing` }
       return { ok: true }

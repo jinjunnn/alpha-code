@@ -47,7 +47,7 @@ review_after: 2026-10-14
 |---|---|---|
 | mcp | strict 叶前像可读性(不可读/**语法损坏**/形状异常拒 —— jsonc 容错解析必须收 ParseError;重装合法,前像本体由引擎 config action 整文件 image journaled);granted 密钥未落位 fail-closed 拒明文持久化 | 引擎回滚(config 复原);本次密钥版本目录删除(版本化只增,旧版本零接触 —— 见能力授权契约 §9);成功后才 GC 旧版本 |
 | plugin npm | 有账拒(三态分发;更新 = #352 替换);**跨配置源同 base 严格检查**(主配置未策展在场拒认领 + legacy XDG 在场拒,任一侧不可读拒;计划前与锁内双查)+ config 数组快照等值 | 引擎回滚(config 整文件复原);零残留 |
-| plugin vendored | 有账拒(三态分发);无账既有目录拒(bare 与内容寻址目录都算在场,不覆盖/不认领);载荷经 CAS 读取重验 | 引擎回滚(file items + config 全撤);rolled-back 终态收空壳目录;崩溃按 journal digest 判翻转 |
+| plugin vendored | 有账拒(三态分发);无账既有目录拒(bare 与内容寻址目录都算在场,不覆盖/不认领);载荷经 CAS 读取重验;**entry 带 package 发行元数据时,跨配置源同 base 严格检查同样适用**(fresh 与 vendored 形态更新都查,主/legacy 未策展同包 npm 条目在场拒 —— 引擎按包名与 file URL 各自去重,漏查即双载;计划前与锁内双查,更新侧排除将被换元的旧条目) | 引擎回滚(file items + config 全撤);rolled-back 终态收空壳目录;崩溃按 journal digest 判翻转 |
 | agent(seed #358 + catalog #361,同一载体) | fresh-only 双层门:catalog 锁外快速拒(有账 v2/v1、md 文件、或手工 `agent.<name>` 配置项 —— strict 读,不可读按在场)+ **引擎锁内 precondition**(`agentFreshGate`)重读封 TOCTOU;catalog 另拒 `entry.id ≠ agent:<name>` 身份漂移与含 `--` 名 | 引擎回滚(file 前像恢复缺席/旧字节 + config 叶复原) |
 | cloud | 账本可写探测 | receipt action 零盘副作用;失败 = 零账本;**卸载 = grants 清除成功前置 + ledger 删除失败 `ok:false`**(receipts-only,账没去=没卸载);重装显式继承 `desiredState` |
 

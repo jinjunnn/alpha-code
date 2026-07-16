@@ -2569,6 +2569,27 @@ describe("plugin replace r15 —— 同版本精确校验与别名身份对账",
     expect(cfgAfter).toEqual(["@alpha/vp@0.9.9"]) // 原条目原封
   })
 
+  test("r21:vendored→vendored 更新遇同包 base 未策展 npm 条目 → 拒且 staging 清净(fresh 门不覆盖 replace)", async () => {
+    const oldDir = path.join(globalRoot, "plugins", "vp")
+    const oldJs = path.join(oldDir, "plugin.js")
+    fs.mkdirSync(oldDir, { recursive: true })
+    fs.writeFileSync(oldJs, "// old")
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [oldJs, "@alpha/vp@0.9.9"] }, null, 2))
+    const w = upsertRecordV2(globalRoot, {
+      id: "plugin:vp", name: "vp", kind: "plugin", environment: "prod", scope: { kind: "global" },
+      version: "0.9.0", desiredState: "enabled", origin: "catalog",
+      configKey: `plugin-path:${oldJs}`, transaction: { id: "tx-old-vp6", state: "committed" },
+      installedAt: "2026-07-15T00:00:00.000Z",
+    })
+    if (!w.ok) throw new Error(w.reason)
+    const { deps } = makeDeps()
+    const r = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("engine loads it alongside")
+    expect(pluginArrayOnDisk()).toEqual([oldJs, "@alpha/vp@0.9.9"]) // config 原封
+    expect(fs.existsSync(path.join(globalRoot, "plugins", "vp@feed1234"))).toBe(false) // staging 已清
+  })
+
   test("r20:npm→vendored 迁移 —— 载荷分支按新 spec 选,npm 钉版被换成 vendored 路径(不再账实背离)", async () => {
     fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: ["@alpha/vp@0.9.0"] }, null, 2))
     const w = upsertRecordV2(globalRoot, {

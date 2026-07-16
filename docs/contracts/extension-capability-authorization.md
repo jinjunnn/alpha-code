@@ -27,8 +27,10 @@ diff 与暂停、renderer 如何确认与重驱、授权账/收据如何落盘�
     零 config/账本/密钥副作用);
   - 单装 **plugin**(catalog #378 + seed #359):vendored fresh = CAS file items + config item
     (`installPluginFromCas`,内容寻址 `plugins/<name>@<digest16>`);npm fresh = config action
-    单事务(整数组换元;跨配置源同 base 严格检查,legacy XDG 在场拒);更新 = #352 原子替换
-    (capabilities/authorization 在 plan 上);
+    单事务(整数组换元;跨配置源同 base 严格检查,legacy XDG 在场拒);**同 base 严格检查对
+    vendored 形态同样适用**(entry 带 package 发行元数据时 fresh 与更新都查,计划前 + 锁内;
+    否则未策展同包 npm 条目与 vendored 路径双载);更新 = #352 原子替换
+    (capabilities/authorization 在 plan 上,载荷分支按新 entry spec 选);
   - 单装 **cloud**(#378):receipt action 单 item(零盘副作用,capabilities/receipt 挂
     `cloud--<name>`;重装显式继承 `desiredState`,disabled 不被静默写回 enabled);
   - atomic bundle(其 skill / 无密钥 MCP-config / cloud-receipt 子项)。
