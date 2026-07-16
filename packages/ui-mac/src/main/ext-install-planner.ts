@@ -48,7 +48,7 @@ import {
 } from "./ext-transaction"
 import { capabilityGrantPath, isSafeCapability, type CapabilityDiff } from "./ext-capability-grants"
 import { agentConfigItemKey, agentInstallKey, installAgentFromCas, recoveryReceiptInputs } from "./ext-agent-install"
-import { collectMcpFileRefPaths, newMcpSecretVersionId, pathIdentityForms, resolveMcpRefPath, substituteMcpSecretRefsPure } from "./alpha-mcp-secrets"
+import { collectMcpFileRefPaths, newMcpSecretVersionId, pathIdentity, resolveMcpRefPath, substituteMcpSecretRefsPure } from "./alpha-mcp-secrets"
 
 /** `{file:<abs>}` 引用 → 文件路径(非引用形状 = null;#378 r1 锁内在场门与失败清理共用)。 */
 function mcpRefPathOf(ref: string): string | null {
@@ -98,15 +98,19 @@ function resolvePluginEntryPath(entry: unknown, configDir: string): string | nul
 function findSameNamePluginPathEntry(list: unknown[], root: string, name: string, entryBaseDir: string = root): string | null {
   // r14 Major:条目可经 symlink 别名到达 plugins/<name>[@…]/plugin.js —— 词法父目录判定漏判,
   // 追加 realpath 身份形态(pluginsRoot 同双形态)。
-  const pluginsRootForms = pathIdentityForms(path.join(root, "plugins"))
+  const pluginsRootIdent = pathIdentity(path.join(root, "plugins"))
   for (const p of list) {
     // r4:元组成员取 spec 头;r6:legacy 源的相对条目按 **legacy 文件所在目录** 解析(entryBaseDir)。
     const resolved = resolvePluginEntryPath(p, entryBaseDir)
     if (resolved === null) continue
-    for (const form of pathIdentityForms(resolved)) {
+    const ident = pathIdentity(resolved)
+    // r15 Major:任一侧身份不可判(非缺席类 fs 错)= 无法证明该条目不是本名别名 —— fail-closed
+    // 按在场处理(拒继续安装,报词法形态),不得静默按词法比较放行。
+    if (!pluginsRootIdent.certain || !ident.certain) return path.resolve(resolved)
+    for (const form of ident.forms) {
       if (path.basename(form) !== "plugin.js") continue
       const dir = path.dirname(form)
-      if (!pluginsRootForms.includes(path.dirname(dir))) continue
+      if (!pluginsRootIdent.forms.includes(path.dirname(dir))) continue
       const base = path.basename(dir)
       if (base === name || base.startsWith(`${name}@`)) return form
     }
@@ -864,8 +868,21 @@ function resolvePluginDispatch(
       return { mode: "refuse", reason: `ledger plugin path "${oldJsPath}" is not under "${pluginsRoot}/${entry.name}[@…]" — refusing replace (uncontrolled removal target)` }
     // r9 Major:对账按引擎解析语义 —— 合法等价改写(相对/file:///元组)不得被词法比较误判
     // 成 ledger drift。r10 Major:等价重复条目解析为同一路径 = 引擎去重后同一 load 身份,
-    // 按解析身份计数(≥1 即对账成立;replace 把全部匹配收敛为单条)。
-    if (cfg.value.filter((x) => resolvePluginEntryPath(x, root) === oldJsPath).length < 1)
+    // 按解析身份计数(≥1 即对账成立;replace 把全部匹配收敛为单条)。r15 Major:比较按文件系统
+    // 身份双形态(symlink 别名条目不得误判 drift);任一侧身份不可判 = 对账不可证明,拒。
+    const oldIdent = pathIdentity(oldJsPath)
+    let identUnprovable = false
+    const hits = cfg.value.filter((x) => {
+      const r = resolvePluginEntryPath(x, root)
+      if (r === null) return false
+      const ident = pathIdentity(r)
+      if (ident.forms.some((f) => oldIdent.forms.includes(f))) return true
+      if (!ident.certain || !oldIdent.certain) identUnprovable = true
+      return false
+    })
+    if (identUnprovable)
+      return { mode: "refuse", reason: `a plugin[] entry's filesystem identity is unresolvable (non-absence fs error) — cannot prove ledger/config reconciliation, refusing replace` }
+    if (hits.length < 1)
       return { mode: "refuse", reason: `ledger configKey "${configKey}" not found in config plugin[] — ledger/config drift, refusing replace` }
     return { mode: "replace", facts: { record, form: { kind: "vendored", oldJsPath, oldDir } } }
   }
@@ -983,12 +1000,39 @@ async function replacePluginViaTransaction(args: {
       newElem = args.seedPayload.jsPath
       newConfigKey = `plugin-path:${args.seedPayload.jsPath}`
     } else {
-      const vendoredHealthy = recordHealthy && fs.existsSync(facts.form.oldJsPath)
-      if (vendoredHealthy) {
-        rollback("already at target version")
-        return { ok: true, kind: "plugin", name: entry.name, manifestDigest, warning: "already at this version — nothing to replace" }
+      const assetKey = spec.vendoredAssetKey
+      if (assetKey === undefined) {
+        rollback("entry has no vendored asset")
+        return { ok: false, reason: "entry has no vendored asset" }
       }
-      const staged = deps.installers.stageVendoredPluginVersioned(spec.vendoredAssetKey!, entry.name)
+      // r15 Major:existsSync 只证 plugin.js 在场不证内容 —— 载荷截断/篡改/缺文件时同版本重装
+      // 必须落修复(staging + 完整 replace),不得「nothing to replace」空转。镜像 seed 幂等早退:
+      // 持 bundle 锁逐文件精确校验 + 账本锁内重读(锁外验证可被并发替换骗过);载荷收集失败/
+      // 锁忙/任一不健康 = 不早退,走修复路径。
+      if (recordHealthy) {
+        const payload = deps.installers.collectVendoredPluginPayload(assetKey, entry.name)
+        if (payload.ok) {
+          const held = tryAcquireBundleLock(root, { txId: `tx-pluginidem-${crypto.randomBytes(4).toString("hex")}` })
+          if (held.ok) {
+            try {
+              const rec = findRecordV2(root, "plugin", entry.name)
+              const still =
+                rec !== null &&
+                rec.manifestDigest === manifestDigest &&
+                rec.version === manifest.version &&
+                rec.transaction?.state === "committed" &&
+                rec.configKey === `plugin-path:${facts.form.oldJsPath}`
+              if (still && verifyVendoredPluginDirExact(facts.form.oldDir, payload.files).ok) {
+                rollback("already at target version")
+                return { ok: true, kind: "plugin", name: entry.name, manifestDigest, warning: "already at this version — nothing to replace" }
+              }
+            } finally {
+              held.lock.release()
+            }
+          }
+        }
+      }
+      const staged = deps.installers.stageVendoredPluginVersioned(assetKey, entry.name)
       if (!staged.ok) {
         rollback(staged.reason)
         return staged
@@ -1011,11 +1055,15 @@ async function replacePluginViaTransaction(args: {
     // 无害,按 runbook 人工收);未被引用才收。
     const live = readPluginArray()
     // r3/r14 Major:引用比较按引擎解析语义 + 文件系统身份双形态(相对/file:///symlink 别名
-    // 都不得被词法比较误判「未引用」而删掉 live 仍指向的载荷)。
-    const newElemForms = pathIdentityForms(newElem)
+    // 都不得被词法比较误判「未引用」而删掉 live 仍指向的载荷)。r15 Major:任一侧身份不可判
+    // (非缺席类 fs 错)= 视为引用(保守不删),不得静默回退词法。
+    const newElemIdent = pathIdentity(newElem)
     const refsStaged = (e: unknown, baseDir: string): boolean => {
       const resolved = resolvePluginEntryPath(e, baseDir)
-      return resolved !== null && pathIdentityForms(resolved).some((f) => newElemForms.includes(f))
+      if (resolved === null) return false
+      const ident = pathIdentity(resolved)
+      if (!newElemIdent.certain || !ident.certain) return true
+      return ident.forms.some((f) => newElemIdent.forms.includes(f))
     }
     if (!live.ok || live.value.some((e) => refsStaged(e, root))) {
       console.error(
@@ -1049,11 +1097,27 @@ async function replacePluginViaTransaction(args: {
   const oldElem = facts.form.kind === "npm" ? facts.form.oldPinned : facts.form.oldJsPath
   // r5/r9 Major:等值与换元按引擎语义 —— npm 按 spec 头(包名非路径);vendored 按解析路径
   // (相对/file:///元组等价形态都命中)。否则合法配置被误报 drift 永远无法更新。
-  const oldElemResolved = facts.form.kind === "npm" ? null : path.resolve(oldElem)
-  const matchesOld = (x: unknown): boolean =>
-    oldElemResolved === null ? pluginSpecOf(x) === oldElem : resolvePluginEntryPath(x, root) === oldElemResolved
+  // r15 Major:vendored 按文件系统身份双形态(symlink 别名条目不得误判 drift/漏换元);
+  // 任一侧身份不可判(非缺席类 fs 错)= 换元集不可证明,拒(否则不可判别名残留会双载)。
+  const oldElemIdent = facts.form.kind === "npm" ? null : pathIdentity(path.resolve(oldElem))
+  let matchIdentUnprovable = false
+  const matchesOld = (x: unknown): boolean => {
+    if (oldElemIdent === null) return pluginSpecOf(x) === oldElem
+    const r = resolvePluginEntryPath(x, root)
+    if (r === null) return false
+    const ident = pathIdentity(r)
+    if (ident.forms.some((f) => oldElemIdent.forms.includes(f))) return true
+    if (!ident.certain || !oldElemIdent.certain) matchIdentUnprovable = true
+    return false
+  }
   // r10 Major:等价重复(同一引擎 load 身份)≥1 即对账成立,置换时收敛为单条;0 条才是 drift。
-  if (snapshot.value.filter(matchesOld).length < 1) {
+  const oldMatchCount = snapshot.value.filter(matchesOld).length
+  if (matchIdentUnprovable) {
+    cleanupStaged()
+    rollback("plugin entry identity unresolvable")
+    return { ok: false, reason: "a plugin[] entry's filesystem identity is unresolvable (non-absence fs error) — cannot prove the replacement set, refusing (retry after resolving)" }
+  }
+  if (oldMatchCount < 1) {
     cleanupStaged()
     rollback("plugin config drifted before plan")
     return { ok: false, reason: "plugin config changed while planning — retry the update" }
@@ -1786,6 +1850,14 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
         // 写形态)时删除同样制造悬空;legacy 读不出 = 保守不删。
         const legacyNow = deps.installers.legacyMcpRefPaths(entry.name)
         // r14 Major:引用与本次版本文件都取文件系统身份双形态(symlink 别名不漏判)。
+        // r15 Major:任一路径身份不可判(非缺席类 fs 错)= 「未引用」不可证明 —— 与 config
+        // 不可读同置(保守不删 + authorize 降级),不得静默回退词法把暂时 EIO 的活体别名删掉。
+        let cleanupIdentUnprovable = false
+        const identFormsOf = (p: string): string[] => {
+          const ident = pathIdentity(p)
+          if (!ident.certain) cleanupIdentUnprovable = true
+          return ident.forms
+        }
         let liveRefs: Set<string> | null = null
         if (leafNow.ok && legacyNow.ok) {
           liveRefs = new Set()
@@ -1793,12 +1865,12 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
             ...(leafNow.value !== undefined ? collectMcpFileRefPaths(leafNow.value) : []).map((q) => resolveMcpRefPath(q, mcpRoot)),
             ...legacyNow.refs,
           ]) {
-            for (const form of pathIdentityForms(p)) liveRefs.add(form)
+            for (const form of identFormsOf(p)) liveRefs.add(form)
           }
         }
-        const stillReferenced =
-          liveRefs === null ||
-          refPaths.some((p) => pathIdentityForms(resolveMcpRefPath(p, mcpRoot)).some((form) => liveRefs.has(form)))
+        const refsHitLive =
+          liveRefs !== null && refPaths.some((p) => identFormsOf(resolveMcpRefPath(p, mcpRoot)).some((form) => liveRefs.has(form)))
+        const stillReferenced = liveRefs === null || cleanupIdentUnprovable || refsHitLive
         // r5/r6 Major:authorize 暂停承诺「零权威副作用 + 零明文残留」—— 清理必须**可证明**完成
         // (leaf 可读 + 未引用本次版本 + 删除成功)才允许照常返回 authorize;任何一环不成立
         // (不可读无从对账 / 出现引用 = 有旁路写方 / 删除失败)都降级为普通失败,原因如实入
@@ -1808,6 +1880,9 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
         if (liveRefs === null) {
           cleanupUnproven = `config unreadable — cannot prove the secret version is unreferenced`
           console.error(`[ext-install-planner] mcp ${entry.name}: secret version ${verId} kept — config unreadable`)
+        } else if (cleanupIdentUnprovable && !refsHitLive) {
+          cleanupUnproven = `a path's filesystem identity is unresolvable (non-absence fs error) — cannot prove the secret version is unreferenced`
+          console.error(`[ext-install-planner] mcp ${entry.name}: secret version ${verId} kept — path identity unresolvable`)
         } else if (stillReferenced) {
           cleanupUnproven = `live config references this attempt's secret version (bypass write?)`
           console.error(`[ext-install-planner] mcp ${entry.name}: secret version ${verId} kept — live config still references it (rollback retained?)`)
@@ -2577,6 +2652,52 @@ function verifySeedPluginDirExact(root: string, relDir: string, specs: TxFileSpe
   return c.cls === "healthy" ? { ok: true } : { ok: false, reason: c.reason }
 }
 
+/** #378 r15(Major):catalog vendored 同版本幂等早退的严格实物校验 —— 与 seed 同一契约:
+ *  期望载荷逐文件字节等值 + 零多余条目 + 零 symlink/非常规文件;任何偏差(截断/篡改/缺文件/
+ *  夹带)= 不健康,早退失效走修复(staging + 完整 replace)。任何读失败一律不健康(fail closed)。 */
+function verifyVendoredPluginDirExact(dir: string, files: Array<{ path: string; data: Buffer }>): { ok: true } | { ok: false; reason: string } {
+  const expected = new Map(files.map((f) => [f.path, f.data]))
+  const seen = new Set<string>()
+  const walk = (rel: string): string | null => {
+    let names: string[]
+    try {
+      names = fs.readdirSync(rel === "" ? dir : path.join(dir, rel))
+    } catch {
+      return `unreadable dir: ${rel === "" ? "." : rel}`
+    }
+    for (const name of names) {
+      const childRel = rel === "" ? name : `${rel}/${name}`
+      let st: fs.Stats
+      try {
+        st = fs.lstatSync(path.join(dir, childRel))
+      } catch {
+        return `unstatable entry: ${childRel}`
+      }
+      if (st.isDirectory()) {
+        const verdict = walk(childRel)
+        if (verdict !== null) return verdict
+        continue
+      }
+      if (!st.isFile()) return `non-regular entry: ${childRel}`
+      const want = expected.get(childRel)
+      if (want === undefined) return `unexpected file: ${childRel}`
+      let got: Buffer
+      try {
+        got = fs.readFileSync(path.join(dir, childRel))
+      } catch {
+        return `unreadable file: ${childRel}`
+      }
+      if (!got.equals(want)) return `content mismatch: ${childRel}`
+      seen.add(childRel)
+    }
+    return null
+  }
+  const verdict = walk("")
+  if (verdict !== null) return { ok: false, reason: verdict }
+  for (const p of expected.keys()) if (!seen.has(p)) return { ok: false, reason: `missing expected file: ${p}` }
+  return { ok: true }
+}
+
 /** seed 安装目标目录的「在场阻断」判定(review r3 Major 4:recovery 回滚只 unlink 文件,遗留的
  *  空壳目录不得永久卡死重试):缺席 = 不阻断;symlink/非目录 = 阻断;目录 = 深扫(逐条目 lstat),
  *  任一文件或 symlink 在场即阻断,**纯空目录树 = 不阻断**(引擎 apply 会原样写入其中)。 */
@@ -2645,24 +2766,15 @@ export function gcVendoredPluginDirLocked(
     // r5 Blocker:引用扫描按引擎语义解析(元组 spec 头/相对/file://)—— 词法「绝对字符串前缀」
     // 会漏等价形态,把 live config 仍引用的旧目录当孤儿递归删除(插件启动即失败)。
     const oldDirResolved = path.resolve(oldDir)
-    // r13 Major:引用可能经 symlink 别名指向旧目录 —— 词法前缀之外补 realpath 身份比较
-    // (任一侧解析失败即回退词法,宁保守)。
-    const oldDirForms = [oldDirResolved]
-    try {
-      oldDirForms.push(fs.realpathSync(oldDirResolved))
-    } catch {
-      /* 目录缺席:词法形态已入 */
-    }
+    // r13 Major:引用可能经 symlink 别名指向旧目录 —— 词法前缀之外补 realpath 身份比较。
+    // r15 Major:非缺席类 realpath 失败 = 身份不可判,视为仍被引用(保留目录),不得静默回退词法。
+    const oldDirIdent = pathIdentity(oldDirResolved)
     const refsDirFrom = (baseDir: string) => (x: unknown): boolean => {
       const resolved = resolvePluginEntryPath(x, baseDir)
       if (resolved === null) return false
-      const forms = [resolved]
-      try {
-        forms.push(fs.realpathSync(resolved))
-      } catch {
-        /* 引用目标缺席:词法形态已入 */
-      }
-      return forms.some((f) => oldDirForms.some((o) => f === o || f.startsWith(o + path.sep)))
+      const ident = pathIdentity(resolved)
+      if (!oldDirIdent.certain || !ident.certain) return true
+      return ident.forms.some((f) => oldDirIdent.forms.some((o) => f === o || f.startsWith(o + path.sep)))
     }
     const refsDir = refsDirFrom(root)
     if (cfg.value.some(refsDir)) return { removed: false, warning: "old plugin dir re-referenced by config — retained (concurrent update)" }

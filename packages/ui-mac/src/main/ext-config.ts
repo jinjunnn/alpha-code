@@ -17,7 +17,7 @@ import { applyEdits, modify, parse, type ParseError } from "jsonc-parser"
 import type { ProviderInput } from "../shared/alpha-model-types"
 import type { InstallMeta } from "../preload/types"
 import { opencodeHomeDir } from "./alpha-bridge"
-import { collectMcpFileRefPaths, gcMcpSecretVersionsLocked, pathIdentityForms, resolveMcpRefPath } from "./alpha-mcp-secrets"
+import { collectMcpFileRefPaths, gcMcpSecretVersionsLocked, pathIdentity, resolveMcpRefPath } from "./alpha-mcp-secrets"
 import { alphaGlobalRoot, removeReceipt } from "./alpha-installs"
 import { alphaJsoncPath } from "./engine-config-truth"
 import { commandHeadBase } from "./platform"
@@ -974,7 +974,7 @@ export function removePluginPath(name: string, absJsPath: string): ConfigResult 
 /** #378 r8(Major):条目按**引擎解析语义**与目标 jsPath 等值(string / [spec, options] 元组头 /
  *  file:// / 相对按 config 目录)—— 词法 `p !== absJsPath` 会漏等价形态,卸载「成功」后留下
  *  指向已删 plugin.js 的条目。 */
-function pluginEntryMatchesPath(entry: unknown, targetResolved: string, configDir: string): boolean {
+function pluginEntryMatchesPath(entry: unknown, targetResolved: string, configDir: string): boolean | "unprovable" {
   const spec = typeof entry === "string" ? entry : Array.isArray(entry) && typeof entry[0] === "string" ? entry[0] : null
   if (spec === null || spec.length === 0) return false
   let p = spec
@@ -988,10 +988,13 @@ function pluginEntryMatchesPath(entry: unknown, targetResolved: string, configDi
     return false
   }
   // r14 Major:symlink 别名条目同样匹配(文件系统身份双形态)—— 否则卸载「成功」后目录被删
-  // 而别名条目残留成悬空引用。
-  const entryForms = pathIdentityForms(path.resolve(configDir, p))
-  const targetForms = pathIdentityForms(targetResolved)
-  return entryForms.some((f) => targetForms.includes(f))
+  // 而别名条目残留成悬空引用。r15 Major:词法不中且任一侧身份不可判(非缺席类 fs 错)=
+  // "unprovable" —— 调用侧必须整体拒卸载(净除不可证明),不得静默按词法判「不匹配」放行。
+  const entryIdent = pathIdentity(path.resolve(configDir, p))
+  const targetIdent = pathIdentity(targetResolved)
+  if (entryIdent.forms.some((f) => targetIdent.forms.includes(f))) return true
+  if (!entryIdent.certain || !targetIdent.certain) return "unprovable"
+  return false
 }
 
 function removePluginPathUnlocked(name: string, absJsPath: string): ConfigResult {
@@ -1014,7 +1017,15 @@ function removePluginPathUnlocked(name: string, absJsPath: string): ConfigResult
       if (pluginVal !== undefined && !Array.isArray(pluginVal)) return { ok: false, reason: `config plugin key is not an array (fail closed): ${file}` }
       const current = Array.isArray(pluginVal) ? pluginVal : []
       const configDir = path.dirname(file)
-      const next = current.filter((p) => !pluginEntryMatchesPath(p, targetResolved, configDir))
+      // r15 Major:任一条目身份不可判 = 净除不可证明 —— 整体拒卸载(载荷/账本不动),不得在
+      // 可能残留悬空别名条目的情况下继续删载荷。
+      let unprovable = false
+      const next = current.filter((p) => {
+        const m = pluginEntryMatchesPath(p, targetResolved, configDir)
+        if (m === "unprovable") unprovable = true
+        return m !== true
+      })
+      if (unprovable) return { ok: false, reason: `a plugin[] entry's filesystem identity is unresolvable (non-absence fs error, fail closed): ${file}` }
       if (next.length !== current.length) {
         const written = writeKeyUnlocked(file, ["plugin"], next)
         if (!written.ok) return written

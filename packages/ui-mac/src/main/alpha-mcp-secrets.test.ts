@@ -16,6 +16,7 @@ import {
   mcpSecretRef,
   mcpSecretVersionedRef,
   newMcpSecretVersionId,
+  pathIdentity,
   removeMcpSecretVersionDir,
   removeMcpServerSecrets,
   substituteMcpSecretRefsPure,
@@ -257,6 +258,30 @@ describe("gcMcpSecretVersionsLocked — 引用对账 + 宽限", () => {
     expect(fs.existsSync(verFile("s", vid, "TOK"))).toBe(true)
   })
 
+  test("r15:引用路径身份不可判(EACCES)→ 本轮整体跳过不删(fail-closed),恢复后照常收", () => {
+    if (typeof process.getuid === "function" && process.getuid() === 0) return // root 无视权限,场景不可构造
+    const vid = newMcpSecretVersionId()
+    writeMcpSecretVersioned(userData, "s", vid, "TOK", "v")
+    age(path.join(userData, "alpha-mcp-secrets", "s", vid)) // 未引用 + 过宽限 = 正常应收
+    const lockedDir = path.join(userData, "locked")
+    fs.mkdirSync(lockedDir, { recursive: true })
+    const unresolvable = path.join(lockedDir, "ref")
+    fs.writeFileSync(unresolvable, "x")
+    fs.chmodSync(lockedDir, 0o000)
+    try {
+      const r = gcMcpSecretVersionsLocked(userData, "s", [unresolvable])
+      expect(r.removed).toEqual([]) // fail-open 旧行为会把过宽限版本收走
+      expect(r.warnings.join(" ")).toContain("unresolvable")
+      expect(fs.existsSync(verFile("s", vid, "TOK"))).toBe(true)
+    } finally {
+      fs.chmodSync(lockedDir, 0o700)
+    }
+    // 权限恢复后引用可判(且不指向版本文件)→ 正常收
+    const r2 = gcMcpSecretVersionsLocked(userData, "s", [unresolvable])
+    expect(r2.warnings).toEqual([])
+    expect(fs.existsSync(verFile("s", vid, "TOK"))).toBe(false)
+  })
+
   test("目录缺席 = 无事;版本目录内任一文件被引用即整目录保留", () => {
     expect(gcMcpSecretVersionsLocked(userData, "absent", []).removed).toEqual([])
     const vid = newMcpSecretVersionId()
@@ -266,6 +291,43 @@ describe("gcMcpSecretVersionsLocked — 引用对账 + 宽限", () => {
     const r = gcMcpSecretVersionsLocked(userData, "s", [verFile("s", vid, "B")])
     expect(r.removed).toEqual([])
     expect(fs.existsSync(verFile("s", vid, "A"))).toBe(true)
+  })
+})
+
+describe("pathIdentity — 文件系统身份(r15:缺席可判,其余 fail-closed)", () => {
+  test("存在:词法 + realpath 双形态 certain;symlink 别名两侧交集命中", () => {
+    const real = path.join(userData, "real.txt")
+    fs.writeFileSync(real, "x")
+    const alias = path.join(userData, "alias.txt")
+    fs.symlinkSync(real, alias)
+    const a = pathIdentity(alias)
+    expect(a.certain).toBe(true)
+    expect(a.forms).toContain(path.resolve(alias))
+    const r = pathIdentity(real)
+    expect(r.certain).toBe(true)
+    expect(a.forms.some((f) => r.forms.includes(f))).toBe(true) // realpath 形态交集
+  })
+
+  test("缺席(ENOENT/ENOTDIR)= certain,词法即完整身份", () => {
+    const missing = pathIdentity(path.join(userData, "no", "such", "file"))
+    expect(missing.certain).toBe(true)
+    expect(missing.forms).toEqual([path.join(userData, "no", "such", "file")])
+    fs.writeFileSync(path.join(userData, "plainfile"), "x")
+    const notdir = pathIdentity(path.join(userData, "plainfile", "child")) // ENOTDIR
+    expect(notdir.certain).toBe(true)
+  })
+
+  test("非缺席类失败(EACCES)= certain=false(调用侧 fail-closed)", () => {
+    if (typeof process.getuid === "function" && process.getuid() === 0) return
+    const lockedDir = path.join(userData, "locked2")
+    fs.mkdirSync(lockedDir, { recursive: true })
+    fs.writeFileSync(path.join(lockedDir, "f"), "x")
+    fs.chmodSync(lockedDir, 0o000)
+    try {
+      expect(pathIdentity(path.join(lockedDir, "f")).certain).toBe(false)
+    } finally {
+      fs.chmodSync(lockedDir, 0o700)
+    }
   })
 })
 

@@ -2435,6 +2435,75 @@ describe("plugin replace hardening (review #381)", () => {
   })
 })
 
+// ── #378 r15:同版本严格实物校验 + 文件系统身份对账的 symlink 别名回归 ─────────────────────────
+describe("plugin replace r15 —— 同版本精确校验与别名身份对账", () => {
+  const seedVendoredCurrent = (jsContent: string) => {
+    const oldDir = path.join(globalRoot, "plugins", "vp")
+    const oldJs = path.join(oldDir, "plugin.js")
+    fs.mkdirSync(oldDir, { recursive: true })
+    fs.writeFileSync(oldJs, jsContent)
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [oldJs] }, null, 2))
+    const d = decodeManifestV2(synthesizeManifest({ entry: pluginVendoredEntry, channel: "remote", catalogVersion: "2026-07-13.1" }))
+    if (!d.ok) throw new Error("fixture manifest invalid")
+    const w = upsertRecordV2(globalRoot, {
+      id: "plugin:vp", name: "vp", kind: "plugin", environment: "prod", scope: { kind: "global" },
+      version: d.manifest.version, manifestDigest: computeManifestDigest(d.manifest),
+      desiredState: "enabled", origin: "catalog",
+      configKey: `plugin-path:${oldJs}`, transaction: { id: "tx-old-vp3", state: "committed" },
+      installedAt: "2026-07-15T00:00:00.000Z",
+    })
+    if (!w.ok) throw new Error(w.reason)
+    return { oldDir, oldJs }
+  }
+
+  test("同 digest + 实物逐字节等值 → 幂等早退零副作用(锁内重读 + 精确校验)", async () => {
+    seedVendoredCurrent("// vendored vp (plugins/vp)") // 与 makeDeps 载荷 fake 逐字节一致
+    const before = fs.readFileSync(path.join(globalRoot, "installs.json"))
+    const { deps } = makeDeps()
+    const r = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.warning).toContain("nothing to replace")
+    expect(fs.readFileSync(path.join(globalRoot, "installs.json")).equals(before)).toBe(true)
+    expect(fs.existsSync(path.join(globalRoot, "plugins", "vp@feed1234"))).toBe(false) // 未 staging
+  })
+
+  test("同 digest 但 plugin.js 内容与载荷不符(截断/篡改)→ 不早退,走修复替换", async () => {
+    seedVendoredCurrent("// tampered") // r15 前旧判据 existsSync 会误判健康而空转
+    const { deps } = makeDeps()
+    const r = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.warning ?? "").not.toContain("nothing to replace")
+    expect(strOf(pluginArrayOnDisk()[0])).toContain("vp@feed1234") // 修好的新 versioned 路径接管
+  })
+
+  test("config 条目经 symlink 别名指向账本路径 → 身份对账不误判 drift,置换收敛为单条", async () => {
+    const oldDir = path.join(globalRoot, "plugins", "vp")
+    const oldJs = path.join(oldDir, "plugin.js")
+    fs.mkdirSync(oldDir, { recursive: true })
+    fs.writeFileSync(oldJs, "// old")
+    const aliasRoot = path.join(tmp, "alias-plugins")
+    fs.symlinkSync(path.join(globalRoot, "plugins"), aliasRoot)
+    const aliasJs = path.join(aliasRoot, "vp", "plugin.js")
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [aliasJs] }, null, 2))
+    const w = upsertRecordV2(globalRoot, {
+      id: "plugin:vp", name: "vp", kind: "plugin", environment: "prod", scope: { kind: "global" },
+      version: "0.9.0", desiredState: "enabled", origin: "catalog",
+      configKey: `plugin-path:${oldJs}`, transaction: { id: "tx-old-vp4", state: "committed" },
+      installedAt: "2026-07-15T00:00:00.000Z",
+    })
+    if (!w.ok) throw new Error(w.reason)
+    const { deps } = makeDeps()
+    const r = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const stagedJs = path.join(globalRoot, "plugins", "vp@feed1234", "plugin.js")
+    expect(pluginArrayOnDisk()).toEqual([stagedJs]) // 别名条目被换元,不残留
+    expect(recOf(findRecordV2(globalRoot, "plugin", "vp")).configKey).toBe(`plugin-path:${stagedJs}`)
+  })
+})
+
 // ── #361:catalog agent 走事务安装链(file md + config 叶单事务;裁决见 issue #361 评论)────────────
 describe("catalog agent install via transaction engine (REQ-098 #361)", () => {
   const entriesWithAgents = [...ALL_ENTRIES, agentBuiltinEntry, agentRemoteEntry]

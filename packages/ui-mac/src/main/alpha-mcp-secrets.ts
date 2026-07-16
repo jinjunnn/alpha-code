@@ -338,16 +338,28 @@ export function substituteMcpSecretRefsPure(
   return { substituted, skipped }
 }
 
-/** #378 r13/r14:路径的文件系统身份形态集 —— 词法 resolve + realpath(存在时)。
+/** 「缺席」类错误 —— 路径链上某段确证不存在(ENOENT/ENOTDIR)。此时词法形态就是完整身份;
+ *  其余(EACCES/EIO/ELOOP…)= 身份**不可判**,调用侧必须 fail-closed(删除守卫视为被引用、
+ *  匹配闸视为对账不成立)。 */
+export function isAbsenceError(e: unknown): boolean {
+  const code = e instanceof Error && "code" in e && typeof e.code === "string" ? e.code : null
+  return code === "ENOENT" || code === "ENOTDIR"
+}
+
+export type PathIdentity = { forms: string[]; certain: boolean }
+
+/** #378 r13/r14/r15:路径的文件系统身份 —— 词法 resolve + realpath(存在时)双形态。
  *  symlink/卷别名(大小写、NFD)会让纯词法比较漏判「同一文件」;引用对账/条目匹配统一
- *  用双形态交集判定(任一形态相等即同一身份)。 */
-export function pathIdentityForms(p: string): string[] {
+ *  用双形态交集判定(任一形态相等即同一身份)。r15 Major:realpath 出错不再静默回退词法
+ *  (fail-open 会把暂时 EIO/EACCES 的活体别名判成未引用而删) —— 只有缺席类错误才 certain
+ *  (词法即完整身份),其余 certain=false 交调用侧 fail-closed。 */
+export function pathIdentity(p: string): PathIdentity {
   const lex = path.resolve(p)
   try {
     const real = fs.realpathSync(lex)
-    return real === lex ? [lex] : [lex, real]
-  } catch {
-    return [lex]
+    return { forms: real === lex ? [lex] : [lex, real], certain: true }
+  } catch (e) {
+    return { forms: [lex], certain: isAbsenceError(e) }
   }
 }
 
@@ -401,22 +413,22 @@ export function gcMcpSecretVersionsLocked(
   const sDir = serverDir(userDataPath, server)
   // r13 Major:引用可能经 symlink 别名到达版本文件 —— 词法 resolve 不够,补文件系统身份
   // (realpath;引用目标缺席时保留词法形态)。候选文件比较时同样双形态查询。
+  // r15 Major:非缺席类 realpath 失败 = 身份不可判 —— 本轮整体不删(fail-closed,宽限期后重试),
+  // 否则暂时 EIO/EACCES 的活体别名引用会被判成未引用而删掉在用密钥。
   const referenced = new Set<string>()
+  let identityUnprovable = false
   for (const rp of referencedPaths) {
-    const lex = path.resolve(rp)
-    referenced.add(lex)
-    try {
-      referenced.add(fs.realpathSync(lex))
-    } catch {
-      /* 引用目标缺席:词法形态已入集 */
-    }
+    const ident = pathIdentity(rp)
+    if (!ident.certain) identityUnprovable = true
+    for (const form of ident.forms) referenced.add(form)
   }
+  if (identityUnprovable) return { removed, warnings: [`gc skipped for ${server}: a reference path's filesystem identity is unresolvable (non-absence fs error) — retrying next gc`] }
   const isReferencedFile = (abs: string): boolean => {
     if (referenced.has(path.resolve(abs))) return true
     try {
       return referenced.has(fs.realpathSync(abs))
-    } catch {
-      return false
+    } catch (e) {
+      return !isAbsenceError(e) // 候选文件身份不可判 = 视为被引用(不删);确证缺席才允许判未引用
     }
   }
   const cutoff = Date.now() - SECRET_GC_GRACE_MS
