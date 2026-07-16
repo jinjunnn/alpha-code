@@ -1665,14 +1665,16 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       return { ok: false, reason: agentGen.reason, ...(agentGen.stage ? { stage: agentGen.stage } : {}) }
     }
     ;(deps.transaction ?? passthroughTx).commit(tx.txId)
+    // loud 信号不吞(裁决缺口 3 + review r1 Major 2):CAS 自愈 warning 与引擎提交后非致命
+    // 失败(grant/授权收据写失败等)一并透传 outcome。
+    const agentWarnings = [...promoted.warnings, ...agentGen.warnings]
     return {
       ok: true,
       kind: "agent",
       name: entry.name,
       files: agentGen.files,
       manifestDigest,
-      // CAS 自愈 warning 透传(裁决缺口 3):loud 信号不吞。
-      ...(promoted.warnings.length ? { warning: promoted.warnings.join("; ") } : {}),
+      ...(agentWarnings.length ? { warning: agentWarnings.join("; ") } : {}),
     }
   } else if (entry.type === "cloud") {
     // receipts-only 语义(REQ-020 T4):不落文件、不写引擎 config —— 只记账。
@@ -2304,7 +2306,15 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
       return { ok: false, reason: agentGen.reason, ...(agentGen.stage ? { stage: agentGen.stage } : {}) }
     }
     ;(deps.transaction ?? passthroughTx).commit(tx.txId)
-    return { ok: true, kind: "agent", name: entry.name, files: agentGen.files, manifestDigest }
+    return {
+      ok: true,
+      kind: "agent",
+      name: entry.name,
+      files: agentGen.files,
+      manifestDigest,
+      // 引擎提交后非致命失败透传(review #384 r1 Major 2;seed 与 catalog 同合同)。
+      ...(agentGen.warnings.length ? { warning: agentGen.warnings.join("; ") } : {}),
+    }
   }
 
   // ── mcp / plugin seed(REQ-102 #359,2026-07-16 Codex 裁决,见 issue 评论)────────────────────

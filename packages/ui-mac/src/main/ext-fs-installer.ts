@@ -584,20 +584,40 @@ export function agentInstallPresent(name: string, target?: InstallTarget): boole
 
 /** #361:收集随包官方 agent md 为原始载荷(catalog agent 事务安装的 CAS 摄取源)。只读零副作用;
  *  返回原始 Buffer 保持 byte-exact(installAgentFromCas 的 CAS digest 语义,不做字符串归一)。
- *  SAFE key 校验防资源树逃逸、缺包如实失败、256KB 帽(装约定与 ext-agent-install 同帽)。 */
+ *  SAFE key 校验 + **内容身份交叉**(key 必须恰为 agents/<name>.md,review r1 Major 1:已验签
+ *  但配错的 entry 不得把别的资产按本 agent 身份装入)、末段 O_NOFOLLOW 读(r1 Minor 4:词法
+ *  正则不防 symlink 逃逸 resources 树;win32 无 O_NOFOLLOW 退化普通打开,该平台 symlink 需特权)、
+ *  256KB 帽 fd 上 fstat 判 + 读后 Buffer 复核(r1 Minor 5:封 stat/read 窗口增长)。 */
 export function collectBuiltinAgentPayload(
   builtinAssetKey: string,
   name: string,
 ): { ok: true; files: Array<{ path: string; data: Buffer }> } | { ok: false; reason: string } {
   if (!SAFE_AGENT_ASSET_KEY.test(builtinAssetKey)) return { ok: false, reason: "invalid asset key" }
   if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid agent name" }
+  if (builtinAssetKey !== `agents/${name}.md`)
+    return { ok: false, reason: `asset key "${builtinAssetKey}" ≠ "agents/${name}.md" — refusing (content identity drift)` }
   const file = path.join(resourcesRoot(), builtinAssetKey)
+  const noFollow = typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0
+  let fd: number
   try {
-    if (!fs.existsSync(file)) return { ok: false, reason: "Agent 内容未随此版本打包" }
-    if (fs.statSync(file).size > 256 * 1024) return { ok: false, reason: "agent md 过大" }
-    return { ok: true, files: [{ path: `${name}.md`, data: fs.readFileSync(file) }] }
+    fd = fs.openSync(file, fs.constants.O_RDONLY | noFollow)
+  } catch (error) {
+    const code = typeof error === "object" && error !== null && "code" in error && typeof error.code === "string" ? error.code : undefined
+    if (code === "ENOENT") return { ok: false, reason: "Agent 内容未随此版本打包" }
+    if (code === "ELOOP") return { ok: false, reason: "agent asset is a symlink — refusing (must be a regular bundled file)" }
+    return { ok: false, reason: error instanceof Error ? error.message : "failed to read agent asset" }
+  }
+  try {
+    const st = fs.fstatSync(fd)
+    if (!st.isFile()) return { ok: false, reason: "agent asset is not a regular file — refusing" }
+    if (st.size > 256 * 1024) return { ok: false, reason: "agent md 过大" }
+    const data = fs.readFileSync(fd)
+    if (data.length > 256 * 1024) return { ok: false, reason: "agent md 过大" }
+    return { ok: true, files: [{ path: `${name}.md`, data }] }
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : "failed to read agent asset" }
+  } finally {
+    fs.closeSync(fd)
   }
 }
 

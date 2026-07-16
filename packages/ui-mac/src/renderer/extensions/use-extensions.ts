@@ -53,7 +53,9 @@ export interface ExtensionsStore {
 /** #348:真判别联合(Codex 裁决 D1 + review minor)—— authorize 分支强制携带 diff,
  *  非 authorize 分支的 stage 类型排除 "authorize":中间包装层折叠丢数据过不了类型检查。 */
 export type ActionResult =
-  | { ok: true; reason?: string }
+  /** warning = 安装成功但携带 loud 诊断信号(CAS 自愈、授权账写失败等,#361 review r1)——
+   *  调用方必须呈现,不得静默吞掉。 */
+  | { ok: true; reason?: string; warning?: string }
   | { ok: false; stage: "authorize"; authorization: CapabilityDiffWire[]; reason?: string }
   | { ok: false; reason?: string; stage?: TxStageNonAuthorizeWire }
 
@@ -516,7 +518,8 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     await loadInstalls()
     const refreshed = await refreshEngine()
     void loadAgents()
-    if (!refreshed) return { ok: true, reason: "reload-pending" }
+    // warning 随两条成功路径透传(#361 review r1:reload-pending 不得把 loud 信号一并吞掉)。
+    if (!refreshed) return { ok: true, reason: "reload-pending", ...(r.warning ? { warning: r.warning } : {}) }
     return r
   }
 

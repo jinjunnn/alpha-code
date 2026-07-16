@@ -194,6 +194,12 @@ describe("collectBuiltinAgentPayload — #361 随包 agent 载荷收集(只读;C
     if (!r.ok) expect(r.reason).toContain("未随此版本打包")
   })
 
+  test("key 与 name 交叉不一致拒收(内容身份合同,#384 r1 Major 1:配错的已验签条目不得借身份装别的资产)", () => {
+    const r = collectBuiltinAgentPayload("agents/code-reviewer.md", "other-name")
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("content identity drift")
+  })
+
   test("真实随包资产:返回原始 Buffer(byte-exact)+ 顶层 .md 路径,零副作用", () => {
     const r = collectBuiltinAgentPayload("agents/code-reviewer.md", "code-reviewer")
     expect(r.ok).toBe(true)

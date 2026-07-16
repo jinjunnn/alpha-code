@@ -141,7 +141,9 @@ export type AgentSeedInstall = {
 }
 
 export type AgentSeedResult =
-  | { ok: true; mdPath: string; files: string[] }
+  /** warnings = 引擎提交后非致命失败(grant/授权收据写失败、陈旧锁清理失败等,review #384 r1
+   *  Major 2)—— live 与 receipt 已真实,但调用方必须透传到 outcome,不得静默吞掉。 */
+  | { ok: true; mdPath: string; files: string[]; warnings: string[] }
   | { ok: false; stage: "authorize"; reason: string; authorization: CapabilityDiff[] }
   | { ok: false; reason: string; stage?: Exclude<TxStage, "authorize"> }
 
@@ -236,5 +238,5 @@ export async function installAgentFromCas(root: string, spec: AgentSeedInstall):
     }
     return { ok: false, reason: result.reason, stage: result.stage }
   }
-  return { ok: true, mdPath, files: [mdPath] }
+  return { ok: true, mdPath, files: [mdPath], warnings: result.warnings }
 }

@@ -48,7 +48,7 @@ related: [ADR-014, ADR-002, REQ-032, REQ-033, REQ-034, REQ-035]
 |---|---|---|---|
 | MCP 连接器 | C 下发 | npm 正源(npx@钉版,运行时拉取) | 否 |
 | skill | C 下发 | C 远程资产通道(sha256 逐文件钉死,不可变版本目录) | 否 |
-| agent | C 下发 | 同 skill(单 .md 约定;**REQ-046 补接线** `installRemoteAgent` + `ext-install-remote-agent`,信任边界同远程技能) | 否(本修订起) |
+| agent | C 下发 | 同 skill(单 .md 约定;REQ-046 补接线,REQ-098 #361 起收编事务载体 `installAgentFromCas`(CAS + file/config 单事务),信任边界同远程技能) | 否(本修订起) |
 | command | 不单列(ADR-014 O2:由 skill/MCP 生成) | — | 否 |
 | plugin | C 下发 | **npm 发包**(可执行 JS 红线:不走 C 文本资产通道;C 托管属 phase 2 逐包签名,不抢跑) | 否(发 npm 包 + C 条目) |
 
