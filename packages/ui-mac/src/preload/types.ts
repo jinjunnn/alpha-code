@@ -513,6 +513,22 @@ export type ElectronAPI = {
       | { ok: true; cleaned: string[]; failed: Array<{ item: string; reason: string }>; reported: string[] }
       | { ok: false; reason: string }
     >
+    /** REQ-100 #375:保留态 journal 只读诊断(global 三环境根恒聚合;projectDir 可选)。 */
+    journalRetainedList: (intent?: { projectDir?: string }) => Promise<{ entries: unknown[] } | { ok: false; reason: string }>
+    /** REQ-100 #375:显式 retire(entryId+fingerprint 定位;两个确认 flag 必须字面 true;
+     *  UI 归 Hub —— 本通道只登记合同)。 */
+    journalRetire: (intent: {
+      scope: { kind: "global"; environment: "dev" | "prod" | "beta" } | { kind: "project"; projectDir: string }
+      entryId: string
+      txId: string
+      journalSha256: string
+      note: string
+      liveStateChecked: true
+      casMarkRemovalAcknowledged: true
+    }) => Promise<
+      | { ok: true; entryId: string; txId: string; movedTo: string; receiptPath: string; markDigestCount: number; stagingPresent: boolean; recoveryOutcome: string }
+      | { ok: false; reason: string }
+    >
   }
   // alpha account (balance / membership / usage) read from the alpha-platform (B) account-server
   // using the main-held JWT. The renderer gets only the resolved summary, never the token.

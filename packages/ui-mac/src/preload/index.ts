@@ -191,6 +191,8 @@ const api: ElectronAPI = {
     externalCheck: (directory) => ipcRenderer.invoke("ext-external-check", directory),
     projectResidualsCheck: (projectDir) => ipcRenderer.invoke("ext-project-residuals-check", projectDir),
     projectResidualsClean: (projectDir) => ipcRenderer.invoke("ext-project-residuals-clean", projectDir),
+    journalRetainedList: (intent) => ipcRenderer.invoke("ext-journal-retained-list", intent),
+    journalRetire: (intent) => ipcRenderer.invoke("ext-journal-retire", intent),
   },
   account: {
     summary: () => ipcRenderer.invoke("account-summary"),

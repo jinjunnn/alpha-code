@@ -35,14 +35,29 @@ journal 收敛到终态;收敛不了的**如实保留**,绝不静默终态化(#3
 - **owned path 删不掉**(EACCES/EBUSY):修复文件权限后,下次启动或下一次相关写操作自动收敛。
 - **不可解析 journal 被隔离的那一轮**:该轮写操作被拒(证据移 `.corrupt-*`);下一轮重试即放行。
 
-处置步骤:
+## 处置流程(#375:显式诊断 + retire 通道)
 
-1. 读 journal 与恢复日志,确认 txId、key、state、reason;
-2. 环境性问题(权限/占用)→ 修复后重试写操作(或重启),前滚自动完成;
-3. 真正畸形/未知的 journal → 人工核对 live 状态(config/store/账本三面)
-   一致后,把 journal 文件移出 `journal/` 目录留档(不要删除;显式
-   quarantine/retire 通道在案 → #375);
-4. 任何时候都**不要**手工改账本(`installs.json`)—— 用卸载/安装通道重放。
+1. **诊断(只读)**:`ext-journal-retained-list` IPC(main-owned;global dev/prod/beta 三根
+   恒聚合,projectDir 可选)列出保留态 journal —— 每项带 entryId(定位符)、txId(体内不一致
+   时 bodyTxId 并列)、op/state/keys、reason(结构畸形 = `structure`,运行期依赖 = `state`)、
+   **fingerprint(journalSha256 + bytes)**、firstSeenAt(标 birthtime/mtime 来源)、
+   `markDigestCount`(该 journal 提供的 CAS mark 数)、`stagingPresent`;另列既有
+   `.corrupt-*` 留证件与 retire 崩溃残留(`retire-incomplete`)。
+2. 环境性问题(权限/占用)→ 修复后重试写操作(或重启),前滚自动完成 —— **能自愈的绝不 retire**;
+3. 真正畸形/不可诊断的 journal → 人工核对 live 状态(config/store/账本三面)一致后,走
+   **`ext-journal-retire`**(显式确认通道):
+   - 请求以 **entryId + journalSha256** 定位(诊断到确认之间文件被替换 = 指纹失配拒,重新诊断);
+   - 必须显式 `liveStateChecked: true` 与 `casMarkRemovalAcknowledged: true`(retire 移除该
+     journal 的 CAS mark;老于宽限窗的孤立 blob 可在**下一轮 GC 被删** —— 宽限窗按 blob mtime,
+     不从 retire 时刻重起算)+ 非空 note(进审计 receipt);
+   - 通道持 root Bundle 锁(与事务/恢复/GC 互斥),锁内先做最后一轮收敛,收敛掉的如实拒绝;
+   - journal 被 **rename 到 `ext-tx/journal-retired/`**(原字节保留,绝不删除),两阶段审计
+     receipt(prepared → retired)同目录留档;中途崩溃可判定:下次 retire 操作自动调和
+     (dest 在场补记 retired;源仍在场记 abandoned),诊断面把残留列为 `retire-incomplete`;
+   - **staging 残留不处置**:journal 移走后 `ext-tx/staging/<txId>`(若在)成为无限期人工证据,
+     recovery 不再收敛它;其中 config/file 前像可含 0600 敏感内容,检视后自行决定留存;
+4. 任何时候都**不要**手工改账本(`installs.json`)—— 用卸载/安装通道重放;retire 只处置
+   journal 文件本身,live 状态修复仍走既有安装/卸载通道。
 
 ## 边界
 

@@ -22,6 +22,7 @@ import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
 import { agentInstallPresent, collectBuiltinAgentPayload, stageVendoredPluginVersioned, importSkillFolder, importSkillGit, installBuiltinSkill, installRemoteSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall, resourcesRoot, writeAgent } from "./ext-fs-installer"
 import { parseAgentImport } from "./ext-import-validate"
 import { cleanProjectCatalogResiduals, detectProjectCatalogResiduals } from "./ext-project-residuals"
+import { listRetainedJournals, retireTransactionJournal, type JournalRootRef } from "./ext-journal-retire"
 import { collectSkillPayloadFromDir, skillGenerationProbe } from "./ext-skill-generations"
 import { agentFileProbe, recoveryReceiptInputs } from "./ext-agent-install"
 import { randomUUID } from "node:crypto"
@@ -41,15 +42,15 @@ import {
 // 兜底真源(ADR-023 两级真源;与 renderer 的 B20 兜底同一字节)。
 import bundledCatalogJson from "../renderer/extensions/alpha-catalog.json"
 import type { Catalog } from "../renderer/extensions/catalog-types"
-import { getAlphaEnvironment } from "./alpha-environment"
+import { environmentMutableRoot, getAlphaEnvironment } from "./alpha-environment"
 import { decodeSetStateIntent, decodeUninstallIntent, installCatalog, listGenerationsByKey, removeInstallGrants, rollbackGenerationByKey, seedPluginFileProbe, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
 import { makeRecoveryGate } from "./ext-recovery-gate"
 import { adoptProjectLedger } from "./ext-project-adopt"
-import { buildGatedWriteChannels, GATED_WRITE_CHANNELS } from "./ext-write-channels"
+import { buildGatedWriteChannels, buildJournalAdminChannels, GATED_WRITE_CHANNELS, JOURNAL_ADMIN_CHANNELS } from "./ext-write-channels"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
 import { lookupForUninstall, migrateV1Ledger, parseUninstallLedgerKey, projectScopeIdentity, readLedgerV2, removeRecordV2, upsertRecordsV2 } from "./ext-receipt-v2"
 import { packagedSeedBrowseView, readPackagedSeed } from "./ext-seed"
-import { recoverExtensionTransactions, recoveryClean, type RecoverOptions } from "./ext-transaction"
+import { recoverExtensionTransactions, recoverExtensionTransactionsInHeldLock, recoveryClean, type RecoverOptions } from "./ext-transaction"
 import { getLogger } from "./logging"
 
 // REQ-076 T2(阻断②):原实现硬编码 `which` + `:` 拼接的 unix PATH,Windows 上恒报「未安装」
@@ -663,6 +664,35 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   ipcMain.handle("ext-project-residuals-check", async (_event: IpcMainInvokeEvent, projectDir: unknown) => {
     await ledgerReady
     return detectProjectCatalogResiduals(projectDir)
+  })
+  // ── #375:journal 管理面(诊断只读 + 显式 retire)。**刻意不进 GATED_WRITE_CHANNELS**
+  // (恢复 gate 拒非终态 journal 是其本职,与 retire 对象语义相反;不写 ledger/config/store),
+  // 经 JOURNAL_ADMIN_CHANNELS 独立注册表 + 构造器接入;互斥 = retire 自持 root Bundle 锁。
+  const journalGlobalRoots = (): JournalRootRef[] => {
+    const base = getAlphaEnvironment().casBaseRoot
+    return [
+      { identity: "dev", root: environmentMutableRoot("dev", base) },
+      { identity: "prod", root: environmentMutableRoot("prod", base) },
+      { identity: "beta", root: environmentMutableRoot("beta", base) },
+    ]
+  }
+  const journalAdmin = buildJournalAdminChannels({
+    globalRoots: journalGlobalRoots,
+    projectRoot: (projectDir) => projectRootOf(projectDir),
+    list: (roots) => listRetainedJournals(roots),
+    retire: (ref, req) =>
+      retireTransactionJournal(ref, req, {
+        // 裁决 Q1:锁内最后收敛必须用 InHeldLock 核心(文件锁非重入,公共入口必然 busy-skip)。
+        recoverInHeldLock: (root) => recoverExtensionTransactionsInHeldLock(root, recoveryOpts(root)),
+      }),
+  })
+  ipcMain.handle(JOURNAL_ADMIN_CHANNELS.retainedList, async (_event: IpcMainInvokeEvent, intent: unknown) => {
+    await ledgerReady // 诊断读也等启动收敛(避免把启动期正在收敛的 journal 误报为保留态)
+    return journalAdmin.retainedList(intent)
+  })
+  ipcMain.handle(JOURNAL_ADMIN_CHANNELS.retire, async (_event: IpcMainInvokeEvent, intent: unknown) => {
+    await ledgerReady
+    return journalAdmin.retire(intent)
   })
   // ── #347(review #376 B1/M3):**全部生产写通道**经写通道表(ext-write-channels.ts 唯一真源)
   // 统一构造:恢复准入 gate + 按操作 root 解析;此处只做 ledgerReady barrier + ipc 注册。

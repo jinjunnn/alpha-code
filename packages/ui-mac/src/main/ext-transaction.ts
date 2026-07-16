@@ -1634,13 +1634,60 @@ export type TxRecoveryAction = "none" | "cleaned" | "aborted" | "rolled-back" | 
  *  阻断(不能仅因 .json 已移走就判安全,#347 Codex 裁决);下轮无 corrupt 即可放行。 */
 export type TxRecoveryReport = { txId: string; state: TxState; action: TxRecoveryAction; detail: string; corrupt?: boolean }
 
-const TERMINAL_TX_STATES = new Set<TxState>(["committed", "rolled-back", "aborted", "uninstalled"])
+const TERMINAL_TX_STATES: ReadonlySet<string> = new Set(["committed", "rolled-back", "aborted", "uninstalled"])
+
+/** #375:终态判定的公开谓词(诊断/retire 通道与 probe 同一真源;未知 state 字符串 = 非终态)。 */
+export function isTerminalTxState(state: string): boolean {
+  return TERMINAL_TX_STATES.has(state)
+}
 
 /** ADR-030(#372)只读巡检:列出根下全部 journal 的 {txId, op, state};不可解析的 journal 以
  *  state:"unreadable" 报告(调用方必须视同在途 —— 无法证明它不是)。`unreadableDir` 区分
  *  「journal 目录不存在 = 确无 journal」与「目录在但枚举失败 = 失据,调用方必须 fail-closed」
  *  (Codex review PR#373 M2:枚举错误不得静默当作零)。零写入、不持锁:仅用于残留报告与
  *  「清理前有无在途手术」判定,真正的收敛仍归 recoverExtensionTransactions。 */
+/** #375:journal 管理面的布局真源(诊断/retire 通道用)。retired 目录是 journal/ 的 sibling ——
+ *  全部 journal 枚举面(listTransactionJournals / probeTransactionJournals / recovery 自身 /
+ *  CAS markJournals)只看 journal/ 下 *.json,retired 件天然不可见。 */
+export function transactionJournalLayout(root: string): { journalDir: string; retiredDir: string; stagingDir: string } {
+  return { journalDir: journalDir(root), retiredDir: path.join(root, TX_DIR, "journal-retired"), stagingDir: txStagingRoot(root) }
+}
+
+export type TxJournalDiagnosis = { verdict: "malformed"; reason: string } | { verdict: "shape-ok" }
+
+/** #375:诊断入参的最弱结构面 —— 允许把 JSON.parse 的产物(经 txId 判据后)直接送诊,
+ *  不需要任何 cast;TxJournal 结构性满足本形状。 */
+export type TxJournalShape = { txId?: unknown; op?: unknown; state?: unknown; items?: unknown }
+
+const isRecShape = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
+
+/** #375(裁决 Q1/Q3):journal 的**纯结构诊断** —— recovery 的保留分支与只读诊断面共用同一
+ *  分类真源(reason 字符串以此为准)。只判结构(items/state/key/genId/files 形状),不判运行期
+ *  依赖(seam 缺失/权限);结构不动 = recovery 绝不 dispatch(封「items 非数组即抛错」类事故,
+ *  抛错会把整轮恢复炸掉并封死 retire 通道)。 */
+export function diagnoseTransactionJournal(journal: TxJournalShape): TxJournalDiagnosis {
+  if (typeof journal.state !== "string") return { verdict: "malformed", reason: "malformed journal (state missing)" }
+  if (!Array.isArray(journal.items)) return { verdict: "malformed", reason: "malformed journal (items is not an array)" }
+  const items: unknown[] = journal.items
+  if (journal.op === "uninstall") {
+    const item = items[0]
+    if (!isRecShape(item) || items.length !== 1) return { verdict: "malformed", reason: "malformed uninstall journal (items)" }
+    if (journal.state !== "uninstalling" && journal.state !== "uninstalled")
+      return { verdict: "malformed", reason: `unexpected state "${journal.state}" for op=uninstall` }
+    const key = item.key
+    if (typeof key !== "string" || !SAFE_KEY.test(key) || key.indexOf("--") <= 0)
+      return { verdict: "malformed", reason: `malformed uninstall journal (key "${String(key)}")` }
+    if (!Array.isArray(item.files) || typeof item.genId !== "string" || (item.genId !== "gen-000000-000000" && !GEN_NAME.test(item.genId)))
+      return { verdict: "malformed", reason: "malformed uninstall journal (item shape)" }
+    return { verdict: "shape-ok" }
+  }
+  for (const item of items) {
+    if (!isRecShape(item) || typeof item.key !== "string")
+      return { verdict: "malformed", reason: "malformed journal (item key)" }
+  }
+  return { verdict: "shape-ok" }
+}
+
 export type TxJournalProbe = { txId: string; op: "install" | "uninstall" | "rollback"; state: TxState | "unreadable"; terminal: boolean }
 export function probeTransactionJournals(root: string): { entries: TxJournalProbe[]; unreadableDir: boolean } {
   if (!path.isAbsolute(root)) return { entries: [], unreadableDir: true }
@@ -1722,28 +1769,52 @@ export async function recoverExtensionTransactions(
   const lock = acquired.lock
 
   try {
-    // 不可解析的 journal:移开留证(loud),绝不静默删
-    let names: string[] = []
-    try {
-      names = fs.readdirSync(journalDir(root)).filter((n) => n.endsWith(".json"))
-    } catch {
-      /* no journals */
-    }
-    for (const name of names.sort()) {
-      const txId = name.slice(0, -".json".length)
-      const journal = readTransactionJournal(root, txId)
-      if (!journal) {
-        const from = journalPath(root, txId)
-        const to = `${from}.corrupt-${Date.now()}`
-        try {
-          fs.renameSync(from, to)
-        } catch {
-          /* best-effort */
-        }
-        log("recovery-journal-corrupt", { txId, movedTo: to })
-        reports.push({ txId, state: "aborted", action: "cleaned", detail: `unreadable journal moved to ${to}`, corrupt: true })
-        continue
+    return await recoverExtensionTransactionsInHeldLock(root, opts)
+  } finally {
+    lock.release()
+  }
+}
+
+/** #375(裁决 Q1):**已持 root Bundle 锁**的恢复核心 —— retire 通道在自己的临界区内做最后
+ *  收敛时调用(公共入口 recoverExtensionTransactions 自行取锁;文件锁非重入,锁内再调公共
+ *  入口必然 busy-skip)。除 retire 与公共入口外不得调用。 */
+export async function recoverExtensionTransactionsInHeldLock(
+  root: string,
+  opts: RecoverOptions = {},
+): Promise<{ ok: boolean; reason?: string; reports: TxRecoveryReport[] }> {
+  const log = opts.log ?? defaultLog
+  const now = opts.now ?? (() => new Date())
+  const reports: TxRecoveryReport[] = []
+  // 不可解析的 journal:移开留证(loud),绝不静默删
+  let names: string[] = []
+  try {
+    names = fs.readdirSync(journalDir(root)).filter((n) => n.endsWith(".json"))
+  } catch {
+    /* no journals */
+  }
+  for (const name of names.sort()) {
+    const txId = name.slice(0, -".json".length)
+    const journal = readTransactionJournal(root, txId)
+    if (!journal) {
+      const from = journalPath(root, txId)
+      const to = `${from}.corrupt-${Date.now()}`
+      try {
+        fs.renameSync(from, to)
+      } catch {
+        /* best-effort */
       }
+      log("recovery-journal-corrupt", { txId, movedTo: to })
+      reports.push({ txId, state: "aborted", action: "cleaned", detail: `unreadable journal moved to ${to}`, corrupt: true })
+      continue
+    }
+    // #375(裁决 Q1):结构诊断先行 —— 畸形 journal 转 retained diagnosis,绝不 dispatch
+    // (items 非数组等结构错误若进 dispatch 会抛错炸掉整轮恢复,连带封死 retire 通道)。
+    const diag = diagnoseTransactionJournal(journal)
+    if (diag.verdict === "malformed") {
+      reports.push({ txId, state: journal.state, action: "none", detail: `${diag.reason} — retained for manual diagnosis` })
+      continue
+    }
+    try {
       reports.push(
         journal.op === "uninstall"
           ? await recoverUninstall(root, journal, opts, now, log)
@@ -1751,18 +1822,25 @@ export async function recoverExtensionTransactions(
             ? await recoverRollback(root, journal, opts, now, log)
             : await recoverOne(root, journal, opts, now, log),
       )
+    } catch (error) {
+      // 兜底(#375):单张 journal 的恢复抛错不得炸整轮 —— 如实转保留态,其余 journal 继续收敛。
+      log("recovery-journal-exception", { txId, error: error instanceof Error ? error.message : String(error) })
+      reports.push({
+        txId,
+        state: journal.state,
+        action: "none",
+        detail: `recovery dispatch threw (${error instanceof Error ? error.message : String(error)}) — retained for manual diagnosis`,
+      })
     }
-    // 有界清理:quarantine + 终态 journal
-    const warnings: string[] = []
-    gcQuarantine(root, { keep: opts.keepQuarantine ?? QUARANTINE_KEEP_DEFAULT }).warnings.forEach((w) =>
-      warnings.push(w),
-    )
-    gcTerminalJournals(root, opts.keepJournals ?? JOURNAL_KEEP_DEFAULT, warnings)
-    for (const w of warnings) log("recovery-gc-warning", { warning: w })
-    return { ok: true, reports }
-  } finally {
-    lock.release()
   }
+  // 有界清理:quarantine + 终态 journal
+  const warnings: string[] = []
+  gcQuarantine(root, { keep: opts.keepQuarantine ?? QUARANTINE_KEEP_DEFAULT }).warnings.forEach((w) =>
+    warnings.push(w),
+  )
+  gcTerminalJournals(root, opts.keepJournals ?? JOURNAL_KEEP_DEFAULT, warnings)
+  for (const w of warnings) log("recovery-gc-warning", { warning: w })
+  return { ok: true, reports }
 }
 
 /** 卸载恢复补偿(REQ-100 #313):前滚 —— 幂等完成 store 删除 + 账本删除,直到终态。账本删除仍失败
@@ -1776,19 +1854,16 @@ async function recoverUninstall(
 ): Promise<TxRecoveryReport> {
   const txId = journal.txId
   if (journal.state === "uninstalled") return { txId, state: journal.state, action: "none", detail: "already terminal" }
-  // #346:空/多 item、畸形 item(key/genId/files/state)、未知 action、缺 seam —— 一律保持非终态
-  // (绝不静默终态化;gate 依据终态放行)。review #374 Major:只校数量不校形状会让 key="bogus"
-  // 走 generation 分派 + 空 store 视为已删 → 假终态。
+  // #346:空/多 item、畸形 item(key/genId/files/state)—— 一律保持非终态(绝不静默终态化;
+  // gate 依据终态放行)。#375 起结构检查归 diagnoseTransactionJournal 单一真源,恢复主循环
+  // 已在 dispatch 前拦截(此处仅防御性复核 + 类型收窄,不再重复报详情)。未知 action、缺 seam
+  // 等运行期依赖仍在本函数内如实保留。
+  const diag = diagnoseTransactionJournal(journal)
+  if (diag.verdict === "malformed")
+    return { txId, state: journal.state, action: "none", detail: `${diag.reason} — retained for manual diagnosis` }
   const item = journal.items[0]
-  if (!item || journal.items.length !== 1)
-    return { txId, state: journal.state, action: "none", detail: "malformed uninstall journal (items) — retained for manual diagnosis" }
-  if (journal.state !== "uninstalling")
-    return { txId, state: journal.state, action: "none", detail: `unexpected state "${journal.state}" for op=uninstall — retained for manual diagnosis` }
+  if (!item) return { txId, state: journal.state, action: "none", detail: "malformed uninstall journal (items) — retained for manual diagnosis" }
   const key = item.key
-  if (typeof key !== "string" || !SAFE_KEY.test(key) || key.indexOf("--") <= 0)
-    return { txId, state: journal.state, action: "none", detail: `malformed uninstall journal (key "${String(key)}") — retained for manual diagnosis` }
-  if (!Array.isArray(item.files) || typeof item.genId !== "string" || (item.genId !== "gen-000000-000000" && !GEN_NAME.test(item.genId)))
-    return { txId, state: journal.state, action: "none", detail: "malformed uninstall journal (item shape) — retained for manual diagnosis" }
   const action = actionOf(item)
   const warnings: string[] = []
   const removed: string[] = []
