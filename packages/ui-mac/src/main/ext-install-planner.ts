@@ -48,7 +48,7 @@ import {
 } from "./ext-transaction"
 import { capabilityGrantPath, isSafeCapability, type CapabilityDiff } from "./ext-capability-grants"
 import { agentConfigItemKey, agentInstallKey, installAgentFromCas, recoveryReceiptInputs } from "./ext-agent-install"
-import { collectMcpFileRefPaths, newMcpSecretVersionId, resolveMcpRefPath, substituteMcpSecretRefsPure } from "./alpha-mcp-secrets"
+import { collectMcpFileRefPaths, newMcpSecretVersionId, pathIdentityForms, resolveMcpRefPath, substituteMcpSecretRefsPure } from "./alpha-mcp-secrets"
 
 /** `{file:<abs>}` 引用 → 文件路径(非引用形状 = null;#378 r1 锁内在场门与失败清理共用)。 */
 function mcpRefPathOf(ref: string): string | null {
@@ -96,16 +96,20 @@ function resolvePluginEntryPath(entry: unknown, configDir: string): string | nul
  *  内容寻址版本的未策展残留 —— 追加第二条同名路径后引擎会把两份 plugin 都加载。
  *  r3:解析走 resolvePluginEntryPath(相对/file:// 等价形态同样命中);树外条目不误伤。 */
 function findSameNamePluginPathEntry(list: unknown[], root: string, name: string, entryBaseDir: string = root): string | null {
-  const pluginsRoot = path.join(root, "plugins")
+  // r14 Major:条目可经 symlink 别名到达 plugins/<name>[@…]/plugin.js —— 词法父目录判定漏判,
+  // 追加 realpath 身份形态(pluginsRoot 同双形态)。
+  const pluginsRootForms = pathIdentityForms(path.join(root, "plugins"))
   for (const p of list) {
     // r4:元组成员取 spec 头;r6:legacy 源的相对条目按 **legacy 文件所在目录** 解析(entryBaseDir)。
     const resolved = resolvePluginEntryPath(p, entryBaseDir)
     if (resolved === null) continue
-    if (path.basename(resolved) !== "plugin.js") continue
-    const dir = path.dirname(resolved)
-    if (path.dirname(dir) !== pluginsRoot) continue
-    const base = path.basename(dir)
-    if (base === name || base.startsWith(`${name}@`)) return resolved
+    for (const form of pathIdentityForms(resolved)) {
+      if (path.basename(form) !== "plugin.js") continue
+      const dir = path.dirname(form)
+      if (!pluginsRootForms.includes(path.dirname(dir))) continue
+      const base = path.basename(dir)
+      if (base === name || base.startsWith(`${name}@`)) return form
+    }
   }
   return null
 }
@@ -1006,10 +1010,14 @@ async function replacePluginViaTransaction(args: {
     // 此时删除会制造「config 指向缺失载荷」。live 引用在场或读不出 = 保守不删(孤儿目录
     // 无害,按 runbook 人工收);未被引用才收。
     const live = readPluginArray()
-    // r3 Major:引用比较按引擎解析语义(旁路把绝对条目改写成等价相对/file:// 形态时,词法
-    // includes 会误判「未引用」而删掉 live 仍指向的载荷)。
-    const newElemResolved = path.resolve(newElem)
-    if (!live.ok || live.value.some((e) => resolvePluginEntryPath(e, root) === newElemResolved)) {
+    // r3/r14 Major:引用比较按引擎解析语义 + 文件系统身份双形态(相对/file:///symlink 别名
+    // 都不得被词法比较误判「未引用」而删掉 live 仍指向的载荷)。
+    const newElemForms = pathIdentityForms(newElem)
+    const refsStaged = (e: unknown, baseDir: string): boolean => {
+      const resolved = resolvePluginEntryPath(e, baseDir)
+      return resolved !== null && pathIdentityForms(resolved).some((f) => newElemForms.includes(f))
+    }
+    if (!live.ok || live.value.some((e) => refsStaged(e, root))) {
       console.error(
         `[ext-install-planner] plugin ${entry.name}: staged dir kept — ${live.ok ? "live config still references it (retained rollback?)" : `config unreadable: ${live.reason}`}`,
       )
@@ -1018,7 +1026,7 @@ async function replacePluginViaTransaction(args: {
     // r8 Major:legacy 源(引擎合并)引用 staged jsPath 时同样保留 —— 只查主数组会在
     // 「legacy 已引用 staged、replace 被门拒」的现场删掉引擎仍会加载的载荷。读不出 = 保守不删。
     const legacyLive = deps.installers.readLegacyPluginArrayStrict()
-    if (!legacyLive.ok || legacyLive.sources.some((src) => src.value.some((e) => resolvePluginEntryPath(e, src.configDir) === newElemResolved))) {
+    if (!legacyLive.ok || legacyLive.sources.some((src) => src.value.some((e) => refsStaged(e, src.configDir)))) {
       console.error(
         `[ext-install-planner] plugin ${entry.name}: staged dir kept — ${legacyLive.ok ? "a legacy config source references it" : `legacy config unreadable: ${legacyLive.reason}`}`,
       )
@@ -1061,6 +1069,18 @@ async function replacePluginViaTransaction(args: {
     cleanupStaged()
     rollback("unregistered plugin path present")
     return { ok: false, reason: `config also contains "${strayEntry}" without a ledger record — refusing to update into a double-load` }
+  }
+  // r14 Major:换包名置换(新 base ≠ 旧 base)时,**主配置**未策展的新 base 同包条目同样拒 ——
+  // 置换后 [newpkg@2, newpkg@9] 引擎 later-wins 加载未策展 pin 而账本记新 pin(旧 base 兄弟
+  // 已由 dispatch sameBase 检查拒;锁内 canon 快照等值保证本检查在计划后持续有效)。
+  if (facts.form.kind === "npm" && pkgBaseOf(newElem) !== pkgBaseOf(facts.form.oldPinned)) {
+    const newBase = pkgBaseOf(newElem)
+    const mainHit = snapshot.value.map(pluginSpecOf).find((x): x is string => x !== null && pkgBaseOf(x) === newBase)
+    if (mainHit !== undefined) {
+      cleanupStaged()
+      rollback("unregistered pin of the new package base present")
+      return { ok: false, reason: `config already contains pin "${mainHit}" of "${newBase}" — engine dedup may load it instead of the replacement, refusing (clean it first)` }
+    }
   }
   // r6 Major:legacy XDG 源的同名派生路径同判(置换后 legacy 旧路径仍被引擎合并加载 = 双载)。
   const replaceLegacyGate = legacySameNamePluginGate(() => deps.installers.readLegacyPluginArrayStrict(), root, entry.name)
@@ -1765,14 +1785,20 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
         // r10 Major:「仍被引用」判定覆盖合并视图 —— retained legacy 源引用本次版本(异常旁路
         // 写形态)时删除同样制造悬空;legacy 读不出 = 保守不删。
         const legacyNow = deps.installers.legacyMcpRefPaths(entry.name)
-        const liveRefs =
-          leafNow.ok && legacyNow.ok
-            ? new Set([
-                ...(leafNow.value !== undefined ? collectMcpFileRefPaths(leafNow.value) : []).map((p) => resolveMcpRefPath(p, mcpRoot)),
-                ...legacyNow.refs,
-              ])
-            : null
-        const stillReferenced = liveRefs === null || refPaths.some((p) => liveRefs.has(resolveMcpRefPath(p, mcpRoot)))
+        // r14 Major:引用与本次版本文件都取文件系统身份双形态(symlink 别名不漏判)。
+        let liveRefs: Set<string> | null = null
+        if (leafNow.ok && legacyNow.ok) {
+          liveRefs = new Set()
+          for (const p of [
+            ...(leafNow.value !== undefined ? collectMcpFileRefPaths(leafNow.value) : []).map((q) => resolveMcpRefPath(q, mcpRoot)),
+            ...legacyNow.refs,
+          ]) {
+            for (const form of pathIdentityForms(p)) liveRefs.add(form)
+          }
+        }
+        const stillReferenced =
+          liveRefs === null ||
+          refPaths.some((p) => pathIdentityForms(resolveMcpRefPath(p, mcpRoot)).some((form) => liveRefs.has(form)))
         // r5/r6 Major:authorize 暂停承诺「零权威副作用 + 零明文残留」—— 清理必须**可证明**完成
         // (leaf 可读 + 未引用本次版本 + 删除成功)才允许照常返回 authorize;任何一环不成立
         // (不可读无从对账 / 出现引用 = 有旁路写方 / 删除失败)都降级为普通失败,原因如实入

@@ -17,7 +17,7 @@ import { applyEdits, modify, parse, type ParseError } from "jsonc-parser"
 import type { ProviderInput } from "../shared/alpha-model-types"
 import type { InstallMeta } from "../preload/types"
 import { opencodeHomeDir } from "./alpha-bridge"
-import { collectMcpFileRefPaths, gcMcpSecretVersionsLocked, resolveMcpRefPath } from "./alpha-mcp-secrets"
+import { collectMcpFileRefPaths, gcMcpSecretVersionsLocked, pathIdentityForms, resolveMcpRefPath } from "./alpha-mcp-secrets"
 import { alphaGlobalRoot, removeReceipt } from "./alpha-installs"
 import { alphaJsoncPath } from "./engine-config-truth"
 import { commandHeadBase } from "./platform"
@@ -987,7 +987,11 @@ function pluginEntryMatchesPath(entry: unknown, targetResolved: string, configDi
   } else if (!p.startsWith(".") && !path.isAbsolute(p)) {
     return false
   }
-  return path.resolve(configDir, p) === targetResolved
+  // r14 Major:symlink 别名条目同样匹配(文件系统身份双形态)—— 否则卸载「成功」后目录被删
+  // 而别名条目残留成悬空引用。
+  const entryForms = pathIdentityForms(path.resolve(configDir, p))
+  const targetForms = pathIdentityForms(targetResolved)
+  return entryForms.some((f) => targetForms.includes(f))
 }
 
 function removePluginPathUnlocked(name: string, absJsPath: string): ConfigResult {

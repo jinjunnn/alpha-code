@@ -338,6 +338,19 @@ export function substituteMcpSecretRefsPure(
   return { substituted, skipped }
 }
 
+/** #378 r13/r14:路径的文件系统身份形态集 —— 词法 resolve + realpath(存在时)。
+ *  symlink/卷别名(大小写、NFD)会让纯词法比较漏判「同一文件」;引用对账/条目匹配统一
+ *  用双形态交集判定(任一形态相等即同一身份)。 */
+export function pathIdentityForms(p: string): string[] {
+  const lex = path.resolve(p)
+  try {
+    const real = fs.realpathSync(lex)
+    return real === lex ? [lex] : [lex, real]
+  } catch {
+    return [lex]
+  }
+}
+
 /** #378 r5(Major):{file:} 引用路径 → **引擎解析语义**的绝对路径(config/variable.ts:先展开
  *  `~/` 为 home,再按 config 文件所在目录 resolve 相对路径)—— GC 与失败清理的引用对账必须与
  *  引擎同判,否则 `{file:~/...}` 等合法形态被误判未引用而删掉在用密钥。 */

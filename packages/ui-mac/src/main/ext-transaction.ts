@@ -561,11 +561,22 @@ function validatePlan(root: string, plan: TxPlan): string | null {
       const relTarget = path.relative(root, item.config.target)
       if (!isSafeRelPath(relTarget) || !confineFileTarget(root, relTarget).ok)
         return `config item "${item.key}": target escapes the transaction root — refused`
+      // r14 Major:词法 resolve 不够 —— 大小写不敏感/NFD 卷(macOS 缺省)上 ALPHA.JSONC 与
+      // alpha.jsonc 同一物理文件却是不同 map 键。身份键 = realpath(父目录)+ 归一化文件名
+      // (NFC + 小写);区分大小写卷上的极端误拒可接受(合法消费方单一构造路径)。
       const resolvedTarget = path.resolve(item.config.target)
-      const priorRaw = configTargetByResolved.get(resolvedTarget)
+      const parentReal = (() => {
+        try {
+          return fs.realpathSync(path.dirname(resolvedTarget))
+        } catch {
+          return path.dirname(resolvedTarget)
+        }
+      })()
+      const identityKey = path.join(parentReal, path.basename(resolvedTarget).normalize("NFC").toLowerCase())
+      const priorRaw = configTargetByResolved.get(identityKey)
       if (priorRaw !== undefined && priorRaw !== item.config.target)
         return `config item "${item.key}": aliased config target (same file via different paths) — refused`
-      configTargetByResolved.set(resolvedTarget, item.config.target)
+      configTargetByResolved.set(identityKey, item.config.target)
       if (!Array.isArray(item.config.edits) || item.config.edits.length === 0)
         return `config item "${item.key}": at least one edit required`
     } else if (kind === "file") {
