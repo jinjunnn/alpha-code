@@ -6,15 +6,19 @@
 // 依赖注入(仓规:零 mock.module);全走真盘临时目录。
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { mkdirSync, mkdtempSync, existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, existsSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { parse } from "jsonc-parser"
+import { agentFileProbe, recoveryReceiptInputs } from "./ext-agent-install"
 import { applyFileImage, prepareFileTx, restoreFileImage } from "./ext-file-tx"
+import { findRecordV2, upsertRecordsV2 } from "./ext-receipt-v2"
+import { skillGenerationProbe } from "./ext-skill-generations"
 import {
   ExtTxCrashError,
   listTransactionJournals,
   recoverExtensionTransactions,
+  recoveryClean,
   runExtensionTransaction,
   type HealthProbe,
   type TxCommitRecord,
@@ -162,14 +166,95 @@ describe("file action in runExtensionTransaction (REQ-102 #358)", () => {
     for (const j of listTransactionJournals(root)) expect(j.state).toBe("committed")
   })
 
-  test("crash after-switched + live md tampered → recovery probe fails → rollback; tampered file kept (fail closed)", async () => {
+  test("crash after-switched + live md tampered → 保留非终态(旁路改写不终态化,review Blocker 3)", async () => {
     await expect(runExtensionTransaction(root, planFor(MD), hooksFor({ crashAt: "after-switched" }))).rejects.toThrow(ExtTxCrashError)
     writeFileSync(MD_PATH(), "tampered by bypass") // 旁路改写:既非 pre 也非 next
     const rec = await recoverExtensionTransactions(root, { probe: fileProbe(MD), commitReceipt: noop, pidAlive: () => false, log: noop })
     expect(rec.ok).toBe(true)
-    expect(rec.reports[0].action).toBe("rolled-back")
+    // file restore 被旁路改写挡住 → 不宣称 rolled-back,journal 保持非终态供人工处置。
+    expect(rec.reports[0].action).toBe("none")
+    expect(recoveryClean(rec)).toBe(false)
     expect(readFileSync(MD_PATH(), "utf8")).toBe("tampered by bypass") // 绝不盲目覆盖旁路内容
-    expect(agentLeaf()).toBeUndefined() // config 正常回滚
+    expect(agentLeaf()).toBeUndefined() // config 已幂等回滚(下轮 noop)
+    const j = listTransactionJournals(root)[0]
+    expect(j.state).toBe("switched") // 非终态保留 → 写方 gate 继续阻断
+  })
+
+  test("恢复期 staging 丢失 = 失据 → 保留非终态,零改动(review Blocker 3)", async () => {
+    await expect(runExtensionTransaction(root, planFor(MD), hooksFor({ crashAt: "mid-switch" }))).rejects.toThrow(ExtTxCrashError)
+    expect(readFileSync(MD_PATH(), "utf8")).toBe(MD) // file 已翻转,config 未翻转
+    rmSync(join(root, "ext-tx", "staging"), { recursive: true, force: true })
+    const rec = await recoverExtensionTransactions(root, { probe: fileProbe(MD), commitReceipt: noop, pidAlive: () => false, log: noop })
+    expect(rec.ok).toBe(true)
+    expect(rec.reports[0].action).toBe("none")
+    expect(recoveryClean(rec)).toBe(false)
+    expect(readFileSync(MD_PATH(), "utf8")).toBe(MD) // 失据时零改动(不盲回滚)
+    const j = listTransactionJournals(root)[0]
+    expect(j.state).toBe("switching")
+  })
+
+  test("父目录 symlink 逃逸在写盘前被圈禁拒绝(review Blocker 2)", async () => {
+    const outside = mkdtempSync(join(tmpdir(), "ext-tx-outside-"))
+    try {
+      symlinkSync(outside, join(root, "agents"))
+      const r = await runExtensionTransaction(root, planFor(MD), hooksFor())
+      expect(r.ok).toBe(false)
+      if (r.ok) return
+      expect(r.reason).toContain("confinement")
+      expect(existsSync(join(outside, "demo.md"))).toBe(false) // root 外零写入
+      expect(agentLeaf()).toBeUndefined()
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  test("生产恢复接线语义:composed probe + 过滤 receipt 前滚(review Blocker 1)", async () => {
+    const iso = new Date().toISOString()
+    const receipt = {
+      id: "agent:demo",
+      name: "demo",
+      kind: "agent",
+      environment: "prod",
+      scope: { kind: "global" },
+      desiredState: "enabled",
+      origin: "catalog",
+      installedAt: iso,
+      configKey: "agent.demo",
+      files: [MD_PATH()],
+    }
+    const plan: TxPlan = {
+      items: [
+        { key: "agent--demo", action: "file", file: { relTarget: "agents/demo.md", next: Buffer.from(MD) }, receipt },
+        {
+          key: "agent--demo--config",
+          action: "config",
+          config: { target: cfgTarget, edits: [{ keyPath: ["agent", "demo"], value: { description: "demo agent", prompt: "body" } }] },
+        },
+      ],
+    }
+    await expect(runExtensionTransaction(root, plan, hooksFor({ crashAt: "after-switched" }))).rejects.toThrow(ExtTxCrashError)
+    // 生产 recoveryOpts 同构:skillGenerationProbe + agentFileProbe 组合、recoveryReceiptInputs 过滤。
+    const fileP = agentFileProbe(root)
+    const rec = await recoverExtensionTransactions(root, {
+      probe: async (input) => {
+        const gen = await skillGenerationProbe(input)
+        if (!gen.healthy) return gen
+        return fileP(input)
+      },
+      commitReceipt: (recs) => {
+        const written = upsertRecordsV2(root, recoveryReceiptInputs(recs))
+        if (!written.ok) throw new Error(written.reason)
+      },
+      pidAlive: () => false,
+      log: noop,
+    })
+    expect(rec.ok).toBe(true)
+    expect(rec.reports[0].action).toBe("resumed-committed") // config 副 item 不再让重放失败
+    expect(readFileSync(MD_PATH(), "utf8")).toBe(MD)
+    expect(agentLeaf()).toEqual({ description: "demo agent", prompt: "body" })
+    const record = findRecordV2(root, "agent", "demo")
+    expect(record).not.toBeNull()
+    expect(record!.configKey).toBe("agent.demo")
   })
 
   test("validatePlan refuses missing payload / unsafe relTarget / empty content / duplicate targets", async () => {

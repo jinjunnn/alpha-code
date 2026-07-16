@@ -56,6 +56,7 @@ import {
 } from "./ext-config-tx"
 import {
   applyFileImage,
+  confineFileTarget,
   fileStagePaths,
   prepareFileTx,
   readStagedFileImage,
@@ -157,6 +158,9 @@ export type HealthProbe = (input: {
   fileTarget?: string
   /** file action(#358):pre-switch 阶段的 staged next 内容路径(候选内容语义校验用)。 */
   stagedFile?: string
+  /** file action(#358):journal 记录的 next 内容 digest —— generic recovery probe(无 planner
+   *  闭包上下文)据此验 live/staged 内容一致性。 */
+  fileDigest?: string
 }) => HealthVerdict | Promise<HealthVerdict>
 
 export type TxCommitRecord = {
@@ -730,11 +734,13 @@ export function readBundleAuthorizationReceipt(root: string, txId: string): Bund
  */
 function writeCommitAuthorizationSync(root: string, journal: TxJournal, now: () => Date, warnings: string[]): void {
   for (const it of journal.items) {
+    // #358 review Minor:未声明 capabilities 的 item 不落授权账(未参与授权 ≠ 已授权空集)。
+    if (it.capabilities === undefined) continue
     try {
       writeCapabilityGrantSync(root, {
         v: 1,
         key: it.key,
-        capabilities: it.capabilities ?? [],
+        capabilities: it.capabilities,
         manifestDigest: it.manifestDigest,
         txId: journal.txId,
         grantedAt: now().toISOString(),
@@ -892,7 +898,9 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
 
   // ── authorize:capability diff 重确认闸口(锁内评估 → 与并发 commit 串行化,防 TOCTOU)。
   // 扩张 / 首次授权而确认未覆盖完整请求集 → 拒绝启动:零写盘、current 原样健康运行(AC3)。
-  const authz = evaluateBundleAuthorization(root, plan.items)
+  // #358 review Minor:未声明 capabilities 的 item(如 agent 的 config 副 item)不参与授权评估
+  // 也不落授权账 —— 「未参与授权」不得折叠成「已授权空集」;一个逻辑扩展一个授权 key。
+  const authz = evaluateBundleAuthorization(root, plan.items.filter((it) => it.capabilities !== undefined))
   for (const diff of authz.items) {
     if (!diff.requiresConfirmation) continue
     if (confirmationCovers(plan.authorization?.confirmed[diff.key], diff.requested)) continue
@@ -958,6 +966,12 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
       return { ok: false, txId, stage: "validate", reason: `duplicate file target across items: ${item.file.relTarget}`, warnings }
     }
     fileTargets.add(target)
+    // #358 review Blocker 2:词法安全 ≠ root 圈禁 —— 已存在前缀段若是 symlink,写入会逃逸 root。
+    const confined = confineFileTarget(root, item.file.relTarget)
+    if (!confined.ok) {
+      lock.release()
+      return { ok: false, txId, stage: "staging", reason: `file prepare failed for "${item.key}": ${confined.reason}`, warnings }
+    }
     const prep = prepareFileTx(target, item.file.next)
     if (!prep.ok) {
       lock.release()
@@ -1025,7 +1039,7 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
   const fileEntries = () =>
     journal.items
       .filter((it) => actionOf(it) === "file" && it.file)
-      .map((it) => ({ key: it.key, target: path.join(root, it.file!.relTarget), slot: it.file!.slot }))
+      .map((it) => ({ key: it.key, target: path.join(root, it.file!.relTarget), slot: it.file!.slot, nextDigest: it.file!.nextDigest }))
 
   /** config/file action 回滚:逆序恢复(仅当 target 仍是 next 态才恢复前像;旁路改写 → fail-closed 留证)。 */
   const rollbackImageActions = (): void => {
@@ -1178,6 +1192,7 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
           phase: "pre-switch",
           fileTarget: f.target,
           stagedFile: fileStagePaths(txStagingDir(root, txId), f.slot).next,
+          fileDigest: f.nextDigest,
         })
       } catch (error) {
         if (error instanceof ExtTxCrashError) throw error
@@ -1237,6 +1252,7 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
           generationDir: "",
           phase: "post-switch",
           fileTarget: f.target,
+          fileDigest: f.nextDigest,
         })
       } catch (error) {
         if (error instanceof ExtTxCrashError) throw error
@@ -1845,6 +1861,9 @@ async function recoverOne(
   }
   const reconstructFileImage = (it: TxJournalItem): FileTxImage | null => {
     if (actionOf(it) !== "file" || !it.file) return null
+    // #358 review Blocker 2:恢复路径同样不得信任 journal 里的 relTarget —— 形状 + 圈禁重验。
+    if (typeof it.file.relTarget !== "string" || !isSafeRelPath(it.file.relTarget)) return null
+    if (!confineFileTarget(root, it.file.relTarget).ok) return null
     const r = readStagedFileImage(staleStaging, it.file.slot, path.join(root, it.file.relTarget), it.file.preDigest, it.file.nextDigest, it.file.preAbsent)
     return r.ok ? r.image : null
   }
@@ -1871,7 +1890,7 @@ async function recoverOne(
           genId: it.genId,
           generationDir: dir,
           phase: "recovery",
-          ...(kind === "file" && it.file ? { fileTarget: path.join(root, it.file.relTarget) } : {}),
+          ...(kind === "file" && it.file ? { fileTarget: path.join(root, it.file.relTarget), fileDigest: it.file.nextDigest } : {}),
         })
         if (!verdict.healthy) {
           healthy = false
@@ -1907,12 +1926,24 @@ async function recoverOne(
     }
   }
 
-  // 回滚:config 逆序恢复(target 仍是 nextImage 才写回 preImage)+ generation 指针回 previous + 隔离失败代。
+  // 回滚:config/file 逆序恢复(target 仍是 next 态才恢复前像)+ generation 指针回 previous + 隔离失败代。
+  // #358 review Blocker 3:file image 不可重建(staging 丢失/journal 段非法/圈禁不过)= 失据 ——
+  // **保留非终态**供重试/人工处置,零改动零终态化;绝不在失据时宣称 rolled-back(那会同时留下
+  // 半装态并撤销非终态 journal 对后续写操作的阻断)。
+  for (const it of journal.items) {
+    if (actionOf(it) !== "file") continue
+    if (!reconstructFileImage(it)) {
+      const detail = `file image unrecoverable for "${it.key}" (staging lost/journal malformed/confinement failed) — retained for retry or manual diagnosis`
+      log("recovery-file-retained", { txId, key: it.key, detail })
+      return { txId, state: journal.state, action: "none", detail }
+    }
+  }
   const reasonParts = [
     allFlipped ? "health not confirmed after crash" : "bundle partially switched at crash (atomicity restored)",
     ...warnings,
   ]
   const reason = `crash recovery rollback: ${reasonParts.join("; ")}`
+  let fileRestoreBlocked: string | null = null
   for (const it of [...journal.items].reverse()) {
     const kind = actionOf(it)
     if (kind === "config") {
@@ -1924,14 +1955,15 @@ async function recoverOne(
       const restored = restoreConfigImage(image)
       if (!restored.ok) warnings.push(`config recovery rollback for "${it.key}": ${restored.reason}`)
     } else if (kind === "file") {
-      const image = reconstructFileImage(it)
-      if (!image) {
-        warnings.push(`file recovery: cannot reconstruct image for "${it.key}" — leaving live as-is (fail closed)`)
-        continue
-      }
-      const restored = restoreFileImage(image)
-      if (!restored.ok) warnings.push(`file recovery rollback for "${it.key}": ${restored.reason}`)
+      const restored = restoreFileImage(reconstructFileImage(it)!) // 上方预扫已证明可重建
+      if (!restored.ok) fileRestoreBlocked = `file recovery rollback for "${it.key}": ${restored.reason}`
     }
+  }
+  // #358 review Blocker 3:file 恢复被旁路改写挡住(target 既非 pre 也非 next)= 现场需人工核对 ——
+  // 保留非终态 + staging(证据与重试依据),不隔离、不终态化。已完成的 config 恢复幂等(下轮 noop)。
+  if (fileRestoreBlocked) {
+    log("recovery-file-retained", { txId, detail: fileRestoreBlocked })
+    return { txId, state: journal.state, action: "none", detail: `${fileRestoreBlocked} — retained for manual diagnosis` }
   }
   for (const it of journal.items) {
     if (actionOf(it) !== "generation") continue

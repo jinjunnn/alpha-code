@@ -63,62 +63,61 @@ function deepEqual(a: unknown, b: unknown): boolean {
 }
 
 /**
- * agent seed 的类型化健康探测(#358,对标 skillGenerationProbe;分相位,Codex 裁决 E):
- *   pre-switch  → staged candidate 语义健康(agentMdToEntry 可解析且与预期条目一致);
- *   post-switch / recovery → live md digest 与预期一致 + 可解析 + live `agent.<name>` 叶与解析
+ * agent file item 的类型化健康探测(#358,对标 skillGenerationProbe;分相位,Codex 裁决 E)。
+ * **generic 形态**(review Blocker 1):不依赖 planner 闭包 —— 期望 digest 取引擎透传的
+ * `input.fileDigest`(journal 真源),名字从 item key 派生,config 落点从 root 派生;
+ * 由此同一探针可注入**生产恢复接线**(startup/写前 gate),与安装路径同源。
+ *   pre-switch  → staged candidate:digest 与 journal 一致 + agentMdToEntry 可解析;
+ *   post-switch / recovery → live md digest 一致 + 可解析 + live `agent.<name>` 叶与解析
  *   结果严格一致(md/config 任一背离 = 不健康 → 回滚/隔离)。
+ * 非 agent key 的 file item = 无类型化探针 → **fail-closed 不健康**(未来新的 file 消费方
+ * 必须自带探针并在此处扩展,绝不静默放行)。
  */
-export function makeAgentSeedProbe(opts: {
-  name: string
-  configTarget: string
-  expectedDigest: string
-  expectedEntry: Record<string, unknown>
-}): HealthProbe {
+export function agentFileProbe(root: string): HealthProbe {
+  const configTarget = join(root, "alpha.jsonc")
   return (input) => {
     if (input.action !== "file") return { healthy: true } // generation/config 由各自 probe 管
-    const readMd = (p: string | undefined, label: string): { ok: true; text: string } | { ok: false; reason: string } => {
-      if (!p) return { ok: false, reason: `agent "${opts.name}": ${label} path missing from probe input` }
+    if (!input.key.startsWith("agent--") || input.key.endsWith("--config"))
+      return { healthy: false, reason: `no typed probe for file item "${input.key}" — refusing (fail closed)` }
+    const name = input.key.slice("agent--".length)
+    if (!SAFE_NAME.test(name)) return { healthy: false, reason: `invalid agent key "${input.key}"` }
+    const readMd = (p: string | undefined, label: string): { ok: true; data: Buffer } | { ok: false; reason: string } => {
+      if (!p) return { ok: false, reason: `agent "${name}": ${label} path missing from probe input` }
       try {
-        return { ok: true, text: readFileSync(p, "utf8") }
+        return { ok: true, data: readFileSync(p) }
       } catch {
-        return { ok: false, reason: `agent "${opts.name}": ${label} md not readable` }
+        return { ok: false, reason: `agent "${name}": ${label} md not readable` }
       }
     }
-    if (input.phase === "pre-switch") {
-      const staged = readMd(input.stagedFile, "staged")
-      if (!staged.ok) return { healthy: false, reason: staged.reason }
-      const parsed = agentMdToEntry(staged.text)
-      if (!parsed.ok) return { healthy: false, reason: `agent "${opts.name}": staged md not convertible: ${parsed.reason}` }
-      if (!deepEqual(parsed.entry, opts.expectedEntry))
-        return { healthy: false, reason: `agent "${opts.name}": staged md entry drifted from plan` }
-      return { healthy: true }
-    }
-    // post-switch / recovery:验 live md + live config 叶。
-    let data: Buffer
-    try {
-      data = readFileSync(input.fileTarget ?? "")
-    } catch {
-      return { healthy: false, reason: `agent "${opts.name}": live md not readable` }
-    }
-    const digest = createHash("sha256").update(data).digest("hex")
-    if (digest !== opts.expectedDigest) return { healthy: false, reason: `agent "${opts.name}": live md digest mismatch` }
-    const parsed = agentMdToEntry(data.toString("utf8"))
-    if (!parsed.ok) return { healthy: false, reason: `agent "${opts.name}": live md not convertible: ${parsed.reason}` }
+    const src = readMd(input.phase === "pre-switch" ? input.stagedFile : input.fileTarget, input.phase === "pre-switch" ? "staged" : "live")
+    if (!src.ok) return { healthy: false, reason: src.reason }
+    if (input.fileDigest && createHash("sha256").update(src.data).digest("hex") !== input.fileDigest)
+      return { healthy: false, reason: `agent "${name}": ${input.phase === "pre-switch" ? "staged" : "live"} md digest mismatch` }
+    const parsed = agentMdToEntry(src.data.toString("utf8"))
+    if (!parsed.ok) return { healthy: false, reason: `agent "${name}": md not convertible: ${parsed.reason}` }
+    if (input.phase === "pre-switch") return { healthy: true } // config 叶尚未落位
+    // post-switch / recovery:live config 叶必须与 md 解析结果严格一致(md/config 不分叉)。
     let cfgText: string
     try {
-      cfgText = readFileSync(opts.configTarget, "utf8")
+      cfgText = readFileSync(configTarget, "utf8")
     } catch {
-      return { healthy: false, reason: `agent "${opts.name}": live config not readable` }
+      return { healthy: false, reason: `agent "${name}": live config not readable` }
     }
     const errors: ParseError[] = []
     const cfg: unknown = parse(cfgText, errors)
-    if (errors.length > 0) return { healthy: false, reason: `agent "${opts.name}": live config is not valid jsonc` }
+    if (errors.length > 0) return { healthy: false, reason: `agent "${name}": live config is not valid jsonc` }
     const agentMap = isObj(cfg) ? cfg.agent : undefined
-    const leaf = isObj(agentMap) ? agentMap[opts.name] : undefined
+    const leaf = isObj(agentMap) ? agentMap[name] : undefined
     if (!deepEqual(leaf, parsed.entry))
-      return { healthy: false, reason: `agent "${opts.name}": live config entry diverged from md (md/config must not fork)` }
+      return { healthy: false, reason: `agent "${name}": live config entry diverged from md (md/config must not fork)` }
     return { healthy: true }
   }
+}
+
+/** 恢复前滚的 receipt 输入(#358 review Blocker 1):无 receipt 的副 item(如 agent 的 config
+ *  item)不落账 —— 与安装路径的过滤同源;生产 recovery 接线必须用本函数而非裸 map。 */
+export function recoveryReceiptInputs(records: TxCommitRecord[]): UpsertInput[] {
+  return records.filter((rec) => rec.receipt !== undefined).map((rec) => commitInputFromRecord(rec))
 }
 
 export type AgentSeedInstall = {
@@ -130,8 +129,6 @@ export type AgentSeedInstall = {
   origin: InstallReceiptOrigin
   /** 唯一内容源:CAS(调用方先 promote;此处读取重验,缺失/篡改 fail-closed)。恰一个顶层 .md。 */
   casFile: { spec: TxFileSpec; casBaseRoot: string }
-  /** alpha.jsonc 绝对路径(调用方从受控根派生;`agent.<name>` 叶经 ext-config-tx 白名单)。 */
-  configTarget: string
   /** #348:严格解码 manifest.capabilities(必填;空集也显式传,禁二次派生制造第二真源)。 */
   capabilities: string[]
   authorization?: TxAuthorizationDecision
@@ -174,6 +171,8 @@ export async function installAgentFromCas(root: string, spec: AgentSeedInstall):
 
   const relTarget = `agents/${spec.name}.md`
   const mdPath = join(root, relTarget)
+  // config 落点 = root 派生固定约定(与 agentFileProbe 同源;调用方无路径通道)。
+  const configTarget = join(root, "alpha.jsonc")
   const now = new Date().toISOString()
   const receiptTemplate: UpsertInput = {
     id: spec.id,
@@ -202,10 +201,10 @@ export async function installAgentFromCas(root: string, spec: AgentSeedInstall):
         ...(spec.manifestDigest ? { manifestDigest: spec.manifestDigest } : {}),
       },
       {
-        // 副 item:无 capabilities(授权 key 归主 item,一个逻辑扩展只弹一次)、无 receipt(账本单条)。
+        // 副 item:无 capabilities(授权 key 归主 item,不参与授权评估也不落授权账)、无 receipt(账本单条)。
         key: agentConfigItemKey(spec.name),
         action: "config",
-        config: { target: spec.configTarget, edits: [{ keyPath: ["agent", spec.name], value: parsed.entry }] },
+        config: { target: configTarget, edits: [{ keyPath: ["agent", spec.name], value: parsed.entry }] },
       },
     ],
     ...(spec.authorization ? { authorization: spec.authorization } : {}),
@@ -213,16 +212,12 @@ export async function installAgentFromCas(root: string, spec: AgentSeedInstall):
   const hooks: TxHooks = {
     ...(spec.precondition ? { precondition: spec.precondition } : {}),
     populate: () => {}, // 无 generation item;file/config 的 staging 由引擎适配器落
-    probe: makeAgentSeedProbe({
-      name: spec.name,
-      configTarget: spec.configTarget,
-      expectedDigest: fileSpec.sha256,
-      expectedEntry: parsed.entry,
-    }),
-    // 账本是事务提交证据(#336/#354):只有主 item 带 receipt,config 副 item 不落账。
+    // 与生产恢复接线同一探针(generic:digest 走引擎透传的 journal 真源)。
+    probe: agentFileProbe(root),
+    // 账本是事务提交证据(#336/#354):只有主 item 带 receipt,config 副 item 不落账(与
+    // recovery 前滚同一过滤,recoveryReceiptInputs)。
     commitReceipt: (records: TxCommitRecord[]) => {
-      const withReceipt = records.filter((rec) => rec.receipt !== undefined)
-      const written = upsertRecordsV2(root, withReceipt.map((rec) => commitInputFromRecord(rec)))
+      const written = upsertRecordsV2(root, recoveryReceiptInputs(records))
       if (!written.ok) throw new Error(`receipt commit failed for agent ${spec.name}: ${written.reason}`)
     },
   }

@@ -22,7 +22,8 @@ import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
 import { agentInstallPresent, stageVendoredPluginVersioned, importSkillFolder, importSkillGit, installBuiltinAgent, installBuiltinSkill, installRemoteAgent, installRemoteSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall, resourcesRoot, writeAgent } from "./ext-fs-installer"
 import { parseAgentImport } from "./ext-import-validate"
 import { cleanProjectCatalogResiduals, detectProjectCatalogResiduals } from "./ext-project-residuals"
-import { collectSkillPayloadFromDir, commitInputFromRecord, skillGenerationProbe } from "./ext-skill-generations"
+import { collectSkillPayloadFromDir, skillGenerationProbe } from "./ext-skill-generations"
+import { agentFileProbe, recoveryReceiptInputs } from "./ext-agent-install"
 import { randomUUID } from "node:crypto"
 import { pickedFiles } from "./ipc"
 import { factorySkillIds } from "./factory-skills"
@@ -431,10 +432,20 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   // #347:恢复参数按 root 构造 —— startup 与写方 gate 三处共用;commitReceipt/commitUninstall
   // 全部写**传入的 root**(此前硬编码全局根,Codex 裁决点名);MCP artifact seam 只允许全局根
   // (mcp 不进 project scope,项目根 journal 里出现 mcp-- key = 异常,保持非终态待诊断)。
-  const recoveryOpts = (root: string): RecoverOptions => ({
-    probe: skillGenerationProbe,
+  // REQ-102 #358(review Blocker 1):恢复接线必须支持 file(agent)事务 —— 探针 = skill
+  // generation + agent file 组合(未知 file item 由 agentFileProbe fail-closed 拒),receipt
+  // 前滚经 recoveryReceiptInputs 过滤无 receipt 的副 item(与安装路径同一过滤;裸 map 会让
+  // config 副 item 缺 kind/name 导致重放永久失败 → 回滚却留下已写 receipt 的双真源分叉)。
+  const recoveryOpts = (root: string): RecoverOptions => {
+    const fileProbe = agentFileProbe(root)
+    return {
+    probe: async (input) => {
+      const gen = await skillGenerationProbe(input)
+      if (!gen.healthy) return gen
+      return fileProbe(input)
+    },
     commitReceipt: (recs) => {
-      const written = upsertRecordsV2(root, recs.map((rec) => commitInputFromRecord(rec)))
+      const written = upsertRecordsV2(root, recoveryReceiptInputs(recs))
       if (!written.ok) throw new Error(`recovery receipt commit failed: ${written.reason}`)
     },
     // REQ-100 #313:卸载恢复的账本删除(幂等去账;去账失败抛错 → 保持 uninstalling 供下次前滚)。
@@ -456,7 +467,8 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
       if (!sec.ok) throw new Error(sec.reason)
     },
     log: (event, detail) => getLogger().log(`[req100-tx-recovery] ${event} ${JSON.stringify(detail)}`),
-  })
+    }
+  }
   const txRecovery = recoverExtensionTransactions(alphaGlobalRoot(), recoveryOpts(alphaGlobalRoot()))
   // #347:写方事务准入 gate —— 每次写操作前恢复收敛 + 终态探测放行(进程内 per-root mutex
   // 把恢复→探测→操作链成一条所有权链;拒绝语义与 busy 一致,如实返回 reason)。

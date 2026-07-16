@@ -39,6 +39,30 @@ function errnoCode(error: unknown): string | undefined {
   return typeof error.code === "string" ? error.code : undefined
 }
 
+/**
+ * root 圈禁(#358 review Blocker 2):词法 isSafeRelPath 不够 —— 若 relTarget 的任一**已存在**
+ * 前缀段(如 `<root>/agents`)是 symlink,写入会逃逸 root。逐段 lstat 拒 symlink(与
+ * verifySeedAsset S6 同纪律);不存在的尾段由 apply 时 mkdir 创建,天然无 symlink。
+ */
+export function confineFileTarget(root: string, relTarget: string): { ok: true } | { ok: false; reason: string } {
+  let cursor = root
+  const segments = relTarget.split("/")
+  for (const [i, seg] of segments.entries()) {
+    cursor = join(cursor, seg)
+    let st: Stats
+    try {
+      st = lstatSync(cursor)
+    } catch (error) {
+      if (errnoCode(error) === "ENOENT") return { ok: true } // 余段将由 apply mkdir 创建
+      return { ok: false, reason: `file target confinement: cannot stat ${cursor}` }
+    }
+    if (st.isSymbolicLink()) return { ok: false, reason: `file target confinement: symlink in path (refusing): ${cursor}` }
+    if (i < segments.length - 1 && !st.isDirectory())
+      return { ok: false, reason: `file target confinement: non-directory ancestor (refusing): ${cursor}` }
+  }
+  return { ok: true }
+}
+
 /** 目标当前态:缺席(与零字节文件判然有别)| 内容 digest。读失败 = null(调用方 fail-closed)。 */
 function currentState(target: string): { absent: true } | { absent: false; digest: string } | null {
   let st: Stats

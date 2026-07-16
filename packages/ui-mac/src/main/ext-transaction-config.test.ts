@@ -144,3 +144,16 @@ describe("config 崩溃恢复", () => {
     expect(fs.readFileSync(cfg, "utf8")).toBe(before) // 仍未动
   })
 })
+
+// REQ-102 #358 review Major 5:jsonc modify 对形状异常父节点抛异常 —— 适配器必须转结构化失败
+// (prepareConfigTx 在引擎 bundle 锁内运行,异常逃逸 = 锁不释放)。
+describe("prepareConfigTx 形状异常 fail-closed(#358 review)", () => {
+  test("非对象父节点(agent 为字符串/数字)返回 ok:false 而非抛异常", async () => {
+    const { prepareConfigTx } = await import("./ext-config-tx")
+    const r1 = prepareConfigTx("/nonexistent/alpha.jsonc", [{ keyPath: ["agent", "demo"], value: { a: 1 } }], '{"agent": "mine"}')
+    expect(r1.ok).toBe(false)
+    if (!r1.ok) expect(r1.reason).toContain("config edit failed")
+    const r2 = prepareConfigTx("/nonexistent/alpha.jsonc", [{ keyPath: ["mcp", "x"], value: {} }], '{"mcp": 3}')
+    expect(r2.ok).toBe(false)
+  })
+})

@@ -1667,7 +1667,13 @@ function agentSeedFreshGate(root: string, name: string, configTarget: string): {
     const errors: ParseError[] = []
     const cfg: unknown = parse(text, errors)
     if (errors.length > 0) return { ok: false, reason: `refusing seed install: config ${configTarget} is not valid jsonc (fail closed)` }
+    // #358 review Major 5:合法 jsonc 但形状异常(根非对象 / agent 段非对象)= config 损坏 ——
+    // 写盘前 fail-closed 拒,绝不放行到 jsonc modify(异常形状会让 edit 抛错)。
+    if (cfg !== undefined && !isObj(cfg))
+      return { ok: false, reason: `refusing seed install: config ${configTarget} root is not an object (fail closed)` }
     const agentMap = isObj(cfg) ? cfg.agent : undefined
+    if (agentMap !== undefined && !isObj(agentMap))
+      return { ok: false, reason: `refusing seed install: config "agent" section is not an object (fail closed)` }
     if (isObj(agentMap) && agentMap[name] !== undefined)
       return { ok: false, reason: `config entry "agent.${name}" exists without a ledger record — refusing to overwrite or adopt unregistered content` }
   }
@@ -1776,7 +1782,6 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
       scope: { kind: "global" },
       origin: "catalog",
       casFile: { spec: casSpec, casBaseRoot },
-      configTarget,
       capabilities: manifest.capabilities,
       ...(intent.authorization ? { authorization: stampAuthorization(intent.authorization, () => deps.now?.() ?? new Date().toISOString())! } : {}),
       version: manifest.version,
@@ -1881,7 +1886,6 @@ export async function uninstallByKey(rawIntent: unknown, deps: PlannerDeps): Pro
     if (!r.ok) return { ok: false, reason: r.reason }
     return { ok: true, ...(r.removed.length ? { files: r.removed } : {}) }
   }
-  const grantWarnings: string[] = []
   if (intent.type === "skill" || intent.type === "agent") {
     const r = deps.installers.removeFsInstall(intent.type, intent.name, target)
     if (!r.ok) {
@@ -1889,8 +1893,11 @@ export async function uninstallByKey(rawIntent: unknown, deps: PlannerDeps): Pro
       return r
     }
     removedFiles = r.files
-    // #358:事务安装的 agent 授权账(ext-store/agent--<name>[--config]/grants.json)随卸载清除 ——
-    // 残留 grant 会让重装按旧授权静默继承,违反 #348 重确认合同。幂等;失败并入 warning(loud)。
+    // #358(review Major 4 收紧):事务安装的 agent 授权账(ext-store/agent--<name>[--config]/
+    // grants.json)随卸载清除,且是**成功前置** —— 残留 grant 会让下一次 fresh install 把旧
+    // capability 集判为已授权(requiresConfirmation=false),静默继承授权,违反 #348 重确认合同。
+    // 删除失败 = 卸载失败且**账本不动**(record 仍在场 → 重试幂等收敛:removeFsInstall 幂等、
+    // grant 删除 existsSync 门、去账最后);崩溃窗口同理由「账本仍在」保证可重试,不谎报完成。
     if (intent.type === "agent") {
       for (const key of [agentInstallKey(intent.name), agentConfigItemKey(intent.name)]) {
         const grantFile = capabilityGrantPath(root, key)
@@ -1900,7 +1907,9 @@ export async function uninstallByKey(rawIntent: unknown, deps: PlannerDeps): Pro
             removedFiles = [...(removedFiles ?? []), grantFile]
           }
         } catch (error) {
-          grantWarnings.push(`grant removal failed for "${key}": ${error instanceof Error ? error.message : String(error)}`)
+          const reason = `agent uninstall: authorization grant removal failed for "${key}": ${error instanceof Error ? error.message : String(error)} — uninstall not completed (ledger retained; fix and retry)`
+          rollback(reason)
+          return { ok: false, reason }
         }
         try {
           fs.rmdirSync(path.dirname(grantFile)) // 只在空时成功;非空/不存在都不算失败
@@ -1970,11 +1979,7 @@ export async function uninstallByKey(rawIntent: unknown, deps: PlannerDeps): Pro
 
   const removed = removeRecordV2(root, intent.type, intent.name)
   ;(deps.transaction ?? passthroughTx).commit(tx.txId)
-  const warningParts = [
-    ...(removed.ok ? [] : [`uninstalled but ledger removal failed: ${removed.reason}`]),
-    ...grantWarnings,
-  ]
-  const warning = warningParts.length ? warningParts.join("; ") : undefined
+  const warning = removed.ok ? undefined : `uninstalled but ledger removal failed: ${removed.reason}`
   return { ok: true, ...(removedFiles ? { files: removedFiles } : {}), ...(warning ? { warning } : {}) }
 }
 

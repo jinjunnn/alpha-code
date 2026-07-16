@@ -592,24 +592,26 @@ describe("agent seed install via installCatalog (REQ-102 #358)", () => {
     expect(r.manifestDigest).toBe(computeManifestDigest(decoded.manifest))
     expect(rec!.manifestDigest).toBe(r.manifestDigest)
 
-    // 授权账落主 item key(committed 后才写)。
+    // 授权账落主 item key(committed 后才写);config 副 item 未声明 capabilities → 零授权账
+    // (review Minor:未参与授权 ≠ 已授权空集)。
     expect(fs.existsSync(capabilityGrantPath(globalRoot, agentInstallKey("bug-triage")))).toBe(true)
+    expect(fs.existsSync(capabilityGrantPath(globalRoot, agentConfigItemKey("bug-triage")))).toBe(false)
   })
 
-  test("首装零副作用停在 authorize;授权 key 归主 item(config 副 item 不再弹)", async () => {
+  test("首装零副作用停在 authorize;未声明 capabilities 的 config 副 item 不参与授权(单 diff)", async () => {
     buildSeed([{ id: "agent:bug-triage", files: agentFiles }])
     const first = await installCatalog(agentSeedIntent, agentDeps())
     expect(first.ok).toBe(false)
     if (first.ok) throw new Error("unreachable")
     expect(first.stage).toBe("authorize")
     if (first.stage !== "authorize") throw new Error("unreachable")
-    expect(first.authorization).toHaveLength(2)
-    const main = first.authorization.find((d) => d.key === agentInstallKey("bug-triage"))!
+    // review Minor:一个逻辑扩展一个授权 key —— config 副 item 不出现在 diff 里。
+    expect(first.authorization).toHaveLength(1)
+    const main = first.authorization[0]
+    expect(main.key).toBe(agentInstallKey("bug-triage"))
     expect(main.requested).toEqual(["engine:config", "prompt:context"])
     expect(main.previous).toBeNull()
     expect(main.requiresConfirmation).toBe(true)
-    const cfgItem = first.authorization.find((d) => d.key === agentConfigItemKey("bug-triage"))!
-    expect(cfgItem.requiresConfirmation).toBe(false)
     // 零权威副作用:无 md、无 config 叶、无账、无授权账。
     expect(fs.existsSync(path.join(globalRoot, "agents", "bug-triage.md"))).toBe(false)
     expect(fs.existsSync(path.join(globalRoot, "alpha.jsonc"))).toBe(false)
@@ -650,6 +652,26 @@ describe("agent seed install via installCatalog (REQ-102 #358)", () => {
     const withLeaf = await installAuthorized(agentSeedIntent, agentDeps())
     expect(withLeaf.ok).toBe(false)
     if (!withLeaf.ok) expect(withLeaf.reason).toContain('config entry "agent.bug-triage"')
+  })
+
+  test("形状异常的合法 jsonc(agent 段非对象 / 根非对象)fail-closed,锁正常释放(review Major 5)", async () => {
+    buildSeed([{ id: "agent:bug-triage", files: agentFiles }])
+    // agent 段是字符串 —— 若放行到 jsonc modify 会抛异常且不释放引擎锁。
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ agent: "mine" }))
+    const strShape = await installAuthorized(agentSeedIntent, agentDeps())
+    expect(strShape.ok).toBe(false)
+    if (!strShape.ok) expect(strShape.reason).toContain('"agent" section is not an object')
+
+    // 根是数组。
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), "[]")
+    const arrRoot = await installAuthorized(agentSeedIntent, agentDeps())
+    expect(arrRoot.ok).toBe(false)
+    if (!arrRoot.ok) expect(arrRoot.reason).toContain("root is not an object")
+
+    // 锁已释放:恢复 config 后同一 deps 可正常安装(若锁泄漏这里会 busy)。
+    fs.rmSync(path.join(globalRoot, "alpha.jsonc"), { force: true })
+    const ok = await installAuthorized(agentSeedIntent, agentDeps())
+    expect(ok.ok).toBe(true)
   })
 
   test("refuses identity drift between entry id and entry name", async () => {
@@ -732,6 +754,39 @@ describe("agent seed install via installCatalog (REQ-102 #358)", () => {
     const again = await installCatalog(agentSeedIntent, deps)
     expect(again.ok).toBe(false)
     if (!again.ok) expect(again.stage).toBe("authorize")
+  })
+
+  test("grant 删除失败 = 卸载失败且账本不动,修复后重试收敛(review Major 4)", async () => {
+    buildSeed([{ id: "agent:bug-triage", files: agentFiles }])
+    const deps = agentDeps()
+    expect((await installAuthorized(agentSeedIntent, deps)).ok).toBe(true)
+
+    const installers: PlannerInstallers = {
+      ...forbiddenInstallers(),
+      removeFsInstall: (_type, name) => {
+        fs.rmSync(path.join(globalRoot, "agents", `${name}.md`), { force: true })
+        fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), "{}\n")
+        return { ok: true, files: [] }
+      },
+    }
+    const uninstallDeps: PlannerDeps = { ...deps, installers }
+
+    // 把 grants.json 换成非空目录 → unlink 必失败。
+    const grantFile = capabilityGrantPath(globalRoot, agentInstallKey("bug-triage"))
+    fs.rmSync(grantFile, { force: true })
+    fs.mkdirSync(path.join(grantFile, "block"), { recursive: true })
+
+    const blocked = await uninstallByKey({ type: "agent", name: "bug-triage", scope: "global" }, uninstallDeps)
+    expect(blocked.ok).toBe(false)
+    if (!blocked.ok) expect(blocked.reason).toContain("grant removal failed")
+    // 账本不动 → 可重试,不谎报完成。
+    expect(findRecordV2(globalRoot, "agent", "bug-triage")).not.toBeNull()
+
+    // 修复(移除占位目录)后重试收敛。
+    fs.rmSync(grantFile, { recursive: true, force: true })
+    const retry = await uninstallByKey({ type: "agent", name: "bug-triage", scope: "global" }, uninstallDeps)
+    expect(retry.ok).toBe(true)
+    expect(findRecordV2(globalRoot, "agent", "bug-triage")).toBeNull()
   })
 })
 
