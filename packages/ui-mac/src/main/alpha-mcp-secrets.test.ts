@@ -8,6 +8,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 import {
   claimMcpSecretVersionDir,
+  resolveMcpRefPath,
   collectMcpFileRefPaths,
   fileifyMcpSecretsVersioned,
   gcMcpSecretVersionsLocked,
@@ -157,6 +158,14 @@ describe("substituteMcpSecretRefsPure — 零写盘的引用替换", () => {
     const config: Record<string, unknown> = { type: "local", command: ["x"] }
     const r = substituteMcpSecretRefsPure(config, { EMPTY: "", ABSENT: "v" }, (v) => `{file:/r/${v}}`)
     expect(r.skipped.sort()).toEqual(["ABSENT", "EMPTY"])
+  })
+})
+
+describe("resolveMcpRefPath — 引擎解析语义(r5)", () => {
+  test("~/ 展开为 home;相对按 config 目录;绝对规范化", () => {
+    expect(resolveMcpRefPath("~/secrets/TOK", "/cfg")).toBe(path.join(os.homedir(), "secrets", "TOK"))
+    expect(resolveMcpRefPath("alpha-mcp-secrets/s/v-aa/TOK", "/cfg/dir")).toBe("/cfg/dir/alpha-mcp-secrets/s/v-aa/TOK")
+    expect(resolveMcpRefPath("/a/./b/TOK", "/cfg")).toBe("/a/b/TOK")
   })
 })
 

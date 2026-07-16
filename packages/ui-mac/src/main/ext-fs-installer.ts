@@ -718,6 +718,10 @@ export function collectVendoredPluginPayload(
 ): { ok: true; files: Array<{ path: string; data: Buffer }> } | { ok: false; reason: string } {
   if (!SAFE_PLUGIN_ASSET_KEY.test(vendoredAssetKey)) return { ok: false, reason: "invalid asset key" }
   if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid plugin name" }
+  // #378 r5(Major):内容身份交叉(#361 agent 同款)—— 已验签但配错的 entry 不得把别的资产
+  // 目录按本 plugin 的名称/账本身份/capability grant 装入运行。
+  if (vendoredAssetKey !== `plugins/${name}`)
+    return { ok: false, reason: `asset key "${vendoredAssetKey}" ≠ "plugins/${name}" — refusing (content identity drift)` }
   const srcDir = path.join(resourcesRoot(), vendoredAssetKey)
   let realSrc: string
   try {

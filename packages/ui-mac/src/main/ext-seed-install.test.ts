@@ -1180,6 +1180,15 @@ describe("plugin seed install via installCatalog (REQ-102 #359)", () => {
     const referenced = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [oldJs] }))
     expect(referenced.removed).toBe(false)
     expect(fs.existsSync(oldDir)).toBe(true)
+    // #378 r5 Blocker:等价形态引用同样保留 —— 相对路径(引擎按 config 目录解析)与元组 spec 头。
+    const relRef = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({
+      ok: true,
+      value: ["./plugins/demo-plugin@aaaabbbbccccdddd/plugin.js"],
+    }))
+    expect(relRef.removed).toBe(false)
+    const tupleRef = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [[oldJs, { opt: true }]] }))
+    expect(tupleRef.removed).toBe(false)
+    expect(fs.existsSync(oldDir)).toBe(true)
     // 锁忙 → 保留。
     const held = tryAcquireBundleLock(globalRoot, { txId: "probe" })
     expect(held.ok).toBe(true)

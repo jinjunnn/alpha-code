@@ -2252,6 +2252,18 @@ async function recoverOne(
   ]
   const reason = `crash recovery rollback: ${reasonParts.join("; ")}`
   let restoreBlocked: string | null = null
+  // #378 r5 Major:失据-no-op 的 config item 记账 —— 其「live 在 pre 态」判定与后续 file 回滚
+  // 之间存在旁路写窗口(绕锁写方可在其间写入引用本事务载荷的配置)。每次 file restore 前与
+  // 终态化前**紧邻重验**这些 item 仍在 pre 态,漂移即冻结;残余相邻 syscall 微窗与 #358 r3
+  // 同类缩窗(能绕 bundle 锁写 config 者本就等价于本用户)。
+  const lostPreConfigs: TxJournalItem[] = []
+  const recheckLostPre = (): string | null => {
+    for (const c of lostPreConfigs) {
+      if (c.config && configTargetDigest(c.config.target) !== c.config.preDigest)
+        return `config recovery for "${c.key}": live drifted after the no-op check — retained`
+    }
+    return null
+  }
   for (const it of [...journal.items].reverse()) {
     // #378 r2 Major:任一恢复被挡即冻结(与前向回滚同款)—— 逆序下 config 先恢复,受阻时
     // 继续 unlink file items 会删掉 live config 仍引用的载荷。剩余 item 原样留证。
@@ -2272,6 +2284,7 @@ async function recoverOne(
         // config 未翻转 + 仅 config staging 丢失」这类可安全收敛的现场被永久卡死,阻断后续写)。
         if (it.config && configTargetDigest(it.config.target) === it.config.preDigest) {
           warnings.push(`config recovery: staged image lost but live already at pre-digest for "${it.key}" — safe no-op`)
+          lostPreConfigs.push(it) // r5:后续 file 回滚/终态化前紧邻重验(旁路写窗口夹逼)
           continue
         }
         // #378 r3 Major:live 非 pre 态(已翻转/已漂移)且失据 → **冻结保留** —— 无从判定
@@ -2297,10 +2310,19 @@ async function recoverOne(
           restoreBlocked = `file recovery rollback for "${it.key}": bypass-planted content at an unapplied target — retained as evidence`
         continue
       }
+      // #378 r5:file restore 前紧邻重验失据-no-op 的 config 仍在 pre 态(漂移 = 有旁路写方
+      // 可能已让 config 重新引用本载荷 → 冻结,不 unlink)。
+      const drifted = recheckLostPre()
+      if (drifted) {
+        restoreBlocked = drifted
+        continue
+      }
       const restored = restoreFileImage(reconstructFileImage(it)!) // 上方预扫已证明可重建
       if (!restored.ok) restoreBlocked = `file recovery rollback for "${it.key}": ${restored.reason}`
     }
   }
+  // #378 r5:终态化前的末次夹逼 —— 全部恢复动作完成后再验一次失据-no-op config 未漂移。
+  if (!restoreBlocked) restoreBlocked = recheckLostPre()
   // #358 review Blocker 3:file 恢复被旁路改写挡住(target 既非 pre 也非 next)= 现场需人工核对 ——
   // 保留非终态 + staging(证据与重试依据),不隔离、不终态化。已完成的 config 恢复幂等(下轮 noop)。
   if (restoreBlocked) {

@@ -305,4 +305,10 @@ describe("collectVendoredPluginPayload — #378 随包 plugin 载荷收集(只�
     expect(collectVendoredPluginPayload("../evil", "x").ok).toBe(false)
     expect(collectVendoredPluginPayload("plugins/opencode-notify", "../x").ok).toBe(false)
   })
+
+  test("#378 r5:内容身份交叉 —— key ≠ plugins/<name> 拒(配错的 entry 不得按本名装入别的资产)", () => {
+    const drift = collectVendoredPluginPayload("plugins/opencode-notify", "other-name")
+    expect(drift.ok).toBe(false)
+    if (!drift.ok) expect(drift.reason).toContain("content identity drift")
+  })
 })

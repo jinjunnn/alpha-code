@@ -1935,6 +1935,38 @@ describe("single-install transactionalization exit criteria (REQ-100 #378)", () 
     expect(JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))).toEqual({ plugin: [strayNp] })
   })
 
+  test("r5:authorize 暂停时本次密钥版本清理失败 → 降级普通失败(不返回 authorize),明文位置入 reason", async () => {
+    const { deps } = makeDeps({
+      installers: {
+        removeMcpSecretVersionDir: (_name: string, _verId: string) => ({ ok: false as const, reason: "EACCES: permission denied" }),
+      },
+    })
+    const first = await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "v" } } }, deps)
+    expect(first.ok).toBe(false)
+    if (first.ok) throw new Error("unreachable")
+    expect(first.stage).toBeUndefined() // 不冒充干净的 authorize 暂停
+    expect(first.reason).toContain("secret version cleanup failed")
+    expect(first.reason).toContain("plaintext")
+  })
+
+  test("r5:元组 [spec, options] —— 合法元组可被 replace 换首项保留 options;非法形状拒", async () => {
+    const { deps } = makeDeps()
+    const v1 = await installAuthorized({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
+    expect(v1.ok).toBe(true)
+    // 把安装条目改写为引擎合法元组(带 options);replace 必须能按 spec 头对账并换元
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [["@alpha/np@2.3.4", { lazy: true }]] }))
+    const v2Entry = { ...pluginNpmEntry, version: "2.3.5", installSpec: { kind: "plugin", package: "@alpha/np", version: "2.3.5" } } as CatalogEntry
+    const { deps: d2 } = makeDeps({ entries: [...ALL_ENTRIES.filter((e) => e.id !== "plugin:np"), v2Entry] })
+    const upd = await installAuthorized({ catalogId: "plugin:np", scope: { scope: "global" } }, d2)
+    expect(upd.ok).toBe(true)
+    expect(pluginArrayOnDisk()).toEqual([["@alpha/np@2.3.5", { lazy: true }]]) // 换首项保留 options
+    // 引擎非法形状(["x"] / ["x", null])在 strict 读被拒 → 新装 fail-closed
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [["only-head"]] }))
+    const bad = await installCatalog({ catalogId: "plugin:vp", scope: { scope: "global" } }, d2)
+    expect(bad.ok).toBe(false)
+    if (!bad.ok) expect(bad.reason).toContain("invalid entries")
+  })
+
   test("r3:相对与 file:// 等价形态的同名 stray 同样被拒(引擎按 config 目录解析路径条目)", async () => {
     fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: ["./plugins/vp@0011223344556677/plugin.js"] }))
     const { deps } = makeDeps()

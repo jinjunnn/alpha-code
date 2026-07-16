@@ -11,6 +11,7 @@
 
 import * as crypto from "node:crypto"
 import * as fs from "node:fs"
+import * as os from "node:os"
 import * as path from "node:path"
 
 const MCP_SECRET_DIR = "alpha-mcp-secrets"
@@ -314,6 +315,14 @@ export function substituteMcpSecretRefsPure(
     else skipped.push(varName)
   }
   return { substituted, skipped }
+}
+
+/** #378 r5(Major):{file:} 引用路径 → **引擎解析语义**的绝对路径(config/variable.ts:先展开
+ *  `~/` 为 home,再按 config 文件所在目录 resolve 相对路径)—— GC 与失败清理的引用对账必须与
+ *  引擎同判,否则 `{file:~/...}` 等合法形态被误判未引用而删掉在用密钥。 */
+export function resolveMcpRefPath(p: string, configDir: string): string {
+  const expanded = p.startsWith("~/") ? path.join(os.homedir(), p.slice(2)) : p
+  return path.isAbsolute(expanded) ? path.resolve(expanded) : path.resolve(configDir, expanded)
 }
 
 /** 深收集一个 config 值里的全部 `{file:<path>}` 引用路径(GC 的「被引用」判据;env 精确值与

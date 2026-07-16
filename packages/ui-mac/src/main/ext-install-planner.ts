@@ -48,7 +48,7 @@ import {
 } from "./ext-transaction"
 import { capabilityGrantPath, isSafeCapability, type CapabilityDiff } from "./ext-capability-grants"
 import { agentConfigItemKey, agentInstallKey, installAgentFromCas, recoveryReceiptInputs } from "./ext-agent-install"
-import { collectMcpFileRefPaths, newMcpSecretVersionId, substituteMcpSecretRefsPure } from "./alpha-mcp-secrets"
+import { collectMcpFileRefPaths, newMcpSecretVersionId, resolveMcpRefPath, substituteMcpSecretRefsPure } from "./alpha-mcp-secrets"
 
 /** `{file:<abs>}` 引用 → 文件路径(非引用形状 = null;#378 r1 锁内在场门与失败清理共用)。 */
 function mcpRefPathOf(ref: string): string | null {
@@ -60,10 +60,17 @@ function mcpRefPathOf(ref: string): string | null {
  *  isPathPluginSpec/resolvePluginSpec)把 `file://`、`.` 前缀与绝对路径当路径,相对路径按
  *  **config 文件所在目录**解析;词法 `includes`/CWD `resolve` 会漏等价形态(`./plugins/...`、
  *  `file://.../plugin.js`、`/a/./b`)。非路径形态(npm 包名)= null。 */
+/** plugin[] 成员的 spec 头(引擎 pluginSpecifier 同判:string 或 [spec, options] 元组)。
+ *  #378 r5:校验/等值比较/换元三阶段共用,元组不许再有任何一处按整值与字符串比较。 */
+function pluginSpecOf(x: unknown): string | null {
+  if (typeof x === "string") return x
+  if (Array.isArray(x) && typeof x[0] === "string") return x[0]
+  return null
+}
+
 function resolvePluginEntryPath(entry: unknown, configDir: string): string | null {
-  // r4:元组成员([spec, options])取 spec 头(引擎 pluginSpecifier 同判)。
-  const spec = Array.isArray(entry) && typeof entry[0] === "string" ? entry[0] : entry
-  if (typeof spec !== "string" || spec.length === 0) return null
+  const spec = pluginSpecOf(entry)
+  if (spec === null || spec.length === 0) return null
   let p = spec
   if (p.startsWith("file://")) {
     try {
@@ -768,7 +775,8 @@ function resolvePluginDispatch(
   const configKey = record.configKey ?? ""
   if (configKey.startsWith("plugin:")) {
     const oldPinned = configKey.slice("plugin:".length)
-    if (cfg.value.filter((x) => x === oldPinned).length !== 1)
+    // r5 Major:元组成员按 spec 头对账(引擎合法的 [oldPinned, options] 不再被误判 drift)。
+    if (cfg.value.filter((x) => pluginSpecOf(x) === oldPinned).length !== 1)
       return { mode: "refuse", reason: `ledger configKey "${configKey}" not matched exactly once in config plugin[] — ledger/config drift, refusing replace` }
     return { mode: "replace", facts: { record, form: { kind: "npm", oldPinned } } }
   }
@@ -786,7 +794,7 @@ function resolvePluginDispatch(
       (dirBase === entry.name || dirBase.startsWith(`${entry.name}@`))
     if (!confined)
       return { mode: "refuse", reason: `ledger plugin path "${oldJsPath}" is not under "${pluginsRoot}/${entry.name}[@…]" — refusing replace (uncontrolled removal target)` }
-    if (cfg.value.filter((x) => x === oldJsPath).length !== 1)
+    if (cfg.value.filter((x) => pluginSpecOf(x) === oldJsPath).length !== 1)
       return { mode: "refuse", reason: `ledger configKey "${configKey}" not matched exactly once in config plugin[] — ledger/config drift, refusing replace` }
     return { mode: "replace", facts: { record, form: { kind: "vendored", oldJsPath, oldDir } } }
   }
@@ -931,7 +939,10 @@ async function replacePluginViaTransaction(args: {
     return snapshot
   }
   const oldElem = facts.form.kind === "npm" ? facts.form.oldPinned : facts.form.oldJsPath
-  if (snapshot.value.filter((x) => x === oldElem).length !== 1) {
+  // r5 Major:等值与换元都按 spec 头(pluginSpecOf)—— 引擎合法的 [oldElem, options] 元组
+  // 必须能被替换(换首项保留 options),否则合法配置被误报 drift 永远无法更新。
+  const matchesOld = (x: unknown): boolean => pluginSpecOf(x) === oldElem
+  if (snapshot.value.filter(matchesOld).length !== 1) {
     cleanupStaged()
     rollback("plugin config drifted before plan")
     return { ok: false, reason: "plugin config changed while planning — retry the update" }
@@ -939,7 +950,7 @@ async function replacePluginViaTransaction(args: {
   // #378 r2(Major,fresh 同款对称):oldElem 之外的同名派生路径 = 未策展残留 —— 置换后它会
   // 留在数组里与新元素双载同名插件;拒绝而非静默带过(与 fresh 的不认领语义一致)。
   const strayEntry = findSameNamePluginPathEntry(
-    snapshot.value.filter((x) => x !== oldElem),
+    snapshot.value.filter((x) => !matchesOld(x)),
     root,
     entry.name,
   )
@@ -948,7 +959,10 @@ async function replacePluginViaTransaction(args: {
     rollback("unregistered plugin path present")
     return { ok: false, reason: `config also contains "${strayEntry}" without a ledger record — refusing to update into a double-load` }
   }
-  const nextArray = snapshot.value.map((x) => (x === oldElem ? newElem : x))
+  const nextArray = snapshot.value.map((x) => {
+    if (!matchesOld(x)) return x
+    return Array.isArray(x) ? [newElem, x[1]] : newElem
+  })
   const snapshotCanon = JSON.stringify(snapshot.value)
 
   const now = deps.now?.() ?? new Date().toISOString()
@@ -1593,18 +1607,32 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       if (verId) {
         const leafNow = deps.installers.readMcpLeafStrict(entry.name)
         // leaf 缺席(fresh 的 authorize 暂停/失败)= 确定零引用,可删;只有**不可读**才保守不删。
-        // r3/r4 Major:两侧按**引擎解析语义**规范化(config/variable.ts 对 {file:相对路径} 按
-        // config 文件所在目录解析,非 CWD)—— 旁路等价改写({file:/a/v/./TOKEN}、相对形态)
-        // 不再被误判「未引用」而删掉 live 仍指向的密钥。
+        // r3/r4/r5 Major:两侧按**引擎解析语义**规范化(resolveMcpRefPath:~/ 展开 + config
+        // 目录基准)—— 旁路等价改写({file:/a/v/./TOKEN}、相对、~/ 形态)不再被误判「未引用」
+        // 而删掉 live 仍指向的密钥。
         const liveRefs = leafNow.ok
-          ? new Set((leafNow.value !== undefined ? collectMcpFileRefPaths(leafNow.value) : []).map((p) => path.resolve(mcpRoot, p)))
+          ? new Set((leafNow.value !== undefined ? collectMcpFileRefPaths(leafNow.value) : []).map((p) => resolveMcpRefPath(p, mcpRoot)))
           : null
-        const stillReferenced = liveRefs === null || refPaths.some((p) => liveRefs.has(path.resolve(mcpRoot, p)))
+        const stillReferenced = liveRefs === null || refPaths.some((p) => liveRefs.has(resolveMcpRefPath(p, mcpRoot)))
+        let cleanupFailed: string | null = null
         if (!stillReferenced) {
           const rm = deps.installers.removeMcpSecretVersionDir(entry.name, verId)
-          if (!rm.ok) console.error(`[ext-install-planner] mcp ${entry.name}: secret version cleanup failed: ${rm.reason}`)
+          if (!rm.ok) {
+            cleanupFailed = rm.reason
+            console.error(`[ext-install-planner] mcp ${entry.name}: secret version cleanup failed: ${rm.reason}`)
+          }
         } else if (liveRefs !== null) {
           console.error(`[ext-install-planner] mcp ${entry.name}: secret version ${verId} kept — live config still references it (rollback retained?)`)
+        }
+        // r5 Major:authorize 暂停承诺「零权威副作用 + 零明文残留」—— 本次版本清理失败破坏
+        // 该承诺时不得照常返回 authorize(调用方会当作干净暂停继续确认流);降级为普通失败,
+        // 明文残留位置如实入 reason(0600,GC 兜底),用户处理后重试。
+        if (cleanupFailed !== null && result.stage === "authorize") {
+          rollback(result.reason)
+          return {
+            ok: false,
+            reason: `authorization pause aborted: this attempt's secret version cleanup failed (${cleanupFailed}) — plaintext may remain in version "${verId}" pending gc; resolve and retry`,
+          }
         }
       }
       rollback(result.reason)
@@ -2123,10 +2151,11 @@ function readPluginArrayStrictAt(configTarget: string): { ok: true; value: unkno
     const v = isObj(parsed) ? parsed.plugin : undefined
     if (v === undefined) return { ok: true, value: [] }
     if (!Array.isArray(v)) return { ok: false, reason: "config plugin key is not an array — refusing (fail closed)" }
-    // #378 r4:与 ext-config.readPluginArrayStrict 同判 —— 引擎合法成员 = string 或
-    // [spec, options] 元组;元组不许误拒(假阳性回归),真非法成员仍拒。
+    // #378 r4/r5:与 ext-config.readPluginArrayStrict 同判 —— 引擎合法成员 = string 或**恰**
+    // [string, Record] 元组;元组不许误拒(假阳性回归),["x"]/["x", null] 等非法形状仍拒。
     const legalEntry = (x: unknown): boolean =>
-      typeof x === "string" || (Array.isArray(x) && x.length >= 1 && typeof x[0] === "string")
+      typeof x === "string" ||
+      (Array.isArray(x) && x.length === 2 && typeof x[0] === "string" && !!x[1] && typeof x[1] === "object" && !Array.isArray(x[1]))
     if (!v.every(legalEntry))
       return { ok: false, reason: "config plugin[] contains invalid entries (neither string nor [spec, options]) — refusing (fix the config first)" }
     return { ok: true, value: v }
@@ -2405,7 +2434,13 @@ export function gcVendoredPluginDirLocked(
   try {
     const cfg = readPluginArray()
     if (!cfg.ok) return { removed: false, warning: `old plugin dir retained (config unreadable: ${cfg.reason})` }
-    const refsDir = (x: unknown): boolean => typeof x === "string" && (x === oldDir || x.startsWith(oldDir + path.sep))
+    // r5 Blocker:引用扫描按引擎语义解析(元组 spec 头/相对/file://)—— 词法「绝对字符串前缀」
+    // 会漏等价形态,把 live config 仍引用的旧目录当孤儿递归删除(插件启动即失败)。
+    const oldDirResolved = path.resolve(oldDir)
+    const refsDir = (x: unknown): boolean => {
+      const resolved = resolvePluginEntryPath(x, root)
+      return resolved !== null && (resolved === oldDirResolved || resolved.startsWith(oldDirResolved + path.sep))
+    }
     if (cfg.value.some(refsDir)) return { removed: false, warning: "old plugin dir re-referenced by config — retained (concurrent update)" }
     // 账本引用 fail-closed:损坏账本 = 无法证明无引用 = 保留。
     const ledgerProbe = probeLedgerForWrite(root)
