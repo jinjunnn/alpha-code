@@ -227,14 +227,19 @@ describe("gcMcpSecretVersionsLocked — 引用对账 + 宽限", () => {
     // 卸载吊销覆盖兄弟级
     const bak2 = path.join(base, "s.bak-cafebabe")
     fs.mkdirSync(bak2, { recursive: true })
-    // r4:恰巧叫 <server>.bak-live 的**另一个合法 server** 绝不能被前缀误伤(后缀须恰 .bak-<hex8>)
+    // r4:恰巧叫 <server>.bak-live 的另一合法 server 绝不能被前缀误伤(后缀须恰 .bak-<hex8>);
+    // r8:恰巧叫 <server>.bak-<hex8> 的**在册 server** 由活体排除保护(isLiveServer)。
     const decoy = path.join(base, "s.bak-live")
     const vidDecoy = newMcpSecretVersionId()
     writeMcpSecretVersioned(userData, "s.bak-live", vidDecoy, "TOK", "decoy-live")
-    removeMcpServerSecrets(userData, "s")
+    const liveHex = path.join(base, "s.bak-feedf00d")
+    const vidLiveHex = newMcpSecretVersionId()
+    writeMcpSecretVersioned(userData, "s.bak-feedf00d", vidLiveHex, "TOK", "live-hex-server")
+    removeMcpServerSecrets(userData, "s", (cand) => cand === "s.bak-feedf00d") // 在册集只含活体
     expect(fs.existsSync(bak2)).toBe(false)
     expect(fs.existsSync(path.join(base, "s"))).toBe(false)
-    expect(fs.readFileSync(path.join(decoy, vidDecoy, "TOK"), "utf8")).toBe("decoy-live") // 另一 server 零接触
+    expect(fs.readFileSync(path.join(decoy, vidDecoy, "TOK"), "utf8")).toBe("decoy-live") // 后缀不匹配零接触
+    expect(fs.readFileSync(path.join(liveHex, vidLiveHex, "TOK"), "utf8")).toBe("live-hex-server") // 在册活体零接触
   })
 
   test("目录缺席 = 无事;版本目录内任一文件被引用即整目录保留", () => {
@@ -265,12 +270,13 @@ describe("fileifyMcpSecretsVersioned — 未策展通道(flat 语义,版本化�
     expect(fs.readFileSync(verFile("github", vid, "GITHUB_PERSONAL_ACCESS_TOKEN"), "utf8")).toBe("ghp_secret")
   })
 
-  test("already-fileref / 空值 skipped(未策展既有 posture 保留)", () => {
+  test("already-fileref / 空值 = 良性跳过(不入 failed,不改 config;r8 fail-closed 语义)", () => {
     const vid = newMcpSecretVersionId()
     const ref = mcpSecretRef(userData, "s", "TOK")
     const config: Record<string, unknown> = { type: "local", command: ["x"], environment: { TOK: ref } }
     const r = fileifyMcpSecretsVersioned(userData, "s", config, ["TOK", "ABSENT"], vid)
-    expect(r.skipped.sort()).toEqual(["ABSENT", "TOK"])
+    expect(r.failed).toEqual([]) // 无明文风险 → 不阻断
+    expect(r.fileified).toEqual([])
     expect(strMap(config.environment).TOK).toBe(ref)
   })
 })

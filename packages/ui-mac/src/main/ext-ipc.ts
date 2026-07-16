@@ -15,7 +15,7 @@ import type { InstallTarget } from "../preload/types"
 import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
 import { claimMcpSecretVersionDir, fileifyMcpSecretsVersioned, mcpSecretVersionedRef, newMcpSecretVersionId, removeMcpSecretVersionDir, removeMcpServerSecrets, removeMcpServerSecretsStrict, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, type ProvenanceRequest } from "./alpha-migrate"
-import { configHealth, findPluginBaseConflictStrict, gcMcpSecretsAgainstConfig, mcpConfigTruthPath, persistPlugin, pluginRecordName, readLegacyPluginArrayStrict, readMcpLeaf, readMcpLeafStrict, readPluginArrayStrict, removeMcp, removeMcpConfigInLock, removePlugin, removePluginEntryExact, removePluginPath, restoreMcpLeaf } from "./ext-config"
+import { configHealth, findPluginBaseConflictStrict, gcMcpSecretsAgainstConfig, listConfiguredMcpServerNamesStrict, mcpConfigTruthPath, persistPlugin, pluginRecordName, readLegacyPluginArrayStrict, readMcpLeaf, readMcpLeafStrict, readPluginArrayStrict, removeMcp, removeMcpConfigInLock, removePlugin, removePluginEntryExact, removePluginPath, restoreMcpLeaf } from "./ext-config"
 import { recordUncuratedInstall } from "./ext-uncurated-record"
 import { applyMcpWritePolicy, persistMcpWithPolicy } from "./ext-mcp-policy"
 import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
@@ -83,21 +83,37 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
       // 通道刚写的新版本一起删(跨通道交错)。改版本化只增不覆盖:本次写全新 verId 目录,既有
       // 版本(可能正被旧 config 或在途事务引用)零接触;失败只删本次 verId(无引用,惰性安全)。
       const vars = secretVars && secretVars.length && server && typeof server === "object" ? secretVars : null
-      // r1 Minor:版本目录排他认领(碰撞换 id 重试,绝不复用既有版本目录)。认领不下来 =
-      // 密钥进不了文件通道,按未策展既有 posture(skip)继续 —— 与 fileify 写失败同语义。
+      // r1 Minor:版本目录排他认领(碰撞换 id 重试,绝不复用既有版本目录)。
+      // r8 Blocker:认领不下来 = 密钥进不了文件通道 —— **fail-closed 拒绝**,绝不带明文继续
+      // 落盘(durable config 只含 {file:} 引用的合同对未策展面同样成立)。
       let verId: string | null = null
+      let claimFail = ""
       if (vars) {
         for (let i = 0; i < 3 && !verId; i++) {
           const vid = newMcpSecretVersionId()
           const claimed = claimMcpSecretVersionDir(userDataPath, name, vid)
           if (claimed.ok) verId = vid
-          else if (!claimed.exists) break // 非碰撞失败(圈禁/权限)重试无意义
+          else {
+            claimFail = claimed.reason
+            if (!claimed.exists) break // 非碰撞失败(圈禁/权限)重试无意义
+          }
         }
+        if (!verId) return { ok: false as const, reason: `secret channel unavailable (${claimFail}) — refusing plaintext persist` }
       }
       // Codex review #355:补偿必须是精确叶子 before-image —— removeMcp 全量卸载会连既有配置/
       // legacy/receipt 一起误删(更新场景毁掉本次写入前就存在的安装)。
       const before = typeof name === "string" ? readMcpLeaf(name) : undefined
-      if (vars && verId) fileifyMcpSecretsVersioned(userDataPath, name, server, vars, verId)
+      if (vars && verId) {
+        const f = fileifyMcpSecretsVersioned(userDataPath, name, server, vars, verId)
+        if (f.failed.length > 0) {
+          // r8 Blocker:明文没能全部进文件通道 → 删本次版本目录并拒绝,绝不明文持久化。
+          const rm = removeMcpSecretVersionDir(userDataPath, name, verId)
+          return {
+            ok: false as const,
+            reason: `secret(s) could not be routed to the {file:} channel: ${f.failed.join(", ")} — refusing plaintext persist${rm.ok ? "" : `; cleanup failed (${rm.reason}) — plaintext may remain in version "${verId}" pending gc`}`,
+          }
+        }
+      }
       // REQ-105 #254:MCP 写盘唯一策略入口。Excel sandbox 闸口(local stdio + 审计钉版 + 零网络
       // 绑定 + 受管 workspace 强制)由 persistMcpWithPolicy 统一执行 —— main 注入固定 EXCEL_FILES_PATH,
       // 结构上消除「调用点忘传 workspace」的 fail-open。
@@ -143,7 +159,12 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
     if (lk.status !== "absent")
       return { ok: false, reason: `ledger-backed MCP (${lk.status}) — use the journaled uninstall channel (ext-uninstall-v2)` }
     const r = removeMcp(nm)
-    if (r.ok) removeMcpServerSecrets(userDataPath, nm)
+    if (r.ok) {
+      // r8:best-effort 面 —— 在册名读不出时把全部候选当活体(跳过备份删除),绝不误删。
+      const live = listConfiguredMcpServerNamesStrict()
+      const names = live.ok ? new Set(live.names) : null
+      removeMcpServerSecrets(userDataPath, nm, (cand) => (names ? names.has(cand) : true))
+    }
     return r
   }
   // B11/B23:全局配置健康探测(语法错/未知顶键 → 引擎会整份清零)
@@ -489,7 +510,11 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
       const name = key.slice("mcp--".length)
       const cfg = removeMcpConfigInLock(name)
       if (!cfg.ok) throw new Error(cfg.reason)
-      const sec = removeMcpServerSecretsStrict(userDataPath, name)
+      // r8 Major:恢复 seam 同款活体排除 —— 在册名读不出 = 吊销失败(journal 保持非终态前滚)。
+      const live = listConfiguredMcpServerNamesStrict()
+      if (!live.ok) throw new Error(`secret revocation blocked: ${live.reason}`)
+      const liveNames = new Set(live.names)
+      const sec = removeMcpServerSecretsStrict(userDataPath, name, (cand) => liveNames.has(cand))
       if (!sec.ok) throw new Error(sec.reason)
       // #359:与主卸载路径同语义 —— 授权账随 artifact 清,失败保持非终态前滚。
       const grants = removeInstallGrants(root, [key])
@@ -596,7 +621,14 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
         gcMcpSecrets: (name) => gcMcpSecretsAgainstConfig(userDataPath, name),
         // #346:journaled MCP 卸载的两个 in-lock/strict 原语(引擎事务锁内调用)。
         removeMcpConfigInLock,
-        removeMcpSecretsStrict: (name) => removeMcpServerSecretsStrict(userDataPath, name),
+        removeMcpSecretsStrict: (name) => {
+          // r8 Major:兄弟备份删除的活体排除种子 —— 在册名集合读不出 = 吊销失败(可观察),
+          // 绝不冒险把可能是另一在册 server 的目录当备份删。
+          const live = listConfiguredMcpServerNamesStrict()
+          if (!live.ok) return { ok: false as const, reason: `secret revocation blocked: ${live.reason}` }
+          const names = new Set(live.names)
+          return removeMcpServerSecretsStrict(userDataPath, name, (cand) => names.has(cand))
+        },
         // #354:写前 strict 前像读(产品早拒 + 锁内 precondition 重验)。
         readMcpLeafStrict,
         // #378(裁决 Q5):npm plugin 跨源(主 + legacy XDG)同 base 严格检查。

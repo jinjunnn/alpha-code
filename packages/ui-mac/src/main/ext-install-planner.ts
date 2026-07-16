@@ -966,6 +966,15 @@ async function replacePluginViaTransaction(args: {
       )
       return
     }
+    // r8 Major:legacy 源(引擎合并)引用 staged jsPath 时同样保留 —— 只查主数组会在
+    // 「legacy 已引用 staged、replace 被门拒」的现场删掉引擎仍会加载的载荷。读不出 = 保守不删。
+    const legacyLive = deps.installers.readLegacyPluginArrayStrict()
+    if (!legacyLive.ok || legacyLive.sources.some((src) => src.value.some((e) => resolvePluginEntryPath(e, src.configDir) === newElemResolved))) {
+      console.error(
+        `[ext-install-planner] plugin ${entry.name}: staged dir kept — ${legacyLive.ok ? "a legacy config source references it" : `legacy config unreadable: ${legacyLive.reason}`}`,
+      )
+      return
+    }
     try {
       fs.rmSync(stagedDir, { recursive: true, force: true })
     } catch {

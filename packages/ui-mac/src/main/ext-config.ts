@@ -12,6 +12,7 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { randomUUID } from "node:crypto"
+import { fileURLToPath } from "node:url"
 import { applyEdits, modify, parse, type ParseError } from "jsonc-parser"
 import type { ProviderInput } from "../shared/alpha-model-types"
 import type { InstallMeta } from "../preload/types"
@@ -502,7 +503,11 @@ export function gcMcpSecretsAgainstConfig(userDataPath: string, name: string): {
         return { removed: [], warnings: [`secret gc skipped for ${name}: legacy config unreadable: ${file}: ${error instanceof Error ? error.message : String(error)}`] }
       }
     }
-    return gcMcpSecretVersionsLocked(userDataPath, name, referenced)
+    // r8 Major:兄弟备份活体排除 —— 在册名读不出 = 引用集同源不可信,整轮安全退出。
+    const live = listConfiguredMcpServerNamesStrict()
+    if (!live.ok) return { removed: [], warnings: [`secret gc skipped for ${name}: ${live.reason}`] }
+    const liveNames = new Set(live.names)
+    return gcMcpSecretVersionsLocked(userDataPath, name, referenced, (cand) => liveNames.has(cand))
   })
   return "removed" in r ? r : { removed: [], warnings: [r.reason] }
 }
@@ -767,6 +772,29 @@ function legalPluginEntry(x: unknown): boolean {
   )
 }
 
+/** #378 r8(Major):全配置源(主 + legacy)在册 MCP server 名集合 —— 兄弟级备份判别的活体
+ *  排除种子:`foo.bak-<hex8>` 完全可以是另一个**合法在册 server** 的名字,只按名字模式删除会
+ *  吊销别家在用凭证。任一源不可读/解析失败 = 集合不可信(strict 调用方必须失败)。 */
+export function listConfiguredMcpServerNamesStrict(): { ok: true; names: string[] } | { ok: false; reason: string } {
+  const names = new Set<string>()
+  const isRec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
+  for (const file of [mcpPluginTargetPath(), ...legacyConfigPaths(mcpPluginTargetPath())]) {
+    try {
+      if (!fs.existsSync(file)) continue
+      const errors: ParseError[] = []
+      const parsed: unknown = parse(fs.readFileSync(file, "utf8"), errors)
+      if (errors.length > 0) return { ok: false, reason: `config unparseable: ${file}` }
+      const mcpMap = isRec(parsed) ? parsed.mcp : undefined
+      if (mcpMap === undefined) continue
+      if (!isRec(mcpMap)) return { ok: false, reason: `config mcp key has unexpected shape: ${file}` }
+      for (const k of Object.keys(mcpMap)) names.add(k)
+    } catch (error) {
+      return { ok: false, reason: `config unreadable: ${file}: ${error instanceof Error ? error.message : String(error)}` }
+    }
+  }
+  return { ok: true, names: [...names] }
+}
+
 /** #378 r7(Major):引擎配置真源路径(escape-hatch 路由后的实际写入目标)—— 事务安装的
  *  config action 圈禁在事务根内,真源被路由到别处时必须 fail-closed 拒(否则「账本记 active、
  *  引擎读不到」谎报成功)。planner 经 seam 消费。 */
@@ -924,14 +952,35 @@ function persistPluginPathUnlocked(name: string, absJsPath: string, files: strin
 export function removePluginPath(name: string, absJsPath: string): ConfigResult {
   return withConfigWriteLock(() => removePluginPathUnlocked(name, absJsPath))
 }
+/** #378 r8(Major):条目按**引擎解析语义**与目标 jsPath 等值(string / [spec, options] 元组头 /
+ *  file:// / 相对按 config 目录)—— 词法 `p !== absJsPath` 会漏等价形态,卸载「成功」后留下
+ *  指向已删 plugin.js 的条目。 */
+function pluginEntryMatchesPath(entry: unknown, targetResolved: string, configDir: string): boolean {
+  const spec = typeof entry === "string" ? entry : Array.isArray(entry) && typeof entry[0] === "string" ? entry[0] : null
+  if (spec === null || spec.length === 0) return false
+  let p = spec
+  if (p.startsWith("file://")) {
+    try {
+      p = fileURLToPath(p)
+    } catch {
+      return false
+    }
+  } else if (!p.startsWith(".") && !path.isAbsolute(p)) {
+    return false
+  }
+  return path.resolve(configDir, p) === targetResolved
+}
+
 function removePluginPathUnlocked(name: string, absJsPath: string): ConfigResult {
   if (!path.isAbsolute(absJsPath)) return { ok: false, reason: "invalid plugin path" }
   const target = mcpPluginTargetPath()
+  const targetResolved = path.resolve(absJsPath)
+  const configDir = path.dirname(target)
   try {
     if (fs.existsSync(target)) {
       const parsed = parse(fs.readFileSync(target, "utf8")) as { plugin?: unknown } | undefined
       const current: unknown[] = Array.isArray(parsed?.plugin) ? (parsed!.plugin as unknown[]) : []
-      const next = current.filter((p) => p !== absJsPath)
+      const next = current.filter((p) => !pluginEntryMatchesPath(p, targetResolved, configDir))
       if (next.length !== current.length) {
         const written = writeKeyUnlocked(target, ["plugin"], next)
         if (!written.ok) return written

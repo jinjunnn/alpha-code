@@ -74,12 +74,24 @@ export function writeMcpSecret(
  *  误判成备份删除。枚举失败走结果通道(strict 调用方必须失败,best-effort 调用方静默);
  *  ENOENT = 空。 */
 const SIBLING_BAK_SUFFIX = /^\.bak-[a-f0-9]{8}$/
-function listSiblingBackupDirs(userDataPath: string, server: string): { ok: true; dirs: string[] } | { ok: false; reason: string } {
+/** r8(Major):名字模式仍可能撞真 server(`foo.bak-<hex8>` 是 SAFE_SERVER 合法名)——
+ *  isLiveServer(全配置源在册名集合)排除活体,只把「名字匹配且不在册」当历史备份。 */
+function listSiblingBackupDirs(
+  userDataPath: string,
+  server: string,
+  isLiveServer: (candidate: string) => boolean,
+): { ok: true; dirs: string[] } | { ok: false; reason: string } {
   const base = path.join(userDataPath, MCP_SECRET_DIR)
   try {
     const dirs = fs
       .readdirSync(base, { withFileTypes: true })
-      .filter((e) => e.isDirectory() && e.name.startsWith(server) && SIBLING_BAK_SUFFIX.test(e.name.slice(server.length)))
+      .filter(
+        (e) =>
+          e.isDirectory() &&
+          e.name.startsWith(server) &&
+          SIBLING_BAK_SUFFIX.test(e.name.slice(server.length)) &&
+          !isLiveServer(e.name),
+      )
       .map((e) => path.join(base, e.name))
     return { ok: true, dirs }
   } catch (error) {
@@ -91,11 +103,15 @@ function listSiblingBackupDirs(userDataPath: string, server: string): { ok: true
 
 /** Remove a connector's whole secret dir on uninstall (revoke — no stale token resurrection).
  *  #378 r3:连同历史兄弟级 `<server>.bak-<hex8>` 快照残留一并吊销。 */
-export function removeMcpServerSecrets(userDataPath: string, server: string): void {
+export function removeMcpServerSecrets(
+  userDataPath: string,
+  server: string,
+  isLiveServer: (candidate: string) => boolean,
+): void {
   if (!SAFE_SERVER.test(server)) return
   try {
     fs.rmSync(serverDir(userDataPath, server), { recursive: true, force: true })
-    const baks = listSiblingBackupDirs(userDataPath, server)
+    const baks = listSiblingBackupDirs(userDataPath, server, isLiveServer)
     if (baks.ok) for (const bak of baks.dirs) fs.rmSync(bak, { recursive: true, force: true })
   } catch {
     /* best-effort */
@@ -106,11 +122,15 @@ export function removeMcpServerSecrets(userDataPath: string, server: string): vo
  *  不可证明,journal 无法据实保持非终态)。目录不存在 = 幂等成功。
  *  #378 r3/r4:兄弟级 `<server>.bak-<hex8>` 历史快照残留同吊销;**枚举失败 = 吊销失败**
  *  (静默折叠成功会让卸载终态化而旧凭证备份仍在盘上)。 */
-export function removeMcpServerSecretsStrict(userDataPath: string, server: string): { ok: true } | { ok: false; reason: string } {
+export function removeMcpServerSecretsStrict(
+  userDataPath: string,
+  server: string,
+  isLiveServer: (candidate: string) => boolean,
+): { ok: true } | { ok: false; reason: string } {
   if (!SAFE_SERVER.test(server)) return { ok: false, reason: `invalid server name: ${server}` }
   try {
     fs.rmSync(serverDir(userDataPath, server), { recursive: true, force: true })
-    const baks = listSiblingBackupDirs(userDataPath, server)
+    const baks = listSiblingBackupDirs(userDataPath, server, isLiveServer)
     if (!baks.ok) return { ok: false, reason: `secret revocation incomplete for ${server}: ${baks.reason}` }
     for (const bak of baks.dirs) fs.rmSync(bak, { recursive: true, force: true })
     return { ok: true }
@@ -124,25 +144,26 @@ export function removeMcpServerSecretsStrict(userDataPath: string, server: strin
 // 只增布局取代(catalog 走 substituteMcpSecretRefsPure + writeMcpSecretVersioned,失败删本次
 // verId;跨通道整目录 restore 会删掉并发事务的新版本,正是被裁决否决的交错)。
 
-/** #378:未策展通道的版本化 fileify(flat fileifyMcpSecrets 语义的只增不覆盖版)—— environment 键
- *  匹配语义逐字保留(已是 {file:} 引用 / 空值 → skipped 原样留在 config,未策展面既有 posture
- *  不在本票收紧);写入走 writeMcpSecretVersioned(新 verId 目录,旧版本零接触)。 */
+/** #378 r8(Blocker):未策展通道的版本化 fileify —— 返回 **failed**(明文在场但没能进文件
+ *  通道:写失败/env 缺失形状异常),调用方必须 fail-closed 拒绝落盘(durable config 只含
+ *  {file:} 引用的合同对未策展面同样成立);已是 {file:} 引用 / 空值 = 良性跳过(无明文风险),
+ *  不再与失败混在一个桶里。写入走 writeMcpSecretVersioned(新 verId 目录,旧版本零接触)。 */
 export function fileifyMcpSecretsVersioned(
   userDataPath: string,
   server: string,
   config: Record<string, unknown>,
   secretVars: string[],
   verId: string,
-): { fileified: string[]; skipped: string[] } {
+): { fileified: string[]; failed: string[] } {
   const isRec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
   const fileified: string[] = []
-  const skipped: string[] = []
+  const failed: string[] = []
   const envMap = isRec(config.environment) ? config.environment : null
-  if (!envMap) return { fileified, skipped: secretVars }
   for (const varName of secretVars) {
-    const value = envMap[varName]
-    if (typeof value !== "string" || value.length === 0 || isFileRef(value)) {
-      skipped.push(varName)
+    const value = envMap ? envMap[varName] : undefined
+    if (typeof value !== "string" || value.length === 0 || isFileRef(value)) continue // 良性:无明文可路由
+    if (!envMap) {
+      failed.push(varName)
       continue
     }
     const written = writeMcpSecretVersioned(userDataPath, server, verId, varName, value)
@@ -150,10 +171,10 @@ export function fileifyMcpSecretsVersioned(
       envMap[varName] = written.ref
       fileified.push(varName)
     } else {
-      skipped.push(varName)
+      failed.push(varName)
     }
   }
-  return { fileified, skipped }
+  return { fileified, failed }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
@@ -358,6 +379,8 @@ export function gcMcpSecretVersionsLocked(
   userDataPath: string,
   server: string,
   referencedPaths: string[],
+  // r8:兄弟备份的活体排除(在册 server 名);缺省无排除只在名字不可能撞库的测试场景使用。
+  isLiveServer: (candidate: string) => boolean = () => false,
 ): { removed: string[]; warnings: string[] } {
   const removed: string[] = []
   const warnings: string[] = []
@@ -375,7 +398,7 @@ export function gcMcpSecretVersionsLocked(
   // #378 r3(Major):历史快照实现的备份在 **server 目录兄弟级**(`<server>.bak-<hex8>`)——
   // 只扫 server 目录内层永远看不见它们,含密钥旧备份会在成功重装后永久残留。过宽限即收
   // (备份从不被 config 引用)。与 server 目录是否存在无关;枚举失败入 warnings(best-effort)。
-  const baks = listSiblingBackupDirs(userDataPath, server)
+  const baks = listSiblingBackupDirs(userDataPath, server, isLiveServer)
   if (!baks.ok) warnings.push(baks.reason)
   else
     for (const bak of baks.dirs) {
