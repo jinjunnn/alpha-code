@@ -25,7 +25,7 @@ import { checkUncuratedConflict, recordUncuratedInstall, type UncuratedOrigin } 
 import { alphaRoot, ensureAlphaScaffold } from "./alpha-workdir"
 import type { InstallMeta, InstallReceipt, InstallTarget } from "../preload/types"
 import { parseSkillFrontmatter, validGitUrl } from "./ext-import-validate"
-import { persistPluginPath } from "./ext-config"
+import { collectSkillPayloadFromDir } from "./ext-skill-generations"
 
 export type FsResult = { ok: true; files?: string[] } | { ok: false; reason: string }
 
@@ -702,28 +702,43 @@ export function stageVendoredPluginVersioned(
   return { ok: true, dir: destDir, jsPath: path.join(destDir, "plugin.js") }
 }
 
-export function installVendoredPlugin(
+/** vendored plugin 载荷单文件帽(与引擎 file action 的 16MB 界一致,提前可读拒绝)+ 总量帽
+ *  (内存态采集,防随包资产异常膨胀拖垮 main)。 */
+const VENDORED_PLUGIN_FILE_MAX_BYTES = 16 * 1024 * 1024
+const VENDORED_PLUGIN_TOTAL_MAX_BYTES = 64 * 1024 * 1024
+
+/** #378(Codex 裁决 D2):收集 vendored plugin 随包目录为原始载荷 —— CAS 摄取源(自算内容地址,
+ *  摄取后完整性),事务 file items 由 planner 复用 seed 载体构造。只读零副作用;旧 flat 写入器
+ *  installVendoredPlugin 随 planner seam 下线删除(D8:无生产调用面)。
+ *  圈禁:srcDir realpath 必须恰为 <realpath(resources)>/<key>(父链 symlink 拒,#361 同款);
+ *  树内 symlink/非常规条目拒(collectSkillPayloadFromDir 同纪律);单文件/总量帽提前拒。 */
+export function collectVendoredPluginPayload(
   vendoredAssetKey: string,
   name: string,
-  meta?: InstallMeta,
-): FsResult {
+): { ok: true; files: Array<{ path: string; data: Buffer }> } | { ok: false; reason: string } {
   if (!SAFE_PLUGIN_ASSET_KEY.test(vendoredAssetKey)) return { ok: false, reason: "invalid asset key" }
   if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid plugin name" }
   const srcDir = path.join(resourcesRoot(), vendoredAssetKey)
-  if (!fs.existsSync(path.join(srcDir, "plugin.js"))) return { ok: false, reason: "插件内容未随此版本打包" }
-  const destDir = safeResolveUnder(alphaGlobalRoot(), "plugins", name)
-  if (!destDir) return { ok: false, reason: "refused: path escapes alpha root" }
+  let realSrc: string
   try {
-    fs.mkdirSync(destDir, { recursive: true })
-    fs.cpSync(srcDir, destDir, { recursive: true }) // vendored 内容可信(我方打包),整目录复制
+    realSrc = fs.realpathSync(srcDir)
+    const expected = path.join(fs.realpathSync(resourcesRoot()), ...vendoredAssetKey.split("/"))
+    if (realSrc !== expected) return { ok: false, reason: "plugin asset escapes the resources tree (symlinked path) — refusing" }
   } catch (error) {
-    return { ok: false, reason: error instanceof Error ? error.message : "failed to copy plugin" }
+    const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined
+    if (code === "ENOENT") return { ok: false, reason: "插件内容未随此版本打包" }
+    return { ok: false, reason: error instanceof Error ? error.message : "failed to read plugin asset" }
   }
-  const jsPath = path.join(destDir, "plugin.js")
-  const persisted = persistPluginPath(name, jsPath, [destDir], meta)
-  if (!persisted.ok) {
-    fs.rmSync(destDir, { recursive: true, force: true }) // 半成品不留
-    return persisted
+  const collected = collectSkillPayloadFromDir(realSrc)
+  if (!collected.ok) return collected
+  if (!collected.files.some((f) => f.path === "plugin.js")) return { ok: false, reason: "插件内容未随此版本打包" }
+  let total = 0
+  for (const f of collected.files) {
+    if (f.data.length > VENDORED_PLUGIN_FILE_MAX_BYTES)
+      return { ok: false, reason: `plugin payload file "${f.path}" exceeds ${VENDORED_PLUGIN_FILE_MAX_BYTES} bytes — refused` }
+    total += f.data.length
+    if (total > VENDORED_PLUGIN_TOTAL_MAX_BYTES)
+      return { ok: false, reason: `plugin payload exceeds ${VENDORED_PLUGIN_TOTAL_MAX_BYTES} bytes total — refused` }
   }
-  return { ok: true, files: [destDir] }
+  return collected
 }

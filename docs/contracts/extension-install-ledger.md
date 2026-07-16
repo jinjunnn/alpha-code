@@ -4,7 +4,7 @@ kind: contract
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-16
+last_reviewed: 2026-07-17
 review_after: 2026-10-14
 ---
 
@@ -16,48 +16,43 @@ review_after: 2026-10-14
 
 ## 1. 写方所有权(单一账本真源)
 
-- **catalog 安装**的账本写方 = planner 提交面的 `upsertRecordV2`(单次写盘,v2 record 与
-  派生 v1 receipt 锁步)。installer/config 层的 eager v1 兜底(persistMcp /
-  persistPluginUnlocked / persistPluginPathUnlocked / recordReceipt catalog 分支)已随
-  fail-open 一并**下线**——不存在「v2 失败但 v1 已写」的合法状态。
+- **catalog 安装(全类型,#378 收口)** 归事务引擎 `commitReceipt`(写失败即事务失败 →
+  引擎回滚,#336/#310/#311/#358/#359/#361/#378):skill = generation 事务;agent = file+config
+  双 item(seed #358 + catalog #361,同一载体);**mcp = config action 单 item(#378;
+  `configKey: mcp.<name>`)**;**plugin vendored fresh = CAS file items + config item(#378,
+  `installPluginFromCas`;`configKey: plugin-path:<jsPath>`,`files:
+  [plugins/<name>@<digest16>]`)**;**plugin npm fresh = config action 单 item(#378;
+  `configKey: plugin:<pinned>`)**;plugin replace = #352 原子替换;**cloud = receipt action
+  单 item(#378,零盘副作用)**;bundle 同前。planner 各分支**自提交早返回**,#354 时代的
+  共享 `upsertRecordV2` 尾部与「按类型补偿闭包 + 密钥快照」已随之**下线**。
+  多 item 事务的账本形态:**单条** v2 record,receipt 模板只挂逻辑主 item,副 item 不落账,
+  `commitReceipt` 经 `recoveryReceiptInputs` 按 `receipt !== undefined` 过滤(恢复前滚同源)。
+  installer/config 层的 eager v1 兜底早已下线(#354)——不存在「v2 失败但 v1 已写」的合法状态。
 - **未策展安装**归 orchestrator(`recordUncuratedInstall`,#306):mutate → 单次账本写 →
-  失败补偿并 fail-closed。
-- **generation/bundle/seed(agent/mcp/plugin)/catalog agent** 归事务引擎 `commitReceipt`
-  (写失败即事务失败 → 引擎回滚,#336/#310/#311/#358/#359/#361)。agent(seed #358 +
-  catalog #361,同一载体)的账本形态:**单条** v2 record(kind `agent`,`configKey:
-  agent.<name>`,`files: [<root>/agents/<name>.md]`),receipt 模板只挂事务的 file 主
-  item —— config 副 item 不落账,`commitReceipt` 经 `recoveryReceiptInputs` 按
-  `receipt !== undefined` 过滤(恢复前滚同源)。catalog agent 分支在 planner 内**自提交
-  早返回**(对齐 skill),不再触达 §2 的共享 `upsertRecordV2` 尾部。mcp seed(#359):
-  单条 record(`configKey: mcp.<name>`);plugin seed:单条 record(`configKey:
-  plugin-path:<jsPath>`,`files: [plugins/<name>@<digest16>]`),replace 复用 #352 语义。
+  失败补偿并 fail-closed(未策展 MCP 的密钥写入自 #378 起走版本化只增布局,失败删本次
+  verId 目录,不再整目录快照/恢复)。
 
-## 2. 提交面 fail-closed(#336 残留收口)
+## 2. 提交面 fail-closed(#336 残留收口;#378 起全类型归引擎)
 
-非 generation 单装(mcp / plugin / cloud;agent 自 #361 起归引擎 §1)的 `upsertRecordV2`
-失败 = **安装失败**:
+- 账本提交 = 引擎 `commitReceipt`(锁内,switch 成功后):写失败抛错 → 引擎回滚全部盘面
+  副作用(config 整文件 image 复原、file/generation 前像复原),receipt 与 live 永不背离。
+- **损坏/不可读账本在计划前与锁内 precondition 双重拒绝且原文件不动**(`probeLedgerForWrite`;
+  quarantine 不是提交路径)。残余界限(诚实声明):探测与 commit 之间若有绕过受控写体系的
+  外部写方把账写坏,upsert 仍会 quarantine 该损坏文件再写新账 —— 旧字节保留供诊断。
+- 审计事务 `commit` 通知只发生在引擎成功后;失败走 `rollback` 通知(配对 begin)。
 
-- planner 审计事务 `commit` 只发生在账本提交成功后;失败走 `rollback`。
-- **损坏/不可读账本在任何副作用之前被拒绝且原文件不动**(`probeLedgerForWrite`;quarantine
-  不是提交路径)。由此健康账本 + 原子写失败 = 磁盘零变化 —— 提交面**不做**整文件恢复:
-  恢复步骤本身才是跨进程覆盖竞态与「恢复后补偿再改账」的来源。残余界限(诚实声明):
-  写前探测与 upsert 之间若有绕过受控写体系的外部写方把账写坏,upsert 仍会 quarantine
-  该损坏文件再写新账 —— 旧字节保留在 quarantine 供诊断,不静默丢失。
-- 失败时按类型补偿副作用;补偿结果并入失败原因(补偿不完整仍 `ok:false`,留可诊断事实
-  —— 密钥恢复失败留 `.bak` 取证,vendored 目录删除失败如实上报)。
+## 3. 按类型的写前门与失败语义(#378:引擎回滚取代手工补偿)
 
-## 3. 按类型的补偿边界(补偿必须可证明)
-
-| 类型 | 写前门 | 提交面失败补偿 |
+| 类型 | 写前门(计划前 + 锁内 precondition) | 失败/崩溃语义 |
 |---|---|---|
-| mcp | strict 叶前像(不可读/**语法损坏**/形状异常拒 —— jsonc 容错解析必须收 ParseError)+ strict 密钥快照(取不到拒) | `restoreMcpLeaf(前像)` + 密钥快照 restore(失败留 `.bak` 并上报);discard 只在提交成功后 |
-| plugin npm | 有账拒 —— 覆盖 v2 record **与 v1-only receipt**,且按 `entry.name` 与历史规范化名 `pluginRecordName(package)` 双查(更新 = #352 原子替换);`changed:false` 无账 = 拒绝认领未策展 | `removePluginEntryExact(本次钉版)` |
-| plugin vendored | 有账拒(同双查);无账既有目录拒(不覆盖/不认领) | 撤路径条目 + 删本次目录(fresh 已证明;删除失败如实上报) |
-| agent(seed #358 + catalog #361,同一载体) | fresh-only 双层门:catalog 锁外快速拒(有账 v2/v1、md 文件、或手工 `agent.<name>` 配置项 —— strict 读,不可读按在场)+ **引擎锁内 precondition**(`agentFreshGate`)重读封 TOCTOU(md 检查含 legacy `agent/` 单数目录,config 不可读 fail-closed);catalog 另拒 `entry.id ≠ agent:<name>` 身份漂移与含 `--` 名 | 引擎回滚(file 前像恢复缺席/旧字节 + config 叶复原),无 planner 手工补偿(#361 起 `removeFsInstall` 只剩卸载用途) |
-| cloud | — | 无副作用 |
+| mcp | strict 叶前像可读性(不可读/**语法损坏**/形状异常拒 —— jsonc 容错解析必须收 ParseError;重装合法,前像本体由引擎 config action 整文件 image journaled);granted 密钥未落位 fail-closed 拒明文持久化 | 引擎回滚(config 复原);本次密钥版本目录删除(版本化只增,旧版本零接触 —— 见能力授权契约 §9);成功后才 GC 旧版本 |
+| plugin npm | 有账拒(三态分发;更新 = #352 替换);**跨配置源同 base 严格检查**(主配置未策展在场拒认领 + legacy XDG 在场拒,任一侧不可读拒;计划前与锁内双查)+ config 数组快照等值 | 引擎回滚(config 整文件复原);零残留 |
+| plugin vendored | 有账拒(三态分发);无账既有目录拒(bare 与内容寻址目录都算在场,不覆盖/不认领);载荷经 CAS 读取重验 | 引擎回滚(file items + config 全撤);rolled-back 终态收空壳目录;崩溃按 journal digest 判翻转 |
+| agent(seed #358 + catalog #361,同一载体) | fresh-only 双层门:catalog 锁外快速拒(有账 v2/v1、md 文件、或手工 `agent.<name>` 配置项 —— strict 读,不可读按在场)+ **引擎锁内 precondition**(`agentFreshGate`)重读封 TOCTOU;catalog 另拒 `entry.id ≠ agent:<name>` 身份漂移与含 `--` 名 | 引擎回滚(file 前像恢复缺席/旧字节 + config 叶复原) |
+| cloud | 账本可写探测 | receipt action 零盘副作用;失败 = 零账本;**卸载 = grants 清除成功前置 + ledger 删除失败 `ok:false`**(receipts-only,账没去=没卸载);重装显式继承 `desiredState` |
 
-MCP 重装是产品流(确认框重装),走前像复原而非拒绝;agent 的覆盖更新在产品上不存在
-(`updateEntry` 不支持 agent),故拒绝无回归。
+MCP 重装是产品流(确认框重装),允许覆盖(引擎前像可复原)而非拒绝;agent 的覆盖更新在
+产品上不存在(`updateEntry` 不支持 agent),故拒绝无回归。
 
 ### 3.1 plugin 原子替换(REQ-099 #352)
 
@@ -91,9 +86,11 @@ MCP 重装是产品流(确认框重装),走前像复原而非拒绝;agent 的覆
 
 ## 5. 证据
 
-`ext-install-planner.test.ts`(fail-closed non-generation ledger commit:逐类型写前门/
-补偿/成功路径 discard 时序/损坏账本写前拒绝/v1-only 双查/补偿失败可观察/cloud 零补偿/
-v1 锁步派生)、`ext-config.test.ts` / `ext-fs-installer.test.ts` / `alpha-environment.test.ts`
+`ext-install-planner.test.ts`(fail-closed ledger commit:逐类型写前门/根只读事务失败零
+残留/损坏账本写前拒绝/v1-only 双查/authorize 暂停零权威副作用/v1 锁步派生;#378 退出条件
+组:四类首装 authorize 生产入口、cloud 卸载双清与 desiredState 继承、plugin 更新失败旧版
+健康、MCP 密钥版本化轮换)、`alpha-mcp-secrets.test.ts`(版本化原语)、
+`ext-config.test.ts` / `ext-fs-installer.test.ts` / `alpha-environment.test.ts`
 (eager v1 下线后的层级契约 + strict 读真实实现)、`ext-project-adopt.test.ts`
 (adoption 矩阵:纯文本收编/幂等不重写 env/scope 不符 retained/损坏零改动/busy 可重试/
 零存量零副作用/触发面源文本合同)。

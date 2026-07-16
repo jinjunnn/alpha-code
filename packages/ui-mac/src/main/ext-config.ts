@@ -16,6 +16,7 @@ import { applyEdits, modify, parse, type ParseError } from "jsonc-parser"
 import type { ProviderInput } from "../shared/alpha-model-types"
 import type { InstallMeta } from "../preload/types"
 import { opencodeHomeDir } from "./alpha-bridge"
+import { collectMcpFileRefPaths, gcMcpSecretVersionsLocked } from "./alpha-mcp-secrets"
 import { alphaGlobalRoot, removeReceipt } from "./alpha-installs"
 import { alphaJsoncPath } from "./engine-config-truth"
 import { commandHeadBase } from "./platform"
@@ -463,6 +464,15 @@ export function restoreMcpLeaf(name: string, value: Record<string, unknown> | un
   return writeKey(mcpPluginTargetPath(), ["mcp", name], value)
 }
 
+/** #378(Codex 裁决 Q1):安装成功后的密钥版本 GC —— 配置锁内读当前 mcp.<name> leaf 收集
+ *  {file:} 引用集,交 gcMcpSecretVersionsLocked 收未引用且过宽限的版本/flat/快照残留。锁在途
+ *  (busy)= 跳过本轮(GC 是 best-effort,残留由下次安装/卸载收),绝不阻塞安装成功路径。 */
+export function gcMcpSecretsAgainstConfig(userDataPath: string, name: string): { removed: string[]; warnings: string[] } {
+  if (!SAFE_NAME.test(name)) return { removed: [], warnings: [`invalid server name: ${name}`] }
+  const r = withConfigWriteLock(() => gcMcpSecretVersionsLocked(userDataPath, name, collectMcpFileRefPaths(readMcpLeaf(name))))
+  return "removed" in r ? r : { removed: [], warnings: [r.reason] }
+}
+
 /** 读 agent.<name> 当前条目(writeAgent 覆盖/补偿用 before-image)。 */
 export function readAgentEntry(name: string, targetPath?: string): Record<string, unknown> | undefined {
   if (!SAFE_NAME.test(name)) return undefined
@@ -713,6 +723,44 @@ function persistPluginUnlocked(pkg: string, meta?: InstallMeta): PersistPluginRe
 /** plugin 的账本名(包名规范化;未策展 orchestrator 与 catalog 落账共用同一派生,防两套名)。 */
 export function pluginRecordName(pkg: string): string {
   return pkgBase(pkg).replace(/^@/, "").replace("/", "__")
+}
+
+/** #378(Codex 裁决 Q5):npm plugin fresh 的跨配置源同 base 严格检查 —— 引擎合并主配置与
+ *  legacy XDG 两份 plugin 数组,任一侧同 base 在场都不是 fresh(persistPlugin 的跨源幂等语义,
+ *  此处 strict 化:任一侧不可读/语法损坏即拒,不能当不存在)。tuple 形态([pkg, opts])的头
+ *  元素同样计入(与 persistPlugin findIn 一致)。计划前与锁内 precondition 都必须调用。 */
+export function findPluginBaseConflictStrict(
+  pkg: string,
+): { ok: true; existing: { spec: string; source: "main" | "legacy" } | undefined } | { ok: false; reason: string } {
+  if (!SAFE_PACKAGE.test(pkg)) return { ok: false, reason: "invalid package name" }
+  const base = pkgBase(pkg)
+  const scan = (
+    file: string,
+    source: "main" | "legacy",
+  ): { ok: true; existing: { spec: string; source: "main" | "legacy" } | undefined } | { ok: false; reason: string } => {
+    try {
+      if (!fs.existsSync(file)) return { ok: true, existing: undefined }
+      const errors: ParseError[] = []
+      const parsed: unknown = parse(fs.readFileSync(file, "utf8"), errors)
+      if (errors.length > 0)
+        return { ok: false, reason: `${source} config unparseable (${errors.length} syntax error(s)) — refusing plugin install` }
+      const list = parsed && typeof parsed === "object" && !Array.isArray(parsed) && "plugin" in parsed ? parsed.plugin : undefined
+      if (list === undefined) return { ok: true, existing: undefined }
+      if (!Array.isArray(list)) return { ok: false, reason: `${source} config plugin key is not an array — refusing plugin install` }
+      for (const p of list) {
+        if (typeof p === "string" && pkgBase(p) === base) return { ok: true, existing: { spec: p, source } }
+        if (Array.isArray(p) && typeof p[0] === "string" && pkgBase(p[0]) === base) return { ok: true, existing: { spec: p[0], source } }
+      }
+      return { ok: true, existing: undefined }
+    } catch (error) {
+      return { ok: false, reason: `${source} config unreadable: ${error instanceof Error ? error.message : String(error)}` }
+    }
+  }
+  const main = scan(mcpPluginTargetPath(), "main")
+  if (!main.ok || main.existing) return main
+  const target = mcpPluginTargetPath()
+  if (target !== userConfigPath()) return scan(userConfigPath(), "legacy")
+  return { ok: true, existing: undefined }
 }
 
 /** Codex review #355:只撤销恰为本次写入的 plugin[] 元素(orchestrator 落账失败补偿)——

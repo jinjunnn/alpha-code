@@ -551,6 +551,12 @@ function validatePlan(root: string, plan: TxPlan): string | null {
       if (!item.config || typeof item.config !== "object") return `config item "${item.key}" missing config payload`
       if (typeof item.config.target !== "string" || !path.isAbsolute(item.config.target))
         return `config item "${item.key}": target must be an absolute path`
+      // #378(Codex 裁决结构性风险 3):前向路径同样圈禁事务根 —— #375 只对恢复侧采信(isFlipped/
+      // reconstruct/restore)加了圈禁,写入侧缺同一约束会让 root 外绝对 target 先合法进 journal。
+      // 全部现有消费方(bundle/seed/单装)都用 root 锚定的 alpha.jsonc,零行为变化。
+      const relTarget = path.relative(root, item.config.target)
+      if (!isSafeRelPath(relTarget) || !confineFileTarget(root, relTarget).ok)
+        return `config item "${item.key}": target escapes the transaction root — refused`
       if (!Array.isArray(item.config.edits) || item.config.edits.length === 0)
         return `config item "${item.key}": at least one edit required`
     } else if (kind === "file") {

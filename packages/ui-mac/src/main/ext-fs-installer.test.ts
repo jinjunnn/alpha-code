@@ -10,7 +10,7 @@ import * as path from "node:path"
 
 mock.module("electron", () => ({ app: { isPackaged: false } }))
 
-const { agentInstallPresent, collectBuiltinAgentPayload, installBuiltinSkill, removeFsInstall, resourcesRoot, writeAgent, writeSkill } = await import("./ext-fs-installer")
+const { agentInstallPresent, collectBuiltinAgentPayload, collectVendoredPluginPayload, installBuiltinSkill, removeFsInstall, resourcesRoot, writeAgent, writeSkill } = await import("./ext-fs-installer")
 const { readLedger } = await import("./alpha-installs")
 
 let base = ""
@@ -283,5 +283,26 @@ describe("agentInstallPresent (REQ-100 #354)", () => {
     fs.mkdirSync(path.join(alphaDir, "agents"), { recursive: true })
     fs.writeFileSync(path.join(alphaDir, "agents", "helper.md"), "---\ndescription: d\n---\nbody")
     expect(agentInstallPresent("helper", { scope: "global" })).toBe(true)
+  })
+})
+
+describe("collectVendoredPluginPayload — #378 随包 plugin 载荷收集(只读;CAS 摄取源)", () => {
+  test("collects the real bundled plugin dir (byte-exact, POSIX rel paths, plugin.js present)", () => {
+    const r = collectVendoredPluginPayload("plugins/opencode-notify", "opencode-notify")
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const js = r.files.find((f) => f.path === "plugin.js")
+    expect(js).toBeDefined()
+    expect(js!.data.equals(fs.readFileSync(path.join(resourcesRoot(), "plugins", "opencode-notify", "plugin.js")))).toBe(true)
+    // 零副作用:资产原样(只读收集)
+    expect(fs.existsSync(path.join(resourcesRoot(), "plugins", "opencode-notify", "plugin.js"))).toBe(true)
+  })
+
+  test("missing asset / unsafe key / unsafe name refused", () => {
+    const ghost = collectVendoredPluginPayload("plugins/ghost-plugin", "ghost-plugin")
+    expect(ghost.ok).toBe(false)
+    if (!ghost.ok) expect(ghost.reason).toContain("未随此版本打包")
+    expect(collectVendoredPluginPayload("../evil", "x").ok).toBe(false)
+    expect(collectVendoredPluginPayload("plugins/opencode-notify", "../x").ok).toBe(false)
   })
 })

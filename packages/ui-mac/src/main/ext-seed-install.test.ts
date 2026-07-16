@@ -1242,7 +1242,7 @@ describe("plugin seed install via installCatalog (REQ-102 #359)", () => {
     buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
     const npm = await installAuthorized(pluginSeedIntent, pluginDeps({ installSpec: { kind: "plugin", package: "demo-pkg" } }))
     expect(npm.ok).toBe(false)
-    if (!npm.ok) expect(npm.reason).toContain("npm plugin is not seed-installable")
+    if (!npm.ok) expect(npm.reason).toContain("npm plugin has no offline CAS payload")
 
     const noJs = [{ path: "index.js", content: "x" }]
     buildSeed([{ id: "plugin:demo-plugin", files: noJs }])

@@ -16,6 +16,12 @@ import * as path from "node:path"
 const MCP_SECRET_DIR = "alpha-mcp-secrets"
 const SAFE_SERVER = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
 const SAFE_VAR = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/
+// #378(Codex 裁决 Q1):版本目录名与 server/VAR 名字空间互斥(SAFE_SERVER 不含 "v-" 前缀约束,
+// 但 SAFE_VAR 不允许 "-",且版本目录固定 v- 前缀 + hex),GC 枚举据此判别三类条目。
+const SAFE_SECRET_VER = /^v-[a-f0-9]{8}$/
+/** 版本目录 GC 宽限:mtime 新于此值的未引用条目不删 —— 保护「文件已写、config 尚未提交」的
+ *  在途安装(写文件不持配置锁,见 gcMcpSecretVersionsLocked 合同)。 */
+const SECRET_GC_GRACE_MS = 10 * 60 * 1000
 
 /** True for a value already routed through the file channel — don't double-wrap or treat as plaintext. */
 export function isFileRef(value: string): boolean {
@@ -57,62 +63,6 @@ export function writeMcpSecret(
   }
 }
 
-/**
- * REQ-100 #342(Codex review #351 高危):更新失败(含事务在途 busy)不得毁掉既有安装的密钥。
- * 写新密钥前快照该 server 的 secret 目录:失败 restore(原样复原;原本无目录则清掉新写入),
- * 成功 discard(丢弃快照)。快照放同级 .bak-<rand>(rename 原子,同卷)。
- */
-export function snapshotMcpServerSecrets(userDataPath: string, server: string): { restore(): void; discard(): void } {
-  const noop = { restore() {}, discard() {} }
-  const strict = snapshotMcpServerSecretsStrict(userDataPath, server)
-  // 快照失败:退回旧行为(失败路径整目录清除),不阻塞主流程 —— 未策展 orchestrator(#306)语义。
-  if (!strict.ok) return noop
-  return { restore: () => void strict.restore(), discard: strict.discard }
-}
-
-/** #354(Codex 裁决必改 2):可失败的严格快照 —— catalog 提交面前像取不到必须**写前拒绝**,
- *  绝不能拿 noop 快照继续写、事后 restore 恢复不了旧密钥。 */
-export function snapshotMcpServerSecretsStrict(
-  userDataPath: string,
-  server: string,
-): { ok: true; restore(): { ok: true } | { ok: false; reason: string }; discard(): void } | { ok: false; reason: string } {
-  if (!SAFE_SERVER.test(server)) return { ok: false, reason: `invalid server name: ${server}` }
-  const dir = serverDir(userDataPath, server)
-  let bak: string | null = null
-  try {
-    if (fs.existsSync(dir)) {
-      bak = `${dir}.bak-${crypto.randomBytes(4).toString("hex")}`
-      fs.cpSync(dir, bak, { recursive: true })
-    }
-  } catch (error) {
-    return { ok: false, reason: `secret snapshot failed for ${server}: ${error instanceof Error ? error.message : String(error)}` }
-  }
-  return {
-    ok: true,
-    // review #379 Major:恢复失败必须可观察 —— 调用方要把「旧密钥未复原(.bak 留证)」并入
-    // compensation incomplete 事实,吞掉就违背契约。
-    restore() {
-      try {
-        fs.rmSync(dir, { recursive: true, force: true })
-        if (bak) fs.renameSync(bak, dir)
-        return { ok: true }
-      } catch (error) {
-        return {
-          ok: false,
-          reason: `secret restore failed for ${server} (${error instanceof Error ? error.message : String(error)}) — backup kept at ${bak ?? "<none>"}`,
-        }
-      }
-    },
-    discard() {
-      try {
-        if (bak) fs.rmSync(bak, { recursive: true, force: true })
-      } catch {
-        /* best-effort */
-      }
-    },
-  }
-}
-
 /** Remove a connector's whole secret dir on uninstall (revoke — no stale token resurrection). */
 export function removeMcpServerSecrets(userDataPath: string, server: string): void {
   if (!SAFE_SERVER.test(server)) return
@@ -135,100 +85,33 @@ export function removeMcpServerSecretsStrict(userDataPath: string, server: strin
   }
 }
 
-/**
- * In-place: for each secret VAR in `secretVars`, move server.environment[VAR] (a real value the
- * renderer just collected) into the file channel and replace it with a `{file:}` ref — so the
- * durable config never carries the plaintext. Values already file-refs are left as-is. Returns the
- * list of vars actually file-ified (for logging by NAME only — never the value).
- */
-/**
- * REQ-099 #305(catalog/planner 专用):按「变量名 → 真值」把密钥路由进文件通道,同时覆盖
- * environment(键匹配)与 headers(值内嵌 —— headersTemplate 的 {VAR} 已被替换成真值,按真值
- * 子串换成 {file:} 引用;引擎 ConfigVariable.substitute 对整份 config 文本做替换,headers 内
- * 引用同样解析)。真值来自 grants(planner 已拒 {file:}/{env:} 语法),一律按字面密钥写文件 ——
- * 不承认 renderer 侧「已有引用」。返回 refs 供调用方把 live 配置换回真值;granted 却没落到任何
- * 字段的密钥进 skipped,由调用方 fail-closed(绝不明文持久化)。
- */
-export function fileifyMcpSecretsDeep(
-  userDataPath: string,
-  server: string,
-  config: Record<string, unknown>,
-  secrets: Record<string, string>,
-):
-  | {
-      ok: true
-      fileified: string[]
-      skipped: string[]
-      refs: Record<string, string>
-      restore(): { ok: true } | { ok: false; reason: string }
-      discard(): void
-    }
-  | { ok: false; reason: string } {
-  // 写前快照(#354 必改 2:严格 —— 快照失败即写前拒绝,绝不带 noop 快照继续写):
-  // 失败路径 restore(更新不毁既有密钥;首装等价清除新写入),成功路径 discard。
-  const snap = snapshotMcpServerSecretsStrict(userDataPath, server)
-  if (!snap.ok) return snap
-  const fileified: string[] = []
-  const skipped: string[] = []
-  const refs: Record<string, string> = {}
-  const env = config.environment && typeof config.environment === "object" && !Array.isArray(config.environment)
-    ? (config.environment as Record<string, unknown>)
-    : null
-  const headers = config.headers && typeof config.headers === "object" && !Array.isArray(config.headers)
-    ? (config.headers as Record<string, unknown>)
-    : null
-  for (const [varName, real] of Object.entries(secrets)) {
-    if (typeof real !== "string" || real.length === 0) continue // 空值 = 无可路由(调用方已过滤)
-    const written = writeMcpSecret(userDataPath, server, varName, real)
-    if (!written.ok) {
-      skipped.push(varName)
-      continue
-    }
-    let replaced = false
-    if (env && env[varName] === real) {
-      env[varName] = written.ref
-      replaced = true
-    }
-    if (headers) {
-      for (const [hk, hv] of Object.entries(headers)) {
-        if (typeof hv === "string" && hv.includes(real)) {
-          headers[hk] = hv.split(real).join(written.ref)
-          replaced = true
-        }
-      }
-    }
-    if (replaced) {
-      fileified.push(varName)
-      refs[varName] = written.ref
-    } else {
-      skipped.push(varName) // granted 但没落到任何 config 字段 —— 视为异常,调用方 fail-closed
-    }
-  }
-  return { ok: true, fileified, skipped, refs, restore: snap.restore, discard: snap.discard }
-}
+// #378(Codex 裁决 Q1)注:REQ-099 #305 的 fileifyMcpSecretsDeep(catalog 深路由 + 整目录快照)
+// 与 #342/#354 的 snapshotMcpServerSecrets(Strict) 已退役 —— 固定路径覆盖写 + 快照/恢复被版本化
+// 只增布局取代(catalog 走 substituteMcpSecretRefsPure + writeMcpSecretVersioned,失败删本次
+// verId;跨通道整目录 restore 会删掉并发事务的新版本,正是被裁决否决的交错)。
 
-export function fileifyMcpSecrets(
+/** #378:未策展通道的版本化 fileify(flat fileifyMcpSecrets 语义的只增不覆盖版)—— environment 键
+ *  匹配语义逐字保留(已是 {file:} 引用 / 空值 → skipped 原样留在 config,未策展面既有 posture
+ *  不在本票收紧);写入走 writeMcpSecretVersioned(新 verId 目录,旧版本零接触)。 */
+export function fileifyMcpSecretsVersioned(
   userDataPath: string,
   server: string,
   config: Record<string, unknown>,
   secretVars: string[],
+  verId: string,
 ): { fileified: string[]; skipped: string[] } {
-  const env = config.environment
+  const isRec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
   const fileified: string[] = []
   const skipped: string[] = []
-  if (!env || typeof env !== "object" || Array.isArray(env)) return { fileified, skipped: secretVars }
-  const envMap = env as Record<string, unknown>
+  const envMap = isRec(config.environment) ? config.environment : null
+  if (!envMap) return { fileified, skipped: secretVars }
   for (const varName of secretVars) {
     const value = envMap[varName]
-    if (typeof value !== "string" || value.length === 0) {
+    if (typeof value !== "string" || value.length === 0 || isFileRef(value)) {
       skipped.push(varName)
       continue
     }
-    if (isFileRef(value)) {
-      skipped.push(varName)
-      continue
-    }
-    const written = writeMcpSecret(userDataPath, server, varName, value)
+    const written = writeMcpSecretVersioned(userDataPath, server, verId, varName, value)
     if (written.ok) {
       envMap[varName] = written.ref
       fileified.push(varName)
@@ -237,4 +120,219 @@ export function fileifyMcpSecrets(
     }
   }
   return { fileified, skipped }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// #378(Codex 裁决 Q1):版本化密钥布局 `<userData>/alpha-mcp-secrets/<server>/<verId>/<VAR>`。
+// 固定路径覆盖写被否决 —— 事务(config action)与未策展通道都改为**只增不覆盖**:每次安装尝试
+// 写全新 verId 目录,旧版本文件零接触(旧 config 的 {file:} 引用直至新 config 提交前始终有效);
+// 失败/authorize 暂停删本次 verId(无引用,惰性);成功后由 gcMcpSecretVersionsLocked 在配置锁内
+// 按「当前 leaf 引用 + mtime 宽限」收未引用版本与旧 flat 布局残留。崩溃孤儿同样无引用,GC 收。
+// 卸载不变:removeMcpServerSecrets(Strict) 整 server 目录(覆盖全部版本 + flat + 快照残留)。
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+/** 新安装尝试的版本 id(每次调用新目录;不可预测性不承载安全属性,只求不碰撞)。 */
+export function newMcpSecretVersionId(): string {
+  return `v-${crypto.randomBytes(4).toString("hex")}`
+}
+
+/** 版本化 `{file:}` 引用(纯路径推导,零写盘 —— planner 先构造 durable config,落盘另走
+ *  writeMcpSecretVersioned;两者必须同参调用)。 */
+export function mcpSecretVersionedRef(userDataPath: string, server: string, verId: string, varName: string): string {
+  return `{file:${path.join(serverDir(userDataPath, server), verId, varName)}}`
+}
+
+/** 组件必须是**非 symlink 实目录**(裁决结构性风险 1:裸 writeFileSync 无圈禁可被 server 目录 /
+ *  VAR symlink 引出树外)。目录由我方 mkdir,lstat 复核 fail-closed。 */
+function ensureRealDir(dir: string): { ok: true } | { ok: false; reason: string } {
+  try {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
+    fs.chmodSync(dir, 0o700)
+    const st = fs.lstatSync(dir)
+    if (st.isSymbolicLink() || !st.isDirectory()) return { ok: false, reason: `${path.basename(dir)} is not a real directory — refusing (symlink hazard)` }
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "failed to create secret dir" }
+  }
+}
+
+/**
+ * 硬化版密钥写(#378):版本目录内 tmp(0600)→ rename 原子落位;写前 lstat 圈禁根/server/版本
+ * 三级目录均为非 symlink 实目录。绝不触碰其他版本/flat 文件。
+ */
+export function writeMcpSecretVersioned(
+  userDataPath: string,
+  server: string,
+  verId: string,
+  varName: string,
+  value: string,
+): { ok: true; ref: string } | { ok: false; reason: string } {
+  if (!SAFE_SERVER.test(server)) return { ok: false, reason: "invalid server name" }
+  if (!SAFE_SECRET_VER.test(verId)) return { ok: false, reason: `invalid secret version id: ${verId}` }
+  if (!SAFE_VAR.test(varName)) return { ok: false, reason: `invalid env var name: ${varName}` }
+  if (typeof value !== "string" || value.length === 0) return { ok: false, reason: "empty secret value" }
+  const root = path.join(userDataPath, MCP_SECRET_DIR)
+  const sDir = serverDir(userDataPath, server)
+  const vDir = path.join(sDir, verId)
+  for (const dir of [root, sDir, vDir]) {
+    const ensured = ensureRealDir(dir)
+    if (!ensured.ok) return ensured
+  }
+  const tmp = path.join(vDir, `.tmp-${crypto.randomBytes(4).toString("hex")}`)
+  try {
+    fs.writeFileSync(tmp, value, { mode: 0o600 })
+    fs.chmodSync(tmp, 0o600)
+    fs.renameSync(tmp, path.join(vDir, varName)) // 同目录 rename:原子,且替换目录项本身不追 symlink
+    return { ok: true, ref: mcpSecretVersionedRef(userDataPath, server, verId, varName) }
+  } catch (error) {
+    try {
+      fs.rmSync(tmp, { force: true })
+    } catch {
+      /* tmp 残留在 0700 版本目录内,GC 收 */
+    }
+    return { ok: false, reason: error instanceof Error ? error.message : "failed to write secret" }
+  }
+}
+
+/** 删除**本次安装尝试**的版本目录(失败/authorize 暂停清理;目录无任何 config 引用,删除惰性安全)。
+ *  幂等:不存在 = ok。 */
+export function removeMcpSecretVersionDir(
+  userDataPath: string,
+  server: string,
+  verId: string,
+): { ok: true } | { ok: false; reason: string } {
+  if (!SAFE_SERVER.test(server)) return { ok: false, reason: "invalid server name" }
+  if (!SAFE_SECRET_VER.test(verId)) return { ok: false, reason: `invalid secret version id: ${verId}` }
+  try {
+    fs.rmSync(path.join(serverDir(userDataPath, server), verId), { recursive: true, force: true })
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "failed to remove secret version dir" }
+  }
+}
+
+/**
+ * 纯引用替换(#378,fileifyMcpSecretsDeep 的零写盘半身):按「变量名 → 真值」把 environment
+ * 键匹配值与 headers 内嵌真值换成 refFor(varName) 引用。**原地修改 config**(与 fileify 同约定,
+ * 调用方传入自己的深拷贝)。granted 但没落到任何字段 → skipped(调用方 fail-closed 拒明文持久化);
+ * 空值同样 skipped(无可路由)。落盘由调用方对 substituted 的每个变量另调 writeMcpSecretVersioned。
+ */
+export function substituteMcpSecretRefsPure(
+  config: Record<string, unknown>,
+  secrets: Record<string, string>,
+  refFor: (varName: string) => string,
+): { substituted: Record<string, string>; skipped: string[] } {
+  const substituted: Record<string, string> = {}
+  const skipped: string[] = []
+  const isRec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
+  const env = isRec(config.environment) ? config.environment : null
+  const headers = isRec(config.headers) ? config.headers : null
+  for (const [varName, real] of Object.entries(secrets)) {
+    if (typeof real !== "string" || real.length === 0) {
+      skipped.push(varName)
+      continue
+    }
+    const ref = refFor(varName)
+    let replaced = false
+    if (env && env[varName] === real) {
+      env[varName] = ref
+      replaced = true
+    }
+    if (headers) {
+      for (const [hk, hv] of Object.entries(headers)) {
+        if (typeof hv === "string" && hv.includes(real)) {
+          headers[hk] = hv.split(real).join(ref)
+          replaced = true
+        }
+      }
+    }
+    if (replaced) substituted[varName] = ref
+    else skipped.push(varName)
+  }
+  return { substituted, skipped }
+}
+
+/** 深收集一个 config 值里的全部 `{file:<path>}` 引用路径(GC 的「被引用」判据;env 精确值与
+ *  headers 内嵌都覆盖 —— 对任意深度字符串值做 token 抽取,宁多算不漏算)。 */
+export function collectMcpFileRefPaths(value: unknown): string[] {
+  const out: string[] = []
+  const walk = (v: unknown): void => {
+    if (typeof v === "string") {
+      for (const m of v.matchAll(/\{file:([^}]+)\}/g)) {
+        const p = m[1]
+        if (p) out.push(p)
+      }
+      return
+    }
+    if (Array.isArray(v)) {
+      for (const item of v) walk(item)
+      return
+    }
+    if (v && typeof v === "object") for (const item of Object.values(v)) walk(item)
+  }
+  walk(value)
+  return out
+}
+
+/**
+ * 提交后版本 GC(#378)。**调用方必须持配置写锁**(referencedPaths 从锁内读出的当前 mcp.<server>
+ * leaf 收集 —— 锁保证引用集与 config 现状一致;命名合同对标 gcVendoredPluginDirLocked)。
+ * 删除三类未引用且 mtime 早于宽限期的条目:版本目录(整目录任一文件被引用即整目录保留)、
+ * legacy flat 密钥文件、历史快照残留(.bak-*)。宽限期保护「文件已写、config 未提交」的在途
+ * 安装(写文件不持锁,见模块头)。best-effort:单条失败进 warnings,绝不抛。
+ */
+export function gcMcpSecretVersionsLocked(
+  userDataPath: string,
+  server: string,
+  referencedPaths: string[],
+): { removed: string[]; warnings: string[] } {
+  const removed: string[] = []
+  const warnings: string[] = []
+  if (!SAFE_SERVER.test(server)) return { removed, warnings: [`invalid server name: ${server}`] }
+  const sDir = serverDir(userDataPath, server)
+  const referenced = new Set(referencedPaths.map((p) => path.resolve(p)))
+  const cutoff = Date.now() - SECRET_GC_GRACE_MS
+  let entries: fs.Dirent[]
+  try {
+    entries = fs.readdirSync(sDir, { withFileTypes: true })
+  } catch (error) {
+    const code = error && typeof error === "object" && "code" in error ? error.code : undefined
+    if (code === "ENOENT") return { removed, warnings }
+    warnings.push(`secret dir unreadable for ${server}: ${error instanceof Error ? error.message : String(error)}`)
+    return { removed, warnings }
+  }
+  const olderThanGrace = (p: string): boolean => {
+    try {
+      return fs.lstatSync(p).mtimeMs < cutoff
+    } catch {
+      return false // 读不到 mtime = 不删(fail-safe)
+    }
+  }
+  for (const entry of entries) {
+    const full = path.join(sDir, entry.name)
+    try {
+      if (entry.isDirectory() && SAFE_SECRET_VER.test(entry.name)) {
+        const files = fs.readdirSync(full)
+        const inUse = files.some((f) => referenced.has(path.resolve(path.join(full, f))))
+        if (!inUse && olderThanGrace(full)) {
+          fs.rmSync(full, { recursive: true, force: true })
+          removed.push(full)
+        }
+      } else if (entry.isDirectory() && entry.name.startsWith(".bak-")) {
+        if (olderThanGrace(full)) {
+          fs.rmSync(full, { recursive: true, force: true })
+          removed.push(full)
+        }
+      } else if (entry.isFile() && SAFE_VAR.test(entry.name)) {
+        if (!referenced.has(path.resolve(full)) && olderThanGrace(full)) {
+          fs.rmSync(full, { force: true })
+          removed.push(full)
+        }
+      }
+      // 其余形态(symlink/未知名)零接触 —— GC 只收自己认识的布局。
+    } catch (error) {
+      warnings.push(`secret gc failed for ${full}: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+  return { removed, warnings }
 }

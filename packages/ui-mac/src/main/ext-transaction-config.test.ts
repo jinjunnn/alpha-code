@@ -48,6 +48,31 @@ const genHooks = (body: string, extra: Partial<TxHooks> = {}): TxHooks => ({
 })
 
 describe("config action", () => {
+  test("#378:config target 圈禁事务根 —— root 外绝对路径在 validate 期拒绝(与恢复侧对称)", async () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "ext-tx-out-"))
+    try {
+      const r = await runExtensionTransaction(
+        root,
+        {
+          items: [
+            {
+              key: "mcp--x",
+              action: "config" as const,
+              config: { target: path.join(outside, "alpha.jsonc"), edits: [{ keyPath: ["mcp", "x"], value: { type: "local" } }] },
+              manifestDigest: `sha256:${sha("x")}`,
+            },
+          ],
+        },
+        { populate: noop, commitReceipt: noop, log: noop },
+      )
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.reason).toContain("escapes the transaction root")
+      expect(fs.existsSync(path.join(outside, "alpha.jsonc"))).toBe(false) // 零写盘
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
   test("config 装进 live alpha.jsonc + 提交 config receipt", async () => {
     const received: TxCommitRecord[][] = []
     const r = await runExtensionTransaction(root, { items: [configItem("mcp--a", "a", { type: "local" })] }, {
