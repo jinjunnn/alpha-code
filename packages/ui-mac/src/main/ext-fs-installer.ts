@@ -534,7 +534,9 @@ export async function importSkillGit(url: string, target?: InstallTarget): Promi
     await new Promise<void>((resolve, reject) => {
       execFile(
         "git",
-        ["clone", "--depth", "1", "--single-branch", "--no-tags", url, tmp],
+        // #335:http.followRedirects=false —— allowlist 只校验原 URL,禁重定向防 clone 被
+        // 可信 forge 的开放重定向/被攻陷响应导向私网或禁端口(SSRF 纵深)。
+        ["-c", "http.followRedirects=false", "clone", "--depth", "1", "--single-branch", "--no-tags", url, tmp],
         { timeout: 60_000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } },
         (err, _stdout, stderr) => (err ? reject(new Error(oneLine(String(stderr || err.message)).slice(0, 200))) : resolve()),
       )
