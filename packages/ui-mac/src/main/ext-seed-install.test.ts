@@ -166,28 +166,44 @@ function bundledAgentEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry 
   } as CatalogEntry
 }
 
-/** seed 路径的完成定义之一:planner installers 一个都不许被触碰。 */
+/** seed 路径的完成定义之一:planner installers 一个都不许被触碰。
+ *  review #384 r2/r3:对象字面量按 PlannerInstallers 全量成员书写、不 as unknown ——
+ *  结构偏差在编辑器/类型感知 lint 层可见(CI 的 tsgo 不含测试文件,tsconfig exclude,
+ *  存量债不在本票开线);运行时另加 Proxy 拦截:访问表外成员(接口新增后未同步、或
+ *  条件式探测旁路)一律 loud 抛错,不给 undefined 静默通过的机会。 */
 function forbiddenInstallers(): PlannerInstallers {
-  const forbid = (fn: string) => () => {
+  const forbid = (fn: string) => (): never => {
     throw new Error(`installer ${fn} must not be called on the seed path`)
   }
-  return {
+  const table: PlannerInstallers = {
     persistMcp: forbid("persistMcp"),
     fileifyMcpSecrets: forbid("fileifyMcpSecrets"),
-    removeMcpSecrets: forbid("removeMcpSecrets"),
-    removeMcp: forbid("removeMcp"),
+    readMcpLeafStrict: forbid("readMcpLeafStrict"),
+    restoreMcpLeaf: forbid("restoreMcpLeaf"),
+    removeMcpConfigInLock: forbid("removeMcpConfigInLock"),
+    removeMcpSecretsStrict: forbid("removeMcpSecretsStrict"),
     persistPlugin: forbid("persistPlugin"),
+    removePluginEntryExact: forbid("removePluginEntryExact"),
+    readPluginArrayStrict: forbid("readPluginArrayStrict"),
+    stageVendoredPluginVersioned: forbid("stageVendoredPluginVersioned"),
     removePlugin: forbid("removePlugin"),
     installVendoredPlugin: forbid("installVendoredPlugin"),
     removePluginPath: forbid("removePluginPath"),
     installBuiltinSkill: forbid("installBuiltinSkill"),
     collectBuiltinSkillPayload: forbid("collectBuiltinSkillPayload"),
-    installBuiltinAgent: forbid("installBuiltinAgent"),
+    collectBuiltinAgentPayload: forbid("collectBuiltinAgentPayload"),
     installRemoteSkill: forbid("installRemoteSkill"),
-    installRemoteAgent: forbid("installRemoteAgent"),
     removeFsInstall: forbid("removeFsInstall"),
+    agentPresent: forbid("agentPresent"),
     downloadRemoteAsset: forbid("downloadRemoteAsset"),
-  } as unknown as PlannerInstallers
+  }
+  return new Proxy(table, {
+    get(t, prop) {
+      if (typeof prop === "string" && !(prop in t))
+        throw new Error(`installer "${prop}" accessed on the seed path but missing from the forbidden table — extend the fixture`)
+      return Reflect.get(t, prop)
+    },
+  })
 }
 
 function makeSeedDeps(opts: { bundledEntries?: CatalogEntry[]; bundledVersion?: string; seedDirOverride?: string | null } = {}): PlannerDeps {

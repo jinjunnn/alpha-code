@@ -51,9 +51,10 @@ journal 收敛到终态;收敛不了的**如实保留**,绝不静默终态化(#3
 - 本 runbook 只覆盖诊断;journal 结构演进与恢复语义归引擎
   (`packages/ui-mac/src/main/ext-transaction.ts` 头注)。
 
-## agent seed(file+config)事务的恢复形态(REQ-102 #358)
+## agent(file+config)事务的恢复形态(REQ-102 #358;#361 起 catalog agent 同载体同形态)
 
-agent seed 安装 = 双 item 单事务:file item(`agent--<name>`,action=file,写
+agent 安装(seed 与 catalog remote/builtin 同走 `installAgentFromCas`)= 双 item 单事务:
+file item(`agent--<name>`,action=file,写
 `<root>/agents/<name>.md`)+ config item(`agent--<name>--config`,action=config,写
 `agent.<name>` 叶)。journal 的 file 段记
 `relTarget/slot/pre-next digest/preAbsent/requireAbsent/applied`(内容在受保护 staging

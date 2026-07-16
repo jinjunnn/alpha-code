@@ -562,10 +562,10 @@ export async function importSkillGit(url: string, target?: InstallTarget): Promi
 // REQ-023 T2:vendored 供给链 —— 官方 agent md 资产安装 + vendored 插件零网络安装。
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 
-/** 安装随 app 打包的官方 agent(md 资产):读文件(体积帽)→ 走 writeAgent 同管线(桥+账本)。 */
 /** #354(Codex 裁决必改 3 替代路径):catalog agent 无更新链(updateEntry 不支持 agent),
- *  写前存在性检查 —— 既有(有账或无账文件)一律拒绝,拒绝静默覆盖/认领;由此 catalog agent
- *  安装可证明 fresh,提交面失败补偿 removeFsInstall 不会毁旧物。解析失败按在场处理(fail-closed)。 */
+ *  写前存在性检查 —— 既有(有账或无账文件)一律拒绝,拒绝静默覆盖/认领。#361 起 catalog agent
+ *  走事务载体,本函数只剩锁外快速拒用途(锁内权威门 = planner 的 agentFreshGate)。
+ *  解析失败按在场处理(fail-closed)。 */
 export function agentInstallPresent(name: string, target?: InstallTarget): boolean {
   if (!SAFE_NAME.test(name)) return true
   const roots = resolveRoots(target)
@@ -582,43 +582,76 @@ export function agentInstallPresent(name: string, target?: InstallTarget): boole
   return entry.present
 }
 
-export function installBuiltinAgent(
+/** #361:收集随包官方 agent md 为原始载荷(catalog agent 事务安装的 CAS 摄取源)。只读零副作用;
+ *  返回原始 Buffer 保持 byte-exact(installAgentFromCas 的 CAS digest 语义,不做字符串归一)。
+ *  SAFE key 校验 + **内容身份交叉**(key 必须恰为 agents/<name>.md,review r1 Major 1:已验签
+ *  但配错的 entry 不得把别的资产按本 agent 身份装入)、**realpath 圈禁 → O_NOFOLLOW 开已解析
+ *  路径 → fd/path dev+ino 身份绑定**(r1 Minor 4 + r2 + r3:词法正则不防 symlink,O_NOFOLLOW
+ *  只管末段,父目录链接/win32 退化面/相邻 syscall 换链竞态由三重检查逐层缩窗)、256KB 帽
+ *  fd 上 fstat 判 + 读后 Buffer 复核(r1 Minor 5:封 stat/read 窗口增长)。 */
+export function collectBuiltinAgentPayload(
   builtinAssetKey: string,
   name: string,
-  target?: InstallTarget,
-  meta?: InstallMeta,
-): FsResult {
+): { ok: true; files: Array<{ path: string; data: Buffer }> } | { ok: false; reason: string } {
   if (!SAFE_AGENT_ASSET_KEY.test(builtinAssetKey)) return { ok: false, reason: "invalid asset key" }
   if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid agent name" }
+  if (builtinAssetKey !== `agents/${name}.md`)
+    return { ok: false, reason: `asset key "${builtinAssetKey}" ≠ "agents/${name}.md" — refusing (content identity drift)` }
   const file = path.join(resourcesRoot(), builtinAssetKey)
-  let content: string
+  const errnoOf = (error: unknown): string | undefined =>
+    typeof error === "object" && error !== null && "code" in error && typeof error.code === "string" ? error.code : undefined
+  // realpath 圈禁先行(review #384 r2:末段 O_NOFOLLOW 不防父目录 symlink,win32 无该位时
+  // 完全退化)—— 解析后的真实路径必须恰为 <realpath(resources)>/agents/<name>.md,任何组件
+  // 是链接都会导致不等式,拒绝;随后 open 的是已解析路径。
+  let realFile: string
   try {
-    if (!fs.existsSync(file)) return { ok: false, reason: "Agent 内容未随此版本打包" }
-    if (fs.statSync(file).size > 256 * 1024) return { ok: false, reason: "agent md 过大" }
-    content = fs.readFileSync(file, "utf8")
+    realFile = fs.realpathSync(file)
+    const expected = path.join(fs.realpathSync(resourcesRoot()), "agents", `${name}.md`)
+    if (realFile !== expected)
+      return { ok: false, reason: "agent asset escapes the resources tree (symlinked path) — refusing" }
   } catch (error) {
+    if (errnoOf(error) === "ENOENT") return { ok: false, reason: "Agent 内容未随此版本打包" }
     return { ok: false, reason: error instanceof Error ? error.message : "failed to read agent asset" }
   }
-  return writeAgent(name, content, target, meta)
-}
-
-/**
- * 安装远程 agent(REQ-046:补齐零发版最后一类)。资产约定 = 单个 .md 文件(引擎以文件名为 agent 名,
- * 无 skill 那样的 frontmatter name 通道 → 无 spoof 面);下载层已做 sha256 钉死 + 路径消毒,
- * 这里再收:单文件 / .md 后缀 / 256KB 帽(与 installBuiltinAgent 同帽)。写盘/桥/账本走 writeAgent 同管线。
- */
-export function installRemoteAgent(
-  name: string,
-  contents: Array<{ path: string; data: Buffer }>,
-  target?: InstallTarget,
-  meta?: InstallMeta,
-): FsResult {
-  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid agent name" }
-  if (contents.length !== 1) return { ok: false, reason: `agent remote asset must be exactly one .md file (got ${contents.length})` }
-  const file = contents[0]!
-  if (!file.path.endsWith(".md") || file.path.includes("/")) return { ok: false, reason: `agent remote asset must be a top-level .md file (got ${file.path})` }
-  if (file.data.length > 256 * 1024) return { ok: false, reason: "agent md 过大" }
-  return writeAgent(name, file.data.toString("utf8"), target, meta, "catalog")
+  const noFollow = typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0
+  let fd: number
+  try {
+    fd = fs.openSync(realFile, fs.constants.O_RDONLY | noFollow)
+  } catch (error) {
+    const code = errnoOf(error)
+    if (code === "ENOENT") return { ok: false, reason: "Agent 内容未随此版本打包" }
+    if (code === "ELOOP") return { ok: false, reason: "agent asset is a symlink — refusing (must be a regular bundled file)" }
+    return { ok: false, reason: error instanceof Error ? error.message : "failed to read agent asset" }
+  }
+  try {
+    // fd/path 身份绑定(review #384 r3):realpath 校验与 open 是相邻 syscall,父目录在其间
+    // 被换链再换回时 fd 可能已指向树外文件 —— 复核「验证过的路径当前指向的文件」与 fd 同
+    // dev/ino。Node 无 openat 原语,多重检查缩窗属纵深(能写 resources 树者本就等价于资产
+    // 作者):要骗过 O_NOFOLLOW + realpath 等值 + 身份绑定,需在多个相邻 syscall 间各完成
+    // 一次精确换向。
+    const st = fs.fstatSync(fd, { bigint: true })
+    let pathSt: fs.BigIntStats
+    try {
+      pathSt = fs.statSync(realFile, { bigint: true })
+    } catch (error) {
+      // 只把路径身份变化类 errno 归为换链竞态(r4:EACCES/EIO 等真实故障保留原始原因,不误诊)。
+      const code = errnoOf(error)
+      if (code === "ENOENT" || code === "ELOOP" || code === "ENOTDIR")
+        return { ok: false, reason: "agent asset changed identity during read (symlink race) — refusing" }
+      return { ok: false, reason: error instanceof Error ? error.message : "failed to read agent asset" }
+    }
+    if (st.dev !== pathSt.dev || st.ino !== pathSt.ino)
+      return { ok: false, reason: "agent asset changed identity during read (symlink race) — refusing" }
+    if (!st.isFile()) return { ok: false, reason: "agent asset is not a regular file — refusing" }
+    if (st.size > 256n * 1024n) return { ok: false, reason: "agent md 过大" }
+    const data = fs.readFileSync(fd)
+    if (data.length > 256 * 1024) return { ok: false, reason: "agent md 过大" }
+    return { ok: true, files: [{ path: `${name}.md`, data }] }
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "failed to read agent asset" }
+  } finally {
+    fs.closeSync(fd)
+  }
 }
 
 /**

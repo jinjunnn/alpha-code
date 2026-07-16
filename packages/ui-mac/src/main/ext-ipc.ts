@@ -19,7 +19,7 @@ import { configHealth, persistPlugin, pluginRecordName, readMcpLeaf, readMcpLeaf
 import { recordUncuratedInstall } from "./ext-uncurated-record"
 import { persistMcpWithPolicy } from "./ext-mcp-policy"
 import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
-import { agentInstallPresent, stageVendoredPluginVersioned, importSkillFolder, importSkillGit, installBuiltinAgent, installBuiltinSkill, installRemoteAgent, installRemoteSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall, resourcesRoot, writeAgent } from "./ext-fs-installer"
+import { agentInstallPresent, collectBuiltinAgentPayload, stageVendoredPluginVersioned, importSkillFolder, importSkillGit, installBuiltinSkill, installRemoteSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall, resourcesRoot, writeAgent } from "./ext-fs-installer"
 import { parseAgentImport } from "./ext-import-validate"
 import { cleanProjectCatalogResiduals, detectProjectCatalogResiduals } from "./ext-project-residuals"
 import { collectSkillPayloadFromDir, skillGenerationProbe } from "./ext-skill-generations"
@@ -129,7 +129,7 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   ipcMain.handle("ext-check-runtime", (_event: IpcMainInvokeEvent, tool: string) => checkRuntime(tool))
   // REQ-036:创建表单已移除(创建走技能:skill-creator/agent-creator 出厂注入),原
   // ext-write-skill / ext-write-agent 渲染层通道随之下线;main 的 writeSkill/writeAgent 保留
-  // (installBuiltinAgent 等 vendored 安装管线内部复用)。
+  // (uncurated import 通道复用;#361 起 catalog agent 走事务载体,不再经 writeAgent)。
   ipcMain.handle("ext-factory-skill-ids", () => factorySkillIds())
 
   // REQ-037 上游能力治理:真源 ~/.alpha/governance.json,物化 home jsonc 受控叶子(见 alpha-governance.ts)。
@@ -581,10 +581,10 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
         installVendoredPlugin,
         removePluginPath,
         installBuiltinSkill,
-        installBuiltinAgent,
         installRemoteSkill,
-        installRemoteAgent,
         removeFsInstall,
+        // #361:builtin agent 原始载荷收集(随包 md → CAS 摄取 → 事务安装;不再有 flat 写通道)。
+        collectBuiltinAgentPayload,
         downloadRemoteAsset,
         // REQ-100 #310:builtin skill 载荷收集(随包目录 → generation 事务 populate;不落 flat 目录)。
         collectBuiltinSkillPayload: (builtinAssetKey: string, name: string) => {

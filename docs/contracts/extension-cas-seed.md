@@ -78,7 +78,11 @@ CAS 补充语义:
    fail-closed 拒,同版本重装幂等;安装**不 pin**(generation content rehash 即 GC mark
    root,#318)。
    **agent seed(#358,2026-07-16 Codex 裁决)**:共享回表/交叉/CAS promote 后按类型分派到
-   `installAgentFromCas`(`ext-agent-install.ts`)—— 一次 `runExtensionTransaction`,
+   `installAgentFromCas`(`ext-agent-install.ts`)—— 该载体自 #361 起同为 **catalog agent
+   (remote/builtin)**的唯一生产安装通道(remote 走 catalog 清单钉死 + `tryReuseCasPayload`
+   重驱免二次下载;builtin 由 `collectBuiltinAgentPayload` 只读收集原始字节、自算内容地址
+   promote,payloadDigest 补齐;flat `writeAgent` 通道只剩 uncurated import)——
+   一次 `runExtensionTransaction`,
    file item(`ext-file-tx` journaled 原子替换 `<root>/agents/<name>.md`,root 内受控相对
    路径,调用方绝对路径无通道)+ config item(`agent.<name>` 叶,`agentMdToEntry` 单一
    解析真源)双 item 单事务,全提交或全回滚。装约定:恰一顶层 `.md`、≤256KB、

@@ -33,9 +33,9 @@ import {
 } from "./ext-transaction"
 
 const SAFE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
-/** 装约定(与 installBuiltinAgent/installRemoteAgent 同款 256KB 帽)。 */
+/** 装约定(agent md 单文件 256KB 帽;builtin 采集器/下载层同帽)。 */
 export const AGENT_MD_MAX_BYTES = 256 * 1024
-/** 单顶层 .md(无目录分隔;装约定与 installRemoteAgent 一致)。 */
+/** 单顶层 .md(无目录分隔;agent 资产装约定)。 */
 const TOP_LEVEL_MD_RE = /^[^/\\]+\.md$/
 
 /** fs-safe 事务 key(授权账/journal/store 同键)。 */
@@ -141,7 +141,9 @@ export type AgentSeedInstall = {
 }
 
 export type AgentSeedResult =
-  | { ok: true; mdPath: string; files: string[] }
+  /** warnings = 引擎提交后非致命失败(grant/授权收据写失败、陈旧锁清理失败等,review #384 r1
+   *  Major 2)—— live 与 receipt 已真实,但调用方必须透传到 outcome,不得静默吞掉。 */
+  | { ok: true; mdPath: string; files: string[]; warnings: string[] }
   | { ok: false; stage: "authorize"; reason: string; authorization: CapabilityDiff[] }
   | { ok: false; reason: string; stage?: Exclude<TxStage, "authorize"> }
 
@@ -236,5 +238,5 @@ export async function installAgentFromCas(root: string, spec: AgentSeedInstall):
     }
     return { ok: false, reason: result.reason, stage: result.stage }
   }
-  return { ok: true, mdPath, files: [mdPath] }
+  return { ok: true, mdPath, files: [mdPath], warnings: result.warnings }
 }

@@ -22,17 +22,20 @@ review_after: 2026-10-14
   fail-open 一并**下线**——不存在「v2 失败但 v1 已写」的合法状态。
 - **未策展安装**归 orchestrator(`recordUncuratedInstall`,#306):mutate → 单次账本写 →
   失败补偿并 fail-closed。
-- **generation/bundle/seed(agent/mcp/plugin)** 归事务引擎 `commitReceipt`(写失败即事务
-  失败 → 引擎回滚,#336/#310/#311/#358/#359)。agent seed(#358)的账本形态:**单条** v2
-  record(kind `agent`,`configKey: agent.<name>`,`files: [<root>/agents/<name>.md]`),
-  receipt 模板只挂事务的 file 主 item —— config 副 item 不落账,`commitReceipt` 经
-  `recoveryReceiptInputs` 按 `receipt !== undefined` 过滤(恢复前滚同源)。mcp seed(#359):
+- **generation/bundle/seed(agent/mcp/plugin)/catalog agent** 归事务引擎 `commitReceipt`
+  (写失败即事务失败 → 引擎回滚,#336/#310/#311/#358/#359/#361)。agent(seed #358 +
+  catalog #361,同一载体)的账本形态:**单条** v2 record(kind `agent`,`configKey:
+  agent.<name>`,`files: [<root>/agents/<name>.md]`),receipt 模板只挂事务的 file 主
+  item —— config 副 item 不落账,`commitReceipt` 经 `recoveryReceiptInputs` 按
+  `receipt !== undefined` 过滤(恢复前滚同源)。catalog agent 分支在 planner 内**自提交
+  早返回**(对齐 skill),不再触达 §2 的共享 `upsertRecordV2` 尾部。mcp seed(#359):
   单条 record(`configKey: mcp.<name>`);plugin seed:单条 record(`configKey:
   plugin-path:<jsPath>`,`files: [plugins/<name>@<digest16>]`),replace 复用 #352 语义。
 
 ## 2. 提交面 fail-closed(#336 残留收口)
 
-非 generation 单装(mcp / plugin / agent / cloud)的 `upsertRecordV2` 失败 = **安装失败**:
+非 generation 单装(mcp / plugin / cloud;agent 自 #361 起归引擎 §1)的 `upsertRecordV2`
+失败 = **安装失败**:
 
 - planner 审计事务 `commit` 只发生在账本提交成功后;失败走 `rollback`。
 - **损坏/不可读账本在任何副作用之前被拒绝且原文件不动**(`probeLedgerForWrite`;quarantine
@@ -50,8 +53,7 @@ review_after: 2026-10-14
 | mcp | strict 叶前像(不可读/**语法损坏**/形状异常拒 —— jsonc 容错解析必须收 ParseError)+ strict 密钥快照(取不到拒) | `restoreMcpLeaf(前像)` + 密钥快照 restore(失败留 `.bak` 并上报);discard 只在提交成功后 |
 | plugin npm | 有账拒 —— 覆盖 v2 record **与 v1-only receipt**,且按 `entry.name` 与历史规范化名 `pluginRecordName(package)` 双查(更新 = #352 原子替换);`changed:false` 无账 = 拒绝认领未策展 | `removePluginEntryExact(本次钉版)` |
 | plugin vendored | 有账拒(同双查);无账既有目录拒(不覆盖/不认领) | 撤路径条目 + 删本次目录(fresh 已证明;删除失败如实上报) |
-| agent(catalog 单装) | 有账(v2/v1)、有 md 文件、或有手工 `agent.<name>` 配置项(strict 读,不可读按在场)一律拒(无更新链) | `removeFsInstall`(fresh 已证明,整撤安全) |
-| agent(seed,#358) | 同上 fresh-only,但在**引擎锁内 precondition** 重读(封锁外 TOCTOU;md 检查含 legacy `agent/` 单数目录,config 不可读 fail-closed) | 引擎回滚(file 前像恢复缺席/旧字节 + config 叶复原),无 planner 手工补偿 |
+| agent(seed #358 + catalog #361,同一载体) | fresh-only 双层门:catalog 锁外快速拒(有账 v2/v1、md 文件、或手工 `agent.<name>` 配置项 —— strict 读,不可读按在场)+ **引擎锁内 precondition**(`agentFreshGate`)重读封 TOCTOU(md 检查含 legacy `agent/` 单数目录,config 不可读 fail-closed);catalog 另拒 `entry.id ≠ agent:<name>` 身份漂移与含 `--` 名 | 引擎回滚(file 前像恢复缺席/旧字节 + config 叶复原),无 planner 手工补偿(#361 起 `removeFsInstall` 只剩卸载用途) |
 | cloud | — | 无副作用 |
 
 MCP 重装是产品流(确认框重装),走前像复原而非拒绝;agent 的覆盖更新在产品上不存在

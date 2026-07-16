@@ -640,6 +640,8 @@ export function ExtensionHub(props: {
         if (!res.ok) return failOr(res)
         if (res.reason === "reload-pending") flash(t("alpha.ext.addedPendingReload"))
         else flash(t("alpha.ext.addedLive"), "success")
+        // 成功但携带 loud 诊断(CAS 自愈/授权账写失败等,#361 review r1):原样呈现,不吞。
+        if (res.warning) flash(res.warning)
       } else if (e.type === "plugin") {
         setStageFor(e.id, "installing")
         const res = await ext.installPlugin(e, authorization)
