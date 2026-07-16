@@ -111,12 +111,19 @@ CAS 补充语义:
    `seedPluginFileProbe` 类型化探测(digest 走 journal 真源),生产恢复接线按 key 前缀路由
    agent/plugin 探针,未知 file item 仍 fail-closed。安装**接 #352 三态**:absent → fresh
    (config action 追加 plugin[] 元素;锁内 precondition **整体重跑三态分发**(含 catalog id
-   的历史名/v1-only 兜底扫描)+ config canon 对比 + 在场目录重查;fresh 时 bare 目录或内容
-   寻址目录已在场 = 无账在场,一律拒不认领);有效 catalog 旧账 → journaled replace(与 #352
-   同一事务,seedPayload 挂点;precondition 增 desiredState 漂移检查 —— plan 与加锁间的合法
-   启停不被旧快照覆盖;同 payload 仅版本变化时新旧目录相同,提交后 GC 跳过);v1-only/损坏/
-   双键/账配漂移 → 拒;same-version healthy 幂等早退;更高已装拒 downgrade。失败路径只收
-   空壳目录(引擎已逐文件恢复缺席态;含文件的现场 = 非终态证据,绝不删)。
+   的历史名/v1-only 兜底扫描)+ config canon 对比 + 目标目录门 = **壳容忍**:缺席与纯空目录树
+   不阻断(recovery 回滚只 unlink 文件,遗留空壳自然收敛重试),文件/symlink/非目录/不可读/
+   圈禁不过一律拒不认领;缺席的最终强制 = 引擎 file prepare 的 `requireAbsent` 断言 +
+   **switch 前紧邻重断言**(旁路在窗口内植入即拒 → 回滚因 diverged 保留非终态留证;残余 =
+   lstat→原子写微秒窗口,与 GC promote 同类);bare 目录 `plugins/<name>` 在场仍按 #354 一律
+   拒);有效 catalog 旧账 → journaled replace(与 #352 同一事务,seedPayload 挂点;
+   precondition 增 desiredState 漂移检查 —— plan 与加锁间的合法启停不被旧快照覆盖;同 payload
+   仅版本变化时新旧目录相同,提交后 GC 跳过;同目录 repair 遇清单外文件/symlink = 锁内分类
+   blocked 拒 —— repair 只重写清单文件,不可收敛就不假装收敛);v1-only/损坏/双键/账配漂移 →
+   拒;same-version healthy 幂等早退(**持 bundle 锁**做账本重读 + 根/逐条目 lstat 实物严格
+   校验);更高已装拒 downgrade。失败路径只收空壳目录(journal 终态 rolled-back 才动;整树
+   lstat 预扫,任何 symlink/文件在场整棵零修改;含文件的现场 = 非终态证据,绝不删)。旧目录
+   GC = 重新持锁 + 全账本(warnings 亦 fail-closed)/config 引用重读 + realpath 圈禁后才删。
    **卸载授权账合同(#358/#359)**:经事务授权闸安装的类型(agent/mcp/plugin)卸载联动清除
    `ext-store/<key>/grants.json`,且为成功前置(mcp 在 journaled artifact seam 内,失败保持
    非终态前滚;agent/plugin 在 flat 通道,失败 = 卸载失败且账本不动)。

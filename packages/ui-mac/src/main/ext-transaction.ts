@@ -958,6 +958,7 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
   // file action 的 image 对同样在锁内、staging 前一次性 prepare(捕获 live 前像含缺席态,#358)。
   // 同一 target 的多个 file item 无累积语义(整文件替换,后写覆盖前写)—— 直接拒。
   const fileImages = new Map<string, FileTxImage>()
+  const fileRequireAbsent = new Set<string>()
   const fileTargets = new Set<string>()
   for (const item of plan.items) {
     if (actionOf(item) !== "file") continue
@@ -987,6 +988,7 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
       lock.release()
       return { ok: false, txId, stage: "staging", reason: `file target for "${item.key}" must be absent (unregistered content is not adopted) — refused`, warnings }
     }
+    if (item.file.requireAbsent) fileRequireAbsent.add(item.key)
     fileImages.set(item.key, prep.image)
   }
 
@@ -1251,6 +1253,11 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
         // 残余窗口收窄为 lstat→单次原子写的微秒级(契约记录,与 GC promote 窗口同类)。
         const confined = confineFileTarget(root, it.file!.relTarget)
         if (!confined.ok) throw new Error(`file confinement re-check failed for "${it.key}": ${confined.reason}`)
+        // #359 review r4 Blocker:requireAbsent 只在 prepare 断言会被 prepare→apply 的异步窗口
+        // 绕过(旁路植入计划内文件被覆盖)—— apply 前**紧邻**重断言缺席;在场即抛 → rollbackAll,
+        // 该 item 的 restore 会因「既非 pre 也非 next」fail-closed 保留非终态留证,绝不覆盖认领。
+        if (fileRequireAbsent.has(it.key) && fs.existsSync(path.join(root, it.file!.relTarget)))
+          throw new Error(`file target for "${it.key}" appeared before switch (must be absent) — refused`)
         applyFileImage(fileImages.get(it.key)!)
       }
       if (i === 0 && journal.items.length > 1) crash("mid-switch")

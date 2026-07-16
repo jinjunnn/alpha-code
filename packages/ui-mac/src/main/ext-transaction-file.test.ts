@@ -342,6 +342,29 @@ describe("file action in runExtensionTransaction (REQ-102 #358)", () => {
     expect(readFileSync(MD_PATH(), "utf8")).toBe("bypass-planted content") // 零覆盖
   })
 
+  test("requireAbsent 在 switch 前紧邻重断言:prepare→apply 窗口内旁路植入 → 拒且保留非终态(#359 r4)", async () => {
+    // pre-switch 探针窗口(prepare 之后、switch 之前)植入计划内目标文件。
+    const plantProbe: HealthProbe = (input) => {
+      if (input.action === "file" && input.phase === "pre-switch") {
+        mkdirSync(join(root, "agents"), { recursive: true })
+        writeFileSync(MD_PATH(), "planted in the async window")
+      }
+      return { healthy: true }
+    }
+    const r = await runExtensionTransaction(
+      root,
+      { items: [{ key: "agent--demo", action: "file", file: { relTarget: "agents/demo.md", next: Buffer.from(MD), requireAbsent: true } }] },
+      { populate: noop, probe: plantProbe, commitReceipt: noop, log: noop },
+    )
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reason).toContain("appeared before switch")
+    expect(r.reason).toContain("retained non-terminal") // 植入内容 diverged → 保留非终态留证
+    expect(readFileSync(MD_PATH(), "utf8")).toBe("planted in the async window") // 零覆盖
+    const j = listTransactionJournals(root)[0]
+    expect(j.state).toBe("switching")
+  })
+
   test("validatePlan refuses missing payload / unsafe relTarget / empty content / duplicate targets", async () => {
     const missing = await runExtensionTransaction(root, { items: [{ key: "a", action: "file" }] }, hooksFor())
     expect(missing.ok).toBe(false)

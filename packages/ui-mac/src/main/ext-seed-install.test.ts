@@ -1111,6 +1111,20 @@ describe("plugin seed install via installCatalog (REQ-102 #359)", () => {
     expect(fs.readFileSync(path.join(dir, "plugin.js"), "utf8")).toBe(PLUGIN_FILES[0].content)
   })
 
+  test("同目录 repair 遇清单外文件:锁内分类 blocked 拒,不假装收敛(review r4 Major)", async () => {
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
+    const deps = pluginDeps()
+    expect((await installAuthorized(pluginSeedIntent, deps)).ok).toBe(true)
+    const dir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
+    // 同时篡改清单文件(触发不健康 → 走 replace)并植入清单外文件(修复不可收敛)。
+    fs.writeFileSync(path.join(dir, "plugin.js"), "tampered")
+    fs.writeFileSync(path.join(dir, "extra.js"), "unmanifested")
+    const r = await installAuthorized(pluginSeedIntent, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("unmanifested content")
+    expect(fs.readFileSync(path.join(dir, "extra.js"), "utf8")).toBe("unmanifested") // 现场不动
+  })
+
   test("同版本重装遇目录被换 symlink:不得误判 healthy,也不得经 symlink 写入(review r3 Major 5)", async () => {
     buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
     const deps = pluginDeps()
@@ -1153,6 +1167,30 @@ describe("plugin seed install via installCatalog (REQ-102 #359)", () => {
     expect(corrupt.removed).toBe(false)
     expect(fs.existsSync(oldDir)).toBe(true)
     fs.rmSync(path.join(globalRoot, "installs.json"), { force: true })
+    // 合法 JSON 但含不可解码记录(warnings)→ 同样 fail-closed 保留(review r4)。
+    const broken: UpsertInput = {
+      id: "plugin:other",
+      name: "other",
+      kind: "plugin",
+      environment: "prod",
+      scope: { kind: "global" },
+      desiredState: "enabled",
+      origin: "catalog",
+      installedAt: new Date().toISOString(),
+    }
+    expect(upsertRecordV2(globalRoot, broken).ok).toBe(true)
+    const ledgerPath2 = path.join(globalRoot, "installs.json")
+    const parsedLedger: unknown = JSON.parse(fs.readFileSync(ledgerPath2, "utf8"))
+    if (!isRec(parsedLedger)) throw new Error("ledger not an object")
+    for (const v of Object.values(parsedLedger)) {
+      if (!Array.isArray(v)) continue
+      for (const rec of v) if (isRec(rec) && rec.kind === "plugin") rec.schemaVersion = 99
+    }
+    fs.writeFileSync(ledgerPath2, JSON.stringify(parsedLedger))
+    const undecodable = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [] }))
+    expect(undecodable.removed).toBe(false)
+    expect(fs.existsSync(oldDir)).toBe(true)
+    fs.rmSync(ledgerPath2, { force: true })
     // 无引用 + 拿到锁 → 删。
     const removed = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [] }))
     expect(removed.removed).toBe(true)

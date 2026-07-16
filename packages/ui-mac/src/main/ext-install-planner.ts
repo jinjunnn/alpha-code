@@ -921,9 +921,16 @@ async function replacePluginViaTransaction(args: {
         return { ok: false, reason: "plugin desired state changed since plan — retry the update" }
       // review r2 Blocker:异 payload 的新内容寻址目录必须缺席(锁内判;r3:壳容忍 —— recovery
       // 回滚遗留的纯空目录树不阻断重试,文件/symlink 在场才拒;preAbsent 的最终强制在引擎
-      // file prepare 的 requireAbsent 断言,锁内同点)。
+      // file prepare 的 requireAbsent 断言 + switch 前紧邻重断言)。
       if (args.seedPayload && facts.form.kind === "vendored" && args.seedPayload.dir !== facts.form.oldDir && seedDirBlocksInstall(root, args.seedPayload.dirRel))
         return { ok: false, reason: `plugin dir "${path.basename(args.seedPayload.dir)}" exists without a ledger record — refusing to overwrite or adopt unregistered content (remove it and retry)` }
+      // review r4 Major:同目录 repair 只重写清单文件 —— 目录里存在清单外文件/symlink 时修复
+      // **不可收敛**(落账成功但永不 healthy),锁内分类为 blocked 即拒,人工核对后删除重试。
+      if (args.seedPayload && facts.form.kind === "vendored" && args.seedPayload.dir === facts.form.oldDir) {
+        const cls = classifySeedPluginDir(root, args.seedPayload.dirRel, args.seedPayload.specs)
+        if (cls.cls === "blocked")
+          return { ok: false, reason: `plugin dir "${path.basename(args.seedPayload.dir)}" contains unmanifested content (${cls.reason}) — repair cannot converge; remove/diagnose it and retry` }
+      }
       return { ok: true }
     },
     commitReceipt: (records: TxCommitRecord[]) => {
@@ -1872,24 +1879,34 @@ function seedPluginPayloadItems(
 /** seed plugin 目录的严格实物校验(review r2 Major + r3 收紧):根与逐条目 **lstat**(Dirent 不可
  *  信赖竞态;根是 symlink 直接不健康)、confineFileTarget 圈禁、结构精确(缺/多/哈希不符即不健康)。
  *  不健康 ≠ 拒装 —— 调用方按「修复路径」走完整 journaled replace 重写清单文件。 */
-function verifySeedPluginDirExact(root: string, relDir: string, specs: TxFileSpec[]): { ok: true } | { ok: false; reason: string } {
-  if (!isSafeRelPath(relDir) || !confineFileTarget(root, relDir).ok) return { ok: false, reason: "dir confinement failed" }
+type SeedPluginDirClass =
+  /** 结构与逐文件 hash 精确一致。 */
+  | { cls: "healthy" }
+  /** 只差清单内文件(缺失/哈希不符)或整目录缺席 —— journaled replace 重写清单文件即可收敛。 */
+  | { cls: "repairable"; reason: string }
+  /** 清单外文件/symlink/不可读/圈禁不过 —— 修复不可收敛(review r4 Major:repair 只写清单文件,
+   *  留着清单外内容会「落账成功但永不 healthy」),必须人工核对后删除重试。 */
+  | { cls: "blocked"; reason: string }
+
+function classifySeedPluginDir(root: string, relDir: string, specs: TxFileSpec[]): SeedPluginDirClass {
+  if (!isSafeRelPath(relDir) || !confineFileTarget(root, relDir).ok) return { cls: "blocked", reason: "dir confinement failed" }
   const dir = path.join(root, relDir)
   try {
     const st = fs.lstatSync(dir)
-    if (st.isSymbolicLink() || !st.isDirectory()) return { ok: false, reason: "dir is not a regular directory" }
+    if (st.isSymbolicLink() || !st.isDirectory()) return { cls: "blocked", reason: "dir is not a regular directory" }
   } catch {
-    return { ok: false, reason: "dir missing" }
+    return { cls: "repairable", reason: "dir missing" }
   }
   const expected = new Map(specs.map((f) => [f.path, f]))
   const seen = new Set<string>()
-  const walk = (rel: string): string | null => {
+  let repairReason: string | null = null
+  const walk = (rel: string): SeedPluginDirClass | null => {
     const abs = rel ? path.join(dir, rel) : dir
     let names: string[]
     try {
       names = fs.readdirSync(abs)
     } catch (error) {
-      return error instanceof Error ? error.message : "unreadable dir"
+      return { cls: "blocked", reason: error instanceof Error ? error.message : "unreadable dir" }
     }
     for (const name of names) {
       const childRel = rel ? `${rel}/${name}` : name
@@ -1898,32 +1915,38 @@ function verifySeedPluginDirExact(root: string, relDir: string, specs: TxFileSpe
       try {
         st = fs.lstatSync(childAbs) // 逐条目 lstat(r3:不信 Dirent,拒竞态换入的 symlink)
       } catch {
-        return `unreadable entry: ${childRel}`
+        return { cls: "blocked", reason: `unreadable entry: ${childRel}` }
       }
-      if (st.isSymbolicLink()) return `symlink present: ${childRel}`
+      if (st.isSymbolicLink()) return { cls: "blocked", reason: `symlink present: ${childRel}` }
       if (st.isDirectory()) {
-        const err = walk(childRel)
-        if (err) return err
+        const verdict = walk(childRel)
+        if (verdict) return verdict
       } else if (st.isFile()) {
         const fileSpec = expected.get(childRel)
-        if (!fileSpec) return `unexpected file: ${childRel}`
+        if (!fileSpec) return { cls: "blocked", reason: `unexpected file: ${childRel}` }
         try {
           if (crypto.createHash("sha256").update(fs.readFileSync(childAbs)).digest("hex") !== fileSpec.sha256)
-            return `sha256 mismatch: ${childRel}`
+            repairReason = repairReason ?? `sha256 mismatch: ${childRel}`
         } catch {
-          return `unreadable file: ${childRel}`
+          return { cls: "blocked", reason: `unreadable file: ${childRel}` }
         }
         seen.add(childRel)
       } else {
-        return `unsupported entry: ${childRel}`
+        return { cls: "blocked", reason: `unsupported entry: ${childRel}` }
       }
     }
     return null
   }
-  const err = walk("")
-  if (err) return { ok: false, reason: err }
-  for (const p of expected.keys()) if (!seen.has(p)) return { ok: false, reason: `missing expected file: ${p}` }
-  return { ok: true }
+  const verdict = walk("")
+  if (verdict) return verdict
+  for (const p of expected.keys()) if (!seen.has(p)) repairReason = repairReason ?? `missing expected file: ${p}`
+  return repairReason ? { cls: "repairable", reason: repairReason } : { cls: "healthy" }
+}
+
+/** 严格实物校验(healthy ⇔ classify 判 healthy;签名保留供幂等早退)。 */
+function verifySeedPluginDirExact(root: string, relDir: string, specs: TxFileSpec[]): { ok: true } | { ok: false; reason: string } {
+  const c = classifySeedPluginDir(root, relDir, specs)
+  return c.cls === "healthy" ? { ok: true } : { ok: false, reason: c.reason }
 }
 
 /** seed 安装目标目录的「在场阻断」判定(review r3 Major 4:recovery 回滚只 unlink 文件,遗留的
@@ -1994,6 +2017,10 @@ export function gcVendoredPluginDirLocked(
     const ledgerProbe = probeLedgerForWrite(root)
     if (!ledgerProbe.ok) return { removed: false, warning: `old plugin dir retained (ledger not provably reference-free: ${ledgerProbe.reason})` }
     const ledger = readLedgerV2(root)
+    // review r4 Major:合法 JSON 里严格解码失败的记录会被过滤进 warnings —— 「读不出的记录」
+    // 同样无法证明不含引用,任何 warning 在场即保留。
+    if (ledger.warnings.length > 0)
+      return { removed: false, warning: `old plugin dir retained (ledger contains undecodable entries: ${ledger.warnings[0]})` }
     const keyRefs = (configKey: string | undefined, files: string[] | undefined): boolean => {
       if (configKey?.startsWith("plugin-path:") && refsDir(path.resolve(configKey.slice("plugin-path:".length)))) return true
       return (files ?? []).some(refsDir)
