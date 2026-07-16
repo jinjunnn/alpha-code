@@ -50,3 +50,17 @@ journal 收敛到终态;收敛不了的**如实保留**,绝不静默终态化(#3
   操作会被如实拒绝,不是故障,是 fail-closed。
 - 本 runbook 只覆盖诊断;journal 结构演进与恢复语义归引擎
   (`packages/ui-mac/src/main/ext-transaction.ts` 头注)。
+
+## plugin 原子替换的恢复形态(REQ-099 #352)
+
+替换 = 单 item config 事务(`plugin--<name>`,action=config)。崩溃窗口与处置:
+
+- **journal 未达 committed**:启动恢复按整文件 before-image 回滚 config —— 旧插件条目原样,
+  账本未动;vendored 情况下已 staging 的 `plugins/<name>@<hex>` 新目录成为无引用孤儿(无害,
+  可手工清理;它不在 GC mark 根上)。
+- **journal 已 committed、receipt 前滚**:恢复重放 `commitReceipt` —— `upsertRecordsV2` 对同
+  `transaction.id` 且事实一致的重放**幂等**(不递增 generation);同 id 但事实不一致 = 账本被
+  外力改写,前滚显式失败并保持 journal 非终态,按本 runbook 顶部的损坏处置流程人工核对。
+- **提交成功、旧 vendored 目录 GC 前崩溃**:旧目录成为无引用孤儿(config 已指向新 versioned
+  目录),安装功能不受影响;出现于 `plugins/` 下 `<name>`(旧式)或 `<name>@<hex>`(versioned)
+  且不被当前 config/账本引用的目录即孤儿,可安全删除。

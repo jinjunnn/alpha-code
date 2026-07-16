@@ -82,3 +82,12 @@ describe("#348 wiring:renderer 承接结构(源文本合同)", () => {
     expect(src).toContain("<Show when={canDismiss()}>")
   })
 })
+
+describe("#352 wiring:插件更新 = 单次 installCatalog(两步链下线,源文本合同)", () => {
+  test("updateEntry plugin 分支不再调用 uninstallV2(main 判 fresh/replace)", () => {
+    const src = read("use-extensions.ts")
+    const branch = src.slice(src.indexOf('entry.type === "plugin"'), src.indexOf('return { ok: false, reason: "unsupported type for update" }'))
+    expect(branch).toContain("installPlugin(entry, authorization)")
+    expect(branch).not.toContain("uninstallV2")
+  })
+})

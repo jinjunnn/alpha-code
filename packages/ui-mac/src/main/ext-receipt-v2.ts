@@ -24,7 +24,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import type { InstallReceipt, InstallReceiptOrigin, InstallReceiptType } from "../preload/types"
 import type { AppEnvironment } from "./alpha-environment"
-import { sha256Hex } from "./ext-manifest-v2"
+import { canonicalJson, sha256Hex } from "./ext-manifest-v2"
 import { validateReceipt } from "./alpha-installs"
 
 export const RECORD_SCHEMA_VERSION = 2 as const
@@ -481,6 +481,31 @@ export type UpsertInput = Omit<InstallRecordV2, "schemaVersion" | "generation" |
 
 export type LedgerV2Write = { ok: true; record: InstallRecordV2; warnings: string[] } | { ok: false; reason: string }
 
+/** #352(Codex 裁决必改 4):transaction exact-replay 幂等 —— 崩溃恢复会重放 commitReceipt,
+ *  同 transaction.id 且全部事实一致时必须直接返回已有记录(绝不递增 generation/previous 链);
+ *  同 id 但事实冲突 = txId 重用,显式拒绝(重用是伪造面)。非重放(无 prev / 无 txId / id 不同)
+ *  返回 fresh 走正常新写。比较基准 = 「按 prev 的 generation/previousDigest 对齐后本会写出的记录」
+ *  与 prev 的 canonical 等值(installedAt 等事实字段来自 journal 模板,重放时逐字节相同)。 */
+function replayVerdict(
+  prev: InstallRecordV2 | null,
+  input: UpsertInput,
+): { kind: "fresh" } | { kind: "replay"; record: InstallRecordV2 } | { kind: "conflict"; reason: string } {
+  const txId = input.transaction?.id
+  if (!prev || !txId || prev.transaction?.id !== txId) return { kind: "fresh" }
+  const candidate = {
+    ...input,
+    schemaVersion: RECORD_SCHEMA_VERSION,
+    generation: prev.generation,
+    ...(prev.previousDigest ? { previousDigest: prev.previousDigest } : {}),
+  }
+  if (!prev.previousDigest) delete (candidate as { previousDigest?: string }).previousDigest
+  if (canonicalJson(candidate) === canonicalJson(prev)) return { kind: "replay", record: prev }
+  return {
+    kind: "conflict",
+    reason: `transaction id ${txId} reused for ${key(input.kind, input.name)} with conflicting facts — refusing (exact replay only)`,
+  }
+}
+
 /**
  * Upsert by (kind, name): generation/previousDigest chain computed from the existing record
  * (a v1-only predecessor counts as generation 1 → new record is generation 2, `migratedFrom` noted
@@ -495,6 +520,9 @@ export function upsertRecordV2(root: string, input: UpsertInput): LedgerV2Write 
   }
   const k = key(input.kind, input.name)
   const prev = parsed.records.find((r) => key(r.kind, r.name) === k) ?? null
+  const verdict = replayVerdict(prev, input)
+  if (verdict.kind === "replay") return { ok: true, record: verdict.record, warnings }
+  if (verdict.kind === "conflict") return { ok: false, reason: verdict.reason }
   const hadV1 = parsed.receipts.some((r) => key(r.type, r.name) === k)
   const record: InstallRecordV2 = {
     ...input,
@@ -530,6 +558,12 @@ export function upsertRecordsV2(root: string, inputs: UpsertInput[]): LedgerV2Ba
   for (const input of inputs) {
     const k = key(input.kind, input.name)
     const prev = recordsByKey.get(k) ?? null
+    const verdict = replayVerdict(prev, input)
+    if (verdict.kind === "conflict") return { ok: false, reason: verdict.reason }
+    if (verdict.kind === "replay") {
+      committed.push(verdict.record) // 幂等:重放件原样计入,不递增 generation
+      continue
+    }
     const hadV1 = receiptKeys.has(k)
     const record: InstallRecordV2 = {
       ...input,

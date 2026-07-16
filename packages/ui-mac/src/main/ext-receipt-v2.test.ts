@@ -482,3 +482,51 @@ describe("computeGrantDigest — 键集 digest,绝不摄入值", () => {
     expect(computeGrantDigest({ workspace: "/w" })).not.toBe(computeGrantDigest(undefined))
   })
 })
+
+// ── #352(Codex 裁决必改 4):transaction exact-replay 幂等 ──────────────────────────────────────
+describe("upsert transaction exact-replay idempotency (REQ-099 #352)", () => {
+  const input = (over: Partial<Parameters<typeof upsertRecordV2>[1]> = {}) => ({
+    id: "plugin:np",
+    name: "np",
+    kind: "plugin" as const,
+    environment: "prod" as const,
+    scope: { kind: "global" as const },
+    version: "2.3.4",
+    desiredState: "enabled" as const,
+    origin: "catalog" as const,
+    configKey: "plugin:@alpha/np@2.3.4",
+    transaction: { id: "tx-replay-1", state: "committed" as const },
+    installedAt: "2026-07-16T00:00:00.000Z",
+    ...over,
+  })
+  test("同 txId + 全部事实一致 → 原记录原样返回,不递增 generation/previous 链", () => {
+    const first = upsertRecordV2(root, input())
+    expect(first.ok).toBe(true)
+    if (!first.ok) return
+    expect(first.record.generation).toBe(1)
+    const replay = upsertRecordV2(root, input())
+    expect(replay.ok).toBe(true)
+    if (!replay.ok) return
+    expect(replay.record.generation).toBe(1) // 幂等:恢复期重放 commitReceipt 不产生新代
+    expect(replay.record).toEqual(first.record)
+  })
+  test("同 txId 但事实冲突 = id 重用 → 显式拒绝(exact replay only);批量同语义", () => {
+    expect(upsertRecordV2(root, input()).ok).toBe(true)
+    const conflict = upsertRecordV2(root, input({ version: "9.9.9" }))
+    expect(conflict.ok).toBe(false)
+    if (!conflict.ok) expect(conflict.reason).toContain("conflicting facts")
+    const batchReplay = upsertRecordsV2(root, [input()])
+    expect(batchReplay.ok).toBe(true)
+    if (batchReplay.ok) expect(batchReplay.records[0]!.generation).toBe(1)
+    const batchConflict = upsertRecordsV2(root, [input({ version: "9.9.9" })])
+    expect(batchConflict.ok).toBe(false)
+  })
+  test("不同 txId = 正常更新 → generation 递增 + previousDigest 链", () => {
+    expect(upsertRecordV2(root, input({ manifestDigest: `sha256:${"a".repeat(64)}` })).ok).toBe(true)
+    const next = upsertRecordV2(root, input({ transaction: { id: "tx-replay-2", state: "committed" as const }, version: "2.4.0", manifestDigest: `sha256:${"b".repeat(64)}` }))
+    expect(next.ok).toBe(true)
+    if (!next.ok) return
+    expect(next.record.generation).toBe(2)
+    expect(next.record.previousDigest).toBe(`sha256:${"a".repeat(64)}`)
+  })
+})

@@ -15,11 +15,11 @@ import type { InstallTarget } from "../preload/types"
 import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
 import { fileifyMcpSecrets, fileifyMcpSecretsDeep, removeMcpServerSecrets, removeMcpServerSecretsStrict, snapshotMcpServerSecrets } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, type ProvenanceRequest } from "./alpha-migrate"
-import { configHealth, persistPlugin, pluginRecordName, readMcpLeaf, readMcpLeafStrict, removeMcp, removeMcpConfigInLock, removePlugin, removePluginEntryExact, removePluginPath, restoreMcpLeaf } from "./ext-config"
+import { configHealth, persistPlugin, pluginRecordName, readMcpLeaf, readMcpLeafStrict, readPluginArrayStrict, removeMcp, removeMcpConfigInLock, removePlugin, removePluginEntryExact, removePluginPath, restoreMcpLeaf } from "./ext-config"
 import { recordUncuratedInstall } from "./ext-uncurated-record"
 import { persistMcpWithPolicy } from "./ext-mcp-policy"
 import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
-import { agentInstallPresent, importSkillFolder, importSkillGit, installBuiltinAgent, installBuiltinSkill, installRemoteAgent, installRemoteSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall, resourcesRoot, writeAgent } from "./ext-fs-installer"
+import { agentInstallPresent, stageVendoredPluginVersioned, importSkillFolder, importSkillGit, installBuiltinAgent, installBuiltinSkill, installRemoteAgent, installRemoteSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall, resourcesRoot, writeAgent } from "./ext-fs-installer"
 import { parseAgentImport } from "./ext-import-validate"
 import { cleanProjectCatalogResiduals, detectProjectCatalogResiduals } from "./ext-project-residuals"
 import { collectSkillPayloadFromDir, commitInputFromRecord, skillGenerationProbe } from "./ext-skill-generations"
@@ -554,6 +554,8 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
         readMcpLeafStrict,
         restoreMcpLeaf,
         removePluginEntryExact,
+        readPluginArrayStrict,
+        stageVendoredPluginVersioned,
         agentPresent: (name, target) => agentInstallPresent(name, target),
         persistPlugin,
         removePlugin,

@@ -72,6 +72,7 @@ import {
   upsertRecordsV2,
   verifyProjectScope,
   type DesiredState,
+  type InstallRecordV2,
   type ScopeIdentity,
   type UpsertInput,
 } from "./ext-receipt-v2"
@@ -479,6 +480,10 @@ export type PlannerInstallers = {
   persistPlugin(pkg: string, meta?: InstallMetaArg): { ok: true; changed: boolean } | { ok: false; reason: string }
   /** #354:npm 插件提交面失败补偿 —— 只撤销恰为本次写入的 plugin[] 元素(#355 原语)。 */
   removePluginEntryExact(pkg: string): ConfigOutcome
+  /** #352:plugin[] 的 strict 快照读(替换的 plan 快照 + 锁内 precondition 重读)。 */
+  readPluginArrayStrict(): { ok: true; value: unknown[] } | { ok: false; reason: string }
+  /** #352:vendored 替换的纯 staging —— 新内容落 versioned 目录,零 config/账本副作用。 */
+  stageVendoredPluginVersioned(vendoredAssetKey: string, name: string): { ok: true; dir: string; jsPath: string } | { ok: false; reason: string }
   removePlugin(pkg: string): ConfigOutcome
   installVendoredPlugin(vendoredAssetKey: string, name: string, meta?: InstallMetaArg): FsOutcome
   removePluginPath(name: string, absJsPath: string): ConfigOutcome
@@ -644,6 +649,220 @@ function tryReuseCasPayload(
     }
   }
   return { hit: true, specs }
+}
+
+// ── #352:catalog 插件原子替换(Codex 裁决:复用 journaled 事务引擎,不新增通道)────────────────────
+
+type PluginReplaceFacts = {
+  record: InstallRecordV2
+  form: { kind: "npm"; oldPinned: string } | { kind: "vendored"; oldJsPath: string; oldDir: string }
+}
+type PluginDispatch = { mode: "fresh" } | { mode: "replace"; facts: PluginReplaceFacts } | { mode: "refuse"; reason: string }
+
+/** #352(必改 2):替换前的严格旧事实查询 —— 恰一条 kind=plugin、origin=catalog、id=catalogId、
+ *  global scope、名字与新 manifest 一致;v1-only / 损坏 / 双键 / configKey 与实际 config 不符
+ *  全部显式拒绝(refuse ≠ fresh:模糊状态绝不当首装装)。absent 双名皆无 → fresh。 */
+function resolvePluginDispatch(
+  root: string,
+  entry: CatalogEntry,
+  spec: { package?: string; vendoredAssetKey?: string } | undefined,
+  readPluginArrayStrict: () => { ok: true; value: unknown[] } | { ok: false; reason: string },
+): PluginDispatch {
+  const names = [entry.name]
+  if (typeof spec?.package === "string" && spec.package) {
+    const normalized = pluginRecordName(spec.package)
+    if (normalized !== entry.name) names.push(normalized)
+  }
+  const hits: Array<{ name: string; lookup: ReturnType<typeof lookupForUninstall> }> = []
+  for (const n of names) {
+    const lk = lookupForUninstall(root, "plugin", n)
+    if (lk.status === "ledger-corrupt" || lk.status === "corrupt-match")
+      return { mode: "refuse", reason: `plugin ledger state for "${n}" is corrupt — refusing replace and refusing fresh-install (${lk.reason})` }
+    if (lk.status === "v1")
+      return { mode: "refuse", reason: `plugin "${n}" has a v1-only record — cannot atomically replace; uninstall explicitly, then reinstall` }
+    if (lk.status === "valid") hits.push({ name: n, lookup: lk })
+  }
+  if (hits.length === 0) return { mode: "fresh" }
+  if (hits.length > 1) return { mode: "refuse", reason: `plugin has records under both "${hits[0]!.name}" and "${hits[1]!.name}" — duplicate keys, refusing (resolve manually)` }
+  const hit = hits[0]!
+  const record = (hit.lookup as Extract<ReturnType<typeof lookupForUninstall>, { status: "valid" }>).record
+  if (record.name !== entry.name)
+    return { mode: "refuse", reason: `installed plugin record name "${record.name}" ≠ catalog entry name "${entry.name}" — name changes are refused in this phase` }
+  if (record.id !== entry.id) return { mode: "refuse", reason: `installed plugin record id "${record.id}" ≠ catalog id "${entry.id}" — identity mismatch, refusing replace` }
+  if (record.origin !== "catalog") return { mode: "refuse", reason: `installed plugin origin "${record.origin}" is not catalog-managed — refusing replace` }
+  if (record.scope.kind !== "global") return { mode: "refuse", reason: "installed plugin record is not global-scoped — refusing replace" }
+  const cfg = readPluginArrayStrict()
+  if (!cfg.ok) return { mode: "refuse", reason: cfg.reason }
+  const configKey = record.configKey ?? ""
+  if (configKey.startsWith("plugin:")) {
+    const oldPinned = configKey.slice("plugin:".length)
+    if (cfg.value.filter((x) => x === oldPinned).length !== 1)
+      return { mode: "refuse", reason: `ledger configKey "${configKey}" not matched exactly once in config plugin[] — ledger/config drift, refusing replace` }
+    return { mode: "replace", facts: { record, form: { kind: "npm", oldPinned } } }
+  }
+  if (configKey.startsWith("plugin-path:")) {
+    const oldJsPath = configKey.slice("plugin-path:".length)
+    if (cfg.value.filter((x) => x === oldJsPath).length !== 1)
+      return { mode: "refuse", reason: `ledger configKey "${configKey}" not matched exactly once in config plugin[] — ledger/config drift, refusing replace` }
+    return { mode: "replace", facts: { record, form: { kind: "vendored", oldJsPath, oldDir: path.dirname(oldJsPath) } } }
+  }
+  return { mode: "refuse", reason: `installed plugin record has no recognizable configKey ("${configKey}") — refusing replace` }
+}
+
+/** #352 替换本体:同一 journaled 事务内「config 精确换元 + receipt 落账」——
+ *  失败由引擎整文件 before-image rollback(config)+ 不落 receipt(账本)收敛;崩溃恢复前滚
+ *  幂等(commitReceipt 重放走 upsert 的 exact-replay,#352 必改 4)。vendored 新内容先落
+ *  versioned 目录(staging,锁外零权威副作用),事务只切 config 路径,旧目录提交成功后 GC。 */
+async function replacePluginViaTransaction(args: {
+  deps: PlannerDeps
+  entry: CatalogEntry
+  manifest: ExtensionManifestV2
+  manifestDigest: string
+  intent: CatalogInstallIntent
+  facts: PluginReplaceFacts
+  rollback: (reason: string) => void
+  txId: string
+}): Promise<CatalogInstallOutcome> {
+  const { deps, entry, manifest, manifestDigest, intent, facts, rollback } = args
+  const root = deps.globalRoot()
+  const spec = entry.installSpec as { kind?: string; package?: string; version?: string; vendoredAssetKey?: string }
+
+  // 新目标派生 + 幂等早退(同钉版/同 digest = 无事可做,零副作用)。
+  let newElem: string
+  let newConfigKey: string
+  let stagedDir: string | null = null
+  if (facts.form.kind === "npm") {
+    if (typeof spec.package !== "string" || !spec.package) {
+      rollback("entry has no plugin package")
+      return { ok: false, reason: "entry has no plugin package" }
+    }
+    const pinned = spec.version && spec.package.indexOf("@", 1) === -1 ? `${spec.package}@${spec.version}` : spec.package
+    if (pinned === facts.form.oldPinned && facts.record.manifestDigest === manifestDigest) {
+      rollback("already at target version")
+      return { ok: true, kind: "plugin", name: entry.name, manifestDigest, warning: `already pinned at ${pinned} — nothing to replace` }
+    }
+    newElem = pinned
+    newConfigKey = `plugin:${pinned}`
+  } else {
+    if (!spec.vendoredAssetKey) {
+      rollback("entry has no vendored asset")
+      return { ok: false, reason: "entry has no vendored asset" }
+    }
+    if (facts.record.manifestDigest === manifestDigest) {
+      rollback("already at target version")
+      return { ok: true, kind: "plugin", name: entry.name, manifestDigest, warning: "already at this version — nothing to replace" }
+    }
+    const staged = deps.installers.stageVendoredPluginVersioned(spec.vendoredAssetKey, entry.name)
+    if (!staged.ok) {
+      rollback(staged.reason)
+      return staged
+    }
+    stagedDir = staged.dir
+    newElem = staged.jsPath
+    newConfigKey = `plugin-path:${staged.jsPath}`
+  }
+  const cleanupStaged = () => {
+    if (!stagedDir) return
+    try {
+      fs.rmSync(stagedDir, { recursive: true, force: true })
+    } catch {
+      /* staging 残留无 config 引用,无害;GC 语义外的孤儿目录 */
+    }
+  }
+
+  // plan 快照(锁外)+ 锁内 precondition 重读钉死 TOCTOU:config 与账本旧事实任一漂移即拒,用户重试。
+  const snapshot = deps.installers.readPluginArrayStrict()
+  if (!snapshot.ok) {
+    cleanupStaged()
+    rollback(snapshot.reason)
+    return snapshot
+  }
+  const oldElem = facts.form.kind === "npm" ? facts.form.oldPinned : facts.form.oldJsPath
+  if (snapshot.value.filter((x) => x === oldElem).length !== 1) {
+    cleanupStaged()
+    rollback("plugin config drifted before plan")
+    return { ok: false, reason: "plugin config changed while planning — retry the update" }
+  }
+  const nextArray = snapshot.value.map((x) => (x === oldElem ? newElem : x))
+  const snapshotCanon = JSON.stringify(snapshot.value)
+
+  const now = deps.now?.() ?? new Date().toISOString()
+  const receiptTemplate: UpsertInput = {
+    id: entry.id,
+    name: entry.name,
+    kind: "plugin",
+    environment: deps.environment(),
+    scope: { kind: "global" },
+    version: manifest.version,
+    manifestDigest,
+    grantDigest: computeGrantDigest(intent.grants ?? {}),
+    // 可选裁决采纳:更新默认保留旧 desiredState —— 更新 disabled 插件不得静默重新启用。
+    desiredState: facts.record.desiredState,
+    origin: "catalog",
+    ...(stagedDir ? { files: [stagedDir] } : {}),
+    configKey: newConfigKey,
+    installedAt: now,
+  }
+  const plan: TxPlan = {
+    items: [
+      {
+        key: `plugin--${entry.name}`,
+        action: "config",
+        config: { target: path.join(root, "alpha.jsonc"), edits: [{ keyPath: ["plugin"], value: nextArray }] },
+        manifestDigest,
+        // #348:替换同样过 authorize 闸(能力扩张时弹确认;renderer 拦截已就绪)。
+        capabilities: manifest.capabilities,
+        receipt: receiptTemplate,
+      },
+    ],
+    ...(intent.authorization ? { authorization: stampAuthorization(intent.authorization, () => deps.now?.() ?? new Date().toISOString())! } : {}),
+  }
+  const hooks: TxHooks = {
+    populate: () => {}, // config action 无 staging 载荷
+    // 锁内前置(TOCTOU 钉死):config 数组与账本旧事实必须仍如 plan 时,任一漂移 = 拒绝重试。
+    precondition: () => {
+      const cur = deps.installers.readPluginArrayStrict()
+      if (!cur.ok) return cur
+      if (JSON.stringify(cur.value) !== snapshotCanon) return { ok: false, reason: "plugin config changed since plan — retry the update" }
+      const rec = findRecordV2(root, "plugin", entry.name)
+      if (!rec || rec.generation !== facts.record.generation || rec.manifestDigest !== facts.record.manifestDigest)
+        return { ok: false, reason: "plugin ledger changed since plan — retry the update" }
+      return { ok: true }
+    },
+    commitReceipt: (records: TxCommitRecord[]) => {
+      const written = upsertRecordsV2(root, records.map((rec) => commitInputFromRecord(rec)))
+      if (!written.ok) throw new Error(`plugin replace receipt commit failed: ${written.reason}`)
+    },
+    log: () => {},
+  }
+  const result = await runExtensionTransaction(root, plan, hooks)
+  if (!result.ok) {
+    cleanupStaged()
+    rollback(`plugin replace failed at ${result.stage}: ${result.reason}`)
+    if (result.stage === "authorize") {
+      if (result.authorization) return { ok: false, stage: "authorize", reason: result.reason, authorization: result.authorization }
+      return { ok: false, reason: result.reason }
+    }
+    return { ok: false, reason: `plugin replace failed at ${result.stage}: ${result.reason}`, stage: result.stage }
+  }
+  // 提交成功:vendored 旧目录 GC(best-effort;失败如实入 warning —— config 已不再引用旧目录)。
+  let warning: string | undefined
+  if (facts.form.kind === "vendored") {
+    try {
+      fs.rmSync(facts.form.oldDir, { recursive: true, force: true })
+    } catch (error) {
+      warning = `old plugin dir not removed (${error instanceof Error ? error.message : String(error)}) — orphan without config reference`
+    }
+  }
+  ;(deps.transaction ?? passthroughTx).commit(args.txId)
+  return {
+    ok: true,
+    kind: "plugin",
+    name: entry.name,
+    manifestDigest,
+    ...(stagedDir ? { files: [stagedDir] } : {}),
+    ...(warning ? { warning } : {}),
+  }
 }
 
 /** #348:renderer 只交 confirmed;decidedAt 是授权收据的审计事实,由 main 在此打戳(Codex 裁决 B1)。 */
@@ -998,13 +1217,29 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
   //    替换;agent 无更新链)。在场检查覆盖 v2 record **与 v1-only receipt**(历史 eager v1 遗物),
   //    npm 插件另按历史规范化名 pluginRecordName(pkg) 查(review:同 catalog ID 双键/ghost)。
   if (entry.type === "plugin") {
-    const pluginNames = new Set([entry.name])
-    if (spec?.kind === "plugin" && typeof spec.package === "string" && spec.package) pluginNames.add(pluginRecordName(spec.package))
-    for (const n of pluginNames) {
-      if (findRecordV2(scope.root(deps), "plugin", n) || findReceipt(scope.root(deps), "plugin", n)) {
-        rollback("existing plugin install")
-        return { ok: false, reason: `plugin "${n}" already on the ledger — update must go through atomic replace (#352), not overwrite-install` }
-      }
+    // #352:fresh / replace / refuse 三态分发(main 从自己账本裁决,复用同一 catalog 通道)——
+    // 有效 catalog 旧账 → journaled 原子替换;v1-only/损坏/双键/漂移 → 显式拒绝;absent → fresh。
+    const dispatch = resolvePluginDispatch(
+      scope.root(deps),
+      entry,
+      spec?.kind === "plugin" ? spec : undefined,
+      deps.installers.readPluginArrayStrict,
+    )
+    if (dispatch.mode === "refuse") {
+      rollback(dispatch.reason)
+      return { ok: false, reason: dispatch.reason }
+    }
+    if (dispatch.mode === "replace") {
+      return replacePluginViaTransaction({
+        deps,
+        entry,
+        manifest,
+        manifestDigest,
+        intent,
+        facts: dispatch.facts,
+        rollback,
+        txId: tx.txId,
+      })
     }
     if (spec?.kind === "plugin" && spec.vendoredAssetKey && fs.existsSync(path.join(deps.globalRoot(), "plugins", entry.name))) {
       rollback("unregistered plugin dir present")
@@ -1565,12 +1800,16 @@ export async function uninstallByKey(rawIntent: unknown, deps: PlannerDeps): Pro
     return { ok: true }
   } else if (intent.type === "plugin") {
     if (configKey?.startsWith("plugin-path:")) {
-      // vendored:owned path 从受控根 + name 重新派生;账本路径必须落在派生目录内,否则 fail closed。
-      const derivedDir = path.join(deps.globalRoot(), "plugins", intent.name)
-      const ledgerJs = configKey.slice("plugin-path:".length)
-      if (path.resolve(ledgerJs) !== path.join(derivedDir, "plugin.js")) {
+      // vendored:owned path 必须是受控根下 plugins/<name> 或 plugins/<name>@<suffix>(#352
+      // versioned 替换落点)里的 plugin.js;其余一律 fail closed(账本路径不可指向树外)。
+      const pluginsRoot = path.join(deps.globalRoot(), "plugins")
+      const ledgerJs = path.resolve(configKey.slice("plugin-path:".length))
+      const ledgerDir = path.dirname(ledgerJs)
+      const dirBase = path.basename(ledgerDir)
+      const validBase = dirBase === intent.name || dirBase.startsWith(`${intent.name}@`)
+      if (path.basename(ledgerJs) !== "plugin.js" || path.dirname(ledgerDir) !== pluginsRoot || !validBase) {
         rollback("ledger plugin path outside derived root")
-        return { ok: false, reason: `fail closed: ledger plugin path "${ledgerJs}" does not match derived "${path.join(derivedDir, "plugin.js")}" — refusing` }
+        return { ok: false, reason: `fail closed: ledger plugin path "${ledgerJs}" is not under "${pluginsRoot}/${intent.name}[@…]" — refusing` }
       }
       const r = deps.installers.removePluginPath(intent.name, ledgerJs)
       if (!r.ok) {
@@ -1578,11 +1817,11 @@ export async function uninstallByKey(rawIntent: unknown, deps: PlannerDeps): Pro
         return r
       }
       try {
-        fs.rmSync(derivedDir, { recursive: true, force: true })
+        fs.rmSync(ledgerDir, { recursive: true, force: true })
       } catch {
         /* best-effort:config 已净除 */
       }
-      removedFiles = [derivedDir]
+      removedFiles = [ledgerDir]
     } else {
       const pkg = configKey?.startsWith("plugin:") ? configKey.slice("plugin:".length) : intent.name
       const r = deps.installers.removePlugin(pkg)
