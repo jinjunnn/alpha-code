@@ -252,6 +252,31 @@ describe("file action in runExtensionTransaction (REQ-102 #358)", () => {
     expect(readdirSync(join(root, "ext-tx", "staging")).length).toBeGreaterThan(0) // 证据保留
   })
 
+  test("圈禁在 apply 前紧邻重验:pre-switch 后父目录被换 symlink → 零树外写入,保留非终态(review r3 Blocker)", async () => {
+    const outside = mkdtempSync(join(tmpdir(), "ext-tx-outside-"))
+    try {
+      // pre-switch 探针窗口内(staging/materialize 之后、switch 之前)把 agents 换成树外 symlink。
+      const swapProbe: HealthProbe = (input) => {
+        if (input.action === "file" && input.phase === "pre-switch") {
+          rmSync(join(root, "agents"), { recursive: true, force: true })
+          symlinkSync(outside, join(root, "agents"))
+        }
+        return { healthy: true }
+      }
+      const r = await runExtensionTransaction(root, planFor(MD), hooksFor({ probe: swapProbe }))
+      expect(r.ok).toBe(false)
+      if (r.ok) return
+      expect(r.reason).toContain("confinement")
+      expect(r.reason).toContain("retained non-terminal") // restore 侧重验同样拦下 → 保留非终态
+      expect(readdirSync(outside)).toEqual([]) // 树外零写入(tmp 文件也没有)
+      expect(agentLeaf()).toBeUndefined()
+      const j = listTransactionJournals(root)[0]
+      expect(j.state).toBe("switching")
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
   test("生产恢复接线语义:composed probe + 过滤 receipt 前滚(review Blocker 1)", async () => {
     const iso = new Date().toISOString()
     const receipt = {

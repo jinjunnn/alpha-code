@@ -86,8 +86,15 @@ CAS 补充语义:
    fresh-only 门在**锁内 precondition**(agent 无更新链):账本 strict(v2/v1 在场拒)+
    md 文件(含 legacy `agent/` 单数目录)/ config 叶在场一律拒,config 不可读 fail-closed。
    capabilities 走严格解码 manifest → #348 锁内授权闸(授权 key 归 file 主 item,
-   `agent--<name>`;config 副 item 空集不弹)。卸载(flat 通道)联动清除
-   `ext-store/agent--<name>[--config]/grants.json`,重装重新弹确认。
+   `agent--<name>`;config 副 item **不声明** capabilities,不参与授权评估也不落授权账)。
+   卸载(flat 通道)联动清除 `ext-store/agent--<name>[--config]/grants.json`(删除失败 =
+   卸载失败且账本不动),重装重新弹确认。
+   **file 落盘圈禁与残余竞态(r3 裁决)**:`confineFileTarget` 逐段 lstat 拒 symlink,在
+   prepare、`applyFileImage` 前、每次 `restoreFileImage` 前(在线回滚与崩溃恢复)以及恢复
+   期任何对 journal file 段的采信(isFlipped/probe/receipt replay)之前**紧邻重验**;重验
+   不过 = 事务保留非终态(零写入、零落账)。接受的残余窗口 = 单次「lstat 重验 → 原子写」
+   之间的微秒级 check-then-use 竞态(与 GC promote 窗口同类,§3):被利用的后果上界是一次
+   写入被并发重绑定劫持,后续任何恢复/采信都会被重验拦下并保留非终态留证,不会静默扩散。
 4. `url` 字段仅传输提示;任何来源的字节一律以 digest 为唯一权威。
 
 ## 3. mark/sweep GC(`ext-cas-gc.collectCasGarbage`)

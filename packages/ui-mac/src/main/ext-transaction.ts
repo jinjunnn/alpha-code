@@ -1055,6 +1055,13 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
       } else if (kind === "file") {
         const image = fileImages.get(it.key)
         if (!image) continue
+        // r3 Blocker:restore 同样先紧邻重验圈禁 —— 目录被重绑定时绝不经 symlink 写/删 root 外
+        // 文件(即使内容恰好匹配 next 态),转 fileBlocked 保留非终态。
+        const confined = it.file ? confineFileTarget(root, it.file.relTarget) : { ok: false as const, reason: "missing file journal segment" }
+        if (!confined.ok) {
+          fileBlocked = `file rollback for "${it.key}": ${confined.reason}`
+          continue
+        }
         const restored = restoreFileImage(image)
         if (!restored.ok) fileBlocked = `file rollback for "${it.key}": ${restored.reason}`
       }
@@ -1228,7 +1235,14 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
       const kind = actionOf(it)
       if (kind === "generation") writePointerSync(root, it.key, it.genId, txId, now)
       else if (kind === "config") applyConfigImage(configImages.get(it.key)!)
-      else if (kind === "file") applyFileImage(fileImages.get(it.key)!)
+      else if (kind === "file") {
+        // #358 review r3 Blocker:prepare 期圈禁与此处写入之间隔着 staging/verify/materialize/
+        // 异步 probe —— 父目录可在窗口内被重绑定为 root 外 symlink。写入前**紧邻**重验;
+        // 残余窗口收窄为 lstat→单次原子写的微秒级(契约记录,与 GC promote 窗口同类)。
+        const confined = confineFileTarget(root, it.file!.relTarget)
+        if (!confined.ok) throw new Error(`file confinement re-check failed for "${it.key}": ${confined.reason}`)
+        applyFileImage(fileImages.get(it.key)!)
+      }
       if (i === 0 && journal.items.length > 1) crash("mid-switch")
     }
   } catch (error) {
@@ -1977,6 +1991,12 @@ async function recoverOne(
       const restored = restoreConfigImage(image)
       if (!restored.ok) warnings.push(`config recovery rollback for "${it.key}": ${restored.reason}`)
     } else if (kind === "file") {
+      // r3 Blocker:预扫与此处之间仍有 config 恢复等异步间隙 —— restore 前紧邻再重验一次圈禁。
+      const confined = it.file ? confineFileTarget(root, it.file.relTarget) : { ok: false as const, reason: "missing file journal segment" }
+      if (!confined.ok) {
+        fileRestoreBlocked = `file recovery rollback for "${it.key}": ${confined.reason}`
+        continue
+      }
       const restored = restoreFileImage(reconstructFileImage(it)!) // 上方预扫已证明可重建
       if (!restored.ok) fileRestoreBlocked = `file recovery rollback for "${it.key}": ${restored.reason}`
     }
