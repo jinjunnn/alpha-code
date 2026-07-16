@@ -43,6 +43,7 @@ import type { Catalog } from "../renderer/extensions/catalog-types"
 import { getAlphaEnvironment } from "./alpha-environment"
 import { decodeSetStateIntent, decodeUninstallIntent, installCatalog, listGenerationsByKey, rollbackGenerationByKey, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
 import { makeRecoveryGate } from "./ext-recovery-gate"
+import { adoptProjectLedger } from "./ext-project-adopt"
 import { buildGatedWriteChannels, GATED_WRITE_CHANNELS } from "./ext-write-channels"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
 import { lookupForUninstall, migrateV1Ledger, parseUninstallLedgerKey, projectScopeIdentity, readLedgerV2, removeRecordV2, upsertRecordsV2 } from "./ext-receipt-v2"
@@ -246,6 +247,20 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   // 不落决策 + 返回 denied,下次仍会弹。
   ipcMain.handle("ext-trust-check", async (event: IpcMainInvokeEvent, directory: string) => {
     if (typeof directory !== "string" || !directory) return { prompted: false, granted: false }
+    // #356:project 账本 v1→v2 adoption —— 必须在下面两个早退(无 executable / 已有信任决策)
+    // **之前**执行:纯文本 skill/agent 项目与已决策项目同样收编。等 ledgerReady(全局恢复收敛)
+    // 后进行;拒绝 loud log 零改动 —— busy/transient 在下一次项目打开的 trust-check 自然重试
+    // (adoption 幂等,renderer 的一次性 checked 吞不掉);gate/锁只罩迁移,不横跨原生确认框。
+    try {
+      await ledgerReady
+      const adopted = await adoptProjectLedger(directory, { environment: getAlphaEnvironment().environment, gate: recoveryGate })
+      if (!adopted.ok)
+        getLogger().log(`[req099-adopt] project ledger adoption refused (${adopted.transient ? "transient — will retry" : "final"}): ${adopted.reason}`)
+      else if (adopted.migrated > 0 || adopted.warnings.length > 0)
+        getLogger().log(`[req099-adopt] project ledger adopted: ${adopted.migrated} migrated, ${adopted.retained} retained${adopted.warnings.length ? `; ${adopted.warnings.join("; ")}` : ""}`)
+    } catch (error) {
+      getLogger().log(`[req099-adopt] adoption error (ledger untouched): ${error instanceof Error ? error.message : String(error)}`)
+    }
     const alphaDir = path.join(directory, ".alpha")
     let jsoncText: string | null = null
     try {
