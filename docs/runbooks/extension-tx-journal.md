@@ -131,11 +131,13 @@ seed plugin 的载荷是同一事务里的 file items,落点 = 内容寻址目�
 `<userData>/alpha-mcp-secrets/<server>/<verId>/<VAR>`(verId = `v-<hex16>`(接受 8-16 位 hex 存量),只增不覆盖;
 完整合同见 `docs/contracts/extension-capability-authorization.md` §9)。残留识别与处置:
 
-- **孤儿判定**:版本目录内没有任何文件被当前 `alpha.jsonc` `mcp.<server>` leaf 的 `{file:}`
-  引用即孤儿(来源:安装失败/authorize 暂停清理失败、崩溃于提交前、提交后旧版本 GC 失败
-  warning)。安装成功路径会在配置写锁内自动 GC(未引用 + mtime 超 10 分钟宽限),一般无需
-  人工;要手工收时先核对当前 leaf 引用,再删未引用版本目录。**宽限期内的新目录不要删**——
-  可能是「文件已写、config 尚未提交」的在途安装。
+- **孤儿判定**:版本目录内没有任何文件被 `mcp.<server>` leaf 的 `{file:}` 引用即孤儿 ——
+  **引用对账必须覆盖主配置与全部 retained legacy 源**(`~/.opencode/opencode.jsonc`、XDG
+  `opencode.jsonc`;引擎会合并它们,r9:只看当前 `alpha.jsonc` 会误删 legacy 仍在用的密钥)。
+  来源:安装失败/authorize 暂停清理失败、崩溃于提交前、提交后旧版本 GC 失败 warning。安装
+  成功路径会在配置写锁内自动 GC(全源未引用 + mtime 超 10 分钟宽限),一般无需人工;要手工
+  收时先逐源核对引用,再删未引用版本目录。**宽限期内的新目录不要删**——可能是「文件已写、
+  config 尚未提交」的在途安装。
 - **legacy flat 文件**(`<server>/<VAR>` 直挂):存量安装与 env 迁移的合法布局,被当前 leaf
   引用时绝不可删;不再被引用后由同一 GC 收。
 - **卸载**:journaled 卸载会删除整个 `<server>` 目录(全部版本 + flat),无需按版本处置。

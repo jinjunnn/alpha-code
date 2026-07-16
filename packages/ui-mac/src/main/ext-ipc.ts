@@ -13,7 +13,7 @@ import { extensionsGranted, hasExtensionsDecision, listProjectExecutables, withE
 import { alphaRoot, readProjectPrefs, writeProjectPrefs } from "./alpha-workdir"
 import type { InstallTarget } from "../preload/types"
 import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
-import { claimMcpSecretVersionDir, fileifyMcpSecretsVersioned, mcpSecretVersionedRef, newMcpSecretVersionId, removeMcpSecretVersionDir, removeMcpServerSecrets, removeMcpServerSecretsStrict, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
+import { claimMcpSecretVersionDir, fileifyMcpSecretsVersioned, isFileRef, mcpSecretVersionedRef, newMcpSecretVersionId, removeMcpSecretVersionDir, removeMcpServerSecrets, removeMcpServerSecretsStrict, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, type ProvenanceRequest } from "./alpha-migrate"
 import { configHealth, findPluginBaseConflictStrict, gcMcpSecretsAgainstConfig, listConfiguredMcpServerNamesStrict, mcpConfigTruthPath, persistPlugin, pluginRecordName, readLegacyPluginArrayStrict, readMcpLeaf, readMcpLeafStrict, readPluginArrayStrict, removeMcp, removeMcpConfigInLock, removePlugin, removePluginEntryExact, removePluginPath, restoreMcpLeaf } from "./ext-config"
 import { recordUncuratedInstall } from "./ext-uncurated-record"
@@ -83,12 +83,22 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
       // 通道刚写的新版本一起删(跨通道交错)。改版本化只增不覆盖:本次写全新 verId 目录,既有
       // 版本(可能正被旧 config 或在途事务引用)零接触;失败只删本次 verId(无引用,惰性安全)。
       const vars = secretVars && secretVars.length && server && typeof server === "object" ? secretVars : null
+      // r9 Major:只有确有**明文**需要路由才认领版本目录 —— 空 env / 纯 {file:} 引用的重装
+      // 无需写通道,secret 树不可写不应无谓拒绝(既有引用继续可用)。
+      const isRecEnv = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
+      const envForScan = vars && isRecEnv(server.environment) ? server.environment : null
+      const plaintextVars = vars
+        ? vars.filter((v) => {
+            const val = envForScan ? envForScan[v] : undefined
+            return typeof val === "string" && val.length > 0 && !isFileRef(val)
+          })
+        : []
       // r1 Minor:版本目录排他认领(碰撞换 id 重试,绝不复用既有版本目录)。
       // r8 Blocker:认领不下来 = 密钥进不了文件通道 —— **fail-closed 拒绝**,绝不带明文继续
       // 落盘(durable config 只含 {file:} 引用的合同对未策展面同样成立)。
       let verId: string | null = null
       let claimFail = ""
-      if (vars) {
+      if (plaintextVars.length > 0) {
         for (let i = 0; i < 3 && !verId; i++) {
           const vid = newMcpSecretVersionId()
           const claimed = claimMcpSecretVersionDir(userDataPath, name, vid)

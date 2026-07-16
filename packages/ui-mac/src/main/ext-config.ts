@@ -973,21 +973,27 @@ function pluginEntryMatchesPath(entry: unknown, targetResolved: string, configDi
 
 function removePluginPathUnlocked(name: string, absJsPath: string): ConfigResult {
   if (!path.isAbsolute(absJsPath)) return { ok: false, reason: "invalid plugin path" }
-  const target = mcpPluginTargetPath()
   const targetResolved = path.resolve(absJsPath)
-  const configDir = path.dirname(target)
-  try {
-    if (fs.existsSync(target)) {
-      const parsed = parse(fs.readFileSync(target, "utf8")) as { plugin?: unknown } | undefined
-      const current: unknown[] = Array.isArray(parsed?.plugin) ? (parsed!.plugin as unknown[]) : []
+  const isRec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
+  // r9 Major:主 + 全部 legacy 源同扫(escape-hatch 切换后原主属 legacy 集合,残留等价条目会在
+  // 载荷删除后悬空);**strict 解析**(语法损坏的容错部分对象会让卸载谎报成功 —— 修好语法后
+  // 条目复活指向已删 plugin.js)。任一源不可净除 = 卸载失败,载荷/账本不动。
+  for (const file of [mcpPluginTargetPath(), ...legacyConfigPaths(mcpPluginTargetPath())]) {
+    try {
+      if (!fs.existsSync(file)) continue
+      const errors: ParseError[] = []
+      const parsed: unknown = parse(fs.readFileSync(file, "utf8"), errors)
+      if (errors.length > 0) return { ok: false, reason: `config unparseable (fail closed): ${file}: ${errors.length} parse error(s)` }
+      const current = isRec(parsed) && Array.isArray(parsed.plugin) ? parsed.plugin : []
+      const configDir = path.dirname(file)
       const next = current.filter((p) => !pluginEntryMatchesPath(p, targetResolved, configDir))
       if (next.length !== current.length) {
-        const written = writeKeyUnlocked(target, ["plugin"], next)
+        const written = writeKeyUnlocked(file, ["plugin"], next)
         if (!written.ok) return written
       }
+    } catch (error) {
+      return { ok: false, reason: `config unreadable (fail closed): ${file}: ${error instanceof Error ? error.message : String(error)}` }
     }
-  } catch {
-    return { ok: false, reason: "failed to read config" }
   }
   if (receiptsActive()) removeReceipt(alphaGlobalRoot(), "plugin", name)
   return { ok: true }

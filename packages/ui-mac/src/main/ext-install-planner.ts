@@ -830,7 +830,9 @@ function resolvePluginDispatch(
       (dirBase === entry.name || dirBase.startsWith(`${entry.name}@`))
     if (!confined)
       return { mode: "refuse", reason: `ledger plugin path "${oldJsPath}" is not under "${pluginsRoot}/${entry.name}[@…]" — refusing replace (uncontrolled removal target)` }
-    if (cfg.value.filter((x) => pluginSpecOf(x) === oldJsPath).length !== 1)
+    // r9 Major:对账按引擎解析语义 —— 合法等价改写(相对/file:///元组)不得被词法比较误判
+    // 成 ledger drift(否则该插件永远无法更新)。
+    if (cfg.value.filter((x) => resolvePluginEntryPath(x, root) === oldJsPath).length !== 1)
       return { mode: "refuse", reason: `ledger configKey "${configKey}" not matched exactly once in config plugin[] — ledger/config drift, refusing replace` }
     return { mode: "replace", facts: { record, form: { kind: "vendored", oldJsPath, oldDir } } }
   }
@@ -990,9 +992,11 @@ async function replacePluginViaTransaction(args: {
     return snapshot
   }
   const oldElem = facts.form.kind === "npm" ? facts.form.oldPinned : facts.form.oldJsPath
-  // r5 Major:等值与换元都按 spec 头(pluginSpecOf)—— 引擎合法的 [oldElem, options] 元组
-  // 必须能被替换(换首项保留 options),否则合法配置被误报 drift 永远无法更新。
-  const matchesOld = (x: unknown): boolean => pluginSpecOf(x) === oldElem
+  // r5/r9 Major:等值与换元按引擎语义 —— npm 按 spec 头(包名非路径);vendored 按解析路径
+  // (相对/file:///元组等价形态都命中)。否则合法配置被误报 drift 永远无法更新。
+  const oldElemResolved = facts.form.kind === "npm" ? null : path.resolve(oldElem)
+  const matchesOld = (x: unknown): boolean =>
+    oldElemResolved === null ? pluginSpecOf(x) === oldElem : resolvePluginEntryPath(x, root) === oldElemResolved
   if (snapshot.value.filter(matchesOld).length !== 1) {
     cleanupStaged()
     rollback("plugin config drifted before plan")

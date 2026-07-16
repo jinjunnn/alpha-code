@@ -2011,6 +2011,32 @@ describe("single-install transactionalization exit criteria (REQ-100 #378)", () 
     if (!r3.ok) expect(r3.reason).toContain("invalid entries")
   })
 
+  test("r9:vendored 条目被等价改写为相对形态 → dispatch/replace 按引擎语义仍可更新", async () => {
+    const { deps } = makeDeps()
+    const v1 = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
+    expect(v1.ok).toBe(true)
+    if (!v1.ok) return
+    const oldJs = path.join(v1.files![0]!, "plugin.js")
+    // 把绝对条目改写为等价相对形态(引擎按 config 目录解析,合法配置)
+    const rel = `./${path.relative(globalRoot, oldJs)}`
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [rel] }))
+    const v2Entry = { ...pluginVendoredEntry, version: "1.0.1" } as CatalogEntry
+    const { deps: d2 } = makeDeps({
+      entries: [...ALL_ENTRIES.filter((e) => e.id !== "plugin:vp"), v2Entry],
+      installers: {
+        collectVendoredPluginPayload: (_key: string, name: string) => ({
+          ok: true as const,
+          files: [{ path: "plugin.js", data: Buffer.from(`// vendored ${name} v1.0.1`) }],
+        }),
+      },
+    })
+    const upd = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, d2)
+    expect(upd.ok).toBe(true) // 不再被词法比较误判 ledger drift
+    const arr = pluginArrayOnDisk()
+    expect(arr).toHaveLength(1)
+    expect(strOf(arr[0])).not.toBe(rel) // 已换元为新落点
+  })
+
   test("r5:元组 [spec, options] —— 合法元组可被 replace 换首项保留 options;非法形状拒", async () => {
     const { deps } = makeDeps()
     const v1 = await installAuthorized({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
