@@ -676,21 +676,30 @@ export function collectBuiltinAgentPayload(
 /** #352(Codex 裁决必改 5,versioned 路线):vendored 替换的**纯 staging** —— 新内容落
  *  不可变 versioned 目录 `plugins/<name>@<hex>`(绝不覆盖既有 `<name>` 目录),零 config/账本
  *  副作用;config 路径与 receipt 由替换事务原子切换,旧目录事务成功后 GC。staging 半成品由
- *  调用方失败清理(残留无 config 引用,无害)。 */
+ *  调用方失败清理(残留无 config 引用,无害)。
+ *  #378 r16(Major):staging 源走与 fresh 同一硬化收集合同(collectVendoredPluginPayload:
+ *  身份绑定、realpath 圈禁、常规文件、16/64MB 帽)—— cpSync 原样复制会把 fresh 被拒的
+ *  symlink/非常规条目/超帽载荷在 update/repair 通道原样激活;落盘逐文件写内存态载荷,
+ *  目标路径再圈禁一次。 */
 export function stageVendoredPluginVersioned(
   vendoredAssetKey: string,
   name: string,
 ): { ok: true; dir: string; jsPath: string } | { ok: false; reason: string } {
   if (!SAFE_PLUGIN_ASSET_KEY.test(vendoredAssetKey)) return { ok: false, reason: "invalid asset key" }
   if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid plugin name" }
-  const srcDir = path.join(resourcesRoot(), vendoredAssetKey)
-  if (!fs.existsSync(path.join(srcDir, "plugin.js"))) return { ok: false, reason: "插件内容未随此版本打包" }
+  const collected = collectVendoredPluginPayload(vendoredAssetKey, name)
+  if (!collected.ok) return collected
   const versioned = `${name}@${crypto.randomBytes(4).toString("hex")}`
   const destDir = safeResolveUnder(alphaGlobalRoot(), "plugins", versioned)
   if (!destDir) return { ok: false, reason: "refused: path escapes alpha root" }
   try {
     fs.mkdirSync(destDir, { recursive: true })
-    fs.cpSync(srcDir, destDir, { recursive: true })
+    for (const f of collected.files) {
+      const target = safeResolveUnder(destDir, ...f.path.split("/"))
+      if (!target) throw new Error(`refused: payload path escapes staging dir: ${f.path}`)
+      fs.mkdirSync(path.dirname(target), { recursive: true })
+      fs.writeFileSync(target, f.data)
+    }
   } catch (error) {
     try {
       fs.rmSync(destDir, { recursive: true, force: true })

@@ -2476,6 +2476,45 @@ describe("plugin replace r15 —— 同版本精确校验与别名身份对账",
     if (!r.ok) return
     expect(r.warning ?? "").not.toContain("nothing to replace")
     expect(strOf(pluginArrayOnDisk()[0])).toContain("vp@feed1234") // 修好的新 versioned 路径接管
+    // r16 Minor:置换 receipt 落 payloadDigest(upsert 整记录替换,缺省会抹掉内容身份)。
+    expect(strOf(recOf(findRecordV2(globalRoot, "plugin", "vp")).payloadDigest)).toMatch(/^sha256:/)
+  })
+
+  test("r16:plugins/<name> 整目录被换成指向外部等值内容的 symlink → 不判健康,走修复替换", async () => {
+    const external = path.join(tmp, "external-vp")
+    fs.mkdirSync(external, { recursive: true })
+    fs.writeFileSync(path.join(external, "plugin.js"), "// vendored vp (plugins/vp)") // 字节等值也不行
+    const oldDir = path.join(globalRoot, "plugins", "vp")
+    fs.mkdirSync(path.dirname(oldDir), { recursive: true })
+    fs.symlinkSync(external, oldDir)
+    const oldJs = path.join(oldDir, "plugin.js")
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [oldJs] }, null, 2))
+    const d = decodeManifestV2(synthesizeManifest({ entry: pluginVendoredEntry, channel: "remote", catalogVersion: "2026-07-13.1" }))
+    if (!d.ok) throw new Error("fixture manifest invalid")
+    const w = upsertRecordV2(globalRoot, {
+      id: "plugin:vp", name: "vp", kind: "plugin", environment: "prod", scope: { kind: "global" },
+      version: d.manifest.version, manifestDigest: computeManifestDigest(d.manifest),
+      desiredState: "enabled", origin: "catalog",
+      configKey: `plugin-path:${oldJs}`, transaction: { id: "tx-old-vp5", state: "committed" },
+      installedAt: "2026-07-15T00:00:00.000Z",
+    })
+    if (!w.ok) throw new Error(w.reason)
+    const { deps } = makeDeps()
+    const r = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.warning ?? "").not.toContain("nothing to replace") // 外部路径执行现场必须被修复
+    expect(strOf(pluginArrayOnDisk()[0])).toContain("vp@feed1234")
+  })
+
+  test("r16:等值载荷 + 多余空目录夹带 → 不判健康,走修复替换", async () => {
+    const { oldDir } = seedVendoredCurrent("// vendored vp (plugins/vp)")
+    fs.mkdirSync(path.join(oldDir, "smuggled"), { recursive: true })
+    const { deps } = makeDeps()
+    const r = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.warning ?? "").not.toContain("nothing to replace")
   })
 
   test("config 条目经 symlink 别名指向账本路径 → 身份对账不误判 drift,置换收敛为单条", async () => {

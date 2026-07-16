@@ -908,6 +908,10 @@ async function replacePluginViaTransaction(args: {
    *  installers.stageVendoredPluginVersioned(resources 源,锁外 staging,#352 原样)。
    *  specs = 期望清单(同版本幂等早退的实物严格校验用,review r2 Major)。 */
   seedPayload?: { dir: string; dirRel: string; jsPath: string; items: TxPlanItem[]; specs: TxFileSpec[]; probe: HealthProbe }
+  /** r16 Minor:载荷内容地址(seed/CAS 通道由调用方供给;catalog vendored 分支内部自算)——
+   *  置换 receipt 不落 payloadDigest 会抹掉内容身份,advisory 聚合 digest 闸对缺失值保守放行/
+   *  误拦。npm 无载荷,合法缺省。 */
+  payloadDigest?: string
   readPluginArray?: () => { ok: true; value: unknown[] } | { ok: false; reason: string }
 }): Promise<CatalogInstallOutcome> {
   const { deps, entry, manifest, manifestDigest, intent, facts, rollback } = args
@@ -924,6 +928,7 @@ async function replacePluginViaTransaction(args: {
   // 新目标派生 + 幂等早退(同钉版/同 digest = 无事可做,零副作用)。
   let newElem: string
   let newConfigKey: string
+  let replacePayloadDigest = args.payloadDigest
   let stagedDir: string | null = null
   if (facts.form.kind === "npm") {
     if (typeof spec.package !== "string" || !spec.package) {
@@ -1005,30 +1010,35 @@ async function replacePluginViaTransaction(args: {
         rollback("entry has no vendored asset")
         return { ok: false, reason: "entry has no vendored asset" }
       }
+      // r16 Major:update/repair 与 fresh 同一硬化收集合同 —— 收集器拒绝(身份漂移/symlink 源/
+      // 超帽/非常规条目)= 置换拒绝,绝不落回原样复制;digest 同源补齐 receipt payloadDigest。
+      const payload = deps.installers.collectVendoredPluginPayload(assetKey, entry.name)
+      if (!payload.ok) {
+        rollback(payload.reason)
+        return payload
+      }
+      replacePayloadDigest = aggregateFilesDigest(payload.files.map((f) => ({ path: f.path, sha256: sha256Hex(f.data), bytes: f.data.length })))
       // r15 Major:existsSync 只证 plugin.js 在场不证内容 —— 载荷截断/篡改/缺文件时同版本重装
       // 必须落修复(staging + 完整 replace),不得「nothing to replace」空转。镜像 seed 幂等早退:
-      // 持 bundle 锁逐文件精确校验 + 账本锁内重读(锁外验证可被并发替换骗过);载荷收集失败/
-      // 锁忙/任一不健康 = 不早退,走修复路径。
+      // 持 bundle 锁逐文件精确校验 + 账本锁内重读(锁外验证可被并发替换骗过);锁忙/任一不健康 =
+      // 不早退,走修复路径。
       if (recordHealthy) {
-        const payload = deps.installers.collectVendoredPluginPayload(assetKey, entry.name)
-        if (payload.ok) {
-          const held = tryAcquireBundleLock(root, { txId: `tx-pluginidem-${crypto.randomBytes(4).toString("hex")}` })
-          if (held.ok) {
-            try {
-              const rec = findRecordV2(root, "plugin", entry.name)
-              const still =
-                rec !== null &&
-                rec.manifestDigest === manifestDigest &&
-                rec.version === manifest.version &&
-                rec.transaction?.state === "committed" &&
-                rec.configKey === `plugin-path:${facts.form.oldJsPath}`
-              if (still && verifyVendoredPluginDirExact(facts.form.oldDir, payload.files).ok) {
-                rollback("already at target version")
-                return { ok: true, kind: "plugin", name: entry.name, manifestDigest, warning: "already at this version — nothing to replace" }
-              }
-            } finally {
-              held.lock.release()
+        const held = tryAcquireBundleLock(root, { txId: `tx-pluginidem-${crypto.randomBytes(4).toString("hex")}` })
+        if (held.ok) {
+          try {
+            const rec = findRecordV2(root, "plugin", entry.name)
+            const still =
+              rec !== null &&
+              rec.manifestDigest === manifestDigest &&
+              rec.version === manifest.version &&
+              rec.transaction?.state === "committed" &&
+              rec.configKey === `plugin-path:${facts.form.oldJsPath}`
+            if (still && verifyVendoredPluginDirExact(facts.form.oldDir, payload.files).ok) {
+              rollback("already at target version")
+              return { ok: true, kind: "plugin", name: entry.name, manifestDigest, warning: "already at this version — nothing to replace" }
             }
+          } finally {
+            held.lock.release()
           }
         }
       }
@@ -1181,6 +1191,9 @@ async function replacePluginViaTransaction(args: {
     desiredState: facts.record.desiredState,
     origin: "catalog",
     ...(stagedDir ? { files: [stagedDir] } : {}),
+    // r16 Minor:置换 receipt 落载荷内容地址 —— upsert 是整记录替换,缺省会抹掉旧值,
+    // advisory 聚合 digest 闸对缺失 payloadDigest 保守判中,升级后的无关载荷被误拦。
+    ...(replacePayloadDigest ? { payloadDigest: replacePayloadDigest } : {}),
     configKey: newConfigKey,
     installedAt: now,
   }
@@ -2652,11 +2665,41 @@ function verifySeedPluginDirExact(root: string, relDir: string, specs: TxFileSpe
   return c.cls === "healthy" ? { ok: true } : { ok: false, reason: c.reason }
 }
 
-/** #378 r15(Major):catalog vendored 同版本幂等早退的严格实物校验 —— 与 seed 同一契约:
- *  期望载荷逐文件字节等值 + 零多余条目 + 零 symlink/非常规文件;任何偏差(截断/篡改/缺文件/
- *  夹带)= 不健康,早退失效走修复(staging + 完整 replace)。任何读失败一律不健康(fail closed)。 */
+/** #378 r15/r16(Major):catalog vendored 同版本幂等早退的严格实物校验 —— 与 seed 同一契约:
+ *  期望载荷逐文件字节等值 + 零多余条目(文件**与目录**)+ 零 symlink/非常规文件;任何偏差
+ *  (截断/篡改/缺文件/夹带)= 不健康,早退失效走修复(staging + 完整 replace)。任何读失败
+ *  一律不健康(fail closed)。r16:根目录本身 lstat 圈禁(整目录被换成指向外部等值内容的
+ *  symlink 时不得判健康 —— 否则活体继续从不受控外部路径执行);文件读取走 O_NOFOLLOW fd
+ *  (lstat→read 窗口内 file→symlink 调包不可乘)。 */
 function verifyVendoredPluginDirExact(dir: string, files: Array<{ path: string; data: Buffer }>): { ok: true } | { ok: false; reason: string } {
   const expected = new Map(files.map((f) => [f.path, f.data]))
+  const expectedDirs = new Set<string>()
+  for (const p of expected.keys()) {
+    const segs = p.split("/")
+    for (let i = 1; i < segs.length; i++) expectedDirs.add(segs.slice(0, i).join("/"))
+  }
+  try {
+    const rootSt = fs.lstatSync(dir)
+    if (rootSt.isSymbolicLink() || !rootSt.isDirectory()) return { ok: false, reason: "plugin dir is not a real directory (symlink swap?)" }
+  } catch {
+    return { ok: false, reason: "plugin dir unstatable" }
+  }
+  const readRegularNoFollow = (abs: string): Buffer | null => {
+    let fd: number
+    try {
+      fd = fs.openSync(abs, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW)
+    } catch {
+      return null
+    }
+    try {
+      if (!fs.fstatSync(fd).isFile()) return null
+      return fs.readFileSync(fd)
+    } catch {
+      return null
+    } finally {
+      fs.closeSync(fd)
+    }
+  }
   const seen = new Set<string>()
   const walk = (rel: string): string | null => {
     let names: string[]
@@ -2674,6 +2717,7 @@ function verifyVendoredPluginDirExact(dir: string, files: Array<{ path: string; 
         return `unstatable entry: ${childRel}`
       }
       if (st.isDirectory()) {
+        if (!expectedDirs.has(childRel)) return `unexpected directory: ${childRel}`
         const verdict = walk(childRel)
         if (verdict !== null) return verdict
         continue
@@ -2681,12 +2725,8 @@ function verifyVendoredPluginDirExact(dir: string, files: Array<{ path: string; 
       if (!st.isFile()) return `non-regular entry: ${childRel}`
       const want = expected.get(childRel)
       if (want === undefined) return `unexpected file: ${childRel}`
-      let got: Buffer
-      try {
-        got = fs.readFileSync(path.join(dir, childRel))
-      } catch {
-        return `unreadable file: ${childRel}`
-      }
+      const got = readRegularNoFollow(path.join(dir, childRel))
+      if (got === null) return `unreadable file (symlink swap?): ${childRel}`
       if (!got.equals(want)) return `content mismatch: ${childRel}`
       seen.add(childRel)
     }
@@ -3253,6 +3293,7 @@ async function installPluginFromCas(args: {
       rollback,
       txId: args.txId,
       seedPayload: { dir, dirRel: `plugins/${dirName}`, jsPath, items: payload.items, specs: args.promotedSpecs, probe: seedPluginFileProbe() },
+      payloadDigest,
       readPluginArray,
     })
   }
