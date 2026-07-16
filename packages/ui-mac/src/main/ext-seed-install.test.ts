@@ -119,7 +119,9 @@ function buildSeed(
       url: `https://alphacodeone.com/catalog/v1/releases/${CATALOG_VERSION}/catalog.json`,
       sigUrl: `https://alphacodeone.com/catalog/v1/releases/${CATALOG_VERSION}/catalog.json.sig`,
     },
-    supportedPlatforms: ["darwin-arm64", "darwin-x64", "win32-arm64", "win32-x64"],
+    // 含 linux token:CI(ubuntu)跑本套件时 readPackagedSeed 的 S9 门按真实 process 平台判,
+    // fixture 不含 linux 会把整个 seed 拒掉 —— #317 起本文件在 linux CI 恒红,此处修复。
+    supportedPlatforms: ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64", "win32-arm64", "win32-x64"],
     budget: { maxAssetBytes: 16777216, maxTotalBytes: 67108864, maxFilesPerAsset: 512 },
     totalBytes: total,
     assets: lockAssets.sort((x, y) => (x.id < y.id ? -1 : 1)) as SeedLock["assets"],
