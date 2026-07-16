@@ -237,11 +237,12 @@ function makeDeps(opts: {
       calls.push({ fn: "readMcpLeafStrict", args: [name] })
       return { ok: true as const, value: undefined }
     },
-    // #378 r6:legacy XDG strict 读(缺省空;legacy 冲突语义在专项测试注入)。
+    // #378 r6/r7:legacy 源 strict 读(缺省零源;legacy 冲突语义在专项测试注入)+ 真源路由门。
     readLegacyPluginArrayStrict: () => {
       calls.push({ fn: "readLegacyPluginArrayStrict", args: [] })
-      return { ok: true as const, value: [] as unknown[], configDir: path.join(tmp, "legacy") }
+      return { ok: true as const, sources: [] as Array<{ value: unknown[]; configDir: string }> }
     },
+    mcpConfigTruthPath: () => path.join(globalRoot, "alpha.jsonc"),
     // #378(裁决 Q5):跨源同 base 检查 —— 镜像真实 alpha.jsonc 的 plugin[](legacy 缺省无冲突)。
     findPluginBaseConflictStrict: (pkg: string) => {
       calls.push({ fn: "findPluginBaseConflictStrict", args: [pkg] })
@@ -1954,6 +1955,21 @@ describe("single-install transactionalization exit criteria (REQ-100 #378)", () 
     expect(first.reason).toContain("plaintext")
   })
 
+  test("r7:escape-hatch 真源路由 → 事务单装 fail-closed 拒(mcp/npm/vendored 三入口),零写零账", async () => {
+    const { deps } = makeDeps({ installers: { mcpConfigTruthPath: () => "/elsewhere/opencode.jsonc" } })
+    for (const c of [
+      { catalogId: "mcp:markitdown", grants: { secrets: { API_KEY: "v" } } },
+      { catalogId: "plugin:np" },
+      { catalogId: "plugin:vp" },
+    ]) {
+      const r = await installCatalog({ catalogId: c.catalogId, scope: { scope: "global" }, ...(c.grants ? { grants: c.grants } : {}) }, deps)
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.reason).toContain("escape-hatch")
+    }
+    expect(fs.existsSync(path.join(globalRoot, "alpha.jsonc"))).toBe(false)
+    expect(fs.existsSync(path.join(globalRoot, "installs.json"))).toBe(false)
+  })
+
   test("r6:vendored 内容身份交叉在分发前 —— 配错 vendoredAssetKey 的 replace/fresh 一律拒", async () => {
     const { deps } = makeDeps()
     const v1 = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
@@ -1975,7 +1991,9 @@ describe("single-install transactionalization exit criteria (REQ-100 #378)", () 
     const withLegacy = (value: unknown[], fail = false) => ({
       installers: {
         readLegacyPluginArrayStrict: () =>
-          fail ? { ok: false as const, reason: "legacy config plugin[] contains invalid entries" } : { ok: true as const, value, configDir: path.join(tmp, "legacy") },
+          fail
+            ? { ok: false as const, reason: "legacy config plugin[] contains invalid entries" }
+            : { ok: true as const, sources: [{ value, configDir: path.join(tmp, "legacy") }] },
       },
     })
     const { deps } = makeDeps(withLegacy([legacyPath]))

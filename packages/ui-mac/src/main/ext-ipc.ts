@@ -15,7 +15,7 @@ import type { InstallTarget } from "../preload/types"
 import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
 import { claimMcpSecretVersionDir, fileifyMcpSecretsVersioned, mcpSecretVersionedRef, newMcpSecretVersionId, removeMcpSecretVersionDir, removeMcpServerSecrets, removeMcpServerSecretsStrict, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, type ProvenanceRequest } from "./alpha-migrate"
-import { configHealth, findPluginBaseConflictStrict, gcMcpSecretsAgainstConfig, persistPlugin, pluginRecordName, readLegacyPluginArrayStrict, readMcpLeaf, readMcpLeafStrict, readPluginArrayStrict, removeMcp, removeMcpConfigInLock, removePlugin, removePluginEntryExact, removePluginPath, restoreMcpLeaf } from "./ext-config"
+import { configHealth, findPluginBaseConflictStrict, gcMcpSecretsAgainstConfig, mcpConfigTruthPath, persistPlugin, pluginRecordName, readLegacyPluginArrayStrict, readMcpLeaf, readMcpLeafStrict, readPluginArrayStrict, removeMcp, removeMcpConfigInLock, removePlugin, removePluginEntryExact, removePluginPath, restoreMcpLeaf } from "./ext-config"
 import { recordUncuratedInstall } from "./ext-uncurated-record"
 import { applyMcpWritePolicy, persistMcpWithPolicy } from "./ext-mcp-policy"
 import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
@@ -602,8 +602,10 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
         // #378(裁决 Q5):npm plugin 跨源(主 + legacy XDG)同 base 严格检查。
         findPluginBaseConflictStrict,
         readPluginArrayStrict,
-        // #378 r6:legacy XDG plugin[] strict 读(同名路径冲突/旧目录 GC 引用对账覆盖合并视图)。
+        // #378 r6/r7:全部 legacy 配置源 plugin[] strict 读(同名路径冲突/旧目录 GC 覆盖合并视图)。
         readLegacyPluginArrayStrict,
+        // #378 r7:引擎配置真源路径(escape-hatch 路由门)。
+        mcpConfigTruthPath,
         stageVendoredPluginVersioned,
         agentPresent: (name, target) => agentInstallPresent(name, target),
         removePlugin,

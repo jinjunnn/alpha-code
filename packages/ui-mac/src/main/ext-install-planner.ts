@@ -104,19 +104,33 @@ function findSameNamePluginPathEntry(list: unknown[], root: string, name: string
   return null
 }
 
-/** #378 r6(Major):fresh/replace 的同名派生路径检查必须覆盖 **legacy XDG 源**(引擎合并两份
- *  plugin 数组)—— legacy 里指向 <root>/plugins/<name>[@…] 的条目在场时,继续安装/置换会双载。
- *  legacy 不可读/形状非法 = fail-closed 拒(引擎会拒整份合并配置)。 */
+/** #378 r6/r7(Blocker/Major):fresh/replace 的同名派生路径检查必须覆盖**全部 legacy 源**
+ *  (引擎合并 XDG 与 retained home 等历史位置)—— 任一源里指向 <root>/plugins/<name>[@…] 的
+ *  条目在场时,继续安装/置换会双载。每源相对条目按其 configDir 解析;任一源不可读/形状非法 =
+ *  fail-closed 拒(引擎会拒整份合并配置)。 */
 function legacySameNamePluginGate(
-  readLegacy: () => { ok: true; value: unknown[]; configDir: string } | { ok: false; reason: string },
+  readLegacy: () => { ok: true; sources: Array<{ value: unknown[]; configDir: string }> } | { ok: false; reason: string },
   root: string,
   name: string,
 ): { ok: true } | { ok: false; reason: string } {
   const legacy = readLegacy()
   if (!legacy.ok) return legacy
-  const hit = findSameNamePluginPathEntry(legacy.value, root, name, legacy.configDir)
-  if (hit) return { ok: false, reason: `legacy config contains "${hit}" without a ledger record — refusing to double-load an unregistered plugin` }
+  for (const src of legacy.sources) {
+    const hit = findSameNamePluginPathEntry(src.value, root, name, src.configDir)
+    if (hit) return { ok: false, reason: `legacy config contains "${hit}" without a ledger record — refusing to double-load an unregistered plugin` }
+  }
   return { ok: true }
+}
+
+/** #378 r7(Major):escape-hatch 环境(ALPHA_JSONC_TRUTH_DISABLE / ALPHA_LEGACY_INSTALL_ROOT)
+ *  把引擎配置真源路由到事务根之外 —— config action 圈禁只能写 <root>/alpha.jsonc,照常提交会
+ *  「账本记 active、引擎读不到」谎报成功。诚实 fail-closed:真源不在根内即拒。 */
+function configTruthInRootGate(root: string, truthPath: string): { ok: true } | { ok: false; reason: string } {
+  if (path.resolve(truthPath) === path.resolve(path.join(root, "alpha.jsonc"))) return { ok: true }
+  return {
+    ok: false,
+    reason: `engine config truth is routed to "${truthPath}" (escape-hatch env) — transactional single-install writes <root>/alpha.jsonc only; refusing to record an install the engine cannot see`,
+  }
 }
 
 /** #378 r1(Major):cloud 重装的锁内 desiredState 漂移门 —— plan 快照在锁外读,锁内重读
@@ -565,9 +579,12 @@ export type PlannerInstallers = {
   findPluginBaseConflictStrict(pkg: string): { ok: true; existing: { spec: string; source: "main" | "legacy" } | undefined } | { ok: false; reason: string }
   /** #352:plugin[] 的 strict 快照读(替换的 plan 快照 + 锁内 precondition 重读)。 */
   readPluginArrayStrict(): { ok: true; value: unknown[] } | { ok: false; reason: string }
-  /** #378 r6:legacy XDG plugin[] 的 strict 读(引擎合并两源;同名路径冲突/GC 引用对账必须
-   *  看得见;成员形状非法 fail-closed)。configDir = legacy 相对条目的解析基准。 */
-  readLegacyPluginArrayStrict(): { ok: true; value: unknown[]; configDir: string } | { ok: false; reason: string }
+  /** #378 r6/r7:**全部** legacy 配置源(XDG + retained home 等)plugin[] 的 strict 读 ——
+   *  同名路径冲突/GC 引用对账必须看得见每一份;成员形状非法 fail-closed;每源携带 configDir
+   *  (相对条目按其所在目录解析)。 */
+  readLegacyPluginArrayStrict(): { ok: true; sources: Array<{ value: unknown[]; configDir: string }> } | { ok: false; reason: string }
+  /** #378 r7:引擎配置真源路径(escape-hatch 路由后)—— 事务安装前置门比对事务根。 */
+  mcpConfigTruthPath(): string
   /** #352:vendored 替换的纯 staging —— 新内容落 versioned 目录,零 config/账本副作用。 */
   stageVendoredPluginVersioned(vendoredAssetKey: string, name: string): { ok: true; dir: string; jsPath: string } | { ok: false; reason: string }
   removePlugin(pkg: string): ConfigOutcome
@@ -844,6 +861,12 @@ async function replacePluginViaTransaction(args: {
   const { deps, entry, manifest, manifestDigest, intent, facts, rollback } = args
   const readPluginArray = args.readPluginArray ?? (() => deps.installers.readPluginArrayStrict())
   const root = deps.globalRoot()
+  // r7 Major:真源路由门(replace 同样只写 <root>/alpha.jsonc)。
+  const replaceTruth = configTruthInRootGate(root, deps.installers.mcpConfigTruthPath())
+  if (!replaceTruth.ok) {
+    rollback(replaceTruth.reason)
+    return replaceTruth
+  }
   const spec = entry.installSpec as { kind?: string; package?: string; version?: string; vendoredAssetKey?: string }
 
   // 新目标派生 + 幂等早退(同钉版/同 digest = 无事可做,零副作用)。
@@ -1499,6 +1522,12 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       rollback("entry has no mcp installSpec")
       return { ok: false, reason: "entry has no mcp installSpec" }
     }
+    // r7 Major:escape-hatch 环境下引擎配置真源不在事务根 → fail-closed 拒(不写账谎报 active)。
+    const mcpTruth = configTruthInRootGate(scope.root(deps), deps.installers.mcpConfigTruthPath())
+    if (!mcpTruth.ok) {
+      rollback(mcpTruth.reason)
+      return mcpTruth
+    }
     const derived = deriveMcpConfig(spec, grants)
     if (!derived.ok) {
       rollback(derived.reason)
@@ -1770,6 +1799,12 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
         return npmSnapshot
       }
       const npmRoot = scope.root(deps)
+      // r7 Major:真源路由门(同 MCP)。
+      const npmTruth = configTruthInRootGate(npmRoot, deps.installers.mcpConfigTruthPath())
+      if (!npmTruth.ok) {
+        rollback(npmTruth.reason)
+        return npmTruth
+      }
       // r2 Major(对称):同名派生 vendored 路径的未策展残留同样拒 —— 引擎合并 plugin[] 全量
       // 加载,追加 npm 钉版会与残留路径双载同名插件。
       const sameNamePath = findSameNamePluginPathEntry(npmSnapshot.value, npmRoot, entry.name)
@@ -2471,9 +2506,9 @@ export function gcVendoredPluginDirLocked(
   name: string,
   oldDir: string,
   readPluginArray: () => { ok: true; value: unknown[] } | { ok: false; reason: string },
-  // #378 r6 Blocker:引擎合并 legacy XDG plugin[] —— 引用对账必须覆盖它,否则 legacy 仍引用的
-  // 旧目录被当孤儿递归删除(下一次加载即悬空)。legacy 相对条目按其 configDir 解析。
-  readLegacyPluginArray: () => { ok: true; value: unknown[]; configDir: string } | { ok: false; reason: string },
+  // #378 r6/r7 Blocker:引擎合并全部 legacy 源(XDG + retained home)plugin[] —— 引用对账必须
+  // 逐源覆盖,否则任一 legacy 源仍引用的旧目录被当孤儿递归删除(下一次加载即悬空)。
+  readLegacyPluginArray: () => { ok: true; sources: Array<{ value: unknown[]; configDir: string }> } | { ok: false; reason: string },
 ): { removed: boolean; warning?: string } {
   const pluginsRoot = path.join(root, "plugins")
   const dirBase = path.basename(oldDir)
@@ -2493,11 +2528,13 @@ export function gcVendoredPluginDirLocked(
     }
     const refsDir = refsDirFrom(root)
     if (cfg.value.some(refsDir)) return { removed: false, warning: "old plugin dir re-referenced by config — retained (concurrent update)" }
-    // r6 Blocker:legacy XDG 源同判;不可读/形状非法 = 无法证明无引用 = 保留(fail-closed)。
+    // r6/r7 Blocker:全部 legacy 源逐一同判;不可读/形状非法 = 无法证明无引用 = 保留(fail-closed)。
     const legacy = readLegacyPluginArray()
     if (!legacy.ok) return { removed: false, warning: `old plugin dir retained (legacy config not provably reference-free: ${legacy.reason})` }
-    if (legacy.value.some(refsDirFrom(legacy.configDir)))
-      return { removed: false, warning: "old plugin dir re-referenced by the legacy config — retained" }
+    for (const src of legacy.sources) {
+      if (src.value.some(refsDirFrom(src.configDir)))
+        return { removed: false, warning: "old plugin dir re-referenced by a legacy config source — retained" }
+    }
     // 账本引用 fail-closed:损坏账本 = 无法证明无引用 = 保留。
     const ledgerProbe = probeLedgerForWrite(root)
     if (!ledgerProbe.ok) return { removed: false, warning: `old plugin dir retained (ledger not provably reference-free: ${ledgerProbe.reason})` }
@@ -2783,6 +2820,12 @@ async function installSeedMcp(args: {
     rollback("entry has no mcp installSpec")
     return { ok: false, reason: "entry has no mcp installSpec" }
   }
+  // #378 r7 Major:真源路由门(seed MCP 同样只写 <root>/alpha.jsonc)。
+  const seedMcpTruth = configTruthInRootGate(root, deps.installers.mcpConfigTruthPath())
+  if (!seedMcpTruth.ok) {
+    rollback(seedMcpTruth.reason)
+    return seedMcpTruth
+  }
   if ((spec.requiredEnvVars?.length ?? 0) > 0) {
     rollback("secret-bearing MCP")
     return { ok: false, reason: "secret-bearing MCP is not seed-installable (seed intent has no grants channel, phase 1) — refused" }
@@ -2901,6 +2944,12 @@ async function installPluginFromCas(args: {
   if (entry.name.includes("--")) {
     rollback("ambiguous plugin name")
     return { ok: false, reason: `plugin name "${entry.name}" contains "--" — ambiguous with the transaction key scheme (plugin--<name>--f<i>); refused` }
+  }
+  // r7 Major:真源路由门(catalog vendored 与 seed plugin 共用本载体,同拒)。
+  const pluginTruth = configTruthInRootGate(root, deps.installers.mcpConfigTruthPath())
+  if (!pluginTruth.ok) {
+    rollback(pluginTruth.reason)
+    return pluginTruth
   }
   if (!args.promotedSpecs.some((f) => f.path === "plugin.js")) {
     rollback("no plugin.js entrypoint")
