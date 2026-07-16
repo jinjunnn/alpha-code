@@ -70,6 +70,80 @@ export type CasGcReport = {
   warnings: string[]
 }
 
+/** 一轮 GC 的入参线格(#367:经 workerData 跨线程传递 —— 纯 JSON 形状,worker 侧严格解码)。 */
+export type CasGcRoundInput = {
+  casBaseRoot: string
+  envRoots: string[]
+  seedLockPaths: string[]
+  graceMs: number
+  dryRun: boolean
+}
+
+/** 一轮 GC 的紧凑摘要(#367 裁决 Q2 修订:不跨线程回传完整 CasGcReport —— extreme 档
+ *  sweepable/swept/warnings 可达上万条,structured clone 过重;main 只记计数)。 */
+export type CasGcRoundSummary = {
+  ok: boolean
+  reason?: string
+  dryRun: boolean
+  marked: number
+  blobsTotal: number
+  sweepableCount: number
+  sweptCount: number
+  keptByGrace: number
+  warningCount: number
+}
+
+export function summarizeCasGcReport(report: CasGcReport): CasGcRoundSummary {
+  return {
+    ok: report.ok,
+    ...(report.reason !== undefined ? { reason: report.reason } : {}),
+    dryRun: report.dryRun,
+    marked: report.marked,
+    blobsTotal: report.blobsTotal,
+    sweepableCount: report.sweepable.length,
+    sweptCount: report.swept.length,
+    keptByGrace: report.keptByGrace,
+    warningCount: report.warnings.length,
+  }
+}
+
+const isRec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
+
+const SUMMARY_KEYS = new Set(["ok", "reason", "dryRun", "marked", "blobsTotal", "sweepableCount", "sweptCount", "keptByGrace", "warningCount"])
+
+/** worker 回传消息的严格解码(fail-closed:形状不符/未知键 = 本轮按异常处理,不猜;
+ *  计数字段全部是数组长度或离散计数 → 只收非负安全整数,#385 review r1 F4)。 */
+export function decodeCasGcRoundSummary(v: unknown): { ok: true; summary: CasGcRoundSummary } | { ok: false; reason: string } {
+  if (!isRec(v)) return { ok: false, reason: "summary must be an object" }
+  for (const key of Object.keys(v)) if (!SUMMARY_KEYS.has(key)) return { ok: false, reason: `summary has unknown key "${key}" — refused` }
+  if (typeof v.ok !== "boolean") return { ok: false, reason: "summary.ok must be boolean" }
+  if (v.reason !== undefined && typeof v.reason !== "string") return { ok: false, reason: "summary.reason must be a string when present" }
+  if (typeof v.dryRun !== "boolean") return { ok: false, reason: "summary.dryRun must be boolean" }
+  const count = (x: unknown): number | undefined => (typeof x === "number" && Number.isSafeInteger(x) && x >= 0 ? x : undefined)
+  const marked = count(v.marked)
+  const blobsTotal = count(v.blobsTotal)
+  const sweepableCount = count(v.sweepableCount)
+  const sweptCount = count(v.sweptCount)
+  const keptByGrace = count(v.keptByGrace)
+  const warningCount = count(v.warningCount)
+  if (marked === undefined || blobsTotal === undefined || sweepableCount === undefined || sweptCount === undefined || keptByGrace === undefined || warningCount === undefined)
+    return { ok: false, reason: "summary counts must be non-negative safe integers" }
+  return {
+    ok: true,
+    summary: {
+      ok: v.ok,
+      ...(typeof v.reason === "string" ? { reason: v.reason } : {}),
+      dryRun: v.dryRun,
+      marked,
+      blobsTotal,
+      sweepableCount,
+      sweptCount,
+      keptByGrace,
+      warningCount,
+    },
+  }
+}
+
 /** 生产缺省的 mark/互斥环境根集合:dev(= base 根)+ prod + beta(REQ-098 分域)。 */
 export function defaultCasGcEnvRoots(baseRoot: string): string[] {
   return [

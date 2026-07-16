@@ -162,7 +162,8 @@ CAS 补充语义:
   sweep 期间新事务无法启动;blob 彼此独立 ⇒ 任意崩溃点后 store 自洽,下一轮从头 mark。
 - **可观测**:`dryRun` 返回完整 sweep 计划(逐 digest/bytes)与 `keptByGrace` 计数,零删除。
 - **生产触发(REQ-102 #318,`ext-cas-gc-scheduler.ts`)**:启动后 5 分钟首跑,此后 24 小时一轮
-  (单次 schedule → run → finally 链式 rearm,不重叠、异常不断链;睡眠错过的周期由下一 timer
+  (单次 schedule → spawn worker → await → finally 链式 rearm(#367),不重叠、异常不断链;
+  睡眠错过的周期由下一 timer
   自然补一轮,无 catch-up storm);锁忙 / mark 根损坏 = 本轮如实记录等下轮,零重试风暴。配置经
   唯一权威取值点 `productionCasGcConfig`(已单测):冻结共享 CAS 基根 + dev/prod/beta 三环境根
   (固定顺序)+ **当前 package 的 seed lock 无条件传入**(缺失 = 整轮 fail-closed,不静默退化;
@@ -176,7 +177,23 @@ CAS 补充语义:
   staleMs(15min)被其它进程按 stale 接管;续租粒度 = 单段操作时长(单 key 巨型 store 的
   rehash 超阈值是已知粒度限制,如实记录)。**promote 窗口**:复用出-grace
   cold blob 的 put 会刷新其 mtime(残余竞态 = GC 单轮 lstat→unlink 微秒级;后果为安装
-  materialize fail-closed abort,可重试、无损坏)。**project 根不参与 mark = 合同行为**
+  materialize fail-closed abort,可重试、无损坏)。
+- **worker 拓扑(REQ-102 #367,2026-07-16 Codex 裁决;实测数据在票面)**:单轮 GC 在
+  `worker_threads` 内执行(入口 `ext-cas-gc-worker.ts` → 构建第三入口
+  `out/main/ext-cas-gc-worker.js`),main 线程零阻塞 —— heavy 档单轮实测 363-499ms、
+  extreme 1.7-2.0s(mark 全量重哈希主导),超 100ms 阈值。跨线程线格:入参 workerData
+  纯 JSON(worker 侧严格解码 fail-closed),出参 = **紧凑摘要**(ok/reason/dryRun +
+  六计数;不回传完整 report —— sweepable/swept/warnings 可达上万条,structured clone
+  过重)。事件合同(**exit 为生命周期终态**,不依赖任何「message 先于 exit」顺序假设):
+  message 严格解码后只暂存(畸形/第二份摘要 = 协议违规,立即失败并 terminate 残活 worker);
+  error / messageerror = 失败 + terminate;exit≠0 = 失败(即使已收到合法摘要);exit=0 ∧
+  恰一份合法摘要才成功;Promise 只结算一次。**失败无同步回退**:spawn 失败/worker 异常 =
+  gc-exception + 24h rearm(空间回收延迟一轮无害,绝不重新引入主线程阻塞)。stop()/quit
+  不 terminate 在途 worker(创建即 unref):应用退出致本轮中断 = 既有崩溃安全合同(blob
+  独立无序删,下一轮从头 mark)。**pid 残余差异(如实留痕)**:worker 与 main 同进程共享
+  pid,锁记录与 pidAlive 语义不变;但 worker 致命终止绕过 finally 而 main 存活时,锁内
+  pid 仍判活,最长等心跳超 staleMs(15min)后由 stale 恢复机接管。
+- **project 根不参与 mark = 合同行为**
   (ADR-030 / #362 裁决:project-scoped catalog/seed generation 已收回,受支持的 catalog
   generation 仅存在于 dev/prod/beta 环境根 —— 见 §6;#318 完成矩阵的 project 项由验收
   owner 按该措辞修订)。
@@ -200,7 +217,7 @@ CAS 补充语义:
 | 快照漂移(S13 A 侧)+ catalog 互钉 + 真链冒烟 | `packages/ui-mac/src/main/extension-seed-snapshot.test.ts` |
 | seed 安装生产链(#317:e2e / 双真源漂移拒绝矩阵 / CAS 注错 abort / XOR / downgrade 门;#358:agent e2e / authorize 单 key / fresh-only 三态 / 装约定拒绝矩阵 / 卸载清授权账;#359:mcp e2e+liveMcp / 纯 validator 负测 / secret·workspace·Excel 拒 / plugin 确定性 staging / #352 三态矩阵 / npm 拒 / 篡改拒) | `packages/ui-mac/src/main/ext-seed-install.test.ts` |
 | file action 引擎语义(#358:file+config 原子 / 缺席≠零字节 / 崩溃恢复前滚·回滚 / 旁路改写 fail-closed) | `packages/ui-mac/src/main/ext-transaction-file.test.ts` |
-| GC 生产触发(#318:调度语义 / 权威配置取值点 / outcome 分类;promote 窗口 mtime 回归在 gc.test) | `packages/ui-mac/src/main/ext-cas-gc-scheduler.test.ts` |
+| GC 生产触发(#318:调度语义 / 权威配置取值点 / outcome 分类;promote 窗口 mtime 回归在 gc.test。#367:worker 事件终态矩阵(fake 驱动)+ workerData/摘要严格解码矩阵 + 真 worker 冒烟 + 构建入口 wiring 守卫) | `packages/ui-mac/src/main/ext-cas-gc-scheduler.test.ts` |
 | project 收回:catalog/seed/bundle 统一拒绝 + 遗留管理面 + generation teardown(#372) | `packages/ui-mac/src/main/ext-install-planner.test.ts` |
 | project 残留检测/显式清理(journal 在场 fail-closed / 幂等 / 移动项目单项拒) | `packages/ui-mac/src/main/ext-project-residuals.test.ts` |
 | 第一方六动作 wiring:installCatalog intent 恒 scope=global | `packages/ui-mac/src/renderer/extensions/install-scope-wiring.test.ts` |
