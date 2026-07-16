@@ -127,7 +127,7 @@ export function decodeCasGcRoundSummary(v: unknown): { ok: true; summary: CasGcR
   const keptByGrace = count(v.keptByGrace)
   const warningCount = count(v.warningCount)
   if (marked === undefined || blobsTotal === undefined || sweepableCount === undefined || sweptCount === undefined || keptByGrace === undefined || warningCount === undefined)
-    return { ok: false, reason: "summary counts must be non-negative finite numbers" }
+    return { ok: false, reason: "summary counts must be non-negative safe integers" }
   return {
     ok: true,
     summary: {

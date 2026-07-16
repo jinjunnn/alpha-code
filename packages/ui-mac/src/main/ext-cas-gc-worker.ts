@@ -9,7 +9,7 @@
 // 缺省 console.error(worker_threads 与宿主共享 stderr)。应用退出致本轮中断 = 模块既有
 // 崩溃安全合同(blob 独立无序删,下一轮从头 mark)。
 import { isMainThread, parentPort, workerData } from "node:worker_threads"
-import * as path from "node:path"
+import { isAbsolute } from "node:path"
 import { collectCasGarbage, summarizeCasGcReport, type CasGcRoundInput } from "./ext-cas-gc"
 
 const isRec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
@@ -21,14 +21,14 @@ const INPUT_KEYS = new Set(["casBaseRoot", "envRoots", "seedLockPaths", "graceMs
 export function decodeCasGcRoundInput(v: unknown): { ok: true; input: CasGcRoundInput } | { ok: false; reason: string } {
   if (!isRec(v)) return { ok: false, reason: "workerData must be an object" }
   for (const key of Object.keys(v)) if (!INPUT_KEYS.has(key)) return { ok: false, reason: `workerData has unknown key "${key}" — refused` }
-  if (typeof v.casBaseRoot !== "string" || !path.isAbsolute(v.casBaseRoot))
+  if (typeof v.casBaseRoot !== "string" || !isAbsolute(v.casBaseRoot))
     return { ok: false, reason: "casBaseRoot must be an absolute path" }
   const strings = (x: unknown): string[] | undefined =>
     Array.isArray(x) && x.every((s): s is string => typeof s === "string") ? x : undefined
   const envRoots = strings(v.envRoots)
-  if (!envRoots || envRoots.some((r) => !path.isAbsolute(r))) return { ok: false, reason: "envRoots must be absolute paths" }
+  if (!envRoots || envRoots.some((r) => !isAbsolute(r))) return { ok: false, reason: "envRoots must be absolute paths" }
   const seedLockPaths = strings(v.seedLockPaths)
-  if (!seedLockPaths || seedLockPaths.some((p) => !path.isAbsolute(p)))
+  if (!seedLockPaths || seedLockPaths.some((p) => !isAbsolute(p)))
     return { ok: false, reason: "seedLockPaths must be absolute paths" }
   if (typeof v.graceMs !== "number" || !Number.isFinite(v.graceMs) || v.graceMs < 0)
     return { ok: false, reason: "graceMs must be a non-negative number" }

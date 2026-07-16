@@ -1,3 +1,13 @@
+---
+title: Mac release runbook (signing, notarization, auto-update)
+kind: runbook
+status: active
+owners:
+  - alpha-code maintainers
+last_reviewed: 2026-07-16
+review_after: 2026-10-16
+---
+
 # 发版 runbook — alpha-code Mac(签名 · 公证 · 自动更新)
 
 > 权威发版文档。把 alpha(opencode 引擎 + 自有前端/后端)打成**你自己**的、签名+公证、可分发给任意 Mac 的 app,并经 GitHub Release 走自动更新。
@@ -86,5 +96,5 @@ curl -sL -o /dev/null -w "%{http_code}\n" \
   2. packaged app 对隔离 heavy fixture(可用 `packages/ui-mac/scripts/bench-cas-gc.ts` 的 heavy 档参数造店)实际触发一轮(等 5 分钟首跑或临时把 `CAS_GC_INITIAL_DELAY_MS` 建包为短值);
   3. 观察日志出现 `[cas-gc-scheduler] gc-success` 结构化摘要(worker 真跑通、非 gc-exception);
   4. 同时记录 main 事件循环最大延迟或 UI heartbeat,判定 **<100ms**(GC 期间 UI 无可感知冻结);
-  5. 该 RC 的执行结果落 `docs/verification/` 或 `docs/audits/`(此处只维护步骤,不存活跃结果)。
+  5. 该 RC 的执行结果落 `docs/verification/`(唯一权威落点;此处只维护步骤,不存活跃结果)。
 - **耦合面复核**(C14):发版/re-freeze 前跑 `upstream-anchors` 契约测试;`providers.ts` 之外不得出现 alpha 组件直 import `@opencode-ai/app`;build 若被 brand/patch strict 拦下 = 上游子串漂移,更新清单而非放行。

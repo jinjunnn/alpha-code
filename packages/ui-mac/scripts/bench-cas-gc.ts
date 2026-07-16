@@ -4,10 +4,10 @@
 // 运行:bun packages/ui-mac/scripts/bench-cas-gc.ts
 // 布局按权威真源:generations = <env>/ext-store/<key>/generations/gen-NNNNNN-hhhhhhhh/,
 // CAS blob = <base>/cas/v1/sha256/<shard>/<digest>。
-import * as crypto from "node:crypto"
-import * as fs from "node:fs"
-import * as os from "node:os"
-import * as path from "node:path"
+import { createHash, randomBytes } from "node:crypto"
+import { mkdtempSync, mkdirSync, writeFileSync, utimesSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { collectCasGarbage } from "../src/main/ext-cas-gc"
 
 type Profile = {
@@ -32,35 +32,35 @@ function mkData(bytes: number, unique: boolean): Buffer {
 }
 
 function writeBlob(blobsDir: string, data: Buffer): void {
-  const digest = crypto.createHash("sha256").update(data).digest("hex")
-  const dir = path.join(blobsDir, digest.slice(0, 2))
-  fs.mkdirSync(dir, { recursive: true })
-  const p = path.join(dir, digest)
-  fs.writeFileSync(p, data)
+  const digest = createHash("sha256").update(data).digest("hex")
+  const dir = join(blobsDir, digest.slice(0, 2))
+  mkdirSync(dir, { recursive: true })
+  const p = join(dir, digest)
+  writeFileSync(p, data)
   const old = new Date(Date.now() - 24 * 3600e3) // 出宽限窗 → sweepable
-  fs.utimesSync(p, old, old)
+  utimesSync(p, old, old)
 }
 
 function buildStore(name: string, p: Profile): { base: string; envRoot: string; genMB: number; blobMB: number; genFiles: number } {
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), `casgc-bench-${name}-`))
-  const envRoot = path.join(base, "env-prod")
-  const blobsDir = path.join(base, "cas", "v1", "sha256")
+  const base = mkdtempSync(join(tmpdir(), `casgc-bench-${name}-`))
+  const envRoot = join(base, "env-prod")
+  const blobsDir = join(base, "cas", "v1", "sha256")
   let genBytes = 0
   let genFiles = 0
   for (let k = 0; k < p.keys; k++) {
-    const genRoot = path.join(envRoot, "ext-store", `skill--bench-${k}`, "generations")
+    const genRoot = join(envRoot, "ext-store", `skill--bench-${k}`, "generations")
     for (let g = 0; g < p.gens; g++) {
-      const dir = path.join(genRoot, `gen-${String(g).padStart(6, "0")}-${crypto.randomBytes(4).toString("hex")}`)
-      fs.mkdirSync(dir, { recursive: true })
+      const dir = join(genRoot, `gen-${String(g).padStart(6, "0")}-${randomBytes(4).toString("hex")}`)
+      mkdirSync(dir, { recursive: true })
       for (let f = 0; f < p.filesPerGen; f++) {
         const data = mkData(p.fileKB * 1024, false)
-        fs.writeFileSync(path.join(dir, `f${f}.md`), data)
+        writeFileSync(join(dir, `f${f}.md`), data)
         genBytes += data.length
         genFiles++
       }
       for (let b = 0; b < p.bigFilesPerGen; b++) {
         const data = mkData(p.bigFileMB * 1024 * 1024, false)
-        fs.writeFileSync(path.join(dir, `bundle${b}.js`), data)
+        writeFileSync(join(dir, `bundle${b}.js`), data)
         genBytes += data.length
         genFiles++
       }
@@ -99,7 +99,7 @@ function bench(name: string, p: Profile): void {
       check: { dryOk: dry.ok, marked: dry.marked, sweepable: dry.sweepable.length, swept: real.swept.length, steadyOk: steady.ok, ...(dry.reason ? { reason: dry.reason } : {}) },
     }),
   )
-  fs.rmSync(base, { recursive: true, force: true })
+  rmSync(base, { recursive: true, force: true })
 }
 
 // typical:轻度用户 —— 15 个扩展 × 2 代,小文件为主;300 个未引用 blob。
