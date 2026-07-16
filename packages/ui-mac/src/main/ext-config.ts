@@ -414,6 +414,28 @@ export function readMcpLeafStrict(
   }
 }
 
+/** #352:plugin[] 的 strict 快照读(原子替换的 plan 快照与锁内 precondition 用)——
+ *  缺失文件 = 合法空数组;语法损坏/形状异常写前拒绝(替换以 config 现状为事实基底,
+ *  基底不可信就不许动)。 */
+export function readPluginArrayStrict(): { ok: true; value: unknown[] } | { ok: false; reason: string } {
+  const target = mcpPluginTargetPath()
+  try {
+    if (!fs.existsSync(target)) return { ok: true, value: [] }
+    const errors: ParseError[] = []
+    const parsed = parse(fs.readFileSync(target, "utf8"), errors) as { plugin?: unknown } | undefined
+    if (errors.length > 0) return { ok: false, reason: `config unparseable (${errors.length} syntax error(s)) — refusing plugin replace` }
+    const v = parsed?.plugin
+    if (v === undefined) return { ok: true, value: [] }
+    if (!Array.isArray(v)) return { ok: false, reason: "config plugin key is not an array — refusing plugin replace" }
+    // review #381 minor:元素必须全为字符串 —— 非法成员(object/null)不许被替换流原样保留。
+    if (!v.every((x) => typeof x === "string"))
+      return { ok: false, reason: "config plugin[] contains non-string entries — refusing plugin replace (fix the config first)" }
+    return { ok: true, value: v }
+  } catch (error) {
+    return { ok: false, reason: `config unreadable: ${error instanceof Error ? error.message : String(error)}` }
+  }
+}
+
 /** #354(review #379 Blocker):agent 写前在场检查的**配置项**面 —— agents/<name>.md 缺席不代表
  *  不在场,手工 `agent.<name>` 配置同样是既有安装事实;不可读/语法损坏按在场处理(fail-closed)。 */
 export function readAgentEntryStrict(

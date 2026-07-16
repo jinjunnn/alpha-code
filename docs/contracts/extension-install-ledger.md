@@ -47,9 +47,25 @@ review_after: 2026-10-14
 | agent | 有账(v2/v1)、有 md 文件、或有手工 `agent.<name>` 配置项(strict 读,不可读按在场)一律拒(无更新链) | `removeFsInstall`(fresh 已证明,整撤安全) |
 | cloud | — | 无副作用 |
 
-MCP 重装是产品流(确认框重装),走前像复原而非拒绝;plugin 更新链(renderer 现存的
-「先卸后装」两步 IPC)的崩溃窗口与原子替换归 #352 —— 本契约的写前门管的是 overwrite-install,
-不覆盖该两步链;agent 的覆盖更新在产品上不存在(`updateEntry` 不支持 agent),故拒绝无回归。
+MCP 重装是产品流(确认框重装),走前像复原而非拒绝;agent 的覆盖更新在产品上不存在
+(`updateEntry` 不支持 agent),故拒绝无回归。
+
+### 3.1 plugin 原子替换(REQ-099 #352)
+
+- renderer 插件更新 = **单次** `ext-install-catalog`;main 从自己账本三态分发:absent → fresh、
+  恰一条有效 catalog 旧账 → replace、其余(v1-only / 损坏 / 双键 / 名变更 / configKey 与
+  config 不符)→ 显式拒绝(模糊态绝不当首装装)。旧「先卸后装」两步链已下线。
+- replace = journaled 事务:config 精确换元(旧元素 → 新钉版/新路径,整文件 before-image
+  由引擎回滚)+ receipt 同锁落账(commitReceipt 失败 = 事务失败);锁内 precondition 重读
+  config 数组与账本旧事实,与 plan 快照任一分歧即拒绝重试(TOCTOU 钉死);崩溃恢复前滚
+  幂等 —— `upsertRecordV2/upsertRecordsV2` 对同 `transaction.id` 且事实一致的重放原样返回
+  (不递增 generation),同 id 事实冲突显式拒绝(§1 的 exact-replay 契约)。
+- vendored 新内容先落 **versioned 目录** `plugins/<name>@<hex>`(staging,零权威副作用),
+  事务只切 config 路径与 receipt,旧目录提交成功后 GC(失败如实入 warning;崩溃残留的
+  新/旧孤儿目录无 config 引用,无害)。卸载接受 `<name>` 与 `<name>@<suffix>` 两种受控落点,
+  树外路径仍 fail-closed。
+- 替换过 #348 authorize 闸(能力扩张弹确认);更新**保留旧 `desiredState`**(更新 disabled
+  插件不静默重新启用);同钉版同 digest 幂等早退(零副作用)。
 
 ## 4. project 账本共享与 environment 归因不变量(REQ-099 #356,Codex 裁决 A+C)
 

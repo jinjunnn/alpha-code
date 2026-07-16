@@ -10,6 +10,7 @@
 // realpath anti-escape walk; asset keys confined to resources/skills.
 
 import { execFile } from "node:child_process"
+import * as crypto from "node:crypto"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
@@ -624,6 +625,35 @@ export function installRemoteAgent(
  * 安装 vendored 插件(零网络):复制 resources/plugins/<key> → ~/.alpha/plugins/<name>/ →
  * plugin[] 写 plugin.js 绝对路径(persistPluginPath 校验路径必须在 ~/.alpha/plugins 树内)。
  */
+/** #352(Codex 裁决必改 5,versioned 路线):vendored 替换的**纯 staging** —— 新内容落
+ *  不可变 versioned 目录 `plugins/<name>@<hex>`(绝不覆盖既有 `<name>` 目录),零 config/账本
+ *  副作用;config 路径与 receipt 由替换事务原子切换,旧目录事务成功后 GC。staging 半成品由
+ *  调用方失败清理(残留无 config 引用,无害)。 */
+export function stageVendoredPluginVersioned(
+  vendoredAssetKey: string,
+  name: string,
+): { ok: true; dir: string; jsPath: string } | { ok: false; reason: string } {
+  if (!SAFE_PLUGIN_ASSET_KEY.test(vendoredAssetKey)) return { ok: false, reason: "invalid asset key" }
+  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid plugin name" }
+  const srcDir = path.join(resourcesRoot(), vendoredAssetKey)
+  if (!fs.existsSync(path.join(srcDir, "plugin.js"))) return { ok: false, reason: "插件内容未随此版本打包" }
+  const versioned = `${name}@${crypto.randomBytes(4).toString("hex")}`
+  const destDir = safeResolveUnder(alphaGlobalRoot(), "plugins", versioned)
+  if (!destDir) return { ok: false, reason: "refused: path escapes alpha root" }
+  try {
+    fs.mkdirSync(destDir, { recursive: true })
+    fs.cpSync(srcDir, destDir, { recursive: true })
+  } catch (error) {
+    try {
+      fs.rmSync(destDir, { recursive: true, force: true })
+    } catch {
+      /* 半成品残留无 config 引用 */
+    }
+    return { ok: false, reason: error instanceof Error ? error.message : "failed to stage plugin" }
+  }
+  return { ok: true, dir: destDir, jsPath: path.join(destDir, "plugin.js") }
+}
+
 export function installVendoredPlugin(
   vendoredAssetKey: string,
   name: string,

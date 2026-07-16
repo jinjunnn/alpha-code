@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { configHealth, persistMcp, persistPlugin, persistProvider, removeMcp, removeMcpConfigInLock, removePlugin, readMcpLeafStrict, readAgentEntryStrict } from "./ext-config"
+import { configHealth, persistMcp, persistPlugin, persistProvider, removeMcp, removeMcpConfigInLock, removePlugin, readMcpLeafStrict, readAgentEntryStrict, readPluginArrayStrict } from "./ext-config"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
 import { addReceipt, findReceipt, readLedger } from "./alpha-installs"
 
@@ -385,5 +385,21 @@ describe("readMcpLeafStrict / readAgentEntryStrict (REQ-100 #354)", () => {
     expect(readAgentEntryStrict("other")).toEqual({ ok: true, present: false })
     fs.writeFileSync(cfgPath(), '{ "agent": { oops')
     expect(readAgentEntryStrict("helper").ok).toBe(false)
+  })
+})
+
+describe("readPluginArrayStrict (REQ-099 #352)", () => {
+  const cfgPath = () => path.join(alphaTmp, "alpha.jsonc")
+  test("缺失 = 空数组;字符串数组原样;非字符串成员/非数组/语法损坏一律拒(替换基底必须可信)", () => {
+    expect(readPluginArrayStrict()).toEqual({ ok: true, value: [] })
+    fs.mkdirSync(alphaTmp, { recursive: true })
+    fs.writeFileSync(cfgPath(), JSON.stringify({ plugin: ["a@1", "b@2"] }))
+    expect(readPluginArrayStrict()).toEqual({ ok: true, value: ["a@1", "b@2"] })
+    fs.writeFileSync(cfgPath(), JSON.stringify({ plugin: ["a@1", { bad: true }] }))
+    expect(readPluginArrayStrict().ok).toBe(false)
+    fs.writeFileSync(cfgPath(), JSON.stringify({ plugin: "not-array" }))
+    expect(readPluginArrayStrict().ok).toBe(false)
+    fs.writeFileSync(cfgPath(), '{ "plugin": [broken')
+    expect(readPluginArrayStrict().ok).toBe(false)
   })
 })
