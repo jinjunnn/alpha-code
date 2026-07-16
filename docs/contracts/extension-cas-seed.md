@@ -114,8 +114,12 @@ CAS 补充语义:
    的历史名/v1-only 兜底扫描)+ config canon 对比 + 目标目录门 = **壳容忍**:缺席与纯空目录树
    不阻断(recovery 回滚只 unlink 文件,遗留空壳自然收敛重试),文件/symlink/非目录/不可读/
    圈禁不过一律拒不认领;缺席的最终强制 = 引擎 file prepare 的 `requireAbsent` 断言 +
-   **switch 前紧邻重断言**(旁路在窗口内植入即拒 → 回滚因 diverged 保留非终态留证;残余 =
-   lstat→原子写微秒窗口,与 GC promote 同类);bare 目录 `plugins/<name>` 在场仍按 #354 一律
+   **switch 前紧邻重断言** + **逐 item apply 进度持久化**(journal `applied`,r5):旁路在
+   窗口内植入计划内文件 —— 无论内容异于还是**恰等于** nextDigest —— 恢复/回滚都按「未 applied
+   而 live 在场 = 植入证据」保留非终态,绝不 unlink 也绝不前滚落账认领(翻转判定 = applied ∧
+   digest 命中,不再只看 digest)。计划外文件的植入与提交后旁路写入 owned 目录同类(一切
+   owned dir 共有的诚实边界,skill generation 同理),不在事务防护面内;残余 =
+   lstat→原子写微秒窗口,与 GC promote 同类。bare 目录 `plugins/<name>` 在场仍按 #354 一律
    拒);有效 catalog 旧账 → journaled replace(与 #352 同一事务,seedPayload 挂点;
    precondition 增 desiredState 漂移检查 —— plan 与加锁间的合法启停不被旧快照覆盖;同 payload
    仅版本变化时新旧目录相同,提交后 GC 跳过;同目录 repair 遇清单外文件/symlink = 锁内分类

@@ -1888,14 +1888,36 @@ type SeedPluginDirClass =
    *  留着清单外内容会「落账成功但永不 healthy」),必须人工核对后删除重试。 */
   | { cls: "blocked"; reason: string }
 
+/** 无断言 errno 提取(cast-free)。 */
+function errnoCodeOf(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("code" in error)) return undefined
+  return typeof error.code === "string" ? error.code : undefined
+}
+
+/** 最终组件 O_NOFOLLOW 读(review r5 Major:lstat→read 的路径级窗口 —— 判定后被换成 symlink
+ *  时绝不沿新 symlink 读树外内容;fd 上 fstat 再验常规文件)。win32 无 O_NOFOLLOW 时退化为
+ *  普通打开(该平台 symlink 需特权,残余面契约记录)。 */
+function readFileNoFollowSync(p: string): Buffer {
+  const noFollow = typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0
+  const fd = fs.openSync(p, fs.constants.O_RDONLY | noFollow)
+  try {
+    if (!fs.fstatSync(fd).isFile()) throw new Error("not a regular file")
+    return fs.readFileSync(fd)
+  } finally {
+    fs.closeSync(fd)
+  }
+}
+
 function classifySeedPluginDir(root: string, relDir: string, specs: TxFileSpec[]): SeedPluginDirClass {
   if (!isSafeRelPath(relDir) || !confineFileTarget(root, relDir).ok) return { cls: "blocked", reason: "dir confinement failed" }
   const dir = path.join(root, relDir)
   try {
     const st = fs.lstatSync(dir)
     if (st.isSymbolicLink() || !st.isDirectory()) return { cls: "blocked", reason: "dir is not a regular directory" }
-  } catch {
-    return { cls: "repairable", reason: "dir missing" }
+  } catch (error) {
+    // review r5 Major:只有 ENOENT 才是「目录缺席 = 可修复重建」;权限/IO/形状错误一律 blocked。
+    if (errnoCodeOf(error) === "ENOENT") return { cls: "repairable", reason: "dir missing" }
+    return { cls: "blocked", reason: `dir unreadable: ${error instanceof Error ? error.message : String(error)}` }
   }
   const expected = new Map(specs.map((f) => [f.path, f]))
   const seen = new Set<string>()
@@ -1919,13 +1941,17 @@ function classifySeedPluginDir(root: string, relDir: string, specs: TxFileSpec[]
       }
       if (st.isSymbolicLink()) return { cls: "blocked", reason: `symlink present: ${childRel}` }
       if (st.isDirectory()) {
+        // review r5 Major:清单期望文件、现场是同名目录 —— prepareFileTx 无法把目录覆盖成
+        // 文件,repair 不可收敛,必须 blocked(此前会被当 missing 判 repairable 死循环)。
+        if (expected.has(childRel)) return { cls: "blocked", reason: `expected file is a directory: ${childRel}` }
         const verdict = walk(childRel)
         if (verdict) return verdict
       } else if (st.isFile()) {
         const fileSpec = expected.get(childRel)
         if (!fileSpec) return { cls: "blocked", reason: `unexpected file: ${childRel}` }
         try {
-          if (crypto.createHash("sha256").update(fs.readFileSync(childAbs)).digest("hex") !== fileSpec.sha256)
+          // O_NOFOLLOW 读(r5:lstat 判定后被换 symlink 时拒读,不沿 symlink 出树)。
+          if (crypto.createHash("sha256").update(readFileNoFollowSync(childAbs)).digest("hex") !== fileSpec.sha256)
             repairReason = repairReason ?? `sha256 mismatch: ${childRel}`
         } catch {
           return { cls: "blocked", reason: `unreadable file: ${childRel}` }

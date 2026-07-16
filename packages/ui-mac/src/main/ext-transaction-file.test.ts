@@ -365,6 +365,52 @@ describe("file action in runExtensionTransaction (REQ-102 #358)", () => {
     expect(j.state).toBe("switching")
   })
 
+  test("同 digest 植入(在线):未 applied 的 requireAbsent 目标绝不 unlink,保留非终态留证(#359 r5)", async () => {
+    // 窗口内植入的内容**恰等于** nextDigest —— 只看 digest 会把它误认本事务输出而在回滚时 unlink。
+    const plantSame: HealthProbe = (input) => {
+      if (input.action === "file" && input.phase === "pre-switch") {
+        mkdirSync(join(root, "agents"), { recursive: true })
+        writeFileSync(MD_PATH(), MD)
+      }
+      return { healthy: true }
+    }
+    const r = await runExtensionTransaction(
+      root,
+      { items: [{ key: "agent--demo", action: "file", file: { relTarget: "agents/demo.md", next: Buffer.from(MD), requireAbsent: true } }] },
+      { populate: noop, probe: plantSame, commitReceipt: noop, log: noop },
+    )
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reason).toContain("retained non-terminal")
+    expect(readFileSync(MD_PATH(), "utf8")).toBe(MD) // 植入文件原样保留(不是我们的输出,不 unlink)
+    expect(listTransactionJournals(root)[0].state).toBe("switching")
+  })
+
+  test("同 digest 植入(崩溃恢复):未 applied → 不前滚落账、不 unlink,保留非终态(#359 r5)", async () => {
+    // 崩溃在 switching journal 落盘后、任何 apply 之前;随后旁路植入同 digest 内容。
+    await expect(
+      runExtensionTransaction(
+        root,
+        { items: [{ key: "agent--demo", action: "file", file: { relTarget: "agents/demo.md", next: Buffer.from(MD), requireAbsent: true }, receipt: { id: "agent:demo" } }] },
+        { populate: noop, probe: fileProbe(MD), commitReceipt: noop, log: noop, crashAt: "after-switching-journal" },
+      ),
+    ).rejects.toThrow(ExtTxCrashError)
+    mkdirSync(join(root, "agents"), { recursive: true })
+    writeFileSync(MD_PATH(), MD) // 同 digest 植入
+    const records: TxCommitRecord[] = []
+    const rec = await recoverExtensionTransactions(root, {
+      probe: fileProbe(MD),
+      commitReceipt: (recs) => records.push(...recs),
+      pidAlive: () => false,
+      log: noop,
+    })
+    expect(rec.ok).toBe(true)
+    expect(rec.reports[0].action).toBe("none") // 未 applied → 不判翻转 → 不前滚
+    expect(records).toHaveLength(0) // 零落账(绝不认领外部字节)
+    expect(readFileSync(MD_PATH(), "utf8")).toBe(MD) // 植入文件原样保留
+    expect(listTransactionJournals(root)[0].state).toBe("switching")
+  })
+
   test("validatePlan refuses missing payload / unsafe relTarget / empty content / duplicate targets", async () => {
     const missing = await runExtensionTransaction(root, { items: [{ key: "a", action: "file" }] }, hooksFor())
     expect(missing.ok).toBe(false)

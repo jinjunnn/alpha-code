@@ -1123,6 +1123,20 @@ describe("plugin seed install via installCatalog (REQ-102 #359)", () => {
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toContain("unmanifested content")
     expect(fs.readFileSync(path.join(dir, "extra.js"), "utf8")).toBe("unmanifested") // 现场不动
+    expect(fs.readFileSync(path.join(dir, "plugin.js"), "utf8")).toBe("tampered") // 篡改文件也不动(r5)
+  })
+
+  test("清单文件被换成同名目录:repair 不可收敛 → blocked 拒(review r5 Major)", async () => {
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
+    const deps = pluginDeps()
+    expect((await installAuthorized(pluginSeedIntent, deps)).ok).toBe(true)
+    const dir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
+    fs.rmSync(path.join(dir, "plugin.js"), { force: true })
+    fs.mkdirSync(path.join(dir, "plugin.js")) // 同名空目录:prepareFileTx 无法覆盖成文件
+    const r = await installAuthorized(pluginSeedIntent, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("unmanifested content")
+    expect(fs.statSync(path.join(dir, "plugin.js")).isDirectory()).toBe(true) // 现场不动
   })
 
   test("同版本重装遇目录被换 symlink:不得误判 healthy,也不得经 symlink 写入(review r3 Major 5)", async () => {
