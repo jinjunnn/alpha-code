@@ -1930,7 +1930,15 @@ async function recoverOne(
     if (kind === "config") return it.config ? configTargetDigest(it.config.target) === it.config.nextDigest : false
     // file(r5 Blocker):翻转 = **本事务已 apply(journal 进度)∧ live digest 命中** —— 只看
     // digest 会把旁路植入的同 digest 文件误认本事务输出(前滚落账 = 认领外部内容)。
-    if (kind === "file") return it.file ? it.file.applied === true && fileTargetDigest(path.join(root, it.file.relTarget)) === it.file.nextDigest : false
+    // r6 Blocker(持久化兼容):#358 时代的 legacy file journal 无 requireAbsent/applied 字段
+    // (以 requireAbsent === undefined 判别)—— 按其发布时语义退回纯 digest 判定,否则升级后
+    // 在途 already-switched journal 会被误判未翻转而错误回滚(receipt 已提交时即双真源分叉)。
+    if (kind === "file") {
+      if (!it.file) return false
+      const digestHit = fileTargetDigest(path.join(root, it.file.relTarget)) === it.file.nextDigest
+      const legacy = it.file.requireAbsent === undefined
+      return legacy ? digestHit : it.file.applied === true && digestHit
+    }
     return readCurrentGeneration(root, it.key)?.genId === it.genId
   }
   // #358 review r2 Blocker:对 journal file 段的**任何**采信(isFlipped digest 读、probe、

@@ -103,7 +103,8 @@ CAS 补充语义:
    `plugin.js`;npm plugin 显式拒 —— 无 seed blob 保证的离线运行语义;名称含 `--` 拒,同 agent
    key 方案纪律)。载荷**不做锁外 staging** —— 每个载荷文件是同一事务里的 **file action item**
    (#358 引擎:锁内前像、staging 0600、digest 校验、圈禁双位点重验、原子 apply + fsync、崩溃
-   恢复按 journal digest 判翻转、失据/旁路改写保留非终态),落点 = 内容寻址目录
+   恢复按 **journal 逐 item 进度(applied)∧ digest** 判翻转 —— legacy #358 journal 无进度
+   字段时按其发布时语义退回纯 digest 判定;失据/旁路改写保留非终态),落点 = 内容寻址目录
    `plugins/<name>@<payloadDigest 剥 sha256: 前缀后前 16 hex>`;由此并发清理误删、tmp 孤儿、
    fsync 缺口、恢复前滚不验载荷在构造上不存在。载荷文件数 ≤63(引擎单事务 64 item 上限,
    与 seed 预算 maxFilesPerAsset=512 的差距是本阶段诚实边界)。capabilities/receipt 只挂
@@ -123,7 +124,9 @@ CAS 补充语义:
    拒);有效 catalog 旧账 → journaled replace(与 #352 同一事务,seedPayload 挂点;
    precondition 增 desiredState 漂移检查 —— plan 与加锁间的合法启停不被旧快照覆盖;同 payload
    仅版本变化时新旧目录相同,提交后 GC 跳过;同目录 repair 遇清单外文件/symlink = 锁内分类
-   blocked 拒 —— repair 只重写清单文件,不可收敛就不假装收敛);v1-only/损坏/双键/账配漂移 →
+   blocked 拒 —— repair 只重写清单文件,不可收敛就不假装收敛;实物校验的哈希读走最终组件
+   O_NOFOLLOW + fd 上 fstat 重验,win32 无该常量时退化为普通打开 —— 该平台建 symlink 需
+   特权,残余面如实记录);v1-only/损坏/双键/账配漂移 →
    拒;same-version healthy 幂等早退(**持 bundle 锁**做账本重读 + 根/逐条目 lstat 实物严格
    校验);更高已装拒 downgrade。失败路径只收空壳目录(journal 终态 rolled-back 才动;整树
    lstat 预扫,任何 symlink/文件在场整棵零修改;含文件的现场 = 非终态证据,绝不删)。旧目录

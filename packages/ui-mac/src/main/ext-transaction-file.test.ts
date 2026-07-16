@@ -411,6 +411,34 @@ describe("file action in runExtensionTransaction (REQ-102 #358)", () => {
     expect(listTransactionJournals(root)[0].state).toBe("switching")
   })
 
+  test("legacy #358 journal(无 requireAbsent/applied)按发布时语义前滚,不误回滚(#359 r6 兼容)", async () => {
+    // 用新引擎制造 after-switched 崩溃,再从盘上剥掉新字段 = 忠实模拟升级前遗留的在途 journal。
+    await expect(runExtensionTransaction(root, planFor(MD), hooksFor({ crashAt: "after-switched" }))).rejects.toThrow(ExtTxCrashError)
+    const jDir = join(root, "ext-tx", "journal")
+    const jFile = join(jDir, readdirSync(jDir).find((n) => n.endsWith(".json"))!)
+    const legacy: unknown = parse(readFileSync(jFile, "utf8"))
+    if (!isRec(legacy) || !Array.isArray(legacy.items)) throw new Error("journal shape")
+    for (const it of legacy.items) {
+      if (isRec(it) && isRec(it.file)) {
+        delete it.file.requireAbsent
+        delete it.file.applied
+      }
+    }
+    writeFileSync(jFile, JSON.stringify(legacy))
+    const records: TxCommitRecord[] = []
+    const rec = await recoverExtensionTransactions(root, {
+      probe: fileProbe(MD),
+      commitReceipt: (recs) => records.push(...recs),
+      pidAlive: () => false,
+      log: noop,
+    })
+    expect(rec.ok).toBe(true)
+    expect(rec.reports[0].action).toBe("resumed-committed") // already-switched 的遗留事务前滚,绝不误回滚
+    expect(readFileSync(MD_PATH(), "utf8")).toBe(MD)
+    expect(agentLeaf()).toEqual({ description: "demo agent", prompt: "body" })
+    expect(records.length).toBeGreaterThan(0) // receipt 重放发生
+  })
+
   test("validatePlan refuses missing payload / unsafe relTarget / empty content / duplicate targets", async () => {
     const missing = await runExtensionTransaction(root, { items: [{ key: "a", action: "file" }] }, hooksFor())
     expect(missing.ok).toBe(false)

@@ -55,14 +55,18 @@ journal 收敛到终态;收敛不了的**如实保留**,绝不静默终态化(#3
 
 agent seed 安装 = 双 item 单事务:file item(`agent--<name>`,action=file,写
 `<root>/agents/<name>.md`)+ config item(`agent--<name>--config`,action=config,写
-`agent.<name>` 叶)。journal 的 file 段只记 `relTarget/slot/pre-next digest/preAbsent`
-(内容在受保护 staging 0600)。崩溃窗口与处置:
+`agent.<name>` 叶)。journal 的 file 段记
+`relTarget/slot/pre-next digest/preAbsent/requireAbsent/applied`(内容在受保护 staging
+0600;`applied` 在 apply 前紧邻持久化 = 逐 item 进度)。崩溃窗口与处置:
 
-- **switching/switched 中断**:恢复按逐 item 翻转判定(file = live 目标存在且 digest ==
-  nextDigest;config = live digest == nextDigest)—— 全翻转 ∧ probe 健康(live md digest +
+- **switching/switched 中断**:恢复按逐 item 翻转判定(file = **本事务已 applied ∧** live
+  digest == nextDigest —— 只看 digest 会把旁路植入的同 digest 文件误认本事务输出;#358 时代
+  的 legacy journal 无 requireAbsent/applied 字段,按其发布时语义退回纯 digest 判定;
+  config = live digest == nextDigest)—— 全翻转 ∧ probe 健康(live md digest +
   `agentMdToEntry` 可解析 + config 叶与 md 严格一致)∧ receipt 可重放 → 前滚 committed;
   部分翻转或健康未知 → 双向回滚(file 恢复**缺席态或旧字节** —— `preAbsent` 区分缺席与
-  零字节,config 整文件 before-image 回旧)。
+  零字节,config 整文件 before-image 回旧;`requireAbsent` 且未 applied 的目标若 live 在场
+  = 窗口植入证据,不 unlink,保留非终态)。
 - **旁路改写**(live md 既非 pre 也非 next;在线回滚与崩溃恢复同语义):恢复 fail-closed
   保留现状,**journal 保持非终态**(写方 gate 继续阻断相关写操作,**包括卸载**),绝不
   盲目覆盖也绝不宣称 rolled-back;config 项已幂等回旧(下轮 noop)。处置顺序:先人工核对
