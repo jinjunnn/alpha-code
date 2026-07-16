@@ -102,8 +102,11 @@ describe("validGitUrl(#335 SSRF allowlist)", () => {
       "https://user@github.com/user/repo",
       "https://github.com/user/repo?x=1", // query
       "https://github.com/user/repo#frag", // fragment
+      "https://github.com/user/repo?", // 空 query 分隔符(review r1 Minor)
+      "https://github.com/user/repo#", // 空 fragment 分隔符
       "https://github.com", // 裸 host,路径规范化为 "/"
       "https://github.com/", // 无 repo 路径段
+      "https://github.com//", // 仅斜杠无段(review r1 Minor)
     ]) {
       expect(validGitUrl(bad)).toBe(false)
     }

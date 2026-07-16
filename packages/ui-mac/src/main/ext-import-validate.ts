@@ -35,6 +35,9 @@ export const GIT_FORGE_ALLOWLIST: readonly string[] = ["github.com", "gitlab.com
  *  execFile 参数数组免 shell 注入是另一层(clone 侧另加 http.followRedirects=false 挡重定向逃逸)。 */
 export function validGitUrl(url: unknown): url is string {
   if (typeof url !== "string" || url.length > 500) return false
+  // review r1 Minor:空 query/fragment 分隔符(`repo?` / `repo#`)会让 search/hash getter 返 ""
+  // 绕过下方判定 —— 合法 git URL 从不含 ? 或 #,原串出现即拒(合同不静默放宽)。
+  if (url.includes("?") || url.includes("#")) return false
   let parsed: URL
   try {
     parsed = new URL(url)
@@ -42,13 +45,14 @@ export function validGitUrl(url: unknown): url is string {
     return false
   }
   if (parsed.protocol !== "https:") return false
-  if (parsed.username !== "" || parsed.password !== "") return false // 不接受 userinfo(合同不静默放宽)
+  if (parsed.username !== "" || parsed.password !== "") return false // 不接受 userinfo
   if (parsed.port !== "") return false // 默认 443 规范化为 "";任何显式非 443 端口拒
-  if (parsed.search !== "" || parsed.hash !== "") return false // 无 query/fragment
+  if (parsed.search !== "" || parsed.hash !== "") return false // 无 query/fragment(纵深)
   const host = parsed.hostname.replace(/\.$/, "") // 剥尾点(localhost. / name.localhost. 绕过)
   const allowed = GIT_FORGE_ALLOWLIST.some((h) => host === h || host.endsWith(`.${h}`))
   if (!allowed) return false // localhost/私网/IP 字面量/单标签/非 allowlist 全在此拒
-  return /^\/[\w./~-]+$/.test(parsed.pathname) // 真实 repo 路径段(裸 host 规范化为 "/" 被拒)
+  // 真实 repo 路径段(裸 host 规范化为 "/" 被拒;首字符须非斜杠,拒 `//` 无段路径,review r1 Minor)。
+  return /^\/[\w.~-][\w./~-]*$/.test(parsed.pathname)
 }
 
 // ── REQ-033:Agent 导入 + 轻转换(Claude Code 格式 → opencode 原语;显式映射,不静默改写)──
