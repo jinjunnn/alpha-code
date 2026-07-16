@@ -20,7 +20,7 @@
 //   · staging(`ext-tx/staging/<txId>`)只报告不处置:journal 移走后 recovery 永不再收敛它,
 //     属无限期人工证据(可含 0600 敏感 image,见 runbook)。
 import { randomBytes, createHash } from "node:crypto"
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync } from "node:fs"
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync } from "node:fs"
 import { dirname, join, relative } from "node:path"
 import { fsyncDirSync, writeFileAtomicSync } from "./ext-atomic-fs"
 import {
@@ -31,7 +31,7 @@ import {
   type TxRecoveryReport,
 } from "./ext-transaction"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
-import type { JournalAdminEntry, JournalAdminScope, JournalRetireIntentWire } from "../shared/ext-journal-admin"
+import type { JournalAdminEntry, JournalAdminScope, JournalRetireIntentWire, JournalRetireResult } from "../shared/ext-journal-admin"
 
 const ENTRY_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}\.json$/
 const SHA256_RE = /^[0-9a-f]{64}$/
@@ -213,9 +213,8 @@ export type RetireJournalRequest = {
   casMarkRemovalAcknowledged: boolean
 }
 
-export type RetireJournalResult =
-  | { ok: true; entryId: string; txId: string; movedTo: string; receiptPath: string; markDigestCount: number; stagingPresent: boolean; recoveryOutcome: string }
-  | { ok: false; reason: string }
+/** review r2 Minor:main 与 preload 共用 shared 真源(不再本地重复定义,防漂移)。 */
+export type RetireJournalResult = JournalRetireResult
 
 export type RetireDeps = {
   /** 锁内最后收敛(裁决 Q1:文件锁非重入,必须用 InHeldLock 核心,不得调公共恢复入口)。
@@ -384,28 +383,71 @@ function reconcilePreparedReceipts(ref: JournalRootRef, retiredDir: string, jour
     const entryId = typeof receipt.entryId === "string" ? receipt.entryId : ""
     const expectedSha = typeof receipt.sourceSha256 === "string" ? receipt.sourceSha256 : undefined
     const destPath = destName !== "" ? join(retiredDir, destName) : ""
-    if (destPath !== "" && existsSync(destPath)) {
-      // review r1 Major:dest 在场即补记 retired,但按实物 sha 复核 receipt.sourceSha256 ——
-      // 不符 = rename 前实物被替换,如实标 drift(实物在 dest,不谎报审计一致)。
-      let actualSha: string | undefined
+    const destExists = destPath !== "" && existsSync(destPath)
+    const sourceExists = entryId !== "" && existsSync(join(journalDirAbs, entryId))
+    const sha = (fp: string): string | undefined => {
       try {
-        actualSha = createHash("sha256").update(readFileSync(destPath)).digest("hex")
+        return createHash("sha256").update(readFileSync(fp)).digest("hex")
       } catch {
-        actualSha = undefined
+        return undefined
       }
-      const drift = expectedSha !== undefined && actualSha !== undefined && actualSha !== expectedSha
+    }
+    if (destExists) {
+      // review r2 Major:dest 在场 = rename 至少已生效。按实物 sha 复核 receipt.sourceSha256:
+      //   · 复核不成立(缺 expectedSha / dest 读失败)→ 标 unverified,**不谎称已复核**;
+      //   · sha 不符 = rename 前实物被替换 → 标 drift;
+      //   · **source 仍在场**(B3 两次 fsync 间掉电,source 删除未持久化)→ dest 与 sha 一致
+      //     时补完 rename(unlink source),否则保留 source 留人工(dest 可疑不敢删原件)。
+      const actualSha = sha(destPath)
+      const verified = expectedSha !== undefined && actualSha !== undefined
+      const drift = verified && actualSha !== expectedSha
+      let sourceResolved = true
+      if (sourceExists) {
+        if (verified && !drift) {
+          try {
+            renameSyncNoThrow(join(journalDirAbs, entryId)) // 补完 rename:删残留 source
+          } catch {
+            sourceResolved = false
+          }
+        } else {
+          sourceResolved = false // dest 可疑 → 不删 source,留人工
+        }
+      }
+      const status = sourceResolved ? "retired" : "retired-source-remains"
       writeFileAtomicSync(
         p,
-        JSON.stringify({ ...receipt, status: "retired", retiredAt: now().toISOString(), reconciled: true, ...(drift ? { fingerprintDriftAtReconcile: true, retiredSha256: actualSha } : {}) }, null, 2),
+        JSON.stringify(
+          {
+            ...receipt,
+            status,
+            retiredAt: now().toISOString(),
+            reconciled: true,
+            fingerprintVerified: verified,
+            ...(drift ? { fingerprintDriftAtReconcile: true } : {}),
+            ...(actualSha !== undefined ? { retiredSha256: actualSha } : {}),
+          },
+          null,
+          2,
+        ),
       )
-      log("journal-retire-reconciled", { receipt: name, outcome: "retired", drift })
-    } else if (entryId !== "" && existsSync(join(journalDirAbs, entryId))) {
+      log("journal-retire-reconciled", { receipt: name, outcome: status, verified, drift })
+    } else if (sourceExists) {
       writeFileAtomicSync(p, JSON.stringify({ ...receipt, status: "abandoned", abandonedAt: now().toISOString() }, null, 2))
       log("journal-retire-reconciled", { receipt: name, outcome: "abandoned" })
     } else {
       writeFileAtomicSync(p, JSON.stringify({ ...receipt, status: "abandoned", abandonedAt: now().toISOString(), note2: "neither source nor destination present at reconcile time" }, null, 2))
       log("journal-retire-reconciled", { receipt: name, outcome: "abandoned-missing" })
     }
+  }
+}
+
+/** 删除已被 dest 权威副本取代的残留 source(补完中断的 rename);ENOENT 幂等。 */
+function renameSyncNoThrow(sourceAbs: string): void {
+  try {
+    unlinkSync(sourceAbs)
+  } catch (error) {
+    if (isRec(error) && error.code === "ENOENT") return
+    throw error
   }
 }
 

@@ -14,9 +14,11 @@ import { gatedWriteHandler, type GateRefusal, type RecoveryGate } from "./ext-re
 import {
   decodeJournalListIntent,
   decodeJournalRetireIntent,
+  type JournalAdminEntry,
   type JournalRootRef,
   type RetireJournalRequest,
 } from "./ext-journal-retire"
+import type { JournalRetireResult } from "../shared/ext-journal-admin"
 
 export type RootResolution = { ok: true; root: string } | { ok: false; reason: string }
 
@@ -90,11 +92,13 @@ export const JOURNAL_ADMIN_CHANNELS = {
   retire: "ext-journal-retire",
 } as const
 
+export type JournalAdminListResult = { entries: JournalAdminEntry[] } | { ok: false; reason: string }
+
 export type JournalAdminHandlers = {
   /** 只读诊断:global 三环境根恒聚合;intent.projectDir(可选)经严格解析后追加。 */
-  retainedList: (intent: unknown) => unknown
+  retainedList: (intent: unknown) => JournalAdminListResult
   /** 显式 retire:scope 严格解码(global env selector / projectDir),renderer 无任意 root 通道。 */
-  retire: (intent: unknown) => Promise<unknown>
+  retire: (intent: unknown) => Promise<JournalRetireResult>
 }
 
 export function buildJournalAdminChannels(deps: {
@@ -102,8 +106,8 @@ export function buildJournalAdminChannels(deps: {
   globalRoots: () => JournalRootRef[]
   /** projectDir 严格解析(realpath identity fail-closed;与 uninstallIntent 同口径)。 */
   projectRoot: (projectDir: string) => RootResolution
-  list: (roots: JournalRootRef[]) => unknown
-  retire: (ref: JournalRootRef, req: RetireJournalRequest) => Promise<unknown>
+  list: (roots: JournalRootRef[]) => { entries: JournalAdminEntry[] }
+  retire: (ref: JournalRootRef, req: RetireJournalRequest) => Promise<JournalRetireResult>
 }): JournalAdminHandlers {
   return {
     retainedList: (intent: unknown) => {

@@ -86,8 +86,9 @@ file item(`agent--<name>`,action=file,写
 - **旁路改写**(live md 既非 pre 也非 next;在线回滚与崩溃恢复同语义):恢复 fail-closed
   保留现状,**journal 保持非终态**(写方 gate 继续阻断相关写操作,**包括卸载**),绝不
   盲目覆盖也绝不宣称 rolled-back;config 项已幂等回旧(下轮 noop)。处置顺序:先人工核对
-  live md / config 叶 / 账本三面,把该 journal 移出 `journal/` 目录留档(解除 gate 阻断),
-  **之后**才能经卸载通道重放收敛。
+  live md / config 叶 / 账本三面一致,**再走 `ext-journal-retire` 通道**把该 journal 退役
+  (解除 gate 阻断)——**绝不手工把 journal 移出 `journal/`**(会绕过 Bundle 锁/fingerprint/
+  CAS mark 确认/prepared receipt,可能与恢复并发);retire 完成后才经安装/卸载通道重放收敛。
 - **staging 丢失 / journal file 段非法 / 圈禁不过**(恢复期无法重建 file image)= 失据:
   **零改动、journal 保持非终态**供重试或人工处置 —— 失据时不做任何回滚(盲回滚可能毁掉
   唯一的完好侧),也不终态化(终态化会同时留下半装态并解除写方 gate 的阻断)。
