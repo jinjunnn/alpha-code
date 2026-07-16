@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url"
 import { opencodeHomeDir, unbridgeItem } from "./alpha-bridge"
 import { agentMdToEntry } from "./agent-md-entry"
 import { persistAgentEntry, readAgentEntry, removeAgentEntry } from "./ext-config"
-import { addReceipt, alphaGlobalRoot, removeReceipt } from "./alpha-installs"
+import { alphaGlobalRoot, removeReceipt } from "./alpha-installs"
 import { tryGetAlphaEnvironment } from "./alpha-environment"
 import { projectScopeIdentity, type ScopeIdentity } from "./ext-receipt-v2"
 import { checkUncuratedConflict, recordUncuratedInstall, type UncuratedOrigin } from "./ext-uncurated-record"
@@ -88,27 +88,15 @@ function resolveRoots(target: InstallTarget | undefined): Roots | { error: strin
 
 type LedgerOutcome = { ok: true; warning?: string } | { ok: false; reason: string }
 
-/** REQ-099 #306:安装落账分流 —— catalog(meta.catalogId)沿用 v1 addReceipt(planner 随后的 v2
- *  upsert 会整键替换;在 planner 非 generation 提交面仍 fail-open 期间是唯一兜底,见 #354);
- *  未策展走 recordUncuratedInstall(单次 upsert 双账本,失败 fail-closed 由调用方补偿)。 */
+/** REQ-099 #306 / #354:安装落账分流 —— catalog(meta.catalogId)的账本所有权**完全归 planner**
+ *  (v2 upsert 提交面已 fail-closed,v1 视图由 toV1Receipt 锁步派生;此前的 eager v1 兜底随
+ *  fail-open 一并下线),本函数对 catalog 直接放行零写入;未策展走 recordUncuratedInstall
+ *  (单次 upsert 双账本,失败 fail-closed 由调用方补偿)。 */
 function recordReceipt(
   roots: Roots,
   entry: { name: string; type: InstallReceipt["type"]; files: string[]; meta?: InstallMeta; origin?: InstallReceipt["origin"] },
 ): LedgerOutcome {
-  if (entry.meta?.catalogId) {
-    const receipt: InstallReceipt = {
-      id: entry.meta.catalogId,
-      name: entry.name,
-      type: entry.type,
-      scope: roots.scope,
-      version: entry.meta.version,
-      installedAt: new Date().toISOString(),
-      origin: entry.origin ?? "catalog",
-      files: entry.files,
-    }
-    const written = addReceipt(roots.alphaDir, receipt)
-    return written.ok ? { ok: true, ...(written.warning ? { warning: written.warning } : {}) } : { ok: false, reason: `receipt not recorded: ${written.reason}` }
-  }
+  if (entry.meta?.catalogId) return { ok: true }
   const origin = (entry.origin ?? "created") as UncuratedOrigin
   const w = recordUncuratedInstall(roots.alphaDir, {
     kind: entry.type,
@@ -574,6 +562,18 @@ export async function importSkillGit(url: string, target?: InstallTarget): Promi
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 
 /** 安装随 app 打包的官方 agent(md 资产):读文件(体积帽)→ 走 writeAgent 同管线(桥+账本)。 */
+/** #354(Codex 裁决必改 3 替代路径):catalog agent 无更新链(updateEntry 不支持 agent),
+ *  写前存在性检查 —— 既有(有账或无账文件)一律拒绝,拒绝静默覆盖/认领;由此 catalog agent
+ *  安装可证明 fresh,提交面失败补偿 removeFsInstall 不会毁旧物。解析失败按在场处理(fail-closed)。 */
+export function agentInstallPresent(name: string, target?: InstallTarget): boolean {
+  if (!SAFE_NAME.test(name)) return true
+  const roots = resolveRoots(target)
+  if ("error" in roots) return true
+  const dir = safeResolveUnder(roots.alphaDir, "agents")
+  if (!dir) return true
+  return fs.existsSync(path.join(dir, `${name}.md`))
+}
+
 export function installBuiltinAgent(
   builtinAssetKey: string,
   name: string,

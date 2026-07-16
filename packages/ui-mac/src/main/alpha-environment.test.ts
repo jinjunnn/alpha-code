@@ -142,6 +142,8 @@ describe("AC#1 跨环境隔离:同 ID 不同版本互不可见(config/receipt/se
       { catalogId: "cat:shared-conn", version: "1.0.0" },
     )
     expect(r1.ok).toBe(true)
+    // #354:eager v1 已下线 —— 各环境 receipt 显式落账(隔离断言的意图不变:账本按环境根分治)。
+    addReceipt(infoA.mutableRoot, { id: "cat:shared-conn", name: "shared-conn", type: "mcp", scope: "global", version: "1.0.0", installedAt: new Date().toISOString(), origin: "catalog", configKey: "mcp.shared-conn" })
     const s1 = writeMcpSecret(userDataA, "shared-conn", "TOKEN", "secret-of-prod")
     expect(s1.ok).toBe(true)
 
@@ -156,6 +158,7 @@ describe("AC#1 跨环境隔离:同 ID 不同版本互不可见(config/receipt/se
       { catalogId: "cat:shared-conn", version: "2.0.0" },
     )
     expect(r2.ok).toBe(true)
+    addReceipt(infoB.mutableRoot, { id: "cat:shared-conn", name: "shared-conn", type: "mcp", scope: "global", version: "2.0.0", installedAt: new Date().toISOString(), origin: "catalog", configKey: "mcp.shared-conn" })
     const s2 = writeMcpSecret(userDataB, "shared-conn", "TOKEN", "secret-of-beta")
     expect(s2.ok).toBe(true)
 

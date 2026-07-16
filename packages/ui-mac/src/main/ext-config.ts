@@ -16,7 +16,7 @@ import { applyEdits, modify, parse, type ParseError } from "jsonc-parser"
 import type { ProviderInput } from "../shared/alpha-model-types"
 import type { InstallMeta } from "../preload/types"
 import { opencodeHomeDir } from "./alpha-bridge"
-import { addReceipt, alphaGlobalRoot, removeReceipt } from "./alpha-installs"
+import { alphaGlobalRoot, removeReceipt } from "./alpha-installs"
 import { alphaJsoncPath } from "./engine-config-truth"
 import { commandHeadBase } from "./platform"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
@@ -371,22 +371,9 @@ export function persistMcp(name: string, server: Record<string, unknown>, meta?:
   if (!server || typeof server !== "object") return { ok: false, reason: "invalid server config" }
   const valid = validateServer(server)
   if (!valid.ok) return valid
-  const written = writeKey(mcpPluginTargetPath(), ["mcp", name], server)
-  // REQ-099 #306:只有 catalog(meta.catalogId)路径在此落 v1 receipt(planner 随后 v2 upsert 整键
-  // 替换);未策展的落账所有权上移到 orchestrator(ext-ipc → recordUncuratedInstall,失败可补偿)。
-  if (written.ok && receiptsActive() && meta?.catalogId) {
-    addReceipt(alphaGlobalRoot(), {
-      id: meta.catalogId,
-      name,
-      type: "mcp",
-      scope: "global",
-      version: meta.version,
-      installedAt: new Date().toISOString(),
-      origin: "catalog",
-      configKey: `mcp.${name}`,
-    })
-  }
-  return written
+  // #354:catalog 的 eager v1 兜底已下线 —— planner 提交面 fail-closed 后,v1 视图由
+  // upsertRecordV2 的 toV1Receipt 锁步派生(单一账本所有权);未策展仍归 orchestrator。
+  return writeKey(mcpPluginTargetPath(), ["mcp", name], server)
 }
 
 /** 读 mcp.<name> 当前叶子(Codex review #355:orchestrator 失败补偿用精确 before-image ——
@@ -401,6 +388,25 @@ export function readMcpLeaf(name: string): Record<string, unknown> | undefined {
     return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined
   } catch {
     return undefined
+  }
+}
+
+/** #354(Codex 裁决必改 2):可失败的严格 leaf 读 —— catalog 提交面区分「不存在」(合法前像
+ *  undefined)与「不可读/形状异常」(必须写前拒绝,否则失败补偿会把未知内容当 undefined 删掉)。 */
+export function readMcpLeafStrict(
+  name: string,
+): { ok: true; value: Record<string, unknown> | undefined } | { ok: false; reason: string } {
+  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid server name" }
+  const target = mcpPluginTargetPath()
+  try {
+    if (!fs.existsSync(target)) return { ok: true, value: undefined }
+    const parsed = parse(fs.readFileSync(target, "utf8")) as { mcp?: Record<string, unknown> } | undefined
+    const v = parsed?.mcp?.[name]
+    if (v === undefined) return { ok: true, value: undefined }
+    if (v && typeof v === "object" && !Array.isArray(v)) return { ok: true, value: v as Record<string, unknown> }
+    return { ok: false, reason: `mcp.${name} has unexpected shape — refusing to snapshot (compensation would destroy it)` }
+  } catch (error) {
+    return { ok: false, reason: `config unreadable: ${error instanceof Error ? error.message : String(error)}` }
   }
 }
 
@@ -652,20 +658,8 @@ function persistPluginUnlocked(pkg: string, meta?: InstallMeta): PersistPluginRe
     if (existing === pkg) return { ok: true, changed: false } // 恰同钉版 → 真幂等,调用方跳过落账
     return { ok: false, reason: `plugin "${base}" already configured as "${existing}" — refusing silent version mismatch (requested "${pkg}")` }
   }
+  // #354:eager v1 下线(v1 视图由 planner v2 upsert 锁步派生;未策展归 orchestrator)。
   const written = writeKeyUnlocked(target, ["plugin"], [...current, pkg])
-  // REQ-099 #306:同 persistMcp —— catalog 才在此落 v1;未策展由 orchestrator 走 coordinator。
-  if (written.ok && receiptsActive() && meta?.catalogId) {
-    addReceipt(alphaGlobalRoot(), {
-      id: meta.catalogId,
-      name: pluginRecordName(pkg),
-      type: "plugin",
-      scope: "global",
-      version: meta.version,
-      installedAt: new Date().toISOString(),
-      origin: "catalog",
-      configKey: `plugin:${pkg}`,
-    })
-  }
   return written.ok ? { ok: true, changed: true } : written
 }
 
@@ -759,22 +753,8 @@ function persistPluginPathUnlocked(name: string, absJsPath: string, files: strin
   }
   const current = read()
   if (current.some((p) => p === absJsPath)) return { ok: true } // idempotent
-  const written = writeKeyUnlocked(target, ["plugin"], [...current, absJsPath])
-  // REQ-099 #306:vendored 无未策展生产调用方(Codex 核实),catalog 才落 v1;防未来伪造面同收窄。
-  if (written.ok && receiptsActive() && meta?.catalogId) {
-    addReceipt(alphaGlobalRoot(), {
-      id: meta.catalogId,
-      name,
-      type: "plugin",
-      scope: "global",
-      version: meta.version,
-      installedAt: new Date().toISOString(),
-      origin: "catalog",
-      configKey: `plugin-path:${absJsPath}`,
-      files,
-    })
-  }
-  return written
+  // #354:eager v1 下线(同 persistPluginUnlocked;v1 视图由 planner v2 upsert 锁步派生)。
+  return writeKeyUnlocked(target, ["plugin"], [...current, absJsPath])
 }
 
 export function removePluginPath(name: string, absJsPath: string): ConfigResult {

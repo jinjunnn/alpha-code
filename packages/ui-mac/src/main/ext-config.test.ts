@@ -9,7 +9,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { configHealth, persistMcp, persistPlugin, persistProvider, removeMcp, removeMcpConfigInLock, removePlugin } from "./ext-config"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
-import { findReceipt, readLedger } from "./alpha-installs"
+import { addReceipt, findReceipt, readLedger } from "./alpha-installs"
 
 // REQ-018 T2: mcp/plugin persistence targets the alpha-owned ~/.opencode/opencode.jsonc
 // (ALPHA_OPENCODE_HOME-overridable); provider persistence stays on the shared XDG config
@@ -158,6 +158,9 @@ describe("persistMcp — accept paths write mcp[name]", () => {
 
   test("#346 removeMcpConfigInLock:锁被持有时照常工作(in-lock 原语不重取锁)、只删配置零账本副作用", () => {
     persistMcp("demo", { type: "local", command: ["npx", "-y", "demo-mcp"] }, { catalogId: "mcp:demo", version: "1.0.0" })
+    // #354:eager v1 已下线(账本所有权归 planner v2 upsert)——receipt 由测试自建,断言意图不变:
+    // in-lock 原语只删配置、零账本副作用。
+    addReceipt(alphaTmp, { id: "mcp:demo", name: "demo", type: "mcp", scope: "global", installedAt: new Date().toISOString(), origin: "catalog", configKey: "mcp.demo" })
     const held = tryAcquireBundleLock(alphaTmp, { txId: "tx-uninstall-346" })
     expect(held.ok).toBe(true)
     if (!held.ok) return
@@ -292,18 +295,20 @@ describe("configHealth", () => {
 
 // ── T6:persistMcp/persistPlugin 记账 + removePlugin 卸载 ──────────────────────────────────────
 describe("receipts on persist/remove (T6)", () => {
-  test("persistMcp records a receipt with configKey; removeMcp drops it", () => {
+  test("#354:persistMcp 不再 eager 落 v1(账本所有权归 planner v2 upsert);removeMcp 仍清 legacy receipt", () => {
     expect(persistMcp("markitdown", { type: "local", command: ["uvx", "markitdown-mcp"] }, { catalogId: "mcp:markitdown", version: "1" }).ok).toBe(true)
-    let r = readLedger(alphaTmp).receipts.find((x) => x.type === "mcp" && x.name === "markitdown")
-    expect(r).toMatchObject({ id: "mcp:markitdown", configKey: "mcp.markitdown", version: "1" })
+    expect(readLedger(alphaTmp).receipts.find((x) => x.type === "mcp" && x.name === "markitdown")).toBeUndefined()
+    // legacy receipt(历史安装)仍由 removeMcp 清理 —— 卸载语义不变。
+    addReceipt(alphaTmp, { id: "mcp:markitdown", name: "markitdown", type: "mcp", scope: "global", installedAt: new Date().toISOString(), origin: "catalog", configKey: "mcp.markitdown" })
     expect(removeMcp("markitdown").ok).toBe(true)
     expect(readLedger(alphaTmp).receipts.find((x) => x.name === "markitdown")).toBeUndefined()
   })
 
-  test("persistPlugin records a receipt; removePlugin removes from config[] and drops receipt", () => {
+  test("#354:persistPlugin 不再 eager 落 v1;removePlugin 撤 config[] 并清 legacy receipt", () => {
     expect(persistPlugin("opencode-notify@0.3.1", { catalogId: "plugin:opencode-notify" }).ok).toBe(true)
     expect(readConfig().plugin).toContain("opencode-notify@0.3.1")
-    expect(readLedger(alphaTmp).receipts.some((x) => x.type === "plugin")).toBe(true)
+    expect(readLedger(alphaTmp).receipts.some((x) => x.type === "plugin")).toBe(false)
+    addReceipt(alphaTmp, { id: "plugin:opencode-notify", name: "opencode-notify", type: "plugin", scope: "global", installedAt: new Date().toISOString(), origin: "catalog", configKey: "plugin:opencode-notify@0.3.1" })
     expect(removePlugin("opencode-notify@0.3.1").ok).toBe(true)
     expect(readConfig().plugin ?? []).not.toContain("opencode-notify@0.3.1")
     expect(readLedger(alphaTmp).receipts.some((x) => x.type === "plugin")).toBe(false)

@@ -175,6 +175,7 @@ function makeDeps(opts: {
     fileifyMcpSecrets: (name: string, server: Record<string, unknown>, secrets: Record<string, string>) => {
       calls.push({ fn: "fileifyMcpSecrets", args: [name, server, secrets] })
       return {
+        ok: true as const,
         fileified: Object.keys(secrets),
         skipped: [],
         refs: {},
@@ -182,9 +183,23 @@ function makeDeps(opts: {
         discard: () => calls.push({ fn: "discardSecrets", args: [] }),
       }
     },
+    // #354:提交面 fail-closed 的前像/补偿原语(缺省 = 无前像、补偿成功、agent 不在场)。
+    readMcpLeafStrict: (name: string) => {
+      calls.push({ fn: "readMcpLeafStrict", args: [name] })
+      return { ok: true as const, value: undefined }
+    },
+    restoreMcpLeaf: (name: string, value: Record<string, unknown> | undefined) => {
+      calls.push({ fn: "restoreMcpLeaf", args: [name, value] })
+      return { ok: true as const }
+    },
+    removePluginEntryExact: record("removePluginEntryExact", { ok: true as const }),
+    agentPresent: (name: string) => {
+      calls.push({ fn: "agentPresent", args: [name] })
+      return false
+    },
     removeMcpConfigInLock: record("removeMcpConfigInLock", { ok: true as const }),
     removeMcpSecretsStrict: record("removeMcpSecretsStrict", { ok: true as const }),
-    persistPlugin: record("persistPlugin", { ok: true as const }),
+    persistPlugin: record("persistPlugin", { ok: true as const, changed: true }),
     removePlugin: record("removePlugin", { ok: true as const }),
     installVendoredPlugin: (key, name) => {
       calls.push({ fn: "installVendoredPlugin", args: [key, name] })
@@ -369,7 +384,7 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
             if (env) env[v] = `{file:secrets/${v}}`
             refs[v] = `{file:secrets/${v}}`
           }
-          return { fileified: Object.keys(secrets), skipped: [], refs, restore() {}, discard() {} }
+          return { ok: true as const, fileified: Object.keys(secrets), skipped: [], refs, restore() {}, discard() {} }
         },
         // 模拟 persistMcpWithPolicy:main 策略原地注入受管字段(如 Excel EXCEL_FILES_PATH)
         persistMcp: (_name, config) => {
@@ -413,6 +428,7 @@ describe("MCP install — facts re-derived from catalog, grants validated", () =
         fileifyMcpSecrets: (name, server, secrets) => {
           calls.push({ fn: "fileifyMcpSecrets", args: [name, server, secrets] })
           return {
+            ok: true as const,
             fileified: [],
             skipped: Object.keys(secrets),
             refs: {},
@@ -1426,5 +1442,177 @@ describe("bundle remote child redrive cache (REQ-100 #348)", () => {
     expect(second.ok).toBe(true)
     expect(called(calls, "downloadRemoteAsset")).toHaveLength(1) // 重驱零网络(bundle classify 分支)
     expect(resolveLiveGenerationDir(globalRoot, "skill--remote-demo")).not.toBeNull()
+  })
+})
+
+// ── #354:非 generation 提交面 fail-closed(账本写失败 = 安装失败 + 按类型补偿)────────────────────
+describe("fail-closed non-generation ledger commit (REQ-100 #354)", () => {
+  const seedRecord = (kind: "plugin" | "agent", name: string) => {
+    const w = upsertRecordV2(globalRoot, {
+      id: `${kind}:${name}`,
+      name,
+      kind,
+      environment: "prod",
+      scope: { kind: "global" },
+      desiredState: "enabled",
+      origin: "catalog",
+      installedAt: new Date().toISOString(),
+    })
+    if (!w.ok) throw new Error(w.reason)
+  }
+  const agentEntry: CatalogEntry = {
+    id: "agent:helper",
+    type: "agent",
+    name: "helper",
+    displayName: "helper",
+    description: "d",
+    source: "official",
+    category: "test",
+    version: "1.0.0",
+    installSpec: { kind: "agent", source: "builtin", builtinAssetKey: "agents/helper" },
+  } as CatalogEntry
+  const lockRoot = () => fs.chmodSync(globalRoot, 0o555)
+  const unlockRoot = () => fs.chmodSync(globalRoot, 0o755)
+
+  test("mcp:账本写失败 → 叶前像复原 + 密钥快照复原(discard 不触发)+ ok:false 并入补偿事实", async () => {
+    const { deps, calls } = makeDeps()
+    lockRoot()
+    try {
+      const r = await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "sekret" } } }, deps)
+      expect(r.ok).toBe(false)
+      if (r.ok) throw new Error("unreachable")
+      expect(r.reason).toContain("install ledger write failed")
+      expect(called(calls, "readMcpLeafStrict")).toHaveLength(1)
+      expect(called(calls, "restoreMcpLeaf")).toHaveLength(1)
+      expect(called(calls, "restoreSecrets")).toHaveLength(1)
+      expect(called(calls, "discardSecrets")).toHaveLength(0)
+    } finally {
+      unlockRoot()
+    }
+  })
+
+  test("mcp:成功路径 —— 密钥快照 discard 只在账本提交成功后触发;v1 视图由 v2 锁步派生", async () => {
+    const { deps, calls } = makeDeps()
+    const r = await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "sekret" } } }, deps)
+    expect(r.ok).toBe(true)
+    expect(called(calls, "discardSecrets")).toHaveLength(1)
+    expect(called(calls, "restoreSecrets")).toHaveLength(0)
+    const ledger = JSON.parse(fs.readFileSync(path.join(globalRoot, "installs.json"), "utf8")) as {
+      records: Array<{ kind: string; name: string }>
+      receipts: Array<{ type: string; name: string; configKey?: string }>
+    }
+    expect(ledger.records.some((x) => x.kind === "mcp" && x.name === "markitdown")).toBe(true)
+    expect(ledger.receipts.some((x) => x.type === "mcp" && x.name === "markitdown" && x.configKey === "mcp.markitdown")).toBe(true)
+  })
+
+  test("mcp:strict 叶前像不可读(形状异常)→ 写前拒绝,零副作用", async () => {
+    const { deps, calls } = makeDeps({
+      installers: { readMcpLeafStrict: () => ({ ok: false as const, reason: "mcp.markitdown has unexpected shape" }) },
+    })
+    const r = await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "s" } } }, deps)
+    expect(r.ok).toBe(false)
+    expect(called(calls, "fileifyMcpSecrets")).toHaveLength(0)
+    expect(called(calls, "persistMcp")).toHaveLength(0)
+  })
+
+  test("plugin(npm):有账在场 → 写前拒绝(更新归 #352 原子替换),零 installer 触碰", async () => {
+    seedRecord("plugin", "np")
+    const { deps, calls } = makeDeps()
+    const r = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("#352")
+    expect(called(calls, "persistPlugin")).toHaveLength(0)
+  })
+
+  test("plugin(npm):changed:false(无账但 config 已有恰同钉版)→ 拒绝静默认领,零补偿", async () => {
+    const { deps, calls } = makeDeps({ installers: { persistPlugin: () => ({ ok: true as const, changed: false }) } })
+    const r = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("refusing to adopt")
+    expect(called(calls, "removePluginEntryExact")).toHaveLength(0)
+  })
+
+  test("plugin(npm):账本写失败 → 只撤本次写入的精确元素(changed:true 已证明新增)", async () => {
+    const { deps, calls } = makeDeps()
+    lockRoot()
+    try {
+      const r = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
+      expect(r.ok).toBe(false)
+      expect(called(calls, "removePluginEntryExact")).toHaveLength(1)
+    } finally {
+      unlockRoot()
+    }
+  })
+
+  test("plugin(vendored):无账目录在场 → 写前拒绝;账本写失败 → 撤路径条目", async () => {
+    fs.mkdirSync(path.join(globalRoot, "plugins", "vp"), { recursive: true })
+    const { deps } = makeDeps()
+    const r = await installCatalog({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("without a ledger record")
+    fs.rmSync(path.join(globalRoot, "plugins", "vp"), { recursive: true, force: true })
+
+    const { deps: d2, calls: c2 } = makeDeps()
+    lockRoot()
+    try {
+      const r2 = await installCatalog({ catalogId: "plugin:vp", scope: { scope: "global" } }, d2)
+      expect(r2.ok).toBe(false)
+      expect(called(c2, "removePluginPath")).toHaveLength(1)
+    } finally {
+      unlockRoot()
+    }
+  })
+
+  test("agent:有账或文件在场 → 写前拒绝(无更新链,不静默覆盖/认领)", async () => {
+    seedRecord("agent", "helper")
+    const { deps, calls } = makeDeps({ entries: [...ALL_ENTRIES, agentEntry] })
+    const r = await installCatalog({ catalogId: "agent:helper", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(false)
+    expect(called(calls, "installBuiltinAgent")).toHaveLength(0)
+
+    fs.rmSync(path.join(globalRoot, "installs.json"), { force: true })
+    const { deps: d2, calls: c2 } = makeDeps({ entries: [...ALL_ENTRIES, agentEntry], installers: { agentPresent: () => true } })
+    const r2 = await installCatalog({ catalogId: "agent:helper", scope: { scope: "global" } }, d2)
+    expect(r2.ok).toBe(false)
+    if (!r2.ok) expect(r2.reason).toContain("already present")
+    expect(called(c2, "installBuiltinAgent")).toHaveLength(0)
+  })
+
+  test("agent:账本写失败 → 整撤本次 fresh 安装(md + 条目)", async () => {
+    const { deps, calls } = makeDeps({ entries: [...ALL_ENTRIES, agentEntry] })
+    lockRoot()
+    try {
+      const r = await installCatalog({ catalogId: "agent:helper", scope: { scope: "global" } }, deps)
+      expect(r.ok).toBe(false)
+      const rem = called(calls, "removeFsInstall")
+      expect(rem).toHaveLength(1)
+      expect(rem[0]!.args[0]).toBe("agent")
+      expect(rem[0]!.args[1]).toBe("helper")
+    } finally {
+      unlockRoot()
+    }
+  })
+
+  test("cloud:账本写失败 → ok:false(零副作用类型,无补偿调用)", async () => {
+    const { deps, calls } = makeDeps()
+    lockRoot()
+    try {
+      const r = await installCatalog({ catalogId: "cloud:research", scope: { scope: "global" } }, deps)
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.reason).toContain("install ledger write failed")
+      expect(installerCallCount(calls)).toBe(0)
+    } finally {
+      unlockRoot()
+    }
+  })
+
+  test("账本前像不可读(installs.json 是目录)→ 写前拒绝,零副作用", async () => {
+    fs.mkdirSync(path.join(globalRoot, "installs.json"), { recursive: true })
+    const { deps, calls } = makeDeps()
+    const r = await installCatalog({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "s" } } }, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("install ledger unreadable")
+    expect(called(calls, "persistMcp")).toHaveLength(0)
+    expect(called(calls, "fileifyMcpSecrets")).toHaveLength(0)
   })
 })
