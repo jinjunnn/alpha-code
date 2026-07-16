@@ -379,9 +379,12 @@ describe("recovery 自守(#375:畸形 journal 不炸整轮)", () => {
     })
     const rec = await recoverExtensionTransactions(ref.root, { log: silentLog })
     const r = rec.reports.find((rep) => rep.txId === "tx-cf")
-    // 未翻转 → 走回滚 → reconstructConfigImage 圈禁返 null → 回滚失败保留,绝不标 committed。
-    expect(r?.action).not.toBe("resumed-committed")
-    expect(r?.state).not.toBe("committed")
+    // 未翻转 → 走回滚 → config 圈禁不过 → **保留态**(retained,不认领/不终态化为 rolled-back)。
+    expect(r?.action).toBe("none")
+    expect(r?.retained).toBe(true)
+    expect(r?.detail).toContain("confinement")
+    expect(recoveryClean(rec)).toBe(false)
+    expect(existsSync(external)).toBe(true) // root 外文件绝不被写
   })
 
   test("review r3 Major:staging 删除失败(圈禁不过)→ 终态件不谎报 cleaned,terminal GC 不删该 journal", async () => {

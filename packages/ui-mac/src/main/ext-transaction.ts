@@ -2236,12 +2236,20 @@ async function recoverOne(
     ...warnings,
   ]
   const reason = `crash recovery rollback: ${reasonParts.join("; ")}`
-  let fileRestoreBlocked: string | null = null
+  let restoreBlocked: string | null = null
   for (const it of [...journal.items].reverse()) {
     const kind = actionOf(it)
     if (kind === "config") {
+      // r6 Major:config.target 圈禁不过(root 外/畸形)= 现场需人工核对 —— **保留非终态**,
+      // 绝不静默 warn+continue 后终态化为 rolled-back(那会让恶意/畸形 config journal 被当作
+      // 正常回滚完成)。与 file 段的 restore-blocked 同款证据保留语义。
+      if (!it.config || !configTargetConfined(it.config.target)) {
+        restoreBlocked = `config recovery rollback for "${it.key}": target failed confinement — retained as evidence`
+        continue
+      }
       const image = reconstructConfigImage(it)
       if (!image) {
+        // 圈禁已过但 staging 丢失/digest 不符:live 保持不动(fail closed),幂等,下轮 noop。
         warnings.push(`config recovery: cannot reconstruct image for "${it.key}" — leaving live as-is (fail closed)`)
         continue
       }
@@ -2251,25 +2259,25 @@ async function recoverOne(
       // r3 Blocker:预扫与此处之间仍有 config 恢复等异步间隙 —— restore 前紧邻再重验一次圈禁。
       const confined = it.file ? confineFileTarget(root, it.file.relTarget) : { ok: false as const, reason: "missing file journal segment" }
       if (!confined.ok) {
-        fileRestoreBlocked = `file recovery rollback for "${it.key}": ${confined.reason}`
+        restoreBlocked = `file recovery rollback for "${it.key}": ${confined.reason}`
         continue
       }
       // r5 Blocker:崩溃前未 apply 的 requireAbsent item —— live 在场(同/异 digest 皆然)=
       // 窗口植入,绝不 unlink,保留非终态留证;缺席 = 无事可回。
       if (it.file?.requireAbsent && it.file.applied !== true) {
         if (fs.existsSync(path.join(root, it.file.relTarget)))
-          fileRestoreBlocked = `file recovery rollback for "${it.key}": bypass-planted content at an unapplied target — retained as evidence`
+          restoreBlocked = `file recovery rollback for "${it.key}": bypass-planted content at an unapplied target — retained as evidence`
         continue
       }
       const restored = restoreFileImage(reconstructFileImage(it)!) // 上方预扫已证明可重建
-      if (!restored.ok) fileRestoreBlocked = `file recovery rollback for "${it.key}": ${restored.reason}`
+      if (!restored.ok) restoreBlocked = `file recovery rollback for "${it.key}": ${restored.reason}`
     }
   }
   // #358 review Blocker 3:file 恢复被旁路改写挡住(target 既非 pre 也非 next)= 现场需人工核对 ——
   // 保留非终态 + staging(证据与重试依据),不隔离、不终态化。已完成的 config 恢复幂等(下轮 noop)。
-  if (fileRestoreBlocked) {
-    log("recovery-file-retained", { txId, detail: fileRestoreBlocked })
-    return { txId, state: journal.state, action: "none", detail: `${fileRestoreBlocked} — retained for manual diagnosis`, retained: true }
+  if (restoreBlocked) {
+    log("recovery-file-retained", { txId, detail: restoreBlocked })
+    return { txId, state: journal.state, action: "none", detail: `${restoreBlocked} — retained for manual diagnosis`, retained: true }
   }
   for (const it of journal.items) {
     if (actionOf(it) !== "generation") continue
