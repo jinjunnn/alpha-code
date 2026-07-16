@@ -118,6 +118,35 @@ const skillRemoteEntry: CatalogEntry = {
   installSpec: { kind: "skill", source: "remote", targetDir: "alpha-skills" },
   remoteAsset: { version: "1.2.0", files: remoteFiles },
 }
+// #361:catalog agent 走事务载体(builtin 载荷由 collectBuiltinAgentPayload 收集;remote 与
+// skill 同款清单钉死)。内容必须 agentMdToEntry 可解析(description + body)。
+const AGENT_MD = "---\ndescription: test agent\n---\nagent body"
+const REMOTE_AGENT_MD = "---\ndescription: remote test agent\n---\nremote agent body"
+const agentRemoteFiles = [
+  {
+    path: "remote-agent.md",
+    sha256: crypto.createHash("sha256").update(REMOTE_AGENT_MD).digest("hex"),
+    bytes: Buffer.byteLength(REMOTE_AGENT_MD),
+    url: "https://assets.example/remote-agent.md",
+  },
+]
+const agentBuiltinEntry: CatalogEntry = {
+  id: "agent:helper",
+  type: "agent",
+  name: "helper",
+  ...base,
+  version: "1.0.0",
+  installSpec: { kind: "agent", source: "builtin", builtinAssetKey: "agents/helper.md" },
+} as CatalogEntry
+const agentRemoteEntry: CatalogEntry = {
+  id: "agent:remote-agent",
+  type: "agent",
+  name: "remote-agent",
+  ...base,
+  version: "1.1.0",
+  installSpec: { kind: "agent", source: "remote" },
+  remoteAsset: { version: "1.1.0", files: agentRemoteFiles },
+} as CatalogEntry
 const pluginVendoredEntry: CatalogEntry = {
   id: "plugin:vp",
   type: "plugin",
@@ -234,14 +263,17 @@ function makeDeps(opts: {
       // 有效 frontmatter(name 匹配 + description)= 类型化 probe(#312)通过。
       return { ok: true as const, files: [{ path: "SKILL.md", data: Buffer.from(`---\nname: ${name}\ndescription: test ${name}\n---\nbody`) }] }
     },
-    installBuiltinAgent: record("installBuiltinAgent", { ok: true as const, files: ["/derived/agent"] }),
+    // #361:builtin agent 载荷收集(只读零副作用;内容 agentMdToEntry 可解析供真引擎走全链)。
+    collectBuiltinAgentPayload: (key: string, name: string) => {
+      calls.push({ fn: "collectBuiltinAgentPayload", args: [key, name] })
+      return { ok: true as const, files: [{ path: `${name}.md`, data: Buffer.from(AGENT_MD) }] }
+    },
     installRemoteSkill: record("installRemoteSkill", { ok: true as const, files: ["/derived/remote-skill"] }),
-    installRemoteAgent: record("installRemoteAgent", { ok: true as const, files: ["/derived/remote-agent"] }),
     removeFsInstall: record("removeFsInstall", { ok: true as const, files: [] }),
     downloadRemoteAsset: async (files) => {
       calls.push({ fn: "downloadRemoteAsset", args: [files] })
-      // 唯一走 remote 的 skill fixture = remote-demo;内容与 remoteFiles 清单 digest/bytes 一致
-      //(#303 promote 前结构校验),有效 frontmatter 供 #312 probe。
+      // 内容与清单 digest/bytes 一致(#303 promote 前结构校验);skill/agent fixture 按清单路径分发。
+      if (files[0]?.path === "remote-agent.md") return { ok: true, contents: [{ path: "remote-agent.md", data: Buffer.from(REMOTE_AGENT_MD) }] }
       return { ok: true, contents: [{ path: "SKILL.md", data: Buffer.from(REMOTE_SKILL_MD) }] }
     },
     ...opts.installers,
@@ -265,6 +297,15 @@ function makeDeps(opts: {
 }
 
 const called = (calls: Call[], fn: string) => calls.filter((c) => c.fn === fn)
+
+// #361:零断言读 alpha.jsonc 的 agent.<name> 叶(JSON.parse 结果走谓词收窄,不 cast)。
+const isRec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
+const readAgentLeaf = (rootDir: string, name: string): Record<string, unknown> | undefined => {
+  const raw: unknown = JSON.parse(fs.readFileSync(path.join(rootDir, "alpha.jsonc"), "utf8"))
+  if (!isRec(raw) || !isRec(raw.agent)) return undefined
+  const leaf = raw.agent[name]
+  return isRec(leaf) ? leaf : undefined
+}
 const installerCallCount = (calls: Call[]) => calls.length
 
 function makeProject(name: string): string {
@@ -1482,17 +1523,6 @@ describe("fail-closed non-generation ledger commit (REQ-100 #354)", () => {
     })
     if (!w.ok) throw new Error(w.reason)
   }
-  const agentEntry: CatalogEntry = {
-    id: "agent:helper",
-    type: "agent",
-    name: "helper",
-    displayName: "helper",
-    description: "d",
-    source: "official",
-    category: "test",
-    version: "1.0.0",
-    installSpec: { kind: "agent", source: "builtin", builtinAssetKey: "agents/helper" },
-  } as CatalogEntry
   const runningAsRoot = () => typeof process.getuid === "function" && process.getuid() === 0
   const lockRoot = () => fs.chmodSync(globalRoot, 0o555)
   const unlockRoot = () => fs.chmodSync(globalRoot, 0o755)
@@ -1589,35 +1619,40 @@ describe("fail-closed non-generation ledger commit (REQ-100 #354)", () => {
     }
   })
 
-  test("agent:有账或文件在场 → 写前拒绝(无更新链,不静默覆盖/认领)", async () => {
+  test("agent:有账或文件在场 → 写前拒绝(无更新链,不静默覆盖/认领),零内容副作用", async () => {
     seedRecord("agent", "helper")
-    const { deps, calls } = makeDeps({ entries: [...ALL_ENTRIES, agentEntry] })
+    const { deps, calls } = makeDeps({ entries: [...ALL_ENTRIES, agentBuiltinEntry] })
     const r = await installCatalog({ catalogId: "agent:helper", scope: { scope: "global" } }, deps)
     expect(r.ok).toBe(false)
-    expect(called(calls, "installBuiltinAgent")).toHaveLength(0)
+    expect(called(calls, "collectBuiltinAgentPayload")).toHaveLength(0)
 
     fs.rmSync(path.join(globalRoot, "installs.json"), { force: true })
-    const { deps: d2, calls: c2 } = makeDeps({ entries: [...ALL_ENTRIES, agentEntry], installers: { agentPresent: () => true } })
+    const { deps: d2, calls: c2 } = makeDeps({ entries: [...ALL_ENTRIES, agentBuiltinEntry], installers: { agentPresent: () => true } })
     const r2 = await installCatalog({ catalogId: "agent:helper", scope: { scope: "global" } }, d2)
     expect(r2.ok).toBe(false)
     if (!r2.ok) expect(r2.reason).toContain("already present")
-    expect(called(c2, "installBuiltinAgent")).toHaveLength(0)
+    expect(called(c2, "collectBuiltinAgentPayload")).toHaveLength(0)
   })
 
-  test("agent:账本写失败 → 整撤本次 fresh 安装(md + 条目)", async () => {
-    const { deps, calls } = makeDeps({ entries: [...ALL_ENTRIES, agentEntry] })
+  test("agent:根只读 → 事务失败 fail-closed,零残留(#361:引擎回滚取代手工补偿)", async () => {
+    // 预写授权基线(与请求集同)→ authorize 闸静默通过,单次驱动直达引擎写路径。
+    writeCapabilityGrantSync(globalRoot, { v: 1, key: "agent--helper", capabilities: ["engine:config", "prompt:context"], txId: "t0", grantedAt: new Date().toISOString() })
+    const { deps, calls } = makeDeps({ entries: [...ALL_ENTRIES, agentBuiltinEntry] })
     if (runningAsRoot()) return // root 下 0o555 仍可写(review minor:假红而非假绿)
     lockRoot()
     try {
       const r = await installCatalog({ catalogId: "agent:helper", scope: { scope: "global" } }, deps)
       expect(r.ok).toBe(false)
-      const rem = called(calls, "removeFsInstall")
-      expect(rem).toHaveLength(1)
-      expect(rem[0]!.args[0]).toBe("agent")
-      expect(rem[0]!.args[1]).toBe("helper")
     } finally {
       unlockRoot()
     }
+    // 引擎回滚零残留:无 md、无 config 叶、无账;补偿不再是 planner 手工调用。
+    expect(fs.existsSync(path.join(globalRoot, "agents", "helper.md"))).toBe(false)
+    expect(findRecordV2(globalRoot, "agent", "helper")).toBeNull()
+    if (fs.existsSync(path.join(globalRoot, "alpha.jsonc"))) {
+      expect(readAgentLeaf(globalRoot, "helper")).toBeUndefined()
+    }
+    expect(called(calls, "removeFsInstall")).toHaveLength(0)
   })
 
   test("cloud:账本写失败 → ok:false(零副作用类型,无补偿调用)", async () => {
@@ -1656,10 +1691,10 @@ describe("fail-closed non-generation ledger commit (REQ-100 #354)", () => {
     expect(called(calls, "persistPlugin")).toHaveLength(0)
 
     addReceipt(globalRoot, { id: "agent:helper", name: "helper", type: "agent", scope: "global", installedAt: new Date().toISOString(), origin: "catalog" })
-    const { deps: d2, calls: c2 } = makeDeps({ entries: [...ALL_ENTRIES, agentEntry] })
+    const { deps: d2, calls: c2 } = makeDeps({ entries: [...ALL_ENTRIES, agentBuiltinEntry] })
     const r2 = await installCatalog({ catalogId: "agent:helper", scope: { scope: "global" } }, d2)
     expect(r2.ok).toBe(false)
-    expect(called(c2, "installBuiltinAgent")).toHaveLength(0)
+    expect(called(c2, "collectBuiltinAgentPayload")).toHaveLength(0)
   })
 
   test("补偿失败可观察(review #379):config 撤销失败与密钥恢复失败并入 compensation incomplete", async () => {
@@ -1943,5 +1978,118 @@ describe("plugin replace hardening (review #381)", () => {
         fs.chmodSync(globalRoot, 0o755)
       }
     }
+  })
+})
+
+// ── #361:catalog agent 走事务安装链(file md + config 叶单事务;裁决见 issue #361 评论)────────────
+describe("catalog agent install via transaction engine (REQ-098 #361)", () => {
+  const entriesWithAgents = [...ALL_ENTRIES, agentBuiltinEntry, agentRemoteEntry]
+
+  test("builtin:生产入口全链 —— CAS 摄取(自算内容地址)+ file/config 单事务 + 引擎单点落账 + 授权账", async () => {
+    const { deps, calls } = makeDeps({ entries: entriesWithAgents })
+    const r = await installAuthorized({ catalogId: "agent:helper", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.kind).toBe("agent")
+    expect(r.name).toBe("helper")
+    // 内容经共享 CAS(#303 裁决 B:builtin 自算内容地址),md byte-exact。
+    expect(hasCasBlob(path.join(tmp, "cas-base"), crypto.createHash("sha256").update(AGENT_MD).digest("hex"))).toBe(true)
+    const mdPath = path.join(globalRoot, "agents", "helper.md")
+    expect(fs.readFileSync(mdPath, "utf8")).toBe(AGENT_MD)
+    expect(r.files).toContain(mdPath)
+    // config 叶与 md 同事务落位(agentMdToEntry 单一真源)。
+    const leaf = readAgentLeaf(globalRoot, "helper")
+    expect(leaf?.description).toBe("test agent")
+    expect(leaf?.prompt).toBe("agent body")
+    // 账本单点 = 引擎 commitReceipt(planner 无第二次 upsert):v2 record 带 configKey + builtin payloadDigest。
+    const rec = findRecordV2(globalRoot, "agent", "helper")
+    expect(rec).not.toBeNull()
+    expect(rec!.kind).toBe("agent")
+    expect(rec!.origin).toBe("catalog")
+    expect(rec!.configKey).toBe("agent.helper")
+    expect(rec!.version).toBe("1.0.0")
+    expect(typeof rec!.payloadDigest).toBe("string")
+    expect(rec!.manifestDigest).toBe(r.manifestDigest)
+    // 授权账落主 item key(config 副 item 不落)。
+    expect(readCapabilityGrant(globalRoot, "agent--helper")?.capabilities?.slice().sort()).toEqual(["engine:config", "prompt:context"])
+    expect(readCapabilityGrant(globalRoot, "agent--helper--config")).toBeNull()
+    // 载荷收集只读可重入(首驱 authorize 暂停 + 确认重驱各一次);journal 全部终态(无 dangling)。
+    expect(called(calls, "collectBuiltinAgentPayload")).toHaveLength(2)
+    expect(probeTransactionJournals(globalRoot).entries.every((e) => e.terminal)).toBe(true)
+  })
+
+  test("remote:authorize 首驱零权威副作用且下载一次;确认重驱 CAS 逐 blob 命中,绝不二次下载", async () => {
+    const { deps, calls } = makeDeps({ entries: entriesWithAgents })
+    const first = await installCatalog({ catalogId: "agent:remote-agent", scope: { scope: "global" } }, deps)
+    expect(first.ok).toBe(false)
+    if (first.ok || first.stage !== "authorize") throw new Error("expected authorize pause")
+    expect(first.authorization).toHaveLength(1)
+    const authzDiff = first.authorization[0]
+    if (!authzDiff) throw new Error("unreachable")
+    expect(authzDiff.key).toBe("agent--remote-agent")
+    expect(authzDiff.requested.slice().sort()).toEqual(["engine:config", "prompt:context"])
+    expect(called(calls, "downloadRemoteAsset")).toHaveLength(1)
+    // 零权威副作用(CAS blob 是可回收缓存,允许残留)。
+    expect(fs.existsSync(path.join(globalRoot, "agents", "remote-agent.md"))).toBe(false)
+    expect(findRecordV2(globalRoot, "agent", "remote-agent")).toBeNull()
+    const confirmed = Object.fromEntries(first.authorization.map((d) => [d.key, d.requested]))
+    const second = await installCatalog({ catalogId: "agent:remote-agent", scope: { scope: "global" }, authorization: { confirmed } }, deps)
+    expect(second.ok).toBe(true)
+    expect(called(calls, "downloadRemoteAsset")).toHaveLength(1) // 重驱零网络
+    expect(fs.readFileSync(path.join(globalRoot, "agents", "remote-agent.md"), "utf8")).toBe(REMOTE_AGENT_MD)
+    const rec = findRecordV2(globalRoot, "agent", "remote-agent")
+    expect(rec!.payloadDigest).toBe(aggregateFilesDigest(agentRemoteFiles))
+  })
+
+  test("身份漂移(id ≠ agent:<name>)与 '--' 名:catalog 边界显式拒(与 seed 同合同),零内容副作用", async () => {
+    const drift = { ...agentBuiltinEntry, name: "other" } as CatalogEntry
+    const { deps, calls } = makeDeps({ entries: [...ALL_ENTRIES, drift] })
+    const r = await installCatalog({ catalogId: "agent:helper", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("identity drift")
+    expect(called(calls, "collectBuiltinAgentPayload")).toHaveLength(0)
+
+    const dashed = { ...agentBuiltinEntry, id: "agent:has--dash", name: "has--dash" } as CatalogEntry
+    const { deps: d2, calls: c2 } = makeDeps({ entries: [...ALL_ENTRIES, dashed] })
+    const r2 = await installCatalog({ catalogId: "agent:has--dash", scope: { scope: "global" } }, d2)
+    expect(r2.ok).toBe(false)
+    if (!r2.ok) expect(r2.reason).toContain('"--"')
+    expect(called(c2, "collectBuiltinAgentPayload")).toHaveLength(0)
+  })
+
+  test("锁内 fresh 门(引擎 precondition):锁外门被绕过(agentPresent=false)仍拒无账 config 叶,引擎回滚零残留", async () => {
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ agent: { helper: { description: "mine", prompt: "p" } } }))
+    const { deps } = makeDeps({ entries: entriesWithAgents }) // harness 缺省 agentPresent=false = 锁外门失明
+    const r = await installAuthorized({ catalogId: "agent:helper", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain('config entry "agent.helper"')
+    expect(fs.existsSync(path.join(globalRoot, "agents", "helper.md"))).toBe(false)
+    expect(findRecordV2(globalRoot, "agent", "helper")).toBeNull()
+  })
+
+  test("remote 资产多文件 → 装约定拒(恰一顶层 .md),不触达引擎", async () => {
+    const extra = "extra-content"
+    const twoFiles = [
+      ...agentRemoteFiles,
+      { path: "extra.md", sha256: crypto.createHash("sha256").update(extra).digest("hex"), bytes: Buffer.byteLength(extra), url: "https://assets.example/extra.md" },
+    ]
+    const multi = { ...agentRemoteEntry, remoteAsset: { version: "1.1.0", files: twoFiles } } as CatalogEntry
+    const { deps } = makeDeps({
+      entries: [...ALL_ENTRIES, multi],
+      installers: {
+        downloadRemoteAsset: async () => ({
+          ok: true,
+          contents: [
+            { path: "remote-agent.md", data: Buffer.from(REMOTE_AGENT_MD) },
+            { path: "extra.md", data: Buffer.from(extra) },
+          ],
+        }),
+      },
+    })
+    const r = await installAuthorized({ catalogId: "agent:remote-agent", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("exactly one file")
+    expect(fs.existsSync(path.join(globalRoot, "agents", "remote-agent.md"))).toBe(false)
+    expect(findRecordV2(globalRoot, "agent", "remote-agent")).toBeNull()
   })
 })

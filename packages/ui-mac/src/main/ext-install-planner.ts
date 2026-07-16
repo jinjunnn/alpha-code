@@ -494,11 +494,11 @@ export type PlannerInstallers = {
   installVendoredPlugin(vendoredAssetKey: string, name: string, meta?: InstallMetaArg): FsOutcome
   removePluginPath(name: string, absJsPath: string): ConfigOutcome
   installBuiltinSkill(builtinAssetKey: string, name: string, target?: TargetArg, meta?: InstallMetaArg): FsOutcome
-  installBuiltinAgent(builtinAssetKey: string, name: string, target?: TargetArg, meta?: InstallMetaArg): FsOutcome
   /** REQ-100 #310:收集 builtin skill 随包目录为载荷(generation 事务 populate 用;不落 flat 目录)。 */
   collectBuiltinSkillPayload(builtinAssetKey: string, name: string): { ok: true; files: Array<{ path: string; data: Buffer }> } | { ok: false; reason: string }
+  /** #361:收集 builtin agent 随包 md 为原始载荷(CAS 摄取 → installAgentFromCas;byte-exact,零副作用)。 */
+  collectBuiltinAgentPayload(builtinAssetKey: string, name: string): { ok: true; files: Array<{ path: string; data: Buffer }> } | { ok: false; reason: string }
   installRemoteSkill(name: string, contents: Array<{ path: string; data: Buffer }>, target?: TargetArg, meta?: InstallMetaArg): FsOutcome
-  installRemoteAgent(name: string, contents: Array<{ path: string; data: Buffer }>, target?: TargetArg, meta?: InstallMetaArg): FsOutcome
   removeFsInstall(type: "skill" | "agent", name: string, target?: TargetArg): FsOutcome
   /** #354(必改 3 替代路径):agent 无更新链 → 写前存在性检查,既有(有账/无账文件)一律拒绝;
    *  由此 agent 安装可证明 fresh,提交面失败补偿 removeFsInstall 不毁旧物。 */
@@ -1580,35 +1580,99 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       ...(promoted.warnings.length ? { warning: promoted.warnings.join("; ") } : {}),
     }
   } else if (entry.type === "agent") {
+    // #361(Codex 裁决 Q1/Q4):catalog agent 收编 #358 的 file-action 事务载体 —— remote/builtin
+    // 内容一律先提升进验证共享 CAS,installAgentFromCas(file md + config 叶单事务、requireAbsent、
+    // #348 授权闸、引擎 commitReceipt 单点)。本分支自提交并早返回:账本归引擎,无手工补偿。
+    // 身份合同与 seed 同钉(#358 裁决 B):id/name 交叉约束,拒漂移。
+    if (entry.id !== `agent:${entry.name}`) {
+      rollback("agent identity drift")
+      return { ok: false, reason: `catalog entry id "${entry.id}" ≠ "agent:${entry.name}" — refusing (identity drift)` }
+    }
+    // #361 裁决缺口 2(边界禁用):manifest SAFE_NAME 允许 "--",但事务 key 方案
+    // (agent--<name>[--config])对其歧义 —— 与载体拒绝同源,在 catalog 边界显式拒。
+    if (entry.name.includes("--")) {
+      rollback("ambiguous agent name")
+      return { ok: false, reason: `agent name "${entry.name}" contains "--" — ambiguous with the transaction key scheme (agent--<name>[--config]); refused` }
+    }
     const fsSpec = spec as { kind?: string; source?: string; builtinAssetKey?: string } | undefined
+    let promoted: { specs: TxFileSpec[]; warnings: string[] }
     if (fsSpec?.source === "remote" && entry.remoteAsset?.files?.length) {
-      const dl = await deps.installers.downloadRemoteAsset(entry.remoteAsset.files)
-      if (!dl.ok) {
-        rollback(dl.reason)
-        return dl
+      // #348:authorize 确认重驱不得二次下载 —— 首驱已提升进 CAS,逐 blob 读取重验命中即复用。
+      const cached = tryReuseCasPayload(deps.casBaseRoot(), entry.remoteAsset.files)
+      if (cached.hit) {
+        promoted = { specs: cached.specs, warnings: [] }
+      } else {
+        const dl = await deps.installers.downloadRemoteAsset(entry.remoteAsset.files)
+        if (!dl.ok) {
+          rollback(dl.reason)
+          return dl
+        }
+        const p = promotePayloadToCas(deps.casBaseRoot(), dl.contents, entry.remoteAsset.files)
+        if (!p.ok) {
+          rollback(p.reason)
+          return { ok: false, reason: p.reason }
+        }
+        promoted = p
       }
-      const r = deps.installers.installRemoteAgent(entry.name, dl.contents, scope.target, meta)
-      if (!r.ok) {
-        rollback(r.reason)
-        return r
-      }
-      files = r.files
       payloadDigest = aggregateFilesDigest(entry.remoteAsset.files)
     } else if (fsSpec?.source === "builtin" && fsSpec.builtinAssetKey) {
-      const r = deps.installers.installBuiltinAgent(fsSpec.builtinAssetKey, entry.name, scope.target, meta)
-      if (!r.ok) {
-        rollback(r.reason)
-        return r
+      const c = deps.installers.collectBuiltinAgentPayload(fsSpec.builtinAssetKey, entry.name)
+      if (!c.ok) {
+        rollback(c.reason)
+        return c
       }
-      files = r.files
+      // builtin 同 skill 先例(#303 裁决 B):自算内容地址进 CAS(摄取后完整性,不主张上游真实性),
+      // payloadDigest 补齐安装事实。
+      const builtinManifest = c.files.map((f) => ({ path: f.path, sha256: sha256Hex(f.data), bytes: f.data.length }))
+      const p = promotePayloadToCas(deps.casBaseRoot(), c.files, builtinManifest)
+      if (!p.ok) {
+        rollback(p.reason)
+        return { ok: false, reason: p.reason }
+      }
+      promoted = p
+      payloadDigest = aggregateFilesDigest(builtinManifest)
     } else {
       rollback("no installable content")
       return { ok: false, reason: "该内容尚未随此版本打包(entry declares no installable asset)" }
     }
-    // #354:写前门已证明 fresh(无账 + 无文件)→ 提交面失败可安全整撤(md + config 条目)。
-    compensate = () => {
-      const rem = deps.installers.removeFsInstall("agent", entry.name, scope.target)
-      return rem.ok ? { ok: true } : { ok: false, reason: `agent removal: ${rem.reason}` }
+    const [agentCasSpec] = promoted.specs
+    if (promoted.specs.length !== 1 || !agentCasSpec) {
+      rollback("agent asset not a single file")
+      return { ok: false, reason: `agent asset must contain exactly one file (got ${promoted.specs.length}) — refused` }
+    }
+    const agentRoot = scope.root(deps)
+    const agentConfigTarget = path.join(agentRoot, "alpha.jsonc")
+    const agentGen = await installAgentFromCas(agentRoot, {
+      name: entry.name,
+      id: entry.id,
+      environment: deps.environment(),
+      scope: scope.identity,
+      origin: "catalog",
+      casFile: { spec: agentCasSpec, casBaseRoot: deps.casBaseRoot() },
+      // #348:能力集取严格解码后的 manifest.capabilities(单一事实);重驱决定由 main 打戳。
+      capabilities: manifest.capabilities,
+      ...(intent.authorization ? { authorization: stampAuthorization(intent.authorization, () => deps.now?.() ?? new Date().toISOString())! } : {}),
+      version: manifest.version,
+      manifestDigest,
+      ...(payloadDigest ? { payloadDigest } : {}),
+      grantDigest: computeGrantDigest(grants),
+      // fresh-only 门作为锁内 precondition(agent 无更新链;锁外写前门只是快速拒,锁内重读封 TOCTOU)。
+      precondition: () => agentFreshGate(agentRoot, entry.name, agentConfigTarget, "catalog"),
+    })
+    if (!agentGen.ok) {
+      rollback(agentGen.reason)
+      if (agentGen.stage === "authorize") return { ok: false, stage: "authorize", reason: agentGen.reason, authorization: agentGen.authorization }
+      return { ok: false, reason: agentGen.reason, ...(agentGen.stage ? { stage: agentGen.stage } : {}) }
+    }
+    ;(deps.transaction ?? passthroughTx).commit(tx.txId)
+    return {
+      ok: true,
+      kind: "agent",
+      name: entry.name,
+      files: agentGen.files,
+      manifestDigest,
+      // CAS 自愈 warning 透传(裁决缺口 3):loud 信号不吞。
+      ...(promoted.warnings.length ? { warning: promoted.warnings.join("; ") } : {}),
     }
   } else if (entry.type === "cloud") {
     // receipts-only 语义(REQ-020 T4):不落文件、不写引擎 config —— 只记账。
@@ -1708,16 +1772,17 @@ function seedInstallVersionGate(root: string, kind: InstallReceiptType, name: st
   return { ok: true }
 }
 
-/** agent seed 的 fresh-only 门(REQ-102 #358,Codex 裁决 Q3:agent 无更新链)。**必须在引擎 Bundle
- *  锁内经 precondition 执行**:账本 strict(损坏 fail-closed;v2 或 v1-only 在场 = 拒)+ 写前账本
- *  健康探测 + md 文件(含 legacy 单数目录)/ config `agent.<name>` 叶在场检查 —— 同名任何在场都拒
- *  (未策展内容不认领),config 不可读同样 fail-closed。 */
-function agentSeedFreshGate(root: string, name: string, configTarget: string): { ok: true } | { ok: false; reason: string } {
+/** agent 的 fresh-only 门(REQ-102 #358 Codex 裁决 Q3:agent 无更新链;#361 起 seed 与 catalog
+ *  同门)。**必须在引擎 Bundle 锁内经 precondition 执行**:账本 strict(损坏 fail-closed;v2 或
+ *  v1-only 在场 = 拒)+ 写前账本健康探测 + md 文件(含 legacy 单数目录)/ config `agent.<name>` 叶
+ *  在场检查 —— 同名任何在场都拒(未策展内容不认领),config 不可读同样 fail-closed。 */
+function agentFreshGate(root: string, name: string, configTarget: string, channel: "seed" | "catalog"): { ok: true } | { ok: false; reason: string } {
+  const refuse = `refusing ${channel} install`
   const ledgerProbe = probeLedgerForWrite(root)
-  if (!ledgerProbe.ok) return { ok: false, reason: `refusing seed install: ${ledgerProbe.reason}` }
+  if (!ledgerProbe.ok) return { ok: false, reason: `${refuse}: ${ledgerProbe.reason}` }
   const lookup = lookupForUninstall(root, "agent", name)
   if (lookup.status === "corrupt-match" || lookup.status === "ledger-corrupt")
-    return { ok: false, reason: `refusing seed install: ${lookup.reason}` }
+    return { ok: false, reason: `${refuse}: ${lookup.reason}` }
   if (lookup.status === "valid" || lookup.status === "v1")
     return { ok: false, reason: `agent "${name}" already present — agents have no update path; refusing overwrite` }
   for (const dir of ["agents", "agent"]) {
@@ -1729,18 +1794,18 @@ function agentSeedFreshGate(root: string, name: string, configTarget: string): {
     try {
       text = fs.readFileSync(configTarget, "utf8")
     } catch {
-      return { ok: false, reason: `refusing seed install: config ${configTarget} unreadable (fail closed)` }
+      return { ok: false, reason: `${refuse}: config ${configTarget} unreadable (fail closed)` }
     }
     const errors: ParseError[] = []
     const cfg: unknown = parse(text, errors)
-    if (errors.length > 0) return { ok: false, reason: `refusing seed install: config ${configTarget} is not valid jsonc (fail closed)` }
+    if (errors.length > 0) return { ok: false, reason: `${refuse}: config ${configTarget} is not valid jsonc (fail closed)` }
     // #358 review Major 5:合法 jsonc 但形状异常(根非对象 / agent 段非对象)= config 损坏 ——
     // 写盘前 fail-closed 拒,绝不放行到 jsonc modify(异常形状会让 edit 抛错)。
     if (cfg !== undefined && !isObj(cfg))
-      return { ok: false, reason: `refusing seed install: config ${configTarget} root is not an object (fail closed)` }
+      return { ok: false, reason: `${refuse}: config ${configTarget} root is not an object (fail closed)` }
     const agentMap = isObj(cfg) ? cfg.agent : undefined
     if (agentMap !== undefined && !isObj(agentMap))
-      return { ok: false, reason: `refusing seed install: config "agent" section is not an object (fail closed)` }
+      return { ok: false, reason: `${refuse}: config "agent" section is not an object (fail closed)` }
     if (isObj(agentMap) && agentMap[name] !== undefined)
       return { ok: false, reason: `config entry "agent.${name}" exists without a ledger record — refusing to overwrite or adopt unregistered content` }
   }
@@ -2231,7 +2296,7 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
       grantDigest: computeGrantDigest({}),
       // fresh-only 门作为锁内 precondition(裁决 Q3:agent 无更新链,同名任何在场即 fail-closed;
       // 锁内重读封死锁外判定的 TOCTOU)。
-      precondition: () => agentSeedFreshGate(deps.globalRoot(), entry.name, configTarget),
+      precondition: () => agentFreshGate(deps.globalRoot(), entry.name, configTarget, "seed"),
     })
     if (!agentGen.ok) {
       rollback(agentGen.reason)

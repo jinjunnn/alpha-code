@@ -182,9 +182,8 @@ function forbiddenInstallers(): PlannerInstallers {
     removePluginPath: forbid("removePluginPath"),
     installBuiltinSkill: forbid("installBuiltinSkill"),
     collectBuiltinSkillPayload: forbid("collectBuiltinSkillPayload"),
-    installBuiltinAgent: forbid("installBuiltinAgent"),
+    collectBuiltinAgentPayload: forbid("collectBuiltinAgentPayload"),
     installRemoteSkill: forbid("installRemoteSkill"),
-    installRemoteAgent: forbid("installRemoteAgent"),
     removeFsInstall: forbid("removeFsInstall"),
     downloadRemoteAsset: forbid("downloadRemoteAsset"),
   } as unknown as PlannerInstallers

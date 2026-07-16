@@ -77,9 +77,8 @@ function makeDeps(overrides: Partial<PlannerInstallers> = {}): PlannerDeps {
     removePluginPath: () => ok,
     installBuiltinSkill: () => ({ ok: true as const, files: [] }),
     collectBuiltinSkillPayload: () => ({ ok: true as const, files: [] }),
-    installBuiltinAgent: () => ({ ok: true as const, files: [] }),
+    collectBuiltinAgentPayload: () => ({ ok: true as const, files: [] }),
     installRemoteSkill: () => ({ ok: true as const, files: [] }),
-    installRemoteAgent: () => ({ ok: true as const, files: [] }),
     removeFsInstall: (type: string, name: string) => {
       flatRemovals.push({ type, name })
       return { ok: true as const, files: [] }

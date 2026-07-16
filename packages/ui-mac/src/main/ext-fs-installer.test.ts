@@ -10,7 +10,7 @@ import * as path from "node:path"
 
 mock.module("electron", () => ({ app: { isPackaged: false } }))
 
-const { agentInstallPresent, installBuiltinSkill, installRemoteAgent, removeFsInstall, writeAgent, writeSkill } = await import("./ext-fs-installer")
+const { agentInstallPresent, collectBuiltinAgentPayload, installBuiltinSkill, removeFsInstall, resourcesRoot, writeAgent, writeSkill } = await import("./ext-fs-installer")
 const { readLedger } = await import("./alpha-installs")
 
 let base = ""
@@ -180,47 +180,29 @@ describe("removeFsInstall — deletes truth, unbridges, drops receipt (T6)", () 
   })
 })
 
-describe("installRemoteAgent — REQ-046 远程 agent 通道(单 .md 约定 + writeAgent 同管线)", () => {
-  const md = (s = "---\ndescription: remote helper\n---\nsystem prompt") => Buffer.from(s, "utf8")
+describe("collectBuiltinAgentPayload — #361 随包 agent 载荷收集(只读;CAS 摄取源)", () => {
+  test("非法/越界 asset key 与非法名拒收(零盘读)", () => {
+    expect(collectBuiltinAgentPayload("../evil.md", "x").ok).toBe(false)
+    expect(collectBuiltinAgentPayload("agents/../../evil.md", "x").ok).toBe(false)
+    expect(collectBuiltinAgentPayload("skills/demo", "x").ok).toBe(false) // 非 agents/<name>.md 形状
+    expect(collectBuiltinAgentPayload("agents/code-reviewer.md", "../evil").ok).toBe(false)
+  })
 
-  test("happy path:单 .md → 真源 + alpha.jsonc 条目(T3b 零桥)+ 账本(origin=catalog,meta 记版本)", () => {
-    const r = installRemoteAgent("remote-helper", [{ path: "remote-helper.md", data: md() }], undefined, {
-      catalogId: "agent:remote-helper",
-      version: "1.0.0",
-    })
+  test("缺包如实失败(不造 placeholder)", () => {
+    const r = collectBuiltinAgentPayload("agents/definitely-not-bundled.md", "definitely-not-bundled")
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("未随此版本打包")
+  })
+
+  test("真实随包资产:返回原始 Buffer(byte-exact)+ 顶层 .md 路径,零副作用", () => {
+    const r = collectBuiltinAgentPayload("agents/code-reviewer.md", "code-reviewer")
     expect(r.ok).toBe(true)
-    expect(fs.readFileSync(path.join(alphaDir, "agents", "remote-helper.md"), "utf8")).toContain("system prompt")
-    expect(fs.existsSync(path.join(opencodeDir, "agents"))).toBe(false)
-    const cfg = JSON.parse(fs.readFileSync(path.join(alphaDir, "alpha.jsonc"), "utf8"))
-    expect(cfg.agent["remote-helper"].prompt).toContain("system prompt")
-    const { receipts } = readLedger(alphaDir)
-    expect(receipts).toHaveLength(0) // #354:同上 —— catalog agent 的账本由 planner v2 upsert 派生
-  })
-
-  test("非法名拒装(无盘写)", () => {
-    expect(installRemoteAgent("../evil", [{ path: "a.md", data: md() }]).ok).toBe(false)
-    expect(fs.existsSync(alphaDir)).toBe(false)
-  })
-
-  test("多文件资产拒装(约定=恰好一个 .md)", () => {
-    const r = installRemoteAgent("x", [
-      { path: "x.md", data: md() },
-      { path: "extra.txt", data: Buffer.from("junk") },
-    ])
-    expect(r).toMatchObject({ ok: false })
-    expect((r as { reason: string }).reason).toContain("exactly one")
-  })
-
-  test("非顶层/非 .md 路径拒装", () => {
-    expect(installRemoteAgent("x", [{ path: "nested/x.md", data: md() }]).ok).toBe(false)
-    expect(installRemoteAgent("x", [{ path: "x.txt", data: md() }]).ok).toBe(false)
-  })
-
-  test("超 256KB 拒装", () => {
-    const big = Buffer.alloc(256 * 1024 + 1, 0x61)
-    const r = installRemoteAgent("x", [{ path: "x.md", data: big }])
-    expect(r).toMatchObject({ ok: false })
-    expect((r as { reason: string }).reason).toContain("过大")
+    if (!r.ok) return
+    expect(r.files).toHaveLength(1)
+    expect(r.files[0]!.path).toBe("code-reviewer.md")
+    const bundled = fs.readFileSync(path.join(resourcesRoot(), "agents", "code-reviewer.md"))
+    expect(r.files[0]!.data.equals(bundled)).toBe(true)
+    expect(fs.existsSync(alphaDir)).toBe(false) // 收集不落任何安装副作用
   })
 })
 
