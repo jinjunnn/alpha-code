@@ -585,9 +585,10 @@ export function agentInstallPresent(name: string, target?: InstallTarget): boole
 /** #361:收集随包官方 agent md 为原始载荷(catalog agent 事务安装的 CAS 摄取源)。只读零副作用;
  *  返回原始 Buffer 保持 byte-exact(installAgentFromCas 的 CAS digest 语义,不做字符串归一)。
  *  SAFE key 校验 + **内容身份交叉**(key 必须恰为 agents/<name>.md,review r1 Major 1:已验签
- *  但配错的 entry 不得把别的资产按本 agent 身份装入)、末段 O_NOFOLLOW 读(r1 Minor 4:词法
- *  正则不防 symlink 逃逸 resources 树;win32 无 O_NOFOLLOW 退化普通打开,该平台 symlink 需特权)、
- *  256KB 帽 fd 上 fstat 判 + 读后 Buffer 复核(r1 Minor 5:封 stat/read 窗口增长)。 */
+ *  但配错的 entry 不得把别的资产按本 agent 身份装入)、末段 O_NOFOLLOW 读 + **realpath 圈禁**
+ *  (r1 Minor 4 + r2:词法正则不防 symlink;O_NOFOLLOW 只管末段,父目录链接与 win32 无该位
+ *  的退化面由 realpath 全路径等值判定兜住)、256KB 帽 fd 上 fstat 判 + 读后 Buffer 复核
+ *  (r1 Minor 5:封 stat/read 窗口增长)。 */
 export function collectBuiltinAgentPayload(
   builtinAssetKey: string,
   name: string,
@@ -608,6 +609,13 @@ export function collectBuiltinAgentPayload(
     return { ok: false, reason: error instanceof Error ? error.message : "failed to read agent asset" }
   }
   try {
+    // realpath 圈禁(review #384 r2:末段 O_NOFOLLOW 不防父目录 symlink,win32 无该位时
+    // 完全退化)—— 解析后的真实路径必须恰为 <realpath(resources)>/agents/<name>.md,
+    // 任何组件是链接都会导致不等式,拒绝。
+    const realFile = fs.realpathSync(file)
+    const expected = path.join(fs.realpathSync(resourcesRoot()), "agents", `${name}.md`)
+    if (realFile !== expected)
+      return { ok: false, reason: "agent asset escapes the resources tree (symlinked path) — refusing" }
     const st = fs.fstatSync(fd)
     if (!st.isFile()) return { ok: false, reason: "agent asset is not a regular file — refusing" }
     if (st.size > 256 * 1024) return { ok: false, reason: "agent md 过大" }

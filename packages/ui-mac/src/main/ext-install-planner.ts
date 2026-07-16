@@ -2306,14 +2306,16 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
       return { ok: false, reason: agentGen.reason, ...(agentGen.stage ? { stage: agentGen.stage } : {}) }
     }
     ;(deps.transaction ?? passthroughTx).commit(tx.txId)
+    // loud 信号不吞(review #384 r1 Major 2 + r2:CAS 自愈/竞态诊断与引擎提交后非致命失败
+    // 一并透传;seed 与 catalog 同合同)。
+    const seedAgentWarnings = [...promoted.warnings, ...agentGen.warnings]
     return {
       ok: true,
       kind: "agent",
       name: entry.name,
       files: agentGen.files,
       manifestDigest,
-      // 引擎提交后非致命失败透传(review #384 r1 Major 2;seed 与 catalog 同合同)。
-      ...(agentGen.warnings.length ? { warning: agentGen.warnings.join("; ") } : {}),
+      ...(seedAgentWarnings.length ? { warning: seedAgentWarnings.join("; ") } : {}),
     }
   }
 

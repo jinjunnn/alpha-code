@@ -166,17 +166,24 @@ function bundledAgentEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry 
   } as CatalogEntry
 }
 
-/** seed 路径的完成定义之一:planner installers 一个都不许被触碰。 */
+/** seed 路径的完成定义之一:planner installers 一个都不许被触碰。
+ *  review #384 r2:全量覆盖现行 PlannerInstallers 且不 as unknown 关闭结构检查 ——
+ *  接口增删会让本 fixture 编译失败,新增成员默认 forbid(seed 想用必须显式豁免)。 */
 function forbiddenInstallers(): PlannerInstallers {
-  const forbid = (fn: string) => () => {
+  const forbid = (fn: string) => (): never => {
     throw new Error(`installer ${fn} must not be called on the seed path`)
   }
   return {
     persistMcp: forbid("persistMcp"),
     fileifyMcpSecrets: forbid("fileifyMcpSecrets"),
-    removeMcpSecrets: forbid("removeMcpSecrets"),
-    removeMcp: forbid("removeMcp"),
+    readMcpLeafStrict: forbid("readMcpLeafStrict"),
+    restoreMcpLeaf: forbid("restoreMcpLeaf"),
+    removeMcpConfigInLock: forbid("removeMcpConfigInLock"),
+    removeMcpSecretsStrict: forbid("removeMcpSecretsStrict"),
     persistPlugin: forbid("persistPlugin"),
+    removePluginEntryExact: forbid("removePluginEntryExact"),
+    readPluginArrayStrict: forbid("readPluginArrayStrict"),
+    stageVendoredPluginVersioned: forbid("stageVendoredPluginVersioned"),
     removePlugin: forbid("removePlugin"),
     installVendoredPlugin: forbid("installVendoredPlugin"),
     removePluginPath: forbid("removePluginPath"),
@@ -185,8 +192,9 @@ function forbiddenInstallers(): PlannerInstallers {
     collectBuiltinAgentPayload: forbid("collectBuiltinAgentPayload"),
     installRemoteSkill: forbid("installRemoteSkill"),
     removeFsInstall: forbid("removeFsInstall"),
+    agentPresent: forbid("agentPresent"),
     downloadRemoteAsset: forbid("downloadRemoteAsset"),
-  } as unknown as PlannerInstallers
+  }
 }
 
 function makeSeedDeps(opts: { bundledEntries?: CatalogEntry[]; bundledVersion?: string; seedDirOverride?: string | null } = {}): PlannerDeps {

@@ -2008,14 +2008,22 @@ describe("catalog agent install via transaction engine (REQ-098 #361)", () => {
     expect(rec!.origin).toBe("catalog")
     expect(rec!.configKey).toBe("agent.helper")
     expect(rec!.version).toBe("1.0.0")
-    expect(typeof rec!.payloadDigest).toBe("string")
+    // builtin payloadDigest 钉精确值(r2:自算内容地址的聚合,任意字符串不许通过)。
+    expect(rec!.payloadDigest).toBe(
+      aggregateFilesDigest([
+        { path: "helper.md", sha256: crypto.createHash("sha256").update(AGENT_MD).digest("hex"), bytes: Buffer.byteLength(AGENT_MD) },
+      ]),
+    )
     expect(rec!.manifestDigest).toBe(r.manifestDigest)
     // 授权账落主 item key(config 副 item 不落)。
     expect(readCapabilityGrant(globalRoot, "agent--helper")?.capabilities?.slice().sort()).toEqual(["engine:config", "prompt:context"])
     expect(readCapabilityGrant(globalRoot, "agent--helper--config")).toBeNull()
-    // 载荷收集只读可重入(首驱 authorize 暂停 + 确认重驱各一次);journal 全部终态(无 dangling)。
+    // 载荷收集只读可重入(首驱 authorize 暂停 + 确认重驱各一次);事务确实产生了 journal
+    // 且全部终态(r2:空列表 every=true 的空通过不算证据)。
     expect(called(calls, "collectBuiltinAgentPayload")).toHaveLength(2)
-    expect(probeTransactionJournals(globalRoot).entries.every((e) => e.terminal)).toBe(true)
+    const journalProbe = probeTransactionJournals(globalRoot)
+    expect(journalProbe.entries.length).toBeGreaterThan(0)
+    expect(journalProbe.entries.every((e) => e.terminal)).toBe(true)
   })
 
   test("remote:authorize 首驱零权威副作用且下载一次;确认重驱 CAS 逐 blob 命中,绝不二次下载", async () => {
