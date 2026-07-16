@@ -1084,6 +1084,18 @@ describe("uninstall — facts from main's own ledger", () => {
     expect(called(calls, "removeFsInstall")).toHaveLength(0) // 未走 flat 路径
   })
 
+  test("r18:账本删除失败(同 key 损坏记录拒删)→ 卸载如实报失败,不折叠 warning 谎报成功", async () => {
+    const { deps } = makeDeps()
+    await installAuthorized({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
+    const ledger = path.join(globalRoot, "installs.json")
+    // 注入同 key 损坏 sibling(generation 非法)—— lookup 面仍见合法记录,实物删除后账本删除被 r17 闸拒。
+    fs.writeFileSync(ledger, fs.readFileSync(ledger, "utf8").replace('"records": [', '"records": [{"kind":"skill","name":"demo","generation":-5},'))
+    const r = await uninstallByKey({ type: "skill", name: "demo", scope: "global" }, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("corrupt v2 record for this key")
+    expect(findRecordV2(globalRoot, "skill", "demo")).not.toBeNull() // 记录仍在账 —— 不得谎报「已卸载」
+  })
+
   test("not installed → refuse (renderer cannot conjure a receipt)", async () => {
     const { deps, calls } = makeDeps()
     const r = await uninstallByKey({ type: "skill", name: "never-installed", scope: "global" }, deps)

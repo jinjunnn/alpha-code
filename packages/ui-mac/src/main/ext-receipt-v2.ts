@@ -396,6 +396,18 @@ function parseLedger(root: string): { parsed: ParsedLedger; corrupt: boolean } {
       else unattributable = true
     }
   }
+  // r18:字节级证据侧写 —— 结构保全经 JSON.parse→stringify 会丢重复键/原始词法;首次观测到
+  // 损坏条目即把**原文件字节**按损坏集哈希落 `installs.json.evidence-<hex12>`(同一损坏集只落
+  // 一份,后续重写不再增殖),取证不依赖工作文件。尽力而为:失败不阻塞(结构保全兜底)。
+  if (rawCorruptRecords.length > 0 || rawInvalidReceipts.length > 0) {
+    try {
+      const setDigest = sha256Hex(Buffer.from(JSON.stringify({ rawCorruptRecords, rawInvalidReceipts }), "utf8")).slice(0, 12)
+      const evidence = `${ledgerPath(root)}.evidence-${setDigest}`
+      if (!fs.existsSync(evidence)) fs.writeFileSync(evidence, text, { flag: "wx" })
+    } catch {
+      /* 证据侧写尽力而为 */
+    }
+  }
   return {
     parsed: { receipts, records, recordWarnings, receiptWarnings, corruptRecords: { corruptKeys, unattributable }, rawInvalidReceipts, rawCorruptRecords },
     corrupt: false,
@@ -674,6 +686,12 @@ export function removeRecordV2(root: string, kind: InstallReceiptType, name: str
 export function setDesiredStateV2(root: string, kind: InstallReceiptType, name: string, state: DesiredState): { ok: true } | { ok: false; reason: string } {
   const { parsed } = parseLedger(root)
   const k = key(kind, name)
+  // r18:与 upsert/remove 同款损坏闸 —— 同 key 损坏所有权不明、unattributable 无从自证,
+  // desiredState 翻转同为写路径,一律拒(原文保全依旧带回,见下方重建)。
+  if (parsed.corruptRecords.corruptKeys.has(k))
+    return { ok: false, reason: `refusing to set desired state for ${k}: ledger holds a corrupt v2 record for this key (fail closed — inspect ${ledgerPath(root)})` }
+  if (parsed.corruptRecords.unattributable)
+    return { ok: false, reason: `refusing to set desired state for ${k}: ledger holds an unattributable corrupt v2 record (fail closed — inspect ${ledgerPath(root)})` }
   const rec = parsed.records.find((r) => key(r.kind, r.name) === k)
   if (!rec) return { ok: false, reason: `no v2 record for ${k} — fail closed (v1-only installs have no desired-state channel)` }
   const next: InstallRecordV2 = { ...rec, desiredState: state, updatedAt: new Date().toISOString() }

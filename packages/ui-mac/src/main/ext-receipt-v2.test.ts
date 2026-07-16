@@ -504,6 +504,24 @@ describe("#378 r17 Blocker —— 损坏记录原文保全 + 同 key/unattributa
     expect(replay.ok).toBe(true) // 同 tx 完全一致 = 纯重放,零写盘
     expect(fs.readFileSync(ledgerFile(), "utf8")).toContain("garbage") // 原文未动
   })
+
+  test("r18:字节级 evidence 侧写(同损坏集只落一份);setDesiredStateV2 同款损坏闸", () => {
+    seedWithCorrupt({ kind: "plugin", name: "px", generation: -5 })
+    const before = fs.readFileSync(ledgerFile(), "utf8")
+    readLedgerV2(root) // 首次观测触发侧写
+    const listEvidence = () => fs.readdirSync(root).filter((f) => f.startsWith("installs.json.evidence-"))
+    const evid = listEvidence()
+    expect(evid).toHaveLength(1)
+    const first = evid[0]
+    if (!first) throw new Error("fixture")
+    expect(fs.readFileSync(path.join(root, first), "utf8")).toBe(before) // 原文件字节(重复键/词法取证不丢)
+    upsertRecordsV2(root, [upsertInput({ id: "skill:a", name: "a", kind: "skill", configKey: undefined })])
+    readLedgerV2(root)
+    expect(listEvidence()).toHaveLength(1) // 损坏集未变 → 不增殖
+    const sds = setDesiredStateV2(root, "plugin", "px", "disabled")
+    expect(sds.ok).toBe(false)
+    if (!sds.ok) expect(sds.reason).toContain("corrupt v2 record for this key")
+  })
 })
 
 describe("computeGrantDigest — 键集 digest,绝不摄入值", () => {

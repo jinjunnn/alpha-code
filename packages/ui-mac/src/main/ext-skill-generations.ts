@@ -130,6 +130,19 @@ export function collectSkillPayloadFromDir(
 ): { ok: true; files: SkillPayloadFile[] } | { ok: false; reason: string } {
   const files: SkillPayloadFile[] = []
   let total = 0
+  // r18:定长读 + 增长探测 —— fstat 后 inode 仍可增长,readFileSync(fd) 按当前大小分配会绕过
+  // 已执行的帽;只读 fstat 时的字节数,读毕再探 1 字节,有余量 = 文件在变,拒。
+  const readFdBounded = (fd: number, size: number): Buffer | null => {
+    const buf = Buffer.alloc(size)
+    let off = 0
+    while (off < size) {
+      const n = fs.readSync(fd, buf, off, size - off, off)
+      if (n <= 0) return null
+      off += n
+    }
+    const probe = Buffer.alloc(1)
+    return fs.readSync(fd, probe, 0, 1, size) > 0 ? null : buf
+  }
   const walk = (relDir: string): string | null => {
     const abs = relDir ? path.join(srcDir, relDir) : srcDir
     for (const entry of fs.readdirSync(abs, { withFileTypes: true })) {
@@ -153,7 +166,9 @@ export function collectSkillPayloadFromDir(
           if (caps && st.size > caps.maxFileBytes) return `payload file "${rel}" exceeds ${caps.maxFileBytes} bytes — refused`
           if (caps && total + st.size > caps.maxTotalBytes) return `payload exceeds ${caps.maxTotalBytes} bytes total — refused`
           total += st.size
-          files.push({ path: rel, data: fs.readFileSync(fd) })
+          const data = readFdBounded(fd, st.size)
+          if (data === null) return `file changed while reading: ${rel}`
+          files.push({ path: rel, data })
         } finally {
           fs.closeSync(fd)
         }

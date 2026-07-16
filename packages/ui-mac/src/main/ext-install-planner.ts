@@ -2680,11 +2680,28 @@ function verifyVendoredPluginDirExact(dir: string, files: Array<{ path: string; 
     const segs = p.split("/")
     for (let i = 1; i < segs.length; i++) expectedDirs.add(segs.slice(0, i).join("/"))
   }
+  // r18:目录**身份**钉住(dev+ino)—— 终态复验若只验「仍是真实目录」,被换成另一棵真实目录树
+  // 依旧漏判;首访身份与终态身份必须同一 inode。
+  const visitedDirs: Array<{ rel: string; dev: number; ino: number }> = []
   try {
     const rootSt = fs.lstatSync(dir)
     if (rootSt.isSymbolicLink() || !rootSt.isDirectory()) return { ok: false, reason: "plugin dir is not a real directory (symlink swap?)" }
+    visitedDirs.push({ rel: "", dev: rootSt.dev, ino: rootSt.ino })
   } catch {
     return { ok: false, reason: "plugin dir unstatable" }
+  }
+  // r18:定长读 + 增长探测 —— fstat 后 inode 仍可增长,readFileSync(fd) 会按当前大小无界分配;
+  // 只读期望字节数,读毕再探 1 字节,有余量 = 文件在变,拒。
+  const readFdBounded = (fd: number, size: number): Buffer | null => {
+    const buf = Buffer.alloc(size)
+    let off = 0
+    while (off < size) {
+      const n = fs.readSync(fd, buf, off, size - off, off)
+      if (n <= 0) return null
+      off += n
+    }
+    const probe = Buffer.alloc(1)
+    return fs.readSync(fd, probe, 0, 1, size) > 0 ? null : buf
   }
   const readRegularNoFollow = (abs: string, wantBytes: number): Buffer | null => {
     let fd: number
@@ -2697,7 +2714,7 @@ function verifyVendoredPluginDirExact(dir: string, files: Array<{ path: string; 
       const st = fs.fstatSync(fd)
       // r17 Major:尺寸前置 —— 期望路径被放超大常规文件时不得无界读入内存(先判不等即拒)。
       if (!st.isFile() || st.size !== wantBytes) return null
-      return fs.readFileSync(fd)
+      return readFdBounded(fd, wantBytes)
     } catch {
       return null
     } finally {
@@ -2705,7 +2722,6 @@ function verifyVendoredPluginDirExact(dir: string, files: Array<{ path: string; 
     }
   }
   const seen = new Set<string>()
-  const visitedDirs: string[] = [""]
   const walk = (rel: string): string | null => {
     let names: string[]
     try {
@@ -2723,7 +2739,7 @@ function verifyVendoredPluginDirExact(dir: string, files: Array<{ path: string; 
       }
       if (st.isDirectory()) {
         if (!expectedDirs.has(childRel)) return `unexpected directory: ${childRel}`
-        visitedDirs.push(childRel)
+        visitedDirs.push({ rel: childRel, dev: st.dev, ino: st.ino })
         const verdict = walk(childRel)
         if (verdict !== null) return verdict
         continue
@@ -2741,15 +2757,16 @@ function verifyVendoredPluginDirExact(dir: string, files: Array<{ path: string; 
   const verdict = walk("")
   if (verdict !== null) return { ok: false, reason: verdict }
   for (const p of expected.keys()) if (!seen.has(p)) return { ok: false, reason: `missing expected file: ${p}` }
-  // r17 Major:祖先目录 TOCTOU 终态复验 —— readdir 按路径进行,根/中间目录在 lstat 后被换成
-  // 指向外部等值树的 symlink 会让整个校验「看别人的树」。走完后逐个重验访问过的目录仍为真实
-  // 目录:**持续存在**的调包必被捕获;瞬时换回 = 盘上留下的是合法树,判健康无害。
+  // r17/r18 Major:祖先目录 TOCTOU 终态复验 —— readdir 按路径进行,根/中间目录在 lstat 后被换
+  // 会让整个校验「看别人的树」。走完后逐个重验访问过的目录**同一 inode**(dev+ino;r18:换成
+  // 另一棵真实目录树同样捕获):持续存在的调包必被捕获;瞬时换回 = 盘上留下的是首访那棵合法树。
   for (const d of visitedDirs) {
     try {
-      const st = fs.lstatSync(d === "" ? dir : path.join(dir, d))
-      if (st.isSymbolicLink() || !st.isDirectory()) return { ok: false, reason: `directory swapped during verification: ${d === "" ? "." : d}` }
+      const st = fs.lstatSync(d.rel === "" ? dir : path.join(dir, d.rel))
+      if (st.isSymbolicLink() || !st.isDirectory() || st.dev !== d.dev || st.ino !== d.ino)
+        return { ok: false, reason: `directory swapped during verification: ${d.rel === "" ? "." : d.rel}` }
     } catch {
-      return { ok: false, reason: `directory unstatable after walk: ${d === "" ? "." : d}` }
+      return { ok: false, reason: `directory unstatable after walk: ${d.rel === "" ? "." : d.rel}` }
     }
   }
   return { ok: true }
@@ -3615,9 +3632,15 @@ export async function uninstallByKey(rawIntent: unknown, deps: PlannerDeps): Pro
   }
 
   const removed = removeRecordV2(root, intent.type, intent.name)
+  // r18 Major:账本删除失败不得折叠成 warning 报成功 —— 同 key 损坏记录拒删等形态下调用方
+  // 会把「记录仍在账」当卸载完成(账实分叉且不再重试)。与 cloud 分支同款 fail-closed:
+  // 实物已删,失败原因如实返回,重试幂等。
+  if (!removed.ok) {
+    rollback(removed.reason)
+    return { ok: false, reason: `${intent.type} uninstall: ledger removal failed: ${removed.reason} — artifacts already removed; retry (idempotent)` }
+  }
   ;(deps.transaction ?? passthroughTx).commit(tx.txId)
-  const warning = removed.ok ? undefined : `uninstalled but ledger removal failed: ${removed.reason}`
-  return { ok: true, ...(removedFiles ? { files: removedFiles } : {}), ...(warning ? { warning } : {}) }
+  return { ok: true, ...(removedFiles ? { files: removedFiles } : {}) }
 }
 
 // ── generation history(REQ-100 #313:列代 + 两版离线回滚;key 面与卸载同一信任边界)─────────────

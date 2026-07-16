@@ -1150,12 +1150,6 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
       } else if (kind === "file") {
         const image = fileImages.get(it.key)
         if (!image) continue
-        // r17 Major:file 恢复前紧邻重验已恢复 config 未漂移(见上)。
-        const driftedFwd = recheckRestoredPre()
-        if (driftedFwd) {
-          fileBlocked = `file rollback for "${it.key}": ${driftedFwd}`
-          continue
-        }
         // r3 Blocker:restore 同样先紧邻重验圈禁 —— 目录被重绑定时绝不经 symlink 写/删 root 外
         // 文件(即使内容恰好匹配 next 态),转 fileBlocked 保留非终态。
         const confined = it.file ? confineFileTarget(root, it.file.relTarget) : { ok: false as const, reason: "missing file journal segment" }
@@ -1169,6 +1163,13 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
         if (it.file?.requireAbsent && it.file.applied !== true) {
           if (fs.existsSync(path.join(root, it.file.relTarget)))
             fileBlocked = `file rollback for "${it.key}": bypass-planted content at an unapplied target — retained as evidence`
+          continue
+        }
+        // r17/r18 Major:重验放在圈禁/requireAbsent 判定**之后、restore 紧邻之前** —— 中间每步
+        // 都是旁路写方重新引用本载荷的窗口,越贴近删除动作窗口越小。
+        const driftedFwd = recheckRestoredPre()
+        if (driftedFwd) {
+          fileBlocked = `file rollback for "${it.key}": ${driftedFwd}`
           continue
         }
         const restored = restoreFileImage(image)

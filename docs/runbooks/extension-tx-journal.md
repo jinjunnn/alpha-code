@@ -117,9 +117,11 @@ seed plugin 的载荷是同一事务里的 file items,落点 = 内容寻址目�
 `plugins/<name>@<digest16>`(#352 的随机后缀 stager 不用于 seed;无锁外 staging → 无 tmp
 目录残留)。残留识别与处置:
 
-- **孤儿判定**:目录不被当前 `alpha.jsonc` `plugin[]` 与账本 `configKey` 引用即孤儿(来源
-  只有两类:replace 提交成功后旧目录 GC 失败 warning 留下的旧目录;回滚后未收干净的空壳
-  子目录),可安全删除;它不在 #318 CAS GC 的删除面上,不会被自动回收。
+- **孤儿判定**:目录不被当前 `alpha.jsonc` `plugin[]`、账本 `configKey`,**以及全部 legacy
+  配置源**(`~/.opencode/opencode.jsonc` 与 XDG 用户配置的 `plugin[]` —— 引擎会合并加载这些
+  历史位置)引用才算孤儿(来源只有两类:replace 提交成功后旧目录 GC 失败 warning 留下的旧
+  目录;回滚后未收干净的空壳子目录),可安全删除;只查主配置会把 legacy 源仍在加载的插件当
+  孤儿删掉。它不在 #318 CAS GC 的删除面上,不会被自动回收。
 - **含文件的目录 + 非终态 journal 在场**:那是失据/旁路改写保留的现场证据 —— 按顶部保留态
   流程处理,**不要**先删目录。
 - **fresh 安装被「exists without a ledger record」拒**:目标内容寻址目录被外部放置/历史残留
