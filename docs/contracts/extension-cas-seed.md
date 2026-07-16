@@ -4,7 +4,7 @@ kind: contract
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-15
+last_reviewed: 2026-07-16
 review_after: 2026-10-13
 ---
 
@@ -72,11 +72,29 @@ CAS 补充语义:
    进共享 CAS(不复制整个 seed)→ REQ-100 generation 事务从 CAS 物化(`populateFromCas`,
    读取重验,缺失/篡改 = staging abort:零 live/staging/generation 残留,终态 aborted
    journal 按引擎语义保留作恢复/审计证据)→ receipt v2 落账(语义派生自 bundled
-   entry;`ownership.distributed` 如实记 `bundled`)。边界:**skill + global-only 首期**
-   (agent → #358,mcp/plugin → #359);版本门在**引擎 Bundle 锁内**经 precondition hook
+   entry;`ownership.distributed` 如实记 `bundled`)。边界:**skill + agent,global-only**
+   (mcp/plugin → #359);skill 版本门在**引擎 Bundle 锁内**经 precondition hook
    执行(锁外判定有 TOCTOU):账本 strict 四态,损坏/已装无版本/不可比/更高已装一律
    fail-closed 拒,同版本重装幂等;安装**不 pin**(generation content rehash 即 GC mark
    root,#318)。
+   **agent seed(#358,2026-07-16 Codex 裁决)**:共享回表/交叉/CAS promote 后按类型分派到
+   `installAgentFromCas`(`ext-agent-install.ts`)—— 一次 `runExtensionTransaction`,
+   file item(`ext-file-tx` journaled 原子替换 `<root>/agents/<name>.md`,root 内受控相对
+   路径,调用方绝对路径无通道)+ config item(`agent.<name>` 叶,`agentMdToEntry` 单一
+   解析真源)双 item 单事务,全提交或全回滚。装约定:恰一顶层 `.md`、≤256KB、
+   `entry.id === "agent:"+entry.name` 一致性校验;内容字节 = CAS blob 原样(byte-exact)。
+   fresh-only 门在**锁内 precondition**(agent 无更新链):账本 strict(v2/v1 在场拒)+
+   md 文件(含 legacy `agent/` 单数目录)/ config 叶在场一律拒,config 不可读 fail-closed。
+   capabilities 走严格解码 manifest → #348 锁内授权闸(授权 key 归 file 主 item,
+   `agent--<name>`;config 副 item **不声明** capabilities,不参与授权评估也不落授权账)。
+   卸载(flat 通道)联动清除 `ext-store/agent--<name>[--config]/grants.json`(删除失败 =
+   卸载失败且账本不动),重装重新弹确认。
+   **file 落盘圈禁与残余竞态(r3 裁决)**:`confineFileTarget` 逐段 lstat 拒 symlink,在
+   prepare、`applyFileImage` 前、每次 `restoreFileImage` 前(在线回滚与崩溃恢复)以及恢复
+   期任何对 journal file 段的采信(isFlipped/probe/receipt replay)之前**紧邻重验**;重验
+   不过 = 事务保留非终态(零写入、零落账)。接受的残余窗口 = 单次「lstat 重验 → 原子写」
+   之间的微秒级 check-then-use 竞态(与 GC promote 窗口同类,§3):被利用的后果上界是一次
+   写入被并发重绑定劫持,后续任何恢复/采信都会被重验拦下并保留非终态留证,不会静默扩散。
 4. `url` 字段仅传输提示;任何来源的字节一律以 digest 为唯一权威。
 
 ## 3. mark/sweep GC(`ext-cas-gc.collectCasGarbage`)
@@ -131,7 +149,8 @@ CAS 补充语义:
 | seed 严格解码 + S5–S11 负向 + 提升两遍式 | `packages/ui-mac/src/main/ext-seed.test.ts` |
 | GC mark 根/互斥/宽限/用户数据不可触 | `packages/ui-mac/src/main/ext-cas-gc.test.ts` |
 | 快照漂移(S13 A 侧)+ catalog 互钉 + 真链冒烟 | `packages/ui-mac/src/main/extension-seed-snapshot.test.ts` |
-| seed 安装生产链(#317:e2e / 双真源漂移拒绝矩阵 / CAS 注错 abort / XOR / downgrade 门) | `packages/ui-mac/src/main/ext-seed-install.test.ts` |
+| seed 安装生产链(#317:e2e / 双真源漂移拒绝矩阵 / CAS 注错 abort / XOR / downgrade 门;#358:agent e2e / authorize 单 key / fresh-only 三态 / 装约定拒绝矩阵 / 卸载清授权账) | `packages/ui-mac/src/main/ext-seed-install.test.ts` |
+| file action 引擎语义(#358:file+config 原子 / 缺席≠零字节 / 崩溃恢复前滚·回滚 / 旁路改写 fail-closed) | `packages/ui-mac/src/main/ext-transaction-file.test.ts` |
 | GC 生产触发(#318:调度语义 / 权威配置取值点 / outcome 分类;promote 窗口 mtime 回归在 gc.test) | `packages/ui-mac/src/main/ext-cas-gc-scheduler.test.ts` |
 | project 收回:catalog/seed/bundle 统一拒绝 + 遗留管理面 + generation teardown(#372) | `packages/ui-mac/src/main/ext-install-planner.test.ts` |
 | project 残留检测/显式清理(journal 在场 fail-closed / 幂等 / 移动项目单项拒) | `packages/ui-mac/src/main/ext-project-residuals.test.ts` |

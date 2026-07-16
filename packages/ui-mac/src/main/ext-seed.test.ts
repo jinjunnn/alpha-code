@@ -311,7 +311,9 @@ describe("verifySeedAsset / promoteSeedAssetToCas — import face", () => {
 describe("packagedSeedBrowseView(#316)", () => {
   test("合法 seed → 安全投影:元数据齐全,零绝对路径/blob 布局/url 外泄", () => {
     writeLock(buildLock(baseAssets))
-    const v = packagedSeedBrowseView(seedDir)
+    // 与本文件其余测试一致注入 platformToken —— fixture 只声明 darwin/win32(S9 负测依赖此形状),
+    // 不注入会在 linux CI 被 S9 门整体拒(#317 起本测试在 linux CI 恒红,#358 顺手修复)。
+    const v = packagedSeedBrowseView(seedDir, { platformToken: PLATFORM })
     expect(v.ok).toBe(true)
     if (!v.ok) return
     expect(v.catalogVersion).toBe("2026-07-13.1")

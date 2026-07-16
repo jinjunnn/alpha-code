@@ -4,7 +4,7 @@ kind: runbook
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-15
+last_reviewed: 2026-07-16
 review_after: 2026-10-15
 ---
 
@@ -21,7 +21,7 @@ journal 收敛到终态;收敛不了的**如实保留**,绝不静默终态化(#3
 | 现象 | 含义 | 自动处置 |
 | --- | --- | --- |
 | `uninstalling`(action=generation/config) | 卸载中途崩溃/某步失败 | 启动或下一次相关写操作前幂等前滚(删净 artifact → 删账 → 终态) |
-| `switching`/`switched` | 安装/回滚在 health/receipt 确认前中断 | probe 重验:健康前滚落账,不健康回滚+隔离 |
+| `switching`/`switched` | 安装/回滚在 health/receipt 确认前中断 | probe 重验:健康前滚落账,不健康回滚+隔离(generation 隔离;config/file 按 image 回旧) |
 | `staging`/`staged`/`materialized` | switch 未发生 | 清 staging 残留,journal → `aborted`(可重试) |
 
 ## 需要人工诊断的保留态(自动恢复**不会**碰)
@@ -50,6 +50,27 @@ journal 收敛到终态;收敛不了的**如实保留**,绝不静默终态化(#3
   操作会被如实拒绝,不是故障,是 fail-closed。
 - 本 runbook 只覆盖诊断;journal 结构演进与恢复语义归引擎
   (`packages/ui-mac/src/main/ext-transaction.ts` 头注)。
+
+## agent seed(file+config)事务的恢复形态(REQ-102 #358)
+
+agent seed 安装 = 双 item 单事务:file item(`agent--<name>`,action=file,写
+`<root>/agents/<name>.md`)+ config item(`agent--<name>--config`,action=config,写
+`agent.<name>` 叶)。journal 的 file 段只记 `relTarget/slot/pre-next digest/preAbsent`
+(内容在受保护 staging 0600)。崩溃窗口与处置:
+
+- **switching/switched 中断**:恢复按逐 item 翻转判定(file = live 目标存在且 digest ==
+  nextDigest;config = live digest == nextDigest)—— 全翻转 ∧ probe 健康(live md digest +
+  `agentMdToEntry` 可解析 + config 叶与 md 严格一致)∧ receipt 可重放 → 前滚 committed;
+  部分翻转或健康未知 → 双向回滚(file 恢复**缺席态或旧字节** —— `preAbsent` 区分缺席与
+  零字节,config 整文件 before-image 回旧)。
+- **旁路改写**(live md 既非 pre 也非 next;在线回滚与崩溃恢复同语义):恢复 fail-closed
+  保留现状,**journal 保持非终态**(写方 gate 继续阻断相关写操作,**包括卸载**),绝不
+  盲目覆盖也绝不宣称 rolled-back;config 项已幂等回旧(下轮 noop)。处置顺序:先人工核对
+  live md / config 叶 / 账本三面,把该 journal 移出 `journal/` 目录留档(解除 gate 阻断),
+  **之后**才能经卸载通道重放收敛。
+- **staging 丢失 / journal file 段非法 / 圈禁不过**(恢复期无法重建 file image)= 失据:
+  **零改动、journal 保持非终态**供重试或人工处置 —— 失据时不做任何回滚(盲回滚可能毁掉
+  唯一的完好侧),也不终态化(终态化会同时留下半装态并解除写方 gate 的阻断)。
 
 ## plugin 原子替换的恢复形态(REQ-099 #352)
 

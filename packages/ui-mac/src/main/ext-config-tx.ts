@@ -70,7 +70,15 @@ export function prepareConfigTx(
   }
   let text = preImage
   for (const e of edits) {
-    const applied = applyEdits(text, modify(text, e.keyPath, e.value, { formattingOptions: { tabSize: 2, insertSpaces: true } }))
+    // jsonc-parser 的 modify 对形状异常的父节点(如 `"agent":"mine"` 下加子键)会**抛异常**而非
+    // 返回错误 —— 本适配器在引擎 bundle 锁内运行,异常必须转结构化失败,否则锁不释放
+    // (REQ-102 #358 review Major 5)。
+    let applied: string
+    try {
+      applied = applyEdits(text, modify(text, e.keyPath, e.value, { formattingOptions: { tabSize: 2, insertSpaces: true } }))
+    } catch (error) {
+      return { ok: false, reason: `config edit failed for ${e.keyPath.join(".")}: ${error instanceof Error ? error.message : String(error)}` }
+    }
     const errors: ParseError[] = []
     parse(applied, errors)
     if (errors.length > 0) return { ok: false, reason: `resulting config is not valid jsonc after edit ${e.keyPath.join(".")}` }

@@ -4,7 +4,7 @@ kind: contract
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-15
+last_reviewed: 2026-07-16
 review_after: 2026-10-13
 ---
 
@@ -18,18 +18,27 @@ diff 与暂停、renderer 如何确认与重驱、授权账/收据如何落盘�
 ## 1. 覆盖范围(诚实边界)
 
 - **进闸路径** = 进入 `runExtensionTransaction` 的生产安装:单装 skill(catalog 与
-  packaged seed)与 atomic bundle(其 skill / 无密钥 MCP-config / cloud-receipt 子项)。
-- **未进闸**:单装 MCP / plugin / agent / cloud 走非事务 legacy 写入路径,当前没有
-  authorize 阶段可言 —— 这不是本契约的豁免而是缺口,由后续 CODE 票(#378,挂父 #211)
-  把这些类型拉进事务后自动获得同一闸口。renderer 侧的拦截**与重驱参数透传**已对全部
+  packaged seed)、**agent seed(REQ-102 #358:file+config 双 item 单事务)**、
+  plugin 原子替换(#352)与 atomic bundle(其 skill / 无密钥 MCP-config /
+  cloud-receipt 子项)。
+- **未进闸**:单装 MCP / plugin / agent(catalog 通道)/ cloud 走非事务 legacy 写入路径,
+  当前没有 authorize 阶段可言 —— 这不是本契约的豁免而是缺口,由后续 CODE 票(#378,挂父
+  #211)把这些类型拉进事务后自动获得同一闸口。renderer 侧的拦截**与重驱参数透传**已对全部
   安装动作(mcp/skill/agent/plugin/bundle/cloud)落地,类型入事务即生效,无需再动 UI。
+- **一个逻辑扩展一个授权 key**(#358 裁决):多 item 事务里 capabilities 只挂逻辑主 item
+  (agent seed = file item `agent--<name>`)。副 item **不声明** `capabilities`(undefined)
+  —— 未声明 = 不参与授权评估、不出现在 diff、不落授权账;这与「已授权空集」判然有别,
+  后续代码不得为副 item 写入空 grant。卸载联动清除该扩展全部 item key 的 `grants.json`
+  (grant 删除失败 = 卸载失败且账本不动,可重试)—— 残留 grant 会让重装静默继承授权。
+  key 方案约束:agent 名含 `--` 与 `agent--<name>[--config]` 方案歧义,seed 安装显式拒。
 
 ## 2. 能力声明(planner → plan)
 
 - 能力集来源 = **严格解码后的 `manifest.capabilities`**(`ext-manifest-v2` 白名单枚举,
   由 catalog entry 类型派生,作者无自报通道)。不得二次调用派生函数制造第二套事实。
-- `SkillGenerationInstall.capabilities` 为**必填**:调用方必须显式选择能力集,真正无能力
-  传 `[]`(空集 = 闸静默通过)。可选字段被安静遗漏正是 #348 修复的缺陷形态。
+- `SkillGenerationInstall.capabilities` 与 `AgentSeedInstall.capabilities`(#358)均为
+  **必填**:调用方必须显式选择能力集,真正无能力传 `[]`(空集 = 闸静默通过)。可选字段
+  被安静遗漏正是 #348 修复的缺陷形态。
 - bundle 逐子项声明各自 manifest 的能力集;**禁止**把 bundle 并集复制给子项 ——
   grants key 与能力归属必须一一对应。
 
