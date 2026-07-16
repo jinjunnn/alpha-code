@@ -15,11 +15,11 @@ import type { InstallTarget } from "../preload/types"
 import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
 import { fileifyMcpSecrets, fileifyMcpSecretsDeep, removeMcpServerSecrets, removeMcpServerSecretsStrict, snapshotMcpServerSecrets } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, type ProvenanceRequest } from "./alpha-migrate"
-import { configHealth, persistPlugin, pluginRecordName, readMcpLeaf, removeMcp, removeMcpConfigInLock, removePlugin, removePluginEntryExact, removePluginPath, restoreMcpLeaf } from "./ext-config"
+import { configHealth, persistPlugin, pluginRecordName, readMcpLeaf, readMcpLeafStrict, removeMcp, removeMcpConfigInLock, removePlugin, removePluginEntryExact, removePluginPath, restoreMcpLeaf } from "./ext-config"
 import { recordUncuratedInstall } from "./ext-uncurated-record"
 import { persistMcpWithPolicy } from "./ext-mcp-policy"
 import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
-import { importSkillFolder, importSkillGit, installBuiltinAgent, installBuiltinSkill, installRemoteAgent, installRemoteSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall, resourcesRoot, writeAgent } from "./ext-fs-installer"
+import { agentInstallPresent, importSkillFolder, importSkillGit, installBuiltinAgent, installBuiltinSkill, installRemoteAgent, installRemoteSkill, installVendoredPlugin, readBuiltinSkill, removeFsInstall, resourcesRoot, writeAgent } from "./ext-fs-installer"
 import { parseAgentImport } from "./ext-import-validate"
 import { cleanProjectCatalogResiduals, detectProjectCatalogResiduals } from "./ext-project-residuals"
 import { collectSkillPayloadFromDir, commitInputFromRecord, skillGenerationProbe } from "./ext-skill-generations"
@@ -535,6 +535,11 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
         // #346:journaled MCP 卸载的两个 in-lock/strict 原语(引擎事务锁内调用)。
         removeMcpConfigInLock,
         removeMcpSecretsStrict: (name) => removeMcpServerSecretsStrict(userDataPath, name),
+        // #354:提交面 fail-closed 的前像/补偿原语。
+        readMcpLeafStrict,
+        restoreMcpLeaf,
+        removePluginEntryExact,
+        agentPresent: (name, target) => agentInstallPresent(name, target),
         persistPlugin,
         removePlugin,
         installVendoredPlugin,

@@ -10,7 +10,7 @@ import * as path from "node:path"
 
 mock.module("electron", () => ({ app: { isPackaged: false } }))
 
-const { installBuiltinSkill, installRemoteAgent, removeFsInstall, writeAgent, writeSkill } = await import("./ext-fs-installer")
+const { agentInstallPresent, installBuiltinSkill, installRemoteAgent, removeFsInstall, writeAgent, writeSkill } = await import("./ext-fs-installer")
 const { readLedger } = await import("./alpha-installs")
 
 let base = ""
@@ -63,11 +63,11 @@ describe("writeSkill — global scope writes truth + bridge + receipt", () => {
     expect(receipts[0]!.files!.length).toBeGreaterThan(0)
   })
 
-  test("catalog meta flows into the receipt (id/version/origin)", () => {
+  test("#354:catalog meta 不再在 installer 层落 v1(账本所有权归 planner v2 upsert)", () => {
     const r = writeSkill("cat-skill", "d", "b", { scope: "global" }, { catalogId: "skill:cat-skill", version: "2026-07-03.1" })
     expect(r.ok).toBe(true)
     const { receipts } = readLedger(alphaDir)
-    expect(receipts[0]).toMatchObject({ id: "skill:cat-skill", version: "2026-07-03.1", origin: "catalog" })
+    expect(receipts).toHaveLength(0) // eager v1 已下线;v1 视图由 planner upsert 的 toV1Receipt 锁步派生
   })
 })
 
@@ -148,7 +148,7 @@ describe("installBuiltinSkill — name + asset-key guards", () => {
     expect(fs.existsSync(path.join(alphaDir, "skills", "safe-refactor", "SKILL.md"))).toBe(true)
     expect(fs.existsSync(path.join(opencodeDir, "skills"))).toBe(false) // T3:skills 桥退役
     const { receipts } = readLedger(alphaDir)
-    expect(receipts[0]).toMatchObject({ id: "skill:safe-refactor", origin: "catalog", type: "skill" })
+    expect(receipts).toHaveLength(0) // #354:catalog 的账本所有权归 planner,installer 层零 v1 写
   })
 })
 
@@ -194,7 +194,7 @@ describe("installRemoteAgent — REQ-046 远程 agent 通道(单 .md 约定 + wr
     const cfg = JSON.parse(fs.readFileSync(path.join(alphaDir, "alpha.jsonc"), "utf8"))
     expect(cfg.agent["remote-helper"].prompt).toContain("system prompt")
     const { receipts } = readLedger(alphaDir)
-    expect(receipts[0]).toMatchObject({ type: "agent", name: "remote-helper", origin: "catalog" })
+    expect(receipts).toHaveLength(0) // #354:同上 —— catalog agent 的账本由 planner v2 upsert 派生
   })
 
   test("非法名拒装(无盘写)", () => {
@@ -276,5 +276,24 @@ describe("uncurated fs installs land v2 records (#306)", () => {
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toContain("catalog install")
     expect(fs.existsSync(path.join(alphaDir, "agents", "pm.md"))).toBe(false) // 补偿:md 已撤
+  })
+})
+
+// ── #354(review #379 Blocker):agent 在场检查必须覆盖手工 `agent.<name>` 配置项 ──────────────────
+describe("agentInstallPresent (REQ-100 #354)", () => {
+  test("md 在场 / 手工配置项在场 / 语法损坏配置 → 一律 true;全净 → false", () => {
+    expect(agentInstallPresent("helper", { scope: "global" })).toBe(false)
+    // 手工 agent.<name> 配置(无 md、无账)= 既有安装事实,覆盖它会造成用户数据丢失。
+    fs.mkdirSync(alphaDir, { recursive: true })
+    fs.writeFileSync(path.join(alphaDir, "alpha.jsonc"), JSON.stringify({ agent: { helper: { prompt: "hand written" } } }))
+    expect(agentInstallPresent("helper", { scope: "global" })).toBe(true)
+    // 语法损坏 → fail-closed 在场。
+    fs.writeFileSync(path.join(alphaDir, "alpha.jsonc"), '{ "agent": { broken')
+    expect(agentInstallPresent("helper", { scope: "global" })).toBe(true)
+    // md 在场(无配置项)。
+    fs.writeFileSync(path.join(alphaDir, "alpha.jsonc"), "{}")
+    fs.mkdirSync(path.join(alphaDir, "agents"), { recursive: true })
+    fs.writeFileSync(path.join(alphaDir, "agents", "helper.md"), "---\ndescription: d\n---\nbody")
+    expect(agentInstallPresent("helper", { scope: "global" })).toBe(true)
   })
 })

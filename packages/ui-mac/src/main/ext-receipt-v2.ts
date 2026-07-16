@@ -311,6 +311,32 @@ function attemptCorruptKey(entry: unknown): string | null {
   return key(rawKind, rawName)
 }
 
+/** #354(review 收敛):提交面**写前**账本健康探测 —— 损坏/不可读账本直接拒绝且原文件不动
+ *  (不给 upsert 的 quarantine 触发机会;Codex 裁决必改 5 的拒绝分支)。由此健康账本 + 原子写
+ *  失败 = 磁盘零变化,提交面无需整文件恢复 —— 恢复步骤本身才是跨进程竞态(捕获与失败恢复之间
+ *  他写方的提交被覆盖)与「恢复后补偿再改账」的来源。缺失 = 合法空账。 */
+export function probeLedgerForWrite(root: string): { ok: true } | { ok: false; reason: string } {
+  let text: string
+  try {
+    text = fs.readFileSync(ledgerPath(root), "utf8")
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { ok: true }
+    return {
+      ok: false,
+      reason: `install ledger unreadable (${error instanceof Error ? error.message : String(error)}) — refusing before any side effect`,
+    }
+  }
+  let raw: unknown
+  try {
+    raw = JSON.parse(text)
+  } catch {
+    return { ok: false, reason: `install ledger corrupt — refusing to write (quarantine is not a commit path); inspect ${ledgerPath(root)}` }
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw))
+    return { ok: false, reason: `install ledger corrupt (non-object root) — refusing to write; inspect ${ledgerPath(root)}` }
+  return { ok: true }
+}
+
 function parseLedger(root: string): { parsed: ParsedLedger; corrupt: boolean } {
   const empty: ParsedLedger = {
     receipts: [],

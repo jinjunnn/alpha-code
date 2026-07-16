@@ -559,12 +559,15 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
     // #348:skill 更新 = 同一事务入口,扩权时同样被 authorize 闸拦下(确认后带 authorization 重入)。
     if (entry.type === "skill") return installSkill(entry, authorization)
     if (entry.type === "plugin") {
+      // ⚠ #354/#352:此「先卸后装」两步链在两次 IPC 之间存在崩溃/失败窗口(旧已删、新未装),
+      // 且主动移除了 planner 写前门用来拒绝 overwrite-install 的旧记录 —— 原子替换收口归 #352
+      //(main 侧同锁 journaled replace),本链届时整体替换为单次调用。
       const old = store.receipts.find((r) => r.id === entry.id && r.type === "plugin")
       if (old) {
         const removed = await window.api.ext.uninstallV2({ type: "plugin", name: old.name, scope: "global" })
         if (!removed.ok) return removed
       }
-      return installPlugin(entry)
+      return installPlugin(entry, authorization)
     }
     return { ok: false, reason: "unsupported type for update" }
   }

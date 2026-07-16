@@ -7,9 +7,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { configHealth, persistMcp, persistPlugin, persistProvider, removeMcp, removeMcpConfigInLock, removePlugin } from "./ext-config"
+import { configHealth, persistMcp, persistPlugin, persistProvider, removeMcp, removeMcpConfigInLock, removePlugin, readMcpLeafStrict, readAgentEntryStrict } from "./ext-config"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
-import { findReceipt, readLedger } from "./alpha-installs"
+import { addReceipt, findReceipt, readLedger } from "./alpha-installs"
 
 // REQ-018 T2: mcp/plugin persistence targets the alpha-owned ~/.opencode/opencode.jsonc
 // (ALPHA_OPENCODE_HOME-overridable); provider persistence stays on the shared XDG config
@@ -158,6 +158,9 @@ describe("persistMcp — accept paths write mcp[name]", () => {
 
   test("#346 removeMcpConfigInLock:锁被持有时照常工作(in-lock 原语不重取锁)、只删配置零账本副作用", () => {
     persistMcp("demo", { type: "local", command: ["npx", "-y", "demo-mcp"] }, { catalogId: "mcp:demo", version: "1.0.0" })
+    // #354:eager v1 已下线(账本所有权归 planner v2 upsert)——receipt 由测试自建,断言意图不变:
+    // in-lock 原语只删配置、零账本副作用。
+    addReceipt(alphaTmp, { id: "mcp:demo", name: "demo", type: "mcp", scope: "global", installedAt: new Date().toISOString(), origin: "catalog", configKey: "mcp.demo" })
     const held = tryAcquireBundleLock(alphaTmp, { txId: "tx-uninstall-346" })
     expect(held.ok).toBe(true)
     if (!held.ok) return
@@ -292,18 +295,20 @@ describe("configHealth", () => {
 
 // ── T6:persistMcp/persistPlugin 记账 + removePlugin 卸载 ──────────────────────────────────────
 describe("receipts on persist/remove (T6)", () => {
-  test("persistMcp records a receipt with configKey; removeMcp drops it", () => {
+  test("#354:persistMcp 不再 eager 落 v1(账本所有权归 planner v2 upsert);removeMcp 仍清 legacy receipt", () => {
     expect(persistMcp("markitdown", { type: "local", command: ["uvx", "markitdown-mcp"] }, { catalogId: "mcp:markitdown", version: "1" }).ok).toBe(true)
-    let r = readLedger(alphaTmp).receipts.find((x) => x.type === "mcp" && x.name === "markitdown")
-    expect(r).toMatchObject({ id: "mcp:markitdown", configKey: "mcp.markitdown", version: "1" })
+    expect(readLedger(alphaTmp).receipts.find((x) => x.type === "mcp" && x.name === "markitdown")).toBeUndefined()
+    // legacy receipt(历史安装)仍由 removeMcp 清理 —— 卸载语义不变。
+    addReceipt(alphaTmp, { id: "mcp:markitdown", name: "markitdown", type: "mcp", scope: "global", installedAt: new Date().toISOString(), origin: "catalog", configKey: "mcp.markitdown" })
     expect(removeMcp("markitdown").ok).toBe(true)
     expect(readLedger(alphaTmp).receipts.find((x) => x.name === "markitdown")).toBeUndefined()
   })
 
-  test("persistPlugin records a receipt; removePlugin removes from config[] and drops receipt", () => {
+  test("#354:persistPlugin 不再 eager 落 v1;removePlugin 撤 config[] 并清 legacy receipt", () => {
     expect(persistPlugin("opencode-notify@0.3.1", { catalogId: "plugin:opencode-notify" }).ok).toBe(true)
     expect(readConfig().plugin).toContain("opencode-notify@0.3.1")
-    expect(readLedger(alphaTmp).receipts.some((x) => x.type === "plugin")).toBe(true)
+    expect(readLedger(alphaTmp).receipts.some((x) => x.type === "plugin")).toBe(false)
+    addReceipt(alphaTmp, { id: "plugin:opencode-notify", name: "opencode-notify", type: "plugin", scope: "global", installedAt: new Date().toISOString(), origin: "catalog", configKey: "plugin:opencode-notify@0.3.1" })
     expect(removePlugin("opencode-notify@0.3.1").ok).toBe(true)
     expect(readConfig().plugin ?? []).not.toContain("opencode-notify@0.3.1")
     expect(readLedger(alphaTmp).receipts.some((x) => x.type === "plugin")).toBe(false)
@@ -351,5 +356,34 @@ describe("config write lock — serialized with the extension bundle lock (REQ-1
     const acquire = tryAcquireBundleLock(alphaTmp, { txId: "after-write" })
     expect(acquire.ok).toBe(true) // 写方 finally 释放,事务可立即获取
     if (acquire.ok) acquire.lock.release()
+  })
+})
+
+// ── #354(review #379):strict 读的真实实现 —— jsonc 容错解析必须收 ParseError ────────────────────
+describe("readMcpLeafStrict / readAgentEntryStrict (REQ-100 #354)", () => {
+  const cfgPath = () => path.join(alphaTmp, "alpha.jsonc")
+  test("缺失文件 = 合法空前像;健康文件返回精确叶子", () => {
+    expect(readMcpLeafStrict("demo")).toEqual({ ok: true, value: undefined })
+    fs.mkdirSync(alphaTmp, { recursive: true })
+    fs.writeFileSync(cfgPath(), JSON.stringify({ mcp: { demo: { type: "local", command: ["npx"] } } }))
+    const r = readMcpLeafStrict("demo")
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.value).toEqual({ type: "local", command: ["npx"] })
+  })
+  test("语法损坏(jsonc-parser 容错不抛错)→ strict 拒绝,绝不当作「叶不存在」", () => {
+    fs.mkdirSync(alphaTmp, { recursive: true })
+    fs.writeFileSync(cfgPath(), '{ "mcp": { broken')
+    const r = readMcpLeafStrict("demo")
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("unparseable")
+  })
+  test("readAgentEntryStrict:手工 agent 条目在场可见;语法损坏拒绝(fail-closed)", () => {
+    fs.mkdirSync(alphaTmp, { recursive: true })
+    fs.writeFileSync(cfgPath(), JSON.stringify({ agent: { helper: { prompt: "hand written" } } }))
+    const ok = readAgentEntryStrict("helper")
+    expect(ok).toEqual({ ok: true, present: true })
+    expect(readAgentEntryStrict("other")).toEqual({ ok: true, present: false })
+    fs.writeFileSync(cfgPath(), '{ "agent": { oops')
+    expect(readAgentEntryStrict("helper").ok).toBe(false)
   })
 })
