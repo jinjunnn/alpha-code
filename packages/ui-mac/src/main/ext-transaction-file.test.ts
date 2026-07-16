@@ -415,7 +415,9 @@ describe("file action in runExtensionTransaction (REQ-102 #358)", () => {
     // 用新引擎制造 after-switched 崩溃,再从盘上剥掉新字段 = 忠实模拟升级前遗留的在途 journal。
     await expect(runExtensionTransaction(root, planFor(MD), hooksFor({ crashAt: "after-switched" }))).rejects.toThrow(ExtTxCrashError)
     const jDir = join(root, "ext-tx", "journal")
-    const jFile = join(jDir, readdirSync(jDir).find((n) => n.endsWith(".json"))!)
+    const jName = readdirSync(jDir).find((n) => n.endsWith(".json"))
+    if (!jName) throw new Error("journal missing")
+    const jFile = join(jDir, jName)
     const legacy: unknown = parse(readFileSync(jFile, "utf8"))
     if (!isRec(legacy) || !Array.isArray(legacy.items)) throw new Error("journal shape")
     for (const it of legacy.items) {
