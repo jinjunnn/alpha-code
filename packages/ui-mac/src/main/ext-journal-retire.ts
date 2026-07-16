@@ -21,7 +21,7 @@
 //     属无限期人工证据(可含 0600 敏感 image,见 runbook)。
 import { randomBytes, createHash } from "node:crypto"
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync } from "node:fs"
-import { join, relative } from "node:path"
+import { dirname, join, relative } from "node:path"
 import { fsyncDirSync, writeFileAtomicSync } from "./ext-atomic-fs"
 import {
   diagnoseTransactionJournal,
@@ -31,6 +31,7 @@ import {
   type TxRecoveryReport,
 } from "./ext-transaction"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
+import type { JournalAdminEntry, JournalAdminScope, JournalRetireIntentWire } from "../shared/ext-journal-admin"
 
 const ENTRY_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}\.json$/
 const SHA256_RE = /^[0-9a-f]{64}$/
@@ -40,37 +41,7 @@ const isRec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 
 
 export type JournalRootRef = { identity: string; root: string }
 
-export type RetainedJournalEntry = {
-  kind: "retained"
-  rootIdentity: string
-  /** journal 目录项文件名(定位符;txId 只作展示 —— 畸形件文件名/体内 txId 可不一致)。 */
-  entryId: string
-  /** root-relative。 */
-  path: string
-  txId: string
-  /** 体内 txId 与文件名派生不一致时二者都留。 */
-  bodyTxId?: string
-  op: "install" | "uninstall" | "rollback"
-  state: string
-  keys: string[]
-  /** 该 journal 提供的去重 digest mark 数(CAS 后果展示,裁决防呆)。 */
-  markDigestCount: number
-  reason: string
-  reasonSource: "structure" | "state"
-  retireEligible: boolean
-  journalSha256: string
-  bytes: number
-  firstSeenAt: string
-  firstSeenAtSource: "birthtime" | "mtime"
-  stagingPresent: boolean
-}
-
-export type JournalAdminEntry =
-  | RetainedJournalEntry
-  | { kind: "already-quarantined"; rootIdentity: string; entryId: string; path: string; bytes: number; firstSeenAt: string; firstSeenAtSource: "birthtime" | "mtime" }
-  | { kind: "malformed-entry"; rootIdentity: string; entryId: string; path: string; reason: string }
-  | { kind: "unreadable-root"; rootIdentity: string; reason: string }
-  | { kind: "retire-incomplete"; rootIdentity: string; receiptPath: string; entryId: string; txId: string; destinationPresent: boolean }
+export type { JournalAdminEntry } from "../shared/ext-journal-admin"
 
 function firstSeenOf(p: string): { firstSeenAt: string; firstSeenAtSource: "birthtime" | "mtime" } {
   const st = statSync(p)
@@ -118,6 +89,9 @@ export function listRetainedJournals(roots: JournalRootRef[]): { entries: Journa
       const code = isRec(error) && typeof error.code === "string" ? error.code : undefined
       if (code !== "ENOENT")
         entries.push({ kind: "unreadable-root", rootIdentity: ref.identity, reason: `journal dir cannot be enumerated: ${error instanceof Error ? error.message : String(error)}` })
+      // review r1 Minor:journal 目录缺失/不可读时仍扫 journal-retired/ 的 prepared 残留 ——
+      // 崩溃证据只落 retired 目录,不能因 journal/ 空/失据就漏报。
+      for (const inc of scanIncompleteReceipts(ref)) entries.push(inc)
       continue
     }
     for (const name of names.sort()) {
@@ -244,8 +218,9 @@ export type RetireJournalResult =
   | { ok: false; reason: string }
 
 export type RetireDeps = {
-  /** 锁内最后收敛(裁决 Q1:文件锁非重入,必须用 InHeldLock 核心,不得调公共恢复入口)。 */
-  recoverInHeldLock: (root: string) => Promise<{ ok: boolean; reason?: string; reports: TxRecoveryReport[] }>
+  /** 锁内最后收敛(裁决 Q1:文件锁非重入,必须用 InHeldLock 核心,不得调公共恢复入口)。
+   *  onProgress = 每张 journal 后续租持有锁(review r1 Major:长恢复不被 15min stale 接管)。 */
+  recoverInHeldLock: (root: string, onProgress: () => void) => Promise<{ ok: boolean; reason?: string; reports: TxRecoveryReport[] }>
   now?: () => Date
   log?: (event: string, detail: Record<string, unknown>) => void
   pidAlive?: (pid: number) => boolean
@@ -284,13 +259,17 @@ export async function retireTransactionJournal(ref: JournalRootRef, req: RetireJ
     staleMs: deps.lockStaleMs,
   })
   if (!acquired.ok) return { ok: false, reason: `journal retire refused: ${acquired.reason} (transaction/recovery/GC in flight — retry later)` }
+  const refresh = (): void => acquired.lock.refresh()
   try {
+    // journal-retired/ 目录项本身持久化(review r1 Blocker B2:新建后须 fsync 其父 ext-tx/,
+    // 否则掉电后 receipt 目录项可能随目录消失,形成「已移动而无 prepared 审计」窗口)。
     mkdirSync(layout.retiredDir, { recursive: true })
+    fsyncDirSync(dirname(layout.retiredDir))
     reconcilePreparedReceipts(ref, layout.retiredDir, layout.journalDir, now, log)
 
-    // 锁内最后收敛:能被自动恢复的绝不 retire。
+    // 锁内最后收敛:能被自动恢复的绝不 retire(每张 journal 后续租锁)。
     const recoveryAttemptedAt = now().toISOString()
-    const rec = await deps.recoverInHeldLock(ref.root)
+    const rec = await deps.recoverInHeldLock(ref.root, refresh)
     const ours = rec.reports.find((r) => `${r.txId}.json` === req.entryId)
     const recoveryOutcome = rec.ok
       ? (ours ? `report: ${ours.action}/${ours.state} — ${ours.detail}` : `ok (${rec.reports.length} report(s), none for this entry)`)
@@ -361,13 +340,27 @@ export async function retireTransactionJournal(ref: JournalRootRef, req: RetireJ
       stagingPresent,
       markDigestCount,
     }
-    // 两阶段(裁决 Q2):prepared receipt 先落盘并 fsync —— rename 与审计之间无裸窗口。
+    refresh() // rename 前续租(复核到落盘之间锁不失效)
+    // 两阶段(裁决 Q2 + review r1 Blocker B2/B3):
+    //   1. prepared receipt 原子写(writeFileAtomicSync 已 fsync 内容 + retiredDir);
+    //   2. rename source → dest;
+    //   3. **先 fsync 目标目录(dest 新增持久),再 fsync 源目录(source 删除持久)** —— 顺序
+    //      反了会在两次 fsync 间掉电时 source 删除已落盘而 dest 新增未落盘 = 两边皆无(数据丢失);
+    //   4. rename 后按实物复核 dest sha256(M1:read→rename 之间外部替换 = drift,如实记 receipt);
+    //   5. receipt 原子更新为 retired。
     writeFileAtomicSync(receiptPath, JSON.stringify(receipt, null, 2))
     renameSync(source, destination)
-    fsyncDirSync(layout.journalDir)
     fsyncDirSync(layout.retiredDir)
-    writeFileAtomicSync(receiptPath, JSON.stringify({ ...receipt, status: "retired", retiredAt: now().toISOString() }, null, 2))
-    log("journal-retired", { rootIdentity: ref.identity, entryId: req.entryId, txId: nameTxId, requestId, markDigestCount, stagingPresent })
+    fsyncDirSync(layout.journalDir)
+    const destSha = createHash("sha256").update(readFileSync(destination)).digest("hex")
+    const drift = destSha !== sha
+    if (drift) log("journal-retire-drift", { rootIdentity: ref.identity, entryId: req.entryId, expected: sha, actual: destSha })
+    writeFileAtomicSync(
+      receiptPath,
+      JSON.stringify({ ...receipt, status: "retired", retiredAt: now().toISOString(), ...(drift ? { fingerprintDriftAtRename: true, retiredSha256: destSha } : {}) }, null, 2),
+    )
+    fsyncDirSync(layout.retiredDir)
+    log("journal-retired", { rootIdentity: ref.identity, entryId: req.entryId, txId: nameTxId, requestId, markDigestCount, stagingPresent, drift })
     return { ok: true, entryId: req.entryId, txId: nameTxId, movedTo: relative(ref.root, destination), receiptPath: relative(ref.root, receiptPath), markDigestCount, stagingPresent, recoveryOutcome }
   } finally {
     acquired.lock.release()
@@ -389,9 +382,23 @@ function reconcilePreparedReceipts(ref: JournalRootRef, retiredDir: string, jour
     if (!receipt || receipt.status !== "prepared") continue
     const destName = typeof receipt.destinationName === "string" ? receipt.destinationName : ""
     const entryId = typeof receipt.entryId === "string" ? receipt.entryId : ""
-    if (destName !== "" && existsSync(join(retiredDir, destName))) {
-      writeFileAtomicSync(p, JSON.stringify({ ...receipt, status: "retired", retiredAt: now().toISOString(), reconciled: true }, null, 2))
-      log("journal-retire-reconciled", { receipt: name, outcome: "retired" })
+    const expectedSha = typeof receipt.sourceSha256 === "string" ? receipt.sourceSha256 : undefined
+    const destPath = destName !== "" ? join(retiredDir, destName) : ""
+    if (destPath !== "" && existsSync(destPath)) {
+      // review r1 Major:dest 在场即补记 retired,但按实物 sha 复核 receipt.sourceSha256 ——
+      // 不符 = rename 前实物被替换,如实标 drift(实物在 dest,不谎报审计一致)。
+      let actualSha: string | undefined
+      try {
+        actualSha = createHash("sha256").update(readFileSync(destPath)).digest("hex")
+      } catch {
+        actualSha = undefined
+      }
+      const drift = expectedSha !== undefined && actualSha !== undefined && actualSha !== expectedSha
+      writeFileAtomicSync(
+        p,
+        JSON.stringify({ ...receipt, status: "retired", retiredAt: now().toISOString(), reconciled: true, ...(drift ? { fingerprintDriftAtReconcile: true, retiredSha256: actualSha } : {}) }, null, 2),
+      )
+      log("journal-retire-reconciled", { receipt: name, outcome: "retired", drift })
     } else if (entryId !== "" && existsSync(join(journalDirAbs, entryId))) {
       writeFileAtomicSync(p, JSON.stringify({ ...receipt, status: "abandoned", abandonedAt: now().toISOString() }, null, 2))
       log("journal-retire-reconciled", { receipt: name, outcome: "abandoned" })
@@ -405,17 +412,7 @@ function reconcilePreparedReceipts(ref: JournalRootRef, retiredDir: string, jour
 // ── wire 解码(#375 裁决 Q4:renderer 无任意 root 通道;scope = main 派生 env selector 或
 //    projectDir 严格解析;flags 必须字面 true;未知键拒)────────────────────────────────────────
 
-export type JournalAdminScope = { kind: "global"; environment: "dev" | "prod" | "beta" } | { kind: "project"; projectDir: string }
-
-export type JournalRetireIntent = {
-  scope: JournalAdminScope
-  entryId: string
-  txId: string
-  journalSha256: string
-  note: string
-  liveStateChecked: true
-  casMarkRemovalAcknowledged: true
-}
+type JournalRetireIntent = JournalRetireIntentWire
 
 const LIST_KEYS = new Set(["projectDir"])
 

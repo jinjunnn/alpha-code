@@ -446,6 +446,10 @@ export function resolveLiveGenerationDir(root: string, key: string): string | nu
 }
 
 function writePointerSync(root: string, key: string, genId: string, txId: string, now: () => Date): void {
+  // #375 review r1 Blocker:key 圈禁前置 —— pointer 走 writeFileAtomicSync 无路径守卫,畸形
+  // key(如 "../../victim")会写出 store 树外;唯一逃逸点在此收口(其余 store 路径构造函数
+  // 都已 SAFE_KEY 守卫)。recover 主循环也拦畸形 key,此处为纵深。
+  if (!SAFE_KEY.test(key)) throw new Error(`refusing to write pointer for unsafe key "${key}"`)
   const { pointer } = extensionStorePaths(root, key)
   const record: GenPointer = { v: 1, generation: genId, txId, switchedAt: now().toISOString() }
   writeFileAtomicSync(pointer, JSON.stringify(record, null, 2) + "\n")
@@ -856,17 +860,33 @@ export function gcQuarantine(root: string, opts: { keep?: number } = {}): { dele
 }
 
 function gcTerminalJournals(root: string, keep: number, warnings: string[]): void {
-  const journals = listTransactionJournals(root)
-    .filter((j) => j.state === "committed" || j.state === "rolled-back" || j.state === "aborted" || j.state === "uninstalled")
-    .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
-  for (const journal of journals.slice(Math.max(0, keep))) {
+  // #375 review r1 Blocker:删除面按**文件名派生 txId**定位,绝不用 body txId(body 逃逸/
+  // 错配会 unlink 另一张 journal,甚至经 "../" 出树)。文件名须过 TX_ID_RE(引擎自产格式),
+  // 且 body txId 与文件名一致才纳入 GC —— 不一致 = 可疑件,留给诊断/recovery,不静默删。
+  let names: string[]
+  try {
+    names = fs.readdirSync(journalDir(root)).filter((n) => n.endsWith(".json"))
+  } catch {
+    return
+  }
+  const eligible: Array<{ txId: string; updatedAt: string }> = []
+  for (const name of names) {
+    const txId = name.slice(0, -".json".length)
+    if (!TX_ID_RE.test(txId)) continue
+    const journal = readTransactionJournal(root, txId)
+    if (!journal || journal.txId !== txId) continue
+    if (journal.state === "committed" || journal.state === "rolled-back" || journal.state === "aborted" || journal.state === "uninstalled")
+      eligible.push({ txId, updatedAt: journal.updatedAt })
+  }
+  eligible.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
+  for (const { txId } of eligible.slice(Math.max(0, keep))) {
     try {
-      fs.unlinkSync(journalPath(root, journal.txId))
+      fs.unlinkSync(journalPath(root, txId))
     } catch (error) {
-      warnings.push(`journal gc failed for ${journal.txId}: ${error instanceof Error ? error.message : String(error)}`)
+      warnings.push(`journal gc failed for ${txId}: ${error instanceof Error ? error.message : String(error)}`)
     }
     try {
-      fs.unlinkSync(authzReceiptPath(root, journal.txId)) // 授权收据随 journal 同界清理
+      fs.unlinkSync(authzReceiptPath(root, txId)) // 授权收据随 journal 同界清理
     } catch {
       /* 无收据 = 无事可清 */
     }
@@ -1682,7 +1702,10 @@ export function diagnoseTransactionJournal(journal: TxJournalShape): TxJournalDi
     return { verdict: "shape-ok" }
   }
   for (const item of items) {
-    if (!isRecShape(item) || typeof item.key !== "string")
+    // install/rollback item.key 与 uninstall 同级校验 SAFE_KEY(review r1 Blocker:仅验
+    // 字符串会放行 "../.." 类 key,recoverRollback 的 writePointerSync 据此逃逸写盘)。
+    // validatePlan 写入时即强制 SAFE_KEY,合法件必过 —— 此判据零回归。
+    if (!isRecShape(item) || typeof item.key !== "string" || !SAFE_KEY.test(item.key))
       return { verdict: "malformed", reason: "malformed journal (item key)" }
   }
   return { verdict: "shape-ok" }
@@ -1733,6 +1756,10 @@ export type RecoverOptions = {
   lockStaleMs?: number
   keepQuarantine?: number
   keepJournals?: number
+  /** #375 review r1 Major:锁续租钩子 —— 每张 journal 处理后回调。retire 在已持锁临界区内
+   *  调 InHeldLock 时传 `() => lock.refresh()`,防长恢复(遍历任意多 journal)期间锁被
+   *  15min stale 接管而失互斥。公共入口自持锁,不需传。 */
+  onProgress?: () => void
 }
 
 /**
@@ -1807,12 +1834,24 @@ export async function recoverExtensionTransactionsInHeldLock(
       reports.push({ txId, state: "aborted", action: "cleaned", detail: `unreadable journal moved to ${to}`, corrupt: true })
       continue
     }
-    // #375(裁决 Q1):结构诊断先行 —— 畸形 journal 转 retained diagnosis,绝不 dispatch
-    // (items 非数组等结构错误若进 dispatch 会抛错炸掉整轮恢复,连带封死 retire 通道)。
-    const diag = diagnoseTransactionJournal(journal)
-    if (diag.verdict === "malformed") {
-      reports.push({ txId, state: journal.state, action: "none", detail: `${diag.reason} — retained for manual diagnosis` })
+    // #375 review r1 Blocker:body txId 不可信 —— 一律以文件名派生的 txId 为准(recover*
+    // 内部用 journal.txId 构造 staging 路径;terminal GC 也据此,body 逃逸/错配会删/写错件)。
+    // 不一致 = 畸形,保留供人工诊断(不 dispatch)。
+    if (journal.txId !== txId) {
+      reports.push({ txId, state: journal.state, action: "none", detail: `journal body txId "${journal.txId}" ≠ filename txId — retained for manual diagnosis` })
       continue
+    }
+    // #375(裁决 Q1):结构诊断先行 —— 畸形**非终态** journal 转 retained diagnosis,绝不
+    // dispatch(items 非数组等结构错误进 dispatch 会抛错炸掉整轮恢复,连带封死 retire 通道)。
+    // review r1 Major:**终态件不拦**(committed/rolled-back/aborted/uninstalled 仍走
+    // dispatch 的 staging 清理与 already-terminal 语义,否则 terminal GC 删 journal 后残留
+    // 敏感前像 staging;公共入口对终态畸形件保持既有行为)。
+    if (!isTerminalTxState(journal.state)) {
+      const diag = diagnoseTransactionJournal(journal)
+      if (diag.verdict === "malformed") {
+        reports.push({ txId, state: journal.state, action: "none", detail: `${diag.reason} — retained for manual diagnosis` })
+        continue
+      }
     }
     try {
       reports.push(
@@ -1832,6 +1871,7 @@ export async function recoverExtensionTransactionsInHeldLock(
         detail: `recovery dispatch threw (${error instanceof Error ? error.message : String(error)}) — retained for manual diagnosis`,
       })
     }
+    opts.onProgress?.() // #375 Major:每张 journal 后续租持有锁(长恢复不被 stale 接管)
   }
   // 有界清理:quarantine + 终态 journal
   const warnings: string[] = []

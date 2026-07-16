@@ -86,7 +86,7 @@ function retireReq(ref: JournalRootRef, entryId: string, over: Partial<RetireJou
   }
 }
 
-const retireDeps = { recoverInHeldLock: (root: string) => recoverExtensionTransactionsInHeldLock(root, { log: silentLog }), log: silentLog }
+const retireDeps = { recoverInHeldLock: (root: string, _onProgress: () => void) => recoverExtensionTransactionsInHeldLock(root, { log: silentLog }), log: silentLog }
 
 describe("listRetainedJournals(#375 诊断分类矩阵)", () => {
   test("retained(结构畸形/state 依赖)、终态跳过、不可解析、已隔离、symlink、体内 txId 不一致", () => {
@@ -157,6 +157,48 @@ describe("recovery 自守(#375:畸形 journal 不炸整轮)", () => {
     expect(bad?.action).toBe("none")
     expect(bad?.detail).toContain("items is not an array")
     expect(bad?.detail).toContain("retained for manual diagnosis")
+  })
+
+  test("review r1 Blocker:畸形 key(../)的 rollback 不写盘逃逸(diagnose 前置拦截 + writePointer 守卫)", async () => {
+    const ref = mkRoot("escape")
+    writeJournal(ref, "tx-evil.json", { txId: "tx-evil", op: "rollback", state: "switching", items: [{ key: "../../../victim", genId: "gen-000000-000000" }] })
+    const rec = await recoverExtensionTransactions(ref.root, { log: silentLog })
+    const evil = rec.reports.find((r) => r.txId === "tx-evil")
+    expect(evil?.action).toBe("none")
+    expect(evil?.detail).toContain("item key")
+    // 未在 store 树外写出 victim 指针。
+    expect(existsSync(join(base, "victim"))).toBe(false)
+    expect(existsSync(join(ref.root, "..", "..", "..", "victim"))).toBe(false)
+  })
+
+  test("review r1 Blocker:body txId ≠ 文件名 → 保留态,不 dispatch(不信 body txId)", async () => {
+    const ref = mkRoot("txidmismatch")
+    writeJournal(ref, "tx-name.json", { txId: "tx-other-body", op: "install", state: "staging", items: [] })
+    const rec = await recoverExtensionTransactions(ref.root, { log: silentLog })
+    const r = rec.reports.find((rep) => rep.txId === "tx-name")
+    expect(r?.action).toBe("none")
+    expect(r?.detail).toContain("body txId")
+  })
+
+  test("review r1 Blocker:terminal GC 按文件名删除,body txId 含 ../ 不逃逸删外部文件", async () => {
+    const ref = mkRoot("gcescape")
+    const victim = join(base, "gc-victim.json")
+    writeFileSync(victim, "precious")
+    // body txId 指向 ../ 外部,但文件名合法;GC 应按文件名删自身、绝不碰 victim。
+    writeJournal(ref, "tx-aaaaaaaaaa-deadbeef.json", { txId: "../../../gc-victim", op: "install", state: "committed", items: [], updatedAt: "2020-01-01T00:00:00Z" })
+    await recoverExtensionTransactions(ref.root, { log: silentLog, keepJournals: 0 })
+    expect(existsSync(victim)).toBe(true) // 外部文件安然无恙
+  })
+
+  test("review r1 Major:结构畸形的**终态** journal 仍清 staging(diagnose 只拦非终态)", async () => {
+    const ref = mkRoot("termstaging")
+    const layout = transactionJournalLayout(ref.root)
+    // 终态 committed + 结构畸形(items 非数组)+ 有 staging 残留(可含敏感前像)。
+    writeJournal(ref, "tx-term.json", { txId: "tx-term", op: "install", state: "committed", items: {} })
+    mkdirSync(join(layout.stagingDir, "tx-term"), { recursive: true })
+    writeFileSync(join(layout.stagingDir, "tx-term", "secret.image"), "0600 before-image")
+    await recoverExtensionTransactions(ref.root, { log: silentLog })
+    expect(existsSync(join(layout.stagingDir, "tx-term"))).toBe(false) // staging 被清,不残留敏感前像
   })
 })
 

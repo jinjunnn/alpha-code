@@ -3,6 +3,7 @@ import type { WslServersPlatform } from "@opencode-ai/app/wsl/types"
 import type { UpdaterState } from "@opencode-ai/app/updater"
 import type { AlphaEndpoints } from "../shared/alpha-config"
 import type { AuthorizationConfirmationWire, CapabilityDiffWire, TxStageNonAuthorizeWire } from "../shared/ext-capability-authorization"
+import type { JournalAdminEntry, JournalRetireIntentWire, JournalRetireResult } from "../shared/ext-journal-admin"
 import type { ArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
 import type { ResolvedSurfaces, SurfaceId } from "../shared/alpha-surfaces"
 import type { AutomationEvent, AutomationGlobalState, AutomationTask, AutomationSchedule } from "../shared/automation-types"
@@ -513,22 +514,13 @@ export type ElectronAPI = {
       | { ok: true; cleaned: string[]; failed: Array<{ item: string; reason: string }>; reported: string[] }
       | { ok: false; reason: string }
     >
-    /** REQ-100 #375:保留态 journal 只读诊断(global 三环境根恒聚合;projectDir 可选)。 */
-    journalRetainedList: (intent?: { projectDir?: string }) => Promise<{ entries: unknown[] } | { ok: false; reason: string }>
+    /** REQ-100 #375:保留态 journal 只读诊断(global 三环境根恒聚合;projectDir 可选)。
+     *  entries = 判别联合(kind: retained/already-quarantined/malformed-entry/unreadable-root/
+     *  retire-incomplete);renderer 按 kind 分派(UI 归 Hub)。 */
+    journalRetainedList: (intent?: { projectDir?: string }) => Promise<{ entries: JournalAdminEntry[] } | { ok: false; reason: string }>
     /** REQ-100 #375:显式 retire(entryId+fingerprint 定位;两个确认 flag 必须字面 true;
      *  UI 归 Hub —— 本通道只登记合同)。 */
-    journalRetire: (intent: {
-      scope: { kind: "global"; environment: "dev" | "prod" | "beta" } | { kind: "project"; projectDir: string }
-      entryId: string
-      txId: string
-      journalSha256: string
-      note: string
-      liveStateChecked: true
-      casMarkRemovalAcknowledged: true
-    }) => Promise<
-      | { ok: true; entryId: string; txId: string; movedTo: string; receiptPath: string; markDigestCount: number; stagingPresent: boolean; recoveryOutcome: string }
-      | { ok: false; reason: string }
-    >
+    journalRetire: (intent: JournalRetireIntentWire) => Promise<JournalRetireResult>
   }
   // alpha account (balance / membership / usage) read from the alpha-platform (B) account-server
   // using the main-held JWT. The renderer gets only the resolved summary, never the token.

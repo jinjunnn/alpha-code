@@ -683,7 +683,7 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
     retire: (ref, req) =>
       retireTransactionJournal(ref, req, {
         // 裁决 Q1:锁内最后收敛必须用 InHeldLock 核心(文件锁非重入,公共入口必然 busy-skip)。
-        recoverInHeldLock: (root) => recoverExtensionTransactionsInHeldLock(root, recoveryOpts(root)),
+        recoverInHeldLock: (root, onProgress) => recoverExtensionTransactionsInHeldLock(root, { ...recoveryOpts(root), onProgress }),
       }),
   })
   ipcMain.handle(JOURNAL_ADMIN_CHANNELS.retainedList, async (_event: IpcMainInvokeEvent, intent: unknown) => {
