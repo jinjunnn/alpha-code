@@ -684,17 +684,43 @@ export function collectBuiltinAgentPayload(
 export function stageVendoredPluginVersioned(
   vendoredAssetKey: string,
   name: string,
+  // r17(Major):调用方已收集的载荷直传 —— receipt digest 与 staging 字节必须同一次收集
+  // (两次独立收集之间源变化会提交「载荷 B + digest A」,内容身份断链)。缺省自收集。
+  precollected?: Array<{ path: string; data: Buffer }>,
 ): { ok: true; dir: string; jsPath: string } | { ok: false; reason: string } {
   if (!SAFE_PLUGIN_ASSET_KEY.test(vendoredAssetKey)) return { ok: false, reason: "invalid asset key" }
   if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid plugin name" }
-  const collected = collectVendoredPluginPayload(vendoredAssetKey, name)
-  if (!collected.ok) return collected
-  const versioned = `${name}@${crypto.randomBytes(4).toString("hex")}`
-  const destDir = safeResolveUnder(alphaGlobalRoot(), "plugins", versioned)
-  if (!destDir) return { ok: false, reason: "refused: path escapes alpha root" }
+  let files: Array<{ path: string; data: Buffer }>
+  if (precollected) files = precollected
+  else {
+    const collected = collectVendoredPluginPayload(vendoredAssetKey, name)
+    if (!collected.ok) return collected
+    files = collected.files
+  }
+  // r17(Major):versioned 目录**排他认领** —— recursive mkdir 对已存在目录静默成功,随机名
+  // 碰撞/预占时会覆盖既有目录、失败清理再整树误删。非递归 mkdir EEXIST 换名重试;清理只删
+  // 自己认领到的目录。
   try {
-    fs.mkdirSync(destDir, { recursive: true })
-    for (const f of collected.files) {
+    fs.mkdirSync(path.join(alphaGlobalRoot(), "plugins"), { recursive: true })
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "failed to prepare plugins root" }
+  }
+  let destDir: string | null = null
+  for (let attempt = 0; attempt < 3 && destDir === null; attempt++) {
+    const versioned = `${name}@${crypto.randomBytes(4).toString("hex")}`
+    const candidate = safeResolveUnder(alphaGlobalRoot(), "plugins", versioned)
+    if (!candidate) return { ok: false, reason: "refused: path escapes alpha root" }
+    try {
+      fs.mkdirSync(candidate) // 非递归:已存在 = EEXIST,绝不复用他人目录
+      destDir = candidate
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "EEXIST"))
+        return { ok: false, reason: error instanceof Error ? error.message : "failed to claim staging dir" }
+    }
+  }
+  if (destDir === null) return { ok: false, reason: "failed to claim a fresh versioned staging dir (3 attempts)" }
+  try {
+    for (const f of files) {
       const target = safeResolveUnder(destDir, ...f.path.split("/"))
       if (!target) throw new Error(`refused: payload path escapes staging dir: ${f.path}`)
       fs.mkdirSync(path.dirname(target), { recursive: true })
@@ -702,7 +728,7 @@ export function stageVendoredPluginVersioned(
     }
   } catch (error) {
     try {
-      fs.rmSync(destDir, { recursive: true, force: true })
+      fs.rmSync(destDir, { recursive: true, force: true }) // 本次排他认领的目录,删除不伤他人
     } catch {
       /* 半成品残留无 config 引用 */
     }
@@ -742,7 +768,9 @@ export function collectVendoredPluginPayload(
     if (code === "ENOENT") return { ok: false, reason: "插件内容未随此版本打包" }
     return { ok: false, reason: error instanceof Error ? error.message : "failed to read plugin asset" }
   }
-  const collected = collectSkillPayloadFromDir(realSrc)
+  // r17(Major):帽下沉到共享收集器的 fstat 前置检查(读入内存前拒);下方循环保留为二道闸
+  // (消息与既有拒绝语义位)。
+  const collected = collectSkillPayloadFromDir(realSrc, { maxFileBytes: VENDORED_PLUGIN_FILE_MAX_BYTES, maxTotalBytes: VENDORED_PLUGIN_TOTAL_MAX_BYTES })
   if (!collected.ok) return collected
   if (!collected.files.some((f) => f.path === "plugin.js")) return { ok: false, reason: "插件内容未随此版本打包" }
   let total = 0

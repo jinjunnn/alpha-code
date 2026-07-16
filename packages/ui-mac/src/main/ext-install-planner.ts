@@ -603,7 +603,7 @@ export type PlannerInstallers = {
   /** #378 r7:引擎配置真源路径(escape-hatch 路由后)—— 事务安装前置门比对事务根。 */
   mcpConfigTruthPath(): string
   /** #352:vendored 替换的纯 staging —— 新内容落 versioned 目录,零 config/账本副作用。 */
-  stageVendoredPluginVersioned(vendoredAssetKey: string, name: string): { ok: true; dir: string; jsPath: string } | { ok: false; reason: string }
+  stageVendoredPluginVersioned(vendoredAssetKey: string, name: string, precollected?: Array<{ path: string; data: Buffer }>): { ok: true; dir: string; jsPath: string } | { ok: false; reason: string }
   removePlugin(pkg: string): ConfigOutcome
   /** #378:收集 vendored plugin 随包目录为原始载荷(CAS 摄取 → file items 事务;只读零副作用;
    *  symlink/非常规条目拒,srcDir realpath 圈禁 resources 树内)。 */
@@ -1042,7 +1042,9 @@ async function replacePluginViaTransaction(args: {
           }
         }
       }
-      const staged = deps.installers.stageVendoredPluginVersioned(assetKey, entry.name)
+      // r17 Major:staging 直用本次收集的字节 —— 与上方 receipt digest 同一来源,杜绝两次独立
+      // 收集之间源变化造成「载荷 B + digest A」。
+      const staged = deps.installers.stageVendoredPluginVersioned(assetKey, entry.name, payload.files)
       if (!staged.ok) {
         rollback(staged.reason)
         return staged
@@ -2684,7 +2686,7 @@ function verifyVendoredPluginDirExact(dir: string, files: Array<{ path: string; 
   } catch {
     return { ok: false, reason: "plugin dir unstatable" }
   }
-  const readRegularNoFollow = (abs: string): Buffer | null => {
+  const readRegularNoFollow = (abs: string, wantBytes: number): Buffer | null => {
     let fd: number
     try {
       fd = fs.openSync(abs, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW)
@@ -2692,7 +2694,9 @@ function verifyVendoredPluginDirExact(dir: string, files: Array<{ path: string; 
       return null
     }
     try {
-      if (!fs.fstatSync(fd).isFile()) return null
+      const st = fs.fstatSync(fd)
+      // r17 Major:尺寸前置 —— 期望路径被放超大常规文件时不得无界读入内存(先判不等即拒)。
+      if (!st.isFile() || st.size !== wantBytes) return null
       return fs.readFileSync(fd)
     } catch {
       return null
@@ -2701,6 +2705,7 @@ function verifyVendoredPluginDirExact(dir: string, files: Array<{ path: string; 
     }
   }
   const seen = new Set<string>()
+  const visitedDirs: string[] = [""]
   const walk = (rel: string): string | null => {
     let names: string[]
     try {
@@ -2718,6 +2723,7 @@ function verifyVendoredPluginDirExact(dir: string, files: Array<{ path: string; 
       }
       if (st.isDirectory()) {
         if (!expectedDirs.has(childRel)) return `unexpected directory: ${childRel}`
+        visitedDirs.push(childRel)
         const verdict = walk(childRel)
         if (verdict !== null) return verdict
         continue
@@ -2725,8 +2731,8 @@ function verifyVendoredPluginDirExact(dir: string, files: Array<{ path: string; 
       if (!st.isFile()) return `non-regular entry: ${childRel}`
       const want = expected.get(childRel)
       if (want === undefined) return `unexpected file: ${childRel}`
-      const got = readRegularNoFollow(path.join(dir, childRel))
-      if (got === null) return `unreadable file (symlink swap?): ${childRel}`
+      const got = readRegularNoFollow(path.join(dir, childRel), want.length)
+      if (got === null) return `unreadable/oversized file (symlink swap?): ${childRel}`
       if (!got.equals(want)) return `content mismatch: ${childRel}`
       seen.add(childRel)
     }
@@ -2735,6 +2741,17 @@ function verifyVendoredPluginDirExact(dir: string, files: Array<{ path: string; 
   const verdict = walk("")
   if (verdict !== null) return { ok: false, reason: verdict }
   for (const p of expected.keys()) if (!seen.has(p)) return { ok: false, reason: `missing expected file: ${p}` }
+  // r17 Major:祖先目录 TOCTOU 终态复验 —— readdir 按路径进行,根/中间目录在 lstat 后被换成
+  // 指向外部等值树的 symlink 会让整个校验「看别人的树」。走完后逐个重验访问过的目录仍为真实
+  // 目录:**持续存在**的调包必被捕获;瞬时换回 = 盘上留下的是合法树,判健康无害。
+  for (const d of visitedDirs) {
+    try {
+      const st = fs.lstatSync(d === "" ? dir : path.join(dir, d))
+      if (st.isSymbolicLink() || !st.isDirectory()) return { ok: false, reason: `directory swapped during verification: ${d === "" ? "." : d}` }
+    } catch {
+      return { ok: false, reason: `directory unstatable after walk: ${d === "" ? "." : d}` }
+    }
+  }
   return { ok: true }
 }
 

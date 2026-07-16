@@ -1114,6 +1114,23 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
    *  调用方**不得终态化**(review r2 Blocker;config 同款,否则「已切换未落账」被当干净回滚)。 */
   const rollbackImageActions = (): { fileBlocked: string | null } => {
     let fileBlocked: string | null = null
+    // #378 r17 Major:config 恢复成功与后续 file 恢复之间存在旁路写窗口 —— 绕锁写方可在其间
+    // 重写 config 引用本事务载荷,继续 unlink 即制造悬空。已恢复的 config 记账,每次 file
+    // 恢复前紧邻重验仍在前像态;漂移即冻结(与 recovery 的 recheckLostPre 同款缩窗语义)。
+    const restoredPreConfigs: Array<{ key: string; target: string; preDigest: string }> = []
+    const liveConfigDigest = (target: string): string | null => {
+      try {
+        return crypto.createHash("sha256").update(fs.existsSync(target) ? fs.readFileSync(target, "utf8") : "{}", "utf8").digest("hex")
+      } catch {
+        return null
+      }
+    }
+    const recheckRestoredPre = (): string | null => {
+      for (const c of restoredPreConfigs) {
+        if (liveConfigDigest(c.target) !== c.preDigest) return `config "${c.key}" drifted after restore — a bypass writer may reference this payload; retained`
+      }
+      return null
+    }
     for (const it of [...journal.items].reverse()) {
       // #378 r2 Major:任一恢复被挡即**冻结**(不再触碰后续 item)—— 逆序下 config(逻辑主
       // item)先恢复,若被旁路改写挡住,live config 仍指向新载荷;继续回滚 file items 会
@@ -1129,9 +1146,16 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
         // 否则「配置已切换 + receipt 未落 + journal rolled-back」被当作干净回滚,调用方按失败
         // 清理(如删密钥版本)会制造悬空引用,且 recovery 不再重试。
         if (!restored.ok) fileBlocked = `config rollback for "${it.key}": ${restored.reason}`
+        else restoredPreConfigs.push({ key: it.key, target: image.target, preDigest: image.preDigest })
       } else if (kind === "file") {
         const image = fileImages.get(it.key)
         if (!image) continue
+        // r17 Major:file 恢复前紧邻重验已恢复 config 未漂移(见上)。
+        const driftedFwd = recheckRestoredPre()
+        if (driftedFwd) {
+          fileBlocked = `file rollback for "${it.key}": ${driftedFwd}`
+          continue
+        }
         // r3 Blocker:restore 同样先紧邻重验圈禁 —— 目录被重绑定时绝不经 symlink 写/删 root 外
         // 文件(即使内容恰好匹配 next 态),转 fileBlocked 保留非终态。
         const confined = it.file ? confineFileTarget(root, it.file.relTarget) : { ok: false as const, reason: "missing file journal segment" }
@@ -1151,6 +1175,8 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
         if (!restored.ok) fileBlocked = `file rollback for "${it.key}": ${restored.reason}`
       }
     }
+    // r17:终态化前的末次夹逼(与 recovery 同款)—— 全部恢复完成后再验已恢复 config 未漂移。
+    if (!fileBlocked) fileBlocked = recheckRestoredPre()
     return { fileBlocked }
   }
 
@@ -2343,6 +2369,10 @@ async function recoverOne(
         restoreBlocked = `config recovery rollback for "${first.key}": preimage write failed: ${error instanceof Error ? error.message : String(error)}`
         break
       }
+      // r17 Major:主动写回前像的链与失据-no-op 同样存在「file 回滚前旁路重写」窗口 —— 写回
+      // 成功即入 recheckLostPre 记账,file restore 前与终态化前同受夹逼;漏记会让旁路写方在
+      // 写回与 unlink 之间重新引用本载荷而不被冻结。
+      lostPreConfigs.push({ key: first.key, target: firstCfg.target, preDigest: firstCfg.preDigest })
     }
   }
   for (const it of [...journal.items].reverse()) {

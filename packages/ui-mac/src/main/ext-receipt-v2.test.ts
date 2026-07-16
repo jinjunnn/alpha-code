@@ -471,6 +471,41 @@ describe("upsertRecordsV2 — 批量单写(REQ-100 #311)", () => {
   })
 })
 
+describe("#378 r17 Blocker —— 损坏记录原文保全 + 同 key/unattributable 拒写", () => {
+  const R17_TX = { id: "tx-r17-replay", state: "committed" as const }
+  const seedWithCorrupt = (extraRecord: unknown) => {
+    upsertRecordV2(root, upsertInput({ transaction: R17_TX }))
+    const valid = readLedgerV2(root).records[0]
+    if (!valid) throw new Error("fixture: valid record missing")
+    fs.writeFileSync(ledgerFile(), JSON.stringify({ v: 2, receipts: [], records: [valid, extraRecord] }))
+  }
+
+  test("可归属损坏记录:无关 key 写/删照常且原文保全;同 key 写与删一律拒", () => {
+    seedWithCorrupt({ kind: "plugin", name: "px", generation: -5 })
+    const w = upsertRecordsV2(root, [upsertInput({ id: "skill:a", name: "a", kind: "skill", configKey: undefined })])
+    expect(w.ok).toBe(true) // 无关 key 不被整账砖死(O4 教训)
+    expect(fs.readFileSync(ledgerFile(), "utf8")).toMatch(/"generation":\s*-5/) // 证据没被重建蒸发
+    const same = upsertRecordV2(root, upsertInput({ id: "plugin:px", name: "px", kind: "plugin", configKey: "plugin:px@1" }))
+    expect(same.ok).toBe(false)
+    if (!same.ok) expect(same.reason).toContain("corrupt v2 record for this key")
+    const rmSame = removeRecordV2(root, "plugin", "px")
+    expect(rmSame.ok).toBe(false)
+    const rmOther = removeRecordV2(root, "skill", "a")
+    expect(rmOther.ok).toBe(true)
+    expect(fs.readFileSync(ledgerFile(), "utf8")).toMatch(/"generation":\s*-5/) // 删除路径同样保全
+  })
+
+  test("unattributable 损坏:任何 fresh 写拒;纯重放批零写盘照常(恢复不被卡)", () => {
+    seedWithCorrupt({ garbage: true })
+    const fresh = upsertRecordsV2(root, [upsertInput({ id: "skill:c", name: "c", kind: "skill", configKey: undefined })])
+    expect(fresh.ok).toBe(false)
+    if (!fresh.ok) expect(fresh.reason).toContain("unattributable")
+    const replay = upsertRecordsV2(root, [upsertInput({ transaction: R17_TX })])
+    expect(replay.ok).toBe(true) // 同 tx 完全一致 = 纯重放,零写盘
+    expect(fs.readFileSync(ledgerFile(), "utf8")).toContain("garbage") // 原文未动
+  })
+})
+
 describe("computeGrantDigest — 键集 digest,绝不摄入值", () => {
   test("value-independent; key-set sensitive", () => {
     const a = computeGrantDigest({ secrets: { API_KEY: "topsecret-1" } })
