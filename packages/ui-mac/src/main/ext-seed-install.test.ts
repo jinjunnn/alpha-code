@@ -1060,6 +1060,75 @@ describe("plugin seed install via installCatalog (REQ-102 #359)", () => {
     expect(rec!.version).toBe("1.1.0")
   })
 
+  test("replace 异 payload:新内容寻址目录在场 = 无账在场,锁内拒不认领(review r2 Blocker)", async () => {
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
+    expect((await installAuthorized(pluginSeedIntent, pluginDeps())).ok).toBe(true)
+    // 目标 v2 目录被外部占用(含垃圾)。
+    const d2 = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES_V2)}`)
+    fs.mkdirSync(d2, { recursive: true })
+    fs.writeFileSync(path.join(d2, "junk.js"), "junk")
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES_V2, version: "1.1.0" }])
+    const v2Entry = bundledPluginEntry({ version: "1.1.0", remoteAsset: { version: "1.1.0", files: lockFileEntries(PLUGIN_FILES_V2, { writeBlobs: false }) } })
+    const r = await installAuthorized(pluginSeedIntent, makeSeedDeps({ bundledEntries: [v2Entry] }))
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("without a ledger record")
+    expect(fs.readFileSync(path.join(d2, "junk.js"), "utf8")).toBe("junk") // 现场不动
+  })
+
+  test("同版本重装遇实物被篡改 → 走修复路径(完整 journaled replace 重写清单文件,review r2 Major)", async () => {
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
+    const deps = pluginDeps()
+    expect((await installAuthorized(pluginSeedIntent, deps)).ok).toBe(true)
+    const jsPath = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`, "plugin.js")
+    fs.writeFileSync(jsPath, "tampered live payload")
+    const repair = await installAuthorized(pluginSeedIntent, deps)
+    expect(repair.ok).toBe(true)
+    if (repair.ok) expect(repair.warning ?? "").not.toContain("nothing to replace") // 不是幂等早退
+    expect(fs.readFileSync(jsPath, "utf8")).toBe(PLUGIN_FILES[0].content) // 修复回清单字节
+  })
+
+  test("载荷路径大小写折叠碰撞 fail-closed(review r2 Major)", async () => {
+    const collide = [
+      { path: "plugin.js", content: "export const Demo = 1" },
+      { path: "Lib.js", content: "A" },
+      { path: "lib.js", content: "b" },
+    ]
+    buildSeed([{ id: "plugin:demo-plugin", files: collide }])
+    const r = await installAuthorized(
+      pluginSeedIntent,
+      pluginDeps({ remoteAsset: { version: "1.0.0", files: lockFileEntries(collide, { writeBlobs: false }) } }),
+    )
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("colliding")
+  })
+
+  test("旧目录 GC 持锁重读引用(review r2 Blocker):被引用/锁忙保留,无引用才删", async () => {
+    const { gcVendoredPluginDirLocked } = await import("./ext-install-planner")
+    const oldDir = path.join(globalRoot, "plugins", "demo-plugin@aaaabbbbccccdddd")
+    fs.mkdirSync(oldDir, { recursive: true })
+    fs.writeFileSync(path.join(oldDir, "plugin.js"), "x")
+    const oldJs = path.join(oldDir, "plugin.js")
+    // 被 config 重新引用 → 保留。
+    const referenced = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [oldJs] }))
+    expect(referenced.removed).toBe(false)
+    expect(fs.existsSync(oldDir)).toBe(true)
+    // 锁忙 → 保留。
+    const held = tryAcquireBundleLock(globalRoot, { txId: "probe" })
+    expect(held.ok).toBe(true)
+    if (held.ok) {
+      const busy = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [] }))
+      expect(busy.removed).toBe(false)
+      held.lock.release()
+    }
+    // 圈禁外 → 保留。
+    const outside = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", path.join(globalRoot, "evil"), () => ({ ok: true, value: [] }))
+    expect(outside.removed).toBe(false)
+    // 无引用 + 拿到锁 → 删。
+    const removed = gcVendoredPluginDirLocked(globalRoot, "demo-plugin", oldDir, () => ({ ok: true, value: [] }))
+    expect(removed.removed).toBe(true)
+    expect(fs.existsSync(oldDir)).toBe(false)
+  })
+
   test("downgrade 拒:已装更高版本时 seed 不提供降级通道", async () => {
     buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES_V2, version: "2.0.0" }])
     const v2Entry = bundledPluginEntry({ version: "2.0.0", remoteAsset: { version: "2.0.0", files: lockFileEntries(PLUGIN_FILES_V2, { writeBlobs: false }) } })
