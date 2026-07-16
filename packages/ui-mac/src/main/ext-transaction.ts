@@ -1771,8 +1771,9 @@ export function probeTransactionJournals(root: string): { entries: TxJournalProb
  *  账本无在途手术时进行的动作,用本谓词判定;不干净只损失一次启动窗口,下次干净再做。 */
 export function recoveryClean(r: { ok: boolean; reports: TxRecoveryReport[] }): boolean {
   if (!r.ok) return false
-  // retained(未收敛保留态)一律判不干净 —— 迁移/清理等只该在账本无在途手术时进行的动作据此跳过。
-  return r.reports.every((rep) => !rep.retained && rep.action !== "aborted" && rep.action !== "rolled-back" && TERMINAL_TX_STATES.has(rep.state))
+  // retained(未收敛保留态)/ corrupt(不可解析,rename 失败时原件甚至仍在)一律判不干净 ——
+  // 迁移/清理等只该在账本无在途手术时进行的动作据此跳过(r4/r5 Major)。
+  return r.reports.every((rep) => !rep.retained && !rep.corrupt && rep.action !== "aborted" && rep.action !== "rolled-back" && TERMINAL_TX_STATES.has(rep.state))
 }
 
 export type RecoverOptions = {
@@ -1961,7 +1962,7 @@ function cleanTerminalStaging(root: string, txId: string, state: TxState, warnin
     const removed = removeDirGuarded(root, staging, warnings)
     return removed
       ? { txId, state, action: "cleaned", detail: "removed leftover staging dir (terminal)" }
-      : { txId, state, action: "none", detail: "terminal but staging removal failed — retained (journal GC skips it)" }
+      : { txId, state, action: "none", detail: "terminal but staging removal failed — retained (journal GC skips it)", retained: true }
   }
   return { txId, state, action: "none", detail: "already terminal" }
 }
@@ -2109,14 +2110,17 @@ async function recoverOne(
       return null
     }
   }
+  // #375 review Blocker/r5:config.target 是 journal 里的**绝对路径**,恢复路径对它的任何采信
+  //(isFlipped digest 读、reconstruct、restore 写)都必须先圈禁 root 内 —— 否则畸形/恶意
+  // journal 把 root 外绝对 target 带进 restoreConfigImage 越界写盘,或让前滚认领 root 外目标。
+  // 与 file 段的 relTarget 圈禁对称。单一真源,两处采信共用。
+  const configTargetConfined = (target: unknown): boolean => {
+    if (typeof target !== "string" || !path.isAbsolute(target)) return false
+    const relTarget = path.relative(root, target)
+    return isSafeRelPath(relTarget) && confineFileTarget(root, relTarget).ok
+  }
   const reconstructConfigImage = (it: TxJournalItem): ConfigTxImage | null => {
-    if (actionOf(it) !== "config" || !it.config) return null
-    // #375 review Blocker:config.target 是 journal 里的**绝对路径**,恢复路径此前无圈禁 —— 畸形/
-    // 恶意 journal 可把 root 外绝对 target 带进 restoreConfigImage 越界写盘(#358 给 file 的
-    // relTarget 加了圈禁,config 遗漏)。target 相对化后必须落在 root 内(与 file 对称)。
-    if (typeof it.config.target !== "string" || !path.isAbsolute(it.config.target)) return null
-    const relTarget = path.relative(root, it.config.target)
-    if (!isSafeRelPath(relTarget) || !confineFileTarget(root, relTarget).ok) return null
+    if (actionOf(it) !== "config" || !it.config || !configTargetConfined(it.config.target)) return null
     const r = readStagedConfigImage(staleStaging, it.config.slot, it.config.target, it.config.preDigest, it.config.nextDigest)
     return r.ok ? r.image : null
   }
@@ -2131,7 +2135,14 @@ async function recoverOne(
   const isFlipped = (it: TxJournalItem): boolean => {
     const kind = actionOf(it)
     if (kind === "receipt") return true
-    if (kind === "config") return it.config ? configTargetDigest(it.config.target) === it.config.nextDigest : false
+    if (kind === "config") {
+      // r5 Major:config.target 圈禁必须前置到 isFlipped —— 否则 root 外目标 digest 命中会让
+      // allFlipped 成立、跳过 probe、前滚落账(把 root 外目标认定为成功切换,写账本/授权),
+      // 即便 reconstructConfigImage 从不写盘。未圈禁 = 判未翻转(强制走回滚 → reconstruct 返 null
+      // → 保留态)。与 file 段的圈禁对称。
+      if (!it.config || !configTargetConfined(it.config.target)) return false
+      return configTargetDigest(it.config.target) === it.config.nextDigest
+    }
     // file(r5 Blocker):翻转 = **本事务已 apply(journal 进度)∧ live digest 命中** —— 只看
     // digest 会把旁路植入的同 digest 文件误认本事务输出(前滚落账 = 认领外部内容)。
     // r6 Blocker(持久化兼容):#358 时代的 legacy file journal 无 requireAbsent/applied 字段

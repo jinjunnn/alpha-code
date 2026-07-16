@@ -356,6 +356,34 @@ describe("recovery 自守(#375:畸形 journal 不炸整轮)", () => {
     expect(recoveryClean(rec)).toBe(false)
   })
 
+  test("review r5 Major:corrupt journal → recoveryClean=false(迁移不在有未知事务证据时进行)", async () => {
+    const ref = mkRoot("corruptclean")
+    const layout = transactionJournalLayout(ref.root)
+    writeFileSync(join(layout.journalDir, "tx-cc-deadbeef.json"), "{ not parseable")
+    const rec = await recoverExtensionTransactions(ref.root, { log: silentLog })
+    expect(recoveryClean(rec)).toBe(false)
+    expect(rec.reports.some((r) => r.corrupt)).toBe(true)
+  })
+
+  test("review r5 Major:config.target 指向 root 外 → isFlipped 判未翻转,不认领/不落账(前滚绕过封堵)", async () => {
+    const ref = mkRoot("cfgflip")
+    const external = join(base, "external-target.jsonc")
+    // switching + config item 的 target 在 root 外,且外部文件 digest 恰等于 nextDigest(伪造命中)。
+    const nextDigest = createHash("sha256").update("{}", "utf8").digest("hex") // 空对象 digest
+    writeFileSync(external, "{}") // digest = nextDigest
+    writeJournal(ref, "tx-cf.json", {
+      txId: "tx-cf",
+      op: "install",
+      state: "switching",
+      items: [{ key: "skill--demo", action: "config", config: { target: external, slot: "a", preDigest: "x", nextDigest } }],
+    })
+    const rec = await recoverExtensionTransactions(ref.root, { log: silentLog })
+    const r = rec.reports.find((rep) => rep.txId === "tx-cf")
+    // 未翻转 → 走回滚 → reconstructConfigImage 圈禁返 null → 回滚失败保留,绝不标 committed。
+    expect(r?.action).not.toBe("resumed-committed")
+    expect(r?.state).not.toBe("committed")
+  })
+
   test("review r3 Major:staging 删除失败(圈禁不过)→ 终态件不谎报 cleaned,terminal GC 不删该 journal", async () => {
     const ref = mkRoot("stagingfail")
     const layout = transactionJournalLayout(ref.root)
