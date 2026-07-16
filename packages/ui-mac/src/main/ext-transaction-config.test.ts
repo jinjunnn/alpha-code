@@ -93,6 +93,44 @@ describe("config action", () => {
     }
   })
 
+  test("#378 r10:同 target 双 config item(链式 image)—— switching 后零 apply 崩溃,恢复干净回滚", async () => {
+    writeCfg({ mcp: { seed: { type: "local" } } })
+    const before = fs.readFileSync(cfg, "utf8")
+    const plan: TxPlan = { items: [configItem("mcp--a", "a", { type: "local" }), configItem("mcp--b", "b", { type: "remote", url: "https://x/sse" })] }
+    let crashed = false
+    try {
+      await runExtensionTransaction(root, plan, { populate: noop, commitReceipt: noop, log: noop, crashAt: "after-switching-journal" })
+    } catch {
+      crashed = true
+    }
+    expect(crashed).toBe(true)
+    expect(fs.readFileSync(cfg, "utf8")).toBe(before) // 尚未 apply,live=链首前像
+    const rec = await recoverExtensionTransactions(root, { commitReceipt: noop, pidAlive: () => false, log: noop })
+    expect(rec.ok).toBe(true)
+    // r10 前:item_b 期望中间前像 → divergence 永久保留;现在按链判 live=pre_0 → 干净回滚
+    expect(rec.reports[0]?.action).toBe("rolled-back")
+    expect(fs.readFileSync(cfg, "utf8")).toBe(before)
+  })
+
+  test("#378 r10:同 target 链中途 apply 停摆(live=中间 next)→ 恢复写回链首前像", async () => {
+    writeCfg({ mcp: { seed: { type: "local" } } })
+    const before = fs.readFileSync(cfg, "utf8")
+    const plan: TxPlan = { items: [configItem("mcp--a", "a", { type: "local" }), configItem("mcp--b", "b", { type: "remote", url: "https://x/sse" })] }
+    let crashed = false
+    try {
+      await runExtensionTransaction(root, plan, { populate: noop, commitReceipt: noop, log: noop, crashAt: "mid-switch" })
+    } catch {
+      crashed = true
+    }
+    expect(crashed).toBe(true)
+    expect(readCfg().mcp.a).toEqual({ type: "local" }) // item_a 已 apply(中间态)
+    expect(readCfg().mcp.b).toBeUndefined()
+    const rec = await recoverExtensionTransactions(root, { commitReceipt: noop, pidAlive: () => false, log: noop })
+    expect(rec.ok).toBe(true)
+    expect(rec.reports[0]?.action).toBe("rolled-back")
+    expect(fs.readFileSync(cfg, "utf8")).toBe(before) // 写回链首前像
+  })
+
   test("#378 r1:config 恢复被旁路改写挡住 → journal 保留非终态(不终态化为 rolled-back)", async () => {
     writeCfg({ mcp: { a: { type: "old" } } })
     const r = await runExtensionTransaction(root, { items: [configItem("mcp--a", "a", { type: "new" })] }, {

@@ -132,11 +132,14 @@ current、不写 config/receipt/grants/授权收据;已验证载荷可能留在�
   (会删掉并发写方的新版本)已废除。
 - 写入硬化:tmp(0600)→ 同目录 rename 原子落位;根/server/版本三级目录 mkdir 后 lstat
   复核非 symlink 实目录(`writeMcpSecretVersioned`)。
-- 生命周期:安装失败 / authorize 暂停 → 删除本次 verId 目录(无引用,惰性;用户确认前
-  零明文残留);提交成功 → `gcMcpSecretsAgainstConfig` 在**配置写锁内**按当前 leaf 引用集
-  收未引用且过宽限期(10 分钟,保护「文件已写、config 未提交」的在途安装)的版本目录、
-  legacy flat 文件与历史 `.bak-*` 快照残留(busy 跳过,best-effort);崩溃孤儿无引用,
-  由后续 GC 收。卸载不变:整 `<server>` 目录删除(覆盖全部版本 + flat)。
+- 生命周期:安装失败 / authorize 暂停 → 删除本次 verId 目录(删除前按**合并视图**(主 leaf +
+  全部 retained legacy 源)证明未被引用,读不出即保守不删;用户确认前零明文残留);提交成功 →
+  `gcMcpSecretsAgainstConfig` 在**配置写锁内**按**全源引用集**(主 leaf + 每个 legacy 源的
+  `mcp.<server>` leaf,各按其文件目录解析,r9/r10)收未引用且过宽限期(10 分钟,保护「文件
+  已写、config 未提交」的在途安装)的版本目录、legacy flat 文件与历史兄弟级 `.bak-<hex8>`
+  快照残留(候选名在册 = 活体排除,绝不删;busy 跳过,best-effort);任一源不可读/形状非法 =
+  引用集不可信,整轮安全退出;崩溃孤儿无引用,由后续 GC 收。卸载:整 `<server>` 目录删除
+  (覆盖全部版本 + flat)+ 兄弟级历史备份(同活体排除)。
 - 存量兼容:legacy flat 引用(`<server>/<VAR>`,含 env 迁移 `alpha-env-migrate` 写入)继续
   可读;仅在被当前 leaf 不再引用且过宽限后被 GC。未策展通道(`ext-persist-mcp`)与 catalog
   事务共用同一版本化原语,skip 语义(已有引用/空值)保持未策展既有 posture。

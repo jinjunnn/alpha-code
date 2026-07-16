@@ -467,6 +467,31 @@ export function restoreMcpLeaf(name: string, value: Record<string, unknown> | un
   return writeKey(mcpPluginTargetPath(), ["mcp", name], value)
 }
 
+/** #378 r7/r10:全部 legacy 源 mcp.<name> leaf 的 {file:} 引用集(各按其文件目录解析;
+ *  语法/形状损坏或不可读 = 引用集不可信,strict 失败)。GC 与安装失败清理共用。 */
+export function collectLegacyMcpRefPathsStrict(name: string): { ok: true; refs: string[] } | { ok: false; reason: string } {
+  if (!SAFE_NAME.test(name)) return { ok: false, reason: `invalid server name: ${name}` }
+  const isRec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
+  const refs: string[] = []
+  for (const file of legacyConfigPaths(mcpPluginTargetPath())) {
+    try {
+      if (!fs.existsSync(file)) continue
+      const errors: ParseError[] = []
+      const parsed: unknown = parse(fs.readFileSync(file, "utf8"), errors)
+      if (errors.length > 0) return { ok: false, reason: `legacy config unparseable: ${file}` }
+      if (parsed !== undefined && !isRec(parsed)) return { ok: false, reason: `legacy config root is not an object: ${file}` }
+      const mcpMap = isRec(parsed) ? parsed.mcp : undefined
+      const legacyLeaf = isRec(mcpMap) ? mcpMap[name] : undefined
+      if (legacyLeaf === undefined) continue
+      const legacyDir = path.dirname(file)
+      for (const p of collectMcpFileRefPaths(legacyLeaf)) refs.push(resolveMcpRefPath(p, legacyDir))
+    } catch (error) {
+      return { ok: false, reason: `legacy config unreadable: ${file}: ${error instanceof Error ? error.message : String(error)}` }
+    }
+  }
+  return { ok: true, refs }
+}
+
 /** #378(Codex 裁决 Q1):安装成功后的密钥版本 GC —— 配置锁内读当前 mcp.<name> leaf 收集
  *  {file:} 引用集,交 gcMcpSecretVersionsLocked 收未引用且过宽限的版本/flat/快照残留。锁在途
  *  (busy)= 跳过本轮(GC 是 best-effort,残留由下次安装/卸载收),绝不阻塞安装成功路径。
@@ -487,22 +512,9 @@ export function gcMcpSecretsAgainstConfig(userDataPath: string, name: string): {
     // r7 Blocker:引擎在主配置之后还合并 retained home(~/.opencode)/XDG 等 legacy 源 ——
     // 其 mcp.<name> leaf 可能仍引用更旧的版本目录或 flat 密钥;引用集漏掉它们,GC 会删掉
     // 合并视图仍在用的凭证。任一 legacy 源不可读/解析失败 = 引用集不可信,整轮安全退出。
-    for (const file of legacyConfigPaths(mcpPluginTargetPath())) {
-      try {
-        if (!fs.existsSync(file)) continue
-        const errors: ParseError[] = []
-        const parsed: unknown = parse(fs.readFileSync(file, "utf8"), errors)
-        if (errors.length > 0) return { removed: [], warnings: [`secret gc skipped for ${name}: legacy config unparseable: ${file}`] }
-        const isRec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
-        const mcpMap = isRec(parsed) ? parsed.mcp : undefined
-        const legacyLeaf = isRec(mcpMap) ? mcpMap[name] : undefined
-        if (legacyLeaf === undefined) continue
-        const legacyDir = path.dirname(file)
-        for (const p of collectMcpFileRefPaths(legacyLeaf)) referenced.push(resolveMcpRefPath(p, legacyDir))
-      } catch (error) {
-        return { removed: [], warnings: [`secret gc skipped for ${name}: legacy config unreadable: ${file}: ${error instanceof Error ? error.message : String(error)}`] }
-      }
-    }
+    const legacyRefs = collectLegacyMcpRefPathsStrict(name)
+    if (!legacyRefs.ok) return { removed: [], warnings: [`secret gc skipped for ${name}: ${legacyRefs.reason}`] }
+    referenced.push(...legacyRefs.refs)
     // r8 Major:兄弟备份活体排除 —— 在册名读不出 = 引用集同源不可信,整轮安全退出。
     const live = listConfiguredMcpServerNamesStrict()
     if (!live.ok) return { removed: [], warnings: [`secret gc skipped for ${name}: ${live.reason}`] }
@@ -784,6 +796,7 @@ export function listConfiguredMcpServerNamesStrict(): { ok: true; names: string[
       const errors: ParseError[] = []
       const parsed: unknown = parse(fs.readFileSync(file, "utf8"), errors)
       if (errors.length > 0) return { ok: false, reason: `config unparseable: ${file}` }
+      if (parsed !== undefined && !isRec(parsed)) return { ok: false, reason: `config root is not an object: ${file}` }
       const mcpMap = isRec(parsed) ? parsed.mcp : undefined
       if (mcpMap === undefined) continue
       if (!isRec(mcpMap)) return { ok: false, reason: `config mcp key has unexpected shape: ${file}` }
@@ -818,6 +831,9 @@ export function readLegacyPluginArrayStrict():
       const errors: ParseError[] = []
       const parsed: unknown = parse(fs.readFileSync(file, "utf8"), errors)
       if (errors.length > 0) return { ok: false, reason: `legacy config unparseable (${errors.length} syntax error(s)): ${file} — refusing plugin install` }
+      // r10 Major:标量/数组根 = 引擎会拒该源致整份配置回退空 —— 不得当「无 plugin」放行安装。
+      if (parsed !== undefined && (!parsed || typeof parsed !== "object" || Array.isArray(parsed)))
+        return { ok: false, reason: `legacy config root is not an object: ${file} — the engine would reject it; refusing plugin install` }
       const v = parsed && typeof parsed === "object" && !Array.isArray(parsed) && "plugin" in parsed ? parsed.plugin : undefined
       if (v === undefined) continue
       if (!Array.isArray(v)) return { ok: false, reason: `legacy config plugin key is not an array: ${file} — refusing plugin install` }
@@ -984,7 +1000,12 @@ function removePluginPathUnlocked(name: string, absJsPath: string): ConfigResult
       const errors: ParseError[] = []
       const parsed: unknown = parse(fs.readFileSync(file, "utf8"), errors)
       if (errors.length > 0) return { ok: false, reason: `config unparseable (fail closed): ${file}: ${errors.length} parse error(s)` }
-      const current = isRec(parsed) && Array.isArray(parsed.plugin) ? parsed.plugin : []
+      // r10 Major:语法合法但形状非法(非对象根 / plugin 非数组)不得折叠成「无条目」——
+      // 那会让卸载在未证明净除的情况下删载荷/账本,修好形状后条目复活指向已删 plugin.js。
+      if (parsed !== undefined && !isRec(parsed)) return { ok: false, reason: `config root is not an object (fail closed): ${file}` }
+      const pluginVal = isRec(parsed) ? parsed.plugin : undefined
+      if (pluginVal !== undefined && !Array.isArray(pluginVal)) return { ok: false, reason: `config plugin key is not an array (fail closed): ${file}` }
+      const current = Array.isArray(pluginVal) ? pluginVal : []
       const configDir = path.dirname(file)
       const next = current.filter((p) => !pluginEntryMatchesPath(p, targetResolved, configDir))
       if (next.length !== current.length) {

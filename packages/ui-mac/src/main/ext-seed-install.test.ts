@@ -184,6 +184,7 @@ function forbiddenInstallers(): PlannerInstallers {
     writeMcpSecretVersioned: forbid("writeMcpSecretVersioned"),
     removeMcpSecretVersionDir: forbid("removeMcpSecretVersionDir"),
     gcMcpSecrets: forbid("gcMcpSecrets"),
+    legacyMcpRefPaths: forbid("legacyMcpRefPaths"),
     readMcpLeafStrict: forbid("readMcpLeafStrict"),
     removeMcpConfigInLock: forbid("removeMcpConfigInLock"),
     removeMcpSecretsStrict: forbid("removeMcpSecretsStrict"),

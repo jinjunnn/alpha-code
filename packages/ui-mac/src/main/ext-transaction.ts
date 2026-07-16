@@ -2256,47 +2256,72 @@ async function recoverOne(
   // 之间存在旁路写窗口(绕锁写方可在其间写入引用本事务载荷的配置)。每次 file restore 前与
   // 终态化前**紧邻重验**这些 item 仍在 pre 态,漂移即冻结;残余相邻 syscall 微窗与 #358 r3
   // 同类缩窗(能绕 bundle 锁写 config 者本就等价于本用户)。
-  const lostPreConfigs: TxJournalItem[] = []
+  const lostPreConfigs: Array<{ key: string; target: string; preDigest: string }> = []
   const recheckLostPre = (): string | null => {
     for (const c of lostPreConfigs) {
-      if (c.config && configTargetDigest(c.config.target) !== c.config.preDigest)
+      if (configTargetDigest(c.target) !== c.preDigest)
         return `config recovery for "${c.key}": live drifted after the no-op check — retained`
     }
     return null
   }
+  // #378 r10 Major:同一 target 的多 config item 是**链式 image**(prepare 时 item_i 的 next =
+  // item_{i+1} 的 pre)—— 逆序逐 item 独立恢复会把「链尚未生效(live=链首前像)」误判 divergence
+  // 永久保留。以链为单位:live=pre_0 → 安全 no-op;live=链上任一 next_i(含中途 apply 停摆)→
+  // 原子写回链首 preImage;其余 = 旁路改写/失据,冻结留证。单 item 链退化为原逐项语义
+  // (r1/r3/r4/r5 各判据保持)。config 恢复先于 file 回滚(受阻即冻结,file 不再触碰)。
+  const configChains = new Map<string, TxJournalItem[]>()
+  for (const it of journal.items) {
+    if (actionOf(it) !== "config") continue
+    // r6 Major:圈禁不过 = 现场需人工核对,保留非终态(绝不 warn+continue 后终态化)。
+    if (!it.config || !configTargetConfined(it.config.target)) {
+      restoreBlocked = `config recovery rollback for "${it.key}": target failed confinement — retained as evidence`
+      break
+    }
+    const chainKey = path.resolve(it.config.target)
+    const chain = configChains.get(chainKey) ?? []
+    chain.push(it)
+    configChains.set(chainKey, chain)
+  }
+  if (!restoreBlocked) {
+    for (const chain of configChains.values()) {
+      const first = chain[0]
+      if (!first?.config) continue
+      const firstCfg = first.config
+      const liveDigest = configTargetDigest(firstCfg.target)
+      if (liveDigest === firstCfg.preDigest) {
+        // r4:整链未生效(live=链首前像)= 安全 no-op(失据与否皆然);记账供 file 回滚前重验。
+        if (chain.length === 1 && !reconstructConfigImage(first))
+          warnings.push(`config recovery: staged image lost but live already at pre-digest for "${first.key}" — safe no-op`)
+        lostPreConfigs.push({ key: first.key, target: firstCfg.target, preDigest: firstCfg.preDigest })
+        continue
+      }
+      const nextDigests = new Set(chain.map((it) => it.config!.nextDigest))
+      if (liveDigest === null || !nextDigests.has(liveDigest)) {
+        // r1/r3:target 不可读,或既非链首前像也非链上任何 next(旁路改写/失据无从判定)→ 冻结留证。
+        restoreBlocked = `config recovery rollback for "${first.key}": cannot reconstruct image (staging lost/corrupt) and live is not at pre-digest — retained`
+        break
+      }
+      // live 在链上 → 写回链首 preImage 需要其字节;链首 image 失据即冻结(r3 语义)。
+      const image0 = reconstructConfigImage(first)
+      if (!image0) {
+        restoreBlocked = `config recovery rollback for "${first.key}": cannot reconstruct image (staging lost/corrupt) and live is not at pre-digest — retained`
+        break
+      }
+      try {
+        writeFileAtomicSync(firstCfg.target, image0.preImage)
+      } catch (error) {
+        // r2 M1 同款:写失败走结果通道,冻结保留(不 reject 悬锁)。
+        restoreBlocked = `config recovery rollback for "${first.key}": preimage write failed: ${error instanceof Error ? error.message : String(error)}`
+        break
+      }
+    }
+  }
   for (const it of [...journal.items].reverse()) {
-    // #378 r2 Major:任一恢复被挡即冻结(与前向回滚同款)—— 逆序下 config 先恢复,受阻时
-    // 继续 unlink file items 会删掉 live config 仍引用的载荷。剩余 item 原样留证。
+    // #378 r2 Major:任一恢复被挡即冻结(与前向回滚同款)—— config 受阻时继续 unlink
+    // file items 会删掉 live config 仍引用的载荷。剩余 item 原样留证。
     if (restoreBlocked) break
     const kind = actionOf(it)
-    if (kind === "config") {
-      // r6 Major:config.target 圈禁不过(root 外/畸形)= 现场需人工核对 —— **保留非终态**,
-      // 绝不静默 warn+continue 后终态化为 rolled-back(那会让恶意/畸形 config journal 被当作
-      // 正常回滚完成)。与 file 段的 restore-blocked 同款证据保留语义。
-      if (!it.config || !configTargetConfined(it.config.target)) {
-        restoreBlocked = `config recovery rollback for "${it.key}": target failed confinement — retained as evidence`
-        continue
-      }
-      const image = reconstructConfigImage(it)
-      if (!image) {
-        // #378 r4 Major:失据但 live 可**证明**已处于 pre 态(digest 相等)= 该 item 的回滚是
-        // 安全 no-op —— 不冻结,让 file items 正常回滚、journal 正常终态化(否则「file 已翻转、
-        // config 未翻转 + 仅 config staging 丢失」这类可安全收敛的现场被永久卡死,阻断后续写)。
-        if (it.config && configTargetDigest(it.config.target) === it.config.preDigest) {
-          warnings.push(`config recovery: staged image lost but live already at pre-digest for "${it.key}" — safe no-op`)
-          lostPreConfigs.push(it) // r5:后续 file 回滚/终态化前紧邻重验(旁路写窗口夹逼)
-          continue
-        }
-        // #378 r3 Major:live 非 pre 态(已翻转/已漂移)且失据 → **冻结保留** —— 无从判定
-        // live config 是否仍指向本事务的 file 载荷;继续 unlink file items 并终态化会留下
-        // 「live config 指向已删载荷」且 journal 终态阻断幂等重试(与 file 段 #358 B3 同款)。
-        restoreBlocked = `config recovery rollback for "${it.key}": cannot reconstruct image (staging lost/corrupt) and live is not at pre-digest — retained`
-        continue
-      }
-      const restored = restoreConfigImage(image)
-      // #378 review r1 Major:恢复路径同款 —— config 恢复被拒不得终态化为 rolled-back。
-      if (!restored.ok) restoreBlocked = `config recovery rollback for "${it.key}": ${restored.reason}`
-    } else if (kind === "file") {
+    if (kind === "file") {
       // r3 Blocker:预扫与此处之间仍有 config 恢复等异步间隙 —— restore 前紧邻再重验一次圈禁。
       const confined = it.file ? confineFileTarget(root, it.file.relTarget) : { ok: false as const, reason: "missing file journal segment" }
       if (!confined.ok) {

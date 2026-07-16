@@ -62,6 +62,12 @@ function mcpRefPathOf(ref: string): string | null {
  *  `file://.../plugin.js`、`/a/./b`)。非路径形态(npm 包名)= null。 */
 /** plugin[] 成员的 spec 头(引擎 pluginSpecifier 同判:string 或 [spec, options] 元组)。
  *  #378 r5:校验/等值比较/换元三阶段共用,元组不许再有任何一处按整值与字符串比较。 */
+/** npm spec 的包名 base(保留 @scope,剥尾部 @version;与 ext-config.pkgBase 同判)。 */
+function pkgBaseOf(spec: string): string {
+  const at = spec.lastIndexOf("@")
+  return at > 0 ? spec.slice(0, at) : spec
+}
+
 function pluginSpecOf(x: unknown): string | null {
   if (typeof x === "string") return x
   if (Array.isArray(x) && typeof x[0] === "string") return x[0]
@@ -564,6 +570,9 @@ export type PlannerInstallers = {
   writeMcpSecretVersioned(name: string, verId: string, varName: string, value: string): { ok: true; ref: string } | { ok: false; reason: string }
   removeMcpSecretVersionDir(name: string, verId: string): { ok: true } | { ok: false; reason: string }
   gcMcpSecrets(name: string): { removed: string[]; warnings: string[] }
+  /** #378 r10:全部 legacy 源 mcp.<name> leaf 的 {file:} 引用集(失败清理的「仍被引用」判定
+   *  必须覆盖合并视图;strict:读不出即失败,调用方保守不删)。 */
+  legacyMcpRefPaths(name: string): { ok: true; refs: string[] } | { ok: false; reason: string }
   /** #354(必改 2):可失败的严格 leaf 前像读 —— 「不存在」= 合法 undefined,「不可读/形状异常」
    *  必须写前拒绝(#378 起前像本体由引擎 config action 整文件 image journaled,此读只作产品语义
    *  早拒 + 锁内 precondition 重验)。 */
@@ -811,9 +820,17 @@ function resolvePluginDispatch(
   const configKey = record.configKey ?? ""
   if (configKey.startsWith("plugin:")) {
     const oldPinned = configKey.slice("plugin:".length)
-    // r5 Major:元组成员按 spec 头对账(引擎合法的 [oldPinned, options] 不再被误判 drift)。
-    if (cfg.value.filter((x) => pluginSpecOf(x) === oldPinned).length !== 1)
-      return { mode: "refuse", reason: `ledger configKey "${configKey}" not matched exactly once in config plugin[] — ledger/config drift, refusing replace` }
+    // r5 Major:元组成员按 spec 头对账。r10 Major:①恰 pin 的等价重复 = 引擎同一 load 身份,
+    // 不再按原始条目数误判 drift(replace 收敛为单条);②**同包其他 pin 在场即拒** —— 引擎按
+    // 包名去重,兄弟 pin 可能胜出,置换后账本记新 pin 而引擎实际加载别的版本。
+    const specs = cfg.value.map(pluginSpecOf).filter((x): x is string => x !== null)
+    const base = pkgBaseOf(oldPinned)
+    const sameBase = specs.filter((x) => pkgBaseOf(x) === base)
+    const exact = sameBase.filter((x) => x === oldPinned)
+    if (exact.length < 1)
+      return { mode: "refuse", reason: `ledger configKey "${configKey}" not found in config plugin[] — ledger/config drift, refusing replace` }
+    if (sameBase.length !== exact.length)
+      return { mode: "refuse", reason: `config plugin[] contains other pins of "${base}" besides the ledger pin — ambiguous engine load identity, refusing replace` }
     return { mode: "replace", facts: { record, form: { kind: "npm", oldPinned } } }
   }
   if (configKey.startsWith("plugin-path:")) {
@@ -831,9 +848,10 @@ function resolvePluginDispatch(
     if (!confined)
       return { mode: "refuse", reason: `ledger plugin path "${oldJsPath}" is not under "${pluginsRoot}/${entry.name}[@…]" — refusing replace (uncontrolled removal target)` }
     // r9 Major:对账按引擎解析语义 —— 合法等价改写(相对/file:///元组)不得被词法比较误判
-    // 成 ledger drift(否则该插件永远无法更新)。
-    if (cfg.value.filter((x) => resolvePluginEntryPath(x, root) === oldJsPath).length !== 1)
-      return { mode: "refuse", reason: `ledger configKey "${configKey}" not matched exactly once in config plugin[] — ledger/config drift, refusing replace` }
+    // 成 ledger drift。r10 Major:等价重复条目解析为同一路径 = 引擎去重后同一 load 身份,
+    // 按解析身份计数(≥1 即对账成立;replace 把全部匹配收敛为单条)。
+    if (cfg.value.filter((x) => resolvePluginEntryPath(x, root) === oldJsPath).length < 1)
+      return { mode: "refuse", reason: `ledger configKey "${configKey}" not found in config plugin[] — ledger/config drift, refusing replace` }
     return { mode: "replace", facts: { record, form: { kind: "vendored", oldJsPath, oldDir } } }
   }
   return { mode: "refuse", reason: `installed plugin record has no recognizable configKey ("${configKey}") — refusing replace` }
@@ -997,7 +1015,8 @@ async function replacePluginViaTransaction(args: {
   const oldElemResolved = facts.form.kind === "npm" ? null : path.resolve(oldElem)
   const matchesOld = (x: unknown): boolean =>
     oldElemResolved === null ? pluginSpecOf(x) === oldElem : resolvePluginEntryPath(x, root) === oldElemResolved
-  if (snapshot.value.filter(matchesOld).length !== 1) {
+  // r10 Major:等价重复(同一引擎 load 身份)≥1 即对账成立,置换时收敛为单条;0 条才是 drift。
+  if (snapshot.value.filter(matchesOld).length < 1) {
     cleanupStaged()
     rollback("plugin config drifted before plan")
     return { ok: false, reason: "plugin config changed while planning — retry the update" }
@@ -1021,10 +1040,17 @@ async function replacePluginViaTransaction(args: {
     rollback("legacy plugin conflict")
     return replaceLegacyGate
   }
-  const nextArray = snapshot.value.map((x) => {
-    if (!matchesOld(x)) return x
-    return Array.isArray(x) ? [newElem, x[1]] : newElem
-  })
+  let replacedOnce = false
+  const nextArray: unknown[] = []
+  for (const x of snapshot.value) {
+    if (!matchesOld(x)) {
+      nextArray.push(x)
+      continue
+    }
+    if (replacedOnce) continue // r10:等价重复条目收敛为单条(引擎同一 load 身份)
+    replacedOnce = true
+    nextArray.push(Array.isArray(x) ? [newElem, x[1]] : newElem)
+  }
   const snapshotCanon = JSON.stringify(snapshot.value)
 
   const now = deps.now?.() ?? new Date().toISOString()
@@ -1685,9 +1711,16 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
         // r3/r4/r5 Major:两侧按**引擎解析语义**规范化(resolveMcpRefPath:~/ 展开 + config
         // 目录基准)—— 旁路等价改写({file:/a/v/./TOKEN}、相对、~/ 形态)不再被误判「未引用」
         // 而删掉 live 仍指向的密钥。
-        const liveRefs = leafNow.ok
-          ? new Set((leafNow.value !== undefined ? collectMcpFileRefPaths(leafNow.value) : []).map((p) => resolveMcpRefPath(p, mcpRoot)))
-          : null
+        // r10 Major:「仍被引用」判定覆盖合并视图 —— retained legacy 源引用本次版本(异常旁路
+        // 写形态)时删除同样制造悬空;legacy 读不出 = 保守不删。
+        const legacyNow = deps.installers.legacyMcpRefPaths(entry.name)
+        const liveRefs =
+          leafNow.ok && legacyNow.ok
+            ? new Set([
+                ...(leafNow.value !== undefined ? collectMcpFileRefPaths(leafNow.value) : []).map((p) => resolveMcpRefPath(p, mcpRoot)),
+                ...legacyNow.refs,
+              ])
+            : null
         const stillReferenced = liveRefs === null || refPaths.some((p) => liveRefs.has(resolveMcpRefPath(p, mcpRoot)))
         // r5/r6 Major:authorize 暂停承诺「零权威副作用 + 零明文残留」—— 清理必须**可证明**完成
         // (leaf 可读 + 未引用本次版本 + 删除成功)才允许照常返回 authorize;任何一环不成立

@@ -232,6 +232,10 @@ function makeDeps(opts: {
       calls.push({ fn: "gcMcpSecrets", args: [name] })
       return { removed: [], warnings: [] }
     },
+    legacyMcpRefPaths: (name: string) => {
+      calls.push({ fn: "legacyMcpRefPaths", args: [name] })
+      return { ok: true as const, refs: [] as string[] }
+    },
     // #354:提交面 fail-closed 的前像原语(缺省 = 无前像、agent 不在场)。
     readMcpLeafStrict: (name: string) => {
       calls.push({ fn: "readMcpLeafStrict", args: [name] })
@@ -2009,6 +2013,42 @@ describe("single-install transactionalization exit criteria (REQ-100 #378)", () 
     const r3 = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, dBad)
     expect(r3.ok).toBe(false)
     if (!r3.ok) expect(r3.reason).toContain("invalid entries")
+  })
+
+  test("r10:等价重复条目(同一引擎 load 身份)→ replace 收敛为单条;npm 同包兄弟 pin → 拒", async () => {
+    const { deps } = makeDeps()
+    const v1 = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
+    expect(v1.ok).toBe(true)
+    if (!v1.ok) return
+    const oldJs = path.join(v1.files![0]!, "plugin.js")
+    // 绝对 + 等价相对重复条目(引擎去重后同一身份)
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [oldJs, `./${path.relative(globalRoot, oldJs)}`] }))
+    const v2Entry = { ...pluginVendoredEntry, version: "1.0.1" } as CatalogEntry
+    const { deps: d2 } = makeDeps({
+      entries: [...ALL_ENTRIES.filter((e) => e.id !== "plugin:vp"), v2Entry],
+      installers: {
+        collectVendoredPluginPayload: (_key: string, name: string) => ({
+          ok: true as const,
+          files: [{ path: "plugin.js", data: Buffer.from(`// vendored ${name} v1.0.1`) }],
+        }),
+      },
+    })
+    const upd = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, d2)
+    expect(upd.ok).toBe(true) // 不再按原始条目数误判 drift
+    expect(pluginArrayOnDisk()).toHaveLength(1) // 等价重复收敛为单条
+    // npm:同包兄弟 pin 在场 → 置换歧义拒
+    fs.rmSync(path.join(globalRoot, "installs.json"), { force: true })
+    fs.rmSync(path.join(globalRoot, "alpha.jsonc"), { force: true })
+    const { deps: d3 } = makeDeps()
+    const np1 = await installAuthorized({ catalogId: "plugin:np", scope: { scope: "global" } }, d3)
+    expect(np1.ok).toBe(true)
+    const cur = pluginArrayOnDisk()
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [...cur, "@alpha/np@9.9.9"] }))
+    const npV2 = { ...pluginNpmEntry, version: "2.3.5", installSpec: { kind: "plugin", package: "@alpha/np", version: "2.3.5" } } as CatalogEntry
+    const { deps: d4 } = makeDeps({ entries: [...ALL_ENTRIES.filter((e) => e.id !== "plugin:np"), npV2] })
+    const npUpd = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, d4)
+    expect(npUpd.ok).toBe(false)
+    if (!npUpd.ok) expect(npUpd.reason).toContain("other pins")
   })
 
   test("r9:vendored 条目被等价改写为相对形态 → dispatch/replace 按引擎语义仍可更新", async () => {

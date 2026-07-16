@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { configHealth, persistMcp, persistPlugin, persistProvider, removeMcp, removeMcpConfigInLock, removePlugin, readMcpLeafStrict, readAgentEntryStrict, readPluginArrayStrict } from "./ext-config"
+import { configHealth, persistMcp, persistPlugin, persistProvider, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, readMcpLeafStrict, readAgentEntryStrict, readPluginArrayStrict } from "./ext-config"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
 import { addReceipt, findReceipt, readLedger } from "./alpha-installs"
 
@@ -403,3 +403,38 @@ describe("readPluginArrayStrict (REQ-099 #352)", () => {
     expect(readPluginArrayStrict().ok).toBe(false)
   })
 })
+
+// ── #378 r9/r10:removePluginPath 真实现回归(此前只有 planner fake 覆盖)────────────────────────
+describe("removePluginPath — 主+legacy 全源净除,引擎语义匹配,strict fail-closed(#378 r9/r10)", () => {
+  const mainCfg = () => path.join(alphaTmp, "alpha.jsonc")
+  const homeCfg = () => path.join(homeTmp, "opencode.jsonc")
+  const jsOf = (dir: string) => path.join(alphaTmp, "plugins", dir, "plugin.js")
+
+  test("元组/相对/file:// 等价条目全部净除;主 + legacy(home)同扫", () => {
+    fs.mkdirSync(alphaTmp, { recursive: true })
+    fs.mkdirSync(homeTmp, { recursive: true })
+    const target = jsOf("vp@aaaa")
+    fs.writeFileSync(mainCfg(), JSON.stringify({ plugin: [[target, { lazy: true }], "keep-pkg@1.0.0"] }))
+    fs.writeFileSync(homeCfg(), JSON.stringify({ plugin: [`file://${target}`] }))
+    const r = removePluginPath("vp", target)
+    expect(r.ok).toBe(true)
+    const pluginsOf = (file: string): unknown => {
+      const raw: unknown = JSON.parse(fs.readFileSync(file, "utf8"))
+      return raw && typeof raw === "object" && !Array.isArray(raw) && "plugin" in raw ? raw.plugin : undefined
+    }
+    expect(pluginsOf(mainCfg())).toEqual(["keep-pkg@1.0.0"]) // 元组匹配净除,别家条目保留
+    expect(pluginsOf(homeCfg())).toEqual([]) // legacy file:// 等价形态同扫
+  })
+
+  test("语法损坏 / 非对象根 / plugin 非数组 → fail-closed 拒(不删条目也不谎报成功)", () => {
+    fs.mkdirSync(alphaTmp, { recursive: true })
+    const target = jsOf("vp@bbbb")
+    fs.writeFileSync(mainCfg(), '{ "plugin": [broken')
+    expect(removePluginPath("vp", target).ok).toBe(false)
+    fs.writeFileSync(mainCfg(), JSON.stringify(["array-root"]))
+    expect(removePluginPath("vp", target).ok).toBe(false)
+    fs.writeFileSync(mainCfg(), JSON.stringify({ plugin: "not-array" }))
+    expect(removePluginPath("vp", target).ok).toBe(false)
+  })
+})
+

@@ -15,7 +15,7 @@ import type { InstallTarget } from "../preload/types"
 import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
 import { claimMcpSecretVersionDir, fileifyMcpSecretsVersioned, isFileRef, mcpSecretVersionedRef, newMcpSecretVersionId, removeMcpSecretVersionDir, removeMcpServerSecrets, removeMcpServerSecretsStrict, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, type ProvenanceRequest } from "./alpha-migrate"
-import { configHealth, findPluginBaseConflictStrict, gcMcpSecretsAgainstConfig, listConfiguredMcpServerNamesStrict, mcpConfigTruthPath, persistPlugin, pluginRecordName, readLegacyPluginArrayStrict, readMcpLeaf, readMcpLeafStrict, readPluginArrayStrict, removeMcp, removeMcpConfigInLock, removePlugin, removePluginEntryExact, removePluginPath, restoreMcpLeaf } from "./ext-config"
+import { collectLegacyMcpRefPathsStrict, configHealth, findPluginBaseConflictStrict, gcMcpSecretsAgainstConfig, listConfiguredMcpServerNamesStrict, mcpConfigTruthPath, persistPlugin, pluginRecordName, readLegacyPluginArrayStrict, readMcpLeaf, readMcpLeafStrict, readPluginArrayStrict, removeMcp, removeMcpConfigInLock, removePlugin, removePluginEntryExact, removePluginPath, restoreMcpLeaf } from "./ext-config"
 import { recordUncuratedInstall } from "./ext-uncurated-record"
 import { applyMcpWritePolicy, persistMcpWithPolicy } from "./ext-mcp-policy"
 import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
@@ -629,6 +629,7 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
         writeMcpSecretVersioned: (name, verId, varName, value) => writeMcpSecretVersioned(userDataPath, name, verId, varName, value),
         removeMcpSecretVersionDir: (name, verId) => removeMcpSecretVersionDir(userDataPath, name, verId),
         gcMcpSecrets: (name) => gcMcpSecretsAgainstConfig(userDataPath, name),
+        legacyMcpRefPaths: (name) => collectLegacyMcpRefPathsStrict(name),
         // #346:journaled MCP 卸载的两个 in-lock/strict 原语(引擎事务锁内调用)。
         removeMcpConfigInLock,
         removeMcpSecretsStrict: (name) => {
