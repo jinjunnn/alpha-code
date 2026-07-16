@@ -466,10 +466,19 @@ export function restoreMcpLeaf(name: string, value: Record<string, unknown> | un
 
 /** #378(Codex 裁决 Q1):安装成功后的密钥版本 GC —— 配置锁内读当前 mcp.<name> leaf 收集
  *  {file:} 引用集,交 gcMcpSecretVersionsLocked 收未引用且过宽限的版本/flat/快照残留。锁在途
- *  (busy)= 跳过本轮(GC 是 best-effort,残留由下次安装/卸载收),绝不阻塞安装成功路径。 */
+ *  (busy)= 跳过本轮(GC 是 best-effort,残留由下次安装/卸载收),绝不阻塞安装成功路径。
+ *  review r1 Major:引用集读取必须 **strict** —— 容错读把「配置暂不可读/损坏」折叠成
+ *  undefined = 零引用,会让 GC 把仍被引用的版本全删;读不出可信引用集就整轮安全退出,
+ *  leaf 缺席(刚成功的安装不可能缺席)同样拒绝零引用清扫。 */
 export function gcMcpSecretsAgainstConfig(userDataPath: string, name: string): { removed: string[]; warnings: string[] } {
   if (!SAFE_NAME.test(name)) return { removed: [], warnings: [`invalid server name: ${name}`] }
-  const r = withConfigWriteLock(() => gcMcpSecretVersionsLocked(userDataPath, name, collectMcpFileRefPaths(readMcpLeaf(name))))
+  const r = withConfigWriteLock(() => {
+    const leaf = readMcpLeafStrict(name)
+    if (!leaf.ok) return { removed: [], warnings: [`secret gc skipped for ${name}: ${leaf.reason}`] }
+    if (leaf.value === undefined)
+      return { removed: [], warnings: [`secret gc skipped for ${name}: mcp leaf absent — refusing a zero-reference sweep`] }
+    return gcMcpSecretVersionsLocked(userDataPath, name, collectMcpFileRefPaths(leaf.value))
+  })
   return "removed" in r ? r : { removed: [], warnings: [r.reason] }
 }
 

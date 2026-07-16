@@ -372,6 +372,19 @@ describe("collectSkillPayloadFromDir", () => {
     const r = collectSkillPayloadFromDir(src)
     expect(r.ok).toBe(false)
   })
+
+  test("树内 symlink 拒绝(#378 r1:vendored plugin 采集共用本走查器 —— 链接文件绝不进 CAS)", () => {
+    const src = path.join(root, "src-linked")
+    const outside = path.join(root, "outside-target")
+    fs.mkdirSync(src, { recursive: true })
+    fs.mkdirSync(outside, { recursive: true })
+    fs.writeFileSync(path.join(outside, "evil.js"), "outside bytes")
+    fs.writeFileSync(path.join(src, "plugin.js"), "legit")
+    fs.symlinkSync(path.join(outside, "evil.js"), path.join(src, "linked.js"))
+    const r = collectSkillPayloadFromDir(src)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("symlink")
+  })
 })
 
 // ── #348:capabilities/authorization 直连事务引擎的适配层契约 ─────────────────────────────────────

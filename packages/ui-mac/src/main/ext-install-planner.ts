@@ -47,7 +47,25 @@ import {
 } from "./ext-transaction"
 import { capabilityGrantPath, isSafeCapability, type CapabilityDiff } from "./ext-capability-grants"
 import { agentConfigItemKey, agentInstallKey, installAgentFromCas, recoveryReceiptInputs } from "./ext-agent-install"
-import { newMcpSecretVersionId, substituteMcpSecretRefsPure } from "./alpha-mcp-secrets"
+import { collectMcpFileRefPaths, newMcpSecretVersionId, substituteMcpSecretRefsPure } from "./alpha-mcp-secrets"
+
+/** `{file:<abs>}` 引用 → 文件路径(非引用形状 = null;#378 r1 锁内在场门与失败清理共用)。 */
+function mcpRefPathOf(ref: string): string | null {
+  const m = /^\{file:(.+)\}$/.exec(ref)
+  return m?.[1] ?? null
+}
+
+/** #378 r1(Major):cloud 重装的锁内 desiredState 漂移门 —— plan 快照在锁外读,锁内重读
+ *  不一致即拒(否则并发 disable 会被旧快照写回 enabled)。导出供直接单测。 */
+export function cloudDesiredStateGate(
+  root: string,
+  name: string,
+  planned: "enabled" | "disabled",
+): { ok: true } | { ok: false; reason: string } {
+  const rec = findRecordV2(root, "cloud", name)
+  const current: "enabled" | "disabled" = rec?.desiredState === "disabled" ? "disabled" : "enabled"
+  return current === planned ? { ok: true } : { ok: false, reason: "cloud desiredState changed since plan — retry the install" }
+}
 import { parse, type ParseError } from "jsonc-parser"
 import type { AuthorizationConfirmationWire } from "../shared/ext-capability-authorization"
 import { findReceipt } from "./alpha-installs"
@@ -463,6 +481,8 @@ export type PlannerInstallers = {
    *  **本次尝试**的版本目录(失败/authorize 暂停清理;无引用,惰性);gcMcpSecrets = 提交后在
    *  配置锁内按当前 leaf 引用收未引用且过宽限的旧版本/flat/快照残留(busy 跳过,best-effort)。 */
   mcpSecretRefFor(name: string, verId: string, varName: string): string
+  /** r1 Minor:版本目录排他认领 —— 碰撞(exists)换 id 重试,绝不复用既有版本目录。 */
+  claimMcpSecretVersionDir(name: string, verId: string): { ok: true } | { ok: false; exists: boolean; reason: string }
   writeMcpSecretVersioned(name: string, verId: string, varName: string, value: string): { ok: true; ref: string } | { ok: false; reason: string }
   removeMcpSecretVersionDir(name: string, verId: string): { ok: true } | { ok: false; reason: string }
   gcMcpSecrets(name: string): { removed: string[]; warnings: string[] }
@@ -1388,16 +1408,31 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
     let verId: string | null = null
     let refs: Record<string, string> = {}
     if (derived.secretVars.length > 0) {
-      const vid = newMcpSecretVersionId()
+      // r1 Minor:排他认领版本目录(碰撞换 id 重试三次;非碰撞失败即拒 —— 圈禁/权限问题重试无意义)。
+      let claimFail = ""
+      for (let i = 0; i < 3 && verId === null; i++) {
+        const vid = newMcpSecretVersionId()
+        const claimed = deps.installers.claimMcpSecretVersionDir(entry.name, vid)
+        if (claimed.ok) verId = vid
+        else {
+          claimFail = claimed.reason
+          if (!claimed.exists) break
+        }
+      }
+      if (verId === null) {
+        rollback(`secret version dir claim failed: ${claimFail}`)
+        return { ok: false, reason: `secret version dir claim failed: ${claimFail}` }
+      }
+      const vid = verId
       const sub = substituteMcpSecretRefsPure(durable, secretMap, (varName) => deps.installers.mcpSecretRefFor(entry.name, vid, varName))
       if (sub.skipped.length > 0) {
+        deps.installers.removeMcpSecretVersionDir(entry.name, vid) // 认领后的空目录随拒绝清理
         rollback(`secrets not routable to {file:} channel: ${sub.skipped.join(", ")}`)
         return {
           ok: false,
           reason: `secret(s) could not be routed to the {file:} channel: ${sub.skipped.join(", ")} — refusing plaintext persist`,
         }
       }
-      verId = vid
       refs = sub.substituted
     }
     // #378(Codex 裁决 Q2):Excel 受管 workspace 策略注入(原 persistMcpWithPolicy 闸口,持久化
@@ -1405,12 +1440,14 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
     // config/账本/密钥副作用(测试钉)。live 从策略后 durable 派生,不缺策略字段。
     const pol = deps.installers.applyMcpWritePolicy(entry.name, durable)
     if (!pol.ok) {
+      if (verId) deps.installers.removeMcpSecretVersionDir(entry.name, verId) // 已认领的空目录随拒绝清理
       rollback(pol.reason)
       return pol
     }
     // 纯校验门(seed/未策展同一 validateServer;对策略注入后的最终 durable 校验)。
     const validated = validateServer(durable)
     if (!validated.ok) {
+      if (verId) deps.installers.removeMcpSecretVersionDir(entry.name, verId)
       rollback(validated.reason)
       return { ok: false, reason: validated.reason }
     }
@@ -1457,14 +1494,24 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       ],
       ...(intent.authorization ? { authorization: stampAuthorization(intent.authorization, () => deps.now?.() ?? new Date().toISOString())! } : {}),
     }
+    const refPaths = Object.values(refs).map(mcpRefPathOf).filter((p): p is string => p !== null)
     const hooks: TxHooks = {
       populate: () => {}, // config action 无 staging 载荷
-      // 锁内 precondition(TOCTOU):账本可写 + 前像仍 strict 可读(覆盖合法,不可读拒)。
+      // 锁内 precondition(TOCTOU):账本可写 + 前像仍 strict 可读(覆盖合法,不可读拒)+
+      // 本次密钥文件仍在场(r1 Major:锁外写文件与取锁之间若被并发 GC/外部清理收走,提交会
+      // 落一份引用悬空文件的 config —— 锁内逐引用 lstat 实文件,缺任一即拒,用户重试)。
       precondition: () => {
         const ledger = probeLedgerForWrite(mcpRoot)
         if (!ledger.ok) return { ok: false, reason: `refusing mcp install: ${ledger.reason}` }
         const leaf = deps.installers.readMcpLeafStrict(entry.name)
         if (!leaf.ok) return { ok: false, reason: `refusing mcp install: ${leaf.reason}` }
+        for (const p of refPaths) {
+          try {
+            if (!fs.lstatSync(p).isFile()) return { ok: false, reason: `secret file missing or not a regular file: ${path.basename(p)} — retry the install` }
+          } catch {
+            return { ok: false, reason: `secret file disappeared before commit (gc/external cleanup): ${path.basename(p)} — retry the install` }
+          }
+        }
         return { ok: true }
       },
       commitReceipt: (records: TxCommitRecord[]) => {
@@ -1474,10 +1521,20 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
     }
     const result = await runExtensionTransaction(mcpRoot, plan, hooks)
     if (!result.ok) {
-      // 本次版本目录清理(authorize 暂停同路径;删失败仅留痕 —— 无引用,提交后 GC 兜底)。
+      // 本次版本目录清理(authorize 暂停同路径)。r1 Major:先验当前 live leaf **未引用**本次
+      // 版本才删 —— 回滚被旁路改写挡住(journal 保留非终态)等留证形态下 config 可能仍指向
+      // 本次版本,删除会制造悬空 {file:} 引用;读不到 leaf 同样保守不删,交 GC 按引用对账收。
       if (verId) {
-        const rm = deps.installers.removeMcpSecretVersionDir(entry.name, verId)
-        if (!rm.ok) console.error(`[ext-install-planner] mcp ${entry.name}: secret version cleanup failed: ${rm.reason}`)
+        const leafNow = deps.installers.readMcpLeafStrict(entry.name)
+        // leaf 缺席(fresh 的 authorize 暂停/失败)= 确定零引用,可删;只有**不可读**才保守不删。
+        const liveRefs = leafNow.ok ? new Set(leafNow.value !== undefined ? collectMcpFileRefPaths(leafNow.value) : []) : null
+        const stillReferenced = liveRefs === null || refPaths.some((p) => liveRefs.has(p))
+        if (!stillReferenced) {
+          const rm = deps.installers.removeMcpSecretVersionDir(entry.name, verId)
+          if (!rm.ok) console.error(`[ext-install-planner] mcp ${entry.name}: secret version cleanup failed: ${rm.reason}`)
+        } else if (liveRefs !== null) {
+          console.error(`[ext-install-planner] mcp ${entry.name}: secret version ${verId} kept — live config still references it (rollback retained?)`)
+        }
       }
       rollback(result.reason)
       if (result.stage === "authorize") {
@@ -1831,6 +1888,7 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
     // 继承停用态(裁决 Q3:不得把 disabled 静默写回 enabled;plugin replace 同一纪律)。
     const cloudRoot = scope.root(deps)
     const prior = findRecordV2(cloudRoot, "cloud", entry.name)
+    const plannedState: "enabled" | "disabled" = prior?.desiredState === "disabled" ? "disabled" : "enabled"
     const cloudNow = deps.now?.() ?? new Date().toISOString()
     const cloudReceipt: UpsertInput = {
       id: entry.id,
@@ -1841,7 +1899,7 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       version: manifest.version,
       manifestDigest,
       grantDigest: computeGrantDigest(grants),
-      desiredState: prior?.desiredState === "disabled" ? "disabled" : "enabled",
+      desiredState: plannedState,
       origin: "catalog",
       installedAt: cloudNow,
     }
@@ -1859,9 +1917,12 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
     }
     const hooks: TxHooks = {
       populate: () => {}, // receipt action 无 staging 载荷
+      // 锁内 precondition:账本可写 + desiredState 未漂移(r1 Major:继承值在锁外读,并发
+      // disable 与本安装交错时旧快照会把 enabled 写回去 —— 锁内重读不一致即拒,用户重试)。
       precondition: () => {
         const ledger = probeLedgerForWrite(cloudRoot)
-        return ledger.ok ? { ok: true } : { ok: false, reason: `refusing cloud install: ${ledger.reason}` }
+        if (!ledger.ok) return { ok: false, reason: `refusing cloud install: ${ledger.reason}` }
+        return cloudDesiredStateGate(cloudRoot, entry.name, plannedState)
       },
       commitReceipt: (records: TxCommitRecord[]) => {
         const written = upsertRecordsV2(cloudRoot, recoveryReceiptInputs(records))
@@ -2985,18 +3046,29 @@ export async function uninstallByKey(rawIntent: unknown, deps: PlannerDeps): Pro
     // #378(Codex 裁决 D4):receipts-only 去账即卸载 —— 经授权闸的 cloud 授权账随卸载清除
     // (成功前置,同 agent/mcp/plugin);且 **ledger 删除失败 = 卸载失败 ok:false**(cloud 无
     // 其他 artifact,账没去=什么都没发生,通用尾部的 ok:true+warning 对 receipts-only 是谎报)。
-    const grants = removeInstallGrants(root, [`cloud--${intent.name}`])
-    if (!grants.ok) {
-      rollback(grants.reason)
-      return { ok: false, reason: `cloud uninstall: ${grants.reason}` }
+    // r1 Major:grants+record 双删必须持跨进程 bundle 锁 —— 否则与在途安装事务(锁内先写
+    // grant 后 commitReceipt)交错,可产出「record 已删、有效 grant 残留」的非串行化状态。
+    const held = tryAcquireBundleLock(root, { txId: `cloud-uninstall-${randomUUID()}` })
+    if (!held.ok) {
+      rollback(held.reason)
+      return { ok: false, reason: `ledger busy: ${held.reason} — retry after the in-flight extension transaction` }
     }
-    const removed = removeRecordV2(root, "cloud", intent.name)
-    if (!removed.ok) {
-      rollback(removed.reason)
-      return { ok: false, reason: `cloud uninstall: ledger removal failed: ${removed.reason} — retry (grants already cleared, idempotent)` }
+    try {
+      const grants = removeInstallGrants(root, [`cloud--${intent.name}`])
+      if (!grants.ok) {
+        rollback(grants.reason)
+        return { ok: false, reason: `cloud uninstall: ${grants.reason}` }
+      }
+      const removed = removeRecordV2(root, "cloud", intent.name)
+      if (!removed.ok) {
+        rollback(removed.reason)
+        return { ok: false, reason: `cloud uninstall: ledger removal failed: ${removed.reason} — retry (grants already cleared, idempotent)` }
+      }
+      ;(deps.transaction ?? passthroughTx).commit(tx.txId)
+      return { ok: true, ...(grants.removed.length ? { files: grants.removed } : {}) }
+    } finally {
+      held.lock.release()
     }
-    ;(deps.transaction ?? passthroughTx).commit(tx.txId)
-    return { ok: true, ...(grants.removed.length ? { files: grants.removed } : {}) }
   } else {
     rollback(`cannot uninstall type: ${intent.type}`)
     return { ok: false, reason: `cannot uninstall type: ${intent.type}` }

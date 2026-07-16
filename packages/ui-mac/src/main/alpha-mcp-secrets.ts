@@ -18,7 +18,9 @@ const SAFE_SERVER = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
 const SAFE_VAR = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/
 // #378(Codex 裁决 Q1):版本目录名与 server/VAR 名字空间互斥(SAFE_SERVER 不含 "v-" 前缀约束,
 // 但 SAFE_VAR 不允许 "-",且版本目录固定 v- 前缀 + hex),GC 枚举据此判别三类条目。
-const SAFE_SECRET_VER = /^v-[a-f0-9]{8}$/
+// review r1 Minor:64 位随机 + **排他 claim**(claimMcpSecretVersionDir)—— 碰撞不再静默复用
+// 既有版本目录(那会经 rename 覆盖旧配置正在引用的密钥,破坏 append-only)。
+const SAFE_SECRET_VER = /^v-[a-f0-9]{8,16}$/
 /** 版本目录 GC 宽限:mtime 新于此值的未引用条目不删 —— 保护「文件已写、config 尚未提交」的
  *  在途安装(写文件不持配置锁,见 gcMcpSecretVersionsLocked 合同)。 */
 const SECRET_GC_GRACE_MS = 10 * 60 * 1000
@@ -131,9 +133,35 @@ export function fileifyMcpSecretsVersioned(
 // 卸载不变:removeMcpServerSecrets(Strict) 整 server 目录(覆盖全部版本 + flat + 快照残留)。
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 
-/** 新安装尝试的版本 id(每次调用新目录;不可预测性不承载安全属性,只求不碰撞)。 */
+/** 新安装尝试的版本 id(每次调用新目录;不可预测性不承载安全属性,只求不碰撞 ——
+ *  碰撞的最终防线是 claimMcpSecretVersionDir 的排他 mkdir)。 */
 export function newMcpSecretVersionId(): string {
-  return `v-${crypto.randomBytes(4).toString("hex")}`
+  return `v-${crypto.randomBytes(8).toString("hex")}`
+}
+
+/** 排他认领本次安装尝试的版本目录(#378 r1 Minor):非递归 mkdir,已存在(哪怕碰巧同名)
+ *  = 认领失败,调用方换新 verId 重试 —— 绝不复用既有版本目录(append-only 的最终强制)。
+ *  父级(根/server)经 ensureRealDir 圈禁。 */
+export function claimMcpSecretVersionDir(
+  userDataPath: string,
+  server: string,
+  verId: string,
+): { ok: true } | { ok: false; exists: boolean; reason: string } {
+  if (!SAFE_SERVER.test(server)) return { ok: false, exists: false, reason: "invalid server name" }
+  if (!SAFE_SECRET_VER.test(verId)) return { ok: false, exists: false, reason: `invalid secret version id: ${verId}` }
+  const sDir = serverDir(userDataPath, server)
+  for (const dir of [path.join(userDataPath, MCP_SECRET_DIR), sDir]) {
+    const ensured = ensureRealDir(dir)
+    if (!ensured.ok) return { ok: false, exists: false, reason: ensured.reason }
+  }
+  try {
+    fs.mkdirSync(path.join(sDir, verId), { mode: 0o700 }) // 非递归 = 排他(EEXIST 即被占)
+    return { ok: true }
+  } catch (error) {
+    const code = error && typeof error === "object" && "code" in error ? error.code : undefined
+    if (code === "EEXIST") return { ok: false, exists: true, reason: `secret version dir already exists: ${verId}` }
+    return { ok: false, exists: false, reason: error instanceof Error ? error.message : "failed to claim secret version dir" }
+  }
 }
 
 /** 版本化 `{file:}` 引用(纯路径推导,零写盘 —— planner 先构造 durable config,落盘另走
@@ -143,13 +171,18 @@ export function mcpSecretVersionedRef(userDataPath: string, server: string, verI
 }
 
 /** 组件必须是**非 symlink 实目录**(裁决结构性风险 1:裸 writeFileSync 无圈禁可被 server 目录 /
- *  VAR symlink 引出树外)。目录由我方 mkdir,lstat 复核 fail-closed。 */
+ *  VAR symlink 引出树外)。次序合同(#378 review r1 Major):**先 lstat 验非链,后 chmod** ——
+ *  chmod 追链,若先执行会在拒绝恶意布局前把链接目标目录权限改掉(圈禁外副作用);mkdir 对已
+ *  存在路径零写入,可先行。验后 chmod 与末次 lstat 之间的换链窗口与 #361 同类缩窗(能写
+ *  userData 者本就等价于本用户)。 */
 function ensureRealDir(dir: string): { ok: true } | { ok: false; reason: string } {
   try {
-    fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
-    fs.chmodSync(dir, 0o700)
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 }) // 已存在(含链)时零副作用
     const st = fs.lstatSync(dir)
     if (st.isSymbolicLink() || !st.isDirectory()) return { ok: false, reason: `${path.basename(dir)} is not a real directory — refusing (symlink hazard)` }
+    fs.chmodSync(dir, 0o700) // 已验非链才 chmod(mkdir mode 对既有目录无效)
+    const st2 = fs.lstatSync(dir)
+    if (st2.isSymbolicLink() || !st2.isDirectory()) return { ok: false, reason: `${path.basename(dir)} is not a real directory — refusing (symlink hazard)` }
     return { ok: true }
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : "failed to create secret dir" }

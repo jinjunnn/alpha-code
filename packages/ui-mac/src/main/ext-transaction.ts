@@ -1090,7 +1090,8 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
       .map((it) => ({ key: it.key, target: path.join(root, it.file!.relTarget), slot: it.file!.slot, nextDigest: it.file!.nextDigest }))
 
   /** config/file action 回滚:逆序恢复(仅当 target 仍是 next 态才恢复前像;旁路改写 → fail-closed 留证)。
-   *  返回 fileBlocked:file 恢复被旁路改写/读失败挡住 —— 调用方**不得终态化**(review r2 Blocker)。 */
+   *  返回 fileBlocked:file **或 config**(#378 r1)恢复被旁路改写/读失败挡住 ——
+   *  调用方**不得终态化**(review r2 Blocker;config 同款,否则「已切换未落账」被当干净回滚)。 */
   const rollbackImageActions = (): { fileBlocked: string | null } => {
     let fileBlocked: string | null = null
     for (const it of [...journal.items].reverse()) {
@@ -1099,7 +1100,10 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
         const image = configImages.get(it.key)
         if (!image) continue
         const restored = restoreConfigImage(image)
-        if (!restored.ok) warnings.push(`config rollback for "${it.key}": ${restored.reason}`)
+        // #378 review r1 Major:config 恢复被拒(旁路改写/写失败)与 file 同款 —— 不得终态化,
+        // 否则「配置已切换 + receipt 未落 + journal rolled-back」被当作干净回滚,调用方按失败
+        // 清理(如删密钥版本)会制造悬空引用,且 recovery 不再重试。
+        if (!restored.ok) fileBlocked = `config rollback for "${it.key}": ${restored.reason}`
       } else if (kind === "file") {
         const image = fileImages.get(it.key)
         if (!image) continue
@@ -2260,7 +2264,8 @@ async function recoverOne(
         continue
       }
       const restored = restoreConfigImage(image)
-      if (!restored.ok) warnings.push(`config recovery rollback for "${it.key}": ${restored.reason}`)
+      // #378 review r1 Major:恢复路径同款 —— config 恢复被拒不得终态化为 rolled-back。
+      if (!restored.ok) restoreBlocked = `config recovery rollback for "${it.key}": ${restored.reason}`
     } else if (kind === "file") {
       // r3 Blocker:预扫与此处之间仍有 config 恢复等异步间隙 —— restore 前紧邻再重验一次圈禁。
       const confined = it.file ? confineFileTarget(root, it.file.relTarget) : { ok: false as const, reason: "missing file journal segment" }

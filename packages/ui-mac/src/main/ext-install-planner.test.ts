@@ -35,6 +35,7 @@ async function installAuthorized(intent: unknown, deps: Parameters<typeof instal
   return installCatalog({ ...(intent as Record<string, unknown>), authorization: { confirmed } }, deps)
 }
 import {
+  cloudDesiredStateGate,
   decodeCatalogInstallIntent,
   decodeSetStateIntent,
   decodeUninstallIntent,
@@ -208,6 +209,13 @@ function makeDeps(opts: {
       return { ok: true as const }
     },
     mcpSecretRefFor: (name: string, verId: string, varName: string) => `{file:${path.join(tmp, "mcp-secrets", name, verId, varName)}}`,
+    claimMcpSecretVersionDir: (name: string, verId: string) => {
+      calls.push({ fn: "claimMcpSecretVersionDir", args: [name, verId] })
+      const dir = path.join(tmp, "mcp-secrets", name, verId)
+      if (fs.existsSync(dir)) return { ok: false as const, exists: true, reason: "exists" }
+      fs.mkdirSync(dir, { recursive: true })
+      return { ok: true as const }
+    },
     writeMcpSecretVersioned: (name: string, verId: string, varName: string, value: string) => {
       calls.push({ fn: "writeMcpSecretVersioned", args: [name, verId, varName, value] })
       const dir = path.join(tmp, "mcp-secrets", name, verId)
@@ -1856,6 +1864,59 @@ describe("single-install transactionalization exit criteria (REQ-100 #378)", () 
     const again = await installAuthorized({ catalogId: "cloud:research", scope: { scope: "global" } }, deps)
     expect(again.ok).toBe(true)
     expect(findRecordV2(globalRoot, "cloud", "research")?.desiredState).toBe("disabled")
+  })
+
+  test("r1:锁内密钥在场门 —— 版本文件在取锁前消失(并发 GC/外部清理)→ precondition 拒,零提交", async () => {
+    const { deps } = makeDeps({
+      installers: {
+        // 谎报成功但不落文件 = 模拟「写后、入锁前被并发 GC 收走」的时序
+        writeMcpSecretVersioned: (name: string, verId: string, varName: string, _value: string) => ({
+          ok: true as const,
+          ref: `{file:${path.join(tmp, "mcp-secrets", name, verId, varName)}}`,
+        }),
+      },
+    })
+    const r = await installAuthorized({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "v" } } }, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("secret file")
+    expect(fs.existsSync(path.join(globalRoot, "alpha.jsonc"))).toBe(false) // 绝不提交悬空引用
+    expect(findRecordV2(globalRoot, "mcp", "markitdown")).toBeNull()
+  })
+
+  test("r1:cloudDesiredStateGate —— plan 快照与锁内现状不一致即拒(锁内漂移门直接单测)", () => {
+    expect(cloudDesiredStateGate(globalRoot, "research", "enabled").ok).toBe(true) // 无记录 = enabled
+    const w = upsertRecordV2(globalRoot, {
+      id: "cloud:research",
+      name: "research",
+      kind: "cloud",
+      environment: "prod",
+      scope: { kind: "global" },
+      desiredState: "disabled",
+      origin: "catalog",
+      installedAt: new Date().toISOString(),
+    })
+    expect(w.ok).toBe(true)
+    expect(cloudDesiredStateGate(globalRoot, "research", "enabled").ok).toBe(false)
+    expect(cloudDesiredStateGate(globalRoot, "research", "disabled").ok).toBe(true)
+  })
+
+  test("r1:cloud 卸载持 bundle 锁 —— 事务在途 busy 即拒,释放后可卸", async () => {
+    const { deps } = makeDeps()
+    const inst = await installAuthorized({ catalogId: "cloud:research", scope: { scope: "global" } }, deps)
+    expect(inst.ok).toBe(true)
+    const held = tryAcquireBundleLock(globalRoot, { txId: "test-busy" })
+    expect(held.ok).toBe(true)
+    try {
+      const u = await uninstallByKey({ type: "cloud", name: "research", scope: "global" }, deps)
+      expect(u.ok).toBe(false)
+      if (!u.ok) expect(u.reason).toContain("busy")
+      expect(findRecordV2(globalRoot, "cloud", "research")).not.toBeNull() // 锁内零删除
+      expect(readCapabilityGrant(globalRoot, "cloud--research")).not.toBeNull()
+    } finally {
+      if (held.ok) held.lock.release()
+    }
+    const u2 = await uninstallByKey({ type: "cloud", name: "research", scope: "global" }, deps)
+    expect(u2.ok).toBe(true)
   })
 
   test("plugin 更新失败 → 旧版继续健康(config 指旧 jsPath、旧目录原样、账本不动)", async () => {

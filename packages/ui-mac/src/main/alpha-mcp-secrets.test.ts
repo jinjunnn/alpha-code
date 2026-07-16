@@ -7,6 +7,7 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import {
+  claimMcpSecretVersionDir,
   collectMcpFileRefPaths,
   fileifyMcpSecretsVersioned,
   gcMcpSecretVersionsLocked,
@@ -91,14 +92,33 @@ describe("writeMcpSecretVersioned — 硬化写(tmp→rename、0600/0700、lstat
     expect(writeMcpSecretVersioned(userData, "srv", "v-XYZ", "OK", "x").ok).toBe(false) // 非 hex
   })
 
-  test("symlinked server dir is refused (lstat confinement)", () => {
+  test("symlinked server dir is refused (lstat confinement),且拒绝前零圈禁外副作用(链接目标权限不被 chmod)", () => {
     const outside = path.join(userData, "outside")
-    fs.mkdirSync(outside, { recursive: true })
+    fs.mkdirSync(outside, { recursive: true, mode: 0o755 })
+    fs.chmodSync(outside, 0o755)
     fs.mkdirSync(path.join(userData, "alpha-mcp-secrets"), { recursive: true })
     fs.symlinkSync(outside, path.join(userData, "alpha-mcp-secrets", "linked"))
     const r = writeMcpSecretVersioned(userData, "linked", newMcpSecretVersionId(), "V", "x")
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toContain("symlink")
+    // r1 Major 回归锁:chmod 追链 —— 拒绝路径绝不改链接目标目录的权限
+    expect(fs.statSync(outside).mode & 0o777).toBe(0o755)
+    expect(fs.readdirSync(outside)).toEqual([]) // 也没有写入任何文件
+  })
+
+  test("claimMcpSecretVersionDir:排他认领 —— 同 verId 二次认领 exists,绝不复用(append-only 最终强制)", () => {
+    const vid = newMcpSecretVersionId()
+    expect(claimMcpSecretVersionDir(userData, "s", vid).ok).toBe(true)
+    const again = claimMcpSecretVersionDir(userData, "s", vid)
+    expect(again.ok).toBe(false)
+    if (!again.ok) expect(again.exists).toBe(true)
+    expect(fs.statSync(path.join(userData, "alpha-mcp-secrets", "s", vid)).mode & 0o777).toBe(0o700)
+    // 认领 + 写:既有版本内容不被后续安装触碰
+    writeMcpSecretVersioned(userData, "s", vid, "TOK", "v1")
+    const vid2 = newMcpSecretVersionId()
+    expect(claimMcpSecretVersionDir(userData, "s", vid2).ok).toBe(true)
+    writeMcpSecretVersioned(userData, "s", vid2, "TOK", "v2")
+    expect(fs.readFileSync(verFile("s", vid, "TOK"), "utf8")).toBe("v1")
   })
 
   test("不同版本互不接触(只增不覆盖)", () => {

@@ -13,7 +13,7 @@ import { extensionsGranted, hasExtensionsDecision, listProjectExecutables, withE
 import { alphaRoot, readProjectPrefs, writeProjectPrefs } from "./alpha-workdir"
 import type { InstallTarget } from "../preload/types"
 import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
-import { fileifyMcpSecretsVersioned, mcpSecretVersionedRef, newMcpSecretVersionId, removeMcpSecretVersionDir, removeMcpServerSecrets, removeMcpServerSecretsStrict, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
+import { claimMcpSecretVersionDir, fileifyMcpSecretsVersioned, mcpSecretVersionedRef, newMcpSecretVersionId, removeMcpSecretVersionDir, removeMcpServerSecrets, removeMcpServerSecretsStrict, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, type ProvenanceRequest } from "./alpha-migrate"
 import { configHealth, findPluginBaseConflictStrict, gcMcpSecretsAgainstConfig, persistPlugin, pluginRecordName, readMcpLeaf, readMcpLeafStrict, readPluginArrayStrict, removeMcp, removeMcpConfigInLock, removePlugin, removePluginEntryExact, removePluginPath, restoreMcpLeaf } from "./ext-config"
 import { recordUncuratedInstall } from "./ext-uncurated-record"
@@ -83,7 +83,17 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
       // 通道刚写的新版本一起删(跨通道交错)。改版本化只增不覆盖:本次写全新 verId 目录,既有
       // 版本(可能正被旧 config 或在途事务引用)零接触;失败只删本次 verId(无引用,惰性安全)。
       const vars = secretVars && secretVars.length && server && typeof server === "object" ? secretVars : null
-      const verId = vars ? newMcpSecretVersionId() : null
+      // r1 Minor:版本目录排他认领(碰撞换 id 重试,绝不复用既有版本目录)。认领不下来 =
+      // 密钥进不了文件通道,按未策展既有 posture(skip)继续 —— 与 fileify 写失败同语义。
+      let verId: string | null = null
+      if (vars) {
+        for (let i = 0; i < 3 && !verId; i++) {
+          const vid = newMcpSecretVersionId()
+          const claimed = claimMcpSecretVersionDir(userDataPath, name, vid)
+          if (claimed.ok) verId = vid
+          else if (!claimed.exists) break // 非碰撞失败(圈禁/权限)重试无意义
+        }
+      }
       // Codex review #355:补偿必须是精确叶子 before-image —— removeMcp 全量卸载会连既有配置/
       // legacy/receipt 一起误删(更新场景毁掉本次写入前就存在的安装)。
       const before = typeof name === "string" ? readMcpLeaf(name) : undefined
@@ -107,9 +117,14 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
         configKey: `mcp.${name}`,
       })
       if (!led.ok) {
-        restoreMcpLeaf(name, before) // 只复原本次目标叶子(before=undefined 即删本次写入)
-        if (verId) removeMcpSecretVersionDir(userDataPath, name, verId)
-        return { ok: false, reason: `install ledger write failed: ${led.reason}` }
+        const lr = restoreMcpLeaf(name, before) // 只复原本次目标叶子(before=undefined 即删本次写入)
+        // r1 Major:复原失败 = config 仍引用本次版本 —— 此时删版本目录会制造悬空 {file:} 引用,
+        // 保留目录(功能上配置仍可用)并把两个失败一并上报;复原成功才清理本次版本。
+        if (verId && lr.ok) removeMcpSecretVersionDir(userDataPath, name, verId)
+        return {
+          ok: false,
+          reason: `install ledger write failed: ${led.reason}${lr.ok ? "" : `; config restore failed: ${lr.reason} — secret version kept (still referenced)`}`,
+        }
       }
       // 成功:收未被当前 leaf 引用且过宽限的旧版本/flat/快照残留(锁内对账;busy 跳过,best-effort)。
       const gc = gcMcpSecretsAgainstConfig(userDataPath, name)
@@ -572,6 +587,7 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
         // + 版本化密钥原语(裁决 Q1:只增不覆盖;引用纯推导与落盘同参)。
         applyMcpWritePolicy,
         mcpSecretRefFor: (name, verId, varName) => mcpSecretVersionedRef(userDataPath, name, verId, varName),
+        claimMcpSecretVersionDir: (name, verId) => claimMcpSecretVersionDir(userDataPath, name, verId),
         writeMcpSecretVersioned: (name, verId, varName, value) => writeMcpSecretVersioned(userDataPath, name, verId, varName, value),
         removeMcpSecretVersionDir: (name, verId) => removeMcpSecretVersionDir(userDataPath, name, verId),
         gcMcpSecrets: (name) => gcMcpSecretsAgainstConfig(userDataPath, name),

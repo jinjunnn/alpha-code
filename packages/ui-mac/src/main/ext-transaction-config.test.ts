@@ -8,6 +8,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 import {
   readCurrentGeneration,
+  readTransactionJournal,
   recoverExtensionTransactions,
   runExtensionTransaction,
   type TxCommitRecord,
@@ -71,6 +72,27 @@ describe("config action", () => {
     } finally {
       fs.rmSync(outside, { recursive: true, force: true })
     }
+  })
+
+  test("#378 r1:config 恢复被旁路改写挡住 → journal 保留非终态(不终态化为 rolled-back)", async () => {
+    writeCfg({ mcp: { a: { type: "old" } } })
+    const r = await runExtensionTransaction(root, { items: [configItem("mcp--a", "a", { type: "new" })] }, {
+      populate: noop,
+      log: noop,
+      commitReceipt: () => {
+        // receipt 失败前旁路改写 target → 回滚时 live 与 next/pre 均不符 → restore 拒
+        fs.writeFileSync(cfg, JSON.stringify({ mcp: { a: { type: "bypass" } } }))
+        throw new Error("receipt sink failed")
+      },
+    })
+    expect(r.ok).toBe(false)
+    if (r.ok) throw new Error("unreachable")
+    expect(r.reason).toContain("retained non-terminal")
+    const journal = readTransactionJournal(root, r.txId!)
+    expect(journal).not.toBeNull()
+    expect(journal!.state).not.toBe("rolled-back")
+    expect(journal!.state).not.toBe("committed")
+    expect(readCfg().mcp.a.type).toBe("bypass") // 留证:不复原、不覆盖
   })
 
   test("config 装进 live alpha.jsonc + 提交 config receipt", async () => {
