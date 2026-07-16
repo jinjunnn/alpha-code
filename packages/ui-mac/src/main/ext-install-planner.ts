@@ -1635,6 +1635,10 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       rollback("no installable content")
       return { ok: false, reason: "该内容尚未随此版本打包(entry declares no installable asset)" }
     }
+    // promotion warnings 产生即落 main 日志(review r5:authorize 暂停会丢弃本次 attempt 的
+    // warnings,确认重驱 CAS 命中后不再复现 —— 留痕不依赖后续路径;成功 outcome 仍合并透传)。
+    if (promoted.warnings.length)
+      console.error(`[ext-install-planner] agent ${entry.name}: CAS promotion warnings: ${promoted.warnings.join("; ")}`)
     const [agentCasSpec] = promoted.specs
     if (promoted.specs.length !== 1 || !agentCasSpec) {
       rollback("agent asset not a single file")
@@ -2277,6 +2281,10 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
     // 裁决 B:agent 主键由 bundled entry 决定,且必须校验 id/name 一致(双真源交叉不查 id 后缀)。
     if (entry.id !== `agent:${entry.name}`)
       return { ok: false, reason: `bundled entry id "${entry.id}" ≠ "agent:${entry.name}" — refusing (identity drift)` }
+    // promotion warnings 产生即落 main 日志(review r5:authorize 暂停丢弃 attempt warnings,
+    // 重驱 blob 已复原不再复现;成功 outcome 仍合并透传)。
+    if (promoted.warnings.length)
+      console.error(`[ext-install-planner] agent seed ${entry.name}: CAS promotion warnings: ${promoted.warnings.join("; ")}`)
     const [casSpec] = promoted.files
     if (promoted.files.length !== 1 || !casSpec) {
       rollback("agent seed asset must contain exactly one file")
