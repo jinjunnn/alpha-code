@@ -1919,6 +1919,39 @@ describe("single-install transactionalization exit criteria (REQ-100 #378)", () 
     expect(u2.ok).toBe(true)
   })
 
+  test("r2:fresh 拒绝同名其他 digest 的未策展派生路径(vendored 与 npm 双入口,防双载)", async () => {
+    const stray = path.join(globalRoot, "plugins", "vp@deadbeefdeadbeef", "plugin.js")
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [stray] }))
+    const { deps } = makeDeps()
+    const r = await installCatalog({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("without a ledger record")
+    const strayNp = path.join(globalRoot, "plugins", "np@aaaabbbbccccdddd", "plugin.js")
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [strayNp] }))
+    const r2 = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
+    expect(r2.ok).toBe(false)
+    if (!r2.ok) expect(r2.reason).toContain("without a ledger record")
+    // 双入口都零写入
+    expect(JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))).toEqual({ plugin: [strayNp] })
+  })
+
+  test("r2:replace 失败清理按 live 引用判定 —— config 已含 staged jsPath 时目录保留", async () => {
+    const { deps } = makeDeps()
+    const v1 = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
+    expect(v1.ok).toBe(true)
+    // 触发 replace(高版本)+ 事务在途 busy → 失败;fake stager 落点固定 plugins/vp@feed1234,
+    // 预先把该 jsPath 塞进 live plugin[](模拟「config 已指向 staged 载荷」的 retained 形态)。
+    const stagedJs = path.join(globalRoot, "plugins", "vp@feed1234", "plugin.js")
+    const cur = pluginArrayOnDisk()
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [...cur, stagedJs] }))
+    const v2Entry = { ...pluginVendoredEntry, version: "1.0.1" } as CatalogEntry
+    const { deps: d2 } = makeDeps({ entries: [...ALL_ENTRIES.filter((e) => e.id !== "plugin:vp"), v2Entry] })
+    const upd = await installCatalog({ catalogId: "plugin:vp", scope: { scope: "global" } }, d2)
+    expect(upd.ok).toBe(false)
+    // 保守清理:live 引用在场 → staged 目录不删(删除会制造「config 指向缺失载荷」)
+    expect(fs.existsSync(path.join(globalRoot, "plugins", "vp@feed1234"))).toBe(true)
+  })
+
   test("plugin 更新失败 → 旧版继续健康(config 指旧 jsPath、旧目录原样、账本不动)", async () => {
     const { deps } = makeDeps()
     const v1 = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)

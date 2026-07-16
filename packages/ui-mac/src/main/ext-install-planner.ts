@@ -55,6 +55,25 @@ function mcpRefPathOf(ref: string): string | null {
   return m?.[1] ?? null
 }
 
+/** #378 r2(Major):plugin fresh 的 config 在场扫描 —— plugin[] 里任何解析为本名派生落点
+ *  (<root>/plugins/<name>/plugin.js 或 <root>/plugins/<name>@<suffix>/plugin.js)的字符串条目
+ *  都算在场:无账不认领(有账早被三态分发送去 replace);只查恰好的本次 jsPath 会漏掉其他
+ *  内容寻址版本的未策展残留 —— 追加第二条同名路径后引擎会把两份 plugin 都加载。
+ *  只匹配本 root 受控布局,树外/非字符串条目不误伤。 */
+function findSameNamePluginPathEntry(list: unknown[], root: string, name: string): string | null {
+  const pluginsRoot = path.join(root, "plugins")
+  for (const p of list) {
+    if (typeof p !== "string") continue
+    const resolved = path.resolve(p)
+    if (path.basename(resolved) !== "plugin.js") continue
+    const dir = path.dirname(resolved)
+    if (path.dirname(dir) !== pluginsRoot) continue
+    const base = path.basename(dir)
+    if (base === name || base.startsWith(`${name}@`)) return p
+  }
+  return null
+}
+
 /** #378 r1(Major):cloud 重装的锁内 desiredState 漂移门 —— plan 快照在锁外读,锁内重读
  *  不一致即拒(否则并发 disable 会被旧快照写回 enabled)。导出供直接单测。 */
 export function cloudDesiredStateGate(
@@ -862,6 +881,16 @@ async function replacePluginViaTransaction(args: {
       return
     }
     if (!stagedDir) return
+    // #378 r2 Major:retained(恢复被挡)形态下 live config 可能已指向 staged jsPath ——
+    // 此时删除会制造「config 指向缺失载荷」。live 引用在场或读不出 = 保守不删(孤儿目录
+    // 无害,按 runbook 人工收);未被引用才收。
+    const live = readPluginArray()
+    if (!live.ok || live.value.includes(newElem)) {
+      console.error(
+        `[ext-install-planner] plugin ${entry.name}: staged dir kept — ${live.ok ? "live config still references it (retained rollback?)" : `config unreadable: ${live.reason}`}`,
+      )
+      return
+    }
     try {
       fs.rmSync(stagedDir, { recursive: true, force: true })
     } catch {
@@ -881,6 +910,18 @@ async function replacePluginViaTransaction(args: {
     cleanupStaged()
     rollback("plugin config drifted before plan")
     return { ok: false, reason: "plugin config changed while planning — retry the update" }
+  }
+  // #378 r2(Major,fresh 同款对称):oldElem 之外的同名派生路径 = 未策展残留 —— 置换后它会
+  // 留在数组里与新元素双载同名插件;拒绝而非静默带过(与 fresh 的不认领语义一致)。
+  const strayEntry = findSameNamePluginPathEntry(
+    snapshot.value.filter((x) => x !== oldElem),
+    root,
+    entry.name,
+  )
+  if (strayEntry) {
+    cleanupStaged()
+    rollback("unregistered plugin path present")
+    return { ok: false, reason: `config also contains "${strayEntry}" without a ledger record — refusing to update into a double-load` }
   }
   const nextArray = snapshot.value.map((x) => (x === oldElem ? newElem : x))
   const snapshotCanon = JSON.stringify(snapshot.value)
@@ -1632,6 +1673,13 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
         return npmSnapshot
       }
       const npmRoot = scope.root(deps)
+      // r2 Major(对称):同名派生 vendored 路径的未策展残留同样拒 —— 引擎合并 plugin[] 全量
+      // 加载,追加 npm 钉版会与残留路径双载同名插件。
+      const sameNamePath = findSameNamePluginPathEntry(npmSnapshot.value, npmRoot, entry.name)
+      if (sameNamePath) {
+        rollback("unregistered plugin path present")
+        return { ok: false, reason: `config already contains "${sameNamePath}" without a ledger record — refusing to adopt or double-install an unregistered plugin` }
+      }
       const npmConfigTarget = path.join(npmRoot, "alpha.jsonc")
       const npmCanon = JSON.stringify(npmSnapshot.value)
       const npmNow = deps.now?.() ?? new Date().toISOString()
@@ -2801,9 +2849,11 @@ async function installPluginFromCas(args: {
     rollback(snapshot.reason)
     return snapshot
   }
-  if (snapshot.value.includes(jsPath)) {
+  // r2 Major:同名派生路径全形态扫描(含其他 digest 的内容寻址目录)—— 不止本次 jsPath。
+  const sameNameEntry = findSameNamePluginPathEntry(snapshot.value, root, entry.name)
+  if (sameNameEntry) {
     rollback("unregistered plugin config present")
-    return { ok: false, reason: `config already contains "${jsPath}" without a ledger record — refusing to adopt an unregistered install as catalog` }
+    return { ok: false, reason: `config already contains "${sameNameEntry}" without a ledger record — refusing to adopt or double-install an unregistered plugin` }
   }
   const nextArray = [...snapshot.value, jsPath]
   const snapshotCanon = JSON.stringify(snapshot.value)

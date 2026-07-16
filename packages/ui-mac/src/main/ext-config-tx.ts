@@ -122,7 +122,14 @@ export function restoreConfigImage(image: ConfigTxImage): ConfigRestoreOutcome {
   const curDigest = digest(current)
   if (curDigest === image.preDigest) return { ok: true, action: "noop" } // 已是旧态(switch 未应用/已回滚)
   if (curDigest === image.nextDigest) {
-    writeFileAtomicSync(image.target, image.preImage)
+    // #378 r2 Major:preimage 写失败(ENOSPC/EIO)必须走结果通道 —— 抛出会绕过引擎的
+    // blocked/保留非终态处理与锁释放(runExtensionTransaction 直接 reject,tx.lock 悬置到
+    // 陈旧锁接管)。
+    try {
+      writeFileAtomicSync(image.target, image.preImage)
+    } catch (error) {
+      return { ok: false, reason: `restore: preimage write failed: ${error instanceof Error ? error.message : String(error)}` }
+    }
     return { ok: true, action: "restored" }
   }
   return { ok: false, reason: `restore: target diverged (neither pre nor next digest) — refusing to clobber ${image.target}` }

@@ -121,6 +121,30 @@ describe("file action in runExtensionTransaction (REQ-102 #358)", () => {
     for (const j of listTransactionJournals(root)) expect(j.state).toBe("rolled-back")
   })
 
+  test("#378 r2:config 恢复被旁路改写挡住 → 冻结,file item 不被回滚 unlink(载荷保留)", async () => {
+    const r = await runExtensionTransaction(root, planFor(MD), {
+      populate: noop,
+      probe: fileProbe(MD),
+      log: noop,
+      commitReceipt: () => {
+        // receipt 失败前旁路改写 config target → 回滚时 config 恢复被拒(既非 pre 也非 next)
+        writeFileSync(cfgTarget, JSON.stringify({ agent: { demo: { bypass: true } } }))
+        throw new Error("receipt sink failed")
+      },
+    })
+    expect(r.ok).toBe(false)
+    if (r.ok) throw new Error("unreachable")
+    expect(r.reason).toContain("retained non-terminal")
+    // 冻结:file item 保留(live config 语义上仍可能指向它),绝不 unlink 制造「配置指向缺失载荷」
+    expect(existsSync(MD_PATH())).toBe(true)
+    expect(readFileSync(MD_PATH(), "utf8")).toBe(MD)
+    // journal 非终态(留待 recovery/人工)
+    for (const j of listTransactionJournals(root)) {
+      expect(j.state).not.toBe("rolled-back")
+      expect(j.state).not.toBe("committed")
+    }
+  })
+
   test("zero-byte preimage is restored as a zero-byte FILE (absent ≠ empty, Codex 裁决 B)", async () => {
     mkdirSync(join(root, "agents"), { recursive: true })
     writeFileSync(MD_PATH(), "") // 存在但零字节

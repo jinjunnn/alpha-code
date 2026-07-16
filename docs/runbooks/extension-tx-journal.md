@@ -128,7 +128,7 @@ seed plugin 的载荷是同一事务里的 file items,落点 = 内容寻址目�
 ## MCP 密钥版本目录的残留形态(REQ-100 #378)
 
 单装/未策展 MCP 的密钥自 #378 起写入版本化布局
-`<userData>/alpha-mcp-secrets/<server>/<verId>/<VAR>`(verId = `v-<hex8>`,只增不覆盖;
+`<userData>/alpha-mcp-secrets/<server>/<verId>/<VAR>`(verId = `v-<hex16>`(接受 8-16 位 hex 存量),只增不覆盖;
 完整合同见 `docs/contracts/extension-capability-authorization.md` §9)。残留识别与处置:
 
 - **孤儿判定**:版本目录内没有任何文件被当前 `alpha.jsonc` `mcp.<server>` leaf 的 `{file:}`

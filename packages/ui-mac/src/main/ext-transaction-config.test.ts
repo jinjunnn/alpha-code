@@ -15,6 +15,7 @@ import {
   type TxHooks,
   type TxPlan,
 } from "./ext-transaction"
+import { restoreConfigImage } from "./ext-config-tx"
 
 let root: string
 let cfg: string
@@ -71,6 +72,24 @@ describe("config action", () => {
       expect(fs.existsSync(path.join(outside, "alpha.jsonc"))).toBe(false) // 零写盘
     } finally {
       fs.rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  test("#378 r2:restore preimage 写失败(目录只读)走结果通道,不抛 —— 引擎按 blocked 保留而非 reject 悬锁", () => {
+    if (typeof process.getuid === "function" && process.getuid() === 0) return // root 下 0o555 仍可写
+    const sub = path.join(root, "ro")
+    fs.mkdirSync(sub, { recursive: true })
+    const target = path.join(sub, "alpha.jsonc")
+    const pre = "{}"
+    const next = JSON.stringify({ mcp: { a: { type: "local" } } })
+    fs.writeFileSync(target, next)
+    fs.chmodSync(sub, 0o555)
+    try {
+      const r = restoreConfigImage({ target, preImage: pre, nextImage: next, preDigest: sha(pre), nextDigest: sha(next) })
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.reason).toContain("preimage write failed")
+    } finally {
+      fs.chmodSync(sub, 0o755)
     }
   })
 

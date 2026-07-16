@@ -126,7 +126,7 @@ current、不写 config/receipt/grants/授权收据;已验证载荷可能留在�
 
 ## 9. MCP 密钥版本化布局(#378,Codex 裁决 Q1)
 
-- 布局:`<userData>/alpha-mcp-secrets/<server>/<verId>/<VAR>`(verId = `v-<hex8>`,每次安装
+- 布局:`<userData>/alpha-mcp-secrets/<server>/<verId>/<VAR>`(verId = `v-<hex16>`(64 位随机,排他 mkdir 认领,GC 判别接受 8-16 位 hex),每次安装
   尝试全新目录);durable config 只携带对应 `{file:}` 引用。**只增不覆盖** —— 旧版本文件被
   旧 config 引用,直至新 config 提交前必须原样可读;固定路径覆盖写与整目录快照/恢复
   (会删掉并发写方的新版本)已废除。

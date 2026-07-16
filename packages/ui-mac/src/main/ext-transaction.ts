@@ -1095,6 +1095,11 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
   const rollbackImageActions = (): { fileBlocked: string | null } => {
     let fileBlocked: string | null = null
     for (const it of [...journal.items].reverse()) {
+      // #378 r2 Major:任一恢复被挡即**冻结**(不再触碰后续 item)—— 逆序下 config(逻辑主
+      // item)先恢复,若被旁路改写挡住,live config 仍指向新载荷;继续回滚 file items 会
+      // unlink 仍被引用的文件,制造「config 指向缺失载荷」。受阻 = 现场留证 + 非终态,
+      // 剩余 item 保持原样等 recovery/人工。
+      if (fileBlocked) break
       const kind = actionOf(it)
       if (kind === "config") {
         const image = configImages.get(it.key)
@@ -2248,6 +2253,9 @@ async function recoverOne(
   const reason = `crash recovery rollback: ${reasonParts.join("; ")}`
   let restoreBlocked: string | null = null
   for (const it of [...journal.items].reverse()) {
+    // #378 r2 Major:任一恢复被挡即冻结(与前向回滚同款)—— 逆序下 config 先恢复,受阻时
+    // 继续 unlink file items 会删掉 live config 仍引用的载荷。剩余 item 原样留证。
+    if (restoreBlocked) break
     const kind = actionOf(it)
     if (kind === "config") {
       // r6 Major:config.target 圈禁不过(root 外/畸形)= 现场需人工核对 —— **保留非终态**,
