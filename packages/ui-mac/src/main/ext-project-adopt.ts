@@ -5,7 +5,7 @@
 // `.alpha/installs.json` 的 v1 存量从未被收编。本模块补齐触发面:项目 lifecycle 事件
 // (ext-trust-check,main 首次得知已确认项目目录)中调用。
 //
-// 共享语义(Codex 裁决 A + 消费不变量 C,契约档 docs/contracts/extension-install-ledger.md §5):
+// 共享语义(Codex 裁决 A + 消费不变量 C,契约档 docs/contracts/extension-install-ledger.md §4):
 // project `.alpha` 跨 app channel 共用且不做环境分根;adoption 将执行时 main 的 environment
 // **如实**写入 record(先到先得的归因事实);environment 对 project 记录是归因字段,不是可见性、
 // 操作资格或 channel namespace —— 任何读方不得按它过滤(readLedgerV2/findRecordV2/
@@ -15,9 +15,9 @@
 // 故顺序 = 身份(realpath)→ recovery gate 准入(恢复收敛 + 终态探测,per-root mutex)→
 // project bundle 锁 → 迁移;gate/锁只罩迁移,不横跨任何原生确认框。electron-free、DI。
 
-import * as crypto from "node:crypto"
-import * as fs from "node:fs"
-import * as path from "node:path"
+import { randomBytes } from "node:crypto"
+import { existsSync } from "node:fs"
+import { join } from "node:path"
 import type { AppEnvironment } from "./alpha-environment"
 import { alphaRoot } from "./alpha-workdir"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
@@ -42,10 +42,10 @@ export async function adoptProjectLedger(
   if (!root) return { ok: false, transient: false, reason: `invalid project root: ${projectDir}` }
   // 无账本 = 无可收编:零写入直接返回(gate/锁会在 .alpha 里落地 lock/journal 目录 ——
   // 不给没有 .alpha 存量的项目制造写副作用)。幂等,存量出现后下次触发自然收编。
-  if (!fs.existsSync(path.join(root, "installs.json"))) return { ok: true, migrated: 0, retained: 0, warnings: [] }
+  if (!existsSync(join(root, "installs.json"))) return { ok: true, migrated: 0, retained: 0, warnings: [] }
 
   const res = await deps.gate.withRecoveredWrite(root, async (): Promise<AdoptOutcome> => {
-    const lock = tryAcquireBundleLock(root, { txId: `adopt-${crypto.randomBytes(6).toString("hex")}` })
+    const lock = tryAcquireBundleLock(root, { txId: `adopt-${randomBytes(6).toString("hex")}` })
     if (!lock.ok) return { ok: false, transient: true, reason: `project ledger busy: ${lock.reason} — will retry on next open` }
     try {
       const m = migrateV1Ledger(root, deps.environment, projectPath)
