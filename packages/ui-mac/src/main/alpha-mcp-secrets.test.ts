@@ -199,6 +199,30 @@ describe("gcMcpSecretVersionsLocked — 引用对账 + 宽限", () => {
     expect(fs.existsSync(path.join(sDir, "unknown.file!"))).toBe(true) // 未知形态零接触
   })
 
+  test("r3:兄弟级 <server>.bak-* 历史快照 —— GC 过宽限收、卸载连带吊销", () => {
+    const base = path.join(userData, "alpha-mcp-secrets")
+    const bak = path.join(base, "s.bak-deadbeef")
+    fs.mkdirSync(bak, { recursive: true })
+    fs.writeFileSync(path.join(bak, "TOK"), "old-secret")
+    const vid = newMcpSecretVersionId()
+    writeMcpSecretVersioned(userData, "s", vid, "TOK", "cur")
+    // 宽限内不收(fail-safe)
+    gcMcpSecretVersionsLocked(userData, "s", [verFile("s", vid, "TOK")])
+    expect(fs.existsSync(bak)).toBe(true)
+    // 过宽限收(备份从不被 config 引用)
+    fs.utimesSync(bak, old, old)
+    const r = gcMcpSecretVersionsLocked(userData, "s", [verFile("s", vid, "TOK")])
+    expect(r.warnings).toEqual([])
+    expect(fs.existsSync(bak)).toBe(false)
+    expect(fs.existsSync(verFile("s", vid, "TOK"))).toBe(true) // 被引用版本不受影响
+    // 卸载吊销覆盖兄弟级
+    const bak2 = path.join(base, "s.bak-cafebabe")
+    fs.mkdirSync(bak2, { recursive: true })
+    removeMcpServerSecrets(userData, "s")
+    expect(fs.existsSync(bak2)).toBe(false)
+    expect(fs.existsSync(path.join(base, "s"))).toBe(false)
+  })
+
   test("目录缺席 = 无事;版本目录内任一文件被引用即整目录保留", () => {
     expect(gcMcpSecretVersionsLocked(userData, "absent", []).removed).toEqual([])
     const vid = newMcpSecretVersionId()

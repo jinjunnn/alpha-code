@@ -1935,6 +1935,19 @@ describe("single-install transactionalization exit criteria (REQ-100 #378)", () 
     expect(JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))).toEqual({ plugin: [strayNp] })
   })
 
+  test("r3:相对与 file:// 等价形态的同名 stray 同样被拒(引擎按 config 目录解析路径条目)", async () => {
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: ["./plugins/vp@0011223344556677/plugin.js"] }))
+    const { deps } = makeDeps()
+    const r = await installCatalog({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("without a ledger record")
+    const fileUrl = `file://${path.join(globalRoot, "plugins", "np@8899aabbccddeeff", "plugin.js")}`
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [fileUrl] }))
+    const r2 = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
+    expect(r2.ok).toBe(false)
+    if (!r2.ok) expect(r2.reason).toContain("without a ledger record")
+  })
+
   test("r2:replace 失败清理按 live 引用判定 —— config 已含 staged jsPath 时目录保留", async () => {
     const { deps } = makeDeps()
     const v1 = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)

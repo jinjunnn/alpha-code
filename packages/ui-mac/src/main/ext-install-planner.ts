@@ -24,6 +24,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import * as crypto from "node:crypto"
 import { randomUUID } from "node:crypto"
+import { fileURLToPath } from "node:url"
 import type { InstallReceiptType } from "../preload/types"
 import type { CatalogEntry, McpInstallSpec } from "../renderer/extensions/catalog-types"
 import type { AppEnvironment } from "./alpha-environment"
@@ -55,16 +56,36 @@ function mcpRefPathOf(ref: string): string | null {
   return m?.[1] ?? null
 }
 
-/** #378 r2(Major):plugin fresh 的 config 在场扫描 —— plugin[] 里任何解析为本名派生落点
- *  (<root>/plugins/<name>/plugin.js 或 <root>/plugins/<name>@<suffix>/plugin.js)的字符串条目
+/** #378 r3(Major):plugin[] 条目按**引擎语义**解析为绝对路径 —— 引擎(config/plugin.ts
+ *  isPathPluginSpec/resolvePluginSpec)把 `file://`、`.` 前缀与绝对路径当路径,相对路径按
+ *  **config 文件所在目录**解析;词法 `includes`/CWD `resolve` 会漏等价形态(`./plugins/...`、
+ *  `file://.../plugin.js`、`/a/./b`)。非路径形态(npm 包名)= null。 */
+function resolvePluginEntryPath(entry: unknown, configDir: string): string | null {
+  if (typeof entry !== "string" || entry.length === 0) return null
+  let p = entry
+  if (p.startsWith("file://")) {
+    try {
+      p = fileURLToPath(p)
+    } catch {
+      return null
+    }
+  } else if (!p.startsWith(".") && !path.isAbsolute(p)) {
+    return null // npm 包名形态,非路径(与引擎 isPathPluginSpec 同判)
+  }
+  return path.resolve(configDir, p)
+}
+
+/** #378 r2(Major):plugin fresh/replace 的 config 在场扫描 —— plugin[] 里任何解析为本名派生
+ *  落点(<root>/plugins/<name>/plugin.js 或 <root>/plugins/<name>@<suffix>/plugin.js)的条目
  *  都算在场:无账不认领(有账早被三态分发送去 replace);只查恰好的本次 jsPath 会漏掉其他
  *  内容寻址版本的未策展残留 —— 追加第二条同名路径后引擎会把两份 plugin 都加载。
- *  只匹配本 root 受控布局,树外/非字符串条目不误伤。 */
+ *  r3:解析走 resolvePluginEntryPath(相对/file:// 等价形态同样命中);树外条目不误伤。 */
 function findSameNamePluginPathEntry(list: unknown[], root: string, name: string): string | null {
   const pluginsRoot = path.join(root, "plugins")
   for (const p of list) {
     if (typeof p !== "string") continue
-    const resolved = path.resolve(p)
+    const resolved = resolvePluginEntryPath(p, root)
+    if (resolved === null) continue
     if (path.basename(resolved) !== "plugin.js") continue
     const dir = path.dirname(resolved)
     if (path.dirname(dir) !== pluginsRoot) continue
@@ -885,7 +906,10 @@ async function replacePluginViaTransaction(args: {
     // 此时删除会制造「config 指向缺失载荷」。live 引用在场或读不出 = 保守不删(孤儿目录
     // 无害,按 runbook 人工收);未被引用才收。
     const live = readPluginArray()
-    if (!live.ok || live.value.includes(newElem)) {
+    // r3 Major:引用比较按引擎解析语义(旁路把绝对条目改写成等价相对/file:// 形态时,词法
+    // includes 会误判「未引用」而删掉 live 仍指向的载荷)。
+    const newElemResolved = path.resolve(newElem)
+    if (!live.ok || live.value.some((e) => resolvePluginEntryPath(e, root) === newElemResolved)) {
       console.error(
         `[ext-install-planner] plugin ${entry.name}: staged dir kept — ${live.ok ? "live config still references it (retained rollback?)" : `config unreadable: ${live.reason}`}`,
       )
@@ -1568,8 +1592,12 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       if (verId) {
         const leafNow = deps.installers.readMcpLeafStrict(entry.name)
         // leaf 缺席(fresh 的 authorize 暂停/失败)= 确定零引用,可删;只有**不可读**才保守不删。
-        const liveRefs = leafNow.ok ? new Set(leafNow.value !== undefined ? collectMcpFileRefPaths(leafNow.value) : []) : null
-        const stillReferenced = liveRefs === null || refPaths.some((p) => liveRefs.has(p))
+        // r3 Major:两侧都 path.resolve 规范化 —— 旁路把 {file:/a/v/TOKEN} 改写成等价
+        // {file:/a/v/./TOKEN} 时,原字符串比较会误判「未引用」而删掉 live 仍指向的密钥。
+        const liveRefs = leafNow.ok
+          ? new Set((leafNow.value !== undefined ? collectMcpFileRefPaths(leafNow.value) : []).map((p) => path.resolve(p)))
+          : null
+        const stillReferenced = liveRefs === null || refPaths.some((p) => liveRefs.has(path.resolve(p)))
         if (!stillReferenced) {
           const rm = deps.installers.removeMcpSecretVersionDir(entry.name, verId)
           if (!rm.ok) console.error(`[ext-install-planner] mcp ${entry.name}: secret version cleanup failed: ${rm.reason}`)

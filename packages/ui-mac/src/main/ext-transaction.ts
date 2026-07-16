@@ -2267,8 +2267,11 @@ async function recoverOne(
       }
       const image = reconstructConfigImage(it)
       if (!image) {
-        // 圈禁已过但 staging 丢失/digest 不符:live 保持不动(fail closed),幂等,下轮 noop。
-        warnings.push(`config recovery: cannot reconstruct image for "${it.key}" — leaving live as-is (fail closed)`)
+        // #378 r3 Major:config image 失据(staging 丢失/digest 不符)同样**冻结保留** ——
+        // 此时无从判定 live config 是否仍指向本事务的 file 载荷;继续 unlink file items 并
+        // 终态化 rolled-back 会留下「live config 指向已删载荷」且 journal 终态阻断幂等重试。
+        // 与 file 段「失据 → 保留非终态零改动」同款(#358 Blocker 3)。
+        restoreBlocked = `config recovery rollback for "${it.key}": cannot reconstruct image (staging lost/corrupt) — retained`
         continue
       }
       const restored = restoreConfigImage(image)
