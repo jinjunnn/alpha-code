@@ -1,8 +1,10 @@
 // REQ-102 #318/#367 —— CAS GC 生产触发(#367 起单轮在 worker_threads 内执行):
 //  · 调度语义(注入最小计时器 + spawn seam,手动执行 callback):首跑只 arm 延迟、执行后链式
 //    rearm、spawn 失败仍 rearm(无同步回退)、stop 幂等 + 取消 + 旧 callback 不复活;
-//  · spawnCasGcWorkerRound 事件合同矩阵:message 严格解码 / error / 非零 exit / 零 exit 无消息 /
-//    畸形摘要 / 畸形 workerData(真入口 fail-closed);
+//  · spawnCasGcWorkerRound 事件终态矩阵(fake worker 确定性驱动,#385 r1):exit 为生命周期
+//    终态(合法摘要只暂存,exit=0 才成功;摘要后 error/exit≠0 仍失败)、messageerror、畸形/
+//    重复摘要 = 协议违规 + terminate、单结算、factory 抛错;另以真 worker stub 入口做集成面
+//    (静默退出/抛错/畸形摘要/畸形 workerData 真入口 fail-closed);
 //  · 真 worker 冒烟:TS 入口 + 小 store,一轮真实 sweep 经 worker 回传摘要;
 //  · 构建接线守卫:electron.vite main 第三入口存在;
 //  · productionCasGcConfig = composition root 的唯一权威取值点(#318,不变)。
@@ -13,7 +15,7 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { __resetAlphaEnvironmentForTests, environmentMutableRoot, initAlphaEnvironment } from "./alpha-environment"
-import { CAS_GC_GRACE_MS_DEFAULT, type CasGcRoundInput, type CasGcRoundSummary } from "./ext-cas-gc"
+import { CAS_GC_GRACE_MS_DEFAULT, decodeCasGcRoundSummary, type CasGcRoundInput, type CasGcRoundSummary } from "./ext-cas-gc"
 import { decodeCasGcRoundInput } from "./ext-cas-gc-worker"
 import { putCasBlobFromBuffer } from "./ext-cas"
 import { resourcesRoot } from "./ext-fs-installer"
@@ -45,6 +47,16 @@ afterEach(() => {
 
 /** microtask/timer 冲刷:tick 的 promise 链(spawn → log → finally arm)结算完再断言。 */
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
+
+/** 拒绝断言 helper(零 await-thenable:直接 await 真 Promise,把拒绝原因转字符串)。 */
+const rejection = async (p: Promise<unknown>): Promise<string> => {
+  try {
+    await p
+    return "__resolved__ (expected rejection)"
+  } catch (error) {
+    return String(error)
+  }
+}
 
 const okSummary = (over: Partial<CasGcRoundSummary> = {}): CasGcRoundSummary => ({
   ok: true,
@@ -190,9 +202,135 @@ describe("startCasGcScheduler(#318/#367)", () => {
   })
 })
 
-// ── #367:worker 事件合同(spawnCasGcWorkerRound 对 stub 入口的判定矩阵)──────────────────────
+// ── #367:worker 事件终态矩阵(#385 r1 F1/F2/F3:注入 fake worker 确定性驱动任意事件序列)──────
 
-describe("spawnCasGcWorkerRound 事件合同(#367 裁决 Q3)", () => {
+describe("spawnCasGcWorkerRound 事件终态矩阵(fake worker)", () => {
+  function fakeWorker() {
+    const cbs: Partial<Record<"message" | "error" | "messageerror" | "exit", (payload: unknown) => void>> = {}
+    let terminated = 0
+    let unrefed = 0
+    const worker = {
+      on(event: "message" | "error" | "messageerror" | "exit", cb: (payload: unknown) => void): void {
+        cbs[event] = cb
+      },
+      unref(): void {
+        unrefed++
+      },
+      terminate(): Promise<number> {
+        terminated++
+        return Promise.resolve(0)
+      },
+    }
+    const fire = (event: "message" | "error" | "messageerror" | "exit", payload: unknown): void => {
+      cbs[event]?.(payload)
+    }
+    return { worker, fire, terminated: () => terminated, unrefed: () => unrefed }
+  }
+  const input = (): CasGcRoundInput => ({ casBaseRoot: "/a", envRoots: ["/b"], seedLockPaths: [], graceMs: 1, dryRun: true })
+
+  test("合法摘要只暂存,exit=0 才成功(exit 为生命周期终态);unref 在创建时调用", async () => {
+    const f = fakeWorker()
+    const p = spawnCasGcWorkerRound(input(), "unused", () => f.worker)
+    expect(f.unrefed()).toBe(1)
+    f.fire("message", okSummary())
+    f.fire("exit", 0)
+    expect(await p).toEqual(okSummary())
+    expect(f.terminated()).toBe(0) // 正常退出无需 terminate
+  })
+
+  test("合法摘要后 exit≠0 = 失败(先到摘要不屏蔽后续失败终态)", async () => {
+    const f = fakeWorker()
+    const p = spawnCasGcWorkerRound(input(), "unused", () => f.worker)
+    f.fire("message", okSummary())
+    f.fire("exit", 7)
+    expect(await rejection(p)).toContain("exited with code 7")
+  })
+
+  test("合法摘要后 error = 失败 + terminate", async () => {
+    const f = fakeWorker()
+    const p = spawnCasGcWorkerRound(input(), "unused", () => f.worker)
+    f.fire("message", okSummary())
+    f.fire("error", new Error("late boom"))
+    expect(await rejection(p)).toContain("late boom")
+    expect(f.terminated()).toBe(1)
+  })
+
+  test("exit≠0(无先行 error)= 失败", async () => {
+    const f = fakeWorker()
+    const p = spawnCasGcWorkerRound(input(), "unused", () => f.worker)
+    f.fire("exit", 3)
+    expect(await rejection(p)).toContain("exited with code 3")
+  })
+
+  test("messageerror = 失败 + terminate", async () => {
+    const f = fakeWorker()
+    const p = spawnCasGcWorkerRound(input(), "unused", () => f.worker)
+    f.fire("messageerror", new Error("clone failed"))
+    expect(await rejection(p)).toContain("message deserialization failed")
+    expect(f.terminated()).toBe(1)
+  })
+
+  test("畸形摘要 = 失败 + terminate;随后 exit 0 不改判(单结算)", async () => {
+    const f = fakeWorker()
+    const p = spawnCasGcWorkerRound(input(), "unused", () => f.worker)
+    f.fire("message", { nope: true })
+    f.fire("exit", 0)
+    expect(await rejection(p)).toContain("malformed summary")
+    expect(f.terminated()).toBe(1)
+  })
+
+  test("第二份摘要 = 协议违规 + terminate", async () => {
+    const f = fakeWorker()
+    const p = spawnCasGcWorkerRound(input(), "unused", () => f.worker)
+    f.fire("message", okSummary())
+    f.fire("message", okSummary({ marked: 9 }))
+    expect(await rejection(p)).toContain("protocol violation")
+    expect(f.terminated()).toBe(1)
+  })
+
+  test("结算后全部事件为 no-op(error 结算后 exit/message 不改判、不重复 terminate)", async () => {
+    const f = fakeWorker()
+    const p = spawnCasGcWorkerRound(input(), "unused", () => f.worker)
+    f.fire("error", new Error("first"))
+    f.fire("message", okSummary())
+    f.fire("exit", 0)
+    f.fire("error", new Error("second"))
+    expect(await rejection(p)).toContain("first")
+    expect(f.terminated()).toBe(1)
+  })
+
+  test("factory 同步抛错 → 直接失败(归 gc-exception 路径)", async () => {
+    const outcome = await rejection(
+      spawnCasGcWorkerRound(input(), "unused", () => {
+        throw new Error("spawn denied")
+      }),
+    )
+    expect(outcome).toContain("spawn denied")
+  })
+})
+
+describe("decodeCasGcRoundSummary 逐字段负向矩阵(#385 r1 F4)", () => {
+  test("未知键 / 非布尔 ok / 非法 reason / 非安全整数计数 / 负数 / 小数一律拒;合法原样通过", () => {
+    expect(decodeCasGcRoundSummary(null).ok).toBe(false)
+    expect(decodeCasGcRoundSummary({ ...okSummary(), extra: 1 }).ok).toBe(false) // 未知键拒
+    expect(decodeCasGcRoundSummary({ ...okSummary(), ok: "yes" }).ok).toBe(false)
+    expect(decodeCasGcRoundSummary({ ...okSummary(), reason: 42 }).ok).toBe(false)
+    expect(decodeCasGcRoundSummary({ ...okSummary(), dryRun: 1 }).ok).toBe(false)
+    for (const key of ["marked", "blobsTotal", "sweepableCount", "sweptCount", "keptByGrace", "warningCount"]) {
+      expect(decodeCasGcRoundSummary({ ...okSummary(), [key]: -1 }).ok).toBe(false)
+      expect(decodeCasGcRoundSummary({ ...okSummary(), [key]: 0.5 }).ok).toBe(false) // 离散计数拒小数
+      expect(decodeCasGcRoundSummary({ ...okSummary(), [key]: Number.MAX_SAFE_INTEGER + 2 }).ok).toBe(false)
+      expect(decodeCasGcRoundSummary({ ...okSummary(), [key]: "3" }).ok).toBe(false)
+    }
+    const good = decodeCasGcRoundSummary(okSummary({ reason: "r" }))
+    expect(good.ok).toBe(true)
+    if (good.ok) expect(good.summary).toEqual(okSummary({ reason: "r" }))
+  })
+})
+
+// ── #367:worker 真入口集成(stub 文件驱动真实 worker_threads 事件)────────────────────────────
+
+describe("spawnCasGcWorkerRound 事件合同(#367 裁决 Q3,真 worker_threads)", () => {
   const stub = (name: string, code: string): string => {
     const p = path.join(base, `${name}.mjs`)
     fs.writeFileSync(p, code)
@@ -201,12 +339,12 @@ describe("spawnCasGcWorkerRound 事件合同(#367 裁决 Q3)", () => {
 
   test("零 exit 无消息 = 失败(不静默当成功)", async () => {
     const entry = stub("silent", "// exits without posting anything\n")
-    await expect(spawnCasGcWorkerRound(minimalInput(), entry)).rejects.toThrow("exited without reporting a summary")
+    expect(await rejection(spawnCasGcWorkerRound(minimalInput(), entry))).toContain("exited without reporting a summary")
   })
 
   test("worker 抛错 → error 事件 → 失败", async () => {
     const entry = stub("thrower", 'throw new Error("stub boom")\n')
-    await expect(spawnCasGcWorkerRound(minimalInput(), entry)).rejects.toThrow("stub boom")
+    expect(await rejection(spawnCasGcWorkerRound(minimalInput(), entry))).toContain("stub boom")
   })
 
   test("畸形摘要 → 严格解码拒(fail-closed)", async () => {
@@ -214,13 +352,13 @@ describe("spawnCasGcWorkerRound 事件合同(#367 裁决 Q3)", () => {
       "malformed",
       'import { parentPort } from "node:worker_threads"\nparentPort.postMessage({ nope: true })\n',
     )
-    await expect(spawnCasGcWorkerRound(minimalInput(), entry)).rejects.toThrow("malformed summary")
+    expect(await rejection(spawnCasGcWorkerRound(minimalInput(), entry))).toContain("malformed summary")
   })
 
   test("真入口 + 畸形 workerData → 入口 fail-closed 抛错(相对路径拒)", async () => {
     const entry = new URL("./ext-cas-gc-worker.ts", import.meta.url)
     const bad: CasGcRoundInput = { ...minimalInput(), casBaseRoot: "not/absolute" }
-    await expect(spawnCasGcWorkerRound(bad, entry)).rejects.toThrow("invalid workerData")
+    expect(await rejection(spawnCasGcWorkerRound(bad, entry))).toContain("invalid workerData")
   })
 
   function minimalInput(): CasGcRoundInput {
@@ -231,11 +369,13 @@ describe("spawnCasGcWorkerRound 事件合同(#367 裁决 Q3)", () => {
 })
 
 describe("decodeCasGcRoundInput(worker 入参 fail-closed)", () => {
-  test("非对象 / 相对路径 / 形状错一律拒;合法输入原样通过", () => {
+  test("非对象 / 未知键 / 相对路径(含 seedLockPaths 逐元素)/ 形状错一律拒;合法输入原样通过", () => {
     expect(decodeCasGcRoundInput(null).ok).toBe(false)
+    expect(decodeCasGcRoundInput({ casBaseRoot: "/a", envRoots: ["/b"], seedLockPaths: [], graceMs: 1, dryRun: true, extra: 1 }).ok).toBe(false) // 未知键拒
     expect(decodeCasGcRoundInput({ casBaseRoot: "rel", envRoots: [], seedLockPaths: [], graceMs: 1, dryRun: true }).ok).toBe(false)
     expect(decodeCasGcRoundInput({ casBaseRoot: "/a", envRoots: ["rel"], seedLockPaths: [], graceMs: 1, dryRun: true }).ok).toBe(false)
     expect(decodeCasGcRoundInput({ casBaseRoot: "/a", envRoots: ["/b"], seedLockPaths: [1], graceMs: 1, dryRun: true }).ok).toBe(false)
+    expect(decodeCasGcRoundInput({ casBaseRoot: "/a", envRoots: ["/b"], seedLockPaths: ["relative/seed.lock.json"], graceMs: 1, dryRun: true }).ok).toBe(false) // 相对 seed 路径拒(按 worker cwd 解析 = 危险)
     expect(decodeCasGcRoundInput({ casBaseRoot: "/a", envRoots: ["/b"], seedLockPaths: [], graceMs: -1, dryRun: true }).ok).toBe(false)
     expect(decodeCasGcRoundInput({ casBaseRoot: "/a", envRoots: ["/b"], seedLockPaths: [], graceMs: 1, dryRun: "yes" }).ok).toBe(false)
     const good = { casBaseRoot: "/a", envRoots: ["/b"], seedLockPaths: ["/s.json"], graceMs: 5, dryRun: false }

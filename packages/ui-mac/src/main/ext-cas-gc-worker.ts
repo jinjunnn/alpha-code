@@ -14,9 +14,13 @@ import { collectCasGarbage, summarizeCasGcReport, type CasGcRoundInput } from ".
 
 const isRec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
 
-/** workerData 严格解码(fail-closed;绝对路径要求与 collector 同口径,提前拒绝更可诊断)。 */
+const INPUT_KEYS = new Set(["casBaseRoot", "envRoots", "seedLockPaths", "graceMs", "dryRun"])
+
+/** workerData 严格解码(fail-closed;未知键拒,全部路径字段(含 seedLockPaths 逐元素)必须
+ *  绝对路径 —— 相对路径会按 worker cwd 解析,#385 review r1 F4)。 */
 export function decodeCasGcRoundInput(v: unknown): { ok: true; input: CasGcRoundInput } | { ok: false; reason: string } {
   if (!isRec(v)) return { ok: false, reason: "workerData must be an object" }
+  for (const key of Object.keys(v)) if (!INPUT_KEYS.has(key)) return { ok: false, reason: `workerData has unknown key "${key}" — refused` }
   if (typeof v.casBaseRoot !== "string" || !path.isAbsolute(v.casBaseRoot))
     return { ok: false, reason: "casBaseRoot must be an absolute path" }
   const strings = (x: unknown): string[] | undefined =>
@@ -24,7 +28,8 @@ export function decodeCasGcRoundInput(v: unknown): { ok: true; input: CasGcRound
   const envRoots = strings(v.envRoots)
   if (!envRoots || envRoots.some((r) => !path.isAbsolute(r))) return { ok: false, reason: "envRoots must be absolute paths" }
   const seedLockPaths = strings(v.seedLockPaths)
-  if (!seedLockPaths) return { ok: false, reason: "seedLockPaths must be a string array" }
+  if (!seedLockPaths || seedLockPaths.some((p) => !path.isAbsolute(p)))
+    return { ok: false, reason: "seedLockPaths must be absolute paths" }
   if (typeof v.graceMs !== "number" || !Number.isFinite(v.graceMs) || v.graceMs < 0)
     return { ok: false, reason: "graceMs must be a non-negative number" }
   if (typeof v.dryRun !== "boolean") return { ok: false, reason: "dryRun must be boolean" }

@@ -72,40 +72,84 @@ const defaultTimer: CasGcSchedulerTimer = {
 /** 一轮 GC 的执行 seam(#367):生产缺省 = 真 worker;测试注入 fake 覆盖调度语义。 */
 export type CasGcSpawnRound = (input: CasGcRoundInput) => Promise<CasGcRoundSummary>
 
+/** worker 最小事件面(#385 review r1 F3:可注入 factory,测试确定性驱动任意事件序列)。
+ *  载荷统一 unknown:调用侧自行收窄(真 Worker 结构性满足;fake 零断言可构造)。 */
+export type CasGcWorkerEvent = "message" | "error" | "messageerror" | "exit"
+export type CasGcWorkerLike = {
+  on(event: CasGcWorkerEvent, cb: (payload: unknown) => void): void
+  unref(): void
+  terminate(): Promise<number>
+}
+
 /**
- * 在 worker_threads 内跑一轮 GC 并回收紧凑摘要。事件合同(裁决 Q3):message 严格解码
- * (形状不符 = 拒)、error / messageerror / exit≠0 / exit=0 无消息 = 全部失败;Promise 只
- * 结算一次(settled 置位后其余事件为 no-op)。创建 → 注册监听 → unref()(Node 保证消息先于
- * exit 到达;unref 只解除 worker 对进程存活的维持,应用退出致消息未回传是明确接受的语义)。
+ * 在 worker_threads 内跑一轮 GC 并回收紧凑摘要。事件合同(裁决 Q3 + review r1 F1 修订,
+ * **exit 为生命周期终态** —— 不依赖任何「message 先于 exit」的顺序假设):
+ *   · message:严格解码后**只暂存**,不结算;畸形 / 第二份摘要 = 协议违规,立即失败;
+ *   · error / messageerror:失败;
+ *   · exit≠0:失败(即使此前已收到合法摘要 —— worker 未以 0 退出即不可信);
+ *   · exit=0 ∧ 恰一份合法摘要:成功;exit=0 无摘要:失败。
+ * Promise 只结算一次;结算即清理:非 exit 路径结算时 terminate() 残活 worker(review r1
+ * F2:失败已上报并将 rearm,旧 worker 不得与后续轮次并存)。创建 → 注册监听 → unref()
+ * (unref 只解除 worker 对进程存活的维持,应用退出致本轮中断是明确接受的语义)。
  */
-export function spawnCasGcWorkerRound(input: CasGcRoundInput, entry: URL | string): Promise<CasGcRoundSummary> {
+export function spawnCasGcWorkerRound(
+  input: CasGcRoundInput,
+  entry: URL | string,
+  createWorker?: (entry: URL | string, input: CasGcRoundInput) => CasGcWorkerLike,
+): Promise<CasGcRoundSummary> {
   return new Promise((resolve, reject) => {
-    let settled = false
-    const settle = (fn: () => void): void => {
-      if (settled) return
-      settled = true
-      fn()
-    }
-    let worker: Worker
+    let worker: CasGcWorkerLike
     try {
-      worker = new Worker(entry, { workerData: input })
+      worker = createWorker ? createWorker(entry, input) : new Worker(entry, { workerData: input })
     } catch (error) {
-      settle(() => reject(error instanceof Error ? error : new Error(String(error))))
+      reject(error instanceof Error ? error : new Error(String(error)))
       return
     }
-    worker.on("message", (msg: unknown) => {
+    let summary: CasGcRoundSummary | null = null
+    let settled = false
+    const finish = (fn: () => void, terminateWorker: boolean): void => {
+      if (settled) return
+      settled = true
+      // 协议失败/异常路径:worker 可能仍存活 —— terminate 防与下一轮并存(结果不再关心,吞错)。
+      if (terminateWorker) {
+        try {
+          void worker.terminate().catch(() => {})
+        } catch {
+          /* terminate 本身抛错 = worker 已死,无事可做 */
+        }
+      }
+      fn()
+    }
+    worker.on("message", (msg) => {
+      if (settled) return
       const decoded = decodeCasGcRoundSummary(msg)
       if (!decoded.ok) {
-        settle(() => reject(new Error(`gc worker returned malformed summary: ${decoded.reason}`)))
+        finish(() => reject(new Error(`gc worker returned malformed summary: ${decoded.reason}`)), true)
         return
       }
-      settle(() => resolve(decoded.summary))
+      if (summary !== null) {
+        finish(() => reject(new Error("gc worker posted more than one summary — protocol violation")), true)
+        return
+      }
+      summary = decoded.summary
     })
-    worker.on("error", (error) => settle(() => reject(error)))
-    worker.on("messageerror", (error) => settle(() => reject(new Error(`gc worker message deserialization failed: ${error.message}`))))
-    worker.on("exit", (code) =>
-      settle(() => reject(new Error(code === 0 ? "gc worker exited without reporting a summary" : `gc worker exited with code ${code}`))),
+    worker.on("error", (payload) => finish(() => reject(payload instanceof Error ? payload : new Error(String(payload))), true))
+    worker.on("messageerror", (payload) =>
+      finish(() => reject(new Error(`gc worker message deserialization failed: ${payload instanceof Error ? payload.message : String(payload)}`)), true),
     )
+    worker.on("exit", (payload) => {
+      // 真 Worker 的 exit 载荷恒为 number;非 number(fake/未来漂移)按失败处理,不猜。
+      if (payload !== 0) {
+        finish(() => reject(new Error(`gc worker exited with code ${String(payload)}`)), false)
+        return
+      }
+      const got = summary
+      if (got === null) {
+        finish(() => reject(new Error("gc worker exited without reporting a summary")), false)
+        return
+      }
+      finish(() => resolve(got), false)
+    })
     worker.unref()
   })
 }
