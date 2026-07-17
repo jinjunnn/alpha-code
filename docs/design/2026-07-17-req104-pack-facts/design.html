@@ -158,7 +158,7 @@ table.matrix{width:100%;min-width:820px;border-collapse:separate;border-spacing:
   <div class="matrix-scroll"><table class="matrix">
     <tr><th>#</th><th>事实</th><th>锚点</th></tr>
     <tr><td>F1</td><td>能力按类型派生(6 枚举)且引擎已有 bundle 并集先例:<code>[...new Set(subEntries.flatMap(capabilitiesFor))]</code> —— 整包权限并集可直接复用同一真源,与 #348 确认框恒一致</td><td><code>ext-install-planner.ts:430</code>、<code>:1520</code></td></tr>
-    <tr><td>F2</td><td>体积与密钥数据面:<code>remoteAsset.files[].bytes</code>(钉死资产)、<code>installSpec.requiredEnvVars</code>;npm 插件/远程 MCP 无 bytes → 体积必须如实「未知」,不猜</td><td><code>catalog-types.ts:27-30</code></td></tr>
+    <tr><td>F2</td><td>体积与密钥数据面:<code>remoteAsset.files[].bytes</code>(钉死资产)、<code>installSpec.requiredEnvVars</code>;体积三分:钉死资产求和 = 已知;下载可执行载荷但未钉字节(npm 装取、无资产 remote skill/agent)= 如实「未知」不猜;config-only 安装(mcp/cloud)与随包资产(builtin/vendored)= 零下载,不算未知(2026-07-17 实现期修订,Codex review 对齐)</td><td><code>catalog-types.ts:27-30</code></td></tr>
     <tr><td>F3</td><td>安装 desiredState 硬编码 <code>"enabled"</code>(skill/mcp/plugin 三处);更新/回滚已有「当前策略优先」语义(disabled 不被更新翻回)</td><td><code>ext-install-planner.ts:1385/1833/2069</code>、<code>:2315</code>、<code>ext-skill-generations.ts:101</code></td></tr>
     <tr><td>F4</td><td>disabled 对 fs 类(skill/agent/plugin)<b>无强制通道</b>:无启停 IPC,桥接层不读 desiredState —— 强制机制归 #394 裁决(A 摘链 / B config 闸 / C 启用才物化)</td><td><code>ext-ipc.ts</code>(无 setDesiredState)、<code>alpha-bridge.ts</code></td></tr>
     <tr><td>F5</td><td>已安装行开关 MCP-only(connect/disconnect 语义);v4 契约:project 组行无开关</td><td><code>extension-hub.tsx</code> InstalledRow</td></tr>
