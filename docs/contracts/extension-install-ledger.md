@@ -109,10 +109,12 @@ MCP 重装是产品流(确认框重装),允许覆盖(引擎前像可复原)而�
   **严格 decoder**:只注入 desiredState === "enabled" 的 skill;缺失/损坏/畸形一律不注入 fail closed)。
 - **cloud 例外**:无本地运行面 + UI 无启停开关,一律 enabled(直装与 bundle 子项一致)。
 - **启停通道**(`ext-set-install-state`,#347-gated):锁内 record 重读 + advisory(R14)+ **持久化
-  config 投影普通原子写 + 账本翻转**(非事务)。**两写按方向排序保安全侧**(Codex r3):disable →
-  config 先(运行立即禁用,账本随后失败也已禁)、enable → 账本先(写失败即止不动 config → 保持
-  disabled);config apply 抛错回滚已翻账本(错误路径原子)。崩溃窗口内安全侧不破(disable 已禁 /
-  enable 未启),下次翻转收敛。enable 缺生效面 fail-closed。disabled ≠ 卸载:内容/账本/授权账照常在位。
+  config 投影普通原子写 + 账本翻转**(非事务)。**两方向都账本先写**(Codex r4):账本是 durable
+  intent —— 更新/重装读账本当前策略优先,账本先写则崩溃在账本↔config 之间时后续更新按账本重投影
+  config **自愈**,禁用绝不被更新复活(config-first 会留「config 禁/账本启」被更新读启用复活)。
+  config 原子写(writeFileAtomicSync 整替换或原文件不变)抛错 → 回滚账本到原态(回滚失败如实报真实
+  状态);config 未变故 opts 等原样保留。残余:账本↔config 崩溃窗口的短暂运行态不符,durable intent 恒
+  正确、下次更新/重开收敛。enable 缺生效面 fail-closed。disabled ≠ 卸载:内容/账本/授权账照常在位。
 - **skill 严格门**:`gen-skill-paths.enabledSkillKeys` 校验 v2 record 完整形状(schemaVersion + 核心
   必填字段类型)后才认 enabled —— 与主进程 `decodeRecordV2` 同强度,畸形/不完整记录一律不注入
   (Codex r3:防篡改重复记录绕过主进程排除复活被禁用技能)。

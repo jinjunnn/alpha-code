@@ -3928,10 +3928,11 @@ export function decodeSetStateIntent(input: unknown): { ok: true; intent: SetSta
 
 
 /** desiredState 翻转:scope 独立(global/各项目账本物理分域),项目 identity fail-closed 同卸载。
- *  #395:global 的 mcp/agent/plugin 走 journaled config 事务 —— 账本翻转在 commitReceipt(引擎
- *  receipt-commit 阶段,失败即整笔回滚),config 投影与账本永不背离;skill(投影 = ext 插件按账本
- *  注入,无 config 面)、cloud(receipts-only)与 project 记录维持锁内纯账本翻转(本函数自持锁;
- *  调用方不再预持,防与引擎锁互斥死锁)。 */
+ *  #395(持久化 config 投影,非事务):锁内 record 重读 + advisory(闭 TOCTOU)→ **两方向都账本先写**
+ *  (durable intent;更新读账本重投影自愈,禁用不被更新复活)→ config 原子写(applyConfigImage;
+ *  抛错回滚账本,回滚失败如实报真实状态)。mcp 写 `enabled:false`、agent 写 `disable:true`、plugin
+ *  从 `plugin[]` 缺席(引擎 import 早于 config-hook);skill 无 config 面(投影经 ext 注入门);cloud/
+ *  project 记录纯账本翻转。本函数自持 Bundle 锁,调用方不得预持(防与内锁互斥死锁)。 */
 export function setInstallStateByKey(
   rawIntent: unknown,
   deps: Pick<PlannerDeps, "globalRoot" | "advisoryGate">,
@@ -4002,27 +4003,24 @@ export function setInstallStateByKey(
       }
     }
 
-    if (intent.state === "disabled") {
-      // disable:config 先(运行立即禁用),账本随后。崩溃在两写间:config 已禁(安全侧)。
-      if (configApply) configApply()
-      const led = setDesiredStateV2(root, intent.type, intent.name, intent.state)
-      if (!led.ok && configApply) {
-        // 账本写失败:回滚 config(还原启用态)使两面一致,返回错误。
-        const rb = projectRollback(root, record, "enabled")
-        return { ok: false, reason: rb.ok ? led.reason : `${led.reason}; config rollback also failed: ${rb.reason}` }
-      }
-      return led
-    }
-    // enable:账本先(写失败即止,config 不动 → 保持 disabled 安全侧),config 随后。
+    // **两方向都账本先写**(Codex r4 Blocker):账本是启停的 durable intent,更新/重装读账本
+    // desiredState 当前策略优先 —— 账本先写,则崩溃在账本↔config 之间时,后续更新按账本重投影
+    // config 自愈,disabled 绝不被更新复活(config-first 会留「config 禁/账本启」→ 更新读启用复活)。
+    //   1. 账本翻转;失败即止,config 从未触碰(安全侧:enable 未启 / disable 保持原态)。
+    //   2. config 原子写(applyConfigImage:writeFileAtomicSync,要么整替换要么原文件不变);抛错 →
+    //      config 未变(opts 等原样保留),回滚账本到原态使两面一致,回滚失败如实带回真实状态。
+    // 残余:账本↔config 之间的崩溃留下短暂运行态与账本不符(disable 后扩展续跑到下次重建/更新、
+    // enable 后未即生效),durable intent 恒正确,下次更新/重开即收敛(见 extension-install-ledger.md §5)。
+    const prevState: DesiredState = record.desiredState
     const led = setDesiredStateV2(root, intent.type, intent.name, intent.state)
     if (!led.ok) return led
     if (configApply) {
       try {
         configApply()
       } catch (error) {
-        // config apply 抛错:回滚账本到 disabled,两面一致,返回错误。
-        setDesiredStateV2(root, intent.type, intent.name, "disabled")
-        return { ok: false, reason: `enable config write failed for ${record.kind} ${record.name}: ${error instanceof Error ? error.message : String(error)} (ledger rolled back to disabled)` }
+        const rb = setDesiredStateV2(root, intent.type, intent.name, prevState)
+        const base = `${intent.state === "enabled" ? "enable" : "disable"} config write failed for ${record.kind} ${record.name}: ${error instanceof Error ? error.message : String(error)}`
+        return { ok: false, reason: rb.ok ? `${base} (ledger rolled back to ${prevState})` : `${base}; ledger rollback ALSO failed: ${rb.reason} — ledger now ${intent.state}, config unchanged (manual repair needed)` }
       }
     }
     return led
@@ -4031,30 +4029,6 @@ export function setInstallStateByKey(
   }
 }
 
-/** #395:错误路径的 config 投影回滚(disable 账本写失败后还原启用态)——尽力而为,失败如实带回。 */
-function projectRollback(root: string, record: InstallRecordV2, to: DesiredState): { ok: true } | { ok: false; reason: string } {
-  const target = path.join(root, "alpha.jsonc")
-  let text: string
-  try {
-    text = fs.readFileSync(target, "utf8")
-  } catch {
-    return { ok: false, reason: "alpha.jsonc not readable during rollback" }
-  }
-  const errors: ParseError[] = []
-  const cfg = parse(text, errors)
-  if (errors.length > 0) return { ok: false, reason: "alpha.jsonc not valid jsonc during rollback" }
-  const proj = computeEnableProjectionEdit(isObj(cfg) ? cfg : {}, root, record, to)
-  if (!proj.ok) return { ok: false, reason: proj.reason }
-  if (!proj.edit) return { ok: true }
-  const prepared = prepareConfigTx(target, [proj.edit], text)
-  if (!prepared.ok) return { ok: false, reason: prepared.reason }
-  try {
-    applyConfigImage(prepared.image)
-    return { ok: true }
-  } catch (error) {
-    return { ok: false, reason: error instanceof Error ? error.message : String(error) }
-  }
-}
 
 /** #395:把 mcp/agent/plugin 的启用态投影进持久化 config —— 计算 config edit(不写盘,供调用方按方向
  *  排序 config↔ledger 写入 + 失败回滚)。字段用**引擎真实消费的键**(Codex r3 Blocker):
@@ -4078,21 +4052,29 @@ function computeEnableProjectionEdit(
     const elem = isPath ? ck.slice("plugin-path:".length) : ck.startsWith("plugin:") ? ck.slice("plugin:".length) : ""
     if (!elem) return { ok: false, reason: `plugin ${record.name}: no configKey on record — cannot project enable state (reinstall to repair)` }
     const arr = Array.isArray(cfgObj.plugin) ? [...(cfgObj.plugin as unknown[])] : []
-    // vendored:按解析路径身份匹配(等价形态同判);npm:spec 头等值。
-    const targetResolved = isPath ? resolvePluginEntryPath(elem, root) : null
+    // vendored:按**文件系统身份**匹配(pathIdentity realpath 双形态 —— symlink/大小写/NFD 别名同判,
+    //   与 replace 路径 findSameNamePluginPathEntry 同强度;身份不可判 = fail-closed 视为匹配,宁可
+    //   拒继续也不漏移除禁用项);npm:spec 头等值(npm 规格非路径,不经 realpath)。Codex r4 Blocker。
+    const targetIdent = isPath ? pathIdentity(resolvePluginEntryPath(elem, root) ?? elem) : null
+    let identUnprovable = false
     const matches = (x: unknown): boolean => {
-      if (isPath) {
-        const r = resolvePluginEntryPath(x, root)
-        return r !== null && targetResolved !== null && r === targetResolved
-      }
-      return pluginSpecOf(x) === elem
+      if (!isPath) return pluginSpecOf(x) === elem
+      const r = resolvePluginEntryPath(x, root)
+      if (r === null) return false
+      const ident = pathIdentity(r)
+      if (targetIdent && ident.forms.some((f) => targetIdent.forms.includes(f))) return true
+      if (!ident.certain || !targetIdent?.certain) identUnprovable = true
+      return false
     }
     if (disable) {
       const next = arr.filter((x) => !matches(x))
+      // 身份不可判(非缺席类 fs 错)= 无法证明该条目不是禁用目标 → fail-closed 拒(不静默漏禁用)。
+      if (identUnprovable) return { ok: false, reason: `plugin ${record.name}: a plugin[] entry's filesystem identity is unresolvable — cannot prove disable removal (retry after resolving)` }
       if (next.length === arr.length) return { ok: true } // 本就缺席
       return { ok: true, edit: { keyPath: ["plugin"], value: next } }
     }
     if (arr.some(matches)) return { ok: true } // 已在场
+    if (identUnprovable) return { ok: false, reason: `plugin ${record.name}: a plugin[] entry's filesystem identity is unresolvable — cannot prove enable presence (retry after resolving)` }
     return { ok: true, edit: { keyPath: ["plugin"], value: [...arr, elem] } }
   }
   // mcp / agent:引擎消费键分别为 enabled(false=禁)/ disable(true=禁)。

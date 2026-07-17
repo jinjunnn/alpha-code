@@ -29,7 +29,7 @@ function makeGeneration(name: string, genId: string) {
 
 /** 良构 v2 skill 记录(gen-skill-paths 严格门要求完整 schema)。 */
 function skillRecord(name: string, desiredState: "enabled" | "disabled") {
-  return { schemaVersion: 2, id: `skill:${name}`, name, kind: "skill", environment: "prod", scope: { kind: "global" }, generation: 1, installedAt: "2026-07-17T00:00:00.000Z", desiredState }
+  return { schemaVersion: 2, id: `skill:${name}`, name, kind: "skill", environment: "prod", origin: "catalog", scope: { kind: "global" }, generation: 1, installedAt: "2026-07-17T00:00:00.000Z", desiredState }
 }
 
 /** 账本追加/合并一条 enabled skill 记录(installs.json 累积)。 */
@@ -134,9 +134,11 @@ describe("#395 disabled 投影门", () => {
     void a
     // 良构 disabled 记录 + 畸形重复(缺 schemaVersion/id/scope…,只有 desiredState:enabled)——
     // 主进程会排除畸形记录、保留 disabled;ext 门必须同样排除,不得注入。
+    // reviewer 确切重复记录:有 schemaVersion:2 但 environment 非法、scope 空、generation:0 ——
+    // 主进程 decodeRecordV2 排除,ext 严格门必须同样排除(否则复活 legit-off)。
     writeLedger([
       skillRecord("legit-off", "disabled"),
-      { kind: "skill", name: "legit-off", desiredState: "enabled" },
+      { schemaVersion: 2, id: "skill:legit-off", name: "legit-off", kind: "skill", environment: "bogus", origin: "catalog", scope: {}, generation: 0, installedAt: "x", desiredState: "enabled" },
     ])
     expect(skillGenerationLiveDirs(root)).toEqual([])
   })

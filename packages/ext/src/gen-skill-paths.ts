@@ -39,7 +39,7 @@ function liveGenerationDir(alphaRoot: string, key: string): string | null {
  *  只注入账本确证 enabled 的 skill key(允许集,非禁用集)。installs.json 缺失/不可解析/无该 skill
  *  记录 = **不注入**(fail closed):generation 目录与账本记录由同一事务原子落位(installSkillGeneration
  *  commitReceipt),孤儿 generation = 失败/回滚残留,不得复活;损坏账本让被禁用技能重新加载是禁用
- *  强制的漏洞。desiredState 缺省(理论上不出现,decoder 必填)按 enabled(不误伤合法记录)。 */
+ *  强制的漏洞。desiredState 缺失/非法 = 记录不良构 → 不注入(严格门,与主 decoder 同排除)。 */
 function enabledSkillKeys(alphaRoot: string): Set<string> | null {
   let parsed: unknown
   try {
@@ -48,25 +48,34 @@ function enabledSkillKeys(alphaRoot: string): Set<string> | null {
     return null // 缺失/不可解析 → 无从确证任何 skill 为 enabled → 全部不注入(fail closed)
   }
   const records = parsed && typeof parsed === "object" && Array.isArray((parsed as { records?: unknown }).records) ? ((parsed as { records: unknown[] }).records) : []
-  // 严格 record 形状门(Codex r3 Blocker:须与主进程 decodeRecordV2 同强度,否则畸形重复记录
-  // {kind,name,desiredState:enabled} 会绕过主进程排除、复活被禁用技能)。校验 v2 schema + 核心
-  // 必填字段的存在与类型(schemaVersion/id/name/kind/environment/scope/generation/installedAt/
-  // desiredState)—— 不完整/畸形记录一律不进允许集(fail closed)。
+  // 严格 record 形状门(Codex r3/r4 Blocker:须与主进程 decodeRecordV2 **同强度**,否则畸形重复记录
+  // 绕过主进程排除、复活被禁用技能)。逐字段镜像 decodeRecordV2 的枚举/类型/范围校验(ext 无法 import
+  // ui-mac decoder,故此处保持镜像 —— 任一侧改动须同步;drift 由本注释与 Codex review 兜底)。
+  const KINDS = new Set(["mcp", "skill", "agent", "command", "plugin", "bundle", "cloud"])
+  const ENVIRONMENTS = new Set(["prod", "beta", "dev"])
+  const ORIGINS = new Set(["catalog", "created", "imported", "imported-claude", "imported-agents"])
+  const SAFE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
+  const isStr = (v: unknown, re?: RegExp): v is string => typeof v === "string" && v.length > 0 && v.length <= 512 && (!re || re.test(v))
   const isWellFormedV2 = (r: unknown): r is { kind: string; name: string; desiredState: string } => {
     if (!r || typeof r !== "object") return false
     const o = r as Record<string, unknown>
-    return (
-      o.schemaVersion === 2 &&
-      typeof o.id === "string" &&
-      typeof o.name === "string" &&
-      typeof o.kind === "string" &&
-      typeof o.environment === "string" &&
-      !!o.scope &&
-      typeof o.scope === "object" &&
-      typeof o.generation === "number" &&
-      typeof o.installedAt === "string" &&
-      (o.desiredState === "enabled" || o.desiredState === "disabled")
-    )
+    if (o.schemaVersion !== 2) return false
+    if (!isStr(o.id) || !isStr(o.name, SAFE_NAME)) return false
+    if (!isStr(o.kind) || !KINDS.has(o.kind)) return false
+    if (!isStr(o.environment) || !ENVIRONMENTS.has(o.environment)) return false
+    if (!isStr(o.origin) || !ORIGINS.has(o.origin)) return false
+    // scope:global(仅 kind)或 project(kind + 绝对 projectPath + 64-hex projectPathHash)。
+    if (!o.scope || typeof o.scope !== "object") return false
+    const sc = o.scope as Record<string, unknown>
+    if (sc.kind === "global") {
+      if (Object.keys(sc).some((k) => k !== "kind")) return false
+    } else if (sc.kind === "project") {
+      if (!isStr(sc.projectPath) || !sc.projectPath.startsWith("/")) return false
+      if (!isStr(sc.projectPathHash, /^[0-9a-f]{64}$/)) return false
+    } else return false
+    if (typeof o.generation !== "number" || !Number.isInteger(o.generation) || o.generation < 1) return false
+    if (!isStr(o.installedAt) || Number.isNaN(Date.parse(o.installedAt))) return false
+    return o.desiredState === "enabled" || o.desiredState === "disabled"
   }
   const out = new Set<string>()
   for (const r of records) {

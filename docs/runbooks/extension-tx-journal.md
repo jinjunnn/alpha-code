@@ -146,6 +146,7 @@ seed plugin 的载荷是同一事务里的 file items,落点 = 内容寻址目�
 
 ## 附:启停(set-state,REQ-104 #395)
 
-启停 = 锁内**持久化 config 投影普通原子写 + 账本翻转**(非事务,不产生 journal 条目)。config
-写在前(运行时权威)、账本随后;崩溃窗口内 config 已新态,账本 mirror 落后一步,下次翻转即收敛。
-故 journal 里不会出现启停事务。
+启停 = 锁内**账本翻转 + 持久化 config 投影普通原子写**(非事务,不产生 journal 条目)。**两方向都
+账本先写**(durable intent):后续更新读账本 desiredState 重投影 config 自愈,禁用不被更新复活。
+config 原子写抛错回滚账本。崩溃窗口(账本↔config 之间)残留短暂运行态与账本不符,durable intent 恒
+正确、下次更新/重开收敛。故 journal 里不会出现启停事务。

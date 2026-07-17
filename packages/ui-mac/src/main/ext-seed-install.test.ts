@@ -1367,7 +1367,7 @@ describe("seed capability authorize gate (REQ-100 #348)", () => {
 
 // ── #395(REQ-104):第三方(official/community)fresh 安装默认关 —— 落盘形态全查 ─────────────────
 
-describe("#395 第三方 seed 安装默认关(账本 disabled;config 写正常条目,投影在引擎 hook)", () => {
+describe("#395 第三方 seed 安装默认关(账本 disabled;持久化 config 投影:mcp enabled:false / plugin 缺席)", () => {
   test("official plugin fresh:账本 disabled;plugin[] 写正常条目(disk);载荷照常物化;set-state 只翻账本", async () => {
     buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES, source: "official" }])
     const entry = bundledPluginEntry({ source: "official" })

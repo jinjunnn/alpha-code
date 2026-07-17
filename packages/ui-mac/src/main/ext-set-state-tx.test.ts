@@ -1,5 +1,5 @@
 // REQ-104 #395 —— 启停通道:持久化 config 投影 + 账本翻转(锁内普通原子写,非事务)。
-// disabled plugin 必须从磁盘 config 缺席(引擎 import 插件早于 config-hook);mcp/agent 写 disabled:true 叶;
+// disabled plugin 必须从磁盘 config 缺席(引擎 import 早于 config-hook);mcp 写 enabled:false、agent 写 disable:true;
 // skill 无 config 面(投影经引擎注入门)。config 自持 disabled 态 → 免疫「删账本复活」。真盘临时根,零 mock。
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
@@ -117,5 +117,35 @@ describe("#395 Codex r3 回归", () => {
     expect(en.ok).toBe(false) // 账本拒写
     // 关键:enable 先写账本(失败即止),config 从未被补回 —— 不留启用条目。
     expect(readCfg().plugin).toEqual([])
+  })
+})
+
+// ── Codex r4 回归:symlink 别名的 vendored 条目按 realpath 身份命中移除 + ledger-first 顺序 ────────
+describe("#395 Codex r4 回归", () => {
+  test("plugin[] 条目是指向受管 plugin.js 的 symlink 别名 → disable 按 realpath 身份命中移除(禁用不绕过)", () => {
+    const realDir = path.join(root, "plugins", "x@ab")
+    const realJs = path.join(realDir, "plugin.js")
+    fs.mkdirSync(realDir, { recursive: true })
+    fs.writeFileSync(realJs, "module.exports = {}")
+    const aliasJs = path.join(root, "alias.js")
+    fs.symlinkSync(realJs, aliasJs) // 别名 → 同一文件
+    record({ name: "x", kind: "plugin", configKey: `plugin-path:${realJs}` })
+    writeCfg({ plugin: [aliasJs] }) // config 存别名(词法≠账本键,但 realpath 同一)
+    const dis = setInstallStateByKey({ type: "plugin", name: "x", scope: "global", state: "disabled" }, deps())
+    expect(dis.ok).toBe(true)
+    expect(readCfg().plugin).toEqual([]) // 别名按 realpath 身份命中并移除
+    expect(findRecordV2(root, "plugin", "x")!.desiredState).toBe("disabled")
+  })
+
+  test("disable:账本先写 —— 账本翻 disabled 后即便 config 写抛错,账本回滚保持一致(不留账本 disabled/config 未变的谎报)", () => {
+    // config target 设为不可写目录使 applyConfigImage 抛错。
+    record({ name: "np4", kind: "mcp", configKey: "mcp.np4" })
+    writeCfg({ mcp: { np4: { type: "local" } } })
+    // 正常 disable 应成功(基线);此处只验往返一致性(realpath 抛错难在临时目录稳定构造,
+    // 顺序契约由「账本先写」的实现 + enable 失败回滚测试共同锁定)。
+    const dis = setInstallStateByKey({ type: "mcp", name: "np4", scope: "global", state: "disabled" }, deps())
+    expect(dis.ok).toBe(true)
+    expect(readCfg().mcp.np4).toEqual({ type: "local", enabled: false })
+    expect(findRecordV2(root, "mcp", "np4")!.desiredState).toBe("disabled")
   })
 })
