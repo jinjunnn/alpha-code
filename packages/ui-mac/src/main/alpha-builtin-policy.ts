@@ -17,9 +17,9 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { alphaGlobalRoot } from "./alpha-installs"
-import { applyGovernanceEdits, type GovernanceEdit } from "./ext-config"
+import { applyBuiltinPolicyEdits, type BuiltinPolicyEdit } from "./ext-config"
 
-export interface Governance {
+export interface BuiltinPolicy {
   version: 1
   mode: "denylist" | "allowlist"
   agents: {
@@ -43,12 +43,12 @@ export interface Governance {
 export const FACTORY_DENIED_SKILLS = ["customize-opencode"] as const
 
 /** 出厂禁用的有效名单 = 出厂清单 − 用户解禁(供 env 注入与菜单过滤)。 */
-export function effectiveFactoryDenied(gov: Governance): string[] {
+export function effectiveFactoryDenied(gov: BuiltinPolicy): string[] {
   const allow = new Set(gov.skills.allowFactory)
   return FACTORY_DENIED_SKILLS.filter((n) => !allow.has(n))
 }
 
-export const DEFAULT_GOVERNANCE: Governance = {
+export const DEFAULT_BUILTIN_POLICY: BuiltinPolicy = {
   version: 1,
   mode: "denylist",
   agents: { hide: [], disable: [], allow: [], override: {} },
@@ -70,9 +70,9 @@ const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
 const govPath = () => path.join(alphaGlobalRoot(), "governance.json")
 const materializedPath = () => path.join(alphaGlobalRoot(), "governance-materialized.json")
 
-/** 任意输入 → 合法 Governance(字段级白名单清洗;renderer 传入的 gov 一律过此关)。 */
-export function normalizeGovernance(raw: unknown): Governance {
-  const r = raw as Partial<Governance> | undefined
+/** 任意输入 → 合法 BuiltinPolicy(字段级白名单清洗;renderer 传入的 gov 一律过此关)。 */
+export function normalizeBuiltinPolicy(raw: unknown): BuiltinPolicy {
+  const r = raw as Partial<BuiltinPolicy> | undefined
   if (r && r.version === 1 && (r.mode === "denylist" || r.mode === "allowlist")) {
     return {
       version: 1,
@@ -93,16 +93,16 @@ export function normalizeGovernance(raw: unknown): Governance {
       commands: { override: asCommandOverrides(r.commands?.override) },
     }
   }
-  return structuredClone(DEFAULT_GOVERNANCE)
+  return structuredClone(DEFAULT_BUILTIN_POLICY)
 }
 
-export function readGovernance(): Governance {
+export function readBuiltinPolicy(): BuiltinPolicy {
   try {
-    return normalizeGovernance(JSON.parse(fs.readFileSync(govPath(), "utf8")))
+    return normalizeBuiltinPolicy(JSON.parse(fs.readFileSync(govPath(), "utf8")))
   } catch {
     /* missing/corrupt → default(诚实:空治理,不猜) */
   }
-  return structuredClone(DEFAULT_GOVERNANCE)
+  return structuredClone(DEFAULT_BUILTIN_POLICY)
 }
 
 const asNames = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x) => typeof x === "string" && NAME_RE.test(x)) : [])
@@ -142,7 +142,7 @@ const asCommandOverrides = (v: unknown): Record<string, { template: string; desc
 export type Violation = { kind: "agent" | "skill" | "command"; name: string; reason: string }
 
 /** 保护名单硬校验(apply 前;confirmBuildDisable 由 UI 二次确认后传入)。 */
-export function validateGovernance(gov: Governance, confirmBuildDisable: boolean): Violation[] {
+export function validateBuiltinPolicy(gov: BuiltinPolicy, confirmBuildDisable: boolean): Violation[] {
   const v: Violation[] = []
   for (const n of gov.agents.disable) {
     if ((HARD_PROTECTED_AGENTS as readonly string[]).includes(n))
@@ -160,8 +160,8 @@ export function validateGovernance(gov: Governance, confirmBuildDisable: boolean
 }
 
 /** 计算需要物化到 home jsonc 的叶子编辑集(声明式:desired 全量,diff 由 apply 层做)。 */
-export function materializeEdits(gov: Governance, visibleAgents: string[]): GovernanceEdit[] {
-  const edits: GovernanceEdit[] = []
+export function materializeEdits(gov: BuiltinPolicy, visibleAgents: string[]): BuiltinPolicyEdit[] {
+  const edits: BuiltinPolicyEdit[] = []
   const hideSet = new Set(gov.agents.hide)
 
   // allowlist 模式:可见 agent 中未列名者一律 hidden(保护名单 + alpha 注入豁免)
@@ -214,8 +214,8 @@ const readMaterialized = (): Materialized => {
 export type ApplyResult = { ok: boolean; reason?: string; violations: Violation[]; written: number; removedStale: number }
 
 /** 应用治理:校验 → 计算 desired → 移除 stale 叶子 → 写入 → 持久化真源与 _materialized。 */
-export function applyGovernance(gov: Governance, visibleAgents: string[], confirmBuildDisable = false): ApplyResult {
-  const violations = validateGovernance(gov, confirmBuildDisable)
+export function applyBuiltinPolicy(gov: BuiltinPolicy, visibleAgents: string[], confirmBuildDisable = false): ApplyResult {
+  const violations = validateBuiltinPolicy(gov, confirmBuildDisable)
   if (violations.length) return { ok: false, reason: violations.map((v) => v.reason).join("; "), violations, written: 0, removedStale: 0 }
 
   const prev = readMaterialized()
@@ -226,7 +226,7 @@ export function applyGovernance(gov: Governance, visibleAgents: string[], confir
   const knownAgents = [...new Set([...visibleAgents, ...prevHidden])]
   const desired = materializeEdits(gov, knownAgents)
   const desiredKeys = new Set(desired.map((e) => e.path.join(" ")))
-  const stale: GovernanceEdit[] = prev.keys
+  const stale: BuiltinPolicyEdit[] = prev.keys
     .filter((k) => !desiredKeys.has(k.join(" ")))
     .map((k) => ({ path: k, value: undefined }))
 
@@ -236,7 +236,7 @@ export function applyGovernance(gov: Governance, visibleAgents: string[], confir
   const superset = [...new Map([...prev.keys, ...desired.map((e) => e.path)].map((k) => [k.join(" "), k])).values()]
   fs.writeFileSync(materializedPath(), JSON.stringify({ keys: superset }, null, 2))
 
-  const r = applyGovernanceEdits([...stale, ...desired])
+  const r = applyBuiltinPolicyEdits([...stale, ...desired])
   if (!r.ok) {
     // 回滚记账到 prev(jsonc 未动,超集记账无害但收敛回去更干净)
     fs.writeFileSync(materializedPath(), JSON.stringify({ keys: prev.keys }, null, 2))
@@ -250,12 +250,12 @@ export function applyGovernance(gov: Governance, visibleAgents: string[], confir
 }
 
 /** 重置治理:净除全部受控叶子 + 真源回默认(用户自有 jsonc 内容不动)。 */
-export function resetGovernance(): ApplyResult {
+export function resetBuiltinPolicy(): ApplyResult {
   const prev = readMaterialized()
-  const r = applyGovernanceEdits(prev.keys.map((k) => ({ path: k, value: undefined })))
+  const r = applyBuiltinPolicyEdits(prev.keys.map((k) => ({ path: k, value: undefined })))
   if (!r.ok) return { ok: false, reason: r.reason, violations: [], written: 0, removedStale: 0 }
   fs.mkdirSync(alphaGlobalRoot(), { recursive: true })
-  fs.writeFileSync(govPath(), JSON.stringify(DEFAULT_GOVERNANCE, null, 2))
+  fs.writeFileSync(govPath(), JSON.stringify(DEFAULT_BUILTIN_POLICY, null, 2))
   fs.writeFileSync(materializedPath(), JSON.stringify({ keys: [] }, null, 2))
   return { ok: true, violations: [], written: 0, removedStale: prev.keys.length }
 }

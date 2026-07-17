@@ -165,6 +165,9 @@ export function createMainWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // REQ-103 AC4④(#195):Electron ≥5 默认已禁 webview 标签;此处显式钉死,防未来无声回归
+      // (ext-security-boundaries.test 源级扫描要求每个窗口创建点都写明 false)。
+      webviewTag: false,
     },
   })
 

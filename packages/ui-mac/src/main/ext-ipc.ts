@@ -29,7 +29,7 @@ import { randomUUID } from "node:crypto"
 import { pickedFiles } from "./ipc"
 import { factorySkillIds } from "./factory-skills"
 import { downloadRemoteAsset, refreshRemoteCatalog } from "./remote-catalog"
-import { applyGovernance, effectiveFactoryDenied, normalizeGovernance, protectionInfo, readGovernance, resetGovernance } from "./alpha-governance"
+import { applyBuiltinPolicy, effectiveFactoryDenied, normalizeBuiltinPolicy, protectionInfo, readBuiltinPolicy, resetBuiltinPolicy } from "./alpha-builtin-policy"
 import {
   detectExternal,
   ecosystemInheritEnabled,
@@ -43,6 +43,7 @@ import {
 import bundledCatalogJson from "../renderer/extensions/alpha-catalog.json"
 import type { Catalog } from "../renderer/extensions/catalog-types"
 import { environmentMutableRoot, getAlphaEnvironment } from "./alpha-environment"
+import { createInventoryQuery } from "./ext-inventory"
 import { decodeSetStateIntent, decodeUninstallIntent, installCatalog, listGenerationsByKey, removeInstallGrants, rollbackGenerationByKey, seedPluginFileProbe, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
 import { makeRecoveryGate } from "./ext-recovery-gate"
 import { adoptProjectLedger } from "./ext-project-adopt"
@@ -188,15 +189,15 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   // REQ-037 上游能力治理:真源 ~/.alpha/governance.json,物化 home jsonc 受控叶子(见 alpha-governance.ts)。
   // apply 后由 renderer 调 refreshEngine()(dispose)热生效 —— 与安装链路同节奏。
   // REQ-067:factoryDenied = 出厂默认禁的有效名单(出厂清单 − 用户解禁)—— 菜单过滤与治理面板共用
-  ipcMain.handle("gov-read", () => {
-    const gov = readGovernance()
+  ipcMain.handle("builtin-read", () => {
+    const gov = readBuiltinPolicy()
     return { gov, protection: protectionInfo(), factoryDenied: effectiveFactoryDenied(gov) }
   })
-  ipcMain.handle("gov-apply", (_event: IpcMainInvokeEvent, gov: unknown, visibleAgents: unknown, confirmBuildDisable?: boolean) => {
+  ipcMain.handle("builtin-apply", (_event: IpcMainInvokeEvent, gov: unknown, visibleAgents: unknown, confirmBuildDisable?: boolean) => {
     const agents = Array.isArray(visibleAgents) ? visibleAgents.filter((a): a is string => typeof a === "string") : []
-    return applyGovernance(normalizeGovernance(gov), agents, confirmBuildDisable === true)
+    return applyBuiltinPolicy(normalizeBuiltinPolicy(gov), agents, confirmBuildDisable === true)
   })
-  ipcMain.handle("gov-reset", () => resetGovernance())
+  ipcMain.handle("builtin-reset", () => resetBuiltinPolicy())
 
   // REQ-032:远程 catalog(ETag+验签+缓存,回退链 远端→缓存→内置由 renderer 兜底)与远程技能安装
   // (下载+sha256 校验在 main,写盘走 builtin 同管线:~/.alpha + 桥 + 账本)。
@@ -580,6 +581,18 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   } catch (err) {
     getLogger().log(`[req102-seed] seed probe failed: ${String(err)}`)
   }
+  // effective catalog 解析(remote/cache 验签 → bundled 快照兜底)—— 只读 inventory 面专用;
+  // 激活面用 plannerDeps 内带 #314/#315 security browse-only 语义的 effectiveCatalog(浏览允许
+  // bundled 兜底,激活不允许 —— 两面职责不同,不合流)。#302:channel 必填。
+  const resolveEffectiveCatalog = async (): Promise<{ entries: Catalog["entries"]; channel: "remote" | "cache" | "bundled"; version: string }> => {
+    const rc = await refreshRemoteCatalog(userDataPath, registryChannel)
+    if (rc.source !== "none") {
+      const cat = rc.catalog as Catalog
+      return { entries: cat.entries ?? [], channel: rc.source, version: String(cat.version ?? rc.version) }
+    }
+    const bundled = bundledCatalogJson as unknown as Catalog
+    return { entries: bundled.entries, channel: "bundled" as const, version: bundled.version }
+  }
   const plannerDeps = (): PlannerDeps => {
     // 每次调用解析一次 effective catalog(bundle 会对逐子条目调 resolveEntry —— 不重复打网络)。
     let effective: Promise<{ entries: Catalog["entries"]; channel: "remote" | "cache" | "bundled"; version: string }> | null = null
@@ -829,6 +842,16 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
     const projectRoot = typeof projectDir === "string" && projectDir ? alphaRoot(projectDir) : null
     return { global, project: projectRoot ? readLedgerV2(projectRoot) : null }
   })
+  // REQ-103 slice 2a(#195):governance 只读查询 —— 逐扩展五维所有权 + 三态(slice 1 聚合面)。
+  // 唯一的 governance 通道,零写面:核心是 electron-free 的 createInventoryQuery(纯读契约与
+  // 负向面在 ext-inventory(-boundaries).test 钉死);catalog 输入复用上面的已验 resolve 面。
+  const inventorySeedDir = path.join(resourcesRoot(), "extension-seed")
+  const inventoryQuery = createInventoryQuery({
+    resolveCatalog: resolveEffectiveCatalog,
+    seedDir: fs.existsSync(inventorySeedDir) ? inventorySeedDir : null,
+    globalRoot: alphaGlobalRoot,
+  })
+  ipcMain.handle("ext-inventory-view", (_event: IpcMainInvokeEvent, projectDir?: unknown) => inventoryQuery(projectDir))
   // #309:启动期账本消费方(index.ts 的 global ecosystem gate)await 此 barrier 后再写账本。
   return ledgerReady
 }

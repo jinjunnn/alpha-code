@@ -16,10 +16,10 @@
 // dialog (key capture / fan-out list); plugin = detail-page-first (install from the page, with a
 // risk line in its confirm dialog).
 
-import { createEffect, createMemo, createSignal, For, Show, onCleanup, type Accessor, type JSX } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, For, Show, onCleanup, type Accessor, type JSX } from "solid-js"
 import { Portal } from "solid-js/web"
 import { t } from "../i18n"
-import { GovernancePanel } from "./governance-panel"
+import { BuiltinControlsPanel } from "./builtin-controls-panel"
 import { catalog, catalogSource, entryVersion, refreshCatalog } from "./catalog-source"
 import { Dialog } from "../alpha-ui/Dialog"
 import { Button } from "../alpha-ui/Button"
@@ -33,6 +33,7 @@ import type { Catalog, CatalogEntry, InstalledState } from "./catalog-types"
 import type { AuthState, InstallReceipt, InstallReceiptType, ProvenanceRequest } from "../../preload/types"
 import { hubSection, setHubSection, type HubSection } from "./ext-hub-state"
 import { iconFor, iconForRow, sourceLabel, typeLabel, Svg, SearchIc, LockIc } from "./ext-presentation"
+import { inventoryInstallRow, healthPresentation } from "./ext-inventory-present"
 import { ExtensionDetail, type DetailTarget } from "./extension-detail"
 import { officeAdvisoryFor } from "../../shared/office-advisories"
 import "./extension-hub.css"
@@ -139,6 +140,14 @@ export function ExtensionHub(props: {
 }) {
   const ext = useExtensions(props.server, props.open)
   const section = hubSection
+  // REQ-103(#195):governance 只读视图(逐扩展五维所有权 + availability/activation/health 三态)。
+  // 唯一只读通道,零写面;keyed on open + 安装账本规模(装/卸后自动重取)。详情页消费 ownership/来源
+  // 签名,已安装 pane 消费 health 三态(按 (id,scope) join,AC5 同名并存各取各)。全局视图(与既有
+  // listInstalls() 同信任面:ServerInfo 不含项目目录 → 不传 projectDir;项目行待项目目录接线后出现)。
+  const [governance] = createResource(
+    () => (props.open() ? ext.store.receipts.length : null),
+    () => window.api.ext.inventoryView(),
+  )
   // REQ-020 T2:云门控。subscribe 会立即回放当前态(preload 内置 getState),再跟增量推送。
   // 云可用 ⟺ 已登录且 platform 模式(mcp.cloud 由 sidecar 在该态注入,ADR-013/ADR-016)。
   const [authState, setAuthState] = createSignal<AuthState>({ status: "logged-out", mode: "byok" })
@@ -457,6 +466,15 @@ export function ExtensionHub(props: {
       })
     }
     return rows
+  })
+
+  // REQ-103(#195,AC5)已安装按 scope 分组:全局(对所有项目生效)/ 本项目。同名可并存 —— 全局与
+  // 项目同名安装是两行、各自独立操作(receipt.scope 即真源;project 行仅当传入项目目录后才出现)。
+  const installedByScope = createMemo(() => {
+    const global: ManageRow[] = []
+    const project: ManageRow[] = []
+    for (const row of installedAll()) (row.receipt.scope === "project" ? project : global).push(row)
+    return { global, project }
   })
 
   // 有更新(REQ-019 T1:已安装 tab 角标 + 列表顶部分组;T5 接更新动作):receipt 记录的 catalog
@@ -1101,6 +1119,121 @@ export function ExtensionHub(props: {
     </div>
   )
 
+  // REQ-103(#195)已安装行:名字 + 徽标 + 一行「健康点 · 健康态 · 启用态」+ 右侧开关/审查更新/卸载。
+  // 三态正交(AC2):健康点=governance health(运行健康/上游归档/事务未落定…);启用态=文字(已连接/
+  // 已安装但关闭);来源/类型/版本收进详情页(coordinator 拍板,已安装行不再挤来源灰字)。
+  const InstalledRow = (cp: { row: ManageRow }) => {
+    const row = cp.row
+    const ic = iconForRow(row.entry, row.type, row.name)
+    const openRow = () => {
+      if (row.entry) return openEntryDetail(row.entry)
+      if (row.type === "agent") {
+        const a = ext.store.agents.find((x) => x.name === row.name)
+        if (a) return openAgentDetail(a)
+      }
+    }
+    const clickable = () => !!row.entry || (row.type === "agent" && ext.store.agents.some((x) => x.name === row.name))
+    // health 三态:governance 只读真源按 (id,scope) join;MCP 实时错误(SDK 真相)叠加在最上(操作性失败最重)。
+    const gov = () => inventoryInstallRow(governance(), row.receipt.id, row.receipt.scope)
+    const health = () => {
+      const g = gov()
+      return g ? healthPresentation(g.health) : undefined
+    }
+    const activationText = () =>
+      row.type === "mcp"
+        ? row.mcp?.connected
+          ? t("alpha.ext.enabledLive")
+          : t("alpha.ext.disabled")
+        : t("alpha.ext.installed")
+    const isUpdatable = () =>
+      updatable().some((r) => r.id === row.receipt.id && r.name === row.name && r.scope === row.receipt.scope)
+    return (
+      <div class="alpha-ext-man" data-clickable={clickable() ? "" : undefined} onClick={() => clickable() && openRow()}>
+        <span class="alpha-ext-man-ic" style={{ background: ic.color }}>
+          {ic.glyph}
+        </span>
+        <div class="alpha-ext-man-body">
+          <div class="alpha-ext-man-nm">
+            <b title={row.name}>{row.displayName}</b>
+            <span class="alpha-ext-type-pill">{typeLabel(row.type)}</span>
+            <Show when={row.version}>
+              <span class="alpha-ext-ver">v{row.version}</span>
+            </Show>
+            {/* REQ-105:archived + unsupported 徽标(上游归档;禁自动更新) */}
+            <Show when={officeAdvisoryFor({ id: row.receipt.id, name: row.name })}>
+              <span class="alpha-ext-verify-chip" data-archived="">
+                {t("alpha.ext.advArchivedUnsupported")}
+              </span>
+            </Show>
+          </div>
+          {/* 状态行:健康点 + 健康文字 · 启用态(来源/类型/版本收进详情页) */}
+          <div class="alpha-ext-man-st">
+            <Show
+              when={row.type === "mcp" && row.mcp?.error}
+              fallback={
+                <Show
+                  when={health()}
+                  fallback={
+                    <>
+                      <span class="alpha-ext-man-dot" data-on={row.type !== "mcp" || row.mcp?.connected ? "" : undefined} />
+                      {activationText()}
+                    </>
+                  }
+                >
+                  {(hp) => (
+                    <>
+                      <span class="alpha-ext-man-dot" data-tone={hp().tone} />
+                      {t(hp().textKey as never)} · {activationText()}
+                    </>
+                  )}
+                </Show>
+              }
+            >
+              <span class="alpha-ext-man-dot" data-err="" />
+              {row.mcp?.error}
+            </Show>
+          </div>
+        </div>
+        {/* REQ-103:审查更新入口(有更新的行内;复用既有 runUpdate —— MCP 走确认框重装,其余原子更新) */}
+        <Show when={isUpdatable()}>
+          <button
+            class="alpha-ext-updbtn"
+            disabled={updBusy() === row.receipt.id}
+            onClick={(ev) => {
+              ev.stopPropagation()
+              void runUpdate(row.receipt)
+            }}
+          >
+            {updBusy() === row.receipt.id ? t("alpha.ext.adding") : t("alpha.ext.reviewUpdate")}
+          </button>
+        </Show>
+        {/* Toggle is MCP-only (connect/disconnect); fs/plugin have no live toggle. */}
+        <Show when={row.type === "mcp"}>
+          <button
+            class="alpha-ext-sw"
+            data-on={row.mcp?.connected ? "" : undefined}
+            aria-label={row.mcp?.connected ? t("alpha.ext.enabled") : t("alpha.ext.disabled")}
+            onClick={(ev) => {
+              ev.stopPropagation()
+              void ext.setMcpConnected(row.name, !row.mcp?.connected)
+            }}
+          />
+        </Show>
+        <button
+          class="alpha-ext-iconbtn"
+          title={t("alpha.ext.remove")}
+          aria-label={t("alpha.ext.remove")}
+          onClick={(ev) => {
+            ev.stopPropagation()
+            void onUninstall(row.receipt)
+          }}
+        >
+          <Svg class="alpha-ic alpha-ic-sm" d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" />
+        </button>
+      </div>
+    )
+  }
+
   return (
     <Show when={props.open()}>
       <Portal mount={host}>
@@ -1162,6 +1295,7 @@ export function ExtensionHub(props: {
                     onOpenEntry={(e) => openEntryDetail(e)}
                     cloudReady={cloudReady}
                     onLogin={authState().status !== "logged-in" ? () => void window.api.auth.start() : undefined}
+                    governance={governance}
                   />
                 }
               >
@@ -1359,8 +1493,8 @@ export function ExtensionHub(props: {
                       </div>
                     </Show>
                     {/* REQ-037:内置(上游)治理分组 —— REQ-019 递延的 V2 内置管理位落点 */}
-                    <SecRow label={t("alpha.gov.builtinSection")} />
-                    <GovernancePanel
+                    <SecRow label={t("alpha.builtin.builtinSection")} />
+                    <BuiltinControlsPanel
                       agents={ext.store.agents}
                       refreshEngine={ext.refreshEngine}
                       reloadAgents={ext.reloadAgents}
@@ -1442,97 +1576,19 @@ export function ExtensionHub(props: {
                       }
                     >
                       <SecRow label={t("alpha.ext.installedSection")} count={installedAll().length} />
-                      <div class="alpha-ext-manage">
-                        <For each={installedAll()}>
-                          {(row) => {
-                            const ic = iconForRow(row.entry, row.type, row.name)
-                            // Row click opens the detail page when we can resolve a target
-                            // (catalog entry, or an engine agent by name).
-                            const openRow = () => {
-                              if (row.entry) return openEntryDetail(row.entry)
-                              if (row.type === "agent") {
-                                const a = ext.store.agents.find((x) => x.name === row.name)
-                                if (a) return openAgentDetail(a)
-                              }
-                            }
-                            const clickable = () => !!row.entry || (row.type === "agent" && ext.store.agents.some((x) => x.name === row.name))
-                            return (
-                              <div
-                                class="alpha-ext-man"
-                                data-clickable={clickable() ? "" : undefined}
-                                onClick={() => clickable() && openRow()}
-                              >
-                                <span class="alpha-ext-man-ic" style={{ background: ic.color }}>
-                                  {ic.glyph}
-                                </span>
-                                <div class="alpha-ext-man-body">
-                                  <div class="alpha-ext-man-nm">
-                                    <b title={row.name}>{row.displayName}</b>
-                                    <span class="alpha-ext-type-pill">{typeLabel(row.type)}</span>
-                                    <Show when={row.version}>
-                                      <span class="alpha-ext-ver">v{row.version}</span>
-                                    </Show>
-                                    {/* REQ-105:archived + unsupported 徽标(上游归档;禁自动更新) */}
-                                    <Show when={officeAdvisoryFor({ id: row.receipt.id, name: row.name })}>
-                                      <span class="alpha-ext-verify-chip" data-archived="">
-                                        {t("alpha.ext.advArchivedUnsupported")}
-                                      </span>
-                                    </Show>
-                                  </div>
-                                  <div class="alpha-ext-man-st">
-                                    {/* MCP: live SDK status (connected/error/disabled). fs/plugin: installed. */}
-                                    <Show
-                                      when={row.type === "mcp"}
-                                      fallback={
-                                        <>
-                                          <span class="alpha-ext-man-dot" data-on="" />
-                                          {t("alpha.ext.installed")}
-                                        </>
-                                      }
-                                    >
-                                      <Show
-                                        when={row.mcp?.error}
-                                        fallback={
-                                          <>
-                                            <span class="alpha-ext-man-dot" data-on={row.mcp?.connected ? "" : undefined} />
-                                            {row.mcp?.connected ? t("alpha.ext.enabledLive") : t("alpha.ext.disabled")}
-                                          </>
-                                        }
-                                      >
-                                        <span class="alpha-ext-man-dot" data-err="" />
-                                        {row.mcp?.error}
-                                      </Show>
-                                    </Show>
-                                  </div>
-                                </div>
-                                {/* Toggle is MCP-only (connect/disconnect); fs/plugin have no live toggle. */}
-                                <Show when={row.type === "mcp"}>
-                                  <button
-                                    class="alpha-ext-sw"
-                                    data-on={row.mcp?.connected ? "" : undefined}
-                                    aria-label={row.mcp?.connected ? t("alpha.ext.enabled") : t("alpha.ext.disabled")}
-                                    onClick={(ev) => {
-                                      ev.stopPropagation()
-                                      void ext.setMcpConnected(row.name, !row.mcp?.connected)
-                                    }}
-                                  />
-                                </Show>
-                                <button
-                                  class="alpha-ext-iconbtn"
-                                  title={t("alpha.ext.remove")}
-                                  aria-label={t("alpha.ext.remove")}
-                                  onClick={(ev) => {
-                                    ev.stopPropagation()
-                                    void onUninstall(row.receipt)
-                                  }}
-                                >
-                                  <Svg class="alpha-ic alpha-ic-sm" d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" />
-                                </button>
-                              </div>
-                            )
-                          }}
-                        </For>
-                      </div>
+                      {/* REQ-103(#195,AC5)scope 分组:全局 / 本项目;同名可并存,各自独立操作。 */}
+                      <Show when={installedByScope().global.length > 0}>
+                        <div class="alpha-ext-scopeh">{t("alpha.ext.scopeGlobalGroup")}</div>
+                        <div class="alpha-ext-manage">
+                          <For each={installedByScope().global}>{(row) => <InstalledRow row={row} />}</For>
+                        </div>
+                      </Show>
+                      <Show when={installedByScope().project.length > 0}>
+                        <div class="alpha-ext-scopeh">{t("alpha.ext.scopeProjectGroup")}</div>
+                        <div class="alpha-ext-manage">
+                          <For each={installedByScope().project}>{(row) => <InstalledRow row={row} />}</For>
+                        </div>
+                      </Show>
                     </Show>
                   </Show>
 

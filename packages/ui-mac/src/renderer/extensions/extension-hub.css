@@ -666,6 +666,31 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
 .alpha-ext-man-dot[data-err] {
   background: var(--a-error);
 }
+/* REQ-103(#195):健康点三态色(governance health → 运行健康/上游归档·事务未落定/隔离/未知)。 */
+.alpha-ext-man-dot[data-tone="ok"] {
+  background: var(--a-success);
+}
+.alpha-ext-man-dot[data-tone="warn"] {
+  background: var(--a-warning);
+}
+.alpha-ext-man-dot[data-tone="err"] {
+  background: var(--a-error);
+}
+.alpha-ext-man-dot[data-tone="muted"] {
+  background: var(--a-text-disabled);
+}
+/* REQ-103(#195):已安装 scope 分组小标题(全局 / 本项目,AC5 同名并存的分区)。 */
+.alpha-ext-scopeh {
+  margin: 18px 0 8px;
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-semibold);
+  letter-spacing: var(--a-tracking-wide);
+  text-transform: uppercase;
+  color: var(--a-text-tertiary);
+}
+.alpha-ext-scopeh:first-of-type {
+  margin-top: 4px;
+}
 .alpha-ext-iconbtn {
   width: 30px;
   height: 30px;

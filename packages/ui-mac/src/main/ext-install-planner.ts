@@ -169,13 +169,11 @@ import {
   sha256Hex,
   MANIFEST_SCHEMA_VERSION,
   type DependencyNode,
-  type DistributionChannel,
   type ExtensionManifestV2,
   type ManifestCapability,
   type ManifestKind,
-  type RuntimeSurface,
-  type SupportTier,
 } from "./ext-manifest-v2"
+import { ownershipFromCatalogEntry, runtimeSurfacesForCatalogEntry } from "../shared/ext-ownership"
 import {
   computeGrantDigest,
   findRecordV2,
@@ -426,16 +424,6 @@ export type VerifiedCatalogEntry = {
   catalogVersion: string
 }
 
-function surfacesFor(entry: CatalogEntry): RuntimeSurface[] {
-  if (entry.type === "mcp") {
-    const spec = entry.installSpec
-    return spec?.kind === "mcp" && spec.mcpType === "remote" ? ["remote-service"] : ["local-subprocess"]
-  }
-  if (entry.type === "plugin") return ["engine-process"]
-  if (entry.type === "cloud") return ["cloud-pipeline"]
-  return ["model-context"]
-}
-
 function capabilitiesFor(entry: CatalogEntry): ManifestCapability[] {
   if (entry.type === "mcp") {
     const spec = entry.installSpec
@@ -448,30 +436,10 @@ function capabilitiesFor(entry: CatalogEntry): ManifestCapability[] {
   return []
 }
 
-function distributedFor(entry: CatalogEntry, channel: VerifiedCatalogEntry["channel"]): DistributionChannel {
-  if (entry.type === "mcp") return "engine-config"
-  if (entry.type === "cloud") return "cloud"
-  if (entry.type === "plugin") {
-    const spec = entry.installSpec
-    return spec?.kind === "plugin" && spec.vendoredAssetKey ? "bundled" : "npm"
-  }
-  const spec = entry.installSpec as { source?: string } | undefined
-  if (spec?.source === "remote" || entry.remoteAsset) return "remote-catalog"
-  if (spec?.source === "builtin") return "bundled"
-  return channel === "bundled" ? "bundled" : "remote-catalog"
-}
-
-function supportTierFor(source: CatalogEntry["source"]): SupportTier {
-  if (source === "alpha") return "alpha"
-  if (source === "official") return "curated"
-  if (source === "community") return "community"
-  return "user"
-}
-
-/** 从已验 catalog 条目合成 ManifestV2(五维 ownership:authored = 条目来源,curated = alpha,不混标)。 */
+/** 从已验 catalog 条目合成 ManifestV2(五维 ownership 推导 = shared/ext-ownership 真源,REQ-103 slice 1)。 */
 export function synthesizeManifest(verified: VerifiedCatalogEntry): unknown {
   const { entry, channel, catalogVersion } = verified
-  const surfaces = surfacesFor(entry)
+  const surfaces = runtimeSurfacesForCatalogEntry(entry)
   return {
     schemaVersion: MANIFEST_SCHEMA_VERSION,
     id: entry.id,
@@ -481,13 +449,7 @@ export function synthesizeManifest(verified: VerifiedCatalogEntry): unknown {
     compatibility: { platforms: ["darwin", "win32"] }, // ADR-026 桌面双平台;catalog 无逐条声明时的诚实默认
     capabilities: capabilitiesFor(entry),
     dependencies: (entry.bundleItems ?? []).map((it) => ({ id: it.catalogEntryId, optional: it.optional === true })),
-    ownership: {
-      authored: entry.source ?? "user",
-      curated: "alpha",
-      distributed: distributedFor(entry, channel),
-      runtimeSurfaces: surfaces,
-      supportTier: supportTierFor(entry.source),
-    },
+    ownership: ownershipFromCatalogEntry(entry, channel),
     components: [{ name: entry.name, runsIn: surfaces }],
     ...(entry.remoteAsset?.files?.length
       ? {
@@ -1553,12 +1515,12 @@ async function installBundleAtomic(
   const items = (verified.entry.bundleItems ?? []).slice().sort((a, b) => a.installOrder - b.installOrder)
   const subEntries = items.map((it) => resolved.get(it.catalogEntryId)!.entry)
   const caps = [...new Set(subEntries.flatMap((e) => capabilitiesFor(e)))]
-  const surfaces = [...new Set(subEntries.flatMap((e) => surfacesFor(e)))]
+  const surfaces = [...new Set(subEntries.flatMap((e) => runtimeSurfacesForCatalogEntry(e)))]
   const bundleManifest = {
     ...(synthesizeManifest(verified) as Record<string, unknown>),
     capabilities: caps,
     ownership: { ...(synthesizeManifest(verified) as { ownership: Record<string, unknown> }).ownership, runtimeSurfaces: surfaces },
-    components: subEntries.map((e) => ({ name: e.name, runsIn: surfacesFor(e) })),
+    components: subEntries.map((e) => ({ name: e.name, runsIn: runtimeSurfacesForCatalogEntry(e) })),
   }
   const bundleDecoded = decodeManifestV2(bundleManifest)
   if (!bundleDecoded.ok) return { ok: false, reason: `bundle manifest invalid: ${bundleDecoded.errors.join("; ")}` }
@@ -1687,6 +1649,10 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
 
   const scope = resolveScope(intent.scope, entry.type)
   if (!scope.ok) return scope
+
+  // REQ-103 AC3 的静默扩权阻断由 #348 的 capability→authorize 闸承担(引擎 authorize 阶段,
+  // 首装/更新/重装全覆盖,stage="authorize" + CapabilityDiff[] 重驱)—— S50 slice 2a 的
+  // confirmedCapabilities 原型已被其取代。
   const grants = intent.grants ?? {}
   const tx = (deps.transaction ?? passthroughTx).begin({ op: "install", kind: entry.type, name: entry.name, scope: intent.scope.scope, manifestDigest })
   const rollback = (reason: string): void => (deps.transaction ?? passthroughTx).rollback(tx.txId, reason)

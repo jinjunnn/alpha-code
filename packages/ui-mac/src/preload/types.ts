@@ -105,7 +105,7 @@ export type AccountResult<T> = T | { error: string }
 // keys each install owns. Engine visibility truth remains the SDK (mcp.status / app.skills / …);
 // receipts ⨝ SDK drives installed/pending-reload UI states, uninstall and update.
 /** REQ-037:治理真源形状(main alpha-governance.ts 与 renderer 共用)。 */
-export interface AlphaGovernance {
+export interface AlphaBuiltinPolicy {
   version: 1
   mode: "denylist" | "allowlist"
   agents: { hide: string[]; disable: string[]; allow: string[]; override: Record<string, Record<string, unknown>> }
@@ -256,6 +256,11 @@ export type {
   ManifestArtifactEntry,
 } from "../main/artifact-manifest"
 
+// REQ-103(#195):governance 只读视图形状(真源 main/ext-inventory.ts;shared/ext-ownership +
+// ext-states 的五维/三态纯值)。
+import type { ExtInventory } from "../main/ext-inventory"
+export type { InventoryRow, ExtInventory } from "../main/ext-inventory"
+
 // REQ-096(#188):隔离 HTML preview 控制通道形状(真源 shared/html-preview.ts;host 本体在
 // main/html-preview-host.ts)。renderer 只见 opaque previewId —— 一次性 host 的 URL/token、
 // 文件字节与绝对路径永不过 IPC。
@@ -395,13 +400,13 @@ export type ElectronAPI = {
     factorySkillIds: () => Promise<string[]>
     /** REQ-037 上游能力治理(真源 ~/.alpha/governance.json;物化 home jsonc 受控叶子,apply 后
      *  renderer 需自行 refreshEngine() 使 dispose 热生效)。 */
-    govRead: () => Promise<{ gov: AlphaGovernance; protection: { hard: string[]; alphaInjected: string[]; confirm: string[] }; factoryDenied: string[] }>
-    govApply: (
-      gov: AlphaGovernance,
+    builtinRead: () => Promise<{ gov: AlphaBuiltinPolicy; protection: { hard: string[]; alphaInjected: string[]; confirm: string[] }; factoryDenied: string[] }>
+    builtinApply: (
+      gov: AlphaBuiltinPolicy,
       visibleAgents: string[],
       confirmBuildDisable?: boolean,
     ) => Promise<{ ok: boolean; reason?: string; violations: { kind: string; name: string; reason: string }[]; written: number; removedStale: number }>
-    govReset: () => Promise<{ ok: boolean; reason?: string }>
+    builtinReset: () => Promise<{ ok: boolean; reason?: string }>
     /** REQ-033:agent 导入两段式(codex 审计后:preview 经 picker token 授权读,confirm 只收
      *  previewId —— 写入内容为 main 侧留存的 preview 产物,renderer 不可提供内容)。 */
     importAgentPreview: (token: string, filePath: string) => Promise<
@@ -521,6 +526,9 @@ export type ElectronAPI = {
     /** REQ-100 #375:显式 retire(entryId+fingerprint 定位;两个确认 flag 必须字面 true;
      *  UI 归 Hub —— 本通道只登记合同)。 */
     journalRetire: (intent: JournalRetireIntentWire) => Promise<JournalRetireResult>
+    /** REQ-103(#195)governance 只读查询:逐扩展五维所有权 + availability/activation/health 三态
+     *  (main 聚合真源 ext-inventory.ts;纯 JSON)。唯一 governance 通道 —— 无任何写面。 */
+    inventoryView: (projectDir?: string) => Promise<ExtInventory>
   }
   // alpha account (balance / membership / usage) read from the alpha-platform (B) account-server
   // using the main-held JWT. The renderer gets only the resolved summary, never the token.

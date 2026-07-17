@@ -69,7 +69,7 @@ import { initByokKeys, injectByokKeysIntoEnv, setByokKeyDeps } from "./alpha-byo
 import { reconcileEngineConfigTruth } from "./engine-config-truth-boot"
 import { factorySkillSources, reconcileFactorySkills } from "./factory-skills"
 import { runGlobalEcosystemGate } from "./ecosystem-gate"
-import { effectiveFactoryDenied, readGovernance } from "./alpha-governance"
+import { effectiveFactoryDenied, readBuiltinPolicy } from "./alpha-builtin-policy"
 import {
   enableProxy,
   ensureFreshToken,
@@ -451,7 +451,7 @@ const main = Effect.gen(function* () {
       process.env.ALPHA_FACTORY_SKILL_DIRS = JSON.stringify(factory.paths)
       stripFactory = [] // reconcile 成功 → 剥离 alpha.jsonc 里的存量出厂条目(它们改由内存注入)
       // REQ-067:出厂默认禁项(− 用户治理解禁)同走 env → ext hook 内存注入,用户配置零明文
-      process.env.ALPHA_FACTORY_DENY_SKILLS = JSON.stringify(effectiveFactoryDenied(readGovernance()))
+      process.env.ALPHA_FACTORY_DENY_SKILLS = JSON.stringify(effectiveFactoryDenied(readBuiltinPolicy()))
       if (factory.removed.length)
         logger.log("[req065] factory-skills: stale .alpha links dismantled (factory content now served from app resources)", {
           removed: factory.removed,

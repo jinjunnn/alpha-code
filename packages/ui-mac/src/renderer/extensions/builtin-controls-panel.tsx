@@ -1,14 +1,14 @@
-// GovernancePanel — 定制中心「已安装」内的「内置(上游)」治理分组(REQ-037,即 REQ-019 递延的 V2
+// BuiltinControlsPanel — 定制中心「已安装」内的「内置(上游)」治理分组(REQ-037,即 REQ-019 递延的 V2
 // 内置管理位)。列原生 agent / 内置 skill / 内置 command,逐项 隐藏·禁用·重写;保护项灰显并说明
 // 原因(C28 诚实控件);denylist/allowlist 可切;「重置治理」全量净除。
 //
-// 数据流:window.api.ext.govRead/govApply/govReset(main 校验+物化 home jsonc 受控叶子)→
+// 数据流:window.api.ext.builtinRead/builtinApply/builtinReset(main 校验+物化 home jsonc 受控叶子)→
 // props.refreshEngine()(POST /global/dispose)→ 下一条消息热生效 → props.reloadAgents() 刷新列表。
 // 泄漏诚实声明:skill deny 后引擎 GET /skill 与斜杠菜单仍会列出该技能(上游行为),但执行被拒 +
 // 斜杠命中的是 alpha 占位模板 —— 面板文案如实说明,不谎称彻底移除。
 
 import { createMemo, createSignal, For, onMount, Show } from "solid-js"
-import type { AlphaGovernance } from "../../preload/types"
+import type { AlphaBuiltinPolicy } from "../../preload/types"
 import type { HubAgent } from "./use-extensions"
 import { t } from "../i18n"
 
@@ -18,7 +18,7 @@ const BUILTIN_COMMANDS = ["init", "review"]
 /** REQ-067:出厂默认禁项(与 main alpha-governance.FACTORY_DENIED_SKILLS 同名单;开关走解禁语义)。 */
 const FACTORY_DENIED_SKILLS = ["customize-opencode"]
 
-const DEFAULT_GOV: AlphaGovernance = {
+const DEFAULT_GOV: AlphaBuiltinPolicy = {
   version: 1,
   mode: "denylist",
   agents: { hide: [], disable: [], allow: [], override: {} },
@@ -26,13 +26,13 @@ const DEFAULT_GOV: AlphaGovernance = {
   commands: { override: {} },
 }
 
-export function GovernancePanel(props: {
+export function BuiltinControlsPanel(props: {
   agents: HubAgent[]
   refreshEngine: () => Promise<boolean>
   reloadAgents: () => Promise<void>
   flash: (msg: string, kind?: "success" | "error") => void
 }) {
-  const [gov, setGov] = createSignal<AlphaGovernance>(structuredClone(DEFAULT_GOV))
+  const [gov, setGov] = createSignal<AlphaBuiltinPolicy>(structuredClone(DEFAULT_GOV))
   const [protection, setProtection] = createSignal<{ hard: string[]; alphaInjected: string[]; confirm: string[] }>({ hard: [], alphaInjected: [], confirm: [] })
   const [busy, setBusy] = createSignal(false)
   const [err, setErr] = createSignal("")
@@ -40,12 +40,12 @@ export function GovernancePanel(props: {
   const [agentEdit, setAgentEdit] = createSignal<{ name: string; prompt: string } | null>(null)
 
   onMount(() => {
-    void window.api.ext.govRead().then((r) => {
+    void window.api.ext.builtinRead().then((r) => {
       setGov(r.gov)
       setProtection(r.protection)
     }).catch(() => {
       // load failed → keep the empty DEFAULT_GOV but say so, or the user might apply over real config
-      setErr(t("alpha.gov.loadFailed"))
+      setErr(t("alpha.builtin.loadFailed"))
     })
   })
 
@@ -61,31 +61,31 @@ export function GovernancePanel(props: {
 
   const protectedReason = (name: string): string | null => {
     const p = protection()
-    if (p.hard.includes(name)) return t("alpha.gov.protHard")
-    if (p.alphaInjected.includes(name)) return t("alpha.gov.protAlpha")
+    if (p.hard.includes(name)) return t("alpha.builtin.protHard")
+    if (p.alphaInjected.includes(name)) return t("alpha.builtin.protAlpha")
     return null
   }
 
-  const apply = async (next: AlphaGovernance, confirmBuild = false) => {
+  const apply = async (next: AlphaBuiltinPolicy, confirmBuild = false) => {
     if (busy()) return // codex M2:硬闸 —— 全量快照式 apply 并发会互相覆盖(last-write-wins 丢改动)
     setBusy(true)
     setErr("")
     try {
-      const r = await window.api.ext.govApply(next, visibleAgentNames(), confirmBuild)
+      const r = await window.api.ext.builtinApply(next, visibleAgentNames(), confirmBuild)
       if (!r.ok) {
         setErr(r.reason ?? "apply failed")
-        props.flash(r.reason ?? t("alpha.gov.applyFailed"), "error")
+        props.flash(r.reason ?? t("alpha.builtin.applyFailed"), "error")
         return
       }
       setGov(next)
       const refreshed = await props.refreshEngine()
       void props.reloadAgents()
-      props.flash(refreshed ? t("alpha.gov.applied") : t("alpha.gov.appliedPendingReload"), "success")
+      props.flash(refreshed ? t("alpha.builtin.applied") : t("alpha.builtin.appliedPendingReload"), "success")
     } catch {
-      // govApply threw (IPC/main error) — callers do `void apply(...)`, so without this catch the
+      // builtinApply threw (IPC/main error) — callers do `void apply(...)`, so without this catch the
       // rejection is silent: busy clears but nothing changed and no feedback (silent-failure class).
-      setErr(t("alpha.gov.applyFailed"))
-      props.flash(t("alpha.gov.applyFailed"), "error")
+      setErr(t("alpha.builtin.applyFailed"))
+      props.flash(t("alpha.builtin.applyFailed"), "error")
     } finally {
       setBusy(false)
     }
@@ -98,7 +98,7 @@ export function GovernancePanel(props: {
     if (i >= 0) arr.splice(i, 1)
     else arr.push(name)
     const needConfirm = list === "disable" && arr.includes(name) && protection().confirm.includes(name)
-    if (needConfirm && !window.confirm(t("alpha.gov.buildConfirm"))) return
+    if (needConfirm && !window.confirm(t("alpha.builtin.buildConfirm"))) return
     void apply(g, needConfirm)
   }
   const toggleAllow = (name: string) => {
@@ -155,10 +155,10 @@ export function GovernancePanel(props: {
     void apply(g)
   }
   const reset = async () => {
-    if (!window.confirm(t("alpha.gov.resetConfirm"))) return
+    if (!window.confirm(t("alpha.builtin.resetConfirm"))) return
     setBusy(true)
     try {
-      const r = await window.api.ext.govReset()
+      const r = await window.api.ext.builtinReset()
       if (!r.ok) {
         setErr(r.reason ?? "reset failed")
         return
@@ -166,7 +166,7 @@ export function GovernancePanel(props: {
       setGov(structuredClone(DEFAULT_GOV))
       await props.refreshEngine()
       void props.reloadAgents()
-      props.flash(t("alpha.gov.resetDone"), "success")
+      props.flash(t("alpha.builtin.resetDone"), "success")
     } finally {
       setBusy(false)
     }
@@ -176,17 +176,17 @@ export function GovernancePanel(props: {
   return (
     <div class="alpha-gov">
       <div class="alpha-ext-callout">
-        {t("alpha.gov.note")}
+        {t("alpha.builtin.note")}
         <span class="alpha-gov-mode">
           <button data-on={g().mode === "denylist" ? "" : undefined} disabled={busy()} onClick={() => switchMode("denylist")}>
-            {t("alpha.gov.denylist")}
+            {t("alpha.builtin.denylist")}
           </button>
           <button data-on={g().mode === "allowlist" ? "" : undefined} disabled={busy()} onClick={() => switchMode("allowlist")}>
-            {t("alpha.gov.allowlist")}
+            {t("alpha.builtin.allowlist")}
           </button>
         </span>
         <button class="alpha-ext-inline-cta" disabled={busy()} onClick={() => void reset()}>
-          {t("alpha.gov.reset")}
+          {t("alpha.builtin.reset")}
         </button>
       </div>
       <Show when={err()}>
@@ -208,36 +208,36 @@ export function GovernancePanel(props: {
                   {name}
                   <span class="alpha-ext-chip">agent</span>
                   <Show when={hidden()}>
-                    <span class="alpha-ext-chip" data-warn="">{t("alpha.gov.stateHidden")}</span>
+                    <span class="alpha-ext-chip" data-warn="">{t("alpha.builtin.stateHidden")}</span>
                   </Show>
                   <Show when={disabled()}>
-                    <span class="alpha-ext-chip" data-warn="">{t("alpha.gov.stateDisabled")}</span>
+                    <span class="alpha-ext-chip" data-warn="">{t("alpha.builtin.stateDisabled")}</span>
                   </Show>
                   <Show when={overridden()}>
-                    <span class="alpha-ext-chip">{t("alpha.gov.stateOverridden")}</span>
+                    <span class="alpha-ext-chip">{t("alpha.builtin.stateOverridden")}</span>
                   </Show>
                 </span>
                 <Show
                   when={!prot()}
-                  fallback={<span class="alpha-gov-prot" title={prot() ?? undefined}>{t("alpha.gov.protected")}</span>}
+                  fallback={<span class="alpha-gov-prot" title={prot() ?? undefined}>{t("alpha.builtin.protected")}</span>}
                 >
                   <span class="alpha-gov-acts">
                     <Show when={g().mode === "allowlist"}>
                       <button disabled={busy()} onClick={() => toggleAllow(name)}>
-                        {allowed() ? t("alpha.gov.inAllow") : t("alpha.gov.notInAllow")}
+                        {allowed() ? t("alpha.builtin.inAllow") : t("alpha.builtin.notInAllow")}
                       </button>
                     </Show>
                     <button disabled={busy()} onClick={() => toggle("hide", name)}>
-                      {hidden() ? t("alpha.gov.unhide") : t("alpha.gov.hide")}
+                      {hidden() ? t("alpha.builtin.unhide") : t("alpha.builtin.hide")}
                     </button>
                     <button disabled={busy()} onClick={() => toggle("disable", name)}>
-                      {disabled() ? t("alpha.gov.enable") : t("alpha.gov.disable")}
+                      {disabled() ? t("alpha.builtin.enable") : t("alpha.builtin.disable")}
                     </button>
                     <button
                       disabled={busy()}
                       onClick={() => setAgentEdit({ name, prompt: String(g().agents.override[name]?.prompt ?? "") })}
                     >
-                      {t("alpha.gov.override")}
+                      {t("alpha.builtin.override")}
                     </button>
                   </span>
                 </Show>
@@ -259,12 +259,12 @@ export function GovernancePanel(props: {
                   {name}
                   <span class="alpha-ext-chip">skill</span>
                   <Show when={denied()}>
-                    <span class="alpha-ext-chip" data-warn="">{t("alpha.gov.stateDenied")}</span>
+                    <span class="alpha-ext-chip" data-warn="">{t("alpha.builtin.stateDenied")}</span>
                   </Show>
                 </span>
                 <span class="alpha-gov-acts">
-                  <button disabled={busy()} onClick={() => toggleSkillDeny(name)} title={t("alpha.gov.skillLeakNote")}>
-                    {denied() ? t("alpha.gov.allow") : t("alpha.gov.deny")}
+                  <button disabled={busy()} onClick={() => toggleSkillDeny(name)} title={t("alpha.builtin.skillLeakNote")}>
+                    {denied() ? t("alpha.builtin.allow") : t("alpha.builtin.deny")}
                   </button>
                 </span>
               </div>
@@ -282,16 +282,16 @@ export function GovernancePanel(props: {
                   /{name}
                   <span class="alpha-ext-chip">command</span>
                   <Show when={overridden()}>
-                    <span class="alpha-ext-chip">{t("alpha.gov.stateOverridden")}</span>
+                    <span class="alpha-ext-chip">{t("alpha.builtin.stateOverridden")}</span>
                   </Show>
                 </span>
                 <span class="alpha-gov-acts">
                   <button
                     disabled={busy()}
                     onClick={() => setCmdEdit({ name, template: g().commands.override[name]?.template ?? "" })}
-                    title={t("alpha.gov.cmdNote")}
+                    title={t("alpha.builtin.cmdNote")}
                   >
-                    {overridden() ? t("alpha.gov.editOverride") : t("alpha.gov.override")}
+                    {overridden() ? t("alpha.builtin.editOverride") : t("alpha.builtin.override")}
                   </button>
                 </span>
               </div>
@@ -304,18 +304,18 @@ export function GovernancePanel(props: {
       <Show when={cmdEdit()}>
         {(e) => (
           <div class="alpha-gov-editor">
-            <div class="alpha-ext-flabel">/{e().name} {t("alpha.gov.cmdTemplate")}</div>
+            <div class="alpha-ext-flabel">/{e().name} {t("alpha.builtin.cmdTemplate")}</div>
             <textarea
               class="alpha-ext-input alpha-ext-textarea alpha-mono"
               value={e().template}
               onInput={(ev) => setCmdEdit({ ...e(), template: ev.currentTarget.value })}
-              placeholder={t("alpha.gov.cmdPlaceholder")}
+              placeholder={t("alpha.builtin.cmdPlaceholder")}
             />
             <div class="alpha-gov-acts">
               <button class="alpha-ext-add" data-variant="primary" disabled={busy()} onClick={saveCmdOverride}>
-                {t("alpha.gov.save")}
+                {t("alpha.builtin.save")}
               </button>
-              <button class="alpha-ext-add" onClick={() => setCmdEdit(null)}>{t("alpha.gov.cancel")}</button>
+              <button class="alpha-ext-add" onClick={() => setCmdEdit(null)}>{t("alpha.builtin.cancel")}</button>
             </div>
           </div>
         )}
@@ -323,18 +323,18 @@ export function GovernancePanel(props: {
       <Show when={agentEdit()}>
         {(e) => (
           <div class="alpha-gov-editor">
-            <div class="alpha-ext-flabel">{e().name} {t("alpha.gov.agentPrompt")}</div>
+            <div class="alpha-ext-flabel">{e().name} {t("alpha.builtin.agentPrompt")}</div>
             <textarea
               class="alpha-ext-input alpha-ext-textarea alpha-mono"
               value={e().prompt}
               onInput={(ev) => setAgentEdit({ ...e(), prompt: ev.currentTarget.value })}
-              placeholder={t("alpha.gov.agentPromptPlaceholder")}
+              placeholder={t("alpha.builtin.agentPromptPlaceholder")}
             />
             <div class="alpha-gov-acts">
               <button class="alpha-ext-add" data-variant="primary" disabled={busy()} onClick={saveAgentOverride}>
-                {t("alpha.gov.save")}
+                {t("alpha.builtin.save")}
               </button>
-              <button class="alpha-ext-add" onClick={() => setAgentEdit(null)}>{t("alpha.gov.cancel")}</button>
+              <button class="alpha-ext-add" onClick={() => setAgentEdit(null)}>{t("alpha.builtin.cancel")}</button>
             </div>
           </div>
         )}
