@@ -152,7 +152,8 @@ describe("reconcileDesiredStateAtBoot(#395 崩溃残留收敛)", () => {
     try {
       const r = reconcileDesiredStateAtBoot(root)
       expect(r.ok).toBe(false)
-      expect(r.skipped).toContain("ledger busy")
+      expect(r.skipped).toContain("lock unavailable")
+      expect(r.enforcementGap && r.enforcementGap.length > 0).toBe(true) // r7 B2:启动期锁不可用 = fail-closed
       expect(readCfg().mcp.m).toEqual({ type: "local" }) // config 未动
     } finally {
       held.lock.release()
@@ -282,17 +283,15 @@ describe("#395 r6 B1/B2/B3 enforcement gap", () => {
     }
   })
 
-  test("skills 派生自愈失败(派生文件所在目录不可写)→ staleAllowList → enforcementGap", () => {
+  test("skills 派生自愈:账本损坏且删不掉陈旧允许集 → staleAllowList(直接测 reconcileSkillsDerivation,不经锁)", () => {
     record({ name: "sk", kind: "skill", desiredState: "enabled" })
     fs.writeFileSync(skillsEnabledPath(root), JSON.stringify({ v: 1, keys: ["skill--sk", "skill--ghost"] })) // 陈旧含 ghost
-    // 账本损坏使 reconcileSkillsDerivation 走「删陈旧允许集」路径;删不掉则 staleAllowList。
-    fs.writeFileSync(path.join(root, "installs.json"), "corrupt")
-    fs.chmodSync(root, 0o555) // 目录只读 → unlink 失败
+    fs.writeFileSync(path.join(root, "installs.json"), "corrupt") // 账本损坏 → 走删陈旧派生分支
+    fs.chmodSync(root, 0o555) // 目录只读 → unlink 派生文件失败
     try {
-      const r = reconcileDesiredStateAtBoot(root)
-      // root 只读也让锁获取失败;仅当拿到锁且 deriv 失败才验 gap(否则锁忙 skip 是另一路径)。
-      if (r.ok === false && r.skipped?.includes("ledger busy")) return
-      if (r.enforcementGap) expect(r.enforcementGap.some((g) => g.includes("skills allow-list"))).toBe(true)
+      const d = reconcileSkillsDerivation(root)
+      // owner 在只读目录仍可能 unlink;仅当确实删失败才验 staleAllowList(可能仍列已禁 skill)。
+      if (d.ok === false) expect(d.staleAllowList).toBe(true)
     } finally {
       fs.chmodSync(root, 0o755)
     }

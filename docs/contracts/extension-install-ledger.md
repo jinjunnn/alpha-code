@@ -95,9 +95,11 @@ MCP 重装是产品流(确认框重装),允许覆盖(引擎前像可复原)而�
   目录安装(origin=catalog)`source==="alpha"` = enabled,其余(含 official)一律 disabled;
   非目录 intake(imported/created)= enabled(用户显式自选内容)。renderer 安装文案共用同一
   函数,不得各写一份。factory 注入零安装不落账,天然绕过。
-- **当前策略优先**:任何更新/重装/回滚对既有记录一律保留其 desiredState
-  (`nextDesiredState` 先查 prior;plugin replace 的锁内漂移检查照旧)。v1→v2 迁移如实保留
-  enabled(存量不回溯)。
+- **当前策略优先(写点决定,Codex r7 B4)**:任何更新/重装/回滚对既有记录一律保留其 desiredState。
+  **决定点在写账本的原子处(`upsertRecordV2`/`upsertRecordsV2` 内锁内 prev),不是调用方计划期**——
+  否则「计划期读到 enabled → 用户中途 disable → 更新事务提交旧 enabled」会复活禁用。prev 存在 = 更新,
+  一律沿用 prev 当前 desiredState(启停只经 set-state 通道 `setDesiredStateV2` 改);fresh(无 prev)
+  才用分类器传入值。v1→v2 迁移如实保留 enabled(存量不回溯)。
 - **持久化 config 投影(#394 裁决 A′;Codex r2/r3 定稿)**:disabled 的 mcp/agent/plugin 的启用态**写进
   磁盘 alpha.jsonc**,字段用**引擎真实消费的键**:mcp `enabled:false`(引擎查 `mcp.enabled === false`)、
   agent `disable:true`(引擎查 `value.disable`)、plugin 从 `plugin[]` **缺席** —— 因引擎 import 插件早于
@@ -129,12 +131,16 @@ MCP 重装是产品流(确认框重装),允许覆盖(引擎前像可复原)而�
   读错误 / legacy concat 残留 / skills 陈旧允许集)= **enforcementGap** → 主进程 **fail-closed 阻断
   首个 sidecar spawn**(dialog 告知 + `app.exit`),绝不让引擎带着「账本禁用但仍会加载」的项启动;
   锁忙(在途事务自保一致)/enable 缺生效面 = 非 gap(仅 warning)。escape hatch 与 REQ-059 同口径。
-- **legacy/XDG concat 残留(Codex r6 B1)**:引擎对 `plugin[]` 用**数组 concat** 合并
-  (`mergeConfigConcatArrays`)—— 从 alpha.jsonc 移除挡不住 legacy(`~/.opencode`)/XDG 源同名条目被
-  concat 加载。plugin **disable**(set-state 与 boot reconcile)先探测 `readLegacyPluginArrayStrict`
-  的全部源(npm 按 base、path 按文件系统身份);任一源仍列该 plugin → fail-closed(须先迁移/移除
-  legacy 条目)。mcp/agent 走深合并且 alpha.jsonc 后加载覆盖(`enabled:false`/`disable:true` 生效),
-  不受 concat 影响。
+- **legacy/XDG 源统一探测(Codex r6 B1 → r7 B1/M1/M3 收敛)**:引擎除主 alpha.jsonc 外还合并
+  `~/.opencode` 与 XDG(config.ts directories 阶段,在主源**之后**再深合并),`plugin[]` 更是跨源
+  **concat**(`mergeConfigConcatArrays`)。任何 kind 的 **disable**(set-state 与 boot reconcile,含
+  alpha.jsonc **缺席**时)都先经 `legacyEnableResidueStrict` 统一探测全部 legacy 源:plugin 任一源含
+  同 base(npm)/同文件身份(path,身份不可判 = fail-closed)→ concat 加载;**mcp** 任一源 `mcp[name]`
+  在场且 `enabled !== false` → 深合并覆盖启用;**agent** 任一源 `agent[name]` 在场且 `disable !== true`
+  → 覆盖启用。有残留 → fail-closed(set-state 拒 / boot 记 enforcementGap)。strict:任一源语法损坏/
+  读不出/根非对象 → fail-closed。(r6 曾误判 mcp/agent「深合并后覆盖安全」,r7 M3 证伪:directories 阶段
+  legacy 反向字段会覆盖禁用投影。)`computeEnableProjectionEdit` 因此回归纯 alpha.jsonc 投影,legacy
+  探测统一在调用方一处。
 - **未策展重加投影(Codex r5/r6 M1)**:`persistMcp`/`persistPlugin` 在唯一写入口消费账本 —— 记录
   disabled 的 mcp 重写叶强制并入 `enabled:false`(内容更新、状态不翻);disabled 的 plugin 重加须先
   确认该 base 从**所有运行时源缺席**才刷账本(换钉版 `@x/p@1`→`@x/p@2` 时旧 spec 若留 config 会成

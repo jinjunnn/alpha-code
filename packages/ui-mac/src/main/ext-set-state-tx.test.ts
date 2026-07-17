@@ -161,3 +161,79 @@ describe("#395 步骤4 读错误收窄", () => {
     expect(findRecordV2(root, "mcp", "m")!.desiredState).toBe("enabled") // 账本未翻
   })
 })
+
+// ── #395 Codex r7:legacy/XDG 源统一探测(mcp/agent 反向字段 + 缺席也探测 + npm base)──────────────
+describe("#395 r7 legacy 源统一探测", () => {
+  let savedXdg: string | undefined
+  beforeEach(() => {
+    savedXdg = process.env.OPENCODE_CONFIG_DIR
+    process.env.ALPHA_GLOBAL_DIR = root
+  })
+  afterEach(() => {
+    if (savedXdg === undefined) delete process.env.OPENCODE_CONFIG_DIR
+    else process.env.OPENCODE_CONFIG_DIR = savedXdg
+    delete process.env.ALPHA_GLOBAL_DIR
+  })
+  const writeXdg = (cfg: unknown) => {
+    const dir = path.join(root, "xdg")
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, "opencode.jsonc"), JSON.stringify(cfg))
+    process.env.OPENCODE_CONFIG_DIR = dir
+  }
+
+  test("M3:mcp disable 时 XDG 源含 mcp[name] 且未禁(enabled!==false)→ fail-closed(深合并会覆盖)", () => {
+    record({ name: "demo", kind: "mcp", configKey: "mcp.demo" })
+    writeCfg({ mcp: { demo: { type: "local", command: ["x"] } } })
+    writeXdg({ mcp: { demo: { type: "local" } } }) // XDG 无 enabled:false → 会覆盖 alpha 的禁用
+    const r = setInstallStateByKey({ type: "mcp", name: "demo", scope: "global", state: "disabled" }, deps())
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("would load")
+    expect(findRecordV2(root, "mcp", "demo")!.desiredState).toBe("enabled") // 账本未翻
+  })
+
+  test("M3:XDG 源 mcp[name] 明确 enabled:false → 不算残留(disable 成功)", () => {
+    record({ name: "d2", kind: "mcp", configKey: "mcp.d2" })
+    writeCfg({ mcp: { d2: { type: "local" } } })
+    writeXdg({ mcp: { d2: { type: "local", enabled: false } } }) // 已禁,不覆盖
+    const r = setInstallStateByKey({ type: "mcp", name: "d2", scope: "global", state: "disabled" }, deps())
+    expect(r.ok).toBe(true)
+    expect(readCfg().mcp.d2).toEqual({ type: "local", enabled: false })
+  })
+
+  test("M3:agent disable 时 XDG 源含 agent[name] 且未禁(disable!==true)→ fail-closed", () => {
+    record({ name: "bot", kind: "agent", configKey: "agent.bot" })
+    writeCfg({ agent: { bot: { description: "d" } } })
+    writeXdg({ agent: { bot: { description: "d" } } }) // 无 disable:true → 覆盖启用
+    const r = setInstallStateByKey({ type: "agent", name: "bot", scope: "global", state: "disabled" }, deps())
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("would load")
+  })
+
+  test("B1:alpha.jsonc 缺席时 plugin disable 仍探测 XDG concat 残留 → fail-closed", () => {
+    record({ name: "p", kind: "plugin", configKey: "plugin:@x/p@1.0.0" })
+    // 不写 alpha.jsonc(缺席);XDG 有该 plugin。
+    writeXdg({ plugin: ["@x/p@1.0.0"] })
+    const r = setInstallStateByKey({ type: "plugin", name: "p", scope: "global", state: "disabled" }, deps())
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("remove the legacy/XDG entry")
+    expect(findRecordV2(root, "plugin", "p")!.desiredState).toBe("enabled")
+  })
+
+  test("M2:XDG 源含同 base 不同钉版(@x/p@1 vs 账本 @x/p@2)→ base 匹配命中 fail-closed", () => {
+    record({ name: "q", kind: "plugin", configKey: "plugin:@x/q@2.0.0" })
+    writeCfg({ plugin: [] })
+    writeXdg({ plugin: ["@x/q@1.0.0"] }) // 同 base 旧钉版
+    const r = setInstallStateByKey({ type: "plugin", name: "q", scope: "global", state: "disabled" }, deps())
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("base")
+  })
+
+  test("legacy 全清:XDG 无残留 → disable 正常成功", () => {
+    record({ name: "clean", kind: "mcp", configKey: "mcp.clean" })
+    writeCfg({ mcp: { clean: { type: "local" } } })
+    writeXdg({ provider: {} }) // 无 mcp
+    const r = setInstallStateByKey({ type: "mcp", name: "clean", scope: "global", state: "disabled" }, deps())
+    expect(r.ok).toBe(true)
+    expect(readCfg().mcp.clean).toEqual({ type: "local", enabled: false })
+  })
+})

@@ -736,6 +736,75 @@ function pkgBase(spec: string): string {
   return at > 0 ? spec.slice(0, at) : spec
 }
 
+export type LegacyEnableResidue = { ok: true; residue: string | null } | { ok: false; reason: string }
+
+/** Codex r7 B1/M3:一个 **disabled** 记录在引擎**额外合并**的 legacy/XDG 源(`~/.opencode` + XDG,
+ *  config.ts directories 阶段,在主 alpha.jsonc 之后再深合并)里是否**会被启用加载**。disable 只投影
+ *  alpha.jsonc 不够 —— 这些源会覆盖/concat:
+ *    · plugin:任一源 `plugin[]` 含同 base(npm)/ 同文件身份(path)→ 引擎 concat 加载(残留);
+ *      path 身份不可判(EACCES/断链)→ fail-closed 视为残留。
+ *    · mcp:任一源 `mcp[name]` 在场且 `enabled !== false` → 深合并覆盖启用。
+ *    · agent:任一源 `agent[name]` 在场且 `disable !== true` → 覆盖启用。
+ *  strict:任一源语法损坏 / 读不出 / 根非对象 → fail-closed(无法确认无残留)。residue!=null = 有残留。
+ *  **只查 legacy 源**(不含主 alpha.jsonc;主源的禁用投影由 computeEnableProjectionEdit 负责)。 */
+export function legacyEnableResidueStrict(kind: string, name: string, configKey: string | undefined): LegacyEnableResidue {
+  const isRec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
+  const specOf = (entry: unknown): string | null =>
+    typeof entry === "string" ? entry : Array.isArray(entry) && typeof entry[0] === "string" ? (entry[0] as string) : null
+  const isPath = configKey?.startsWith("plugin-path:") ?? false
+  const npmBase = kind === "plugin" && !isPath && configKey?.startsWith("plugin:") ? pkgBase(configKey.slice("plugin:".length)) : null
+  const pathElem = kind === "plugin" && isPath ? configKey!.slice("plugin-path:".length) : null
+  const targetIdent = pathElem ? pathIdentity(path.resolve(pathElem)) : null
+  const resolveEntry = (entry: unknown, configDir: string): string | null => {
+    const spec = specOf(entry)
+    if (spec === null) return null
+    let p = spec
+    if (p.startsWith("file://")) {
+      try {
+        p = fileURLToPath(p)
+      } catch {
+        return null
+      }
+    } else if (!p.startsWith(".") && !path.isAbsolute(p)) return null // npm 规格,非路径
+    return path.resolve(configDir, p)
+  }
+  for (const file of legacyConfigPaths(mcpPluginTargetPath())) {
+    let parsed: unknown
+    try {
+      if (!fs.existsSync(file)) continue
+      const errors: ParseError[] = []
+      parsed = parse(fs.readFileSync(file, "utf8"), errors)
+      if (errors.length > 0) return { ok: false, reason: `legacy config unparseable: ${file}` }
+    } catch (e) {
+      return { ok: false, reason: `legacy config unreadable: ${file}: ${e instanceof Error ? e.message : String(e)}` }
+    }
+    if (parsed === undefined) continue
+    if (!isRec(parsed)) return { ok: false, reason: `legacy config root is not an object: ${file}` }
+    if (kind === "plugin") {
+      const arr = Array.isArray(parsed.plugin) ? (parsed.plugin as unknown[]) : []
+      for (const entry of arr) {
+        if (npmBase !== null) {
+          const spec = specOf(entry)
+          if (spec !== null && pkgBase(spec) === npmBase) return { ok: true, residue: `plugin base "${npmBase}" present in ${file}` }
+        } else if (targetIdent) {
+          const r = resolveEntry(entry, path.dirname(file))
+          if (r === null) continue
+          const id = pathIdentity(r)
+          if (id.forms.some((f) => targetIdent.forms.includes(f))) return { ok: true, residue: `plugin path present in ${file}` }
+          if (!id.certain || !targetIdent.certain) return { ok: true, residue: `plugin path identity unprovable in ${file} (fail closed)` }
+        }
+      }
+    } else if (kind === "mcp") {
+      const leaf = isRec(parsed.mcp) ? parsed.mcp[name] : undefined
+      if (isRec(leaf) && leaf.enabled !== false) return { ok: true, residue: `mcp "${name}" would load (enabled !== false) from ${file}` }
+    } else if (kind === "agent") {
+      const leaf = isRec(parsed.agent) ? parsed.agent[name] : undefined
+      if (isRec(leaf) && leaf.disable !== true) return { ok: true, residue: `agent "${name}" would load (disable !== true) from ${file}` }
+    }
+  }
+  return { ok: true, residue: null }
+}
+
 /**
  * Append a plugin package to the config `plugin` array (SINGULAR — the key opencode's V1 schema
  * accepts; `plugins` would hard-fail the whole config). opencode auto-installs it from npm on next
@@ -799,8 +868,19 @@ function persistPluginUnlocked(pkg: string, meta?: InstallMeta): PersistPluginRe
   //   · 主 config 残留(旧钉版 / 崩溃残留)→ 移除该 base 全部条目(投影为缺席),changed。
   //   · 都缺席 → changed:false(纯账本刷新)。
   if (priorRecord?.desiredState === "disabled") {
-    if (existingLegacy !== undefined)
-      return { ok: false, reason: `plugin "${base}" present in legacy/XDG config as "${existingLegacy}" — engine concatenates plugin[]; cannot keep it disabled (remove the legacy entry first)` }
+    // Codex r7 B3:legacy 探测须 **strict**(语法错/EACCES 不得像 readPlugins 折叠成空数组 fail-open)
+    // 且覆盖**全部** legacy 源(readLegacyPluginArrayStrict = ~/.opencode + XDG,不只 userConfigPath)。
+    // 任一源含同 base → fail-closed(引擎 concat plugin[],无法从此移除)。
+    const legacy = readLegacyPluginArrayStrict()
+    if (!legacy.ok) return { ok: false, reason: `plugin "${base}": legacy config unreadable (${legacy.reason}) — cannot guarantee disabled (fail closed)` }
+    const legacyHit = legacy.sources.some((src) =>
+      src.value.some((p) => {
+        const s = typeof p === "string" ? p : Array.isArray(p) && typeof p[0] === "string" ? (p[0] as string) : null
+        return s !== null && pkgBase(s) === base
+      }),
+    )
+    if (legacyHit)
+      return { ok: false, reason: `plugin "${base}" present in a legacy/XDG config source — engine concatenates plugin[]; cannot keep it disabled (remove the legacy entry first)` }
     if (existingMain !== undefined) {
       const next = current.filter((p) => {
         const s = typeof p === "string" ? p : Array.isArray(p) && typeof p[0] === "string" ? (p[0] as string) : null

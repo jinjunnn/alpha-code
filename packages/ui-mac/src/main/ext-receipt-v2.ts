@@ -712,6 +712,11 @@ export function upsertRecordV2(root: string, input: UpsertInput): LedgerV2Write 
     schemaVersion: RECORD_SCHEMA_VERSION,
     generation: input.generation ?? (prev ? prev.generation + 1 : hadV1 ? 2 : 1),
     ...(input.previousDigest ? { previousDigest: input.previousDigest } : prev?.manifestDigest ? { previousDigest: prev.manifestDigest } : {}),
+    // Codex r7 B4:desiredState 的「当前策略优先」必须在写账本的原子点(锁内 prev)决定 —— 不能沿用
+    // 调用方计划期(锁外)算的 input.desiredState。否则计划期读到 enabled、用户随后 disable、更新事务
+    // 提交旧 enabled 会把禁用复活。prev 存在 = 更新,一律沿用 prev 当前 desiredState(启停只经 set-state
+    // 通道改);fresh(无 prev)才用分类器传入值。
+    ...(prev ? { desiredState: prev.desiredState } : {}),
   }
   const check = decodeRecordV2(record)
   if (!check.ok) return { ok: false, reason: `refusing to write invalid record: ${check.errors.join("; ")}` }
@@ -762,6 +767,9 @@ export function upsertRecordsV2(root: string, inputs: UpsertInput[]): LedgerV2Ba
       schemaVersion: RECORD_SCHEMA_VERSION,
       generation: input.generation ?? (prev ? prev.generation + 1 : hadV1 ? 2 : 1),
       ...(input.previousDigest ? { previousDigest: input.previousDigest } : prev?.manifestDigest ? { previousDigest: prev.manifestDigest } : {}),
+      // Codex r7 B4:同 upsertRecordV2 —— 更新(prev 存在)在写点沿用 prev 当前 desiredState(锁内真值),
+      // 不用计划期传入值,防「计划读 enabled → 用户 disable → 提交复活」。批内同 key 后写基于累积态。
+      ...(prev ? { desiredState: prev.desiredState } : {}),
     }
     const check = decodeRecordV2(record)
     if (!check.ok) return { ok: false, reason: `refusing to write invalid record ${k}: ${check.errors.join("; ")}` }

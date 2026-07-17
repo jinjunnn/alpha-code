@@ -621,3 +621,31 @@ describe("upsert transaction exact-replay idempotency (REQ-099 #352)", () => {
     expect(next.record.previousDigest).toBe(`sha256:${"a".repeat(64)}`)
   })
 })
+
+// ── #395 Codex r7 B4:更新在写点(锁内 prev)决定 desiredState,不用计划期传入值 ──────────────────
+describe("#395 r7 B4 desiredState 写点优先", () => {
+  test("更新(prev 存在):计划期传入 enabled,但 prev 已 disabled → 沿用 prev,禁用不复活", () => {
+    const first = upsertRecordV2(root, upsertInput({ desiredState: "enabled" }))
+    expect(first.ok).toBe(true)
+    // 模拟用户中途 disable(set-state 通道)。
+    expect(setDesiredStateV2(root, "mcp", "markitdown", "disabled").ok).toBe(true)
+    // 更新事务用计划期(锁外)算的旧 enabled 提交 —— 必须被锁内 prev(disabled)覆盖。
+    const upd = upsertRecordV2(root, upsertInput({ desiredState: "enabled", manifestDigest: DIGEST_B }))
+    expect(upd.ok).toBe(true)
+    if (upd.ok) expect(upd.record.desiredState).toBe("disabled")
+  })
+
+  test("fresh(无 prev):用传入 desiredState(分类器值)", () => {
+    const w = upsertRecordV2(root, upsertInput({ desiredState: "disabled" }))
+    expect(w.ok).toBe(true)
+    if (w.ok) expect(w.record.desiredState).toBe("disabled")
+  })
+
+  test("批量 upsert 同样在写点沿用 prev(更新不复活禁用)", () => {
+    upsertRecordV2(root, upsertInput({ desiredState: "enabled" }))
+    expect(setDesiredStateV2(root, "mcp", "markitdown", "disabled").ok).toBe(true)
+    const batch = upsertRecordsV2(root, [upsertInput({ desiredState: "enabled", manifestDigest: DIGEST_B })])
+    expect(batch.ok).toBe(true)
+    if (batch.ok) expect(batch.records[0].desiredState).toBe("disabled")
+  })
+})
