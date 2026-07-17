@@ -10,7 +10,7 @@ import * as path from "node:path"
 
 mock.module("electron", () => ({ app: { isPackaged: false } }))
 
-const { agentInstallPresent, collectBuiltinAgentPayload, installBuiltinSkill, removeFsInstall, resourcesRoot, writeAgent, writeSkill } = await import("./ext-fs-installer")
+const { agentInstallPresent, collectBuiltinAgentPayload, collectVendoredPluginPayload, installBuiltinSkill, removeFsInstall, resourcesRoot, stageVendoredPluginVersioned, writeAgent, writeSkill } = await import("./ext-fs-installer")
 const { readLedger } = await import("./alpha-installs")
 
 let base = ""
@@ -283,5 +283,56 @@ describe("agentInstallPresent (REQ-100 #354)", () => {
     fs.mkdirSync(path.join(alphaDir, "agents"), { recursive: true })
     fs.writeFileSync(path.join(alphaDir, "agents", "helper.md"), "---\ndescription: d\n---\nbody")
     expect(agentInstallPresent("helper", { scope: "global" })).toBe(true)
+  })
+})
+
+describe("collectVendoredPluginPayload — #378 随包 plugin 载荷收集(只读;CAS 摄取源)", () => {
+  test("collects the real bundled plugin dir (byte-exact, POSIX rel paths, plugin.js present)", () => {
+    const r = collectVendoredPluginPayload("plugins/opencode-notify", "opencode-notify")
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const js = r.files.find((f) => f.path === "plugin.js")
+    expect(js).toBeDefined()
+    expect(js!.data.equals(fs.readFileSync(path.join(resourcesRoot(), "plugins", "opencode-notify", "plugin.js")))).toBe(true)
+    // 零副作用:资产原样(只读收集)
+    expect(fs.existsSync(path.join(resourcesRoot(), "plugins", "opencode-notify", "plugin.js"))).toBe(true)
+  })
+
+  test("missing asset / unsafe key / unsafe name refused", () => {
+    const ghost = collectVendoredPluginPayload("plugins/ghost-plugin", "ghost-plugin")
+    expect(ghost.ok).toBe(false)
+    if (!ghost.ok) expect(ghost.reason).toContain("未随此版本打包")
+    expect(collectVendoredPluginPayload("../evil", "x").ok).toBe(false)
+    expect(collectVendoredPluginPayload("plugins/opencode-notify", "../x").ok).toBe(false)
+  })
+
+  test("#378 r5:内容身份交叉 —— key ≠ plugins/<name> 拒(配错的 entry 不得按本名装入别的资产)", () => {
+    const drift = collectVendoredPluginPayload("plugins/opencode-notify", "other-name")
+    expect(drift.ok).toBe(false)
+    if (!drift.ok) expect(drift.reason).toContain("content identity drift")
+  })
+
+  test("r16:stageVendoredPluginVersioned 走同一收集合同 —— 落盘与收集器逐字节一致、零额外条目;收集器拒即 staging 拒", () => {
+    const c = collectVendoredPluginPayload("plugins/opencode-notify", "opencode-notify")
+    expect(c.ok).toBe(true)
+    if (!c.ok) return
+    const s = stageVendoredPluginVersioned("plugins/opencode-notify", "opencode-notify")
+    expect(s.ok).toBe(true)
+    if (!s.ok) return
+    expect(path.dirname(s.dir)).toBe(path.join(alphaDir, "plugins"))
+    const walked: string[] = []
+    const walk = (rel: string) => {
+      for (const n of fs.readdirSync(rel === "" ? s.dir : path.join(s.dir, rel))) {
+        const childRel = rel === "" ? n : `${rel}/${n}`
+        if (fs.lstatSync(path.join(s.dir, childRel)).isDirectory()) walk(childRel)
+        else walked.push(childRel)
+      }
+    }
+    walk("")
+    expect(walked.sort()).toEqual(c.files.map((f) => f.path).sort())
+    for (const f of c.files) expect(fs.readFileSync(path.join(s.dir, f.path)).equals(f.data)).toBe(true)
+    const ghost = stageVendoredPluginVersioned("plugins/ghost-plugin", "ghost-plugin")
+    expect(ghost.ok).toBe(false)
+    if (!ghost.ok) expect(ghost.reason).toContain("未随此版本打包")
   })
 })

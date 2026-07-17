@@ -298,6 +298,11 @@ type ParsedLedger = {
   recordWarnings: string[]
   receiptWarnings: string[]
   corruptRecords: CorruptRecords
+  /** #378 r17(Blocker):解码失败条目的**原文保全** —— 重建写盘时必须原样带回,否则任何一次
+   *  合法 upsert/remove 都会静默抹掉损坏记录及其所有权证据(不可逆数据丢失)。损坏 key 的
+   *  操作仍被各闸拒绝;保全只保证证据不因无关写入蒸发。 */
+  rawInvalidReceipts: unknown[]
+  rawCorruptRecords: unknown[]
 }
 
 /** 从损坏 record 原始对象里独立提取 kind:name(不经严格 decoder)。两者都是合法字符串且 kind 已知
@@ -334,22 +339,37 @@ export function probeLedgerForWrite(root: string): { ok: true } | { ok: false; r
   }
   if (!raw || typeof raw !== "object" || Array.isArray(raw))
     return { ok: false, reason: `install ledger corrupt (non-object root) — refusing to write; inspect ${ledgerPath(root)}` }
+  // r22 Major:提交面同样收信封 —— 未来版本拒写(读不懂的数据不得重建);records/receipts
+  // 非数组 = 损坏,拒(quarantine 不是提交路径)。
+  if ("v" in raw && raw.v !== undefined && raw.v !== 1 && raw.v !== 2) {
+    const vLabel = typeof raw.v === "number" || typeof raw.v === "string" ? raw.v : "unknown"
+    return { ok: false, reason: `install ledger envelope version ${vLabel} is newer than this build understands — refusing to write; inspect ${ledgerPath(root)}` }
+  }
+  if (("records" in raw && raw.records !== undefined && !Array.isArray(raw.records)) || ("receipts" in raw && raw.receipts !== undefined && !Array.isArray(raw.receipts)))
+    return { ok: false, reason: `install ledger corrupt (non-array records/receipts) — refusing to write; inspect ${ledgerPath(root)}` }
   return { ok: true }
 }
 
-function parseLedger(root: string): { parsed: ParsedLedger; corrupt: boolean } {
+/** r19 Major:readError = 文件在场但读失败(EIO/EACCES 等瞬时故障)—— 绝不折叠成「健康空账」,
+ *  否则 removeRecordV2 会 no-op 成功、卸载在记录仍在的情况下谎报完成。缺席(ENOENT/ENOTDIR)
+ *  才是合法空账。 */
+function parseLedger(root: string): { parsed: ParsedLedger; corrupt: boolean; readError?: string } {
   const empty: ParsedLedger = {
     receipts: [],
     records: [],
     recordWarnings: [],
     receiptWarnings: [],
     corruptRecords: { corruptKeys: new Set(), unattributable: false },
+    rawInvalidReceipts: [],
+    rawCorruptRecords: [],
   }
   let text: string
   try {
     text = fs.readFileSync(ledgerPath(root), "utf8")
-  } catch {
-    return { parsed: empty, corrupt: false }
+  } catch (error) {
+    const code = error instanceof Error && "code" in error && typeof error.code === "string" ? error.code : null
+    if (code === "ENOENT" || code === "ENOTDIR") return { parsed: empty, corrupt: false }
+    return { parsed: empty, corrupt: false, readError: `install ledger unreadable (${error instanceof Error ? error.message : String(error)}): ${ledgerPath(root)}` }
   }
   let raw: unknown
   try {
@@ -358,16 +378,30 @@ function parseLedger(root: string): { parsed: ParsedLedger; corrupt: boolean } {
     return { parsed: empty, corrupt: true }
   }
   if (!isObj(raw)) return { parsed: empty, corrupt: true }
+  // r22 Major:信封收口 —— 未来版本信封(v 非 1/2)拒触碰(不是损坏,是本构建读不懂的数据,
+  // 重建 = 摧毁);records/receipts 非数组不得折叠成「空」(下一次 upsert 整文件重建会连同
+  // 所有权证据一起抹掉)—— 按损坏文件处理(写路径 quarantine 保字节 + 响亮警告)。
+  if (raw.v !== undefined && raw.v !== 1 && raw.v !== 2) {
+    const vLabel = typeof raw.v === "number" || typeof raw.v === "string" ? raw.v : "unknown"
+    return { parsed: empty, corrupt: false, readError: `install ledger envelope version ${vLabel} is newer than this build understands — refusing to touch it: ${ledgerPath(root)}` }
+  }
+  if ((raw.records !== undefined && !Array.isArray(raw.records)) || (raw.receipts !== undefined && !Array.isArray(raw.receipts)))
+    return { parsed: empty, corrupt: true }
   const receipts: InstallReceipt[] = []
   const receiptWarnings: string[] = []
+  const rawInvalidReceipts: unknown[] = []
   if (Array.isArray(raw.receipts)) {
     for (const entry of raw.receipts) {
       if (validateReceipt(entry as InstallReceipt) === null) receipts.push(entry as InstallReceipt)
-      else receiptWarnings.push(`invalid v1 receipt ignored in ${ledgerPath(root)}`)
+      else {
+        receiptWarnings.push(`invalid v1 receipt ignored in ${ledgerPath(root)}`)
+        rawInvalidReceipts.push(entry)
+      }
     }
   }
   const records: InstallRecordV2[] = []
   const recordWarnings: string[] = []
+  const rawCorruptRecords: unknown[] = []
   const corruptKeys = new Set<string>()
   let unattributable = false
   if (Array.isArray(raw.records)) {
@@ -378,13 +412,26 @@ function parseLedger(root: string): { parsed: ParsedLedger; corrupt: boolean } {
         continue
       }
       recordWarnings.push(`corrupt v2 record excluded (fail closed — not operable) in ${ledgerPath(root)}: ${decoded.errors[0]}`)
+      rawCorruptRecords.push(entry)
       const attributed = attemptCorruptKey(entry)
       if (attributed) corruptKeys.add(attributed)
       else unattributable = true
     }
   }
+  // r18:字节级证据侧写 —— 结构保全经 JSON.parse→stringify 会丢重复键/原始词法;首次观测到
+  // 损坏条目即把**原文件字节**按损坏集哈希落 `installs.json.evidence-<hex12>`(同一损坏集只落
+  // 一份,后续重写不再增殖),取证不依赖工作文件。尽力而为:失败不阻塞(结构保全兜底)。
+  if (rawCorruptRecords.length > 0 || rawInvalidReceipts.length > 0) {
+    try {
+      const setDigest = sha256Hex(Buffer.from(JSON.stringify({ rawCorruptRecords, rawInvalidReceipts }), "utf8")).slice(0, 12)
+      const evidence = `${ledgerPath(root)}.evidence-${setDigest}`
+      if (!fs.existsSync(evidence)) fs.writeFileSync(evidence, text, { flag: "wx" })
+    } catch {
+      /* 证据侧写尽力而为 */
+    }
+  }
   return {
-    parsed: { receipts, records, recordWarnings, receiptWarnings, corruptRecords: { corruptKeys, unattributable } },
+    parsed: { receipts, records, recordWarnings, receiptWarnings, corruptRecords: { corruptKeys, unattributable }, rawInvalidReceipts, rawCorruptRecords },
     corrupt: false,
   }
 }
@@ -400,7 +447,9 @@ function quarantineCorrupt(root: string): string | null {
   }
 }
 
-function writeLedgerFile(root: string, receipts: InstallReceipt[], records: InstallRecordV2[]): { ok: true } | { ok: false; reason: string } {
+/** r17(Blocker):receipts/records 接受 unknown —— 重建视图必须能原样携带解码失败条目
+ *  (rawInvalidReceipts/rawCorruptRecords),序列化本就与类型无关。 */
+function writeLedgerFile(root: string, receipts: readonly unknown[], records: readonly unknown[]): { ok: true } | { ok: false; reason: string } {
   try {
     fs.mkdirSync(root, { recursive: true })
     const file = ledgerPath(root)
@@ -415,8 +464,8 @@ function writeLedgerFile(root: string, receipts: InstallReceipt[], records: Inst
 
 /** Read the dual ledger. Corrupt FILE → empty + warning(写路径会 quarantine);corrupt record → excluded + warning。 */
 export function readLedgerV2(root: string): LedgerV2Read {
-  const { parsed, corrupt } = parseLedger(root)
-  const warnings = [...parsed.recordWarnings, ...parsed.receiptWarnings]
+  const { parsed, corrupt, readError } = parseLedger(root)
+  const warnings = [...(readError ? [readError] : []), ...parsed.recordWarnings, ...parsed.receiptWarnings]
   if (corrupt) warnings.push(`installs.json unreadable: ${ledgerPath(root)}`)
   const recordKeys = new Set(parsed.records.map((r) => key(r.kind, r.name)))
   const v1Only = parsed.receipts.filter((r) => !recordKeys.has(key(r.type, r.name)))
@@ -442,7 +491,8 @@ export type UninstallLookup =
   | { status: "absent" }
 
 export function lookupForUninstall(root: string, kind: InstallReceiptType, name: string): UninstallLookup {
-  const { parsed, corrupt } = parseLedger(root)
+  const { parsed, corrupt, readError } = parseLedger(root)
+  if (readError) return { status: "ledger-corrupt", reason: readError }
   if (corrupt) return { status: "ledger-corrupt", reason: `installs.json unreadable: ${ledgerPath(root)}` }
   const k = key(kind, name)
   const record = parsed.records.find((r) => r.kind === kind && r.name === name)
@@ -521,7 +571,8 @@ function replayVerdict(
  * by the caller if desired). Writes BOTH views in lockstep for this key; other entries untouched.
  */
 export function upsertRecordV2(root: string, input: UpsertInput): LedgerV2Write {
-  const { parsed, corrupt } = parseLedger(root)
+  const { parsed, corrupt, readError } = parseLedger(root)
+  if (readError) return { ok: false, reason: `${readError} — refusing to write` }
   const warnings: string[] = [...parsed.recordWarnings, ...parsed.receiptWarnings]
   if (corrupt) {
     const q = quarantineCorrupt(root)
@@ -532,6 +583,12 @@ export function upsertRecordV2(root: string, input: UpsertInput): LedgerV2Write 
   const verdict = replayVerdict(prev, input)
   if (verdict.kind === "replay") return { ok: true, record: verdict.record, warnings }
   if (verdict.kind === "conflict") return { ok: false, reason: verdict.reason }
+  // r17(Blocker):同 key 存在解码失败记录 = 所有权无从证明,拒写(证据由原文保全带回,人工
+  // 处置后重试);unattributable 损坏连 key 都提不出,任何 fresh 写都无法自证不与其同 key,同拒。
+  if (parsed.corruptRecords.corruptKeys.has(k))
+    return { ok: false, reason: `refusing to write ${k}: ledger holds a corrupt v2 record for this key (fail closed — inspect ${ledgerPath(root)})` }
+  if (parsed.corruptRecords.unattributable)
+    return { ok: false, reason: `refusing to write ${k}: ledger holds an unattributable corrupt v2 record (fail closed — inspect ${ledgerPath(root)})` }
   const hadV1 = parsed.receipts.some((r) => key(r.type, r.name) === k)
   const record: InstallRecordV2 = {
     ...input,
@@ -541,8 +598,8 @@ export function upsertRecordV2(root: string, input: UpsertInput): LedgerV2Write 
   }
   const check = decodeRecordV2(record)
   if (!check.ok) return { ok: false, reason: `refusing to write invalid record: ${check.errors.join("; ")}` }
-  const nextRecords = [...parsed.records.filter((r) => key(r.kind, r.name) !== k), check.record]
-  const nextReceipts = [...parsed.receipts.filter((r) => key(r.type, r.name) !== k), toV1Receipt(check.record)]
+  const nextRecords = [...parsed.records.filter((r) => key(r.kind, r.name) !== k), check.record, ...parsed.rawCorruptRecords]
+  const nextReceipts = [...parsed.receipts.filter((r) => key(r.type, r.name) !== k), toV1Receipt(check.record), ...parsed.rawInvalidReceipts]
   const written = writeLedgerFile(root, nextReceipts, nextRecords)
   if (!written.ok) return written
   return { ok: true, record: check.record, warnings }
@@ -555,7 +612,8 @@ export type LedgerV2BatchWrite = { ok: true; records: InstallRecordV2[]; warning
  * 任一 record 非法即整批拒绝(不留半套 receipt)。同一账本内解析一次,按输入顺序累积(同 key 后写覆盖)。 */
 export function upsertRecordsV2(root: string, inputs: UpsertInput[]): LedgerV2BatchWrite {
   if (inputs.length === 0) return { ok: false, reason: "batch upsert has no records" }
-  const { parsed, corrupt } = parseLedger(root)
+  const { parsed, corrupt, readError } = parseLedger(root)
+  if (readError) return { ok: false, reason: `${readError} — refusing to write` }
   const warnings: string[] = [...parsed.recordWarnings, ...parsed.receiptWarnings]
   if (corrupt) {
     const q = quarantineCorrupt(root)
@@ -574,6 +632,12 @@ export function upsertRecordsV2(root: string, inputs: UpsertInput[]): LedgerV2Ba
       committed.push(verdict.record) // 幂等:重放件原样计入,不递增 generation
       continue
     }
+    // r17(Blocker):fresh 写遇同 key 损坏记录/unattributable 损坏 = 拒整批(纯重放批在上方
+    // continue,零写盘不受影响 —— 恢复重放不因旧损坏被卡)。
+    if (parsed.corruptRecords.corruptKeys.has(k))
+      return { ok: false, reason: `refusing to write ${k}: ledger holds a corrupt v2 record for this key (fail closed — inspect ${ledgerPath(root)})` }
+    if (parsed.corruptRecords.unattributable)
+      return { ok: false, reason: `refusing to write ${k}: ledger holds an unattributable corrupt v2 record (fail closed — inspect ${ledgerPath(root)})` }
     freshWrites++
     const hadV1 = receiptKeys.has(k)
     const record: InstallRecordV2 = {
@@ -595,10 +659,12 @@ export function upsertRecordsV2(root: string, inputs: UpsertInput[]): LedgerV2Ba
   const finalRecords = [
     ...parsed.records.filter((r) => !committedKeys.has(key(r.kind, r.name))),
     ...committedKeys.size ? [...committedKeys].map((k) => recordsByKey.get(k)!) : [],
+    ...parsed.rawCorruptRecords, // r17(Blocker):原文保全,重建不得抹证据
   ]
   const finalReceipts = [
     ...parsed.receipts.filter((r) => !committedKeys.has(key(r.type, r.name))),
     ...[...committedKeys].map((k) => toV1Receipt(recordsByKey.get(k)!)),
+    ...parsed.rawInvalidReceipts,
   ]
   const written = writeLedgerFile(root, finalReceipts, finalRecords)
   if (!written.ok) return written
@@ -620,16 +686,24 @@ export function parseUninstallLedgerKey(key: string): { kind: InstallReceiptType
 }
 
 export function removeRecordV2(root: string, kind: InstallReceiptType, name: string): { ok: true; removed: InstallRecordV2 | null } | { ok: false; reason: string } {
-  const { parsed, corrupt } = parseLedger(root)
+  const { parsed, corrupt, readError } = parseLedger(root)
+  // r19 Major:读失败 ≠ 空账 —— 折叠成 no-op 成功会让卸载在记录仍在的情况下谎报完成。
+  if (readError) return { ok: false, reason: `${readError} — refusing to remove` }
   if (corrupt) quarantineCorrupt(root)
   const k = key(kind, name)
+  // r17(Blocker):同 key 损坏记录在场 = 无法证明删除目标不是它(lookupForUninstall 已挡装载面,
+  // 这里挡直接调用方);无关 key 的损坏条目原文保全带回,删除不得顺手蒸发证据。
+  if (parsed.corruptRecords.corruptKeys.has(k))
+    return { ok: false, reason: `refusing to remove ${k}: ledger holds a corrupt v2 record for this key (fail closed — inspect ${ledgerPath(root)})` }
+  if (parsed.corruptRecords.unattributable)
+    return { ok: false, reason: `refusing to remove ${k}: ledger holds an unattributable corrupt v2 record (fail closed — inspect ${ledgerPath(root)})` }
   const removed = parsed.records.find((r) => key(r.kind, r.name) === k) ?? null
   const hadReceipt = parsed.receipts.some((r) => key(r.type, r.name) === k)
   if (!removed && !hadReceipt && !corrupt) return { ok: true, removed: null }
   const written = writeLedgerFile(
     root,
-    parsed.receipts.filter((r) => key(r.type, r.name) !== k),
-    parsed.records.filter((r) => key(r.kind, r.name) !== k),
+    [...parsed.receipts.filter((r) => key(r.type, r.name) !== k), ...parsed.rawInvalidReceipts],
+    [...parsed.records.filter((r) => key(r.kind, r.name) !== k), ...parsed.rawCorruptRecords],
   )
   if (!written.ok) return written
   return { ok: true, removed }
@@ -637,15 +711,22 @@ export function removeRecordV2(root: string, kind: InstallReceiptType, name: str
 
 /** desiredState 翻转(Hub 项目上下文「禁用」的 main 侧真源;引擎生效面由消费方处理)。 */
 export function setDesiredStateV2(root: string, kind: InstallReceiptType, name: string, state: DesiredState): { ok: true } | { ok: false; reason: string } {
-  const { parsed } = parseLedger(root)
+  const { parsed, readError } = parseLedger(root)
+  if (readError) return { ok: false, reason: `${readError} — refusing to write` }
   const k = key(kind, name)
+  // r18:与 upsert/remove 同款损坏闸 —— 同 key 损坏所有权不明、unattributable 无从自证,
+  // desiredState 翻转同为写路径,一律拒(原文保全依旧带回,见下方重建)。
+  if (parsed.corruptRecords.corruptKeys.has(k))
+    return { ok: false, reason: `refusing to set desired state for ${k}: ledger holds a corrupt v2 record for this key (fail closed — inspect ${ledgerPath(root)})` }
+  if (parsed.corruptRecords.unattributable)
+    return { ok: false, reason: `refusing to set desired state for ${k}: ledger holds an unattributable corrupt v2 record (fail closed — inspect ${ledgerPath(root)})` }
   const rec = parsed.records.find((r) => key(r.kind, r.name) === k)
   if (!rec) return { ok: false, reason: `no v2 record for ${k} — fail closed (v1-only installs have no desired-state channel)` }
   const next: InstallRecordV2 = { ...rec, desiredState: state, updatedAt: new Date().toISOString() }
   const written = writeLedgerFile(
     root,
-    parsed.receipts,
-    [...parsed.records.filter((r) => key(r.kind, r.name) !== k), next],
+    [...parsed.receipts, ...parsed.rawInvalidReceipts],
+    [...parsed.records.filter((r) => key(r.kind, r.name) !== k), next, ...parsed.rawCorruptRecords],
   )
   return written.ok ? { ok: true } : written
 }
@@ -708,7 +789,8 @@ export function migrateV1Ledger(
   environment: AppEnvironment,
   projectDir?: string,
 ): { ok: true; migrated: number; retained: number; warnings: string[] } | { ok: false; reason: string } {
-  const { parsed, corrupt } = parseLedger(root)
+  const { parsed, corrupt, readError } = parseLedger(root)
+  if (readError) return { ok: false, reason: `${readError} — refusing to migrate` }
   if (corrupt) return { ok: false, reason: `installs.json unreadable: ${ledgerPath(root)} — refusing to migrate a corrupt ledger` }
   // Codex review #357 Blocker:信封严格校验 —— parseLedger 对顶层是宽容读(缺 v/未知键/非数组
   // 集合都静默当空),迁移的「解析→重写」会把未来版本或畸形账本改写成本构建形状并丢数据。
@@ -766,7 +848,7 @@ export function migrateV1Ledger(
     }
   }
   if (adopted.length === 0) return { ok: true, migrated: 0, retained, warnings }
-  const written = writeLedgerFile(root, parsed.receipts, [...parsed.records, ...adopted])
+  const written = writeLedgerFile(root, [...parsed.receipts, ...parsed.rawInvalidReceipts], [...parsed.records, ...adopted, ...parsed.rawCorruptRecords])
   if (!written.ok) return written
   return { ok: true, migrated: adopted.length, retained, warnings }
 }

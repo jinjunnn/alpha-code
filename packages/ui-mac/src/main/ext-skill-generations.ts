@@ -122,8 +122,27 @@ export function commitInputFromRecord(rec: TxCommitRecord): UpsertInput {
 export type SkillPayloadFile = { path: string; data: Buffer }
 
 /** 递归枚举 srcDir 为载荷(跳过 symlink;POSIX 相对路径)。用于 builtin skill(随包目录)。 */
-export function collectSkillPayloadFromDir(srcDir: string): { ok: true; files: SkillPayloadFile[] } | { ok: false; reason: string } {
+export function collectSkillPayloadFromDir(
+  srcDir: string,
+  // #378 r17(Major):读取**前**按 fstat.size 执行的帽 —— 全树读入内存后再拒,结构化拒绝
+  // 之前 main 进程可能已被超大载荷拖垮。缺省不设帽(既有 skill 调用方语义不变)。
+  caps?: { maxFileBytes: number; maxTotalBytes: number },
+): { ok: true; files: SkillPayloadFile[] } | { ok: false; reason: string } {
   const files: SkillPayloadFile[] = []
+  let total = 0
+  // r18:定长读 + 增长探测 —— fstat 后 inode 仍可增长,readFileSync(fd) 按当前大小分配会绕过
+  // 已执行的帽;只读 fstat 时的字节数,读毕再探 1 字节,有余量 = 文件在变,拒。
+  const readFdBounded = (fd: number, size: number): Buffer | null => {
+    const buf = Buffer.alloc(size)
+    let off = 0
+    while (off < size) {
+      const n = fs.readSync(fd, buf, off, size - off, off)
+      if (n <= 0) return null
+      off += n
+    }
+    const probe = Buffer.alloc(1)
+    return fs.readSync(fd, probe, 0, 1, size) > 0 ? null : buf
+  }
   const walk = (relDir: string): string | null => {
     const abs = relDir ? path.join(srcDir, relDir) : srcDir
     for (const entry of fs.readdirSync(abs, { withFileTypes: true })) {
@@ -133,7 +152,26 @@ export function collectSkillPayloadFromDir(srcDir: string): { ok: true; files: S
         const err = walk(rel)
         if (err) return err
       } else if (entry.isFile()) {
-        files.push({ path: rel, data: fs.readFileSync(path.join(srcDir, rel)) })
+        // r17(Major):Dirent 判定与按路径 readFileSync 之间可被换成 symlink —— O_NOFOLLOW fd
+        // 绑定身份后 fstat 复验 + 从同一 fd 读取,绝不追随检查后换入的链接。
+        let fd: number
+        try {
+          fd = fs.openSync(path.join(srcDir, rel), fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW)
+        } catch {
+          return `unreadable file (symlink swap?): ${rel}`
+        }
+        try {
+          const st = fs.fstatSync(fd)
+          if (!st.isFile()) return `unsupported entry: ${rel}`
+          if (caps && st.size > caps.maxFileBytes) return `payload file "${rel}" exceeds ${caps.maxFileBytes} bytes — refused`
+          if (caps && total + st.size > caps.maxTotalBytes) return `payload exceeds ${caps.maxTotalBytes} bytes total — refused`
+          total += st.size
+          const data = readFdBounded(fd, st.size)
+          if (data === null) return `file changed while reading: ${rel}`
+          files.push({ path: rel, data })
+        } finally {
+          fs.closeSync(fd)
+        }
       } else {
         return `unsupported entry: ${rel}`
       }

@@ -8,12 +8,14 @@ import * as os from "node:os"
 import * as path from "node:path"
 import {
   readCurrentGeneration,
+  readTransactionJournal,
   recoverExtensionTransactions,
   runExtensionTransaction,
   type TxCommitRecord,
   type TxHooks,
   type TxPlan,
 } from "./ext-transaction"
+import { restoreConfigImage } from "./ext-config-tx"
 
 let root: string
 let cfg: string
@@ -48,6 +50,171 @@ const genHooks = (body: string, extra: Partial<TxHooks> = {}): TxHooks => ({
 })
 
 describe("config action", () => {
+  test("#378:config target 圈禁事务根 —— root 外绝对路径在 validate 期拒绝(与恢复侧对称)", async () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "ext-tx-out-"))
+    try {
+      const r = await runExtensionTransaction(
+        root,
+        {
+          items: [
+            {
+              key: "mcp--x",
+              action: "config" as const,
+              config: { target: path.join(outside, "alpha.jsonc"), edits: [{ keyPath: ["mcp", "x"], value: { type: "local" } }] },
+              manifestDigest: `sha256:${sha("x")}`,
+            },
+          ],
+        },
+        { populate: noop, commitReceipt: noop, log: noop },
+      )
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.reason).toContain("escapes the transaction root")
+      expect(fs.existsSync(path.join(outside, "alpha.jsonc"))).toBe(false) // 零写盘
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  test("#378 r13:同一物理文件的别名 config target(sub/../)在 validate 期拒绝", async () => {
+    const aliased = `${root}${path.sep}sub${path.sep}..${path.sep}alpha.jsonc` // 不经 join 归一的原始别名
+    const r = await runExtensionTransaction(
+      root,
+      {
+        items: [
+          configItem("mcp--a", "a", { type: "local" }),
+          { key: "mcp--b", action: "config" as const, config: { target: aliased, edits: [{ keyPath: ["mcp", "b"], value: { type: "local" } }] }, manifestDigest: `sha256:${sha("b")}` },
+        ],
+      },
+      { populate: noop, commitReceipt: noop, log: noop },
+    )
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("aliased config target")
+    expect(fs.existsSync(cfg)).toBe(false) // 零写盘
+  })
+
+  test("#378 r2:restore preimage 写失败(目录只读)走结果通道,不抛 —— 引擎按 blocked 保留而非 reject 悬锁", () => {
+    if (typeof process.getuid === "function" && process.getuid() === 0) return // root 下 0o555 仍可写
+    const sub = path.join(root, "ro")
+    fs.mkdirSync(sub, { recursive: true })
+    const target = path.join(sub, "alpha.jsonc")
+    const pre = "{}"
+    const next = JSON.stringify({ mcp: { a: { type: "local" } } })
+    fs.writeFileSync(target, next)
+    fs.chmodSync(sub, 0o555)
+    try {
+      const r = restoreConfigImage({ target, preImage: pre, nextImage: next, preDigest: sha(pre), nextDigest: sha(next) })
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.reason).toContain("preimage write failed")
+    } finally {
+      fs.chmodSync(sub, 0o755)
+    }
+  })
+
+  test("#378 r10:同 target 双 config item(链式 image)—— switching 后零 apply 崩溃,恢复干净回滚", async () => {
+    writeCfg({ mcp: { seed: { type: "local" } } })
+    const before = fs.readFileSync(cfg, "utf8")
+    const plan: TxPlan = { items: [configItem("mcp--a", "a", { type: "local" }), configItem("mcp--b", "b", { type: "remote", url: "https://x/sse" })] }
+    let crashed = false
+    try {
+      await runExtensionTransaction(root, plan, { populate: noop, commitReceipt: noop, log: noop, crashAt: "after-switching-journal" })
+    } catch {
+      crashed = true
+    }
+    expect(crashed).toBe(true)
+    expect(fs.readFileSync(cfg, "utf8")).toBe(before) // 尚未 apply,live=链首前像
+    const rec = await recoverExtensionTransactions(root, { commitReceipt: noop, pidAlive: () => false, log: noop })
+    expect(rec.ok).toBe(true)
+    // r10 前:item_b 期望中间前像 → divergence 永久保留;现在按链判 live=pre_0 → 干净回滚
+    expect(rec.reports[0]?.action).toBe("rolled-back")
+    expect(fs.readFileSync(cfg, "utf8")).toBe(before)
+  })
+
+  test("#378 r11:同 target 双 config 链完整提交(after-switched 崩溃)→ 恢复前滚 committed(不整体回滚)", async () => {
+    writeCfg({ mcp: { seed: { type: "local" } } })
+    const plan: TxPlan = { items: [configItem("mcp--a", "a", { type: "local" }), configItem("mcp--b", "b", { type: "remote", url: "https://x/sse" })] }
+    let crashed = false
+    try {
+      await runExtensionTransaction(root, plan, { populate: noop, commitReceipt: noop, log: noop, crashAt: "after-switched" })
+    } catch {
+      crashed = true
+    }
+    expect(crashed).toBe(true)
+    expect(readCfg().mcp.a).toEqual({ type: "local" })
+    expect(readCfg().mcp.b).toEqual({ type: "remote", url: "https://x/sse" }) // 链已完整生效
+    const received: TxCommitRecord[][] = []
+    const rec = await recoverExtensionTransactions(root, {
+      probe: () => ({ healthy: true }),
+      commitReceipt: (r) => void received.push(r),
+      pidAlive: () => false,
+      log: noop,
+    })
+    expect(rec.ok).toBe(true)
+    // r11 前:链首 item 用中间 nextDigest 判翻转恒 false → 完整提交的事务被整体回滚
+    expect(rec.reports[0]?.action).toBe("resumed-committed")
+    expect(readCfg().mcp.a).toEqual({ type: "local" })
+    expect(readCfg().mcp.b).toEqual({ type: "remote", url: "https://x/sse" })
+    expect(received.flat().map((r) => r.key).sort()).toEqual(["mcp--a", "mcp--b"])
+  })
+
+  test("#378 r19:同 target 链前向回滚(receipt 失败)→ 干净 rolled-back,不被陈旧中间前像误冻结", async () => {
+    writeCfg({ mcp: { seed: { type: "local" } } })
+    const before = fs.readFileSync(cfg, "utf8")
+    const plan: TxPlan = { items: [configItem("mcp--a", "a", { type: "local" }), configItem("mcp--b", "b", { type: "remote", url: "https://x/sse" })] }
+    const r = await runExtensionTransaction(root, plan, {
+      populate: noop,
+      commitReceipt: () => {
+        throw new Error("receipt boom")
+      },
+      log: noop,
+    })
+    expect(r.ok).toBe(false)
+    if (r.ok || !r.txId) throw new Error("expected failed tx with txId")
+    // r19 前:逆序恢复把中间前像 B 与链首前像 A 双记账,终态重验拿 live=A 对比陈旧 B →
+    // 误判旁路漂移,成功回滚被永久冻结成非终态(fileBlocked)。
+    expect(readTransactionJournal(root, r.txId)?.state).toBe("rolled-back")
+    expect(fs.readFileSync(cfg, "utf8")).toBe(before) // 链首前像完整复原
+  })
+
+  test("#378 r10:同 target 链中途 apply 停摆(live=中间 next)→ 恢复写回链首前像", async () => {
+    writeCfg({ mcp: { seed: { type: "local" } } })
+    const before = fs.readFileSync(cfg, "utf8")
+    const plan: TxPlan = { items: [configItem("mcp--a", "a", { type: "local" }), configItem("mcp--b", "b", { type: "remote", url: "https://x/sse" })] }
+    let crashed = false
+    try {
+      await runExtensionTransaction(root, plan, { populate: noop, commitReceipt: noop, log: noop, crashAt: "mid-switch" })
+    } catch {
+      crashed = true
+    }
+    expect(crashed).toBe(true)
+    expect(readCfg().mcp.a).toEqual({ type: "local" }) // item_a 已 apply(中间态)
+    expect(readCfg().mcp.b).toBeUndefined()
+    const rec = await recoverExtensionTransactions(root, { commitReceipt: noop, pidAlive: () => false, log: noop })
+    expect(rec.ok).toBe(true)
+    expect(rec.reports[0]?.action).toBe("rolled-back")
+    expect(fs.readFileSync(cfg, "utf8")).toBe(before) // 写回链首前像
+  })
+
+  test("#378 r1:config 恢复被旁路改写挡住 → journal 保留非终态(不终态化为 rolled-back)", async () => {
+    writeCfg({ mcp: { a: { type: "old" } } })
+    const r = await runExtensionTransaction(root, { items: [configItem("mcp--a", "a", { type: "new" })] }, {
+      populate: noop,
+      log: noop,
+      commitReceipt: () => {
+        // receipt 失败前旁路改写 target → 回滚时 live 与 next/pre 均不符 → restore 拒
+        fs.writeFileSync(cfg, JSON.stringify({ mcp: { a: { type: "bypass" } } }))
+        throw new Error("receipt sink failed")
+      },
+    })
+    expect(r.ok).toBe(false)
+    if (r.ok) throw new Error("unreachable")
+    expect(r.reason).toContain("retained non-terminal")
+    const journal = readTransactionJournal(root, r.txId!)
+    expect(journal).not.toBeNull()
+    expect(journal!.state).not.toBe("rolled-back")
+    expect(journal!.state).not.toBe("committed")
+    expect(readCfg().mcp.a.type).toBe("bypass") // 留证:不复原、不覆盖
+  })
+
   test("config 装进 live alpha.jsonc + 提交 config receipt", async () => {
     const received: TxCommitRecord[][] = []
     const r = await runExtensionTransaction(root, { items: [configItem("mcp--a", "a", { type: "local" })] }, {

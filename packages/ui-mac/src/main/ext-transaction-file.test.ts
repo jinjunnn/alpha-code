@@ -121,6 +121,30 @@ describe("file action in runExtensionTransaction (REQ-102 #358)", () => {
     for (const j of listTransactionJournals(root)) expect(j.state).toBe("rolled-back")
   })
 
+  test("#378 r2:config 恢复被旁路改写挡住 → 冻结,file item 不被回滚 unlink(载荷保留)", async () => {
+    const r = await runExtensionTransaction(root, planFor(MD), {
+      populate: noop,
+      probe: fileProbe(MD),
+      log: noop,
+      commitReceipt: () => {
+        // receipt 失败前旁路改写 config target → 回滚时 config 恢复被拒(既非 pre 也非 next)
+        writeFileSync(cfgTarget, JSON.stringify({ agent: { demo: { bypass: true } } }))
+        throw new Error("receipt sink failed")
+      },
+    })
+    expect(r.ok).toBe(false)
+    if (r.ok) throw new Error("unreachable")
+    expect(r.reason).toContain("retained non-terminal")
+    // 冻结:file item 保留(live config 语义上仍可能指向它),绝不 unlink 制造「配置指向缺失载荷」
+    expect(existsSync(MD_PATH())).toBe(true)
+    expect(readFileSync(MD_PATH(), "utf8")).toBe(MD)
+    // journal 非终态(留待 recovery/人工)
+    for (const j of listTransactionJournals(root)) {
+      expect(j.state).not.toBe("rolled-back")
+      expect(j.state).not.toBe("committed")
+    }
+  })
+
   test("zero-byte preimage is restored as a zero-byte FILE (absent ≠ empty, Codex 裁决 B)", async () => {
     mkdirSync(join(root, "agents"), { recursive: true })
     writeFileSync(MD_PATH(), "") // 存在但零字节
@@ -179,6 +203,66 @@ describe("file action in runExtensionTransaction (REQ-102 #358)", () => {
     expect(agentLeaf()).toBeUndefined() // config 已幂等回滚(下轮 noop)
     const j = listTransactionJournals(root)[0]
     expect(j.state).toBe("switched") // 非终态保留 → 写方 gate 继续阻断
+  })
+
+  test("#378 r3/r4:config staging 丢失 —— live 可证明在 pre 态 = 安全 no-op 完成回滚(不误冻结)", async () => {
+    let crashed = false
+    try {
+      await runExtensionTransaction(root, planFor(MD), hooksFor({ crashAt: "mid-switch" }))
+    } catch (error) {
+      crashed = error instanceof ExtTxCrashError
+    }
+    expect(crashed).toBe(true)
+    expect(readFileSync(MD_PATH(), "utf8")).toBe(MD) // file 已翻转,config 未翻转(live=pre)
+    const stagingRoot = join(root, "ext-tx", "staging")
+    const dirs = readdirSync(stagingRoot)
+    const txDir = join(stagingRoot, dirs[0] ?? "")
+    for (const f of readdirSync(txDir)) if (f.startsWith("config-")) rmSync(join(txDir, f), { force: true })
+    const rec = await recoverExtensionTransactions(root, { probe: fileProbe(MD), commitReceipt: noop, pidAlive: () => false, log: noop })
+    expect(rec.ok).toBe(true)
+    // r4:config 回滚是可证明的 no-op(live digest = pre)→ 正常回滚收敛而非冻结卡死后续写
+    expect(existsSync(MD_PATH())).toBe(false) // file unlink 回缺席
+    const j = listTransactionJournals(root)[0]
+    expect(j.state).toBe("rolled-back")
+  })
+
+  test("#378 r4:config 已翻转 + staging 丢失 = 真失据 → 冻结保留,file 不被触碰", async () => {
+    // config 先、file 后:mid-switch = config 已翻转(live=next)、file 未翻转
+    const planConfigFirst: TxPlan = {
+      items: [
+        {
+          key: "agent--demo--config",
+          action: "config",
+          config: { target: cfgTarget, edits: [{ keyPath: ["agent", "demo"], value: { description: "demo agent", prompt: "body" } }] },
+        },
+        {
+          key: "agent--demo",
+          action: "file",
+          file: { relTarget: "agents/demo.md", next: Buffer.from(MD), requireAbsent: true },
+          receipt: { id: "agent:demo", name: "demo" },
+        },
+      ],
+    }
+    let crashed = false
+    try {
+      await runExtensionTransaction(root, planConfigFirst, hooksFor({ crashAt: "mid-switch" }))
+    } catch (error) {
+      crashed = error instanceof ExtTxCrashError
+    }
+    expect(crashed).toBe(true)
+    expect(agentLeaf()).toEqual({ description: "demo agent", prompt: "body" }) // config 已翻转
+    expect(existsSync(MD_PATH())).toBe(false) // file 未翻转
+    const stagingRoot = join(root, "ext-tx", "staging")
+    const dirs = readdirSync(stagingRoot)
+    const txDir = join(stagingRoot, dirs[0] ?? "")
+    for (const f of readdirSync(txDir)) if (f.startsWith("config-")) rmSync(join(txDir, f), { force: true })
+    const rec = await recoverExtensionTransactions(root, { probe: fileProbe(MD), commitReceipt: noop, pidAlive: () => false, log: noop })
+    expect(rec.ok).toBe(true)
+    expect(recoveryClean(rec)).toBe(false)
+    // live=next 且失据:无从安全复原 → 冻结非终态,config 保持现状(不盲改)
+    expect(agentLeaf()).toEqual({ description: "demo agent", prompt: "body" })
+    const j = listTransactionJournals(root)[0]
+    expect(j.state).toBe("switching")
   })
 
   test("恢复期 staging 丢失 = 失据 → 保留非终态,零改动(review Blocker 3)", async () => {

@@ -12,10 +12,12 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { randomUUID } from "node:crypto"
+import { fileURLToPath } from "node:url"
 import { applyEdits, modify, parse, type ParseError } from "jsonc-parser"
 import type { ProviderInput } from "../shared/alpha-model-types"
 import type { InstallMeta } from "../preload/types"
 import { opencodeHomeDir } from "./alpha-bridge"
+import { collectMcpFileRefPaths, gcMcpSecretVersionsLocked, pathIdentity, resolveMcpRefPath } from "./alpha-mcp-secrets"
 import { alphaGlobalRoot, removeReceipt } from "./alpha-installs"
 import { alphaJsoncPath } from "./engine-config-truth"
 import { commandHeadBase } from "./platform"
@@ -429,9 +431,11 @@ export function readPluginArrayStrict(): { ok: true; value: unknown[] } | { ok: 
     const v = parsed?.plugin
     if (v === undefined) return { ok: true, value: [] }
     if (!Array.isArray(v)) return { ok: false, reason: "config plugin key is not an array — refusing plugin replace" }
-    // review #381 minor:元素必须全为字符串 —— 非法成员(object/null)不许被替换流原样保留。
-    if (!v.every((x) => typeof x === "string"))
-      return { ok: false, reason: "config plugin[] contains non-string entries — refusing plugin replace (fix the config first)" }
+    // review #381 minor + #378 r4/r5:引擎 V1 schema 的合法成员 = string 或**恰** [string, Record]
+    // 元组(core/v1/config/plugin.ts Spec)—— 元组不许被误拒(带 options 的既有插件让无关新装
+    // 假阳性失败),但 ["x"]/["x", null]/多余元素这类引擎非法形状同样拒(不许被写流原样保留)。
+    if (!v.every(legalPluginEntry))
+      return { ok: false, reason: "config plugin[] contains invalid entries (neither string nor [spec, options]) — refusing (fix the config first)" }
     return { ok: true, value: v }
   } catch (error) {
     return { ok: false, reason: `config unreadable: ${error instanceof Error ? error.message : String(error)}` }
@@ -461,6 +465,66 @@ export function readAgentEntryStrict(
 export function restoreMcpLeaf(name: string, value: Record<string, unknown> | undefined): ConfigResult {
   if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid server name" }
   return writeKey(mcpPluginTargetPath(), ["mcp", name], value)
+}
+
+/** #378 r7/r10:全部 legacy 源 mcp.<name> leaf 的 {file:} 引用集(各按其文件目录解析;
+ *  语法/形状损坏或不可读 = 引用集不可信,strict 失败)。GC 与安装失败清理共用。 */
+export function collectLegacyMcpRefPathsStrict(name: string): { ok: true; refs: string[] } | { ok: false; reason: string } {
+  if (!SAFE_NAME.test(name)) return { ok: false, reason: `invalid server name: ${name}` }
+  const isRec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
+  const refs: string[] = []
+  for (const file of legacyConfigPaths(mcpPluginTargetPath())) {
+    try {
+      if (!fs.existsSync(file)) continue
+      const errors: ParseError[] = []
+      const parsed: unknown = parse(fs.readFileSync(file, "utf8"), errors)
+      if (errors.length > 0) return { ok: false, reason: `legacy config unparseable: ${file}` }
+      if (parsed !== undefined && !isRec(parsed)) return { ok: false, reason: `legacy config root is not an object: ${file}` }
+      const mcpMap = isRec(parsed) ? parsed.mcp : undefined
+      // r11 Major:mcp 值形状非法(数组/标量)不得折叠成「无引用」—— 修好形状后引用复活而
+      // 密钥已被按零引用清理,strict 合同一致性。
+      if (mcpMap !== undefined && !isRec(mcpMap)) return { ok: false, reason: `legacy config mcp key has unexpected shape: ${file}` }
+      const legacyLeaf = isRec(mcpMap) ? mcpMap[name] : undefined
+      if (legacyLeaf === undefined) continue
+      const legacyDir = path.dirname(file)
+      for (const p of collectMcpFileRefPaths(legacyLeaf)) refs.push(resolveMcpRefPath(p, legacyDir))
+    } catch (error) {
+      return { ok: false, reason: `legacy config unreadable: ${file}: ${error instanceof Error ? error.message : String(error)}` }
+    }
+  }
+  return { ok: true, refs }
+}
+
+/** #378(Codex 裁决 Q1):安装成功后的密钥版本 GC —— 配置锁内读当前 mcp.<name> leaf 收集
+ *  {file:} 引用集,交 gcMcpSecretVersionsLocked 收未引用且过宽限的版本/flat/快照残留。锁在途
+ *  (busy)= 跳过本轮(GC 是 best-effort,残留由下次安装/卸载收),绝不阻塞安装成功路径。
+ *  review r1 Major:引用集读取必须 **strict** —— 容错读把「配置暂不可读/损坏」折叠成
+ *  undefined = 零引用,会让 GC 把仍被引用的版本全删;读不出可信引用集就整轮安全退出,
+ *  leaf 缺席(刚成功的安装不可能缺席)同样拒绝零引用清扫。 */
+export function gcMcpSecretsAgainstConfig(userDataPath: string, name: string): { removed: string[]; warnings: string[] } {
+  if (!SAFE_NAME.test(name)) return { removed: [], warnings: [`invalid server name: ${name}`] }
+  const r = withConfigWriteLock(() => {
+    const leaf = readMcpLeafStrict(name)
+    if (!leaf.ok) return { removed: [], warnings: [`secret gc skipped for ${name}: ${leaf.reason}`] }
+    if (leaf.value === undefined)
+      return { removed: [], warnings: [`secret gc skipped for ${name}: mcp leaf absent — refusing a zero-reference sweep`] }
+    // r4/r5 Major:引用集按引擎解析语义规范化(resolveMcpRefPath:先展开 ~/,再按 config
+    // 文件所在目录 resolve 相对)—— 任何等价形态被误判未引用都会删掉在用密钥。
+    const configDir = path.dirname(mcpPluginTargetPath())
+    const referenced = collectMcpFileRefPaths(leaf.value).map((p) => resolveMcpRefPath(p, configDir))
+    // r7 Blocker:引擎在主配置之后还合并 retained home(~/.opencode)/XDG 等 legacy 源 ——
+    // 其 mcp.<name> leaf 可能仍引用更旧的版本目录或 flat 密钥;引用集漏掉它们,GC 会删掉
+    // 合并视图仍在用的凭证。任一 legacy 源不可读/解析失败 = 引用集不可信,整轮安全退出。
+    const legacyRefs = collectLegacyMcpRefPathsStrict(name)
+    if (!legacyRefs.ok) return { removed: [], warnings: [`secret gc skipped for ${name}: ${legacyRefs.reason}`] }
+    referenced.push(...legacyRefs.refs)
+    // r8 Major:兄弟备份活体排除 —— 在册名读不出 = 引用集同源不可信,整轮安全退出。
+    const live = listConfiguredMcpServerNamesStrict()
+    if (!live.ok) return { removed: [], warnings: [`secret gc skipped for ${name}: ${live.reason}`] }
+    const liveNames = new Set(live.names)
+    return gcMcpSecretVersionsLocked(userDataPath, name, referenced, (cand) => liveNames.has(cand))
+  })
+  return "removed" in r ? r : { removed: [], warnings: [r.reason] }
 }
 
 /** 读 agent.<name> 当前条目(writeAgent 覆盖/补偿用 before-image)。 */
@@ -715,6 +779,106 @@ export function pluginRecordName(pkg: string): string {
   return pkgBase(pkg).replace(/^@/, "").replace("/", "__")
 }
 
+/** plugin[] 成员的引擎合法形状(V1 schema:string 或恰 [string, Record])。 */
+function legalPluginEntry(x: unknown): boolean {
+  return (
+    typeof x === "string" ||
+    (Array.isArray(x) && x.length === 2 && typeof x[0] === "string" && !!x[1] && typeof x[1] === "object" && !Array.isArray(x[1]))
+  )
+}
+
+/** #378 r8(Major):全配置源(主 + legacy)在册 MCP server 名集合 —— 兄弟级备份判别的活体
+ *  排除种子:`foo.bak-<hex8>` 完全可以是另一个**合法在册 server** 的名字,只按名字模式删除会
+ *  吊销别家在用凭证。任一源不可读/解析失败 = 集合不可信(strict 调用方必须失败)。 */
+export function listConfiguredMcpServerNamesStrict(): { ok: true; names: string[] } | { ok: false; reason: string } {
+  const names = new Set<string>()
+  const isRec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
+  for (const file of [mcpPluginTargetPath(), ...legacyConfigPaths(mcpPluginTargetPath())]) {
+    try {
+      if (!fs.existsSync(file)) continue
+      const errors: ParseError[] = []
+      const parsed: unknown = parse(fs.readFileSync(file, "utf8"), errors)
+      if (errors.length > 0) return { ok: false, reason: `config unparseable: ${file}` }
+      if (parsed !== undefined && !isRec(parsed)) return { ok: false, reason: `config root is not an object: ${file}` }
+      const mcpMap = isRec(parsed) ? parsed.mcp : undefined
+      if (mcpMap === undefined) continue
+      if (!isRec(mcpMap)) return { ok: false, reason: `config mcp key has unexpected shape: ${file}` }
+      for (const k of Object.keys(mcpMap)) names.add(k)
+    } catch (error) {
+      return { ok: false, reason: `config unreadable: ${file}: ${error instanceof Error ? error.message : String(error)}` }
+    }
+  }
+  return { ok: true, names: [...names] }
+}
+
+/** #378 r7(Major):引擎配置真源路径(escape-hatch 路由后的实际写入目标)—— 事务安装的
+ *  config action 圈禁在事务根内,真源被路由到别处时必须 fail-closed 拒(否则「账本记 active、
+ *  引擎读不到」谎报成功)。planner 经 seam 消费。 */
+export function mcpConfigTruthPath(): string {
+  return mcpPluginTargetPath()
+}
+
+/** #378 r6/r7(Blocker):**全部** legacy 配置源的 plugin[] strict 读 —— 引擎合并 XDG **与**
+ *  retained home(~/.opencode)等历史位置(legacyConfigPaths 单一枚举真源;r7:只读 XDG 会漏
+ *  home 源,GC/fresh/replace 拿到不完整合并视图)。fresh 冲突检查、旧目录 GC 引用对账都必须
+ *  看得见每一份。成员形状与主配置同判(**非法成员 fail-closed**:引擎会因 schema 非法拒整份
+ *  合并配置,安装侧不得当作可安装状态继续落账);文件缺失 = 跳过。每源携带自己的 configDir
+ *  —— 相对条目按**其所在目录**解析。 */
+export function readLegacyPluginArrayStrict():
+  | { ok: true; sources: Array<{ value: unknown[]; configDir: string }> }
+  | { ok: false; reason: string } {
+  const sources: Array<{ value: unknown[]; configDir: string }> = []
+  for (const file of legacyConfigPaths(mcpPluginTargetPath())) {
+    try {
+      if (!fs.existsSync(file)) continue
+      const errors: ParseError[] = []
+      const parsed: unknown = parse(fs.readFileSync(file, "utf8"), errors)
+      if (errors.length > 0) return { ok: false, reason: `legacy config unparseable (${errors.length} syntax error(s)): ${file} — refusing plugin install` }
+      // r10 Major:标量/数组根 = 引擎会拒该源致整份配置回退空 —— 不得当「无 plugin」放行安装。
+      if (parsed !== undefined && (!parsed || typeof parsed !== "object" || Array.isArray(parsed)))
+        return { ok: false, reason: `legacy config root is not an object: ${file} — the engine would reject it; refusing plugin install` }
+      const v = parsed && typeof parsed === "object" && !Array.isArray(parsed) && "plugin" in parsed ? parsed.plugin : undefined
+      if (v === undefined) continue
+      if (!Array.isArray(v)) return { ok: false, reason: `legacy config plugin key is not an array: ${file} — refusing plugin install` }
+      if (!v.every(legalPluginEntry))
+        return { ok: false, reason: `legacy config plugin[] contains invalid entries: ${file} — the engine would reject the merged config; refusing (fix the legacy config first)` }
+      sources.push({ value: v, configDir: path.dirname(file) })
+    } catch (error) {
+      return { ok: false, reason: `legacy config unreadable: ${file}: ${error instanceof Error ? error.message : String(error)}` }
+    }
+  }
+  return { ok: true, sources }
+}
+
+/** #378(Codex 裁决 Q5):npm plugin fresh 的跨配置源同 base 严格检查 —— 引擎合并主配置与
+ *  legacy XDG 两份 plugin 数组,任一侧同 base 在场都不是 fresh(persistPlugin 的跨源幂等语义,
+ *  此处 strict 化:任一侧不可读/语法损坏/**成员形状非法**(r6)即拒,不能当不存在)。tuple 形态
+ *  的头元素同样计入。计划前与锁内 precondition 都必须调用。 */
+export function findPluginBaseConflictStrict(
+  pkg: string,
+): { ok: true; existing: { spec: string; source: "main" | "legacy" } | undefined } | { ok: false; reason: string } {
+  if (!SAFE_PACKAGE.test(pkg)) return { ok: false, reason: "invalid package name" }
+  const base = pkgBase(pkg)
+  const findIn = (list: unknown[], source: "main" | "legacy"): { spec: string; source: "main" | "legacy" } | undefined => {
+    for (const p of list) {
+      if (typeof p === "string" && pkgBase(p) === base) return { spec: p, source }
+      if (Array.isArray(p) && typeof p[0] === "string" && pkgBase(p[0]) === base) return { spec: p[0], source }
+    }
+    return undefined
+  }
+  const main = readPluginArrayStrict()
+  if (!main.ok) return main
+  const hitMain = findIn(main.value, "main")
+  if (hitMain) return { ok: true, existing: hitMain }
+  const legacy = readLegacyPluginArrayStrict()
+  if (!legacy.ok) return legacy
+  for (const src of legacy.sources) {
+    const hit = findIn(src.value, "legacy")
+    if (hit) return { ok: true, existing: hit }
+  }
+  return { ok: true, existing: undefined }
+}
+
 /** Codex review #355:只撤销恰为本次写入的 plugin[] 元素(orchestrator 落账失败补偿)——
  *  不碰 legacy 文件、不碰 receipt、不碰同 base 其他元素(removePlugin 全量卸载会误删既有安装)。 */
 export function removePluginEntryExact(pkg: string): ConfigResult {
@@ -807,21 +971,68 @@ function persistPluginPathUnlocked(name: string, absJsPath: string, files: strin
 export function removePluginPath(name: string, absJsPath: string): ConfigResult {
   return withConfigWriteLock(() => removePluginPathUnlocked(name, absJsPath))
 }
+/** #378 r8(Major):条目按**引擎解析语义**与目标 jsPath 等值(string / [spec, options] 元组头 /
+ *  file:// / 相对按 config 目录)—— 词法 `p !== absJsPath` 会漏等价形态,卸载「成功」后留下
+ *  指向已删 plugin.js 的条目。 */
+function pluginEntryMatchesPath(entry: unknown, targetResolved: string, configDir: string): boolean | "unprovable" {
+  const spec = typeof entry === "string" ? entry : Array.isArray(entry) && typeof entry[0] === "string" ? entry[0] : null
+  if (spec === null || spec.length === 0) return false
+  let p = spec
+  if (p.startsWith("file://")) {
+    try {
+      p = fileURLToPath(p)
+    } catch {
+      return false
+    }
+  } else if (!p.startsWith(".") && !path.isAbsolute(p)) {
+    return false
+  }
+  // r14 Major:symlink 别名条目同样匹配(文件系统身份双形态)—— 否则卸载「成功」后目录被删
+  // 而别名条目残留成悬空引用。r15 Major:词法不中且任一侧身份不可判(非缺席类 fs 错)=
+  // "unprovable" —— 调用侧必须整体拒卸载(净除不可证明),不得静默按词法判「不匹配」放行。
+  const entryIdent = pathIdentity(path.resolve(configDir, p))
+  const targetIdent = pathIdentity(targetResolved)
+  if (entryIdent.forms.some((f) => targetIdent.forms.includes(f))) return true
+  if (!entryIdent.certain || !targetIdent.certain) return "unprovable"
+  return false
+}
+
 function removePluginPathUnlocked(name: string, absJsPath: string): ConfigResult {
   if (!path.isAbsolute(absJsPath)) return { ok: false, reason: "invalid plugin path" }
-  const target = mcpPluginTargetPath()
-  try {
-    if (fs.existsSync(target)) {
-      const parsed = parse(fs.readFileSync(target, "utf8")) as { plugin?: unknown } | undefined
-      const current: unknown[] = Array.isArray(parsed?.plugin) ? (parsed!.plugin as unknown[]) : []
-      const next = current.filter((p) => p !== absJsPath)
+  const targetResolved = path.resolve(absJsPath)
+  const isRec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
+  // r9 Major:主 + 全部 legacy 源同扫(escape-hatch 切换后原主属 legacy 集合,残留等价条目会在
+  // 载荷删除后悬空);**strict 解析**(语法损坏的容错部分对象会让卸载谎报成功 —— 修好语法后
+  // 条目复活指向已删 plugin.js)。任一源不可净除 = 卸载失败,载荷/账本不动。
+  for (const file of [mcpPluginTargetPath(), ...legacyConfigPaths(mcpPluginTargetPath())]) {
+    try {
+      if (!fs.existsSync(file)) continue
+      const errors: ParseError[] = []
+      const parsed: unknown = parse(fs.readFileSync(file, "utf8"), errors)
+      if (errors.length > 0) return { ok: false, reason: `config unparseable (fail closed): ${file}: ${errors.length} parse error(s)` }
+      // r10 Major:语法合法但形状非法(非对象根 / plugin 非数组)不得折叠成「无条目」——
+      // 那会让卸载在未证明净除的情况下删载荷/账本,修好形状后条目复活指向已删 plugin.js。
+      if (parsed !== undefined && !isRec(parsed)) return { ok: false, reason: `config root is not an object (fail closed): ${file}` }
+      const pluginVal = isRec(parsed) ? parsed.plugin : undefined
+      if (pluginVal !== undefined && !Array.isArray(pluginVal)) return { ok: false, reason: `config plugin key is not an array (fail closed): ${file}` }
+      const current = Array.isArray(pluginVal) ? pluginVal : []
+      const configDir = path.dirname(file)
+      // r15 Major:任一条目身份不可判 = 净除不可证明 —— 整体拒卸载(载荷/账本不动),不得在
+      // 可能残留悬空别名条目的情况下继续删载荷。
+      let unprovable = false
+      const next = current.filter((p) => {
+        const m = pluginEntryMatchesPath(p, targetResolved, configDir)
+        if (m === "unprovable") unprovable = true
+        return m !== true
+      })
+      if (unprovable) return { ok: false, reason: `a plugin[] entry's filesystem identity is unresolvable (non-absence fs error, fail closed): ${file}` }
       if (next.length !== current.length) {
-        const written = writeKeyUnlocked(target, ["plugin"], next)
+        const written = writeKeyUnlocked(file, ["plugin"], next)
         if (!written.ok) return written
       }
+    } catch (error) {
+      return { ok: false, reason: `config unreadable (fail closed): ${file}: ${error instanceof Error ? error.message : String(error)}` }
     }
-  } catch {
-    return { ok: false, reason: "failed to read config" }
   }
   if (receiptsActive()) removeReceipt(alphaGlobalRoot(), "plugin", name)
   return { ok: true }

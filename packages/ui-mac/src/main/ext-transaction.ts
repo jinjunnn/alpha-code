@@ -540,6 +540,10 @@ function validatePlan(root: string, plan: TxPlan): string | null {
   if (plan.items.length === 0) return "plan has no items"
   if (plan.items.length > 64) return "plan exceeds 64 items"
   const keys = new Set<string>()
+  // #378 r13 Major:同一物理 config 文件的**别名 target**(/a/alpha.jsonc 与 /a/sub/../alpha.jsonc)
+  // 在 prepare 期按原始字符串各自成链(第二条覆盖第一条的写),恢复期按 resolve 归一又当同一条
+  // 链 —— 语义分叉,fail-closed 拒(合法消费方都用单一构造路径;同一 raw target 多 item = 合法链)。
+  const configTargetByResolved = new Map<string, string>()
   for (const item of plan.items) {
     if (!item || typeof item !== "object") return "invalid plan item"
     if (typeof item.key !== "string" || !SAFE_KEY.test(item.key)) return `invalid item key: ${String(item.key)}`
@@ -551,6 +555,28 @@ function validatePlan(root: string, plan: TxPlan): string | null {
       if (!item.config || typeof item.config !== "object") return `config item "${item.key}" missing config payload`
       if (typeof item.config.target !== "string" || !path.isAbsolute(item.config.target))
         return `config item "${item.key}": target must be an absolute path`
+      // #378(Codex 裁决结构性风险 3):前向路径同样圈禁事务根 —— #375 只对恢复侧采信(isFlipped/
+      // reconstruct/restore)加了圈禁,写入侧缺同一约束会让 root 外绝对 target 先合法进 journal。
+      // 全部现有消费方(bundle/seed/单装)都用 root 锚定的 alpha.jsonc,零行为变化。
+      const relTarget = path.relative(root, item.config.target)
+      if (!isSafeRelPath(relTarget) || !confineFileTarget(root, relTarget).ok)
+        return `config item "${item.key}": target escapes the transaction root — refused`
+      // r14 Major:词法 resolve 不够 —— 大小写不敏感/NFD 卷(macOS 缺省)上 ALPHA.JSONC 与
+      // alpha.jsonc 同一物理文件却是不同 map 键。身份键 = realpath(父目录)+ 归一化文件名
+      // (NFC + 小写);区分大小写卷上的极端误拒可接受(合法消费方单一构造路径)。
+      const resolvedTarget = path.resolve(item.config.target)
+      const parentReal = (() => {
+        try {
+          return fs.realpathSync(path.dirname(resolvedTarget))
+        } catch {
+          return path.dirname(resolvedTarget)
+        }
+      })()
+      const identityKey = path.join(parentReal, path.basename(resolvedTarget).normalize("NFC").toLowerCase())
+      const priorRaw = configTargetByResolved.get(identityKey)
+      if (priorRaw !== undefined && priorRaw !== item.config.target)
+        return `config item "${item.key}": aliased config target (same file via different paths) — refused`
+      configTargetByResolved.set(identityKey, item.config.target)
       if (!Array.isArray(item.config.edits) || item.config.edits.length === 0)
         return `config item "${item.key}": at least one edit required`
     } else if (kind === "file") {
@@ -1084,16 +1110,46 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
       .map((it) => ({ key: it.key, target: path.join(root, it.file!.relTarget), slot: it.file!.slot, nextDigest: it.file!.nextDigest }))
 
   /** config/file action 回滚:逆序恢复(仅当 target 仍是 next 态才恢复前像;旁路改写 → fail-closed 留证)。
-   *  返回 fileBlocked:file 恢复被旁路改写/读失败挡住 —— 调用方**不得终态化**(review r2 Blocker)。 */
+   *  返回 fileBlocked:file **或 config**(#378 r1)恢复被旁路改写/读失败挡住 ——
+   *  调用方**不得终态化**(review r2 Blocker;config 同款,否则「已切换未落账」被当干净回滚)。 */
   const rollbackImageActions = (): { fileBlocked: string | null } => {
     let fileBlocked: string | null = null
+    // #378 r17 Major:config 恢复成功与后续 file 恢复之间存在旁路写窗口 —— 绕锁写方可在其间
+    // 重写 config 引用本事务载荷,继续 unlink 即制造悬空。已恢复的 config 记账,每次 file
+    // 恢复前紧邻重验仍在前像态;漂移即冻结(与 recovery 的 recheckLostPre 同款缩窗语义)。
+    // r19 Major:同 target 链(A→B→C)逆序会先后恢复 B、A —— 按 target 键控,**后到覆盖**
+    // (最终 live 应等于最后一次恢复的前像);数组式双记账会拿陈旧 B 对比 A 误判旁路漂移,
+    // 把本已成功的回滚永久冻结成非终态。
+    const restoredPreConfigs = new Map<string, { key: string; preDigest: string }>()
+    const liveConfigDigest = (target: string): string | null => {
+      try {
+        return crypto.createHash("sha256").update(fs.existsSync(target) ? fs.readFileSync(target, "utf8") : "{}", "utf8").digest("hex")
+      } catch {
+        return null
+      }
+    }
+    const recheckRestoredPre = (): string | null => {
+      for (const [target, c] of restoredPreConfigs) {
+        if (liveConfigDigest(target) !== c.preDigest) return `config "${c.key}" drifted after restore — a bypass writer may reference this payload; retained`
+      }
+      return null
+    }
     for (const it of [...journal.items].reverse()) {
+      // #378 r2 Major:任一恢复被挡即**冻结**(不再触碰后续 item)—— 逆序下 config(逻辑主
+      // item)先恢复,若被旁路改写挡住,live config 仍指向新载荷;继续回滚 file items 会
+      // unlink 仍被引用的文件,制造「config 指向缺失载荷」。受阻 = 现场留证 + 非终态,
+      // 剩余 item 保持原样等 recovery/人工。
+      if (fileBlocked) break
       const kind = actionOf(it)
       if (kind === "config") {
         const image = configImages.get(it.key)
         if (!image) continue
         const restored = restoreConfigImage(image)
-        if (!restored.ok) warnings.push(`config rollback for "${it.key}": ${restored.reason}`)
+        // #378 review r1 Major:config 恢复被拒(旁路改写/写失败)与 file 同款 —— 不得终态化,
+        // 否则「配置已切换 + receipt 未落 + journal rolled-back」被当作干净回滚,调用方按失败
+        // 清理(如删密钥版本)会制造悬空引用,且 recovery 不再重试。
+        if (!restored.ok) fileBlocked = `config rollback for "${it.key}": ${restored.reason}`
+        else restoredPreConfigs.set(image.target, { key: it.key, preDigest: image.preDigest })
       } else if (kind === "file") {
         const image = fileImages.get(it.key)
         if (!image) continue
@@ -1112,10 +1168,19 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
             fileBlocked = `file rollback for "${it.key}": bypass-planted content at an unapplied target — retained as evidence`
           continue
         }
+        // r17/r18 Major:重验放在圈禁/requireAbsent 判定**之后、restore 紧邻之前** —— 中间每步
+        // 都是旁路写方重新引用本载荷的窗口,越贴近删除动作窗口越小。
+        const driftedFwd = recheckRestoredPre()
+        if (driftedFwd) {
+          fileBlocked = `file rollback for "${it.key}": ${driftedFwd}`
+          continue
+        }
         const restored = restoreFileImage(image)
         if (!restored.ok) fileBlocked = `file rollback for "${it.key}": ${restored.reason}`
       }
     }
+    // r17:终态化前的末次夹逼(与 recovery 同款)—— 全部恢复完成后再验已恢复 config 未漂移。
+    if (!fileBlocked) fileBlocked = recheckRestoredPre()
     return { fileBlocked }
   }
 
@@ -2132,6 +2197,14 @@ async function recoverOne(
     const r = readStagedFileImage(staleStaging, it.file.slot, path.join(root, it.file.relTarget), it.file.preDigest, it.file.nextDigest, it.file.preAbsent)
     return r.ok ? r.image : null
   }
+  // #378 r11 Major:同 target 多 config item 是链式 image —— live 完整提交后只会等于链上
+  // **最后一条**的 nextDigest;逐 item 用各自(中间)nextDigest 会让链首永判未翻转,完整
+  // 提交的异构 bundle 在恢复期被错误整体回滚。翻转判定按链尾 digest。
+  const chainLastNextDigest = new Map<string, string>()
+  for (const it of journal.items) {
+    if (actionOf(it) !== "config" || !it.config) continue
+    chainLastNextDigest.set(path.resolve(it.config.target), it.config.nextDigest)
+  }
   const isFlipped = (it: TxJournalItem): boolean => {
     const kind = actionOf(it)
     if (kind === "receipt") return true
@@ -2141,7 +2214,8 @@ async function recoverOne(
       // 即便 reconstructConfigImage 从不写盘。未圈禁 = 判未翻转(强制走回滚 → reconstruct 返 null
       // → 保留态)。与 file 段的圈禁对称。
       if (!it.config || !configTargetConfined(it.config.target)) return false
-      return configTargetDigest(it.config.target) === it.config.nextDigest
+      const lastNext = chainLastNextDigest.get(path.resolve(it.config.target)) ?? it.config.nextDigest
+      return configTargetDigest(it.config.target) === lastNext
     }
     // file(r5 Blocker):翻转 = **本事务已 apply(journal 进度)∧ live digest 命中** —— 只看
     // digest 会把旁路植入的同 digest 文件误认本事务输出(前滚落账 = 认领外部内容)。
@@ -2237,25 +2311,80 @@ async function recoverOne(
   ]
   const reason = `crash recovery rollback: ${reasonParts.join("; ")}`
   let restoreBlocked: string | null = null
+  // #378 r5 Major:失据-no-op 的 config item 记账 —— 其「live 在 pre 态」判定与后续 file 回滚
+  // 之间存在旁路写窗口(绕锁写方可在其间写入引用本事务载荷的配置)。每次 file restore 前与
+  // 终态化前**紧邻重验**这些 item 仍在 pre 态,漂移即冻结;残余相邻 syscall 微窗与 #358 r3
+  // 同类缩窗(能绕 bundle 锁写 config 者本就等价于本用户)。
+  const lostPreConfigs: Array<{ key: string; target: string; preDigest: string }> = []
+  const recheckLostPre = (): string | null => {
+    for (const c of lostPreConfigs) {
+      if (configTargetDigest(c.target) !== c.preDigest)
+        return `config recovery for "${c.key}": live drifted after the no-op check — retained`
+    }
+    return null
+  }
+  // #378 r10 Major:同一 target 的多 config item 是**链式 image**(prepare 时 item_i 的 next =
+  // item_{i+1} 的 pre)—— 逆序逐 item 独立恢复会把「链尚未生效(live=链首前像)」误判 divergence
+  // 永久保留。以链为单位:live=pre_0 → 安全 no-op;live=链上任一 next_i(含中途 apply 停摆)→
+  // 原子写回链首 preImage;其余 = 旁路改写/失据,冻结留证。单 item 链退化为原逐项语义
+  // (r1/r3/r4/r5 各判据保持)。config 恢复先于 file 回滚(受阻即冻结,file 不再触碰)。
+  const configChains = new Map<string, TxJournalItem[]>()
+  for (const it of journal.items) {
+    if (actionOf(it) !== "config") continue
+    // r6 Major:圈禁不过 = 现场需人工核对,保留非终态(绝不 warn+continue 后终态化)。
+    if (!it.config || !configTargetConfined(it.config.target)) {
+      restoreBlocked = `config recovery rollback for "${it.key}": target failed confinement — retained as evidence`
+      break
+    }
+    const chainKey = path.resolve(it.config.target)
+    const chain = configChains.get(chainKey) ?? []
+    chain.push(it)
+    configChains.set(chainKey, chain)
+  }
+  if (!restoreBlocked) {
+    for (const chain of configChains.values()) {
+      const first = chain[0]
+      if (!first?.config) continue
+      const firstCfg = first.config
+      const liveDigest = configTargetDigest(firstCfg.target)
+      if (liveDigest === firstCfg.preDigest) {
+        // r4:整链未生效(live=链首前像)= 安全 no-op(失据与否皆然);记账供 file 回滚前重验。
+        if (chain.length === 1 && !reconstructConfigImage(first))
+          warnings.push(`config recovery: staged image lost but live already at pre-digest for "${first.key}" — safe no-op`)
+        lostPreConfigs.push({ key: first.key, target: firstCfg.target, preDigest: firstCfg.preDigest })
+        continue
+      }
+      const nextDigests = new Set(chain.map((it) => it.config!.nextDigest))
+      if (liveDigest === null || !nextDigests.has(liveDigest)) {
+        // r1/r3:target 不可读,或既非链首前像也非链上任何 next(旁路改写/失据无从判定)→ 冻结留证。
+        restoreBlocked = `config recovery rollback for "${first.key}": cannot reconstruct image (staging lost/corrupt) and live is not at pre-digest — retained`
+        break
+      }
+      // live 在链上 → 写回链首 preImage 需要其字节;链首 image 失据即冻结(r3 语义)。
+      const image0 = reconstructConfigImage(first)
+      if (!image0) {
+        restoreBlocked = `config recovery rollback for "${first.key}": cannot reconstruct image (staging lost/corrupt) and live is not at pre-digest — retained`
+        break
+      }
+      try {
+        writeFileAtomicSync(firstCfg.target, image0.preImage)
+      } catch (error) {
+        // r2 M1 同款:写失败走结果通道,冻结保留(不 reject 悬锁)。
+        restoreBlocked = `config recovery rollback for "${first.key}": preimage write failed: ${error instanceof Error ? error.message : String(error)}`
+        break
+      }
+      // r17 Major:主动写回前像的链与失据-no-op 同样存在「file 回滚前旁路重写」窗口 —— 写回
+      // 成功即入 recheckLostPre 记账,file restore 前与终态化前同受夹逼;漏记会让旁路写方在
+      // 写回与 unlink 之间重新引用本载荷而不被冻结。
+      lostPreConfigs.push({ key: first.key, target: firstCfg.target, preDigest: firstCfg.preDigest })
+    }
+  }
   for (const it of [...journal.items].reverse()) {
+    // #378 r2 Major:任一恢复被挡即冻结(与前向回滚同款)—— config 受阻时继续 unlink
+    // file items 会删掉 live config 仍引用的载荷。剩余 item 原样留证。
+    if (restoreBlocked) break
     const kind = actionOf(it)
-    if (kind === "config") {
-      // r6 Major:config.target 圈禁不过(root 外/畸形)= 现场需人工核对 —— **保留非终态**,
-      // 绝不静默 warn+continue 后终态化为 rolled-back(那会让恶意/畸形 config journal 被当作
-      // 正常回滚完成)。与 file 段的 restore-blocked 同款证据保留语义。
-      if (!it.config || !configTargetConfined(it.config.target)) {
-        restoreBlocked = `config recovery rollback for "${it.key}": target failed confinement — retained as evidence`
-        continue
-      }
-      const image = reconstructConfigImage(it)
-      if (!image) {
-        // 圈禁已过但 staging 丢失/digest 不符:live 保持不动(fail closed),幂等,下轮 noop。
-        warnings.push(`config recovery: cannot reconstruct image for "${it.key}" — leaving live as-is (fail closed)`)
-        continue
-      }
-      const restored = restoreConfigImage(image)
-      if (!restored.ok) warnings.push(`config recovery rollback for "${it.key}": ${restored.reason}`)
-    } else if (kind === "file") {
+    if (kind === "file") {
       // r3 Blocker:预扫与此处之间仍有 config 恢复等异步间隙 —— restore 前紧邻再重验一次圈禁。
       const confined = it.file ? confineFileTarget(root, it.file.relTarget) : { ok: false as const, reason: "missing file journal segment" }
       if (!confined.ok) {
@@ -2269,10 +2398,19 @@ async function recoverOne(
           restoreBlocked = `file recovery rollback for "${it.key}": bypass-planted content at an unapplied target — retained as evidence`
         continue
       }
+      // #378 r5:file restore 前紧邻重验失据-no-op 的 config 仍在 pre 态(漂移 = 有旁路写方
+      // 可能已让 config 重新引用本载荷 → 冻结,不 unlink)。
+      const drifted = recheckLostPre()
+      if (drifted) {
+        restoreBlocked = drifted
+        continue
+      }
       const restored = restoreFileImage(reconstructFileImage(it)!) // 上方预扫已证明可重建
       if (!restored.ok) restoreBlocked = `file recovery rollback for "${it.key}": ${restored.reason}`
     }
   }
+  // #378 r5:终态化前的末次夹逼 —— 全部恢复动作完成后再验一次失据-no-op config 未漂移。
+  if (!restoreBlocked) restoreBlocked = recheckLostPre()
   // #358 review Blocker 3:file 恢复被旁路改写挡住(target 既非 pre 也非 next)= 现场需人工核对 ——
   // 保留非终态 + staging(证据与重试依据),不隔离、不终态化。已完成的 config 恢复幂等(下轮 noop)。
   if (restoreBlocked) {

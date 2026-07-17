@@ -25,7 +25,7 @@ import { checkUncuratedConflict, recordUncuratedInstall, type UncuratedOrigin } 
 import { alphaRoot, ensureAlphaScaffold } from "./alpha-workdir"
 import type { InstallMeta, InstallReceipt, InstallTarget } from "../preload/types"
 import { parseSkillFrontmatter, validGitUrl } from "./ext-import-validate"
-import { persistPluginPath } from "./ext-config"
+import { collectSkillPayloadFromDir } from "./ext-skill-generations"
 
 export type FsResult = { ok: true; files?: string[] } | { ok: false; reason: string }
 
@@ -676,24 +676,59 @@ export function collectBuiltinAgentPayload(
 /** #352(Codex 裁决必改 5,versioned 路线):vendored 替换的**纯 staging** —— 新内容落
  *  不可变 versioned 目录 `plugins/<name>@<hex>`(绝不覆盖既有 `<name>` 目录),零 config/账本
  *  副作用;config 路径与 receipt 由替换事务原子切换,旧目录事务成功后 GC。staging 半成品由
- *  调用方失败清理(残留无 config 引用,无害)。 */
+ *  调用方失败清理(残留无 config 引用,无害)。
+ *  #378 r16(Major):staging 源走与 fresh 同一硬化收集合同(collectVendoredPluginPayload:
+ *  身份绑定、realpath 圈禁、常规文件、16/64MB 帽)—— cpSync 原样复制会把 fresh 被拒的
+ *  symlink/非常规条目/超帽载荷在 update/repair 通道原样激活;落盘逐文件写内存态载荷,
+ *  目标路径再圈禁一次。 */
 export function stageVendoredPluginVersioned(
   vendoredAssetKey: string,
   name: string,
+  // r17(Major):调用方已收集的载荷直传 —— receipt digest 与 staging 字节必须同一次收集
+  // (两次独立收集之间源变化会提交「载荷 B + digest A」,内容身份断链)。缺省自收集。
+  precollected?: Array<{ path: string; data: Buffer }>,
 ): { ok: true; dir: string; jsPath: string } | { ok: false; reason: string } {
   if (!SAFE_PLUGIN_ASSET_KEY.test(vendoredAssetKey)) return { ok: false, reason: "invalid asset key" }
   if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid plugin name" }
-  const srcDir = path.join(resourcesRoot(), vendoredAssetKey)
-  if (!fs.existsSync(path.join(srcDir, "plugin.js"))) return { ok: false, reason: "插件内容未随此版本打包" }
-  const versioned = `${name}@${crypto.randomBytes(4).toString("hex")}`
-  const destDir = safeResolveUnder(alphaGlobalRoot(), "plugins", versioned)
-  if (!destDir) return { ok: false, reason: "refused: path escapes alpha root" }
+  let files: Array<{ path: string; data: Buffer }>
+  if (precollected) files = precollected
+  else {
+    const collected = collectVendoredPluginPayload(vendoredAssetKey, name)
+    if (!collected.ok) return collected
+    files = collected.files
+  }
+  // r17(Major):versioned 目录**排他认领** —— recursive mkdir 对已存在目录静默成功,随机名
+  // 碰撞/预占时会覆盖既有目录、失败清理再整树误删。非递归 mkdir EEXIST 换名重试;清理只删
+  // 自己认领到的目录。
   try {
-    fs.mkdirSync(destDir, { recursive: true })
-    fs.cpSync(srcDir, destDir, { recursive: true })
+    fs.mkdirSync(path.join(alphaGlobalRoot(), "plugins"), { recursive: true })
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "failed to prepare plugins root" }
+  }
+  let destDir: string | null = null
+  for (let attempt = 0; attempt < 3 && destDir === null; attempt++) {
+    const versioned = `${name}@${crypto.randomBytes(4).toString("hex")}`
+    const candidate = safeResolveUnder(alphaGlobalRoot(), "plugins", versioned)
+    if (!candidate) return { ok: false, reason: "refused: path escapes alpha root" }
+    try {
+      fs.mkdirSync(candidate) // 非递归:已存在 = EEXIST,绝不复用他人目录
+      destDir = candidate
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "EEXIST"))
+        return { ok: false, reason: error instanceof Error ? error.message : "failed to claim staging dir" }
+    }
+  }
+  if (destDir === null) return { ok: false, reason: "failed to claim a fresh versioned staging dir (3 attempts)" }
+  try {
+    for (const f of files) {
+      const target = safeResolveUnder(destDir, ...f.path.split("/"))
+      if (!target) throw new Error(`refused: payload path escapes staging dir: ${f.path}`)
+      fs.mkdirSync(path.dirname(target), { recursive: true })
+      fs.writeFileSync(target, f.data)
+    }
   } catch (error) {
     try {
-      fs.rmSync(destDir, { recursive: true, force: true })
+      fs.rmSync(destDir, { recursive: true, force: true }) // 本次排他认领的目录,删除不伤他人
     } catch {
       /* 半成品残留无 config 引用 */
     }
@@ -702,28 +737,49 @@ export function stageVendoredPluginVersioned(
   return { ok: true, dir: destDir, jsPath: path.join(destDir, "plugin.js") }
 }
 
-export function installVendoredPlugin(
+/** vendored plugin 载荷单文件帽(与引擎 file action 的 16MB 界一致,提前可读拒绝)+ 总量帽
+ *  (内存态采集,防随包资产异常膨胀拖垮 main)。 */
+const VENDORED_PLUGIN_FILE_MAX_BYTES = 16 * 1024 * 1024
+const VENDORED_PLUGIN_TOTAL_MAX_BYTES = 64 * 1024 * 1024
+
+/** #378(Codex 裁决 D2):收集 vendored plugin 随包目录为原始载荷 —— CAS 摄取源(自算内容地址,
+ *  摄取后完整性),事务 file items 由 planner 复用 seed 载体构造。只读零副作用;旧 flat 写入器
+ *  installVendoredPlugin 随 planner seam 下线删除(D8:无生产调用面)。
+ *  圈禁:srcDir realpath 必须恰为 <realpath(resources)>/<key>(父链 symlink 拒,#361 同款);
+ *  树内 symlink/非常规条目拒(collectSkillPayloadFromDir 同纪律);单文件/总量帽提前拒。 */
+export function collectVendoredPluginPayload(
   vendoredAssetKey: string,
   name: string,
-  meta?: InstallMeta,
-): FsResult {
+): { ok: true; files: Array<{ path: string; data: Buffer }> } | { ok: false; reason: string } {
   if (!SAFE_PLUGIN_ASSET_KEY.test(vendoredAssetKey)) return { ok: false, reason: "invalid asset key" }
   if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid plugin name" }
+  // #378 r5(Major):内容身份交叉(#361 agent 同款)—— 已验签但配错的 entry 不得把别的资产
+  // 目录按本 plugin 的名称/账本身份/capability grant 装入运行。
+  if (vendoredAssetKey !== `plugins/${name}`)
+    return { ok: false, reason: `asset key "${vendoredAssetKey}" ≠ "plugins/${name}" — refusing (content identity drift)` }
   const srcDir = path.join(resourcesRoot(), vendoredAssetKey)
-  if (!fs.existsSync(path.join(srcDir, "plugin.js"))) return { ok: false, reason: "插件内容未随此版本打包" }
-  const destDir = safeResolveUnder(alphaGlobalRoot(), "plugins", name)
-  if (!destDir) return { ok: false, reason: "refused: path escapes alpha root" }
+  let realSrc: string
   try {
-    fs.mkdirSync(destDir, { recursive: true })
-    fs.cpSync(srcDir, destDir, { recursive: true }) // vendored 内容可信(我方打包),整目录复制
+    realSrc = fs.realpathSync(srcDir)
+    const expected = path.join(fs.realpathSync(resourcesRoot()), ...vendoredAssetKey.split("/"))
+    if (realSrc !== expected) return { ok: false, reason: "plugin asset escapes the resources tree (symlinked path) — refusing" }
   } catch (error) {
-    return { ok: false, reason: error instanceof Error ? error.message : "failed to copy plugin" }
+    const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined
+    if (code === "ENOENT") return { ok: false, reason: "插件内容未随此版本打包" }
+    return { ok: false, reason: error instanceof Error ? error.message : "failed to read plugin asset" }
   }
-  const jsPath = path.join(destDir, "plugin.js")
-  const persisted = persistPluginPath(name, jsPath, [destDir], meta)
-  if (!persisted.ok) {
-    fs.rmSync(destDir, { recursive: true, force: true }) // 半成品不留
-    return persisted
+  // r17(Major):帽下沉到共享收集器的 fstat 前置检查(读入内存前拒);下方循环保留为二道闸
+  // (消息与既有拒绝语义位)。
+  const collected = collectSkillPayloadFromDir(realSrc, { maxFileBytes: VENDORED_PLUGIN_FILE_MAX_BYTES, maxTotalBytes: VENDORED_PLUGIN_TOTAL_MAX_BYTES })
+  if (!collected.ok) return collected
+  if (!collected.files.some((f) => f.path === "plugin.js")) return { ok: false, reason: "插件内容未随此版本打包" }
+  let total = 0
+  for (const f of collected.files) {
+    if (f.data.length > VENDORED_PLUGIN_FILE_MAX_BYTES)
+      return { ok: false, reason: `plugin payload file "${f.path}" exceeds ${VENDORED_PLUGIN_FILE_MAX_BYTES} bytes — refused` }
+    total += f.data.length
+    if (total > VENDORED_PLUGIN_TOTAL_MAX_BYTES)
+      return { ok: false, reason: `plugin payload exceeds ${VENDORED_PLUGIN_TOTAL_MAX_BYTES} bytes total — refused` }
   }
-  return { ok: true, files: [destDir] }
+  return collected
 }

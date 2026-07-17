@@ -16,6 +16,7 @@ import {
   findRecordV2,
   lookupForUninstall,
   migrateV1Ledger,
+  probeLedgerForWrite,
   projectScopeIdentity,
   readLedgerV2,
   removeRecordV2,
@@ -405,7 +406,8 @@ describe("v1 → v2 explicit migration (AC#6)", () => {
       const bytes = fs.readFileSync(ledgerFile(), "utf8")
       const r = migrateV1Ledger(root, "prod")
       expect(r.ok).toBe(false)
-      if (!r.ok) expect(r.reason).toContain("refusing migration")
+      // r22:未来版本/非数组集合改由 parseLedger 信封闸先拒(文案不同,语义同为拒 + 零改动)。
+      if (!r.ok) expect(r.reason).toContain("refusing")
       expect(fs.readFileSync(ledgerFile(), "utf8")).toBe(bytes)
     }
     // v:1 纯 receipts 信封(v1 writer 真实形状)照常可迁
@@ -468,6 +470,95 @@ describe("upsertRecordsV2 — 批量单写(REQ-100 #311)", () => {
     const w = upsertRecordsV2(root, [upsertInput({ manifestDigest: DIGEST_B, version: "1.1.0" })])
     expect(w.ok).toBe(true)
     if (w.ok) expect(w.records[0]!.generation).toBe(2)
+  })
+})
+
+describe("#378 r17 Blocker —— 损坏记录原文保全 + 同 key/unattributable 拒写", () => {
+  const R17_TX = { id: "tx-r17-replay", state: "committed" as const }
+  const seedWithCorrupt = (extraRecord: unknown) => {
+    upsertRecordV2(root, upsertInput({ transaction: R17_TX }))
+    const valid = readLedgerV2(root).records[0]
+    if (!valid) throw new Error("fixture: valid record missing")
+    fs.writeFileSync(ledgerFile(), JSON.stringify({ v: 2, receipts: [], records: [valid, extraRecord] }))
+  }
+
+  test("可归属损坏记录:无关 key 写/删照常且原文保全;同 key 写与删一律拒", () => {
+    seedWithCorrupt({ kind: "plugin", name: "px", generation: -5 })
+    const w = upsertRecordsV2(root, [upsertInput({ id: "skill:a", name: "a", kind: "skill", configKey: undefined })])
+    expect(w.ok).toBe(true) // 无关 key 不被整账砖死(O4 教训)
+    expect(fs.readFileSync(ledgerFile(), "utf8")).toMatch(/"generation":\s*-5/) // 证据没被重建蒸发
+    const same = upsertRecordV2(root, upsertInput({ id: "plugin:px", name: "px", kind: "plugin", configKey: "plugin:px@1" }))
+    expect(same.ok).toBe(false)
+    if (!same.ok) expect(same.reason).toContain("corrupt v2 record for this key")
+    const rmSame = removeRecordV2(root, "plugin", "px")
+    expect(rmSame.ok).toBe(false)
+    const rmOther = removeRecordV2(root, "skill", "a")
+    expect(rmOther.ok).toBe(true)
+    expect(fs.readFileSync(ledgerFile(), "utf8")).toMatch(/"generation":\s*-5/) // 删除路径同样保全
+  })
+
+  test("unattributable 损坏:任何 fresh 写拒;纯重放批零写盘照常(恢复不被卡)", () => {
+    seedWithCorrupt({ garbage: true })
+    const fresh = upsertRecordsV2(root, [upsertInput({ id: "skill:c", name: "c", kind: "skill", configKey: undefined })])
+    expect(fresh.ok).toBe(false)
+    if (!fresh.ok) expect(fresh.reason).toContain("unattributable")
+    const replay = upsertRecordsV2(root, [upsertInput({ transaction: R17_TX })])
+    expect(replay.ok).toBe(true) // 同 tx 完全一致 = 纯重放,零写盘
+    expect(fs.readFileSync(ledgerFile(), "utf8")).toContain("garbage") // 原文未动
+  })
+
+  test("r22:信封收口 —— 未来版本一切写拒零触碰;records 非数组按损坏处理(quarantine 保字节,不静默折叠成空)", () => {
+    fs.writeFileSync(ledgerFile(), JSON.stringify({ v: 3, receipts: [], records: [{ future: true }] }))
+    const futureBytes = fs.readFileSync(ledgerFile(), "utf8")
+    expect(probeLedgerForWrite(root).ok).toBe(false)
+    const w = upsertRecordV2(root, upsertInput())
+    expect(w.ok).toBe(false)
+    if (!w.ok) expect(w.reason).toContain("newer than this build")
+    expect(removeRecordV2(root, "mcp", "markitdown").ok).toBe(false)
+    expect(fs.readFileSync(ledgerFile(), "utf8")).toBe(futureBytes) // 未来数据零触碰
+    fs.writeFileSync(ledgerFile(), JSON.stringify({ v: 2, receipts: [], records: { ownership: "evidence" } }))
+    expect(probeLedgerForWrite(root).ok).toBe(false) // 提交面拒(quarantine 不是提交路径)
+    const w2 = upsertRecordsV2(root, [upsertInput()]) // 直接写面:损坏文件语义 = 隔离保字节 + 响亮警告
+    expect(w2.ok).toBe(true)
+    if (w2.ok) expect(w2.warnings.join(" ")).toContain("quarantined")
+    const quarantined = fs.readdirSync(root).filter((f) => f.startsWith("installs.json.corrupt-"))
+    expect(quarantined.length).toBeGreaterThanOrEqual(1)
+    expect(fs.readFileSync(path.join(root, quarantined[quarantined.length - 1] ?? ""), "utf8")).toContain("ownership") // 证据字节保全
+  })
+
+  test("r19:账本读失败(EACCES)≠ 空账 —— 写/删/翻转/卸载查询一律拒,不 no-op 谎报;恢复后照常", () => {
+    if (typeof process.getuid === "function" && process.getuid() === 0) return
+    upsertRecordV2(root, upsertInput())
+    fs.chmodSync(ledgerFile(), 0o000)
+    try {
+      expect(removeRecordV2(root, "mcp", "markitdown").ok).toBe(false) // r19 前:no-op「成功」
+      expect(upsertRecordV2(root, upsertInput({ id: "skill:x", name: "x", kind: "skill", configKey: undefined })).ok).toBe(false)
+      expect(setDesiredStateV2(root, "mcp", "markitdown", "disabled").ok).toBe(false)
+      expect(lookupForUninstall(root, "mcp", "markitdown").status).toBe("ledger-corrupt")
+    } finally {
+      fs.chmodSync(ledgerFile(), 0o644)
+    }
+    const rm = removeRecordV2(root, "mcp", "markitdown")
+    expect(rm.ok).toBe(true)
+    if (rm.ok) expect(rm.removed?.name).toBe("markitdown")
+  })
+
+  test("r18:字节级 evidence 侧写(同损坏集只落一份);setDesiredStateV2 同款损坏闸", () => {
+    seedWithCorrupt({ kind: "plugin", name: "px", generation: -5 })
+    const before = fs.readFileSync(ledgerFile(), "utf8")
+    readLedgerV2(root) // 首次观测触发侧写
+    const listEvidence = () => fs.readdirSync(root).filter((f) => f.startsWith("installs.json.evidence-"))
+    const evid = listEvidence()
+    expect(evid).toHaveLength(1)
+    const first = evid[0]
+    if (!first) throw new Error("fixture")
+    expect(fs.readFileSync(path.join(root, first), "utf8")).toBe(before) // 原文件字节(重复键/词法取证不丢)
+    upsertRecordsV2(root, [upsertInput({ id: "skill:a", name: "a", kind: "skill", configKey: undefined })])
+    readLedgerV2(root)
+    expect(listEvidence()).toHaveLength(1) // 损坏集未变 → 不增殖
+    const sds = setDesiredStateV2(root, "plugin", "px", "disabled")
+    expect(sds.ok).toBe(false)
+    if (!sds.ok) expect(sds.reason).toContain("corrupt v2 record for this key")
   })
 })
 

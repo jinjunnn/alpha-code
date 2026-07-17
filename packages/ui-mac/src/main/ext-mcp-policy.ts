@@ -46,7 +46,16 @@ function applyExcelWorkspacePolicy(name: string, server: Record<string, unknown>
   return checkExcelMcpSafety(name, server, workspace)
 }
 
-/** MCP 写盘唯一策略入口:先过 Excel workspace 闸口(拒绝即 fail-closed 不落盘),再 persistMcp。 */
+/** #378(Codex 裁决 Q2):策略闸口的持久化剥离面 —— 单装事务先注入策略再把最终 durable 交
+ *  config action(引擎落盘),不得经 persistMcp 直写。mkdir/realpath 属**非权威 provisioning**:
+ *  authorize 暂停后残留的只是空受管目录,零 config/账本/密钥副作用。 */
+export function applyMcpWritePolicy(name: string, server: Record<string, unknown>): ConfigResult {
+  if (server && typeof server === "object") return applyExcelWorkspacePolicy(name, server)
+  return { ok: false, reason: "invalid server config" }
+}
+
+/** MCP 写盘唯一策略入口(未策展直写通道):先过 Excel workspace 闸口(拒绝即 fail-closed
+ *  不落盘),再 persistMcp。单装 catalog 事务走 applyMcpWritePolicy + config action。 */
 export function persistMcpWithPolicy(name: string, server: Record<string, unknown>, meta?: InstallMeta): ConfigResult {
   if (server && typeof server === "object") {
     const policy = applyExcelWorkspacePolicy(name, server)

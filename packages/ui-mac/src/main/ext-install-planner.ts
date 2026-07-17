@@ -24,6 +24,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import * as crypto from "node:crypto"
 import { randomUUID } from "node:crypto"
+import { fileURLToPath } from "node:url"
 import type { InstallReceiptType } from "../preload/types"
 import type { CatalogEntry, McpInstallSpec } from "../renderer/extensions/catalog-types"
 import type { AppEnvironment } from "./alpha-environment"
@@ -47,6 +48,116 @@ import {
 } from "./ext-transaction"
 import { capabilityGrantPath, isSafeCapability, type CapabilityDiff } from "./ext-capability-grants"
 import { agentConfigItemKey, agentInstallKey, installAgentFromCas, recoveryReceiptInputs } from "./ext-agent-install"
+import { collectMcpFileRefPaths, newMcpSecretVersionId, pathIdentity, resolveMcpRefPath, substituteMcpSecretRefsPure } from "./alpha-mcp-secrets"
+
+/** `{file:<abs>}` 引用 → 文件路径(非引用形状 = null;#378 r1 锁内在场门与失败清理共用)。 */
+function mcpRefPathOf(ref: string): string | null {
+  const m = /^\{file:(.+)\}$/.exec(ref)
+  return m?.[1] ?? null
+}
+
+/** #378 r3(Major):plugin[] 条目按**引擎语义**解析为绝对路径 —— 引擎(config/plugin.ts
+ *  isPathPluginSpec/resolvePluginSpec)把 `file://`、`.` 前缀与绝对路径当路径,相对路径按
+ *  **config 文件所在目录**解析;词法 `includes`/CWD `resolve` 会漏等价形态(`./plugins/...`、
+ *  `file://.../plugin.js`、`/a/./b`)。非路径形态(npm 包名)= null。 */
+/** plugin[] 成员的 spec 头(引擎 pluginSpecifier 同判:string 或 [spec, options] 元组)。
+ *  #378 r5:校验/等值比较/换元三阶段共用,元组不许再有任何一处按整值与字符串比较。 */
+/** npm spec 的包名 base(保留 @scope,剥尾部 @version;与 ext-config.pkgBase 同判)。 */
+function pkgBaseOf(spec: string): string {
+  const at = spec.lastIndexOf("@")
+  return at > 0 ? spec.slice(0, at) : spec
+}
+
+function pluginSpecOf(x: unknown): string | null {
+  if (typeof x === "string") return x
+  if (Array.isArray(x) && typeof x[0] === "string") return x[0]
+  return null
+}
+
+function resolvePluginEntryPath(entry: unknown, configDir: string): string | null {
+  const spec = pluginSpecOf(entry)
+  if (spec === null || spec.length === 0) return null
+  let p = spec
+  if (p.startsWith("file://")) {
+    try {
+      p = fileURLToPath(p)
+    } catch {
+      return null
+    }
+  } else if (!p.startsWith(".") && !path.isAbsolute(p)) {
+    return null // npm 包名形态,非路径(与引擎 isPathPluginSpec 同判)
+  }
+  return path.resolve(configDir, p)
+}
+
+/** #378 r2(Major):plugin fresh/replace 的 config 在场扫描 —— plugin[] 里任何解析为本名派生
+ *  落点(<root>/plugins/<name>/plugin.js 或 <root>/plugins/<name>@<suffix>/plugin.js)的条目
+ *  都算在场:无账不认领(有账早被三态分发送去 replace);只查恰好的本次 jsPath 会漏掉其他
+ *  内容寻址版本的未策展残留 —— 追加第二条同名路径后引擎会把两份 plugin 都加载。
+ *  r3:解析走 resolvePluginEntryPath(相对/file:// 等价形态同样命中);树外条目不误伤。 */
+function findSameNamePluginPathEntry(list: unknown[], root: string, name: string, entryBaseDir: string = root): string | null {
+  // r14 Major:条目可经 symlink 别名到达 plugins/<name>[@…]/plugin.js —— 词法父目录判定漏判,
+  // 追加 realpath 身份形态(pluginsRoot 同双形态)。
+  const pluginsRootIdent = pathIdentity(path.join(root, "plugins"))
+  for (const p of list) {
+    // r4:元组成员取 spec 头;r6:legacy 源的相对条目按 **legacy 文件所在目录** 解析(entryBaseDir)。
+    const resolved = resolvePluginEntryPath(p, entryBaseDir)
+    if (resolved === null) continue
+    const ident = pathIdentity(resolved)
+    // r15 Major:任一侧身份不可判(非缺席类 fs 错)= 无法证明该条目不是本名别名 —— fail-closed
+    // 按在场处理(拒继续安装,报词法形态),不得静默按词法比较放行。
+    if (!pluginsRootIdent.certain || !ident.certain) return path.resolve(resolved)
+    for (const form of ident.forms) {
+      if (path.basename(form) !== "plugin.js") continue
+      const dir = path.dirname(form)
+      if (!pluginsRootIdent.forms.includes(path.dirname(dir))) continue
+      const base = path.basename(dir)
+      if (base === name || base.startsWith(`${name}@`)) return form
+    }
+  }
+  return null
+}
+
+/** #378 r6/r7(Blocker/Major):fresh/replace 的同名派生路径检查必须覆盖**全部 legacy 源**
+ *  (引擎合并 XDG 与 retained home 等历史位置)—— 任一源里指向 <root>/plugins/<name>[@…] 的
+ *  条目在场时,继续安装/置换会双载。每源相对条目按其 configDir 解析;任一源不可读/形状非法 =
+ *  fail-closed 拒(引擎会拒整份合并配置)。 */
+function legacySameNamePluginGate(
+  readLegacy: () => { ok: true; sources: Array<{ value: unknown[]; configDir: string }> } | { ok: false; reason: string },
+  root: string,
+  name: string,
+): { ok: true } | { ok: false; reason: string } {
+  const legacy = readLegacy()
+  if (!legacy.ok) return legacy
+  for (const src of legacy.sources) {
+    const hit = findSameNamePluginPathEntry(src.value, root, name, src.configDir)
+    if (hit) return { ok: false, reason: `legacy config contains "${hit}" without a ledger record — refusing to double-load an unregistered plugin` }
+  }
+  return { ok: true }
+}
+
+/** #378 r7(Major):escape-hatch 环境(ALPHA_JSONC_TRUTH_DISABLE / ALPHA_LEGACY_INSTALL_ROOT)
+ *  把引擎配置真源路由到事务根之外 —— config action 圈禁只能写 <root>/alpha.jsonc,照常提交会
+ *  「账本记 active、引擎读不到」谎报成功。诚实 fail-closed:真源不在根内即拒。 */
+function configTruthInRootGate(root: string, truthPath: string): { ok: true } | { ok: false; reason: string } {
+  if (path.resolve(truthPath) === path.resolve(path.join(root, "alpha.jsonc"))) return { ok: true }
+  return {
+    ok: false,
+    reason: `engine config truth is routed to "${truthPath}" (escape-hatch env) — transactional single-install writes <root>/alpha.jsonc only; refusing to record an install the engine cannot see`,
+  }
+}
+
+/** #378 r1(Major):cloud 重装的锁内 desiredState 漂移门 —— plan 快照在锁外读,锁内重读
+ *  不一致即拒(否则并发 disable 会被旧快照写回 enabled)。导出供直接单测。 */
+export function cloudDesiredStateGate(
+  root: string,
+  name: string,
+  planned: "enabled" | "disabled",
+): { ok: true } | { ok: false; reason: string } {
+  const rec = findRecordV2(root, "cloud", name)
+  const current: "enabled" | "disabled" = rec?.desiredState === "disabled" ? "disabled" : "enabled"
+  return current === planned ? { ok: true } : { ok: false, reason: "cloud desiredState changed since plan — retry the install" }
+}
 import { parse, type ParseError } from "jsonc-parser"
 import type { AuthorizationConfirmationWire } from "../shared/ext-capability-authorization"
 import { findReceipt } from "./alpha-installs"
@@ -453,45 +564,50 @@ export type InstallMetaArg = { catalogId?: string; version?: string }
 export type TargetArg = { scope: "global" } | { scope: "project"; projectDir: string }
 
 export type PlannerInstallers = {
-  persistMcp(name: string, server: Record<string, unknown>, meta?: InstallMetaArg): ConfigOutcome
-  /** REQ-099 #305:密钥深路由(environment 键 + headers 内嵌真值 → {file:} 引用);skipped 非空
-   *  = 有密钥没能进文件通道,调用方必须 fail-closed,绝不明文持久化。refs 供 live 真值回填。
-   *  restore/discard = 写前快照(#351:失败复原既有密钥,成功丢弃快照)。 */
-  fileifyMcpSecrets(
-    name: string,
-    server: Record<string, unknown>,
-    secrets: Record<string, string>,
-  ):
-    | {
-        ok: true
-        fileified: string[]
-        skipped: string[]
-        refs: Record<string, string>
-        restore(): { ok: true } | { ok: false; reason: string }
-        discard(): void
-      }
-    | { ok: false; reason: string }
+  /** #378(Codex 裁决 Q2):MCP 写盘策略注入(Excel 受管 workspace mkdir+realpath+fail-closed
+   *  校验;**非权威 provisioning** —— authorize 暂停后残留的只是一个空受管目录,零 config/账本/
+   *  密钥副作用)。原地修改 server;单装事务与未策展通道共用同一闸口。 */
+  applyMcpWritePolicy(name: string, server: Record<string, unknown>): ConfigOutcome
+  /** #378(Codex 裁决 Q1):版本化密钥原语 —— 引用纯推导(零写盘,planner 先构造 durable config)
+   *  与落盘(硬化写:tmp→rename、0600、lstat 圈禁)必须同参;removeMcpSecretVersionDir 只删
+   *  **本次尝试**的版本目录(失败/authorize 暂停清理;无引用,惰性);gcMcpSecrets = 提交后在
+   *  配置锁内按当前 leaf 引用收未引用且过宽限的旧版本/flat/快照残留(busy 跳过,best-effort)。 */
+  mcpSecretRefFor(name: string, verId: string, varName: string): string
+  /** r1 Minor:版本目录排他认领 —— 碰撞(exists)换 id 重试,绝不复用既有版本目录。 */
+  claimMcpSecretVersionDir(name: string, verId: string): { ok: true } | { ok: false; exists: boolean; reason: string }
+  writeMcpSecretVersioned(name: string, verId: string, varName: string, value: string): { ok: true; ref: string } | { ok: false; reason: string }
+  removeMcpSecretVersionDir(name: string, verId: string): { ok: true } | { ok: false; reason: string }
+  gcMcpSecrets(name: string): { removed: string[]; warnings: string[] }
+  /** #378 r10:全部 legacy 源 mcp.<name> leaf 的 {file:} 引用集(失败清理的「仍被引用」判定
+   *  必须覆盖合并视图;strict:读不出即失败,调用方保守不删)。 */
+  legacyMcpRefPaths(name: string): { ok: true; refs: string[] } | { ok: false; reason: string }
   /** #354(必改 2):可失败的严格 leaf 前像读 —— 「不存在」= 合法 undefined,「不可读/形状异常」
-   *  必须写前拒绝(否则失败补偿会把未知内容当 undefined 删掉)。 */
+   *  必须写前拒绝(#378 起前像本体由引擎 config action 整文件 image journaled,此读只作产品语义
+   *  早拒 + 锁内 precondition 重验)。 */
   readMcpLeafStrict(name: string): { ok: true; value: Record<string, unknown> | undefined } | { ok: false; reason: string }
-  /** #354:提交面失败补偿 —— mcp.<name> 精确复原到前像(undefined = 删除本次写入)。 */
-  restoreMcpLeaf(name: string, value: Record<string, unknown> | undefined): ConfigOutcome
   /** #346:journaled MCP 卸载的 in-lock 原语 —— 仅删配置副本(主+legacy),零账本副作用,
    *  失败如实返回(legacy 不可读也算失败)。**只在 uninstallExtensionTransaction 锁内调用**。 */
   removeMcpConfigInLock(name: string): ConfigOutcome
-  /** #346:严格密钥吊销 —— 失败可观察(journal 据此保持非终态);目录缺失 = 幂等成功。 */
+  /** #346:严格密钥吊销 —— 失败可观察(journal 据此保持非终态);目录缺失 = 幂等成功。
+   *  整 server 目录删除,天然覆盖 #378 的全部版本目录 + legacy flat。 */
   removeMcpSecretsStrict(name: string): { ok: true } | { ok: false; reason: string }
-  /** #354(必改 1):changed 必须透传 —— changed:false = config 已有恰同钉版(真幂等),
-   *  提交面失败绝不能按「本次新增」补偿删除既有条目。 */
-  persistPlugin(pkg: string, meta?: InstallMetaArg): { ok: true; changed: boolean } | { ok: false; reason: string }
-  /** #354:npm 插件提交面失败补偿 —— 只撤销恰为本次写入的 plugin[] 元素(#355 原语)。 */
-  removePluginEntryExact(pkg: string): ConfigOutcome
+  /** #378(Codex 裁决 Q5):npm plugin 跨配置源(主 + legacy XDG)同 base 严格检查 —— 任一侧
+   *  在场都不是 fresh;任一侧不可读即拒(不能当不存在)。计划前与锁内 precondition 双调。 */
+  findPluginBaseConflictStrict(pkg: string): { ok: true; existing: { spec: string; source: "main" | "legacy" } | undefined } | { ok: false; reason: string }
   /** #352:plugin[] 的 strict 快照读(替换的 plan 快照 + 锁内 precondition 重读)。 */
   readPluginArrayStrict(): { ok: true; value: unknown[] } | { ok: false; reason: string }
+  /** #378 r6/r7:**全部** legacy 配置源(XDG + retained home 等)plugin[] 的 strict 读 ——
+   *  同名路径冲突/GC 引用对账必须看得见每一份;成员形状非法 fail-closed;每源携带 configDir
+   *  (相对条目按其所在目录解析)。 */
+  readLegacyPluginArrayStrict(): { ok: true; sources: Array<{ value: unknown[]; configDir: string }> } | { ok: false; reason: string }
+  /** #378 r7:引擎配置真源路径(escape-hatch 路由后)—— 事务安装前置门比对事务根。 */
+  mcpConfigTruthPath(): string
   /** #352:vendored 替换的纯 staging —— 新内容落 versioned 目录,零 config/账本副作用。 */
-  stageVendoredPluginVersioned(vendoredAssetKey: string, name: string): { ok: true; dir: string; jsPath: string } | { ok: false; reason: string }
+  stageVendoredPluginVersioned(vendoredAssetKey: string, name: string, precollected?: Array<{ path: string; data: Buffer }>): { ok: true; dir: string; jsPath: string } | { ok: false; reason: string }
   removePlugin(pkg: string): ConfigOutcome
-  installVendoredPlugin(vendoredAssetKey: string, name: string, meta?: InstallMetaArg): FsOutcome
+  /** #378:收集 vendored plugin 随包目录为原始载荷(CAS 摄取 → file items 事务;只读零副作用;
+   *  symlink/非常规条目拒,srcDir realpath 圈禁 resources 树内)。 */
+  collectVendoredPluginPayload(vendoredAssetKey: string, name: string): { ok: true; files: Array<{ path: string; data: Buffer }> } | { ok: false; reason: string }
   removePluginPath(name: string, absJsPath: string): ConfigOutcome
   installBuiltinSkill(builtinAssetKey: string, name: string, target?: TargetArg, meta?: InstallMetaArg): FsOutcome
   /** REQ-100 #310:收集 builtin skill 随包目录为载荷(generation 事务 populate 用;不落 flat 目录)。 */
@@ -673,6 +789,9 @@ function resolvePluginDispatch(
   entry: CatalogEntry,
   spec: { package?: string; vendoredAssetKey?: string } | undefined,
   readPluginArrayStrict: () => { ok: true; value: unknown[] } | { ok: false; reason: string },
+  // #378 r11 Major:npm 兄弟 pin 检查必须覆盖 legacy 源(引擎合并后按包名去重,legacy 的
+  // 同包 pin 可能胜出 —— 置换后账本与实际加载版本背离)。strict:读不出即拒。
+  readLegacyPluginArray: () => { ok: true; sources: Array<{ value: unknown[]; configDir: string }> } | { ok: false; reason: string },
 ): PluginDispatch {
   const names = [entry.name]
   if (typeof spec?.package === "string" && spec.package) {
@@ -712,8 +831,25 @@ function resolvePluginDispatch(
   const configKey = record.configKey ?? ""
   if (configKey.startsWith("plugin:")) {
     const oldPinned = configKey.slice("plugin:".length)
-    if (cfg.value.filter((x) => x === oldPinned).length !== 1)
-      return { mode: "refuse", reason: `ledger configKey "${configKey}" not matched exactly once in config plugin[] — ledger/config drift, refusing replace` }
+    // r5 Major:元组成员按 spec 头对账。r10 Major:①恰 pin 的等价重复 = 引擎同一 load 身份,
+    // 不再按原始条目数误判 drift(replace 收敛为单条);②**同包其他 pin 在场即拒** —— 引擎按
+    // 包名去重,兄弟 pin 可能胜出,置换后账本记新 pin 而引擎实际加载别的版本。
+    const specs = cfg.value.map(pluginSpecOf).filter((x): x is string => x !== null)
+    const base = pkgBaseOf(oldPinned)
+    const sameBase = specs.filter((x) => pkgBaseOf(x) === base)
+    const exact = sameBase.filter((x) => x === oldPinned)
+    if (exact.length < 1)
+      return { mode: "refuse", reason: `ledger configKey "${configKey}" not found in config plugin[] — ledger/config drift, refusing replace` }
+    if (sameBase.length !== exact.length)
+      return { mode: "refuse", reason: `config plugin[] contains other pins of "${base}" besides the ledger pin — ambiguous engine load identity, refusing replace` }
+    // r11 Major:legacy 源的同包任何 pin 在场同拒(引擎合并去重时 later 源可能胜出)。
+    const legacy = readLegacyPluginArray()
+    if (!legacy.ok) return { mode: "refuse", reason: legacy.reason }
+    for (const src of legacy.sources) {
+      const legacyHit = src.value.map(pluginSpecOf).find((x): x is string => x !== null && pkgBaseOf(x) === base)
+      if (legacyHit !== undefined)
+        return { mode: "refuse", reason: `legacy config contains pin "${legacyHit}" of "${base}" — engine dedup may load it instead of the replacement, refusing (clean the legacy entry first)` }
+    }
     return { mode: "replace", facts: { record, form: { kind: "npm", oldPinned } } }
   }
   if (configKey.startsWith("plugin-path:")) {
@@ -730,8 +866,24 @@ function resolvePluginDispatch(
       (dirBase === entry.name || dirBase.startsWith(`${entry.name}@`))
     if (!confined)
       return { mode: "refuse", reason: `ledger plugin path "${oldJsPath}" is not under "${pluginsRoot}/${entry.name}[@…]" — refusing replace (uncontrolled removal target)` }
-    if (cfg.value.filter((x) => x === oldJsPath).length !== 1)
-      return { mode: "refuse", reason: `ledger configKey "${configKey}" not matched exactly once in config plugin[] — ledger/config drift, refusing replace` }
+    // r9 Major:对账按引擎解析语义 —— 合法等价改写(相对/file:///元组)不得被词法比较误判
+    // 成 ledger drift。r10 Major:等价重复条目解析为同一路径 = 引擎去重后同一 load 身份,
+    // 按解析身份计数(≥1 即对账成立;replace 把全部匹配收敛为单条)。r15 Major:比较按文件系统
+    // 身份双形态(symlink 别名条目不得误判 drift);任一侧身份不可判 = 对账不可证明,拒。
+    const oldIdent = pathIdentity(oldJsPath)
+    let identUnprovable = false
+    const hits = cfg.value.filter((x) => {
+      const r = resolvePluginEntryPath(x, root)
+      if (r === null) return false
+      const ident = pathIdentity(r)
+      if (ident.forms.some((f) => oldIdent.forms.includes(f))) return true
+      if (!ident.certain || !oldIdent.certain) identUnprovable = true
+      return false
+    })
+    if (identUnprovable)
+      return { mode: "refuse", reason: `a plugin[] entry's filesystem identity is unresolvable (non-absence fs error) — cannot prove ledger/config reconciliation, refusing replace` }
+    if (hits.length < 1)
+      return { mode: "refuse", reason: `ledger configKey "${configKey}" not found in config plugin[] — ledger/config drift, refusing replace` }
     return { mode: "replace", facts: { record, form: { kind: "vendored", oldJsPath, oldDir } } }
   }
   return { mode: "refuse", reason: `installed plugin record has no recognizable configKey ("${configKey}") — refusing replace` }
@@ -756,18 +908,37 @@ async function replacePluginViaTransaction(args: {
    *  installers.stageVendoredPluginVersioned(resources 源,锁外 staging,#352 原样)。
    *  specs = 期望清单(同版本幂等早退的实物严格校验用,review r2 Major)。 */
   seedPayload?: { dir: string; dirRel: string; jsPath: string; items: TxPlanItem[]; specs: TxFileSpec[]; probe: HealthProbe }
+  /** r16 Minor:载荷内容地址(seed/CAS 通道由调用方供给;catalog vendored 分支内部自算)——
+   *  置换 receipt 不落 payloadDigest 会抹掉内容身份,advisory 聚合 digest 闸对缺失值保守放行/
+   *  误拦。npm 无载荷,合法缺省。 */
+  payloadDigest?: string
   readPluginArray?: () => { ok: true; value: unknown[] } | { ok: false; reason: string }
 }): Promise<CatalogInstallOutcome> {
   const { deps, entry, manifest, manifestDigest, intent, facts, rollback } = args
   const readPluginArray = args.readPluginArray ?? (() => deps.installers.readPluginArrayStrict())
   const root = deps.globalRoot()
+  // r7 Major:真源路由门(replace 同样只写 <root>/alpha.jsonc)。
+  const replaceTruth = configTruthInRootGate(root, deps.installers.mcpConfigTruthPath())
+  if (!replaceTruth.ok) {
+    rollback(replaceTruth.reason)
+    return replaceTruth
+  }
   const spec = entry.installSpec as { kind?: string; package?: string; version?: string; vendoredAssetKey?: string }
 
   // 新目标派生 + 幂等早退(同钉版/同 digest = 无事可做,零副作用)。
+  // r20 Major:载荷分支按**新 entry 的 spec** 选(vendoredAssetKey 在场 = bundled 通道装
+  // vendored 载荷),不按旧账形态 —— npm→vendored 迁移否则会继续钉 npm,实际加载源与已验
+  // bundled manifest/账本声明持续背离(且错态账本下次被 npmHealthy 当已完成)。旧形态
+  // (facts.form)只用于旧条目匹配/清除与旧目录 GC。
+  const newFormVendored = Boolean(args.seedPayload) || (typeof spec.vendoredAssetKey === "string" && spec.vendoredAssetKey.length > 0)
+  // r21 Major:vendored 形态下 entry 的 package 发行元数据 —— 主/legacy 未策展同包 npm 条目
+  // 不会被换元(matchesOld 只匹配旧形态),置换后与新路径双载,须对称守门。
+  const newPkgBase = typeof spec.package === "string" && spec.package ? pkgBaseOf(spec.package) : null
   let newElem: string
   let newConfigKey: string
+  let replacePayloadDigest = args.payloadDigest
   let stagedDir: string | null = null
-  if (facts.form.kind === "npm") {
+  if (!newFormVendored) {
     if (typeof spec.package !== "string" || !spec.package) {
       rollback("entry has no plugin package")
       return { ok: false, reason: "entry has no plugin package" }
@@ -776,6 +947,7 @@ async function replacePluginViaTransaction(args: {
     // review #381 Major:幂等早退必须证明目标安装**完整**(digest 相等只证身份)—— receipt 版本、
     // 事务终态任一不符即走完整替换(替换本身就是修复路径),绝不把坏状态报成功。
     const npmHealthy =
+      facts.form.kind === "npm" &&
       pinned === facts.form.oldPinned &&
       facts.record.manifestDigest === manifestDigest &&
       facts.record.version === manifest.version &&
@@ -786,6 +958,25 @@ async function replacePluginViaTransaction(args: {
     }
     newElem = pinned
     newConfigKey = `plugin:${pinned}`
+    // r13 Major:换包名置换(新 base ≠ 旧 base)时,legacy 源已有**新 base** pin 同样拒 ——
+    // dispatch 只查旧 base;引擎按包名去重,legacy 新 base pin 可能胜出。r20:vendored→npm
+    // 迁移(旧形态非 npm)没有旧 base,新 base 一律查。
+    if (facts.form.kind !== "npm" || pkgBaseOf(pinned) !== pkgBaseOf(facts.form.oldPinned)) {
+      // npm form 无 staging(cleanupStaged 定义在后且无事可清)。
+      const legacyPre = deps.installers.readLegacyPluginArrayStrict()
+      if (!legacyPre.ok) {
+        rollback(legacyPre.reason)
+        return legacyPre
+      }
+      const newBase = pkgBaseOf(pinned)
+      for (const src of legacyPre.sources) {
+        const hit = src.value.map(pluginSpecOf).find((x): x is string => x !== null && pkgBaseOf(x) === newBase)
+        if (hit !== undefined) {
+          rollback("legacy pin of the new package base present")
+          return { ok: false, reason: `legacy config contains pin "${hit}" of "${newBase}" — engine dedup may load it instead of the replacement, refusing (clean the legacy entry first)` }
+        }
+      }
+    }
   } else {
     if (!args.seedPayload && !spec.vendoredAssetKey) {
       rollback("entry has no vendored asset")
@@ -796,11 +987,23 @@ async function replacePluginViaTransaction(args: {
       facts.record.manifestDigest === manifestDigest &&
       facts.record.version === manifest.version &&
       facts.record.transaction?.state === "committed"
+    // r22 Major:同版本幂等早退不得跳过同包 base 对称门 —— 主/legacy 存在同包 npm pin(或任一
+    // 源不可读)时不早退,落完整 replace 让 plan 期门如实拒;否则双载现场被报「already at
+    // this version」而两份都继续加载。
+    const sameBasePinAbsent = (): boolean => {
+      if (newPkgBase === null) return true
+      const cur = readPluginArray()
+      if (!cur.ok) return false
+      if (cur.value.map(pluginSpecOf).some((x) => x !== null && pkgBaseOf(x) === newPkgBase)) return false
+      const leg = deps.installers.readLegacyPluginArrayStrict()
+      if (!leg.ok) return false
+      return !leg.sources.some((src) => src.value.map(pluginSpecOf).some((x) => x !== null && pkgBaseOf(x) === newPkgBase))
+    }
     if (args.seedPayload) {
       // seed 幂等早退(review r2 Major + r3 收紧):必须**持 bundle 锁**做实物严格逐文件校验 +
       // 账本锁内重读 —— 锁外验证可被并发替换骗过(TOCTOU),existsSync 只证存在不证内容。
       // 锁忙或任一不健康 = 不早退,落完整 journaled replace(修复路径;引擎锁内串行化)。
-      if (recordHealthy && facts.form.oldDir === args.seedPayload.dir) {
+      if (recordHealthy && facts.form.kind === "vendored" && facts.form.oldDir === args.seedPayload.dir && sameBasePinAbsent()) {
         const held = tryAcquireBundleLock(root, { txId: `tx-pluginidem-${crypto.randomBytes(4).toString("hex")}` })
         if (held.ok) {
           try {
@@ -824,12 +1027,48 @@ async function replacePluginViaTransaction(args: {
       newElem = args.seedPayload.jsPath
       newConfigKey = `plugin-path:${args.seedPayload.jsPath}`
     } else {
-      const vendoredHealthy = recordHealthy && fs.existsSync(facts.form.oldJsPath)
-      if (vendoredHealthy) {
-        rollback("already at target version")
-        return { ok: true, kind: "plugin", name: entry.name, manifestDigest, warning: "already at this version — nothing to replace" }
+      const assetKey = spec.vendoredAssetKey
+      if (assetKey === undefined) {
+        rollback("entry has no vendored asset")
+        return { ok: false, reason: "entry has no vendored asset" }
       }
-      const staged = deps.installers.stageVendoredPluginVersioned(spec.vendoredAssetKey!, entry.name)
+      // r16 Major:update/repair 与 fresh 同一硬化收集合同 —— 收集器拒绝(身份漂移/symlink 源/
+      // 超帽/非常规条目)= 置换拒绝,绝不落回原样复制;digest 同源补齐 receipt payloadDigest。
+      const payload = deps.installers.collectVendoredPluginPayload(assetKey, entry.name)
+      if (!payload.ok) {
+        rollback(payload.reason)
+        return payload
+      }
+      replacePayloadDigest = aggregateFilesDigest(payload.files.map((f) => ({ path: f.path, sha256: sha256Hex(f.data), bytes: f.data.length })))
+      // r15 Major:existsSync 只证 plugin.js 在场不证内容 —— 载荷截断/篡改/缺文件时同版本重装
+      // 必须落修复(staging + 完整 replace),不得「nothing to replace」空转。镜像 seed 幂等早退:
+      // 持 bundle 锁逐文件精确校验 + 账本锁内重读(锁外验证可被并发替换骗过);锁忙/任一不健康 =
+      // 不早退,走修复路径。
+      // r20:同版本幂等早退只对「旧形态同为 vendored」有意义(npm→vendored 迁移 digest 必变,
+      // recordHealthy 恒 false,此处的窄化守卫只是类型与语义双保险)。
+      if (recordHealthy && facts.form.kind === "vendored" && sameBasePinAbsent()) {
+        const held = tryAcquireBundleLock(root, { txId: `tx-pluginidem-${crypto.randomBytes(4).toString("hex")}` })
+        if (held.ok) {
+          try {
+            const rec = findRecordV2(root, "plugin", entry.name)
+            const still =
+              rec !== null &&
+              rec.manifestDigest === manifestDigest &&
+              rec.version === manifest.version &&
+              rec.transaction?.state === "committed" &&
+              rec.configKey === `plugin-path:${facts.form.oldJsPath}`
+            if (still && verifyVendoredPluginDirExact(facts.form.oldDir, payload.files).ok) {
+              rollback("already at target version")
+              return { ok: true, kind: "plugin", name: entry.name, manifestDigest, warning: "already at this version — nothing to replace" }
+            }
+          } finally {
+            held.lock.release()
+          }
+        }
+      }
+      // r17 Major:staging 直用本次收集的字节 —— 与上方 receipt digest 同一来源,杜绝两次独立
+      // 收集之间源变化造成「载荷 B + digest A」。
+      const staged = deps.installers.stageVendoredPluginVersioned(assetKey, entry.name, payload.files)
       if (!staged.ok) {
         rollback(staged.reason)
         return staged
@@ -847,6 +1086,36 @@ async function replacePluginViaTransaction(args: {
       return
     }
     if (!stagedDir) return
+    // #378 r2 Major:retained(恢复被挡)形态下 live config 可能已指向 staged jsPath ——
+    // 此时删除会制造「config 指向缺失载荷」。live 引用在场或读不出 = 保守不删(孤儿目录
+    // 无害,按 runbook 人工收);未被引用才收。
+    const live = readPluginArray()
+    // r3/r14 Major:引用比较按引擎解析语义 + 文件系统身份双形态(相对/file:///symlink 别名
+    // 都不得被词法比较误判「未引用」而删掉 live 仍指向的载荷)。r15 Major:任一侧身份不可判
+    // (非缺席类 fs 错)= 视为引用(保守不删),不得静默回退词法。
+    const newElemIdent = pathIdentity(newElem)
+    const refsStaged = (e: unknown, baseDir: string): boolean => {
+      const resolved = resolvePluginEntryPath(e, baseDir)
+      if (resolved === null) return false
+      const ident = pathIdentity(resolved)
+      if (!newElemIdent.certain || !ident.certain) return true
+      return ident.forms.some((f) => newElemIdent.forms.includes(f))
+    }
+    if (!live.ok || live.value.some((e) => refsStaged(e, root))) {
+      console.error(
+        `[ext-install-planner] plugin ${entry.name}: staged dir kept — ${live.ok ? "live config still references it (retained rollback?)" : `config unreadable: ${live.reason}`}`,
+      )
+      return
+    }
+    // r8 Major:legacy 源(引擎合并)引用 staged jsPath 时同样保留 —— 只查主数组会在
+    // 「legacy 已引用 staged、replace 被门拒」的现场删掉引擎仍会加载的载荷。读不出 = 保守不删。
+    const legacyLive = deps.installers.readLegacyPluginArrayStrict()
+    if (!legacyLive.ok || legacyLive.sources.some((src) => src.value.some((e) => refsStaged(e, src.configDir)))) {
+      console.error(
+        `[ext-install-planner] plugin ${entry.name}: staged dir kept — ${legacyLive.ok ? "a legacy config source references it" : `legacy config unreadable: ${legacyLive.reason}`}`,
+      )
+      return
+    }
     try {
       fs.rmSync(stagedDir, { recursive: true, force: true })
     } catch {
@@ -862,12 +1131,102 @@ async function replacePluginViaTransaction(args: {
     return snapshot
   }
   const oldElem = facts.form.kind === "npm" ? facts.form.oldPinned : facts.form.oldJsPath
-  if (snapshot.value.filter((x) => x === oldElem).length !== 1) {
+  // r5/r9 Major:等值与换元按引擎语义 —— npm 按 spec 头(包名非路径);vendored 按解析路径
+  // (相对/file:///元组等价形态都命中)。否则合法配置被误报 drift 永远无法更新。
+  // r15 Major:vendored 按文件系统身份双形态(symlink 别名条目不得误判 drift/漏换元);
+  // 任一侧身份不可判(非缺席类 fs 错)= 换元集不可证明,拒(否则不可判别名残留会双载)。
+  const oldElemIdent = facts.form.kind === "npm" ? null : pathIdentity(path.resolve(oldElem))
+  let matchIdentUnprovable = false
+  const matchesOld = (x: unknown): boolean => {
+    if (oldElemIdent === null) return pluginSpecOf(x) === oldElem
+    const r = resolvePluginEntryPath(x, root)
+    if (r === null) return false
+    const ident = pathIdentity(r)
+    if (ident.forms.some((f) => oldElemIdent.forms.includes(f))) return true
+    if (!ident.certain || !oldElemIdent.certain) matchIdentUnprovable = true
+    return false
+  }
+  // r10 Major:等价重复(同一引擎 load 身份)≥1 即对账成立,置换时收敛为单条;0 条才是 drift。
+  const oldMatchCount = snapshot.value.filter(matchesOld).length
+  if (matchIdentUnprovable) {
+    cleanupStaged()
+    rollback("plugin entry identity unresolvable")
+    return { ok: false, reason: "a plugin[] entry's filesystem identity is unresolvable (non-absence fs error) — cannot prove the replacement set, refusing (retry after resolving)" }
+  }
+  if (oldMatchCount < 1) {
     cleanupStaged()
     rollback("plugin config drifted before plan")
     return { ok: false, reason: "plugin config changed while planning — retry the update" }
   }
-  const nextArray = snapshot.value.map((x) => (x === oldElem ? newElem : x))
+  // #378 r2(Major,fresh 同款对称):oldElem 之外的同名派生路径 = 未策展残留 —— 置换后它会
+  // 留在数组里与新元素双载同名插件;拒绝而非静默带过(与 fresh 的不认领语义一致)。
+  const strayEntry = findSameNamePluginPathEntry(
+    snapshot.value.filter((x) => !matchesOld(x)),
+    root,
+    entry.name,
+  )
+  if (strayEntry) {
+    cleanupStaged()
+    rollback("unregistered plugin path present")
+    return { ok: false, reason: `config also contains "${strayEntry}" without a ledger record — refusing to update into a double-load` }
+  }
+  // r14 Major:换包名置换(新 base ≠ 旧 base)时,**主配置**未策展的新 base 同包条目同样拒 ——
+  // 置换后 [newpkg@2, newpkg@9] 引擎 later-wins 加载未策展 pin 而账本记新 pin(旧 base 兄弟
+  // 已由 dispatch sameBase 检查拒;锁内 canon 快照等值保证本检查在计划后持续有效)。
+  // r20:vendored→npm 迁移(旧形态非 npm)没有旧 base,新 base 一律查。
+  if (!newFormVendored && (facts.form.kind !== "npm" || pkgBaseOf(newElem) !== pkgBaseOf(facts.form.oldPinned))) {
+    const newBase = pkgBaseOf(newElem)
+    const mainHit = snapshot.value.map(pluginSpecOf).find((x): x is string => x !== null && pkgBaseOf(x) === newBase)
+    if (mainHit !== undefined) {
+      cleanupStaged()
+      rollback("unregistered pin of the new package base present")
+      return { ok: false, reason: `config already contains pin "${mainHit}" of "${newBase}" — engine dedup may load it instead of the replacement, refusing (clean it first)` }
+    }
+  }
+  // r21 Major:新形态 vendored 且带 package 元数据 —— 主/legacy 未策展同包 npm 条目在场即拒
+  // (排除将被本次换元的旧条目:npm→vendored 迁移的旧 pin 合法)。fresh 的 r20 门只挡首装,
+  // vendored→vendored 更新否则原样保留同包 pin,引擎按包名与 file URL 各自去重 = 双载。
+  if (newFormVendored && newPkgBase !== null) {
+    const mainPkgHit = snapshot.value.filter((x) => !matchesOld(x)).map(pluginSpecOf).find((x): x is string => x !== null && pkgBaseOf(x) === newPkgBase)
+    if (mainPkgHit !== undefined) {
+      cleanupStaged()
+      rollback("unregistered pin of the plugin package present")
+      return { ok: false, reason: `config already contains pin "${mainPkgHit}" of "${newPkgBase}" without a ledger record — engine loads it alongside the vendored payload, refusing (clean it first)` }
+    }
+    const legacyPkg = deps.installers.readLegacyPluginArrayStrict()
+    if (!legacyPkg.ok) {
+      cleanupStaged()
+      rollback(legacyPkg.reason)
+      return legacyPkg
+    }
+    for (const src of legacyPkg.sources) {
+      const hit = src.value.map(pluginSpecOf).find((x): x is string => x !== null && pkgBaseOf(x) === newPkgBase)
+      if (hit !== undefined) {
+        cleanupStaged()
+        rollback("legacy pin of the plugin package present")
+        return { ok: false, reason: `legacy config contains pin "${hit}" of "${newPkgBase}" — engine loads it alongside the vendored payload, refusing (clean the legacy entry first)` }
+      }
+    }
+  }
+  // r6 Major:legacy XDG 源的同名派生路径同判(置换后 legacy 旧路径仍被引擎合并加载 = 双载)。
+  const replaceLegacyGate = legacySameNamePluginGate(() => deps.installers.readLegacyPluginArrayStrict(), root, entry.name)
+  if (!replaceLegacyGate.ok) {
+    cleanupStaged()
+    rollback("legacy plugin conflict")
+    return replaceLegacyGate
+  }
+  // r10/r11:等价重复收敛为单条;保留**最后一条**匹配的形态/options —— 引擎对重复解析身份
+  // 取后者为准(config/plugin.ts later-wins),保首条会丢弃真正生效的 options。
+  const lastMatchIdx = snapshot.value.reduce((acc, x, i) => (matchesOld(x) ? i : acc), -1)
+  const nextArray: unknown[] = []
+  for (const [i, x] of snapshot.value.entries()) {
+    if (!matchesOld(x)) {
+      nextArray.push(x)
+      continue
+    }
+    if (i !== lastMatchIdx) continue
+    nextArray.push(Array.isArray(x) ? [newElem, x[1]] : newElem)
+  }
   const snapshotCanon = JSON.stringify(snapshot.value)
 
   const now = deps.now?.() ?? new Date().toISOString()
@@ -884,6 +1243,9 @@ async function replacePluginViaTransaction(args: {
     desiredState: facts.record.desiredState,
     origin: "catalog",
     ...(stagedDir ? { files: [stagedDir] } : {}),
+    // r16 Minor:置换 receipt 落载荷内容地址 —— upsert 是整记录替换,缺省会抹掉旧值,
+    // advisory 聚合 digest 闸对缺失 payloadDigest 保守判中,升级后的无关载荷被误拦。
+    ...(replacePayloadDigest ? { payloadDigest: replacePayloadDigest } : {}),
     configKey: newConfigKey,
     installedAt: now,
   }
@@ -919,6 +1281,26 @@ async function replacePluginViaTransaction(args: {
         return { ok: false, reason: "plugin ledger changed since plan — retry the update" }
       if (rec.desiredState !== facts.record.desiredState)
         return { ok: false, reason: "plugin desired state changed since plan — retry the update" }
+      // r12 Major:legacy 源不在主 canon 快照覆盖内 —— 锁内重跑两个 legacy 门(同名派生路径 +
+      // npm 同包 pin),与「计划前 + 锁内双查」合同一致;否则计划后写入 retained 源的同包 pin
+      // 会让引擎 later-wins 加载 legacy 版本而账本记新 pin。
+      const legacyGateNow = legacySameNamePluginGate(() => deps.installers.readLegacyPluginArrayStrict(), root, entry.name)
+      if (!legacyGateNow.ok) return legacyGateNow
+      // r13 Major:catalog 更新可换包名(同 entry 名)—— 旧/新两个 base 都要复核,否则
+      // 计划后写入 legacy 的 pin 会在引擎 later-wins 时胜出而账本记新事实。r20:base 集按
+      // 新旧形态各自取(npm→vendored 迁移仍须守旧 base;vendored→npm 守新 base)。
+      const recheckBases = new Set<string>()
+      if (facts.form.kind === "npm") recheckBases.add(pkgBaseOf(facts.form.oldPinned))
+      if (!newFormVendored) recheckBases.add(pkgBaseOf(newElem))
+      if (newFormVendored && newPkgBase !== null) recheckBases.add(newPkgBase) // r21:vendored 形态守 package 元数据 base
+      if (recheckBases.size > 0) {
+        const legacyNow = deps.installers.readLegacyPluginArrayStrict()
+        if (!legacyNow.ok) return legacyNow
+        for (const src of legacyNow.sources) {
+          const hit = src.value.map(pluginSpecOf).find((x): x is string => x !== null && recheckBases.has(pkgBaseOf(x)))
+          if (hit !== undefined) return { ok: false, reason: `legacy config gained pin "${hit}" since plan — retry the update` }
+        }
+      }
       // review r2 Blocker:异 payload 的新内容寻址目录必须缺席(锁内判;r3:壳容忍 —— recovery
       // 回滚遗留的纯空目录树不阻断重试,文件/symlink 在场才拒;preAbsent 的最终强制在引擎
       // file prepare 的 requireAbsent 断言 + switch 前紧邻重断言)。
@@ -955,7 +1337,7 @@ async function replacePluginViaTransaction(args: {
   // 引用 = 保留(孤儿有 runbook 处置),绝不误删已提交运行载荷。
   let warning: string | undefined
   if (facts.form.kind === "vendored" && facts.form.oldDir !== stagedDir) {
-    const gc = gcVendoredPluginDirLocked(root, entry.name, facts.form.oldDir, readPluginArray)
+    const gc = gcVendoredPluginDirLocked(root, entry.name, facts.form.oldDir, readPluginArray, () => deps.installers.readLegacyPluginArrayStrict())
     if (!gc.removed) warning = gc.warning
   }
   ;(deps.transaction ?? passthroughTx).commit(args.txId)
@@ -1090,6 +1472,10 @@ async function classifyBundleChild(
   if (entry.type === "mcp") {
     const spec = entry.installSpec
     if (spec?.kind !== "mcp") return { status: "fatal", id, reason: "mcp entry has no mcp installSpec" }
+    // r11 Major:bundle MCP child 与单装同一真源门 —— escape-hatch 路由下写 root/alpha.jsonc
+    // 会「账本记 active、引擎读不到」。fatal(required 子项拒整单,与单装一致 fail-closed)。
+    const bundleTruth = configTruthInRootGate(deps.globalRoot(), deps.installers.mcpConfigTruthPath())
+    if (!bundleTruth.ok) return { status: "fatal", id, reason: bundleTruth.reason }
     // 首期排除需密钥 / workspace / Excel 的 MCP —— 它们的 secret 文件写、workspace 沙箱不在 config
     // action 的原子边界内(REQ-105 Excel 闸口、fileifyMcpSecrets 独立文件)。fail-closed。
     if ((spec.requiredEnvVars?.length ?? 0) > 0)
@@ -1302,25 +1688,26 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
   const scope = resolveScope(intent.scope, entry.type)
   if (!scope.ok) return scope
   const grants = intent.grants ?? {}
-  const meta: InstallMetaArg = { catalogId: entry.id, version: manifest.version }
   const tx = (deps.transaction ?? passthroughTx).begin({ op: "install", kind: entry.type, name: entry.name, scope: intent.scope.scope, manifestDigest })
   const rollback = (reason: string): void => (deps.transaction ?? passthroughTx).rollback(tx.txId, reason)
 
-  let files: string[] | undefined
-  let configKey: string | undefined
+  // #378:全类型分支自提交并早返回(引擎 commitReceipt 单点)—— #354 时代「提交面补偿闭包 +
+  // 密钥快照」随非事务尾部一并退役。
   let payloadDigest: string | undefined
-  let liveMcp: { name: string; config: Record<string, unknown> } | undefined
-  // #354:非 generation 提交面的失败补偿(按类型在各分支登记;密钥快照只在账本提交成功后 discard)。
-  let compensate: (() => { ok: true } | { ok: false; reason: string }) | null = null
-  let mcpSecretSnap: { restore(): { ok: true } | { ok: false; reason: string }; discard(): void } | null = null
 
   const spec = entry.installSpec
 
-  // ── #354 写前门(Codex 裁决必改 1/3 + review #379 Major):补偿必须可证明 —— 没有可靠前像的
-  //    覆盖更新一律显式拒绝,不静默覆盖、不把无账在场认领为 catalog(plugin 更新链 = #352 原子
-  //    替换;agent 无更新链)。在场检查覆盖 v2 record **与 v1-only receipt**(历史 eager v1 遗物),
-  //    npm 插件另按历史规范化名 pluginRecordName(pkg) 查(review:同 catalog ID 双键/ghost)。
+  // ── #354 写前门(Codex 裁决必改 1/3 + review #379 Major):没有可靠前像的覆盖更新一律显式
+  //    拒绝,不静默覆盖、不把无账在场认领为 catalog(plugin 更新链 = #352 原子替换;agent 无
+  //    更新链)。在场检查覆盖 v2 record **与 v1-only receipt**(历史 eager v1 遗物)。
   if (entry.type === "plugin") {
+    // #378 r6(Major):vendored 内容身份交叉在**分发之前**(fresh 收集器的绑定会被 replace
+    // 分支绕过 —— 已有 victim 记录 + 配错 vendoredAssetKey 的新 entry 会把别的资产按 victim
+    // 的名称/账本/授权身份置换进运行)。与 collectVendoredPluginPayload/#361 agent 同一合同。
+    if (spec?.kind === "plugin" && spec.vendoredAssetKey && spec.vendoredAssetKey !== `plugins/${entry.name}`) {
+      rollback("plugin content identity drift")
+      return { ok: false, reason: `catalog entry vendoredAssetKey "${spec.vendoredAssetKey}" ≠ "plugins/${entry.name}" — refusing (content identity drift)` }
+    }
     // #352:fresh / replace / refuse 三态分发(main 从自己账本裁决,复用同一 catalog 通道)——
     // 有效 catalog 旧账 → journaled 原子替换;v1-only/损坏/双键/漂移 → 显式拒绝;absent → fresh。
     const dispatch = resolvePluginDispatch(
@@ -1328,6 +1715,7 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       entry,
       spec?.kind === "plugin" ? spec : undefined,
       deps.installers.readPluginArrayStrict,
+      () => deps.installers.readLegacyPluginArrayStrict(),
     )
     if (dispatch.mode === "refuse") {
       rollback(dispatch.reason)
@@ -1370,138 +1758,406 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
   }
 
   if (entry.type === "mcp") {
+    // #378(Codex 裁决 D1):单装 MCP 收进 config action 单事务(bundle/seed 同形态)——
+    // capabilities/receipt 挂 item,#348 授权闸随之生效;前像/复原由引擎整文件 image journaled
+    // 承担(重装是产品流,允许覆盖,不做 version gate);账本归引擎 commitReceipt 单点。
     if (spec?.kind !== "mcp") {
       rollback("entry has no mcp installSpec")
       return { ok: false, reason: "entry has no mcp installSpec" }
+    }
+    // r7 Major:escape-hatch 环境下引擎配置真源不在事务根 → fail-closed 拒(不写账谎报 active)。
+    const mcpTruth = configTruthInRootGate(scope.root(deps), deps.installers.mcpConfigTruthPath())
+    if (!mcpTruth.ok) {
+      rollback(mcpTruth.reason)
+      return mcpTruth
     }
     const derived = deriveMcpConfig(spec, grants)
     if (!derived.ok) {
       rollback(derived.reason)
       return derived
     }
-    // #354(必改 2):精确前像(strict:不可读/形状异常写前拒绝)—— 提交面失败复原旧叶,
-    // 绝不把未知内容当 undefined 删掉;MCP 重装是产品流(确认框重装),必须可复原而非拒绝。
+    // #354 语义保留(产品早拒):不可读/形状异常的前像写前拒绝(锁内 precondition 重验)。
     const leafBefore = deps.installers.readMcpLeafStrict(entry.name)
     if (!leafBefore.ok) {
       rollback(leafBefore.reason)
       return leafBefore
     }
-    // durable 配置先把密钥(environment 键 + headers 内嵌真值)全部路由进 {file:} 通道再落盘;
-    // 任一密钥没能转换(写文件失败 / granted 却没落到任何字段)即 fail-closed —— 绝不明文持久化
-    // (Codex review #350 阻断项:此前 remote MCP 的 header 密钥明文进 alpha.jsonc)。
-    const durable = JSON.parse(JSON.stringify(derived.config)) as Record<string, unknown>
+    const durable = structuredClone(derived.config)
     const secretMap: Record<string, string> = {}
-    for (const v of derived.secretVars) secretMap[v] = grants.secrets![v]!
+    for (const v of derived.secretVars) {
+      const real = grants.secrets?.[v]
+      if (typeof real === "string" && real.length > 0) secretMap[v] = real
+    }
+    // #378(Codex 裁决 Q1):版本化密钥 —— 纯引用替换先行(零写盘);granted 未落到任何字段
+    // fail-closed 拒明文持久化(#350 阻断项语义保留);落盘推迟到策略/校验通过之后。
+    let verId: string | null = null
     let refs: Record<string, string> = {}
-    // Codex review #351:失败路径(含配置写锁 busy)按写前快照复原 —— 更新场景不得毁掉既有安装
-    // 仍被 config 引用的密钥;首装无快照则等价于清掉新写入(不留孤儿)。#354:快照严格化
-    //(取不到即拒),且 discard 延迟到账本提交成功后。
     if (derived.secretVars.length > 0) {
-      const f = deps.installers.fileifyMcpSecrets(entry.name, durable, secretMap)
-      if (!f.ok) {
-        rollback(f.reason)
-        return f
+      // r1 Minor:排他认领版本目录(碰撞换 id 重试三次;非碰撞失败即拒 —— 圈禁/权限问题重试无意义)。
+      let claimFail = ""
+      for (let i = 0; i < 3 && verId === null; i++) {
+        const vid = newMcpSecretVersionId()
+        const claimed = deps.installers.claimMcpSecretVersionDir(entry.name, vid)
+        if (claimed.ok) verId = vid
+        else {
+          claimFail = claimed.reason
+          if (!claimed.exists) break
+        }
       }
-      mcpSecretSnap = f
-      if (f.skipped.length > 0) {
-        const sr = f.restore() // 复原失败可观察(review #379),并入拒绝原因
-        mcpSecretSnap = null
-        rollback(`secrets not routable to {file:} channel: ${f.skipped.join(", ")}`)
+      if (verId === null) {
+        rollback(`secret version dir claim failed: ${claimFail}`)
+        return { ok: false, reason: `secret version dir claim failed: ${claimFail}` }
+      }
+      const vid = verId
+      const sub = substituteMcpSecretRefsPure(durable, secretMap, (varName) => deps.installers.mcpSecretRefFor(entry.name, vid, varName))
+      if (sub.skipped.length > 0) {
+        deps.installers.removeMcpSecretVersionDir(entry.name, vid) // 认领后的空目录随拒绝清理
+        rollback(`secrets not routable to {file:} channel: ${sub.skipped.join(", ")}`)
         return {
           ok: false,
-          reason: `secret(s) could not be routed to the {file:} channel: ${f.skipped.join(", ")} — refusing plaintext persist${sr.ok ? "" : `; ${sr.reason}`}`,
+          reason: `secret(s) could not be routed to the {file:} channel: ${sub.skipped.join(", ")} — refusing plaintext persist`,
         }
       }
-      refs = f.refs
+      refs = sub.substituted
     }
-    // persistMcp(=persistMcpWithPolicy)会**原地**注入 main 策略(如 Excel 受管 EXCEL_FILES_PATH),
-    // live 必须在 persist 之后从 durable 派生,否则 renderer 拿去 sdk.mcp.add 的 live 配置缺策略字段。
-    const persisted = deps.installers.persistMcp(entry.name, durable, meta)
-    if (!persisted.ok) {
-      const sr = mcpSecretSnap?.restore()
-      mcpSecretSnap = null
-      rollback(persisted.reason)
-      return sr && !sr.ok ? { ok: false, reason: `${persisted.reason}; ${sr.reason}` } : persisted
+    // #378(Codex 裁决 Q2):Excel 受管 workspace 策略注入(原 persistMcpWithPolicy 闸口,持久化
+    // 剥离)—— mkdir/realpath 属非权威 provisioning:authorize 暂停残留的只是空受管目录,零
+    // config/账本/密钥副作用(测试钉)。live 从策略后 durable 派生,不缺策略字段。
+    const pol = deps.installers.applyMcpWritePolicy(entry.name, durable)
+    if (!pol.ok) {
+      if (verId) deps.installers.removeMcpSecretVersionDir(entry.name, verId) // 已认领的空目录随拒绝清理
+      rollback(pol.reason)
+      return pol
     }
-    configKey = `mcp.${entry.name}`
-    compensate = () => {
-      const failures: string[] = []
-      const lr = deps.installers.restoreMcpLeaf(entry.name, leafBefore.value)
-      if (!lr.ok) failures.push(`mcp leaf restore: ${lr.reason}`)
-      // review #379:密钥恢复失败必须可观察(.bak 留证)—— 吞掉 = 谎报补偿完整。
-      const sr = mcpSecretSnap?.restore()
-      if (sr && !sr.ok) failures.push(sr.reason)
-      mcpSecretSnap = null
-      return failures.length ? { ok: false, reason: failures.join("; ") } : { ok: true }
+    // 纯校验门(seed/未策展同一 validateServer;对策略注入后的最终 durable 校验)。
+    const validated = validateServer(durable)
+    if (!validated.ok) {
+      if (verId) deps.installers.removeMcpSecretVersionDir(entry.name, verId)
+      rollback(validated.reason)
+      return { ok: false, reason: validated.reason }
     }
-    // live = 策略后配置 + 密钥真值回填(environment 与 headers 里的 {file:} 引用换回 renderer 刚交
-    // 的真值 —— 该值本就来自本次 grants;契约:绝不回传任何 main/keychain 来源的密钥)。
-    const liveCfg = JSON.parse(JSON.stringify(durable)) as Record<string, unknown>
+    // 写本次版本的密钥文件(只增不覆盖:旧版本文件被旧 config 引用,直至新 config 提交前必须
+    // 原样可读;本次目录写失败即删,无引用惰性安全)。
+    if (verId) {
+      for (const [varName, real] of Object.entries(secretMap)) {
+        if (refs[varName] === undefined) continue
+        const written = deps.installers.writeMcpSecretVersioned(entry.name, verId, varName, real)
+        if (!written.ok) {
+          const rm = deps.installers.removeMcpSecretVersionDir(entry.name, verId)
+          rollback(written.reason)
+          return { ok: false, reason: `secret write failed: ${written.reason}${rm.ok ? "" : `; version cleanup failed: ${rm.reason}`}` }
+        }
+      }
+    }
+    const mcpRoot = scope.root(deps)
+    const mcpConfigTarget = path.join(mcpRoot, "alpha.jsonc")
+    const mcpNow = deps.now?.() ?? new Date().toISOString()
+    const mcpReceipt: UpsertInput = {
+      id: entry.id,
+      name: entry.name,
+      kind: "mcp",
+      environment: deps.environment(),
+      scope: scope.identity,
+      version: manifest.version,
+      manifestDigest,
+      grantDigest: computeGrantDigest(grants),
+      desiredState: "enabled",
+      origin: "catalog",
+      configKey: `mcp.${entry.name}`,
+      installedAt: mcpNow,
+    }
+    const plan: TxPlan = {
+      items: [
+        {
+          key: `mcp--${entry.name}`,
+          action: "config",
+          config: { target: mcpConfigTarget, edits: [{ keyPath: ["mcp", entry.name], value: durable }] },
+          manifestDigest,
+          capabilities: manifest.capabilities,
+          receipt: mcpReceipt,
+        },
+      ],
+      ...(intent.authorization ? { authorization: stampAuthorization(intent.authorization, () => deps.now?.() ?? new Date().toISOString())! } : {}),
+    }
+    const refPaths = Object.values(refs).map(mcpRefPathOf).filter((p): p is string => p !== null)
+    const hooks: TxHooks = {
+      populate: () => {}, // config action 无 staging 载荷
+      // 锁内 precondition(TOCTOU):账本可写 + 前像仍 strict 可读(覆盖合法,不可读拒)+
+      // 本次密钥文件仍在场(r1 Major:锁外写文件与取锁之间若被并发 GC/外部清理收走,提交会
+      // 落一份引用悬空文件的 config —— 锁内逐引用 lstat 实文件,缺任一即拒,用户重试)。
+      precondition: () => {
+        const ledger = probeLedgerForWrite(mcpRoot)
+        if (!ledger.ok) return { ok: false, reason: `refusing mcp install: ${ledger.reason}` }
+        const leaf = deps.installers.readMcpLeafStrict(entry.name)
+        if (!leaf.ok) return { ok: false, reason: `refusing mcp install: ${leaf.reason}` }
+        for (const p of refPaths) {
+          try {
+            if (!fs.lstatSync(p).isFile()) return { ok: false, reason: `secret file missing or not a regular file: ${path.basename(p)} — retry the install` }
+          } catch {
+            return { ok: false, reason: `secret file disappeared before commit (gc/external cleanup): ${path.basename(p)} — retry the install` }
+          }
+        }
+        return { ok: true }
+      },
+      commitReceipt: (records: TxCommitRecord[]) => {
+        const written = upsertRecordsV2(mcpRoot, recoveryReceiptInputs(records))
+        if (!written.ok) throw new Error(`mcp receipt commit failed: ${written.reason}`)
+      },
+    }
+    const result = await runExtensionTransaction(mcpRoot, plan, hooks)
+    if (!result.ok) {
+      // 本次版本目录清理(authorize 暂停同路径)。r1 Major:先验当前 live leaf **未引用**本次
+      // 版本才删 —— 回滚被旁路改写挡住(journal 保留非终态)等留证形态下 config 可能仍指向
+      // 本次版本,删除会制造悬空 {file:} 引用;读不到 leaf 同样保守不删,交 GC 按引用对账收。
+      if (verId) {
+        const leafNow = deps.installers.readMcpLeafStrict(entry.name)
+        // leaf 缺席(fresh 的 authorize 暂停/失败)= 确定零引用,可删;只有**不可读**才保守不删。
+        // r3/r4/r5 Major:两侧按**引擎解析语义**规范化(resolveMcpRefPath:~/ 展开 + config
+        // 目录基准)—— 旁路等价改写({file:/a/v/./TOKEN}、相对、~/ 形态)不再被误判「未引用」
+        // 而删掉 live 仍指向的密钥。
+        // r10 Major:「仍被引用」判定覆盖合并视图 —— retained legacy 源引用本次版本(异常旁路
+        // 写形态)时删除同样制造悬空;legacy 读不出 = 保守不删。
+        const legacyNow = deps.installers.legacyMcpRefPaths(entry.name)
+        // r14 Major:引用与本次版本文件都取文件系统身份双形态(symlink 别名不漏判)。
+        // r15 Major:任一路径身份不可判(非缺席类 fs 错)= 「未引用」不可证明 —— 与 config
+        // 不可读同置(保守不删 + authorize 降级),不得静默回退词法把暂时 EIO 的活体别名删掉。
+        let cleanupIdentUnprovable = false
+        const identFormsOf = (p: string): string[] => {
+          const ident = pathIdentity(p)
+          if (!ident.certain) cleanupIdentUnprovable = true
+          return ident.forms
+        }
+        let liveRefs: Set<string> | null = null
+        if (leafNow.ok && legacyNow.ok) {
+          liveRefs = new Set()
+          for (const p of [
+            ...(leafNow.value !== undefined ? collectMcpFileRefPaths(leafNow.value) : []).map((q) => resolveMcpRefPath(q, mcpRoot)),
+            ...legacyNow.refs,
+          ]) {
+            for (const form of identFormsOf(p)) liveRefs.add(form)
+          }
+        }
+        const refsHitLive =
+          liveRefs !== null && refPaths.some((p) => identFormsOf(resolveMcpRefPath(p, mcpRoot)).some((form) => liveRefs.has(form)))
+        const stillReferenced = liveRefs === null || cleanupIdentUnprovable || refsHitLive
+        // r5/r6 Major:authorize 暂停承诺「零权威副作用 + 零明文残留」—— 清理必须**可证明**完成
+        // (leaf 可读 + 未引用本次版本 + 删除成功)才允许照常返回 authorize;任何一环不成立
+        // (不可读无从对账 / 出现引用 = 有旁路写方 / 删除失败)都降级为普通失败,原因如实入
+        // reason(明文 0600,GC 兜底),用户处理后重试。非 authorize 失败保持原语义(保守不删
+        // 留给 GC,不污染引擎失败原因)。
+        let cleanupUnproven: string | null = null
+        if (liveRefs === null) {
+          cleanupUnproven = `config unreadable — cannot prove the secret version is unreferenced`
+          console.error(`[ext-install-planner] mcp ${entry.name}: secret version ${verId} kept — config unreadable`)
+        } else if (cleanupIdentUnprovable && !refsHitLive) {
+          cleanupUnproven = `a path's filesystem identity is unresolvable (non-absence fs error) — cannot prove the secret version is unreferenced`
+          console.error(`[ext-install-planner] mcp ${entry.name}: secret version ${verId} kept — path identity unresolvable`)
+        } else if (stillReferenced) {
+          cleanupUnproven = `live config references this attempt's secret version (bypass write?)`
+          console.error(`[ext-install-planner] mcp ${entry.name}: secret version ${verId} kept — live config still references it (rollback retained?)`)
+        } else {
+          const rm = deps.installers.removeMcpSecretVersionDir(entry.name, verId)
+          if (!rm.ok) {
+            cleanupUnproven = rm.reason
+            console.error(`[ext-install-planner] mcp ${entry.name}: secret version cleanup failed: ${rm.reason}`)
+          }
+        }
+        if (cleanupUnproven !== null && result.stage === "authorize") {
+          rollback(result.reason)
+          return {
+            ok: false,
+            reason: `authorization pause aborted: this attempt's secret version cleanup is not proven (${cleanupUnproven}) — plaintext may remain in version "${verId}" pending gc; resolve and retry`,
+          }
+        }
+      }
+      rollback(result.reason)
+      if (result.stage === "authorize") {
+        if (result.authorization) return { ok: false, stage: "authorize", reason: result.reason, authorization: result.authorization }
+        return { ok: false, reason: result.reason }
+      }
+      return { ok: false, reason: result.reason, ...(result.stage ? { stage: result.stage } : {}) }
+    }
+    ;(deps.transaction ?? passthroughTx).commit(tx.txId)
+    // 提交成功:收未被当前 leaf 引用且过宽限的旧版本/flat/快照残留(锁内对账;busy 跳过)。
+    const gc = deps.installers.gcMcpSecrets(entry.name)
+    // live = 策略后配置 + 密钥真值回填({file:} 引用换回本次 grants 真值;契约:绝不回传任何
+    // main/keychain 来源的密钥)。
+    const liveCfg = structuredClone(durable)
+    const isRec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
     for (const [varName, ref] of Object.entries(refs)) {
-      const real = secretMap[varName]!
+      const real = secretMap[varName]
+      if (typeof real !== "string") continue
       const liveEnv = liveCfg.environment
-      if (liveEnv && typeof liveEnv === "object" && !Array.isArray(liveEnv) && (liveEnv as Record<string, unknown>)[varName] === ref)
-        (liveEnv as Record<string, unknown>)[varName] = real
+      if (isRec(liveEnv) && liveEnv[varName] === ref) liveEnv[varName] = real
       const liveHeaders = liveCfg.headers
-      if (liveHeaders && typeof liveHeaders === "object" && !Array.isArray(liveHeaders)) {
-        const h = liveHeaders as Record<string, unknown>
-        for (const [hk, hv] of Object.entries(h)) {
-          if (typeof hv === "string" && hv.includes(ref)) h[hk] = hv.split(ref).join(real)
+      if (isRec(liveHeaders)) {
+        for (const [hk, hv] of Object.entries(liveHeaders)) {
+          if (typeof hv === "string" && hv.includes(ref)) liveHeaders[hk] = hv.split(ref).join(real)
         }
       }
     }
-    liveMcp = { name: entry.name, config: liveCfg }
+    const mcpWarnings = [...result.warnings, ...gc.warnings]
+    return {
+      ok: true,
+      kind: "mcp",
+      name: entry.name,
+      manifestDigest,
+      liveMcp: { name: entry.name, config: liveCfg },
+      ...(mcpWarnings.length ? { warning: mcpWarnings.join("; ") } : {}),
+    }
   } else if (entry.type === "plugin") {
+    // #378(Codex 裁决 D2/D3):plugin fresh 收进事务 —— replace 已由上方 #352 三态分发走
+    // journaled 替换(capabilities/authorization 在 plan 上,已过闸),此处只剩 fresh:
+    // vendored = 随包载荷自算内容地址进 CAS → #359 seed 同一事务载体(constraints/探针/
+    // precondition 全复用,目录 = 内容寻址 plugins/<name>@<digest16>);npm = config action
+    // 单事务(整数组换元)。两路 authorize 闸随 plan capabilities 生效,账本归引擎单点。
     if (spec?.kind !== "plugin") {
       rollback("entry has no plugin installSpec")
       return { ok: false, reason: "entry has no plugin installSpec" }
     }
     if (spec.vendoredAssetKey) {
-      const r = deps.installers.installVendoredPlugin(spec.vendoredAssetKey, entry.name, meta)
-      if (!r.ok) {
-        rollback(r.reason)
-        return r
+      const c = deps.installers.collectVendoredPluginPayload(spec.vendoredAssetKey, entry.name)
+      if (!c.ok) {
+        rollback(c.reason)
+        return c
       }
-      files = r.files
-      configKey = files?.[0] ? `plugin-path:${path.join(files[0], "plugin.js")}` : undefined
-      // #354:写前门已证明 fresh(无账 + 无既有目录)→ 提交面失败可安全撤路径条目 + 删目录。
-      const vendoredDir = files?.[0]
-      compensate = () => {
-        if (!vendoredDir) return { ok: false, reason: "vendored dir unknown — cannot compensate" }
-        const failures: string[] = []
-        const rem = deps.installers.removePluginPath(entry.name, path.join(vendoredDir, "plugin.js"))
-        if (!rem.ok) failures.push(`vendored plugin config restore: ${rem.reason}`)
-        try {
-          fs.rmSync(vendoredDir, { recursive: true, force: true })
-        } catch (error) {
-          // review #379:目录删除失败同样并入 compensation incomplete(权限/竞态残目录如实可见)。
-          failures.push(`vendored dir removal: ${error instanceof Error ? error.message : String(error)}`)
-        }
-        return failures.length ? { ok: false, reason: failures.join("; ") } : { ok: true }
+      // 自算内容地址进 CAS(#303 builtin 先例:摄取后完整性,不主张上游真实性)。
+      const vendManifest = c.files.map((f) => ({ path: f.path, sha256: sha256Hex(f.data), bytes: f.data.length }))
+      const p = promotePayloadToCas(deps.casBaseRoot(), c.files, vendManifest)
+      if (!p.ok) {
+        rollback(p.reason)
+        return { ok: false, reason: p.reason }
       }
-    } else if (typeof spec.package === "string" && spec.package) {
-      const pinned = spec.version && spec.package.indexOf("@", 1) === -1 ? `${spec.package}@${spec.version}` : spec.package
-      const r = deps.installers.persistPlugin(pinned, meta)
-      if (!r.ok) {
-        rollback(r.reason)
-        return r
-      }
-      // #354(必改 1):changed:false = config 已有恰同钉版而无账(有账在写前门已拒)——
-      // 拒绝把未策展在场静默认领为 catalog;此路径零写入,无补偿。
-      if (!r.changed) {
-        rollback("unregistered plugin config present")
-        return { ok: false, reason: `config already contains "${pinned}" without a ledger record — refusing to adopt an unregistered install as catalog` }
-      }
-      configKey = `plugin:${pinned}`
-      // 本次新增被证明(changed:true)→ 提交面失败只撤本次写入的精确元素(#355 原语)。
-      compensate = () => {
-        const rem = deps.installers.removePluginEntryExact(pinned)
-        return rem.ok ? { ok: true } : { ok: false, reason: `plugin entry restore: ${rem.reason}` }
-      }
-    } else {
-      rollback("entry has no plugin package")
-      return { ok: false, reason: "entry has no plugin package" }
+      // promotion warnings 产生即落 main 日志(#361 r5 同款:authorize 暂停不丢证据)。
+      if (p.warnings.length)
+        console.error(`[ext-install-planner] plugin ${entry.name}: CAS promotion warnings: ${p.warnings.join("; ")}`)
+      return installPluginFromCas({
+        deps,
+        entry,
+        manifest,
+        manifestDigest,
+        payloadDigest: aggregateFilesDigest(vendManifest),
+        promotedSpecs: p.specs,
+        casBaseRoot: deps.casBaseRoot(),
+        auth: { ...(intent.grants ? { grants: intent.grants } : {}), ...(intent.authorization ? { authorization: intent.authorization } : {}) },
+        rollback,
+        txId: tx.txId,
+      })
     }
+    if (typeof spec.package === "string" && spec.package) {
+      const pinned = spec.version && spec.package.indexOf("@", 1) === -1 ? `${spec.package}@${spec.version}` : spec.package
+      // #378(Codex 裁决 Q5):跨配置源同 base 严格检查 —— 主配置在场 = 未策展拒认领(#354 语义)
+      // 或版本漂移拒;legacy XDG 在场 = 引擎会合并两份 plugin 数组,绝不是 fresh;任一侧不可读拒。
+      const conflict = deps.installers.findPluginBaseConflictStrict(pinned)
+      if (!conflict.ok) {
+        rollback(conflict.reason)
+        return conflict
+      }
+      if (conflict.existing) {
+        rollback("plugin base already configured")
+        return {
+          ok: false,
+          reason: `plugin "${pinned}" already configured as "${conflict.existing.spec}" in the ${conflict.existing.source} config without a matching catalog record — refusing to adopt or double-install`,
+        }
+      }
+      const npmSnapshot = deps.installers.readPluginArrayStrict()
+      if (!npmSnapshot.ok) {
+        rollback(npmSnapshot.reason)
+        return npmSnapshot
+      }
+      const npmRoot = scope.root(deps)
+      // r7 Major:真源路由门(同 MCP)。
+      const npmTruth = configTruthInRootGate(npmRoot, deps.installers.mcpConfigTruthPath())
+      if (!npmTruth.ok) {
+        rollback(npmTruth.reason)
+        return npmTruth
+      }
+      // r2 Major(对称):同名派生 vendored 路径的未策展残留同样拒 —— 引擎合并 plugin[] 全量
+      // 加载,追加 npm 钉版会与残留路径双载同名插件。
+      const sameNamePath = findSameNamePluginPathEntry(npmSnapshot.value, npmRoot, entry.name)
+      if (sameNamePath) {
+        rollback("unregistered plugin path present")
+        return { ok: false, reason: `config already contains "${sameNamePath}" without a ledger record — refusing to adopt or double-install an unregistered plugin` }
+      }
+      // r6 Major:legacy XDG 源的同名派生路径同样拒(引擎合并两源)。
+      const npmLegacyGate = legacySameNamePluginGate(() => deps.installers.readLegacyPluginArrayStrict(), npmRoot, entry.name)
+      if (!npmLegacyGate.ok) {
+        rollback("legacy plugin conflict")
+        return npmLegacyGate
+      }
+      const npmConfigTarget = path.join(npmRoot, "alpha.jsonc")
+      const npmCanon = JSON.stringify(npmSnapshot.value)
+      const npmNow = deps.now?.() ?? new Date().toISOString()
+      const npmReceipt: UpsertInput = {
+        id: entry.id,
+        name: entry.name,
+        kind: "plugin",
+        environment: deps.environment(),
+        scope: scope.identity,
+        version: manifest.version,
+        manifestDigest,
+        grantDigest: computeGrantDigest(grants),
+        desiredState: "enabled",
+        origin: "catalog",
+        configKey: `plugin:${pinned}`,
+        installedAt: npmNow,
+      }
+      const plan: TxPlan = {
+        items: [
+          {
+            key: `plugin--${entry.name}`,
+            action: "config",
+            config: { target: npmConfigTarget, edits: [{ keyPath: ["plugin"], value: [...npmSnapshot.value, pinned] }] },
+            manifestDigest,
+            capabilities: manifest.capabilities,
+            receipt: npmReceipt,
+          },
+        ],
+        ...(intent.authorization ? { authorization: stampAuthorization(intent.authorization, () => deps.now?.() ?? new Date().toISOString())! } : {}),
+      }
+      const hooks: TxHooks = {
+        populate: () => {}, // config action 无 staging 载荷
+        // 锁内前置(TOCTOU):三态整体重跑 + 跨源冲突重查 + config 数组未漂移 + 账本可写。
+        precondition: () => {
+          const ledger = probeLedgerForWrite(npmRoot)
+          if (!ledger.ok) return { ok: false, reason: `refusing plugin install: ${ledger.reason}` }
+          const redispatch = resolvePluginDispatch(npmRoot, entry, spec, deps.installers.readPluginArrayStrict, () => deps.installers.readLegacyPluginArrayStrict())
+          if (redispatch.mode !== "fresh") return { ok: false, reason: "plugin ledger changed since plan — retry the install" }
+          const re = deps.installers.findPluginBaseConflictStrict(pinned)
+          if (!re.ok) return re
+          if (re.existing) return { ok: false, reason: `plugin base appeared in the ${re.existing.source} config since plan — retry the install` }
+          const legacyRe = legacySameNamePluginGate(() => deps.installers.readLegacyPluginArrayStrict(), npmRoot, entry.name)
+          if (!legacyRe.ok) return legacyRe
+          const cur = deps.installers.readPluginArrayStrict()
+          if (!cur.ok) return cur
+          if (JSON.stringify(cur.value) !== npmCanon) return { ok: false, reason: "plugin config changed since plan — retry the install" }
+          return { ok: true }
+        },
+        commitReceipt: (records: TxCommitRecord[]) => {
+          const written = upsertRecordsV2(npmRoot, recoveryReceiptInputs(records))
+          if (!written.ok) throw new Error(`plugin receipt commit failed: ${written.reason}`)
+        },
+      }
+      const result = await runExtensionTransaction(npmRoot, plan, hooks)
+      if (!result.ok) {
+        rollback(result.reason)
+        if (result.stage === "authorize") {
+          if (result.authorization) return { ok: false, stage: "authorize", reason: result.reason, authorization: result.authorization }
+          return { ok: false, reason: result.reason }
+        }
+        return { ok: false, reason: result.reason, ...(result.stage ? { stage: result.stage } : {}) }
+      }
+      ;(deps.transaction ?? passthroughTx).commit(tx.txId)
+      return {
+        ok: true,
+        kind: "plugin",
+        name: entry.name,
+        manifestDigest,
+        ...(result.warnings.length ? { warning: result.warnings.join("; ") } : {}),
+      }
+    }
+    rollback("entry has no plugin package")
+    return { ok: false, reason: "entry has no plugin package" }
   } else if (entry.type === "skill") {
     // REQ-100 #310:skill 走不可变 generation 事务 —— staging→verify→materialize→switch →
     // commitReceipt=upsertRecordV2(写失败即事务失败,#336)。REQ-098 #303:内容一律先提升进
@@ -1681,59 +2337,73 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       ...(agentWarnings.length ? { warning: agentWarnings.join("; ") } : {}),
     }
   } else if (entry.type === "cloud") {
-    // receipts-only 语义(REQ-020 T4):不落文件、不写引擎 config —— 只记账。
-    configKey = undefined
-  } else {
-    rollback(`unsupported kind: ${entry.type}`)
-    return { ok: false, reason: `unsupported kind: ${entry.type}` }
-  }
-
-  const now = deps.now?.() ?? new Date().toISOString()
-  const written = upsertRecordV2(scope.root(deps), {
-    id: entry.id,
-    name: entry.name,
-    kind: entry.type,
-    environment: deps.environment(),
-    scope: scope.identity,
-    version: manifest.version,
-    manifestDigest,
-    ...(payloadDigest ? { payloadDigest } : {}),
-    grantDigest: computeGrantDigest(grants),
-    desiredState: "enabled",
-    origin: "catalog",
-    ...(files ? { files } : {}),
-    ...(configKey ? { configKey } : {}),
-    transaction: { id: tx.txId, state: "committed" },
-    installedAt: now,
-  })
-  if (!written.ok) {
-    // #354(#336 残留收口):账本写失败 = 安装失败 —— 按类型补偿副作用(#306 orchestrator 同形);
-    // 账本本身无需恢复:写前探测已拒损坏账,健康账 + 原子写失败 = 磁盘零变化(review #379:
-    // 整文件恢复反而制造跨进程覆盖与「恢复后补偿再改账」)。补偿结果并入原因(必改 6:即便
-    // 补偿不完整仍 ok:false,留下可诊断事实,绝不吞掉)。commit 只发生在账本提交成功后。
-    const failures: string[] = []
-    if (compensate) {
-      const c = compensate()
-      if (!c.ok) failures.push(c.reason)
+    // #378(Codex 裁决 Q3/D4):receipts-only 语义(REQ-020 T4)收进 receipt action 单事务
+    // (bundle 同形态,零盘副作用)—— capabilities 过 #348 授权闸(扩权 diff 锁内自动触发),
+    // 账本归引擎 commitReceipt 单点(exact-replay 已是 upsertRecordsV2 通用合同)。重装显式
+    // 继承停用态(裁决 Q3:不得把 disabled 静默写回 enabled;plugin replace 同一纪律)。
+    const cloudRoot = scope.root(deps)
+    const prior = findRecordV2(cloudRoot, "cloud", entry.name)
+    const plannedState: "enabled" | "disabled" = prior?.desiredState === "disabled" ? "disabled" : "enabled"
+    const cloudNow = deps.now?.() ?? new Date().toISOString()
+    const cloudReceipt: UpsertInput = {
+      id: entry.id,
+      name: entry.name,
+      kind: "cloud",
+      environment: deps.environment(),
+      scope: scope.identity,
+      version: manifest.version,
+      manifestDigest,
+      grantDigest: computeGrantDigest(grants),
+      desiredState: plannedState,
+      origin: "catalog",
+      installedAt: cloudNow,
     }
-    rollback(`v2 record failed: ${written.reason}`)
+    const plan: TxPlan = {
+      items: [
+        {
+          key: `cloud--${entry.name}`,
+          action: "receipt",
+          manifestDigest,
+          capabilities: manifest.capabilities,
+          receipt: cloudReceipt,
+        },
+      ],
+      ...(intent.authorization ? { authorization: stampAuthorization(intent.authorization, () => deps.now?.() ?? new Date().toISOString())! } : {}),
+    }
+    const hooks: TxHooks = {
+      populate: () => {}, // receipt action 无 staging 载荷
+      // 锁内 precondition:账本可写 + desiredState 未漂移(r1 Major:继承值在锁外读,并发
+      // disable 与本安装交错时旧快照会把 enabled 写回去 —— 锁内重读不一致即拒,用户重试)。
+      precondition: () => {
+        const ledger = probeLedgerForWrite(cloudRoot)
+        if (!ledger.ok) return { ok: false, reason: `refusing cloud install: ${ledger.reason}` }
+        return cloudDesiredStateGate(cloudRoot, entry.name, plannedState)
+      },
+      commitReceipt: (records: TxCommitRecord[]) => {
+        const written = upsertRecordsV2(cloudRoot, recoveryReceiptInputs(records))
+        if (!written.ok) throw new Error(`cloud receipt commit failed: ${written.reason}`)
+      },
+    }
+    const result = await runExtensionTransaction(cloudRoot, plan, hooks)
+    if (!result.ok) {
+      rollback(result.reason)
+      if (result.stage === "authorize") {
+        if (result.authorization) return { ok: false, stage: "authorize", reason: result.reason, authorization: result.authorization }
+        return { ok: false, reason: result.reason }
+      }
+      return { ok: false, reason: result.reason, ...(result.stage ? { stage: result.stage } : {}) }
+    }
+    ;(deps.transaction ?? passthroughTx).commit(tx.txId)
     return {
-      ok: false,
-      reason: `install ledger write failed: ${written.reason}${failures.length ? ` — compensation incomplete: ${failures.join("; ")}` : ""}`,
+      ok: true,
+      kind: "cloud",
+      name: entry.name,
+      manifestDigest,
+      ...(result.warnings.length ? { warning: result.warnings.join("; ") } : {}),
     }
   }
-  mcpSecretSnap?.discard() // #354:密钥快照只在账本提交成功后丢弃
-  ;(deps.transaction ?? passthroughTx).commit(tx.txId)
-  const warning = written.warnings.length ? written.warnings.join("; ") : undefined
-  return {
-    ok: true,
-    kind: entry.type,
-    name: entry.name,
-    ...(files ? { files } : {}),
-    manifestDigest,
-    ...(liveMcp ? { liveMcp } : {}),
-    ...(warning ? { warning } : {}),
-  }
+  rollback(`unsupported kind: ${entry.type}`)
+  return { ok: false, reason: `unsupported kind: ${entry.type}` }
 }
 
 // ── seed install(REQ-102 #317:选中 skill seed 经共享 CAS 事务物化;skill/global-only 首期)────
@@ -1830,8 +2500,13 @@ function readPluginArrayStrictAt(configTarget: string): { ok: true; value: unkno
     const v = isObj(parsed) ? parsed.plugin : undefined
     if (v === undefined) return { ok: true, value: [] }
     if (!Array.isArray(v)) return { ok: false, reason: "config plugin key is not an array — refusing (fail closed)" }
-    if (!v.every((x) => typeof x === "string"))
-      return { ok: false, reason: "config plugin[] contains non-string entries — refusing (fix the config first)" }
+    // #378 r4/r5:与 ext-config.readPluginArrayStrict 同判 —— 引擎合法成员 = string 或**恰**
+    // [string, Record] 元组;元组不许误拒(假阳性回归),["x"]/["x", null] 等非法形状仍拒。
+    const legalEntry = (x: unknown): boolean =>
+      typeof x === "string" ||
+      (Array.isArray(x) && x.length === 2 && typeof x[0] === "string" && !!x[1] && typeof x[1] === "object" && !Array.isArray(x[1]))
+    if (!v.every(legalEntry))
+      return { ok: false, reason: "config plugin[] contains invalid entries (neither string nor [spec, options]) — refusing (fix the config first)" }
     return { ok: true, value: v }
   } catch (error) {
     return { ok: false, reason: `config unreadable: ${error instanceof Error ? error.message : String(error)}` }
@@ -2046,6 +2721,111 @@ function verifySeedPluginDirExact(root: string, relDir: string, specs: TxFileSpe
   return c.cls === "healthy" ? { ok: true } : { ok: false, reason: c.reason }
 }
 
+/** #378 r15/r16(Major):catalog vendored 同版本幂等早退的严格实物校验 —— 与 seed 同一契约:
+ *  期望载荷逐文件字节等值 + 零多余条目(文件**与目录**)+ 零 symlink/非常规文件;任何偏差
+ *  (截断/篡改/缺文件/夹带)= 不健康,早退失效走修复(staging + 完整 replace)。任何读失败
+ *  一律不健康(fail closed)。r16:根目录本身 lstat 圈禁(整目录被换成指向外部等值内容的
+ *  symlink 时不得判健康 —— 否则活体继续从不受控外部路径执行);文件读取走 O_NOFOLLOW fd
+ *  (lstat→read 窗口内 file→symlink 调包不可乘)。 */
+function verifyVendoredPluginDirExact(dir: string, files: Array<{ path: string; data: Buffer }>): { ok: true } | { ok: false; reason: string } {
+  const expected = new Map(files.map((f) => [f.path, f.data]))
+  const expectedDirs = new Set<string>()
+  for (const p of expected.keys()) {
+    const segs = p.split("/")
+    for (let i = 1; i < segs.length; i++) expectedDirs.add(segs.slice(0, i).join("/"))
+  }
+  // r18:目录**身份**钉住(dev+ino)—— 终态复验若只验「仍是真实目录」,被换成另一棵真实目录树
+  // 依旧漏判;首访身份与终态身份必须同一 inode。
+  const visitedDirs: Array<{ rel: string; dev: number; ino: number }> = []
+  try {
+    const rootSt = fs.lstatSync(dir)
+    if (rootSt.isSymbolicLink() || !rootSt.isDirectory()) return { ok: false, reason: "plugin dir is not a real directory (symlink swap?)" }
+    visitedDirs.push({ rel: "", dev: rootSt.dev, ino: rootSt.ino })
+  } catch {
+    return { ok: false, reason: "plugin dir unstatable" }
+  }
+  // r18:定长读 + 增长探测 —— fstat 后 inode 仍可增长,readFileSync(fd) 会按当前大小无界分配;
+  // 只读期望字节数,读毕再探 1 字节,有余量 = 文件在变,拒。
+  const readFdBounded = (fd: number, size: number): Buffer | null => {
+    const buf = Buffer.alloc(size)
+    let off = 0
+    while (off < size) {
+      const n = fs.readSync(fd, buf, off, size - off, off)
+      if (n <= 0) return null
+      off += n
+    }
+    const probe = Buffer.alloc(1)
+    return fs.readSync(fd, probe, 0, 1, size) > 0 ? null : buf
+  }
+  const readRegularNoFollow = (abs: string, wantBytes: number): Buffer | null => {
+    let fd: number
+    try {
+      fd = fs.openSync(abs, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW)
+    } catch {
+      return null
+    }
+    try {
+      const st = fs.fstatSync(fd)
+      // r17 Major:尺寸前置 —— 期望路径被放超大常规文件时不得无界读入内存(先判不等即拒)。
+      if (!st.isFile() || st.size !== wantBytes) return null
+      return readFdBounded(fd, wantBytes)
+    } catch {
+      return null
+    } finally {
+      fs.closeSync(fd)
+    }
+  }
+  const seen = new Set<string>()
+  const walk = (rel: string): string | null => {
+    let names: string[]
+    try {
+      names = fs.readdirSync(rel === "" ? dir : path.join(dir, rel))
+    } catch {
+      return `unreadable dir: ${rel === "" ? "." : rel}`
+    }
+    for (const name of names) {
+      const childRel = rel === "" ? name : `${rel}/${name}`
+      let st: fs.Stats
+      try {
+        st = fs.lstatSync(path.join(dir, childRel))
+      } catch {
+        return `unstatable entry: ${childRel}`
+      }
+      if (st.isDirectory()) {
+        if (!expectedDirs.has(childRel)) return `unexpected directory: ${childRel}`
+        visitedDirs.push({ rel: childRel, dev: st.dev, ino: st.ino })
+        const verdict = walk(childRel)
+        if (verdict !== null) return verdict
+        continue
+      }
+      if (!st.isFile()) return `non-regular entry: ${childRel}`
+      const want = expected.get(childRel)
+      if (want === undefined) return `unexpected file: ${childRel}`
+      const got = readRegularNoFollow(path.join(dir, childRel), want.length)
+      if (got === null) return `unreadable/oversized file (symlink swap?): ${childRel}`
+      if (!got.equals(want)) return `content mismatch: ${childRel}`
+      seen.add(childRel)
+    }
+    return null
+  }
+  const verdict = walk("")
+  if (verdict !== null) return { ok: false, reason: verdict }
+  for (const p of expected.keys()) if (!seen.has(p)) return { ok: false, reason: `missing expected file: ${p}` }
+  // r17/r18 Major:祖先目录 TOCTOU 终态复验 —— readdir 按路径进行,根/中间目录在 lstat 后被换
+  // 会让整个校验「看别人的树」。走完后逐个重验访问过的目录**同一 inode**(dev+ino;r18:换成
+  // 另一棵真实目录树同样捕获):持续存在的调包必被捕获;瞬时换回 = 盘上留下的是首访那棵合法树。
+  for (const d of visitedDirs) {
+    try {
+      const st = fs.lstatSync(d.rel === "" ? dir : path.join(dir, d.rel))
+      if (st.isSymbolicLink() || !st.isDirectory() || st.dev !== d.dev || st.ino !== d.ino)
+        return { ok: false, reason: `directory swapped during verification: ${d.rel === "" ? "." : d.rel}` }
+    } catch {
+      return { ok: false, reason: `directory unstatable after walk: ${d.rel === "" ? "." : d.rel}` }
+    }
+  }
+  return { ok: true }
+}
+
 /** seed 安装目标目录的「在场阻断」判定(review r3 Major 4:recovery 回滚只 unlink 文件,遗留的
  *  空壳目录不得永久卡死重试):缺席 = 不阻断;symlink/非目录 = 阻断;目录 = 深扫(逐条目 lstat),
  *  任一文件或 symlink 在场即阻断,**纯空目录树 = 不阻断**(引擎 apply 会原样写入其中)。 */
@@ -2098,6 +2878,9 @@ export function gcVendoredPluginDirLocked(
   name: string,
   oldDir: string,
   readPluginArray: () => { ok: true; value: unknown[] } | { ok: false; reason: string },
+  // #378 r6/r7 Blocker:引擎合并全部 legacy 源(XDG + retained home)plugin[] —— 引用对账必须
+  // 逐源覆盖,否则任一 legacy 源仍引用的旧目录被当孤儿递归删除(下一次加载即悬空)。
+  readLegacyPluginArray: () => { ok: true; sources: Array<{ value: unknown[]; configDir: string }> } | { ok: false; reason: string },
 ): { removed: boolean; warning?: string } {
   const pluginsRoot = path.join(root, "plugins")
   const dirBase = path.basename(oldDir)
@@ -2108,8 +2891,28 @@ export function gcVendoredPluginDirLocked(
   try {
     const cfg = readPluginArray()
     if (!cfg.ok) return { removed: false, warning: `old plugin dir retained (config unreadable: ${cfg.reason})` }
-    const refsDir = (x: unknown): boolean => typeof x === "string" && (x === oldDir || x.startsWith(oldDir + path.sep))
+    // r5 Blocker:引用扫描按引擎语义解析(元组 spec 头/相对/file://)—— 词法「绝对字符串前缀」
+    // 会漏等价形态,把 live config 仍引用的旧目录当孤儿递归删除(插件启动即失败)。
+    const oldDirResolved = path.resolve(oldDir)
+    // r13 Major:引用可能经 symlink 别名指向旧目录 —— 词法前缀之外补 realpath 身份比较。
+    // r15 Major:非缺席类 realpath 失败 = 身份不可判,视为仍被引用(保留目录),不得静默回退词法。
+    const oldDirIdent = pathIdentity(oldDirResolved)
+    const refsDirFrom = (baseDir: string) => (x: unknown): boolean => {
+      const resolved = resolvePluginEntryPath(x, baseDir)
+      if (resolved === null) return false
+      const ident = pathIdentity(resolved)
+      if (!oldDirIdent.certain || !ident.certain) return true
+      return ident.forms.some((f) => oldDirIdent.forms.some((o) => f === o || f.startsWith(o + path.sep)))
+    }
+    const refsDir = refsDirFrom(root)
     if (cfg.value.some(refsDir)) return { removed: false, warning: "old plugin dir re-referenced by config — retained (concurrent update)" }
+    // r6/r7 Blocker:全部 legacy 源逐一同判;不可读/形状非法 = 无法证明无引用 = 保留(fail-closed)。
+    const legacy = readLegacyPluginArray()
+    if (!legacy.ok) return { removed: false, warning: `old plugin dir retained (legacy config not provably reference-free: ${legacy.reason})` }
+    for (const src of legacy.sources) {
+      if (src.value.some(refsDirFrom(src.configDir)))
+        return { removed: false, warning: "old plugin dir re-referenced by a legacy config source — retained" }
+    }
     // 账本引用 fail-closed:损坏账本 = 无法证明无引用 = 保留。
     const ledgerProbe = probeLedgerForWrite(root)
     if (!ledgerProbe.ok) return { removed: false, warning: `old plugin dir retained (ledger not provably reference-free: ${ledgerProbe.reason})` }
@@ -2331,7 +3134,7 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
   if (asset.type === "mcp")
     return installSeedMcp({ deps, entry, manifest, manifestDigest, payloadDigest, intent, rollback, txId: tx.txId })
   if (asset.type === "plugin")
-    return installSeedPlugin({
+    return installPluginFromCas({
       deps,
       entry,
       manifest,
@@ -2339,7 +3142,7 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
       payloadDigest,
       promotedSpecs: promoted.files,
       casBaseRoot,
-      intent,
+      auth: intent.authorization ? { authorization: intent.authorization } : {},
       rollback,
       txId: tx.txId,
     })
@@ -2394,6 +3197,12 @@ async function installSeedMcp(args: {
   if (spec?.kind !== "mcp") {
     rollback("entry has no mcp installSpec")
     return { ok: false, reason: "entry has no mcp installSpec" }
+  }
+  // #378 r7 Major:真源路由门(seed MCP 同样只写 <root>/alpha.jsonc)。
+  const seedMcpTruth = configTruthInRootGate(root, deps.installers.mcpConfigTruthPath())
+  if (!seedMcpTruth.ok) {
+    rollback(seedMcpTruth.reason)
+    return seedMcpTruth
   }
   if ((spec.requiredEnvVars?.length ?? 0) > 0) {
     rollback("secret-bearing MCP")
@@ -2473,15 +3282,17 @@ async function installSeedMcp(args: {
 }
 
 /**
- * plugin seed 安装(REQ-102 #359,合并前 review r1 结构性修正):CAS 字节 = 离线运行载荷,
+ * CAS 载荷 plugin 安装(REQ-102 #359 seed 首建;#378 起 catalog vendored fresh 同一载体,Codex
+ * 裁决 D2:constraints/探针/precondition 复用,不另建近似实现):CAS 字节 = 离线运行载荷,
  * **以 file items 进同一事务**(#358 引擎;不做锁外 staging)—— 目录 = 内容寻址
  * `plugins/<name>@<digest16>`,每个载荷文件一个 file item + config item 换/追加 plugin[] 元素,
  * 全提交或全回滚;崩溃恢复按 journal digest 判翻转 + seedPluginFileProbe 验载荷。
  * **接入 #352 三态**(裁决 Q4):absent → fresh;有效 catalog 旧账 → journaled replace
  * (replacePluginViaTransaction 的 seedPayload 挂点);v1-only/损坏/双键/漂移 → 拒;
- * same-version healthy 幂等早退;更高已装拒 downgrade。npm plugin seed 显式拒(裁决 E)。
+ * same-version healthy 幂等早退;更高已装拒 downgrade。npm plugin 无 CAS 载荷,显式拒
+ * (seed 裁决 E;catalog npm 走 config action 事务,在 installCatalog 分流)。
  */
-async function installSeedPlugin(args: {
+async function installPluginFromCas(args: {
   deps: PlannerDeps
   entry: CatalogEntry
   manifest: ExtensionManifestV2
@@ -2489,25 +3300,34 @@ async function installSeedPlugin(args: {
   payloadDigest: string
   promotedSpecs: TxFileSpec[]
   casBaseRoot: string
-  intent: SeedInstallIntent
+  /** grants(catalog 通道;seed 无 grants)+ authorize 重驱决定。 */
+  auth: Pick<CatalogInstallIntent, "grants" | "authorization">
   rollback: (reason: string) => void
   txId: string
 }): Promise<CatalogInstallOutcome> {
-  const { deps, entry, manifest, manifestDigest, payloadDigest, intent, rollback } = args
+  const { deps, entry, manifest, manifestDigest, payloadDigest, auth, rollback } = args
   const root = deps.globalRoot()
   const spec = entry.installSpec as { kind?: string; package?: string; vendoredAssetKey?: string } | undefined
   if (spec?.kind !== "plugin") {
     rollback("entry has no plugin installSpec")
     return { ok: false, reason: "entry has no plugin installSpec" }
   }
-  if (typeof spec.package === "string" && spec.package) {
-    rollback("npm plugin seed")
-    return { ok: false, reason: "npm plugin is not seed-installable (no offline runtime payload guaranteed by seed blobs) — refused" }
+  // 纯 npm(无 vendored 载荷)才拒 —— vendoredAssetKey 在场时 package 只是发行元数据,本通道
+  // 装的是 CAS 载荷(catalog vendored entry 常两者并存)。
+  if (typeof spec.package === "string" && spec.package && !spec.vendoredAssetKey) {
+    rollback("npm plugin has no CAS payload")
+    return { ok: false, reason: "npm plugin has no offline CAS payload — this channel installs vendored payloads only; refused" }
   }
   // 名称含 "--" 与 item key 方案(plugin--<name>[--f<i>])歧义 —— 与 agent 同款显式拒(#358 r2)。
   if (entry.name.includes("--")) {
     rollback("ambiguous plugin name")
     return { ok: false, reason: `plugin name "${entry.name}" contains "--" — ambiguous with the transaction key scheme (plugin--<name>--f<i>); refused` }
+  }
+  // r7 Major:真源路由门(catalog vendored 与 seed plugin 共用本载体,同拒)。
+  const pluginTruth = configTruthInRootGate(root, deps.installers.mcpConfigTruthPath())
+  if (!pluginTruth.ok) {
+    rollback(pluginTruth.reason)
+    return pluginTruth
   }
   if (!args.promotedSpecs.some((f) => f.path === "plugin.js")) {
     rollback("no plugin.js entrypoint")
@@ -2519,7 +3339,7 @@ async function installSeedPlugin(args: {
   const configTarget = path.join(root, "alpha.jsonc")
   const readPluginArray = () => readPluginArrayStrictAt(configTarget)
   // #352 三态分发(main 从自己账本裁决;refuse ≠ fresh,模糊态绝不当首装装)。
-  const dispatch = resolvePluginDispatch(root, entry, spec, readPluginArray)
+  const dispatch = resolvePluginDispatch(root, entry, spec, readPluginArray, () => deps.installers.readLegacyPluginArrayStrict())
   if (dispatch.mode === "refuse") {
     rollback(dispatch.reason)
     return { ok: false, reason: dispatch.reason }
@@ -2556,11 +3376,12 @@ async function installSeedPlugin(args: {
       entry,
       manifest,
       manifestDigest,
-      intent: intent.authorization ? { authorization: intent.authorization } : {},
+      intent: auth,
       facts: dispatch.facts,
       rollback,
       txId: args.txId,
       seedPayload: { dir, dirRel: `plugins/${dirName}`, jsPath, items: payload.items, specs: args.promotedSpecs, probe: seedPluginFileProbe() },
+      payloadDigest,
       readPluginArray,
     })
   }
@@ -2576,14 +3397,40 @@ async function installSeedPlugin(args: {
     rollback("unregistered plugin dir present")
     return { ok: false, reason: `plugin dir "plugins/${dirName}" exists without a ledger record — refusing to overwrite or adopt unregistered content (remove it and retry)` }
   }
+  // r20 Major:同包 base 的未策展 npm 条目(主/legacy)与 vendored 首装双载 —— 引擎按包名与
+  // file URL 各自去重,两份都会加载。catalog vendored 条目常并存 package 发行元数据,分发进
+  // 本通道会绕过 npm 分支的 findPluginBaseConflictStrict,这里对称补门(路径形态由下方同名
+  // 扫描负责)。
+  if (typeof spec.package === "string" && spec.package) {
+    const conflict = deps.installers.findPluginBaseConflictStrict(spec.package)
+    if (!conflict.ok) {
+      rollback(conflict.reason)
+      return conflict
+    }
+    if (conflict.existing) {
+      rollback("plugin base already configured")
+      return {
+        ok: false,
+        reason: `plugin package "${spec.package}" already configured as "${conflict.existing.spec}" in the ${conflict.existing.source} config without a matching catalog record — refusing to adopt or double-install`,
+      }
+    }
+  }
   const snapshot = readPluginArray()
   if (!snapshot.ok) {
     rollback(snapshot.reason)
     return snapshot
   }
-  if (snapshot.value.includes(jsPath)) {
+  // r2 Major:同名派生路径全形态扫描(含其他 digest 的内容寻址目录)—— 不止本次 jsPath。
+  const sameNameEntry = findSameNamePluginPathEntry(snapshot.value, root, entry.name)
+  if (sameNameEntry) {
     rollback("unregistered plugin config present")
-    return { ok: false, reason: `config already contains "${jsPath}" without a ledger record — refusing to adopt an unregistered install as catalog` }
+    return { ok: false, reason: `config already contains "${sameNameEntry}" without a ledger record — refusing to adopt or double-install an unregistered plugin` }
+  }
+  // r6 Major:legacy XDG 源同判(引擎合并两源;legacy 同名路径在场时 fresh 落账会双载)。
+  const freshLegacyGate = legacySameNamePluginGate(() => deps.installers.readLegacyPluginArrayStrict(), root, entry.name)
+  if (!freshLegacyGate.ok) {
+    rollback("legacy plugin conflict")
+    return freshLegacyGate
   }
   const nextArray = [...snapshot.value, jsPath]
   const snapshotCanon = JSON.stringify(snapshot.value)
@@ -2597,7 +3444,7 @@ async function installSeedPlugin(args: {
     version: manifest.version,
     manifestDigest,
     payloadDigest,
-    grantDigest: computeGrantDigest({}),
+    grantDigest: computeGrantDigest(auth.grants ?? {}),
     desiredState: "enabled",
     origin: "catalog",
     files: [dir],
@@ -2617,7 +3464,7 @@ async function installSeedPlugin(args: {
         receipt: receiptTemplate,
       },
     ],
-    ...(intent.authorization ? { authorization: stampAuthorization(intent.authorization, () => deps.now?.() ?? new Date().toISOString())! } : {}),
+    ...(auth.authorization ? { authorization: stampAuthorization(auth.authorization, () => deps.now?.() ?? new Date().toISOString())! } : {}),
   }
   const hooks: TxHooks = {
     populate: () => {}, // file/config 的 staging 由引擎适配器落
@@ -2626,19 +3473,29 @@ async function installSeedPlugin(args: {
     // catalog id 的历史名/v1-only 兜底扫描)+ config 数组未漂移 + 在场目录重查。
     precondition: () => {
       const ledgerProbe = probeLedgerForWrite(root)
-      if (!ledgerProbe.ok) return { ok: false, reason: `refusing seed install: ${ledgerProbe.reason}` }
-      const redispatch = resolvePluginDispatch(root, entry, spec, readPluginArray)
+      if (!ledgerProbe.ok) return { ok: false, reason: `refusing plugin install: ${ledgerProbe.reason}` }
+      const redispatch = resolvePluginDispatch(root, entry, spec, readPluginArray, () => deps.installers.readLegacyPluginArrayStrict())
       if (redispatch.mode !== "fresh") return { ok: false, reason: "plugin ledger changed since plan — retry the install" }
       const cur = readPluginArray()
       if (!cur.ok) return cur
       if (JSON.stringify(cur.value) !== snapshotCanon) return { ok: false, reason: "plugin config changed since plan — retry the install" }
+      const legacyRe = legacySameNamePluginGate(() => deps.installers.readLegacyPluginArrayStrict(), root, entry.name) // r6
+      if (!legacyRe.ok) return legacyRe
+      // r21:同包 base 冲突门锁内复核(r20 只有计划期)—— 计划后写入 legacy 源的同包 npm 条目
+      // 否则穿过前置,重新引入双载。
+      if (typeof spec.package === "string" && spec.package) {
+        const conflictNow = deps.installers.findPluginBaseConflictStrict(spec.package)
+        if (!conflictNow.ok) return conflictNow
+        if (conflictNow.existing)
+          return { ok: false, reason: `plugin package "${spec.package}" gained pin "${conflictNow.existing.spec}" in the ${conflictNow.existing.source} config since plan — retry the install` }
+      }
       if (fs.existsSync(path.join(root, "plugins", entry.name)) || seedDirBlocksInstall(root, `plugins/${dirName}`))
         return { ok: false, reason: `plugin dir appeared without a ledger record — refusing` }
       return { ok: true }
     },
     commitReceipt: (records: TxCommitRecord[]) => {
       const written = upsertRecordsV2(root, recoveryReceiptInputs(records))
-      if (!written.ok) throw new Error(`seed plugin receipt commit failed: ${written.reason}`)
+      if (!written.ok) throw new Error(`plugin receipt commit failed: ${written.reason}`)
     },
   }
   const result = await runExtensionTransaction(root, plan, hooks)
@@ -2816,23 +3673,78 @@ export async function uninstallByKey(rawIntent: unknown, deps: PlannerDeps): Pro
       }
     }
     // #359:经事务授权闸的 plugin(seed 安装 / #352 替换)授权账随卸载清除,成功前置同 agent。
-    const grants = removeInstallGrants(root, [`plugin--${intent.name}`])
-    if (!grants.ok) {
-      rollback(grants.reason)
-      return { ok: false, reason: `plugin uninstall: ${grants.reason}` }
+    // r19 Major:grants+record 双删持 bundle 锁,且锁内重读钉 configKey 未漂移 —— 快照与此处
+    // 之间的并发替换(#352 持同一锁)已让账本指向新载荷,继续双删会把**新装插件**清成
+    // 「已配置但无账无授权」;漂移 = 拒(旧实物已删无妨,本就被替换淘汰),如实报重试。
+    const heldPl = tryAcquireBundleLock(root, { txId: `plugin-uninstall-${randomUUID()}` })
+    if (!heldPl.ok) {
+      rollback(heldPl.reason)
+      return { ok: false, reason: `ledger busy: ${heldPl.reason} — retry after the in-flight extension transaction` }
     }
-    if (grants.removed.length) removedFiles = [...(removedFiles ?? []), ...grants.removed]
+    try {
+      const recNow = findRecordV2(root, "plugin", intent.name)
+      if ((recNow?.configKey ?? v1?.configKey ?? null) !== (configKey ?? null)) {
+        rollback("plugin record drifted during uninstall")
+        return { ok: false, reason: `plugin "${intent.name}" changed while uninstalling (concurrent replace?) — ledger/grants untouched; retry` }
+      }
+      const grants = removeInstallGrants(root, [`plugin--${intent.name}`])
+      if (!grants.ok) {
+        rollback(grants.reason)
+        return { ok: false, reason: `plugin uninstall: ${grants.reason}` }
+      }
+      if (grants.removed.length) removedFiles = [...(removedFiles ?? []), ...grants.removed]
+      const removedPl = removeRecordV2(root, "plugin", intent.name)
+      if (!removedPl.ok) {
+        rollback(removedPl.reason)
+        return { ok: false, reason: `plugin uninstall: ledger removal failed: ${removedPl.reason} — artifacts already removed; retry (idempotent)` }
+      }
+      ;(deps.transaction ?? passthroughTx).commit(tx.txId)
+      return { ok: true, ...(removedFiles ? { files: removedFiles } : {}) }
+    } finally {
+      heldPl.lock.release()
+    }
   } else if (intent.type === "cloud") {
-    // receipts-only:去账即卸载。
+    // #378(Codex 裁决 D4):receipts-only 去账即卸载 —— 经授权闸的 cloud 授权账随卸载清除
+    // (成功前置,同 agent/mcp/plugin);且 **ledger 删除失败 = 卸载失败 ok:false**(cloud 无
+    // 其他 artifact,账没去=什么都没发生,通用尾部的 ok:true+warning 对 receipts-only 是谎报)。
+    // r1 Major:grants+record 双删必须持跨进程 bundle 锁 —— 否则与在途安装事务(锁内先写
+    // grant 后 commitReceipt)交错,可产出「record 已删、有效 grant 残留」的非串行化状态。
+    const held = tryAcquireBundleLock(root, { txId: `cloud-uninstall-${randomUUID()}` })
+    if (!held.ok) {
+      rollback(held.reason)
+      return { ok: false, reason: `ledger busy: ${held.reason} — retry after the in-flight extension transaction` }
+    }
+    try {
+      const grants = removeInstallGrants(root, [`cloud--${intent.name}`])
+      if (!grants.ok) {
+        rollback(grants.reason)
+        return { ok: false, reason: `cloud uninstall: ${grants.reason}` }
+      }
+      const removed = removeRecordV2(root, "cloud", intent.name)
+      if (!removed.ok) {
+        rollback(removed.reason)
+        return { ok: false, reason: `cloud uninstall: ledger removal failed: ${removed.reason} — retry (grants already cleared, idempotent)` }
+      }
+      ;(deps.transaction ?? passthroughTx).commit(tx.txId)
+      return { ok: true, ...(grants.removed.length ? { files: grants.removed } : {}) }
+    } finally {
+      held.lock.release()
+    }
   } else {
     rollback(`cannot uninstall type: ${intent.type}`)
     return { ok: false, reason: `cannot uninstall type: ${intent.type}` }
   }
 
   const removed = removeRecordV2(root, intent.type, intent.name)
+  // r18 Major:账本删除失败不得折叠成 warning 报成功 —— 同 key 损坏记录拒删等形态下调用方
+  // 会把「记录仍在账」当卸载完成(账实分叉且不再重试)。与 cloud 分支同款 fail-closed:
+  // 实物已删,失败原因如实返回,重试幂等。
+  if (!removed.ok) {
+    rollback(removed.reason)
+    return { ok: false, reason: `${intent.type} uninstall: ledger removal failed: ${removed.reason} — artifacts already removed; retry (idempotent)` }
+  }
   ;(deps.transaction ?? passthroughTx).commit(tx.txId)
-  const warning = removed.ok ? undefined : `uninstalled but ledger removal failed: ${removed.reason}`
-  return { ok: true, ...(removedFiles ? { files: removedFiles } : {}), ...(warning ? { warning } : {}) }
+  return { ok: true, ...(removedFiles ? { files: removedFiles } : {}) }
 }
 
 // ── generation history(REQ-100 #313:列代 + 两版离线回滚;key 面与卸载同一信任边界)─────────────
