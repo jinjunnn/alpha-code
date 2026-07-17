@@ -181,14 +181,32 @@ describe("#395 r7 legacy 源统一探测", () => {
     process.env.OPENCODE_CONFIG_DIR = dir
   }
 
-  test("M3:mcp disable 时 XDG 源含 mcp[name] 且未禁(enabled!==false)→ fail-closed(深合并会覆盖)", () => {
+  test("M2/M3:mcp disable 主叶在场 + XDG 明确 enabled:true → 覆盖主叶禁用 → fail-closed", () => {
     record({ name: "demo", kind: "mcp", configKey: "mcp.demo" })
     writeCfg({ mcp: { demo: { type: "local", command: ["x"] } } })
-    writeXdg({ mcp: { demo: { type: "local" } } }) // XDG 无 enabled:false → 会覆盖 alpha 的禁用
+    writeXdg({ mcp: { demo: { type: "local", enabled: true } } }) // 明确 enabled:true → mergeDeep 覆盖主叶 enabled:false
     const r = setInstallStateByKey({ type: "mcp", name: "demo", scope: "global", state: "disabled" }, deps())
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toContain("would load")
     expect(findRecordV2(root, "mcp", "demo")!.desiredState).toBe("enabled") // 账本未翻
+  })
+
+  test("M2:mcp disable 主叶在场 + XDG 省略 enabled → mergeDeep 保留主叶禁用,disable 成功(不误判残留)", () => {
+    record({ name: "keep", kind: "mcp", configKey: "mcp.keep" })
+    writeCfg({ mcp: { keep: { type: "local", command: ["x"] } } })
+    writeXdg({ mcp: { keep: { type: "local" } } }) // 省略 enabled → 不覆盖主叶 enabled:false → 常见 retained legacy
+    const r = setInstallStateByKey({ type: "mcp", name: "keep", scope: "global", state: "disabled" }, deps())
+    expect(r.ok).toBe(true)
+    expect(readCfg().mcp.keep).toEqual({ type: "local", command: ["x"], enabled: false })
+  })
+
+  test("M2:mcp disable 主叶**缺席** + XDG 省略 enabled → 无投影面,legacy 在场即加载 → fail-closed", () => {
+    record({ name: "noleaf", kind: "mcp", configKey: "mcp.noleaf" })
+    writeCfg({ mcp: {} }) // alpha 无该叶(无投影面)
+    writeXdg({ mcp: { noleaf: { type: "local" } } }) // 省略 enabled = 默认启用,alpha 无叶覆盖不了
+    const r = setInstallStateByKey({ type: "mcp", name: "noleaf", scope: "global", state: "disabled" }, deps())
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("would load")
   })
 
   test("M3:XDG 源 mcp[name] 明确 enabled:false → 不算残留(disable 成功)", () => {
@@ -200,13 +218,22 @@ describe("#395 r7 legacy 源统一探测", () => {
     expect(readCfg().mcp.d2).toEqual({ type: "local", enabled: false })
   })
 
-  test("M3:agent disable 时 XDG 源含 agent[name] 且未禁(disable!==true)→ fail-closed", () => {
+  test("M2/M3:agent disable 主叶在场 + XDG 明确 disable:false → 覆盖主叶禁用 → fail-closed", () => {
     record({ name: "bot", kind: "agent", configKey: "agent.bot" })
     writeCfg({ agent: { bot: { description: "d" } } })
-    writeXdg({ agent: { bot: { description: "d" } } }) // 无 disable:true → 覆盖启用
+    writeXdg({ agent: { bot: { description: "d", disable: false } } }) // 明确 disable:false → 覆盖主叶 disable:true
     const r = setInstallStateByKey({ type: "agent", name: "bot", scope: "global", state: "disabled" }, deps())
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toContain("would load")
+  })
+
+  test("M2:agent disable 主叶在场 + XDG 省略 disable → 保留主叶禁用,disable 成功(不误判)", () => {
+    record({ name: "keepbot", kind: "agent", configKey: "agent.keepbot" })
+    writeCfg({ agent: { keepbot: { description: "d" } } })
+    writeXdg({ agent: { keepbot: { description: "d" } } }) // 省略 disable → 不覆盖主叶 disable:true
+    const r = setInstallStateByKey({ type: "agent", name: "keepbot", scope: "global", state: "disabled" }, deps())
+    expect(r.ok).toBe(true)
+    expect(readCfg().agent.keepbot).toEqual({ description: "d", disable: true })
   })
 
   test("B1:alpha.jsonc 缺席时 plugin disable 仍探测 XDG concat 残留 → fail-closed", () => {

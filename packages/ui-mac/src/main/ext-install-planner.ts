@@ -4007,7 +4007,11 @@ export function setInstallStateByKey(
         // r7 B1/M3:任何 kind 的 disable 都先探测引擎额外合并的 legacy/XDG 源(~/.opencode + XDG):
         // plugin concat 残留 / mcp-agent 反向字段覆盖 → strict fail-closed(残留则禁用无法保证)。
         if (intent.state === "disabled") {
-          const residue = legacyEnableResidueStrict(record.kind, record.name, record.configKey)
+          // Codex r8 M2:mcp/agent 主叶存在 → alpha.jsonc 投影 enabled:false 会覆盖 legacy 省略字段,
+          // 只有 legacy 明确反向字段才算残留;主叶缺席则 legacy 在场即加载(plugin concat 不看主叶)。
+          const map = isObj(cfg) ? (cfg as Record<string, unknown>)[record.kind] : undefined
+          const mainLeaf = isObj(map) && isObj((map as Record<string, unknown>)[record.name])
+          const residue = legacyEnableResidueStrict(record.kind, record.name, record.configKey, mainLeaf)
           if (!residue.ok) return { ok: false, reason: `${record.kind} ${record.name}: ${residue.reason} — cannot guarantee disable (fail closed)` }
           if (residue.residue) return { ok: false, reason: `${record.kind} ${record.name}: ${residue.residue}; remove the legacy/XDG entry first (fail closed)` }
         }
@@ -4106,9 +4110,12 @@ function computeEnableProjectionEdit(
       if (next.length === arr.length) return { ok: true } // 本就缺席
       return { ok: true, edit: { keyPath: ["plugin"], value: next } }
     }
-    if (arr.some(matches)) return { ok: true } // 已在场
-    if (identUnprovable) return { ok: false, reason: `plugin ${record.name}: a plugin[] entry's filesystem identity is unresolvable — cannot prove enable presence (retry after resolving)` }
-    return { ok: true, edit: { keyPath: ["plugin"], value: [...arr, elem] } }
+    // enable(Codex r8 M3):plugin[] 应恰含账本记录的**精确** spec —— base 匹配(matches)会把残留旧钉版
+    // `@x/p@1` 误认作 `@x/p@2` 已在场,引擎实际跑旧版。故移除同 base 全部(错误钉版/别名)后补回精确 elem。
+    const cleaned = arr.filter((x) => !matches(x))
+    if (identUnprovable) return { ok: false, reason: `plugin ${record.name}: a plugin[] entry's filesystem identity is unresolvable — cannot rebuild enable (retry after resolving)` }
+    if (cleaned.length === arr.length - 1 && arr.includes(elem)) return { ok: true } // 恰精确在场且无同 base 残留
+    return { ok: true, edit: { keyPath: ["plugin"], value: [...cleaned, elem] } }
   }
   // mcp / agent:引擎消费键分别为 enabled(false=禁)/ disable(true=禁)。
   const field = record.kind === "mcp" ? "enabled" : "disable"
@@ -4197,7 +4204,7 @@ export function reconcileDesiredStateAtBoot(root: string): BootReconcileOutcome 
             warnings.push(`${r.kind} ${r.name}: ledger says enabled but alpha.jsonc is absent — no effect surface (reinstall to repair)`)
             continue
           }
-          const residue = legacyEnableResidueStrict(r.kind, r.name, r.configKey)
+          const residue = legacyEnableResidueStrict(r.kind, r.name, r.configKey, false) // 缺席:无主投影面
           if (!residue.ok) gap.push(`${r.kind} ${r.name}: legacy probe failed: ${residue.reason}`)
           else if (residue.residue) gap.push(`${r.kind} ${r.name}: ${residue.residue}`)
         }
@@ -4224,7 +4231,10 @@ export function reconcileDesiredStateAtBoot(root: string): BootReconcileOutcome 
       // Codex r7 B1/M3:disable 先探测引擎额外合并的 legacy/XDG 源(plugin concat / mcp-agent 反向字段
       // 覆盖)—— strict fail-closed;残留则该项 disable 无法保证 → gap,跳过主源投影。
       if (record.desiredState === "disabled") {
-        const residue = legacyEnableResidueStrict(record.kind, record.name, record.configKey)
+        // r8 M2:主叶存在(working 有该 mcp/agent 叶,将投影 enabled:false)→ legacy 只有明确反向字段才残留。
+        const wm = (working as Record<string, unknown>)[record.kind]
+        const mainLeaf = isObj(wm) && isObj((wm as Record<string, unknown>)[record.name])
+        const residue = legacyEnableResidueStrict(record.kind, record.name, record.configKey, mainLeaf)
         if (!residue.ok) {
           warnings.push(`${record.kind} ${record.name}: legacy probe failed: ${residue.reason}`)
           gap.push(`${record.kind} ${record.name}: legacy probe failed: ${residue.reason}`)

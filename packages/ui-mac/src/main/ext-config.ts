@@ -738,6 +738,25 @@ function pkgBase(spec: string): string {
 
 export type LegacyEnableResidue = { ok: true; residue: string | null } | { ok: false; reason: string }
 
+/** Codex r8 B1:引擎在主 alpha.jsonc 之外**真实读取**的全部 legacy config 文件 —— XDG 的
+ *  `config.json` + `opencode.json` + `opencode.jsonc`(config.ts:258-260 全部加载)与 directories 阶段
+ *  `~/.opencode` 的 `opencode.json` + `opencode.jsonc`(config.ts:426-429)。legacyConfigPaths 每目录
+ *  只取一份且**漏 XDG config.json**,不足以做安全探测(空 opencode.jsonc + 有内容的 opencode.json/
+ *  config.json 会绕过)。去重并排除主 alpha.jsonc。 */
+function engineLegacyReadFiles(): string[] {
+  const xdgDir = path.dirname(userConfigPath())
+  const homeDir = opencodeHomeDir()
+  const primary = mcpPluginTargetPath()
+  const files = [
+    path.join(xdgDir, "config.json"),
+    path.join(xdgDir, "opencode.json"),
+    path.join(xdgDir, "opencode.jsonc"),
+    path.join(homeDir, "opencode.json"),
+    path.join(homeDir, "opencode.jsonc"),
+  ]
+  return [...new Set(files)].filter((f) => f !== primary)
+}
+
 /** Codex r7 B1/M3:一个 **disabled** 记录在引擎**额外合并**的 legacy/XDG 源(`~/.opencode` + XDG,
  *  config.ts directories 阶段,在主 alpha.jsonc 之后再深合并)里是否**会被启用加载**。disable 只投影
  *  alpha.jsonc 不够 —— 这些源会覆盖/concat:
@@ -747,7 +766,12 @@ export type LegacyEnableResidue = { ok: true; residue: string | null } | { ok: f
  *    · agent:任一源 `agent[name]` 在场且 `disable !== true` → 覆盖启用。
  *  strict:任一源语法损坏 / 读不出 / 根非对象 → fail-closed(无法确认无残留)。residue!=null = 有残留。
  *  **只查 legacy 源**(不含主 alpha.jsonc;主源的禁用投影由 computeEnableProjectionEdit 负责)。 */
-export function legacyEnableResidueStrict(kind: string, name: string, configKey: string | undefined): LegacyEnableResidue {
+export function legacyEnableResidueStrict(
+  kind: string,
+  name: string,
+  configKey: string | undefined,
+  mainLeafProjectsDisabled: boolean,
+): LegacyEnableResidue {
   const isRec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
   const specOf = (entry: unknown): string | null =>
     typeof entry === "string" ? entry : Array.isArray(entry) && typeof entry[0] === "string" ? (entry[0] as string) : null
@@ -768,7 +792,7 @@ export function legacyEnableResidueStrict(kind: string, name: string, configKey:
     } else if (!p.startsWith(".") && !path.isAbsolute(p)) return null // npm 规格,非路径
     return path.resolve(configDir, p)
   }
-  for (const file of legacyConfigPaths(mcpPluginTargetPath())) {
+  for (const file of engineLegacyReadFiles()) {
     let parsed: unknown
     try {
       if (!fs.existsSync(file)) continue
@@ -795,11 +819,19 @@ export function legacyEnableResidueStrict(kind: string, name: string, configKey:
         }
       }
     } else if (kind === "mcp") {
+      // Codex r8 M2:mergeDeep 语义 —— 主叶已投影 enabled:false 时 legacy 省略字段不覆盖(禁用保留),
+      // 只有**明确 enabled:true**才复活;主叶缺席(无投影面)时 legacy 在场且 enabled!==false 即加载。
       const leaf = isRec(parsed.mcp) ? parsed.mcp[name] : undefined
-      if (isRec(leaf) && leaf.enabled !== false) return { ok: true, residue: `mcp "${name}" would load (enabled !== false) from ${file}` }
+      if (isRec(leaf)) {
+        const wouldLoad = mainLeafProjectsDisabled ? leaf.enabled === true : leaf.enabled !== false
+        if (wouldLoad) return { ok: true, residue: `mcp "${name}" would load from ${file}` }
+      }
     } else if (kind === "agent") {
       const leaf = isRec(parsed.agent) ? parsed.agent[name] : undefined
-      if (isRec(leaf) && leaf.disable !== true) return { ok: true, residue: `agent "${name}" would load (disable !== true) from ${file}` }
+      if (isRec(leaf)) {
+        const wouldLoad = mainLeafProjectsDisabled ? leaf.disable === false : leaf.disable !== true
+        if (wouldLoad) return { ok: true, residue: `agent "${name}" would load from ${file}` }
+      }
     }
   }
   return { ok: true, residue: null }
@@ -868,19 +900,13 @@ function persistPluginUnlocked(pkg: string, meta?: InstallMeta): PersistPluginRe
   //   · 主 config 残留(旧钉版 / 崩溃残留)→ 移除该 base 全部条目(投影为缺席),changed。
   //   · 都缺席 → changed:false(纯账本刷新)。
   if (priorRecord?.desiredState === "disabled") {
-    // Codex r7 B3:legacy 探测须 **strict**(语法错/EACCES 不得像 readPlugins 折叠成空数组 fail-open)
-    // 且覆盖**全部** legacy 源(readLegacyPluginArrayStrict = ~/.opencode + XDG,不只 userConfigPath)。
-    // 任一源含同 base → fail-closed(引擎 concat plugin[],无法从此移除)。
-    const legacy = readLegacyPluginArrayStrict()
-    if (!legacy.ok) return { ok: false, reason: `plugin "${base}": legacy config unreadable (${legacy.reason}) — cannot guarantee disabled (fail closed)` }
-    const legacyHit = legacy.sources.some((src) =>
-      src.value.some((p) => {
-        const s = typeof p === "string" ? p : Array.isArray(p) && typeof p[0] === "string" ? (p[0] as string) : null
-        return s !== null && pkgBase(s) === base
-      }),
-    )
-    if (legacyHit)
-      return { ok: false, reason: `plugin "${base}" present in a legacy/XDG config source — engine concatenates plugin[]; cannot keep it disabled (remove the legacy entry first)` }
+    // Codex r7 B3 → r8 B1:legacy 探测统一走 legacyEnableResidueStrict —— strict + **引擎完整读取集**
+    // (XDG config.json/opencode.json/opencode.jsonc + ~/.opencode 两件,非 legacyConfigPaths 的每目录
+    // 一份)。plugin concat 不看主叶(mainLeaf=false);任一源含同 base → fail-closed。
+    const residue = legacyEnableResidueStrict("plugin", pluginRecordName(pkg), `plugin:${pkg}`, false)
+    if (!residue.ok) return { ok: false, reason: `plugin "${base}": ${residue.reason} — cannot guarantee disabled (fail closed)` }
+    if (residue.residue)
+      return { ok: false, reason: `plugin "${base}": ${residue.residue} — remove the legacy/XDG entry first (fail closed)` }
     if (existingMain !== undefined) {
       const next = current.filter((p) => {
         const s = typeof p === "string" ? p : Array.isArray(p) && typeof p[0] === "string" ? (p[0] as string) : null

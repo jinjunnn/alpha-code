@@ -590,6 +590,6 @@ describe("#395 r6 M1 disabled plugin 换钉版", () => {
     fs.writeFileSync(path.join(tmp, "opencode.jsonc"), JSON.stringify({ plugin: ["@z/r@1.0.0"] }))
     const r = persistPlugin("@z/r@2.0.0")
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("legacy/XDG config")
+    if (!r.ok) expect(r.reason).toContain("remove the legacy/XDG entry")
   })
 })
