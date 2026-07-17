@@ -13,7 +13,8 @@ import type { ExtensionsApi, HubAgent } from "./use-extensions"
 import { CloudDispatchBox } from "./cloud-dispatch-box"
 import { iconFor, iconForRow, sourceLabel, typeLabel, Svg, LockIc } from "./ext-presentation"
 import { ExtGrantedCapRow } from "./ext-authz"
-import { inventoryRowFor, ownershipRows, trustRows, type PresentRow } from "./ext-inventory-present"
+import { inventoryRowFor, ownershipRows, trustRows, runtimeSurfaceLabelKey, supportTierLabelKey, type PresentRow } from "./ext-inventory-present"
+import { derivePackFacts, formatPackBytes } from "./ext-pack-facts"
 import { EXCEL_MCP_PIN, officeAdvisoryFor, type OfficeAdvisory } from "../../shared/office-advisories"
 
 /** What the detail page shows: a catalog entry, an engine agent (no catalog identity), or the
@@ -215,6 +216,21 @@ export function ExtensionDetail(props: {
   // 仅 catalog 条目有 governance 身份;agent(引擎原生)/云连接器无 id → 两段不渲染(不造)。
   const govRow = createMemo(() => inventoryRowFor(props.governance?.(), entry()?.id ?? ""))
 
+  // #396(REQ-104):套件整包事实(体积/密钥/运行面/支持等级 + 能力并集)—— 纯读派生自已解析
+  // 子项(ext-pack-facts,能力与 #348 确认框同一真源)。非 bundle 恒 undefined,段不渲染。
+  // Codex r1 Major:子项解析缺失(catalog 引用悬空)不静默过滤 —— 密钥/运行面/能力同样未知,
+  // 部分聚合会误导(planner 侧同一场景会拒装);missing>0 时整段替换为「数据不完整」诚实提示。
+  const packFacts = createMemo(() => {
+    const e = entry()
+    if (!e || e.type !== "bundle") return undefined
+    const items = (e.bundleItems ?? []).slice().sort((a, b) => a.installOrder - b.installOrder)
+    const children = items.map((it) => props.byId(it.catalogEntryId)).filter((x): x is CatalogEntry => !!x)
+    return { missing: items.length - children.length, facts: derivePackFacts(children) }
+  })
+  // 能力来源标注:≤2 个子项列名(连接符走 i18n,Codex r1 Minor),更多收敛为计数。
+  const packFromLabel = (names: string[]) =>
+    names.length > 2 ? t("alpha.ext.packCapFromMany", { n: names.length }) : names.join(t("alpha.ext.packCapFromSep"))
+
   // PresentRow[] → FactRow 列表(值为 i18n key 数组则逐个 t() 后「 · 」拼接,或字面值直出)。
   const FactRows = (p: { rows: PresentRow[] }) => (
     <For each={p.rows}>
@@ -354,6 +370,64 @@ export function ExtensionDetail(props: {
           </div>
         </Show>
       </Section>
+
+      {/* ── #396(REQ-104)套件整包事实:装前看整体代价。位置 = 简介之后、子项列表之前(已批
+          设计稿 v5 Q2);体积「≥ 已知 + N 项未知」诚实口径(Q3);能力并集行复用 #392 被动行,
+          subtitle 标注来源子项。 ── */}
+      <Show when={packFacts()}>
+        {(pack) => (
+          <Section title={t("alpha.ext.packFactsTitle")}>
+            <Show
+              when={pack().missing === 0}
+              fallback={
+                <p class="alpha-ext-dnote" data-err="">
+                  {t("alpha.ext.packFactsIncomplete", { n: pack().missing })}
+                </p>
+              }
+            >
+              {(() => {
+                const pf = () => pack().facts
+                return (
+                  <>
+                    <FactRow label={t("alpha.ext.packSize")}>
+                      <Show when={pf().unknownSizeCount > 0} fallback={formatPackBytes(pf().knownBytes)}>
+                        ≥ {formatPackBytes(pf().knownBytes)}{" "}
+                        <span class="alpha-ext-type-pill">
+                          {pf().unknownSizeCount === 1 ? t("alpha.ext.packSizeUnknownOne") : t("alpha.ext.packSizeUnknown", { n: pf().unknownSizeCount })}
+                        </span>
+                      </Show>
+                    </FactRow>
+                    <FactRow label={t("alpha.ext.packSecrets")}>
+                      <Show when={pf().secrets.length > 0} fallback={t("alpha.ext.packNoSecrets")}>
+                        <span class="alpha-ext-dcode">{pf().secrets.join(" · ")}</span>
+                        <Show when={pf().secretFreeCount > 0}>
+                          {" · "}
+                          {pf().secretFreeCount === 1 ? t("alpha.ext.packSecretsRestOne") : t("alpha.ext.packSecretsRest", { n: pf().secretFreeCount })}
+                        </Show>
+                      </Show>
+                    </FactRow>
+                    <FactRow label={t("alpha.ext.packSurfaces")}>
+                      {pf().surfaces.map((s) => t(runtimeSurfaceLabelKey(s))).join(" · ")}
+                    </FactRow>
+                    <FactRow label={t("alpha.ext.packSupport")}>
+                      {t("alpha.ext.packSupportLowest", { tier: t(supportTierLabelKey(pf().lowestTier)) })}
+                    </FactRow>
+                    <p class="alpha-ext-dsec-t" style={{ margin: "12px 0 8px" }}>
+                      {t("alpha.ext.packCapsTitle")}
+                    </p>
+                    <div class="alpha-ext-authz-box">
+                      <For each={pf().caps}>
+                        {(row) => <ExtGrantedCapRow cap={row.cap} subtitle={t("alpha.ext.packCapFrom", { names: packFromLabel(row.from) })} />}
+                      </For>
+                    </div>
+                    <p class="alpha-ext-dnote">{t("alpha.ext.packFactsNote")}</p>
+                  </>
+                )
+              })()}
+            </Show>
+          </Section>
+        )}
+      </Show>
 
       {/* ── 类型专属槽(T2 骨架:已有事实;T3 填 tools[]/SKILL.md/hooks/权限档) ── */}
       <Section title={typeLabel(header().type as CatalogEntry["type"])}>

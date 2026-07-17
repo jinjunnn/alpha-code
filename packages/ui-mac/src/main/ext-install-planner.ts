@@ -159,7 +159,7 @@ export function cloudDesiredStateGate(
   return current === planned ? { ok: true } : { ok: false, reason: "cloud desiredState changed since plan — retry the install" }
 }
 import { parse, type ParseError } from "jsonc-parser"
-import type { AuthorizationConfirmationWire } from "../shared/ext-capability-authorization"
+import { capabilitiesForCatalogEntry, type AuthorizationConfirmationWire } from "../shared/ext-capability-authorization"
 import { findReceipt } from "./alpha-installs"
 import {
   aggregateFilesDigest,
@@ -428,15 +428,9 @@ export type VerifiedCatalogEntry = {
 }
 
 function capabilitiesFor(entry: CatalogEntry): ManifestCapability[] {
-  if (entry.type === "mcp") {
-    const spec = entry.installSpec
-    return spec?.kind === "mcp" && spec.mcpType === "remote" ? ["network:remote", "engine:config"] : ["process:spawn", "engine:config"]
-  }
-  if (entry.type === "plugin") return ["engine:plugin", "engine:config"]
-  if (entry.type === "agent") return ["prompt:context", "engine:config"]
-  if (entry.type === "skill") return ["prompt:context"]
-  if (entry.type === "cloud") return ["cloud:dispatch"]
-  return []
+  // #396:派生逻辑上移 shared/ext-capability-authorization —— 确认框(#348)与 Pack 整包事实
+  // 同一真源,两处永不漂移(v5 稿硬约束)。本地包一层保住既有调用面与命名。
+  return capabilitiesForCatalogEntry(entry)
 }
 
 /** 从已验 catalog 条目合成 ManifestV2(五维 ownership 推导 = shared/ext-ownership 真源,REQ-103 slice 1)。 */

@@ -104,8 +104,9 @@ function CapRow(props: { cap: string; kind: CapRowKind }) {
 }
 
 /** #392(REQ-103):详情页「已授权能力」被动行 —— 与确认框同一词汇/图标/风险分级(两处永远一致),
- *  但无 diff chip、无 muted:这是授权总账的查询面,变更仍只经上方确认框发生。 */
-export function ExtGrantedCapRow(props: { cap: string }) {
+ *  但无 diff chip、无 muted:这是授权总账的查询面,变更仍只经上方确认框发生。
+ *  #396(REQ-104):subtitle 可选覆盖说明行(Pack 整包事实用它标注「来自:<子项>」)。 */
+export function ExtGrantedCapRow(props: { cap: string; subtitle?: string }) {
   const vocab = () => CAP_VOCAB[props.cap]
   return (
     <div class="alpha-ext-authz-cap">
@@ -116,8 +117,8 @@ export function ExtGrantedCapRow(props: { cap: string }) {
       </span>
       <span class="alpha-ext-authz-nm">
         <b>{vocab() ? t(vocab().label) : props.cap}</b>
-        <Show when={vocab()}>
-          <small>{t(vocab().desc)}</small>
+        <Show when={props.subtitle} fallback={<Show when={vocab()}><small>{t(vocab().desc)}</small></Show>}>
+          <small>{props.subtitle}</small>
         </Show>
       </span>
       <span class="alpha-ext-authz-id">{props.cap}</span>

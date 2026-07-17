@@ -24,7 +24,7 @@ checklists, line numbers, and rollout phases remain authored-time history.
 
 | Family | Design history | Current authority |
 | --- | --- | --- |
-| Extension Hub | `extension-hub.md` → `2026-06-22-arch-extension-hub.md` → `2026-07-04-extension-hub-v3-universal.md` → `2026-07-13-req103-hub-governance/` (治理三归位 v3) → `2026-07-15-capability-authorize-dialog/` (authorize 确认框增量) → `2026-07-17-req103-remaining/` (scope 分组做实 + 已授权能力段 v4,approved 2026-07-17) | current extension code/tests and ADR-014/ADR-028/ADR-030 |
+| Extension Hub | `extension-hub.md` → `2026-06-22-arch-extension-hub.md` → `2026-07-04-extension-hub-v3-universal.md` → `2026-07-13-req103-hub-governance/` (治理三归位 v3) → `2026-07-15-capability-authorize-dialog/` (authorize 确认框增量) → `2026-07-17-req103-remaining/` (scope 分组做实 + 已授权能力段 v4,approved 2026-07-17) → `2026-07-17-req104-pack-facts/` (Pack 整包事实 + 第三方默认关 v5,approved 2026-07-17) | current extension code/tests and ADR-014/ADR-028/ADR-030 |
 | Product visual language | `2026-06-25-cool-graphite-visual-system.md` plus protected prototypes under `docs/archive/assets/design-program/` | current UI tokens, components, and visual tests |
 | Frontend/upstream boundary | `2026-07-03-frontend-decoupling-options.md` | `docs/architecture/upstream-integration.md`, sync workflows, ADR-020/ADR-029 |
 | Alpha extension storage | `2026-07-07-project-alpha-only-extensions.md` | current installer/config code and ADR-019 |
