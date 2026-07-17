@@ -106,7 +106,7 @@ MCP 重装是产品流(确认框重装),允许覆盖(引擎前像可复原)而�
   写 `[spec,opts]` 元组,opts 不丢;用户对受管条目手加的 opts 不随启停往返 —— 显式契约,非静默)。config
   自持 disabled 态 → **天然免疫「删/坏账本复活」**(账本不是运行时唯一权威,config 是)。
 - **skill 例外**:skill 不预加载,投影 = 引擎侧 config-hook 注入门(`skillGenerationLiveDirs`,
-  **严格 decoder**:只注入 desiredState === "enabled" 的 skill;缺失/损坏/畸形一律不注入 fail closed)。
+  只注入 **main 派生允许集** `skills-enabled.json` 里的 key;缺失/损坏/形状异常一律不注入 fail closed)。
 - **cloud 例外**:无本地运行面 + UI 无启停开关,一律 enabled(直装与 bundle 子项一致)。
 - **启停通道**(`ext-set-install-state`,#347-gated):锁内 record 重读 + advisory(R14)+ **持久化
   config 投影普通原子写 + 账本翻转**(非事务)。**两方向都账本先写**(Codex r4):账本是 durable
@@ -115,13 +115,33 @@ MCP 重装是产品流(确认框重装),允许覆盖(引擎前像可复原)而�
   config 原子写(writeFileAtomicSync 整替换或原文件不变)抛错 → 回滚账本到原态(回滚失败如实报真实
   状态);config 未变故 opts 等原样保留。残余:账本↔config 崩溃窗口的短暂运行态不符,durable intent 恒
   正确、下次更新/重开收敛。enable 缺生效面 fail-closed。disabled ≠ 卸载:内容/账本/授权账照常在位。
-- **skill 严格门**:`gen-skill-paths.enabledSkillKeys` 校验 v2 record 完整形状(schemaVersion + 核心
-  必填字段类型)后才认 enabled —— 与主进程 `decodeRecordV2` 同强度,畸形/不完整记录一律不注入
-  (Codex r3:防篡改重复记录绕过主进程排除复活被禁用技能)。
+- **skill 严格门(Codex r5 定稿)**:ext 无法 import 主进程 decoder,逐字段镜像有永久漂移风险 ——
+  改为 **main 用真 `decodeRecordV2` 派生 enabled 允许集写独立文件 `<root>/skills-enabled.json`**,
+  hook 只读该文件(缺失/损坏/未知版本 = fail closed 不注入)。派生与账本**锁步**
+  (`writeLedgerFile` 方向排序:有 key 被收走/现状不可信 → 派生先写,中途崩溃只会技能变暗;
+  纯扩容 → 账本先写,派生失败回退删除,删不掉陈旧允许集才报错);boot reconcile 按账本重算自愈
+  (升级首启 backfill / 扩容失败残留 / 账本损坏时撤陈旧允许集)。
+- **startup reconcile(Codex r5 缺失件,#395 定稿)**:主进程启动时(REQ-059 truth reconcile 之后、
+  首个 sidecar fork 读 config 之前)`reconcileDesiredStateAtBoot` 把账本全部 global mcp/agent/plugin
+  记录的 desiredState **双向重投影**回 alpha.jsonc(disabled → 禁用键/缺席;enabled → 剥禁用键/补回),
+  使 config 恒 = 账本派生 —— 消除「账本 disabled / config enabled」崩溃残留与一切旁路写入的复活面。
+  边界全 loud 不阻断启动:锁忙/账本文件级损坏/非法 jsonc/非缺席读错误 → skip(config 不动);
+  损坏单条 → 该条跳过;enable 缺生效面 → warning(重装修复)。escape hatch 与 REQ-059 同口径。
+- **未策展重加投影(Codex r5)**:`persistMcp`/`persistPlugin` 在唯一写入口消费账本 —— 记录
+  disabled 的 mcp 重写叶强制并入 `enabled:false`(内容更新、状态不翻);disabled 的 plugin 条目
+  保持缺席(`projectedDisabled`,调用方照常刷账本、零 config 写入)。旁路「写正常叶复活」由此封死。
+- **读错误收窄(Codex r5)**:alpha.jsonc 各读点只容缺席(ENOENT/ENOTDIR);EACCES/EIO 等
+  「读不出」≠「不存在」,一律 fail-closed(启停双向拒、truth reconcile 整体 skip、legacy 不迁不清理、
+  persistPlugin 拒写防空基底 clobber)。断链 symlink(链在、目标缺席)`pathIdentity` 判 certain:false
+  (身份在链目标侧,词法不可证)→ 匹配消费方按身份不可判 fail-closed。
+- **账本 durability(Codex r5)**:`installs.json` 与 `skills-enabled.json` 写盘 = tmp fsync +
+  原子 rename + best-effort 目录 fsync(账本先写契约的前提:账本必须先于 config 到达持久介质)。
 
 ## 6. 证据
 
-`ext-install-planner.test.ts`(fail-closed ledger commit:逐类型写前门/根只读事务失败零
+`ext-boot-reconcile.test.ts`(#395 startup reconcile:双向重投影/幂等零写盘/锁忙与损坏
+fail-closed/skills 派生允许集锁步 + boot 自愈)、`gen-skill-paths.test.ts`(允许集注入门
+fail-closed)、`ext-install-planner.test.ts`(fail-closed ledger commit:逐类型写前门/根只读事务失败零
 残留/损坏账本写前拒绝/v1-only 双查/authorize 暂停零权威副作用/v1 锁步派生;#378 退出条件
 组:四类首装 authorize 生产入口、cloud 卸载双清与 desiredState 继承、plugin 更新失败旧版
 健康、MCP 密钥版本化轮换)、`alpha-mcp-secrets.test.ts`(版本化原语)、

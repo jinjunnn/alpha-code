@@ -383,7 +383,17 @@ export function pathIdentity(p: string): PathIdentity {
     const real = fs.realpathSync(lex)
     return { forms: real === lex ? [lex] : [lex, real], certain: true }
   } catch (e) {
-    return { forms: [lex], certain: isAbsenceError(e) }
+    if (!isAbsenceError(e)) return { forms: [lex], certain: false }
+    // #395(Codex r5):absence ≠ 词法身份可证 —— 断链 symlink(链在、目标缺席)realpath 同样
+    // ENOENT,但该路径的真实身份在链目标侧,仅词法形态会漏判等价(vendored 禁用漏删条目)。
+    // lstat 区分:最终组件是 symlink → certain:false(消费方按身份不可判 fail-closed);
+    // 彻底缺席(lstat 也 absence)→ 词法身份可证。
+    try {
+      const st = fs.lstatSync(lex)
+      return { forms: [lex], certain: !st.isSymbolicLink() }
+    } catch (e2) {
+      return { forms: [lex], certain: isAbsenceError(e2) }
+    }
   }
 }
 

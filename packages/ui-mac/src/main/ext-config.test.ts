@@ -10,6 +10,7 @@ import * as path from "node:path"
 import { applyBuiltinPolicyEdits, configHealth, persistMcp, persistPlugin, persistProvider, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, readMcpLeafStrict, readAgentEntryStrict, readPluginArrayStrict } from "./ext-config"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
 import { addReceipt, findReceipt, readLedger } from "./alpha-installs"
+import { upsertRecordV2 } from "./ext-receipt-v2"
 
 // REQ-018 T2: mcp/plugin persistence targets the alpha-owned ~/.opencode/opencode.jsonc
 // (ALPHA_OPENCODE_HOME-overridable); provider persistence stays on the shared XDG config
@@ -485,5 +486,66 @@ describe("applyBuiltinPolicyEdits — 幽灵删除跳过(O4)", () => {
     // 事务本身会原子写回 "{}"(建目标属既有行为);关键是不再 throw、不误造治理键
     const cfg = JSON.parse(fs.readFileSync(target(), "utf8"))
     expect(cfg.permission).toBeUndefined()
+  })
+})
+
+// ── #395(Codex r5):未策展重加接入同一投影 —— disabled 记录不得被 persist 写「正常叶」复活 ────
+describe("#395 persistMcp/persistPlugin — 账本 disabled 投影(重加不复活)", () => {
+  const record = (kind: "mcp" | "plugin", name: string, desiredState: "enabled" | "disabled", configKey: string) => {
+    const w = upsertRecordV2(alphaTmp, {
+      id: `user:${name}`,
+      name,
+      kind,
+      environment: "prod",
+      scope: { kind: "global" },
+      desiredState,
+      origin: "created",
+      installedAt: "2026-07-17T00:00:00.000Z",
+      configKey,
+    })
+    if (!w.ok) throw new Error(w.reason)
+  }
+
+  test("persistMcp:账本 disabled → 重写叶强制带 enabled:false(内容照常更新)", () => {
+    record("mcp", "srv", "disabled", "mcp.srv")
+    const r = persistMcp("srv", { type: "local", command: ["npx", "-y", "x"] })
+    expect(r.ok).toBe(true)
+    expect(readConfig().mcp.srv).toEqual({ type: "local", command: ["npx", "-y", "x"], enabled: false })
+  })
+
+  test("persistMcp:账本 enabled / 无记录 → 叶原样(不额外注键)", () => {
+    record("mcp", "on", "enabled", "mcp.on")
+    expect(persistMcp("on", { type: "local", command: ["npx"] }).ok).toBe(true)
+    expect(readConfig().mcp.on).toEqual({ type: "local", command: ["npx"] })
+    expect(persistMcp("fresh", { type: "local", command: ["npx"] }).ok).toBe(true)
+    expect(readConfig().mcp.fresh).toEqual({ type: "local", command: ["npx"] })
+  })
+
+  test("persistMcp:账本 disabled 且入参带 enabled:true → 投影覆盖为 false(状态只走 set-state 通道)", () => {
+    record("mcp", "srv2", "disabled", "mcp.srv2")
+    expect(persistMcp("srv2", { type: "local", command: ["npx"], enabled: true }).ok).toBe(true)
+    expect(readConfig().mcp.srv2.enabled).toBe(false)
+  })
+
+  test("persistPlugin:账本 disabled → projectedDisabled,plugin[] 保持缺席(config 零写入)", () => {
+    record("plugin", "x__p", "disabled", "plugin:@x/p@1.0.0")
+    const r = persistPlugin("@x/p@1.0.0")
+    expect(r).toEqual({ ok: true, changed: false, projectedDisabled: true })
+    expect(fs.existsSync(path.join(alphaTmp, "alpha.jsonc"))).toBe(false) // 从未写盘
+  })
+
+  test("persistPlugin:账本 enabled → 照常追加(投影不误伤)", () => {
+    record("plugin", "y__q", "enabled", "plugin:@y/q@1.0.0")
+    expect(persistPlugin("@y/q@1.0.0")).toEqual({ ok: true, changed: true })
+    expect(readConfig().plugin).toEqual(["@y/q@1.0.0"])
+  })
+})
+
+describe("#395 步骤4:persistPlugin 目标读错误 fail-closed", () => {
+  test("目标 config 不可读(EISDIR)→ 拒绝(不以空基底 [pkg] 整替换既有 plugin[])", () => {
+    fs.mkdirSync(path.join(alphaTmp, "alpha.jsonc"), { recursive: true })
+    const r = persistPlugin("@z/r@1.0.0")
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("unreadable")
   })
 })

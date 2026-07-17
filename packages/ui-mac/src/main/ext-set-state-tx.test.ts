@@ -149,3 +149,15 @@ describe("#395 Codex r4 回归", () => {
     expect(findRecordV2(root, "mcp", "np4")!.desiredState).toBe("disabled")
   })
 })
+
+// ── #395(Codex r5)步骤4:alpha.jsonc 读错误只容缺席(ENOENT/ENOTDIR),其余 fail-closed ─────────
+describe("#395 步骤4 读错误收窄", () => {
+  test("config 不可读(EISDIR)→ 启停双向 fail-closed(不把「读不出」当缺席谎报 disable 成功)", () => {
+    record({ name: "m", kind: "mcp", configKey: "mcp.m" })
+    fs.mkdirSync(path.join(root, "alpha.jsonc")) // 目录占位 → readFileSync EISDIR(非缺席)
+    const r = setInstallStateByKey({ type: "mcp", name: "m", scope: "global", state: "disabled" }, deps())
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("unreadable")
+    expect(findRecordV2(root, "mcp", "m")!.desiredState).toBe("enabled") // 账本未翻
+  })
+})

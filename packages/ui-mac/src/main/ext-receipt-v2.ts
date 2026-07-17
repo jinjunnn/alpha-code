@@ -447,15 +447,135 @@ function quarantineCorrupt(root: string): string | null {
   }
 }
 
+// ── #395 步骤5:skills「enabled 允许集」派生文件(hook 只读此文件,不再镜像 decoder)────────────
+
+const SKILLS_ENABLED_FILE = "skills-enabled.json"
+
+/** `<root>/skills-enabled.json` —— main 用真 decodeRecordV2 派生的 skill 允许集;
+ *  @alpha-code/ext 的注入门只读此文件(缺失/损坏 = fail-closed 不注入)。 */
+export function skillsEnabledPath(root: string): string {
+  return path.join(root, SKILLS_ENABLED_FILE)
+}
+
+/** 从 raw records(含损坏保全条目)派生 enabled skill 允许集 —— **真 decoder** 判定:
+ *  损坏/畸形记录解码失败自然排除,与主进程一切读侧同强度(未知键/digest/id 前缀等不变量全覆盖)。 */
+function enabledSkillKeysFromRecords(records: readonly unknown[]): string[] {
+  const keys = new Set<string>()
+  for (const r of records) {
+    const d = decodeRecordV2(r)
+    if (d.ok && d.record.kind === "skill" && d.record.desiredState === "enabled") keys.add(`skill--${d.record.name}`)
+  }
+  return [...keys].sort()
+}
+
+function isAbsenceCode(e: unknown): boolean {
+  const code = (e as NodeJS.ErrnoException)?.code
+  return code === "ENOENT" || code === "ENOTDIR"
+}
+
+function readDerivationKeys(file: string): string[] | "absent" | "unknown" {
+  let text: string
+  try {
+    text = fs.readFileSync(file, "utf8")
+  } catch (e) {
+    return isAbsenceCode(e) ? "absent" : "unknown"
+  }
+  try {
+    const parsed = JSON.parse(text) as { v?: unknown; keys?: unknown } | null
+    if (!parsed || typeof parsed !== "object" || parsed.v !== 1 || !Array.isArray(parsed.keys)) return "unknown"
+    return parsed.keys.filter((k): k is string => typeof k === "string")
+  } catch {
+    return "unknown"
+  }
+}
+
+/** #395 步骤6:掉电 durability 的原子写 —— tmp fsync 后 rename,再 best-effort fsync 父目录
+ *  (账本先写的前提:账本必须比 config 先到达持久介质,否则崩溃残留方向反转)。 */
+function writeFileSyncedAtomic(file: string, text: string): void {
+  const tmp = `${file}.tmp-${process.pid}`
+  const fd = fs.openSync(tmp, "w")
+  try {
+    fs.writeSync(fd, text)
+    fs.fsyncSync(fd)
+  } finally {
+    fs.closeSync(fd)
+  }
+  fs.renameSync(tmp, file)
+  try {
+    const dfd = fs.openSync(path.dirname(file), "r")
+    try {
+      fs.fsyncSync(dfd)
+    } finally {
+      fs.closeSync(dfd)
+    }
+  } catch {
+    /* 目录 fsync 不可用(平台差异)→ 内容已 fsync + 原子 rename,仅目录项的掉电窗口 best-effort */
+  }
+}
+
+/** #395 步骤5(boot 自愈,调用方持 bundle 锁):从账本重算 skills 派生允许集。
+ *  账本文件级损坏/读错误 → 删派生文件(缺失 = hook fail-closed 不注入,与账本不可信同向);
+ *  健康 → 原子重写(升级迁移首启 backfill / 扩容失败残留在此收敛)。 */
+export function reconcileSkillsDerivation(root: string): { ok: true } | { ok: false; reason: string } {
+  const { parsed, corrupt, readError } = parseLedger(root)
+  const file = skillsEnabledPath(root)
+  if (corrupt || readError) {
+    try {
+      fs.unlinkSync(file)
+    } catch (e) {
+      if (!isAbsenceCode(e))
+        return { ok: false, reason: `ledger unusable and stale skills allow-list could not be removed: ${e instanceof Error ? e.message : String(e)}` }
+    }
+    return { ok: true }
+  }
+  try {
+    const keys = enabledSkillKeysFromRecords([...parsed.records, ...parsed.rawCorruptRecords])
+    writeFileSyncedAtomic(file, JSON.stringify({ v: 1, keys }, null, 2) + "\n")
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, reason: `skills allow-list write failed: ${error instanceof Error ? error.message : String(error)}` }
+  }
+}
+
 /** r17(Blocker):receipts/records 接受 unknown —— 重建视图必须能原样携带解码失败条目
- *  (rawInvalidReceipts/rawCorruptRecords),序列化本就与类型无关。 */
+ *  (rawInvalidReceipts/rawCorruptRecords),序列化本就与类型无关。
+ *  #395 步骤5:skills 派生允许集与账本**锁步**(hook 只读派生文件)。方向排序(同 set-state 精神):
+ *  有键被收走/现状不可信 → 派生先写 —— 中途崩溃只会技能变暗(boot 自愈按账本重算恢复),绝不残留
+ *  「账本 disabled / 派生仍允许」;纯扩容 → 账本先写,派生失败回退删除(缺失 = fail-closed),
+ *  删不掉陈旧允许集才如实报错。#395 步骤6:两个文件都走 fsync 原子写(掉电 durability)。 */
 function writeLedgerFile(root: string, receipts: readonly unknown[], records: readonly unknown[]): { ok: true } | { ok: false; reason: string } {
   try {
     fs.mkdirSync(root, { recursive: true })
     const file = ledgerPath(root)
-    const tmp = `${file}.tmp-${process.pid}`
-    fs.writeFileSync(tmp, JSON.stringify({ v: 2, receipts, records }, null, 2) + "\n", "utf8")
-    fs.renameSync(tmp, file)
+    const derivationFile = skillsEnabledPath(root)
+    const nextKeys = enabledSkillKeysFromRecords(records)
+    const derivationText = JSON.stringify({ v: 1, keys: nextKeys }, null, 2) + "\n"
+    const cur = readDerivationKeys(derivationFile)
+    const shrinks = cur === "unknown" ? true : cur === "absent" ? false : cur.some((k) => !nextKeys.includes(k))
+    if (shrinks) writeFileSyncedAtomic(derivationFile, derivationText)
+    writeFileSyncedAtomic(file, JSON.stringify({ v: 2, receipts, records }, null, 2) + "\n")
+    if (!shrinks) {
+      try {
+        writeFileSyncedAtomic(derivationFile, derivationText)
+      } catch (error) {
+        try {
+          fs.unlinkSync(derivationFile)
+        } catch {
+          /* 存在性复查在下方 */
+        }
+        let stale = false
+        try {
+          fs.statSync(derivationFile)
+          stale = true
+        } catch {
+          stale = false
+        }
+        const msg = error instanceof Error ? error.message : String(error)
+        if (stale)
+          return { ok: false, reason: `ledger written but skills allow-list update failed AND stale allow-list could not be removed (enforcement hole until next successful write): ${msg}` }
+        return { ok: false, reason: `ledger written but skills allow-list update failed (allow-list removed — skills fail closed until retry/restart): ${msg}` }
+      }
+    }
     return { ok: true }
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : "failed to write ledger" }

@@ -138,8 +138,26 @@ function writeLedger(root: string, receipts: InstallReceipt[]): LedgerWriteResul
     const tmp = `${file}.tmp-${process.pid}`
     const records = readCarriedRecords(root)
     const payload = records.length > 0 ? { v: 2, receipts, records } : { v: LEDGER_VERSION, receipts }
-    fs.writeFileSync(tmp, JSON.stringify(payload, null, 2) + "\n", "utf8")
+    // #395 步骤6:掉电 durability —— 账本是启停/安装的 durable intent(账本先写契约的前提),
+    // tmp fsync 后 rename,再 best-effort fsync 父目录(与 ext-receipt-v2.writeLedgerFile 同则)。
+    const fd = fs.openSync(tmp, "w")
+    try {
+      fs.writeSync(fd, JSON.stringify(payload, null, 2) + "\n")
+      fs.fsyncSync(fd)
+    } finally {
+      fs.closeSync(fd)
+    }
     fs.renameSync(tmp, file)
+    try {
+      const dfd = fs.openSync(root, "r")
+      try {
+        fs.fsyncSync(dfd)
+      } finally {
+        fs.closeSync(dfd)
+      }
+    } catch {
+      /* 目录 fsync 平台差异 → 内容已 fsync + 原子 rename,目录项持久化 best-effort */
+    }
     return { ok: true }
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : "failed to write ledger" }

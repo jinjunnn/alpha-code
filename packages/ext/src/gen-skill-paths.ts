@@ -35,52 +35,26 @@ function liveGenerationDir(alphaRoot: string, key: string): string | null {
   }
 }
 
-/** #395(REQ-104)+ Codex r1 Blocker 2:账本 desiredState 投影门,**严格 decoder**(#394 硬约束)——
- *  只注入账本确证 enabled 的 skill key(允许集,非禁用集)。installs.json 缺失/不可解析/无该 skill
- *  记录 = **不注入**(fail closed):generation 目录与账本记录由同一事务原子落位(installSkillGeneration
- *  commitReceipt),孤儿 generation = 失败/回滚残留,不得复活;损坏账本让被禁用技能重新加载是禁用
- *  强制的漏洞。desiredState 缺失/非法 = 记录不良构 → 不注入(严格门,与主 decoder 同排除)。 */
+/** #395(REQ-104)账本 desiredState 投影门 —— 只注入 main 确证 enabled 的 skill key(允许集,非
+ *  禁用集)。Codex r5(步骤5):ext 无法 import ui-mac 的 decodeRecordV2,此前逐字段镜像 decoder
+ *  存在永久漂移风险(未知键/version/digest/files/transaction/id 前缀不变量漏校)—— 改为 **main 用
+ *  真 decoder 算出允许集写独立派生文件 `skills-enabled.json`**(ext-receipt-v2 与账本锁步写,方向
+ *  排序:收窄先行;boot reconcile 自愈 backfill),hook 只读该文件。
+ *  缺失/不可解析/形状异常 = 无从确证任何 skill 为 enabled → 全部不注入(fail closed):孤儿
+ *  generation、损坏账本、升级空窗一律走安全侧;条目须匹配受管 key 形状(SAFE_KEY)。 */
 function enabledSkillKeys(alphaRoot: string): Set<string> | null {
   let parsed: unknown
   try {
-    parsed = JSON.parse(readFileSync(join(alphaRoot, "installs.json"), "utf8"))
+    parsed = JSON.parse(readFileSync(join(alphaRoot, "skills-enabled.json"), "utf8"))
   } catch {
-    return null // 缺失/不可解析 → 无从确证任何 skill 为 enabled → 全部不注入(fail closed)
+    return null // 缺失/不可解析 → fail closed
   }
-  const records = parsed && typeof parsed === "object" && Array.isArray((parsed as { records?: unknown }).records) ? ((parsed as { records: unknown[] }).records) : []
-  // 严格 record 形状门(Codex r3/r4 Blocker:须与主进程 decodeRecordV2 **同强度**,否则畸形重复记录
-  // 绕过主进程排除、复活被禁用技能)。逐字段镜像 decodeRecordV2 的枚举/类型/范围校验(ext 无法 import
-  // ui-mac decoder,故此处保持镜像 —— 任一侧改动须同步;drift 由本注释与 Codex review 兜底)。
-  const KINDS = new Set(["mcp", "skill", "agent", "command", "plugin", "bundle", "cloud"])
-  const ENVIRONMENTS = new Set(["prod", "beta", "dev"])
-  const ORIGINS = new Set(["catalog", "created", "imported", "imported-claude", "imported-agents"])
-  const SAFE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
-  const isStr = (v: unknown, re?: RegExp): v is string => typeof v === "string" && v.length > 0 && v.length <= 512 && (!re || re.test(v))
-  const isWellFormedV2 = (r: unknown): r is { kind: string; name: string; desiredState: string } => {
-    if (!r || typeof r !== "object") return false
-    const o = r as Record<string, unknown>
-    if (o.schemaVersion !== 2) return false
-    if (!isStr(o.id) || !isStr(o.name, SAFE_NAME)) return false
-    if (!isStr(o.kind) || !KINDS.has(o.kind)) return false
-    if (!isStr(o.environment) || !ENVIRONMENTS.has(o.environment)) return false
-    if (!isStr(o.origin) || !ORIGINS.has(o.origin)) return false
-    // scope:global(仅 kind)或 project(kind + 绝对 projectPath + 64-hex projectPathHash)。
-    if (!o.scope || typeof o.scope !== "object") return false
-    const sc = o.scope as Record<string, unknown>
-    if (sc.kind === "global") {
-      if (Object.keys(sc).some((k) => k !== "kind")) return false
-    } else if (sc.kind === "project") {
-      if (!isStr(sc.projectPath) || !sc.projectPath.startsWith("/")) return false
-      if (!isStr(sc.projectPathHash, /^[0-9a-f]{64}$/)) return false
-    } else return false
-    if (typeof o.generation !== "number" || !Number.isInteger(o.generation) || o.generation < 1) return false
-    if (!isStr(o.installedAt) || Number.isNaN(Date.parse(o.installedAt))) return false
-    return o.desiredState === "enabled" || o.desiredState === "disabled"
-  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null
+  const o = parsed as { v?: unknown; keys?: unknown }
+  if (o.v !== 1 || !Array.isArray(o.keys)) return null // 未知版本/形状 → fail closed
   const out = new Set<string>()
-  for (const r of records) {
-    if (!isWellFormedV2(r)) continue // 畸形/不完整记录 fail closed(与主进程 decoder 同排除)
-    if (r.kind === "skill" && r.desiredState === "enabled") out.add(`skill--${r.name}`)
+  for (const k of o.keys) {
+    if (typeof k === "string" && SAFE_KEY.test(k)) out.add(k)
   }
   return out
 }

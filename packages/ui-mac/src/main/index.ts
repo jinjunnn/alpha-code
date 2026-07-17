@@ -67,6 +67,8 @@ import { registerEndpointsIpcHandlers } from "./endpoints-ipc"
 import { registerSurfaceIpc } from "./alpha-surfaces"
 import { initByokKeys, injectByokKeysIntoEnv, setByokKeyDeps } from "./alpha-byok-keys"
 import { reconcileEngineConfigTruth } from "./engine-config-truth-boot"
+import { reconcileDesiredStateAtBoot } from "./ext-install-planner"
+import { alphaGlobalRoot } from "./alpha-installs"
 import { factorySkillSources, reconcileFactorySkills } from "./factory-skills"
 import { runGlobalEcosystemGate } from "./ecosystem-gate"
 import { effectiveFactoryDenied, readBuiltinPolicy } from "./alpha-builtin-policy"
@@ -467,6 +469,22 @@ const main = Effect.gen(function* () {
         logger.warn("[req059] engine config reconcile bailed out (kept legacy in place)", { reason: outcome.bailedOut })
     } catch (error) {
       logger.warn("[req059] engine config reconcile failed (non-fatal)", error)
+    }
+    // #395:startup reconcile —— 账本 desiredState 权威重投影回 alpha.jsonc(REQ-059 truth reconcile
+    // 之后、首个 sidecar fork 读 config 之前;双向)。消除「账本 disabled / config enabled」崩溃残留
+    // 与旁路写入的复活面(引擎 import 插件早于任何 config-hook,持久化 config 是唯一权威生效面)。
+    // 失败/跳过一律 loud 且不阻断启动(config 保持原样;fail-closed 细则在函数内)。escape hatch 与
+    // REQ-059 同口径:legacy 模式下 alpha.jsonc 非引擎读取目标,不投影。
+    if (process.env.ALPHA_JSONC_TRUTH_DISABLE !== "1" && process.env.ALPHA_LEGACY_INSTALL_ROOT !== "1") {
+      try {
+        const ds = reconcileDesiredStateAtBoot(alphaGlobalRoot())
+        if (ds.skipped) logger.warn("[req104-395] desired-state reconcile skipped", { reason: ds.skipped })
+        if (ds.applied.length > 0)
+          logger.log("[req104-395] desired-state residue reprojected into alpha.jsonc", { applied: ds.applied })
+        for (const w of ds.warnings) logger.warn(`[req104-395] desired-state reconcile: ${w}`)
+      } catch (error) {
+        logger.warn("[req104-395] desired-state reconcile failed (non-fatal)", error)
+      }
     }
   }
   ensureAlphaLayoutDefault()

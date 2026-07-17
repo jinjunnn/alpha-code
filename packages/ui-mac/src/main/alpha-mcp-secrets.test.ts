@@ -331,6 +331,15 @@ describe("pathIdentity — 文件系统身份(r15:缺席可判,其余 fail-close
     expect(notdir.certain).toBe(true)
   })
 
+  test("#395(Codex r5):断链 symlink(链在、目标缺席)= certain=false —— 身份在链目标侧,词法不可证", () => {
+    const gone = path.join(userData, "gone-target.js")
+    const broken = path.join(userData, "broken-link.js")
+    fs.symlinkSync(gone, broken) // 目标从未存在 → realpath ENOENT,但链本身在
+    const b = pathIdentity(broken)
+    expect(b.certain).toBe(false)
+    expect(b.forms).toEqual([path.resolve(broken)])
+  })
+
   test("非缺席类失败(EACCES)= certain=false(调用侧 fail-closed)", () => {
     if (typeof process.getuid === "function" && process.getuid() === 0) return
     const lockedDir = path.join(userData, "locked2")

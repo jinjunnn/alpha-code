@@ -48,7 +48,7 @@ import {
 } from "./ext-transaction"
 import { capabilityGrantPath, isSafeCapability, type CapabilityDiff } from "./ext-capability-grants"
 import { agentConfigItemKey, agentInstallKey, installAgentFromCas, recoveryReceiptInputs } from "./ext-agent-install"
-import { collectMcpFileRefPaths, newMcpSecretVersionId, pathIdentity, resolveMcpRefPath, substituteMcpSecretRefsPure } from "./alpha-mcp-secrets"
+import { collectMcpFileRefPaths, isAbsenceError, newMcpSecretVersionId, pathIdentity, resolveMcpRefPath, substituteMcpSecretRefsPure } from "./alpha-mcp-secrets"
 
 /** `{file:<abs>}` 引用 → 文件路径(非引用形状 = null;#378 r1 锁内在场门与失败清理共用)。 */
 function mcpRefPathOf(ref: string): string | null {
@@ -184,6 +184,7 @@ import {
   setDesiredStateV2,
   probeLedgerForWrite,
   readLedgerV2,
+  reconcileSkillsDerivation,
   upsertRecordV2,
   upsertRecordsV2,
   verifyProjectScope,
@@ -3984,9 +3985,16 @@ export function setInstallStateByKey(
       let text: string
       try {
         text = fs.readFileSync(target, "utf8")
-      } catch {
-        // config 不存在:disable = 投影本就不在(成功,仅翻账本);enable = 无生效面重建(拒)。
-        if (intent.state === "enabled") return { ok: false, reason: `${record.kind} ${record.name}: alpha.jsonc not readable — cannot enable (reinstall to repair)` }
+      } catch (error) {
+        // #395(Codex r5):只容缺席(ENOENT/ENOTDIR)—— EACCES/EIO 等「读不出」≠「不存在」,
+        // 当缺席会让 disable 谎报成功(config 可能仍留启用叶/条目)。其余错误双向 fail-closed。
+        if (!isAbsenceError(error))
+          return {
+            ok: false,
+            reason: `${record.kind} ${record.name}: alpha.jsonc unreadable (${(error as NodeJS.ErrnoException).code ?? String(error)}) — fail closed, enable state unchanged`,
+          }
+        // config 确证缺席:disable = 投影本就不在(成功,仅翻账本);enable = 无生效面重建(拒)。
+        if (intent.state === "enabled") return { ok: false, reason: `${record.kind} ${record.name}: alpha.jsonc absent — cannot enable (reinstall to repair)` }
         text = ""
       }
       if (text !== "") {
@@ -4091,4 +4099,106 @@ function computeEnableProjectionEdit(
   }
   if (leaf[field] === undefined) return { ok: true }
   return { ok: true, edit: { keyPath: [record.kind, record.name], value: Object.fromEntries(Object.entries(leaf).filter(([k]) => k !== field)) } }
+}
+
+// ── #395 startup reconcile:账本 desiredState → alpha.jsonc 权威重投影 ─────────────────────────────
+
+export type BootReconcileOutcome = {
+  /** false = reconcile 整体未完成(skipped 带因,config 保持原样);true 时 warnings 仍可能非空(单条跳过)。 */
+  ok: boolean
+  /** 实际投影修复的记录(`kind:name→state`);无残留时为空。 */
+  applied: string[]
+  warnings: string[]
+  skipped?: string
+}
+
+/** 主进程启动 reconcile(引擎首次 fork 读 config 之前调用):把账本全部 global mcp/agent/plugin 记录
+ *  的 desiredState 重投影回 alpha.jsonc(双向:disabled → `enabled:false`/`disable:true`/plugin[] 缺席;
+ *  enabled → 剥禁用键)。config 恒 = 账本派生 → 消除崩溃残留(账本↔config 两写之间断电)与旁路写入
+ *  (未策展重加等)的复活面 —— 引擎 import 插件早于任何 config-hook,持久化 config 是唯一权威生效面。
+ *  边界(全部 loud,不 throw):
+ *    · 锁忙(真持有)→ skip:在途事务自身保证两面一致;陈旧锁由 tryAcquireBundleLock 接管。
+ *    · 账本文件级损坏 → records 空 → 不动 config(威胁模型是崩溃残留,能改账本者可直改 config;
+ *      skill 生效面由引擎注入门独立 fail-closed)。
+ *    · 损坏单条 record → decoder 排除 + warning,config 该条保持原态(禁用投影在 disable 时已落盘)。
+ *    · alpha.jsonc ENOENT/ENOTDIR = 合法缺席:disabled 天然满足;enabled 缺生效面 → warning(重装修复)。
+ *      其余读错(EACCES/EIO)→ fail-closed skip,config 不动;非法 jsonc → fail-closed skip(不清写)。
+ *    · 单条 enable 缺生效面 / plugin 身份不可判 → warning + 跳过该条,不 abort 其余。
+ *  project-scope 记录不在此对账(引擎启动只读 global alpha.jsonc;项目残留由 set-state/更新路径自愈)。 */
+export function reconcileDesiredStateAtBoot(root: string): BootReconcileOutcome {
+  const warnings: string[] = []
+  const applied: string[] = []
+  const held = tryAcquireBundleLock(root, { txId: `boot-reconcile-${randomUUID()}` })
+  if (!held.ok) return { ok: false, applied, warnings, skipped: `ledger busy: ${held.reason}` }
+  try {
+    // #395 步骤5:skills 派生允许集自愈(升级首启 backfill / 扩容失败残留收敛 / 账本损坏时撤陈旧
+    // 允许集)—— 在 config 投影之前,与其共享同一把锁。
+    const deriv = reconcileSkillsDerivation(root)
+    if (!deriv.ok) warnings.push(`skills derivation: ${deriv.reason}`)
+    const ledger = readLedgerV2(root)
+    warnings.push(...ledger.warnings)
+    const configBacked = ledger.records.filter(
+      (r) => r.scope.kind === "global" && (r.kind === "mcp" || r.kind === "agent" || r.kind === "plugin"),
+    )
+    if (configBacked.length === 0) return { ok: true, applied, warnings }
+    const target = path.join(root, "alpha.jsonc")
+    let text: string
+    try {
+      text = fs.readFileSync(target, "utf8")
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code === "ENOENT" || code === "ENOTDIR") {
+        for (const r of configBacked)
+          if (r.desiredState === "enabled")
+            warnings.push(`${r.kind} ${r.name}: ledger says enabled but alpha.jsonc is absent — no effect surface (reinstall to repair)`)
+        return { ok: true, applied, warnings }
+      }
+      return { ok: false, applied, warnings, skipped: `alpha.jsonc unreadable (${code ?? String(error)}) — fail closed, config untouched` }
+    }
+    const parseErrors: ParseError[] = []
+    const cfg = parse(text, parseErrors)
+    if (parseErrors.length > 0) return { ok: false, applied, warnings, skipped: "alpha.jsonc is not valid jsonc — fail closed, config untouched" }
+    // 工作副本上逐条累积(多条 plugin 记录共享 plugin[] 键路径,后算必须看见先算的结果);
+    // edits 按 keyPath 去重 last-wins(每个键路径只落最终累积值,免得整值 edit 互相覆盖)。
+    const working = isObj(cfg) ? (structuredClone(cfg) as Record<string, unknown>) : {}
+    const byPath = new Map<string, ConfigEdit>()
+    for (const record of configBacked) {
+      const proj = computeEnableProjectionEdit(working, root, record, record.desiredState)
+      if (!proj.ok) {
+        warnings.push(`${record.kind} ${record.name}: ${proj.reason}`)
+        continue
+      }
+      if (!proj.edit) continue
+      setAtKeyPath(working, proj.edit.keyPath, proj.edit.value)
+      byPath.set(proj.edit.keyPath.join(" "), proj.edit)
+      applied.push(`${record.kind}:${record.name}→${record.desiredState}`)
+    }
+    if (byPath.size === 0) return { ok: true, applied, warnings }
+    const prepared = prepareConfigTx(target, [...byPath.values()], text)
+    if (!prepared.ok) return { ok: false, applied: [], warnings, skipped: `config tx prepare failed: ${prepared.reason}` }
+    try {
+      applyConfigImage(prepared.image)
+    } catch (error) {
+      return { ok: false, applied: [], warnings, skipped: `config write failed: ${error instanceof Error ? error.message : String(error)}` }
+    }
+    return { ok: true, applied, warnings }
+  } finally {
+    held.lock.release()
+  }
+}
+
+/** 把值写进工作副本的 keyPath(缺失/非对象中间层重建为空对象 —— 与 jsonc modify 的落点语义对齐)。 */
+function setAtKeyPath(obj: Record<string, unknown>, keyPath: string[], value: unknown): void {
+  let cur = obj
+  for (let i = 0; i < keyPath.length - 1; i++) {
+    const next = cur[keyPath[i]]
+    if (isObj(next)) {
+      cur = next
+    } else {
+      const fresh: Record<string, unknown> = {}
+      cur[keyPath[i]] = fresh
+      cur = fresh
+    }
+  }
+  cur[keyPath[keyPath.length - 1]] = value
 }
