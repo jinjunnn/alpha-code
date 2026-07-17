@@ -20,16 +20,13 @@ export type ManifestPlatform = "darwin" | "win32" | "linux"
 // 五维 ownership 的值域真源在 shared/ext-ownership.ts(REQ-103 slice 1);此处 re-export 保持既有导出面。
 export type { RuntimeSurface, SupportTier, DistributionChannel } from "../shared/ext-ownership"
 
-/** capability 枚举白名单 —— 名单之外即「越权 capability」,解码期拒绝(AC#1)。 */
-export const MANIFEST_CAPABILITIES = [
-  "prompt:context", // 文本注入(skill/agent)
-  "engine:config", // 写引擎配置条目
-  "engine:plugin", // 在引擎进程内执行 JS
-  "process:spawn", // 派生本机子进程(local MCP)
-  "network:remote", // 连接远程服务(remote MCP)
-  "cloud:dispatch", // 云 pipeline 派发
-] as const
-export type ManifestCapability = (typeof MANIFEST_CAPABILITIES)[number]
+/** capability 枚举白名单 —— 名单之外即「越权 capability」,解码期拒绝(AC#1)。
+ *  真源上移 shared/ext-capability-authorization(#396:与 renderer 派生共用);此处 re-export
+ *  保持既有导出面(ownership 值域 re-export 同款先例)。 */
+import { MANIFEST_CAPABILITIES } from "../shared/ext-capability-authorization"
+export { MANIFEST_CAPABILITIES }
+export type { ManifestCapability } from "../shared/ext-capability-authorization"
+import type { ManifestCapability } from "../shared/ext-capability-authorization"
 
 export interface ManifestArtifact {
   /** `sha256:<64 hex>` — 机械格式校验,非法 digest 解码期拒绝。 */

@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>alpha-code · REQ-104 消费侧增量 v5 — Pack 整包事实 + 第三方默认关 (2026-07-17)</title>
+<style>
+/* ════════════════════════════════════════════════════════════════════════
+   tokens verbatim 沿用 v3/v4(2026-07-13-req103-hub-governance → 2026-07-17-req103-remaining
+   血统)。v5 = REQ-104 消费侧(#196)在既有框架内的两处增量:
+     · 改动一(#396)= 套件(Pack)详情页新增「整包事实」段(权限并集/体积/密钥/运行面/支持等级)
+     · 改动二(#395)= 已安装行开关从 MCP-only 扩到全类型 + 第三方默认关闭态
+   tab、详情页既有段顺序(v3 定)、已安装行结构(v4 做实)全部不动。
+   ════════════════════════════════════════════════════════════════════════ */
+:root{
+  --a-bg-canvas:#ffffff;--a-bg-subtle:#f6f7f9;--a-bg-muted:#eceef1;--a-bg-inset:#e3e6ea;
+  --a-surface:#ffffff;--a-surface-raised:#ffffff;--a-scrim:rgba(15,17,21,.45);
+  --a-border-faint:#eef0f3;--a-border:#e4e6ea;--a-border-strong:#ced2d9;
+  --a-text:#18181b;--a-text-secondary:#52525b;--a-text-tertiary:#7c7d85;--a-text-disabled:#b3b6bd;
+  --a-overlay-hover:rgba(15,17,21,.05);
+  --a-accent:#4f46e5;--a-accent-solid:#4f46e5;--a-accent-solid-hover:#4338ca;
+  --a-accent-subtle:rgba(79,70,229,.10);--a-accent-ring:rgba(79,70,229,.45);
+  --a-success:#16a34a;--a-warning:#d97706;--a-error:#dc2626;--a-info:#2563eb;
+  --a-success-subtle:rgba(22,163,74,.12);--a-warning-subtle:rgba(217,119,6,.12);--a-error-subtle:rgba(220,38,38,.12);
+  --a-font-sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;
+  --a-font-mono:"SF Mono","JetBrains Mono","Menlo",ui-monospace,monospace;
+  --a-text-2xs:10.5px;--a-text-xs:11.5px;--a-text-sm:12.5px;--a-text-base:13px;--a-text-md:14px;--a-text-lg:16px;--a-text-xl:19px;--a-text-2xl:23px;
+  --a-leading-tight:1.2;--a-leading-snug:1.4;--a-leading-normal:1.55;--a-tracking-tight:-0.014em;--a-tracking-wide:0.04em;
+  --a-weight-normal:400;--a-weight-medium:500;--a-weight-semibold:600;
+  --a-radius-sm:6px;--a-radius-md:8px;--a-radius-lg:11px;--a-radius-xl:14px;--a-radius-2xl:18px;--a-radius-full:9999px;
+  --a-shadow-xs:0 1px 2px rgba(15,17,21,.05);--a-shadow-sm:0 1px 3px rgba(15,17,21,.07),0 1px 2px rgba(15,17,21,.04);
+  --a-shadow-md:0 4px 12px rgba(15,17,21,.08),0 2px 4px rgba(15,17,21,.05);--a-shadow-lg:0 12px 32px rgba(15,17,21,.12),0 4px 8px rgba(15,17,21,.06);
+  --a-shadow-overlay:0 24px 64px rgba(15,17,21,.20),0 8px 16px rgba(15,17,21,.10);--a-ring-focus:0 0 0 3px var(--a-accent-ring);--a-edge-light:inset 0 1px 0 rgba(255,255,255,.65);
+  --a-dur-fast:130ms;--a-dur-base:190ms;--a-ease-out:cubic-bezier(.22,1,.36,1);
+}
+html[data-theme="dark"]{
+  --a-bg-canvas:#0a0b0d;--a-bg-subtle:#0e0f11;--a-bg-muted:#16171a;--a-bg-inset:#1e2024;
+  --a-surface:#121316;--a-surface-raised:#17181b;--a-scrim:rgba(0,0,0,.60);
+  --a-text:#fafafa;--a-text-secondary:#a1a1aa;--a-text-tertiary:#71727a;--a-text-disabled:#4f5158;
+  --a-border-faint:#1b1c20;--a-border:#232428;--a-border-strong:#34363c;--a-overlay-hover:rgba(255,255,255,.055);
+  --a-accent:#818cf8;--a-accent-solid:#4f46e5;--a-accent-solid-hover:#5b54ea;--a-accent-subtle:rgba(129,140,248,.14);--a-accent-ring:rgba(129,140,248,.45);
+  --a-success:#4ade80;--a-warning:#fbbf24;--a-error:#f87171;--a-info:#60a5fa;
+  --a-success-subtle:rgba(74,222,128,.14);--a-warning-subtle:rgba(251,191,36,.14);--a-error-subtle:rgba(248,113,113,.14);
+  --a-shadow-xs:0 1px 2px rgba(0,0,0,.4);--a-shadow-sm:0 1px 3px rgba(0,0,0,.5);--a-shadow-md:0 4px 12px rgba(0,0,0,.5);--a-shadow-lg:0 12px 32px rgba(0,0,0,.6);--a-shadow-overlay:0 24px 64px rgba(0,0,0,.7);--a-edge-light:inset 0 1px 0 rgba(255,255,255,.06);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--a-bg-subtle);color:var(--a-text);font-family:var(--a-font-sans);font-size:var(--a-text-base);line-height:var(--a-leading-normal);-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{margin:0;font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight);line-height:var(--a-leading-tight)}
+button{font-family:inherit;cursor:pointer}svg{display:block}
+.mono{font-family:var(--a-font-mono)}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:16px;padding:12px 22px;background:color-mix(in srgb,var(--a-bg-canvas) 86%,transparent);backdrop-filter:blur(12px);border-bottom:1px solid var(--a-border-faint)}
+.topbar .brand{display:flex;align-items:center;gap:10px;font-weight:var(--a-weight-semibold)}
+.topbar .brand .m{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:7px;background:var(--a-accent-solid);color:#fff;font-weight:800;font-size:13px}
+.topbar .spacer{flex:1}.topbar nav{display:flex;gap:2px}
+.topbar nav a{padding:6px 10px;border-radius:var(--a-radius-md);color:var(--a-text-secondary);text-decoration:none;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium)}
+.topbar nav a:hover{background:var(--a-bg-muted);color:var(--a-text)}
+.seg{display:inline-flex;padding:2px;background:var(--a-bg-muted);border-radius:var(--a-radius-md);gap:2px}
+.seg button{border:0;background:transparent;color:var(--a-text-secondary);font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);padding:5px 10px;border-radius:6px}
+.seg button.on{background:var(--a-surface);color:var(--a-text);box-shadow:var(--a-shadow-xs)}
+.wrap{max-width:1180px;margin:0 auto;padding:36px 24px 140px}
+.sec{margin-bottom:56px;scroll-margin-top:76px}
+.sec-kicker{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary)}
+.sec h2{font-size:var(--a-text-2xl);margin-top:6px}
+.sec p.lede{margin:8px 0 0;color:var(--a-text-secondary);font-size:var(--a-text-md);max-width:78ch}
+.note{margin-top:14px;padding:12px 14px;background:var(--a-bg-canvas);border:1px solid var(--a-border);border-left:3px solid var(--a-accent);border-radius:var(--a-radius-md);font-size:var(--a-text-sm);color:var(--a-text-secondary)}
+.note b{color:var(--a-text)}.note.ok{border-left-color:var(--a-success)}.note.warn{border-left-color:var(--a-warning)}
+.matrix-scroll{overflow-x:auto;margin-top:8px}
+table.matrix{width:100%;min-width:820px;border-collapse:separate;border-spacing:0;background:var(--a-surface);border:1px solid var(--a-border);border-radius:var(--a-radius-lg);overflow:hidden;font-size:var(--a-text-sm)}
+.matrix th{background:var(--a-bg-subtle);text-align:left;font-weight:var(--a-weight-semibold);font-size:var(--a-text-xs);color:var(--a-text-secondary);padding:10px 14px;border-bottom:1px solid var(--a-border)}
+.matrix td{padding:11px 14px;border-bottom:1px solid var(--a-border-faint);vertical-align:top;color:var(--a-text-secondary);line-height:var(--a-leading-snug)}
+.matrix tr:last-child td{border-bottom:0}.matrix td:first-child{white-space:nowrap;font-weight:var(--a-weight-semibold);color:var(--a-text)}
+.matrix td code,.note code,.cap code{font-family:var(--a-font-mono);font-size:var(--a-text-2xs);background:var(--a-bg-muted);border:1px solid var(--a-border-faint);border-radius:4px;padding:0 4px;white-space:nowrap}
+.tag{display:inline-block;font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);padding:1.5px 7px;border-radius:var(--a-radius-full);white-space:nowrap}
+.tag.zero{background:var(--a-bg-muted);color:var(--a-text-tertiary)}.tag.new{background:var(--a-accent-subtle);color:var(--a-accent)}.tag.blocked{background:var(--a-error-subtle);color:var(--a-error)}
+.frame{position:relative;border:1px solid var(--a-border);border-radius:var(--a-radius-xl);overflow:hidden;background:var(--a-bg-canvas);box-shadow:var(--a-shadow-md);margin-top:16px}
+.cap{font-size:var(--a-text-xs);color:var(--a-text-tertiary);margin-top:10px}
+.chip{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);padding:1.5px 7px;border-radius:var(--a-radius-full);white-space:nowrap}
+.chip[data-src="official"]{background:color-mix(in srgb,var(--a-info) 14%,transparent);color:var(--a-info)}
+.chip[data-src="community"]{background:var(--a-warning-subtle);color:var(--a-warning)}
+.chip[data-src="type"]{background:var(--a-bg-muted);color:var(--a-text-secondary)}
+.chip[data-src="warn"]{background:var(--a-warning-subtle);color:var(--a-warning)}
+.chip[data-src="off"]{background:var(--a-bg-muted);color:var(--a-text-tertiary)}
+
+/* 详情页骨架(现行) */
+.det{padding:24px 26px}
+.dhead{display:flex;gap:14px;align-items:flex-start}
+.dhead .ico{width:48px;height:48px;border-radius:var(--a-radius-lg);display:grid;place-items:center;font-size:17px;font-weight:700;color:#fff;flex:none;box-shadow:var(--a-shadow-xs)}
+.dhead h3{font-size:var(--a-text-xl);display:inline;margin-right:6px}
+.dhead .titleline{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.add{display:inline-flex;align-items:center;height:28px;padding:0 13px;border-radius:var(--a-radius-md);border:0;background:var(--a-accent-solid);color:#fff;font-size:var(--a-text-xs);font-weight:var(--a-weight-medium)}
+.dsec{border-top:1px solid var(--a-border-faint);padding:16px 0 4px;margin-top:16px;position:relative}
+.dsec .marker{position:absolute;right:0;top:16px;font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);padding:1px 7px;border-radius:var(--a-radius-full)}
+.dsec .marker.new{color:var(--a-accent);background:var(--a-accent-subtle)}
+.dsec .marker.done{color:var(--a-text-tertiary);background:var(--a-bg-muted)}
+.dsec-t{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary);margin-bottom:10px}
+.dnote{font-size:var(--a-text-xs);color:var(--a-text-tertiary);margin:8px 2px 0;line-height:var(--a-leading-snug)}
+
+/* 整包事实:facts 行(复用 v3 fact 词汇)+ 能力行(#348 authz-cap 规格被动版,同 #392) */
+.fact{display:flex;gap:12px;font-size:var(--a-text-sm);margin-bottom:8px}
+.fact .k{flex:0 0 88px;color:var(--a-text-tertiary)}.fact .v{min-width:0;color:var(--a-text)}
+.authz-box{border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);overflow:hidden;margin-bottom:10px}
+.authz-cap{display:flex;align-items:center;gap:10px;padding:10px 14px;font-size:var(--a-text-sm);background:var(--a-surface)}
+.authz-cap + .authz-cap{border-top:1px solid var(--a-border-faint)}
+.authz-ic{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;flex:none;background:var(--a-bg-muted);color:var(--a-text-secondary)}
+.authz-ic[data-tier="high"]{background:var(--a-warning-subtle);color:var(--a-warning)}
+.authz-ic svg{width:13px;height:13px;stroke:currentColor;stroke-width:1.5;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.authz-nm{display:flex;flex-direction:column;gap:1px;min-width:0}
+.authz-nm b{font-weight:var(--a-weight-medium);font-size:var(--a-text-sm)}
+.authz-nm small{font-size:var(--a-text-2xs);color:var(--a-text-tertiary)}
+.authz-id{margin-left:auto;font-family:var(--a-font-mono);font-size:10.5px;color:var(--a-text-tertiary);background:var(--a-bg-muted);border:1px solid var(--a-border-faint);border-radius:4px;padding:1px 6px;flex:none}
+/* 子项列表(现行 .alpha-ext-dbundle,零改动) */
+.dbundle-row{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--a-border-faint);border-radius:var(--a-radius-md);margin-bottom:7px;font-size:var(--a-text-sm);background:var(--a-surface)}
+.dbundle-row .n{width:18px;height:18px;border-radius:50%;background:var(--a-bg-muted);color:var(--a-text-tertiary);display:grid;place-items:center;font-size:10px;font-weight:600;flex:none}
+
+/* 已安装行(现役 .alpha-ext-man,v4 血统) */
+.man-row{display:flex;align-items:center;gap:13px;padding:13px 15px;border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-surface);margin-bottom:9px}
+.man-row .ico{width:36px;height:36px;border-radius:var(--a-radius-md);display:grid;place-items:center;color:#fff;font-size:12px;font-weight:700;flex:none;box-shadow:var(--a-shadow-xs)}
+.man-row .body{min-width:0;flex:1}
+.man-row .nm{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.man-row .nm b{font-size:var(--a-text-md);font-weight:var(--a-weight-medium)}
+.man-row .st{font-size:var(--a-text-sm);color:var(--a-text-tertiary);margin-top:2px;display:flex;align-items:center;gap:6px}
+.man-row .st .dot{width:7px;height:7px;border-radius:50%;flex:none}
+.man-row .st .dot.ok{background:var(--a-success)}.man-row .st .dot.muted{background:var(--a-text-disabled)}
+.sw{width:36px;height:21px;border-radius:var(--a-radius-full);background:var(--a-bg-inset);position:relative;flex:none;cursor:pointer;border:0;padding:0}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:var(--a-shadow-xs);transition:left var(--a-dur-fast) var(--a-ease-out)}
+.sw.on{background:var(--a-accent-solid)}.sw.on::after{left:17px}
+.scope-h{display:flex;align-items:center;gap:8px;margin:20px 0 10px;font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary)}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand"><span class="m">α</span> REQ-104 消费侧增量 · v5</div>
+  <div class="spacer"></div>
+  <nav><a href="#lineage">与上一稿的关系</a><a href="#facts">事实基线</a><a href="#pack">整包事实</a><a href="#defaultoff">默认关</a><a href="#review">评审点</a></nav>
+  <div class="seg" id="themeSeg"><button data-t="light" class="on">浅色</button><button data-t="dark">深色</button></div>
+</div>
+
+<div class="wrap">
+
+<!-- ═══ 与上一稿的关系 ═══ -->
+<section class="sec" id="lineage">
+  <div class="sec-kicker">REQ-104 · #196(#395/#396)· 基线 = v4 已批稿 + 现行实现(alpha 3c76d387)</div>
+  <h2>框架不动,只加两处:Pack 整包事实段 + 第三方默认关</h2>
+  <p class="lede">基线谱系:<b>v3</b> 定详情页段顺序与已安装三态,<b>v4</b>(2026-07-17 已批)做实 scope 分组与「已授权能力」段并交付。本稿 = REQ-104 消费侧在同一框架内的增量;供给侧(alpha-web intake #20)未开工,<b>四级货架 tier 字段消费(#397)被阻塞不在本稿</b>——本稿只画现有 schema 撑得起的部分。</p>
+  <div class="matrix-scroll"><table class="matrix">
+    <tr><th>#196 AC</th><th>现状</th><th>本稿</th></tr>
+    <tr><td>原子安装复用</td><td>REQ-100 存量已交付(bundle 全有或全无 + 逐子项授权,#348)</td><td><span class="tag zero">零改动</span></td></tr>
+    <tr><td>Pack 权限/大小/依赖可见</td><td>套件详情页只有子项列表(<code>extension-detail.tsx:533-560</code>),无整包事实;权限只在安装确认时逐子项弹(#348)</td><td><span class="tag new">改动一 · #396</span></td></tr>
+    <tr><td>第三方非默认启用</td><td>三层全缺:安装恒 <code>enabled</code>、disabled 对 fs 类无强制、开关 MCP-only(F3-F5)</td><td><span class="tag new">改动二 · #395(UI 面)</span></td></tr>
+    <tr><td>四级货架(核心/预缓存/连接器/Labs)</td><td>目录 schema 无 tier 字段;数据 = alpha-web intake(#20 未开工)</td><td><span class="tag blocked">#397 阻塞,不入稿</span></td></tr>
+  </table></div>
+</section>
+
+<!-- ═══ 事实基线 ═══ -->
+<section class="sec" id="facts">
+  <div class="sec-kicker">审计结论 · file:line 证据(2026-07-17,alpha <code>3c76d387</code>)</div>
+  <h2>事实基线</h2>
+  <div class="matrix-scroll"><table class="matrix">
+    <tr><th>#</th><th>事实</th><th>锚点</th></tr>
+    <tr><td>F1</td><td>能力按类型派生(6 枚举)且引擎已有 bundle 并集先例:<code>[...new Set(subEntries.flatMap(capabilitiesFor))]</code> —— 整包权限并集可直接复用同一真源,与 #348 确认框恒一致</td><td><code>ext-install-planner.ts:430</code>、<code>:1520</code></td></tr>
+    <tr><td>F2</td><td>体积与密钥数据面:<code>remoteAsset.files[].bytes</code>(钉死资产)、<code>installSpec.requiredEnvVars</code>;npm 插件/远程 MCP 无 bytes → 体积必须如实「未知」,不猜</td><td><code>catalog-types.ts:27-30</code></td></tr>
+    <tr><td>F3</td><td>安装 desiredState 硬编码 <code>"enabled"</code>(skill/mcp/plugin 三处);更新/回滚已有「当前策略优先」语义(disabled 不被更新翻回)</td><td><code>ext-install-planner.ts:1385/1833/2069</code>、<code>:2315</code>、<code>ext-skill-generations.ts:101</code></td></tr>
+    <tr><td>F4</td><td>disabled 对 fs 类(skill/agent/plugin)<b>无强制通道</b>:无启停 IPC,桥接层不读 desiredState —— 强制机制归 #394 裁决(A 摘链 / B config 闸 / C 启用才物化)</td><td><code>ext-ipc.ts</code>(无 setDesiredState)、<code>alpha-bridge.ts</code></td></tr>
+    <tr><td>F5</td><td>已安装行开关 MCP-only(connect/disconnect 语义);v4 契约:project 组行无开关</td><td><code>extension-hub.tsx</code> InstalledRow</td></tr>
+    <tr><td>F6</td><td>支持等级/所有权五维已有展示层(S50);「已安装但关闭」态 inventory 已能表达(activation=disabled → muted 点)</td><td><code>ext-inventory-present.ts</code>、<code>ext-inventory.ts</code> deriveActivation</td></tr>
+    <tr><td>F7</td><td>目录 schema 无 tier/SBOM/依赖图字段;<code>license/redistributable</code> 已有 —— 供给侧数据未建,#397 消费无从谈起</td><td><code>catalog-types.ts</code> CatalogEntry</td></tr>
+  </table></div>
+</section>
+
+<!-- ═══ 改动一:Pack 整包事实 ═══ -->
+<section class="sec" id="pack">
+  <div class="sec-kicker">改动一 · #396 · 套件详情页(纯读派生,零新账本面)</div>
+  <h2>Pack 详情页:「整包事实」段</h2>
+  <p class="lede">位置 = 简介之后、子项列表之前(先看整体代价,再看构成)。四行事实 + 能力并集框:能力行复用 #348/#392 的 authz-cap 规格(高危同一分级),体积按钉死资产求和、有未知项如实标注,密钥/运行面/支持等级取并集或最低档。子项列表现行结构零改动。</p>
+  <div class="frame"><div class="det">
+    <div class="dhead"><div class="ico" style="background:#0f766e">办</div><div><div class="titleline"><h3>办公全家桶</h3><span class="chip" data-src="official">官方</span><span class="chip" data-src="type">套件 · 4 项</span></div><div style="font-size:var(--a-text-sm);color:var(--a-text-tertiary);margin-top:6px">Excel/Word 读写 + 网页抓取 + 表格技能,一键装齐。· v2026-07-16.1</div></div><button class="add" style="margin-left:auto">添加</button></div>
+
+    <div class="dsec"><div class="dsec-t">简介</div><p style="font-size:var(--a-text-sm);color:var(--a-text-secondary);margin:0">(现行内容,零改动)</p></div>
+
+    <div class="dsec"><div class="dsec-t">整包事实</div>
+      <div class="fact"><span class="k">下载体积</span><span class="v">≥ 3.2 MB<span class="chip" data-src="type" style="margin-left:6px">1 项体积未知(npm 装取)</span></span></div>
+      <div class="fact"><span class="k">所需密钥</span><span class="v"><span class="mono" style="font-size:var(--a-text-xs)">EXCEL_LICENSE_KEY</span> · 其余 3 项无密钥</span></div>
+      <div class="fact"><span class="k">运行面</span><span class="v">引擎进程 · 本机子进程</span></div>
+      <div class="fact"><span class="k">支持等级</span><span class="v">按最低档:社区维护<span class="chip" data-src="community" style="margin-left:6px">社区</span></span></div>
+      <div style="margin-top:10px" class="dsec-t">整包能力并集(安装时逐子项确认,#348)</div>
+      <div class="authz-box">
+        <div class="authz-cap"><span class="authz-ic" data-tier="high"><svg viewBox="0 0 16 16"><path d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5"/></svg></span><span class="authz-nm"><b>在引擎进程内运行代码 <span class="chip" data-src="warn">高风险</span></b><small>来自:Excel 表格读写</small></span><span class="authz-id">engine:plugin</span></div>
+        <div class="authz-cap"><span class="authz-ic" data-tier="high"><svg viewBox="0 0 16 16"><path d="M1.8 2.8h12.4v10.4H1.8zM4.5 6l2 2-2 2M8.5 10.5h3"/></svg></span><span class="authz-nm"><b>启动本机子进程 <span class="chip" data-src="warn">高风险</span></b><small>来自:网页抓取(fetch)</small></span><span class="authz-id">process:spawn</span></div>
+        <div class="authz-cap"><span class="authz-ic"><svg viewBox="0 0 16 16"><path d="M8 5.8a2.2 2.2 0 1 0 0 4.4 2.2 2.2 0 0 0 0-4.4M8 1.8v2M8 12.2v2M1.8 8h2M12.2 8h2"/></svg></span><span class="authz-nm"><b>写入引擎配置</b><small>来自:3 个子项</small></span><span class="authz-id">engine:config</span></div>
+        <div class="authz-cap"><span class="authz-ic"><svg viewBox="0 0 16 16"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z"/></svg></span><span class="authz-nm"><b>注入提示词上下文</b><small>来自:表格清洗技能</small></span><span class="authz-id">prompt:context</span></div>
+      </div>
+      <p class="dnote">派生自各子项的目录事实(与安装确认框同一真源,F1);体积只统计已钉死校验的下载资产,npm/远程装取的子项如实计「未知」。</p>
+    </div>
+
+    <div class="dsec"><div class="dsec-t">包含 4 项(按安装顺序)</div>
+      <div class="dbundle-row"><span class="n">1</span><b>Excel 表格读写</b><span class="chip" data-src="community">社区</span><span style="margin-left:auto;color:var(--a-text-tertiary)">插件</span></div>
+      <div class="dbundle-row"><span class="n">2</span><b>网页抓取(fetch)</b><span class="chip" data-src="official">官方</span><span style="margin-left:auto;color:var(--a-text-tertiary)">连接器</span></div>
+      <div class="dbundle-row"><span class="n">3</span><b>表格清洗技能</b><span class="chip" data-src="official">官方</span><span style="margin-left:auto;color:var(--a-text-tertiary)">技能</span></div>
+    </div>
+  </div></div>
+  <div class="cap">帧内自上而下:简介(现行零改动)→ <b>整包事实(本稿新增)</b> → 子项列表(现行零改动)。复用类:<code>.alpha-ext-dfact</code> 族(事实行)+ <code>.alpha-ext-authz-cap</code> 族(能力行,small 行改标注来源子项)。非 bundle 条目详情页零改动(单项的能力/密钥已有呈现位)。mock 帧 = 纯产品 UI,增量归属只在本行标注。</div>
+</section>
+
+<!-- ═══ 改动二:第三方默认关 ═══ -->
+<section class="sec" id="defaultoff">
+  <div class="sec-kicker">改动二 · #395(UI 面;强制机制与判定源 = #394 裁决,不挡本稿)</div>
+  <h2>已安装:第三方装完默认关,开关全类型可用</h2>
+  <p class="lede">从目录安装非第一方扩展 → 落账即 <code>disabled</code>,已安装行出现但开关为关、状态「已安装,未启用」;手动开启才生效。开关从 MCP-only 扩到 skill/agent/plugin(project 组仍无开关,v4 契约)。安装完成 toast 文案带一句「已安装但未启用」,不再暗示立即可用。</p>
+  <div class="frame"><div style="padding:20px 24px">
+    <div class="scope-h" style="margin-top:0">全局 · 对所有项目生效</div>
+    <div class="man-row"><div class="ico" style="background:#2563eb">X</div><div class="body"><div class="nm"><b>Excel 表格读写</b><span class="chip" data-src="community">社区</span><span class="chip" data-src="off">已安装 · 未启用</span></div><div class="st"><span class="dot muted"></span>第三方扩展默认关闭,打开开关后生效</div></div><button class="sw" role="switch" aria-checked="false"></button></div>
+    <div class="man-row"><div class="ico" style="background:#0e7490">抓</div><div class="body"><div class="nm"><b>网页抓取(fetch)</b><span class="chip" data-src="official">官方</span></div><div class="st"><span class="dot ok"></span>运行健康 · 已启用</div></div><button class="sw on" role="switch" aria-checked="true"></button></div>
+    <div class="man-row"><div class="ico" style="background:#4f46e5">技</div><div class="body"><div class="nm"><b>技能创建助手</b><span class="chip" data-src="type">出厂内置</span></div><div class="st"><span class="dot ok"></span>运行健康 · 已启用(第一方核心,默认开)</div></div><button class="sw on" role="switch" aria-checked="true"></button></div>
+  </div></div>
+  <div class="cap">开关语义按类型如实:MCP = 连接/断开(现行);skill/agent/plugin = 引擎可见性(机制按 #394 裁决)。「已安装 · 未启用」chip 只在 disabled 且从未启用过时显示,开过一次后回归普通状态行。存量已装扩展不回溯改状态。</div>
+  <div class="note warn"><b>依赖声明</b>:本改动的落账策略(哪些来源默认关)与强制机制(disabled 如何真不加载)以 #394 Codex 裁决 + 你在下方 Q1 的拍板为准;本稿只定视觉与交互契约。</div>
+</section>
+
+<!-- ═══ 评审点 ═══ -->
+<section class="sec" id="review">
+  <div class="sec-kicker">待你拍板</div>
+  <h2>评审点</h2>
+  <div class="note"><b>Q1 「第一方核心」判定源(intake tier 字段落地前的保守规则)?</b>稿采用 <b>A = 仅 <code>source==="alpha"</code> 与出厂注入件算第一方核心默认开;"official"(如 GitHub 官方 MCP)按供应链语义算第三方,默认关</b>。备选 B = official 也默认开(体验顺,但"官方出品≠我们审过",供应链语义打折)。#394 裁决会给技术建议,产品口径由你定。</div>
+  <div class="note"><b>Q2 整包事实段位置?</b>稿采用<b>简介之后、子项列表之前</b>(先整体代价后构成)。备选:子项列表之后(先看有什么再看代价)。</div>
+  <div class="note"><b>Q3 体积「未知」口径?</b>稿采用 <b>「≥ X MB + N 项体积未知」</b>(下界诚实 + 未知显式)。备选:有任何未知就整体只显示「部分未知」不给数字(更保守但信息量低)。</div>
+  <div class="note warn"><b>硬约束(不接受反转)</b>:能力并集与 #348 确认框同一派生真源(F1),两处永不漂移;体积绝不估算未钉死资产;默认关不回溯存量;#397(四级货架)等 alpha-web intake,本稿与实现均不预造 tier 数据。</div>
+</section>
+
+</div>
+
+<script>
+document.querySelectorAll(".sw").forEach(function(s){s.addEventListener("click",function(){s.classList.toggle("on")})});
+document.querySelectorAll("#themeSeg button").forEach(function(b){b.addEventListener("click",function(){document.querySelectorAll("#themeSeg button").forEach(function(x){x.classList.remove("on")});b.classList.add("on");document.documentElement.dataset.theme=b.dataset.t})});
+</script>
+</body>
+</html>
