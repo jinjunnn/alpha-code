@@ -535,6 +535,11 @@ export const dict = {
   "alpha.ext.scopeProjectReadonly": "Read-only \u00b7 from import/adoption",
   "alpha.ext.scopeProjectEmpty": "No project-local extensions yet. Project extensions come from Import or adoption from the project directory; catalog installs always go to Global.",
   "alpha.ext.reviewUpdate": "Review update",
+  // \u2500\u2500 #395(REQ-104):third-party disabled-by-default + universal enable switch \u2500\u2500
+  "alpha.ext.notEnabledChip": "Installed \u00b7 not enabled",
+  "alpha.ext.notEnabledHint": "Not enabled \u2014 turn on the switch to take effect",
+  "alpha.ext.addedDisabled": "Installed but not enabled \u2014 turn it on under Installed to take effect",
+  "alpha.ext.stateFailed": "Failed to change enable state",
   // \u2500\u2500 #396(REQ-104):bundle detail "pack facts" section \u2500\u2500
   "alpha.ext.packFactsTitle": "Pack facts",
   "alpha.ext.packSize": "Download size",

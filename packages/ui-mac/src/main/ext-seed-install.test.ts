@@ -22,6 +22,7 @@ import { tryAcquireBundleLock } from "./ext-bundle-lock"
 import {
   compareVersionsSafe,
   installCatalog,
+  setInstallStateByKey,
   synthesizeManifest,
   uninstallByKey,
   type PlannerDeps,
@@ -130,7 +131,8 @@ function buildSeed(
   return lock
 }
 
-const entryBase = { displayName: "d", description: "d", source: "official" as const, category: "test" }
+// #395:机器面测试用第一方 source(alpha)保持 enabled 投影 —— 默认关策略/disabled 投影有专项测试(ext-install-policy.test / 本文件末尾 #395 块)。
+const entryBase = { displayName: "d", description: "d", source: "alpha" as const, category: "test" }
 
 function bundledSkillEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
   return {
@@ -1359,5 +1361,44 @@ describe("seed capability authorize gate (REQ-100 #348)", () => {
     expect(first.authorization[0]!.previous).toBeNull()
     expect(resolveLiveGenerationDir(globalRoot, skillGenerationKey("hello"))).toBeNull()
     expect(findRecordV2(globalRoot, "skill", "hello")).toBeNull()
+  })
+})
+
+// ── #395(REQ-104):第三方(official/community)fresh 安装默认关 —— 落盘形态全查 ─────────────────
+
+describe("#395 第三方 seed 安装默认关(disabled 投影落盘)", () => {
+  test("official plugin fresh:账本 disabled;plugin[] 无条目(在场性投影);载荷/授权账照常落位", async () => {
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
+    const entry = bundledPluginEntry({ source: "official" })
+    const r = await installAuthorized(pluginSeedIntent, makeSeedDeps({ bundledEntries: [entry] }))
+    expect(r.ok).toBe(true)
+    const rec = findRecordV2(globalRoot, "plugin", "demo-plugin")!
+    expect(rec.desiredState).toBe("disabled")
+    const cfg: { plugin?: string[] } = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))
+    expect(cfg.plugin ?? []).toEqual([])
+    // 内容照常物化(disabled ≠ 未安装):enable 只翻投影,不再下载。
+    const dir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
+    expect(fs.existsSync(path.join(dir, "plugin.js"))).toBe(true)
+    // 启用:set-state 事务按 configKey 物化条目 + 账本翻开。
+    const en = await setInstallStateByKey(
+      { type: "plugin", name: "demo-plugin", scope: "global", state: "enabled" },
+      { globalRoot: () => globalRoot, advisoryGate: () => ({ allowed: true }) },
+    )
+    expect(en.ok).toBe(true)
+    const cfg2: { plugin: string[] } = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))
+    expect(cfg2.plugin).toEqual([path.join(dir, "plugin.js")])
+    expect(findRecordV2(globalRoot, "plugin", "demo-plugin")!.desiredState).toBe("enabled")
+  })
+
+  test("official mcp fresh:账本 disabled;config 叶带引擎原生 disabled:true;不发 liveMcp(装 ≠ 连)", async () => {
+    buildSeed([{ id: "mcp:demo", files: MCP_FILES }])
+    const entry = bundledMcpEntry({ source: "official" })
+    const r = await installAuthorized(mcpSeedIntent, makeSeedDeps({ bundledEntries: [entry] }))
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect("liveMcp" in r ? r.liveMcp : undefined).toBeUndefined()
+    expect(findRecordV2(globalRoot, "mcp", "demo")!.desiredState).toBe("disabled")
+    const cfg: { mcp: Record<string, Record<string, unknown>> } = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))
+    expect(cfg.mcp.demo?.disabled).toBe(true)
   })
 })

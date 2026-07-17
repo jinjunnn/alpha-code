@@ -182,6 +182,7 @@ const api: ElectronAPI = {
     importSkillGit: (url, target) => ipcRenderer.invoke("ext-import-skill-git", url, target),
     listInstalls: (projectDir) => ipcRenderer.invoke("ext-list-installs", projectDir),
     uninstallV2: (intent) => ipcRenderer.invoke("ext-uninstall-v2", intent),
+    setInstallState: (intent) => ipcRenderer.invoke("ext-set-install-state", intent),
     listGenerations: (intent) => ipcRenderer.invoke("ext-list-generations", intent),
     rollback: (intent, genId) => ipcRenderer.invoke("ext-rollback", intent, genId),
     migrateScan: () => ipcRenderer.invoke("ext-migrate-scan"),

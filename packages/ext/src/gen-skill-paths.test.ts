@@ -67,3 +67,39 @@ describe("injectSkillGenerationPaths", () => {
     expect(injectSkillGenerationPaths(cfg, root)).toEqual([])
   })
 })
+
+// ── #395(REQ-104):账本 desiredState 投影门 —— disabled 的 skill 不注入(装 ≠ 跑)──────────────
+
+function writeLedger(records: unknown[]) {
+  writeFileSync(join(root, "installs.json"), JSON.stringify({ v: 2, receipts: [], records }))
+}
+
+describe("#395 disabled 投影门", () => {
+  test("账本 disabled 的 skill 不进 live 目录;enabled 与无记录的照常注入", () => {
+    const a = makeGeneration("alpha-on", "gen-000001-000001")
+    makeGeneration("beta-off", "gen-000001-000002")
+    const c = makeGeneration("gamma-unlisted", "gen-000001-000003")
+    writeLedger([
+      { kind: "skill", name: "alpha-on", desiredState: "enabled" },
+      { kind: "skill", name: "beta-off", desiredState: "disabled" },
+      { kind: "mcp", name: "beta-off", desiredState: "disabled" }, // 非 skill 记录不影响 skill 投影
+    ])
+    expect(skillGenerationLiveDirs(root)).toEqual([a, c].sort())
+  })
+
+  test("账本缺失/不可解析 = 无禁用信息 → 全量注入(容错朝可用性,不放大 IO 故障)", () => {
+    const a = makeGeneration("solo", "gen-000001-000001")
+    expect(skillGenerationLiveDirs(root)).toEqual([a])
+    writeFileSync(join(root, "installs.json"), "{ not json")
+    expect(skillGenerationLiveDirs(root)).toEqual([a])
+  })
+
+  test("injectSkillGenerationPaths 同步遵守门(disabled 不进 cfg.skills.paths)", () => {
+    const a = makeGeneration("keep", "gen-000001-000001")
+    makeGeneration("drop", "gen-000001-000002")
+    writeLedger([{ kind: "skill", name: "drop", desiredState: "disabled" }])
+    const cfg: Record<string, unknown> = {}
+    const added = injectSkillGenerationPaths(cfg, root)
+    expect(added).toEqual([a])
+  })
+})

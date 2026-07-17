@@ -35,7 +35,27 @@ function liveGenerationDir(alphaRoot: string, key: string): string | null {
   }
 }
 
-/** 枚举 `<alphaRoot>/ext-store/skill--*` 的 live generation 目录(升序,稳定)。 */
+/** #395(REQ-104):账本 desiredState 投影门 —— disabled 的 skill 不注入(装 ≠ 跑;#394 裁决 A′)。
+ *  只读容错朝可用性:installs.json 缺失/不可解析 = 无禁用信息 → 维持全量注入(不把账本 IO 故障
+ *  放大成全部技能消失;状态翻转的写路径在 main 侧对损坏账本 fail-closed,权威在那边)。 */
+function disabledSkillKeys(alphaRoot: string): Set<string> {
+  const out = new Set<string>()
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(readFileSync(join(alphaRoot, "installs.json"), "utf8"))
+  } catch {
+    return out
+  }
+  const records = parsed && typeof parsed === "object" && Array.isArray((parsed as { records?: unknown }).records) ? ((parsed as { records: unknown[] }).records) : []
+  for (const r of records) {
+    if (!r || typeof r !== "object") continue
+    const rec = r as { kind?: unknown; name?: unknown; desiredState?: unknown }
+    if (rec.kind === "skill" && rec.desiredState === "disabled" && typeof rec.name === "string") out.add(`skill--${rec.name}`)
+  }
+  return out
+}
+
+/** 枚举 `<alphaRoot>/ext-store/skill--*` 的 live generation 目录(升序,稳定;#395 过账本禁用门)。 */
 export function skillGenerationLiveDirs(alphaRoot: string): string[] {
   const storeRoot = join(alphaRoot, "ext-store")
   let entries: string[]
@@ -44,9 +64,11 @@ export function skillGenerationLiveDirs(alphaRoot: string): string[] {
   } catch {
     return []
   }
+  const disabled = disabledSkillKeys(alphaRoot)
   const dirs: string[] = []
   for (const name of entries) {
     if (!SAFE_KEY.test(name)) continue
+    if (disabled.has(name)) continue
     const live = liveGenerationDir(alphaRoot, name)
     if (live) dirs.push(live)
   }

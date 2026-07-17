@@ -160,6 +160,7 @@ export function cloudDesiredStateGate(
 }
 import { parse, type ParseError } from "jsonc-parser"
 import { capabilitiesForCatalogEntry, type AuthorizationConfirmationWire } from "../shared/ext-capability-authorization"
+import { nextDesiredState } from "./ext-install-policy"
 import { findReceipt } from "./alpha-installs"
 import {
   aggregateFilesDigest,
@@ -797,6 +798,10 @@ function resolvePluginDispatch(
     const base = pkgBaseOf(oldPinned)
     const sameBase = specs.filter((x) => pkgBaseOf(x) === base)
     const exact = sameBase.filter((x) => x === oldPinned)
+    // #395:disabled 的投影 = plugin[] 无条目 —— 缺席即对账成立;在场(pre-#395 存量 / 半途翻转)
+    // 由 replace 本体收敛(丢旧不加新),不拒。同包歧义/legacy 门只护「将要放入的条目」的引擎
+    // load 身份 —— disabled 不放条目,跳过。
+    if (record.desiredState === "disabled") return { mode: "replace", facts: { record, form: { kind: "npm", oldPinned } } }
     if (exact.length < 1)
       return { mode: "refuse", reason: `ledger configKey "${configKey}" not found in config plugin[] — ledger/config drift, refusing replace` }
     if (sameBase.length !== exact.length)
@@ -841,6 +846,8 @@ function resolvePluginDispatch(
     })
     if (identUnprovable)
       return { mode: "refuse", reason: `a plugin[] entry's filesystem identity is unresolvable (non-absence fs error) — cannot prove ledger/config reconciliation, refusing replace` }
+    // #395:disabled 缺席即对账成立;在场(pre-#395 存量)由 replace 收敛(丢旧不加新),不拒。
+    if (record.desiredState === "disabled") return { mode: "replace", facts: { record, form: { kind: "vendored", oldJsPath, oldDir } } }
     if (hits.length < 1)
       return { mode: "refuse", reason: `ledger configKey "${configKey}" not found in config plugin[] — ledger/config drift, refusing replace` }
     return { mode: "replace", facts: { record, form: { kind: "vendored", oldJsPath, oldDir } } }
@@ -1184,6 +1191,9 @@ async function replacePluginViaTransaction(args: {
       continue
     }
     if (i !== lastMatchIdx) continue
+    // #395:disabled 的替换不重新物化 plugin[] 条目(丢旧不加新;账本/内容照常换代)——
+    // 更新 disabled 插件不得静默重新启用(与 desiredState 保留同一纪律)。
+    if (facts.record.desiredState === "disabled") continue
     nextArray.push(Array.isArray(x) ? [newElem, x[1]] : newElem)
   }
   const snapshotCanon = JSON.stringify(snapshot.value)
@@ -1376,7 +1386,9 @@ async function classifyBundleChild(
     version: decoded.manifest.version,
     manifestDigest,
     grantDigest: computeGrantDigest({}),
-    desiredState: "enabled" as const,
+    // #395:bundle 按 child entry source 分别定初始态(#394 裁决),不用 bundle 一刀切;
+    // 既有记录当前策略优先。root 恒 global(ADR-030 policy guard 在此前已拒 project 目录装)。
+    desiredState: nextDesiredState(deps.globalRoot(), entry.type as InstallReceiptType, entry.name, { origin: "catalog", source: entry.source }),
     origin: "catalog" as const,
     installedAt: new Date().toISOString(),
   }
@@ -1454,7 +1466,11 @@ async function classifyBundleChild(
         key,
         // config target 锚定事务根(= 生产 ~/.alpha/alpha.jsonc;与 staging 同卷,原子替换)。
         action: "config",
-        config: { target: path.join(deps.globalRoot(), "alpha.jsonc"), edits: [{ keyPath: ["mcp", entry.name], value: derived.config }] },
+        config: {
+          target: path.join(deps.globalRoot(), "alpha.jsonc"),
+          // #395:bundle MCP 子项同样按各自初始态投影 disabled 叶。
+          edits: [{ keyPath: ["mcp", entry.name], value: baseRecord.desiredState === "disabled" ? { ...derived.config, disabled: true } : derived.config }],
+        },
         manifestDigest,
         capabilities: decoded.manifest.capabilities,
       },
@@ -1824,7 +1840,8 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       version: manifest.version,
       manifestDigest,
       grantDigest: computeGrantDigest(grants),
-      desiredState: "enabled",
+      // #395:fresh-intake 初始态按来源分类(alpha=开,其余含 official=关);既有记录当前策略优先。
+      desiredState: nextDesiredState(mcpRoot, "mcp", entry.name, { origin: "catalog", source: entry.source }),
       origin: "catalog",
       configKey: `mcp.${entry.name}`,
       installedAt: mcpNow,
@@ -1834,7 +1851,11 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
         {
           key: `mcp--${entry.name}`,
           action: "config",
-          config: { target: mcpConfigTarget, edits: [{ keyPath: ["mcp", entry.name], value: durable }] },
+          config: {
+            target: mcpConfigTarget,
+            // #395:默认关的 MCP 落引擎原生 disabled 叶(装 ≠ 连);enable 经 set-state 事务翻回。
+            edits: [{ keyPath: ["mcp", entry.name], value: mcpReceipt.desiredState === "disabled" ? { ...durable, disabled: true } : durable }],
+          },
           manifestDigest,
           capabilities: manifest.capabilities,
           receipt: mcpReceipt,
@@ -1965,7 +1986,8 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       kind: "mcp",
       name: entry.name,
       manifestDigest,
-      liveMcp: { name: entry.name, config: liveCfg },
+      // #395:默认关的 seed MCP 不发 live 段(装 ≠ 连;config 已带 disabled:true)。
+      ...(mcpReceipt.desiredState === "disabled" ? {} : { liveMcp: { name: entry.name, config: liveCfg } }),
       ...(mcpWarnings.length ? { warning: mcpWarnings.join("; ") } : {}),
     }
   } else if (entry.type === "plugin") {
@@ -2060,7 +2082,8 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
         version: manifest.version,
         manifestDigest,
         grantDigest: computeGrantDigest(grants),
-        desiredState: "enabled",
+        // #395:同上 —— npm plugin fresh-intake 按来源分类。
+        desiredState: nextDesiredState(npmRoot, "plugin", entry.name, { origin: "catalog", source: entry.source }),
         origin: "catalog",
         configKey: `plugin:${pinned}`,
         installedAt: npmNow,
@@ -2070,7 +2093,11 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
           {
             key: `plugin--${entry.name}`,
             action: "config",
-            config: { target: npmConfigTarget, edits: [{ keyPath: ["plugin"], value: [...npmSnapshot.value, pinned] }] },
+            config: {
+              target: npmConfigTarget,
+              // #395:disabled = plugin[] 无条目(在场性投影);enable 经 set-state 事务补入。
+              edits: [{ keyPath: ["plugin"], value: npmReceipt.desiredState === "disabled" ? [...npmSnapshot.value] : [...npmSnapshot.value, pinned] }],
+            },
             manifestDigest,
             capabilities: manifest.capabilities,
             receipt: npmReceipt,
@@ -2172,6 +2199,7 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       environment: deps.environment(),
       scope: scope.identity,
       origin: "catalog",
+      source: entry.source, // #395:fresh-intake 初始启用分类输入
       casFiles: { specs: promoted.specs, casBaseRoot: deps.casBaseRoot() },
       // #348:能力集取严格解码后的 manifest.capabilities(单一事实,不再二次派生);authorize
       // 重驱决定由 main 打戳 decidedAt(renderer 无审计戳通道)。
@@ -2271,6 +2299,7 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       environment: deps.environment(),
       scope: scope.identity,
       origin: "catalog",
+      source: entry.source, // #395:fresh-intake 初始启用分类输入
       casFile: { spec: agentCasSpec, casBaseRoot: deps.casBaseRoot() },
       // #348:能力集取严格解码后的 manifest.capabilities(单一事实);重驱决定由 main 打戳。
       capabilities: manifest.capabilities,
@@ -3194,6 +3223,7 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
       environment: deps.environment(),
       scope: { kind: "global" },
       origin: "catalog",
+      source: entry.source, // #395:seed agent 以已验 bundled entry 的 source 为权威
       casFile: { spec: casSpec, casBaseRoot },
       capabilities: manifest.capabilities,
       ...(intent.authorization ? { authorization: stampAuthorization(intent.authorization, () => deps.now?.() ?? new Date().toISOString())! } : {}),
@@ -3249,6 +3279,7 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
     environment: deps.environment(),
     scope: { kind: "global" },
     origin: "catalog",
+    source: entry.source, // #395:seed 以已验 bundled entry 的 source 为权威
     casFiles: { specs: promoted.files, casBaseRoot },
     // #348:seed 与 catalog 单装同一 authorize 契约(能力集 = 严格解码 manifest;重驱决定 main 打戳)。
     capabilities: manifest.capabilities,
@@ -3335,7 +3366,8 @@ async function installSeedMcp(args: {
     manifestDigest,
     payloadDigest,
     grantDigest: computeGrantDigest({}),
-    desiredState: "enabled",
+    // #395:同上 —— 单装 MCP fresh-intake 按来源分类。
+    desiredState: nextDesiredState(root, "mcp", entry.name, { origin: "catalog", source: entry.source }),
     origin: "catalog",
     configKey: `mcp.${entry.name}`,
     installedAt: now,
@@ -3345,7 +3377,11 @@ async function installSeedMcp(args: {
       {
         key: `mcp--${entry.name}`,
         action: "config",
-        config: { target: configTarget, edits: [{ keyPath: ["mcp", entry.name], value: derived.config }] },
+        config: {
+          target: configTarget,
+          // #395:同上 —— 默认关的单装 MCP 带引擎原生 disabled 叶。
+          edits: [{ keyPath: ["mcp", entry.name], value: receiptTemplate.desiredState === "disabled" ? { ...derived.config, disabled: true } : derived.config }],
+        },
         manifestDigest,
         capabilities: manifest.capabilities,
         receipt: receiptTemplate,
@@ -3372,6 +3408,8 @@ async function installSeedMcp(args: {
   }
   ;(deps.transaction ?? passthroughTx).commit(args.txId)
   // liveMcp(裁决 B):renderer 据此 live sdk.mcp.add;seed 无密钥 → live = durable 原样。
+  // #395:默认关的安装不发 live 段 —— 装 ≠ 连;config 已带 disabled:true,引擎原生跳过。
+  if (receiptTemplate.desiredState === "disabled") return { ok: true, kind: "mcp", name: entry.name, manifestDigest }
   return { ok: true, kind: "mcp", name: entry.name, manifestDigest, liveMcp: { name: entry.name, config: derived.config } }
 }
 
@@ -3539,7 +3577,8 @@ async function installPluginFromCas(args: {
     manifestDigest,
     payloadDigest,
     grantDigest: computeGrantDigest(auth.grants ?? {}),
-    desiredState: "enabled",
+    // #395:同上 —— vendored plugin fresh-intake 按来源分类。
+    desiredState: nextDesiredState(root, "plugin", entry.name, { origin: "catalog", source: entry.source }),
     origin: "catalog",
     files: [dir],
     configKey: `plugin-path:${jsPath}`,
@@ -3552,7 +3591,11 @@ async function installPluginFromCas(args: {
         // 逻辑主 item:capabilities/receipt 只挂这里(一个扩展一个授权 key,账本单条)。
         key: `plugin--${entry.name}`,
         action: "config",
-        config: { target: configTarget, edits: [{ keyPath: ["plugin"], value: nextArray }] },
+        config: {
+          target: configTarget,
+          // #395:disabled = plugin[] 无条目(在场性投影);enable 经 set-state 事务补入。
+          edits: [{ keyPath: ["plugin"], value: receiptTemplate.desiredState === "disabled" ? [...snapshot.value] : nextArray }],
+        },
         manifestDigest,
         capabilities: manifest.capabilities,
         receipt: receiptTemplate,
@@ -3902,11 +3945,64 @@ export function decodeSetStateIntent(input: unknown): { ok: true; intent: SetSta
   return { ok: true, intent: { ...base.intent, state } }
 }
 
-/** desiredState 翻转:scope 独立(global/各项目账本物理分域),项目 identity fail-closed 同卸载。 */
-export function setInstallStateByKey(
+/** #395:global 投影 kinds(mcp/agent/plugin)的启停 config 变更构造。
+ *  返回三态:edits(进事务)/ skipConfig(投影已是目标形态,纯账本翻转)/ fail(诚实拒绝)。 */
+function buildSetStateEdits(
+  root: string,
+  record: InstallRecordV2,
+  state: DesiredState,
+): { kind: "edits"; target: string; edits: { keyPath: string[]; value: unknown }[] } | { kind: "skip" } | { kind: "fail"; reason: string } {
+  const target = path.join(root, "alpha.jsonc")
+  let cfg: unknown
+  try {
+    const errors: ParseError[] = []
+    cfg = parse(fs.readFileSync(target, "utf8"), errors)
+    if (errors.length > 0) return { kind: "fail", reason: `alpha.jsonc is not valid jsonc — refusing to change enable state (fail closed)` }
+  } catch {
+    return { kind: "fail", reason: `alpha.jsonc not readable — refusing to change enable state (fail closed)` }
+  }
+  const cfgObj: Record<string, unknown> = isObj(cfg) ? cfg : {}
+  if (record.kind === "plugin") {
+    // 在场性投影:disabled = plugin[] 无条目;元素由 configKey 重建(受管安装写入的都是纯 spec 串)。
+    const ck = record.configKey ?? ""
+    const elem = ck.startsWith("plugin-path:") ? ck.slice("plugin-path:".length) : ck.startsWith("plugin:") ? ck.slice("plugin:".length) : ""
+    if (!elem) return { kind: "fail", reason: `plugin ${record.name}: no configKey on record — cannot project enable state (reinstall to repair)` }
+    const arr = Array.isArray(cfgObj.plugin) ? (cfgObj.plugin as unknown[]) : []
+    const matches = (x: unknown) => x === elem || (Array.isArray(x) && x[0] === elem)
+    const present = arr.some(matches)
+    if (state === "disabled") {
+      if (!present) return { kind: "skip" }
+      return { kind: "edits", target, edits: [{ keyPath: ["plugin"], value: arr.filter((x) => !matches(x)) }] }
+    }
+    if (present) return { kind: "skip" }
+    return { kind: "edits", target, edits: [{ keyPath: ["plugin"], value: [...arr, elem] }] }
+  }
+  // mcp / agent:引擎原生 disabled 叶(#394 裁决;leaf 其余键原样保留)。
+  const map = cfgObj[record.kind]
+  const leaf = isObj(map) ? map[record.name] : undefined
+  if (!isObj(leaf)) {
+    // 叶缺失:disable = 投影本就不在(纯账本翻转);enable = 无从重建生效面,诚实拒绝。
+    if (state === "disabled") return { kind: "skip" }
+    return { kind: "fail", reason: `${record.kind} ${record.name}: config entry missing — cannot enable (reinstall to repair)` }
+  }
+  const leafObj = leaf
+  if (state === "disabled") {
+    if (leafObj.disabled === true) return { kind: "skip" }
+    return { kind: "edits", target, edits: [{ keyPath: [record.kind, record.name], value: { ...leafObj, disabled: true } }] }
+  }
+  if (leafObj.disabled === undefined) return { kind: "skip" }
+  return { kind: "edits", target, edits: [{ keyPath: [record.kind, record.name], value: Object.fromEntries(Object.entries(leafObj).filter(([k]) => k !== "disabled")) }] }
+}
+
+/** desiredState 翻转:scope 独立(global/各项目账本物理分域),项目 identity fail-closed 同卸载。
+ *  #395:global 的 mcp/agent/plugin 走 journaled config 事务 —— 账本翻转在 commitReceipt(引擎
+ *  receipt-commit 阶段,失败即整笔回滚),config 投影与账本永不背离;skill(投影 = ext 插件按账本
+ *  注入,无 config 面)、cloud(receipts-only)与 project 记录维持锁内纯账本翻转(本函数自持锁;
+ *  调用方不再预持,防与引擎锁互斥死锁)。 */
+export async function setInstallStateByKey(
   rawIntent: unknown,
   deps: Pick<PlannerDeps, "globalRoot" | "advisoryGate">,
-): { ok: true } | { ok: false; reason: string } {
+): Promise<{ ok: true; warning?: string } | { ok: false; reason: string }> {
   const decoded = decodeSetStateIntent(rawIntent)
   if (!decoded.ok) return decoded
   const intent = decoded.intent
@@ -3939,5 +4035,35 @@ export function setInstallStateByKey(
     })
     if (!adv.allowed) return { ok: false, reason: `advisory ${adv.advisoryId}: ${adv.reason} — re-enable refused (R14)` }
   }
-  return setDesiredStateV2(root, intent.type, intent.name, intent.state)
+
+  const ledgerFlip = (): { ok: true; warning?: string } | { ok: false; reason: string } => {
+    const held = tryAcquireBundleLock(root, { txId: `set-state-${randomUUID()}` })
+    if (!held.ok) return { ok: false, reason: `ledger busy: ${held.reason} — retry after the in-flight transaction` }
+    try {
+      return setDesiredStateV2(root, intent.type, intent.name, intent.state)
+    } finally {
+      held.lock.release()
+    }
+  }
+
+  if (record.scope.kind !== "project" && (intent.type === "mcp" || intent.type === "agent" || intent.type === "plugin")) {
+    const built = buildSetStateEdits(root, record, intent.state)
+    if (built.kind === "fail") return { ok: false, reason: built.reason }
+    if (built.kind === "skip") return ledgerFlip()
+    const plan: TxPlan = {
+      items: [{ key: `${intent.type}--${intent.name}--state`, action: "config", config: { target: built.target, edits: built.edits } }],
+    }
+    const hooks: TxHooks = {
+      populate: () => {},
+      probe: () => ({ healthy: true }), // config action 的原子性/前置由引擎 config-tx 自身保证
+      commitReceipt: () => {
+        const w = setDesiredStateV2(root, intent.type, intent.name, intent.state)
+        if (!w.ok) throw new Error(w.reason) // receipt-commit 失败 → 引擎回滚 config:两面永不背离
+      },
+    }
+    const res = await runExtensionTransaction(root, plan, hooks)
+    if (!res.ok) return { ok: false, reason: res.reason }
+    return { ok: true }
+  }
+  return ledgerFlip()
 }

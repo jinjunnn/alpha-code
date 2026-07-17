@@ -143,3 +143,10 @@ seed plugin 的载荷是同一事务里的 file items,落点 = 内容寻址目�
 - **legacy flat 文件**(`<server>/<VAR>` 直挂):存量安装与 env 迁移的合法布局,被当前 leaf
   引用时绝不可删;不再被引用后由同一 GC 收。
 - **卸载**:journaled 卸载会删除整个 `<server>` 目录(全部版本 + flat),无需按版本处置。
+
+## 附:set-state 事务(REQ-104 #395)
+
+启停翻转(mcp/agent/plugin)以单 config item 的 journaled 事务执行:key =
+`<kind>--<name>--state`,无 capabilities(不落授权账)、无 receipt(账本翻转在 commitReceipt
+经 `setDesiredStateV2`,失败即整笔回滚)。崩溃恢复沿既有 journal 前滚/回滚收敛;journal 里
+出现该 key 形态即启停事务,处置与普通 config 事务一致。

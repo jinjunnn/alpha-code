@@ -535,6 +535,11 @@ export const dict = {
   "alpha.ext.scopeProjectReadonly": "只读 · 来自导入/收编",
   "alpha.ext.scopeProjectEmpty": "此项目还没有本地扩展。项目扩展来自「导入」或从项目目录收编;目录安装始终装到全局。",
   "alpha.ext.reviewUpdate": "审查更新",
+  // ── #395(REQ-104):第三方默认关 + 全类型启用开关 ──
+  "alpha.ext.notEnabledChip": "已安装 · 未启用",
+  "alpha.ext.notEnabledHint": "未启用 —— 打开开关后生效",
+  "alpha.ext.addedDisabled": "已安装但未启用 —— 在「已安装」里打开开关后生效",
+  "alpha.ext.stateFailed": "启用状态切换失败",
   // ── #396(REQ-104):套件详情页「整包事实」段 ──
   "alpha.ext.packFactsTitle": "整包事实",
   "alpha.ext.packSize": "下载体积",

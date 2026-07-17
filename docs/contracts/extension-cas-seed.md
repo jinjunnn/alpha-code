@@ -244,3 +244,11 @@ CAS 补充语义:
   形状为 `skill--<safe>`、具 generation-store 结构的 ghost 店。其余一律只报告:非该形状的
   ext-store 条目、误置(非 project scope)record、v1 占位、以及 orphan agent 面
   (`.alpha/agents/*.md`、`alpha.jsonc` agent 条目)—— 永不自动清。
+
+## 附:seed 安装的初始启用态(REQ-104 #395)
+
+seed(随包 first-run)与目录单装同一 fresh-intake 分类器:以**已验 bundled CatalogEntry 的
+`source`** 为权威(随 app 打包 ≠ 第一方;official/community seed 一律默认 disabled,仅
+`source==="alpha"` 默认 enabled)。默认关的 seed MCP 不发 `liveMcp` 段(装 ≠ 连),config 叶
+带引擎原生 `disabled:true`;plugin 载荷照常物化进内容寻址目录,仅 `plugin[]` 条目不落
+(enable 经 set-state 事务按 configKey 物化)。

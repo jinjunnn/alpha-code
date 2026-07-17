@@ -138,6 +138,8 @@ export type InstallLedgerView = { global: InstallReceipt[]; project: InstallRece
 export type UninstallKeyIntent =
   | { type: InstallReceiptType; name: string; scope: "global" }
   | { type: InstallReceiptType; name: string; scope: "project"; projectDir: string }
+/** REQ-104 #395:key-based 启停意图(卸载同信任边界 + 目标态)。 */
+export type SetStateKeyIntent = UninstallKeyIntent & { state: "enabled" | "disabled" }
 /** REQ-100 #313:generation 历史条目(安全元数据面;eligible = 有可读快照可离线回滚)。 */
 export type SkillGenerationInfo = { genId: string; current: boolean; version?: string; manifestDigest?: string; installedAt?: string; eligible: boolean }
 /** Legacy installs found in the shared XDG config dir, offered for migration to .alpha (REQ-018 T3). */
@@ -473,6 +475,9 @@ export type ElectronAPI = {
     /** REQ-100 #313:key-based v2 卸载 —— renderer 只提供 type/name/scope,receipt 事实由 main
      *  账本自查(ADR-028 §1);generation skill 走锁内 journaled store+ledger teardown。 */
     uninstallV2: (intent: UninstallKeyIntent) => Promise<{ ok: true; files?: string[]; warning?: string } | { ok: false; reason: string }>
+    /** REQ-104 #395:key-based 启停 —— main 按账本自查;mcp/agent/plugin 走 journaled config 事务
+     *  (投影与账本原子),skill 纯账本翻转(投影 = 引擎侧按账本注入);enable 过 advisory 闸(R14)。 */
+    setInstallState: (intent: SetStateKeyIntent) => Promise<{ ok: true; warning?: string } | { ok: false; reason: string }>
     /** REQ-100 #313:某 skill 的 generation 历史(current + 保留代)。只透安全元数据,不外泄绝对路径。 */
     listGenerations: (intent: UninstallKeyIntent) => Promise<{ ok: true; generations: SkillGenerationInfo[] } | { ok: false; reason: string }>
     /** REQ-100 #313:两版离线回滚 —— 目标 gen 健康门 + 锁内翻指针 + receipt 修订;任一前置失败零变更。 */

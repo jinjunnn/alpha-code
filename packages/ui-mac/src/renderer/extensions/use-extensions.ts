@@ -95,6 +95,9 @@ export interface ExtensionsApi {
   removeMcp(name: string): Promise<ActionResult>
   /** Uninstall any installed item by its receipt (fs/plugin/mcp) — files/config/secrets + receipt. */
   uninstall(receipt: InstallReceipt): Promise<ActionResult>
+  /** REQ-104 #395:启停(global 收据;project 组只读无开关)。main 侧账本+投影原子翻转;
+   *  fs 类翻转后 dispose 引擎使投影生效;mcp 的 live connect 由调用方按需衔接。 */
+  setInstallState(receipt: InstallReceipt, state: "enabled" | "disabled"): Promise<ActionResult>
   /** True if this catalog entry is already installed (MCP via SDK truth; others via receipts). */
   isInstalled(entry: CatalogEntry): boolean
   /** which-check the entry's runtime deps; { ok:false, missing } if a binary is absent. */
@@ -437,6 +440,19 @@ export function useExtensions(
     return res
   }
 
+  /** REQ-104 #395:启停(仅 global 收据;project 组只读)。main 侧原子翻转(mcp/agent/plugin =
+   *  journaled config 事务 + 账本;skill = 账本,投影由引擎侧注入门消费);fs 类随后 dispose 引擎
+   *  使投影立即生效;mcp 的 live connect/disconnect 由调用方(hub 开关)按语义衔接。 */
+  async function setInstallState(receipt: InstallReceipt, state: "enabled" | "disabled"): Promise<ActionResult> {
+    if (receipt.scope === "project") return { ok: false, reason: "project-scoped records have no enable switch (read-only group)" }
+    const res = await window.api.ext.setInstallState({ type: receipt.type, name: receipt.name, scope: "global", state })
+    if (!res.ok) return res
+    await loadInstalls()
+    if (receipt.type !== "mcp" && receipt.type !== "cloud") await refreshEngine()
+    if (receipt.type === "agent") void loadAgents()
+    return res
+  }
+
   // REQ-018 T4(免重启生效):fs 类安装(skill/agent/plugin)写盘后,引擎按目录缓存的实例不会
   // 重扫(上游 InstanceState 无文件监听)——不触发重建就是 placebo 安装。S12 spike 实测:
   // POST /global/dispose 8ms 返回,下一请求 ~100-300ms 惰性重建并重扫,经 symlink 桥的
@@ -622,6 +638,7 @@ export function useExtensions(
     setMcpConnected,
     removeMcp,
     uninstall,
+    setInstallState,
     isInstalled,
     checkRuntime,
     factorySkills: () => factoryIds(),

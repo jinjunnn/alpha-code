@@ -743,18 +743,11 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
     await ledgerReady
     return listGenerationsByKey(intent, { globalRoot: alphaGlobalRoot })
   })
-  // #347(Codex 裁决 d):set-state 虽不建 journal,但对同一 installs.json 做 read-modify-write ——
-  // 必须过 gate 且与账本写同一锁临界区(持文件锁执行,防与并发 receipt commit 互踩)。
+  // #347(Codex 裁决 d)+ #395:set-state 仍过 gate;锁改由 planner 内部管理 —— 投影 kinds
+  // (mcp/agent/plugin)走 journaled config 事务(引擎自持锁,账本翻转在 commitReceipt),
+  // 其余走 planner 自持文件锁的纯账本翻转。此处不得预持锁(会与引擎锁互斥死锁)。
   const setInstallStateBody = async (intent: unknown) => {
-    const resolved = setStateIntentRoot(intent)
-    if (!resolved.ok) return resolved
-    const held = tryAcquireBundleLock(resolved.root, { txId: `set-state-${randomUUID()}` })
-    if (!held.ok) return { ok: false as const, reason: `ledger busy: ${held.reason} — retry after the in-flight transaction` }
-    try {
-      return setInstallStateByKey(intent, { globalRoot: alphaGlobalRoot, advisoryGate: makeAdvisoryGate(userDataPath) })
-    } finally {
-      held.lock.release()
-    }
+    return setInstallStateByKey(intent, { globalRoot: alphaGlobalRoot, advisoryGate: makeAdvisoryGate(userDataPath) })
   }
   // ADR-030(#372):收回路径的残留检测(只读)与显式清理(journal 在场 fail-closed;
   // generation-aware —— 删受控 ext-store + 对应账本,绝不落 flat 删除)。

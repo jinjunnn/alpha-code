@@ -66,7 +66,8 @@ afterEach(() => {
 
 // ── catalog fixtures(已验 catalog 侧的条目;renderer 无从改写)─────────────────────────────────
 
-const base = { displayName: "d", description: "d", source: "official" as const, category: "test" }
+// #395:机器面测试用第一方 source(alpha)保持 enabled 投影(默认关策略另有专项测试)。
+const base = { displayName: "d", description: "d", source: "alpha" as const, category: "test" }
 
 const mcpEntry: CatalogEntry = {
   id: "mcp:markitdown",
@@ -424,7 +425,8 @@ describe("intent decoding — forged renderer facts have no channel (AC#2)", () 
 
 describe("manifest synthesis & pre-disk refusal (AC#1)", () => {
   test("synthesized manifest decodes strictly; five-dimension ownership(curated ≠ authored)", () => {
-    const verified: VerifiedCatalogEntry = { entry: mcpEntry, channel: "remote", catalogVersion: "2026-07-13.1" }
+    // curated≠authored 的语义靠第三方 source 才能显形(#395 全局 fixture 改 alpha 后此处本地覆盖)。
+    const verified: VerifiedCatalogEntry = { entry: { ...mcpEntry, source: "official" }, channel: "remote", catalogVersion: "2026-07-13.1" }
     const decoded = decodeManifestV2(synthesizeManifest(verified))
     expect(decoded.ok).toBe(true)
     if (!decoded.ok) return
@@ -988,7 +990,7 @@ describe("legacy project manage (AC#3/AC#4 semantics kept for residuals)", () =>
     expect(findRecordV2(rootB, "skill", "demo")).not.toBeNull()
 
     // 禁用 A 项目的 → global 与 B 不动
-    expect(setInstallStateByKey({ type: "skill", name: "demo", scope: "project", projectDir: projA, state: "disabled" }, { globalRoot: () => globalRoot, advisoryGate: () => ({ allowed: true }) }).ok).toBe(true)
+    expect((await setInstallStateByKey({ type: "skill", name: "demo", scope: "project", projectDir: projA, state: "disabled" }, { globalRoot: () => globalRoot, advisoryGate: () => ({ allowed: true }) })).ok).toBe(true)
     expect(findRecordV2(rootA, "skill", "demo")?.desiredState).toBe("disabled")
     expect(findRecordV2(globalRoot, "skill", "demo")?.desiredState).toBe("enabled")
     expect(findRecordV2(rootB, "skill", "demo")?.desiredState).toBe("enabled")
@@ -1041,7 +1043,7 @@ describe("legacy project manage (AC#3/AC#4 semantics kept for residuals)", () =>
     seedProjectCatalogRecord(projA)
     const projMoved = path.join(tmp, "proj-moved-state")
     fs.renameSync(projA, projMoved)
-    const r = setInstallStateByKey({ type: "skill", name: "demo", scope: "project", projectDir: projMoved, state: "disabled" }, { globalRoot: () => globalRoot, advisoryGate: () => ({ allowed: true }) })
+    const r = await setInstallStateByKey({ type: "skill", name: "demo", scope: "project", projectDir: projMoved, state: "disabled" }, { globalRoot: () => globalRoot, advisoryGate: () => ({ allowed: true }) })
     expect(r.ok).toBe(false)
     expect(findRecordV2(path.join(projMoved, ".alpha"), "skill", "demo")?.desiredState).toBe("enabled")
   })
@@ -1409,8 +1411,8 @@ describe("#315 advisory 激活闸接线", () => {
     const globalRoot = deps.globalRoot()
     const ok = await installAuthorized({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
     expect(ok.ok).toBe(true)
-    expect(setInstallStateByKey({ type: "skill", name: "demo", scope: "global", state: "disabled" }, { globalRoot: () => globalRoot, advisoryGate: denyGate() }).ok).toBe(true)
-    const re = setInstallStateByKey({ type: "skill", name: "demo", scope: "global", state: "enabled" }, { globalRoot: () => globalRoot, advisoryGate: denyGate() })
+    expect((await setInstallStateByKey({ type: "skill", name: "demo", scope: "global", state: "disabled" }, { globalRoot: () => globalRoot, advisoryGate: denyGate() })).ok).toBe(true)
+    const re = await setInstallStateByKey({ type: "skill", name: "demo", scope: "global", state: "enabled" }, { globalRoot: () => globalRoot, advisoryGate: denyGate() })
     expect(re.ok).toBe(false)
     if (re.ok) throw new Error("unreachable")
     expect(re.reason).toContain("re-enable refused")
@@ -2282,7 +2284,9 @@ describe("atomic plugin replace via installCatalog (REQ-099 #352)", () => {
     expect(r.ok).toBe(true)
     if (!r.ok) return
     const cfg = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8")) as { plugin: string[] }
-    expect(cfg.plugin).toEqual(["@alpha/np@2.3.4"]) // 旧精确元素被换,不残留、不追加
+    // #395:disabled 的替换收敛投影 —— 旧元素移除且不放新元素(更新 disabled 插件不得静默重新启用);
+    // 内容/账本照常换代,enable 时经 set-state 事务按新 configKey 物化。
+    expect(cfg.plugin).toEqual([])
     const rec = findRecordV2(globalRoot, "plugin", "np")!
     expect(rec.generation).toBe(old.generation + 1)
     expect(rec.version).toBe("2.3.4")

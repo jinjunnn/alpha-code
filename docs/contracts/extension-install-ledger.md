@@ -89,7 +89,26 @@ MCP 重装是产品流(确认框重装),允许覆盖(引擎前像可复原)而�
   project bundle 锁 → `migrateV1Ledger`(迁移器自身不持锁);无 `.alpha` 存量零写副作用;
   拒绝 loud log 零改动,busy/transient 下次打开自然重试(幂等)。
 
-## 5. 证据
+## 5. desiredState:初始分类、当前策略优先与投影权威(REQ-104 #395)
+
+- **fresh-intake 分类器唯一决策点**(`shared/ext-install-policy.initialDesiredState`,#394 裁决):
+  目录安装(origin=catalog)`source==="alpha"` = enabled,其余(含 official)一律 disabled;
+  非目录 intake(imported/created)= enabled(用户显式自选内容)。renderer 安装文案共用同一
+  函数,不得各写一份。factory 注入零安装不落账,天然绕过。
+- **当前策略优先**:任何更新/重装/回滚对既有记录一律保留其 desiredState
+  (`nextDesiredState` 先查 prior;plugin replace 的锁内漂移检查照旧)。v1→v2 迁移如实保留
+  enabled(存量不回溯)。
+- **投影权威 = 账本 desiredState**,按类型生效(#394 裁决 A′):skill = 引擎侧
+  `skillGenerationLiveDirs` 注入门(disabled 不进 `skills.paths`;账本不可读容错朝可用性);
+  agent / mcp = 引擎原生 `disabled:true` 配置叶;plugin = `plugin[]` 条目在场性。disabled ≠ 卸载:
+  内容、账本、授权账照常在位与换代;**disabled 的替换收敛投影(丢旧不加新)**,对账门对
+  disabled 记录按「缺席即成立、在场由替换收敛」判定。
+- **启停通道**(`ext-set-install-state`,#347-gated):mcp/agent/plugin 走 journaled config 事务,
+  账本翻转在 `commitReceipt`(receipt-commit 失败 → 引擎回滚 config,投影与账本永不背离);
+  skill/cloud/project 记录走锁内纯账本翻转。enable 缺生效面(config 叶/条目无从重建)fail-closed;
+  disabled→enabled 过 advisory 闸(R14)不变。
+
+## 6. 证据
 
 `ext-install-planner.test.ts`(fail-closed ledger commit:逐类型写前门/根只读事务失败零
 残留/损坏账本写前拒绝/v1-only 双查/authorize 暂停零权威副作用/v1 锁步派生;#378 退出条件
