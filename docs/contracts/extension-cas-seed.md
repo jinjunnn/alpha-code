@@ -249,6 +249,5 @@ CAS 补充语义:
 
 seed(随包 first-run)与目录单装同一 fresh-intake 分类器:以**已验 bundled CatalogEntry 的
 `source`** 为权威(随 app 打包 ≠ 第一方;official/community seed 一律默认 disabled,仅
-`source==="alpha"` 默认 enabled)。默认关的 seed MCP 不发 `liveMcp` 段(装 ≠ 连);config 与 plugin[] 均写**正常条目**
-(disk 不含启用态),运行时 disabled 由引擎 config-hook 从账本 desiredState 派生
-(`applyLedgerEnableProjection`)。
+`source==="alpha"` 默认 enabled)。默认关的 seed MCP 不发 `liveMcp` 段(装 ≠ 连);持久化投影直接写 disabled 态(mcp 叶
+`disabled:true`;plugin 从 `plugin[]` 缺席),config 自持 disabled 态。

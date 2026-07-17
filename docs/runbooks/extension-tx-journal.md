@@ -146,7 +146,6 @@ seed plugin 的载荷是同一事务里的 file items,落点 = 内容寻址目�
 
 ## 附:启停(set-state,REQ-104 #395)
 
-启停翻转是**纯账本单写**(`setDesiredStateV2` 原子 rename,持 Bundle 锁),**不产生 journal
-条目、不改 alpha.jsonc** —— 运行时投影由引擎 config-hook 从账本 desiredState 派生。故 journal
-里不会出现启停事务;若见到 `<kind>--<name>--state` 之类 key,是早期设计的残留,按普通 config
-事务处置(该设计已废弃,现行启停不进事务引擎)。
+启停 = 锁内**持久化 config 投影普通原子写 + 账本翻转**(非事务,不产生 journal 条目)。config
+写在前(运行时权威)、账本随后;崩溃窗口内 config 已新态,账本 mirror 落后一步,下次翻转即收敛。
+故 journal 里不会出现启停事务。

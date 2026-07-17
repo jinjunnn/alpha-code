@@ -1374,17 +1374,19 @@ describe("#395 第三方 seed 安装默认关(账本 disabled;config 写正常�
     const r = await installAuthorized(pluginSeedIntent, makeSeedDeps({ bundledEntries: [entry] }))
     expect(r.ok).toBe(true)
     expect(findRecordV2(globalRoot, "plugin", "demo-plugin")!.desiredState).toBe("disabled")
-    // disk 上 plugin[] 恒写正常条目(运行时 disabled 投影由引擎 hook 从账本派生,不改 alpha.jsonc)。
+    // 持久化投影:disabled plugin 从 disk plugin[] 缺席(引擎 import 前);内容照常物化(disabled ≠ 未装)。
     const dir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
     const cfg: { plugin?: string[] } = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))
-    expect(cfg.plugin ?? []).toEqual([path.join(dir, "plugin.js")])
+    expect(cfg.plugin ?? []).toEqual([])
     expect(fs.existsSync(path.join(dir, "plugin.js"))).toBe(true)
-    // 启用:纯账本翻转(config 不动)。
+    // 启用:按 configKey 补回 plugin[] 条目 + 账本翻开。
     const en = setInstallStateByKey(
       { type: "plugin", name: "demo-plugin", scope: "global", state: "enabled" },
       { globalRoot: () => globalRoot, advisoryGate: () => ({ allowed: true }) },
     )
     expect(en.ok).toBe(true)
+    const cfg2: { plugin: string[] } = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))
+    expect(cfg2.plugin).toEqual([path.join(dir, "plugin.js")])
     expect(findRecordV2(globalRoot, "plugin", "demo-plugin")!.desiredState).toBe("enabled")
   })
 
@@ -1396,8 +1398,8 @@ describe("#395 第三方 seed 安装默认关(账本 disabled;config 写正常�
     if (!r.ok) return
     expect("liveMcp" in r ? r.liveMcp : undefined).toBeUndefined() // 默认关不自动连
     expect(findRecordV2(globalRoot, "mcp", "demo")!.desiredState).toBe("disabled")
-    // disk 上 mcp 叶正常(无 disabled 键);运行时 disabled 由引擎 hook 从账本派生。
+    // 持久化投影:disabled mcp 叶带引擎原生 disabled:true(引擎不连)。
     const cfg: { mcp: Record<string, Record<string, unknown>> } = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))
-    expect(cfg.mcp.demo?.disabled).toBeUndefined()
+    expect(cfg.mcp.demo?.disabled).toBe(true)
   })
 })

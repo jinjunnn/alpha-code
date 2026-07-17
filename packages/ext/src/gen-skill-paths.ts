@@ -52,7 +52,9 @@ function enabledSkillKeys(alphaRoot: string): Set<string> | null {
   for (const r of records) {
     if (!r || typeof r !== "object") continue
     const rec = r as { kind?: unknown; name?: unknown; desiredState?: unknown }
-    if (rec.kind === "skill" && typeof rec.name === "string" && rec.desiredState !== "disabled") out.add(`skill--${rec.name}`)
+    // 严格 decoder(Codex r2 Blocker):只认**明确 enabled**(desiredState === "enabled")——
+    // 畸形/缺失/拼错的 desiredState 一律不注入(fail closed),不让篡改记录复活被禁用技能。
+    if (rec.kind === "skill" && typeof rec.name === "string" && rec.desiredState === "enabled") out.add(`skill--${rec.name}`)
   }
   return out
 }

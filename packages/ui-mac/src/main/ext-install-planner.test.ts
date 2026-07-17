@@ -2284,8 +2284,8 @@ describe("atomic plugin replace via installCatalog (REQ-099 #352)", () => {
     expect(r.ok).toBe(true)
     if (!r.ok) return
     const cfg = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8")) as { plugin: string[] }
-    // #395 重设计:replace 恒写正常条目(disk);运行时 disabled 投影由引擎 hook 从账本派生,不改 alpha.jsonc。
-    expect(cfg.plugin).toEqual(["@alpha/np@2.3.4"])
+    // #395:disabled 插件的置换保持 plugin[] 缺席(丢旧不加新;更新 disabled 不重新启用),内容/账本照常换代。
+    expect(cfg.plugin).toEqual([])
     const rec = findRecordV2(globalRoot, "plugin", "np")!
     expect(rec.generation).toBe(old.generation + 1)
     expect(rec.version).toBe("2.3.4")
