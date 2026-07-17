@@ -19,11 +19,17 @@ import {
   importGlobalClaudeMd,
   readGlobalGateMarker,
   writeGlobalGateMarker,
+  type EcosystemGlobalSkillInstaller,
 } from "./ecosystem-import"
 
 type Logger = { log: (m: string, meta?: unknown) => void; warn: (m: string, meta?: unknown) => void }
 
-export async function runGlobalEcosystemGate(parent: BrowserWindow | undefined, logger: Logger): Promise<void> {
+export async function runGlobalEcosystemGate(
+  parent: BrowserWindow | undefined,
+  logger: Logger,
+  // #390:恢复-gate 包装的 global 技能安装器(main 注入;走事务安装,不绕恢复准入)。
+  installGlobal: EcosystemGlobalSkillInstaller,
+): Promise<void> {
   if (ecosystemInheritEnabled()) return
   if (readGlobalGateMarker()) return // 已决策(任一方向),不再弹
   const detected = detectExternal(os.homedir(), "global")
@@ -54,7 +60,8 @@ export async function runGlobalEcosystemGate(parent: BrowserWindow | undefined, 
     logger.log("[req063] global ecosystem content declined — external dirs stay invisible (files untouched)")
     return
   }
-  const r = importExternalSkills(detected.skills, { scope: "global" })
+  // #390:首启全局生态导入走注入的恢复-gate 事务安装器(崩溃可恢复 + 恢复准入;取代 flat copy 半成品窗)。
+  const r = await importExternalSkills(detected.skills, { scope: "global" }, installGlobal)
   const imported = [...r.importedSkills]
   const skipped = [...r.skipped]
   if (detected.claudeMd) {

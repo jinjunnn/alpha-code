@@ -540,7 +540,8 @@ const main = Effect.gen(function* () {
   // registryChannel,prod→stable/beta→preview/dev→dev,已单测钉死映射),composition root
   // 一次注入,IPC/planner/预热同一份。
   const registryChannel = catalogRegistryChannel()
-  const extLedgerReady = registerExtIpcHandlers(app.getPath("userData"), registryChannel)
+  // #390:解构出恢复-gate 包装的 global 技能安装器,传给首启 ecosystem gate(不绕恢复准入)。
+  const { ledgerReady: extLedgerReady, ecosystemGlobalSkillInstaller } = registerExtIpcHandlers(app.getPath("userData"), registryChannel)
   // REQ-032:启动预热远端 catalog(ETag 缓存;失败静默回退,进 hub 时再刷)
   void refreshRemoteCatalog(app.getPath("userData"), registryChannel).catch(() => {})
   // REQ-102 #318:CAS GC 生产触发(5min 首跑 + 24h 链式周期;锁忙/mark 根损坏 = 本轮跳过等下轮)。
@@ -695,7 +696,7 @@ const main = Effect.gen(function* () {
   // 首启必弹防「技能丢了」重演;fire-and-forget,不阻塞窗口;marker 记账不再弹。
   if (!TEST_ONBOARDING) {
     void extLedgerReady
-      .then(() => runGlobalEcosystemGate(mainWindow ?? undefined, logger))
+      .then(() => runGlobalEcosystemGate(mainWindow ?? undefined, logger, ecosystemGlobalSkillInstaller))
       .catch((error) => logger.warn("[req063] global ecosystem gate failed (non-fatal)", error))
   }
 

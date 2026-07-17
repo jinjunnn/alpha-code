@@ -45,7 +45,7 @@ export function checkUncuratedConflict(root: string, kind: InstallReceiptType, n
   if (v1?.origin === "catalog")
     return { ok: false, reason: `refusing uncurated record: ${kind}:${name} has a catalog v1 receipt — uninstall it first` }
   if (kind === "skill" && hasSkillGeneration(root, name))
-    return { ok: false, reason: `refusing uncurated record: skill "${name}" is generation-managed (catalog) — uninstall it first` }
+    return { ok: false, reason: `refusing uncurated record: skill "${name}" is generation-managed — uninstall it first` }
   return { ok: true }
 }
 

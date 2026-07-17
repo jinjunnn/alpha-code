@@ -470,8 +470,173 @@ function collectImportFiles(srcDir: string): { ok: true; files: string[] } | { o
   }
 }
 
+/** #390:未策展技能导入 byte-exact 单文件读 —— realpath 圈禁(父目录 symlink 逃逸)+ O_NOFOLLOW
+ *  开(末段 symlink 换内容)+ fstat 前置帽 + 定长读 + 增长探测(帽/身份都以实际字节为准,不信 walk 期
+ *  stat 快照;review r1 Major 3/4)。data.length 即最终帽依据,调用方据此累计真实总量。 */
+function readImportFileBounded(
+  abs: string,
+  realBase: string,
+  capBytes: number,
+): { ok: true; data: Buffer } | { ok: false; reason: string; oversize?: boolean } {
+  const noFollow = typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0
+  // O_NONBLOCK(review r3 Major 2):竞态把常规文件换成 FIFO 时,同步 O_RDONLY 会阻塞等 writer,
+  // 冻死 Electron main —— 非阻塞打开后立即 fstat + isFile 拒非常规文件。
+  const nonBlock = typeof fs.constants.O_NONBLOCK === "number" ? fs.constants.O_NONBLOCK : 0
+  const errnoCode = (error: unknown): string | undefined =>
+    typeof error === "object" && error !== null && "code" in error && typeof error.code === "string" ? error.code : undefined
+  let fd: number
+  try {
+    // review r5:开**原始 abs**(非 realpath 后的 rp)—— 否则 O_NOFOLLOW 护的是已解析路径、对末段
+    // symlink 完全失效(realpath 已跟过)。开 abs 使 O_NOFOLLOW 真正封末段 symlink(swap 成 symlink → ELOOP 拒)。
+    fd = fs.openSync(abs, fs.constants.O_RDONLY | noFollow | nonBlock)
+  } catch (error) {
+    if (errnoCode(error) === "ELOOP") return { ok: false, reason: "import: 是 symlink — 拒(须常规文件)" }
+    return { ok: false, reason: "import: 无法安全打开(symlink / 特殊文件)— 拒" }
+  }
+  try {
+    const st = fs.fstatSync(fd, { bigint: true })
+    if (!st.isFile()) return { ok: false, reason: "import: 不是常规文件 — 拒" }
+    // 圈禁缩窗纵深(review r2/r3/r5):末段 symlink 已由「开 abs + O_NOFOLLOW」封死;父目录 symlink 逃逸
+    // 由 open 后 realpath 复核收尾 —— ① realpath(abs) 落 realBase 外(稳定换向)→ 拒;② 复核 fd 与「规范
+    // 路径当前指向的文件」同 dev/ino(换回原链 = fd 指树外而规范路径落树内,dev/ino 不等 → 拒)。Node 无
+    // openat,dev/ino 相等不等于圈禁封死;父目录多次精确换向属固有残余(能在源目录内换目录链者等价于
+    // 导入内容作者;与 collectBuiltinAgentPayload 同纵深)。
+    let rp: string
+    let pathSt: fs.BigIntStats
+    try {
+      rp = fs.realpathSync(abs)
+      pathSt = fs.statSync(rp, { bigint: true })
+    } catch (error) {
+      const code = errnoCode(error)
+      if (code === "ENOENT" || code === "ELOOP" || code === "ENOTDIR")
+        return { ok: false, reason: "import: 路径读取期间改变身份(symlink race)— 拒" }
+      return { ok: false, reason: error instanceof Error ? error.message : "import: 读取失败" }
+    }
+    if (rp !== realBase && !rp.startsWith(realBase + path.sep))
+      return { ok: false, reason: "import: 路径逃逸源目录 — 拒" }
+    if (st.dev !== pathSt.dev || st.ino !== pathSt.ino)
+      return { ok: false, reason: "import: 路径读取期间改变身份(symlink race)— 拒" }
+    if (st.size > BigInt(capBytes)) return { ok: false, reason: "import: 超过大小上限", oversize: true }
+    const size = Number(st.size)
+    const data = Buffer.alloc(size)
+    let off = 0
+    while (off < size) {
+      const n = fs.readSync(fd, data, off, size - off, off)
+      if (n === 0) break
+      off += n
+    }
+    if (off !== size) return { ok: false, reason: "import: 读取长度不符(文件在变)— 拒" }
+    // fstat 后 inode 仍可增长;读毕探 1 字节,有余量 = 文件在变,拒(定长读会绕过已执行的帽)。
+    const probe = Buffer.alloc(1)
+    if (fs.readSync(fd, probe, 0, 1, size) !== 0) return { ok: false, reason: "import: 文件读取期间增长 — 拒" }
+    return { ok: true, data }
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "import: 读取失败" }
+  } finally {
+    fs.closeSync(fd)
+  }
+}
+
+/** #390:未策展技能导入的 byte-exact 载荷采集 —— 集中 import 校验(realpath / SKILL.md 帽 +
+ *  frontmatter → name / 体积·计数帽 / 跳 .git·node_modules / 拒 symlink),返回 POSIX 相对路径
+ *  载荷,供 planner 提升进验证共享 CAS 走 generation 事务(取代 flat copy)。只读零副作用。
+ *  帽与 symlink 身份全部以 fd 绑定的实际字节为准(见 readImportFileBounded)。 */
+export function collectImportSkillPayload(
+  srcDir: string,
+): { ok: true; name: string; files: Array<{ path: string; data: Buffer }> } | { ok: false; reason: string } {
+  if (typeof srcDir !== "string" || !path.isAbsolute(srcDir)) return { ok: false, reason: "invalid folder" }
+  let real: string
+  try {
+    real = fs.realpathSync(srcDir)
+    if (!fs.statSync(real).isDirectory()) return { ok: false, reason: "不是文件夹" }
+  } catch {
+    return { ok: false, reason: "文件夹不存在" }
+  }
+  // 根 SKILL.md **先于目录遍历**读一次(review r2 Major 2 单读 + r3/r4 Minor 1:无效 frontmatter 早拒、
+  // 越界报 SKILL.md 过大而非误报目录帽 —— collectImportFiles 的粗总量检查含 SKILL.md,若放它后面会先
+  // 报「目录超过 10MB」)。lstat 门:根 SKILL.md 必须是非 symlink 常规文件(symlink/特殊 = 视作无
+  // SKILL.md,与 walk 跳 symlink dirent 的语义一致)。
+  const skillMdAbs = path.join(real, "SKILL.md")
+  let smdLst: fs.Stats
+  try {
+    smdLst = fs.lstatSync(skillMdAbs)
+  } catch {
+    return { ok: false, reason: "文件夹内没有 SKILL.md" }
+  }
+  if (!smdLst.isFile()) return { ok: false, reason: "文件夹内没有 SKILL.md" }
+  const smd = readImportFileBounded(skillMdAbs, real, Math.min(SKILL_MD_MAX, IMPORT_MAX_TOTAL))
+  if (!smd.ok) return { ok: false, reason: smd.oversize ? "SKILL.md 过大(>256KB)" : smd.reason }
+  const fm = parseSkillFrontmatter(smd.data.toString("utf8"))
+  if (!fm.ok) return fm
+  const listed = collectImportFiles(real) // walk:跳 .git/node_modules、拒 symlink dirent、粗计数帽
+  if (!listed.ok) return listed
+  const files: Array<{ path: string; data: Buffer }> = [{ path: "SKILL.md", data: smd.data }]
+  let total = smd.data.length // 权威总量帽 = 实际读入字节(非 walk 期 stat 快照)
+  for (const rel of listed.files) {
+    if (rel === "SKILL.md") continue // 已读
+    const r = readImportFileBounded(path.join(real, rel), real, IMPORT_MAX_TOTAL - total)
+    if (!r.ok) return { ok: false, reason: r.oversize ? "目录超过 10MB 上限" : r.reason }
+    total += r.data.length
+    files.push({ path: rel.split(path.sep).join("/"), data: r.data })
+  }
+  return { ok: true, name: fm.name, files }
+}
+
+/** #390:git 技能仓浅克隆到临时目录并定位 SKILL.md 源目录(网络/SSRF 隔离与 importSkillGit 同源)。
+ *  返回本地源目录 + 清理句柄,供 planner 走 CAS 事务导入;调用方 finally 必须 cleanup()。 */
+export async function cloneSkillGitToTmp(
+  url: string,
+): Promise<{ ok: true; srcDir: string; cleanup: () => void } | { ok: false; reason: string }> {
+  if (!validGitUrl(url)) return { ok: false, reason: "仅支持 https Git 地址" }
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-import-git-"))
+  const cleanup = () => {
+    try {
+      fs.rmSync(tmp, { recursive: true, force: true })
+    } catch {
+      /* best-effort */
+    }
+  }
+  try {
+    const gitEnv: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_CONFIG_GLOBAL: os.devNull, GIT_CONFIG_SYSTEM: os.devNull }
+    delete gitEnv.GIT_CONFIG_PARAMETERS
+    const count = Number.parseInt(gitEnv.GIT_CONFIG_COUNT ?? "", 10)
+    if (Number.isFinite(count)) for (let i = 0; i < count; i++) {
+      delete gitEnv[`GIT_CONFIG_KEY_${i}`]
+      delete gitEnv[`GIT_CONFIG_VALUE_${i}`]
+    }
+    delete gitEnv.GIT_CONFIG_COUNT
+    await new Promise<void>((resolve, reject) => {
+      execFile(
+        "git",
+        ["-c", "http.followRedirects=false", "clone", "--depth", "1", "--single-branch", "--no-tags", url, tmp],
+        { timeout: 60_000, env: gitEnv },
+        (err, _stdout, stderr) => (err ? reject(new Error(oneLine(String(stderr || err.message)).slice(0, 200))) : resolve()),
+      )
+    })
+    let src = tmp
+    if (!fs.existsSync(path.join(src, "SKILL.md"))) {
+      const dirs = fs
+        .readdirSync(tmp, { withFileTypes: true })
+        .filter((e) => e.isDirectory() && e.name !== ".git")
+        .map((e) => e.name)
+      const candidate = dirs.length === 1 ? path.join(tmp, dirs[0]) : null
+      if (!candidate || !fs.existsSync(path.join(candidate, "SKILL.md"))) {
+        cleanup()
+        return { ok: false, reason: "仓库内未找到 SKILL.md(根目录或唯一子目录)" }
+      }
+      src = candidate
+    }
+    return { ok: true, srcDir: src, cleanup }
+  } catch (error) {
+    cleanup()
+    return { ok: false, reason: error instanceof Error ? error.message : "克隆失败" }
+  }
+}
+
 /** 导入本地技能文件夹:校验 SKILL.md frontmatter → 逐文件复制入 .alpha + receipt。
- *  origin 默认 imported;REQ-063 外部生态转换导入传 imported-claude / imported-agents(hub 可溯源)。 */
+ *  origin 默认 imported;REQ-063 外部生态转换导入传 imported-claude / imported-agents(hub 可溯源)。
+ *  #390:global 未策展导入的生产路径已改走 planner 的 CAS 事务(installUncuratedSkillImport);
+ *  本 flat 实现保留给 project scope 的 sanctioned 路径(ADR-030)与既有测试。 */
 export function importSkillFolder(
   srcDir: string,
   target?: InstallTarget,
