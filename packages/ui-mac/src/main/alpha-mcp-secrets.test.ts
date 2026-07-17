@@ -322,22 +322,41 @@ describe("pathIdentity — 文件系统身份(r15:缺席可判,其余 fail-close
     expect(a.forms.some((f) => r.forms.includes(f))).toBe(true) // realpath 形态交集
   })
 
-  test("缺席(ENOENT/ENOTDIR)= certain,词法即完整身份", () => {
+  test("纯缺席(祖先全实体)= certain;最长存在前缀经好 symlink 时给出 realpath 规范形态", () => {
     const missing = pathIdentity(path.join(userData, "no", "such", "file"))
     expect(missing.certain).toBe(true)
-    expect(missing.forms).toEqual([path.join(userData, "no", "such", "file")])
+    // userData 常在 /var/folders(macOS /var→/private/var 好 symlink)—— 缺席路径也规范化,词法形态恒在。
+    expect(missing.forms).toContain(path.join(userData, "no", "such", "file"))
     fs.writeFileSync(path.join(userData, "plainfile"), "x")
     const notdir = pathIdentity(path.join(userData, "plainfile", "child")) // ENOTDIR
     expect(notdir.certain).toBe(true)
   })
 
-  test("#395(Codex r5):断链 symlink(链在、目标缺席)= certain=false —— 身份在链目标侧,词法不可证", () => {
+  test("#395(Codex r5):断链 symlink(自身,目标缺席)= certain=false —— 身份在链目标侧,词法不可证", () => {
     const gone = path.join(userData, "gone-target.js")
     const broken = path.join(userData, "broken-link.js")
     fs.symlinkSync(gone, broken) // 目标从未存在 → realpath ENOENT,但链本身在
     const b = pathIdentity(broken)
     expect(b.certain).toBe(false)
     expect(b.forms).toEqual([path.resolve(broken)])
+  })
+
+  test("#395(Codex r6 B5):**祖先**断链 symlink = certain=false —— /alias/plugin.js 里 /alias 断链", () => {
+    const goneDir = path.join(userData, "gone-dir")
+    const aliasDir = path.join(userData, "alias-dir")
+    fs.symlinkSync(goneDir, aliasDir) // 祖先目录 symlink,目标从未存在(断链)
+    const under = pathIdentity(path.join(aliasDir, "plugin.js")) // 完整路径 realpath+lstat 皆 ENOENT
+    expect(under.certain).toBe(false) // 不因祖先断链被误判 certain(r5 只查最终组件的回归)
+  })
+
+  test("#395(Codex r6 B5):好 symlink 祖先不 fail-closed(realpath 穿透,身份可证)", () => {
+    const realDir = path.join(userData, "real-dir")
+    fs.mkdirSync(realDir)
+    const goodAlias = path.join(userData, "good-alias") // 指向存在目录的好 symlink
+    fs.symlinkSync(realDir, goodAlias)
+    const under = pathIdentity(path.join(goodAlias, "absent-file.js")) // basename 缺席,祖先好链
+    expect(under.certain).toBe(true) // 好链穿透 → 规范形态确定
+    expect(under.forms).toContain(path.join(fs.realpathSync(realDir), "absent-file.js"))
   })
 
   test("非缺席类失败(EACCES)= certain=false(调用侧 fail-closed)", () => {

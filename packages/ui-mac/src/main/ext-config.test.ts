@@ -549,3 +549,47 @@ describe("#395 步骤4:persistPlugin 目标读错误 fail-closed", () => {
     if (!r.ok) expect(r.reason).toContain("unreadable")
   })
 })
+
+// ── #395 Codex r6 M1:disabled plugin 换钉版重加 —— 清残留 / legacy fail-closed(不留无账活条目)──
+describe("#395 r6 M1 disabled plugin 换钉版", () => {
+  const recPlugin = (name: string, configKey: string) => {
+    const w = upsertRecordV2(alphaTmp, {
+      id: `user:${name}`,
+      name,
+      kind: "plugin",
+      environment: "prod",
+      scope: { kind: "global" },
+      desiredState: "disabled",
+      origin: "created",
+      installedAt: "2026-07-17T00:00:00.000Z",
+      configKey,
+    })
+    if (!w.ok) throw new Error(w.reason)
+  }
+
+  test("主 config 有旧钉版残留(@x/p@1),重加 @x/p@2 → 清残留 + projectedDisabled changed(不留旧活条目)", () => {
+    recPlugin("x__p", "plugin:@x/p@1.0.0") // 账本 name=x__p(pkgBase 派生),记录 disabled
+    // 崩溃残留:主 config 仍有旧钉版条目 + 无关插件。
+    fs.writeFileSync(path.join(alphaTmp, "alpha.jsonc"), JSON.stringify({ plugin: ["@x/p@1.0.0", "@keep/o@1"] }))
+    const r = persistPlugin("@x/p@2.0.0")
+    expect(r).toEqual({ ok: true, changed: true, projectedDisabled: true })
+    // 旧钉版残留被清,无关插件保留,新钉版不写(disabled = 缺席)。
+    expect(readConfig().plugin).toEqual(["@keep/o@1"])
+  })
+
+  test("主+legacy 都缺席该 base → changed:false(纯账本刷新,零 config 写)", () => {
+    recPlugin("y__q", "plugin:@y/q@1.0.0")
+    const r = persistPlugin("@y/q@2.0.0")
+    expect(r).toEqual({ ok: true, changed: false, projectedDisabled: true })
+    expect(fs.existsSync(path.join(alphaTmp, "alpha.jsonc"))).toBe(false)
+  })
+
+  test("legacy/XDG 源有该 base 残留 → fail-closed(引擎 concat,无法保证 disabled)", () => {
+    recPlugin("z__r", "plugin:@z/r@1.0.0")
+    // XDG(userConfigPath = OPENCODE_CONFIG_DIR)残留同 base。
+    fs.writeFileSync(path.join(tmp, "opencode.jsonc"), JSON.stringify({ plugin: ["@z/r@1.0.0"] }))
+    const r = persistPlugin("@z/r@2.0.0")
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("legacy/XDG config")
+  })
+})

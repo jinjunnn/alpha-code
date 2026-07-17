@@ -7,7 +7,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event } from "electron"
-import { app, BrowserWindow } from "electron"
+import { app, BrowserWindow, dialog } from "electron"
 
 import { Deferred, Effect } from "effect"
 import contextMenu from "electron-context-menu"
@@ -140,6 +140,10 @@ async function killSidecar() {
 // 「上一代 child 的迟到 exit」;蓄意 kill 的信号 = killSidecar 先把 `server` 置 null 再 stop。
 let quittingApp = false
 let sidecarGen = 0
+// #395(Codex r6 B2/B3):startup reconcile 发现「本应禁用的扩展无法保证从引擎配置移除」(config 写
+// 失败 / 读不出 / legacy concat 残留 / skills 陈旧允许集)时置位 —— 首个 sidecar fork 前 fail-closed
+// 阻断,绝不让引擎带着「账本禁用但仍会加载」的项启动。
+let bootEnforcementGap: string[] | null = null
 let selfHeal = initialSelfHealState()
 let selfHealTimer: NodeJS.Timeout | null = null
 let requestSidecarRespawn: (() => Promise<void>) | null = null
@@ -482,8 +486,15 @@ const main = Effect.gen(function* () {
         if (ds.applied.length > 0)
           logger.log("[req104-395] desired-state residue reprojected into alpha.jsonc", { applied: ds.applied })
         for (const w of ds.warnings) logger.warn(`[req104-395] desired-state reconcile: ${w}`)
+        // r6 B2/B3:有未能保证的禁用项 → 置 fail-closed 位(spawn 前阻断引擎)。
+        if (ds.enforcementGap && ds.enforcementGap.length > 0) {
+          bootEnforcementGap = ds.enforcementGap
+          logger.error("[req104-395] desired-state enforcement gap — disabled extensions cannot be guaranteed; blocking sidecar", { gap: ds.enforcementGap })
+        }
       } catch (error) {
-        logger.warn("[req104-395] desired-state reconcile failed (non-fatal)", error)
+        // reconcile 自身抛错(不该发生 — 内部已捕获)= 无法确认禁用态 → fail-closed。
+        bootEnforcementGap = [`desired-state reconcile threw: ${error instanceof Error ? error.message : String(error)}`]
+        logger.error("[req104-395] desired-state reconcile crashed — blocking sidecar (fail closed)", error)
       }
     }
   }
@@ -663,6 +674,19 @@ const main = Effect.gen(function* () {
     if (!dbPreflight.proceed) {
       logger.log("db-safety: user chose quit at preflight")
       app.exit(0)
+      return
+    }
+
+    // #395(Codex r6 B2/B3):startup reconcile 判定「本应关闭的扩展无法保证已从引擎配置移除」→
+    // fail-closed 拒绝 spawn 引擎(绝不让它带着「账本禁用但仍会加载」的项启动)。gap 细节已 error
+    // 记日志;对用户给通俗诊断 + 修复指引。只 gate 首次 spawn(respawn 不重跑 reconcile)。
+    if (bootEnforcementGap) {
+      logger.error("[req104-395] refusing to spawn sidecar — extension disable state cannot be guaranteed", { gap: bootEnforcementGap })
+      dialog.showErrorBox(
+        "扩展安全状态无法确保",
+        "有本应关闭的扩展无法确认已经关闭(可能因磁盘空间不足或配置文件损坏)。为避免它们被意外加载,已暂停启动。请检查磁盘空间后重新打开应用;若持续出现,请联系支持并附上日志。",
+      )
+      app.exit(1)
       return
     }
 

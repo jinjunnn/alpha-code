@@ -756,7 +756,6 @@ function persistPluginUnlocked(pkg: string, meta?: InstallMeta): PersistPluginRe
   // (引擎 import 早于 config-hook;写正常数组元素 = 确定性复活)。projectedDisabled 让调用方照常
   // 刷账本(desiredState 当前策略优先,不翻),config 零写入,启用时按 configKey 补回。
   const priorRecord = findRecordV2(alphaGlobalRoot(), "plugin", pluginRecordName(pkg))
-  if (priorRecord?.desiredState === "disabled") return { ok: true, changed: false, projectedDisabled: true }
   const target = mcpPluginTargetPath()
   const readPlugins = (file: string): unknown[] => {
     try {
@@ -792,7 +791,28 @@ function persistPluginUnlocked(pkg: string, meta?: InstallMeta): PersistPluginRe
   }
   // idempotent across BOTH files: an entry still sitting in the legacy XDG config (pre-migration)
   // must not be duplicated into the alpha file — the engine merges the two plugin arrays.
-  const existing = findIn(current) ?? (target !== userConfigPath() ? findIn(readPlugins(userConfigPath())) : undefined)
+  const existingMain = findIn(current)
+  const existingLegacy = target !== userConfigPath() ? findIn(readPlugins(userConfigPath())) : undefined
+  // #395(Codex r5/r6 M1):账本 disabled 的 plugin 重加 —— 必须确认该 base 从**所有运行时源缺席**
+  // 才让调用方刷账本(换钉版 @x/p@1→@x/p@2 时,旧 spec 若留在 config 会成永久无账活条目)。
+  //   · legacy/XDG 残留 → fail-closed(引擎 concat plugin[],无法从此移除,disable 不能保证)。
+  //   · 主 config 残留(旧钉版 / 崩溃残留)→ 移除该 base 全部条目(投影为缺席),changed。
+  //   · 都缺席 → changed:false(纯账本刷新)。
+  if (priorRecord?.desiredState === "disabled") {
+    if (existingLegacy !== undefined)
+      return { ok: false, reason: `plugin "${base}" present in legacy/XDG config as "${existingLegacy}" — engine concatenates plugin[]; cannot keep it disabled (remove the legacy entry first)` }
+    if (existingMain !== undefined) {
+      const next = current.filter((p) => {
+        const s = typeof p === "string" ? p : Array.isArray(p) && typeof p[0] === "string" ? (p[0] as string) : null
+        return s === null || pkgBase(s) !== base
+      })
+      const w = writeKeyUnlocked(target, ["plugin"], next)
+      if (!w.ok) return w
+      return { ok: true, changed: true, projectedDisabled: true }
+    }
+    return { ok: true, changed: false, projectedDisabled: true }
+  }
+  const existing = existingMain ?? existingLegacy
   if (existing !== undefined) {
     if (existing === pkg) return { ok: true, changed: false } // 恰同钉版 → 真幂等,调用方跳过落账
     return { ok: false, reason: `plugin "${base}" already configured as "${existing}" — refusing silent version mismatch (requested "${pkg}")` }

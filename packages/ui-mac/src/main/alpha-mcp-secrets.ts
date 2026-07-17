@@ -384,15 +384,37 @@ export function pathIdentity(p: string): PathIdentity {
     return { forms: real === lex ? [lex] : [lex, real], certain: true }
   } catch (e) {
     if (!isAbsenceError(e)) return { forms: [lex], certain: false }
-    // #395(Codex r5):absence ≠ 词法身份可证 —— 断链 symlink(链在、目标缺席)realpath 同样
-    // ENOENT,但该路径的真实身份在链目标侧,仅词法形态会漏判等价(vendored 禁用漏删条目)。
-    // lstat 区分:最终组件是 symlink → certain:false(消费方按身份不可判 fail-closed);
-    // 彻底缺席(lstat 也 absence)→ 词法身份可证。
+    // #395(Codex r5/r6 B5):absence ≠ 词法身份可证。realpath 整条 ENOENT 有两种成因,必须区分:
+    //   ① 纯缺席:某组件根本不存在(非 symlink)—— 到断裂点为止的祖先都是实体(或**好** symlink,
+    //      realpath 能穿透得到唯一规范形态)→ 身份可证 certain:true。
+    //   ② **断链** symlink 前缀:路径链上某组件是指向缺失目标的 symlink(自身或祖先,如
+    //      `/alias/plugin.js` 里 `/alias`)→ 真实身份在链目标侧,词法不可证 → certain:false。
+    // 做法:realpath **最长存在前缀**(穿透所有好 symlink,消除 /var→/private/var 这类系统链的
+    // 别名歧义),把缺席后缀接回得到规范形态;上溯途中遇断链 symlink 组件即 certain:false。
+    return identityWhenAbsent(lex)
+  }
+}
+
+function identityWhenAbsent(lex: string): PathIdentity {
+  const suffix: string[] = []
+  let cur = lex
+  for (;;) {
     try {
-      const st = fs.lstatSync(lex)
-      return { forms: [lex], certain: !st.isSymbolicLink() }
-    } catch (e2) {
-      return { forms: [lex], certain: isAbsenceError(e2) }
+      const real = fs.realpathSync(cur) // 穿透好 symlink → 唯一规范前缀
+      const canonical = suffix.length > 0 ? path.join(real, ...[...suffix].reverse()) : real
+      return { forms: canonical === lex ? [lex] : [lex, canonical], certain: true }
+    } catch (e) {
+      if (!isAbsenceError(e)) return { forms: [lex], certain: false } // 不可判(EACCES)→ fail-closed
+      // cur 不存在或断链。cur 自身是 symlink → 断链前缀 → 身份不可词法证。
+      try {
+        if (fs.lstatSync(cur).isSymbolicLink()) return { forms: [lex], certain: false }
+      } catch {
+        /* lstat 也 ENOENT → cur 是纯缺席组件(非链),继续上溯 */
+      }
+      const parent = path.dirname(cur)
+      if (parent === cur) return { forms: [lex], certain: true } // 上溯到根仍纯缺席 → 词法可证
+      suffix.push(path.basename(cur))
+      cur = parent
     }
   }
 }

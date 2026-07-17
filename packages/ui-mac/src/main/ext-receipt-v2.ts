@@ -26,6 +26,7 @@ import type { InstallReceipt, InstallReceiptOrigin, InstallReceiptType } from ".
 import type { AppEnvironment } from "./alpha-environment"
 import { canonicalJson, sha256Hex } from "./ext-manifest-v2"
 import { validateReceipt } from "./alpha-installs"
+import { writeFileAtomicSync } from "./ext-atomic-fs"
 
 export const RECORD_SCHEMA_VERSION = 2 as const
 
@@ -489,34 +490,19 @@ function readDerivationKeys(file: string): string[] | "absent" | "unknown" {
   }
 }
 
-/** #395 步骤6:掉电 durability 的原子写 —— tmp fsync 后 rename,再 best-effort fsync 父目录
- *  (账本先写的前提:账本必须比 config 先到达持久介质,否则崩溃残留方向反转)。 */
-function writeFileSyncedAtomic(file: string, text: string): void {
-  const tmp = `${file}.tmp-${process.pid}`
-  const fd = fs.openSync(tmp, "w")
-  try {
-    fs.writeSync(fd, text)
-    fs.fsyncSync(fd)
-  } finally {
-    fs.closeSync(fd)
-  }
-  fs.renameSync(tmp, file)
-  try {
-    const dfd = fs.openSync(path.dirname(file), "r")
-    try {
-      fs.fsyncSync(dfd)
-    } finally {
-      fs.closeSync(dfd)
-    }
-  } catch {
-    /* 目录 fsync 不可用(平台差异)→ 内容已 fsync + 原子 rename,仅目录项的掉电窗口 best-effort */
-  }
-}
+const derivationTextOf = (keys: readonly string[]): string => JSON.stringify({ v: 1, keys }, null, 2) + "\n"
 
-/** #395 步骤5(boot 自愈,调用方持 bundle 锁):从账本重算 skills 派生允许集。
- *  账本文件级损坏/读错误 → 删派生文件(缺失 = hook fail-closed 不注入,与账本不可信同向);
- *  健康 → 原子重写(升级迁移首启 backfill / 扩容失败残留在此收敛)。 */
-export function reconcileSkillsDerivation(root: string): { ok: true } | { ok: false; reason: string } {
+export type SkillsDerivationOutcome =
+  | { ok: true }
+  /** staleAllowList = 无法证明陈旧允许集已收窄(可能仍列已禁 skill)→ 调用方须 fail-closed。 */
+  | { ok: false; reason: string; staleAllowList?: boolean }
+
+/** #395 步骤5(boot 自愈,调用方持 bundle 锁):从账本重算 skills 派生允许集(`writeFileAtomicSync`
+ *  单次原子写 = 掉电 durability + 完整写循环 + 目录 fsync)。账本文件级损坏/读错误 → 删派生文件
+ *  (缺失 = hook fail-closed 不注入);删不掉陈旧允许集 = 可能仍列已禁 skill → staleAllowList。
+ *  健康 → 原子重写(升级首启 backfill / 扩容失败残留收敛);写失败 = 旧派生可能过度授权 →
+ *  staleAllowList。 */
+export function reconcileSkillsDerivation(root: string): SkillsDerivationOutcome {
   const { parsed, corrupt, readError } = parseLedger(root)
   const file = skillsEnabledPath(root)
   if (corrupt || readError) {
@@ -524,56 +510,67 @@ export function reconcileSkillsDerivation(root: string): { ok: true } | { ok: fa
       fs.unlinkSync(file)
     } catch (e) {
       if (!isAbsenceCode(e))
-        return { ok: false, reason: `ledger unusable and stale skills allow-list could not be removed: ${e instanceof Error ? e.message : String(e)}` }
+        return {
+          ok: false,
+          reason: `ledger unusable and stale skills allow-list could not be removed: ${e instanceof Error ? e.message : String(e)}`,
+          staleAllowList: true,
+        }
     }
     return { ok: true }
   }
   try {
     const keys = enabledSkillKeysFromRecords([...parsed.records, ...parsed.rawCorruptRecords])
-    writeFileSyncedAtomic(file, JSON.stringify({ v: 1, keys }, null, 2) + "\n")
+    writeFileAtomicSync(file, derivationTextOf(keys))
     return { ok: true }
   } catch (error) {
-    return { ok: false, reason: `skills allow-list write failed: ${error instanceof Error ? error.message : String(error)}` }
+    // 写失败 = 旧派生原样保留,可能列出已在账本禁用的 skill(过度授权)→ fail-closed。
+    return { ok: false, reason: `skills allow-list write failed: ${error instanceof Error ? error.message : String(error)}`, staleAllowList: true }
   }
 }
 
 /** r17(Blocker):receipts/records 接受 unknown —— 重建视图必须能原样携带解码失败条目
  *  (rawInvalidReceipts/rawCorruptRecords),序列化本就与类型无关。
- *  #395 步骤5:skills 派生允许集与账本**锁步**(hook 只读派生文件)。方向排序(同 set-state 精神):
- *  有键被收走/现状不可信 → 派生先写 —— 中途崩溃只会技能变暗(boot 自愈按账本重算恢复),绝不残留
- *  「账本 disabled / 派生仍允许」;纯扩容 → 账本先写,派生失败回退删除(缺失 = fail-closed),
- *  删不掉陈旧允许集才如实报错。#395 步骤6:两个文件都走 fsync 原子写(掉电 durability)。 */
+ *  #395 步骤5+6:skills 派生允许集与账本**锁步**,`writeFileAtomicSync` 原子写(掉电 durability +
+ *  完整写循环,杜绝短写截断)。**方向排序(Codex r6 B4 修正)**:任何**移除**(收窄)必须在账本写
+ *  之前落盘 —— 引擎绝不得看到已撤销的允许项;派生损坏(unknown)先写**空集**(最严格)。**新增**
+ *  (扩容)必须在账本写之后 best-effort 发布 —— 账本授权在先才允许 hook 加载。pre-shrink 失败 =
+ *  账本未写(回到起点,安全,ok:false);final publish 失败 = 账本已 durable + 派生停在更严格态
+ *  (skill 少注入 = 安全侧,boot 自愈补齐,ok:true + loud)。 */
 function writeLedgerFile(root: string, receipts: readonly unknown[], records: readonly unknown[]): { ok: true } | { ok: false; reason: string } {
   try {
     fs.mkdirSync(root, { recursive: true })
     const file = ledgerPath(root)
     const derivationFile = skillsEnabledPath(root)
     const nextKeys = enabledSkillKeysFromRecords(records)
-    const derivationText = JSON.stringify({ v: 1, keys: nextKeys }, null, 2) + "\n"
     const cur = readDerivationKeys(derivationFile)
-    const shrinks = cur === "unknown" ? true : cur === "absent" ? false : cur.some((k) => !nextKeys.includes(k))
-    if (shrinks) writeFileSyncedAtomic(derivationFile, derivationText)
-    writeFileSyncedAtomic(file, JSON.stringify({ v: 2, receipts, records }, null, 2) + "\n")
-    if (!shrinks) {
+    // 收窄先行:算出「账本写之前必须落盘的更严格允许集」。
+    //   · unknown(派生损坏)→ 空集(无从算交集,最严格 fail-closed)。
+    //   · array 且有键将被移除 → current ∩ next(只留仍授权的,移除立即生效)。
+    //   · absent / array 无移除 → 无需 pre-write。
+    let preKeys: string[] | null = null
+    if (cur === "unknown") preKeys = []
+    else if (Array.isArray(cur)) {
+      const intersection = cur.filter((k) => nextKeys.includes(k))
+      if (intersection.length !== cur.length) preKeys = intersection
+    }
+    if (preKeys !== null) {
       try {
-        writeFileSyncedAtomic(derivationFile, derivationText)
+        writeFileAtomicSync(derivationFile, derivationTextOf(preKeys))
       } catch (error) {
-        try {
-          fs.unlinkSync(derivationFile)
-        } catch {
-          /* 存在性复查在下方 */
-        }
-        let stale = false
-        try {
-          fs.statSync(derivationFile)
-          stale = true
-        } catch {
-          stale = false
-        }
-        const msg = error instanceof Error ? error.message : String(error)
-        if (stale)
-          return { ok: false, reason: `ledger written but skills allow-list update failed AND stale allow-list could not be removed (enforcement hole until next successful write): ${msg}` }
-        return { ok: false, reason: `ledger written but skills allow-list update failed (allow-list removed — skills fail closed until retry/restart): ${msg}` }
+        // 账本尚未写 → 回到起点(旧账本 + 旧派生一致),安全 fail-closed,用户/调用方可重试。
+        return { ok: false, reason: `refusing ledger write: could not shrink skills allow-list first (a stale entry may still enable a disabled skill): ${error instanceof Error ? error.message : String(error)}` }
+      }
+    }
+    writeFileAtomicSync(file, JSON.stringify({ v: 2, receipts, records }, null, 2) + "\n") // 账本 durable
+    // 完整 next 发布(新增在账本之后):absent 首建、pre 后补新增、纯扩容都需要;已相等则跳过。
+    const alreadyFinal = preKeys === null && Array.isArray(cur) && cur.length === nextKeys.length && cur.every((k) => nextKeys.includes(k))
+    if (!alreadyFinal) {
+      try {
+        writeFileAtomicSync(derivationFile, derivationTextOf(nextKeys))
+      } catch (error) {
+        // 派生停在更严格态(空集 / 交集 / 旧集去掉移除项)= skill 少注入 = 安全侧;账本已 durable,
+        // 下次 boot reconcile 按账本重算补齐。不让整体失败(账本才是真源)。
+        console.error(`[req395] skills allow-list final publish failed (stays stricter, boot self-heals): ${error instanceof Error ? error.message : String(error)}`)
       }
     }
     return { ok: true }

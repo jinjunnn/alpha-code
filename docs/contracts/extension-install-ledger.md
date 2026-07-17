@@ -125,17 +125,32 @@ MCP 重装是产品流(确认框重装),允许覆盖(引擎前像可复原)而�
   首个 sidecar fork 读 config 之前)`reconcileDesiredStateAtBoot` 把账本全部 global mcp/agent/plugin
   记录的 desiredState **双向重投影**回 alpha.jsonc(disabled → 禁用键/缺席;enabled → 剥禁用键/补回),
   使 config 恒 = 账本派生 —— 消除「账本 disabled / config enabled」崩溃残留与一切旁路写入的复活面。
-  边界全 loud 不阻断启动:锁忙/账本文件级损坏/非法 jsonc/非缺席读错误 → skip(config 不动);
-  损坏单条 → 该条跳过;enable 缺生效面 → warning(重装修复)。escape hatch 与 REQ-059 同口径。
-- **未策展重加投影(Codex r5)**:`persistMcp`/`persistPlugin` 在唯一写入口消费账本 —— 记录
-  disabled 的 mcp 重写叶强制并入 `enabled:false`(内容更新、状态不翻);disabled 的 plugin 条目
-  保持缺席(`projectedDisabled`,调用方照常刷账本、零 config 写入)。旁路「写正常叶复活」由此封死。
+  边界 loud;**Codex r6 B2/B3**:凡「本应禁用的项无法保证从引擎配置移除」(config 写失败 / 非缺席
+  读错误 / legacy concat 残留 / skills 陈旧允许集)= **enforcementGap** → 主进程 **fail-closed 阻断
+  首个 sidecar spawn**(dialog 告知 + `app.exit`),绝不让引擎带着「账本禁用但仍会加载」的项启动;
+  锁忙(在途事务自保一致)/enable 缺生效面 = 非 gap(仅 warning)。escape hatch 与 REQ-059 同口径。
+- **legacy/XDG concat 残留(Codex r6 B1)**:引擎对 `plugin[]` 用**数组 concat** 合并
+  (`mergeConfigConcatArrays`)—— 从 alpha.jsonc 移除挡不住 legacy(`~/.opencode`)/XDG 源同名条目被
+  concat 加载。plugin **disable**(set-state 与 boot reconcile)先探测 `readLegacyPluginArrayStrict`
+  的全部源(npm 按 base、path 按文件系统身份);任一源仍列该 plugin → fail-closed(须先迁移/移除
+  legacy 条目)。mcp/agent 走深合并且 alpha.jsonc 后加载覆盖(`enabled:false`/`disable:true` 生效),
+  不受 concat 影响。
+- **未策展重加投影(Codex r5/r6 M1)**:`persistMcp`/`persistPlugin` 在唯一写入口消费账本 —— 记录
+  disabled 的 mcp 重写叶强制并入 `enabled:false`(内容更新、状态不翻);disabled 的 plugin 重加须先
+  确认该 base 从**所有运行时源缺席**才刷账本(换钉版 `@x/p@1`→`@x/p@2` 时旧 spec 若留 config 会成
+  永久无账活条目):legacy/XDG 残留 → fail-closed;主 config 残留(旧钉版/崩溃残留)→ 移除该 base
+  全部条目投影为缺席;都缺席 → 纯账本刷新。旁路「写正常叶复活」由此封死。
 - **读错误收窄(Codex r5)**:alpha.jsonc 各读点只容缺席(ENOENT/ENOTDIR);EACCES/EIO 等
   「读不出」≠「不存在」,一律 fail-closed(启停双向拒、truth reconcile 整体 skip、legacy 不迁不清理、
-  persistPlugin 拒写防空基底 clobber)。断链 symlink(链在、目标缺席)`pathIdentity` 判 certain:false
-  (身份在链目标侧,词法不可证)→ 匹配消费方按身份不可判 fail-closed。
-- **账本 durability(Codex r5)**:`installs.json` 与 `skills-enabled.json` 写盘 = tmp fsync +
-  原子 rename + best-effort 目录 fsync(账本先写契约的前提:账本必须先于 config 到达持久介质)。
+  persistPlugin 拒写防空基底 clobber)。断链 symlink `pathIdentity` 判 certain:false —— **Codex r6 B5**:
+  不只查最终组件,realpath **最长存在前缀**(穿透好 symlink 消除系统链别名歧义)+ 逐段上溯检测,
+  祖先断链 symlink(`/alias/plugin.js` 里 `/alias` 断链)同样判不可词法证 → 匹配消费方 fail-closed。
+- **账本 durability(Codex r5/r6 M2)**:`installs.json` 与 `skills-enabled.json` 写盘统一走
+  `ext-atomic-fs.writeFileAtomicSync`(完整写循环杜绝短写截断 + fsync 文件 + 原子 rename + fsync
+  目录)—— 手写单次 `fs.writeSync` 会忽略短写(ENOSPC/EIO)留下截断账本。账本先写契约的前提:账本
+  必须先于 config 到达持久介质。skills 派生**方向排序(Codex r6 B4)**:收窄(移除项)先于账本落盘、
+  扩容(新增项)后于账本;pre-shrink 失败 = 账本未写(回起点安全);final publish 失败 = 派生停在
+  更严格态(skill 少注入 = 安全侧,boot 自愈补齐)。
 
 ## 6. 证据
 
