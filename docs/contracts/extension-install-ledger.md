@@ -98,15 +98,19 @@ MCP 重装是产品流(确认框重装),允许覆盖(引擎前像可复原)而�
 - **当前策略优先**:任何更新/重装/回滚对既有记录一律保留其 desiredState
   (`nextDesiredState` 先查 prior;plugin replace 的锁内漂移检查照旧)。v1→v2 迁移如实保留
   enabled(存量不回溯)。
-- **投影权威 = 账本 desiredState**,按类型生效(#394 裁决 A′):skill = 引擎侧
-  `skillGenerationLiveDirs` 注入门(disabled 不进 `skills.paths`;账本不可读容错朝可用性);
-  agent / mcp = 引擎原生 `disabled:true` 配置叶;plugin = `plugin[]` 条目在场性。disabled ≠ 卸载:
-  内容、账本、授权账照常在位与换代;**disabled 的替换收敛投影(丢旧不加新)**,对账门对
-  disabled 记录按「缺席即成立、在场由替换收敛」判定。
-- **启停通道**(`ext-set-install-state`,#347-gated):mcp/agent/plugin 走 journaled config 事务,
-  账本翻转在 `commitReceipt`(receipt-commit 失败 → 引擎回滚 config,投影与账本永不背离);
-  skill/cloud/project 记录走锁内纯账本翻转。enable 缺生效面(config 叶/条目无从重建)fail-closed;
-  disabled→enabled 过 advisory 闸(R14)不变。
+- **投影权威 = 账本 desiredState,运行时投影全部在引擎 config-hook 从账本派生**(#394 裁决 A′;
+  Codex r1 重设计):安装/置换恒把**正常条目**写进 alpha.jsonc / plugin[](磁盘不含启用态),
+  引擎看到的内存 cfg 由 `packages/ext` 两处派生 —— skill = `skillGenerationLiveDirs` 注入门
+  (**严格 decoder**:只注入账本确证 enabled 的 skill;账本缺失/损坏/无记录 = 不注入,fail closed);
+  mcp/agent/plugin = `applyLedgerEnableProjection`(disabled → mcp/agent 叶 `disabled:true` / plugin[]
+  移除条目;enabled → 剥离 Alpha 管理的 `disabled` 键;账本不可读 = 不改 cfg,不误禁用户手写条目)。
+  disabled ≠ 卸载:内容、账本、授权账、config 正常条目均照常在位与换代。
+- **cloud 例外**:云 pipeline 无本地运行面(receipts-only,dispatch 另有登录/PIPL 同意门)且 UI
+  无行内启停开关,一律 enabled(直装与 bundle 子项一致)。
+- **启停通道**(`ext-set-install-state`,#347-gated):**纯账本单写**(`setDesiredStateV2` 原子 rename,
+  持 Bundle 锁防与并发 receipt commit 互踩);config 从不随启停改写 —— 运行时效果靠上述 hook 派生,
+  故无「config 已翻账本未翻」的崩溃分叉、也无 receipt-on-config-item 被 rollback 误删记录之虞。
+  fs 类翻转后由 renderer dispose 引擎触发 hook 重派生;disabled→enabled 过 advisory 闸(R14)不变。
 
 ## 6. 证据
 

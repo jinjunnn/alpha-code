@@ -144,9 +144,9 @@ seed plugin 的载荷是同一事务里的 file items,落点 = 内容寻址目�
   引用时绝不可删;不再被引用后由同一 GC 收。
 - **卸载**:journaled 卸载会删除整个 `<server>` 目录(全部版本 + flat),无需按版本处置。
 
-## 附:set-state 事务(REQ-104 #395)
+## 附:启停(set-state,REQ-104 #395)
 
-启停翻转(mcp/agent/plugin)以单 config item 的 journaled 事务执行:key =
-`<kind>--<name>--state`,无 capabilities(不落授权账)、无 receipt(账本翻转在 commitReceipt
-经 `setDesiredStateV2`,失败即整笔回滚)。崩溃恢复沿既有 journal 前滚/回滚收敛;journal 里
-出现该 key 形态即启停事务,处置与普通 config 事务一致。
+启停翻转是**纯账本单写**(`setDesiredStateV2` 原子 rename,持 Bundle 锁),**不产生 journal
+条目、不改 alpha.jsonc** —— 运行时投影由引擎 config-hook 从账本 desiredState 派生。故 journal
+里不会出现启停事务;若见到 `<kind>--<name>--state` 之类 key,是早期设计的残留,按普通 config
+事务处置(该设计已废弃,现行启停不进事务引擎)。

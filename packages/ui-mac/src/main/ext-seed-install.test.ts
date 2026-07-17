@@ -89,7 +89,7 @@ function lockFileEntries(files: FileFixture[], opts: { writeBlobs?: boolean } = 
 }
 
 function buildSeed(
-  assets: Array<{ id: string; files: FileFixture[]; version?: string }>,
+  assets: Array<{ id: string; files: FileFixture[]; version?: string; source?: string }>,
   opts: { writeBlobs?: boolean; catalogVersion?: string } = {},
 ): SeedLock {
   let total = 0
@@ -102,10 +102,11 @@ function buildSeed(
       type: a.id.split(":")[0]!,
       version: a.version ?? "1.0.0",
       license: "MIT",
-      source: "alpha",
+      source: a.source ?? "alpha",
       redistributable: true as const,
       platforms: ["*"],
-      licenseFiles: [],
+      licenseFiles: a.source && a.source !== "alpha" ? ["LICENSE"] : [], // S8:第三方资产须随许可文本
+
       bytes,
       files,
     }
@@ -1366,39 +1367,37 @@ describe("seed capability authorize gate (REQ-100 #348)", () => {
 
 // ── #395(REQ-104):第三方(official/community)fresh 安装默认关 —— 落盘形态全查 ─────────────────
 
-describe("#395 第三方 seed 安装默认关(disabled 投影落盘)", () => {
-  test("official plugin fresh:账本 disabled;plugin[] 无条目(在场性投影);载荷/授权账照常落位", async () => {
-    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES }])
+describe("#395 第三方 seed 安装默认关(账本 disabled;config 写正常条目,投影在引擎 hook)", () => {
+  test("official plugin fresh:账本 disabled;plugin[] 写正常条目(disk);载荷照常物化;set-state 只翻账本", async () => {
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES, source: "official" }])
     const entry = bundledPluginEntry({ source: "official" })
     const r = await installAuthorized(pluginSeedIntent, makeSeedDeps({ bundledEntries: [entry] }))
     expect(r.ok).toBe(true)
-    const rec = findRecordV2(globalRoot, "plugin", "demo-plugin")!
-    expect(rec.desiredState).toBe("disabled")
-    const cfg: { plugin?: string[] } = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))
-    expect(cfg.plugin ?? []).toEqual([])
-    // 内容照常物化(disabled ≠ 未安装):enable 只翻投影,不再下载。
+    expect(findRecordV2(globalRoot, "plugin", "demo-plugin")!.desiredState).toBe("disabled")
+    // disk 上 plugin[] 恒写正常条目(运行时 disabled 投影由引擎 hook 从账本派生,不改 alpha.jsonc)。
     const dir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
+    const cfg: { plugin?: string[] } = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))
+    expect(cfg.plugin ?? []).toEqual([path.join(dir, "plugin.js")])
     expect(fs.existsSync(path.join(dir, "plugin.js"))).toBe(true)
-    // 启用:set-state 事务按 configKey 物化条目 + 账本翻开。
-    const en = await setInstallStateByKey(
+    // 启用:纯账本翻转(config 不动)。
+    const en = setInstallStateByKey(
       { type: "plugin", name: "demo-plugin", scope: "global", state: "enabled" },
       { globalRoot: () => globalRoot, advisoryGate: () => ({ allowed: true }) },
     )
     expect(en.ok).toBe(true)
-    const cfg2: { plugin: string[] } = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))
-    expect(cfg2.plugin).toEqual([path.join(dir, "plugin.js")])
     expect(findRecordV2(globalRoot, "plugin", "demo-plugin")!.desiredState).toBe("enabled")
   })
 
-  test("official mcp fresh:账本 disabled;config 叶带引擎原生 disabled:true;不发 liveMcp(装 ≠ 连)", async () => {
-    buildSeed([{ id: "mcp:demo", files: MCP_FILES }])
+  test("official mcp fresh:账本 disabled;config 写正常叶(无 disabled 键);不发 liveMcp(装 ≠ 连)", async () => {
+    buildSeed([{ id: "mcp:demo", files: MCP_FILES, source: "official" }])
     const entry = bundledMcpEntry({ source: "official" })
     const r = await installAuthorized(mcpSeedIntent, makeSeedDeps({ bundledEntries: [entry] }))
     expect(r.ok).toBe(true)
     if (!r.ok) return
-    expect("liveMcp" in r ? r.liveMcp : undefined).toBeUndefined()
+    expect("liveMcp" in r ? r.liveMcp : undefined).toBeUndefined() // 默认关不自动连
     expect(findRecordV2(globalRoot, "mcp", "demo")!.desiredState).toBe("disabled")
+    // disk 上 mcp 叶正常(无 disabled 键);运行时 disabled 由引擎 hook 从账本派生。
     const cfg: { mcp: Record<string, Record<string, unknown>> } = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))
-    expect(cfg.mcp.demo?.disabled).toBe(true)
+    expect(cfg.mcp.demo?.disabled).toBeUndefined()
   })
 })

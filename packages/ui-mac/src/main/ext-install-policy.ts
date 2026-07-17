@@ -26,5 +26,6 @@ export { initialDesiredState, type FreshIntakeFacts } from "../shared/ext-instal
 export function nextDesiredState(root: string, kind: InstallRecordV2["kind"], name: string, intake: FreshIntakeFacts): DesiredState {
   const prior = findRecordV2(root, kind, name)
   if (prior) return prior.desiredState
-  return initialDesiredState(intake)
+  // kind 由本函数补入(cloud 例外判定,Codex r1 Major 2)—— 调用方无须逐点携带。
+  return initialDesiredState({ ...intake, kind })
 }

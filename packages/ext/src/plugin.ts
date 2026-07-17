@@ -11,6 +11,7 @@ import { applyPromptTakeover } from "./alpha-prompts"
 import { applyFactoryDeny } from "./factory-deny"
 import { injectFactorySkillPaths } from "./factory-paths"
 import { injectSkillGenerationPaths } from "./gen-skill-paths"
+import { applyLedgerEnableProjection } from "./ledger-projection"
 import { rebrandSystem } from "./prompt-rebrand"
 
 /**
@@ -81,6 +82,11 @@ export const AlphaExt: Plugin = async (input) => {
         const genAdded = injectSkillGenerationPaths(cfg as Record<string, unknown>, globalAlphaRoot)
         if (process.env.ALPHA_EXT_VERBOSE && genAdded.length)
           console.log(`[@alpha-code/ext] skill generation paths injected in-memory: ${genAdded.length}`)
+        // REQ-104 #395:mcp/agent/plugin 的启用投影从账本 desiredState 派生(disabled → mcp/agent
+        // 叶 disabled:true / plugin[] 移除条目)。启停 = 纯账本单写,config 无需随之改写。
+        const projected = applyLedgerEnableProjection(cfg as Record<string, unknown>, globalAlphaRoot)
+        if (process.env.ALPHA_EXT_VERBOSE && projected)
+          console.log(`[@alpha-code/ext] ledger enable-projection applied to ${projected} entries`)
         // REQ-067:上游默认禁项零明文 —— main 算 effective(出厂清单 − 用户解禁)经 env 传入,内存注入
         // permission.skill deny + 键入兜底占位(同为「出厂内置行为不进用户配置」口径)。
         const denied = applyFactoryDeny(cfg as Record<string, unknown>, process.env.ALPHA_FACTORY_DENY_SKILLS)

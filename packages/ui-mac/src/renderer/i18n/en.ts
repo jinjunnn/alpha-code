@@ -540,6 +540,7 @@ export const dict = {
   "alpha.ext.notEnabledHint": "Not enabled \u2014 turn on the switch to take effect",
   "alpha.ext.addedDisabled": "Installed but not enabled \u2014 turn it on under Installed to take effect",
   "alpha.ext.stateFailed": "Failed to change enable state",
+  "alpha.ext.statePendingReload": "Recorded — takes effect after engine reload (the current instance may still run the old state)",
   // \u2500\u2500 #396(REQ-104):bundle detail "pack facts" section \u2500\u2500
   "alpha.ext.packFactsTitle": "Pack facts",
   "alpha.ext.packSize": "Download size",

@@ -12,9 +12,15 @@ export type FreshIntakeFacts = {
   origin: string
   /** 目录条目 source(official/community/alpha);非目录 intake 缺省。 */
   source?: string
+  /** 扩展类型 —— cloud 例外的判定输入(Codex r1 Major 2)。 */
+  kind?: string
 }
 
 export function initialDesiredState(intake: FreshIntakeFacts): "enabled" | "disabled" {
+  // cloud 例外:云 pipeline 无本地运行面(receipts-only,dispatch 时另有登录/PIPL 同意门 ADR-016/021),
+  // 且 UI 无行内启停开关 —— 默认关会造成无法启用的死态。一律 enabled,两条安装路径(直装/bundle 子项)
+  // 因此一致(Codex r1 Major 2:direct cloud 曾漏落分类器写死 enabled,bundle child 走分类器)。
+  if (intake.kind === "cloud") return "enabled"
   if (intake.origin !== "catalog") return "enabled"
   return intake.source === "alpha" ? "enabled" : "disabled"
 }

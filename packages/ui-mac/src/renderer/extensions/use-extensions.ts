@@ -448,7 +448,10 @@ export function useExtensions(
     const res = await window.api.ext.setInstallState({ type: receipt.type, name: receipt.name, scope: "global", state })
     if (!res.ok) return res
     await loadInstalls()
-    if (receipt.type !== "mcp" && receipt.type !== "cloud") await refreshEngine()
+    // Codex r1 Blocker 3:账本已翻(committed),但 fs 类的运行面靠 dispose→惰性重建生效 —— dispose
+    // 失败(无 client/超时/异常)时旧引擎实例仍在跑该扩展,不得谎报已生效。透传 reload-pending,
+    // 调用方据此提示「已记录,待重载」而非直接宣称已启用/禁用。
+    if (receipt.type !== "mcp" && receipt.type !== "cloud" && !(await refreshEngine())) return { ok: true, reason: "reload-pending" }
     if (receipt.type === "agent") void loadAgents()
     return res
   }

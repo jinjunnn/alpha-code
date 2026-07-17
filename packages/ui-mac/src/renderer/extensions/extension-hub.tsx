@@ -668,7 +668,7 @@ export function ExtensionHub(props: {
     }
     // #395:第三方 fresh 安装默认关 —— 成功文案如实说「已安装但未启用」,不暗示立即可用
     // (分类与 main 落账同一 shared 真源;已装条目的重装/更新不改既有状态,不换文案)。
-    const willBeDisabled = !ext.isInstalled(e) && initialDesiredState({ origin: "catalog", source: e.source }) === "disabled"
+    const willBeDisabled = !ext.isInstalled(e) && initialDesiredState({ origin: "catalog", source: e.source, kind: e.type }) === "disabled"
     const addedFlash = (fallbackKey: "alpha.ext.added" | "alpha.ext.addedLive" | "alpha.ext.pluginRestart") =>
       flash(willBeDisabled ? t("alpha.ext.addedDisabled") : t(fallbackKey), "success")
     try {
@@ -1192,12 +1192,17 @@ export function ExtensionHub(props: {
     const stateBusy = createSignal(false)
     const toggleState = async () => {
       if (stateBusy[0]()) return
+      stateBusy[1](true)
       // live-unreceipted MCP(无账本记录):保持既有 live connect/disconnect 语义,不进账本通道。
+      // Codex r1 Minor 1:busy 门提前到分支之前 —— 否则此分支在设 busy 前返回,可被双击并发。
       if (row.type === "mcp" && row.receipt.installedAt === "") {
-        await ext.setMcpConnected(row.name, !row.mcp?.connected)
+        try {
+          await ext.setMcpConnected(row.name, !row.mcp?.connected)
+        } finally {
+          stateBusy[1](false)
+        }
         return
       }
-      stateBusy[1](true)
       try {
         const next = desiredOn() ? "disabled" : "enabled"
         const r = await ext.setInstallState(row.receipt, next)
@@ -1207,7 +1212,10 @@ export function ExtensionHub(props: {
           return
         }
         if (row.type === "mcp") await ext.setMcpConnected(row.name, next === "enabled")
-        void refetchGovernance()
+        // Codex r1 Blocker 3:dispose 失败 = 账本已翻但旧引擎实例仍在跑 —— 如实告知「待重载」,
+        // 不宣称已生效(状态开关反映已提交的 desiredState,提示条补充运行面尚未刷新)。
+        if (r.reason === "reload-pending") pushToast({ kind: "info", title: t("alpha.ext.statePendingReload") })
+        await refetchGovernance()
       } finally {
         stateBusy[1](false)
       }

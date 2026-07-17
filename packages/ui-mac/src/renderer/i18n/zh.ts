@@ -540,6 +540,7 @@ export const dict = {
   "alpha.ext.notEnabledHint": "未启用 —— 打开开关后生效",
   "alpha.ext.addedDisabled": "已安装但未启用 —— 在「已安装」里打开开关后生效",
   "alpha.ext.stateFailed": "启用状态切换失败",
+  "alpha.ext.statePendingReload": "已记录,引擎重载后生效(当前实例可能仍在运行旧状态)",
   // ── #396(REQ-104):套件详情页「整包事实」段 ──
   "alpha.ext.packFactsTitle": "整包事实",
   "alpha.ext.packSize": "下载体积",

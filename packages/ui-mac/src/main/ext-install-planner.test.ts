@@ -2284,9 +2284,8 @@ describe("atomic plugin replace via installCatalog (REQ-099 #352)", () => {
     expect(r.ok).toBe(true)
     if (!r.ok) return
     const cfg = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8")) as { plugin: string[] }
-    // #395:disabled 的替换收敛投影 —— 旧元素移除且不放新元素(更新 disabled 插件不得静默重新启用);
-    // 内容/账本照常换代,enable 时经 set-state 事务按新 configKey 物化。
-    expect(cfg.plugin).toEqual([])
+    // #395 重设计:replace 恒写正常条目(disk);运行时 disabled 投影由引擎 hook 从账本派生,不改 alpha.jsonc。
+    expect(cfg.plugin).toEqual(["@alpha/np@2.3.4"])
     const rec = findRecordV2(globalRoot, "plugin", "np")!
     expect(rec.generation).toBe(old.generation + 1)
     expect(rec.version).toBe("2.3.4")

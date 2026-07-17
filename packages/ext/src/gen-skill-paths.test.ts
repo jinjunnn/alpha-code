@@ -1,7 +1,7 @@
 // REQ-100 #310 — skill generation live 目录投影进 cfg.skills.paths(current.json = 唯一原子真源)。
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { injectSkillGenerationPaths, skillGenerationLiveDirs } from "./gen-skill-paths"
@@ -14,14 +14,32 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
-/** 造一个 skill generation:ext-store/<key>/generations/<gen> + current.json 指针。 */
+/** 造一个 skill generation:ext-store/<key>/generations/<gen> + current.json 指针 + enabled 账本记录。
+ *  #395 起注入是严格 decoder(只注入账本确证 enabled 的);生产流 generation 与账本记录同事务原子
+ *  落位,故测试同步写一条 enabled 记录(disabled/缺记录场景由各用例显式覆写账本)。 */
 function makeGeneration(name: string, genId: string) {
   const store = join(root, "ext-store", `skill--${name}`)
   const genDir = join(store, "generations", genId)
   mkdirSync(genDir, { recursive: true })
   writeFileSync(join(genDir, "SKILL.md"), `---\nname: ${name}\n---\nbody`)
   writeFileSync(join(store, "current.json"), JSON.stringify({ v: 1, generation: genId, txId: "tx-x", switchedAt: "t" }))
+  appendEnabledRecord(name)
   return genDir
+}
+
+/** 账本追加/合并一条 enabled skill 记录(installs.json 累积)。 */
+function appendEnabledRecord(name: string) {
+  const file = join(root, "installs.json")
+  let records: unknown[] = []
+  try {
+    const parsed: { records?: unknown[] } = JSON.parse(readFileSync(file, "utf8"))
+    records = parsed.records ?? []
+  } catch {
+    /* fresh */
+  }
+  records = records.filter((r) => !(r && typeof r === "object" && (r as { name?: unknown }).name === name && (r as { kind?: unknown }).kind === "skill"))
+  records.push({ kind: "skill", name, desiredState: "enabled" })
+  writeFileSync(file, JSON.stringify({ v: 2, receipts: [], records }))
 }
 
 describe("skillGenerationLiveDirs", () => {
@@ -75,29 +93,44 @@ function writeLedger(records: unknown[]) {
 }
 
 describe("#395 disabled 投影门", () => {
-  test("账本 disabled 的 skill 不进 live 目录;enabled 与无记录的照常注入", () => {
+  test("账本 enabled 的 skill 注入、disabled 的不注入;非 skill 记录不影响 skill 投影", () => {
     const a = makeGeneration("alpha-on", "gen-000001-000001")
     makeGeneration("beta-off", "gen-000001-000002")
-    const c = makeGeneration("gamma-unlisted", "gen-000001-000003")
+    const c = makeGeneration("gamma-on", "gen-000001-000003")
     writeLedger([
       { kind: "skill", name: "alpha-on", desiredState: "enabled" },
       { kind: "skill", name: "beta-off", desiredState: "disabled" },
+      { kind: "skill", name: "gamma-on", desiredState: "enabled" },
       { kind: "mcp", name: "beta-off", desiredState: "disabled" }, // 非 skill 记录不影响 skill 投影
     ])
     expect(skillGenerationLiveDirs(root)).toEqual([a, c].sort())
   })
 
-  test("账本缺失/不可解析 = 无禁用信息 → 全量注入(容错朝可用性,不放大 IO 故障)", () => {
+  test("账本缺失/不可解析 → 不注入任何技能(严格 decoder,fail closed;Codex r1 Blocker 2)", () => {
     const a = makeGeneration("solo", "gen-000001-000001")
-    expect(skillGenerationLiveDirs(root)).toEqual([a])
+    expect(skillGenerationLiveDirs(root)).toEqual([a]) // makeGeneration 写了 enabled 记录
     writeFileSync(join(root, "installs.json"), "{ not json")
-    expect(skillGenerationLiveDirs(root)).toEqual([a])
+    expect(skillGenerationLiveDirs(root)).toEqual([]) // 坏账本 = 无 enabled 确证 → 全部不注入
+    rmSync(join(root, "installs.json"))
+    expect(skillGenerationLiveDirs(root)).toEqual([]) // 缺账本同理
+  })
+
+  test("generation 有目录但账本无该记录(孤儿/回滚残留)→ 不注入", () => {
+    const store = join(root, "ext-store", "skill--orphan")
+    mkdirSync(join(store, "generations", "gen-000001-000001"), { recursive: true })
+    writeFileSync(join(store, "generations", "gen-000001-000001", "SKILL.md"), "---\nname: orphan\n---\nbody")
+    writeFileSync(join(store, "current.json"), JSON.stringify({ v: 1, generation: "gen-000001-000001", txId: "t", switchedAt: "t" }))
+    writeLedger([]) // 空账本:该 generation 无对应记录
+    expect(skillGenerationLiveDirs(root)).toEqual([])
   })
 
   test("injectSkillGenerationPaths 同步遵守门(disabled 不进 cfg.skills.paths)", () => {
     const a = makeGeneration("keep", "gen-000001-000001")
     makeGeneration("drop", "gen-000001-000002")
-    writeLedger([{ kind: "skill", name: "drop", desiredState: "disabled" }])
+    writeLedger([
+      { kind: "skill", name: "keep", desiredState: "enabled" },
+      { kind: "skill", name: "drop", desiredState: "disabled" },
+    ])
     const cfg: Record<string, unknown> = {}
     const added = injectSkillGenerationPaths(cfg, root)
     expect(added).toEqual([a])
