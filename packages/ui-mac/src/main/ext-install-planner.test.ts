@@ -2569,6 +2569,16 @@ describe("plugin replace r15 —— 同版本精确校验与别名身份对账",
     expect(cfgAfter).toEqual(["@alpha/vp@0.9.9"]) // 原条目原封
   })
 
+  test("r22:同版本健康 vendored + 同包 npm pin 在场 → 幂等早退失效,如实拒(不谎报 already)", async () => {
+    const { oldJs } = seedVendoredCurrent("// vendored vp (plugins/vp)") // 实物逐字节健康
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [oldJs, "@alpha/vp@0.9.9"] }, null, 2))
+    const { deps } = makeDeps()
+    const r = await installAuthorized({ catalogId: "plugin:vp", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(false) // r22 前:返回 ok + "already at this version",双载现场被报成功
+    if (!r.ok) expect(r.reason).toContain("engine loads it alongside")
+    expect(pluginArrayOnDisk()).toEqual([oldJs, "@alpha/vp@0.9.9"]) // config 原封交人工清
+  })
+
   test("r21:vendored→vendored 更新遇同包 base 未策展 npm 条目 → 拒且 staging 清净(fresh 门不覆盖 replace)", async () => {
     const oldDir = path.join(globalRoot, "plugins", "vp")
     const oldJs = path.join(oldDir, "plugin.js")

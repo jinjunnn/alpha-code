@@ -339,6 +339,14 @@ export function probeLedgerForWrite(root: string): { ok: true } | { ok: false; r
   }
   if (!raw || typeof raw !== "object" || Array.isArray(raw))
     return { ok: false, reason: `install ledger corrupt (non-object root) — refusing to write; inspect ${ledgerPath(root)}` }
+  // r22 Major:提交面同样收信封 —— 未来版本拒写(读不懂的数据不得重建);records/receipts
+  // 非数组 = 损坏,拒(quarantine 不是提交路径)。
+  if ("v" in raw && raw.v !== undefined && raw.v !== 1 && raw.v !== 2) {
+    const vLabel = typeof raw.v === "number" || typeof raw.v === "string" ? raw.v : "unknown"
+    return { ok: false, reason: `install ledger envelope version ${vLabel} is newer than this build understands — refusing to write; inspect ${ledgerPath(root)}` }
+  }
+  if (("records" in raw && raw.records !== undefined && !Array.isArray(raw.records)) || ("receipts" in raw && raw.receipts !== undefined && !Array.isArray(raw.receipts)))
+    return { ok: false, reason: `install ledger corrupt (non-array records/receipts) — refusing to write; inspect ${ledgerPath(root)}` }
   return { ok: true }
 }
 
@@ -370,6 +378,15 @@ function parseLedger(root: string): { parsed: ParsedLedger; corrupt: boolean; re
     return { parsed: empty, corrupt: true }
   }
   if (!isObj(raw)) return { parsed: empty, corrupt: true }
+  // r22 Major:信封收口 —— 未来版本信封(v 非 1/2)拒触碰(不是损坏,是本构建读不懂的数据,
+  // 重建 = 摧毁);records/receipts 非数组不得折叠成「空」(下一次 upsert 整文件重建会连同
+  // 所有权证据一起抹掉)—— 按损坏文件处理(写路径 quarantine 保字节 + 响亮警告)。
+  if (raw.v !== undefined && raw.v !== 1 && raw.v !== 2) {
+    const vLabel = typeof raw.v === "number" || typeof raw.v === "string" ? raw.v : "unknown"
+    return { parsed: empty, corrupt: false, readError: `install ledger envelope version ${vLabel} is newer than this build understands — refusing to touch it: ${ledgerPath(root)}` }
+  }
+  if ((raw.records !== undefined && !Array.isArray(raw.records)) || (raw.receipts !== undefined && !Array.isArray(raw.receipts)))
+    return { parsed: empty, corrupt: true }
   const receipts: InstallReceipt[] = []
   const receiptWarnings: string[] = []
   const rawInvalidReceipts: unknown[] = []

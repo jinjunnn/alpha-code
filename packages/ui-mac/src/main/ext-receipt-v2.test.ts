@@ -16,6 +16,7 @@ import {
   findRecordV2,
   lookupForUninstall,
   migrateV1Ledger,
+  probeLedgerForWrite,
   projectScopeIdentity,
   readLedgerV2,
   removeRecordV2,
@@ -405,7 +406,8 @@ describe("v1 → v2 explicit migration (AC#6)", () => {
       const bytes = fs.readFileSync(ledgerFile(), "utf8")
       const r = migrateV1Ledger(root, "prod")
       expect(r.ok).toBe(false)
-      if (!r.ok) expect(r.reason).toContain("refusing migration")
+      // r22:未来版本/非数组集合改由 parseLedger 信封闸先拒(文案不同,语义同为拒 + 零改动)。
+      if (!r.ok) expect(r.reason).toContain("refusing")
       expect(fs.readFileSync(ledgerFile(), "utf8")).toBe(bytes)
     }
     // v:1 纯 receipts 信封(v1 writer 真实形状)照常可迁
@@ -503,6 +505,25 @@ describe("#378 r17 Blocker —— 损坏记录原文保全 + 同 key/unattributa
     const replay = upsertRecordsV2(root, [upsertInput({ transaction: R17_TX })])
     expect(replay.ok).toBe(true) // 同 tx 完全一致 = 纯重放,零写盘
     expect(fs.readFileSync(ledgerFile(), "utf8")).toContain("garbage") // 原文未动
+  })
+
+  test("r22:信封收口 —— 未来版本一切写拒零触碰;records 非数组按损坏处理(quarantine 保字节,不静默折叠成空)", () => {
+    fs.writeFileSync(ledgerFile(), JSON.stringify({ v: 3, receipts: [], records: [{ future: true }] }))
+    const futureBytes = fs.readFileSync(ledgerFile(), "utf8")
+    expect(probeLedgerForWrite(root).ok).toBe(false)
+    const w = upsertRecordV2(root, upsertInput())
+    expect(w.ok).toBe(false)
+    if (!w.ok) expect(w.reason).toContain("newer than this build")
+    expect(removeRecordV2(root, "mcp", "markitdown").ok).toBe(false)
+    expect(fs.readFileSync(ledgerFile(), "utf8")).toBe(futureBytes) // 未来数据零触碰
+    fs.writeFileSync(ledgerFile(), JSON.stringify({ v: 2, receipts: [], records: { ownership: "evidence" } }))
+    expect(probeLedgerForWrite(root).ok).toBe(false) // 提交面拒(quarantine 不是提交路径)
+    const w2 = upsertRecordsV2(root, [upsertInput()]) // 直接写面:损坏文件语义 = 隔离保字节 + 响亮警告
+    expect(w2.ok).toBe(true)
+    if (w2.ok) expect(w2.warnings.join(" ")).toContain("quarantined")
+    const quarantined = fs.readdirSync(root).filter((f) => f.startsWith("installs.json.corrupt-"))
+    expect(quarantined.length).toBeGreaterThanOrEqual(1)
+    expect(fs.readFileSync(path.join(root, quarantined[quarantined.length - 1] ?? ""), "utf8")).toContain("ownership") // 证据字节保全
   })
 
   test("r19:账本读失败(EACCES)≠ 空账 —— 写/删/翻转/卸载查询一律拒,不 no-op 谎报;恢复后照常", () => {

@@ -160,6 +160,20 @@ describe("substituteMcpSecretRefsPure — 零写盘的引用替换", () => {
     const r = substituteMcpSecretRefsPure(config, { EMPTY: "", ABSENT: "v" }, (v) => `{file:/r/${v}}`)
     expect(r.skipped.sort()).toEqual(["ABSENT", "EMPTY"])
   })
+
+  test("r22:先替换的引用不被后续值污染(值恰为引用子串)—— 对原始值单趟同时替换 + 长值优先", () => {
+    const config: Record<string, unknown> = {
+      headers: { A: "Bearer SECRETA", B: "x Users y", C: "abcdef" },
+    }
+    // refFor 产出的引用含 "Users";值 "Users" 的 B 不得改写 A 已生成的引用(r22 前:链式
+    // split/join 把 A 的 {file:/Users/...} 污染成嵌套残废,提交后 A 引用不可解析)。
+    const r = substituteMcpSecretRefsPure(config, { A: "SECRETA", B: "Users", LONG: "abcdef", SHORT: "abc" }, (v) => `{file:/Users/refs/${v}}`)
+    expect(strMap(config.headers).A).toBe("Bearer {file:/Users/refs/A}") // 未被 B 二次改写
+    expect(strMap(config.headers).B).toBe("x {file:/Users/refs/B} y")
+    expect(strMap(config.headers).C).toBe("{file:/Users/refs/LONG}") // 长值优先,不是 SHORT 引用 + "def"
+    expect(r.substituted).toEqual({ A: "{file:/Users/refs/A}", B: "{file:/Users/refs/B}", LONG: "{file:/Users/refs/LONG}" })
+    expect(r.skipped).toEqual(["SHORT"])
+  })
 })
 
 describe("resolveMcpRefPath — 引擎解析语义(r5)", () => {

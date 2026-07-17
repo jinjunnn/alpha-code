@@ -987,11 +987,23 @@ async function replacePluginViaTransaction(args: {
       facts.record.manifestDigest === manifestDigest &&
       facts.record.version === manifest.version &&
       facts.record.transaction?.state === "committed"
+    // r22 Major:同版本幂等早退不得跳过同包 base 对称门 —— 主/legacy 存在同包 npm pin(或任一
+    // 源不可读)时不早退,落完整 replace 让 plan 期门如实拒;否则双载现场被报「already at
+    // this version」而两份都继续加载。
+    const sameBasePinAbsent = (): boolean => {
+      if (newPkgBase === null) return true
+      const cur = readPluginArray()
+      if (!cur.ok) return false
+      if (cur.value.map(pluginSpecOf).some((x) => x !== null && pkgBaseOf(x) === newPkgBase)) return false
+      const leg = deps.installers.readLegacyPluginArrayStrict()
+      if (!leg.ok) return false
+      return !leg.sources.some((src) => src.value.map(pluginSpecOf).some((x) => x !== null && pkgBaseOf(x) === newPkgBase))
+    }
     if (args.seedPayload) {
       // seed 幂等早退(review r2 Major + r3 收紧):必须**持 bundle 锁**做实物严格逐文件校验 +
       // 账本锁内重读 —— 锁外验证可被并发替换骗过(TOCTOU),existsSync 只证存在不证内容。
       // 锁忙或任一不健康 = 不早退,落完整 journaled replace(修复路径;引擎锁内串行化)。
-      if (recordHealthy && facts.form.kind === "vendored" && facts.form.oldDir === args.seedPayload.dir) {
+      if (recordHealthy && facts.form.kind === "vendored" && facts.form.oldDir === args.seedPayload.dir && sameBasePinAbsent()) {
         const held = tryAcquireBundleLock(root, { txId: `tx-pluginidem-${crypto.randomBytes(4).toString("hex")}` })
         if (held.ok) {
           try {
@@ -1034,7 +1046,7 @@ async function replacePluginViaTransaction(args: {
       // 不早退,走修复路径。
       // r20:同版本幂等早退只对「旧形态同为 vendored」有意义(npm→vendored 迁移 digest 必变,
       // recordHealthy 恒 false,此处的窄化守卫只是类型与语义双保险)。
-      if (recordHealthy && facts.form.kind === "vendored") {
+      if (recordHealthy && facts.form.kind === "vendored" && sameBasePinAbsent()) {
         const held = tryAcquireBundleLock(root, { txId: `tx-pluginidem-${crypto.randomBytes(4).toString("hex")}` })
         if (held.ok) {
           try {

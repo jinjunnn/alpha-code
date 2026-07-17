@@ -313,26 +313,50 @@ export function substituteMcpSecretRefsPure(
   const isRec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
   const env = isRec(config.environment) ? config.environment : null
   const headers = isRec(config.headers) ? config.headers : null
+  const replacedVars = new Set<string>()
+  // env:整值精确等值,各 key 只被自己的 var 触碰,无链式污染。
+  for (const [varName, real] of Object.entries(secrets)) {
+    if (typeof real !== "string" || real.length === 0) continue
+    if (env && env[varName] === real) {
+      env[varName] = refFor(varName)
+      replacedVars.add(varName)
+    }
+  }
+  // headers(r22 Major):对**原始值**做单趟多模式同时替换 —— 逐值链式 split/join 会把先前
+  // 生成的 {file:} 引用当作后续值的匹配面(某值恰为其子串时污染已生成引用,提交后该密钥
+  // 引用不可解析)。按值长度降序优先(长值吞短值,不产生部分重叠改写);已消费区段不回扫。
+  if (headers) {
+    const pairs = Object.entries(secrets)
+      .filter((e): e is [string, string] => typeof e[1] === "string" && e[1].length > 0)
+      .map(([varName, real]) => ({ varName, real, ref: refFor(varName) }))
+      .sort((a, b) => b.real.length - a.real.length)
+    for (const [hk, hv] of Object.entries(headers)) {
+      if (typeof hv !== "string") continue
+      let out = ""
+      let i = 0
+      let touched = false
+      scan: while (i < hv.length) {
+        for (const p of pairs) {
+          if (hv.startsWith(p.real, i)) {
+            out += p.ref
+            i += p.real.length
+            replacedVars.add(p.varName)
+            touched = true
+            continue scan
+          }
+        }
+        out += hv[i]
+        i++
+      }
+      if (touched) headers[hk] = out
+    }
+  }
   for (const [varName, real] of Object.entries(secrets)) {
     if (typeof real !== "string" || real.length === 0) {
       skipped.push(varName)
       continue
     }
-    const ref = refFor(varName)
-    let replaced = false
-    if (env && env[varName] === real) {
-      env[varName] = ref
-      replaced = true
-    }
-    if (headers) {
-      for (const [hk, hv] of Object.entries(headers)) {
-        if (typeof hv === "string" && hv.includes(real)) {
-          headers[hk] = hv.split(real).join(ref)
-          replaced = true
-        }
-      }
-    }
-    if (replaced) substituted[varName] = ref
+    if (replacedVars.has(varName)) substituted[varName] = refFor(varName)
     else skipped.push(varName)
   }
   return { substituted, skipped }
