@@ -17,7 +17,7 @@ import { createEffect, createSignal, onCleanup, type Accessor } from "solid-js"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import type { ServerInfo } from "../sidebar/use-projects"
 import type { CatalogEntry, InstalledState, McpConfig, McpInstallSpec, RuntimeCheck } from "./catalog-types"
-import type { InstallReceipt } from "../../preload/types"
+import type { InstallReceipt, UninstallKeyIntent } from "../../preload/types"
 import type { AuthorizationConfirmationWire, CapabilityDiffWire, TxStageNonAuthorizeWire } from "../../shared/ext-capability-authorization"
 
 // Receipt provenance (REQ-018): catalog snapshot version recorded per install → update checks.
@@ -44,6 +44,9 @@ export interface ExtensionsStore {
   /** Install receipts (REQ-018): alpha's record of what we installed — the "installed" truth for
    *  skill/agent/plugin, which the SDK MCP status can't cover. Global scope for the hub list. */
   receipts: InstallReceipt[]
+  /** REQ-099(#307)项目账本视图:当前打开项目的 scope=project 收据(导入/收编产物;ADR-030 下
+   *  无受管 project 安装)。无项目上下文时恒空。catalog「已安装」判定仍只看 global receipts。 */
+  projectReceipts: InstallReceipt[]
   /** Agents the engine knows (REQ-018 T7 Agent tab): built-in + alpha-created (via SDK app.agents). */
   agents: HubAgent[]
   ready: boolean
@@ -202,8 +205,27 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | typeof TIMED_OUT
   return Promise.race([p, new Promise<typeof TIMED_OUT>((r) => setTimeout(() => r(TIMED_OUT), ms))])
 }
 
-export function useExtensions(server: Accessor<ServerInfo | undefined>, active?: Accessor<boolean>): ExtensionsApi {
-  const [store, setStore] = createStore<ExtensionsStore>({ mcp: {}, receipts: [], agents: [], ready: false, error: false })
+/** REQ-099(#307)卸载意图构造(纯函数,use-extensions-ipc.test 锁契约):scope 取自 receipt 真源;
+ *  project 收据必须带当前项目目录 —— 目录缺失(上下文丢失)如实拒绝,绝不降级成 global intent
+ *  去删同名全局安装(AC5 同名并存下那是删错对象)。 */
+export function uninstallIntentFor(
+  receipt: Pick<InstallReceipt, "type" | "name" | "scope">,
+  projectDir: string | undefined,
+): { ok: true; intent: UninstallKeyIntent } | { ok: false; reason: string } {
+  if (receipt.scope === "project") {
+    if (!projectDir) return { ok: false, reason: "project uninstall requires an open project (context lost — reopen the project session)" }
+    return { ok: true, intent: { type: receipt.type, name: receipt.name, scope: "project", projectDir } }
+  }
+  return { ok: true, intent: { type: receipt.type, name: receipt.name, scope: "global" } }
+}
+
+export function useExtensions(
+  server: Accessor<ServerInfo | undefined>,
+  active?: Accessor<boolean>,
+  /** REQ-099(#307)当前项目目录(hub 从路由解析);在场时 listInstalls 连带读项目账本。 */
+  projectDir?: Accessor<string | undefined>,
+): ExtensionsApi {
+  const [store, setStore] = createStore<ExtensionsStore>({ mcp: {}, receipts: [], projectReceipts: [], agents: [], ready: false, error: false })
 
   let client: Client | undefined
   let generation = 0
@@ -211,12 +233,19 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
 
   // REQ-018:安装账本(global ~/.alpha)。receipts 覆盖 skill/agent/plugin 的「已安装」真相
   // (SDK 的 mcp.status 只认 MCP);每次安装/卸载后刷新。
+  // REQ-099(#307):有项目上下文时同一调用连带读项目账本(main 双账本读面早已就绪);
+  // 无项目时 project 视图如实清空 —— 不残留上一个项目的行。
+  // Codex r1 B2 + r2 修正:project 部分按发起时的目录判有效(迟到响应不把 A 的行摆进 B 的组头);
+  // global 账本与目录无关,任何有效响应都应用 —— 整体丢弃会让"切换后替代请求失败"的场景把 global
+  // 面冻在旧值上。切换瞬间的 project 清空由 projectDir effect 负责。
   async function loadInstalls() {
+    const dir = projectDir?.()
     try {
-      const view = await window.api.ext.listInstalls()
+      const view = await window.api.ext.listInstalls(dir)
       setStore("receipts", view.global)
+      if ((projectDir?.() ?? undefined) === (dir ?? undefined)) setStore("projectReceipts", dir ? view.project : [])
     } catch {
-      /* transient — keep previous */
+      /* transient — keep previous(project 行与目录不符的窗口已被切换清空堵死) */
     }
   }
 
@@ -388,13 +417,18 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
 
   /** REQ-100 #313:卸载切 key-based v2 —— renderer 只提供 type/name/scope(新构普通对象,顺带消掉
    *  REQ-016 的 store-Proxy 过桥问题),receipt 事实由 main 账本自查;generation skill 在 main 走
-   *  锁内 journaled teardown。hub 列表 = global 账本视图(loadInstalls 只取 view.global)→ 恒 global。 */
+   *  锁内 journaled teardown。REQ-099(#307):scope 取自 receipt 真源 —— project 行带当前项目目录
+   *  (行只在有项目上下文时存在;目录缺失如实拒绝,绝不静默降级去删同名 global 安装)。 */
   async function uninstall(receipt: InstallReceipt): Promise<ActionResult> {
     // 账本外的 live MCP(手工/迁移前,hub 合成 receipt 行):v2 按账本自查会诚实拒「not installed」,
     // 这类走既有 name-based removeMcp(config 名单键移除 + live disconnect),与旧行为一致。
-    if (receipt.type === "mcp" && !store.receipts.some((r) => r.type === "mcp" && r.name === receipt.name))
+    // Codex r1 M2:仅限 global —— project MCP 收据(legacy 账本可能存在)必须走 v2 project 通道
+    // 由 main 按项目账本自查,绝不落进按名字操作全局 config 的旧路。
+    if (receipt.type === "mcp" && receipt.scope !== "project" && !store.receipts.some((r) => r.type === "mcp" && r.name === receipt.name))
       return removeMcp(receipt.name)
-    const res = await window.api.ext.uninstallV2({ type: receipt.type, name: receipt.name, scope: "global" })
+    const built = uninstallIntentFor(receipt, projectDir?.())
+    if (!built.ok) return { ok: false, reason: built.reason }
+    const res = await window.api.ext.uninstallV2(built.intent)
     if (res.ok && receipt.type === "mcp") await client?.mcp.disconnect({ name: receipt.name } as any).catch(() => {})
     await Promise.all([loadStatus(), loadInstalls()])
     // fs/plugin removal needs a rescan;cloud 只动账本(引擎无状态)无需 dispose。
@@ -465,6 +499,16 @@ export function useExtensions(server: Accessor<ServerInfo | undefined>, active?:
       if (gen === generation) client = undefined
       abortRef.abort()
     })
+  })
+
+  // REQ-099(#307):项目上下文切换(换项目会话 / 回 home)→ 重读账本,project 视图跟随当前目录。
+  // Codex r1 B2:切换瞬间先清空 project 行 —— 绝不把上一项目的行显示在新目录组头下(那扇窗口里
+  // 点卸载会用新目录构造意图,同 key 时删错对象);新目录的行等它自己的账本响应到达再出现。
+  createEffect(() => {
+    projectDir?.()
+    if (!activated) return
+    setStore("projectReceipts", [])
+    void loadInstalls()
   })
 
   // REQ-036:出厂技能名单(一次取回缓存;失败诚实为空 = 不显「出厂内置」徽标,条目退回可安装态)。

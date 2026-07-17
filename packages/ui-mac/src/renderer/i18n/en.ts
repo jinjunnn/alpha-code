@@ -532,7 +532,14 @@ export const dict = {
   "alpha.ext.healthTxRolledBack": "Last update rolled back",
   "alpha.ext.scopeGlobalGroup": "Global \u00b7 applies to all projects",
   "alpha.ext.scopeProjectGroup": "This project",
+  "alpha.ext.scopeProjectReadonly": "Read-only \u00b7 from import/adoption",
+  "alpha.ext.scopeProjectEmpty": "No project-local extensions yet. Project extensions come from Import or adoption from the project directory; catalog installs always go to Global.",
   "alpha.ext.reviewUpdate": "Review update",
+  // \u2500\u2500 #392(REQ-103):detail-page granted-capabilities read-only section \u2500\u2500
+  "alpha.ext.grantedTitle": "Granted capabilities",
+  "alpha.ext.grantedEmpty": "Installed before capability authorization was introduced \u2014 no grant record. It will appear here once the next update is authorized.",
+  "alpha.ext.grantedNone": "This extension requested no capabilities.",
+  "alpha.ext.grantedMeta": "Granted {{date}} \u00b7 transaction {{tx}} \u00b7 recorded on committed install, removed on uninstall; changes re-confirm via the authorization dialog.",
   // ── Artifact Workbench(REQ-094/#186 + REQ-095/#187)──
   "alpha.sidebar.workbench": "Artifacts",
   "alpha.wb.title": "Artifact Workbench",

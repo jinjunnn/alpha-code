@@ -12,6 +12,7 @@ import type { InstallReceipt, ExtInventory } from "../../preload/types"
 import type { ExtensionsApi, HubAgent } from "./use-extensions"
 import { CloudDispatchBox } from "./cloud-dispatch-box"
 import { iconFor, iconForRow, sourceLabel, typeLabel, Svg, LockIc } from "./ext-presentation"
+import { ExtGrantedCapRow } from "./ext-authz"
 import { inventoryRowFor, ownershipRows, trustRows, type PresentRow } from "./ext-inventory-present"
 import { EXCEL_MCP_PIN, officeAdvisoryFor, type OfficeAdvisory } from "../../shared/office-advisories"
 
@@ -218,8 +219,8 @@ export function ExtensionDetail(props: {
   const FactRows = (p: { rows: PresentRow[] }) => (
     <For each={p.rows}>
       {(r) => (
-        <FactRow label={t(r.labelKey as never)}>
-          {r.valueKeys ? r.valueKeys.map((k) => t(k as never)).join(" · ") : r.value}
+        <FactRow label={t(r.labelKey)}>
+          {r.valueKeys ? r.valueKeys.map((k) => t(k)).join(" · ") : r.value}
         </FactRow>
       )}
     </For>
@@ -763,8 +764,8 @@ export function ExtensionDetail(props: {
       </Show>
 
       {/* ── REQ-103(#195)所有权段(AC1:作者与甄选分开陈述,永不塌缩成「Alpha 出品」)──
-          能力授权总账和信任链不该是独立页面 —— 就在「你正在看的这个扩展」里。仅 catalog 条目有
-          governance 身份;数据面无 per-扩展 capability 列表,故设计稿的「权限」段暂缺(见回报 OPEN)。 */}
+          能力授权总账和信任链不该是独立页面 —— 就在「你正在看的这个扩展」里。段顺序 = 已批设计稿
+          (2026-07-17):所有权 → 已授权能力 → 来源与签名。 */}
       <Show when={govRow()}>
         {(row) => (
           <>
@@ -772,6 +773,41 @@ export function ExtensionDetail(props: {
               <FactRows rows={ownershipRows(row().ownership)} />
               <p class="alpha-ext-dnote">{t("alpha.ext.ownNote")}</p>
             </Section>
+            {/* ── #392 已授权能力段:#348 授权账(ext-store/<key>/grants.json)的被动查询面。对安装行渲染
+                (grant 只随 committed 安装存在);无记录 = 如实空态,绝不回填按类型派生的"本应请求"
+                集(未经确认的猜测不进总账);capabilities=[](未策展导入)如实说明未请求任何能力。
+                Codex r1 m1 + r2 修正:live-but-unreceipted MCP(governance 里是 scope=null 浏览行,
+                但本页按合成收据视为已安装)同样出段 —— 显示「没有授权记录」空态,而不是整段消失。
+                门精确到 mcp:bundle 的 installed() 是"必选子项全装"的派生真(自身无账本行),授权
+                记录属于各子项,bundle 详情不得冒出误导性的"无授权记录"。 ── */}
+            <Show when={row().scope !== null || (entry()?.type === "mcp" && installed())}>
+              <Section title={t("alpha.ext.grantedTitle")}>
+                <Show
+                  when={row().granted}
+                  fallback={
+                    <div class="alpha-ext-authz-box">
+                      <p class="alpha-ext-authz-empty">{t("alpha.ext.grantedEmpty")}</p>
+                    </div>
+                  }
+                >
+                  {(g) => (
+                    <>
+                      <div class="alpha-ext-authz-box">
+                        <Show
+                          when={g().capabilities.length > 0}
+                          fallback={<p class="alpha-ext-authz-empty">{t("alpha.ext.grantedNone")}</p>}
+                        >
+                          <For each={g().capabilities}>{(cap) => <ExtGrantedCapRow cap={cap} />}</For>
+                        </Show>
+                      </div>
+                      <p class="alpha-ext-dnote">
+                        {t("alpha.ext.grantedMeta", { date: g().grantedAt.slice(0, 10), tx: g().txId.slice(0, 12) })}
+                      </p>
+                    </>
+                  )}
+                </Show>
+              </Section>
+            </Show>
             {/* ── 来源与签名段:信任链就近呈现(签名通道 + 分发 + 目录版本;发布钥不在读面 → 省略)── */}
             <Section title={t("alpha.ext.trustTitle")}>
               <FactRows

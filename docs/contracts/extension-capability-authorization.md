@@ -92,6 +92,10 @@ diff 与暂停、renderer 如何确认与重驱、授权账/收据如何落盘�
   (`<root>/ext-tx/authz/<txId>.json`,含 `decidedAt` + 完整 `items` diff + `skippedOptional`)
   **只在事务 journal 达 committed 后**落盘;abort/rollback 不碰授权账 —— 崩溃窗口的失败
   模式 = 下次多问一次(fail closed),绝不静默继承。
+- 读面(REQ-103 #392):governance 只读查询(`ext-inventory.ts`)按账本在册 key 附带
+  `granted` 快照(capabilities/grantedAt/txId,不透传 manifestDigest),详情页「已授权能力」
+  段据此渲染 —— 零写面、不枚举 `ext-store`(孤儿 grant 不进读面)、无记录/坏 JSON 如实缺省
+  (绝不回填按类型派生的能力集);词汇与风险分级与确认框同源(`ext-authz.tsx`)。
 - 崩溃恢复前滚沿 `journal.authorization` 与逐 item `capabilities` 自足落账
   (`writeCommitAuthorizationSync` 与主路径同源),无 UI 参与。
 

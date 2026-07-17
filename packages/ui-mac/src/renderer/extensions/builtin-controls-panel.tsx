@@ -32,7 +32,7 @@ export function BuiltinControlsPanel(props: {
   reloadAgents: () => Promise<void>
   flash: (msg: string, kind?: "success" | "error") => void
 }) {
-  const [gov, setGov] = createSignal<AlphaBuiltinPolicy>(structuredClone(DEFAULT_GOV))
+  const [gov, setGov] = createSignal(structuredClone(DEFAULT_GOV))
   const [protection, setProtection] = createSignal<{ hard: string[]; alphaInjected: string[]; confirm: string[] }>({ hard: [], alphaInjected: [], confirm: [] })
   const [busy, setBusy] = createSignal(false)
   const [err, setErr] = createSignal("")

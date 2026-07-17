@@ -532,7 +532,14 @@ export const dict = {
   "alpha.ext.healthTxRolledBack": "上次更新已回滚",
   "alpha.ext.scopeGlobalGroup": "全局 · 对所有项目生效",
   "alpha.ext.scopeProjectGroup": "本项目",
+  "alpha.ext.scopeProjectReadonly": "只读 · 来自导入/收编",
+  "alpha.ext.scopeProjectEmpty": "此项目还没有本地扩展。项目扩展来自「导入」或从项目目录收编;目录安装始终装到全局。",
   "alpha.ext.reviewUpdate": "审查更新",
+  // ── #392(REQ-103):详情页「已授权能力」只读段 ──
+  "alpha.ext.grantedTitle": "已授权能力",
+  "alpha.ext.grantedEmpty": "该扩展安装于能力授权确认启用之前,没有授权记录。下次更新经确认授权后,记录会出现在这里。",
+  "alpha.ext.grantedNone": "该扩展未请求任何能力。",
+  "alpha.ext.grantedMeta": "授权于 {{date}} · 事务 {{tx}} · 记录随安装提交生效、随卸载删除;能力变更时经确认框重新授权。",
   // ── Artifact Workbench(REQ-094/#186 + REQ-095/#187)──
   "alpha.sidebar.workbench": "产物",
   "alpha.wb.title": "产物工作台",
