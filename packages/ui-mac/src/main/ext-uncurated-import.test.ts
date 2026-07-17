@@ -125,6 +125,16 @@ describe("collectImportSkillPayload — 集中 import 校验 + byte-exact 载荷
     expect(r.reason).toContain("SKILL.md")
   })
 
+  test("SKILL.md 自身 11MB → 报 SKILL.md 过大而非误报目录帽(review r4 Minor 1)", () => {
+    fs.mkdirSync(src, { recursive: true })
+    fs.writeFileSync(path.join(src, "SKILL.md"), "---\nname: demo\ndescription: x\n---\n\n" + "a".repeat(11 * 1024 * 1024))
+    const r = collectImportSkillPayload(src)
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reason).toContain("SKILL.md")
+    expect(r.reason).not.toContain("10MB")
+  })
+
   test("目录总量 > 10MB → 拒(实际读入字节累计,review r1 Major 4)", () => {
     mkSkillDir(src, "demo")
     // 三个 4MB 文件 = 12MB > 10MB 帽。

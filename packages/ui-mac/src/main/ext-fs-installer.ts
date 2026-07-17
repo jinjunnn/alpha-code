@@ -554,15 +554,24 @@ export function collectImportSkillPayload(
   } catch {
     return { ok: false, reason: "文件夹不存在" }
   }
-  const listed = collectImportFiles(real) // walk:跳 .git/node_modules、拒 symlink dirent、粗计数帽
-  if (!listed.ok) return listed
-  if (!listed.files.includes("SKILL.md")) return { ok: false, reason: "文件夹内没有 SKILL.md" } // 只认根 SKILL.md
-  // 根 SKILL.md **先读一次**(review r2 Major 2 单读 + r3 Minor 1:无效 frontmatter 早拒,不必先读满
-  // 10MB;帽用 256KB,越界即报 SKILL.md 过大而非误报目录帽),随后跳过它读其余文件(实际字节累计总量帽)。
-  const smd = readImportFileBounded(path.join(real, "SKILL.md"), real, Math.min(SKILL_MD_MAX, IMPORT_MAX_TOTAL))
+  // 根 SKILL.md **先于目录遍历**读一次(review r2 Major 2 单读 + r3/r4 Minor 1:无效 frontmatter 早拒、
+  // 越界报 SKILL.md 过大而非误报目录帽 —— collectImportFiles 的粗总量检查含 SKILL.md,若放它后面会先
+  // 报「目录超过 10MB」)。lstat 门:根 SKILL.md 必须是非 symlink 常规文件(symlink/特殊 = 视作无
+  // SKILL.md,与 walk 跳 symlink dirent 的语义一致)。
+  const skillMdAbs = path.join(real, "SKILL.md")
+  let smdLst: fs.Stats
+  try {
+    smdLst = fs.lstatSync(skillMdAbs)
+  } catch {
+    return { ok: false, reason: "文件夹内没有 SKILL.md" }
+  }
+  if (!smdLst.isFile()) return { ok: false, reason: "文件夹内没有 SKILL.md" }
+  const smd = readImportFileBounded(skillMdAbs, real, Math.min(SKILL_MD_MAX, IMPORT_MAX_TOTAL))
   if (!smd.ok) return { ok: false, reason: smd.oversize ? "SKILL.md 过大(>256KB)" : smd.reason }
   const fm = parseSkillFrontmatter(smd.data.toString("utf8"))
   if (!fm.ok) return fm
+  const listed = collectImportFiles(real) // walk:跳 .git/node_modules、拒 symlink dirent、粗计数帽
+  if (!listed.ok) return listed
   const files: Array<{ path: string; data: Buffer }> = [{ path: "SKILL.md", data: smd.data }]
   let total = smd.data.length // 权威总量帽 = 实际读入字节(非 walk 期 stat 快照)
   for (const rel of listed.files) {
