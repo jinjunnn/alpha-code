@@ -5,24 +5,28 @@
 // 消费方:extension-detail.tsx(所有权段 + 来源与签名段)、extension-hub.tsx(已安装行三态)。
 //
 // 数据面边界(与设计稿对不上的字段,如实不造,交主会话裁决):
-//   · 权限「能力授权总账」段:inventoryView 不含 per-扩展 capability 列表,CatalogEntry 无
-//     capabilities 字段 —— 本模块不合成,详情页该段暂缺(OPEN)。
+//   · 权限「能力授权总账」段:#392 已落 —— inventoryView 行带 granted(授权账只读快照),详情页
+//     直接消费(extension-detail.tsx),无需本模块翻译(能力词汇归 ext-authz.tsx,与确认框同源)。
 //   · 来源与签名:仅有 ownership.distributed + view.catalogChannel + view.catalogVersion;
 //     发布钥(如「alpha-web-1」)不在读面 —— 如实省略(降精,不造)。
 //   · 隔离态(签名撤销强制停用):ext-states.ts 的 HealthIssue 联合无 revoked/quarantine kind
 //     —— isSwitchLocked 只在既有 kind 上判定,当前恒不锁(OPEN:数据面需补 kind)。
 
+import type { t } from "../i18n"
 import type { InventoryRow, ExtInventory } from "../../preload/types"
 import type { DistributionChannel, OwnershipDims, RuntimeSurface, SupportTier } from "../../shared/ext-ownership"
 import type { HealthView } from "../../shared/ext-states"
 
+/** 字典键(type-only 派生 —— 返回真 key 类型使 TSX 端 t() 免 as never,模块保持零运行时依赖)。 */
+export type I18nKey = Parameters<typeof t>[0]
+
 /** 一行陈述:标签 key + 值(多值 key 数组,或字面串)。TSX 负责 t() 与拼接。 */
-export type PresentRow = { labelKey: string; valueKeys?: string[]; value?: string }
+export type PresentRow = { labelKey: I18nKey; valueKeys?: I18nKey[]; value?: string }
 
 // ── 值域 → i18n key(作者/甄选/分发/运行面/支持;未知值如实落 unknown,不猜)──────────────────
 
 /** 作者维:catalog source / user / unknown。sourceLabel 只覆盖 official/community/alpha,此处补 user/unknown。 */
-export function authoredLabelKey(authored: string): string {
+export function authoredLabelKey(authored: string): I18nKey {
   switch (authored) {
     case "official":
       return "alpha.ext.partyOfficial"
@@ -38,53 +42,42 @@ export function authoredLabelKey(authored: string): string {
 }
 
 /** 甄选维:alpha(经 Alpha 策展)/ 其余(未经甄选,自装)。 */
-export function curatedLabelKey(curated: string): string {
+export function curatedLabelKey(curated: string): I18nKey {
   return curated === "alpha" ? "alpha.ext.curatedAlpha" : "alpha.ext.curatedUser"
 }
 
-export function distributionLabelKey(channel: DistributionChannel): string {
-  switch (channel) {
-    case "bundled":
-      return "alpha.ext.distBundled"
-    case "remote-catalog":
-      return "alpha.ext.distRemoteCatalog"
-    case "npm":
-      return "alpha.ext.distNpm"
-    case "engine-config":
-      return "alpha.ext.distEngineConfig"
-    case "cloud":
-      return "alpha.ext.distCloud"
-    case "local-import":
-      return "alpha.ext.distLocalImport"
-  }
+// 闭集维度用 Record 查表(Record<union, …> 键缺失即编译错,穷举保障与 switch 等价且免 consistent-return)。
+const DISTRIBUTION_KEYS: Record<DistributionChannel, I18nKey> = {
+  bundled: "alpha.ext.distBundled",
+  "remote-catalog": "alpha.ext.distRemoteCatalog",
+  npm: "alpha.ext.distNpm",
+  "engine-config": "alpha.ext.distEngineConfig",
+  cloud: "alpha.ext.distCloud",
+  "local-import": "alpha.ext.distLocalImport",
+}
+export function distributionLabelKey(channel: DistributionChannel): I18nKey {
+  return DISTRIBUTION_KEYS[channel]
 }
 
-export function runtimeSurfaceLabelKey(surface: RuntimeSurface): string {
-  switch (surface) {
-    case "engine-process":
-      return "alpha.ext.surfEngineProcess"
-    case "local-subprocess":
-      return "alpha.ext.surfLocalSubprocess"
-    case "remote-service":
-      return "alpha.ext.surfRemoteService"
-    case "model-context":
-      return "alpha.ext.surfModelContext"
-    case "cloud-pipeline":
-      return "alpha.ext.surfCloudPipeline"
-  }
+const RUNTIME_SURFACE_KEYS: Record<RuntimeSurface, I18nKey> = {
+  "engine-process": "alpha.ext.surfEngineProcess",
+  "local-subprocess": "alpha.ext.surfLocalSubprocess",
+  "remote-service": "alpha.ext.surfRemoteService",
+  "model-context": "alpha.ext.surfModelContext",
+  "cloud-pipeline": "alpha.ext.surfCloudPipeline",
+}
+export function runtimeSurfaceLabelKey(surface: RuntimeSurface): I18nKey {
+  return RUNTIME_SURFACE_KEYS[surface]
 }
 
-export function supportTierLabelKey(tier: SupportTier): string {
-  switch (tier) {
-    case "alpha":
-      return "alpha.ext.tierAlpha"
-    case "curated":
-      return "alpha.ext.tierCurated"
-    case "community":
-      return "alpha.ext.tierCommunity"
-    case "user":
-      return "alpha.ext.tierUser"
-  }
+const SUPPORT_TIER_KEYS: Record<SupportTier, I18nKey> = {
+  alpha: "alpha.ext.tierAlpha",
+  curated: "alpha.ext.tierCurated",
+  community: "alpha.ext.tierCommunity",
+  user: "alpha.ext.tierUser",
+}
+export function supportTierLabelKey(tier: SupportTier): I18nKey {
+  return SUPPORT_TIER_KEYS[tier]
 }
 
 // ── 详情页:所有权段(AC1 锚:作者与甄选分开陈述,永不塌缩成「Alpha 出品」)────────────────────
@@ -105,7 +98,7 @@ export function ownershipRows(ownership: OwnershipDims): PresentRow[] {
 // ── 详情页:来源与签名段(信任链就近呈现;发布钥不在读面 → 降精省略,不造)──────────────────────
 
 /** 签名/信任状态:已验签名通道(remote/cache)/ 随包内置信任(bundled)/ 不可用(null)。 */
-export function trustSignatureKey(catalogChannel: ExtInventory["catalogChannel"]): string {
+export function trustSignatureKey(catalogChannel: ExtInventory["catalogChannel"]): I18nKey {
   if (catalogChannel === "remote" || catalogChannel === "cache") return "alpha.ext.trustSignedChannel"
   if (catalogChannel === "bundled") return "alpha.ext.trustBundled"
   return "alpha.ext.trustUnverified"
@@ -130,7 +123,7 @@ export function trustRows(
 // 迁移窗口的既有事实),不是运行故障 —— 不塌进运行健康 dot(否则现存 v1 安装会一片琥珀,与设计
 // 稿「多数绿·运行健康」相悖)。archived/事务未落定/事务已回滚 = 真运行面警示 → warn。
 export type HealthTone = "ok" | "warn" | "err" | "muted"
-export type HealthPresentation = { tone: HealthTone; textKey: string }
+export type HealthPresentation = { tone: HealthTone; textKey: I18nKey }
 
 const WARN_ISSUE_KINDS = new Set(["archived-upstream", "transaction-pending", "transaction-rolled-back"])
 

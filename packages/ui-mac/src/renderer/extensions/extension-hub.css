@@ -691,6 +691,20 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
 .alpha-ext-scopeh:first-of-type {
   margin-top: 4px;
 }
+/* #307:组头行内的只读徽标与空态说明行(设计稿 2026-07-17 改动一;项目组只读+卸载,ADR-030)。 */
+.alpha-ext-scopeh .alpha-ext-type-pill {
+  margin-left: 8px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.alpha-ext-man-empty {
+  padding: 14px 15px;
+  border: 1px dashed var(--a-border);
+  border-radius: var(--a-radius-lg);
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-sm);
+  line-height: var(--a-leading-snug);
+}
 .alpha-ext-iconbtn {
   width: 30px;
   height: 30px;
@@ -1653,6 +1667,14 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   padding: 1px 6px;
   border-radius: 5px;
   flex: none;
+}
+/* #392:详情页「已授权能力」空态(无授权记录 / 未请求任何能力)—— 同框内如实一行。 */
+.alpha-ext-authz-empty {
+  margin: 0;
+  padding: 11px 14px;
+  font-size: var(--a-text-sm);
+  color: var(--a-text-tertiary);
+  line-height: var(--a-leading-snug);
 }
 .alpha-ext-authz-chip {
   flex: none;

@@ -10,6 +10,7 @@ import * as path from "node:path"
 import type { CatalogEntry } from "../renderer/extensions/catalog-types"
 import type { InstallReceipt } from "../preload/types"
 import { upsertRecordV2, type InstallRecordV2 } from "./ext-receipt-v2"
+import { writeCapabilityGrantSync } from "./ext-capability-grants"
 import {
   aggregateInventory,
   collectInventory,
@@ -396,5 +397,92 @@ describe("createInventoryQuery(IPC 通道核心:只读、fail-closed、纯 JSON)
     await query({ evil: true } as never)
     await query()
     expect(snapshotTree(tmp)).toEqual(before)
+  })
+})
+
+// ── #392(REQ-103):已授权能力 join —— grants/<key>.json 只读进 InventoryRow.granted ──────────────
+
+describe("#392 已授权能力聚合(grants join,只读)", () => {
+  const grant = { capabilities: ["network:remote"], grantedAt: "2026-07-16T00:00:00.000Z", txId: "tx-a" }
+
+  test("aggregateInventory:按 <kind>--<name> join;无记录行不出 granted 字段;global/project 各取各账;空能力集如实保留([] ≠ 无记录)", () => {
+    const projGrant = { capabilities: [], grantedAt: "2026-07-17T00:00:00.000Z", txId: "tx-b" }
+    const view = aggregateInventory({
+      catalog: null,
+      seedAssets: [],
+      ledgers: [
+        {
+          scope: "global",
+          records: [record({ id: "mcp:fetch", name: "fetch", kind: "mcp" }), record({ id: "skill:writer", name: "writer", kind: "skill" })],
+          v1Only: [],
+          warnings: [],
+          grants: { "mcp--fetch": grant },
+        },
+        {
+          scope: "project",
+          records: [
+            record({
+              id: "user:writer",
+              name: "writer",
+              kind: "skill",
+              origin: "imported",
+              scope: { kind: "project", projectPath: "/p", projectPathHash: "b".repeat(64) },
+            }),
+          ],
+          v1Only: [],
+          warnings: [],
+          grants: { "skill--writer": projGrant },
+        },
+      ],
+    })
+    expect(byId(view.rows, "mcp:fetch", "global")[0]!.granted).toEqual(grant)
+    // global writer 无授权记录 —— 不回填、不借 project 同名账。
+    expect(byId(view.rows, "skill:writer", "global")[0]!.granted).toBeUndefined()
+    expect(byId(view.rows, "user:writer", "project")[0]!.granted).toEqual(projGrant)
+  })
+
+  test("v1-only 存量行恒无 granted(早于 #348 闸口;即便 grants map 里有同 key 也不回填)", () => {
+    const view = aggregateInventory({
+      catalog: null,
+      seedAssets: [],
+      ledgers: [{ scope: "global", records: [], v1Only: [v1({ id: "mcp:old", name: "old", type: "mcp" })], warnings: [], grants: { "mcp--old": grant } }],
+    })
+    expect(byId(view.rows, "mcp:old", "global")[0]!.granted).toBeUndefined()
+  })
+
+  test("collectInventory:真盘 grant 随行返回(global+project);孤儿 grant(无账本记录)不进读面;坏 JSON 如实无记录", () => {
+    const globalRoot = path.join(tmp, "g392")
+    const projectDir = path.join(tmp, "p392")
+    const projectRoot = path.join(projectDir, ".alpha")
+    fs.mkdirSync(globalRoot, { recursive: true })
+    fs.mkdirSync(projectRoot, { recursive: true })
+
+    expect(upsertRecordV2(globalRoot, record({ id: "user:my-mcp", name: "my-mcp", kind: "mcp", origin: "created" })).ok).toBe(true)
+    expect(
+      upsertRecordV2(
+        projectRoot,
+        record({
+          id: "user:writer",
+          name: "writer",
+          kind: "skill",
+          origin: "imported",
+          scope: { kind: "project", projectPath: projectDir, projectPathHash: "b".repeat(64) },
+        }),
+      ).ok,
+    ).toBe(true)
+    writeCapabilityGrantSync(globalRoot, { v: 1, key: "mcp--my-mcp", capabilities: ["network:remote"], txId: "tx-g", grantedAt: "2026-07-17T01:00:00.000Z" })
+    writeCapabilityGrantSync(projectRoot, { v: 1, key: "skill--writer", capabilities: ["prompt:context"], txId: "tx-p", grantedAt: "2026-07-17T02:00:00.000Z" })
+    // 孤儿 grant:账本无此 record —— 不得凭空造行/附着到别的行。
+    writeCapabilityGrantSync(globalRoot, { v: 1, key: "skill--ghost", capabilities: ["engine:plugin"], txId: "tx-x", grantedAt: "2026-07-17T03:00:00.000Z" })
+
+    const view = collectInventory({ catalog: null, globalRoot, projectDir })
+    expect(byId(view.rows, "user:my-mcp", "global")[0]!.granted).toEqual({ capabilities: ["network:remote"], grantedAt: "2026-07-17T01:00:00.000Z", txId: "tx-g" })
+    expect(byId(view.rows, "user:writer", "project")[0]!.granted).toEqual({ capabilities: ["prompt:context"], grantedAt: "2026-07-17T02:00:00.000Z", txId: "tx-p" })
+    expect(view.rows.some((r) => r.id.includes("ghost") || r.name.includes("ghost"))).toBe(false)
+
+    // 坏 JSON 的 grant 文件 → 该行如实无 granted(readCapabilityGrant 容错返回 null,不抛、不进 warnings 噪音)。
+    fs.writeFileSync(path.join(globalRoot, "ext-store", "mcp--my-mcp", "grants.json"), "{not json")
+    const view2 = collectInventory({ catalog: null, globalRoot, projectDir })
+    expect(byId(view2.rows, "user:my-mcp", "global")[0]!.granted).toBeUndefined()
   })
 })

@@ -103,6 +103,33 @@ function CapRow(props: { cap: string; kind: CapRowKind }) {
   )
 }
 
+/** #392(REQ-103):详情页「已授权能力」被动行 —— 与确认框同一词汇/图标/风险分级(两处永远一致),
+ *  但无 diff chip、无 muted:这是授权总账的查询面,变更仍只经上方确认框发生。 */
+export function ExtGrantedCapRow(props: { cap: string }) {
+  const vocab = () => CAP_VOCAB[props.cap]
+  return (
+    <div class="alpha-ext-authz-cap">
+      <span class="alpha-ext-authz-ic" data-tier={vocab()?.tier ?? "mid"}>
+        <Show when={vocab()} fallback={<span aria-hidden="true">?</span>}>
+          {vocab().icon()}
+        </Show>
+      </span>
+      <span class="alpha-ext-authz-nm">
+        <b>{vocab() ? t(vocab().label) : props.cap}</b>
+        <Show when={vocab()}>
+          <small>{t(vocab().desc)}</small>
+        </Show>
+      </span>
+      <span class="alpha-ext-authz-id">{props.cap}</span>
+      <Show when={HIGH_RISK.has(props.cap)}>
+        <span class="alpha-ext-authz-chip" data-kind="risk">
+          {t("alpha.ext.authz.riskHigh")}
+        </span>
+      </Show>
+    </div>
+  )
+}
+
 /** 授权视图 body(宿主 Dialog 由 hub 提供:独立弹出或既有确认框第二阶段)。 */
 export function ExtAuthzView(props: { name: string; isBundle: boolean; mode: "install" | "update"; diffs: CapabilityDiffWire[] }) {
   const confirmDiffs = () => props.diffs.filter((d) => d.requiresConfirmation)

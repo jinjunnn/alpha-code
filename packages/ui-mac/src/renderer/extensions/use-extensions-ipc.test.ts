@@ -35,3 +35,25 @@ describe("IPC 参数必须 unwrap(REQ-016 真机批回归锁)", () => {
     expect(cloned).toEqual(receipt)
   })
 })
+
+// ── REQ-099(#307):卸载意图 scope 分支(uninstallIntentFor 纯函数;hook 挂载不可测的既有约束下,
+// 契约在此锁定:project 收据必须携带项目目录,目录缺失如实拒绝 —— 绝不降级 global 删错同名对象)。
+import { uninstallIntentFor } from "./use-extensions"
+
+describe("uninstallIntentFor(#307 scope 分支)", () => {
+  test("global 收据 → {scope:'global'},与项目上下文无关", () => {
+    const r = uninstallIntentFor({ type: "skill", name: "safe-refactor", scope: "global" }, "/some/project")
+    expect(r).toEqual({ ok: true, intent: { type: "skill", name: "safe-refactor", scope: "global" } })
+  })
+
+  test("project 收据 + 项目上下文 → {scope:'project', projectDir}", () => {
+    const r = uninstallIntentFor({ type: "skill", name: "writer", scope: "project" }, "/w/alpha-code")
+    expect(r).toEqual({ ok: true, intent: { type: "skill", name: "writer", scope: "project", projectDir: "/w/alpha-code" } })
+  })
+
+  test("project 收据、上下文丢失 → 如实拒绝(不发 intent,不降级 global)", () => {
+    const r = uninstallIntentFor({ type: "skill", name: "writer", scope: "project" }, undefined)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("project")
+  })
+})

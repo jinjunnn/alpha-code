@@ -18,7 +18,10 @@
 
 import { createEffect, createMemo, createResource, createSignal, For, Show, onCleanup, type Accessor, type JSX } from "solid-js"
 import { Portal } from "solid-js/web"
+import { useLocation } from "@solidjs/router"
 import { t } from "../i18n"
+import { parseRoute } from "../../shared/legacy-route-abi"
+import { projectLabel } from "../sidebar/route"
 import { BuiltinControlsPanel } from "./builtin-controls-panel"
 import { catalog, catalogSource, entryVersion, refreshCatalog } from "./catalog-source"
 import { Dialog } from "../alpha-ui/Dialog"
@@ -138,15 +141,22 @@ export function ExtensionHub(props: {
   open: Accessor<boolean>
   onClose: () => void
 }) {
-  const ext = useExtensions(props.server, props.open)
+  // REQ-099(#307)项目上下文 = 当前路由的项目目录(与 composer-takeover 同款 parseRoute 先例;
+  // 设计稿 Q1 采 A 案)。home/new-session 路由 = 无上下文 →「本项目」组不渲染。
+  const loc = useLocation()
+  const projectDir = createMemo((): string | undefined => {
+    const r = parseRoute(loc.pathname)
+    return r.kind === "session" || r.kind === "directory" ? r.directory : undefined
+  })
+  const ext = useExtensions(props.server, props.open, projectDir)
   const section = hubSection
   // REQ-103(#195):governance 只读视图(逐扩展五维所有权 + availability/activation/health 三态)。
-  // 唯一只读通道,零写面;keyed on open + 安装账本规模(装/卸后自动重取)。详情页消费 ownership/来源
-  // 签名,已安装 pane 消费 health 三态(按 (id,scope) join,AC5 同名并存各取各)。全局视图(与既有
-  // listInstalls() 同信任面:ServerInfo 不含项目目录 → 不传 projectDir;项目行待项目目录接线后出现)。
+  // 唯一只读通道,零写面;keyed on open + 安装账本规模(装/卸后自动重取)+ 项目上下文(#307:传
+  // projectDir 即出项目行)。详情页消费 ownership/来源签名/已授权能力,已安装 pane 消费 health 三态
+  // (按 (id,scope) join,AC5 同名并存各取各)。
   const [governance] = createResource(
-    () => (props.open() ? ext.store.receipts.length : null),
-    () => window.api.ext.inventoryView(),
+    () => (props.open() ? `${ext.store.receipts.length}:${ext.store.projectReceipts.length}:${projectDir() ?? ""}` : null),
+    () => window.api.ext.inventoryView(projectDir()),
   )
   // REQ-020 T2:云门控。subscribe 会立即回放当前态(preload 内置 getState),再跟增量推送。
   // 云可用 ⟺ 已登录且 platform 模式(mcp.cloud 由 sidecar 在该态注入,ADR-013/ADR-016)。
@@ -465,6 +475,21 @@ export function ExtensionHub(props: {
         mcp: s,
       })
     }
+    // REQ-099(#307)项目账本行(scope=project:导入/收编产物)。无 live MCP join —— 项目组按
+    // ADR-030 只读+卸载;key 加 scope 后缀,AC5 同名并存不撞。
+    for (const r of ext.store.projectReceipts) {
+      const entry = byId(r.id)
+      rows.push({
+        key: `${r.type}:${r.name}:project`,
+        type: r.type,
+        name: r.name,
+        displayName: entry?.displayName ?? r.name,
+        source: entry?.source,
+        version: r.version,
+        receipt: r,
+        entry,
+      })
+    }
     return rows
   })
 
@@ -484,7 +509,9 @@ export function ExtensionHub(props: {
   const updatable = createMemo(() =>
     ext.store.receipts.filter(
       // REQ-032:条目级更新判定(receipt.version vs entry.version;X7:非 catalog 来源不参与角标)
+      // #307:恒 global —— updatable 只扫 global receipts;project 组只读+卸载(ADR-030 无受管更新)。
       (r) =>
+        r.scope !== "project" &&
         r.origin !== "imported" &&
         r.origin !== "created" &&
         !officeAdvisoryFor({ id: r.id, name: r.name }) &&
@@ -1126,10 +1153,13 @@ export function ExtensionHub(props: {
     const row = cp.row
     const ic = iconForRow(row.entry, row.type, row.name)
     const openRow = () => {
-      if (row.entry) return openEntryDetail(row.entry)
+      if (row.entry) {
+        openEntryDetail(row.entry)
+        return
+      }
       if (row.type === "agent") {
         const a = ext.store.agents.find((x) => x.name === row.name)
-        if (a) return openAgentDetail(a)
+        if (a) openAgentDetail(a)
       }
     }
     const clickable = () => !!row.entry || (row.type === "agent" && ext.store.agents.some((x) => x.name === row.name))
@@ -1183,7 +1213,7 @@ export function ExtensionHub(props: {
                   {(hp) => (
                     <>
                       <span class="alpha-ext-man-dot" data-tone={hp().tone} />
-                      {t(hp().textKey as never)} · {activationText()}
+                      {t(hp().textKey)} · {activationText()}
                     </>
                   )}
                 </Show>
@@ -1583,11 +1613,25 @@ export function ExtensionHub(props: {
                           <For each={installedByScope().global}>{(row) => <InstalledRow row={row} />}</For>
                         </div>
                       </Show>
-                      <Show when={installedByScope().project.length > 0}>
-                        <div class="alpha-ext-scopeh">{t("alpha.ext.scopeProjectGroup")}</div>
-                        <div class="alpha-ext-manage">
-                          <For each={installedByScope().project}>{(row) => <InstalledRow row={row} />}</For>
-                        </div>
+                      {/* #307 项目组做实:有项目上下文即渲染组头(空账本 = 空态说明行,让用户知道
+                          组的存在与来路);无项目上下文 = 组整体不渲染(设计稿空态 B)。 */}
+                      <Show when={projectDir()}>
+                        {(dir) => (
+                          <>
+                            <div class="alpha-ext-scopeh">
+                              {t("alpha.ext.scopeProjectGroup")} · {projectLabel(dir())}
+                              <span class="alpha-ext-type-pill">{t("alpha.ext.scopeProjectReadonly")}</span>
+                            </div>
+                            <Show
+                              when={installedByScope().project.length > 0}
+                              fallback={<div class="alpha-ext-man-empty">{t("alpha.ext.scopeProjectEmpty")}</div>}
+                            >
+                              <div class="alpha-ext-manage">
+                                <For each={installedByScope().project}>{(row) => <InstalledRow row={row} />}</For>
+                              </div>
+                            </Show>
+                          </>
+                        )}
                       </Show>
                     </Show>
                   </Show>

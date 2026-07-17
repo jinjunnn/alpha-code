@@ -36,6 +36,7 @@ import {
   type HealthView,
 } from "../shared/ext-states"
 import { readLedgerV2, type InstallRecordV2 } from "./ext-receipt-v2"
+import { readCapabilityGrant } from "./ext-capability-grants"
 import { readPackagedSeed } from "./ext-seed"
 import { alphaRoot } from "./alpha-workdir"
 
@@ -55,7 +56,14 @@ export type InventoryLedgerInput = {
   records: InstallRecordV2[]
   v1Only: InstallReceipt[]
   warnings: string[]
+  /** REQ-103(#392)能力授权账(`ext-store/<key>/grants.json`,#348 committed 落账)的只读快照,
+   *  按事务 item key(`<kind>--<name>`)索引。缺省 = 采集方没读(行不出 granted 字段,消费方如实
+   *  呈现无记录)。 */
+  grants?: Record<string, InventoryGrantView>
 }
+
+/** #392:授权记录只读视图(CapabilityGrant 的展示子集 —— 不透传 manifestDigest,详情页用不到)。 */
+export type InventoryGrantView = { capabilities: string[]; grantedAt: string; txId: string }
 
 export type InventorySources = {
   catalog: InventoryCatalogInput | null
@@ -81,6 +89,9 @@ export type InventoryRow = {
   version?: string
   generation?: number
   origin?: string
+  /** #392:已授权能力(授权账有记录才出字段;缺省 = 早于 #348 闸口的存量安装/未走授权的类型,
+   *  详情页如实空态 —— 绝不回填按类型派生的"本应请求"集)。 */
+  granted?: InventoryGrantView
 }
 
 export type ExtInventory = {
@@ -118,6 +129,8 @@ export function aggregateInventory(sources: InventorySources): ExtInventory {
       installedIds.add(record.id)
       const entry = catalogById.get(record.id)
       const advisory = officeAdvisoryFor({ id: record.id, name: record.name })
+      // #392:授权账 join —— key = 事务 item key(`<kind>--<name>`,写账与卸载清账同一构造)。
+      const granted = ledger.grants?.[`${record.kind}--${record.name}`]
       rows.push({
         id: record.id,
         name: record.name,
@@ -135,6 +148,7 @@ export function aggregateInventory(sources: InventorySources): ExtInventory {
         ...(record.version ? { version: record.version } : {}),
         generation: record.generation,
         origin: record.origin,
+        ...(granted ? { granted } : {}),
       })
     }
 
@@ -200,7 +214,7 @@ export function aggregateInventory(sources: InventorySources): ExtInventory {
     })
   }
 
-  rows.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : SCOPE_RANK[String(a.scope)]! - SCOPE_RANK[String(b.scope)]!))
+  rows.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : SCOPE_RANK[String(a.scope)] - SCOPE_RANK[String(b.scope)]))
   return {
     catalogVersion: sources.catalog?.version ?? null,
     catalogChannel: sources.catalog?.channel ?? null,
@@ -229,6 +243,18 @@ export function collectInventory(opts: CollectInventoryOpts): ExtInventory {
   return collectInventoryWithWarnings(opts, [])
 }
 
+/** #392:逐账本 record 读授权账(纯读;readCapabilityGrant 对坏 key/坏 JSON 返回 null = 如实无记录)。
+ *  只读账本里在册的 key —— 不枚举 ext-store,孤儿 grant 文件不进读面(它属于卸载失败的修复路径)。 */
+function collectGrantViews(root: string, records: InstallRecordV2[]): Record<string, InventoryGrantView> {
+  const grants: Record<string, InventoryGrantView> = {}
+  for (const record of records) {
+    const key = `${record.kind}--${record.name}`
+    const grant = readCapabilityGrant(root, key)
+    if (grant) grants[key] = { capabilities: grant.capabilities, grantedAt: grant.grantedAt, txId: grant.txId }
+  }
+  return grants
+}
+
 function collectInventoryWithWarnings(opts: CollectInventoryOpts, priorWarnings: string[]): ExtInventory {
   const warnings: string[] = [...priorWarnings]
 
@@ -244,7 +270,13 @@ function collectInventoryWithWarnings(opts: CollectInventoryOpts, priorWarnings:
 
   const ledgers: InventoryLedgerInput[] = []
   const globalLedger = readLedgerV2(opts.globalRoot)
-  ledgers.push({ scope: "global", records: globalLedger.records, v1Only: globalLedger.v1Only, warnings: globalLedger.warnings })
+  ledgers.push({
+    scope: "global",
+    records: globalLedger.records,
+    v1Only: globalLedger.v1Only,
+    warnings: globalLedger.warnings,
+    grants: collectGrantViews(opts.globalRoot, globalLedger.records),
+  })
 
   if (opts.projectDir !== undefined) {
     const projectRoot = alphaRoot(opts.projectDir)
@@ -252,7 +284,13 @@ function collectInventoryWithWarnings(opts: CollectInventoryOpts, priorWarnings:
       warnings.push(`project ledger skipped: invalid project root ${opts.projectDir} (fail closed)`)
     } else {
       const projectLedger = readLedgerV2(projectRoot)
-      ledgers.push({ scope: "project", records: projectLedger.records, v1Only: projectLedger.v1Only, warnings: projectLedger.warnings })
+      ledgers.push({
+        scope: "project",
+        records: projectLedger.records,
+        v1Only: projectLedger.v1Only,
+        warnings: projectLedger.warnings,
+        grants: collectGrantViews(projectRoot, projectLedger.records),
+      })
     }
   }
 

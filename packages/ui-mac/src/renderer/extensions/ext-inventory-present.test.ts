@@ -38,14 +38,14 @@ describe("所有权段(AC1:作者与甄选分开陈述)", () => {
       "alpha.ext.ownSupport",
     ])
     // 社区作者 + Alpha 甄选 —— 两维独立,不塌缩成「Alpha 出品」。
-    expect(rows[0]!.valueKeys).toEqual(["alpha.ext.partyCommunity"])
-    expect(rows[1]!.valueKeys).toEqual(["alpha.ext.curatedAlpha"])
-    expect(rows[0]!.valueKeys).not.toEqual(rows[1]!.valueKeys)
+    expect(rows[0].valueKeys).toEqual(["alpha.ext.partyCommunity"])
+    expect(rows[1].valueKeys).toEqual(["alpha.ext.curatedAlpha"])
+    expect(rows[0].valueKeys).not.toEqual(rows[1].valueKeys)
   })
 
   test("多运行面如实并列(不塌缩为单值)", () => {
     const rows = ownershipRows({ ...communityMcp, runtimeSurfaces: ["local-subprocess", "remote-service"] })
-    expect(rows[3]!.valueKeys).toEqual(["alpha.ext.surfLocalSubprocess", "alpha.ext.surfRemoteService"])
+    expect(rows[3].valueKeys).toEqual(["alpha.ext.surfLocalSubprocess", "alpha.ext.surfRemoteService"])
   })
 
   test("作者维越域/未知如实落 unknown,不猜", () => {
@@ -64,8 +64,8 @@ describe("来源与签名段(信任链就近;发布钥不在读面 → 省略)",
       "alpha.ext.trustDistLabel",
       "alpha.ext.trustVersionLabel",
     ])
-    expect(rows[0]!.valueKeys).toEqual(["alpha.ext.trustSignedChannel"])
-    expect(rows[2]!.value).toBe("2026-07-13.1")
+    expect(rows[0].valueKeys).toEqual(["alpha.ext.trustSignedChannel"])
+    expect(rows[2].value).toBe("2026-07-13.1")
   })
 
   test("catalogChannel 决定签名文案:remote/cache=已验,bundled=内置信任,null=不可用", () => {
