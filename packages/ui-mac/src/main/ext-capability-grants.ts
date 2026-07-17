@@ -59,6 +59,9 @@ export function readCapabilityGrant(root: string, key: string): CapabilityGrant 
   }
   if (!parsed || typeof parsed !== "object" || parsed.v !== 1) return null
   if (typeof parsed.key !== "string" || typeof parsed.txId !== "string") return null
+  // #392 读面硬化(Codex r1 m2):grantedAt 必须是字符串(缺失/异型会带过 IPC 让详情页 .slice 崩溃);
+  // 文件内 key 必须与请求 key 一致(错放的合法 grant 文件不得显示到别的扩展上)—— 均 fail closed。
+  if (typeof parsed.grantedAt !== "string" || parsed.key !== key) return null
   if (!Array.isArray(parsed.capabilities) || !parsed.capabilities.every(isSafeCapability)) return null
   return parsed
 }

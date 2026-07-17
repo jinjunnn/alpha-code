@@ -112,6 +112,19 @@ describe("grant ledger (read/write/remove)", () => {
     expect(readCapabilityGrant(root, "skill--demo")).toBeNull()
   })
 
+  test("#392(Codex r1 m2)读面硬化:缺 grantedAt / 文件内 key 与请求 key 不符 → null(fail closed)", () => {
+    const file = capabilityGrantPath(root, "skill--demo")
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    // grantedAt 缺失(可解析但异型)—— 不得带过 IPC 让详情页 .slice 崩溃。
+    fs.writeFileSync(file, JSON.stringify({ v: 1, key: "skill--demo", capabilities: ["prompt:context"], txId: "t" }))
+    expect(readCapabilityGrant(root, "skill--demo")).toBeNull()
+    // 错放的合法 grant(内 key ≠ 请求 key)—— 不得显示到别的扩展上。
+    writeCapabilityGrantSync(root, grantOf("skill--other", ["prompt:context"]))
+    fs.copyFileSync(capabilityGrantPath(root, "skill--other"), file)
+    expect(readCapabilityGrant(root, "skill--demo")).toBeNull()
+    expect(readCapabilityGrant(root, "skill--other")?.key).toBe("skill--other")
+  })
+
   test("unsafe key is refused on read/write/remove", () => {
     expect(readCapabilityGrant(root, "../escape")).toBeNull()
     expect(() => writeCapabilityGrantSync(root, grantOf("../escape", []))).toThrow()

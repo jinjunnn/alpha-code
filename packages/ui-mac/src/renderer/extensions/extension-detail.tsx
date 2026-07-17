@@ -773,10 +773,12 @@ export function ExtensionDetail(props: {
               <FactRows rows={ownershipRows(row().ownership)} />
               <p class="alpha-ext-dnote">{t("alpha.ext.ownNote")}</p>
             </Section>
-            {/* ── #392 已授权能力段:#348 授权账(ext-store/<key>/grants.json)的被动查询面。只对安装行渲染
+            {/* ── #392 已授权能力段:#348 授权账(ext-store/<key>/grants.json)的被动查询面。对安装行渲染
                 (grant 只随 committed 安装存在);无记录 = 如实空态,绝不回填按类型派生的"本应请求"
-                集(未经确认的猜测不进总账);capabilities=[](未策展导入)如实说明未请求任何能力。 ── */}
-            <Show when={row().scope !== null}>
+                集(未经确认的猜测不进总账);capabilities=[](未策展导入)如实说明未请求任何能力。
+                Codex r1 m1:live-but-unreceipted MCP(governance 里是 scope=null 浏览行,但本页按
+                合成收据视为已安装)同样出段 —— 显示「没有授权记录」空态,而不是整段消失。 ── */}
+            <Show when={row().scope !== null || installed()}>
               <Section title={t("alpha.ext.grantedTitle")}>
                 <Show
                   when={row().granted}

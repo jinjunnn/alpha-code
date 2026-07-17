@@ -235,14 +235,17 @@ export function useExtensions(
   // (SDK 的 mcp.status 只认 MCP);每次安装/卸载后刷新。
   // REQ-099(#307):有项目上下文时同一调用连带读项目账本(main 双账本读面早已就绪);
   // 无项目时 project 视图如实清空 —— 不残留上一个项目的行。
+  // Codex r1 B2:响应按发起时的目录判有效 —— 项目切换后,旧目录的迟到响应整体丢弃(global 面也不
+  // 应用:同一响应,半用半弃只会引入撕裂);切换瞬间的清空由 projectDir effect 负责。
   async function loadInstalls() {
+    const dir = projectDir?.()
     try {
-      const dir = projectDir?.()
       const view = await window.api.ext.listInstalls(dir)
+      if ((projectDir?.() ?? undefined) !== (dir ?? undefined)) return
       setStore("receipts", view.global)
       setStore("projectReceipts", dir ? view.project : [])
     } catch {
-      /* transient — keep previous */
+      /* transient — keep previous(project 行与目录不符的窗口已被切换清空堵死) */
     }
   }
 
@@ -419,7 +422,9 @@ export function useExtensions(
   async function uninstall(receipt: InstallReceipt): Promise<ActionResult> {
     // 账本外的 live MCP(手工/迁移前,hub 合成 receipt 行):v2 按账本自查会诚实拒「not installed」,
     // 这类走既有 name-based removeMcp(config 名单键移除 + live disconnect),与旧行为一致。
-    if (receipt.type === "mcp" && !store.receipts.some((r) => r.type === "mcp" && r.name === receipt.name))
+    // Codex r1 M2:仅限 global —— project MCP 收据(legacy 账本可能存在)必须走 v2 project 通道
+    // 由 main 按项目账本自查,绝不落进按名字操作全局 config 的旧路。
+    if (receipt.type === "mcp" && receipt.scope !== "project" && !store.receipts.some((r) => r.type === "mcp" && r.name === receipt.name))
       return removeMcp(receipt.name)
     const built = uninstallIntentFor(receipt, projectDir?.())
     if (!built.ok) return { ok: false, reason: built.reason }
@@ -497,9 +502,12 @@ export function useExtensions(
   })
 
   // REQ-099(#307):项目上下文切换(换项目会话 / 回 home)→ 重读账本,project 视图跟随当前目录。
+  // Codex r1 B2:切换瞬间先清空 project 行 —— 绝不把上一项目的行显示在新目录组头下(那扇窗口里
+  // 点卸载会用新目录构造意图,同 key 时删错对象);新目录的行等它自己的账本响应到达再出现。
   createEffect(() => {
     projectDir?.()
     if (!activated) return
+    setStore("projectReceipts", [])
     void loadInstalls()
   })
 

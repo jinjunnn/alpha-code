@@ -151,11 +151,17 @@ export function ExtensionHub(props: {
   const ext = useExtensions(props.server, props.open, projectDir)
   const section = hubSection
   // REQ-103(#195):governance 只读视图(逐扩展五维所有权 + availability/activation/health 三态)。
-  // 唯一只读通道,零写面;keyed on open + 安装账本规模(装/卸后自动重取)+ 项目上下文(#307:传
-  // projectDir 即出项目行)。详情页消费 ownership/来源签名/已授权能力,已安装 pane 消费 health 三态
-  // (按 (id,scope) join,AC5 同名并存各取各)。
+  // 唯一只读通道,零写面;keyed on open + 账本内容指纹 + 项目上下文(#307:传 projectDir 即出项目行)。
+  // Codex r1 M1:指纹取逐收据 id/scope/version/installedAt 而非 length —— 扩权更新原地改写收据与
+  // grants(数量不变),length key 会让详情页的「已授权能力」段停在旧授权集。详情页消费 ownership/
+  // 来源签名/已授权能力,已安装 pane 消费 health 三态(按 (id,scope) join,AC5 同名并存各取各)。
+  const receiptFingerprint = (rs: readonly InstallReceipt[]) =>
+    rs.map((r) => `${r.id}@${r.scope}@${r.version ?? ""}@${r.installedAt}`).join("|")
   const [governance] = createResource(
-    () => (props.open() ? `${ext.store.receipts.length}:${ext.store.projectReceipts.length}:${projectDir() ?? ""}` : null),
+    () =>
+      props.open()
+        ? `${receiptFingerprint(ext.store.receipts)}:${receiptFingerprint(ext.store.projectReceipts)}:${projectDir() ?? ""}`
+        : null,
     () => window.api.ext.inventoryView(projectDir()),
   )
   // REQ-020 T2:云门控。subscribe 会立即回放当前态(preload 内置 getState),再跟增量推送。
@@ -1162,7 +1168,12 @@ export function ExtensionHub(props: {
         if (a) openAgentDetail(a)
       }
     }
-    const clickable = () => !!row.entry || (row.type === "agent" && ext.store.agents.some((x) => x.name === row.name))
+    // Codex r1 B1:project 行不下钻详情 —— 详情页的收据解析是 global 语义面(receipt memo 只查
+    // global 账本),legacy 项目账本若存 catalog-id 记录,下钻后「卸载」会误落同 id 的 global 安装。
+    // project 组 = 只读+卸载(ADR-030),行内动作已完备,详情留给 global/目录语义。
+    const clickable = () =>
+      row.receipt.scope !== "project" &&
+      (!!row.entry || (row.type === "agent" && ext.store.agents.some((x) => x.name === row.name)))
     // health 三态:governance 只读真源按 (id,scope) join;MCP 实时错误(SDK 真相)叠加在最上(操作性失败最重)。
     const gov = () => inventoryInstallRow(governance(), row.receipt.id, row.receipt.scope)
     const health = () => {
@@ -1237,8 +1248,10 @@ export function ExtensionHub(props: {
             {updBusy() === row.receipt.id ? t("alpha.ext.adding") : t("alpha.ext.reviewUpdate")}
           </button>
         </Show>
-        {/* Toggle is MCP-only (connect/disconnect); fs/plugin have no live toggle. */}
-        <Show when={row.type === "mcp"}>
+        {/* Toggle is MCP-only (connect/disconnect); fs/plugin have no live toggle.
+            Codex r1 M2:project 收据不出开关 —— setMcpConnected 按全局 live 名称操作,legacy 项目
+            账本的 MCP 记录若出开关,启停会误落同名 global 连接器。 */}
+        <Show when={row.type === "mcp" && row.receipt.scope !== "project"}>
           <button
             class="alpha-ext-sw"
             data-on={row.mcp?.connected ? "" : undefined}
