@@ -98,16 +98,21 @@ export type EcosystemGlobalSkillInstaller = (
 export async function importExternalSkills(
   skills: readonly ExternalSkill[],
   target: InstallTarget,
-  // #390:global scope 提供 → 走 CAS 事务(崩溃可恢复);缺省(project scope)= flat sanctioned 路径(ADR-030)。
+  // #390:global scope **必须**注入 CAS 事务安装器(缺省即 fail-closed,不静默退回 flat —— review r1
+  // Major 1);project scope 走 flat sanctioned 路径(ADR-030,忽略 installGlobal)。
   installGlobal?: EcosystemGlobalSkillInstaller,
 ): Promise<Pick<ImportOutcome, "importedSkills" | "skipped">> {
   const importedSkills: string[] = []
   const skipped: Array<{ name: string; reason: string }> = []
+  // global 漏注入安装器 = fail-closed 全跳(绝不把 global 内容退回 flat 直写路径)。
+  if (target.scope === "global" && !installGlobal) {
+    return { importedSkills, skipped: skills.map((s) => ({ name: s.name, reason: "global import requires a transactional installer (fail-closed)" })) }
+  }
   for (const s of skills) {
     const origin = s.source === "claude" ? "imported-claude" : "imported-agents"
     const r =
-      target.scope === "global" && installGlobal
-        ? await installGlobal(s.dir, origin)
+      target.scope === "global"
+        ? await installGlobal!(s.dir, origin)
         : importSkillFolder(s.dir, target, origin)
     if (r.ok) importedSkills.push(("name" in r && r.name) ? r.name : s.name)
     else skipped.push({ name: s.name, reason: r.reason })

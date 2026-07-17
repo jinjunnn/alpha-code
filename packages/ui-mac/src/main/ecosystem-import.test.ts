@@ -98,31 +98,30 @@ describe("detectExternal — 只报上游真会继承的范围", () => {
 })
 
 describe("转换导入 — 快照 + 溯源 + 不碰源", () => {
-  // #390:无注入 installer 时 global 走 flat 回退路径(本用例验回退分支);生产 global 注入 CAS 事务
-  // installer(见下方「注入 installer → 走 CAS 事务」用例)。
-  test("global skills(无注入):落 ~/.alpha/skills + receipts origin 按来源(imported-claude/agents);源目录不动", async () => {
+  // #390(review r1 Major 1):global scope 漏注入事务安装器 = fail-closed 全跳,绝不静默退回 flat
+  // 直写路径。global 走事务的正例见 ext-uncurated-import.test.ts 的路由 wiring 用例。
+  test("global skills(无注入 installer)→ fail-closed 全跳,不落 flat、源不动", async () => {
     const home = path.join(tmp, "home")
     mkSkill(home, ".claude", "graphify")
     mkSkill(home, ".agents", "helper")
     const detected = detectExternal(home, "global")
     const r = await importExternalSkills(detected.skills, { scope: "global" })
-    expect(r.importedSkills.sort()).toEqual(["graphify", "helper"])
-    expect(fs.existsSync(path.join(tmp, ".alpha", "skills", "graphify", "SKILL.md"))).toBe(true)
-    expect(fs.existsSync(path.join(home, ".claude", "skills", "graphify", "SKILL.md"))).toBe(true) // 源不动
-    const ledger = JSON.parse(fs.readFileSync(path.join(tmp, ".alpha", "installs.json"), "utf8"))
-    const origins = Object.fromEntries(ledger.receipts.map((x: any) => [x.name, x.origin]))
-    expect(origins.graphify).toBe("imported-claude")
-    expect(origins.helper).toBe("imported-agents")
+    expect(r.importedSkills).toEqual([])
+    expect(r.skipped.map((s) => s.name).sort()).toEqual(["graphify", "helper"])
+    expect(r.skipped.every((s) => s.reason.includes("fail-closed"))).toBe(true)
+    // 未走 flat:~/.alpha/skills 未创建,源目录不动。
+    expect(fs.existsSync(path.join(tmp, ".alpha", "skills", "graphify"))).toBe(false)
+    expect(fs.existsSync(path.join(home, ".claude", "skills", "graphify", "SKILL.md"))).toBe(true)
   })
-  test("同名已存在 → 该项诚实失败,不覆盖既有内容", async () => {
-    const home = path.join(tmp, "home")
-    mkSkill(home, ".claude", "graphify")
-    fs.mkdirSync(path.join(tmp, ".alpha", "skills", "graphify"), { recursive: true })
-    fs.writeFileSync(path.join(tmp, ".alpha", "skills", "graphify", "SKILL.md"), "user's own\n")
-    const r = await importExternalSkills(detectExternal(home, "global").skills, { scope: "global" })
+  test("project scope 同名已存在 → 该项诚实失败,不覆盖既有内容(flat sanctioned 路径)", async () => {
+    const proj = path.join(tmp, "proj-dup")
+    mkSkill(proj, ".claude", "graphify")
+    fs.mkdirSync(path.join(proj, ".alpha", "skills", "graphify"), { recursive: true })
+    fs.writeFileSync(path.join(proj, ".alpha", "skills", "graphify", "SKILL.md"), "user's own\n")
+    const r = await importExternalSkills(detectExternal(proj, "project").skills, { scope: "project", projectDir: proj })
     expect(r.importedSkills).toEqual([])
     expect(r.skipped[0].name).toBe("graphify")
-    expect(fs.readFileSync(path.join(tmp, ".alpha", "skills", "graphify", "SKILL.md"), "utf8")).toBe("user's own\n")
+    expect(fs.readFileSync(path.join(proj, ".alpha", "skills", "graphify", "SKILL.md"), "utf8")).toBe("user's own\n")
   })
   test("项目 CLAUDE.md → AGENTS.md(带快照溯源头);已存在 AGENTS.md → 不动 + 如实报告", () => {
     const proj = path.join(tmp, "proj")

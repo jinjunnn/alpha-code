@@ -541,6 +541,13 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   // #347:写方事务准入 gate —— 每次写操作前恢复收敛 + 终态探测放行(进程内 per-root mutex
   // 把恢复→探测→操作链成一条所有权链;拒绝语义与 busy 一致,如实返回 reason)。
   const recoveryGate = makeRecoveryGate(recoveryOpts, (m) => getLogger().log(m))
+  // #390(review r1 Blocker):启动期全局生态导入必须过恢复 gate,不能只靠 ledgerReady barrier ——
+  // 启动恢复失败/仍有非终态 journal 时 barrier 只 loud 记录后正常 resolve,若直接 installUncurated…
+  // 就会在未收敛 journal 的 root 上创建新事务写同一本账。经 withRecoveredWrite 包装:恢复→终态探测→
+  // 操作成一条 per-root 所有权链,拒则返回 GateRefusal({ok:false})不写盘。gate refusal 与安装失败
+  // 对 ecosystem 调用方同形(both {ok:false;reason}),as-skipped 处置。
+  const ecosystemGlobalSkillInstaller = (dir: string, origin: "imported-claude" | "imported-agents") =>
+    recoveryGate.withRecoveredWrite(alphaGlobalRoot(), () => installUncuratedSkillImport(dir, plannerDeps(), { origin }))
   // REQ-099 #309:统一账本就绪 barrier —— recovery(结果不吞)→ 仅在恢复干净时跑 v1→v2 迁移。
   // recovery 不干净(锁被占/journal 未收敛)或迁移被拒:loud 记录但 barrier 正常结束,不阻断启动
   // (v2 消费面对结构有效的 v1-only 有 fallback;文件级损坏本就被 lookup fail-closed)。
@@ -875,5 +882,6 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   })
   ipcMain.handle("ext-inventory-view", (_event: IpcMainInvokeEvent, projectDir?: unknown) => inventoryQuery(projectDir))
   // #309:启动期账本消费方(index.ts 的 global ecosystem gate)await 此 barrier 后再写账本。
-  return ledgerReady
+  // #390:同时交出恢复-gate 包装的 global 技能安装器,供 ecosystem gate 走事务安装(不绕恢复准入)。
+  return { ledgerReady, ecosystemGlobalSkillInstaller }
 }

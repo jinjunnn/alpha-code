@@ -193,6 +193,7 @@ import {
 } from "./ext-receipt-v2"
 import {
   commitInputFromRecord,
+  hasSkillGeneration,
   installSkillGeneration,
   listSkillGenerations,
   rollbackSkillGeneration,
@@ -2490,6 +2491,11 @@ function uncuratedSkillFreshGate(root: string, name: string): { ok: true } | { o
     return { ok: false, reason: `skill "${name}" already present — uninstall it first before re-importing` }
   if (fs.existsSync(path.join(root, "skills", name)))
     return { ok: false, reason: `skill dir "skills/${name}" exists without a ledger record — refusing to overwrite or adopt unregistered content` }
+  // review r1 Major 2:generation store 在盘即拒 —— checkUncuratedConflict/hasSkillGeneration 只认「可解析
+  // 的健康 live generation」,current.json 缺失/损坏/悬空但 ext-store/skill--<name> 已存在时会漏放行,
+  // 新事务改写 current 认领残留 store。store 目录在场且无健康 generation = fail-closed(不认领残留)。
+  if (fs.existsSync(skillStorePaths(root, name).store) && !hasSkillGeneration(root, name))
+    return { ok: false, reason: `skill store for "${name}" exists but is not a healthy generation — refusing to adopt unregistered/dangling store (fail closed)` }
   return { ok: true }
 }
 

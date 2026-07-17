@@ -80,6 +80,59 @@ describe("collectImportSkillPayload — 集中 import 校验 + byte-exact 载荷
     if (!r.ok) return
     expect(r.files.some((f) => f.path === "link.txt")).toBe(false)
   })
+
+  test("SKILL.md symlink 指向源目录外 → realpath 圈禁拒(review r1 Major 3)", () => {
+    fs.mkdirSync(src, { recursive: true })
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-uncurated-outside-"))
+    fs.writeFileSync(path.join(outside, "secret.md"), "---\nname: demo\ndescription: x\n---\n\n越界内容\n")
+    try {
+      fs.symlinkSync(path.join(outside, "secret.md"), path.join(src, "SKILL.md"))
+    } catch {
+      fs.rmSync(outside, { recursive: true, force: true })
+      return
+    }
+    const r = collectImportSkillPayload(src)
+    fs.rmSync(outside, { recursive: true, force: true })
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reason).toMatch(/逃逸源目录|不是常规文件|安全打开/)
+  })
+
+  test("普通文件 symlink 指向源目录外 → 不入载荷 / 圈禁拒(review r1 Major 3)", () => {
+    mkSkillDir(src, "demo")
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-uncurated-outside2-"))
+    fs.writeFileSync(path.join(outside, "secret.txt"), "越界字节")
+    try {
+      fs.symlinkSync(path.join(outside, "secret.txt"), path.join(src, "leak.txt"))
+    } catch {
+      fs.rmSync(outside, { recursive: true, force: true })
+      return
+    }
+    const r = collectImportSkillPayload(src)
+    fs.rmSync(outside, { recursive: true, force: true })
+    // collectImportFiles 在 walk 期跳 symlink dirent → leak.txt 根本不进列表(越界字节永不入 CAS)。
+    if (r.ok) expect(r.files.some((f) => f.path === "leak.txt")).toBe(false)
+  })
+
+  test("SKILL.md > 256KB → 拒(实际字节帽,review r1 Major 4)", () => {
+    fs.mkdirSync(src, { recursive: true })
+    const big = "---\nname: demo\ndescription: x\n---\n\n" + "a".repeat(300 * 1024)
+    fs.writeFileSync(path.join(src, "SKILL.md"), big)
+    const r = collectImportSkillPayload(src)
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reason).toContain("SKILL.md")
+  })
+
+  test("目录总量 > 10MB → 拒(实际读入字节累计,review r1 Major 4)", () => {
+    mkSkillDir(src, "demo")
+    // 三个 4MB 文件 = 12MB > 10MB 帽。
+    for (let i = 0; i < 3; i++) fs.writeFileSync(path.join(src, `big${i}.bin`), Buffer.alloc(4 * 1024 * 1024, 1))
+    const r = collectImportSkillPayload(src)
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reason).toContain("10MB")
+  })
 })
 
 describe("installUncuratedSkillImport — global folder 导入走 CAS + generation 事务", () => {
@@ -122,6 +175,16 @@ describe("installUncuratedSkillImport — global folder 导入走 CAS + generati
     expect(r.reason).toContain("without a ledger record")
     // 用户既有内容不被动。
     expect(fs.readFileSync(path.join(root, "skills", "demo", "SKILL.md"), "utf8")).toBe("user's own\n")
+  })
+
+  test("悬空/损坏 generation store 在盘(无健康 generation)→ 拒(review r1 Major 2)", async () => {
+    mkSkillDir(src, "demo")
+    // 造 ext-store/skill--demo 目录但无 current.json / 无可解析 live generation(悬空 store)。
+    fs.mkdirSync(path.join(root, "ext-store", "skill--demo", "generations"), { recursive: true })
+    const r = await installUncuratedSkillImport(src, deps, { origin: "imported" })
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reason).toMatch(/store.*not a healthy generation|fail closed/)
   })
 
   test("prod/beta 相同载荷共享同一 CAS blob(内容去重,generation 分域)", async () => {

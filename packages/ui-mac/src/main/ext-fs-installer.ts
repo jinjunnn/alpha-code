@@ -470,9 +470,54 @@ function collectImportFiles(srcDir: string): { ok: true; files: string[] } | { o
   }
 }
 
+/** #390:未策展技能导入 byte-exact 单文件读 —— realpath 圈禁(父目录 symlink 逃逸)+ O_NOFOLLOW
+ *  开(末段 symlink 换内容)+ fstat 前置帽 + 定长读 + 增长探测(帽/身份都以实际字节为准,不信 walk 期
+ *  stat 快照;review r1 Major 3/4)。data.length 即最终帽依据,调用方据此累计真实总量。 */
+function readImportFileBounded(
+  abs: string,
+  realBase: string,
+  capBytes: number,
+): { ok: true; data: Buffer } | { ok: false; reason: string; oversize?: boolean } {
+  let rp: string
+  try {
+    rp = fs.realpathSync(abs)
+  } catch {
+    return { ok: false, reason: `import: 读取失败(${abs})` }
+  }
+  if (rp !== realBase && !rp.startsWith(realBase + path.sep)) return { ok: false, reason: "import: 路径逃逸源目录 — 拒" }
+  let fd: number
+  try {
+    fd = fs.openSync(rp, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW)
+  } catch {
+    return { ok: false, reason: "import: 无法安全打开(symlink / 特殊文件)— 拒" }
+  }
+  try {
+    const st = fs.fstatSync(fd)
+    if (!st.isFile()) return { ok: false, reason: "import: 不是常规文件 — 拒" }
+    if (st.size > capBytes) return { ok: false, reason: "import: 超过大小上限", oversize: true }
+    const data = Buffer.alloc(st.size)
+    let off = 0
+    while (off < data.length) {
+      const n = fs.readSync(fd, data, off, data.length - off, off)
+      if (n === 0) break
+      off += n
+    }
+    if (off !== data.length) return { ok: false, reason: "import: 读取长度不符(文件在变)— 拒" }
+    // fstat 后 inode 仍可增长;读毕探 1 字节,有余量 = 文件在变,拒(定长读会绕过已执行的帽)。
+    const probe = Buffer.alloc(1)
+    if (fs.readSync(fd, probe, 0, 1, data.length) !== 0) return { ok: false, reason: "import: 文件读取期间增长 — 拒" }
+    return { ok: true, data }
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "import: 读取失败" }
+  } finally {
+    fs.closeSync(fd)
+  }
+}
+
 /** #390:未策展技能导入的 byte-exact 载荷采集 —— 集中 import 校验(realpath / SKILL.md 帽 +
  *  frontmatter → name / 体积·计数帽 / 跳 .git·node_modules / 拒 symlink),返回 POSIX 相对路径
- *  载荷,供 planner 提升进验证共享 CAS 走 generation 事务(取代 flat copy)。只读零副作用。 */
+ *  载荷,供 planner 提升进验证共享 CAS 走 generation 事务(取代 flat copy)。只读零副作用。
+ *  帽与 symlink 身份全部以 fd 绑定的实际字节为准(见 readImportFileBounded)。 */
 export function collectImportSkillPayload(
   srcDir: string,
 ): { ok: true; name: string; files: Array<{ path: string; data: Buffer }> } | { ok: false; reason: string } {
@@ -484,30 +529,21 @@ export function collectImportSkillPayload(
   } catch {
     return { ok: false, reason: "文件夹不存在" }
   }
-  const skillMd = path.join(real, "SKILL.md")
-  let text: string
-  try {
-    if (fs.statSync(skillMd).size > SKILL_MD_MAX) return { ok: false, reason: "SKILL.md 过大(>256KB)" }
-    text = fs.readFileSync(skillMd, "utf8")
-  } catch {
-    return { ok: false, reason: "文件夹内没有 SKILL.md" }
-  }
-  const fm = parseSkillFrontmatter(text)
+  const skillMdAbs = path.join(real, "SKILL.md")
+  if (!fs.existsSync(skillMdAbs)) return { ok: false, reason: "文件夹内没有 SKILL.md" }
+  const smd = readImportFileBounded(skillMdAbs, real, SKILL_MD_MAX)
+  if (!smd.ok) return { ok: false, reason: smd.oversize ? "SKILL.md 过大(>256KB)" : smd.reason }
+  const fm = parseSkillFrontmatter(smd.data.toString("utf8"))
   if (!fm.ok) return fm
-  const listed = collectImportFiles(real)
+  const listed = collectImportFiles(real) // walk:跳 .git/node_modules、拒 symlink dirent、粗计数帽
   if (!listed.ok) return listed
   const files: Array<{ path: string; data: Buffer }> = []
+  let total = 0 // 权威总量帽 = 实际读入字节(非 walk 期 stat 快照)
   for (const rel of listed.files) {
-    const abs = path.join(real, rel)
-    let data: Buffer
-    try {
-      // walk 已在 dirent 层跳 symlink;读前再 lstat 拒(防 walk→read 之间被换成 symlink 偷内容/逃逸)。
-      if (!fs.lstatSync(abs).isFile()) return { ok: false, reason: `import: ${rel} 不是常规文件` }
-      data = fs.readFileSync(abs)
-    } catch (error) {
-      return { ok: false, reason: error instanceof Error ? error.message : `读取失败: ${rel}` }
-    }
-    files.push({ path: rel.split(path.sep).join("/"), data })
+    const r = readImportFileBounded(path.join(real, rel), real, IMPORT_MAX_TOTAL - total)
+    if (!r.ok) return { ok: false, reason: r.oversize ? "目录超过 10MB 上限" : r.reason }
+    total += r.data.length
+    files.push({ path: rel.split(path.sep).join("/"), data: r.data })
   }
   return { ok: true, name: fm.name, files }
 }
