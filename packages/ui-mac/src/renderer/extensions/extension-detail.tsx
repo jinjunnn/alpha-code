@@ -776,9 +776,11 @@ export function ExtensionDetail(props: {
             {/* ── #392 已授权能力段:#348 授权账(ext-store/<key>/grants.json)的被动查询面。对安装行渲染
                 (grant 只随 committed 安装存在);无记录 = 如实空态,绝不回填按类型派生的"本应请求"
                 集(未经确认的猜测不进总账);capabilities=[](未策展导入)如实说明未请求任何能力。
-                Codex r1 m1:live-but-unreceipted MCP(governance 里是 scope=null 浏览行,但本页按
-                合成收据视为已安装)同样出段 —— 显示「没有授权记录」空态,而不是整段消失。 ── */}
-            <Show when={row().scope !== null || installed()}>
+                Codex r1 m1 + r2 修正:live-but-unreceipted MCP(governance 里是 scope=null 浏览行,
+                但本页按合成收据视为已安装)同样出段 —— 显示「没有授权记录」空态,而不是整段消失。
+                门精确到 mcp:bundle 的 installed() 是"必选子项全装"的派生真(自身无账本行),授权
+                记录属于各子项,bundle 详情不得冒出误导性的"无授权记录"。 ── */}
+            <Show when={row().scope !== null || (entry()?.type === "mcp" && installed())}>
               <Section title={t("alpha.ext.grantedTitle")}>
                 <Show
                   when={row().granted}

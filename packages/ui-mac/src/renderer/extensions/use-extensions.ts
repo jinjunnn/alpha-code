@@ -235,15 +235,15 @@ export function useExtensions(
   // (SDK 的 mcp.status 只认 MCP);每次安装/卸载后刷新。
   // REQ-099(#307):有项目上下文时同一调用连带读项目账本(main 双账本读面早已就绪);
   // 无项目时 project 视图如实清空 —— 不残留上一个项目的行。
-  // Codex r1 B2:响应按发起时的目录判有效 —— 项目切换后,旧目录的迟到响应整体丢弃(global 面也不
-  // 应用:同一响应,半用半弃只会引入撕裂);切换瞬间的清空由 projectDir effect 负责。
+  // Codex r1 B2 + r2 修正:project 部分按发起时的目录判有效(迟到响应不把 A 的行摆进 B 的组头);
+  // global 账本与目录无关,任何有效响应都应用 —— 整体丢弃会让"切换后替代请求失败"的场景把 global
+  // 面冻在旧值上。切换瞬间的 project 清空由 projectDir effect 负责。
   async function loadInstalls() {
     const dir = projectDir?.()
     try {
       const view = await window.api.ext.listInstalls(dir)
-      if ((projectDir?.() ?? undefined) !== (dir ?? undefined)) return
       setStore("receipts", view.global)
-      setStore("projectReceipts", dir ? view.project : [])
+      if ((projectDir?.() ?? undefined) === (dir ?? undefined)) setStore("projectReceipts", dir ? view.project : [])
     } catch {
       /* transient — keep previous(project 行与目录不符的窗口已被切换清空堵死) */
     }
