@@ -168,9 +168,9 @@ const api: ElectronAPI = {
     checkRuntime: (tool) => ipcRenderer.invoke("ext-check-runtime", tool),
     configHealth: () => ipcRenderer.invoke("ext-config-health"),
     factorySkillIds: () => ipcRenderer.invoke("ext-factory-skill-ids"),
-    govRead: () => ipcRenderer.invoke("gov-read"),
-    govApply: (gov, visibleAgents, confirmBuildDisable) => ipcRenderer.invoke("gov-apply", gov, visibleAgents, confirmBuildDisable),
-    govReset: () => ipcRenderer.invoke("gov-reset"),
+    builtinRead: () => ipcRenderer.invoke("builtin-read"),
+    builtinApply: (gov, visibleAgents, confirmBuildDisable) => ipcRenderer.invoke("builtin-apply", gov, visibleAgents, confirmBuildDisable),
+    builtinReset: () => ipcRenderer.invoke("builtin-reset"),
     importAgentPreview: (token, filePath) => ipcRenderer.invoke("ext-import-agent-preview", token, filePath),
     importAgentConfirm: (previewId) => ipcRenderer.invoke("ext-import-agent-confirm", previewId),
     remoteCatalog: () => ipcRenderer.invoke("ext-remote-catalog"),
@@ -193,6 +193,8 @@ const api: ElectronAPI = {
     projectResidualsClean: (projectDir) => ipcRenderer.invoke("ext-project-residuals-clean", projectDir),
     journalRetainedList: (intent) => ipcRenderer.invoke("ext-journal-retained-list", intent),
     journalRetire: (intent) => ipcRenderer.invoke("ext-journal-retire", intent),
+    // REQ-103(#195):governance 只读查询(五维所有权 + 三态)。只透传 projectDir,零写面。
+    inventoryView: (projectDir) => ipcRenderer.invoke("ext-inventory-view", projectDir),
   },
   account: {
     summary: () => ipcRenderer.invoke("account-summary"),

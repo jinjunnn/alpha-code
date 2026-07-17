@@ -51,7 +51,7 @@ export const ENGINE_BUILTIN_COMMANDS: ReadonlySet<string> = new Set(["init", "re
  *  command 覆盖后的 command 源条目(materializeEdits 写 command.<n>.template → 引擎同名
  *  覆盖使 source 变 "command")。引擎侧占位 template 保留:手动键入完整命令名仍得到诚实
  *  说明(纵深不拆)。 */
-export function filterGovernanceDenied<T extends { name: string }>(
+export function filterBuiltinDenied<T extends { name: string }>(
   commands: readonly T[],
   deniedSkills: ReadonlySet<string>,
 ): T[] {

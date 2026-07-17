@@ -8,7 +8,7 @@ import {
   OPENCODE_JUNK_ENTRIES,
   planConfigMerge,
   rewriteFactorySkillPaths,
-  stripFactoryGovernanceLeaves,
+  stripFactoryBuiltinPolicyLeaves,
 } from "./engine-config-truth"
 
 describe("ensureSkillsPath — skills.paths OBJECT form (真机 ConfigInvalidError 回归锁)", () => {
@@ -220,14 +220,14 @@ describe("planConfigMerge", () => {
   })
 })
 
-describe("stripFactoryGovernanceLeaves — REQ-067(出厂默认禁明文剥离)", () => {
+describe("stripFactoryBuiltinPolicyLeaves — REQ-067(出厂默认禁明文剥离)", () => {
   const NAMES2 = ["customize-opencode"]
   test("剥 permission.skill deny + 治理打底 + 占位 command(整链清空)", () => {
     const c: Record<string, unknown> = {
       permission: { skill: { "*": "allow", "customize-opencode": "deny" } },
       command: { "customize-opencode": { description: "(已禁用)该技能已在 alpha 治理中禁用", template: "x" } },
     }
-    expect(stripFactoryGovernanceLeaves(c, NAMES2)).toBe(true)
+    expect(stripFactoryBuiltinPolicyLeaves(c, NAMES2)).toBe(true)
     expect(c.permission).toBeUndefined() // skill 只剩打底 → 整链删
     expect(c.command).toBeUndefined()
   })
@@ -236,13 +236,13 @@ describe("stripFactoryGovernanceLeaves — REQ-067(出厂默认禁明文剥离)"
       permission: { skill: { "*": "allow", "customize-opencode": "deny", "my-skill": "deny" } },
       command: { "customize-opencode": { description: "user's own command", template: "y" } },
     }
-    expect(stripFactoryGovernanceLeaves(c, NAMES2)).toBe(true)
+    expect(stripFactoryBuiltinPolicyLeaves(c, NAMES2)).toBe(true)
     expect((c.permission as any).skill["my-skill"]).toBe("deny") // 用户自禁保留
     expect((c.permission as any).skill["*"]).toBe("allow")
     expect((c.command as any)["customize-opencode"].description).toBe("user's own command") // 无占位指纹不碰
   })
   test("幂等:干净配置 no-op", () => {
     const c: Record<string, unknown> = { skills: { paths: ["/a"] } }
-    expect(stripFactoryGovernanceLeaves(c, NAMES2)).toBe(false)
+    expect(stripFactoryBuiltinPolicyLeaves(c, NAMES2)).toBe(false)
   })
 })

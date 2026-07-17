@@ -11,15 +11,14 @@
 // discipline: no mock.module for electron/logging in new modules).
 
 import { createHash } from "node:crypto"
+import { decodeOwnershipDims, RUNTIME_SURFACES, type OwnershipDims, type RuntimeSurface } from "../shared/ext-ownership"
 
 export const MANIFEST_SCHEMA_VERSION = 2 as const
 
 export type ManifestKind = "skill" | "agent" | "mcp" | "plugin" | "bundle" | "cloud"
 export type ManifestPlatform = "darwin" | "win32" | "linux"
-/** 运行面(五维 ownership 的 runtime surfaces 维;组件级 runsIn 复用同一枚举)。 */
-export type RuntimeSurface = "engine-process" | "local-subprocess" | "remote-service" | "model-context" | "cloud-pipeline"
-export type SupportTier = "alpha" | "curated" | "community" | "user"
-export type DistributionChannel = "bundled" | "remote-catalog" | "npm" | "engine-config" | "cloud"
+// 五维 ownership 的值域真源在 shared/ext-ownership.ts(REQ-103 slice 1);此处 re-export 保持既有导出面。
+export type { RuntimeSurface, SupportTier, DistributionChannel } from "../shared/ext-ownership"
 
 /** capability 枚举白名单 —— 名单之外即「越权 capability」,解码期拒绝(AC#1)。 */
 export const MANIFEST_CAPABILITIES = [
@@ -52,13 +51,7 @@ export interface ManifestDependency {
 }
 
 /** 五维 ownership + support tier(REQ-099 交付①;curated ≠ authored,不得混标)。 */
-export interface ManifestOwnership {
-  authored: string
-  curated: string
-  distributed: DistributionChannel
-  runtimeSurfaces: RuntimeSurface[]
-  supportTier: SupportTier
-}
+export type ManifestOwnership = OwnershipDims
 
 export interface ExtensionManifestV2 {
   schemaVersion: typeof MANIFEST_SCHEMA_VERSION
@@ -79,9 +72,8 @@ export type ManifestDecode = { ok: true; manifest: ExtensionManifestV2 } | { ok:
 
 const KINDS = new Set<string>(["skill", "agent", "mcp", "plugin", "bundle", "cloud"])
 const PLATFORMS = new Set<string>(["darwin", "win32", "linux"])
-const SURFACES = new Set<string>(["engine-process", "local-subprocess", "remote-service", "model-context", "cloud-pipeline"])
-const TIERS = new Set<string>(["alpha", "curated", "community", "user"])
-const CHANNELS = new Set<string>(["bundled", "remote-catalog", "npm", "engine-config", "cloud"])
+// 值域集合从 shared 枚举派生 —— 与 UI/推导层永远同一份(REQ-103 slice 1)。
+const SURFACES = new Set<string>(RUNTIME_SURFACES)
 const CAPS = new Set<string>(MANIFEST_CAPABILITIES)
 
 const SAFE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/
@@ -104,7 +96,6 @@ const TOP_KEYS = new Set([
 ])
 const ARTIFACT_KEYS = new Set(["digest", "size", "mediaType"])
 const COMPAT_KEYS = new Set(["platforms"])
-const OWNERSHIP_KEYS = new Set(["authored", "curated", "distributed", "runtimeSurfaces", "supportTier"])
 const COMPONENT_KEYS = new Set(["name", "runsIn"])
 const DEPENDENCY_KEYS = new Set(["id", "version", "optional"])
 
@@ -228,28 +219,12 @@ export function decodeManifestV2(input: unknown): ManifestDecode {
     })
   }
 
-  // ownership(五维)
+  // ownership(五维)—— 严格解码委托 shared 真源(REQ-103 slice 1;同一套值域与校验)。
   let ownership: ManifestOwnership | undefined
-  if (!isObj(input.ownership)) {
-    errors.push("manifest.ownership: required object (authored/curated/distributed/runtimeSurfaces/supportTier)")
-  } else {
-    rejectUnknownKeys(input.ownership, OWNERSHIP_KEYS, "manifest.ownership", errors)
-    const authored = decodeString(input.ownership.authored, "manifest.ownership.authored", errors, { max: 64 })
-    const curated = decodeString(input.ownership.curated, "manifest.ownership.curated", errors, { max: 64 })
-    const distributed = decodeString(input.ownership.distributed, "manifest.ownership.distributed", errors)
-    if (distributed !== undefined && !CHANNELS.has(distributed)) errors.push(`manifest.ownership.distributed: "${distributed}" not a known channel`)
-    const surfaces = decodeEnumArray(input.ownership.runtimeSurfaces, SURFACES, "manifest.ownership.runtimeSurfaces", errors, { nonEmpty: true })
-    const tier = decodeString(input.ownership.supportTier, "manifest.ownership.supportTier", errors)
-    if (tier !== undefined && !TIERS.has(tier)) errors.push(`manifest.ownership.supportTier: "${tier}" not a known tier`)
-    if (authored && curated && distributed && CHANNELS.has(distributed) && tier && TIERS.has(tier)) {
-      ownership = {
-        authored,
-        curated,
-        distributed: distributed as DistributionChannel,
-        runtimeSurfaces: surfaces as RuntimeSurface[],
-        supportTier: tier as SupportTier,
-      }
-    }
+  {
+    const decoded = decodeOwnershipDims(input.ownership, "manifest.ownership")
+    if (decoded.ok) ownership = decoded.dims
+    else errors.push(...decoded.errors)
   }
 
   // components(逐组件 runsIn)

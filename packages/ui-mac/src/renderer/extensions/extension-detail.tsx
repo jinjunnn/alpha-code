@@ -8,10 +8,11 @@
 import { createMemo, createResource, For, Show, type Accessor, type JSX } from "solid-js"
 import { t } from "../i18n"
 import type { CatalogEntry, CloudPipelineSpec, McpInstallSpec, PluginInstallSpec, SkillInstallSpec } from "./catalog-types"
-import type { InstallReceipt } from "../../preload/types"
+import type { InstallReceipt, ExtInventory } from "../../preload/types"
 import type { ExtensionsApi, HubAgent } from "./use-extensions"
 import { CloudDispatchBox } from "./cloud-dispatch-box"
 import { iconFor, iconForRow, sourceLabel, typeLabel, Svg, LockIc } from "./ext-presentation"
+import { inventoryRowFor, ownershipRows, trustRows, type PresentRow } from "./ext-inventory-present"
 import { EXCEL_MCP_PIN, officeAdvisoryFor, type OfficeAdvisory } from "../../shared/office-advisories"
 
 /** What the detail page shows: a catalog entry, an engine agent (no catalog identity), or the
@@ -96,6 +97,8 @@ export function ExtensionDetail(props: {
   cloudReady?: Accessor<boolean>
   /** 未登录时云页的登录 CTA(window.api.auth.start,hub 持有)。 */
   onLogin?: () => void
+  /** REQ-103(#195):governance 只读真源(逐扩展五维所有权 + 三态);详情页所有权/来源签名段据此渲染。 */
+  governance?: Accessor<ExtInventory | undefined>
 }) {
   const entry = () => (props.target.kind === "entry" ? props.target.entry : undefined)
   const agent = () => (props.target.kind === "agent" ? props.target.agent : undefined)
@@ -206,6 +209,21 @@ export function ExtensionDetail(props: {
       desc: a.description ?? t("alpha.ext.agentNoDesc"),
     }
   })
+
+  // REQ-103(#195):本条目的 governance 行(同 id 优先已安装行,否则浏览行)——所有权/来源签名段的真源。
+  // 仅 catalog 条目有 governance 身份;agent(引擎原生)/云连接器无 id → 两段不渲染(不造)。
+  const govRow = createMemo(() => inventoryRowFor(props.governance?.(), entry()?.id ?? ""))
+
+  // PresentRow[] → FactRow 列表(值为 i18n key 数组则逐个 t() 后「 · 」拼接,或字面值直出)。
+  const FactRows = (p: { rows: PresentRow[] }) => (
+    <For each={p.rows}>
+      {(r) => (
+        <FactRow label={t(r.labelKey as never)}>
+          {r.valueKeys ? r.valueKeys.map((k) => t(k as never)).join(" · ") : r.value}
+        </FactRow>
+      )}
+    </For>
+  )
 
   return (
     <div class="alpha-ext-detail">
@@ -742,6 +760,31 @@ export function ExtensionDetail(props: {
             <p class="alpha-ext-dnote">{t("alpha.ext.keyHint")}</p>
           </Show>
         </Section>
+      </Show>
+
+      {/* ── REQ-103(#195)所有权段(AC1:作者与甄选分开陈述,永不塌缩成「Alpha 出品」)──
+          能力授权总账和信任链不该是独立页面 —— 就在「你正在看的这个扩展」里。仅 catalog 条目有
+          governance 身份;数据面无 per-扩展 capability 列表,故设计稿的「权限」段暂缺(见回报 OPEN)。 */}
+      <Show when={govRow()}>
+        {(row) => (
+          <>
+            <Section title={t("alpha.ext.ownTitle")}>
+              <FactRows rows={ownershipRows(row().ownership)} />
+              <p class="alpha-ext-dnote">{t("alpha.ext.ownNote")}</p>
+            </Section>
+            {/* ── 来源与签名段:信任链就近呈现(签名通道 + 分发 + 目录版本;发布钥不在读面 → 省略)── */}
+            <Section title={t("alpha.ext.trustTitle")}>
+              <FactRows
+                rows={trustRows(
+                  row().ownership,
+                  props.governance?.()?.catalogChannel ?? null,
+                  props.governance?.()?.catalogVersion ?? null,
+                )}
+              />
+              <p class="alpha-ext-dnote">{t("alpha.ext.trustNote")}</p>
+            </Section>
+          </>
+        )}
       </Show>
 
     </div>

@@ -25,10 +25,10 @@ import {
   isJunkOnlyDir,
   planConfigMerge,
   rewriteFactorySkillPaths,
-  stripFactoryGovernanceLeaves,
+  stripFactoryBuiltinPolicyLeaves,
 } from "./engine-config-truth"
 import { FACTORY_SKILL_IDS } from "./factory-skills"
-import { FACTORY_DENIED_SKILLS } from "./alpha-governance"
+import { FACTORY_DENIED_SKILLS } from "./alpha-builtin-policy"
 
 type Logger = { log: (m: string, meta?: unknown) => void; warn: (m: string, meta?: unknown) => void }
 
@@ -131,7 +131,7 @@ export function reconcileEngineConfigTruth(log?: Logger, opts?: ReconcileOptions
     : false
   // REQ-067:剥离历史物化的「出厂默认禁」明文(permission.skill deny + 占位 command)——
   // 该行为现由 env → ext hook 内存注入,用户配置零痕迹。幂等,无条件执行(只针对出厂清单名)。
-  const denyStripped = stripFactoryGovernanceLeaves(plan.merged, FACTORY_DENIED_SKILLS)
+  const denyStripped = stripFactoryBuiltinPolicyLeaves(plan.merged, FACTORY_DENIED_SKILLS)
   const added = [
     ...plan.added,
     ...(skillsAdded ? ["skills[]"] : []),

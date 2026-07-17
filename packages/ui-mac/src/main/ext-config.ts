@@ -150,10 +150,10 @@ function providerReadPaths(): string[] {
 // 与 persistMcp 同一 home jsonc 目标 + 同一 jsonc-parser 修改姿势,但:①一次事务应用多个**叶子**
 // 编辑(agent.<n>.hidden 而非整个 agent.<n> —— 用户同名兄弟字段保留,验收⑥);②独立的路径白名单
 // (只允许治理面的三个受控域,与 MCP/plugin 白名单互不放宽);③value=undefined = 删除该叶子(净除)。
-export type GovernanceEdit = { path: string[]; value: unknown; onlyIfAbsent?: boolean }
+export type BuiltinPolicyEdit = { path: string[]; value: unknown; onlyIfAbsent?: boolean }
 
 const GOV_NAME_RE = /^[a-zA-Z0-9*][a-zA-Z0-9._*-]{0,63}$/
-function governancePathAllowed(p: string[]): boolean {
+function builtinPolicyPathAllowed(p: string[]): boolean {
   if (p[0] === "agent")
     return p.length === 3 && GOV_NAME_RE.test(p[1]) &&
       ["hidden", "disable", "prompt", "model", "permission", "description", "temperature", "steps", "variant", "color"].includes(p[2])
@@ -162,17 +162,17 @@ function governancePathAllowed(p: string[]): boolean {
   return false
 }
 
-export type GovernanceApplyOutcome = { ok: true; applied: string[][] } | { ok: false; reason: string }
+export type BuiltinPolicyApplyOutcome = { ok: true; applied: string[][] } | { ok: false; reason: string }
 
 /** 一次事务应用全部治理叶子编辑:全部路径过白名单 → 逐条 modify → 解析校验 → 原子写(失败整体回滚)。
  *  返回**实际写入**的叶子路径(onlyIfAbsent 被跳过的不算 —— codex H1:跳过的键绝不能进记账,
  *  否则 reset 会删掉用户自有的同名键,如用户预设的 permission.skill."*")。 */
-export function applyGovernanceEdits(edits: GovernanceEdit[]): GovernanceApplyOutcome {
-  return withConfigWriteLock(() => applyGovernanceEditsUnlocked(edits))
+export function applyBuiltinPolicyEdits(edits: BuiltinPolicyEdit[]): BuiltinPolicyApplyOutcome {
+  return withConfigWriteLock(() => applyBuiltinPolicyEditsUnlocked(edits))
 }
-function applyGovernanceEditsUnlocked(edits: GovernanceEdit[]): GovernanceApplyOutcome {
+function applyBuiltinPolicyEditsUnlocked(edits: BuiltinPolicyEdit[]): BuiltinPolicyApplyOutcome {
   for (const e of edits) {
-    if (!governancePathAllowed(e.path)) return { ok: false, reason: `refused: governance path not allowed: ${e.path.join(".")}` }
+    if (!builtinPolicyPathAllowed(e.path)) return { ok: false, reason: `refused: governance path not allowed: ${e.path.join(".")}` }
   }
   const target = mcpPluginTargetPath()
   const bak = `${target}.bak`
@@ -198,6 +198,11 @@ function applyGovernanceEditsUnlocked(edits: GovernanceEdit[]): GovernanceApplyO
         const existing = parse(text) as Record<string, unknown> | undefined
         if (nodeAt(existing, e.path) !== undefined) continue // 用户已有 → 跳过且不记账(codex H1)
       }
+      // O4:删除的叶子在当前文档不存在(旧账物化在历史目标文件,账实分离)→ 跳过 ——
+      // jsonc-parser 对父路径缺失的删除会 throw("Can not delete in empty document"),一个幽灵键
+      // 即砖死整笔事务(治理面所有 apply/reset 永久失败);跳过后本次 apply 以 r.applied 收敛记账,
+      // 幽灵键自愈出账。删除不进 applied,记账语义不变。
+      if (e.value === undefined && nodeAt(parse(text) as Record<string, unknown> | undefined, e.path) === undefined) continue
       const edits2 = modify(text, e.path, e.value, { formattingOptions: { tabSize: 2, insertSpaces: true } })
       text = applyEdits(text, edits2)
       if (e.value !== undefined) applied.push(e.path)

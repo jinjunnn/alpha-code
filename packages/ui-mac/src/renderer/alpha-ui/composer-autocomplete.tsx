@@ -33,7 +33,7 @@ import {
   commandOrigin,
   detectTrigger,
   displayDescription,
-  filterGovernanceDenied,
+  filterBuiltinDenied,
   slashSection,
   sourceTag,
   triggerSignature,
@@ -134,11 +134,11 @@ export function createComposerAutocomplete(opts: {
   const [importedSkills, setImportedSkills] = createSignal<ReadonlySet<string>>(new Set())
   // REQ-072:出厂技能名单 —— 「技能」节里区分 内置(出厂)vs 个人(自装/导入)的归属真源。
   const [factorySkills, setFactorySkills] = createSignal<ReadonlySet<string>>(new Set())
-  const refreshGovernance = async () => {
+  const refreshBuiltinDenied = async () => {
     const ext = window.api?.ext
     if (!ext) return
     const [gov, installs, factory] = await Promise.all([
-      ext.govRead().catch(() => null),
+      ext.builtinRead().catch(() => null),
       ext.listInstalls(opts.directory()).catch(() => null),
       ext.factorySkillIds().catch(() => null),
     ])
@@ -158,7 +158,7 @@ export function createComposerAutocomplete(opts: {
   createEffect(() => {
     const isSlash = view()?.mode === "slash"
     if (isSlash && !wasSlash) {
-      void refreshGovernance()
+      void refreshBuiltinDenied()
       void refetchCmds() // 解禁后的占位残描述 / 新装技能 → 打开菜单即拉新(resource 刷新期间保留旧值,无闪烁)
     }
     wasSlash = isSlash
@@ -197,7 +197,7 @@ export function createComposerAutocomplete(opts: {
     }, 120)
   })
   onCleanup(() => fileTimer && clearTimeout(fileTimer))
-  // REQ-078 T3:零查询钉「git 变更文件」—— @/+ 弹窗打开瞬间拉一次 vcs.status(refreshGovernance
+  // REQ-078 T3:零查询钉「git 变更文件」—— @/+ 弹窗打开瞬间拉一次 vcs.status(refreshBuiltinDenied
   // 同节奏);失败/无目录/非 git → 空(退回纯提示行,不崩不留陈旧路径)。
   // 注意端点选型:`/file/status` 在上游引擎是恒返 [] 的存根(handlers/file.ts:127-129,SDK 有形
   // 引擎无实,dev 实测),真实现是 `/vcs/status`(handlers/instance.ts:47-49 → Vcs.Service)。
@@ -234,7 +234,7 @@ export function createComposerAutocomplete(opts: {
     const v = view()
     if (!v || v.mode !== "slash") return null
     const entries: SlashItem[] = [
-      ...filterGovernanceDenied(customCmds() ?? [], deniedSkills()).map((c) =>
+      ...filterBuiltinDenied(customCmds() ?? [], deniedSkills()).map((c) =>
         toSlashItem({
           id: `custom.${c.name}`,
           trigger: c.name,

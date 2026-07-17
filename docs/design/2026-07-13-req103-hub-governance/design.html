@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>alpha-code · REQ-103 定制中心治理增量 v3 — 零新增 tab,三功能各归其位 (2026-07-13)</title>
+<style>
+/* ════════════════════════════════════════════════════════════════════════
+   tokens + 组件词汇 verbatim 沿用 2026-07-04-ext-hub-m2 稿(6-26 定稿血统)。
+   v3 = 用户拍板方向:删「治理」tab,三样功能各归其位——
+     · 能力授权总账 → 详情页新增 section     · 信任链状态 → 详情页新增 section
+     · 缓存回收(CAS/GC)→ 设置页新增 section
+   定制中心横向 tab 一个不新增;唯一 tab 级改动 = 「已安装」内部三态增强。
+   v1(左栏四区)、v2(治理 tab)均作废。
+   ════════════════════════════════════════════════════════════════════════ */
+:root{
+  --a-bg-canvas:#ffffff;--a-bg-subtle:#f6f7f9;--a-bg-muted:#eceef1;--a-bg-inset:#e3e6ea;
+  --a-surface:#ffffff;--a-surface-raised:#ffffff;--a-scrim:rgba(15,17,21,.45);
+  --a-border-faint:#eef0f3;--a-border:#e4e6ea;--a-border-strong:#ced2d9;
+  --a-text:#18181b;--a-text-secondary:#52525b;--a-text-tertiary:#7c7d85;--a-text-disabled:#b3b6bd;
+  --a-overlay-hover:rgba(15,17,21,.05);
+  --a-accent:#4f46e5;--a-accent-solid:#4f46e5;--a-accent-solid-hover:#4338ca;
+  --a-accent-subtle:rgba(79,70,229,.10);--a-accent-ring:rgba(79,70,229,.45);
+  --a-success:#16a34a;--a-warning:#d97706;--a-error:#dc2626;--a-info:#2563eb;
+  --a-success-subtle:rgba(22,163,74,.12);--a-warning-subtle:rgba(217,119,6,.12);--a-error-subtle:rgba(220,38,38,.12);
+  --a-font-sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;
+  --a-font-mono:"SF Mono","JetBrains Mono","Menlo",ui-monospace,monospace;
+  --a-text-2xs:10.5px;--a-text-xs:11.5px;--a-text-sm:12.5px;--a-text-base:13px;--a-text-md:14px;--a-text-lg:16px;--a-text-xl:19px;--a-text-2xl:23px;
+  --a-leading-tight:1.2;--a-leading-snug:1.4;--a-leading-normal:1.55;--a-tracking-tight:-0.014em;--a-tracking-wide:0.04em;
+  --a-weight-normal:400;--a-weight-medium:500;--a-weight-semibold:600;
+  --a-radius-sm:6px;--a-radius-md:8px;--a-radius-lg:11px;--a-radius-xl:14px;--a-radius-2xl:18px;--a-radius-full:9999px;
+  --a-shadow-xs:0 1px 2px rgba(15,17,21,.05);--a-shadow-sm:0 1px 3px rgba(15,17,21,.07),0 1px 2px rgba(15,17,21,.04);
+  --a-shadow-md:0 4px 12px rgba(15,17,21,.08),0 2px 4px rgba(15,17,21,.05);--a-shadow-lg:0 12px 32px rgba(15,17,21,.12),0 4px 8px rgba(15,17,21,.06);
+  --a-shadow-overlay:0 24px 64px rgba(15,17,21,.20),0 8px 16px rgba(15,17,21,.10);--a-ring-focus:0 0 0 3px var(--a-accent-ring);--a-edge-light:inset 0 1px 0 rgba(255,255,255,.65);
+  --a-dur-fast:130ms;--a-dur-base:190ms;--a-ease-out:cubic-bezier(.22,1,.36,1);
+}
+html[data-theme="dark"]{
+  --a-bg-canvas:#0a0b0d;--a-bg-subtle:#0e0f11;--a-bg-muted:#16171a;--a-bg-inset:#1e2024;
+  --a-surface:#121316;--a-surface-raised:#17181b;--a-scrim:rgba(0,0,0,.60);
+  --a-text:#fafafa;--a-text-secondary:#a1a1aa;--a-text-tertiary:#71727a;--a-text-disabled:#4f5158;
+  --a-border-faint:#1b1c20;--a-border:#232428;--a-border-strong:#34363c;--a-overlay-hover:rgba(255,255,255,.055);
+  --a-accent:#818cf8;--a-accent-solid:#4f46e5;--a-accent-solid-hover:#5b54ea;--a-accent-subtle:rgba(129,140,248,.14);--a-accent-ring:rgba(129,140,248,.45);
+  --a-success:#4ade80;--a-warning:#fbbf24;--a-error:#f87171;--a-info:#60a5fa;
+  --a-success-subtle:rgba(74,222,128,.14);--a-warning-subtle:rgba(251,191,36,.14);--a-error-subtle:rgba(248,113,113,.14);
+  --a-shadow-xs:0 1px 2px rgba(0,0,0,.4);--a-shadow-sm:0 1px 3px rgba(0,0,0,.5);--a-shadow-md:0 4px 12px rgba(0,0,0,.5);--a-shadow-lg:0 12px 32px rgba(0,0,0,.6);--a-shadow-overlay:0 24px 64px rgba(0,0,0,.7);--a-edge-light:inset 0 1px 0 rgba(255,255,255,.06);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--a-bg-subtle);color:var(--a-text);font-family:var(--a-font-sans);font-size:var(--a-text-base);line-height:var(--a-leading-normal);-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{margin:0;font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight);line-height:var(--a-leading-tight)}
+button{font-family:inherit;cursor:pointer}svg{display:block}
+.ic{width:16px;height:16px;stroke:currentColor;stroke-width:1.6;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.mono{font-family:var(--a-font-mono)}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:16px;padding:12px 22px;background:color-mix(in srgb,var(--a-bg-canvas) 86%,transparent);backdrop-filter:blur(12px);border-bottom:1px solid var(--a-border-faint)}
+.topbar .brand{display:flex;align-items:center;gap:10px;font-weight:var(--a-weight-semibold)}
+.topbar .brand .m{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:7px;background:var(--a-accent-solid);color:#fff;font-weight:800;font-size:13px}
+.topbar .spacer{flex:1}.topbar nav{display:flex;gap:2px}
+.topbar nav a{padding:6px 10px;border-radius:var(--a-radius-md);color:var(--a-text-secondary);text-decoration:none;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium)}
+.topbar nav a:hover{background:var(--a-bg-muted);color:var(--a-text)}
+.seg{display:inline-flex;padding:2px;background:var(--a-bg-muted);border-radius:var(--a-radius-md);gap:2px}
+.seg button{border:0;background:transparent;color:var(--a-text-secondary);font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);padding:5px 10px;border-radius:6px}
+.seg button.on{background:var(--a-surface);color:var(--a-text);box-shadow:var(--a-shadow-xs)}
+.wrap{max-width:1180px;margin:0 auto;padding:36px 24px 140px}
+.sec{margin-bottom:56px;scroll-margin-top:76px}
+.sec-kicker{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary)}
+.sec h2{font-size:var(--a-text-2xl);margin-top:6px}
+.sec p.lede{margin:8px 0 0;color:var(--a-text-secondary);font-size:var(--a-text-md);max-width:78ch}
+.note{margin-top:14px;padding:12px 14px;background:var(--a-bg-canvas);border:1px solid var(--a-border);border-left:3px solid var(--a-accent);border-radius:var(--a-radius-md);font-size:var(--a-text-sm);color:var(--a-text-secondary)}
+.note b{color:var(--a-text)}.note.ok{border-left-color:var(--a-success)}.note.warn{border-left-color:var(--a-warning)}
+.matrix-scroll{overflow-x:auto;margin-top:8px}
+table.matrix{width:100%;min-width:820px;border-collapse:separate;border-spacing:0;background:var(--a-surface);border:1px solid var(--a-border);border-radius:var(--a-radius-lg);overflow:hidden;font-size:var(--a-text-sm)}
+.matrix th{background:var(--a-bg-subtle);text-align:left;font-weight:var(--a-weight-semibold);font-size:var(--a-text-xs);color:var(--a-text-secondary);padding:10px 14px;border-bottom:1px solid var(--a-border)}
+.matrix td{padding:11px 14px;border-bottom:1px solid var(--a-border-faint);vertical-align:top;color:var(--a-text-secondary);line-height:var(--a-leading-snug)}
+.matrix tr:last-child td{border-bottom:0}.matrix td:first-child{white-space:nowrap;font-weight:var(--a-weight-semibold);color:var(--a-text)}
+.tag{display:inline-block;font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);padding:1.5px 7px;border-radius:var(--a-radius-full);white-space:nowrap}
+.tag.zero{background:var(--a-bg-muted);color:var(--a-text-tertiary)}.tag.new{background:var(--a-accent-subtle);color:var(--a-accent)}.tag.enh{background:var(--a-warning-subtle);color:var(--a-warning)}
+.frame{position:relative;border:1px solid var(--a-border);border-radius:var(--a-radius-xl);overflow:hidden;background:var(--a-bg-canvas);box-shadow:var(--a-shadow-md);margin-top:16px}
+.cap{font-size:var(--a-text-xs);color:var(--a-text-tertiary);margin-top:10px}
+
+/* hub shell 同现行 */
+.app{display:flex;height:640px;min-width:940px}
+.content{flex:1;background:var(--a-bg-canvas);position:relative;overflow:hidden;display:flex;flex-direction:column}
+.hub-tabbar{position:sticky;top:0;z-index:4;border-bottom:1px solid var(--a-border-faint);padding:0 24px;display:flex;justify-content:center;background:color-mix(in srgb,var(--a-bg-canvas) 88%,transparent);backdrop-filter:blur(12px)}
+.hub-tabs{display:flex;gap:2px;width:100%;max-width:880px;overflow-x:auto;scrollbar-width:none}.hub-tabs::-webkit-scrollbar{display:none}
+.hub-tab{padding:13px 11px 11px;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);color:var(--a-text-tertiary);border-bottom:2px solid transparent;cursor:pointer;margin-bottom:-1px;white-space:nowrap}
+.hub-tab:hover{color:var(--a-text-secondary)}.hub-tab.on{color:var(--a-text);border-bottom-color:var(--a-accent)}
+.hub-scroll{flex:1;overflow-y:auto;padding:26px 24px 40px;container-type:inline-size}
+.hub-center{max-width:820px;margin:0 auto}
+.hub-h1{font-size:var(--a-text-2xl)}.hub-sub{color:var(--a-text-secondary);font-size:var(--a-text-md);margin-top:6px}
+.chip{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);padding:1.5px 7px;border-radius:var(--a-radius-full);white-space:nowrap}
+.chip[data-src="official"]{background:color-mix(in srgb,var(--a-info) 14%,transparent);color:var(--a-info)}
+.chip[data-src="alpha"]{background:var(--a-accent-subtle);color:var(--a-accent)}
+.chip[data-src="community"]{background:var(--a-warning-subtle);color:var(--a-warning)}
+.chip[data-src="type"]{background:var(--a-bg-muted);color:var(--a-text-secondary)}
+.chip[data-src="verify"]{background:var(--a-warning-subtle);color:var(--a-warning)}
+.chip[data-src="err"]{background:var(--a-error-subtle);color:var(--a-error)}
+.scope-h{display:flex;align-items:center;gap:8px;margin:20px 0 10px;font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary)}
+.scope-h:first-child{margin-top:4px}
+
+/* 已安装行(增强,man-row 沿用) */
+.man-row{display:flex;align-items:center;gap:13px;padding:13px 15px;border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-surface);margin-bottom:9px;cursor:pointer}
+.man-row:hover{border-color:var(--a-border-strong)}
+.man-row .ico{width:36px;height:36px;border-radius:var(--a-radius-md);display:grid;place-items:center;color:#fff;font-size:12px;font-weight:700;flex:none;box-shadow:var(--a-shadow-xs)}
+.man-row .body{min-width:0;flex:1}
+.man-row .nm{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.man-row .nm b{font-size:var(--a-text-md);font-weight:var(--a-weight-medium)}
+.man-row .st{font-size:var(--a-text-sm);color:var(--a-text-tertiary);margin-top:2px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.man-row .st .dot{width:7px;height:7px;border-radius:50%;flex:none}
+.man-row .st .dot.ok{background:var(--a-success)}.man-row .st .dot.warn{background:var(--a-warning)}.man-row .st .dot.err{background:var(--a-error)}
+.man-row .src{color:var(--a-text-disabled)}
+.man-row .acts{display:flex;align-items:center;gap:10px;flex:none}
+.upd-btn{display:inline-flex;align-items:center;height:28px;padding:0 12px;border-radius:var(--a-radius-md);border:0;background:var(--a-warning-subtle);color:var(--a-warning);font-size:var(--a-text-xs);font-weight:var(--a-weight-semibold)}
+.ghost-btn{display:inline-flex;align-items:center;height:28px;padding:0 12px;border-radius:var(--a-radius-md);border:1px solid var(--a-border);background:var(--a-surface);color:var(--a-text-secondary);font-size:var(--a-text-xs);font-weight:var(--a-weight-medium)}
+.ghost-btn:hover{background:var(--a-overlay-hover)}
+.add{display:inline-flex;align-items:center;height:28px;padding:0 13px;border-radius:var(--a-radius-md);border:0;background:var(--a-accent-solid);color:#fff;font-size:var(--a-text-xs);font-weight:var(--a-weight-medium)}
+.add[data-variant="ghost"]{background:var(--a-surface);color:var(--a-text);border:1px solid var(--a-border)}
+.sw{width:36px;height:21px;border-radius:var(--a-radius-full);background:var(--a-bg-inset);position:relative;flex:none;cursor:pointer;border:0;padding:0}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:var(--a-shadow-xs);transition:left var(--a-dur-fast) var(--a-ease-out)}
+.sw.on{background:var(--a-accent-solid)}.sw.on::after{left:17px}.sw[disabled]{opacity:.45;cursor:not-allowed}
+
+/* 详情页(现行 + 两个新 section) */
+.det{padding:24px 26px}
+.backrow{display:inline-flex;align-items:center;gap:5px;margin-bottom:16px;padding:5px 10px 5px 4px;border:0;border-radius:var(--a-radius-md);background:transparent;color:var(--a-text-secondary);font-size:var(--a-text-sm);font-weight:var(--a-weight-medium)}
+.backrow:hover{background:var(--a-bg-muted);color:var(--a-text)}
+.dhead{display:flex;gap:14px;align-items:flex-start}
+.dhead .ico{width:48px;height:48px;border-radius:var(--a-radius-lg);display:grid;place-items:center;font-size:17px;font-weight:700;color:#fff;flex:none;box-shadow:var(--a-shadow-xs)}
+.dhead h3{font-size:var(--a-text-xl);display:inline;margin-right:6px}
+.dhead .titleline{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dhead .hd-act{margin-left:auto;flex:none}
+.dsec{border-top:1px solid var(--a-border-faint);padding:16px 0 4px;margin-top:16px}
+.dsec.newsec{position:relative}
+.dsec.newsec::before{content:"REQ-103 新增";position:absolute;right:0;top:16px;font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);color:var(--a-accent);background:var(--a-accent-subtle);padding:1px 7px;border-radius:var(--a-radius-full)}
+.dsec-t{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary);margin-bottom:10px}
+.fact{display:flex;gap:12px;font-size:var(--a-text-sm);margin-bottom:8px}
+.fact .k{flex:0 0 76px;color:var(--a-text-tertiary)}.fact .v{min-width:0;color:var(--a-text)}
+.fact .v .chip{margin-left:6px}
+.perm-list{display:flex;flex-direction:column;gap:1px;background:var(--a-border-faint);border:1px solid var(--a-border-faint);border-radius:var(--a-radius-md);overflow:hidden}
+.perm-row{display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--a-surface);font-size:var(--a-text-sm)}
+.perm-row .pk{width:96px;flex:none;color:var(--a-text-secondary);font-family:var(--a-font-mono);font-size:var(--a-text-xs)}
+.perm-row .pv{color:var(--a-text)}.perm-row .pv.none{color:var(--a-text-disabled)}
+.trust-line{display:flex;gap:8px;flex-wrap:wrap}
+.chip[data-src="ok"]{background:var(--a-success-subtle);color:var(--a-success)}
+
+/* 设置片段(新 section) */
+.settings{padding:26px 30px;max-width:720px;margin:0 auto}
+.set-pagehd{font-size:var(--a-text-xl);margin-bottom:2px}
+.set-sub{color:var(--a-text-tertiary);font-size:var(--a-text-sm);margin-bottom:20px}
+.set-group{border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-surface);margin-bottom:14px;overflow:hidden}
+.set-group.newsec{border-color:var(--a-accent-border,rgba(79,70,229,.35))}
+.set-grouphd{display:flex;align-items:center;gap:8px;padding:13px 16px;border-bottom:1px solid var(--a-border-faint);font-size:var(--a-text-sm);font-weight:var(--a-weight-semibold)}
+.set-grouphd .badge{margin-left:auto;font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);color:var(--a-accent);background:var(--a-accent-subtle);padding:1px 7px;border-radius:var(--a-radius-full)}
+.set-body{padding:14px 16px}
+.gc-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.gc-bar .n{font-family:var(--a-font-mono);font-size:var(--a-text-sm);color:var(--a-text-secondary)}
+.gc-bar .n b{font-size:var(--a-text-lg);color:var(--a-text)}
+.gc-bar .btns{margin-left:auto;display:flex;gap:8px}
+
+/* 权限重确认弹框(骨架同现行确认框) */
+.scrim{position:absolute;inset:0;background:var(--a-scrim);backdrop-filter:blur(3px);z-index:8;display:none}.scrim.on{display:block}
+.modal{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:440px;max-width:92%;background:var(--a-surface-raised);border:1px solid var(--a-border-faint);border-radius:var(--a-radius-2xl);box-shadow:var(--a-shadow-overlay);overflow:hidden;z-index:9;display:none}.modal.on{display:block}
+.modal-hero{display:flex;flex-direction:column;align-items:center;text-align:center;padding:26px 24px 12px}
+.modal-hero .big{width:48px;height:48px;border-radius:var(--a-radius-lg);display:grid;place-items:center;font-size:18px;font-weight:700;color:#fff;box-shadow:var(--a-shadow-sm);margin-bottom:12px}
+.modal-hero h3{font-size:var(--a-text-xl)}.modal-hero .dev{font-size:var(--a-text-sm);color:var(--a-text-tertiary);margin-top:5px}
+.modal-body{padding:0 24px 4px}
+.install-box{border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);overflow:hidden}
+.install-row{display:flex;align-items:center;gap:10px;padding:10px 13px;border-bottom:1px solid var(--a-border-faint);font-size:var(--a-text-sm)}.install-row:last-child{border-bottom:0}
+.install-row.addcap{background:var(--a-warning-subtle)}
+.install-row .k{font-family:var(--a-font-mono);font-size:var(--a-text-xs);color:var(--a-text-secondary);width:96px;flex:none}
+.install-row .lab{margin-left:auto;font-size:var(--a-text-2xs);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;flex:none}
+.install-row.addcap .lab{color:var(--a-warning);font-weight:var(--a-weight-semibold)}.install-row .lab.same{color:var(--a-text-disabled)}
+.modal-note{font-size:var(--a-text-xs);color:var(--a-text-tertiary);margin:14px 2px 0;line-height:var(--a-leading-snug)}
+.modal-foot{padding:16px 24px 22px}
+.modal-foot .go{width:100%;height:40px;display:flex;align-items:center;justify-content:center;border:0;border-radius:var(--a-radius-md);background:var(--a-accent-solid);color:#fff;font-size:var(--a-text-md);font-weight:var(--a-weight-medium)}
+.modal-foot .alt{display:block;text-align:center;margin-top:10px;font-size:var(--a-text-sm);color:var(--a-text-tertiary);cursor:pointer;background:0;border:0;width:100%}
+.tabpane{display:none}.tabpane.on{display:block;animation:fade .22s var(--a-ease-out)}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.tabpane.on{animation:none}}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand"><span class="m">α</span> REQ-103 定制中心治理增量 · v3</div>
+  <div class="spacer"></div>
+  <nav><a href="#delta">与现行的关系</a><a href="#installed">已安装</a><a href="#detail">详情页</a><a href="#settings">设置</a></nav>
+  <div class="seg" id="themeSeg"><button data-t="light" class="on">浅色</button><button data-t="dark">深色</button></div>
+</div>
+
+<div class="wrap">
+
+<!-- ═══ 增量声明 ═══ -->
+<section class="sec" id="delta">
+  <div class="sec-kicker">REQ-103 · #195/#212 · 基于现行实现做增量(v1/v2 已废)</div>
+  <h2>不新增任何 tab,三样功能各归其位</h2>
+  <p class="lede">定制中心的横向 tab(推荐/连接器/技能/Agent/插件/套件/已安装/导入/云能力)<b>一个都不动</b>。#212 的"治理"不是一个页面,而是三样具体功能,各自并入用户本来就会去的地方。</p>
+  <div class="matrix-scroll"><table class="matrix">
+    <tr><th>#212 里的东西</th><th>v2 错误做法</th><th>v3 正确落点</th><th>改动</th></tr>
+    <tr><td>能力授权总账</td><td>独立「治理」tab</td><td><b>扩展详情页</b>新增「权限」section(点某个扩展就看到它要了哪些权限)</td><td><span class="tag new">详情页 +1 段</span></td></tr>
+    <tr><td>信任链 / 签名状态</td><td>独立「治理」tab</td><td><b>扩展详情页</b>新增「来源与签名」section</td><td><span class="tag new">详情页 +1 段</span></td></tr>
+    <tr><td>缓存回收(CAS/GC)</td><td>独立「治理」tab</td><td><b>设置页</b>新增「扩展存储」section(挨着现有"全部数据清除")</td><td><span class="tag new">设置 +1 段</span></td></tr>
+    <tr><td>可获得/启用/健康 三态(AC2)</td><td>—</td><td><b>「已安装」tab 内部增强</b>:开关=启用、彩点=健康、灰字=来源 + 全局/项目分组</td><td><span class="tag enh">已安装增强</span></td></tr>
+    <tr><td>五维所有权(AC1)</td><td>卡片堆五个徽标</td><td>详情页「权限」上方一行陈述:作者/甄选/分发/运行面/支持</td><td><span class="tag new">详情页 +1 行</span></td></tr>
+    <tr><td>权限重确认(AC3)</td><td>—</td><td>复用现行确认框骨架的<b>弹框</b>,更新含新权限时弹,默认=保持旧版</td><td><span class="tag new">新增弹框</span></td></tr>
+    <tr><td>推荐/连接器/技能/Agent/插件/套件/导入/云能力</td><td>—</td><td>零改动</td><td><span class="tag zero">不动</span></td></tr>
+  </table></div>
+  <div class="note ok"><b>净效果</b>:用户打开定制中心,看到的 tab 和现在一模一样。变化只在:①「已安装」页每行信息更清楚;②点进某个扩展的详情页,多两段(权限、来源签名);③设置页多一段"扩展存储";④更新要新权限时弹一次确认。</div>
+</section>
+
+<!-- ═══ 已安装(增强)═══ -->
+<section class="sec" id="installed">
+  <div class="sec-kicker">改动一 · 「已安装」tab 内部</div>
+  <h2>已安装:三态分离</h2>
+  <p class="lede">开关只管<b>启用/关闭</b>;名字旁的彩色圆点只表<b>健康</b>;灰字只说<b>来源</b>。三者互不影响(AC2)。全局与本项目分组,同名可并存、单独操作(AC5)。</p>
+  <div class="frame"><div class="app"><div class="content">
+    <div class="hub-tabbar"><div class="hub-tabs">
+      <div class="hub-tab">推荐</div><div class="hub-tab">连接器</div><div class="hub-tab">技能</div><div class="hub-tab">Agent</div><div class="hub-tab">插件</div><div class="hub-tab">套件</div><div class="hub-tab on">已安装</div><div class="hub-tab">导入</div><div class="hub-tab">云能力</div>
+    </div></div>
+    <div class="hub-scroll"><div class="hub-center">
+      <div class="hub-h1">已安装</div>
+      <div class="hub-sub">点任一行进详情页看权限与来源签名。</div>
+      <div class="scope-h">全局 · 对所有项目生效</div>
+      <div class="man-row"><div class="ico" style="background:#18181b">GH</div><div class="body"><div class="nm"><b>GitHub</b><span class="chip" data-src="official">官方</span></div><div class="st"><span class="dot ok"></span>运行健康 · 已连接<span class="src">· 来源 签名通道 · mcp</span></div></div><div class="acts"><button class="sw on" role="switch" aria-checked="true"></button></div></div>
+      <div class="man-row"><div class="ico" style="background:#2563eb">X</div><div class="body"><div class="nm"><b>Excel 表格读写</b><span class="chip" data-src="community">社区</span></div><div class="st"><span class="dot ok"></span>健康 · <b>已安装但关闭</b><span class="src">· 来源 签名通道 · v0.1.8 审计锁定</span></div></div><div class="acts"><button class="sw" role="switch" aria-checked="false"></button></div></div>
+      <div class="man-row"><div class="ico" style="background:#d97706">抓</div><div class="body"><div class="nm"><b>网页抓取(fetch)</b><span class="chip" data-src="verify">更新需重授权</span></div><div class="st"><span class="dot warn"></span>v1.4 运行中 · v1.5 请求新权限,静默更新已拦下<span class="src">· 官方</span></div></div><div class="acts"><button class="upd-btn" data-open-modal>审查更新</button><button class="sw on" role="switch" aria-checked="true"></button></div></div>
+      <div class="man-row" style="opacity:.92"><div class="ico" style="background:#dc2626">BW</div><div class="body"><div class="nm"><b>bulk-writer</b><span class="chip" data-src="err">已隔离</span></div><div class="st"><span class="dot err"></span>签名已撤销 · 系统强制停用,开关锁定</div></div><div class="acts"><button class="ghost-btn" style="color:var(--a-error);border-color:currentColor">卸载</button><button class="sw" disabled></button></div></div>
+      <div class="scope-h">本项目 · alpha-code · 与全局同名可并存(AC5)</div>
+      <div class="man-row"><div class="ico" style="background:#4f46e5">技</div><div class="body"><div class="nm"><b>技能创建助手</b><span class="chip" data-src="alpha">自建</span><span class="chip" data-src="type">项目版 v3.0</span></div><div class="st"><span class="dot ok"></span>健康 · 覆盖全局 v3.1<span class="src">· skill</span></div></div><div class="acts"><button class="sw on" role="switch" aria-checked="true"></button></div></div>
+    </div></div>
+    <div class="scrim" id="mscrim"></div>
+    <div class="modal" id="capmodal" role="dialog" aria-modal="true">
+      <div class="modal-hero"><span class="big" style="background:#d97706">抓</span><h3>网页抓取(fetch)请求新权限</h3><div class="dev">v1.4 → v1.5 · 更新已暂停,当前版本继续运行</div></div>
+      <div class="modal-body"><div class="install-box">
+        <div class="install-row"><span class="k">网络域名</span>api.github.com · registry.npmjs.org<span class="lab same">不变</span></div>
+        <div class="install-row addcap"><span class="k">网络域名</span>*.fetcher-cloud.io<span class="lab">新增</span></div>
+        <div class="install-row addcap"><span class="k">密钥</span>读取 FETCHER_API_KEY<span class="lab">新增</span></div>
+      </div><div class="modal-note">拒绝:保持 v1.4,不安装新版本。同意:经原子事务更新到 v1.5,失败自动回滚(REQ-100)。</div></div>
+      <div class="modal-foot"><button class="go" data-close-modal>保持 v1.4(推荐)</button><button class="alt" data-close-modal>授权新权限并更新到 v1.5</button></div>
+    </div>
+  </div></div></div>
+  <div class="cap">改动:三态分离 + 全局/项目分组 + 「审查更新」入口 + 隔离态锁开关。行结构、开关、徽标全部沿用现行组件。</div>
+</section>
+
+<!-- ═══ 详情页(现行 + 两个新 section)═══ -->
+<section class="sec" id="detail">
+  <div class="sec-kicker">改动二 · 扩展详情页(现行分区:简介→数据边界→运行时依赖→所需密钥)</div>
+  <h2>详情页:所有权 + 权限 + 来源签名</h2>
+  <p class="lede">能力授权总账和信任链不是独立页面——它们本来就该在"你正在看的这个扩展"里。在现行详情页尾部加两段。</p>
+  <div class="frame"><div class="det">
+    <button class="backrow"><svg class="ic" viewBox="0 0 24 24"><path d="M14 6l-6 6 6 6"/></svg>连接器</button>
+    <div class="dhead"><div class="ico" style="background:#d97706">抓</div><div><div class="titleline"><h3>网页抓取(fetch)</h3><span class="chip" data-src="official">官方</span></div><div style="font-size:var(--a-text-sm);color:var(--a-text-tertiary);margin-top:6px">抓取 URL 并转 Markdown,供研究/检索。· MIT · v1.4</div></div><button class="add" style="margin-left:auto">已安装</button></div>
+
+    <div class="dsec"><div class="dsec-t">简介 · 数据边界 · 运行时依赖 · 所需密钥</div><p style="font-size:var(--a-text-sm);color:var(--a-text-secondary)">(现行内容,零改动)</p></div>
+
+    <div class="dsec newsec"><div class="dsec-t">所有权</div>
+      <div class="fact"><span class="k">作者</span><span class="v">第三方社区<span class="chip" data-src="community">社区</span></span></div>
+      <div class="fact"><span class="k">甄选</span><span class="v">Alpha 精选目录收录</span></div>
+      <div class="fact"><span class="k">分发</span><span class="v">Alpha 签名通道 stable</span></div>
+      <div class="fact"><span class="k">运行位置</span><span class="v">引擎进程(非主界面)</span></div>
+      <div class="fact"><span class="k">支持</span><span class="v">社区维护</span></div>
+      <div class="cap" style="margin-top:2px">AC1:作者与甄选分开陈述——"社区作者、Alpha 甄选",不会读成"Alpha 出品"。</div>
+    </div>
+
+    <div class="dsec newsec"><div class="dsec-t">权限</div>
+      <div class="perm-list">
+        <div class="perm-row"><span class="pk">文件系统</span><span class="pv none">未请求</span></div>
+        <div class="perm-row"><span class="pk">网络域名</span><span class="pv">api.github.com · registry.npmjs.org</span></div>
+        <div class="perm-row"><span class="pk">进程命令</span><span class="pv none">未请求</span></div>
+        <div class="perm-row"><span class="pk">密钥</span><span class="pv none">未请求</span></div>
+        <div class="perm-row"><span class="pk">引擎钩子</span><span class="pv none">未请求</span></div>
+      </div>
+      <div class="cap" style="margin-top:8px">这就是"能力授权总账",按扩展分散呈现;权限增加时经弹框重确认(AC3)。</div>
+    </div>
+
+    <div class="dsec newsec"><div class="dsec-t">来源与签名</div>
+      <div class="trust-line">
+        <span class="chip" data-src="ok">✓ 签名验证通过</span>
+        <span class="chip" data-src="type">通道 stable · 2026-07-13.1</span>
+        <span class="chip" data-src="type">发布钥 alpha-web-1</span>
+      </div>
+      <div class="cap" style="margin-top:8px">信任链状态就近呈现;若该扩展的签名被撤销,这里转红 + 已安装页转隔离态。</div>
+    </div>
+  </div></div>
+</section>
+
+<!-- ═══ 设置(新 section)═══ -->
+<section class="sec" id="settings">
+  <div class="sec-kicker">改动三 · 设置页</div>
+  <h2>设置:扩展存储</h2>
+  <p class="lede">缓存回收(REQ-102 的 CAS/GC)属于存储管理,放在设置页,挨着现有的"全部数据清除"。</p>
+  <div class="frame"><div class="settings">
+    <div class="set-pagehd">设置</div>
+    <div class="set-sub">(现行设置分组,零改动)</div>
+    <div class="set-group"><div class="set-grouphd">外观与主题</div><div class="set-body" style="color:var(--a-text-tertiary);font-size:var(--a-text-sm)">(现行内容)</div></div>
+    <div class="set-group"><div class="set-grouphd">数据与隐私</div><div class="set-body" style="color:var(--a-text-tertiary);font-size:var(--a-text-sm)">全部数据清除 · (现行,REQ-050)</div></div>
+    <div class="set-group newsec"><div class="set-grouphd">扩展存储<span class="badge">REQ-103 新增</span></div><div class="set-body">
+      <div class="gc-bar">
+        <span class="n"><b>98</b> 项缓存 · 12.4 MB</span>
+        <span class="n">可回收 <b>3</b> 项 · 0.8 MB</span>
+        <span class="btns"><button class="ghost-btn">预览可回收</button><button class="ghost-btn">立即回收</button></span>
+      </div>
+      <div class="cap" style="margin-top:10px">内容寻址缓存跨项目共享;回收只清理不可达内容,<b>已安装的扩展与你的数据永不触碰</b>(REQ-102 GC 语义)。</div>
+    </div></div>
+  </div></div>
+</section>
+
+<!-- ═══ 评审点 ═══ -->
+<section class="sec">
+  <div class="sec-kicker">待你拍板</div><h2>评审点</h2>
+  <div class="note ok"><b>Q1 已定</b>:详情页两段保持独立、顺序不变、不合并。</div>
+  <div class="note ok"><b>Q2 已定</b>:已安装行去掉来源灰字,每行只留健康点 + 启用态;来源/类型/版本只在详情页展示。</div>
+  <div class="note warn"><b>硬约束</b>:重确认弹框默认按钮固定"保持旧版"(AC3 安全语义,不接受反转);其余样式随你改。</div>
+</section>
+
+</div>
+
+<script>
+document.querySelectorAll("[data-open-modal]").forEach(function(b){b.addEventListener("click",function(e){e.stopPropagation();document.getElementById("mscrim").classList.add("on");document.getElementById("capmodal").classList.add("on")})});
+document.querySelectorAll("[data-close-modal]").forEach(function(b){b.addEventListener("click",function(){document.getElementById("mscrim").classList.remove("on");document.getElementById("capmodal").classList.remove("on")})});
+document.getElementById("mscrim").addEventListener("click",function(){this.classList.remove("on");document.getElementById("capmodal").classList.remove("on")});
+document.querySelectorAll(".sw:not([disabled])").forEach(function(s){s.addEventListener("click",function(e){e.stopPropagation();s.classList.toggle("on")})});
+document.querySelectorAll("#themeSeg button").forEach(function(b){b.addEventListener("click",function(){document.querySelectorAll("#themeSeg button").forEach(function(x){x.classList.remove("on")});b.classList.add("on");document.documentElement.dataset.theme=b.dataset.t})});
+document.addEventListener("keydown",function(e){if(e.key==="Escape"){document.getElementById("mscrim").classList.remove("on");document.getElementById("capmodal").classList.remove("on")}});
+</script>
+</body>
+</html>

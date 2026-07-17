@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { configHealth, persistMcp, persistPlugin, persistProvider, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, readMcpLeafStrict, readAgentEntryStrict, readPluginArrayStrict } from "./ext-config"
+import { applyBuiltinPolicyEdits, configHealth, persistMcp, persistPlugin, persistProvider, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, readMcpLeafStrict, readAgentEntryStrict, readPluginArrayStrict } from "./ext-config"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
 import { addReceipt, findReceipt, readLedger } from "./alpha-installs"
 
@@ -435,5 +435,55 @@ describe("removePluginPath — 主+legacy 全源净除,引擎语义匹配,strict
     expect(removePluginPath("vp", target).ok).toBe(false)
     fs.writeFileSync(mainCfg(), JSON.stringify({ plugin: "not-array" }))
     expect(removePluginPath("vp", target).ok).toBe(false)
+  })
+})
+
+// ── O4 钉测:幽灵删除不砖事务(S50 真机白捡)─────────────────────────────────────────────
+// 现场:materialized 旧账指向的叶子不在当前真源 alpha.jsonc(REQ-059 迁真源后账实分离)。
+// jsonc-parser 对父路径缺失的删除会 throw "Can not delete in empty document" → 修前一个
+// 幽灵键砖死整笔 apply(治理面永久失败)。修后:幽灵删除 = 跳过,其余编辑照常落盘。
+describe("applyBuiltinPolicyEdits — 幽灵删除跳过(O4)", () => {
+  const target = () => path.join(alphaTmp, "alpha.jsonc")
+
+  test("删除父路径不存在的叶子:跳过不 throw,同笔写入照常生效", () => {
+    fs.mkdirSync(alphaTmp, { recursive: true })
+    fs.writeFileSync(target(), JSON.stringify({ theme: "dark", agent: { explore: { disable: true } } }, null, 2))
+    const r = applyBuiltinPolicyEdits([
+      { path: ["permission", "skill", "*"], value: undefined }, // 顶键 permission 整链缺失
+      { path: ["permission", "skill", "customize-opencode"], value: undefined },
+      { path: ["command", "customize-opencode", "description"], value: undefined },
+      { path: ["command", "customize-opencode", "template"], value: undefined },
+      { path: ["agent", "plan", "hidden"], value: true }, // 同笔真实写入必须存活
+    ])
+    expect(r.ok).toBe(true)
+    if (!r.ok) throw new Error("unreachable")
+    expect(r.applied).toEqual([["agent", "plan", "hidden"]]) // 删除与跳过均不入账
+    const cfg = JSON.parse(fs.readFileSync(target(), "utf8"))
+    expect(cfg.agent.plan.hidden).toBe(true)
+    expect(cfg.agent.explore.disable).toBe(true) // 用户既有内容不动
+    expect(cfg.theme).toBe("dark")
+    expect(cfg.permission).toBeUndefined() // 幽灵删除零副作用,不凭空造父对象
+    expect(cfg.command).toBeUndefined()
+  })
+
+  test("父对象在、叶子缺:同样跳过;真实存在的叶子照常删除", () => {
+    fs.mkdirSync(alphaTmp, { recursive: true })
+    fs.writeFileSync(target(), JSON.stringify({ agent: { plan: { hidden: true }, explore: { temperature: 0.5 } } }, null, 2))
+    const r = applyBuiltinPolicyEdits([
+      { path: ["agent", "plan", "disable"], value: undefined }, // 父在叶缺 → 跳过
+      { path: ["agent", "plan", "hidden"], value: undefined }, // 真实存在 → 删除 + 空壳剪枝
+    ])
+    expect(r.ok).toBe(true)
+    const cfg = JSON.parse(fs.readFileSync(target(), "utf8"))
+    expect(cfg.agent.plan).toBeUndefined() // hidden 删除后 plan 空壳被剪
+    expect(cfg.agent.explore.temperature).toBe(0.5)
+  })
+
+  test("目标文件不存在(纯删除事务):跳过全部,ok 且不落盘副作用文件", () => {
+    const r = applyBuiltinPolicyEdits([{ path: ["permission", "skill", "*"], value: undefined }])
+    expect(r.ok).toBe(true)
+    // 事务本身会原子写回 "{}"(建目标属既有行为);关键是不再 throw、不误造治理键
+    const cfg = JSON.parse(fs.readFileSync(target(), "utf8"))
+    expect(cfg.permission).toBeUndefined()
   })
 })

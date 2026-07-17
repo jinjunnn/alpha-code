@@ -93,7 +93,7 @@ export function rewriteFactorySkillPaths(
  *     用户自建同名 command(无该指纹)不碰。
  * 幂等;返回是否有改动。
  */
-export function stripFactoryGovernanceLeaves(config: Record<string, unknown>, factoryNames: readonly string[]): boolean {
+export function stripFactoryBuiltinPolicyLeaves(config: Record<string, unknown>, factoryNames: readonly string[]): boolean {
   let changed = false
   const permission = config.permission
   if (permission && typeof permission === "object" && !Array.isArray(permission)) {
@@ -150,7 +150,7 @@ export const OPENCODE_JUNK_ENTRIES = new Set([
   ".gitignore",
 ])
 
-/** 治理面:REQ-037 alpha 会写的引擎治理叶子域(与 ext-config governancePathAllowed 同口径的顶层集)。 */
+/** 治理面:REQ-037 alpha 会写的引擎治理叶子域(与 ext-config builtinPolicyPathAllowed 同口径的顶层集)。 */
 const GOVERNANCE_TOP_KEYS = new Set(["agent", "permission", "command"])
 
 export type OwnershipInput = {

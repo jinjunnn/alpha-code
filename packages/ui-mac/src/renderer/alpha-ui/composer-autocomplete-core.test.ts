@@ -11,7 +11,7 @@ import {
   COMMAND_ORIGIN_LABEL,
   detectTrigger,
   displayDescription,
-  filterGovernanceDenied,
+  filterBuiltinDenied,
   rankSlashMatch,
   slashSection,
   sourceTag,
@@ -110,7 +110,7 @@ describe("buildMentionParts", () => {
 })
 
 // ── REQ-066 斜杠菜单卫生:治理过滤(T1)+ 来源归类(T2)────────────────────────────
-describe("filterGovernanceDenied — 治理禁用项不进菜单(REQ-066 T1)", () => {
+describe("filterBuiltinDenied — 治理禁用项不进菜单(REQ-066 T1)", () => {
   const cmds = [
     { name: "customize-opencode", source: "command", description: "(已禁用)该技能已在 alpha 治理中禁用" }, // 占位覆盖形态
     { name: "graphify", source: "skill" },
@@ -118,10 +118,10 @@ describe("filterGovernanceDenied — 治理禁用项不进菜单(REQ-066 T1)", (
   ]
   test("deny 的名字两种形态都隐藏:占位 command 源 + skill 源", () => {
     const denied = new Set(["customize-opencode", "graphify"])
-    expect(filterGovernanceDenied(cmds, denied).map((c) => c.name)).toEqual(["deploy"])
+    expect(filterBuiltinDenied(cmds, denied).map((c) => c.name)).toEqual(["deploy"])
   })
   test("解禁(空 deny 集)→ 全部可见 —— 判定依据是治理真源,不是文案前缀", () => {
-    expect(filterGovernanceDenied(cmds, new Set()).map((c) => c.name)).toEqual([
+    expect(filterBuiltinDenied(cmds, new Set()).map((c) => c.name)).toEqual([
       "customize-opencode",
       "graphify",
       "deploy",
