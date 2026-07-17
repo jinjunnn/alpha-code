@@ -1398,8 +1398,8 @@ describe("#395 第三方 seed 安装默认关(账本 disabled;config 写正常�
     if (!r.ok) return
     expect("liveMcp" in r ? r.liveMcp : undefined).toBeUndefined() // 默认关不自动连
     expect(findRecordV2(globalRoot, "mcp", "demo")!.desiredState).toBe("disabled")
-    // 持久化投影:disabled mcp 叶带引擎原生 disabled:true(引擎不连)。
+    // 持久化投影:disabled mcp 叶带引擎消费键 enabled:false(引擎查 mcp.enabled === false 即跳过)。
     const cfg: { mcp: Record<string, Record<string, unknown>> } = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))
-    expect(cfg.mcp.demo?.disabled).toBe(true)
+    expect(cfg.mcp.demo?.enabled).toBe(false)
   })
 })

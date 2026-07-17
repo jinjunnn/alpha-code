@@ -27,6 +27,11 @@ function makeGeneration(name: string, genId: string) {
   return genDir
 }
 
+/** 良构 v2 skill 记录(gen-skill-paths 严格门要求完整 schema)。 */
+function skillRecord(name: string, desiredState: "enabled" | "disabled") {
+  return { schemaVersion: 2, id: `skill:${name}`, name, kind: "skill", environment: "prod", scope: { kind: "global" }, generation: 1, installedAt: "2026-07-17T00:00:00.000Z", desiredState }
+}
+
 /** 账本追加/合并一条 enabled skill 记录(installs.json 累积)。 */
 function appendEnabledRecord(name: string) {
   const file = join(root, "installs.json")
@@ -38,7 +43,7 @@ function appendEnabledRecord(name: string) {
     /* fresh */
   }
   records = records.filter((r) => !(r && typeof r === "object" && (r as { name?: unknown }).name === name && (r as { kind?: unknown }).kind === "skill"))
-  records.push({ kind: "skill", name, desiredState: "enabled" })
+  records.push(skillRecord(name, "enabled"))
   writeFileSync(file, JSON.stringify({ v: 2, receipts: [], records }))
 }
 
@@ -98,9 +103,9 @@ describe("#395 disabled 投影门", () => {
     makeGeneration("beta-off", "gen-000001-000002")
     const c = makeGeneration("gamma-on", "gen-000001-000003")
     writeLedger([
-      { kind: "skill", name: "alpha-on", desiredState: "enabled" },
-      { kind: "skill", name: "beta-off", desiredState: "disabled" },
-      { kind: "skill", name: "gamma-on", desiredState: "enabled" },
+      skillRecord("alpha-on", "enabled"),
+      skillRecord("beta-off", "disabled"),
+      skillRecord("gamma-on", "enabled"),
       { kind: "mcp", name: "beta-off", desiredState: "disabled" }, // 非 skill 记录不影响 skill 投影
     ])
     expect(skillGenerationLiveDirs(root)).toEqual([a, c].sort())
@@ -124,12 +129,24 @@ describe("#395 disabled 投影门", () => {
     expect(skillGenerationLiveDirs(root)).toEqual([])
   })
 
+  test("畸形/不完整记录不能复活被禁用技能(严格 record 门,Codex r3 Blocker)", () => {
+    const a = makeGeneration("legit-off", "gen-000001-000001") // makeGeneration 写良构 enabled;下面覆写
+    void a
+    // 良构 disabled 记录 + 畸形重复(缺 schemaVersion/id/scope…,只有 desiredState:enabled)——
+    // 主进程会排除畸形记录、保留 disabled;ext 门必须同样排除,不得注入。
+    writeLedger([
+      skillRecord("legit-off", "disabled"),
+      { kind: "skill", name: "legit-off", desiredState: "enabled" },
+    ])
+    expect(skillGenerationLiveDirs(root)).toEqual([])
+  })
+
   test("injectSkillGenerationPaths 同步遵守门(disabled 不进 cfg.skills.paths)", () => {
     const a = makeGeneration("keep", "gen-000001-000001")
     makeGeneration("drop", "gen-000001-000002")
     writeLedger([
-      { kind: "skill", name: "keep", desiredState: "enabled" },
-      { kind: "skill", name: "drop", desiredState: "disabled" },
+      skillRecord("keep", "enabled"),
+      skillRecord("drop", "disabled"),
     ])
     const cfg: Record<string, unknown> = {}
     const added = injectSkillGenerationPaths(cfg, root)

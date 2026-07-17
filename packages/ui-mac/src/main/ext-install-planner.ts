@@ -1463,7 +1463,7 @@ async function classifyBundleChild(
         key,
         // config target 锚定事务根(= 生产 ~/.alpha/alpha.jsonc;与 staging 同卷,原子替换)。
         action: "config",
-        config: { target: path.join(deps.globalRoot(), "alpha.jsonc"), edits: [{ keyPath: ["mcp", entry.name], value: baseRecord.desiredState === "disabled" ? { ...derived.config, disabled: true } : derived.config }] },
+        config: { target: path.join(deps.globalRoot(), "alpha.jsonc"), edits: [{ keyPath: ["mcp", entry.name], value: baseRecord.desiredState === "disabled" ? { ...derived.config, enabled: false } : derived.config }] },
         manifestDigest,
         capabilities: decoded.manifest.capabilities,
       },
@@ -1844,7 +1844,7 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
         {
           key: `mcp--${entry.name}`,
           action: "config",
-          config: { target: mcpConfigTarget, edits: [{ keyPath: ["mcp", entry.name], value: mcpReceipt.desiredState === "disabled" ? { ...durable, disabled: true } : durable }] },
+          config: { target: mcpConfigTarget, edits: [{ keyPath: ["mcp", entry.name], value: mcpReceipt.desiredState === "disabled" ? { ...durable, enabled: false } : durable }] },
           manifestDigest,
           capabilities: manifest.capabilities,
           receipt: mcpReceipt,
@@ -1975,7 +1975,7 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       kind: "mcp",
       name: entry.name,
       manifestDigest,
-      // #395:默认关的 seed MCP 不发 live 段(装 ≠ 连;config 已带 disabled:true)。
+      // #395:默认关的 seed MCP 不发 live 段(装 ≠ 连;config 已带 enabled:false)。
       ...(mcpReceipt.desiredState === "disabled" ? {} : { liveMcp: { name: entry.name, config: liveCfg } }),
       ...(mcpWarnings.length ? { warning: mcpWarnings.join("; ") } : {}),
     }
@@ -3366,7 +3366,7 @@ async function installSeedMcp(args: {
       {
         key: `mcp--${entry.name}`,
         action: "config",
-        config: { target: configTarget, edits: [{ keyPath: ["mcp", entry.name], value: receiptTemplate.desiredState === "disabled" ? { ...derived.config, disabled: true } : derived.config }] },
+        config: { target: configTarget, edits: [{ keyPath: ["mcp", entry.name], value: receiptTemplate.desiredState === "disabled" ? { ...derived.config, enabled: false } : derived.config }] },
         manifestDigest,
         capabilities: manifest.capabilities,
         receipt: receiptTemplate,
@@ -3393,7 +3393,7 @@ async function installSeedMcp(args: {
   }
   ;(deps.transaction ?? passthroughTx).commit(args.txId)
   // liveMcp(裁决 B):renderer 据此 live sdk.mcp.add;seed 无密钥 → live = durable 原样。
-  // #395:默认关的安装不发 live 段 —— 装 ≠ 连;config 已带 disabled:true,引擎原生跳过。
+  // #395:默认关的安装不发 live 段 —— 装 ≠ 连;config 已带 enabled:false,引擎跳过连接。
   if (receiptTemplate.desiredState === "disabled") return { ok: true, kind: "mcp", name: entry.name, manifestDigest }
   return { ok: true, kind: "mcp", name: entry.name, manifestDigest, liveMcp: { name: entry.name, config: derived.config } }
 }
@@ -3950,16 +3950,14 @@ export function setInstallStateByKey(
   } else {
     root = deps.globalRoot()
   }
-  // Codex r2 重设计:启停以**持久化 config 投影 + 账本翻转**在锁内完成(mcp/agent 写 disabled:true 叶、
-  // plugin 从 plugin[] 增删条目 —— disabled plugin 必须从磁盘 config 缺席,因引擎 import 插件早于
-  // config-hook,hook-time 派生拦不住已加载插件)。skill 无 config 面(投影 = 引擎侧账本注入门)。
-  // advisory 与 record 重读全部**移进锁内**(Codex r2 Major:锁外检查有 TOCTOU)。config 写在前
-  // (运行时权威)、账本翻转在后:崩溃窗口内 config 已是新态(运行正确),账本 mirror 落后一步,
-  // 下次翻转即收敛(config 自持 disabled 态 → 天然免疫「删账本复活」)。
+  // Codex r2/r3 重设计:启停 = **持久化 config 投影 + 账本翻转**(锁内;disabled plugin 必须从磁盘
+  // config 缺席,因引擎 import 插件早于 config-hook)。skill 无 config 面(投影 = 引擎侧账本注入门)。
+  // record 重读 + advisory 全部**在锁内**(闭 TOCTOU)。两写按方向排序保证安全侧不因崩溃/错误破窗
+  // (Codex r3 Blocker):disable → config 先(运行立即禁用,即便账本随后失败也已禁);enable → 账本
+  // 先(账本写失败即止,不动 config → 保持 disabled)。config apply 抛错则回滚已翻的账本(错误路径原子)。
   const held = tryAcquireBundleLock(root, { txId: `set-state-${randomUUID()}` })
   if (!held.ok) return { ok: false, reason: `ledger busy: ${held.reason} — retry after the in-flight transaction` }
   try {
-    // 锁内重读 record + scope 校验 + advisory(封锁外→锁内的置换窗口)。
     const record = findRecordV2(root, intent.type, intent.name)
     if (!record) return { ok: false, reason: `no v2 record for ${intent.type}:${intent.name} in this scope — fail closed (v1-only installs have no desired-state channel)` }
     if (record.scope.kind === "project") {
@@ -3976,70 +3974,139 @@ export function setInstallStateByKey(
       })
       if (!adv.allowed) return { ok: false, reason: `advisory ${adv.advisoryId}: ${adv.reason} — re-enable refused (R14)` }
     }
-    // config 投影(skill 无 config 面,跳过 → 纯账本翻转,投影经引擎注入门)。
-    if (record.kind === "mcp" || record.kind === "agent" || record.kind === "plugin") {
-      const proj = projectEnableStateToConfig(root, record, intent.state)
-      if (!proj.ok) return proj
+    const hasConfig = record.kind === "mcp" || record.kind === "agent" || record.kind === "plugin"
+
+    // config edit 预计算(不写盘;image 校验含 jsonc 合法性)。skill = 无 config 面。
+    let configApply: (() => void) | null = null
+    if (hasConfig) {
+      const target = path.join(root, "alpha.jsonc")
+      let text: string
+      try {
+        text = fs.readFileSync(target, "utf8")
+      } catch {
+        // config 不存在:disable = 投影本就不在(成功,仅翻账本);enable = 无生效面重建(拒)。
+        if (intent.state === "enabled") return { ok: false, reason: `${record.kind} ${record.name}: alpha.jsonc not readable — cannot enable (reinstall to repair)` }
+        text = ""
+      }
+      if (text !== "") {
+        const errors: ParseError[] = []
+        const cfg = parse(text, errors)
+        if (errors.length > 0) return { ok: false, reason: `alpha.jsonc is not valid jsonc — refusing to change enable state (fail closed)` }
+        const proj = computeEnableProjectionEdit(isObj(cfg) ? cfg : {}, root, record, intent.state)
+        if (!proj.ok) return proj
+        if (proj.edit) {
+          const prepared = prepareConfigTx(target, [proj.edit], text)
+          if (!prepared.ok) return prepared
+          configApply = () => applyConfigImage(prepared.image)
+        }
+      }
     }
-    return setDesiredStateV2(root, intent.type, intent.name, intent.state)
+
+    if (intent.state === "disabled") {
+      // disable:config 先(运行立即禁用),账本随后。崩溃在两写间:config 已禁(安全侧)。
+      if (configApply) configApply()
+      const led = setDesiredStateV2(root, intent.type, intent.name, intent.state)
+      if (!led.ok && configApply) {
+        // 账本写失败:回滚 config(还原启用态)使两面一致,返回错误。
+        const rb = projectRollback(root, record, "enabled")
+        return { ok: false, reason: rb.ok ? led.reason : `${led.reason}; config rollback also failed: ${rb.reason}` }
+      }
+      return led
+    }
+    // enable:账本先(写失败即止,config 不动 → 保持 disabled 安全侧),config 随后。
+    const led = setDesiredStateV2(root, intent.type, intent.name, intent.state)
+    if (!led.ok) return led
+    if (configApply) {
+      try {
+        configApply()
+      } catch (error) {
+        // config apply 抛错:回滚账本到 disabled,两面一致,返回错误。
+        setDesiredStateV2(root, intent.type, intent.name, "disabled")
+        return { ok: false, reason: `enable config write failed for ${record.kind} ${record.name}: ${error instanceof Error ? error.message : String(error)} (ledger rolled back to disabled)` }
+      }
+    }
+    return led
   } finally {
     held.lock.release()
   }
 }
 
-/** #395:把 mcp/agent/plugin 的启用态投影进持久化 config(锁内普通原子写,非事务 —— 避开 r0 事务的
- *  receipt 语义/崩溃分叉)。disabled:mcp/agent 叶设 disabled:true、plugin 从 plugin[] 移除;enabled:
- *  剥离 disabled 键 / 把条目按 configKey 补回。config 缺项时 disable = 无操作成功、enable = 无从重建拒。 */
-function projectEnableStateToConfig(
-  root: string,
-  record: InstallRecordV2,
-  state: DesiredState,
-): { ok: true } | { ok: false; reason: string } {
+/** #395:错误路径的 config 投影回滚(disable 账本写失败后还原启用态)——尽力而为,失败如实带回。 */
+function projectRollback(root: string, record: InstallRecordV2, to: DesiredState): { ok: true } | { ok: false; reason: string } {
   const target = path.join(root, "alpha.jsonc")
   let text: string
   try {
     text = fs.readFileSync(target, "utf8")
   } catch {
-    // config 不存在:disable = 投影本就不在(成功);enable = 无生效面可重建(拒)。
-    return state === "disabled" ? { ok: true } : { ok: false, reason: `${record.kind} ${record.name}: alpha.jsonc not readable — cannot enable (reinstall to repair)` }
+    return { ok: false, reason: "alpha.jsonc not readable during rollback" }
   }
   const errors: ParseError[] = []
   const cfg = parse(text, errors)
-  if (errors.length > 0) return { ok: false, reason: `alpha.jsonc is not valid jsonc — refusing to change enable state (fail closed)` }
-  const cfgObj: Record<string, unknown> = isObj(cfg) ? cfg : {}
+  if (errors.length > 0) return { ok: false, reason: "alpha.jsonc not valid jsonc during rollback" }
+  const proj = computeEnableProjectionEdit(isObj(cfg) ? cfg : {}, root, record, to)
+  if (!proj.ok) return { ok: false, reason: proj.reason }
+  if (!proj.edit) return { ok: true }
+  const prepared = prepareConfigTx(target, [proj.edit], text)
+  if (!prepared.ok) return { ok: false, reason: prepared.reason }
+  try {
+    applyConfigImage(prepared.image)
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+/** #395:把 mcp/agent/plugin 的启用态投影进持久化 config —— 计算 config edit(不写盘,供调用方按方向
+ *  排序 config↔ledger 写入 + 失败回滚)。字段用**引擎真实消费的键**(Codex r3 Blocker):
+ *    · mcp:`enabled:false`(引擎查 mcp.enabled === false);enable 剥离 enabled 键。
+ *    · agent:`disable:true`(引擎查 value.disable);enable 剥离 disable 键。
+ *    · plugin:从 `plugin[]` 移除(disable)/ 按 configKey 补回(enable)。移除按**解析路径身份**匹配
+ *      (resolvePluginEntryPath:绝对/相对/file:// 等价形态同判,Codex r3 Blocker),npm 按 spec 等值。
+ *  返回 { noop } = 投影已是目标态(无需写);enable 缺生效面(config 叶/条目无从重建)= fail-closed。
+ *  受管归一化:enable 按 configKey 补回受管条目形态(受管安装从不写 [spec,opts] 元组,故 opts 不丢;
+ *  用户对受管条目手加的 opts 不随启停往返 —— 显式契约,非静默,见 extension-install-ledger.md §5)。 */
+function computeEnableProjectionEdit(
+  cfgObj: Record<string, unknown>,
+  root: string,
+  record: InstallRecordV2,
+  state: DesiredState,
+): { ok: true; edit?: ConfigEdit } | { ok: false; reason: string } {
   const disable = state === "disabled"
-  let edit: ConfigEdit
   if (record.kind === "plugin") {
     const ck = record.configKey ?? ""
-    const elem = ck.startsWith("plugin-path:") ? ck.slice("plugin-path:".length) : ck.startsWith("plugin:") ? ck.slice("plugin:".length) : ""
+    const isPath = ck.startsWith("plugin-path:")
+    const elem = isPath ? ck.slice("plugin-path:".length) : ck.startsWith("plugin:") ? ck.slice("plugin:".length) : ""
     if (!elem) return { ok: false, reason: `plugin ${record.name}: no configKey on record — cannot project enable state (reinstall to repair)` }
     const arr = Array.isArray(cfgObj.plugin) ? [...(cfgObj.plugin as unknown[])] : []
-    const matches = (x: unknown) => x === elem || (Array.isArray(x) && x[0] === elem)
+    // vendored:按解析路径身份匹配(等价形态同判);npm:spec 头等值。
+    const targetResolved = isPath ? resolvePluginEntryPath(elem, root) : null
+    const matches = (x: unknown): boolean => {
+      if (isPath) {
+        const r = resolvePluginEntryPath(x, root)
+        return r !== null && targetResolved !== null && r === targetResolved
+      }
+      return pluginSpecOf(x) === elem
+    }
     if (disable) {
       const next = arr.filter((x) => !matches(x))
       if (next.length === arr.length) return { ok: true } // 本就缺席
-      edit = { keyPath: ["plugin"], value: next }
-    } else {
-      if (arr.some(matches)) return { ok: true } // 已在场
-      edit = { keyPath: ["plugin"], value: [...arr, elem] }
+      return { ok: true, edit: { keyPath: ["plugin"], value: next } }
     }
-  } else {
-    const map = cfgObj[record.kind]
-    const leaf = isObj(map) ? map[record.name] : undefined
-    if (!isObj(leaf)) {
-      return disable ? { ok: true } : { ok: false, reason: `${record.kind} ${record.name}: config entry missing — cannot enable (reinstall to repair)` }
-    }
-    const leafObj = leaf
-    if (disable) {
-      if (leafObj.disabled === true) return { ok: true }
-      edit = { keyPath: [record.kind, record.name], value: { ...leafObj, disabled: true } }
-    } else {
-      if (leafObj.disabled === undefined) return { ok: true }
-      edit = { keyPath: [record.kind, record.name], value: Object.fromEntries(Object.entries(leafObj).filter(([k]) => k !== "disabled")) }
-    }
+    if (arr.some(matches)) return { ok: true } // 已在场
+    return { ok: true, edit: { keyPath: ["plugin"], value: [...arr, elem] } }
   }
-  const prepared = prepareConfigTx(target, [edit], text)
-  if (!prepared.ok) return prepared
-  applyConfigImage(prepared.image)
-  return { ok: true }
+  // mcp / agent:引擎消费键分别为 enabled(false=禁)/ disable(true=禁)。
+  const field = record.kind === "mcp" ? "enabled" : "disable"
+  const disabledValue = record.kind !== "mcp" // mcp: enabled=false 表禁;agent: disable=true 表禁
+  const map = cfgObj[record.kind]
+  const leaf = isObj(map) ? map[record.name] : undefined
+  if (!isObj(leaf)) {
+    return disable ? { ok: true } : { ok: false, reason: `${record.kind} ${record.name}: config entry missing — cannot enable (reinstall to repair)` }
+  }
+  if (disable) {
+    if (leaf[field] === disabledValue) return { ok: true }
+    return { ok: true, edit: { keyPath: [record.kind, record.name], value: { ...leaf, [field]: disabledValue } } }
+  }
+  if (leaf[field] === undefined) return { ok: true }
+  return { ok: true, edit: { keyPath: [record.kind, record.name], value: Object.fromEntries(Object.entries(leaf).filter(([k]) => k !== field)) } }
 }

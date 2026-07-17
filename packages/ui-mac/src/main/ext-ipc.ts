@@ -743,9 +743,10 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
     await ledgerReady
     return listGenerationsByKey(intent, { globalRoot: alphaGlobalRoot })
   })
-  // #347(Codex 裁决 d)+ #395:set-state 仍过 gate;锁改由 planner 内部管理 —— 投影 kinds
-  // (mcp/agent/plugin)走 journaled config 事务(引擎自持锁,账本翻转在 commitReceipt),
-  // 其余走 planner 自持文件锁的纯账本翻转。此处不得预持锁(会与引擎锁互斥死锁)。
+  // #347(Codex 裁决 d)+ #395:set-state 过 gate;锁由 planner 内部管理(自持 Bundle 锁)——
+  // mcp/agent/plugin 在锁内做**持久化 config 投影普通原子写 + 账本翻转**(非事务;disable config 先、
+  // enable 账本先,失败回滚,见 setInstallStateByKey),skill 纯账本翻转(投影经引擎注入门)。
+  // 此处不得预持锁(会与 planner 内锁互斥死锁)。
   const setInstallStateBody = async (intent: unknown) => {
     return setInstallStateByKey(intent, { globalRoot: alphaGlobalRoot, advisoryGate: makeAdvisoryGate(userDataPath) })
   }

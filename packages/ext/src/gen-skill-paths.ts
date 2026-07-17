@@ -48,13 +48,30 @@ function enabledSkillKeys(alphaRoot: string): Set<string> | null {
     return null // 缺失/不可解析 → 无从确证任何 skill 为 enabled → 全部不注入(fail closed)
   }
   const records = parsed && typeof parsed === "object" && Array.isArray((parsed as { records?: unknown }).records) ? ((parsed as { records: unknown[] }).records) : []
+  // 严格 record 形状门(Codex r3 Blocker:须与主进程 decodeRecordV2 同强度,否则畸形重复记录
+  // {kind,name,desiredState:enabled} 会绕过主进程排除、复活被禁用技能)。校验 v2 schema + 核心
+  // 必填字段的存在与类型(schemaVersion/id/name/kind/environment/scope/generation/installedAt/
+  // desiredState)—— 不完整/畸形记录一律不进允许集(fail closed)。
+  const isWellFormedV2 = (r: unknown): r is { kind: string; name: string; desiredState: string } => {
+    if (!r || typeof r !== "object") return false
+    const o = r as Record<string, unknown>
+    return (
+      o.schemaVersion === 2 &&
+      typeof o.id === "string" &&
+      typeof o.name === "string" &&
+      typeof o.kind === "string" &&
+      typeof o.environment === "string" &&
+      !!o.scope &&
+      typeof o.scope === "object" &&
+      typeof o.generation === "number" &&
+      typeof o.installedAt === "string" &&
+      (o.desiredState === "enabled" || o.desiredState === "disabled")
+    )
+  }
   const out = new Set<string>()
   for (const r of records) {
-    if (!r || typeof r !== "object") continue
-    const rec = r as { kind?: unknown; name?: unknown; desiredState?: unknown }
-    // 严格 decoder(Codex r2 Blocker):只认**明确 enabled**(desiredState === "enabled")——
-    // 畸形/缺失/拼错的 desiredState 一律不注入(fail closed),不让篡改记录复活被禁用技能。
-    if (rec.kind === "skill" && typeof rec.name === "string" && rec.desiredState === "enabled") out.add(`skill--${rec.name}`)
+    if (!isWellFormedV2(r)) continue // 畸形/不完整记录 fail closed(与主进程 decoder 同排除)
+    if (r.kind === "skill" && r.desiredState === "enabled") out.add(`skill--${r.name}`)
   }
   return out
 }

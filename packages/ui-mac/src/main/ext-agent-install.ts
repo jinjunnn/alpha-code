@@ -109,9 +109,9 @@ export function agentFileProbe(root: string): HealthProbe {
     if (errors.length > 0) return { healthy: false, reason: `agent "${name}": live config is not valid jsonc` }
     const agentMap = isObj(cfg) ? cfg.agent : undefined
     const leaf = isObj(agentMap) ? agentMap[name] : undefined
-    // #395:disabled 是 Alpha 管理的启停投影叶(set-state/默认关写入),不来自 md —— 比对前剥离,
+    // #395:disable 是 Alpha 管理的启停投影叶(set-state/默认关写入),不来自 md —— 比对前剥离,
     // 其余任何键背离仍如实判 fork(禁启用面被 md 内容偷改)。
-    const leafForCompare = isObj(leaf) && typeof leaf.disabled === "boolean" ? Object.fromEntries(Object.entries(leaf).filter(([k]) => k !== "disabled")) : leaf
+    const leafForCompare = isObj(leaf) && typeof leaf.disable === "boolean" ? Object.fromEntries(Object.entries(leaf).filter(([k]) => k !== "disable")) : leaf
     if (!deepEqual(leafForCompare, parsed.entry))
       return { healthy: false, reason: `agent "${name}": live config entry diverged from md (md/config must not fork)` }
     return { healthy: true }
@@ -218,13 +218,13 @@ export async function installAgentFromCas(root: string, spec: AgentSeedInstall):
       },
       {
         // 副 item:无 capabilities(授权 key 归主 item,不参与授权评估也不落授权账)、无 receipt(账本单条)。
-        // #395:默认关的 agent 落引擎原生 disabled:true(agent loader 会移除 disabled 条目,#394 裁决
-        // = B 在 agent 上的合法复用);enable 经 set-state 事务翻回。
+        // #395:默认关的 agent 落引擎原生 disable:true(agent loader 查 value.disable 即移除该条目);
+        // enable 经 set-state 剥离 disable 键。
         key: agentConfigItemKey(spec.name),
         action: "config",
         config: {
           target: configTarget,
-          edits: [{ keyPath: ["agent", spec.name], value: receiptTemplate.desiredState === "disabled" ? { ...parsed.entry, disabled: true } : parsed.entry }],
+          edits: [{ keyPath: ["agent", spec.name], value: receiptTemplate.desiredState === "disabled" ? { ...parsed.entry, disable: true } : parsed.entry }],
         },
       },
     ],

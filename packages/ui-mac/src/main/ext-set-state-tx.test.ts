@@ -46,20 +46,20 @@ describe("setInstallStateByKey(#395 持久化投影 + 账本翻转)", () => {
     expect(findRecordV2(root, "plugin", "np")!.desiredState).toBe("enabled")
   })
 
-  test("mcp:disable 写引擎原生 disabled:true(其余键原样);enable 剥离该键", () => {
+  test("mcp:disable 写引擎消费键 enabled:false(其余键原样);enable 剥离该键", () => {
     record({ name: "demo", kind: "mcp", configKey: "mcp.demo" })
     writeCfg({ mcp: { demo: { type: "local", command: ["x"] } } })
     expect(setInstallStateByKey({ type: "mcp", name: "demo", scope: "global", state: "disabled" }, deps()).ok).toBe(true)
-    expect(readCfg().mcp.demo).toEqual({ type: "local", command: ["x"], disabled: true })
+    expect(readCfg().mcp.demo).toEqual({ type: "local", command: ["x"], enabled: false })
     expect(setInstallStateByKey({ type: "mcp", name: "demo", scope: "global", state: "enabled" }, deps()).ok).toBe(true)
     expect(readCfg().mcp.demo).toEqual({ type: "local", command: ["x"] })
   })
 
-  test("agent:disable/enable 翻 disabled 叶;enable 缺生效面(叶不存在)fail-closed 不写账", () => {
+  test("agent:disable/enable 翻引擎消费键 disable;enable 缺生效面(叶不存在)fail-closed 不写账", () => {
     record({ name: "bot", kind: "agent", configKey: "agent.bot" })
     writeCfg({ agent: { bot: { description: "d" } } })
     expect(setInstallStateByKey({ type: "agent", name: "bot", scope: "global", state: "disabled" }, deps()).ok).toBe(true)
-    expect(readCfg().agent.bot).toEqual({ description: "d", disabled: true })
+    expect(readCfg().agent.bot).toEqual({ description: "d", disable: true })
     writeCfg({ agent: {} }) // 叶被外力删掉
     const en = setInstallStateByKey({ type: "agent", name: "bot", scope: "global", state: "enabled" }, deps())
     expect(en.ok).toBe(false)
@@ -88,5 +88,34 @@ describe("setInstallStateByKey(#395 持久化投影 + 账本翻转)", () => {
     const r = setInstallStateByKey({ type: "plugin", name: "np2", scope: "global", state: "disabled" }, deps())
     expect(r.ok).toBe(false)
     expect(findRecordV2(root, "plugin", "np2")!.desiredState).toBe("enabled") // 账本未翻
+  })
+})
+
+// ── Codex r3 回归:路径身份匹配(等价形态)+ enable 失败回滚 config ──────────────────────────────
+describe("#395 Codex r3 回归", () => {
+  test("vendored plugin:disk 条目为 file:// 等价形态时,disable 仍按解析路径命中移除(禁用不绕过)", () => {
+    const abs = path.join(root, "plugins", "v@ab", "plugin.js")
+    record({ name: "v", kind: "plugin", configKey: `plugin-path:${abs}` })
+    // disk 存的是 file:// 形态(引擎/用户等价改写)——账本键是绝对路径,须解析后匹配。
+    writeCfg({ plugin: [`file://${abs}`, "@keep/other@1"] })
+    const dis = setInstallStateByKey({ type: "plugin", name: "v", scope: "global", state: "disabled" }, deps())
+    expect(dis.ok).toBe(true)
+    expect(readCfg().plugin).toEqual(["@keep/other@1"]) // file:// 形态被解析命中并移除
+    expect(findRecordV2(root, "plugin", "v")!.desiredState).toBe("disabled")
+  })
+
+  test("enable 时账本损坏(setDesiredStateV2 拒写)→ config 回滚,不留 config-enabled/账本-disabled 分叉", () => {
+    const abs = path.join(root, "plugins", "np@cd", "plugin.js")
+    record({ name: "np3", kind: "plugin", configKey: `plugin-path:${abs}` })
+    writeCfg({ plugin: [] }) // disabled 投影:缺席
+    // 先合法置 disabled(config 已缺席),再注入同 key 损坏记录使 enable 的账本写被拒。
+    const raw: { records: any[] } = JSON.parse(fs.readFileSync(path.join(root, "installs.json"), "utf8"))
+    raw.records = raw.records.map((r: any) => (r.name === "np3" ? { ...r, desiredState: "disabled" } : r))
+    raw.records.push({ schemaVersion: 2, id: "plugin:np3", name: "np3", kind: "plugin" }) // 损坏重复
+    fs.writeFileSync(path.join(root, "installs.json"), JSON.stringify(raw))
+    const en = setInstallStateByKey({ type: "plugin", name: "np3", scope: "global", state: "enabled" }, deps())
+    expect(en.ok).toBe(false) // 账本拒写
+    // 关键:enable 先写账本(失败即止),config 从未被补回 —— 不留启用条目。
+    expect(readCfg().plugin).toEqual([])
   })
 })
