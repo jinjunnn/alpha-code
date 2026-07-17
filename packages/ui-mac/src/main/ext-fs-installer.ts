@@ -485,27 +485,44 @@ function readImportFileBounded(
     return { ok: false, reason: `import: 读取失败(${abs})` }
   }
   if (rp !== realBase && !rp.startsWith(realBase + path.sep)) return { ok: false, reason: "import: 路径逃逸源目录 — 拒" }
+  const noFollow = typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0
   let fd: number
   try {
-    fd = fs.openSync(rp, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW)
+    fd = fs.openSync(rp, fs.constants.O_RDONLY | noFollow)
   } catch {
     return { ok: false, reason: "import: 无法安全打开(symlink / 特殊文件)— 拒" }
   }
   try {
-    const st = fs.fstatSync(fd)
+    const st = fs.fstatSync(fd, { bigint: true })
+    // fd/path 身份绑定(review r2 Major 1,同 collectBuiltinAgentPayload):realpath 圈禁与 open 是相邻
+    // syscall,父目录在其间被换成树外 symlink 时 O_NOFOLLOW 只护末段、fd 可能已指向树外 —— 复核「验证
+    // 过的路径当前指向的文件」与 fd 同 dev/ino。Node 无 openat,多重检查缩窗属纵深(能在源目录内换目录
+    // 链者本就等价于导入内容作者)。
+    let pathSt: fs.BigIntStats
+    try {
+      pathSt = fs.statSync(rp, { bigint: true })
+    } catch (error) {
+      const code = typeof error === "object" && error !== null && "code" in error && typeof error.code === "string" ? error.code : undefined
+      if (code === "ENOENT" || code === "ELOOP" || code === "ENOTDIR")
+        return { ok: false, reason: "import: 路径读取期间改变身份(symlink race)— 拒" }
+      return { ok: false, reason: error instanceof Error ? error.message : "import: 读取失败" }
+    }
+    if (st.dev !== pathSt.dev || st.ino !== pathSt.ino)
+      return { ok: false, reason: "import: 路径读取期间改变身份(symlink race)— 拒" }
     if (!st.isFile()) return { ok: false, reason: "import: 不是常规文件 — 拒" }
-    if (st.size > capBytes) return { ok: false, reason: "import: 超过大小上限", oversize: true }
-    const data = Buffer.alloc(st.size)
+    if (st.size > BigInt(capBytes)) return { ok: false, reason: "import: 超过大小上限", oversize: true }
+    const size = Number(st.size)
+    const data = Buffer.alloc(size)
     let off = 0
-    while (off < data.length) {
-      const n = fs.readSync(fd, data, off, data.length - off, off)
+    while (off < size) {
+      const n = fs.readSync(fd, data, off, size - off, off)
       if (n === 0) break
       off += n
     }
-    if (off !== data.length) return { ok: false, reason: "import: 读取长度不符(文件在变)— 拒" }
+    if (off !== size) return { ok: false, reason: "import: 读取长度不符(文件在变)— 拒" }
     // fstat 后 inode 仍可增长;读毕探 1 字节,有余量 = 文件在变,拒(定长读会绕过已执行的帽)。
     const probe = Buffer.alloc(1)
-    if (fs.readSync(fd, probe, 0, 1, data.length) !== 0) return { ok: false, reason: "import: 文件读取期间增长 — 拒" }
+    if (fs.readSync(fd, probe, 0, 1, size) !== 0) return { ok: false, reason: "import: 文件读取期间增长 — 拒" }
     return { ok: true, data }
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : "import: 读取失败" }
@@ -529,22 +546,25 @@ export function collectImportSkillPayload(
   } catch {
     return { ok: false, reason: "文件夹不存在" }
   }
-  const skillMdAbs = path.join(real, "SKILL.md")
-  if (!fs.existsSync(skillMdAbs)) return { ok: false, reason: "文件夹内没有 SKILL.md" }
-  const smd = readImportFileBounded(skillMdAbs, real, SKILL_MD_MAX)
-  if (!smd.ok) return { ok: false, reason: smd.oversize ? "SKILL.md 过大(>256KB)" : smd.reason }
-  const fm = parseSkillFrontmatter(smd.data.toString("utf8"))
-  if (!fm.ok) return fm
   const listed = collectImportFiles(real) // walk:跳 .git/node_modules、拒 symlink dirent、粗计数帽
   if (!listed.ok) return listed
+  // SKILL.md 只读一次(review r2 Major 2:分开读 SKILL.md 再重读全目录 = 两次读之间被换成 >256KB 内容
+  // 可绕帽);统一读循环里对 SKILL.md 用 min(256KB, 剩余总量)帽,循环后从最终 Buffer 解析 frontmatter。
   const files: Array<{ path: string; data: Buffer }> = []
   let total = 0 // 权威总量帽 = 实际读入字节(非 walk 期 stat 快照)
+  let skillMd: Buffer | null = null
   for (const rel of listed.files) {
-    const r = readImportFileBounded(path.join(real, rel), real, IMPORT_MAX_TOTAL - total)
-    if (!r.ok) return { ok: false, reason: r.oversize ? "目录超过 10MB 上限" : r.reason }
+    const isSkillMd = rel === "SKILL.md"
+    const cap = isSkillMd ? Math.min(SKILL_MD_MAX, IMPORT_MAX_TOTAL - total) : IMPORT_MAX_TOTAL - total
+    const r = readImportFileBounded(path.join(real, rel), real, cap)
+    if (!r.ok) return { ok: false, reason: r.oversize ? (isSkillMd ? "SKILL.md 过大(>256KB)" : "目录超过 10MB 上限") : r.reason }
     total += r.data.length
+    if (isSkillMd) skillMd = r.data
     files.push({ path: rel.split(path.sep).join("/"), data: r.data })
   }
+  if (!skillMd) return { ok: false, reason: "文件夹内没有 SKILL.md" }
+  const fm = parseSkillFrontmatter(skillMd.toString("utf8"))
+  if (!fm.ok) return fm
   return { ok: true, name: fm.name, files }
 }
 

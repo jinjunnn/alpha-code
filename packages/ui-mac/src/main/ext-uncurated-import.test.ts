@@ -95,7 +95,8 @@ describe("collectImportSkillPayload — 集中 import 校验 + byte-exact 载荷
     fs.rmSync(outside, { recursive: true, force: true })
     expect(r.ok).toBe(false)
     if (r.ok) return
-    expect(r.reason).toMatch(/逃逸源目录|不是常规文件|安全打开/)
+    // walk 跳 symlink dirent → 「没有 SKILL.md」;或若走到读取层则 realpath 圈禁拒 —— 两者都不读越界字节。
+    expect(r.reason).toMatch(/逃逸源目录|不是常规文件|安全打开|没有 SKILL\.md/)
   })
 
   test("普通文件 symlink 指向源目录外 → 不入载荷 / 圈禁拒(review r1 Major 3)", () => {
