@@ -478,44 +478,42 @@ function readImportFileBounded(
   realBase: string,
   capBytes: number,
 ): { ok: true; data: Buffer } | { ok: false; reason: string; oversize?: boolean } {
-  let rp: string
-  try {
-    rp = fs.realpathSync(abs)
-  } catch {
-    return { ok: false, reason: `import: 读取失败(${abs})` }
-  }
-  if (rp !== realBase && !rp.startsWith(realBase + path.sep)) return { ok: false, reason: "import: 路径逃逸源目录 — 拒" }
   const noFollow = typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0
   // O_NONBLOCK(review r3 Major 2):竞态把常规文件换成 FIFO 时,同步 O_RDONLY 会阻塞等 writer,
   // 冻死 Electron main —— 非阻塞打开后立即 fstat + isFile 拒非常规文件。
   const nonBlock = typeof fs.constants.O_NONBLOCK === "number" ? fs.constants.O_NONBLOCK : 0
+  const errnoCode = (error: unknown): string | undefined =>
+    typeof error === "object" && error !== null && "code" in error && typeof error.code === "string" ? error.code : undefined
   let fd: number
   try {
-    fd = fs.openSync(rp, fs.constants.O_RDONLY | noFollow | nonBlock)
-  } catch {
+    // review r5:开**原始 abs**(非 realpath 后的 rp)—— 否则 O_NOFOLLOW 护的是已解析路径、对末段
+    // symlink 完全失效(realpath 已跟过)。开 abs 使 O_NOFOLLOW 真正封末段 symlink(swap 成 symlink → ELOOP 拒)。
+    fd = fs.openSync(abs, fs.constants.O_RDONLY | noFollow | nonBlock)
+  } catch (error) {
+    if (errnoCode(error) === "ELOOP") return { ok: false, reason: "import: 是 symlink — 拒(须常规文件)" }
     return { ok: false, reason: "import: 无法安全打开(symlink / 特殊文件)— 拒" }
   }
   try {
     const st = fs.fstatSync(fd, { bigint: true })
     if (!st.isFile()) return { ok: false, reason: "import: 不是常规文件 — 拒" }
-    // 圈禁缩窗纵深(review r2/r3):O_NOFOLLOW 只护末段,父目录在 realpath→open 间被换成树外 symlink 时
-    // fd 可能已指向树外。① open 后再 realpath 一次并复核圈禁(稳定换向 = 重解析落树外 → 拒);② 复核 fd 与
-    // 「重解析路径当前指向的文件」同 dev/ino(换回原链 = fd 指树外而重解析落树内,dev/ino 不等 → 拒)。
-    // Node 无 openat,dev/ino 相等不等于圈禁封死;残余需在多个相邻 syscall 间各完成精确换向(能在源目录内
-    // 换目录链者本就等价于导入内容作者;与 collectBuiltinAgentPayload 同纵深)。
-    let rp2: string
+    // 圈禁缩窗纵深(review r2/r3/r5):末段 symlink 已由「开 abs + O_NOFOLLOW」封死;父目录 symlink 逃逸
+    // 由 open 后 realpath 复核收尾 —— ① realpath(abs) 落 realBase 外(稳定换向)→ 拒;② 复核 fd 与「规范
+    // 路径当前指向的文件」同 dev/ino(换回原链 = fd 指树外而规范路径落树内,dev/ino 不等 → 拒)。Node 无
+    // openat,dev/ino 相等不等于圈禁封死;父目录多次精确换向属固有残余(能在源目录内换目录链者等价于
+    // 导入内容作者;与 collectBuiltinAgentPayload 同纵深)。
+    let rp: string
     let pathSt: fs.BigIntStats
     try {
-      rp2 = fs.realpathSync(abs)
-      pathSt = fs.statSync(rp2, { bigint: true })
+      rp = fs.realpathSync(abs)
+      pathSt = fs.statSync(rp, { bigint: true })
     } catch (error) {
-      const code = typeof error === "object" && error !== null && "code" in error && typeof error.code === "string" ? error.code : undefined
+      const code = errnoCode(error)
       if (code === "ENOENT" || code === "ELOOP" || code === "ENOTDIR")
         return { ok: false, reason: "import: 路径读取期间改变身份(symlink race)— 拒" }
       return { ok: false, reason: error instanceof Error ? error.message : "import: 读取失败" }
     }
-    if (rp2 !== realBase && !rp2.startsWith(realBase + path.sep))
-      return { ok: false, reason: "import: 路径读取期间逃逸源目录(换链)— 拒" }
+    if (rp !== realBase && !rp.startsWith(realBase + path.sep))
+      return { ok: false, reason: "import: 路径逃逸源目录 — 拒" }
     if (st.dev !== pathSt.dev || st.ino !== pathSt.ino)
       return { ok: false, reason: "import: 路径读取期间改变身份(symlink race)— 拒" }
     if (st.size > BigInt(capBytes)) return { ok: false, reason: "import: 超过大小上限", oversize: true }
