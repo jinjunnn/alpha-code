@@ -19,7 +19,7 @@ import { collectLegacyMcpRefPathsStrict, configHealth, findPluginBaseConflictStr
 import { recordUncuratedInstall } from "./ext-uncurated-record"
 import { applyMcpWritePolicy, persistMcpWithPolicy } from "./ext-mcp-policy"
 import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
-import { agentInstallPresent, collectBuiltinAgentPayload, collectVendoredPluginPayload, stageVendoredPluginVersioned, importSkillFolder, importSkillGit, installBuiltinSkill, installRemoteSkill, readBuiltinSkill, removeFsInstall, resourcesRoot, writeAgent } from "./ext-fs-installer"
+import { agentInstallPresent, cloneSkillGitToTmp, collectBuiltinAgentPayload, collectVendoredPluginPayload, stageVendoredPluginVersioned, importSkillFolder, installBuiltinSkill, installRemoteSkill, readBuiltinSkill, removeFsInstall, resourcesRoot } from "./ext-fs-installer"
 import { parseAgentImport } from "./ext-import-validate"
 import { cleanProjectCatalogResiduals, detectProjectCatalogResiduals } from "./ext-project-residuals"
 import { listRetainedJournals, retireTransactionJournal, type JournalRootRef } from "./ext-journal-retire"
@@ -44,7 +44,7 @@ import bundledCatalogJson from "../renderer/extensions/alpha-catalog.json"
 import type { Catalog } from "../renderer/extensions/catalog-types"
 import { environmentMutableRoot, getAlphaEnvironment } from "./alpha-environment"
 import { createInventoryQuery } from "./ext-inventory"
-import { decodeSetStateIntent, decodeUninstallIntent, installCatalog, listGenerationsByKey, removeInstallGrants, rollbackGenerationByKey, seedPluginFileProbe, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
+import { decodeSetStateIntent, decodeUninstallIntent, installCatalog, installUncuratedAgentImport, installUncuratedSkillImport, listGenerationsByKey, removeInstallGrants, rollbackGenerationByKey, seedPluginFileProbe, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
 import { makeRecoveryGate } from "./ext-recovery-gate"
 import { adoptProjectLedger } from "./ext-project-adopt"
 import { buildGatedWriteChannels, buildJournalAdminChannels, GATED_WRITE_CHANNELS, JOURNAL_ADMIN_CHANNELS } from "./ext-write-channels"
@@ -182,8 +182,9 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   ipcMain.handle("ext-config-health", () => configHealth())
   ipcMain.handle("ext-check-runtime", (_event: IpcMainInvokeEvent, tool: string) => checkRuntime(tool))
   // REQ-036:创建表单已移除(创建走技能:skill-creator/agent-creator 出厂注入),原
-  // ext-write-skill / ext-write-agent 渲染层通道随之下线;main 的 writeSkill/writeAgent 保留
-  // (uncurated import 通道复用;#361 起 catalog agent 走事务载体,不再经 writeAgent)。
+  // ext-write-skill / ext-write-agent 渲染层通道随之下线。#390 起未策展导入(folder/git 技能 +
+  // imported agent)也改走 planner 的 CAS 事务(installUncuratedSkillImport/installUncuratedAgentImport);
+  // main 的 flat writeSkill/writeAgent 已无生产调用方,仅作既有测试覆盖的 flat 原语保留。
   ipcMain.handle("ext-factory-skill-ids", () => factorySkillIds())
 
   // REQ-037 上游能力治理:真源 ~/.alpha/governance.json,物化 home jsonc 受控叶子(见 alpha-governance.ts)。
@@ -228,7 +229,8 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
     if (!issued) return { ok: false, reason: "预览已失效,请重新选择文件" }
     // Codex review #351:写成功才消费 preview —— 配置写锁 busy 等可重试失败后,用户重点确认
     // 不该只能得到「预览已失效」(单次消费语义只对成功写入成立)。
-    const r = writeAgent(issued.name, issued.composed, undefined, undefined, "imported")
+    // #390:imported agent 走 CAS + file/config 单事务(取代 flat writeAgent 的 active-无账本 fail-open)。
+    const r = await installUncuratedAgentImport(issued.name, issued.composed, plannerDeps(), { origin: "imported" })
     if (r.ok) issuedAgentImports.delete(previewId as string)
     return r
   }
@@ -428,7 +430,8 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
     let skipped: Array<{ name: string; reason: string }> = []
     let claudeMd: "agents-md-created" | "agents-md-exists" | "none" = "none"
     if (doImport) {
-      const r = importExternalSkills(detected.skills, { scope: "project", projectDir: directory })
+      // #390:project scope 未策展技能维持 sanctioned flat 路径(ADR-030;不注入 global 安装器)。
+      const r = await importExternalSkills(detected.skills, { scope: "project", projectDir: directory })
       importedSkills = r.importedSkills
       skipped = r.skipped
       if (detected.claudeMd) {
@@ -784,6 +787,9 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   // ── #347(review #376 B1/M3):**全部生产写通道**经写通道表(ext-write-channels.ts 唯一真源)
   // 统一构造:恢复准入 gate + 按操作 root 解析;此处只做 ledgerReady barrier + ipc 注册。
   // 新写通道必须先进表登记,不得直接 ipcMain.handle。
+  // #390:target 是否 project scope —— global 未策展导入走事务,project 维持 sanctioned flat 路径。
+  const isProjectTarget = (t: InstallTarget | undefined): boolean =>
+    !!t && typeof t === "object" && (t as { scope?: string }).scope === "project"
   const gatedWrite = buildGatedWriteChannels({
     gate: recoveryGate,
     roots: {
@@ -808,8 +814,24 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
       persistMcp: (name, server, secretVars) => persistMcpBody(name as string, server as Record<string, unknown>, secretVars as string[] | undefined),
       installPlugin: (pkg) => installPluginBody(pkg as string),
       importAgentConfirm: importAgentConfirmBody,
-      importSkillFolder: async (srcDir, target) => importSkillFolder(srcDir, target),
-      importSkillGit: async (url, target) => importSkillGit(url as string, target),
+      // #390:global 未策展技能导入走 planner 的 CAS + generation 事务(取代 flat copy 的崩溃半成品窗);
+      // project scope 维持 `<project>/.alpha/skills` sanctioned flat 路径(ADR-030,不 reopen project generation)。
+      // 生产 renderer 从 hub 导入恒 global(不传 target);project 仅经 ecosystem-import 通道,不走本 body。
+      importSkillFolder: async (srcDir, target) =>
+        isProjectTarget(target)
+          ? importSkillFolder(srcDir, target)
+          : installUncuratedSkillImport(srcDir, plannerDeps(), { origin: "imported" }),
+      importSkillGit: async (url, target) => {
+        const cloned = await cloneSkillGitToTmp(url as string)
+        if (!cloned.ok) return cloned
+        try {
+          return isProjectTarget(target)
+            ? importSkillFolder(cloned.srcDir, target)
+            : await installUncuratedSkillImport(cloned.srcDir, plannerDeps(), { origin: "imported" })
+        } finally {
+          cloned.cleanup()
+        }
+      },
     },
   })
   const barrier = <A extends unknown[], R>(fn: (...a: A) => Promise<R>) =>

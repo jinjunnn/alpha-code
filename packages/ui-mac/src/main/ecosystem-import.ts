@@ -88,15 +88,28 @@ export type ImportOutcome = {
  *  项目 scope 成功导入 ≥1 项时,补项目 `alpha.jsonc` 的 skills.paths 注册("./.alpha/skills",
  *  与 alpha_register type=skill 同形状)—— 引擎经 ext config hook 按此发现项目技能;漏注册 =
  *  文件落了但引擎永远看不见(2026-07-08 真机验收当场抓到的缺口)。 */
-export function importExternalSkills(
+/** #390:global 未策展技能安装器 —— 由 electron 侧调用方注入(planner 的 CAS 事务路径),使本
+ *  纯 fs 模块不必 import planner(保持 bun test 无 electron 加载不变量,见文件头 §纯 fs)。 */
+export type EcosystemGlobalSkillInstaller = (
+  dir: string,
+  origin: "imported-claude" | "imported-agents",
+) => Promise<{ ok: true; name?: string } | { ok: false; reason: string }>
+
+export async function importExternalSkills(
   skills: readonly ExternalSkill[],
   target: InstallTarget,
-): Pick<ImportOutcome, "importedSkills" | "skipped"> {
+  // #390:global scope 提供 → 走 CAS 事务(崩溃可恢复);缺省(project scope)= flat sanctioned 路径(ADR-030)。
+  installGlobal?: EcosystemGlobalSkillInstaller,
+): Promise<Pick<ImportOutcome, "importedSkills" | "skipped">> {
   const importedSkills: string[] = []
   const skipped: Array<{ name: string; reason: string }> = []
   for (const s of skills) {
-    const r = importSkillFolder(s.dir, target, s.source === "claude" ? "imported-claude" : "imported-agents")
-    if (r.ok) importedSkills.push(r.name ?? s.name)
+    const origin = s.source === "claude" ? "imported-claude" : "imported-agents"
+    const r =
+      target.scope === "global" && installGlobal
+        ? await installGlobal(s.dir, origin)
+        : importSkillFolder(s.dir, target, origin)
+    if (r.ok) importedSkills.push(("name" in r && r.name) ? r.name : s.name)
     else skipped.push({ name: s.name, reason: r.reason })
   }
   if (target.scope === "project" && importedSkills.length > 0) {

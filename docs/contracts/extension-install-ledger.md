@@ -30,7 +30,10 @@ review_after: 2026-10-14
   installer/config 层的 eager v1 兜底早已下线(#354)——不存在「v2 失败但 v1 已写」的合法状态。
 - **未策展安装**归 orchestrator(`recordUncuratedInstall`,#306):mutate → 单次账本写 →
   失败补偿并 fail-closed(未策展 MCP 的密钥写入自 #378 起走版本化只增布局,失败删本次
-  verId 目录,不再整目录快照/恢复)。
+  verId 目录,不再整目录快照/恢复)。**例外(#390):未策展的 folder/git 技能导入与 imported
+  agent(global scope)已改走事务载体**(`installUncuratedSkillImport`/`installUncuratedAgentImport`
+  → generation / file+config),不再 flat copy + `recordUncuratedInstall`;自定义 MCP / npm 导入
+  仍走 `recordUncuratedInstall`。account id 恒 `user:<name>`,非 catalog 不携供给链摘要(#306)。
 
 ## 2. 提交面 fail-closed(#336 残留收口;#378 起全类型归引擎)
 
@@ -50,9 +53,11 @@ review_after: 2026-10-14
 | plugin vendored | 有账拒(三态分发);无账既有目录拒(bare 与内容寻址目录都算在场,不覆盖/不认领);载荷经 CAS 读取重验;**entry 带 package 发行元数据时,跨配置源同 base 严格检查同样适用**(fresh 与 vendored 形态更新都查,主/legacy 未策展同包 npm 条目在场拒 —— 引擎按包名与 file URL 各自去重,漏查即双载;计划前与锁内双查,更新侧排除将被换元的旧条目) | 引擎回滚(file items + config 全撤);rolled-back 终态收空壳目录;崩溃按 journal digest 判翻转 |
 | agent(seed #358 + catalog #361,同一载体) | fresh-only 双层门:catalog 锁外快速拒(有账 v2/v1、md 文件、或手工 `agent.<name>` 配置项 —— strict 读,不可读按在场)+ **引擎锁内 precondition**(`agentFreshGate`)重读封 TOCTOU;catalog 另拒 `entry.id ≠ agent:<name>` 身份漂移与含 `--` 名 | 引擎回滚(file 前像恢复缺席/旧字节 + config 叶复原) |
 | cloud | 账本可写探测 | receipt action 零盘副作用;失败 = 零账本;**卸载 = grants 清除成功前置 + ledger 删除失败 `ok:false`**(receipts-only,账没去=没卸载);重装显式继承 `desiredState` |
+| 未策展导入(#390:folder/git 技能 + imported agent,**仅 global**) | fresh-only:skill = `uncuratedSkillFreshGate`(catalog/损坏冲突 + 账本可写 + 有账 v2/v1 拒 + 无账 flat `skills/<name>` 目录拒),agent = `agentFreshGate(channel="import")`;`id=user:<name>`、`capabilities=[]`、**不携供给链摘要**(#306 非 catalog 不变量);内容自算地址进验证共享 CAS | 技能走 generation 载体、agent 走 file+config 载体,引擎回滚(前像恢复缺席/旧字节);project scope 不走本路径(ADR-030:维持 `<project>/.alpha/skills` flat sanctioned) |
 
 MCP 重装是产品流(确认框重装),允许覆盖(引擎前像可复原)而非拒绝;agent 的覆盖更新在
-产品上不存在(`updateEntry` 不支持 agent),故拒绝无回归。
+产品上不存在(`updateEntry` 不支持 agent),故拒绝无回归。未策展导入(#390)同 agent:无就地
+更新,改内容走重导入(fresh-only 拒同名)。
 
 ### 3.1 plugin 原子替换(REQ-099 #352)
 

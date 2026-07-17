@@ -20,8 +20,18 @@ import {
   readGlobalGateMarker,
   writeGlobalGateMarker,
 } from "./ecosystem-import"
+import { alphaGlobalRoot } from "./alpha-installs"
+import { getAlphaEnvironment } from "./alpha-environment"
+import { installUncuratedSkillImport, type UncuratedImportDeps } from "./ext-install-planner"
 
 type Logger = { log: (m: string, meta?: unknown) => void; warn: (m: string, meta?: unknown) => void }
+
+/** #390:global 未策展导入的环境三元(main 注入冻结快照;与 plannerDeps 同源)。 */
+const uncuratedGlobalImportDeps = (): UncuratedImportDeps => ({
+  globalRoot: alphaGlobalRoot,
+  casBaseRoot: () => getAlphaEnvironment().casBaseRoot,
+  environment: () => getAlphaEnvironment().environment,
+})
 
 export async function runGlobalEcosystemGate(parent: BrowserWindow | undefined, logger: Logger): Promise<void> {
   if (ecosystemInheritEnabled()) return
@@ -54,7 +64,10 @@ export async function runGlobalEcosystemGate(parent: BrowserWindow | undefined, 
     logger.log("[req063] global ecosystem content declined — external dirs stay invisible (files untouched)")
     return
   }
-  const r = importExternalSkills(detected.skills, { scope: "global" })
+  // #390:首启全局生态导入走 planner 的 CAS 事务(崩溃可恢复;取代 flat copy 的半成品窗)。
+  const r = await importExternalSkills(detected.skills, { scope: "global" }, (dir, origin) =>
+    installUncuratedSkillImport(dir, uncuratedGlobalImportDeps(), { origin }),
+  )
   const imported = [...r.importedSkills]
   const skipped = [...r.skipped]
   if (detected.claudeMd) {

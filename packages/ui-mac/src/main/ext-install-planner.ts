@@ -206,6 +206,8 @@ import { promoteSeedAssetToCas, readPackagedSeed, type SeedAsset } from "./ext-s
 import { casBlobPath, materializeFilesFromCas, putCasBlobFromBuffer, readCasBlobVerified } from "./ext-cas"
 import { confinedExistingPath, isSafeRelPath } from "./ext-atomic-fs"
 import { pluginRecordName, validateServer } from "./ext-config"
+import { collectImportSkillPayload } from "./ext-fs-installer"
+import { checkUncuratedConflict, type UncuratedOrigin } from "./ext-uncurated-record"
 
 // ── renderer intents(严格解码:未知键 = 伪造事实通道,loud 拒绝)─────────────────────────────
 
@@ -2418,7 +2420,7 @@ function seedInstallVersionGate(root: string, kind: InstallReceiptType, name: st
  *  同门)。**必须在引擎 Bundle 锁内经 precondition 执行**:账本 strict(损坏 fail-closed;v2 或
  *  v1-only 在场 = 拒)+ 写前账本健康探测 + md 文件(含 legacy 单数目录)/ config `agent.<name>` 叶
  *  在场检查 —— 同名任何在场都拒(未策展内容不认领),config 不可读同样 fail-closed。 */
-function agentFreshGate(root: string, name: string, configTarget: string, channel: "seed" | "catalog"): { ok: true } | { ok: false; reason: string } {
+function agentFreshGate(root: string, name: string, configTarget: string, channel: "seed" | "catalog" | "import"): { ok: true } | { ok: false; reason: string } {
   const refuse = `refusing ${channel} install`
   const ledgerProbe = probeLedgerForWrite(root)
   if (!ledgerProbe.ok) return { ok: false, reason: `${refuse}: ${ledgerProbe.reason}` }
@@ -2452,6 +2454,132 @@ function agentFreshGate(root: string, name: string, configTarget: string, channe
       return { ok: false, reason: `config entry "agent.${name}" exists without a ledger record — refusing to overwrite or adopt unregistered content` }
   }
   return { ok: true }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// #390(REQ-098):未策展导入(folder/git 技能 + imported agent)走验证共享 CAS + 事务 —— 取代
+// flat copy。裁决 A(2026-07-17 Codex DECIDE):flat 路径崩溃留可加载半成品 / agent active-无账本
+// fail-open;事务载体(installSkillGeneration / installAgentFromCas)封窗:staging→verify→
+// materialize→switch,journal + 崩溃可恢复,commitReceipt 失败回滚+quarantine。scope 限 global
+// (ADR-030:project 本地技能维持 `<project>/.alpha/skills` sanctioned flat 路径,不 reopen
+// project generation)。capabilities=[](未策展无 manifest 能力);id=`user:<name>` 保留既有账本身份。
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+/** #390:未策展导入只需环境/根三元(不触 installers/resolveEntry/advisoryGate);PlannerDeps 是其超集,
+ *  ext-ipc 直接传 plannerDeps()。单列以便窄测。 */
+export type UncuratedImportDeps = {
+  globalRoot(): string
+  casBaseRoot(): string
+  environment(): AppEnvironment
+}
+
+export type UncuratedImportOutcome =
+  | { ok: true; kind: "skill" | "agent"; name: string; files?: string[]; warning?: string }
+  | { ok: false; reason: string }
+
+/** 未策展 skill 的 fresh-only 门(agent 无更新链,skill 未策展导入同款 fresh-only)—— 与
+ *  agentFreshGate 对称:catalog/损坏冲突(checkUncuratedConflict)+ 账本可写 + 任一同名有效/ v1
+ *  记录拒 + 无账 flat 目录拒。锁外 preflight 省无谓 CAS 写,锁内 precondition 封 TOCTOU。 */
+function uncuratedSkillFreshGate(root: string, name: string): { ok: true } | { ok: false; reason: string } {
+  const base = checkUncuratedConflict(root, "skill", name)
+  if (!base.ok) return base
+  const probe = probeLedgerForWrite(root)
+  if (!probe.ok) return { ok: false, reason: `refusing import install: ${probe.reason}` }
+  const lookup = lookupForUninstall(root, "skill", name)
+  if (lookup.status === "valid" || lookup.status === "v1")
+    return { ok: false, reason: `skill "${name}" already present — uninstall it first before re-importing` }
+  if (fs.existsSync(path.join(root, "skills", name)))
+    return { ok: false, reason: `skill dir "skills/${name}" exists without a ledger record — refusing to overwrite or adopt unregistered content` }
+  return { ok: true }
+}
+
+/** #390:global 未策展技能导入(folder/git)走 CAS + generation 事务。srcDir 已由调用方(folder =
+ *  picker / git = cloneSkillGitToTmp)解析为本地源目录。 */
+export async function installUncuratedSkillImport(
+  srcDir: string,
+  deps: UncuratedImportDeps,
+  opts: { origin: UncuratedOrigin },
+): Promise<UncuratedImportOutcome> {
+  const collected = collectImportSkillPayload(srcDir)
+  if (!collected.ok) return { ok: false, reason: collected.reason }
+  const { name, files } = collected
+  const root = deps.globalRoot()
+  const pre = uncuratedSkillFreshGate(root, name)
+  if (!pre.ok) return pre
+  const manifest = files.map((f) => ({ path: f.path, sha256: sha256Hex(f.data), bytes: f.data.length }))
+  const promoted = promotePayloadToCas(deps.casBaseRoot(), files, manifest)
+  if (!promoted.ok) return { ok: false, reason: promoted.reason }
+  if (promoted.warnings.length)
+    console.error(`[ext-install-planner] uncurated skill ${name}: CAS promotion warnings: ${promoted.warnings.join("; ")}`)
+  const gen = await installSkillGeneration(root, {
+    name,
+    id: `user:${name}`,
+    environment: deps.environment(),
+    scope: { kind: "global" },
+    origin: opts.origin,
+    casFiles: { specs: promoted.specs, casBaseRoot: deps.casBaseRoot() },
+    // 未策展导入无 manifest 能力 —— 显式空集(installSkillGeneration 要求 capabilities 必填,
+    // 缺省会被安静遗漏;空集 = authorize 闸静默通过,符合未策展语义)。
+    capabilities: [],
+    // 不带 payload/manifest/grant digest:#306 不变量 —— 非 catalog 来源的账本禁携供给链摘要
+    // (防伪造 catalog provenance)。CAS blob 仍按内容寻址,完整性由事务 verify/probe 保证。
+    // 锁内 fresh-only(封锁外 preflight→写盘 TOCTOU;与 agentFreshGate precondition 同纪律)。
+    precondition: () => uncuratedSkillFreshGate(root, name),
+  })
+  if (!gen.ok) return { ok: false, reason: gen.reason }
+  return {
+    ok: true,
+    kind: "skill",
+    name,
+    ...(gen.files.length ? { files: gen.files } : {}),
+    ...(promoted.warnings.length ? { warning: promoted.warnings.join("; ") } : {}),
+  }
+}
+
+/** #390:imported agent(preview 确认)走 CAS + file/config 单事务(取代 flat writeAgent 的
+ *  active-无账本 fail-open)。composedMd = main 侧留存的 preview 产物(renderer 无写入内容通道)。 */
+export async function installUncuratedAgentImport(
+  name: string,
+  composedMd: string,
+  deps: UncuratedImportDeps,
+  opts: { origin: UncuratedOrigin },
+): Promise<UncuratedImportOutcome> {
+  if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid agent name" }
+  if (name.includes("--"))
+    return { ok: false, reason: `agent name "${name}" contains "--" — ambiguous with the transaction key scheme; refused` }
+  const root = deps.globalRoot()
+  const configTarget = path.join(root, "alpha.jsonc")
+  const pre = agentFreshGate(root, name, configTarget, "import")
+  if (!pre.ok) return pre
+  // 与 flat writeAgent 同款换行归一;installAgentFromCas 从 CAS 字节重解析(agentMdToEntry fail-closed)。
+  const data = Buffer.from(composedMd.endsWith("\n") ? composedMd : `${composedMd}\n`, "utf8")
+  const relPath = `${name}.md`
+  const manifest = [{ path: relPath, sha256: sha256Hex(data), bytes: data.length }]
+  const promoted = promotePayloadToCas(deps.casBaseRoot(), [{ path: relPath, data }], manifest)
+  if (!promoted.ok) return { ok: false, reason: promoted.reason }
+  if (promoted.warnings.length)
+    console.error(`[ext-install-planner] uncurated agent ${name}: CAS promotion warnings: ${promoted.warnings.join("; ")}`)
+  const [agentCasSpec] = promoted.specs
+  if (promoted.specs.length !== 1 || !agentCasSpec) return { ok: false, reason: "agent asset must contain exactly one file — refused" }
+  const agentGen = await installAgentFromCas(root, {
+    name,
+    id: `user:${name}`,
+    environment: deps.environment(),
+    scope: { kind: "global" },
+    origin: opts.origin,
+    casFile: { spec: agentCasSpec, casBaseRoot: deps.casBaseRoot() },
+    capabilities: [],
+    // #306 不变量:非 catalog 来源账本禁携供给链摘要(见 skill 分支注释)。
+    precondition: () => agentFreshGate(root, name, configTarget, "import"),
+  })
+  if (!agentGen.ok) return { ok: false, reason: agentGen.reason }
+  return {
+    ok: true,
+    kind: "agent",
+    name,
+    ...(agentGen.files.length ? { files: agentGen.files } : {}),
+    ...(agentGen.warnings.length ? { warning: agentGen.warnings.join("; ") } : {}),
+  }
 }
 
 /** target 参数化的 strict plugin[] 读(#359 seed 路径专用 —— 不触 installers;语义对齐

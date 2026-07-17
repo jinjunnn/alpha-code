@@ -98,12 +98,14 @@ describe("detectExternal — 只报上游真会继承的范围", () => {
 })
 
 describe("转换导入 — 快照 + 溯源 + 不碰源", () => {
-  test("global skills:落 ~/.alpha/skills + receipts origin 按来源(imported-claude/agents);源目录不动", () => {
+  // #390:无注入 installer 时 global 走 flat 回退路径(本用例验回退分支);生产 global 注入 CAS 事务
+  // installer(见下方「注入 installer → 走 CAS 事务」用例)。
+  test("global skills(无注入):落 ~/.alpha/skills + receipts origin 按来源(imported-claude/agents);源目录不动", async () => {
     const home = path.join(tmp, "home")
     mkSkill(home, ".claude", "graphify")
     mkSkill(home, ".agents", "helper")
     const detected = detectExternal(home, "global")
-    const r = importExternalSkills(detected.skills, { scope: "global" })
+    const r = await importExternalSkills(detected.skills, { scope: "global" })
     expect(r.importedSkills.sort()).toEqual(["graphify", "helper"])
     expect(fs.existsSync(path.join(tmp, ".alpha", "skills", "graphify", "SKILL.md"))).toBe(true)
     expect(fs.existsSync(path.join(home, ".claude", "skills", "graphify", "SKILL.md"))).toBe(true) // 源不动
@@ -112,12 +114,12 @@ describe("转换导入 — 快照 + 溯源 + 不碰源", () => {
     expect(origins.graphify).toBe("imported-claude")
     expect(origins.helper).toBe("imported-agents")
   })
-  test("同名已存在 → 该项诚实失败,不覆盖既有内容", () => {
+  test("同名已存在 → 该项诚实失败,不覆盖既有内容", async () => {
     const home = path.join(tmp, "home")
     mkSkill(home, ".claude", "graphify")
     fs.mkdirSync(path.join(tmp, ".alpha", "skills", "graphify"), { recursive: true })
     fs.writeFileSync(path.join(tmp, ".alpha", "skills", "graphify", "SKILL.md"), "user's own\n")
-    const r = importExternalSkills(detectExternal(home, "global").skills, { scope: "global" })
+    const r = await importExternalSkills(detectExternal(home, "global").skills, { scope: "global" })
     expect(r.importedSkills).toEqual([])
     expect(r.skipped[0].name).toBe("graphify")
     expect(fs.readFileSync(path.join(tmp, ".alpha", "skills", "graphify", "SKILL.md"), "utf8")).toBe("user's own\n")
@@ -161,10 +163,10 @@ describe("记账 — 项目 prefs 版本化 + 全局 marker 一次性", () => {
 })
 
 describe("registerProjectSkillsPath — 项目 skills 注册(2026-07-08 真机缺口回归锁)", () => {
-  test("项目导入 ≥1 技能 → 自动写项目 alpha.jsonc 的 skills.paths(引擎发现链)", () => {
+  test("项目导入 ≥1 技能 → 自动写项目 alpha.jsonc 的 skills.paths(引擎发现链)", async () => {
     const proj = path.join(tmp, "proj-reg")
     mkSkill(proj, ".claude", "demo")
-    const r = importExternalSkills(detectExternal(proj, "project").skills, { scope: "project", projectDir: proj })
+    const r = await importExternalSkills(detectExternal(proj, "project").skills, { scope: "project", projectDir: proj })
     expect(r.importedSkills).toEqual(["demo"])
     const cfg = JSON.parse(fs.readFileSync(path.join(proj, ".alpha", "alpha.jsonc"), "utf8"))
     expect(cfg.skills.paths).toEqual(["./.alpha/skills"])

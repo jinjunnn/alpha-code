@@ -470,8 +470,103 @@ function collectImportFiles(srcDir: string): { ok: true; files: string[] } | { o
   }
 }
 
+/** #390:未策展技能导入的 byte-exact 载荷采集 —— 集中 import 校验(realpath / SKILL.md 帽 +
+ *  frontmatter → name / 体积·计数帽 / 跳 .git·node_modules / 拒 symlink),返回 POSIX 相对路径
+ *  载荷,供 planner 提升进验证共享 CAS 走 generation 事务(取代 flat copy)。只读零副作用。 */
+export function collectImportSkillPayload(
+  srcDir: string,
+): { ok: true; name: string; files: Array<{ path: string; data: Buffer }> } | { ok: false; reason: string } {
+  if (typeof srcDir !== "string" || !path.isAbsolute(srcDir)) return { ok: false, reason: "invalid folder" }
+  let real: string
+  try {
+    real = fs.realpathSync(srcDir)
+    if (!fs.statSync(real).isDirectory()) return { ok: false, reason: "不是文件夹" }
+  } catch {
+    return { ok: false, reason: "文件夹不存在" }
+  }
+  const skillMd = path.join(real, "SKILL.md")
+  let text: string
+  try {
+    if (fs.statSync(skillMd).size > SKILL_MD_MAX) return { ok: false, reason: "SKILL.md 过大(>256KB)" }
+    text = fs.readFileSync(skillMd, "utf8")
+  } catch {
+    return { ok: false, reason: "文件夹内没有 SKILL.md" }
+  }
+  const fm = parseSkillFrontmatter(text)
+  if (!fm.ok) return fm
+  const listed = collectImportFiles(real)
+  if (!listed.ok) return listed
+  const files: Array<{ path: string; data: Buffer }> = []
+  for (const rel of listed.files) {
+    const abs = path.join(real, rel)
+    let data: Buffer
+    try {
+      // walk 已在 dirent 层跳 symlink;读前再 lstat 拒(防 walk→read 之间被换成 symlink 偷内容/逃逸)。
+      if (!fs.lstatSync(abs).isFile()) return { ok: false, reason: `import: ${rel} 不是常规文件` }
+      data = fs.readFileSync(abs)
+    } catch (error) {
+      return { ok: false, reason: error instanceof Error ? error.message : `读取失败: ${rel}` }
+    }
+    files.push({ path: rel.split(path.sep).join("/"), data })
+  }
+  return { ok: true, name: fm.name, files }
+}
+
+/** #390:git 技能仓浅克隆到临时目录并定位 SKILL.md 源目录(网络/SSRF 隔离与 importSkillGit 同源)。
+ *  返回本地源目录 + 清理句柄,供 planner 走 CAS 事务导入;调用方 finally 必须 cleanup()。 */
+export async function cloneSkillGitToTmp(
+  url: string,
+): Promise<{ ok: true; srcDir: string; cleanup: () => void } | { ok: false; reason: string }> {
+  if (!validGitUrl(url)) return { ok: false, reason: "仅支持 https Git 地址" }
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-import-git-"))
+  const cleanup = () => {
+    try {
+      fs.rmSync(tmp, { recursive: true, force: true })
+    } catch {
+      /* best-effort */
+    }
+  }
+  try {
+    const gitEnv: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_CONFIG_GLOBAL: os.devNull, GIT_CONFIG_SYSTEM: os.devNull }
+    delete gitEnv.GIT_CONFIG_PARAMETERS
+    const count = Number.parseInt(gitEnv.GIT_CONFIG_COUNT ?? "", 10)
+    if (Number.isFinite(count)) for (let i = 0; i < count; i++) {
+      delete gitEnv[`GIT_CONFIG_KEY_${i}`]
+      delete gitEnv[`GIT_CONFIG_VALUE_${i}`]
+    }
+    delete gitEnv.GIT_CONFIG_COUNT
+    await new Promise<void>((resolve, reject) => {
+      execFile(
+        "git",
+        ["-c", "http.followRedirects=false", "clone", "--depth", "1", "--single-branch", "--no-tags", url, tmp],
+        { timeout: 60_000, env: gitEnv },
+        (err, _stdout, stderr) => (err ? reject(new Error(oneLine(String(stderr || err.message)).slice(0, 200))) : resolve()),
+      )
+    })
+    let src = tmp
+    if (!fs.existsSync(path.join(src, "SKILL.md"))) {
+      const dirs = fs
+        .readdirSync(tmp, { withFileTypes: true })
+        .filter((e) => e.isDirectory() && e.name !== ".git")
+        .map((e) => e.name)
+      const candidate = dirs.length === 1 ? path.join(tmp, dirs[0]) : null
+      if (!candidate || !fs.existsSync(path.join(candidate, "SKILL.md"))) {
+        cleanup()
+        return { ok: false, reason: "仓库内未找到 SKILL.md(根目录或唯一子目录)" }
+      }
+      src = candidate
+    }
+    return { ok: true, srcDir: src, cleanup }
+  } catch (error) {
+    cleanup()
+    return { ok: false, reason: error instanceof Error ? error.message : "克隆失败" }
+  }
+}
+
 /** 导入本地技能文件夹:校验 SKILL.md frontmatter → 逐文件复制入 .alpha + receipt。
- *  origin 默认 imported;REQ-063 外部生态转换导入传 imported-claude / imported-agents(hub 可溯源)。 */
+ *  origin 默认 imported;REQ-063 外部生态转换导入传 imported-claude / imported-agents(hub 可溯源)。
+ *  #390:global 未策展导入的生产路径已改走 planner 的 CAS 事务(installUncuratedSkillImport);
+ *  本 flat 实现保留给 project scope 的 sanctioned 路径(ADR-030)与既有测试。 */
 export function importSkillFolder(
   srcDir: string,
   target?: InstallTarget,
