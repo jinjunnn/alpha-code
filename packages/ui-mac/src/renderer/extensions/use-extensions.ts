@@ -57,8 +57,9 @@ export interface ExtensionsStore {
  *  非 authorize 分支的 stage 类型排除 "authorize":中间包装层折叠丢数据过不了类型检查。 */
 export type ActionResult =
   /** warning = 安装成功但携带 loud 诊断信号(CAS 自愈、授权账写失败等,#361 review r1)——
-   *  调用方必须呈现,不得静默吞掉。 */
-  | { ok: true; reason?: string; warning?: string }
+   *  调用方必须呈现,不得静默吞掉。projectionLag(#336 r1)= 账本已 durable 但 skills 允许集
+   *  发布失败(本次未注入,重启自愈)—— UI 据此给「重启后生效」级用户提示。 */
+  | { ok: true; reason?: string; warning?: string; projectionLag?: string }
   | { ok: false; stage: "authorize"; authorization: CapabilityDiffWire[]; reason?: string }
   | { ok: false; reason?: string; stage?: TxStageNonAuthorizeWire }
 
@@ -630,15 +631,18 @@ export function useExtensions(
     const r = await window.api.ext.importSkillFolder()
     if (!r.ok) return r
     await loadInstalls()
-    if (!(await refreshEngine())) return { ok: true, name: r.name, reason: "reload-pending" }
-    return { ok: true, name: r.name }
+    // #336 r1:warning/projectionLag 端到端透传(此前重建 {ok,name} 把降级信号吞掉)。
+    const carry = { ...(r.warning ? { warning: r.warning } : {}), ...(r.projectionLag ? { projectionLag: r.projectionLag } : {}) }
+    if (!(await refreshEngine())) return { ok: true, name: r.name, reason: "reload-pending", ...carry }
+    return { ok: true, name: r.name, ...carry }
   }
   async function importSkillGit(url: string): Promise<ActionResult & { name?: string }> {
     const r = await window.api.ext.importSkillGit(url)
     if (!r.ok) return r
     await loadInstalls()
-    if (!(await refreshEngine())) return { ok: true, name: r.name, reason: "reload-pending" }
-    return { ok: true, name: r.name }
+    const carry = { ...(r.warning ? { warning: r.warning } : {}), ...(r.projectionLag ? { projectionLag: r.projectionLag } : {}) }
+    if (!(await refreshEngine())) return { ok: true, name: r.name, reason: "reload-pending", ...carry }
+    return { ok: true, name: r.name, ...carry }
   }
   async function importNpmPlugin(pkg: string): Promise<ActionResult> {
     const r = await window.api.ext.installPlugin(pkg)

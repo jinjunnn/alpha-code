@@ -87,7 +87,7 @@ function resolveRoots(target: InstallTarget | undefined): Roots | { error: strin
   return { alphaDir: root, opencodeDir: path.join(t.projectDir, ".opencode"), scope: "project", identity: identity.scope }
 }
 
-type LedgerOutcome = { ok: true; warning?: string } | { ok: false; reason: string }
+type LedgerOutcome = { ok: true; warning?: string; projectionLag?: string } | { ok: false; reason: string }
 
 /** REQ-099 #306 / #354:安装落账分流 —— catalog(meta.catalogId)的账本所有权**完全归 planner**
  *  (v2 upsert 提交面已 fail-closed,v1 视图由 toV1Receipt 锁步派生;此前的 eager v1 兜底随
@@ -109,7 +109,9 @@ function recordReceipt(
   })
   if (!w.ok) return { ok: false, reason: w.reason }
   const warning = w.warnings.join("; ")
-  return { ok: true, ...(warning ? { warning } : {}) }
+  // #336 r1:projectionLag(账本 durable、skills 允许集发布失败)独立透传 —— flat import 链
+  // 不得在此丢弃,renderer 端到端呈现「重启后生效」。
+  return { ok: true, ...(warning ? { warning } : {}), ...(w.projectionLag ? { projectionLag: w.projectionLag } : {}) }
 }
 
 function oneLine(value: string): string {
@@ -641,7 +643,7 @@ export function importSkillFolder(
   srcDir: string,
   target?: InstallTarget,
   origin: InstallReceipt["origin"] = "imported",
-): FsResult & { name?: string } {
+): FsResult & { name?: string; warning?: string; projectionLag?: string } {
   if (typeof srcDir !== "string" || !path.isAbsolute(srcDir)) return { ok: false, reason: "invalid folder" }
   let real: string
   try {
@@ -688,11 +690,18 @@ export function importSkillFolder(
     fs.rmSync(destDir, { recursive: true, force: true }) // #306 fail-closed:账本没进,导入不算成功
     return { ok: false, reason: `install ledger write failed: ${ledger.reason}` }
   }
-  return { ok: true, files, name }
+  // #336 r1:warning/projectionLag 随成功结果透传(此前在此丢弃 = import 用户可见入口失联)。
+  return {
+    ok: true,
+    files,
+    name,
+    ...(ledger.warning ? { warning: ledger.warning } : {}),
+    ...(ledger.projectionLag ? { projectionLag: ledger.projectionLag } : {}),
+  }
 }
 
 /** 导入 Git 仓库技能:https-only 浅克隆到临时目录 → 定位 SKILL.md(根或唯一子目录)→ 走文件夹导入。 */
-export async function importSkillGit(url: string, target?: InstallTarget): Promise<FsResult & { name?: string }> {
+export async function importSkillGit(url: string, target?: InstallTarget): Promise<FsResult & { name?: string; warning?: string; projectionLag?: string }> {
   if (!validGitUrl(url)) return { ok: false, reason: "仅支持 https Git 地址" }
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-import-git-"))
   try {

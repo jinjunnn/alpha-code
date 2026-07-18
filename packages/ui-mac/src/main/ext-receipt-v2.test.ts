@@ -669,3 +669,73 @@ describe("#395 r11 重复有效记录 fail-closed", () => {
     if (!sd.ok) expect(sd.reason).toContain("corrupt")
   })
 })
+
+// ── #336:skills 派生允许集 final-publish 失败 —— 账本 durable + projectionLag 判别式如实上报 ─────
+// 注入 = 窄参数 seam(publishFinal;Codex 裁决:fs 手段无法只让 final publish 失败 —— 目录占位会
+// 先命中读侧 "unknown" → pre-shrink ok:false 路径,证明不了「账本已 durable 后发布失败」)。
+describe("#336 skills projection final-publish lag — 判别式如实上报", () => {
+  const failingPublish = () => {
+    throw new Error("injected: derivation volume gone")
+  }
+  const derivationFile = () => path.join(root, "skills-enabled.json")
+  const derivationKeys = (): string[] => (JSON.parse(fs.readFileSync(derivationFile(), "utf8")) as { keys: string[] }).keys
+  const skillInput = (name: string, desiredState: "enabled" | "disabled" = "enabled"): UpsertInput =>
+    upsertInput({ id: `skill:${name}`, name, kind: "skill", desiredState, configKey: undefined })
+
+  test("纯扩容 upsert:final publish 失败 → ok:true + projectionLag;账本已 durable、派生停在更严格态", () => {
+    const w = upsertRecordV2(root, skillInput("lagged"), failingPublish)
+    expect(w.ok).toBe(true)
+    if (!w.ok) throw new Error("unreachable")
+    expect(w.projectionLag).toContain("final publish failed")
+    // 账本才是真源:record 已 durable;派生文件缺席 = hook fail-closed 不注入(安全侧)
+    expect(findRecordV2(root, "skill", "lagged")?.desiredState).toBe("enabled")
+    expect(fs.existsSync(derivationFile())).toBe(false)
+    // boot 自愈闭环:reconcile 按账本重算补齐
+    const { reconcileSkillsDerivation } = require("./ext-receipt-v2") as typeof import("./ext-receipt-v2")
+    expect(reconcileSkillsDerivation(root).ok).toBe(true)
+    expect(derivationKeys()).toEqual(["skill--lagged"])
+  })
+
+  test("批量 upsertRecordsV2(bundle 提交面):含 enabled skill 的批,final publish 失败 → 批 ok 臂携带 projectionLag", () => {
+    const w = upsertRecordsV2(root, [skillInput("in-bundle"), upsertInput({ id: "mcp:side", name: "side", kind: "mcp" })], failingPublish)
+    expect(w.ok).toBe(true)
+    if (!w.ok) throw new Error("unreachable")
+    expect(w.projectionLag).toContain("final publish failed")
+    expect(findRecordV2(root, "skill", "in-bundle")?.desiredState).toBe("enabled")
+  })
+
+  test("set-state enable(用户可见开关面):final publish 失败 → ok:true + projectionLag;账本 enabled、派生未扩", () => {
+    // 先落 disabled(真发布)→ 派生为空集不含该 key
+    const seeded = upsertRecordV2(root, skillInput("toggle", "disabled"))
+    expect(seeded.ok).toBe(true)
+    const sd = setDesiredStateV2(root, "skill", "toggle", "enabled", failingPublish)
+    expect(sd.ok).toBe(true)
+    if (!sd.ok) throw new Error("unreachable")
+    expect(sd.projectionLag).toContain("final publish failed")
+    expect(findRecordV2(root, "skill", "toggle")?.desiredState).toBe("enabled") // durable intent 已翻
+    expect(derivationKeys()).not.toContain("skill--toggle") // 派生停在更严格态(未注入 = 安全侧)
+  })
+
+  test("收窄方向不受 seam 影响:disable 的移除在账本写之前已真落盘(安全方向排序原样)", () => {
+    const seeded = upsertRecordV2(root, skillInput("shrink"))
+    expect(seeded.ok).toBe(true)
+    expect(derivationKeys()).toEqual(["skill--shrink"])
+    const sd = setDesiredStateV2(root, "skill", "shrink", "disabled", failingPublish)
+    expect(sd.ok).toBe(true)
+    // pre-shrink 不走 seam:移除立即生效(引擎绝不见已撤销允许项),即便 final publish 注入失败
+    expect(derivationKeys()).not.toContain("skill--shrink")
+  })
+
+  test("派生无变化(非 skill 写)不触发 publish:seam 失败不误报 projectionLag", () => {
+    const w = upsertRecordV2(root, upsertInput({ id: "mcp:plain", name: "plain", kind: "mcp" }), failingPublish)
+    expect(w.ok).toBe(true)
+    if (!w.ok) throw new Error("unreachable")
+    // 首写时派生缺席→absent 也会做首建发布;先真建一次再验"无变化跳过"
+    const again = upsertRecordV2(root, upsertInput({ id: "mcp:plain2", name: "plain2", kind: "mcp" }))
+    expect(again.ok).toBe(true)
+    const third = upsertRecordV2(root, upsertInput({ id: "mcp:plain3", name: "plain3", kind: "mcp" }), failingPublish)
+    expect(third.ok).toBe(true)
+    if (!third.ok) throw new Error("unreachable")
+    expect(third.projectionLag).toBeUndefined() // keys 集无变化(全 mcp)→ alreadyFinal 跳过 publish
+  })
+})

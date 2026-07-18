@@ -23,6 +23,7 @@ import {
   readCurrentGeneration,
   readQuarantineReceipt,
   recoverExtensionTransactions,
+  recoveryClean,
   resolveLiveGenerationDir,
   rollbackToGeneration,
   runExtensionTransaction,
@@ -388,6 +389,7 @@ const EXPECT_AFTER_RECOVERY: Record<TxCrashPoint, "v1" | "v2"> = {
   "after-switched": "v2", // 全翻转 + 恢复探测健康 + receipt 幂等重放 → 前滚
   "after-post-probe": "v2",
   "after-receipt-commit": "v2",
+  "after-authorizing": "v2", // #336:journal=authorizing(receipt 已 durable)→ 恢复只前滚补授权投影
   "before-gc": "v2", // journal 已 committed → 终态,仅清理
 }
 
@@ -807,6 +809,255 @@ describe("capability authorization gate", () => {
     expect(
       await bad({ items: [{ key: "k", files }], skippedOptional: [{ key: "../evil" }] }),
     ).toContain("invalid key")
+  })
+})
+
+// ── #336:授权投影写失败 —— authorizing 非终态 + 前滚重试直至成功(绝不回滚、绝不终态化) ────────
+
+describe("#336 authorization projection fail-closed (authorizing state)", () => {
+  const CAPS = ["net:fetch", "prompt:context"]
+  const capsPlan = (files: Record<string, string>): TxPlan => ({
+    items: [{ key: "skill--demo", files: specsOf(files), capabilities: CAPS }],
+    authorization: { confirmed: { "skill--demo": CAPS } },
+  })
+
+  test("grants.json 写失败:ok:true + authorizationPending;journal 停 authorizing;live/receipt 完好;清障后恢复前滚收敛", async () => {
+    // 注入:grants.json 路径预占为目录 → writeFileAtomicSync 的 rename 确定性失败(真盘,零 mock)
+    const grantPath = capabilityGrantPath(root, "skill--demo")
+    fs.mkdirSync(grantPath, { recursive: true })
+    const committed: TxCommitRecord[][] = []
+    const result = await runExtensionTransaction(root, capsPlan(V1), hooksFor(V1, { commitReceipt: (recs) => void committed.push(recs) }))
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error("unreachable")
+    // 如实上报:成功臂判别字段 + warnings(绝非 ok:false —— 那是「计划未落地」的补偿契约)
+    expect(result.authorizationPending?.some((f) => f.includes("grant write failed"))).toBe(true)
+    expect(result.warnings.some((w) => w.includes("grant write failed"))).toBe(true)
+    // live 已切换、receipt 已提交(越过可回滚点)
+    expect(versionOf(root, "skill--demo")).toBe("v1")
+    expect(committed).toHaveLength(1)
+    // journal 保留非终态 authorizing;staging 已清
+    const journals = listTransactionJournals(root)
+    expect(journals.map((j) => j.state)).toEqual(["authorizing"])
+    expect(fs.existsSync(path.join(root, "ext-tx", "staging", result.txId))).toBe(false)
+
+    // 恢复(无 probe/commitReceipt seam:authorizing 前滚不需要)—— 障碍仍在 → 保留非终态,绝不回滚
+    const still = await recoverExtensionTransactions(root, { pidAlive: () => false, log: noop })
+    expect(still.ok).toBe(true)
+    const rep = still.reports.find((r) => r.txId === result.txId)!
+    expect(rep.action).toBe("none")
+    expect(rep.state).toBe("authorizing")
+    expect(recoveryClean(still)).toBe(false) // 非终态在案 = 不干净(gate 拒后续写的判据)
+    expect(versionOf(root, "skill--demo")).toBe("v1") // live 纹丝不动
+
+    // 清障 → 恢复前滚收敛:grants 落位、journal 终态、报告携带最终 state
+    fs.rmSync(grantPath, { recursive: true, force: true })
+    const recovered = await recoverExtensionTransactions(root, { pidAlive: () => false, log: noop })
+    expect(recovered.ok).toBe(true)
+    const done = recovered.reports.find((r) => r.txId === result.txId)!
+    expect(done.action).toBe("resumed-committed")
+    expect(done.state).toBe("committed") // recoveryClean 按报告 state 判净
+    expect(recoveryClean(recovered)).toBe(true)
+    expect(readCapabilityGrant(root, "skill--demo")?.capabilities).toEqual([...CAPS].sort())
+    expect(readBundleAuthorizationReceipt(root, result.txId)?.items[0]?.requested).toEqual([...CAPS].sort())
+    expect(listTransactionJournals(root).map((j) => j.state)).toEqual(["committed"])
+  })
+
+  test("授权收据写失败(ext-tx/authz 被占为文件):同样 pending;grants 先行已落;清障后收据可读", async () => {
+    fs.mkdirSync(path.join(root, "ext-tx"), { recursive: true })
+    fs.writeFileSync(path.join(root, "ext-tx", "authz"), "occupied")
+    const result = await runExtensionTransaction(root, capsPlan(V1), hooksFor(V1))
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error("unreachable")
+    expect(result.authorizationPending?.some((f) => f.includes("authorization receipt write failed"))).toBe(true)
+    expect(readCapabilityGrant(root, "skill--demo")?.capabilities).toEqual([...CAPS].sort()) // grants 幂等已落
+    expect(listTransactionJournals(root).map((j) => j.state)).toEqual(["authorizing"])
+
+    fs.rmSync(path.join(root, "ext-tx", "authz"))
+    const recovered = await recoverExtensionTransactions(root, { pidAlive: () => false, log: noop })
+    const done = recovered.reports.find((r) => r.txId === result.txId)!
+    expect(done.action).toBe("resumed-committed")
+    expect(readBundleAuthorizationReceipt(root, result.txId)?.items[0]?.requested).toEqual([...CAPS].sort())
+  })
+
+  test("crash at after-authorizing + 障碍在场:恢复保留非终态、live 保持新版(绝不回滚);二次恢复(清障)收敛", async () => {
+    // 先正常装 V1(grants 落位),再让升级的 grant 写失败:grants.json 换成目录
+    const first = await runExtensionTransaction(root, capsPlan(V1), hooksFor(V1))
+    expect(first.ok).toBe(true)
+    const grantPath = capabilityGrantPath(root, "skill--demo")
+    fs.rmSync(grantPath, { force: true })
+    fs.mkdirSync(grantPath)
+    const crashed = runExtensionTransaction(root, capsPlan(V2), hooksFor(V2, { crashAt: "after-authorizing", probe: healthyProbe, commitReceipt: noop }))
+    await expect(crashed).rejects.toThrow(ExtTxCrashError)
+
+    const still = await recoverExtensionTransactions(root, { probe: healthyProbe, commitReceipt: noop, pidAlive: () => false, log: noop })
+    expect(still.ok).toBe(true)
+    const rep = still.reports.find((r) => r.state === "authorizing")!
+    expect(rep.action).toBe("none")
+    expect(versionOf(root, "skill--demo")).toBe("v2") // receipt 已 durable → 只前滚,绝不回滚
+
+    fs.rmSync(grantPath, { recursive: true, force: true })
+    const recovered = await recoverExtensionTransactions(root, { probe: healthyProbe, commitReceipt: noop, pidAlive: () => false, log: noop })
+    expect(recovered.reports.some((r) => r.action === "resumed-committed" && r.state === "committed")).toBe(true)
+    expect(readCapabilityGrant(root, "skill--demo")?.capabilities).toEqual([...CAPS].sort())
+    expect(versionOf(root, "skill--demo")).toBe("v2")
+  })
+
+  test("正常提交不受影响:无 authorizationPending 字段、journal 直达 committed", async () => {
+    const result = await runExtensionTransaction(root, capsPlan(V1), hooksFor(V1))
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error("unreachable")
+    expect(result.authorizationPending).toBeUndefined()
+    expect(listTransactionJournals(root).map((j) => j.state)).toEqual(["committed"])
+  })
+
+  // ── r1 Major:receipt durable 之后**任何**失败都只前滚 —— replay/snapshot/journal 进度失败均不得回滚 ──
+
+  test("crash at after-receipt-commit + 恢复期 replay 暂时失败:绝不回滚(receipt 可能已 durable)、零隔离;replay 恢复后前滚", async () => {
+    await installOk(["skill--demo"], V1, { probe: healthyProbe, commitReceipt: noop })
+    const crashed = runExtensionTransaction(
+      root,
+      planFor(["skill--demo"], V2),
+      hooksFor(V2, { crashAt: "after-receipt-commit", probe: healthyProbe, commitReceipt: noop }),
+    )
+    await expect(crashed).rejects.toThrow(ExtTxCrashError)
+    // replay 暂时失败(账本忙类故障)→ 保留 switched:live 不回旧、不隔离、不终态化
+    const still = await recoverExtensionTransactions(root, {
+      probe: healthyProbe,
+      commitReceipt: () => {
+        throw new Error("ledger busy")
+      },
+      pidAlive: () => false,
+      log: noop,
+    })
+    expect(still.ok).toBe(true)
+    const rep = still.reports.find((r) => r.action === "none" && r.state === "switched")!
+    expect(rep.detail).toContain("receipt replay failed")
+    expect(versionOf(root, "skill--demo")).toBe("v2")
+    expect(readQuarantineReceipt(root, rep.txId)).toBeNull()
+    expect(recoveryClean(still)).toBe(false)
+    // replay 恢复正常 → 前滚收敛 committed
+    const recovered = await recoverExtensionTransactions(root, { probe: healthyProbe, commitReceipt: noop, pidAlive: () => false, log: noop })
+    expect(recovered.reports.some((r) => r.action === "resumed-committed" && r.state === "committed")).toBe(true)
+    expect(versionOf(root, "skill--demo")).toBe("v2")
+  })
+
+  test("主路径 snapshot 写失败(receipts 占位为文件):只前滚通道 ok:true + pending、journal 停 switched、锁释放;障碍在场恢复保留、清障后收敛", async () => {
+    const planWithReceipt = (files: Record<string, string>): TxPlan => ({
+      items: [{ key: "skill--demo", files: specsOf(files), receipt: { marker: "snap" } }],
+    })
+    const first = await runExtensionTransaction(root, planWithReceipt(V1), hooksFor(V1, { probe: healthyProbe, commitReceipt: noop }))
+    expect(first.ok).toBe(true)
+    const recDir = path.join(root, "ext-store", "skill--demo", "receipts")
+    fs.rmSync(recDir, { recursive: true, force: true })
+    fs.writeFileSync(recDir, "occupied")
+    const result = await runExtensionTransaction(root, planWithReceipt(V2), hooksFor(V2, { probe: healthyProbe, commitReceipt: noop }))
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error("unreachable")
+    expect(result.authorizationPending?.some((f) => f.includes("receipt snapshot write failed"))).toBe(true)
+    expect(versionOf(root, "skill--demo")).toBe("v2") // live 不回旧
+    expect(fs.existsSync(bundleLockPath(root))).toBe(false) // 锁已释放,不悬置到 stale 接管
+    expect(listTransactionJournals(root).some((j) => j.state === "switched" && j.txId === result.txId)).toBe(true)
+    // 障碍在场:恢复 replay 后 snapshot 再失败 → 保留非终态,绝不回滚
+    const still = await recoverExtensionTransactions(root, { probe: healthyProbe, commitReceipt: noop, pidAlive: () => false, log: noop })
+    const rep = still.reports.find((r) => r.txId === result.txId)!
+    expect(rep.action).toBe("none")
+    expect(rep.state).toBe("switched")
+    expect(versionOf(root, "skill--demo")).toBe("v2")
+    // 清障 → 前滚收敛
+    fs.rmSync(recDir, { force: true })
+    const recovered = await recoverExtensionTransactions(root, { probe: healthyProbe, commitReceipt: noop, pidAlive: () => false, log: noop })
+    expect(recovered.reports.some((r) => r.txId === result.txId && r.action === "resumed-committed" && r.state === "committed")).toBe(true)
+  })
+
+  // ── r3(r2 Major 1):receipt durable = 不可回退点,对恢复一切分支成立(含 probe 不健康) ──
+
+  const planReceipt = (files: Record<string, string>): TxPlan => ({
+    items: [{ key: "skill--demo", files: specsOf(files), receipt: { marker: "r3" } }],
+  })
+  const unhealthyProbe: HealthProbe = () => ({ healthy: false, reason: "transient outage" })
+
+  test("r3:receipt durable + 恢复 probe 不健康 → 拒回滚保留(零隔离、live 不动);probe 恢复后前滚收敛", async () => {
+    // fake 账本:commitReceipt 落账,receiptCommitted 读同一真源(engine seam 契约)
+    const ledger = new Set<string>()
+    const commitToLedger = (recs: TxCommitRecord[]) => {
+      for (const r of recs) ledger.add(`${r.txId}:${r.key}`)
+    }
+    const receiptCommitted = (recs: TxCommitRecord[]) => recs.some((r) => ledger.has(`${r.txId}:${r.key}`))
+    const first = await runExtensionTransaction(root, planReceipt(V1), hooksFor(V1, { probe: healthyProbe, commitReceipt: commitToLedger }))
+    expect(first.ok).toBe(true)
+    // receipt 已 durable、journal 停 switched(after-receipt-commit 崩溃)
+    const crashed = runExtensionTransaction(
+      root,
+      planReceipt(V2),
+      hooksFor(V2, { crashAt: "after-receipt-commit", probe: healthyProbe, commitReceipt: commitToLedger }),
+    )
+    await expect(crashed).rejects.toThrow(ExtTxCrashError)
+    // probe 暂时不健康 → **禁入回滚**:live 保持 v2、零隔离、journal 非终态
+    const still = await recoverExtensionTransactions(root, { probe: unhealthyProbe, commitReceipt: commitToLedger, receiptCommitted, pidAlive: () => false, log: noop })
+    expect(still.ok).toBe(true)
+    const rep = still.reports.find((r) => r.state === "switched")!
+    expect(rep.action).toBe("none")
+    expect(rep.detail).toContain("rollback refused")
+    expect(versionOf(root, "skill--demo")).toBe("v2")
+    expect(readQuarantineReceipt(root, rep.txId)).toBeNull()
+    expect(recoveryClean(still)).toBe(false)
+    // probe 恢复健康 → 前滚 committed(绝不回滚)
+    const recovered = await recoverExtensionTransactions(root, { probe: healthyProbe, commitReceipt: commitToLedger, receiptCommitted, pidAlive: () => false, log: noop })
+    expect(recovered.reports.some((r) => r.action === "resumed-committed" && r.state === "committed")).toBe(true)
+    expect(versionOf(root, "skill--demo")).toBe("v2")
+  })
+
+  test("r3:receipt 面在场但缺 receiptCommitted seam(无法证伪)→ probe 不健康同样拒回滚 fail-closed", async () => {
+    const crashed = runExtensionTransaction(root, planReceipt(V1), hooksFor(V1, { crashAt: "after-receipt-commit", probe: healthyProbe, commitReceipt: noop }))
+    await expect(crashed).rejects.toThrow(ExtTxCrashError)
+    const still = await recoverExtensionTransactions(root, { probe: unhealthyProbe, commitReceipt: noop, pidAlive: () => false, log: noop })
+    expect(still.ok).toBe(true)
+    const rep = still.reports.find((r) => r.state === "switched")!
+    expect(rep.action).toBe("none")
+    expect(rep.detail).toContain("unverifiable")
+    expect(versionOf(root, "skill--demo")).toBe("v1")
+    expect(readQuarantineReceipt(root, rep.txId)).toBeNull()
+  })
+
+  test("r3 回归:receiptCommitted 确证未落 → 不健康 probe 的回滚照旧(隔离 + rolled-back)", async () => {
+    await installOk(["skill--demo"], V1)
+    const crashed = runExtensionTransaction(root, planReceipt(V2), hooksFor(V2, { crashAt: "after-switched", probe: healthyProbe, commitReceipt: noop }))
+    await expect(crashed).rejects.toThrow(ExtTxCrashError)
+    const rec = await recoverExtensionTransactions(root, {
+      probe: unhealthyProbe,
+      commitReceipt: noop,
+      receiptCommitted: () => false, // 账本可证:本事务 receipt 未落
+      pidAlive: () => false,
+      log: noop,
+    })
+    expect(rec.ok).toBe(true)
+    const rep = rec.reports.find((r) => r.action === "rolled-back")!
+    expect(versionOf(root, "skill--demo")).toBe("v1")
+    expect(readQuarantineReceipt(root, rep.txId)?.from).toBe("crash-recovery")
+  })
+
+  test("主路径 authorizing 进度写失败(journal 目录只读):只前滚通道 ok:true + pending、journal 停 switched、锁释放;解除后恢复前滚", async () => {
+    await installOk(["skill--demo"], V1)
+    const journalDir = path.join(root, "ext-tx", "journal")
+    const result = await runExtensionTransaction(
+      root,
+      planFor(["skill--demo"], V2),
+      hooksFor(V2, {
+        probe: healthyProbe,
+        // receipt 成功之后、advance("authorizing") 之前使 journal 目录不可写(注入点 = commitReceipt 时机)
+        commitReceipt: () => fs.chmodSync(journalDir, 0o555),
+      }),
+    )
+    fs.chmodSync(journalDir, 0o755)
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error("unreachable")
+    expect(result.authorizationPending?.some((f) => f.includes("journal progress write failed"))).toBe(true)
+    expect(versionOf(root, "skill--demo")).toBe("v2")
+    expect(fs.existsSync(bundleLockPath(root))).toBe(false)
+    expect(listTransactionJournals(root).some((j) => j.state === "switched" && j.txId === result.txId)).toBe(true)
+    const recovered = await recoverExtensionTransactions(root, { probe: healthyProbe, commitReceipt: noop, pidAlive: () => false, log: noop })
+    expect(recovered.reports.some((r) => r.txId === result.txId && r.action === "resumed-committed" && r.state === "committed")).toBe(true)
+    expect(versionOf(root, "skill--demo")).toBe("v2")
   })
 })
 

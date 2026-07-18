@@ -380,6 +380,7 @@ export const dict = {
   "alpha.ext.updated": "Updated to the latest pinned version",
   "alpha.ext.importFolderPick": "Pick a folder containing SKILL.md",
   "alpha.ext.imported": "Imported \u201c{{name}}\u201d \u00b7 effective now",
+  "alpha.ext.importedPendingRestart": "Imported \u201c{{name}}\u201d \u00b7 takes effect after an app restart",
   "alpha.ext.importing": "Importing\u2026",
   "alpha.ext.importGitTitle": "Import a skill from a Git repo",
   "alpha.ext.importGitHint": "https URLs only; shallow-cloned to a temp dir, and written into .alpha only after the SKILL.md frontmatter validates. Nothing in the repo is executed.",

@@ -1616,6 +1616,9 @@ async function installBundleAtomic(
     commitReceipt: (recs: TxCommitRecord[]) => {
       const written = upsertRecordsV2(deps.globalRoot(), recs.map((rec) => commitInputFromRecord(rec)))
       if (!written.ok) throw new Error(`bundle receipt commit failed: ${written.reason}`)
+      // #336:账本 durable 但 skills 派生允许集发布失败 —— 不 throw(会误触发引擎回滚与已
+      // durable 账本分叉),捕获进 bundleWarnings 随成功结果如实上报。
+      if (written.projectionLag) bundleWarnings.push(written.projectionLag)
     },
     log: () => {},
   }
@@ -2231,13 +2234,15 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       return { ok: false, reason: gen.reason, ...(gen.stage ? { stage: gen.stage } : {}) }
     }
     ;(deps.transaction ?? passthroughTx).commit(tx.txId)
+    // #336:projectionLag(账本 durable、允许集发布失败)并入用户可见 warning 通道。
+    const skillWarnings = [...promoted.warnings, ...(gen.projectionLag ? [gen.projectionLag] : [])]
     return {
       ok: true,
       kind: "skill",
       name: entry.name,
       ...(gen.files.length ? { files: gen.files } : {}),
       manifestDigest,
-      ...(promoted.warnings.length ? { warning: promoted.warnings.join("; ") } : {}),
+      ...(skillWarnings.length ? { warning: skillWarnings.join("; ") } : {}),
     }
   } else if (entry.type === "agent") {
     // #361(Codex 裁决 Q1/Q4):catalog agent 收编 #358 的 file-action 事务载体 —— remote/builtin
@@ -2512,7 +2517,9 @@ export type UncuratedImportDeps = {
 }
 
 export type UncuratedImportOutcome =
-  | { ok: true; kind: "skill" | "agent"; name: string; files?: string[]; warning?: string }
+  /** #336 r1:projectionLag = 账本已 durable 但 skills 派生允许集发布失败(本次未注入,重启自愈)
+   *  —— 独立判别字段(不折叠进 warning),renderer 据此给用户「重启后生效」级呈现。 */
+  | { ok: true; kind: "skill" | "agent"; name: string; files?: string[]; warning?: string; projectionLag?: string }
   | { ok: false; reason: string }
 
 /** 未策展 skill 的 fresh-only 门(agent 无更新链,skill 未策展导入同款 fresh-only)—— 与
@@ -2570,12 +2577,14 @@ export async function installUncuratedSkillImport(
     precondition: () => uncuratedSkillFreshGate(root, name),
   })
   if (!gen.ok) return { ok: false, reason: gen.reason }
+  // #336 r1:projectionLag 以独立判别字段透传(不折叠进 warning)—— preload/renderer 端到端呈现。
   return {
     ok: true,
     kind: "skill",
     name,
     ...(gen.files.length ? { files: gen.files } : {}),
     ...(promoted.warnings.length ? { warning: promoted.warnings.join("; ") } : {}),
+    ...(gen.projectionLag ? { projectionLag: gen.projectionLag } : {}),
   }
 }
 
@@ -3318,7 +3327,15 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
     return { ok: false, reason: gen.reason, ...(gen.stage ? { stage: gen.stage } : {}) }
   }
   ;(deps.transaction ?? passthroughTx).commit(tx.txId)
-  return { ok: true, kind: "skill", name: entry.name, ...(gen.files.length ? { files: gen.files } : {}), manifestDigest }
+  // #336:projectionLag 并入用户可见 warning 通道(seed 安装入口)。
+  return {
+    ok: true,
+    kind: "skill",
+    name: entry.name,
+    ...(gen.files.length ? { files: gen.files } : {}),
+    manifestDigest,
+    ...(gen.projectionLag ? { warning: gen.projectionLag } : {}),
+  }
 }
 
 /**
@@ -4063,6 +4080,9 @@ export function setInstallStateByKey(
     const prevState: DesiredState = record.desiredState
     const led = setDesiredStateV2(root, intent.type, intent.name, intent.state)
     if (!led.ok) return led
+    // #336:skill enable 的派生允许集发布失败(账本已 durable、注入待 boot 自愈)—— 经既有
+    // warning 通道如实上报(用户可见开关入口)。
+    const projectionLag = led.projectionLag
     if (configApply) {
       try {
         configApply()
@@ -4072,7 +4092,7 @@ export function setInstallStateByKey(
         return { ok: false, reason: rb.ok ? `${base} (ledger rolled back to ${prevState})` : `${base}; ledger rollback ALSO failed: ${rb.reason} — ledger now ${intent.state}, config unchanged (manual repair needed)` }
       }
     }
-    return led
+    return projectionLag ? { ok: true, warning: projectionLag } : { ok: true }
   } finally {
     held.lock.release()
   }

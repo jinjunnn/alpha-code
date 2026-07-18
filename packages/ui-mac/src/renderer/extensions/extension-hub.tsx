@@ -286,7 +286,8 @@ export function ExtensionHub(props: {
     try {
       // REQ-098 #255:main 自弹目录选择器并直接以用户实选目录为来源;renderer 不再传 srcDir。
       const r = await ext.importSkillFolder()
-      if (r.ok) flash(t("alpha.ext.imported", { name: r.name ?? "" }), "success")
+      // #336 r1:projectionLag = 本次未注入(重启自愈)—— 不得宣称「当场生效」。
+      if (r.ok) flash(t(r.projectionLag ? "alpha.ext.importedPendingRestart" : "alpha.ext.imported", { name: r.name ?? "" }), "success")
       else if (!r.canceled) setImportErr(r.reason ?? t("alpha.ext.installFailed"))
     } finally {
       setImportBusy(false)
@@ -301,7 +302,13 @@ export function ExtensionHub(props: {
     try {
       const r = kind === "git" ? await ext.importSkillGit(value) : await ext.importNpmPlugin(value)
       if (r.ok) {
-        flash(kind === "git" ? t("alpha.ext.imported", { name: (r as { name?: string }).name ?? "" }) : t("alpha.ext.pluginRestart"), "success")
+        // #336 r1:projectionLag = 本次未注入(重启自愈)—— 不得宣称「当场生效」。
+        flash(
+          kind === "git"
+            ? t(r.projectionLag ? "alpha.ext.importedPendingRestart" : "alpha.ext.imported", { name: (r as { name?: string }).name ?? "" })
+            : t("alpha.ext.pluginRestart"),
+          "success",
+        )
         setImportDialog(null)
         setImportInput("")
       } else {

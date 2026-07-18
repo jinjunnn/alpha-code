@@ -464,13 +464,21 @@ export type ElectronAPI = {
     // REQ-019 T6:导入。folder = main 自弹目录选择器,用户实选目录即来源(REQ-098 #255:renderer
     // 不再传 srcDir),校验 SKILL.md frontmatter → 复制入 .alpha + receipt(imported);git = https-only
     // 浅克隆临时目录 → 同校验。外来内容绝不执行,symlink 不复制。
+    /** #336 r1:成功臂 warning = loud 诊断透传;projectionLag = 账本已 durable 但 skills 允许集
+     *  发布失败(本次未注入,重启自愈)—— renderer 必须据此呈现「重启后生效」级提示。 */
     importSkillFolder: (
       target?: InstallTarget,
-    ) => Promise<{ ok: true; files?: string[]; name?: string } | { ok: false; canceled?: boolean; reason: string }>
+    ) => Promise<
+      | { ok: true; files?: string[]; name?: string; warning?: string; projectionLag?: string }
+      | { ok: false; canceled?: boolean; reason: string }
+    >
     importSkillGit: (
       url: string,
       target?: InstallTarget,
-    ) => Promise<{ ok: true; files?: string[]; name?: string } | { ok: false; reason: string }>
+    ) => Promise<
+      | { ok: true; files?: string[]; name?: string; warning?: string; projectionLag?: string }
+      | { ok: false; reason: string }
+    >
     // REQ-018 安装账本:global(~/.alpha)+ project(<dir>/.alpha)receipts 合并只读视图
     listInstalls: (projectDir?: string) => Promise<InstallLedgerView>
     /** REQ-100 #313:key-based v2 卸载 —— renderer 只提供 type/name/scope,receipt 事实由 main
@@ -522,10 +530,11 @@ export type ElectronAPI = {
         }
       | { ok: false; reason: string }
     >
-    /** ADR-030(#372):显式清理(journal/账本失据 fail-closed;只删账本可证明的受控面)。 */
+    /** ADR-030(#372):显式清理(journal/账本失据 fail-closed;只删账本可证明的受控面)。
+     *  #336:任一删账失败 → 整单 ok:false(cleaned/failed/reported 保留如实进度;幂等可重试)。 */
     projectResidualsClean: (projectDir: string) => Promise<
-      | { ok: true; cleaned: string[]; failed: Array<{ item: string; reason: string }>; reported: string[] }
-      | { ok: false; reason: string }
+      | { ok: true; cleaned: string[]; reported: string[] }
+      | { ok: false; reason: string; cleaned?: string[]; failed?: Array<{ item: string; reason: string }>; reported?: string[] }
     >
     /** REQ-100 #375:保留态 journal 只读诊断(global 三环境根恒聚合;projectDir 可选)。
      *  entries = 判别联合(kind: retained/already-quarantined/malformed-entry/unreadable-root/
