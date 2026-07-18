@@ -203,13 +203,15 @@ export async function installAgentFromCas(root: string, spec: AgentSeedInstall):
     ...(spec.payloadDigest ? { payloadDigest: spec.payloadDigest } : {}),
     ...(spec.grantDigest ? { grantDigest: spec.grantDigest } : {}),
     // #395:fresh-intake 按来源分类(单一分类器 ext-install-policy);既有记录当前策略优先。
-    // #397:有效 curation 声明优先(planner 透传;session-grant 恒 disabled)。
+    // #397:有效 curation 声明优先(planner 透传;session-grant 恒 disabled,写点例外标记与
+    // receipt 同原子 —— agent 虽 fresh-only(无 prior 复活面),标记保持全类型同构)。
     desiredState: nextDesiredState(root, "agent", spec.name, {
       origin: spec.origin,
       source: spec.source,
       ...(spec.activationPolicy !== undefined ? { activationPolicy: spec.activationPolicy } : {}),
       ...(spec.reviewExpired !== undefined ? { reviewExpired: spec.reviewExpired } : {}),
     }),
+    ...(spec.origin === "catalog" && spec.activationPolicy === "session-grant" ? { sessionGrantEnforced: true as const } : {}),
     origin: spec.origin,
     files: [mdPath],
     configKey: `agent.${spec.name}`,

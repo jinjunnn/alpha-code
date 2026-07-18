@@ -686,6 +686,13 @@ export function toV1Receipt(record: InstallRecordV2): InstallReceipt {
 export type UpsertInput = Omit<InstallRecordV2, "schemaVersion" | "generation" | "previousDigest"> & {
   generation?: number
   previousDigest?: string
+  /** #397(REQ-104,Codex r3):session-grant 对 r7 B4「prev 当前策略优先」的**写点例外**。
+   *  携带本标记的记录 desiredState 恒落 "disabled" —— prev.desiredState=enabled 不得复活
+   *  (合同 §7.2:session-grant 的持久 enabled 本身非法;会话级启用 = #408 瞬态)。
+   *  单向:只禁不启,绝不用于强制 enable。由 planner 在 curation 采信判定 session-grant 时
+   *  打标,随 receipt 模板进 journal(恢复前滚同源)—— 归位与 receipt 同原子:receipt 之前
+   *  任何失败,账本从未被碰,回滚无需补偿。标记不落盘(写点 strip,不进 RECORD_KEYS)。 */
+  sessionGrantEnforced?: true
 }
 
 export type LedgerV2Write =
@@ -712,6 +719,8 @@ function replayVerdict(
     const clone: Record<string, unknown> = { ...r }
     delete clone.desiredState
     delete clone.updatedAt
+    // #397:session-grant 写点标记不属身份事实(只作用于已剔除的 desiredState)—— 重放等值同剔。
+    delete clone.sessionGrantEnforced
     return canonicalJson(clone)
   }
   const candidate = {
@@ -753,8 +762,9 @@ export function upsertRecordV2(root: string, input: UpsertInput, publishFinal?: 
   if (parsed.corruptRecords.unattributable)
     return { ok: false, reason: `refusing to write ${k}: ledger holds an unattributable corrupt v2 record (fail closed — inspect ${ledgerPath(root)})` }
   const hadV1 = parsed.receipts.some((r) => key(r.type, r.name) === k)
+  const { sessionGrantEnforced, ...inputBare } = input
   const record: InstallRecordV2 = {
-    ...input,
+    ...inputBare,
     schemaVersion: RECORD_SCHEMA_VERSION,
     generation: input.generation ?? (prev ? prev.generation + 1 : hadV1 ? 2 : 1),
     ...(input.previousDigest ? { previousDigest: input.previousDigest } : prev?.manifestDigest ? { previousDigest: prev.manifestDigest } : {}),
@@ -762,7 +772,11 @@ export function upsertRecordV2(root: string, input: UpsertInput, publishFinal?: 
     // 调用方计划期(锁外)算的 input.desiredState。否则计划期读到 enabled、用户随后 disable、更新事务
     // 提交旧 enabled 会把禁用复活。prev 存在 = 更新,一律沿用 prev 当前 desiredState(启停只经 set-state
     // 通道改);fresh(无 prev)才用分类器传入值。
-    ...(prev ? { desiredState: prev.desiredState } : {}),
+    // #397(Codex r3)例外:sessionGrantEnforced 标记 = curation 判定 session-grant 的记录 ——
+    // prev enabled 属非法状态(持久 enabled 违反合同 §7.2),prev 优先规则**不得**把它复活,
+    // desiredState 恒落 "disabled"(单向,只禁不启)。归位与 receipt 同原子:本写点之前的任何
+    // 失败都不碰账本,回滚无需补偿。
+    desiredState: sessionGrantEnforced === true ? "disabled" : prev ? prev.desiredState : input.desiredState,
   }
   const check = decodeRecordV2(record)
   if (!check.ok) return { ok: false, reason: `refusing to write invalid record: ${check.errors.join("; ")}` }
@@ -810,14 +824,17 @@ export function upsertRecordsV2(root: string, inputs: UpsertInput[], publishFina
       return { ok: false, reason: `refusing to write ${k}: ledger holds an unattributable corrupt v2 record (fail closed — inspect ${ledgerPath(root)})` }
     freshWrites++
     const hadV1 = receiptKeys.has(k)
+    const { sessionGrantEnforced, ...inputBare } = input
     const record: InstallRecordV2 = {
-      ...input,
+      ...inputBare,
       schemaVersion: RECORD_SCHEMA_VERSION,
       generation: input.generation ?? (prev ? prev.generation + 1 : hadV1 ? 2 : 1),
       ...(input.previousDigest ? { previousDigest: input.previousDigest } : prev?.manifestDigest ? { previousDigest: prev.manifestDigest } : {}),
       // Codex r7 B4:同 upsertRecordV2 —— 更新(prev 存在)在写点沿用 prev 当前 desiredState(锁内真值),
       // 不用计划期传入值,防「计划读 enabled → 用户 disable → 提交复活」。批内同 key 后写基于累积态。
-      ...(prev ? { desiredState: prev.desiredState } : {}),
+      // #397(Codex r3)例外:sessionGrantEnforced 标记的记录恒落 "disabled"(prev enabled 非法,
+      // 不得复活;单向只禁不启)—— 与 upsertRecordV2 同合同,见彼处注释。
+      desiredState: sessionGrantEnforced === true ? "disabled" : prev ? prev.desiredState : input.desiredState,
     }
     const check = decodeRecordV2(record)
     if (!check.ok) return { ok: false, reason: `refusing to write invalid record ${k}: ${check.errors.join("; ")}` }

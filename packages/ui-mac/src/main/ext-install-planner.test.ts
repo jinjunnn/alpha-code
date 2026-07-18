@@ -2906,6 +2906,90 @@ describe("#397 安装面:archived 拒装 + activationPolicy 声明落账", () =>
     expect(mcpLeafOnDisk("markitdown")?.enabled).toBe(false)
   })
 
+  test("r3①:receipt 之前失败(post-journal probe 拒)⇒ 账本零副作用 —— 非法 enabled 原样;r3②:随后成功提交才落 disabled", async () => {
+    // 先以未策展 alpha 源装 skill:demo → enabled(#395 规则)。
+    const { deps: seedDeps } = makeDeps({ entries: [skillBuiltinEntry] })
+    expect((await installAuthorized({ catalogId: "skill:demo", scope: { scope: "global" } }, seedDeps)).ok).toBe(true)
+    const before = findRecordV2(globalRoot, "skill", "demo")!
+    expect(before.desiredState).toBe("enabled")
+    // 目录换代:同 id 声明 session-grant,但载荷 frontmatter 名不匹配 → 事务在 journal 之后、
+    // receipt 之前的 probe 段失败 → rollbackAll。归位 = receipt 写点例外 ⇒ 账本从未被碰。
+    const sgSkill: CatalogEntry = {
+      ...skillBuiltinEntry,
+      curation: makeCuration("skill:demo", "1.0.0", { tier: "labs", activationPolicy: "session-grant" }),
+    }
+    const badPayload = (_key: string, _name: string) =>
+      ({ ok: true as const, files: [{ path: "SKILL.md", data: Buffer.from("---\nname: shadow\ndescription: t\n---\nbody") }] })
+    const { deps: failDeps } = makeDeps({ entries: [sgSkill], installers: { collectBuiltinSkillPayload: badPayload } })
+    const failed = await installAuthorized({ catalogId: "skill:demo", scope: { scope: "global" } }, failDeps)
+    expect(failed.ok).toBe(false)
+    const after = findRecordV2(globalRoot, "skill", "demo")!
+    expect(after.desiredState).toBe("enabled") // r3 核心:失败的操作零账本副作用(归位与 receipt 同原子)
+    expect(after.generation).toBe(before.generation)
+    expect(after.updatedAt).toBe(before.updatedAt)
+    // r3②:好载荷重装成功 → receipt 写点例外落 disabled(prev enabled 不复活)。
+    const { deps: okDeps } = makeDeps({ entries: [sgSkill] })
+    expect((await installAuthorized({ catalogId: "skill:demo", scope: { scope: "global" } }, okDeps)).ok).toBe(true)
+    expect(findRecordV2(globalRoot, "skill", "demo")!.desiredState).toBe("disabled")
+  })
+
+  test("r3③:bundle 一子项失败 ⇒ 整包账本零副作用(session-grant 子项的非法 enabled 原样保留)", async () => {
+    // 预置:skill:sga 已装且 enabled(历史非法态 —— 目录现声明 session-grant)。
+    const w = upsertRecordV2(globalRoot, {
+      id: "skill:sga",
+      name: "sga",
+      kind: "skill",
+      environment: "prod",
+      scope: { kind: "global" },
+      version: "0.9.0",
+      desiredState: "enabled",
+      origin: "catalog",
+      installedAt: "2026-07-15T00:00:00.000Z",
+    })
+    expect(w.ok).toBe(true)
+    const sga: CatalogEntry = {
+      ...skillBuiltinEntry,
+      id: "skill:sga",
+      name: "sga",
+      installSpec: { kind: "skill", source: "builtin", builtinAssetKey: "skills/sga", targetDir: "alpha-skills" },
+      curation: makeCuration("skill:sga", "1.0.0", { tier: "labs", activationPolicy: "session-grant" }),
+    }
+    const sgb: CatalogEntry = {
+      ...skillBuiltinEntry,
+      id: "skill:sgb",
+      name: "sgb",
+      installSpec: { kind: "skill", source: "builtin", builtinAssetKey: "skills/sgb", targetDir: "alpha-skills" },
+    }
+    const sgBundle: CatalogEntry = {
+      ...bundleEntry,
+      id: "bundle:sg",
+      name: "sgb-pack",
+      bundleItems: [
+        { catalogEntryId: "skill:sga", optional: false, installOrder: 1 },
+        { catalogEntryId: "skill:sgb", optional: false, installOrder: 2 },
+      ],
+    }
+    // sgb 载荷 frontmatter 名不匹配 → 整包事务 probe 失败;sga 的归位标记只随 receipt 生效 → 零写。
+    const payloadByName = (_key: string, name: string) =>
+      name === "sgb"
+        ? { ok: true as const, files: [{ path: "SKILL.md", data: Buffer.from("---\nname: shadow\ndescription: t\n---\nbody") }] }
+        : { ok: true as const, files: [{ path: "SKILL.md", data: Buffer.from(`---\nname: ${name}\ndescription: t\n---\nbody`) }] }
+    const { deps } = makeDeps({ entries: [sga, sgb, sgBundle], installers: { collectBuiltinSkillPayload: payloadByName } })
+    const r = await installAuthorized({ catalogId: "bundle:sg", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(false)
+    expect(findRecordV2(globalRoot, "skill", "sga")!.desiredState).toBe("enabled") // 未被半写归位
+    expect(findRecordV2(globalRoot, "skill", "sga")!.version).toBe("0.9.0")
+    expect(findRecordV2(globalRoot, "skill", "sgb")).toBeNull() // 整包零落账
+    // 修复 sgb 后整包成功:sga 经 receipt 写点例外落 disabled,sgb 正常落账。
+    const goodPayload = (_key: string, name: string) =>
+      ({ ok: true as const, files: [{ path: "SKILL.md", data: Buffer.from(`---\nname: ${name}\ndescription: t\n---\nbody`) }] })
+    const { deps: okDeps } = makeDeps({ entries: [sga, sgb, sgBundle], installers: { collectBuiltinSkillPayload: goodPayload } })
+    const ok = await installAuthorized({ catalogId: "bundle:sg", scope: { scope: "global" } }, okDeps)
+    expect(ok.ok).toBe(true)
+    expect(findRecordV2(globalRoot, "skill", "sga")!.desiredState).toBe("disabled")
+    expect(findRecordV2(globalRoot, "skill", "sgb")).not.toBeNull()
+  })
+
   test("curation 校验失败 = fail-closed 到未策展保守面:绝不部分采信(archived 也不作数),按 #395 分类", async () => {
     const invalid: CatalogEntry = {
       ...mcpEntry,

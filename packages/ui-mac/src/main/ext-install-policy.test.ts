@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { initialDesiredState, nextDesiredState, normalizeSessionGrantPriorInLock } from "./ext-install-policy"
+import { initialDesiredState, nextDesiredState } from "./ext-install-policy"
 import { findRecordV2, upsertRecordV2 } from "./ext-receipt-v2"
 
 let root: string
@@ -91,15 +91,11 @@ describe("#397 activationPolicy 声明优先序(Codex 裁决钉死)", () => {
     seed("keep-x")
     expect(nextDesiredState(root, "mcp", "keep-x", { origin: "catalog", source: "official", activationPolicy: "default-disabled" })).toBe("enabled")
     expect(findRecordV2(root, "mcp", "keep-x")!.desiredState).toBe("enabled") // 账本不被动
-    // 声明 session-grant → 决策返回 disabled;**分类器只算不写**(r2:计划/授权前阶段零账本
-    // 副作用)—— 非法 prior 的真实归位在锁内(normalizeSessionGrantPriorInLock / boot reconcile)。
+    // 声明 session-grant → 决策返回 disabled;**分类器只算不写**(r2/r3:计划/授权前阶段零账本
+    // 副作用)—— 非法 prior 的真实归位 = upsert 写点例外(sessionGrantEnforced,见
+    // ext-receipt-v2.test)与 boot reconcile。
     seed("labs-x")
     expect(nextDesiredState(root, "mcp", "labs-x", { origin: "catalog", source: "official", activationPolicy: "session-grant" })).toBe("disabled")
     expect(findRecordV2(root, "mcp", "labs-x")!.desiredState).toBe("enabled") // 计划期不写账本
-    // 锁内归位原语:prev enabled → disabled;缺席/已 disabled = no-op。
-    expect(normalizeSessionGrantPriorInLock(root, "mcp", "labs-x").ok).toBe(true)
-    expect(findRecordV2(root, "mcp", "labs-x")!.desiredState).toBe("disabled")
-    expect(normalizeSessionGrantPriorInLock(root, "mcp", "labs-x").ok).toBe(true) // 幂等
-    expect(normalizeSessionGrantPriorInLock(root, "mcp", "ghost").ok).toBe(true) // 无记录 no-op
   })
 })

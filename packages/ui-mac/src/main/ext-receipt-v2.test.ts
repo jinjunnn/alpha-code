@@ -650,6 +650,47 @@ describe("#395 r7 B4 desiredState 写点优先", () => {
   })
 })
 
+// ── #397 r3:session-grant 写点例外(sessionGrantEnforced)——「prev 优先」不复活非法 enabled ─────
+describe("#397 sessionGrantEnforced 写点例外(r7 B4 的合同例外)", () => {
+  test("更新(prev enabled)+ 标记 → 落 disabled(prev 不复活);标记不落盘", () => {
+    expect(upsertRecordV2(root, upsertInput({ desiredState: "enabled" })).ok).toBe(true)
+    const upd = upsertRecordV2(root, upsertInput({ desiredState: "disabled", manifestDigest: DIGEST_B, sessionGrantEnforced: true }))
+    expect(upd.ok).toBe(true)
+    if (upd.ok) {
+      expect(upd.record.desiredState).toBe("disabled")
+      expect("sessionGrantEnforced" in upd.record).toBe(false) // strip:不进存储记录
+    }
+    expect(JSON.stringify(readRaw())).not.toContain("sessionGrantEnforced") // 账本文件零痕迹
+    expect(findRecordV2(root, "mcp", "markitdown")!.desiredState).toBe("disabled")
+  })
+
+  test("无标记的更新照旧 prev 优先(r7 B4 主规则不回归)", () => {
+    expect(upsertRecordV2(root, upsertInput({ desiredState: "enabled" })).ok).toBe(true)
+    const upd = upsertRecordV2(root, upsertInput({ desiredState: "disabled", manifestDigest: DIGEST_B }))
+    expect(upd.ok).toBe(true)
+    if (upd.ok) expect(upd.record.desiredState).toBe("enabled") // prev enabled 沿用
+  })
+
+  test("批量写点同规;单向 —— 标记恒落 disabled(误传 enabled 也不放行)", () => {
+    expect(upsertRecordV2(root, upsertInput({ desiredState: "enabled" })).ok).toBe(true)
+    const batch = upsertRecordsV2(root, [upsertInput({ desiredState: "disabled", manifestDigest: DIGEST_B, sessionGrantEnforced: true })])
+    expect(batch.ok).toBe(true)
+    if (batch.ok) expect(batch.records[0]!.desiredState).toBe("disabled")
+    const oneWay = upsertRecordV2(root, upsertInput({ id: "mcp:oneway", name: "oneway", configKey: "mcp.oneway", desiredState: "enabled", sessionGrantEnforced: true }))
+    expect(oneWay.ok).toBe(true)
+    if (oneWay.ok) expect(oneWay.record.desiredState).toBe("disabled")
+  })
+
+  test("崩溃恢复 exact-replay:标记不进身份等值 —— 同 txId 重放 = 幂等 replay,不 conflict 不递增", () => {
+    const tx = { id: "tx-sg-replay", state: "committed" as const }
+    const first = upsertRecordV2(root, upsertInput({ desiredState: "disabled", sessionGrantEnforced: true, transaction: tx }))
+    expect(first.ok).toBe(true)
+    const replay = upsertRecordV2(root, upsertInput({ desiredState: "disabled", sessionGrantEnforced: true, transaction: tx }))
+    expect(replay.ok).toBe(true)
+    if (first.ok && replay.ok) expect(replay.record.generation).toBe(first.record.generation)
+  })
+})
+
 // ── #395 Codex r11 Major:同 (kind,name) 多条有效记录 = 冲突,整组 fail-closed ────────────────────
 describe("#395 r11 重复有效记录 fail-closed", () => {
   test("两条均可解码的同 key skill(一 enabled 一 disabled)→ 整组排除 + 不进 records", () => {

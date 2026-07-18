@@ -14,32 +14,11 @@
 // enabled(存量不回溯的同一原则)。
 
 import type { DesiredState, InstallRecordV2 } from "./ext-receipt-v2"
-import { findRecordV2, setDesiredStateV2 } from "./ext-receipt-v2"
+import { findRecordV2 } from "./ext-receipt-v2"
 import { initialDesiredState, type FreshIntakeFacts } from "../shared/ext-install-policy"
 
 // 纯分类器上移 shared(renderer 安装文案共用同一真源);此处 re-export 保持既有导入面。
 export { initialDesiredState, type FreshIntakeFacts } from "../shared/ext-install-policy"
-
-/** #397(Codex r2):session-grant 非法 prior(enabled)的**锁内**归位 —— 唯一合法写点是
- *  事务锁保护的提交边界:各安装事务的锁内 precondition(引擎顺序 = lock → authorize 零写盘
- *  暂停 → precondition,ext-transaction.ts 主流程)与 boot reconcile(自持锁)。
- *  **调用方必须已持锁**;计划/分类与授权前阶段绝不写账本 —— 失败的操作不得留下账本副作用。
- *  归位后账本 = 计划值(disabled),账本 upsert 写点的「prev 当前策略优先」(receipt-v2 r7 B4)
- *  由此不再复活非法 enabled;归位写失败 = 调用方 precondition 拒绝(fail-closed)。 */
-export function normalizeSessionGrantPriorInLock(
-  root: string,
-  kind: InstallRecordV2["kind"],
-  name: string,
-): { ok: true } | { ok: false; reason: string } {
-  const prior = findRecordV2(root, kind, name)
-  if (!prior || prior.desiredState === "disabled") return { ok: true }
-  const w = setDesiredStateV2(root, kind, name, "disabled")
-  if (!w.ok) return { ok: false, reason: `session-grant prior could not be normalized in-lock: ${w.reason}` }
-  console.error(
-    `[req104-397] ${kind} "${name}": session-grant prior was enabled — normalized to disabled inside the transaction lock (persistent enable is illegal; per-session activation = #408)`,
-  )
-  return { ok: true }
-}
 
 /** 落账用启用态:有既有记录 = 当前策略优先(更新/重装绝不翻用户手动设过的状态);
  *  无记录 = 按 fresh-intake 分类。plan 期读账、锁内提交 —— fresh 场景同名并发装由既有
@@ -47,9 +26,10 @@ export function normalizeSessionGrantPriorInLock(
  *  #397(Codex 裁决必改①):session-grant 在 prior 之前判 —— 持久账本 enabled 的
  *  session-grant 本身非法(会话级启用 = #408 瞬态,绝不落盘),prior 不得把它保留/复活;
  *  prior 只对 default-enabled/default-disabled(及未策展保守面)保留。
- *  **纯函数,只算不写**(Codex r2):非法 prior 的真实归位只发生在锁内合法写点 ——
- *  各安装事务的锁内 precondition(planner normalizeSessionGrantPriorInLock)与 boot
- *  reconcile(已持锁);计划/分类与授权前阶段绝不写账本(授权拒绝零写盘)。 */
+ *  **纯函数,只算不写**(Codex r2/r3):非法 prior 的真实归位只发生在两个合法写点 ——
+ *  ① 账本 upsert 写点例外(UpsertInput.sessionGrantEnforced,与 receipt 同原子;planner
+ *  在 curation 判定 session-grant 时打标);② boot reconcile(自持锁,处置历史残留)。
+ *  计划/分类与授权前阶段绝不写账本(授权拒绝零写盘;receipt 前任何失败账本零副作用)。 */
 export function nextDesiredState(root: string, kind: InstallRecordV2["kind"], name: string, intake: FreshIntakeFacts): DesiredState {
   if (intake.origin === "catalog" && intake.activationPolicy === "session-grant") return "disabled"
   const prior = findRecordV2(root, kind, name)
