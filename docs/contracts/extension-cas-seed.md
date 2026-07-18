@@ -165,7 +165,7 @@ CAS 补充语义:
   3. packaged seed lock(seed target 保留 —— 离线重装/修复可用);
   4. `pins.json` 显式 pin。**严格判别式解码**(#318):根与 `pins` 字段都必须是普通 JSON
      对象(数组/null/标量拒)、`v` 必须恰为 1(缺失/漂移拒)、逐条目 digest/reason/pinnedAt
-     严格校验;任何解码失败 = 整轮拒绝,唯一合法空 pin 集来源 = 文件 ENOENT
+     严格校验;任何解码失败 = 整轮拒绝,唯一合法的隐式空集来源 = 文件 ENOENT(显式空集 {v:1,pins:{}} 亦合法)
      (`{v:1,pins:{}}` 是合法的显式空集)。
 - **sweep**:只删「blob 命名双守卫(64hex + 分片一致)∧ realpath 圈禁于 CAS 根 ∧ 未 mark ∧
   出宽限窗(默认 6h,mtime)」的常规文件;未知条目 / symlink / 异位文件一律保留 + loud。
