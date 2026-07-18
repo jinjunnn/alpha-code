@@ -213,6 +213,8 @@ export const dict = {
   "alpha.ext.shelfLabsTitle": "Labs",
   "alpha.ext.shelfLabsSub": "Per-session trial: turn it on for one session; it switches off when the session ends",
   "alpha.ext.noShelves": "Recommendations are on their way — this catalog has no reviewed extensions yet",
+  "alpha.ext.advisoriesChecking": "Checking security notices\u2026",
+  "alpha.ext.advisoriesUnavailable": "Security notices can\u2019t be verified right now, so recommendations are paused \u2014 every extension is still available in the category tabs.",
   "alpha.ext.ungradedGroup": "Not yet graded",
   "alpha.ext.ungradedNote": "These extensions have not been graded by security review yet: they stay off after install — turn them on yourself if you trust them.",
   "alpha.ext.shelfArchivedChip": "Upstream archived",

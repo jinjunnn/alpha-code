@@ -212,6 +212,8 @@ export const dict = {
   "alpha.ext.shelfLabsTitle": "实验室",
   "alpha.ext.shelfLabsSub": "按会话试用:每次会话单独开启,会话结束自动关闭",
   "alpha.ext.noShelves": "推荐内容准备中:当前目录还没有通过安全审核的扩展",
+  "alpha.ext.advisoriesChecking": "正在核实安全公示\u2026",
+  "alpha.ext.advisoriesUnavailable": "暂时无法核实安全公示,推荐已暂停显示;各分类页仍可浏览全部扩展。",
   "alpha.ext.ungradedGroup": "未分级",
   "alpha.ext.ungradedNote": "以下扩展尚未经安全审核分级:安装后默认关闭,请自行判断后手动开启。",
   "alpha.ext.shelfArchivedChip": "上游已归档",

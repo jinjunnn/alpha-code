@@ -131,7 +131,8 @@ function metaPills(e: CatalogEntry, curation?: Curation | null): { text: string;
       out.push({ text: t("alpha.ext.metaKeysCount", { count: String(curation.summaries.requiredSecrets.length) }), lock: true })
     const dl = downloadPresentation(curation)
     if (dl.kind === "known") out.push({ text: t("alpha.ext.metaDownloadKnown", { size: formatBytesApprox(dl.bytes) }) })
-    else if (dl.kind === "unknown") out.push({ text: t("alpha.ext.metaDownloadUnknown") })
+    else if (dl.kind === "config-only") out.push({ text: t("alpha.ext.metaDownloadNone") }) // r1-4:connection-only 诚实口径
+    else out.push({ text: t("alpha.ext.metaDownloadUnknown") })
     if (e.type === "bundle") out.push({ text: t("alpha.ext.metaItems", { count: (e.bundleItems ?? []).length }) })
     return out
   }
@@ -550,13 +551,25 @@ export function ExtensionHub(props: {
   // 复审期限比较的时钟:每次打开 hub 取一次(合同:消费端时钟仅用于此比较)。
   const nowIso = createMemo(() => (props.open(), new Date().toISOString()))
   // 公示阻断事实(main 派生已验公示 LKG + 随包基线;advisory 永远赢,§1)—— 每次打开刷新。
+  // r1-1(Major):**不可判定 ≠ 空集** —— 加载中 / IPC 失败 / 公示不新鲜(fresh=false:冷启动、
+  // 过期 LKG)时,renderer 无法证明条目未被公示阻断,推荐面必须保守(不建货架,诚实降级文案),
+  // 与 main 闸「advisories 不可验即拒激活」同向 fail-closed。fetcher 自吞异常归一为不可判定态。
   const [advisoryFacts] = createResource(
     () => (props.open() ? "open" : null),
-    () => window.api.ext.advisoryActive(),
+    () => window.api.ext.advisoryActive().catch((): { ids: string[]; fresh: boolean } => ({ ids: [], fresh: false })),
   )
+  const advisoryState = createMemo<"loading" | "unavailable" | "ready">(() => {
+    if (advisoryFacts.loading) return "loading"
+    if (advisoryFacts.error) return "unavailable"
+    const f = advisoryFacts()
+    return f && f.fresh ? "ready" : "unavailable"
+  })
   const advisoryBlocked = createMemo(() => new Set(advisoryFacts()?.ids ?? []))
   // 推荐页四货架(固定序 核心→精选→接入→实验室;空货架隐藏;未策展/归档/失养/过期/公示不进)。
-  const shelves = createMemo(() => buildShelves(catalog().entries, curationById(), nowIso(), advisoryBlocked()))
+  // 公示事实未就绪 = 零货架(保守;featured JSX 按 advisoryState 给诚实降级态)。
+  const shelves = createMemo(() =>
+    advisoryState() === "ready" ? buildShelves(catalog().entries, curationById(), nowIso(), advisoryBlocked()) : [],
+  )
 
   // Connectors grouped by category (fixed order) — drives the 连接器 tab subheaders.
   // #397 改动二:分组轴保持 category(货架是治理身份不是导航轴);仅已分级条目进分组,
@@ -1675,7 +1688,15 @@ export function ExtensionHub(props: {
                         </>
                       )}
                     </For>
-                    <Show when={shelves().length === 0}>
+                    {/* r1-1:公示事实三态的诚实呈现 —— 核实中 / 不可核实(保守不推荐,分类页仍可浏览)/
+                        就绪但目录无已审核条目。绝不以空集当「没有公示」上架。 */}
+                    <Show when={advisoryState() === "loading"}>
+                      <EmptyState title={t("alpha.ext.advisoriesChecking")} />
+                    </Show>
+                    <Show when={advisoryState() === "unavailable"}>
+                      <EmptyState title={t("alpha.ext.advisoriesUnavailable")} />
+                    </Show>
+                    <Show when={advisoryState() === "ready" && shelves().length === 0}>
                       <EmptyState title={t("alpha.ext.noShelves")} />
                     </Show>
                   </Show>

@@ -436,7 +436,9 @@ export function ExtensionDetail(props: {
                     </button>
                   </Show>
                 </Show>
-                <Show when={e().type === "mcp" && installed()}>
+                {/* r1-2(Major):session-grant 条目详情页同样**不渲染**持久开关(main 闸拒持久启用;
+                    可点后被拒的开关 = 假开关,违反 #408 诚实降级 —— 与已装列表行同一条件)。 */}
+                <Show when={e().type === "mcp" && installed() && !sessionGrantNow()}>
                   {(() => {
                     // #395(Codex r9 B3):启用真源 = governance activation(账本 desiredState 投影);无
                     // governance 行(live-unreceipted 合成收据)按 live 连接态。开关走 hub 的
@@ -1040,28 +1042,45 @@ export function ExtensionDetail(props: {
               </Show>
             }
           >
-            {(c) => (
-              <Show
-                when={c().summaries.requiredSecrets.length > 0}
-                fallback={<p class="alpha-ext-dnote">{t("alpha.ext.noSecrets")}</p>}
-              >
-                <div class="alpha-ext-dpills">
-                  <For each={c().summaries.requiredSecrets}>
-                    {(s) => (
-                      <span class="alpha-ext-meta">
-                        <LockIc />
-                        {s.name}
-                      </span>
-                    )}
-                  </For>
-                </div>
-                <p class="alpha-ext-dnote">
-                  {c().summaries.requiredSecrets.every((s) => s.source === "connection")
-                    ? t("alpha.ext.secretsFromConnNote")
-                    : t("alpha.ext.secretsFromEnvNote")}
-                </p>
-              </Show>
-            )}
+            {(c) => {
+              // r1-3(Minor):按来源分组如实标注 —— 合同允许同条目混合 environment/connection,
+              // 整组归为环境变量会把 connection 密钥的来源说错;逐组各配各的说明。
+              const envSecrets = () => c().summaries.requiredSecrets.filter((s) => s.source === "environment")
+              const connSecrets = () => c().summaries.requiredSecrets.filter((s) => s.source === "connection")
+              return (
+                <Show
+                  when={c().summaries.requiredSecrets.length > 0}
+                  fallback={<p class="alpha-ext-dnote">{t("alpha.ext.noSecrets")}</p>}
+                >
+                  <Show when={envSecrets().length > 0}>
+                    <div class="alpha-ext-dpills">
+                      <For each={envSecrets()}>
+                        {(s) => (
+                          <span class="alpha-ext-meta">
+                            <LockIc />
+                            {s.name}
+                          </span>
+                        )}
+                      </For>
+                    </div>
+                    <p class="alpha-ext-dnote">{t("alpha.ext.secretsFromEnvNote")}</p>
+                  </Show>
+                  <Show when={connSecrets().length > 0}>
+                    <div class="alpha-ext-dpills">
+                      <For each={connSecrets()}>
+                        {(s) => (
+                          <span class="alpha-ext-meta">
+                            <LockIc />
+                            {s.name}
+                          </span>
+                        )}
+                      </For>
+                    </div>
+                    <p class="alpha-ext-dnote">{t("alpha.ext.secretsFromConnNote")}</p>
+                  </Show>
+                </Show>
+              )
+            }}
           </Show>
         </Section>
 
