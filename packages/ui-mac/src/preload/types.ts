@@ -355,7 +355,8 @@ export type ElectronAPI = {
    *  既不能伪造环境,也没有任何通道改写环境根(AC#6)。 */
   environment: () => Promise<AlphaEnvironmentInfo>
   /** REQ-084:启动期 surface 选择。resolve 每次加载读一次(env > pin > 发布默认 + 崩溃降级);
-   *  reportFailure 只落盘供下次加载判定 —— 绝不热切换。 */
+   *  reportFailure 只落盘供下次加载判定 —— 绝不热切换。#334 r1:其 promise 兑现 = main 已确认
+   *  原子落盘;reject = 未落盘(renderer 的 reload 门控据此不放行,不得伪装已记录)。 */
   surfaces: {
     resolve: () => Promise<ResolvedSurfaces>
     reportFailure: (payload: { surface: SurfaceId; error: string }) => Promise<void>

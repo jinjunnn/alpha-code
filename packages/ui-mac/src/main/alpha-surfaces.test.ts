@@ -1,7 +1,8 @@
 // REQ-084:surface 解析/落盘单测。契约:env > pin > 发布默认;凡会产出 alpha 的态(alpha 与
 // auto-fallback,不论哪层命中)只对「本 app 版本」的崩溃记录降 legacy(旧版本记录陈旧忽略;
 // #334:硬 alpha 不豁免,否则 fatal 后无 legacy 兜底 → crash-loop);文件损坏按空处理;失败记录
-// 截 500 字符且剥离绝对路径样式片段;未知 surface id 直接拒绝。
+// 截 500 字符且剥离绝对路径样式片段;未知 surface id 直接拒绝;落盘原子(同目录 tmp + fsync +
+// rename)且 fail-closed —— 写入失败如实抛错、不伪装成功(#334 r1,renderer reload 门控依赖)。
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import * as fs from "node:fs"
@@ -166,5 +167,31 @@ describe("recordSurfaceFailure — 落盘卫生", () => {
       "unknown surface id",
     )
     expect(fs.existsSync(path.join(tmp, FILE))).toBe(false)
+  })
+})
+
+describe("recordSurfaceFailure — 失败窗口 fail-closed(#334 r1)", () => {
+  test("写入失败 → 如实抛错(IPC 将 reject,reload 门不放行),错误不含用户路径", () => {
+    // 目标文件位置被目录占住:tmp 写入成功但 rename 必败 —— 模拟落盘失败窗口。
+    fs.mkdirSync(path.join(tmp, FILE))
+    let thrown: Error | undefined
+    try {
+      recordSurfaceFailure(tmp, "1.0.0", { surface: "home", error: "fatal render" })
+    } catch (e) {
+      thrown = e as Error
+    }
+    expect(thrown?.message).toContain("failed to persist surface failure record")
+    expect(thrown?.message ?? "").not.toContain(tmp)
+    // 未落盘 = 无记录:re-resolve 不得凭空得 legacy —— 记录状态与门控口径一致,谁也不伪装。
+    const r = resolveSurfaces({ env: {}, file: readSurfaceFile(tmp), appVersion: "1.0.0" })
+    expect(r.home).toEqual({ mode: "alpha", reason: "release-default" })
+  })
+
+  test("成功路径原子收尾:无 tmp 残留,文件权限 0600", () => {
+    recordSurfaceFailure(tmp, "1.0.0", { surface: "home", error: "boom" })
+    expect(fs.readdirSync(tmp).filter((n) => n.includes(".tmp-"))).toEqual([])
+    if (process.platform !== "win32") {
+      expect(fs.statSync(path.join(tmp, FILE)).mode & 0o777).toBe(0o600)
+    }
   })
 })

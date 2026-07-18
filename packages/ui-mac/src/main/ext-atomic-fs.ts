@@ -78,12 +78,13 @@ export function fsyncDirSync(dir: string): void {
   }
 }
 
-/** 原子写文件:同目录 tmp → fsync → rename → fsync 父目录。 */
-export function writeFileAtomicSync(file: string, data: string | Buffer): void {
+/** 原子写文件:同目录 tmp → fsync → rename → fsync 父目录。opts.mode 施加在 tmp 创建时
+ *  (rename 保留权限位 —— 供 0o600 级私有状态文件复用本原语而不降权)。 */
+export function writeFileAtomicSync(file: string, data: string | Buffer, opts?: { mode?: fs.Mode }): void {
   const dir = path.dirname(file)
   fs.mkdirSync(dir, { recursive: true })
   const tmp = path.join(dir, `.${path.basename(file)}.tmp-${process.pid}-${crypto.randomBytes(4).toString("hex")}`)
-  fs.writeFileSync(tmp, data)
+  fs.writeFileSync(tmp, data, { mode: opts?.mode })
   fsyncFileSync(tmp)
   fs.renameSync(tmp, file)
   fsyncDirSync(dir)

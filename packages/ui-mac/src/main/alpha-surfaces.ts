@@ -7,12 +7,16 @@
 // 默认)都叠一层崩溃记录(#334 fail-safe):本 app 版本记录过致命渲染错误 → legacy(crash-fallback),
 // 旧版本的记录视为陈旧忽略(版本升级即自然失效;手动重置 = 删本文件的 failure 条目)。解析只在
 // 加载时进行 —— 运行中绝不热切换,任何改动下次 reload 才体现。
-// 失败上报(alpha-surface-failure)落盘同一 JSON;错误文本截断 500 字符并剥离绝对路径样式片段
-// (userData 内容可能进日志导出包,不落用户路径)。文件损坏/不可读 → 按空处理(留一行日志)。
+// 失败上报(alpha-surface-failure)落盘同一 JSON:原子写(同目录 tmp + fsync + rename,
+// ext-atomic-fs 原语)且 fail-closed —— 写入失败如实抛错(IPC reject),renderer 的 reload 门控
+// 只在确认落盘后放行(#334 r1:没有落盘记录就 reload = 回到同一个坏 alpha,crash-loop)。
+// 错误文本截断 500 字符并剥离绝对路径样式片段(userData 内容可能进日志导出包,不落用户路径)。
+// 文件损坏/不可读 → 按空处理(留一行日志)。
 
 import { app, ipcMain } from "electron"
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { writeFileAtomicSync } from "./ext-atomic-fs"
 import {
   SURFACE_RELEASE_STATES,
   type ResolvedSurface,
@@ -108,7 +112,10 @@ export function resolveSurfaces(opts: {
 }
 
 /** 记录一次 Alpha surface 的致命渲染错误(下次加载凡会产出 alpha 的态据此降 legacy)。
- *  未知 surface id 直接拒绝(throw → IPC promise reject);错误文本先剥路径再截 500。 */
+ *  未知 surface id 直接拒绝(throw → IPC promise reject);错误文本先剥路径再截 500。
+ *  #334 r1:写入走 writeFileAtomicSync(同目录 tmp + fsync + rename——覆盖中断不会留半截文件)
+ *  且 fail-closed:落盘失败同样 throw(重抛干净错误,不带文件路径)—— 绝不伪装成功,renderer
+ *  的 reload 门控依赖本函数成功返回。 */
 export function recordSurfaceFailure(
   userDataPath: string,
   appVersion: string,
@@ -124,11 +131,10 @@ export function recordSurfaceFailure(
     failures: { ...current.failures, [payload.surface]: { at: new Date().toISOString(), appVersion, error } },
   }
   try {
-    fs.mkdirSync(userDataPath, { recursive: true })
-    fs.writeFileSync(surfaceFilePath(userDataPath), JSON.stringify(next), { encoding: "utf8", mode: 0o600 })
+    writeFileAtomicSync(surfaceFilePath(userDataPath), JSON.stringify(next), { mode: 0o600 })
   } catch {
-    // 落盘失败只损失一次 fallback 机会,不阻塞 renderer 的错误路径。
     log("warn", "alpha-surfaces: failed to persist surface failure record")
+    throw new Error("alpha-surfaces: failed to persist surface failure record")
   }
 }
 
@@ -144,6 +150,8 @@ export function registerSurfaceIpc(userDataPath: string) {
     }
     return resolved
   })
+  // resolve = 记录已确认落盘;recordSurfaceFailure 抛错 → promise reject —— renderer 的 reload
+  // 门控据此不放行(#334 r1)。
   ipcMain.handle("alpha-surface-failure", (_event, payload: { surface: SurfaceId; error: string }) => {
     recordSurfaceFailure(userDataPath, app.getVersion(), payload)
   })
