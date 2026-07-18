@@ -408,6 +408,21 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
       const written = upsertRecordsV2(root, recoveryReceiptInputs(recs))
       if (!written.ok) throw new Error(`recovery receipt commit failed: ${written.reason}`)
     },
+    // #336 r3(r2 Major 1):receipt durable 证伪 —— 恢复进入任何回滚分支前读账本判定。
+    // valid + 同 txId = durable(**任一** item 在账即禁回滚,防半批分叉);absent/v1/异 txId =
+    // 确证未落(允许回滚);corrupt/ledger-corrupt = 无法证伪 → 抛错(引擎 fail-closed 保留
+    // 非终态,绝不在失据账本上回滚)。与 commitReceipt 同一 record→input 映射,同一真源。
+    receiptCommitted: (recs) => {
+      const inputs = recoveryReceiptInputs(recs)
+      let anyDurable = false
+      for (const input of inputs) {
+        const lk = lookupForUninstall(root, input.kind, input.name)
+        if (lk.status === "corrupt-match" || lk.status === "ledger-corrupt")
+          throw new Error(`ledger state for ${input.kind}:${input.name} is corrupt — receipt durability unverifiable`)
+        if (lk.status === "valid" && lk.record.transaction?.id === input.transaction?.id) anyDurable = true
+      }
+      return anyDurable
+    },
     // REQ-100 #313:卸载恢复的账本删除(幂等去账;去账失败抛错 → 保持 uninstalling 供下次前滚)。
     // review #374 Major:非法/未知 key 必须抛错(journal 保持非终态待诊断),绝不静默假终态。
     commitUninstall: (key) => {

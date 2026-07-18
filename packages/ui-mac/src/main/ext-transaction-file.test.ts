@@ -167,7 +167,9 @@ describe("file action in runExtensionTransaction (REQ-102 #358)", () => {
   test("crash mid-switch (file flipped, config not) → recovery restores bundle atomicity", async () => {
     await expect(runExtensionTransaction(root, planFor(MD), hooksFor({ crashAt: "mid-switch" }))).rejects.toThrow(ExtTxCrashError)
     expect(readFileSync(MD_PATH(), "utf8")).toBe(MD) // 崩溃时 file 已翻转
-    const rec = await recoverExtensionTransactions(root, { probe: fileProbe(MD), commitReceipt: noop, pidAlive: () => false, log: noop })
+    // #336 r3:本组场景 receipt 均未 durable(崩溃点在 receipt commit 之前)—— 显式证伪,
+    // 保留原回滚/冻结语义(缺 seam = 无法证伪会被恢复期 durable 护栏 fail-closed 保留)。
+    const rec = await recoverExtensionTransactions(root, { probe: fileProbe(MD), commitReceipt: noop, receiptCommitted: () => false, pidAlive: () => false, log: noop })
     expect(rec.ok).toBe(true)
     expect(rec.reports[0].action).toBe("rolled-back")
     expect(existsSync(MD_PATH())).toBe(false) // 部分翻转 = 原子性破缺 → 回滚到全旧
@@ -194,7 +196,9 @@ describe("file action in runExtensionTransaction (REQ-102 #358)", () => {
   test("crash after-switched + live md tampered → 保留非终态(旁路改写不终态化,review Blocker 3)", async () => {
     await expect(runExtensionTransaction(root, planFor(MD), hooksFor({ crashAt: "after-switched" }))).rejects.toThrow(ExtTxCrashError)
     writeFileSync(MD_PATH(), "tampered by bypass") // 旁路改写:既非 pre 也非 next
-    const rec = await recoverExtensionTransactions(root, { probe: fileProbe(MD), commitReceipt: noop, pidAlive: () => false, log: noop })
+    // #336 r3:本组场景 receipt 均未 durable(崩溃点在 receipt commit 之前)—— 显式证伪,
+    // 保留原回滚/冻结语义(缺 seam = 无法证伪会被恢复期 durable 护栏 fail-closed 保留)。
+    const rec = await recoverExtensionTransactions(root, { probe: fileProbe(MD), commitReceipt: noop, receiptCommitted: () => false, pidAlive: () => false, log: noop })
     expect(rec.ok).toBe(true)
     // file restore 被旁路改写挡住 → 不宣称 rolled-back,journal 保持非终态供人工处置。
     expect(rec.reports[0].action).toBe("none")
@@ -218,7 +222,9 @@ describe("file action in runExtensionTransaction (REQ-102 #358)", () => {
     const dirs = readdirSync(stagingRoot)
     const txDir = join(stagingRoot, dirs[0] ?? "")
     for (const f of readdirSync(txDir)) if (f.startsWith("config-")) rmSync(join(txDir, f), { force: true })
-    const rec = await recoverExtensionTransactions(root, { probe: fileProbe(MD), commitReceipt: noop, pidAlive: () => false, log: noop })
+    // #336 r3:本组场景 receipt 均未 durable(崩溃点在 receipt commit 之前)—— 显式证伪,
+    // 保留原回滚/冻结语义(缺 seam = 无法证伪会被恢复期 durable 护栏 fail-closed 保留)。
+    const rec = await recoverExtensionTransactions(root, { probe: fileProbe(MD), commitReceipt: noop, receiptCommitted: () => false, pidAlive: () => false, log: noop })
     expect(rec.ok).toBe(true)
     // r4:config 回滚是可证明的 no-op(live digest = pre)→ 正常回滚收敛而非冻结卡死后续写
     expect(existsSync(MD_PATH())).toBe(false) // file unlink 回缺席
@@ -256,7 +262,9 @@ describe("file action in runExtensionTransaction (REQ-102 #358)", () => {
     const dirs = readdirSync(stagingRoot)
     const txDir = join(stagingRoot, dirs[0] ?? "")
     for (const f of readdirSync(txDir)) if (f.startsWith("config-")) rmSync(join(txDir, f), { force: true })
-    const rec = await recoverExtensionTransactions(root, { probe: fileProbe(MD), commitReceipt: noop, pidAlive: () => false, log: noop })
+    // #336 r3:本组场景 receipt 均未 durable(崩溃点在 receipt commit 之前)—— 显式证伪,
+    // 保留原回滚/冻结语义(缺 seam = 无法证伪会被恢复期 durable 护栏 fail-closed 保留)。
+    const rec = await recoverExtensionTransactions(root, { probe: fileProbe(MD), commitReceipt: noop, receiptCommitted: () => false, pidAlive: () => false, log: noop })
     expect(rec.ok).toBe(true)
     expect(recoveryClean(rec)).toBe(false)
     // live=next 且失据:无从安全复原 → 冻结非终态,config 保持现状(不盲改)
@@ -269,7 +277,9 @@ describe("file action in runExtensionTransaction (REQ-102 #358)", () => {
     await expect(runExtensionTransaction(root, planFor(MD), hooksFor({ crashAt: "mid-switch" }))).rejects.toThrow(ExtTxCrashError)
     expect(readFileSync(MD_PATH(), "utf8")).toBe(MD) // file 已翻转,config 未翻转
     rmSync(join(root, "ext-tx", "staging"), { recursive: true, force: true })
-    const rec = await recoverExtensionTransactions(root, { probe: fileProbe(MD), commitReceipt: noop, pidAlive: () => false, log: noop })
+    // #336 r3:本组场景 receipt 均未 durable(崩溃点在 receipt commit 之前)—— 显式证伪,
+    // 保留原回滚/冻结语义(缺 seam = 无法证伪会被恢复期 durable 护栏 fail-closed 保留)。
+    const rec = await recoverExtensionTransactions(root, { probe: fileProbe(MD), commitReceipt: noop, receiptCommitted: () => false, pidAlive: () => false, log: noop })
     expect(rec.ok).toBe(true)
     expect(rec.reports[0].action).toBe("none")
     expect(recoveryClean(rec)).toBe(false)

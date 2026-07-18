@@ -175,6 +175,12 @@ describe("#312 崩溃恢复:probe + receipt 模板前滚", () => {
       const w = upsertRecordsV2(root, recs.map((rec) => commitInputFromRecord(rec)))
       if (!w.ok) throw new Error(w.reason)
     },
+    // #336 r3:receipt durable 证伪(真账本):同 txId record 在账 = durable(禁回滚);缺席 = 未落。
+    receiptCommitted: (recs: TxCommitRecord[]) =>
+      recs.some((r) => {
+        const t = r.receipt as { name?: unknown } | undefined
+        return typeof t?.name === "string" && findRecordV2(root, "skill", t.name)?.transaction?.id === r.txId
+      }),
     log: () => {},
     pidAlive: () => false,
   }

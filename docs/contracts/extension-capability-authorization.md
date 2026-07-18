@@ -98,6 +98,13 @@ diff 与暂停、renderer 如何确认与重驱、授权账/收据如何落盘�
   不得伪装)但携带 `authorizationPending` 判别字段(并入 warnings);恢复 gate/启动恢复对
   `authorizing` **只前滚**重试 `writeCommitAuthorizationSync`(幂等)直至成功才 `committed`,
   绝不回滚(回滚会造成 receipt/live 分叉);持续失败 = 非终态在案,gate 拒绝后续写(loud)。
+- **receipt durable = 不可回退点,对恢复一切分支成立**(#336 r3):receipt commit 成功之后的
+  任何失败(snapshot/journal 进度/授权投影/终态化写)都走只前滚结果通道,绝不抛出;恢复对
+  停在 `switched` 的 journal 进入**任何**回滚分支(含 probe 不健康/失据/未全翻转)前,必须经
+  `RecoverOptions.receiptCommitted` **读账本**证伪本事务 receipt 是否已 durable(绝不只信
+  journal state)—— 已 durable 或无法证伪(缺 seam/账本损坏)一律拒入回滚、保留非终态只前滚;
+  唯有确证未落才允许回滚。生产判定与恢复 replay 同一 record→input 映射
+  (`recoveryReceiptInputs` + 账本 `transaction.id`),损坏账本抛错 = fail-closed 保留。
 - 读面(REQ-103 #392):governance 只读查询(`ext-inventory.ts`)按账本在册 key 附带
   `granted` 快照(capabilities/grantedAt/txId,不透传 manifestDigest),详情页「已授权能力」
   段据此渲染 —— 零写面、不枚举 `ext-store`(孤儿 grant 不进读面)、无记录/坏 JSON 如实缺省

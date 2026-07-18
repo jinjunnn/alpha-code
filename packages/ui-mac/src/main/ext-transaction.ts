@@ -1459,11 +1459,12 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
   // 回滚**(抛出会悬置锁到 stale 接管,且磁盘 journal 停 switched 时恢复的回滚路径会制造
   // 「receipt durable + live 回旧」分叉)。统一结果通道:失败如实入 authorizationPending +
   // warnings,journal 保留非终态(switched/authorizing),gate/启动恢复前滚重试直至收敛。
-  // journal 仍在 switched 时**不清 staging**(万一后续恢复因 probe 不健康走回滚仍需 image;
-  // 达 authorizing 后恢复只前滚,staging 才无用可清)。
-  const pendingReturn = (failures: string[], clearStaging: boolean): TxResult => {
+  // r3(r2 Major 1):staging 一律清理 —— receipt 已 durable,本 journal 的回滚已被恢复期
+  // durable 护栏(recoverOne 回滚前证伪)禁入,staging 不再服务任何分支;receipt **未** durable
+  // 的 switched 崩溃不经此通道(崩溃即抛,staging 原样保留),其回滚 image 不受影响。
+  const pendingReturn = (failures: string[]): TxResult => {
     warnings.push(...failures)
-    if (clearStaging) removeDirGuarded(root, txStagingDir(root, txId), warnings)
+    removeDirGuarded(root, txStagingDir(root, txId), warnings)
     lock.release()
     log("tx-authorization-pending", { txId, failures })
     return { ok: true, txId, committed: records, warnings, authorizationPending: failures }
@@ -1474,10 +1475,7 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
       if (actionOf(it) === "generation") writeReceiptSnapshot(root, it.key, it.genId, it.receipt, committedAt)
   } catch (error) {
     if (error instanceof ExtTxCrashError) throw error
-    return pendingReturn(
-      [`receipt snapshot write failed: ${error instanceof Error ? error.message : String(error)} — recovery will forward-roll`],
-      false,
-    )
+    return pendingReturn([`receipt snapshot write failed: ${error instanceof Error ? error.message : String(error)} — recovery will forward-roll`])
   }
   crash("after-receipt-commit")
   // #336:receipt 已 durable → 进入 `authorizing` 落授权账/收据;全部落位才 committed。
@@ -1486,10 +1484,7 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
     advance("authorizing")
   } catch (error) {
     if (error instanceof ExtTxCrashError) throw error
-    return pendingReturn(
-      [`journal progress write failed: ${error instanceof Error ? error.message : String(error)} — recovery will forward-roll`],
-      false,
-    )
+    return pendingReturn([`journal progress write failed: ${error instanceof Error ? error.message : String(error)} — recovery will forward-roll`])
   }
   crash("after-authorizing")
   const authzFailures = writeCommitAuthorizationSync(root, journal, now)
@@ -1497,17 +1492,14 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
     // 授权投影未落位:journal 保留非终态 authorizing;live+receipt 已 durable → 以成功臂判别
     // 字段如实上报,绝不 ok:false(ok:false = 计划未落地,是 planner 各补偿路径的既有契约,
     // post-commit 失败伪装 ok:false 会误触发补偿撤销已落地计划)。
-    return pendingReturn(authzFailures, true)
+    return pendingReturn(authzFailures)
   }
   try {
     advance("committed")
   } catch (error) {
     if (error instanceof ExtTxCrashError) throw error
     // 投影已全部落位,仅终态化写失败 → journal 停 authorizing,恢复幂等重写投影后 finish。
-    return pendingReturn(
-      [`journal finalize write failed: ${error instanceof Error ? error.message : String(error)} — recovery will forward-roll`],
-      true,
-    )
+    return pendingReturn([`journal finalize write failed: ${error instanceof Error ? error.message : String(error)} — recovery will forward-roll`])
   }
   crash("before-gc")
 
@@ -1921,6 +1913,11 @@ export function recoveryClean(r: { ok: boolean; reports: TxRecoveryReport[] }): 
 export type RecoverOptions = {
   probe?: HealthProbe
   commitReceipt?: (records: TxCommitRecord[]) => void | Promise<void>
+  /** #336 r3(r2 Major 1):receipt durable 证伪 seam —— 恢复在进入**任何**回滚分支前,用它读
+   *  账本判定本事务 receipt 是否已 durable(绝不只信 journal state)。true = 已在账(任一 item
+   *  即算;不可回退,禁回滚);false = **确证未落**(允许回滚);抛错 = 无法证伪(账本损坏/
+   *  不可读)→ fail-closed 保留非终态。缺失且 journal 含 receipt 面 = 同样无法证伪,禁回滚。 */
+  receiptCommitted?: (records: TxCommitRecord[]) => boolean | Promise<boolean>
   /** REQ-100 #313:卸载恢复的账本删除接缝(按 key 幂等去账)。缺失时卸载 journal **保持非终态**
    *  (#346 修正:此前缺 seam 仍标 uninstalled = 假终态)。 */
   commitUninstall?: (key: string) => void | Promise<void>
@@ -2441,6 +2438,36 @@ async function recoverOne(
       }
     } else {
       warnings.push(probeReason)
+    }
+  }
+
+  // #336 r3(r2 Major 1):receipt durable = 不可回退点,对恢复**一切**分支成立(probe 不健康/
+  // probe 抛错/缺 seam/未全翻转皆然)。进入回滚前先证伪:journal 含 receipt 面时读账本判定本
+  // 事务 receipt 是否已 durable —— 已 durable 或无法证伪(缺 seam/判定抛错)一律拒入回滚,保留
+  // 非终态只前滚/重试(probe 恢复健康即经前滚路径收敛;持续不健康 = gate 拒写,runbook 处置);
+  // 唯有**确证未落**才允许回滚。无 receipt 面的事务不存在 receipt/live 分叉,回滚照旧。
+  if (journal.items.some((it) => it.receipt !== undefined)) {
+    let durable: boolean | "unknown"
+    if (!opts.receiptCommitted) {
+      durable = "unknown"
+    } else {
+      try {
+        const probeRecords = journal.items.map((it) => buildCommitRecord(root, txId, it, now().toISOString()))
+        durable = await opts.receiptCommitted(probeRecords)
+      } catch (error) {
+        warnings.push(`receipt durability check failed: ${error instanceof Error ? error.message : String(error)}`)
+        durable = "unknown"
+      }
+    }
+    if (durable !== false) {
+      const why = durable === true ? "receipt already durable" : "receipt durability unverifiable"
+      log("recovery-rollback-refused", { txId, reason: why, warnings })
+      return {
+        txId,
+        state: journal.state,
+        action: "none",
+        detail: `${why} — rollback refused (would fork receipt/live); retained (forward-only retry)${warnings.length ? `; ${warnings.join("; ")}` : ""}`,
+      }
     }
   }
 

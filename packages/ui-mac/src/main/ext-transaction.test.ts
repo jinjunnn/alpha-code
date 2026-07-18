@@ -969,6 +969,73 @@ describe("#336 authorization projection fail-closed (authorizing state)", () => 
     expect(recovered.reports.some((r) => r.txId === result.txId && r.action === "resumed-committed" && r.state === "committed")).toBe(true)
   })
 
+  // ── r3(r2 Major 1):receipt durable = 不可回退点,对恢复一切分支成立(含 probe 不健康) ──
+
+  const planReceipt = (files: Record<string, string>): TxPlan => ({
+    items: [{ key: "skill--demo", files: specsOf(files), receipt: { marker: "r3" } }],
+  })
+  const unhealthyProbe: HealthProbe = () => ({ healthy: false, reason: "transient outage" })
+
+  test("r3:receipt durable + 恢复 probe 不健康 → 拒回滚保留(零隔离、live 不动);probe 恢复后前滚收敛", async () => {
+    // fake 账本:commitReceipt 落账,receiptCommitted 读同一真源(engine seam 契约)
+    const ledger = new Set<string>()
+    const commitToLedger = (recs: TxCommitRecord[]) => {
+      for (const r of recs) ledger.add(`${r.txId}:${r.key}`)
+    }
+    const receiptCommitted = (recs: TxCommitRecord[]) => recs.some((r) => ledger.has(`${r.txId}:${r.key}`))
+    const first = await runExtensionTransaction(root, planReceipt(V1), hooksFor(V1, { probe: healthyProbe, commitReceipt: commitToLedger }))
+    expect(first.ok).toBe(true)
+    // receipt 已 durable、journal 停 switched(after-receipt-commit 崩溃)
+    const crashed = runExtensionTransaction(
+      root,
+      planReceipt(V2),
+      hooksFor(V2, { crashAt: "after-receipt-commit", probe: healthyProbe, commitReceipt: commitToLedger }),
+    )
+    await expect(crashed).rejects.toThrow(ExtTxCrashError)
+    // probe 暂时不健康 → **禁入回滚**:live 保持 v2、零隔离、journal 非终态
+    const still = await recoverExtensionTransactions(root, { probe: unhealthyProbe, commitReceipt: commitToLedger, receiptCommitted, pidAlive: () => false, log: noop })
+    expect(still.ok).toBe(true)
+    const rep = still.reports.find((r) => r.state === "switched")!
+    expect(rep.action).toBe("none")
+    expect(rep.detail).toContain("rollback refused")
+    expect(versionOf(root, "skill--demo")).toBe("v2")
+    expect(readQuarantineReceipt(root, rep.txId)).toBeNull()
+    expect(recoveryClean(still)).toBe(false)
+    // probe 恢复健康 → 前滚 committed(绝不回滚)
+    const recovered = await recoverExtensionTransactions(root, { probe: healthyProbe, commitReceipt: commitToLedger, receiptCommitted, pidAlive: () => false, log: noop })
+    expect(recovered.reports.some((r) => r.action === "resumed-committed" && r.state === "committed")).toBe(true)
+    expect(versionOf(root, "skill--demo")).toBe("v2")
+  })
+
+  test("r3:receipt 面在场但缺 receiptCommitted seam(无法证伪)→ probe 不健康同样拒回滚 fail-closed", async () => {
+    const crashed = runExtensionTransaction(root, planReceipt(V1), hooksFor(V1, { crashAt: "after-receipt-commit", probe: healthyProbe, commitReceipt: noop }))
+    await expect(crashed).rejects.toThrow(ExtTxCrashError)
+    const still = await recoverExtensionTransactions(root, { probe: unhealthyProbe, commitReceipt: noop, pidAlive: () => false, log: noop })
+    expect(still.ok).toBe(true)
+    const rep = still.reports.find((r) => r.state === "switched")!
+    expect(rep.action).toBe("none")
+    expect(rep.detail).toContain("unverifiable")
+    expect(versionOf(root, "skill--demo")).toBe("v1")
+    expect(readQuarantineReceipt(root, rep.txId)).toBeNull()
+  })
+
+  test("r3 回归:receiptCommitted 确证未落 → 不健康 probe 的回滚照旧(隔离 + rolled-back)", async () => {
+    await installOk(["skill--demo"], V1)
+    const crashed = runExtensionTransaction(root, planReceipt(V2), hooksFor(V2, { crashAt: "after-switched", probe: healthyProbe, commitReceipt: noop }))
+    await expect(crashed).rejects.toThrow(ExtTxCrashError)
+    const rec = await recoverExtensionTransactions(root, {
+      probe: unhealthyProbe,
+      commitReceipt: noop,
+      receiptCommitted: () => false, // 账本可证:本事务 receipt 未落
+      pidAlive: () => false,
+      log: noop,
+    })
+    expect(rec.ok).toBe(true)
+    const rep = rec.reports.find((r) => r.action === "rolled-back")!
+    expect(versionOf(root, "skill--demo")).toBe("v1")
+    expect(readQuarantineReceipt(root, rep.txId)?.from).toBe("crash-recovery")
+  })
+
   test("主路径 authorizing 进度写失败(journal 目录只读):只前滚通道 ok:true + pending、journal 停 switched、锁释放;解除后恢复前滚", async () => {
     await installOk(["skill--demo"], V1)
     const journalDir = path.join(root, "ext-tx", "journal")
