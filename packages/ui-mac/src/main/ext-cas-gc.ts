@@ -27,7 +27,7 @@ import { confinedExistingPath, sha256FileSync } from "./ext-atomic-fs"
 import { tryAcquireBundleLock, type BundleLock } from "./ext-bundle-lock"
 import { CAS_SHA256_RE, casPaths, readCasPinsStrict } from "./ext-cas"
 import { decodeSeedLock } from "./ext-seed"
-import { listGenerations, readTransactionJournal, type TxLog } from "./ext-transaction"
+import { listGenerationsStrict, readTransactionJournal, type TxLog } from "./ext-transaction"
 import { environmentMutableRoot } from "./alpha-environment"
 
 /** 宽限窗默认 6 小时:提升进 CAS 但尚未被 journal/generation 引用的新 blob 不被误扫。 */
@@ -153,14 +153,18 @@ export function defaultCasGcEnvRoots(baseRoot: string): string[] {
   ]
 }
 
-/** 递归收集目录内全部常规文件的 sha256(symlink 不跟、warning 记账)。 */
+/** 递归收集目录内全部常规文件的 sha256。generation 内容是 mark 根(合同 §3:任一 mark 根
+ *  不可读 → 整轮拒绝):目录不可枚举或文件哈希失败 = 该 generation 的可达 digest 无法证明
+ *  已全部 mark → **抛错整轮拒绝**(#318;此前只 warning 继续 sweep,仅靠该 generation 可达
+ *  的 blob 会被误清)。ENOENT 同样拒:枚举发生在持 Bundle 锁之后,合法内容不可能中途消失,
+ *  消失 = 旁路篡改/IO 故障证据。symlink 维持不跟随 + warning(事务引擎从不物化 symlink ——
+ *  植入证据,与 sweep「保留 + loud」同款纪律,不构成合法内容缺 mark)。 */
 function markDirContents(dir: string, marked: Set<string>, warnings: string[]): void {
   let entries: fs.Dirent[]
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true })
   } catch (error) {
-    warnings.push(`mark: unreadable dir ${dir}: ${error instanceof Error ? error.message : String(error)}`)
-    return
+    throw new Error(`generation content unreadable ${dir} — refusing to GC (fail closed): ${error instanceof Error ? error.message : String(error)}`)
   }
   for (const entry of entries) {
     const abs = path.join(dir, entry.name)
@@ -173,7 +177,7 @@ function markDirContents(dir: string, marked: Set<string>, warnings: string[]): 
       try {
         marked.add(sha256FileSync(abs))
       } catch (error) {
-        warnings.push(`mark: unreadable file ${abs}: ${error instanceof Error ? error.message : String(error)}`)
+        throw new Error(`generation file unhashable ${abs} — refusing to GC (fail closed): ${error instanceof Error ? error.message : String(error)}`)
       }
     }
   }
@@ -211,8 +215,16 @@ function markGenerations(envRoot: string, marked: Set<string>, warnings: string[
   }
   for (const key of keys) {
     if (!key.isDirectory()) continue
-    // 布局所有权在 ext-transaction;listGenerations 是权威枚举面(非法 key/非 generation 目录自滤)。
-    for (const gen of listGenerations(envRoot, key.name)) markDirContents(gen.dir, marked, warnings)
+    // 布局所有权在 ext-transaction;listGenerationsStrict 是 GC 的权威枚举面(非法 key/非
+    // generation 命名自滤;generations 目录「存在而不可枚举」= mark 根不可信 → 整轮拒绝,#318。
+    // 仅 ENOENT(generations 未建的空壳 key)= 合法缺席空集)。
+    let gens: ReturnType<typeof listGenerationsStrict>
+    try {
+      gens = listGenerationsStrict(envRoot, key.name)
+    } catch (error) {
+      throw new Error(`${error instanceof Error ? error.message : String(error)} — refusing to GC (fail closed)`)
+    }
+    for (const gen of gens) markDirContents(gen.dir, marked, warnings)
     // 每 key 全量重哈希后续租锁心跳(单 key 大 store 也无 15 分钟上界,review #366 Blocker)。
     onKeyDone?.()
   }

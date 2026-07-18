@@ -154,9 +154,19 @@ CAS 补充语义:
      blob 出宽限窗后可回收(宽限窗按 blob mtime,不从 retire 时刻重起算;retire 通道强制
      调用方显式确认该后果);
   2. 各环境根 `ext-store` 全部 generation 内容重哈希(current/previous/pinned generation ⇒
-     receipts 可达性的机器形态);
+     receipts 可达性的机器形态)。「不可读即整轮拒绝」的机械展开(#318):`ext-store` 或某
+     key 的 `generations` 目录「存在而不可枚举」(EACCES/EIO/ENOTDIR 等非 ENOENT)、任一
+     generation 目录不可枚举、任一内容文件哈希失败 = 整轮拒绝;枚举发生在持 Bundle 锁之后,
+     合法内容不可能中途消失 —— generation 层的 ENOENT 同样拒。**合法缺席**(继续整轮)仅限
+     锁外既有可选面的 ENOENT:`ext-store` 未建(无安装)、`ext-tx/journal` 未建(无事务史)、
+     `<key>/generations` 未建(失败路径遗留的空壳 key 目录)。generation 内 symlink 一律
+     不跟随 + warning 记账(事务引擎从不物化 symlink —— 植入证据,与 sweep「保留 + loud」
+     同款纪律,不构成合法内容缺 mark);
   3. packaged seed lock(seed target 保留 —— 离线重装/修复可用);
-  4. `pins.json` 显式 pin。
+  4. `pins.json` 显式 pin。**严格判别式解码**(#318):根与 `pins` 字段都必须是普通 JSON
+     对象(数组/null/标量拒)、`v` 必须恰为 1(缺失/漂移拒)、逐条目 digest/reason/pinnedAt
+     严格校验;任何解码失败 = 整轮拒绝,唯一合法的隐式空集来源 = 文件 ENOENT(显式空集 {v:1,pins:{}} 亦合法)
+     (`{v:1,pins:{}}` 是合法的显式空集)。
 - **sweep**:只删「blob 命名双守卫(64hex + 分片一致)∧ realpath 圈禁于 CAS 根 ∧ 未 mark ∧
   出宽限窗(默认 6h,mtime)」的常规文件;未知条目 / symlink / 异位文件一律保留 + loud。
   **用户数据在任何情况下不可达**(负向测试钉死)。

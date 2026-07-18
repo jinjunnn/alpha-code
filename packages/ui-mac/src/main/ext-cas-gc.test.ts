@@ -222,6 +222,82 @@ describe("collectCasGarbage — fail closed", () => {
     expect(hasCasBlob(base, garbage)).toBeTrue()
   })
 
+  test("#318 pins schema drift ({v:2} / missing v / {v:1,pins:[]}) aborts the round — never read as an empty pin set", () => {
+    // 收口审计残留①:这些形状此前被判 valid 空集 → GC 继续 sweep,已 pin blob 被误清。
+    const protectedBlob = putOldBlob("pinned then pins schema drifts")
+    pinCasBlob(base, protectedBlob, "release baseline")
+    const { pinsPath } = casPaths(base)
+    const drifted = [
+      JSON.stringify({ v: 2, pins: {} }), // 版本漂移
+      JSON.stringify({ pins: {} }), // 缺 v
+      JSON.stringify({ v: 1, pins: [] }), // pins 是数组
+      JSON.stringify({ v: 1, pins: null }), // pins 非对象
+    ]
+    for (const text of drifted) {
+      fs.writeFileSync(pinsPath, text)
+      const r = collectCasGarbage(base, { envRoots: [envRoot] })
+      expect(!r.ok && r.reason!.includes("fail closed"), text).toBeTrue()
+      expect(hasCasBlob(base, protectedBlob), text).toBeTrue()
+    }
+  })
+
+  test("#318 unreadable generation content / file hash failure refuses the whole round (nothing deleted)", () => {
+    // 收口审计残留②:此前只加 warning 继续 sweep —— 仅靠该 generation 可达的 digest 未 mark 即被清。
+    const onlyRef = putOldBlob("reachable only via this generation")
+    writeGeneration(envRoot, "skill--sole", "gen-000001-aaaaaaaa", { "SKILL.md": "reachable only via this generation" })
+    const genDir = path.join(envRoot, "ext-store", "skill--sole", "generations", "gen-000001-aaaaaaaa")
+    // ① generation 目录不可枚举(EACCES)
+    fs.chmodSync(genDir, 0o000)
+    try {
+      const r1 = collectCasGarbage(base, { envRoots: [envRoot] })
+      expect(!r1.ok && r1.reason!.includes("fail closed")).toBeTrue()
+      expect(r1.swept).toHaveLength(0)
+      expect(hasCasBlob(base, onlyRef)).toBeTrue()
+    } finally {
+      fs.chmodSync(genDir, 0o755)
+    }
+    // ② 内容文件哈希失败(文件不可读)
+    fs.chmodSync(path.join(genDir, "SKILL.md"), 0o000)
+    try {
+      const r2 = collectCasGarbage(base, { envRoots: [envRoot] })
+      expect(!r2.ok && r2.reason!.includes("fail closed")).toBeTrue()
+      expect(hasCasBlob(base, onlyRef)).toBeTrue()
+    } finally {
+      fs.chmodSync(path.join(genDir, "SKILL.md"), 0o644)
+    }
+    // 恢复可读后整轮照常通过,generation 可达 blob 存活
+    const r3 = collectCasGarbage(base, { envRoots: [envRoot] })
+    expect(r3.ok).toBeTrue()
+    expect(hasCasBlob(base, onlyRef)).toBeTrue()
+  })
+
+  test("#318 unreadable generations dir (non-ENOENT) refuses the round; absent generations dir stays a legal empty set", () => {
+    const garbage = putOldBlob("survives unreadable generations dir")
+    // 合法缺席:key 目录在、generations 未建(失败路径遗留的空壳)→ 整轮照常通过(dryRun 免删)
+    fs.mkdirSync(path.join(envRoot, "ext-store", "skill--shell"), { recursive: true })
+    const r0 = collectCasGarbage(base, { envRoots: [envRoot], dryRun: true })
+    expect(r0.ok).toBeTrue()
+    // ENOTDIR:generations 是文件而非目录 = 布局被篡改,非合法缺席 → 整轮拒绝
+    const fileKey = path.join(envRoot, "ext-store", "skill--notdir")
+    fs.mkdirSync(fileKey, { recursive: true })
+    fs.writeFileSync(path.join(fileKey, "generations"), "planted")
+    const r1 = collectCasGarbage(base, { envRoots: [envRoot] })
+    expect(!r1.ok && r1.reason!.includes("fail closed")).toBeTrue()
+    expect(hasCasBlob(base, garbage)).toBeTrue()
+    fs.rmSync(fileKey, { recursive: true, force: true })
+    // EACCES:generations 目录存在但不可枚举 → 整轮拒绝
+    const lockedGens = path.join(envRoot, "ext-store", "skill--locked", "generations")
+    fs.mkdirSync(lockedGens, { recursive: true })
+    fs.chmodSync(lockedGens, 0o000)
+    try {
+      const r2 = collectCasGarbage(base, { envRoots: [envRoot] })
+      expect(!r2.ok && r2.reason!.includes("fail closed")).toBeTrue()
+      expect(hasCasBlob(base, garbage)).toBeTrue()
+    } finally {
+      fs.chmodSync(lockedGens, 0o755)
+    }
+  })
+
   test("corrupt pins.json aborts the round — a protected-then-corrupted blob is never swept (REQ-102 #333)", () => {
     // 真实场景:先 pin 保护一个 blob,随后 pin 账损坏(部分写/磁盘错)。GC 绝不能把损坏 pin 账
     // 当空集继续 sweep,否则受保护 blob 被误删(数据丢失)。
