@@ -439,7 +439,7 @@ render(() => {
 
     // REQ-085/086:alpha 模式的叶页面经 typed surface seam 注入(单一 page root,upstream 叶
     // 不挂载);legacy 模式不注入 = 严格 upstream 默认页面。surface 组件经 SurfaceBoundary 兜
-    // 致命 render 错误(记录 + 用户确认 reload 后 auto-fallback 回 legacy)。
+    // 致命 render 错误(记录 + 用户确认 reload 后回 legacy —— 一切 alpha 生效态均受该记录约束,#334)。
     const surfaceComponents = createMemo<AppSurfaces | undefined>(() => {
       const resolved = resolvedSurfaces.latest
       if (!resolved) return undefined

@@ -87,6 +87,13 @@ describe("writeFileAtomicSync", () => {
     const leftovers = fs.readdirSync(path.dirname(file)).filter((n) => n.includes(".tmp-"))
     expect(leftovers).toEqual([])
   })
+
+  test("opts.mode applies to the final file (rename preserves tmp permissions)", () => {
+    if (process.platform === "win32") return
+    const file = path.join(root, "private.json")
+    writeFileAtomicSync(file, "secret", { mode: 0o600 })
+    expect(fs.statSync(file).mode & 0o777).toBe(0o600)
+  })
 })
 
 describe("sha256FileSync", () => {
