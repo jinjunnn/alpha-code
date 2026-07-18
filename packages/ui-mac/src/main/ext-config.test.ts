@@ -583,13 +583,4 @@ describe("#395 r6 M1 disabled plugin 换钉版", () => {
     expect(r).toEqual({ ok: true, changed: false, projectedDisabled: true })
     expect(fs.existsSync(path.join(alphaTmp, "alpha.jsonc"))).toBe(false)
   })
-
-  test("legacy/XDG 源有该 base 残留 → fail-closed(引擎 concat,无法保证 disabled)", () => {
-    recPlugin("z__r", "plugin:@z/r@1.0.0")
-    // XDG(userConfigPath = OPENCODE_CONFIG_DIR)残留同 base。
-    fs.writeFileSync(path.join(tmp, "opencode.jsonc"), JSON.stringify({ plugin: ["@z/r@1.0.0"] }))
-    const r = persistPlugin("@z/r@2.0.0")
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("remove the legacy/XDG entry")
-  })
 })

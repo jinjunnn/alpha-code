@@ -239,45 +239,37 @@ describe("#395 r6 B4 派生方向排序", () => {
 })
 
 // ── #395 Codex r6 B1:plugin[] concat 合并 —— legacy/XDG 源残留时 disable fail-closed + enforcementGap ─
-describe("#395 r6 B1/B2/B3 enforcement gap", () => {
-  const writeLegacyXdg = (plugins: unknown[]) => {
-    // reconcile 读的 legacy 源 = legacyConfigPaths(alpha.jsonc):~/.opencode + XDG。用 XDG 注入残留。
-    const xdgDir = path.join(root, "xdg-opencode")
-    fs.mkdirSync(xdgDir, { recursive: true })
-    fs.writeFileSync(path.join(xdgDir, "opencode.jsonc"), JSON.stringify({ plugin: plugins }))
-    process.env.OPENCODE_CONFIG_DIR = xdgDir
-  }
-  let savedXdg: string | undefined
+describe("#395 enforcement gap（r11 pivot：只 plugin 落盘失败入 gap，mcp/agent 由注入兜底）", () => {
   beforeEach(() => {
-    savedXdg = process.env.OPENCODE_CONFIG_DIR
     process.env.ALPHA_GLOBAL_DIR = root
   })
   afterEach(() => {
-    if (savedXdg === undefined) delete process.env.OPENCODE_CONFIG_DIR
-    else process.env.OPENCODE_CONFIG_DIR = savedXdg
     delete process.env.ALPHA_GLOBAL_DIR
   })
 
-  test("disabled plugin 在 legacy/XDG 源仍在场 → 该条不投影 + enforcementGap(引擎 concat 会加载)", () => {
+  test("plugin disable config write 失败(目标只读)→ 入 enforcementGap", () => {
     record({ name: "p", kind: "plugin", configKey: "plugin:@x/p@1.0.0", desiredState: "disabled" })
-    writeCfg({ plugin: [] }) // 主 config 已缺席
-    writeLegacyXdg(["@x/p@1.0.0"]) // 但 XDG 残留同名 → concat 加载
-    const r = reconcileDesiredStateAtBoot(root)
-    expect(r.enforcementGap && r.enforcementGap.length > 0).toBe(true)
-    expect(r.enforcementGap!.some((g) => g.includes("plugin p"))).toBe(true)
-  })
-
-  test("config write 失败(目标只读)→ disabled 项全部入 enforcementGap", () => {
-    record({ name: "m", kind: "mcp", configKey: "mcp.m", desiredState: "disabled" })
-    writeCfg({ mcp: { m: { type: "local" } } })
+    writeCfg({ plugin: ["@x/p@1.0.0"] })
     fs.chmodSync(cfgPath(), 0o444) // 只读 → applyConfigImage 写失败
     try {
       const r = reconcileDesiredStateAtBoot(root)
-      // 只读文件在某些环境仍可被 root/owner 覆盖;仅当确实写失败才断言 gap。
+      // 只读文件在某些环境仍可被 owner 覆盖;仅当确实写失败才断言 gap。
       if (!r.ok) {
         expect(r.enforcementGap && r.enforcementGap.length > 0).toBe(true)
-        expect(r.enforcementGap!.some((g) => g.includes("mcp m"))).toBe(true)
+        expect(r.enforcementGap!.some((g) => g.includes("plugin p"))).toBe(true)
       }
+    } finally {
+      fs.chmodSync(cfgPath(), 0o644)
+    }
+  })
+
+  test("mcp disable config write 失败 → **不入** gap（注入兜底，非安全洞）", () => {
+    record({ name: "m", kind: "mcp", configKey: "mcp.m", desiredState: "disabled" })
+    writeCfg({ mcp: { m: { type: "local" } } })
+    fs.chmodSync(cfgPath(), 0o444)
+    try {
+      const r = reconcileDesiredStateAtBoot(root)
+      if (!r.ok) expect(r.enforcementGap).toBeUndefined() // mcp 写失败不置 gap
     } finally {
       fs.chmodSync(cfgPath(), 0o644)
     }
@@ -297,10 +289,9 @@ describe("#395 r6 B1/B2/B3 enforcement gap", () => {
     }
   })
 
-  test("disabled plugin 全部源都缺席 → 正常收敛,无 enforcementGap", () => {
+  test("disabled plugin 从 alpha.jsonc plugin[] 移除 → 正常收敛,无 enforcementGap", () => {
     record({ name: "p", kind: "plugin", configKey: "plugin:@x/p@1.0.0", desiredState: "disabled" })
     writeCfg({ plugin: ["@x/p@1.0.0"] })
-    writeLegacyXdg([]) // XDG 无残留
     const r = reconcileDesiredStateAtBoot(root)
     expect(r.ok).toBe(true)
     expect(r.enforcementGap).toBeUndefined()

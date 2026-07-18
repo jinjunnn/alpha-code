@@ -127,45 +127,33 @@ MCP 重装是产品流(确认框重装),允许覆盖(引擎前像可复原)而�
   首个 sidecar fork 读 config 之前)`reconcileDesiredStateAtBoot` 把账本全部 global mcp/agent/plugin
   记录的 desiredState **双向重投影**回 alpha.jsonc(disabled → 禁用键/缺席;enabled → 剥禁用键/补回),
   使 config 恒 = 账本派生 —— 消除「账本 disabled / config enabled」崩溃残留与一切旁路写入的复活面。
-  边界 loud;**Codex r6 B2/B3**:凡「本应禁用的项无法保证从引擎配置移除」(config 写失败 / 非缺席
-  读错误 / legacy concat 残留 / skills 陈旧允许集)= **enforcementGap** → 主进程 **fail-closed 阻断
-  首个 sidecar spawn**(dialog 告知 + `app.exit`),绝不让引擎带着「账本禁用但仍会加载」的项启动;
-  锁忙(在途事务自保一致)/enable 缺生效面 = 非 gap(仅 warning)。escape hatch 与 REQ-059 同口径。
-- **legacy 源统一探测(Codex r6→r10 收敛)**:引擎除主 alpha.jsonc 外还合并多个源;任何 kind 的
-  **disable**(set-state 与 boot reconcile,含 alpha.jsonc **缺席**时)都先经 `legacyEnableResidueStrict`
-  探测。**引擎真实加载语义(Codex r9/r10 勘破,audits/2026-07-18-req395-engine-config-load)**是探测器的
-  地面真相(顺序与合并语义见下,勿再按"XDG 在主源之后 / plugin 走 concat"的旧描述重建 —— 那是 r7/r8
-  的错误模型):
-    · 引擎全局 config 目录 = `(XDG_CONFIG_HOME||~/.config)/opencode`(xdg-basedir,**固定,不 honor
-      `OPENCODE_CONFIG_DIR`** —— 后者只进 directories 阶段);alpha 生产只注 `OPENCODE_CONFIG`(=alpha.jsonc)
-      + `OPENCODE_CONFIG_CONTENT`,不改 XDG_CONFIG_HOME、不设 OPENCODE_CONFIG_DIR。
-    · 加载序:**XDG 全局三文件**(`config.json`→`opencode.json`→`opencode.jsonc`)+ **XDG legacy TOML
-      `config`**(config.ts:262,均在 alpha.jsonc **之前**)→ **alpha.jsonc** → **directories 阶段**
-      (`~/.opencode/opencode.json(c)` + 各目录的 **agent `*.md`** / **plugin `*.ts|js`** 自动发现,
-      config.ts:423-465)→ **`OPENCODE_CONFIG_CONTENT`**(step 6)+ OPENCODE_CONFIG_DIR/项目/managed/MDM
-      (均在 alpha.jsonc **之后**)。`~/.opencode` 不读 `config.json`。**探测器覆盖(Codex r10 B1/B2)**:
-      XDG 三 json + TOML `config`(plugin:存在即 fail-closed,无 TOML 解析器)+ `~/.opencode` 两 json +
-      各目录 `{agent,agents}/**/*.md`(agent:frontmatter disable)+ `{plugin,plugins}/*.{ts,js}`(plugin:
-      文件身份)+ `OPENCODE_CONFIG_CONTENT`。项目 cwd-walk = 项目 scope 另账;managed/MDM/active-org = 企业
-      受控源,不入全局 reconcile。
-    · **plugin** = `mergePluginOrigins` **union(按身份去重,顺序无关)**:before+after **任一**源含同 base
-      (npm)/同文件身份(path,身份不可判 = fail-closed)→ 加载;不看主叶。
-    · **mcp/agent** = `mergeDeep` **later-wins(顺序敏感)**:探测器按加载序对 `enabled`/`disable` 顶层标量
-      做 **last-set 追踪**(before 源 → alpha 投影[disabled 时贡献 `enabled:false`/`disable:true`]→ after 源),
-      最终值由最后显式设该字段的源决定。**before 源(XDG)被 alpha 覆盖 = 安全,不算残留**(Codex r9 M1 —
-      r7/r8 曾逐文件短路把 XDG 也当复活面 → 误拒);只有 **after 源**(`~/.opencode`/OPENCODE_CONFIG_DIR)的
-      显式反向字段能翻;主叶缺席则无 alpha 投影,before/after 按序 last-set 决定。`mainLeafProjectsDisabled`
-      = 主叶是否投影禁用(计入合并序)。
-  叶在任一源在场 + 最终 `enabled!==false`(mcp)/`disable!==true`(agent)= 会加载 = 残留 → fail-closed
-  (set-state 拒 / boot 记 enforcementGap)。strict:任一源语法损坏/读不出/根非对象 → fail-closed。
-  `computeEnableProjectionEdit` 只做纯 alpha.jsonc 投影(disable 按 base 移除同 base 全部钉版;**enable 按
-  精确 spec** 重建 —— Codex r8 M3:base 匹配会把残留旧钉版误认已在场,故 enable 移除同 base 全部后补回精确
-  elem),legacy 探测统一在 `legacyEnableResidueStrict` 一处。
-- **未策展重加投影(Codex r5/r6 M1)**:`persistMcp`/`persistPlugin` 在唯一写入口消费账本 —— 记录
-  disabled 的 mcp 重写叶强制并入 `enabled:false`(内容更新、状态不翻);disabled 的 plugin 重加须先
-  确认该 base 从**所有运行时源缺席**才刷账本(换钉版 `@x/p@1`→`@x/p@2` 时旧 spec 若留 config 会成
-  永久无账活条目):legacy/XDG 残留 → fail-closed;主 config 残留(旧钉版/崩溃残留)→ 移除该 base
-  全部条目投影为缺席;都缺席 → 纯账本刷新。旁路「写正常叶复活」由此封死。
+  边界 loud;**enforcementGap(r11 pivot 后收窄到 plugin)**:唯 **plugin disable 无法从 alpha.jsonc
+  `plugin[]` 落盘**(config 写失败/非缺席读错误/非法 jsonc)= gap → 主进程 **fail-closed 阻断首个
+  sidecar spawn**(dialog + `app.exit`)。mcp/agent 由下述主权注入兜底,写失败非 gap;锁忙/enable 缺
+  生效面 = 非 gap(仅 warning)。escape hatch 与 REQ-059 同口径。
+- **主权注入(Codex r11 定案 —— 取代 r6→r10 的 legacy 探测器)**:引擎除 alpha.jsonc 外还合并许多源
+  (XDG 全局三 json + legacy TOML `config` / `~/.opencode` / 各目录 `{agent,agents}/**/*.md` + `{plugin,
+  plugins}/*.{ts,js}` 自动发现 / `OPENCODE_CONFIG_CONTENT` / 项目 / managed / MDM / active-org)。**逐源探测
+  = 重实现引擎整个 config 解析器,是发散的无底洞**(r7→r11 每轮暴露新源:TOML、逐目录交错序、gray-matter
+  YAML、JSONC、npm 身份归一……)。改为**让 alpha 权威**:
+    · **mcp/agent**:`injectDisabledOverrides`(`ext-disabled-injection.ts`)把每个 **global disabled** 记录的
+      `mcp[name].enabled=false` / `agent[name].disable=true` 注入 **`OPENCODE_CONFIG_CONTENT`** —— 它在引擎
+      加载序 **step 6**(所有 in-scope 源之后:XDG/~/.opencode/agent-md·plugin-script 自动发现/项目)。
+      `mergeDeep` later-wins 使 alpha 的禁用**压过一切 in-scope 源**,disabled 扩展**永不被引擎加载,无需
+      探测**。引擎 schema 显式允许 lone `{enabled:false}` mcp 叶(`core/v1/config/config.ts:114` 的 Union)
+      与 disable-only agent 叶(全 optional)。每次 sidecar fork 从账本重算,best-effort(账本不可读 → 跳过,
+      alpha.jsonc 投影仍在)。
+    · **plugin**:union(`mergePluginOrigins`)无覆盖面 → 靠从 **alpha.jsonc `plugin[]` 移除**
+      (`computeEnableProjectionEdit`:disable 按 base 移除同 base 全部钉版;enable 按精确 spec 重建)。
+      **无用户 = 无其他 plugin 源**(alpha 只写 alpha.jsonc),故移除即权威;移除失败 = plugin gap。
+    · **企业/远程源(managed dir / MDM / active-org,step 7-9,在注入之后加载)**:alpha 无法覆盖,属管理员/
+      远程受控,不在 alpha 的威胁模型内(且无用户下不存在)。**文档化边界**,非 alpha 残留。
+    · **live 运行面**:引擎 `mcp.connect` 强制 `enabled:true`,当前 session 的连接是暂态;权威层 = 注入
+      (任何 reload 引擎必读 disabled)。安装/开关的 live 连接前经 inventoryView 复查 activation(best-effort),
+      残窗自愈。alpha.jsonc 的 mcp/agent 投影(set-state/boot)保留作 consistency,非 load-bearing。
+- **未策展重加投影(Codex r5/r6 M1 → r11)**:`persistMcp` 对账本 disabled 的 mcp 重写叶并入 `enabled:false`
+  (内容更新、状态不翻);`persistPlugin` 对 disabled 的 plugin 从 alpha.jsonc `plugin[]` 移除该 base 全部
+  条目(换钉版旧 spec 不留)——无用户 = 无他源,移除即权威(不再逐源探测)。
 - **读错误收窄(Codex r5)**:alpha.jsonc 各读点只容缺席(ENOENT/ENOTDIR);EACCES/EIO 等
   「读不出」≠「不存在」,一律 fail-closed(启停双向拒、truth reconcile 整体 skip、legacy 不迁不清理、
   persistPlugin 拒写防空基底 clobber)。断链 symlink `pathIdentity` 判 certain:false —— **Codex r6 B5**:

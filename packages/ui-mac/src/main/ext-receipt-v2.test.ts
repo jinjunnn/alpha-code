@@ -649,3 +649,23 @@ describe("#395 r7 B4 desiredState 写点优先", () => {
     if (batch.ok) expect(batch.records[0].desiredState).toBe("disabled")
   })
 })
+
+// ── #395 Codex r11 Major:同 (kind,name) 多条有效记录 = 冲突,整组 fail-closed ────────────────────
+describe("#395 r11 重复有效记录 fail-closed", () => {
+  test("两条均可解码的同 key skill(一 enabled 一 disabled)→ 整组排除 + 不进 records", () => {
+    const a = upsertInput({ id: "skill:dup", name: "dup", kind: "skill", desiredState: "enabled", configKey: undefined })
+    const w = upsertRecordV2(root, a)
+    expect(w.ok).toBe(true)
+    // 手工注入第二条同 key 有效记录(disabled)。
+    const raw = readRaw()
+    const clone = JSON.parse(JSON.stringify(raw.records[0])) as Record<string, unknown>
+    clone.desiredState = "disabled"
+    raw.records.push(clone)
+    fs.writeFileSync(ledgerFile(), JSON.stringify(raw))
+    // findRecordV2 应查不到(整组 fail-closed 排除),setDesiredStateV2 应拒。
+    expect(findRecordV2(root, "skill", "dup")).toBeNull()
+    const sd = setDesiredStateV2(root, "skill", "dup", "enabled")
+    expect(sd.ok).toBe(false)
+    if (!sd.ok) expect(sd.reason).toContain("corrupt")
+  })
+})

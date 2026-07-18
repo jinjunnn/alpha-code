@@ -210,7 +210,6 @@ import { casBlobPath, materializeFilesFromCas, putCasBlobFromBuffer, readCasBlob
 import { confinedExistingPath, isSafeRelPath } from "./ext-atomic-fs"
 import { pluginRecordName, validateServer } from "./ext-config"
 import { prepareConfigTx, applyConfigImage, type ConfigEdit } from "./ext-config-tx"
-import { legacyEnableResidueStrict } from "./ext-config"
 import { collectImportSkillPayload } from "./ext-fs-installer"
 import { checkUncuratedConflict, type UncuratedOrigin } from "./ext-uncurated-record"
 
@@ -4032,22 +4031,12 @@ export function setInstallStateByKey(
         text = ""
       }
       {
-        // Codex r7 B1:无条件进入(即便 alpha.jsonc 缺席)—— config 缺席 ≠ legacy 缺席,plugin disable
-        // 仍须探测 legacy/XDG concat 残留(否则翻账本 disabled 但 legacy 条目照常被引擎加载)。
+        // #395(r11 pivot):mcp/agent 的 disable 权威由 sidecar 注入 OPENCODE_CONFIG_CONTENT 保证
+        // (引擎最后加载,mergeDeep 压过一切 in-scope 源),不再逐源探测 legacy 残留。alpha.jsonc 投影
+        // 仍写(consistency;plugin 的 disable = 从 plugin[] 移除,alpha.jsonc 是其唯一生效面)。
         const errors: ParseError[] = []
         const cfg = text !== "" ? parse(text, errors) : {}
         if (text !== "" && errors.length > 0) return { ok: false, reason: `alpha.jsonc is not valid jsonc — refusing to change enable state (fail closed)` }
-        // r7 B1/M3:任何 kind 的 disable 都先探测引擎额外合并的 legacy/XDG 源(~/.opencode + XDG):
-        // plugin concat 残留 / mcp-agent 反向字段覆盖 → strict fail-closed(残留则禁用无法保证)。
-        if (intent.state === "disabled") {
-          // Codex r8 M2:mcp/agent 主叶存在 → alpha.jsonc 投影 enabled:false 会覆盖 legacy 省略字段,
-          // 只有 legacy 明确反向字段才算残留;主叶缺席则 legacy 在场即加载(plugin concat 不看主叶)。
-          const map = isObj(cfg) ? (cfg as Record<string, unknown>)[record.kind] : undefined
-          const mainLeaf = isObj(map) && isObj((map as Record<string, unknown>)[record.name])
-          const residue = legacyEnableResidueStrict(record.kind, record.name, record.configKey, mainLeaf)
-          if (!residue.ok) return { ok: false, reason: `${record.kind} ${record.name}: ${residue.reason} — cannot guarantee disable (fail closed)` }
-          if (residue.residue) return { ok: false, reason: `${record.kind} ${record.name}: ${residue.residue}; remove the legacy/XDG entry first (fail closed)` }
-        }
         const proj = computeEnableProjectionEdit(isObj(cfg) ? cfg : {}, root, record, intent.state)
         if (!proj.ok) return proj
         if (proj.edit) {
@@ -4221,7 +4210,9 @@ export function reconcileDesiredStateAtBoot(root: string): BootReconcileOutcome 
     const configBacked = ledger.records.filter(
       (r) => r.scope.kind === "global" && (r.kind === "mcp" || r.kind === "agent" || r.kind === "plugin"),
     )
-    const disabledRecs = configBacked.filter((r) => r.desiredState === "disabled")
+    // #395(r11 pivot):mcp/agent disable 由 sidecar 主权注入保证;唯 **plugin** disable 生效面 =
+    // 从 alpha.jsonc plugin[] 移除(无用户 = 无他源),故 enforcementGap 只在 plugin disable 无法落盘时置位。
+    const disabledPlugins = configBacked.filter((r) => r.desiredState === "disabled" && r.kind === "plugin")
     if (configBacked.length === 0) return done({ ok: true, applied, warnings })
     const target = path.join(root, "alpha.jsonc")
     let text: string
@@ -4230,26 +4221,19 @@ export function reconcileDesiredStateAtBoot(root: string): BootReconcileOutcome 
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code
       if (code === "ENOENT" || code === "ENOTDIR") {
-        // config 缺席 = 引擎读不到 alpha.jsonc → 主源投影天然满足;但 Codex r7 B1:引擎仍合并 legacy/XDG,
-        // disabled 记录若会被那些源加载 = enforcement gap;enabled 缺生效面仅 warning。
-        for (const r of configBacked) {
-          if (r.desiredState === "enabled") {
+        // config 缺席:disabled plugin 天然不在 plugin[](安全);mcp/agent 注入保证;enabled 缺生效面 warning。
+        for (const r of configBacked)
+          if (r.desiredState === "enabled")
             warnings.push(`${r.kind} ${r.name}: ledger says enabled but alpha.jsonc is absent — no effect surface (reinstall to repair)`)
-            continue
-          }
-          const residue = legacyEnableResidueStrict(r.kind, r.name, r.configKey, false) // 缺席:无主投影面
-          if (!residue.ok) gap.push(`${r.kind} ${r.name}: legacy probe failed: ${residue.reason}`)
-          else if (residue.residue) gap.push(`${r.kind} ${r.name}: ${residue.residue}`)
-        }
         return done({ ok: true, applied, warnings })
       }
-      for (const r of disabledRecs) gap.push(`${r.kind} ${r.name}: alpha.jsonc unreadable (${code ?? String(error)}) — cannot confirm disable projection`)
+      for (const r of disabledPlugins) gap.push(`plugin ${r.name}: alpha.jsonc unreadable (${code ?? String(error)}) — cannot remove from plugin[]`)
       return done({ ok: false, applied, warnings, skipped: `alpha.jsonc unreadable (${code ?? String(error)}) — fail closed, config untouched` })
     }
     const parseErrors: ParseError[] = []
     const cfg = parse(text, parseErrors)
     if (parseErrors.length > 0) {
-      for (const r of disabledRecs) gap.push(`${r.kind} ${r.name}: alpha.jsonc not valid jsonc — cannot confirm disable projection`)
+      for (const r of disabledPlugins) gap.push(`plugin ${r.name}: alpha.jsonc not valid jsonc — cannot remove from plugin[]`)
       return done({ ok: false, applied, warnings, skipped: "alpha.jsonc is not valid jsonc — fail closed, config untouched" })
     }
     // r6 B1:plugin[] 是引擎 concat 合并,从 alpha.jsonc 移除挡不住 legacy/XDG 源同名条目被 concat
@@ -4259,35 +4243,17 @@ export function reconcileDesiredStateAtBoot(root: string): BootReconcileOutcome 
     // edits 按 keyPath 去重 last-wins(每个键路径只落最终累积值,免得整值 edit 互相覆盖)。
     const working = isObj(cfg) ? (structuredClone(cfg) as Record<string, unknown>) : {}
     const byPath = new Map<string, ConfigEdit>()
-    const disableEdited: string[] = [] // Codex r7 minor:本次真产生 disable edit 的记录(prepare/write 失败只 gap 这些)
+    const pluginDisableEdited: string[] = [] // 真产生 plugin disable edit 的记录(prepare/write 失败只 gap 这些)
     for (const record of configBacked) {
-      // Codex r7 B1/M3:disable 先探测引擎额外合并的 legacy/XDG 源(plugin concat / mcp-agent 反向字段
-      // 覆盖)—— strict fail-closed;残留则该项 disable 无法保证 → gap,跳过主源投影。
-      if (record.desiredState === "disabled") {
-        // r8 M2:主叶存在(working 有该 mcp/agent 叶,将投影 enabled:false)→ legacy 只有明确反向字段才残留。
-        const wm = (working as Record<string, unknown>)[record.kind]
-        const mainLeaf = isObj(wm) && isObj((wm as Record<string, unknown>)[record.name])
-        const residue = legacyEnableResidueStrict(record.kind, record.name, record.configKey, mainLeaf)
-        if (!residue.ok) {
-          warnings.push(`${record.kind} ${record.name}: legacy probe failed: ${residue.reason}`)
-          gap.push(`${record.kind} ${record.name}: legacy probe failed: ${residue.reason}`)
-          continue
-        }
-        if (residue.residue) {
-          warnings.push(`${record.kind} ${record.name}: ${residue.residue}`)
-          gap.push(`${record.kind} ${record.name}: ${residue.residue}`)
-          continue
-        }
-      }
       const proj = computeEnableProjectionEdit(working, root, record, record.desiredState)
       if (!proj.ok) {
         warnings.push(`${record.kind} ${record.name}: ${proj.reason}`)
-        // disable 失败 = 该项无法保证从引擎配置移除,记 gap;enable 失败仅功能缺失(非安全洞)。
-        if (record.desiredState === "disabled") gap.push(`${record.kind} ${record.name}: ${proj.reason}`)
+        // plugin disable 失败 = 无法从 plugin[] 移除 → gap;mcp/agent 注入兜底;enable 失败仅功能缺失。
+        if (record.desiredState === "disabled" && record.kind === "plugin") gap.push(`plugin ${record.name}: ${proj.reason}`)
         continue
       }
       if (!proj.edit) continue
-      if (record.desiredState === "disabled") disableEdited.push(`${record.kind} ${record.name}`)
+      if (record.desiredState === "disabled" && record.kind === "plugin") pluginDisableEdited.push(`plugin ${record.name}`)
       setAtKeyPath(working, proj.edit.keyPath, proj.edit.value)
       byPath.set(proj.edit.keyPath.join(" "), proj.edit)
       applied.push(`${record.kind}:${record.name}→${record.desiredState}`)
@@ -4295,14 +4261,13 @@ export function reconcileDesiredStateAtBoot(root: string): BootReconcileOutcome 
     if (byPath.size === 0) return done({ ok: true, applied, warnings })
     const prepared = prepareConfigTx(target, [...byPath.values()], text)
     if (!prepared.ok) {
-      // Codex r7 minor:只 gap 本次真需落 disable edit 的记录(disableEdited),不含早已安全投影的 disabled。
-      for (const d of disableEdited) gap.push(`${d}: config tx prepare failed — disable not persisted`)
+      for (const d of pluginDisableEdited) gap.push(`${d}: config tx prepare failed — plugin not removed`)
       return done({ ok: false, applied: [], warnings, skipped: `config tx prepare failed: ${prepared.reason}` })
     }
     try {
       applyConfigImage(prepared.image)
     } catch (error) {
-      for (const d of disableEdited) gap.push(`${d}: config write failed — disable not persisted`)
+      for (const d of pluginDisableEdited) gap.push(`${d}: config write failed — plugin not removed`)
       return done({ ok: false, applied: [], warnings, skipped: `config write failed: ${error instanceof Error ? error.message : String(error)}` })
     }
     return done({ ok: true, applied, warnings })

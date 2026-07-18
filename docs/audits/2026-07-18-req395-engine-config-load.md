@@ -1,6 +1,18 @@
-# REQ-104 #395 — 引擎 config 加载语义勘破(legacy 残留探测的地面真相)
+---
+title: 引擎 config 加载语义勘破（REQ-104 #395 主权注入的地面真相）
+kind: audit
+status: active
+owners:
+  - alpha-code
+last_reviewed: 2026-07-18
+---
 
-**日期**:2026-07-18 · **触发**:Codex #399 r9 B1/M1 — legacy 残留探测器逐文件短路,与引擎真实合并语义(文件集/顺序/mergeDeep-vs-union)偏差 · **范围**:只读源码勘破,支撑 `ext-config.ts:legacyEnableResidueStrict` 的正确设计。
+# REQ-104 #395 — 引擎 config 加载语义勘破（主权注入的地面真相）
+
+> 分支 `feat/395-default-disabled`
+> 触发:Codex #399 r9→r11 —— legacy 残留探测器逐文件短路,与引擎真实合并语义(文件集/顺序/mergeDeep-vs-union/自动发现目录/TOML/env-content)持续偏差(r10→r11 finding 4B→8B 发散)。
+> 方法:只读源码勘破(config.ts / core/global.ts / config/{agent,plugin,paths}.ts / sidecar.ts)。
+> 结论(r11 定案):**逐源探测是发散无底洞,弃用**。改为**主权注入**——alpha 把 disabled mcp/agent 覆盖注入 `OPENCODE_CONFIG_CONTENT`(引擎加载序 **step 6**,压过一切 in-scope 源),让 alpha 权威。本报告的引擎加载序/合并语义事实即该设计成立的地面真相(尤其 OPENCODE_CONFIG_CONTENT 在所有 in-scope 源之后加载)。以下"探测器"章节保留为历史设计参考。
 
 ## 结论(探测器地面真相)
 

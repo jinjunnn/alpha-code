@@ -400,16 +400,21 @@ function parseLedger(root: string): { parsed: ParsedLedger; corrupt: boolean; re
       }
     }
   }
-  const records: InstallRecordV2[] = []
+  let records: InstallRecordV2[] = []
   const recordWarnings: string[] = []
   const rawCorruptRecords: unknown[] = []
   const corruptKeys = new Set<string>()
   let unattributable = false
   if (Array.isArray(raw.records)) {
+    // 先按 key 分组已解码记录 + 保留其原始条目(重复检测后可整组转损坏,原文保全)。
+    const decodedByKey = new Map<string, Array<{ record: InstallRecordV2; raw: unknown }>>()
     for (const entry of raw.records) {
       const decoded = decodeRecordV2(entry)
       if (decoded.ok) {
-        records.push(decoded.record)
+        const k = key(decoded.record.kind, decoded.record.name)
+        const arr = decodedByKey.get(k) ?? []
+        arr.push({ record: decoded.record, raw: entry })
+        decodedByKey.set(k, arr)
         continue
       }
       recordWarnings.push(`corrupt v2 record excluded (fail closed — not operable) in ${ledgerPath(root)}: ${decoded.errors[0]}`)
@@ -417,6 +422,18 @@ function parseLedger(root: string): { parsed: ParsedLedger; corrupt: boolean; re
       const attributed = attemptCorruptKey(entry)
       if (attributed) corruptKeys.add(attributed)
       else unattributable = true
+    }
+    // Codex r11 Major:同 (kind,name) 有多条**均可解码**的记录 = 语义冲突(enable/disable 含义不明,
+    // 派生允许集的 any-enabled 会误注入)—— **整组 fail-closed**:排除全部、标 corruptKey(下游 set-state/
+    // uninstall/skills 派生一律拒该 key),原文保全供取证。
+    for (const [k, group] of decodedByKey) {
+      if (group.length > 1) {
+        corruptKeys.add(k)
+        for (const g of group) rawCorruptRecords.push(g.raw)
+        recordWarnings.push(`conflicting duplicate v2 records for ${k} (${group.length}) excluded (fail closed) in ${ledgerPath(root)}`)
+        continue
+      }
+      records.push(group[0].record)
     }
   }
   // r18:字节级证据侧写 —— 结构保全经 JSON.parse→stringify 会丢重复键/原始词法;首次观测到

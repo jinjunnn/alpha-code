@@ -352,13 +352,15 @@ export function useExtensions(
     // 回「已装未启用」。(inventoryView 读账本 desiredState 投影;global mcp 无 projectDir。)
     try {
       const inv = await window.api.ext.inventoryView()
-      const row = inv.rows.find((r) => r.kind === "mcp" && r.name === name && r.scope !== "project")
+      // Codex r11 B7:选**已安装 global 行**(scope==="global"),不能落到未安装浏览行(scope=null,
+      // activation:not-installed)——否则 disabled 的自定义 MCP 会被误判"未安装"而照常连接。
+      const row = inv.rows.find((r) => r.kind === "mcp" && r.name === name && r.scope === "global")
       if (row?.activation === "disabled") {
         await Promise.all([loadStatus(), loadInstalls()])
         return { ok: true, reason: "installed-disabled" }
       }
     } catch {
-      /* 读失败不阻断:退回既有连接语义(不比 r10 前更差) */
+      /* 读失败不阻断:主权注入是权威层(下次 reload 引擎必读 disabled),live 连接尽力而为、自愈 */
     }
     const added = await withTimeout(c.mcp.add({ name, config } as any), 15000)
     if (added === TIMED_OUT) {

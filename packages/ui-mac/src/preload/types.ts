@@ -475,8 +475,10 @@ export type ElectronAPI = {
     /** REQ-100 #313:key-based v2 卸载 —— renderer 只提供 type/name/scope,receipt 事实由 main
      *  账本自查(ADR-028 §1);generation skill 走锁内 journaled store+ledger teardown。 */
     uninstallV2: (intent: UninstallKeyIntent) => Promise<{ ok: true; files?: string[]; warning?: string } | { ok: false; reason: string }>
-    /** REQ-104 #395:key-based 启停 —— main 按账本自查;mcp/agent/plugin 走 journaled config 事务
-     *  (投影与账本原子),skill 纯账本翻转(投影 = 引擎侧按账本注入);enable 过 advisory 闸(R14)。 */
+    /** REQ-104 #395:key-based 启停 —— main 按账本自查。写序 = 账本翻转 + alpha.jsonc config 投影
+     *  (两次写 + 失败补偿,非单事务);mcp/agent 的禁用**权威由 sidecar 注入 OPENCODE_CONFIG_CONTENT
+     *  保证**(引擎最后加载 override),alpha.jsonc 投影仅 consistency;plugin 禁用 = 从 alpha.jsonc
+     *  plugin[] 移除;skill 纯账本翻转(投影 = 引擎侧按账本注入)。enable 过 advisory 闸(R14)。 */
     setInstallState: (intent: SetStateKeyIntent) => Promise<{ ok: true; warning?: string } | { ok: false; reason: string }>
     /** REQ-100 #313:某 skill 的 generation 历史(current + 保留代)。只透安全元数据,不外泄绝对路径。 */
     listGenerations: (intent: UninstallKeyIntent) => Promise<{ ok: true; generations: SkillGenerationInfo[] } | { ok: false; reason: string }>
