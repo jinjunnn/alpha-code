@@ -29,6 +29,7 @@ import {
 import type { CapabilityDiff } from "./ext-capability-grants"
 import { populateFromCas } from "./ext-cas"
 import { findRecordV2, upsertRecordsV2, upsertRecordV2, type ScopeIdentity, type UpsertInput } from "./ext-receipt-v2"
+import { nextDesiredState } from "./ext-install-policy"
 import { parseSkillFrontmatter } from "./ext-import-validate"
 import type { InstallReceiptOrigin } from "../preload/types"
 
@@ -196,6 +197,9 @@ export type SkillGenerationInstall = {
   environment: AppEnvironment
   scope: ScopeIdentity
   origin: InstallReceiptOrigin
+  /** #395:目录条目 source(official/community/alpha)—— fresh-intake 初始启用分类输入;
+   *  非目录 intake(imported/created)缺省。 */
+  source?: string
   /** 唯一内容源(REQ-098 #303 收紧 CAS-only,Codex 裁决 C:buffer 直填旁路永久移除):调用方先把
    *  载荷提升进验证共享 CAS,staging 由 populateFromCas 物化(读取重验)。journal 只存 TxFileSpec,
    *  与来源无关 —— buffer 时代 journal 的恢复语义不受影响(恢复不重 populate)。 */
@@ -254,7 +258,9 @@ export async function installSkillGeneration(root: string, spec: SkillGeneration
     ...(spec.manifestDigest ? { manifestDigest: spec.manifestDigest } : {}),
     ...(spec.payloadDigest ? { payloadDigest: spec.payloadDigest } : {}),
     ...(spec.grantDigest ? { grantDigest: spec.grantDigest } : {}),
-    desiredState: "enabled",
+    // #395:fresh-intake 按来源分类(单一分类器 ext-install-policy);既有记录当前策略优先
+    // —— 更新出新 generation 不再把用户手动关掉的技能翻回启用。
+    desiredState: nextDesiredState(root, "skill", spec.name, { origin: spec.origin, source: spec.source }),
     origin: spec.origin,
     installedAt: now,
   }

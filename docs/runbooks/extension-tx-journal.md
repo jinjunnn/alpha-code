@@ -143,3 +143,10 @@ seed plugin 的载荷是同一事务里的 file items,落点 = 内容寻址目�
 - **legacy flat 文件**(`<server>/<VAR>` 直挂):存量安装与 env 迁移的合法布局,被当前 leaf
   引用时绝不可删;不再被引用后由同一 GC 收。
 - **卸载**:journaled 卸载会删除整个 `<server>` 目录(全部版本 + flat),无需按版本处置。
+
+## 附:启停(set-state,REQ-104 #395)
+
+启停 = 锁内**账本翻转 + 持久化 config 投影普通原子写**(非事务,不产生 journal 条目)。**两方向都
+账本先写**(durable intent):后续更新读账本 desiredState 重投影 config 自愈,禁用不被更新复活。
+config 原子写抛错回滚账本。崩溃窗口(账本↔config 之间)残留短暂运行态与账本不符,durable intent 恒
+正确、下次更新/重开收敛。故 journal 里不会出现启停事务。

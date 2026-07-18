@@ -89,9 +89,99 @@ MCP 重装是产品流(确认框重装),允许覆盖(引擎前像可复原)而�
   project bundle 锁 → `migrateV1Ledger`(迁移器自身不持锁);无 `.alpha` 存量零写副作用;
   拒绝 loud log 零改动,busy/transient 下次打开自然重试(幂等)。
 
-## 5. 证据
+## 5. desiredState:初始分类、当前策略优先与投影权威(REQ-104 #395)
 
-`ext-install-planner.test.ts`(fail-closed ledger commit:逐类型写前门/根只读事务失败零
+- **fresh-intake 分类器唯一决策点**(`shared/ext-install-policy.initialDesiredState`,#394 裁决):
+  目录安装(origin=catalog)`source==="alpha"` = enabled,其余(含 official)一律 disabled;
+  非目录 intake(imported/created)= enabled(用户显式自选内容)。renderer 安装文案共用同一
+  函数,不得各写一份。factory 注入零安装不落账,天然绕过。
+- **当前策略优先(写点决定,Codex r7 B4)**:任何更新/重装/回滚对既有记录一律保留其 desiredState。
+  **决定点在写账本的原子处(`upsertRecordV2`/`upsertRecordsV2` 内锁内 prev),不是调用方计划期**——
+  否则「计划期读到 enabled → 用户中途 disable → 更新事务提交旧 enabled」会复活禁用。prev 存在 = 更新,
+  一律沿用 prev 当前 desiredState(启停只经 set-state 通道 `setDesiredStateV2` 改);fresh(无 prev)
+  才用分类器传入值。v1→v2 迁移如实保留 enabled(存量不回溯)。
+- **持久化 config 投影(#394 裁决 A′;Codex r2/r3 定稿)**:disabled 的 mcp/agent/plugin 的启用态**写进
+  磁盘 alpha.jsonc**,字段用**引擎真实消费的键**:mcp `enabled:false`(引擎查 `mcp.enabled === false`)、
+  agent `disable:true`(引擎查 `value.disable`)、plugin 从 `plugin[]` **缺席** —— 因引擎 import 插件早于
+  config-hook,disabled plugin 必须从持久化 config 缺席才拦得住加载。plugin 增删按**解析路径身份**匹配
+  (绝对/相对/`file://` 等价形态同判),受管归一化:enable 按 configKey 补回受管条目形态(受管安装从不
+  写 `[spec,opts]` 元组,opts 不丢;用户对受管条目手加的 opts 不随启停往返 —— 显式契约,非静默)。config
+  自持 disabled 态 → **天然免疫「删/坏账本复活」**(账本不是运行时唯一权威,config 是)。
+- **skill 例外**:skill 不预加载,投影 = 引擎侧 config-hook 注入门(`skillGenerationLiveDirs`,
+  只注入 **main 派生允许集** `skills-enabled.json` 里的 key;缺失/损坏/形状异常一律不注入 fail closed)。
+- **cloud 例外**:无本地运行面 + UI 无启停开关,一律 enabled(直装与 bundle 子项一致)。
+- **启停通道**(`ext-set-install-state`,#347-gated):锁内 record 重读 + advisory(R14)+ **持久化
+  config 投影普通原子写 + 账本翻转**(非事务)。**两方向都账本先写**(Codex r4):账本是 durable
+  intent —— 更新/重装读账本当前策略优先,账本先写则崩溃在账本↔config 之间时后续更新按账本重投影
+  config **自愈**,禁用绝不被更新复活(config-first 会留「config 禁/账本启」被更新读启用复活)。
+  config 原子写(writeFileAtomicSync 整替换或原文件不变)抛错 → 回滚账本到原态(回滚失败如实报真实
+  状态);config 未变故 opts 等原样保留。残余:账本↔config 崩溃窗口的短暂运行态不符,durable intent 恒
+  正确、下次更新/重开收敛。enable 缺生效面 fail-closed。disabled ≠ 卸载:内容/账本/授权账照常在位。
+- **skill 严格门(Codex r5 定稿)**:ext 无法 import 主进程 decoder,逐字段镜像有永久漂移风险 ——
+  改为 **main 用真 `decodeRecordV2` 派生 enabled 允许集写独立文件 `<root>/skills-enabled.json`**,
+  hook 只读该文件(缺失/损坏/未知版本 = fail closed 不注入)。派生与账本**锁步**
+  (`writeLedgerFile` 方向排序:有 key 被收走/现状不可信 → 派生先写,中途崩溃只会技能变暗;
+  纯扩容 → 账本先写,派生失败回退删除,删不掉陈旧允许集才报错);boot reconcile 按账本重算自愈
+  (升级首启 backfill / 扩容失败残留 / 账本损坏时撤陈旧允许集)。
+- **startup reconcile(Codex r5 缺失件,#395 定稿)**:主进程启动时(REQ-059 truth reconcile 之后、
+  首个 sidecar fork 读 config 之前)`reconcileDesiredStateAtBoot` 把账本全部 global mcp/agent/plugin
+  记录的 desiredState **双向重投影**回 alpha.jsonc(disabled → 禁用键/缺席;enabled → 剥禁用键/补回),
+  使 config 恒 = 账本派生 —— 消除「账本 disabled / config enabled」崩溃残留与一切旁路写入的复活面。
+  边界 loud;**enforcementGap(r11 pivot 后收窄到 plugin)**:唯 **plugin disable 无法从 alpha.jsonc
+  `plugin[]` 落盘**(config 写失败/非缺席读错误/非法 jsonc)= gap → 主进程 **fail-closed 阻断首个
+  sidecar spawn**(dialog + `app.exit`)。mcp/agent 由下述主权注入兜底,写失败非 gap;锁忙/enable 缺
+  生效面 = 非 gap(仅 warning)。escape hatch 与 REQ-059 同口径。
+- **主权注入(Codex r11 定案 —— 取代 r6→r10 的 legacy 探测器)**:引擎除 alpha.jsonc 外还合并许多源
+  (XDG 全局三 json + legacy TOML `config` / `~/.opencode` / 各目录 `{agent,agents}/**/*.md` + `{plugin,
+  plugins}/*.{ts,js}` 自动发现 / `OPENCODE_CONFIG_CONTENT` / 项目 / managed / MDM / active-org)。**逐源探测
+  = 重实现引擎整个 config 解析器,是发散的无底洞**(r7→r11 每轮暴露新源:TOML、逐目录交错序、gray-matter
+  YAML、JSONC、npm 身份归一……)。改为**让 alpha 权威**:
+    · **mcp/agent**:`injectDisabledOverrides`(`ext-disabled-injection.ts`)把每个 **global disabled** 记录的
+      `mcp[name].enabled=false` / `agent[name].disable=true` 注入 **`OPENCODE_CONFIG_CONTENT`** —— 它在引擎
+      加载序 **step 6**(所有 in-scope 源之后:XDG/~/.opencode/agent-md·plugin-script 自动发现/项目)。
+      `mergeDeep` later-wins 使 alpha 的禁用**压过一切 in-scope 源**,disabled 扩展**永不被引擎加载,无需
+      探测**。引擎 schema 显式允许 lone `{enabled:false}` mcp 叶(`core/v1/config/config.ts:114` 的 Union)
+      与 disable-only agent 叶(全 optional)。每次 sidecar fork 从账本重算,best-effort(账本不可读 → 跳过,
+      alpha.jsonc 投影仍在)。
+    · **plugin**:union(`mergePluginOrigins`)**无 disable 键、无覆盖面** → 只能从 **alpha.jsonc `plugin[]`
+      移除**(`computeEnableProjectionEdit`:disable 按 base 移除同 base 全部钉版;enable 按精确 spec 重建)。
+      **已知边界(Codex r12 Major2,信任模型显式声明)**:plugin 的 disable **只治理 alpha 自有副本**
+      (alpha 只写 alpha.jsonc);若同一 plugin 也出现在其他引擎读取源(XDG / 项目 / `~/.opencode` / 自动
+      发现目录),引擎 union 仍会 import —— **本设计不防御该情形**。当前部署无用户 = 无其他 plugin 源,故
+      移除即权威;若未来引入用户手写配置,须显式向用户暴露"plugin 开关仅治理 alpha 安装的副本"这一限制,
+      或补 plugin 侧的运行时 enforcement。移除失败 = plugin gap(阻断 sidecar)。
+    · **企业/远程源(managed dir / MDM / active-org,step 7-9,在注入之后加载)**:alpha 无法覆盖,属管理员/
+      远程受控,不在 alpha 的威胁模型内(且无用户下不存在)。**文档化边界**,非 alpha 残留。
+    · **账本损坏/不可读**(Codex r12 B2):sidecar 注入会拿到空 records、disabled mcp/agent 无从注入 →
+      boot reconcile `probeLedgerForWrite` 检出损坏(非缺席)即 **enforcementGap 阻断 sidecar**(不放行可能
+      加载已禁扩展的引擎)。缺席账本(ENOENT)= 无记录 = 安全,不阻断。
+    · **command/bundle 无生效面**(Codex r12 Major3):引擎 config.command/bundle 无 disable 键、alpha 无
+      投影/注入面 —— set-state 对 command/bundle/cloud 一律拒(翻 desiredState 会谎报已禁而仍可执行),
+      行内/详情页开关也只给有生效面的 mcp/agent/plugin/skill。
+    · **live 运行面**:引擎 `mcp.connect`/`mcp.add` 强制 `enabled:true`,当前 session 的连接是暂态;权威层 =
+      注入(任何 reload 引擎必读 disabled)。安装/开关的 live 连接前经 inventoryView 复查 activation,读失败
+      **fail-closed 不激活**(Codex r12 Major1:回 reload-pending,不靠"下次自愈"当安全控制);disabled 则不
+      连。alpha.jsonc 的 mcp/agent 投影(set-state/boot)保留作 consistency,非 load-bearing。
+- **未策展重加投影(Codex r5/r6 M1 → r11)**:`persistMcp` 对账本 disabled 的 mcp 重写叶并入 `enabled:false`
+  (内容更新、状态不翻);`persistPlugin` 对 disabled 的 plugin 从 alpha.jsonc `plugin[]` 移除该 base 全部
+  条目(换钉版旧 spec 不留)——无用户 = 无他源,移除即权威(不再逐源探测)。
+- **读错误收窄(Codex r5)**:alpha.jsonc 各读点只容缺席(ENOENT/ENOTDIR);EACCES/EIO 等
+  「读不出」≠「不存在」,一律 fail-closed(启停双向拒、truth reconcile 整体 skip、legacy 不迁不清理、
+  persistPlugin 拒写防空基底 clobber)。断链 symlink `pathIdentity` 判 certain:false —— **Codex r6 B5**:
+  不只查最终组件,realpath **最长存在前缀**(穿透好 symlink 消除系统链别名歧义)+ 逐段上溯检测,
+  祖先断链 symlink(`/alias/plugin.js` 里 `/alias` 断链)同样判不可词法证 → 匹配消费方 fail-closed。
+- **账本 durability(Codex r5/r6 M2)**:`installs.json` 与 `skills-enabled.json` 写盘统一走
+  `ext-atomic-fs.writeFileAtomicSync`(完整写循环杜绝短写截断 + fsync 文件 + 原子 rename + fsync
+  目录)—— 手写单次 `fs.writeSync` 会忽略短写(ENOSPC/EIO)留下截断账本。账本先写契约的前提:账本
+  必须先于 config 到达持久介质。skills 派生**方向排序(Codex r6 B4)**:收窄(移除项)先于账本落盘、
+  扩容(新增项)后于账本;pre-shrink 失败 = 账本未写(回起点安全);final publish 失败 = 派生停在
+  更严格态(skill 少注入 = 安全侧,boot 自愈补齐)。
+
+## 6. 证据
+
+`ext-boot-reconcile.test.ts`(#395 startup reconcile:双向重投影/幂等零写盘/锁忙与损坏
+fail-closed/skills 派生允许集锁步 + boot 自愈)、`gen-skill-paths.test.ts`(允许集注入门
+fail-closed)、`ext-install-planner.test.ts`(fail-closed ledger commit:逐类型写前门/根只读事务失败零
 残留/损坏账本写前拒绝/v1-only 双查/authorize 暂停零权威副作用/v1 锁步派生;#378 退出条件
 组:四类首装 authorize 生产入口、cloud 卸载双清与 desiredState 继承、plugin 更新失败旧版
 健康、MCP 密钥版本化轮换)、`alpha-mcp-secrets.test.ts`(版本化原语)、

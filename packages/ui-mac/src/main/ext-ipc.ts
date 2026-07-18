@@ -49,7 +49,7 @@ import { makeRecoveryGate } from "./ext-recovery-gate"
 import { adoptProjectLedger } from "./ext-project-adopt"
 import { buildGatedWriteChannels, buildJournalAdminChannels, GATED_WRITE_CHANNELS, JOURNAL_ADMIN_CHANNELS } from "./ext-write-channels"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
-import { lookupForUninstall, migrateV1Ledger, parseUninstallLedgerKey, projectScopeIdentity, readLedgerV2, removeRecordV2, upsertRecordsV2 } from "./ext-receipt-v2"
+import { findRecordV2, lookupForUninstall, migrateV1Ledger, parseUninstallLedgerKey, projectScopeIdentity, readLedgerV2, removeRecordV2, upsertRecordsV2 } from "./ext-receipt-v2"
 import { packagedSeedBrowseView, readPackagedSeed } from "./ext-seed"
 import { recoverExtensionTransactions, recoverExtensionTransactionsInHeldLock, recoveryClean, type RecoverOptions } from "./ext-transaction"
 import { getLogger } from "./logging"
@@ -252,6 +252,21 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   const installPluginBody = async (pkg: string) => {
     const r = persistPlugin(pkg, undefined)
     if (!r.ok) return r
+    // #395(Codex r5):账本 disabled → persistPlugin 投影为条目缺席(config 零写入)。恰同钉版
+    // 重加 = 真幂等跳过落账(同 #355:不虚增 generation);换钉版才刷账本(nextDesiredState 当前
+    // 策略优先,状态不翻);失败无需 config 补偿(本次未写数组)。
+    if (r.projectedDisabled) {
+      if (findRecordV2(alphaGlobalRoot(), "plugin", pluginRecordName(pkg))?.configKey === `plugin:${pkg}`) return { ok: true }
+      const led = recordUncuratedInstall(alphaGlobalRoot(), {
+        kind: "plugin",
+        name: pluginRecordName(pkg),
+        origin: "created",
+        environment: getAlphaEnvironment().environment,
+        scope: { kind: "global" },
+        configKey: `plugin:${pkg}`,
+      })
+      return led.ok ? { ok: true } : { ok: false, reason: `install ledger write failed: ${led.reason}` }
+    }
     // Codex review #355:恰同钉版重装 = 真幂等 → 跳过落账(不虚增 generation);
     // 同 base 不同钉版已在 persistPlugin 内显式拒绝(不许「配置不变、账本记新版」)。
     if (!r.changed) return { ok: true }
@@ -743,18 +758,12 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
     await ledgerReady
     return listGenerationsByKey(intent, { globalRoot: alphaGlobalRoot })
   })
-  // #347(Codex 裁决 d):set-state 虽不建 journal,但对同一 installs.json 做 read-modify-write ——
-  // 必须过 gate 且与账本写同一锁临界区(持文件锁执行,防与并发 receipt commit 互踩)。
+  // #347(Codex 裁决 d)+ #395:set-state 过 gate;锁由 planner 内部管理(自持 Bundle 锁)——
+  // mcp/agent/plugin 在锁内做**持久化 config 投影普通原子写 + 账本翻转**(非事务;disable config 先、
+  // enable 账本先,失败回滚,见 setInstallStateByKey),skill 纯账本翻转(投影经引擎注入门)。
+  // 此处不得预持锁(会与 planner 内锁互斥死锁)。
   const setInstallStateBody = async (intent: unknown) => {
-    const resolved = setStateIntentRoot(intent)
-    if (!resolved.ok) return resolved
-    const held = tryAcquireBundleLock(resolved.root, { txId: `set-state-${randomUUID()}` })
-    if (!held.ok) return { ok: false as const, reason: `ledger busy: ${held.reason} — retry after the in-flight transaction` }
-    try {
-      return setInstallStateByKey(intent, { globalRoot: alphaGlobalRoot, advisoryGate: makeAdvisoryGate(userDataPath) })
-    } finally {
-      held.lock.release()
-    }
+    return setInstallStateByKey(intent, { globalRoot: alphaGlobalRoot, advisoryGate: makeAdvisoryGate(userDataPath) })
   }
   // ADR-030(#372):收回路径的残留检测(只读)与显式清理(journal 在场 fail-closed;
   // generation-aware —— 删受控 ext-store + 对应账本,绝不落 flat 删除)。

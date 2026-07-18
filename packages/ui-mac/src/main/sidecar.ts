@@ -8,6 +8,7 @@ import { buildAlphaIdentity } from "./alpha-identity"
 import { buildAlphaModelConfig } from "./alpha-models"
 import { hasSecretFile, secretFileRef } from "./alpha-secret-files"
 import { alphaGlobalRoot, alphaJsoncPath } from "./engine-config-truth"
+import { injectDisabledOverrides } from "./ext-disabled-injection"
 
 // ADR-006 bridge ("two runtime worlds"). opencode's ToolRegistry dynamically imports a project's
 // raw-TS tools (.opencode/tool/*.ts), and packages whose TS entry does `import "./x.js"` (e.g.
@@ -377,6 +378,16 @@ function injectAlphaConfig(userDataPath: string, extPluginPath?: string) {
         },
       }
     }
+
+    // #395(Codex r11 pivot → 主权注入):把账本 disabled 的 mcp/agent 权威覆盖注入 OPENCODE_CONFIG_CONTENT
+    // —— 它在引擎加载序 step 6(所有 in-scope 源之后:XDG / ~/.opencode / agent-md·plugin-script 自动
+    // 发现目录 / 项目)。mergeDeep later-wins 使 alpha 的 `enabled:false`/`disable:true` **压过一切 in-scope
+    // 源**,disabled 扩展永不被引擎加载 —— 无需逐源探测(探测器无底洞由此消除)。引擎 schema 显式允许
+    // lone `{enabled:false}` mcp 叶(v1/config/config.ts:114)与 disable-only agent 叶(全 optional)。
+    // plugin 是 union 无覆盖面,靠 alpha.jsonc 移除(无用户 = 无他源);cloud/skill 无此面。
+    // 仅 global scope(项目 scope 由项目 config 面另管)。best-effort:账本不可读 → 跳过(alpha.jsonc
+    // 投影仍在;主权注入是加固层)。
+    injectDisabledOverrides(config)
 
     process.env.OPENCODE_CONFIG_CONTENT = JSON.stringify(config)
   } catch (error) {

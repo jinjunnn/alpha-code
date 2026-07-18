@@ -206,3 +206,28 @@ describe("reconcile — REQ-065 factory skills.paths group", () => {
     expect(paths).toContain("/Old.app/Contents/Resources/skills/skill-creator")
   })
 })
+
+// ── #395(Codex r5)步骤4:alpha.jsonc 读错误只容缺席,其余 fail-closed ───────────────────────────
+describe("reconcile — #395 读错误收窄(非缺席 fail-closed)", () => {
+  test("truth 不可读(EISDIR)→ 整体 skip,不写盘(不以不完整基底重建)", () => {
+    fs.mkdirSync(path.join(alphaTmp, "alpha.jsonc")) // 目录占位 → readFileSync EISDIR(非缺席)
+    writeLegacy({ mcp: { demo: { type: "local" } } })
+    writeLedger([mcpReceipt("demo")])
+    const out = reconcileEngineConfigTruth()
+    expect(out.skipped).toBe(true)
+    if (out.skipped) expect(out.reason).toContain("unreadable")
+    expect(homeExists()).toBe(true) // 未清理
+  })
+
+  test("legacy 不可读(EISDIR)→ bail-out(不迁不清理),truth 仍注入 skills.paths", () => {
+    fs.rmSync(path.join(homeTmp, "opencode.jsonc"), { force: true })
+    fs.mkdirSync(path.join(homeTmp, "opencode.jsonc"))
+    const out = reconcileEngineConfigTruth()
+    expect(out.skipped).toBe(false)
+    if (!out.skipped) {
+      expect(out.bailedOut).toContain("unreadable")
+      expect(truthExists()).toBe(true) // skills.paths 注入不受 bail 阻断(REQ-059 既有契约)
+    }
+    expect(fs.existsSync(path.join(homeTmp, "opencode.jsonc"))).toBe(true) // 保留原样
+  })
+})

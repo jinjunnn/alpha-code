@@ -21,6 +21,7 @@ import { Portal } from "solid-js/web"
 import { useLocation } from "@solidjs/router"
 import { t } from "../i18n"
 import { parseRoute } from "../../shared/legacy-route-abi"
+import { initialDesiredState } from "../../shared/ext-install-policy"
 import { projectLabel } from "../sidebar/route"
 import { BuiltinControlsPanel } from "./builtin-controls-panel"
 import { catalog, catalogSource, entryVersion, refreshCatalog } from "./catalog-source"
@@ -157,7 +158,7 @@ export function ExtensionHub(props: {
   // 来源签名/已授权能力,已安装 pane 消费 health 三态(按 (id,scope) join,AC5 同名并存各取各)。
   const receiptFingerprint = (rs: readonly InstallReceipt[]) =>
     rs.map((r) => `${r.id}@${r.scope}@${r.version ?? ""}@${r.installedAt}`).join("|")
-  const [governance] = createResource(
+  const [governance, { refetch: refetchGovernance }] = createResource(
     () =>
       props.open()
         ? `${receiptFingerprint(ext.store.receipts)}:${receiptFingerprint(ext.store.projectReceipts)}:${projectDir() ?? ""}`
@@ -172,6 +173,38 @@ export function ExtensionHub(props: {
   const cloudLive = () => ext.store.mcp["cloud"]
   const [query, setQuery] = createSignal("")
   const [busy, setBusy] = createSignal<string | null>(null)
+  // #395(Codex r9 B3):启停唯一处理器 —— 行内开关(row)与详情页开关共用,保证详情页不再绕过
+  // desired-state/advisory 通道直连 MCP。入参已由调用方按各自数据源解出(receipt/当前启用态/是否
+  // live-unreceipted/mcp 连接态)。account:has-receipt → setInstallState(过 advisory + 账本 + config)
+  // 后再切 live;live-unreceipted → 纯 live connect/disconnect。两路 disconnect/dispose 失败均如实
+  // 提示待重载,advisory 拒(R14)走 error toast。
+  const runStateToggle = async (args: {
+    receipt: InstallReceipt
+    type: string
+    name: string
+    currentlyOn: boolean
+    liveUnreceipted: boolean
+    mcpConnected: boolean
+  }): Promise<void> => {
+    if (args.liveUnreceipted && args.type === "mcp") {
+      const mc = await ext.setMcpConnected(args.name, !args.mcpConnected)
+      if (mc.reason === "reload-pending") pushToast({ kind: "info", title: t("alpha.ext.statePendingReload") })
+      return
+    }
+    const next = args.currentlyOn ? "disabled" : "enabled"
+    const r = await ext.setInstallState(args.receipt, next)
+    if (!r.ok) {
+      pushToast({ kind: "error", title: r.reason ?? t("alpha.ext.stateFailed") })
+      return
+    }
+    let mcPending = false
+    if (args.type === "mcp") {
+      const mc = await ext.setMcpConnected(args.name, next === "enabled")
+      mcPending = mc.reason === "reload-pending"
+    }
+    if (r.reason === "reload-pending" || mcPending) pushToast({ kind: "info", title: t("alpha.ext.statePendingReload") })
+    await refetchGovernance()
+  }
   // T7/T9:安装阶段(粗粒度状态机:checking→installing)与逐条行内错误(B11:失败不裸 toast)。
   const [stage, setStage] = createSignal<Record<string, "checking" | "installing">>({})
   const [cardErr, setCardErr] = createSignal<Record<string, string>>({})
@@ -328,7 +361,11 @@ export function ExtensionHub(props: {
       }
       setCustomMcpOpen(false)
       setCmName(""); setCmCommand(""); setCmUrl(""); setCmEnv(""); setCmSecrets("")
-      flash(r.reason === "slow" ? t("alpha.ext.customMcpSlow") : t("alpha.ext.customMcpDone"), "success")
+      // #395(Codex r10 M5):重加已 disabled 的自定义 MCP —— 落盘成功但不激活连接,如实提示。
+      flash(
+        r.reason === "installed-disabled" ? t("alpha.ext.installedDisabled") : r.reason === "slow" ? t("alpha.ext.customMcpSlow") : t("alpha.ext.customMcpDone"),
+        "success",
+      )
     } finally {
       setCmBusy(false)
     }
@@ -665,6 +702,11 @@ export function ExtensionHub(props: {
       setErrFor(e.id, res.reason ?? t("alpha.ext.installFailed"))
       return null
     }
+    // #395:第三方 fresh 安装默认关 —— 成功文案如实说「已安装但未启用」,不暗示立即可用
+    // (分类与 main 落账同一 shared 真源;已装条目的重装/更新不改既有状态,不换文案)。
+    const willBeDisabled = !ext.isInstalled(e) && initialDesiredState({ origin: "catalog", source: e.source, kind: e.type }) === "disabled"
+    const addedFlash = (fallbackKey: "alpha.ext.added" | "alpha.ext.addedLive" | "alpha.ext.pluginRestart") =>
+      flash(willBeDisabled ? t("alpha.ext.addedDisabled") : t(fallbackKey), "success")
     try {
       if (e.type === "mcp") {
         setStageFor(e.id, "checking")
@@ -677,27 +719,29 @@ export function ExtensionHub(props: {
         setStageFor(e.id, "installing")
         const res = await addMcpEntry(e, secrets, true, authorization)
         if (!res.ok) return failOr(res)
-        if (res.reason === "slow") flash(t("alpha.ext.installSlow"))
-        else flash(t("alpha.ext.added"), "success")
+        // #395(Codex r8 M4):第三方 MCP 默认关 —— 装成功但未激活连接,如实提示「已装未启用」。
+        if (res.reason === "installed-disabled") flash(t("alpha.ext.installedDisabled"))
+        else if (res.reason === "slow") flash(t("alpha.ext.installSlow"))
+        else addedFlash("alpha.ext.added")
       } else if (e.type === "skill") {
         setStageFor(e.id, "installing")
         const res = await ext.installSkill(e, authorization)
         if (!res.ok) return failOr(res)
         if (res.reason === "reload-pending") flash(t("alpha.ext.addedPendingReload"))
-        else flash(t("alpha.ext.addedLive"), "success")
+        else addedFlash("alpha.ext.addedLive")
       } else if (e.type === "agent") {
         setStageFor(e.id, "installing")
         const res = await ext.installAgentEntry(e, authorization)
         if (!res.ok) return failOr(res)
         if (res.reason === "reload-pending") flash(t("alpha.ext.addedPendingReload"))
-        else flash(t("alpha.ext.addedLive"), "success")
+        else addedFlash("alpha.ext.addedLive")
         // 成功但携带 loud 诊断(CAS 自愈/授权账写失败等,#361 review r1):原样呈现,不吞。
         if (res.warning) flash(res.warning)
       } else if (e.type === "plugin") {
         setStageFor(e.id, "installing")
         const res = await ext.installPlugin(e, authorization)
         if (!res.ok) return failOr(res)
-        flash(t("alpha.ext.pluginRestart"), "success")
+        addedFlash("alpha.ext.pluginRestart")
       } else if (e.type === "bundle") {
         setStageFor(e.id, "installing")
         const res = await installBundle(e, authorization)
@@ -1180,12 +1224,35 @@ export function ExtensionHub(props: {
       const g = gov()
       return g ? healthPresentation(g.health) : undefined
     }
+    // #395:启用真源 = governance activation(账本 desiredState 的读投影);无 governance 行
+    // (live-unreceipted MCP 合成收据)按启用处理(其启停走 live 语义,见 toggleState)。
+    const desiredOn = () => gov()?.activation !== "disabled"
+    const stateBusy = createSignal(false)
+    const toggleState = async () => {
+      if (stateBusy[0]()) return // Codex r1 Minor 1:busy 门提前 —— 防双击并发。
+      stateBusy[1](true)
+      try {
+        // 启停逻辑统一进 runStateToggle(Codex r9 B3:与详情页共用一条通道)。
+        await runStateToggle({
+          receipt: row.receipt,
+          type: row.type,
+          name: row.name,
+          currentlyOn: desiredOn(),
+          liveUnreceipted: row.receipt.installedAt === "",
+          mcpConnected: !!row.mcp?.connected,
+        })
+      } finally {
+        stateBusy[1](false)
+      }
+    }
     const activationText = () =>
       row.type === "mcp"
         ? row.mcp?.connected
           ? t("alpha.ext.enabledLive")
           : t("alpha.ext.disabled")
-        : t("alpha.ext.installed")
+        : desiredOn()
+          ? t("alpha.ext.installed")
+          : t("alpha.ext.notEnabledHint") // #395:默认关/手动关的状态行提示
     const isUpdatable = () =>
       updatable().some((r) => r.id === row.receipt.id && r.name === row.name && r.scope === row.receipt.scope)
     return (
@@ -1199,6 +1266,12 @@ export function ExtensionHub(props: {
             <span class="alpha-ext-type-pill">{typeLabel(row.type)}</span>
             <Show when={row.version}>
               <span class="alpha-ext-ver">v{row.version}</span>
+            </Show>
+            {/* #395:未启用徽标(账本 disabled 的诚实呈现;开关打开即消失) */}
+            <Show when={row.receipt.scope !== "project" && !desiredOn()}>
+              <span class="alpha-ext-type-pill" data-off="">
+                {t("alpha.ext.notEnabledChip")}
+              </span>
             </Show>
             {/* REQ-105:archived + unsupported 徽标(上游归档;禁自动更新) */}
             <Show when={officeAdvisoryFor({ id: row.receipt.id, name: row.name })}>
@@ -1248,17 +1321,18 @@ export function ExtensionHub(props: {
             {updBusy() === row.receipt.id ? t("alpha.ext.adding") : t("alpha.ext.reviewUpdate")}
           </button>
         </Show>
-        {/* Toggle is MCP-only (connect/disconnect); fs/plugin have no live toggle.
-            Codex r1 M2:project 收据不出开关 —— setMcpConnected 按全局 live 名称操作,legacy 项目
-            账本的 MCP 记录若出开关,启停会误落同名 global 连接器。 */}
-        <Show when={row.type === "mcp" && row.receipt.scope !== "project"}>
+        {/* #395:开关只给**有禁用生效面**的类型 —— mcp/agent(主权注入)、plugin(alpha.jsonc plugin[])、
+            skill(允许集)。Codex r12 Major3:command/bundle 无生效面(翻 desiredState 谎报已禁),cloud 无
+            本地运行面,一律不出行内开关。project 收据只读不出开关(Codex r1 M2 + #307)。 */}
+        <Show when={(row.type === "mcp" || row.type === "agent" || row.type === "plugin" || row.type === "skill") && row.receipt.scope !== "project"}>
           <button
             class="alpha-ext-sw"
-            data-on={row.mcp?.connected ? "" : undefined}
-            aria-label={row.mcp?.connected ? t("alpha.ext.enabled") : t("alpha.ext.disabled")}
+            data-on={(row.type === "mcp" && row.receipt.installedAt === "" ? row.mcp?.connected : desiredOn()) ? "" : undefined}
+            disabled={stateBusy[0]()}
+            aria-label={desiredOn() ? t("alpha.ext.enabled") : t("alpha.ext.disabled")}
             onClick={(ev) => {
               ev.stopPropagation()
-              void ext.setMcpConnected(row.name, !row.mcp?.connected)
+              void toggleState()
             }}
           />
         </Show>
@@ -1339,6 +1413,7 @@ export function ExtensionHub(props: {
                     cloudReady={cloudReady}
                     onLogin={authState().status !== "logged-in" ? () => void window.api.auth.start() : undefined}
                     governance={governance}
+                    onToggleState={runStateToggle}
                   />
                 }
               >

@@ -19,6 +19,7 @@ import type { InstallMeta } from "../preload/types"
 import { opencodeHomeDir } from "./alpha-bridge"
 import { collectMcpFileRefPaths, gcMcpSecretVersionsLocked, pathIdentity, resolveMcpRefPath } from "./alpha-mcp-secrets"
 import { alphaGlobalRoot, removeReceipt } from "./alpha-installs"
+import { findRecordV2 } from "./ext-receipt-v2"
 import { alphaJsoncPath } from "./engine-config-truth"
 import { commandHeadBase } from "./platform"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
@@ -382,7 +383,11 @@ export function persistMcp(name: string, server: Record<string, unknown>, meta?:
   if (!valid.ok) return valid
   // #354:catalog 的 eager v1 兜底已下线 —— planner 提交面 fail-closed 后,v1 视图由
   // upsertRecordV2 的 toV1Receipt 锁步派生(单一账本所有权);未策展仍归 orchestrator。
-  return writeKey(mcpPluginTargetPath(), ["mcp", name], server)
+  // #395(Codex r5):未策展重加接入同一投影 —— 账本 disabled 的 server,重写叶必须带引擎
+  // 消费键 enabled:false(写「正常叶」= 确定性复活禁用)。内容照常更新;状态只走 set-state 通道。
+  const prior = findRecordV2(alphaGlobalRoot(), "mcp", name)
+  const projected = prior?.desiredState === "disabled" ? { ...server, enabled: false } : server
+  return writeKey(mcpPluginTargetPath(), ["mcp", name], projected)
 }
 
 /** 读 mcp.<name> 当前叶子(Codex review #355:orchestrator 失败补偿用精确 before-image ——
@@ -731,6 +736,7 @@ function pkgBase(spec: string): string {
   return at > 0 ? spec.slice(0, at) : spec
 }
 
+
 /**
  * Append a plugin package to the config `plugin` array (SINGULAR — the key opencode's V1 schema
  * accepts; `plugins` would hard-fail the whole config). opencode auto-installs it from npm on next
@@ -738,13 +744,19 @@ function pkgBase(spec: string): string {
  */
 /** Codex review #355:persist 必须回报真实变更 —— changed=false(恰同钉版已在)时调用方跳过落账
  *  (免虚增 generation);同 base 不同钉版一律显式拒绝(不许「配置不变、账本记新版」的谎)。 */
-export type PersistPluginResult = { ok: true; changed: boolean } | { ok: false; reason: string }
+export type PersistPluginResult =
+  | { ok: true; changed: boolean; projectedDisabled?: true }
+  | { ok: false; reason: string }
 
 export function persistPlugin(pkg: string, meta?: InstallMeta): PersistPluginResult {
   return withConfigWriteLock(() => persistPluginUnlocked(pkg, meta)) // plugin[] 是跨读写 RMW,整函数持锁
 }
 function persistPluginUnlocked(pkg: string, meta?: InstallMeta): PersistPluginResult {
   if (!SAFE_PACKAGE.test(pkg)) return { ok: false, reason: "invalid package name" }
+  // #395(Codex r5):未策展 npm 重加接入同一投影 —— 账本 disabled 的 plugin 条目必须保持缺席
+  // (引擎 import 早于 config-hook;写正常数组元素 = 确定性复活)。projectedDisabled 让调用方照常
+  // 刷账本(desiredState 当前策略优先,不翻),config 零写入,启用时按 configKey 补回。
+  const priorRecord = findRecordV2(alphaGlobalRoot(), "plugin", pluginRecordName(pkg))
   const target = mcpPluginTargetPath()
   const readPlugins = (file: string): unknown[] => {
     try {
@@ -758,7 +770,18 @@ function persistPluginUnlocked(pkg: string, meta?: InstallMeta): PersistPluginRe
   // opencode validates opencode.jsonc with its V1 schema, whose key is `plugin` (SINGULAR) —
   // `plugins` is an unrecognized key and makes opencode hard-fail the ENTIRE config (breaking every
   // session), see packages/core/src/v1/config/config.ts:56. Element shape is string | [string, opts].
-  const current = readPlugins(target)
+  // #395(Codex r5)步骤4:目标 config 读错误只容缺席 —— EACCES/EIO 当空数组会让下方 modify 以
+  // [pkg] 整替换既有 plugin[](clobber 其余条目);legacy XDG 侧保持容错(只用于幂等判重,读不出
+  // 顶多放行一个重复项,引擎合并侧去重)。
+  let current: unknown[]
+  try {
+    const parsed = parse(fs.readFileSync(target, "utf8")) as { plugin?: unknown } | undefined
+    current = Array.isArray(parsed?.plugin) ? (parsed!.plugin as unknown[]) : []
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code
+    if (code !== "ENOENT" && code !== "ENOTDIR") return { ok: false, reason: `config unreadable (${code ?? String(e)}) — fail closed` }
+    current = []
+  }
   const base = pkgBase(pkg)
   const findIn = (list: unknown[]): string | undefined => {
     for (const p of list) {
@@ -769,7 +792,24 @@ function persistPluginUnlocked(pkg: string, meta?: InstallMeta): PersistPluginRe
   }
   // idempotent across BOTH files: an entry still sitting in the legacy XDG config (pre-migration)
   // must not be duplicated into the alpha file — the engine merges the two plugin arrays.
-  const existing = findIn(current) ?? (target !== userConfigPath() ? findIn(readPlugins(userConfigPath())) : undefined)
+  const existingMain = findIn(current)
+  const existingLegacy = target !== userConfigPath() ? findIn(readPlugins(userConfigPath())) : undefined
+  // #395(Codex r5/r6 M1 → r11 pivot):账本 disabled 的 plugin 重加 —— 只需保证从 alpha.jsonc plugin[]
+  // 缺席(无用户 = 无他源;plugin union 无覆盖面,alpha.jsonc 是唯一生效面)。主 config 残留旧钉版
+  // (换钉版 @x/p@1→@x/p@2 或崩溃残留)→ 移除该 base 全部条目(投影为缺席),changed;缺席 → 纯账本刷新。
+  if (priorRecord?.desiredState === "disabled") {
+    if (existingMain !== undefined) {
+      const next = current.filter((p) => {
+        const s = typeof p === "string" ? p : Array.isArray(p) && typeof p[0] === "string" ? (p[0] as string) : null
+        return s === null || pkgBase(s) !== base
+      })
+      const w = writeKeyUnlocked(target, ["plugin"], next)
+      if (!w.ok) return w
+      return { ok: true, changed: true, projectedDisabled: true }
+    }
+    return { ok: true, changed: false, projectedDisabled: true }
+  }
+  const existing = existingMain ?? existingLegacy
   if (existing !== undefined) {
     if (existing === pkg) return { ok: true, changed: false } // 恰同钉版 → 真幂等,调用方跳过落账
     return { ok: false, reason: `plugin "${base}" already configured as "${existing}" — refusing silent version mismatch (requested "${pkg}")` }

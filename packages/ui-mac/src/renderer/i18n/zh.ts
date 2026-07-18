@@ -239,6 +239,7 @@ export const dict = {
   "alpha.ext.pluginRestart": "已写入,引擎自动加载中(首次启用需下载依赖)",
   "alpha.ext.addedPendingReload": "已安装,但引擎刷新失败 —— 重启应用后生效",
   "alpha.ext.installSlow": "已写入,首次连接较慢(在下载依赖),稍后自动连接",
+  "alpha.ext.installedDisabled": "已安装但未启用 —— 需要用时点行内开关打开",
   "alpha.ext.pickWorkspace": "选择该连接器可访问的目录",
   "alpha.ext.cancelled": "已取消",
   "alpha.ext.confirmTitle": "安装「{{name}}」?",
@@ -535,6 +536,12 @@ export const dict = {
   "alpha.ext.scopeProjectReadonly": "只读 · 来自导入/收编",
   "alpha.ext.scopeProjectEmpty": "此项目还没有本地扩展。项目扩展来自「导入」或从项目目录收编;目录安装始终装到全局。",
   "alpha.ext.reviewUpdate": "审查更新",
+  // ── #395(REQ-104):第三方默认关 + 全类型启用开关 ──
+  "alpha.ext.notEnabledChip": "已安装 · 未启用",
+  "alpha.ext.notEnabledHint": "未启用 —— 打开开关后生效",
+  "alpha.ext.addedDisabled": "已安装但未启用 —— 在「已安装」里打开开关后生效",
+  "alpha.ext.stateFailed": "启用状态切换失败",
+  "alpha.ext.statePendingReload": "已记录,引擎重载后生效(当前实例可能仍在运行旧状态)",
   // ── #396(REQ-104):套件详情页「整包事实」段 ──
   "alpha.ext.packFactsTitle": "整包事实",
   "alpha.ext.packSize": "下载体积",

@@ -240,6 +240,7 @@ export const dict = {
   "alpha.ext.pluginRestart": "Saved — engine is loading it (first enable downloads deps)",
   "alpha.ext.addedPendingReload": "Installed, but the engine refresh failed — takes effect after an app restart",
   "alpha.ext.installSlow": "Saved — first connect is slow (downloading deps); finishing in the background",
+  "alpha.ext.installedDisabled": "Installed but off — turn it on with the row switch when you want to use it",
   "alpha.ext.pickWorkspace": "Pick a directory this connector can access",
   "alpha.ext.cancelled": "Cancelled",
   "alpha.ext.confirmTitle": "Install \"{{name}}\"?",
@@ -535,6 +536,12 @@ export const dict = {
   "alpha.ext.scopeProjectReadonly": "Read-only \u00b7 from import/adoption",
   "alpha.ext.scopeProjectEmpty": "No project-local extensions yet. Project extensions come from Import or adoption from the project directory; catalog installs always go to Global.",
   "alpha.ext.reviewUpdate": "Review update",
+  // \u2500\u2500 #395(REQ-104):third-party disabled-by-default + universal enable switch \u2500\u2500
+  "alpha.ext.notEnabledChip": "Installed \u00b7 not enabled",
+  "alpha.ext.notEnabledHint": "Not enabled \u2014 turn on the switch to take effect",
+  "alpha.ext.addedDisabled": "Installed but not enabled \u2014 turn it on under Installed to take effect",
+  "alpha.ext.stateFailed": "Failed to change enable state",
+  "alpha.ext.statePendingReload": "Recorded — takes effect after engine reload (the current instance may still run the old state)",
   // \u2500\u2500 #396(REQ-104):bundle detail "pack facts" section \u2500\u2500
   "alpha.ext.packFactsTitle": "Pack facts",
   "alpha.ext.packSize": "Download size",

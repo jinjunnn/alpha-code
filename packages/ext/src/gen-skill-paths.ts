@@ -35,7 +35,31 @@ function liveGenerationDir(alphaRoot: string, key: string): string | null {
   }
 }
 
-/** 枚举 `<alphaRoot>/ext-store/skill--*` 的 live generation 目录(升序,稳定)。 */
+/** #395(REQ-104)账本 desiredState 投影门 —— 只注入 main 确证 enabled 的 skill key(允许集,非
+ *  禁用集)。Codex r5(步骤5):ext 无法 import ui-mac 的 decodeRecordV2,此前逐字段镜像 decoder
+ *  存在永久漂移风险(未知键/version/digest/files/transaction/id 前缀不变量漏校)—— 改为 **main 用
+ *  真 decoder 算出允许集写独立派生文件 `skills-enabled.json`**(ext-receipt-v2 与账本锁步写,方向
+ *  排序:收窄先行;boot reconcile 自愈 backfill),hook 只读该文件。
+ *  缺失/不可解析/形状异常 = 无从确证任何 skill 为 enabled → 全部不注入(fail closed):孤儿
+ *  generation、损坏账本、升级空窗一律走安全侧;条目须匹配受管 key 形状(SAFE_KEY)。 */
+function enabledSkillKeys(alphaRoot: string): Set<string> | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(readFileSync(join(alphaRoot, "skills-enabled.json"), "utf8"))
+  } catch {
+    return null // 缺失/不可解析 → fail closed
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null
+  const o = parsed as { v?: unknown; keys?: unknown }
+  if (o.v !== 1 || !Array.isArray(o.keys)) return null // 未知版本/形状 → fail closed
+  const out = new Set<string>()
+  for (const k of o.keys) {
+    if (typeof k === "string" && SAFE_KEY.test(k)) out.add(k)
+  }
+  return out
+}
+
+/** 枚举 `<alphaRoot>/ext-store/skill--*` 的 live generation 目录(升序,稳定;#395 过账本 enabled 门)。 */
 export function skillGenerationLiveDirs(alphaRoot: string): string[] {
   const storeRoot = join(alphaRoot, "ext-store")
   let entries: string[]
@@ -44,9 +68,12 @@ export function skillGenerationLiveDirs(alphaRoot: string): string[] {
   } catch {
     return []
   }
+  const enabled = enabledSkillKeys(alphaRoot)
+  if (enabled === null) return [] // 账本不可读 → 无 enabled 确证 → 不注入任何技能(fail closed)
   const dirs: string[] = []
   for (const name of entries) {
     if (!SAFE_KEY.test(name)) continue
+    if (!enabled.has(name)) continue
     const live = liveGenerationDir(alphaRoot, name)
     if (live) dirs.push(live)
   }

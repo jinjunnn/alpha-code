@@ -59,13 +59,31 @@ function legacyOpencodePath(): string {
   return jsonc
 }
 
-function readJsonc(file: string): Record<string, unknown> | undefined {
+type JsoncRead =
+  | { status: "ok"; value: Record<string, unknown> }
+  | { status: "absent" }
+  | { status: "unreadable"; reason: string }
+
+/** #395(Codex r5)步骤4:读错误只容缺席(ENOENT/ENOTDIR)—— EACCES/EIO 等「读不出」≠「不存在」。
+ *  truth 读不出还照写 = 以不完整基底重建 alpha.jsonc,会抹掉既有内容(含 disabled 投影键);
+ *  legacy/XDG 读不出当缺席 = 该迁的没迁还可能触发清理。非缺席错误一律显式上报,由调用方 fail-closed。
+ *  (解析容忍度不变:jsonc-parser 容错解析,非对象/解析异常仍视作无内容 —— 与既有迁移语义一致。) */
+function readJsonc(file: string): JsoncRead {
+  let text: string
   try {
-    if (!fs.existsSync(file)) return undefined
-    const parsed = parse(fs.readFileSync(file, "utf8")) as unknown
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : undefined
+    text = fs.readFileSync(file, "utf8")
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code
+    if (code === "ENOENT" || code === "ENOTDIR") return { status: "absent" }
+    return { status: "unreadable", reason: `${file}: ${code ?? String(e)}` }
+  }
+  try {
+    const parsed = parse(text) as unknown
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? { status: "ok", value: parsed as Record<string, unknown> }
+      : { status: "absent" }
   } catch {
-    return undefined
+    return { status: "absent" }
   }
 }
 
@@ -88,16 +106,31 @@ export function reconcileEngineConfigTruth(log?: Logger, opts?: ReconcileOptions
   const legacyFile = legacyOpencodePath()
   const xdgFile = xdgConfigPath()
 
-  const existing = readJsonc(truth)
-  const legacy = readJsonc(legacyFile)
-  const xdg = readJsonc(xdgFile)
+  const existingRead = readJsonc(truth)
+  if (existingRead.status === "unreadable") {
+    // 步骤4(#395):truth 读不出(非缺席)→ 不写 —— 以不完整基底重建 alpha.jsonc 会抹掉既有
+    // 内容(含 disabled 投影键 = 禁用被复活)。fail-closed,本次启动跳过 reconcile。
+    log?.warn(`[req059] alpha.jsonc unreadable — reconcile fail-closed, config untouched: ${existingRead.reason}`)
+    return { skipped: true, reason: `alpha.jsonc unreadable (fail closed): ${existingRead.reason}` }
+  }
+  const existing = existingRead.status === "ok" ? existingRead.value : undefined
+  const legacyRead = readJsonc(legacyFile)
+  const xdgRead = readJsonc(xdgFile)
+  if (xdgRead.status === "unreadable")
+    log?.warn(`[req059] XDG config unreadable — provider domain not lifted this launch: ${xdgRead.reason}`)
+  const legacy = legacyRead.status === "ok" ? legacyRead.value : undefined
+  const xdg = xdgRead.status === "ok" ? xdgRead.value : undefined
 
   // Ownership judgement only gates the legacy ~/.opencode MIGRATION (alpha wrote it wholesale) — NOT the
   // skills.paths injection below. Critical: a bail-out (e.g. an mcp without a receipt) must NOT block
   // skills.paths, or factory skills would go dark on exactly the machines that keep their legacy config.
   let bailedOut: string | undefined
   let legacyToMerge = legacy
-  if (legacy) {
+  if (legacyRead.status === "unreadable") {
+    // 步骤4(#395):legacy 读不出 ≠ 缺席 —— 不迁移、不清理(bail-out loud,原布局功能零损失)。
+    log?.warn(`[req059] legacy ~/.opencode config unreadable — skipping MIGRATION (kept in place): ${legacyRead.reason}`)
+    bailedOut = `legacy unreadable: ${legacyRead.reason}`
+  } else if (legacy) {
     const receipts = readLedger(alphaGlobalRoot()).receipts
     const receiptMcpNames = new Set(receipts.filter((r) => r.type === "mcp").map((r) => r.name))
     const receiptPluginKeys = new Set(

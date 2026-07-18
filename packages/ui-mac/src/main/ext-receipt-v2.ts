@@ -26,6 +26,7 @@ import type { InstallReceipt, InstallReceiptOrigin, InstallReceiptType } from ".
 import type { AppEnvironment } from "./alpha-environment"
 import { canonicalJson, sha256Hex } from "./ext-manifest-v2"
 import { validateReceipt } from "./alpha-installs"
+import { writeFileAtomicSync } from "./ext-atomic-fs"
 
 export const RECORD_SCHEMA_VERSION = 2 as const
 
@@ -282,6 +283,10 @@ export type LedgerV2Read = {
   /** v1-only 存量(有 receipt 无 record)—— 只读兼容面。 */
   v1Only: InstallReceipt[]
   warnings: string[]
+  /** Codex(增量 r13)Blocker:有 record 因损坏/重复/混合归属被**排除**(corruptKeys 非空或 unattributable
+   *  或文件级 corrupt)。这些被排除的记录里可能有 disabled mcp/agent —— 它们不进 records、injection 拿不到、
+   *  boot 投影也看不到 → disable 无从执行。调用方(boot)据此 fail-closed 阻断 sidecar。 */
+  hasExcludedRecords: boolean
 }
 
 const ledgerPath = (root: string) => path.join(root, LEDGER_FILE)
@@ -399,16 +404,21 @@ function parseLedger(root: string): { parsed: ParsedLedger; corrupt: boolean; re
       }
     }
   }
-  const records: InstallRecordV2[] = []
+  let records: InstallRecordV2[] = []
   const recordWarnings: string[] = []
   const rawCorruptRecords: unknown[] = []
   const corruptKeys = new Set<string>()
   let unattributable = false
   if (Array.isArray(raw.records)) {
+    // 先按 key 分组已解码记录 + 保留其原始条目(重复检测后可整组转损坏,原文保全)。
+    const decodedByKey = new Map<string, Array<{ record: InstallRecordV2; raw: unknown }>>()
     for (const entry of raw.records) {
       const decoded = decodeRecordV2(entry)
       if (decoded.ok) {
-        records.push(decoded.record)
+        const k = key(decoded.record.kind, decoded.record.name)
+        const arr = decodedByKey.get(k) ?? []
+        arr.push({ record: decoded.record, raw: entry })
+        decodedByKey.set(k, arr)
         continue
       }
       recordWarnings.push(`corrupt v2 record excluded (fail closed — not operable) in ${ledgerPath(root)}: ${decoded.errors[0]}`)
@@ -417,6 +427,21 @@ function parseLedger(root: string): { parsed: ParsedLedger; corrupt: boolean; re
       if (attributed) corruptKeys.add(attributed)
       else unattributable = true
     }
+    // Codex r11 Major:同 (kind,name) 有多条**均可解码**的记录 = 语义冲突(enable/disable 含义不明,
+    // 派生允许集的 any-enabled 会误注入)—— **整组 fail-closed**:排除全部、标 corruptKey(下游 set-state/
+    // uninstall/skills 派生一律拒该 key),原文保全供取证。
+    for (const [k, group] of decodedByKey) {
+      if (group.length > 1) {
+        corruptKeys.add(k)
+        for (const g of group) rawCorruptRecords.push(g.raw)
+        recordWarnings.push(`conflicting duplicate v2 records for ${k} (${group.length}) excluded (fail closed) in ${ledgerPath(root)}`)
+        continue
+      }
+      records.push(group[0].record)
+    }
+    // Codex r12 B3:一条有效 + 一条同 key 损坏 = 归属歧义 —— 有效那条也 fail-closed 排除(否则读侧/注入
+    // 仍信它)。损坏兄弟已在上方把 key 加进 corruptKeys;此处把这些 key 的有效记录一并剔出 records。
+    if (corruptKeys.size > 0) records = records.filter((r) => !corruptKeys.has(key(r.kind, r.name)))
   }
   // r18:字节级证据侧写 —— 结构保全经 JSON.parse→stringify 会丢重复键/原始词法;首次观测到
   // 损坏条目即把**原文件字节**按损坏集哈希落 `installs.json.evidence-<hex12>`(同一损坏集只落
@@ -447,15 +472,133 @@ function quarantineCorrupt(root: string): string | null {
   }
 }
 
+// ── #395 步骤5:skills「enabled 允许集」派生文件(hook 只读此文件,不再镜像 decoder)────────────
+
+const SKILLS_ENABLED_FILE = "skills-enabled.json"
+
+/** `<root>/skills-enabled.json` —— main 用真 decodeRecordV2 派生的 skill 允许集;
+ *  @alpha-code/ext 的注入门只读此文件(缺失/损坏 = fail-closed 不注入)。 */
+export function skillsEnabledPath(root: string): string {
+  return path.join(root, SKILLS_ENABLED_FILE)
+}
+
+/** 从 raw records(含损坏保全条目)派生 enabled skill 允许集 —— **真 decoder** 判定:
+ *  损坏/畸形记录解码失败自然排除,与主进程一切读侧同强度(未知键/digest/id 前缀等不变量全覆盖)。 */
+function enabledSkillKeysFromRecords(records: readonly unknown[]): string[] {
+  const keys = new Set<string>()
+  for (const r of records) {
+    const d = decodeRecordV2(r)
+    if (d.ok && d.record.kind === "skill" && d.record.desiredState === "enabled") keys.add(`skill--${d.record.name}`)
+  }
+  return [...keys].sort()
+}
+
+function isAbsenceCode(e: unknown): boolean {
+  const code = (e as NodeJS.ErrnoException)?.code
+  return code === "ENOENT" || code === "ENOTDIR"
+}
+
+function readDerivationKeys(file: string): string[] | "absent" | "unknown" {
+  let text: string
+  try {
+    text = fs.readFileSync(file, "utf8")
+  } catch (e) {
+    return isAbsenceCode(e) ? "absent" : "unknown"
+  }
+  try {
+    const parsed = JSON.parse(text) as { v?: unknown; keys?: unknown } | null
+    if (!parsed || typeof parsed !== "object" || parsed.v !== 1 || !Array.isArray(parsed.keys)) return "unknown"
+    return parsed.keys.filter((k): k is string => typeof k === "string")
+  } catch {
+    return "unknown"
+  }
+}
+
+const derivationTextOf = (keys: readonly string[]): string => JSON.stringify({ v: 1, keys }, null, 2) + "\n"
+
+export type SkillsDerivationOutcome =
+  | { ok: true }
+  /** staleAllowList = 无法证明陈旧允许集已收窄(可能仍列已禁 skill)→ 调用方须 fail-closed。 */
+  | { ok: false; reason: string; staleAllowList?: boolean }
+
+/** #395 步骤5(boot 自愈,调用方持 bundle 锁):从账本重算 skills 派生允许集(`writeFileAtomicSync`
+ *  单次原子写 = 掉电 durability + 完整写循环 + 目录 fsync)。账本文件级损坏/读错误 → 删派生文件
+ *  (缺失 = hook fail-closed 不注入);删不掉陈旧允许集 = 可能仍列已禁 skill → staleAllowList。
+ *  健康 → 原子重写(升级首启 backfill / 扩容失败残留收敛);写失败 = 旧派生可能过度授权 →
+ *  staleAllowList。 */
+export function reconcileSkillsDerivation(root: string): SkillsDerivationOutcome {
+  const { parsed, corrupt, readError } = parseLedger(root)
+  const file = skillsEnabledPath(root)
+  if (corrupt || readError) {
+    try {
+      fs.unlinkSync(file)
+    } catch (e) {
+      if (!isAbsenceCode(e))
+        return {
+          ok: false,
+          reason: `ledger unusable and stale skills allow-list could not be removed: ${e instanceof Error ? e.message : String(e)}`,
+          staleAllowList: true,
+        }
+    }
+    return { ok: true }
+  }
+  try {
+    // Codex r12 B3:只喂**干净 records**(parsed.records 已排除损坏/重复 key);rawCorruptRecords 含能
+    // 解码的重复条目,若重新解码会把已 fail-closed 的 skill 重新放进允许集 —— 绝不喂。
+    const keys = enabledSkillKeysFromRecords(parsed.records)
+    writeFileAtomicSync(file, derivationTextOf(keys))
+    return { ok: true }
+  } catch (error) {
+    // 写失败 = 旧派生原样保留,可能列出已在账本禁用的 skill(过度授权)→ fail-closed。
+    return { ok: false, reason: `skills allow-list write failed: ${error instanceof Error ? error.message : String(error)}`, staleAllowList: true }
+  }
+}
+
 /** r17(Blocker):receipts/records 接受 unknown —— 重建视图必须能原样携带解码失败条目
- *  (rawInvalidReceipts/rawCorruptRecords),序列化本就与类型无关。 */
+ *  (rawInvalidReceipts/rawCorruptRecords),序列化本就与类型无关。
+ *  #395 步骤5+6:skills 派生允许集与账本**锁步**,`writeFileAtomicSync` 原子写(掉电 durability +
+ *  完整写循环,杜绝短写截断)。**方向排序(Codex r6 B4 修正)**:任何**移除**(收窄)必须在账本写
+ *  之前落盘 —— 引擎绝不得看到已撤销的允许项;派生损坏(unknown)先写**空集**(最严格)。**新增**
+ *  (扩容)必须在账本写之后 best-effort 发布 —— 账本授权在先才允许 hook 加载。pre-shrink 失败 =
+ *  账本未写(回到起点,安全,ok:false);final publish 失败 = 账本已 durable + 派生停在更严格态
+ *  (skill 少注入 = 安全侧,boot 自愈补齐,ok:true + loud)。 */
 function writeLedgerFile(root: string, receipts: readonly unknown[], records: readonly unknown[]): { ok: true } | { ok: false; reason: string } {
   try {
     fs.mkdirSync(root, { recursive: true })
     const file = ledgerPath(root)
-    const tmp = `${file}.tmp-${process.pid}`
-    fs.writeFileSync(tmp, JSON.stringify({ v: 2, receipts, records }, null, 2) + "\n", "utf8")
-    fs.renameSync(tmp, file)
+    const derivationFile = skillsEnabledPath(root)
+    const nextKeys = enabledSkillKeysFromRecords(records)
+    const cur = readDerivationKeys(derivationFile)
+    // 收窄先行:算出「账本写之前必须落盘的更严格允许集」。
+    //   · unknown(派生损坏)→ 空集(无从算交集,最严格 fail-closed)。
+    //   · array 且有键将被移除 → current ∩ next(只留仍授权的,移除立即生效)。
+    //   · absent / array 无移除 → 无需 pre-write。
+    let preKeys: string[] | null = null
+    if (cur === "unknown") preKeys = []
+    else if (Array.isArray(cur)) {
+      const intersection = cur.filter((k) => nextKeys.includes(k))
+      if (intersection.length !== cur.length) preKeys = intersection
+    }
+    if (preKeys !== null) {
+      try {
+        writeFileAtomicSync(derivationFile, derivationTextOf(preKeys))
+      } catch (error) {
+        // 账本尚未写 → 回到起点(旧账本 + 旧派生一致),安全 fail-closed,用户/调用方可重试。
+        return { ok: false, reason: `refusing ledger write: could not shrink skills allow-list first (a stale entry may still enable a disabled skill): ${error instanceof Error ? error.message : String(error)}` }
+      }
+    }
+    writeFileAtomicSync(file, JSON.stringify({ v: 2, receipts, records }, null, 2) + "\n") // 账本 durable
+    // 完整 next 发布(新增在账本之后):absent 首建、pre 后补新增、纯扩容都需要;已相等则跳过。
+    const alreadyFinal = preKeys === null && Array.isArray(cur) && cur.length === nextKeys.length && cur.every((k) => nextKeys.includes(k))
+    if (!alreadyFinal) {
+      try {
+        writeFileAtomicSync(derivationFile, derivationTextOf(nextKeys))
+      } catch (error) {
+        // 派生停在更严格态(空集 / 交集 / 旧集去掉移除项)= skill 少注入 = 安全侧;账本已 durable,
+        // 下次 boot reconcile 按账本重算补齐。不让整体失败(账本才是真源)。
+        console.error(`[req395] skills allow-list final publish failed (stays stricter, boot self-heals): ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
     return { ok: true }
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : "failed to write ledger" }
@@ -469,7 +612,8 @@ export function readLedgerV2(root: string): LedgerV2Read {
   if (corrupt) warnings.push(`installs.json unreadable: ${ledgerPath(root)}`)
   const recordKeys = new Set(parsed.records.map((r) => key(r.kind, r.name)))
   const v1Only = parsed.receipts.filter((r) => !recordKeys.has(key(r.type, r.name)))
-  return { records: parsed.records, v1Only, warnings }
+  const hasExcludedRecords = corrupt || !!readError || parsed.corruptRecords.corruptKeys.size > 0 || parsed.corruptRecords.unattributable
+  return { records: parsed.records, v1Only, warnings, hasExcludedRecords }
 }
 
 export function findRecordV2(root: string, kind: InstallReceiptType, name: string): InstallRecordV2 | null {
@@ -595,6 +739,11 @@ export function upsertRecordV2(root: string, input: UpsertInput): LedgerV2Write 
     schemaVersion: RECORD_SCHEMA_VERSION,
     generation: input.generation ?? (prev ? prev.generation + 1 : hadV1 ? 2 : 1),
     ...(input.previousDigest ? { previousDigest: input.previousDigest } : prev?.manifestDigest ? { previousDigest: prev.manifestDigest } : {}),
+    // Codex r7 B4:desiredState 的「当前策略优先」必须在写账本的原子点(锁内 prev)决定 —— 不能沿用
+    // 调用方计划期(锁外)算的 input.desiredState。否则计划期读到 enabled、用户随后 disable、更新事务
+    // 提交旧 enabled 会把禁用复活。prev 存在 = 更新,一律沿用 prev 当前 desiredState(启停只经 set-state
+    // 通道改);fresh(无 prev)才用分类器传入值。
+    ...(prev ? { desiredState: prev.desiredState } : {}),
   }
   const check = decodeRecordV2(record)
   if (!check.ok) return { ok: false, reason: `refusing to write invalid record: ${check.errors.join("; ")}` }
@@ -645,6 +794,9 @@ export function upsertRecordsV2(root: string, inputs: UpsertInput[]): LedgerV2Ba
       schemaVersion: RECORD_SCHEMA_VERSION,
       generation: input.generation ?? (prev ? prev.generation + 1 : hadV1 ? 2 : 1),
       ...(input.previousDigest ? { previousDigest: input.previousDigest } : prev?.manifestDigest ? { previousDigest: prev.manifestDigest } : {}),
+      // Codex r7 B4:同 upsertRecordV2 —— 更新(prev 存在)在写点沿用 prev 当前 desiredState(锁内真值),
+      // 不用计划期传入值,防「计划读 enabled → 用户 disable → 提交复活」。批内同 key 后写基于累积态。
+      ...(prev ? { desiredState: prev.desiredState } : {}),
     }
     const check = decodeRecordV2(record)
     if (!check.ok) return { ok: false, reason: `refusing to write invalid record ${k}: ${check.errors.join("; ")}` }

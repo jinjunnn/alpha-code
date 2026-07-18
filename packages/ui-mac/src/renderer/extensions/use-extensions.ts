@@ -89,12 +89,17 @@ export interface ExtensionsApi {
     env: Record<string, string>,
     secrets: Record<string, string>,
   ): Promise<ActionResult>
-  /** Toggle a known MCP server: connect when shouldConnect, else disconnect. */
-  setMcpConnected(name: string, shouldConnect: boolean): Promise<void>
+  /** Toggle a known MCP server: connect when shouldConnect, else disconnect.
+   *  #395(Codex r8 M5):disconnect 失败(无 client / 抛错)= 旧连接可能仍在跑 → 返回 reload-pending,
+   *  调用方据此如实提示「运行面待重载」,不谎报已断连。 */
+  setMcpConnected(name: string, shouldConnect: boolean): Promise<ActionResult>
   /** Remove an MCP server from the user config + disconnect. */
   removeMcp(name: string): Promise<ActionResult>
   /** Uninstall any installed item by its receipt (fs/plugin/mcp) — files/config/secrets + receipt. */
   uninstall(receipt: InstallReceipt): Promise<ActionResult>
+  /** REQ-104 #395:启停(global 收据;project 组只读无开关)。main 侧账本+投影原子翻转;
+   *  fs 类翻转后 dispose 引擎使投影生效;mcp 的 live connect 由调用方按需衔接。 */
+  setInstallState(receipt: InstallReceipt, state: "enabled" | "disabled"): Promise<ActionResult>
   /** True if this catalog entry is already installed (MCP via SDK truth; others via receipts). */
   isInstalled(entry: CatalogEntry): boolean
   /** which-check the entry's runtime deps; { ok:false, missing } if a binary is absent. */
@@ -322,8 +327,14 @@ export function useExtensions(
       ...(authorization ? { authorization } : {}),
     })
     if (!r.ok) return r
-    // Codex review #350:MCP 成功结果必须带 liveMcp —— 缺失 = main 已按其它 kind 落盘(catalog
-    // 漂移),静默 ok 会装错类型还报成功;显式失败并如实说明已落盘事实。
+    // #395(Codex r8 M4):第三方 MCP 默认关 —— main 故意不发 liveMcp 并标 installedDisabled。这是成功的
+    // 「装 ≠ 跑」(config 已带 enabled:false,引擎跳过连接),不是失败。刷新列表后如实回「已装未启用」。
+    if (r.installedDisabled) {
+      await Promise.all([loadStatus(), loadInstalls()])
+      return { ok: true, reason: "installed-disabled" }
+    }
+    // Codex review #350:除默认关外,MCP 成功结果必须带 liveMcp —— 缺失 = main 已按其它 kind 落盘
+    // (catalog 漂移),静默 ok 会装错类型还报成功;显式失败并如实说明已落盘事实。
     if (!r.liveMcp) {
       await Promise.all([loadStatus(), loadInstalls()])
       return { ok: false, reason: `catalog kind mismatch: expected mcp, got "${r.kind}"(条目已按实际类型落盘,未激活连接)` }
@@ -335,6 +346,27 @@ export function useExtensions(
   async function liveAddAndConnect(name: string, config: unknown): Promise<ActionResult> {
     const c = client
     if (!c) return { ok: false, reason: "no server" }
+    // #395(Codex r10 B4/M5):连接前复查当前 activation —— 安装/持久化提交后返回 live 段,与用户并发
+    // disable(post-commit)竞态,或本就是「重加已 disabled 的自定义 MCP」。引擎 mcp.connect 强制
+    // enabled:true,会绕过账本/config 的 disabled 复活运行面。account 为 disabled 则不激活连接,如实
+    // 回「已装未启用」。(inventoryView 读账本 desiredState 投影;global mcp 无 projectDir。)
+    // #395 连接前复查 activation —— 与并发 disable 竞态、或重加已 disabled 的 MCP。引擎 mcp.add/connect
+    // 强制 enabled:true,会绕账本复活运行面。**只有 activation 明确 === "enabled" 才连接**;读失败/行缺席/
+    // activation unknown/disabled 一律 **fail-closed 不激活**(Codex 增量 r13 Major:此前只在 IPC 抛错才
+    // fail-closed,查询成功但行缺席/unknown 时 activation=undefined 仍照连 → 已禁 MCP 被激活)。
+    let activation: string | undefined
+    try {
+      const inv = await window.api.ext.inventoryView()
+      // Codex r11 B7:选**已安装 global 行**(scope==="global"),不落未安装浏览行(scope=null)。
+      activation = inv.rows.find((r) => r.kind === "mcp" && r.name === name && r.scope === "global")?.activation
+    } catch {
+      activation = undefined
+    }
+    if (activation !== "enabled") {
+      // 非明确 enabled(disabled / undefined / unknown / 行缺席 / 读失败)→ 不激活,已落盘。
+      await Promise.all([loadStatus(), loadInstalls()])
+      return { ok: true, reason: activation === "disabled" ? "installed-disabled" : "reload-pending" }
+    }
     const added = await withTimeout(c.mcp.add({ name, config } as any), 15000)
     if (added === TIMED_OUT) {
       void loadStatus()
@@ -378,16 +410,24 @@ export function useExtensions(
     return persistAndConnectMcp(name, config, secretVars.length ? secretVars : undefined)
   }
 
-  async function setMcpConnected(name: string, shouldConnect: boolean) {
+  async function setMcpConnected(name: string, shouldConnect: boolean): Promise<ActionResult> {
     const c = client
-    if (!c) return
+    // #395(Codex r8 M5):无 client / connect|disconnect 抛错 = 运行面未真正切换 —— 旧连接可能仍在
+    // 跑该 MCP。账本/config 已是目标态(desiredState),但当前 sidecar 实例的连接未随之刷新,如实回
+    // reload-pending,不谎报已生效。仅两侧都成功才回 ok。
+    if (!c) {
+      await loadStatus()
+      return { ok: true, reason: "reload-pending" }
+    }
     try {
       if (shouldConnect) await c.mcp.connect({ name } as any)
       else await c.mcp.disconnect({ name } as any)
+      await loadStatus()
+      return { ok: true }
     } catch {
-      /* surfaced via the refreshed status */
+      await loadStatus()
+      return { ok: true, reason: "reload-pending" }
     }
-    await loadStatus()
   }
 
   async function removeMcp(name: string): Promise<ActionResult> {
@@ -433,6 +473,22 @@ export function useExtensions(
     await Promise.all([loadStatus(), loadInstalls()])
     // fs/plugin removal needs a rescan;cloud 只动账本(引擎无状态)无需 dispose。
     if (res.ok && receipt.type !== "mcp" && receipt.type !== "cloud") await refreshEngine()
+    if (receipt.type === "agent") void loadAgents()
+    return res
+  }
+
+  /** REQ-104 #395:启停(仅 global 收据;project 组只读)。main 侧原子翻转(mcp/agent/plugin =
+   *  journaled config 事务 + 账本;skill = 账本,投影由引擎侧注入门消费);fs 类随后 dispose 引擎
+   *  使投影立即生效;mcp 的 live connect/disconnect 由调用方(hub 开关)按语义衔接。 */
+  async function setInstallState(receipt: InstallReceipt, state: "enabled" | "disabled"): Promise<ActionResult> {
+    if (receipt.scope === "project") return { ok: false, reason: "project-scoped records have no enable switch (read-only group)" }
+    const res = await window.api.ext.setInstallState({ type: receipt.type, name: receipt.name, scope: "global", state })
+    if (!res.ok) return res
+    await loadInstalls()
+    // Codex r1 Blocker 3:账本已翻(committed),但 fs 类的运行面靠 dispose→惰性重建生效 —— dispose
+    // 失败(无 client/超时/异常)时旧引擎实例仍在跑该扩展,不得谎报已生效。透传 reload-pending,
+    // 调用方据此提示「已记录,待重载」而非直接宣称已启用/禁用。
+    if (receipt.type !== "mcp" && receipt.type !== "cloud" && !(await refreshEngine())) return { ok: true, reason: "reload-pending" }
     if (receipt.type === "agent") void loadAgents()
     return res
   }
@@ -622,6 +678,7 @@ export function useExtensions(
     setMcpConnected,
     removeMcp,
     uninstall,
+    setInstallState,
     isInstalled,
     checkRuntime,
     factorySkills: () => factoryIds(),

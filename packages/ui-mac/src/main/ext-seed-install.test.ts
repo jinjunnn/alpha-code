@@ -22,6 +22,7 @@ import { tryAcquireBundleLock } from "./ext-bundle-lock"
 import {
   compareVersionsSafe,
   installCatalog,
+  setInstallStateByKey,
   synthesizeManifest,
   uninstallByKey,
   type PlannerDeps,
@@ -88,7 +89,7 @@ function lockFileEntries(files: FileFixture[], opts: { writeBlobs?: boolean } = 
 }
 
 function buildSeed(
-  assets: Array<{ id: string; files: FileFixture[]; version?: string }>,
+  assets: Array<{ id: string; files: FileFixture[]; version?: string; source?: string }>,
   opts: { writeBlobs?: boolean; catalogVersion?: string } = {},
 ): SeedLock {
   let total = 0
@@ -101,10 +102,11 @@ function buildSeed(
       type: a.id.split(":")[0]!,
       version: a.version ?? "1.0.0",
       license: "MIT",
-      source: "alpha",
+      source: a.source ?? "alpha",
       redistributable: true as const,
       platforms: ["*"],
-      licenseFiles: [],
+      licenseFiles: a.source && a.source !== "alpha" ? ["LICENSE"] : [], // S8:第三方资产须随许可文本
+
       bytes,
       files,
     }
@@ -130,7 +132,8 @@ function buildSeed(
   return lock
 }
 
-const entryBase = { displayName: "d", description: "d", source: "official" as const, category: "test" }
+// #395:机器面测试用第一方 source(alpha)保持 enabled 投影 —— 默认关策略/disabled 投影有专项测试(ext-install-policy.test / 本文件末尾 #395 块)。
+const entryBase = { displayName: "d", description: "d", source: "alpha" as const, category: "test" }
 
 function bundledSkillEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
   return {
@@ -1359,5 +1362,44 @@ describe("seed capability authorize gate (REQ-100 #348)", () => {
     expect(first.authorization[0]!.previous).toBeNull()
     expect(resolveLiveGenerationDir(globalRoot, skillGenerationKey("hello"))).toBeNull()
     expect(findRecordV2(globalRoot, "skill", "hello")).toBeNull()
+  })
+})
+
+// ── #395(REQ-104):第三方(official/community)fresh 安装默认关 —— 落盘形态全查 ─────────────────
+
+describe("#395 第三方 seed 安装默认关(账本 disabled;持久化 config 投影:mcp enabled:false / plugin 缺席)", () => {
+  test("official plugin fresh:账本 disabled;plugin[] 写正常条目(disk);载荷照常物化;set-state 只翻账本", async () => {
+    buildSeed([{ id: "plugin:demo-plugin", files: PLUGIN_FILES, source: "official" }])
+    const entry = bundledPluginEntry({ source: "official" })
+    const r = await installAuthorized(pluginSeedIntent, makeSeedDeps({ bundledEntries: [entry] }))
+    expect(r.ok).toBe(true)
+    expect(findRecordV2(globalRoot, "plugin", "demo-plugin")!.desiredState).toBe("disabled")
+    // 持久化投影:disabled plugin 从 disk plugin[] 缺席(引擎 import 前);内容照常物化(disabled ≠ 未装)。
+    const dir = path.join(globalRoot, "plugins", `demo-plugin@${pluginDigest16(PLUGIN_FILES)}`)
+    const cfg: { plugin?: string[] } = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))
+    expect(cfg.plugin ?? []).toEqual([])
+    expect(fs.existsSync(path.join(dir, "plugin.js"))).toBe(true)
+    // 启用:按 configKey 补回 plugin[] 条目 + 账本翻开。
+    const en = setInstallStateByKey(
+      { type: "plugin", name: "demo-plugin", scope: "global", state: "enabled" },
+      { globalRoot: () => globalRoot, advisoryGate: () => ({ allowed: true }) },
+    )
+    expect(en.ok).toBe(true)
+    const cfg2: { plugin: string[] } = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))
+    expect(cfg2.plugin).toEqual([path.join(dir, "plugin.js")])
+    expect(findRecordV2(globalRoot, "plugin", "demo-plugin")!.desiredState).toBe("enabled")
+  })
+
+  test("official mcp fresh:账本 disabled;config 写正常叶(无 disabled 键);不发 liveMcp(装 ≠ 连)", async () => {
+    buildSeed([{ id: "mcp:demo", files: MCP_FILES, source: "official" }])
+    const entry = bundledMcpEntry({ source: "official" })
+    const r = await installAuthorized(mcpSeedIntent, makeSeedDeps({ bundledEntries: [entry] }))
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect("liveMcp" in r ? r.liveMcp : undefined).toBeUndefined() // 默认关不自动连
+    expect(findRecordV2(globalRoot, "mcp", "demo")!.desiredState).toBe("disabled")
+    // 持久化投影:disabled mcp 叶带引擎消费键 enabled:false(引擎查 mcp.enabled === false 即跳过)。
+    const cfg: { mcp: Record<string, Record<string, unknown>> } = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))
+    expect(cfg.mcp.demo?.enabled).toBe(false)
   })
 })

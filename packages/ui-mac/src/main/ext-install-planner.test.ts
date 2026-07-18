@@ -66,7 +66,8 @@ afterEach(() => {
 
 // ── catalog fixtures(已验 catalog 侧的条目;renderer 无从改写)─────────────────────────────────
 
-const base = { displayName: "d", description: "d", source: "official" as const, category: "test" }
+// #395:机器面测试用第一方 source(alpha)保持 enabled 投影(默认关策略另有专项测试)。
+const base = { displayName: "d", description: "d", source: "alpha" as const, category: "test" }
 
 const mcpEntry: CatalogEntry = {
   id: "mcp:markitdown",
@@ -424,7 +425,8 @@ describe("intent decoding — forged renderer facts have no channel (AC#2)", () 
 
 describe("manifest synthesis & pre-disk refusal (AC#1)", () => {
   test("synthesized manifest decodes strictly; five-dimension ownership(curated ≠ authored)", () => {
-    const verified: VerifiedCatalogEntry = { entry: mcpEntry, channel: "remote", catalogVersion: "2026-07-13.1" }
+    // curated≠authored 的语义靠第三方 source 才能显形(#395 全局 fixture 改 alpha 后此处本地覆盖)。
+    const verified: VerifiedCatalogEntry = { entry: { ...mcpEntry, source: "official" }, channel: "remote", catalogVersion: "2026-07-13.1" }
     const decoded = decodeManifestV2(synthesizeManifest(verified))
     expect(decoded.ok).toBe(true)
     if (!decoded.ok) return
@@ -463,6 +465,21 @@ describe("manifest synthesis & pre-disk refusal (AC#1)", () => {
 })
 
 // ── MCP:grants 校验 + main 重建配置 ────────────────────────────────────────────────────────────
+
+describe("MCP install — #395 默认关(第三方 source)", () => {
+  test("Codex r8 M4:official source MCP 默认关 —— 落 enabled:false + 不发 liveMcp + 标 installedDisabled", async () => {
+    const officialMcp: CatalogEntry = { ...mcpEntry, source: "official" }
+    const { deps } = makeDeps({ entries: [officialMcp] })
+    const r = await installAuthorized({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "s" } } }, deps)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.kind).toBe("mcp")
+    expect(r.installedDisabled).toBe(true) // renderer 据此报「已装未启用」而非 kind 漂移失败
+    expect(r.liveMcp).toBeUndefined() // 装 ≠ 连
+    expect(mcpLeafOnDisk("markitdown")?.enabled).toBe(false) // 引擎消费键落盘
+    expect(findRecordV2(globalRoot, "mcp", "markitdown")?.desiredState).toBe("disabled")
+  })
+})
 
 describe("MCP install — facts re-derived from catalog, grants validated", () => {
   test("happy path(#378):config leaf 由引擎 config action 落盘;密钥走版本化 {file:} 通道;record 由 commitReceipt 落账", async () => {
@@ -988,7 +1005,7 @@ describe("legacy project manage (AC#3/AC#4 semantics kept for residuals)", () =>
     expect(findRecordV2(rootB, "skill", "demo")).not.toBeNull()
 
     // 禁用 A 项目的 → global 与 B 不动
-    expect(setInstallStateByKey({ type: "skill", name: "demo", scope: "project", projectDir: projA, state: "disabled" }, { globalRoot: () => globalRoot, advisoryGate: () => ({ allowed: true }) }).ok).toBe(true)
+    expect((await setInstallStateByKey({ type: "skill", name: "demo", scope: "project", projectDir: projA, state: "disabled" }, { globalRoot: () => globalRoot, advisoryGate: () => ({ allowed: true }) })).ok).toBe(true)
     expect(findRecordV2(rootA, "skill", "demo")?.desiredState).toBe("disabled")
     expect(findRecordV2(globalRoot, "skill", "demo")?.desiredState).toBe("enabled")
     expect(findRecordV2(rootB, "skill", "demo")?.desiredState).toBe("enabled")
@@ -1041,7 +1058,7 @@ describe("legacy project manage (AC#3/AC#4 semantics kept for residuals)", () =>
     seedProjectCatalogRecord(projA)
     const projMoved = path.join(tmp, "proj-moved-state")
     fs.renameSync(projA, projMoved)
-    const r = setInstallStateByKey({ type: "skill", name: "demo", scope: "project", projectDir: projMoved, state: "disabled" }, { globalRoot: () => globalRoot, advisoryGate: () => ({ allowed: true }) })
+    const r = await setInstallStateByKey({ type: "skill", name: "demo", scope: "project", projectDir: projMoved, state: "disabled" }, { globalRoot: () => globalRoot, advisoryGate: () => ({ allowed: true }) })
     expect(r.ok).toBe(false)
     expect(findRecordV2(path.join(projMoved, ".alpha"), "skill", "demo")?.desiredState).toBe("enabled")
   })
@@ -1121,8 +1138,11 @@ describe("uninstall — facts from main's own ledger", () => {
     fs.writeFileSync(ledger, fs.readFileSync(ledger, "utf8").replace('"records": [', '"records": [{"kind":"skill","name":"demo","generation":-5},'))
     const r = await uninstallByKey({ type: "skill", name: "demo", scope: "global" }, deps)
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("corrupt v2 record for this key")
-    expect(findRecordV2(globalRoot, "skill", "demo")).not.toBeNull() // 记录仍在账 —— 不得谎报「已卸载」
+    // r12 B3 后:含损坏 sibling 的 key,lookup 层即 corrupt-match fail-closed 拒(更干净:不再"物删后
+    // 账删失败");reason 仍如实标 corrupt + fail closed。
+    if (!r.ok) expect(r.reason).toContain("is corrupt")
+    // 卸载失败=没删:文件字节仍含 demo 记录(不得谎报「已卸载」)。
+    expect(fs.readFileSync(ledger, "utf8")).toContain('"name":"demo"')
   })
 
   test("not installed → refuse (renderer cannot conjure a receipt)", async () => {
@@ -1409,8 +1429,8 @@ describe("#315 advisory 激活闸接线", () => {
     const globalRoot = deps.globalRoot()
     const ok = await installAuthorized({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
     expect(ok.ok).toBe(true)
-    expect(setInstallStateByKey({ type: "skill", name: "demo", scope: "global", state: "disabled" }, { globalRoot: () => globalRoot, advisoryGate: denyGate() }).ok).toBe(true)
-    const re = setInstallStateByKey({ type: "skill", name: "demo", scope: "global", state: "enabled" }, { globalRoot: () => globalRoot, advisoryGate: denyGate() })
+    expect((await setInstallStateByKey({ type: "skill", name: "demo", scope: "global", state: "disabled" }, { globalRoot: () => globalRoot, advisoryGate: denyGate() })).ok).toBe(true)
+    const re = await setInstallStateByKey({ type: "skill", name: "demo", scope: "global", state: "enabled" }, { globalRoot: () => globalRoot, advisoryGate: denyGate() })
     expect(re.ok).toBe(false)
     if (re.ok) throw new Error("unreachable")
     expect(re.reason).toContain("re-enable refused")
@@ -2282,7 +2302,8 @@ describe("atomic plugin replace via installCatalog (REQ-099 #352)", () => {
     expect(r.ok).toBe(true)
     if (!r.ok) return
     const cfg = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8")) as { plugin: string[] }
-    expect(cfg.plugin).toEqual(["@alpha/np@2.3.4"]) // 旧精确元素被换,不残留、不追加
+    // #395:disabled 插件的置换保持 plugin[] 缺席(丢旧不加新;更新 disabled 不重新启用),内容/账本照常换代。
+    expect(cfg.plugin).toEqual([])
     const rec = findRecordV2(globalRoot, "plugin", "np")!
     expect(rec.generation).toBe(old.generation + 1)
     expect(rec.version).toBe("2.3.4")

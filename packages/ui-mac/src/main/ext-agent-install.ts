@@ -21,6 +21,7 @@ import { readCasBlobVerified } from "./ext-cas"
 import type { CapabilityDiff } from "./ext-capability-grants"
 import { commitInputFromRecord } from "./ext-skill-generations"
 import { upsertRecordsV2, type ScopeIdentity, type UpsertInput } from "./ext-receipt-v2"
+import { nextDesiredState } from "./ext-install-policy"
 import {
   runExtensionTransaction,
   type HealthProbe,
@@ -108,7 +109,10 @@ export function agentFileProbe(root: string): HealthProbe {
     if (errors.length > 0) return { healthy: false, reason: `agent "${name}": live config is not valid jsonc` }
     const agentMap = isObj(cfg) ? cfg.agent : undefined
     const leaf = isObj(agentMap) ? agentMap[name] : undefined
-    if (!deepEqual(leaf, parsed.entry))
+    // #395:disable 是 Alpha 管理的启停投影叶(set-state/默认关写入),不来自 md —— 比对前剥离,
+    // 其余任何键背离仍如实判 fork(禁启用面被 md 内容偷改)。
+    const leafForCompare = isObj(leaf) && typeof leaf.disable === "boolean" ? Object.fromEntries(Object.entries(leaf).filter(([k]) => k !== "disable")) : leaf
+    if (!deepEqual(leafForCompare, parsed.entry))
       return { healthy: false, reason: `agent "${name}": live config entry diverged from md (md/config must not fork)` }
     return { healthy: true }
   }
@@ -127,6 +131,9 @@ export type AgentSeedInstall = {
   environment: AppEnvironment
   scope: ScopeIdentity
   origin: InstallReceiptOrigin
+  /** #395:目录条目 source(official/community/alpha)—— fresh-intake 初始启用分类输入;
+   *  非目录 intake(imported)缺省。 */
+  source?: string
   /** 唯一内容源:CAS(调用方先 promote;此处读取重验,缺失/篡改 fail-closed)。恰一个顶层 .md。 */
   casFile: { spec: TxFileSpec; casBaseRoot: string }
   /** #348:严格解码 manifest.capabilities(必填;空集也显式传,禁二次派生制造第二真源)。 */
@@ -190,7 +197,8 @@ export async function installAgentFromCas(root: string, spec: AgentSeedInstall):
     ...(spec.manifestDigest ? { manifestDigest: spec.manifestDigest } : {}),
     ...(spec.payloadDigest ? { payloadDigest: spec.payloadDigest } : {}),
     ...(spec.grantDigest ? { grantDigest: spec.grantDigest } : {}),
-    desiredState: "enabled",
+    // #395:fresh-intake 按来源分类(单一分类器 ext-install-policy);既有记录当前策略优先。
+    desiredState: nextDesiredState(root, "agent", spec.name, { origin: spec.origin, source: spec.source }),
     origin: spec.origin,
     files: [mdPath],
     configKey: `agent.${spec.name}`,
@@ -210,9 +218,14 @@ export async function installAgentFromCas(root: string, spec: AgentSeedInstall):
       },
       {
         // 副 item:无 capabilities(授权 key 归主 item,不参与授权评估也不落授权账)、无 receipt(账本单条)。
+        // #395:默认关的 agent 落引擎原生 disable:true(agent loader 查 value.disable 即移除该条目);
+        // enable 经 set-state 剥离 disable 键。
         key: agentConfigItemKey(spec.name),
         action: "config",
-        config: { target: configTarget, edits: [{ keyPath: ["agent", spec.name], value: parsed.entry }] },
+        config: {
+          target: configTarget,
+          edits: [{ keyPath: ["agent", spec.name], value: receiptTemplate.desiredState === "disabled" ? { ...parsed.entry, disable: true } : parsed.entry }],
+        },
       },
     ],
     ...(spec.authorization ? { authorization: spec.authorization } : {}),

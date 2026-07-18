@@ -12,6 +12,7 @@
 import { findReceipt } from "./alpha-installs"
 import { hasSkillGeneration } from "./ext-skill-generations"
 import { lookupForUninstall, upsertRecordV2, type LedgerV2Write, type ScopeIdentity } from "./ext-receipt-v2"
+import { nextDesiredState } from "./ext-install-policy"
 import type { AppEnvironment } from "./alpha-environment"
 import type { InstallReceiptOrigin, InstallReceiptType } from "../preload/types"
 
@@ -49,7 +50,8 @@ export function checkUncuratedConflict(root: string, kind: InstallReceiptType, n
   return { ok: true }
 }
 
-/** 未策展安装落账(id 恒 `user:<name>`,desiredState=enabled;generation 由 upsert 计算)。 */
+/** 未策展安装落账(id 恒 `user:<name>`;generation 由 upsert 计算)。desiredState 走统一分类器
+ *  (#395):非目录 intake = 用户显式导入,分类为 enabled;既有记录当前策略优先。 */
 export function recordUncuratedInstall(root: string, input: UncuratedInstallInput): LedgerV2Write {
   const conflict = checkUncuratedConflict(root, input.kind, input.name)
   if (!conflict.ok) return conflict
@@ -59,7 +61,7 @@ export function recordUncuratedInstall(root: string, input: UncuratedInstallInpu
     kind: input.kind,
     environment: input.environment,
     scope: input.scope,
-    desiredState: "enabled",
+    desiredState: nextDesiredState(root, input.kind, input.name, { origin: input.origin }),
     origin: input.origin,
     installedAt: new Date().toISOString(),
     ...(input.version ? { version: input.version } : {}),
