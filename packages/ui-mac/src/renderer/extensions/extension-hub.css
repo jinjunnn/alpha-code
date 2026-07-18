@@ -1714,3 +1714,133 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
   border-top: 1px solid var(--a-border-faint);
   background: var(--a-bg-subtle);
 }
+
+/* ── #397 PR-B:四级货架与策展呈现(v6 已批稿;tokens 全读设计系统,零硬编码色)────────────── */
+
+/* 货架身份 chip:核心=success、精选=accent、接入=info、实验室=warning —— 四色即四货架 */
+.alpha-ext-chip[data-shelf="core"] {
+  background: var(--a-success-subtle);
+  color: var(--a-success);
+}
+.alpha-ext-chip[data-shelf="precache"] {
+  background: var(--a-accent-subtle);
+  color: var(--a-accent);
+}
+.alpha-ext-chip[data-shelf="connector"] {
+  background: var(--a-info-subtle);
+  color: var(--a-info);
+}
+.alpha-ext-chip[data-shelf="labs"] {
+  background: var(--a-warning-subtle);
+  color: var(--a-warning);
+}
+
+/* 推荐页货架组头(标题 + 一句用户语言副标题) */
+.alpha-ext-shelf-h {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 24px 0 4px;
+}
+.alpha-ext-shelf-h b {
+  font-size: var(--a-text-md);
+  font-weight: var(--a-weight-semibold);
+}
+.alpha-ext-shelf-h span {
+  font-size: var(--a-text-xs);
+  color: var(--a-text-tertiary);
+}
+
+/* 「未分级」尾组的诚实说明行 */
+.alpha-ext-group-note {
+  font-size: var(--a-text-xs);
+  color: var(--a-text-tertiary);
+  margin: 4px 0 8px;
+}
+
+/* 未分级卡的 ghost 安装按钮(可装但不促装) */
+.alpha-ext-add[data-variant="ghost"] {
+  background: transparent;
+  color: var(--a-text-secondary);
+  border: 1px solid var(--a-border);
+}
+
+/* 详情页:域名清单(mono,折叠展开) */
+.alpha-ext-domlist {
+  margin-top: 8px;
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-md);
+  padding: 9px 12px;
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-2xs);
+  color: var(--a-text-secondary);
+  line-height: 1.8;
+  background: var(--a-bg-subtle);
+}
+
+/* 详情页:组件与来源 row(校验态图标 + 摘要 + 动作) */
+.alpha-ext-sbomrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-md);
+  margin-bottom: 7px;
+  font-size: var(--a-text-sm);
+  background: var(--a-surface);
+}
+.alpha-ext-sbomst {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--a-bg-muted);
+  color: var(--a-text-tertiary);
+}
+.alpha-ext-sbomst[data-tone="ok"] {
+  background: var(--a-success-subtle);
+  color: var(--a-success);
+}
+.alpha-ext-sbomst[data-tone="err"] {
+  background: var(--a-error-subtle);
+  color: var(--a-error);
+}
+.alpha-ext-sbombd {
+  min-width: 0;
+  flex: 1;
+}
+.alpha-ext-sbombd b {
+  font-weight: var(--a-weight-medium);
+}
+.alpha-ext-sbombd small {
+  display: block;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-2xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.alpha-ext-sbommono {
+  font-family: var(--a-font-mono);
+}
+
+/* 轻量 ghost 按钮(展开/重试;组件与来源 row 与域名折叠共用) */
+.alpha-ext-ghostbtn {
+  border: 1px solid var(--a-border);
+  background: transparent;
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-xs);
+  font-weight: var(--a-weight-medium);
+  padding: 3px 10px;
+  border-radius: var(--a-radius-md);
+  cursor: pointer;
+  flex: none;
+}
+.alpha-ext-ghostbtn:hover {
+  background: var(--a-overlay-hover);
+}

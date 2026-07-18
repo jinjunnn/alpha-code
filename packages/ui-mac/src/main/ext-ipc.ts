@@ -3,7 +3,7 @@
 // config (ext-config.ts), and a runtime which-check so the UI can warn before adding a local MCP
 // whose binary (uv/node/…) is missing. All validation lives in ext-config / here — see ADR-014 §8.
 
-import { makeAdvisoryGate } from "./ext-advisory-gate"
+import { listAdvisoryBlockedFacts, makeAdvisoryGate } from "./ext-advisory-gate"
 import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from "electron"
 import { execFile } from "node:child_process"
 import * as fs from "node:fs"
@@ -664,6 +664,9 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   ipcMain.handle("ext-curation-blob", async (_event: IpcMainInvokeEvent, catalogId: unknown, kind: unknown) =>
     fetchCurationBlob({ resolveEntry: plannerDeps().resolveEntry }, catalogId, kind),
   )
+  // #397 PR-B:浏览/推荐面的公示阻断事实(main 派生已验公示 LKG + 随包基线;只读)——
+  // 货架排除消费此面,renderer 不得用静态表自判(Codex 裁决必改④)。
+  ipcMain.handle("ext-advisory-active", () => listAdvisoryBlockedFacts(userDataPath))
   // #347(Codex 裁决 d)+ #395:set-state 过 gate;锁由 planner 内部管理(自持 Bundle 锁)——
   // mcp/agent/plugin 在锁内做**持久化 config 投影普通原子写 + 账本翻转**(非事务;disable config 先、
   // enable 账本先,失败回滚,见 setInstallStateByKey),skill 纯账本翻转(投影经引擎注入门)。

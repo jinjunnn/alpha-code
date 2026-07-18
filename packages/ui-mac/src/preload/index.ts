@@ -184,6 +184,7 @@ const api: ElectronAPI = {
     listInstalls: (projectDir) => ipcRenderer.invoke("ext-list-installs", projectDir),
     uninstallV2: (intent) => ipcRenderer.invoke("ext-uninstall-v2", intent),
     setInstallState: (intent) => ipcRenderer.invoke("ext-set-install-state", intent),
+    advisoryActive: () => ipcRenderer.invoke("ext-advisory-active"),
     listGenerations: (intent) => ipcRenderer.invoke("ext-list-generations", intent),
     rollback: (intent, genId) => ipcRenderer.invoke("ext-rollback", intent, genId),
     migrateScan: () => ipcRenderer.invoke("ext-migrate-scan"),

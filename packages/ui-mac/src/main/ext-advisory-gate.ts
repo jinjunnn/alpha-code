@@ -17,7 +17,7 @@
 // 非目标(#315 票面外,票面注记):app 启动/MCP 重连对**已启用存量**的再生效(仅告警面,
 // REQ-105 UI 已示);事务 crash recovery 前滚(恢复的是已授权操作,授权时点已过闸)。
 
-import { officeAdvisoryFor } from "../shared/office-advisories"
+import { ARCHIVED_OFFICE_ADVISORIES, officeAdvisoryFor } from "../shared/office-advisories"
 import {
   BUILTIN_CATALOG_PUBKEY_B64,
   readAdvisoriesLKG,
@@ -121,4 +121,23 @@ export function makeAdvisoryGate(userDataPath: string, deps: ChannelClientDeps =
     }
     return r
   }
+}
+
+/** #397 PR-B:浏览/推荐面的**只读公示阻断事实**(main 派生;renderer 不得用静态表自判)。
+ *  ids = 当前会拦「新激活」的 catalogId 集:已验公示 LKG 的 active 记录(digest-scoped 记录同列 ——
+ *  货架排除是保守方向,展示面不携带 digest 上下文,与闸的「缺 digest 保守拦」同语义)∪ 随包
+ *  office 静态基线。fresh = 已验公示在场且未过 stale 窗(不可判定时如实 false —— 推荐面对
+ *  签名目录内容按闸语义整体保守,由调用方决定呈现)。 */
+export function listAdvisoryBlockedFacts(
+  userDataPath: string,
+  deps: ChannelClientDeps = {},
+): { ids: string[]; fresh: boolean } {
+  const nowMs = (deps.now ?? Date.now)()
+  const builtin = deps.builtinKeyB64 ?? BUILTIN_CATALOG_PUBKEY_B64
+  const trust = readCachedTrust(userDataPath, builtin, nowMs)
+  const verified = trust ? readAdvisoriesLKG(userDataPath, trust.doc, nowMs) : null
+  const ids = new Set<string>()
+  for (const office of ARCHIVED_OFFICE_ADVISORIES) ids.add(office.catalogId)
+  if (verified) for (const r of verified.doc.records) if (r.status === "active") ids.add(r.catalogId)
+  return { ids: [...ids].sort(), fresh: verified !== null && !verified.stale }
 }

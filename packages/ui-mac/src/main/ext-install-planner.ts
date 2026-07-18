@@ -4102,8 +4102,13 @@ export function decodeSetStateIntent(input: unknown): { ok: true; intent: SetSta
   return { ok: true, intent: { ...base.intent, state, ...(confirmExpiredReview !== undefined ? { confirmExpiredReview } : {}) } }
 }
 
-/** #397 enable 闸的机器可判别拒绝码(renderer 据此路由确认对话/诚实文案,不解析 reason 字符串)。 */
-export type SetStateRefusalCode = "session-grant-persistent-enable" | "expired-review-confirmation-required"
+/** #397 enable 闸的机器可判别拒绝码(renderer 据此路由确认对话/诚实文案,不解析 reason 字符串)。
+ *  PR-B 增 curation-unverifiable:catalog 不可得/身份失配的两类拒绝共用(用户语言文案同一句 ——
+ *  「暂时无法核实审核数据」;细分原因留在 reason 供日志)。 */
+export type SetStateRefusalCode =
+  | "session-grant-persistent-enable"
+  | "expired-review-confirmation-required"
+  | "curation-unverifiable"
 
 
 /** desiredState 翻转:scope 独立(global/各项目账本物理分域),项目 identity fail-closed 同卸载。
@@ -4199,6 +4204,7 @@ export async function setInstallStateByKey(
         if (!v)
           return {
             ok: false,
+            code: "curation-unverifiable",
             reason: `${record.kind} ${record.name}: cannot verify curation — the entry is not resolvable from the verified catalog (delisted/offline/security state); enable refused (fail closed)`,
           }
         // r1-5:身份四元组逐项相等(锁内 record vs **已验 entry**)—— 同时覆盖锁外/锁内 record
@@ -4207,6 +4213,7 @@ export async function setInstallStateByKey(
         if (record.version === undefined || v.id !== record.id || v.type !== record.kind || v.name !== record.name || v.version !== record.version)
           return {
             ok: false,
+            code: "curation-unverifiable",
             reason: `${record.kind} ${record.name}: verified catalog entry identity does not match this install (installed ${record.version ?? "unversioned"} vs catalog ${v.version ?? "unversioned"}) — refusing to apply its curation; update or reinstall first (fail closed)`,
           }
         const status = frozenCuration.status!

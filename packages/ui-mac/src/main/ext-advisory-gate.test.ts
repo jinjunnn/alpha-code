@@ -9,7 +9,7 @@ import * as crypto from "node:crypto"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { evaluateAdvisoryGate, makeAdvisoryGate } from "./ext-advisory-gate"
+import { evaluateAdvisoryGate, listAdvisoryBlockedFacts, makeAdvisoryGate } from "./ext-advisory-gate"
 import { setInstallStateByKey } from "./ext-install-planner"
 import { validateAdvisoriesDoc, type AdvisoriesDoc } from "./catalog-channels"
 import { refreshChannelCatalog } from "./catalog-channels"
@@ -277,5 +277,16 @@ describe("#315 review M3:非规范 catalog id 保守拦(catalog 面来源)", () 
     if (r.allowed) throw new Error("unreachable")
     expect(r.advisoryId).toBe("advisory-uncanonical-id")
     expect(evaluateAdvisoryGate(fresh(vectorAdvisories), { catalogId: "user:my-thing", provenance: "bundled" }).allowed).toBe(true)
+  })
+})
+
+// ── #397 PR-B:浏览/推荐面的公示阻断事实(main 派生;renderer 禁静态表自判)────────────────────
+describe("#397 listAdvisoryBlockedFacts(只读呈现事实)", () => {
+  test("无已验公示:ids = 随包 office 基线;fresh = false(不可判定 ≠ 空集,如实上报)", () => {
+    const { ARCHIVED_OFFICE_ADVISORIES } = require("../shared/office-advisories") as typeof import("../shared/office-advisories")
+    const r = listAdvisoryBlockedFacts(dir)
+    expect(r.fresh).toBe(false)
+    // office 静态基线全部在列(REQ-105 归档连接器)。
+    for (const office of ARCHIVED_OFFICE_ADVISORIES) expect(r.ids).toContain(office.catalogId)
   })
 })
