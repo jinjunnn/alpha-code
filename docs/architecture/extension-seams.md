@@ -34,6 +34,14 @@
 - **视觉改造走自有组件,不改 `pages/*`**:`pages/layout.tsx`(~90KB)、`session.tsx`(~57KB)、`home.tsx`(~47KB)是高 churn 大文件,改它们=每次升级重 merge。要换屏幕,逐个用自有组件替换,别编辑官方屏幕内部。
 - Mac 外壳保留 Electron:复用 desktop 的 sidecar 拉起 + Basic auth(`OPENCODE_SERVER_PASSWORD`)+ `oc://renderer` 协议 + `virtual:opencode-server` 内嵌(`desktop/electron.vite.config.ts`)。
 
+### B2. alpha ui-mac 的 renderer↔main 信任接缝(自有面,REQ-104 #397 增)
+
+自有 Mac 壳(`packages/ui-mac`)的 IPC 信任边界遵守与 desktop 相同的纪律(只新增 handler+preload 对,renderer 零路径/零 URL 输入权)。签名目录的策展消费(REQ-104)新增如下接缝,全部 fail-closed:
+
+- **策展契约执行器**(`src/shared/catalog-curation.ts`):entry `curation` 对象的唯一采信入口(`decodeEntryCuration`;未知 schema/未知键/不变量失败 = 整体不采信),main 与 renderer 共用同一真源;契约 = alpha-web `contracts/catalog-intake/CONTRACT.md`,由 vendored testvectors(`src/shared/catalog-intake-contract/`)钉死防漂移。
+- **只读 blob 通道**(`ext-curation-blob`,`src/main/curation-blobs.ts`):renderer 只给 `(catalogId, kind)`;entry/BlobRef/URL 全由 main 从已验 catalog 派生并按合同 §7.3 采信前置(bytes/sha256 精确匹配 + canonical 字节复验 + 剖面校验,拒重定向,5 MiB 帽)。失败不影响货架/启用判定。
+- **session-grant 持久投影强制**(`src/main/ext-curation-policy.ts`):`activationPolicy=session-grant` 的记录在一切持久投影面(startup reconcile、sidecar `OPENCODE_CONFIG_CONTENT` 注入)按 disabled 处理;持久 enable 在 `setInstallStateByKey` 被闸(会话级启用 = #408)。
+
 ## C. 禁区(升级必冲突,永不编辑)
 - `opencode/packages/core/**`(仅 `/public`、`/session/runner`、`/system-context` 稳定且仍在开发)
 - `server/src/api.ts`、`handlers.ts`、`groups/**`(静态路由组装)

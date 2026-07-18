@@ -424,6 +424,14 @@ export type ElectronAPI = {
       | { source: "remote" | "cache"; catalog: unknown; version: string; fetchedAt: string; error?: string; via: string; channel: "stable" | "preview" | "dev" }
       | { source: "none"; error: string }
     >
+    /** REQ-104 #397:SBOM(kind="sbom")/ 来源溯源(kind="provenance")blob 按需拉取。
+     *  合同 §7.3 采信前置全在 main(bytes/sha256 精确匹配 + canonical 字节复验 + 剖面校验,
+     *  拒重定向,5MiB 帽);renderer 零 URL/digest 输入权。失败不影响货架/启用判定,详情面
+     *  如实报错;重试 = 重调本方法。 */
+    curationBlob: (
+      catalogId: string,
+      kind: "sbom" | "provenance",
+    ) => Promise<{ ok: true; kind: "sbom" | "provenance"; sha256: string; data: unknown } | { ok: false; reason: string }>
     /** REQ-102 #316:packaged seed 浏览(main-owned 纯读安全投影 —— 零绝对路径/blob 布局/url;
      *  availability=bundled 与激活态正交;选装走 installCatalog 的 seed 意图,UI 归 REQ-103)。 */
     browseSeed: () => Promise<

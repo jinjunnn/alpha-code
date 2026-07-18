@@ -1,0 +1,56 @@
+{
+  "$id": "alpha.intake-provenance.v1",
+  "title": "Deterministic intake provenance blob (content-addressed under assets/<idDot>/<version>/alpha-curation/intake-provenance/, REQ-104 contract §5). No build timestamps, no local paths, no transport-derived values.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "catalogId", "version", "source", "manifest", "lockDigests", "artifactDigests"],
+  "properties": {
+    "schema": { "const": "alpha.intake-provenance.v1" },
+    "catalogId": { "type": "string", "pattern": "^(mcp|skill|plugin|bundle|agent|cloud):[a-z0-9][a-z0-9-]*$" },
+    "version": { "type": "string", "pattern": "^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "locator", "requestedRef", "resolved"],
+      "properties": {
+        "kind": { "enum": ["git", "npm", "pypi", "https"] },
+        "locator": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^(git\\+https://|https://|npm:|pypi:)[^\\s]+$" },
+        "requestedRef": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._/@-]*$" },
+        "resolved": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[A-Za-z0-9][A-Za-z0-9+/=:.@_-]*$" }
+      }
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256", "bytes"],
+      "properties": {
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "bytes": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "lockDigests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "sha256"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]*$" },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        }
+      }
+    },
+    "artifactDigests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "sha256"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]*$" },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        }
+      }
+    }
+  }
+}

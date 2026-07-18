@@ -1380,9 +1380,9 @@ describe("#395 第三方 seed 安装默认关(账本 disabled;持久化 config �
     expect(cfg.plugin ?? []).toEqual([])
     expect(fs.existsSync(path.join(dir, "plugin.js"))).toBe(true)
     // 启用:按 configKey 补回 plugin[] 条目 + 账本翻开。
-    const en = setInstallStateByKey(
+    const en = await setInstallStateByKey(
       { type: "plugin", name: "demo-plugin", scope: "global", state: "enabled" },
-      { globalRoot: () => globalRoot, advisoryGate: () => ({ allowed: true }) },
+      { globalRoot: () => globalRoot, advisoryGate: () => ({ allowed: true }), resolveEntry: async () => null },
     )
     expect(en.ok).toBe(true)
     const cfg2: { plugin: string[] } = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))

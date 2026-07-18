@@ -45,6 +45,7 @@ import type { Catalog } from "../renderer/extensions/catalog-types"
 import { environmentMutableRoot, getAlphaEnvironment } from "./alpha-environment"
 import { createInventoryQuery } from "./ext-inventory"
 import { decodeSetStateIntent, decodeUninstallIntent, installCatalog, installUncuratedAgentImport, installUncuratedSkillImport, listGenerationsByKey, removeInstallGrants, rollbackGenerationByKey, seedPluginFileProbe, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
+import { fetchCurationBlob } from "./curation-blobs"
 import { makeRecoveryGate } from "./ext-recovery-gate"
 import { adoptProjectLedger } from "./ext-project-adopt"
 import { buildGatedWriteChannels, buildJournalAdminChannels, GATED_WRITE_CHANNELS, JOURNAL_ADMIN_CHANNELS } from "./ext-write-channels"
@@ -657,12 +658,20 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
     await ledgerReady
     return listGenerationsByKey(intent, { globalRoot: alphaGlobalRoot })
   })
+  // #397:SBOM / 来源溯源 blob 按需拉取(合同 §7.3 采信前置全在 main;renderer 只给
+  // (catalogId, kind),entry/BlobRef/URL 全由 main 从已验 catalog 派生 —— 只读通道,零写面。
+  // 失败不影响货架/启用判定(摘要已内联),详情面如实报错 + 重试即重拉。
+  ipcMain.handle("ext-curation-blob", async (_event: IpcMainInvokeEvent, catalogId: unknown, kind: unknown) =>
+    fetchCurationBlob({ resolveEntry: plannerDeps().resolveEntry }, catalogId, kind),
+  )
   // #347(Codex 裁决 d)+ #395:set-state 过 gate;锁由 planner 内部管理(自持 Bundle 锁)——
   // mcp/agent/plugin 在锁内做**持久化 config 投影普通原子写 + 账本翻转**(非事务;disable config 先、
   // enable 账本先,失败回滚,见 setInstallStateByKey),skill 纯账本翻转(投影经引擎注入门)。
   // 此处不得预持锁(会与 planner 内锁互斥死锁)。
   const setInstallStateBody = async (intent: unknown) => {
-    return setInstallStateByKey(intent, { globalRoot: alphaGlobalRoot, advisoryGate: makeAdvisoryGate(userDataPath) })
+    // #397:enable 方向的 curation 闸需要 resolveEntry(已验 effective catalog)—— 直接用
+    // plannerDeps(自带 #314/#315 security browse-only 语义与懒冻结 advisory 视图)。
+    return setInstallStateByKey(intent, plannerDeps())
   }
   // ADR-030(#372):收回路径的残留检测(只读)与显式清理(journal 在场 fail-closed;
   // generation-aware —— 删受控 ext-store + 对应账本,绝不落 flat 删除)。

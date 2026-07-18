@@ -126,6 +126,9 @@ export interface CatalogEntry {
    *  REQ-102 #359 起 mcp/plugin 的 seed 条目也必须声明(双真源交叉验证输入):plugin = 离线
    *  运行载荷(plugin.js 等),mcp = 离线携带字节(安装语义仍派生自 installSpec,非运行载荷)。 */
   remoteAsset?: { version: string; files: Array<{ path: string; sha256: string; bytes: number; url: string }> }
+  /** REQ-104 #397:策展对象(合同 alpha.catalog.curation.v1)。**刻意 unknown** —— 唯一采信
+   *  入口 = shared/catalog-curation.ts decodeEntryCuration(fail-closed),禁止旁路直读。 */
+  curation?: unknown
 }
 
 export interface Catalog {

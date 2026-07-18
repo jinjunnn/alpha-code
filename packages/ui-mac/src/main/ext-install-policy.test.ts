@@ -48,3 +48,45 @@ describe("nextDesiredState(存量当前策略优先)", () => {
     expect(nextDesiredState(root, "skill", "demo", { origin: "catalog", source: "official" })).toBe("enabled")
   })
 })
+
+describe("#397 activationPolicy 声明优先序(Codex 裁决钉死)", () => {
+  test("规则 1:有效声明 > 来源分类 —— default-enabled 开(即使 official);default-disabled 关(即使 alpha)", () => {
+    expect(initialDesiredState({ origin: "catalog", source: "official", activationPolicy: "default-enabled" })).toBe("enabled")
+    expect(initialDesiredState({ origin: "catalog", source: "alpha", activationPolicy: "default-disabled" })).toBe("disabled")
+  })
+
+  test("session-grant → 持久账本恒 disabled(会话级启用 = #408)", () => {
+    expect(initialDesiredState({ origin: "catalog", source: "official", activationPolicy: "session-grant" })).toBe("disabled")
+  })
+
+  test("复审过期(排他截止):fresh install 一律先落 disabled,即使 default-enabled", () => {
+    expect(initialDesiredState({ origin: "catalog", source: "alpha", activationPolicy: "default-enabled", reviewExpired: true })).toBe("disabled")
+    expect(initialDesiredState({ origin: "catalog", source: "official", activationPolicy: "default-disabled", reviewExpired: true })).toBe("disabled")
+  })
+
+  test("声明优先于 cloud 例外;无声明时 cloud 例外与 #395 面逐字不变", () => {
+    expect(initialDesiredState({ origin: "catalog", source: "official", kind: "cloud", activationPolicy: "default-disabled" })).toBe("disabled")
+    expect(initialDesiredState({ origin: "catalog", source: "official", kind: "cloud" })).toBe("enabled")
+  })
+
+  test("声明只对 origin=catalog 生效(非目录 intake 不进合同面)", () => {
+    expect(initialDesiredState({ origin: "imported", activationPolicy: "session-grant" })).toBe("enabled")
+  })
+
+  test("规则 3/4:prior 只对 default-enabled/default-disabled(与未策展面)保留;session-grant 不被 prior 保留", () => {
+    const w = upsertRecordV2(root, {
+      id: "mcp:labs-x",
+      name: "labs-x",
+      kind: "mcp",
+      environment: "prod",
+      scope: { kind: "global" },
+      desiredState: "enabled", // 非法存量(session-grant 不该持久 enabled)—— 重分类必须压回 disabled
+      origin: "catalog",
+      installedAt: "2026-07-17T00:00:00.000Z",
+    })
+    expect(w.ok).toBe(true)
+    expect(nextDesiredState(root, "mcp", "labs-x", { origin: "catalog", source: "official", activationPolicy: "session-grant" })).toBe("disabled")
+    // 同一记录若声明是 default-disabled → prior enabled 保留(存量不回溯)。
+    expect(nextDesiredState(root, "mcp", "labs-x", { origin: "catalog", source: "official", activationPolicy: "default-disabled" })).toBe("enabled")
+  })
+})

@@ -22,8 +22,12 @@ export { initialDesiredState, type FreshIntakeFacts } from "../shared/ext-instal
 
 /** 落账用启用态:有既有记录 = 当前策略优先(更新/重装绝不翻用户手动设过的状态);
  *  无记录 = 按 fresh-intake 分类。plan 期读账、锁内提交 —— fresh 场景同名并发装由既有
- *  fresh 门拒绝,窗口内不存在被翻的用户状态。 */
+ *  fresh 门拒绝,窗口内不存在被翻的用户状态。
+ *  #397(Codex 裁决必改①):session-grant 在 prior 之前判 —— 持久账本 enabled 的
+ *  session-grant 本身非法(会话级启用 = #408 瞬态,绝不落盘),prior 不得把它保留/复活;
+ *  prior 只对 default-enabled/default-disabled(及未策展保守面)保留。 */
 export function nextDesiredState(root: string, kind: InstallRecordV2["kind"], name: string, intake: FreshIntakeFacts): DesiredState {
+  if (intake.origin === "catalog" && intake.activationPolicy === "session-grant") return "disabled"
   const prior = findRecordV2(root, kind, name)
   if (prior) return prior.desiredState
   // kind 由本函数补入(cloud 例外判定,Codex r1 Major 2)—— 调用方无须逐点携带。
