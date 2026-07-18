@@ -1455,27 +1455,60 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
       return rollbackAll("receipt-commit", `receipt commit failed: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
+  // #336 r1 Major:receipt 已 durable = 越过可回滚点 —— **从此一切失败只前滚,绝不抛出、绝不
+  // 回滚**(抛出会悬置锁到 stale 接管,且磁盘 journal 停 switched 时恢复的回滚路径会制造
+  // 「receipt durable + live 回旧」分叉)。统一结果通道:失败如实入 authorizationPending +
+  // warnings,journal 保留非终态(switched/authorizing),gate/启动恢复前滚重试直至收敛。
+  // journal 仍在 switched 时**不清 staging**(万一后续恢复因 probe 不健康走回滚仍需 image;
+  // 达 authorizing 后恢复只前滚,staging 才无用可清)。
+  const pendingReturn = (failures: string[], clearStaging: boolean): TxResult => {
+    warnings.push(...failures)
+    if (clearStaging) removeDirGuarded(root, txStagingDir(root, txId), warnings)
+    lock.release()
+    log("tx-authorization-pending", { txId, failures })
+    return { ok: true, txId, committed: records, warnings, authorizationPending: failures }
+  }
   // generation receipt descriptor 快照(#313):与 receipt commit 同阶段落盘,供离线回滚复原元数据。
-  for (const it of journal.items)
-    if (actionOf(it) === "generation") writeReceiptSnapshot(root, it.key, it.genId, it.receipt, committedAt)
+  try {
+    for (const it of journal.items)
+      if (actionOf(it) === "generation") writeReceiptSnapshot(root, it.key, it.genId, it.receipt, committedAt)
+  } catch (error) {
+    if (error instanceof ExtTxCrashError) throw error
+    return pendingReturn(
+      [`receipt snapshot write failed: ${error instanceof Error ? error.message : String(error)} — recovery will forward-roll`],
+      false,
+    )
+  }
   crash("after-receipt-commit")
-  // #336:receipt 已 durable = 越过可回滚点 → 进入 `authorizing` 落授权账/收据;全部落位才
-  // committed。此前任何失败路径都不触碰授权账(abort/rollback 永不写 grant)。
-  advance("authorizing")
+  // #336:receipt 已 durable → 进入 `authorizing` 落授权账/收据;全部落位才 committed。
+  // 此前任何失败路径都不触碰授权账(abort/rollback 永不写 grant)。
+  try {
+    advance("authorizing")
+  } catch (error) {
+    if (error instanceof ExtTxCrashError) throw error
+    return pendingReturn(
+      [`journal progress write failed: ${error instanceof Error ? error.message : String(error)} — recovery will forward-roll`],
+      false,
+    )
+  }
   crash("after-authorizing")
   const authzFailures = writeCommitAuthorizationSync(root, journal, now)
   if (authzFailures.length > 0) {
-    // 授权投影未落位:journal 保留非终态 authorizing(gate/启动恢复只前滚重试直至成功);
-    // live+receipt 已 durable → 以成功臂判别字段如实上报,绝不 ok:false(ok:false = 计划未
-    // 落地,是 planner 各补偿路径的既有契约,post-commit 失败伪装 ok:false 会误触发补偿撤销
-    // 已落地计划)。staging 对 authorizing 前滚无用,照常清理。
-    warnings.push(...authzFailures)
-    removeDirGuarded(root, txStagingDir(root, txId), warnings)
-    lock.release()
-    log("tx-authorization-pending", { txId, failures: authzFailures })
-    return { ok: true, txId, committed: records, warnings, authorizationPending: authzFailures }
+    // 授权投影未落位:journal 保留非终态 authorizing;live+receipt 已 durable → 以成功臂判别
+    // 字段如实上报,绝不 ok:false(ok:false = 计划未落地,是 planner 各补偿路径的既有契约,
+    // post-commit 失败伪装 ok:false 会误触发补偿撤销已落地计划)。
+    return pendingReturn(authzFailures, true)
   }
-  advance("committed")
+  try {
+    advance("committed")
+  } catch (error) {
+    if (error instanceof ExtTxCrashError) throw error
+    // 投影已全部落位,仅终态化写失败 → journal 停 authorizing,恢复幂等重写投影后 finish。
+    return pendingReturn(
+      [`journal finalize write failed: ${error instanceof Error ? error.message : String(error)} — recovery will forward-roll`],
+      true,
+    )
+  }
   crash("before-gc")
 
   // ⑧ 有界 GC + staging 清理(均 warnings-only,不影响成功语义)。GC 只针对 generation(config 无代数)。
@@ -2202,7 +2235,14 @@ async function recoverOne(
       }
     }
     removeDirGuarded(root, staleStaging, warnings)
-    finish("committed", "crash recovery: authorization projection completed")
+    try {
+      finish("committed", "crash recovery: authorization projection completed")
+    } catch (error) {
+      // 终态化写失败同属 receipt-durable 之后的失败:保留 authorizing,下轮幂等重写投影后 finish。
+      const msg = error instanceof Error ? error.message : String(error)
+      log("recovery-authz-pending", { txId, warning: `journal finalize write failed: ${msg}` })
+      return { txId, state: journal.state, action: "none", detail: `journal finalize write failed: ${msg} — retained (forward-only retry)` }
+    }
     for (const w of warnings) log("recovery-warning", { txId, warning: w })
     log("recovery-resumed", { txId })
     // 报告最终 state(committed)—— recoveryClean 按报告 state 判净,读取时态会误判不干净。
@@ -2341,17 +2381,25 @@ async function recoverOne(
     if (healthy) {
       const committedAt = now().toISOString()
       const records: TxCommitRecord[] = journal.items.map((it) => buildCommitRecord(root, txId, it, committedAt))
-      let receiptReplayed = false
       try {
         await opts.commitReceipt(records) // 幂等 upsert(接缝契约)
         for (const it of journal.items)
           if (actionOf(it) === "generation") writeReceiptSnapshot(root, it.key, it.genId, it.receipt, committedAt) // #313 快照前滚
-        receiptReplayed = true
       } catch (error) {
-        warnings.push(`receipt replay failed: ${error instanceof Error ? error.message : String(error)}`)
-        // 落回滚路径:receipt 无法落 → live 不得与 receipt 背离
+        // #336 r1 Major:probe 健康 + 全翻转时,replay/snapshot 失败**不得落回滚** —— receipt 可能
+        // 已 durable(after-receipt-commit 崩溃、主路径 authorizing 进度写失败都停在 switched),
+        // 回滚会制造「receipt durable + live 回旧 + journal=rolled-back 终态」分叉且 gate 放行。
+        // 保留非终态待下轮重试(replay 幂等;账本暂时不可写属可重试故障)。
+        const msg = error instanceof Error ? error.message : String(error)
+        log("recovery-receipt-retry", { txId, warning: `receipt replay failed: ${msg}` })
+        return {
+          txId,
+          state: journal.state,
+          action: "none",
+          detail: `probe healthy but receipt replay failed: ${msg} — retained (forward-only retry)`,
+        }
       }
-      if (receiptReplayed) {
+      {
         // #336:receipt 已 durable = 越过可回滚点 —— 从此**只前滚,绝不落回滚路径**(回滚会造成
         // receipt/live 分叉)。先持久化 authorizing 进度,再落授权账/收据(与主路径同序;幂等,
         // 同一 helper);任一步失败 = 保留非终态,下次恢复继续前滚。
@@ -2378,7 +2426,14 @@ async function recoverOne(
           }
         }
         removeDirGuarded(root, staleStaging, warnings)
-        finish("committed", "crash recovery: switch verified healthy — receipt replayed")
+        try {
+          finish("committed", "crash recovery: switch verified healthy — receipt replayed")
+        } catch (error) {
+          // 终态化写失败同属 receipt-durable 之后的失败:保留 authorizing,下轮幂等重写投影后 finish。
+          const msg = error instanceof Error ? error.message : String(error)
+          log("recovery-authz-pending", { txId, warning: `journal finalize write failed: ${msg}` })
+          return { txId, state: "authorizing", action: "none", detail: `journal finalize write failed: ${msg} — retained (forward-only retry)` }
+        }
         for (const w of warnings) log("recovery-warning", { txId, warning: w })
         log("recovery-resumed", { txId })
         // 报告最终 state(committed)—— recoveryClean 按报告 state 判净,读取时态会误判不干净。

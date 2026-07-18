@@ -379,6 +379,7 @@ export const dict = {
   "alpha.ext.updated": "已更新到最新钉版",
   "alpha.ext.importFolderPick": "选择包含 SKILL.md 的技能文件夹",
   "alpha.ext.imported": "已导入「{{name}}」· 当场生效",
+  "alpha.ext.importedPendingRestart": "已导入「{{name}}」· 重启应用后生效",
   "alpha.ext.importing": "导入中…",
   "alpha.ext.importGitTitle": "从 Git 仓库导入技能",
   "alpha.ext.importGitHint": "仅支持 https 地址;浅克隆到临时目录,校验 SKILL.md frontmatter 通过后才写入 .alpha,不执行仓库内任何脚本。",

@@ -2517,7 +2517,9 @@ export type UncuratedImportDeps = {
 }
 
 export type UncuratedImportOutcome =
-  | { ok: true; kind: "skill" | "agent"; name: string; files?: string[]; warning?: string }
+  /** #336 r1:projectionLag = 账本已 durable 但 skills 派生允许集发布失败(本次未注入,重启自愈)
+   *  —— 独立判别字段(不折叠进 warning),renderer 据此给用户「重启后生效」级呈现。 */
+  | { ok: true; kind: "skill" | "agent"; name: string; files?: string[]; warning?: string; projectionLag?: string }
   | { ok: false; reason: string }
 
 /** 未策展 skill 的 fresh-only 门(agent 无更新链,skill 未策展导入同款 fresh-only)—— 与
@@ -2575,14 +2577,14 @@ export async function installUncuratedSkillImport(
     precondition: () => uncuratedSkillFreshGate(root, name),
   })
   if (!gen.ok) return { ok: false, reason: gen.reason }
-  // #336:projectionLag 并入用户可见 warning 通道(导入入口)。
-  const importWarnings = [...promoted.warnings, ...(gen.projectionLag ? [gen.projectionLag] : [])]
+  // #336 r1:projectionLag 以独立判别字段透传(不折叠进 warning)—— preload/renderer 端到端呈现。
   return {
     ok: true,
     kind: "skill",
     name,
     ...(gen.files.length ? { files: gen.files } : {}),
-    ...(importWarnings.length ? { warning: importWarnings.join("; ") } : {}),
+    ...(promoted.warnings.length ? { warning: promoted.warnings.join("; ") } : {}),
+    ...(gen.projectionLag ? { projectionLag: gen.projectionLag } : {}),
   }
 }
 

@@ -909,6 +909,89 @@ describe("#336 authorization projection fail-closed (authorizing state)", () => 
     expect(result.authorizationPending).toBeUndefined()
     expect(listTransactionJournals(root).map((j) => j.state)).toEqual(["committed"])
   })
+
+  // ── r1 Major:receipt durable 之后**任何**失败都只前滚 —— replay/snapshot/journal 进度失败均不得回滚 ──
+
+  test("crash at after-receipt-commit + 恢复期 replay 暂时失败:绝不回滚(receipt 可能已 durable)、零隔离;replay 恢复后前滚", async () => {
+    await installOk(["skill--demo"], V1, { probe: healthyProbe, commitReceipt: noop })
+    const crashed = runExtensionTransaction(
+      root,
+      planFor(["skill--demo"], V2),
+      hooksFor(V2, { crashAt: "after-receipt-commit", probe: healthyProbe, commitReceipt: noop }),
+    )
+    await expect(crashed).rejects.toThrow(ExtTxCrashError)
+    // replay 暂时失败(账本忙类故障)→ 保留 switched:live 不回旧、不隔离、不终态化
+    const still = await recoverExtensionTransactions(root, {
+      probe: healthyProbe,
+      commitReceipt: () => {
+        throw new Error("ledger busy")
+      },
+      pidAlive: () => false,
+      log: noop,
+    })
+    expect(still.ok).toBe(true)
+    const rep = still.reports.find((r) => r.action === "none" && r.state === "switched")!
+    expect(rep.detail).toContain("receipt replay failed")
+    expect(versionOf(root, "skill--demo")).toBe("v2")
+    expect(readQuarantineReceipt(root, rep.txId)).toBeNull()
+    expect(recoveryClean(still)).toBe(false)
+    // replay 恢复正常 → 前滚收敛 committed
+    const recovered = await recoverExtensionTransactions(root, { probe: healthyProbe, commitReceipt: noop, pidAlive: () => false, log: noop })
+    expect(recovered.reports.some((r) => r.action === "resumed-committed" && r.state === "committed")).toBe(true)
+    expect(versionOf(root, "skill--demo")).toBe("v2")
+  })
+
+  test("主路径 snapshot 写失败(receipts 占位为文件):只前滚通道 ok:true + pending、journal 停 switched、锁释放;障碍在场恢复保留、清障后收敛", async () => {
+    const planWithReceipt = (files: Record<string, string>): TxPlan => ({
+      items: [{ key: "skill--demo", files: specsOf(files), receipt: { marker: "snap" } }],
+    })
+    const first = await runExtensionTransaction(root, planWithReceipt(V1), hooksFor(V1, { probe: healthyProbe, commitReceipt: noop }))
+    expect(first.ok).toBe(true)
+    const recDir = path.join(root, "ext-store", "skill--demo", "receipts")
+    fs.rmSync(recDir, { recursive: true, force: true })
+    fs.writeFileSync(recDir, "occupied")
+    const result = await runExtensionTransaction(root, planWithReceipt(V2), hooksFor(V2, { probe: healthyProbe, commitReceipt: noop }))
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error("unreachable")
+    expect(result.authorizationPending?.some((f) => f.includes("receipt snapshot write failed"))).toBe(true)
+    expect(versionOf(root, "skill--demo")).toBe("v2") // live 不回旧
+    expect(fs.existsSync(bundleLockPath(root))).toBe(false) // 锁已释放,不悬置到 stale 接管
+    expect(listTransactionJournals(root).some((j) => j.state === "switched" && j.txId === result.txId)).toBe(true)
+    // 障碍在场:恢复 replay 后 snapshot 再失败 → 保留非终态,绝不回滚
+    const still = await recoverExtensionTransactions(root, { probe: healthyProbe, commitReceipt: noop, pidAlive: () => false, log: noop })
+    const rep = still.reports.find((r) => r.txId === result.txId)!
+    expect(rep.action).toBe("none")
+    expect(rep.state).toBe("switched")
+    expect(versionOf(root, "skill--demo")).toBe("v2")
+    // 清障 → 前滚收敛
+    fs.rmSync(recDir, { force: true })
+    const recovered = await recoverExtensionTransactions(root, { probe: healthyProbe, commitReceipt: noop, pidAlive: () => false, log: noop })
+    expect(recovered.reports.some((r) => r.txId === result.txId && r.action === "resumed-committed" && r.state === "committed")).toBe(true)
+  })
+
+  test("主路径 authorizing 进度写失败(journal 目录只读):只前滚通道 ok:true + pending、journal 停 switched、锁释放;解除后恢复前滚", async () => {
+    await installOk(["skill--demo"], V1)
+    const journalDir = path.join(root, "ext-tx", "journal")
+    const result = await runExtensionTransaction(
+      root,
+      planFor(["skill--demo"], V2),
+      hooksFor(V2, {
+        probe: healthyProbe,
+        // receipt 成功之后、advance("authorizing") 之前使 journal 目录不可写(注入点 = commitReceipt 时机)
+        commitReceipt: () => fs.chmodSync(journalDir, 0o555),
+      }),
+    )
+    fs.chmodSync(journalDir, 0o755)
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error("unreachable")
+    expect(result.authorizationPending?.some((f) => f.includes("journal progress write failed"))).toBe(true)
+    expect(versionOf(root, "skill--demo")).toBe("v2")
+    expect(fs.existsSync(bundleLockPath(root))).toBe(false)
+    expect(listTransactionJournals(root).some((j) => j.state === "switched" && j.txId === result.txId)).toBe(true)
+    const recovered = await recoverExtensionTransactions(root, { probe: healthyProbe, commitReceipt: noop, pidAlive: () => false, log: noop })
+    expect(recovered.reports.some((r) => r.txId === result.txId && r.action === "resumed-committed" && r.state === "committed")).toBe(true)
+    expect(versionOf(root, "skill--demo")).toBe("v2")
+  })
 })
 
 // ── 恢复杂项 ─────────────────────────────────────────────────────────────────────────────────

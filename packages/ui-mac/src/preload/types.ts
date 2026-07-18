@@ -464,13 +464,21 @@ export type ElectronAPI = {
     // REQ-019 T6:导入。folder = main 自弹目录选择器,用户实选目录即来源(REQ-098 #255:renderer
     // 不再传 srcDir),校验 SKILL.md frontmatter → 复制入 .alpha + receipt(imported);git = https-only
     // 浅克隆临时目录 → 同校验。外来内容绝不执行,symlink 不复制。
+    /** #336 r1:成功臂 warning = loud 诊断透传;projectionLag = 账本已 durable 但 skills 允许集
+     *  发布失败(本次未注入,重启自愈)—— renderer 必须据此呈现「重启后生效」级提示。 */
     importSkillFolder: (
       target?: InstallTarget,
-    ) => Promise<{ ok: true; files?: string[]; name?: string } | { ok: false; canceled?: boolean; reason: string }>
+    ) => Promise<
+      | { ok: true; files?: string[]; name?: string; warning?: string; projectionLag?: string }
+      | { ok: false; canceled?: boolean; reason: string }
+    >
     importSkillGit: (
       url: string,
       target?: InstallTarget,
-    ) => Promise<{ ok: true; files?: string[]; name?: string } | { ok: false; reason: string }>
+    ) => Promise<
+      | { ok: true; files?: string[]; name?: string; warning?: string; projectionLag?: string }
+      | { ok: false; reason: string }
+    >
     // REQ-018 安装账本:global(~/.alpha)+ project(<dir>/.alpha)receipts 合并只读视图
     listInstalls: (projectDir?: string) => Promise<InstallLedgerView>
     /** REQ-100 #313:key-based v2 卸载 —— renderer 只提供 type/name/scope,receipt 事实由 main
