@@ -239,6 +239,7 @@ export const dict = {
   "alpha.ext.pluginRestart": "已写入,引擎自动加载中(首次启用需下载依赖)",
   "alpha.ext.addedPendingReload": "已安装,但引擎刷新失败 —— 重启应用后生效",
   "alpha.ext.installSlow": "已写入,首次连接较慢(在下载依赖),稍后自动连接",
+  "alpha.ext.installedDisabled": "已安装但未启用 —— 需要用时点行内开关打开",
   "alpha.ext.pickWorkspace": "选择该连接器可访问的目录",
   "alpha.ext.cancelled": "已取消",
   "alpha.ext.confirmTitle": "安装「{{name}}」?",

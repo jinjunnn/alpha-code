@@ -683,7 +683,9 @@ export function ExtensionHub(props: {
         setStageFor(e.id, "installing")
         const res = await addMcpEntry(e, secrets, true, authorization)
         if (!res.ok) return failOr(res)
-        if (res.reason === "slow") flash(t("alpha.ext.installSlow"))
+        // #395(Codex r8 M4):第三方 MCP 默认关 —— 装成功但未激活连接,如实提示「已装未启用」。
+        if (res.reason === "installed-disabled") flash(t("alpha.ext.installedDisabled"))
+        else if (res.reason === "slow") flash(t("alpha.ext.installSlow"))
         else addedFlash("alpha.ext.added")
       } else if (e.type === "skill") {
         setStageFor(e.id, "installing")
@@ -1197,7 +1199,9 @@ export function ExtensionHub(props: {
       // Codex r1 Minor 1:busy 门提前到分支之前 —— 否则此分支在设 busy 前返回,可被双击并发。
       if (row.type === "mcp" && row.receipt.installedAt === "") {
         try {
-          await ext.setMcpConnected(row.name, !row.mcp?.connected)
+          // #395(Codex r8 M5):disconnect/connect 失败 = 运行面未真正切换 → 如实提示待重载,不静默。
+          const mc = await ext.setMcpConnected(row.name, !row.mcp?.connected)
+          if (mc.reason === "reload-pending") pushToast({ kind: "info", title: t("alpha.ext.statePendingReload") })
         } finally {
           stateBusy[1](false)
         }
@@ -1211,10 +1215,16 @@ export function ExtensionHub(props: {
           pushToast({ kind: "error", title: r.reason ?? t("alpha.ext.stateFailed") })
           return
         }
-        if (row.type === "mcp") await ext.setMcpConnected(row.name, next === "enabled")
+        // #395(Codex r8 M5):MCP 关闭时 disconnect 失败 = 旧连接仍在跑 —— 与 set-state 的 dispose 失败
+        // 一并视作待重载(两者任一 pending 都提示;设 setState 已提交 desiredState,运行面待刷新)。
+        let mcPending = false
+        if (row.type === "mcp") {
+          const mc = await ext.setMcpConnected(row.name, next === "enabled")
+          mcPending = mc.reason === "reload-pending"
+        }
         // Codex r1 Blocker 3:dispose 失败 = 账本已翻但旧引擎实例仍在跑 —— 如实告知「待重载」,
         // 不宣称已生效(状态开关反映已提交的 desiredState,提示条补充运行面尚未刷新)。
-        if (r.reason === "reload-pending") pushToast({ kind: "info", title: t("alpha.ext.statePendingReload") })
+        if (r.reason === "reload-pending" || mcPending) pushToast({ kind: "info", title: t("alpha.ext.statePendingReload") })
         await refetchGovernance()
       } finally {
         stateBusy[1](false)

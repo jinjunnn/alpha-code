@@ -89,8 +89,10 @@ export interface ExtensionsApi {
     env: Record<string, string>,
     secrets: Record<string, string>,
   ): Promise<ActionResult>
-  /** Toggle a known MCP server: connect when shouldConnect, else disconnect. */
-  setMcpConnected(name: string, shouldConnect: boolean): Promise<void>
+  /** Toggle a known MCP server: connect when shouldConnect, else disconnect.
+   *  #395(Codex r8 M5):disconnect 失败(无 client / 抛错)= 旧连接可能仍在跑 → 返回 reload-pending,
+   *  调用方据此如实提示「运行面待重载」,不谎报已断连。 */
+  setMcpConnected(name: string, shouldConnect: boolean): Promise<ActionResult>
   /** Remove an MCP server from the user config + disconnect. */
   removeMcp(name: string): Promise<ActionResult>
   /** Uninstall any installed item by its receipt (fs/plugin/mcp) — files/config/secrets + receipt. */
@@ -325,8 +327,14 @@ export function useExtensions(
       ...(authorization ? { authorization } : {}),
     })
     if (!r.ok) return r
-    // Codex review #350:MCP 成功结果必须带 liveMcp —— 缺失 = main 已按其它 kind 落盘(catalog
-    // 漂移),静默 ok 会装错类型还报成功;显式失败并如实说明已落盘事实。
+    // #395(Codex r8 M4):第三方 MCP 默认关 —— main 故意不发 liveMcp 并标 installedDisabled。这是成功的
+    // 「装 ≠ 跑」(config 已带 enabled:false,引擎跳过连接),不是失败。刷新列表后如实回「已装未启用」。
+    if (r.installedDisabled) {
+      await Promise.all([loadStatus(), loadInstalls()])
+      return { ok: true, reason: "installed-disabled" }
+    }
+    // Codex review #350:除默认关外,MCP 成功结果必须带 liveMcp —— 缺失 = main 已按其它 kind 落盘
+    // (catalog 漂移),静默 ok 会装错类型还报成功;显式失败并如实说明已落盘事实。
     if (!r.liveMcp) {
       await Promise.all([loadStatus(), loadInstalls()])
       return { ok: false, reason: `catalog kind mismatch: expected mcp, got "${r.kind}"(条目已按实际类型落盘,未激活连接)` }
@@ -381,16 +389,24 @@ export function useExtensions(
     return persistAndConnectMcp(name, config, secretVars.length ? secretVars : undefined)
   }
 
-  async function setMcpConnected(name: string, shouldConnect: boolean) {
+  async function setMcpConnected(name: string, shouldConnect: boolean): Promise<ActionResult> {
     const c = client
-    if (!c) return
+    // #395(Codex r8 M5):无 client / connect|disconnect 抛错 = 运行面未真正切换 —— 旧连接可能仍在
+    // 跑该 MCP。账本/config 已是目标态(desiredState),但当前 sidecar 实例的连接未随之刷新,如实回
+    // reload-pending,不谎报已生效。仅两侧都成功才回 ok。
+    if (!c) {
+      await loadStatus()
+      return { ok: true, reason: "reload-pending" }
+    }
     try {
       if (shouldConnect) await c.mcp.connect({ name } as any)
       else await c.mcp.disconnect({ name } as any)
+      await loadStatus()
+      return { ok: true }
     } catch {
-      /* surfaced via the refreshed status */
+      await loadStatus()
+      return { ok: true, reason: "reload-pending" }
     }
-    await loadStatus()
   }
 
   async function removeMcp(name: string): Promise<ActionResult> {

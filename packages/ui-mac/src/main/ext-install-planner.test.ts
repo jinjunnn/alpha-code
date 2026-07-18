@@ -466,6 +466,21 @@ describe("manifest synthesis & pre-disk refusal (AC#1)", () => {
 
 // ── MCP:grants 校验 + main 重建配置 ────────────────────────────────────────────────────────────
 
+describe("MCP install — #395 默认关(第三方 source)", () => {
+  test("Codex r8 M4:official source MCP 默认关 —— 落 enabled:false + 不发 liveMcp + 标 installedDisabled", async () => {
+    const officialMcp: CatalogEntry = { ...mcpEntry, source: "official" }
+    const { deps } = makeDeps({ entries: [officialMcp] })
+    const r = await installAuthorized({ catalogId: "mcp:markitdown", scope: { scope: "global" }, grants: { secrets: { API_KEY: "s" } } }, deps)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.kind).toBe("mcp")
+    expect(r.installedDisabled).toBe(true) // renderer 据此报「已装未启用」而非 kind 漂移失败
+    expect(r.liveMcp).toBeUndefined() // 装 ≠ 连
+    expect(mcpLeafOnDisk("markitdown")?.enabled).toBe(false) // 引擎消费键落盘
+    expect(findRecordV2(globalRoot, "mcp", "markitdown")?.desiredState).toBe("disabled")
+  })
+})
+
 describe("MCP install — facts re-derived from catalog, grants validated", () => {
   test("happy path(#378):config leaf 由引擎 config action 落盘;密钥走版本化 {file:} 通道;record 由 commitReceipt 落账", async () => {
     const { deps, calls } = makeDeps()

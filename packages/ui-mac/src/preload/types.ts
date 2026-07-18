@@ -452,7 +452,7 @@ export type ElectronAPI = {
        *  seedDir/清单/版本/receipt 语义全 main-owned。 */
       | { source: "seed"; assetId: string; scope: { scope: "global" }; authorization?: AuthorizationConfirmationWire }
     ) => Promise<
-      | { ok: true; kind: string; name: string; manifestDigest?: string; liveMcp?: { name: string; config: Record<string, unknown> }; installed?: string[]; skipped?: Array<{ id: string; reason: string }>; warning?: string }
+      | { ok: true; kind: string; name: string; manifestDigest?: string; liveMcp?: { name: string; config: Record<string, unknown> }; installedDisabled?: true; installed?: string[]; skipped?: Array<{ id: string; reason: string }>; warning?: string }
       /** #348:capability 授权闸 —— 零权威副作用暂停,带逐 item diff;确认后带 authorization 重驱同一通道。
        *  真判别联合(review minor):非 authorize 分支的 stage 类型排除 "authorize",中间层丢 diff 过不了类型检查。 */
       | { ok: false; stage: "authorize"; reason: string; authorization: CapabilityDiffWire[] }

@@ -251,6 +251,9 @@ export type CatalogInstallOutcome =
       manifestDigest?: string
       /** MCP:renderer 用于 live sdk.mcp.add 的完整配置(含用户刚输入的密钥真值 —— 该值本就来自 renderer)。 */
       liveMcp?: { name: string; config: Record<string, unknown> }
+      /** #395(Codex r8 M4):MCP 因**默认关/当前 disabled** 故意不发 liveMcp —— 装成功但不激活连接。
+       *  renderer 据此与「kind 漂移(装错类型)」区分:前者是成功的「装 ≠ 跑」,后者才是失败。 */
+      installedDisabled?: true
       /** bundle:main 已验证(存在性/循环依赖/平台)的有序子条目 id。 */
       bundle?: { items: string[] }
       /** bundle:一次原子事务提交的子条目 id(REQ-100 #311)。 */
@@ -1977,8 +1980,9 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       kind: "mcp",
       name: entry.name,
       manifestDigest,
-      // #395:默认关的 seed MCP 不发 live 段(装 ≠ 连;config 已带 enabled:false)。
-      ...(mcpReceipt.desiredState === "disabled" ? {} : { liveMcp: { name: entry.name, config: liveCfg } }),
+      // #395:默认关的 MCP 不发 live 段(装 ≠ 连;config 已带 enabled:false),显式标 installedDisabled
+      // 供 renderer 与 kind 漂移区分(Codex r8 M4)。
+      ...(mcpReceipt.desiredState === "disabled" ? { installedDisabled: true as const } : { liveMcp: { name: entry.name, config: liveCfg } }),
       ...(mcpWarnings.length ? { warning: mcpWarnings.join("; ") } : {}),
     }
   } else if (entry.type === "plugin") {
@@ -3396,7 +3400,8 @@ async function installSeedMcp(args: {
   ;(deps.transaction ?? passthroughTx).commit(args.txId)
   // liveMcp(裁决 B):renderer 据此 live sdk.mcp.add;seed 无密钥 → live = durable 原样。
   // #395:默认关的安装不发 live 段 —— 装 ≠ 连;config 已带 enabled:false,引擎跳过连接。
-  if (receiptTemplate.desiredState === "disabled") return { ok: true, kind: "mcp", name: entry.name, manifestDigest }
+  // Codex r8 M4:显式标 installedDisabled 供 renderer 与 kind 漂移区分(装成功 ≠ 装错类型)。
+  if (receiptTemplate.desiredState === "disabled") return { ok: true, kind: "mcp", name: entry.name, manifestDigest, installedDisabled: true }
   return { ok: true, kind: "mcp", name: entry.name, manifestDigest, liveMcp: { name: entry.name, config: derived.config } }
 }
 
