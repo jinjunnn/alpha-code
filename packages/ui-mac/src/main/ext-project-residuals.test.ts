@@ -248,9 +248,8 @@ describe("cleanProjectCatalogResiduals — 显式清理", () => {
     fs.mkdirSync(path.join(root, "ext-store", "hand-made"), { recursive: true })
 
     const r = await cleanProjectCatalogResiduals(proj, makeDeps())
-    expect(r.ok).toBe(true)
+    expect(r.ok).toBe(true) // #336:ok:true 只在零失败时成立(成功臂不再携带 failed)
     if (!r.ok) return
-    expect(r.failed).toEqual([])
     expect(r.cleaned.sort()).toEqual(["agent:helper", "skill:demo", "store:skill--ghosty"])
     expect(r.reported).toEqual(["unknown-store:hand-made"])
     expect(findRecordV2(root, "skill", "demo")).toBeNull()
@@ -267,7 +266,7 @@ describe("cleanProjectCatalogResiduals — 显式清理", () => {
     if (again.ok) expect(again.cleaned).toEqual([])
   })
 
-  test("失败隔离:agent flat 删除失败进 failed,skill 照常清完(Minor1 回归)", async () => {
+  test("失败隔离:agent flat 删除失败进 failed → 整单 ok:false(#336 判别位如实),skill 照常清完", async () => {
     flatRemovals.length = 0
     const proj = makeProject("isolation")
     const root = seedRecord(proj, "demo", "skill")
@@ -275,24 +274,31 @@ describe("cleanProjectCatalogResiduals — 显式清理", () => {
     seedRecord(proj, "helper", "agent")
     const deps = makeDeps({ removeFsInstall: () => ({ ok: false as const, reason: "disk says no" }) })
     const r = await cleanProjectCatalogResiduals(proj, deps)
-    expect(r.ok).toBe(true)
-    if (!r.ok) return
+    // #336:failed 非空绝不包成外层 ok:true(跨 IPC 的成功判别位必须如实);进度字段保留供呈现。
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reason).toContain("agent:helper")
     expect(r.cleaned).toEqual(["skill:demo"])
     expect(r.failed).toEqual([{ item: "agent:helper", reason: "disk says no" }])
     expect(findRecordV2(root, "agent", "helper")).not.toBeNull() // 失败项零变更
     expect(fs.existsSync(skillStorePaths(root, "demo").store)).toBe(false)
+
+    // 幂等重试:清障(deps 恢复正常)后重跑只补失败项 → ok:true
+    const retry = await cleanProjectCatalogResiduals(proj, makeDeps())
+    expect(retry.ok).toBe(true)
+    if (retry.ok) expect(retry.cleaned).toEqual(["agent:helper"])
   })
 
-  test("项目移动 → identity 不符的账单项 fail-closed 进 failed,不删任何东西", async () => {
+  test("项目移动 → identity 不符的账单项 fail-closed 进 failed → 整单 ok:false,不删任何东西", async () => {
     const proj = makeProject("moving")
     const root = seedRecord(proj, "demo", "skill")
     seedStore(root, "demo")
     const moved = path.join(tmp, "moved-away")
     fs.renameSync(proj, moved)
     const r = await cleanProjectCatalogResiduals(moved, makeDeps())
-    expect(r.ok).toBe(true)
-    if (!r.ok) return
-    expect(r.failed.some((f) => f.item === "skill:demo" && f.reason.includes("identity mismatch"))).toBe(true)
+    expect(r.ok).toBe(false) // #336:失败项在场 = 整单 ok:false
+    if (r.ok) return
+    expect(r.failed?.some((f) => f.item === "skill:demo" && f.reason.includes("identity mismatch"))).toBe(true)
     const movedRoot = path.join(moved, ".alpha")
     expect(findRecordV2(movedRoot, "skill", "demo")).not.toBeNull()
     expect(fs.existsSync(skillStorePaths(movedRoot, "demo").store)).toBe(true)

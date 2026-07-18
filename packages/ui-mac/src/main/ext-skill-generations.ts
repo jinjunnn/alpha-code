@@ -219,7 +219,9 @@ export type SkillGenerationInstall = {
 }
 
 export type SkillGenerationResult =
-  | { ok: true; generationDir: string; files: string[] }
+  /** #336:projectionLag = 账本已 durable 但 skills 派生允许集 final publish 失败(注入待 boot
+   *  自愈)—— 用户可见安装入口必须呈现(planner 各 warning 通道)。 */
+  | { ok: true; generationDir: string; files: string[]; projectionLag?: string }
   /** #348:authorize 暂停不是失败 —— 零权威副作用,携带逐 item diff 等确认重驱(Codex 裁决 C1:
    *  判别分支强制携带 diff,不允许 stage 折叠成裸字符串丢数据)。 */
   | { ok: false; stage: "authorize"; reason: string; authorization: CapabilityDiff[] }
@@ -281,6 +283,7 @@ export async function installSkillGeneration(root: string, spec: SkillGeneration
   // staging 由 populateFromCas 物化(读取重验 digest,缺失/篡改抛错 = 事务 abort);
   // 引擎 verify 随后对 staging 做结构精确校验(纵深)。
   const casPopulate = populateFromCas(spec.casFiles.casBaseRoot)
+  let projectionLag: string | undefined // #336:commitReceipt 闭包捕获派生允许集发布失败
   const hooks: TxHooks = {
     ...(spec.precondition ? { precondition: spec.precondition } : {}),
     populate: (_item, stagingDir) => casPopulate({ files: txFiles }, stagingDir),
@@ -291,6 +294,9 @@ export async function installSkillGeneration(root: string, spec: SkillGeneration
     commitReceipt: (records: TxCommitRecord[]) => {
       const written = upsertRecordsV2(root, records.map((rec) => commitInputFromRecord(rec)))
       if (!written.ok) throw new Error(`receipt commit failed for skill ${spec.name}: ${written.reason}`)
+      // #336:账本 durable 但派生允许集发布失败 —— 不 throw(会误触发引擎回滚与已 durable
+      // 账本分叉),捕获后随成功结果如实上报。
+      projectionLag = written.projectionLag
     },
   }
 
@@ -314,7 +320,7 @@ export async function installSkillGeneration(root: string, spec: SkillGeneration
   }
 
   const live = resolveLiveGenerationDir(root, key)
-  return { ok: true, generationDir: live ?? "", files: live ? [live] : [] }
+  return { ok: true, generationDir: live ?? "", files: live ? [live] : [], ...(projectionLag ? { projectionLag } : {}) }
 }
 
 /**

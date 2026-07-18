@@ -206,6 +206,7 @@ export const TX_CRASH_POINTS = [
   "after-switched",
   "after-post-probe",
   "after-receipt-commit",
+  "after-authorizing",
   "before-gc",
 ] as const
 export type TxCrashPoint = (typeof TX_CRASH_POINTS)[number]
@@ -243,7 +244,16 @@ export type TxHooks = {
 export type TxStage = "authorize" | TxStageNonAuthorizeWire
 
 export type TxResult =
-  | { ok: true; txId: string; committed: TxCommitRecord[]; warnings: string[] }
+  | {
+      ok: true
+      txId: string
+      committed: TxCommitRecord[]
+      warnings: string[]
+      /** #336:live+receipt 已 durable(计划已落地)但授权账/收据投影未落位 —— journal 保留非终态
+       *  `authorizing`,gate/启动恢复只前滚重试直至成功。绝不以 ok:false 表达(ok:false = 计划未
+       *  落地,是调用方补偿路径的既有契约)。内容同时并入 warnings。 */
+      authorizationPending?: string[]
+    }
   | {
       ok: false
       txId?: string
@@ -262,7 +272,8 @@ export type TxState =
   | "materialized" // generation 目录已 rename 就位(未 live)
   | "switching" // 已记录 previous 指针 + 翻转意图(commit 意图点)
   | "switched" // 全部指针已翻转(previous generation 保留)
-  | "committed" // receipt 已提交(终态,成功)
+  | "authorizing" // #336:receipt 已 durable(越过可回滚点),授权账/收据投影落位中 —— 非终态,恢复只前滚
+  | "committed" // receipt 已提交且授权投影落位(终态,成功)
   | "rolled-back" // 终态:指针已回旧,失败 generation 已隔离
   | "aborted" // 终态:switch 之前失败,current 全量不变
   | "uninstalling" // REQ-100 #313:卸载进行中(锁内 store-first 删除 → 删账)
@@ -781,13 +792,17 @@ export function readBundleAuthorizationReceipt(root: string, txId: string): Bund
 }
 
 /**
- * committed 之后的授权落账(主路径与恢复前滚共用;幂等):
- *   · 逐 item 写 grants.json(下次升级的 diff 基线)—— **只有走到 committed 的事务**才会执行,
+ * 越过可回滚点(receipt 已 durable、journal 达 `authorizing`)之后的授权落账(主路径与恢复
+ * 前滚共用;幂等):
+ *   · 逐 item 写 grants.json(下次升级的 diff 基线)—— 只有 receipt 已提交的事务才会执行,
  *     abort/rollback 一律不触碰授权账 → 拒绝/失败后旧版继续按旧授权健康运行;
  *   · 落 Bundle 授权收据(diff + optional 跳过,审计可见)。
- * 失败仅记 warnings(live 与 receipt 已真实;授权账落后的失败模式 = 下次多问一次,fail closed)。
+ * #336:失败**如实返回失败清单**(不再折叠进 warnings 终态化)—— 调用方据此把 journal 保留在
+ * 非终态 `authorizing`,由 gate/启动恢复前滚重试直至全部落位;grants 落后的窗口失败模式仍是
+ * 下次多问一次(fail closed),绝不静默继承。
  */
-function writeCommitAuthorizationSync(root: string, journal: TxJournal, now: () => Date, warnings: string[]): void {
+function writeCommitAuthorizationSync(root: string, journal: TxJournal, now: () => Date): string[] {
+  const failures: string[] = []
   for (const it of journal.items) {
     // #358 review Minor:未声明 capabilities 的 item 不落授权账(未参与授权 ≠ 已授权空集)。
     if (it.capabilities === undefined) continue
@@ -801,7 +816,7 @@ function writeCommitAuthorizationSync(root: string, journal: TxJournal, now: () 
         grantedAt: now().toISOString(),
       })
     } catch (error) {
-      warnings.push(`grant write failed for "${it.key}": ${error instanceof Error ? error.message : String(error)}`)
+      failures.push(`grant write failed for "${it.key}": ${error instanceof Error ? error.message : String(error)}`)
     }
   }
   if (journal.authorization) {
@@ -815,9 +830,10 @@ function writeCommitAuthorizationSync(root: string, journal: TxJournal, now: () 
     try {
       writeFileAtomicSync(authzReceiptPath(root, journal.txId), JSON.stringify(receipt, null, 2) + "\n")
     } catch (error) {
-      warnings.push(`authorization receipt write failed: ${error instanceof Error ? error.message : String(error)}`)
+      failures.push(`authorization receipt write failed: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
+  return failures
 }
 
 // ── 受守卫删除 ───────────────────────────────────────────────────────────────────────────────
@@ -1443,9 +1459,23 @@ export async function runExtensionTransaction(root: string, plan: TxPlan, hooks:
   for (const it of journal.items)
     if (actionOf(it) === "generation") writeReceiptSnapshot(root, it.key, it.genId, it.receipt, committedAt)
   crash("after-receipt-commit")
+  // #336:receipt 已 durable = 越过可回滚点 → 进入 `authorizing` 落授权账/收据;全部落位才
+  // committed。此前任何失败路径都不触碰授权账(abort/rollback 永不写 grant)。
+  advance("authorizing")
+  crash("after-authorizing")
+  const authzFailures = writeCommitAuthorizationSync(root, journal, now)
+  if (authzFailures.length > 0) {
+    // 授权投影未落位:journal 保留非终态 authorizing(gate/启动恢复只前滚重试直至成功);
+    // live+receipt 已 durable → 以成功臂判别字段如实上报,绝不 ok:false(ok:false = 计划未
+    // 落地,是 planner 各补偿路径的既有契约,post-commit 失败伪装 ok:false 会误触发补偿撤销
+    // 已落地计划)。staging 对 authorizing 前滚无用,照常清理。
+    warnings.push(...authzFailures)
+    removeDirGuarded(root, txStagingDir(root, txId), warnings)
+    lock.release()
+    log("tx-authorization-pending", { txId, failures: authzFailures })
+    return { ok: true, txId, committed: records, warnings, authorizationPending: authzFailures }
+  }
   advance("committed")
-  // 授权账只在 committed 后落盘(与恢复前滚共用;此前任何失败路径都不触碰授权账)
-  writeCommitAuthorizationSync(root, journal, now, warnings)
   crash("before-gc")
 
   // ⑧ 有界 GC + staging 清理(均 warnings-only,不影响成功语义)。GC 只针对 generation(config 无代数)。
@@ -2101,7 +2131,8 @@ async function recoverUninstall(
   writeJournalSync(root, { ...journal, state: "uninstalled", updatedAt: now().toISOString() })
   for (const w of warnings) log("recovery-uninstall-warning", { txId, warning: w })
   log("recovery-uninstalled", { txId, key, action })
-  return { txId, state: journal.state, action: "resumed-committed", detail: "uninstall forward-completed" }
+  // 报告最终 state(uninstalled)—— recoveryClean 按报告 state 判净,读取时态会误判不干净(#336)。
+  return { txId, state: "uninstalled", action: "resumed-committed", detail: "uninstall forward-completed" }
 }
 
 /** 回滚恢复补偿(REQ-100 #313):前滚 —— 确保指针翻到目标 gen,并从 journal receipt 补落新修订。
@@ -2130,7 +2161,8 @@ async function recoverRollback(
   }
   writeJournalSync(root, { ...journal, state: "committed", updatedAt: now().toISOString() })
   log("recovery-rolled-forward", { txId, key: it.key, target: it.genId })
-  return { txId, state: journal.state, action: "resumed-committed", detail: "rollback forward-completed" }
+  // 报告最终 state(committed)—— recoveryClean 按报告 state 判净,读取时态会误判不干净(#336)。
+  return { txId, state: "committed", action: "resumed-committed", detail: "rollback forward-completed" }
 }
 
 async function recoverOne(
@@ -2153,6 +2185,28 @@ async function recoverOne(
       return { txId, state: journal.state, action: "cleaned", detail: "removed leftover staging dir" }
     }
     return { txId, state: journal.state, action: "none", detail: "already terminal" }
+  }
+
+  // #336:authorizing = receipt 已 durable、live 已翻转(越过可回滚点)—— **只前滚**授权投影,
+  // 永不回滚(回滚会造成 receipt/live 分叉);probe/commitReceipt seam 均不需要(两步已完成)。
+  // 必须先于通用 switching/switched 判定处理。
+  if (journal.state === "authorizing") {
+    const failures = writeCommitAuthorizationSync(root, journal, now)
+    if (failures.length > 0) {
+      for (const f of failures) log("recovery-authz-pending", { txId, warning: f })
+      return {
+        txId,
+        state: journal.state,
+        action: "none",
+        detail: `authorization projection still failing: ${failures[0]!} — retained (forward-only retry)`,
+      }
+    }
+    removeDirGuarded(root, staleStaging, warnings)
+    finish("committed", "crash recovery: authorization projection completed")
+    for (const w of warnings) log("recovery-warning", { txId, warning: w })
+    log("recovery-resumed", { txId })
+    // 报告最终 state(committed)—— recoveryClean 按报告 state 判净,读取时态会误判不干净。
+    return { txId, state: "committed", action: "resumed-committed", detail: "authorization projection completed" }
   }
 
   if (journal.state === "staging" || journal.state === "staged" || journal.state === "materialized") {
@@ -2287,20 +2341,48 @@ async function recoverOne(
     if (healthy) {
       const committedAt = now().toISOString()
       const records: TxCommitRecord[] = journal.items.map((it) => buildCommitRecord(root, txId, it, committedAt))
+      let receiptReplayed = false
       try {
         await opts.commitReceipt(records) // 幂等 upsert(接缝契约)
         for (const it of journal.items)
           if (actionOf(it) === "generation") writeReceiptSnapshot(root, it.key, it.genId, it.receipt, committedAt) // #313 快照前滚
-        removeDirGuarded(root, staleStaging, warnings)
-        finish("committed", "crash recovery: switch verified healthy — receipt replayed")
-        // 前滚 = committed:授权账与授权收据同样落位(幂等;主路径同一 helper)
-        writeCommitAuthorizationSync(root, { ...journal, state: "committed" }, now, warnings)
-        for (const w of warnings) log("recovery-warning", { txId, warning: w })
-        log("recovery-resumed", { txId })
-        return { txId, state: journal.state, action: "resumed-committed", detail: "probe healthy; receipt replayed" }
+        receiptReplayed = true
       } catch (error) {
         warnings.push(`receipt replay failed: ${error instanceof Error ? error.message : String(error)}`)
         // 落回滚路径:receipt 无法落 → live 不得与 receipt 背离
+      }
+      if (receiptReplayed) {
+        // #336:receipt 已 durable = 越过可回滚点 —— 从此**只前滚,绝不落回滚路径**(回滚会造成
+        // receipt/live 分叉)。先持久化 authorizing 进度,再落授权账/收据(与主路径同序;幂等,
+        // 同一 helper);任一步失败 = 保留非终态,下次恢复继续前滚。
+        try {
+          writeJournalSync(root, { ...journal, state: "authorizing", updatedAt: now().toISOString() })
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error)
+          log("recovery-authz-pending", { txId, warning: `journal progress write failed: ${msg}` })
+          return {
+            txId,
+            state: journal.state,
+            action: "none",
+            detail: `receipt replayed but journal progress write failed: ${msg} — retained (forward-only retry)`,
+          }
+        }
+        const authzFailures = writeCommitAuthorizationSync(root, journal, now)
+        if (authzFailures.length > 0) {
+          for (const f of authzFailures) log("recovery-authz-pending", { txId, warning: f })
+          return {
+            txId,
+            state: "authorizing",
+            action: "none",
+            detail: `receipt replayed; authorization projection still failing: ${authzFailures[0]!} — retained (forward-only retry)`,
+          }
+        }
+        removeDirGuarded(root, staleStaging, warnings)
+        finish("committed", "crash recovery: switch verified healthy — receipt replayed")
+        for (const w of warnings) log("recovery-warning", { txId, warning: w })
+        log("recovery-resumed", { txId })
+        // 报告最终 state(committed)—— recoveryClean 按报告 state 判净,读取时态会误判不干净。
+        return { txId, state: "committed", action: "resumed-committed", detail: "probe healthy; receipt replayed" }
       }
     } else {
       warnings.push(probeReason)

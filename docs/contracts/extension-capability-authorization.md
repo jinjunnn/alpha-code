@@ -86,12 +86,18 @@ diff 与暂停、renderer 如何确认与重驱、授权账/收据如何落盘�
   `isSafeCapability`、拒重复;重建全新对象,不保留 renderer 引用。confirmed key 是否属于
   本次 plan、整集覆盖判定归引擎。
 
-## 5. 授权账与收据(仅 committed 后)
+## 5. 授权账与收据(越过可回滚点后,`authorizing` → `committed`)
 
 - 逐 item `grants.json`(`<root>/ext-store/<key>/grants.json`)与 bundle 级授权收据
   (`<root>/ext-tx/authz/<txId>.json`,含 `decidedAt` + 完整 `items` diff + `skippedOptional`)
-  **只在事务 journal 达 committed 后**落盘;abort/rollback 不碰授权账 —— 崩溃窗口的失败
-  模式 = 下次多问一次(fail closed),绝不静默继承。
+  在 **receipt 已 durable、事务越过可回滚点后**落盘:journal 先进非终态 `authorizing`,
+  授权账/收据**全部落位后才进入终态 `committed`**(#336)。abort/rollback 永不触碰授权账 ——
+  崩溃窗口的失败模式 = 下次多问一次(fail closed),绝不静默继承。
+- **授权投影写失败不终态化、不谎报**(#336):失败时 journal 保留在 `authorizing`,事务结果
+  仍 `ok:true`(live+receipt 已落地 —— `ok:false` = 「计划未落地」是调用方补偿路径的既有契约,
+  不得伪装)但携带 `authorizationPending` 判别字段(并入 warnings);恢复 gate/启动恢复对
+  `authorizing` **只前滚**重试 `writeCommitAuthorizationSync`(幂等)直至成功才 `committed`,
+  绝不回滚(回滚会造成 receipt/live 分叉);持续失败 = 非终态在案,gate 拒绝后续写(loud)。
 - 读面(REQ-103 #392):governance 只读查询(`ext-inventory.ts`)按账本在册 key 附带
   `granted` 快照(capabilities/grantedAt/txId,不透传 manifestDigest),详情页「已授权能力」
   段据此渲染 —— 零写面、不枚举 `ext-store`(孤儿 grant 不进读面)、无记录/坏 JSON 如实缺省
@@ -128,7 +134,9 @@ current、不写 config/receipt/grants/授权收据;已验证载荷可能留在�
 `ext-transaction-config.test.ts`(config target 前向圈禁)、
 `ext-skill-generations.test.ts`(适配层判别分支)、
 `ext-authz-wiring.test.ts`(renderer 承接合同)、`ext-transaction.test.ts`
-(引擎闸/整集覆盖/崩溃前滚,先于本票)。
+(引擎闸/整集覆盖/崩溃前滚,先于本票;**#336 授权投影 fail-closed 组:grants/收据写失败 →
+`ok:true + authorizationPending` + journal 停 `authorizing`、恢复只前滚重试直至 `committed`、
+`after-authorizing` 崩溃点并入 AC1 矩阵、恢复报告携带最终 state 供 `recoveryClean` 判净**)。
 
 ## 9. MCP 密钥版本化布局(#378,Codex 裁决 Q1)
 

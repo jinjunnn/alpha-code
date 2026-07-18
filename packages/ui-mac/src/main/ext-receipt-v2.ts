@@ -554,6 +554,11 @@ export function reconcileSkillsDerivation(root: string): SkillsDerivationOutcome
   }
 }
 
+/** #336:skills 派生允许集 final-publish 的窄注入面(测试专用;生产恒缺省 `writeFileAtomicSync`)——
+ *  唯一用途是确定性证明「账本已 durable 之后发布失败」的判别式契约(fs 手段无法只让 final publish
+ *  失败而不先命中读侧/pre-shrink 路径)。 */
+export type SkillsFinalPublish = (file: string, text: string) => void
+
 /** r17(Blocker):receipts/records 接受 unknown —— 重建视图必须能原样携带解码失败条目
  *  (rawInvalidReceipts/rawCorruptRecords),序列化本就与类型无关。
  *  #395 步骤5+6:skills 派生允许集与账本**锁步**,`writeFileAtomicSync` 原子写(掉电 durability +
@@ -561,8 +566,15 @@ export function reconcileSkillsDerivation(root: string): SkillsDerivationOutcome
  *  之前落盘 —— 引擎绝不得看到已撤销的允许项;派生损坏(unknown)先写**空集**(最严格)。**新增**
  *  (扩容)必须在账本写之后 best-effort 发布 —— 账本授权在先才允许 hook 加载。pre-shrink 失败 =
  *  账本未写(回到起点,安全,ok:false);final publish 失败 = 账本已 durable + 派生停在更严格态
- *  (skill 少注入 = 安全侧,boot 自愈补齐,ok:true + loud)。 */
-function writeLedgerFile(root: string, receipts: readonly unknown[], records: readonly unknown[]): { ok: true } | { ok: false; reason: string } {
+ *  (skill 少注入 = 安全侧,boot 自愈补齐)—— #336:仍 ok:true(账本才是真源,改 ok:false 会经
+ *  commitReceipt throw 让引擎回滚 live 与已 durable 账本分叉),但以 `projectionLag` 判别式如实
+ *  上报 + 此处 loud log(后台入口 recovery/migration 的最低上报面)。 */
+function writeLedgerFile(
+  root: string,
+  receipts: readonly unknown[],
+  records: readonly unknown[],
+  publishFinal: SkillsFinalPublish = writeFileAtomicSync,
+): { ok: true; projectionLag?: string } | { ok: false; reason: string } {
   try {
     fs.mkdirSync(root, { recursive: true })
     const file = ledgerPath(root)
@@ -592,11 +604,14 @@ function writeLedgerFile(root: string, receipts: readonly unknown[], records: re
     const alreadyFinal = preKeys === null && Array.isArray(cur) && cur.length === nextKeys.length && cur.every((k) => nextKeys.includes(k))
     if (!alreadyFinal) {
       try {
-        writeFileAtomicSync(derivationFile, derivationTextOf(nextKeys))
+        publishFinal(derivationFile, derivationTextOf(nextKeys))
       } catch (error) {
         // 派生停在更严格态(空集 / 交集 / 旧集去掉移除项)= skill 少注入 = 安全侧;账本已 durable,
-        // 下次 boot reconcile 按账本重算补齐。不让整体失败(账本才是真源)。
-        console.error(`[req395] skills allow-list final publish failed (stays stricter, boot self-heals): ${error instanceof Error ? error.message : String(error)}`)
+        // 下次 boot reconcile 按账本重算补齐。不让整体失败(账本才是真源)—— #336:但**如实上报**:
+        // loud log(后台入口的最低上报面)+ projectionLag 判别式(用户可见写入口经此呈现)。
+        const reason = `skills allow-list final publish failed (stays stricter, boot self-heals): ${error instanceof Error ? error.message : String(error)}`
+        console.error(`[req395] ${reason}`)
+        return { ok: true, projectionLag: reason }
       }
     }
     return { ok: true }
@@ -673,7 +688,11 @@ export type UpsertInput = Omit<InstallRecordV2, "schemaVersion" | "generation" |
   previousDigest?: string
 }
 
-export type LedgerV2Write = { ok: true; record: InstallRecordV2; warnings: string[] } | { ok: false; reason: string }
+export type LedgerV2Write =
+  /** #336:projectionLag = 账本已 durable 但 skills 派生允许集 final publish 失败(停在更严格态,
+   *  boot 自愈补齐)—— 用户可见写入口必须呈现该字段,后台入口至少 loud log(写点已统一打)。 */
+  | { ok: true; record: InstallRecordV2; warnings: string[]; projectionLag?: string }
+  | { ok: false; reason: string }
 
 /** #352(Codex 裁决必改 4):transaction exact-replay 幂等 —— 崩溃恢复会重放 commitReceipt,
  *  同 transaction.id 且**身份事实**一致时必须直接返回已有记录(绝不递增 generation/previous 链);
@@ -714,7 +733,7 @@ function replayVerdict(
  * (a v1-only predecessor counts as generation 1 → new record is generation 2, `migratedFrom` noted
  * by the caller if desired). Writes BOTH views in lockstep for this key; other entries untouched.
  */
-export function upsertRecordV2(root: string, input: UpsertInput): LedgerV2Write {
+export function upsertRecordV2(root: string, input: UpsertInput, publishFinal?: SkillsFinalPublish): LedgerV2Write {
   const { parsed, corrupt, readError } = parseLedger(root)
   if (readError) return { ok: false, reason: `${readError} — refusing to write` }
   const warnings: string[] = [...parsed.recordWarnings, ...parsed.receiptWarnings]
@@ -749,17 +768,19 @@ export function upsertRecordV2(root: string, input: UpsertInput): LedgerV2Write 
   if (!check.ok) return { ok: false, reason: `refusing to write invalid record: ${check.errors.join("; ")}` }
   const nextRecords = [...parsed.records.filter((r) => key(r.kind, r.name) !== k), check.record, ...parsed.rawCorruptRecords]
   const nextReceipts = [...parsed.receipts.filter((r) => key(r.type, r.name) !== k), toV1Receipt(check.record), ...parsed.rawInvalidReceipts]
-  const written = writeLedgerFile(root, nextReceipts, nextRecords)
+  const written = writeLedgerFile(root, nextReceipts, nextRecords, publishFinal)
   if (!written.ok) return written
-  return { ok: true, record: check.record, warnings }
+  return { ok: true, record: check.record, warnings, ...(written.projectionLag ? { projectionLag: written.projectionLag } : {}) }
 }
 
-export type LedgerV2BatchWrite = { ok: true; records: InstallRecordV2[]; warnings: string[] } | { ok: false; reason: string }
+export type LedgerV2BatchWrite =
+  | { ok: true; records: InstallRecordV2[]; warnings: string[]; projectionLag?: string }
+  | { ok: false; reason: string }
 
 /**
  * 批量 upsert 单次写盘(REQ-100 #311):bundle 的多条 receipt 一次读、全校验、一次 rename 落盘 ——
  * 任一 record 非法即整批拒绝(不留半套 receipt)。同一账本内解析一次,按输入顺序累积(同 key 后写覆盖)。 */
-export function upsertRecordsV2(root: string, inputs: UpsertInput[]): LedgerV2BatchWrite {
+export function upsertRecordsV2(root: string, inputs: UpsertInput[], publishFinal?: SkillsFinalPublish): LedgerV2BatchWrite {
   if (inputs.length === 0) return { ok: false, reason: "batch upsert has no records" }
   const { parsed, corrupt, readError } = parseLedger(root)
   if (readError) return { ok: false, reason: `${readError} — refusing to write` }
@@ -818,9 +839,9 @@ export function upsertRecordsV2(root: string, inputs: UpsertInput[]): LedgerV2Ba
     ...[...committedKeys].map((k) => toV1Receipt(recordsByKey.get(k)!)),
     ...parsed.rawInvalidReceipts,
   ]
-  const written = writeLedgerFile(root, finalReceipts, finalRecords)
+  const written = writeLedgerFile(root, finalReceipts, finalRecords, publishFinal)
   if (!written.ok) return written
-  return { ok: true, records: committed, warnings }
+  return { ok: true, records: committed, warnings, ...(written.projectionLag ? { projectionLag: written.projectionLag } : {}) }
 }
 
 /** Remove by (kind, name) from BOTH views. Missing = ok(idempotent), removed record returned for teardown对账。 */
@@ -861,8 +882,16 @@ export function removeRecordV2(root: string, kind: InstallReceiptType, name: str
   return { ok: true, removed }
 }
 
-/** desiredState 翻转(Hub 项目上下文「禁用」的 main 侧真源;引擎生效面由消费方处理)。 */
-export function setDesiredStateV2(root: string, kind: InstallReceiptType, name: string, state: DesiredState): { ok: true } | { ok: false; reason: string } {
+/** desiredState 翻转(Hub 项目上下文「禁用」的 main 侧真源;引擎生效面由消费方处理)。
+ *  #336:ok 臂携带 projectionLag(skill enable 后派生允许集发布失败 = 账本已 durable、注入待
+ *  boot 自愈)—— 用户可见开关入口必须呈现。 */
+export function setDesiredStateV2(
+  root: string,
+  kind: InstallReceiptType,
+  name: string,
+  state: DesiredState,
+  publishFinal?: SkillsFinalPublish,
+): { ok: true; projectionLag?: string } | { ok: false; reason: string } {
   const { parsed, readError } = parseLedger(root)
   if (readError) return { ok: false, reason: `${readError} — refusing to write` }
   const k = key(kind, name)
@@ -879,8 +908,9 @@ export function setDesiredStateV2(root: string, kind: InstallReceiptType, name: 
     root,
     [...parsed.receipts, ...parsed.rawInvalidReceipts],
     [...parsed.records.filter((r) => key(r.kind, r.name) !== k), next, ...parsed.rawCorruptRecords],
+    publishFinal,
   )
-  return written.ok ? { ok: true } : written
+  return written.ok ? { ok: true, ...(written.projectionLag ? { projectionLag: written.projectionLag } : {}) } : written
 }
 
 // ── v1 → v2 显式迁移(AC#6)────────────────────────────────────────────────────────────────────

@@ -23,6 +23,7 @@ import {
   readCurrentGeneration,
   readQuarantineReceipt,
   recoverExtensionTransactions,
+  recoveryClean,
   resolveLiveGenerationDir,
   rollbackToGeneration,
   runExtensionTransaction,
@@ -388,6 +389,7 @@ const EXPECT_AFTER_RECOVERY: Record<TxCrashPoint, "v1" | "v2"> = {
   "after-switched": "v2", // 全翻转 + 恢复探测健康 + receipt 幂等重放 → 前滚
   "after-post-probe": "v2",
   "after-receipt-commit": "v2",
+  "after-authorizing": "v2", // #336:journal=authorizing(receipt 已 durable)→ 恢复只前滚补授权投影
   "before-gc": "v2", // journal 已 committed → 终态,仅清理
 }
 
@@ -807,6 +809,105 @@ describe("capability authorization gate", () => {
     expect(
       await bad({ items: [{ key: "k", files }], skippedOptional: [{ key: "../evil" }] }),
     ).toContain("invalid key")
+  })
+})
+
+// ── #336:授权投影写失败 —— authorizing 非终态 + 前滚重试直至成功(绝不回滚、绝不终态化) ────────
+
+describe("#336 authorization projection fail-closed (authorizing state)", () => {
+  const CAPS = ["net:fetch", "prompt:context"]
+  const capsPlan = (files: Record<string, string>): TxPlan => ({
+    items: [{ key: "skill--demo", files: specsOf(files), capabilities: CAPS }],
+    authorization: { confirmed: { "skill--demo": CAPS } },
+  })
+
+  test("grants.json 写失败:ok:true + authorizationPending;journal 停 authorizing;live/receipt 完好;清障后恢复前滚收敛", async () => {
+    // 注入:grants.json 路径预占为目录 → writeFileAtomicSync 的 rename 确定性失败(真盘,零 mock)
+    const grantPath = capabilityGrantPath(root, "skill--demo")
+    fs.mkdirSync(grantPath, { recursive: true })
+    const committed: TxCommitRecord[][] = []
+    const result = await runExtensionTransaction(root, capsPlan(V1), hooksFor(V1, { commitReceipt: (recs) => void committed.push(recs) }))
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error("unreachable")
+    // 如实上报:成功臂判别字段 + warnings(绝非 ok:false —— 那是「计划未落地」的补偿契约)
+    expect(result.authorizationPending?.some((f) => f.includes("grant write failed"))).toBe(true)
+    expect(result.warnings.some((w) => w.includes("grant write failed"))).toBe(true)
+    // live 已切换、receipt 已提交(越过可回滚点)
+    expect(versionOf(root, "skill--demo")).toBe("v1")
+    expect(committed).toHaveLength(1)
+    // journal 保留非终态 authorizing;staging 已清
+    const journals = listTransactionJournals(root)
+    expect(journals.map((j) => j.state)).toEqual(["authorizing"])
+    expect(fs.existsSync(path.join(root, "ext-tx", "staging", result.txId))).toBe(false)
+
+    // 恢复(无 probe/commitReceipt seam:authorizing 前滚不需要)—— 障碍仍在 → 保留非终态,绝不回滚
+    const still = await recoverExtensionTransactions(root, { pidAlive: () => false, log: noop })
+    expect(still.ok).toBe(true)
+    const rep = still.reports.find((r) => r.txId === result.txId)!
+    expect(rep.action).toBe("none")
+    expect(rep.state).toBe("authorizing")
+    expect(recoveryClean(still)).toBe(false) // 非终态在案 = 不干净(gate 拒后续写的判据)
+    expect(versionOf(root, "skill--demo")).toBe("v1") // live 纹丝不动
+
+    // 清障 → 恢复前滚收敛:grants 落位、journal 终态、报告携带最终 state
+    fs.rmSync(grantPath, { recursive: true, force: true })
+    const recovered = await recoverExtensionTransactions(root, { pidAlive: () => false, log: noop })
+    expect(recovered.ok).toBe(true)
+    const done = recovered.reports.find((r) => r.txId === result.txId)!
+    expect(done.action).toBe("resumed-committed")
+    expect(done.state).toBe("committed") // recoveryClean 按报告 state 判净
+    expect(recoveryClean(recovered)).toBe(true)
+    expect(readCapabilityGrant(root, "skill--demo")?.capabilities).toEqual([...CAPS].sort())
+    expect(readBundleAuthorizationReceipt(root, result.txId)?.items[0]?.requested).toEqual([...CAPS].sort())
+    expect(listTransactionJournals(root).map((j) => j.state)).toEqual(["committed"])
+  })
+
+  test("授权收据写失败(ext-tx/authz 被占为文件):同样 pending;grants 先行已落;清障后收据可读", async () => {
+    fs.mkdirSync(path.join(root, "ext-tx"), { recursive: true })
+    fs.writeFileSync(path.join(root, "ext-tx", "authz"), "occupied")
+    const result = await runExtensionTransaction(root, capsPlan(V1), hooksFor(V1))
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error("unreachable")
+    expect(result.authorizationPending?.some((f) => f.includes("authorization receipt write failed"))).toBe(true)
+    expect(readCapabilityGrant(root, "skill--demo")?.capabilities).toEqual([...CAPS].sort()) // grants 幂等已落
+    expect(listTransactionJournals(root).map((j) => j.state)).toEqual(["authorizing"])
+
+    fs.rmSync(path.join(root, "ext-tx", "authz"))
+    const recovered = await recoverExtensionTransactions(root, { pidAlive: () => false, log: noop })
+    const done = recovered.reports.find((r) => r.txId === result.txId)!
+    expect(done.action).toBe("resumed-committed")
+    expect(readBundleAuthorizationReceipt(root, result.txId)?.items[0]?.requested).toEqual([...CAPS].sort())
+  })
+
+  test("crash at after-authorizing + 障碍在场:恢复保留非终态、live 保持新版(绝不回滚);二次恢复(清障)收敛", async () => {
+    // 先正常装 V1(grants 落位),再让升级的 grant 写失败:grants.json 换成目录
+    const first = await runExtensionTransaction(root, capsPlan(V1), hooksFor(V1))
+    expect(first.ok).toBe(true)
+    const grantPath = capabilityGrantPath(root, "skill--demo")
+    fs.rmSync(grantPath, { force: true })
+    fs.mkdirSync(grantPath)
+    const crashed = runExtensionTransaction(root, capsPlan(V2), hooksFor(V2, { crashAt: "after-authorizing", probe: healthyProbe, commitReceipt: noop }))
+    await expect(crashed).rejects.toThrow(ExtTxCrashError)
+
+    const still = await recoverExtensionTransactions(root, { probe: healthyProbe, commitReceipt: noop, pidAlive: () => false, log: noop })
+    expect(still.ok).toBe(true)
+    const rep = still.reports.find((r) => r.state === "authorizing")!
+    expect(rep.action).toBe("none")
+    expect(versionOf(root, "skill--demo")).toBe("v2") // receipt 已 durable → 只前滚,绝不回滚
+
+    fs.rmSync(grantPath, { recursive: true, force: true })
+    const recovered = await recoverExtensionTransactions(root, { probe: healthyProbe, commitReceipt: noop, pidAlive: () => false, log: noop })
+    expect(recovered.reports.some((r) => r.action === "resumed-committed" && r.state === "committed")).toBe(true)
+    expect(readCapabilityGrant(root, "skill--demo")?.capabilities).toEqual([...CAPS].sort())
+    expect(versionOf(root, "skill--demo")).toBe("v2")
+  })
+
+  test("正常提交不受影响:无 authorizationPending 字段、journal 直达 committed", async () => {
+    const result = await runExtensionTransaction(root, capsPlan(V1), hooksFor(V1))
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error("unreachable")
+    expect(result.authorizationPending).toBeUndefined()
+    expect(listTransactionJournals(root).map((j) => j.state)).toEqual(["committed"])
   })
 })
 

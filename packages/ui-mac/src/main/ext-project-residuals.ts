@@ -179,14 +179,16 @@ export function detectProjectCatalogResiduals(projectDir: unknown): ProjectResid
 }
 
 export type ProjectResidualCleanOutcome =
+  /** #336:ok:true 只在**零失败**时成立(成功臂不再携带恒空 failed)。 */
   | {
       ok: true
       cleaned: string[]
-      failed: Array<{ item: string; reason: string }>
       /** 只报告不清理的面(unknown 店 / orphan agent),供调用方如实呈现。 */
       reported: string[]
     }
-  | { ok: false; reason: string }
+  /** 任一删账/卸载失败 → 整单 ok:false(fail-closed 判别位跨 IPC 如实);cleaned/failed/reported
+   *  保留,如实表达已完成的批处理进度(逐项隔离、幂等,重试收敛)。 */
+  | { ok: false; reason: string; cleaned?: string[]; failed?: Array<{ item: string; reason: string }>; reported?: string[] }
 
 /** 显式清理:先检测,cleanBlockers/openJournals 在场整单 fail-closed;起步前重新巡检 journal
  *  (缩小 detect→clean 窗口;店删除本身持锁 journaled,与并发事务串行)。逐项隔离失败,幂等。 */
@@ -238,5 +240,15 @@ export async function cleanProjectCatalogResiduals(
     ...detected.orphanAgentFiles.map((f) => `orphan-agent-file:${f}`),
     ...detected.orphanAgentConfigEntries.map((n) => `orphan-agent-config:${n}`),
   ]
-  return { ok: true, cleaned, failed, reported }
+  // #336:单项失败不得包成外层成功 —— failed 非空即整单 ok:false(判别位跨 IPC 如实),
+  // 进度字段保留(幂等,重试只补失败项)。
+  if (failed.length > 0)
+    return {
+      ok: false,
+      reason: `${failed.length} residual(s) failed to clean (e.g. ${failed[0]!.item}: ${failed[0]!.reason})`,
+      cleaned,
+      failed,
+      reported,
+    }
+  return { ok: true, cleaned, reported }
 }

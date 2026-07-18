@@ -522,10 +522,11 @@ export type ElectronAPI = {
         }
       | { ok: false; reason: string }
     >
-    /** ADR-030(#372):显式清理(journal/账本失据 fail-closed;只删账本可证明的受控面)。 */
+    /** ADR-030(#372):显式清理(journal/账本失据 fail-closed;只删账本可证明的受控面)。
+     *  #336:任一删账失败 → 整单 ok:false(cleaned/failed/reported 保留如实进度;幂等可重试)。 */
     projectResidualsClean: (projectDir: string) => Promise<
-      | { ok: true; cleaned: string[]; failed: Array<{ item: string; reason: string }>; reported: string[] }
-      | { ok: false; reason: string }
+      | { ok: true; cleaned: string[]; reported: string[] }
+      | { ok: false; reason: string; cleaned?: string[]; failed?: Array<{ item: string; reason: string }>; reported?: string[] }
     >
     /** REQ-100 #375:保留态 journal 只读诊断(global 三环境根恒聚合;projectDir 可选)。
      *  entries = 判别联合(kind: retained/already-quarantined/malformed-entry/unreadable-root/

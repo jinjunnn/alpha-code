@@ -13,11 +13,11 @@ import { extensionsGranted, hasExtensionsDecision, listProjectExecutables, withE
 import { alphaRoot, readProjectPrefs, writeProjectPrefs } from "./alpha-workdir"
 import type { InstallTarget } from "../preload/types"
 import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
-import { claimMcpSecretVersionDir, fileifyMcpSecretsVersioned, isFileRef, mcpSecretVersionedRef, newMcpSecretVersionId, removeMcpSecretVersionDir, removeMcpServerSecrets, removeMcpServerSecretsStrict, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
+import { claimMcpSecretVersionDir, mcpSecretVersionedRef, removeMcpSecretVersionDir, removeMcpServerSecrets, removeMcpServerSecretsStrict, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
 import { isMigrationEnabled, removeLegacy, scanLegacy, verifyLegacyProvenance, type ProvenanceRequest } from "./alpha-migrate"
-import { collectLegacyMcpRefPathsStrict, configHealth, findPluginBaseConflictStrict, gcMcpSecretsAgainstConfig, listConfiguredMcpServerNamesStrict, mcpConfigTruthPath, persistPlugin, pluginRecordName, readLegacyPluginArrayStrict, readMcpLeaf, readMcpLeafStrict, readPluginArrayStrict, removeMcp, removeMcpConfigInLock, removePlugin, removePluginEntryExact, removePluginPath, restoreMcpLeaf } from "./ext-config"
-import { recordUncuratedInstall } from "./ext-uncurated-record"
-import { applyMcpWritePolicy, persistMcpWithPolicy } from "./ext-mcp-policy"
+import { collectLegacyMcpRefPathsStrict, configHealth, findPluginBaseConflictStrict, gcMcpSecretsAgainstConfig, listConfiguredMcpServerNamesStrict, mcpConfigTruthPath, readLegacyPluginArrayStrict, readMcpLeafStrict, readPluginArrayStrict, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath } from "./ext-config"
+import { makeUncuratedInstallBodies } from "./ext-uncurated-bodies"
+import { applyMcpWritePolicy } from "./ext-mcp-policy"
 import { ensureUserWorkspaceDir } from "./alpha-user-workspace"
 import { agentInstallPresent, cloneSkillGitToTmp, collectBuiltinAgentPayload, collectVendoredPluginPayload, stageVendoredPluginVersioned, importSkillFolder, installBuiltinSkill, installRemoteSkill, readBuiltinSkill, removeFsInstall, resourcesRoot } from "./ext-fs-installer"
 import { parseAgentImport } from "./ext-import-validate"
@@ -49,7 +49,7 @@ import { makeRecoveryGate } from "./ext-recovery-gate"
 import { adoptProjectLedger } from "./ext-project-adopt"
 import { buildGatedWriteChannels, buildJournalAdminChannels, GATED_WRITE_CHANNELS, JOURNAL_ADMIN_CHANNELS } from "./ext-write-channels"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
-import { findRecordV2, lookupForUninstall, migrateV1Ledger, parseUninstallLedgerKey, projectScopeIdentity, readLedgerV2, removeRecordV2, upsertRecordsV2 } from "./ext-receipt-v2"
+import { lookupForUninstall, migrateV1Ledger, parseUninstallLedgerKey, projectScopeIdentity, readLedgerV2, removeRecordV2, upsertRecordsV2 } from "./ext-receipt-v2"
 import { packagedSeedBrowseView, readPackagedSeed } from "./ext-seed"
 import { recoverExtensionTransactions, recoverExtensionTransactionsInHeldLock, recoveryClean, type RecoverOptions } from "./ext-transaction"
 import { getLogger } from "./logging"
@@ -73,94 +73,15 @@ function checkRuntime(tool: string): Promise<{ ok: boolean }> {
 /** registryChannel:冻结环境快照的 registry 通道(REQ-098 #302),由 composition root(index.ts)
  *  注入 —— IPC handler 与 planner 的 catalog 拉取共用同一份,类型必填(无缺省可静默回落 stable)。 */
 export function registerExtIpcHandlers(userDataPath: string, registryChannel: "stable" | "preview" | "dev") {
-  // REQ-099 #305:未策展自定义 MCP 专用通道(catalog MCP 走 ext-install-catalog);不收 renderer
-  // meta —— 未策展安装拿不到 catalog 身份,防伪造 catalog 来源/版本(ADR-028 §5)。
-  // #347(review #376 B1):注册经写通道表(文件尾),过恢复 gate + ledgerReady。
-  const persistMcpBody = async (name: string, server: Record<string, unknown>, secretVars?: string[]) => {
-      // T5:把 requiredEnvVars 的真值(renderer 刚采集,经 IPC 结构化克隆到达此处)搬进
-      // {file:} 密钥通道 → durable config 只落引用,绝不明文。renderer 的 live mcp.add 仍用
-      // 真值(内存态),下次启动引擎按 {file:} 解析。
-      // #378(Codex 裁决 Q1):固定路径覆盖写 + 整目录快照/恢复退役 —— 那套 restore 会连事务
-      // 通道刚写的新版本一起删(跨通道交错)。改版本化只增不覆盖:本次写全新 verId 目录,既有
-      // 版本(可能正被旧 config 或在途事务引用)零接触;失败只删本次 verId(无引用,惰性安全)。
-      const vars = secretVars && secretVars.length && server && typeof server === "object" ? secretVars : null
-      // r9 Major:只有确有**明文**需要路由才认领版本目录 —— 空 env / 纯 {file:} 引用的重装
-      // 无需写通道,secret 树不可写不应无谓拒绝(既有引用继续可用)。
-      const isRecEnv = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
-      const envForScan = vars && isRecEnv(server.environment) ? server.environment : null
-      const plaintextVars = vars
-        ? vars.filter((v) => {
-            const val = envForScan ? envForScan[v] : undefined
-            return typeof val === "string" && val.length > 0 && !isFileRef(val)
-          })
-        : []
-      // r1 Minor:版本目录排他认领(碰撞换 id 重试,绝不复用既有版本目录)。
-      // r8 Blocker:认领不下来 = 密钥进不了文件通道 —— **fail-closed 拒绝**,绝不带明文继续
-      // 落盘(durable config 只含 {file:} 引用的合同对未策展面同样成立)。
-      let verId: string | null = null
-      let claimFail = ""
-      if (plaintextVars.length > 0) {
-        for (let i = 0; i < 3 && !verId; i++) {
-          const vid = newMcpSecretVersionId()
-          const claimed = claimMcpSecretVersionDir(userDataPath, name, vid)
-          if (claimed.ok) verId = vid
-          else {
-            claimFail = claimed.reason
-            if (!claimed.exists) break // 非碰撞失败(圈禁/权限)重试无意义
-          }
-        }
-        if (!verId) return { ok: false as const, reason: `secret channel unavailable (${claimFail}) — refusing plaintext persist` }
-      }
-      // Codex review #355:补偿必须是精确叶子 before-image —— removeMcp 全量卸载会连既有配置/
-      // legacy/receipt 一起误删(更新场景毁掉本次写入前就存在的安装)。
-      const before = typeof name === "string" ? readMcpLeaf(name) : undefined
-      if (vars && verId) {
-        const f = fileifyMcpSecretsVersioned(userDataPath, name, server, vars, verId)
-        if (f.failed.length > 0) {
-          // r8 Blocker:明文没能全部进文件通道 → 删本次版本目录并拒绝,绝不明文持久化。
-          const rm = removeMcpSecretVersionDir(userDataPath, name, verId)
-          return {
-            ok: false as const,
-            reason: `secret(s) could not be routed to the {file:} channel: ${f.failed.join(", ")} — refusing plaintext persist${rm.ok ? "" : `; cleanup failed (${rm.reason}) — plaintext may remain in version "${verId}" pending gc`}`,
-          }
-        }
-      }
-      // REQ-105 #254:MCP 写盘唯一策略入口。Excel sandbox 闸口(local stdio + 审计钉版 + 零网络
-      // 绑定 + 受管 workspace 强制)由 persistMcpWithPolicy 统一执行 —— main 注入固定 EXCEL_FILES_PATH,
-      // 结构上消除「调用点忘传 workspace」的 fail-open。
-      const r = persistMcpWithPolicy(name, server, undefined)
-      if (!r.ok) {
-        // r6 Major:清理失败不许吞 —— 0600 明文残留位置如实并入错误(GC 兜底,用户可定位)。
-        const rm = verId ? removeMcpSecretVersionDir(userDataPath, name, verId) : { ok: true as const }
-        return rm.ok ? r : { ok: false, reason: `${r.reason}; secret version cleanup failed (${rm.reason}) — plaintext may remain in version "${verId}" pending gc` }
-      }
-      // REQ-099 #306:未策展落账走 coordinator(v2+派生 v1 单次写);失败补偿 = 撤配置 + 删本次
-      // 密钥版本,不谎报成功(#336 语义)。
-      const led = recordUncuratedInstall(alphaGlobalRoot(), {
-        kind: "mcp",
-        name,
-        origin: "created",
-        environment: getAlphaEnvironment().environment,
-        scope: { kind: "global" },
-        configKey: `mcp.${name}`,
-      })
-      if (!led.ok) {
-        const lr = restoreMcpLeaf(name, before) // 只复原本次目标叶子(before=undefined 即删本次写入)
-        // r1 Major:复原失败 = config 仍引用本次版本 —— 此时删版本目录会制造悬空 {file:} 引用,
-        // 保留目录(功能上配置仍可用)并把两个失败一并上报;复原成功才清理本次版本。
-        // r6 Major:清理失败同样不许吞,残留位置如实并入错误。
-        const rm = verId && lr.ok ? removeMcpSecretVersionDir(userDataPath, name, verId) : { ok: true as const }
-        const tails = [
-          ...(lr.ok ? [] : [`config restore failed: ${lr.reason} — secret version kept (still referenced)`]),
-          ...(rm.ok ? [] : [`secret version cleanup failed (${rm.reason}) — plaintext may remain in version "${verId}" pending gc`]),
-        ]
-        return { ok: false, reason: `install ledger write failed: ${led.reason}${tails.length ? `; ${tails.join("; ")}` : ""}` }
-      }
-      // 成功:收未被当前 leaf 引用且过宽限的旧版本/flat/快照残留(锁内对账;busy 跳过,best-effort)。
-      const gc = gcMcpSecretsAgainstConfig(userDataPath, name)
-      if (gc.warnings.length) console.error(`[ext-ipc] mcp secret gc (${name}): ${gc.warnings.join("; ")}`)
-      return r
-  }
+  // REQ-099 #305:未策展自定义 MCP 专用通道(catalog MCP 走 ext-install-catalog)与未策展 npm
+  // plugin 导入的 body —— #336(残留4)抽至 electron-free 的 ext-uncurated-bodies(账本写失败的
+  // fail-closed 返回 + 精确补偿可注入测试);此处只接线,注册仍经写通道表(文件尾),过恢复
+  // gate + ledgerReady(#347,review #376 B1)。
+  const { persistMcpBody, installPluginBody } = makeUncuratedInstallBodies({
+    userDataPath,
+    globalRoot: alphaGlobalRoot,
+    environment: () => getAlphaEnvironment().environment,
+  })
   // Codex review #351:先删配置(锁内)、成功才吊销密钥 —— busy 时不得留下「配置还在、密钥已毁」。
   // #346(Codex 裁决旁路封堵):本通道只服务**无账 live MCP**;有账(v2/v1/损坏)一律拒 ——
   // ledger-backed 卸载必须走 journaled 的 ext-uninstall-v2,否则这里就是绕开 journal 的活旁路。
@@ -249,43 +170,6 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   // ext-install-vendored-plugin / ext-enable-cloud 均并入 ext-install-catalog(planner 从已验签 catalog
   // 派生全部事实);ext-install-plugin 仅保留给未策展 npm 导入,且不再收 renderer meta(未策展安装
   // 无 catalog 身份,防伪造 catalog 来源,ADR-028 §5)。
-  const installPluginBody = async (pkg: string) => {
-    const r = persistPlugin(pkg, undefined)
-    if (!r.ok) return r
-    // #395(Codex r5):账本 disabled → persistPlugin 投影为条目缺席(config 零写入)。恰同钉版
-    // 重加 = 真幂等跳过落账(同 #355:不虚增 generation);换钉版才刷账本(nextDesiredState 当前
-    // 策略优先,状态不翻);失败无需 config 补偿(本次未写数组)。
-    if (r.projectedDisabled) {
-      if (findRecordV2(alphaGlobalRoot(), "plugin", pluginRecordName(pkg))?.configKey === `plugin:${pkg}`) return { ok: true }
-      const led = recordUncuratedInstall(alphaGlobalRoot(), {
-        kind: "plugin",
-        name: pluginRecordName(pkg),
-        origin: "created",
-        environment: getAlphaEnvironment().environment,
-        scope: { kind: "global" },
-        configKey: `plugin:${pkg}`,
-      })
-      return led.ok ? { ok: true } : { ok: false, reason: `install ledger write failed: ${led.reason}` }
-    }
-    // Codex review #355:恰同钉版重装 = 真幂等 → 跳过落账(不虚增 generation);
-    // 同 base 不同钉版已在 persistPlugin 内显式拒绝(不许「配置不变、账本记新版」)。
-    if (!r.changed) return { ok: true }
-    // REQ-099 #306:未策展 npm 导入落账(coordinator);失败只撤本次新增的数组元素(精确补偿,
-    // 不碰 legacy/receipt/同 base 其他条目)。
-    const led = recordUncuratedInstall(alphaGlobalRoot(), {
-      kind: "plugin",
-      name: pluginRecordName(pkg),
-      origin: "created",
-      environment: getAlphaEnvironment().environment,
-      scope: { kind: "global" },
-      configKey: `plugin:${pkg}`,
-    })
-    if (!led.ok) {
-      removePluginEntryExact(pkg)
-      return { ok: false, reason: `install ledger write failed: ${led.reason}` }
-    }
-    return { ok: true }
-  }
   // REQ-019 T3:详情页 SKILL.md 预览(只读,资产键校验 + 体积帽)
   ipcMain.handle("ext-read-builtin-skill", (_event: IpcMainInvokeEvent, builtinAssetKey: string) =>
     readBuiltinSkill(builtinAssetKey),

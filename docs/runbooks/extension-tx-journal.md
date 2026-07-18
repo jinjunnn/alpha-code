@@ -22,6 +22,7 @@ journal 收敛到终态;收敛不了的**如实保留**,绝不静默终态化(#3
 | --- | --- | --- |
 | `uninstalling`(action=generation/config) | 卸载中途崩溃/某步失败 | 启动或下一次相关写操作前幂等前滚(删净 artifact → 删账 → 终态) |
 | `switching`/`switched` | 安装/回滚在 health/receipt 确认前中断 | probe 重验:健康前滚落账,不健康回滚+隔离(generation 隔离;config/file 按 image 回旧) |
+| `authorizing`(#336) | receipt 已 durable(越过可回滚点),授权账/收据投影未落位(grants.json / ext-tx/authz 写失败或其间崩溃) | **只前滚**:重试 `writeCommitAuthorizationSync`(幂等)→ 成功即 `committed`;失败保留非终态待下轮(gate 拒后续写)。绝不回滚(回滚 = receipt/live 分叉)。人工处置 = 排除授权投影路径的写障碍(如 grants.json 被目录占位/卷只读),任一写操作或重启即自动收敛 |
 | `staging`/`staged`/`materialized` | switch 未发生 | 清 staging 残留,journal → `aborted`(可重试) |
 
 ## 需要人工诊断的保留态(自动恢复**不会**碰)

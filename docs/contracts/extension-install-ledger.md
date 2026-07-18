@@ -175,7 +175,11 @@ MCP 重装是产品流(确认框重装),允许覆盖(引擎前像可复原)而�
   目录)—— 手写单次 `fs.writeSync` 会忽略短写(ENOSPC/EIO)留下截断账本。账本先写契约的前提:账本
   必须先于 config 到达持久介质。skills 派生**方向排序(Codex r6 B4)**:收窄(移除项)先于账本落盘、
   扩容(新增项)后于账本;pre-shrink 失败 = 账本未写(回起点安全);final publish 失败 = 派生停在
-  更严格态(skill 少注入 = 安全侧,boot 自愈补齐)。
+  更严格态(skill 少注入 = 安全侧,boot 自愈补齐)—— **#336 如实上报**:该降级不再静默,writer
+  ok 臂携带 `projectionLag` 判别字段(账本已 durable、允许集发布失败),**用户可见写入口必须呈现**
+  (skill 安装/bundle/set-state 的 warning 通道),**后台入口(recovery 重放 / migration / boot)
+  必须 loud log**(写点统一 `console.error`);整体仍 `ok:true`(账本才是真源 —— 改 `ok:false`
+  会经 commitReceipt throw 让引擎回滚 live 与已 durable 账本分叉)。
 
 ## 6. 证据
 
@@ -188,4 +192,9 @@ fail-closed)、`ext-install-planner.test.ts`(fail-closed ledger commit:逐类型
 `ext-config.test.ts` / `ext-fs-installer.test.ts` / `alpha-environment.test.ts`
 (eager v1 下线后的层级契约 + strict 读真实实现)、`ext-project-adopt.test.ts`
 (adoption 矩阵:纯文本收编/幂等不重写 env/scope 不符 retained/损坏零改动/busy 可重试/
-零存量零副作用/触发面源文本合同)。
+零存量零副作用/触发面源文本合同)、`ext-receipt-v2.test.ts`(**#336 projectionLag 判别式:
+final-publish 窄 seam 注入 —— 账本 durable 后发布失败 → ok:true + projectionLag、收窄方向不受
+seam 影响、无变化不误报、boot 自愈闭环**)、`ext-uncurated-bodies.test.ts`(**#336 未策展提交面
+账本写失败注入:custom MCP 前像精确复原/密钥版本清理、npm plugin removePluginEntryExact、
+projectedDisabled 绕幂等短路真进落账、恰同钉版幂等零落账**)、`ext-project-residuals.test.ts`
+(**#336 批处理判别位:failed 非空 → 整单 ok:false + 进度字段保留、幂等重试只补失败项**)。
