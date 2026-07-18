@@ -101,9 +101,9 @@ export function ExtensionDetail(props: {
   onLogin?: () => void
   /** REQ-103(#195):governance 只读真源(逐扩展五维所有权 + 三态);详情页所有权/来源签名段据此渲染。 */
   governance?: Accessor<ExtInventory | undefined>
-  /** #395(Codex r9 B3):启停唯一处理器(hub 持有,与行内开关共用)—— 详情页 MCP 开关据此走
-   *  desired-state/advisory 通道,不再直连 setMcpConnected 绕过账本/闸门。 */
-  onToggleState?: (args: {
+  /** #395(Codex r9 B3 / r10 minor):启停唯一处理器(hub 持有,与行内开关共用)—— 详情页 MCP 开关据此
+   *  走 desired-state/advisory 通道。**必填**(r10:可选 + fallback 直连会让新增 caller 漏传时绕过闸门)。 */
+  onToggleState: (args: {
     receipt: InstallReceipt
     type: string
     name: string
@@ -340,17 +340,17 @@ export function ExtensionDetail(props: {
                         class="alpha-ext-sw"
                         data-on={on() ? "" : undefined}
                         aria-label={on() ? t("alpha.ext.enabled") : t("alpha.ext.disabled")}
+                        disabled={!rc}
                         onClick={() =>
-                          rc && props.onToggleState
-                            ? void props.onToggleState({
-                                receipt: rc,
-                                type: e().type,
-                                name: e().name,
-                                currentlyOn: on(),
-                                liveUnreceipted: liveUnreceipted(),
-                                mcpConnected: !!mcpLive()?.connected,
-                              })
-                            : void props.ext.setMcpConnected(e().name, !mcpLive()?.connected)
+                          rc &&
+                          void props.onToggleState({
+                            receipt: rc,
+                            type: e().type,
+                            name: e().name,
+                            currentlyOn: on(),
+                            liveUnreceipted: liveUnreceipted(),
+                            mcpConnected: !!mcpLive()?.connected,
+                          })
                         }
                       />
                     )

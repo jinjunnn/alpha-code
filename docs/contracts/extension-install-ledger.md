@@ -131,17 +131,23 @@ MCP 重装是产品流(确认框重装),允许覆盖(引擎前像可复原)而�
   读错误 / legacy concat 残留 / skills 陈旧允许集)= **enforcementGap** → 主进程 **fail-closed 阻断
   首个 sidecar spawn**(dialog 告知 + `app.exit`),绝不让引擎带着「账本禁用但仍会加载」的项启动;
   锁忙(在途事务自保一致)/enable 缺生效面 = 非 gap(仅 warning)。escape hatch 与 REQ-059 同口径。
-- **legacy/XDG 源统一探测(Codex r6 B1 → r7 B1/M1/M3 收敛)**:引擎除主 alpha.jsonc 外还合并
-  `~/.opencode` 与 XDG(config.ts directories 阶段,在主源**之后**再深合并),`plugin[]` 更是跨源
-  **concat**(`mergeConfigConcatArrays`)。任何 kind 的 **disable**(set-state 与 boot reconcile,含
-  alpha.jsonc **缺席**时)都先经 `legacyEnableResidueStrict` 探测。**引擎真实加载语义(Codex r9 勘破,
-  audits/2026-07-18-req395-engine-config-load)**是探测器的地面真相:
+- **legacy 源统一探测(Codex r6→r10 收敛)**:引擎除主 alpha.jsonc 外还合并多个源;任何 kind 的
+  **disable**(set-state 与 boot reconcile,含 alpha.jsonc **缺席**时)都先经 `legacyEnableResidueStrict`
+  探测。**引擎真实加载语义(Codex r9/r10 勘破,audits/2026-07-18-req395-engine-config-load)**是探测器的
+  地面真相(顺序与合并语义见下,勿再按"XDG 在主源之后 / plugin 走 concat"的旧描述重建 —— 那是 r7/r8
+  的错误模型):
     · 引擎全局 config 目录 = `(XDG_CONFIG_HOME||~/.config)/opencode`(xdg-basedir,**固定,不 honor
       `OPENCODE_CONFIG_DIR`** —— 后者只进 directories 阶段);alpha 生产只注 `OPENCODE_CONFIG`(=alpha.jsonc)
       + `OPENCODE_CONFIG_CONTENT`,不改 XDG_CONFIG_HOME、不设 OPENCODE_CONFIG_DIR。
-    · 加载序:**XDG 全局三文件**(`config.json`→`opencode.json`→`opencode.jsonc`,在 alpha.jsonc **之前**)
-      → **alpha.jsonc** → **`~/.opencode/opencode.json(c)`**(home-walk)+ OPENCODE_CONFIG_DIR/项目/managed
-      /MDM(均在 alpha.jsonc **之后**)。`~/.opencode` 不读 `config.json`。
+    · 加载序:**XDG 全局三文件**(`config.json`→`opencode.json`→`opencode.jsonc`)+ **XDG legacy TOML
+      `config`**(config.ts:262,均在 alpha.jsonc **之前**)→ **alpha.jsonc** → **directories 阶段**
+      (`~/.opencode/opencode.json(c)` + 各目录的 **agent `*.md`** / **plugin `*.ts|js`** 自动发现,
+      config.ts:423-465)→ **`OPENCODE_CONFIG_CONTENT`**(step 6)+ OPENCODE_CONFIG_DIR/项目/managed/MDM
+      (均在 alpha.jsonc **之后**)。`~/.opencode` 不读 `config.json`。**探测器覆盖(Codex r10 B1/B2)**:
+      XDG 三 json + TOML `config`(plugin:存在即 fail-closed,无 TOML 解析器)+ `~/.opencode` 两 json +
+      各目录 `{agent,agents}/**/*.md`(agent:frontmatter disable)+ `{plugin,plugins}/*.{ts,js}`(plugin:
+      文件身份)+ `OPENCODE_CONFIG_CONTENT`。项目 cwd-walk = 项目 scope 另账;managed/MDM/active-org = 企业
+      受控源,不入全局 reconcile。
     · **plugin** = `mergePluginOrigins` **union(按身份去重,顺序无关)**:before+after **任一**源含同 base
       (npm)/同文件身份(path,身份不可判 = fail-closed)→ 加载;不看主叶。
     · **mcp/agent** = `mergeDeep` **later-wins(顺序敏感)**:探测器按加载序对 `enabled`/`disable` 顶层标量

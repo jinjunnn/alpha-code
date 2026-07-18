@@ -773,6 +773,72 @@ function engineLegacyReadFiles(): Array<{ file: string; phase: "before" | "after
   return out.filter((s) => s.file !== primary)
 }
 
+/** Codex r10 B2:引擎 directories 阶段(alpha 之后)对每个 config 目录做 agent `*.md` / plugin `*.ts|js`
+ *  **自动发现**(config.ts:423-465,ConfigAgent.load/ConfigPlugin.load)。全局面的目录 = 引擎固定 XDG +
+ *  `~/.opencode`(+ OPENCODE_CONFIG_DIR 若设);项目 cwd-walk 属项目 scope 另账,不入全局 reconcile。 */
+function engineAutoDiscoverDirs(): string[] {
+  const dirs = [engineXdgConfigDir(), opencodeHomeDir()]
+  const cfgDir = process.env.OPENCODE_CONFIG_DIR
+  if (cfgDir && cfgDir.length > 0) dirs.push(cfgDir)
+  return [...new Set(dirs)]
+}
+
+/** 递归列出目录下匹配后缀的文件(相对 root 的路径 + 绝对路径)。root 不存在/不可读 → 空。
+ *  Codex r10 B2:无 glob 依赖,复现引擎 `Glob.scan("{agent,agents}/ ** /*.md")` 的递归语义。 */
+function walkFiles(root: string, exts: string[]): Array<{ rel: string; abs: string }> {
+  const out: Array<{ rel: string; abs: string }> = []
+  const rec = (dir: string, relBase: string): void => {
+    let entries: fs.Dirent[]
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of entries) {
+      const abs = path.join(dir, e.name)
+      const rel = relBase ? `${relBase}/${e.name}` : e.name
+      // symlink 也随(引擎 Glob symlink:true);isDirectory 对 symlink→dir 需 stat
+      let isDir = e.isDirectory()
+      if (e.isSymbolicLink()) {
+        try {
+          isDir = fs.statSync(abs).isDirectory()
+        } catch {
+          continue
+        }
+      }
+      if (isDir) rec(abs, rel)
+      else if (exts.some((x) => e.name.endsWith(x))) out.push({ rel, abs })
+    }
+  }
+  rec(root, "")
+  return out
+}
+
+/** OPENCODE_CONFIG_CONTENT(引擎 step 6,在 directories 之后加载)—— alpha 注入面,但会**保留**进程
+ *  预置的 content(sidecar.ts:163)。作为 after 源纳入探测。解析失败/根非对象 → 视作无内容(该 env
+ *  由 alpha 自控,非攻击面;真损坏由引擎侧自负)。 */
+/** 从 agent md frontmatter 抽取顶层 `disable` 布尔(引擎 ConfigAgentV1 消费键)。返回 undefined = 无
+ *  显式 disable(mergeDeep 保留前源值)。仅识别 `disable: true|false` 的标准行式(最小、够用)。 */
+function frontmatterDisable(text: string): boolean | undefined {
+  if (!text.startsWith("---")) return undefined
+  const end = text.indexOf("\n---", 3)
+  if (end === -1) return undefined
+  const block = text.slice(3, end)
+  const m = /^\s*disable\s*:\s*(true|false)\s*$/m.exec(block)
+  return m ? m[1] === "true" : undefined
+}
+
+function readEngineConfigContent(): Record<string, unknown> | null {
+  const raw = process.env.OPENCODE_CONFIG_CONTENT
+  if (!raw || raw.length === 0) return null
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
 /** Codex r7→r9:一个 **disabled** 记录在引擎**额外合并**的 legacy 源里是否**会被启用加载**。按引擎真实
  *  加载语义(勘破报告 §6),而非逐文件短路:
  *    · **mcp/agent**(mergeDeep,顺序敏感)= 对 `enabled`/`disable` 顶层标量做**按加载序 last-set**:
@@ -854,6 +920,17 @@ export function legacyEnableResidueStrict(
     }
     return null
   }
+  // Codex r10 B1:XDG legacy TOML `config`(引擎 config.ts:262 在 alpha 之前 import 为 toml,merge 后写
+  // 回 config.json)。before 源 → mcp/agent 被 alpha 覆盖(安全);plugin union 仍残留。无 TOML 解析器
+  // 且无用户/无向后兼容(该文件在 alpha 世界不应存在)→ 存在即对 plugin fail-closed(保守)。
+  if (kind === "plugin") {
+    const tomlConfig = path.join(engineXdgConfigDir(), "config")
+    try {
+      if (fs.existsSync(tomlConfig)) return { ok: true, residue: `legacy TOML config present at ${tomlConfig} — cannot verify it lacks this plugin (fail closed; remove it)` }
+    } catch {
+      /* stat 失败按不存在处理 */
+    }
+  }
   // 加载序:before 源 → alpha 主投影 → after 源。plugin 顺序无关(两 phase 各扫即可)。
   const beforeErr = scan("before")
   if (beforeErr) return beforeErr
@@ -864,10 +941,66 @@ export function legacyEnableResidueStrict(
   }
   const afterErr = scan("after")
   if (afterErr) return afterErr
-  if (kind === "plugin") return { ok: true, residue: null } // plugin 命中已在 scan 内早返回
+
+  // ── Codex r10 B2:alpha 之后的目录自动发现 + OPENCODE_CONFIG_CONTENT(引擎 step 5/6)──────────────
+  if (kind === "plugin" && targetIdent) {
+    // plugin `*.ts|js` 自动发现(union;仅 path-plugin 命中,npm base 不经脚本文件)。
+    for (const dir of engineAutoDiscoverDirs()) {
+      for (const parent of ["plugin", "plugins"]) {
+        for (const f of walkFiles(path.join(dir, parent), [".ts", ".js"])) {
+          const id = pathIdentity(f.abs)
+          if (id.forms.some((x) => targetIdent.forms.includes(x))) return { ok: true, residue: `plugin script present at ${f.abs} (auto-discovered)` }
+          if (!id.certain || !targetIdent.certain) return { ok: true, residue: `plugin script identity unprovable at ${f.abs} (fail closed)` }
+        }
+      }
+    }
+  }
+  if (kind === "agent") {
+    // agent `*.md` 自动发现(mergeDeep after 源;名由路径派生,frontmatter disable 覆盖)。
+    for (const dir of engineAutoDiscoverDirs()) {
+      for (const parent of ["agent", "agents"]) {
+        for (const f of walkFiles(path.join(dir, parent), [".md"])) {
+          const derived = f.rel.endsWith(".md") ? f.rel.slice(0, -3) : f.rel // configEntryNameFromPath:剥前缀后去扩展名
+          if (derived !== name) continue
+          leafPresent = true // md 在场 = agent 在场
+          let text: string
+          try {
+            text = fs.readFileSync(f.abs, "utf8")
+          } catch {
+            return { ok: false, reason: `agent md unreadable at ${f.abs} — fail closed` }
+          }
+          const d = frontmatterDisable(text)
+          if (d !== undefined) fieldValue = d // frontmatter 显式 disable 覆盖;无则保留前值(mergeDeep 语义)
+        }
+      }
+    }
+  }
+  // OPENCODE_CONFIG_CONTENT(step 6,最后的 in-scope after 源):mcp/agent 叶 last-set;plugin union。
+  const envContent = readEngineConfigContent()
+  if (envContent) {
+    if (kind === "plugin") {
+      const arr = Array.isArray(envContent.plugin) ? (envContent.plugin as unknown[]) : []
+      for (const entry of arr) {
+        if (npmBase !== null) {
+          const spec = specOf(entry)
+          if (spec !== null && pkgBase(spec) === npmBase) return { ok: true, residue: `plugin base "${npmBase}" present in OPENCODE_CONFIG_CONTENT` }
+        } else if (targetIdent) {
+          const r = resolveEntry(entry, engineXdgConfigDir())
+          if (r !== null) {
+            const id = pathIdentity(r)
+            if (id.forms.some((x) => targetIdent.forms.includes(x))) return { ok: true, residue: `plugin path present in OPENCODE_CONFIG_CONTENT` }
+          }
+        }
+      }
+    } else {
+      applyLeaf(isRec(envContent[kind]) ? (envContent[kind] as Record<string, unknown>)[name] : undefined)
+    }
+  }
+
+  if (kind === "plugin") return { ok: true, residue: null } // plugin 命中已在各处早返回
   // mcp/agent 最终态:叶在场且最终字段非禁用值(mcp enabled!==false / agent disable!==true)= 会加载。
   const finalDisabled = fieldValue === disabledValue
-  if (leafPresent && !finalDisabled) return { ok: true, residue: `${kind} "${name}" would load after engine merge (a source after alpha.jsonc sets it enabled)` }
+  if (leafPresent && !finalDisabled) return { ok: true, residue: `${kind} "${name}" would load after engine merge (a source after alpha.jsonc keeps it enabled)` }
   return { ok: true, residue: null }
 }
 

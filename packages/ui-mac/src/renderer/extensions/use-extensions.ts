@@ -346,6 +346,20 @@ export function useExtensions(
   async function liveAddAndConnect(name: string, config: unknown): Promise<ActionResult> {
     const c = client
     if (!c) return { ok: false, reason: "no server" }
+    // #395(Codex r10 B4/M5):连接前复查当前 activation —— 安装/持久化提交后返回 live 段,与用户并发
+    // disable(post-commit)竞态,或本就是「重加已 disabled 的自定义 MCP」。引擎 mcp.connect 强制
+    // enabled:true,会绕过账本/config 的 disabled 复活运行面。account 为 disabled 则不激活连接,如实
+    // 回「已装未启用」。(inventoryView 读账本 desiredState 投影;global mcp 无 projectDir。)
+    try {
+      const inv = await window.api.ext.inventoryView()
+      const row = inv.rows.find((r) => r.kind === "mcp" && r.name === name && r.scope !== "project")
+      if (row?.activation === "disabled") {
+        await Promise.all([loadStatus(), loadInstalls()])
+        return { ok: true, reason: "installed-disabled" }
+      }
+    } catch {
+      /* 读失败不阻断:退回既有连接语义(不比 r10 前更差) */
+    }
     const added = await withTimeout(c.mcp.add({ name, config } as any), 15000)
     if (added === TIMED_OUT) {
       void loadStatus()

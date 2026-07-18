@@ -285,3 +285,113 @@ describe("#395 r7→r9 legacy 源探测(按引擎加载序)", () => {
     expect(readCfg().mcp.clean).toEqual({ type: "local", enabled: false })
   })
 })
+
+// ── #395 Codex r10 B1/B2:补全探测器 —— TOML config / agent-md 目录 / plugin-script 目录 / env content ──
+describe("#395 r10 补全探测器(引擎完整读取面)", () => {
+  const xdgOpencode = () => path.join(process.env.XDG_CONFIG_HOME!, "opencode")
+  beforeEach(() => {
+    process.env.ALPHA_GLOBAL_DIR = root
+    delete process.env.OPENCODE_CONFIG_CONTENT
+  })
+  afterEach(() => {
+    delete process.env.ALPHA_GLOBAL_DIR
+    delete process.env.OPENCODE_CONFIG_CONTENT
+  })
+
+  test("B1:XDG legacy TOML `config` 存在 → plugin disable fail-closed(无解析器,保守)", () => {
+    record({ name: "p", kind: "plugin", configKey: "plugin:@x/p@1.0.0" })
+    writeCfg({ plugin: [] })
+    fs.mkdirSync(xdgOpencode(), { recursive: true })
+    fs.writeFileSync(path.join(xdgOpencode(), "config"), 'plugin = ["@x/p@1.0.0"]\n') // TOML
+    const r = setInstallStateByKey({ type: "plugin", name: "p", scope: "global", state: "disabled" }, deps())
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("TOML")
+  })
+
+  test("B1:TOML config 存在但 disable mcp(before 源被 alpha 覆盖)→ 安全成功", () => {
+    record({ name: "m", kind: "mcp", configKey: "mcp.m" })
+    writeCfg({ mcp: { m: { type: "local" } } })
+    fs.mkdirSync(xdgOpencode(), { recursive: true })
+    fs.writeFileSync(path.join(xdgOpencode(), "config"), 'model = "x"\n')
+    expect(setInstallStateByKey({ type: "mcp", name: "m", scope: "global", state: "disabled" }, deps()).ok).toBe(true)
+  })
+
+  test("B2:agent-md(~/.opencode/agent/foo.md 明确 disable:false)→ after 源覆盖复活 → fail-closed", () => {
+    record({ name: "foo", kind: "agent", configKey: "agent.foo" })
+    writeCfg({ agent: { foo: { description: "d" } } })
+    const dir = path.join(process.env.ALPHA_OPENCODE_HOME!, "agent")
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, "foo.md"), "---\ndisable: false\n---\nbody") // 明确 disable:false → 覆盖 alpha
+    const r = setInstallStateByKey({ type: "agent", name: "foo", scope: "global", state: "disabled" }, deps())
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("would load")
+  })
+
+  test("B2:agent-md 主叶投影 + frontmatter 无 disable → mergeDeep 保留 alpha 禁用 → 成功(不误判)", () => {
+    record({ name: "foo2", kind: "agent", configKey: "agent.foo2" })
+    writeCfg({ agent: { foo2: { description: "d" } } })
+    const dir = path.join(process.env.ALPHA_OPENCODE_HOME!, "agent")
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, "foo2.md"), "---\ndescription: hi\n---\nbody") // 无 disable → 保留 alpha disable:true
+    expect(setInstallStateByKey({ type: "agent", name: "foo2", scope: "global", state: "disabled" }, deps()).ok).toBe(true)
+  })
+
+  test("B2:agent-md 主叶**缺席** + md 无 disable → 无 alpha 覆盖 → 默认启用 → fail-closed", () => {
+    record({ name: "foo3", kind: "agent", configKey: "agent.foo3" })
+    writeCfg({ agent: {} }) // 主叶缺席
+    const dir = path.join(process.env.ALPHA_OPENCODE_HOME!, "agent")
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, "foo3.md"), "---\ndescription: hi\n---\nbody")
+    const r = setInstallStateByKey({ type: "agent", name: "foo3", scope: "global", state: "disabled" }, deps())
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("would load")
+  })
+
+  test("B2:agent-md frontmatter 明确 disable:true → 不复活(disable 成功)", () => {
+    record({ name: "bar", kind: "agent", configKey: "agent.bar" })
+    writeCfg({ agent: { bar: { description: "d" } } })
+    const dir = path.join(process.env.ALPHA_OPENCODE_HOME!, "agents") // agents/ 复数目录也扫
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, "bar.md"), "---\ndisable: true\n---\nbody")
+    expect(setInstallStateByKey({ type: "agent", name: "bar", scope: "global", state: "disabled" }, deps()).ok).toBe(true)
+  })
+
+  test("B2:plugin-script 自动发现(~/.opencode/plugin/x.ts 指向账本 path-plugin)→ union 残留 fail-closed", () => {
+    const jsPath = path.join(root, "plugins", "vend", "plugin.js")
+    fs.mkdirSync(path.dirname(jsPath), { recursive: true })
+    fs.writeFileSync(jsPath, "module.exports={}")
+    record({ name: "v", kind: "plugin", configKey: `plugin-path:${jsPath}` })
+    writeCfg({ plugin: [] })
+    // 自动发现目录里放一个 symlink 指向同一 plugin.js(身份匹配)
+    const disc = path.join(process.env.ALPHA_OPENCODE_HOME!, "plugin")
+    fs.mkdirSync(disc, { recursive: true })
+    fs.symlinkSync(jsPath, path.join(disc, "alias.js"))
+    const r = setInstallStateByKey({ type: "plugin", name: "v", scope: "global", state: "disabled" }, deps())
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("script")
+  })
+
+  test("B2:OPENCODE_CONFIG_CONTENT 含 mcp enabled:true(after 源)→ 复活 → fail-closed", () => {
+    record({ name: "cc", kind: "mcp", configKey: "mcp.cc" })
+    writeCfg({ mcp: { cc: { type: "local" } } })
+    process.env.OPENCODE_CONFIG_CONTENT = JSON.stringify({ mcp: { cc: { type: "local", enabled: true } } })
+    const r = setInstallStateByKey({ type: "mcp", name: "cc", scope: "global", state: "disabled" }, deps())
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("would load")
+  })
+
+  test("B2:OPENCODE_CONFIG_CONTENT 含 plugin[] 同 base → union 残留 fail-closed", () => {
+    record({ name: "q", kind: "plugin", configKey: "plugin:@x/q@2.0.0" })
+    writeCfg({ plugin: [] })
+    process.env.OPENCODE_CONFIG_CONTENT = JSON.stringify({ plugin: ["@x/q@1.0.0"] })
+    const r = setInstallStateByKey({ type: "plugin", name: "q", scope: "global", state: "disabled" }, deps())
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("OPENCODE_CONFIG_CONTENT")
+  })
+
+  test("全清:无 TOML/agent-md/plugin-script/env → disable 成功", () => {
+    record({ name: "ok", kind: "agent", configKey: "agent.ok" })
+    writeCfg({ agent: { ok: { description: "d" } } })
+    expect(setInstallStateByKey({ type: "agent", name: "ok", scope: "global", state: "disabled" }, deps()).ok).toBe(true)
+  })
+})

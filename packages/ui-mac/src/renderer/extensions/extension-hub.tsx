@@ -361,7 +361,11 @@ export function ExtensionHub(props: {
       }
       setCustomMcpOpen(false)
       setCmName(""); setCmCommand(""); setCmUrl(""); setCmEnv(""); setCmSecrets("")
-      flash(r.reason === "slow" ? t("alpha.ext.customMcpSlow") : t("alpha.ext.customMcpDone"), "success")
+      // #395(Codex r10 M5):重加已 disabled 的自定义 MCP —— 落盘成功但不激活连接,如实提示。
+      flash(
+        r.reason === "installed-disabled" ? t("alpha.ext.installedDisabled") : r.reason === "slow" ? t("alpha.ext.customMcpSlow") : t("alpha.ext.customMcpDone"),
+        "success",
+      )
     } finally {
       setCmBusy(false)
     }

@@ -1587,12 +1587,28 @@ async function installBundleAtomic(
     // 原始 id 保留在 reason 里供审计;该 key 无查找语义(只进 journal/授权收据)。
     skippedOptional: skipped.map((s) => ({ key: `skipped--${sha256Hex(s.id).slice(0, 24)}`, reason: `${s.id}: ${s.reason}` })),
   }
+  // Codex r10 B3:bundle child 的 config edit 用 plan 期 baseRecord.desiredState(锁外分类);并发
+  // disable 在 bundle 取锁前发生时,旧快照会落无 enabled:false 的 config(批量 upsert 保留锁内 disabled
+  // → 账本 disabled / config enabled 复活)。锁内逐 config-backed child 复核 desiredState vs plan,漂移
+  // 即拒重试(镜像单装/seed)。收集计划期 (kind,name,plannedState)。
+  const driftChecks = planItems
+    .map((it) => it.receipt as UpsertInput | undefined)
+    .filter((r): r is UpsertInput => !!r && (r.kind === "mcp" || r.kind === "agent" || r.kind === "plugin"))
+    .map((r) => ({ kind: r.kind, name: r.name, planned: r.desiredState }))
   const hooks: TxHooks = {
     // REQ-098 #303:generation 项统一从验证共享 CAS 物化(读取重验;blob 被 GC/外部删除 → 抛错 =
     // 事务 abort,绝不回退 buffer 直填)。config/receipt 项无 populate。
     populate: (item, stagingDir) => {
       if (actionOf(item) !== "generation") return
       materializeFilesFromCas(deps.casBaseRoot(), item.files ?? [], stagingDir)
+    },
+    precondition: () => {
+      for (const d of driftChecks) {
+        const prior = findRecordV2(deps.globalRoot(), d.kind, d.name)
+        if ((prior?.desiredState ?? d.planned) !== d.planned)
+          return { ok: false, reason: `bundle child ${d.kind} ${d.name}: desired state changed since plan — retry the bundle install` }
+      }
+      return { ok: true }
     },
     // 类型化健康探测(#312):skill generation 落地后验 SKILL.md 可发现;非 generation 直接健康。
     probe: skillGenerationProbe,
