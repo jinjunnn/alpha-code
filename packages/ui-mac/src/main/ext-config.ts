@@ -738,34 +738,52 @@ function pkgBase(spec: string): string {
 
 export type LegacyEnableResidue = { ok: true; residue: string | null } | { ok: false; reason: string }
 
-/** Codex r8 B1:引擎在主 alpha.jsonc 之外**真实读取**的全部 legacy config 文件 —— XDG 的
- *  `config.json` + `opencode.json` + `opencode.jsonc`(config.ts:258-260 全部加载)与 directories 阶段
- *  `~/.opencode` 的 `opencode.json` + `opencode.jsonc`(config.ts:426-429)。legacyConfigPaths 每目录
- *  只取一份且**漏 XDG config.json**,不足以做安全探测(空 opencode.jsonc + 有内容的 opencode.json/
- *  config.json 会绕过)。去重并排除主 alpha.jsonc。 */
-function engineLegacyReadFiles(): string[] {
-  const xdgDir = path.dirname(userConfigPath())
-  const homeDir = opencodeHomeDir()
-  const primary = mcpPluginTargetPath()
-  const files = [
-    path.join(xdgDir, "config.json"),
-    path.join(xdgDir, "opencode.json"),
-    path.join(xdgDir, "opencode.jsonc"),
-    path.join(homeDir, "opencode.json"),
-    path.join(homeDir, "opencode.jsonc"),
-  ]
-  return [...new Set(files)].filter((f) => f !== primary)
+/** Codex r9 B1:引擎读取的 XDG 全局目录 = `(XDG_CONFIG_HOME || ~/.config)/opencode`(xdg-basedir 语义,
+ *  core/global.ts:13)—— **固定,不 honor `OPENCODE_CONFIG_DIR`**(它只进 directories 阶段,不改
+ *  Global.Path.config)。此前误用 `userConfigPath()`(honor OPENCODE_CONFIG_DIR)推 XDG 根,OPENCODE_CONFIG_DIR
+ *  被设时会漏读真实 XDG、多读不存在的目录。 */
+function engineXdgConfigDir(): string {
+  const base = process.env.XDG_CONFIG_HOME && process.env.XDG_CONFIG_HOME.length > 0 ? process.env.XDG_CONFIG_HOME : path.join(os.homedir(), ".config")
+  return path.join(base, "opencode")
 }
 
-/** Codex r7 B1/M3:一个 **disabled** 记录在引擎**额外合并**的 legacy/XDG 源(`~/.opencode` + XDG,
- *  config.ts directories 阶段,在主 alpha.jsonc 之后再深合并)里是否**会被启用加载**。disable 只投影
- *  alpha.jsonc 不够 —— 这些源会覆盖/concat:
- *    · plugin:任一源 `plugin[]` 含同 base(npm)/ 同文件身份(path)→ 引擎 concat 加载(残留);
- *      path 身份不可判(EACCES/断链)→ fail-closed 视为残留。
- *    · mcp:任一源 `mcp[name]` 在场且 `enabled !== false` → 深合并覆盖启用。
- *    · agent:任一源 `agent[name]` 在场且 `disable !== true` → 覆盖启用。
- *  strict:任一源语法损坏 / 读不出 / 根非对象 → fail-closed(无法确认无残留)。residue!=null = 有残留。
- *  **只查 legacy 源**(不含主 alpha.jsonc;主源的禁用投影由 computeEnableProjectionEdit 负责)。 */
+/** Codex r9 B1/M1:引擎在主 alpha.jsonc 之外**真实读取**的 legacy 文件,**按加载先后 + 相对 alpha 的
+ *  phase 分组**(勘破报告 §6)。
+ *   · `before`(alpha.jsonc 之前加载):XDG 全局 `config.json`→`opencode.json`→`opencode.jsonc`。
+ *   · `after`(alpha.jsonc 之后加载):`~/.opencode/opencode.json`→`opencode.jsonc`(home walk;不读
+ *     config.json),以及 `OPENCODE_CONFIG_DIR/opencode.json`→`opencode.jsonc`(若该 env 被设)。
+ *  mcp/agent 走 mergeDeep(顺序敏感):before 源被 alpha 的禁用覆盖(安全),只有 after 源能反向复活。
+ *  plugin 走 union(mergePluginOrigins,顺序无关):before+after 任一源都算残留。项目 cwd-walk 源与
+ *  managed/MDM 不在全局 reconcile 面(项目 scope 另账;企业受控源非本探测目标)。 */
+function engineLegacyReadFiles(): Array<{ file: string; phase: "before" | "after" }> {
+  const xdgDir = engineXdgConfigDir()
+  const homeDir = opencodeHomeDir()
+  const primary = mcpPluginTargetPath()
+  const out: Array<{ file: string; phase: "before" | "after" }> = [
+    { file: path.join(xdgDir, "config.json"), phase: "before" },
+    { file: path.join(xdgDir, "opencode.json"), phase: "before" },
+    { file: path.join(xdgDir, "opencode.jsonc"), phase: "before" },
+    { file: path.join(homeDir, "opencode.json"), phase: "after" },
+    { file: path.join(homeDir, "opencode.jsonc"), phase: "after" },
+  ]
+  const cfgDir = process.env.OPENCODE_CONFIG_DIR
+  if (cfgDir && cfgDir.length > 0) {
+    out.push({ file: path.join(cfgDir, "opencode.json"), phase: "after" }, { file: path.join(cfgDir, "opencode.jsonc"), phase: "after" })
+  }
+  return out.filter((s) => s.file !== primary)
+}
+
+/** Codex r7→r9:一个 **disabled** 记录在引擎**额外合并**的 legacy 源里是否**会被启用加载**。按引擎真实
+ *  加载语义(勘破报告 §6),而非逐文件短路:
+ *    · **mcp/agent**(mergeDeep,顺序敏感)= 对 `enabled`/`disable` 顶层标量做**按加载序 last-set**:
+ *      before 源 → alpha 投影(disabled 时贡献 `enabled:false`/`disable:true`)→ after 源。最终值由最后
+ *      一个显式设该字段的源决定。before 源(XDG)被 alpha 覆盖 = 安全;只有 after 源的显式反向字段能翻。
+ *      叶在任一源在场 + 最终 enabled!==false(mcp)/ disable!==true(agent)= 会加载 = 残留。
+ *    · **plugin**(union,顺序无关)= 任一源 `plugin[]` 含同 base(npm)/ 同文件身份(path;身份不可判
+ *      = fail-closed)= 残留。
+ *  `mainLeafProjectsDisabled` = alpha.jsonc(主源)是否已/将投影禁用叶(mcp/agent);true 时把 alpha 的
+ *  `enabled:false`/`disable:true` 计入 before/after 之间的合并序。strict:任一源语法损坏/读不出/根非对象
+ *  → fail-closed。 */
 export function legacyEnableResidueStrict(
   kind: string,
   name: string,
@@ -792,48 +810,64 @@ export function legacyEnableResidueStrict(
     } else if (!p.startsWith(".") && !path.isAbsolute(p)) return null // npm 规格,非路径
     return path.resolve(configDir, p)
   }
-  for (const file of engineLegacyReadFiles()) {
-    let parsed: unknown
-    try {
-      if (!fs.existsSync(file)) continue
-      const errors: ParseError[] = []
-      parsed = parse(fs.readFileSync(file, "utf8"), errors)
-      if (errors.length > 0) return { ok: false, reason: `legacy config unparseable: ${file}` }
-    } catch (e) {
-      return { ok: false, reason: `legacy config unreadable: ${file}: ${e instanceof Error ? e.message : String(e)}` }
-    }
-    if (parsed === undefined) continue
-    if (!isRec(parsed)) return { ok: false, reason: `legacy config root is not an object: ${file}` }
-    if (kind === "plugin") {
-      const arr = Array.isArray(parsed.plugin) ? (parsed.plugin as unknown[]) : []
-      for (const entry of arr) {
-        if (npmBase !== null) {
-          const spec = specOf(entry)
-          if (spec !== null && pkgBase(spec) === npmBase) return { ok: true, residue: `plugin base "${npmBase}" present in ${file}` }
-        } else if (targetIdent) {
-          const r = resolveEntry(entry, path.dirname(file))
-          if (r === null) continue
-          const id = pathIdentity(r)
-          if (id.forms.some((f) => targetIdent.forms.includes(f))) return { ok: true, residue: `plugin path present in ${file}` }
-          if (!id.certain || !targetIdent.certain) return { ok: true, residue: `plugin path identity unprovable in ${file} (fail closed)` }
-        }
-      }
-    } else if (kind === "mcp") {
-      // Codex r8 M2:mergeDeep 语义 —— 主叶已投影 enabled:false 时 legacy 省略字段不覆盖(禁用保留),
-      // 只有**明确 enabled:true**才复活;主叶缺席(无投影面)时 legacy 在场且 enabled!==false 即加载。
-      const leaf = isRec(parsed.mcp) ? parsed.mcp[name] : undefined
-      if (isRec(leaf)) {
-        const wouldLoad = mainLeafProjectsDisabled ? leaf.enabled === true : leaf.enabled !== false
-        if (wouldLoad) return { ok: true, residue: `mcp "${name}" would load from ${file}` }
-      }
-    } else if (kind === "agent") {
-      const leaf = isRec(parsed.agent) ? parsed.agent[name] : undefined
-      if (isRec(leaf)) {
-        const wouldLoad = mainLeafProjectsDisabled ? leaf.disable === false : leaf.disable !== true
-        if (wouldLoad) return { ok: true, residue: `agent "${name}" would load from ${file}` }
-      }
-    }
+  const field = kind === "mcp" ? "enabled" : "disable"
+  const disabledValue = kind === "mcp" ? false : true // mcp 禁 = enabled:false;agent 禁 = disable:true
+  // mcp/agent 的 last-set 追踪:leafPresent = 叶在任一源在场;fieldValue = 按加载序最后一个显式设的字段值。
+  let leafPresent = false
+  let fieldValue: unknown = undefined
+  const applyLeaf = (leaf: unknown): void => {
+    if (!isRec(leaf)) return
+    leafPresent = true
+    if (field in leaf) fieldValue = leaf[field]
   }
+  const scan = (phase: "before" | "after"): LegacyEnableResidue | null => {
+    for (const src of engineLegacyReadFiles()) {
+      if (src.phase !== phase) continue
+      let parsed: unknown
+      try {
+        if (!fs.existsSync(src.file)) continue
+        const errors: ParseError[] = []
+        parsed = parse(fs.readFileSync(src.file, "utf8"), errors)
+        if (errors.length > 0) return { ok: false, reason: `legacy config unparseable: ${src.file}` }
+      } catch (e) {
+        return { ok: false, reason: `legacy config unreadable: ${src.file}: ${e instanceof Error ? e.message : String(e)}` }
+      }
+      if (parsed === undefined) continue
+      if (!isRec(parsed)) return { ok: false, reason: `legacy config root is not an object: ${src.file}` }
+      if (kind === "plugin") {
+        const arr = Array.isArray(parsed.plugin) ? (parsed.plugin as unknown[]) : []
+        for (const entry of arr) {
+          if (npmBase !== null) {
+            const spec = specOf(entry)
+            if (spec !== null && pkgBase(spec) === npmBase) return { ok: true, residue: `plugin base "${npmBase}" present in ${src.file}` }
+          } else if (targetIdent) {
+            const r = resolveEntry(entry, path.dirname(src.file))
+            if (r === null) continue
+            const id = pathIdentity(r)
+            if (id.forms.some((f) => targetIdent.forms.includes(f))) return { ok: true, residue: `plugin path present in ${src.file}` }
+            if (!id.certain || !targetIdent.certain) return { ok: true, residue: `plugin path identity unprovable in ${src.file} (fail closed)` }
+          }
+        }
+      } else {
+        applyLeaf(isRec(parsed[kind]) ? (parsed[kind] as Record<string, unknown>)[name] : undefined)
+      }
+    }
+    return null
+  }
+  // 加载序:before 源 → alpha 主投影 → after 源。plugin 顺序无关(两 phase 各扫即可)。
+  const beforeErr = scan("before")
+  if (beforeErr) return beforeErr
+  // alpha 主投影(mcp/agent):主叶投影禁用时贡献 enabled:false / disable:true 到合并序中间。
+  if (kind !== "plugin" && mainLeafProjectsDisabled) {
+    leafPresent = true
+    fieldValue = disabledValue
+  }
+  const afterErr = scan("after")
+  if (afterErr) return afterErr
+  if (kind === "plugin") return { ok: true, residue: null } // plugin 命中已在 scan 内早返回
+  // mcp/agent 最终态:叶在场且最终字段非禁用值(mcp enabled!==false / agent disable!==true)= 会加载。
+  const finalDisabled = fieldValue === disabledValue
+  if (leafPresent && !finalDisabled) return { ok: true, residue: `${kind} "${name}" would load after engine merge (a source after alpha.jsonc sets it enabled)` }
   return { ok: true, residue: null }
 }
 

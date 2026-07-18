@@ -1866,6 +1866,13 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       precondition: () => {
         const ledger = probeLedgerForWrite(mcpRoot)
         if (!ledger.ok) return { ok: false, reason: `refusing mcp install: ${ledger.reason}` }
+        // Codex r9 B2:desiredState 漂移钉死(镜像 plugin replacement)—— config edit 与 live outcome
+        // 都用 plan 期 mcpReceipt.desiredState;plan 快照与加锁之间的合法启停(用户 disable)不得被旧
+        // 快照静默覆盖(否则账本 disabled 但 config 无 enabled:false + 返回 liveMcp → 运行面复活)。
+        // 漂移即拒,重试重读 desiredState 后按新态重建 config/outcome。fresh 装无 prior,不进此支。
+        const prior = findRecordV2(mcpRoot, "mcp", entry.name)
+        if ((prior?.desiredState ?? mcpReceipt.desiredState) !== mcpReceipt.desiredState)
+          return { ok: false, reason: `mcp desired state changed since plan — retry the install` }
         const leaf = deps.installers.readMcpLeafStrict(entry.name)
         if (!leaf.ok) return { ok: false, reason: `refusing mcp install: ${leaf.reason}` }
         for (const p of refPaths) {
@@ -2631,9 +2638,14 @@ function readPluginArrayStrictAt(configTarget: string): { ok: true; value: unkno
 /** mcp seed 的锁内门(#359 裁决 B/E):账本写前探测 + 版本门(kind 泛化,downgrade/不可比拒)+
  *  无账 config 叶拒认领 + 形状异常 fail-closed(根/mcp 段非对象 —— 合法 jsonc 也可能形状异常,
  *  与 agent 门同款,否则 jsonc modify 会在锁内抛异常)。 */
-function mcpSeedGate(root: string, name: string, configTarget: string, seedVersion: string): { ok: true } | { ok: false; reason: string } {
+function mcpSeedGate(root: string, name: string, configTarget: string, seedVersion: string, plannedState: DesiredState): { ok: true } | { ok: false; reason: string } {
   const ledgerProbe = probeLedgerForWrite(root)
   if (!ledgerProbe.ok) return { ok: false, reason: `refusing seed install: ${ledgerProbe.reason}` }
+  // Codex r9 B2:desiredState 漂移钉死 —— seed config edit 也用 plan 期 desiredState;并发 disable 后
+  // 旧快照会落无 enabled:false 的 config。漂移即拒重试(fresh 无 prior 不进此支)。
+  const prior = findRecordV2(root, "mcp", name)
+  if ((prior?.desiredState ?? plannedState) !== plannedState)
+    return { ok: false, reason: `refusing seed install: mcp desired state changed since plan — retry` }
   const gate = seedInstallVersionGate(root, "mcp", name, seedVersion)
   if (!gate.ok) return gate
   if (fs.existsSync(configTarget)) {
@@ -3382,7 +3394,7 @@ async function installSeedMcp(args: {
   }
   const hooks: TxHooks = {
     populate: () => {}, // config action 无 staging 载荷
-    precondition: () => mcpSeedGate(root, entry.name, configTarget, manifest.version),
+    precondition: () => mcpSeedGate(root, entry.name, configTarget, manifest.version, receiptTemplate.desiredState),
     commitReceipt: (records: TxCommitRecord[]) => {
       const written = upsertRecordsV2(root, recoveryReceiptInputs(records))
       if (!written.ok) throw new Error(`seed mcp receipt commit failed: ${written.reason}`)

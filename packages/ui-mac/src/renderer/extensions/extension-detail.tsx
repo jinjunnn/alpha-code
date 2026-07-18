@@ -13,7 +13,7 @@ import type { ExtensionsApi, HubAgent } from "./use-extensions"
 import { CloudDispatchBox } from "./cloud-dispatch-box"
 import { iconFor, iconForRow, sourceLabel, typeLabel, Svg, LockIc } from "./ext-presentation"
 import { ExtGrantedCapRow } from "./ext-authz"
-import { inventoryRowFor, ownershipRows, trustRows, runtimeSurfaceLabelKey, supportTierLabelKey, type PresentRow } from "./ext-inventory-present"
+import { inventoryRowFor, inventoryInstallRow, ownershipRows, trustRows, runtimeSurfaceLabelKey, supportTierLabelKey, type PresentRow } from "./ext-inventory-present"
 import { derivePackFacts, formatPackBytes } from "./ext-pack-facts"
 import { EXCEL_MCP_PIN, officeAdvisoryFor, type OfficeAdvisory } from "../../shared/office-advisories"
 
@@ -101,6 +101,16 @@ export function ExtensionDetail(props: {
   onLogin?: () => void
   /** REQ-103(#195):governance 只读真源(逐扩展五维所有权 + 三态);详情页所有权/来源签名段据此渲染。 */
   governance?: Accessor<ExtInventory | undefined>
+  /** #395(Codex r9 B3):启停唯一处理器(hub 持有,与行内开关共用)—— 详情页 MCP 开关据此走
+   *  desired-state/advisory 通道,不再直连 setMcpConnected 绕过账本/闸门。 */
+  onToggleState?: (args: {
+    receipt: InstallReceipt
+    type: string
+    name: string
+    currentlyOn: boolean
+    liveUnreceipted: boolean
+    mcpConnected: boolean
+  }) => Promise<void>
 }) {
   const entry = () => (props.target.kind === "entry" ? props.target.entry : undefined)
   const agent = () => (props.target.kind === "agent" ? props.target.agent : undefined)
@@ -316,12 +326,35 @@ export function ExtensionDetail(props: {
                   </button>
                 </Show>
                 <Show when={e().type === "mcp" && installed()}>
-                  <button
-                    class="alpha-ext-sw"
-                    data-on={mcpLive()?.connected ? "" : undefined}
-                    aria-label={mcpLive()?.connected ? t("alpha.ext.enabled") : t("alpha.ext.disabled")}
-                    onClick={() => void props.ext.setMcpConnected(e().name, !mcpLive()?.connected)}
-                  />
+                  {(() => {
+                    // #395(Codex r9 B3):启用真源 = governance activation(账本 desiredState 投影);无
+                    // governance 行(live-unreceipted 合成收据)按 live 连接态。开关走 hub 的
+                    // onToggleState 统一通道(过 advisory + 账本 + config),不再直连绕过闸门。
+                    const rc = receipt()
+                    const govActivation = () =>
+                      rc ? inventoryInstallRow(props.governance?.(), rc.id, rc.scope)?.activation : undefined
+                    const liveUnreceipted = () => !rc || rc.installedAt === ""
+                    const on = () => (liveUnreceipted() ? !!mcpLive()?.connected : govActivation() !== "disabled")
+                    return (
+                      <button
+                        class="alpha-ext-sw"
+                        data-on={on() ? "" : undefined}
+                        aria-label={on() ? t("alpha.ext.enabled") : t("alpha.ext.disabled")}
+                        onClick={() =>
+                          rc && props.onToggleState
+                            ? void props.onToggleState({
+                                receipt: rc,
+                                type: e().type,
+                                name: e().name,
+                                currentlyOn: on(),
+                                liveUnreceipted: liveUnreceipted(),
+                                mcpConnected: !!mcpLive()?.connected,
+                              })
+                            : void props.ext.setMcpConnected(e().name, !mcpLive()?.connected)
+                        }
+                      />
+                    )
+                  })()}
                 </Show>
               </>
             )}

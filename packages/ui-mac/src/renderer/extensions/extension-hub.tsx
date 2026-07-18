@@ -173,6 +173,38 @@ export function ExtensionHub(props: {
   const cloudLive = () => ext.store.mcp["cloud"]
   const [query, setQuery] = createSignal("")
   const [busy, setBusy] = createSignal<string | null>(null)
+  // #395(Codex r9 B3):启停唯一处理器 —— 行内开关(row)与详情页开关共用,保证详情页不再绕过
+  // desired-state/advisory 通道直连 MCP。入参已由调用方按各自数据源解出(receipt/当前启用态/是否
+  // live-unreceipted/mcp 连接态)。account:has-receipt → setInstallState(过 advisory + 账本 + config)
+  // 后再切 live;live-unreceipted → 纯 live connect/disconnect。两路 disconnect/dispose 失败均如实
+  // 提示待重载,advisory 拒(R14)走 error toast。
+  const runStateToggle = async (args: {
+    receipt: InstallReceipt
+    type: string
+    name: string
+    currentlyOn: boolean
+    liveUnreceipted: boolean
+    mcpConnected: boolean
+  }): Promise<void> => {
+    if (args.liveUnreceipted && args.type === "mcp") {
+      const mc = await ext.setMcpConnected(args.name, !args.mcpConnected)
+      if (mc.reason === "reload-pending") pushToast({ kind: "info", title: t("alpha.ext.statePendingReload") })
+      return
+    }
+    const next = args.currentlyOn ? "disabled" : "enabled"
+    const r = await ext.setInstallState(args.receipt, next)
+    if (!r.ok) {
+      pushToast({ kind: "error", title: r.reason ?? t("alpha.ext.stateFailed") })
+      return
+    }
+    let mcPending = false
+    if (args.type === "mcp") {
+      const mc = await ext.setMcpConnected(args.name, next === "enabled")
+      mcPending = mc.reason === "reload-pending"
+    }
+    if (r.reason === "reload-pending" || mcPending) pushToast({ kind: "info", title: t("alpha.ext.statePendingReload") })
+    await refetchGovernance()
+  }
   // T7/T9:安装阶段(粗粒度状态机:checking→installing)与逐条行内错误(B11:失败不裸 toast)。
   const [stage, setStage] = createSignal<Record<string, "checking" | "installing">>({})
   const [cardErr, setCardErr] = createSignal<Record<string, string>>({})
@@ -1193,39 +1225,18 @@ export function ExtensionHub(props: {
     const desiredOn = () => gov()?.activation !== "disabled"
     const stateBusy = createSignal(false)
     const toggleState = async () => {
-      if (stateBusy[0]()) return
+      if (stateBusy[0]()) return // Codex r1 Minor 1:busy 门提前 —— 防双击并发。
       stateBusy[1](true)
-      // live-unreceipted MCP(无账本记录):保持既有 live connect/disconnect 语义,不进账本通道。
-      // Codex r1 Minor 1:busy 门提前到分支之前 —— 否则此分支在设 busy 前返回,可被双击并发。
-      if (row.type === "mcp" && row.receipt.installedAt === "") {
-        try {
-          // #395(Codex r8 M5):disconnect/connect 失败 = 运行面未真正切换 → 如实提示待重载,不静默。
-          const mc = await ext.setMcpConnected(row.name, !row.mcp?.connected)
-          if (mc.reason === "reload-pending") pushToast({ kind: "info", title: t("alpha.ext.statePendingReload") })
-        } finally {
-          stateBusy[1](false)
-        }
-        return
-      }
       try {
-        const next = desiredOn() ? "disabled" : "enabled"
-        const r = await ext.setInstallState(row.receipt, next)
-        if (!r.ok) {
-          // enable 被 advisory 闸拒(R14)等必须让用户看到原因 —— 行内无错误槽,用 error toast。
-          pushToast({ kind: "error", title: r.reason ?? t("alpha.ext.stateFailed") })
-          return
-        }
-        // #395(Codex r8 M5):MCP 关闭时 disconnect 失败 = 旧连接仍在跑 —— 与 set-state 的 dispose 失败
-        // 一并视作待重载(两者任一 pending 都提示;设 setState 已提交 desiredState,运行面待刷新)。
-        let mcPending = false
-        if (row.type === "mcp") {
-          const mc = await ext.setMcpConnected(row.name, next === "enabled")
-          mcPending = mc.reason === "reload-pending"
-        }
-        // Codex r1 Blocker 3:dispose 失败 = 账本已翻但旧引擎实例仍在跑 —— 如实告知「待重载」,
-        // 不宣称已生效(状态开关反映已提交的 desiredState,提示条补充运行面尚未刷新)。
-        if (r.reason === "reload-pending" || mcPending) pushToast({ kind: "info", title: t("alpha.ext.statePendingReload") })
-        await refetchGovernance()
+        // 启停逻辑统一进 runStateToggle(Codex r9 B3:与详情页共用一条通道)。
+        await runStateToggle({
+          receipt: row.receipt,
+          type: row.type,
+          name: row.name,
+          currentlyOn: desiredOn(),
+          liveUnreceipted: row.receipt.installedAt === "",
+          mcpConnected: !!row.mcp?.connected,
+        })
       } finally {
         stateBusy[1](false)
       }
@@ -1399,6 +1410,7 @@ export function ExtensionHub(props: {
                     cloudReady={cloudReady}
                     onLogin={authState().status !== "logged-in" ? () => void window.api.auth.start() : undefined}
                     governance={governance}
+                    onToggleState={runStateToggle}
                   />
                 }
               >

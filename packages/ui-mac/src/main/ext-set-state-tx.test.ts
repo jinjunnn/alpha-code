@@ -10,12 +10,34 @@ import { findRecordV2, upsertRecordV2, type UpsertInput } from "./ext-receipt-v2
 
 let root: string
 const deps = () => ({ globalRoot: () => root, advisoryGate: () => ({ allowed: true }) as const })
+// hermetic:隔离引擎真实读取的 legacy 源根(XDG 固定 = XDG_CONFIG_HOME/opencode;~/.opencode = ALPHA_OPENCODE_HOME),
+// 使 legacyEnableResidueStrict 探测不碰开发机真实 ~/.config,并可精确造 before(XDG)/after(~/.opencode)源。
+const savedEnv: Record<string, string | undefined> = {}
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), "ext-setstate-"))
+  for (const k of ["XDG_CONFIG_HOME", "ALPHA_OPENCODE_HOME", "OPENCODE_CONFIG_DIR"]) savedEnv[k] = process.env[k]
+  process.env.XDG_CONFIG_HOME = path.join(root, "xdg-home") // → 引擎 XDG 目录 = <root>/xdg-home/opencode
+  process.env.ALPHA_OPENCODE_HOME = path.join(root, "dot-opencode") // → ~/.opencode(after 源)
+  delete process.env.OPENCODE_CONFIG_DIR
 })
 afterEach(() => {
+  for (const k of ["XDG_CONFIG_HOME", "ALPHA_OPENCODE_HOME", "OPENCODE_CONFIG_DIR"]) {
+    if (savedEnv[k] === undefined) delete process.env[k]
+    else process.env[k] = savedEnv[k]
+  }
   fs.rmSync(root, { recursive: true, force: true })
 })
+// 写引擎 XDG 全局源(before alpha)与 ~/.opencode(after alpha),供 before/after 语义测试。
+const writeXdgGlobal = (cfg: unknown, file = "opencode.jsonc") => {
+  const dir = path.join(process.env.XDG_CONFIG_HOME!, "opencode")
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, file), JSON.stringify(cfg))
+}
+const writeDotOpencode = (cfg: unknown, file = "opencode.jsonc") => {
+  const dir = process.env.ALPHA_OPENCODE_HOME!
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, file), JSON.stringify(cfg))
+}
 
 const record = (over: Partial<UpsertInput> & { name: string; kind: UpsertInput["kind"] }): void => {
   const w = upsertRecordV2(root, {
@@ -163,102 +185,101 @@ describe("#395 步骤4 读错误收窄", () => {
 })
 
 // ── #395 Codex r7:legacy/XDG 源统一探测(mcp/agent 反向字段 + 缺席也探测 + npm base)──────────────
-describe("#395 r7 legacy 源统一探测", () => {
-  let savedXdg: string | undefined
+describe("#395 r7→r9 legacy 源探测(按引擎加载序)", () => {
   beforeEach(() => {
-    savedXdg = process.env.OPENCODE_CONFIG_DIR
     process.env.ALPHA_GLOBAL_DIR = root
   })
   afterEach(() => {
-    if (savedXdg === undefined) delete process.env.OPENCODE_CONFIG_DIR
-    else process.env.OPENCODE_CONFIG_DIR = savedXdg
     delete process.env.ALPHA_GLOBAL_DIR
   })
-  const writeXdg = (cfg: unknown) => {
-    const dir = path.join(root, "xdg")
-    fs.mkdirSync(dir, { recursive: true })
-    fs.writeFileSync(path.join(dir, "opencode.jsonc"), JSON.stringify(cfg))
-    process.env.OPENCODE_CONFIG_DIR = dir
-  }
 
-  test("M2/M3:mcp disable 主叶在场 + XDG 明确 enabled:true → 覆盖主叶禁用 → fail-closed", () => {
+  // ── mcp/agent = mergeDeep 顺序敏感:before(XDG)被 alpha 覆盖(安全),after(~/.opencode)能翻 ──
+  test("M1 核心:mcp before 源(XDG)enabled:true + 主叶投影禁用 → alpha 覆盖 → 安全 disable 成功", () => {
     record({ name: "demo", kind: "mcp", configKey: "mcp.demo" })
     writeCfg({ mcp: { demo: { type: "local", command: ["x"] } } })
-    writeXdg({ mcp: { demo: { type: "local", enabled: true } } }) // 明确 enabled:true → mergeDeep 覆盖主叶 enabled:false
+    writeXdgGlobal({ mcp: { demo: { type: "local", enabled: true } } }) // XDG 在 alpha 之前加载 → 被覆盖
     const r = setInstallStateByKey({ type: "mcp", name: "demo", scope: "global", state: "disabled" }, deps())
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("would load")
-    expect(findRecordV2(root, "mcp", "demo")!.desiredState).toBe("enabled") // 账本未翻
+    expect(r.ok).toBe(true) // r9 之前这里误判 fail-closed(M1)
+    expect(readCfg().mcp.demo).toEqual({ type: "local", command: ["x"], enabled: false })
   })
 
-  test("M2:mcp disable 主叶在场 + XDG 省略 enabled → mergeDeep 保留主叶禁用,disable 成功(不误判残留)", () => {
+  test("mcp after 源(~/.opencode)enabled:true + 主叶投影禁用 → 覆盖 alpha → fail-closed", () => {
+    record({ name: "demo2", kind: "mcp", configKey: "mcp.demo2" })
+    writeCfg({ mcp: { demo2: { type: "local" } } })
+    writeDotOpencode({ mcp: { demo2: { type: "local", enabled: true } } }) // ~/.opencode 在 alpha 之后
+    const r = setInstallStateByKey({ type: "mcp", name: "demo2", scope: "global", state: "disabled" }, deps())
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("would load")
+    expect(findRecordV2(root, "mcp", "demo2")!.desiredState).toBe("enabled")
+  })
+
+  test("mcp after 源省略 enabled + 主叶投影禁用 → mergeDeep 保留禁用 → 成功(不误判)", () => {
     record({ name: "keep", kind: "mcp", configKey: "mcp.keep" })
     writeCfg({ mcp: { keep: { type: "local", command: ["x"] } } })
-    writeXdg({ mcp: { keep: { type: "local" } } }) // 省略 enabled → 不覆盖主叶 enabled:false → 常见 retained legacy
+    writeDotOpencode({ mcp: { keep: { type: "local" } } }) // after 但省略 enabled → 不翻
     const r = setInstallStateByKey({ type: "mcp", name: "keep", scope: "global", state: "disabled" }, deps())
     expect(r.ok).toBe(true)
     expect(readCfg().mcp.keep).toEqual({ type: "local", command: ["x"], enabled: false })
   })
 
-  test("M2:mcp disable 主叶**缺席** + XDG 省略 enabled → 无投影面,legacy 在场即加载 → fail-closed", () => {
+  test("mcp 主叶缺席 + before 源(XDG)省略 enabled → 无投影覆盖 → 默认启用 → fail-closed", () => {
     record({ name: "noleaf", kind: "mcp", configKey: "mcp.noleaf" })
     writeCfg({ mcp: {} }) // alpha 无该叶(无投影面)
-    writeXdg({ mcp: { noleaf: { type: "local" } } }) // 省略 enabled = 默认启用,alpha 无叶覆盖不了
+    writeXdgGlobal({ mcp: { noleaf: { type: "local" } } }) // 省略 = 默认启用,无 alpha 叶覆盖
     const r = setInstallStateByKey({ type: "mcp", name: "noleaf", scope: "global", state: "disabled" }, deps())
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toContain("would load")
   })
 
-  test("M3:XDG 源 mcp[name] 明确 enabled:false → 不算残留(disable 成功)", () => {
+  test("mcp after 源明确 enabled:false → 不算残留(disable 成功)", () => {
     record({ name: "d2", kind: "mcp", configKey: "mcp.d2" })
     writeCfg({ mcp: { d2: { type: "local" } } })
-    writeXdg({ mcp: { d2: { type: "local", enabled: false } } }) // 已禁,不覆盖
+    writeDotOpencode({ mcp: { d2: { type: "local", enabled: false } } })
     const r = setInstallStateByKey({ type: "mcp", name: "d2", scope: "global", state: "disabled" }, deps())
     expect(r.ok).toBe(true)
-    expect(readCfg().mcp.d2).toEqual({ type: "local", enabled: false })
   })
 
-  test("M2/M3:agent disable 主叶在场 + XDG 明确 disable:false → 覆盖主叶禁用 → fail-closed", () => {
+  test("agent after 源(~/.opencode)disable:false + 主叶投影禁用 → 覆盖 → fail-closed;before 源同字段 → 安全", () => {
     record({ name: "bot", kind: "agent", configKey: "agent.bot" })
     writeCfg({ agent: { bot: { description: "d" } } })
-    writeXdg({ agent: { bot: { description: "d", disable: false } } }) // 明确 disable:false → 覆盖主叶 disable:true
-    const r = setInstallStateByKey({ type: "agent", name: "bot", scope: "global", state: "disabled" }, deps())
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("would load")
+    writeDotOpencode({ agent: { bot: { description: "d", disable: false } } })
+    expect(setInstallStateByKey({ type: "agent", name: "bot", scope: "global", state: "disabled" }, deps()).ok).toBe(false)
+    // before 源(XDG)同字段 → 被 alpha 覆盖 → 安全
+    fs.rmSync(path.join(process.env.ALPHA_OPENCODE_HOME!, "opencode.jsonc"))
+    writeXdgGlobal({ agent: { bot: { description: "d", disable: false } } })
+    expect(setInstallStateByKey({ type: "agent", name: "bot", scope: "global", state: "disabled" }, deps()).ok).toBe(true)
   })
 
-  test("M2:agent disable 主叶在场 + XDG 省略 disable → 保留主叶禁用,disable 成功(不误判)", () => {
-    record({ name: "keepbot", kind: "agent", configKey: "agent.keepbot" })
-    writeCfg({ agent: { keepbot: { description: "d" } } })
-    writeXdg({ agent: { keepbot: { description: "d" } } }) // 省略 disable → 不覆盖主叶 disable:true
-    const r = setInstallStateByKey({ type: "agent", name: "keepbot", scope: "global", state: "disabled" }, deps())
-    expect(r.ok).toBe(true)
-    expect(readCfg().agent.keepbot).toEqual({ description: "d", disable: true })
-  })
-
-  test("B1:alpha.jsonc 缺席时 plugin disable 仍探测 XDG concat 残留 → fail-closed", () => {
+  // ── plugin = union 顺序无关:before + after 任一源都算残留 ──
+  test("plugin before 源(XDG)含同 base → 残留 fail-closed(union 顺序无关)", () => {
     record({ name: "p", kind: "plugin", configKey: "plugin:@x/p@1.0.0" })
-    // 不写 alpha.jsonc(缺席);XDG 有该 plugin。
-    writeXdg({ plugin: ["@x/p@1.0.0"] })
+    writeXdgGlobal({ plugin: ["@x/p@1.0.0"] }) // XDG 是 before,但 plugin union 仍残留
     const r = setInstallStateByKey({ type: "plugin", name: "p", scope: "global", state: "disabled" }, deps())
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toContain("remove the legacy/XDG entry")
-    expect(findRecordV2(root, "plugin", "p")!.desiredState).toBe("enabled")
   })
 
-  test("M2:XDG 源含同 base 不同钉版(@x/p@1 vs 账本 @x/p@2)→ base 匹配命中 fail-closed", () => {
+  test("plugin after 源含同 base 不同钉版(@x/q@1 vs 账本 @x/q@2)→ base 匹配 fail-closed", () => {
     record({ name: "q", kind: "plugin", configKey: "plugin:@x/q@2.0.0" })
     writeCfg({ plugin: [] })
-    writeXdg({ plugin: ["@x/q@1.0.0"] }) // 同 base 旧钉版
+    writeDotOpencode({ plugin: ["@x/q@1.0.0"] })
     const r = setInstallStateByKey({ type: "plugin", name: "q", scope: "global", state: "disabled" }, deps())
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toContain("base")
   })
 
-  test("legacy 全清:XDG 无残留 → disable 正常成功", () => {
+  test("XDG config.json(非 jsonc)源也被探测(引擎读全三文件)→ plugin 残留 fail-closed", () => {
+    record({ name: "z", kind: "plugin", configKey: "plugin:@x/z@1.0.0" })
+    writeXdgGlobal({ plugin: ["@x/z@1.0.0"] }, "config.json") // config.json 而非 opencode.jsonc
+    const r = setInstallStateByKey({ type: "plugin", name: "z", scope: "global", state: "disabled" }, deps())
+    expect(r.ok).toBe(false)
+  })
+
+  test("legacy 全清:无残留 → disable 正常成功", () => {
     record({ name: "clean", kind: "mcp", configKey: "mcp.clean" })
     writeCfg({ mcp: { clean: { type: "local" } } })
-    writeXdg({ provider: {} }) // 无 mcp
+    writeXdgGlobal({ provider: {} })
+    writeDotOpencode({ provider: {} })
     const r = setInstallStateByKey({ type: "mcp", name: "clean", scope: "global", state: "disabled" }, deps())
     expect(r.ok).toBe(true)
     expect(readCfg().mcp.clean).toEqual({ type: "local", enabled: false })
