@@ -344,7 +344,7 @@ describe("#397 session-grant 强制(boot reconcile 面)", () => {
     const r = reconcileDesiredStateAtBoot(root, {
       userDataPath: root,
       channel: "stable",
-      sessionGrantIds: () => new Set(["mcp:labs"]),
+      sessionGrantIds: () => ({ ok: true as const, ids: new Set(["mcp:labs"]) }),
     })
     expect(r.ok).toBe(true)
     expect(r.applied).toContain("mcp:labs→disabled")
@@ -352,5 +352,66 @@ describe("#397 session-grant 强制(boot reconcile 面)", () => {
     const cfg = JSON.parse(fs.readFileSync(path.join(root, "alpha.jsonc"), "utf8"))
     expect(cfg.mcp.labs.enabled).toBe(false)
     expect(cfg.mcp.free.enabled).toBeUndefined()
+  })
+})
+
+// ── #397 r1-3/r1-4:skill 面强制 + oracle 不可判定 fail-closed ──────────────────────────────────
+describe("#397 session-grant 强制(skill 面 + oracle 不可判定)", () => {
+  const readKeys = (): string[] =>
+    fs.existsSync(skillsEnabledPath(root)) ? (JSON.parse(fs.readFileSync(skillsEnabledPath(root), "utf8")) as { keys: string[] }).keys : []
+
+  test("r1-3:session-grant skill ledger enabled → 账本归位 disabled + 允许集重建后不含该 skill", () => {
+    record({ name: "labs-sk", kind: "skill", desiredState: "enabled" })
+    record({ name: "free-sk", kind: "skill", desiredState: "enabled" })
+    expect(readKeys().sort()).toEqual(["skill--free-sk", "skill--labs-sk"])
+    const r = reconcileDesiredStateAtBoot(root, {
+      userDataPath: root,
+      channel: "stable",
+      sessionGrantIds: () => ({ ok: true as const, ids: new Set(["skill:labs-sk"]) }),
+    })
+    expect(r.ok).toBe(true)
+    expect(r.enforcementGap).toBeUndefined()
+    expect(findRecordV2(root, "skill", "labs-sk")!.desiredState).toBe("disabled") // 账本归位
+    expect(findRecordV2(root, "skill", "free-sk")!.desiredState).toBe("enabled") // 未命中不动
+    expect(readKeys()).toEqual(["skill--free-sk"]) // 注入允许集不再含 session-grant skill
+    expect(r.warnings.some((w) => w.includes("session-grant") && w.includes("labs-sk"))).toBe(true)
+  })
+
+  test("r1-4:oracle 不可判定 + 存在已启用 catalog 记录 → enforcementGap 阻断(不可判定 ≠ 空集)", () => {
+    record({ name: "m", kind: "mcp", configKey: "mcp.m", desiredState: "enabled" })
+    fs.writeFileSync(path.join(root, "alpha.jsonc"), JSON.stringify({ mcp: { m: { type: "local", command: ["x"] } } }))
+    const r = reconcileDesiredStateAtBoot(root, {
+      userDataPath: root,
+      channel: "stable",
+      sessionGrantIds: () => ({ ok: false as const, reason: "no verified channel LKG and no verified v1 catalog cache", partialIds: new Set<string>() }),
+    })
+    expect(r.enforcementGap?.some((g) => g.includes("session-grant determination unavailable"))).toBe(true)
+  })
+
+  test("r1-4:oracle 不可判定但随包部分集仍尽力归位;无已启用 catalog 记录时不置 gap", () => {
+    // 部分集命中:即便整体不可判定,可识别的 session-grant 仍被归位(尽力而为 + gap 已阻断)。
+    record({ name: "labs2", kind: "mcp", configKey: "mcp.labs2", desiredState: "enabled" })
+    fs.writeFileSync(path.join(root, "alpha.jsonc"), JSON.stringify({ mcp: { labs2: { type: "local", command: ["x"] } } }))
+    const r = reconcileDesiredStateAtBoot(root, {
+      userDataPath: root,
+      channel: "stable",
+      sessionGrantIds: () => ({ ok: false as const, reason: "unknown", partialIds: new Set(["mcp:labs2"]) }),
+    })
+    expect(findRecordV2(root, "mcp", "labs2")!.desiredState).toBe("disabled")
+    expect(r.enforcementGap?.some((g) => g.includes("session-grant determination unavailable"))).toBe(true)
+
+    // 无已启用 catalog 记录(全 disabled)→ 不可判定无害,不置 gap。
+    const clean = fs.mkdtempSync(path.join(os.tmpdir(), "ext-bootrec-clean-"))
+    try {
+      const r2 = reconcileDesiredStateAtBoot(clean, {
+        userDataPath: clean,
+        channel: "stable",
+        sessionGrantIds: () => ({ ok: false as const, reason: "unknown", partialIds: new Set<string>() }),
+      })
+      expect(r2.ok).toBe(true)
+      expect(r2.enforcementGap).toBeUndefined()
+    } finally {
+      fs.rmSync(clean, { recursive: true, force: true })
+    }
   })
 })

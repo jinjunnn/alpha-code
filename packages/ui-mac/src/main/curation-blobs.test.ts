@@ -212,3 +212,42 @@ describe("fetchCurationBlob(合同 §7.3 采信前置)", () => {
     if (!r.ok) expect(r.reason).toContain("failed validation")
   })
 })
+
+// ── #397 r1-6:缓存命中必须携带完整采信上下文(kind + entry/version 绑定)──────────────────────────
+describe("r1-6:跨上下文缓存复用被拒(缓存投毒面封死)", () => {
+  test("同 digest 跨 kind:先作为合法 SBOM 采信,再被声明为 provenance → 不走缓存,剖面校验如实拒", async () => {
+    const sbomBytes = canonicalJsonBytes({ ...SBOM_OK, components: [{ name: "cross-kind", version: "1" }] })
+    const sha = sha256Hex(sbomBytes)
+    // 同一 entry:sbom 与 provenance 两个 ref 声明同一 digest/bytes(schema 不禁止)。
+    const entry = makeEntry(sbomBytes, sbomBytes, { provSha: sha, provLen: sbomBytes.length })
+    const { deps, calls } = makeDeps(entry, () => sbomBytes)
+    const asSbom = await fetchCurationBlob(deps, "mcp:blobber", "sbom")
+    expect(asSbom.ok).toBe(true)
+    const asProv = await fetchCurationBlob(deps, "mcp:blobber", "provenance")
+    expect(asProv.ok).toBe(false) // 缓存键含 kind → miss → 全量校验 → SBOM 内容过不了 provenance 剖面
+    if (!asProv.ok) expect(asProv.reason).toContain("failed contract validation")
+    expect(calls.length).toBe(2) // 第二次真实重拉,未借缓存绕过
+  })
+
+  test("同 digest 跨 entry:A 的合法 provenance 已缓存,B 引用同 digest → 不走缓存,entry 绑定如实拒", async () => {
+    const provBytes = canonicalJsonBytes(PROV_OK) // 绑定 mcp:blobber
+    const entryA = makeEntry(canonicalJsonBytes(SBOM_OK), provBytes)
+    const { deps: depsA } = makeDeps(entryA, () => provBytes)
+    expect((await fetchCurationBlob(depsA, "mcp:blobber", "provenance")).ok).toBe(true)
+
+    // entry B(不同 id;blob URL 依 B 的身份重推导)引用同 digest/bytes。
+    const entryB: CatalogEntry = {
+      ...makeEntry(canonicalJsonBytes(SBOM_OK), provBytes),
+      id: "mcp:blobber2",
+      name: "blobber2",
+    }
+    const curB = entryB.curation as { refs: { intakeProvenance: { url: string; sha256: string }; sbom: { url: string; sha256: string } } }
+    curB.refs.intakeProvenance.url = curationBlobUrl("mcp:blobber2", "1.0.0", "intakeProvenance", curB.refs.intakeProvenance.sha256)
+    curB.refs.sbom.url = curationBlobUrl("mcp:blobber2", "1.0.0", "sbom", curB.refs.sbom.sha256)
+    const { deps: depsB, calls: callsB } = makeDeps(entryB, () => provBytes)
+    const r = await fetchCurationBlob(depsB, "mcp:blobber2", "provenance")
+    expect(r.ok).toBe(false) // 缓存键含 catalogId/version → miss → 全量校验 → 绑定失配
+    if (!r.ok) expect(r.reason).toContain("does not match entry")
+    expect(callsB.length).toBe(1) // 真实重拉发生
+  })
+})

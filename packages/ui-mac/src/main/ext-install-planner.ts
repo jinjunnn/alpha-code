@@ -168,8 +168,8 @@ import {
   type ActivationPolicy,
   type CurationStatus,
 } from "../shared/catalog-curation"
-import { nextDesiredState } from "./ext-install-policy"
-import { readSessionGrantIdsSync } from "./ext-curation-policy"
+import { nextDesiredState, normalizeSessionGrantPrior } from "./ext-install-policy"
+import { readSessionGrantIdsSync, type SessionGrantOracle } from "./ext-curation-policy"
 import type { ChannelName } from "./catalog-channels"
 import { findReceipt } from "./alpha-installs"
 import {
@@ -1211,6 +1211,14 @@ async function replacePluginViaTransaction(args: {
     rollback("legacy plugin conflict")
     return replaceLegacyGate
   }
+  // #397(Codex r1-2):置换后的启用态经**带当前 curation facts 的统一分类器** —— 更新默认保留旧
+  // desiredState(nextDesiredState prior 优先,#352 裁决语义不变),但目标版本声明 session-grant
+  // 时强制 disabled(持久 enabled 非法;fresh 早已如此,更新链不得成为豁免通道)。
+  const plannedDesiredState = nextDesiredState(root, "plugin", entry.name, {
+    origin: "catalog",
+    source: entry.source,
+    ...curationPolicyFactsOf(entry, deps.now?.() ?? new Date().toISOString()),
+  })
   // r10/r11:等价重复收敛为单条;保留**最后一条**匹配的形态/options —— 引擎对重复解析身份
   // 取后者为准(config/plugin.ts later-wins),保首条会丢弃真正生效的 options。
   const lastMatchIdx = snapshot.value.reduce((acc, x, i) => (matchesOld(x) ? i : acc), -1)
@@ -1222,7 +1230,7 @@ async function replacePluginViaTransaction(args: {
     }
     if (i !== lastMatchIdx) continue
     // #395:disabled 的置换保持 plugin[] 无条目(丢旧不加新;更新 disabled 插件不重新启用)。
-    if (facts.record.desiredState === "disabled") continue
+    if (plannedDesiredState === "disabled") continue
     nextArray.push(Array.isArray(x) ? [newElem, x[1]] : newElem)
   }
   const snapshotCanon = JSON.stringify(snapshot.value)
@@ -1238,7 +1246,8 @@ async function replacePluginViaTransaction(args: {
     manifestDigest,
     grantDigest: computeGrantDigest(intent.grants ?? {}),
     // 可选裁决采纳:更新默认保留旧 desiredState —— 更新 disabled 插件不得静默重新启用。
-    desiredState: facts.record.desiredState,
+    // #397 r1-2:经统一分类器(session-grant 目标版本强制 disabled,其余 = prior 原值)。
+    desiredState: plannedDesiredState,
     origin: "catalog",
     ...(stagedDir ? { files: [stagedDir] } : {}),
     // r16 Minor:置换 receipt 落载荷内容地址 —— upsert 是整记录替换,缺省会抹掉旧值,
@@ -1745,6 +1754,14 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       rollback("plugin content identity drift")
       return { ok: false, reason: `catalog entry vendoredAssetKey "${spec.vendoredAssetKey}" ≠ "plugins/${entry.name}" — refusing (content identity drift)` }
     }
+    // #397 r1-2:目标版本声明 session-grant 时,先把非法的 prior enabled 在账本归位 ——
+    // 必须发生在 resolvePluginDispatch 的前像快照**之前**,否则置换的锁内 drift 门会把
+    // 归位误判为并发漂移而拒绝重试;归位后 dispatch/plan/precondition/receipt 四面一致。
+    normalizeSessionGrantPrior(scope.root(deps), "plugin", entry.name, {
+      origin: "catalog",
+      source: entry.source,
+      ...curationPolicyFactsOf(entry, deps.now?.() ?? new Date().toISOString()),
+    })
     // #352:fresh / replace / refuse 三态分发(main 从自己账本裁决,复用同一 catalog 通道)——
     // 有效 catalog 旧账 → journaled 原子替换;v1-only/损坏/双键/漂移 → 显式拒绝;absent → fresh。
     const dispatch = resolvePluginDispatch(
@@ -3362,6 +3379,7 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
     scope: { kind: "global" },
     origin: "catalog",
     source: entry.source, // #395:seed 以已验 bundled entry 的 source 为权威
+    ...curationPolicyFactsOf(entry, deps.now?.() ?? new Date().toISOString()), // #397 r1-1:seed skill 与其余三型同门
     casFiles: { specs: promoted.files, casBaseRoot },
     // #348:seed 与 catalog 单装同一 authorize 契约(能力集 = 严格解码 manifest;重驱决定 main 打戳)。
     capabilities: manifest.capabilities,
@@ -4063,20 +4081,34 @@ export async function setInstallStateByKey(
   } else {
     root = deps.globalRoot()
   }
-  // ── #397(Codex 裁决必改⑤):enable 方向的 curation 闸,resolveEntry 是异步 → **锁外**冻结
-  //    决策(record 指纹 + 解码结果),锁内重读 record 核对指纹一致才采信;不一致拒绝重试 ——
-  //    既有锁内 TOCTOU 闭合(record 重读 + advisory 在锁内)不被破坏。
-  //    resolveEntry null(条目已下架 / catalog security browse-only)→ 无 curation 知识,不加
-  //    新限制(advisory 闸仍权威;session-grant 残留由持久投影面在下次启动强制,必改①)。
-  let frozenCuration: { fp: { id: string; kind: string; name: string; version?: string }; status: CurationStatus } | null = null
+  // ── #397(Codex 裁决必改⑤ + r1-5):enable 方向的 curation 闸,resolveEntry 是异步 → **锁外**
+  //    冻结决策(已验 entry 身份 + 解码结果),锁内重读 record 并要求 record 与**已验 entry**
+  //    身份四元组(id/kind/name/version)精确相等才采信;不一致拒绝重试 —— 既有锁内 TOCTOU
+  //    闭合(record 重读 + advisory 在锁内)不被破坏。
+  //    r1-5 裁定:resolveEntry null(条目下架 / 离线无 LKG / security browse-only)或身份不匹配
+  //    (含同 ID 异版本:装 v1 不得套用 v2 策略)一律**拒绝 enable**,绝不降格 uncurated 放行;
+  //    只有真正已验且同身份的 entry 无 curation 时才继续走 #395 保守面。
+  let frozenCuration: {
+    verified: { id: string; type: string; name: string; version: string | undefined } | null
+    status: CurationStatus | null
+  } | null = null
   if (intent.state === "enabled") {
     const pre = findRecordV2(root, intent.type, intent.name)
     if (pre && pre.origin === "catalog") {
       const verified = await deps.resolveEntry(pre.id)
-      frozenCuration = {
-        fp: { id: pre.id, kind: pre.kind, name: pre.name, version: pre.version },
-        status: verified ? decodeEntryCurationLoud(verified.entry) : { kind: "uncurated" },
-      }
+      frozenCuration = verified
+        ? {
+            verified: {
+              id: verified.entry.id,
+              type: verified.entry.type,
+              name: verified.entry.name,
+              // 安装面 record.version = manifest.version = entry.version ?? catalogVersion(synthesizeManifest)
+              // —— 身份比较用同一派生,免得无条目级版本的 bundled 条目恒假失配。
+              version: typeof verified.entry.version === "string" && verified.entry.version ? verified.entry.version : verified.catalogVersion,
+            },
+            status: decodeEntryCurationLoud(verified.entry),
+          }
+        : { verified: null, status: null }
     }
   }
   // Codex r2/r3 重设计:启停 = **持久化 config 投影 + 账本翻转**(锁内;disabled plugin 必须从磁盘
@@ -4109,12 +4141,26 @@ export async function setInstallStateByKey(
       if (!adv.allowed) return { ok: false, reason: `advisory ${adv.advisoryId}: ${adv.reason} — re-enable refused (R14)` }
       // #397 curation 闸(advisory 之后 —— 权威排序 §1;仅 catalog 记录有 curation 面)。
       if (record.origin === "catalog") {
-        const fp = frozenCuration?.fp
-        // 锁内指纹核对(必改⑤):锁外冻结的 curation 决策必须与锁内 record 同一身份
-        // (id/kind/name/version 全部相等),否则拒绝重试 —— 含「锁外无记录、锁内出现」的窗口。
-        if (!fp || fp.id !== record.id || fp.kind !== record.kind || fp.name !== record.name || fp.version !== record.version)
-          return { ok: false, reason: `${record.kind} ${record.name}: record changed while curation was being resolved — retry` }
-        const status = frozenCuration!.status
+        // 「锁外无记录、锁内出现」的窗口 → 拒绝重试(下轮重新冻结)。
+        if (!frozenCuration)
+          return { ok: false, reason: `${record.kind} ${record.name}: record appeared while curation was being resolved — retry` }
+        const v = frozenCuration.verified
+        // r1-5:取不到已验 entry(下架/离线/security browse-only)= 无法证明策展状态 → 拒,
+        // 绝不降格 uncurated 放行(fail closed)。
+        if (!v)
+          return {
+            ok: false,
+            reason: `${record.kind} ${record.name}: cannot verify curation — the entry is not resolvable from the verified catalog (delisted/offline/security state); enable refused (fail closed)`,
+          }
+        // r1-5:身份四元组逐项相等(锁内 record vs **已验 entry**)—— 同时覆盖锁外/锁内 record
+        // 漂移与「同 ID 异版本」(装 v1 不得套用 v2 的策展策略);record 无 version(v1 遗留)
+        // 即无法自证身份,同拒。
+        if (record.version === undefined || v.id !== record.id || v.type !== record.kind || v.name !== record.name || v.version !== record.version)
+          return {
+            ok: false,
+            reason: `${record.kind} ${record.name}: verified catalog entry identity does not match this install (installed ${record.version ?? "unversioned"} vs catalog ${v.version ?? "unversioned"}) — refusing to apply its curation; update or reinstall first (fail closed)`,
+          }
+        const status = frozenCuration.status!
         if (status.kind === "curated") {
           // session-grant:持久账本 enabled 本身非法(会话级启用 = #408);任何路径不得借
           // setInstallState 把它落成跨会话启用。
@@ -4317,7 +4363,7 @@ export function reconcileDesiredStateAtBoot(
     userDataPath: string
     channel: ChannelName
     /** 仅测试注入;缺省 = 生产 oracle(ext-curation-policy 已验 catalog 同步读)。 */
-    sessionGrantIds?: (userDataPath: string, channel: ChannelName) => Set<string>
+    sessionGrantIds?: (userDataPath: string, channel: ChannelName) => SessionGrantOracle
   },
 ): BootReconcileOutcome {
   const warnings: string[] = []
@@ -4334,6 +4380,35 @@ export function reconcileDesiredStateAtBoot(
     return { ok: false, applied, warnings, skipped: `ledger lock unavailable: ${held.reason}`, enforcementGap: gap }
   }
   try {
+    // ── #397(Codex r1-3/r1-4):session-grant 归位**先行**,且在 skills 派生之前 ──
+    // session-grant 记录的持久 enabled 非法(会话级启用 = #408)。此处直接把账本归位为
+    // disabled(setDesiredStateV2,锁内)—— 归位后 skills 派生允许集、config 投影、sidecar
+    // 注入全部从合法账本重建,skill 面(skills-enabled.json)由此天然覆盖(r1-3)。
+    // oracle 不可判定(无已验 LKG/v1 缓存)= fail-closed:存在已启用 catalog 记录时置
+    // enforcementGap 阻断 sidecar(「无法判定」绝不当「确定没有」,r1-4);随包快照可识别的
+    // 部分集仍尽力归位。归位写失败同样 gap(识别出的非法启用无法执行 = 不放行)。
+    const oracle = (opts.sessionGrantIds ?? readSessionGrantIdsSync)(opts.userDataPath, opts.channel)
+    {
+      const pre = readLedgerV2(root)
+      const enforceableKinds = new Set(["mcp", "agent", "plugin", "skill"])
+      const catalogEnabled = pre.records.filter(
+        (r) => r.scope.kind === "global" && r.origin === "catalog" && r.desiredState !== "disabled" && enforceableKinds.has(r.kind),
+      )
+      if (!oracle.ok && catalogEnabled.length > 0)
+        gap.push(
+          `session-grant determination unavailable (${oracle.reason}) while ${catalogEnabled.length} catalog extension(s) are enabled — cannot prove none is session-grant; blocking sidecar (fail closed)`,
+        )
+      const ids = oracle.ok ? oracle.ids : oracle.partialIds
+      for (const r of catalogEnabled) {
+        if (!ids.has(r.id)) continue
+        const w = setDesiredStateV2(root, r.kind, r.name, "disabled")
+        if (w.ok)
+          warnings.push(
+            `${r.kind} ${r.name}: session-grant per curation but the ledger said enabled — forced disabled (persistent enable is illegal; per-session activation = #408)`,
+          )
+        else gap.push(`${r.kind} ${r.name}: session-grant record could not be forced disabled: ${w.reason}`)
+      }
+    }
     // #395 步骤5:skills 派生允许集自愈(升级首启 backfill / 扩容失败残留收敛 / 账本损坏时撤陈旧
     // 允许集)—— 在 config 投影之前,与其共享同一把锁。r6 B3:陈旧允许集(可能仍列已禁 skill)= gap。
     const deriv = reconcileSkillsDerivation(root)
@@ -4361,23 +4436,10 @@ export function reconcileDesiredStateAtBoot(
     const configBacked = ledger.records.filter(
       (r) => r.scope.kind === "global" && (r.kind === "mcp" || r.kind === "agent" || r.kind === "plugin"),
     )
-    // #397(Codex 裁决必改①):curation activationPolicy=session-grant 的记录,持久账本 enabled
-    // 本身非法(会话级启用 = #408 瞬态)—— 本持久投影面一律按 disabled 处理(历史安装/旁路写入
-    // 不得借持久账本获得跨会话启用)。判定真源 = 已验 catalog 同步读(ext-curation-policy)。
-    const sessionGrantIds = (opts.sessionGrantIds ?? readSessionGrantIdsSync)(opts.userDataPath, opts.channel)
-    const sessionGrantForced = new Set<string>()
-    for (const r of configBacked)
-      if (r.desiredState !== "disabled" && sessionGrantIds.has(r.id)) {
-        sessionGrantForced.add(`${r.kind}:${r.name}`)
-        warnings.push(
-          `${r.kind} ${r.name}: session-grant per curation but the ledger says enabled — projecting disabled (persistent enable is illegal; per-session activation = #408)`,
-        )
-      }
-    const effectiveDesired = (r: { kind: string; name: string; desiredState: DesiredState }): DesiredState =>
-      sessionGrantForced.has(`${r.kind}:${r.name}`) ? "disabled" : r.desiredState
     // #395(r11 pivot):mcp/agent disable 由 sidecar 主权注入保证;唯 **plugin** disable 生效面 =
     // 从 alpha.jsonc plugin[] 移除(无用户 = 无他源),故 enforcementGap 只在 plugin disable 无法落盘时置位。
-    const disabledPlugins = configBacked.filter((r) => effectiveDesired(r) === "disabled" && r.kind === "plugin")
+    // #397:session-grant 已在本函数开头归位进账本(readLedgerV2 此处读的已是合法态)。
+    const disabledPlugins = configBacked.filter((r) => r.desiredState === "disabled" && r.kind === "plugin")
     if (configBacked.length === 0) return done({ ok: true, applied, warnings })
     const target = path.join(root, "alpha.jsonc")
     let text: string
@@ -4388,7 +4450,7 @@ export function reconcileDesiredStateAtBoot(
       if (code === "ENOENT" || code === "ENOTDIR") {
         // config 缺席:disabled plugin 天然不在 plugin[](安全);mcp/agent 注入保证;enabled 缺生效面 warning。
         for (const r of configBacked)
-          if (effectiveDesired(r) === "enabled")
+          if (r.desiredState === "enabled")
             warnings.push(`${r.kind} ${r.name}: ledger says enabled but alpha.jsonc is absent — no effect surface (reinstall to repair)`)
         return done({ ok: true, applied, warnings })
       }
@@ -4410,7 +4472,7 @@ export function reconcileDesiredStateAtBoot(
     const byPath = new Map<string, ConfigEdit>()
     const pluginDisableEdited: string[] = [] // 真产生 plugin disable edit 的记录(prepare/write 失败只 gap 这些)
     for (const record of configBacked) {
-      const effState = effectiveDesired(record) // #397:session-grant enabled 记录按 disabled 投影
+      const effState = record.desiredState // #397:session-grant 已在函数开头归位,账本即合法态
       const proj = computeEnableProjectionEdit(working, root, record, effState)
       if (!proj.ok) {
         warnings.push(`${record.kind} ${record.name}: ${proj.reason}`)

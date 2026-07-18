@@ -12,6 +12,7 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import type { CatalogEntry } from "../renderer/extensions/catalog-types"
+import { curationBlobUrl } from "../shared/catalog-curation"
 import { casBlobPath, hasCasBlob } from "./ext-cas"
 import { aggregateFilesDigest, computeManifestDigest, decodeManifestV2 } from "./ext-manifest-v2"
 import { findRecordV2, upsertRecordV2, type UpsertInput } from "./ext-receipt-v2"
@@ -1379,10 +1380,15 @@ describe("#395 第三方 seed 安装默认关(账本 disabled;持久化 config �
     const cfg: { plugin?: string[] } = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))
     expect(cfg.plugin ?? []).toEqual([])
     expect(fs.existsSync(path.join(dir, "plugin.js"))).toBe(true)
-    // 启用:按 configKey 补回 plugin[] 条目 + 账本翻开。
+    // 启用:按 configKey 补回 plugin[] 条目 + 账本翻开。#397 r1-5:enable 闸要求解析到同身份
+    // 已验 entry(record.version = 1.0.0 = entry.version)—— 回镜 bundled entry。
     const en = await setInstallStateByKey(
       { type: "plugin", name: "demo-plugin", scope: "global", state: "enabled" },
-      { globalRoot: () => globalRoot, advisoryGate: () => ({ allowed: true }), resolveEntry: async () => null },
+      {
+        globalRoot: () => globalRoot,
+        advisoryGate: () => ({ allowed: true }),
+        resolveEntry: async () => ({ entry: bundledPluginEntry({ source: "official" }), channel: "bundled", catalogVersion: "1.0.0" }),
+      },
     )
     expect(en.ok).toBe(true)
     const cfg2: { plugin: string[] } = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))
@@ -1401,5 +1407,65 @@ describe("#395 第三方 seed 安装默认关(账本 disabled;持久化 config �
     // 持久化投影:disabled mcp 叶带引擎消费键 enabled:false(引擎查 mcp.enabled === false 即跳过)。
     const cfg: { mcp: Record<string, Record<string, unknown>> } = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8"))
     expect(cfg.mcp.demo?.enabled).toBe(false)
+  })
+})
+
+// ── #397 r1-1:seed skill 与其余三型同门(activationPolicy 声明进 seed skill 落账) ─────────────────
+const seedCurationOf = (
+  catalogId: string,
+  over: Partial<{ tier: string; activationPolicy: string }> = {},
+) => {
+  const shaA = "a".repeat(64)
+  const shaB = "b".repeat(64)
+  return {
+    schema: "alpha.catalog.curation.v1",
+    tier: over.tier ?? "labs",
+    activationPolicy: over.activationPolicy ?? "session-grant",
+    deliveryMode: "installable",
+    review: {
+      reviewedAt: "2026-07-01T00:00:00Z",
+      reviewedBy: "alpha-review",
+      upstreamStatus: "active",
+      supportTier: "best-effort",
+      reviewBefore: "2027-07-01T00:00:00Z",
+    },
+    applicability: { frameworks: ["*"] },
+    summaries: {
+      capabilities: [],
+      networkDomains: [],
+      requiredSecrets: [],
+      runtimeDependencies: [],
+      download: { bytes: null, basis: "unknown" },
+    },
+    refs: {
+      sbom: { sha256: shaA, bytes: 1024, url: curationBlobUrl(catalogId, "1.0.0", "sbom", shaA), format: "cyclonedx-1.6+json" },
+      intakeProvenance: {
+        sha256: shaB,
+        bytes: 512,
+        url: curationBlobUrl(catalogId, "1.0.0", "intakeProvenance", shaB),
+        format: "alpha.intake-provenance.v1+json",
+      },
+    },
+  }
+}
+
+describe("#397 r1-1:seed skill 的 curation 声明落账(与直装/其余 seed 类型同门)", () => {
+  test("alpha 源 seed skill 声明 session-grant ⇒ 落 disabled(#395 alpha 规则不得越过声明)", async () => {
+    buildSeed([{ id: "skill:hello", files: skillFiles }])
+    const entry = bundledSkillEntry({ curation: seedCurationOf("skill:hello") })
+    const r = await installAuthorized(seedIntent, makeSeedDeps({ bundledEntries: [entry] }))
+    expect(r.ok).toBe(true)
+    expect(findRecordV2(globalRoot, "skill", "hello")!.desiredState).toBe("disabled")
+  })
+
+  test("official 源 seed skill 声明 default-enabled(core)⇒ 落 enabled(声明 > 来源保守规则)", async () => {
+    buildSeed([{ id: "skill:hello", files: skillFiles, source: "official" }])
+    const entry = bundledSkillEntry({
+      source: "official",
+      curation: seedCurationOf("skill:hello", { tier: "core", activationPolicy: "default-enabled" }),
+    })
+    const r = await installAuthorized(seedIntent, makeSeedDeps({ bundledEntries: [entry] }))
+    expect(r.ok).toBe(true)
+    expect(findRecordV2(globalRoot, "skill", "hello")!.desiredState).toBe("enabled")
   })
 })

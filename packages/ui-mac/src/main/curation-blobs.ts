@@ -41,10 +41,14 @@ export type CurationBlobDeps = {
 const FETCH_TIMEOUT_MS = 8000
 const sha256Hex = (buf: Uint8Array): string => createHash("sha256").update(buf).digest("hex")
 
-/** 成功采信的 blob 内存缓存(sha256 → {bytes, parsed};content-addressed ⇒ 键即内容身份。
- *  命中仍要求 ref.bytes 与已验长度一致 —— 声明自相矛盾(同 sha 不同 bytes)不走缓存,重拉后
- *  按 §7.3 精确匹配如实拒)。 */
+/** 成功采信的 blob 内存缓存。Codex r1-6:缓存键必须携带**完整采信上下文**
+ *  `kind:catalogId:version:sha256` —— 仅按 sha256 命中会让同 digest 跨 kind(SBOM↔provenance)
+ *  或跨 entry 复用绕过剖面校验与 entry/version 绑定(缓存投毒面)。命中仍要求 ref.bytes 与
+ *  已验长度一致(声明自相矛盾不走缓存,重拉后按 §7.3 精确匹配如实拒)。 */
 const memCache = new Map<string, { bytes: number; data: unknown }>()
+
+const cacheKeyOf = (kind: CurationBlobWireKind, catalogId: string, version: string, sha256: string): string =>
+  `${kind}:${catalogId}:${version}:${sha256}`
 
 const WIRE_TO_REF: Record<CurationBlobWireKind, CurationBlobKind> = { sbom: "sbom", provenance: "intakeProvenance" }
 
@@ -61,7 +65,8 @@ export async function fetchCurationBlob(deps: CurationBlobDeps, rawCatalogId: un
 
   const refKind = WIRE_TO_REF[kind]
   const ref = status.curation.refs[refKind]
-  const cached = memCache.get(ref.sha256)
+  const cacheKey = cacheKeyOf(kind, verified.entry.id, verified.entry.version!, ref.sha256)
+  const cached = memCache.get(cacheKey)
   if (cached !== undefined && cached.bytes === ref.bytes) return { ok: true, kind, sha256: ref.sha256, data: cached.data }
 
   // URL 由 main 重推导(decode 不变量保证与 ref.url 逐字相等;不采用任何外部给定 URL)。
@@ -103,7 +108,7 @@ export async function fetchCurationBlob(deps: CurationBlobDeps, rawCatalogId: un
       : checkProvenanceContract(parsed, { catalogId: verified.entry.id, version: verified.entry.version! })
   if (profileError) return { ok: false, reason: `curation ${kind} blob failed contract validation (fail closed): ${profileError}` }
 
-  memCache.set(ref.sha256, { bytes: ref.bytes, data: parsed })
+  memCache.set(cacheKey, { bytes: ref.bytes, data: parsed })
   return { ok: true, kind, sha256: ref.sha256, data: parsed }
 }
 

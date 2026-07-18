@@ -5,7 +5,7 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { initialDesiredState, nextDesiredState } from "./ext-install-policy"
-import { upsertRecordV2 } from "./ext-receipt-v2"
+import { findRecordV2, upsertRecordV2 } from "./ext-receipt-v2"
 
 let root: string
 beforeEach(() => {
@@ -73,20 +73,28 @@ describe("#397 activationPolicy 声明优先序(Codex 裁决钉死)", () => {
     expect(initialDesiredState({ origin: "imported", activationPolicy: "session-grant" })).toBe("enabled")
   })
 
-  test("规则 3/4:prior 只对 default-enabled/default-disabled(与未策展面)保留;session-grant 不被 prior 保留", () => {
-    const w = upsertRecordV2(root, {
-      id: "mcp:labs-x",
-      name: "labs-x",
-      kind: "mcp",
-      environment: "prod",
-      scope: { kind: "global" },
-      desiredState: "enabled", // 非法存量(session-grant 不该持久 enabled)—— 重分类必须压回 disabled
-      origin: "catalog",
-      installedAt: "2026-07-17T00:00:00.000Z",
-    })
-    expect(w.ok).toBe(true)
+  test("规则 3/4:prior 只对 default-enabled/default-disabled(与未策展面)保留;session-grant 不被 prior 保留且**归位账本**(r1-2)", () => {
+    const seed = (name: string) => {
+      const w = upsertRecordV2(root, {
+        id: `mcp:${name}`,
+        name,
+        kind: "mcp",
+        environment: "prod",
+        scope: { kind: "global" },
+        desiredState: "enabled",
+        origin: "catalog",
+        installedAt: "2026-07-17T00:00:00.000Z",
+      })
+      expect(w.ok).toBe(true)
+    }
+    // 声明 default-disabled → prior enabled 保留(存量不回溯)。
+    seed("keep-x")
+    expect(nextDesiredState(root, "mcp", "keep-x", { origin: "catalog", source: "official", activationPolicy: "default-disabled" })).toBe("enabled")
+    expect(findRecordV2(root, "mcp", "keep-x")!.desiredState).toBe("enabled") // 账本不被动
+    // 声明 session-grant → 决策返回 disabled,且非法的 prior enabled 在决策点被归位写回 disabled
+    // (账本 upsert 写点「prev 当前策略优先」会沿用 prev —— 不归位,更新落账会复活 enabled)。
+    seed("labs-x")
     expect(nextDesiredState(root, "mcp", "labs-x", { origin: "catalog", source: "official", activationPolicy: "session-grant" })).toBe("disabled")
-    // 同一记录若声明是 default-disabled → prior enabled 保留(存量不回溯)。
-    expect(nextDesiredState(root, "mcp", "labs-x", { origin: "catalog", source: "official", activationPolicy: "default-disabled" })).toBe("enabled")
+    expect(findRecordV2(root, "mcp", "labs-x")!.desiredState).toBe("disabled") // 决策点归位
   })
 })

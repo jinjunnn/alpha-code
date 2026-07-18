@@ -53,11 +53,16 @@ describe("sessionGrantIdsFromEntries(纯判定,fail-closed 采信)", () => {
   })
 })
 
-describe("readSessionGrantIdsSync(同步读链)", () => {
-  test("无缓存/无 state → 随包快照兜底(当前随包目录无 curation → 空集,不抛)", () => {
+describe("readSessionGrantIdsSync(同步读链,r1-4:不可判定 ≠ 空集)", () => {
+  test("无已验 LKG/v1 缓存 → ok:false(远端状态未知),partialIds = 随包可识别子集(当前随包无 curation → 空)", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "curation-oracle-"))
     try {
-      expect(readSessionGrantIdsSync(dir, "stable").size).toBe(0)
+      const oracle = readSessionGrantIdsSync(dir, "stable")
+      expect(oracle.ok).toBe(false)
+      if (!oracle.ok) {
+        expect(oracle.reason).toContain("no verified channel LKG")
+        expect(oracle.partialIds.size).toBe(0)
+      }
     } finally {
       fs.rmSync(dir, { recursive: true, force: true })
     }

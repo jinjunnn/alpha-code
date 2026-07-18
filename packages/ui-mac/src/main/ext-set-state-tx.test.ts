@@ -5,11 +5,33 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { setInstallStateByKey } from "./ext-install-planner"
-import { findRecordV2, upsertRecordV2, type UpsertInput } from "./ext-receipt-v2"
+import { setInstallStateByKey, type VerifiedCatalogEntry } from "./ext-install-planner"
+import { findRecordV2, upsertRecordV2, type InstallReceiptType, type UpsertInput } from "./ext-receipt-v2"
+import type { CatalogEntry } from "../renderer/extensions/catalog-types"
 
 let root: string
-const deps = () => ({ globalRoot: () => root, advisoryGate: () => ({ allowed: true }) as const, resolveEntry: async () => null })
+// #397 r1-5:enable 闸要求已验 entry 与 record 身份(id/kind/name/version)精确对应 ——
+// 测试 deps 从账本回镜同身份 uncurated entry(本文件测的是 #395 投影语义,非 curation 面)。
+const deps = () => ({
+  globalRoot: () => root,
+  advisoryGate: () => ({ allowed: true }) as const,
+  resolveEntry: async (id: string): Promise<VerifiedCatalogEntry | null> => {
+    const [kind, name] = id.split(":") as [InstallReceiptType, string]
+    const rec = findRecordV2(root, kind, name)
+    if (!rec) return null
+    const entry = {
+      id,
+      type: kind,
+      name,
+      displayName: name,
+      description: "t",
+      source: "official",
+      category: "t",
+      ...(rec.version ? { version: rec.version } : {}),
+    } as unknown as CatalogEntry
+    return { entry, channel: "cache", catalogVersion: rec.version ?? "t" }
+  },
+})
 // hermetic:隔离引擎真实读取的 legacy 源根(XDG 固定 = XDG_CONFIG_HOME/opencode;~/.opencode = ALPHA_OPENCODE_HOME),
 // 使 legacyEnableResidueStrict 探测不碰开发机真实 ~/.config,并可精确造 before(XDG)/after(~/.opencode)源。
 const savedEnv: Record<string, string | undefined> = {}
@@ -46,6 +68,7 @@ const record = (over: Partial<UpsertInput> & { name: string; kind: UpsertInput["
     scope: { kind: "global" },
     desiredState: "enabled",
     origin: "catalog",
+    version: "1.0.0", // #397 r1-5:record 无 version 即无法自证身份,enable 会被拒 —— 测试记录补齐
     installedAt: "2026-07-17T00:00:00.000Z",
     ...over,
   })

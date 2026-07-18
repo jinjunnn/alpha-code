@@ -104,7 +104,7 @@ describe("#397 session-grant 强制(注入面)", () => {
     injectDisabledOverrides(config, {
       userDataPath: root,
       channel: "stable",
-      sessionGrantIds: () => new Set(["mcp:labs", "agent:la"]),
+      sessionGrantIds: () => ({ ok: true as const, ids: new Set(["mcp:labs", "agent:la"]) }),
     })
     expect(config.mcp!.labs).toEqual({ enabled: false }) // 持久 enable 非法 → 注入面按 disabled
     expect(config.mcp!.free).toBeUndefined() // 非 session-grant 的 enabled 不受影响

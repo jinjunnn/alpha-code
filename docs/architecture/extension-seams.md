@@ -40,7 +40,7 @@
 
 - **策展契约执行器**(`src/shared/catalog-curation.ts`):entry `curation` 对象的唯一采信入口(`decodeEntryCuration`;未知 schema/未知键/不变量失败 = 整体不采信),main 与 renderer 共用同一真源;契约 = alpha-web `contracts/catalog-intake/CONTRACT.md`,由 vendored testvectors(`src/shared/catalog-intake-contract/`)钉死防漂移。
 - **只读 blob 通道**(`ext-curation-blob`,`src/main/curation-blobs.ts`):renderer 只给 `(catalogId, kind)`;entry/BlobRef/URL 全由 main 从已验 catalog 派生并按合同 §7.3 采信前置(bytes/sha256 精确匹配 + canonical 字节复验 + 剖面校验,拒重定向,5 MiB 帽)。失败不影响货架/启用判定。
-- **session-grant 持久投影强制**(`src/main/ext-curation-policy.ts`):`activationPolicy=session-grant` 的记录在一切持久投影面(startup reconcile、sidecar `OPENCODE_CONFIG_CONTENT` 注入)按 disabled 处理;持久 enable 在 `setInstallStateByKey` 被闸(会话级启用 = #408)。
+- **session-grant 持久投影强制**(`src/main/ext-curation-policy.ts`):`activationPolicy=session-grant` 的记录持久 enabled 非法 —— 启动 reconcile 把此类账本记录**归位为 disabled**(mcp/agent/plugin/skill 四型;先于 skills 允许集派生,注入面同强制),安装/更新链在决策点同样归位(`nextDesiredState`),持久 enable 在 `setInstallStateByKey` 被闸(要求解析到与安装身份 id/kind/name/version 精确对应的已验 entry;取不到即拒,会话级启用 = #408)。oracle(已验 channel LKG → v1 缓存 → 随包补充)**区分「不可判定」与「空集」**:两级已验源都不可用且存在已启用 catalog 记录时,fail-closed 置 enforcementGap 阻断 sidecar,不以空集放行。
 
 ## C. 禁区(升级必冲突,永不编辑)
 - `opencode/packages/core/**`(仅 `/public`、`/session/runner`、`/system-context` 稳定且仍在开发)

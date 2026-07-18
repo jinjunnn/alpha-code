@@ -2887,6 +2887,25 @@ describe("#397 安装面:archived 拒装 + activationPolicy 声明落账", () =>
     expect(findRecordV2(globalRoot, "mcp", "markitdown")?.desiredState).toBe("disabled")
   })
 
+  test("r1-2(更新链):已启用 mcp 重装到声明 session-grant 的版本 ⇒ 账本归位 disabled(upsert 的 prev 优先不得复活 enabled)", async () => {
+    // 先以未策展 alpha 源装成 enabled(#395 规则)。
+    const plainAlpha: CatalogEntry = { ...mcpEntry, source: "alpha" }
+    const { deps: deps1 } = makeDeps({ entries: [plainAlpha] })
+    expect((await installAuthorized(intent, deps1)).ok).toBe(true)
+    expect(findRecordV2(globalRoot, "mcp", "markitdown")?.desiredState).toBe("enabled")
+    // 目录换代:同 id 版本声明 session-grant → 重装后持久账本必须归位 disabled。
+    const labsNow: CatalogEntry = {
+      ...mcpEntry,
+      source: "alpha",
+      curation: makeCuration("mcp:markitdown", "1.0.0", { tier: "labs", activationPolicy: "session-grant" }),
+    }
+    const { deps: deps2 } = makeDeps({ entries: [labsNow] })
+    const r = await installAuthorized(intent, deps2)
+    expect(r.ok).toBe(true)
+    expect(findRecordV2(globalRoot, "mcp", "markitdown")?.desiredState).toBe("disabled")
+    expect(mcpLeafOnDisk("markitdown")?.enabled).toBe(false)
+  })
+
   test("curation 校验失败 = fail-closed 到未策展保守面:绝不部分采信(archived 也不作数),按 #395 分类", async () => {
     const invalid: CatalogEntry = {
       ...mcpEntry,
@@ -2971,7 +2990,37 @@ describe("#397 enable 闸(setInstallStateByKey;advisory 之后)", () => {
     }
     const r = await setInstallStateByKey(enableIntent, racing)
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("record changed while curation was being resolved")
+    // r1-5:锁内以「record vs 已验 entry」身份四元组判定 —— 版本漂移即身份失配,拒绝重试。
+    if (!r.ok) expect(r.reason).toContain("identity does not match")
+  })
+
+  test("r1-5:catalog 不可得(resolveEntry null)⇒ enable 拒,绝不降格未策展放行", async () => {
+    const curated: CatalogEntry = { ...mcpEntry, source: "official", curation: makeCuration("mcp:markitdown", "1.0.0") }
+    const { deps } = makeDeps({ entries: [curated] })
+    expect((await installAuthorized(intent, deps)).ok).toBe(true)
+    const offline: typeof deps = { ...deps, resolveEntry: async () => null }
+    const r = await setInstallStateByKey(enableIntent, offline)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("not resolvable from the verified catalog")
+    // disable 方向不受限(fail-closed 只闸激活)。
+    expect((await setInstallStateByKey({ ...enableIntent, state: "disabled" }, offline)).ok).toBe(true)
+  })
+
+  test("r1-5:同 ID 异版本(装 1.0.0,目录已是 2.0.0)⇒ enable 拒 —— 不得用 v2 策略放行 v1", async () => {
+    const v1: CatalogEntry = { ...mcpEntry, source: "official", curation: makeCuration("mcp:markitdown", "1.0.0") }
+    const { deps } = makeDeps({ entries: [v1] })
+    expect((await installAuthorized(intent, deps)).ok).toBe(true)
+    // 目录换代:同 id 的 v2(策展改 default-enabled 也无济于事 —— 身份失配先拒)。
+    const v2: CatalogEntry = {
+      ...mcpEntry,
+      version: "2.0.0",
+      source: "official",
+      curation: makeCuration("mcp:markitdown", "2.0.0", { tier: "core", activationPolicy: "default-enabled" }),
+    }
+    const { deps: deps2 } = makeDeps({ entries: [v2] })
+    const r = await setInstallStateByKey(enableIntent, deps2)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("identity does not match")
   })
 
   test("未策展记录:enable 不受新限制(#395 语义不回归)", async () => {
@@ -2982,5 +3031,55 @@ describe("#397 enable 闸(setInstallStateByKey;advisory 之后)", () => {
     const en = await setInstallStateByKey(enableIntent, deps)
     expect(en.ok).toBe(true)
     expect(findRecordV2(globalRoot, "mcp", "markitdown")?.desiredState).toBe("enabled")
+  })
+})
+
+// ── #397 r1-2:plugin 置换(更新链)经带当前 curation 的分类器 ────────────────────────────────────
+describe("#397 r1-2:plugin replace 的 session-grant 强制(更新链不是豁免通道)", () => {
+  const seedNpmOldEnabled = () => {
+    const pinned = "@alpha/np@2.0.0"
+    fs.mkdirSync(globalRoot, { recursive: true })
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [pinned] }, null, 2))
+    const w = upsertRecordV2(globalRoot, {
+      id: "plugin:np",
+      name: "np",
+      kind: "plugin",
+      environment: "prod",
+      scope: { kind: "global" },
+      version: "2.0.0",
+      desiredState: "enabled",
+      origin: "catalog",
+      configKey: `plugin:${pinned}`,
+      transaction: { id: "tx-old-1", state: "committed" },
+      installedAt: "2026-07-15T00:00:00.000Z",
+    })
+    if (!w.ok) throw new Error(w.reason)
+  }
+
+  test("已启用 plugin 更新到声明 session-grant 的版本 ⇒ plugin[] 移除 + 账本 disabled(不留非法 enabled)", async () => {
+    seedNpmOldEnabled()
+    const sessionGrantV2: CatalogEntry = {
+      ...pluginNpmEntry,
+      source: "official",
+      curation: makeCuration("plugin:np", "2.3.4", { tier: "labs", activationPolicy: "session-grant" }),
+    }
+    const { deps } = makeDeps({ entries: [sessionGrantV2] })
+    const r = await installAuthorized({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(true)
+    const cfg = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8")) as { plugin: string[] }
+    expect(cfg.plugin).toEqual([]) // 目标版本 session-grant:置换丢旧不加新
+    const rec = findRecordV2(globalRoot, "plugin", "np")!
+    expect(rec.version).toBe("2.3.4")
+    expect(rec.desiredState).toBe("disabled") // 持久 enabled 非法 —— 更新链同样强制
+  })
+
+  test("对照:目标版本未策展 ⇒ 置换保留旧 enabled(#352 语义不回归)", async () => {
+    seedNpmOldEnabled()
+    const { deps } = makeDeps({ entries: [{ ...pluginNpmEntry, source: "official" }] })
+    const r = await installAuthorized({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(true)
+    const cfg = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8")) as { plugin: string[] }
+    expect(cfg.plugin).toEqual(["@alpha/np@2.3.4"])
+    expect(findRecordV2(globalRoot, "plugin", "np")!.desiredState).toBe("enabled")
   })
 })

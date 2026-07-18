@@ -11,7 +11,7 @@
 // 旁路写入不得借持久账本获得跨会话启用)。判定真源 = ext-curation-policy(已验 catalog 同步读)。
 
 import { alphaGlobalRoot } from "./alpha-installs"
-import { readSessionGrantIdsSync } from "./ext-curation-policy"
+import { readSessionGrantIdsSync, type SessionGrantOracle } from "./ext-curation-policy"
 import { readLedgerV2 } from "./ext-receipt-v2"
 import type { ChannelName } from "./catalog-channels"
 
@@ -21,12 +21,20 @@ export function injectDisabledOverrides(
     userDataPath: string
     channel: ChannelName
     /** 仅测试注入;缺省 = 生产 oracle(ext-curation-policy 已验 catalog 同步读)。 */
-    sessionGrantIds?: (userDataPath: string, channel: ChannelName) => Set<string>
+    sessionGrantIds?: (userDataPath: string, channel: ChannelName) => SessionGrantOracle
   },
 ): void {
   try {
     const { records } = readLedgerV2(alphaGlobalRoot())
-    const sessionGrantIds = (opts.sessionGrantIds ?? readSessionGrantIdsSync)(opts.userDataPath, opts.channel)
+    // r1-4:oracle 不可判定 ≠ 空集 —— 注入面尽力强制随包可识别子集并 loud;fail-closed 权威
+    // 在 boot reconcile(不可判定 + 存在已启用 catalog 记录 = enforcementGap 阻断 sidecar,
+    // 本函数在被阻断时根本不会执行到)。
+    const oracle = (opts.sessionGrantIds ?? readSessionGrantIdsSync)(opts.userDataPath, opts.channel)
+    if (!oracle.ok)
+      console.error(
+        `[req104-397] session-grant determination unavailable in injection (${oracle.reason}) — forcing only the bundled-recognizable subset (boot reconcile holds the fail-closed gate)`,
+      )
+    const sessionGrantIds = oracle.ok ? oracle.ids : oracle.partialIds
     const setLeaf = (bucket: "mcp" | "agent" | "mode", name: string, field: string, value: unknown) => {
       const map = config[bucket]
       const cur = map && typeof map[name] === "object" && map[name] ? (map[name] as Record<string, unknown>) : {}
