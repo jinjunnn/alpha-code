@@ -4219,6 +4219,13 @@ export function reconcileDesiredStateAtBoot(root: string): BootReconcileOutcome 
     }
     const ledger = readLedgerV2(root)
     warnings.push(...ledger.warnings)
+    // Codex 增量 r13 Blocker:probeLedgerForWrite 只验文件级信封,不严格解码 records。若有 record 因
+    // 损坏/重复/混合归属被排除(hasExcludedRecords),被排除的可能是 disabled mcp/agent —— 不进 records、
+    // injection 拿不到 → disable 无从执行 → fail-closed gap 阻断 sidecar(宁可不起,不放行可能加载已禁项)。
+    if (ledger.hasExcludedRecords) {
+      gap.push(`installs.json has excluded (corrupt/duplicate) records — an excluded disabled mcp/agent cannot be enforced by injection; blocking sidecar`)
+      return done({ ok: false, applied, warnings, skipped: "ledger has excluded records — fail closed" })
+    }
     const configBacked = ledger.records.filter(
       (r) => r.scope.kind === "global" && (r.kind === "mcp" || r.kind === "agent" || r.kind === "plugin"),
     )

@@ -283,6 +283,10 @@ export type LedgerV2Read = {
   /** v1-only 存量(有 receipt 无 record)—— 只读兼容面。 */
   v1Only: InstallReceipt[]
   warnings: string[]
+  /** Codex(增量 r13)Blocker:有 record 因损坏/重复/混合归属被**排除**(corruptKeys 非空或 unattributable
+   *  或文件级 corrupt)。这些被排除的记录里可能有 disabled mcp/agent —— 它们不进 records、injection 拿不到、
+   *  boot 投影也看不到 → disable 无从执行。调用方(boot)据此 fail-closed 阻断 sidecar。 */
+  hasExcludedRecords: boolean
 }
 
 const ledgerPath = (root: string) => path.join(root, LEDGER_FILE)
@@ -608,7 +612,8 @@ export function readLedgerV2(root: string): LedgerV2Read {
   if (corrupt) warnings.push(`installs.json unreadable: ${ledgerPath(root)}`)
   const recordKeys = new Set(parsed.records.map((r) => key(r.kind, r.name)))
   const v1Only = parsed.receipts.filter((r) => !recordKeys.has(key(r.type, r.name)))
-  return { records: parsed.records, v1Only, warnings }
+  const hasExcludedRecords = corrupt || !!readError || parsed.corruptRecords.corruptKeys.size > 0 || parsed.corruptRecords.unattributable
+  return { records: parsed.records, v1Only, warnings, hasExcludedRecords }
 }
 
 export function findRecordV2(root: string, kind: InstallReceiptType, name: string): InstallRecordV2 | null {

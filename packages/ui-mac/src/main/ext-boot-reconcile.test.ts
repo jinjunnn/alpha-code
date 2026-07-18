@@ -113,17 +113,16 @@ describe("reconcileDesiredStateAtBoot(#395 崩溃残留收敛)", () => {
     expect(fs.readFileSync(cfgPath(), "utf8")).toBe(before) // config 仍不动
   })
 
-  test("损坏单条 record → 该条不投影(config 保持原态),其余记录照常收敛", () => {
+  test("损坏单条 record 被排除 → boot fail-closed + gap(增量 r13 Blocker:排除的可能是 disabled mcp/agent,injection 拿不到)", () => {
     record({ name: "good", kind: "mcp", configKey: "mcp.good", desiredState: "disabled" })
     const raw: { records: any[] } = JSON.parse(fs.readFileSync(path.join(root, "installs.json"), "utf8"))
     raw.records.push({ schemaVersion: 2, id: "mcp:z", name: "z", kind: "mcp" }) // 缺必填字段的损坏记录
     fs.writeFileSync(path.join(root, "installs.json"), JSON.stringify(raw))
     writeCfg({ mcp: { good: { type: "local" }, z: { type: "local" } } })
     const r = reconcileDesiredStateAtBoot(root)
-    expect(r.ok).toBe(true)
-    const cfg = readCfg()
-    expect(cfg.mcp.good).toEqual({ type: "local", enabled: false })
-    expect(cfg.mcp.z).toEqual({ type: "local" }) // 损坏记录不产生投影
+    expect(r.ok).toBe(false)
+    expect(r.enforcementGap && r.enforcementGap.length > 0).toBe(true)
+    expect(r.enforcementGap!.some((g) => g.includes("excluded"))).toBe(true)
   })
 
   test("skill(无 config 面)与 project-scope 记录不触碰 global config", () => {
@@ -314,5 +313,21 @@ describe("#395 r12 B2 账本损坏 fail-closed", () => {
     const r = reconcileDesiredStateAtBoot(root)
     expect(r.ok).toBe(true)
     expect(r.enforcementGap).toBeUndefined()
+  })
+})
+
+// ── 增量 r13 Blocker:有效 disabled + 同 key 损坏 sibling → readLedgerV2.hasExcludedRecords → boot gap ──
+describe("#395 增量 r13 Blocker（记录级损坏 fail-closed）", () => {
+  test("valid disabled mcp + 同 key 损坏 sibling → 整组排除 + boot enforcementGap", () => {
+    record({ name: "m", kind: "mcp", configKey: "mcp.m", desiredState: "disabled" })
+    const raw: { records: any[] } = JSON.parse(fs.readFileSync(path.join(root, "installs.json"), "utf8"))
+    raw.records.push({ kind: "mcp", name: "m", generation: -5 }) // 同 key 损坏 sibling
+    fs.writeFileSync(path.join(root, "installs.json"), JSON.stringify(raw))
+    const rd = require("./ext-receipt-v2").readLedgerV2(root)
+    expect(rd.hasExcludedRecords).toBe(true)
+    expect(rd.records.find((x: any) => x.name === "m")).toBeUndefined() // 有效那条也被排除
+    const r = reconcileDesiredStateAtBoot(root)
+    expect(r.ok).toBe(false)
+    expect(r.enforcementGap!.some((g) => g.includes("excluded"))).toBe(true)
   })
 })
