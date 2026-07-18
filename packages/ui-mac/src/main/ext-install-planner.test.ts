@@ -13,6 +13,7 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import type { CatalogEntry } from "../renderer/extensions/catalog-types"
+import { curationBlobUrl } from "../shared/catalog-curation"
 import { addReceipt } from "./alpha-installs"
 import { aggregateFilesDigest, computeManifestDigest, decodeManifestV2 } from "./ext-manifest-v2"
 import { hasCasBlob } from "./ext-cas"
@@ -1005,7 +1006,7 @@ describe("legacy project manage (AC#3/AC#4 semantics kept for residuals)", () =>
     expect(findRecordV2(rootB, "skill", "demo")).not.toBeNull()
 
     // 禁用 A 项目的 → global 与 B 不动
-    expect((await setInstallStateByKey({ type: "skill", name: "demo", scope: "project", projectDir: projA, state: "disabled" }, { globalRoot: () => globalRoot, advisoryGate: () => ({ allowed: true }) })).ok).toBe(true)
+    expect((await setInstallStateByKey({ type: "skill", name: "demo", scope: "project", projectDir: projA, state: "disabled" }, { globalRoot: () => globalRoot, advisoryGate: () => ({ allowed: true }), resolveEntry: async () => null })).ok).toBe(true)
     expect(findRecordV2(rootA, "skill", "demo")?.desiredState).toBe("disabled")
     expect(findRecordV2(globalRoot, "skill", "demo")?.desiredState).toBe("enabled")
     expect(findRecordV2(rootB, "skill", "demo")?.desiredState).toBe("enabled")
@@ -1058,7 +1059,7 @@ describe("legacy project manage (AC#3/AC#4 semantics kept for residuals)", () =>
     seedProjectCatalogRecord(projA)
     const projMoved = path.join(tmp, "proj-moved-state")
     fs.renameSync(projA, projMoved)
-    const r = await setInstallStateByKey({ type: "skill", name: "demo", scope: "project", projectDir: projMoved, state: "disabled" }, { globalRoot: () => globalRoot, advisoryGate: () => ({ allowed: true }) })
+    const r = await setInstallStateByKey({ type: "skill", name: "demo", scope: "project", projectDir: projMoved, state: "disabled" }, { globalRoot: () => globalRoot, advisoryGate: () => ({ allowed: true }), resolveEntry: async () => null })
     expect(r.ok).toBe(false)
     expect(findRecordV2(path.join(projMoved, ".alpha"), "skill", "demo")?.desiredState).toBe("enabled")
   })
@@ -1429,8 +1430,8 @@ describe("#315 advisory 激活闸接线", () => {
     const globalRoot = deps.globalRoot()
     const ok = await installAuthorized({ catalogId: "skill:demo", scope: { scope: "global" } }, deps)
     expect(ok.ok).toBe(true)
-    expect((await setInstallStateByKey({ type: "skill", name: "demo", scope: "global", state: "disabled" }, { globalRoot: () => globalRoot, advisoryGate: denyGate() })).ok).toBe(true)
-    const re = await setInstallStateByKey({ type: "skill", name: "demo", scope: "global", state: "enabled" }, { globalRoot: () => globalRoot, advisoryGate: denyGate() })
+    expect((await setInstallStateByKey({ type: "skill", name: "demo", scope: "global", state: "disabled" }, { globalRoot: () => globalRoot, advisoryGate: denyGate(), resolveEntry: async () => null })).ok).toBe(true)
+    const re = await setInstallStateByKey({ type: "skill", name: "demo", scope: "global", state: "enabled" }, { globalRoot: () => globalRoot, advisoryGate: denyGate(), resolveEntry: async () => null })
     expect(re.ok).toBe(false)
     if (re.ok) throw new Error("unreachable")
     expect(re.reason).toContain("re-enable refused")
@@ -2786,5 +2787,408 @@ describe("catalog agent install via transaction engine (REQ-098 #361)", () => {
     if (!r.ok) expect(r.reason).toContain("exactly one file")
     expect(fs.existsSync(path.join(globalRoot, "agents", "remote-agent.md"))).toBe(false)
     expect(findRecordV2(globalRoot, "agent", "remote-agent")).toBeNull()
+  })
+})
+
+// ── #397:curation 消费接线(archived 拒装 / activationPolicy 落账 / enable 闸)────────────────────
+
+const SHA_A = "a".repeat(64)
+const SHA_B = "b".repeat(64)
+/** 合同-有效的 curation 对象(blob URL 按 (id, version) 逐字推导;不变量:labs⇒session-grant、
+ *  default-enabled⇒core 由调用方保证)。 */
+const makeCuration = (
+  catalogId: string,
+  version: string,
+  over: Partial<{ tier: string; activationPolicy: string; upstreamStatus: string; reviewedAt: string; reviewBefore: string }> = {},
+) => ({
+  schema: "alpha.catalog.curation.v1",
+  tier: over.tier ?? "precache",
+  activationPolicy: over.activationPolicy ?? "default-disabled",
+  deliveryMode: "installable",
+  review: {
+    reviewedAt: over.reviewedAt ?? "2026-07-01T00:00:00Z",
+    reviewedBy: "alpha-review",
+    upstreamStatus: over.upstreamStatus ?? "active",
+    supportTier: "best-effort",
+    reviewBefore: over.reviewBefore ?? "2027-07-01T00:00:00Z",
+  },
+  applicability: { frameworks: ["*"] },
+  summaries: {
+    capabilities: [],
+    networkDomains: [],
+    requiredSecrets: [],
+    runtimeDependencies: [],
+    download: { bytes: null, basis: "unknown" },
+  },
+  refs: {
+    sbom: { sha256: SHA_A, bytes: 1024, url: curationBlobUrl(catalogId, version, "sbom", SHA_A), format: "cyclonedx-1.6+json" },
+    intakeProvenance: {
+      sha256: SHA_B,
+      bytes: 512,
+      url: curationBlobUrl(catalogId, version, "intakeProvenance", SHA_B),
+      format: "alpha.intake-provenance.v1+json",
+    },
+  },
+})
+
+describe("#397 安装面:archived 拒装 + activationPolicy 声明落账", () => {
+  const grants = { secrets: { API_KEY: "s" } }
+  const intent = { catalogId: "mcp:markitdown", scope: { scope: "global" }, grants }
+
+  test("upstreamStatus=archived ⇒ 禁新安装(§7.2 纵深);零落账", async () => {
+    const archived: CatalogEntry = {
+      ...mcpEntry,
+      source: "official",
+      curation: makeCuration("mcp:markitdown", "1.0.0", { upstreamStatus: "archived" }),
+    }
+    const { deps } = makeDeps({ entries: [archived] })
+    const r = await installAuthorized(intent, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("upstream is archived")
+    expect(findRecordV2(globalRoot, "mcp", "markitdown")).toBeNull()
+  })
+
+  test("default-enabled(core)声明 > #395 来源分类:official source 也落 enabled", async () => {
+    const coreEntry: CatalogEntry = {
+      ...mcpEntry,
+      source: "official",
+      curation: makeCuration("mcp:markitdown", "1.0.0", { tier: "core", activationPolicy: "default-enabled" }),
+    }
+    const { deps } = makeDeps({ entries: [coreEntry] })
+    const r = await installAuthorized(intent, deps)
+    expect(r.ok).toBe(true)
+    expect(findRecordV2(globalRoot, "mcp", "markitdown")?.desiredState).toBe("enabled")
+  })
+
+  test("session-grant(labs)⇒ 持久账本恒 disabled:alpha source 也不例外", async () => {
+    const labsEntry: CatalogEntry = {
+      ...mcpEntry,
+      source: "alpha",
+      curation: makeCuration("mcp:markitdown", "1.0.0", { tier: "labs", activationPolicy: "session-grant" }),
+    }
+    const { deps } = makeDeps({ entries: [labsEntry] })
+    const r = await installAuthorized(intent, deps)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.installedDisabled).toBe(true)
+    expect(mcpLeafOnDisk("markitdown")?.enabled).toBe(false)
+    expect(findRecordV2(globalRoot, "mcp", "markitdown")?.desiredState).toBe("disabled")
+  })
+
+  test("复审过期(排他截止):default-enabled 也先落 disabled(启用走显式确认)", async () => {
+    const expired: CatalogEntry = {
+      ...mcpEntry,
+      source: "alpha",
+      curation: makeCuration("mcp:markitdown", "1.0.0", { tier: "core", activationPolicy: "default-enabled", reviewedAt: "2025-01-01T00:00:00Z", reviewBefore: "2026-01-01T00:00:00Z" }),
+    }
+    const { deps } = makeDeps({ entries: [expired] })
+    const r = await installAuthorized(intent, deps)
+    expect(r.ok).toBe(true)
+    expect(findRecordV2(globalRoot, "mcp", "markitdown")?.desiredState).toBe("disabled")
+  })
+
+  test("r1-2(更新链):已启用 mcp 重装到声明 session-grant 的版本 ⇒ 账本归位 disabled(upsert 的 prev 优先不得复活 enabled)", async () => {
+    // 先以未策展 alpha 源装成 enabled(#395 规则)。
+    const plainAlpha: CatalogEntry = { ...mcpEntry, source: "alpha" }
+    const { deps: deps1 } = makeDeps({ entries: [plainAlpha] })
+    expect((await installAuthorized(intent, deps1)).ok).toBe(true)
+    expect(findRecordV2(globalRoot, "mcp", "markitdown")?.desiredState).toBe("enabled")
+    // 目录换代:同 id 版本声明 session-grant → 重装后持久账本必须归位 disabled。
+    const labsNow: CatalogEntry = {
+      ...mcpEntry,
+      source: "alpha",
+      curation: makeCuration("mcp:markitdown", "1.0.0", { tier: "labs", activationPolicy: "session-grant" }),
+    }
+    const { deps: deps2 } = makeDeps({ entries: [labsNow] })
+    const r = await installAuthorized(intent, deps2)
+    expect(r.ok).toBe(true)
+    expect(findRecordV2(globalRoot, "mcp", "markitdown")?.desiredState).toBe("disabled")
+    expect(mcpLeafOnDisk("markitdown")?.enabled).toBe(false)
+  })
+
+  test("r3①:receipt 之前失败(post-journal probe 拒)⇒ 账本零副作用 —— 非法 enabled 原样;r3②:随后成功提交才落 disabled", async () => {
+    // 先以未策展 alpha 源装 skill:demo → enabled(#395 规则)。
+    const { deps: seedDeps } = makeDeps({ entries: [skillBuiltinEntry] })
+    expect((await installAuthorized({ catalogId: "skill:demo", scope: { scope: "global" } }, seedDeps)).ok).toBe(true)
+    const before = findRecordV2(globalRoot, "skill", "demo")!
+    expect(before.desiredState).toBe("enabled")
+    // 目录换代:同 id 声明 session-grant,但载荷 frontmatter 名不匹配 → 事务在 journal 之后、
+    // receipt 之前的 probe 段失败 → rollbackAll。归位 = receipt 写点例外 ⇒ 账本从未被碰。
+    const sgSkill: CatalogEntry = {
+      ...skillBuiltinEntry,
+      curation: makeCuration("skill:demo", "1.0.0", { tier: "labs", activationPolicy: "session-grant" }),
+    }
+    const badPayload = (_key: string, _name: string) =>
+      ({ ok: true as const, files: [{ path: "SKILL.md", data: Buffer.from("---\nname: shadow\ndescription: t\n---\nbody") }] })
+    const { deps: failDeps } = makeDeps({ entries: [sgSkill], installers: { collectBuiltinSkillPayload: badPayload } })
+    const failed = await installAuthorized({ catalogId: "skill:demo", scope: { scope: "global" } }, failDeps)
+    expect(failed.ok).toBe(false)
+    const after = findRecordV2(globalRoot, "skill", "demo")!
+    expect(after.desiredState).toBe("enabled") // r3 核心:失败的操作零账本副作用(归位与 receipt 同原子)
+    expect(after.generation).toBe(before.generation)
+    expect(after.updatedAt).toBe(before.updatedAt)
+    // r3②:好载荷重装成功 → receipt 写点例外落 disabled(prev enabled 不复活)。
+    const { deps: okDeps } = makeDeps({ entries: [sgSkill] })
+    expect((await installAuthorized({ catalogId: "skill:demo", scope: { scope: "global" } }, okDeps)).ok).toBe(true)
+    expect(findRecordV2(globalRoot, "skill", "demo")!.desiredState).toBe("disabled")
+  })
+
+  test("r3③:bundle 一子项失败 ⇒ 整包账本零副作用(session-grant 子项的非法 enabled 原样保留)", async () => {
+    // 预置:skill:sga 已装且 enabled(历史非法态 —— 目录现声明 session-grant)。
+    const w = upsertRecordV2(globalRoot, {
+      id: "skill:sga",
+      name: "sga",
+      kind: "skill",
+      environment: "prod",
+      scope: { kind: "global" },
+      version: "0.9.0",
+      desiredState: "enabled",
+      origin: "catalog",
+      installedAt: "2026-07-15T00:00:00.000Z",
+    })
+    expect(w.ok).toBe(true)
+    const sga: CatalogEntry = {
+      ...skillBuiltinEntry,
+      id: "skill:sga",
+      name: "sga",
+      installSpec: { kind: "skill", source: "builtin", builtinAssetKey: "skills/sga", targetDir: "alpha-skills" },
+      curation: makeCuration("skill:sga", "1.0.0", { tier: "labs", activationPolicy: "session-grant" }),
+    }
+    const sgb: CatalogEntry = {
+      ...skillBuiltinEntry,
+      id: "skill:sgb",
+      name: "sgb",
+      installSpec: { kind: "skill", source: "builtin", builtinAssetKey: "skills/sgb", targetDir: "alpha-skills" },
+    }
+    const sgBundle: CatalogEntry = {
+      ...bundleEntry,
+      id: "bundle:sg",
+      name: "sgb-pack",
+      bundleItems: [
+        { catalogEntryId: "skill:sga", optional: false, installOrder: 1 },
+        { catalogEntryId: "skill:sgb", optional: false, installOrder: 2 },
+      ],
+    }
+    // sgb 载荷 frontmatter 名不匹配 → 整包事务 probe 失败;sga 的归位标记只随 receipt 生效 → 零写。
+    const payloadByName = (_key: string, name: string) =>
+      name === "sgb"
+        ? { ok: true as const, files: [{ path: "SKILL.md", data: Buffer.from("---\nname: shadow\ndescription: t\n---\nbody") }] }
+        : { ok: true as const, files: [{ path: "SKILL.md", data: Buffer.from(`---\nname: ${name}\ndescription: t\n---\nbody`) }] }
+    const { deps } = makeDeps({ entries: [sga, sgb, sgBundle], installers: { collectBuiltinSkillPayload: payloadByName } })
+    const r = await installAuthorized({ catalogId: "bundle:sg", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(false)
+    expect(findRecordV2(globalRoot, "skill", "sga")!.desiredState).toBe("enabled") // 未被半写归位
+    expect(findRecordV2(globalRoot, "skill", "sga")!.version).toBe("0.9.0")
+    expect(findRecordV2(globalRoot, "skill", "sgb")).toBeNull() // 整包零落账
+    // 修复 sgb 后整包成功:sga 经 receipt 写点例外落 disabled,sgb 正常落账。
+    const goodPayload = (_key: string, name: string) =>
+      ({ ok: true as const, files: [{ path: "SKILL.md", data: Buffer.from(`---\nname: ${name}\ndescription: t\n---\nbody`) }] })
+    const { deps: okDeps } = makeDeps({ entries: [sga, sgb, sgBundle], installers: { collectBuiltinSkillPayload: goodPayload } })
+    const ok = await installAuthorized({ catalogId: "bundle:sg", scope: { scope: "global" } }, okDeps)
+    expect(ok.ok).toBe(true)
+    expect(findRecordV2(globalRoot, "skill", "sga")!.desiredState).toBe("disabled")
+    expect(findRecordV2(globalRoot, "skill", "sgb")).not.toBeNull()
+  })
+
+  test("curation 校验失败 = fail-closed 到未策展保守面:绝不部分采信(archived 也不作数),按 #395 分类", async () => {
+    const invalid: CatalogEntry = {
+      ...mcpEntry,
+      source: "alpha", // #395 保守面:alpha 源 → enabled(证明走了保守面而非声明面)
+      curation: { ...makeCuration("mcp:markitdown", "1.0.0", { upstreamStatus: "archived" }), rogue: true },
+    }
+    const { deps } = makeDeps({ entries: [invalid] })
+    const r = await installAuthorized(intent, deps)
+    expect(r.ok).toBe(true) // invalid 的 archived 不拒装(不挑「看起来没坏」的字段用)
+    expect(findRecordV2(globalRoot, "mcp", "markitdown")?.desiredState).toBe("enabled")
+  })
+})
+
+describe("#397 enable 闸(setInstallStateByKey;advisory 之后)", () => {
+  const grants = { secrets: { API_KEY: "s" } }
+  const intent = { catalogId: "mcp:markitdown", scope: { scope: "global" }, grants }
+  const enableIntent = { type: "mcp", name: "markitdown", scope: "global", state: "enabled" }
+
+  test("session-grant:enable 拒(code 判别);disable 方向不受限", async () => {
+    const labsEntry: CatalogEntry = {
+      ...mcpEntry,
+      source: "alpha",
+      curation: makeCuration("mcp:markitdown", "1.0.0", { tier: "labs", activationPolicy: "session-grant" }),
+    }
+    const { deps } = makeDeps({ entries: [labsEntry] })
+    expect((await installAuthorized(intent, deps)).ok).toBe(true)
+    const en = await setInstallStateByKey(enableIntent, deps)
+    expect(en.ok).toBe(false)
+    if (!en.ok) {
+      expect(en.code).toBe("session-grant-persistent-enable")
+      expect(en.reason).toContain("session-grant")
+    }
+    expect(findRecordV2(globalRoot, "mcp", "markitdown")?.desiredState).toBe("disabled")
+    const dis = await setInstallStateByKey({ ...enableIntent, state: "disabled" }, deps)
+    expect(dis.ok).toBe(true)
+  })
+
+  test("复审过期:enable 需显式确认(confirmExpiredReview=true 才放行)", async () => {
+    const expired: CatalogEntry = {
+      ...mcpEntry,
+      source: "official",
+      curation: makeCuration("mcp:markitdown", "1.0.0", { reviewedAt: "2025-01-01T00:00:00Z", reviewBefore: "2026-01-01T00:00:00Z" }),
+    }
+    const { deps } = makeDeps({ entries: [expired] })
+    expect((await installAuthorized(intent, deps)).ok).toBe(true)
+    const refused = await setInstallStateByKey(enableIntent, deps)
+    expect(refused.ok).toBe(false)
+    if (!refused.ok) expect(refused.code).toBe("expired-review-confirmation-required")
+    const confirmed = await setInstallStateByKey({ ...enableIntent, confirmExpiredReview: true }, deps)
+    expect(confirmed.ok).toBe(true)
+    expect(findRecordV2(globalRoot, "mcp", "markitdown")?.desiredState).toBe("enabled")
+  })
+
+  test("锁外/锁内指纹漂移(version 变更)⇒ 拒绝重试(TOCTOU 闭合,必改⑤)", async () => {
+    const curated: CatalogEntry = {
+      ...mcpEntry,
+      source: "official",
+      curation: makeCuration("mcp:markitdown", "1.0.0"),
+    }
+    const { deps } = makeDeps({ entries: [curated] })
+    expect((await installAuthorized(intent, deps)).ok).toBe(true)
+    // resolveEntry await 期间(锁外冻结后、取锁前)记录被改写(版本漂移)→ 锁内指纹核对必须拒。
+    const racing: typeof deps = {
+      ...deps,
+      resolveEntry: async (id) => {
+        const rec = findRecordV2(globalRoot, "mcp", "markitdown")!
+        const w = upsertRecordV2(globalRoot, {
+          id: rec.id,
+          name: rec.name,
+          kind: "mcp",
+          environment: rec.environment,
+          scope: { kind: "global" },
+          version: "9.9.9",
+          desiredState: rec.desiredState,
+          origin: rec.origin,
+          configKey: rec.configKey,
+          installedAt: rec.installedAt,
+        })
+        if (!w.ok) throw new Error(w.reason)
+        return deps.resolveEntry(id)
+      },
+    }
+    const r = await setInstallStateByKey(enableIntent, racing)
+    expect(r.ok).toBe(false)
+    // r1-5:锁内以「record vs 已验 entry」身份四元组判定 —— 版本漂移即身份失配,拒绝重试。
+    if (!r.ok) expect(r.reason).toContain("identity does not match")
+  })
+
+  test("r1-5:catalog 不可得(resolveEntry null)⇒ enable 拒,绝不降格未策展放行", async () => {
+    const curated: CatalogEntry = { ...mcpEntry, source: "official", curation: makeCuration("mcp:markitdown", "1.0.0") }
+    const { deps } = makeDeps({ entries: [curated] })
+    expect((await installAuthorized(intent, deps)).ok).toBe(true)
+    const offline: typeof deps = { ...deps, resolveEntry: async () => null }
+    const r = await setInstallStateByKey(enableIntent, offline)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("not resolvable from the verified catalog")
+    // disable 方向不受限(fail-closed 只闸激活)。
+    expect((await setInstallStateByKey({ ...enableIntent, state: "disabled" }, offline)).ok).toBe(true)
+  })
+
+  test("r1-5:同 ID 异版本(装 1.0.0,目录已是 2.0.0)⇒ enable 拒 —— 不得用 v2 策略放行 v1", async () => {
+    const v1: CatalogEntry = { ...mcpEntry, source: "official", curation: makeCuration("mcp:markitdown", "1.0.0") }
+    const { deps } = makeDeps({ entries: [v1] })
+    expect((await installAuthorized(intent, deps)).ok).toBe(true)
+    // 目录换代:同 id 的 v2(策展改 default-enabled 也无济于事 —— 身份失配先拒)。
+    const v2: CatalogEntry = {
+      ...mcpEntry,
+      version: "2.0.0",
+      source: "official",
+      curation: makeCuration("mcp:markitdown", "2.0.0", { tier: "core", activationPolicy: "default-enabled" }),
+    }
+    const { deps: deps2 } = makeDeps({ entries: [v2] })
+    const r = await setInstallStateByKey(enableIntent, deps2)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain("identity does not match")
+  })
+
+  test("未策展记录:enable 不受新限制(#395 语义不回归)", async () => {
+    const plain: CatalogEntry = { ...mcpEntry, source: "official" }
+    const { deps } = makeDeps({ entries: [plain] })
+    expect((await installAuthorized(intent, deps)).ok).toBe(true)
+    expect(findRecordV2(globalRoot, "mcp", "markitdown")?.desiredState).toBe("disabled")
+    const en = await setInstallStateByKey(enableIntent, deps)
+    expect(en.ok).toBe(true)
+    expect(findRecordV2(globalRoot, "mcp", "markitdown")?.desiredState).toBe("enabled")
+  })
+})
+
+// ── #397 r1-2:plugin 置换(更新链)经带当前 curation 的分类器 ────────────────────────────────────
+describe("#397 r1-2:plugin replace 的 session-grant 强制(更新链不是豁免通道)", () => {
+  const seedNpmOldEnabled = () => {
+    const pinned = "@alpha/np@2.0.0"
+    fs.mkdirSync(globalRoot, { recursive: true })
+    fs.writeFileSync(path.join(globalRoot, "alpha.jsonc"), JSON.stringify({ plugin: [pinned] }, null, 2))
+    const w = upsertRecordV2(globalRoot, {
+      id: "plugin:np",
+      name: "np",
+      kind: "plugin",
+      environment: "prod",
+      scope: { kind: "global" },
+      version: "2.0.0",
+      desiredState: "enabled",
+      origin: "catalog",
+      configKey: `plugin:${pinned}`,
+      transaction: { id: "tx-old-1", state: "committed" },
+      installedAt: "2026-07-15T00:00:00.000Z",
+    })
+    if (!w.ok) throw new Error(w.reason)
+  }
+
+  test("已启用 plugin 更新到声明 session-grant 的版本 ⇒ plugin[] 移除 + 账本 disabled(不留非法 enabled)", async () => {
+    seedNpmOldEnabled()
+    const sessionGrantV2: CatalogEntry = {
+      ...pluginNpmEntry,
+      source: "official",
+      curation: makeCuration("plugin:np", "2.3.4", { tier: "labs", activationPolicy: "session-grant" }),
+    }
+    const { deps } = makeDeps({ entries: [sessionGrantV2] })
+    const r = await installAuthorized({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(true)
+    const cfg = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8")) as { plugin: string[] }
+    expect(cfg.plugin).toEqual([]) // 目标版本 session-grant:置换丢旧不加新
+    const rec = findRecordV2(globalRoot, "plugin", "np")!
+    expect(rec.version).toBe("2.3.4")
+    expect(rec.desiredState).toBe("disabled") // 持久 enabled 非法 —— 更新链同样强制
+  })
+
+  test("r2:授权暂停零账本副作用 —— 归位只在锁内提交路径发生,拒绝/暂停的操作不动账", async () => {
+    seedNpmOldEnabled()
+    const sessionGrantV2: CatalogEntry = {
+      ...pluginNpmEntry,
+      source: "official",
+      curation: makeCuration("plugin:np", "2.3.4", { tier: "labs", activationPolicy: "session-grant" }),
+    }
+    const { deps } = makeDeps({ entries: [sessionGrantV2] })
+    // 首驱:无授权基线 → authorize 暂停(引擎顺序 lock → authorize 零写盘 → precondition)。
+    const first = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
+    expect(first.ok).toBe(false)
+    if (!first.ok) expect(first.stage).toBe("authorize")
+    // r2 Major 的核心断言:暂停的操作零账本副作用 —— 非法 enabled 原样保留,config 不动。
+    expect(findRecordV2(globalRoot, "plugin", "np")!.desiredState).toBe("enabled")
+    expect(findRecordV2(globalRoot, "plugin", "np")!.version).toBe("2.0.0")
+    const cfg0 = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8")) as { plugin: string[] }
+    expect(cfg0.plugin).toEqual(["@alpha/np@2.0.0"])
+    // 确认重驱:锁内 precondition 归位 + 同一事务提交 → disabled + plugin[] 移除。
+    const confirmed = await installAuthorized({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
+    expect(confirmed.ok).toBe(true)
+    expect(findRecordV2(globalRoot, "plugin", "np")!.desiredState).toBe("disabled")
+    const cfg1 = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8")) as { plugin: string[] }
+    expect(cfg1.plugin).toEqual([])
+  })
+
+  test("对照:目标版本未策展 ⇒ 置换保留旧 enabled(#352 语义不回归)", async () => {
+    seedNpmOldEnabled()
+    const { deps } = makeDeps({ entries: [{ ...pluginNpmEntry, source: "official" }] })
+    const r = await installAuthorized({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
+    expect(r.ok).toBe(true)
+    const cfg = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8")) as { plugin: string[] }
+    expect(cfg.plugin).toEqual(["@alpha/np@2.3.4"])
+    expect(findRecordV2(globalRoot, "plugin", "np")!.desiredState).toBe("enabled")
   })
 })

@@ -1,0 +1,48 @@
+{
+  "catalogId": "skill:experimental-viz",
+  "version": "0.3.1",
+  "entryType": "skill",
+  "hasPayloadAssets": true,
+  "curation": {
+    "schema": "alpha.catalog.curation.v1",
+    "tier": "labs",
+    "activationPolicy": "session-grant",
+    "deliveryMode": "installable",
+    "review": {
+      "reviewedAt": "2026-07-15T00:00:00Z",
+      "reviewedBy": "alpha-review",
+      "upstreamStatus": "unknown",
+      "supportTier": "none",
+      "reviewBefore": "2026-10-15T00:00:00Z"
+    },
+    "applicability": {
+      "frameworks": [
+        "*"
+      ]
+    },
+    "summaries": {
+      "capabilities": [],
+      "networkDomains": [],
+      "requiredSecrets": [],
+      "runtimeDependencies": [],
+      "download": {
+        "bytes": 4096,
+        "basis": "catalog-assets"
+      }
+    },
+    "refs": {
+      "sbom": {
+        "sha256": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c",
+        "bytes": 2048,
+        "url": "https://alphacodeone.com/catalog/assets/skill.experimental-viz/0.3.1/alpha-curation/sbom/3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c.cdx.json",
+        "format": "cyclonedx-1.6+json"
+      },
+      "intakeProvenance": {
+        "sha256": "4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d",
+        "bytes": 1024,
+        "url": "https://alphacodeone.com/catalog/assets/skill.experimental-viz/0.3.1/alpha-curation/intake-provenance/4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d.json",
+        "format": "alpha.intake-provenance.v1+json"
+      }
+    }
+  }
+}

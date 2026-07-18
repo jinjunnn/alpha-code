@@ -216,7 +216,7 @@ describe("#315 生产链 wiring:refresh 落盘 → makeAdvisoryGate 真信任链
     const gate = makeAdvisoryGate(dir, { now: () => NOW, builtinKeyB64: k.publicKeyB64 })
     const refused = await setInstallStateByKey(
       { type: "skill", name: "demo", scope: "global", state: "enabled" },
-      { globalRoot: () => globalRoot, advisoryGate: gate },
+      { globalRoot: () => globalRoot, advisoryGate: gate, resolveEntry: async () => null },
     )
     expect(refused.ok).toBe(false)
     if (refused.ok) throw new Error("unreachable")
@@ -224,7 +224,7 @@ describe("#315 生产链 wiring:refresh 落盘 → makeAdvisoryGate 真信任链
     // disable 不受闸(advisory 拦的是再启用)
     const disable = await setInstallStateByKey(
       { type: "skill", name: "demo", scope: "global", state: "disabled" },
-      { globalRoot: () => globalRoot, advisoryGate: gate },
+      { globalRoot: () => globalRoot, advisoryGate: gate, resolveEntry: async () => null },
     )
     expect(disable.ok).toBe(true)
   })

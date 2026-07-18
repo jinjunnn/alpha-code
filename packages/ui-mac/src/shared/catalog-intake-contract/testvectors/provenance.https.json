@@ -1,0 +1,26 @@
+{
+  "catalogId": "skill:fonts",
+  "version": "1.0.0",
+  "provenance": {
+    "schema": "alpha.intake-provenance.v1",
+    "catalogId": "skill:fonts",
+    "version": "1.0.0",
+    "source": {
+      "kind": "https",
+      "locator": "https://downloads.example.com/fonts/inter",
+      "requestedRef": "1.0.0",
+      "resolved": "sha256:dededededededededededededededededededededededededededededededede"
+    },
+    "manifest": {
+      "sha256": "f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0",
+      "bytes": 1024
+    },
+    "lockDigests": [],
+    "artifactDigests": [
+      {
+        "name": "Inter-OFL.txt",
+        "sha256": "2121212121212121212121212121212121212121212121212121212121212121"
+      }
+    ]
+  }
+}

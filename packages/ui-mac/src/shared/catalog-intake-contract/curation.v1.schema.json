@@ -1,0 +1,106 @@
+{
+  "$id": "alpha.catalog.curation.v1",
+  "title": "Per-entry curation object published inside the signed catalog payload (REQ-104). Structural face only — cross-field invariants live in scripts/lib/catalog-intake-core.mjs assertCurationCoherent (contract §3).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "tier", "activationPolicy", "deliveryMode", "review", "applicability", "summaries", "refs"],
+  "properties": {
+    "schema": { "const": "alpha.catalog.curation.v1" },
+    "tier": { "enum": ["core", "precache", "connector", "labs"] },
+    "activationPolicy": { "enum": ["default-enabled", "default-disabled", "session-grant"] },
+    "deliveryMode": { "enum": ["installable", "connection-only", "aggregate"] },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reviewedAt", "reviewedBy", "upstreamStatus", "supportTier", "reviewBefore"],
+      "properties": {
+        "reviewedAt": { "type": "string", "format": "date-time", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$" },
+        "reviewedBy": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+        "upstreamStatus": { "enum": ["active", "archived", "unmaintained", "unknown"] },
+        "supportTier": { "enum": ["full", "best-effort", "community", "none"] },
+        "reviewBefore": { "type": "string", "format": "date-time", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$" }
+      }
+    },
+    "applicability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["frameworks"],
+      "properties": {
+        "frameworks": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^(\\*|[a-z0-9][a-z0-9-]*)$" }
+        }
+      }
+    },
+    "summaries": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capabilities", "networkDomains", "requiredSecrets", "runtimeDependencies", "download"],
+      "properties": {
+        "capabilities": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9][a-z0-9.:-]*$" }
+        },
+        "networkDomains": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "maxLength": 255, "pattern": "^(\\*|[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+)$" }
+        },
+        "requiredSecrets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "source"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Z][A-Z0-9_]*$" },
+              "source": { "enum": ["environment", "connection"] }
+            }
+          }
+        },
+        "runtimeDependencies": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^[a-z0-9][a-z0-9.-]*$" }
+        },
+        "download": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["bytes", "basis"],
+          "properties": {
+            "bytes": { "$comment": "integer >= 0 or null; nullability and the null<=>basis:unknown tie are enforced by assertCurationCoherent (schema-lite has no type unions)" },
+            "basis": { "enum": ["catalog-assets", "locked-packages", "aggregate", "none", "unknown"] }
+          }
+        }
+      }
+    },
+    "refs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sbom", "intakeProvenance"],
+      "properties": {
+        "sbom": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sha256", "bytes", "url", "format"],
+          "properties": {
+            "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "bytes": { "type": "integer", "minimum": 1 },
+            "url": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^https://" },
+            "format": { "const": "cyclonedx-1.6+json" }
+          }
+        },
+        "intakeProvenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sha256", "bytes", "url", "format"],
+          "properties": {
+            "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "bytes": { "type": "integer", "minimum": 1 },
+            "url": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^https://" },
+            "format": { "const": "alpha.intake-provenance.v1+json" }
+          }
+        }
+      }
+    }
+  }
+}

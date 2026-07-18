@@ -160,7 +160,17 @@ export function cloudDesiredStateGate(
 }
 import { parse, type ParseError } from "jsonc-parser"
 import { capabilitiesForCatalogEntry, type AuthorizationConfirmationWire } from "../shared/ext-capability-authorization"
+import {
+  curationActivationFacts,
+  decodeEntryCuration,
+  isCurationArchived,
+  isReviewExpired,
+  type ActivationPolicy,
+  type CurationStatus,
+} from "../shared/catalog-curation"
 import { nextDesiredState } from "./ext-install-policy"
+import { readSessionGrantIdsSync, type SessionGrantOracle } from "./ext-curation-policy"
+import type { ChannelName } from "./catalog-channels"
 import { findReceipt } from "./alpha-installs"
 import {
   aggregateFilesDigest,
@@ -638,6 +648,28 @@ function advisoryInputOf(
     provenance,
   }
 }
+
+/** #397:安装/落账用 curation 消费事实(合同 §7.1/§7.2)。唯一采信入口 = decodeEntryCuration
+ *  (fail-closed:未策展/校验失败 → 空 facts = #395 保守面)。decode 纯且廉价,逐位点就地计算,
+ *  不跨函数传递(避免 facts 与 entry 脱钩的错配面)。 */
+function curationPolicyFactsOf(
+  entry: CatalogEntry,
+  nowIso: string,
+): { activationPolicy?: ActivationPolicy; reviewExpired?: boolean } {
+  return curationActivationFacts(decodeEntryCuration(entry), nowIso)
+}
+
+/** #397:entry 级 curation 采信 + loud 上报(invalid = fail-closed 到保守面,绝不部分采信)。 */
+function decodeEntryCurationLoud(entry: CatalogEntry): CurationStatus {
+  const status = decodeEntryCuration(entry)
+  if (status.kind === "invalid")
+    console.error(`[req104-397] entry ${entry.id}: curation FAILED validation — fail closed to the uncurated conservative face (${status.reason})`)
+  return status
+}
+
+// #397(Codex r3):session-grant 非法 prior 的归位 = 账本 upsert 写点例外
+// (ext-receipt-v2 UpsertInput.sessionGrantEnforced,与 receipt 同原子)—— 本文件各安装路径
+// 只在计划期给 receipt 模板**打标**(纯数据),不做任何计划期/锁内预写。
 
 /** 目标卷可移植的路径碰撞键(Codex review #363 Major 2):darwin/win32 常见大小写不敏感 +
  *  Unicode normalization 折叠 —— 折叠后相同即视为同一物理落点,清单歧义直接拒。 */
@@ -1183,6 +1215,18 @@ async function replacePluginViaTransaction(args: {
     rollback("legacy plugin conflict")
     return replaceLegacyGate
   }
+  // #397(Codex r1-2 + r3):置换后的启用态经**带当前 curation facts 的统一分类器**(纯计算,
+  // 零账本写)—— 更新默认保留旧 desiredState(nextDesiredState prior 优先,#352 裁决语义不变),
+  // 但目标版本声明 session-grant 时强制 disabled(持久 enabled 非法;fresh 早已如此,更新链不得
+  // 成为豁免通道)。非法 prior 的归位 = receipt 写点例外(sessionGrantEnforced 标记,与 receipt
+  // 同原子);plugin[] 决策用同一计划值,receipt 之前任何失败零账本副作用。
+  const replacePolicyFacts = curationPolicyFactsOf(entry, deps.now?.() ?? new Date().toISOString())
+  const replaceSessionGrantForced = replacePolicyFacts.activationPolicy === "session-grant"
+  const plannedDesiredState = nextDesiredState(root, "plugin", entry.name, {
+    origin: "catalog",
+    source: entry.source,
+    ...replacePolicyFacts,
+  })
   // r10/r11:等价重复收敛为单条;保留**最后一条**匹配的形态/options —— 引擎对重复解析身份
   // 取后者为准(config/plugin.ts later-wins),保首条会丢弃真正生效的 options。
   const lastMatchIdx = snapshot.value.reduce((acc, x, i) => (matchesOld(x) ? i : acc), -1)
@@ -1194,7 +1238,7 @@ async function replacePluginViaTransaction(args: {
     }
     if (i !== lastMatchIdx) continue
     // #395:disabled 的置换保持 plugin[] 无条目(丢旧不加新;更新 disabled 插件不重新启用)。
-    if (facts.record.desiredState === "disabled") continue
+    if (plannedDesiredState === "disabled") continue
     nextArray.push(Array.isArray(x) ? [newElem, x[1]] : newElem)
   }
   const snapshotCanon = JSON.stringify(snapshot.value)
@@ -1210,7 +1254,9 @@ async function replacePluginViaTransaction(args: {
     manifestDigest,
     grantDigest: computeGrantDigest(intent.grants ?? {}),
     // 可选裁决采纳:更新默认保留旧 desiredState —— 更新 disabled 插件不得静默重新启用。
-    desiredState: facts.record.desiredState,
+    // #397 r1-2:经统一分类器(session-grant 目标版本强制 disabled,其余 = prior 原值)。
+    desiredState: plannedDesiredState,
+    ...(replaceSessionGrantForced ? { sessionGrantEnforced: true as const } : {}), // #397 r3:写点例外标记
     origin: "catalog",
     ...(stagedDir ? { files: [stagedDir] } : {}),
     // r16 Minor:置换 receipt 落载荷内容地址 —— upsert 是整记录替换,缺省会抹掉旧值,
@@ -1249,6 +1295,8 @@ async function replacePluginViaTransaction(args: {
       const rec = findRecordV2(root, "plugin", entry.name)
       if (!rec || rec.generation !== facts.record.generation || rec.manifestDigest !== facts.record.manifestDigest)
         return { ok: false, reason: "plugin ledger changed since plan — retry the update" }
+      // #397 r3:drift 基线恒为计划期观测的 prior 态(facts.record)—— forced 场景锁内不再预写,
+      // prior 保持原值直到 receipt 写点按 sessionGrantEnforced 例外落 disabled。
       if (rec.desiredState !== facts.record.desiredState)
         return { ok: false, reason: "plugin desired state changed since plan — retry the update" }
       // r12 Major:legacy 源不在主 canon 快照覆盖内 —— 锁内重跑两个 legacy 门(同名派生路径 +
@@ -1378,7 +1426,14 @@ async function classifyBundleChild(
   if (!decoded.ok) return { status: "fatal", id, reason: `manifest invalid: ${decoded.errors.join("; ")}` }
   if (!(decoded.manifest.compatibility.platforms as string[]).includes(deps.platform()))
     return { status: "skip", id, reason: `platform ${deps.platform()} not supported` }
+  // #397(Codex 裁决必改②):bundle fan-out 不走 installCatalog,archived 门必须逐子项落此 ——
+  // fatal 语义天然给出「required → 整包失败 / optional → 跳过并如实返回」(见 installBundleAtomic)。
+  if (isCurationArchived(decodeEntryCurationLoud(entry)))
+    return { status: "fatal", id, reason: `upstream is archived per curation review — new installs are refused (contract §7.2)` }
   const manifestDigest = computeManifestDigest(decoded.manifest)
+  // #397:child 自己的有效 curation 声明优先(逐子项解码,纯计算);session-grant 归位 =
+  // receipt 写点例外标记(与整包 receipt 批量落账同原子,r3)。
+  const childPolicyFacts = curationPolicyFactsOf(entry, deps.now?.() ?? new Date().toISOString())
   const baseRecord = {
     id: entry.id,
     name: entry.name,
@@ -1389,7 +1444,12 @@ async function classifyBundleChild(
     grantDigest: computeGrantDigest({}),
     // #395:bundle 按 child entry source 分别定初始态(#394 裁决),不用 bundle 一刀切;
     // 既有记录当前策略优先。root 恒 global(ADR-030 policy guard 在此前已拒 project 目录装)。
-    desiredState: nextDesiredState(deps.globalRoot(), entry.type as InstallReceiptType, entry.name, { origin: "catalog", source: entry.source }),
+    desiredState: nextDesiredState(deps.globalRoot(), entry.type as InstallReceiptType, entry.name, {
+      origin: "catalog",
+      source: entry.source,
+      ...childPolicyFacts,
+    }),
+    ...(childPolicyFacts.activationPolicy === "session-grant" ? { sessionGrantEnforced: true as const } : {}),
     origin: "catalog" as const,
     installedAt: new Date().toISOString(),
   }
@@ -1590,10 +1650,16 @@ async function installBundleAtomic(
   // disable 在 bundle 取锁前发生时,旧快照会落无 enabled:false 的 config(批量 upsert 保留锁内 disabled
   // → 账本 disabled / config enabled 复活)。锁内逐 config-backed child 复核 desiredState vs plan,漂移
   // 即拒重试(镜像单装/seed)。收集计划期 (kind,name,plannedState)。
+  // #397 r3:forced(sessionGrantEnforced)子项计划值恒 disabled ≠ prior 不是漂移(政策强制,
+  // 写点例外落 disabled)—— drift 基线改用计划期观测的 prior 态,只拦真正的并发变化。
   const driftChecks = planItems
     .map((it) => it.receipt as UpsertInput | undefined)
     .filter((r): r is UpsertInput => !!r && (r.kind === "mcp" || r.kind === "agent" || r.kind === "plugin"))
-    .map((r) => ({ kind: r.kind, name: r.name, planned: r.desiredState }))
+    .map((r) => ({
+      kind: r.kind,
+      name: r.name,
+      planned: r.sessionGrantEnforced === true ? findRecordV2(deps.globalRoot(), r.kind, r.name)?.desiredState : r.desiredState,
+    }))
   const hooks: TxHooks = {
     // REQ-098 #303:generation 项统一从验证共享 CAS 物化(读取重验;blob 被 GC/外部删除 → 抛错 =
     // 事务 abort,绝不回退 buffer 直填)。config/receipt 项无 populate。
@@ -1666,6 +1732,11 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
   const adv = deps.advisoryGate(advisoryInputOf(entry, verified.channel))
   if (!adv.allowed) return { ok: false, reason: `advisory ${adv.advisoryId}: ${adv.reason} — activation refused (R14)` }
 
+  // ── #397:curation 消费(合同 §7.1 采信分级后于 advisory —— advisory 永远赢;§7.2:
+  //    upstreamStatus=archived ⇒ 禁新安装,纵深门,发布端门闸本不应放行;已装项不受影响)。
+  if (isCurationArchived(decodeEntryCurationLoud(entry)))
+    return { ok: false, reason: `entry ${entry.id}: upstream is archived per curation review — new installs are refused (existing installs unaffected)` }
+
   if (entry.type === "bundle") return installBundleAtomic(verified, intent, deps)
 
   // Phase 1:写盘前 manifest 严格校验(缺字段/未知键/非法 digest/越权 capability/平台不兼容全在此拒)。
@@ -1705,6 +1776,7 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
     }
     // #352:fresh / replace / refuse 三态分发(main 从自己账本裁决,复用同一 catalog 通道)——
     // 有效 catalog 旧账 → journaled 原子替换;v1-only/损坏/双键/漂移 → 显式拒绝;absent → fresh。
+    // (#397 r2:session-grant 的 prior 归位不在此计划阶段写 —— 见 replace 锁内 precondition。)
     const dispatch = resolvePluginDispatch(
       scope.root(deps),
       entry,
@@ -1847,6 +1919,12 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
     const mcpRoot = scope.root(deps)
     const mcpConfigTarget = path.join(mcpRoot, "alpha.jsonc")
     const mcpNow = deps.now?.() ?? new Date().toISOString()
+    // #397(r3):计划期只**计算**消费事实(纯,零账本写);session-grant 的归位 = receipt 写点
+    // 例外(UpsertInput.sessionGrantEnforced,与 receipt 同原子)。drift 基线在 forced 场景取
+    // **计划期观测的 prior 态**(planned 恒 disabled ≠ prior 不是漂移,是政策强制)。
+    const mcpPolicyFacts = curationPolicyFactsOf(entry, mcpNow)
+    const mcpSessionGrantForced = mcpPolicyFacts.activationPolicy === "session-grant"
+    const mcpPlanObservedPrior = findRecordV2(mcpRoot, "mcp", entry.name)?.desiredState
     const mcpReceipt: UpsertInput = {
       id: entry.id,
       name: entry.name,
@@ -1857,7 +1935,9 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       manifestDigest,
       grantDigest: computeGrantDigest(grants),
       // #395:fresh-intake 初始态按来源分类(alpha=开,其余含 official=关);既有记录当前策略优先。
-      desiredState: nextDesiredState(mcpRoot, "mcp", entry.name, { origin: "catalog", source: entry.source }),
+      // #397:有效 curation 的 activationPolicy 声明优先(session-grant 恒 disabled;纯计算)。
+      desiredState: nextDesiredState(mcpRoot, "mcp", entry.name, { origin: "catalog", source: entry.source, ...mcpPolicyFacts }),
+      ...(mcpSessionGrantForced ? { sessionGrantEnforced: true as const } : {}), // #397 r3:写点例外标记
       origin: "catalog",
       configKey: `mcp.${entry.name}`,
       installedAt: mcpNow,
@@ -1888,8 +1968,11 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
         // 都用 plan 期 mcpReceipt.desiredState;plan 快照与加锁之间的合法启停(用户 disable)不得被旧
         // 快照静默覆盖(否则账本 disabled 但 config 无 enabled:false + 返回 liveMcp → 运行面复活)。
         // 漂移即拒,重试重读 desiredState 后按新态重建 config/outcome。fresh 装无 prior,不进此支。
+        // #397 r3:forced(session-grant)场景计划值恒 disabled ≠ prior 不是漂移(政策强制,写点
+        // 例外落 disabled)—— 基线改用计划期观测的 prior 态,只拦真正的并发变化。
         const prior = findRecordV2(mcpRoot, "mcp", entry.name)
-        if ((prior?.desiredState ?? mcpReceipt.desiredState) !== mcpReceipt.desiredState)
+        const mcpDriftBaseline = mcpSessionGrantForced ? mcpPlanObservedPrior : mcpReceipt.desiredState
+        if ((prior?.desiredState ?? mcpDriftBaseline) !== mcpDriftBaseline)
           return { ok: false, reason: `mcp desired state changed since plan — retry the install` }
         const leaf = deps.installers.readMcpLeafStrict(entry.name)
         if (!leaf.ok) return { ok: false, reason: `refusing mcp install: ${leaf.reason}` }
@@ -2093,6 +2176,7 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       const npmConfigTarget = path.join(npmRoot, "alpha.jsonc")
       const npmCanon = JSON.stringify(npmSnapshot.value)
       const npmNow = deps.now?.() ?? new Date().toISOString()
+      const npmPolicyFacts = curationPolicyFactsOf(entry, npmNow) // #397 r3:纯计算 + 写点例外标记
       const npmReceipt: UpsertInput = {
         id: entry.id,
         name: entry.name,
@@ -2102,8 +2186,9 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
         version: manifest.version,
         manifestDigest,
         grantDigest: computeGrantDigest(grants),
-        // #395:同上 —— npm plugin fresh-intake 按来源分类。
-        desiredState: nextDesiredState(npmRoot, "plugin", entry.name, { origin: "catalog", source: entry.source }),
+        // #395:同上 —— npm plugin fresh-intake 按来源分类。#397:有效 curation 声明优先。
+        desiredState: nextDesiredState(npmRoot, "plugin", entry.name, { origin: "catalog", source: entry.source, ...npmPolicyFacts }),
+        ...(npmPolicyFacts.activationPolicy === "session-grant" ? { sessionGrantEnforced: true as const } : {}),
         origin: "catalog",
         configKey: `plugin:${pinned}`,
         installedAt: npmNow,
@@ -2216,6 +2301,7 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       scope: scope.identity,
       origin: "catalog",
       source: entry.source, // #395:fresh-intake 初始启用分类输入
+      ...curationPolicyFactsOf(entry, deps.now?.() ?? new Date().toISOString()), // #397:有效 curation 声明透传
       casFiles: { specs: promoted.specs, casBaseRoot: deps.casBaseRoot() },
       // #348:能力集取严格解码后的 manifest.capabilities(单一事实,不再二次派生);authorize
       // 重驱决定由 main 打戳 decidedAt(renderer 无审计戳通道)。
@@ -2318,6 +2404,7 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       scope: scope.identity,
       origin: "catalog",
       source: entry.source, // #395:fresh-intake 初始启用分类输入
+      ...curationPolicyFactsOf(entry, deps.now?.() ?? new Date().toISOString()), // #397:有效 curation 声明透传
       casFile: { spec: agentCasSpec, casBaseRoot: deps.casBaseRoot() },
       // #348:能力集取严格解码后的 manifest.capabilities(单一事实);重驱决定由 main 打戳。
       capabilities: manifest.capabilities,
@@ -2354,8 +2441,14 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
     const cloudRoot = scope.root(deps)
     // #395(Codex r1 Major 2):经统一分类器 —— cloud 恒 enabled(无本地运行面 + UI 无启停开关),
     // 与 bundle cloud 子项一致;既有记录当前策略优先(nextDesiredState 内含)。
-    const plannedState = nextDesiredState(cloudRoot, "cloud", entry.name, { origin: "catalog", source: entry.source })
+    // #397:有效 curation 声明优先于 cloud 例外(声明是合同面;当前目录无策展 cloud 条目)。
     const cloudNow = deps.now?.() ?? new Date().toISOString()
+    // #397 r3:纯计算;session-grant 归位 = receipt 写点例外标记。forced 场景 drift 基线取
+    // 计划期观测态(cloudDesiredStateGate 的 current 语义:无记录/enabled 折叠为 enabled)。
+    const cloudPolicyFacts = curationPolicyFactsOf(entry, cloudNow)
+    const cloudSessionGrantForced = cloudPolicyFacts.activationPolicy === "session-grant"
+    const cloudPlanObserved: DesiredState = findRecordV2(cloudRoot, "cloud", entry.name)?.desiredState === "disabled" ? "disabled" : "enabled"
+    const plannedState = nextDesiredState(cloudRoot, "cloud", entry.name, { origin: "catalog", source: entry.source, ...cloudPolicyFacts })
     const cloudReceipt: UpsertInput = {
       id: entry.id,
       name: entry.name,
@@ -2366,6 +2459,7 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       manifestDigest,
       grantDigest: computeGrantDigest(grants),
       desiredState: plannedState,
+      ...(cloudSessionGrantForced ? { sessionGrantEnforced: true as const } : {}), // #397 r3:写点例外标记
       origin: "catalog",
       installedAt: cloudNow,
     }
@@ -2388,7 +2482,9 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       precondition: () => {
         const ledger = probeLedgerForWrite(cloudRoot)
         if (!ledger.ok) return { ok: false, reason: `refusing cloud install: ${ledger.reason}` }
-        return cloudDesiredStateGate(cloudRoot, entry.name, plannedState)
+        // #397 r3:forced 场景计划值恒 disabled ≠ current 不是漂移(写点例外落 disabled)——
+        // drift 基线用计划期观测态,只拦真正的并发变化。
+        return cloudDesiredStateGate(cloudRoot, entry.name, cloudSessionGrantForced ? cloudPlanObserved : plannedState)
       },
       commitReceipt: (records: TxCommitRecord[]) => {
         const written = upsertRecordsV2(cloudRoot, recoveryReceiptInputs(records))
@@ -3208,6 +3304,10 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
   const seedAdv = deps.advisoryGate(advisoryInputOf(entry, "seed"))
   if (!seedAdv.allowed) return { ok: false, reason: `advisory ${seedAdv.advisoryId}: ${seedAdv.reason} — activation refused (R14)` }
 
+  // #397:seed 与直接安装同一 curation 门(bundled 快照当前无 curation → uncurated 直落保守面)。
+  if (isCurationArchived(decodeEntryCurationLoud(entry)))
+    return { ok: false, reason: `entry ${entry.id}: upstream is archived per curation review — new installs are refused (existing installs unaffected)` }
+
   // manifest 合成/严格校验与 catalog 安装同源;交付介质是随包 seed → ownership.distributed 如实记
   // bundled(digest 语义 = 安装时刻 manifest 快照,与 remote 安装的 digest 不同是诚实差异)。
   const synthesized = synthesizeManifest(verified) as Record<string, unknown>
@@ -3255,6 +3355,7 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
       scope: { kind: "global" },
       origin: "catalog",
       source: entry.source, // #395:seed agent 以已验 bundled entry 的 source 为权威
+      ...curationPolicyFactsOf(entry, deps.now?.() ?? new Date().toISOString()), // #397:有效 curation 声明透传
       casFile: { spec: casSpec, casBaseRoot },
       capabilities: manifest.capabilities,
       ...(intent.authorization ? { authorization: stampAuthorization(intent.authorization, () => deps.now?.() ?? new Date().toISOString())! } : {}),
@@ -3311,6 +3412,7 @@ async function installSeedAsset(intent: SeedInstallIntent, deps: PlannerDeps): P
     scope: { kind: "global" },
     origin: "catalog",
     source: entry.source, // #395:seed 以已验 bundled entry 的 source 为权威
+    ...curationPolicyFactsOf(entry, deps.now?.() ?? new Date().toISOString()), // #397 r1-1:seed skill 与其余三型同门
     casFiles: { specs: promoted.files, casBaseRoot },
     // #348:seed 与 catalog 单装同一 authorize 契约(能力集 = 严格解码 manifest;重驱决定 main 打戳)。
     capabilities: manifest.capabilities,
@@ -3395,6 +3497,10 @@ async function installSeedMcp(args: {
   }
   const configTarget = path.join(root, "alpha.jsonc")
   const now = deps.now?.() ?? new Date().toISOString()
+  // #397 r3:纯计算;session-grant 归位 = receipt 写点例外标记,drift 基线取计划期观测 prior 态。
+  const seedMcpPolicyFacts = curationPolicyFactsOf(entry, now)
+  const seedMcpSessionGrantForced = seedMcpPolicyFacts.activationPolicy === "session-grant"
+  const seedMcpPlanObservedPrior = findRecordV2(root, "mcp", entry.name)?.desiredState
   const receiptTemplate: UpsertInput = {
     id: entry.id,
     name: entry.name,
@@ -3405,8 +3511,9 @@ async function installSeedMcp(args: {
     manifestDigest,
     payloadDigest,
     grantDigest: computeGrantDigest({}),
-    // #395:同上 —— 单装 MCP fresh-intake 按来源分类。
-    desiredState: nextDesiredState(root, "mcp", entry.name, { origin: "catalog", source: entry.source }),
+    // #395:同上 —— 单装 MCP fresh-intake 按来源分类。#397:有效 curation 声明优先(seed 同接线)。
+    desiredState: nextDesiredState(root, "mcp", entry.name, { origin: "catalog", source: entry.source, ...seedMcpPolicyFacts }),
+    ...(seedMcpSessionGrantForced ? { sessionGrantEnforced: true as const } : {}), // #397 r3:写点例外标记
     origin: "catalog",
     configKey: `mcp.${entry.name}`,
     installedAt: now,
@@ -3426,7 +3533,16 @@ async function installSeedMcp(args: {
   }
   const hooks: TxHooks = {
     populate: () => {}, // config action 无 staging 载荷
-    precondition: () => mcpSeedGate(root, entry.name, configTarget, manifest.version, receiptTemplate.desiredState),
+    // #397 r3:forced 场景 drift 基线 = 计划期观测 prior 态(无 prior 时用计划值,gate 的
+    // `prior ?? planned` 折叠正确处理 fresh);只拦真正的并发变化,归位交 receipt 写点例外。
+    precondition: () =>
+      mcpSeedGate(
+        root,
+        entry.name,
+        configTarget,
+        manifest.version,
+        seedMcpSessionGrantForced ? (seedMcpPlanObservedPrior ?? receiptTemplate.desiredState) : receiptTemplate.desiredState,
+      ),
     commitReceipt: (records: TxCommitRecord[]) => {
       const written = upsertRecordsV2(root, recoveryReceiptInputs(records))
       if (!written.ok) throw new Error(`seed mcp receipt commit failed: ${written.reason}`)
@@ -3603,6 +3719,7 @@ async function installPluginFromCas(args: {
   const nextArray = [...snapshot.value, jsPath]
   const snapshotCanon = JSON.stringify(snapshot.value)
   const now = deps.now?.() ?? new Date().toISOString()
+  const casPluginPolicyFacts = curationPolicyFactsOf(entry, now) // #397 r3:纯计算 + 写点例外标记
   const receiptTemplate: UpsertInput = {
     id: entry.id,
     name: entry.name,
@@ -3613,8 +3730,9 @@ async function installPluginFromCas(args: {
     manifestDigest,
     payloadDigest,
     grantDigest: computeGrantDigest(auth.grants ?? {}),
-    // #395:同上 —— vendored plugin fresh-intake 按来源分类。
-    desiredState: nextDesiredState(root, "plugin", entry.name, { origin: "catalog", source: entry.source }),
+    // #395:同上 —— vendored plugin fresh-intake 按来源分类。#397:有效 curation 声明优先(catalog/seed 同接线)。
+    desiredState: nextDesiredState(root, "plugin", entry.name, { origin: "catalog", source: entry.source, ...casPluginPolicyFacts }),
+    ...(casPluginPolicyFacts.activationPolicy === "session-grant" ? { sessionGrantEnforced: true as const } : {}),
     origin: "catalog",
     files: [dir],
     configKey: `plugin-path:${jsPath}`,
@@ -3965,17 +4083,27 @@ export async function rollbackGenerationByKey(
 
 // ── desired state(Hub 项目上下文「禁用」;main 侧真源,引擎生效面由消费方处理)──────────────────
 
-export type SetStateIntent = UninstallIntent & { state: DesiredState }
+export type SetStateIntent = UninstallIntent & {
+  state: DesiredState
+  /** #397:curated 条目复审过期(排他截止)后的 enable 显式确认位(合同 §7.2:新启用需
+   *  显式确认并展示过期事实)。renderer 在用户确认对话后重发意图携带 true。 */
+  confirmExpiredReview?: boolean
+}
 
 /** 严格解码同卸载意图(key 面完全一致 + state 枚举);伪造 receipt/路径同样无通道。 */
 export function decodeSetStateIntent(input: unknown): { ok: true; intent: SetStateIntent } | { ok: false; reason: string } {
   if (!isObj(input)) return { ok: false, reason: "intent: must be an object" }
-  const { state, ...rest } = input
+  const { state, confirmExpiredReview, ...rest } = input
   if (state !== "enabled" && state !== "disabled") return { ok: false, reason: `intent.state: ${JSON.stringify(state)} not "enabled" | "disabled"` }
+  if (confirmExpiredReview !== undefined && typeof confirmExpiredReview !== "boolean")
+    return { ok: false, reason: `intent.confirmExpiredReview: ${JSON.stringify(confirmExpiredReview)} not a boolean` }
   const base = decodeUninstallIntent(rest)
   if (!base.ok) return base
-  return { ok: true, intent: { ...base.intent, state } }
+  return { ok: true, intent: { ...base.intent, state, ...(confirmExpiredReview !== undefined ? { confirmExpiredReview } : {}) } }
 }
+
+/** #397 enable 闸的机器可判别拒绝码(renderer 据此路由确认对话/诚实文案,不解析 reason 字符串)。 */
+export type SetStateRefusalCode = "session-grant-persistent-enable" | "expired-review-confirmation-required"
 
 
 /** desiredState 翻转:scope 独立(global/各项目账本物理分域),项目 identity fail-closed 同卸载。
@@ -3984,10 +4112,10 @@ export function decodeSetStateIntent(input: unknown): { ok: true; intent: SetSta
  *  抛错回滚账本,回滚失败如实报真实状态)。mcp 写 `enabled:false`、agent 写 `disable:true`、plugin
  *  从 `plugin[]` 缺席(引擎 import 早于 config-hook);skill 无 config 面(投影经 ext 注入门);cloud/
  *  project 记录纯账本翻转。本函数自持 Bundle 锁,调用方不得预持(防与内锁互斥死锁)。 */
-export function setInstallStateByKey(
+export async function setInstallStateByKey(
   rawIntent: unknown,
-  deps: Pick<PlannerDeps, "globalRoot" | "advisoryGate">,
-): { ok: true; warning?: string } | { ok: false; reason: string } {
+  deps: Pick<PlannerDeps, "globalRoot" | "advisoryGate" | "resolveEntry">,
+): Promise<{ ok: true; warning?: string } | { ok: false; reason: string; code?: SetStateRefusalCode }> {
   const decoded = decodeSetStateIntent(rawIntent)
   if (!decoded.ok) return decoded
   const intent = decoded.intent
@@ -4001,6 +4129,36 @@ export function setInstallStateByKey(
     root = projectRoot
   } else {
     root = deps.globalRoot()
+  }
+  // ── #397(Codex 裁决必改⑤ + r1-5):enable 方向的 curation 闸,resolveEntry 是异步 → **锁外**
+  //    冻结决策(已验 entry 身份 + 解码结果),锁内重读 record 并要求 record 与**已验 entry**
+  //    身份四元组(id/kind/name/version)精确相等才采信;不一致拒绝重试 —— 既有锁内 TOCTOU
+  //    闭合(record 重读 + advisory 在锁内)不被破坏。
+  //    r1-5 裁定:resolveEntry null(条目下架 / 离线无 LKG / security browse-only)或身份不匹配
+  //    (含同 ID 异版本:装 v1 不得套用 v2 策略)一律**拒绝 enable**,绝不降格 uncurated 放行;
+  //    只有真正已验且同身份的 entry 无 curation 时才继续走 #395 保守面。
+  let frozenCuration: {
+    verified: { id: string; type: string; name: string; version: string | undefined } | null
+    status: CurationStatus | null
+  } | null = null
+  if (intent.state === "enabled") {
+    const pre = findRecordV2(root, intent.type, intent.name)
+    if (pre && pre.origin === "catalog") {
+      const verified = await deps.resolveEntry(pre.id)
+      frozenCuration = verified
+        ? {
+            verified: {
+              id: verified.entry.id,
+              type: verified.entry.type,
+              name: verified.entry.name,
+              // 安装面 record.version = manifest.version = entry.version ?? catalogVersion(synthesizeManifest)
+              // —— 身份比较用同一派生,免得无条目级版本的 bundled 条目恒假失配。
+              version: typeof verified.entry.version === "string" && verified.entry.version ? verified.entry.version : verified.catalogVersion,
+            },
+            status: decodeEntryCurationLoud(verified.entry),
+          }
+        : { verified: null, status: null }
+    }
   }
   // Codex r2/r3 重设计:启停 = **持久化 config 投影 + 账本翻转**(锁内;disabled plugin 必须从磁盘
   // config 缺席,因引擎 import 插件早于 config-hook)。skill 无 config 面(投影 = 引擎侧账本注入门)。
@@ -4030,6 +4188,47 @@ export function setInstallStateByKey(
         provenance: record.origin === "catalog" ? "cache" : "bundled",
       })
       if (!adv.allowed) return { ok: false, reason: `advisory ${adv.advisoryId}: ${adv.reason} — re-enable refused (R14)` }
+      // #397 curation 闸(advisory 之后 —— 权威排序 §1;仅 catalog 记录有 curation 面)。
+      if (record.origin === "catalog") {
+        // 「锁外无记录、锁内出现」的窗口 → 拒绝重试(下轮重新冻结)。
+        if (!frozenCuration)
+          return { ok: false, reason: `${record.kind} ${record.name}: record appeared while curation was being resolved — retry` }
+        const v = frozenCuration.verified
+        // r1-5:取不到已验 entry(下架/离线/security browse-only)= 无法证明策展状态 → 拒,
+        // 绝不降格 uncurated 放行(fail closed)。
+        if (!v)
+          return {
+            ok: false,
+            reason: `${record.kind} ${record.name}: cannot verify curation — the entry is not resolvable from the verified catalog (delisted/offline/security state); enable refused (fail closed)`,
+          }
+        // r1-5:身份四元组逐项相等(锁内 record vs **已验 entry**)—— 同时覆盖锁外/锁内 record
+        // 漂移与「同 ID 异版本」(装 v1 不得套用 v2 的策展策略);record 无 version(v1 遗留)
+        // 即无法自证身份,同拒。
+        if (record.version === undefined || v.id !== record.id || v.type !== record.kind || v.name !== record.name || v.version !== record.version)
+          return {
+            ok: false,
+            reason: `${record.kind} ${record.name}: verified catalog entry identity does not match this install (installed ${record.version ?? "unversioned"} vs catalog ${v.version ?? "unversioned"}) — refusing to apply its curation; update or reinstall first (fail closed)`,
+          }
+        const status = frozenCuration.status!
+        if (status.kind === "curated") {
+          // session-grant:持久账本 enabled 本身非法(会话级启用 = #408);任何路径不得借
+          // setInstallState 把它落成跨会话启用。
+          if (status.curation.activationPolicy === "session-grant")
+            return {
+              ok: false,
+              code: "session-grant-persistent-enable",
+              reason: `${record.kind} ${record.name}: activationPolicy is "session-grant" — persistent enable refused (per-session activation ships with #408)`,
+            }
+          // 复审过期(排他截止):enable 需显式确认(合同 §7.2「新启用需显式确认并展示过期事实」;
+          // 覆盖一切 enable 路径,不只已装行 toggle —— Codex 裁决必改②)。消费端时钟仅用于本比较。
+          if (isReviewExpired(status.curation, new Date().toISOString()) && intent.confirmExpiredReview !== true)
+            return {
+              ok: false,
+              code: "expired-review-confirmation-required",
+              reason: `${record.kind} ${record.name}: security review expired at ${status.curation.review.reviewBefore} — enable requires explicit user confirmation (contract §7.2)`,
+            }
+        }
+      }
     }
     const hasConfig = record.kind === "mcp" || record.kind === "agent" || record.kind === "plugin"
 
@@ -4207,7 +4406,15 @@ export type BootReconcileOutcome = {
  *      其余读错(EACCES/EIO)/非法 jsonc → plugin disable 无法落盘 → gap;config 不动。
  *    · 单条 enable 缺生效面 / plugin 身份不可判 → warning + 跳过该条,不 abort 其余。
  *  project-scope 记录不在此对账(引擎启动只读 global alpha.jsonc;项目残留由 set-state/更新路径自愈)。 */
-export function reconcileDesiredStateAtBoot(root: string): BootReconcileOutcome {
+export function reconcileDesiredStateAtBoot(
+  root: string,
+  opts: {
+    userDataPath: string
+    channel: ChannelName
+    /** 仅测试注入;缺省 = 生产 oracle(ext-curation-policy 已验 catalog 同步读)。 */
+    sessionGrantIds?: (userDataPath: string, channel: ChannelName) => SessionGrantOracle
+  },
+): BootReconcileOutcome {
   const warnings: string[] = []
   const applied: string[] = []
   const gap: string[] = []
@@ -4222,6 +4429,35 @@ export function reconcileDesiredStateAtBoot(root: string): BootReconcileOutcome 
     return { ok: false, applied, warnings, skipped: `ledger lock unavailable: ${held.reason}`, enforcementGap: gap }
   }
   try {
+    // ── #397(Codex r1-3/r1-4):session-grant 归位**先行**,且在 skills 派生之前 ──
+    // session-grant 记录的持久 enabled 非法(会话级启用 = #408)。此处直接把账本归位为
+    // disabled(setDesiredStateV2,锁内)—— 归位后 skills 派生允许集、config 投影、sidecar
+    // 注入全部从合法账本重建,skill 面(skills-enabled.json)由此天然覆盖(r1-3)。
+    // oracle 不可判定(无已验 LKG/v1 缓存)= fail-closed:存在已启用 catalog 记录时置
+    // enforcementGap 阻断 sidecar(「无法判定」绝不当「确定没有」,r1-4);随包快照可识别的
+    // 部分集仍尽力归位。归位写失败同样 gap(识别出的非法启用无法执行 = 不放行)。
+    const oracle = (opts.sessionGrantIds ?? readSessionGrantIdsSync)(opts.userDataPath, opts.channel)
+    {
+      const pre = readLedgerV2(root)
+      const enforceableKinds = new Set(["mcp", "agent", "plugin", "skill"])
+      const catalogEnabled = pre.records.filter(
+        (r) => r.scope.kind === "global" && r.origin === "catalog" && r.desiredState !== "disabled" && enforceableKinds.has(r.kind),
+      )
+      if (!oracle.ok && catalogEnabled.length > 0)
+        gap.push(
+          `session-grant determination unavailable (${oracle.reason}) while ${catalogEnabled.length} catalog extension(s) are enabled — cannot prove none is session-grant; blocking sidecar (fail closed)`,
+        )
+      const ids = oracle.ok ? oracle.ids : oracle.partialIds
+      for (const r of catalogEnabled) {
+        if (!ids.has(r.id)) continue
+        const w = setDesiredStateV2(root, r.kind, r.name, "disabled")
+        if (w.ok)
+          warnings.push(
+            `${r.kind} ${r.name}: session-grant per curation but the ledger said enabled — forced disabled (persistent enable is illegal; per-session activation = #408)`,
+          )
+        else gap.push(`${r.kind} ${r.name}: session-grant record could not be forced disabled: ${w.reason}`)
+      }
+    }
     // #395 步骤5:skills 派生允许集自愈(升级首启 backfill / 扩容失败残留收敛 / 账本损坏时撤陈旧
     // 允许集)—— 在 config 投影之前,与其共享同一把锁。r6 B3:陈旧允许集(可能仍列已禁 skill)= gap。
     const deriv = reconcileSkillsDerivation(root)
@@ -4251,6 +4487,7 @@ export function reconcileDesiredStateAtBoot(root: string): BootReconcileOutcome 
     )
     // #395(r11 pivot):mcp/agent disable 由 sidecar 主权注入保证;唯 **plugin** disable 生效面 =
     // 从 alpha.jsonc plugin[] 移除(无用户 = 无他源),故 enforcementGap 只在 plugin disable 无法落盘时置位。
+    // #397:session-grant 已在本函数开头归位进账本(readLedgerV2 此处读的已是合法态)。
     const disabledPlugins = configBacked.filter((r) => r.desiredState === "disabled" && r.kind === "plugin")
     if (configBacked.length === 0) return done({ ok: true, applied, warnings })
     const target = path.join(root, "alpha.jsonc")
@@ -4284,18 +4521,19 @@ export function reconcileDesiredStateAtBoot(root: string): BootReconcileOutcome 
     const byPath = new Map<string, ConfigEdit>()
     const pluginDisableEdited: string[] = [] // 真产生 plugin disable edit 的记录(prepare/write 失败只 gap 这些)
     for (const record of configBacked) {
-      const proj = computeEnableProjectionEdit(working, root, record, record.desiredState)
+      const effState = record.desiredState // #397:session-grant 已在函数开头归位,账本即合法态
+      const proj = computeEnableProjectionEdit(working, root, record, effState)
       if (!proj.ok) {
         warnings.push(`${record.kind} ${record.name}: ${proj.reason}`)
         // plugin disable 失败 = 无法从 plugin[] 移除 → gap;mcp/agent 注入兜底;enable 失败仅功能缺失。
-        if (record.desiredState === "disabled" && record.kind === "plugin") gap.push(`plugin ${record.name}: ${proj.reason}`)
+        if (effState === "disabled" && record.kind === "plugin") gap.push(`plugin ${record.name}: ${proj.reason}`)
         continue
       }
       if (!proj.edit) continue
-      if (record.desiredState === "disabled" && record.kind === "plugin") pluginDisableEdited.push(`plugin ${record.name}`)
+      if (effState === "disabled" && record.kind === "plugin") pluginDisableEdited.push(`plugin ${record.name}`)
       setAtKeyPath(working, proj.edit.keyPath, proj.edit.value)
       byPath.set(proj.edit.keyPath.join(" "), proj.edit)
-      applied.push(`${record.kind}:${record.name}→${record.desiredState}`)
+      applied.push(`${record.kind}:${record.name}→${effState}`)
     }
     if (byPath.size === 0) return done({ ok: true, applied, warnings })
     const prepared = prepareConfigTx(target, [...byPath.values()], text)

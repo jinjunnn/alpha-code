@@ -5,7 +5,7 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { initialDesiredState, nextDesiredState } from "./ext-install-policy"
-import { upsertRecordV2 } from "./ext-receipt-v2"
+import { findRecordV2, upsertRecordV2 } from "./ext-receipt-v2"
 
 let root: string
 beforeEach(() => {
@@ -46,5 +46,56 @@ describe("nextDesiredState(存量当前策略优先)", () => {
     expect(w.ok).toBe(true)
     // official 来源但用户已有 enabled 记录 → 更新保持 enabled(不被分类器翻关)。
     expect(nextDesiredState(root, "skill", "demo", { origin: "catalog", source: "official" })).toBe("enabled")
+  })
+})
+
+describe("#397 activationPolicy 声明优先序(Codex 裁决钉死)", () => {
+  test("规则 1:有效声明 > 来源分类 —— default-enabled 开(即使 official);default-disabled 关(即使 alpha)", () => {
+    expect(initialDesiredState({ origin: "catalog", source: "official", activationPolicy: "default-enabled" })).toBe("enabled")
+    expect(initialDesiredState({ origin: "catalog", source: "alpha", activationPolicy: "default-disabled" })).toBe("disabled")
+  })
+
+  test("session-grant → 持久账本恒 disabled(会话级启用 = #408)", () => {
+    expect(initialDesiredState({ origin: "catalog", source: "official", activationPolicy: "session-grant" })).toBe("disabled")
+  })
+
+  test("复审过期(排他截止):fresh install 一律先落 disabled,即使 default-enabled", () => {
+    expect(initialDesiredState({ origin: "catalog", source: "alpha", activationPolicy: "default-enabled", reviewExpired: true })).toBe("disabled")
+    expect(initialDesiredState({ origin: "catalog", source: "official", activationPolicy: "default-disabled", reviewExpired: true })).toBe("disabled")
+  })
+
+  test("声明优先于 cloud 例外;无声明时 cloud 例外与 #395 面逐字不变", () => {
+    expect(initialDesiredState({ origin: "catalog", source: "official", kind: "cloud", activationPolicy: "default-disabled" })).toBe("disabled")
+    expect(initialDesiredState({ origin: "catalog", source: "official", kind: "cloud" })).toBe("enabled")
+  })
+
+  test("声明只对 origin=catalog 生效(非目录 intake 不进合同面)", () => {
+    expect(initialDesiredState({ origin: "imported", activationPolicy: "session-grant" })).toBe("enabled")
+  })
+
+  test("规则 3/4:prior 只对 default-enabled/default-disabled(与未策展面)保留;session-grant 不被 prior 保留;分类器纯计算零写账(r2)", () => {
+    const seed = (name: string) => {
+      const w = upsertRecordV2(root, {
+        id: `mcp:${name}`,
+        name,
+        kind: "mcp",
+        environment: "prod",
+        scope: { kind: "global" },
+        desiredState: "enabled",
+        origin: "catalog",
+        installedAt: "2026-07-17T00:00:00.000Z",
+      })
+      expect(w.ok).toBe(true)
+    }
+    // 声明 default-disabled → prior enabled 保留(存量不回溯)。
+    seed("keep-x")
+    expect(nextDesiredState(root, "mcp", "keep-x", { origin: "catalog", source: "official", activationPolicy: "default-disabled" })).toBe("enabled")
+    expect(findRecordV2(root, "mcp", "keep-x")!.desiredState).toBe("enabled") // 账本不被动
+    // 声明 session-grant → 决策返回 disabled;**分类器只算不写**(r2/r3:计划/授权前阶段零账本
+    // 副作用)—— 非法 prior 的真实归位 = upsert 写点例外(sessionGrantEnforced,见
+    // ext-receipt-v2.test)与 boot reconcile。
+    seed("labs-x")
+    expect(nextDesiredState(root, "mcp", "labs-x", { origin: "catalog", source: "official", activationPolicy: "session-grant" })).toBe("disabled")
+    expect(findRecordV2(root, "mcp", "labs-x")!.desiredState).toBe("enabled") // 计划期不写账本
   })
 })

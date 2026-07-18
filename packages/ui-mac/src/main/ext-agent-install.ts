@@ -134,6 +134,11 @@ export type AgentSeedInstall = {
   /** #395:目录条目 source(official/community/alpha)—— fresh-intake 初始启用分类输入;
    *  非目录 intake(imported)缺省。 */
   source?: string
+  /** #397:有效 curation 的显式启用声明(planner 经 decodeEntryCuration 采信后透传;
+   *  未策展/校验失败缺省 = #395 保守面)。 */
+  activationPolicy?: "default-enabled" | "default-disabled" | "session-grant"
+  /** #397:review.reviewBefore 已过期(排他截止)—— fresh install 一律先落 disabled。 */
+  reviewExpired?: boolean
   /** 唯一内容源:CAS(调用方先 promote;此处读取重验,缺失/篡改 fail-closed)。恰一个顶层 .md。 */
   casFile: { spec: TxFileSpec; casBaseRoot: string }
   /** #348:严格解码 manifest.capabilities(必填;空集也显式传,禁二次派生制造第二真源)。 */
@@ -198,7 +203,15 @@ export async function installAgentFromCas(root: string, spec: AgentSeedInstall):
     ...(spec.payloadDigest ? { payloadDigest: spec.payloadDigest } : {}),
     ...(spec.grantDigest ? { grantDigest: spec.grantDigest } : {}),
     // #395:fresh-intake 按来源分类(单一分类器 ext-install-policy);既有记录当前策略优先。
-    desiredState: nextDesiredState(root, "agent", spec.name, { origin: spec.origin, source: spec.source }),
+    // #397:有效 curation 声明优先(planner 透传;session-grant 恒 disabled,写点例外标记与
+    // receipt 同原子 —— agent 虽 fresh-only(无 prior 复活面),标记保持全类型同构)。
+    desiredState: nextDesiredState(root, "agent", spec.name, {
+      origin: spec.origin,
+      source: spec.source,
+      ...(spec.activationPolicy !== undefined ? { activationPolicy: spec.activationPolicy } : {}),
+      ...(spec.reviewExpired !== undefined ? { reviewExpired: spec.reviewExpired } : {}),
+    }),
+    ...(spec.origin === "catalog" && spec.activationPolicy === "session-grant" ? { sessionGrantEnforced: true as const } : {}),
     origin: spec.origin,
     files: [mdPath],
     configKey: `agent.${spec.name}`,

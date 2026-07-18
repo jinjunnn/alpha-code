@@ -1,0 +1,26 @@
+{
+  "catalogId": "mcp:github",
+  "version": "1.0.0",
+  "provenance": {
+    "schema": "alpha.intake-provenance.v1",
+    "catalogId": "mcp:github",
+    "version": "1.0.0",
+    "source": {
+      "kind": "npm",
+      "locator": "npm:@modelcontextprotocol/server-github",
+      "requestedRef": "1.0.0",
+      "resolved": "sha512:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+    },
+    "manifest": {
+      "sha256": "1212121212121212121212121212121212121212121212121212121212121212",
+      "bytes": 8192
+    },
+    "lockDigests": [
+      {
+        "name": "package-lock.json",
+        "sha256": "3434343434343434343434343434343434343434343434343434343434343434"
+      }
+    ],
+    "artifactDigests": []
+  }
+}

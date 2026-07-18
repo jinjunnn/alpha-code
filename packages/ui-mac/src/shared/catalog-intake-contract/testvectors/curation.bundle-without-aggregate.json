@@ -1,0 +1,53 @@
+{
+  "catalogId": "bundle:office-suite",
+  "version": "2026.07.1",
+  "entryType": "bundle",
+  "hasPayloadAssets": false,
+  "curation": {
+    "schema": "alpha.catalog.curation.v1",
+    "tier": "precache",
+    "activationPolicy": "default-disabled",
+    "deliveryMode": "installable",
+    "review": {
+      "reviewedAt": "2026-07-15T00:00:00Z",
+      "reviewedBy": "alpha-review",
+      "upstreamStatus": "active",
+      "supportTier": "full",
+      "reviewBefore": "2026-10-15T00:00:00Z"
+    },
+    "applicability": {
+      "frameworks": [
+        "*"
+      ]
+    },
+    "summaries": {
+      "capabilities": [
+        "fs:read",
+        "fs:write"
+      ],
+      "networkDomains": [],
+      "requiredSecrets": [],
+      "runtimeDependencies": [
+        "uv"
+      ],
+      "download": {
+        "bytes": 999999,
+        "basis": "catalog-assets"
+      }
+    },
+    "refs": {
+      "sbom": {
+        "sha256": "9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c",
+        "bytes": 2048,
+        "url": "https://alphacodeone.com/catalog/assets/bundle.office-suite/2026.07.1/alpha-curation/sbom/9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c.cdx.json",
+        "format": "cyclonedx-1.6+json"
+      },
+      "intakeProvenance": {
+        "sha256": "0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d",
+        "bytes": 1024,
+        "url": "https://alphacodeone.com/catalog/assets/bundle.office-suite/2026.07.1/alpha-curation/intake-provenance/0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d.json",
+        "format": "alpha.intake-provenance.v1+json"
+      }
+    }
+  }
+}

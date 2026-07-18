@@ -1,0 +1,164 @@
+{
+  "schema": "alpha.catalog-intake.testvectors.v1",
+  "curation": {
+    "valid": [
+      "curation.core.json",
+      "curation.labs.json",
+      "curation.connector-connection-only.json",
+      "curation.precache-unknown-size.json",
+      "curation.bundle-aggregate.json"
+    ],
+    "invalid": [
+      {
+        "file": "curation.bad-schema-id.json",
+        "errorIncludes": "expected const"
+      },
+      {
+        "file": "curation.unknown-key.json",
+        "errorIncludes": "unknown property \"notes\""
+      },
+      {
+        "file": "curation.labs-default-enabled.json",
+        "errorIncludes": "requires activationPolicy \"session-grant\""
+      },
+      {
+        "file": "curation.default-enabled-noncore.json",
+        "errorIncludes": "only allowed on tier \"core\""
+      },
+      {
+        "file": "curation.connection-only-nonzero-download.json",
+        "errorIncludes": "deliveryMode \"connection-only\" requires download"
+      },
+      {
+        "file": "curation.connection-only-with-payload.json",
+        "errorIncludes": "forbids payload assets"
+      },
+      {
+        "file": "curation.connection-only-env-secret.json",
+        "errorIncludes": "to have source \"connection\""
+      },
+      {
+        "file": "curation.bytes-null-basis-mismatch.json",
+        "errorIncludes": "download.bytes null <=> download.basis"
+      },
+      {
+        "file": "curation.negative-bytes.json",
+        "errorIncludes": "must be null or an integer >= 0"
+      },
+      {
+        "file": "curation.impossible-date.json",
+        "errorIncludes": "not a real calendar date-time"
+      },
+      {
+        "file": "curation.unsorted-domains.json",
+        "errorIncludes": "unique and byte-order sorted"
+      },
+      {
+        "file": "curation.uppercase-domain.json",
+        "errorIncludes": "fails pattern"
+      },
+      {
+        "file": "curation.wildcard-mixed-domains.json",
+        "errorIncludes": "\"*\" must be the only element"
+      },
+      {
+        "file": "curation.blobref-bad-url.json",
+        "errorIncludes": "url must be exactly"
+      },
+      {
+        "file": "curation.blobref-oversize.json",
+        "errorIncludes": "1..5242880"
+      },
+      {
+        "file": "curation.review-before-not-after.json",
+        "errorIncludes": "reviewBefore must be after"
+      },
+      {
+        "file": "curation.aggregate-on-nonbundle.json",
+        "errorIncludes": "deliveryMode \"aggregate\" <=> entry type \"bundle\""
+      },
+      {
+        "file": "curation.bundle-without-aggregate.json",
+        "errorIncludes": "deliveryMode \"aggregate\" <=> entry type \"bundle\""
+      }
+    ]
+  },
+  "provenance": {
+    "valid": [
+      "provenance.git.json",
+      "provenance.npm.json",
+      "provenance.pypi.json",
+      "provenance.https.json"
+    ],
+    "invalid": [
+      {
+        "file": "provenance.unknown-key.json",
+        "errorIncludes": "unknown property \"fetchedAt\""
+      },
+      {
+        "file": "provenance.unsorted-locks.json",
+        "errorIncludes": "unique and byte-order sorted"
+      },
+      {
+        "file": "provenance.entry-mismatch.json",
+        "errorIncludes": "does not match entry"
+      },
+      {
+        "file": "provenance.noncanonical-locator.json",
+        "errorIncludes": "not canonical"
+      },
+      {
+        "file": "provenance.bad-resolved.json",
+        "errorIncludes": "integrity digest"
+      },
+      {
+        "file": "provenance.traversal-path.json",
+        "errorIncludes": "not canonical"
+      },
+      {
+        "file": "provenance.bad-integrity.json",
+        "errorIncludes": "integrity digest"
+      }
+    ]
+  },
+  "sbom": {
+    "valid": [
+      "sbom.minimal.json",
+      "sbom.with-deps.json"
+    ],
+    "invalid": [
+      {
+        "file": "sbom.timestamp.json",
+        "errorIncludes": "metadata.timestamp is forbidden"
+      },
+      {
+        "file": "sbom.serial-number.json",
+        "errorIncludes": "forbidden or unknown top-level key \"serialNumber\""
+      },
+      {
+        "file": "sbom.dangling-dep.json",
+        "errorIncludes": "does not resolve to a component bom-ref"
+      },
+      {
+        "file": "sbom.bad-hash-alg.json",
+        "errorIncludes": "alg must be \"SHA-256\""
+      },
+      {
+        "file": "sbom.metadata-extra-key.json",
+        "errorIncludes": "sbom.metadata.properties is forbidden"
+      },
+      {
+        "file": "sbom.hash-extra-key.json",
+        "errorIncludes": "hashes: forbidden key \"seen\""
+      },
+      {
+        "file": "sbom.dep-extra-key.json",
+        "errorIncludes": "forbidden key \"scope\""
+      },
+      {
+        "file": "sbom.bad-component-type.json",
+        "errorIncludes": ".type must be one of"
+      }
+    ]
+  }
+}

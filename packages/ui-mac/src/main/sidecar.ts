@@ -4,6 +4,7 @@ import * as http from "node:http"
 import * as path from "node:path"
 import * as tls from "node:tls"
 import { ALPHA_BEHAVIOR_MD } from "./alpha-behavior"
+import { catalogRegistryChannel } from "./alpha-environment"
 import { buildAlphaIdentity } from "./alpha-identity"
 import { buildAlphaModelConfig } from "./alpha-models"
 import { hasSecretFile, secretFileRef } from "./alpha-secret-files"
@@ -386,8 +387,9 @@ function injectAlphaConfig(userDataPath: string, extPluginPath?: string) {
     // lone `{enabled:false}` mcp 叶(v1/config/config.ts:114)与 disable-only agent 叶(全 optional)。
     // plugin 是 union 无覆盖面,靠 alpha.jsonc 移除(无用户 = 无他源);cloud/skill 无此面。
     // 仅 global scope(项目 scope 由项目 config 面另管)。best-effort:账本不可读 → 跳过(alpha.jsonc
-    // 投影仍在;主权注入是加固层)。
-    injectDisabledOverrides(config)
+    // 投影仍在;主权注入是加固层)。#397:session-grant 记录在注入面强制按 disabled 处理
+    // (持久 enable 非法;判定读已验 catalog,userDataPath/channel 由此传入)。
+    injectDisabledOverrides(config, { userDataPath, channel: catalogRegistryChannel() })
 
     process.env.OPENCODE_CONFIG_CONTENT = JSON.stringify(config)
   } catch (error) {

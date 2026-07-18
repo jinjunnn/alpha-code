@@ -481,7 +481,8 @@ const main = Effect.gen(function* () {
     // REQ-059 同口径:legacy 模式下 alpha.jsonc 非引擎读取目标,不投影。
     if (process.env.ALPHA_JSONC_TRUTH_DISABLE !== "1" && process.env.ALPHA_LEGACY_INSTALL_ROOT !== "1") {
       try {
-        const ds = reconcileDesiredStateAtBoot(alphaGlobalRoot())
+        // #397:userDataPath/channel 供 session-grant 强制面(已验 catalog 同步读)使用。
+        const ds = reconcileDesiredStateAtBoot(alphaGlobalRoot(), { userDataPath: app.getPath("userData"), channel: catalogRegistryChannel() })
         if (ds.skipped) logger.warn("[req104-395] desired-state reconcile skipped", { reason: ds.skipped })
         if (ds.applied.length > 0)
           logger.log("[req104-395] desired-state residue reprojected into alpha.jsonc", { applied: ds.applied })

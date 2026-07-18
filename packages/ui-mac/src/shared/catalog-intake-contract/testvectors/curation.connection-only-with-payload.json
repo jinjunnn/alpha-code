@@ -1,0 +1,57 @@
+{
+  "catalogId": "cloud:figma",
+  "version": "2026.07.0",
+  "entryType": "cloud",
+  "hasPayloadAssets": true,
+  "curation": {
+    "schema": "alpha.catalog.curation.v1",
+    "tier": "connector",
+    "activationPolicy": "default-disabled",
+    "deliveryMode": "connection-only",
+    "review": {
+      "reviewedAt": "2026-07-15T00:00:00Z",
+      "reviewedBy": "alpha-review",
+      "upstreamStatus": "active",
+      "supportTier": "best-effort",
+      "reviewBefore": "2026-10-15T00:00:00Z"
+    },
+    "applicability": {
+      "frameworks": [
+        "*"
+      ]
+    },
+    "summaries": {
+      "capabilities": [
+        "design:read"
+      ],
+      "networkDomains": [
+        "api.figma.com"
+      ],
+      "requiredSecrets": [
+        {
+          "name": "FIGMA_TOKEN",
+          "source": "connection"
+        }
+      ],
+      "runtimeDependencies": [],
+      "download": {
+        "bytes": 0,
+        "basis": "none"
+      }
+    },
+    "refs": {
+      "sbom": {
+        "sha256": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+        "bytes": 2048,
+        "url": "https://alphacodeone.com/catalog/assets/cloud.figma/2026.07.0/alpha-curation/sbom/5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e.cdx.json",
+        "format": "cyclonedx-1.6+json"
+      },
+      "intakeProvenance": {
+        "sha256": "6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
+        "bytes": 1024,
+        "url": "https://alphacodeone.com/catalog/assets/cloud.figma/2026.07.0/alpha-curation/intake-provenance/6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f.json",
+        "format": "alpha.intake-provenance.v1+json"
+      }
+    }
+  }
+}

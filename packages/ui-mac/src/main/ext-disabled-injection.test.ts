@@ -37,7 +37,7 @@ describe("injectDisabledOverrides（主权注入）", () => {
     record({ name: "m", kind: "mcp", configKey: "mcp.m", desiredState: "disabled" })
     record({ name: "a", kind: "agent", configKey: "agent.a", desiredState: "disabled" })
     const config: { mcp?: Record<string, unknown>; agent?: Record<string, unknown> } = {}
-    injectDisabledOverrides(config)
+    injectDisabledOverrides(config, { userDataPath: root, channel: "stable" })
     expect(config.mcp!.m).toEqual({ enabled: false })
     expect(config.agent!.a).toEqual({ disable: true })
   })
@@ -45,7 +45,7 @@ describe("injectDisabledOverrides（主权注入）", () => {
   test("已有同名叶 → merge 保留其余字段,只覆盖 enabled/disable", () => {
     record({ name: "m", kind: "mcp", configKey: "mcp.m", desiredState: "disabled" })
     const config = { mcp: { m: { type: "local", command: ["x"], enabled: true } } as Record<string, unknown> }
-    injectDisabledOverrides(config)
+    injectDisabledOverrides(config, { userDataPath: root, channel: "stable" })
     expect(config.mcp.m).toEqual({ type: "local", command: ["x"], enabled: false })
   })
 
@@ -54,7 +54,7 @@ describe("injectDisabledOverrides（主权注入）", () => {
     record({ name: "sk", kind: "skill", desiredState: "disabled" })
     record({ name: "pl", kind: "plugin", configKey: "plugin:@x/p@1", desiredState: "disabled" })
     const config: { mcp?: Record<string, unknown>; agent?: Record<string, unknown> } = {}
-    injectDisabledOverrides(config)
+    injectDisabledOverrides(config, { userDataPath: root, channel: "stable" })
     expect(config.mcp).toBeUndefined()
     expect(config.agent).toBeUndefined()
   })
@@ -68,14 +68,14 @@ describe("injectDisabledOverrides（主权注入）", () => {
       scope: { kind: "project", projectPath: "/tmp/x", projectPathHash: "a".repeat(64) },
     })
     const config: { mcp?: Record<string, unknown> } = {}
-    injectDisabledOverrides(config)
+    injectDisabledOverrides(config, { userDataPath: root, channel: "stable" })
     expect(config.mcp).toBeUndefined()
   })
 
   test("账本不可读 → 跳过不抛(best-effort;alpha.jsonc 投影仍在)", () => {
     fs.writeFileSync(path.join(root, "installs.json"), "corrupt")
     const config: { mcp?: Record<string, unknown> } = { mcp: { keep: { type: "local" } } }
-    expect(() => injectDisabledOverrides(config)).not.toThrow()
+    expect(() => injectDisabledOverrides(config, { userDataPath: root, channel: "stable" })).not.toThrow()
     expect(config.mcp!.keep).toEqual({ type: "local" }) // 未破坏既有
   })
 })
@@ -88,8 +88,27 @@ describe("injectDisabledOverrides r12 B1（mode 折叠）", () => {
       desiredState: "disabled", origin: "catalog", configKey: "agent.w", installedAt: "2026-07-18T00:00:00.000Z",
     })
     const config: { agent?: Record<string, unknown>; mode?: Record<string, unknown> } = {}
-    injectDisabledOverrides(config)
+    injectDisabledOverrides(config, { userDataPath: root, channel: "stable" })
     expect((config.agent!.w as Record<string, unknown>).disable).toBe(true)
     expect((config.mode!.w as Record<string, unknown>).disable).toBe(true) // 折叠面也压住
+  })
+})
+
+// ── #397(必改①):session-grant 记录的持久投影强制 ──────────────────────────────────────────────
+describe("#397 session-grant 强制(注入面)", () => {
+  test("session-grant 记录 ledger enabled → 强制注入 disabled;未命中的 enabled 不注入", () => {
+    record({ name: "labs", kind: "mcp", configKey: "mcp.labs", desiredState: "enabled" })
+    record({ name: "free", kind: "mcp", configKey: "mcp.free", desiredState: "enabled" })
+    record({ name: "la", kind: "agent", configKey: "agent.la", desiredState: "enabled" })
+    const config: { mcp?: Record<string, unknown>; agent?: Record<string, unknown>; mode?: Record<string, unknown> } = {}
+    injectDisabledOverrides(config, {
+      userDataPath: root,
+      channel: "stable",
+      sessionGrantIds: () => ({ ok: true as const, ids: new Set(["mcp:labs", "agent:la"]) }),
+    })
+    expect(config.mcp!.labs).toEqual({ enabled: false }) // 持久 enable 非法 → 注入面按 disabled
+    expect(config.mcp!.free).toBeUndefined() // 非 session-grant 的 enabled 不受影响
+    expect(config.agent!.la).toEqual({ disable: true })
+    expect(config.mode!.la).toEqual({ disable: true })
   })
 })

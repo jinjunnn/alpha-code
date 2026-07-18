@@ -1,0 +1,61 @@
+{
+  "catalogId": "mcp:github",
+  "version": "1.0.0",
+  "entryType": "mcp",
+  "hasPayloadAssets": true,
+  "curation": {
+    "schema": "alpha.catalog.curation.v1",
+    "tier": "core",
+    "activationPolicy": "default-enabled",
+    "deliveryMode": "installable",
+    "review": {
+      "reviewedAt": "2026-07-15T00:00:00Z",
+      "reviewedBy": "alpha-review",
+      "upstreamStatus": "active",
+      "supportTier": "full",
+      "reviewBefore": "2026-10-15T00:00:00Z"
+    },
+    "applicability": {
+      "frameworks": [
+        "*"
+      ]
+    },
+    "summaries": {
+      "capabilities": [
+        "repo:read",
+        "repo:write"
+      ],
+      "networkDomains": [
+        "*",
+        "api.github.com"
+      ],
+      "requiredSecrets": [
+        {
+          "name": "GITHUB_TOKEN",
+          "source": "environment"
+        }
+      ],
+      "runtimeDependencies": [
+        "node"
+      ],
+      "download": {
+        "bytes": 123456,
+        "basis": "locked-packages"
+      }
+    },
+    "refs": {
+      "sbom": {
+        "sha256": "1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a",
+        "bytes": 2048,
+        "url": "https://alphacodeone.com/catalog/assets/mcp.github/1.0.0/alpha-curation/sbom/1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a.cdx.json",
+        "format": "cyclonedx-1.6+json"
+      },
+      "intakeProvenance": {
+        "sha256": "2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b",
+        "bytes": 1024,
+        "url": "https://alphacodeone.com/catalog/assets/mcp.github/1.0.0/alpha-curation/intake-provenance/2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b.json",
+        "format": "alpha.intake-provenance.v1+json"
+      }
+    }
+  }
+}

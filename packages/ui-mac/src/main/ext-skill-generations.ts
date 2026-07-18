@@ -200,6 +200,11 @@ export type SkillGenerationInstall = {
   /** #395:目录条目 source(official/community/alpha)—— fresh-intake 初始启用分类输入;
    *  非目录 intake(imported/created)缺省。 */
   source?: string
+  /** #397:有效 curation 的显式启用声明(planner 经 decodeEntryCuration 采信后透传;
+   *  未策展/校验失败缺省 = #395 保守面)。 */
+  activationPolicy?: "default-enabled" | "default-disabled" | "session-grant"
+  /** #397:review.reviewBefore 已过期(排他截止)—— fresh install 一律先落 disabled。 */
+  reviewExpired?: boolean
   /** 唯一内容源(REQ-098 #303 收紧 CAS-only,Codex 裁决 C:buffer 直填旁路永久移除):调用方先把
    *  载荷提升进验证共享 CAS,staging 由 populateFromCas 物化(读取重验)。journal 只存 TxFileSpec,
    *  与来源无关 —— buffer 时代 journal 的恢复语义不受影响(恢复不重 populate)。 */
@@ -261,8 +266,15 @@ export async function installSkillGeneration(root: string, spec: SkillGeneration
     ...(spec.payloadDigest ? { payloadDigest: spec.payloadDigest } : {}),
     ...(spec.grantDigest ? { grantDigest: spec.grantDigest } : {}),
     // #395:fresh-intake 按来源分类(单一分类器 ext-install-policy);既有记录当前策略优先
-    // —— 更新出新 generation 不再把用户手动关掉的技能翻回启用。
-    desiredState: nextDesiredState(root, "skill", spec.name, { origin: spec.origin, source: spec.source }),
+    // —— 更新出新 generation 不再把用户手动关掉的技能翻回启用。#397:有效 curation 声明优先;
+    // session-grant 归位 = receipt 写点例外标记(r3:与 receipt 同原子,计划期零账本写)。
+    desiredState: nextDesiredState(root, "skill", spec.name, {
+      origin: spec.origin,
+      source: spec.source,
+      ...(spec.activationPolicy !== undefined ? { activationPolicy: spec.activationPolicy } : {}),
+      ...(spec.reviewExpired !== undefined ? { reviewExpired: spec.reviewExpired } : {}),
+    }),
+    ...(spec.origin === "catalog" && spec.activationPolicy === "session-grant" ? { sessionGrantEnforced: true as const } : {}),
     origin: spec.origin,
     installedAt: now,
   }
@@ -284,6 +296,8 @@ export async function installSkillGeneration(root: string, spec: SkillGeneration
   // 引擎 verify 随后对 staging 做结构精确校验(纵深)。
   const casPopulate = populateFromCas(spec.casFiles.casBaseRoot)
   let projectionLag: string | undefined // #336:commitReceipt 闭包捕获派生允许集发布失败
+  // (#397 r3:session-grant 归位 = receipt 模板的 sessionGrantEnforced 写点例外,与 receipt
+  // 同原子 —— 本函数不再有任何锁内预写;precondition 回归调用方透传。)
   const hooks: TxHooks = {
     ...(spec.precondition ? { precondition: spec.precondition } : {}),
     populate: (_item, stagingDir) => casPopulate({ files: txFiles }, stagingDir),

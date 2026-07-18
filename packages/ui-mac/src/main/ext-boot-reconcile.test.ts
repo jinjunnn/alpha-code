@@ -40,7 +40,7 @@ describe("reconcileDesiredStateAtBoot(#395 崩溃残留收敛)", () => {
     record({ name: "p", kind: "plugin", configKey: "plugin:@x/p@1.0.0", desiredState: "disabled" })
     // 崩溃残留形态:账本已翻 disabled,config 仍是启用叶/在场条目。
     writeCfg({ mcp: { m: { type: "local", command: ["x"] } }, agent: { a: { description: "d" } }, plugin: ["@x/p@1.0.0", "@keep/u@1"] })
-    const r = reconcileDesiredStateAtBoot(root)
+    const r = reconcileDesiredStateAtBoot(root, { userDataPath: root, channel: "stable" })
     expect(r.ok).toBe(true)
     expect(r.applied.sort()).toEqual(["agent:a→disabled", "mcp:m→disabled", "plugin:p→disabled"])
     const cfg = readCfg()
@@ -54,7 +54,7 @@ describe("reconcileDesiredStateAtBoot(#395 崩溃残留收敛)", () => {
     record({ name: "a", kind: "agent", configKey: "agent.a", desiredState: "enabled" })
     record({ name: "p", kind: "plugin", configKey: "plugin:@x/p@1.0.0", desiredState: "enabled" })
     writeCfg({ mcp: { m: { type: "local", enabled: false } }, agent: { a: { description: "d", disable: true } }, plugin: [] })
-    const r = reconcileDesiredStateAtBoot(root)
+    const r = reconcileDesiredStateAtBoot(root, { userDataPath: root, channel: "stable" })
     expect(r.ok).toBe(true)
     const cfg = readCfg()
     expect(cfg.mcp.m).toEqual({ type: "local" })
@@ -67,7 +67,7 @@ describe("reconcileDesiredStateAtBoot(#395 崩溃残留收敛)", () => {
     record({ name: "b", kind: "plugin", configKey: "plugin:@x/b@1", desiredState: "disabled" })
     record({ name: "c", kind: "plugin", configKey: "plugin:@x/c@1", desiredState: "enabled" })
     writeCfg({ plugin: ["@x/a@1", "@x/b@1", "@keep/u@1"] })
-    const r = reconcileDesiredStateAtBoot(root)
+    const r = reconcileDesiredStateAtBoot(root, { userDataPath: root, channel: "stable" })
     expect(r.ok).toBe(true)
     expect(readCfg().plugin).toEqual(["@keep/u@1", "@x/c@1"])
   })
@@ -78,7 +78,7 @@ describe("reconcileDesiredStateAtBoot(#395 崩溃残留收敛)", () => {
     writeCfg({ mcp: { m: { type: "local", enabled: false } }, plugin: ["@x/p@1"] })
     const before = fs.readFileSync(cfgPath(), "utf8")
     const beforeStat = fs.statSync(cfgPath()).mtimeMs
-    const r = reconcileDesiredStateAtBoot(root)
+    const r = reconcileDesiredStateAtBoot(root, { userDataPath: root, channel: "stable" })
     expect(r.ok).toBe(true)
     expect(r.applied).toEqual([])
     expect(fs.readFileSync(cfgPath(), "utf8")).toBe(before)
@@ -88,7 +88,7 @@ describe("reconcileDesiredStateAtBoot(#395 崩溃残留收敛)", () => {
   test("alpha.jsonc 缺席:disabled 天然满足(ok);enabled 缺生效面 → warning,不无中生有建文件", () => {
     record({ name: "m", kind: "mcp", configKey: "mcp.m", desiredState: "disabled" })
     record({ name: "p", kind: "plugin", configKey: "plugin:@x/p@1", desiredState: "enabled" })
-    const r = reconcileDesiredStateAtBoot(root)
+    const r = reconcileDesiredStateAtBoot(root, { userDataPath: root, channel: "stable" })
     expect(r.ok).toBe(true)
     expect(r.applied).toEqual([])
     expect(r.warnings.some((w) => w.includes("plugin p") && w.includes("absent"))).toBe(true)
@@ -98,7 +98,7 @@ describe("reconcileDesiredStateAtBoot(#395 崩溃残留收敛)", () => {
   test("alpha.jsonc 非法 jsonc → fail-closed skip,文件不动", () => {
     record({ name: "m", kind: "mcp", configKey: "mcp.m", desiredState: "disabled" })
     fs.writeFileSync(cfgPath(), "{ not jsonc !!!")
-    const r = reconcileDesiredStateAtBoot(root)
+    const r = reconcileDesiredStateAtBoot(root, { userDataPath: root, channel: "stable" })
     expect(r.ok).toBe(false)
     expect(r.skipped).toContain("not valid jsonc")
     expect(fs.readFileSync(cfgPath(), "utf8")).toBe("{ not jsonc !!!")
@@ -108,7 +108,7 @@ describe("reconcileDesiredStateAtBoot(#395 崩溃残留收敛)", () => {
     fs.writeFileSync(path.join(root, "installs.json"), "totally not json")
     writeCfg({ mcp: { m: { type: "local" } } })
     const before = fs.readFileSync(cfgPath(), "utf8")
-    const r = reconcileDesiredStateAtBoot(root)
+    const r = reconcileDesiredStateAtBoot(root, { userDataPath: root, channel: "stable" })
     expect(r.ok).toBe(false) // r12 B2:损坏账本 → fail-closed 阻断
     expect(fs.readFileSync(cfgPath(), "utf8")).toBe(before) // config 仍不动
   })
@@ -119,7 +119,7 @@ describe("reconcileDesiredStateAtBoot(#395 崩溃残留收敛)", () => {
     raw.records.push({ schemaVersion: 2, id: "mcp:z", name: "z", kind: "mcp" }) // 缺必填字段的损坏记录
     fs.writeFileSync(path.join(root, "installs.json"), JSON.stringify(raw))
     writeCfg({ mcp: { good: { type: "local" }, z: { type: "local" } } })
-    const r = reconcileDesiredStateAtBoot(root)
+    const r = reconcileDesiredStateAtBoot(root, { userDataPath: root, channel: "stable" })
     expect(r.ok).toBe(false)
     expect(r.enforcementGap && r.enforcementGap.length > 0).toBe(true)
     expect(r.enforcementGap!.some((g) => g.includes("excluded"))).toBe(true)
@@ -136,7 +136,7 @@ describe("reconcileDesiredStateAtBoot(#395 崩溃残留收敛)", () => {
     })
     writeCfg({ plugin: ["@x/pp@1"] })
     const before = fs.readFileSync(cfgPath(), "utf8")
-    const r = reconcileDesiredStateAtBoot(root)
+    const r = reconcileDesiredStateAtBoot(root, { userDataPath: root, channel: "stable" })
     expect(r.ok).toBe(true)
     expect(r.applied).toEqual([])
     expect(fs.readFileSync(cfgPath(), "utf8")).toBe(before)
@@ -148,7 +148,7 @@ describe("reconcileDesiredStateAtBoot(#395 崩溃残留收敛)", () => {
     const held = tryAcquireBundleLock(root, { txId: "test-holder" })
     if (!held.ok) throw new Error("test setup: could not acquire lock")
     try {
-      const r = reconcileDesiredStateAtBoot(root)
+      const r = reconcileDesiredStateAtBoot(root, { userDataPath: root, channel: "stable" })
       expect(r.ok).toBe(false)
       expect(r.skipped).toContain("lock unavailable")
       expect(r.enforcementGap && r.enforcementGap.length > 0).toBe(true) // r7 B2:启动期锁不可用 = fail-closed
@@ -162,7 +162,7 @@ describe("reconcileDesiredStateAtBoot(#395 崩溃残留收敛)", () => {
     record({ name: "gone", kind: "mcp", configKey: "mcp.gone", desiredState: "enabled" })
     record({ name: "m", kind: "mcp", configKey: "mcp.m", desiredState: "disabled" })
     writeCfg({ mcp: { m: { type: "local" } } })
-    const r = reconcileDesiredStateAtBoot(root)
+    const r = reconcileDesiredStateAtBoot(root, { userDataPath: root, channel: "stable" })
     expect(r.ok).toBe(true)
     expect(r.warnings.some((w) => w.includes("mcp gone") && w.includes("config entry missing"))).toBe(true)
     expect(readCfg().mcp.m).toEqual({ type: "local", enabled: false })
@@ -205,7 +205,7 @@ describe("#395 skills 派生允许集(main 真 decoder)", () => {
   test("reconcileDesiredStateAtBoot 顺带自愈派生文件(共享同一把锁)", () => {
     record({ name: "sk", kind: "skill", desiredState: "enabled" })
     fs.rmSync(skillsEnabledPath(root))
-    expect(reconcileDesiredStateAtBoot(root).ok).toBe(true)
+    expect(reconcileDesiredStateAtBoot(root, { userDataPath: root, channel: "stable" }).ok).toBe(true)
     expect(readKeys()).toEqual(["skill--sk"])
   })
 })
@@ -250,7 +250,7 @@ describe("#395 enforcement gap（r11 pivot：只 plugin 落盘失败入 gap，mc
     writeCfg({ plugin: ["@x/p@1.0.0"] })
     fs.chmodSync(cfgPath(), 0o444) // 只读 → applyConfigImage 写失败
     try {
-      const r = reconcileDesiredStateAtBoot(root)
+      const r = reconcileDesiredStateAtBoot(root, { userDataPath: root, channel: "stable" })
       // 只读文件在某些环境仍可被 owner 覆盖;仅当确实写失败才断言 gap。
       if (!r.ok) {
         expect(r.enforcementGap && r.enforcementGap.length > 0).toBe(true)
@@ -266,7 +266,7 @@ describe("#395 enforcement gap（r11 pivot：只 plugin 落盘失败入 gap，mc
     writeCfg({ mcp: { m: { type: "local" } } })
     fs.chmodSync(cfgPath(), 0o444)
     try {
-      const r = reconcileDesiredStateAtBoot(root)
+      const r = reconcileDesiredStateAtBoot(root, { userDataPath: root, channel: "stable" })
       if (!r.ok) expect(r.enforcementGap).toBeUndefined() // mcp 写失败不置 gap
     } finally {
       fs.chmodSync(cfgPath(), 0o644)
@@ -290,7 +290,7 @@ describe("#395 enforcement gap（r11 pivot：只 plugin 落盘失败入 gap，mc
   test("disabled plugin 从 alpha.jsonc plugin[] 移除 → 正常收敛,无 enforcementGap", () => {
     record({ name: "p", kind: "plugin", configKey: "plugin:@x/p@1.0.0", desiredState: "disabled" })
     writeCfg({ plugin: ["@x/p@1.0.0"] })
-    const r = reconcileDesiredStateAtBoot(root)
+    const r = reconcileDesiredStateAtBoot(root, { userDataPath: root, channel: "stable" })
     expect(r.ok).toBe(true)
     expect(r.enforcementGap).toBeUndefined()
     expect(readCfg().plugin).toEqual([])
@@ -302,7 +302,7 @@ describe("#395 r12 B2 账本损坏 fail-closed", () => {
   test("installs.json 损坏(非缺席）→ enforcementGap（阻断 sidecar）", () => {
     fs.writeFileSync(path.join(root, "installs.json"), "totally not json")
     writeCfg({ mcp: { m: { type: "local" } } })
-    const r = reconcileDesiredStateAtBoot(root)
+    const r = reconcileDesiredStateAtBoot(root, { userDataPath: root, channel: "stable" })
     expect(r.ok).toBe(false)
     expect(r.enforcementGap && r.enforcementGap.length > 0).toBe(true)
     expect(r.enforcementGap!.some((g) => g.includes("corrupt"))).toBe(true)
@@ -310,7 +310,7 @@ describe("#395 r12 B2 账本损坏 fail-closed", () => {
 
   test("installs.json 缺席（ENOENT）→ 无 gap（无记录=安全)", () => {
     // 无账本文件、无记录。
-    const r = reconcileDesiredStateAtBoot(root)
+    const r = reconcileDesiredStateAtBoot(root, { userDataPath: root, channel: "stable" })
     expect(r.ok).toBe(true)
     expect(r.enforcementGap).toBeUndefined()
   })
@@ -326,8 +326,92 @@ describe("#395 增量 r13 Blocker（记录级损坏 fail-closed）", () => {
     const rd = require("./ext-receipt-v2").readLedgerV2(root)
     expect(rd.hasExcludedRecords).toBe(true)
     expect(rd.records.find((x: any) => x.name === "m")).toBeUndefined() // 有效那条也被排除
-    const r = reconcileDesiredStateAtBoot(root)
+    const r = reconcileDesiredStateAtBoot(root, { userDataPath: root, channel: "stable" })
     expect(r.ok).toBe(false)
     expect(r.enforcementGap!.some((g) => g.includes("excluded"))).toBe(true)
+  })
+})
+
+// ── #397(必改①):session-grant 记录的持久投影强制(startup reconcile 面)────────────────────────
+describe("#397 session-grant 强制(boot reconcile 面)", () => {
+  test("session-grant 记录 ledger enabled → 投影按 disabled(mcp enabled:false;warning 如实);未命中不动", () => {
+    record({ name: "labs", kind: "mcp", configKey: "mcp.labs", desiredState: "enabled" })
+    record({ name: "free", kind: "mcp", configKey: "mcp.free", desiredState: "enabled" })
+    fs.writeFileSync(
+      path.join(root, "alpha.jsonc"),
+      JSON.stringify({ mcp: { labs: { type: "local", command: ["x"] }, free: { type: "local", command: ["y"] } } }, null, 2),
+    )
+    const r = reconcileDesiredStateAtBoot(root, {
+      userDataPath: root,
+      channel: "stable",
+      sessionGrantIds: () => ({ ok: true as const, ids: new Set(["mcp:labs"]) }),
+    })
+    expect(r.ok).toBe(true)
+    expect(r.applied).toContain("mcp:labs→disabled")
+    expect(r.warnings.some((w) => w.includes("session-grant") && w.includes("labs"))).toBe(true)
+    const cfg = JSON.parse(fs.readFileSync(path.join(root, "alpha.jsonc"), "utf8"))
+    expect(cfg.mcp.labs.enabled).toBe(false)
+    expect(cfg.mcp.free.enabled).toBeUndefined()
+  })
+})
+
+// ── #397 r1-3/r1-4:skill 面强制 + oracle 不可判定 fail-closed ──────────────────────────────────
+describe("#397 session-grant 强制(skill 面 + oracle 不可判定)", () => {
+  const readKeys = (): string[] =>
+    fs.existsSync(skillsEnabledPath(root)) ? (JSON.parse(fs.readFileSync(skillsEnabledPath(root), "utf8")) as { keys: string[] }).keys : []
+
+  test("r1-3:session-grant skill ledger enabled → 账本归位 disabled + 允许集重建后不含该 skill", () => {
+    record({ name: "labs-sk", kind: "skill", desiredState: "enabled" })
+    record({ name: "free-sk", kind: "skill", desiredState: "enabled" })
+    expect(readKeys().sort()).toEqual(["skill--free-sk", "skill--labs-sk"])
+    const r = reconcileDesiredStateAtBoot(root, {
+      userDataPath: root,
+      channel: "stable",
+      sessionGrantIds: () => ({ ok: true as const, ids: new Set(["skill:labs-sk"]) }),
+    })
+    expect(r.ok).toBe(true)
+    expect(r.enforcementGap).toBeUndefined()
+    expect(findRecordV2(root, "skill", "labs-sk")!.desiredState).toBe("disabled") // 账本归位
+    expect(findRecordV2(root, "skill", "free-sk")!.desiredState).toBe("enabled") // 未命中不动
+    expect(readKeys()).toEqual(["skill--free-sk"]) // 注入允许集不再含 session-grant skill
+    expect(r.warnings.some((w) => w.includes("session-grant") && w.includes("labs-sk"))).toBe(true)
+  })
+
+  test("r1-4:oracle 不可判定 + 存在已启用 catalog 记录 → enforcementGap 阻断(不可判定 ≠ 空集)", () => {
+    record({ name: "m", kind: "mcp", configKey: "mcp.m", desiredState: "enabled" })
+    fs.writeFileSync(path.join(root, "alpha.jsonc"), JSON.stringify({ mcp: { m: { type: "local", command: ["x"] } } }))
+    const r = reconcileDesiredStateAtBoot(root, {
+      userDataPath: root,
+      channel: "stable",
+      sessionGrantIds: () => ({ ok: false as const, reason: "no verified channel LKG and no verified v1 catalog cache", partialIds: new Set<string>() }),
+    })
+    expect(r.enforcementGap?.some((g) => g.includes("session-grant determination unavailable"))).toBe(true)
+  })
+
+  test("r1-4:oracle 不可判定但随包部分集仍尽力归位;无已启用 catalog 记录时不置 gap", () => {
+    // 部分集命中:即便整体不可判定,可识别的 session-grant 仍被归位(尽力而为 + gap 已阻断)。
+    record({ name: "labs2", kind: "mcp", configKey: "mcp.labs2", desiredState: "enabled" })
+    fs.writeFileSync(path.join(root, "alpha.jsonc"), JSON.stringify({ mcp: { labs2: { type: "local", command: ["x"] } } }))
+    const r = reconcileDesiredStateAtBoot(root, {
+      userDataPath: root,
+      channel: "stable",
+      sessionGrantIds: () => ({ ok: false as const, reason: "unknown", partialIds: new Set(["mcp:labs2"]) }),
+    })
+    expect(findRecordV2(root, "mcp", "labs2")!.desiredState).toBe("disabled")
+    expect(r.enforcementGap?.some((g) => g.includes("session-grant determination unavailable"))).toBe(true)
+
+    // 无已启用 catalog 记录(全 disabled)→ 不可判定无害,不置 gap。
+    const clean = fs.mkdtempSync(path.join(os.tmpdir(), "ext-bootrec-clean-"))
+    try {
+      const r2 = reconcileDesiredStateAtBoot(clean, {
+        userDataPath: clean,
+        channel: "stable",
+        sessionGrantIds: () => ({ ok: false as const, reason: "unknown", partialIds: new Set<string>() }),
+      })
+      expect(r2.ok).toBe(true)
+      expect(r2.enforcementGap).toBeUndefined()
+    } finally {
+      fs.rmSync(clean, { recursive: true, force: true })
+    }
   })
 })

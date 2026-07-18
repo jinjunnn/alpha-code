@@ -1,0 +1,30 @@
+{
+  "catalogId": "skill:experimental-viz",
+  "version": "0.3.1",
+  "provenance": {
+    "schema": "alpha.intake-provenance.v1",
+    "catalogId": "skill:experimental-viz",
+    "version": "0.3.1",
+    "source": {
+      "kind": "git",
+      "locator": "git+https://github.com/acme/experimental-viz",
+      "requestedRef": "v0.3.1",
+      "resolved": "aaaabbbbccccddddeeeeffff0000111122223333"
+    },
+    "manifest": {
+      "sha256": "abababababababababababababababababababababababababababababababab",
+      "bytes": 4096
+    },
+    "lockDigests": [],
+    "artifactDigests": [
+      {
+        "name": "LICENSE.txt",
+        "sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      },
+      {
+        "name": "SKILL.md",
+        "sha256": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef"
+      }
+    ]
+  }
+}
