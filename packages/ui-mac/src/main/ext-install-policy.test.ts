@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { initialDesiredState, nextDesiredState } from "./ext-install-policy"
+import { initialDesiredState, nextDesiredState, normalizeSessionGrantPriorInLock } from "./ext-install-policy"
 import { findRecordV2, upsertRecordV2 } from "./ext-receipt-v2"
 
 let root: string
@@ -73,7 +73,7 @@ describe("#397 activationPolicy 声明优先序(Codex 裁决钉死)", () => {
     expect(initialDesiredState({ origin: "imported", activationPolicy: "session-grant" })).toBe("enabled")
   })
 
-  test("规则 3/4:prior 只对 default-enabled/default-disabled(与未策展面)保留;session-grant 不被 prior 保留且**归位账本**(r1-2)", () => {
+  test("规则 3/4:prior 只对 default-enabled/default-disabled(与未策展面)保留;session-grant 不被 prior 保留;分类器纯计算零写账(r2)", () => {
     const seed = (name: string) => {
       const w = upsertRecordV2(root, {
         id: `mcp:${name}`,
@@ -91,10 +91,15 @@ describe("#397 activationPolicy 声明优先序(Codex 裁决钉死)", () => {
     seed("keep-x")
     expect(nextDesiredState(root, "mcp", "keep-x", { origin: "catalog", source: "official", activationPolicy: "default-disabled" })).toBe("enabled")
     expect(findRecordV2(root, "mcp", "keep-x")!.desiredState).toBe("enabled") // 账本不被动
-    // 声明 session-grant → 决策返回 disabled,且非法的 prior enabled 在决策点被归位写回 disabled
-    // (账本 upsert 写点「prev 当前策略优先」会沿用 prev —— 不归位,更新落账会复活 enabled)。
+    // 声明 session-grant → 决策返回 disabled;**分类器只算不写**(r2:计划/授权前阶段零账本
+    // 副作用)—— 非法 prior 的真实归位在锁内(normalizeSessionGrantPriorInLock / boot reconcile)。
     seed("labs-x")
     expect(nextDesiredState(root, "mcp", "labs-x", { origin: "catalog", source: "official", activationPolicy: "session-grant" })).toBe("disabled")
-    expect(findRecordV2(root, "mcp", "labs-x")!.desiredState).toBe("disabled") // 决策点归位
+    expect(findRecordV2(root, "mcp", "labs-x")!.desiredState).toBe("enabled") // 计划期不写账本
+    // 锁内归位原语:prev enabled → disabled;缺席/已 disabled = no-op。
+    expect(normalizeSessionGrantPriorInLock(root, "mcp", "labs-x").ok).toBe(true)
+    expect(findRecordV2(root, "mcp", "labs-x")!.desiredState).toBe("disabled")
+    expect(normalizeSessionGrantPriorInLock(root, "mcp", "labs-x").ok).toBe(true) // 幂等
+    expect(normalizeSessionGrantPriorInLock(root, "mcp", "ghost").ok).toBe(true) // 无记录 no-op
   })
 })

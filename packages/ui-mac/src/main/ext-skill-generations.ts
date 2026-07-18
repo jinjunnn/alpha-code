@@ -29,7 +29,7 @@ import {
 import type { CapabilityDiff } from "./ext-capability-grants"
 import { populateFromCas } from "./ext-cas"
 import { findRecordV2, upsertRecordsV2, upsertRecordV2, type ScopeIdentity, type UpsertInput } from "./ext-receipt-v2"
-import { nextDesiredState } from "./ext-install-policy"
+import { nextDesiredState, normalizeSessionGrantPriorInLock } from "./ext-install-policy"
 import { parseSkillFrontmatter } from "./ext-import-validate"
 import type { InstallReceiptOrigin } from "../preload/types"
 
@@ -294,8 +294,19 @@ export async function installSkillGeneration(root: string, spec: SkillGeneration
   // 引擎 verify 随后对 staging 做结构精确校验(纵深)。
   const casPopulate = populateFromCas(spec.casFiles.casBaseRoot)
   let projectionLag: string | undefined // #336:commitReceipt 闭包捕获派生允许集发布失败
+  // #397 r2:session-grant 非法 prior 的**锁内**归位(引擎顺序 = lock → authorize 零写盘暂停 →
+  // precondition)—— 计划/分类阶段零账本写;归位后 prior = 计划值 disabled,账本 upsert 写点的
+  // 「prev 当前策略优先」不再复活非法 enabled。与调用方自带 precondition(seed downgrade 门)串行。
+  const sessionGrantForced = spec.origin === "catalog" && spec.activationPolicy === "session-grant"
+  const precondition = (): { ok: true } | { ok: false; reason: string } => {
+    if (sessionGrantForced) {
+      const norm = normalizeSessionGrantPriorInLock(root, "skill", spec.name)
+      if (!norm.ok) return norm
+    }
+    return spec.precondition ? spec.precondition() : { ok: true }
+  }
   const hooks: TxHooks = {
-    ...(spec.precondition ? { precondition: spec.precondition } : {}),
+    precondition,
     populate: (_item, stagingDir) => casPopulate({ files: txFiles }, stagingDir),
     // 类型化健康探测(REQ-100 #312):generation 落地后、切换前后验 SKILL.md 可发现 + frontmatter name 匹配。
     probe: skillGenerationProbe,

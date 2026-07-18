@@ -168,7 +168,7 @@ import {
   type ActivationPolicy,
   type CurationStatus,
 } from "../shared/catalog-curation"
-import { nextDesiredState, normalizeSessionGrantPrior } from "./ext-install-policy"
+import { nextDesiredState, normalizeSessionGrantPriorInLock } from "./ext-install-policy"
 import { readSessionGrantIdsSync, type SessionGrantOracle } from "./ext-curation-policy"
 import type { ChannelName } from "./catalog-channels"
 import { findReceipt } from "./alpha-installs"
@@ -666,6 +666,9 @@ function decodeEntryCurationLoud(entry: CatalogEntry): CurationStatus {
     console.error(`[req104-397] entry ${entry.id}: curation FAILED validation — fail closed to the uncurated conservative face (${status.reason})`)
   return status
 }
+
+// #397(Codex r2):session-grant 非法 prior 的锁内归位 = ext-install-policy
+// normalizeSessionGrantPriorInLock(单一实现;skill 路径在 ext-skill-generations 内共用)。
 
 /** 目标卷可移植的路径碰撞键(Codex review #363 Major 2):darwin/win32 常见大小写不敏感 +
  *  Unicode normalization 折叠 —— 折叠后相同即视为同一物理落点,清单歧义直接拒。 */
@@ -1211,13 +1214,16 @@ async function replacePluginViaTransaction(args: {
     rollback("legacy plugin conflict")
     return replaceLegacyGate
   }
-  // #397(Codex r1-2):置换后的启用态经**带当前 curation facts 的统一分类器** —— 更新默认保留旧
-  // desiredState(nextDesiredState prior 优先,#352 裁决语义不变),但目标版本声明 session-grant
-  // 时强制 disabled(持久 enabled 非法;fresh 早已如此,更新链不得成为豁免通道)。
+  // #397(Codex r1-2 + r2):置换后的启用态经**带当前 curation facts 的统一分类器**(纯计算)——
+  // 更新默认保留旧 desiredState(nextDesiredState prior 优先,#352 裁决语义不变),但目标版本
+  // 声明 session-grant 时强制 disabled(持久 enabled 非法;fresh 早已如此,更新链不得成为豁免
+  // 通道)。非法 prior 的真实归位只在锁内 precondition(r2:计划/授权前阶段零账本写)。
+  const replacePolicyFacts = curationPolicyFactsOf(entry, deps.now?.() ?? new Date().toISOString())
+  const replaceSessionGrantForced = replacePolicyFacts.activationPolicy === "session-grant"
   const plannedDesiredState = nextDesiredState(root, "plugin", entry.name, {
     origin: "catalog",
     source: entry.source,
-    ...curationPolicyFactsOf(entry, deps.now?.() ?? new Date().toISOString()),
+    ...replacePolicyFacts,
   })
   // r10/r11:等价重复收敛为单条;保留**最后一条**匹配的形态/options —— 引擎对重复解析身份
   // 取后者为准(config/plugin.ts later-wins),保首条会丢弃真正生效的 options。
@@ -1283,10 +1289,17 @@ async function replacePluginViaTransaction(args: {
       const cur = readPluginArray()
       if (!cur.ok) return cur
       if (JSON.stringify(cur.value) !== snapshotCanon) return { ok: false, reason: "plugin config changed since plan — retry the update" }
+      // #397 r2:session-grant 非法 prior 的**锁内**归位(authorize 零写盘暂停之后;失败即拒)。
+      // 归位改变 desiredState —— 下方 drift 基线在 forced 场景按计划值(disabled)核对:
+      // 归位后必然一致;并发 enable 已被 setInstallStateByKey 闸死,不存在被覆盖的合法状态。
+      if (replaceSessionGrantForced) {
+        const norm = normalizeSessionGrantPriorInLock(root, "plugin", entry.name)
+        if (!norm.ok) return norm
+      }
       const rec = findRecordV2(root, "plugin", entry.name)
       if (!rec || rec.generation !== facts.record.generation || rec.manifestDigest !== facts.record.manifestDigest)
         return { ok: false, reason: "plugin ledger changed since plan — retry the update" }
-      if (rec.desiredState !== facts.record.desiredState)
+      if (rec.desiredState !== (replaceSessionGrantForced ? plannedDesiredState : facts.record.desiredState))
         return { ok: false, reason: "plugin desired state changed since plan — retry the update" }
       // r12 Major:legacy 源不在主 canon 快照覆盖内 —— 锁内重跑两个 legacy 门(同名派生路径 +
       // npm 同包 pin),与「计划前 + 锁内双查」合同一致;否则计划后写入 retained 源的同包 pin
@@ -1592,6 +1605,7 @@ async function installBundleAtomic(
   const installedIds: string[] = []
   const skipped: Array<{ id: string; reason: string }> = []
   const bundleWarnings: string[] = []
+  const sessionGrantForcedChildren: Array<{ kind: InstallRecordV2["kind"]; name: string }> = []
   for (const it of items) {
     const child = resolved.get(it.catalogEntryId)!
     // #315(并入 REQ-105 静态基线):advisory 命中的子条目绝不经 bundle 通道铺给用户 ——
@@ -1613,6 +1627,11 @@ async function installBundleAtomic(
       planItems.push({ ...c.item, receipt: c.record })
       if (c.warnings?.length) bundleWarnings.push(...c.warnings)
       installedIds.push(c.id)
+      // #397 r2:session-grant 子项计划期只**记名**(纯计算);非法 prior 的归位在锁内
+      // precondition(skip/fatal 的子项无 receipt 写面,不参与 —— 残留由 boot 归位)。
+      const childFacts = curationActivationFacts(decodeEntryCuration(child.entry), deps.now?.() ?? new Date().toISOString())
+      if (childFacts.activationPolicy === "session-grant")
+        sessionGrantForcedChildren.push({ kind: child.entry.type as InstallRecordV2["kind"], name: child.entry.name })
     }
   }
 
@@ -1648,6 +1667,12 @@ async function installBundleAtomic(
       materializeFilesFromCas(deps.casBaseRoot(), item.files ?? [], stagingDir)
     },
     precondition: () => {
+      // #397 r2:session-grant 子项非法 prior 的**锁内**归位(authorize 零写盘暂停之后、drift
+      // 复核之前 —— 归位后 prior = 计划值 disabled,下方 drift 门读到一致态;失败即整单拒)。
+      for (const f of sessionGrantForcedChildren) {
+        const norm = normalizeSessionGrantPriorInLock(deps.globalRoot(), f.kind, f.name)
+        if (!norm.ok) return { ok: false, reason: `bundle child ${f.kind} ${f.name}: ${norm.reason}` }
+      }
       for (const d of driftChecks) {
         const prior = findRecordV2(deps.globalRoot(), d.kind, d.name)
         if ((prior?.desiredState ?? d.planned) !== d.planned)
@@ -1754,16 +1779,9 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       rollback("plugin content identity drift")
       return { ok: false, reason: `catalog entry vendoredAssetKey "${spec.vendoredAssetKey}" ≠ "plugins/${entry.name}" — refusing (content identity drift)` }
     }
-    // #397 r1-2:目标版本声明 session-grant 时,先把非法的 prior enabled 在账本归位 ——
-    // 必须发生在 resolvePluginDispatch 的前像快照**之前**,否则置换的锁内 drift 门会把
-    // 归位误判为并发漂移而拒绝重试;归位后 dispatch/plan/precondition/receipt 四面一致。
-    normalizeSessionGrantPrior(scope.root(deps), "plugin", entry.name, {
-      origin: "catalog",
-      source: entry.source,
-      ...curationPolicyFactsOf(entry, deps.now?.() ?? new Date().toISOString()),
-    })
     // #352:fresh / replace / refuse 三态分发(main 从自己账本裁决,复用同一 catalog 通道)——
     // 有效 catalog 旧账 → journaled 原子替换;v1-only/损坏/双键/漂移 → 显式拒绝;absent → fresh。
+    // (#397 r2:session-grant 的 prior 归位不在此计划阶段写 —— 见 replace 锁内 precondition。)
     const dispatch = resolvePluginDispatch(
       scope.root(deps),
       entry,
@@ -1906,6 +1924,8 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
     const mcpRoot = scope.root(deps)
     const mcpConfigTarget = path.join(mcpRoot, "alpha.jsonc")
     const mcpNow = deps.now?.() ?? new Date().toISOString()
+    // #397:计划期只**计算**消费事实(纯);session-grant 的账本归位在锁内 precondition。
+    const mcpPolicyFacts = curationPolicyFactsOf(entry, mcpNow)
     const mcpReceipt: UpsertInput = {
       id: entry.id,
       name: entry.name,
@@ -1916,8 +1936,8 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       manifestDigest,
       grantDigest: computeGrantDigest(grants),
       // #395:fresh-intake 初始态按来源分类(alpha=开,其余含 official=关);既有记录当前策略优先。
-      // #397:有效 curation 的 activationPolicy 声明优先(session-grant 恒 disabled)。
-      desiredState: nextDesiredState(mcpRoot, "mcp", entry.name, { origin: "catalog", source: entry.source, ...curationPolicyFactsOf(entry, mcpNow) }),
+      // #397:有效 curation 的 activationPolicy 声明优先(session-grant 恒 disabled;纯计算)。
+      desiredState: nextDesiredState(mcpRoot, "mcp", entry.name, { origin: "catalog", source: entry.source, ...mcpPolicyFacts }),
       origin: "catalog",
       configKey: `mcp.${entry.name}`,
       installedAt: mcpNow,
@@ -1944,6 +1964,12 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       precondition: () => {
         const ledger = probeLedgerForWrite(mcpRoot)
         if (!ledger.ok) return { ok: false, reason: `refusing mcp install: ${ledger.reason}` }
+        // #397 r2:session-grant 非法 prior 的**锁内**归位(authorize 零写盘暂停之后、drift 门
+        // 之前 —— 归位后 prior = 计划值 disabled,下方 drift 门读到一致态;归位失败即拒)。
+        if (mcpPolicyFacts.activationPolicy === "session-grant") {
+          const norm = normalizeSessionGrantPriorInLock(mcpRoot, "mcp", entry.name)
+          if (!norm.ok) return norm
+        }
         // Codex r9 B2:desiredState 漂移钉死(镜像 plugin replacement)—— config edit 与 live outcome
         // 都用 plan 期 mcpReceipt.desiredState;plan 快照与加锁之间的合法启停(用户 disable)不得被旧
         // 快照静默覆盖(否则账本 disabled 但 config 无 enabled:false + 返回 liveMcp → 运行面复活)。
@@ -2418,7 +2444,8 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
     // 与 bundle cloud 子项一致;既有记录当前策略优先(nextDesiredState 内含)。
     // #397:有效 curation 声明优先于 cloud 例外(声明是合同面;当前目录无策展 cloud 条目)。
     const cloudNow = deps.now?.() ?? new Date().toISOString()
-    const plannedState = nextDesiredState(cloudRoot, "cloud", entry.name, { origin: "catalog", source: entry.source, ...curationPolicyFactsOf(entry, cloudNow) })
+    const cloudPolicyFacts = curationPolicyFactsOf(entry, cloudNow) // 纯计算;归位在锁内 precondition
+    const plannedState = nextDesiredState(cloudRoot, "cloud", entry.name, { origin: "catalog", source: entry.source, ...cloudPolicyFacts })
     const cloudReceipt: UpsertInput = {
       id: entry.id,
       name: entry.name,
@@ -2451,6 +2478,11 @@ export async function installCatalog(rawIntent: unknown, deps: PlannerDeps): Pro
       precondition: () => {
         const ledger = probeLedgerForWrite(cloudRoot)
         if (!ledger.ok) return { ok: false, reason: `refusing cloud install: ${ledger.reason}` }
+        // #397 r2:session-grant 非法 prior 的锁内归位(drift 门之前;失败即拒)。
+        if (cloudPolicyFacts.activationPolicy === "session-grant") {
+          const norm = normalizeSessionGrantPriorInLock(cloudRoot, "cloud", entry.name)
+          if (!norm.ok) return norm
+        }
         return cloudDesiredStateGate(cloudRoot, entry.name, plannedState)
       },
       commitReceipt: (records: TxCommitRecord[]) => {
@@ -3464,6 +3496,7 @@ async function installSeedMcp(args: {
   }
   const configTarget = path.join(root, "alpha.jsonc")
   const now = deps.now?.() ?? new Date().toISOString()
+  const seedMcpPolicyFacts = curationPolicyFactsOf(entry, now) // 纯计算;归位在锁内 precondition
   const receiptTemplate: UpsertInput = {
     id: entry.id,
     name: entry.name,
@@ -3475,7 +3508,7 @@ async function installSeedMcp(args: {
     payloadDigest,
     grantDigest: computeGrantDigest({}),
     // #395:同上 —— 单装 MCP fresh-intake 按来源分类。#397:有效 curation 声明优先(seed 同接线)。
-    desiredState: nextDesiredState(root, "mcp", entry.name, { origin: "catalog", source: entry.source, ...curationPolicyFactsOf(entry, now) }),
+    desiredState: nextDesiredState(root, "mcp", entry.name, { origin: "catalog", source: entry.source, ...seedMcpPolicyFacts }),
     origin: "catalog",
     configKey: `mcp.${entry.name}`,
     installedAt: now,
@@ -3495,7 +3528,14 @@ async function installSeedMcp(args: {
   }
   const hooks: TxHooks = {
     populate: () => {}, // config action 无 staging 载荷
-    precondition: () => mcpSeedGate(root, entry.name, configTarget, manifest.version, receiptTemplate.desiredState),
+    precondition: () => {
+      // #397 r2:session-grant 非法 prior 的锁内归位(seed 与直装同门;失败即拒)。
+      if (seedMcpPolicyFacts.activationPolicy === "session-grant") {
+        const norm = normalizeSessionGrantPriorInLock(root, "mcp", entry.name)
+        if (!norm.ok) return norm
+      }
+      return mcpSeedGate(root, entry.name, configTarget, manifest.version, receiptTemplate.desiredState)
+    },
     commitReceipt: (records: TxCommitRecord[]) => {
       const written = upsertRecordsV2(root, recoveryReceiptInputs(records))
       if (!written.ok) throw new Error(`seed mcp receipt commit failed: ${written.reason}`)

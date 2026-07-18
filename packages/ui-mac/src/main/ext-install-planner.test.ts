@@ -3073,6 +3073,31 @@ describe("#397 r1-2:plugin replace 的 session-grant 强制(更新链不是豁�
     expect(rec.desiredState).toBe("disabled") // 持久 enabled 非法 —— 更新链同样强制
   })
 
+  test("r2:授权暂停零账本副作用 —— 归位只在锁内提交路径发生,拒绝/暂停的操作不动账", async () => {
+    seedNpmOldEnabled()
+    const sessionGrantV2: CatalogEntry = {
+      ...pluginNpmEntry,
+      source: "official",
+      curation: makeCuration("plugin:np", "2.3.4", { tier: "labs", activationPolicy: "session-grant" }),
+    }
+    const { deps } = makeDeps({ entries: [sessionGrantV2] })
+    // 首驱:无授权基线 → authorize 暂停(引擎顺序 lock → authorize 零写盘 → precondition)。
+    const first = await installCatalog({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
+    expect(first.ok).toBe(false)
+    if (!first.ok) expect(first.stage).toBe("authorize")
+    // r2 Major 的核心断言:暂停的操作零账本副作用 —— 非法 enabled 原样保留,config 不动。
+    expect(findRecordV2(globalRoot, "plugin", "np")!.desiredState).toBe("enabled")
+    expect(findRecordV2(globalRoot, "plugin", "np")!.version).toBe("2.0.0")
+    const cfg0 = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8")) as { plugin: string[] }
+    expect(cfg0.plugin).toEqual(["@alpha/np@2.0.0"])
+    // 确认重驱:锁内 precondition 归位 + 同一事务提交 → disabled + plugin[] 移除。
+    const confirmed = await installAuthorized({ catalogId: "plugin:np", scope: { scope: "global" } }, deps)
+    expect(confirmed.ok).toBe(true)
+    expect(findRecordV2(globalRoot, "plugin", "np")!.desiredState).toBe("disabled")
+    const cfg1 = JSON.parse(fs.readFileSync(path.join(globalRoot, "alpha.jsonc"), "utf8")) as { plugin: string[] }
+    expect(cfg1.plugin).toEqual([])
+  })
+
   test("对照:目标版本未策展 ⇒ 置换保留旧 enabled(#352 语义不回归)", async () => {
     seedNpmOldEnabled()
     const { deps } = makeDeps({ entries: [{ ...pluginNpmEntry, source: "official" }] })
