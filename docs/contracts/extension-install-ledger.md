@@ -143,14 +143,25 @@ MCP 重装是产品流(确认框重装),允许覆盖(引擎前像可复原)而�
       探测**。引擎 schema 显式允许 lone `{enabled:false}` mcp 叶(`core/v1/config/config.ts:114` 的 Union)
       与 disable-only agent 叶(全 optional)。每次 sidecar fork 从账本重算,best-effort(账本不可读 → 跳过,
       alpha.jsonc 投影仍在)。
-    · **plugin**:union(`mergePluginOrigins`)无覆盖面 → 靠从 **alpha.jsonc `plugin[]` 移除**
-      (`computeEnableProjectionEdit`:disable 按 base 移除同 base 全部钉版;enable 按精确 spec 重建)。
-      **无用户 = 无其他 plugin 源**(alpha 只写 alpha.jsonc),故移除即权威;移除失败 = plugin gap。
+    · **plugin**:union(`mergePluginOrigins`)**无 disable 键、无覆盖面** → 只能从 **alpha.jsonc `plugin[]`
+      移除**(`computeEnableProjectionEdit`:disable 按 base 移除同 base 全部钉版;enable 按精确 spec 重建)。
+      **已知边界(Codex r12 Major2,信任模型显式声明)**:plugin 的 disable **只治理 alpha 自有副本**
+      (alpha 只写 alpha.jsonc);若同一 plugin 也出现在其他引擎读取源(XDG / 项目 / `~/.opencode` / 自动
+      发现目录),引擎 union 仍会 import —— **本设计不防御该情形**。当前部署无用户 = 无其他 plugin 源,故
+      移除即权威;若未来引入用户手写配置,须显式向用户暴露"plugin 开关仅治理 alpha 安装的副本"这一限制,
+      或补 plugin 侧的运行时 enforcement。移除失败 = plugin gap(阻断 sidecar)。
     · **企业/远程源(managed dir / MDM / active-org,step 7-9,在注入之后加载)**:alpha 无法覆盖,属管理员/
       远程受控,不在 alpha 的威胁模型内(且无用户下不存在)。**文档化边界**,非 alpha 残留。
-    · **live 运行面**:引擎 `mcp.connect` 强制 `enabled:true`,当前 session 的连接是暂态;权威层 = 注入
-      (任何 reload 引擎必读 disabled)。安装/开关的 live 连接前经 inventoryView 复查 activation(best-effort),
-      残窗自愈。alpha.jsonc 的 mcp/agent 投影(set-state/boot)保留作 consistency,非 load-bearing。
+    · **账本损坏/不可读**(Codex r12 B2):sidecar 注入会拿到空 records、disabled mcp/agent 无从注入 →
+      boot reconcile `probeLedgerForWrite` 检出损坏(非缺席)即 **enforcementGap 阻断 sidecar**(不放行可能
+      加载已禁扩展的引擎)。缺席账本(ENOENT)= 无记录 = 安全,不阻断。
+    · **command/bundle 无生效面**(Codex r12 Major3):引擎 config.command/bundle 无 disable 键、alpha 无
+      投影/注入面 —— set-state 对 command/bundle/cloud 一律拒(翻 desiredState 会谎报已禁而仍可执行),
+      行内/详情页开关也只给有生效面的 mcp/agent/plugin/skill。
+    · **live 运行面**:引擎 `mcp.connect`/`mcp.add` 强制 `enabled:true`,当前 session 的连接是暂态;权威层 =
+      注入(任何 reload 引擎必读 disabled)。安装/开关的 live 连接前经 inventoryView 复查 activation,读失败
+      **fail-closed 不激活**(Codex r12 Major1:回 reload-pending,不靠"下次自愈"当安全控制);disabled 则不
+      连。alpha.jsonc 的 mcp/agent 投影(set-state/boot)保留作 consistency,非 load-bearing。
 - **未策展重加投影(Codex r5/r6 M1 → r11)**:`persistMcp` 对账本 disabled 的 mcp 重写叶并入 `enabled:false`
   (内容更新、状态不翻);`persistPlugin` 对 disabled 的 plugin 从 alpha.jsonc `plugin[]` 移除该 base 全部
   条目(换钉版旧 spec 不留)——无用户 = 无他源,移除即权威(不再逐源探测)。

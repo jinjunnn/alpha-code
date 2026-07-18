@@ -185,3 +185,21 @@ describe("#395 步骤4 读错误收窄", () => {
 })
 
 // ── #395 Codex r7:legacy/XDG 源统一探测(mcp/agent 反向字段 + 缺席也探测 + npm base)──────────────
+
+// ── Codex r12 Major3:command/bundle/cloud 无禁用生效面 → set-state 拒 ─────────────────────────────
+describe("#395 r12 Major3 无生效面拒绝", () => {
+  const cases = [
+    { kind: "command" as const, origin: "imported" as const },
+    { kind: "bundle" as const, origin: "catalog" as const },
+    { kind: "cloud" as const, origin: "catalog" as const },
+  ]
+  for (const { kind, origin } of cases) {
+    test(`${kind} disable → fail-closed（无生效面，翻 desiredState 会谎报）`, () => {
+      const id = kind === "command" ? `user:c-${kind}` : `${kind}:c-${kind}`
+      record({ name: `c-${kind}`, kind, id, origin, ...(kind === "cloud" ? {} : { configKey: `${kind}.c-${kind}` }) } as any)
+      const r = setInstallStateByKey({ type: kind, name: `c-${kind}`, scope: "global", state: "disabled" }, deps())
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.reason).toContain("no enable/disable surface")
+    })
+  }
+})

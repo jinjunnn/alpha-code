@@ -3995,6 +3995,11 @@ export function setInstallStateByKey(
   try {
     const record = findRecordV2(root, intent.type, intent.name)
     if (!record) return { ok: false, reason: `no v2 record for ${intent.type}:${intent.name} in this scope — fail closed (v1-only installs have no desired-state channel)` }
+    // Codex r12 Major3:command/bundle 无禁用生效面(引擎 config.command/bundle 无 disable 键,alpha 无
+    // 投影/注入面)—— 翻 desiredState 会谎报「已禁用」而 command 仍可执行。有生效面的仅 mcp/agent(注入)、
+    // plugin(alpha.jsonc plugin[])、skill(允许集);cloud 无本地运行面(UI 本就不给开关)。一律拒。
+    if (record.kind === "command" || record.kind === "bundle" || record.kind === "cloud")
+      return { ok: false, reason: `${record.kind} "${record.name}" has no enable/disable surface — refusing to flip desired state (would misreport)` }
     if (record.scope.kind === "project") {
       if (intent.scope !== "project") return { ok: false, reason: "fail closed: record is project-scoped but intent is global" }
       const verified = verifyProjectScope(record, intent.projectDir)
@@ -4164,23 +4169,22 @@ export type BootReconcileOutcome = {
   applied: string[]
   warnings: string[]
   skipped?: string
-  /** Codex r6 B2/B3:**非空 = 有本应禁用的项未能保证从引擎读取的配置移除**(config 写失败 / 读不出 /
-   *  legacy concat 残留 / skills 陈旧允许集)—— 调用方(index.ts)须 fail-closed 阻断 sidecar,
-   *  绝不让引擎带着"账本禁用但仍会加载"的项启动。enable 侧失败只记 warning,不入此列(功能缺失非安全洞)。 */
+  /** 非空 = 有本应禁用的项未能保证不被引擎加载 —— 调用方(index.ts)须 fail-closed 阻断 sidecar。
+   *  r11 pivot 后:mcp/agent 由 sidecar 主权注入(OPENCODE_CONFIG_CONTENT)保证,唯 **plugin 无法从
+   *  alpha.jsonc plugin[] 落盘移除**(config 写失败/读不出/非法 jsonc)、**账本损坏/不可读**(注入会拿到
+   *  空 records,Codex r12 B2)、skills 陈旧允许集入此列。enable 失败只记 warning(功能缺失非安全洞)。 */
   enforcementGap?: string[]
 }
 
-/** 主进程启动 reconcile(引擎首次 fork 读 config 之前调用):把账本全部 global mcp/agent/plugin 记录
- *  的 desiredState 重投影回 alpha.jsonc(双向:disabled → `enabled:false`/`disable:true`/plugin[] 缺席;
- *  enabled → 剥禁用键)。config 恒 = 账本派生 → 消除崩溃残留(账本↔config 两写之间断电)与旁路写入
- *  (未策展重加等)的复活面 —— 引擎 import 插件早于任何 config-hook,持久化 config 是唯一权威生效面。
- *  边界(全部 loud,不 throw):
- *    · 锁忙(真持有)→ skip:在途事务自身保证两面一致;陈旧锁由 tryAcquireBundleLock 接管。
- *    · 账本文件级损坏 → records 空 → 不动 config(威胁模型是崩溃残留,能改账本者可直改 config;
- *      skill 生效面由引擎注入门独立 fail-closed)。
- *    · 损坏单条 record → decoder 排除 + warning,config 该条保持原态(禁用投影在 disable 时已落盘)。
- *    · alpha.jsonc ENOENT/ENOTDIR = 合法缺席:disabled 天然满足;enabled 缺生效面 → warning(重装修复)。
- *      其余读错(EACCES/EIO)→ fail-closed skip,config 不动;非法 jsonc → fail-closed skip(不清写)。
+/** 主进程启动 reconcile(引擎首次 fork 读 config 之前调用)。r11 pivot:mcp/agent 的 disable 由 sidecar
+ *  `injectDisabledOverrides` 注入 OPENCODE_CONFIG_CONTENT 权威保证(引擎最后加载 override),本函数对
+ *  mcp/agent 只做 alpha.jsonc consistency 投影;**plugin** 的 disable 生效面 = 从 alpha.jsonc `plugin[]`
+ *  移除(无用户=无他源),是 enforcementGap 的唯一 config 面。skills 派生允许集自愈同锁内做。
+ *  边界(全部 loud,不 throw;gap = fail-closed 阻断 sidecar):
+ *    · 锁忙(真持有)→ skip 非 gap(在途事务自保一致)。
+ *    · **账本损坏/不可读(probeLedgerForWrite 非 ok)→ gap**(注入落空,Codex r12 B2)。
+ *    · alpha.jsonc ENOENT/ENOTDIR = 缺席:plugin 天然不在 plugin[](安全);enabled 缺生效面 warning。
+ *      其余读错(EACCES/EIO)/非法 jsonc → plugin disable 无法落盘 → gap;config 不动。
  *    · 单条 enable 缺生效面 / plugin 身份不可判 → warning + 跳过该条,不 abort 其余。
  *  project-scope 记录不在此对账(引擎启动只读 global alpha.jsonc;项目残留由 set-state/更新路径自愈)。 */
 export function reconcileDesiredStateAtBoot(root: string): BootReconcileOutcome {
@@ -4204,6 +4208,14 @@ export function reconcileDesiredStateAtBoot(root: string): BootReconcileOutcome 
     if (!deriv.ok) {
       warnings.push(`skills derivation: ${deriv.reason}`)
       if (deriv.staleAllowList) gap.push(`skills allow-list may still enable disabled skills: ${deriv.reason}`)
+    }
+    // Codex r12 B2:账本损坏/不可读(非缺席)→ 主权注入会拿到空 records、disabled mcp/agent 无从注入,
+    // fail-open。此处 fail-closed:probeLedgerForWrite 区分缺席(ENOENT=ok,无记录=安全)与损坏/EACCES/EIO
+    // (可能藏 disabled 记录,注入落空)→ 后者 enforcementGap 阻断 sidecar(不放行可能加载已禁扩展的引擎)。
+    const health = probeLedgerForWrite(root)
+    if (!health.ok) {
+      gap.push(`installs.json corrupt/unreadable: ${health.reason} — cannot enforce disabled extensions (injection would be empty)`)
+      return done({ ok: false, applied, warnings, skipped: `ledger unusable: ${health.reason}` })
     }
     const ledger = readLedgerV2(root)
     warnings.push(...ledger.warnings)

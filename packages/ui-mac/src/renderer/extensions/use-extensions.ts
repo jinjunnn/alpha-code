@@ -350,17 +350,21 @@ export function useExtensions(
     // disable(post-commit)竞态,或本就是「重加已 disabled 的自定义 MCP」。引擎 mcp.connect 强制
     // enabled:true,会绕过账本/config 的 disabled 复活运行面。account 为 disabled 则不激活连接,如实
     // 回「已装未启用」。(inventoryView 读账本 desiredState 投影;global mcp 无 projectDir。)
+    let activation: string | undefined
     try {
       const inv = await window.api.ext.inventoryView()
       // Codex r11 B7:选**已安装 global 行**(scope==="global"),不能落到未安装浏览行(scope=null,
       // activation:not-installed)——否则 disabled 的自定义 MCP 会被误判"未安装"而照常连接。
-      const row = inv.rows.find((r) => r.kind === "mcp" && r.name === name && r.scope === "global")
-      if (row?.activation === "disabled") {
-        await Promise.all([loadStatus(), loadInstalls()])
-        return { ok: true, reason: "installed-disabled" }
-      }
+      activation = inv.rows.find((r) => r.kind === "mcp" && r.name === name && r.scope === "global")?.activation
     } catch {
-      /* 读失败不阻断:主权注入是权威层(下次 reload 引擎必读 disabled),live 连接尽力而为、自愈 */
+      // Codex r12 Major1:activation 读失败 → **fail-closed** 不激活(引擎 mcp.add/connect 会强制启用,
+      // 一次账本/IPC 故障就能让已禁 MCP 运行到 reload)。已落盘,回 reload-pending,下次重载按账本决定。
+      await Promise.all([loadStatus(), loadInstalls()])
+      return { ok: true, reason: "reload-pending" }
+    }
+    if (activation === "disabled") {
+      await Promise.all([loadStatus(), loadInstalls()])
+      return { ok: true, reason: "installed-disabled" }
     }
     const added = await withTimeout(c.mcp.add({ name, config } as any), 15000)
     if (added === TIMED_OUT) {

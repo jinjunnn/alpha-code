@@ -79,3 +79,17 @@ describe("injectDisabledOverrides（主权注入）", () => {
     expect(config.mcp!.keep).toEqual({ type: "local" }) // 未破坏既有
   })
 })
+
+// ── Codex r12 B1:agent disable 同时注入 mode 面(引擎末尾 mode→agent 折叠会覆盖 agent.disable）──
+describe("injectDisabledOverrides r12 B1（mode 折叠）", () => {
+  test("disabled agent → agent[name].disable=true **且** mode[name].disable=true", () => {
+    upsertRecordV2(root, {
+      id: "agent:w", name: "w", kind: "agent", environment: "prod", scope: { kind: "global" },
+      desiredState: "disabled", origin: "catalog", configKey: "agent.w", installedAt: "2026-07-18T00:00:00.000Z",
+    })
+    const config: { agent?: Record<string, unknown>; mode?: Record<string, unknown> } = {}
+    injectDisabledOverrides(config)
+    expect((config.agent!.w as Record<string, unknown>).disable).toBe(true)
+    expect((config.mode!.w as Record<string, unknown>).disable).toBe(true) // 折叠面也压住
+  })
+})

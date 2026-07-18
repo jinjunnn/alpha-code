@@ -435,6 +435,9 @@ function parseLedger(root: string): { parsed: ParsedLedger; corrupt: boolean; re
       }
       records.push(group[0].record)
     }
+    // Codex r12 B3:一条有效 + 一条同 key 损坏 = 归属歧义 —— 有效那条也 fail-closed 排除(否则读侧/注入
+    // 仍信它)。损坏兄弟已在上方把 key 加进 corruptKeys;此处把这些 key 的有效记录一并剔出 records。
+    if (corruptKeys.size > 0) records = records.filter((r) => !corruptKeys.has(key(r.kind, r.name)))
   }
   // r18:字节级证据侧写 —— 结构保全经 JSON.parse→stringify 会丢重复键/原始词法;首次观测到
   // 损坏条目即把**原文件字节**按损坏集哈希落 `installs.json.evidence-<hex12>`(同一损坏集只落
@@ -536,7 +539,9 @@ export function reconcileSkillsDerivation(root: string): SkillsDerivationOutcome
     return { ok: true }
   }
   try {
-    const keys = enabledSkillKeysFromRecords([...parsed.records, ...parsed.rawCorruptRecords])
+    // Codex r12 B3:只喂**干净 records**(parsed.records 已排除损坏/重复 key);rawCorruptRecords 含能
+    // 解码的重复条目,若重新解码会把已 fail-closed 的 skill 重新放进允许集 —— 绝不喂。
+    const keys = enabledSkillKeysFromRecords(parsed.records)
     writeFileAtomicSync(file, derivationTextOf(keys))
     return { ok: true }
   } catch (error) {

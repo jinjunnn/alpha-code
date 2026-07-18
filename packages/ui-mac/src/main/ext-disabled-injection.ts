@@ -9,17 +9,23 @@
 import { alphaGlobalRoot } from "./alpha-installs"
 import { readLedgerV2 } from "./ext-receipt-v2"
 
-export function injectDisabledOverrides(config: { mcp?: Record<string, unknown>; agent?: Record<string, unknown> }): void {
+export function injectDisabledOverrides(config: { mcp?: Record<string, unknown>; agent?: Record<string, unknown>; mode?: Record<string, unknown> }): void {
   try {
     const { records } = readLedgerV2(alphaGlobalRoot())
+    const setLeaf = (bucket: "mcp" | "agent" | "mode", name: string, field: string, value: unknown) => {
+      const map = config[bucket]
+      const cur = map && typeof map[name] === "object" && map[name] ? (map[name] as Record<string, unknown>) : {}
+      config[bucket] = { ...(map ?? {}), [name]: { ...cur, [field]: value } }
+    }
     for (const r of records) {
       if (r.scope.kind !== "global" || r.desiredState !== "disabled") continue
-      if (r.kind === "mcp") {
-        const cur = config.mcp && typeof config.mcp[r.name] === "object" && config.mcp[r.name] ? (config.mcp[r.name] as Record<string, unknown>) : {}
-        config.mcp = { ...(config.mcp ?? {}), [r.name]: { ...cur, enabled: false } }
-      } else if (r.kind === "agent") {
-        const cur = config.agent && typeof config.agent[r.name] === "object" && config.agent[r.name] ? (config.agent[r.name] as Record<string, unknown>) : {}
-        config.agent = { ...(config.agent ?? {}), [r.name]: { ...cur, disable: true } }
+      if (r.kind === "mcp") setLeaf("mcp", r.name, "enabled", false)
+      else if (r.kind === "agent") {
+        setLeaf("agent", r.name, "disable", true)
+        // Codex r12 B1:引擎在合并末尾把 deprecated `mode[name]` 折叠回 `agent[name]`(config.ts:536-542,
+        // 在 step 6 之后)—— 若项目 `mode[name].disable=false` 会覆盖注入的 agent.disable。故 mode 面也
+        // 注入 disable:true(step 6 是最后的 mode 源,折叠时压过);两面齐才真权威。
+        setLeaf("mode", r.name, "disable", true)
       }
     }
   } catch (error) {

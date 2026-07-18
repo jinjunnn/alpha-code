@@ -1138,8 +1138,11 @@ describe("uninstall — facts from main's own ledger", () => {
     fs.writeFileSync(ledger, fs.readFileSync(ledger, "utf8").replace('"records": [', '"records": [{"kind":"skill","name":"demo","generation":-5},'))
     const r = await uninstallByKey({ type: "skill", name: "demo", scope: "global" }, deps)
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.reason).toContain("corrupt v2 record for this key")
-    expect(findRecordV2(globalRoot, "skill", "demo")).not.toBeNull() // 记录仍在账 —— 不得谎报「已卸载」
+    // r12 B3 后:含损坏 sibling 的 key,lookup 层即 corrupt-match fail-closed 拒(更干净:不再"物删后
+    // 账删失败");reason 仍如实标 corrupt + fail closed。
+    if (!r.ok) expect(r.reason).toContain("is corrupt")
+    // 卸载失败=没删:文件字节仍含 demo 记录(不得谎报「已卸载」)。
+    expect(fs.readFileSync(ledger, "utf8")).toContain('"name":"demo"')
   })
 
   test("not installed → refuse (renderer cannot conjure a receipt)", async () => {

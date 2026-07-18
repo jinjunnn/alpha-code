@@ -104,14 +104,13 @@ describe("reconcileDesiredStateAtBoot(#395 崩溃残留收敛)", () => {
     expect(fs.readFileSync(cfgPath(), "utf8")).toBe("{ not jsonc !!!")
   })
 
-  test("账本文件级损坏 → 不动 config(无从派生;loud warning)", () => {
+  test("账本文件级损坏 → config 不动(r12 B2:改 fail-closed + gap,详见 r12 B2 块)", () => {
     fs.writeFileSync(path.join(root, "installs.json"), "totally not json")
     writeCfg({ mcp: { m: { type: "local" } } })
     const before = fs.readFileSync(cfgPath(), "utf8")
     const r = reconcileDesiredStateAtBoot(root)
-    expect(r.ok).toBe(true)
-    expect(r.applied).toEqual([])
-    expect(fs.readFileSync(cfgPath(), "utf8")).toBe(before)
+    expect(r.ok).toBe(false) // r12 B2:损坏账本 → fail-closed 阻断
+    expect(fs.readFileSync(cfgPath(), "utf8")).toBe(before) // config 仍不动
   })
 
   test("损坏单条 record → 该条不投影(config 保持原态),其余记录照常收敛", () => {
@@ -296,5 +295,24 @@ describe("#395 enforcement gap（r11 pivot：只 plugin 落盘失败入 gap，mc
     expect(r.ok).toBe(true)
     expect(r.enforcementGap).toBeUndefined()
     expect(readCfg().plugin).toEqual([])
+  })
+})
+
+// ── Codex r12 B2:账本损坏/不可读 → enforcementGap 阻断 sidecar（注入会落空）───────────────────────
+describe("#395 r12 B2 账本损坏 fail-closed", () => {
+  test("installs.json 损坏(非缺席）→ enforcementGap（阻断 sidecar）", () => {
+    fs.writeFileSync(path.join(root, "installs.json"), "totally not json")
+    writeCfg({ mcp: { m: { type: "local" } } })
+    const r = reconcileDesiredStateAtBoot(root)
+    expect(r.ok).toBe(false)
+    expect(r.enforcementGap && r.enforcementGap.length > 0).toBe(true)
+    expect(r.enforcementGap!.some((g) => g.includes("corrupt"))).toBe(true)
+  })
+
+  test("installs.json 缺席（ENOENT）→ 无 gap（无记录=安全)", () => {
+    // 无账本文件、无记录。
+    const r = reconcileDesiredStateAtBoot(root)
+    expect(r.ok).toBe(true)
+    expect(r.enforcementGap).toBeUndefined()
   })
 })

@@ -1321,11 +1321,10 @@ export function ExtensionHub(props: {
             {updBusy() === row.receipt.id ? t("alpha.ext.adding") : t("alpha.ext.reviewUpdate")}
           </button>
         </Show>
-        {/* #395:开关扩到全类型(v3 三态分离:开关=启用,彩点=健康)—— mcp/skill/agent/plugin 均
-            按账本 desiredState 翻转(mcp 随后衔接 live connect/disconnect;fs 类 dispose 生效)。
-            live-unreceipted MCP 维持既有 live 语义;project 收据不出开关(Codex r1 M2 + #307 只读);
-            cloud 的启用语义在详情页,不出行内开关。 */}
-        <Show when={row.type !== "cloud" && row.receipt.scope !== "project"}>
+        {/* #395:开关只给**有禁用生效面**的类型 —— mcp/agent(主权注入)、plugin(alpha.jsonc plugin[])、
+            skill(允许集)。Codex r12 Major3:command/bundle 无生效面(翻 desiredState 谎报已禁),cloud 无
+            本地运行面,一律不出行内开关。project 收据只读不出开关(Codex r1 M2 + #307)。 */}
+        <Show when={(row.type === "mcp" || row.type === "agent" || row.type === "plugin" || row.type === "skill") && row.receipt.scope !== "project"}>
           <button
             class="alpha-ext-sw"
             data-on={(row.type === "mcp" && row.receipt.installedAt === "" ? row.mcp?.connected : desiredOn()) ? "" : undefined}
