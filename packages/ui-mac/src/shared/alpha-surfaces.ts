@@ -10,7 +10,7 @@ export type SurfaceMode = "alpha" | "legacy"
 export type SurfaceReleaseState = "alpha" | "legacy" | "auto-fallback"
 
 /** 单个 surface 的解析结果:生效模式 + 命中哪一层(env > pin > 发布默认;crash-fallback =
- *  auto-fallback 态命中了本版本的致命渲染错误记录)。 */
+ *  命中了本版本的致命渲染错误记录 —— 凡会产出 alpha 的态(alpha / auto-fallback)都受其约束,#334)。 */
 export interface ResolvedSurface {
   mode: SurfaceMode
   reason: "release-default" | "env-override" | "pin" | "crash-fallback"

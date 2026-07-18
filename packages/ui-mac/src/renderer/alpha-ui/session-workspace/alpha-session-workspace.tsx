@@ -19,7 +19,8 @@
 //       Stage C-1 前本外框**不自渲染 AlphaComposer**(那要求与 takeover gate 同 PR,见审计 §4.1)。
 //   - 跨 server 最小安全解(C4 S5 携带项②):alpha 侧栏恒 pin 本地 sidecar,active server 为他机时
 //     点其会话必然叶 throw ——CrossServerGuard 有界识别该错误族并给出引导(回首页 / 重新加载),
-//     不再落 surface 致命 fallback(避免污染 auto-fallback 崩溃记录);识别不到的错误原样 rethrow,
+//     不再落 surface 致命 fallback(避免污染崩溃记录 —— 该记录对一切 alpha 生效态降 legacy,#334);
+//     识别不到的错误原样 rethrow,
 //     SurfaceBoundary 语义不变。
 //   - preloadSessionLeaf(C4 携带项③):alpha 侧栏 hover/点击时预热叶 lazy chunk,消 C4 实测的
 //     冷入场(0ms 采样 panel=0);窄导出与上游 lazy 解析到同一模块 id,legacy 模式同样受益。

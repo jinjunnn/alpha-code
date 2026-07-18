@@ -1,6 +1,7 @@
-// REQ-084:surface 解析/落盘单测。契约:env > pin > 发布默认;auto-fallback 只对「本 app 版本」
-// 的崩溃记录降 legacy(旧版本记录陈旧忽略);文件损坏按空处理;失败记录截 500 字符且剥离
-// 绝对路径样式片段;未知 surface id 直接拒绝。
+// REQ-084:surface 解析/落盘单测。契约:env > pin > 发布默认;凡会产出 alpha 的态(alpha 与
+// auto-fallback,不论哪层命中)只对「本 app 版本」的崩溃记录降 legacy(旧版本记录陈旧忽略;
+// #334:硬 alpha 不豁免,否则 fatal 后无 legacy 兜底 → crash-loop);文件损坏按空处理;失败记录
+// 截 500 字符且剥离绝对路径样式片段;未知 surface id 直接拒绝。
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import * as fs from "node:fs"
@@ -56,12 +57,12 @@ describe("resolveSurfaces — 层级:env > pin > 默认", () => {
   })
 })
 
-describe("resolveSurfaces — auto-fallback × 崩溃记录", () => {
-  const failure = (appVersion: string) => ({
-    failures: { home: { at: "2026-07-12T00:00:00.000Z", appVersion, error: "boom" } },
+describe("resolveSurfaces — 崩溃记录 × 一切产出 alpha 的态(#334 fail-safe)", () => {
+  const failure = (appVersion: string, id: "home" | "session" = "home") => ({
+    failures: { [id]: { at: "2026-07-12T00:00:00.000Z", appVersion, error: "boom" } },
   })
 
-  test("本版本记录过失败 → legacy(crash-fallback)", () => {
+  test("auto-fallback(发布默认)+ 本版本记录过失败 → legacy(crash-fallback)", () => {
     const r = resolveSurfaces({ env: {}, file: failure("1.0.0"), appVersion: "1.0.0" })
     expect(r.home).toEqual({ mode: "legacy", reason: "crash-fallback" })
   })
@@ -71,14 +72,41 @@ describe("resolveSurfaces — auto-fallback × 崩溃记录", () => {
     expect(r.home).toEqual({ mode: "alpha", reason: "release-default" })
   })
 
-  test("显式 pin=alpha 无视崩溃记录(手动重置通道)", () => {
+  test("#334 回归:显式 pin=alpha 不再豁免崩溃记录 → legacy(crash-fallback)", () => {
     const r = resolveSurfaces({ env: {}, file: { ...failure("1.0.0"), pins: { home: "alpha" } }, appVersion: "1.0.0" })
-    expect(r.home).toEqual({ mode: "alpha", reason: "pin" })
+    expect(r.home).toEqual({ mode: "legacy", reason: "crash-fallback" })
   })
 
   test("env=auto-fallback + 本版本失败记录 → legacy(crash-fallback)", () => {
     const r = resolveSurfaces({ env: { ALPHA_SURFACE_HOME: "auto-fallback" }, file: failure("1.0.0"), appVersion: "1.0.0" })
     expect(r.home).toEqual({ mode: "legacy", reason: "crash-fallback" })
+  })
+
+  test("#334 回归:env 强推 session=alpha + 本版本失败记录 → legacy(crash-fallback)", () => {
+    const r = resolveSurfaces({
+      env: { ALPHA_SURFACE_SESSION: "alpha" },
+      file: failure("1.0.0", "session"),
+      appVersion: "1.0.0",
+    })
+    expect(r.session).toEqual({ mode: "legacy", reason: "crash-fallback" })
+  })
+
+  test("#334:硬 alpha 态下旧版本记录仍陈旧忽略 → alpha(env-override)——版本升级即自然恢复", () => {
+    const r = resolveSurfaces({
+      env: { ALPHA_SURFACE_SESSION: "alpha" },
+      file: failure("0.9.0", "session"),
+      appVersion: "1.0.0",
+    })
+    expect(r.session).toEqual({ mode: "alpha", reason: "env-override" })
+  })
+
+  test("#334 复现全路径:强推 session=alpha → reportFailure 落盘 → re-resolve 必得 legacy", () => {
+    const env = { ALPHA_SURFACE_SESSION: "alpha" }
+    const before = resolveSurfaces({ env, file: readSurfaceFile(tmp), appVersion: "1.0.0" })
+    expect(before.session).toEqual({ mode: "alpha", reason: "env-override" })
+    recordSurfaceFailure(tmp, "1.0.0", { surface: "session", error: "fatal render" })
+    const after = resolveSurfaces({ env, file: readSurfaceFile(tmp), appVersion: "1.0.0" })
+    expect(after.session).toEqual({ mode: "legacy", reason: "crash-fallback" })
   })
 })
 

@@ -1,6 +1,7 @@
 // SurfaceBoundary — ADR-027/REQ-084 surface 级致命错误边界。与 AlphaBoundary(注入件局部降级)
 // 不同,surface 是整页所有权:render throw = 该 surface 不可用 → 记录 surface id/version、上报
-// main(auto-fallback 据此在下次加载解析为 legacy),用户确认 reload 后回到同 URL 的 legacy 页面。
+// main(下次加载据此解析为 legacy —— 对 alpha 与 auto-fallback 态均生效,#334),用户确认 reload
+// 后回到同 URL 的 legacy 页面。
 // 只接管 render 崩溃;发送、权限、数据一致性错误不经此边界(它们有各自的可见错误态,不得吞)。
 import { ErrorBoundary, type JSX } from "solid-js"
 import { SURFACE_ABI_VERSION, type SurfaceId } from "../../shared/alpha-surfaces"
@@ -20,7 +21,7 @@ export function SurfaceBoundary(props: { surface: SurfaceId; children: JSX.Eleme
             <button
               class="a-boundary-btn"
               onClick={() => {
-                // 上报已落盘(auto-fallback 下次解析为 legacy);同 URL reload 切回旧版页面。
+                // 上报已落盘(下次解析降 legacy,硬 alpha 态同样生效);同 URL reload 切回旧版页面。
                 location.reload()
               }}
             >
