@@ -62,6 +62,9 @@ import { productionCasGcConfig, startCasGcScheduler } from "./ext-cas-gc-schedul
 import { runEnvMigration } from "./alpha-env-migrate"
 import { ensureAlphaLayoutDefault } from "./alpha-defaults"
 import { initialSelfHealState, noteSpawn, planSelfHeal } from "./sidecar-self-heal"
+// #408:session-grant 生命周期接线(会话边界 = sidecar 运行期;栅栏语义见 ext-session-grants.ts)。
+import { sessionGrantRegistry } from "./ext-session-grants"
+import type { SessionGrantsEndedEventWire } from "../shared/ext-session-grant-wire"
 import { initEndpoints } from "./alpha-endpoints"
 import { registerEndpointsIpcHandlers } from "./endpoints-ipc"
 import { registerSurfaceIpc } from "./alpha-surfaces"
@@ -133,7 +136,21 @@ async function killSidecar() {
   if (!server) return
   const current = server
   server = null
+  // #408:蓄意停止 = 会话结束 —— 在任何 await 之前推栅栏(endSession 先撤 active 标记再清 Map),
+  // 此后一切在途 grant 授权的迟到 commit 都被拒,复活窗口闭合(Codex 裁决 Q3 竞态不变量)。
+  endSessionGrants("sidecar-stop")
   await current.stop()
+}
+
+// #408:会话结束的统一收口(蓄意 kill = "sidecar-stop";崩溃 = "sidecar-exit")。幂等:无活跃
+// 会话(endedGen=null,如 respawn 里 killSidecar 已收口后的迟到 exit)不重复发事件。事件 =
+// renderer 把全部会话开关归位的权威信号(respawn 后的 renderer reload 会重查到空集,双保险)。
+function endSessionGrants(reason: SessionGrantsEndedEventWire["reason"]) {
+  const ended = sessionGrantRegistry.endSession()
+  if (ended.endedGen === null) return
+  if (ended.grants.length > 0)
+    writeLog("utility", "session grants ended with the engine session", { reason, count: ended.grants.length })
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("ext-session-grants-ended", { reason })
 }
 
 // B5 crash self-heal(wiring;决策逻辑在 sidecar-self-heal.ts)。gen 区分「本代 child 崩了」与
@@ -153,6 +170,8 @@ function handleSidecarExit(gen: number, code: number) {
   if (quittingApp) return
   if (gen !== sidecarGen) return
   if (!server) return
+  // #408:崩溃 = 会话结束(栅栏先行;respawn 后新会话从空集开始,grant 无从复活)。
+  endSessionGrants("sidecar-exit")
   const plan = planSelfHeal(selfHeal, Date.now())
   selfHeal = plan.state
   if (plan.action === "give-up") {
@@ -703,6 +722,7 @@ const main = Effect.gen(function* () {
       }),
     )
     server = listener
+    sessionGrantRegistry.beginSession(spawnGen) // #408:新会话空集起步(grant 面绑本代)
     yield* Deferred.succeed(serverReady, {
       url,
       username: "opencode",
@@ -769,6 +789,7 @@ const main = Effect.gen(function* () {
         onExit: (code) => handleSidecarExit(spawnGen, code),
       })
       server = listener
+      sessionGrantRegistry.beginSession(spawnGen) // #408:respawn = 新会话,grant 恒从空集开始
       // B5 验收②:未健康不 reload —— reload 进死后端只会白屏(REQ-014 同族),留旧 renderer 状态。
       const healthy = await Promise.race([
         health.wait.then(() => true, () => false),

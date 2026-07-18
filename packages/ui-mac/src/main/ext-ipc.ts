@@ -47,6 +47,8 @@ import { createInventoryQuery } from "./ext-inventory"
 import { decodeSetStateIntent, decodeUninstallIntent, installCatalog, installUncuratedAgentImport, installUncuratedSkillImport, listGenerationsByKey, removeInstallGrants, rollbackGenerationByKey, seedPluginFileProbe, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
 import { fetchCurationBlob } from "./curation-blobs"
 import { makeRecoveryGate } from "./ext-recovery-gate"
+// #408:session-grant 会话级启用(main 内存登记 + 栅栏;生命周期接线在 index.ts)。
+import { grantSessionGrant, revokeSessionGrant, sessionGrantRegistry } from "./ext-session-grants"
 import { adoptProjectLedger } from "./ext-project-adopt"
 import { buildGatedWriteChannels, buildJournalAdminChannels, GATED_WRITE_CHANNELS, JOURNAL_ADMIN_CHANNELS } from "./ext-write-channels"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
@@ -667,6 +669,28 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   // #397 PR-B:浏览/推荐面的公示阻断事实(main 派生已验公示 LKG + 随包基线;只读)——
   // 货架排除消费此面,renderer 不得用静态表自判(Codex 裁决必改④)。
   ipcMain.handle("ext-advisory-active", () => listAdvisoryBlockedFacts(userDataPath))
+  // ── #408:session-grant 三通道(labs 条目的会话级启用;Codex 方案裁决 2026-07-18)──────────
+  // grant = main 内存登记(sidecar 代际栅栏,ext-session-grants.ts;生命周期接线在 index.ts),
+  // **零持久面**:不写账本、不写 alpha.jsonc、不进注入 env —— #397「注入面对 session-grant 恒
+  // disabled」不变量原样。生效 = renderer 在 ok 后对**同 directory** 调引擎 /mcp/:name/connect
+  // (原生热连);引擎 global.disposed 后 renderer 经本通道 re-assert(重校验失败 = 旧 grant 已
+  // 就地撤下,开关回落)。校验复用 plannerDeps(resolveEntry 已验 catalog + 每操作冻结 advisory
+  // 视图),权威序同 enable 闸:kind 面 → advisory → 身份四元组 → curation → 复审过期确认。
+  // 刻意不进 GATED_WRITE_CHANNELS(非账本写通道),但读账本故过 ledgerReady(恢复收敛先行)。
+  ipcMain.handle("ext-session-grant", async (_event: IpcMainInvokeEvent, input: unknown) => {
+    await ledgerReady
+    const deps = plannerDeps()
+    return grantSessionGrant(input, {
+      registry: sessionGrantRegistry,
+      globalRoot: alphaGlobalRoot,
+      resolveEntry: deps.resolveEntry,
+      advisoryGate: deps.advisoryGate,
+    })
+  })
+  ipcMain.handle("ext-session-grant-revoke", (_event: IpcMainInvokeEvent, input: unknown) =>
+    revokeSessionGrant(input, { registry: sessionGrantRegistry }),
+  )
+  ipcMain.handle("ext-session-grants", () => ({ grants: sessionGrantRegistry.list() }))
   // #347(Codex 裁决 d)+ #395:set-state 过 gate;锁由 planner 内部管理(自持 Bundle 锁)——
   // mcp/agent/plugin 在锁内做**持久化 config 投影普通原子写 + 账本翻转**(非事务;disable config 先、
   // enable 账本先,失败回滚,见 setInstallStateByKey),skill 纯账本翻转(投影经引擎注入门)。

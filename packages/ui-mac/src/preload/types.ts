@@ -4,6 +4,9 @@ import type { UpdaterState } from "@opencode-ai/app/updater"
 import type { AlphaEndpoints } from "../shared/alpha-config"
 import type { AuthorizationConfirmationWire, CapabilityDiffWire, TxStageNonAuthorizeWire } from "../shared/ext-capability-authorization"
 import type { JournalAdminEntry, JournalRetireIntentWire, JournalRetireResult } from "../shared/ext-journal-admin"
+import type { SessionGrantResultWire, SessionGrantWire, SessionGrantsEndedEventWire } from "../shared/ext-session-grant-wire"
+// #408:preload/index.ts 只许 import "./types"(ext-security-boundaries AC4③ 装载路径钉)—— wire 类型经此转口。
+export type { SessionGrantsEndedEventWire } from "../shared/ext-session-grant-wire"
 import type { ArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
 import type { ResolvedSurfaces, SurfaceId } from "../shared/alpha-surfaces"
 import type { AutomationEvent, AutomationGlobalState, AutomationTask, AutomationSchedule } from "../shared/automation-types"
@@ -562,6 +565,20 @@ export type ElectronAPI = {
     /** REQ-103(#195)governance 只读查询:逐扩展五维所有权 + availability/activation/health 三态
      *  (main 聚合真源 ext-inventory.ts;纯 JSON)。唯一 governance 通道 —— 无任何写面。 */
     inventoryView: (projectDir?: string) => Promise<ExtInventory>
+    /** #408:labs(session-grant)条目的会话级启用。grant 纯 main 内存(sidecar 代际栅栏),
+     *  零持久面(账本/config/注入 env 全不动)。ok 后调用方须对**同 directory** 调引擎
+     *  POST /mcp/:name/connect 热连;引擎 global.disposed 后须经本通道 re-assert(重校验失败 =
+     *  旧 grant 已被 main 撤下,开关必须回落)。复审过期拒绝码 = expired-review-confirmation-required,
+     *  带 confirmExpiredReview:true 重试。 */
+    sessionGrant: (input: { catalogId: string; directory: string; confirmExpiredReview?: boolean }) => Promise<SessionGrantResultWire>
+    /** #408:撤销(幂等;directory 维度 —— 只撤该 instance 空间的授权,调用方随后对同 directory
+     *  调 /mcp/:name/disconnect)。同条目多 directory 激活 = 多条 grant,经 sessionGrants 枚举可尽撤。 */
+    sessionGrantRevoke: (input: { catalogId: string; directory: string }) => Promise<{ ok: true } | { ok: false; reason: string; code: "session-grant-refused" }>
+    /** #408:当前会话的 grant 全集(会话结束/未启动 = 空;含各 grant 的 directory)。 */
+    sessionGrants: () => Promise<{ grants: SessionGrantWire[] }>
+    /** #408:会话结束事件(蓄意停止 = sidecar-stop / 崩溃 = sidecar-exit)—— 收到即把全部会话
+     *  开关归位;respawn 后的 renderer reload 重查空集 = 双保险。返回退订函数。 */
+    onSessionGrantsEnded: (cb: (e: SessionGrantsEndedEventWire) => void) => () => void
   }
   // alpha account (balance / membership / usage) read from the alpha-platform (B) account-server
   // using the main-held JWT. The renderer gets only the resolved summary, never the token.
