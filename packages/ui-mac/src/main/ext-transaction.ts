@@ -472,13 +472,27 @@ function clearPointerSync(root: string, key: string): void {
 }
 
 export function listGenerations(root: string, key: string): Array<{ genId: string; dir: string; current: boolean }> {
+  try {
+    return listGenerationsStrict(root, key)
+  } catch {
+    return [] // 展示/派生消费面维持宽松语义:枚举不了 = 当前看不到,由各自流程兜底
+  }
+}
+
+/** GC mark 用的严格枚举(#318):布局权威与 `listGenerations` 同一处,但 generations 目录
+ *  「存在而不可枚举」(EACCES/EIO/ENOTDIR 等非 ENOENT)**抛错**而非静默空集 —— 该 key 的可达
+ *  generation 无法证明为空,吞掉即 under-mark → GC 误删仅靠它可达的 blob。合法缺席仅限
+ *  ENOENT(generations 目录未建 —— 失败路径遗留的空壳 key 目录是合法中间态)。非法 key /
+ *  非 generation 命名条目仍自滤(不是 generation 布局的一部分,receipts 不可能指向)。 */
+export function listGenerationsStrict(root: string, key: string): Array<{ genId: string; dir: string; current: boolean }> {
   if (!SAFE_KEY.test(key)) return []
   const { generations } = extensionStorePaths(root, key)
   let names: string[]
   try {
     names = fs.readdirSync(generations).filter((n) => GEN_NAME.test(n))
-  } catch {
-    return []
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return []
+    throw new Error(`generations dir unreadable ${generations}: ${error instanceof Error ? error.message : String(error)}`)
   }
   const current = readCurrentGeneration(root, key)?.genId
   return names

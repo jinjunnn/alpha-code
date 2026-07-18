@@ -172,6 +172,32 @@ describe("pins", () => {
     expect(readCasPinsStrict(base).status).toBe("invalid")
   })
 
+  test("#318 strict schema: v must be exactly 1 and pins must be a plain object — drift is invalid, never an empty pin set", () => {
+    const { pinsPath } = casPaths(base)
+    fs.mkdirSync(path.dirname(pinsPath), { recursive: true })
+    const drifted: Array<[string, string]> = [
+      ["版本漂移 v:2", JSON.stringify({ v: 2, pins: {} })],
+      ["缺 v", JSON.stringify({ pins: {} })],
+      ["v 是字符串", JSON.stringify({ v: "1", pins: {} })],
+      ["pins 是数组", JSON.stringify({ v: 1, pins: [] })],
+      ["pins 是 null", JSON.stringify({ v: 1, pins: null })],
+      ["pins 是标量", JSON.stringify({ v: 1, pins: "x" })],
+      ["缺 pins", JSON.stringify({ v: 1 })],
+      ["根是数组", JSON.stringify([])],
+      ["根是标量", JSON.stringify(42)],
+    ]
+    for (const [label, text] of drifted) {
+      fs.writeFileSync(pinsPath, text)
+      const read = readCasPinsStrict(base)
+      expect(read.status, label).toBe("invalid")
+      // 便利读同样抛错 —— 形状漂移绝不能被任何调用面当空集消费
+      expect(() => readCasPins(base), label).toThrow()
+    }
+    // 严格合法形状(v 恰 1 + 普通对象 pins)照常通过 —— 空对象是合法的显式空 pin 集
+    fs.writeFileSync(pinsPath, JSON.stringify({ v: 1, pins: {} }))
+    expect(readCasPinsStrict(base).status).toBe("valid")
+  })
+
   test("pin/unpin refuse to overwrite a corrupt pins ledger (REQ-102 #333)", () => {
     const { pinsPath } = casPaths(base)
     const digest = sha("do not clobber")

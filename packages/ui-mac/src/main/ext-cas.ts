@@ -185,6 +185,14 @@ export type CasPinsRead =
   | { status: "valid"; pins: CasPins["pins"] }
   | { status: "invalid"; reason: string }
 
+/** 判别式解码用的「普通对象」守卫(#318):数组/null/异常原型一律不算 —— pins 账的根与
+ *  `pins` 字段都必须是纯 JSON object,`{v:1,pins:[]}` 这类形状漂移绝不能被当作合法空 pin 集。 */
+const isPlainRecord = (v: unknown): v is Record<string, unknown> => {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return false
+  const proto: unknown = Object.getPrototypeOf(v)
+  return proto === Object.prototype || proto === null
+}
+
 export function readCasPinsStrict(baseRoot: string): CasPinsRead {
   const pinsPath = casPaths(baseRoot).pinsPath
   let text: string
@@ -201,11 +209,16 @@ export function readCasPinsStrict(baseRoot: string): CasPinsRead {
   } catch (error) {
     return { status: "invalid", reason: `pins JSON parse failed: ${error instanceof Error ? error.message : String(error)}` }
   }
-  if (!parsed || typeof parsed !== "object") return { status: "invalid", reason: "pins root is not an object" }
-  const raw = (parsed as { pins?: unknown }).pins
-  if (!raw || typeof raw !== "object") return { status: "invalid", reason: "pins.pins missing or not an object" }
+  // #318 严格判别式:根/`pins` 必须是普通对象、`v` 必须恰为 1。任何形状漂移({v:2,pins:{}}、
+  // 缺 v、{v:1,pins:[]}、pins 非对象)都不是「合法空 pin 集」—— 当空集会让 GC 把受保护 blob
+  // 当垃圾清掉。唯一合法空集来源 = 文件 ENOENT(上方 missing 分支)。
+  if (!isPlainRecord(parsed)) return { status: "invalid", reason: "pins root is not a plain object" }
+  if (parsed.v !== 1)
+    return { status: "invalid", reason: `pins schema v must be exactly 1 — got ${parsed.v === undefined ? "missing" : JSON.stringify(parsed.v)}` }
+  const raw = parsed.pins
+  if (!isPlainRecord(raw)) return { status: "invalid", reason: "pins.pins missing or not a plain object" }
   const pins: CasPins["pins"] = {}
-  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+  for (const [k, v] of Object.entries(raw)) {
     if (!CAS_SHA256_RE.test(k)) return { status: "invalid", reason: `invalid pin digest key: ${k.slice(0, 16)}…` }
     if (!v || typeof v !== "object") return { status: "invalid", reason: `invalid pin entry for ${k.slice(0, 12)}…` }
     const entry = v as { reason?: unknown; pinnedAt?: unknown }
