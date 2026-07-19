@@ -17,7 +17,7 @@ import { createEffect, createSignal, onCleanup, type Accessor } from "solid-js"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import type { ServerInfo } from "../sidebar/use-projects"
 import type { CatalogEntry, InstalledState, McpConfig, McpInstallSpec, RuntimeCheck } from "./catalog-types"
-import type { InstallReceipt, UninstallKeyIntent } from "../../preload/types"
+import type { InstallReceipt, SetStateRefusalCodeWire, UninstallKeyIntent } from "../../preload/types"
 import type { AuthorizationConfirmationWire, CapabilityDiffWire, TxStageNonAuthorizeWire } from "../../shared/ext-capability-authorization"
 
 // Receipt provenance (REQ-018): catalog snapshot version recorded per install → update checks.
@@ -61,7 +61,7 @@ export type ActionResult =
    *  发布失败(本次未注入,重启自愈)—— UI 据此给「重启后生效」级用户提示。 */
   | { ok: true; reason?: string; warning?: string; projectionLag?: string }
   | { ok: false; stage: "authorize"; authorization: CapabilityDiffWire[]; reason?: string }
-  | { ok: false; reason?: string; stage?: TxStageNonAuthorizeWire }
+  | { ok: false; reason?: string; stage?: TxStageNonAuthorizeWire; code?: SetStateRefusalCodeWire }
 
 /** stage="authorize" 拦截守卫:diff 在场才算(引擎契约保证成对出现)。 */
 export function isAuthzRequired(res: ActionResult): res is { ok: false; stage: "authorize"; authorization: CapabilityDiffWire[]; reason?: string } {
@@ -100,7 +100,7 @@ export interface ExtensionsApi {
   uninstall(receipt: InstallReceipt): Promise<ActionResult>
   /** REQ-104 #395:启停(global 收据;project 组只读无开关)。main 侧账本+投影原子翻转;
    *  fs 类翻转后 dispose 引擎使投影生效;mcp 的 live connect 由调用方按需衔接。 */
-  setInstallState(receipt: InstallReceipt, state: "enabled" | "disabled"): Promise<ActionResult>
+  setInstallState(receipt: InstallReceipt, state: "enabled" | "disabled", opts?: { confirmExpiredReview?: boolean }): Promise<ActionResult>
   /** True if this catalog entry is already installed (MCP via SDK truth; others via receipts). */
   isInstalled(entry: CatalogEntry): boolean
   /** which-check the entry's runtime deps; { ok:false, missing } if a binary is absent. */
@@ -481,9 +481,19 @@ export function useExtensions(
   /** REQ-104 #395:启停(仅 global 收据;project 组只读)。main 侧原子翻转(mcp/agent/plugin =
    *  journaled config 事务 + 账本;skill = 账本,投影由引擎侧注入门消费);fs 类随后 dispose 引擎
    *  使投影立即生效;mcp 的 live connect/disconnect 由调用方(hub 开关)按语义衔接。 */
-  async function setInstallState(receipt: InstallReceipt, state: "enabled" | "disabled"): Promise<ActionResult> {
+  async function setInstallState(
+    receipt: InstallReceipt,
+    state: "enabled" | "disabled",
+    opts?: { confirmExpiredReview?: boolean },
+  ): Promise<ActionResult> {
     if (receipt.scope === "project") return { ok: false, reason: "project-scoped records have no enable switch (read-only group)" }
-    const res = await window.api.ext.setInstallState({ type: receipt.type, name: receipt.name, scope: "global", state })
+    const res = await window.api.ext.setInstallState({
+      type: receipt.type,
+      name: receipt.name,
+      scope: "global",
+      state,
+      ...(opts?.confirmExpiredReview ? { confirmExpiredReview: true } : {}),
+    })
     if (!res.ok) return res
     await loadInstalls()
     // Codex r1 Blocker 3:账本已翻(committed),但 fs 类的运行面靠 dispose→惰性重建生效 —— dispose

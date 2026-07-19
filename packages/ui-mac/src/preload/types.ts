@@ -139,7 +139,13 @@ export type UninstallKeyIntent =
   | { type: InstallReceiptType; name: string; scope: "global" }
   | { type: InstallReceiptType; name: string; scope: "project"; projectDir: string }
 /** REQ-104 #395:key-based 启停意图(卸载同信任边界 + 目标态)。 */
-export type SetStateKeyIntent = UninstallKeyIntent & { state: "enabled" | "disabled" }
+export type SetStateKeyIntent = UninstallKeyIntent & {
+  state: "enabled" | "disabled"
+  /** #397:curated 条目复审过期后的 enable 显式确认位(确认对话后重发)。 */
+  confirmExpiredReview?: boolean
+}
+/** #397:enable 闸的机器可判别拒绝码(过期确认 / 会话级拒持久启用 / 审核数据不可核实)。 */
+export type SetStateRefusalCodeWire = "session-grant-persistent-enable" | "expired-review-confirmation-required" | "curation-unverifiable"
 /** REQ-100 #313:generation 历史条目(安全元数据面;eligible = 有可读快照可离线回滚)。 */
 export type SkillGenerationInfo = { genId: string; current: boolean; version?: string; manifestDigest?: string; installedAt?: string; eligible: boolean }
 /** Legacy installs found in the shared XDG config dir, offered for migration to .alpha (REQ-018 T3). */
@@ -496,7 +502,9 @@ export type ElectronAPI = {
      *  (两次写 + 失败补偿,非单事务);mcp/agent 的禁用**权威由 sidecar 注入 OPENCODE_CONFIG_CONTENT
      *  保证**(引擎最后加载 override),alpha.jsonc 投影仅 consistency;plugin 禁用 = 从 alpha.jsonc
      *  plugin[] 移除;skill 纯账本翻转(投影 = 引擎侧按账本注入)。enable 过 advisory 闸(R14)。 */
-    setInstallState: (intent: SetStateKeyIntent) => Promise<{ ok: true; warning?: string } | { ok: false; reason: string }>
+    setInstallState: (intent: SetStateKeyIntent) => Promise<{ ok: true; warning?: string } | { ok: false; reason: string; code?: SetStateRefusalCodeWire }>
+    /** #397 PR-B:浏览/推荐面的公示阻断事实(main 派生已验公示;ids = 拦新激活的条目)。 */
+    advisoryActive: () => Promise<{ ids: string[]; fresh: boolean }>
     /** REQ-100 #313:某 skill 的 generation 历史(current + 保留代)。只透安全元数据,不外泄绝对路径。 */
     listGenerations: (intent: UninstallKeyIntent) => Promise<{ ok: true; generations: SkillGenerationInfo[] } | { ok: false; reason: string }>
     /** REQ-100 #313:两版离线回滚 —— 目标 gen 健康门 + 锁内翻指针 + receipt 修订;任一前置失败零变更。 */

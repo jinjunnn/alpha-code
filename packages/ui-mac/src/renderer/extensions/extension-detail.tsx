@@ -5,7 +5,7 @@
 // 运行时依赖 → 所需密钥 → 操作区. T3 fills the type-specific blocks (tools[]/SKILL.md/hooks…);
 // T4 upgrades 数据边界/依赖 to live which-checks.
 
-import { createMemo, createResource, For, Show, type Accessor, type JSX } from "solid-js"
+import { createMemo, createResource, createSignal, For, Show, type Accessor, type JSX } from "solid-js"
 import { t } from "../i18n"
 import type { CatalogEntry, CloudPipelineSpec, McpInstallSpec, PluginInstallSpec, SkillInstallSpec } from "./catalog-types"
 import type { InstallReceipt, ExtInventory } from "../../preload/types"
@@ -16,6 +16,9 @@ import { ExtGrantedCapRow } from "./ext-authz"
 import { inventoryRowFor, inventoryInstallRow, ownershipRows, trustRows, runtimeSurfaceLabelKey, supportTierLabelKey, type PresentRow } from "./ext-inventory-present"
 import { derivePackFacts, formatPackBytes } from "./ext-pack-facts"
 import { EXCEL_MCP_PIN, officeAdvisoryFor, type OfficeAdvisory } from "../../shared/office-advisories"
+// #397 PR-B:策展呈现(签名摘要真源;curated 整段切换,uncurated 走旧真源,两真源不混排)。
+import { CAPABILITY_LABEL_KEYS, SHELF_CHIP_KEYS, curatedOf, foldDomains, isArchived, isExpired, isSessionGrant } from "./ext-curation-view"
+import type { CurationStatus } from "../../shared/catalog-curation"
 
 /** What the detail page shows: a catalog entry, an engine agent (no catalog identity), or the
  *  injected platform cloud connector (REQ-020 T3 — not a catalog entry, not installable). */
@@ -101,6 +104,10 @@ export function ExtensionDetail(props: {
   onLogin?: () => void
   /** REQ-103(#195):governance 只读真源(逐扩展五维所有权 + 三态);详情页所有权/来源签名段据此渲染。 */
   governance?: Accessor<ExtInventory | undefined>
+  /** #397:策展采信结果(hub 解码一次;fail-closed —— invalid 与未策展同保守面)。 */
+  curationStatus: (id: string) => CurationStatus
+  /** #397:复审期限比较的时钟(hub 每次打开取一次;合同:消费端时钟仅用于此比较)。 */
+  nowIso: Accessor<string>
   /** #395(Codex r9 B3 / r10 minor):启停唯一处理器(hub 持有,与行内开关共用)—— 详情页 MCP 开关据此
    *  走 desired-state/advisory 通道。**必填**(r10:可选 + fallback 直连会让新增 caller 漏传时绕过闸门)。 */
   onToggleState: (args: {
@@ -159,13 +166,93 @@ export function ExtensionDetail(props: {
     (key) => window.api.ext.readBuiltinSkill(key),
   )
 
+  // ── #397:策展采信(整段真源切换的判定;fail-closed —— invalid 走未策展保守面 + 一行上报)──
+  const cst = createMemo<CurationStatus>(() => {
+    const e = entry()
+    return e ? props.curationStatus(e.id) : { kind: "uncurated" }
+  })
+  const curated = () => curatedOf(cst())
+  const archivedNow = () => isArchived(cst())
+  const expiredNow = () => isExpired(cst(), props.nowIso())
+  const sessionGrantNow = () => isSessionGrant(cst())
+  // 组件清单 / 来源快照:进详情页即拉(v6 稿 Q5=A;main 全量采信前置,失败逐行 loud + 重试;
+  // 拉取失败不影响本页其余判定 —— 摘要已内联随 payload 签名)。
+  const [sbomBlob, { refetch: refetchSbom }] = createResource(
+    () => {
+      const e = entry()
+      return e && curated() ? e.id : undefined
+    },
+    (id) => window.api.ext.curationBlob(id, "sbom"),
+  )
+  const [provBlob, { refetch: refetchProv }] = createResource(
+    () => {
+      const e = entry()
+      return e && curated() ? e.id : undefined
+    },
+    (id) => window.api.ext.curationBlob(id, "provenance"),
+  )
+  const sbomComponents = createMemo((): { name: string; version: string }[] => {
+    const r = sbomBlob()
+    if (!r?.ok) return []
+    const comps = (r.data as { components?: unknown[] }).components ?? []
+    return comps
+      .filter((c): c is { name: string; version: string } => !!c && typeof c === "object")
+      .map((c) => ({ name: String(c.name ?? ""), version: String(c.version ?? "") }))
+  })
+  const [sbomOpen, setSbomOpen] = createSignal(false)
+  const provFacts = createMemo((): { locator: string; resolved: string } | null => {
+    const r = provBlob()
+    if (!r?.ok) return null
+    const p = r.data as { source?: { locator?: unknown; resolved?: unknown } }
+    return { locator: String(p.source?.locator ?? ""), resolved: String(p.source?.resolved ?? "") }
+  })
+
+  // #397:所有权段并入评审事实(甄选值 = 审核于日期;支持改读 review.supportTier,替换按来源猜的
+  // 旧口径;上游状态仅异常态出行;复审期限追加行)。uncurated 原样。
+  const detailOwnershipRows = (ownership: Parameters<typeof ownershipRows>[0]): PresentRow[] => {
+    const base = ownershipRows(ownership)
+    const c = curated()
+    if (!c) return base
+    const supportKey =
+      c.review.supportTier === "full"
+        ? ("alpha.ext.supportFull" as const)
+        : c.review.supportTier === "best-effort"
+          ? ("alpha.ext.supportBestEffort" as const)
+          : c.review.supportTier === "community"
+            ? ("alpha.ext.supportCommunity" as const)
+            : ("alpha.ext.supportNone" as const)
+    const out: PresentRow[] = []
+    for (const r of base) {
+      if (r.labelKey === "alpha.ext.ownCurated") {
+        out.push({ labelKey: "alpha.ext.ownCurated", value: t("alpha.ext.ownCuratedReviewed", { date: c.review.reviewedAt.slice(0, 10) }) })
+        if (c.review.upstreamStatus === "archived") out.push({ labelKey: "alpha.ext.ownUpstream", valueKeys: ["alpha.ext.upstreamArchived"] })
+        else if (c.review.upstreamStatus === "unmaintained")
+          out.push({ labelKey: "alpha.ext.ownUpstream", valueKeys: ["alpha.ext.upstreamUnmaintained"] })
+      } else if (r.labelKey === "alpha.ext.ownSupport") {
+        out.push({ labelKey: "alpha.ext.ownSupport", valueKeys: [supportKey] })
+      } else {
+        out.push(r)
+      }
+    }
+    out.push({ labelKey: "alpha.ext.ownReviewBefore", value: t("alpha.ext.reviewValidUntil", { date: c.review.reviewBefore.slice(0, 10) }) })
+    return out
+  }
+
   // REQ-019 T4:进详情页即实时 which 检测运行时依赖(复用 ext.checkRuntime),不再等点「添加」
   // 才发现缺依赖;缺失的给安装指引。source 串上 entry id,切换条目即重测。
+  // #397:curated 条目的依赖供集改读甄选摘要(需要什么 = 签名真源;有没有 = 本地 which 实测)。
+  const runtimeDepList = createMemo((): string[] => {
+    const e = entry()
+    if (!e) return []
+    const c = curated()
+    if (c) return c.summaries.runtimeDependencies
+    return mcpSpec(e)?.runtimeDep ?? []
+  })
   const [depCheck] = createResource(
     () => {
       const e = entry()
-      const deps = e && mcpSpec(e)?.runtimeDep
-      return deps?.length ? { id: e!.id, deps } : undefined
+      const deps = runtimeDepList()
+      return e && deps.length ? { id: e.id, deps } : undefined
     },
     async (src) => {
       const results: { dep: string; ok: boolean }[] = []
@@ -272,16 +359,30 @@ export function ExtensionDetail(props: {
         <div class="alpha-ext-dhead-body">
           <div class="alpha-ext-dhead-t">
             <h2>{header().title}</h2>
+            {/* #397:分级 chip(四色货架,与列表同词) + 归档/过期事实 chip */}
+            <Show when={curated()}>
+              {(c) => (
+                <span class="alpha-ext-chip" data-shelf={c().tier}>
+                  {t(SHELF_CHIP_KEYS[c().tier] as never)}
+                </span>
+              )}
+            </Show>
             <Show when={header().source}>
               <span class="alpha-ext-chip" data-source={header().source}>
                 {sourceLabel(header().source!)}
               </span>
             </Show>
             <span class="alpha-ext-type-pill">{typeLabel(header().type as CatalogEntry["type"])}</span>
+            <Show when={archivedNow()}>
+              <span class="alpha-ext-verify-chip" data-archived="">{t("alpha.ext.shelfArchivedChip")}</span>
+            </Show>
+            <Show when={expiredNow()}>
+              <span class="alpha-ext-verify-chip" data-archived="">{t("alpha.ext.reviewExpiredChip")}</span>
+            </Show>
             <Show when={entry() && verifyText(entry()!)}>
               <span class="alpha-ext-verify-chip">{t("alpha.ext.verifyPending")}</span>
             </Show>
-            <Show when={entry() && advisoryOf(entry()!)}>
+            <Show when={!archivedNow() && entry() && advisoryOf(entry()!)}>
               <span class="alpha-ext-verify-chip" data-archived="">{t("alpha.ext.advArchivedUnsupported")}</span>
             </Show>
           </div>
@@ -309,23 +410,35 @@ export function ExtensionDetail(props: {
             {(e) => (
               <>
                 <Show when={!installed()}>
-                  <button
-                    class="alpha-ext-add"
-                    data-variant="primary"
-                    data-size="lg"
-                    disabled={props.busy() === e().id || (e().type === "cloud" && !cloudReady())}
-                    onClick={() => props.onInstall(e())}
+                  {/* #397:归档 = 禁新安装(main 闸已拒;此处如实置灰给原因) */}
+                  <Show
+                    when={!archivedNow()}
+                    fallback={
+                      <button class="alpha-ext-add" data-size="lg" disabled title={t("alpha.ext.archivedNoInstallHint")}>
+                        {t("alpha.ext.archivedNoInstall")}
+                      </button>
+                    }
                   >
-                    {props.busy() === e().id
-                      ? t("alpha.ext.adding")
-                      : e().type === "plugin"
-                        ? t("alpha.ext.installPluginBtn")
-                        : e().type === "cloud"
-                          ? t("alpha.ext.enableCloud")
-                          : t("alpha.ext.add")}
-                  </button>
+                    <button
+                      class="alpha-ext-add"
+                      data-variant="primary"
+                      data-size="lg"
+                      disabled={props.busy() === e().id || (e().type === "cloud" && !cloudReady())}
+                      onClick={() => props.onInstall(e())}
+                    >
+                      {props.busy() === e().id
+                        ? t("alpha.ext.adding")
+                        : e().type === "plugin"
+                          ? t("alpha.ext.installPluginBtn")
+                          : e().type === "cloud"
+                            ? t("alpha.ext.enableCloud")
+                            : t("alpha.ext.add")}
+                    </button>
+                  </Show>
                 </Show>
-                <Show when={e().type === "mcp" && installed()}>
+                {/* r1-2(Major):session-grant 条目详情页同样**不渲染**持久开关(main 闸拒持久启用;
+                    可点后被拒的开关 = 假开关,违反 #408 诚实降级 —— 与已装列表行同一条件)。 */}
+                <Show when={e().type === "mcp" && installed() && !sessionGrantNow()}>
                   {(() => {
                     // #395(Codex r9 B3):启用真源 = governance activation(账本 desiredState 投影);无
                     // governance 行(live-unreceipted 合成收据)按 live 连接态。开关走 hub 的
@@ -370,6 +483,18 @@ export function ExtensionDetail(props: {
       {/* B11:安装失败行内(与卡片错误同源),不裸 toast */}
       <Show when={entry() && props.errorFor?.(entry()!.id)}>
         <p class="alpha-ext-card-err">{props.errorFor!(entry()!.id)}</p>
+      </Show>
+
+      {/* #397:归档 / 复审过期的如实警示(v6 稿;已装不强拆,时钟仅用于过期比较) */}
+      <Show when={archivedNow()}>
+        <div class="alpha-ext-verify-note" data-archived="" role="alert">
+          <p>{t("alpha.ext.archivedDetailWarn")}</p>
+        </div>
+      </Show>
+      <Show when={!archivedNow() && expiredNow()}>
+        <div class="alpha-ext-verify-note" data-archived="" role="alert">
+          <p>{t("alpha.ext.expiredDetailWarn", { date: curated()!.review.reviewBefore.slice(0, 10) })}</p>
+        </div>
       </Show>
 
       {/* ── 简介 ── */}
@@ -788,37 +913,82 @@ export function ExtensionDetail(props: {
         </Show>
       </Section>
 
-      {/* ── 数据边界(T2 基线:remote=目的 host,local=仅本机;REQ-020:云条目/连接器引 ADR-021) ── */}
+      {/* ── 数据边界(T2 基线:remote=目的 host,local=仅本机;REQ-020:云条目/连接器引 ADR-021)
+          #397:curated 整段真源切换 —— 能力面(用户语言 pills,未知 token 原样)+ 域名清单
+          (≤6 全列,>6 折叠);签名摘要是展示真源,不重算替换。uncurated 走旧真源不混排。 ── */}
       <Section title={t("alpha.ext.detailBoundary")}>
-        <p class="alpha-ext-dboundary">
-          <Show
-            when={entry()}
-            fallback={isCloudConnector() ? t("alpha.ext.boundaryCloud") : t("alpha.ext.boundaryLocalOnly")}
-          >
-            {(e) => {
-              const spec = mcpSpec(e())
-              if (spec?.mcpType === "remote") return t("alpha.ext.boundaryRemote", { host: hostOf(spec.url) })
-              // 本地命令型 MCP 不等于「不出网」——进程在本机跑,但可能按其功能访问外部服务
-              // (如 GitHub 连接器访问 github.com)。逐条目的地列举归 T4;这里只做诚实概述。
-              if (spec) return t("alpha.ext.boundaryLocalCmd")
-              if (e().type === "plugin") return t("alpha.ext.boundaryPluginProc")
-              if (e().type === "bundle") return t("alpha.ext.boundaryBundle")
-              if (e().type === "cloud") return t("alpha.ext.boundaryCloud")
-              return t("alpha.ext.boundaryLocalOnly")
-            }}
-          </Show>
-        </p>
+        <Show
+          when={curated()}
+          fallback={
+            <p class="alpha-ext-dboundary">
+              <Show
+                when={entry()}
+                fallback={isCloudConnector() ? t("alpha.ext.boundaryCloud") : t("alpha.ext.boundaryLocalOnly")}
+              >
+                {(e) => {
+                  const spec = mcpSpec(e())
+                  if (spec?.mcpType === "remote") return t("alpha.ext.boundaryRemote", { host: hostOf(spec.url) })
+                  // 本地命令型 MCP 不等于「不出网」——进程在本机跑,但可能按其功能访问外部服务
+                  // (如 GitHub 连接器访问 github.com)。逐条目的地列举归 T4;这里只做诚实概述。
+                  if (spec) return t("alpha.ext.boundaryLocalCmd")
+                  if (e().type === "plugin") return t("alpha.ext.boundaryPluginProc")
+                  if (e().type === "bundle") return t("alpha.ext.boundaryBundle")
+                  if (e().type === "cloud") return t("alpha.ext.boundaryCloud")
+                  return t("alpha.ext.boundaryLocalOnly")
+                }}
+              </Show>
+            </p>
+          }
+        >
+          {(c) => {
+            const domains = () => foldDomains(c().summaries.networkDomains)
+            const [domainsOpen, setDomainsOpen] = createSignal(false)
+            return (
+              <>
+                <Show
+                  when={c().summaries.capabilities.length > 0 || c().summaries.networkDomains.length > 0}
+                  fallback={<p class="alpha-ext-dnote">{t("alpha.ext.boundaryNone")}</p>}
+                >
+                  <Show when={c().summaries.capabilities.length > 0}>
+                    <div class="alpha-ext-dpills">
+                      <For each={c().summaries.capabilities}>
+                        {(cap) => {
+                          const key = CAPABILITY_LABEL_KEYS[cap]
+                          return <span class="alpha-ext-meta">{key ? t(key as never) : <code>{cap}</code>}</span>
+                        }}
+                      </For>
+                    </div>
+                  </Show>
+                  <Show when={c().summaries.networkDomains.length > 0}>
+                    <p class="alpha-ext-dnote">{t("alpha.ext.boundaryDomainsIntro", { count: String(c().summaries.networkDomains.length) })}</p>
+                    <div class="alpha-ext-domlist">
+                      {(domainsOpen() ? c().summaries.networkDomains : domains().shown).join(" · ")}
+                      <Show when={domains().folded && !domainsOpen()}>
+                        {" "}
+                        <button class="alpha-ext-ghostbtn" onClick={() => setDomainsOpen(true)}>
+                          {t("alpha.ext.domainsShowAll", { count: String(domains().total) })}
+                        </button>
+                      </Show>
+                    </div>
+                  </Show>
+                  <p class="alpha-ext-dnote">{t("alpha.ext.boundaryDomainsNote")}</p>
+                </Show>
+              </>
+            )
+          }}
+        </Show>
       </Section>
 
       {/* ── 运行时依赖(T4:进页即实时 which 检测;缺失给安装指引,不等点「添加」才发现) ── */}
       <Show when={entry()}>
         <Section title={t("alpha.ext.detailRuntime")}>
+          {/* #397:curated 供集 = 甄选摘要(需要什么);✓/✗ 仍是本地 which 实测(有没有)。 */}
           <Show
-            when={(mcpSpec(entry()!)?.runtimeDep ?? []).length > 0}
+            when={runtimeDepList().length > 0}
             fallback={<p class="alpha-ext-dnote">{t("alpha.ext.noRuntimeDeps")}</p>}
           >
             <div class="alpha-ext-dpills">
-              <For each={mcpSpec(entry()!)!.runtimeDep}>
+              <For each={runtimeDepList()}>
                 {(dep) => {
                   const state = () => {
                     if (depCheck.loading || !depCheck()) return "checking"
@@ -849,25 +1019,84 @@ export function ExtensionDetail(props: {
           </Show>
         </Section>
 
-        {/* ── 所需密钥 ── */}
+        {/* ── 所需密钥(#397:curated 改读甄选摘要 —— 名称 + 来源标注;永不显示值)── */}
         <Section title={t("alpha.ext.detailSecrets")}>
           <Show
-            when={(mcpSpec(entry()!)?.requiredEnvVars ?? []).length > 0}
-            fallback={<p class="alpha-ext-dnote">{t("alpha.ext.noSecrets")}</p>}
+            when={curated()}
+            fallback={
+              <Show
+                when={(mcpSpec(entry()!)?.requiredEnvVars ?? []).length > 0}
+                fallback={<p class="alpha-ext-dnote">{t("alpha.ext.noSecrets")}</p>}
+              >
+                <div class="alpha-ext-dpills">
+                  <For each={mcpSpec(entry()!)!.requiredEnvVars}>
+                    {(v) => (
+                      <span class="alpha-ext-meta">
+                        <LockIc />
+                        {v}
+                      </span>
+                    )}
+                  </For>
+                </div>
+                <p class="alpha-ext-dnote">{t("alpha.ext.keyHint")}</p>
+              </Show>
+            }
           >
-            <div class="alpha-ext-dpills">
-              <For each={mcpSpec(entry()!)!.requiredEnvVars}>
-                {(v) => (
-                  <span class="alpha-ext-meta">
-                    <LockIc />
-                    {v}
-                  </span>
-                )}
-              </For>
-            </div>
-            <p class="alpha-ext-dnote">{t("alpha.ext.keyHint")}</p>
+            {(c) => {
+              // r1-3(Minor):按来源分组如实标注 —— 合同允许同条目混合 environment/connection,
+              // 整组归为环境变量会把 connection 密钥的来源说错;逐组各配各的说明。
+              const envSecrets = () => c().summaries.requiredSecrets.filter((s) => s.source === "environment")
+              const connSecrets = () => c().summaries.requiredSecrets.filter((s) => s.source === "connection")
+              return (
+                <Show
+                  when={c().summaries.requiredSecrets.length > 0}
+                  fallback={<p class="alpha-ext-dnote">{t("alpha.ext.noSecrets")}</p>}
+                >
+                  <Show when={envSecrets().length > 0}>
+                    <div class="alpha-ext-dpills">
+                      <For each={envSecrets()}>
+                        {(s) => (
+                          <span class="alpha-ext-meta">
+                            <LockIc />
+                            {s.name}
+                          </span>
+                        )}
+                      </For>
+                    </div>
+                    <p class="alpha-ext-dnote">{t("alpha.ext.secretsFromEnvNote")}</p>
+                  </Show>
+                  <Show when={connSecrets().length > 0}>
+                    <div class="alpha-ext-dpills">
+                      <For each={connSecrets()}>
+                        {(s) => (
+                          <span class="alpha-ext-meta">
+                            <LockIc />
+                            {s.name}
+                          </span>
+                        )}
+                      </For>
+                    </div>
+                    <p class="alpha-ext-dnote">{t("alpha.ext.secretsFromConnNote")}</p>
+                  </Show>
+                </Show>
+              )
+            }}
           </Show>
         </Section>
+
+        {/* ── #397:fail-closed 的一行如实上报(仅 invalid 态渲染;无 curation = 正常未分级,零说明)── */}
+        <Show when={cst().kind === "invalid"}>
+          <Section title={t("alpha.ext.gradeFailTitle")}>
+            <p class="alpha-ext-dnote">{t("alpha.ext.gradeFailBody")}</p>
+          </Section>
+        </Show>
+
+        {/* ── #397:实验室条目的「启用方式」(session-grant 语义讲人话;#408 未落地前如实降级)── */}
+        <Show when={sessionGrantNow()}>
+          <Section title={t("alpha.ext.labsHowTitle")}>
+            <p class="alpha-ext-dnote">{t("alpha.ext.labsHowBody")}</p>
+          </Section>
+        </Show>
       </Show>
 
       {/* ── REQ-103(#195)所有权段(AC1:作者与甄选分开陈述,永不塌缩成「Alpha 出品」)──
@@ -877,7 +1106,7 @@ export function ExtensionDetail(props: {
         {(row) => (
           <>
             <Section title={t("alpha.ext.ownTitle")}>
-              <FactRows rows={ownershipRows(row().ownership)} />
+              <FactRows rows={detailOwnershipRows(row().ownership)} />
               <p class="alpha-ext-dnote">{t("alpha.ext.ownNote")}</p>
             </Section>
             {/* ── #392 已授权能力段:#348 授权账(ext-store/<key>/grants.json)的被动查询面。对安装行渲染
@@ -928,6 +1157,90 @@ export function ExtensionDetail(props: {
             </Section>
           </>
         )}
+      </Show>
+
+      {/* ── #397 改动三:「组件与来源」段(置段尾:数据按需拉取、不参与任何判定,合同 §7.3)——
+          逐 blob 独立校验态 + 失败 loud + 重试;绝不整段消失或静默留白。 ── */}
+      <Show when={curated()}>
+        <Section title={t("alpha.ext.sbomTitle")}>
+          <div class="alpha-ext-sbomrow">
+            <span class="alpha-ext-sbomst" data-tone={sbomBlob.loading ? undefined : sbomBlob()?.ok ? "ok" : "err"}>
+              {sbomBlob.loading ? "…" : sbomBlob()?.ok ? "✓" : "!"}
+            </span>
+            <div class="alpha-ext-sbombd">
+              <Show when={!sbomBlob.loading} fallback={<b>{t("alpha.ext.blobLoading")}</b>}>
+                <Show
+                  when={sbomBlob()?.ok}
+                  fallback={
+                    <>
+                      <b>{t("alpha.ext.sbomLoadFail")}</b>
+                      <small>{t("alpha.ext.blobFailNote")}</small>
+                    </>
+                  }
+                >
+                  <b>
+                    {t("alpha.ext.sbomRowComponents")} · {t("alpha.ext.sbomComponentsCount", { count: String(sbomComponents().length) })} ·{" "}
+                    {t("alpha.ext.sbomVerified")}
+                  </b>
+                  <Show when={sbomComponents().length > 0}>
+                    <small>
+                      {(sbomOpen() ? sbomComponents() : sbomComponents().slice(0, 3)).map((c) => `${c.name}@${c.version}`).join(" · ")}
+                    </small>
+                  </Show>
+                </Show>
+              </Show>
+            </div>
+            <Show
+              when={!sbomBlob.loading && sbomBlob()?.ok && sbomComponents().length > 3}
+              fallback={
+                <Show when={!sbomBlob.loading && sbomBlob() && !sbomBlob()!.ok}>
+                  <button class="alpha-ext-ghostbtn" onClick={() => void refetchSbom()}>
+                    {t("alpha.ext.blobRetry")}
+                  </button>
+                </Show>
+              }
+            >
+              <button class="alpha-ext-ghostbtn" onClick={() => setSbomOpen(!sbomOpen())}>
+                {sbomOpen() ? t("alpha.ext.sbomCollapse") : t("alpha.ext.sbomExpand")}
+              </button>
+            </Show>
+          </div>
+          <div class="alpha-ext-sbomrow">
+            <span class="alpha-ext-sbomst" data-tone={provBlob.loading ? undefined : provBlob()?.ok ? "ok" : "err"}>
+              {provBlob.loading ? "…" : provBlob()?.ok ? "✓" : "!"}
+            </span>
+            <div class="alpha-ext-sbombd">
+              <Show when={!provBlob.loading} fallback={<b>{t("alpha.ext.blobLoading")}</b>}>
+                <Show
+                  when={provFacts()}
+                  fallback={
+                    <>
+                      <b>{t("alpha.ext.provLoadFail")}</b>
+                      <small>{t("alpha.ext.blobFailNote")}</small>
+                    </>
+                  }
+                >
+                  {(p) => (
+                    <>
+                      <b>
+                        {t("alpha.ext.provRowTitle")} · {t("alpha.ext.sbomVerified")}
+                      </b>
+                      <small class="alpha-ext-sbommono">
+                        {p().locator} · {p().resolved.length > 24 ? `${p().resolved.slice(0, 24)}…` : p().resolved}
+                      </small>
+                    </>
+                  )}
+                </Show>
+              </Show>
+            </div>
+            <Show when={!provBlob.loading && provBlob() && !provBlob()!.ok}>
+              <button class="alpha-ext-ghostbtn" onClick={() => void refetchProv()}>
+                {t("alpha.ext.blobRetry")}
+              </button>
+            </Show>
+          </div>
+          <p class="alpha-ext-dnote">{t("alpha.ext.sbomNote")}</p>
+        </Section>
       </Show>
 
     </div>

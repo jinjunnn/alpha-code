@@ -40,6 +40,22 @@ import { iconFor, iconForRow, sourceLabel, typeLabel, Svg, SearchIc, LockIc } fr
 import { inventoryInstallRow, healthPresentation } from "./ext-inventory-present"
 import { ExtensionDetail, type DetailTarget } from "./extension-detail"
 import { officeAdvisoryFor } from "../../shared/office-advisories"
+// #397 PR-B:四级货架与策展呈现(纯派生层;解码真源 = shared/catalog-curation,fail-closed)。
+import {
+  SHELF_CHIP_KEYS,
+  SHELF_TITLE_KEYS,
+  buildShelves,
+  curatedOf,
+  curationMapOf,
+  curationOf,
+  downloadPresentation,
+  formatBytesApprox,
+  isArchived,
+  isExpired,
+  isSessionGrant,
+  splitBrowse,
+} from "./ext-curation-view"
+import { curationActivationFacts, type Curation, type CurationStatus } from "../../shared/catalog-curation"
 import "./extension-hub.css"
 
 
@@ -89,8 +105,7 @@ function catLabel(cat: string): string {
   }
 }
 
-// Curated "popular" connectors for the Featured tab.
-const FEATURED_CONNECTORS = ["mcp:markitdown", "mcp:playwright", "mcp:fetch", "mcp:github"]
+// #397:推荐页从「代码手挑列表」切换为甄选驱动四货架(v6 已批稿改动一)—— 硬编码推荐退场。
 
 // Numeric-aware version compare for catalog snapshot versions ("2026-07-03.1"): true if a < b.
 function versionLess(a: string, b: string): boolean {
@@ -106,7 +121,21 @@ function versionLess(a: string, b: string): boolean {
 
 // Compact "what this needs" pills shown on a card foot (runtime deps, key requirement, pick-dir,
 // license, restart, item count). lock=true renders a small padlock before the text.
-function metaPills(e: CatalogEntry): { text: string; lock?: boolean }[] {
+// #397:curated 条目的密钥/依赖/体积事实真源切到甄选摘要(签名真源;诚实口径 —— unknown 不估算)。
+function metaPills(e: CatalogEntry, curation?: Curation | null): { text: string; lock?: boolean }[] {
+  if (curation) {
+    const out: { text: string; lock?: boolean }[] = []
+    if (curation.summaries.runtimeDependencies.length)
+      out.push({ text: t("alpha.ext.metaRuntime", { dep: curation.summaries.runtimeDependencies.join(" · ") }) })
+    if (curation.summaries.requiredSecrets.length)
+      out.push({ text: t("alpha.ext.metaKeysCount", { count: String(curation.summaries.requiredSecrets.length) }), lock: true })
+    const dl = downloadPresentation(curation)
+    if (dl.kind === "known") out.push({ text: t("alpha.ext.metaDownloadKnown", { size: formatBytesApprox(dl.bytes) }) })
+    else if (dl.kind === "config-only") out.push({ text: t("alpha.ext.metaDownloadNone") }) // r1-4:connection-only 诚实口径
+    else out.push({ text: t("alpha.ext.metaDownloadUnknown") })
+    if (e.type === "bundle") out.push({ text: t("alpha.ext.metaItems", { count: (e.bundleItems ?? []).length }) })
+    return out
+  }
   const out: { text: string; lock?: boolean }[] = []
   const spec = e.installSpec
   if (e.type === "mcp" && spec?.kind === "mcp") {
@@ -178,6 +207,38 @@ export function ExtensionHub(props: {
   // live-unreceipted/mcp 连接态)。account:has-receipt → setInstallState(过 advisory + 账本 + config)
   // 后再切 live;live-unreceipted → 纯 live connect/disconnect。两路 disconnect/dispose 失败均如实
   // 提示待重载,advisory 拒(R14)走 error toast。
+  // #397:复审过期的 enable 显式确认(main 闸 code=expired-review-confirmation-required 驱动;
+  // 确认后携 confirmExpiredReview 重发 —— 覆盖一切 enable 路径,不只已装行 toggle)。
+  const [expiredConfirm, setExpiredConfirm] = createSignal<{
+    receipt: InstallReceipt
+    type: string
+    name: string
+  } | null>(null)
+  const expiredConfirmDate = createMemo(() => {
+    const pending = expiredConfirm()
+    if (!pending) return ""
+    const c = curatedOf(statusOf(pending.receipt.id))
+    return c ? c.review.reviewBefore.slice(0, 10) : ""
+  })
+  const finishEnable = async (args: { receipt: InstallReceipt; type: string; name: string }, r: ActionResult): Promise<void> => {
+    if (!r.ok) {
+      pushToast({ kind: "error", title: r.reason ?? t("alpha.ext.stateFailed") })
+      return
+    }
+    let mcPending = false
+    if (args.type === "mcp") {
+      const mc = await ext.setMcpConnected(args.name, true)
+      mcPending = mc.reason === "reload-pending"
+    }
+    if (r.reason === "reload-pending" || mcPending) pushToast({ kind: "info", title: t("alpha.ext.statePendingReload") })
+    await refetchGovernance()
+  }
+  const proceedExpiredEnable = async (): Promise<void> => {
+    const pending = expiredConfirm()
+    if (!pending) return
+    setExpiredConfirm(null)
+    await finishEnable(pending, await ext.setInstallState(pending.receipt, "enabled", { confirmExpiredReview: true }))
+  }
   const runStateToggle = async (args: {
     receipt: InstallReceipt
     type: string
@@ -194,6 +255,20 @@ export function ExtensionHub(props: {
     const next = args.currentlyOn ? "disabled" : "enabled"
     const r = await ext.setInstallState(args.receipt, next)
     if (!r.ok) {
+      // #397:main enable 闸的机器码路由(不解析 reason;用户语言文案,零开发术语)。
+      const code = "code" in r ? r.code : undefined
+      if (code === "expired-review-confirmation-required") {
+        setExpiredConfirm({ receipt: args.receipt, type: args.type, name: args.name })
+        return
+      }
+      if (code === "session-grant-persistent-enable") {
+        pushToast({ kind: "info", title: t("alpha.ext.sessionOnlyRefused") })
+        return
+      }
+      if (code === "curation-unverifiable") {
+        pushToast({ kind: "error", title: t("alpha.ext.curationUnverifiable") })
+        return
+      }
       pushToast({ kind: "error", title: r.reason ?? t("alpha.ext.stateFailed") })
       return
     }
@@ -470,11 +545,39 @@ export function ExtensionHub(props: {
   const ownAgents = createMemo(() => ext.store.agents.filter((a) => !a.native))
   const searchAgents = createMemo(() => (searching() ? ownAgents().filter(matchesAgent) : []))
 
+  // ── #397 PR-B:策展视图(解码一次/目录;fail-closed —— invalid 与未策展同呈现)────────────────
+  const curationById = createMemo(() => curationMapOf(catalog()))
+  const statusOf = (id: string): CurationStatus => curationOf(curationById(), id)
+  // 复审期限比较的时钟:每次打开 hub 取一次(合同:消费端时钟仅用于此比较)。
+  const nowIso = createMemo(() => (props.open(), new Date().toISOString()))
+  // 公示阻断事实(main 派生已验公示 LKG + 随包基线;advisory 永远赢,§1)—— 每次打开刷新。
+  // r1-1(Major):**不可判定 ≠ 空集** —— 加载中 / IPC 失败 / 公示不新鲜(fresh=false:冷启动、
+  // 过期 LKG)时,renderer 无法证明条目未被公示阻断,推荐面必须保守(不建货架,诚实降级文案),
+  // 与 main 闸「advisories 不可验即拒激活」同向 fail-closed。fetcher 自吞异常归一为不可判定态。
+  const [advisoryFacts] = createResource(
+    () => (props.open() ? "open" : null),
+    () => window.api.ext.advisoryActive().catch((): { ids: string[]; fresh: boolean } => ({ ids: [], fresh: false })),
+  )
+  const advisoryState = createMemo<"loading" | "unavailable" | "ready">(() => {
+    if (advisoryFacts.loading) return "loading"
+    if (advisoryFacts.error) return "unavailable"
+    const f = advisoryFacts()
+    return f && f.fresh ? "ready" : "unavailable"
+  })
+  const advisoryBlocked = createMemo(() => new Set(advisoryFacts()?.ids ?? []))
+  // 推荐页四货架(固定序 核心→精选→接入→实验室;空货架隐藏;未策展/归档/失养/过期/公示不进)。
+  // 公示事实未就绪 = 零货架(保守;featured JSX 按 advisoryState 给诚实降级态)。
+  const shelves = createMemo(() =>
+    advisoryState() === "ready" ? buildShelves(catalog().entries, curationById(), nowIso(), advisoryBlocked()) : [],
+  )
+
   // Connectors grouped by category (fixed order) — drives the 连接器 tab subheaders.
+  // #397 改动二:分组轴保持 category(货架是治理身份不是导航轴);仅已分级条目进分组,
+  // 未分级(未策展 + fail-closed)收尾组(诚实组头,见 browse JSX)。
   const groupedConnectors = createMemo(() => {
-    const list = byTypeF("mcp")
+    const { graded } = splitBrowse(byTypeF("mcp"), curationById())
     const map = new Map<string, CatalogEntry[]>()
-    for (const e of list) {
+    for (const e of graded) {
       const k = (CAT_ORDER as readonly string[]).includes(e.category) ? e.category : "other"
       const arr = map.get(k) ?? []
       arr.push(e)
@@ -482,11 +585,7 @@ export function ExtensionHub(props: {
     }
     return CAT_ORDER.filter((c) => map.has(c)).map((c) => ({ cat: c as string, items: map.get(c)! }))
   })
-
-  const featuredBundles = createMemo(() => byType("bundle").slice(0, 3))
-  const featuredConnectors = createMemo(() =>
-    FEATURED_CONNECTORS.map((id) => byId(id)).filter((e): e is CatalogEntry => !!e),
-  )
+  const ungradedConnectors = createMemo(() => splitBrowse(byTypeF("mcp"), curationById()).ungraded)
 
   // 已安装 = 全类型统一视图(REQ-018 T6):receipts(skill/agent/plugin/mcp)⨝ SDK 的 MCP 实时
   // 状态(connected/error)。live-but-unrecorded 的 MCP(手动加/迁移前)也并入,合成最小 receipt
@@ -711,7 +810,15 @@ export function ExtensionHub(props: {
     }
     // #395:第三方 fresh 安装默认关 —— 成功文案如实说「已安装但未启用」,不暗示立即可用
     // (分类与 main 落账同一 shared 真源;已装条目的重装/更新不改既有状态,不换文案)。
-    const willBeDisabled = !ext.isInstalled(e) && initialDesiredState({ origin: "catalog", source: e.source, kind: e.type }) === "disabled"
+    // #397:有效 curation 的声明进同一分类器(default-enabled 核心 = 装完即用;session-grant/过期 = 关)。
+    const willBeDisabled =
+      !ext.isInstalled(e) &&
+      initialDesiredState({
+        origin: "catalog",
+        source: e.source,
+        kind: e.type,
+        ...curationActivationFacts(statusOf(e.id), nowIso()),
+      }) === "disabled"
     const addedFlash = (fallbackKey: "alpha.ext.added" | "alpha.ext.addedLive" | "alpha.ext.pluginRestart") =>
       flash(willBeDisabled ? t("alpha.ext.addedDisabled") : t(fallbackKey), "success")
     try {
@@ -1009,6 +1116,10 @@ export function ExtensionHub(props: {
     // 再给安装按钮是双重身份混乱;关掉出厂注入(逃生开关)时名单为空,条目自动回到可安装态。
     const isFactory = createMemo(() => e.type === "skill" && ext.factorySkills().includes(e.name))
     const isBusy = () => busy() === e.id
+    // #397:策展身份(chip = 用户语言四色货架;归档 = 禁新安装,main 闸已拒,此处是呈现层)。
+    const cst = createMemo(() => statusOf(e.id))
+    const curated = () => curatedOf(cst())
+    const archivedNow = () => isArchived(cst())
     return (
       <div class="alpha-ext-card" data-clickable="" onClick={() => openEntryDetail(e)}>
         <div class="alpha-ext-card-top">
@@ -1018,14 +1129,28 @@ export function ExtensionHub(props: {
           <div class="alpha-ext-card-hd">
             <div class="alpha-ext-card-name">
               <b title={e.name}>{e.displayName}</b>
+              {/* #397 改动二:分级 chip(名称行;四色四货架,与推荐页同词;未分级 = 缺席即身份) */}
+              <Show when={curated()}>
+                {(c) => (
+                  <span class="alpha-ext-chip" data-shelf={c().tier}>
+                    {t(SHELF_CHIP_KEYS[c().tier] as never)}
+                  </span>
+                )}
+              </Show>
               <span class="alpha-ext-chip" data-source={e.source}>
                 {sourceLabel(e.source)}
               </span>
+              <Show when={archivedNow()}>
+                <span class="alpha-ext-verify-chip" data-archived="">{t("alpha.ext.shelfArchivedChip")}</span>
+              </Show>
+              <Show when={isExpired(cst(), nowIso())}>
+                <span class="alpha-ext-verify-chip" data-archived="">{t("alpha.ext.reviewExpiredChip")}</span>
+              </Show>
               <Show when={e._verify ?? e.installSpec?._verify}>
                 <span class="alpha-ext-verify-chip">{t("alpha.ext.verifyPending")}</span>
               </Show>
               {/* REQ-105:归档连接器如经远程/缓存 catalog 露出,卡片即带 archived 警示(legacy optional) */}
-              <Show when={officeAdvisoryFor({ id: e.id, name: e.name })}>
+              <Show when={!archivedNow() && officeAdvisoryFor({ id: e.id, name: e.name })}>
                 <span class="alpha-ext-verify-chip" data-archived="">{t("alpha.ext.advArchivedChip")}</span>
               </Show>
             </div>
@@ -1033,7 +1158,7 @@ export function ExtensionHub(props: {
         </div>
         <p class="alpha-ext-card-desc">{e.description}</p>
         <div class="alpha-ext-card-foot">
-          <For each={metaPills(e)}>
+          <For each={metaPills(e, curated())}>
             {(m) => (
               <span class="alpha-ext-meta">
                 <Show when={m.lock}>
@@ -1073,23 +1198,34 @@ export function ExtensionHub(props: {
                 </button>
               }
             >
-              <button
-                class="alpha-ext-add"
-                data-variant="primary"
-                disabled={isBusy()}
-                onClick={(ev) => {
-                  ev.stopPropagation()
-                  stageInstall(e)
-                }}
+              {/* #397:归档 = 禁新安装(合同 §7.2;main 已拒,这里如实置灰给原因);
+                  未分级卡按钮降为 ghost(可装但不促装,安装后默认关闭)。 */}
+              <Show
+                when={!archivedNow()}
+                fallback={
+                  <button class="alpha-ext-add" disabled title={t("alpha.ext.archivedNoInstallHint")} onClick={(ev) => ev.stopPropagation()}>
+                    {t("alpha.ext.archivedNoInstall")}
+                  </button>
+                }
               >
-                {stage()[e.id] === "checking"
-                  ? t("alpha.ext.stageChecking")
-                  : stage()[e.id] === "installing" || isBusy()
-                    ? t("alpha.ext.stageInstalling")
-                    : e.type === "cloud"
-                      ? t("alpha.ext.enableCloud")
-                      : t("alpha.ext.add")}
-              </button>
+                <button
+                  class="alpha-ext-add"
+                  data-variant={cst().kind === "curated" ? "primary" : "ghost"}
+                  disabled={isBusy()}
+                  onClick={(ev) => {
+                    ev.stopPropagation()
+                    stageInstall(e)
+                  }}
+                >
+                  {stage()[e.id] === "checking"
+                    ? t("alpha.ext.stageChecking")
+                    : stage()[e.id] === "installing" || isBusy()
+                      ? t("alpha.ext.stageInstalling")
+                      : e.type === "cloud"
+                        ? t("alpha.ext.enableCloud")
+                        : t("alpha.ext.add")}
+                </button>
+              </Show>
             </Show>
           </Show>
         </div>
@@ -1105,6 +1241,19 @@ export function ExtensionHub(props: {
     <div class="alpha-ext-grid">
       <For each={cp.items}>{(e) => <Card e={e} />}</For>
     </div>
+  )
+
+  // #397 改动二:「未分级」尾组(未策展 + fail-closed 同呈现;组头一行诚实说明 ——
+  // 可安装,走默认关闭的保守规则;无分级 chip = 缺席即身份,不发明「未知级」徽章)。
+  const UngradedGroup = (cp: { items: CatalogEntry[] }) => (
+    <Show when={cp.items.length > 0}>
+      <div class="alpha-ext-grp">
+        {t("alpha.ext.ungradedGroup")}
+        <span class="alpha-ext-grp-ct">{cp.items.length}</span>
+      </div>
+      <p class="alpha-ext-group-note">{t("alpha.ext.ungradedNote")}</p>
+      <Grid items={cp.items} />
+    </Show>
   )
 
   // One engine agent as a card (Agent tab + global search). Card body opens the agent detail.
@@ -1252,14 +1401,19 @@ export function ExtensionHub(props: {
         stateBusy[1](false)
       }
     }
+    // #397:策展身份(labs = session-grant 的诚实降级:不渲染假开关,状态行讲清「按会话开启即将提供」)。
+    const rowCst = createMemo(() => statusOf(row.receipt.id))
+    const rowSessionGrant = () => isSessionGrant(rowCst())
     const activationText = () =>
-      row.type === "mcp"
-        ? row.mcp?.connected
-          ? t("alpha.ext.enabledLive")
-          : t("alpha.ext.disabled")
-        : desiredOn()
-          ? t("alpha.ext.installed")
-          : t("alpha.ext.notEnabledHint") // #395:默认关/手动关的状态行提示
+      rowSessionGrant()
+        ? t("alpha.ext.sessionOnlyRow") // #408 未落地前的如实说明(不许假开关)
+        : row.type === "mcp"
+          ? row.mcp?.connected
+            ? t("alpha.ext.enabledLive")
+            : t("alpha.ext.disabled")
+          : desiredOn()
+            ? t("alpha.ext.installed")
+            : t("alpha.ext.notEnabledHint") // #395:默认关/手动关的状态行提示
     const isUpdatable = () =>
       updatable().some((r) => r.id === row.receipt.id && r.name === row.name && r.scope === row.receipt.scope)
     return (
@@ -1270,9 +1424,21 @@ export function ExtensionHub(props: {
         <div class="alpha-ext-man-body">
           <div class="alpha-ext-man-nm">
             <b title={row.name}>{row.displayName}</b>
+            {/* #397:分级 chip(与浏览页同词;未分级 = 缺席即身份) */}
+            <Show when={curatedOf(rowCst())}>
+              {(c) => (
+                <span class="alpha-ext-chip" data-shelf={c().tier}>
+                  {t(SHELF_CHIP_KEYS[c().tier] as never)}
+                </span>
+              )}
+            </Show>
             <span class="alpha-ext-type-pill">{typeLabel(row.type)}</span>
             <Show when={row.version}>
               <span class="alpha-ext-ver">v{row.version}</span>
+            </Show>
+            {/* #397:归档已装行如实警示(可继续使用或卸载,不强拆;REQ-105 同一诚实原则) */}
+            <Show when={isArchived(rowCst())}>
+              <span class="alpha-ext-verify-chip" data-archived="">{t("alpha.ext.shelfArchivedChip")}</span>
             </Show>
             {/* #395:未启用徽标(账本 disabled 的诚实呈现;开关打开即消失) */}
             <Show when={row.receipt.scope !== "project" && !desiredOn()}>
@@ -1331,7 +1497,8 @@ export function ExtensionHub(props: {
         {/* #395:开关只给**有禁用生效面**的类型 —— mcp/agent(主权注入)、plugin(alpha.jsonc plugin[])、
             skill(允许集)。Codex r12 Major3:command/bundle 无生效面(翻 desiredState 谎报已禁),cloud 无
             本地运行面,一律不出行内开关。project 收据只读不出开关(Codex r1 M2 + #307)。 */}
-        <Show when={(row.type === "mcp" || row.type === "agent" || row.type === "plugin" || row.type === "skill") && row.receipt.scope !== "project"}>
+        {/* #397:session-grant 行不渲染持久开关(main 闸拒持久启用;假开关禁止 —— 状态行已如实说明) */}
+        <Show when={(row.type === "mcp" || row.type === "agent" || row.type === "plugin" || row.type === "skill") && row.receipt.scope !== "project" && !rowSessionGrant()}>
           <button
             class="alpha-ext-sw"
             data-on={(row.type === "mcp" && row.receipt.installedAt === "" ? row.mcp?.connected : desiredOn()) ? "" : undefined}
@@ -1421,6 +1588,8 @@ export function ExtensionHub(props: {
                     onLogin={authState().status !== "logged-in" ? () => void window.api.auth.start() : undefined}
                     governance={governance}
                     onToggleState={runStateToggle}
+                    curationStatus={statusOf}
+                    nowIso={nowIso}
                   />
                 }
               >
@@ -1506,37 +1675,50 @@ export function ExtensionHub(props: {
                       </div>
                     </Show>
 
-                    <SecRow
-                      label={t("alpha.ext.featuredBundles")}
-                      actionLabel={t("alpha.ext.viewAll")}
-                      onAction={() => gotoSection("bundles")}
-                    />
-                    <For each={featuredBundles()}>{(e) => <KitRow e={e} />}</For>
-
-                    <SecRow
-                      label={t("alpha.ext.hotConnectors")}
-                      actionLabel={t("alpha.ext.viewAll")}
-                      onAction={() => gotoSection("connectors")}
-                    />
-                    <Grid items={featuredConnectors()} />
+                    {/* #397 改动一:推荐 = 甄选驱动四货架(固定序 核心→精选→接入→实验室;空货架
+                        隐藏不造数据;未策展/归档/失养/过期/公示不进推荐 —— 它们仍在类型 tab 与搜索)。 */}
+                    <For each={shelves()}>
+                      {(shelf) => (
+                        <>
+                          <div class="alpha-ext-shelf-h">
+                            <b>{t(SHELF_TITLE_KEYS[shelf.tier].title as never)}</b>
+                            <span>{t(SHELF_TITLE_KEYS[shelf.tier].sub as never)}</span>
+                          </div>
+                          <Grid items={shelf.items} />
+                        </>
+                      )}
+                    </For>
+                    {/* r1-1:公示事实三态的诚实呈现 —— 核实中 / 不可核实(保守不推荐,分类页仍可浏览)/
+                        就绪但目录无已审核条目。绝不以空集当「没有公示」上架。 */}
+                    <Show when={advisoryState() === "loading"}>
+                      <EmptyState title={t("alpha.ext.advisoriesChecking")} />
+                    </Show>
+                    <Show when={advisoryState() === "unavailable"}>
+                      <EmptyState title={t("alpha.ext.advisoriesUnavailable")} />
+                    </Show>
+                    <Show when={advisoryState() === "ready" && shelves().length === 0}>
+                      <EmptyState title={t("alpha.ext.noShelves")} />
+                    </Show>
                   </Show>
 
                   {/* ░░ CONNECTORS (grouped by category) ░░ */}
                   <Show when={section() === "connectors"}>
                     <Hero title={t("alpha.ext.tabConnectors")} sub={t("alpha.ext.connectorsSub")} />
                     <Filters />
-                    <Show when={groupedConnectors().length > 0} fallback={<FilteredEmpty />}>
-                    <For each={groupedConnectors()}>
-                      {(g) => (
-                        <>
-                          <div class="alpha-ext-grp">
-                            {catLabel(g.cat)}
-                            <span class="alpha-ext-grp-ct">{g.items.length}</span>
-                          </div>
-                          <Grid items={g.items} />
-                        </>
-                      )}
-                    </For>
+                    <Show when={groupedConnectors().length > 0 || ungradedConnectors().length > 0} fallback={<FilteredEmpty />}>
+                      <For each={groupedConnectors()}>
+                        {(g) => (
+                          <>
+                            <div class="alpha-ext-grp">
+                              {catLabel(g.cat)}
+                              <span class="alpha-ext-grp-ct">{g.items.length}</span>
+                            </div>
+                            <Grid items={g.items} />
+                          </>
+                        )}
+                      </For>
+                      {/* #397:未分级尾组(category 分组只对已分级;未策展/校验失败收尾,诚实组头) */}
+                      <UngradedGroup items={ungradedConnectors()} />
                     </Show>
                   </Show>
 
@@ -1548,8 +1730,11 @@ export function ExtensionHub(props: {
                       when={byTypeF("skill").length > 0}
                       fallback={<FilteredEmpty />}
                     >
-                      <SecRow label={t("alpha.ext.allSkills")} count={byTypeF("skill").length} />
-                      <Grid items={byTypeF("skill")} />
+                      <Show when={splitBrowse(byTypeF("skill"), curationById()).graded.length > 0}>
+                        <SecRow label={t("alpha.ext.allSkills")} count={splitBrowse(byTypeF("skill"), curationById()).graded.length} />
+                        <Grid items={splitBrowse(byTypeF("skill"), curationById()).graded} />
+                      </Show>
+                      <UngradedGroup items={splitBrowse(byTypeF("skill"), curationById()).ungraded} />
                     </Show>
                   </Show>
 
@@ -1562,8 +1747,11 @@ export function ExtensionHub(props: {
                       <span class="alpha-ext-dnote"> {t("alpha.ext.createAgentViaChat")}</span>
                     </div>
                     <Show when={byTypeF("agent").length > 0}>
-                      <SecRow label={t("alpha.ext.installableAgents")} count={byTypeF("agent").length} />
-                      <Grid items={byTypeF("agent")} />
+                      <Show when={splitBrowse(byTypeF("agent"), curationById()).graded.length > 0}>
+                        <SecRow label={t("alpha.ext.installableAgents")} count={splitBrowse(byTypeF("agent"), curationById()).graded.length} />
+                        <Grid items={splitBrowse(byTypeF("agent"), curationById()).graded} />
+                      </Show>
+                      <UngradedGroup items={splitBrowse(byTypeF("agent"), curationById()).ungraded} />
                     </Show>
                     {/* REQ-079:引擎原生内置不再平铺(管理归治理面板);浏览面只剩精选 + 自建 */}
                     <Show when={ownAgents().length > 0}>
@@ -1583,8 +1771,11 @@ export function ExtensionHub(props: {
                     <div class="alpha-ext-callout">{t("alpha.ext.pluginNote")}</div>
                     <Filters />
                     <Show when={byTypeF("plugin").length > 0} fallback={<FilteredEmpty />}>
-                      <SecRow label={t("alpha.ext.allPlugins")} count={byTypeF("plugin").length} />
-                      <Grid items={byTypeF("plugin")} />
+                      <Show when={splitBrowse(byTypeF("plugin"), curationById()).graded.length > 0}>
+                        <SecRow label={t("alpha.ext.allPlugins")} count={splitBrowse(byTypeF("plugin"), curationById()).graded.length} />
+                        <Grid items={splitBrowse(byTypeF("plugin"), curationById()).graded} />
+                      </Show>
+                      <UngradedGroup items={splitBrowse(byTypeF("plugin"), curationById()).ungraded} />
                     </Show>
                   </Show>
 
@@ -1593,8 +1784,11 @@ export function ExtensionHub(props: {
                     <Hero title={t("alpha.ext.tabBundles")} sub={t("alpha.ext.bundlesSub")} />
                     <Filters />
                     <Show when={byTypeF("bundle").length > 0} fallback={<FilteredEmpty />}>
-                      <SecRow label={t("alpha.ext.allBundles")} count={byTypeF("bundle").length} />
-                      <Grid items={byTypeF("bundle")} />
+                      <Show when={splitBrowse(byTypeF("bundle"), curationById()).graded.length > 0}>
+                        <SecRow label={t("alpha.ext.allBundles")} count={splitBrowse(byTypeF("bundle"), curationById()).graded.length} />
+                        <Grid items={splitBrowse(byTypeF("bundle"), curationById()).graded} />
+                      </Show>
+                      <UngradedGroup items={splitBrowse(byTypeF("bundle"), curationById()).ungraded} />
                     </Show>
                   </Show>
 
@@ -1909,6 +2103,27 @@ export function ExtensionHub(props: {
 
         {/* Install confirmation — staged by MCP/bundle 添加 or the plugin detail page. Backdrop/
             Escape cancel (alpha Dialog). Plugin confirms carry an explicit risk line (Q2). */}
+        {/* #397:复审过期的启用显式确认(v6 稿态二;main 闸 code 驱动,确认后携标记重发 ——
+            已装已启用不动,时钟仅用于该比较;取消 = 不启用,零副作用)。 */}
+        <Dialog
+          open={!!expiredConfirm()}
+          onClose={() => setExpiredConfirm(null)}
+          besideSidebar
+          size="sm"
+          title={t("alpha.ext.expiredConfirmTitle")}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setExpiredConfirm(null)}>
+                {t("alpha.ext.cancel")}
+              </Button>
+              <Button variant="primary" onClick={() => void proceedExpiredEnable()}>
+                {t("alpha.ext.expiredConfirmGo")}
+              </Button>
+            </>
+          }
+        >
+          <p class="alpha-ext-dnote">{t("alpha.ext.expiredConfirmBody", { date: expiredConfirmDate() })}</p>
+        </Dialog>
         <Dialog
           open={!!confirming()}
           onClose={closeAuthz}
