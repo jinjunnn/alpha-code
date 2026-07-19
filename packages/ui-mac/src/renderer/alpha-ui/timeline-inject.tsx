@@ -89,52 +89,11 @@ function decorateGroup(trigger: HTMLElement) {
 
 const svg = (inner: string, w = 1.8) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`
-const FOLDER = '<path d="M3 7l2-3h5l2 3h7v11H3z"/>'
-const FILE = '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/>'
 const EXTERNAL = '<path d="M15 3h6v6M10 14L21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/>'
 
-// ① Directory listing → file grid. opencode renders a dir read/list as raw `<Markdown>` inside
-// [data-component=tool-output]: a flat newline list + a "(N entries)" footer (read.ts <entries>).
-// Guarded HARD so glob/grep outputs (which share tool-output but have NO footer) are never touched;
-// non-destructive (hide originals + append) so we don't tear out Solid-owned nodes. Idempotent.
-function decorateDirOutput(out: HTMLElement) {
-  if (out.hasAttribute("data-alpha-dirgrid")) return
-  let entries: string[] = []
-  let total = 0
-  try {
-    const raw = out.textContent || ""
-    const foot = raw.match(/\((?:Showing\s+\d+\s+of\s+)?(\d+)\s+entries/)
-    if (!foot) return // not a directory listing → leave as-is
-    total = parseInt(foot[1], 10)
-    // Prefer the <entries> element (clean, newline-separated). If markdown stripped it, bail safely.
-    const src = out.querySelector("entries")?.textContent || ""
-    if (!src) return
-    entries = src
-      .split("\n")
-      .map((s) => s.trim())
-      .filter((l) => l && !l.startsWith("(")) // drop the "(N entries)" footer line
-    if (!entries.length) return
-  } catch {
-    return
-  }
-  out.setAttribute("data-alpha-dirgrid", "")
-  const grid = document.createElement("div")
-  grid.className = "a-dirgrid"
-  for (const name of entries) {
-    const isDir = name.endsWith("/")
-    const it = document.createElement("span")
-    it.className = "it " + (isDir ? "dir" : "file")
-    it.innerHTML = svg(isDir ? FOLDER : FILE, 1.7)
-    it.appendChild(document.createTextNode(name))
-    grid.appendChild(it)
-  }
-  const count = document.createElement("div")
-  count.className = "a-dircount"
-  count.textContent = `共 ${total} 项`
-  for (const c of Array.from(out.children)) (c as HTMLElement).style.display = "none"
-  out.appendChild(grid)
-  out.appendChild(count)
-}
+// ① dirgrid REMOVED (#252): upstream now folds read/glob/grep/list outputs into a context-group and
+// renders only the title row (no [data-component=tool-output] body), so the directory-grid decoration
+// had nothing to attach to — dead path excised (S48 REQ-088 O3 forensics).
 
 // ② "在面板打开" pill on file-product cards (edit/write/apply_patch) → opens opencode's review
 // panel by clicking its own header toggle ([aria-controls=review-panel]). File-specific focus is
@@ -211,17 +170,14 @@ function decorateBashExit(trigger: HTMLElement) {
   content.appendChild(badge)
 }
 
-// ⑦ Slash-command → compact chip (FUTURE commands only — per the user's call). opencode discards the
-// command name when it expands /init server-side (UserMessage carries no `command` field; the rendered
-// DOM has no marker), so a command can't be recovered after the fact. Instead we CAPTURE it at SEND time
-// — the composer text is still "/init" right before opencode expands it — then fold the very next user
-// message that appears into a chip. Reliable for live commands, zero upstream edits (ADR-016 kept).
+// ⑦ Slash-command → compact chip. LIVE CAPTURE REMOVED (#251): captureSend read the composer at send
+// time, but ComposerTakeover hides the upstream composer and the user's real input lives in
+// AlphaComposer — the capture path could never see a command again (S48 REQ-088 O2: chip count 0→0).
+// What remains is the RENDER half: folds persisted in localStorage (alpha-cmd:<messageID>) keep
+// rendering as chips across reloads / app restarts / reopening the session.
 type SlashType = "command" | "skill" | "mcp"
 type SlashCmd = { name: string; args: string; type: SlashType }
-let pendingCmd: (SlashCmd & { t: number }) | null = null
 const cmdMsgs = new Map<string, SlashCmd>() // messageID → slash invocation (sticks across re-renders)
-const seenMsgs = new Set<string>() // user messages already present (so we never fold history on load)
-const slashTypeMap = new Map<string, SlashType>() // trigger → type, learned live from the / popover
 
 // Persist folds by messageID so a /command STAYS a chip across reloads / app restarts / reopening the
 // session (it was reverting to full text because the map was memory-only). Keyed on the server msg id.
@@ -232,12 +188,6 @@ try {
     if (k?.startsWith(CMD_LS)) cmdMsgs.set(k.slice(CMD_LS.length), JSON.parse(localStorage.getItem(k)!) as SlashCmd)
   }
 } catch {}
-function rememberCmd(id: string, cmd: SlashCmd) {
-  cmdMsgs.set(id, cmd)
-  try {
-    localStorage.setItem(CMD_LS + id, JSON.stringify(cmd))
-  } catch {}
-}
 
 // glyph per slash type (color comes from CSS: command=accent, skill=orange, mcp=purple).
 const CHIP_GLYPH: Record<SlashType, string> = {
@@ -252,35 +202,6 @@ const SLASH_LABEL: Record<SlashType, string> = {
   command: "运行命令 · ",
   skill: "运行技能 · ",
   mcp: "MCP · ",
-}
-
-// learn each slash item's type from the live "/" popover — items carry a 技能/MCP badge; else command.
-function scanSlashMenu() {
-  for (const it of document.querySelectorAll<HTMLElement>("[data-slash-id]")) {
-    const trig = (it.querySelector("span")?.textContent || it.getAttribute("data-slash-id") || "")
-      .replace(/^\//, "")
-      .trim()
-      .toLowerCase()
-    if (!trig) continue
-    let type: SlashType = "command"
-    for (const s of it.querySelectorAll("span")) {
-      const t = (s.textContent || "").trim()
-      if (t === "技能" || /^skill$/i.test(t)) { type = "skill"; break }
-      if (/^mcp$/i.test(t)) { type = "mcp"; break }
-    }
-    slashTypeMap.set(trig, type)
-  }
-}
-
-// read the composer the instant before a send fires (capture phase, before it clears).
-function captureSend() {
-  const composer = document.querySelector("[data-component=session-composer],[data-component=session-new-composer]")
-  const input = composer?.querySelector("[contenteditable], textarea, input") as HTMLInputElement | null
-  const txt = ((input?.value ?? input?.textContent) || "").trim()
-  const m = txt.match(/^\/([a-z0-9][\w-]*)\s*([\s\S]*)$/i)
-  if (!m) return
-  const name = m[1].toLowerCase()
-  pendingCmd = { name, args: (m[2] || "").trim(), type: slashTypeMap.get(name) || "command", t: Date.now() }
 }
 
 // fold a slash invocation into a chip: [type icon] 运行命令 · name + the user's OWN typed prompt (args).
@@ -315,24 +236,10 @@ function foldCommand(um: HTMLElement, cmd: SlashCmd) {
 }
 
 function scanCommands() {
-  scanSlashMenu()
   for (const um of document.querySelectorAll<HTMLElement>("[data-component='user-message']")) {
     const id =
       um.closest("[data-message-id]")?.getAttribute("data-message-id") || um.getAttribute("data-timeline-part-id")
     if (!id) continue
-    if (!seenMsgs.has(id)) {
-      seenMsgs.add(id)
-      // brand-new message right after a slash send → it's that invocation's expansion. Fold it into a
-      // chip showing the command + the user's OWN args; we never capture/show the expanded template.
-      if (pendingCmd && Date.now() - pendingCmd.t < 8000) {
-        const txt = (um.querySelector("[data-slot='user-message-body']")?.textContent || "").trim()
-        if (!txt.startsWith("/" + pendingCmd.name)) {
-          const { name, args, type } = pendingCmd
-          rememberCmd(id, { name, args, type }) // expanded ⇒ a real slash invocation; persist it
-        }
-        pendingCmd = null
-      }
-    }
     const cmd = cmdMsgs.get(id)
     if (cmd) foldCommand(um, cmd)
   }
@@ -380,7 +287,6 @@ export function TimelineInject() {
       decorateBashExit(t)
     }
     for (const g of document.querySelectorAll<HTMLElement>("[data-component='context-tool-group-trigger']")) decorateGroup(g)
-    for (const o of document.querySelectorAll<HTMLElement>("[data-component='tool-output']")) decorateDirOutput(o)
     for (const d of document.querySelectorAll<HTMLElement>("[data-component='session-turn-diffs-group']")) decorateDiffSummary(d)
     decorateTurns()
     scanCommands()
@@ -392,37 +298,18 @@ export function TimelineInject() {
       scan()
     }, 0)
   }
-  // capture a slash command at SEND time (Enter without shift, or a click on the send button), before
-  // opencode clears the composer and expands it. scanCommands() then folds the resulting message.
-  const onKey = (e: KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) captureSend()
-  }
-  const onClick = (e: MouseEvent) => {
-    const t = e.target as HTMLElement
-    const slash = t?.closest?.("[data-slash-id]") // picking a command from the slash popover
-    if (slash) {
-      const name = (slash.querySelector("span")?.textContent || slash.getAttribute("data-slash-id") || "")
-        .replace(/^\//, "")
-        .trim()
-        .toLowerCase()
-      if (name) pendingCmd = { name, args: "", type: slashTypeMap.get(name) || "command", t: Date.now() }
-      return
-    }
-    if (t?.closest?.("[data-action=prompt-submit]")) captureSend()
-  }
+  // #251: the send-time capture listeners (keydown Enter / prompt-submit click → captureSend) are
+  // gone — they read the upstream composer that ComposerTakeover hides, so they could never capture
+  // again. scanCommands() still folds messages recorded in localStorage.
   onMount(() => {
     scan()
     for (const d of [120, 400, 900]) setTimeout(scan, d)
     mo = new MutationObserver(schedule)
     mo.observe(document.body, { childList: true, subtree: true })
-    document.addEventListener("keydown", onKey, true)
-    document.addEventListener("click", onClick, true)
   })
   onCleanup(() => {
     mo?.disconnect()
     if (timer) clearTimeout(timer)
-    document.removeEventListener("keydown", onKey, true)
-    document.removeEventListener("click", onClick, true)
   })
   return null
 }

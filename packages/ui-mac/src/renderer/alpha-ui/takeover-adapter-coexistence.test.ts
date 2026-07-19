@@ -74,11 +74,10 @@ describe("T6 ①挂载通道:takeover 与 session 叶零耦合(挂载方式无�
     }
   })
 
-  test("TimelineInject 的发送捕获走 document 级 capture 事件(与叶挂载位置无关)", () => {
-    expect(timelineInject).toContain(`document.addEventListener("keydown", onKey, true)`)
-    expect(timelineInject).toContain(`document.addEventListener("click", onClick, true)`)
-    expect(timelineInject).toContain(`document.removeEventListener("keydown", onKey, true)`)
-    expect(timelineInject).toContain(`document.removeEventListener("click", onClick, true)`)
+  test("TimelineInject 不再挂发送捕获监听(#251:上游 composer 被 ComposerTakeover 隐藏,捕获路径已死)", () => {
+    expect(timelineInject).not.toContain(`document.addEventListener("keydown"`)
+    expect(timelineInject).not.toContain(`document.addEventListener("click"`)
+    expect(timelineInject).not.toContain("function captureSend")
   })
 
   test("路由假设走版本化 legacy-route-abi,不手搓路由正则(adapter 不改路由形状,ABI 是唯一事实源)", () => {
@@ -182,7 +181,5 @@ describe("T6 ②c TimelineInject 锚点(REQ-012 manifest 命名空间外的补�
     expect(ui("components/tool-error-card.tsx")).toContain(`data-kind="tool-error-card"`)
   })
 
-  test("目录网格的数据格式耦合:上游 read 工具仍输出 <entries> 包裹(格式变 → decorateDirOutput 静默失效)", () => {
-    expect(read(path.join(REPO, "packages/opencode/src/tool/read.ts"))).toContain("`<entries>`")
-  })
+  // 目录网格 <entries> 格式锁已随 #252 摘除(decorateDirOutput 死路径已删,无耦合可锁)。
 })

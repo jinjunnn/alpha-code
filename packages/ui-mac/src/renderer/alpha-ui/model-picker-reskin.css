@@ -4,8 +4,11 @@
  * picker matching the 2026-06-27 design. Scoped via :has([data-alpha-picker]) so tooltips / the
  * provider-select dialog are untouched. */
 
-/* Panel: override the native w-72/h-80 (288×320 fixed) → design 380 wide, content-height capped. */
-[data-popper-positioner]:has([data-alpha-picker]) > * {
+/* Panel: override the native w-72/h-80 (288×320 fixed) → design 380 wide, content-height capped.
+ * #250: keyed on the dialog that DIRECTLY hosts our injected picker — upstream's Kobalte upgrade
+ * removed [data-popper-positioner] from the popover DOM (forensics popperPositioners:0), so any
+ * selector hard-keyed on it silently never matches. */
+[role="dialog"]:has(> [data-alpha-picker]) {
   width: 380px !important;
   max-width: 92vw !important;
   height: auto !important;
@@ -19,7 +22,7 @@
   box-shadow: var(--a-shadow-overlay), var(--a-edge-light) !important;
 }
 /* hide the entire native list (search row + groups) — kept in DOM for programmatic row clicks. */
-[data-popper-positioner]:has([data-alpha-picker]) [data-component="list"] {
+[role="dialog"]:has(> [data-alpha-picker]) [data-component="list"] {
   display: none !important;
 }
 
@@ -760,8 +763,12 @@
  * composer (user-reported 2026-06-30). ModelPickerInject tags the popover's positioner with
  * [data-alpha-home-anchor] and feeds it `--a-pick-tf` = a translate computed from the visible chip's
  * rect. A STYLESHEET !important transform BEATS floating-ui's (non-important) inline transform, so it
- * can't drift back — no rAF fight. In-session has no alpha ModelChip so the tag is never set. */
-[data-popper-positioner][data-alpha-home-anchor] {
+ * can't drift back — no rAF fight. In-session has no alpha ModelChip so the tag is never set.
+ * #250: keyed on [data-alpha-home-anchor] ALONE — upstream's Kobalte upgrade removed
+ * [data-popper-positioner], so the old double-keyed selector never matched (computedTf:none) and the
+ * home anchor silently fell back to upstream's default position. The JS already sets the attribute on
+ * the actual positioned element (dlg.parentElement fallback). */
+[data-alpha-home-anchor] {
   position: fixed !important;
   inset: auto !important;
   left: 0 !important;

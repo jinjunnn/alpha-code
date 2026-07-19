@@ -145,12 +145,12 @@
  *   data-slot/component 钩子,刻意不耦合其 Tailwind 类(见该 partial 头注)。
  *
  * ── alpha 自有(非耦合,列出防混淆)────────────────────────────────────────────────────
- * timeline-inject.tsx 造的元素/标记:.a-tc-ico · .a-openp · .a-dirgrid/.a-dircount ·
- *   .a-cmd-chip · .a-exit · .a-turn-div · [data-alpha-*] 幂等标记;这些是 alpha 自渲染,
- *   不属上游耦合面。inject 侧还读:[data-message-id]/[data-timeline-row]
- *   message-timeline.tsx:1010-1011 · [data-timeline-part-id] message-part.tsx:1131 ·
- *   [data-slash-id] app/components/prompt-input/slash-popover.tsx:104 ·
- *   aria-controls=review-panel(见上)。
+ * timeline-inject.tsx 造的元素/标记:.a-tc-ico · .a-openp · .a-cmd-chip · .a-exit ·
+ *   .a-turn-div · [data-alpha-*] 幂等标记;这些是 alpha 自渲染,不属上游耦合面
+ *   (.a-dirgrid/.a-dircount 已随 #252 摘除)。inject 侧还读:
+ *   [data-message-id]/[data-timeline-row] message-timeline.tsx:1010-1011 ·
+ *   [data-timeline-part-id] message-part.tsx:1131 · aria-controls=review-panel(见上)。
+ *   [data-slash-id](composer-reskin.css 仍耦合)自 #251 起 inject 不再读。
  *
  * 定位约定:CSS 目标是 timeline 专属钩子(never the generic button/icon/markdown ones);
  * 通用组件锚(button/icon/markdown/tabs/select/radio-group)只允许出现在带 timeline 专属
@@ -585,48 +585,8 @@
   height: 12px;
 }
 
-/* ① Directory listing → file grid injected into a `list`/dir-read tool-output (audit #1: bare
- *    grid + bilingual "22 entries 共。"). Folder = accent, file = faint, clean "共 N 项" count. */
-.a-dirgrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 1px 18px;
-  padding: 10px 12px;
-  font-family: var(--a-font-mono);
-  font-size: var(--a-text-sm);
-}
-.a-dirgrid .it {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 2px 0;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--a-text-secondary);
-}
-.a-dirgrid .it svg {
-  width: 13px;
-  height: 13px;
-  flex: none;
-}
-.a-dirgrid .it.dir {
-  color: var(--a-text);
-  font-weight: var(--a-weight-medium);
-}
-.a-dirgrid .it.dir svg {
-  color: var(--a-accent);
-}
-.a-dirgrid .it.file svg {
-  color: var(--a-text-disabled);
-}
-.a-dircount {
-  padding: 6px 12px;
-  border-top: 1px solid var(--a-border-faint);
-  font-size: var(--a-text-2xs);
-  color: var(--a-text-tertiary);
-}
+/* ① dirgrid REMOVED (#252) — upstream folds read/glob/grep/list outputs into a context-group and
+ *    renders only the title row, so the injected directory grid had nothing to attach to. */
 
 /* ⑦ Slash-command chip — a /init send is folded (body hidden) into a compact pill on the right, like a
  *    connector chip, instead of dumping the expanded prompt (audit #10). Element built in inject. */

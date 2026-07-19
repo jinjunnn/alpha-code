@@ -167,9 +167,10 @@
 
 /* ── TL-20 · glob/grep 输出 ──────────────────────────────────────────────────────────────────────
  * glob & grep render their output as <div tool-output[data-scrollable]><Markdown/></div> — IDENTICAL
- * markup to `list`, which timeline-inject converts to a grid (marks it [data-alpha-dirgrid]). So we
- * EXCLUDE list via :not([data-alpha-dirgrid]) and give grep/glob a compact, scrollable mono scan
- * block. FLAG: coloring `file:line` + highlighting the matched keyword needs inject to parse the
+ * markup to `list`. The dirgrid decoration was removed with #252 (upstream folds these outputs into a
+ * context-group title row), so [data-alpha-dirgrid] is never set anymore; the :not() guard is kept
+ * only to preserve this rule's specificity in the cascade.
+ * FLAG: coloring `file:line` + highlighting the matched keyword needs inject to parse the
  * rendered markdown (no per-token DOM hook) — CSS only delivers mono readability + a scroll cap. */
 [data-component="tool-output"][data-scrollable]:not([data-alpha-dirgrid]) {
   max-height: 260px;
