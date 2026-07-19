@@ -203,7 +203,7 @@ describe("授予(fail-closed 校验链)", () => {
     expect(registry.list()).toHaveLength(0)
   })
 
-  test("resolver rejection(r2 Major):已有 grant 的 re-assert 遇 resolveEntry 抛错 → 结构化拒 + 旧 grant 撤下,绝不上抛/存活", async () => {
+  test("resolver rejection(r2 Major):已有 grant 的 re-assert 遇 resolveEntry 抛错 → 结构化拒 + 旧 grant 撤下;reason 为固定安全文案,不泄内部错误(r3)", async () => {
     seedRecord()
     expect((await grantSessionGrant(grantInput(), depsOf())).ok).toBe(true)
     expect(registry.list()).toHaveLength(1)
@@ -211,16 +211,42 @@ describe("授予(fail-closed 校验链)", () => {
       grantInput(),
       depsOf({
         resolveEntry: async () => {
-          throw new Error("catalog refresh I/O failure")
+          throw new Error("EACCES /Users/x/secret-cache https://user:token@channels.internal/catalog")
         },
       }),
     )
     expect(r.ok).toBe(false)
     if (!r.ok) {
       expect(r.code).toBe("session-grant-refused")
-      expect(r.reason).toContain("catalog refresh I/O failure")
+      // r3 门控 Major:原始异常文案(路径/凭据 URL 等内部信息)绝不进 wire reason —— 只落 main 日志
+      expect(r.reason).not.toContain("EACCES")
+      expect(r.reason).not.toContain("secret-cache")
+      expect(r.reason).not.toContain("token")
+      expect(r.reason).toContain("could not be consulted")
     }
     expect(registry.list()).toHaveLength(0) // 重校验不可证 = 同 key 旧 grant 必须撤下(fail closed)
+  })
+
+  test("advisoryGate 抛错(r3 同族):已有 grant 的 re-assert 遇 gate 抛错 → 结构化拒 + 旧 grant 撤下;reason 无内部细节", async () => {
+    seedRecord()
+    expect((await grantSessionGrant(grantInput(), depsOf())).ok).toBe(true)
+    expect(registry.list()).toHaveLength(1)
+    const r = await grantSessionGrant(
+      grantInput(),
+      depsOf({
+        advisoryGate: () => {
+          throw new Error("ENOENT /Users/x/advisories-lkg.json")
+        },
+      }),
+    )
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.code).toBe("session-grant-refused")
+      expect(r.reason).not.toContain("ENOENT")
+      expect(r.reason).not.toContain("advisories-lkg")
+      expect(r.reason).toContain("advisory state could not be determined")
+    }
+    expect(registry.list()).toHaveLength(0) // advisory 状态无从判定 = fail closed,同 key 旧 grant 撤下
   })
 
   test("resolver rejection + advisory 已阻断 → advisory 拒绝优先(reason 是 advisory,非 resolver 失败)", async () => {

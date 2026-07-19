@@ -153,28 +153,39 @@ export async function grantSessionGrant(rawInput: unknown, deps: SessionGrantDep
   // 与 refuse() 的同 key 撤下(IPC 外层无转换):已有 grant(disposed 后 re-assert)在「重校验
   // 不可证」时存活,违反 fail-closed 撤下合同。失败记为结构化不可用态,解释序不变:
   // advisory 拒绝最优先 → resolver 失败 ⇒ 结构化拒绝(走 refuse() 撤 grant)→ 身份/curation/复审。
-  let resolved: { settled: true; verified: VerifiedCatalogEntry | null } | { settled: false; failure: string }
+  // r3 门控 Major 修复:原始异常对象只落 main 日志 —— wire reason 恒为固定安全文案(catalog 刷新
+  // 异常可能携带绝对路径/远端响应/带凭据 URL 等内部信息,ext-ipc 无过滤直达 renderer,不得进 wire)。
+  let resolved: { settled: true; verified: VerifiedCatalogEntry | null } | { settled: false; failure: unknown }
   try {
     resolved = { settled: true, verified: await deps.resolveEntry(catalogId) }
   } catch (error) {
-    resolved = { settled: false, failure: error instanceof Error ? error.message : String(error) }
+    resolved = { settled: false, failure: error }
   }
 
   // advisory 闸(权威序:advisory 拒绝优先于 resolver 失败/curation/复审拒绝;输入与 enable 闸同形)。
-  const adv = deps.advisoryGate({
-    catalogId: record.id,
-    name: record.name,
-    payloadDigest: record.payloadDigest,
-    provenance: "cache",
-  })
+  // r3 同族修复(out-of-round Major 一并闭):gate 自身抛错同样 **settle** —— 上抛会越过 refuse()
+  // 的同 key 撤下(与 r2 同族的 fail-closed 洞)。抛错 = advisory 状态无从判定 ⇒ 结构化拒绝
+  // (固定安全 reason,原始错误只落日志)+ 撤同 key 旧 grant。
+  let adv: ReturnType<AdvisoryGate>
+  try {
+    adv = deps.advisoryGate({
+      catalogId: record.id,
+      name: record.name,
+      payloadDigest: record.payloadDigest,
+      provenance: "cache",
+    })
+  } catch (error) {
+    console.error(`[req104-408] advisory gate threw during session grant for mcp ${record.name} — refusing (fail closed)`, error)
+    return refuse(`mcp ${record.name}: advisory state could not be determined — session grant refused (fail closed)`)
+  }
   if (!adv.allowed) return refuse(`advisory ${adv.advisoryId}: ${adv.reason} — session grant refused (R14)`)
 
   // resolver settle 失败(advisory 已允许)= 策展/身份状态无从证明 → 结构化 fail-closed 拒绝
-  // (refuse() 通道:同 key 旧 grant 一并撤下,绝不静默存活)。
-  if (!resolved.settled)
-    return refuse(
-      `mcp ${record.name}: verified catalog resolution failed (${resolved.failure}) — cannot prove curation state; session grant refused (fail closed)`,
-    )
+  // (refuse() 通道:同 key 旧 grant 一并撤下,绝不静默存活)。reason 固定安全文案,细节在日志。
+  if (!resolved.settled) {
+    console.error(`[req104-408] verified catalog resolution failed during session grant for mcp ${record.name} — refusing (fail closed)`, resolved.failure)
+    return refuse(`mcp ${record.name}: the verified catalog could not be consulted — session grant refused (fail closed)`)
+  }
   const verified = resolved.verified
 
   // 身份四元组(#397 r1-5 同口径):record 无 version = 无法自证身份;已验 entry 解析不到 =
