@@ -144,6 +144,14 @@ export async function grantSessionGrant(rawInput: unknown, deps: SessionGrantDep
       "session-grant-kind-unsupported",
     )
 
+  // r1 Major 修复:**获取顺序 resolveEntry 先行,解释顺序 advisory 仍最优先**。plannerDeps 的
+  // resolveEntry 先刷新并持久化 catalog/advisories,首次 advisory 调用才冻结「刷新后」的视图
+  // (ext-ipc plannerDeps 懒冻结语义)。若先冻结 advisory 再 resolveEntry:旧 advisory LKG 尚
+  // 新鲜且未阻断时,本轮刷新才带回的新 active advisory 会被旧冻结视图放行 —— R14 新激活阻断被
+  // 绕过。故此处只**获取**并保存 resolveEntry 结果(使刷新完成),对 verified===null/身份/
+  // curation/复审的**解释**全部留在 advisory 判定之后(权威序不变)。
+  const verified = await deps.resolveEntry(catalogId)
+
   // advisory 闸(权威序:advisory 拒绝优先于 curation/复审拒绝;输入与 enable 闸同形)。
   const adv = deps.advisoryGate({
     catalogId: record.id,
@@ -157,7 +165,6 @@ export async function grantSessionGrant(rawInput: unknown, deps: SessionGrantDep
   // 下架/离线/security browse-only,一律拒,绝不降格放行。
   if (record.version === undefined)
     return refuse(`mcp ${record.name}: install record has no version — cannot prove identity against the verified catalog (fail closed)`)
-  const verified = await deps.resolveEntry(catalogId)
   if (!verified)
     return refuse(
       `mcp ${record.name}: cannot verify curation — the entry is not resolvable from the verified catalog (delisted/offline/security state); session grant refused (fail closed)`,

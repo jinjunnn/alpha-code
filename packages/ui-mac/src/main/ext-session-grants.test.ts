@@ -180,6 +180,29 @@ describe("授予(fail-closed 校验链)", () => {
     }
   })
 
+  test("获取顺序:resolveEntry 先行刷新 —— 刷新带回的新 active advisory 必须拒(r1 Major:旧 LKG 冻结视图不得绕过 R14 新激活阻断)", async () => {
+    seedRecord()
+    // 模拟 plannerDeps 语义:resolveEntry 刷新并持久化 advisories;advisory gate 冻结「调用时」
+    // 的视图。刷新前 = 未阻断(旧 LKG 尚新鲜),刷新后 = 新 active advisory 阻断。
+    let refreshed = false
+    const gate: AdvisoryGate = () =>
+      refreshed ? { allowed: false, advisoryId: "ADV-R14", reason: "activated by this refresh" } : { allowed: true }
+    const deps = depsOf({
+      advisoryGate: gate,
+      resolveEntry: async () => {
+        refreshed = true // 刷新落盘 → advisory 面翻新
+        return verifiedOf(entryOf())
+      },
+    })
+    const r = await grantSessionGrant(grantInput(), deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.reason).toContain("advisory ADV-R14")
+      expect(r.code).toBe("session-grant-refused")
+    }
+    expect(registry.list()).toHaveLength(0)
+  })
+
   test("已验 entry 解析不到(下架/离线/security)→ 拒,不降格放行", async () => {
     seedRecord()
     const r = await grantSessionGrant(grantInput(), depsOf({ resolveEntry: async () => null }))
