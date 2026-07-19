@@ -3,7 +3,7 @@
 
 import { describe, expect, test } from "bun:test"
 import type { SessionGrantWire } from "../../shared/ext-session-grant-wire"
-import { findSessionGrant, grantsToReassert, sessionRefusalRoute, sessionToggleView } from "./ext-session-toggle"
+import { connectOutcome, findSessionGrant, grantsToReassert, sessionRefusalRoute, sessionToggleView } from "./ext-session-toggle"
 
 const grant = (id: string, directory: string): SessionGrantWire => ({
   id,
@@ -43,6 +43,22 @@ describe("开关状态机(grant 在场 = 开;连接真伪单独如实呈现)", (
     expect(findSessionGrant(grants, "mcp:labs1", DIR_A)?.directory).toBe(DIR_A)
     expect(findSessionGrant(grants, "mcp:labs1", DIR_B)).toBeUndefined()
     expect(findSessionGrant(grants, "mcp:labs1", undefined)).toBeUndefined()
+  })
+})
+
+describe("connect 结果 → 连接真伪(r1 Major:SDK throwOnError:false 的 {error} 返回不抛)", () => {
+  test("HTTP 错误以 {error} 返回(404 配置缺失等)= 未连接 → grant 在场时必须进 on-no-link,绝不记 connected", () => {
+    expect(connectOutcome({ error: { status: 404 } })).toBe(false)
+    const g = grant("mcp:labs1", DIR_A)
+    const link = connectOutcome({ error: { status: 404 } }) ? ("connected" as const) : ("failed" as const)
+    expect(sessionToggleView(g, link)).toEqual({ on: true, textKey: "alpha.ext.sessionOnNoLink", tone: "warn" })
+  })
+
+  test("成功(有结果且无 error)→ true;空结果/缺失 → false(fail-closed)", () => {
+    expect(connectOutcome({ data: true } as { error?: unknown })).toBe(true)
+    expect(connectOutcome({})).toBe(true) // 无 error 键 = SDK 成功臂
+    expect(connectOutcome(null)).toBe(false)
+    expect(connectOutcome(undefined)).toBe(false)
   })
 })
 

@@ -1493,8 +1493,12 @@ export function ExtensionHub(props: {
             <Show when={isArchived(rowCst())}>
               <span class="alpha-ext-verify-chip" data-archived="">{t("alpha.ext.shelfArchivedChip")}</span>
             </Show>
-            {/* #395:未启用徽标(账本 disabled 的诚实呈现;开关打开即消失) */}
-            <Show when={row.receipt.scope !== "project" && !desiredOn()}>
+            {/* #395:未启用徽标(账本 disabled 的诚实呈现;开关打开即消失)。
+                #408 r1 Major:session-grant 行排除 —— 其账本恒 disabled 是设计(持久 enable 非法),
+                desiredOn() 恒 false 会让「已安装 · 未启用」与「本次会话已启用」并存;会话态由
+                状态行 + 琥珀开关承载(v6 稿改动四帧的实验室行本就无此徽标,off 态语义 =
+                「每次会话单独开启」,持久「未启用」措辞在此即误导)。 */}
+            <Show when={row.receipt.scope !== "project" && !desiredOn() && !rowSessionGrant()}>
               <span class="alpha-ext-type-pill" data-off="">
                 {t("alpha.ext.notEnabledChip")}
               </span>

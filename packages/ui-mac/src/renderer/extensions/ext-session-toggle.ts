@@ -51,6 +51,13 @@ export function sessionRefusalRoute(code: SessionGrantRefusalCode | undefined): 
   return { kind: "toast", tone: "error", textKey: "alpha.ext.sessionRefusedToast" }
 }
 
+/** SDK 调用结果 → 连接真伪(r1 Major:SDK v2 client 默认 throwOnError:false —— 404 等 HTTP
+ *  错误以 `{error}` **返回**而不抛,不查即真值会把失败记成 connected,「本次会话已启用」变假。
+ *  error 在场 / 无结果 = 未切换成功)。connect 与 disconnect、首连与 disposed re-assert 同判。 */
+export function connectOutcome(result: { error?: unknown } | null | undefined): boolean {
+  return !!result && !result.error
+}
+
 /** 引擎 global.disposed 后的 re-assert 计划(Codex 裁决:renderer 消费 disposed 信号重走 grant
  *  通道)。事件带 directory 时只重断言该 instance 空间的 grant;缺失则全量(幂等,grant 通道
  *  即重校验入口)。 */

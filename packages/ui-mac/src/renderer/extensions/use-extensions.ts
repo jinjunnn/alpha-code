@@ -20,7 +20,7 @@ import type { CatalogEntry, InstalledState, McpConfig, McpInstallSpec, RuntimeCh
 import type { InstallReceipt, SetStateRefusalCodeWire, UninstallKeyIntent } from "../../preload/types"
 import type { AuthorizationConfirmationWire, CapabilityDiffWire, TxStageNonAuthorizeWire } from "../../shared/ext-capability-authorization"
 import type { SessionGrantRefusalCode, SessionGrantWire } from "../../shared/ext-session-grant-wire"
-import { grantsToReassert, sessionGrantKeyOf } from "./ext-session-toggle"
+import { connectOutcome, grantsToReassert, sessionGrantKeyOf } from "./ext-session-toggle"
 
 // Receipt provenance (REQ-018): catalog snapshot version recorded per install → update checks.
 
@@ -463,14 +463,16 @@ export function useExtensions(
     }
   }
 
-  /** 引擎热连(directory-scoped)。返回连接真伪;失败不抛(调用方如实呈现)。 */
+  /** 引擎热连(directory-scoped)。返回连接真伪;失败不抛(调用方如实呈现)。
+   *  r1 Major:SDK 默认 throwOnError:false —— HTTP 错误(如实例重建后连接器配置缺失的 404)
+   *  以 {error} 返回不进 catch;必须查返回结果再定连接态(connectOutcome),否则 grant 通过而
+   *  连接失败会被记成 connected(假「本次会话已启用」,disposed re-assert 同染)。 */
   async function connectSessionMcp(name: string, directory: string, shouldConnect: boolean): Promise<boolean> {
     const c = client
     if (!c) return false
     try {
-      if (shouldConnect) await c.mcp.connect({ name, directory })
-      else await c.mcp.disconnect({ name, directory })
-      return true
+      const r = shouldConnect ? await c.mcp.connect({ name, directory }) : await c.mcp.disconnect({ name, directory })
+      return connectOutcome(r as { error?: unknown })
     } catch {
       return false
     }
