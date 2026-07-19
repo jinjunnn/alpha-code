@@ -8,6 +8,7 @@ import type {
   WslServersEvent,
 } from "./types"
 import type { UpdaterState } from "@opencode-ai/app/updater"
+import type { SessionGrantsEndedEventWire } from "./types"
 
 const updaterCallbacks = new Set<(state: UpdaterState) => void>()
 let updaterState: UpdaterState | undefined
@@ -198,6 +199,15 @@ const api: ElectronAPI = {
     journalRetire: (intent) => ipcRenderer.invoke("ext-journal-retire", intent),
     // REQ-103(#195):governance 只读查询(五维所有权 + 三态)。只透传 projectDir,零写面。
     inventoryView: (projectDir) => ipcRenderer.invoke("ext-inventory-view", projectDir),
+    // #408:session-grant 三通道 + 会话结束事件(labs 条目会话级启用;grant 纯 main 内存,零持久面)。
+    sessionGrant: (input) => ipcRenderer.invoke("ext-session-grant", input),
+    sessionGrantRevoke: (input) => ipcRenderer.invoke("ext-session-grant-revoke", input),
+    sessionGrants: () => ipcRenderer.invoke("ext-session-grants"),
+    onSessionGrantsEnded: (cb) => {
+      const handler = (_: unknown, e: SessionGrantsEndedEventWire) => cb(e)
+      ipcRenderer.on("ext-session-grants-ended", handler)
+      return () => ipcRenderer.removeListener("ext-session-grants-ended", handler)
+    },
   },
   account: {
     summary: () => ipcRenderer.invoke("account-summary"),
