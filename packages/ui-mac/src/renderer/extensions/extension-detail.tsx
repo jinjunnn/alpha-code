@@ -18,6 +18,7 @@ import { derivePackFacts, formatPackBytes } from "./ext-pack-facts"
 import { EXCEL_MCP_PIN, officeAdvisoryFor, type OfficeAdvisory } from "../../shared/office-advisories"
 // #397 PR-B:策展呈现(签名摘要真源;curated 整段切换,uncurated 走旧真源,两真源不混排)。
 import { CAPABILITY_LABEL_KEYS, SHELF_CHIP_KEYS, curatedOf, foldDomains, isArchived, isExpired, isSessionGrant } from "./ext-curation-view"
+import type { SessionToggleView } from "./ext-session-toggle"
 import type { CurationStatus } from "../../shared/catalog-curation"
 
 /** What the detail page shows: a catalog entry, an engine agent (no catalog identity), or the
@@ -118,6 +119,13 @@ export function ExtensionDetail(props: {
     liveUnreceipted: boolean
     mcpConnected: boolean
   }) => Promise<void>
+  /** #408 PR-C:会话开关(labs mcp)—— 与已装行共用 hub 的状态机与唯一处理器。**必填**同 r10 纪律
+   *  (可选 + 漏传 = 详情页静默丢开关)。sessionAvailable=false(home/new-session 无 instance
+   *  上下文)时开关禁用 + 如实提示。 */
+  sessionViewFor: (catalogId: string) => SessionToggleView
+  sessionAvailable: () => boolean
+  sessionBusyFor: (catalogId: string) => boolean
+  onSessionToggle: (args: { catalogId: string; name: string; on: boolean }) => Promise<void>
 }) {
   const entry = () => (props.target.kind === "entry" ? props.target.entry : undefined)
   const agent = () => (props.target.kind === "agent" ? props.target.agent : undefined)
@@ -436,8 +444,21 @@ export function ExtensionDetail(props: {
                     </button>
                   </Show>
                 </Show>
-                {/* r1-2(Major):session-grant 条目详情页同样**不渲染**持久开关(main 闸拒持久启用;
-                    可点后被拒的开关 = 假开关,违反 #408 诚实降级 —— 与已装列表行同一条件)。 */}
+                {/* r1-2(Major):session-grant 条目详情页不渲染**持久**开关(main 闸拒持久启用)——
+                    #408 PR-C 起改渲染真实**会话开关**(琥珀;与已装行同一状态机与处理器,见下方)。 */}
+                <Show when={e().type === "mcp" && installed() && sessionGrantNow()}>
+                  <button
+                    class="alpha-ext-sw"
+                    data-session=""
+                    data-on={props.sessionViewFor(e().id).on ? "" : undefined}
+                    disabled={props.sessionBusyFor(e().id) || !props.sessionAvailable()}
+                    title={!props.sessionAvailable() ? t("alpha.ext.sessionNeedsProject") : undefined}
+                    aria-label={props.sessionViewFor(e().id).on ? t("alpha.ext.sessionOnRow") : t("alpha.ext.sessionOffRow")}
+                    onClick={() =>
+                      void props.onSessionToggle({ catalogId: e().id, name: e().name, on: !props.sessionViewFor(e().id).on })
+                    }
+                  />
+                </Show>
                 <Show when={e().type === "mcp" && installed() && !sessionGrantNow()}>
                   {(() => {
                     // #395(Codex r9 B3):启用真源 = governance activation(账本 desiredState 投影);无
@@ -1091,10 +1112,14 @@ export function ExtensionDetail(props: {
           </Section>
         </Show>
 
-        {/* ── #397:实验室条目的「启用方式」(session-grant 语义讲人话;#408 未落地前如实降级)── */}
+        {/* ── #397→#408:实验室条目的「启用方式」(session-grant 语义讲人话;会话开关已落地,
+            文案改为现实 —— 已装态还给当前会话状态一行,与开关状态机同真源)── */}
         <Show when={sessionGrantNow()}>
           <Section title={t("alpha.ext.labsHowTitle")}>
             <p class="alpha-ext-dnote">{t("alpha.ext.labsHowBody")}</p>
+            <Show when={entry() && entry()!.type === "mcp" && installed()}>
+              <p class="alpha-ext-dnote">{t(props.sessionViewFor(entry()!.id).textKey)}</p>
+            </Show>
           </Section>
         </Show>
       </Show>

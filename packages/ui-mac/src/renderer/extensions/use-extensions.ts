@@ -19,6 +19,8 @@ import type { ServerInfo } from "../sidebar/use-projects"
 import type { CatalogEntry, InstalledState, McpConfig, McpInstallSpec, RuntimeCheck } from "./catalog-types"
 import type { InstallReceipt, SetStateRefusalCodeWire, UninstallKeyIntent } from "../../preload/types"
 import type { AuthorizationConfirmationWire, CapabilityDiffWire, TxStageNonAuthorizeWire } from "../../shared/ext-capability-authorization"
+import type { SessionGrantRefusalCode, SessionGrantWire } from "../../shared/ext-session-grant-wire"
+import { connectOutcome, grantsToReassert, sessionGrantKeyOf } from "./ext-session-toggle"
 
 // Receipt provenance (REQ-018): catalog snapshot version recorded per install → update checks.
 
@@ -49,9 +51,18 @@ export interface ExtensionsStore {
   projectReceipts: InstallReceipt[]
   /** Agents the engine knows (REQ-018 T7 Agent tab): built-in + alpha-created (via SDK app.agents). */
   agents: HubAgent[]
+  /** #408:当前会话的 session-grant 全集(main 内存真源;会话结束事件即清空)。 */
+  sessionGrants: SessionGrantWire[]
+  /** #408:逐 (catalogId, directory) 的最近连接结果 —— grant ok ≠ 已连接,连接真伪单独如实呈现。 */
+  sessionLink: Record<string, "connected" | "failed">
   ready: boolean
   error: boolean
 }
+
+/** #408:会话级授予的结果(connected = 引擎热连真伪;拒绝码按 #397 纪律机器可判别)。 */
+export type SessionGrantAction =
+  | { ok: true; connected: boolean }
+  | { ok: false; reason?: string; code?: SessionGrantRefusalCode }
 
 /** #348:真判别联合(Codex 裁决 D1 + review minor)—— authorize 分支强制携带 diff,
  *  非 authorize 分支的 stage 类型排除 "authorize":中间包装层折叠丢数据过不了类型检查。 */
@@ -96,6 +107,11 @@ export interface ExtensionsApi {
   setMcpConnected(name: string, shouldConnect: boolean): Promise<ActionResult>
   /** Remove an MCP server from the user config + disconnect. */
   removeMcp(name: string): Promise<ActionResult>
+  /** #408:实验室条目的会话级授予(main 校验 + 内存登记 → 同 directory 引擎热连)。
+   *  connected = 连接真伪(grant ok ≠ 已连接,调用方如实呈现);拒绝按机器码路由。 */
+  grantSession(catalogId: string, directory: string, opts?: { confirmExpiredReview?: boolean }): Promise<SessionGrantAction>
+  /** #408:撤销会话授予(幂等;directory 维度)并断开该 instance 空间的连接(best-effort)。 */
+  revokeSession(catalogId: string, directory: string, name: string): Promise<ActionResult>
   /** Uninstall any installed item by its receipt (fs/plugin/mcp) — files/config/secrets + receipt. */
   uninstall(receipt: InstallReceipt): Promise<ActionResult>
   /** REQ-104 #395:启停(global 收据;project 组只读无开关)。main 侧账本+投影原子翻转;
@@ -231,7 +247,7 @@ export function useExtensions(
   /** REQ-099(#307)当前项目目录(hub 从路由解析);在场时 listInstalls 连带读项目账本。 */
   projectDir?: Accessor<string | undefined>,
 ): ExtensionsApi {
-  const [store, setStore] = createStore<ExtensionsStore>({ mcp: {}, receipts: [], projectReceipts: [], agents: [], ready: false, error: false })
+  const [store, setStore] = createStore<ExtensionsStore>({ mcp: {}, receipts: [], projectReceipts: [], agents: [], sessionGrants: [], sessionLink: {}, ready: false, error: false })
 
   let client: Client | undefined
   let generation = 0
@@ -431,6 +447,81 @@ export function useExtensions(
     }
   }
 
+  // ── #408:session-grant(实验室扩展的会话级启用)────────────────────────────────────────────
+  // grant 真源 = main 内存登记(sidecar 运行期边界,零持久面);生效 = 引擎原生 /mcp/:name/connect
+  // 对**同 directory**(grant 的 enforcement 空间)热连。连接真伪单独记录(sessionLink)——
+  // grant ok ≠ 已连接,不谎报。engine connect 强制 enabled:true 会绕账本,但本通道的权威即
+  // main grant IPC ok(#408 契约;#395 的 activation==="enabled" 前置检查不适用 —— session-grant
+  // 记录的账本 desiredState 恒 disabled 正是设计)。
+
+  async function loadSessionGrants(): Promise<void> {
+    try {
+      const r = await window.api.ext.sessionGrants()
+      setStore("sessionGrants", Array.isArray(r?.grants) ? r.grants : [])
+    } catch {
+      /* IPC 瞬断:保留现值,下一次事件/操作再同步 */
+    }
+  }
+
+  /** 引擎热连(directory-scoped)。返回连接真伪;失败不抛(调用方如实呈现)。
+   *  r1 Major:SDK 默认 throwOnError:false —— HTTP 错误(如实例重建后连接器配置缺失的 404)
+   *  以 {error} 返回不进 catch;必须查返回结果再定连接态(connectOutcome),否则 grant 通过而
+   *  连接失败会被记成 connected(假「本次会话已启用」,disposed re-assert 同染)。 */
+  async function connectSessionMcp(name: string, directory: string, shouldConnect: boolean): Promise<boolean> {
+    const c = client
+    if (!c) return false
+    try {
+      const r = shouldConnect ? await c.mcp.connect({ name, directory }) : await c.mcp.disconnect({ name, directory })
+      return connectOutcome(r as { error?: unknown })
+    } catch {
+      return false
+    }
+  }
+
+  async function grantSession(
+    catalogId: string,
+    directory: string,
+    opts?: { confirmExpiredReview?: boolean },
+  ): Promise<SessionGrantAction> {
+    const r = await window.api.ext.sessionGrant({
+      catalogId,
+      directory,
+      ...(opts?.confirmExpiredReview ? { confirmExpiredReview: true } : {}),
+    })
+    if (!r.ok) {
+      // main 的任何拒绝都会撤下同 key 旧 grant(fail-closed)—— 同步真源,开关随之回落。
+      await loadSessionGrants()
+      return { ok: false, reason: r.reason, code: r.code }
+    }
+    const connected = await connectSessionMcp(r.grant.name, directory, true)
+    setStore("sessionLink", sessionGrantKeyOf(catalogId, directory), connected ? "connected" : "failed")
+    await Promise.all([loadSessionGrants(), loadStatus()])
+    return { ok: true, connected }
+  }
+
+  async function revokeSession(catalogId: string, directory: string, name: string): Promise<ActionResult> {
+    const r = await window.api.ext.sessionGrantRevoke({ catalogId, directory })
+    if (!r.ok) return { ok: false, reason: r.reason }
+    // 撤销后断连(best-effort;grant 已撤,注入/重建面不会复活它 —— 断连失败只影响本实例余温)。
+    await connectSessionMcp(name, directory, false)
+    setStore("sessionLink", sessionGrantKeyOf(catalogId, directory), undefined!)
+    await Promise.all([loadSessionGrants(), loadStatus()])
+    return { ok: true }
+  }
+
+  /** 引擎 global.disposed 后的 re-assert(Codex 裁决):instance 重建会重放注入的 disabled 叶,
+   *  热连的 grant mcp 掉线 —— 重走 grant 通道(main 重校验身份/advisory;失败 = main 已撤 grant,
+   *  开关如实回落)后重连。幂等,可重入。 */
+  async function reassertSessionGrants(disposedDirectory: string | undefined): Promise<void> {
+    const plan = grantsToReassert(store.sessionGrants, disposedDirectory)
+    for (const g of plan) {
+      const r = await window.api.ext.sessionGrant({ catalogId: g.id, directory: g.directory }).catch(() => null)
+      const connected = r?.ok ? await connectSessionMcp(g.name, g.directory, true) : false
+      setStore("sessionLink", sessionGrantKeyOf(g.id, g.directory), r?.ok ? (connected ? "connected" : "failed") : undefined!)
+    }
+    await Promise.all([loadSessionGrants(), loadStatus()])
+  }
+
   async function removeMcp(name: string): Promise<ActionResult> {
     const c = client
     const res = await window.api.ext.removeMcp(name)
@@ -540,6 +631,9 @@ export function useExtensions(
         if (gen !== generation) break
         const type: string = event?.payload?.type ?? ""
         if (type.startsWith("mcp")) void loadStatus()
+        // #408(Codex 裁决):re-assert 消费引擎权威 disposal 信号(覆盖 PATCH /global/config 等一切
+        // 内部 dispose 路径,不猜调用点)。事件携带被释放 instance 的 directory。
+        if (type === "server.instance.disposed") void reassertSessionGrants(event?.directory)
       }
     } catch {
       /* aborted on cleanup / transient; SDK auto-reconnects */
@@ -561,6 +655,7 @@ export function useExtensions(
     void loadStatus()
     void loadInstalls()
     void loadAgents()
+    void loadSessionGrants()
     void subscribe()
     onCleanup(() => {
       if (gen === generation) client = undefined
@@ -577,6 +672,16 @@ export function useExtensions(
     setStore("projectReceipts", [])
     void loadInstalls()
   })
+
+  // #408:会话结束事件(main:sidecar exit/respawn)—— grant 已整体失效,清空本地视图使全部
+  // 会话开关归位(respawn 后 renderer reload 会重查到空集 = 双保险);toast 提示由 hub 订阅同
+  // 一事件自行呈现(多监听允许)。
+  onCleanup(
+    window.api.ext.onSessionGrantsEnded(() => {
+      setStore("sessionGrants", [])
+      setStore("sessionLink", {})
+    }),
+  )
 
   // REQ-036:出厂技能名单(一次取回缓存;失败诚实为空 = 不显「出厂内置」徽标,条目退回可安装态)。
   const [factoryIds, setFactoryIds] = createSignal<string[]>([])
@@ -691,6 +796,8 @@ export function useExtensions(
     addCustomMcp,
     setMcpConnected,
     removeMcp,
+    grantSession,
+    revokeSession,
     uninstall,
     setInstallState,
     isInstalled,
