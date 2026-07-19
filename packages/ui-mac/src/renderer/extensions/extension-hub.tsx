@@ -55,6 +55,8 @@ import {
   isSessionGrant,
   splitBrowse,
 } from "./ext-curation-view"
+// #408 PR-C:会话开关纯派生层(状态机 / 拒绝码路由;真源 = main grant 登记 + 本地连接结果)。
+import { findSessionGrant, sessionGrantKeyOf, sessionRefusalRoute, sessionToggleView } from "./ext-session-toggle"
 import { curationActivationFacts, type Curation, type CurationStatus } from "../../shared/catalog-curation"
 import "./extension-hub.css"
 
@@ -209,15 +211,16 @@ export function ExtensionHub(props: {
   // 提示待重载,advisory 拒(R14)走 error toast。
   // #397:复审过期的 enable 显式确认(main 闸 code=expired-review-confirmation-required 驱动;
   // 确认后携 confirmExpiredReview 重发 —— 覆盖一切 enable 路径,不只已装行 toggle)。
-  const [expiredConfirm, setExpiredConfirm] = createSignal<{
-    receipt: InstallReceipt
-    type: string
-    name: string
-  } | null>(null)
+  // #408:会话启用同属 enable 路径 —— 同一对话框第二形态(mode 判别;确认后携标记重走 grant 通道)。
+  const [expiredConfirm, setExpiredConfirm] = createSignal<
+    | { mode: "persistent"; receipt: InstallReceipt; type: string; name: string }
+    | { mode: "session"; catalogId: string; directory: string }
+    | null
+  >(null)
   const expiredConfirmDate = createMemo(() => {
     const pending = expiredConfirm()
     if (!pending) return ""
-    const c = curatedOf(statusOf(pending.receipt.id))
+    const c = curatedOf(statusOf(pending.mode === "persistent" ? pending.receipt.id : pending.catalogId))
     return c ? c.review.reviewBefore.slice(0, 10) : ""
   })
   const finishEnable = async (args: { receipt: InstallReceipt; type: string; name: string }, r: ActionResult): Promise<void> => {
@@ -237,8 +240,53 @@ export function ExtensionHub(props: {
     const pending = expiredConfirm()
     if (!pending) return
     setExpiredConfirm(null)
+    if (pending.mode === "session") {
+      await finishSessionGrant(pending.catalogId, pending.directory, { confirmExpiredReview: true })
+      return
+    }
     await finishEnable(pending, await ext.setInstallState(pending.receipt, "enabled", { confirmExpiredReview: true }))
   }
+  // ── #408:会话开关(实验室条目;行内与详情页共用一条通道,同 runStateToggle 纪律)────────────
+  // directory = 当前路由的项目目录(引擎 instance 的 enforcement 空间);home/new-session 无
+  // instance 上下文 → 开关禁用 + 如实提示(main 要求绝对路径,fail-closed)。
+  const sessionDirectory = () => projectDir()
+  const [sessionBusy, setSessionBusy] = createSignal<string | null>(null)
+  const sessionViewFor = (catalogId: string) =>
+    sessionToggleView(
+      findSessionGrant(ext.store.sessionGrants, catalogId, sessionDirectory()),
+      sessionDirectory() ? ext.store.sessionLink[sessionGrantKeyOf(catalogId, sessionDirectory()!)] : undefined,
+    )
+  const finishSessionGrant = async (catalogId: string, directory: string, opts?: { confirmExpiredReview?: boolean }): Promise<void> => {
+    const r = await ext.grantSession(catalogId, directory, opts)
+    if (!r.ok) {
+      const route = sessionRefusalRoute(r.code)
+      if (route.kind === "expired-confirm") {
+        setExpiredConfirm({ mode: "session", catalogId, directory })
+        return
+      }
+      pushToast({ kind: route.tone === "info" ? "info" : "error", title: t(route.textKey) })
+      return
+    }
+    // grant ok ≠ 已连接:连接未成功如实提示(状态行同步 warn 态,可关闭后重试)。
+    if (!r.connected) pushToast({ kind: "info", title: t("alpha.ext.sessionOnNoLink") })
+  }
+  const runSessionToggle = async (args: { catalogId: string; name: string; on: boolean }): Promise<void> => {
+    const dir = sessionDirectory()
+    if (!dir) {
+      pushToast({ kind: "info", title: t("alpha.ext.sessionNeedsProject") })
+      return
+    }
+    if (sessionBusy()) return
+    setSessionBusy(args.catalogId)
+    try {
+      if (args.on) await finishSessionGrant(args.catalogId, dir)
+      else await ext.revokeSession(args.catalogId, dir, args.name)
+    } finally {
+      setSessionBusy(null)
+    }
+  }
+  // #408:会话结束事件(sidecar 停止/崩溃)→ 开关已由数据层归位,此处如实提示(v6:行保留、开关归位)。
+  onCleanup(window.api.ext.onSessionGrantsEnded(() => pushToast({ kind: "info", title: t("alpha.ext.sessionEndedToast") })))
   const runStateToggle = async (args: {
     receipt: InstallReceipt
     type: string
@@ -258,7 +306,7 @@ export function ExtensionHub(props: {
       // #397:main enable 闸的机器码路由(不解析 reason;用户语言文案,零开发术语)。
       const code = "code" in r ? r.code : undefined
       if (code === "expired-review-confirmation-required") {
-        setExpiredConfirm({ receipt: args.receipt, type: args.type, name: args.name })
+        setExpiredConfirm({ mode: "persistent", receipt: args.receipt, type: args.type, name: args.name })
         return
       }
       if (code === "session-grant-persistent-enable") {
@@ -1401,12 +1449,17 @@ export function ExtensionHub(props: {
         stateBusy[1](false)
       }
     }
-    // #397:策展身份(labs = session-grant 的诚实降级:不渲染假开关,状态行讲清「按会话开启即将提供」)。
+    // #397 策展身份 → #408 PR-C:labs(session-grant)行的真实会话开关 —— 状态机真源 = main grant
+    // 登记 + 本地连接结果(sessionViewFor);非 mcp 的 labs 行无引擎瞬态激活面,不渲染开关(假开关
+    // 禁止),状态行如实说明。
     const rowCst = createMemo(() => statusOf(row.receipt.id))
     const rowSessionGrant = () => isSessionGrant(rowCst())
+    const rowSessionView = createMemo(() => sessionViewFor(row.receipt.id))
     const activationText = () =>
       rowSessionGrant()
-        ? t("alpha.ext.sessionOnlyRow") // #408 未落地前的如实说明(不许假开关)
+        ? row.type === "mcp"
+          ? t(rowSessionView().textKey)
+          : t("alpha.ext.sessionKindUnsupportedRow")
         : row.type === "mcp"
           ? row.mcp?.connected
             ? t("alpha.ext.enabledLive")
@@ -1462,7 +1515,12 @@ export function ExtensionHub(props: {
                   when={health()}
                   fallback={
                     <>
-                      <span class="alpha-ext-man-dot" data-on={row.type !== "mcp" || row.mcp?.connected ? "" : undefined} />
+                      {/* #408:会话行的点随开关状态机走(ok=已启用已连接 / warn=已开但连接未成功 / muted=关) */}
+                      <span
+                        class="alpha-ext-man-dot"
+                        data-tone={rowSessionGrant() && row.type === "mcp" ? rowSessionView().tone : undefined}
+                        data-on={!rowSessionGrant() && (row.type !== "mcp" || row.mcp?.connected) ? "" : undefined}
+                      />
                       {activationText()}
                     </>
                   }
@@ -1507,6 +1565,23 @@ export function ExtensionHub(props: {
             onClick={(ev) => {
               ev.stopPropagation()
               void toggleState()
+            }}
+          />
+        </Show>
+        {/* #408 PR-C:labs mcp 行的**会话开关**(琥珀;v6 稿改动四)—— 开 = grant + 同 directory 热连,
+            关 = 撤销 + 断连;会话结束自动归位(数据层清空)。home/new-session 无 instance 上下文 →
+            禁用 + 如实提示(main 要求绝对 directory,fail-closed;非 mcp labs 行无开关,见状态行)。 */}
+        <Show when={row.type === "mcp" && row.receipt.scope !== "project" && rowSessionGrant()}>
+          <button
+            class="alpha-ext-sw"
+            data-session=""
+            data-on={rowSessionView().on ? "" : undefined}
+            disabled={sessionBusy() === row.receipt.id || !sessionDirectory()}
+            title={!sessionDirectory() ? t("alpha.ext.sessionNeedsProject") : undefined}
+            aria-label={rowSessionView().on ? t("alpha.ext.sessionOnRow") : t("alpha.ext.sessionOffRow")}
+            onClick={(ev) => {
+              ev.stopPropagation()
+              void runSessionToggle({ catalogId: row.receipt.id, name: row.name, on: !rowSessionView().on })
             }}
           />
         </Show>
@@ -1590,6 +1665,10 @@ export function ExtensionHub(props: {
                     onToggleState={runStateToggle}
                     curationStatus={statusOf}
                     nowIso={nowIso}
+                    sessionViewFor={sessionViewFor}
+                    sessionAvailable={() => !!sessionDirectory()}
+                    sessionBusyFor={(id) => sessionBusy() === id}
+                    onSessionToggle={runSessionToggle}
                   />
                 }
               >

@@ -756,6 +756,15 @@ body[data-alpha-sidebar="open"] .alpha-ext-page {
 .alpha-ext-sw[data-on]::after {
   left: 17px;
 }
+/* #408:实验室会话开关(琥珀,v6 稿改动四 .sw.session)—— 开态区别于持久开关的品牌色;
+   禁用态(home/new-session 无 instance 上下文)沿用按钮通用降透明。 */
+.alpha-ext-sw[data-session][data-on] {
+  background: var(--a-warning);
+}
+.alpha-ext-sw[data-session]:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 
 /* ── Create / import form ───────────────────────────────────────────────────── */
 .alpha-ext-form {
