@@ -9,7 +9,8 @@
     "./updater": "./src/updater.ts",
     "./wsl/types": "./src/wsl/types.ts",
     "./vite": "./vite.js",
-    "./index.css": "./src/index.css"
+    "./index.css": "./src/index.css",
+    "./surface/session": "./src/pages/session.tsx"
   },
   "scripts": {
     "typecheck": "tsgo -b",
