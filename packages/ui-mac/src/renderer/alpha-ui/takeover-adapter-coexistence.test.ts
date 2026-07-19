@@ -157,6 +157,16 @@ describe("T6 ②b ModelPickerInject 锚点(弹层在 body 级 portal,叶挂载�
     expect(modelPickerInject).toContain(`[data-slot="list-item"][data-key=`)
     expect(modelPickerInject).toContain("el?.click()")
   })
+
+  test("接管后初始焦点归 alpha 搜索框(#250 r1:上游 autofocus 的原生搜索框被 reskin 隐藏)", () => {
+    // claimFocus:picker 打开即把焦点移到 alpha 搜索框,带重试(晚到的上游 autofocus 不能赢终局),
+    // 且不抢已在 picker 内的焦点(用户点行 / add-provider 表单)。
+    expect(modelPickerInject).toContain("const claimFocus = ()")
+    expect(modelPickerInject).toContain("searchEl.focus()")
+    expect(modelPickerInject).toContain("setTimeout(claimFocus, d)")
+    expect(modelPickerInject).toContain(`document.querySelector("[data-alpha-picker]")?.contains(active)`)
+    expect(modelPickerInject).toContain("ref={searchEl}")
+  })
 })
 
 describe("T6 ②c TimelineInject 锚点(REQ-012 manifest 命名空间外的补钉)", () => {

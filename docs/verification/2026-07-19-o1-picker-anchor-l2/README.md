@@ -24,6 +24,7 @@ native dialog-select-model)。对照基线 = S48 O1 取证
 | `o1-session-forensics.json` | 修复后取证:`anchored.computedTf = matrix(1,0,0,1,788,-79)`(修复前 none)、`computedPos:fixed`、锚定元素底边 721 = chip 顶 729 − 8、左 788 ≈ chip 左 787.98;`dlgWidth:380`、picker 378×510 充满弹层无裁切 |
 | `o1-nochip-guard.json` | 守卫分支(票面②):隐藏 chip + resize → `data-alpha-home-anchor` 被移除、positioner 回落上游默认定位(`position:relative`、`transform:none`、上游默认矩形);chip 恢复 → 锚定回位 |
 | `o1-home-probe.json` | home DOM 探针:`upstreamComposer/upstreamNewComposer = []`、无 model 类 data-component,唯一模型按钮 = alpha `.a-chip-model` |
+| `o1-focus-claim.json` / `o1-focus-typed.png` | **r1 Major 修复取证(2026-07-19 复验)**:mod+' 开 picker 后直接经 CDP 键入 "glm" —— `activeElement` = alpha 搜索框、值 = "glm"、被隐藏的原生搜索框值为空、行列表实时过滤(glm-5.2 / glm-5-turbo);claimFocus 与 anchorToChip 同节奏重试,晚到的上游 autofocus 不能赢终局,且不抢已在 picker 内的焦点 |
 
 ## 三点判定(票面「必须真机验证」)
 

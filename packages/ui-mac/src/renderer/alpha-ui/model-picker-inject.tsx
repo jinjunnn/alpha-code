@@ -184,6 +184,24 @@ export function ModelPickerInject() {
     onCleanup(() => window.removeEventListener("resize", anchorToChip))
   })
 
+  // ── initial focus (#250 r1 Major) ────────────────────────────────────────────────────────────────
+  // On open, upstream autofocuses ITS native search input (ui/dialog.tsx autofocus) — which our reskin
+  // hides, so typing right after mod+' went into an invisible field. Whenever the picker (re)opens,
+  // move focus to OUR search box, on the same retry schedule as anchorToChip so a late-arriving
+  // upstream autofocus can't win the endgame. Never steals focus that is already inside the alpha
+  // picker (user clicked a row / the add-provider form).
+  let searchEl: HTMLInputElement | undefined
+  const claimFocus = () => {
+    if (!searchEl || !searchEl.isConnected) return
+    const active = document.activeElement
+    if (active && document.querySelector("[data-alpha-picker]")?.contains(active)) return
+    searchEl.focus()
+  }
+  createEffect(() => {
+    if (!panelHost()) return
+    for (const d of [0, 30, 90, 200]) setTimeout(claimFocus, d)
+  })
+
   // ── build rows from catalog + native keys ───────────────────────────────────────────────────────
   const picoFor = (prov: string): { letter: string; color: string } => {
     const cat = catalog()
@@ -310,6 +328,7 @@ export function ModelPickerInject() {
             <div class="a-mp2-search">
               <Search />
               <input
+                ref={searchEl}
                 type="text"
                 placeholder="搜索模型 / 供应商"
                 value={query()}
