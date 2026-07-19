@@ -203,6 +203,46 @@ describe("授予(fail-closed 校验链)", () => {
     expect(registry.list()).toHaveLength(0)
   })
 
+  test("resolver rejection(r2 Major):已有 grant 的 re-assert 遇 resolveEntry 抛错 → 结构化拒 + 旧 grant 撤下,绝不上抛/存活", async () => {
+    seedRecord()
+    expect((await grantSessionGrant(grantInput(), depsOf())).ok).toBe(true)
+    expect(registry.list()).toHaveLength(1)
+    const r = await grantSessionGrant(
+      grantInput(),
+      depsOf({
+        resolveEntry: async () => {
+          throw new Error("catalog refresh I/O failure")
+        },
+      }),
+    )
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.code).toBe("session-grant-refused")
+      expect(r.reason).toContain("catalog refresh I/O failure")
+    }
+    expect(registry.list()).toHaveLength(0) // 重校验不可证 = 同 key 旧 grant 必须撤下(fail closed)
+  })
+
+  test("resolver rejection + advisory 已阻断 → advisory 拒绝优先(reason 是 advisory,非 resolver 失败)", async () => {
+    seedRecord()
+    const blocked: AdvisoryGate = () => ({ allowed: false, advisoryId: "ADV-2", reason: "blocked upstream" })
+    const r = await grantSessionGrant(
+      grantInput(),
+      depsOf({
+        advisoryGate: blocked,
+        resolveEntry: async () => {
+          throw new Error("catalog refresh I/O failure")
+        },
+      }),
+    )
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.reason).toContain("advisory ADV-2")
+      expect(r.reason).not.toContain("catalog refresh I/O failure")
+    }
+    expect(registry.list()).toHaveLength(0)
+  })
+
   test("已验 entry 解析不到(下架/离线/security)→ 拒,不降格放行", async () => {
     seedRecord()
     const r = await grantSessionGrant(grantInput(), depsOf({ resolveEntry: async () => null }))

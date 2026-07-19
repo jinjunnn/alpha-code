@@ -148,11 +148,19 @@ export async function grantSessionGrant(rawInput: unknown, deps: SessionGrantDep
   // resolveEntry 先刷新并持久化 catalog/advisories,首次 advisory 调用才冻结「刷新后」的视图
   // (ext-ipc plannerDeps 懒冻结语义)。若先冻结 advisory 再 resolveEntry:旧 advisory LKG 尚
   // 新鲜且未阻断时,本轮刷新才带回的新 active advisory 会被旧冻结视图放行 —— R14 新激活阻断被
-  // 绕过。故此处只**获取**并保存 resolveEntry 结果(使刷新完成),对 verified===null/身份/
-  // curation/复审的**解释**全部留在 advisory 判定之后(权威序不变)。
-  const verified = await deps.resolveEntry(catalogId)
+  // 绕过。故此处只**获取**并保存 resolveEntry 结果(使刷新完成),一切**解释**留在后面。
+  // r2 Major 修复:resolveEntry 必须 **settle**(rejection 同样捕获)—— 上抛会越过 advisory 解释
+  // 与 refuse() 的同 key 撤下(IPC 外层无转换):已有 grant(disposed 后 re-assert)在「重校验
+  // 不可证」时存活,违反 fail-closed 撤下合同。失败记为结构化不可用态,解释序不变:
+  // advisory 拒绝最优先 → resolver 失败 ⇒ 结构化拒绝(走 refuse() 撤 grant)→ 身份/curation/复审。
+  let resolved: { settled: true; verified: VerifiedCatalogEntry | null } | { settled: false; failure: string }
+  try {
+    resolved = { settled: true, verified: await deps.resolveEntry(catalogId) }
+  } catch (error) {
+    resolved = { settled: false, failure: error instanceof Error ? error.message : String(error) }
+  }
 
-  // advisory 闸(权威序:advisory 拒绝优先于 curation/复审拒绝;输入与 enable 闸同形)。
+  // advisory 闸(权威序:advisory 拒绝优先于 resolver 失败/curation/复审拒绝;输入与 enable 闸同形)。
   const adv = deps.advisoryGate({
     catalogId: record.id,
     name: record.name,
@@ -160,6 +168,14 @@ export async function grantSessionGrant(rawInput: unknown, deps: SessionGrantDep
     provenance: "cache",
   })
   if (!adv.allowed) return refuse(`advisory ${adv.advisoryId}: ${adv.reason} — session grant refused (R14)`)
+
+  // resolver settle 失败(advisory 已允许)= 策展/身份状态无从证明 → 结构化 fail-closed 拒绝
+  // (refuse() 通道:同 key 旧 grant 一并撤下,绝不静默存活)。
+  if (!resolved.settled)
+    return refuse(
+      `mcp ${record.name}: verified catalog resolution failed (${resolved.failure}) — cannot prove curation state; session grant refused (fail closed)`,
+    )
+  const verified = resolved.verified
 
   // 身份四元组(#397 r1-5 同口径):record 无 version = 无法自证身份;已验 entry 解析不到 =
   // 下架/离线/security browse-only,一律拒,绝不降格放行。
