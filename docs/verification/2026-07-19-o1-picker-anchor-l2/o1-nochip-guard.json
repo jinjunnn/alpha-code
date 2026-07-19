@@ -1,0 +1,22 @@
+{
+  "before": {
+    "anchor": true,
+    "visibleChips": 1
+  },
+  "after": {
+    "anchorAfterHide": false,
+    "parentComputedPos": "relative",
+    "parentComputedTf": "none",
+    "parentRect": {
+      "x": 290.5,
+      "y": 144,
+      "width": 640,
+      "height": 512,
+      "top": 144,
+      "right": 930.5,
+      "bottom": 656,
+      "left": 290.5
+    },
+    "anchorRestored": true
+  }
+}
