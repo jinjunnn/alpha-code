@@ -1,0 +1,15 @@
+{
+  "upstreamNewComposer": [],
+  "upstreamComposer": [],
+  "modelButtons": [
+    {
+      "text": "α选择模型",
+      "visible": true,
+      "cls": "a-chip a-chip-model",
+      "comp": null
+    }
+  ],
+  "dialogs": 0,
+  "slotButtons": [],
+  "componentsWithModel": []
+}

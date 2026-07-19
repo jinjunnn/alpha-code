@@ -1,0 +1,65 @@
+{
+  "dialogPresent": true,
+  "pickerPresent": true,
+  "popperPositioners": 0,
+  "anchored": {
+    "tag": "DIV",
+    "rect": {
+      "x": 788,
+      "y": 209,
+      "width": 640,
+      "height": 512,
+      "top": 209,
+      "right": 1428,
+      "bottom": 721,
+      "left": 788
+    },
+    "styleTf": "",
+    "varTf": "translate(788px, -79px)",
+    "computedTf": "matrix(1, 0, 0, 1, 788, -79)",
+    "computedPos": "fixed"
+  },
+  "anchoredIsDlgParent": true,
+  "dlg": {
+    "tag": "DIV",
+    "rect": {
+      "x": 788,
+      "y": 209,
+      "width": 380,
+      "height": 512,
+      "top": 209,
+      "right": 1168,
+      "bottom": 721,
+      "left": 788
+    },
+    "styleTf": "",
+    "varTf": "",
+    "computedTf": "none",
+    "computedPos": "relative"
+  },
+  "dlgWidth": 380,
+  "nativeListDisplay": "flex",
+  "pickerRect": {
+    "x": 789,
+    "y": 210,
+    "width": 378,
+    "height": 510,
+    "top": 210,
+    "right": 1167,
+    "bottom": 720,
+    "left": 789
+  },
+  "chipRect": {
+    "x": 787.9765625,
+    "y": 729,
+    "width": 109,
+    "height": 30,
+    "top": 729,
+    "right": 896.9765625,
+    "bottom": 759,
+    "left": 787.9765625
+  },
+  "visibleChips": 1,
+  "innerW": 1221,
+  "innerH": 800
+}
