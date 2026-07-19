@@ -43,8 +43,8 @@ review_after: 2026-10-18
 
 | 文件 | 内容 |
 |---|---|
-| `req104-session-toggle-l2-light.png` | 会话开关三态,浅色 |
-| `req104-session-toggle-l2-dark.png` | 同三态,深色 |
+| `req104-session-toggle-l2-light.png` | 会话开关四态,浅色 |
+| `req104-session-toggle-l2-dark.png` | 同四态,深色 |
 
 | 态 | 覆盖点(v6 稿改动四对照) |
 |---|---|
