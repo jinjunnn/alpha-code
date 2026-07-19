@@ -1,0 +1,46 @@
+{
+  "resolve": {
+    "home": {
+      "mode": "legacy",
+      "reason": "env-override"
+    },
+    "newSession": {
+      "mode": "alpha",
+      "reason": "release-default"
+    },
+    "session": {
+      "mode": "alpha",
+      "reason": "env-override"
+    }
+  },
+  "homeLegacy": {
+    "alphaHome": 0,
+    "alphaNewSession": 0,
+    "alphaSessionWorkspace": 0,
+    "upstreamSessionComposer": 0,
+    "spikeFlag": null
+  },
+  "sessionId": "ses_08630afbeffed9i23VN9B2z5gX",
+  "sessionNoSpike": {
+    "alphaHome": 0,
+    "alphaNewSession": 0,
+    "alphaSessionWorkspace": 0,
+    "upstreamSessionComposer": 0,
+    "spikeFlag": null
+  },
+  "sessionWithSpike": {
+    "alphaHome": 0,
+    "alphaNewSession": 0,
+    "alphaSessionWorkspace": 1,
+    "upstreamSessionComposer": 1,
+    "spikeFlag": "1"
+  },
+  "workspaceWrapsUpstream": true,
+  "sessionSpikeOff": {
+    "alphaHome": 0,
+    "alphaNewSession": 0,
+    "alphaSessionWorkspace": 0,
+    "upstreamSessionComposer": 1,
+    "spikeFlag": null
+  }
+}

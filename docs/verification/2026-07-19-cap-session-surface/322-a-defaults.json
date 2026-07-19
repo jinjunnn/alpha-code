@@ -1,0 +1,90 @@
+{
+  "resolve0": {
+    "home": {
+      "mode": "alpha",
+      "reason": "release-default"
+    },
+    "newSession": {
+      "mode": "alpha",
+      "reason": "release-default"
+    },
+    "session": {
+      "mode": "legacy",
+      "reason": "release-default"
+    }
+  },
+  "home": {
+    "url": "/",
+    "alphaHome": true,
+    "alphaNewSession": false,
+    "alphaSessionWorkspace": false,
+    "upstreamSessionComposer": 0,
+    "alphaHomeCount": 1,
+    "alphaNewSessionCount": 0
+  },
+  "draft": {
+    "url": "/L3ByaXZhdGUvdG1wL2NsYXVkZS01MDEvLVVzZXJzLXRpZGUtYXBwLWFscGhhLXdvcmsvODM2MTZiYWMtNzI1OC00MWFmLTkzYWQtYjRmODAzNmI4ODhkL3NjcmF0Y2hwYWQvY2FwLXZlcmlmeS9wcm9qLWE/session",
+    "alphaHome": true,
+    "alphaNewSession": false,
+    "alphaSessionWorkspace": false,
+    "upstreamSessionComposer": 0,
+    "alphaHomeCount": 1,
+    "alphaNewSessionCount": 0
+  },
+  "sessionId": "ses_08635db6effebX4hnN3ILgkmpD",
+  "sessionLegacy": {
+    "url": "/L3ByaXZhdGUvdG1wL2NsYXVkZS01MDEvLVVzZXJzLXRpZGUtYXBwLWFscGhhLXdvcmsvODM2MTZiYWMtNzI1OC00MWFmLTkzYWQtYjRmODAzNmI4ODhkL3NjcmF0Y2hwYWQvY2FwLXZlcmlmeS9wcm9qLWE/session/ses_08635db6effebX4hnN3ILgkmpD",
+    "alphaHome": false,
+    "alphaNewSession": true,
+    "alphaSessionWorkspace": false,
+    "upstreamSessionComposer": 0,
+    "alphaHomeCount": 0,
+    "alphaNewSessionCount": 1
+  },
+  "invalidDir": {
+    "url": "/L25vbmV4aXN0ZW50L2NhcC12ZXJpZnktYm9ndXMtZGly/session",
+    "alphaHome": false,
+    "alphaNewSession": true,
+    "alphaSessionWorkspace": false,
+    "upstreamSessionComposer": 0,
+    "alphaHomeCount": 0,
+    "alphaNewSessionCount": 1
+  },
+  "resolveAfterRecord": {
+    "home": {
+      "mode": "legacy",
+      "reason": "crash-fallback"
+    },
+    "newSession": {
+      "mode": "alpha",
+      "reason": "release-default"
+    },
+    "session": {
+      "mode": "legacy",
+      "reason": "release-default"
+    }
+  },
+  "homeAfterFatal": {
+    "url": "/",
+    "alphaHome": false,
+    "alphaNewSession": true,
+    "alphaSessionWorkspace": false,
+    "upstreamSessionComposer": 0,
+    "alphaHomeCount": 0,
+    "alphaNewSessionCount": 1
+  },
+  "resolveAfterReload": {
+    "home": {
+      "mode": "legacy",
+      "reason": "crash-fallback"
+    },
+    "newSession": {
+      "mode": "alpha",
+      "reason": "release-default"
+    },
+    "session": {
+      "mode": "legacy",
+      "reason": "release-default"
+    }
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "resolveAfterClear": {
+    "home": {
+      "mode": "alpha",
+      "reason": "release-default"
+    },
+    "newSession": {
+      "mode": "alpha",
+      "reason": "release-default"
+    },
+    "session": {
+      "mode": "legacy",
+      "reason": "release-default"
+    }
+  },
+  "homeRestored": {
+    "alphaHome": 0,
+    "alphaNewSession": 1,
+    "alphaSessionWorkspace": 0,
+    "upstreamSessionComposer": 0,
+    "upstreamMessageList": 0
+  },
+  "sessionId": "ses_08632088effeCLj0grtJI004dl",
+  "sidebarRows": 2,
+  "clickedSession": {
+    "ok": true,
+    "text": "cap-322 leaf probe"
+  },
+  "sessionLeaf": {
+    "alphaHome": 0,
+    "alphaNewSession": 0,
+    "alphaSessionWorkspace": 0,
+    "upstreamSessionComposer": 1,
+    "upstreamMessageList": 0
+  },
+  "navButtons": [
+    "主页",
+    "Close tab",
+    "Close tab",
+    "Close tab",
+    "Close tab",
+    "Close tab",
+    "",
+    "切换审查",
+    "",
+    "更多选项",
+    "装配:引用 · 附加 · 模式(与 @ 同一弹窗",
+    "",
+    "查看上下文用量",
+    "选择模型",
+    "推理强度 — 选择模型后可用",
+    "发送",
+    "附加文件",
+    "发送",
+    "",
+    "打开文件",
+    "",
+    "新建终端",
+    "Help",
+    "隐藏侧边栏"
+  ]
+}

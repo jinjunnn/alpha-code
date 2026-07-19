@@ -1,0 +1,292 @@
+{
+  "open": {
+    "ok": true,
+    "already": true
+  },
+  "initial": {
+    "open": true,
+    "project": "/private/tmp/claude-501/-Users-tide-app-alpha-work/83616bac-7258-41af-93ad-b4f8036b888d/scratchpad/cap-verify/proj-a",
+    "runs": [
+      "job_caprun20 个产物 · 22 B",
+      "job_caprun110 个产物 · 272 B2 个缺失"
+    ],
+    "cards": [
+      {
+        "name": "old-report.md",
+        "state": "legacy",
+        "active": false,
+        "warn": true
+      }
+    ],
+    "tabs": [],
+    "notices": [
+      {
+        "kind": null,
+        "text": "平台产物列表不可用(离线或未登录)—— 仅显示本地产物。"
+      },
+      {
+        "kind": "warn",
+        "text": "legacy run: artifacts/ discovered read-only without artifacts.json (unverified)"
+      }
+    ],
+    "panelText": null
+  },
+  "runA": {
+    "open": true,
+    "project": "/private/tmp/claude-501/-Users-tide-app-alpha-work/83616bac-7258-41af-93ad-b4f8036b888d/scratchpad/cap-verify/proj-a",
+    "runs": [
+      "job_caprun20 个产物 · 22 B",
+      "job_caprun110 个产物 · 272 B2 个缺失"
+    ],
+    "cards": [
+      {
+        "name": "report.md",
+        "state": "verified",
+        "active": false,
+        "warn": false
+      },
+      {
+        "name": "data.csv",
+        "state": "verified",
+        "active": false,
+        "warn": false
+      },
+      {
+        "name": "config.json",
+        "state": "verified",
+        "active": false,
+        "warn": false
+      },
+      {
+        "name": "picture.png",
+        "state": "verified",
+        "active": false,
+        "warn": false
+      },
+      {
+        "name": "page.html",
+        "state": "unverified",
+        "active": false,
+        "warn": false
+      },
+      {
+        "name": "notes.txt",
+        "state": "unverified",
+        "active": false,
+        "warn": false
+      },
+      {
+        "name": "tampered.bin",
+        "state": "mismatch",
+        "active": false,
+        "warn": true
+      },
+      {
+        "name": "drifted.csv",
+        "state": "mismatch",
+        "active": false,
+        "warn": true
+      },
+      {
+        "name": "gone.pdf",
+        "state": "missing",
+        "active": false,
+        "warn": false
+      },
+      {
+        "name": "lost.zip",
+        "state": "missing",
+        "active": false,
+        "warn": false
+      },
+      {
+        "name": "extra-legacy.txt",
+        "state": "legacy",
+        "active": false,
+        "warn": true
+      }
+    ],
+    "tabs": [],
+    "notices": [
+      {
+        "kind": null,
+        "text": "平台产物列表不可用(离线或未登录)—— 仅显示本地产物。"
+      }
+    ],
+    "panelText": null
+  },
+  "mdPreview": {
+    "tabs": [
+      "a-wb-tab-preview",
+      "a-wb-tab-source",
+      "a-wb-tab-metadata"
+    ],
+    "panelHasHeading": true,
+    "panelText": "cap-verify reportrun A fixture",
+    "decisionChip": [
+      "markdown"
+    ]
+  },
+  "metadata": {
+    "sel": "true",
+    "text": "名称report.md大小37 B状态verifiedRenderermarkdown — 声明 MIME text/markdown → markdownMIMEclaimed text/markdown / detected —idart_job_caprun1_0_ec03f4b1sha2563287956a…2ad6dc1a来源信任sandboxed · primaryprovenancepipeline · job_caprun1 · cap-verify-fixtureverificationverified路径artifacts/report.md"
+  },
+  "mismatch": {
+    "notices": [
+      {
+        "kind": null,
+        "text": "平台产物列表不可用(离线或未登录)—— 仅显示本地产物。"
+      },
+      {
+        "kind": "error",
+        "text": "完整性校验不符(digest/尺寸不一致)—— 内容按原样显示,请谨慎对待。"
+      }
+    ],
+    "cardState": "mismatch"
+  },
+  "missing": {
+    "cardState": "missing",
+    "panelText": "文件已在盘上消失。下载",
+    "hasDownloadBtn": true
+  },
+  "runB": {
+    "open": true,
+    "project": "/private/tmp/claude-501/-Users-tide-app-alpha-work/83616bac-7258-41af-93ad-b4f8036b888d/scratchpad/cap-verify/proj-a",
+    "runs": [
+      "job_caprun20 个产物 · 22 B",
+      "job_caprun110 个产物 · 272 B2 个缺失"
+    ],
+    "cards": [
+      {
+        "name": "old-report.md",
+        "state": "legacy",
+        "active": false,
+        "warn": true
+      }
+    ],
+    "tabs": [],
+    "notices": [
+      {
+        "kind": null,
+        "text": "平台产物列表不可用(离线或未登录)—— 仅显示本地产物。"
+      },
+      {
+        "kind": "warn",
+        "text": "legacy run: artifacts/ discovered read-only without artifacts.json (unverified)"
+      }
+    ],
+    "panelText": null
+  },
+  "reopen": {
+    "ok": true
+  },
+  "restored": {
+    "open": true,
+    "project": "/private/tmp/claude-501/-Users-tide-app-alpha-work/83616bac-7258-41af-93ad-b4f8036b888d/scratchpad/cap-verify/proj-a",
+    "runs": [
+      "job_caprun20 个产物 · 22 B",
+      "job_caprun110 个产物 · 272 B2 个缺失"
+    ],
+    "cards": [
+      {
+        "name": "report.md",
+        "state": "verified",
+        "active": false,
+        "warn": false
+      },
+      {
+        "name": "data.csv",
+        "state": "verified",
+        "active": true,
+        "warn": false
+      },
+      {
+        "name": "config.json",
+        "state": "verified",
+        "active": false,
+        "warn": false
+      },
+      {
+        "name": "picture.png",
+        "state": "verified",
+        "active": false,
+        "warn": false
+      },
+      {
+        "name": "page.html",
+        "state": "unverified",
+        "active": false,
+        "warn": false
+      },
+      {
+        "name": "notes.txt",
+        "state": "unverified",
+        "active": false,
+        "warn": false
+      },
+      {
+        "name": "tampered.bin",
+        "state": "mismatch",
+        "active": false,
+        "warn": true
+      },
+      {
+        "name": "drifted.csv",
+        "state": "mismatch",
+        "active": false,
+        "warn": true
+      },
+      {
+        "name": "gone.pdf",
+        "state": "missing",
+        "active": false,
+        "warn": false
+      },
+      {
+        "name": "lost.zip",
+        "state": "missing",
+        "active": false,
+        "warn": false
+      },
+      {
+        "name": "extra-legacy.txt",
+        "state": "legacy",
+        "active": false,
+        "warn": true
+      }
+    ],
+    "tabs": [
+      {
+        "id": "a-wb-tab-preview",
+        "sel": "true"
+      },
+      {
+        "id": "a-wb-tab-source",
+        "sel": "false"
+      },
+      {
+        "id": "a-wb-tab-metadata",
+        "sel": "false"
+      }
+    ],
+    "notices": [
+      {
+        "kind": null,
+        "text": "平台产物列表不可用(离线或未登录)—— 仅显示本地产物。"
+      }
+    ],
+    "panelText": "abc123456"
+  },
+  "container": {
+    "wbInsideWorkspace": false,
+    "wbHostParent": "DIV",
+    "modeTabs": [
+      "a-wb-tab-preview",
+      "a-wb-tab-source",
+      "a-wb-tab-metadata"
+    ],
+    "filesMode": false,
+    "changesMode": false,
+    "inspectorMode": false
+  }
+}

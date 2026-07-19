@@ -1,0 +1,46 @@
+{
+  "wbTablist": {
+    "tablistPresent": true,
+    "tablistLabel": "产物工作台",
+    "tabCount": 3,
+    "tabsHaveAriaSelected": true,
+    "tabsControlPanel": true,
+    "panelRole": "tabpanel",
+    "panelLabelledby": "a-wb-tab-preview",
+    "liveRegion": true,
+    "closeBtnLabel": "关闭"
+  },
+  "wbKeyboard": {
+    "focusStart": "a-wb-tab-preview",
+    "afterArrowRight": "a-wb-tab-source",
+    "afterEnd": "a-wb-tab-metadata",
+    "afterHome": "a-wb-tab-preview"
+  },
+  "wbFocusVisible": {
+    "outline": "none",
+    "outlineWidth": "3px",
+    "boxShadow": "rgba(79, 70, 229, 0.45) 0px 0px 0px 3px"
+  },
+  "wbEsc": {
+    "pageStillOpen": false,
+    "activeBefore": ""
+  },
+  "wbAfterEsc": {
+    "pageOpen": false,
+    "active": "antialiased overscroll-none overflow-hidden font-(family-name:--font-family-text) text-[13px] font-[440]",
+    "restoredToTrigger": false
+  },
+  "wbReducedMotion": {},
+  "homeProbe": {
+    "composerPresent": true,
+    "textareaAccessibleName": "问点什么,输入 / 调命令,@ 引用上下文…",
+    "textareaRole": null,
+    "textareaAriaControls": null,
+    "textareaAriaExpanded": null,
+    "wsChipPresent": false,
+    "wsChipAriaExpanded": null,
+    "wsChipAriaControls": null,
+    "listboxPresent": false,
+    "listboxLinkedToInput": null
+  }
+}

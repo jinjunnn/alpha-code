@@ -1,0 +1,11 @@
+{
+  "motionDefault": {
+    "transitionDuration": "0s",
+    "tabTransition": "0s"
+  },
+  "motionReduced": {
+    "transitionDuration": "0s",
+    "tabTransition": "0s",
+    "cardAnim": "0s"
+  }
+}
