@@ -15,13 +15,25 @@ export const OOXML_LIMITS = {
   maxCompressionRatio: 200,
   maxInflateMilliseconds: 5_000,
   maxInflateInputChunkBytes: 16 * 1024,
-  // DEFLATE can emit at most 1,032 output bytes per compressed byte;the extra byte covers a
-  // partially buffered symbol at an append boundary. One fallback delivery is therefore bounded
-  // by 16,909,320 bytes. While zip.js joins its fragments, live unchecked inflated storage is at
-  // most fragments + result + its 32 KiB reusable buffer = 33,851,408 bytes. The sink checks every
-  // delivery before accepting another compressed chunk.
+  // zip.js 2.7.62 source audit (paths below are under @zip.js/zip.js/lib/core):
+  // - io.js:72-82,522-524 and streams/codec-stream.js:125-150 bound conservative input staging
+  //   to 6 * 16 KiB (two reader chunks, a 32 KiB join, and two 16 KiB slices).
+  // - streams/codecs/inflate.js:105-110,486-489 bounds a DEFLATE copy to 258 bytes;the established
+  //   1,032:1 bit-level bound plus one append-boundary byte gives D = 16,909,320 bytes.
+  // - inflate.js:2112-2152 retains up to D fragment bytes and allocates a second D-byte merge copy.
+  // - inflate.js:2103-2105 allocates an independent 32 KiB reusable output buffer.
+  // - inflate.js:1815-1826,2052-2057,1149-1155 allocates an independent 32 KiB sliding window and
+  //   a 17,280-byte Huffman table (1,440 * 3 * Int32Array.BYTES_PER_ELEMENT).
+  // Known typed-array payload is 33,999,760 bytes. At most ceil(D / 32 KiB) = 517 fragments exist;
+  // zip.js uses a JS Array for them (inflate.js:2112) plus engine-sized wrappers and small work
+  // arrays (inflate.js:334-359,1299-1302,1465-1471). Their portable byte size is not specified, so
+  // the contract conservatively charges 64 KiB per fragment (33,882,112) plus 1 MiB for remaining
+  // inflater/container state, then rounds 68,930,448 up to an 80 MiB operational ceiling. This is
+  // transient fallback storage only:the caller-owned archive is separately capped at 20 MiB by
+  // maxCompressedBytes. It is not a claim about whole-process RSS or delayed-GC copies. The sink
+  // checks each delivery before another compressed chunk is accepted.
   maxInflateDeliveryBytes: (16 * 1024 + 1) * 1_032,
-  maxUncheckedInflateMaterializedBytes: 2 * ((16 * 1024 + 1) * 1_032) + 2 * 16 * 1024,
+  maxUncheckedInflateMaterializedBytes: 80 * 1024 * 1024,
 } as const
 
 export const OOXML_SUBTYPES = {
@@ -162,49 +174,75 @@ const CP437 = Array.from(
     "└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ ",
 )
 
-// Single authority for native Word/Excel/PowerPoint formats that the OS may hand to Office.
-// Rows follow Microsoft's supported file-format tables and IANA's registered Office media types.
-// Legacy compiled add-ins have no dedicated registered media type, so they retain the family MIME;
-// extension matching remains independently authoritative. Only docx/xlsx/pptx can ever pass after
-// byte-level OOXML proof; every other row is deliberately denied external-open fallback.
+// Single authority for renderer and main:include every current desktop Word/Excel/PowerPoint
+// association that can carry macros, formulas, linked/embedded objects, external connections, or
+// active web content. A supported rich/container format with uncertain active capacity is included
+// fail-closed. Extensions and IANA media types are independent claims;formats without a dedicated
+// registration use IANA's generic Office-family type. Only docx/xlsx/pptx can pass byte-level proof.
+//
+// Audited exclusions from Microsoft's current Office file-format tables:
+// - .txt/.prn/.dbf/.tsv/.tab:import/passive values and no Office-specific launch association;
+// - .htm/.html/.mht/.mhtml/.xml:Office import/export, but the target OS associates these generic
+//   web/XML formats with browser/editor consumers, not desktop Office;
+// - .pdf/.xps and .bmp/.gif/.jpg/.jpeg/.png/.tif/.tiff/.wmf/.emf/.mp4/.mov/.wmv:fixed/media
+//   interchange without Office macro/formula/connection execution and normally non-Office viewers;
+// - .wps/.dic:legacy import/dictionary data with no documented active-content carrier semantics;
+// - .xlc/.wk1/.wk2/.wk3/.wk4/.wks/.wq1/.wb1/.wb3, .ppz, and PowerPoint 95-or-earlier forms:
+//   explicitly unsupported by the current Office reference, so no target-platform association;
+// - .qry opens in Microsoft Query rather than Excel;generic .dll is not an Office document
+//   association; .asd/.wbk/.xlk are internal recovery/backup artifacts, not supported open formats;
+// - .fodt/.fods/.fodp and .pages/.numbers/.key have no current Microsoft Office association.
 export const OFFICE_OPEN_GATE_FORMATS = [
-  { family: "word", kind: "document", extension: "docx", mime: OOXML_SUBTYPES.docx.mime },
-  { family: "word", kind: "template", extension: "dotx", mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.template" },
-  { family: "word", kind: "macro-document", extension: "docm", mime: "application/vnd.ms-word.document.macroEnabled.12" },
-  { family: "word", kind: "macro-template", extension: "dotm", mime: "application/vnd.ms-word.template.macroEnabled.12" },
-  { family: "word", kind: "legacy-binary-document", extension: "doc", mime: "application/msword" },
-  { family: "word", kind: "legacy-binary-template", extension: "dot", mime: "application/msword" },
-  { family: "word", kind: "legacy-binary-addin", extension: "wll", mime: "application/msword" },
-  { family: "excel", kind: "workbook", extension: "xlsx", mime: OOXML_SUBTYPES.xlsx.mime },
-  { family: "excel", kind: "template", extension: "xltx", mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.template" },
-  { family: "excel", kind: "macro-workbook", extension: "xlsm", mime: "application/vnd.ms-excel.sheet.macroEnabled.12" },
-  { family: "excel", kind: "macro-template", extension: "xltm", mime: "application/vnd.ms-excel.template.macroEnabled.12" },
-  { family: "excel", kind: "macro-addin", extension: "xlam", mime: "application/vnd.ms-excel.addin.macroEnabled.12" },
-  { family: "excel", kind: "binary-workbook", extension: "xlsb", mime: "application/vnd.ms-excel.sheet.binary.macroEnabled.12" },
-  { family: "excel", kind: "legacy-binary-workbook", extension: "xls", mime: "application/vnd.ms-excel" },
-  { family: "excel", kind: "legacy-binary-template", extension: "xlt", mime: "application/vnd.ms-excel" },
-  { family: "excel", kind: "legacy-binary-addin", extension: "xla", mime: "application/vnd.ms-excel" },
-  { family: "excel", kind: "legacy-binary-workbook", extension: "xlw", mime: "application/vnd.ms-excel" },
-  { family: "excel", kind: "legacy-macro-sheet", extension: "xlm", mime: "application/vnd.ms-excel" },
-  { family: "excel", kind: "compiled-addin", extension: "xll", mime: "application/vnd.ms-excel" },
-  { family: "powerpoint", kind: "presentation", extension: "pptx", mime: OOXML_SUBTYPES.pptx.mime },
-  { family: "powerpoint", kind: "template", extension: "potx", mime: "application/vnd.openxmlformats-officedocument.presentationml.template" },
-  { family: "powerpoint", kind: "slideshow", extension: "ppsx", mime: "application/vnd.openxmlformats-officedocument.presentationml.slideshow" },
-  { family: "powerpoint", kind: "slide", extension: "sldx", mime: "application/vnd.openxmlformats-officedocument.presentationml.slide" },
-  { family: "powerpoint", kind: "theme", extension: "thmx", mime: "application/vnd.ms-officetheme" },
-  { family: "powerpoint", kind: "macro-presentation", extension: "pptm", mime: "application/vnd.ms-powerpoint.presentation.macroEnabled.12" },
-  { family: "powerpoint", kind: "macro-template", extension: "potm", mime: "application/vnd.ms-powerpoint.template.macroEnabled.12" },
-  { family: "powerpoint", kind: "macro-slideshow", extension: "ppsm", mime: "application/vnd.ms-powerpoint.slideshow.macroEnabled.12" },
-  { family: "powerpoint", kind: "macro-slide", extension: "sldm", mime: "application/vnd.ms-powerpoint.slide.macroEnabled.12" },
-  { family: "powerpoint", kind: "macro-addin", extension: "ppam", mime: "application/vnd.ms-powerpoint.addin.macroEnabled.12" },
-  { family: "powerpoint", kind: "legacy-binary-presentation", extension: "ppt", mime: "application/vnd.ms-powerpoint" },
-  { family: "powerpoint", kind: "legacy-binary-template", extension: "pot", mime: "application/vnd.ms-powerpoint" },
-  { family: "powerpoint", kind: "legacy-binary-slideshow", extension: "pps", mime: "application/vnd.ms-powerpoint" },
-  { family: "powerpoint", kind: "legacy-binary-addin", extension: "ppa", mime: "application/vnd.ms-powerpoint" },
+  { family: "word", kind: "document", extension: "docx", mimes: [OOXML_SUBTYPES.docx.mime] },
+  { family: "word", kind: "template", extension: "dotx", mimes: ["application/vnd.openxmlformats-officedocument.wordprocessingml.template"] },
+  { family: "word", kind: "macro-document", extension: "docm", mimes: ["application/vnd.ms-word.document.macroEnabled.12"] },
+  { family: "word", kind: "macro-template", extension: "dotm", mimes: ["application/vnd.ms-word.template.macroEnabled.12"] },
+  { family: "word", kind: "legacy-binary-document", extension: "doc", mimes: ["application/msword"] },
+  { family: "word", kind: "legacy-binary-template", extension: "dot", mimes: ["application/msword"] },
+  { family: "word", kind: "legacy-binary-addin", extension: "wll", mimes: ["application/msword"] },
+  { family: "word", kind: "opendocument-text", extension: "odt", mimes: ["application/vnd.oasis.opendocument.text"] },
+  { family: "word", kind: "rich-text", extension: "rtf", mimes: ["application/rtf", "text/rtf"] },
+  { family: "excel", kind: "workbook", extension: "xlsx", mimes: [OOXML_SUBTYPES.xlsx.mime] },
+  { family: "excel", kind: "template", extension: "xltx", mimes: ["application/vnd.openxmlformats-officedocument.spreadsheetml.template"] },
+  { family: "excel", kind: "macro-workbook", extension: "xlsm", mimes: ["application/vnd.ms-excel.sheet.macroEnabled.12"] },
+  { family: "excel", kind: "macro-template", extension: "xltm", mimes: ["application/vnd.ms-excel.template.macroEnabled.12"] },
+  { family: "excel", kind: "macro-addin", extension: "xlam", mimes: ["application/vnd.ms-excel.addin.macroEnabled.12"] },
+  { family: "excel", kind: "binary-workbook", extension: "xlsb", mimes: ["application/vnd.ms-excel.sheet.binary.macroEnabled.12"] },
+  { family: "excel", kind: "legacy-binary-workbook", extension: "xls", mimes: ["application/vnd.ms-excel"] },
+  { family: "excel", kind: "legacy-binary-template", extension: "xlt", mimes: ["application/vnd.ms-excel"] },
+  { family: "excel", kind: "legacy-binary-addin", extension: "xla", mimes: ["application/vnd.ms-excel"] },
+  { family: "excel", kind: "legacy-binary-workbook", extension: "xlw", mimes: ["application/vnd.ms-excel"] },
+  { family: "excel", kind: "legacy-macro-sheet", extension: "xlm", mimes: ["application/vnd.ms-excel"] },
+  { family: "excel", kind: "compiled-addin", extension: "xll", mimes: ["application/vnd.ms-excel"] },
+  { family: "excel", kind: "works-spreadsheet", extension: "xlr", mimes: ["application/vnd.ms-works"] },
+  { family: "excel", kind: "opendocument-spreadsheet", extension: "ods", mimes: ["application/vnd.oasis.opendocument.spreadsheet"] },
+  { family: "excel", kind: "comma-separated-values", extension: "csv", mimes: ["text/csv"] },
+  { family: "excel", kind: "data-interchange-formulas", extension: "dif", mimes: ["application/vnd.ms-excel"] },
+  { family: "excel", kind: "sylk-macro-sheet", extension: "slk", mimes: ["application/vnd.ms-excel"] },
+  { family: "excel", kind: "web-query", extension: "iqy", mimes: ["application/vnd.ms-excel"] },
+  { family: "excel", kind: "olap-query", extension: "oqy", mimes: ["application/vnd.ms-excel"] },
+  { family: "excel", kind: "database-query", extension: "dqy", mimes: ["application/vnd.ms-excel"] },
+  { family: "excel", kind: "report-query", extension: "rqy", mimes: ["application/vnd.ms-excel"] },
+  { family: "excel", kind: "office-data-connection", extension: "odc", mimes: ["application/vnd.ms-excel"] },
+  { family: "powerpoint", kind: "presentation", extension: "pptx", mimes: [OOXML_SUBTYPES.pptx.mime] },
+  { family: "powerpoint", kind: "template", extension: "potx", mimes: ["application/vnd.openxmlformats-officedocument.presentationml.template"] },
+  { family: "powerpoint", kind: "slideshow", extension: "ppsx", mimes: ["application/vnd.openxmlformats-officedocument.presentationml.slideshow"] },
+  { family: "powerpoint", kind: "slide", extension: "sldx", mimes: ["application/vnd.openxmlformats-officedocument.presentationml.slide"] },
+  { family: "powerpoint", kind: "theme", extension: "thmx", mimes: ["application/vnd.ms-officetheme"] },
+  { family: "powerpoint", kind: "macro-presentation", extension: "pptm", mimes: ["application/vnd.ms-powerpoint.presentation.macroEnabled.12"] },
+  { family: "powerpoint", kind: "macro-template", extension: "potm", mimes: ["application/vnd.ms-powerpoint.template.macroEnabled.12"] },
+  { family: "powerpoint", kind: "macro-slideshow", extension: "ppsm", mimes: ["application/vnd.ms-powerpoint.slideshow.macroEnabled.12"] },
+  { family: "powerpoint", kind: "macro-slide", extension: "sldm", mimes: ["application/vnd.ms-powerpoint.slide.macroEnabled.12"] },
+  { family: "powerpoint", kind: "macro-addin", extension: "ppam", mimes: ["application/vnd.ms-powerpoint.addin.macroEnabled.12"] },
+  { family: "powerpoint", kind: "legacy-binary-presentation", extension: "ppt", mimes: ["application/vnd.ms-powerpoint"] },
+  { family: "powerpoint", kind: "legacy-binary-template", extension: "pot", mimes: ["application/vnd.ms-powerpoint"] },
+  { family: "powerpoint", kind: "legacy-binary-slideshow", extension: "pps", mimes: ["application/vnd.ms-powerpoint"] },
+  { family: "powerpoint", kind: "legacy-binary-addin", extension: "ppa", mimes: ["application/vnd.ms-powerpoint"] },
+  { family: "powerpoint", kind: "opendocument-presentation", extension: "odp", mimes: ["application/vnd.oasis.opendocument.presentation"] },
 ] as const
 
 const OFFICE_GATE_EXTENSIONS = new Set<string>(OFFICE_OPEN_GATE_FORMATS.map((format) => format.extension))
-const OFFICE_GATE_MIMES = new Set<string>(OFFICE_OPEN_GATE_FORMATS.map((format) => format.mime.toLowerCase()))
+const OFFICE_GATE_MIMES = new Set<string>(OFFICE_OPEN_GATE_FORMATS.flatMap((format) => format.mimes.map((mime) => mime.toLowerCase())))
 const ZIP_GATE_EXTENSIONS = new Set<string>(["zip"])
 const ZIP_GATE_MIMES = new Set<string>(["application/zip", "application/x-zip-compressed", "multipart/x-zip"])
 

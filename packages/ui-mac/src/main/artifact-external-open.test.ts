@@ -51,18 +51,31 @@ describe("main-owned artifact external-open gate", () => {
     expect(opened).toBe(false)
   })
 
-  test("each authoritative Office extension is main-gated without ZIP magic for missing,neutral,and corresponding MIME claims", async () => {
+  test("each authoritative Office extension is main-gated for extension × missing/neutral/claimed MIME", async () => {
     let opened = false
     for (const format of OFFICE_OPEN_GATE_FORMATS) {
       for (const variant of [
         { label: "missing" },
         { label: "neutral", claimedMime: "application/octet-stream" },
-        { label: "claimed", claimedMime: format.mime },
+        ...format.mimes.map((claimedMime, index) => ({ label: `claimed-${index}`, claimedMime })),
       ]) {
         const descriptor = register(
           `${format.extension}-${variant.label}.${format.extension}`,
           new TextEncoder().encode("not a ZIP container"),
           variant.claimedMime,
+          null,
+        )
+        const result = await openRunArtifactExternal(projectDir, RUN, descriptor.id, async () => {
+          opened = true
+        })
+        expect(result.ok).toBe(false)
+        if (!result.ok) expect(result.code).toBe("OOXML_REJECTED")
+      }
+      for (const [index, claimedMime] of format.mimes.entries()) {
+        const descriptor = register(
+          `mime-only-${format.extension}-${index}`,
+          new TextEncoder().encode("not a ZIP container"),
+          claimedMime,
           null,
         )
         const result = await openRunArtifactExternal(projectDir, RUN, descriptor.id, async () => {

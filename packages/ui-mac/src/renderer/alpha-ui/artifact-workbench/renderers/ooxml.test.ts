@@ -263,6 +263,26 @@ describe("local headers must exactly match the central directory", () => {
 })
 
 describe("declared and actual inflate budgets", () => {
+  test("fallback unchecked-memory ceiling includes every source-audited allocation class", () => {
+    const inputChunk = OOXML_LIMITS.maxInflateInputChunkBytes
+    const fragments = Math.ceil(OOXML_LIMITS.maxInflateDeliveryBytes / (2 * inputChunk))
+    const knownTypedArrayPayload =
+      6 * inputChunk +
+      2 * OOXML_LIMITS.maxInflateDeliveryBytes +
+      2 * inputChunk +
+      2 ** 15 +
+      1_440 * 3 * Int32Array.BYTES_PER_ELEMENT
+    const conservativeAccounted =
+      knownTypedArrayPayload + fragments * 64 * 1024 + 1 * 1024 * 1024
+
+    expect(OOXML_LIMITS.maxInflateDeliveryBytes).toBe(16_909_320)
+    expect(fragments).toBe(517)
+    expect(knownTypedArrayPayload).toBe(33_999_760)
+    expect(conservativeAccounted).toBe(68_930_448)
+    expect(OOXML_LIMITS.maxUncheckedInflateMaterializedBytes).toBe(80 * 1024 * 1024)
+    expect(OOXML_LIMITS.maxUncheckedInflateMaterializedBytes).toBeGreaterThan(conservativeAccounted)
+  })
+
   test("declared per-entry size is rejected before inflate", async () => {
     const fixture = await makeOoxmlFixture("xlsx")
     await expectCode(

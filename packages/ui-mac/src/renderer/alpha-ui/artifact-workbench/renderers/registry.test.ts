@@ -42,7 +42,7 @@ describe("normalizeMime / extension helpers", () => {
 
 describe("路由优先级", () => {
   test("① detectedMime 优先于 claimed 与扩展名", () => {
-    const d = routeArtifact({ name: "data.txt", claimedMime: "text/plain", detectedMime: "text/csv" })
+    const d = routeArtifact({ name: "data.txt", claimedMime: "text/plain", detectedMime: "text/tab-separated-values" })
     expect(d.rendererId).toBe("csv")
     expect(d.source).toBe("detected")
     expect(d.warnings.length).toBe(1) // 冲突诚实
@@ -132,24 +132,34 @@ describe("OOXML 结构闸(REQ-093 #281)", () => {
     expect(routeArtifact({ name: "archive.bin" }).externalOpen).toBe("allowed")
   })
 
-  test("authoritative table contains the native Word, Excel, and PowerPoint gate extensions", () => {
-    expect(OFFICE_OPEN_GATE_FORMATS.map((format) => format.extension)).toEqual([
-      "docx", "dotx", "docm", "dotm", "doc", "dot", "wll",
-      "xlsx", "xltx", "xlsm", "xltm", "xlam", "xlsb", "xls", "xlt", "xla", "xlw", "xlm", "xll",
-      "pptx", "potx", "ppsx", "sldx", "thmx", "pptm", "potm", "ppsm", "sldm", "ppam", "ppt", "pot", "pps", "ppa",
-    ])
+  test("authoritative table is normalized,non-empty,and extension-unique", () => {
+    const extensions = OFFICE_OPEN_GATE_FORMATS.map((format) => format.extension)
+    expect(extensions.length).toBeGreaterThan(0)
+    expect(new Set(extensions).size).toBe(extensions.length)
+    for (const format of OFFICE_OPEN_GATE_FORMATS) {
+      expect(format.extension).toBe(format.extension.toLowerCase())
+      expect(format.mimes.length).toBeGreaterThan(0)
+      expect(new Set(format.mimes).size).toBe(format.mimes.length)
+      for (const mime of format.mimes) expect(normalizeMime(mime)).toBe(mime.toLowerCase())
+    }
   })
 
   for (const format of OFFICE_OPEN_GATE_FORMATS) {
-    test(`${format.family} .${format.extension} ${format.kind}:missing,neutral,and corresponding MIME claims stay gated`, () => {
-      for (const claimedMime of [undefined, "application/octet-stream", format.mime]) {
-        const input = { name: `artifact.${format.extension}`, ...(claimedMime ? { claimedMime } : {}) }
+    test(`${format.family} .${format.extension} ${format.kind}:extension × missing/neutral/claimed MIME stays gated`, () => {
+      for (const variant of [
+        { label: "missing" },
+        { label: "neutral", claimedMime: "application/octet-stream" },
+        ...format.mimes.map((claimedMime, index) => ({ label: `claimed-${index}`, claimedMime })),
+      ]) {
+        const input = { name: `artifact-${variant.label}.${format.extension}`, ...(variant.claimedMime ? { claimedMime: variant.claimedMime } : {}) }
         expect(shouldDetectOoxml(input)).toBe(true)
         expect(routeArtifact(input).externalOpen).toBe("blocked")
       }
-      expect(shouldDetectOoxml({ name: "artifact", claimedMime: format.mime })).toBe(true)
-      expect(routeArtifact({ name: "artifact", claimedMime: format.mime }).externalOpen).toBe("blocked")
-      if (!["docx", "xlsx", "pptx"].includes(format.extension))
+      for (const claimedMime of format.mimes) {
+        expect(shouldDetectOoxml({ name: "artifact", claimedMime })).toBe(true)
+        expect(routeArtifact({ name: "artifact", claimedMime }).externalOpen).toBe("blocked")
+      }
+      if (!Object.prototype.hasOwnProperty.call(OOXML_SUBTYPES, format.extension))
         expect(routeArtifact({ name: `artifact.${format.extension}`, ooxml: DETECTED_XLSX }).externalOpen)
           .toBe("blocked")
     })
@@ -240,7 +250,6 @@ describe("常规格式覆盖", () => {
     ["a.md", "text/markdown", "markdown"],
     ["a.json", "application/json", "json"],
     ["a.geojson", "application/geo+json", "json"],
-    ["a.csv", "text/csv", "csv"],
     ["a.tsv", "text/tab-separated-values", "csv"],
     ["a.png", "image/png", "image"],
     ["a.webp", "image/webp", "image"],
