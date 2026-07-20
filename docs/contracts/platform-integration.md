@@ -82,11 +82,18 @@ The admission guarantee is limited to a local filesystem with a locally
 coherent directory namespace. It does not apply to NFS, SMB, remote FUSE, or
 other shared/network volumes. At main-process initialization the desktop
 checks the Electron `userData` volume, and on the first use of a different
-artifact volume it checks that volume too. On macOS, the check requires the
-mounted filesystem's `local` flag. A remote volume returns the stable
-`unsupported-filesystem` error; an unknown locality result fails closed as
-`disk`. Move the project and `userData` to local volumes before retrying. The
-desktop does not implement NFS cache-convergence or cross-client coordination.
+artifact volume it checks that volume too. On macOS, the desktop resolves the
+root through `realpath`, parses `/sbin/mount`, selects the deepest mount point
+that actually contains that resolved path, and accepts only the explicit
+filesystem-type whitelist `apfs` and `hfs`. It does not trust a filesystem's
+`local` mount option. Every other type is rejected, including `macfuse`,
+`osxfuse`, `fuse.*`, `nfs`, `smbfs`, `afpfs`, `webdav`, and unknown future
+types, even when the mount claims `local`. These known-but-unsupported results
+return stable `unsupported-filesystem`. A failed or timed-out mount command,
+failed `realpath`, malformed output, or inability to identify an owning mount
+point fails closed as stable `disk`. Move the project and `userData` to APFS or
+HFS volumes before retrying. The desktop does not implement NFS
+cache-convergence or cross-client coordination.
 
 The desktop creates one random UUID machine identity at
 `<userData>/artifact-quota-machine-id`, mode `0600`, and reuses it without
@@ -133,13 +140,21 @@ yield while the minimum key progresses, rather than all contenders repeatedly
 colliding on one shared pathname. Before the minimum key performs its final
 rename, it asynchronously rescans until every greater conflicting reservation
 has either yielded or committed. Rescans run at most every 20 ms and are
-subject to both a 5-second deadline and a 250-round ceiling. Exhausting either
-bound returns the stable `retryable` error and never admits. Timer waits yield
-the Electron main-process event loop; no `Atomics.wait` or other synchronous
-wait is used. This convergence step closes the case where a smaller key is
-published after a greater key already completed its first decision: the smaller
-attempt observes the greater reservation until its final file becomes chargeable, then
-reevaluates instead of double-admitting.
+subject to both a 5-second deadline and a 250-round ceiling. Reservation and
+committed traversal uses asynchronous directory reads and stats, with an
+explicit event-loop yield every 32 visited entries. Each complete
+reservation-then-committed scan is independently capped at 250 ms and 10,000
+visited directory entries; either scan cap returns stable `retryable`. The
+global deadline is checked before and after every scan, and the scan timer is
+clipped to the remaining global budget. Without the global bound, the
+conservative per-round maximum would be `250 × (20 ms + 250 ms) = 67.5 s`; the
+remaining-budget clipping makes the 5-second global deadline dominant. Timer
+dispatch can add normal event-loop scheduling jitter, but this code performs no
+synchronous full-project traversal that can extend the bound. Exhausting any
+bound never admits. This convergence step closes the case where a smaller key
+is published after a greater key already completed its first decision: the
+smaller attempt observes the greater reservation until its final file becomes
+chargeable, then reevaluates instead of double-admitting.
 
 Immediately before rename, the admitted attempt rechecks the open staged-file
 descriptor and the staged pathname against the initially captured `dev`/`ino`,

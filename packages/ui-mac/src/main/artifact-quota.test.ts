@@ -265,6 +265,73 @@ describe("finalizeArtifactWithQuota", () => {
     expect(readFileSync(join(projectDir, ARTIFACT_QUOTA_MACHINE_ID_FILE), "utf8").trim()).toBe(machineId)
   })
 
+  test("production mount parsing accepts only the APFS and HFS local-type whitelist", async () => {
+    for (const fileSystemType of ["apfs", "hfs"]) {
+      const initialized = await initializeArtifactQuotaEnvironment(projectDir, {
+        testHooks: {
+          mountTable: async () => `/dev/disk-test on ${projectDir} (${fileSystemType}, journaled)\n`,
+        },
+      })
+
+      expect(initialized).toEqual({ ok: true })
+    }
+  })
+
+  test("production mount parsing rejects FUSE and network types even when they claim local", async () => {
+    for (const fileSystemType of ["macfuse", "osxfuse", "fuse.sshfs", "nfs", "smbfs", "afpfs", "webdav"]) {
+      const initialized = await initializeArtifactQuotaEnvironment(projectDir, {
+        testHooks: {
+          mountTable: async () =>
+            `/dev/disk-root on / (apfs, local)\nremote on ${projectDir} (${fileSystemType}, local, automounted)\n`,
+        },
+      })
+
+      expect(initialized).toEqual({
+        ok: false,
+        error: "unsupported-filesystem",
+        detail: "artifact quota requires a local filesystem",
+      })
+    }
+  })
+
+  test("production mount parsing rejects an unknown type at the owning mount point", async () => {
+    const initialized = await initializeArtifactQuotaEnvironment(projectDir, {
+      testHooks: {
+        mountTable: async () =>
+          `/dev/disk-root on / (apfs, local)\nunknown on ${projectDir} (futurefs, local, journaled)\n`,
+      },
+    })
+
+    expect(initialized).toEqual({
+      ok: false,
+      error: "unsupported-filesystem",
+      detail: "artifact quota requires a local filesystem",
+    })
+  })
+
+  test("mount command failure and timeout fail closed with the stable disk error", async () => {
+    const failed = await initializeArtifactQuotaEnvironment(projectDir, {
+      testHooks: { mountTable: async () => null },
+    })
+    expect(failed).toEqual({
+      ok: false,
+      error: "disk",
+      detail: "artifact quota admission unavailable (filesystem locality unavailable)",
+    })
+
+    const timedOut = await initializeArtifactQuotaEnvironment(projectDir, {
+      testHooks: {
+        mountTable: () => new Promise(() => {}),
+        volumeDetectionTimeoutMs: 5,
+      },
+    })
+    expect(timedOut).toEqual({
+      ok: false,
+      error: "disk",
+      detail: "artifact quota admission unavailable (filesystem locality unavailable)",
+    })
+  })
+
   test("under both run and project limits admits before final rename and removes its reservation", async () => {
     writeFileSync(target("existing.bin"), "1234")
     const result = await write("admitted.bin", "12345", { limits: limits() })
@@ -595,6 +662,111 @@ describe("finalizeArtifactWithQuota", () => {
       detail: "artifact quota admission retry required (reservation convergence timed out)",
     })
     expect(existsSync(target("deadline.bin"))).toBe(false)
+    expect(reservations()).toHaveLength(1)
+    expect(stagingResidue()).toEqual([])
+  })
+
+  test("a slow wait scan obeys the global deadline while the event loop keeps turning", async () => {
+    Array.from({ length: 48 }, (_, index) => writeFileSync(target(`slow-${index}.bin`), "x"))
+    seedReservation({
+      declaredBytes: 1,
+      startedAt: String((RACE_STARTED_AT + 1_000) * 1_000),
+    })
+    let slowScan = false
+    let eventLoopTicks = 0
+    let yieldedChunks = 0
+    const ticker = setInterval(() => (eventLoopTicks += 1), 1)
+    const startedAt = Date.now()
+    const result = await write("slow-deadline.bin", "x", {
+      limits: limits({ runMaxBytes: 49, runMaxCount: 100, projectMaxBytes: 49 }),
+      now: () => new Date(RACE_STARTED_AT),
+      pidAlive: () => true,
+      testHooks: {
+        afterQuotaScan() {
+          slowScan = true
+        },
+        waitPolicy: { deadlineMs: 20, maxRounds: 250, intervalMs: 1 },
+        scanPolicy: { timeoutMs: 100, maxEntries: 1_000, yieldEvery: 1 },
+        async beforeScanEntry() {
+          if (slowScan) await Bun.sleep(2)
+        },
+        afterScanYield() {
+          if (slowScan) yieldedChunks += 1
+        },
+      },
+    })
+    clearInterval(ticker)
+
+    expect(result).toEqual({
+      ok: false,
+      error: "retryable",
+      detail: "artifact quota admission retry required (reservation convergence timed out)",
+    })
+    expect(Date.now() - startedAt).toBeLessThan(150)
+    expect(eventLoopTicks).toBeGreaterThan(0)
+    expect(yieldedChunks).toBeGreaterThan(0)
+    expect(existsSync(target("slow-deadline.bin"))).toBe(false)
+    expect(reservations()).toHaveLength(1)
+    expect(stagingResidue()).toEqual([])
+  })
+
+  test("an individual wait scan timeout returns the stable retryable error before the global deadline", async () => {
+    Array.from({ length: 24 }, (_, index) => writeFileSync(target(`scan-timeout-${index}.bin`), "x"))
+    seedReservation({
+      declaredBytes: 1,
+      startedAt: String((RACE_STARTED_AT + 1_000) * 1_000),
+    })
+    let slowScan = false
+    const result = await write("scan-timeout.bin", "x", {
+      limits: limits({ runMaxBytes: 25, runMaxCount: 100, projectMaxBytes: 25 }),
+      now: () => new Date(RACE_STARTED_AT),
+      pidAlive: () => true,
+      testHooks: {
+        afterQuotaScan() {
+          slowScan = true
+        },
+        waitPolicy: { deadlineMs: 100, maxRounds: 250, intervalMs: 1 },
+        scanPolicy: { timeoutMs: 10, maxEntries: 1_000, yieldEvery: 1 },
+        async beforeScanEntry() {
+          if (slowScan) await Bun.sleep(3)
+        },
+      },
+    })
+
+    expect(result).toEqual({
+      ok: false,
+      error: "retryable",
+      detail: "artifact quota admission retry required (quota scan timed out)",
+    })
+    expect(existsSync(target("scan-timeout.bin"))).toBe(false)
+    expect(reservations()).toHaveLength(1)
+    expect(stagingResidue()).toEqual([])
+  })
+
+  test("a wait scan entry cap returns the stable retryable error", async () => {
+    seedReservation({
+      declaredBytes: 1,
+      startedAt: String((RACE_STARTED_AT + 1_000) * 1_000),
+    })
+    const result = await write("scan-entry-cap.bin", "x", {
+      limits: limits({ runMaxBytes: 1, projectMaxBytes: 1 }),
+      now: () => new Date(RACE_STARTED_AT),
+      pidAlive: () => true,
+      testHooks: {
+        afterQuotaScan() {
+          Array.from({ length: 8 }, (_, index) => writeFileSync(target(`late-${index}.bin`), "x"))
+        },
+        waitPolicy: { deadlineMs: 100, maxRounds: 250, intervalMs: 1 },
+        scanPolicy: { timeoutMs: 100, maxEntries: 5, yieldEvery: 1 },
+      },
+    })
+
+    expect(result).toEqual({
+      ok: false,
+      error: "retryable",
+      detail: "artifact quota admission retry required (quota scan entry limit reached)",
+    })
+    expect(existsSync(target("scan-entry-cap.bin"))).toBe(false)
     expect(reservations()).toHaveLength(1)
     expect(stagingResidue()).toEqual([])
   })

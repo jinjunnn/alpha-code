@@ -30,11 +30,19 @@ indeterminate PID probe is intentionally fail-closed.
 
 This mechanism is supported only on local filesystems. The stable
 `unsupported-filesystem` error means `userData` or the project artifact root is
-on a network/remote mount. Move both roots to local volumes and retry; do not
-work around the check by manually renaming `.part` files or deleting
-reservations. Unknown mount locality returns `disk` and must be diagnosed
-before retrying. NFS/SMB cache tuning is outside this runbook because shared
-volumes are not a supported deployment.
+not on the macOS filesystem-type whitelist: only `apfs` and `hfs` are accepted.
+The rejection includes all FUSE types (`macfuse`, `osxfuse`, and `fuse.*`),
+`nfs`, `smbfs`, `afpfs`, `webdav`, and every unknown type, even if its mount
+options contain `local`. Move both roots to APFS or HFS volumes and retry; do
+not work around the check by manually renaming `.part` files or deleting
+reservations. Stable `disk` with detail `filesystem locality unavailable`
+means `realpath` failed, `/sbin/mount` failed or timed out, its output was
+malformed, or no owning mount point could be identified. Confirm the root is
+available, inspect `/sbin/mount` for the resolved root's actual mount point,
+repair the mount/OS command failure, restart the desktop, and retry. Do not
+override the detector or treat an unreadable type as local. NFS/SMB cache
+tuning is outside this runbook because shared volumes are not a supported
+deployment.
 
 ## Automatic convergence
 
@@ -50,13 +58,32 @@ ignores strictly greater reservations during its second quota calculation and
 continues when committed usage plus its own declaration fits. It performs fresh
 reservation-then-committed rescans before final rename until every greater
 conflict has either deleted its reservation while yielding or exposed a
-committed final file. Rescans use asynchronous 20 ms timer waits and terminate
-after at most 5 seconds or 250
-rounds. Either bound returns stable `retryable`; it never admits or waits
-forever. A smaller key that appears after a greater key's first decision
-therefore cannot preempt an unseen commit; it reevaluates the newly committed
-bytes. Retrying a yielded or `retryable` download creates a new owner-unique
-reservation and rescans current disk truth.
+committed final file. Rescans use asynchronous directory reads and stats,
+explicitly yield every 32 visited entries, and wait no more than 20 ms between
+rounds. Each reservation-then-committed scan is capped at 250 ms and 10,000
+entries. Convergence terminates after at most 5 seconds or 250 rounds, checks
+the deadline on both sides of every scan, and clips each scan to the remaining
+global time. The nominal per-round bounds alone are
+`250 × (20 ms + 250 ms) = 67.5 s`, so the clipped 5-second deadline is the
+dominant application bound. Normal event-loop timer scheduling may add jitter,
+but no synchronous full-project walk extends the wait. Any bound returns stable
+`retryable`; it never admits or waits forever. A smaller key that appears after
+a greater key's first decision therefore cannot preempt an unseen commit; it
+reevaluates the newly committed bytes. Retrying a yielded or `retryable`
+download creates a new owner-unique reservation and rescans current disk truth.
+
+The retryable detail identifies the exhausted bound:
+
+- `reservation convergence timed out` means the global 5-second budget ended;
+- `reservation convergence round limit reached` means 250 fast rounds ended;
+- `quota scan timed out` means one scan reached its 250 ms independent cap; and
+- `quota scan entry limit reached` means one scan visited more than 10,000
+  entries.
+
+For the first three, retry after other active downloads settle and inspect local
+disk latency if the error repeats. For the entry cap, use supported artifact
+removal/export flows to reduce managed run contents before retrying. Never
+delete or rewrite reservation files merely to get below a scan bound.
 
 A scan may lazily delete somebody else's residual reservation only when both of
 these facts are conclusive:
