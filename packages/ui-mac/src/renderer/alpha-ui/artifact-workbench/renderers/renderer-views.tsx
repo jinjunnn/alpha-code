@@ -29,15 +29,10 @@ export type PreviewContext = {
 
 export type PreviewProps = { ctx: PreviewContext }
 
-/** 盘上文件的绝对路径(仅用于交给系统外部打开;renderer 不自行读)。 */
-function absolutePathOf(ctx: PreviewContext): string | null {
-  if (!ctx.card.savedPath) return null
-  return `${ctx.directory}/.alpha/runs/${ctx.runId}/${ctx.card.savedPath}`
-}
-
 function openExternally(ctx: PreviewContext): void {
-  const p = absolutePathOf(ctx)
-  if (p) void window.api.openPath(p)
+  if (ctx.decision.externalOpen !== "allowed") return
+  if (!ctx.card.descriptor) return
+  void window.api.runArtifacts.openExternal(ctx.directory, ctx.runId, ctx.card.descriptor.id)
 }
 
 function revealRunDir(ctx: PreviewContext): void {
@@ -399,7 +394,9 @@ const ImageView: Component<PreviewProps> = (props) => {
       fallback={
         <div class="a-wb-notice" data-kind="error" role="alert">
           {t("alpha.wb.readFailed")}:{String((res.error as Error)?.message ?? res.error)}
-          <button type="button" class="a-wb-btn" onClick={() => openExternally(props.ctx)}>{t("alpha.wb.openExternal")}</button>
+          <Show when={props.ctx.card.descriptor && props.ctx.decision.externalOpen === "allowed"}>
+            <button type="button" class="a-wb-btn" onClick={() => openExternally(props.ctx)}>{t("alpha.wb.openExternal")}</button>
+          </Show>
         </div>
       }
     >
@@ -410,7 +407,9 @@ const ImageView: Component<PreviewProps> = (props) => {
             fallback={
               <div class="a-wb-notice" data-kind="error" role="alert">
                 {t("alpha.wb.imgDecodeFailed")}
-                <button type="button" class="a-wb-btn" onClick={() => openExternally(props.ctx)}>{t("alpha.wb.openExternal")}</button>
+                <Show when={props.ctx.card.descriptor && props.ctx.decision.externalOpen === "allowed"}>
+                  <button type="button" class="a-wb-btn" onClick={() => openExternally(props.ctx)}>{t("alpha.wb.openExternal")}</button>
+                </Show>
               </div>
             }
           >
@@ -452,8 +451,11 @@ function HonestCard(props: PreviewProps & { title: string; note: string }) {
         <FactRow label="sha256" value={shortSha(d!.sha256)} />
         <FactRow label={t("alpha.wb.factTrust")} value={`${d!.trust} · ${d!.role}`} />
       </Show>
+      <Show when={props.ctx.decision.ooxmlSubtype}>
+        <FactRow label="OOXML" value={`${props.ctx.decision.ooxmlSubtype} · ${props.ctx.decision.effectiveMime}`} />
+      </Show>
       <div class="a-wb-toolbar">
-        <Show when={props.ctx.card.savedPath}>
+        <Show when={props.ctx.card.savedPath && props.ctx.card.descriptor && props.ctx.decision.externalOpen === "allowed"}>
           <button type="button" class="a-wb-btn" data-variant="primary" onClick={() => openExternally(props.ctx)}>
             {t("alpha.wb.openExternal")}
           </button>

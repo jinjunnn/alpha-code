@@ -32,7 +32,8 @@ import {
   type DownloadPhase,
 } from "./workbench-core"
 import { recallSelection, rememberSelection, setWorkbenchOpen, workbenchOpen } from "./workbench-state"
-import { routeArtifact } from "./renderers/registry"
+import { detectOoxmlContainer, OOXML_LIMITS } from "./renderers/ooxml"
+import { routeArtifact, shouldDetectOoxml } from "./renderers/registry"
 import { RENDERER_COMPONENTS, SourceView, type PreviewContext } from "./renderers/renderer-views"
 import "./artifact-workbench.css"
 
@@ -208,6 +209,40 @@ export function ArtifactWorkbench(props: { projects: AlphaProjectsApi }) {
       .finally(() => setVerifying(false))
   })
 
+  // ── OOXML 结构检测(REQ-093 #281):复用既有有界 bytes IPC,不新增内容/渲染通道 ──
+  // resource 的值携带 source key,避免切换 artifact 时把上一件的 subtype 短暂套到下一件。
+  const ooxmlTarget = createMemo(() => {
+    const card = selectedCard()
+    const dir = directory()
+    const run = selectedRun()
+    if (!card || !dir || !run || !cardPreviewable(card) || card.state === "mismatch") return null
+    if (!shouldDetectOoxml({ name: card.savedPath!, claimedMime: card.claimedMime, detectedMime: card.detectedMime })) return null
+    const readRef: ArtifactReadRef =
+      card.descriptor && card.state !== "legacy" ? { artifactId: card.descriptor.id } : { savedPath: card.savedPath! }
+    return { key: `${dir}:${run}:${card.key}`, dir, run, readRef }
+  })
+  const [ooxmlRes] = createResource(ooxmlTarget, async (target) => {
+    const read = await window.api.runArtifacts.read(target.dir, target.run, target.readRef, {
+      mode: "bytes",
+      maxBytes: OOXML_LIMITS.maxCompressedBytes,
+    })
+    if (!read.ok)
+      return {
+        key: target.key,
+        detection: { status: "rejected" as const, code: "ZIP_DECOMPRESSION_FAILED" as const, reason: read.reason },
+      }
+    if (read.kind !== "bytes")
+      return {
+        key: target.key,
+        detection: {
+          status: "rejected" as const,
+          code: "ZIP_DECOMPRESSION_FAILED" as const,
+          reason: "unexpected read kind",
+        },
+      }
+    return { key: target.key, detection: await detectOoxmlContainer(read.bytes) }
+  })
+
   // ── 下载状态机(纯 reducer;进度事件按 artifactId 全局到达)──
   const [phases, setPhases] = createStore<Record<string, DownloadPhase>>({})
   const phaseOf = (key: string): DownloadPhase => phases[key] ?? { status: "idle" }
@@ -271,7 +306,15 @@ export function ArtifactWorkbench(props: { projects: AlphaProjectsApi }) {
     if (!card || !dir || !run || !cardPreviewable(card)) return null
     const readRef: ArtifactReadRef =
       card.descriptor && card.state !== "legacy" ? { artifactId: card.descriptor.id } : { savedPath: card.savedPath! }
-    const decision = routeArtifact({ name: card.name, claimedMime: card.claimedMime, detectedMime: card.detectedMime })
+    const target = ooxmlTarget()
+    const detected = ooxmlRes()
+    const ooxml = !verifying() && target && detected?.key === target.key ? detected.detection : undefined
+    const decision = routeArtifact({
+      name: card.savedPath ?? card.name,
+      claimedMime: card.claimedMime,
+      detectedMime: card.detectedMime,
+      ooxml,
+    })
     return { directory: dir, runId: run, readRef, name: card.name, decision, card }
   })
 
@@ -584,7 +627,10 @@ function MetadataView(props: { ctx: PreviewContext }) {
       [t("alpha.wb.factState"), props.ctx.card.state],
       [t("alpha.wb.decision"), `${props.ctx.decision.rendererId} — ${props.ctx.decision.reason}`],
       ["MIME", `claimed ${props.ctx.card.claimedMime ?? "—"} / detected ${props.ctx.card.detectedMime ?? "—"}`],
+      ["external open", props.ctx.decision.externalOpen],
     ]
+    if (props.ctx.decision.ooxmlSubtype)
+      out.push(["OOXML", `${props.ctx.decision.ooxmlSubtype} / ${props.ctx.decision.effectiveMime}`])
     const desc = d()
     if (desc) {
       out.push(
