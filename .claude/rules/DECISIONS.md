@@ -3,6 +3,7 @@
 > 架构决策记录(ADR)索引。**每条 ADR 一个文件**,见 `.claude/rules/adrs/`。
 > 新增:在 `adrs/` 加 `ADR-0NN-<slug>.md`(必带 frontmatter:`id/title/status/date`,可选 `supersedes/superseded-by/related`),并在下表追加一行。
 > 不删除既有 ADR,只改其 `status` + 在文件内追加"撤回/修订"。`status` ∈ `accepted | trial | superseded | proposed`。
+> 跨仓决策的所有权与引用规则见 [alpha-work:ADR-003](https://github.com/jinjunnn/alpha-work/blob/main/governance/ADR-003-cross-repository-decision-ownership.md)，统一导航见 [Alpha 跨仓架构决策登记簿](https://github.com/jinjunnn/alpha-work/blob/main/governance/architecture-decision-registry.md)；本仓只维护其拥有边界的 ADR，不复制父仓或兄弟仓正文。
 
 | ADR | 标题 | 状态 | 日期 |
 |-----|------|------|------|
@@ -27,13 +28,14 @@
 | [ADR-022](adrs/ADR-022-automations.md) | 自动化定时任务:本地调度器 + 只读 agent 静态权限档 + `.alpha` 落盘(REQ-021 A1;A2/A3 分期) | accepted(2026-07-05 真机批 PASS,REQ-016 S16;到点触发+readonly deny 零 ask+错过 skip) | 2026-07-04 |
 | [ADR-023](adrs/ADR-023-external-ecosystem-adaptation.md) | 外部生态适配 = 安装期转换器(不做运行时模拟)+ 插件包分发分层(npm 正源 / C 侧清单与精选资产) | accepted | 2026-07-05 |
 | [ADR-024](adrs/ADR-024-ecosystem-inheritance-default-deny.md) | 外部生态继承默认拒绝(.claude/.agents/CLAUDE.md)+ 打开项目 consent 导入门(consent = 安装期转换导入 `.alpha`,非重开继承;全局存量一次性迁移门为发布闸) | accepted | 2026-07-08 |
-| [ADR-025](adrs/ADR-025-user-workspace-alpha-dir.md) | `~/Alpha` 用户默认工作目录:可见数据主目录的目录契约与写入治理(lazy 供给 + 无项目态默认落点 + Journal/Memory/Outputs 契约 + 内置技能 `alpha-workspace`;2026-07-09 同日三残点拍板收口) | accepted | 2026-07-09 |
+| [ADR-025](adrs/ADR-025-user-workspace-alpha-dir.md) | `~/Alpha` 用户默认工作目录:可见数据主目录的目录契约与写入治理(lazy 供给 + 无项目态默认落点 + Journal/Memory/Outputs 契约 + 内置技能 `alpha-workspace`;2026-07-09 同日三残点拍板收口)。**2026-07-19 修订(ADR-031)**:§6 治理边界两条被窄修订 —— ① Memory 面允许用户显式发起的选择性云发布(其余 `~/Alpha` 仍不做同步/备份);② 「不删改用户文件」拆为「自动写入仍只追加」+「用户显式请求且指明范围可删 Memory 文件」 | accepted | 2026-07-09 |
 | [ADR-026](adrs/ADR-026-windows-platform-support.md) | Windows 平台支持:桌面扩为 macOS+Windows(撤回 NON_GOALS#6 Mac-only)+ 平台差异收敛(路径全平台同构零特例 / platform seam 单点分发 / 安全诚实降级 / 发布链分工;审计实证无硬崩点、核心 2–4 人日) | accepted | 2026-07-09 |
 | [ADR-027](adrs/ADR-027-alpha-product-kernel.md) | Alpha Product Kernel:AppInterface typed surface seam(home/newSession/session 窄叶 override)进入冻结前端,基点铸 `frontend-freeze-base-2`(ADR-029 L3 re-freeze,还原步 loud-fail 校验 seam 存活;修订 ADR-016/020) | accepted | 2026-07-12 |
 | [ADR-028](adrs/ADR-028-extension-registry-v2.md) | Extension Package & Registry v2:ManifestV2/InstallRecordV2 严格 schema + main-only 安装计划(renderer 零安装权)+ 项目作用域闭环 fail-closed(Phase 0 信任修复 / Phase 1 ManifestV2 分期;ADR-029 全 L0;REQ-100 只留窄事务钩子接缝) | accepted | 2026-07-12 |
 | [ADR-029](adrs/ADR-029-upstream-sovereignty-ladder.md) | 上游主权阶梯:「零改上游」铁律不修宪,主权升级走四级枚举通道(L0 接缝 → L1 变换 → L2 补丁 loud-fail → L3 冻结接管;逐案 ADR、永不设 L4 直接编辑;既有例外归位记账) | accepted(2026-07-12 同日拍板) | 2026-07-12 |
 | [ADR-030](adrs/ADR-030-project-scope-generation-recall.md) | 收回 project-scope catalog/seed 受管安装:planner decode 后统一 policy guard fail-closed 拒(skill/agent 对称;wire 形状保留),新增安装策略与遗留可管理 kind 拆分,残留显式检测 + generation-aware 清理(journal 在场 fail-closed);项目技能能力走 `.alpha/skills` 非 generation 路径(#362 DECIDE,Codex 裁决) | accepted | 2026-07-15 |
+| [ADR-031](adrs/ADR-031-hybrid-user-memory.md) | 混合用户记忆——本地优先、选择性云发布与有界上下文 | proposed | 2026-07-19 |
 
-> 🔒 **编号预留**:产品所有权专项(见 [GitHub Issues](https://github.com/jinjunnn/alpha-code/issues) 与 [Alpha Delivery](https://github.com/users/jinjunnn/projects/2) §5)预留的 ADR-027/ADR-028 均已于 2026-07-12 按号落笔,预留清空;新 ADR 从 ADR-031 起编号。
+> 🔒 **编号预留**:产品所有权专项(见 [GitHub Issues](https://github.com/jinjunnn/alpha-code/issues) 与 [Alpha Delivery](https://github.com/users/jinjunnn/projects/2) §5)预留的 ADR-027/ADR-028 均已于 2026-07-12 按号落笔,预留清空;新 ADR 从 ADR-032 起编号。
 
 > 📦 **ADR-010/011/013(云平台内部决策)已迁至 `alpha-platform/.claude/rules/adrs/`**(2026-06-22)。本仓只保留"本地→云派发接缝"(见 [ADR-002](adrs/ADR-002-backend-seams.md));文中其余处对它们的引用视为跨项目引用。
