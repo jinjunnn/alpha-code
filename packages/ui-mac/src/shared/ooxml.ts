@@ -174,56 +174,25 @@ const CP437 = Array.from(
     "└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ ",
 )
 
-// Single authority for renderer and main:include every current desktop Word/Excel/PowerPoint
-// association that can carry macros, formulas, linked/embedded objects, external connections, or
-// active web content. A supported rich/container format with uncertain active capacity is included
-// fail-closed. Extensions and IANA media types are independent claims;formats without a dedicated
-// registration use IANA's generic Office-family type. Only docx/xlsx/pptx can pass byte-level proof.
-//
-// Audited exclusions from Microsoft's current Office file-format tables:
-// - .txt/.prn/.dbf/.tsv/.tab:import/passive values and no Office-specific launch association;
-// - .htm/.html/.mht/.mhtml/.xml:Office import/export, but the target OS associates these generic
-//   web/XML formats with browser/editor consumers, not desktop Office;
-// - .pdf/.xps and .bmp/.gif/.jpg/.jpeg/.png/.tif/.tiff/.wmf/.emf/.mp4/.mov/.wmv:fixed/media
-//   interchange without Office macro/formula/connection execution and normally non-Office viewers;
-// - .wps/.dic:legacy import/dictionary data with no documented active-content carrier semantics;
-// - .xlc/.wk1/.wk2/.wk3/.wk4/.wks/.wq1/.wb1/.wb3, .ppz, and PowerPoint 95-or-earlier forms:
-//   explicitly unsupported by the current Office reference, so no target-platform association;
-// - .qry opens in Microsoft Query rather than Excel;generic .dll is not an Office document
-//   association; .asd/.wbk/.xlk are internal recovery/backup artifacts, not supported open formats;
-// - .fodt/.fods/.fodp and .pages/.numbers/.key have no current Microsoft Office association.
+// Single authority for renderer and main:include only OOXML Office formats whose files are ZIP/OPC
+// containers. Inside that domain, a format stays included and fail-closed whenever active content
+// cannot be reliably excluded. Do not extend that uncertainty rule to legacy binary Office, text,
+// web, OpenDocument, query/connection, recovery, media, iWork, or other non-OOXML formats;they keep
+// their pre-gate external-open behavior. Extensions and media types are independent claims. Only
+// docx/xlsx/pptx can pass the current byte-level proof;the other OOXML variants remain fail-closed.
+// xlsb is deliberately included:its workbook parts are binary, but the file itself is a ZIP/OPC
+// package. Every legacy Excel binary extension other than xlsb is outside this gate.
 export const OFFICE_OPEN_GATE_FORMATS = [
   { family: "word", kind: "document", extension: "docx", mimes: [OOXML_SUBTYPES.docx.mime] },
   { family: "word", kind: "template", extension: "dotx", mimes: ["application/vnd.openxmlformats-officedocument.wordprocessingml.template"] },
   { family: "word", kind: "macro-document", extension: "docm", mimes: ["application/vnd.ms-word.document.macroEnabled.12"] },
   { family: "word", kind: "macro-template", extension: "dotm", mimes: ["application/vnd.ms-word.template.macroEnabled.12"] },
-  { family: "word", kind: "legacy-binary-document", extension: "doc", mimes: ["application/msword"] },
-  { family: "word", kind: "legacy-binary-template", extension: "dot", mimes: ["application/msword"] },
-  { family: "word", kind: "legacy-binary-addin", extension: "wll", mimes: ["application/msword"] },
-  { family: "word", kind: "opendocument-text", extension: "odt", mimes: ["application/vnd.oasis.opendocument.text"] },
-  { family: "word", kind: "rich-text", extension: "rtf", mimes: ["application/rtf", "text/rtf"] },
   { family: "excel", kind: "workbook", extension: "xlsx", mimes: [OOXML_SUBTYPES.xlsx.mime] },
   { family: "excel", kind: "template", extension: "xltx", mimes: ["application/vnd.openxmlformats-officedocument.spreadsheetml.template"] },
   { family: "excel", kind: "macro-workbook", extension: "xlsm", mimes: ["application/vnd.ms-excel.sheet.macroEnabled.12"] },
   { family: "excel", kind: "macro-template", extension: "xltm", mimes: ["application/vnd.ms-excel.template.macroEnabled.12"] },
   { family: "excel", kind: "macro-addin", extension: "xlam", mimes: ["application/vnd.ms-excel.addin.macroEnabled.12"] },
   { family: "excel", kind: "binary-workbook", extension: "xlsb", mimes: ["application/vnd.ms-excel.sheet.binary.macroEnabled.12"] },
-  { family: "excel", kind: "legacy-binary-workbook", extension: "xls", mimes: ["application/vnd.ms-excel"] },
-  { family: "excel", kind: "legacy-binary-template", extension: "xlt", mimes: ["application/vnd.ms-excel"] },
-  { family: "excel", kind: "legacy-binary-addin", extension: "xla", mimes: ["application/vnd.ms-excel"] },
-  { family: "excel", kind: "legacy-binary-workbook", extension: "xlw", mimes: ["application/vnd.ms-excel"] },
-  { family: "excel", kind: "legacy-macro-sheet", extension: "xlm", mimes: ["application/vnd.ms-excel"] },
-  { family: "excel", kind: "compiled-addin", extension: "xll", mimes: ["application/vnd.ms-excel"] },
-  { family: "excel", kind: "works-spreadsheet", extension: "xlr", mimes: ["application/vnd.ms-works"] },
-  { family: "excel", kind: "opendocument-spreadsheet", extension: "ods", mimes: ["application/vnd.oasis.opendocument.spreadsheet"] },
-  { family: "excel", kind: "comma-separated-values", extension: "csv", mimes: ["text/csv"] },
-  { family: "excel", kind: "data-interchange-formulas", extension: "dif", mimes: ["application/vnd.ms-excel"] },
-  { family: "excel", kind: "sylk-macro-sheet", extension: "slk", mimes: ["application/vnd.ms-excel"] },
-  { family: "excel", kind: "web-query", extension: "iqy", mimes: ["application/vnd.ms-excel"] },
-  { family: "excel", kind: "olap-query", extension: "oqy", mimes: ["application/vnd.ms-excel"] },
-  { family: "excel", kind: "database-query", extension: "dqy", mimes: ["application/vnd.ms-excel"] },
-  { family: "excel", kind: "report-query", extension: "rqy", mimes: ["application/vnd.ms-excel"] },
-  { family: "excel", kind: "office-data-connection", extension: "odc", mimes: ["application/vnd.ms-excel"] },
   { family: "powerpoint", kind: "presentation", extension: "pptx", mimes: [OOXML_SUBTYPES.pptx.mime] },
   { family: "powerpoint", kind: "template", extension: "potx", mimes: ["application/vnd.openxmlformats-officedocument.presentationml.template"] },
   { family: "powerpoint", kind: "slideshow", extension: "ppsx", mimes: ["application/vnd.openxmlformats-officedocument.presentationml.slideshow"] },
@@ -234,17 +203,10 @@ export const OFFICE_OPEN_GATE_FORMATS = [
   { family: "powerpoint", kind: "macro-slideshow", extension: "ppsm", mimes: ["application/vnd.ms-powerpoint.slideshow.macroEnabled.12"] },
   { family: "powerpoint", kind: "macro-slide", extension: "sldm", mimes: ["application/vnd.ms-powerpoint.slide.macroEnabled.12"] },
   { family: "powerpoint", kind: "macro-addin", extension: "ppam", mimes: ["application/vnd.ms-powerpoint.addin.macroEnabled.12"] },
-  { family: "powerpoint", kind: "legacy-binary-presentation", extension: "ppt", mimes: ["application/vnd.ms-powerpoint"] },
-  { family: "powerpoint", kind: "legacy-binary-template", extension: "pot", mimes: ["application/vnd.ms-powerpoint"] },
-  { family: "powerpoint", kind: "legacy-binary-slideshow", extension: "pps", mimes: ["application/vnd.ms-powerpoint"] },
-  { family: "powerpoint", kind: "legacy-binary-addin", extension: "ppa", mimes: ["application/vnd.ms-powerpoint"] },
-  { family: "powerpoint", kind: "opendocument-presentation", extension: "odp", mimes: ["application/vnd.oasis.opendocument.presentation"] },
 ] as const
 
 const OFFICE_GATE_EXTENSIONS = new Set<string>(OFFICE_OPEN_GATE_FORMATS.map((format) => format.extension))
 const OFFICE_GATE_MIMES = new Set<string>(OFFICE_OPEN_GATE_FORMATS.flatMap((format) => format.mimes.map((mime) => mime.toLowerCase())))
-const ZIP_GATE_EXTENSIONS = new Set<string>(["zip"])
-const ZIP_GATE_MIMES = new Set<string>(["application/zip", "application/x-zip-compressed", "multipart/x-zip"])
 
 const NEUTRAL_CONTAINER_MIMES = new Set([
   "application/zip",
@@ -282,12 +244,12 @@ class OoxmlLimitError extends Error {
   }
 }
 
-/** True whenever a ZIP/Office claim must not reach a privileged external consumer without this gate. */
+/** True whenever an OOXML-family claim must not reach an external consumer without this gate. */
 export function shouldGateOoxml(input: OoxmlClaimInput): boolean {
   const extension = extensionOf(input.name)
-  if (extension && (OFFICE_GATE_EXTENSIONS.has(extension) || ZIP_GATE_EXTENSIONS.has(extension))) return true
+  if (extension && OFFICE_GATE_EXTENSIONS.has(extension)) return true
   return [normalizeMime(input.claimedMime), normalizeMime(input.detectedMime)].some(
-    (mime) => mime !== null && (OFFICE_GATE_MIMES.has(mime) || ZIP_GATE_MIMES.has(mime)),
+    (mime) => mime !== null && OFFICE_GATE_MIMES.has(mime),
   )
 }
 

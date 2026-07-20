@@ -5,6 +5,7 @@ import { dirname, join } from "node:path"
 import { tmpdir } from "node:os"
 import { TextReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js"
 import { artifactIdFor, type ArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
+import { NON_OOXML_OPEN_GATE_REGRESSION_FORMATS } from "../shared/ooxml-gate.test-support"
 import { OFFICE_OPEN_GATE_FORMATS, OOXML_SUBTYPES } from "../shared/ooxml"
 import { registerDownloadedArtifact } from "./artifact-service"
 import { isManagedRunArtifactPath, openRunArtifactExternal } from "./artifact-external-open"
@@ -88,6 +89,38 @@ describe("main-owned artifact external-open gate", () => {
     expect(opened).toBe(false)
   })
 
+  test("all 63 removed extensions and MIME claims keep pre-gate external open", async () => {
+    expect(NON_OOXML_OPEN_GATE_REGRESSION_FORMATS).toHaveLength(63)
+    for (const format of NON_OOXML_OPEN_GATE_REGRESSION_FORMATS) {
+      for (const [name, claimedMime] of [
+        [`out-of-scope.${format.extension}`, undefined],
+        ...format.mimes.map((mime, index) => [`mime-only-${format.extension}-${index}`, mime] as const),
+      ] as const) {
+        const descriptor = register(name, new TextEncoder().encode("not an Office container"), claimedMime, null)
+        const result = await openRunArtifactExternal(projectDir, RUN, descriptor.id, async (path) => {
+          rmSync(dirname(path), { recursive: true, force: true })
+        })
+        expect(result).toEqual({ ok: true })
+      }
+    }
+  })
+
+  test("generic ZIP extension, MIME, and actual ZIP bytes remain outside the OOXML-family gate", async () => {
+    const bytes = await makeGenericZipFixture()
+    for (const [name, claimedMime] of [
+      ["archive.zip", undefined],
+      ["mime-only-zip", "application/zip"],
+      ["mime-only-x-zip", "application/x-zip-compressed"],
+      ["mime-only-multipart-zip", "multipart/x-zip"],
+    ] as const) {
+      const descriptor = register(name, bytes, claimedMime)
+      const result = await openRunArtifactExternal(projectDir, RUN, descriptor.id, async (path) => {
+        rmSync(dirname(path), { recursive: true, force: true })
+      })
+      expect(result).toEqual({ ok: true })
+    }
+  })
+
   test("malformed OOXML is rejected by main even if renderer-side state was previously favorable", async () => {
     const bytes = await makeXlsxFixture("word/document.xml")
     const descriptor = register("book.xlsx", bytes, OOXML_SUBTYPES.xlsx.mime)
@@ -155,6 +188,14 @@ async function makeXlsxFixture(target = "xl/workbook.xml") {
     ["xl/workbook.xml", "<workbook/>"],
   ] as const)
     await writer.add(name, new TextReader(content), { dataDescriptor: false, extendedTimestamp: false })
+  await writer.close()
+  return output.getData()
+}
+
+async function makeGenericZipFixture() {
+  const output = new Uint8ArrayWriter()
+  const writer = new ZipWriter(output, { useWebWorkers: false })
+  await writer.add("readme.txt", new TextReader("ordinary archive"), { dataDescriptor: false, extendedTimestamp: false })
   await writer.close()
   return output.getData()
 }

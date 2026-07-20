@@ -2,6 +2,7 @@
 // 冲突诚实(warning chip)、恶意 fixture(html 冒充 image、带脚本 SVG、检测结论权威不回退)。
 import { describe, expect, test } from "bun:test"
 import { TextReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js"
+import { NON_OOXML_OPEN_GATE_REGRESSION_FORMATS } from "../../../../shared/ooxml-gate.test-support"
 import {
   OFFICE_OPEN_GATE_FORMATS,
   OOXML_SUBTYPES,
@@ -42,8 +43,8 @@ describe("normalizeMime / extension helpers", () => {
 
 describe("路由优先级", () => {
   test("① detectedMime 优先于 claimed 与扩展名", () => {
-    const d = routeArtifact({ name: "data.txt", claimedMime: "text/plain", detectedMime: "text/tab-separated-values" })
-    expect(d.rendererId).toBe("csv")
+    const d = routeArtifact({ name: "data.md", claimedMime: "text/markdown", detectedMime: "application/json" })
+    expect(d.rendererId).toBe("json")
     expect(d.source).toBe("detected")
     expect(d.warnings.length).toBe(1) // 冲突诚实
   })
@@ -77,11 +78,11 @@ describe("路由优先级", () => {
 })
 
 describe("OOXML 结构闸(REQ-093 #281)", () => {
-  test("Office 扩展名/MIME 与 generic ZIP magic 都要求结构检测", () => {
+  test("只有 OOXML 家族扩展名/MIME 要求结构检测", () => {
     expect(shouldDetectOoxml({ name: "book.xlsx" })).toBe(true)
     expect(shouldDetectOoxml({ name: "book", claimedMime: OOXML_SUBTYPES.xlsx.mime })).toBe(true)
-    expect(shouldDetectOoxml({ name: "book.bin", detectedMime: "application/zip" })).toBe(true)
-    expect(shouldDetectOoxml({ name: "notes.txt", detectedMime: "text/plain" })).toBe(false)
+    expect(shouldDetectOoxml({ name: "book.bin", detectedMime: "application/zip" })).toBe(false)
+    expect(shouldDetectOoxml({ name: "notes.md", detectedMime: "text/markdown" })).toBe(false)
   })
 
   test("真实 xlsx 结构 + 一致声称:仍走既有 fallback,但允许外部 Office 打开", () => {
@@ -123,19 +124,47 @@ describe("OOXML 结构闸(REQ-093 #281)", () => {
     }
   })
 
-  test("检测中/非 OOXML/畸形或超限一律 fail-closed,普通非 OOXML 不受影响", () => {
+  test("域内检测中/非 OOXML/畸形或超限一律 fail-closed,普通 ZIP 不受影响", () => {
     const input = { name: "book.xlsx", claimedMime: OOXML_SUBTYPES.xlsx.mime }
     expect(routeArtifact(input).externalOpen).toBe("blocked")
     expect(routeArtifact({ ...input, ooxml: { status: "not-ooxml", code: "CONTENT_TYPES_MISSING", reason: "CONTENT_TYPES_MISSING" } }).externalOpen).toBe("blocked")
     expect(routeArtifact({ ...input, ooxml: { status: "rejected", code: "ZIP_ENTRY_LIMIT", reason: "ZIP_ENTRY_LIMIT" } }).externalOpen).toBe("blocked")
-    expect(routeArtifact({ name: "archive.zip", ooxml: { status: "not-ooxml", code: "CONTENT_TYPES_MISSING", reason: "CONTENT_TYPES_MISSING" } }).externalOpen).toBe("blocked")
+    expect(routeArtifact({ name: "archive.zip", detectedMime: "application/zip" }).externalOpen).toBe("allowed")
     expect(routeArtifact({ name: "archive.bin" }).externalOpen).toBe("allowed")
+  })
+
+  test("移出项恢复外部打开且保留既有应用内 renderer", () => {
+    for (const [name, rendererId] of [
+      ["page.html", "html"],
+      ["page.xhtml", "html"],
+      ["data.xml", "code"],
+      ["notes.txt", "text"],
+      ["table.tsv", "csv"],
+    ] as const) {
+      const decision = routeArtifact({ name })
+      expect(decision.rendererId).toBe(rendererId)
+      expect(decision.externalOpen).toBe("allowed")
+    }
+  })
+
+  test("全部 63 个移出项的扩展名及 MIME 保持闸前外部打开策略", () => {
+    expect(NON_OOXML_OPEN_GATE_REGRESSION_FORMATS).toHaveLength(63)
+    expect(new Set(NON_OOXML_OPEN_GATE_REGRESSION_FORMATS.map((format) => format.extension)).size).toBe(63)
+    for (const format of NON_OOXML_OPEN_GATE_REGRESSION_FORMATS) {
+      expect(shouldDetectOoxml({ name: `artifact.${format.extension}` })).toBe(false)
+      expect(routeArtifact({ name: `artifact.${format.extension}` }).externalOpen).toBe("allowed")
+      for (const claimedMime of format.mimes) {
+        expect(shouldDetectOoxml({ name: "artifact", claimedMime })).toBe(false)
+        expect(routeArtifact({ name: "artifact", claimedMime }).externalOpen).toBe("allowed")
+      }
+    }
   })
 
   test("authoritative table is normalized,non-empty,and extension-unique", () => {
     const extensions = OFFICE_OPEN_GATE_FORMATS.map((format) => format.extension)
-    expect(extensions.length).toBeGreaterThan(0)
+    expect(extensions).toHaveLength(20)
     expect(new Set(extensions).size).toBe(extensions.length)
+    expect(new Set(OFFICE_OPEN_GATE_FORMATS.flatMap((format) => format.mimes)).size).toBe(20)
     for (const format of OFFICE_OPEN_GATE_FORMATS) {
       expect(format.extension).toBe(format.extension.toLowerCase())
       expect(format.mimes.length).toBeGreaterThan(0)
@@ -197,6 +226,7 @@ describe("恶意 fixture(REQ-095 恶意矩阵)", () => {
     const d = routeArtifact({ name: "evil.html", claimedMime: "image/png" })
     expect(d.rendererId).toBe("image")
     expect(d.source).toBe("claimed")
+    expect(d.externalOpen).toBe("allowed")
     expect(d.warnings.length).toBe(1)
   })
   test("带脚本 SVG:无论声明/检测/扩展名,一律路由 code(源码只读),绝不 image-inline", () => {
@@ -210,17 +240,28 @@ describe("恶意 fixture(REQ-095 恶意矩阵)", () => {
     }
   })
   test("text/html 的所有来源路径都终结于 html 卡片(REQ-096 接线点),永不 text/code", () => {
-    expect(routeArtifact({ name: "a", detectedMime: "text/html" }).rendererId).toBe("html")
-    expect(routeArtifact({ name: "a", claimedMime: "text/html" }).rendererId).toBe("html")
-    expect(routeArtifact({ name: "a.html" }).rendererId).toBe("html")
-    expect(routeArtifact({ name: "a.xhtml" }).rendererId).toBe("html")
+    for (const input of [
+      { name: "a", detectedMime: "text/html" },
+      { name: "a", claimedMime: "text/html" },
+      { name: "a.html" },
+      { name: "a.xhtml" },
+    ]) {
+      const decision = routeArtifact(input)
+      expect(decision.rendererId).toBe("html")
+      expect(decision.externalOpen).toBe("allowed")
+    }
   })
   test("PDF → pdf 卡片(无伪造内置查看器路由)", () => {
-    expect(routeArtifact({ name: "r.pdf" }).rendererId).toBe("pdf")
-    expect(routeArtifact({ name: "r", detectedMime: "application/pdf" }).rendererId).toBe("pdf")
+    for (const input of [{ name: "r.pdf" }, { name: "r", detectedMime: "application/pdf" }]) {
+      const decision = routeArtifact(input)
+      expect(decision.rendererId).toBe("pdf")
+      expect(decision.externalOpen).toBe("allowed")
+    }
   })
   test("音视频可 fallback;Office 在检测前必须保持 blocked fallback", () => {
-    expect(routeArtifact({ name: "a.mp4", claimedMime: "video/mp4" }).rendererId).toBe("fallback")
+    const media = routeArtifact({ name: "a.mp4", claimedMime: "video/mp4" })
+    expect(media.rendererId).toBe("fallback")
+    expect(media.externalOpen).toBe("allowed")
     const office = routeArtifact({
       name: "a.docx",
       claimedMime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",

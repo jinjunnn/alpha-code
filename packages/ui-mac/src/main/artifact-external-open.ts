@@ -77,16 +77,12 @@ export async function openRunArtifactExternal(
       isAbsolute(rel)
     ) return refused("ARTIFACT_PATH_REJECTED")
 
-    const header = Buffer.alloc(4)
-    const headerBytes = readSync(source, header, 0, header.byteLength, 0)
     const claim = {
       name: entry.local.savedPath,
       claimedMime: entry.descriptor.claimedMime,
       detectedMime: entry.local.detectedMime ?? entry.descriptor.detectedMime,
     }
-    const mustGate =
-      shouldGateOoxml(claim) ||
-      (headerBytes === 4 && header[0] === 0x50 && header[1] === 0x4b && header[2] === 0x03 && header[3] === 0x04)
+    const mustGate = shouldGateOoxml(claim)
     const bytes = mustGate
       ? sourceStat.size <= OOXML_LIMITS.maxCompressedBytes
         ? readPinnedFile(source, sourceStat.size)

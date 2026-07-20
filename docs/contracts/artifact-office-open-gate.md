@@ -54,54 +54,119 @@ sliding window。
 单一权威表是 `packages/ui-mac/src/shared/ooxml.ts` 的 `OFFICE_OPEN_GATE_FORMATS`；renderer
 与 main 只从它派生扩展名/MIME set，不得各持副本。
 
-纳入一个扩展名须满足：当前桌面 Word、Excel 或 PowerPoint 在目标平台把它作为可打开的
-文件形态或应用关联，并且它可承载宏、公式、链接/嵌入对象、外部数据连接或主动 Web 内容。
-官方文档确认可打开但主动承载能力不能可靠排除的 rich/container 格式也保守纳入。扩展名
-与 MIME 是两个独立的非可信声称：IANA 有专用注册时列出全部相关注册；无专用注册时使用
-IANA 的 Office family MIME。命中任一项就必须过闸，不能因另一项缺失或为中性 MIME 放行。
+本准则只适用于 **OOXML（ZIP/OPC 容器）Office 格式**。域内不能可靠排除主动内容时必须
+纳入并 fail-closed；这条不确定性规则不得用于任何非 ZIP/OPC 格式。扩展名与 MIME 是两个
+独立的非可信声称：命中任一权威表项就必须过闸，不能因另一项缺失或为中性 MIME 放行。
 
-当前权威表按族为：
+当前权威表为 **20 个扩展名 / 20 个唯一 MIME**：
 
-- Word：`.docx/.dotx/.docm/.dotm/.doc/.dot/.wll/.odt/.rtf`；RTF 同时接受 IANA 的
-  `application/rtf` 与 `text/rtf`。
-- Excel：`.xlsx/.xltx/.xlsm/.xltm/.xlam/.xlsb/.xls/.xlt/.xla/.xlw/.xlm/.xll/.xlr/.ods`，
-  Excel-associated 文本交换 `.csv/.dif/.slk`，外部连接 `.iqy/.oqy/.dqy/.rqy/.odc`。
-- PowerPoint：`.pptx/.potx/.ppsx/.sldx/.thmx/.pptm/.potm/.ppsm/.sldm/.ppam/.ppt/.pot/.pps/.ppa/.odp`。
+| 扩展名 | 对应 MIME |
+| --- | --- |
+| `.docx` | `application/vnd.openxmlformats-officedocument.wordprocessingml.document` |
+| `.dotx` | `application/vnd.openxmlformats-officedocument.wordprocessingml.template` |
+| `.docm` | `application/vnd.ms-word.document.macroEnabled.12` |
+| `.dotm` | `application/vnd.ms-word.template.macroEnabled.12` |
+| `.xlsx` | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` |
+| `.xltx` | `application/vnd.openxmlformats-officedocument.spreadsheetml.template` |
+| `.xlsm` | `application/vnd.ms-excel.sheet.macroEnabled.12` |
+| `.xltm` | `application/vnd.ms-excel.template.macroEnabled.12` |
+| `.xlam` | `application/vnd.ms-excel.addin.macroEnabled.12` |
+| `.xlsb` | `application/vnd.ms-excel.sheet.binary.macroEnabled.12` |
+| `.pptx` | `application/vnd.openxmlformats-officedocument.presentationml.presentation` |
+| `.potx` | `application/vnd.openxmlformats-officedocument.presentationml.template` |
+| `.ppsx` | `application/vnd.openxmlformats-officedocument.presentationml.slideshow` |
+| `.sldx` | `application/vnd.openxmlformats-officedocument.presentationml.slide` |
+| `.thmx` | `application/vnd.ms-officetheme` |
+| `.pptm` | `application/vnd.ms-powerpoint.presentation.macroEnabled.12` |
+| `.potm` | `application/vnd.ms-powerpoint.template.macroEnabled.12` |
+| `.ppsm` | `application/vnd.ms-powerpoint.slideshow.macroEnabled.12` |
+| `.sldm` | `application/vnd.ms-powerpoint.slide.macroEnabled.12` |
+| `.ppam` | `application/vnd.ms-powerpoint.addin.macroEnabled.12` |
 
-核对基线：[Microsoft current Office file-format reference](https://learn.microsoft.com/en-us/office/compatibility/office-file-format-reference)
-与 [Excel supported-formats 表](https://support.microsoft.com/en-us/excel/file-formats-that-are-supported-in-excel)
-决定“可打开”边界；[Excel 格式损失表](https://support.microsoft.com/en-us/excel/excel-formatting-and-features-that-are-not-transferred-to-other-file-formats)
-核对 CSV/DIF/SYLK 的公式承载；Microsoft 的
-[external-content/Query 安全说明](https://support.microsoft.com/en-us/office/security-privacy/block-or-unblock-external-content-in-office-documents)
-和 [Excel data journey](https://support.microsoft.com/en-us/excel/how-data-journeys-through-excel)
-决定 query/connection 风险；[IANA media-type registry](https://www.iana.org/assignments/media-types/media-types.xhtml)
-决定 MIME 拼写。每次升级 Office 目标版本或 zip.js 都必须重做这两组核对，不得只在表尾
-补单个后缀。
+`.xlsb` 的工作簿部件虽为二进制，文件外层仍是 ZIP/OPC package，因此保留纳入；除 `.xlsb`
+外的旧式 Excel 二进制格式均在域外。通用 `.zip` 扩展名、`application/zip`、
+`application/x-zip-compressed` 与 `multipart/x-zip` 不代表 OOXML 家族，不直接命中本闸。
 
-## 3. 决定不纳入
+MIME 拼写以 [IANA media-type registry](https://www.iana.org/assignments/media-types/media-types.xhtml)
+及 OOXML/Office 注册为核对基线。每次升级 Office 目标版本或 zip.js 都必须重新核对 ZIP/OPC
+属性与结构检测边界，不得越过 OOXML 容器域。
 
-- `.txt/.prn/.dbf/.tsv/.tab`：通用导入或被动值，不是 Office-specific launch
-  association；官方格式损失说明不保留可执行公式/宏语义。`.csv` 是例外，因为作为 Excel
-  关联格式打开时单元格公式会被解释，所以已纳入。
-- `.htm/.html/.mht/.mhtml/.xml`：Office 可以导入/导出，但目标 OS 默认交给浏览器或编辑器，
-  不满足“Office 应用关联”这一半准则；它们继续走既有非特权 HTML/XML 处理。
-- `.pdf/.xps`、图片与音视频 `.bmp/.gif/.jpg/.jpeg/.png/.tif/.tiff/.wmf/.emf/.mp4/.mov/.wmv`：
-  固定版式或媒体交换，不执行 Office 宏/公式/连接，且通常关联非 Office viewer。
-- `.wps/.dic`：legacy import/dictionary，官方资料没有证明它们是主动内容载体。
-- `.xlc/.wk1/.wk2/.wk3/.wk4/.wks/.wq1/.wb1/.wb3`、`.ppz` 与 PowerPoint 95-or-earlier：
-  current Microsoft reference 明列不支持，目标平台无当前 Office 关联；这也是 Lotus 与
-  Quattro 族被复核后不纳入的理由。
-- `.qry`：需先由 Microsoft Query 打开再另存 `.dqy`，不是 Excel 直接关联；`.dll` 是通用
-  可执行库而非 Office 文档关联（`.xll` 已单独纳入）。
-- `.asd/.wbk/.xlk`：Office 内部恢复/备份，不在 current supported open-format contract。
-- `.fodt/.fods/.fodp` 与 `.pages/.numbers/.key`：current Microsoft reference 没有目标 Office
-  关联依据。
+## 3. 外部打开闸与非特权 renderer 的边界
 
-## 4. 验证合同
+进入 `OFFICE_OPEN_GATE_FORMATS` 表示 claimed/extension fallback **本身不能取得系统外部打开
+许可**，不表示该格式禁止一切本地呈现。renderer 仍按 detected MIME、claimed MIME、扩展名
+的既有优先级选择 non-privileged renderer；未获精确结构证明时把 `externalOpen` 固定为
+`blocked`。main 从同表独立派生 gate，并拒绝把未获精确 OOXML 证明的字节交给系统关联应用。
 
-- 表结构测试只遍历权威常量，断言扩展名唯一、规范化且每行 MIME 非空；不得再复制一份
-  “expected extension list”。
+当前结构证明只识别无宏 `.docx/.xlsx/.pptx`，且要求结构 subtype、扩展名及所有非中性 MIME
+一致。其它 17 个 OOXML 变体一律 fail-closed；三种基础格式在结构缺失、损坏、超限或声称
+冲突时也 fail-closed。本变更不新增内容语义扫描或预览格式面，也不把 renderer 结果升级为
+外部打开依据。
+
+收窄后用户可见影响完整如下；“事实 fallback”只展示 artifact 事实与操作状态，不解析 Office
+内容，因此这些行都没有应用内文档查看路径：
+
+| 扩展名 | 失去 claimed/extension fallback 外部打开的条件 | 应用内查看路径 |
+| --- | --- | --- |
+| `.docx` | 结构不符、损坏、超限或声称冲突 | 无；事实 fallback |
+| `.dotx` | 始终（当前无该 subtype 的结构放行） | 无；事实 fallback |
+| `.docm` | 始终（当前无该 subtype 的结构放行） | 无；事实 fallback |
+| `.dotm` | 始终（当前无该 subtype 的结构放行） | 无；事实 fallback |
+| `.xlsx` | 结构不符、损坏、超限或声称冲突 | 无；事实 fallback |
+| `.xltx` | 始终（当前无该 subtype 的结构放行） | 无；事实 fallback |
+| `.xlsm` | 始终（当前无该 subtype 的结构放行） | 无；事实 fallback |
+| `.xltm` | 始终（当前无该 subtype 的结构放行） | 无；事实 fallback |
+| `.xlam` | 始终（当前无该 subtype 的结构放行） | 无；事实 fallback |
+| `.xlsb` | 始终（当前无该 subtype 的结构放行） | 无；事实 fallback |
+| `.pptx` | 结构不符、损坏、超限或声称冲突 | 无；事实 fallback |
+| `.potx` | 始终（当前无该 subtype 的结构放行） | 无；事实 fallback |
+| `.ppsx` | 始终（当前无该 subtype 的结构放行） | 无；事实 fallback |
+| `.sldx` | 始终（当前无该 subtype 的结构放行） | 无；事实 fallback |
+| `.thmx` | 始终（当前无该 subtype 的结构放行） | 无；事实 fallback |
+| `.pptm` | 始终（当前无该 subtype 的结构放行） | 无；事实 fallback |
+| `.potm` | 始终（当前无该 subtype 的结构放行） | 无；事实 fallback |
+| `.ppsm` | 始终（当前无该 subtype 的结构放行） | 无；事实 fallback |
+| `.sldm` | 始终（当前无该 subtype 的结构放行） | 无；事实 fallback |
+| `.ppam` | 始终（当前无该 subtype 的结构放行） | 无；事实 fallback |
+
+## 4. 范围重裁
+
+从本 PR 曾提出的最大 83 项表中完整移出以下 **63 个非 OOXML 扩展名**，恢复本 PR 之前的
+系统外部打开策略：
+
+- Word/文字处理（9）：`.doc/.dot/.wll/.odt/.rtf/.wps/.asd/.wbk/.fodt`。
+- 文本/Web/XML（7）：`.txt/.htm/.html/.mht/.mhtml/.xhtml/.xml`。
+- Excel/表格/连接/旧式家族（31）：`.xls/.xlt/.xla/.xlw/.xlm/.xll/.xlr/.ods/.csv/.prn/.tsv/.tab/.dif/.slk/.iqy/.oqy/.dqy/.rqy/.qry/.odc/.xlk/.xlc/.fods/.wk1/.wk2/.wk3/.wk4/.wks/.wq1/.wb1/.wb3`。
+- PowerPoint/演示（7）：`.ppt/.pot/.pps/.ppa/.odp/.fodp/.ppz`。
+- 此前已移出的 PDF/XPS、媒体与 iWork（9）：`.pdf/.xps/.oxps/.mp4/.mov/.wmv/.pages/.numbers/.key`。
+
+这些行对应的 **33 个唯一 MIME** 也全部移出：
+`application/msword`、`application/vnd.oasis.opendocument.text`、`application/rtf`、
+`text/rtf`、`application/vnd.ms-works`、`application/vnd.oasis.opendocument.text-flat-xml`、
+`text/plain`、`text/html`、`multipart/related`、`application/xhtml+xml`、`application/xml`、
+`text/xml`、`application/vnd.ms-excel`、`application/vnd.oasis.opendocument.spreadsheet`、
+`text/csv`、`text/tab-separated-values`、
+`application/vnd.oasis.opendocument.spreadsheet-flat-xml`、`application/vnd.lotus-1-2-3`、
+`application/x-quattropro`、`application/x-quattro-win`、`application/vnd.ms-powerpoint`、
+`application/vnd.oasis.opendocument.presentation`、
+`application/vnd.oasis.opendocument.presentation-flat-xml`、`application/pdf`、
+`application/vnd.ms-xpsdocument`、`application/oxps`、`video/mp4`、`audio/mp4`、
+`video/quicktime`、`video/x-ms-wmv`、`application/vnd.apple.pages`、
+`application/vnd.apple.numbers`、`application/vnd.apple.keynote`。
+
+该 63 项是本 PR 曾纳入表中的完整移出清单；其它非 OOXML 格式从未成为本闸权威项，也继续
+保持原行为。HTML/XHTML、XML、TXT、CSV/TSV/TAB 与 PDF 仍走各自既有应用内 renderer；其余
+移出项没有内置查看器时仍显示事实 fallback，但重新保留系统外部打开。普通 ZIP 及其中性
+MIME 也不受本闸影响。
+
+## 5. 验证合同
+
+- 表结构测试只遍历权威常量，断言 20 个扩展名、20 个唯一 MIME、扩展名唯一且规范化；
+  不得再复制一份 production “expected extension list”。
 - renderer 与 main 测试对表中每一行生成 extension × MIME 三态：MIME 缺失、中性
   `application/octet-stream`、以及每个声称 MIME；还要生成 MIME-only case。
 - 除 `.docx/.xlsx/.pptx` 精确结构证明外，权威表每行都必须保持 external-open blocked。
+- renderer 与 main 必须逐项断言 63 个移出扩展名及其 MIME 不命中本闸；renderer 另须钉住
+  HTML/XHTML、XML、TXT、CSV/TSV/TAB 与 PDF 的既有应用内路径。
+- main 必须用真实普通 ZIP 字节钉住通用 ZIP 扩展名/MIME 不受 OOXML 家族闸影响。
 - 完成门：从 `packages/ui-mac` 运行 `bun typecheck` 与 `bun test src`。
