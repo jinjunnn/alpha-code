@@ -46,7 +46,7 @@ beforeEach(async () => {
   projectDir = realpathSync(mkdtempSync(join(tmpdir(), "artifact-quota-")))
   reservationCounter = 100
   mkdirSync(artifactsDir(), { recursive: true })
-  const initialized = await initializeArtifactQuotaEnvironment(projectDir, { volumeIsLocal: async () => true })
+  const initialized = await initializeArtifactQuotaEnvironment(projectDir)
   if (!initialized.ok) throw new Error(`test setup: artifact quota initialization failed (${initialized.error})`)
   machineId = readFileSync(join(projectDir, ARTIFACT_QUOTA_MACHINE_ID_FILE), "utf8").trim()
 })
@@ -258,98 +258,11 @@ function expectMinimumOnly(results: ChildFinalizeResult[], names: string[]) {
 }
 
 describe("finalizeArtifactWithQuota", () => {
-  test("machine identity persists in userData and the real local temp volume is accepted", async () => {
+  test("machine identity persists in userData", async () => {
     const initialized = await initializeArtifactQuotaEnvironment(projectDir)
 
     expect(initialized).toEqual({ ok: true })
     expect(readFileSync(join(projectDir, ARTIFACT_QUOTA_MACHINE_ID_FILE), "utf8").trim()).toBe(machineId)
-  })
-
-  test("production statfs accepts only the HFS and APFS Darwin type-code whitelist", async () => {
-    for (const fileSystemType of [17, 26]) {
-      const initialized = await initializeArtifactQuotaEnvironment(projectDir, {
-        testHooks: {
-          statfsType: async () => fileSystemType,
-        },
-      })
-
-      expect(initialized).toEqual({ ok: true })
-    }
-  })
-
-  test("production statfs rejects every non-whitelisted filesystem type", async () => {
-    for (const fileSystemType of [0, 2, 19, 27, 0x65735546]) {
-      const initialized = await initializeArtifactQuotaEnvironment(projectDir, {
-        testHooks: {
-          statfsType: async () => fileSystemType,
-        },
-      })
-
-      expect(initialized).toEqual({
-        ok: false,
-        error: "unsupported-filesystem",
-        detail: "artifact quota requires a local filesystem",
-      })
-    }
-  })
-
-  test('literal " on ", parentheses, newline, and tab cannot alter a non-whitelisted statfs verdict', async () => {
-    const specialRoot = join(projectDir, "literal on mount (point)\nwith\ttab")
-    mkdirSync(specialRoot)
-    let observedRoot = ""
-    const initialized = await initializeArtifactQuotaEnvironment(specialRoot, {
-      testHooks: {
-        statfsType: async (root) => {
-          observedRoot = root
-          return 27
-        },
-      },
-    })
-
-    expect(observedRoot).toBe(specialRoot)
-    expect(initialized).toEqual({
-      ok: false,
-      error: "unsupported-filesystem",
-      detail: "artifact quota requires a local filesystem",
-    })
-  })
-
-  test("statfs failure and timeout fail closed with the stable disk error", async () => {
-    const failed = await initializeArtifactQuotaEnvironment(projectDir, {
-      testHooks: { statfsType: async () => null },
-    })
-    expect(failed).toEqual({
-      ok: false,
-      error: "disk",
-      detail: "artifact quota admission unavailable (filesystem locality unavailable)",
-    })
-
-    const timedOut = await initializeArtifactQuotaEnvironment(projectDir, {
-      testHooks: {
-        statfsType: () => new Promise(() => {}),
-        volumeDetectionTimeoutMs: 5,
-      },
-    })
-    expect(timedOut).toEqual({
-      ok: false,
-      error: "disk",
-      detail: "artifact quota admission unavailable (filesystem locality unavailable)",
-    })
-  })
-
-  test("filesystem support is rechecked for every finalization instead of cached by device", async () => {
-    const initialized = await initializeArtifactQuotaEnvironment(projectDir, {
-      testHooks: { statfsType: async (root) => (root === projectDir ? 26 : 27) },
-    })
-    expect(initialized).toEqual({ ok: true })
-
-    const result = await write("changed-volume.bin", "x", { limits: limits() })
-
-    expect(result).toEqual({
-      ok: false,
-      error: "unsupported-filesystem",
-      detail: "artifact quota requires a local filesystem",
-    })
   })
 
   test("under both run and project limits admits before final rename and removes its reservation", async () => {
@@ -622,23 +535,6 @@ describe("finalizeArtifactWithQuota", () => {
     expect(stagingResidue()).toEqual([])
   })
 
-  test("non-local artifact volumes fail closed with a stable error code", async () => {
-    const initialized = await initializeArtifactQuotaEnvironment(projectDir, {
-      volumeIsLocal: async (root) => !root.includes(`${join(".alpha", "runs")}`),
-    })
-    expect(initialized.ok).toBe(true)
-    const result = await write("remote.bin", "x", { limits: limits() })
-
-    expect(result).toEqual({
-      ok: false,
-      error: "unsupported-filesystem",
-      detail: "artifact quota requires a local filesystem",
-    })
-    expect(existsSync(target("remote.bin"))).toBe(false)
-    expect(reservations()).toEqual([])
-    expect(stagingResidue()).toEqual([])
-  })
-
   test("reservation convergence has deadline and round bounds without blocking the event loop", async () => {
     seedReservation({
       declaredBytes: 1,
@@ -760,6 +656,98 @@ describe("finalizeArtifactWithQuota", () => {
     expect(eventLoopTicks).toBeGreaterThan(0)
     expect(existsSync(target("slow-reservation-read.bin"))).toBe(false)
     expect(reservations()).toHaveLength(1)
+    expect(stagingResidue()).toEqual([])
+  })
+
+  test("timed-out reservation reread and staged handle close cannot extend the retryable return path", async () => {
+    seedReservation({
+      declaredBytes: 1,
+      startedAt: String((RACE_STARTED_AT + 1_000) * 1_000),
+    })
+    const startedAt = Date.now()
+    const result = await write("bounded-return.bin", "x", {
+      limits: limits({ runMaxBytes: 1, projectMaxBytes: 1 }),
+      now: () => new Date(RACE_STARTED_AT),
+      pidAlive: () => true,
+      testHooks: {
+        waitPolicy: { deadlineMs: 10, maxRounds: 250, intervalMs: 1 },
+        returnPolicy: { reservationDeadlineMs: 10, stagedCloseDeadlineMs: 10 },
+        async beforeReservationCleanupRead() {
+          await Bun.sleep(100)
+        },
+        async beforeStagedHandleClose() {
+          await Bun.sleep(100)
+        },
+      },
+    })
+
+    expect(result).toEqual({
+      ok: false,
+      error: "retryable",
+      detail: "artifact quota admission retry required (reservation convergence timed out)",
+    })
+    expect(Date.now() - startedAt).toBeLessThan(100)
+    expect(existsSync(target("bounded-return.bin"))).toBe(false)
+    expect(reservations()).toHaveLength(2)
+    expect(stagingResidue()).toEqual([])
+  })
+
+  test("timed-out reservation deletion is abandoned without changing the retryable error", async () => {
+    seedReservation({
+      declaredBytes: 1,
+      startedAt: String((RACE_STARTED_AT + 1_000) * 1_000),
+    })
+    const startedAt = Date.now()
+    const result = await write("bounded-delete.bin", "x", {
+      limits: limits({ runMaxBytes: 1, projectMaxBytes: 1 }),
+      now: () => new Date(RACE_STARTED_AT),
+      pidAlive: () => true,
+      testHooks: {
+        waitPolicy: { deadlineMs: 10, maxRounds: 250, intervalMs: 1 },
+        returnPolicy: { reservationDeadlineMs: 10, stagedCloseDeadlineMs: 10 },
+        async beforeReservationCleanupDelete() {
+          await Bun.sleep(100)
+        },
+      },
+    })
+
+    expect(result).toEqual({
+      ok: false,
+      error: "retryable",
+      detail: "artifact quota admission retry required (reservation convergence timed out)",
+    })
+    expect(Date.now() - startedAt).toBeLessThan(100)
+    expect(existsSync(target("bounded-delete.bin"))).toBe(false)
+    expect(reservations()).toHaveLength(2)
+    expect(stagingResidue()).toEqual([])
+  })
+
+  test("initial admission scan has a retryable wall-clock deadline", async () => {
+    Array.from({ length: 48 }, (_, index) => writeFileSync(target(`initial-slow-${index}.bin`), "x"))
+    let eventLoopTicks = 0
+    const ticker = setInterval(() => (eventLoopTicks += 1), 1)
+    const startedAt = Date.now()
+    const result = await write("initial-deadline.bin", "x", {
+      limits: limits({ runMaxBytes: 100, runMaxCount: 100, projectMaxBytes: 100 }),
+      testHooks: {
+        initialScanDeadlineMs: 20,
+        scanPolicy: { maxEntries: 1_000, yieldEvery: 1 },
+        async beforeScanEntry() {
+          await Bun.sleep(2)
+        },
+      },
+    })
+    clearInterval(ticker)
+
+    expect(result).toEqual({
+      ok: false,
+      error: "retryable",
+      detail: "artifact quota admission retry required (quota scan timed out)",
+    })
+    expect(Date.now() - startedAt).toBeLessThan(150)
+    expect(eventLoopTicks).toBeGreaterThan(0)
+    expect(existsSync(target("initial-deadline.bin"))).toBe(false)
+    expect(reservations()).toEqual([])
     expect(stagingResidue()).toEqual([])
   })
 

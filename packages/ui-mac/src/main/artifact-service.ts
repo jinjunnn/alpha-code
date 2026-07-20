@@ -46,11 +46,11 @@ const ARTIFACT_QUOTA_YIELDED = "artifact quota admission yielded to an earlier r
 const ARTIFACT_QUOTA_WAIT_DEADLINE_MS = 5_000
 const ARTIFACT_QUOTA_WAIT_MAX_ROUNDS = 250
 const ARTIFACT_QUOTA_WAIT_INTERVAL_MS = 20
+const ARTIFACT_QUOTA_INITIAL_SCAN_DEADLINE_MS = 30_000
+const ARTIFACT_QUOTA_RESERVATION_CLEANUP_DEADLINE_MS = 100
+const ARTIFACT_QUOTA_STAGED_CLOSE_DEADLINE_MS = 100
 const ARTIFACT_QUOTA_SCAN_MAX_ENTRIES = 10_000
 const ARTIFACT_QUOTA_SCAN_YIELD_EVERY = 32
-const ARTIFACT_VOLUME_DETECTION_TIMEOUT_MS = 1_000
-// Darwin vfs type numbers are stable ABI values: HFS=17 and APFS=26. Everything else is unsupported.
-const ARTIFACT_SUPPORTED_DARWIN_FILESYSTEM_TYPES = new Set([17n, 26n])
 const ARTIFACT_PART_SUFFIX_RE = /\.[0-9a-z]+-[0-9a-z]+-[0-9a-z]+-[0-9a-f]{8}\.part$/
 const ARTIFACT_RESERVATION_STARTED_AT_RE = /^[0-9]{16}$/
 const ARTIFACT_RESERVATION_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
@@ -72,23 +72,13 @@ export type ArtifactQuotaFinalizeResult =
   | { ok: true }
   | {
       ok: false
-      error: "over-limit" | "disk" | "retryable" | "staging-changed" | "unsupported-filesystem"
+      error: "over-limit" | "disk" | "retryable" | "staging-changed"
       detail: string
     }
 
 export type ArtifactQuotaEnvironmentResult =
   | { ok: true }
-  | { ok: false; error: "disk" | "unsupported-filesystem"; detail: string }
-
-export type ArtifactQuotaEnvironmentOptions = {
-  /** 仅供测试注入卷支持结论;生产按目标路径的 Darwin statfs 类型码白名单判定。 */
-  volumeIsLocal?: (root: string) => Promise<boolean | undefined>
-  /** 仅供测试覆盖生产 statfs 类型读取与检测超时;生产调用不得注入。 */
-  testHooks?: {
-    statfsType?: (root: string) => Promise<number | bigint | null>
-    volumeDetectionTimeoutMs?: number
-  }
-}
+  | { ok: false; error: "disk"; detail: string }
 
 export type ArtifactQuotaFinalizeOptions = {
   limits?: ArtifactQuotaLimits
@@ -101,8 +91,13 @@ export type ArtifactQuotaFinalizeOptions = {
     afterQuotaScan?: () => void | Promise<void>
     waitPolicy?: { deadlineMs: number; maxRounds: number; intervalMs: number }
     scanPolicy?: { maxEntries: number; yieldEvery: number }
+    initialScanDeadlineMs?: number
+    returnPolicy?: { reservationDeadlineMs: number; stagedCloseDeadlineMs: number }
     beforeScanEntry?: () => void | Promise<void>
     beforeOwnReservationRead?: () => void | Promise<void>
+    beforeReservationCleanupRead?: () => void | Promise<void>
+    beforeReservationCleanupDelete?: () => void | Promise<void>
+    beforeStagedHandleClose?: () => void | Promise<void>
     afterScanYield?: () => void
   }
 }
@@ -126,11 +121,9 @@ type ArtifactQuotaReservation = ArtifactQuotaReservationRecord & {
 
 type StagedArtifact = { handle: fs.promises.FileHandle; dev: bigint; ino: bigint; bytes: bigint }
 
-type ArtifactQuotaEnvironment = {
-  machineId: string
-  volumeIsLocal: (root: string) => Promise<boolean | undefined>
-  volumeDetectionTimeoutMs: number
-}
+type ArtifactQuotaEnvironment = { machineId: string }
+
+type ArtifactQuotaReservationReleaseResult = "released" | "missing" | "changed" | "failed" | "timed-out"
 
 let artifactQuotaEnvironment: ArtifactQuotaEnvironment | ArtifactQuotaEnvironmentResult | null = null
 
@@ -167,12 +160,10 @@ export function artifactQuotaReservationsPath(projectDir: string, runId: string)
 }
 
 /**
- * 主进程启动后初始化一次安装级 machine id。userData 与每个首次使用的 artifact 根都必须
- * 位于 macOS 明确白名单的本地文件系统;未知或远程卷均 fail closed。
+ * 主进程启动后初始化一次安装级 machine id。artifact 根的部署前置条件见平台契约。
  */
 export async function initializeArtifactQuotaEnvironment(
   userDataPath: string,
-  opts: ArtifactQuotaEnvironmentOptions = {},
 ): Promise<ArtifactQuotaEnvironmentResult> {
   const root = path.resolve(userDataPath)
   let stat: fs.Stats
@@ -188,32 +179,13 @@ export async function initializeArtifactQuotaEnvironment(
     artifactQuotaEnvironment = result
     return result
   }
-  const volumeIsLocal =
-    opts.volumeIsLocal ?? ((candidate: string) => defaultArtifactVolumeIsLocal(candidate, opts.testHooks?.statfsType))
-  const volumeDetectionTimeoutMs = Math.min(
-    ARTIFACT_VOLUME_DETECTION_TIMEOUT_MS,
-    Math.max(1, opts.testHooks?.volumeDetectionTimeoutMs ?? ARTIFACT_VOLUME_DETECTION_TIMEOUT_MS),
-  )
-  const local = await detectArtifactVolumeSupport(root, volumeIsLocal, volumeDetectionTimeoutMs)
-  if (local !== true) {
-    const result =
-      local === false
-        ? quotaEnvironmentUnsupportedFilesystem()
-        : quotaEnvironmentDiskError("filesystem locality unavailable")
-    artifactQuotaEnvironment = result
-    return result
-  }
   const machineId = await loadOrCreateArtifactQuotaMachineId(root)
   if (!machineId) {
     const result = quotaEnvironmentDiskError("machine identity unavailable")
     artifactQuotaEnvironment = result
     return result
   }
-  artifactQuotaEnvironment = {
-    machineId,
-    volumeIsLocal,
-    volumeDetectionTimeoutMs,
-  }
+  artifactQuotaEnvironment = { machineId }
   return { ok: true }
 }
 
@@ -256,16 +228,14 @@ export async function finalizeArtifactWithQuota(
     !ARTIFACT_PART_SUFFIX_RE.test(path.basename(partPath))
   )
     return quotaDiskError("staging file identity unavailable")
-  const local = await artifactVolumeIsLocal(artifactsDir, environment)
-  if (local === false) return quotaUnsupportedFilesystem()
-  if (local !== true) return quotaDiskError("filesystem locality unavailable")
   const staged = await openStagedArtifact(partPath, input.bytes)
   if (!staged.ok) return quotaStagingChanged()
   try {
     const created = createArtifactQuotaReservation(projectDir, runId, input.bytes, environment.machineId, opts)
     if (!created.ok) return quotaDiskError(created.reason)
     const release = async (result: ArtifactQuotaFinalizeResult) => {
-      const released = await releaseOwnArtifactQuotaReservation(created.reservation)
+      const released = await releaseOwnArtifactQuotaReservationBeforeDeadline(created.reservation, opts.testHooks)
+      if (released === "timed-out") return result
       if (released === "released" || released === "missing") return result
       if (released === "changed") return quotaRetryable("own reservation changed")
       return quotaDiskError("own reservation cleanup failed")
@@ -280,6 +250,11 @@ export async function finalizeArtifactWithQuota(
         environment.machineId,
         opts.pidAlive ?? defaultPidAlive,
         opts.testHooks,
+        Date.now() +
+          Math.min(
+            ARTIFACT_QUOTA_INITIAL_SCAN_DEADLINE_MS,
+            Math.max(1, opts.testHooks?.initialScanDeadlineMs ?? ARTIFACT_QUOTA_INITIAL_SCAN_DEADLINE_MS),
+          ),
       )
       if (!scanned.ok) return await release(quotaRetryable(scanned.reason))
       if (!scanned.reservations.some((reservation) => artifactQuotaReservationsMatch(reservation, created.reservation)))
@@ -323,17 +298,13 @@ export async function finalizeArtifactWithQuota(
       }
       // rename 已提交后不再把“预约删除失败”伪装成下载失败;残留只会保守多计,由死 PID
       // 惰性清理或 runbook 处置。正常路径仍仅删除身份未变的本次预约。
-      await releaseOwnArtifactQuotaReservation(created.reservation)
+      await releaseOwnArtifactQuotaReservationBeforeDeadline(created.reservation, opts.testHooks)
       return { ok: true }
     } catch {
       return await release(quotaDiskError("committed usage unavailable"))
     }
   } finally {
-    try {
-      await staged.value.handle.close()
-    } catch {
-      // 只读 staged fd;关闭失败不改变已经得出的 fail-closed 结论。
-    }
+    await closeStagedArtifactBeforeDeadline(staged.value, opts.testHooks)
   }
 }
 
@@ -347,22 +318,6 @@ function quotaDiskError(reason: string): ArtifactQuotaFinalizeResult {
 
 function quotaEnvironmentDiskError(reason: string): ArtifactQuotaEnvironmentResult {
   return { ok: false, error: "disk", detail: `artifact quota admission unavailable (${reason})` }
-}
-
-function quotaUnsupportedFilesystem(): ArtifactQuotaFinalizeResult {
-  return {
-    ok: false,
-    error: "unsupported-filesystem",
-    detail: "artifact quota requires a local filesystem",
-  }
-}
-
-function quotaEnvironmentUnsupportedFilesystem(): ArtifactQuotaEnvironmentResult {
-  return {
-    ok: false,
-    error: "unsupported-filesystem",
-    detail: "artifact quota requires a local filesystem",
-  }
 }
 
 function quotaRetryable(reason: string): ArtifactQuotaFinalizeResult {
@@ -668,51 +623,6 @@ async function stagedArtifactIsUnchanged(
   }
 }
 
-async function artifactVolumeIsLocal(
-  root: string,
-  environment: ArtifactQuotaEnvironment,
-): Promise<boolean | undefined> {
-  return detectArtifactVolumeSupport(root, environment.volumeIsLocal, environment.volumeDetectionTimeoutMs)
-}
-
-async function detectArtifactVolumeSupport(
-  root: string,
-  detect: (root: string) => Promise<boolean | undefined>,
-  timeoutMs: number,
-): Promise<boolean | undefined> {
-  return new Promise<boolean | undefined>((resolve) => {
-    const timer = setTimeout(() => resolve(undefined), timeoutMs)
-    detect(root).then(
-      (result) => {
-        clearTimeout(timer)
-        resolve(result)
-      },
-      () => {
-        clearTimeout(timer)
-        resolve(undefined)
-      },
-    )
-  })
-}
-
-async function defaultArtifactVolumeIsLocal(
-  root: string,
-  statfsType: (root: string) => Promise<number | bigint | null> = readArtifactStatfsType,
-): Promise<boolean | undefined> {
-  if (process.platform !== "darwin") return undefined
-  const type = await statfsType(root)
-  if (type === null) return undefined
-  return ARTIFACT_SUPPORTED_DARWIN_FILESYSTEM_TYPES.has(typeof type === "bigint" ? type : BigInt(type))
-}
-
-async function readArtifactStatfsType(root: string): Promise<bigint | null> {
-  try {
-    return (await fs.promises.statfs(root, { bigint: true })).type
-  } catch {
-    return null
-  }
-}
-
 async function loadOrCreateArtifactQuotaMachineId(userDataPath: string): Promise<string | null> {
   const file = path.join(userDataPath, ARTIFACT_QUOTA_MACHINE_ID_FILE)
   let fd: number | null = null
@@ -844,22 +754,59 @@ function releaseArtifactQuotaReservation(file: string): boolean {
 
 async function releaseOwnArtifactQuotaReservation(
   reservation: ArtifactQuotaReservation,
-): Promise<"released" | "missing" | "changed" | "failed"> {
+  deadline: number,
+  beforeDelete?: () => void | Promise<void>,
+): Promise<ArtifactQuotaReservationReleaseResult> {
   let current: ArtifactQuotaReservation | null
   try {
     current = await readArtifactQuotaReservationAsync(reservation.file, reservation.runId)
   } catch {
     return "changed"
   }
+  if (Date.now() >= deadline) return "timed-out"
   if (!current) return "missing"
   if (!artifactQuotaReservationsMatch(current, reservation)) return "changed"
   try {
+    await beforeDelete?.()
+    if (Date.now() >= deadline) return "timed-out"
     await fs.promises.unlink(reservation.file)
     return "released"
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return "missing"
     return "failed"
   }
+}
+
+async function releaseOwnArtifactQuotaReservationBeforeDeadline(
+  reservation: ArtifactQuotaReservation,
+  testHooks?: ArtifactQuotaFinalizeOptions["testHooks"],
+): Promise<ArtifactQuotaReservationReleaseResult> {
+  const deadline =
+    Date.now() +
+    Math.min(
+      ARTIFACT_QUOTA_RESERVATION_CLEANUP_DEADLINE_MS,
+      Math.max(
+        1,
+        testHooks?.returnPolicy?.reservationDeadlineMs ?? ARTIFACT_QUOTA_RESERVATION_CLEANUP_DEADLINE_MS,
+      ),
+    )
+  return resolveArtifactQuotaBeforeDeadline(
+    async () => {
+      try {
+        await testHooks?.beforeReservationCleanupRead?.()
+        if (Date.now() >= deadline) return "timed-out"
+        return await releaseOwnArtifactQuotaReservation(
+          reservation,
+          deadline,
+          testHooks?.beforeReservationCleanupDelete,
+        )
+      } catch {
+        return "changed"
+      }
+    },
+    deadline,
+    "timed-out",
+  )
 }
 
 async function scanArtifactQuotaReservations(
@@ -1031,6 +978,47 @@ async function ownArtifactQuotaReservationIsUnchangedBeforeDeadline(
           resolve(false)
         },
       )
+  })
+}
+
+async function closeStagedArtifactBeforeDeadline(
+  staged: StagedArtifact,
+  testHooks?: ArtifactQuotaFinalizeOptions["testHooks"],
+): Promise<void> {
+  const deadline =
+    Date.now() +
+    Math.min(
+      ARTIFACT_QUOTA_STAGED_CLOSE_DEADLINE_MS,
+      Math.max(1, testHooks?.returnPolicy?.stagedCloseDeadlineMs ?? ARTIFACT_QUOTA_STAGED_CLOSE_DEADLINE_MS),
+    )
+  await resolveArtifactQuotaBeforeDeadline(
+    async () => {
+      try {
+        await testHooks?.beforeStagedHandleClose?.()
+        await staged.handle.close()
+      } catch {
+        // 只读 staged fd;关闭失败或超时不改变已经得出的 fail-closed 结论。
+      }
+      return true
+    },
+    deadline,
+    false,
+  )
+}
+
+function resolveArtifactQuotaBeforeDeadline<T>(work: () => Promise<T>, deadline: number, timedOut: T): Promise<T> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(timedOut), Math.max(1, deadline - Date.now()))
+    work().then(
+      (result) => {
+        clearTimeout(timer)
+        resolve(result)
+      },
+      () => {
+        clearTimeout(timer)
+        resolve(timedOut)
+      },
+    )
   })
 }
 

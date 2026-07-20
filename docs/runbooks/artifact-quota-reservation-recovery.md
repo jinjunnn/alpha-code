@@ -28,21 +28,36 @@ Do not remove or rewrite a reservation merely because it is old. Age is not a
 liveness signal. A foreign-machine record, malformed record, live PID, or
 indeterminate PID probe is intentionally fail-closed.
 
-This mechanism is supported only on local filesystems. The stable
-`unsupported-filesystem` error means `userData` or the project artifact root is
-not on the macOS filesystem-type whitelist: only `apfs` and `hfs` are accepted.
-The rejection includes all FUSE types (`macfuse`, `osxfuse`, and `fuse.*`),
-`nfs`, `smbfs`, `afpfs`, `webdav`, and every unknown type, even if its mount
-options contain `local`. Move both roots to APFS or HFS volumes and retry; do
-not work around the check by manually renaming `.part` files or deleting
-reservations. Stable `disk` with detail `filesystem locality unavailable`
-means `realpath` failed, `/sbin/mount` failed or timed out, its output was
-malformed, or no owning mount point could be identified. Confirm the root is
-available, inspect `/sbin/mount` for the resolved root's actual mount point,
-repair the mount/OS command failure, restart the desktop, and retry. Do not
-override the detector or treat an unreadable type as local. NFS/SMB cache
-tuning is outside this runbook because shared volumes are not a supported
-deployment.
+## Deployment precondition
+
+The artifact root must be on a local filesystem with a locally coherent
+directory namespace. Cross-machine NFS, SMB, AFP, WebDAV, and remote FUSE
+mounts do not satisfy this precondition. The application does not detect or
+reject them at runtime because filesystem type numbers and mount text are not a
+reliable, non-bypassable identity, and a parent path can change between a check
+and the later open/rename.
+
+Confirm placement manually before enabling managed cloud artifact downloads:
+
+1. Identify the artifact root at
+   `<project>/.alpha/runs/<run>/artifacts/`; if it does not exist yet, inspect
+   the deepest existing parent below `<project>/.alpha`.
+2. Run `df -P "<artifact-root-or-parent>"` and record the filesystem source and
+   owning mount point. Then inspect the matching entry in `/sbin/mount`.
+3. Treat network-style sources and filesystem types such as `nfs`, `smbfs`,
+   `afpfs`, `webdav`, and remote `fuse.*` as shared. Also check Finder's Get
+   Info, Disk Utility, or the storage administrator's configuration when the
+   source is not self-explanatory; a mount option named `local` alone is not
+   sufficient evidence.
+4. If local placement cannot be confirmed, move the project to an internal or
+   directly attached local disk before retrying. Do not work around the
+   precondition by renaming `.part` files or deleting reservations.
+
+On a shared volume, clients can miss one another's reservation or committed
+file and admit more artifact count or bytes than the run/project quotas allow.
+The consequence is quota over-admission, not additional path authority, byte
+corruption, or privilege gain. NFS/SMB cache tuning does not establish the
+required local namespace semantics.
 
 ## Automatic convergence
 
@@ -60,30 +75,35 @@ reservation-then-committed rescans before final rename until every greater
 conflict has either deleted its reservation while yielding or exposed a
 committed final file. Rescans use asynchronous directory reads and stats,
 explicitly yield every 32 visited entries, and wait no more than 20 ms between
-rounds. Each reservation-then-committed scan is capped at 250 ms and 10,000
-entries. Convergence terminates after at most 5 seconds or 250 rounds, checks
-the deadline on both sides of every scan, and clips each scan to the remaining
-global time. The nominal per-round bounds alone are
-`250 × (20 ms + 250 ms) = 67.5 s`, so the clipped 5-second deadline is the
-dominant application bound. Normal event-loop timer scheduling may add jitter,
-but no synchronous full-project walk extends the wait. Any bound returns stable
-`retryable`; it never admits or waits forever. A smaller key that appears after
-a greater key's first decision therefore cannot preempt an unseen commit; it
-reevaluates the newly committed bytes. Retrying a yielded or `retryable`
-download creates a new owner-unique reservation and rescans current disk truth.
+rounds. The first complete admission scan has a separate 30-second budget. The
+wide initial budget permits a stable project spanning more than one
+10,000-entry cooperative slice to finish while bounding very large, slow, or
+continuously growing trees. Convergence terminates after at most 5 seconds or
+250 rounds, checks the deadline on both sides of every scan, and clips each
+scan to the remaining global time. Any bound returns stable `retryable`; it
+never admits a partial scan. A smaller key that appears after a greater key's
+first decision therefore cannot preempt an unseen commit; it reevaluates the
+newly committed bytes. Retrying a yielded or `retryable` download creates a new
+owner-unique reservation and rescans current disk truth.
+
+On a timeout return, self-reservation reread/delete has an independent 100 ms
+application wait budget and staged-handle close has another 100 ms budget. If
+either expires, the finalizer returns the existing `retryable` result without
+waiting for more cleanup and without renaming the staged file. An issued native
+filesystem request may settle later; the application does not claim to cancel
+it. If cleanup remains incomplete, the self-reservation stays charged, which is
+the conservative failure direction.
 
 The retryable detail identifies the exhausted bound:
 
 - `reservation convergence timed out` means the global 5-second budget ended;
 - `reservation convergence round limit reached` means 250 fast rounds ended;
-- `quota scan timed out` means one scan reached its 250 ms independent cap; and
-- `quota scan entry limit reached` means one scan visited more than 10,000
-  entries.
+- `quota scan timed out` means the initial scan reached 30 seconds or a
+  convergence scan exhausted the remaining 5-second budget.
 
-For the first three, retry after other active downloads settle and inspect local
-disk latency if the error repeats. For the entry cap, use supported artifact
-removal/export flows to reduce managed run contents before retrying. Never
-delete or rewrite reservation files merely to get below a scan bound.
+Retry after other active downloads settle and inspect local disk latency or
+project size if the error repeats. Never delete or rewrite reservation files
+merely to get below a scan bound.
 
 A scan may lazily delete somebody else's residual reservation only when both of
 these facts are conclusive:
@@ -147,5 +167,6 @@ manifest-owned final; and downloader failure cleanup may remove only the
 invocation's `O_EXCL`-created `.part`. These are the complete artifact state
 machine modification points and their ownership bases are detailed in the
 [platform integration contract](../contracts/platform-integration.md#ownership-and-modification-points).
-Foreign-machine or uncertain records remain fail-closed, and shared volumes are
-rejected rather than coordinated.
+Foreign-machine or uncertain records remain fail-closed. Shared volumes are not
+coordinated and violate the deployment precondition; they are not detected or
+rejected at runtime.

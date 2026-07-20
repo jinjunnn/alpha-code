@@ -78,20 +78,23 @@ file below `<project>/.alpha/runs/<run>/artifacts/`. After length and digest
 verification, every production download must pass the project-owned artifact
 quota finalizer; no caller has direct final-rename authority.
 
-The admission guarantee is limited to a local filesystem with a locally
-coherent directory namespace. It does not apply to NFS, SMB, remote FUSE, or
-other shared/network volumes. At main-process initialization the desktop
-checks the Electron `userData` volume and rechecks the artifact path before
-every finalization. On macOS, the desktop calls `statfs` on the path and accepts
-only Darwin filesystem type codes HFS `17` and APFS `26`. The path is passed as
-a syscall argument and is never interpolated into or recovered from mount-table
-text, so spaces, the literal delimiter `" on "`, parentheses, tabs, and newlines
-cannot alter which filesystem is examined. Every other type is rejected,
-including FUSE and network filesystems and unknown future types. These
-known-but-unsupported results return stable `unsupported-filesystem`. A failed
-or timed-out `statfs`, or an unavailable type, fails closed as stable `disk`.
-Move the project and `userData` to APFS or HFS volumes before retrying. The
-desktop does not implement NFS cache-convergence or cross-client coordination.
+The admission guarantee has a deployment precondition: the artifact root must
+be on a local filesystem with a locally coherent directory namespace. NFS,
+SMB, remote FUSE, and other cross-machine shared/network volumes do not satisfy
+this precondition. The desktop does not attempt runtime volume-type detection.
+User space has no reliable, non-bypassable predicate across filesystem type
+numbers, mount-table formats, and parent-path replacement between a check and
+the later open/rename. Operators must confirm the placement as described in the
+[artifact quota reservation recovery
+runbook](../runbooks/artifact-quota-reservation-recovery.md#deployment-precondition).
+
+If the artifact root is placed on a cross-machine shared volume, delayed or
+incoherent namespace observations can cause contenders to miss peer
+reservations or committed files and admit more run count, run bytes, or project
+bytes than the configured quota. This residual is confined to quota
+over-admission; it does not expand the finalizer's path authority, corrupt
+artifact bytes, or grant privileges. The desktop does not implement remote
+cache convergence or cross-client coordination.
 
 The desktop creates one random UUID machine identity at
 `<userData>/artifact-quota-machine-id`, mode `0600`, and reuses it without
@@ -143,14 +146,18 @@ committed traversal uses asynchronous directory reads and stats, with an
 explicit event-loop yield every 32 visited entries. The former 10,000-entry
 limit is a cooperative scan slice: reaching it yields while retaining the
 directory-entry position, recursive call stack, and accumulated usage, then
-resumes the same complete reservation-before-committed scan. Initial admission
-therefore has no total entry-count or wall-clock scan rejection and eventually
-admits a large legal project. A convergence rescan is instead clipped directly
-to the remaining global deadline; it never admits a partial scan. The finalizer
-also races its asynchronous owner-reservation recheck against that deadline. Timer
-dispatch can add normal event-loop scheduling jitter, but the waiting path has
-no synchronous filesystem call or full-project traversal that can block timer
-dispatch. Exhausting the deadline or round ceiling never admits. This
+resumes the same complete reservation-before-committed scan.
+
+The first complete admission scan has its own 30-second wall-clock budget. This
+is deliberately wider than the 5-second contender-convergence budget because
+it covers one full project traversal and allows stable projects well beyond one
+10,000-entry cooperative slice to complete, while still bounding a very large,
+slow, or continuously growing tree. Reaching 30 seconds returns stable
+`retryable` detail `quota scan timed out`; no partial scan is admitted. A
+convergence rescan is clipped directly to its remaining 5-second global budget
+and likewise never admits a partial scan. The finalizer also races its
+asynchronous wait-path owner-reservation recheck against that convergence
+deadline. Exhausting a deadline or the round ceiling never admits. This
 convergence step closes the case where a smaller key is published after a
 greater key already completed its first decision: the smaller attempt observes
 the greater reservation until its final file becomes chargeable, then
@@ -167,13 +174,23 @@ reservation state returns stable `retryable`. The admitted attempt then
 atomically renames its own `.part` to the final target and deletes only its
 still-identity-matching reservation.
 
+After a retryable convergence or scan timeout, self-reservation reread/delete
+gets an independent 100 ms application wait budget and staged-handle close gets
+a separate 100 ms application wait budget. If either budget expires, the state
+machine stops awaiting that cleanup and returns the already selected error; it
+does not proceed to final rename. A cleanup syscall already issued may settle
+later, but no later unlink is started after an over-budget reservation reread.
+The safe worst case is an unremoved self-reservation that remains charged and
+reduces available capacity. Normal event-loop scheduling can add timer jitter;
+these budgets do not claim that the operating system cancels in-flight I/O.
+
 Scanning reservations before final files is required on the supported local
 filesystem: the owner transitions from reservation-only, through a conservative
 reservation-plus-final overlap, to final-only, so a concurrent scan observes at
 least one side of every commit. Quota exhaustion, malformed or unreadable
-reservation state, unknown filesystem locality, or unreadable committed usage
-fails closed. Errors expose a stable category and bounded quota figures, not
-local paths, descriptor metadata, bearer values, or response content.
+reservation state, scan timeout, or unreadable committed usage fails closed.
+Errors expose a stable category and bounded quota figures, not local paths,
+descriptor metadata, bearer values, or response content.
 
 A crash before rename leaves the reservation charged even though the unique
 `.part` remains excluded. A crash after rename but before reservation deletion

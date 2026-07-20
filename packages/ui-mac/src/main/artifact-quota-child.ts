@@ -36,7 +36,7 @@ const waitFor = async (marker: string, reason: string) => {
   }
 }
 const uuid = `00000000-0000-4000-8000-${markerName.padStart(12, "0")}`
-const initialized = await initializeArtifactQuotaEnvironment(projectDir, { volumeIsLocal: async () => true })
+const initialized = await initializeArtifactQuotaEnvironment(projectDir)
 if (!initialized.ok) throw new Error(`artifact quota child: initialization failed (${initialized.error})`)
 const result = await writeChunksChecked(
   (async function* () {

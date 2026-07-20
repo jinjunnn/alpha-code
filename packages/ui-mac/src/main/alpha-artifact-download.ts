@@ -53,7 +53,6 @@ export type ArtifactDownloadErrorCode =
   | "disk"
   | "retryable"
   | "staging-changed"
-  | "unsupported-filesystem"
   | `http-${number}`
 
 export type ArtifactDownloadProgress = { bytes: number; total?: number; percent?: number }
@@ -63,7 +62,7 @@ export type ArtifactFinalizeResult =
   | { ok: true }
   | {
       ok: false
-      error: "over-limit" | "disk" | "retryable" | "staging-changed" | "unsupported-filesystem"
+      error: "over-limit" | "disk" | "retryable" | "staging-changed"
       detail: string
     }
 export type ArtifactFinalizer = (input: ArtifactFinalizeInput) => ArtifactFinalizeResult | Promise<ArtifactFinalizeResult>
