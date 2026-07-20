@@ -5,7 +5,6 @@ import {
   createRecoveryActionAdapter,
   type RecoveryActionResult,
   type RecoveryLogger,
-  type RecoveryPlan,
 } from "./recovery-adapter"
 
 const silent: RecoveryLogger = () => {}
@@ -88,10 +87,10 @@ describe("adaptRecoveryPlan — four real recovery partitions", () => {
     ).toBeNull()
   })
 
-  test("renderer-safe values exclude path, home name, secret, exception text, stack, and source identifiers", () => {
+  test("renderer and logger values exclude path, home name, secret, exception text, stack, and source identifiers", () => {
     const poison = "Error: token=sk-secret at /Users/alice/private/config.json\n    at save (/home/alice/app.ts:1:1)"
-    const logs: Record<string, unknown>[] = []
-    const log: RecoveryLogger = (_event, detail) => logs.push(detail)
+    const logs: unknown[] = []
+    const log: RecoveryLogger = (event, detail) => logs.push({ event, detail })
     const values = [
       adaptRecoveryPlan({ kind: "database", plan: { kind: "corrupt", detail: poison }, backupAvailable: true }, log),
       adaptRecoveryPlan(
@@ -104,27 +103,61 @@ describe("adaptRecoveryPlan — four real recovery partitions", () => {
       ),
       adaptRecoveryPlan({ kind: "surface", failureRecord: "failed", error: new Error(poison) }, log),
     ]
-    const rendered = JSON.stringify(values)
+    const rendered = JSON.stringify({ values, logs })
     for (const forbidden of ["/Users/", "/home/", "alice", "sk-secret", "config.json", "Error:", "at save", "future"]) {
       expect(rendered).not.toContain(forbidden)
     }
-    expect(JSON.stringify(logs)).toContain("sk-secret")
+    expect(logs).toEqual([
+      { event: "recovery-plan", detail: { code: "RECOVERY_DATABASE_CORRUPT", status: "available" } },
+      { event: "recovery-plan", detail: { code: "RECOVERY_DATABASE_TOO_NEW", status: "available" } },
+      { event: "recovery-plan", detail: { code: "RECOVERY_ENGINE_STOPPED", status: "available" } },
+      { event: "recovery-plan", detail: { code: "RECOVERY_SURFACE_CRASHED", status: "available" } },
+    ])
     expect(Object.keys(values[0] ?? {}).sort()).toEqual(["actions", "category", "code", "retryable"])
+  })
+
+  test("a throwing logger cannot escape adaptRecoveryPlan or change its safe DTO", () => {
+    const poison = "Error: token=sk-secret at /Users/alice/private/config.json\n    at adapt (/home/alice/app.ts:1:1)"
+    const result = adaptRecoveryPlan(
+      { kind: "database", plan: { kind: "corrupt", detail: poison }, backupAvailable: false },
+      () => {
+        throw new Error(poison)
+      },
+    )
+
+    expect(result).toEqual({
+      code: "RECOVERY_DATABASE_CORRUPT",
+      category: "database-corrupt",
+      actions: ["exit-app", "continue-startup"],
+      retryable: false,
+    })
+    expect(JSON.stringify(result)).not.toContain("sk-secret")
   })
 })
 
-const retryPlan: RecoveryPlan = {
-  code: "RECOVERY_ENGINE_STOPPED",
-  category: "engine-stopped",
-  actions: [RECOVERY_ACTIONS.retryEngine],
-  retryable: true,
+function createRetryPlan(log: RecoveryLogger = silent) {
+  const plan = adaptRecoveryPlan(
+    { kind: "engine", plan: { action: "give-up", state: { attempts: 5, lastSpawnAt: 10 } } },
+    log,
+  )
+  if (!plan) throw new Error("Expected engine recovery plan")
+  return plan
+}
+
+function createDatabaseTooNewPlan(log: RecoveryLogger = silent) {
+  const plan = adaptRecoveryPlan(
+    { kind: "database", plan: { kind: "db-ahead", unknown: ["future"], latest: "future" }, backupAvailable: false },
+    log,
+  )
+  if (!plan) throw new Error("Expected database recovery plan")
+  return plan
 }
 
 describe("createRecoveryActionAdapter — idempotent submission", () => {
   test("sequential duplicate applies once and reports the second call as not newly applied", async () => {
     let calls = 0
     const adapter = createRecoveryActionAdapter(
-      retryPlan,
+      createRetryPlan(),
       {
         [RECOVERY_ACTIONS.retryEngine]: () => {
           calls++
@@ -154,7 +187,7 @@ describe("createRecoveryActionAdapter — idempotent submission", () => {
     let release: (() => void) | undefined
     const gate = new Promise<void>((resolve) => (release = resolve))
     const adapter = createRecoveryActionAdapter(
-      retryPlan,
+      createRetryPlan(),
       {
         [RECOVERY_ACTIONS.retryEngine]: async () => {
           calls++
@@ -173,11 +206,47 @@ describe("createRecoveryActionAdapter — idempotent submission", () => {
     expect(calls).toBe(1)
   })
 
+  test("two adapters for one incident coalesce concurrent submissions into one effect", async () => {
+    let calls = 0
+    let release: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const plan = createRetryPlan()
+    const effects = {
+      [RECOVERY_ACTIONS.retryEngine]: async () => {
+        calls++
+        await gate
+        return { applied: true } as const
+      },
+    }
+    const firstAdapter = createRecoveryActionAdapter(plan, effects, silent)
+    const rebuiltAdapter = createRecoveryActionAdapter(plan, effects, silent)
+
+    const first = firstAdapter.submit(RECOVERY_ACTIONS.retryEngine)
+    const duplicate = rebuiltAdapter.submit(RECOVERY_ACTIONS.retryEngine)
+    release!()
+
+    expect(await first).toMatchObject({ code: "RECOVERY_ACTION_APPLIED", applied: true })
+    expect(await duplicate).toMatchObject({ code: "RECOVERY_ACTION_ALREADY_APPLIED", applied: false })
+    expect(calls).toBe(1)
+  })
+
+  test("a cloned renderer DTO is rejected because it is not the main-process incident owner", () => {
+    const plan = createRetryPlan()
+
+    expect(() =>
+      createRecoveryActionAdapter(
+        structuredClone(plan),
+        { [RECOVERY_ACTIONS.retryEngine]: () => ({ applied: true }) },
+        silent,
+      ),
+    ).toThrow("Recovery action adapters require an owned recovery incident")
+  })
+
   test("an effect must explicitly confirm application; failed effects can retry only when truthful", async () => {
     let calls = 0
     const logged: Record<string, unknown>[] = []
     const adapter = createRecoveryActionAdapter(
-      retryPlan,
+      createRetryPlan(),
       {
         [RECOVERY_ACTIONS.retryEngine]: () =>
           ++calls === 1 ? { applied: false, retryable: true, error: new Error("/Users/alice sk-secret") } : { applied: true },
@@ -193,17 +262,24 @@ describe("createRecoveryActionAdapter — idempotent submission", () => {
     })
     expect(await adapter.submit(RECOVERY_ACTIONS.retryEngine)).toMatchObject({ code: "RECOVERY_ACTION_APPLIED", applied: true })
     expect(calls).toBe(2)
-    expect((logged[0]?.error as Error).message).toContain("sk-secret")
+    const rendered = JSON.stringify(logged)
+    for (const forbidden of ["/Users/", "alice", "sk-secret", "Error:", "at "]) expect(rendered).not.toContain(forbidden)
+    expect(logged).toEqual([
+      {
+        code: "RECOVERY_ENGINE_STOPPED",
+        action: "retry-engine",
+        status: "failed",
+        reason: "effect-not-applied",
+      },
+    ])
   })
 
   test("non-retryable failure is cached and never repeats its side effect", async () => {
     let calls = 0
-    const plan: RecoveryPlan = {
-      code: "RECOVERY_DATABASE_CORRUPT",
-      category: "database-corrupt",
-      actions: [RECOVERY_ACTIONS.restoreLatestBackup],
-      retryable: false,
-    }
+    const plan = adaptRecoveryPlan(
+      { kind: "database", plan: { kind: "corrupt", detail: "bad db" }, backupAvailable: true },
+      silent,
+    )!
     const adapter = createRecoveryActionAdapter(
       plan,
       {
@@ -222,14 +298,73 @@ describe("createRecoveryActionAdapter — idempotent submission", () => {
     expect(calls).toBe(1)
   })
 
+  test("an explicit not-applied result remains action-scoped because its side-effect boundary is known", async () => {
+    let backupCalls = 0
+    let continueCalls = 0
+    const adapter = createRecoveryActionAdapter(
+      createDatabaseTooNewPlan(),
+      {
+        [RECOVERY_ACTIONS.backupAndContinue]: () => {
+          backupCalls++
+          return { applied: false, retryable: false }
+        },
+        [RECOVERY_ACTIONS.continueStartup]: () => {
+          continueCalls++
+          return { applied: true }
+        },
+      },
+      silent,
+    )
+
+    expect(await adapter.submit(RECOVERY_ACTIONS.backupAndContinue)).toMatchObject({
+      code: "RECOVERY_ACTION_FAILED",
+      retryable: false,
+    })
+    expect(await adapter.submit(RECOVERY_ACTIONS.continueStartup)).toMatchObject({
+      code: "RECOVERY_ACTION_APPLIED",
+      applied: true,
+    })
+    expect({ backupCalls, continueCalls }).toEqual({ backupCalls: 1, continueCalls: 1 })
+  })
+
+  test("an unknown effect boundary terminates the incident and blocks every different action", async () => {
+    let backupCalls = 0
+    let continueCalls = 0
+    const adapter = createRecoveryActionAdapter(
+      createDatabaseTooNewPlan(),
+      {
+        [RECOVERY_ACTIONS.backupAndContinue]: () => {
+          backupCalls++
+          throw new Error("partial side effect token=sk-secret /Users/alice/private")
+        },
+        [RECOVERY_ACTIONS.continueStartup]: () => {
+          continueCalls++
+          return { applied: true }
+        },
+      },
+      silent,
+    )
+
+    expect(await adapter.submit(RECOVERY_ACTIONS.backupAndContinue)).toEqual({
+      ok: false,
+      code: "RECOVERY_ACTION_FAILED",
+      action: "backup-and-continue",
+      retryable: false,
+    })
+    const blocked = await adapter.submit(RECOVERY_ACTIONS.continueStartup)
+    expect(blocked).toEqual({
+      ok: false,
+      code: "RECOVERY_ACTION_CONFLICT",
+      action: "continue-startup",
+      retryable: false,
+    })
+    expect(await adapter.submit(RECOVERY_ACTIONS.continueStartup)).toEqual(blocked)
+    expect({ backupCalls, continueCalls }).toEqual({ backupCalls: 1, continueCalls: 0 })
+  })
+
   test("unavailable and conflicting actions produce no side effect", async () => {
     let calls = 0
-    const plan: RecoveryPlan = {
-      code: "RECOVERY_DATABASE_TOO_NEW",
-      category: "database-too-new",
-      actions: [RECOVERY_ACTIONS.exitApp, RECOVERY_ACTIONS.continueStartup],
-      retryable: false,
-    }
+    const plan = createDatabaseTooNewPlan()
     const adapter = createRecoveryActionAdapter(
       plan,
       {
@@ -256,16 +391,26 @@ describe("createRecoveryActionAdapter — idempotent submission", () => {
     expect(calls).toBe(1)
   })
 
-  test("unknown thrown exceptions are redacted and fail closed as non-retryable", async () => {
+  test("a throwing action logger cannot expose the effect exception or change the safe failure DTO", async () => {
+    const poison = "Error: token=sk-secret /Users/alice/private\n    at retry (/home/alice/app.ts:1:1)"
     const adapter = createRecoveryActionAdapter(
-      retryPlan,
-      { [RECOVERY_ACTIONS.retryEngine]: () => Promise.reject(new Error("token=sk-secret /Users/alice/private")) },
-      silent,
+      createRetryPlan(),
+      { [RECOVERY_ACTIONS.retryEngine]: () => Promise.reject(new Error(poison)) },
+      () => {
+        throw new Error(poison)
+      },
     )
     const result: RecoveryActionResult = await adapter.submit(RECOVERY_ACTIONS.retryEngine)
-    expect(JSON.stringify(result)).not.toContain("sk-secret")
-    expect(JSON.stringify(result)).not.toContain("/Users/")
-    expect(result).toMatchObject({ ok: false, code: "RECOVERY_ACTION_FAILED", retryable: false })
+    const rendered = JSON.stringify(result)
+    for (const forbidden of ["/Users/", "/home/", "alice", "sk-secret", "Error:", "at retry"]) {
+      expect(rendered).not.toContain(forbidden)
+    }
+    expect(result).toEqual({
+      ok: false,
+      code: "RECOVERY_ACTION_FAILED",
+      action: "retry-engine",
+      retryable: false,
+    })
     expect(Object.keys(result).sort()).toEqual(["action", "code", "ok", "retryable"])
   })
 })

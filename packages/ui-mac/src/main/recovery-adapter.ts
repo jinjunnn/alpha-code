@@ -21,6 +21,8 @@ export const RECOVERY_ACTIONS = {
 
 export type RecoveryAction = (typeof RECOVERY_ACTIONS)[keyof typeof RECOVERY_ACTIONS]
 
+declare const recoveryIncident: unique symbol
+
 export const RECOVERY_ACTION_RESULT_CODES = {
   applied: "RECOVERY_ACTION_APPLIED",
   alreadyApplied: "RECOVERY_ACTION_ALREADY_APPLIED",
@@ -35,6 +37,7 @@ export type RecoveryPlan = {
   category: "database-corrupt" | "database-too-new" | "engine-stopped" | "surface-crashed"
   actions: readonly RecoveryAction[]
   retryable: boolean
+  readonly [recoveryIncident]: true
 }
 
 export type RecoverySource =
@@ -42,58 +45,70 @@ export type RecoverySource =
   | { kind: "engine"; plan: SelfHealPlan; error?: unknown }
   | { kind: "surface"; failureRecord: "pending" | "saved" | "failed"; error?: unknown }
 
-export type RecoveryLogger = (event: "recovery-plan" | "recovery-action-failed", detail: Record<string, unknown>) => void
+export type RecoveryLogDetail =
+  | { code: RecoveryCode; status: "available" }
+  | {
+      code: RecoveryCode
+      action: RecoveryAction
+      status: "failed"
+      reason: "effect-not-applied" | "effect-boundary-unknown"
+    }
+
+export type RecoveryLogger = (
+  event: "recovery-plan" | "recovery-action-failed",
+  detail: RecoveryLogDetail,
+) => void | Promise<void>
 
 /**
- * Converts existing recovery decisions into the renderer-safe contract. Source details are sent only
- * to the injected local logger; the returned object contains no paths, exceptions, stacks, secrets,
- * migration ids, backup names, or surface ids.
+ * Converts existing recovery decisions into the renderer-safe contract. Neither the returned object
+ * nor injected logger receives paths, exceptions, stacks, secrets, migration ids, backup names, or
+ * surface ids.
  */
 export function adaptRecoveryPlan(source: RecoverySource, log: RecoveryLogger): RecoveryPlan | null {
   if (source.kind === "database") {
     if (source.plan.kind === "corrupt") {
-      const result: RecoveryPlan = {
+      const result = registerRecoveryIncident({
         code: RECOVERY_CODES.databaseCorrupt,
         category: "database-corrupt",
         actions: source.backupAvailable
           ? [RECOVERY_ACTIONS.restoreLatestBackup, RECOVERY_ACTIONS.exitApp, RECOVERY_ACTIONS.continueStartup]
           : [RECOVERY_ACTIONS.exitApp, RECOVERY_ACTIONS.continueStartup],
         retryable: false,
-      }
-      log("recovery-plan", { code: result.code, source: source.plan })
+      })
+      logRecovery(log, "recovery-plan", { code: result.code, status: "available" })
       return result
     }
     if (source.plan.kind !== "db-ahead") return null
-    const result: RecoveryPlan = {
+    const result = registerRecoveryIncident({
       code: RECOVERY_CODES.databaseTooNew,
       category: "database-too-new",
       actions: [RECOVERY_ACTIONS.exitApp, RECOVERY_ACTIONS.backupAndContinue, RECOVERY_ACTIONS.continueStartup],
       retryable: false,
-    }
-    log("recovery-plan", { code: result.code, source: source.plan })
+    })
+    logRecovery(log, "recovery-plan", { code: result.code, status: "available" })
     return result
   }
 
   if (source.kind === "engine") {
     if (source.plan.action !== "give-up") return null
-    const result: RecoveryPlan = {
+    const result = registerRecoveryIncident({
       code: RECOVERY_CODES.engineStopped,
       category: "engine-stopped",
       actions: [RECOVERY_ACTIONS.retryEngine],
       retryable: true,
-    }
-    log("recovery-plan", { code: result.code, source: source.plan, error: source.error })
+    })
+    logRecovery(log, "recovery-plan", { code: result.code, status: "available" })
     return result
   }
 
   const canRetrySave = source.failureRecord === "failed"
-  const result: RecoveryPlan = {
+  const result = registerRecoveryIncident({
     code: RECOVERY_CODES.surfaceCrashed,
     category: "surface-crashed",
     actions: canRetrySave ? [RECOVERY_ACTIONS.retryFailureSave] : [],
     retryable: canRetrySave,
-  }
-  log("recovery-plan", { code: result.code, failureRecord: source.failureRecord, error: source.error })
+  })
+  logRecovery(log, "recovery-plan", { code: result.code, status: "available" })
   return result
 }
 
@@ -115,33 +130,45 @@ export type RecoveryActionEffects = Partial<
   Record<RecoveryAction, () => RecoveryActionEffectResult | Promise<RecoveryActionEffectResult>>
 >
 
-/** One instance owns one failure incident. Create a new instance only after observing a new incident. */
+type RecoveryIncidentState = {
+  terminalFailures: Map<RecoveryAction, RecoveryActionResult>
+  appliedAction?: RecoveryAction
+  unknownBoundaryAction?: RecoveryAction
+  inflight?: { action: RecoveryAction; result: Promise<RecoveryActionResult> }
+}
+
+const recoveryIncidents = new WeakMap<RecoveryPlan, RecoveryIncidentState>()
+
+/** Adapter instances for the exact plan object share one process-local incident state. */
 export function createRecoveryActionAdapter(plan: RecoveryPlan, effects: RecoveryActionEffects, log: RecoveryLogger) {
-  const terminalFailures = new Map<RecoveryAction, RecoveryActionResult>()
-  let appliedAction: RecoveryAction | undefined
-  let inflight: { action: RecoveryAction; result: Promise<RecoveryActionResult> } | undefined
+  const state = recoveryIncidents.get(plan)
+  if (!state) throw new Error("Recovery action adapters require an owned recovery incident")
 
   return {
     plan,
     submit(action: RecoveryAction): Promise<RecoveryActionResult> {
+      if (state.unknownBoundaryAction) {
+        if (state.unknownBoundaryAction === action) return Promise.resolve(state.terminalFailures.get(action)!)
+        return Promise.resolve({ ok: false, code: RECOVERY_ACTION_RESULT_CODES.conflict, action, retryable: false })
+      }
       if (!plan.actions.includes(action) || !effects[action]) {
         return Promise.resolve({ ok: false, code: RECOVERY_ACTION_RESULT_CODES.unavailable, action, retryable: false })
       }
-      if (appliedAction === action) {
+      if (state.appliedAction === action) {
         return Promise.resolve({ ok: true, code: RECOVERY_ACTION_RESULT_CODES.alreadyApplied, action, applied: false })
       }
-      if (appliedAction) {
+      if (state.appliedAction) {
         return Promise.resolve({ ok: false, code: RECOVERY_ACTION_RESULT_CODES.conflict, action, retryable: false })
       }
-      if (inflight?.action === action) {
-        return inflight.result.then((result) =>
+      if (state.inflight?.action === action) {
+        return state.inflight.result.then((result) =>
           result.ok
             ? { ok: true, code: RECOVERY_ACTION_RESULT_CODES.alreadyApplied, action, applied: false }
             : result,
         )
       }
-      if (inflight) return Promise.resolve({ ok: false, code: RECOVERY_ACTION_RESULT_CODES.busy, action, retryable: true })
-      const terminal = terminalFailures.get(action)
+      if (state.inflight) return Promise.resolve({ ok: false, code: RECOVERY_ACTION_RESULT_CODES.busy, action, retryable: true })
+      const terminal = state.terminalFailures.get(action)
       if (terminal) return Promise.resolve(terminal)
 
       const effect = effects[action]!
@@ -149,7 +176,7 @@ export function createRecoveryActionAdapter(plan: RecoveryPlan, effects: Recover
         .then(effect)
         .then((outcome): RecoveryActionResult => {
           if (outcome.applied) {
-            appliedAction = action
+            state.appliedAction = action
             return { ok: true, code: RECOVERY_ACTION_RESULT_CODES.applied, action, applied: true }
           }
           const failure: RecoveryActionResult = {
@@ -158,26 +185,54 @@ export function createRecoveryActionAdapter(plan: RecoveryPlan, effects: Recover
             action,
             retryable: plan.retryable && outcome.retryable,
           }
-          log("recovery-action-failed", { recoveryCode: plan.code, action, error: outcome.error })
-          if (!failure.retryable) terminalFailures.set(action, failure)
+          logRecovery(log, "recovery-action-failed", {
+            code: plan.code,
+            action,
+            status: "failed",
+            reason: "effect-not-applied",
+          })
+          if (!failure.retryable) state.terminalFailures.set(action, failure)
           return failure
         })
-        .catch((error): RecoveryActionResult => {
+        .catch((): RecoveryActionResult => {
           const failure: RecoveryActionResult = {
             ok: false,
             code: RECOVERY_ACTION_RESULT_CODES.failed,
             action,
             retryable: false,
           }
-          log("recovery-action-failed", { recoveryCode: plan.code, action, error })
-          terminalFailures.set(action, failure)
+          logRecovery(log, "recovery-action-failed", {
+            code: plan.code,
+            action,
+            status: "failed",
+            reason: "effect-boundary-unknown",
+          })
+          state.terminalFailures.set(action, failure)
+          state.unknownBoundaryAction = action
           return failure
         })
         .finally(() => {
-          inflight = undefined
+          state.inflight = undefined
         })
-      inflight = { action, result }
+      state.inflight = { action, result }
       return result
     },
   }
+}
+
+function registerRecoveryIncident(plan: Omit<RecoveryPlan, typeof recoveryIncident>) {
+  const result = plan as RecoveryPlan
+  recoveryIncidents.set(result, { terminalFailures: new Map() })
+  return result
+}
+
+function logRecovery(
+  log: RecoveryLogger,
+  event: "recovery-plan" | "recovery-action-failed",
+  detail: RecoveryLogDetail,
+) {
+  try {
+    const pending = log(event, detail)
+    if (pending) void pending.catch(() => {})
+  } catch {}
 }
