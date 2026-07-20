@@ -103,6 +103,20 @@ export function writeFileAtomicSync(file: string, data: string | Buffer, opts?: 
 export type DurableAtomicWriteOptions = {
   mode?: fs.Mode
   onCommitPoint?: (point: "file-synced" | "renamed", temporaryFile: string) => void
+  /** Test-only seam; production uses node:fs directly. */
+  fileSystem?: DurableAtomicFileSystem
+}
+
+export type DurableAtomicFileSystem = {
+  existsSync(file: string): boolean
+  mkdirSync(dir: string, options: { recursive: true }): string | undefined
+  writeFileSync(file: string, data: string | Buffer, options: { mode?: fs.Mode }): void
+  openSync(file: string, flags: "r"): number
+  fsyncSync(fd: number): void
+  closeSync(fd: number): void
+  renameSync(from: string, to: string): void
+  readdirSync(dir: string): string[]
+  unlinkSync(file: string): void
 }
 
 /**
@@ -116,14 +130,48 @@ export function writeFileDurableAtomicSync(
   opts?: DurableAtomicWriteOptions,
 ): void {
   const dir = path.dirname(file)
-  fs.mkdirSync(dir, { recursive: true })
+  const fileSystem: DurableAtomicFileSystem = opts?.fileSystem ?? fs
+  fileSystem.mkdirSync(dir, { recursive: true })
   const tmp = path.join(dir, `.${path.basename(file)}.tmp-${process.pid}-${crypto.randomBytes(4).toString("hex")}`)
-  fs.writeFileSync(tmp, data, { mode: opts?.mode })
-  fsyncFileSync(tmp)
-  opts?.onCommitPoint?.("file-synced", tmp)
-  fs.renameSync(tmp, file)
+  try {
+    fileSystem.writeFileSync(tmp, data, { mode: opts?.mode })
+    const fd = fileSystem.openSync(tmp, "r")
+    try {
+      fileSystem.fsyncSync(fd)
+    } finally {
+      fileSystem.closeSync(fd)
+    }
+    opts?.onCommitPoint?.("file-synced", tmp)
+    fileSystem.renameSync(tmp, file)
+  } catch (error) {
+    try {
+      fileSystem.unlinkSync(tmp)
+    } catch {
+      // Cleanup must not replace the commit error with a secondary unlink failure.
+    }
+    throw error
+  }
   opts?.onCommitPoint?.("renamed", tmp)
-  fsyncDirRequiredSync(dir)
+  const dirFd = fileSystem.openSync(dir, "r")
+  try {
+    fileSystem.fsyncSync(dirFd)
+  } finally {
+    fileSystem.closeSync(dirFd)
+  }
+}
+
+/** Remove only orphan files produced by this helper for the exact target. */
+export function cleanupDurableAtomicTemporaryFilesSync(
+  file: string,
+  fileSystem: DurableAtomicFileSystem = fs,
+): void {
+  const dir = path.dirname(file)
+  if (!fileSystem.existsSync(dir)) return
+  const prefix = `.${path.basename(file)}.tmp-`
+  fileSystem
+    .readdirSync(dir)
+    .filter((entry) => entry.startsWith(prefix) && /^\d+-[0-9a-f]{8}$/.test(entry.slice(prefix.length)))
+    .forEach((entry) => fileSystem.unlinkSync(path.join(dir, entry)))
 }
 
 /** 原子改名(同卷保证由调用方负责:staging 与 store 同根即同卷)+ fsync 目的父目录。 */

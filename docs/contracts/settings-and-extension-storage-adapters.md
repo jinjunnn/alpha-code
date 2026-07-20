@@ -42,6 +42,9 @@ settings.write(input: {
 - 上述任一步（包括父目录 fsync）失败都 fail closed 为 `write-failed`，即使 rename 后的新值
   在当前文件视图已可见也不升级为成功。只有完整持久提交结束且重读确认目标权威值后才返回
   `ok: true`。
+- rename 前失败会删除本次写入创建的唯一临时文件，且清理失败不得覆盖原始提交错误。adapter
+  启动时只清扫与当前目标严格匹配的 `.目标名.tmp-<pid>-<8hex>` 孤儿；无法完成清扫时 fail closed，
+  不读取或改写其它临时文件命名空间。
 - 失败结果尽力附上重新读取的 `authoritative` 值，供消费者保留草稿并显示仍生效的值。进程
   重启后 `read` 重新从同一 `default.dat/settings.v3` 读取，不采信 renderer 内存或成功提示。
 
@@ -103,8 +106,12 @@ warnings 明细或其它未知字段。warning 只允许聚合为 `warningCount`
 - 不提供通用设置注册框架，不修改上游 Settings UI、配置持久化内核或 GC collector。
 - adapter 契约测试位于
   `packages/ui-mac/src/main/settings-adapters.test.ts`，Settings 用例使用真实临时 `userData/default.dat`，
-  并通过子进程重新打开验证成功提交。崩溃注入分别命中「文件 fsync 后、rename 前」与
-  「rename 后、父目录 fsync 前」，要求子进程未报成功且重启后只能读到完整旧值或完整新值。
-  其余覆盖 schema 正负例、真实 rename/父目录 fsync 文件层失败、revision 冲突、
-  exact replay 幂等、错误脱敏、手动 GC dry-run/collect、确定性 busy 映射与 renderer
-  字段白名单。
+  并通过子进程重新打开验证成功提交。同步 fs 测试接缝会记录 fd 与打开路径，要求一次成功写入
+  严格出现「临时文件 fsync → rename 到目标 → 父目录 fsync → 返回成功」；删除父目录 fsync
+  会直接缺少必需事件并使测试失败。该断言证明提交代码执行了正确系统调用，不声称用户态测试
+  可以模拟掉电后的真实介质状态。
+- 崩溃注入分别命中「文件 fsync 后、rename 前」与「rename 后、父目录 fsync 前」，只证明子进程
+  未报假成功且重启后权威值是完整旧值或完整新值；它不单独证明目录项已掉电持久。前一窗口的
+  orphan temp 必须由下一次 adapter 启动清扫，普通写入/文件 fsync/hook/rename 失败则在本次失败
+  路径清理。其余覆盖 schema 正负例、注入的 rename/父目录 fsync 系统调用失败、revision 冲突、
+  exact replay 幂等、错误脱敏、手动 GC dry-run/collect、确定性 busy 映射与 renderer 字段白名单。

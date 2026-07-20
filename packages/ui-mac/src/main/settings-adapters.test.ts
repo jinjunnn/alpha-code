@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import {
+  closeSync,
   existsSync,
+  fsyncSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   readdirSync,
   renameSync,
@@ -11,9 +14,10 @@ import {
   writeFileSync,
 } from "node:fs"
 import { tmpdir } from "node:os"
-import { dirname, join } from "node:path"
+import { basename, dirname, join } from "node:path"
 import type { CasGcRoundInput, CasGcRoundSummary } from "./ext-cas-gc"
 import type { CasGcSchedulerConfig } from "./ext-cas-gc-scheduler"
+import { writeFileDurableAtomicSync, type DurableAtomicFileSystem } from "./ext-atomic-fs"
 import { createExtensionStorageAdapter, createSettingsAdapter } from "./settings-adapters"
 import { ALPHA_SETTINGS_DEFAULTS, type AlphaSettings } from "../shared/settings-adapters"
 import { RENDERER_SETTINGS_KEY } from "./store-keys"
@@ -75,6 +79,25 @@ function writeAuthority(file: string, raw: unknown, extra: Record<string, unknow
 
 function readDocument(file: string) {
   return JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>
+}
+
+const nodeFileSystem: DurableAtomicFileSystem = {
+  existsSync: (file) => existsSync(file),
+  mkdirSync: (dir, options) => mkdirSync(dir, options),
+  writeFileSync: (file, data, options) => writeFileSync(file, data, options),
+  openSync: (file, flags) => openSync(file, flags),
+  fsyncSync: (fd) => fsyncSync(fd),
+  closeSync: (fd) => closeSync(fd),
+  renameSync: (from, to) => renameSync(from, to),
+  readdirSync: (dir) => readdirSync(dir),
+  unlinkSync: (file) => unlinkSync(file),
+}
+
+function durableTemporaryFiles(file: string) {
+  const prefix = `.${basename(file)}.tmp-`
+  return readdirSync(dirname(file)).filter(
+    (entry) => entry.startsWith(prefix) && /^\d+-[0-9a-f]{8}$/.test(entry.slice(prefix.length)),
+  )
 }
 
 describe("Settings typed adapter", () => {
@@ -143,6 +166,75 @@ describe("Settings typed adapter", () => {
     }
   })
 
+  test("a successful commit fsyncs the renamed file contents and parent directory before returning success", () => {
+    const descriptors = new Map<number, string>()
+    const operations: Array<{
+      kind: "open" | "fsync" | "close" | "rename" | "returned"
+      file?: string
+      fd?: number
+      from?: string
+      to?: string
+    }> = []
+    const fileSystem: DurableAtomicFileSystem = {
+      ...nodeFileSystem,
+      openSync(openedFile, flags) {
+        const fd = openSync(openedFile, flags)
+        descriptors.set(fd, openedFile)
+        operations.push({ kind: "open", file: openedFile, fd })
+        return fd
+      },
+      fsyncSync(fd) {
+        const openedFile = descriptors.get(fd)
+        if (!openedFile) throw new Error("fsync descriptor was not opened by the durable writer")
+        fsyncSync(fd)
+        operations.push({ kind: "fsync", file: openedFile, fd })
+      },
+      closeSync(fd) {
+        const openedFile = descriptors.get(fd)
+        if (!openedFile) throw new Error("close descriptor was not opened by the durable writer")
+        closeSync(fd)
+        operations.push({ kind: "close", file: openedFile, fd })
+        descriptors.delete(fd)
+      },
+      renameSync(from, to) {
+        renameSync(from, to)
+        operations.push({ kind: "rename", from, to })
+      },
+    }
+    const adapter = createSettingsAdapter(file, { fileSystem })
+    const read = adapter.read()
+    expect(read.ok).toBe(true)
+    if (!read.ok) return
+    const next = settings()
+    next.notifications.errors = true
+    const saved = adapter.write({ value: next, expectedRevision: read.revision })
+    operations.push({ kind: "returned" })
+
+    expect(saved.ok).toBe(true)
+    expect(operations.map((operation) => operation.kind)).toEqual([
+      "open",
+      "fsync",
+      "close",
+      "rename",
+      "open",
+      "fsync",
+      "close",
+      "returned",
+    ])
+    expect(operations[0]?.file).toBe(operations[1]?.file)
+    expect(operations[0]?.fd).toBe(operations[1]?.fd)
+    expect(operations[0]?.file).toBe(operations[2]?.file)
+    expect(operations[0]?.fd).toBe(operations[2]?.fd)
+    expect(operations[3]?.from).toBe(operations[0]?.file)
+    expect(operations[3]?.to).toBe(file)
+    expect(dirname(operations[0]?.file ?? "")).toBe(dirname(file))
+    expect(operations[4]?.file).toBe(dirname(file))
+    expect(operations[4]?.fd).toBe(operations[5]?.fd)
+    expect(operations[4]?.file).toBe(operations[5]?.file)
+    expect(operations[4]?.fd).toBe(operations[6]?.fd)
+    expect(operations[4]?.file).toBe(operations[6]?.file)
+  })
+
   test("an exact repeated submission is idempotent even with the original revision", () => {
     let commits = 0
     const adapter = createSettingsAdapter(file, {
@@ -207,37 +299,77 @@ describe("Settings typed adapter", () => {
     expect(existsSync(file)).toBe(false)
   })
 
-  test("a real rename failure is fail-closed with the old restart authority and no direct-write fallback", () => {
-    const adapter = createSettingsAdapter(file)
-    const read = adapter.read()
-    expect(read.ok).toBe(true)
-    if (!read.ok) return
-    const old = settings()
-    old.general.releaseNotes = false
-    const initial = adapter.write({ value: old, expectedRevision: read.revision })
-    expect(initial.ok).toBe(true)
-    if (!initial.ok) return
-    const next = settings()
-    next.general.showTerminal = true
-    const failing = createSettingsAdapter(file, {
-      onCommitPoint: (point, temporaryFile) => {
-        if (point !== "file-synced") return
-        expect(dirname(temporaryFile)).toBe(dirname(file))
-        unlinkSync(temporaryFile)
+  test.each(["write", "file-fsync", "hook", "rename"] as const)(
+    "%s failure removes this attempt's temporary file and never falls back to a direct write",
+    (failure) => {
+      const descriptors = new Map<number, string>()
+      const fileSystem: DurableAtomicFileSystem = {
+        ...nodeFileSystem,
+        writeFileSync(temporaryFile, data, options) {
+          writeFileSync(temporaryFile, data, options)
+          if (failure === "write") throw new Error("injected write failure")
+        },
+        openSync(openedFile, flags) {
+          const fd = openSync(openedFile, flags)
+          descriptors.set(fd, openedFile)
+          return fd
+        },
+        fsyncSync(fd) {
+          if (failure === "file-fsync" && descriptors.get(fd) !== dirname(file)) {
+            throw new Error("injected file fsync failure")
+          }
+          fsyncSync(fd)
+        },
+        closeSync(fd) {
+          closeSync(fd)
+          descriptors.delete(fd)
+        },
+        renameSync(from, to) {
+          if (failure === "rename") throw new Error("injected rename failure")
+          renameSync(from, to)
+        },
+      }
+      const adapter = createSettingsAdapter(file, {
+        fileSystem,
+        onCommitPoint: (point) => {
+          if (failure === "hook" && point === "file-synced") throw new Error("injected hook failure")
+        },
+      })
+      const read = adapter.read()
+      expect(read.ok).toBe(true)
+      if (!read.ok) return
+      const next = settings()
+      next.general.showTerminal = true
+      const result = adapter.write({ value: next, expectedRevision: read.revision })
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.code).toBe("write-failed")
+      expect(existsSync(file)).toBe(false)
+      expect(durableTemporaryFiles(file)).toEqual([])
+      const restarted = readInChild(file)
+      expect(restarted.ok).toBe(true)
+      if (restarted.ok) expect(restarted.value).toEqual(ALPHA_SETTINGS_DEFAULTS)
+    },
+  )
+
+  test("a temporary-file cleanup failure does not replace the original commit error", () => {
+    const commitError = new Error("original commit failure")
+    const fileSystem: DurableAtomicFileSystem = {
+      ...nodeFileSystem,
+      writeFileSync(temporaryFile, data, options) {
+        writeFileSync(temporaryFile, data, options)
+        throw commitError
       },
-    })
-    const result = failing.write({ value: next, expectedRevision: initial.revision })
-    expect(result.ok).toBe(false)
-    if (result.ok) return
-    expect(result.code).toBe("write-failed")
-    expect(result.authoritative?.value).toEqual(old)
-    const restarted = readInChild(file)
-    expect(restarted.ok).toBe(true)
-    if (restarted.ok) expect(restarted.value).toEqual(old)
-    expect(readDocument(file)[RENDERER_SETTINGS_KEY]).toBe(JSON.stringify(old))
+      unlinkSync() {
+        throw new Error("secondary cleanup failure")
+      },
+    }
+
+    expect(() => writeFileDurableAtomicSync(file, "candidate", { fileSystem })).toThrow(commitError)
+    expect(durableTemporaryFiles(file)).toHaveLength(1)
   })
 
-  test("a real parent-directory fsync failure after rename never reports success", () => {
+  test("a parent-directory fsync failure after rename never reports success", () => {
     const adapter = createSettingsAdapter(file)
     const read = adapter.read()
     expect(read.ok).toBe(true)
@@ -247,24 +379,77 @@ describe("Settings typed adapter", () => {
     const initial = adapter.write({ value: old, expectedRevision: read.revision })
     expect(initial.ok).toBe(true)
     if (!initial.ok) return
-
-    const movedUserData = `${userData}-during-directory-fsync`
+    const descriptors = new Map<number, string>()
+    const directoryFsyncAttempts: string[] = []
+    const fileSystem: DurableAtomicFileSystem = {
+      ...nodeFileSystem,
+      openSync(openedFile, flags) {
+        const fd = openSync(openedFile, flags)
+        descriptors.set(fd, openedFile)
+        return fd
+      },
+      fsyncSync(fd) {
+        const openedFile = descriptors.get(fd)
+        if (openedFile === dirname(file)) {
+          directoryFsyncAttempts.push(openedFile)
+          throw new Error("injected parent-directory fsync failure")
+        }
+        fsyncSync(fd)
+      },
+      closeSync(fd) {
+        closeSync(fd)
+        descriptors.delete(fd)
+      },
+    }
     const next = settings()
     next.general.showTerminal = true
-    const failing = createSettingsAdapter(file, {
-      onCommitPoint: (point) => {
-        if (point === "renamed") renameSync(userData, movedUserData)
-      },
-    })
+    const failing = createSettingsAdapter(file, { fileSystem })
     const result = failing.write({ value: next, expectedRevision: initial.revision })
-    renameSync(movedUserData, userData)
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.code).toBe("write-failed")
 
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe("write-failed")
+      expect(result.authoritative?.value).toEqual(next)
+    }
+    expect(directoryFsyncAttempts).toEqual([dirname(file)])
+    expect(durableTemporaryFiles(file)).toEqual([])
     const restarted = readInChild(file)
     expect(restarted.ok).toBe(true)
     if (restarted.ok) expect(restarted.value).toEqual(next)
-    expect(() => readDocument(file)).not.toThrow()
+  })
+
+  test("startup cleanup removes only orphan temporary files in this adapter's namespace", () => {
+    const orphan = join(userData, `.${basename(file)}.tmp-123-aaaaaaaa`)
+    const similar = join(userData, `.${basename(file)}.tmp-not-this-writer`)
+    const foreign = join(userData, ".other-adapter.tmp-123-aaaaaaaa")
+    writeFileSync(orphan, "orphan")
+    writeFileSync(similar, "similar")
+    writeFileSync(foreign, "foreign")
+
+    expect(createSettingsAdapter(file).read().ok).toBe(true)
+    expect(existsSync(orphan)).toBe(false)
+    expect(existsSync(similar)).toBe(true)
+    expect(existsSync(foreign)).toBe(true)
+  })
+
+  test("startup cleanup failure keeps the adapter fail-closed", () => {
+    const orphan = join(userData, `.${basename(file)}.tmp-123-aaaaaaaa`)
+    writeFileSync(orphan, "orphan")
+    const adapter = createSettingsAdapter(file, {
+      fileSystem: {
+        ...nodeFileSystem,
+        unlinkSync(temporaryFile) {
+          if (temporaryFile === orphan) throw new Error("injected startup cleanup failure")
+          unlinkSync(temporaryFile)
+        },
+      },
+    })
+
+    expect(adapter.read()).toEqual({ ok: false, code: "read-failed" })
+    expect(
+      adapter.write({ value: settings(), expectedRevision: `s1:${"0".repeat(64)}` }),
+    ).toEqual({ ok: false, code: "write-failed" })
+    expect(existsSync(orphan)).toBe(true)
   })
 
   test.each([
@@ -285,6 +470,7 @@ describe("Settings typed adapter", () => {
     const child = runSettingsChild(file, "write", { value: next, revision: initial.revision, crashPoint })
     expect(child.exitCode).not.toBe(0)
     expect(new TextDecoder().decode(child.stdout)).toBe("")
+    expect(durableTemporaryFiles(file).length).toBe(crashPoint === "file-synced" ? 1 : 0)
 
     const restarted = readInChild(file)
     expect(restarted.ok).toBe(true)
@@ -292,9 +478,7 @@ describe("Settings typed adapter", () => {
     if (expected === "old") expect(restarted.value).toEqual(old)
     if (expected === "old-or-new") expect([old, next]).toContainEqual(restarted.value)
     expect(() => readDocument(file)).not.toThrow()
-    readdirSync(userData)
-      .filter((entry) => entry.includes(".tmp-"))
-      .forEach((entry) => expect(() => JSON.parse(readFileSync(join(userData, entry), "utf8"))).not.toThrow())
+    expect(durableTemporaryFiles(file)).toEqual([])
   })
 
   test("an invalid authority can be repaired only with the revision returned by read", () => {

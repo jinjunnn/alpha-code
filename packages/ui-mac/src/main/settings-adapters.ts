@@ -4,9 +4,11 @@ import { dirname } from "node:path"
 import type { CasGcRoundInput, CasGcRoundSummary } from "./ext-cas-gc"
 import type { CasGcSchedulerConfig, CasGcSpawnRound } from "./ext-cas-gc-scheduler"
 import {
+  cleanupDurableAtomicTemporaryFilesSync,
   fsyncDirRequiredSync,
   fsyncFileSync,
   writeFileDurableAtomicSync,
+  type DurableAtomicFileSystem,
   type DurableAtomicWriteOptions,
 } from "./ext-atomic-fs"
 import {
@@ -30,11 +32,22 @@ const INVALID = Symbol("invalid")
 
 export type SettingsAdapterOptions = {
   onCommitPoint?: DurableAtomicWriteOptions["onCommitPoint"]
+  /** Test-only syscall seam for the durable atomic helper. */
+  fileSystem?: DurableAtomicFileSystem
 }
 
 export function createSettingsAdapter(file: string, options?: SettingsAdapterOptions) {
+  const startupReady = (() => {
+    try {
+      cleanupDurableAtomicTemporaryFilesSync(file, options?.fileSystem)
+      return true
+    } catch {
+      return false
+    }
+  })()
   return {
     read(): SettingsReadResult {
+      if (!startupReady) return { ok: false, code: "read-failed" }
       const current = readCurrent(file)
       if (current.kind === "valid") return { ok: true, ...current.authority }
       if (current.kind === "invalid") return { ok: false, code: "authority-invalid", revision: current.revision }
@@ -52,6 +65,7 @@ export function createSettingsAdapter(file: string, options?: SettingsAdapterOpt
       if (!value || typeof envelope.expectedRevision !== "string" || !REVISION_PATTERN.test(envelope.expectedRevision)) {
         return { ok: false, code: "invalid-input" }
       }
+      if (!startupReady) return { ok: false, code: "write-failed" }
       const current = readCurrent(file)
       if (current.kind === "failed") return { ok: false, code: "read-failed" }
       const json = JSON.stringify(value)
@@ -80,6 +94,7 @@ export function createSettingsAdapter(file: string, options?: SettingsAdapterOpt
         document[RENDERER_SETTINGS_KEY] = json
         writeFileDurableAtomicSync(file, JSON.stringify(document, null, "\t"), {
           onCommitPoint: options?.onCommitPoint,
+          fileSystem: options?.fileSystem,
         })
       } catch {
         return writeFailure(readCurrent(file))
