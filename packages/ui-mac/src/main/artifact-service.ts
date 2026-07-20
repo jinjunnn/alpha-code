@@ -44,6 +44,8 @@ export const MAX_PROJECT_ARTIFACT_BYTES = 5 * 1024 * 1024 * 1024
 export const ARTIFACT_QUOTA_LOCK_FILE = "artifact-quota.lock"
 const ARTIFACT_QUOTA_STALE_DIR = "artifact-quota-stale"
 const ARTIFACT_QUOTA_LOCK_ATTEMPTS = 3
+const ARTIFACT_QUOTA_LOCK_OWNERSHIP_LOST = "project lock ownership lost"
+const ARTIFACT_QUOTA_DISPLACED_LOCK_CLEANUP_FAILED = "displaced lock cleanup failed"
 const ARTIFACT_PART_SUFFIX_RE = /\.[0-9a-z]+-[0-9a-z]+-[0-9a-z]+-[0-9a-f]{8}\.part$/
 
 export type ArtifactQuotaLimits = {
@@ -66,10 +68,12 @@ export type ArtifactQuotaFinalizeOptions = {
   limits?: ArtifactQuotaLimits
   now?: () => Date
   pidAlive?: (pid: number) => boolean | undefined
-  /** 仅供并发测试把竞态固定在扫描/判定完成与 final rename 之间;生产调用不得注入。 */
+  /** 仅供测试固定锁回收/提交竞态与 I/O 失败;生产调用不得注入。 */
   testHooks?: {
     afterQuotaScan?: () => void
     beforeStaleLockRevalidate?: () => void
+    afterStaleLockRevalidate?: () => void
+    beforeDisplacedLockCleanup?: (staleFile: string) => void
   }
 }
 
@@ -167,7 +171,7 @@ export function finalizeArtifactWithQuota(
     if (nextProjectBytes > limits.projectMaxBytes)
       return quotaOverLimit("project bytes", nextProjectBytes, limits.projectMaxBytes)
     opts.testHooks?.afterQuotaScan?.()
-    if (!acquired.lock.owned()) return quotaDiskError("project lock busy")
+    if (!acquired.lock.owned()) return quotaDiskError(ARTIFACT_QUOTA_LOCK_OWNERSHIP_LOST)
     try {
       fs.renameSync(partPath, targetPath)
     } catch {
@@ -269,6 +273,11 @@ function acquireArtifactQuotaLock(
     const revalidated = artifactQuotaLockIdentityAtPath(file, existing.identity)
     if (revalidated === "unknown") return { ok: false, reason: "project lock busy" }
     if (revalidated === "changed") continue
+    try {
+      opts.testHooks?.afterStaleLockRevalidate?.()
+    } catch {
+      return { ok: false, reason: "project lock recovery unavailable" }
+    }
 
     const staleDir = safeResolveInAlpha(projectDir, ARTIFACT_QUOTA_STALE_DIR)
     if (!staleDir) return { ok: false, reason: "stale lock evidence unavailable" }
@@ -283,9 +292,16 @@ function acquireArtifactQuotaLock(
       if ((error as NodeJS.ErrnoException).code === "ENOENT") continue
       return { ok: false, reason: "project lock recovery unavailable" }
     }
-    if (artifactQuotaLockIdentityAtPath(staleFile, existing.identity) === "same") continue
-    if (!restoreDisplacedArtifactQuotaLock(staleFile, file))
-      return { ok: false, reason: "project lock busy" }
+    const archived = artifactQuotaLockIdentityAtPath(staleFile, existing.identity)
+    if (archived === "same") continue
+    if (archived === "unknown") return { ok: false, reason: "stale lock evidence unavailable" }
+    try {
+      opts.testHooks?.beforeDisplacedLockCleanup?.(staleFile)
+      fs.unlinkSync(staleFile)
+    } catch {
+      return { ok: false, reason: ARTIFACT_QUOTA_DISPLACED_LOCK_CLEANUP_FAILED }
+    }
+    return { ok: false, reason: "project lock busy" }
   }
   return { ok: false, reason: "project lock busy" }
 }
@@ -335,7 +351,8 @@ function artifactQuotaLock(
   holder: ArtifactQuotaLockHolder,
   identity: ArtifactQuotaLockIdentity,
 ): ArtifactQuotaLock {
-  const owned = () => {
+  let ownershipLost = false
+  const matchesCurrent = () => {
     const current = readArtifactQuotaLock(file)
     return (
       current.state === "present" &&
@@ -345,13 +362,24 @@ function artifactQuotaLock(
       current.holder.nonce === holder.nonce
     )
   }
+  const owned = () => {
+    if (ownershipLost) return false
+    if (matchesCurrent()) return true
+    ownershipLost = true
+    return false
+  }
   return {
     owned,
     release() {
-      if (!owned()) return
+      if (ownershipLost) return
+      if (!matchesCurrent()) {
+        ownershipLost = true
+        return
+      }
       try {
         fs.unlinkSync(file)
-      } catch {
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") ownershipLost = true
         // 已释放或目录异常:绝不扩大删除范围。
       }
     },
@@ -421,17 +449,6 @@ function artifactQuotaLockIdentityAtPath(
     } catch {
       // read-only fd;关闭失败不扩大回收范围。
     }
-  }
-}
-
-function restoreDisplacedArtifactQuotaLock(staleFile: string, file: string): boolean {
-  try {
-    fs.linkSync(staleFile, file)
-    fs.unlinkSync(staleFile)
-    return true
-  } catch {
-    // link 不覆盖并发创建的新 primary;失败时保留被搬文件作诊断且整体 fail-closed。
-    return false
   }
 }
 

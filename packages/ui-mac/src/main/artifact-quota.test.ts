@@ -2,8 +2,8 @@
 // `.part → fsync → project lock 内核算/rename`:正反例、末余额并发、崩溃锁/孤儿 staging 恢复、脱敏错误面。
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs"
+import { dirname, join } from "node:path"
 import { hostname, tmpdir } from "node:os"
 import { uniquePartPath, writeChunksChecked, type ArtifactDownloadOutcome } from "./alpha-artifact-download"
 import {
@@ -18,6 +18,8 @@ const RUN = "job-quota"
 const OTHER_RUN = "job-other"
 const SECRET = "Bearer-TOKEN-MARKER-req093"
 const LOCK_BUSY_DETAIL = "artifact quota admission unavailable (project lock busy)"
+const LOCK_OWNERSHIP_LOST_DETAIL = "artifact quota admission unavailable (project lock ownership lost)"
+const DISPLACED_LOCK_CLEANUP_FAILED_DETAIL = "artifact quota admission unavailable (displaced lock cleanup failed)"
 const RACE_ROUNDS = Number(process.env.ARTIFACT_QUOTA_STRESS_ROUNDS ?? "1")
 if (!Number.isSafeInteger(RACE_ROUNDS) || RACE_ROUNDS <= 0)
   throw new Error("ARTIFACT_QUOTA_STRESS_ROUNDS must be a positive integer")
@@ -126,6 +128,55 @@ async function runConcurrentFinalizers(names: [string, string], quota: ArtifactQ
   return stdout.map((output) => JSON.parse(output) as ChildFinalizeResult)
 }
 
+async function runDisplacedHolderRace(names: [string, string], quota: ArtifactQuotaLimits, deadPid: number) {
+  const barrierDir = mkdtempSync(join(projectDir, "artifact-quota-displacement-"))
+  const helper = join(import.meta.dir, "artifact-quota-child.ts")
+  const deadline = Date.now() + 10_000
+  const children = names.map((name, index) =>
+    Bun.spawn(
+      [
+        process.execPath,
+        helper,
+        projectDir,
+        RUN,
+        name,
+        index === 0 ? "holder" : "reclaimer",
+        barrierDir,
+        index.toString(),
+        JSON.stringify(quota),
+        deadline.toString(),
+        deadPid.toString(),
+        "displacement",
+      ],
+      { stdin: "ignore", stdout: "pipe", stderr: "pipe" },
+    ),
+  )
+  const waitFor = async (marker: string) => {
+    while (!existsSync(join(barrierDir, marker)) && Date.now() < deadline) await Bun.sleep(10)
+    if (existsSync(join(barrierDir, marker))) return
+    children.forEach((child) => child.kill())
+    throw new Error(`artifact quota displacement barrier failed (${marker})`)
+  }
+
+  await Promise.all([waitFor("revalidated-0"), waitFor("revalidated-1")])
+  writeFileSync(join(barrierDir, "archive-0"), "archive\n", { flag: "wx" })
+  await waitFor("scanned-0")
+  writeFileSync(join(barrierDir, "archive-1"), "archive\n", { flag: "wx" })
+  await waitFor("done-1")
+  writeFileSync(join(barrierDir, "commit-0"), "commit\n", { flag: "wx" })
+
+  const killTimer = setTimeout(() => children.forEach((child) => child.kill()), Math.max(1, deadline - Date.now()))
+  const [codes, stdout, stderr] = await Promise.all([
+    Promise.all(children.map((child) => child.exited)),
+    Promise.all(children.map((child) => new Response(child.stdout).text())),
+    Promise.all(children.map((child) => new Response(child.stderr).text())),
+  ])
+  clearTimeout(killTimer)
+  if (codes.some((code) => code !== 0))
+    throw new Error(`artifact quota displacement child failed (${codes.join(", ")}): ${stderr.join(" | ")}`)
+  return stdout.map((output) => JSON.parse(output) as ChildFinalizeResult)
+}
+
 function expectSingleAdmission(results: ChildFinalizeResult[], names: [string, string]) {
   const admitted = results.filter((entry) => entry.result.ok)
   const refused = results.filter((entry) => !entry.result.ok)
@@ -136,6 +187,21 @@ function expectSingleAdmission(results: ChildFinalizeResult[], names: [string, s
   expect(failure).toEqual({ ok: false, error: "disk", detail: LOCK_BUSY_DETAIL })
   expect(names.map((name) => existsSync(target(name))).filter(Boolean)).toHaveLength(1)
   expect(stagingResidue()).toEqual([])
+}
+
+function expectNoDoubleAdmission(results: ChildFinalizeResult[], names: [string, string]) {
+  const admitted = results.filter((entry) => entry.result.ok)
+  const refused = results.filter((entry) => !entry.result.ok)
+  expect(admitted.length).toBeLessThanOrEqual(1)
+  refused.forEach((entry) => {
+    const failure = entry.result
+    if (failure.ok) throw new Error("unreachable")
+    expect(failure.error).toBe("disk")
+    expect([LOCK_BUSY_DETAIL, LOCK_OWNERSHIP_LOST_DETAIL]).toContain(failure.detail)
+  })
+  expect(names.map((name) => existsSync(target(name))).filter(Boolean)).toHaveLength(admitted.length)
+  expect(stagingResidue()).toEqual([])
+  return admitted.length
 }
 
 describe("finalizeArtifactWithQuota", () => {
@@ -262,7 +328,71 @@ describe("finalizeArtifactWithQuota", () => {
     expect(stagingResidue()).toEqual([])
   })
 
-  test("two Bun processes reclaiming one dead lock allow only one takeover", async () => {
+  test("a reclaimer that displaces a new holder converges without restoring a live-PID orphan", async () => {
+    const deadPid = 999_999
+    const lock = writeProjectLock({ pid: deadPid, nonce: "dead-before-displacement" })
+    const names: [string, string] = ["displaced-holder.bin", "late-reclaimer.bin"]
+    const results = await runDisplacedHolderRace(names, limits(), deadPid)
+
+    expect(results[0]!.result).toEqual({ ok: false, error: "disk", detail: LOCK_OWNERSHIP_LOST_DETAIL })
+    expect(results[1]!.result).toEqual({ ok: false, error: "disk", detail: LOCK_BUSY_DETAIL })
+    expect(names.some((name) => existsSync(target(name)))).toBe(false)
+    expect(stagingResidue()).toEqual([])
+    expect(existsSync(lock)).toBe(false)
+    const staleDir = join(projectDir, ".alpha", "artifact-quota-stale")
+    const stale = readdirSync(staleDir)
+    expect(stale).toHaveLength(1)
+    expect(JSON.parse(readFileSync(join(staleDir, stale[0]!), "utf8"))).toMatchObject({
+      pid: deadPid,
+      nonce: "dead-before-displacement",
+    })
+
+    const retry = await write("after-displacement.bin", "x", { limits: limits() })
+    expect(retry.ok).toBe(true)
+    expect(existsSync(lock)).toBe(false)
+    expect(readdirSync(staleDir)).toEqual(stale)
+  })
+
+  test("a displaced-copy unlink failure is explicit and does not masquerade as a busy primary", async () => {
+    const deadPid = 999_999
+    const lock = writeProjectLock({ pid: deadPid, nonce: "dead-before-cleanup-failure" })
+    const displaced = `${lock}.released`
+    const staleDir = join(projectDir, ".alpha", "artifact-quota-stale")
+    const result = await (async () => {
+      try {
+        return await write("cleanup-failure.bin", "x", {
+          limits: limits(),
+          pidAlive: (pid) => (pid === deadPid ? false : true),
+          testHooks: {
+            afterStaleLockRevalidate() {
+              renameSync(lock, displaced)
+              writeProjectLock({ nonce: "displaced-live-lock" })
+            },
+            beforeDisplacedLockCleanup(staleFile) {
+              chmodSync(dirname(staleFile), 0o555)
+            },
+          },
+        })
+      } finally {
+        chmodSync(staleDir, 0o755)
+      }
+    })()
+
+    expect(result).toEqual({ ok: false, error: "disk", detail: DISPLACED_LOCK_CLEANUP_FAILED_DETAIL })
+    expect(existsSync(lock)).toBe(false)
+    const stale = readdirSync(staleDir)
+    expect(stale).toHaveLength(1)
+    expect(JSON.parse(readFileSync(join(staleDir, stale[0]!), "utf8"))).toMatchObject({
+      pid: process.pid,
+      nonce: "displaced-live-lock",
+    })
+
+    const retry = await write("after-cleanup-failure.bin", "x", { limits: limits() })
+    expect(retry.ok).toBe(true)
+    expect(existsSync(lock)).toBe(false)
+  })
+
+  test("two Bun processes reclaiming one dead lock never double-admit and converge on retry", async () => {
     writeFileSync(target("existing.bin"), "1234")
     const deadPid = 999_999
     for (let round = 0; round < RACE_ROUNDS; round++) {
@@ -270,9 +400,15 @@ describe("finalizeArtifactWithQuota", () => {
       const names: [string, string] = [`stale-racer-a-${round}.bin`, `stale-racer-b-${round}.bin`]
       const results = await runConcurrentFinalizers(names, limits({ runMaxBytes: 5, projectMaxBytes: 5 }), deadPid)
 
-      expectSingleAdmission(results, names)
+      const admitted = expectNoDoubleAdmission(results, names)
       expect(existsSync(lock)).toBe(false)
       expect(readdirSync(join(projectDir, ".alpha", "artifact-quota-stale"))).toHaveLength(round + 1)
+      if (admitted === 0) {
+        const retryName = `stale-racer-retry-${round}.bin`
+        const retry = await write(retryName, "x", { limits: limits({ runMaxBytes: 5, projectMaxBytes: 5 }) })
+        expect(retry.ok).toBe(true)
+        rmSync(target(retryName), { force: true })
+      }
       names.forEach((name) => rmSync(target(name), { force: true }))
     }
   }, RACE_TEST_TIMEOUT)

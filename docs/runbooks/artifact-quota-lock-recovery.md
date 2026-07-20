@@ -20,6 +20,31 @@ Do not remove or rewrite a busy lock merely because it is old. A malformed
 record, foreign-host record, live PID, or indeterminate liveness probe is
 intentionally fail-closed.
 
+## Automatic race convergence
+
+Portable Node filesystem APIs cannot conditionally rename a path by its
+previously observed `dev`/`ino`. Two dead-lock reclaimers can therefore both
+validate the old primary before one of them creates a new primary. If the
+later reclaimer moves that new lock, the post-move identity check detects the
+mismatch, deletes the displaced copy from `artifact-quota-stale`, and returns
+`artifact quota admission unavailable (project lock busy)` for that attempt.
+It never restores the displaced lock.
+
+The displaced holder checks ownership immediately before the artifact rename.
+A missing or different primary permanently marks that handle as having lost
+ownership and aborts the finalize with
+`artifact quota admission unavailable (project lock ownership lost)`. The
+primary remains absent, so the next retry can create a fresh lock normally.
+This race can cause one retryable finalization failure but cannot leave a
+live-PID lock whose finalizer has already exited.
+
+If the displaced copy cannot be deleted, the affected attempt fails with
+`artifact quota admission unavailable (displaced lock cleanup failed)`. The
+copy is not authoritative as a primary, but its identity could not be cleaned
+up automatically. Stop all finalizers and preserve or remove that residual
+copy only under the controlled procedure below; do not infer ownership from
+its location in `artifact-quota-stale`.
+
 ## Controlled manual recovery
 
 Use this procedure only after repeated finalization attempts return
@@ -51,9 +76,11 @@ rename a `.part` directly to its final name outside the quota finalizer.
 Portable Node filesystem APIs do not provide a conditional rename by
 `dev`/`ino`. The implementation therefore narrows the remaining pathname race
 with pre-rename identity validation, post-rename archived-identity validation
-and no-clobber restoration, plus a final holder-identity check immediately
-before artifact commit. A process with write authority over the project's
-`.alpha` directory can still replace paths in the last check-to-operation
-window. Shared-volume hosts also require distinct `hostId` values; this lock is
-not a distributed coordination protocol. Stop all finalizers and use the
-controlled evidence-preserving procedure whenever ownership cannot be proven.
+and deletion of a proven displaced copy, plus a final holder-identity check
+immediately before artifact commit. There is deliberately no restoration
+step. A process with write authority over the project's `.alpha` directory can
+still replace paths in the last check-to-operation window. Shared-volume hosts
+also require distinct `hostId` values; this lock is not a distributed
+coordination protocol. Stop all finalizers and use the controlled
+evidence-preserving procedure whenever ownership or a residual lock cannot be
+proven.

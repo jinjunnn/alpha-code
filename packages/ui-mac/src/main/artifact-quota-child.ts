@@ -3,7 +3,7 @@ import { join } from "node:path"
 import { writeChunksChecked } from "./alpha-artifact-download"
 import { finalizeArtifactWithQuota, type ArtifactQuotaLimits } from "./artifact-service"
 
-const [projectDir, runId, name, content, barrierDir, markerName, limitsJson, deadlineText, deadPidText] = process.argv.slice(2)
+const [projectDir, runId, name, content, barrierDir, markerName, limitsJson, deadlineText, deadPidText, scenario] = process.argv.slice(2)
 if (!projectDir || !runId || !name || content === undefined || !barrierDir || !markerName || !limitsJson || !deadlineText)
   throw new Error("artifact quota child: missing arguments")
 
@@ -15,6 +15,12 @@ if (deadPid !== undefined && (!Number.isInteger(deadPid) || deadPid <= 0))
   throw new Error("artifact quota child: invalid dead PID")
 const targetPath = join(projectDir, ".alpha", "runs", runId, "artifacts", name)
 const waiter = new Int32Array(new SharedArrayBuffer(4))
+const waitFor = (marker: string, reason: string) => {
+  while (!existsSync(join(barrierDir, marker))) {
+    if (Date.now() >= deadline) throw new Error(reason)
+    Atomics.wait(waiter, 0, 0, 10)
+  }
+}
 const result = await writeChunksChecked(
   (async function* () {
     yield Buffer.from(content)
@@ -29,12 +35,17 @@ const result = await writeChunksChecked(
         limits,
         ...(deadPid !== undefined ? { pidAlive: (pid: number) => (pid === deadPid ? false : undefined) } : {}),
         testHooks: {
+          ...(scenario === "displacement"
+            ? {
+                afterStaleLockRevalidate() {
+                  writeFileSync(join(barrierDir, `revalidated-${markerName}`), "revalidated\n", { flag: "wx" })
+                  waitFor(`archive-${markerName}`, "stale archive barrier timed out")
+                },
+              }
+            : {}),
           afterQuotaScan() {
             writeFileSync(join(barrierDir, `scanned-${markerName}`), "scanned\n", { flag: "wx" })
-            while (!existsSync(join(barrierDir, "commit"))) {
-              if (Date.now() >= deadline) throw new Error("quota scan barrier timed out")
-              Atomics.wait(waiter, 0, 0, 10)
-            }
+            waitFor(scenario === "displacement" ? `commit-${markerName}` : "commit", "quota scan barrier timed out")
           },
         },
       }),
