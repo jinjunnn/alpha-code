@@ -14,7 +14,15 @@ mock.module("./alpha-byok-keys", () => ({ byokKeyMap: () => mockKeychain }))
 
 const { getProviderKeyStatus } = await import("./alpha-provider-status")
 
-const MANAGED = ["DEEPSEEK_API_KEY", "ZHIPU_API_KEY", "MINIMAX_API_KEY", "DASHSCOPE_API_KEY", "MOONSHOT_API_KEY", "OPENCODE_CONFIG_DIR"]
+const MANAGED = [
+  "DEEPSEEK_API_KEY",
+  "ZHIPU_API_KEY",
+  "MINIMAX_API_KEY",
+  "DASHSCOPE_API_KEY",
+  "MOONSHOT_API_KEY",
+  "ALPHA_GLOBAL_DIR",
+  "OPENCODE_CONFIG_DIR",
+]
 const saved: Record<string, string | undefined> = {}
 let tmp = ""
 
@@ -25,6 +33,8 @@ beforeEach(() => {
     delete process.env[k]
   }
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-provstatus-"))
+  process.env.ALPHA_GLOBAL_DIR = path.join(fs.realpathSync(tmp), "alpha-code-state", "env", "dev")
+  fs.mkdirSync(process.env.ALPHA_GLOBAL_DIR, { recursive: true })
   process.env.OPENCODE_CONFIG_DIR = tmp
 })
 afterEach(() => {

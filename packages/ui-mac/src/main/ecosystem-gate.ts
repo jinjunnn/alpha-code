@@ -2,9 +2,9 @@
 //
 // default-deny 上线后,存量用户 `~/.claude/skills`、`~/.agents/skills`、`~/.claude/CLAUDE.md`
 // 一夜之间对引擎不可见 —— 不弹这个门就会重演「技能丢了」误会。首启检测非空 → 一次性询问:
-// 「导入」= 转换为 `~/.alpha` 全局原生资产(skills 走既有导入管线 + receipts 溯源;CLAUDE.md 落
-// `~/.alpha/instructions/`,sidecar 注入通道);「不导入」= loud 明示从此不可见。两种决策都写
-// marker(`~/.alpha/ecosystem-import.json`),不再重复弹。逃生 ALPHA_ECOSYSTEM_INHERIT=1 → 静默。
+// 「导入」= 转换为当前环境全局原生资产(skills 走既有导入管线 + receipts 溯源;CLAUDE.md 落
+// `<current-environment-root>/instructions/`,sidecar 注入通道);「不导入」= loud 明示从此不可见。
+// 两种决策都写当前环境 marker,不再重复弹。逃生 ALPHA_ECOSYSTEM_INHERIT=1 → 静默。
 //
 // 时机:窗口就绪后 fire-and-forget(不阻塞启动;导入生效走下一次 fork/dispose —— 首启导入的技能
 // 在引擎侧的可见时机 = 下一条消息触发的实例装配,与定制中心安装同节奏)。
@@ -46,7 +46,7 @@ export async function runGlobalEcosystemGate(
     detail:
       "本版本起,alpha-code 默认不再读取其它工具的目录(~/.claude、~/.agents)——防止未经确认的内容进入模型上下文。\n" +
       `发现:\n${items}\n\n` +
-      "「导入」= 转换为 ~/.alpha 下的原生资产(快照,原文件不动;技能进定制中心「已安装」,可卸载可更新)。\n" +
+      "「导入」= 转换到当前 alpha 环境的原生资产(快照,原文件不动;技能进定制中心「已安装」,可卸载可更新)。\n" +
       "「不导入」= 这些内容从此在 alpha-code 中不可见(原文件仍在,之后可在会话里说「导入外部技能」补做)。",
     buttons: ["导入为 alpha 原生", "不导入(从此不可见)"],
     defaultId: 0,
@@ -67,7 +67,7 @@ export async function runGlobalEcosystemGate(
   if (detected.claudeMd) {
     try {
       importGlobalClaudeMd(detected.claudeMd)
-      imported.push("CLAUDE.md → ~/.alpha/instructions")
+      imported.push("CLAUDE.md → 当前环境 instructions")
     } catch (error) {
       skipped.push({ name: "CLAUDE.md", reason: error instanceof Error ? error.message : String(error) })
     }

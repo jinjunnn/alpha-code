@@ -1,7 +1,7 @@
 // ext-skill-generations — REQ-100 #310:把 skill 生产安装/更新路由进不可变 generation。
 //
 // 现状问题(审计 6/6 AC FAIL):1246 行事务引擎 runExtensionTransaction 生产零调用;planner 走
-// passthroughTx + 直写 ~/.alpha/skills/<name> + 各自写 V1 receipt,更新不清旧文件、账本写失败仍
+// passthroughTx + 直写当前环境 skills/<name> + 各自写 V1 receipt,更新不清旧文件、账本写失败仍
 // 报成功。本模块把 skill(builtin/remote)安装收敛成:纯 staging 填充(去 receipt 化)→ 引擎事务
 // (staging→verify→materialize→switch)→ commitReceipt=upsertRecordV2(写失败即事务失败 = 折入
 // #336)。物理真源 = <root>/ext-store/skill--<name>/generations/<genId>,current.json 原子指针。
@@ -324,7 +324,7 @@ export async function installSkillGeneration(root: string, spec: SkillGeneration
     return { ok: false, reason: result.reason, stage: result.stage }
   }
 
-  // supersede:清除本 skill 的旧 flat 安装(我们上一版直写的 ~/.alpha/skills/<name>),防与 generation
+  // supersede:清除本 skill 的旧 flat 安装(我们上一版直写的当前环境 skills/<name>),防与 generation
   // 双真源(重名 skill 静默覆盖)。只删同名——即我们自己拥有的先前安装,不碰其它内容。best-effort。
   const flat = path.join(root, "skills", spec.name)
   try {

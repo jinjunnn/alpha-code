@@ -9,11 +9,11 @@
 //              origin 标 imported-claude / imported-agents 可溯源;
 //   - 项目 CLAUDE.md → AGENTS.md(引擎原生指令约定,零新通道;已有 AGENTS.md → loud 让用户手动
 //              合并,绝不静默覆盖/追加,C28);
-//   - 全局 CLAUDE.md → `~/.alpha/instructions/imported-claude-code.md`(sidecar injectAlphaConfig
+//   - 全局 CLAUDE.md → `<current-environment-root>/instructions/imported-claude-code.md`(sidecar injectAlphaConfig
 //              扫描该目录并入 instructions —— alpha 原生通道)。
 //
 // 记账:项目决策 = `.alpha/prefs.json` 的 externalImport(版本化,REQ-060 extensionsConsent 同款);
-// 全局一次性迁移门 = `~/.alpha/ecosystem-import.json`(marker,防重复弹)。
+// 全局一次性迁移门 = `<current-environment-root>/ecosystem-import.json`(marker,防重复弹)。
 
 import * as fs from "node:fs"
 import * as path from "node:path"
@@ -160,7 +160,7 @@ export function importProjectClaudeMd(projectDir: string, claudeMdPath: string):
   return "agents-md-created"
 }
 
-/** 全局 CLAUDE.md → `~/.alpha/instructions/imported-claude-code.md`(sidecar 注入通道)。 */
+/** 全局 CLAUDE.md → `<current-environment-root>/instructions/imported-claude-code.md`(sidecar 注入通道)。 */
 export function importGlobalClaudeMd(claudeMdPath: string): string {
   const dir = path.join(alphaGlobalRoot(), "instructions")
   fs.mkdirSync(dir, { recursive: true })
@@ -169,7 +169,7 @@ export function importGlobalClaudeMd(claudeMdPath: string): string {
   return dest
 }
 
-/** `~/.alpha/instructions/*.md` 清单(sidecar injectAlphaConfig 消费;缺目录 = 空)。 */
+/** `<current-environment-root>/instructions/*.md` 清单(sidecar injectAlphaConfig 消费;缺目录 = 空)。 */
 export function listAlphaInstructionFiles(root: string = alphaGlobalRoot()): string[] {
   const dir = path.join(root, "instructions")
   try {

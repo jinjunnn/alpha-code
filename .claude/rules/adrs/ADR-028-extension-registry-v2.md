@@ -78,3 +78,10 @@ related: [ADR-014, ADR-019, ADR-023, ADR-024, ADR-029, REQ-098, REQ-099, REQ-100
 - ⚠️ breaking-change:旧 IPC 通道下线,renderer 与 main 必须同版本(同包发布,实际无兼容窗口);catalog 严格解码把 schema 演进的协调成本显式化(这是目的,不是副作用)。
 - ⚠️ manifest 由 catalog 合成 = 现阶段 manifest 可信度上限是 catalog 通道可信度(ed25519 整体验签);逐包签名/独立 manifest 分发在 REQ-101 前不假装存在。
 - 🔭 residual(如实):Hub 项目上下文 UI(逐项目禁用/更新)、五维 ownership 的 UI 呈现、未策展入口的风险文案 UI、v1 账本的自动批量迁移触发时机——main 侧机器(`ext-install-catalog` / `ext-uninstall-v2` / `ext-set-install-state` / `ext-list-installs-v2` 四通道 + schema/planner/账本模块)已就位,UI/编排随后续 slice。既有 renderer 事实通道(`ext-persist-mcp` 收 meta、`ext-install-builtin-*`、`ext-uninstall` 收整张 receipt 等)的**实际下线**与未策展入口的 meta 剥离,随 renderer 切换到新通道同 PR 收口——新旧并存只是仓内开发窗口,不跨发布(同包发布,无兼容矩阵)。
+
+## 修订(2026-07-20,#428 环境根退役)
+
+§5 的受控全局根由 env-scoped `~/.alpha` 改为
+`<appData>/alpha-code-state/env/<environment>`，且只消费 desktop 冻结的 canonical
+`ALPHA_GLOBAL_DIR`；退休 home 根及其 alias 均拒绝。项目级 `<project>/.alpha`、owned path
+重新派生与 realpath 反逃逸约束不变。

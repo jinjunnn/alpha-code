@@ -24,6 +24,7 @@ const MANAGED = [
   "MINIMAX_API_KEY",
   "DASHSCOPE_API_KEY",
   "MOONSHOT_API_KEY",
+  "ALPHA_GLOBAL_DIR",
   "OPENCODE_CONFIG_DIR",
 ]
 const saved: Record<string, string | undefined> = {}
@@ -43,6 +44,8 @@ beforeEach(() => {
   }
   // Empty config dir → readUserProviderIds() sees no user providers (isolates the byok/gateway logic).
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-models-"))
+  process.env.ALPHA_GLOBAL_DIR = path.join(fs.realpathSync(tmp), "alpha-code-state", "env", "dev")
+  fs.mkdirSync(process.env.ALPHA_GLOBAL_DIR, { recursive: true })
   process.env.OPENCODE_CONFIG_DIR = tmp
   userData = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-models-userdata-"))
 })

@@ -2,8 +2,8 @@
 //
 // 通道演进:
 //   REQ-036 初版:`~/.opencode/skill/<name>` 直链 app 资源(违反 .alpha 中转不变量,已迁移);
-//   REQ-052:两跳桥 `~/.alpha/skills/<name>` → app 资源 + `~/.opencode/skills` 桥;
-//   REQ-059 T3:桥退役,引擎经 alpha.jsonc `skills.paths:[~/.alpha/skills]`(文件通道)发现;
+//   REQ-052:两跳桥 `<global-root>/skills/<name>` → app 资源 + `~/.opencode/skills` 桥;
+//   REQ-059 T3:桥退役,引擎经 alpha.jsonc `skills.paths:[<global-root>/skills]`(文件通道)发现;
 //   **REQ-065(现行)**:`.alpha` 纯度反向收口 —— `.alpha` 只承载**用户自有**内容(有用户动作、
 //   receipts 可溯);出厂件(零用户动作预置)不落 `.alpha`,由 `skills.paths` **直指 app 资源目录**
 //   (boot reconcile 每启动重写该组条目,跟随 app 路径/版本变化,见 engine-config-truth 的
@@ -78,7 +78,7 @@ export function isAlphaFactoryLink(linkTo: string, name: string): boolean {
 export type FactoryReconcileResult = {
   /** REQ-065 T1:本次应注入 alpha.jsonc skills.paths 的出厂资源目录(enabled 且未被用户内容遮蔽)。 */
   paths: string[]
-  /** REQ-065 T2:拆除的 `~/.alpha/skills/<name>` 存量出厂链(REQ-052 两跳桥遗留)。 */
+  /** REQ-065 T2:拆除的 `<current-environment-root>/skills/<name>` 存量出厂链。 */
   removed: string[]
   /** REQ-036 初版 `~/.opencode/skill/<name>` 直链拆除。 */
   migrated: string[]
@@ -175,12 +175,12 @@ export function reconcileFactorySkills(
         }
       } else {
         // 异源链占位:不碰、不注入(目标未知,注入可能与其解析出的同名技能双源)
-        result.skipped.push({ name, reason: `foreign symlink at ~/.alpha/skills left alone: → ${t}` })
+        result.skipped.push({ name, reason: `foreign symlink at current environment skills left alone: → ${t}` })
         continue
       }
     } else if (fs.existsSync(truth)) {
       // 真实目录:catalog 安装/用户自建 —— 它是用户内容真源(receipts 可溯),出厂路径让位不注入
-      result.skipped.push({ name, reason: "~/.alpha/skills holds installed/user content (real dir), factory path yields" })
+      result.skipped.push({ name, reason: "current environment skills holds installed/user content (real dir), factory path yields" })
       continue
     }
 

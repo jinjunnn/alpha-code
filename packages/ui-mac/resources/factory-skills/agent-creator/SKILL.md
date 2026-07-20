@@ -67,8 +67,10 @@ skill-creator teaches the generic methodology; these are the alpha-specific rule
 - **Project skill (default)**: write `<project>/.alpha/skills/<name>/SKILL.md`, then call
   `alpha_register` with `type: "skill"` (no name/entry needed — it registers the skills path once).
   Never write into `.opencode`.
-- **Global (only when asked)**: write `~/.alpha/skills/<name>/SKILL.md` — the engine discovers
-  this directory natively (no registration needed).
+- **Global (only when asked)**: write `$ALPHA_GLOBAL_DIR/skills/<name>/SKILL.md` — the desktop
+  process supplies this absolute, canonical current-environment root and the engine discovers the
+  directory natively (no registration needed). Never synthesize, replace, or redirect this value;
+  the retired `$HOME/.alpha` root is not a fallback.
 - **Frontmatter**: `name` (lowercase-hyphen, ≤64, must equal the folder name) + `description`
   (write it for the MODEL: concrete "Use when …" triggers decide whether the skill fires).
 - **Take effect**: the engine does NOT watch files — after writing, call the `alpha_reload` tool

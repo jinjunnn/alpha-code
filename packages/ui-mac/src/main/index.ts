@@ -59,7 +59,6 @@ import { spawnWslSidecar } from "./wsl/sidecar"
 import { migrate } from "./migrate"
 import { catalogRegistryChannel, initAlphaEnvironment } from "./alpha-environment"
 import { productionCasGcConfig, startCasGcScheduler } from "./ext-cas-gc-scheduler"
-import { runEnvMigration } from "./alpha-env-migrate"
 import { ensureAlphaLayoutDefault } from "./alpha-defaults"
 import { initialSelfHealState, noteSpawn, planSelfHeal } from "./sidecar-self-heal"
 // #408:session-grant 生命周期接线(会话边界 = sidecar 运行期;栅栏语义见 ext-session-grants.ts)。
@@ -157,9 +156,8 @@ function endSessionGrants(reason: SessionGrantsEndedEventWire["reason"]) {
 // 「上一代 child 的迟到 exit」;蓄意 kill 的信号 = killSidecar 先把 `server` 置 null 再 stop。
 let quittingApp = false
 let sidecarGen = 0
-// #395(Codex r6 B2/B3):startup reconcile 发现「本应禁用的扩展无法保证从引擎配置移除」(config 写
-// 失败 / 读不出 / legacy concat 残留 / skills 陈旧允许集)时置位 —— 首个 sidecar fork 前 fail-closed
-// 阻断,绝不让引擎带着「账本禁用但仍会加载」的项启动。
+// #395/#428:startup reconcile 发现「本应禁用的扩展无法保证从引擎配置移除」或退休桥无法确认
+// 已断链时置位 —— 首个 sidecar fork 前 fail-closed 阻断,绝不让引擎依赖未收敛的旧桥/配置启动。
 let bootEnforcementGap: string[] | null = null
 let selfHeal = initialSelfHealState()
 let selfHealTimer: NodeJS.Timeout | null = null
@@ -232,9 +230,8 @@ const main = Effect.gen(function* () {
     process.env.XDG_CONFIG_HOME = join(root, "config")
     process.env.XDG_CACHE_HOME = join(root, "cache")
     process.env.XDG_STATE_HOME = join(root, "state")
-    // REQ-018:安装真源(~/.alpha)与引擎桥根(~/.opencode)不在 XDG 下 → 测试态显式改道,
+    // 安装真源与引擎桥根不在 XDG 下 → 测试态显式改道,
     // 否则隔离 test build 的定制中心安装会写进真实 home(os.homedir() 不吃 env 重定向)。
-    process.env.ALPHA_GLOBAL_DIR = join(root, "alpha-home")
     process.env.ALPHA_OPENCODE_HOME = join(root, "opencode-home")
     return root
   })()
@@ -309,10 +306,23 @@ const main = Effect.gen(function* () {
   }
 
   preferAppEnv(app.getPath("userData"))
-  // REQ-098:唯一环境映射(prod/beta/dev → mutable root / registry channel / updater feed)在任何
-  // alphaGlobalRoot() 消费方(reconcile / 安装 / sidecar fork)之前落定。ALPHA_GLOBAL_DIR 预置
-  // (测试隔离 / 开发者显式 export,含 preferAppEnv 应用的真实 shell export)= 覆盖,不改写。
-  const alphaEnv = initAlphaEnvironment({ isPackaged: app.isPackaged, channel: CHANNEL })
+  // REQ-098/#428:在任何 root 消费方前冻结 canonical 新根。packaged onboarding 只把内部生成
+  // 的临时 base 作为函数参数传入；环境变量 override 不能授权 packaged 状态落点。
+  const alphaEnv = (() => {
+    try {
+      return initAlphaEnvironment({
+        isPackaged: app.isPackaged,
+        channel: CHANNEL,
+        appDataDir: app.getPath("appData"),
+        ...(onboardingTestRoot ? { baseRoot: join(onboardingTestRoot, "alpha-code-state") } : {}),
+      })
+    } catch {
+      logger.error("alpha environment initialization refused (external override or root identity is invalid)")
+      app.exit(1)
+      return null
+    }
+  })()
+  if (!alphaEnv) return
   logger.log("alpha environment resolved", {
     environment: alphaEnv.environment,
     registryChannel: alphaEnv.registryChannel,
@@ -415,48 +425,7 @@ const main = Effect.gen(function* () {
   void syncLiveAllowlist(app.getPath("userData")).catch(() => {})
 
   if (!TEST_ONBOARDING) migrate()
-  // REQ-098 T3:旧 `~/.alpha` 单根布局 → 当前环境 mutable root 的一次性只读导入(copy-don't-touch,
-  // 幂等 + crash 可重试,receipt = <envRoot>/env-migration-receipt.json,旧根留 rollback 标记)。
-  // dev 环境 root = 旧根 → 天然 skipped-same-root。置于 REQ-059 reconcile 之前:首次 reconcile
-  // 即读到导入后的 alpha.jsonc。失败非致命(环境以空状态启动,旧布局原样,下次启动重试)。
-  if (!TEST_ONBOARDING) {
-    try {
-      const envImport = runEnvMigration({
-        sourceRoot: alphaEnv.legacyRoot,
-        targetRoot: alphaEnv.mutableRoot,
-        userDataPath: app.getPath("userData"),
-        environment: alphaEnv.environment,
-        appVersion: app.getVersion(),
-      })
-      if (envImport.status === "migrated") {
-        logger.log("[req098] legacy ~/.alpha imported into environment root", {
-          environment: alphaEnv.environment,
-          results: envImport.receipt.results,
-          secretRefs: envImport.receipt.secretRefs,
-          pathsRewritten: envImport.receipt.pathsRewritten,
-          warnings: envImport.receipt.warnings,
-        })
-      } else if (envImport.status === "already-migrated" && envImport.reconcile.status === "reconciled") {
-        // #304:rollback 期状态对账(新导入/仅报告的 legacyOnly/冲突/被拒引用/配置漂移)。
-        logger.log("[req098] rollback-era state reconciled against legacy ~/.alpha", {
-          environment: alphaEnv.environment,
-          ...envImport.reconcile,
-        })
-      } else if (envImport.status === "already-migrated" && envImport.reconcile.status === "reconcile-failed") {
-        logger.error("[req098] rollback-era reconcile FAILED (migration receipt intact; retry next launch)", {
-          reason: envImport.reconcile.reason,
-        })
-      } else if (envImport.status === "failed") {
-        logger.error("[req098] environment import FAILED (legacy layout untouched; retry next launch)", {
-          reason: envImport.reason,
-          warnings: envImport.warnings,
-        })
-      }
-    } catch (error) {
-      logger.error("[req098] environment import crashed (legacy layout untouched; retry next launch)", error)
-    }
-  }
-  // REQ-059:存量引擎配置(~/.opencode/opencode.jsonc + XDG provider 域)迁进真源 ~/.alpha/alpha.jsonc
+  // REQ-059:存量引擎配置(~/.opencode/opencode.jsonc + XDG provider 域)迁进当前环境 alpha.jsonc
   // (copy-don't-delete,幂等,所有权判定 bail-out loud)。在 migrate() 之后(REQ-018 先把散落迁 ~/.opencode)、
   // 首个 sidecar fork 之前,使第一次 fork 即读到迁移后配置。~/.opencode 清理(拆桥+删目录)属 T3。
   // REQ-065(修订,用户拍板 2026-07-08):出厂技能先行 reconcile(拆存量 .alpha 出厂链 + 计算注入组);
@@ -491,7 +460,8 @@ const main = Effect.gen(function* () {
       if (!outcome.skipped && outcome.bailedOut)
         logger.warn("[req059] engine config reconcile bailed out (kept legacy in place)", { reason: outcome.bailedOut })
     } catch (error) {
-      logger.warn("[req059] engine config reconcile failed (non-fatal)", error)
+      bootEnforcementGap = [`engine config reconcile failed: ${error instanceof Error ? error.message : String(error)}`]
+      logger.error("[req059] engine config reconcile failed — blocking sidecar (fail closed)", error)
     }
     // #395:startup reconcile —— 账本 desiredState 权威重投影回 alpha.jsonc(REQ-059 truth reconcile
     // 之后、首个 sidecar fork 读 config 之前;双向)。消除「账本 disabled / config enabled」崩溃残留
@@ -697,14 +667,13 @@ const main = Effect.gen(function* () {
       return
     }
 
-    // #395(Codex r6 B2/B3):startup reconcile 判定「本应关闭的扩展无法保证已从引擎配置移除」→
-    // fail-closed 拒绝 spawn 引擎(绝不让它带着「账本禁用但仍会加载」的项启动)。gap 细节已 error
-    // 记日志;对用户给通俗诊断 + 修复指引。只 gate 首次 spawn(respawn 不重跑 reconcile)。
+    // #395/#428:startup reconcile 判定配置禁用面或退休桥断链无法保证 → fail-closed 拒绝
+    // spawn 引擎。gap 细节已 error 记日志；只 gate 首次 spawn(respawn 不重跑 reconcile)。
     if (bootEnforcementGap) {
       logger.error("[req104-395] refusing to spawn sidecar — extension disable state cannot be guaranteed", { gap: bootEnforcementGap })
       dialog.showErrorBox(
         "扩展安全状态无法确保",
-        "有本应关闭的扩展无法确认已经关闭(可能因磁盘空间不足或配置文件损坏)。为避免它们被意外加载,已暂停启动。请检查磁盘空间后重新打开应用;若持续出现,请联系支持并附上日志。",
+        "扩展配置或历史桥接状态无法确认已经安全收敛(可能因磁盘空间、权限或配置文件损坏)。为避免旧桥或本应关闭的扩展被意外加载,已暂停启动。请检查磁盘与目录权限后重新打开应用;若持续出现,请联系支持并附上日志。",
       )
       app.exit(1)
       return

@@ -68,3 +68,9 @@ related: [ADR-019, ADR-021, ADR-022, ADR-031, REQ-065, REQ-071]
 > **本段的存在即是修订记录本身。** ADR-031 初稿仅声明修订了第 ① 条,§6 却同时建立了本地删除通道——该不自洽已由 2026-07-19 的跨仓审查发现并经 owner 裁决,ADR-031 的范围声明已同步更正为两条。
 >
 > Memory 文件的具体形态(§4 表格的「一事一文件 + 索引」)是否仍然有效,随跨仓 Memory 合同由 [alpha-platform#84](https://github.com/jinjunnn/alpha-platform/issues/84) 一并裁决;在该裁决落地前,§4 约定继续有效。
+
+## 修订(2026-07-20,#428 环境根退役)
+
+背景与决策第 1 条中的全局 `~/.alpha` 表述保留为 2026-07-09 的历史结论。自本修订起，全局安装物与
+账本改位于 `<appData>/alpha-code-state/env/<environment>`；退休 home 根不读、不写、不迁移、
+不 dual-read。`~/Alpha` 的用户可见工作目录定位、项目级 `<project>/.alpha` 与 userData 职责不变。

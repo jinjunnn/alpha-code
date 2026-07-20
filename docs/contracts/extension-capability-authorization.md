@@ -161,7 +161,7 @@ current、不写 config/receipt/grants/授权收据;已验证载荷可能留在�
   快照残留(候选名在册 = 活体排除,绝不删;busy 跳过,best-effort);任一源不可读/形状非法 =
   引用集不可信,整轮安全退出;崩溃孤儿无引用,由后续 GC 收。卸载:整 `<server>` 目录删除
   (覆盖全部版本 + flat)+ 兄弟级历史备份(同活体排除)。
-- 存量兼容:legacy flat 引用(`<server>/<VAR>`,含 env 迁移 `alpha-env-migrate` 写入)继续
+- 存量兼容:当前环境 root 内既有 legacy flat 引用(`<server>/<VAR>`)继续
   可读;仅在被当前 leaf 不再引用且过宽限后被 GC。未策展通道(`ext-persist-mcp`)与 catalog
   事务共用同一版本化原语,skip 语义(已有引用/空值)保持未策展既有 posture。
 - 残余窗口(如实记录):密钥文件写入发生在事务外(userData 与事务根不同卷/不同圈禁域,

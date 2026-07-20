@@ -4,16 +4,15 @@
 // receipts add the "what did WE install and what do we own" half so installed-state, uninstall
 // and update work for fs/config types too (designs/2026-07-04-extension-hub-v3-universal.md §4.1).
 //
-// Storage: <root>/installs.json, root = ~/.alpha (global scope) or <projectDir>/.alpha (project
+// Storage: <root>/installs.json, root = frozen current-environment root (global scope) or <projectDir>/.alpha (project
 // scope). Electron-free and root-parameterized (same testability pattern as alpha-workdir.ts).
 // A corrupt ledger is never silently clobbered: reads surface a warning, and the next write
 // quarantines the corrupt file as installs.json.corrupt-<ts> before starting fresh.
 
 import * as fs from "node:fs"
-import * as os from "node:os"
 import * as path from "node:path"
 import type { InstallLedgerView, InstallReceipt } from "../preload/types"
-import { tryGetAlphaEnvironment } from "./alpha-environment"
+import { resolveAlphaGlobalRoot } from "./alpha-environment"
 import { alphaRoot } from "./alpha-workdir"
 import { writeFileAtomicSync } from "./ext-atomic-fs"
 
@@ -29,16 +28,11 @@ export type LedgerRead = { receipts: InstallReceipt[]; warning?: string }
 export type LedgerWriteResult = { ok: true } | { ok: false; reason: string }
 
 /**
- * `~/.alpha` — the global alpha home (ADR-019 修订:全局层;installs/skills/agents/… live under it).
- * Overridable so tests and OPENCODE_TEST_ONBOARDING builds never touch the real home dir
- * (os.homedir() is not env-redirectable under bun).
+ * 当前环境的 canonical mutable root。main 读冻结快照；无快照进程只接受已派生的绝对
+ * ALPHA_GLOBAL_DIR，并拒绝退休根关系及其可解析 symlink alias。
  */
 export function alphaGlobalRoot(): string {
-  // REQ-098 #301:main 已冻结环境根 → 以冻结快照为单一真源,运行期 process.env 漂移(如 shell env
-  // 后台刷新)不再改变消费者看到的根。未初始化(纯单测 / sidecar 进程)才退回 process.env。
-  const frozen = tryGetAlphaEnvironment()
-  if (frozen) return frozen.mutableRoot
-  return process.env.ALPHA_GLOBAL_DIR || path.join(os.homedir(), ".alpha")
+  return resolveAlphaGlobalRoot()
 }
 
 function ledgerPath(root: string): string {

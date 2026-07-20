@@ -37,6 +37,8 @@ export function mergeHooks(
 }
 
 export type FanoutDeps = {
+  /** 每次项目路径 I/O 紧前复验准入时 root；失败时整次 fan-out 拒绝。 */
+  verifyIdentity: () => boolean
   existsSync: (p: string) => boolean
   readdirSync: (p: string) => string[]
   /** dynamic import of a self-contained ESM plugin file → module (default/AlphaExt = Plugin fn). */
@@ -52,17 +54,19 @@ export type FanoutDeps = {
  * (可执行物未 consent 不加载)。逐个 import + 调用 Plugin(input);失败 loud 跳过(不阻断整体)。
  */
 export async function loadProjectPlugins(
-  directory: string,
+  alphaRoot: string,
   pluginInput: unknown,
   trusted: boolean,
   deps: FanoutDeps,
 ): Promise<Record<string, unknown>[]> {
   if (!trusted) return []
-  const dir = deps.join(directory, ".alpha", "plugins")
+  const dir = deps.join(alphaRoot, "plugins")
+  if (!deps.verifyIdentity()) return []
   if (!deps.existsSync(dir)) return []
   const hooks: Record<string, unknown>[] = []
   let files: string[]
   try {
+    if (!deps.verifyIdentity()) return []
     const all = deps.readdirSync(dir)
     // ADR-006 生 TS 雷拒收 loud:桌面运行时(Electron-Node)加载生 TS 必崩,只认自包含 ESM .js。
     for (const f of all)
@@ -77,6 +81,7 @@ export async function loadProjectPlugins(
   for (const f of files) {
     const abs = deps.join(dir, f)
     try {
+      if (!deps.verifyIdentity()) return []
       const mod = await deps.importModule(deps.pathToFileURL(abs))
       const plugin = (mod.default ?? mod.AlphaExt ?? mod.plugin) as ((i: unknown) => Promise<unknown>) | undefined
       if (typeof plugin !== "function") {

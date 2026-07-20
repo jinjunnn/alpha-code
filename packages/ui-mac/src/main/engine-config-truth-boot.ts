@@ -1,4 +1,4 @@
-// REQ-059 T2:启动 reconcile —— 存量引擎配置迁进真源 `~/.alpha/alpha.jsonc`(copy-don't-delete)。
+// REQ-059 T2:启动 reconcile —— 存量引擎配置迁进当前环境 `alpha.jsonc`(copy-don't-delete)。
 //
 // 读 legacy(`~/.opencode/opencode.jsonc`,REQ-018 时代 mcp/plugin/治理键)+ XDG provider 域 →
 // 所有权判定(isAlphaOwnedConfig,越界/非账内 mcp = bail-out loud 不迁,保留原布局功能零损失)→
@@ -92,13 +92,28 @@ export type ReconcileOptions = {
    *  此参数现用于**剥离**历史版本写盘的出厂条目:传 [](reconcile 成功时的常态)= 只清不加;
    *  不传 = 不动该组(factory reconcile 失败时的保守态/测试兼容)。 */
   factorySkillDirs?: string[]
+  /** 仅用于测试隔离退休根；生产默认真实 home。 */
+  retiredHomeDir?: string
+  /** 仅用于退休桥竞争测试；生产固定使用 node:fs。 */
+  retiredBridgeFs?: RetiredBridgeFs
+}
+
+type RetiredBridgeFs = {
+  lstatSync: (file: string) => fs.Stats
+  readlinkSync: (file: string) => string
+  readdirSync: (directory: string) => string[]
+  unlinkSync: (file: string) => void
 }
 
 /**
  * Migrate legacy engine config into the alpha truth file. Copy-don't-delete + idempotent.
- * Returns an outcome for logging/telemetry (never throws on a migration miss — reconcile is best-effort).
+ * Returns an outcome for logging/telemetry. Retirement bridge cleanup errors propagate so startup can
+ * fail closed; ordinary migration misses retain the existing best-effort outcome semantics.
  */
 export function reconcileEngineConfigTruth(log?: Logger, opts?: ReconcileOptions): ReconcileOutcome {
+  // 退休桥断链与配置迁移完全独立：必须早于 escape hatch、truth 读失败、ownership bail-out 等
+  // 任一提前返回。这里只 lstat/readlink 桥本身，不 realpath/读取/迁移退休目标。
+  unlinkRetiredOpencodeBridges(opts?.retiredHomeDir ?? os.homedir(), log, opts?.retiredBridgeFs)
   if (process.env.ALPHA_JSONC_TRUTH_DISABLE === "1" || process.env.ALPHA_LEGACY_INSTALL_ROOT === "1") {
     return { skipped: true, reason: "escape hatch set (ALPHA_JSONC_TRUTH_DISABLE / ALPHA_LEGACY_INSTALL_ROOT)" }
   }
@@ -154,10 +169,10 @@ export function reconcileEngineConfigTruth(log?: Logger, opts?: ReconcileOptions
   const xdgProvider = !bailedOut && xdg && "provider" in xdg ? { provider: xdg.provider } : undefined
 
   const plan = planConfigMerge(existing, legacyToMerge, xdgProvider)
-  // T3:全局 skills 经 skills.paths(文件通道生效)发现 ~/.alpha/skills —— 恒定注入(非迁移物,独立于
+  // T3:全局 skills 经 skills.paths(文件通道生效)发现当前环境 skills —— 恒定注入(非迁移物,独立于
   // ownership bail),使桥退役后引擎仍能发现**用户装的**技能。幂等。
   const skillsAdded = ensureSkillsPath(plan.merged, alphaSkillsDir())
-  // REQ-065:出厂技能条目组重写 —— 直指 app 资源(不再经 ~/.alpha/skills 链中转;.alpha 只承载
+  // REQ-065:出厂技能条目组重写 —— 直指 app 资源(不再经全局 skills 链中转;.alpha 只承载
   // 用户自有内容)。每启动重写,跟随 app 安装路径/版本变化;stale 出厂路径按名单+布局判定移除。
   const factoryRewritten = opts?.factorySkillDirs
     ? rewriteFactorySkillPaths(plan.merged, opts.factorySkillDirs, FACTORY_SKILL_IDS)
@@ -179,7 +194,7 @@ export function reconcileEngineConfigTruth(log?: Logger, opts?: ReconcileOptions
       const tmp = `${truth}.tmp`
       fs.writeFileSync(tmp, JSON.stringify(plan.merged, null, 2) + "\n", "utf8")
       fs.renameSync(tmp, truth)
-      log?.log(`[req059] engine config truth updated ~/.alpha/alpha.jsonc`, { added })
+      log?.log(`[req059] current-environment engine config truth updated`, { added })
       migrated = true
     } catch (error) {
       log?.warn(`[req059] failed to write alpha.jsonc during reconcile`, { error: String(error) })
@@ -198,8 +213,116 @@ export function reconcileEngineConfigTruth(log?: Logger, opts?: ReconcileOptions
   return { skipped: false, migrated, added }
 }
 
+type RetiredBridgeProbe =
+  | { status: "absent" }
+  | { status: "other"; stat: fs.Stats }
+  | { status: "retired"; dev: number; ino: number; target: string }
+
+const RETIRED_BRIDGE_UNLINK_ATTEMPTS = 3
+
+function unlinkRetiredOpencodeBridges(homeDir: string, log?: Logger, injected?: RetiredBridgeFs): void {
+  const bridgeFs = injected ?? {
+    lstatSync: fs.lstatSync,
+    readlinkSync: fs.readlinkSync,
+    readdirSync: fs.readdirSync,
+    unlinkSync: fs.unlinkSync,
+  }
+  const opencodeDir = opencodeHomeDir()
+  const retiredRoot = path.resolve(homeDir, ".alpha")
+  for (const kind of ["skills", "agents", "commands"] as const) {
+    const kindPath = path.join(opencodeDir, kind)
+    const kindProbe = probeRetiredBridge(kindPath, retiredRoot, bridgeFs)
+    if (kindProbe.status === "absent") continue
+    if (kindProbe.status === "retired") {
+      if (unlinkRetiredBridge(kindPath, retiredRoot, kindProbe, bridgeFs)) {
+        log?.log(`[req098] retired ~/.opencode/${kind} bridge removed`)
+      }
+      continue
+    }
+    if (!kindProbe.stat.isDirectory()) continue
+    for (const name of readdirOrAbsent(kindPath, bridgeFs)) {
+      const itemPath = path.join(kindPath, name)
+      const itemProbe = probeRetiredBridge(itemPath, retiredRoot, bridgeFs)
+      if (itemProbe.status !== "retired") continue
+      if (unlinkRetiredBridge(itemPath, retiredRoot, itemProbe, bridgeFs))
+        log?.log(`[req098] retired ~/.opencode/${kind}/${name} bridge removed`)
+    }
+  }
+}
+
+function probeRetiredBridge(link: string, root: string, bridgeFs: RetiredBridgeFs): RetiredBridgeProbe {
+  const stat = lstatOrAbsent(link, bridgeFs)
+  if (!stat) return { status: "absent" }
+  if (!stat.isSymbolicLink()) return { status: "other", stat }
+  const target = readlinkOrAbsent(link, bridgeFs)
+  if (target === null) return { status: "absent" }
+  const resolved = path.resolve(path.dirname(link), target)
+  const relative = path.relative(root, resolved)
+  if (relative !== "" && (relative.startsWith("..") || path.isAbsolute(relative))) return { status: "other", stat }
+  return { status: "retired", dev: stat.dev, ino: stat.ino, target }
+}
+
+function unlinkRetiredBridge(
+  link: string,
+  root: string,
+  expected: Extract<RetiredBridgeProbe, { status: "retired" }>,
+  bridgeFs: RetiredBridgeFs,
+): boolean {
+  let admitted = expected
+  for (let attempt = 0; attempt < RETIRED_BRIDGE_UNLINK_ATTEMPTS; attempt++) {
+    const current = probeRetiredBridge(link, root, bridgeFs)
+    if (current.status !== "retired") return false
+    if (current.dev !== admitted.dev || current.ino !== admitted.ino || current.target !== admitted.target) {
+      // #428 r3：竞争换位只有变成非退休对象才跳过；换入另一条退休链则采用新身份继续重验删除。
+      admitted = current
+      continue
+    }
+    // 删除前用 dev/ino + 原始 target 紧邻重验同一退休链。接受的残余仅为这次
+    // lstat/readlink 重验到单次 unlink 之间的微秒级竞态；与 #358 r3 同口径，不引入 openat。
+    try {
+      bridgeFs.unlinkSync(link)
+      return true
+    } catch (error) {
+      if (isEnoent(error)) return false
+      throw error
+    }
+  }
+  throw new Error(`retired bridge kept changing identity after ${RETIRED_BRIDGE_UNLINK_ATTEMPTS} attempts: ${link}`)
+}
+
+function lstatOrAbsent(file: string, bridgeFs: RetiredBridgeFs): fs.Stats | null {
+  try {
+    return bridgeFs.lstatSync(file)
+  } catch (error) {
+    if (isEnoent(error)) return null
+    throw error
+  }
+}
+
+function readlinkOrAbsent(file: string, bridgeFs: RetiredBridgeFs): string | null {
+  try {
+    return bridgeFs.readlinkSync(file)
+  } catch (error) {
+    if (isEnoent(error)) return null
+    throw error
+  }
+}
+
+function readdirOrAbsent(directory: string, bridgeFs: RetiredBridgeFs): string[] {
+  try {
+    return bridgeFs.readdirSync(directory)
+  } catch (error) {
+    if (isEnoent(error)) return []
+    throw error
+  }
+}
+
+function isEnoent(error: unknown): boolean {
+  return !!error && typeof error === "object" && "code" in error && error.code === "ENOENT"
+}
+
 /**
- * T3 桥退役 + `~/.opencode` 清理:拆 alpha 自有 symlink(指向 ~/.alpha 的 skills/agents/commands 链)、
+ * T3 桥退役 + `~/.opencode` 清理:拆指向当前环境根的 alpha 自有 skills/agents/commands 链、
  * 删已迁的 opencode.jsonc/.json + `.alpha-bak-*` 残留;剩余仅引擎 junk 白名单 → 整目录删除。
  * 含用户自建内容(非链、非 junk)→ 保留 + loud(降级共存,ADR-019 §4)。幂等、best-effort。
  */
@@ -211,11 +334,11 @@ function cleanupOpencodeHome(log?: Logger): void {
   } catch {
     return
   }
-  // 0.(T3b)存量 agents 桥 → 条目化迁移 + 拆链:~/.alpha/agents/*.md → agentMdToEntry → alpha.jsonc
+  // 0.(T3b)存量 agents 桥 → 条目化迁移 + 拆链:<current-environment-root>/agents/*.md → alpha.jsonc
   //    agent 条目;**全部成功才拆 agents 桥**(任一转换失败 → loud 保留桥 = 该 agent 继续经桥可见,
   //    诚实降级)。幂等:persistAgentEntry 覆盖写同值;无 agents 目录/无桥 → no-op。
   migrateAgentBridges(dir, alphaRoot, log)
-  // 1. 拆 alpha 自有的类目 symlink(dir-link 指向 ~/.alpha/<kind>)。用户真实目录/异源链不碰。
+  // 1. 拆 alpha 自有的类目 symlink(dir-link 指向当前环境的 <kind>)。用户真实目录/异源链不碰。
   //    skills = REQ-059 T3(skills.paths 文件通道接管);agents 由上一步全权处理(迁移成功才拆);
   //    commands = 防御性(无写入方,预留目录,若存在 alpha 链一并拆)。
   for (const kind of ["skills", "commands"]) {
@@ -227,7 +350,7 @@ function cleanupOpencodeHome(log?: Logger): void {
         const resolved = path.isAbsolute(target) ? target : path.resolve(dir, target)
         if (resolved === path.join(alphaRoot, kind) || resolved.startsWith(alphaRoot + path.sep)) {
           fs.unlinkSync(p)
-          log?.log(`[req059] unbridged ~/.opencode/${kind} (pointed into ~/.alpha)`)
+          log?.log(`[req059] unbridged ~/.opencode/${kind} (pointed into current environment root)`)
         }
       }
     } catch {
@@ -264,7 +387,7 @@ function cleanupOpencodeHome(log?: Logger): void {
 
 /**
  * T3b:存量 agents 桥的条目化迁移。桥形态两种(alpha-bridge):目录级 dir-link
- * `~/.opencode/agents → ~/.alpha/agents`,或真实目录内的逐条目链。逐 md 转换写条目;
+ * `~/.opencode/agents → <current-environment-root>/agents`,或真实目录内的逐条目链。逐 md 转换写条目;
  * **全部成功才拆链**(部分失败 → 保留桥,loud;下次启动重试 —— persistAgentEntry 幂等)。
  */
 function migrateAgentBridges(opencodeDir: string, alphaRoot: string, log?: Logger): void {

@@ -7,8 +7,11 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import {
+  alphaRoot,
+  assertProjectAlphaRootIdentity,
   ensureAlphaScaffold,
   isSafeRunId,
+  resolveProjectAlphaRoot,
   sanitizeArtifactName,
   safeResolveInAlpha,
   saveCloudRun,
@@ -82,7 +85,7 @@ describe("sanitizeArtifactName", () => {
 
 describe("safeResolveInAlpha", () => {
   test("resolves inside .alpha", () => {
-    expect(safeResolveInAlpha(projectDir, "runs", "r1")).toBe(path.join(projectDir, ".alpha", "runs", "r1"))
+    expect(safeResolveInAlpha(projectDir, "runs", "r1")).toBe(path.join(fs.realpathSync(projectDir), ".alpha", "runs", "r1"))
   })
   test("refuses .. escape", () => {
     expect(safeResolveInAlpha(projectDir, "..", "outside")).toBeNull()
@@ -100,6 +103,81 @@ describe("safeResolveInAlpha", () => {
       expect(safeResolveInAlpha(projectDir, "runs", "r1")).toBeNull()
     } finally {
       fs.rmSync(outside, { recursive: true, force: true })
+    }
+  })
+})
+
+describe("main project identity 三态", () => {
+  test("real home、home alias、unknown 在任何 `.alpha` 读取/写入前拒绝", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-main-project-id-"))
+    const home = path.join(root, "home")
+    const project = path.join(root, "project")
+    const alias = path.join(root, "home-alias")
+    fs.mkdirSync(home)
+    fs.mkdirSync(project)
+    fs.symlinkSync(home, alias, "dir")
+    try {
+      expect(resolveProjectAlphaRoot(home, home).status).toBe("retired-home")
+      expect(resolveProjectAlphaRoot(alias, home).status).toBe("retired-home")
+      expect(resolveProjectAlphaRoot(path.join(root, "missing"), home).status).toBe("unknown")
+      const admitted = resolveProjectAlphaRoot(project, home)
+      expect(admitted.status).toBe("project")
+      if (admitted.status === "project") expect(admitted.root).toBe(path.join(fs.realpathSync(project), ".alpha"))
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test("`.alpha → retired root` 与退休根内项目拒绝，sentinel 原样且无 scaffold", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-main-retired-"))
+    const home = path.join(root, "home")
+    const retired = path.join(home, ".alpha")
+    const project = path.join(root, "project")
+    fs.mkdirSync(path.join(retired, "nested"), { recursive: true })
+    fs.mkdirSync(project)
+    fs.writeFileSync(path.join(retired, "sentinel"), "untouched")
+    fs.symlinkSync(retired, path.join(project, ".alpha"), "dir")
+    try {
+      expect(resolveProjectAlphaRoot(project, home).status).toBe("unknown")
+      expect(resolveProjectAlphaRoot(path.join(retired, "nested"), home).status).toBe("retired-home")
+      expect(fs.readFileSync(path.join(retired, "sentinel"), "utf8")).toBe("untouched")
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test("退休 `~/.alpha` realpath 遇 EACCES → unknown，不回退词法放行", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-main-retired-eacces-"))
+    const home = path.join(root, "home")
+    const project = path.join(root, "project")
+    const locked = path.join(root, "locked")
+    fs.mkdirSync(path.join(locked, "retired"), { recursive: true })
+    fs.mkdirSync(home)
+    fs.mkdirSync(project)
+    fs.symlinkSync(path.join(locked, "retired"), path.join(home, ".alpha"), "dir")
+    fs.chmodSync(locked, 0o000)
+    try {
+      expect(resolveProjectAlphaRoot(project, home)).toEqual({
+        status: "unknown",
+        reason: "retired global root identity cannot be confirmed",
+      })
+    } finally {
+      fs.chmodSync(locked, 0o700)
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test("root-aware recovery 复验拒绝被换成 symlink 的 project root", () => {
+    const root = alphaRoot(projectDir)!
+    fs.mkdirSync(root)
+    expect(() => assertProjectAlphaRootIdentity(root)).not.toThrow()
+    const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-main-drift-"))
+    fs.rmSync(root, { recursive: true })
+    fs.symlinkSync(elsewhere, root, "dir")
+    try {
+      expect(() => assertProjectAlphaRootIdentity(root)).toThrow()
+    } finally {
+      fs.rmSync(elsewhere, { recursive: true, force: true })
     }
   })
 })
@@ -209,6 +287,6 @@ describe("saveCloudRun", () => {
       }),
     )
     expect(res.ok).toBe(true)
-    expect(seenTarget).toBe(path.join(projectDir, ".alpha", "runs", "job-1", "artifacts", "report.md"))
+    expect(seenTarget).toBe(path.join(fs.realpathSync(projectDir), ".alpha", "runs", "job-1", "artifacts", "report.md"))
   })
 })

@@ -63,3 +63,11 @@ related: [ADR-005, ADR-012, ADR-019, ADR-020, ADR-025, REQ-076]
 - ⚠️ CI 无 Windows runner:typecheck/单测平台无关照旧,Windows 构建验证初期靠手工/VM 真机;CI matrix 后议(YAGNI)。
 - ⚠️ WSL 深度功能受冻结前端限制(§8),需求出现时按 ADR-020 §5 re-freeze 路径评估。
 - 🔭 执行载体 [[REQ-076]](分期 T1 出包冒烟 / T2 功能对齐 / T3 安全与发布);待拍板点(Authenticode 证书形态、密钥 ACL vs 明示降级、Windows on ARM)入 BACKLOG 待拍板队列。
+
+## 修订(2026-07-20,#428 环境根退役)
+
+决策第 2 条首项保留为原始跨平台路径结论；本修订仅取代其中的全局 `~/.alpha` 落点。全局状态
+基根现为 Electron `app.getPath("appData")/alpha-code-state`，mutable 根为 `env/{dev,prod,beta}`
+三个兄弟目录，共享 CAS 位于 `cas/`。desktop 初始化后派生 canonical `ALPHA_GLOBAL_DIR`，外部
+override 与退休根 alias fail-closed。用户工作目录 `~/Alpha`、项目 `.alpha/`、userData 与引擎侧
+路径的既有跨平台约定不变。

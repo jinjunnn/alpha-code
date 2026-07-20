@@ -264,6 +264,9 @@ export function collectCasGarbage(baseRoot: string, opts: CasGcOptions): CasGcRe
   })
   if (!path.isAbsolute(baseRoot)) return report({ ok: false, reason: `baseRoot must be absolute: ${baseRoot}` })
   const { root: casRoot, blobsDir } = casPaths(baseRoot)
+  const identityFailure = [baseRoot, casRoot, ...opts.envRoots].find((root) => !canonicalDirectoryMatches(root))
+  if (identityFailure)
+    return report({ ok: false, reason: `GC root identity cannot be confirmed: ${identityFailure}` })
   // 注:empty-store 快返放在锁 + mark 根校验**之后**(review #366:seed/pins 等强制 mark 根损坏
   // 必须在空店时同样整轮 fail-closed 暴露,不得静默 ok)。
 
@@ -402,5 +405,14 @@ export function collectCasGarbage(baseRoot: string, opts: CasGcOptions): CasGcRe
     return report({ ok: true, marked: marked.size, blobsTotal, sweepable, swept, keptByGrace })
   } finally {
     releaseAll()
+  }
+}
+
+function canonicalDirectoryMatches(root: string): boolean {
+  try {
+    const stat = fs.lstatSync(root)
+    return stat.isDirectory() && !stat.isSymbolicLink() && path.normalize(fs.realpathSync(root)) === path.normalize(root)
+  } catch {
+    return false
   }
 }

@@ -18,7 +18,8 @@ is the way to refresh after the external directory changes).
    - `<project>/CLAUDE.md`
    - global: `~/.claude/skills/`, `~/.agents/skills/`, `~/.claude/CLAUDE.md`
 2. **Preview** — show the user the exact list (names + source paths) and what each maps to:
-   - skill → `<project>/.alpha/skills/<name>/` (or `~/.alpha/skills/<name>/` for global)
+   - skill → `<project>/.alpha/skills/<name>/` (or
+     `$ALPHA_GLOBAL_DIR/skills/<name>/` for global; use only the absolute value supplied by alpha)
    - `CLAUDE.md` → `AGENTS.md` (the engine's native instruction file)
    Anything that does not map (e.g. `.claude/commands`, `.claude/agents`, hook scripts) must be
    listed as **not importable** — say so plainly, never silently drop it.

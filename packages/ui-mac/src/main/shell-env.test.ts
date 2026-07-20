@@ -13,6 +13,7 @@ describe("minimalProbeEnv (REQ-047 探针净化)", () => {
       LANG: "zh_CN.UTF-8",
       PATH: "/opt/homebrew/bin:/custom",
       ALPHA_GLOBAL_DIR: "/tmp/dead/m1-alpha-home",
+      ALPHA_ENV_BASE_DIR: "/tmp/dead/state-base",
       OPENCODE_CONFIG_DIR: "/tmp/dead/m1-legacy",
       ALPHA_CDP: "1",
       ALPHA_MIGRATE_ENABLE: "1",

@@ -2,6 +2,8 @@
 // 守卫根复核(越界拒删)、shared opt-in、单项失败不中断、logs 最后删。
 
 import { describe, expect, test } from "bun:test"
+import * as nodeFs from "node:fs"
+import * as os from "node:os"
 import * as path from "node:path"
 
 import * as DataClear from "./data-clear"
@@ -74,7 +76,7 @@ class MemFs {
 
 const ROOTS: DataClear.ClearRoots = {
   userData: "/ud",
-  alphaGlobal: "/home/.alpha",
+  alphaGlobal: "/state/env/dev",
   opencodeHome: "/home/.opencode",
   engineData: "/home/.local/share/opencode",
 }
@@ -89,8 +91,8 @@ function seed(): MemFs {
   fs.addFile("/ud/opencode.settings", 5)
   fs.addFile("/ud/logs/main.log", 1000)
   fs.addFile("/ud/alpha-db-backups/opencode-backup-1.db", 5000)
-  fs.addFile("/home/.alpha/installs.json", 40)
-  fs.addFile("/home/.alpha/skills/foo/SKILL.md", 10)
+  fs.addFile("/state/env/dev/installs.json", 40)
+  fs.addFile("/state/env/dev/skills/foo/SKILL.md", 10)
   fs.addFile("/home/.local/share/opencode/opencode.db", 9000)
   fs.addFile("/home/.local/share/opencode/auth.json", 60)
   return fs
@@ -125,7 +127,7 @@ describe("planClear · credentials", () => {
 })
 
 describe("planClear · data(全部)", () => {
-  test("userData 逐子项 + ~/.alpha + 引擎数据(shared);logs 排最后;总体积正确", () => {
+  test("userData 逐子项 + 当前环境 root + 引擎数据(shared);logs 排最后;总体积正确", () => {
     const fs = seed()
     const plan = DataClear.planClear(fs.deps(), "data", ROOTS)
     const ids = plan.items.map((i) => i.id)
@@ -146,7 +148,7 @@ describe("planClear · data(全部)", () => {
     expect(results.find((r) => r.id === "engine-data")?.outcome).toBe("skipped")
     expect(deps.exists("/home/.local/share/opencode/opencode.db")).toBe(true)
     expect(deps.exists("/ud/logs")).toBe(false)
-    expect(deps.exists("/home/.alpha")).toBe(false)
+    expect(deps.exists("/state/env/dev")).toBe(false)
 
     const fs2 = seed()
     const deps2 = fs2.deps()
@@ -160,13 +162,13 @@ describe("planClear · data(全部)", () => {
 describe("findAlphaOwnedLinks · 桥链判别", () => {
   test("kind 级整目录链 + 条目级链均入列;真实目录/外来链/普通文件不碰", () => {
     const fs = seed()
-    // kind 级整目录链(REQ-036 形态):~/.opencode/skill → ~/.alpha/skills
-    fs.mkdirs("/home/.alpha/skills")
-    fs.addLink("/home/.opencode/skill", "/home/.alpha/skills")
+    // kind 级整目录链(REQ-036 形态):~/.opencode/skill → 当前环境 skills
+    fs.mkdirs("/state/env/dev/skills")
+    fs.addLink("/home/.opencode/skill", "/state/env/dev/skills")
     // 真实目录内的条目级链
     fs.mkdirs("/home/.opencode/agent")
-    fs.addLink("/home/.opencode/agent/alpha-bot.md", "/home/.alpha/agents/alpha-bot.md")
-    fs.addFile("/home/.alpha/agents/alpha-bot.md", 10)
+    fs.addLink("/home/.opencode/agent/alpha-bot.md", "/state/env/dev/agents/alpha-bot.md")
+    fs.addFile("/state/env/dev/agents/alpha-bot.md", 10)
     // 用户自建内容:真实文件 + 指向别处的链
     fs.addFile("/home/.opencode/agent/mine.md", 10)
     fs.addLink("/home/.opencode/agent/other.md", "/somewhere/else.md")
@@ -176,18 +178,18 @@ describe("findAlphaOwnedLinks · 桥链判别", () => {
     expect(links.sort()).toEqual(["/home/.opencode/agent/alpha-bot.md", "/home/.opencode/skill"])
   })
 
-  test("目标已失效(~/.alpha 已删)仍按字面解析识别自有链", () => {
+  test("目标已失效(当前环境 root 已删)仍按字面解析识别自有链", () => {
     const fs = new MemFs()
     fs.mkdirs("/home/.opencode")
-    fs.addLink("/home/.opencode/skill", "/home/.alpha/skills") // 目标不存在
+    fs.addLink("/home/.opencode/skill", "/state/env/dev/skills") // 目标不存在
     const links = DataClear.findAlphaOwnedLinks(fs.deps(), ROOTS.opencodeHome, ROOTS.alphaGlobal)
     expect(links).toEqual(["/home/.opencode/skill"])
   })
 
   test("执行时链被换成真实体 → 拒删留痕(用户内容红线)", () => {
     const fs = seed()
-    fs.addLink("/home/.opencode/skill", "/home/.alpha/skills")
-    fs.mkdirs("/home/.alpha/skills")
+    fs.addLink("/home/.opencode/skill", "/state/env/dev/skills")
+    fs.mkdirs("/state/env/dev/skills")
     const deps = fs.deps()
     const plan = DataClear.planClear(deps, "data", ROOTS)
     expect(plan.bridgeLinks).toEqual(["/home/.opencode/skill"])
@@ -202,6 +204,72 @@ describe("findAlphaOwnedLinks · 桥链判别", () => {
 })
 
 describe("executeClear · 守卫与失败语义", () => {
+  test("真实三兄弟根只清 dev，prod/beta/CAS sentinel 字节不变", () => {
+    const temp = nodeFs.realpathSync(nodeFs.mkdtempSync(path.join(os.tmpdir(), "alpha-clear-siblings-")))
+    const state = path.join(temp, "state")
+    const dev = path.join(state, "env", "dev")
+    const prod = path.join(state, "env", "prod")
+    const beta = path.join(state, "env", "beta")
+    const cas = path.join(state, "cas")
+    const userData = path.join(temp, "user-data")
+    ;[dev, prod, beta, cas, userData].forEach((directory) => nodeFs.mkdirSync(directory, { recursive: true }))
+    nodeFs.writeFileSync(path.join(dev, "dev.txt"), "dev")
+    nodeFs.writeFileSync(path.join(prod, "sentinel"), "prod-bytes")
+    nodeFs.writeFileSync(path.join(beta, "sentinel"), "beta-bytes")
+    nodeFs.writeFileSync(path.join(cas, "sentinel"), "cas-bytes")
+    nodeFs.writeFileSync(path.join(userData, "settings"), "x")
+    const deps: DataClear.FsDeps = {
+      exists: nodeFs.existsSync,
+      lstat: (file) => {
+        try {
+          const stat = nodeFs.lstatSync(file)
+          return { isSymlink: stat.isSymbolicLink(), isDir: stat.isDirectory(), size: stat.size }
+        } catch {
+          return null
+        }
+      },
+      readdir: nodeFs.readdirSync,
+      readlink: (file) => {
+        try {
+          return nodeFs.readlinkSync(file)
+        } catch {
+          return null
+        }
+      },
+      realpath: (file) => {
+        try {
+          return nodeFs.realpathSync(file)
+        } catch {
+          return null
+        }
+      },
+      remove: (file) => nodeFs.rmSync(file, { recursive: true, force: true }),
+    }
+    const roots = {
+      userData,
+      alphaGlobal: dev,
+      opencodeHome: path.join(temp, "opencode-home"),
+      engineData: path.join(temp, "engine-data"),
+    }
+    const plan = DataClear.planClear(deps, "data", roots)
+    DataClear.executeClear(deps, plan, roots, { includeShared: false })
+    expect(nodeFs.existsSync(dev)).toBe(false)
+    expect(nodeFs.readFileSync(path.join(prod, "sentinel"), "utf8")).toBe("prod-bytes")
+    expect(nodeFs.readFileSync(path.join(beta, "sentinel"), "utf8")).toBe("beta-bytes")
+    expect(nodeFs.readFileSync(path.join(cas, "sentinel"), "utf8")).toBe("cas-bytes")
+    nodeFs.rmSync(temp, { recursive: true, force: true })
+  })
+
+  test("当前根身份无法确认时整批拒绝且零删除", () => {
+    const fs = seed()
+    const deps = fs.deps()
+    const plan = DataClear.planClear(deps, "data", ROOTS)
+    const unknown: DataClear.FsDeps = { ...deps, realpath: (file) => (file === ROOTS.alphaGlobal ? null : deps.realpath(file)) }
+    expect(() => DataClear.executeClear(unknown, plan, ROOTS, { includeShared: true })).toThrow()
+    expect(deps.exists("/ud/alpha-auth.json")).toBe(true)
+    expect(deps.exists(ROOTS.alphaGlobal)).toBe(true)
+  })
+
   test("realpath 逃逸守卫根 → 拒删", () => {
     const fs = seed()
     // /ud/evil 是指向守卫根外的目录链 —— lstat 是链 → 只删链本身(安全);
@@ -235,6 +303,7 @@ describe("executeClear · 守卫与失败语义", () => {
   test("缺席项记 missing,不算失败", () => {
     const fs = new MemFs()
     fs.mkdirs("/ud")
+    fs.mkdirs(ROOTS.alphaGlobal)
     const deps = fs.deps()
     const plan = DataClear.planClear(deps, "credentials", ROOTS)
     const results = DataClear.executeClear(deps, plan, ROOTS, { includeShared: true })

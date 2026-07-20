@@ -72,3 +72,17 @@ related: [ADR-002, ADR-005, ADR-006, ADR-014]
 1. **纯度口径补全(双向)**:`.alpha`(全局与项目级)**只承载用户自有内容**——凡有用户动作(安装/创建/导入)且 receipts/记录可溯者;**出厂/系统件(零用户动作预置)不落 `.alpha`**,经 config 通道(`alpha.jsonc` skills.paths 等)直指 app 随包资源,reconcile 每启动重写以跟随版本/路径变化。alpha 注入的系统级 agent(alpha-automation 系)只存在于 config、本就不落盘,天然合规。
 2. **存量清理**:reconcile 拆除 `~/.alpha/skills` 下 `isAlphaFactoryLink` 判我方的出厂链(用户自装内容不碰,§4 边界不变)。
 3. REQ-052 不变量的其余精神(alpha 自有条目不散落上游命名空间)不变,其「先落 `.alpha` 中转」条款对**出厂件**就此退役。执行载体 [[REQ-065]]。
+
+## 修订(2026-07-19,#428 —— 退休 home 全局根，采用环境级兄弟拓扑)
+
+本修订取代本文此前所有把 home `.alpha` 当作**全局**根、fallback、迁移 source 或兼容读面的
+条款；那些文字只保留为历史决策链。项目级 `<project>/.alpha` 的目录契约继续有效。
+
+1. 新基根为 `<appData>/alpha-code-state`，共享 CAS 为 `cas/`，mutable 根为
+   `env/{dev,prod,beta}` 三个互非祖先的兄弟目录。
+2. desktop 启动唯一选择环境，创建后复验非 symlink 与 realpath 未漂移，再冻结并派生
+   `ALPHA_GLOBAL_DIR`；业务模块不得自行拼根、回退或重定向。
+3. 退休 home `.alpha` 根及其等值、祖先、后代、可解析 symlink alias 一律拒绝。当前版本对其
+   零读取、零写入、零迁移、零 dual-read；无用户/无租户意味着不存在兼容窗口。
+4. 恢复、事务写入、CAS GC、data clear 与扩展初始化在批次动作前紧邻复验 canonical 根身份；
+   身份不明整批拒绝。精确检查后竞态保留为既有威胁模型残余，不引入 openat 或长期 dev/ino 绑定。

@@ -31,6 +31,7 @@ content is recoverable at commit
 | former `designs`, `diagrams`, `qa`, `retros`, `debates`, and `spikes` roots | role aliases | normalized without deleting assets | `design/`, `architecture/diagrams/`, `verification/`, `retrospectives/`, and `audits/` |
 | implementation `build.md`, `dev-plan.md`, and `tasks.md` embedded in design packages | historical delivery prose | retained unchanged as protected source material, but removed from current design authority | `docs/archive/assets/design-program/`; GitHub Issues own active work |
 | timeline-overhaul `audit.md` embedded in a design package | verification evidence | normalized without content deletion | `docs/audits/2026-06-28-timeline-overhaul.md` |
+| `docs/contracts/env-migration-rollback-reconcile.md` | retired compatibility contract | removed with the retired-root importer; no migration, rollback reconciliation, dual-read, marker, or receipt remains | `docs/contracts/extension-cas-seed.md` §1; recovery revision `cb486c70` |
 
 No item in this ledger owns current status, priority, assignee, or Sprint
 membership. Protected design, decision, audit, verification, retrospective,

@@ -1525,7 +1525,7 @@ async function classifyBundleChild(
       id,
       item: {
         key,
-        // config target 锚定事务根(= 生产 ~/.alpha/alpha.jsonc;与 staging 同卷,原子替换)。
+        // config target 锚定事务根(= 当前环境 alpha.jsonc;与 staging 同卷,原子替换)。
         action: "config",
         config: { target: path.join(deps.globalRoot(), "alpha.jsonc"), edits: [{ keyPath: ["mcp", entry.name], value: baseRecord.desiredState === "disabled" ? { ...derived.config, enabled: false } : derived.config }] },
         manifestDigest,

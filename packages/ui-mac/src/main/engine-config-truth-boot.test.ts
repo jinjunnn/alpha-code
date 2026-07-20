@@ -4,7 +4,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { reconcileEngineConfigTruth } from "./engine-config-truth-boot"
 
-// Reconcile: legacy ~/.opencode + XDG provider → ~/.alpha/alpha.jsonc, skills.paths injection (T3),
+// Reconcile: legacy ~/.opencode + XDG provider → current-environment alpha.jsonc, skills.paths injection (T3),
 // and ~/.opencode cleanup (T3: unbridge + delete migrated config + junk-only dir removal).
 // Temp-dir isolated via the same env knobs ext-config uses. Receipts gate ownership.
 let tmp = ""
@@ -17,10 +17,11 @@ const KEYS = ["ALPHA_GLOBAL_DIR", "ALPHA_OPENCODE_HOME", "OPENCODE_CONFIG_DIR", 
 beforeEach(() => {
   for (const k of KEYS) saved[k] = process.env[k]
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-reconcile-"))
-  alphaTmp = path.join(tmp, "alpha")
+  alphaTmp = path.join(fs.realpathSync(tmp), "alpha-code-state", "env", "dev")
   homeTmp = path.join(tmp, "opencode-home")
   xdgTmp = path.join(tmp, "xdg")
   fs.mkdirSync(alphaTmp, { recursive: true })
+  alphaTmp = fs.realpathSync(alphaTmp)
   fs.mkdirSync(homeTmp, { recursive: true })
   fs.mkdirSync(xdgTmp, { recursive: true })
   process.env.ALPHA_GLOBAL_DIR = alphaTmp
@@ -127,6 +128,117 @@ describe("reconcile — ownership bail-out", () => {
 })
 
 describe("reconcile — T3 ~/.opencode cleanup", () => {
+  test("所有提前返回前只断退休 kind/item 桥，退休根 sentinel 原封不动", () => {
+    const retiredHome = path.join(tmp, "retired-home")
+    const retired = path.join(retiredHome, ".alpha")
+    for (const kind of ["skills", "agents", "commands"])
+      fs.mkdirSync(path.join(retired, kind), { recursive: true })
+    fs.writeFileSync(path.join(retired, "skills", "sentinel.txt"), "skill sentinel")
+    fs.writeFileSync(path.join(retired, "agents", "legacy.md"), "agent sentinel")
+    fs.writeFileSync(path.join(retired, "commands", "legacy.md"), "command sentinel")
+
+    fs.symlinkSync(path.join(retired, "skills"), path.join(homeTmp, "skills"), "dir")
+    fs.mkdirSync(path.join(homeTmp, "agents"))
+    fs.symlinkSync(path.join(retired, "agents", "legacy.md"), path.join(homeTmp, "agents", "legacy.md"), "file")
+    fs.mkdirSync(path.join(homeTmp, "commands"))
+    fs.symlinkSync(path.join(retired, "commands", "legacy.md"), path.join(homeTmp, "commands", "legacy.md"), "file")
+
+    process.env.ALPHA_JSONC_TRUTH_DISABLE = "1"
+    const result = reconcileEngineConfigTruth(undefined, { retiredHomeDir: retiredHome })
+
+    expect(result.skipped).toBe(true)
+    expect(fs.existsSync(path.join(homeTmp, "skills"))).toBe(false)
+    expect(fs.existsSync(path.join(homeTmp, "agents", "legacy.md"))).toBe(false)
+    expect(fs.existsSync(path.join(homeTmp, "commands", "legacy.md"))).toBe(false)
+    expect(fs.readFileSync(path.join(retired, "skills", "sentinel.txt"), "utf8")).toBe("skill sentinel")
+    expect(fs.readFileSync(path.join(retired, "agents", "legacy.md"), "utf8")).toBe("agent sentinel")
+    expect(fs.readFileSync(path.join(retired, "commands", "legacy.md"), "utf8")).toBe("command sentinel")
+    expect(fs.readdirSync(retired).sort()).toEqual(["agents", "commands", "skills"])
+  })
+
+  test("退休桥目录不可写(EACCES)→ reconcile 抛错且不继续，桥与 truth 均不动", () => {
+    const retiredHome = path.join(tmp, "retired-home-eacces")
+    const retired = path.join(retiredHome, ".alpha", "skills")
+    fs.mkdirSync(retired, { recursive: true })
+    const bridge = path.join(homeTmp, "skills")
+    fs.symlinkSync(retired, bridge, "dir")
+    fs.chmodSync(homeTmp, 0o555)
+    try {
+      expect(() => reconcileEngineConfigTruth(undefined, { retiredHomeDir: retiredHome })).toThrow()
+      expect(fs.lstatSync(bridge).isSymbolicLink()).toBe(true)
+      expect(truthExists()).toBe(false)
+    } finally {
+      fs.chmodSync(homeTmp, 0o755)
+    }
+  })
+
+  test("退休桥在 unlink 紧邻重验时换成另一条退休链→ 按新身份重验后删链，退休 truth 原封不动", () => {
+    const retiredHome = path.join(tmp, "retired-home-race-retired")
+    const retired = path.join(retiredHome, ".alpha")
+    const firstTarget = path.join(retired, "skills-first")
+    const replacementTarget = path.join(retired, "skills-replacement")
+    fs.mkdirSync(firstTarget, { recursive: true })
+    fs.mkdirSync(replacementTarget, { recursive: true })
+    fs.writeFileSync(path.join(firstTarget, "sentinel.txt"), "first truth")
+    fs.writeFileSync(path.join(replacementTarget, "sentinel.txt"), "replacement truth")
+    const bridge = path.join(homeTmp, "skills")
+    fs.symlinkSync(firstTarget, bridge, "dir")
+    let bridgeStats = 0
+    process.env.ALPHA_JSONC_TRUTH_DISABLE = "1"
+
+    const result = reconcileEngineConfigTruth(undefined, {
+      retiredHomeDir: retiredHome,
+      retiredBridgeFs: {
+        lstatSync: (file) => {
+          if (file === bridge && ++bridgeStats === 2) {
+            fs.unlinkSync(bridge)
+            fs.symlinkSync(replacementTarget, bridge, "dir")
+          }
+          return fs.lstatSync(file)
+        },
+        readlinkSync: (file) => fs.readlinkSync(file),
+        readdirSync: (directory) => fs.readdirSync(directory),
+        unlinkSync: (file) => fs.unlinkSync(file),
+      },
+    })
+
+    expect(result.skipped).toBe(true)
+    expect(fs.existsSync(bridge)).toBe(false)
+    expect(fs.readFileSync(path.join(firstTarget, "sentinel.txt"), "utf8")).toBe("first truth")
+    expect(fs.readFileSync(path.join(replacementTarget, "sentinel.txt"), "utf8")).toBe("replacement truth")
+  })
+
+  test("退休桥在 unlink 紧邻重验时已换成非退休对象→ 跳过且不删竞争换位对象", () => {
+    const retiredHome = path.join(tmp, "retired-home-race")
+    const retired = path.join(retiredHome, ".alpha", "skills")
+    fs.mkdirSync(retired, { recursive: true })
+    const bridge = path.join(homeTmp, "skills")
+    fs.symlinkSync(retired, bridge, "dir")
+    let bridgeStats = 0
+    process.env.ALPHA_JSONC_TRUTH_DISABLE = "1"
+
+    const result = reconcileEngineConfigTruth(undefined, {
+      retiredHomeDir: retiredHome,
+      retiredBridgeFs: {
+        lstatSync: (file) => {
+          if (file === bridge && ++bridgeStats === 2) {
+            fs.unlinkSync(bridge)
+            fs.writeFileSync(bridge, "competitor")
+          }
+          return fs.lstatSync(file)
+        },
+        readlinkSync: (file) => fs.readlinkSync(file),
+        readdirSync: (directory) => fs.readdirSync(directory),
+        unlinkSync: (file) => fs.unlinkSync(file),
+      },
+    })
+
+    expect(result.skipped).toBe(true)
+    expect(fs.lstatSync(bridge).isFile()).toBe(true)
+    expect(fs.readFileSync(bridge, "utf8")).toBe("competitor")
+    expect(fs.readdirSync(retired)).toEqual([])
+  })
+
   test("junk-only ~/.opencode removed after migration", () => {
     writeLegacy({ mcp: { markitdown: { type: "local" } } })
     writeLedger([mcpReceipt("markitdown")])
@@ -173,7 +285,7 @@ describe("reconcile — T3 ~/.opencode cleanup", () => {
 })
 
 describe("reconcile — REQ-065 factory skills.paths group", () => {
-  test("factorySkillDirs injected into the truth file alongside ~/.alpha/skills", () => {
+  test("factorySkillDirs injected alongside current-environment skills", () => {
     const dirs = ["/App.app/Contents/Resources/skills/skill-creator", "/App.app/Contents/Resources/factory-skills/agent-creator"]
     const r = reconcileEngineConfigTruth(undefined, { factorySkillDirs: dirs })
     expect(r.skipped).toBe(false)

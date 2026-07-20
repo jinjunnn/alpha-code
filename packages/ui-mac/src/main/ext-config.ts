@@ -106,7 +106,7 @@ function alphaOpencodeConfigPath(): string {
   return jsonc
 }
 
-// REQ-059:alpha 写入的引擎配置唯一真源 = ~/.alpha/alpha.jsonc(经 sidecar G1 = OPENCODE_CONFIG
+// REQ-059:alpha 写入的全局引擎配置唯一真源 = <current-environment-root>/alpha.jsonc(经 sidecar G1 = OPENCODE_CONFIG
 // 注入,引擎原生「额外配置文件」合并,dispose 重读;T0 spike audits/2026-07-07-req059-060-t0-spike)。
 // 取代 REQ-018 的 ~/.opencode/opencode.jsonc(home walk 发现)。alpha 从此不写 .opencode。
 // alphaJsoncPath 由 engine-config-truth 单一真源导出(sidecar 注入用同一路径)。
@@ -128,7 +128,7 @@ function providerTargetPath(): string {
 }
 
 // 迁移期:主目标之外仍可能残留 alpha 写入物的历史位置(去重、排除主目标)。REQ-018 mcp/plugin 写
-// ~/.opencode、更早写 XDG;REQ-059 后 provider 从 XDG 迁 ~/.alpha。清除/读取都要覆盖这些兜底位置,
+// ~/.opencode、更早写 XDG;REQ-059 后 provider 迁入 alpha 当前环境根。清除/读取都要覆盖这些兜底位置,
 // 否则存量副本会在下次 reconnect「影子复活」已删条目、或漏读未迁尽的存量。
 function legacyConfigPaths(primary: string): string[] {
   const out: string[] = []
@@ -982,7 +982,7 @@ function removePluginUnlocked(pkg: string): ConfigResult {
 
 // ── REQ-023 T2:vendored 插件的绝对路径持久化(零网络通道) ──────────────────────────────────
 // 引擎 plugin[] 原生接受绝对路径(config/plugin.ts:42-60,与 @alpha-code/ext 注入同机制)。
-// 路径必须位于 ~/.alpha/plugins 树内(装载面收敛:不能把任意本机 JS 喂进引擎进程)。
+// 路径必须位于当前环境的 plugins 树内(装载面收敛:不能把任意本机 JS 喂进引擎进程)。
 
 function underAlphaPlugins(absPath: string): boolean {
   const root = path.join(alphaGlobalRoot(), "plugins")
@@ -996,7 +996,7 @@ export function persistPluginPath(name: string, absJsPath: string, files: string
 function persistPluginPathUnlocked(name: string, absJsPath: string, files: string[], meta?: InstallMeta): ConfigResult {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(name)) return { ok: false, reason: "invalid plugin name" }
   if (!path.isAbsolute(absJsPath) || !absJsPath.endsWith(".js") || !underAlphaPlugins(absJsPath))
-    return { ok: false, reason: "refused: plugin path outside ~/.alpha/plugins" }
+    return { ok: false, reason: "refused: plugin path outside the current environment plugins root" }
   const target = mcpPluginTargetPath()
   const read = (): unknown[] => {
     try {

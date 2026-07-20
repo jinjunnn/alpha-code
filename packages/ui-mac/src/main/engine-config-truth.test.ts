@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test"
+import { homedir } from "node:os"
+import { join } from "node:path"
 import {
   ALPHA_CONFIG_TOP_KEYS,
+  alphaGlobalRoot,
   ensureSkillsPath,
   isAlphaOwnedConfig,
   isFactoryResourcePath,
@@ -10,6 +13,21 @@ import {
   rewriteFactorySkillPaths,
   stripFactoryBuiltinPolicyLeaves,
 } from "./engine-config-truth"
+
+test("alphaGlobalRoot 无 main 快照时拒绝缺失、相对与退休根", () => {
+  const saved = process.env.ALPHA_GLOBAL_DIR
+  try {
+    delete process.env.ALPHA_GLOBAL_DIR
+    expect(() => alphaGlobalRoot()).toThrow()
+    process.env.ALPHA_GLOBAL_DIR = "relative/root"
+    expect(() => alphaGlobalRoot()).toThrow()
+    process.env.ALPHA_GLOBAL_DIR = join(homedir(), ".alpha")
+    expect(() => alphaGlobalRoot()).toThrow()
+  } finally {
+    if (saved === undefined) delete process.env.ALPHA_GLOBAL_DIR
+    else process.env.ALPHA_GLOBAL_DIR = saved
+  }
+})
 
 describe("ensureSkillsPath — skills.paths OBJECT form (真机 ConfigInvalidError 回归锁)", () => {
   test("empty config → skills = { paths: [dir] }(object,非数组)", () => {

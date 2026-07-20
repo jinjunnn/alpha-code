@@ -62,3 +62,9 @@ related: [ADR-002, ADR-019, ADR-021, REQ-021, REQ-022]
 
 ## 修订(2026-07-07,REQ-055 —— 内部 agent 对选择器隐藏)
 原 ⚠️「alpha-automation 以 mode:primary 注入 → 会出现在引擎 agent 列表/选择器里」的观感债就此关闭:三个内部 agent(alpha-automation / alpha-automation-standard / alpha-readonly)经 config 注入上游原生 `hidden: true`(agent.ts 字段,仅影响可见列表)+ AlphaComposer agent 列表二次过滤,不再出现在任何用户可见选择器;调度器/只读档按名 prompt 不受影响(dev 实证)。
+
+## 修订(2026-07-20,#428 —— 自动化真源随当前环境隔离)
+
+2026-07-05 真机批引述与决策第 1 条中的 `~/.alpha` 路径保留为历史记录。自动化真源现改为
+`<appData>/alpha-code-state/env/<environment>/automations`；调度器只消费 desktop 初始化后派生的
+canonical `ALPHA_GLOBAL_DIR`。退休 home 根零读取、零迁移、零 dual-read。

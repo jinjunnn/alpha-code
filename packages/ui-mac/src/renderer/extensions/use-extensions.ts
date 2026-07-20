@@ -253,7 +253,7 @@ export function useExtensions(
   let generation = 0
   let abortRef = new AbortController()
 
-  // REQ-018:安装账本(global ~/.alpha)。receipts 覆盖 skill/agent/plugin 的「已安装」真相
+  // REQ-018:安装账本(current-environment global)。receipts 覆盖 skill/agent/plugin 的「已安装」真相
   // (SDK 的 mcp.status 只认 MCP);每次安装/卸载后刷新。
   // REQ-099(#307):有项目上下文时同一调用连带读项目账本(main 双账本读面早已就绪);
   // 无项目时 project 视图如实清空 —— 不残留上一个项目的行。
