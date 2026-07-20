@@ -3,6 +3,7 @@
 > 架构决策记录(ADR)索引。**每条 ADR 一个文件**,见 `.claude/rules/adrs/`。
 > 新增:在 `adrs/` 加 `ADR-0NN-<slug>.md`(必带 frontmatter:`id/title/status/date`,可选 `supersedes/superseded-by/related`),并在下表追加一行。
 > 不删除既有 ADR,只改其 `status` + 在文件内追加"撤回/修订"。`status` ∈ `accepted | trial | superseded | proposed`。
+> 跨仓决策的所有权与引用规则见 [alpha-work:ADR-003](https://github.com/jinjunnn/alpha-work/blob/main/governance/ADR-003-cross-repository-decision-ownership.md)，统一导航见 [Alpha 跨仓架构决策登记簿](https://github.com/jinjunnn/alpha-work/blob/main/governance/architecture-decision-registry.md)；本仓只维护其拥有边界的 ADR，不复制父仓或兄弟仓正文。
 
 | ADR | 标题 | 状态 | 日期 |
 |-----|------|------|------|
@@ -33,7 +34,8 @@
 | [ADR-028](adrs/ADR-028-extension-registry-v2.md) | Extension Package & Registry v2:ManifestV2/InstallRecordV2 严格 schema + main-only 安装计划(renderer 零安装权)+ 项目作用域闭环 fail-closed(Phase 0 信任修复 / Phase 1 ManifestV2 分期;ADR-029 全 L0;REQ-100 只留窄事务钩子接缝) | accepted | 2026-07-12 |
 | [ADR-029](adrs/ADR-029-upstream-sovereignty-ladder.md) | 上游主权阶梯:「零改上游」铁律不修宪,主权升级走四级枚举通道(L0 接缝 → L1 变换 → L2 补丁 loud-fail → L3 冻结接管;逐案 ADR、永不设 L4 直接编辑;既有例外归位记账) | accepted(2026-07-12 同日拍板) | 2026-07-12 |
 | [ADR-030](adrs/ADR-030-project-scope-generation-recall.md) | 收回 project-scope catalog/seed 受管安装:planner decode 后统一 policy guard fail-closed 拒(skill/agent 对称;wire 形状保留),新增安装策略与遗留可管理 kind 拆分,残留显式检测 + generation-aware 清理(journal 在场 fail-closed);项目技能能力走 `.alpha/skills` 非 generation 路径(#362 DECIDE,Codex 裁决) | accepted | 2026-07-15 |
+| [ADR-031](adrs/ADR-031-hybrid-user-memory.md) | 混合用户记忆——本地优先、选择性云发布与有界上下文 | proposed | 2026-07-19 |
 
-> 🔒 **编号预留**:产品所有权专项(见 [GitHub Issues](https://github.com/jinjunnn/alpha-code/issues) 与 [Alpha Delivery](https://github.com/users/jinjunnn/projects/2) §5)预留的 ADR-027/ADR-028 均已于 2026-07-12 按号落笔,预留清空;新 ADR 从 ADR-031 起编号。
+> 🔒 **编号预留**:产品所有权专项(见 [GitHub Issues](https://github.com/jinjunnn/alpha-code/issues) 与 [Alpha Delivery](https://github.com/users/jinjunnn/projects/2) §5)预留的 ADR-027/ADR-028 均已于 2026-07-12 按号落笔,预留清空;新 ADR 从 ADR-032 起编号。
 
 > 📦 **ADR-010/011/013(云平台内部决策)已迁至 `alpha-platform/.claude/rules/adrs/`**(2026-06-22)。本仓只保留"本地→云派发接缝"(见 [ADR-002](adrs/ADR-002-backend-seams.md));文中其余处对它们的引用视为跨项目引用。
