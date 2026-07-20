@@ -19,6 +19,7 @@ import type { CasGcRoundInput, CasGcRoundSummary } from "./ext-cas-gc"
 import type { CasGcSchedulerConfig } from "./ext-cas-gc-scheduler"
 import {
   cleanupDurableAtomicTemporaryFilesSync,
+  DURABLE_ATOMIC_MACHINE_ID_FILE,
   writeFileDurableAtomicSync,
   type DurableAtomicFileSystem,
 } from "./ext-atomic-fs"
@@ -93,6 +94,7 @@ const nodeFileSystem: DurableAtomicFileSystem = {
   fsyncSync: (fd) => fsyncSync(fd),
   closeSync: (fd) => closeSync(fd),
   renameSync: (from, to) => renameSync(from, to),
+  readFileSync: (file, encoding) => readFileSync(file, encoding),
   readdirSync: (dir) => readdirSync(dir),
   unlinkSync: (file) => unlinkSync(file),
 }
@@ -101,7 +103,7 @@ function durableTemporaryFiles(file: string) {
   const prefix = `.${basename(file)}.tmp-`
   return readdirSync(dirname(file)).filter(
     (entry) =>
-      entry.startsWith(prefix) && /^\d+-[0-9a-f]{8}-[0-9a-f]{16}-[0-9a-f]{16}$/.test(entry.slice(prefix.length)),
+      entry.startsWith(prefix) && /^\d+-[0-9a-f]{8}-[0-9a-f]{32}-[0-9a-f]{16}$/.test(entry.slice(prefix.length)),
   )
 }
 
@@ -150,6 +152,9 @@ describe("Settings typed adapter", () => {
   beforeEach(() => {
     userData = mkdtempSync(join(tmpdir(), "req090-settings-"))
     file = join(userData, "default.dat")
+    const identitySeed = join(userData, "identity-seed")
+    writeFileDurableAtomicSync(identitySeed, "identity", { fileSystem: nodeFileSystem })
+    unlinkSync(identitySeed)
   })
 
   afterEach(() => {
@@ -276,7 +281,7 @@ describe("Settings typed adapter", () => {
     expect(dirname(temporaryFile)).toBe(dirname(file))
     expect(basename(temporaryFile)).toMatch(
       new RegExp(
-        `^\\.${basename(file).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.tmp-${process.pid}-[0-9a-f]{8}-[0-9a-f]{16}-[0-9a-f]{16}$`,
+        `^\\.${basename(file).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.tmp-${process.pid}-[0-9a-f]{8}-[0-9a-f]{32}-[0-9a-f]{16}$`,
       ),
     )
     expect(operations[1]?.file).toBe(temporaryFile)
@@ -511,13 +516,13 @@ describe("Settings typed adapter", () => {
     expect(existsSync(orphan)).toBe(false)
   })
 
-  test("cleanup leaves foreign host identities, other target namespaces, and similar names untouched", () => {
+  test("cleanup leaves foreign machine identities, other target namespaces, and similar names untouched", () => {
     const temporaryFile = leaveDeadProcessTemporaryFile(file)
-    const match = /^(.*\.tmp-\d+-[0-9a-f]{8})-([0-9a-f]{16})-([0-9a-f]{16})$/.exec(basename(temporaryFile))
+    const match = /^(.*\.tmp-\d+-[0-9a-f]{8})-([0-9a-f]{32})-([0-9a-f]{16})$/.exec(basename(temporaryFile))
     expect(match).not.toBeNull()
     if (!match) return
-    const foreignHost = match[2] === "0".repeat(16) ? "1".repeat(16) : "0".repeat(16)
-    const foreignIdentity = join(userData, `${match[1]}-${foreignHost}-${match[3]}`)
+    const foreignMachineID = match[2] === "0".repeat(32) ? "1".repeat(32) : "0".repeat(32)
+    const foreignIdentity = join(userData, `${match[1]}-${foreignMachineID}-${match[3]}`)
     const similar = join(userData, `.${basename(file)}.tmp-${process.pid}-aaaaaaaa-not-an-owner`)
     const foreignNamespace = join(userData, `.other-adapter.tmp-${process.pid}-aaaaaaaa-${match[2]}-${match[3]}`)
     renameSync(temporaryFile, foreignIdentity)
@@ -529,6 +534,47 @@ describe("Settings typed adapter", () => {
     expect(existsSync(similar)).toBe(true)
     expect(existsSync(foreignNamespace)).toBe(true)
   })
+
+  test("cleanup preserves a same-hostname temporary file carrying another machine's persisted identity", () => {
+    const foreignUserData = mkdtempSync(join(tmpdir(), "req090-settings-foreign-machine-"))
+    const foreignFile = join(foreignUserData, basename(file))
+    const temporaryFile = leaveDeadProcessTemporaryFile(foreignFile)
+    const localMachineID = readFileSync(join(userData, DURABLE_ATOMIC_MACHINE_ID_FILE), "utf8")
+    const foreignMachineID = readFileSync(join(foreignUserData, DURABLE_ATOMIC_MACHINE_ID_FILE), "utf8")
+    expect(foreignMachineID).not.toBe(localMachineID)
+    const foreignTemporaryFile = join(userData, basename(temporaryFile))
+    renameSync(temporaryFile, foreignTemporaryFile)
+
+    cleanupDurableAtomicTemporaryFilesSync(file, nodeFileSystem)
+    expect(existsSync(foreignTemporaryFile)).toBe(true)
+    rmSync(foreignUserData, { recursive: true, force: true })
+  })
+
+  test("cleanup preserves a dead pid candidate whose process-instance-id does not match its persisted record", () => {
+    const temporaryFile = leaveDeadProcessTemporaryFile(file)
+    const match = /^(.*\.tmp-\d+-[0-9a-f]{8}-[0-9a-f]{32})-([0-9a-f]{16})$/.exec(basename(temporaryFile))
+    expect(match).not.toBeNull()
+    if (!match) return
+    const mismatchedProcessInstanceID = match[2] === "0".repeat(16) ? "1".repeat(16) : "0".repeat(16)
+    const mismatched = join(userData, `${match[1]}-${mismatchedProcessInstanceID}`)
+    renameSync(temporaryFile, mismatched)
+
+    cleanupDurableAtomicTemporaryFilesSync(file, nodeFileSystem)
+    expect(existsSync(mismatched)).toBe(true)
+  })
+
+  test.each(["missing", "corrupt"] as const)(
+    "cleanup preserves every candidate without throwing when the machine identity file is %s",
+    (state) => {
+      const temporaryFile = leaveDeadProcessTemporaryFile(file)
+      const machineIDFile = join(userData, DURABLE_ATOMIC_MACHINE_ID_FILE)
+      if (state === "missing") unlinkSync(machineIDFile)
+      if (state === "corrupt") writeFileSync(machineIDFile, "not-a-machine-id")
+
+      expect(() => cleanupDurableAtomicTemporaryFilesSync(file, nodeFileSystem)).not.toThrow()
+      expect(existsSync(temporaryFile)).toBe(true)
+    },
+  )
 
   test("cleanup preserves a candidate when process state is uncertain and does not throw", () => {
     const temporaryFile = leaveDeadProcessTemporaryFile(file)

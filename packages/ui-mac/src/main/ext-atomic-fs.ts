@@ -13,7 +13,6 @@
 import * as crypto from "node:crypto"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { hostname } from "node:os"
 
 /** 相对路径结构校验:拒绝绝对路径、`..`/`.` 段、反斜杠、控制字符、空段、超深/超长。 */
 export function isSafeRelPath(rel: string): boolean {
@@ -104,8 +103,7 @@ export function writeFileAtomicSync(file: string, data: string | Buffer, opts?: 
 export type DurableAtomicWriteOptions = {
   mode?: fs.Mode
   onCommitPoint?: (point: "file-synced" | "renamed", temporaryFile: string) => void
-  /** Test-only seam; production uses node:fs directly. */
-  fileSystem?: DurableAtomicFileSystem
+  fileSystem: DurableAtomicFileSystem
 }
 
 export type DurableAtomicFileSystem = {
@@ -116,15 +114,20 @@ export type DurableAtomicFileSystem = {
   fsyncSync(fd: number): void
   closeSync(fd: number): void
   renameSync(from: string, to: string): void
+  readFileSync(file: string, encoding: "utf8"): string
   readdirSync(dir: string): string[]
   unlinkSync(file: string): void
 }
 
 type DurableAtomicProcessState = "alive" | "dead" | "unknown"
 
-const DURABLE_TEMPORARY_HOST_ID = crypto.createHash("sha256").update(hostname()).digest("hex").slice(0, 16)
+export const DURABLE_ATOMIC_MACHINE_ID_FILE = ".alpha-durable-atomic-machine-id"
+export const DEFAULT_DURABLE_ATOMIC_FILE_SYSTEM: DurableAtomicFileSystem = fs
+
+const DURABLE_ATOMIC_MACHINE_ID_PATTERN = /^[0-9a-f]{32}$/
+const DURABLE_ATOMIC_PROCESS_INSTANCE_ID_PATTERN = /^[0-9a-f]{16}$/
 const DURABLE_TEMPORARY_PROCESS_INSTANCE_ID = crypto.randomBytes(8).toString("hex")
-const DURABLE_TEMPORARY_SUFFIX_PATTERN = /^(\d+)-[0-9a-f]{8}-([0-9a-f]{16})-[0-9a-f]{16}$/
+const DURABLE_TEMPORARY_SUFFIX_PATTERN = /^(\d+)-[0-9a-f]{8}-([0-9a-f]{32})-([0-9a-f]{16})$/
 
 /**
  * 持久原子写:Settings 等成功边界要求 tmp 内容与 rename 目录项都已落盘。
@@ -134,17 +137,19 @@ const DURABLE_TEMPORARY_SUFFIX_PATTERN = /^(\d+)-[0-9a-f]{8}-([0-9a-f]{16})-[0-9
 export function writeFileDurableAtomicSync(
   file: string,
   data: string | Buffer,
-  opts?: DurableAtomicWriteOptions,
+  opts: DurableAtomicWriteOptions,
 ): void {
   const dir = path.dirname(file)
-  const fileSystem: DurableAtomicFileSystem = opts?.fileSystem ?? fs
+  const fileSystem = opts.fileSystem
   fileSystem.mkdirSync(dir, { recursive: true })
+  const machineID = requireDurableAtomicMachineIDSync(dir, fileSystem)
+  recordDurableAtomicProcessInstanceSync(dir, machineID, fileSystem)
   const tmp = path.join(
     dir,
-    `.${path.basename(file)}.tmp-${process.pid}-${crypto.randomBytes(4).toString("hex")}-${DURABLE_TEMPORARY_HOST_ID}-${DURABLE_TEMPORARY_PROCESS_INSTANCE_ID}`,
+    `.${path.basename(file)}.tmp-${process.pid}-${crypto.randomBytes(4).toString("hex")}-${machineID}-${DURABLE_TEMPORARY_PROCESS_INSTANCE_ID}`,
   )
   try {
-    fileSystem.writeFileSync(tmp, data, { flag: "wx", mode: opts?.mode })
+    fileSystem.writeFileSync(tmp, data, { flag: "wx", mode: opts.mode })
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
       try {
@@ -162,7 +167,7 @@ export function writeFileDurableAtomicSync(
     } finally {
       fileSystem.closeSync(fd)
     }
-    opts?.onCommitPoint?.("file-synced", tmp)
+    opts.onCommitPoint?.("file-synced", tmp)
     fileSystem.renameSync(tmp, file)
   } catch (error) {
     try {
@@ -172,7 +177,7 @@ export function writeFileDurableAtomicSync(
     }
     throw error
   }
-  opts?.onCommitPoint?.("renamed", tmp)
+  opts.onCommitPoint?.("renamed", tmp)
   const dirFd = fileSystem.openSync(dir, "r")
   try {
     fileSystem.fsyncSync(dirFd)
@@ -181,20 +186,24 @@ export function writeFileDurableAtomicSync(
   }
 }
 
-/** Remove only same-host temporary files whose recorded creator pid is provably dead. */
-export function cleanupDurableAtomicTemporaryFilesSync(file: string, fileSystem: DurableAtomicFileSystem = fs): void {
+/** Remove only same-machine/process-instance temporary files whose recorded creator pid is provably dead. */
+export function cleanupDurableAtomicTemporaryFilesSync(file: string, fileSystem: DurableAtomicFileSystem): void {
   const dir = path.dirname(file)
   try {
     if (!fileSystem.existsSync(dir)) return
+    const machineID = readDurableAtomicMachineIDSync(dir, fileSystem)
+    if (!machineID) return
     const prefix = `.${path.basename(file)}.tmp-`
     fileSystem
       .readdirSync(dir)
       .filter((entry) => entry.startsWith(prefix))
       .forEach((entry) => {
         const match = DURABLE_TEMPORARY_SUFFIX_PATTERN.exec(entry.slice(prefix.length))
-        if (!match || match[2] !== DURABLE_TEMPORARY_HOST_ID) return
+        if (!match || match[2] !== machineID) return
         const pid = Number(match[1])
+        const processInstanceID = match[3]
         if (!Number.isSafeInteger(pid) || pid <= 0 || durableAtomicProcessState(pid) !== "dead") return
+        if (readDurableAtomicProcessInstanceIDSync(dir, machineID, pid, fileSystem) !== processInstanceID) return
         try {
           fileSystem.unlinkSync(path.join(dir, entry))
         } catch {
@@ -203,6 +212,87 @@ export function cleanupDurableAtomicTemporaryFilesSync(file: string, fileSystem:
       })
   } catch {
     // Unreadable directories and uncertain process state preserve every candidate without blocking startup.
+  }
+}
+
+function requireDurableAtomicMachineIDSync(dir: string, fileSystem: DurableAtomicFileSystem) {
+  const existing = readDurableAtomicMachineIDSync(dir, fileSystem)
+  if (existing) return existing
+  const file = path.join(dir, DURABLE_ATOMIC_MACHINE_ID_FILE)
+  if (fileSystem.existsSync(file)) throw new Error("durable atomic machine identity is invalid")
+  const machineID = crypto.randomBytes(16).toString("hex")
+  try {
+    fileSystem.writeFileSync(file, machineID, { flag: "wx", mode: 0o600 })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      const raced = readDurableAtomicMachineIDSync(dir, fileSystem)
+      if (raced) return raced
+    }
+    throw error
+  }
+  fsyncDurableAtomicPathSync(file, fileSystem)
+  fsyncDurableAtomicPathSync(dir, fileSystem)
+  return machineID
+}
+
+function readDurableAtomicMachineIDSync(dir: string, fileSystem: DurableAtomicFileSystem) {
+  try {
+    const machineID = fileSystem.readFileSync(path.join(dir, DURABLE_ATOMIC_MACHINE_ID_FILE), "utf8")
+    return DURABLE_ATOMIC_MACHINE_ID_PATTERN.test(machineID) ? machineID : undefined
+  } catch {
+    return
+  }
+}
+
+function recordDurableAtomicProcessInstanceSync(
+  dir: string,
+  machineID: string,
+  fileSystem: DurableAtomicFileSystem,
+) {
+  const file = durableAtomicProcessInstanceFile(dir, machineID, process.pid)
+  if (readDurableAtomicProcessInstanceIDSync(dir, machineID, process.pid, fileSystem) === DURABLE_TEMPORARY_PROCESS_INSTANCE_ID) {
+    return
+  }
+  const tmp = `${file}.tmp-${DURABLE_TEMPORARY_PROCESS_INSTANCE_ID}`
+  try {
+    fileSystem.writeFileSync(tmp, DURABLE_TEMPORARY_PROCESS_INSTANCE_ID, { flag: "wx", mode: 0o600 })
+    fsyncDurableAtomicPathSync(tmp, fileSystem)
+    fileSystem.renameSync(tmp, file)
+    fsyncDurableAtomicPathSync(dir, fileSystem)
+  } catch (error) {
+    try {
+      fileSystem.unlinkSync(tmp)
+    } catch {
+      // Cleanup must not replace the process identity persistence error.
+    }
+    throw error
+  }
+}
+
+function readDurableAtomicProcessInstanceIDSync(
+  dir: string,
+  machineID: string,
+  pid: number,
+  fileSystem: DurableAtomicFileSystem,
+) {
+  try {
+    const processInstanceID = fileSystem.readFileSync(durableAtomicProcessInstanceFile(dir, machineID, pid), "utf8")
+    return DURABLE_ATOMIC_PROCESS_INSTANCE_ID_PATTERN.test(processInstanceID) ? processInstanceID : undefined
+  } catch {
+    return
+  }
+}
+
+function durableAtomicProcessInstanceFile(dir: string, machineID: string, pid: number) {
+  return path.join(dir, `.alpha-durable-atomic-process-${machineID}-${pid}`)
+}
+
+function fsyncDurableAtomicPathSync(file: string, fileSystem: DurableAtomicFileSystem) {
+  const fd = fileSystem.openSync(file, "r")
+  try {
+    fileSystem.fsyncSync(fd)
+  } finally {
+    fileSystem.closeSync(fd)
   }
 }
 

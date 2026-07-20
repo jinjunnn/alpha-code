@@ -5,6 +5,7 @@ import type { CasGcRoundInput, CasGcRoundSummary } from "./ext-cas-gc"
 import type { CasGcSchedulerConfig, CasGcSpawnRound } from "./ext-cas-gc-scheduler"
 import {
   cleanupDurableAtomicTemporaryFilesSync,
+  DEFAULT_DURABLE_ATOMIC_FILE_SYSTEM,
   fsyncDirRequiredSync,
   fsyncFileSync,
   writeFileDurableAtomicSync,
@@ -37,7 +38,12 @@ export type SettingsAdapterOptions = {
 }
 
 export function createSettingsAdapter(file: string, options?: SettingsAdapterOptions) {
-  cleanupDurableAtomicTemporaryFilesSync(file, options?.fileSystem)
+  // Resolve the optional seam once: branching on its presence below could let tested and production commits diverge.
+  const durableAtomicOptions: DurableAtomicWriteOptions = {
+    fileSystem: options?.fileSystem ?? DEFAULT_DURABLE_ATOMIC_FILE_SYSTEM,
+    onCommitPoint: options?.onCommitPoint,
+  }
+  cleanupDurableAtomicTemporaryFilesSync(file, durableAtomicOptions.fileSystem)
   return {
     read(): SettingsReadResult {
       const current = readCurrent(file)
@@ -83,10 +89,7 @@ export function createSettingsAdapter(file: string, options?: SettingsAdapterOpt
       try {
         const document = readSettingsDocument(file)
         document[RENDERER_SETTINGS_KEY] = json
-        writeFileDurableAtomicSync(file, JSON.stringify(document, null, "\t"), {
-          onCommitPoint: options?.onCommitPoint,
-          fileSystem: options?.fileSystem,
-        })
+        writeFileDurableAtomicSync(file, JSON.stringify(document, null, "\t"), durableAtomicOptions)
       } catch {
         return writeFailure(readCurrent(file))
       }
