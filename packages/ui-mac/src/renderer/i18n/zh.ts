@@ -561,7 +561,7 @@ export const dict = {
   "alpha.ext.detailCommand": "启动命令",
   "alpha.ext.detailEndpoint": "远程端点",
   "alpha.ext.detailScope": "启用范围",
-  "alpha.ext.scopeGlobal": "全局(~/.alpha)",
+  "alpha.ext.scopeGlobal": "全局(当前环境)",
   "alpha.ext.detailInstallDir": "安装位置",
   "alpha.ext.detailPackage": "npm 包",
   "alpha.ext.detailMode": "模式",

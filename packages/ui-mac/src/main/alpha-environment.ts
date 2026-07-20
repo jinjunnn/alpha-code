@@ -1,24 +1,23 @@
-// REQ-098 唯一环境映射(issue #190)—— main 进程持有,renderer 零输入。
+// REQ-098 唯一环境映射(issue #190/#428)—— main 进程持有,renderer 零输入。
 //
 // App 运行环境(prod/beta/dev)只由两个构建事实推导:app.isPackaged + 构建渠道(OPENCODE_CHANNEL,
 // 打包时冻结,ADR-012)。由环境单向派生三件事,任何消费方不得自行再推:
 //   ① Registry 通道:prod → stable、beta → preview、dev → dev(preview 维持 ADR-012 休眠语义,
 //      #232 拍板 B:机制对齐、不承诺发布);
 //   ② updater feed channel:prod → latest(stable feed)、beta → beta(preview feed)、dev → 禁用;
-//   ③ 环境 mutable root(可变状态分域):prod → <base>/env/prod、beta → <base>/env/beta、
-//      dev → <base>(= 旧单根 ~/.alpha 原样 —— 开发者人体工学:dev 构建/单测直接看到既有全局目录,
-//      不迁移;测试隔离照旧走 ALPHA_GLOBAL_DIR 预置)。base = ~/.alpha(ADR-019 全局层)。
+//   ③ 环境 mutable root(可变状态分域):<appData>/alpha-code-state/env/{prod,beta,dev};
+//      三根恒为兄弟,共享 CAS 落 <appData>/alpha-code-state/cas。
 //
-// 落地机制:initAlphaEnvironment 在启动早期(任何 alphaGlobalRoot() 消费方之前)把环境 root 写进
-// process.env.ALPHA_GLOBAL_DIR —— 全部既有消费方(alpha-installs / engine-config-truth / ext-config /
-// sidecar 注入 / @alpha-code/ext)按现有惯例读同一变量,零重接线。预置的 ALPHA_GLOBAL_DIR(测试
-// 隔离 / 开发者显式 export,shell-env 缓存已把它列为会话级控制键)= 终态覆盖,本模块不改写、只记账。
+// initAlphaEnvironment 在任何根消费方之前校验三根的词法与 canonical 身份,创建新拓扑后复验
+// endpoint 非 symlink 且 realpath 未漂移,最后才冻结快照并派生 ALPHA_GLOBAL_DIR。旧全局根不迁移、
+// 不 dual-read；ALPHA_GLOBAL_DIR 不再接受外部预置。unpackaged 可用 ALPHA_ENV_BASE_DIR 做 base 级
+// 隔离；packaged onboarding 只接受 composition root 传入的内部临时 base。
 //
-// 内容寻址不可变 blob(REQ-102)未来落 <base> 共享层,不在本 REQ;当前所有可变状态一律分域。
-// electron-free:isPackaged/channel 由 index.ts 注入,单测零 mock。
+// electron-free:isPackaged/channel/appData 由 index.ts 注入,单测零 mock。
 
-import * as os from "node:os"
-import * as path from "node:path"
+import { lstatSync, mkdirSync, realpathSync, statSync } from "node:fs"
+import { homedir } from "node:os"
+import { basename, dirname, isAbsolute, join, normalize, relative, resolve } from "node:path"
 import type { AlphaEnvironmentInfo } from "../preload/types"
 
 export type AppEnvironment = "prod" | "beta" | "dev"
@@ -53,15 +52,14 @@ export function updaterFeedChannelFor(env: AppEnvironment): "latest" | "beta" | 
   return null
 }
 
-/** `~/.alpha` 基根(homeDir 可注入,单测用)。 */
-export function defaultAlphaBaseRoot(homeDir: string = os.homedir()): string {
-  return path.join(homeDir, ".alpha")
+/** 新共享基根；appDataDir 由 Electron composition root 注入。 */
+export function defaultAlphaBaseRoot(appDataDir: string): string {
+  return join(appDataDir, "alpha-code-state")
 }
 
-/** 环境 mutable root:prod/beta 分域进 <base>/env/<env>;dev = 旧单根原样(见文件头拍板)。 */
+/** 三环境 mutable root 恒为兄弟。 */
 export function environmentMutableRoot(env: AppEnvironment, baseRoot: string): string {
-  if (env === "dev") return baseRoot
-  return path.join(baseRoot, "env", env)
+  return join(baseRoot, "env", env)
 }
 
 let current: AlphaEnvironmentInfo | undefined
@@ -69,41 +67,174 @@ let current: AlphaEnvironmentInfo | undefined
 export type InitEnvironmentInput = {
   isPackaged: boolean
   channel: BuildChannel
-  /** 默认 process.env;注入以便单测。ALPHA_GLOBAL_DIR 预置 = 覆盖,只读不改写。 */
+  /** Electron `app.getPath("appData")`；本模块不自行推导。 */
+  appDataDir: string
+  /** 默认 process.env；注入以便单测。 */
   env?: NodeJS.ProcessEnv
-  /** 默认 os.homedir();注入以便单测。 */
+  /** 仅 composition root 内部生成的 base（packaged onboarding）；不读取环境变量。 */
+  baseRoot?: string
+  /** 仅用于退休根 denial；默认真实 home。 */
   homeDir?: string
 }
 
 /**
- * 启动早期调用一次;此后环境快照冻结,任何运行期输入(含 renderer)都改变不了它(AC#6)。
- * 副作用:未被覆盖时把环境 root 写入 env.ALPHA_GLOBAL_DIR(消费方 + sidecar fork 继承同一根)。
+ * 启动早期调用一次；先完整校验并创建/复验新拓扑，随后才写派生 env 与冻结快照。
  */
 export function initAlphaEnvironment(input: InitEnvironmentInput): AlphaEnvironmentInfo {
   if (current) return current
   const env = input.env ?? process.env
+  if (env.ALPHA_GLOBAL_DIR !== undefined) throw new Error("external ALPHA_GLOBAL_DIR override is retired")
+  if (input.isPackaged && env.ALPHA_ENV_BASE_DIR !== undefined)
+    throw new Error("packaged builds refuse external alpha base overrides")
+  if (input.baseRoot !== undefined && env.ALPHA_ENV_BASE_DIR !== undefined)
+    throw new Error("multiple alpha base inputs are not allowed")
+
   const environment = resolveAppEnvironment(input)
-  const baseRoot = defaultAlphaBaseRoot(input.homeDir)
-  const override = env.ALPHA_GLOBAL_DIR?.trim()
-  const mutableRoot = override || environmentMutableRoot(environment, baseRoot)
-  // 兼容读源(迁移 source)= 旧单根布局。覆盖态下一切都在覆盖根里(测试隔离语义:无旧布局可导)。
-  const legacyRoot = override || baseRoot
-  if (!override) env.ALPHA_GLOBAL_DIR = mutableRoot
+  const externalBase = input.isPackaged ? undefined : env.ALPHA_ENV_BASE_DIR
+  const requestedBase = input.baseRoot ?? externalBase ?? defaultAlphaBaseRoot(input.appDataDir)
+  if (!requestedBase.trim() || !isAbsolute(requestedBase)) throw new Error("alpha base must be a non-empty absolute path")
+
+  const lexicalBase = normalize(requestedBase)
+  rejectTerminalSymlink(lexicalBase, "alpha base")
+  const lexicalRoots = environmentRoots(lexicalBase)
+  assertSiblingRoots(Object.values(lexicalRoots), "lexical")
+  assertOutsideRetiredRoot([lexicalBase, ...Object.values(lexicalRoots)], input.homeDir ?? homedir(), false)
+
+  const baseRoot = prospectiveCanonical(lexicalBase)
+  const roots = environmentRoots(baseRoot)
+  const canonicalRoots = {
+    dev: prospectiveCanonical(roots.dev),
+    prod: prospectiveCanonical(roots.prod),
+    beta: prospectiveCanonical(roots.beta),
+  }
+  assertSiblingRoots(Object.values(canonicalRoots), "canonical")
+  assertOutsideRetiredRoot([baseRoot, ...Object.values(canonicalRoots)], input.homeDir ?? homedir(), true)
+
+  const directories = [baseRoot, join(baseRoot, "env"), ...Object.values(canonicalRoots), join(baseRoot, "cas")]
+  directories.forEach((directory) => mkdirSync(directory, { recursive: true }))
+  directories.forEach((directory) => assertCanonicalDirectory(directory, directory))
+
+  const mutableRoot = canonicalRoots[environment]
+  env.ALPHA_GLOBAL_DIR = mutableRoot
   current = Object.freeze({
     environment,
     registryChannel: registryChannelFor(environment),
     buildChannel: input.channel,
     packaged: input.isPackaged,
     mutableRoot,
-    legacyRoot,
-    // 共享 CAS 基根(REQ-102 #317):CAS 落 <casBaseRoot>/cas,prod/beta/dev 共享去重(blob 不可变、
-    // 按 digest 寻址,跨环境共享无污染面);语义独立于 legacyRoot(迁移只读 source)——当前同值是
-    // 布局事实,不是耦合契约。覆盖态(测试隔离)一切进覆盖根。
-    casBaseRoot: override || baseRoot,
-    rootOverridden: Boolean(override),
+    casBaseRoot: baseRoot,
+    rootOverridden: input.baseRoot !== undefined || externalBase !== undefined,
     updaterFeedChannel: updaterFeedChannelFor(environment),
   })
   return current
+}
+
+/** main 消费方的唯一根解析：快照优先；无快照只接受显式、绝对且不指向退休根的派生输出。 */
+export function resolveAlphaGlobalRoot(env: NodeJS.ProcessEnv = process.env, homeDir: string = homedir()): string {
+  if (current) return current.mutableRoot
+  const raw = env.ALPHA_GLOBAL_DIR?.trim()
+  if (!raw || !isAbsolute(raw)) throw new Error("ALPHA_GLOBAL_DIR requires an absolute initialized root")
+  assertOutsideRetiredRoot([normalize(raw)], homeDir, false)
+  const canonical = prospectiveCanonical(raw)
+  assertOutsideRetiredRoot([canonical], homeDir, true)
+  return canonical
+}
+
+/** 高风险批次入口调用：冻结的 base、三环境根与 CAS endpoint 身份必须仍然完全一致。 */
+export function assertAlphaEnvironmentIdentity(): void {
+  const info = getAlphaEnvironment()
+  const roots = environmentRoots(info.casBaseRoot)
+  ;[info.casBaseRoot, ...Object.values(roots), join(info.casBaseRoot, "cas")].forEach((root) =>
+    assertCanonicalDirectory(root, root),
+  )
+  if (roots[info.environment] !== info.mutableRoot) throw new Error("frozen alpha root mapping changed")
+}
+
+function environmentRoots(baseRoot: string): Record<AppEnvironment, string> {
+  return {
+    dev: environmentMutableRoot("dev", baseRoot),
+    prod: environmentMutableRoot("prod", baseRoot),
+    beta: environmentMutableRoot("beta", baseRoot),
+  }
+}
+
+function assertCanonicalDirectory(directory: string, expected: string): void {
+  try {
+    const stat = lstatSync(directory)
+    if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error("endpoint is not a real directory")
+    if (normalize(realpathSync(directory)) !== normalize(expected)) throw new Error("canonical identity drifted")
+  } catch {
+    throw new Error("alpha root identity cannot be confirmed")
+  }
+}
+
+function prospectiveCanonical(input: string): string {
+  const suffix: string[] = []
+  let cursor = normalize(input)
+  while (true) {
+    try {
+      lstatSync(cursor)
+    } catch (error) {
+      if (errorCode(error) !== "ENOENT") throw new Error("alpha root identity cannot be confirmed", { cause: error })
+      const parent = dirname(cursor)
+      if (parent === cursor) throw new Error("alpha root identity cannot be confirmed", { cause: error })
+      suffix.push(basename(cursor))
+      cursor = parent
+      continue
+    }
+    try {
+      if (suffix.length > 0 && !statSync(cursor).isDirectory()) throw new Error("existing ancestor is not a directory")
+      return resolve(realpathSync(cursor), ...suffix.reverse())
+    } catch {
+      throw new Error("alpha root identity cannot be confirmed")
+    }
+  }
+}
+
+function rejectTerminalSymlink(directory: string, label: string): void {
+  try {
+    if (lstatSync(directory).isSymbolicLink()) throw new Error(`${label} cannot be a symlink`)
+  } catch (error) {
+    if (errorCode(error) === "ENOENT") return
+    throw error
+  }
+}
+
+function errorCode(error: unknown): unknown {
+  if (!error || typeof error !== "object" || !("code" in error)) return undefined
+  return error.code
+}
+
+function assertSiblingRoots(roots: string[], kind: string): void {
+  for (const root of roots)
+    for (const other of roots)
+      if (root !== other && related(root, other)) throw new Error(`${kind} environment roots overlap`)
+  if (new Set(roots).size !== roots.length) throw new Error(`${kind} environment roots alias`)
+}
+
+function assertOutsideRetiredRoot(candidates: string[], homeDir: string, canonical: boolean): void {
+  const retiredLexical = normalize(join(homeDir, ".alpha"))
+  const retired = canonical ? retiredCanonical(retiredLexical, homeDir) : retiredLexical
+  if (candidates.some((candidate) => related(normalize(candidate), retired)))
+    throw new Error("alpha root is related to the retired global root")
+}
+
+function retiredCanonical(retiredRoot: string, homeDir: string): string {
+  try {
+    return normalize(realpathSync(retiredRoot))
+  } catch (error) {
+    if (errorCode(error) !== "ENOENT") throw new Error("retired alpha root identity cannot be confirmed", { cause: error })
+    return join(prospectiveCanonical(homeDir), ".alpha")
+  }
+}
+
+function related(left: string, right: string): boolean {
+  return sameOrInside(left, right) || sameOrInside(right, left)
+}
+
+function sameOrInside(child: string, parent: string): boolean {
+  const rel = relative(parent, child)
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))
 }
 
 export function getAlphaEnvironment(): AlphaEnvironmentInfo {

@@ -1,7 +1,7 @@
 // factory-deny — REQ-067(用户拍板 2026-07-08,与 REQ-065 修订同一口径):上游默认禁项**零明文**。
 //
 // customize-opencode 这类「上游自带、alpha 出厂即禁」的技能,禁用是产品内置行为,不该以
-// `permission.skill.<n>: "deny"` 明文出现在用户配置(`~/.alpha/alpha.jsonc`)里 —— 用户配置只放
+// `permission.skill.<n>: "deny"` 明文出现在用户配置(`<current-environment-root>/alpha.jsonc`)里 —— 用户配置只放
 // 用户自己的东西。机制与出厂技能路径(factory-paths.ts)同构:main 算好 effective 名单
 // (出厂清单 − 用户在治理面的解禁)→ `ALPHA_FACTORY_DENY_SKILLS`(JSON 数组)→ 本模块在
 // config hook 里内存注入:

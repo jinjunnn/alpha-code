@@ -1,5 +1,5 @@
 // 自动化(定时任务)实体 —— REQ-021 全期共用形状(A1 只消费其中本地只读子集)。
-// 落盘:~/.alpha/automations/<id>.json(main/alpha-automations.ts);运行记录写目标项目
+// 落盘:<current-environment-root>/automations/<id>.json(main/alpha-automations.ts);运行记录写目标项目
 // .alpha/runs/auto-<id>-<ts>/(ADR-019 schema)。跨 bundle 纯类型,零运行时依赖。
 
 /** 调度形状。tz 字段 A1 只存不算(计算用系统本地时区,ADR-022 §边界)。 */
@@ -58,7 +58,7 @@ export type AutomationEvent =
   | { type: "run-finished"; taskId: string; record: AutomationRunRecord }
   | { type: "tasks-changed" }
 
-/** 全局调度状态(~/.alpha/automations/_state.json)。 */
+/** 当前环境的全局调度状态(<current-environment-root>/automations/_state.json)。 */
 export interface AutomationGlobalState {
   pausedAll: boolean
   /** 全局 dailyRunCap 记账:日期(YYYY-MM-DD,本地)+ 当日已运行次数。 */

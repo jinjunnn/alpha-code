@@ -42,7 +42,7 @@ import {
 // 兜底真源(ADR-023 两级真源;与 renderer 的 B20 兜底同一字节)。
 import bundledCatalogJson from "../renderer/extensions/alpha-catalog.json"
 import type { Catalog } from "../renderer/extensions/catalog-types"
-import { environmentMutableRoot, getAlphaEnvironment } from "./alpha-environment"
+import { assertAlphaEnvironmentIdentity, environmentMutableRoot, getAlphaEnvironment } from "./alpha-environment"
 import { createInventoryQuery } from "./ext-inventory"
 import { decodeSetStateIntent, decodeUninstallIntent, installCatalog, installUncuratedAgentImport, installUncuratedSkillImport, listGenerationsByKey, removeInstallGrants, rollbackGenerationByKey, seedPluginFileProbe, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
 import { fetchCurationBlob } from "./curation-blobs"
@@ -76,6 +76,7 @@ function checkRuntime(tool: string): Promise<{ ok: boolean }> {
 /** registryChannel:冻结环境快照的 registry 通道(REQ-098 #302),由 composition root(index.ts)
  *  注入 —— IPC handler 与 planner 的 catalog 拉取共用同一份,类型必填(无缺省可静默回落 stable)。 */
 export function registerExtIpcHandlers(userDataPath: string, registryChannel: "stable" | "preview" | "dev") {
+  assertAlphaEnvironmentIdentity()
   // REQ-099 #305:未策展自定义 MCP 专用通道(catalog MCP 走 ext-install-catalog)与未策展 npm
   // plugin 导入的 body —— #336(残留4)抽至 electron-free 的 ext-uncurated-bodies(账本写失败的
   // fail-closed 返回 + 精确补偿可注入测试);此处只接线,注册仍经写通道表(文件尾),过恢复
@@ -111,7 +112,7 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   // main 的 flat writeSkill/writeAgent 已无生产调用方,仅作既有测试覆盖的 flat 原语保留。
   ipcMain.handle("ext-factory-skill-ids", () => factorySkillIds())
 
-  // REQ-037 上游能力治理:真源 ~/.alpha/governance.json,物化 home jsonc 受控叶子(见 alpha-governance.ts)。
+  // REQ-037 上游能力治理:真源 <current-environment-root>/governance.json,物化 home jsonc 受控叶子。
   // apply 后由 renderer 调 refreshEngine()(dispose)热生效 —— 与安装链路同节奏。
   // REQ-067:factoryDenied = 出厂默认禁的有效名单(出厂清单 − 用户解禁)—— 菜单过滤与治理面板共用
   ipcMain.handle("builtin-read", () => {
@@ -125,7 +126,7 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   ipcMain.handle("builtin-reset", () => resetBuiltinPolicy())
 
   // REQ-032:远程 catalog(ETag+验签+缓存,回退链 远端→缓存→内置由 renderer 兜底)与远程技能安装
-  // (下载+sha256 校验在 main,写盘走 builtin 同管线:~/.alpha + 桥 + 账本)。
+  // (下载+sha256 校验在 main,写盘走当前环境 root + 账本同一管线)。
   // REQ-033:agent 导入两段式,codex 审计后收紧两条信任边界:
   //  H1 — preview 读文件必须经 openFilePicker 的授权 token(pickedFiles 注册表:sender 绑定 + 单次
   //       消费),renderer 无法拿任意路径当读 oracle;
@@ -191,7 +192,7 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
     if (result.canceled || result.filePaths.length === 0) return { ok: false, canceled: true, reason: "已取消" }
     return { ok: true, srcDir: result.filePaths[0]! }
   }
-  // REQ-018 安装账本:合并只读视图(global ~/.alpha + 可选 project .alpha)
+  // REQ-018 安装账本:合并只读视图(current-environment global + 可选 project .alpha)
   ipcMain.handle("ext-list-installs", (_event: IpcMainInvokeEvent, projectDir?: string) => listInstalls(projectDir))
   // REQ-100 #313:旧 receipt-based ext-uninstall 通道已下线 —— renderer 提供的 receipt.files/configKey
   // 直达 rmSync/removePluginPath 是任意路径删除通道(startsWith 前缀挡不住 `..`,Codex review #345
@@ -454,10 +455,11 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
     log: (event, detail) => getLogger().log(`[req100-tx-recovery] ${event} ${JSON.stringify(detail)}`),
     }
   }
+  assertAlphaEnvironmentIdentity()
   const txRecovery = recoverExtensionTransactions(alphaGlobalRoot(), recoveryOpts(alphaGlobalRoot()))
   // #347:写方事务准入 gate —— 每次写操作前恢复收敛 + 终态探测放行(进程内 per-root mutex
   // 把恢复→探测→操作链成一条所有权链;拒绝语义与 busy 一致,如实返回 reason)。
-  const recoveryGate = makeRecoveryGate(recoveryOpts, (m) => getLogger().log(m))
+  const recoveryGate = makeRecoveryGate(recoveryOpts, (m) => getLogger().log(m), assertAlphaEnvironmentIdentity)
   // #390(review r1 Blocker):启动期全局生态导入必须过恢复 gate,不能只靠 ledgerReady barrier ——
   // 启动恢复失败/仍有非终态 journal 时 barrier 只 loud 记录后正常 resolve,若直接 installUncurated…
   // 就会在未收敛 journal 的 root 上创建新事务写同一本账。经 withRecoveredWrite 包装:恢复→终态探测→
@@ -710,6 +712,7 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   // (恢复 gate 拒非终态 journal 是其本职,与 retire 对象语义相反;不写 ledger/config/store),
   // 经 JOURNAL_ADMIN_CHANNELS 独立注册表 + 构造器接入;互斥 = retire 自持 root Bundle 锁。
   const journalGlobalRoots = (): JournalRootRef[] => {
+    assertAlphaEnvironmentIdentity()
     const base = getAlphaEnvironment().casBaseRoot
     return [
       { identity: "dev", root: environmentMutableRoot("dev", base) },

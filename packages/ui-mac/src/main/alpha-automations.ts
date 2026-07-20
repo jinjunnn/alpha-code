@@ -1,4 +1,4 @@
-// 自动化任务存储(REQ-021 A1)——~/.alpha/automations/<id>.json 一任务一文件 + _state.json 全局态。
+// 自动化任务存储(REQ-021 A1)——<current-environment-root>/automations/<id>.json + _state.json。
 // 形制对齐 alpha-installs.ts(alphaGlobalRoot 同根、校验后原子写、坏文件跳过不清库)。
 // 纯存储层:不含调度逻辑(automation-scheduler.ts)、不触达引擎。
 

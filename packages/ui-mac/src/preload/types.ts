@@ -176,7 +176,7 @@ export type ProvenanceRequest =
     }
   | { type: "plugin"; name: string; package: string }
 export type ProvenanceVerdict = { type: "skill" | "mcp" | "plugin"; name: string; verified: boolean; reason: string }
-/** Install destination: global (~/.alpha + ~/.opencode bridge) or a specific project's .alpha. */
+/** Install destination: the frozen current-environment root or a specific project's .alpha. */
 export type InstallTarget = { scope: "global" } | { scope: "project"; projectDir: string }
 /** Catalog provenance recorded into the receipt (id + catalog snapshot version for update checks). */
 export type InstallMeta = { catalogId?: string; version?: string }
@@ -291,11 +291,9 @@ export type AlphaEnvironmentInfo = {
   packaged: boolean
   /** 本环境的可变状态根(config/receipts/grants/secret refs/enabled state 的分域落点)。 */
   mutableRoot: string
-  /** 旧单根布局根(迁移的只读 source;dev 环境下 = mutableRoot)。 */
-  legacyRoot: string
-  /** 共享 CAS 基根(REQ-102:CAS 落 <casBaseRoot>/cas,prod/beta/dev 共享去重;覆盖态 = 覆盖根)。 */
+  /** 共享 canonical 基根(REQ-102:CAS 落 <casBaseRoot>/cas,三环境 mutable root 落 env/ 下)。 */
   casBaseRoot: string
-  /** ALPHA_GLOBAL_DIR 预置覆盖生效(测试隔离/开发者显式 export)。 */
+  /** base 由 unpackaged override 或内部 onboarding 隔离参数提供。 */
   rootOverridden: boolean
   updaterFeedChannel: "latest" | "beta" | null
 }
@@ -410,7 +408,7 @@ export type ElectronAPI = {
     /** REQ-036 出厂技能名单(skills.paths 注入的技能名;ALPHA_FACTORY_SKILLS_DISABLE 时为空)——
      *  hub 用来把对应 catalog 条目标成「出厂内置」而非「可安装」(S18 X1)。 */
     factorySkillIds: () => Promise<string[]>
-    /** REQ-037 上游能力治理(真源 ~/.alpha/governance.json;物化 home jsonc 受控叶子,apply 后
+    /** REQ-037 上游能力治理(真源 <current-environment-root>/governance.json;物化 home jsonc 受控叶子,apply 后
      *  renderer 需自行 refreshEngine() 使 dispose 热生效)。 */
     builtinRead: () => Promise<{ gov: AlphaBuiltinPolicy; protection: { hard: string[]; alphaInjected: string[]; confirm: string[] }; factoryDenied: string[] }>
     builtinApply: (
@@ -496,7 +494,7 @@ export type ElectronAPI = {
       | { ok: true; files?: string[]; name?: string; warning?: string; projectionLag?: string }
       | { ok: false; reason: string }
     >
-    // REQ-018 安装账本:global(~/.alpha)+ project(<dir>/.alpha)receipts 合并只读视图
+    // REQ-018 安装账本:current-environment global + project(<dir>/.alpha) receipts 合并只读视图
     listInstalls: (projectDir?: string) => Promise<InstallLedgerView>
     /** REQ-100 #313:key-based v2 卸载 —— renderer 只提供 type/name/scope,receipt 事实由 main
      *  账本自查(ADR-028 §1);generation skill 走锁内 journaled store+ledger teardown。 */

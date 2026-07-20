@@ -2,10 +2,10 @@
 // data-clear-boot.ts)。分级:credentials(凭证)⊂ data(全部数据,为卸载做准备)。
 //
 // 安全边界(fail-closed,与 REQ-044 provenance 同一纪律):
-//   - 只删白名单根(userData / ~/.alpha / 引擎数据目录)内的路径,executeClear 逐项 realpath 复核,
+//   - 只删白名单根(userData / 当前环境 mutable root / 引擎数据目录)内的路径,executeClear 逐项 realpath 复核,
 //     越界一律拒删(失败留痕,不静默);
 //   - symlink 永不跟随:lstat 语义,删链只删链本身;
-//   - `~/.opencode` 里只摘 alpha 自有的 symlink(目标解析进 ~/.alpha 才算),真实文件/外来链一律不碰
+//   - `~/.opencode` 里只摘 alpha 自有的 symlink(目标解析进当前环境 root 才算),真实文件/外来链一律不碰
 //     (ADR-019 §4:用户自建内容不迁移、不接管、更不删除);
 //   - 引擎数据目录(XDG …/opencode,含会话 DB 与引擎 auth.json)与独立安装的 opencode CLI 共享,
 //     删除必须由调用方显式 opt-in(includeShared),对话框文案如实告知。
@@ -19,7 +19,7 @@ export type ClearLevel = "credentials" | "data"
 
 export type ClearRoots = {
   userData: string
-  alphaGlobal: string // alphaGlobalRoot() —— ~/.alpha
+  alphaGlobal: string // alphaGlobalRoot() —— frozen current environment root
   opencodeHome: string // opencodeHomeDir() —— ~/.opencode(只摘自有链,不作删除根)
   engineData: string // XDG …/opencode(共享面,须 opt-in)
 }
@@ -65,7 +65,7 @@ export type PlanItem = ManifestItem & { path: string; present: boolean; bytes: n
 
 export type ClearPlan = {
   items: PlanItem[]
-  /** ~/.opencode 内解析进 ~/.alpha 的自有 symlink(全部数据级才摘)。 */
+  /** ~/.opencode 内解析进当前环境根的自有 symlink(全部数据级才摘)。 */
   bridgeLinks: string[]
   totalBytes: number
 }
@@ -110,7 +110,7 @@ function resolveLinkTarget(fs: FsDeps, linkPath: string): string | null {
 
 /**
  * `~/.opencode` 内 alpha 自有 symlink 扫描(深度 ≤2:kind 级整目录链 + kind 目录内逐条目链)。
- * 判据 = 链目标解析进 ~/.alpha(realpath 优先,目标已失效时退回字面解析)。真实文件/目录、
+ * 判据 = 链目标解析进当前环境根(realpath 优先,目标已失效时退回字面解析)。真实文件/目录、
  * 目标在别处的链,一律不入列。
  */
 export function findAlphaOwnedLinks(fs: FsDeps, opencodeHome: string, alphaGlobal: string): string[] {
@@ -141,7 +141,7 @@ export function findAlphaOwnedLinks(fs: FsDeps, opencodeHome: string, alphaGloba
 
 /**
  * 计划(dry-run):列出将删项 + 体积。credentials = 白名单文件;data = credentials + userData 全部
- * 子项 + ~/.alpha 整根 + 引擎数据目录(shared,opt-in)+ 桥链。日志目录排到最后删(留痕窗口)。
+ * 子项 + 当前环境整根 + 引擎数据目录(shared,opt-in)+ 桥链。日志目录排到最后删(留痕窗口)。
  */
 export function planClear(fs: FsDeps, level: ClearLevel, roots: ClearRoots): ClearPlan {
   const items: PlanItem[] = []
@@ -168,7 +168,12 @@ export function planClear(fs: FsDeps, level: ClearLevel, roots: ClearRoots): Cle
       bytes: sizeOf(fs, path.join(roots.userData, child)),
     })
   }
-  const alphaRoot: ManifestItem = { id: "alpha-global", root: "alphaGlobal", rel: ".", desc: "全局安装物与自动化(~/.alpha)" }
+  const alphaRoot: ManifestItem = {
+    id: "alpha-global",
+    root: "alphaGlobal",
+    rel: ".",
+    desc: "当前环境的全局安装物与自动化",
+  }
   push({ ...alphaRoot })
   const engineRoot: ManifestItem = {
     id: "engine-data",
@@ -198,6 +203,10 @@ export function executeClear(
   roots: ClearRoots,
   opts: { includeShared: boolean },
 ): ClearResultItem[] {
+  const alphaInfo = fs.lstat(roots.alphaGlobal)
+  const alphaCanonical = fs.realpath(roots.alphaGlobal)
+  if (!alphaInfo?.isDir || alphaInfo.isSymlink || alphaCanonical !== path.normalize(roots.alphaGlobal))
+    throw new Error("current alpha root identity cannot be confirmed — clear refused")
   const guards = [roots.userData, roots.alphaGlobal, roots.engineData].map((r) => fs.realpath(r) ?? path.normalize(r))
   const results: ClearResultItem[] = []
 

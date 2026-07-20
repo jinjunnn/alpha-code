@@ -5,15 +5,59 @@
 // 而非「覆盖全局」的语义在此阶段——覆盖策略留 T1 信任门后细化);skills 走 { paths:[] } object 并集
 // (与全局 REQ-059 同一 schema 教训,数组会被引擎拒)。plugin 不在此(走 host fan-out,ADR-006 生 TS 雷)。
 
-import { join, resolve } from "node:path"
+import { lstatSync, realpathSync } from "node:fs"
+import { homedir } from "node:os"
+import { isAbsolute, join, normalize, relative, resolve } from "node:path"
 
-/** REQ-060 边界(真机发现):home 目录实例的 `<dir>/.alpha` 就是全局 `~/.alpha` —— 其 alpha.jsonc 是
- *  全局引擎配置(已经 G1/OPENCODE_CONFIG 注入),不是项目配置。项目级通道(config hook / plugin
- *  fan-out)对这种目录必须整体跳过:否则全局 mcp 被信任门误 gated(噪声 loud + 将来 UI 会对 home
- *  弹「信任你自己的全局配置」的 consent),且 home 侧一旦误授 consent,`~/.alpha/plugins/`(vendored
- *  全局插件,已走 config.plugin[])会被 fan-out 双重加载。 */
-export function isGlobalAlphaDir(directory: string, globalAlphaRoot: string): boolean {
-  return resolve(join(directory, ".alpha")) === resolve(globalAlphaRoot)
+export type ProjectDirectoryIdentity = "project" | "retired-home" | "unknown"
+
+/** home 项目边界三态：realpath 无法确认一律 unknown，由调用方 fail-closed 拒绝项目通道。 */
+export function projectDirectoryIdentity(directory: string, homeDir: string = homedir()): ProjectDirectoryIdentity {
+  try {
+    const candidate = normalize(realpathSync(directory))
+    const home = normalize(realpathSync(homeDir))
+    return candidate === home ? "retired-home" : "project"
+  } catch {
+    return "unknown"
+  }
+}
+
+/** sidecar/ext 无 main 快照，必须只消费 main 已派生的 canonical root。 */
+export function requireAlphaGlobalRoot(value: string | undefined = process.env.ALPHA_GLOBAL_DIR, homeDir: string = homedir()): string {
+  const raw = value?.trim()
+  if (!raw || !isAbsolute(raw)) throw new Error("ALPHA_GLOBAL_DIR requires an absolute initialized root")
+  const candidate = normalize(raw)
+  const retired = normalize(join(homeDir, ".alpha"))
+  if (related(candidate, retired)) throw new Error("ALPHA_GLOBAL_DIR is related to the retired global root")
+  try {
+    const canonical = normalize(realpathSync(candidate))
+    const stat = lstatSync(candidate)
+    if (stat.isSymbolicLink() || !stat.isDirectory() || canonical !== candidate)
+      throw new Error("ALPHA_GLOBAL_DIR is not the canonical directory")
+    const home = normalize(realpathSync(homeDir))
+    const retiredCanonical = (() => {
+      try {
+        return normalize(realpathSync(retired))
+      } catch (error) {
+        if (!error || typeof error !== "object" || !("code" in error) || error.code !== "ENOENT") throw error
+        return join(home, ".alpha")
+      }
+    })()
+    if (related(canonical, retiredCanonical)) throw new Error("ALPHA_GLOBAL_DIR resolves to the retired global root")
+    return canonical
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("ALPHA_GLOBAL_DIR")) throw error
+    throw new Error("ALPHA_GLOBAL_DIR identity cannot be confirmed", { cause: error })
+  }
+}
+
+function related(left: string, right: string): boolean {
+  return sameOrInside(left, right) || sameOrInside(right, left)
+}
+
+function sameOrInside(child: string, parent: string): boolean {
+  const rel = relative(parent, child)
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))
 }
 
 export type MergeResult = {

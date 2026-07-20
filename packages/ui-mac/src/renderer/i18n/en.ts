@@ -562,7 +562,7 @@ export const dict = {
   "alpha.ext.detailCommand": "Launch command",
   "alpha.ext.detailEndpoint": "Remote endpoint",
   "alpha.ext.detailScope": "Scope",
-  "alpha.ext.scopeGlobal": "Global (~/.alpha)",
+  "alpha.ext.scopeGlobal": "Global (current environment)",
   "alpha.ext.detailInstallDir": "Install location",
   "alpha.ext.detailPackage": "npm package",
   "alpha.ext.detailMode": "Mode",

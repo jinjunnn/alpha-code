@@ -1,4 +1,4 @@
-// REQ-059 全局层:alpha 引擎配置真源 = `~/.alpha/alpha.jsonc`(经 G1 = OPENCODE_CONFIG 注入,
+// REQ-059 全局层:alpha 引擎配置真源 = `<current-environment-root>/alpha.jsonc`(经 G1 = OPENCODE_CONFIG 注入,
 // sidecar 内 injectAlphaConfig 设 env;source T0 spike audits/2026-07-07-req059-060-t0-spike)。
 //
 // 本模块是 electron-free 纯逻辑核(单测覆盖),只做「判定 + 计划计算」,不落盘、不读环境:
@@ -8,21 +8,15 @@
 //   4. 迁移合并计划(legacy jsonc + XDG provider → alpha.jsonc,copy-don't-delete + 幂等)。
 // 运行时接线(sidecar 注入 / ext-config 写入切换 / reconcile 落盘)在各消费方,不在此。
 
-import os from "node:os"
 import path from "node:path"
-import { tryGetAlphaEnvironment } from "./alpha-environment"
+import { resolveAlphaGlobalRoot } from "./alpha-environment"
 
-/** `~/.alpha` global root. Mirrors alpha-installs.alphaGlobalRoot **including the REQ-098 #301 freeze**:
- *  冻结后以快照为准 —— 否则运行期 env 漂移会出现「配置写锁锁 A 根、alphaJsoncPath 写 B 根」的
- *  分根写(Codex review #351);未初始化(纯单测/sidecar)才退回 process.env。
- *  (alpha-environment 与本模块同为 os/path 级纯模块,不破坏 dependency-light。) */
+/** 当前环境 canonical mutable root；无快照时只接受已校验的派生 ALPHA_GLOBAL_DIR。 */
 export function alphaGlobalRoot(): string {
-  const frozen = tryGetAlphaEnvironment()
-  if (frozen) return frozen.mutableRoot
-  return process.env.ALPHA_GLOBAL_DIR || path.join(os.homedir(), ".alpha")
+  return resolveAlphaGlobalRoot()
 }
 
-/** The single alpha engine-config truth file (`~/.alpha/alpha.jsonc`). alpha always writes `.jsonc`. */
+/** The single alpha engine-config truth file for the frozen current environment. alpha always writes `.jsonc`. */
 export function alphaJsoncPath(): string {
   return path.join(alphaGlobalRoot(), "alpha.jsonc")
 }
@@ -61,7 +55,7 @@ export function isFactoryResourcePath(p: string, factoryNames: readonly string[]
 /**
  * REQ-065:重写 skills.paths 里的「出厂技能资源路径」组。**修订(用户拍板 2026-07-08)**:出厂路径
  * 不再写入用户配置(改由 env → ext config hook 内存注入,见 factory-skills.ts),本函数的现役用途
- * = 传 [] **剥离**历史版本写盘的出厂条目(布局+出厂名单双重判定;用户自加路径与 `~/.alpha/skills`
+ * = 传 [] **剥离**历史版本写盘的出厂条目(布局+出厂名单双重判定;用户自加路径与当前环境 skills
  * 用户安装物目录一概不动)。追加分支保留(通用性/测试),生产不再走。幂等;返回是否有改动。
  */
 export function rewriteFactorySkillPaths(

@@ -232,7 +232,7 @@ export type CollectInventoryOpts = {
   seedDir?: string | null
   /** 平台 token 注入(测试);缺省 = 当前进程平台。 */
   platformToken?: string
-  /** 全局账本根(env-scoped `~/.alpha`,REQ-098 main 真源)。 */
+  /** 全局账本根(frozen current-environment root,REQ-098 main 真源)。 */
   globalRoot: string
   /** 当前项目目录(可选;项目账本 = `<project>/.alpha`,fail-closed 由 alphaRoot/readLedgerV2 承载)。 */
   projectDir?: string

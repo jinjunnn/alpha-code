@@ -27,7 +27,11 @@ export type RecoveryGate = {
 /** per-root 进程内 mutex + 恢复准入。recoveryOpts 按 root 构造(seam 必须写传入的 root)。
  *  log:准入耗时观测(review #376 m4:每次准入 = 同步 journal 扫描 ×(恢复+GC+探测),GC 后
  *  上限 ~100 张终态件,首次面对大量存量时无界 —— 超阈值 loud,供性能回归定位)。 */
-export function makeRecoveryGate(recoveryOpts: (root: string) => RecoverOptions, log?: (message: string) => void): RecoveryGate {
+export function makeRecoveryGate(
+  recoveryOpts: (root: string) => RecoverOptions,
+  log?: (message: string) => void,
+  verifyRoot?: (root: string) => void,
+): RecoveryGate {
   const chains = new Map<string, Promise<unknown>>()
   const SLOW_ADMIT_MS = 250
   async function admit(root: string): Promise<{ ok: true } | GateRefusal> {
@@ -40,6 +44,11 @@ export function makeRecoveryGate(recoveryOpts: (root: string) => RecoverOptions,
     }
   }
   async function admitInner(root: string): Promise<{ ok: true } | GateRefusal> {
+    try {
+      verifyRoot?.(root)
+    } catch {
+      return { ok: false, reason: "root identity cannot be confirmed — operation refused (fail closed)" }
+    }
     const rec = await recoverExtensionTransactions(root, recoveryOpts(root))
     if (!rec.ok) return { ok: false, reason: `ledger recovery incomplete — operation refused: ${rec.reason ?? "unknown"}` }
     const corrupt = rec.reports.find((r) => r.corrupt)

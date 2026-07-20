@@ -1,5 +1,5 @@
 // REQ-059 T3b:agent md(frontmatter + body)→ 引擎 config agent 条目 —— 桥退役后全局 agent 经
-// `~/.alpha/alpha.jsonc` 的 `agent.<name>` 条目进引擎(G1/OPENCODE_CONFIG 通道),不再造 `.opencode` 桥。
+// 当前环境 `alpha.jsonc` 的 `agent.<name>` 条目进引擎(G1/OPENCODE_CONFIG 通道),不再造 `.opencode` 桥。
 //
 // 解析器纪律(沿 ext-import-validate:不引 YAML 解析器):只认 alpha 自有 agent 资产/创建流实际用到的
 // 受限形状 —— 顶层平铺 `key: value` + `permission:` 一~两层嵌套(tool: action 或 tool 下 pattern→action)。

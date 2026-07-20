@@ -148,9 +148,9 @@ function prepareSidecarEnv(password: string, userDataPath: string, extPluginPath
 //      (ADR-006 caveat)的运行时证明 = alpha_ping 出现在工具表且能执行(真机批核验)。
 function injectAlphaConfig(userDataPath: string, extPluginPath?: string) {
   try {
-    // REQ-059 G1:引擎经 OPENCODE_CONFIG 加载 alpha 引擎配置真源 ~/.alpha/alpha.jsonc(mcp/plugin/
+    // REQ-059 G1:引擎经 OPENCODE_CONFIG 加载当前环境的 alpha.jsonc(mcp/plugin/
     // provider/治理键)。文件通道 → dispose 重建重读文件 = 安装免重启;merge 序 XDG 后(压 provider)/
-    // 项目前(可覆盖);junk 循环不扫单文件 → ~/.alpha 零引擎垃圾(T0 spike 判定)。全新机器 seed
+    // 项目前(可覆盖);junk 循环不扫单文件 → 当前环境根零引擎垃圾(T0 spike 判定)。全新机器 seed
     // {$schema},否则 loadFile 指向不存在文件。逃生 ALPHA_JSONC_TRUTH_DISABLE / ALPHA_LEGACY_INSTALL_ROOT
     // 不注入(回 REQ-018 home walk 行为,ext-config 写入目标也随之回退,两侧一致)。
     if (process.env.ALPHA_JSONC_TRUTH_DISABLE !== "1" && process.env.ALPHA_LEGACY_INSTALL_ROOT !== "1") {
@@ -201,7 +201,7 @@ function injectAlphaConfig(userDataPath: string, extPluginPath?: string) {
       config.instructions = instructions
     }
 
-    // REQ-063:`~/.alpha/instructions/*.md` = 用户经导入门转换的全局指令(如 ~/.claude/CLAUDE.md
+    // REQ-063:`<current-environment-root>/instructions/*.md` = 用户经导入门转换的全局指令(如 ~/.claude/CLAUDE.md
     // 快照)。存在即注入 —— 它们只在用户显式「导入」后出现,是 alpha 原生资产(非继承通道)。
     try {
       const instrDir = path.join(alphaGlobalRoot(), "instructions")

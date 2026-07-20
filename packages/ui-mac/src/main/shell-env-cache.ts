@@ -21,9 +21,10 @@ const PROBE_TIMEOUT = 5_000
 // 修复版首启即剥离危险键,随后干净再探测会整份重写缓存完成自愈。
 const SESSION_CONTROL_KEYS = [
   "ALPHA_GLOBAL_DIR",
+  "ALPHA_ENV_BASE_DIR",
   "ALPHA_OPENCODE_HOME",
   "OPENCODE_CONFIG_DIR",
-  "OPENCODE_CONFIG", // REQ-059:alpha 每 fork 设它指向 ~/.alpha/alpha.jsonc —— 不得被 shell env 缓存跨会话污染
+  "OPENCODE_CONFIG", // REQ-059:alpha 每 fork 设它指向当前环境 alpha.jsonc —— 不得被 shell env 缓存跨会话污染
   "OPENCODE_DB",
   "ALPHA_MIGRATE_ENABLE",
   "ALPHA_JSONC_TRUTH_DISABLE",

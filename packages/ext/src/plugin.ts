@@ -1,10 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs"
-import { homedir } from "node:os"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import type { Plugin } from "@opencode-ai/plugin"
 import { tool } from "@opencode-ai/plugin"
-import { isGlobalAlphaDir, mergeProjectConfig } from "./project-config"
+import { mergeProjectConfig, projectDirectoryIdentity, requireAlphaGlobalRoot } from "./project-config"
 import { loadProjectPlugins, mergeHooks } from "./plugin-fanout"
 import { applyRegister, type RegisterType } from "./register"
 import { applyPromptTakeover } from "./alpha-prompts"
@@ -41,10 +40,9 @@ export const AlphaExt: Plugin = async (input) => {
   // REQ-062 T1:转写残留 warning 去重(每进程每签名一次)
   const rebrandWarned = new Set<string>()
 
-  // REQ-060 边界:home 目录实例(`<dir>/.alpha` == 全局 `~/.alpha`)不走项目级通道 —— 全局 alpha.jsonc
-  // 已经 G1(OPENCODE_CONFIG)注入,再当项目配置读会把全局 mcp 误 gated,且 ~/.alpha/plugins 有双载风险。
-  const globalAlphaRoot = process.env.ALPHA_GLOBAL_DIR?.trim() || join(homedir(), ".alpha")
-  const projectScoped = !isGlobalAlphaDir(input.directory, globalAlphaRoot)
+  // sidecar 初始化批次先复验 main 派生 root 的 canonical 身份；缺失、相对、退休根或 alias 都拒绝。
+  const globalAlphaRoot = requireAlphaGlobalRoot()
+  const projectAllowed = (directory: string) => projectDirectoryIdentity(directory) === "project"
 
   const ownHooks: Awaited<ReturnType<Plugin>> = {
     // REQ-060 项目级扩展物 `.alpha`-only:config hook 按 instance 读 `<directory>/.alpha/alpha.jsonc`
@@ -53,7 +51,7 @@ export const AlphaExt: Plugin = async (input) => {
     // 触发 = 免重启。信任门(项目自带 mcp/plugin = 加载可执行物)= T1 后续,当前 spike 只验通道。
     async config(cfg) {
       try {
-        if (projectScoped) {
+        if (projectAllowed(input.directory)) {
           const f = join(input.directory, ".alpha", "alpha.jsonc")
           if (existsSync(f)) {
             // 信任门:项目自带 mcp(可执行连接器)只在项目已 consent 时加载。consent 落 `.alpha/prefs.json`
@@ -155,10 +153,10 @@ export const AlphaExt: Plugin = async (input) => {
             .default(""),
         },
         async execute(args, ctx) {
-          if (isGlobalAlphaDir(ctx.directory, globalAlphaRoot))
+          if (!projectAllowed(ctx.directory))
             return {
               title: "alpha_register",
-              output: "refused: this session runs in the home directory — project-scoped registration needs a project. Global installs go through the Extension Hub.",
+              output: "refused: the session directory identity cannot be confirmed as a project. Global installs go through the Extension Hub.",
               metadata: { ok: false },
             }
           let entry: Record<string, unknown> | undefined
@@ -266,7 +264,7 @@ export const AlphaExt: Plugin = async (input) => {
 
   // REQ-060 plugin host fan-out:加载项目 `.alpha/plugins/*.js`(信任门:未 consent 不加载可执行物)
   // 并与 ownHooks 合并 return —— 项目插件的 hook 经引擎照常派发,项目零 `.opencode`/零 config.plugin[]。
-  const trusted = projectScoped && readProjectExtensionsConsent(input.directory)
+  const trusted = projectAllowed(input.directory) && readProjectExtensionsConsent(input.directory)
   const projectHooks = await loadProjectPlugins(input.directory, input, trusted, {
     existsSync,
     readdirSync,
@@ -284,6 +282,7 @@ export const AlphaExt: Plugin = async (input) => {
 /** 项目扩展信任门 consent:`<dir>/.alpha/prefs.json` 的 `extensionsConsent.granted === true`(版本化,
  *  ADR-021 模式)。缺失/坏/未授 = 不信任(默认拒绝可执行物,安全红线)。 */
 function readProjectExtensionsConsent(dir: string): boolean {
+  if (projectDirectoryIdentity(dir) !== "project") return false
   try {
     const p = join(dir, ".alpha", "prefs.json")
     if (!existsSync(p)) return false

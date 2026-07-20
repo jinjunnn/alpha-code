@@ -1,5 +1,5 @@
 // Extension Hub file installer (main process) — REQ-018 T2 rework. User-authored / catalog skills
-// and agents now land in the ALPHA truth root (`~/.alpha/{skills,agents}` for global scope,
+// and agents now land in the ALPHA truth root (`<current-environment-root>/{skills,agents}` for global scope,
 // `<project>/.alpha/...` for project scope) and reach the engine through the `.opencode` symlink
 // bridge (alpha-bridge.ts, REQ-004-validated). Every successful install writes a receipt
 // (alpha-installs.ts) recording the exact files it owns, so installed-state/uninstall/update work.
@@ -168,7 +168,7 @@ export function writeSkill(
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : "failed to write skill" }
   }
-  // T3(REQ-059):skills 桥退役 —— 真源 ~/.alpha/skills/<name> 就位即可,引擎经 alpha.jsonc 的
+  // T3(REQ-059):skills 桥退役 —— 当前环境 skills/<name> 就位即可,引擎经 alpha.jsonc 的
   // skills.paths 发现,不再往 .opencode 建桥(不变量:.opencode 内零 alpha 痕迹)。
   const files = [dir]
   const ledger = recordReceipt(roots, { name, type: "skill", files, meta })
@@ -333,7 +333,7 @@ export function installBuiltinSkill(
 }
 
 /** REQ-032:安装**已下载并 sha256 校验过**的远程技能内容(main 内存 → 与 builtin 同管线:
- *  ~/.alpha/skills/<name> + 桥 + 账本;下载与校验在 remote-catalog.downloadRemoteAsset,不在此重复)。 */
+ *  当前环境 skills/<name> + 账本;下载与校验在 remote-catalog.downloadRemoteAsset,不在此重复)。 */
 export function installRemoteSkill(
   name: string,
   contents: Array<{ path: string; data: Buffer }>,
@@ -844,8 +844,8 @@ export function collectBuiltinAgentPayload(
 }
 
 /**
- * 安装 vendored 插件(零网络):复制 resources/plugins/<key> → ~/.alpha/plugins/<name>/ →
- * plugin[] 写 plugin.js 绝对路径(persistPluginPath 校验路径必须在 ~/.alpha/plugins 树内)。
+ * 安装 vendored 插件(零网络):复制 resources/plugins/<key> → 当前环境 plugins/<name>/ →
+ * plugin[] 写 plugin.js 绝对路径(persistPluginPath 校验路径必须在当前环境 plugins 树内)。
  */
 /** #352(Codex 裁决必改 5,versioned 路线):vendored 替换的**纯 staging** —— 新内容落
  *  不可变 versioned 目录 `plugins/<name>@<hex>`(绝不覆盖既有 `<name>` 目录),零 config/账本

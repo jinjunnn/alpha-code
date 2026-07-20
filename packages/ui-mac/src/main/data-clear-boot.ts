@@ -4,7 +4,7 @@
 // 分级流:
 //   凭证级(dev/打包均可用):确认 → 清 BYOK 内存库 + 撤密钥 env + 删凭证文件 → logout()(重置态 +
 //   respawn,fork 时 syncSecretFiles 对缺失 env 做删除 → 不会复活残件)→ 完成提示。
-//   全部级(仅打包态,B14 同款理由:dev 分支后缀库 + 共享 ~/.alpha,删错目标风险 > 收益):
+//   全部级(仅打包态,B14 同款理由:dev 分支后缀库 + 当前环境根,删错目标风险 > 收益):
 //   先备份提示(B14 验收④)→ 红色终确认(列将删项 + 体积 + 共享面 checkbox)→ 停引擎 → 清除 →
 //   退出(数据已清,无可重启的状态)。
 
@@ -20,6 +20,7 @@ import { secretEnvVars } from "./alpha-secret-files"
 import { logout } from "./alpha-auth"
 import * as DataClear from "./data-clear"
 import { safeStorageBackend } from "./platform"
+import { assertAlphaEnvironmentIdentity } from "./alpha-environment"
 
 // REQ-076 T2:safeStorage 残留说明按托管后端分叉(darwin=钥匙串可手动清;win32=DPAPI 绑用户
 // 账户,加密文件删除后无独立残留项可清)——文案如实,不给 Windows 用户指一条不存在的「钥匙串」路。
@@ -87,6 +88,7 @@ export function createDataClearAction(opts: {
   stopSidecars: () => Promise<void>
 }): DataClearAction {
   const clearCredentials = async () => {
+    assertAlphaEnvironmentIdentity()
     const roots = resolveRoots(opts.userDataPath)
     const plan = DataClear.planClear(fsDeps, "credentials", roots)
     const present = plan.items.filter((i) => i.present)
@@ -107,6 +109,7 @@ export function createDataClearAction(opts: {
 
     // 顺序有讲究:①清 BYOK(内存库+权威清 env,自带 respawn 排队)②撤密钥 env(防 respawn 的
     // syncSecretFiles 从残留 env 复活文件)③删文件 ④logout(重置态 + respawn 收尾)
+    assertAlphaEnvironmentIdentity()
     clearByokKeys()
     for (const name of secretEnvVars()) delete process.env[name]
     const results = DataClear.executeClear(fsDeps, plan, roots, { includeShared: true })
@@ -129,11 +132,12 @@ export function createDataClearAction(opts: {
         type: "info",
         title: "仅打包版可用",
         message: "「全部数据」清除仅在打包安装版可用。",
-        detail: "开发构建使用分支后缀数据库,且与本机真实安装共享 ~/.alpha —— 删错目标风险大于收益(与备份菜单同一纪律)。",
+        detail: "开发构建不提供产品级 reset 通道；请使用隔离 base 做验证(与备份菜单同一纪律)。",
         buttons: ["好"],
       })
       return
     }
+    assertAlphaEnvironmentIdentity()
     const roots = resolveRoots(opts.userDataPath)
     const plan = DataClear.planClear(fsDeps, "data", roots)
 
@@ -158,7 +162,7 @@ export function createDataClearAction(opts: {
       message: `将删除约 ${DataClear.formatBytes(plan.totalBytes)} 数据,应用随后退出。此操作不可撤销。`,
       detail:
         `· 应用数据(设置/日志/密钥/凭证):${DataClear.formatBytes(localBytes)}\n` +
-        `· 全局安装物 ~/.alpha 及其在 ~/.opencode 的桥接链接(${plan.bridgeLinks.length} 条)\n` +
+        `· 当前环境安装物及其在 ~/.opencode 的桥接链接(${plan.bridgeLinks.length} 条)\n` +
         `· 引擎数据(会话数据库/项目元数据/引擎凭证):${DataClear.formatBytes(sharedBytes)} —— 见下方勾选\n\n` +
         "不会触碰:你的项目文件、各项目内 .alpha/ 目录、~/.opencode 内你自建的内容、" +
         "~/.opencode/opencode.jsonc(如经定制中心装过连接器/插件,建议先在定制中心卸载,或事后手动清理其条目)。\n" +
@@ -173,6 +177,7 @@ export function createDataClearAction(opts: {
 
     getLogger()?.warn("[c16-data-clear] full data clear confirmed — stopping sidecars")
     await opts.stopSidecars()
+    assertAlphaEnvironmentIdentity()
     const results = DataClear.executeClear(fsDeps, plan, roots, { includeShared: confirm.checkboxChecked })
     logResults("data", results)
     const failed = results.filter((r) => r.outcome === "failed")
