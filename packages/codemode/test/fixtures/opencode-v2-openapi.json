@@ -5515,37 +5515,16 @@
             "name": "location",
             "in": "query",
             "schema": {
-              "anyOf": [
-                {
-                  "type": "object",
-                  "properties": {
-                    "directory": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "workspace": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    }
-                  },
-                  "additionalProperties": false
+              "type": "object",
+              "properties": {
+                "directory": {
+                  "type": "string"
                 },
-                {
-                  "type": "null"
+                "workspace": {
+                  "type": "string"
                 }
-              ]
+              },
+              "additionalProperties": false
             },
             "required": false,
             "style": "deepObject",
@@ -5562,12 +5541,12 @@
                   "type": "object",
                   "properties": {
                     "location": {
-                      "$ref": "#/components/schemas/Location.Info"
+                      "$ref": "#/components/schemas/LocationInfo"
                     },
                     "data": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/PermissionV2.Request"
+                        "$ref": "#/components/schemas/PermissionV2Request"
                       }
                     }
                   },
@@ -5611,14 +5590,7 @@
             "name": "projectID",
             "in": "query",
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
+              "type": "string"
             },
             "required": false
           }
@@ -5635,7 +5607,7 @@
                     "data": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/PermissionSaved.Info"
+                        "$ref": "#/components/schemas/PermissionSavedInfo"
                       }
                     }
                   },
@@ -5724,11 +5696,7 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "allOf": [
-                {
-                  "pattern": "^ses"
-                }
-              ]
+              "pattern": "^ses"
             },
             "required": true
           }
@@ -5743,22 +5711,55 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "type": "object",
-                      "properties": {
-                        "id": {
-                          "type": "string",
-                          "allOf": [
-                            {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": ["evaluated"]
+                            },
+                            "id": {
+                              "type": "string",
                               "pattern": "^per"
+                            },
+                            "effect": {
+                              "type": "string",
+                              "enum": ["allow", "deny"]
                             }
-                          ]
+                          },
+                          "required": ["status", "id", "effect"],
+                          "additionalProperties": false
                         },
-                        "effect": {
-                          "$ref": "#/components/schemas/PermissionV2.Effect"
+                        {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": ["pending"]
+                            },
+                            "request": {
+                              "$ref": "#/components/schemas/PermissionV2Request"
+                            }
+                          },
+                          "required": ["status", "request"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": ["decided"]
+                            },
+                            "receipt": {
+                              "$ref": "#/components/schemas/PermissionV2DecisionReceipt"
+                            }
+                          },
+                          "required": ["status", "receipt"],
+                          "additionalProperties": false
                         }
-                      },
-                      "required": ["id", "effect"],
-                      "additionalProperties": false
+                      ]
                     }
                   },
                   "required": ["data"],
@@ -5803,6 +5804,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "ConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictError"
+                }
+              }
+            }
           }
         },
         "description": "Evaluate and, when approval is required, create a permission request for a session.",
@@ -5814,19 +5825,8 @@
                 "type": "object",
                 "properties": {
                   "id": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "allOf": [
-                          {
-                            "pattern": "^per"
-                          }
-                        ]
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
+                    "type": "string",
+                    "pattern": "^per"
                   },
                   "action": {
                     "type": "string"
@@ -5847,17 +5847,10 @@
                     "type": "object"
                   },
                   "source": {
-                    "$ref": "#/components/schemas/PermissionV2.Source"
+                    "$ref": "#/components/schemas/PermissionV2Source"
                   },
                   "agent": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
+                    "type": "string"
                   }
                 },
                 "required": ["action", "resources"],
@@ -5877,11 +5870,7 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "allOf": [
-                {
-                  "pattern": "^ses"
-                }
-              ]
+              "pattern": "^ses"
             },
             "required": true
           }
@@ -5898,7 +5887,7 @@
                     "data": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/PermissionV2.Request"
+                        "$ref": "#/components/schemas/PermissionV2Request"
                       }
                     }
                   },
@@ -5960,11 +5949,7 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "allOf": [
-                {
-                  "pattern": "^ses"
-                }
-              ]
+              "pattern": "^ses"
             },
             "required": true
           },
@@ -5973,11 +5958,7 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "allOf": [
-                {
-                  "pattern": "^per"
-                }
-              ]
+              "pattern": "^per"
             },
             "required": true
           }
@@ -5992,7 +5973,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/PermissionV2.Request"
+                      "$ref": "#/components/schemas/PermissionV2Request"
                     }
                   },
                   "required": ["data"],
@@ -6056,11 +6037,7 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "allOf": [
-                {
-                  "pattern": "^ses"
-                }
-              ]
+              "pattern": "^ses"
             },
             "required": true
           },
@@ -6069,19 +6046,29 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "allOf": [
-                {
-                  "pattern": "^per"
-                }
-              ]
+              "pattern": "^per"
             },
             "required": true
           }
         ],
         "security": [],
         "responses": {
-          "204": {
-            "description": "<No Content>"
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PermissionV2DecisionReceipt"
+                    }
+                  },
+                  "required": ["data"],
+                  "additionalProperties": false
+                }
+              }
+            }
           },
           "400": {
             "description": "InvalidRequestError",
@@ -6122,32 +6109,25 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "ConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictError"
+                }
+              }
+            }
           }
         },
-        "description": "Respond to a pending permission request owned by a session.",
+        "description": "Atomically decide a permission request or return its exact persisted decision receipt.",
         "summary": "Reply to pending permission request",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "reply": {
-                    "$ref": "#/components/schemas/PermissionV2.Reply"
-                  },
-                  "message": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  }
-                },
-                "required": ["reply"],
-                "additionalProperties": false
+                "$ref": "#/components/schemas/PermissionV2DecisionCommand"
               }
             }
           },
@@ -9311,6 +9291,262 @@
         "description": "Diff the working copy against HEAD (mode git) or the default-branch merge base (mode branch) for the requested location.",
         "summary": "VCS diff"
       }
+    },
+    "/permission": {
+      "get": {
+        "tags": ["permission"],
+        "operationId": "permission.list",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of pending permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PermissionRequest"
+                  },
+                  "description": "List of pending permissions"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Get all pending permission requests across all sessions.",
+        "summary": "List pending permissions"
+      }
+    },
+    "/permission/{requestID}/reply": {
+      "post": {
+        "tags": ["permission"],
+        "operationId": "permission.reply",
+        "parameters": [
+          {
+            "name": "requestID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^per"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Permission processed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean",
+                  "description": "Permission processed successfully"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "PermissionNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionNotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Approve or deny a permission request from the AI assistant.",
+        "summary": "Respond to permission request",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reply": {
+                    "type": "string",
+                    "enum": ["once", "always", "reject"]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                },
+                "required": ["reply"],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/session/{sessionID}/permissions/{permissionID}": {
+      "post": {
+        "tags": ["session"],
+        "operationId": "permission.respond",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses"
+            },
+            "required": true
+          },
+          {
+            "name": "permissionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^per"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Permission processed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean",
+                  "description": "Permission processed successfully"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NotFoundError | PermissionNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/NotFoundError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PermissionNotFoundError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Approve or deny a permission request from the AI assistant.",
+        "summary": "Respond to permission",
+        "deprecated": true,
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "response": {
+                    "type": "string",
+                    "enum": ["once", "always", "reject"]
+                  }
+                },
+                "required": ["response"],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -9340,24 +9576,10 @@
             "type": "string"
           },
           "kind": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "type": "string"
           },
           "field": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "type": "string"
           }
         },
         "required": ["_tag", "message"],
@@ -9447,32 +9669,6 @@
             "enum": ["primary", "secondary", "accent", "success", "warning", "error", "info"]
           }
         ]
-      },
-      "PermissionV2.Effect": {
-        "type": "string",
-        "enum": ["allow", "deny", "ask"]
-      },
-      "PermissionV2.Rule": {
-        "type": "object",
-        "properties": {
-          "action": {
-            "type": "string"
-          },
-          "resource": {
-            "type": "string"
-          },
-          "effect": {
-            "$ref": "#/components/schemas/PermissionV2.Effect"
-          }
-        },
-        "required": ["action", "resource", "effect"],
-        "additionalProperties": false
-      },
-      "PermissionV2.Ruleset": {
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/PermissionV2.Rule"
-        }
       },
       "AgentV2.Info": {
         "type": "object",
@@ -10026,14 +10222,7 @@
             "type": "string"
           },
           "resource": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "type": "string"
           }
         },
         "required": ["_tag", "message"],
@@ -15599,71 +15788,6 @@
         "required": ["_tag", "id", "message"],
         "additionalProperties": false
       },
-      "PermissionV2.Source": {
-        "anyOf": [
-          {
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": ["tool"]
-              },
-              "messageID": {
-                "type": "string"
-              },
-              "callID": {
-                "type": "string"
-              }
-            },
-            "required": ["type", "messageID", "callID"],
-            "additionalProperties": false
-          }
-        ]
-      },
-      "PermissionV2.Request": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "allOf": [
-              {
-                "pattern": "^per"
-              }
-            ]
-          },
-          "sessionID": {
-            "type": "string",
-            "allOf": [
-              {
-                "pattern": "^ses"
-              }
-            ]
-          },
-          "action": {
-            "type": "string"
-          },
-          "resources": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "save": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "source": {
-            "$ref": "#/components/schemas/PermissionV2.Source"
-          }
-        },
-        "required": ["id", "sessionID", "action", "resources"],
-        "additionalProperties": false
-      },
       "PermissionSaved.Info": {
         "type": "object",
         "properties": {
@@ -15699,10 +15823,6 @@
         },
         "required": ["_tag", "requestID", "message"],
         "additionalProperties": false
-      },
-      "PermissionV2.Reply": {
-        "type": "string",
-        "enum": ["once", "always", "reject"]
       },
       "FileSystem.Entry": {
         "type": "object",
@@ -23624,6 +23744,396 @@
       "Vcs.Mode": {
         "type": "string",
         "enum": ["working", "branch"]
+      },
+      "PermissionRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^per"
+          },
+          "sessionID": {
+            "type": "string",
+            "pattern": "^ses"
+          },
+          "permission": {
+            "type": "string"
+          },
+          "patterns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "always": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tool": {
+            "type": "object",
+            "properties": {
+              "messageID": {
+                "type": "string"
+              },
+              "callID": {
+                "type": "string"
+              }
+            },
+            "required": ["messageID", "callID"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "sessionID", "permission", "patterns", "metadata", "always"],
+        "additionalProperties": false
+      },
+      "BadRequestError": {
+        "type": "object",
+        "required": ["name", "data"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": ["BadRequest"]
+          },
+          "data": {
+            "type": "object",
+            "required": ["message"],
+            "properties": {
+              "message": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["Params", "Headers", "Query", "Body", "Payload"]
+              }
+            }
+          }
+        }
+      },
+      "effect_HttpApiError_BadRequest": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": ["BadRequest"]
+          }
+        },
+        "required": ["_tag"],
+        "additionalProperties": false
+      },
+      "NotFoundError": {
+        "type": "object",
+        "required": ["name", "data"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": ["NotFoundError"]
+          },
+          "data": {
+            "type": "object",
+            "required": ["message"],
+            "properties": {
+              "message": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "LocationInfo": {
+        "type": "object",
+        "properties": {
+          "directory": {
+            "type": "string"
+          },
+          "workspaceID": {
+            "type": "string",
+            "pattern": "^wrk"
+          },
+          "project": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "directory": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "directory"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["directory", "project"],
+        "additionalProperties": false
+      },
+      "PermissionV2Request": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^per"
+          },
+          "sessionID": {
+            "type": "string",
+            "pattern": "^ses"
+          },
+          "fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "subject": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["agent"]
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": ["kind", "id"],
+            "additionalProperties": false
+          },
+          "action": {
+            "type": "string"
+          },
+          "resources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "scope": {
+            "$ref": "#/components/schemas/PermissionV2Scope"
+          },
+          "expiresAt": {
+            "$ref": "#/components/schemas/PermissionV2ExpiresAt"
+          },
+          "save": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "source": {
+            "$ref": "#/components/schemas/PermissionV2Source"
+          }
+        },
+        "required": ["id", "sessionID", "fingerprint", "subject", "action", "resources", "scope", "expiresAt"],
+        "additionalProperties": false
+      },
+      "PermissionV2Scope": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/PermissionV2SessionScope"
+          },
+          {
+            "$ref": "#/components/schemas/PermissionV2ProjectScope"
+          }
+        ]
+      },
+      "PermissionV2SessionScope": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["session"]
+          },
+          "sessionID": {
+            "type": "string",
+            "pattern": "^ses"
+          }
+        },
+        "required": ["kind", "sessionID"],
+        "additionalProperties": false
+      },
+      "PermissionV2ProjectScope": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["project"]
+          },
+          "projectID": {
+            "type": "string"
+          }
+        },
+        "required": ["kind", "projectID"],
+        "additionalProperties": false
+      },
+      "PermissionV2ExpiresAt": {
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": 0
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "PermissionV2Source": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["tool"]
+          },
+          "messageID": {
+            "type": "string"
+          },
+          "callID": {
+            "type": "string"
+          }
+        },
+        "required": ["type", "messageID", "callID"],
+        "additionalProperties": false
+      },
+      "PermissionSavedInfo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "projectID": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "resource": {
+            "type": "string"
+          }
+        },
+        "required": ["id", "projectID", "action", "resource"],
+        "additionalProperties": false
+      },
+      "PermissionV2DecisionReceipt": {
+        "type": "object",
+        "properties": {
+          "requestID": {
+            "type": "string",
+            "pattern": "^per"
+          },
+          "sessionID": {
+            "type": "string",
+            "pattern": "^ses"
+          },
+          "requestFingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "decisionID": {
+            "type": "string",
+            "pattern": "^pdec"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/PermissionV2Decision"
+          },
+          "message": {
+            "type": "string"
+          },
+          "grantScope": {
+            "$ref": "#/components/schemas/PermissionV2ProjectScope"
+          },
+          "grantExpiresAt": {
+            "$ref": "#/components/schemas/PermissionV2ExpiresAt"
+          },
+          "committedAt": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "resolvedRequestIDs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^per"
+            }
+          }
+        },
+        "required": [
+          "requestID",
+          "sessionID",
+          "requestFingerprint",
+          "decisionID",
+          "decision",
+          "committedAt",
+          "resolvedRequestIDs"
+        ],
+        "additionalProperties": false
+      },
+      "PermissionV2Decision": {
+        "type": "string",
+        "enum": ["once", "always", "reject"]
+      },
+      "PermissionV2DecisionCommand": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "requestFingerprint": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "decisionID": {
+                "type": "string",
+                "pattern": "^pdec"
+              },
+              "message": {
+                "type": "string"
+              },
+              "decision": {
+                "type": "string",
+                "enum": ["once", "reject"]
+              },
+              "grantScope": {
+                "not": {}
+              },
+              "grantExpiresAt": {
+                "not": {}
+              }
+            },
+            "required": ["requestFingerprint", "decisionID", "decision"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "requestFingerprint": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "decisionID": {
+                "type": "string",
+                "pattern": "^pdec"
+              },
+              "message": {
+                "type": "string"
+              },
+              "decision": {
+                "type": "string",
+                "enum": ["always"]
+              },
+              "grantScope": {
+                "$ref": "#/components/schemas/PermissionV2ProjectScope"
+              },
+              "grantExpiresAt": {
+                "type": "null"
+              }
+            },
+            "required": ["requestFingerprint", "decisionID", "decision", "grantScope", "grantExpiresAt"],
+            "additionalProperties": false
+          }
+        ]
       }
     },
     "securitySchemes": {}

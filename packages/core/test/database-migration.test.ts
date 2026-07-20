@@ -79,6 +79,9 @@ describe("DatabaseMigration", () => {
           yield* db.get(sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'permission_decision'`),
         ).toEqual({ name: "permission_decision" })
         expect(
+          yield* db.get(sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'permission_request'`),
+        ).toEqual({ name: "permission_request" })
+        expect(
           yield* db.get(
             sql`SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'permission_decision_request_idx'`,
           ),

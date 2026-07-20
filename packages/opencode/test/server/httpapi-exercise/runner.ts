@@ -1,18 +1,23 @@
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
-import { Cause, Duration, Effect, Layer, Scope } from "effect"
+import { Cause, Duration, Effect, Layer, Schema, Scope } from "effect"
 import { TestLLMServer } from "../../lib/llm-server"
 import type { Config } from "../../../src/config/config"
 
 import type { MessageV2 } from "../../../src/session/message-v2"
 import { MessageID, PartID } from "../../../src/session/schema"
-import { call, callAuthProbe, disposeApps } from "./backend"
+import { call, callAuthProbe, callRequest, disposeApps } from "./backend"
 import { original } from "./environment"
 import { runtime } from "./runtime"
 import type { ActiveScenario, Options, ProjectOptions, Result, Scenario, ScenarioContext, SeededContext } from "./types"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
+import { PermissionV2 } from "@opencode-ai/core/permission"
+import { AgentV2 } from "@opencode-ai/core/agent"
+import { Location } from "@opencode-ai/core/location"
+import { LocationServiceMap, locationServiceMapLayer } from "@opencode-ai/core/location-services"
+import { AbsolutePath } from "@opencode-ai/core/schema"
 
 export function runScenario(options: Options) {
   return (scenario: Scenario) => {
@@ -139,6 +144,64 @@ function withContext<A, E>(
             run(modules.Session.Service.use((svc) => svc.get(sessionID))).pipe(
               Effect.catchCause(() => Effect.succeed(undefined)),
             ),
+          permissionRequest: (sessionID, input) =>
+            Effect.gen(function* () {
+              const payload = {
+                action: "external_directory",
+                resources: ["/outside/project"],
+                ...input,
+              }
+              yield* run(
+                Effect.gen(function* () {
+                  const locations = yield* LocationServiceMap.Service
+                  yield* Effect.gen(function* () {
+                    const agents = yield* AgentV2.Service
+                    yield* agents.transform((draft) =>
+                      draft.update(AgentV2.defaultID, (item) => {
+                        item.mode = "primary"
+                        item.permissions = [{ action: "*", resource: "*", effect: "ask" }]
+                      }),
+                    )
+                    const result = yield* (yield* PermissionV2.Service)
+                      .ask({
+                        sessionID,
+                        action: payload.action,
+                        resources: payload.resources,
+                        save: payload.save,
+                        metadata: payload.metadata,
+                        source: payload.source,
+                        agent: payload.agent,
+                        ...(input?.id ? { id: PermissionV2.ID.create(input.id) } : {}),
+                      })
+                      .pipe(Effect.orDie)
+                    if (result.status !== "pending")
+                      return yield* Effect.die(
+                        new Error(`permission durable seed was ${result.status}, expected pending`),
+                      )
+                  }).pipe(
+                    Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory()) }))),
+                  )
+                }),
+              ).pipe(Effect.provide(locationServiceMapLayer), Effect.provideService(Scope.Scope, scope))
+              const result = yield* callRequest(
+                new Request(new URL(`/api/session/${sessionID}/permission`, "http://localhost"), {
+                  method: "POST",
+                  headers: {
+                    "content-type": "application/json",
+                    ...(context.dir?.path ? { "x-opencode-directory": context.dir.path } : {}),
+                  },
+                  body: JSON.stringify(payload),
+                }),
+              )
+              if (result.status !== 200)
+                return yield* Effect.die(new Error(`permission seed returned HTTP ${result.status}`))
+              const body = yield* Schema.decodeUnknownEffect(Schema.Struct({ data: PermissionV2.AskResult }))(
+                result.body,
+              ).pipe(Effect.orDie)
+              if (body.data.status !== "pending")
+                return yield* Effect.die(new Error(`permission seed was ${body.data.status}, expected pending`))
+              return body.data.request
+            }),
           project: () =>
             Effect.sync(() => {
               if (!instance) throw new Error("scenario needs a project directory")

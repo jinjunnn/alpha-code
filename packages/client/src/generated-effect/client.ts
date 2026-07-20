@@ -451,13 +451,7 @@ type Endpoint9_6Request = Parameters<RawClient["server.permission"]["session.per
 type Endpoint9_6Input = {
   readonly sessionID: Endpoint9_6Request["params"]["sessionID"]
   readonly requestID: Endpoint9_6Request["params"]["requestID"]
-  readonly requestFingerprint: Endpoint9_6Request["payload"]["requestFingerprint"]
-  readonly decisionID: Endpoint9_6Request["payload"]["decisionID"]
-  readonly message?: Endpoint9_6Request["payload"]["message"]
-  readonly decision: Endpoint9_6Request["payload"]["decision"]
-  readonly grantScope?: Endpoint9_6Request["payload"]["grantScope"]
-  readonly grantExpiresAt?: Endpoint9_6Request["payload"]["grantExpiresAt"]
-}
+} & Endpoint9_6Request["payload"]
 const Endpoint9_6 = (raw: RawClient["server.permission"]) => (input: Endpoint9_6Input) =>
   raw["session.permission.reply"]({
     params: { sessionID: input["sessionID"], requestID: input["requestID"] },
@@ -469,7 +463,7 @@ const Endpoint9_6 = (raw: RawClient["server.permission"]) => (input: Endpoint9_6
       grantScope: input["grantScope"],
       grantExpiresAt: input["grantExpiresAt"],
     },
-  }).pipe(
+  } as Endpoint9_6Request).pipe(
     Effect.mapError(mapClientError),
     Effect.map((value) => value.data),
   )

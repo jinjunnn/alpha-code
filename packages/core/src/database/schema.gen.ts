@@ -103,6 +103,16 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`permission_request\` (
+          \`request_id\` text PRIMARY KEY,
+          \`session_id\` text NOT NULL,
+          \`request_fingerprint\` text NOT NULL,
+          \`request\` text NOT NULL,
+          \`outcome\` text NOT NULL,
+          CONSTRAINT \`fk_permission_request_session_id_session_id_fk\` FOREIGN KEY (\`session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`permission\` (
           \`id\` text PRIMARY KEY,
           \`project_id\` text NOT NULL,

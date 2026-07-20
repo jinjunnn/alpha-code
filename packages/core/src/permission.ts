@@ -9,7 +9,7 @@ import { makeLocationNode } from "./effect/app-node"
 import { EventV2 } from "./event"
 import { Location } from "./location"
 import { PermissionSaved } from "./permission/saved"
-import { PermissionDecisionTable, PermissionTable } from "./permission/sql"
+import { PermissionDecisionTable, PermissionRequestTable, PermissionTable } from "./permission/sql"
 import { SessionV2 } from "./session"
 import { SessionStore } from "./session/store"
 import { Hash } from "./util/hash"
@@ -38,6 +38,19 @@ const RequestFields = {
   metadata: Permission.Request.fields.metadata,
   source: Permission.Request.fields.source,
 }
+
+const RequestFacts = Schema.Struct({
+  sessionID: Permission.Request.fields.sessionID,
+  subject: Permission.Request.fields.subject,
+  action: Permission.Request.fields.action,
+  resources: Permission.Request.fields.resources,
+  scope: Permission.Request.fields.scope,
+  expiresAt: Permission.Request.fields.expiresAt,
+  save: Permission.Request.fields.save,
+  metadata: Permission.Request.fields.metadata,
+  source: Permission.Request.fields.source,
+})
+type RequestFacts = typeof RequestFacts.Type
 
 export const Request = Permission.Request
 export type Request = typeof Request.Type
@@ -128,11 +141,8 @@ interface Pending {
 }
 
 type DecisionRow = typeof PermissionDecisionTable.$inferSelect
-type AlwaysCommand = DecisionCommand & {
-  readonly decision: "always"
-  readonly grantScope: Permission.ProjectScope
-  readonly grantExpiresAt: null
-}
+type RequestRow = typeof PermissionRequestTable.$inferSelect
+type AlwaysCommand = Extract<DecisionCommand, { readonly decision: "always" }>
 
 const layer = Layer.effect(
   Service,
@@ -195,24 +205,36 @@ const layer = Layer.effect(
       return { effect, rules: all }
     })
 
-    function request(input: AssertInput, agentID: AgentV2.ID): Request {
-      const facts = {
+    const request = Effect.fnUntraced(function* (input: AssertInput, agentID: AgentV2.ID) {
+      if (input.metadata !== undefined && !isJsonWireValue(input.metadata))
+        return yield* Effect.die(new Error("Permission metadata must contain only plain JSON wire values"))
+      const facts = yield* Schema.decodeUnknownEffect(RequestFacts)({
         sessionID: input.sessionID,
-        subject: { kind: "agent" as const, id: agentID },
+        subject: { kind: "agent", id: agentID },
         action: input.action,
         resources: input.resources,
-        scope: { kind: "session" as const, sessionID: input.sessionID },
+        scope: { kind: "session", sessionID: input.sessionID },
         expiresAt: null,
         ...(input.save ? { save: input.save } : {}),
         ...(input.metadata ? { metadata: input.metadata } : {}),
         ...(input.source ? { source: input.source } : {}),
-      }
-      return {
+      }).pipe(Effect.orDie)
+      const snapshot = structuredClone(facts)
+      return deepFreeze({
         id: input.id ?? ID.create(),
-        fingerprint: Fingerprint.make(Hash.sha256(JSON.stringify(normalize(facts)))),
-        ...facts,
-      }
-    }
+        fingerprint: requestFingerprint(snapshot),
+        ...snapshot,
+      })
+    })
+
+    const findRequest = Effect.fnUntraced(function* (requestID: ID) {
+      return yield* database.db
+        .select()
+        .from(PermissionRequestTable)
+        .where(eq(PermissionRequestTable.request_id, requestID))
+        .get()
+        .pipe(Effect.orDie)
+    })
 
     const findReceipt = Effect.fnUntraced(function* (requestID: ID) {
       const row = yield* database.db
@@ -224,7 +246,10 @@ const layer = Layer.effect(
       return row ? receipt(row) : undefined
     })
 
-    const admission = Effect.fnUntraced(function* (value: Request, effect: Permission.Effect) {
+    const admission = Effect.fnUntraced(function* (
+      value: Request,
+      evaluate: () => Effect.Effect<{ readonly effect: Permission.Effect; readonly rules: Permission.Ruleset }>,
+    ) {
       return yield* lock.withPermit(
         Effect.uninterruptible(
           Effect.gen(function* () {
@@ -234,18 +259,42 @@ const layer = Layer.effect(
                 return yield* new ConflictError({ requestID: value.id })
               return { status: "pending" as const, item: active }
             }
-            const decided = yield* findReceipt(value.id)
-            if (decided) {
-              if (decided.requestFingerprint !== value.fingerprint)
+            const admitted = yield* findRequest(value.id)
+            if (admitted) {
+              if (admitted.request_fingerprint !== value.fingerprint)
                 return yield* new ConflictError({ requestID: value.id })
-              return { status: "decided" as const, receipt: decided }
+              const decided = yield* findReceipt(value.id)
+              if (decided) return { status: "decided" as const, receipt: decided }
+              if (admitted.outcome !== "ask") return { status: "evaluated" as const, effect: admitted.outcome }
+              const item = {
+                request: yield* requestSnapshot(admitted),
+                deferred: yield* Deferred.make<void, DeclinedError | CorrectedError>(),
+              }
+              pending.set(value.id, item)
+              yield* events
+                .publish(Event.Asked, detached(item.request))
+                .pipe(Effect.onError(() => Effect.sync(() => pending.delete(value.id))))
+              return { status: "pending" as const, item }
             }
-            if (effect !== "ask") return { status: "evaluated" as const, effect }
 
+            const result = yield* evaluate()
+            yield* database.db
+              .insert(PermissionRequestTable)
+              .values({
+                request_id: value.id,
+                session_id: value.sessionID,
+                request_fingerprint: value.fingerprint,
+                request: value,
+                outcome: result.effect,
+              })
+              .run()
+              .pipe(Effect.orDie)
+            if (result.effect !== "ask")
+              return { status: "evaluated" as const, effect: result.effect, rules: result.rules }
             const item = { request: value, deferred: yield* Deferred.make<void, DeclinedError | CorrectedError>() }
             pending.set(value.id, item)
             yield* events
-              .publish(Event.Asked, value)
+              .publish(Event.Asked, detached(value))
               .pipe(Effect.onError(() => Effect.sync(() => pending.delete(value.id))))
             return { status: "pending" as const, item }
           }),
@@ -255,11 +304,10 @@ const layer = Layer.effect(
 
     const ask = Effect.fn("PermissionV2.ask")(function* (input: AssertInput) {
       const resolved = yield* resolveInput(input)
-      const value = request(input, resolved.agentID)
-      const result = yield* evaluateInput(input, resolved.rules)
-      const admitted = yield* admission(value, result.effect)
-      if (admitted.status === "pending") return { status: "pending" as const, request: admitted.item.request }
-      if (admitted.status === "decided") return admitted
+      const value = yield* request(input, resolved.agentID)
+      const admitted = yield* admission(value, () => evaluateInput(value, resolved.rules))
+      if (admitted.status === "pending") return { status: "pending" as const, request: detached(admitted.item.request) }
+      if (admitted.status === "decided") return { status: "decided" as const, receipt: detached(admitted.receipt) }
       return { status: "evaluated" as const, id: value.id, effect: admitted.effect }
     })
 
@@ -267,13 +315,12 @@ const layer = Layer.effect(
       Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
           const resolved = yield* resolveInput(input)
-          const value = request(input, resolved.agentID)
-          const result = yield* evaluateInput(input, resolved.rules)
-          const admitted = yield* admission(value, result.effect)
+          const value = yield* request(input, resolved.agentID)
+          const admitted = yield* admission(value, () => evaluateInput(value, resolved.rules))
           if (admitted.status === "decided") return yield* apply(admitted.receipt)
           if (admitted.status === "evaluated") {
             if (admitted.effect === "allow") return
-            return yield* new BlockedError({ rules: relevant(input, result.rules) })
+            return yield* new BlockedError({ rules: relevant(value, admitted.rules ?? resolved.rules) })
           }
           return yield* restore(Deferred.await(admitted.item.deferred)).pipe(
             Effect.catchTag("PermissionV2.DeclinedError", (error) => Effect.die(error)),
@@ -303,7 +350,7 @@ const layer = Layer.effect(
                 return yield* new NotFoundError({ requestID: input.requestID })
               if (!sameDecision(previous, input.command))
                 return yield* new ConflictError({ requestID: input.requestID, decisionID: input.command.decisionID })
-              return receipt(previous)
+              return detached(receipt(previous))
             }
             if (decided.length > 0)
               return yield* new ConflictError({ requestID: input.requestID, decisionID: input.command.decisionID })
@@ -313,19 +360,13 @@ const layer = Layer.effect(
               return yield* new NotFoundError({ requestID: input.requestID })
             if (existing.request.fingerprint !== input.command.requestFingerprint)
               return yield* new ConflictError({ requestID: input.requestID, decisionID: input.command.decisionID })
-            if (input.command.decision === "always" && !isAlways(input.command))
+            if (existing.request.fingerprint !== requestFingerprint(existing.request))
               return yield* new ConflictError({ requestID: input.requestID, decisionID: input.command.decisionID })
             if (
               isAlways(input.command) &&
               (input.command.grantScope.projectID !== location.project.id || !existing.request.save?.length)
             )
               return yield* new ConflictError({ requestID: input.requestID, decisionID: input.command.decisionID })
-            if (
-              input.command.decision !== "always" &&
-              (input.command.grantScope !== undefined || input.command.grantExpiresAt !== undefined)
-            )
-              return yield* new ConflictError({ requestID: input.requestID, decisionID: input.command.decisionID })
-
             const committedAt = Date.now()
             const always = isAlways(input.command) ? input.command : undefined
             const batch = always ? [existing, ...(yield* eligible(existing, yield* savedRules()))] : [existing]
@@ -411,7 +452,8 @@ const layer = Layer.effect(
                 )
                 .get()
                 .pipe(Effect.orDie)
-              if (raced?.request_id === input.requestID && sameDecision(raced, input.command)) return receipt(raced)
+              if (raced?.request_id === input.requestID && sameDecision(raced, input.command))
+                return detached(receipt(raced))
               return yield* new ConflictError({ requestID: input.requestID, decisionID: input.command.decisionID })
             }
 
@@ -431,7 +473,7 @@ const layer = Layer.effect(
                     }
                     pending.delete(item.requestID)
                   }
-                  yield* events.publish(Event.Replied, item).pipe(
+                  yield* events.publish(Event.Replied, detached(item)).pipe(
                     Effect.catchCause((cause) =>
                       Effect.logError("Permission decision event listener failed", {
                         requestID: item.requestID,
@@ -443,7 +485,7 @@ const layer = Layer.effect(
                 }),
               { discard: true },
             )
-            return committed[0]!
+            return detached(committed[0]!)
           }),
         ),
       ),
@@ -473,20 +515,43 @@ const layer = Layer.effect(
     })
 
     const list = Effect.fn("PermissionV2.list")(function* () {
-      return Array.from(pending.values(), (item) => item.request)
+      return Array.from(pending.values(), (item) => detached(item.request))
     })
 
     const get = Effect.fn("PermissionV2.get")(function* (id: ID) {
-      return pending.get(id)?.request
+      const value = pending.get(id)?.request
+      return value ? detached(value) : undefined
     })
 
     const forSession = Effect.fn("PermissionV2.forSession")(function* (sessionID: SessionV2.ID) {
-      return Array.from(pending.values(), (item) => item.request).filter((request) => request.sessionID === sessionID)
+      return Array.from(pending.values(), (item) => item.request)
+        .filter((request) => request.sessionID === sessionID)
+        .map(detached)
     })
 
     return Service.of({ ask, assert, reply, get, forSession, list })
   }),
 )
+
+function requestFingerprint(value: RequestFacts) {
+  return Fingerprint.make(
+    Hash.sha256(
+      JSON.stringify(
+        normalize({
+          sessionID: value.sessionID,
+          subject: value.subject,
+          action: value.action,
+          resources: value.resources,
+          scope: value.scope,
+          expiresAt: value.expiresAt,
+          ...(value.save === undefined ? {} : { save: value.save }),
+          ...(value.metadata === undefined ? {} : { metadata: value.metadata }),
+          ...(value.source === undefined ? {} : { source: value.source }),
+        }),
+      ),
+    ),
+  )
+}
 
 function normalize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(normalize)
@@ -495,6 +560,61 @@ function normalize(value: unknown): unknown {
     Object.entries(value)
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([key, item]) => [key, normalize(item)]),
+  )
+}
+
+function deepFreeze<T>(value: T): T {
+  if (!value || typeof value !== "object" || Object.isFrozen(value)) return value
+  Object.values(value).forEach(deepFreeze)
+  return Object.freeze(value)
+}
+
+function detached<T>(value: T): T {
+  return structuredClone(value)
+}
+
+function isJsonWireValue(value: unknown): value is Schema.Json {
+  const path = new Set<unknown>()
+  return visit(value)
+
+  function visit(item: unknown): boolean {
+    if (item === null || typeof item === "string" || typeof item === "boolean") return true
+    if (typeof item === "number") return Number.isFinite(item)
+    if (!item || typeof item !== "object" || path.has(item)) return false
+    const prototype = Object.getPrototypeOf(item)
+    if (!Array.isArray(item) && prototype !== Object.prototype && prototype !== null) return false
+    const descriptors = Object.getOwnPropertyDescriptors(item)
+    if (Reflect.ownKeys(descriptors).some((key) => typeof key !== "string")) return false
+    path.add(item)
+    const valid = Array.isArray(item)
+      ? Reflect.ownKeys(descriptors).every(
+          (key) =>
+            key === "length" || (typeof key === "string" && /^(0|[1-9]\d*)$/.test(key) && Number(key) < item.length),
+        ) &&
+        Array.from({ length: item.length }, (_, index) => descriptors[index]).every(
+          (descriptor) =>
+            descriptor !== undefined && descriptor.enumerable && "value" in descriptor && visit(descriptor.value),
+        )
+      : Object.values(descriptors).every(
+          (descriptor) => descriptor.enumerable && "value" in descriptor && visit(descriptor.value),
+        )
+    path.delete(item)
+    return valid
+  }
+}
+
+function requestSnapshot(row: RequestRow) {
+  return Schema.decodeUnknownEffect(Request)(row.request).pipe(
+    Effect.filterOrFail(
+      (value) =>
+        value.id === row.request_id &&
+        value.sessionID === row.session_id &&
+        value.fingerprint === row.request_fingerprint &&
+        value.fingerprint === requestFingerprint(value),
+      () => new ConflictError({ requestID: row.request_id }),
+    ),
+    Effect.map((value) => deepFreeze(detached(value))),
+    Effect.orDie,
   )
 }
 
@@ -577,7 +697,7 @@ function apply(value: DecisionReceipt) {
 }
 
 function isAlways(command: DecisionCommand): command is AlwaysCommand {
-  return command.decision === "always" && command.grantScope !== undefined && command.grantExpiresAt === null
+  return command.decision === "always"
 }
 
 export const locationLayer = layer.pipe(Layer.provideMerge(AgentV2.locationLayer))

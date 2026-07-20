@@ -62,7 +62,7 @@ const RequestFields = {
   scope: Scope,
   expiresAt: ExpiresAt,
   save: Schema.Array(Schema.String).pipe(optional),
-  metadata: Schema.Record(Schema.String, Schema.Unknown).pipe(optional),
+  metadata: Schema.Record(Schema.String, Schema.Json).pipe(optional),
   source: Source.pipe(optional),
 }
 
@@ -83,12 +83,20 @@ const DecisionCommandFields = {
   message: Schema.String.pipe(optional),
 }
 
-export const DecisionCommand = Schema.Struct({
-  ...DecisionCommandFields,
-  decision: Decision,
-  grantScope: ProjectScope.pipe(optional),
-  grantExpiresAt: ExpiresAt.pipe(optional),
-}).annotate({ identifier: "PermissionV2.DecisionCommand" })
+export const DecisionCommand = Schema.Union([
+  Schema.Struct({
+    ...DecisionCommandFields,
+    decision: Schema.Literals(["once", "reject"]),
+    grantScope: Schema.Never.pipe(optional),
+    grantExpiresAt: Schema.Never.pipe(optional),
+  }),
+  Schema.Struct({
+    ...DecisionCommandFields,
+    decision: Schema.Literal("always"),
+    grantScope: ProjectScope,
+    grantExpiresAt: Schema.Null,
+  }),
+]).annotate({ identifier: "PermissionV2.DecisionCommand" })
 export type DecisionCommand = typeof DecisionCommand.Type
 
 export const DecisionReceipt = Schema.Struct({

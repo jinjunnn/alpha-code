@@ -816,18 +816,41 @@ const scenarios: Scenario[] = [
   }),
   http.protected
     .post("/api/session/{sessionID}/permission", "v2.session.permission.create")
-    .seeded((ctx) => ctx.session({ title: "Permission create owner" }))
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const session = yield* ctx.session({ title: "Permission create owner" })
+        yield* ctx.permissionRequest(session.id, { id: "per_httpapi_create" })
+        return session
+      }),
+    )
     .at((ctx) => ({
       path: route("/api/session/{sessionID}/permission", { sessionID: ctx.state.id }),
       headers: ctx.headers(),
-      body: { action: "read", resources: [".env"] },
+      body: { id: "per_httpapi_create", action: "external_directory", resources: ["/outside/project"] },
     }))
     .json(200, (body) => {
       object(body)
       object(body.data)
-      check(typeof body.data.id === "string", "permission create should return an ID")
-      check(body.data.effect === "ask", "permission create should create a pending request")
+      check(body.data.status === "pending", "permission create should return a pending state")
+      object(body.data.request)
+      check(body.data.request.id === "per_httpapi_create", "pending request should retain its ID")
+      check(typeof body.data.request.fingerprint === "string", "pending request should include its fingerprint")
     }),
+  http.protected
+    .post("/api/session/{sessionID}/permission", "v2.session.permission.create.conflict")
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const session = yield* ctx.session({ title: "Permission create conflict owner" })
+        yield* ctx.permissionRequest(session.id, { id: "per_httpapi_create_conflict" })
+        return session
+      }),
+    )
+    .at((ctx) => ({
+      path: route("/api/session/{sessionID}/permission", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+      body: { id: "per_httpapi_create_conflict", action: "read", resources: ["src/other.ts"] },
+    }))
+    .json(409, object, "status"),
   http.protected
     .get("/api/session/{sessionID}/permission", "v2.session.permission.list")
     .seeded((ctx) => ctx.session({ title: "Permission list owner" }))
@@ -857,16 +880,71 @@ const scenarios: Scenario[] = [
     .json(200, data(array)),
   http.protected
     .post("/api/session/{sessionID}/permission/{requestID}/reply", "v2.session.permission.reply")
-    .seeded((ctx) => ctx.session({ title: "Permission owner" }))
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const session = yield* ctx.session({ title: "Permission owner" })
+        const request = yield* ctx.permissionRequest(session.id, { id: "per_httpapi_reply" })
+        return { session, request }
+      }),
+    )
+    .at((ctx) => ({
+      path: route("/api/session/{sessionID}/permission/{requestID}/reply", {
+        sessionID: ctx.state.session.id,
+        requestID: ctx.state.request.id,
+      }),
+      headers: ctx.headers(),
+      body: {
+        requestFingerprint: ctx.state.request.fingerprint,
+        decisionID: "pdec_httpapi_once",
+        decision: "once",
+      },
+    }))
+    .json(200, (body) => {
+      object(body)
+      object(body.data)
+      check(body.data.requestID === "per_httpapi_reply", "receipt should identify the decided request")
+      check(body.data.decisionID === "pdec_httpapi_once", "receipt should identify the decision")
+      check(body.data.decision === "once", "receipt should preserve the decision")
+      array(body.data.resolvedRequestIDs)
+    }),
+  http.protected
+    .post("/api/session/{sessionID}/permission/{requestID}/reply", "v2.session.permission.reply.conflict")
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const session = yield* ctx.session({ title: "Permission conflict owner" })
+        const request = yield* ctx.permissionRequest(session.id, { id: "per_httpapi_reply_conflict" })
+        return { session, request }
+      }),
+    )
+    .at((ctx) => ({
+      path: route("/api/session/{sessionID}/permission/{requestID}/reply", {
+        sessionID: ctx.state.session.id,
+        requestID: ctx.state.request.id,
+      }),
+      headers: ctx.headers(),
+      body: {
+        requestFingerprint: "0".repeat(64),
+        decisionID: "pdec_httpapi_conflict",
+        decision: "once",
+      },
+    }))
+    .json(409, object, "status"),
+  http.protected
+    .post("/api/session/{sessionID}/permission/{requestID}/reply", "v2.session.permission.reply.invalid-command")
+    .seeded((ctx) => ctx.session({ title: "Permission invalid command owner" }))
     .at((ctx) => ({
       path: route("/api/session/{sessionID}/permission/{requestID}/reply", {
         sessionID: ctx.state.id,
-        requestID: "per_httpapi_missing",
+        requestID: "per_httpapi_invalid_command",
       }),
       headers: ctx.headers(),
-      body: { reply: "once" },
+      body: {
+        requestFingerprint: "0".repeat(64),
+        decisionID: "pdec_httpapi_invalid",
+        decision: "always",
+      },
     }))
-    .json(404, object, "status"),
+    .json(400, object, "status"),
   http.protected
     .post("/api/session/{sessionID}/question/{requestID}/reply", "v2.session.question.reply")
     .seeded((ctx) => ctx.session({ title: "Question reply owner" }))

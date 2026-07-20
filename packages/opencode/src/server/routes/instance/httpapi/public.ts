@@ -96,6 +96,11 @@ function matchLegacyOpenApi(input: Record<string, unknown>) {
     spec.components!.schemas![name] = stripOptionalNull(structuredClone(schema))
   }
   normalizeComponentNames(spec)
+  // This is a reusable NullOr value, not an optional property. Preserve its
+  // explicit null arm after the legacy optional-null compatibility transform.
+  const permissionExpiresAt = spec.components?.schemas?.PermissionV2ExpiresAt
+  if (permissionExpiresAt)
+    spec.components!.schemas!.PermissionV2ExpiresAt = { anyOf: [permissionExpiresAt, { type: "null" }] }
   collapseDuplicateComponents(spec)
   applyLegacySchemaOverrides(spec)
   normalizeComponentDescriptions(spec)

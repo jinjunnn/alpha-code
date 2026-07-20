@@ -26,17 +26,27 @@ owned by REQ-212.
   expire automatically; and
 - optional `save`, `metadata`, and tool-call `source` facts.
 
+Admission decodes those facts into JSON wire values, makes a service-owned
+copy, and recursively freezes that copy before fingerprinting or evaluation.
+`metadata` accepts only JSON primitives, arrays, and plain string-keyed JSON
+objects; host objects such as `Date`, functions, `undefined`, symbols,
+non-finite numbers, and cyclic values are rejected fail-closed. Events and all
+service reads return detached copies rather than the internal snapshot.
+
 The fingerprint covers every request fact except `id`: Session, subject,
 action, resources, scope, expiry, save candidates, metadata, and source.
 Object keys are recursively sorted before hashing; array order is retained.
-Request ID and fingerprint therefore form the immutable idempotency identity.
+The hash is computed from the actual frozen public-wire snapshot and is checked
+again immediately before a decision commits. Request ID and fingerprint
+therefore form the immutable idempotency identity.
 
 `PermissionV2.DecisionCommand` contains `requestFingerprint`, `decisionID`,
-`decision`, and optional correction `message`. An `always` command additionally
-requires `grantScope: { kind: "project", projectID }` and
+`decision`, and optional correction `message`. It is a discriminated union:
+`once` and `reject` forbid grant fields, while `always` requires both
+`grantScope: { kind: "project", projectID }` and an explicit
 `grantExpiresAt: null`. The current saved-rule engine supports only a permanent
-grant for the active project; a different project, a non-null expiry, or an
-`always` request without `save` resources fails closed.
+grant for the active project; a different project or an `always` request
+without `save` resources fails closed.
 
 `PermissionV2.DecisionReceipt` contains the request and Session identities,
 request fingerprint, decision ID and value, committed time, optional grant
@@ -59,6 +69,7 @@ new request -> evaluated allow/deny
             -> pending -> committed receipt -> decided
 
 same request ID + same fingerprint:
+  evaluated -> original allow/deny outcome
   pending -> same pending request
   decided -> original receipt
 
@@ -92,6 +103,12 @@ missing Sessions, and unrelated actions/resources remain pending.
 
 ## Persistence and recovery
 
+Every create result is admitted to `permission_request` before it is returned.
+The row stores request ID, fingerprint, the immutable public request snapshot,
+and the original `allow`, `deny`, or `ask` outcome. Exact retries therefore
+replay evaluated outcomes even if policy changes, while reuse of an ID with a
+different fingerprint conflicts.
+
 Receipts live in `permission_decision`, with unique constraints on decision ID
 and request ID. For `always`, the primary receipt, saved-rule inserts, derived
 receipts, and the primary `resolvedRequestIDs` are one SQLite transaction. A
@@ -101,8 +118,10 @@ pending.
 A process crash before that transaction commits has no success fact and remains
 fail-closed. After commit, rebuilding the Permission service reads the receipt;
 an exact create/assert retry returns or applies the original decision without
-repeating side effects. Pending requests themselves are process-local and are
-not claimed to survive a crash.
+repeating side effects. Pending ownership and waiting fibers remain
+process-local; after rebuilding the service, an exact create retry rehydrates
+the pending request from its durable admission fact before it can be replied
+to. A reply without that re-admission remains not found and fail-closed.
 
 ## HTTP errors
 

@@ -2485,55 +2485,24 @@ export type PermissionsGetOutput = {
 export type PermissionsReplyInput = {
   readonly sessionID: { readonly sessionID: string; readonly requestID: string }["sessionID"]
   readonly requestID: { readonly sessionID: string; readonly requestID: string }["requestID"]
-  readonly requestFingerprint: {
-    readonly requestFingerprint: string
-    readonly decisionID: string
-    readonly message?: string
-    readonly decision: "once" | "always" | "reject"
-    readonly grantScope?: { readonly kind: "project"; readonly projectID: string }
-    readonly grantExpiresAt?: number | null
-  }["requestFingerprint"]
-  readonly decisionID: {
-    readonly requestFingerprint: string
-    readonly decisionID: string
-    readonly message?: string
-    readonly decision: "once" | "always" | "reject"
-    readonly grantScope?: { readonly kind: "project"; readonly projectID: string }
-    readonly grantExpiresAt?: number | null
-  }["decisionID"]
-  readonly message?: {
-    readonly requestFingerprint: string
-    readonly decisionID: string
-    readonly message?: string
-    readonly decision: "once" | "always" | "reject"
-    readonly grantScope?: { readonly kind: "project"; readonly projectID: string }
-    readonly grantExpiresAt?: number | null
-  }["message"]
-  readonly decision: {
-    readonly requestFingerprint: string
-    readonly decisionID: string
-    readonly message?: string
-    readonly decision: "once" | "always" | "reject"
-    readonly grantScope?: { readonly kind: "project"; readonly projectID: string }
-    readonly grantExpiresAt?: number | null
-  }["decision"]
-  readonly grantScope?: {
-    readonly requestFingerprint: string
-    readonly decisionID: string
-    readonly message?: string
-    readonly decision: "once" | "always" | "reject"
-    readonly grantScope?: { readonly kind: "project"; readonly projectID: string }
-    readonly grantExpiresAt?: number | null
-  }["grantScope"]
-  readonly grantExpiresAt?: {
-    readonly requestFingerprint: string
-    readonly decisionID: string
-    readonly message?: string
-    readonly decision: "once" | "always" | "reject"
-    readonly grantScope?: { readonly kind: "project"; readonly projectID: string }
-    readonly grantExpiresAt?: number | null
-  }["grantExpiresAt"]
-}
+} & (
+  | {
+      readonly requestFingerprint: string
+      readonly decisionID: string
+      readonly message?: string
+      readonly decision: "once" | "reject"
+      readonly grantScope?: never
+      readonly grantExpiresAt?: never
+    }
+  | {
+      readonly requestFingerprint: string
+      readonly decisionID: string
+      readonly message?: string
+      readonly decision: "always"
+      readonly grantScope: { readonly kind: "project"; readonly projectID: string }
+      readonly grantExpiresAt: null
+    }
+)
 
 export type PermissionsReplyOutput = {
   readonly data: {

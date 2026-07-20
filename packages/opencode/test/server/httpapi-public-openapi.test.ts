@@ -7,7 +7,9 @@ type OpenApiSchema = {
   readonly $ref?: string
   readonly anyOf?: ReadonlyArray<OpenApiSchema>
   readonly type?: string
+  readonly minimum?: number
   readonly enum?: readonly unknown[]
+  readonly not?: Record<string, never>
   readonly properties?: Record<string, OpenApiSchema>
   readonly required?: readonly string[]
   readonly contentSchema?: OpenApiSchema
@@ -143,6 +145,37 @@ describe("PublicApi OpenAPI v2 errors", () => {
       "/api/session/{sessionID}/question/{requestID}/reply",
     ]) {
       expect(spec.paths[path]?.post?.requestBody?.required, path).toBe(true)
+    }
+  })
+
+  test("preserves the permission decision union and conflict responses", () => {
+    const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
+    const command = spec.components.schemas.PermissionV2DecisionCommand
+
+    expect(spec.components.schemas.PermissionV2ExpiresAt?.anyOf).toEqual([
+      { type: "integer", minimum: 0 },
+      { type: "null" },
+    ])
+    expect(command?.anyOf?.[0]).toMatchObject({
+      properties: {
+        decision: { enum: ["once", "reject"] },
+        grantScope: { not: {} },
+        grantExpiresAt: { not: {} },
+      },
+      required: ["requestFingerprint", "decisionID", "decision"],
+    })
+    expect(command?.anyOf?.[1]).toMatchObject({
+      properties: {
+        decision: { enum: ["always"] },
+        grantExpiresAt: { type: "null" },
+      },
+      required: ["requestFingerprint", "decisionID", "decision", "grantScope", "grantExpiresAt"],
+    })
+    for (const path of [
+      "/api/session/{sessionID}/permission",
+      "/api/session/{sessionID}/permission/{requestID}/reply",
+    ]) {
+      expect(spec.paths[path]?.post?.responses?.["409"], path).toBeDefined()
     }
   })
 

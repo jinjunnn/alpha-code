@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "68d2d3ec-902c-45f0-ba98-bf0ff0e92980",
+  "id": "25fd8cf5-c7b6-469f-8a83-d0c40fa8635d",
   "prevIds": [
-    "f14a9b18-8207-487e-a3d3-227e629ba9ad"
+    "68d2d3ec-902c-45f0-ba98-bf0ff0e92980"
   ],
   "ddl": [
     {
@@ -40,6 +40,10 @@
     },
     {
       "name": "permission_decision",
+      "entityType": "tables"
+    },
+    {
+      "name": "permission_request",
       "entityType": "tables"
     },
     {
@@ -655,6 +659,56 @@
       "name": "committed_at",
       "entityType": "columns",
       "table": "permission_decision"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "request_id",
+      "entityType": "columns",
+      "table": "permission_request"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "session_id",
+      "entityType": "columns",
+      "table": "permission_request"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "request_fingerprint",
+      "entityType": "columns",
+      "table": "permission_request"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "request",
+      "entityType": "columns",
+      "table": "permission_request"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "outcome",
+      "entityType": "columns",
+      "table": "permission_request"
     },
     {
       "type": "text",
@@ -1658,6 +1712,21 @@
     },
     {
       "columns": [
+        "session_id"
+      ],
+      "tableTo": "session",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_permission_request_session_id_session_id_fk",
+      "entityType": "fks",
+      "table": "permission_request"
+    },
+    {
+      "columns": [
         "project_id"
       ],
       "tableTo": "project",
@@ -1906,6 +1975,15 @@
       "nameExplicit": false,
       "name": "permission_decision_pk",
       "table": "permission_decision",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "request_id"
+      ],
+      "nameExplicit": false,
+      "name": "permission_request_pk",
+      "table": "permission_request",
       "entityType": "pks"
     },
     {

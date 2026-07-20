@@ -332,6 +332,7 @@ function renderImportedEffectFiles(
     const rawGroup = group.endpoints[0]?.topLevel ? "RawClient" : `RawClient[${JSON.stringify(group.sourceIdentifier)}]`
     const methods = group.endpoints.map((item, endpointIndex) => {
       const prefix = `Endpoint${groupIndex}_${endpointIndex}`
+      const payloadUnion = isInputUnion(item.payloads[0])
       const request = (["params", "query", "headers", "payload"] as const)
         .flatMap((source) => {
           const fields = item.input.filter((field) => field.source === source)
@@ -342,18 +343,22 @@ function renderImportedEffectFiles(
         })
         .join(", ")
       const input = item.input
+        .filter((field) => !payloadUnion || field.source !== "payload")
         .map(
           (field) =>
             `readonly ${JSON.stringify(field.name)}${field.optional ? "?" : ""}: ${prefix}Request[${JSON.stringify(field.source)}][${JSON.stringify(field.name)}]`,
         )
         .join("; ")
+      const inputType = payloadUnion
+        ? `${input === "" ? "" : `{ ${input} } & `}${prefix}Request["payload"]`
+        : `{ ${input} }`
       const argument =
         item.operation.inputMode === "none"
           ? ""
           : `input${item.operation.inputMode === "optional" ? "?" : ""}: ${prefix}Input`
-      const rawCall = `raw[${JSON.stringify(item.endpoint.name)}]({ ${request} })`
+      const rawCall = `raw[${JSON.stringify(item.endpoint.name)}]({ ${request} }${payloadUnion ? ` as ${prefix}Request` : ""})`
       const mapped = `${rawCall}.pipe(Effect.mapError(mapClientError)${item.unwrapData ? ", Effect.map((value) => value.data)" : ""})`
-      return `${item.operation.inputMode === "none" ? "" : `type ${prefix}Request = Parameters<${rawGroup}[${JSON.stringify(item.endpoint.name)}]>[0]\ntype ${prefix}Input = { ${input} }\n`}const ${prefix} = (raw: ${rawGroup}) => (${argument}) => ${item.operation.success === "stream" ? `Stream.unwrap(${rawCall}.pipe(Effect.mapError(mapClientError), Effect.map((stream) => stream.pipe(Stream.mapError(mapClientError)))))` : mapped}`
+      return `${item.operation.inputMode === "none" ? "" : `type ${prefix}Request = Parameters<${rawGroup}[${JSON.stringify(item.endpoint.name)}]>[0]\ntype ${prefix}Input = ${inputType}\n`}const ${prefix} = (raw: ${rawGroup}) => (${argument}) => ${item.operation.success === "stream" ? `Stream.unwrap(${rawCall}.pipe(Effect.mapError(mapClientError), Effect.map((stream) => stream.pipe(Stream.mapError(mapClientError)))))` : mapped}`
     })
     return `${methods.join("\n\n")}\n\nconst adaptGroup${groupIndex} = (raw: ${rawGroup}) => ({ ${group.endpoints.map((item, endpointIndex) => `${JSON.stringify(item.operation.name)}: Endpoint${groupIndex}_${endpointIndex}(raw)`).join(", ")} })`
   })
@@ -457,7 +462,9 @@ function renderPromiseTypes(
           headers: endpoint.headers,
           payload: endpoint.payloads[0],
         }
+        const payloadUnion = isInputUnion(schemas.payload)
         const input = endpoint.input
+          .filter((field) => !payloadUnion || field.source !== "payload")
           .map((field) => {
             const schema = schemas[field.source]
             if (schema === undefined)
@@ -465,6 +472,9 @@ function renderPromiseTypes(
             return `readonly ${JSON.stringify(field.name)}${field.optional ? "?" : ""}: (${typeOf(schema, field.source === "query")})[${JSON.stringify(field.name)}]`
           })
           .join("; ")
+        const inputType = payloadUnion
+          ? `${input === "" ? "" : `{ ${input} } & `}(${typeOf(schemas.payload!)})`
+          : `{ ${input} }`
         const successSchema = endpoint.successes[0]
         const success =
           outputTypes?.[`${group.identifier}.${endpoint.operation.name}`]?.name ??
@@ -476,7 +486,7 @@ function renderPromiseTypes(
               : successSchema,
           )
         return [
-          ...(endpoint.operation.inputMode === "none" ? [] : [`export type ${prefix}Input = { ${input} }`]),
+          ...(endpoint.operation.inputMode === "none" ? [] : [`export type ${prefix}Input = ${inputType}`]),
           `export type ${prefix}Output = ${endpoint.unwrapData ? `(${success})["data"]` : success}`,
         ]
       }),
@@ -781,9 +791,34 @@ export function generate<Id extends string, Groups extends HttpApiGroup.Any>(
 function inputFields(schema: Schema.Top | undefined, source: InputField["source"], operation: string) {
   if (schema === undefined) return []
   const ast = Schema.toType(schema).ast
-  if (!SchemaAST.isObjects(ast) || ast.indexSignatures.length > 0) {
+  if (SchemaAST.isObjects(ast) && ast.indexSignatures.length === 0) return structInputFields(ast, source, operation)
+  if (!SchemaAST.isUnion(ast)) {
     throw new GenerationError({ reason: `Input schema must be a struct: ${operation}.${source}` })
   }
+  const members = ast.types.map((member) => {
+    if (!SchemaAST.isObjects(member) || member.indexSignatures.length > 0) {
+      throw new GenerationError({ reason: `Input schema union members must be structs: ${operation}.${source}` })
+    }
+    return structInputFields(member, source, operation)
+  })
+  const fields = members[0] ?? []
+  if (
+    members.some(
+      (member) =>
+        member.length !== fields.length || member.some((field) => !fields.some((item) => item.name === field.name)),
+    )
+  ) {
+    throw new GenerationError({
+      reason: `Input schema union members must expose the same fields: ${operation}.${source}`,
+    })
+  }
+  return fields.map((field) => ({
+    ...field,
+    optional: members.some((member) => member.find((item) => item.name === field.name)!.optional),
+  }))
+}
+
+function structInputFields(ast: SchemaAST.Objects, source: InputField["source"], operation: string) {
   return ast.propertySignatures.map((field) => {
     if (typeof field.name !== "string") {
       throw new GenerationError({ reason: `Input field must have a string name: ${operation}.${source}` })
@@ -794,6 +829,10 @@ function inputFields(schema: Schema.Top | undefined, source: InputField["source"
       optional: SchemaAST.isOptional(field.type),
     }
   })
+}
+
+function isInputUnion(schema: Schema.Top | undefined) {
+  return schema !== undefined && SchemaAST.isUnion(Schema.toType(schema).ast)
 }
 
 function responseSchemas(schema: Schema.Top, path: string): Array<readonly [string, Schema.Top]> {
@@ -1023,6 +1062,7 @@ function renderGroup(group: Group, groupIndex: number) {
       successes,
     } = operation
     const prefix = `Endpoint${endpointIndex}`
+    const payloadUnion = isInputUnion(endpointPayloads[0])
     const params = addSlot(endpointParams, `${prefix}Params`)
     const query = addSlot(endpointQuery, `${prefix}Query`)
     const headers = addSlot(endpointHeaders, `${prefix}Headers`)
@@ -1043,6 +1083,7 @@ function renderGroup(group: Group, groupIndex: number) {
     ].filter((option): option is string => option !== undefined)
     const schemaBySource = { params, query, headers, payload: payloads[0] }
     const inputType = operation.input
+      .filter((field) => !payloadUnion || field.source !== "payload")
       .map((field) => {
         const slot = schemaBySource[field.source]
         if (slot === undefined) {
@@ -1051,6 +1092,9 @@ function renderGroup(group: Group, groupIndex: number) {
         return `readonly ${JSON.stringify(field.name)}${field.optional ? "?" : ""}: (typeof ${slot.name}.Type)[${JSON.stringify(field.name)}]`
       })
       .join("; ")
+    const input = payloadUnion
+      ? `${inputType === "" ? "" : `{ ${inputType} } & `}typeof ${payloads[0]!.name}.Type`
+      : `{ ${inputType} }`
     const argument =
       operation.operation.inputMode === "none"
         ? ""
@@ -1071,9 +1115,12 @@ function renderGroup(group: Group, groupIndex: number) {
     const declared = [...errorSlots, ...(success.streamError === undefined ? [] : [success.streamError])]
     const declaredSchema =
       declared.length === 0 ? "Schema.Never" : `Schema.Union([${declared.map((slot) => slot.name).join(", ")}])`
-    const rawCall = `raw[${JSON.stringify(endpoint.name)}]({ ${request} })`
+    const rawCall = `raw[${JSON.stringify(endpoint.name)}]({ ${request} }${payloadUnion ? ` as ${prefix}Request` : ""})`
     const mapped = `${rawCall}.pipe(Effect.mapError(map${prefix}Error)${operation.unwrapData ? ", Effect.map((value) => value.data)" : ""})`
-    const inputDeclaration = operation.operation.inputMode === "none" ? "" : `type ${prefix}Input = { ${inputType} }\n`
+    const inputDeclaration =
+      operation.operation.inputMode === "none"
+        ? ""
+        : `${payloadUnion ? `type ${prefix}Request = Parameters<RawGroup[${JSON.stringify(endpoint.name)}]>[0]\n` : ""}type ${prefix}Input = ${input}\n`
     adapters.push(
       `${inputDeclaration}const ${prefix}DeclaredError = ${declaredSchema}\nconst map${prefix}Error = (error: unknown) => HttpClientError.isHttpClientError(error) || Schema.isSchemaError(error) || Sse.Retry.is(error) ? new ClientError({ cause: error }) : Schema.is(${prefix}DeclaredError)(error) ? error : new ClientError({ cause: error })\nconst ${prefix} = (raw: RawGroup) => (${argument}) => ${operation.operation.success === "stream" ? `Stream.unwrap(${rawCall}.pipe(Effect.mapError(map${prefix}Error), Effect.map((stream) => stream.pipe(Stream.mapError(map${prefix}Error)))))` : mapped}`,
     )

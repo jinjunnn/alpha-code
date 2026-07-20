@@ -82,7 +82,14 @@ const historyTypesPatched = generatedTypes.replace(
 if (historyTypesPatched === generatedTypes) {
   throw new Error("Session history numeric query patch did not apply")
 }
-await Bun.write("./src/v2/gen/types.gen.ts", historyTypesPatched)
+const permissionTypesPatched = historyTypesPatched.replace(
+  /(export type PermissionV2DecisionCommand =[\s\S]*?decision: ["']once["'] \| ["']reject["'][;,]?[\s\S]*?grantScope\?: )unknown([;,]?\s*grantExpiresAt\?: )unknown/,
+  "$1never$2never",
+)
+if (permissionTypesPatched === historyTypesPatched) {
+  throw new Error("Permission decision forbidden grant field patch did not apply")
+}
+await Bun.write("./src/v2/gen/types.gen.ts", permissionTypesPatched)
 
 const generatedSdk = await Bun.file("./src/v2/gen/sdk.gen.ts").text()
 const historySdkPatched = generatedSdk.replace(
