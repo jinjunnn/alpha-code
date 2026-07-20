@@ -245,6 +245,8 @@ const api: ElectronAPI = {
     // REQ-094/095(#186/#187):打开前复核 + 受控内容读取(text 截断 / bytes 限额;守卫在 main)。
     verify: (directory, runId, artifactId) => ipcRenderer.invoke("run-artifact-verify", directory, runId, artifactId),
     read: (directory, runId, ref, opts) => ipcRenderer.invoke("run-artifact-read", directory, runId, ref, opts),
+    openExternal: (directory, runId, artifactId) =>
+      ipcRenderer.invoke("run-artifact-open-external", directory, runId, artifactId),
   },
   // REQ-096(#188):隔离 HTML preview 控制通道 —— renderer 只拿 opaque previewId;一次性 host
   // 的 URL/token、文件字节与绝对路径永不过 IPC(host 本体 main/html-preview-host.ts)。

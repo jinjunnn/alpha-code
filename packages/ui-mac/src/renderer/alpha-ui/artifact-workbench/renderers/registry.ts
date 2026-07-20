@@ -1,7 +1,7 @@
 // Artifact renderer registry — REQ-095 核心(alpha-code#187)。纯逻辑、零 DOM、零 IPC,bun:test 可全测。
 //
 // 确定性路由(优先级从高到低,同源内按 priority 降序、id 升序稳定裁决):
-//   ① 本地 OOXML 结构检测(central directory + [Content_Types].xml + actual main part)——
+//   ① 本地 OOXML 结构检测(strict raw ZIP + bounded all-entry inflate + package root relationship)——
 //      只有检测成功且扩展名/claimed/detected 声称不冲突时,才允许外部 Office 特权打开;
 //      检测中、检测失败、畸形/超限容器、结构冲突一律 non-privileged fallback;
 //   ② detectedMime(magic 检测,local.detectedMime ?? descriptor.detectedMime)——
@@ -22,7 +22,13 @@
 //   · "image" renderer 只经 <img> + blob 呈现(被动解码,不执行脚本);声明为 image/* 的
 //     非图片内容最多解码失败 → 可恢复错误卡,不会执行。
 
-import { OOXML_SUBTYPES, type OoxmlDetection, type OoxmlSubtype } from "./ooxml"
+import {
+  OOXML_SUBTYPES,
+  ooxmlOpenConflicts,
+  shouldGateOoxml,
+  type OoxmlDetection,
+  type OoxmlSubtype,
+} from "./ooxml"
 
 export type RendererId =
   | "markdown"
@@ -153,25 +159,9 @@ export function mimeForName(name: string): string | null {
   return null
 }
 
-const OOXML_MIMES = new Set<string>(Object.values(OOXML_SUBTYPES).map((facts) => facts.mime))
-const OOXML_EXTENSIONS = new Set<OoxmlSubtype>(Object.keys(OOXML_SUBTYPES) as OoxmlSubtype[])
-const NEUTRAL_CONTAINER_MIMES = new Set(["application/zip", "application/octet-stream"])
-
 /** Workbench uses this pure predicate to decide whether it must read bytes before routing. */
 export function shouldDetectOoxml(input: Pick<RouteInput, "name" | "claimedMime" | "detectedMime">): boolean {
-  const extension = extensionOf(input.name)
-  if (extension && OOXML_EXTENSIONS.has(extension as OoxmlSubtype)) return true
-  return [normalizeMime(input.claimedMime), normalizeMime(input.detectedMime)].some(
-    (mime) => mime !== null && (OOXML_MIMES.has(mime) || mime === "application/zip"),
-  )
-}
-
-function hasOoxmlClaim(input: Pick<RouteInput, "name" | "claimedMime" | "detectedMime">): boolean {
-  const extension = extensionOf(input.name)
-  if (extension && OOXML_EXTENSIONS.has(extension as OoxmlSubtype)) return true
-  return [normalizeMime(input.claimedMime), normalizeMime(input.detectedMime)].some(
-    (mime) => mime !== null && OOXML_MIMES.has(mime),
-  )
+  return shouldGateOoxml(input)
 }
 
 // ---------------------------------------------------------------------------
@@ -215,16 +205,11 @@ export function routeArtifact(input: RouteInput): RouteDecision {
   const warnings: string[] = []
 
   // OOXML is the one format family whose privileged consumer is external Office. The local byte
-  // detector is the only authority:generic ZIP magic, an Office MIME, or a .docx/.xlsx/.pptx name
-  // merely requires the gate;none can grant it.
+  // detector is the only authority:generic ZIP/Office claims merely require the gate;only a
+  // matching non-macro .docx/.xlsx/.pptx claim can receive renderer-side provisional allowance.
   if (shouldDetectOoxml(input)) {
     if (input.ooxml?.status === "detected") {
-      const extension = extensionOf(input.name)
-      const conflicts = [
-        extension && extension !== input.ooxml.subtype ? `扩展名 .${extension}` : null,
-        claimed && claimed !== input.ooxml.mime && !NEUTRAL_CONTAINER_MIMES.has(claimed) ? `声明 MIME ${claimed}` : null,
-        detected && detected !== input.ooxml.mime && !NEUTRAL_CONTAINER_MIMES.has(detected) ? `既有检测 MIME ${detected}` : null,
-      ].filter((value): value is string => value !== null)
+      const conflicts = ooxmlOpenConflicts(input, input.ooxml)
       if (conflicts.length > 0) {
         warnings.push(`OOXML 结构为 ${input.ooxml.subtype},但与${conflicts.join("、")}冲突 —— 已阻止特权渲染`)
         return {
@@ -252,17 +237,15 @@ export function routeArtifact(input: RouteInput): RouteDecision {
       }
     }
 
-    if (hasOoxmlClaim(input)) {
-      const failure = input.ooxml ? input.ooxml.reason : "结构检测尚未完成"
-      warnings.push(`OOXML 结构未获证:${failure} —— 已阻止特权渲染`)
-      return {
-        rendererId: "fallback",
-        effectiveMime: detected ?? claimed ?? extMime,
-        source: detected ? "detected" : claimed ? "claimed" : extensionOf(input.name) ? "extension" : "none",
-        reason: `OOXML 结构未获证 → non-privileged fallback`,
-        warnings,
-        externalOpen: "blocked",
-      }
+    const failure = input.ooxml ? input.ooxml.reason : "结构检测尚未完成"
+    warnings.push(`OOXML/ZIP 结构未获证:${failure} —— 已阻止特权渲染`)
+    return {
+      rendererId: "fallback",
+      effectiveMime: detected ?? claimed ?? extMime,
+      source: detected ? "detected" : claimed ? "claimed" : extensionOf(input.name) ? "extension" : "none",
+      reason: `OOXML/ZIP 结构未获证 → non-privileged fallback`,
+      warnings,
+      externalOpen: "blocked",
     }
   }
 

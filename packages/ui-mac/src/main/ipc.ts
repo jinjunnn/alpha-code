@@ -17,6 +17,7 @@ import { GLOBAL_RENDERER_STORE, TABS_KEY, TABS_RECENT_KEY } from "./tabs-preclea
 import { getPinchZoomEnabled, setPinchZoomEnabled, setTitlebar, updateTitlebar } from "./windows"
 import type { UpdaterController } from "./updater-controller"
 import { createUpdaterSubscriptions } from "./updater-subscriptions"
+import { isManagedRunArtifactPath } from "./artifact-external-open"
 
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
@@ -236,6 +237,7 @@ export function registerIpcHandlers(deps: Deps) {
     "Finder",
   ])
   ipcMain.handle("open-path", async (_event: IpcMainInvokeEvent, path: string, app?: string) => {
+    if (isManagedRunArtifactPath(path)) throw new Error("managed run artifacts require run-artifact-open-external")
     if (!app || !ALLOWED_OPEN_APPS.has(app)) return shell.openPath(path)
     // REQ-076 T2:win32 上 display 名不是可执行名("Visual Studio Code" ≠ code.exe)——
     // 经 seam 映射 CLI 名 + apps.resolveAppPath(where + .cmd→.exe)落成真实 .exe 后 execFile

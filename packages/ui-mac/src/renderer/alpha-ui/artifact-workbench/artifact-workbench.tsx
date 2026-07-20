@@ -216,7 +216,7 @@ export function ArtifactWorkbench(props: { projects: AlphaProjectsApi }) {
     const dir = directory()
     const run = selectedRun()
     if (!card || !dir || !run || !cardPreviewable(card) || card.state === "mismatch") return null
-    if (!shouldDetectOoxml({ name: card.name, claimedMime: card.claimedMime, detectedMime: card.detectedMime })) return null
+    if (!shouldDetectOoxml({ name: card.savedPath!, claimedMime: card.claimedMime, detectedMime: card.detectedMime })) return null
     const readRef: ArtifactReadRef =
       card.descriptor && card.state !== "legacy" ? { artifactId: card.descriptor.id } : { savedPath: card.savedPath! }
     return { key: `${dir}:${run}:${card.key}`, dir, run, readRef }
@@ -226,9 +226,20 @@ export function ArtifactWorkbench(props: { projects: AlphaProjectsApi }) {
       mode: "bytes",
       maxBytes: OOXML_LIMITS.maxCompressedBytes,
     })
-    if (!read.ok) return { key: target.key, detection: { status: "rejected" as const, reason: read.reason } }
+    if (!read.ok)
+      return {
+        key: target.key,
+        detection: { status: "rejected" as const, code: "ZIP_DECOMPRESSION_FAILED" as const, reason: read.reason },
+      }
     if (read.kind !== "bytes")
-      return { key: target.key, detection: { status: "rejected" as const, reason: "unexpected read kind" } }
+      return {
+        key: target.key,
+        detection: {
+          status: "rejected" as const,
+          code: "ZIP_DECOMPRESSION_FAILED" as const,
+          reason: "unexpected read kind",
+        },
+      }
     return { key: target.key, detection: await detectOoxmlContainer(read.bytes) }
   })
 
@@ -299,7 +310,7 @@ export function ArtifactWorkbench(props: { projects: AlphaProjectsApi }) {
     const detected = ooxmlRes()
     const ooxml = !verifying() && target && detected?.key === target.key ? detected.detection : undefined
     const decision = routeArtifact({
-      name: card.name,
+      name: card.savedPath ?? card.name,
       claimedMime: card.claimedMime,
       detectedMime: card.detectedMime,
       ooxml,

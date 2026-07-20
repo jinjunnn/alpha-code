@@ -1,7 +1,8 @@
 // REQ-095(#187)registry 路由单测:确定性、优先级(detected > claimed > extension > fallback)、
 // 冲突诚实(warning chip)、恶意 fixture(html 冒充 image、带脚本 SVG、检测结论权威不回退)。
 import { describe, expect, test } from "bun:test"
-import { OOXML_SUBTYPES, type OoxmlDetection } from "./ooxml"
+import { TextReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js"
+import { OOXML_SUBTYPES, detectOoxmlContainer, type OoxmlDetection } from "./ooxml"
 import { extensionOf, mimeForName, normalizeMime, routeArtifact, RENDERER_REGISTRY, shouldDetectOoxml } from "./registry"
 
 const DETECTED_XLSX: OoxmlDetection = {
@@ -91,17 +92,21 @@ describe("OOXML 结构闸(REQ-093 #281)", () => {
     expect(decision.externalOpen).toBe("allowed")
   })
 
-  test("改扩展名:xlsx 结构伪装 docx → non-privileged fallback", () => {
+  test("真实 bytes → detector → 冲突扩展名 registry 生产链 fail-closed", async () => {
+    const detection = await detectOoxmlContainer(await makeXlsxFixture())
+    expect(detection.status).toBe("detected")
     const decision = routeArtifact({
       name: "renamed.docx",
       claimedMime: OOXML_SUBTYPES.docx.mime,
       detectedMime: "application/zip",
-      ooxml: DETECTED_XLSX,
+      ooxml: detection,
     })
     expect(decision.rendererId).toBe("fallback")
     expect(decision.ooxmlSubtype).toBe("xlsx")
     expect(decision.externalOpen).toBe("blocked")
-    expect(decision.warnings.join(" ")).toContain("特权渲染")
+    expect(decision.warnings).toEqual([
+      "OOXML 结构为 xlsx,但与extension:docx、claimed-mime:application/vnd.openxmlformats-officedocument.wordprocessingml.document冲突 —— 已阻止特权渲染",
+    ])
   })
 
   test("结构与非中性 claimed/detected MIME 任一冲突都阻止特权渲染", () => {
@@ -116,9 +121,26 @@ describe("OOXML 结构闸(REQ-093 #281)", () => {
   test("检测中/非 OOXML/畸形或超限一律 fail-closed,普通非 OOXML 不受影响", () => {
     const input = { name: "book.xlsx", claimedMime: OOXML_SUBTYPES.xlsx.mime }
     expect(routeArtifact(input).externalOpen).toBe("blocked")
-    expect(routeArtifact({ ...input, ooxml: { status: "not-ooxml", reason: "no content types" } }).externalOpen).toBe("blocked")
-    expect(routeArtifact({ ...input, ooxml: { status: "rejected", reason: "ZIP entry limit exceeded" } }).externalOpen).toBe("blocked")
+    expect(routeArtifact({ ...input, ooxml: { status: "not-ooxml", code: "CONTENT_TYPES_MISSING", reason: "CONTENT_TYPES_MISSING" } }).externalOpen).toBe("blocked")
+    expect(routeArtifact({ ...input, ooxml: { status: "rejected", code: "ZIP_ENTRY_LIMIT", reason: "ZIP_ENTRY_LIMIT" } }).externalOpen).toBe("blocked")
+    expect(routeArtifact({ name: "archive.zip", ooxml: { status: "not-ooxml", code: "CONTENT_TYPES_MISSING", reason: "CONTENT_TYPES_MISSING" } }).externalOpen).toBe("blocked")
     expect(routeArtifact({ name: "archive.bin" }).externalOpen).toBe("allowed")
+  })
+
+  test("macro-enabled and other Office extensions/MIMEs all enter the gate and can never inherit fallback allow", () => {
+    for (const name of ["a.xlsm", "a.docm", "a.pptm", "a.xlsb", "a.dotm", "a.xltm", "a.potm", "a.doc", "a.xls", "a.ppt"])
+      expect(routeArtifact({ name }).externalOpen).toBe("blocked")
+    for (const claimedMime of [
+      "application/vnd.ms-excel.sheet.macroEnabled.12",
+      "application/vnd.ms-word.document.macroEnabled.12",
+      "application/vnd.ms-powerpoint.presentation.macroEnabled.12",
+      "application/vnd.ms-excel.sheet.binary.macroEnabled.12",
+      "application/msword",
+    ]) {
+      expect(shouldDetectOoxml({ name: "artifact", claimedMime })).toBe(true)
+      expect(routeArtifact({ name: "artifact", claimedMime }).externalOpen).toBe("blocked")
+    }
+    expect(routeArtifact({ name: "a.xlsm", ooxml: DETECTED_XLSX }).externalOpen).toBe("blocked")
   })
 })
 
@@ -175,16 +197,31 @@ describe("恶意 fixture(REQ-095 恶意矩阵)", () => {
     expect(routeArtifact({ name: "r.pdf" }).rendererId).toBe("pdf")
     expect(routeArtifact({ name: "r", detectedMime: "application/pdf" }).rendererId).toBe("pdf")
   })
-  test("音视频/Office 无内置 renderer → fallback(诚实外部打开)", () => {
+  test("音视频可 fallback;Office 在检测前必须保持 blocked fallback", () => {
     expect(routeArtifact({ name: "a.mp4", claimedMime: "video/mp4" }).rendererId).toBe("fallback")
-    expect(
-      routeArtifact({
-        name: "a.docx",
-        claimedMime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      }).rendererId,
-    ).toBe("fallback")
+    const office = routeArtifact({
+      name: "a.docx",
+      claimedMime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    })
+    expect(office.rendererId).toBe("fallback")
+    expect(office.externalOpen).toBe("blocked")
   })
 })
+
+async function makeXlsxFixture() {
+  const output = new Uint8ArrayWriter()
+  const writer = new ZipWriter(output, { useWebWorkers: false })
+  const contentTypes = `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Override PartName="/xl/workbook.xml" ContentType="${OOXML_SUBTYPES.xlsx.mainContentType}"/></Types>`
+  const relationships = `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`
+  for (const [name, content] of [
+    ["[Content_Types].xml", contentTypes],
+    ["_rels/.rels", relationships],
+    ["xl/workbook.xml", "<workbook/>"],
+  ] as const)
+    await writer.add(name, new TextReader(content), { dataDescriptor: false, extendedTimestamp: false })
+  await writer.close()
+  return output.getData()
+}
 
 describe("常规格式覆盖", () => {
   const cases: Array<[string, string | undefined, string]> = [
