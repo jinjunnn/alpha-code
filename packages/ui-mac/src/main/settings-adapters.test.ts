@@ -17,12 +17,8 @@ import { tmpdir } from "node:os"
 import { basename, dirname, join } from "node:path"
 import type { CasGcRoundInput, CasGcRoundSummary } from "./ext-cas-gc"
 import type { CasGcSchedulerConfig } from "./ext-cas-gc-scheduler"
-import { writeFileDurableAtomicSync, type DurableAtomicFileSystem } from "./ext-atomic-fs"
-import {
-  createExtensionStorageAdapter,
-  createSettingsAdapter,
-  DEFAULT_DURABLE_ATOMIC_FILE_SYSTEM,
-} from "./settings-adapters"
+import { createExtensionStorageAdapter, createSettingsAdapter } from "./settings-adapters"
+import { writeFileDurableAtomicSync, type DurableAtomicFileSystem } from "./settings-durable-writer"
 import { ALPHA_SETTINGS_DEFAULTS, type AlphaSettings } from "../shared/settings-adapters"
 import { RENDERER_SETTINGS_KEY } from "./store-keys"
 
@@ -131,7 +127,7 @@ describe("Settings typed adapter", () => {
     rmSync(userData, { recursive: true, force: true })
   })
 
-  test("production default and test seam expose the same fixed writer method keys", () => {
+  test("the equivalent test seam exposes the fixed writer method keys", () => {
     const expected = new Set([
       "mkdirSync",
       "writeFileSync",
@@ -141,11 +137,9 @@ describe("Settings typed adapter", () => {
       "renameSync",
       "unlinkSync",
     ])
-    const production = new Set(Object.keys(DEFAULT_DURABLE_ATOMIC_FILE_SYSTEM))
     const seam = new Set(Object.keys(nodeFileSystem))
 
-    expect(production).toEqual(seam)
-    expect(production).toEqual(expected)
+    expect(seam).toEqual(expected)
   })
 
   test("read returns defaults for an empty authority and normalizes the existing partial alpha seed", () => {

@@ -13,13 +13,12 @@ import {
 import { dirname } from "node:path"
 import type { CasGcRoundInput, CasGcRoundSummary } from "./ext-cas-gc"
 import type { CasGcSchedulerConfig, CasGcSpawnRound } from "./ext-cas-gc-scheduler"
+import { fsyncDirRequiredSync, fsyncFileSync } from "./ext-atomic-fs"
 import {
-  fsyncDirRequiredSync,
-  fsyncFileSync,
   writeFileDurableAtomicSync,
   type DurableAtomicFileSystem,
   type DurableAtomicWriteOptions,
-} from "./ext-atomic-fs"
+} from "./settings-durable-writer"
 import {
   ALPHA_SETTINGS_DEFAULTS,
   type AlphaSettings,
@@ -39,16 +38,6 @@ const MAX_KEYBIND_CHARS = 256
 const MAX_SOUND_ID_CHARS = 64
 const INVALID = Symbol("invalid")
 
-export const DEFAULT_DURABLE_ATOMIC_FILE_SYSTEM: DurableAtomicFileSystem = {
-  mkdirSync: (dir, options) => mkdirSync(dir, options),
-  writeFileSync: (file, data, options) => writeFileSync(file, data, options),
-  openSync: (file, flags) => openSync(file, flags),
-  fsyncSync: (fd) => fsyncSync(fd),
-  closeSync: (fd) => closeSync(fd),
-  renameSync: (from, to) => renameSync(from, to),
-  unlinkSync: (file) => unlinkSync(file),
-}
-
 export type SettingsAdapterOptions = {
   onCommitPoint?: DurableAtomicWriteOptions["onCommitPoint"]
   /** Test-only syscall seam for the durable atomic helper. */
@@ -56,9 +45,17 @@ export type SettingsAdapterOptions = {
 }
 
 export function createSettingsAdapter(file: string, options?: SettingsAdapterOptions) {
-  // Resolve once to the same fixed syscall shape used by tests; the writer never inspects seam identity or capabilities.
+  // Resolve once to the same fixed syscall shape used by tests; the private default identity cannot cross this boundary.
   const durableAtomicOptions: DurableAtomicWriteOptions = {
-    fileSystem: options?.fileSystem ?? DEFAULT_DURABLE_ATOMIC_FILE_SYSTEM,
+    fileSystem: options?.fileSystem ?? {
+      mkdirSync: (dir, mkdirOptions) => mkdirSync(dir, mkdirOptions),
+      writeFileSync: (writtenFile, data, writeOptions) => writeFileSync(writtenFile, data, writeOptions),
+      openSync: (openedFile, flags) => openSync(openedFile, flags),
+      fsyncSync: (fd) => fsyncSync(fd),
+      closeSync: (fd) => closeSync(fd),
+      renameSync: (from, to) => renameSync(from, to),
+      unlinkSync: (unlinkedFile) => unlinkSync(unlinkedFile),
+    },
     onCommitPoint: options?.onCommitPoint,
   }
   return {

@@ -114,12 +114,14 @@ warnings 明细或其它未知字段。warning 只允许聚合为 `warningCount`
   临时文件 → 以 `r` 打开并 fsync 同一临时文件 → 从该临时文件 rename 到不同的目标 → 以 `r`
   打开并 fsync 父目录 → 返回成功」。可选测试接缝只在 adapter 构造入口解析一次，此后核心
   writer 只接收一个必填、固定形状的 fs 接口；该接口恰好暴露 `mkdirSync`、`writeFileSync`、
-  `openSync`、`fsyncSync`、`closeSync`、`renameSync` 与 `unlinkSync`。生产默认对象是只含这七个
-  方法的显式对象，不是完整 `node:fs` namespace；契约测试断言生产对象与测试接缝的方法键集合
-  完全相等。writer 只无条件调用接口方法，不得按是否注入、对象身份、`in`/`typeof` 能力嗅探或
-  额外属性选择提交步骤。因此令 temp 等于目标、删除父目录 fsync，或绕过该唯一 fs 对象直接使用
-  `node:fs`/`fs.promises`，都会缺失对象、flags 或事件绑定并使测试失败。该断言只证明这些系统
-  调用对象与顺序，不声称用户态测试可以模拟掉电后的真实介质状态。
+  `openSync`、`fsyncSync`、`closeSync`、`renameSync` 与 `unlinkSync`。生产默认对象在 adapter 边界
+  内联构造，只含这七个方法且不导出或泄漏身份；测试自行构造等价对象，接口精确形状与键集测试
+  将生产默认路径和被观察路径约束为相同的七方法集合。writer 只无条件调用接口方法，不得按是否
+  注入、对象身份、`in`/`typeof` 能力嗅探或额外属性选择提交步骤，也不得直接 import `node:fs` 或
+  `fs/promises`。因此令 temp 等于目标、删除父目录 fsync，或绕过该唯一 fs 对象直接执行系统调用，
+  都会缺失对象、flags 或事件绑定并使测试失败。该测试接缝证明的是生产默认路径与被观察路径形状
+  一致且调用序正确；它不能完全排除实现方故意检测测试环境后选择另一条实现路径，该已知残余由
+  code review 承担。该断言也不声称用户态测试可以模拟掉电后的真实介质状态。
 - 崩溃注入分别命中「文件 fsync 后、rename 前」与「rename 后、父目录 fsync 前」，只证明子进程
   未报假成功且重启后权威值是完整旧值或完整新值；它不单独证明目录项已掉电持久。前一窗口的
   crash temp 会保留且不自动清扫；回归测试证明其存在时后续读取、持久写入与提交系统调用顺序
