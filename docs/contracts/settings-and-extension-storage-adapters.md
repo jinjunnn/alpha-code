@@ -33,9 +33,15 @@ settings.write(input: {
   错误类型和危险 key 均 fail closed。成功返回完整 typed value 与 opaque revision。
 - `validate` 是无副作用预检；`write` 必须再次执行相同校验，renderer 的预检结果不构成授权。
 - `write` 先读当前权威值。目标与权威值完全相同时按 exact replay 幂等成功，哪怕调用方仍携带
-  第一次提交前的 revision；否则 revision 不匹配返回冲突且零写入。
-- 真写复用 `electron-store.set` 的原子文件替换，不增加第二套持久化。写后必须重新读取并验证
-  目标已成为权威值才返回成功；写调用抛错但重读已等于目标时，同样按已提交事实收敛成功。
+  第一次提交前的 revision；已存在权威文件时，exact replay 也要求文件与父目录 fsync
+  成功才返回成功。否则 revision 不匹配返回冲突且零写入。
+- typed Settings 提交直接更新 `default.dat` 的 `settings.v3`，保留文件中其它顶层键；
+  该权威键不经由 `electron-store.set` 的写路径。提交使用与目标同目录的临时文件，严格按
+  「写临时文件 → fsync 临时文件 → 同目录原子 rename → fsync 父目录」完成；不存在
+  EXDEV/直接覆盖 fallback。
+- 上述任一步（包括父目录 fsync）失败都 fail closed 为 `write-failed`，即使 rename 后的新值
+  在当前文件视图已可见也不升级为成功。只有完整持久提交结束且重读确认目标权威值后才返回
+  `ok: true`。
 - 失败结果尽力附上重新读取的 `authoritative` 值，供消费者保留草稿并显示仍生效的值。进程
   重启后 `read` 重新从同一 `default.dat/settings.v3` 读取，不采信 renderer 内存或成功提示。
 
@@ -96,7 +102,9 @@ warnings 明细或其它未知字段。warning 只允许聚合为 `warningCount`
 - 无用户/租户参数；设置与扩展存储只作用于当前本机 app 环境。
 - 不提供通用设置注册框架，不修改上游 Settings UI、配置持久化内核或 GC collector。
 - adapter 契约测试位于
-  `packages/ui-mac/src/main/settings-adapters.test.ts`，覆盖 schema 正负例、失败恢复、重启权威值、
-  revision 冲突、exact replay 幂等、错误脱敏、手动 GC dry-run/collect、并发 busy 与 renderer
+  `packages/ui-mac/src/main/settings-adapters.test.ts`，Settings 用例使用真实临时 `userData/default.dat`，
+  并通过子进程重新打开验证成功提交。崩溃注入分别命中「文件 fsync 后、rename 前」与
+  「rename 后、父目录 fsync 前」，要求子进程未报成功且重启后只能读到完整旧值或完整新值。
+  其余覆盖 schema 正负例、真实 rename/父目录 fsync 文件层失败、revision 冲突、
+  exact replay 幂等、错误脱敏、手动 GC dry-run/collect、确定性 busy 映射与 renderer
   字段白名单。
-

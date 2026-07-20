@@ -1,6 +1,14 @@
 import { createHash } from "node:crypto"
+import { existsSync, readFileSync } from "node:fs"
+import { dirname } from "node:path"
 import type { CasGcRoundInput, CasGcRoundSummary } from "./ext-cas-gc"
 import type { CasGcSchedulerConfig, CasGcSpawnRound } from "./ext-cas-gc-scheduler"
+import {
+  fsyncDirRequiredSync,
+  fsyncFileSync,
+  writeFileDurableAtomicSync,
+  type DurableAtomicWriteOptions,
+} from "./ext-atomic-fs"
 import {
   ALPHA_SETTINGS_DEFAULTS,
   type AlphaSettings,
@@ -20,15 +28,14 @@ const MAX_KEYBIND_CHARS = 256
 const MAX_SOUND_ID_CHARS = 64
 const INVALID = Symbol("invalid")
 
-export type SettingsStore = {
-  get(key: string): unknown
-  set(key: string, value: string): unknown
+export type SettingsAdapterOptions = {
+  onCommitPoint?: DurableAtomicWriteOptions["onCommitPoint"]
 }
 
-export function createSettingsAdapter(store: SettingsStore) {
+export function createSettingsAdapter(file: string, options?: SettingsAdapterOptions) {
   return {
     read(): SettingsReadResult {
-      const current = readCurrent(store)
+      const current = readCurrent(file)
       if (current.kind === "valid") return { ok: true, ...current.authority }
       if (current.kind === "invalid") return { ok: false, code: "authority-invalid", revision: current.revision }
       return { ok: false, code: "read-failed" }
@@ -45,10 +52,18 @@ export function createSettingsAdapter(store: SettingsStore) {
       if (!value || typeof envelope.expectedRevision !== "string" || !REVISION_PATTERN.test(envelope.expectedRevision)) {
         return { ok: false, code: "invalid-input" }
       }
-      const current = readCurrent(store)
+      const current = readCurrent(file)
       if (current.kind === "failed") return { ok: false, code: "read-failed" }
       const json = JSON.stringify(value)
       if (current.kind === "valid" && JSON.stringify(current.authority.value) === json) {
+        try {
+          if (existsSync(file)) {
+            fsyncFileSync(file)
+            fsyncDirRequiredSync(dirname(file))
+          }
+        } catch {
+          return writeFailure(readCurrent(file))
+        }
         return { ok: true, changed: false, ...current.authority }
       }
       const revision = current.kind === "valid" ? current.authority.revision : current.revision
@@ -61,11 +76,15 @@ export function createSettingsAdapter(store: SettingsStore) {
         }
       }
       try {
-        store.set(RENDERER_SETTINGS_KEY, json)
+        const document = readSettingsDocument(file)
+        document[RENDERER_SETTINGS_KEY] = json
+        writeFileDurableAtomicSync(file, JSON.stringify(document, null, "\t"), {
+          onCommitPoint: options?.onCommitPoint,
+        })
       } catch {
-        return reconcileFailedWrite(store, value)
+        return writeFailure(readCurrent(file))
       }
-      const saved = readCurrent(store)
+      const saved = readCurrent(file)
       if (saved.kind === "valid" && JSON.stringify(saved.authority.value) === json) {
         return { ok: true, changed: true, ...saved.authority }
       }
@@ -115,9 +134,9 @@ type CurrentSettings =
   | { kind: "invalid"; revision: string }
   | { kind: "failed" }
 
-function readCurrent(store: SettingsStore): CurrentSettings {
+function readCurrent(file: string): CurrentSettings {
   try {
-    const raw = store.get(RENDERER_SETTINGS_KEY)
+    const raw = readSettingsDocument(file)[RENDERER_SETTINGS_KEY]
     const parsed = parseStored(raw)
     if (parsed === INVALID) return { kind: "invalid", revision: revision(raw) }
     const value = decodeSettings(parsed, true)
@@ -126,6 +145,14 @@ function readCurrent(store: SettingsStore): CurrentSettings {
   } catch {
     return { kind: "failed" }
   }
+}
+
+function readSettingsDocument(file: string) {
+  if (!existsSync(file)) return {} as Record<string, unknown>
+  const parsed = JSON.parse(readFileSync(file, "utf8")) as unknown
+  const document = object(parsed)
+  if (!document) throw new Error("invalid settings document")
+  return document
 }
 
 function parseStored(raw: unknown): unknown | typeof INVALID {
@@ -140,14 +167,6 @@ function parseStored(raw: unknown): unknown | typeof INVALID {
 
 function revision(value: unknown) {
   return `s1:${createHash("sha256").update(typeof value === "string" ? value : JSON.stringify(value)).digest("hex")}`
-}
-
-function reconcileFailedWrite(store: SettingsStore, target: AlphaSettings): SettingsWriteResult {
-  const recovered = readCurrent(store)
-  if (recovered.kind === "valid" && JSON.stringify(recovered.authority.value) === JSON.stringify(target)) {
-    return { ok: true, changed: true, ...recovered.authority }
-  }
-  return writeFailure(recovered)
 }
 
 function writeFailure(current: CurrentSettings): SettingsWriteResult {
@@ -328,12 +347,11 @@ function safeKey(key: string) {
 }
 
 function projectStorageResult(summary: CasGcRoundSummary): ExtensionStorageResult {
+  const busy =
+    summary.reason?.startsWith("CAS lock busy:") === true ||
+    summary.reason?.endsWith("— GC skipped (mutual exclusion)") === true
   return {
-    code: summary.ok
-      ? "ok"
-      : summary.reason?.includes("mutual exclusion") || summary.reason?.includes("lock busy")
-        ? "busy"
-        : "fail-closed",
+    code: summary.ok ? "ok" : busy ? "busy" : "fail-closed",
     blobsTotal: summary.blobsTotal,
     sweepableCount: summary.sweepableCount,
     sweptCount: summary.sweptCount,

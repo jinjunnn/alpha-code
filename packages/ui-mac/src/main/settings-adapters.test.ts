@@ -1,47 +1,102 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs"
+import { tmpdir } from "node:os"
+import { dirname, join } from "node:path"
 import type { CasGcRoundInput, CasGcRoundSummary } from "./ext-cas-gc"
 import type { CasGcSchedulerConfig } from "./ext-cas-gc-scheduler"
-import { createExtensionStorageAdapter, createSettingsAdapter, type SettingsStore } from "./settings-adapters"
+import { createExtensionStorageAdapter, createSettingsAdapter } from "./settings-adapters"
 import { ALPHA_SETTINGS_DEFAULTS, type AlphaSettings } from "../shared/settings-adapters"
 import { RENDERER_SETTINGS_KEY } from "./store-keys"
 
-class MemorySettingsStore implements SettingsStore {
-  raw: unknown
-  sets = 0
-  getError: Error | undefined
-  setError: Error | undefined
-  writeBeforeError = false
+const settings = (): AlphaSettings => structuredClone(ALPHA_SETTINGS_DEFAULTS)
+const childModule = new URL("./settings-adapters.ts", import.meta.url).href
+const childSource = `
+const { createSettingsAdapter } = await import(${JSON.stringify(childModule)})
+const file = process.env.REQ090_SETTINGS_FILE
+const mode = process.env.REQ090_SETTINGS_MODE
+if (!file || !mode) throw new Error("missing child input")
+const adapter = createSettingsAdapter(file, {
+  onCommitPoint(point) {
+    if (point === process.env.REQ090_CRASH_POINT) process.kill(process.pid, "SIGKILL")
+  },
+})
+if (mode === "read") console.log(JSON.stringify(adapter.read()))
+if (mode === "write") {
+  const value = JSON.parse(process.env.REQ090_SETTINGS_VALUE ?? "null")
+  console.log(JSON.stringify(adapter.write({ value, expectedRevision: process.env.REQ090_SETTINGS_REVISION })))
+}
+`
 
-  constructor(raw?: unknown) {
-    this.raw = raw
-  }
-
-  get(key: string) {
-    expect(key).toBe(RENDERER_SETTINGS_KEY)
-    if (this.getError) throw this.getError
-    return this.raw
-  }
-
-  set(key: string, value: string) {
-    expect(key).toBe(RENDERER_SETTINGS_KEY)
-    this.sets++
-    if (this.writeBeforeError) this.raw = value
-    if (this.setError) throw this.setError
-    this.raw = value
-  }
+function runSettingsChild(
+  file: string,
+  mode: "read" | "write",
+  input?: { value: AlphaSettings; revision: string; crashPoint?: "file-synced" | "renamed" },
+) {
+  return Bun.spawnSync({
+    cmd: [process.execPath, "--eval", childSource],
+    env: {
+      ...process.env,
+      REQ090_SETTINGS_FILE: file,
+      REQ090_SETTINGS_MODE: mode,
+      ...(input
+        ? {
+            REQ090_SETTINGS_VALUE: JSON.stringify(input.value),
+            REQ090_SETTINGS_REVISION: input.revision,
+            ...(input.crashPoint ? { REQ090_CRASH_POINT: input.crashPoint } : {}),
+          }
+        : {}),
+    },
+    stdout: "pipe",
+    stderr: "pipe",
+  })
 }
 
-const settings = (): AlphaSettings => structuredClone(ALPHA_SETTINGS_DEFAULTS)
+function readInChild(file: string) {
+  const child = runSettingsChild(file, "read")
+  expect(child.exitCode).toBe(0)
+  expect(new TextDecoder().decode(child.stderr)).toBe("")
+  return JSON.parse(new TextDecoder().decode(child.stdout)) as ReturnType<ReturnType<typeof createSettingsAdapter>["read"]>
+}
+
+function writeAuthority(file: string, raw: unknown, extra: Record<string, unknown> = {}) {
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, JSON.stringify({ ...extra, [RENDERER_SETTINGS_KEY]: raw }, null, "\t"))
+}
+
+function readDocument(file: string) {
+  return JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>
+}
 
 describe("Settings typed adapter", () => {
+  let userData: string
+  let file: string
+
+  beforeEach(() => {
+    userData = mkdtempSync(join(tmpdir(), "req090-settings-"))
+    file = join(userData, "default.dat")
+  })
+
+  afterEach(() => {
+    rmSync(userData, { recursive: true, force: true })
+  })
+
   test("read returns defaults for an empty authority and normalizes the existing partial alpha seed", () => {
-    const empty = createSettingsAdapter(new MemorySettingsStore()).read()
+    const empty = createSettingsAdapter(file).read()
     expect(empty.ok).toBe(true)
     if (empty.ok) expect(empty.value).toEqual(ALPHA_SETTINGS_DEFAULTS)
 
-    const seeded = createSettingsAdapter(
-      new MemorySettingsStore(JSON.stringify({ general: { newLayoutDesigns: true, showCustomAgents: true } })),
-    ).read()
+    writeAuthority(file, JSON.stringify({ general: { newLayoutDesigns: true, showCustomAgents: true } }))
+    const seeded = createSettingsAdapter(file).read()
     expect(seeded.ok).toBe(true)
     if (!seeded.ok) return
     expect(seeded.value.general.newLayoutDesigns).toBe(true)
@@ -50,7 +105,7 @@ describe("Settings typed adapter", () => {
   })
 
   test("validate accepts the complete schema and rejects wrong types, unknown fields and unsafe keybind keys", () => {
-    const adapter = createSettingsAdapter(new MemorySettingsStore())
+    const adapter = createSettingsAdapter(file)
     expect(adapter.validate(settings())).toEqual({ ok: true })
     expect(adapter.validate({ ...settings(), appearance: { ...settings().appearance, fontSize: "14" } })).toEqual({
       ok: false,
@@ -66,9 +121,9 @@ describe("Settings typed adapter", () => {
     })
   })
 
-  test("save persists a validated value and a new adapter instance reads the restart authority", () => {
-    const store = new MemorySettingsStore()
-    const first = createSettingsAdapter(store)
+  test("save is durable before success and a child process reopens the authoritative value", () => {
+    writeAuthority(file, undefined, { unrelated: { preserved: true } })
+    const first = createSettingsAdapter(file)
     const read = first.read()
     expect(read.ok).toBe(true)
     if (!read.ok) return
@@ -78,9 +133,9 @@ describe("Settings typed adapter", () => {
     expect(saved.ok).toBe(true)
     if (!saved.ok) return
     expect(saved.changed).toBe(true)
-    expect(store.sets).toBe(1)
+    expect(readDocument(file).unrelated).toEqual({ preserved: true })
 
-    const restarted = createSettingsAdapter(store).read()
+    const restarted = readInChild(file)
     expect(restarted.ok).toBe(true)
     if (restarted.ok) {
       expect(restarted.value.notifications.errors).toBe(true)
@@ -89,8 +144,12 @@ describe("Settings typed adapter", () => {
   })
 
   test("an exact repeated submission is idempotent even with the original revision", () => {
-    const store = new MemorySettingsStore()
-    const adapter = createSettingsAdapter(store)
+    let commits = 0
+    const adapter = createSettingsAdapter(file, {
+      onCommitPoint: (point) => {
+        if (point === "file-synced") commits++
+      },
+    })
     const read = adapter.read()
     expect(read.ok).toBe(true)
     if (!read.ok) return
@@ -101,12 +160,16 @@ describe("Settings typed adapter", () => {
     expect(first.ok).toBe(true)
     expect(replay.ok).toBe(true)
     if (replay.ok) expect(replay.changed).toBe(false)
-    expect(store.sets).toBe(1)
+    expect(commits).toBe(1)
   })
 
   test("a stale conflicting submission is refused with the current authoritative value", () => {
-    const store = new MemorySettingsStore()
-    const adapter = createSettingsAdapter(store)
+    let commits = 0
+    const adapter = createSettingsAdapter(file, {
+      onCommitPoint: (point) => {
+        if (point === "file-synced") commits++
+      },
+    })
     const read = adapter.read()
     expect(read.ok).toBe(true)
     if (!read.ok) return
@@ -120,85 +183,137 @@ describe("Settings typed adapter", () => {
     if (result.ok) return
     expect(result.code).toBe("revision-conflict")
     expect(result.authoritative?.value.general.showStatus).toBe(true)
-    expect(store.sets).toBe(1)
+    expect(commits).toBe(1)
   })
 
   test("invalid input never writes", () => {
-    const store = new MemorySettingsStore()
-    const result = createSettingsAdapter(store).write({
+    const result = createSettingsAdapter(file).write({
       value: { ...settings(), notifications: { agent: true, permissions: true, errors: "yes" } },
       expectedRevision: "s1:" + "0".repeat(64),
     })
     expect(result).toEqual({ ok: false, code: "invalid-input" })
-    expect(store.sets).toBe(0)
+    expect(existsSync(file)).toBe(false)
   })
 
   test("a malformed write envelope returns only invalid-input", () => {
-    const store = new MemorySettingsStore()
-    expect(createSettingsAdapter(store).write(null)).toEqual({ ok: false, code: "invalid-input" })
+    expect(createSettingsAdapter(file).write(null)).toEqual({ ok: false, code: "invalid-input" })
     expect(
-      createSettingsAdapter(store).write({
+      createSettingsAdapter(file).write({
         value: settings(),
         expectedRevision: "s1:".padEnd(67, "0"),
         secret: "do-not-leak",
       }),
     ).toEqual({ ok: false, code: "invalid-input" })
-    expect(store.sets).toBe(0)
+    expect(existsSync(file)).toBe(false)
   })
 
-  test("write failure returns the prior authority and redacts raw exception, path and secret", () => {
-    const store = new MemorySettingsStore()
-    const adapter = createSettingsAdapter(store)
+  test("a real rename failure is fail-closed with the old restart authority and no direct-write fallback", () => {
+    const adapter = createSettingsAdapter(file)
     const read = adapter.read()
     expect(read.ok).toBe(true)
     if (!read.ok) return
-    store.setError = new Error("EACCES /Users/alice/.config token=super-secret")
+    const old = settings()
+    old.general.releaseNotes = false
+    const initial = adapter.write({ value: old, expectedRevision: read.revision })
+    expect(initial.ok).toBe(true)
+    if (!initial.ok) return
     const next = settings()
-    next.general.releaseNotes = false
-    const result = adapter.write({ value: next, expectedRevision: read.revision })
+    next.general.showTerminal = true
+    const failing = createSettingsAdapter(file, {
+      onCommitPoint: (point, temporaryFile) => {
+        if (point !== "file-synced") return
+        expect(dirname(temporaryFile)).toBe(dirname(file))
+        unlinkSync(temporaryFile)
+      },
+    })
+    const result = failing.write({ value: next, expectedRevision: initial.revision })
     expect(result.ok).toBe(false)
     if (result.ok) return
     expect(result.code).toBe("write-failed")
-    expect(result.authoritative?.value.general.releaseNotes).toBe(true)
-    expect(JSON.stringify(result)).not.toContain("/Users/")
-    expect(JSON.stringify(result)).not.toContain("super-secret")
-    expect(JSON.stringify(result)).not.toContain("EACCES")
+    expect(result.authoritative?.value).toEqual(old)
+    const restarted = readInChild(file)
+    expect(restarted.ok).toBe(true)
+    if (restarted.ok) expect(restarted.value).toEqual(old)
+    expect(readDocument(file)[RENDERER_SETTINGS_KEY]).toBe(JSON.stringify(old))
   })
 
-  test("a backend that commits before throwing reconciles to authoritative success", () => {
-    const store = new MemorySettingsStore()
-    const adapter = createSettingsAdapter(store)
+  test("a real parent-directory fsync failure after rename never reports success", () => {
+    const adapter = createSettingsAdapter(file)
     const read = adapter.read()
     expect(read.ok).toBe(true)
     if (!read.ok) return
-    store.writeBeforeError = true
-    store.setError = new Error("late flush error")
+    const old = settings()
+    old.general.showStatus = true
+    const initial = adapter.write({ value: old, expectedRevision: read.revision })
+    expect(initial.ok).toBe(true)
+    if (!initial.ok) return
+
+    const movedUserData = `${userData}-during-directory-fsync`
+    const next = settings()
+    next.general.showTerminal = true
+    const failing = createSettingsAdapter(file, {
+      onCommitPoint: (point) => {
+        if (point === "renamed") renameSync(userData, movedUserData)
+      },
+    })
+    const result = failing.write({ value: next, expectedRevision: initial.revision })
+    renameSync(movedUserData, userData)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.code).toBe("write-failed")
+
+    const restarted = readInChild(file)
+    expect(restarted.ok).toBe(true)
+    if (restarted.ok) expect(restarted.value).toEqual(next)
+    expect(() => readDocument(file)).not.toThrow()
+  })
+
+  test.each([
+    ["file-synced", "old"],
+    ["renamed", "old-or-new"],
+  ] as const)("crash at %s never reports success or leaves a corrupt authority", (crashPoint, expected) => {
+    const adapter = createSettingsAdapter(file)
+    const read = adapter.read()
+    expect(read.ok).toBe(true)
+    if (!read.ok) return
+    const old = settings()
+    old.general.showStatus = true
+    const initial = adapter.write({ value: old, expectedRevision: read.revision })
+    expect(initial.ok).toBe(true)
+    if (!initial.ok) return
     const next = settings()
     next.sounds.agentEnabled = false
-    const result = adapter.write({ value: next, expectedRevision: read.revision })
-    expect(result.ok).toBe(true)
-    if (result.ok) expect(result.value.sounds.agentEnabled).toBe(false)
+    const child = runSettingsChild(file, "write", { value: next, revision: initial.revision, crashPoint })
+    expect(child.exitCode).not.toBe(0)
+    expect(new TextDecoder().decode(child.stdout)).toBe("")
+
+    const restarted = readInChild(file)
+    expect(restarted.ok).toBe(true)
+    if (!restarted.ok) return
+    if (expected === "old") expect(restarted.value).toEqual(old)
+    if (expected === "old-or-new") expect([old, next]).toContainEqual(restarted.value)
+    expect(() => readDocument(file)).not.toThrow()
+    readdirSync(userData)
+      .filter((entry) => entry.includes(".tmp-"))
+      .forEach((entry) => expect(() => JSON.parse(readFileSync(join(userData, entry), "utf8"))).not.toThrow())
   })
 
   test("an invalid authority can be repaired only with the revision returned by read", () => {
-    const store = new MemorySettingsStore('{"general":{"showSearch":"/Users/alice/secret"}}')
-    const adapter = createSettingsAdapter(store)
+    writeAuthority(file, '{"general":{"showSearch":"/Users/alice/secret"}}')
+    const adapter = createSettingsAdapter(file)
     const read = adapter.read()
     expect(read.ok).toBe(false)
     if (read.ok || read.code !== "authority-invalid") return
     expect(JSON.stringify(read)).not.toContain("/Users/")
     const repaired = adapter.write({ value: settings(), expectedRevision: read.revision })
     expect(repaired.ok).toBe(true)
-    expect(createSettingsAdapter(store).read().ok).toBe(true)
+    expect(readInChild(file).ok).toBe(true)
   })
 
-  test("read exceptions return only a stable redacted code", () => {
-    const store = new MemorySettingsStore()
-    store.getError = new Error("broken /home/alice/settings token=hunter2")
-    const result = createSettingsAdapter(store).read()
+  test("real file read failures return only a stable redacted code", () => {
+    mkdirSync(file)
+    const result = createSettingsAdapter(file).read()
     expect(result).toEqual({ ok: false, code: "read-failed" })
-    expect(JSON.stringify(result)).not.toContain("/home/")
-    expect(JSON.stringify(result)).not.toContain("hunter2")
+    expect(JSON.stringify(result)).not.toContain(userData)
   })
 })
 
@@ -297,6 +412,16 @@ describe("extension storage typed adapter", () => {
       Promise.resolve(summary({ ok: false, reason: "CAS lock busy: held by /home/alice" })),
     )
     expect((await busy.collect()).code).toBe("busy")
+
+    const transactionBusy = createExtensionStorageAdapter(gcConfig, () =>
+      Promise.resolve(summary({ ok: false, reason: "transaction in flight at /x — GC skipped (mutual exclusion)" })),
+    )
+    expect((await transactionBusy.collect()).code).toBe("busy")
+
+    const misleadingPath = createExtensionStorageAdapter(gcConfig, () =>
+      Promise.resolve(summary({ ok: false, reason: "seed identity invalid at /Users/lock busy/root" })),
+    )
+    expect((await misleadingPath.inspect()).code).toBe("fail-closed")
   })
 
   test("worker failure returns a stable zeroed result", async () => {
