@@ -38,13 +38,17 @@ settings.write(input: {
 - typed Settings 提交直接更新 `default.dat` 的 `settings.v3`，保留文件中其它顶层键；
   该权威键不经由 `electron-store.set` 的写路径。提交使用与目标同目录的临时文件，严格按
   「写临时文件 → fsync 临时文件 → 同目录原子 rename → fsync 父目录」完成；不存在
-  EXDEV/直接覆盖 fallback。
+  EXDEV/直接覆盖 fallback。临时文件以 `wx` 独占创建，命名为
+  `.目标名.tmp-<pid>-<8hex>-<host-id>-<process-instance-id>`；前两段保留写入尝试身份，后两段绑定创建
+  主机与进程实例。命名碰撞会令提交失败，且不会删除或覆盖已存在的同名临时文件。
 - 上述任一步（包括父目录 fsync）失败都 fail closed 为 `write-failed`，即使 rename 后的新值
   在当前文件视图已可见也不升级为成功。只有完整持久提交结束且重读确认目标权威值后才返回
   `ok: true`。
 - rename 前失败会删除本次写入创建的唯一临时文件，且清理失败不得覆盖原始提交错误。adapter
-  启动时只清扫与当前目标严格匹配的 `.目标名.tmp-<pid>-<8hex>` 孤儿；无法完成清扫时 fail closed，
-  不读取或改写其它临时文件命名空间。
+  启动时只考虑与当前目标及完整创建身份严格匹配的临时文件：host-id 必须与本机一致，且记录的
+  pid 只有在 `process.kill(pid, 0)` 明确返回 `ESRCH` 时才可判为孤儿并删除；成功或 `EPERM`
+  均按活跃处理，其它错误、旧格式、身份损坏、异机身份及任何清扫异常一律保守保留。该删除判定
+  fail closed，但残留临时文件或清扫失败不阻断正常权威值读写。
 - 失败结果尽力附上重新读取的 `authoritative` 值，供消费者保留草稿并显示仍生效的值。进程
   重启后 `read` 重新从同一 `default.dat/settings.v3` 读取，不采信 renderer 内存或成功提示。
 
@@ -106,12 +110,16 @@ warnings 明细或其它未知字段。warning 只允许聚合为 `warningCount`
 - 不提供通用设置注册框架，不修改上游 Settings UI、配置持久化内核或 GC collector。
 - adapter 契约测试位于
   `packages/ui-mac/src/main/settings-adapters.test.ts`，Settings 用例使用真实临时 `userData/default.dat`，
-  并通过子进程重新打开验证成功提交。同步 fs 测试接缝会记录 fd 与打开路径，要求一次成功写入
-  严格出现「临时文件 fsync → rename 到目标 → 父目录 fsync → 返回成功」；删除父目录 fsync
-  会直接缺少必需事件并使测试失败。该断言证明提交代码执行了正确系统调用，不声称用户态测试
-  可以模拟掉电后的真实介质状态。
+  并通过子进程重新打开验证成功提交。同步 fs 测试接缝记录写目标、open 路径与 flags、fd、fsync、
+  close 及 rename 两端，要求一次成功写入严格出现「以 `wx` 写入契约命名且不同于目标的同目录
+  临时文件 → 以 `r` 打开并 fsync 同一临时文件 → 从该临时文件 rename 到不同的目标 → 以 `r`
+  打开并 fsync 父目录 → 返回成功」。因此令 temp 等于目标、删除父目录 fsync，或绕过接缝直接
+  使用 `node:fs`/`fs.promises` 都会缺失对象、flags 或事件绑定并使测试失败。该断言只证明这些
+  系统调用对象与顺序，不声称用户态测试可以模拟掉电后的真实介质状态。
 - 崩溃注入分别命中「文件 fsync 后、rename 前」与「rename 后、父目录 fsync 前」，只证明子进程
   未报假成功且重启后权威值是完整旧值或完整新值；它不单独证明目录项已掉电持久。前一窗口的
-  orphan temp 必须由下一次 adapter 启动清扫，普通写入/文件 fsync/hook/rename 失败则在本次失败
-  路径清理。其余覆盖 schema 正负例、注入的 rename/父目录 fsync 系统调用失败、revision 冲突、
-  exact replay 幂等、错误脱敏、手动 GC dry-run/collect、确定性 busy 映射与 renderer 字段白名单。
+  同机且创建者 pid 已明确死亡的 orphan temp 必须由下一次 adapter 启动清扫，普通写入/文件
+  fsync/hook/rename 失败则在本次失败路径清理。清扫测试另覆盖活跃 pid、异机/相似命名、进程
+  状态判不准及清扫 I/O 失败的保守保留。其余覆盖 schema 正负例、注入的 rename/父目录 fsync
+  系统调用失败、revision 冲突、exact replay 幂等、错误脱敏、手动 GC dry-run/collect、确定性
+  busy 映射与 renderer 字段白名单。

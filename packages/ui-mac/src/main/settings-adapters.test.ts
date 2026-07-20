@@ -17,7 +17,11 @@ import { tmpdir } from "node:os"
 import { basename, dirname, join } from "node:path"
 import type { CasGcRoundInput, CasGcRoundSummary } from "./ext-cas-gc"
 import type { CasGcSchedulerConfig } from "./ext-cas-gc-scheduler"
-import { writeFileDurableAtomicSync, type DurableAtomicFileSystem } from "./ext-atomic-fs"
+import {
+  cleanupDurableAtomicTemporaryFilesSync,
+  writeFileDurableAtomicSync,
+  type DurableAtomicFileSystem,
+} from "./ext-atomic-fs"
 import { createExtensionStorageAdapter, createSettingsAdapter } from "./settings-adapters"
 import { ALPHA_SETTINGS_DEFAULTS, type AlphaSettings } from "../shared/settings-adapters"
 import { RENDERER_SETTINGS_KEY } from "./store-keys"
@@ -96,8 +100,47 @@ const nodeFileSystem: DurableAtomicFileSystem = {
 function durableTemporaryFiles(file: string) {
   const prefix = `.${basename(file)}.tmp-`
   return readdirSync(dirname(file)).filter(
-    (entry) => entry.startsWith(prefix) && /^\d+-[0-9a-f]{8}$/.test(entry.slice(prefix.length)),
+    (entry) =>
+      entry.startsWith(prefix) && /^\d+-[0-9a-f]{8}-[0-9a-f]{16}-[0-9a-f]{16}$/.test(entry.slice(prefix.length)),
   )
+}
+
+function leaveCurrentProcessTemporaryFile(file: string) {
+  const created = { file: "" }
+  const fileSystem: DurableAtomicFileSystem = {
+    ...nodeFileSystem,
+    unlinkSync(unlinkedFile) {
+      if (unlinkedFile === created.file) throw new Error("preserve temporary file for cleanup test")
+      unlinkSync(unlinkedFile)
+    },
+  }
+  expect(() =>
+    writeFileDurableAtomicSync(file, "candidate", {
+      fileSystem,
+      onCommitPoint(point, createdFile) {
+        if (point !== "file-synced") return
+        created.file = createdFile
+        throw new Error("stop before rename")
+      },
+    }),
+  ).toThrow("stop before rename")
+  expect(created.file).not.toBe("")
+  expect(existsSync(created.file)).toBe(true)
+  return created.file
+}
+
+function leaveDeadProcessTemporaryFile(file: string) {
+  const read = createSettingsAdapter(file).read()
+  expect(read.ok).toBe(true)
+  if (!read.ok) throw new Error("expected readable Settings authority")
+  const next = settings()
+  next.general.showTerminal = true
+  const child = runSettingsChild(file, "write", { value: next, revision: read.revision, crashPoint: "file-synced" })
+  expect(child.exitCode).not.toBe(0)
+  const orphan = durableTemporaryFiles(file)
+  expect(orphan).toHaveLength(1)
+  if (!orphan[0]) throw new Error("expected child process temporary file")
+  return join(dirname(file), orphan[0])
 }
 
 describe("Settings typed adapter", () => {
@@ -169,18 +212,23 @@ describe("Settings typed adapter", () => {
   test("a successful commit fsyncs the renamed file contents and parent directory before returning success", () => {
     const descriptors = new Map<number, string>()
     const operations: Array<{
-      kind: "open" | "fsync" | "close" | "rename" | "returned"
+      kind: "write" | "open" | "fsync" | "close" | "rename" | "returned"
       file?: string
       fd?: number
+      flags?: "r" | "wx"
       from?: string
       to?: string
     }> = []
     const fileSystem: DurableAtomicFileSystem = {
       ...nodeFileSystem,
+      writeFileSync(writtenFile, data, options) {
+        writeFileSync(writtenFile, data, options)
+        operations.push({ kind: "write", file: writtenFile, flags: options.flag })
+      },
       openSync(openedFile, flags) {
         const fd = openSync(openedFile, flags)
         descriptors.set(fd, openedFile)
-        operations.push({ kind: "open", file: openedFile, fd })
+        operations.push({ kind: "open", file: openedFile, fd, flags })
         return fd
       },
       fsyncSync(fd) {
@@ -212,6 +260,7 @@ describe("Settings typed adapter", () => {
 
     expect(saved.ok).toBe(true)
     expect(operations.map((operation) => operation.kind)).toEqual([
+      "write",
       "open",
       "fsync",
       "close",
@@ -221,18 +270,30 @@ describe("Settings typed adapter", () => {
       "close",
       "returned",
     ])
-    expect(operations[0]?.file).toBe(operations[1]?.file)
-    expect(operations[0]?.fd).toBe(operations[1]?.fd)
-    expect(operations[0]?.file).toBe(operations[2]?.file)
-    expect(operations[0]?.fd).toBe(operations[2]?.fd)
-    expect(operations[3]?.from).toBe(operations[0]?.file)
-    expect(operations[3]?.to).toBe(file)
-    expect(dirname(operations[0]?.file ?? "")).toBe(dirname(file))
-    expect(operations[4]?.file).toBe(dirname(file))
-    expect(operations[4]?.fd).toBe(operations[5]?.fd)
-    expect(operations[4]?.file).toBe(operations[5]?.file)
-    expect(operations[4]?.fd).toBe(operations[6]?.fd)
-    expect(operations[4]?.file).toBe(operations[6]?.file)
+    const temporaryFile = operations[0]?.file ?? ""
+    expect(operations[0]?.flags).toBe("wx")
+    expect(temporaryFile).not.toBe(file)
+    expect(dirname(temporaryFile)).toBe(dirname(file))
+    expect(basename(temporaryFile)).toMatch(
+      new RegExp(
+        `^\\.${basename(file).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.tmp-${process.pid}-[0-9a-f]{8}-[0-9a-f]{16}-[0-9a-f]{16}$`,
+      ),
+    )
+    expect(operations[1]?.file).toBe(temporaryFile)
+    expect(operations[1]?.flags).toBe("r")
+    expect(operations[1]?.file).toBe(operations[2]?.file)
+    expect(operations[1]?.fd).toBe(operations[2]?.fd)
+    expect(operations[1]?.file).toBe(operations[3]?.file)
+    expect(operations[1]?.fd).toBe(operations[3]?.fd)
+    expect(operations[4]?.from).toBe(temporaryFile)
+    expect(operations[4]?.to).toBe(file)
+    expect(operations[4]?.from).not.toBe(operations[4]?.to)
+    expect(operations[5]?.file).toBe(dirname(file))
+    expect(operations[5]?.flags).toBe("r")
+    expect(operations[5]?.fd).toBe(operations[6]?.fd)
+    expect(operations[5]?.file).toBe(operations[6]?.file)
+    expect(operations[5]?.fd).toBe(operations[7]?.fd)
+    expect(operations[5]?.file).toBe(operations[7]?.file)
   })
 
   test("an exact repeated submission is idempotent even with the original revision", () => {
@@ -369,6 +430,23 @@ describe("Settings typed adapter", () => {
     expect(durableTemporaryFiles(file)).toHaveLength(1)
   })
 
+  test("an exclusive-create collision never overwrites or unlinks the existing temporary file", () => {
+    const collision = { file: "" }
+    const fileSystem: DurableAtomicFileSystem = {
+      ...nodeFileSystem,
+      writeFileSync(temporaryFile) {
+        collision.file = temporaryFile
+        writeFileSync(temporaryFile, "another writer", { flag: "wx" })
+        const error = new Error("temporary file already exists") as NodeJS.ErrnoException
+        error.code = "EEXIST"
+        throw error
+      },
+    }
+
+    expect(() => writeFileDurableAtomicSync(file, "candidate", { fileSystem })).toThrow("already exists")
+    expect(readFileSync(collision.file, "utf8")).toBe("another writer")
+  })
+
   test("a parent-directory fsync failure after rename never reports success", () => {
     const adapter = createSettingsAdapter(file)
     const read = adapter.read()
@@ -418,38 +496,66 @@ describe("Settings typed adapter", () => {
     if (restarted.ok) expect(restarted.value).toEqual(next)
   })
 
-  test("startup cleanup removes only orphan temporary files in this adapter's namespace", () => {
-    const orphan = join(userData, `.${basename(file)}.tmp-123-aaaaaaaa`)
-    const similar = join(userData, `.${basename(file)}.tmp-not-this-writer`)
-    const foreign = join(userData, ".other-adapter.tmp-123-aaaaaaaa")
-    writeFileSync(orphan, "orphan")
-    writeFileSync(similar, "similar")
-    writeFileSync(foreign, "foreign")
+  test("startup cleanup preserves a temporary file owned by an active pid", () => {
+    const active = leaveCurrentProcessTemporaryFile(file)
+    expect(basename(active)).toContain(`.tmp-${process.pid}-`)
+
+    expect(createSettingsAdapter(file).read().ok).toBe(true)
+    expect(existsSync(active)).toBe(true)
+  })
+
+  test("startup cleanup recovers a same-host temporary file after its creator pid dies", () => {
+    const orphan = leaveDeadProcessTemporaryFile(file)
 
     expect(createSettingsAdapter(file).read().ok).toBe(true)
     expect(existsSync(orphan)).toBe(false)
-    expect(existsSync(similar)).toBe(true)
-    expect(existsSync(foreign)).toBe(true)
   })
 
-  test("startup cleanup failure keeps the adapter fail-closed", () => {
-    const orphan = join(userData, `.${basename(file)}.tmp-123-aaaaaaaa`)
-    writeFileSync(orphan, "orphan")
-    const adapter = createSettingsAdapter(file, {
-      fileSystem: {
-        ...nodeFileSystem,
-        unlinkSync(temporaryFile) {
-          if (temporaryFile === orphan) throw new Error("injected startup cleanup failure")
-          unlinkSync(temporaryFile)
-        },
-      },
-    })
+  test("cleanup leaves foreign host identities, other target namespaces, and similar names untouched", () => {
+    const temporaryFile = leaveDeadProcessTemporaryFile(file)
+    const match = /^(.*\.tmp-\d+-[0-9a-f]{8})-([0-9a-f]{16})-([0-9a-f]{16})$/.exec(basename(temporaryFile))
+    expect(match).not.toBeNull()
+    if (!match) return
+    const foreignHost = match[2] === "0".repeat(16) ? "1".repeat(16) : "0".repeat(16)
+    const foreignIdentity = join(userData, `${match[1]}-${foreignHost}-${match[3]}`)
+    const similar = join(userData, `.${basename(file)}.tmp-${process.pid}-aaaaaaaa-not-an-owner`)
+    const foreignNamespace = join(userData, `.other-adapter.tmp-${process.pid}-aaaaaaaa-${match[2]}-${match[3]}`)
+    renameSync(temporaryFile, foreignIdentity)
+    writeFileSync(similar, "similar")
+    writeFileSync(foreignNamespace, "foreign")
 
-    expect(adapter.read()).toEqual({ ok: false, code: "read-failed" })
-    expect(
-      adapter.write({ value: settings(), expectedRevision: `s1:${"0".repeat(64)}` }),
-    ).toEqual({ ok: false, code: "write-failed" })
-    expect(existsSync(orphan)).toBe(true)
+    cleanupDurableAtomicTemporaryFilesSync(file, nodeFileSystem)
+    expect(existsSync(foreignIdentity)).toBe(true)
+    expect(existsSync(similar)).toBe(true)
+    expect(existsSync(foreignNamespace)).toBe(true)
+  })
+
+  test("cleanup preserves a candidate when process state is uncertain and does not throw", () => {
+    const temporaryFile = leaveDeadProcessTemporaryFile(file)
+    const uncertain = join(userData, basename(temporaryFile).replace(/\.tmp-\d+-/, `.tmp-${"9".repeat(32)}-`))
+    renameSync(temporaryFile, uncertain)
+
+    expect(() => cleanupDurableAtomicTemporaryFilesSync(file, nodeFileSystem)).not.toThrow()
+    expect(existsSync(uncertain)).toBe(true)
+  })
+
+  test("startup cleanup failure leaves residual temps without blocking normal reads or writes", () => {
+    const residual = leaveCurrentProcessTemporaryFile(file)
+    const fileSystem: DurableAtomicFileSystem = {
+      ...nodeFileSystem,
+      readdirSync() {
+        throw new Error("injected startup cleanup failure")
+      },
+    }
+    const adapter = createSettingsAdapter(file, { fileSystem })
+    const read = adapter.read()
+    expect(read.ok).toBe(true)
+    if (!read.ok) return
+    const next = settings()
+    next.general.showSearch = true
+
+    expect(adapter.write({ value: next, expectedRevision: read.revision }).ok).toBe(true)
+    expect(existsSync(residual)).toBe(true)
   })
 
   test.each([

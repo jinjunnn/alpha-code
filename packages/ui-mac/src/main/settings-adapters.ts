@@ -37,17 +37,9 @@ export type SettingsAdapterOptions = {
 }
 
 export function createSettingsAdapter(file: string, options?: SettingsAdapterOptions) {
-  const startupReady = (() => {
-    try {
-      cleanupDurableAtomicTemporaryFilesSync(file, options?.fileSystem)
-      return true
-    } catch {
-      return false
-    }
-  })()
+  cleanupDurableAtomicTemporaryFilesSync(file, options?.fileSystem)
   return {
     read(): SettingsReadResult {
-      if (!startupReady) return { ok: false, code: "read-failed" }
       const current = readCurrent(file)
       if (current.kind === "valid") return { ok: true, ...current.authority }
       if (current.kind === "invalid") return { ok: false, code: "authority-invalid", revision: current.revision }
@@ -65,7 +57,6 @@ export function createSettingsAdapter(file: string, options?: SettingsAdapterOpt
       if (!value || typeof envelope.expectedRevision !== "string" || !REVISION_PATTERN.test(envelope.expectedRevision)) {
         return { ok: false, code: "invalid-input" }
       }
-      if (!startupReady) return { ok: false, code: "write-failed" }
       const current = readCurrent(file)
       if (current.kind === "failed") return { ok: false, code: "read-failed" }
       const json = JSON.stringify(value)

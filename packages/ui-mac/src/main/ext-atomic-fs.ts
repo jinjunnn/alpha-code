@@ -13,6 +13,7 @@
 import * as crypto from "node:crypto"
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { hostname } from "node:os"
 
 /** 相对路径结构校验:拒绝绝对路径、`..`/`.` 段、反斜杠、控制字符、空段、超深/超长。 */
 export function isSafeRelPath(rel: string): boolean {
@@ -110,7 +111,7 @@ export type DurableAtomicWriteOptions = {
 export type DurableAtomicFileSystem = {
   existsSync(file: string): boolean
   mkdirSync(dir: string, options: { recursive: true }): string | undefined
-  writeFileSync(file: string, data: string | Buffer, options: { mode?: fs.Mode }): void
+  writeFileSync(file: string, data: string | Buffer, options: { flag: "wx"; mode?: fs.Mode }): void
   openSync(file: string, flags: "r"): number
   fsyncSync(fd: number): void
   closeSync(fd: number): void
@@ -118,6 +119,12 @@ export type DurableAtomicFileSystem = {
   readdirSync(dir: string): string[]
   unlinkSync(file: string): void
 }
+
+type DurableAtomicProcessState = "alive" | "dead" | "unknown"
+
+const DURABLE_TEMPORARY_HOST_ID = crypto.createHash("sha256").update(hostname()).digest("hex").slice(0, 16)
+const DURABLE_TEMPORARY_PROCESS_INSTANCE_ID = crypto.randomBytes(8).toString("hex")
+const DURABLE_TEMPORARY_SUFFIX_PATTERN = /^(\d+)-[0-9a-f]{8}-([0-9a-f]{16})-[0-9a-f]{16}$/
 
 /**
  * 持久原子写:Settings 等成功边界要求 tmp 内容与 rename 目录项都已落盘。
@@ -132,9 +139,23 @@ export function writeFileDurableAtomicSync(
   const dir = path.dirname(file)
   const fileSystem: DurableAtomicFileSystem = opts?.fileSystem ?? fs
   fileSystem.mkdirSync(dir, { recursive: true })
-  const tmp = path.join(dir, `.${path.basename(file)}.tmp-${process.pid}-${crypto.randomBytes(4).toString("hex")}`)
+  const tmp = path.join(
+    dir,
+    `.${path.basename(file)}.tmp-${process.pid}-${crypto.randomBytes(4).toString("hex")}-${DURABLE_TEMPORARY_HOST_ID}-${DURABLE_TEMPORARY_PROCESS_INSTANCE_ID}`,
+  )
   try {
-    fileSystem.writeFileSync(tmp, data, { mode: opts?.mode })
+    fileSystem.writeFileSync(tmp, data, { flag: "wx", mode: opts?.mode })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+      try {
+        fileSystem.unlinkSync(tmp)
+      } catch {
+        // Cleanup must not replace the commit error with a secondary unlink failure.
+      }
+    }
+    throw error
+  }
+  try {
     const fd = fileSystem.openSync(tmp, "r")
     try {
       fileSystem.fsyncSync(fd)
@@ -160,18 +181,41 @@ export function writeFileDurableAtomicSync(
   }
 }
 
-/** Remove only orphan files produced by this helper for the exact target. */
-export function cleanupDurableAtomicTemporaryFilesSync(
-  file: string,
-  fileSystem: DurableAtomicFileSystem = fs,
-): void {
+/** Remove only same-host temporary files whose recorded creator pid is provably dead. */
+export function cleanupDurableAtomicTemporaryFilesSync(file: string, fileSystem: DurableAtomicFileSystem = fs): void {
   const dir = path.dirname(file)
-  if (!fileSystem.existsSync(dir)) return
-  const prefix = `.${path.basename(file)}.tmp-`
-  fileSystem
-    .readdirSync(dir)
-    .filter((entry) => entry.startsWith(prefix) && /^\d+-[0-9a-f]{8}$/.test(entry.slice(prefix.length)))
-    .forEach((entry) => fileSystem.unlinkSync(path.join(dir, entry)))
+  try {
+    if (!fileSystem.existsSync(dir)) return
+    const prefix = `.${path.basename(file)}.tmp-`
+    fileSystem
+      .readdirSync(dir)
+      .filter((entry) => entry.startsWith(prefix))
+      .forEach((entry) => {
+        const match = DURABLE_TEMPORARY_SUFFIX_PATTERN.exec(entry.slice(prefix.length))
+        if (!match || match[2] !== DURABLE_TEMPORARY_HOST_ID) return
+        const pid = Number(match[1])
+        if (!Number.isSafeInteger(pid) || pid <= 0 || durableAtomicProcessState(pid) !== "dead") return
+        try {
+          fileSystem.unlinkSync(path.join(dir, entry))
+        } catch {
+          // Cleanup is conservative maintenance; a residual temp must not block the authority.
+        }
+      })
+  } catch {
+    // Unreadable directories and uncertain process state preserve every candidate without blocking startup.
+  }
+}
+
+function durableAtomicProcessState(pid: number): DurableAtomicProcessState {
+  try {
+    process.kill(pid, 0)
+    return "alive"
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === "ESRCH") return "dead"
+    if (code === "EPERM") return "alive"
+    return "unknown"
+  }
 }
 
 /** 原子改名(同卷保证由调用方负责:staging 与 store 同根即同卷)+ fsync 目的父目录。 */
