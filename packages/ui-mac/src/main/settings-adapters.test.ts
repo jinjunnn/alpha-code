@@ -17,13 +17,12 @@ import { tmpdir } from "node:os"
 import { basename, dirname, join } from "node:path"
 import type { CasGcRoundInput, CasGcRoundSummary } from "./ext-cas-gc"
 import type { CasGcSchedulerConfig } from "./ext-cas-gc-scheduler"
+import { writeFileDurableAtomicSync, type DurableAtomicFileSystem } from "./ext-atomic-fs"
 import {
-  cleanupDurableAtomicTemporaryFilesSync,
-  DURABLE_ATOMIC_MACHINE_ID_FILE,
-  writeFileDurableAtomicSync,
-  type DurableAtomicFileSystem,
-} from "./ext-atomic-fs"
-import { createExtensionStorageAdapter, createSettingsAdapter } from "./settings-adapters"
+  createExtensionStorageAdapter,
+  createSettingsAdapter,
+  DEFAULT_DURABLE_ATOMIC_FILE_SYSTEM,
+} from "./settings-adapters"
 import { ALPHA_SETTINGS_DEFAULTS, type AlphaSettings } from "../shared/settings-adapters"
 import { RENDERER_SETTINGS_KEY } from "./store-keys"
 
@@ -74,7 +73,9 @@ function readInChild(file: string) {
   const child = runSettingsChild(file, "read")
   expect(child.exitCode).toBe(0)
   expect(new TextDecoder().decode(child.stderr)).toBe("")
-  return JSON.parse(new TextDecoder().decode(child.stdout)) as ReturnType<ReturnType<typeof createSettingsAdapter>["read"]>
+  return JSON.parse(new TextDecoder().decode(child.stdout)) as ReturnType<
+    ReturnType<typeof createSettingsAdapter>["read"]
+  >
 }
 
 function writeAuthority(file: string, raw: unknown, extra: Record<string, unknown> = {}) {
@@ -87,48 +88,20 @@ function readDocument(file: string) {
 }
 
 const nodeFileSystem: DurableAtomicFileSystem = {
-  existsSync: (file) => existsSync(file),
   mkdirSync: (dir, options) => mkdirSync(dir, options),
   writeFileSync: (file, data, options) => writeFileSync(file, data, options),
   openSync: (file, flags) => openSync(file, flags),
   fsyncSync: (fd) => fsyncSync(fd),
   closeSync: (fd) => closeSync(fd),
   renameSync: (from, to) => renameSync(from, to),
-  readFileSync: (file, encoding) => readFileSync(file, encoding),
-  readdirSync: (dir) => readdirSync(dir),
   unlinkSync: (file) => unlinkSync(file),
 }
 
 function durableTemporaryFiles(file: string) {
   const prefix = `.${basename(file)}.tmp-`
   return readdirSync(dirname(file)).filter(
-    (entry) =>
-      entry.startsWith(prefix) && /^\d+-[0-9a-f]{8}-[0-9a-f]{32}-[0-9a-f]{16}$/.test(entry.slice(prefix.length)),
+    (entry) => entry.startsWith(prefix) && /^\d+-[0-9a-f]{8}$/.test(entry.slice(prefix.length)),
   )
-}
-
-function leaveCurrentProcessTemporaryFile(file: string) {
-  const created = { file: "" }
-  const fileSystem: DurableAtomicFileSystem = {
-    ...nodeFileSystem,
-    unlinkSync(unlinkedFile) {
-      if (unlinkedFile === created.file) throw new Error("preserve temporary file for cleanup test")
-      unlinkSync(unlinkedFile)
-    },
-  }
-  expect(() =>
-    writeFileDurableAtomicSync(file, "candidate", {
-      fileSystem,
-      onCommitPoint(point, createdFile) {
-        if (point !== "file-synced") return
-        created.file = createdFile
-        throw new Error("stop before rename")
-      },
-    }),
-  ).toThrow("stop before rename")
-  expect(created.file).not.toBe("")
-  expect(existsSync(created.file)).toBe(true)
-  return created.file
 }
 
 function leaveDeadProcessTemporaryFile(file: string) {
@@ -152,13 +125,27 @@ describe("Settings typed adapter", () => {
   beforeEach(() => {
     userData = mkdtempSync(join(tmpdir(), "req090-settings-"))
     file = join(userData, "default.dat")
-    const identitySeed = join(userData, "identity-seed")
-    writeFileDurableAtomicSync(identitySeed, "identity", { fileSystem: nodeFileSystem })
-    unlinkSync(identitySeed)
   })
 
   afterEach(() => {
     rmSync(userData, { recursive: true, force: true })
+  })
+
+  test("production default and test seam expose the same fixed writer method keys", () => {
+    const expected = new Set([
+      "mkdirSync",
+      "writeFileSync",
+      "openSync",
+      "fsyncSync",
+      "closeSync",
+      "renameSync",
+      "unlinkSync",
+    ])
+    const production = new Set(Object.keys(DEFAULT_DURABLE_ATOMIC_FILE_SYSTEM))
+    const seam = new Set(Object.keys(nodeFileSystem))
+
+    expect(production).toEqual(seam)
+    expect(production).toEqual(expected)
   })
 
   test("read returns defaults for an empty authority and normalizes the existing partial alpha seed", () => {
@@ -280,9 +267,7 @@ describe("Settings typed adapter", () => {
     expect(temporaryFile).not.toBe(file)
     expect(dirname(temporaryFile)).toBe(dirname(file))
     expect(basename(temporaryFile)).toMatch(
-      new RegExp(
-        `^\\.${basename(file).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.tmp-${process.pid}-[0-9a-f]{8}-[0-9a-f]{32}-[0-9a-f]{16}$`,
-      ),
+      new RegExp(`^\\.${basename(file).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.tmp-${process.pid}-[0-9a-f]{8}$`),
     )
     expect(operations[1]?.file).toBe(temporaryFile)
     expect(operations[1]?.flags).toBe("r")
@@ -501,96 +486,38 @@ describe("Settings typed adapter", () => {
     if (restarted.ok) expect(restarted.value).toEqual(next)
   })
 
-  test("startup cleanup preserves a temporary file owned by an active pid", () => {
-    const active = leaveCurrentProcessTemporaryFile(file)
-    expect(basename(active)).toContain(`.tmp-${process.pid}-`)
-
-    expect(createSettingsAdapter(file).read().ok).toBe(true)
-    expect(existsSync(active)).toBe(true)
-  })
-
-  test("startup cleanup recovers a same-host temporary file after its creator pid dies", () => {
-    const orphan = leaveDeadProcessTemporaryFile(file)
-
-    expect(createSettingsAdapter(file).read().ok).toBe(true)
-    expect(existsSync(orphan)).toBe(false)
-  })
-
-  test("cleanup leaves foreign machine identities, other target namespaces, and similar names untouched", () => {
-    const temporaryFile = leaveDeadProcessTemporaryFile(file)
-    const match = /^(.*\.tmp-\d+-[0-9a-f]{8})-([0-9a-f]{32})-([0-9a-f]{16})$/.exec(basename(temporaryFile))
-    expect(match).not.toBeNull()
-    if (!match) return
-    const foreignMachineID = match[2] === "0".repeat(32) ? "1".repeat(32) : "0".repeat(32)
-    const foreignIdentity = join(userData, `${match[1]}-${foreignMachineID}-${match[3]}`)
-    const similar = join(userData, `.${basename(file)}.tmp-${process.pid}-aaaaaaaa-not-an-owner`)
-    const foreignNamespace = join(userData, `.other-adapter.tmp-${process.pid}-aaaaaaaa-${match[2]}-${match[3]}`)
-    renameSync(temporaryFile, foreignIdentity)
-    writeFileSync(similar, "similar")
-    writeFileSync(foreignNamespace, "foreign")
-
-    cleanupDurableAtomicTemporaryFilesSync(file, nodeFileSystem)
-    expect(existsSync(foreignIdentity)).toBe(true)
-    expect(existsSync(similar)).toBe(true)
-    expect(existsSync(foreignNamespace)).toBe(true)
-  })
-
-  test("cleanup preserves a same-hostname temporary file carrying another machine's persisted identity", () => {
-    const foreignUserData = mkdtempSync(join(tmpdir(), "req090-settings-foreign-machine-"))
-    const foreignFile = join(foreignUserData, basename(file))
-    const temporaryFile = leaveDeadProcessTemporaryFile(foreignFile)
-    const localMachineID = readFileSync(join(userData, DURABLE_ATOMIC_MACHINE_ID_FILE), "utf8")
-    const foreignMachineID = readFileSync(join(foreignUserData, DURABLE_ATOMIC_MACHINE_ID_FILE), "utf8")
-    expect(foreignMachineID).not.toBe(localMachineID)
-    const foreignTemporaryFile = join(userData, basename(temporaryFile))
-    renameSync(temporaryFile, foreignTemporaryFile)
-
-    cleanupDurableAtomicTemporaryFilesSync(file, nodeFileSystem)
-    expect(existsSync(foreignTemporaryFile)).toBe(true)
-    rmSync(foreignUserData, { recursive: true, force: true })
-  })
-
-  test("cleanup preserves a dead pid candidate whose process-instance-id does not match its persisted record", () => {
-    const temporaryFile = leaveDeadProcessTemporaryFile(file)
-    const match = /^(.*\.tmp-\d+-[0-9a-f]{8}-[0-9a-f]{32})-([0-9a-f]{16})$/.exec(basename(temporaryFile))
-    expect(match).not.toBeNull()
-    if (!match) return
-    const mismatchedProcessInstanceID = match[2] === "0".repeat(16) ? "1".repeat(16) : "0".repeat(16)
-    const mismatched = join(userData, `${match[1]}-${mismatchedProcessInstanceID}`)
-    renameSync(temporaryFile, mismatched)
-
-    cleanupDurableAtomicTemporaryFilesSync(file, nodeFileSystem)
-    expect(existsSync(mismatched)).toBe(true)
-  })
-
-  test.each(["missing", "corrupt"] as const)(
-    "cleanup preserves every candidate without throwing when the machine identity file is %s",
-    (state) => {
-      const temporaryFile = leaveDeadProcessTemporaryFile(file)
-      const machineIDFile = join(userData, DURABLE_ATOMIC_MACHINE_ID_FILE)
-      if (state === "missing") unlinkSync(machineIDFile)
-      if (state === "corrupt") writeFileSync(machineIDFile, "not-a-machine-id")
-
-      expect(() => cleanupDurableAtomicTemporaryFilesSync(file, nodeFileSystem)).not.toThrow()
-      expect(existsSync(temporaryFile)).toBe(true)
-    },
-  )
-
-  test("cleanup preserves a candidate when process state is uncertain and does not throw", () => {
-    const temporaryFile = leaveDeadProcessTemporaryFile(file)
-    const uncertain = join(userData, basename(temporaryFile).replace(/\.tmp-\d+-/, `.tmp-${"9".repeat(32)}-`))
-    renameSync(temporaryFile, uncertain)
-
-    expect(() => cleanupDurableAtomicTemporaryFilesSync(file, nodeFileSystem)).not.toThrow()
-    expect(existsSync(uncertain)).toBe(true)
-  })
-
-  test("startup cleanup failure leaves residual temps without blocking normal reads or writes", () => {
-    const residual = leaveCurrentProcessTemporaryFile(file)
+  test("a crash residual temp does not affect later reads, writes, or durable commit order", () => {
+    const residual = leaveDeadProcessTemporaryFile(file)
+    const descriptors = new Map<number, string>()
+    const operations: string[] = []
     const fileSystem: DurableAtomicFileSystem = {
       ...nodeFileSystem,
-      readdirSync() {
-        throw new Error("injected startup cleanup failure")
+      writeFileSync(temporaryFile, data, options) {
+        writeFileSync(temporaryFile, data, options)
+        operations.push("write")
+      },
+      openSync(openedFile, flags) {
+        const fd = openSync(openedFile, flags)
+        descriptors.set(fd, openedFile)
+        operations.push(openedFile === dirname(file) ? "open-directory" : "open-temporary")
+        return fd
+      },
+      fsyncSync(fd) {
+        const openedFile = descriptors.get(fd)
+        if (!openedFile) throw new Error("fsync descriptor was not opened by the durable writer")
+        fsyncSync(fd)
+        operations.push(openedFile === dirname(file) ? "fsync-directory" : "fsync-temporary")
+      },
+      closeSync(fd) {
+        const openedFile = descriptors.get(fd)
+        if (!openedFile) throw new Error("close descriptor was not opened by the durable writer")
+        closeSync(fd)
+        descriptors.delete(fd)
+        operations.push(openedFile === dirname(file) ? "close-directory" : "close-temporary")
+      },
+      renameSync(from, to) {
+        renameSync(from, to)
+        operations.push("rename")
       },
     }
     const adapter = createSettingsAdapter(file, { fileSystem })
@@ -600,8 +527,23 @@ describe("Settings typed adapter", () => {
     const next = settings()
     next.general.showSearch = true
 
-    expect(adapter.write({ value: next, expectedRevision: read.revision }).ok).toBe(true)
+    const saved = adapter.write({ value: next, expectedRevision: read.revision })
+    expect(saved.ok).toBe(true)
+    expect(operations).toEqual([
+      "write",
+      "open-temporary",
+      "fsync-temporary",
+      "close-temporary",
+      "rename",
+      "open-directory",
+      "fsync-directory",
+      "close-directory",
+    ])
     expect(existsSync(residual)).toBe(true)
+    expect(durableTemporaryFiles(file)).toEqual([basename(residual)])
+    const restarted = readInChild(file)
+    expect(restarted.ok).toBe(true)
+    if (restarted.ok) expect(restarted.value).toEqual(next)
   })
 
   test.each([
@@ -622,7 +564,8 @@ describe("Settings typed adapter", () => {
     const child = runSettingsChild(file, "write", { value: next, revision: initial.revision, crashPoint })
     expect(child.exitCode).not.toBe(0)
     expect(new TextDecoder().decode(child.stdout)).toBe("")
-    expect(durableTemporaryFiles(file).length).toBe(crashPoint === "file-synced" ? 1 : 0)
+    const residualCount = crashPoint === "file-synced" ? 1 : 0
+    expect(durableTemporaryFiles(file)).toHaveLength(residualCount)
 
     const restarted = readInChild(file)
     expect(restarted.ok).toBe(true)
@@ -630,7 +573,7 @@ describe("Settings typed adapter", () => {
     if (expected === "old") expect(restarted.value).toEqual(old)
     if (expected === "old-or-new") expect([old, next]).toContainEqual(restarted.value)
     expect(() => readDocument(file)).not.toThrow()
-    expect(durableTemporaryFiles(file)).toEqual([])
+    expect(durableTemporaryFiles(file)).toHaveLength(residualCount)
   })
 
   test("an invalid authority can be repaired only with the revision returned by read", () => {

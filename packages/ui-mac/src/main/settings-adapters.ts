@@ -1,11 +1,19 @@
 import { createHash } from "node:crypto"
-import { existsSync, readFileSync } from "node:fs"
+import {
+  closeSync,
+  existsSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs"
 import { dirname } from "node:path"
 import type { CasGcRoundInput, CasGcRoundSummary } from "./ext-cas-gc"
 import type { CasGcSchedulerConfig, CasGcSpawnRound } from "./ext-cas-gc-scheduler"
 import {
-  cleanupDurableAtomicTemporaryFilesSync,
-  DEFAULT_DURABLE_ATOMIC_FILE_SYSTEM,
   fsyncDirRequiredSync,
   fsyncFileSync,
   writeFileDurableAtomicSync,
@@ -31,6 +39,16 @@ const MAX_KEYBIND_CHARS = 256
 const MAX_SOUND_ID_CHARS = 64
 const INVALID = Symbol("invalid")
 
+export const DEFAULT_DURABLE_ATOMIC_FILE_SYSTEM: DurableAtomicFileSystem = {
+  mkdirSync: (dir, options) => mkdirSync(dir, options),
+  writeFileSync: (file, data, options) => writeFileSync(file, data, options),
+  openSync: (file, flags) => openSync(file, flags),
+  fsyncSync: (fd) => fsyncSync(fd),
+  closeSync: (fd) => closeSync(fd),
+  renameSync: (from, to) => renameSync(from, to),
+  unlinkSync: (file) => unlinkSync(file),
+}
+
 export type SettingsAdapterOptions = {
   onCommitPoint?: DurableAtomicWriteOptions["onCommitPoint"]
   /** Test-only syscall seam for the durable atomic helper. */
@@ -38,12 +56,11 @@ export type SettingsAdapterOptions = {
 }
 
 export function createSettingsAdapter(file: string, options?: SettingsAdapterOptions) {
-  // Resolve the optional seam once: branching on its presence below could let tested and production commits diverge.
+  // Resolve once to the same fixed syscall shape used by tests; the writer never inspects seam identity or capabilities.
   const durableAtomicOptions: DurableAtomicWriteOptions = {
     fileSystem: options?.fileSystem ?? DEFAULT_DURABLE_ATOMIC_FILE_SYSTEM,
     onCommitPoint: options?.onCommitPoint,
   }
-  cleanupDurableAtomicTemporaryFilesSync(file, durableAtomicOptions.fileSystem)
   return {
     read(): SettingsReadResult {
       const current = readCurrent(file)
@@ -60,7 +77,11 @@ export function createSettingsAdapter(file: string, options?: SettingsAdapterOpt
         return { ok: false, code: "invalid-input" }
       }
       const value = decodeSettings(envelope.value, false)
-      if (!value || typeof envelope.expectedRevision !== "string" || !REVISION_PATTERN.test(envelope.expectedRevision)) {
+      if (
+        !value ||
+        typeof envelope.expectedRevision !== "string" ||
+        !REVISION_PATTERN.test(envelope.expectedRevision)
+      ) {
         return { ok: false, code: "invalid-input" }
       }
       const current = readCurrent(file)
@@ -175,7 +196,9 @@ function parseStored(raw: unknown): unknown | typeof INVALID {
 }
 
 function revision(value: unknown) {
-  return `s1:${createHash("sha256").update(typeof value === "string" ? value : JSON.stringify(value)).digest("hex")}`
+  return `s1:${createHash("sha256")
+    .update(typeof value === "string" ? value : JSON.stringify(value))
+    .digest("hex")}`
 }
 
 function writeFailure(current: CurrentSettings): SettingsWriteResult {
@@ -186,11 +209,17 @@ function writeFailure(current: CurrentSettings): SettingsWriteResult {
 
 function decodeSettings(value: unknown, allowMissing: boolean): AlphaSettings | undefined {
   const root = object(value)
-  if (!root || !keysAllowed(root, ["general", "appearance", "keybinds", "permissions", "notifications", "sounds"])) return
+  if (!root || !keysAllowed(root, ["general", "appearance", "keybinds", "permissions", "notifications", "sounds"]))
+    return
   const general = decodeGeneral(root.general, allowMissing)
   const appearance = decodeAppearance(root.appearance, allowMissing)
   const keybinds = decodeKeybinds(root.keybinds, allowMissing)
-  const permissions = decodeBooleans(root.permissions, ["autoApprove"], ALPHA_SETTINGS_DEFAULTS.permissions, allowMissing)
+  const permissions = decodeBooleans(
+    root.permissions,
+    ["autoApprove"],
+    ALPHA_SETTINGS_DEFAULTS.permissions,
+    allowMissing,
+  )
   const notifications = decodeBooleans(
     root.notifications,
     ["agent", "permissions", "errors"],
@@ -278,7 +307,10 @@ function decodeKeybinds(value: unknown, allowMissing: boolean): Record<string, s
   if (
     !Object.entries(source).every(
       ([key, binding]) =>
-        safeKey(key) && key.length <= MAX_KEYBIND_CHARS && typeof binding === "string" && binding.length <= MAX_KEYBIND_CHARS,
+        safeKey(key) &&
+        key.length <= MAX_KEYBIND_CHARS &&
+        typeof binding === "string" &&
+        binding.length <= MAX_KEYBIND_CHARS,
     )
   )
     return
@@ -287,7 +319,11 @@ function decodeKeybinds(value: unknown, allowMissing: boolean): Record<string, s
 
 function decodeSounds(value: unknown, allowMissing: boolean): AlphaSettings["sounds"] | undefined {
   const source = group(value, allowMissing)
-  if (!source || !keysAllowed(source, ["agentEnabled", "agent", "permissionsEnabled", "permissions", "errorsEnabled", "errors"])) return
+  if (
+    !source ||
+    !keysAllowed(source, ["agentEnabled", "agent", "permissionsEnabled", "permissions", "errorsEnabled", "errors"])
+  )
+    return
   const enabled = decodeBooleans(
     source,
     ["agentEnabled", "permissionsEnabled", "errorsEnabled"],
