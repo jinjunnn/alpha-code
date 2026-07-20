@@ -4,7 +4,7 @@ kind: contract
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-16
+last_reviewed: 2026-07-19
 review_after: 2026-10-13
 ---
 
@@ -20,9 +20,27 @@ review_after: 2026-10-13
 
 | 层 | 根 | 生命周期 | 所有者模块 |
 | --- | --- | --- | --- |
-| CAS blob(不可变内容,media-type-neutral) | `<base>/cas/v1/sha256/<aa>/<64hex>`(base = `~/.alpha` 基根,**跨环境共享** —— prod/beta/dev 同 payload 只占一份磁盘,parent AC2) | 由 mark/sweep GC 管理;blob 可随时按 digest 重建 | `ext-cas.ts` |
-| 安装态(receipts / generations / journal / grants) | REQ-098 环境 mutable root(`<base>` dev / `<base>/env/prod` / `<base>/env/beta`) | REQ-099 账本 + REQ-100 事务引擎(有界代数保留) | `ext-receipt-v2.ts` / `ext-transaction.ts` |
+| 共享 base | `<appData>/alpha-code-state` | main 启动时 canonical 冻结；不是可变安装根，也不是 data-clear 删除目标 | `alpha-environment.ts` |
+| CAS blob(不可变内容,media-type-neutral) | `<base>/cas/v1/sha256/<aa>/<64hex>`(**跨环境共享** —— prod/beta/dev 同 payload 只占一份磁盘,parent AC2) | 由 mark/sweep GC 管理;blob 可随时按 digest 重建 | `ext-cas.ts` |
+| 安装态(receipts / generations / journal / grants) | `<base>/env/dev`、`<base>/env/prod`、`<base>/env/beta`(两两不等且互非祖先) | REQ-099 账本 + REQ-100 事务引擎(有界代数保留) | `ext-receipt-v2.ts` / `ext-transaction.ts` |
 | 用户数据(workspace / secrets / 会话 / 导入源) | 各自既有根 | **任何 CAS/GC 路径在构造上不可达**;GC 唯一删除面 = 严格 blob 命名 + realpath 圈禁的 CAS 文件 | — |
+
+环境根安全合同(#428):
+
+- `initAlphaEnvironment` 是唯一解析点。默认 base 来自 Electron `app.getPath("appData")`；
+  `ALPHA_ENV_BASE_DIR` 仅 unpackaged 构建接受且只覆盖 base，不能直接指定 mutable root。
+  packaged onboarding 只使用 composition root 内部生成、经显式函数参数传入的临时 base。
+- `ALPHA_GLOBAL_DIR` 只是初始化成功后的派生输出。packaged 发现任何外部 root override，或任意
+  构建发现预置 `ALPHA_GLOBAL_DIR`，均在窗口、sidecar 与派生写盘前 fail-closed 退出。
+- 初始化先对三环境根执行词法与 prospective-canonical equality/ancestry 检查，并拒绝退休根
+  `~/.alpha` 的等值、祖先、后代和可解析 symlink alias；首次创建新拓扑后立即复验 endpoint
+  非 symlink 且 realpath 未漂移，随后才冻结 canonical base/root 并写派生环境变量。
+- 退休根执行**零迁移、零 dual-read、零兼容写**：除 denial 所需的 endpoint
+  `lstat`/`realpath` 身份比较外，运行时不创建、读取内容、删除或遍历它；旧根内的状态、CAS、
+  journal、receipt 和 rollback marker 都不导入到新 base。
+- 恢复/write gate、CAS GC、data-clear 与 ext 初始化在每个批次操作前紧邻复验 frozen root
+  realpath；身份不能确认即整批拒绝。接受的残余仅为一次复验与单次文件操作之间的精确竞态，
+  与既有 threat model 一致，本合同不引入 `openat` 或长期 dev/ino 绑定。
 
 CAS 补充语义:
 

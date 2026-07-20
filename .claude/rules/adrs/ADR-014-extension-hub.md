@@ -58,3 +58,11 @@ related: [ADR-002, ADR-003, ADR-006, ADR-008, ADR-009]
 
 ## 修订(2026-07-07,REQ-059 —— 持久化真源改 `~/.alpha/alpha.jsonc`)
 v3 修订①③所述「MCP/plugin 引擎侧持久化 = `~/.opencode/opencode.jsonc`(文件通道)」更新:真源迁 `~/.alpha/alpha.jsonc`;引擎可见通道 = `OPENCODE_CONFIG` 原生 additional-config 合并 / ext 插件 `config` hook(同日晚追加拍板:**全面零 `.opencode`**,不再有任何指针/桥,per-route 由 T0 spike 裁定)。dispose 免重启语义、「receipts ⨝ SDK」真相源不变。机制/迁移/所有权判定见 [[ADR-019]] 同日修订(含补充)与 [[REQ-059]]。
+
+## 修订(2026-07-19,#428 —— 全局安装面改为环境级 canonical 根)
+
+本 ADR 早期修订中的全局 home `.alpha` 路径仅保留为历史决策记录，现行安装、账本、配置与
+自动化真源一律位于 `<appData>/alpha-code-state/env/<environment>`；共享 CAS 位于兄弟目录
+`<appData>/alpha-code-state/cas`。desktop 唯一初始化并派生 canonical `ALPHA_GLOBAL_DIR`，各写入
+批次在动作前复验根身份。退休 home 根不读、不写、不迁移、不 dual-read；它的等值、祖先、后代
+和 symlink alias 均拒绝。项目级 `<project>/.alpha` 不受本修订影响。

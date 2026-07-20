@@ -54,7 +54,7 @@ related: [ADR-014, ADR-019, ADR-023, ADR-024, ADR-029, REQ-098, REQ-099, REQ-100
 ### 5. 项目作用域闭环(fail-closed)
 
 - 项目 receipt 落**项目自己的** `.alpha/installs.json`(随项目移动);操作项目 scope 时 main 重新 realpath 当前项目目录并与 record 的 scope identity 比对——**不一致(项目被移动/符号链接偷换)即 fail closed**,给出显式错误,**绝不退化为 global 卸载**;record 损坏同样拒绝操作(不猜路径)。
-- owned paths 永远从「受控根(env-scoped `~/.alpha` 或 `<project>/.alpha`)+ kind + name」重新派生(realpath 反逃逸守卫),record 中的绝对路径仅作对账参考,不作删除依据。
+- owned paths 永远从「受控根(`<appData>/alpha-code-state/env/<environment>` 或 `<project>/.alpha`)+ kind + name」重新派生(realpath 反逃逸守卫),record 中的绝对路径仅作对账参考,不作删除依据。全局根只消费 desktop 冻结的 canonical `ALPHA_GLOBAL_DIR`，退休 home 根及 alias 均拒绝。
 - global 与不同项目安装同名扩展互不影响(账本物理分域 + scope identity)。
 
 ### 6. 分期交付与 REQ-100 接缝

@@ -14,8 +14,8 @@ tools' conventions; alpha-code does not read them).
 
 | Scope | Truth | What goes there |
 |---|---|---|
-| Global (all projects) | `~/.alpha/alpha.jsonc` | connectors (`mcp`), `plugin`, `agent`, `command`, `provider` overrides |
-| Global installs | `~/.alpha/{skills,agents,plugins}/` + ledger `~/.alpha/installs.json` | things the user installed/created/imported |
+| Global (all projects) | `$ALPHA_GLOBAL_DIR/alpha.jsonc` | connectors (`mcp`), `plugin`, `agent`, `command`, `provider` overrides |
+| Global installs | `$ALPHA_GLOBAL_DIR/{skills,agents,plugins}/` + ledger `$ALPHA_GLOBAL_DIR/installs.json` | things the user installed/created/imported |
 | Per project | `<project>/.alpha/alpha.jsonc` | project-scoped connectors / agents / commands / skills path |
 | Per project content | `<project>/.alpha/skills/<name>/SKILL.md`, `<project>/.alpha/plugins/*.js` | project skills and plugins |
 
@@ -31,9 +31,12 @@ the app and never appears in `.alpha`.
    - `type=skill` (no entry) after writing `<project>/.alpha/skills/<name>/SKILL.md`
    Changes are validated, written atomically, and hot-reloaded after the current reply — available
    from the NEXT message. No app restart.
-2. **Global changes** — edit `~/.alpha/alpha.jsonc` directly (same keys as project), then call
-   `alpha_reload`. For connectors/skills/agents/plugins prefer the **Extension Hub** (定制中心) in
-   the sidebar: browse, one-click install, update, uninstall — it keeps the install ledger accurate.
+2. **Global changes** — edit `$ALPHA_GLOBAL_DIR/alpha.jsonc` directly (same keys as project), then
+   call `alpha_reload`. The desktop process supplies `ALPHA_GLOBAL_DIR` as an absolute, canonical
+   current-environment root; never synthesize, replace, or redirect it, and never fall back to the
+   retired `$HOME/.alpha` root. For connectors/skills/agents/plugins prefer the **Extension Hub**
+   (定制中心) in the sidebar: browse, one-click install, update, uninstall — it keeps the install
+   ledger accurate.
 3. **Creating new skills/agents** — delegate to the factory skills `skill-creator` / `agent-creator`
    (they interview, generate, write to the right place, and hot-reload).
 

@@ -20,8 +20,12 @@ related: [ADR-005, ADR-012, ADR-019, ADR-020, ADR-025, REQ-076]
 
 1. **平台范围**:桌面 = **macOS(主平台/首发)+ Windows(本 ADR 纳入)**;**Linux 明确不做**(electron-builder linux 段保留休眠,同 ADR-012「机制保留不删」逻辑);web/tui/console/enterprise 照旧不做(NON_GOALS#6 存留部分)。
 
-2. **路径与数据落点 = 全平台同构,零特例**:
-   - 全局 `~/.alpha`、用户工作目录 `~/Alpha`(ADR-025)、项目 `.alpha/`(ADR-019)在 Windows 一律经 `os.homedir()` 同构解析(`C:\Users\<u>\.alpha` / `…\Alpha`);**不引入 `%APPDATA%`/`%LOCALAPPDATA%` 特例**。理由:①与 `.claude`/`.codex` 生态同构(它们在 Windows 同样用 home dot-dir),用户口径/文档/排障单一;②代码已收敛在 `alphaGlobalRoot()` 等单点,同构 = 零改动;③「`.alpha` 是 harness 的,`~/Alpha` 是你的」心智口径(ADR-019/025)天然平台无关。
+2. **路径与数据落点 = 平台原生 appData + 项目/home 同构**:
+   - 全局状态基根走 Electron `app.getPath("appData")/alpha-code-state`：mutable 根为
+     `env/{dev,prod,beta}` 兄弟目录，共享 CAS 为 `cas/`；Windows 因而使用平台原生 appData，
+     不再把 home `.alpha` 作为全局根。用户工作目录 `~/Alpha`(ADR-025)与项目 `.alpha/`
+     (ADR-019)仍经 `os.homedir()` / `node:path` 同构解析。desktop 初始化后派生 canonical
+     `ALPHA_GLOBAL_DIR`，外部 override 与退休根 alias fail-closed。
    - Electron userData(内部件:auth/secrets/identity/behavior)走 `app.getPath("userData")`,平台原生落点(mac `~/Library/Application Support` / win `%APPDATA%`),**不动**。
    - 引擎侧路径(home `.opencode`、XDG)是上游职责且上游已跨平台,不接管(§4 边界一致)。
    - **路径字符串纪律**:凡进 config/jsonc 的路径经 `\\`→`/` 归一(`engine-config-truth.ts:51` 既有做法),新代码同款;文件系统操作一律 `node:path`,禁手拼分隔符。
