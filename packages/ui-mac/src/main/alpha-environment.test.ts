@@ -274,6 +274,54 @@ describe("initAlphaEnvironment — canonical 新根与 override 权限", () => {
     ).toThrow()
   })
 
+  test("环境 endpoint symlink 指向安全外部目录也零副作用拒绝", () => {
+    const override = path.join(base, "endpoint symlink state")
+    const external = path.join(base, "safe external")
+    fs.mkdirSync(path.join(override, "env"), { recursive: true })
+    fs.mkdirSync(external)
+    fs.writeFileSync(path.join(external, "sentinel"), "untouched")
+    fs.symlinkSync(external, path.join(override, "env", "prod"), "dir")
+    process.env.ALPHA_ENV_BASE_DIR = override
+
+    expect(() =>
+      initAlphaEnvironment({ isPackaged: false, channel: "dev", appDataDir: appData, homeDir: home }),
+    ).toThrow()
+
+    expect(fs.readdirSync(path.join(override, "env"))).toEqual(["prod"])
+    expect(fs.readFileSync(path.join(external, "sentinel"), "utf8")).toBe("untouched")
+    expect(fs.existsSync(path.join(override, "cas"))).toBe(false)
+    expect(process.env.ALPHA_GLOBAL_DIR).toBeUndefined()
+    expect(() => getAlphaEnvironment()).toThrow()
+  })
+
+  test("预检后的 late collision 逆序回滚本次空目录且不冻结环境", () => {
+    const override = path.join(base, "late collision state")
+    const envRoot = path.join(override, "env")
+    fs.mkdirSync(envRoot, { recursive: true })
+    const canonicalEnvRoot = fs.realpathSync(envRoot)
+    process.env.ALPHA_ENV_BASE_DIR = override
+
+    expect(() =>
+      initAlphaEnvironment({
+        isPackaged: false,
+        channel: "dev",
+        appDataDir: appData,
+        homeDir: home,
+        beforeDirectoryCreate: (directory) => {
+          if (directory === path.join(canonicalEnvRoot, "beta")) fs.writeFileSync(directory, "late collider")
+        },
+      }),
+    ).toThrow()
+
+    expect(fs.readdirSync(envRoot)).toEqual(["beta"])
+    expect(fs.readFileSync(path.join(envRoot, "beta"), "utf8")).toBe("late collider")
+    expect(fs.existsSync(path.join(envRoot, "dev"))).toBe(false)
+    expect(fs.existsSync(path.join(envRoot, "prod"))).toBe(false)
+    expect(fs.existsSync(path.join(override, "cas"))).toBe(false)
+    expect(process.env.ALPHA_GLOBAL_DIR).toBeUndefined()
+    expect(() => getAlphaEnvironment()).toThrow()
+  })
+
   test("Unicode、空格、.. 与尾分隔符 normalize 后仍派生正确兄弟根", () => {
     const override = path.join(base, "unused", "..", "state 空格 β") + path.sep
     process.env.ALPHA_ENV_BASE_DIR = override

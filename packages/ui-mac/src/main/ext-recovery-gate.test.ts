@@ -10,7 +10,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
-import { gatedWriteHandler, makeRecoveryGate, type RecoveryGate } from "./ext-recovery-gate"
+import { gatedWriteHandler, makeRecoveryGate, runVerifiedMutation, type RecoveryGate } from "./ext-recovery-gate"
 import { probeTransactionJournals, type RecoverOptions } from "./ext-transaction"
 
 let root: string
@@ -70,6 +70,29 @@ describe("withRecoveredWrite — 准入判据", () => {
     })
     expect(result).toEqual({ ok: false, reason: "root identity cannot be confirmed — operation refused (fail closed)" })
     expect(recoveryOptsCalls).toBe(0)
+    expect(bodyCalls).toBe(0)
+  })
+
+  test("probe 后第二次 root 复验注入漂移 → write body 零执行", async () => {
+    let verifies = 0
+    let bodyCalls = 0
+    const gate = makeRecoveryGate(
+      () => ({}),
+      undefined,
+      (seenRoot) => {
+        expect(seenRoot).toBe(root)
+        verifies++
+        if (verifies === 2) throw new Error("identity drift after recovery")
+      },
+    )
+
+    const result = await gate.withRecoveredWrite(root, async () => {
+      bodyCalls++
+      return { ok: true as const }
+    })
+
+    expect(result).toEqual({ ok: false, reason: "root identity cannot be confirmed — operation refused (fail closed)" })
+    expect(verifies).toBe(2)
     expect(bodyCalls).toBe(0)
   })
 
@@ -249,5 +272,26 @@ describe("gatedWriteHandler — 结构性接入(假 registrar 行为断言)", ()
     expect(await h("x", 7)).toBe("done")
     expect(seenArgs).toEqual(["x", 7])
     expect(seenRoots).toEqual(["/resolved/root", "/resolved/root"])
+  })
+})
+
+describe("runVerifiedMutation — startup migration 紧前复验", () => {
+  test("recovery 前已验、migration 前第二验漂移 → migration 零执行", () => {
+    let verifies = 0
+    let migrations = 0
+    const verify = (seenRoot: string) => {
+      expect(seenRoot).toBe(root)
+      verifies++
+      if (verifies === 2) throw new Error("root drifted during recovery")
+    }
+
+    verify(root)
+    expect(() =>
+      runVerifiedMutation(root, verify, () => {
+        migrations++
+      }),
+    ).toThrow("root drifted during recovery")
+    expect(verifies).toBe(2)
+    expect(migrations).toBe(0)
   })
 })

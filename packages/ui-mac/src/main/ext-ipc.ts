@@ -7,10 +7,12 @@ import { listAdvisoryBlockedFacts, makeAdvisoryGate } from "./ext-advisory-gate"
 import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from "electron"
 import { execFile } from "node:child_process"
 import * as fs from "node:fs"
+import { homedir } from "node:os"
 import * as path from "node:path"
 import { toolProbe } from "./platform"
 import { extensionsGranted, hasExtensionsDecision, listProjectExecutables, withExtensionsConsent } from "./alpha-ext-trust"
-import { alphaRoot, readProjectPrefs, writeProjectPrefs } from "./alpha-workdir"
+import { assertProjectAlphaRootIdentity, readProjectPrefs, writeProjectPrefs } from "./alpha-workdir"
+import { projectIpcHandler, resolveProjectIpcEntry } from "./ext-project-entry"
 import type { InstallTarget } from "../preload/types"
 import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
 import { claimMcpSecretVersionDir, mcpSecretVersionedRef, removeMcpSecretVersionDir, removeMcpServerSecrets, removeMcpServerSecretsStrict, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
@@ -46,13 +48,13 @@ import { assertAlphaEnvironmentIdentity, environmentMutableRoot, getAlphaEnviron
 import { createInventoryQuery } from "./ext-inventory"
 import { decodeSetStateIntent, decodeUninstallIntent, installCatalog, installUncuratedAgentImport, installUncuratedSkillImport, listGenerationsByKey, removeInstallGrants, rollbackGenerationByKey, seedPluginFileProbe, setInstallStateByKey, uninstallByKey, type PlannerDeps } from "./ext-install-planner"
 import { fetchCurationBlob } from "./curation-blobs"
-import { makeRecoveryGate } from "./ext-recovery-gate"
+import { makeRecoveryGate, runVerifiedMutation } from "./ext-recovery-gate"
 // #408:session-grant 会话级启用(main 内存登记 + 栅栏;生命周期接线在 index.ts)。
 import { grantSessionGrant, revokeSessionGrant, sessionGrantRegistry } from "./ext-session-grants"
 import { adoptProjectLedger } from "./ext-project-adopt"
 import { buildGatedWriteChannels, buildJournalAdminChannels, GATED_WRITE_CHANNELS, JOURNAL_ADMIN_CHANNELS } from "./ext-write-channels"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
-import { lookupForUninstall, migrateV1Ledger, parseUninstallLedgerKey, projectScopeIdentity, readLedgerV2, removeRecordV2, upsertRecordsV2 } from "./ext-receipt-v2"
+import { lookupForUninstall, migrateV1Ledger, parseUninstallLedgerKey, readLedgerV2, removeRecordV2, upsertRecordsV2 } from "./ext-receipt-v2"
 import { packagedSeedBrowseView, readPackagedSeed } from "./ext-seed"
 import { recoverExtensionTransactions, recoverExtensionTransactionsInHeldLock, recoveryClean, type RecoverOptions } from "./ext-transaction"
 import { getLogger } from "./logging"
@@ -75,8 +77,13 @@ function checkRuntime(tool: string): Promise<{ ok: boolean }> {
 
 /** registryChannel:冻结环境快照的 registry 通道(REQ-098 #302),由 composition root(index.ts)
  *  注入 —— IPC handler 与 planner 的 catalog 拉取共用同一份,类型必填(无缺省可静默回落 stable)。 */
-export function registerExtIpcHandlers(userDataPath: string, registryChannel: "stable" | "preview" | "dev") {
+export function registerExtIpcHandlers(
+  userDataPath: string,
+  registryChannel: "stable" | "preview" | "dev",
+  homeDir: string = homedir(),
+) {
   assertAlphaEnvironmentIdentity()
+  const resolveProjectEntry = (projectDir: unknown) => resolveProjectIpcEntry(projectDir, homeDir)
   // REQ-099 #305:未策展自定义 MCP 专用通道(catalog MCP 走 ext-install-catalog)与未策展 npm
   // plugin 导入的 body —— #336(残留4)抽至 electron-free 的 ext-uncurated-bodies(账本写失败的
   // fail-closed 返回 + 精确补偿可注入测试);此处只接线,注册仍经写通道表(文件尾),过恢复
@@ -193,7 +200,14 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
     return { ok: true, srcDir: result.filePaths[0]! }
   }
   // REQ-018 安装账本:合并只读视图(current-environment global + 可选 project .alpha)
-  ipcMain.handle("ext-list-installs", (_event: IpcMainInvokeEvent, projectDir?: string) => listInstalls(projectDir))
+  ipcMain.handle("ext-list-installs", (_event: IpcMainInvokeEvent, projectDir?: string) => {
+    if (projectDir === undefined) return listInstalls()
+    const resolved = resolveProjectEntry(projectDir)
+    if (resolved.ok) return listInstalls(resolved.projectDir)
+    const view = listInstalls()
+    view.warnings.push(resolved.reason)
+    return view
+  })
   // REQ-100 #313:旧 receipt-based ext-uninstall 通道已下线 —— renderer 提供的 receipt.files/configKey
   // 直达 rmSync/removePluginPath 是任意路径删除通道(startsWith 前缀挡不住 `..`,Codex review #345
   // critical);卸载只走 ext-uninstall-v2(key-based,receipt 事实由 main 账本自查,ADR-028 §1)。
@@ -205,8 +219,11 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   // 的 extensionsConsent(@alpha-code/ext 信任门读同一字段)。granted 后由 renderer 调 dispose 免重启
   // 生效(链路已真机证通,audits/2026-07-07-req060-fanout-realmachine)。写盘失败不静默放行(反 placebo):
   // 不落决策 + 返回 denied,下次仍会弹。
-  ipcMain.handle("ext-trust-check", async (event: IpcMainInvokeEvent, directory: string) => {
-    if (typeof directory !== "string" || !directory) return { prompted: false, granted: false }
+  ipcMain.handle("ext-trust-check", projectIpcHandler(
+    homeDir,
+    (reason) => ({ prompted: false, granted: false, reason }),
+    async (event: IpcMainInvokeEvent, project) => {
+    const directory = project.projectDir
     // #356:project 账本 v1→v2 adoption —— 必须在下面两个早退(无 executable / 已有信任决策)
     // **之前**执行:纯文本 skill/agent 项目与已决策项目同样收编。等 ledgerReady(全局恢复收敛)
     // 后进行;拒绝 loud log 零改动 —— busy/transient 在下一次项目打开的 trust-check 自然重试
@@ -221,7 +238,7 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
     } catch (error) {
       getLogger().log(`[req099-adopt] adoption error (ledger untouched): ${error instanceof Error ? error.message : String(error)}`)
     }
-    const alphaDir = path.join(directory, ".alpha")
+    const alphaDir = project.root
     let jsoncText: string | null = null
     try {
       jsoncText = fs.readFileSync(path.join(alphaDir, "alpha.jsonc"), "utf8")
@@ -273,14 +290,18 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
     }
     getLogger().log(`[req060-trust] ${granted ? "granted" : "denied"} for project: ${directory}`)
     return { prompted: true, granted }
-  })
+    },
+  ))
 
   // REQ-063(ADR-024):外部生态 consent 导入门(项目级)。default-deny 后引擎不再读项目自带的
   // `.claude`/`.agents` skills 与 CLAUDE.md;首次进入检测到外来内容 → 原生确认 → 「导入」= 安装期
   // 转换为本项目 `.alpha` 原生扩展(快照、脱钩,ADR-023);两种决策都记 `.alpha/prefs.json` 不再弹。
   // 逃生 ALPHA_ECOSYSTEM_INHERIT=1 → 全程静默(上游继承已恢复,alpha 不检测不弹窗,ADR-024 §5)。
-  ipcMain.handle("ext-external-check", async (event: IpcMainInvokeEvent, directory: string) => {
+  ipcMain.handle("ext-external-check", async (event: IpcMainInvokeEvent, requestedDirectory: string) => {
     const none = { prompted: false, imported: false, importedSkills: [] as string[], skipped: [] as Array<{ name: string; reason: string }>, claudeMd: "none" as const }
+    const project = resolveProjectEntry(requestedDirectory)
+    if (!project.ok) return none
+    const directory = project.projectDir
     // ADR-030(#372):项目打开位点的残留报告 —— 只读、best-effort、loud;清理只走显式通道
     // (ext-project-residuals-clean),这里零写入零弹窗。
     if (typeof directory === "string" && directory) {
@@ -303,7 +324,7 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
         /* 报告面绝不影响项目打开 */
       }
     }
-    if (typeof directory !== "string" || !directory || ecosystemInheritEnabled()) return none
+    if (ecosystemInheritEnabled()) return none
     const detected = detectExternal(directory, "project")
     if (detected.skills.length === 0 && !detected.claudeMd) return none
     const prefs = readProjectPrefs(directory)
@@ -459,7 +480,15 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   const txRecovery = recoverExtensionTransactions(alphaGlobalRoot(), recoveryOpts(alphaGlobalRoot()))
   // #347:写方事务准入 gate —— 每次写操作前恢复收敛 + 终态探测放行(进程内 per-root mutex
   // 把恢复→探测→操作链成一条所有权链;拒绝语义与 busy 一致,如实返回 reason)。
-  const recoveryGate = makeRecoveryGate(recoveryOpts, (m) => getLogger().log(m), assertAlphaEnvironmentIdentity)
+  const verifyRecoveryRoot = (root: string) => {
+    const environment = getAlphaEnvironment()
+    if (root === environment.mutableRoot) {
+      assertAlphaEnvironmentIdentity()
+      return
+    }
+    assertProjectAlphaRootIdentity(root)
+  }
+  const recoveryGate = makeRecoveryGate(recoveryOpts, (m) => getLogger().log(m), verifyRecoveryRoot)
   // #390(review r1 Blocker):启动期全局生态导入必须过恢复 gate,不能只靠 ledgerReady barrier ——
   // 启动恢复失败/仍有非终态 journal 时 barrier 只 loud 记录后正常 resolve,若直接 installUncurated…
   // 就会在未收敛 journal 的 root 上创建新事务写同一本账。经 withRecoveredWrite 包装:恢复→终态探测→
@@ -485,7 +514,10 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
         return
       }
       const env = getAlphaEnvironment()
-      const m = migrateV1Ledger(env.mutableRoot, env.environment)
+      // recovery/probe 收敛后、migration 写盘紧前再次夹逼冻结全局根身份。
+      const m = runVerifiedMutation(env.mutableRoot, verifyRecoveryRoot, () =>
+        migrateV1Ledger(env.mutableRoot, env.environment),
+      )
       if (!m.ok) {
         getLogger().log(`[req099-migrate] refused: ${m.reason}`)
         return
@@ -634,11 +666,8 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   // identity fail-closed,与 planner 同口径);解析失败原样返回、零副作用、不进 gate。
   const globalWriteRoot = (..._args: unknown[]) => ({ ok: true as const, root: alphaGlobalRoot() })
   const projectRootOf = (projectDir: string): { ok: true; root: string } | { ok: false; reason: string } => {
-    const identity = projectScopeIdentity(projectDir)
-    if (!identity.ok) return { ok: false, reason: `fail closed: ${identity.reason}` }
-    const root = alphaRoot(identity.scope.projectPath)
-    if (!root) return { ok: false, reason: `fail closed: invalid project root: ${projectDir}` }
-    return { ok: true, root }
+    const resolved = resolveProjectEntry(projectDir)
+    return resolved.ok ? { ok: true, root: resolved.root } : resolved
   }
   const uninstallIntentRoot = (rawIntent: unknown): { ok: true; root: string } | { ok: false; reason: string } => {
     const d = decodeUninstallIntent(rawIntent)
@@ -705,8 +734,10 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   // ADR-030(#372):收回路径的残留检测(只读)与显式清理(journal 在场 fail-closed;
   // generation-aware —— 删受控 ext-store + 对应账本,绝不落 flat 删除)。
   ipcMain.handle("ext-project-residuals-check", async (_event: IpcMainInvokeEvent, projectDir: unknown) => {
+    const resolved = resolveProjectEntry(projectDir)
+    if (!resolved.ok) return resolved
     await ledgerReady
-    return detectProjectCatalogResiduals(projectDir)
+    return detectProjectCatalogResiduals(resolved.projectDir)
   })
   // ── #375:journal 管理面(诊断只读 + 显式 retire)。**刻意不进 GATED_WRITE_CHANNELS**
   // (恢复 gate 拒非终态 journal 是其本职,与 retire 对象语义相反;不写 ledger/config/store),
@@ -751,10 +782,7 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
       uninstallIntent: uninstallIntentRoot,
       setStateIntent: setStateIntentRoot,
       importTarget: importTargetRoot,
-      projectDir: (projectDir: unknown) =>
-        typeof projectDir === "string" && path.isAbsolute(projectDir)
-          ? projectRootOf(projectDir)
-          : { ok: false as const, reason: "projectDir: required absolute path" },
+      projectDir: (projectDir: unknown) => resolveProjectEntry(projectDir),
     },
     bodies: {
       installCatalog: (intent) => installCatalog(intent, plannerDeps()),
@@ -813,10 +841,11 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
   // REQ-099(ADR-028 §5):Hub 项目上下文读通道 —— global 与当前项目的 v2 账本分读(物理分域),
   // records 带 environment/scope identity/desiredState/generation;v1Only 为只读兼容面。
   ipcMain.handle("ext-list-installs-v2", async (_event: IpcMainInvokeEvent, projectDir?: unknown) => {
+    const resolved = projectDir === undefined ? null : resolveProjectEntry(projectDir)
     await ledgerReady // #309:读方同 barrier(迁移中途的半程视图不外泄)
     const global = readLedgerV2(alphaGlobalRoot())
-    const projectRoot = typeof projectDir === "string" && projectDir ? alphaRoot(projectDir) : null
-    return { global, project: projectRoot ? readLedgerV2(projectRoot) : null }
+    if (resolved && !resolved.ok) return { global, project: null, projectError: resolved.reason }
+    return { global, project: resolved ? readLedgerV2(resolved.root) : null }
   })
   // REQ-103 slice 2a(#195):governance 只读查询 —— 逐扩展五维所有权 + 三态(slice 1 聚合面)。
   // 唯一的 governance 通道,零写面:核心是 electron-free 的 createInventoryQuery(纯读契约与
@@ -827,7 +856,14 @@ export function registerExtIpcHandlers(userDataPath: string, registryChannel: "s
     seedDir: fs.existsSync(inventorySeedDir) ? inventorySeedDir : null,
     globalRoot: alphaGlobalRoot,
   })
-  ipcMain.handle("ext-inventory-view", (_event: IpcMainInvokeEvent, projectDir?: unknown) => inventoryQuery(projectDir))
+  ipcMain.handle("ext-inventory-view", async (_event: IpcMainInvokeEvent, projectDir?: unknown) => {
+    if (projectDir === undefined) return inventoryQuery()
+    const resolved = resolveProjectEntry(projectDir)
+    if (resolved.ok) return inventoryQuery(resolved.projectDir)
+    const view = await inventoryQuery()
+    view.warnings.push(resolved.reason)
+    return view
+  })
   // #309:启动期账本消费方(index.ts 的 global ecosystem gate)await 此 barrier 后再写账本。
   // #390:同时交出恢复-gate 包装的 global 技能安装器,供 ecosystem gate 走事务安装(不绕恢复准入)。
   return { ledgerReady, ecosystemGlobalSkillInstaller }

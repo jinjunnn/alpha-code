@@ -24,6 +24,12 @@ export type RecoveryGate = {
   withRecoveredWrite<T>(root: string, op: () => Promise<T>): Promise<T | GateRefusal>
 }
 
+/** 已完成 recovery/probe 后的同步 mutation 夹逼；复验失败时 mutation 绝不调用。 */
+export function runVerifiedMutation<T>(root: string, verifyRoot: (root: string) => void, mutation: () => T): T {
+  verifyRoot(root)
+  return mutation()
+}
+
 /** per-root 进程内 mutex + 恢复准入。recoveryOpts 按 root 构造(seam 必须写传入的 root)。
  *  log:准入耗时观测(review #376 m4:每次准入 = 同步 journal 扫描 ×(恢复+GC+探测),GC 后
  *  上限 ~100 张终态件,首次面对大量存量时无界 —— 超阈值 loud,供性能回归定位)。 */
@@ -78,6 +84,12 @@ export function makeRecoveryGate(
       try {
         const admitted = await admit(root)
         if (!admitted.ok) return admitted
+        try {
+          // recovery 可能无界；终态 probe 成功后、write body 紧前再夹逼同一个 root 的身份。
+          verifyRoot?.(root)
+        } catch {
+          return { ok: false, reason: "root identity cannot be confirmed — operation refused (fail closed)" }
+        }
         return await op()
       } finally {
         release()

@@ -15,7 +15,7 @@
 //
 // electron-free:isPackaged/channel/appData 由 index.ts 注入,单测零 mock。
 
-import { lstatSync, mkdirSync, realpathSync, statSync } from "node:fs"
+import { lstatSync, mkdirSync, readdirSync, realpathSync, rmdirSync, statSync } from "node:fs"
 import { homedir } from "node:os"
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve } from "node:path"
 import type { AlphaEnvironmentInfo } from "../preload/types"
@@ -75,6 +75,8 @@ export type InitEnvironmentInput = {
   baseRoot?: string
   /** 仅用于退休根 denial；默认真实 home。 */
   homeDir?: string
+  /** 单测 seam：在完整预检后、单个缺失目录创建前注入 late collision。 */
+  beforeDirectoryCreate?: (directory: string) => void
 }
 
 /**
@@ -102,19 +104,37 @@ export function initAlphaEnvironment(input: InitEnvironmentInput): AlphaEnvironm
 
   const baseRoot = prospectiveCanonical(lexicalBase)
   const roots = environmentRoots(baseRoot)
-  const canonicalRoots = {
-    dev: prospectiveCanonical(roots.dev),
-    prod: prospectiveCanonical(roots.prod),
-    beta: prospectiveCanonical(roots.beta),
+  const envRoot = join(baseRoot, "env")
+  assertSiblingRoots(Object.values(roots), "canonical")
+  if (Object.values(roots).some((root) => dirname(root) !== envRoot))
+    throw new Error("canonical environment roots must share the expected env parent")
+  assertOutsideRetiredRoot([baseRoot, ...Object.values(roots)], input.homeDir ?? homedir(), true)
+
+  // 先把全部 endpoint（含创建 base 所需的缺失父链）一次性预检完，再产生任何目录副作用。
+  // prospective canonical 必须逐字等于预期 endpoint；现存 endpoint 还必须是同路径的非链实目录。
+  const topology = [baseRoot, envRoot, ...Object.values(roots), join(baseRoot, "cas")]
+  const directories = [...new Set([...missingDirectoryChain(dirname(baseRoot)), ...topology])]
+  const preflight = new Map(directories.map((directory) => [directory, inspectExpectedDirectory(directory)]))
+  const created: Array<{ directory: string; identity: DirectoryIdentity }> = []
+  try {
+    for (const directory of directories) {
+      const expected = preflight.get(directory)!
+      if (expected) {
+        assertDirectoryIdentity(directory, expected)
+        continue
+      }
+      assertCanonicalDirectory(dirname(directory), dirname(directory))
+      input.beforeDirectoryCreate?.(directory)
+      mkdirSync(directory)
+      created.push({ directory, identity: directoryIdentity(directory) })
+    }
+    topology.forEach((directory) => assertCanonicalDirectory(directory, directory))
+  } catch (error) {
+    rollbackCreatedDirectories(created)
+    throw new Error("alpha environment topology initialization failed", { cause: error })
   }
-  assertSiblingRoots(Object.values(canonicalRoots), "canonical")
-  assertOutsideRetiredRoot([baseRoot, ...Object.values(canonicalRoots)], input.homeDir ?? homedir(), true)
 
-  const directories = [baseRoot, join(baseRoot, "env"), ...Object.values(canonicalRoots), join(baseRoot, "cas")]
-  directories.forEach((directory) => mkdirSync(directory, { recursive: true }))
-  directories.forEach((directory) => assertCanonicalDirectory(directory, directory))
-
-  const mutableRoot = canonicalRoots[environment]
+  const mutableRoot = roots[environment]
   env.ALPHA_GLOBAL_DIR = mutableRoot
   current = Object.freeze({
     environment,
@@ -166,6 +186,58 @@ function assertCanonicalDirectory(directory: string, expected: string): void {
   } catch {
     throw new Error("alpha root identity cannot be confirmed")
   }
+}
+
+type DirectoryIdentity = { dev: number; ino: number }
+
+function inspectExpectedDirectory(directory: string): DirectoryIdentity | null {
+  if (prospectiveCanonical(directory) !== directory) throw new Error("alpha endpoint does not resolve to its expected path")
+  try {
+    return directoryIdentity(directory)
+  } catch (error) {
+    if (errorCode(error) === "ENOENT") return null
+    throw error
+  }
+}
+
+function directoryIdentity(directory: string): DirectoryIdentity {
+  const stat = lstatSync(directory)
+  if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error("endpoint is not a real directory")
+  if (normalize(realpathSync(directory)) !== normalize(directory)) throw new Error("canonical identity drifted")
+  return { dev: stat.dev, ino: stat.ino }
+}
+
+function assertDirectoryIdentity(directory: string, expected: DirectoryIdentity): void {
+  const actual = directoryIdentity(directory)
+  if (actual.dev !== expected.dev || actual.ino !== expected.ino) throw new Error("alpha endpoint identity changed after preflight")
+}
+
+function missingDirectoryChain(directory: string): string[] {
+  const missing: string[] = []
+  let cursor = directory
+  while (true) {
+    try {
+      directoryIdentity(cursor)
+      return missing.reverse()
+    } catch (error) {
+      if (errorCode(error) !== "ENOENT") throw error
+      const parent = dirname(cursor)
+      if (parent === cursor) throw new Error("alpha root identity cannot be confirmed", { cause: error })
+      missing.push(cursor)
+      cursor = parent
+    }
+  }
+}
+
+function rollbackCreatedDirectories(created: Array<{ directory: string; identity: DirectoryIdentity }>): void {
+  created.reverse().forEach(({ directory, identity }) => {
+    try {
+      assertDirectoryIdentity(directory, identity)
+      if (readdirSync(directory).length === 0) rmdirSync(directory)
+    } catch {
+      // 只回收仍为空且 inode 未变的本次创建目录；漂移或新内容一律保留。
+    }
+  })
 }
 
 function prospectiveCanonical(input: string): string {

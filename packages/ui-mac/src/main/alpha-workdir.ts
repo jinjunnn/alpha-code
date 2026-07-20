@@ -8,6 +8,7 @@
 // no user .gitignore edit required.
 
 import * as fs from "node:fs"
+import * as os from "node:os"
 import * as path from "node:path"
 import type { CloudArtifactMeta, CloudArtifactList, CloudJobEnvelope, CloudJobStatus, CloudResult } from "../preload/types"
 import type { ArtifactDownloadOutcome } from "./alpha-artifact-download"
@@ -36,23 +37,72 @@ export function sanitizeArtifactName(name: string | undefined, fallback: string)
   return base.length > 128 ? base.slice(0, 128) : base
 }
 
-/** `<projectDir>/.alpha`, or null if projectDir is not an absolute path to an existing real directory. */
+export type ProjectAlphaRootResolution =
+  | { status: "project"; projectDir: string; root: string }
+  | { status: "retired-home"; reason: string }
+  | { status: "unknown"; reason: string }
+
+/** main 项目入口的统一三态身份：返回 canonical project + 已验证 `.alpha` endpoint。 */
+export function resolveProjectAlphaRoot(projectDir: string, homeDir: string = os.homedir()): ProjectAlphaRootResolution {
+  if (typeof projectDir !== "string" || !path.isAbsolute(projectDir) || projectDir === path.parse(projectDir).root)
+    return { status: "unknown", reason: "project directory must be an absolute non-root path" }
+  let project: string
+  let home: string
+  try {
+    project = path.normalize(fs.realpathSync(projectDir))
+    home = path.normalize(fs.realpathSync(homeDir))
+    if (!fs.statSync(project).isDirectory()) return { status: "unknown", reason: "project path is not a directory" }
+  } catch {
+    return { status: "unknown", reason: "project directory identity cannot be confirmed" }
+  }
+  if (project === home) return { status: "retired-home", reason: "real home and its aliases are not projects" }
+
+  const retiredLexical = path.join(home, ".alpha")
+  const retired = (() => {
+    try {
+      return path.normalize(fs.realpathSync(retiredLexical))
+    } catch {
+      return retiredLexical
+    }
+  })()
+  const root = path.join(project, ".alpha")
+  if (sameOrInside(project, retired) || related(root, retiredLexical) || related(root, retired))
+    return { status: "retired-home", reason: "project alpha root is related to the retired global root" }
+
+  try {
+    const stat = fs.lstatSync(root)
+    if (stat.isSymbolicLink() || !stat.isDirectory())
+      return { status: "unknown", reason: "project alpha endpoint is not a real directory" }
+    if (path.normalize(fs.realpathSync(root)) !== root)
+      return { status: "unknown", reason: "project alpha endpoint is a canonical alias" }
+  } catch (error) {
+    if (!error || typeof error !== "object" || !("code" in error) || error.code !== "ENOENT")
+      return { status: "unknown", reason: "project alpha root identity cannot be confirmed" }
+  }
+  return { status: "project", projectDir: project, root }
+}
+
+/** `<projectDir>/.alpha`, or null unless the unified three-state resolver admits it. */
 export function alphaRoot(projectDir: string): string | null {
-  if (!path.isAbsolute(projectDir)) return null
-  if (projectDir === path.parse(projectDir).root) return null // refuse "/" — junk-project guard (B4)
-  try {
-    if (!fs.statSync(projectDir).isDirectory()) return null
-  } catch {
-    return null
-  }
-  const root = path.join(projectDir, ".alpha")
-  // realpath would legitimize a symlinked root — refuse `.alpha` that is itself a symlink.
-  try {
-    if (fs.lstatSync(root).isSymbolicLink()) return null
-  } catch {
-    // not existing yet is fine
-  }
-  return root
+  const resolved = resolveProjectAlphaRoot(projectDir)
+  return resolved.status === "project" ? resolved.root : null
+}
+
+/** Recovery gate 的 project-root 复验：root 必须仍是同一 canonical 项目的已验证 `.alpha` endpoint。 */
+export function assertProjectAlphaRootIdentity(root: string): void {
+  if (!path.isAbsolute(root) || path.basename(root) !== ".alpha") throw new Error("invalid project alpha root")
+  const resolved = resolveProjectAlphaRoot(path.dirname(root))
+  if (resolved.status !== "project" || resolved.root !== path.normalize(root))
+    throw new Error("project alpha root identity cannot be confirmed")
+}
+
+function related(left: string, right: string): boolean {
+  return sameOrInside(left, right) || sameOrInside(right, left)
+}
+
+function sameOrInside(child: string, parent: string): boolean {
+  const relative = path.relative(parent, child)
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
 }
 
 // Resolve a target inside <projectDir>/.alpha and assert (via realpath of the nearest existing

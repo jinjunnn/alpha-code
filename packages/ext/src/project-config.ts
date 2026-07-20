@@ -9,17 +9,49 @@ import { lstatSync, realpathSync } from "node:fs"
 import { homedir } from "node:os"
 import { isAbsolute, join, normalize, relative, resolve } from "node:path"
 
-export type ProjectDirectoryIdentity = "project" | "retired-home" | "unknown"
+export type ProjectDirectoryIdentity =
+  | { status: "project"; directory: string; root: string }
+  | { status: "retired-home"; reason: string }
+  | { status: "unknown"; reason: string }
 
-/** home 项目边界三态：realpath 无法确认一律 unknown，由调用方 fail-closed 拒绝项目通道。 */
+/** home 项目边界三态：project 分支携带唯一可供消费者使用的已验证 `.alpha` root。 */
 export function projectDirectoryIdentity(directory: string, homeDir: string = homedir()): ProjectDirectoryIdentity {
+  if (!isAbsolute(directory)) return { status: "unknown", reason: "project directory must be absolute" }
+  let candidate: string
+  let home: string
   try {
-    const candidate = normalize(realpathSync(directory))
-    const home = normalize(realpathSync(homeDir))
-    return candidate === home ? "retired-home" : "project"
+    candidate = normalize(realpathSync(directory))
+    home = normalize(realpathSync(homeDir))
   } catch {
-    return "unknown"
+    return { status: "unknown", reason: "project directory identity cannot be confirmed" }
   }
+  if (candidate === home) return { status: "retired-home", reason: "real home and its aliases are not projects" }
+
+  const retiredLexical = normalize(join(home, ".alpha"))
+  const retired = (() => {
+    try {
+      return normalize(realpathSync(retiredLexical))
+    } catch {
+      return retiredLexical
+    }
+  })()
+  const root = join(candidate, ".alpha")
+  if (sameOrInside(candidate, retired) || related(root, retiredLexical) || related(root, retired))
+    return { status: "retired-home", reason: "project alpha root is related to the retired global root" }
+
+  try {
+    const stat = lstatSync(root)
+    if (stat.isSymbolicLink() || !stat.isDirectory())
+      return { status: "unknown", reason: "project alpha endpoint is not a real directory" }
+    const canonical = normalize(realpathSync(root))
+    if (canonical !== root) return { status: "unknown", reason: "project alpha endpoint is a canonical alias" }
+    if (related(canonical, retired))
+      return { status: "retired-home", reason: "project alpha root resolves to the retired global root" }
+  } catch (error) {
+    if (!error || typeof error !== "object" || !("code" in error) || error.code !== "ENOENT")
+      return { status: "unknown", reason: "project alpha root identity cannot be confirmed" }
+  }
+  return { status: "project", directory: candidate, root }
 }
 
 /** sidecar/ext 无 main 快照，必须只消费 main 已派生的 canonical root。 */

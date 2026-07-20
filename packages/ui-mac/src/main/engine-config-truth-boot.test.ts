@@ -128,6 +128,34 @@ describe("reconcile — ownership bail-out", () => {
 })
 
 describe("reconcile — T3 ~/.opencode cleanup", () => {
+  test("所有提前返回前只断退休 kind/item 桥，退休根 sentinel 原封不动", () => {
+    const retiredHome = path.join(tmp, "retired-home")
+    const retired = path.join(retiredHome, ".alpha")
+    for (const kind of ["skills", "agents", "commands"])
+      fs.mkdirSync(path.join(retired, kind), { recursive: true })
+    fs.writeFileSync(path.join(retired, "skills", "sentinel.txt"), "skill sentinel")
+    fs.writeFileSync(path.join(retired, "agents", "legacy.md"), "agent sentinel")
+    fs.writeFileSync(path.join(retired, "commands", "legacy.md"), "command sentinel")
+
+    fs.symlinkSync(path.join(retired, "skills"), path.join(homeTmp, "skills"), "dir")
+    fs.mkdirSync(path.join(homeTmp, "agents"))
+    fs.symlinkSync(path.join(retired, "agents", "legacy.md"), path.join(homeTmp, "agents", "legacy.md"), "file")
+    fs.mkdirSync(path.join(homeTmp, "commands"))
+    fs.symlinkSync(path.join(retired, "commands", "legacy.md"), path.join(homeTmp, "commands", "legacy.md"), "file")
+
+    process.env.ALPHA_JSONC_TRUTH_DISABLE = "1"
+    const result = reconcileEngineConfigTruth(undefined, { retiredHomeDir: retiredHome })
+
+    expect(result.skipped).toBe(true)
+    expect(fs.existsSync(path.join(homeTmp, "skills"))).toBe(false)
+    expect(fs.existsSync(path.join(homeTmp, "agents", "legacy.md"))).toBe(false)
+    expect(fs.existsSync(path.join(homeTmp, "commands", "legacy.md"))).toBe(false)
+    expect(fs.readFileSync(path.join(retired, "skills", "sentinel.txt"), "utf8")).toBe("skill sentinel")
+    expect(fs.readFileSync(path.join(retired, "agents", "legacy.md"), "utf8")).toBe("agent sentinel")
+    expect(fs.readFileSync(path.join(retired, "commands", "legacy.md"), "utf8")).toBe("command sentinel")
+    expect(fs.readdirSync(retired).sort()).toEqual(["agents", "commands", "skills"])
+  })
+
   test("junk-only ~/.opencode removed after migration", () => {
     writeLegacy({ mcp: { markitdown: { type: "local" } } })
     writeLedger([mcpReceipt("markitdown")])

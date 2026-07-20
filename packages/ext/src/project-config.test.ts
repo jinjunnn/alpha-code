@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { mergeProjectConfig, projectDirectoryIdentity, requireAlphaGlobalRoot } from "./project-config"
+import { AlphaExt } from "./plugin"
 
 const j = (o: unknown) => JSON.stringify(o)
 
@@ -110,10 +111,23 @@ describe("project/root identity fail-closed", () => {
   test("home、home symlink alias 拒绝；普通项目放行；身份不明拒绝", () => {
     const alias = join(root, "home-alias")
     symlinkSync(home, alias)
-    expect(projectDirectoryIdentity(home, home)).toBe("retired-home")
-    expect(projectDirectoryIdentity(alias, home)).toBe("retired-home")
-    expect(projectDirectoryIdentity(project, home)).toBe("project")
-    expect(projectDirectoryIdentity(join(root, "missing"), home)).toBe("unknown")
+    expect(projectDirectoryIdentity(home, home).status).toBe("retired-home")
+    expect(projectDirectoryIdentity(alias, home).status).toBe("retired-home")
+    const admitted = projectDirectoryIdentity(project, home)
+    expect(admitted.status).toBe("project")
+    if (admitted.status === "project") expect(admitted.root).toBe(join(realpathSync(project), ".alpha"))
+    expect(projectDirectoryIdentity(join(root, "missing"), home).status).toBe("unknown")
+  })
+
+  test("项目 `.alpha` terminal symlink 与退休根内项目均拒绝，sentinel 不被读取迁移", () => {
+    const retired = join(home, ".alpha")
+    mkdirSync(join(retired, "nested"), { recursive: true })
+    writeFileSync(join(retired, "sentinel"), "untouched")
+    symlinkSync(retired, join(project, ".alpha"), "dir")
+
+    expect(projectDirectoryIdentity(project, home).status).toBe("unknown")
+    expect(projectDirectoryIdentity(join(retired, "nested"), home).status).toBe("retired-home")
+    expect(readFileSync(join(retired, "sentinel"), "utf8")).toBe("untouched")
   })
 
   test("ext 初始化 root 缺失、相对、退休根关系与 symlink alias 一律拒绝", () => {
@@ -136,11 +150,45 @@ describe("project/root identity fail-closed", () => {
     expect(() => requireAlphaGlobalRoot(alias, home)).toThrow()
   })
 
-  test("plugin 将三态 identity gate 接到 config、consent、fan-out 与 alpha_register", () => {
-    const source = readFileSync(join(import.meta.dir, "plugin.ts"), "utf8")
-    expect(source).toContain("if (projectAllowed(input.directory))")
-    expect(source).toContain('if (projectDirectoryIdentity(dir) !== "project") return false')
-    expect(source).toContain("const trusted = projectAllowed(input.directory) && readProjectExtensionsConsent(input.directory)")
-    expect(source).toContain("if (!projectAllowed(ctx.directory))")
+  test("`.alpha → retired root` 时 config、consent、fan-out、alpha_register 四路行为均零触达", async () => {
+    const retired = join(home, ".alpha")
+    mkdirSync(join(retired, "plugins"), { recursive: true })
+    const config = JSON.stringify({ agent: { retired: { prompt: "must not load" } } })
+    writeFileSync(join(retired, "alpha.jsonc"), config)
+    writeFileSync(join(retired, "prefs.json"), JSON.stringify({ extensionsConsent: { version: 1, granted: true } }))
+    writeFileSync(join(retired, "plugins", "retired.js"), "export default async () => ({ tool: { retired_tool: {} } })")
+    writeFileSync(join(retired, "sentinel"), "untouched")
+    symlinkSync(retired, join(project, ".alpha"), "dir")
+
+    const global = join(root, "global", "env", "dev")
+    mkdirSync(global, { recursive: true })
+    const previous = process.env.ALPHA_GLOBAL_DIR
+    process.env.ALPHA_GLOBAL_DIR = realpathSync(global)
+    try {
+      const hooks = await AlphaExt({
+        directory: project,
+        worktree: project,
+        client: { instance: { dispose: async () => {} } },
+      } as unknown as Parameters<typeof AlphaExt>[0])
+      const exposed = hooks as unknown as {
+        config: (cfg: Record<string, unknown>) => Promise<void>
+        tool: Record<string, { execute: (args: { type: "agent"; name: string; entry: string }, ctx: { directory: string; sessionID: string }) => Promise<{ metadata: { ok: boolean } }> }>
+      }
+      const cfg: Record<string, unknown> = {}
+      await exposed.config(cfg)
+      expect((cfg.agent as Record<string, unknown>).retired).toBeUndefined()
+      expect(exposed.tool.retired_tool).toBeUndefined()
+
+      const registered = await exposed.tool.alpha_register.execute(
+        { type: "agent", name: "new-agent", entry: JSON.stringify({ prompt: "write" }) },
+        { directory: project, sessionID: "s1" },
+      )
+      expect(registered.metadata.ok).toBe(false)
+      expect(readFileSync(join(retired, "alpha.jsonc"), "utf8")).toBe(config)
+      expect(readFileSync(join(retired, "sentinel"), "utf8")).toBe("untouched")
+    } finally {
+      if (previous === undefined) delete process.env.ALPHA_GLOBAL_DIR
+      else process.env.ALPHA_GLOBAL_DIR = previous
+    }
   })
 })

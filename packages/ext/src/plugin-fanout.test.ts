@@ -56,7 +56,7 @@ describe("loadProjectPlugins — trust gate + dynamic import", () => {
 
   test("untrusted → returns [] (executable not loaded)", async () => {
     let imported = 0
-    const hooks = await loadProjectPlugins("/proj", {}, false, {
+    const hooks = await loadProjectPlugins("/proj/.alpha", {}, false, {
       ...baseDeps,
       importModule: async () => (imported++, { default: async () => ({}) }),
     })
@@ -66,7 +66,7 @@ describe("loadProjectPlugins — trust gate + dynamic import", () => {
 
   test("trusted → imports only .js, calls Plugin(input), collects hooks", async () => {
     const seen: string[] = []
-    const hooks = await loadProjectPlugins("/proj", { directory: "/proj" }, true, {
+    const hooks = await loadProjectPlugins("/proj/.alpha", { directory: "/proj" }, true, {
       ...baseDeps,
       importModule: async (url) => {
         seen.push(url)
@@ -79,7 +79,7 @@ describe("loadProjectPlugins — trust gate + dynamic import", () => {
 
   test("a broken plugin is skipped loud, others still load", async () => {
     const errors: string[] = []
-    const hooks = await loadProjectPlugins("/proj", {}, true, {
+    const hooks = await loadProjectPlugins("/proj/.alpha", {}, true, {
       ...baseDeps,
       readdirSync: () => ["good.js", "bad.js"],
       importModule: async (url) => {
@@ -93,13 +93,13 @@ describe("loadProjectPlugins — trust gate + dynamic import", () => {
   })
 
   test("no plugins dir → []", async () => {
-    const hooks = await loadProjectPlugins("/proj", {}, true, { ...baseDeps, existsSync: () => false, importModule: async () => ({}) })
+    const hooks = await loadProjectPlugins("/proj/.alpha", {}, true, { ...baseDeps, existsSync: () => false, importModule: async () => ({}) })
     expect(hooks).toEqual([])
   })
 
   test("module without default fn → skipped loud", async () => {
     const errors: string[] = []
-    const hooks = await loadProjectPlugins("/proj", {}, true, {
+    const hooks = await loadProjectPlugins("/proj/.alpha", {}, true, {
       ...baseDeps,
       readdirSync: () => ["x.js"],
       importModule: async () => ({ notAPlugin: 1 }),

@@ -92,6 +92,8 @@ export type ReconcileOptions = {
    *  此参数现用于**剥离**历史版本写盘的出厂条目:传 [](reconcile 成功时的常态)= 只清不加;
    *  不传 = 不动该组(factory reconcile 失败时的保守态/测试兼容)。 */
   factorySkillDirs?: string[]
+  /** 仅用于测试隔离退休根；生产默认真实 home。 */
+  retiredHomeDir?: string
 }
 
 /**
@@ -99,6 +101,9 @@ export type ReconcileOptions = {
  * Returns an outcome for logging/telemetry (never throws on a migration miss — reconcile is best-effort).
  */
 export function reconcileEngineConfigTruth(log?: Logger, opts?: ReconcileOptions): ReconcileOutcome {
+  // 退休桥断链与配置迁移完全独立：必须早于 escape hatch、truth 读失败、ownership bail-out 等
+  // 任一提前返回。这里只 lstat/readlink 桥本身，不 realpath/读取/迁移退休目标。
+  unlinkRetiredOpencodeBridges(opts?.retiredHomeDir ?? os.homedir(), log)
   if (process.env.ALPHA_JSONC_TRUTH_DISABLE === "1" || process.env.ALPHA_LEGACY_INSTALL_ROOT === "1") {
     return { skipped: true, reason: "escape hatch set (ALPHA_JSONC_TRUTH_DISABLE / ALPHA_LEGACY_INSTALL_ROOT)" }
   }
@@ -196,6 +201,44 @@ export function reconcileEngineConfigTruth(log?: Logger, opts?: ReconcileOptions
   cleanupOpencodeHome(log)
 
   return { skipped: false, migrated, added }
+}
+
+function unlinkRetiredOpencodeBridges(homeDir: string, log?: Logger): void {
+  const opencodeDir = opencodeHomeDir()
+  const retiredRoot = path.resolve(homeDir, ".alpha")
+  for (const kind of ["skills", "agents", "commands"] as const) {
+    const kindPath = path.join(opencodeDir, kind)
+    try {
+      const stat = fs.lstatSync(kindPath)
+      if (stat.isSymbolicLink()) {
+        if (symlinkPointsInto(kindPath, retiredRoot)) {
+          fs.unlinkSync(kindPath)
+          log?.log(`[req098] retired ~/.opencode/${kind} bridge removed`)
+        }
+        continue
+      }
+      if (!stat.isDirectory()) continue
+      for (const name of fs.readdirSync(kindPath)) {
+        const itemPath = path.join(kindPath, name)
+        try {
+          if (!fs.lstatSync(itemPath).isSymbolicLink() || !symlinkPointsInto(itemPath, retiredRoot)) continue
+          fs.unlinkSync(itemPath)
+          log?.log(`[req098] retired ~/.opencode/${kind}/${name} bridge removed`)
+        } catch {
+          // 条目消失/不可确认时不跟随、不猜测。
+        }
+      }
+    } catch {
+      // kind 缺失或不可确认：不跟随、不猜测。
+    }
+  }
+}
+
+function symlinkPointsInto(link: string, root: string): boolean {
+  const target = fs.readlinkSync(link)
+  const resolved = path.resolve(path.dirname(link), target)
+  const relative = path.relative(root, resolved)
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
 }
 
 /**

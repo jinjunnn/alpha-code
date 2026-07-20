@@ -52,13 +52,13 @@ export type FanoutDeps = {
  * (可执行物未 consent 不加载)。逐个 import + 调用 Plugin(input);失败 loud 跳过(不阻断整体)。
  */
 export async function loadProjectPlugins(
-  directory: string,
+  alphaRoot: string,
   pluginInput: unknown,
   trusted: boolean,
   deps: FanoutDeps,
 ): Promise<Record<string, unknown>[]> {
   if (!trusted) return []
-  const dir = deps.join(directory, ".alpha", "plugins")
+  const dir = deps.join(alphaRoot, "plugins")
   if (!deps.existsSync(dir)) return []
   const hooks: Record<string, unknown>[] = []
   let files: string[]
