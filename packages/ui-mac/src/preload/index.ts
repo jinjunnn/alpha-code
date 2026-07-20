@@ -85,6 +85,16 @@ const api: ElectronAPI = {
   storeClear: (name) => ipcRenderer.invoke("store-clear", name),
   storeKeys: (name) => ipcRenderer.invoke("store-keys", name),
   storeLength: (name) => ipcRenderer.invoke("store-length", name),
+  settings: {
+    read: () => ipcRenderer.invoke("settings-read"),
+    validate: (value) => ipcRenderer.invoke("settings-validate", value),
+    write: (input) => ipcRenderer.invoke("settings-write", input),
+  },
+  extensionStorage: {
+    snapshot: () => ipcRenderer.invoke("extension-storage-snapshot"),
+    inspect: () => ipcRenderer.invoke("extension-storage-inspect"),
+    collect: () => ipcRenderer.invoke("extension-storage-collect"),
+  },
 
   getWindowCount: () => ipcRenderer.invoke("get-window-count"),
   onMenuCommand: (cb) => {

@@ -9,6 +9,14 @@ import type { SessionGrantResultWire, SessionGrantWire, SessionGrantsEndedEventW
 export type { SessionGrantsEndedEventWire } from "../shared/ext-session-grant-wire"
 import type { ArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
 import type { ResolvedSurfaces, SurfaceId } from "../shared/alpha-surfaces"
+import type {
+  AlphaSettings,
+  ExtensionStorageResult,
+  ExtensionStorageSnapshot,
+  SettingsReadResult,
+  SettingsValidateResult,
+  SettingsWriteResult,
+} from "../shared/settings-adapters"
 import type { AutomationEvent, AutomationGlobalState, AutomationTask, AutomationSchedule } from "../shared/automation-types"
 import type {
   AlphaModelCatalog,
@@ -322,6 +330,18 @@ export type ElectronAPI = {
   storeClear: (name: string) => Promise<void>
   storeKeys: (name: string) => Promise<string[]>
   storeLength: (name: string) => Promise<number>
+  /** REQ-090:authoritative default.dat/settings.v3 adapter; failures expose stable codes only. */
+  settings: {
+    read: () => Promise<SettingsReadResult>
+    validate: (value: unknown) => Promise<SettingsValidateResult>
+    write: (input: { value: AlphaSettings; expectedRevision: string }) => Promise<SettingsWriteResult>
+  }
+  /** REQ-090/#253:manual CAS GC; renderer receives only the closed aggregate projection. */
+  extensionStorage: {
+    snapshot: () => Promise<ExtensionStorageSnapshot>
+    inspect: () => Promise<ExtensionStorageResult>
+    collect: () => Promise<ExtensionStorageResult>
+  }
 
   getWindowCount: () => Promise<number>
   onMenuCommand: (cb: (id: string) => void) => () => void

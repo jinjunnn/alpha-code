@@ -1,5 +1,7 @@
 import log from "electron-log/main.js"
+import { createSettingsAdapter } from "./settings-adapters"
 import { getStore } from "./store"
+import { RENDERER_SETTINGS_STORE } from "./store-keys"
 
 // alpha ships opencode's "new layout" (V2) as its baseline: that mode renders the minimal
 // titlebar+main shell (no legacy rail sidebar, no big wordmark home) onto which our own
@@ -10,8 +12,6 @@ import { getStore } from "./store"
 // reads it — exactly ONCE (guarded by a sentinel), so a user who later turns it back off in
 // Settings is respected. Escape hatch: ALPHA_LEGACY_LAYOUT=1 skips the seed entirely.
 
-const RENDERER_STORE = "default.dat"
-const SETTINGS_KEY = "settings.v3"
 const SEEDED_KEY = "alphaNewLayoutSeeded"
 
 export function ensureAlphaLayoutDefault() {
@@ -21,29 +21,15 @@ export function ensureAlphaLayoutDefault() {
   if (sentinelStore.get(SEEDED_KEY)) return
 
   try {
-    const store = getStore(RENDERER_STORE)
-    const raw = store.get(SETTINGS_KEY)
-
-    let settings: Record<string, unknown> = {}
-    if (typeof raw === "string") {
-      try {
-        settings = JSON.parse(raw) as Record<string, unknown>
-      } catch {
-        settings = {}
+    const settings = createSettingsAdapter(getStore(RENDERER_SETTINGS_STORE).path)
+    const current = settings.read()
+    if (!current.ok) throw new Error("settings authority unavailable")
+    if (current.value.general.newLayoutDesigns !== true) {
+      const next = structuredClone(current.value)
+      next.general.newLayoutDesigns = true
+      if (!settings.write({ value: next, expectedRevision: current.revision }).ok) {
+        throw new Error("settings authority commit failed")
       }
-    } else if (raw && typeof raw === "object") {
-      settings = raw as Record<string, unknown>
-    }
-
-    const general =
-      settings.general && typeof settings.general === "object"
-        ? (settings.general as Record<string, unknown>)
-        : {}
-
-    if (general.newLayoutDesigns !== true) {
-      general.newLayoutDesigns = true
-      settings.general = general
-      store.set(SETTINGS_KEY, JSON.stringify(settings))
       log.log("alpha: seeded new layout (newLayoutDesigns=true)")
     }
 
@@ -56,26 +42,15 @@ export function ensureAlphaLayoutDefault() {
   // 无从切换)。同款一次性 sentinel;用户之后在设置里关掉则尊重。
   try {
     if (sentinelStore.get("alphaCustomAgentsSeeded")) return
-    const store = getStore(RENDERER_STORE)
-    const raw = store.get(SETTINGS_KEY)
-    let settings: Record<string, unknown> = {}
-    if (typeof raw === "string") {
-      try {
-        settings = JSON.parse(raw) as Record<string, unknown>
-      } catch {
-        settings = {}
+    const settings = createSettingsAdapter(getStore(RENDERER_SETTINGS_STORE).path)
+    const current = settings.read()
+    if (!current.ok) throw new Error("settings authority unavailable")
+    if (current.value.general.showCustomAgents !== true) {
+      const next = structuredClone(current.value)
+      next.general.showCustomAgents = true
+      if (!settings.write({ value: next, expectedRevision: current.revision }).ok) {
+        throw new Error("settings authority commit failed")
       }
-    } else if (raw && typeof raw === "object") {
-      settings = raw as Record<string, unknown>
-    }
-    const general =
-      settings.general && typeof settings.general === "object"
-        ? (settings.general as Record<string, unknown>)
-        : {}
-    if (general.showCustomAgents !== true) {
-      general.showCustomAgents = true
-      settings.general = general
-      store.set(SETTINGS_KEY, JSON.stringify(settings))
       log.log("alpha: seeded custom agents visibility (showCustomAgents=true)")
     }
     sentinelStore.set("alphaCustomAgentsSeeded", true)

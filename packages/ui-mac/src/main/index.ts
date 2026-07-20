@@ -59,6 +59,7 @@ import { spawnWslSidecar } from "./wsl/sidecar"
 import { migrate } from "./migrate"
 import { catalogRegistryChannel, initAlphaEnvironment } from "./alpha-environment"
 import { productionCasGcConfig, startCasGcScheduler } from "./ext-cas-gc-scheduler"
+import { registerSettingsIpcHandlers } from "./settings-ipc"
 import { ensureAlphaLayoutDefault } from "./alpha-defaults"
 import { initialSelfHealState, noteSpawn, planSelfHeal } from "./sidecar-self-heal"
 // #408:session-grant 生命周期接线(会话边界 = sidecar 运行期;栅栏语义见 ext-session-grants.ts)。
@@ -566,8 +567,10 @@ const main = Effect.gen(function* () {
   // REQ-102 #318:CAS GC 生产触发(5min 首跑 + 24h 链式周期;锁忙/mark 根损坏 = 本轮跳过等下轮)。
   // 配置经唯一权威取值点 productionCasGcConfig(冻结共享 CAS 根 + 三环境根 + 无条件 seed lock +
   // 显式非零 grace,已单测钉死)。
-  const casGc = startCasGcScheduler(productionCasGcConfig())
+  const casGcConfig = productionCasGcConfig()
+  const casGc = startCasGcScheduler(casGcConfig)
   app.once("will-quit", () => casGc.stop())
+  registerSettingsIpcHandlers(casGcConfig)
   registerAccountIpcHandlers()
   registerCloudIpcHandlers()
   // REQ-093(#185):run artifact manifest 只读查询面(artifacts.json + 磁盘 reconcile)。

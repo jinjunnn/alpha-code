@@ -1,0 +1,130 @@
+---
+title: Settings and extension storage typed adapters
+kind: contract
+status: active
+owners:
+  - alpha-code maintainers
+last_reviewed: 2026-07-20
+review_after: 2026-10-13
+---
+
+# Settings 与扩展存储 typed adapters
+
+本文拥有 REQ-090 Settings 持久化 adapter 与 Settings 消费的扩展 CAS/GC adapter 合同。
+它只定义 main/preload 间的 typed 数据与命令，不定义 Settings UI，也不改变上游配置持久化
+内核或 CAS GC 算法。
+
+## 1. Settings 权威值与接口
+
+Settings 真源仍是 Electron `userData/default.dat` 的 `settings.v3` 值；其字段形状与当前
+`packages/app/src/context/settings.tsx` 的 `Settings` 一致。语言、配色、shell、自动授权等由
+各自既有真源拥有，不由本 adapter 聚合或迁移。
+
+```ts
+settings.read(): Promise<SettingsReadResult>
+settings.validate(value: unknown): Promise<SettingsValidateResult>
+settings.write(input: {
+  value: AlphaSettings
+  expectedRevision: string
+}): Promise<SettingsWriteResult>
+```
+
+- `read` 对既有 Alpha 首启写入的 partial seed 补齐当前默认值，但不在读取时改盘；未知字段、
+  错误类型和危险 key 均 fail closed。成功返回完整 typed value 与 opaque revision。
+- `validate` 是无副作用预检；`write` 必须再次执行相同校验，renderer 的预检结果不构成授权。
+- `write` 先读当前权威值。目标与权威值完全相同时按 exact replay 幂等成功，哪怕调用方仍携带
+  第一次提交前的 revision；已存在权威文件时，exact replay 也要求文件与父目录 fsync
+  成功才返回成功。否则 revision 不匹配返回冲突且零写入。
+- typed Settings 提交直接更新 `default.dat` 的 `settings.v3`，保留文件中其它顶层键；
+  该权威键不经由 `electron-store.set` 的写路径。提交使用与目标同目录的临时文件，严格按
+  「写临时文件 → fsync 临时文件 → 同目录原子 rename → fsync 父目录」完成；不存在
+  EXDEV/直接覆盖 fallback。临时文件以 `wx` 独占创建，命名为
+  `.目标名.tmp-<pid>-<8hex>`。命名碰撞会令提交失败，且不会删除或覆盖已存在的同名临时文件。
+- 上述任一步（包括父目录 fsync）失败都 fail closed 为 `write-failed`，即使 rename 后的新值
+  在当前文件视图已可见也不升级为成功。只有完整持久提交结束且重读确认目标权威值后才返回
+  `ok: true`。
+- rename 前失败会尽力删除本次写入创建的唯一临时文件，且清理失败不得覆盖原始提交错误。进程
+  崩溃可能遗留 `.目标名.tmp-*` 小文件；adapter 不执行启动或跨进程自动清扫，因为共享目录内
+  无法安全证明另一主机或进程已经放弃该文件。残留不会被读取为权威值，也不会改变后续提交序；
+  新写入仍使用随机名称与 `wx` 并在碰撞时 fail closed。手工清理必须遵循
+  [Settings storage recovery runbook](../runbooks/settings-storage-recovery.md) 的全共享范围静默判据。
+- 失败结果尽力附上重新读取的 `authoritative` 值，供消费者保留草稿并显示仍生效的值。进程
+  重启后 `read` 重新从同一 `default.dat/settings.v3` 读取，不采信 renderer 内存或成功提示。
+
+稳定错误码：
+
+| code                | 语义                                                              | 是否写入                                    |
+| ------------------- | ----------------------------------------------------------------- | ------------------------------------------- |
+| `invalid-input`     | candidate/revision 不满足 closed schema                           | 否                                          |
+| `authority-invalid` | 已存权威值不可解码；`read` 返回其 opaque revision，允许显式修复写 | 否                                          |
+| `read-failed`       | 权威存储不可读                                                    | 否                                          |
+| `revision-conflict` | 非 exact replay 且 expected revision 已陈旧                       | 否                                          |
+| `write-failed`      | 无法证明目标已经成为权威值                                        | 未知或否；调用方必须以返回/后续 `read` 为准 |
+
+所有失败只返回上述 code、opaque revision 和可验证的 typed authoritative value；底层异常、
+本地路径、secret 与原始损坏内容不得跨 preload。
+
+## 2. 扩展存储接口与白名单
+
+```ts
+extensionStorage.snapshot(): Promise<ExtensionStorageSnapshot>
+extensionStorage.inspect(): Promise<ExtensionStorageResult> // dryRun=true
+extensionStorage.collect(): Promise<ExtensionStorageResult> // dryRun=false
+```
+
+`inspect` 与 `collect` 复用定时 GC 的同一 production worker 入口、冻结环境根/seed lock/grace
+配置，以及既有 CAS/Bundle 锁。因此手动操作与定时轮次、扩展事务之间保持原有互斥、宽限和
+fail-closed 语义；adapter 不提供同步 main-thread 回退。
+
+Renderer-safe 结果是 closed projection，字段只允许：
+
+```ts
+type ExtensionStorageResult = {
+  code: "ok" | "busy" | "fail-closed" | "worker-failed"
+  blobsTotal: number
+  sweepableCount: number
+  sweptCount: number
+  keptByGrace: number
+  warningCount: number
+}
+```
+
+| code            | 语义                                               |
+| --------------- | -------------------------------------------------- |
+| `ok`            | worker 以可信摘要完成                              |
+| `busy`          | CAS/事务锁忙，或本进程已有手动轮次；本次零新增触发 |
+| `fail-closed`   | mark root/身份/协议事实不足，collector 拒绝 sweep  |
+| `worker-failed` | worker 创建、执行或通信失败；无 main-thread 回退   |
+
+`snapshot.state` 只允许 `not-run / checking / collecting / ready`；`ready` 携带最后一次上述
+结果，其余状态不带结果。时间戳、容量/bytes、逐项或百分比进度均不在数据合同内。
+
+完整 `CasGcReport` 和 worker `CasGcRoundSummary` 都不是 renderer wire 类型。投影必须丢弃
+`reason`、`marked`、`dryRun`，并禁止任何 digest、实际删除路径、`sweepable`/`swept` 数组、
+warnings 明细或其它未知字段。warning 只允许聚合为 `warningCount`。
+
+## 3. 边界与验证
+
+- 无用户/租户参数；设置与扩展存储只作用于当前本机 app 环境。
+- 不提供通用设置注册框架，不修改上游 Settings UI、配置持久化内核或 GC collector。
+- adapter 契约测试位于
+  `packages/ui-mac/src/main/settings-adapters.test.ts`，Settings 用例使用真实临时 `userData/default.dat`，
+  并通过子进程重新打开验证成功提交。同步 fs 测试接缝记录写目标、open 路径与 flags、fd、fsync、
+  close 及 rename 两端，要求一次成功写入严格出现「以 `wx` 写入契约命名且不同于目标的同目录
+  临时文件 → 以 `r` 打开并 fsync 同一临时文件 → 从该临时文件 rename 到不同的目标 → 以 `r`
+  打开并 fsync 父目录 → 返回成功」。可选测试接缝只在 adapter 构造入口解析一次，此后核心
+  writer 只接收一个必填、固定形状的 fs 接口；该接口恰好暴露 `mkdirSync`、`writeFileSync`、
+  `openSync`、`fsyncSync`、`closeSync`、`renameSync` 与 `unlinkSync`。生产默认对象在 adapter 边界
+  内联构造，只含这七个方法且不导出或泄漏身份；测试自行构造等价对象，接口精确形状与键集测试
+  将生产默认路径和被观察路径约束为相同的七方法集合。writer 只无条件调用接口方法，不得按是否
+  注入、对象身份、`in`/`typeof` 能力嗅探或额外属性选择提交步骤，也不得直接 import `node:fs` 或
+  `fs/promises`。因此令 temp 等于目标、删除父目录 fsync，或绕过该唯一 fs 对象直接执行系统调用，
+  都会缺失对象、flags 或事件绑定并使测试失败。该测试接缝证明的是生产默认路径与被观察路径形状
+  一致且调用序正确；它不能完全排除实现方故意检测测试环境后选择另一条实现路径，该已知残余由
+  code review 承担。该断言也不声称用户态测试可以模拟掉电后的真实介质状态。
+- 崩溃注入分别命中「文件 fsync 后、rename 前」与「rename 后、父目录 fsync 前」，只证明子进程
+  未报假成功且重启后权威值是完整旧值或完整新值；它不单独证明目录项已掉电持久。前一窗口的
+  crash temp 会保留且不自动清扫；回归测试证明其存在时后续读取、持久写入与提交系统调用顺序
+  保持正常。普通写入/文件 fsync/hook/rename 失败仍在本次失败路径只清理自己创建的临时文件。
+  其余覆盖 schema 正负例、注入的 rename/父目录 fsync 系统调用失败、revision 冲突、exact replay
+  幂等、错误脱敏、手动 GC dry-run/collect、确定性 busy 映射与 renderer 字段白名单。

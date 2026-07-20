@@ -159,6 +159,11 @@ function productionWorkerEntry(): URL {
   return new URL("./ext-cas-gc-worker.js", import.meta.url)
 }
 
+/** Manual Settings adapter and periodic scheduler share the exact production worker path. */
+export function spawnProductionCasGcWorkerRound(input: CasGcRoundInput): Promise<CasGcRoundSummary> {
+  return spawnCasGcWorkerRound(input, productionWorkerEntry())
+}
+
 export type CasGcSchedulerDeps = {
   timer?: CasGcSchedulerTimer
   spawnRound?: CasGcSpawnRound
@@ -173,7 +178,7 @@ export type CasGcSchedulerDeps = {
  */
 export function startCasGcScheduler(config: CasGcSchedulerConfig, deps: CasGcSchedulerDeps = {}): { stop(): void } {
   const timer = deps.timer ?? defaultTimer
-  const spawnRound = deps.spawnRound ?? ((input: CasGcRoundInput) => spawnCasGcWorkerRound(input, productionWorkerEntry()))
+  const spawnRound = deps.spawnRound ?? spawnProductionCasGcWorkerRound
   const rawLog = deps.log ?? ((event, detail) => console.error(`[cas-gc-scheduler] ${event} ${JSON.stringify(detail)}`))
   // 日志绝不抛(review #366:注入 logger 连抛会逃出 timer callback 打死 main 进程;注入契约不保证不抛)。
   const log: typeof rawLog = (event, detail) => {
