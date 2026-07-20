@@ -3,21 +3,25 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
   realpathSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs"
 import { join } from "node:path"
-import { hostname, tmpdir } from "node:os"
+import { tmpdir } from "node:os"
 import { uniquePartPath, writeChunksChecked, type ArtifactDownloadOutcome } from "./alpha-artifact-download"
 import {
   artifactQuotaReservationsPath,
+  ARTIFACT_QUOTA_MACHINE_ID_FILE,
   finalizeArtifactWithQuota,
+  initializeArtifactQuotaEnvironment,
   type ArtifactQuotaFinalizeOptions,
   type ArtifactQuotaLimits,
 } from "./artifact-service"
@@ -34,13 +38,17 @@ const RACE_STARTED_AT = Date.parse("2026-07-20T12:00:00.000Z")
 
 let projectDir: string
 let reservationCounter: number
+let machineId: string
 const artifactsDir = (runId = RUN) => join(projectDir, ".alpha", "runs", runId, "artifacts")
 const target = (name: string) => join(artifactsDir(), name)
 
-beforeEach(() => {
+beforeEach(async () => {
   projectDir = realpathSync(mkdtempSync(join(tmpdir(), "artifact-quota-")))
   reservationCounter = 100
   mkdirSync(artifactsDir(), { recursive: true })
+  const initialized = await initializeArtifactQuotaEnvironment(projectDir, { volumeIsLocal: async () => true })
+  if (!initialized.ok) throw new Error(`test setup: artifact quota initialization failed (${initialized.error})`)
+  machineId = readFileSync(join(projectDir, ARTIFACT_QUOTA_MACHINE_ID_FILE), "utf8").trim()
 })
 
 afterEach(() => {
@@ -82,7 +90,7 @@ function reservations(runId = RUN): string[] {
 }
 
 function seedReservation(
-  over: Partial<{ pid: number; hostId: string; declaredBytes: number; startedAt: string; uuid: string }> = {},
+  over: Partial<{ pid: number; machineId: string; declaredBytes: number; startedAt: string; uuid: string }> = {},
   runId = RUN,
 ): string {
   const dir = artifactQuotaReservationsPath(projectDir, runId)
@@ -91,7 +99,7 @@ function seedReservation(
   const uuid = `00000000-0000-4000-8000-${String(reservationCounter++).padStart(12, "0")}`
   const record = {
     pid: process.pid,
-    hostId: hostname(),
+    machineId,
     declaredBytes: 1,
     startedAt: String(RACE_STARTED_AT * 1_000),
     uuid,
@@ -237,7 +245,10 @@ async function runLateLowerKeyFinalizers(names: [string, string], quota: Artifac
 }
 
 function expectMinimumOnly(results: ChildFinalizeResult[], names: string[]) {
-  expect(results.find((entry) => entry.name === names[0])?.result.ok).toBe(true)
+  expect(
+    results.find((entry) => entry.name === names[0])?.result.ok,
+    `minimum reservation failed: ${JSON.stringify(results)}`,
+  ).toBe(true)
   results
     .filter((entry) => entry.name !== names[0])
     .forEach((entry) => expect(entry.result).toEqual({ ok: false, error: "over-limit", detail: YIELDED_DETAIL }))
@@ -247,12 +258,34 @@ function expectMinimumOnly(results: ChildFinalizeResult[], names: string[]) {
 }
 
 describe("finalizeArtifactWithQuota", () => {
+  test("machine identity persists in userData and the real local temp volume is accepted", async () => {
+    const initialized = await initializeArtifactQuotaEnvironment(projectDir)
+
+    expect(initialized).toEqual({ ok: true })
+    expect(readFileSync(join(projectDir, ARTIFACT_QUOTA_MACHINE_ID_FILE), "utf8").trim()).toBe(machineId)
+  })
+
   test("under both run and project limits admits before final rename and removes its reservation", async () => {
     writeFileSync(target("existing.bin"), "1234")
     const result = await write("admitted.bin", "12345", { limits: limits() })
 
     expect(result.ok).toBe(true)
     expect(readFileSync(target("admitted.bin"), "utf8")).toBe("12345")
+    expect(reservations()).toEqual([])
+    expect(stagingResidue()).toEqual([])
+  })
+
+  test("replacement admission never subtracts a pre-scan target snapshot", async () => {
+    writeFileSync(target("replace.bin"), "12345")
+    writeFileSync(target("other.bin"), "12345")
+    const result = await write("replace.bin", "x", { limits: limits({ runMaxCount: 10 }) })
+
+    expect(result).toEqual({
+      ok: false,
+      error: "over-limit",
+      detail: "artifact quota exceeded (run bytes: next 11, limit 10)",
+    })
+    expect(readFileSync(target("replace.bin"), "utf8")).toBe("12345")
     expect(reservations()).toEqual([])
     expect(stagingResidue()).toEqual([])
   })
@@ -335,7 +368,7 @@ describe("finalizeArtifactWithQuota", () => {
     expect(stagingResidue()).toEqual([])
   })
 
-  test("a crashed reservation stays conservatively charged until same-host PID death is conclusive", async () => {
+  test("a crashed reservation stays conservatively charged until same-machine PID death is conclusive", async () => {
     writeFileSync(target("existing.bin"), "1234")
     writeFileSync(uniquePartPath(target("orphan.bin")), "orphan staging is excluded")
     const owner = Bun.spawn([process.execPath, "-e", "setInterval(() => {}, 1000)"], {
@@ -366,15 +399,23 @@ describe("finalizeArtifactWithQuota", () => {
       limits: limits({ runMaxBytes: 5, projectMaxBytes: 5 }),
       now: () => new Date(RACE_STARTED_AT + 3_000),
     })
-    expect(cleaned.ok).toBe(true)
+    expect(cleaned).toEqual({ ok: false, error: "over-limit", detail: YIELDED_DETAIL })
     expect(existsSync(stale)).toBe(false)
+    const retried = await write("dead-owner.bin", "x", {
+      limits: limits({ runMaxBytes: 5, projectMaxBytes: 5 }),
+      now: () => new Date(RACE_STARTED_AT + 4_000),
+    })
+    expect(retried.ok).toBe(true)
     expect(existsSync(target("dead-owner.bin"))).toBe(true)
     expect(reservations()).toEqual([])
   })
 
-  test("foreign-host reservations are never cleaned even when their PID probe says dead", async () => {
+  test("foreign-machine reservations are never cleaned even when their PID probe says dead", async () => {
     writeFileSync(target("existing.bin"), "1234")
-    const foreign = seedReservation({ pid: 999_999, hostId: `${hostname()}-foreign` })
+    const foreign = seedReservation({
+      pid: 999_999,
+      machineId: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+    })
     const result = await write("foreign-owner.bin", "x", {
       limits: limits({ runMaxBytes: 5, projectMaxBytes: 5 }),
       now: () => new Date(RACE_STARTED_AT + 1_000),
@@ -384,6 +425,178 @@ describe("finalizeArtifactWithQuota", () => {
     expect(result).toEqual({ ok: false, error: "over-limit", detail: YIELDED_DETAIL })
     expect(existsSync(foreign)).toBe(true)
     expect(existsSync(target("foreign-owner.bin"))).toBe(false)
+  })
+
+  test("mistaken peer cleanup is harmless because the owner rechecks its reservation before rename", async () => {
+    let scanned!: () => void
+    let resume!: () => void
+    const reachedScan = new Promise<void>((resolve) => (scanned = resolve))
+    const resumeCommit = new Promise<void>((resolve) => (resume = resolve))
+    const victim = write("victim.bin", "v", {
+      limits: limits({ runMaxBytes: 100, projectMaxBytes: 100 }),
+      now: () => new Date(RACE_STARTED_AT),
+      testHooks: {
+        async afterQuotaScan() {
+          scanned()
+          await resumeCommit
+        },
+      },
+    })
+    await reachedScan
+
+    const cleaner = await write("cleaner.bin", "c", {
+      limits: limits({ runMaxBytes: 100, projectMaxBytes: 100 }),
+      now: () => new Date(RACE_STARTED_AT + 1_000),
+      pidAlive: () => false,
+    })
+    expect(cleaner.ok).toBe(true)
+    resume()
+    const result = await victim
+
+    expect(result).toEqual({
+      ok: false,
+      error: "retryable",
+      detail: "artifact quota admission retry required (own reservation changed)",
+    })
+    expect(existsSync(target("victim.bin"))).toBe(false)
+    expect(existsSync(target("cleaner.bin"))).toBe(true)
+    expect(reservations()).toEqual([])
+    expect(stagingResidue()).toEqual([])
+  })
+
+  test("reservation content drift is retryable and the changed path is not unlinked as owned", async () => {
+    let reservationFile = ""
+    const result = await write("changed-reservation.bin", "x", {
+      limits: limits(),
+      testHooks: {
+        afterReservationCreated(file) {
+          reservationFile = file
+        },
+        afterQuotaScan() {
+          appendFileSync(reservationFile, " ")
+        },
+      },
+    })
+
+    expect(result).toEqual({
+      ok: false,
+      error: "retryable",
+      detail: "artifact quota admission retry required (own reservation changed)",
+    })
+    expect(existsSync(reservationFile)).toBe(true)
+    expect(existsSync(target("changed-reservation.bin"))).toBe(false)
+    expect(stagingResidue()).toEqual([])
+  })
+
+  test("staged growth after reservation is rejected at the rename boundary", async () => {
+    const result = await write("growing.bin", "x", {
+      limits: limits(),
+      testHooks: {
+        afterQuotaScan() {
+          const [part] = stagingResidue()
+          if (!part) throw new Error("test setup: staged file missing")
+          appendFileSync(join(artifactsDir(), part), "growth")
+        },
+      },
+    })
+
+    expect(result).toEqual({
+      ok: false,
+      error: "staging-changed",
+      detail: "artifact staging identity or byte count changed",
+    })
+    expect(existsSync(target("growing.bin"))).toBe(false)
+    expect(reservations()).toEqual([])
+    expect(stagingResidue()).toEqual([])
+  })
+
+  test("same-sized staged inode replacement is rejected at the rename boundary", async () => {
+    const result = await write("replaced-stage.bin", "x", {
+      limits: limits(),
+      testHooks: {
+        afterQuotaScan() {
+          const [part] = stagingResidue()
+          if (!part) throw new Error("test setup: staged file missing")
+          const staged = join(artifactsDir(), part)
+          const replacement = `${staged}.replacement`
+          writeFileSync(replacement, "y")
+          renameSync(replacement, staged)
+        },
+      },
+    })
+
+    expect(result).toEqual({
+      ok: false,
+      error: "staging-changed",
+      detail: "artifact staging identity or byte count changed",
+    })
+    expect(existsSync(target("replaced-stage.bin"))).toBe(false)
+    expect(reservations()).toEqual([])
+    expect(stagingResidue()).toEqual([])
+  })
+
+  test("non-local artifact volumes fail closed with a stable error code", async () => {
+    const initialized = await initializeArtifactQuotaEnvironment(projectDir, {
+      volumeIsLocal: async (root) => !root.includes(`${join(".alpha", "runs")}`),
+    })
+    expect(initialized.ok).toBe(true)
+    const result = await write("remote.bin", "x", { limits: limits() })
+
+    expect(result).toEqual({
+      ok: false,
+      error: "unsupported-filesystem",
+      detail: "artifact quota requires a local filesystem",
+    })
+    expect(existsSync(target("remote.bin"))).toBe(false)
+    expect(reservations()).toEqual([])
+    expect(stagingResidue()).toEqual([])
+  })
+
+  test("reservation convergence has deadline and round bounds without blocking the event loop", async () => {
+    seedReservation({
+      declaredBytes: 1,
+      startedAt: String((RACE_STARTED_AT + 1_000) * 1_000),
+    })
+    let timerFired = false
+    setTimeout(() => (timerFired = true), 0)
+    const result = await write("bounded-wait.bin", "x", {
+      limits: limits({ runMaxBytes: 1, projectMaxBytes: 1 }),
+      now: () => new Date(RACE_STARTED_AT),
+      pidAlive: () => true,
+      testHooks: { waitPolicy: { deadlineMs: 100, maxRounds: 3, intervalMs: 5 } },
+    })
+
+    expect(result).toEqual({
+      ok: false,
+      error: "retryable",
+      detail: "artifact quota admission retry required (reservation convergence round limit reached)",
+    })
+    expect(timerFired).toBe(true)
+    expect(existsSync(target("bounded-wait.bin"))).toBe(false)
+    expect(reservations()).toHaveLength(1)
+    expect(stagingResidue()).toEqual([])
+  })
+
+  test("reservation convergence deadline returns the stable retryable error", async () => {
+    seedReservation({
+      declaredBytes: 1,
+      startedAt: String((RACE_STARTED_AT + 1_000) * 1_000),
+    })
+    const result = await write("deadline.bin", "x", {
+      limits: limits({ runMaxBytes: 1, projectMaxBytes: 1 }),
+      now: () => new Date(RACE_STARTED_AT),
+      pidAlive: () => true,
+      testHooks: { waitPolicy: { deadlineMs: 8, maxRounds: 250, intervalMs: 5 } },
+    })
+
+    expect(result).toEqual({
+      ok: false,
+      error: "retryable",
+      detail: "artifact quota admission retry required (reservation convergence timed out)",
+    })
+    expect(existsSync(target("deadline.bin"))).toBe(false)
+    expect(reservations()).toHaveLength(1)
+    expect(stagingResidue()).toEqual([])
   })
 
   test("malformed reservations fail closed and are not mutated", async () => {

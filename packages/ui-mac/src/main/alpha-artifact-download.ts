@@ -51,6 +51,9 @@ export type ArtifactDownloadErrorCode =
   | "cancelled"
   | "network"
   | "disk"
+  | "retryable"
+  | "staging-changed"
+  | "unsupported-filesystem"
   | `http-${number}`
 
 export type ArtifactDownloadProgress = { bytes: number; total?: number; percent?: number }
@@ -58,8 +61,12 @@ export type ArtifactDownloadProgress = { bytes: number; total?: number; percent?
 export type ArtifactFinalizeInput = { partPath: string; targetPath: string; bytes: number }
 export type ArtifactFinalizeResult =
   | { ok: true }
-  | { ok: false; error: "over-limit" | "disk"; detail: string }
-export type ArtifactFinalizer = (input: ArtifactFinalizeInput) => ArtifactFinalizeResult
+  | {
+      ok: false
+      error: "over-limit" | "disk" | "retryable" | "staging-changed" | "unsupported-filesystem"
+      detail: string
+    }
+export type ArtifactFinalizer = (input: ArtifactFinalizeInput) => ArtifactFinalizeResult | Promise<ArtifactFinalizeResult>
 
 export type ArtifactDownloadOutcome =
   | {
@@ -368,7 +375,7 @@ export async function writeChunksChecked(
     await fh.sync()
     await fh.close()
     fh = null
-    const finalized = opts.finalize({ partPath: part, targetPath: opts.targetPath, bytes })
+    const finalized = await opts.finalize({ partPath: part, targetPath: opts.targetPath, bytes })
     if (!finalized.ok) {
       await cleanup()
       return finalized

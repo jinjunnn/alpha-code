@@ -1,7 +1,11 @@
 import { existsSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { writeChunksChecked } from "./alpha-artifact-download"
-import { finalizeArtifactWithQuota, type ArtifactQuotaLimits } from "./artifact-service"
+import {
+  finalizeArtifactWithQuota,
+  initializeArtifactQuotaEnvironment,
+  type ArtifactQuotaLimits,
+} from "./artifact-service"
 
 const [projectDir, runId, name, content, barrierDir, markerName, limitsJson, deadlineText, startedAtText, scenario] =
   process.argv.slice(2)
@@ -25,14 +29,15 @@ const startedAt = Number(startedAtText)
 if (!Number.isSafeInteger(deadline) || deadline <= 0) throw new Error("artifact quota child: invalid deadline")
 if (!Number.isSafeInteger(startedAt) || startedAt <= 0) throw new Error("artifact quota child: invalid startedAt")
 const targetPath = join(projectDir, ".alpha", "runs", runId, "artifacts", name)
-const waiter = new Int32Array(new SharedArrayBuffer(4))
-const waitFor = (marker: string, reason: string) => {
+const waitFor = async (marker: string, reason: string) => {
   while (!existsSync(join(barrierDir, marker))) {
     if (Date.now() >= deadline) throw new Error(reason)
-    Atomics.wait(waiter, 0, 0, 10)
+    await new Promise((resolve) => setTimeout(resolve, 10))
   }
 }
 const uuid = `00000000-0000-4000-8000-${markerName.padStart(12, "0")}`
+const initialized = await initializeArtifactQuotaEnvironment(projectDir, { volumeIsLocal: async () => true })
+if (!initialized.ok) throw new Error(`artifact quota child: initialization failed (${initialized.error})`)
 const result = await writeChunksChecked(
   (async function* () {
     yield Buffer.from(content)
@@ -48,13 +53,13 @@ const result = await writeChunksChecked(
         now: () => new Date(startedAt),
         testHooks: {
           reservationUuid: () => uuid,
-          afterReservationCreated(reservationFile) {
+          async afterReservationCreated(reservationFile) {
             writeFileSync(join(barrierDir, `reserved-${markerName}`), reservationFile + "\n", { flag: "wx" })
-            waitFor(scenario === "ordered" ? `scan-${markerName}` : "scan", "reservation scan barrier timed out")
+            await waitFor(scenario === "ordered" ? `scan-${markerName}` : "scan", "reservation scan barrier timed out")
           },
-          afterQuotaScan() {
+          async afterQuotaScan() {
             writeFileSync(join(barrierDir, `scanned-${markerName}`), "scanned\n", { flag: "wx" })
-            waitFor("commit", "quota commit barrier timed out")
+            await waitFor("commit", "quota commit barrier timed out")
           },
         },
       }),

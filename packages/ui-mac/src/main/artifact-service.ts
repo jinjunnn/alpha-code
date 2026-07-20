@@ -20,7 +20,7 @@
 import * as crypto from "node:crypto"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { hostname } from "node:os"
+import { execFile } from "node:child_process"
 import { isSafeRunId, safeResolveInAlpha } from "./alpha-workdir"
 import {
   ARTIFACT_MANIFEST_VERSION,
@@ -42,10 +42,15 @@ export const MAX_RUN_ARTIFACT_BYTES = 512 * 1024 * 1024
 export const MAX_PROJECT_ARTIFACT_BYTES = 5 * 1024 * 1024 * 1024
 
 export const ARTIFACT_QUOTA_RESERVATIONS_DIR = "reservations"
+export const ARTIFACT_QUOTA_MACHINE_ID_FILE = "artifact-quota-machine-id"
 const ARTIFACT_QUOTA_YIELDED = "artifact quota admission yielded to an earlier reservation"
+const ARTIFACT_QUOTA_WAIT_DEADLINE_MS = 5_000
+const ARTIFACT_QUOTA_WAIT_MAX_ROUNDS = 250
+const ARTIFACT_QUOTA_WAIT_INTERVAL_MS = 20
 const ARTIFACT_PART_SUFFIX_RE = /\.[0-9a-z]+-[0-9a-z]+-[0-9a-z]+-[0-9a-f]{8}\.part$/
 const ARTIFACT_RESERVATION_STARTED_AT_RE = /^[0-9]{16}$/
 const ARTIFACT_RESERVATION_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+const ARTIFACT_MACHINE_ID_RE = ARTIFACT_RESERVATION_UUID_RE
 
 export type ArtifactQuotaLimits = {
   runMaxBytes: number
@@ -59,7 +64,22 @@ export type ArtifactQuotaFinalizeInput = {
   bytes: number
 }
 
-export type ArtifactQuotaFinalizeResult = { ok: true } | { ok: false; error: "over-limit" | "disk"; detail: string }
+export type ArtifactQuotaFinalizeResult =
+  | { ok: true }
+  | {
+      ok: false
+      error: "over-limit" | "disk" | "retryable" | "staging-changed" | "unsupported-filesystem"
+      detail: string
+    }
+
+export type ArtifactQuotaEnvironmentResult =
+  | { ok: true }
+  | { ok: false; error: "disk" | "unsupported-filesystem"; detail: string }
+
+export type ArtifactQuotaEnvironmentOptions = {
+  /** 仅供测试注入卷本地性结论;生产使用 macOS mount 的 `local` 标志。 */
+  volumeIsLocal?: (root: string) => Promise<boolean | undefined>
+}
 
 export type ArtifactQuotaFinalizeOptions = {
   limits?: ArtifactQuotaLimits
@@ -68,20 +88,39 @@ export type ArtifactQuotaFinalizeOptions = {
   /** 仅供测试固定预约发布/判定/提交交错;生产调用不得注入。 */
   testHooks?: {
     reservationUuid?: () => string
-    afterReservationCreated?: (reservationFile: string) => void
-    afterQuotaScan?: () => void
+    afterReservationCreated?: (reservationFile: string) => void | Promise<void>
+    afterQuotaScan?: () => void | Promise<void>
+    waitPolicy?: { deadlineMs: number; maxRounds: number; intervalMs: number }
   }
 }
 
 type ArtifactQuotaReservationRecord = {
   pid: number
-  hostId: string
+  machineId: string
   declaredBytes: number
   startedAt: string
   uuid: string
 }
 
-type ArtifactQuotaReservation = ArtifactQuotaReservationRecord & { file: string; runId: string }
+type ArtifactQuotaReservation = ArtifactQuotaReservationRecord & {
+  file: string
+  runId: string
+  dev: bigint
+  ino: bigint
+  content: string
+  pathBound: boolean
+}
+
+type StagedArtifact = { fd: number; dev: bigint; ino: bigint; bytes: bigint }
+
+type ArtifactQuotaEnvironment = {
+  machineId: string
+  volumeIsLocal: (root: string) => Promise<boolean | undefined>
+  localByDevice: Map<number, boolean | undefined>
+  cacheByDevice: boolean
+}
+
+let artifactQuotaEnvironment: ArtifactQuotaEnvironment | ArtifactQuotaEnvironmentResult | null = null
 
 type CommittedArtifactUsage = {
   totalBytes: number
@@ -99,6 +138,58 @@ export function artifactQuotaReservationsPath(projectDir: string, runId: string)
 }
 
 /**
+ * 主进程启动后初始化一次安装级 machine id。userData 与每个首次使用的 artifact 根都必须
+ * 位于 macOS 标记为 `local` 的卷;未知或远程卷均 fail closed。
+ */
+export async function initializeArtifactQuotaEnvironment(
+  userDataPath: string,
+  opts: ArtifactQuotaEnvironmentOptions = {},
+): Promise<ArtifactQuotaEnvironmentResult> {
+  const root = path.resolve(userDataPath)
+  let stat: fs.Stats
+  try {
+    stat = await fs.promises.stat(root)
+  } catch {
+    const result = quotaEnvironmentDiskError("machine identity root unavailable")
+    artifactQuotaEnvironment = result
+    return result
+  }
+  if (!stat.isDirectory()) {
+    const result = quotaEnvironmentDiskError("machine identity root unavailable")
+    artifactQuotaEnvironment = result
+    return result
+  }
+  const volumeIsLocal = opts.volumeIsLocal ?? defaultArtifactVolumeIsLocal
+  let local: boolean | undefined
+  try {
+    local = await volumeIsLocal(root)
+  } catch {
+    local = undefined
+  }
+  if (local !== true) {
+    const result =
+      local === false
+        ? quotaEnvironmentUnsupportedFilesystem()
+        : quotaEnvironmentDiskError("filesystem locality unavailable")
+    artifactQuotaEnvironment = result
+    return result
+  }
+  const machineId = await loadOrCreateArtifactQuotaMachineId(root)
+  if (!machineId) {
+    const result = quotaEnvironmentDiskError("machine identity unavailable")
+    artifactQuotaEnvironment = result
+    return result
+  }
+  artifactQuotaEnvironment = {
+    machineId,
+    volumeIsLocal,
+    localByDevice: new Map([[stat.dev, true]]),
+    cacheByDevice: !opts.volumeIsLocal,
+  }
+  return { ok: true }
+}
+
+/**
  * REQ-093/#279 唯一 final rename 准入点。每次尝试先发布唯一预约,再按“预约 → final”
  * 顺序扫描盘面真相,执行 run 件数/run 字节/project 字节判定后 rename。超限与核算
  * 不可信都 fail closed,且错误面不携带绝对路径、descriptor 或凭据。
@@ -106,13 +197,16 @@ export function artifactQuotaReservationsPath(projectDir: string, runId: string)
  * rename 前崩溃会遗留预约并保守多计 declaredBytes;rename 后、预约删除前崩溃会同时
  * 计入 final 与预约。只有同机且 PID 被证明 ESRCH 的预约才会被后续扫描惰性清理。
  */
-export function finalizeArtifactWithQuota(
+export async function finalizeArtifactWithQuota(
   projectDir: string,
   runId: string,
   input: ArtifactQuotaFinalizeInput,
   opts: ArtifactQuotaFinalizeOptions = {},
-): ArtifactQuotaFinalizeResult {
+): Promise<ArtifactQuotaFinalizeResult> {
   if (!isSafeRunId(runId)) return quotaDiskError("invalid run identity")
+  const environment = artifactQuotaEnvironment
+  if (!environment) return quotaDiskError("machine identity unavailable")
+  if ("ok" in environment) return environment
   const artifactsDir = safeResolveInAlpha(projectDir, "runs", runId, RUN_ARTIFACTS_SUBDIR)
   if (!artifactsDir) return quotaDiskError("project identity unavailable")
   const targetPath = path.resolve(input.targetPath)
@@ -133,70 +227,81 @@ export function finalizeArtifactWithQuota(
     !ARTIFACT_PART_SUFFIX_RE.test(path.basename(partPath))
   )
     return quotaDiskError("staging file identity unavailable")
-
+  const local = await artifactVolumeIsLocal(artifactsDir, environment)
+  if (local === false) return quotaUnsupportedFilesystem()
+  if (local !== true) return quotaDiskError("filesystem locality unavailable")
+  const staged = openStagedArtifact(partPath, input.bytes)
+  if (!staged.ok) return quotaStagingChanged()
   try {
-    const staged = fs.lstatSync(partPath)
-    if (!staged.isFile() || staged.size !== input.bytes) return quotaDiskError("staging byte count changed")
-  } catch {
-    return quotaDiskError("staging file unavailable")
-  }
-
-  const created = createArtifactQuotaReservation(projectDir, runId, input.bytes, opts)
-  if (!created.ok) return quotaDiskError(created.reason)
-  const release = (result: ArtifactQuotaFinalizeResult) =>
-    releaseArtifactQuotaReservation(created.reservation.file)
-      ? result
-      : quotaDiskError("own reservation cleanup failed")
-  try {
-    opts.testHooks?.afterReservationCreated?.(created.reservation.file)
-    const existing = existingTargetSize(targetPath)
-    if (!existing.ok) return release(quotaDiskError(existing.reason))
-    // 先扫预约、后扫 final:所有者的提交顺序是 final rename → 删除预约,因此任意交错至少
-    // 观察到二者之一;反向扫描会漏掉恰好发生在两次扫描之间的提交。
-    const reservations = scanArtifactQuotaReservations(
-      projectDir,
-      created.reservation.file,
-      opts.pidAlive ?? defaultPidAlive,
-    )
-    if (!reservations.some((reservation) => reservation.file === created.reservation.file))
-      return release(quotaDiskError("own reservation unavailable"))
-    const limits = opts.limits ?? {
-      runMaxBytes: MAX_RUN_ARTIFACT_BYTES,
-      runMaxCount: MAX_ARTIFACTS_PER_RUN,
-      projectMaxBytes: MAX_PROJECT_ARTIFACT_BYTES,
-    }
-    const decision = decideArtifactQuotaAdmission(
-      runId,
-      existing,
-      reservations,
-      scanCommittedArtifactUsage(projectDir),
-      limits,
-      created.reservation,
-    )
-    if (!decision.ok) return release(decision.result)
-    opts.testHooks?.afterQuotaScan?.()
-    if (decision.waitForGreater) {
-      const converged = waitForGreaterArtifactQuotaReservations(
-        projectDir,
-        runId,
-        existing,
-        limits,
-        created.reservation,
-        opts.pidAlive ?? defaultPidAlive,
-      )
-      if (converged) return release(converged)
+    const created = createArtifactQuotaReservation(projectDir, runId, input.bytes, environment.machineId, opts)
+    if (!created.ok) return quotaDiskError(created.reason)
+    const release = (result: ArtifactQuotaFinalizeResult) => {
+      const released = releaseOwnArtifactQuotaReservation(created.reservation)
+      if (released === "released" || released === "missing") return result
+      if (released === "changed") return quotaRetryable("own reservation changed")
+      return quotaDiskError("own reservation cleanup failed")
     }
     try {
-      fs.renameSync(partPath, targetPath)
+      await opts.testHooks?.afterReservationCreated?.(created.reservation.file)
+      // 先扫预约、后扫 final:所有者的提交顺序是 final rename → 删除预约,因此本地线性一致
+      // namespace 的任意交错至少观察到二者之一。
+      const reservations = scanArtifactQuotaReservations(
+        projectDir,
+        created.reservation.file,
+        environment.machineId,
+        opts.pidAlive ?? defaultPidAlive,
+      )
+      if (!reservations.some((reservation) => artifactQuotaReservationsMatch(reservation, created.reservation)))
+        return release(quotaRetryable("own reservation changed"))
+      const limits = opts.limits ?? {
+        runMaxBytes: MAX_RUN_ARTIFACT_BYTES,
+        runMaxCount: MAX_ARTIFACTS_PER_RUN,
+        projectMaxBytes: MAX_PROJECT_ARTIFACT_BYTES,
+      }
+      const decision = decideArtifactQuotaAdmission(
+        runId,
+        reservations,
+        scanCommittedArtifactUsage(projectDir),
+        limits,
+        created.reservation,
+      )
+      if (!decision.ok) return release(decision.result)
+      await opts.testHooks?.afterQuotaScan?.()
+      if (decision.waitForGreater) {
+        const converged = await waitForGreaterArtifactQuotaReservations(
+          projectDir,
+          runId,
+          limits,
+          created.reservation,
+          environment.machineId,
+          opts.pidAlive ?? defaultPidAlive,
+          opts.testHooks?.waitPolicy,
+        )
+        if (converged) return release(converged)
+      }
+      if (!stagedArtifactIsUnchanged(partPath, input.bytes, staged.value))
+        return release(quotaStagingChanged())
+      // 自有预约是 rename 前最后一次路径读取;缺失、换 inode 或内容改变都可重试地中止。
+      if (!ownArtifactQuotaReservationIsUnchanged(created.reservation))
+        return release(quotaRetryable("own reservation changed"))
+      try {
+        fs.renameSync(partPath, targetPath)
+      } catch {
+        return release(quotaDiskError("final rename failed"))
+      }
+      // rename 已提交后不再把“预约删除失败”伪装成下载失败;残留只会保守多计,由死 PID
+      // 惰性清理或 runbook 处置。正常路径仍仅删除身份未变的本次预约。
+      releaseOwnArtifactQuotaReservation(created.reservation)
+      return { ok: true }
     } catch {
-      return release(quotaDiskError("final rename failed"))
+      return release(quotaDiskError("committed usage unavailable"))
     }
-    // rename 已提交后不再把“预约删除失败”伪装成下载失败;残留只会保守多计,由死 PID
-    // 惰性清理或 runbook 处置。正常路径仍同步删除本次唯一预约。
-    releaseArtifactQuotaReservation(created.reservation.file)
-    return { ok: true }
-  } catch {
-    return release(quotaDiskError("committed usage unavailable"))
+  } finally {
+    try {
+      fs.closeSync(staged.value.fd)
+    } catch {
+      // 只读 staged fd;关闭失败不改变已经得出的 fail-closed 结论。
+    }
   }
 }
 
@@ -206,6 +311,34 @@ function quotaOverLimit(scope: string, next: number, limit: number): ArtifactQuo
 
 function quotaDiskError(reason: string): ArtifactQuotaFinalizeResult {
   return { ok: false, error: "disk", detail: `artifact quota admission unavailable (${reason})` }
+}
+
+function quotaEnvironmentDiskError(reason: string): ArtifactQuotaEnvironmentResult {
+  return { ok: false, error: "disk", detail: `artifact quota admission unavailable (${reason})` }
+}
+
+function quotaUnsupportedFilesystem(): ArtifactQuotaFinalizeResult {
+  return {
+    ok: false,
+    error: "unsupported-filesystem",
+    detail: "artifact quota requires a local filesystem",
+  }
+}
+
+function quotaEnvironmentUnsupportedFilesystem(): ArtifactQuotaEnvironmentResult {
+  return {
+    ok: false,
+    error: "unsupported-filesystem",
+    detail: "artifact quota requires a local filesystem",
+  }
+}
+
+function quotaRetryable(reason: string): ArtifactQuotaFinalizeResult {
+  return { ok: false, error: "retryable", detail: `artifact quota admission retry required (${reason})` }
+}
+
+function quotaStagingChanged(): ArtifactQuotaFinalizeResult {
+  return { ok: false, error: "staging-changed", detail: "artifact staging identity or byte count changed" }
 }
 
 function quotaYielded(): ArtifactQuotaFinalizeResult {
@@ -227,7 +360,6 @@ function quotaExceeded(
 
 function decideArtifactQuotaAdmission(
   runId: string,
-  existing: { exists: boolean; bytes: number },
   reservations: ArtifactQuotaReservation[],
   usage: CommittedArtifactUsage,
   limits: ArtifactQuotaLimits,
@@ -235,9 +367,11 @@ function decideArtifactQuotaAdmission(
 ): ArtifactQuotaAdmissionDecision {
   const run = usage.runs.get(runId) ?? { bytes: 0, count: 0 }
   const runReservations = reservations.filter((reservation) => reservation.runId === runId)
-  const nextRunCount = run.count - (existing.exists ? 1 : 0) + runReservations.length
-  const nextRunBytes = run.bytes - existing.bytes + sumReservationBytes(runReservations)
-  const nextProjectBytes = usage.totalBytes - existing.bytes + sumReservationBytes(reservations)
+  // committed 已含当前 target 的扫描时真实状态;任何扫描前 target 快照都可能陈旧,因此替换也不
+  // 扣旧文件。预约声明作为本次提交增量全额计入,必要时保守双计旧 final + 新声明。
+  const nextRunCount = run.count + runReservations.length
+  const nextRunBytes = run.bytes + sumReservationBytes(runReservations)
+  const nextProjectBytes = usage.totalBytes + sumReservationBytes(reservations)
   const exceeded = quotaExceeded(nextRunCount, nextRunBytes, nextProjectBytes, limits)
   if (!exceeded) return { ok: true, waitForGreater: false }
 
@@ -262,23 +396,32 @@ function decideArtifactQuotaAdmission(
   return { ok: true, waitForGreater: later.length > 0 }
 }
 
-function waitForGreaterArtifactQuotaReservations(
+async function waitForGreaterArtifactQuotaReservations(
   projectDir: string,
   runId: string,
-  existing: { exists: boolean; bytes: number },
   limits: ArtifactQuotaLimits,
   own: ArtifactQuotaReservation,
+  machineId: string,
   pidAlive: (pid: number) => boolean | undefined,
-): ArtifactQuotaFinalizeResult | null {
-  const waiter = new Int32Array(new SharedArrayBuffer(4))
-  while (true) {
-    Atomics.wait(waiter, 0, 0, 1)
-    const reservations = scanArtifactQuotaReservations(projectDir, own.file, pidAlive)
-    if (!reservations.some((reservation) => reservation.file === own.file))
-      return quotaDiskError("own reservation unavailable")
+  waitPolicy = {
+    deadlineMs: ARTIFACT_QUOTA_WAIT_DEADLINE_MS,
+    maxRounds: ARTIFACT_QUOTA_WAIT_MAX_ROUNDS,
+    intervalMs: ARTIFACT_QUOTA_WAIT_INTERVAL_MS,
+  },
+): Promise<ArtifactQuotaFinalizeResult | null> {
+  const deadline = Date.now() + Math.min(ARTIFACT_QUOTA_WAIT_DEADLINE_MS, Math.max(1, waitPolicy.deadlineMs))
+  const maxRounds = Math.min(ARTIFACT_QUOTA_WAIT_MAX_ROUNDS, Math.max(1, waitPolicy.maxRounds))
+  const intervalMs = Math.min(ARTIFACT_QUOTA_WAIT_INTERVAL_MS, Math.max(1, waitPolicy.intervalMs))
+  for (let round = 0; round < maxRounds; round++) {
+    const remaining = deadline - Date.now()
+    if (remaining <= 0) return quotaRetryable("reservation convergence timed out")
+    await delay(Math.min(intervalMs, remaining))
+    if (!ownArtifactQuotaReservationIsUnchanged(own)) return quotaRetryable("own reservation changed")
+    const reservations = scanArtifactQuotaReservations(projectDir, own.file, machineId, pidAlive)
+    if (!reservations.some((reservation) => artifactQuotaReservationsMatch(reservation, own)))
+      return quotaRetryable("own reservation changed")
     const decision = decideArtifactQuotaAdmission(
       runId,
-      existing,
       reservations,
       scanCommittedArtifactUsage(projectDir),
       limits,
@@ -287,19 +430,7 @@ function waitForGreaterArtifactQuotaReservations(
     if (!decision.ok) return decision.result
     if (!decision.waitForGreater) return null
   }
-}
-
-function existingTargetSize(
-  targetPath: string,
-): { ok: true; exists: boolean; bytes: number } | { ok: false; reason: string } {
-  try {
-    const existing = fs.lstatSync(targetPath)
-    if (!existing.isFile()) return { ok: false, reason: "final target is not a regular file" }
-    return { ok: true, exists: true, bytes: existing.size }
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { ok: true, exists: false, bytes: 0 }
-    return { ok: false, reason: "final target is unreadable" }
-  }
+  return quotaRetryable("reservation convergence round limit reached")
 }
 
 function scanCommittedArtifactUsage(projectDir: string): CommittedArtifactUsage {
@@ -340,10 +471,192 @@ function readDirectory(dir: string): fs.Dirent[] {
   }
 }
 
+function openStagedArtifact(
+  partPath: string,
+  declaredBytes: number,
+): { ok: true; value: StagedArtifact } | { ok: false } {
+  const noFollow = typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0
+  const nonBlock = typeof fs.constants.O_NONBLOCK === "number" ? fs.constants.O_NONBLOCK : 0
+  let fd: number
+  try {
+    fd = fs.openSync(partPath, fs.constants.O_RDONLY | noFollow | nonBlock)
+  } catch {
+    return { ok: false }
+  }
+  try {
+    const stat = fs.fstatSync(fd, { bigint: true })
+    const pathStat = fs.lstatSync(partPath, { bigint: true })
+    if (
+      !stat.isFile() ||
+      !pathStat.isFile() ||
+      stat.dev !== pathStat.dev ||
+      stat.ino !== pathStat.ino ||
+      stat.size !== BigInt(declaredBytes)
+    ) {
+      fs.closeSync(fd)
+      return { ok: false }
+    }
+    return { ok: true, value: { fd, dev: stat.dev, ino: stat.ino, bytes: stat.size } }
+  } catch {
+    try {
+      fs.closeSync(fd)
+    } catch {
+      // 只读 staged fd;失败路径仍保持拒绝。
+    }
+    return { ok: false }
+  }
+}
+
+function stagedArtifactIsUnchanged(partPath: string, declaredBytes: number, staged: StagedArtifact): boolean {
+  try {
+    const stat = fs.fstatSync(staged.fd, { bigint: true })
+    const pathStat = fs.lstatSync(partPath, { bigint: true })
+    return (
+      stat.isFile() &&
+      pathStat.isFile() &&
+      stat.dev === staged.dev &&
+      stat.ino === staged.ino &&
+      stat.size === staged.bytes &&
+      stat.size === BigInt(declaredBytes) &&
+      pathStat.dev === stat.dev &&
+      pathStat.ino === stat.ino &&
+      pathStat.size === stat.size
+    )
+  } catch {
+    return false
+  }
+}
+
+async function artifactVolumeIsLocal(root: string, environment: ArtifactQuotaEnvironment): Promise<boolean | undefined> {
+  let stat: fs.Stats
+  try {
+    stat = await fs.promises.stat(root)
+  } catch {
+    return undefined
+  }
+  if (environment.cacheByDevice && environment.localByDevice.has(stat.dev))
+    return environment.localByDevice.get(stat.dev)
+  let local: boolean | undefined
+  try {
+    local = await environment.volumeIsLocal(root)
+  } catch {
+    local = undefined
+  }
+  if (environment.cacheByDevice) environment.localByDevice.set(stat.dev, local)
+  return local
+}
+
+async function defaultArtifactVolumeIsLocal(root: string): Promise<boolean | undefined> {
+  if (process.platform !== "darwin") return undefined
+  let resolved: string
+  try {
+    resolved = await fs.promises.realpath(root)
+  } catch {
+    return undefined
+  }
+  const output = await new Promise<string | null>((resolve) => {
+    execFile("/sbin/mount", { encoding: "utf8", maxBuffer: 1024 * 1024 }, (error, stdout) =>
+      resolve(error ? null : stdout),
+    )
+  })
+  if (output === null) return undefined
+  const mounts = output.split("\n").flatMap((line) => {
+    const optionsStart = line.lastIndexOf(" (")
+    const separator = line.lastIndexOf(" on ", optionsStart)
+    if (separator < 0 || optionsStart < 0 || !line.endsWith(")")) return []
+    return [
+      {
+        mountPoint: line.slice(separator + 4, optionsStart),
+        options: line
+          .slice(optionsStart + 2, -1)
+          .split(",")
+          .map((value) => value.trim()),
+      },
+    ]
+  })
+  const mounted = mounts
+    .filter(
+      (mount) =>
+        resolved === mount.mountPoint ||
+        mount.mountPoint === path.parse(resolved).root ||
+        resolved.startsWith(`${mount.mountPoint}${path.sep}`),
+    )
+    .sort((a, b) => b.mountPoint.length - a.mountPoint.length)[0]
+  return mounted?.options.includes("local")
+}
+
+async function loadOrCreateArtifactQuotaMachineId(userDataPath: string): Promise<string | null> {
+  const file = path.join(userDataPath, ARTIFACT_QUOTA_MACHINE_ID_FILE)
+  let fd: number | null = null
+  let created = false
+  try {
+    fd = fs.openSync(file, "wx", 0o600)
+    created = true
+    fs.writeFileSync(fd, `${crypto.randomUUID()}\n`)
+    fs.fsyncSync(fd)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") return null
+  } finally {
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd)
+      } catch {
+        // machine id 文件已 fsync;关闭失败由随后绑定读取决定是否可用。
+      }
+    }
+  }
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const machineId = readArtifactQuotaMachineId(file)
+    if (machineId) return machineId
+    if (created) return null
+    await delay(10)
+  }
+  return null
+}
+
+function readArtifactQuotaMachineId(file: string): string | null {
+  const noFollow = typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0
+  const nonBlock = typeof fs.constants.O_NONBLOCK === "number" ? fs.constants.O_NONBLOCK : 0
+  let fd: number
+  try {
+    fd = fs.openSync(file, fs.constants.O_RDONLY | noFollow | nonBlock)
+  } catch {
+    return null
+  }
+  try {
+    const stat = fs.fstatSync(fd, { bigint: true })
+    const pathStat = fs.lstatSync(file, { bigint: true })
+    if (
+      !stat.isFile() ||
+      !pathStat.isFile() ||
+      stat.size > 64n ||
+      (stat.mode & 0o077n) !== 0n ||
+      stat.dev !== pathStat.dev ||
+      stat.ino !== pathStat.ino
+    )
+      return null
+    const value = fs.readFileSync(fd, "utf8").trim()
+    return ARTIFACT_MACHINE_ID_RE.test(value) ? value : null
+  } catch {
+    return null
+  } finally {
+    try {
+      fs.closeSync(fd)
+    } catch {
+      // read-only fd;关闭失败不改变 machine id 是否已绑定验证。
+    }
+  }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 function createArtifactQuotaReservation(
   projectDir: string,
   runId: string,
   declaredBytes: number,
+  machineId: string,
   opts: ArtifactQuotaFinalizeOptions,
 ): { ok: true; reservation: ArtifactQuotaReservation } | { ok: false; reason: string } {
   const dir = artifactQuotaReservationsPath(projectDir, runId)
@@ -359,7 +672,8 @@ function createArtifactQuotaReservation(
     !ARTIFACT_RESERVATION_UUID_RE.test(uuid)
   )
     return { ok: false, reason: "reservation metadata unavailable" }
-  const reservation = { pid: process.pid, hostId: hostname(), declaredBytes, startedAt, uuid }
+  const reservation = { pid: process.pid, machineId, declaredBytes, startedAt, uuid }
+  const content = JSON.stringify(reservation) + "\n"
   const file = path.join(dir, `${startedAt}-${uuid}.json`)
   let fd: number
   try {
@@ -369,9 +683,21 @@ function createArtifactQuotaReservation(
     return { ok: false, reason: "reservation cannot be created" }
   }
   try {
-    fs.writeFileSync(fd, JSON.stringify(reservation) + "\n")
+    fs.writeFileSync(fd, content)
     fs.fsyncSync(fd)
-    return { ok: true, reservation: { ...reservation, file, runId } }
+    const stat = fs.fstatSync(fd, { bigint: true })
+    const pathStat = fs.lstatSync(file, { bigint: true })
+    if (
+      !stat.isFile() ||
+      !pathStat.isFile() ||
+      stat.dev !== pathStat.dev ||
+      stat.ino !== pathStat.ino
+    )
+      throw new Error("reservation identity changed")
+    return {
+      ok: true,
+      reservation: { ...reservation, file, runId, dev: stat.dev, ino: stat.ino, content, pathBound: true },
+    }
   } catch {
     releaseArtifactQuotaReservation(file)
     return { ok: false, reason: "reservation cannot be persisted" }
@@ -393,9 +719,30 @@ function releaseArtifactQuotaReservation(file: string): boolean {
   }
 }
 
+function releaseOwnArtifactQuotaReservation(
+  reservation: ArtifactQuotaReservation,
+): "released" | "missing" | "changed" | "failed" {
+  let current: ArtifactQuotaReservation | null
+  try {
+    current = readArtifactQuotaReservation(reservation.file, reservation.runId)
+  } catch {
+    return "changed"
+  }
+  if (!current) return "missing"
+  if (!artifactQuotaReservationsMatch(current, reservation)) return "changed"
+  try {
+    fs.unlinkSync(reservation.file)
+    return "released"
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "missing"
+    return "failed"
+  }
+}
+
 function scanArtifactQuotaReservations(
   projectDir: string,
   ownFile: string,
+  machineId: string,
   pidAlive: (pid: number) => boolean | undefined,
 ): ArtifactQuotaReservation[] {
   const runsDir = safeResolveInAlpha(projectDir, "runs")
@@ -407,23 +754,32 @@ function scanArtifactQuotaReservations(
     return readDirectory(dir).flatMap((entry) => {
       if (!entry.isFile()) throw new Error("invalid reservation entry")
       const file = path.join(dir, entry.name)
-      const reservation = readArtifactQuotaReservation(file, run.name)
+      const reservation = readArtifactQuotaReservation(file, run.name, true)
       if (!reservation) return []
-      if (file === ownFile || !artifactQuotaReservationOwnerIsDead(reservation, pidAlive)) return [reservation]
+      if (
+        file === ownFile ||
+        !reservation.pathBound ||
+        !artifactQuotaReservationOwnerIsDead(reservation, machineId, pidAlive)
+      )
+        return [reservation]
       try {
         fs.unlinkSync(file)
-        return []
-      } catch (error) {
-        // 仅清理同机且 PID 已证死的唯一路径。失败或路径已消失时都保持保守:
-        // ENOENT 已无预约可计,其它错误继续把声明字节计入额度。
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") return []
+        // 本轮仍保守计费;删除只对下一次完整“预约 → committed”扫描生效。
+        return [reservation]
+      } catch {
+        // 仅清理同机且 PID 已证死的唯一路径。失败或路径已消失时,本轮仍以刚绑定读取的
+        // 声明保守计费;下一轮再从盘面重建真相。
         return [reservation]
       }
     })
   })
 }
 
-function readArtifactQuotaReservation(file: string, runId: string): ArtifactQuotaReservation | null {
+function readArtifactQuotaReservation(
+  file: string,
+  runId: string,
+  retainUnbound = false,
+): ArtifactQuotaReservation | null {
   const noFollow = typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0
   const nonBlock = typeof fs.constants.O_NONBLOCK === "number" ? fs.constants.O_NONBLOCK : 0
   let fd: number
@@ -434,13 +790,24 @@ function readArtifactQuotaReservation(file: string, runId: string): ArtifactQuot
     throw error
   }
   try {
-    const stat = fs.fstatSync(fd)
-    if (!stat.isFile() || stat.size > 4_096) throw new Error("invalid reservation file")
-    const value = JSON.parse(fs.readFileSync(fd, "utf8")) as unknown
+    const stat = fs.fstatSync(fd, { bigint: true })
+    if (!stat.isFile() || stat.size > 4_096n) throw new Error("invalid reservation file")
+    const content = fs.readFileSync(fd, "utf8")
+    const value = JSON.parse(content) as unknown
     if (!isArtifactQuotaReservationRecord(value)) throw new Error("invalid reservation record")
     if (path.basename(file) !== `${value.startedAt}-${value.uuid}.json`)
       throw new Error("reservation filename mismatch")
-    return { ...value, file, runId }
+    try {
+      const pathStat = fs.lstatSync(file, { bigint: true })
+      if (!pathStat.isFile() || stat.dev !== pathStat.dev || stat.ino !== pathStat.ino) {
+        if (!retainUnbound) throw new Error("reservation identity changed")
+        return { ...value, file, runId, dev: stat.dev, ino: stat.ino, content, pathBound: false }
+      }
+    } catch (error) {
+      if (!retainUnbound || (error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+      return { ...value, file, runId, dev: stat.dev, ino: stat.ino, content, pathBound: false }
+    }
+    return { ...value, file, runId, dev: stat.dev, ino: stat.ino, content, pathBound: true }
   } finally {
     try {
       fs.closeSync(fd)
@@ -458,8 +825,8 @@ function isArtifactQuotaReservationRecord(value: unknown): value is ArtifactQuot
     typeof record.pid === "number" &&
     Number.isInteger(record.pid) &&
     record.pid > 0 &&
-    typeof record.hostId === "string" &&
-    record.hostId.length > 0 &&
+    typeof record.machineId === "string" &&
+    ARTIFACT_MACHINE_ID_RE.test(record.machineId) &&
     typeof record.declaredBytes === "number" &&
     Number.isSafeInteger(record.declaredBytes) &&
     record.declaredBytes >= 0 &&
@@ -472,11 +839,37 @@ function isArtifactQuotaReservationRecord(value: unknown): value is ArtifactQuot
 
 function artifactQuotaReservationOwnerIsDead(
   reservation: ArtifactQuotaReservation,
+  machineId: string,
   pidAlive: (pid: number) => boolean | undefined,
 ): boolean {
-  if (reservation.hostId !== hostname()) return false
+  if (reservation.machineId !== machineId) return false
   try {
     return pidAlive(reservation.pid) === false
+  } catch {
+    return false
+  }
+}
+
+function artifactQuotaReservationsMatch(a: ArtifactQuotaReservation, b: ArtifactQuotaReservation): boolean {
+  return (
+    a.file === b.file &&
+    a.runId === b.runId &&
+    a.dev === b.dev &&
+    a.ino === b.ino &&
+    a.content === b.content &&
+    a.pathBound === b.pathBound &&
+    a.pid === b.pid &&
+    a.machineId === b.machineId &&
+    a.declaredBytes === b.declaredBytes &&
+    a.startedAt === b.startedAt &&
+    a.uuid === b.uuid
+  )
+}
+
+function ownArtifactQuotaReservationIsUnchanged(reservation: ArtifactQuotaReservation): boolean {
+  try {
+    const current = readArtifactQuotaReservation(reservation.file, reservation.runId)
+    return current !== null && artifactQuotaReservationsMatch(current, reservation)
   } catch {
     return false
   }
