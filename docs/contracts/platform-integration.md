@@ -81,19 +81,17 @@ quota finalizer; no caller has direct final-rename authority.
 The admission guarantee is limited to a local filesystem with a locally
 coherent directory namespace. It does not apply to NFS, SMB, remote FUSE, or
 other shared/network volumes. At main-process initialization the desktop
-checks the Electron `userData` volume, and on the first use of a different
-artifact volume it checks that volume too. On macOS, the desktop resolves the
-root through `realpath`, parses `/sbin/mount`, selects the deepest mount point
-that actually contains that resolved path, and accepts only the explicit
-filesystem-type whitelist `apfs` and `hfs`. It does not trust a filesystem's
-`local` mount option. Every other type is rejected, including `macfuse`,
-`osxfuse`, `fuse.*`, `nfs`, `smbfs`, `afpfs`, `webdav`, and unknown future
-types, even when the mount claims `local`. These known-but-unsupported results
-return stable `unsupported-filesystem`. A failed or timed-out mount command,
-failed `realpath`, malformed output, or inability to identify an owning mount
-point fails closed as stable `disk`. Move the project and `userData` to APFS or
-HFS volumes before retrying. The desktop does not implement NFS
-cache-convergence or cross-client coordination.
+checks the Electron `userData` volume and rechecks the artifact path before
+every finalization. On macOS, the desktop calls `statfs` on the path and accepts
+only Darwin filesystem type codes HFS `17` and APFS `26`. The path is passed as
+a syscall argument and is never interpolated into or recovered from mount-table
+text, so spaces, the literal delimiter `" on "`, parentheses, tabs, and newlines
+cannot alter which filesystem is examined. Every other type is rejected,
+including FUSE and network filesystems and unknown future types. These
+known-but-unsupported results return stable `unsupported-filesystem`. A failed
+or timed-out `statfs`, or an unavailable type, fails closed as stable `disk`.
+Move the project and `userData` to APFS or HFS volumes before retrying. The
+desktop does not implement NFS cache-convergence or cross-client coordination.
 
 The desktop creates one random UUID machine identity at
 `<userData>/artifact-quota-machine-id`, mode `0600`, and reuses it without
@@ -142,29 +140,32 @@ rename, it asynchronously rescans until every greater conflicting reservation
 has either yielded or committed. Rescans run at most every 20 ms and are
 subject to both a 5-second deadline and a 250-round ceiling. Reservation and
 committed traversal uses asynchronous directory reads and stats, with an
-explicit event-loop yield every 32 visited entries. Each complete
-reservation-then-committed scan is independently capped at 250 ms and 10,000
-visited directory entries; either scan cap returns stable `retryable`. The
-global deadline is checked before and after every scan, and the scan timer is
-clipped to the remaining global budget. Without the global bound, the
-conservative per-round maximum would be `250 × (20 ms + 250 ms) = 67.5 s`; the
-remaining-budget clipping makes the 5-second global deadline dominant. Timer
-dispatch can add normal event-loop scheduling jitter, but this code performs no
-synchronous full-project traversal that can extend the bound. Exhausting any
-bound never admits. This convergence step closes the case where a smaller key
-is published after a greater key already completed its first decision: the
-smaller attempt observes the greater reservation until its final file becomes
-chargeable, then reevaluates instead of double-admitting.
+explicit event-loop yield every 32 visited entries. The former 10,000-entry
+limit is a cooperative scan slice: reaching it yields while retaining the
+directory-entry position, recursive call stack, and accumulated usage, then
+resumes the same complete reservation-before-committed scan. Initial admission
+therefore has no total entry-count or wall-clock scan rejection and eventually
+admits a large legal project. A convergence rescan is instead clipped directly
+to the remaining global deadline; it never admits a partial scan. The finalizer
+also races its asynchronous owner-reservation recheck against that deadline. Timer
+dispatch can add normal event-loop scheduling jitter, but the waiting path has
+no synchronous filesystem call or full-project traversal that can block timer
+dispatch. Exhausting the deadline or round ceiling never admits. This
+convergence step closes the case where a smaller key is published after a
+greater key already completed its first decision: the smaller attempt observes
+the greater reservation until its final file becomes chargeable, then
+reevaluates instead of double-admitting.
 
-Immediately before rename, the admitted attempt rechecks the open staged-file
-descriptor and the staged pathname against the initially captured `dev`/`ino`,
-requires both to remain regular files, and requires both actual sizes to equal
-`declaredBytes`. A changed inode or size returns stable `staging-changed` and is
-not committed. It then reopens its reservation with `O_NOFOLLOW`, binds fd and
-pathname by `dev`/`ino`, and requires the inode and exact bytes to match the
-record it created. Missing or changed reservation state returns stable
-`retryable`. The admitted attempt then atomically renames its own `.part` to the
-final target and deletes only its still-identity-matching reservation.
+Immediately before rename, the admitted attempt asynchronously rechecks the
+open staged-file descriptor and the staged pathname against the initially
+captured `dev`/`ino`, requires both to remain regular files, and requires both
+actual sizes to equal `declaredBytes`. A changed inode or size returns stable
+`staging-changed` and is not committed. It then asynchronously reopens its
+reservation with `O_NOFOLLOW`, binds fd and pathname by `dev`/`ino`, and requires
+the inode and exact bytes to match the record it created. Missing or changed
+reservation state returns stable `retryable`. The admitted attempt then
+atomically renames its own `.part` to the final target and deletes only its
+still-identity-matching reservation.
 
 Scanning reservations before final files is required on the supported local
 filesystem: the owner transitions from reservation-only, through a conservative
