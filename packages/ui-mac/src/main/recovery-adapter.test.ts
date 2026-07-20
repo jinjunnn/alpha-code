@@ -133,6 +133,23 @@ describe("adaptRecoveryPlan — four real recovery partitions", () => {
     })
     expect(JSON.stringify(result)).not.toContain("sk-secret")
   })
+
+  test("a rejecting logger cannot escape adaptRecoveryPlan or change its safe DTO", async () => {
+    const poison = "Error: token=sk-secret at /Users/alice/private/config.json\n    at adapt (/home/alice/app.ts:1:1)"
+    const result = adaptRecoveryPlan(
+      { kind: "database", plan: { kind: "corrupt", detail: poison }, backupAvailable: false },
+      () => Promise.reject(new Error(poison)),
+    )
+    await Promise.resolve()
+
+    expect(result).toEqual({
+      code: "RECOVERY_DATABASE_CORRUPT",
+      category: "database-corrupt",
+      actions: ["exit-app", "continue-startup"],
+      retryable: false,
+    })
+    expect(JSON.stringify(result)).not.toContain("sk-secret")
+  })
 })
 
 function createRetryPlan(log: RecoveryLogger = silent) {
@@ -223,6 +240,33 @@ describe("createRecoveryActionAdapter — idempotent submission", () => {
 
     const first = firstAdapter.submit(RECOVERY_ACTIONS.retryEngine)
     const duplicate = rebuiltAdapter.submit(RECOVERY_ACTIONS.retryEngine)
+    release!()
+
+    expect(await first).toMatchObject({ code: "RECOVERY_ACTION_APPLIED", applied: true })
+    expect(await duplicate).toMatchObject({ code: "RECOVERY_ACTION_ALREADY_APPLIED", applied: false })
+    expect(calls).toBe(1)
+  })
+
+  test("adapting one source plan twice memoizes its DTO and coalesces adapters", async () => {
+    let calls = 0
+    let release: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const sourcePlan = { action: "give-up", state: { attempts: 5, lastSpawnAt: 10 } } as const
+    const firstPlan = adaptRecoveryPlan({ kind: "engine", plan: sourcePlan }, silent)!
+    const secondPlan = adaptRecoveryPlan({ kind: "engine", plan: sourcePlan }, silent)!
+    const effects = {
+      [RECOVERY_ACTIONS.retryEngine]: async () => {
+        calls++
+        await gate
+        return { applied: true } as const
+      },
+    }
+    const firstAdapter = createRecoveryActionAdapter(firstPlan, effects, silent)
+    const secondAdapter = createRecoveryActionAdapter(secondPlan, effects, silent)
+
+    expect(secondPlan).toBe(firstPlan)
+    const first = firstAdapter.submit(RECOVERY_ACTIONS.retryEngine)
+    const duplicate = secondAdapter.submit(RECOVERY_ACTIONS.retryEngine)
     release!()
 
     expect(await first).toMatchObject({ code: "RECOVERY_ACTION_APPLIED", applied: true })
@@ -345,7 +389,8 @@ describe("createRecoveryActionAdapter — idempotent submission", () => {
       silent,
     )
 
-    expect(await adapter.submit(RECOVERY_ACTIONS.backupAndContinue)).toEqual({
+    const failed = await adapter.submit(RECOVERY_ACTIONS.backupAndContinue)
+    expect(failed).toEqual({
       ok: false,
       code: "RECOVERY_ACTION_FAILED",
       action: "backup-and-continue",
@@ -359,6 +404,7 @@ describe("createRecoveryActionAdapter — idempotent submission", () => {
       retryable: false,
     })
     expect(await adapter.submit(RECOVERY_ACTIONS.continueStartup)).toEqual(blocked)
+    expect(await adapter.submit(RECOVERY_ACTIONS.backupAndContinue)).toEqual(failed)
     expect({ backupCalls, continueCalls }).toEqual({ backupCalls: 1, continueCalls: 0 })
   })
 

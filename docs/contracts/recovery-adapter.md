@@ -37,12 +37,19 @@ change the returned DTO or action control flow.
 
 ## Action result and idempotency
 
-The exact branded `RecoveryPlan` object returned by `adaptRecoveryPlan` is the main-process incident
-owner. Its identity is not serialized into the renderer DTO. A process-local `WeakMap` registry keys
-shared action state by that owner, so rebuilding multiple action-adapter instances for the same plan
-coalesces their submissions. A constructed, cloned, or deserialized DTO is not an incident owner and
-is rejected at the action-adapter factory boundary. A newly observed incident requires a newly
-adapted plan object; releasing the plan also permits its process-local state to be collected.
+The main-process source plan object is the incident owner: the `PreflightPlan` for database recovery,
+the `SelfHealPlan` for engine recovery, and the surface source object for surface recovery. A
+process-local `WeakMap` memoizes the first eligible adaptation by that source object together with
+its shared action state. Repeated calls with the same source plan therefore return the exact same
+`RecoveryPlan` DTO, and every action adapter created from those calls converges on the same state;
+callers do not need to coordinate a single adaptation. The wrapper passed for a database or engine
+source is not the key and may be rebuilt without splitting the incident.
+
+Source identity and the registry are not serialized into the renderer DTO. A reverse process-local
+ownership map admits only the exact memoized DTO at the action-adapter factory boundary, so a
+constructed, cloned, or deserialized DTO is rejected. Releasing the source plan and DTO permits their
+process-local state to be collected. A source object reconstructed after serialization or in another
+process has new identity and is outside this process-local guarantee.
 
 - An effect must return `{ applied: true }` before the adapter emits `RECOVERY_ACTION_APPLIED`.
   Resolving a `void` promise is not a success contract.

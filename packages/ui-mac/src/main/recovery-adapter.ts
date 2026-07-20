@@ -65,9 +65,13 @@ export type RecoveryLogger = (
  * surface ids.
  */
 export function adaptRecoveryPlan(source: RecoverySource, log: RecoveryLogger): RecoveryPlan | null {
+  const incidentSource = source.kind === "surface" ? source : source.plan
+  const existing = recoveryIncidents.get(incidentSource)
+  if (existing) return existing.plan
+
   if (source.kind === "database") {
     if (source.plan.kind === "corrupt") {
-      const result = registerRecoveryIncident({
+      const result = registerRecoveryIncident(incidentSource, {
         code: RECOVERY_CODES.databaseCorrupt,
         category: "database-corrupt",
         actions: source.backupAvailable
@@ -79,7 +83,7 @@ export function adaptRecoveryPlan(source: RecoverySource, log: RecoveryLogger): 
       return result
     }
     if (source.plan.kind !== "db-ahead") return null
-    const result = registerRecoveryIncident({
+    const result = registerRecoveryIncident(incidentSource, {
       code: RECOVERY_CODES.databaseTooNew,
       category: "database-too-new",
       actions: [RECOVERY_ACTIONS.exitApp, RECOVERY_ACTIONS.backupAndContinue, RECOVERY_ACTIONS.continueStartup],
@@ -91,7 +95,7 @@ export function adaptRecoveryPlan(source: RecoverySource, log: RecoveryLogger): 
 
   if (source.kind === "engine") {
     if (source.plan.action !== "give-up") return null
-    const result = registerRecoveryIncident({
+    const result = registerRecoveryIncident(incidentSource, {
       code: RECOVERY_CODES.engineStopped,
       category: "engine-stopped",
       actions: [RECOVERY_ACTIONS.retryEngine],
@@ -102,7 +106,7 @@ export function adaptRecoveryPlan(source: RecoverySource, log: RecoveryLogger): 
   }
 
   const canRetrySave = source.failureRecord === "failed"
-  const result = registerRecoveryIncident({
+  const result = registerRecoveryIncident(incidentSource, {
     code: RECOVERY_CODES.surfaceCrashed,
     category: "surface-crashed",
     actions: canRetrySave ? [RECOVERY_ACTIONS.retryFailureSave] : [],
@@ -137,11 +141,13 @@ type RecoveryIncidentState = {
   inflight?: { action: RecoveryAction; result: Promise<RecoveryActionResult> }
 }
 
-const recoveryIncidents = new WeakMap<RecoveryPlan, RecoveryIncidentState>()
+const recoveryIncidents = new WeakMap<object, { plan: RecoveryPlan; state: RecoveryIncidentState }>()
+const recoverySources = new WeakMap<RecoveryPlan, object>()
 
-/** Adapter instances for the exact plan object share one process-local incident state. */
+/** Adapter instances for DTOs memoized from the same source plan share one process-local incident state. */
 export function createRecoveryActionAdapter(plan: RecoveryPlan, effects: RecoveryActionEffects, log: RecoveryLogger) {
-  const state = recoveryIncidents.get(plan)
+  const incidentSource = recoverySources.get(plan)
+  const state = incidentSource ? recoveryIncidents.get(incidentSource)?.state : undefined
   if (!state) throw new Error("Recovery action adapters require an owned recovery incident")
 
   return {
@@ -220,9 +226,10 @@ export function createRecoveryActionAdapter(plan: RecoveryPlan, effects: Recover
   }
 }
 
-function registerRecoveryIncident(plan: Omit<RecoveryPlan, typeof recoveryIncident>) {
+function registerRecoveryIncident(source: object, plan: Omit<RecoveryPlan, typeof recoveryIncident>) {
   const result = plan as RecoveryPlan
-  recoveryIncidents.set(result, { terminalFailures: new Map() })
+  recoveryIncidents.set(source, { plan: result, state: { terminalFailures: new Map() } })
+  recoverySources.set(result, source)
   return result
 }
 
