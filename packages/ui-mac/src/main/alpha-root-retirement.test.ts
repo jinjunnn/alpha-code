@@ -22,6 +22,7 @@ describe("retired global-root operational ratchet", () => {
     ]
     const forbidden = [
       { name: "retired environment migration module", pattern: /\b(?:alpha-env-migrate|runEnvMigration)\b/ },
+      { name: "retired environment migration constant", pattern: /\bENV_MIGRATION_/ },
       { name: "retired snapshot field", pattern: /\.legacyRoot\b/ },
       { name: "retired migration receipt", pattern: /env-migration-receipt\.json/ },
       { name: "retired rollback marker", pattern: /\.alpha-env-rollback\.json/ },

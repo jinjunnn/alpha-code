@@ -54,7 +54,7 @@ related: [ADR-014, ADR-019, ADR-023, ADR-024, ADR-029, REQ-098, REQ-099, REQ-100
 ### 5. 项目作用域闭环(fail-closed)
 
 - 项目 receipt 落**项目自己的** `.alpha/installs.json`(随项目移动);操作项目 scope 时 main 重新 realpath 当前项目目录并与 record 的 scope identity 比对——**不一致(项目被移动/符号链接偷换)即 fail closed**,给出显式错误,**绝不退化为 global 卸载**;record 损坏同样拒绝操作(不猜路径)。
-- owned paths 永远从「受控根(`<appData>/alpha-code-state/env/<environment>` 或 `<project>/.alpha`)+ kind + name」重新派生(realpath 反逃逸守卫),record 中的绝对路径仅作对账参考,不作删除依据。全局根只消费 desktop 冻结的 canonical `ALPHA_GLOBAL_DIR`，退休 home 根及 alias 均拒绝。
+- owned paths 永远从「受控根(env-scoped `~/.alpha` 或 `<project>/.alpha`)+ kind + name」重新派生(realpath 反逃逸守卫),record 中的绝对路径仅作对账参考,不作删除依据。
 - global 与不同项目安装同名扩展互不影响(账本物理分域 + scope identity)。
 
 ### 6. 分期交付与 REQ-100 接缝
@@ -78,3 +78,10 @@ related: [ADR-014, ADR-019, ADR-023, ADR-024, ADR-029, REQ-098, REQ-099, REQ-100
 - ⚠️ breaking-change:旧 IPC 通道下线,renderer 与 main 必须同版本(同包发布,实际无兼容窗口);catalog 严格解码把 schema 演进的协调成本显式化(这是目的,不是副作用)。
 - ⚠️ manifest 由 catalog 合成 = 现阶段 manifest 可信度上限是 catalog 通道可信度(ed25519 整体验签);逐包签名/独立 manifest 分发在 REQ-101 前不假装存在。
 - 🔭 residual(如实):Hub 项目上下文 UI(逐项目禁用/更新)、五维 ownership 的 UI 呈现、未策展入口的风险文案 UI、v1 账本的自动批量迁移触发时机——main 侧机器(`ext-install-catalog` / `ext-uninstall-v2` / `ext-set-install-state` / `ext-list-installs-v2` 四通道 + schema/planner/账本模块)已就位,UI/编排随后续 slice。既有 renderer 事实通道(`ext-persist-mcp` 收 meta、`ext-install-builtin-*`、`ext-uninstall` 收整张 receipt 等)的**实际下线**与未策展入口的 meta 剥离,随 renderer 切换到新通道同 PR 收口——新旧并存只是仓内开发窗口,不跨发布(同包发布,无兼容矩阵)。
+
+## 修订(2026-07-20,#428 环境根退役)
+
+§5 的受控全局根由 env-scoped `~/.alpha` 改为
+`<appData>/alpha-code-state/env/<environment>`，且只消费 desktop 冻结的 canonical
+`ALPHA_GLOBAL_DIR`；退休 home 根及其 alias 均拒绝。项目级 `<project>/.alpha`、owned path
+重新派生与 realpath 反逃逸约束不变。

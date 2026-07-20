@@ -206,6 +206,27 @@ describe("initAlphaEnvironment — canonical 新根与 override 权限", () => {
     }
   })
 
+  test("base override 经词法混淆落入退休根或其后代时仍拒绝", () => {
+    const retired = path.join(home, ".alpha")
+    const values = [
+      `${retired}${path.sep}..${path.sep}.alpha`,
+      `${home}${path.sep}${path.sep}.alpha${path.sep}`,
+      `${home}${path.sep}.${path.sep}.alpha`,
+      `${base}${path.sep}ok${path.sep}..${path.sep}${path.basename(home)}${path.sep}.alpha${path.sep}sub`,
+    ]
+    values.forEach((value) => {
+      __resetAlphaEnvironmentForTests()
+      delete process.env.ALPHA_GLOBAL_DIR
+      process.env.ALPHA_ENV_BASE_DIR = value
+      expect(() =>
+        initAlphaEnvironment({ isPackaged: false, channel: "dev", appDataDir: appData, homeDir: home }),
+      ).toThrow()
+      expect(() => getAlphaEnvironment()).toThrow()
+      expect(process.env.ALPHA_GLOBAL_DIR).toBeUndefined()
+    })
+    // 不做 Unicode NFC/NFD 文本折叠；identity 依赖 canonical realpath，alias 兜底见相邻 symlink 用例。
+  })
+
   test("base endpoint symlink 指向退休根时拒绝", () => {
     const retired = path.join(home, ".alpha")
     const alias = path.join(base, "retired alias")

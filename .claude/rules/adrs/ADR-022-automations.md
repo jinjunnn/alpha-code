@@ -6,7 +6,7 @@ date: 2026-07-04
 related: [ADR-002, ADR-019, ADR-021, REQ-021, REQ-022]
 ---
 
-> **2026-07-05 转 accepted**(REQ-016 S16 真机批,证据 [audits/2026-07-05-req016-realmachine-batch/verify.md](../../../docs/audits/2026-07-05-req016-realmachine-batch/verify.md)):prod 签名包实测 —— E1 once 任务到点触发(+4ms)→ 真会话 → report.md/status.json 落 `.alpha/runs/`;E2 readonly 档实调「创建文件+bash」被 deny 且**全程零 ask**(status=ok 非 timeout,禁止文件零创建);E3 过期任务 catchUpPolicy:skip 未补跑;E4 自动化实体与 `_state.json`(dailyRunCap 跨重启)机制验证。残余(冷重启往返 / 历史回跳 / 云档位)不阻断转正。下方「真机批待验」门已达成。
+> **2026-07-05 转 accepted**(REQ-016 S16 真机批,证据 [audits/2026-07-05-req016-realmachine-batch/verify.md](../../../docs/audits/2026-07-05-req016-realmachine-batch/verify.md)):prod 签名包实测 —— E1 once 任务到点触发(+4ms)→ 真会话 → report.md/status.json 落 `.alpha/runs/`;E2 readonly 档实调「创建文件+bash」被 deny 且**全程零 ask**(status=ok 非 timeout,禁止文件零创建);E3 过期任务 catchUpPolicy:skip 未补跑;E4 落盘 `~/.alpha/automations/*.json`+`_state.json`(dailyRunCap 跨重启)机制验证。残余(冷重启往返 / 历史回跳 / 云档位)不阻断转正。下方「真机批待验」门已达成。
 
 ## 背景
 用户目标:定制中心下方「自动化」——一句话描述 workflow → 定时执行(REQ-021,2026-07-04 拍板:
@@ -16,7 +16,7 @@ related: [ADR-002, ADR-019, ADR-021, REQ-021, REQ-022]
 流消费。
 
 ## 决策(A1,全部 alpha 自有文件,零改上游)
-1. **实体**:`<环境级全局根>/automations/<id>.json` 一任务一文件(`shared/automation-types.ts`;
+1. **实体**:`~/.alpha/automations/<id>.json` 一任务一文件(`shared/automation-types.ts`;
    schedule = cron 5 字段 | interval 分钟 | once)+ `_state.json`(全部暂停 + dailyRunCap 记账)。
    运行记录写目标项目 `.alpha/runs/auto-<id>-<ts>/`(report.md + status.json,复用 ADR-019 守卫
    `alpha-workdir.writeRunFiles`)。存储层硬校验(A1 强制 execution:local + readonly,防绕过 UI 直写)。
@@ -63,7 +63,8 @@ related: [ADR-002, ADR-019, ADR-021, REQ-021, REQ-022]
 ## 修订(2026-07-07,REQ-055 —— 内部 agent 对选择器隐藏)
 原 ⚠️「alpha-automation 以 mode:primary 注入 → 会出现在引擎 agent 列表/选择器里」的观感债就此关闭:三个内部 agent(alpha-automation / alpha-automation-standard / alpha-readonly)经 config 注入上游原生 `hidden: true`(agent.ts 字段,仅影响可见列表)+ AlphaComposer agent 列表二次过滤,不再出现在任何用户可见选择器;调度器/只读档按名 prompt 不受影响(dev 实证)。
 
-## 修订(2026-07-19,#428 —— 自动化真源随当前环境隔离)
+## 修订(2026-07-20,#428 —— 自动化真源随当前环境隔离)
 
-`<环境级全局根>` 定义为 `<appData>/alpha-code-state/env/<environment>`。调度器只消费 desktop
-初始化后派生的 canonical `ALPHA_GLOBAL_DIR`；退休 home 根零读取、零迁移、零 dual-read。
+2026-07-05 真机批引述与决策第 1 条中的 `~/.alpha` 路径保留为历史记录。自动化真源现改为
+`<appData>/alpha-code-state/env/<environment>/automations`；调度器只消费 desktop 初始化后派生的
+canonical `ALPHA_GLOBAL_DIR`。退休 home 根零读取、零迁移、零 dual-read。
