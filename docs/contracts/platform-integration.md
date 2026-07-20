@@ -15,12 +15,12 @@ integration. Service wire formats remain owned by their producer repositories.
 
 ## Ownership and authority
 
-| Surface | Owner | Desktop seam |
-| --- | --- | --- |
-| Authorization code, refresh/session rotation, endpoint discovery | `alpha-web` | `alpha-auth.ts`, `alpha-endpoints.ts` |
-| Model gateway and model registry | `alpha-platform` | injected `alpha` provider |
-| Cloud Jobs HTTP/SSE, artifacts, schedules, MCP facade | `alpha-platform` | main-process clients and injected MCP server |
-| Account summary and billing transactions | `alpha-platform` account service | main-process account client |
+| Surface                                                          | Owner                            | Desktop seam                                 |
+| ---------------------------------------------------------------- | -------------------------------- | -------------------------------------------- |
+| Authorization code, refresh/session rotation, endpoint discovery | `alpha-web`                      | `alpha-auth.ts`, `alpha-endpoints.ts`        |
+| Model gateway and model registry                                 | `alpha-platform`                 | injected `alpha` provider                    |
+| Cloud Jobs HTTP/SSE, artifacts, schedules, MCP facade            | `alpha-platform`                 | main-process clients and injected MCP server |
+| Account summary and billing transactions                         | `alpha-platform` account service | main-process account client                  |
 
 Current Alpha Platform contracts are
 [`cloud-jobs-v1.md`](https://github.com/jinjunnn/alpha-platform/blob/main/docs/contracts/cloud-jobs-v1.md)
@@ -78,42 +78,58 @@ file below `<project>/.alpha/runs/<run>/artifacts/`. After length and digest
 verification, every production download must pass the project-owned artifact
 quota finalizer; no caller has direct final-rename authority.
 
-The finalizer serializes admission per managed project with one cross-process
-primary lock created by exclusive `wx` open. Its immutable holder record is
-`{pid, hostId, nonce, startedAt}`. While holding that lock, the finalizer
-derives committed usage from regular files on disk, including legacy files
-that are not in a manifest, and checks all of these limits before the atomic
-final rename:
+Each finalization attempt first creates and fsyncs exactly one owner-unique
+reservation with an exclusive `O_EXCL` open at
+`<project>/.alpha/runs/<run>/reservations/<startedAtMicros>-<uuid>.json`. The
+immutable record is `{pid, hostId, declaredBytes, startedAt, uuid}`. A path is
+owned only by the attempt whose UUID created it; no active attempt renames,
+unlinks, or rewrites another attempt's reservation.
+
+Admission scans reservations before final files. Run usage is committed regular
+files plus the count and `declaredBytes` of every reservation below that run;
+project usage is committed regular files plus `declaredBytes` from every run's
+reservations. The committed scan includes legacy files that are not in a
+manifest. It excludes uniquely named `.part` staging files. The finalizer checks
+all of these limits before the atomic final rename:
 
 - 100 MiB per artifact;
 - 256 committed artifacts and 512 MiB per run; and
 - 5 GiB across the managed project.
 
-The usage check and rename are one synchronous critical section, so concurrent
-finalizers cannot both consume the same remaining capacity. Immediately before
-the final rename, the holder revalidates the primary path's file identity and
-nonce. Quota exhaustion, an unreadable usage root, or an unavailable admission
-lock fails closed and does not create a final file. Errors expose a stable
-category and bounded quota figures, not local paths, descriptor metadata,
-bearer values, or response content.
+If the combined usage is within every applicable limit, the attempt is
+admitted. If it is over a run or project limit, conflicting reservations are
+ordered lexicographically by `(startedAt, uuid)`. An attempt with a strictly
+smaller conflicting key present deletes only its own reservation and returns
+the stable, retryable `over-limit` detail
+`artifact quota admission yielded to an earlier reservation`. The minimum-key
+attempt subtracts all strictly greater reservations and reevaluates; it is
+admitted when committed usage plus its own reservation fits. Thus greater keys
+yield while the minimum key progresses, rather than all contenders repeatedly
+colliding on one shared pathname. Before the minimum key performs its final
+rename, it read-only rescans until every greater conflicting reservation has
+either yielded or committed. This convergence step closes the case where a
+smaller key is published after a greater key already completed its first
+decision: the smaller attempt observes the greater reservation until its final
+file becomes chargeable, then reevaluates instead of double-admitting.
 
-Quota has no independent durable reservation counter. A crash before rename
-can leave only a uniquely named staging file, which is excluded from committed
-usage; a crash after rename leaves a regular final file, which the next disk
-scan charges automatically.
+The admitted attempt atomically renames its own `.part` to the final target and
+then deletes its own reservation. Scanning reservations before final files is
+required: the owner transitions from reservation-only, through a conservative
+reservation-plus-final overlap, to final-only, so a concurrent scan observes at
+least one side of every commit. Quota exhaustion, malformed or unreadable
+reservation state, or unreadable committed usage fails closed. Errors expose a
+stable category and bounded quota figures, not local paths, descriptor
+metadata, bearer values, or response content.
 
-There is no recovery mutex. On `EEXIST`, a contender opens the current primary
-once, reads its holder record, and records `dev`/`ino` from that same file
-descriptor. A foreign-host holder, malformed record, live local PID, or
-indeterminate PID probe remains busy. Only a local PID proven dead by `ESRCH`
-may be recovered: the contender reopens and revalidates the same `dev`/`ino`
-immediately before moving the lock into `artifact-quota-stale`, verifies the
-archived identity, and retries exclusive primary creation. A mismatched move
-is restored with a no-clobber operation when the primary remains absent; if a
-concurrent primary exists, recovery remains busy. Acquisition is bounded to
-three attempts; exhaustion remains a retryable busy result. Preserved lock
-evidence and fail-closed cases are handled by the
-[artifact quota lock recovery runbook](../runbooks/artifact-quota-lock-recovery.md).
+A crash before rename leaves the reservation charged even though the unique
+`.part` remains excluded. A crash after rename but before reservation deletion
+temporarily charges both the final file and reservation. This is intentionally
+fail-closed: a crash cannot leak capacity. A later scan may unlink another
+reservation only when its `hostId` is local and PID liveness conclusively
+returns `ESRCH`; `EPERM` means live, and foreign-host, malformed, live, or
+indeterminate records are never cleaned. Cleanup failure keeps the reservation
+charged. Diagnostics and recovery boundaries are defined by the
+[artifact quota reservation recovery runbook](../runbooks/artifact-quota-reservation-recovery.md).
 
 ## Invariants
 

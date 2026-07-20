@@ -3,16 +3,27 @@ import { join } from "node:path"
 import { writeChunksChecked } from "./alpha-artifact-download"
 import { finalizeArtifactWithQuota, type ArtifactQuotaLimits } from "./artifact-service"
 
-const [projectDir, runId, name, content, barrierDir, markerName, limitsJson, deadlineText, deadPidText, scenario] = process.argv.slice(2)
-if (!projectDir || !runId || !name || content === undefined || !barrierDir || !markerName || !limitsJson || !deadlineText)
+const [projectDir, runId, name, content, barrierDir, markerName, limitsJson, deadlineText, startedAtText, scenario] =
+  process.argv.slice(2)
+if (
+  !projectDir ||
+  !runId ||
+  !name ||
+  content === undefined ||
+  !barrierDir ||
+  !markerName ||
+  !limitsJson ||
+  !deadlineText ||
+  !startedAtText ||
+  !scenario
+)
   throw new Error("artifact quota child: missing arguments")
 
 const limits = JSON.parse(limitsJson) as ArtifactQuotaLimits
 const deadline = Number(deadlineText)
+const startedAt = Number(startedAtText)
 if (!Number.isSafeInteger(deadline) || deadline <= 0) throw new Error("artifact quota child: invalid deadline")
-const deadPid = deadPidText ? Number(deadPidText) : undefined
-if (deadPid !== undefined && (!Number.isInteger(deadPid) || deadPid <= 0))
-  throw new Error("artifact quota child: invalid dead PID")
+if (!Number.isSafeInteger(startedAt) || startedAt <= 0) throw new Error("artifact quota child: invalid startedAt")
 const targetPath = join(projectDir, ".alpha", "runs", runId, "artifacts", name)
 const waiter = new Int32Array(new SharedArrayBuffer(4))
 const waitFor = (marker: string, reason: string) => {
@@ -21,6 +32,7 @@ const waitFor = (marker: string, reason: string) => {
     Atomics.wait(waiter, 0, 0, 10)
   }
 }
+const uuid = `00000000-0000-4000-8000-${markerName.padStart(12, "0")}`
 const result = await writeChunksChecked(
   (async function* () {
     yield Buffer.from(content)
@@ -33,19 +45,16 @@ const result = await writeChunksChecked(
     finalize: (input) =>
       finalizeArtifactWithQuota(projectDir, runId, input, {
         limits,
-        ...(deadPid !== undefined ? { pidAlive: (pid: number) => (pid === deadPid ? false : undefined) } : {}),
+        now: () => new Date(startedAt),
         testHooks: {
-          ...(scenario === "displacement"
-            ? {
-                afterStaleLockRevalidate() {
-                  writeFileSync(join(barrierDir, `revalidated-${markerName}`), "revalidated\n", { flag: "wx" })
-                  waitFor(`archive-${markerName}`, "stale archive barrier timed out")
-                },
-              }
-            : {}),
+          reservationUuid: () => uuid,
+          afterReservationCreated(reservationFile) {
+            writeFileSync(join(barrierDir, `reserved-${markerName}`), reservationFile + "\n", { flag: "wx" })
+            waitFor(scenario === "ordered" ? `scan-${markerName}` : "scan", "reservation scan barrier timed out")
+          },
           afterQuotaScan() {
             writeFileSync(join(barrierDir, `scanned-${markerName}`), "scanned\n", { flag: "wx" })
-            waitFor(scenario === "displacement" ? `commit-${markerName}` : "commit", "quota scan barrier timed out")
+            waitFor("commit", "quota commit barrier timed out")
           },
         },
       }),

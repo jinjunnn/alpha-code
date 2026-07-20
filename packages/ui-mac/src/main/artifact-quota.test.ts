@@ -1,14 +1,22 @@
-// REQ-093/#279 —— run/project artifact quota 原子准入。真实 temp project + 真实
-// `.part → fsync → project lock 内核算/rename`:正反例、末余额并发、崩溃锁/孤儿 staging 恢复、脱敏错误面。
+// REQ-093/#279 —— run/project artifact quota 预约准入。真实 temp project + 真实
+// `.part → fsync → reservation scan/decision → final rename`:末余额多进程、崩溃预约与脱敏错误面。
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs"
-import { dirname, join } from "node:path"
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs"
+import { join } from "node:path"
 import { hostname, tmpdir } from "node:os"
 import { uniquePartPath, writeChunksChecked, type ArtifactDownloadOutcome } from "./alpha-artifact-download"
 import {
-  ARTIFACT_QUOTA_LOCK_FILE,
-  artifactQuotaLockPath,
+  artifactQuotaReservationsPath,
   finalizeArtifactWithQuota,
   type ArtifactQuotaFinalizeOptions,
   type ArtifactQuotaLimits,
@@ -17,20 +25,21 @@ import {
 const RUN = "job-quota"
 const OTHER_RUN = "job-other"
 const SECRET = "Bearer-TOKEN-MARKER-req093"
-const LOCK_BUSY_DETAIL = "artifact quota admission unavailable (project lock busy)"
-const LOCK_OWNERSHIP_LOST_DETAIL = "artifact quota admission unavailable (project lock ownership lost)"
-const DISPLACED_LOCK_CLEANUP_FAILED_DETAIL = "artifact quota admission unavailable (displaced lock cleanup failed)"
+const YIELDED_DETAIL = "artifact quota admission yielded to an earlier reservation"
 const RACE_ROUNDS = Number(process.env.ARTIFACT_QUOTA_STRESS_ROUNDS ?? "1")
 if (!Number.isSafeInteger(RACE_ROUNDS) || RACE_ROUNDS <= 0)
   throw new Error("ARTIFACT_QUOTA_STRESS_ROUNDS must be a positive integer")
-const RACE_TEST_TIMEOUT = RACE_ROUNDS === 1 ? 15_000 : RACE_ROUNDS * 5_000
+const RACE_TEST_TIMEOUT = Math.max(20_000, RACE_ROUNDS * 1_000)
+const RACE_STARTED_AT = Date.parse("2026-07-20T12:00:00.000Z")
 
 let projectDir: string
+let reservationCounter: number
 const artifactsDir = (runId = RUN) => join(projectDir, ".alpha", "runs", runId, "artifacts")
 const target = (name: string) => join(artifactsDir(), name)
 
 beforeEach(() => {
   projectDir = realpathSync(mkdtempSync(join(tmpdir(), "artifact-quota-")))
+  reservationCounter = 100
   mkdirSync(artifactsDir(), { recursive: true })
 })
 
@@ -66,70 +75,49 @@ function stagingResidue(): string[] {
   return readdirSync(artifactsDir()).filter((name) => name.endsWith(".part"))
 }
 
-function writeProjectLock(
-  over: Partial<{ pid: number; hostId: string; nonce: string; startedAt: string }> = {},
+function reservations(runId = RUN): string[] {
+  const dir = artifactQuotaReservationsPath(projectDir, runId)
+  if (!dir || !existsSync(dir)) return []
+  return readdirSync(dir)
+}
+
+function seedReservation(
+  over: Partial<{ pid: number; hostId: string; declaredBytes: number; startedAt: string; uuid: string }> = {},
+  runId = RUN,
 ): string {
-  const lock = artifactQuotaLockPath(projectDir)
-  if (!lock) throw new Error("test setup: project lock path unavailable")
-  writeFileSync(
-    lock,
-    JSON.stringify({
-      v: 1,
-      pid: process.pid,
-      hostId: hostname(),
-      nonce: "test-project-lock",
-      startedAt: "2026-07-20T12:00:00.000Z",
-      ...over,
-    }),
-  )
-  return lock
+  const dir = artifactQuotaReservationsPath(projectDir, runId)
+  if (!dir) throw new Error("test setup: reservation path unavailable")
+  mkdirSync(dir, { recursive: true })
+  const uuid = `00000000-0000-4000-8000-${String(reservationCounter++).padStart(12, "0")}`
+  const record = {
+    pid: process.pid,
+    hostId: hostname(),
+    declaredBytes: 1,
+    startedAt: String(RACE_STARTED_AT * 1_000),
+    uuid,
+    ...over,
+  }
+  const file = join(dir, `${record.startedAt}-${record.uuid}.json`)
+  writeFileSync(file, JSON.stringify(record) + "\n", { flag: "wx" })
+  return file
 }
 
 type ChildFinalizeResult = { name: string; result: ArtifactDownloadOutcome }
 
-async function runConcurrentFinalizers(names: [string, string], quota: ArtifactQuotaLimits, deadPid?: number) {
-  const barrierDir = mkdtempSync(join(projectDir, "artifact-quota-barrier-"))
-  const helper = join(import.meta.dir, "artifact-quota-child.ts")
-  const deadline = Date.now() + 5_000
-  const children = names.map((name, index) =>
-    Bun.spawn(
-      [
-        process.execPath,
-        helper,
-        projectDir,
-        RUN,
-        name,
-        index === 0 ? "a" : "b",
-        barrierDir,
-        index.toString(),
-        JSON.stringify(quota),
-        deadline.toString(),
-        deadPid?.toString() ?? "",
-      ],
-      { stdin: "ignore", stdout: "pipe", stderr: "pipe" },
-    ),
-  )
-  const settled = children.map((_, index) => [join(barrierDir, `scanned-${index}`), join(barrierDir, `done-${index}`)])
-  while (!settled.every((markers) => markers.some(existsSync)) && Date.now() < deadline) await Bun.sleep(10)
-  const barrierReady = settled.every((markers) => markers.some(existsSync))
-  if (barrierReady) writeFileSync(join(barrierDir, "commit"), "commit\n", { flag: "wx" })
-  if (!barrierReady) children.forEach((child) => child.kill())
-
-  const killTimer = setTimeout(() => children.forEach((child) => child.kill()), Math.max(1, deadline - Date.now()))
-  const [codes, stdout, stderr] = await Promise.all([
-    Promise.all(children.map((child) => child.exited)),
-    Promise.all(children.map((child) => new Response(child.stdout).text())),
-    Promise.all(children.map((child) => new Response(child.stderr).text())),
-  ])
-  clearTimeout(killTimer)
-  if (!barrierReady) throw new Error(`child quota scan barrier failed: ${stderr.join(" | ")}`)
-  if (codes.some((code) => code !== 0))
-    throw new Error(`artifact quota child failed (${codes.join(", ")}): ${stderr.join(" | ")}`)
-  return stdout.map((output) => JSON.parse(output) as ChildFinalizeResult)
+async function waitForBarrier(
+  barrierDir: string,
+  marker: string,
+  deadline: number,
+  children: Bun.Subprocess<"ignore", "pipe", "pipe">[],
+) {
+  while (!existsSync(join(barrierDir, marker)) && Date.now() < deadline) await Bun.sleep(5)
+  if (existsSync(join(barrierDir, marker))) return
+  children.forEach((child) => child.kill())
+  throw new Error(`artifact quota barrier failed (${marker})`)
 }
 
-async function runDisplacedHolderRace(names: [string, string], quota: ArtifactQuotaLimits, deadPid: number) {
-  const barrierDir = mkdtempSync(join(projectDir, "artifact-quota-displacement-"))
+async function runConcurrentFinalizers(names: string[], quota: ArtifactQuotaLimits, scenario: "race" | "ordered") {
+  const barrierDir = mkdtempSync(join(projectDir, "artifact-quota-barrier-"))
   const helper = join(import.meta.dir, "artifact-quota-child.ts")
   const deadline = Date.now() + 10_000
   const children = names.map((name, index) =>
@@ -140,30 +128,51 @@ async function runDisplacedHolderRace(names: [string, string], quota: ArtifactQu
         projectDir,
         RUN,
         name,
-        index === 0 ? "holder" : "reclaimer",
+        "x",
         barrierDir,
         index.toString(),
         JSON.stringify(quota),
         deadline.toString(),
-        deadPid.toString(),
-        "displacement",
+        RACE_STARTED_AT.toString(),
+        scenario,
       ],
       { stdin: "ignore", stdout: "pipe", stderr: "pipe" },
     ),
   )
-  const waitFor = async (marker: string) => {
-    while (!existsSync(join(barrierDir, marker)) && Date.now() < deadline) await Bun.sleep(10)
-    if (existsSync(join(barrierDir, marker))) return
-    children.forEach((child) => child.kill())
-    throw new Error(`artifact quota displacement barrier failed (${marker})`)
+
+  await Promise.all(names.map((_, index) => waitForBarrier(barrierDir, `reserved-${index}`, deadline, children)))
+  if (scenario === "race") {
+    writeFileSync(join(barrierDir, "scan"), "scan\n", { flag: "wx" })
+    await Promise.all(
+      names.map(async (_, index) => {
+        while (
+          !existsSync(join(barrierDir, `scanned-${index}`)) &&
+          !existsSync(join(barrierDir, `done-${index}`)) &&
+          Date.now() < deadline
+        )
+          await Bun.sleep(5)
+        if (existsSync(join(barrierDir, `scanned-${index}`)) || existsSync(join(barrierDir, `done-${index}`))) return
+        children.forEach((child) => child.kill())
+        throw new Error(`artifact quota decision barrier failed (${index})`)
+      }),
+    )
+  }
+  if (scenario === "ordered") {
+    writeFileSync(join(barrierDir, "scan-0"), "scan\n", { flag: "wx" })
+    await waitForBarrier(barrierDir, "scanned-0", deadline, children)
+    for (const index of names
+      .slice(1)
+      .map((_, offset) => offset + 1)
+      .reverse()) {
+      writeFileSync(join(barrierDir, `scan-${index}`), "scan\n", { flag: "wx" })
+      await waitForBarrier(barrierDir, `done-${index}`, deadline, children)
+    }
   }
 
-  await Promise.all([waitFor("revalidated-0"), waitFor("revalidated-1")])
-  writeFileSync(join(barrierDir, "archive-0"), "archive\n", { flag: "wx" })
-  await waitFor("scanned-0")
-  writeFileSync(join(barrierDir, "archive-1"), "archive\n", { flag: "wx" })
-  await waitFor("done-1")
-  writeFileSync(join(barrierDir, "commit-0"), "commit\n", { flag: "wx" })
+  // 证伪屏障固定在“扫描+准入判定完成”之后、“final rename”之前。
+  expect(names.some((name) => existsSync(target(name)))).toBe(false)
+  expect(readFileSync(join(barrierDir, "reserved-0"), "utf8").trim()).toContain("reservations")
+  writeFileSync(join(barrierDir, "commit"), "commit\n", { flag: "wx" })
 
   const killTimer = setTimeout(() => children.forEach((child) => child.kill()), Math.max(1, deadline - Date.now()))
   const [codes, stdout, stderr] = await Promise.all([
@@ -172,246 +181,229 @@ async function runDisplacedHolderRace(names: [string, string], quota: ArtifactQu
     Promise.all(children.map((child) => new Response(child.stderr).text())),
   ])
   clearTimeout(killTimer)
+  rmSync(barrierDir, { recursive: true, force: true })
   if (codes.some((code) => code !== 0))
-    throw new Error(`artifact quota displacement child failed (${codes.join(", ")}): ${stderr.join(" | ")}`)
+    throw new Error(`artifact quota child failed (${codes.join(", ")}): ${stderr.join(" | ")}`)
   return stdout.map((output) => JSON.parse(output) as ChildFinalizeResult)
 }
 
-function expectSingleAdmission(results: ChildFinalizeResult[], names: [string, string]) {
-  const admitted = results.filter((entry) => entry.result.ok)
-  const refused = results.filter((entry) => !entry.result.ok)
-  expect(admitted).toHaveLength(1)
-  expect(refused).toHaveLength(1)
-  const failure = refused[0]!.result
-  if (failure.ok) throw new Error("unreachable")
-  expect(failure).toEqual({ ok: false, error: "disk", detail: LOCK_BUSY_DETAIL })
-  expect(names.map((name) => existsSync(target(name))).filter(Boolean)).toHaveLength(1)
-  expect(stagingResidue()).toEqual([])
+async function runLateLowerKeyFinalizers(names: [string, string], quota: ArtifactQuotaLimits) {
+  const barrierDir = mkdtempSync(join(projectDir, "artifact-quota-late-lower-"))
+  const helper = join(import.meta.dir, "artifact-quota-child.ts")
+  const deadline = Date.now() + 10_000
+  const spawn = (name: string, index: number) =>
+    Bun.spawn(
+      [
+        process.execPath,
+        helper,
+        projectDir,
+        RUN,
+        name,
+        "x",
+        barrierDir,
+        index.toString(),
+        JSON.stringify(quota),
+        deadline.toString(),
+        RACE_STARTED_AT.toString(),
+        "ordered",
+      ],
+      { stdin: "ignore", stdout: "pipe", stderr: "pipe" },
+    )
+  const greater = spawn(names[1], 1)
+  const children = [greater]
+  await waitForBarrier(barrierDir, "reserved-1", deadline, children)
+  writeFileSync(join(barrierDir, "scan-1"), "scan\n", { flag: "wx" })
+  await waitForBarrier(barrierDir, "scanned-1", deadline, children)
+
+  const lower = spawn(names[0], 0)
+  children.push(lower)
+  await waitForBarrier(barrierDir, "reserved-0", deadline, children)
+  writeFileSync(join(barrierDir, "scan-0"), "scan\n", { flag: "wx" })
+  await waitForBarrier(barrierDir, "scanned-0", deadline, children)
+  expect(names.some((name) => existsSync(target(name)))).toBe(false)
+  writeFileSync(join(barrierDir, "commit"), "commit\n", { flag: "wx" })
+
+  const killTimer = setTimeout(() => children.forEach((child) => child.kill()), Math.max(1, deadline - Date.now()))
+  const [codes, stdout, stderr] = await Promise.all([
+    Promise.all(children.map((child) => child.exited)),
+    Promise.all(children.map((child) => new Response(child.stdout).text())),
+    Promise.all(children.map((child) => new Response(child.stderr).text())),
+  ])
+  clearTimeout(killTimer)
+  rmSync(barrierDir, { recursive: true, force: true })
+  if (codes.some((code) => code !== 0))
+    throw new Error(`artifact quota late-lower child failed (${codes.join(", ")}): ${stderr.join(" | ")}`)
+  return stdout.map((output) => JSON.parse(output) as ChildFinalizeResult)
 }
 
-function expectNoDoubleAdmission(results: ChildFinalizeResult[], names: [string, string]) {
-  const admitted = results.filter((entry) => entry.result.ok)
-  const refused = results.filter((entry) => !entry.result.ok)
-  expect(admitted.length).toBeLessThanOrEqual(1)
-  refused.forEach((entry) => {
-    const failure = entry.result
-    if (failure.ok) throw new Error("unreachable")
-    expect(failure.error).toBe("disk")
-    expect([LOCK_BUSY_DETAIL, LOCK_OWNERSHIP_LOST_DETAIL]).toContain(failure.detail)
-  })
-  expect(names.map((name) => existsSync(target(name))).filter(Boolean)).toHaveLength(admitted.length)
+function expectMinimumOnly(results: ChildFinalizeResult[], names: string[]) {
+  expect(results.find((entry) => entry.name === names[0])?.result.ok).toBe(true)
+  results
+    .filter((entry) => entry.name !== names[0])
+    .forEach((entry) => expect(entry.result).toEqual({ ok: false, error: "over-limit", detail: YIELDED_DETAIL }))
+  expect(names.map((name) => existsSync(target(name))).filter(Boolean)).toHaveLength(1)
+  expect(reservations()).toEqual([])
   expect(stagingResidue()).toEqual([])
-  return admitted.length
 }
 
 describe("finalizeArtifactWithQuota", () => {
-  test("under both run and project limits admits before final rename", async () => {
+  test("under both run and project limits admits before final rename and removes its reservation", async () => {
     writeFileSync(target("existing.bin"), "1234")
     const result = await write("admitted.bin", "12345", { limits: limits() })
 
     expect(result.ok).toBe(true)
     expect(readFileSync(target("admitted.bin"), "utf8")).toBe("12345")
+    expect(reservations()).toEqual([])
     expect(stagingResidue()).toEqual([])
   })
 
-  test("run byte and count limits fail closed with no final file or staging residue", async () => {
+  test("run byte and count limits fail closed with no final file, reservation, or staging residue", async () => {
     writeFileSync(target("existing.bin"), "12345678")
     const bytes = await write("run-bytes.bin", "123", { limits: limits() })
     expect(bytes).toMatchObject({ ok: false, error: "over-limit" })
     expect(String((bytes as { detail?: string }).detail)).toContain("run bytes")
-    expect(existsSync(target("run-bytes.bin"))).toBe(false)
 
     const count = await write("run-count.bin", "1", { limits: limits({ runMaxBytes: 100, runMaxCount: 1 }) })
     expect(count).toMatchObject({ ok: false, error: "over-limit" })
     expect(String((count as { detail?: string }).detail)).toContain("run artifact count")
+    expect(existsSync(target("run-bytes.bin"))).toBe(false)
     expect(existsSync(target("run-count.bin"))).toBe(false)
+    expect(reservations()).toEqual([])
     expect(stagingResidue()).toEqual([])
   })
 
-  test("project limit includes committed bytes from other runs", async () => {
+  test("project limit includes committed bytes and reservations from other runs", async () => {
     mkdirSync(artifactsDir(OTHER_RUN), { recursive: true })
     writeFileSync(join(artifactsDir(OTHER_RUN), "other.bin"), "12345678")
-    const result = await write("project.bin", "123", {
+    seedReservation({ declaredBytes: 1 }, OTHER_RUN)
+    const result = await write("project.bin", "12", {
       limits: limits({ runMaxBytes: 100, projectMaxBytes: 10 }),
+      now: () => new Date(RACE_STARTED_AT + 1_000),
+      pidAlive: () => true,
     })
 
-    expect(result).toMatchObject({ ok: false, error: "over-limit" })
-    expect(String((result as { detail?: string }).detail)).toContain("project bytes")
+    expect(result).toEqual({ ok: false, error: "over-limit", detail: YIELDED_DETAIL })
     expect(existsSync(target("project.bin"))).toBe(false)
+    expect(reservations(OTHER_RUN)).toHaveLength(1)
+    expect(reservations()).toEqual([])
     expect(stagingResidue()).toEqual([])
   })
 
-  test("two Bun processes racing for the final byte admit exactly one", async () => {
+  test(
+    "two Bun processes racing for the final byte admit exactly the minimum key",
+    async () => {
+      writeFileSync(target("existing.bin"), "1234")
+      for (let round = 0; round < RACE_ROUNDS; round++) {
+        const names = [`racer-a-${round}.bin`, `racer-b-${round}.bin`]
+        const results = await runConcurrentFinalizers(names, limits({ runMaxBytes: 5, projectMaxBytes: 5 }), "race")
+
+        expectMinimumOnly(results, names)
+        names.forEach((name) => rmSync(target(name), { force: true }))
+      }
+    },
+    RACE_TEST_TIMEOUT,
+  )
+
+  test(
+    "three-process interleaving admits no pair and the minimum key progresses",
+    async () => {
+      writeFileSync(target("existing.bin"), "1234")
+      for (let round = 0; round < RACE_ROUNDS; round++) {
+        const names = [`triple-a-${round}.bin`, `triple-b-${round}.bin`, `triple-c-${round}.bin`]
+        const results = await runConcurrentFinalizers(names, limits({ runMaxBytes: 5, projectMaxBytes: 5 }), "ordered")
+
+        expectMinimumOnly(results, names)
+        names.forEach((name) => rmSync(target(name), { force: true }))
+      }
+    },
+    RACE_TEST_TIMEOUT,
+  )
+
+  test("a lower key published after a greater key's decision cannot double-admit", async () => {
     writeFileSync(target("existing.bin"), "1234")
-    for (let round = 0; round < RACE_ROUNDS; round++) {
-      const names: [string, string] = [`racer-a-${round}.bin`, `racer-b-${round}.bin`]
-      const results = await runConcurrentFinalizers(names, limits({ runMaxBytes: 5, projectMaxBytes: 5 }))
+    const names: [string, string] = ["late-lower.bin", "already-decided.bin"]
+    const results = await runLateLowerKeyFinalizers(names, limits({ runMaxBytes: 5, projectMaxBytes: 5 }))
 
-      expectSingleAdmission(results, names)
-      names.forEach((name) => rmSync(target(name), { force: true }))
-    }
-  }, RACE_TEST_TIMEOUT)
-
-  test("a lock older than fifteen minutes stays busy while its local PID is alive", async () => {
-    const lock = writeProjectLock({ startedAt: "2026-07-20T12:00:00.000Z" })
-    const result = await write("live-holder.bin", "x", {
-      limits: limits(),
-      now: () => new Date("2026-07-20T12:16:00.000Z"),
+    expect(results.find((entry) => entry.name === names[1])?.result.ok).toBe(true)
+    expect(results.find((entry) => entry.name === names[0])?.result).toEqual({
+      ok: false,
+      error: "over-limit",
+      detail: "artifact quota exceeded (run bytes: next 6, limit 5)",
     })
-
-    expect(result).toEqual({ ok: false, error: "disk", detail: LOCK_BUSY_DETAIL })
-    expect(existsSync(lock)).toBe(true)
-    expect(existsSync(target("live-holder.bin"))).toBe(false)
+    expect(names.map((name) => existsSync(target(name)))).toEqual([false, true])
+    expect(reservations()).toEqual([])
     expect(stagingResidue()).toEqual([])
   })
 
-  test("foreign-host, malformed, and indeterminate locks fail closed instead of being reclaimed by age", async () => {
-    const lock = writeProjectLock({ hostId: `${hostname()}-foreign`, startedAt: "2020-01-01T00:00:00.000Z" })
-    const foreign = await write("foreign-holder.bin", "x", { limits: limits(), pidAlive: () => false })
-    expect(foreign).toEqual({ ok: false, error: "disk", detail: LOCK_BUSY_DETAIL })
+  test("a crashed reservation stays conservatively charged until same-host PID death is conclusive", async () => {
+    writeFileSync(target("existing.bin"), "1234")
+    writeFileSync(uniquePartPath(target("orphan.bin")), "orphan staging is excluded")
+    const owner = Bun.spawn([process.execPath, "-e", "setInterval(() => {}, 1000)"], {
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "ignore",
+    })
+    const stale = seedReservation({ pid: owner.pid })
 
-    writeFileSync(lock, "{ malformed lock")
-    const malformed = await write("malformed-holder.bin", "x", { limits: limits(), pidAlive: () => false })
-    expect(malformed).toEqual({ ok: false, error: "disk", detail: LOCK_BUSY_DETAIL })
+    const live = await write("live-owner.bin", "x", {
+      limits: limits({ runMaxBytes: 5, projectMaxBytes: 5 }),
+      now: () => new Date(RACE_STARTED_AT + 1_000),
+    })
+    expect(live).toEqual({ ok: false, error: "over-limit", detail: YIELDED_DETAIL })
+    expect(existsSync(stale)).toBe(true)
 
-    writeFileSync(lock, JSON.stringify({
-      v: 1,
-      pid: 999_999,
-      hostId: hostname(),
-      nonce: "indeterminate-local-lock",
-      startedAt: "2020-01-01T00:00:00.000Z",
-    }))
-    const indeterminate = await write("indeterminate-holder.bin", "x", { limits: limits(), pidAlive: () => undefined })
-    expect(indeterminate).toEqual({ ok: false, error: "disk", detail: LOCK_BUSY_DETAIL })
-    expect(stagingResidue()).toEqual([])
+    owner.kill()
+    await owner.exited
+    const indeterminate = await write("unknown-owner.bin", "x", {
+      limits: limits({ runMaxBytes: 5, projectMaxBytes: 5 }),
+      now: () => new Date(RACE_STARTED_AT + 2_000),
+      pidAlive: () => undefined,
+    })
+    expect(indeterminate).toEqual({ ok: false, error: "over-limit", detail: YIELDED_DETAIL })
+    expect(existsSync(stale)).toBe(true)
+
+    const cleaned = await write("dead-owner.bin", "x", {
+      limits: limits({ runMaxBytes: 5, projectMaxBytes: 5 }),
+      now: () => new Date(RACE_STARTED_AT + 3_000),
+    })
+    expect(cleaned.ok).toBe(true)
+    expect(existsSync(stale)).toBe(false)
+    expect(existsSync(target("dead-owner.bin"))).toBe(true)
+    expect(reservations()).toEqual([])
   })
 
-  test("crashed reservation lock is reclaimed and orphan staging bytes do not leak quota", async () => {
-    const orphanTarget = target("orphan.bin")
-    writeFileSync(uniquePartPath(orphanTarget), "stale bytes larger than the whole quota")
-    const lock = writeProjectLock({ pid: 999_999, nonce: "crashed-reservation" })
-    expect(lock).toBe(join(projectDir, ".alpha", ARTIFACT_QUOTA_LOCK_FILE))
-
-    const result = await write("recovered.bin", "x", {
-      limits: limits({ runMaxBytes: 1, projectMaxBytes: 1 }),
-      now: () => new Date("2026-07-20T12:00:01.000Z"),
+  test("foreign-host reservations are never cleaned even when their PID probe says dead", async () => {
+    writeFileSync(target("existing.bin"), "1234")
+    const foreign = seedReservation({ pid: 999_999, hostId: `${hostname()}-foreign` })
+    const result = await write("foreign-owner.bin", "x", {
+      limits: limits({ runMaxBytes: 5, projectMaxBytes: 5 }),
+      now: () => new Date(RACE_STARTED_AT + 1_000),
       pidAlive: () => false,
     })
 
-    expect(result.ok).toBe(true)
-    expect(existsSync(target("recovered.bin"))).toBe(true)
-    expect(existsSync(lock)).toBe(false)
-    expect(readdirSync(join(projectDir, ".alpha", "artifact-quota-stale"))).toHaveLength(1)
+    expect(result).toEqual({ ok: false, error: "over-limit", detail: YIELDED_DETAIL })
+    expect(existsSync(foreign)).toBe(true)
+    expect(existsSync(target("foreign-owner.bin"))).toBe(false)
   })
 
-  test("a stale candidate replaced before archive is never mistaken for the new live lock", async () => {
-    const deadPid = 999_999
-    const lock = writeProjectLock({ pid: deadPid, nonce: "dead-before-revalidate" })
-    const displaced = `${lock}.released`
-    const replacementNonce = "replacement-live-lock"
-    const result = await write("identity-race.bin", "x", {
-      limits: limits(),
-      pidAlive: (pid) => (pid === deadPid ? false : true),
-      testHooks: {
-        beforeStaleLockRevalidate() {
-          renameSync(lock, displaced)
-          writeProjectLock({ nonce: replacementNonce })
-        },
-      },
-    })
+  test("malformed reservations fail closed and are not mutated", async () => {
+    const dir = artifactQuotaReservationsPath(projectDir, RUN)
+    if (!dir) throw new Error("test setup: reservation path unavailable")
+    mkdirSync(dir, { recursive: true })
+    const malformed = join(dir, "0000000000000000-00000000-0000-4000-8000-000000000999.json")
+    writeFileSync(malformed, "{ malformed reservation")
+    const result = await write("malformed.bin", "x", { limits: limits() })
 
-    expect(result).toEqual({ ok: false, error: "disk", detail: LOCK_BUSY_DETAIL })
-    expect(JSON.parse(readFileSync(lock, "utf8"))).toMatchObject({ pid: process.pid, nonce: replacementNonce })
-    expect(existsSync(displaced)).toBe(true)
-    expect(existsSync(join(projectDir, ".alpha", "artifact-quota-stale"))).toBe(false)
-    expect(existsSync(target("identity-race.bin"))).toBe(false)
+    expect(result).toEqual({
+      ok: false,
+      error: "disk",
+      detail: "artifact quota admission unavailable (committed usage unavailable)",
+    })
+    expect(readFileSync(malformed, "utf8")).toBe("{ malformed reservation")
+    expect(existsSync(target("malformed.bin"))).toBe(false)
+    expect(reservations()).toEqual([malformed.split("/").at(-1)!])
     expect(stagingResidue()).toEqual([])
   })
-
-  test("a reclaimer that displaces a new holder converges without restoring a live-PID orphan", async () => {
-    const deadPid = 999_999
-    const lock = writeProjectLock({ pid: deadPid, nonce: "dead-before-displacement" })
-    const names: [string, string] = ["displaced-holder.bin", "late-reclaimer.bin"]
-    const results = await runDisplacedHolderRace(names, limits(), deadPid)
-
-    expect(results[0]!.result).toEqual({ ok: false, error: "disk", detail: LOCK_OWNERSHIP_LOST_DETAIL })
-    expect(results[1]!.result).toEqual({ ok: false, error: "disk", detail: LOCK_BUSY_DETAIL })
-    expect(names.some((name) => existsSync(target(name)))).toBe(false)
-    expect(stagingResidue()).toEqual([])
-    expect(existsSync(lock)).toBe(false)
-    const staleDir = join(projectDir, ".alpha", "artifact-quota-stale")
-    const stale = readdirSync(staleDir)
-    expect(stale).toHaveLength(1)
-    expect(JSON.parse(readFileSync(join(staleDir, stale[0]!), "utf8"))).toMatchObject({
-      pid: deadPid,
-      nonce: "dead-before-displacement",
-    })
-
-    const retry = await write("after-displacement.bin", "x", { limits: limits() })
-    expect(retry.ok).toBe(true)
-    expect(existsSync(lock)).toBe(false)
-    expect(readdirSync(staleDir)).toEqual(stale)
-  })
-
-  test("a displaced-copy unlink failure is explicit and does not masquerade as a busy primary", async () => {
-    const deadPid = 999_999
-    const lock = writeProjectLock({ pid: deadPid, nonce: "dead-before-cleanup-failure" })
-    const displaced = `${lock}.released`
-    const staleDir = join(projectDir, ".alpha", "artifact-quota-stale")
-    const result = await (async () => {
-      try {
-        return await write("cleanup-failure.bin", "x", {
-          limits: limits(),
-          pidAlive: (pid) => (pid === deadPid ? false : true),
-          testHooks: {
-            afterStaleLockRevalidate() {
-              renameSync(lock, displaced)
-              writeProjectLock({ nonce: "displaced-live-lock" })
-            },
-            beforeDisplacedLockCleanup(staleFile) {
-              chmodSync(dirname(staleFile), 0o555)
-            },
-          },
-        })
-      } finally {
-        chmodSync(staleDir, 0o755)
-      }
-    })()
-
-    expect(result).toEqual({ ok: false, error: "disk", detail: DISPLACED_LOCK_CLEANUP_FAILED_DETAIL })
-    expect(existsSync(lock)).toBe(false)
-    const stale = readdirSync(staleDir)
-    expect(stale).toHaveLength(1)
-    expect(JSON.parse(readFileSync(join(staleDir, stale[0]!), "utf8"))).toMatchObject({
-      pid: process.pid,
-      nonce: "displaced-live-lock",
-    })
-
-    const retry = await write("after-cleanup-failure.bin", "x", { limits: limits() })
-    expect(retry.ok).toBe(true)
-    expect(existsSync(lock)).toBe(false)
-  })
-
-  test("two Bun processes reclaiming one dead lock never double-admit and converge on retry", async () => {
-    writeFileSync(target("existing.bin"), "1234")
-    const deadPid = 999_999
-    for (let round = 0; round < RACE_ROUNDS; round++) {
-      const lock = writeProjectLock({ pid: deadPid, nonce: `dead-before-race-${round}` })
-      const names: [string, string] = [`stale-racer-a-${round}.bin`, `stale-racer-b-${round}.bin`]
-      const results = await runConcurrentFinalizers(names, limits({ runMaxBytes: 5, projectMaxBytes: 5 }), deadPid)
-
-      const admitted = expectNoDoubleAdmission(results, names)
-      expect(existsSync(lock)).toBe(false)
-      expect(readdirSync(join(projectDir, ".alpha", "artifact-quota-stale"))).toHaveLength(round + 1)
-      if (admitted === 0) {
-        const retryName = `stale-racer-retry-${round}.bin`
-        const retry = await write(retryName, "x", { limits: limits({ runMaxBytes: 5, projectMaxBytes: 5 }) })
-        expect(retry.ok).toBe(true)
-        rmSync(target(retryName), { force: true })
-      }
-      names.forEach((name) => rmSync(target(name), { force: true }))
-    }
-  }, RACE_TEST_TIMEOUT)
 
   test("over-limit error is visible but omits paths and hostile metadata", async () => {
     writeFileSync(target("existing.bin"), "1234567890")
@@ -422,6 +414,7 @@ describe("finalizeArtifactWithQuota", () => {
     expect(result.detail).not.toContain(projectDir)
     expect(result.detail).not.toContain(SECRET)
     expect(result.detail.toLowerCase()).not.toContain("bearer")
+    expect(reservations()).toEqual([])
     expect(stagingResidue()).toEqual([])
   })
 })
