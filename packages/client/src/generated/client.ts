@@ -714,7 +714,7 @@ export function make(options: ClientOptions) {
               agent: input["agent"],
             },
             successStatus: 200,
-            declaredStatuses: [404, 400, 401],
+            declaredStatuses: [409, 404, 400, 401],
             empty: false,
           },
           requestOptions,
@@ -742,17 +742,24 @@ export function make(options: ClientOptions) {
           requestOptions,
         ).then((value) => value.data),
       reply: (input: PermissionsReplyInput, requestOptions?: RequestOptions) =>
-        request<PermissionsReplyOutput>(
+        request<{ readonly data: PermissionsReplyOutput }>(
           {
             method: "POST",
             path: `/api/session/${encodeURIComponent(input.sessionID)}/permission/${encodeURIComponent(input.requestID)}/reply`,
-            body: { reply: input["reply"], message: input["message"] },
-            successStatus: 204,
-            declaredStatuses: [404, 400, 401],
-            empty: true,
+            body: {
+              requestFingerprint: input["requestFingerprint"],
+              decisionID: input["decisionID"],
+              message: input["message"],
+              decision: input["decision"],
+              grantScope: input["grantScope"],
+              grantExpiresAt: input["grantExpiresAt"],
+            },
+            successStatus: 200,
+            declaredStatuses: [409, 404, 400, 401],
+            empty: false,
           },
           requestOptions,
-        ),
+        ).then((value) => value.data),
     },
     files: {
       list: (input?: FilesListInput, requestOptions?: RequestOptions) =>

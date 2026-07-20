@@ -4,11 +4,15 @@ import { PermissionSaved } from "@opencode-ai/core/permission/saved"
 import { Effect } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
-import { PermissionNotFoundError, SessionNotFoundError } from "@opencode-ai/protocol/errors"
+import { ConflictError, PermissionNotFoundError, SessionNotFoundError } from "@opencode-ai/protocol/errors"
 import { response } from "../location"
 
 function missingRequest(id: PermissionV2.ID) {
   return new PermissionNotFoundError({ requestID: id, message: `Permission request not found: ${id}` })
+}
+
+function conflictingRequest(id: PermissionV2.ID) {
+  return new ConflictError({ resource: id, message: `Permission request conflicts with the immutable request: ${id}` })
 }
 
 export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", (handlers) =>
@@ -37,6 +41,7 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
                 agent: ctx.payload.agent,
               })
               .pipe(
+                Effect.catchTag("PermissionV2.ConflictError", (error) => conflictingRequest(error.requestID)),
                 Effect.catchTag(
                   "Session.NotFoundError",
                   (error) =>
@@ -68,12 +73,14 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
         "session.permission.reply",
         Effect.fn(function* (ctx) {
           const permission = yield* PermissionV2.Service
-          const request = yield* permission.get(ctx.params.requestID)
-          if (!request || request.sessionID !== ctx.params.sessionID) return yield* missingRequest(ctx.params.requestID)
-          yield* permission
-            .reply({ requestID: ctx.params.requestID, reply: ctx.payload.reply, message: ctx.payload.message })
-            .pipe(Effect.catchTag("PermissionV2.NotFoundError", () => missingRequest(ctx.params.requestID)))
-          return HttpApiSchema.NoContent.make()
+          return {
+            data: yield* permission
+              .reply({ requestID: ctx.params.requestID, sessionID: ctx.params.sessionID, command: ctx.payload })
+              .pipe(
+                Effect.catchTag("PermissionV2.NotFoundError", () => missingRequest(ctx.params.requestID)),
+                Effect.catchTag("PermissionV2.ConflictError", () => conflictingRequest(ctx.params.requestID)),
+              ),
+          }
         }),
       )
       .handle(

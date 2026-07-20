@@ -6,7 +6,7 @@ import { Project } from "@opencode-ai/schema/project"
 import { Session } from "@opencode-ai/schema/session"
 import { Context, Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
-import { PermissionNotFoundError, SessionNotFoundError } from "../errors"
+import { ConflictError, PermissionNotFoundError, SessionNotFoundError } from "../errors"
 import { LocationQuery, locationQueryOpenApi } from "./location"
 
 export const makePermissionGroup = <
@@ -72,9 +72,17 @@ export const makePermissionGroup = <
           agent: Agent.ID.pipe(Schema.optional),
         }),
         success: Schema.Struct({
-          data: Schema.Struct({ id: Permission.ID, effect: Permission.Effect }),
+          data: Schema.Union([
+            Schema.Struct({
+              status: Schema.Literal("evaluated"),
+              id: Permission.ID,
+              effect: Schema.Literals(["allow", "deny"]),
+            }),
+            Schema.Struct({ status: Schema.Literal("pending"), request: Permission.Request }),
+            Schema.Struct({ status: Schema.Literal("decided"), receipt: Permission.DecisionReceipt }),
+          ]),
         }),
-        error: SessionNotFoundError,
+        error: [ConflictError, SessionNotFoundError],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(
@@ -118,19 +126,16 @@ export const makePermissionGroup = <
     .add(
       HttpApiEndpoint.post("session.permission.reply", "/api/session/:sessionID/permission/:requestID/reply", {
         params: { sessionID: Session.ID, requestID: Permission.ID },
-        payload: Schema.Struct({
-          reply: Permission.Reply,
-          message: Schema.String.pipe(Schema.optional),
-        }),
-        success: HttpApiSchema.NoContent,
-        error: [SessionNotFoundError, PermissionNotFoundError],
+        payload: Permission.DecisionCommand,
+        success: Schema.Struct({ data: Permission.DecisionReceipt }),
+        error: [ConflictError, SessionNotFoundError, PermissionNotFoundError],
       })
         .middleware(sessionLocationMiddleware)
         .annotateMerge(
           OpenApi.annotations({
             identifier: "v2.session.permission.reply",
             summary: "Reply to pending permission request",
-            description: "Respond to a pending permission request owned by a session.",
+            description: "Atomically decide a permission request or return its exact persisted decision receipt.",
           }),
         ),
     )
