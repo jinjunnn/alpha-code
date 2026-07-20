@@ -14,9 +14,10 @@ import { collectCasGarbage, defaultCasGcEnvRoots } from "./ext-cas-gc"
 let base: string
 let envRoot: string
 beforeEach(() => {
-  base = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-casgc-"))
+  base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "alpha-casgc-")))
   envRoot = path.join(base, "env", "prod")
   fs.mkdirSync(envRoot, { recursive: true })
+  fs.mkdirSync(path.join(base, "cas"), { recursive: true })
 })
 afterEach(() => {
   fs.rmSync(base, { recursive: true, force: true })
@@ -361,14 +362,42 @@ describe("collectCasGarbage — user data is untouchable", () => {
     expect(fs.existsSync(misfiled)).toBeTrue()
     expect(r.warnings.some((w) => w.includes(misfiled))).toBeTrue()
   })
+
+  test("三环境 journal 同轮 mark，共享 CAS 只 sweep 不可达 blob且不删 mutable roots", () => {
+    const roots = defaultCasGcEnvRoots(base)
+    roots.forEach((root) => fs.mkdirSync(root, { recursive: true }))
+    const referenced = roots.map((root, index) => {
+      const digest = putOldBlob(`reachable-${index}`)
+      writeJournal(root, `tx-env-${index}-00000001`, [digest])
+      return digest
+    })
+    const victim = putOldBlob("unreachable")
+    const report = collectCasGarbage(base, { envRoots: roots, graceMs: 0 })
+    expect(report.ok).toBeTrue()
+    for (const digest of referenced) expect(hasCasBlob(base, digest)).toBeTrue()
+    expect(hasCasBlob(base, victim)).toBeFalse()
+    roots.forEach((root) => expect(fs.existsSync(root)).toBeTrue())
+  })
+
+  test("GC root 被换链或身份未知时整轮拒绝且零 sweep", () => {
+    const victim = putOldBlob("identity-protected")
+    const elsewhere = path.join(base, "elsewhere")
+    fs.mkdirSync(elsewhere)
+    fs.rmSync(envRoot, { recursive: true })
+    fs.symlinkSync(elsewhere, envRoot)
+    const report = collectCasGarbage(base, { envRoots: [envRoot], graceMs: 0 })
+    expect(report.ok).toBeFalse()
+    expect(report.reason).toContain("identity")
+    expect(hasCasBlob(base, victim)).toBeTrue()
+  })
 })
 
 describe("defaultCasGcEnvRoots", () => {
-  test("covers dev(base) + prod + beta per REQ-098 domain split", () => {
-    expect(defaultCasGcEnvRoots("/home/u/.alpha")).toEqual([
-      "/home/u/.alpha",
-      path.join("/home/u/.alpha", "env", "prod"),
-      path.join("/home/u/.alpha", "env", "beta"),
+  test("covers dev + prod + beta siblings per REQ-098 domain split", () => {
+    expect(defaultCasGcEnvRoots("/state")).toEqual([
+      path.join("/state", "env", "dev"),
+      path.join("/state", "env", "prod"),
+      path.join("/state", "env", "beta"),
     ])
   })
 })

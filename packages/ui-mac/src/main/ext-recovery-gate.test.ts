@@ -51,6 +51,28 @@ const fullOpts = (): RecoverOptions => ({
 const gateWith = (opts: () => RecoverOptions): RecoveryGate => makeRecoveryGate(() => opts())
 
 describe("withRecoveredWrite — 准入判据", () => {
+  test("root canonical 身份无法复验 → 恢复与 write body 均不执行", async () => {
+    let recoveryOptsCalls = 0
+    let bodyCalls = 0
+    const gate = makeRecoveryGate(
+      () => {
+        recoveryOptsCalls++
+        return {}
+      },
+      undefined,
+      () => {
+        throw new Error("identity drift")
+      },
+    )
+    const result = await gate.withRecoveredWrite(root, async () => {
+      bodyCalls++
+      return { ok: true as const }
+    })
+    expect(result).toEqual({ ok: false, reason: "root identity cannot be confirmed — operation refused (fail closed)" })
+    expect(recoveryOptsCalls).toBe(0)
+    expect(bodyCalls).toBe(0)
+  })
+
   test("非终态 journal → 先收敛再执行 op(op 看到的是全终态账本)", async () => {
     writeUninstallJournal("tx-open-1")
     const gate = gateWith(fullOpts)

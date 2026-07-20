@@ -1,5 +1,8 @@
-import { describe, expect, test } from "bun:test"
-import { isGlobalAlphaDir, mergeProjectConfig } from "./project-config"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { mergeProjectConfig, projectDirectoryIdentity, requireAlphaGlobalRoot } from "./project-config"
 
 const j = (o: unknown) => JSON.stringify(o)
 
@@ -89,23 +92,55 @@ describe("mergeProjectConfig — trust gate on executable mcp", () => {
   })
 })
 
-describe("isGlobalAlphaDir — home 目录实例不走项目级通道(REQ-060 真机发现)", () => {
-  test("home dir: <dir>/.alpha == 全局 root → true", () => {
-    expect(isGlobalAlphaDir("/Users/x", "/Users/x/.alpha")).toBe(true)
+describe("project/root identity fail-closed", () => {
+  let root = ""
+  let home = ""
+  let project = ""
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "alpha-ext-identity-"))
+    home = join(root, "home")
+    project = join(root, "project")
+    mkdirSync(home)
+    mkdirSync(project)
   })
 
-  test("普通项目目录 → false", () => {
-    expect(isGlobalAlphaDir("/Users/x/proj", "/Users/x/.alpha")).toBe(false)
+  afterEach(() => rmSync(root, { recursive: true, force: true }))
+
+  test("home、home symlink alias 拒绝；普通项目放行；身份不明拒绝", () => {
+    const alias = join(root, "home-alias")
+    symlinkSync(home, alias)
+    expect(projectDirectoryIdentity(home, home)).toBe("retired-home")
+    expect(projectDirectoryIdentity(alias, home)).toBe("retired-home")
+    expect(projectDirectoryIdentity(project, home)).toBe("project")
+    expect(projectDirectoryIdentity(join(root, "missing"), home)).toBe("unknown")
   })
 
-  test("尾斜线/非规范路径容忍(resolve 归一)", () => {
-    expect(isGlobalAlphaDir("/Users/x/", "/Users/x/.alpha/")).toBe(true)
-    expect(isGlobalAlphaDir("/Users/x/proj/..", "/Users/x/.alpha")).toBe(true)
+  test("ext 初始化 root 缺失、相对、退休根关系与 symlink alias 一律拒绝", () => {
+    const retired = join(home, ".alpha")
+    mkdirSync(retired)
+    const alias = join(root, "retired-alias")
+    symlinkSync(retired, alias)
+    expect(() => requireAlphaGlobalRoot(undefined, home)).toThrow()
+    expect(() => requireAlphaGlobalRoot("relative/root", home)).toThrow()
+    for (const candidate of [home, retired, join(retired, "child"), alias])
+      expect(() => requireAlphaGlobalRoot(candidate, home)).toThrow()
   })
 
-  test("测试覆盖的全局 root(ALPHA_GLOBAL_DIR 场景):项目目录恰含 .alpha 也不误判", () => {
-    expect(isGlobalAlphaDir("/tmp/proj", "/custom/alpha-global")).toBe(false)
-    expect(isGlobalAlphaDir("/custom", "/custom/alpha-global")).toBe(false)
-    expect(isGlobalAlphaDir("/custom/alpha-global/..", "/custom/alpha-global")).toBe(false)
+  test("main 派生的 canonical 新根通过；非 canonical safe alias 也拒绝", () => {
+    const state = join(root, "state", "env", "dev")
+    mkdirSync(state, { recursive: true })
+    expect(requireAlphaGlobalRoot(realpathSync(state), home)).toBe(realpathSync(state))
+    const alias = join(root, "state-alias")
+    symlinkSync(state, alias)
+    expect(() => requireAlphaGlobalRoot(alias, home)).toThrow()
+  })
+
+  test("plugin 将三态 identity gate 接到 config、consent、fan-out 与 alpha_register", () => {
+    const source = readFileSync(join(import.meta.dir, "plugin.ts"), "utf8")
+    expect(source).toContain("if (projectAllowed(input.directory))")
+    expect(source).toContain('if (projectDirectoryIdentity(dir) !== "project") return false')
+    expect(source).toContain("const trusted = projectAllowed(input.directory) && readProjectExtensionsConsent(input.directory)")
+    expect(source).toContain("if (!projectAllowed(ctx.directory))")
   })
 })

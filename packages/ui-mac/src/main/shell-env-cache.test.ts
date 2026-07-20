@@ -46,6 +46,7 @@ describe("shell env cache", () => {
       PATH: "/opt/homebrew/bin:/usr/bin",
       DEEPSEEK_API_KEY: "sk-user-real",
       ALPHA_GLOBAL_DIR: "/tmp/claude-501/dead-session/m1-alpha-home",
+      ALPHA_ENV_BASE_DIR: "/tmp/claude-501/dead-session/state-base",
       OPENCODE_CONFIG_DIR: "/tmp/claude-501/dead-session/m1-legacy",
       ALPHA_OPENCODE_HOME: "/tmp/claude-501/dead-session/m1-opencode-home",
       ALPHA_MIGRATE_ENABLE: "1",
@@ -66,9 +67,9 @@ describe("shell env cache", () => {
   })
 
   test("sanitizeCachedShellEnv 纯函数:stripped 列表如实、干净输入原样返回(不复制)", () => {
-    const dirty = sanitizeCachedShellEnv({ A: "1", ALPHA_CDP: "1", OPENCODE_CONFIG_DIR: "/x" })
+    const dirty = sanitizeCachedShellEnv({ A: "1", ALPHA_CDP: "1", ALPHA_ENV_BASE_DIR: "/state", OPENCODE_CONFIG_DIR: "/x" })
     expect(dirty.env).toEqual({ A: "1" })
-    expect(dirty.stripped.sort()).toEqual(["ALPHA_CDP", "OPENCODE_CONFIG_DIR"])
+    expect(dirty.stripped.sort()).toEqual(["ALPHA_CDP", "ALPHA_ENV_BASE_DIR", "OPENCODE_CONFIG_DIR"])
     const clean = { PATH: "/usr/bin", MY_KEY: "v" }
     const r = sanitizeCachedShellEnv(clean)
     expect(r.env).toBe(clean)

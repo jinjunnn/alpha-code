@@ -1,6 +1,6 @@
 // Unit tests for the skill/agent installer (REQ-018 T2 rework). Rejection paths (name/asset-key
 // guards) return before disk I/O. Accept paths are now fully testable off-device: the alpha truth
-// root and engine bridge root honor ALPHA_GLOBAL_DIR / ALPHA_OPENCODE_HOME env overrides, so real
+// root and engine bridge root honor ALPHA_GLOBAL_DIR / ALPHA_OPENCODE_HOME test inputs, so real
 // writes land in throwaway temp dirs — we assert truth files, bridge symlinks AND receipts.
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
@@ -20,9 +20,10 @@ const prevAlpha = process.env.ALPHA_GLOBAL_DIR
 const prevHome = process.env.ALPHA_OPENCODE_HOME
 
 beforeEach(() => {
-  base = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-installer-"))
-  alphaDir = path.join(base, ".alpha")
+  base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "alpha-installer-")))
+  alphaDir = path.join(base, "alpha-code-state", "env", "dev")
   opencodeDir = path.join(base, ".opencode")
+  fs.mkdirSync(alphaDir, { recursive: true })
   process.env.ALPHA_GLOBAL_DIR = alphaDir
   process.env.ALPHA_OPENCODE_HOME = opencodeDir
 })
@@ -39,7 +40,7 @@ describe("writeSkill / writeAgent — name validation blocks traversal (no disk 
     "writeSkill rejects unsafe name %p",
     (name) => {
       expect(writeSkill(name, "d", "b")).toEqual({ ok: false, reason: "invalid skill name" })
-      expect(fs.existsSync(alphaDir)).toBe(false)
+      expect(fs.existsSync(path.join(alphaDir, "skills"))).toBe(false)
     },
   )
 
@@ -49,7 +50,7 @@ describe("writeSkill / writeAgent — name validation blocks traversal (no disk 
 })
 
 describe("writeSkill — global scope writes truth + bridge + receipt", () => {
-  test("SKILL.md lands in ~/.alpha/skills (T3: engine sees it via skills.paths, no .opencode bridge)", () => {
+  test("SKILL.md lands in current-environment skills (engine sees it via skills.paths)", () => {
     const r = writeSkill("my-skill", "does things", "# body")
     expect(r.ok).toBe(true)
     const truth = path.join(alphaDir, "skills", "my-skill", "SKILL.md")
@@ -72,7 +73,7 @@ describe("writeSkill — global scope writes truth + bridge + receipt", () => {
 })
 
 describe("writeAgent — global scope", () => {
-  test("T3b:agent md 落 ~/.alpha/agents + alpha.jsonc 条目;零 .opencode 桥", () => {
+  test("T3b:agent md 落当前环境 agents + alpha.jsonc 条目;零 .opencode 桥", () => {
     const r = writeAgent("helper", "---\ndescription: h\nmode: subagent\n---\nsystem")
     expect(r.ok).toBe(true)
     expect(fs.readFileSync(path.join(alphaDir, "agents", "helper.md"), "utf8")).toContain("system")
@@ -208,7 +209,7 @@ describe("collectBuiltinAgentPayload — #361 随包 agent 载荷收集(只读;C
     expect(r.files[0]!.path).toBe("code-reviewer.md")
     const bundled = fs.readFileSync(path.join(resourcesRoot(), "agents", "code-reviewer.md"))
     expect(r.files[0]!.data.equals(bundled)).toBe(true)
-    expect(fs.existsSync(alphaDir)).toBe(false) // 收集不落任何安装副作用
+    expect(fs.readdirSync(alphaDir)).toEqual([]) // 收集不落任何安装副作用
   })
 })
 

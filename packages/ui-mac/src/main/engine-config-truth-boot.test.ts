@@ -4,7 +4,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { reconcileEngineConfigTruth } from "./engine-config-truth-boot"
 
-// Reconcile: legacy ~/.opencode + XDG provider → ~/.alpha/alpha.jsonc, skills.paths injection (T3),
+// Reconcile: legacy ~/.opencode + XDG provider → current-environment alpha.jsonc, skills.paths injection (T3),
 // and ~/.opencode cleanup (T3: unbridge + delete migrated config + junk-only dir removal).
 // Temp-dir isolated via the same env knobs ext-config uses. Receipts gate ownership.
 let tmp = ""
@@ -17,10 +17,11 @@ const KEYS = ["ALPHA_GLOBAL_DIR", "ALPHA_OPENCODE_HOME", "OPENCODE_CONFIG_DIR", 
 beforeEach(() => {
   for (const k of KEYS) saved[k] = process.env[k]
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-reconcile-"))
-  alphaTmp = path.join(tmp, "alpha")
+  alphaTmp = path.join(fs.realpathSync(tmp), "alpha-code-state", "env", "dev")
   homeTmp = path.join(tmp, "opencode-home")
   xdgTmp = path.join(tmp, "xdg")
   fs.mkdirSync(alphaTmp, { recursive: true })
+  alphaTmp = fs.realpathSync(alphaTmp)
   fs.mkdirSync(homeTmp, { recursive: true })
   fs.mkdirSync(xdgTmp, { recursive: true })
   process.env.ALPHA_GLOBAL_DIR = alphaTmp
@@ -173,7 +174,7 @@ describe("reconcile — T3 ~/.opencode cleanup", () => {
 })
 
 describe("reconcile — REQ-065 factory skills.paths group", () => {
-  test("factorySkillDirs injected into the truth file alongside ~/.alpha/skills", () => {
+  test("factorySkillDirs injected alongside current-environment skills", () => {
     const dirs = ["/App.app/Contents/Resources/skills/skill-creator", "/App.app/Contents/Resources/factory-skills/agent-creator"]
     const r = reconcileEngineConfigTruth(undefined, { factorySkillDirs: dirs })
     expect(r.skipped).toBe(false)

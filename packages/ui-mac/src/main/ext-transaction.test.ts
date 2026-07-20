@@ -594,23 +594,53 @@ describe("uninstall (AC6: only transaction/generation-owned paths)", () => {
 // ── 环境隔离(REQ-098) ──────────────────────────────────────────────────────────────────────
 
 describe("environment isolation (REQ-098 roots)", () => {
-  test("a transaction in the prod root never touches the beta root (or the shared base)", async () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "ext-tx-env-"))
-    try {
-      const prodRoot = environmentMutableRoot("prod", base)
-      const betaRoot = environmentMutableRoot("beta", base)
-      fs.mkdirSync(betaRoot, { recursive: true })
-      const result = await runExtensionTransaction(prodRoot, planFor(["skill--demo"], V1), hooksFor(V1))
-      expect(result.ok).toBe(true)
-      expect(versionOf(prodRoot, "skill--demo")).toBe("v1")
-      // beta 域与 base(dev 单根)零接触
-      expect(fs.readdirSync(betaRoot)).toEqual([])
-      expect(fs.existsSync(path.join(base, "ext-store"))).toBe(false)
-      expect(fs.existsSync(path.join(base, "ext-tx"))).toBe(false)
-    } finally {
-      fs.rmSync(base, { recursive: true, force: true })
-    }
-  })
+  for (const environment of ["dev", "prod", "beta"] as const) {
+    test(`${environment}:成功事务 + crash recovery 只触及本环境根`, async () => {
+      const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `ext-tx-${environment}-`)))
+      const roots = {
+        dev: environmentMutableRoot("dev", base),
+        prod: environmentMutableRoot("prod", base),
+        beta: environmentMutableRoot("beta", base),
+      }
+      const cas = path.join(base, "cas")
+      try {
+        ;[...Object.values(roots), cas].forEach((directory) => fs.mkdirSync(directory, { recursive: true }))
+        for (const [name, directory] of Object.entries(roots)) fs.writeFileSync(path.join(directory, "sentinel"), name)
+        fs.writeFileSync(path.join(cas, "sentinel"), "cas")
+
+        const installed = await runExtensionTransaction(roots[environment], planFor(["skill--demo"], V1), hooksFor(V1))
+        expect(installed.ok).toBe(true)
+        expect(versionOf(roots[environment], "skill--demo")).toBe("v1")
+
+        await expect(
+          runExtensionTransaction(
+            roots[environment],
+            planFor(["skill--demo"], V2),
+            hooksFor(V2, { crashAt: "after-switched", probe: healthyProbe, commitReceipt: noop }),
+          ),
+        ).rejects.toThrow(ExtTxCrashError)
+        const recovered = await recoverExtensionTransactions(roots[environment], {
+          probe: healthyProbe,
+          commitReceipt: noop,
+          pidAlive: () => false,
+          log: noop,
+        })
+        expect(recovered.ok).toBe(true)
+        expect(versionOf(roots[environment], "skill--demo")).toBe("v2")
+
+        for (const [name, directory] of Object.entries(roots)) {
+          expect(fs.readFileSync(path.join(directory, "sentinel"), "utf8")).toBe(name)
+          if (name !== environment) {
+            expect(fs.existsSync(path.join(directory, "ext-store"))).toBe(false)
+            expect(fs.existsSync(path.join(directory, "ext-tx"))).toBe(false)
+          }
+        }
+        expect(fs.readFileSync(path.join(cas, "sentinel"), "utf8")).toBe("cas")
+      } finally {
+        fs.rmSync(base, { recursive: true, force: true })
+      }
+    })
+  }
 })
 
 // ── capability 授权闸口(REQ-100 AC3:权限扩张必须重确认,静默继承无通道) ─────────────────────
