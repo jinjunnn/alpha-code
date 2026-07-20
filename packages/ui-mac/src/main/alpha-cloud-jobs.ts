@@ -15,7 +15,12 @@ import { ALPHA_PATHS } from "../shared/alpha-config"
 import { resolveEndpoints } from "./alpha-endpoints"
 import { getAccessToken } from "./alpha-auth"
 import { guardCloudEnvelope } from "./cloud-envelope-guard"
-import { downloadArtifactToFile, type ArtifactDownloadOutcome, type ArtifactDownloadRequest } from "./alpha-artifact-download"
+import {
+  downloadArtifactToFile,
+  type ArtifactDownloadOutcome,
+  type ArtifactDownloadRequest,
+  type ArtifactFinalizer,
+} from "./alpha-artifact-download"
 import { getLogger } from "./logging"
 import type { CloudResult, CloudJobEnvelope, CloudDispatchResult, CloudJobStatus, CloudArtifactList } from "../preload/types"
 
@@ -71,12 +76,15 @@ export const listCloudArtifacts = (jobId: string): Promise<CloudResult<CloudArti
 // 旧「arrayBuffer→Buffer→编码→Buffer」全缓冲链已删除;窗口期 legacy 内联回退在 alpha-artifact-download 内部
 // (同 .part 写入器 + 同限额 + 同 sha256 校验,⏰ 2026-08-15 随平台 compat flag 一并移除)。
 // 失败只回分类码 + 净化 detail;此处日志也只落分类码(token 卫生,REQ-092 AC#5)。
-export async function downloadCloudArtifactTo(req: ArtifactDownloadRequest): Promise<ArtifactDownloadOutcome> {
+export async function downloadCloudArtifactTo(
+  req: ArtifactDownloadRequest,
+  finalize: ArtifactFinalizer,
+): Promise<ArtifactDownloadOutcome> {
   const token = getAccessToken()
   if (!token) return { ok: false, error: "not-authenticated" }
   const base = cloudBase()
   if (!base) return { ok: false, error: "no-cloud-endpoint" }
-  const outcome = await downloadArtifactToFile(req, { token, base })
+  const outcome = await downloadArtifactToFile(req, { token, base, finalize })
   if (!outcome.ok && outcome.error !== "cancelled") {
     getLogger().warn(`alpha-cloud-jobs: artifact download failed (${outcome.error})`)
   }

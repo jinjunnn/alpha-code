@@ -4,7 +4,7 @@ kind: contract
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-13
+last_reviewed: 2026-07-20
 review_after: 2026-10-13
 ---
 
@@ -15,12 +15,12 @@ integration. Service wire formats remain owned by their producer repositories.
 
 ## Ownership and authority
 
-| Surface | Owner | Desktop seam |
-| --- | --- | --- |
-| Authorization code, refresh/session rotation, endpoint discovery | `alpha-web` | `alpha-auth.ts`, `alpha-endpoints.ts` |
-| Model gateway and model registry | `alpha-platform` | injected `alpha` provider |
-| Cloud Jobs HTTP/SSE, artifacts, schedules, MCP facade | `alpha-platform` | main-process clients and injected MCP server |
-| Account summary and billing transactions | `alpha-platform` account service | main-process account client |
+| Surface                                                          | Owner                            | Desktop seam                                 |
+| ---------------------------------------------------------------- | -------------------------------- | -------------------------------------------- |
+| Authorization code, refresh/session rotation, endpoint discovery | `alpha-web`                      | `alpha-auth.ts`, `alpha-endpoints.ts`        |
+| Model gateway and model registry                                 | `alpha-platform`                 | injected `alpha` provider                    |
+| Cloud Jobs HTTP/SSE, artifacts, schedules, MCP facade            | `alpha-platform`                 | main-process clients and injected MCP server |
+| Account summary and billing transactions                         | `alpha-platform` account service | main-process account client                  |
 
 Current Alpha Platform contracts are
 [`cloud-jobs-v1.md`](https://github.com/jinjunnn/alpha-platform/blob/main/docs/contracts/cloud-jobs-v1.md)
@@ -70,6 +70,172 @@ Login activates platform mode and respawns the sidecar in place when a live
 window exists. Cold-start callbacks defer activation until the next normal
 sidecar start. Logout clears token state and re-forks without platform
 credentials.
+
+## Managed cloud artifact persistence
+
+Cloud artifact bytes remain in the main process and stream to a unique `.part`
+file below `<project>/.alpha/runs/<run>/artifacts/`. After length and digest
+verification, every production download must pass the project-owned artifact
+quota finalizer; no caller has direct final-rename authority.
+
+The admission guarantee has a deployment precondition: the artifact root must
+be on a local filesystem with a locally coherent directory namespace. NFS,
+SMB, remote FUSE, and other cross-machine shared/network volumes do not satisfy
+this precondition. The desktop does not attempt runtime volume-type detection.
+User space has no reliable, non-bypassable predicate across filesystem type
+numbers, mount-table formats, and parent-path replacement between a check and
+the later open/rename. Operators must confirm the placement as described in the
+[artifact quota reservation recovery
+runbook](../runbooks/artifact-quota-reservation-recovery.md#deployment-precondition).
+
+If the artifact root is placed on a cross-machine shared volume, delayed or
+incoherent namespace observations can cause contenders to miss peer
+reservations or committed files and admit more run count, run bytes, or project
+bytes than the configured quota. This residual is confined to quota
+over-admission; it does not expand the finalizer's path authority, corrupt
+artifact bytes, or grant privileges. The desktop does not implement remote
+cache convergence or cross-client coordination.
+
+The desktop creates one random UUID machine identity at
+`<userData>/artifact-quota-machine-id`, mode `0600`, and reuses it without
+rewriting it. This installation identity, not `hostname()`, identifies records
+eligible for same-machine dead-PID cleanup.
+
+Each finalization attempt first creates and fsyncs exactly one owner-unique
+reservation with an exclusive `O_EXCL` open at
+`<project>/.alpha/runs/<run>/reservations/<startedAt>-<uuid>.json`. `startedAt`
+is a fixed-width sortable value derived from millisecond wall-clock time; it
+does not claim microsecond clock precision. The immutable record is
+`{pid, machineId, declaredBytes, startedAt, uuid}`. A path is owned only by the
+attempt whose UUID created it.
+
+Admission scans reservations before final files. Run usage is committed regular
+files plus the count and `declaredBytes` of every reservation below that run;
+project usage is committed regular files plus `declaredBytes` from every run's
+reservations. The committed scan includes legacy files that are not in a
+manifest. It excludes uniquely named `.part` staging files. The finalizer checks
+all of these limits before the atomic final rename:
+
+- 100 MiB per artifact;
+- 256 committed artifacts and 512 MiB per run; and
+- 5 GiB across the managed project.
+
+The committed scan already contains the current final target when one exists.
+Admission therefore never subtracts an earlier target-size or target-existence
+snapshot: the formula is committed usage plus all reservations, including the
+caller's own full declaration. Replacing an existing target can conservatively
+charge both the old final and the new declaration until rename. This can reject
+a replacement that would fit after overwrite, but it removes the shared-target
+check-then-act window; there is no stale value deducted after another finalizer
+or `removeArtifact` changes the target.
+
+If the combined usage is within every applicable limit, the attempt is
+admitted. If it is over a run or project limit, conflicting reservations are
+ordered lexicographically by `(startedAt, uuid)`. An attempt with a strictly
+smaller conflicting key present deletes only its own reservation and returns
+the stable, retryable `over-limit` detail
+`artifact quota admission yielded to an earlier reservation`. The minimum-key
+attempt subtracts all strictly greater reservations and reevaluates; it is
+admitted when committed usage plus its own reservation fits. Thus greater keys
+yield while the minimum key progresses, rather than all contenders repeatedly
+colliding on one shared pathname. Before the minimum key performs its final
+rename, it asynchronously rescans until every greater conflicting reservation
+has either yielded or committed. Rescans run at most every 20 ms and are
+subject to both a 5-second deadline and a 250-round ceiling. Reservation and
+committed traversal uses asynchronous directory reads and stats, with an
+explicit event-loop yield every 32 visited entries. The former 10,000-entry
+limit is a cooperative scan slice: reaching it yields while retaining the
+directory-entry position, recursive call stack, and accumulated usage, then
+resumes the same complete reservation-before-committed scan.
+
+The first complete admission scan has its own 30-second wall-clock budget. This
+is deliberately wider than the 5-second contender-convergence budget because
+it covers one full project traversal and allows stable projects well beyond one
+10,000-entry cooperative slice to complete, while still bounding a very large,
+slow, or continuously growing tree. Reaching 30 seconds returns stable
+`retryable` detail `quota scan timed out`; no partial scan is admitted. A
+convergence rescan is clipped directly to its remaining 5-second global budget
+and likewise never admits a partial scan. The finalizer also races its
+asynchronous wait-path owner-reservation recheck against that convergence
+deadline. Exhausting a deadline or the round ceiling never admits. This
+convergence step closes the case where a smaller key is published after a
+greater key already completed its first decision: the smaller attempt observes
+the greater reservation until its final file becomes chargeable, then
+reevaluates instead of double-admitting.
+
+Immediately before rename, the admitted attempt asynchronously rechecks the
+open staged-file descriptor and the staged pathname against the initially
+captured `dev`/`ino`, requires both to remain regular files, and requires both
+actual sizes to equal `declaredBytes`. A changed inode or size returns stable
+`staging-changed` and is not committed. It then asynchronously reopens its
+reservation with `O_NOFOLLOW`, binds fd and pathname by `dev`/`ino`, and requires
+the inode and exact bytes to match the record it created. Missing or changed
+reservation state returns stable `retryable`. The admitted attempt then
+atomically renames its own `.part` to the final target and deletes only its
+still-identity-matching reservation.
+
+After a retryable convergence or scan timeout, self-reservation reread/delete
+gets an independent 100 ms application wait budget and staged-handle close gets
+a separate 100 ms application wait budget. If either budget expires, the state
+machine stops awaiting that cleanup and returns the already selected error; it
+does not proceed to final rename. A cleanup syscall already issued may settle
+later, but no later unlink is started after an over-budget reservation reread.
+The safe worst case is an unremoved self-reservation that remains charged and
+reduces available capacity. Normal event-loop scheduling can add timer jitter;
+these budgets do not claim that the operating system cancels in-flight I/O.
+
+Scanning reservations before final files is required on the supported local
+filesystem: the owner transitions from reservation-only, through a conservative
+reservation-plus-final overlap, to final-only, so a concurrent scan observes at
+least one side of every commit. Quota exhaustion, malformed or unreadable
+reservation state, scan timeout, or unreadable committed usage fails closed.
+Errors expose a stable category and bounded quota figures, not local paths,
+descriptor metadata, bearer values, or response content.
+
+A crash before rename leaves the reservation charged even though the unique
+`.part` remains excluded. A crash after rename but before reservation deletion
+charges both the final file and reservation. This is intentionally fail-closed:
+a crash cannot leak capacity. A later scan may unlink another reservation only
+when its `machineId` equals the persistent local installation identity and PID
+liveness conclusively returns `ESRCH`; `EPERM` means live, and foreign-machine,
+malformed, live, or indeterminate records are never cleaned. A successful lazy
+unlink remains charged for that scan and affects only a later full rescan.
+Cleanup failure also keeps the reservation charged.
+
+The owner recheck makes the two PID uncertainty directions safe: a dead owner
+misclassified as live remains conservatively charged, while a live owner whose
+reservation is mistakenly deleted detects the missing identity before rename
+and returns `retryable`. Cross-owner deletion is therefore restricted to the
+explicit same-machine plus conclusively-dead-PID recovery case; it is not a
+general ownership transfer. Diagnostics and recovery boundaries are defined by
+the [artifact quota reservation recovery
+runbook](../runbooks/artifact-quota-reservation-recovery.md).
+
+### Ownership and modification points
+
+The complete write surface for this artifact state machine is:
+
+- Reservation directory `mkdir` creates only shared structural parents and is
+  idempotent; it does not claim or rewrite a peer record.
+- Reservation `O_EXCL` create, write, and fsync target the caller's random
+  UUID pathname. Normal failure, yield, and success unlink only that same path
+  after fd/path identity and exact-content revalidation.
+- Lazy cross-owner reservation unlink is the sole recovery exception. It is
+  allowed only for the same persistent `machineId` plus a PID conclusively
+  reported dead, and the removed declaration remains charged for the current
+  scan.
+- Final rename moves the caller's unique `.part` into the run-owned final
+  artifact pathname. It may replace an existing final directory entry; that
+  authority comes from the finalizer being the sole commit point for the
+  caller-selected managed run target. The conservative quota formula does not
+  pre-delete or subtract the replaced entry.
+- `removeArtifact` may unlink a final file only after resolving the selected
+  manifest entry inside the managed run path. Its authority is the explicit
+  artifact-removal/GC operation; a failed final unlink leaves the manifest
+  unchanged.
+- The downloader's failure cleanup may `rm` only its invocation-unique `.part`
+  pathname created with `O_EXCL`. It never removes a peer `.part` or a final
+  target.
 
 ## Invariants
 

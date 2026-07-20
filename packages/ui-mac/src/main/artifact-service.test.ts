@@ -172,12 +172,12 @@ describe("registerDownloadedArtifact (#184 集成点)", () => {
     expect(JSON.parse(fs.readFileSync(manifestPath(), "utf8")).schemaVersion).toBe(99)
   })
 
-  test("超过件数基线只 loud 警告,不拒绝已落盘文件(供数不执法)", () => {
+  test("配额基线从 registry 单点导出;admission 警告不污染已登记 entry", () => {
     const a = seedArtifact("report.md", "# hi")
-    // 预先塞一个 255 条的 manifest 太重;直接检查常量导出 + 单条路径的 warning 结构即可
     expect(MAX_ARTIFACTS_PER_RUN).toBe(256)
     const res = registerDownloadedArtifact(projectDir, RUN, { descriptor: a.descriptor, savedPath: a.savedPath, verifiedSha256: a.digest })
-    expect(res.ok && res.entry.local.warnings.every((w) => !w.includes("exceeds baseline"))).toBe(true)
+    expect(res.ok).toBe(true)
+    if (res.ok) expect(res.entry.local.warnings).toEqual([])
   })
 })
 

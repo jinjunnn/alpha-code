@@ -5,7 +5,7 @@
 // 阶段二:+ artifact 列表/下载(alpha-cloud-jobs)+ SSE 进度订阅(alpha-cloud-events)。SSE 事件经
 // event.sender.send("cloud-job-event", …) 推给对应 renderer;订阅按 (webContents, jobId) 记账,窗口销毁自动清。
 
-import { registerDownloadedArtifact } from "./artifact-service"
+import { finalizeArtifactWithQuota, registerDownloadedArtifact } from "./artifact-service"
 import { validateArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
 import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from "electron"
 import { execFile } from "node:child_process"
@@ -121,15 +121,18 @@ export function registerCloudIpcHandlers() {
     wc.once("destroyed", onDestroyed)
     try {
       fs.mkdirSync(path.dirname(target), { recursive: true })
-      const outcome = await downloadCloudArtifactTo({
-        artifact,
-        targetPath: target,
-        jobId: runId,
-        signal: ctrl.signal,
-        onProgress: (p) => {
-          if (!wc.isDestroyed()) wc.send("cloud-artifact-progress", { runId, artifactId, ...p })
+      const outcome = await downloadCloudArtifactTo(
+        {
+          artifact,
+          targetPath: target,
+          jobId: runId,
+          signal: ctrl.signal,
+          onProgress: (p) => {
+            if (!wc.isDestroyed()) wc.send("cloud-artifact-progress", { runId, artifactId, ...p })
+          },
         },
-      })
+        (input) => finalizeArtifactWithQuota(directory, runId, input),
+      )
       // REQ-093/#186:单件下载与 saveRun 同纪律 —— 完整 descriptor 才入 manifest(legacy meta 不合成
       // 假 descriptor,盘上文件由 legacyFiles 只读发现兜底);登记失败只留痕,不推翻已落盘的下载结果。
       if (outcome.ok) {
@@ -170,7 +173,11 @@ export function registerCloudIpcHandlers() {
       {
         status: getCloudJobStatus,
         artifacts: listCloudArtifacts,
-        download: (artifact, targetPath, jobId) => downloadCloudArtifactTo({ artifact, targetPath, jobId }),
+        download: (artifact, targetPath, jobId) =>
+          downloadCloudArtifactTo(
+            { artifact, targetPath, jobId },
+            (input) => finalizeArtifactWithQuota(directory, runId, input),
+          ),
         // REQ-093:下载成功即入 manifest(依赖注入,见 SaveRunDeps.register)。
         register: (input) => registerDownloadedArtifact(directory, runId, input),
       },

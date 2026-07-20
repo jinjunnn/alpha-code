@@ -21,6 +21,7 @@ import { refreshRemoteCatalog } from "./remote-catalog"
 import { registerAccountIpcHandlers } from "./account-ipc"
 import { registerCloudIpcHandlers } from "./cloud-ipc"
 import { registerArtifactIpcHandlers } from "./artifact-ipc"
+import { initializeArtifactQuotaEnvironment } from "./artifact-service"
 import { registerHtmlPreviewIpcHandlers } from "./html-preview-host"
 import { registerAutomationIpcHandlers } from "./automation-ipc"
 import { startAutomationScheduler } from "./automation-scheduler"
@@ -408,6 +409,12 @@ const main = Effect.gen(function* () {
   const serverReady = Deferred.makeUnsafe<ServerReadyData, unknown>()
 
   yield* Effect.promise(() => app.whenReady())
+
+  const artifactQuotaEnvironment = yield* Effect.promise(() =>
+    initializeArtifactQuotaEnvironment(app.getPath("userData")),
+  )
+  if (!artifactQuotaEnvironment.ok)
+    writeLog("utility", "artifact quota environment unavailable", { error: artifactQuotaEnvironment.error }, "warn")
 
   // Derive the platform proxy env (ALPHA_BASE_URL/ALPHA_API_KEY for the model proxy + cloud MCP)
   // from any stored login or DEV_PLATFORM_TOKEN,AFTER app ready(safeStorage 可用)且 BEFORE
