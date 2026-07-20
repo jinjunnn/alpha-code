@@ -21,6 +21,7 @@ const stringCharCodeAt = String.prototype.charCodeAt
 const hex = "0123456789abcdef"
 const metadataMaxEntries = 256
 const metadataMaxDepth = 16
+const validationOptions = { onExcessProperty: "error" } as const
 
 export const ID = Permission.ID
 export type ID = typeof ID.Type
@@ -184,15 +185,16 @@ const layer = Layer.effect(
     })
 
     const assertInputSnapshot = Effect.fnUntraced(function* (input: AssertInput) {
-      const copied = yield* Effect.sync(() => wireSnapshot(input))
-      const decoded = yield* Schema.decodeUnknownEffect(AssertInput)(copied).pipe(Effect.orDie)
-      return deepFreeze(wireSnapshot(decoded))
+      const snapshot = yield* Effect.sync(() => deepFreeze(wireSnapshot(input)))
+      // Effect decoders may allocate prototype-bearing containers; only their accept/reject result is authoritative.
+      yield* Schema.decodeUnknownEffect(AssertInput, validationOptions)(snapshot).pipe(Effect.orDie)
+      return snapshot
     })
 
     const replyInputSnapshot = Effect.fnUntraced(function* (input: ReplyInput) {
-      const copied = yield* Effect.sync(() => wireSnapshot(input))
-      const decoded = yield* Schema.decodeUnknownEffect(ReplyInput)(copied).pipe(Effect.orDie)
-      return deepFreeze(wireSnapshot(decoded))
+      const snapshot = yield* Effect.sync(() => deepFreeze(wireSnapshot(input)))
+      yield* Schema.decodeUnknownEffect(ReplyInput, validationOptions)(snapshot).pipe(Effect.orDie)
+      return snapshot
     })
 
     const resolveInput = Effect.fn("PermissionV2.resolveInput")(function* (input: AssertInput) {
@@ -246,7 +248,7 @@ const layer = Layer.effect(
 
     const request = Effect.fnUntraced(function* (input: AssertInput, agentID: AgentV2.ID) {
       const sessionID = requiredOwn(input, "sessionID")
-      const facts = yield* Schema.decodeUnknownEffect(RequestFacts)(
+      const snapshot = deepFreeze(
         wireSnapshot({
           sessionID,
           subject: { kind: "agent", id: agentID },
@@ -257,9 +259,9 @@ const layer = Layer.effect(
           ...(Object.hasOwn(input, "save") ? { save: requiredOwn(input, "save") } : {}),
           ...(Object.hasOwn(input, "metadata") ? { metadata: requiredOwn(input, "metadata") } : {}),
           ...(Object.hasOwn(input, "source") ? { source: requiredOwn(input, "source") } : {}),
-        }),
-      ).pipe(Effect.orDie)
-      const snapshot = deepFreeze(wireSnapshot(facts))
+        } satisfies RequestFacts),
+      )
+      yield* Schema.decodeUnknownEffect(RequestFacts, validationOptions)(snapshot).pipe(Effect.orDie)
       return deepFreeze(
         Object.assign(
           Object.create(null),
@@ -889,9 +891,9 @@ function requiredOwn<T extends object, K extends keyof T>(value: T, key: K): T[K
 }
 
 function requestSnapshot(row: RequestRow) {
-  return Effect.sync(() => wireSnapshot(row.request)).pipe(
-    Effect.flatMap(Schema.decodeUnknownEffect(Request)),
-    Effect.map((value) => deepFreeze(wireSnapshot(value))),
+  return Effect.sync(() => deepFreeze(wireSnapshot(row.request))).pipe(
+    // Keep the prototype-free DB snapshot; the decoder output is validation scratch only.
+    Effect.tap(Schema.decodeUnknownEffect(Request, validationOptions)),
     Effect.filterOrFail(
       (value) =>
         requiredOwn(value, "id") === row.request_id &&

@@ -27,19 +27,56 @@ owned by REQ-212.
 - optional `save`, `metadata`, and tool-call `source` facts.
 
 Admission first copies untrusted input exactly once from own property
-descriptors, then validates and decodes only that inert copy. Accessors, sparse
-arrays, custom prototypes, symbols, host objects such as `Date`, functions,
-`undefined`, non-finite numbers, negative zero, non-canonical array properties,
-and cyclic values are rejected fail-closed. Metadata is limited to 256 total
-enumerable entries, including nested array elements, and 16 nested containers;
-either overflow is rejected before admission.
-The service rebuilds the decoded internal snapshot with no prototypes and
-reads request fields only after an own-property check, then recursively freezes
-it before fingerprinting or evaluation. Service reads return detached copies;
-Permission event data and its event envelope, including `location`, metadata,
-and durable routing fields, are instead deeply frozen so every sequential
-listener and stream consumer observes the same facts and must clone before
-mutation.
+descriptors into prototype-free objects and arrays, then recursively freezes
+that snapshot. It passes the frozen snapshot to the Effect Schema decoder only
+for an accept/reject result and discards every object or array returned by the
+decoder. Fingerprinting, evaluation, persistence, reply comparison, and event
+payload construction use only the first snapshot or a prototype-free object
+built from it. Accessors, sparse arrays, custom prototypes, symbols, host
+objects such as `Date`, functions, `undefined`, non-finite numbers, negative
+zero, non-canonical array properties, and cyclic values are rejected
+fail-closed. Metadata is limited to 256 total enumerable entries, including
+nested array elements, and 16 nested containers; either overflow is rejected
+before admission.
+
+The applicable schemas perform no accepted authorization-relevant conversion
+that must be replayed after validation. Permission validation sets
+`onExcessProperty: "error"`, so a Struct never accepts an input whose decoder
+output would need unknown-key stripping. Branded IDs and fingerprints add
+checks but do not change strings; literal unions, integer bounds, arrays, JSON
+records, and struct fields only validate shape and values; optional keys remain
+absent or retain their supplied value, with no default; and there is no type
+coercion or normalization. Defaults and derived facts belong to the service,
+not the decoder: an omitted `agent` selects the Session agent, an omitted
+request `id` is generated only while constructing the final prototype-free
+request, and the service supplies `subject` from the selected agent, Session
+`scope`, and `expiresAt: null` before the prototype-free request-facts snapshot
+is taken.
+
+Service reads return detached response copies. Permission event data and its
+event envelope, including `location`, metadata, and durable routing fields, are
+instead deeply frozen so every sequential listener and stream consumer
+observes the same facts and must clone before mutation.
+
+### Prototype-boundary inventory
+
+Every container-creation point on the permission path has one of two roles:
+transport or output scratch that is never an authorization fact source (a), or
+a permission-owned container whose prototype is removed before indexed or
+named property assignment (b).
+
+| Point | Classification and boundary |
+| --- | --- |
+| UI, SDK, generated-client request bodies, HTTP JSON parsing, protocol decoding, and handler DTO construction | (a) These are transport containers. Their object identity and decoder-produced containers are never admitted, fingerprinted, evaluated, or persisted directly. The Permission service reads only own data descriptors into its first `wireSnapshot`; that snapshot is the authorization boundary. JSON parsing itself defines own properties rather than invoking inherited assignment setters. |
+| `Object.getOwnPropertyDescriptors`, individual descriptors, and `Reflect.ownKeys` arrays | (a) These native-created ordinary inspection containers are read-only scratch. Permission code never assigns authorization fields into them and never retains their identity; it accepts only checked own enumerable data descriptors and copies their primitive or recursively visited values into `wireSnapshot`. |
+| `wireSnapshot` for create/assert and reply input | (b) Objects start as `Object.create(null)`. Arrays have their prototype removed before `length` or any index is assigned. The complete tree is frozen before schema validation. |
+| Effect decoders for `AssertInput`, `ReplyInput`, internal `RequestFacts`, and DB-restored `Request` | (a) Decoders may create ordinary structs and arrays with normal assignments. Their output is validation scratch only and is discarded; rejection still fails closed. Strict excess-property rejection and the identity-only checks enumerated above mean no accepted decoder conversion must be replayed. |
+| Internal request-fact and public-request construction | (b) Derived facts are copied through `wireSnapshot` before validation. The final request target is `Object.create(null)` before `id`, `fingerprint`, and the validated facts are assigned. |
+| Fingerprint canonicalization | (b) Canonical object-key and merge-sort scratch stores are created with `Object.create(null)` before assignment. Canonical arrays must already be prototype-free; only primitive strings and numbers are accumulated. |
+| Persistence insert envelopes and JSON serialization | (a) They are sinks populated from the frozen request/command facts after authorization checks, not a new source of authorization facts. Object-literal property creation does not invoke inherited assignment setters. |
+| SQLite/Drizzle row envelopes and JSON deserialization | (a) Raw row and `JSON.parse` containers are transport scratch, not admitted facts. A restored request is first rebuilt and frozen by `wireSnapshot`, then schema-validated with decoder output discarded, and its row IDs and recomputed fingerprint must agree before it can re-enter pending authorization state. Persisted receipt columns are compared to the already-snapshotted reply command before a retry is accepted. |
+| Receipt, saved-rule, batch, and event construction | (a) Their ordinary container identities are orchestration or output scratch, not authorization facts. Batch candidates retain references to already frozen requests and are independently re-evaluated from those request facts; saved-rule values are derived from the checked request and command. Event payload data is independently rebuilt through `wireSnapshot` and frozen, and the generic event envelope is frozen before listeners run. |
+| `structuredClone` service/SDK response containers and client response decoding | (a) These are outward detached copies after authorization or replay selection. Mutating or setter-influencing them cannot change pending requests, fingerprints, persisted rows, or execution decisions. |
 
 The fingerprint covers every request fact except `id`: Session, subject,
 action, resources, scope, expiry, save candidates, metadata, and source.

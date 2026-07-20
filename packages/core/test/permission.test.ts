@@ -106,6 +106,54 @@ function decision(
   }
 }
 
+function pollutePermissionDecoderSetters() {
+  const action = Object.getOwnPropertyDescriptor(Object.prototype, "action")
+  const decision = Object.getOwnPropertyDescriptor(Object.prototype, "decision")
+  const resource = Object.getOwnPropertyDescriptor(Array.prototype, "0")
+  const restore = () => {
+    if (action) Object.defineProperty(Object.prototype, "action", action)
+    else Reflect.deleteProperty(Object.prototype, "action")
+    if (decision) Object.defineProperty(Object.prototype, "decision", decision)
+    else Reflect.deleteProperty(Object.prototype, "decision")
+    if (resource) Object.defineProperty(Array.prototype, "0", resource)
+    else Reflect.deleteProperty(Array.prototype, "0")
+  }
+  Object.defineProperty(Object.prototype, "action", {
+    configurable: true,
+    set(value) {
+      Object.defineProperty(this, "action", {
+        configurable: true,
+        enumerable: true,
+        value: value === "bash" ? "read" : value,
+        writable: true,
+      })
+    },
+  })
+  Object.defineProperty(Object.prototype, "decision", {
+    configurable: true,
+    set(value) {
+      Object.defineProperty(this, "decision", {
+        configurable: true,
+        enumerable: true,
+        value: value === "once" ? "reject" : value,
+        writable: true,
+      })
+    },
+  })
+  Object.defineProperty(Array.prototype, "0", {
+    configurable: true,
+    set(value) {
+      Object.defineProperty(this, "0", {
+        configurable: true,
+        enumerable: true,
+        value: value === "pwd" ? "src/index.ts" : value,
+        writable: true,
+      })
+    },
+  })
+  return restore
+}
+
 function waitForRequest(input = assertion()) {
   return Effect.gen(function* () {
     const service = yield* PermissionV2.Service
@@ -500,6 +548,120 @@ describe("PermissionV2", () => {
       if (first.status !== "pending" || second.status !== "pending") return
       expect(first.request.fingerprint).not.toBe(second.request.fingerprint)
       expect(conflict).toEqual(new PermissionV2.ConflictError({ requestID: firstInput.id }))
+    }),
+  )
+
+  it.effect("keeps approved facts through create and reply when decoder prototypes have setters", () =>
+    Effect.gen(function* () {
+      yield* setup()
+      const service = yield* PermissionV2.Service
+      const events = yield* EventV2.Service
+      const input = assertion({
+        id: PermissionV2.ID.create("per_decoder_setter_chain"),
+        action: "bash",
+        resources: ["pwd"],
+      })
+      const asked = yield* Deferred.make<PermissionV2.Request>()
+      const executed = Object.create(null) as { action?: string; resource?: string }
+      const unsubscribe = yield* events.listen((event) =>
+        event.type === PermissionV2.Event.Asked.type
+          ? Deferred.succeed(asked, event.data as PermissionV2.Request).pipe(Effect.asVoid)
+          : Effect.void,
+      )
+      yield* Effect.addFinalizer(() => unsubscribe)
+      const restore = pollutePermissionDecoderSetters()
+      yield* Effect.addFinalizer(() => Effect.sync(restore))
+
+      const fiber = yield* service
+        .assert(input)
+        .pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              executed.action = input.action
+              executed.resource = input.resources[0]
+            }),
+          ),
+          Effect.forkScoped,
+        )
+      const request = yield* Deferred.await(asked)
+      const receipt = yield* service.reply(decision(request, "once"))
+      yield* Fiber.join(fiber)
+      restore()
+
+      const database = yield* Database.Service
+      const admitted = yield* database.db
+        .select()
+        .from(PermissionRequestTable)
+        .where(eq(PermissionRequestTable.request_id, request.id))
+        .get()
+      const committed = yield* database.db
+        .select()
+        .from(PermissionDecisionTable)
+        .where(eq(PermissionDecisionTable.request_id, request.id))
+        .get()
+
+      expect(request.action).toBe("bash")
+      expect(request.resources).toEqual(["pwd"])
+      expect(receipt.decision).toBe("once")
+      expect(executed.action).toBe("bash")
+      expect(executed.resource).toBe("pwd")
+      expect(admitted?.request.action).toBe("bash")
+      expect(admitted?.request.resources).toEqual(["pwd"])
+      expect(committed?.decision).toBe("once")
+      expect(committed?.request.action).toBe("bash")
+      expect(committed?.request.resources).toEqual(["pwd"])
+    }),
+  )
+
+  it.effect("keeps distinct fingerprints when decoder setters collapse action and resources", () =>
+    Effect.gen(function* () {
+      yield* setup()
+      const service = yield* PermissionV2.Service
+      const firstInput = assertion({
+        id: PermissionV2.ID.create("per_decoder_setter_fingerprint_first"),
+        action: "read",
+        resources: ["src/index.ts"],
+      })
+      const secondInput = assertion({
+        id: PermissionV2.ID.create("per_decoder_setter_fingerprint_second"),
+        action: "bash",
+        resources: ["pwd"],
+      })
+      const restore = pollutePermissionDecoderSetters()
+      yield* Effect.addFinalizer(() => Effect.sync(restore))
+
+      const first = yield* service.ask(firstInput)
+      const second = yield* service.ask(secondInput)
+      restore()
+
+      expect(first.status).toBe("pending")
+      expect(second.status).toBe("pending")
+      if (first.status !== "pending" || second.status !== "pending") return
+      expect(first.request).toMatchObject({ action: "read", resources: ["src/index.ts"] })
+      expect(second.request).toMatchObject({ action: "bash", resources: ["pwd"] })
+      expect(first.request.fingerprint).not.toBe(second.request.fingerprint)
+    }),
+  )
+
+  it.effect("rejects schema-invalid input when decoder prototypes have setters", () =>
+    Effect.gen(function* () {
+      yield* setup()
+      const service = yield* PermissionV2.Service
+      const restore = pollutePermissionDecoderSetters()
+      yield* Effect.addFinalizer(() => Effect.sync(restore))
+
+      const result = yield* service
+        .ask(
+          assertion({
+            id: PermissionV2.ID.create("per_decoder_setter_invalid"),
+            resources: [42] as never,
+          }),
+        )
+        .pipe(Effect.exit)
+      restore()
+
+      expect(result._tag).toBe("Failure")
+      expect(yield* (yield* Database.Service).db.select().from(PermissionRequestTable).all()).toEqual([])
     }),
   )
 
