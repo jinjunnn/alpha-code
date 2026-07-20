@@ -30,13 +30,16 @@ export function projectDirectoryIdentity(directory: string, homeDir: string = ho
   const retiredLexical = normalize(join(home, ".alpha"))
   const retired = (() => {
     try {
-      return normalize(realpathSync(retiredLexical))
-    } catch {
-      return retiredLexical
+      return { ok: true as const, path: normalize(realpathSync(retiredLexical)) }
+    } catch (error) {
+      if (!error || typeof error !== "object" || !("code" in error) || error.code !== "ENOENT")
+        return { ok: false as const }
+      return { ok: true as const, path: retiredLexical }
     }
   })()
+  if (!retired.ok) return { status: "unknown", reason: "retired global root identity cannot be confirmed" }
   const root = join(candidate, ".alpha")
-  if (sameOrInside(candidate, retired) || related(root, retiredLexical) || related(root, retired))
+  if (sameOrInside(candidate, retired.path) || related(root, retiredLexical) || related(root, retired.path))
     return { status: "retired-home", reason: "project alpha root is related to the retired global root" }
 
   try {
@@ -45,13 +48,25 @@ export function projectDirectoryIdentity(directory: string, homeDir: string = ho
       return { status: "unknown", reason: "project alpha endpoint is not a real directory" }
     const canonical = normalize(realpathSync(root))
     if (canonical !== root) return { status: "unknown", reason: "project alpha endpoint is a canonical alias" }
-    if (related(canonical, retired))
+    if (related(canonical, retired.path))
       return { status: "retired-home", reason: "project alpha root resolves to the retired global root" }
   } catch (error) {
     if (!error || typeof error !== "object" || !("code" in error) || error.code !== "ENOENT")
       return { status: "unknown", reason: "project alpha root identity cannot be confirmed" }
   }
   return { status: "project", directory: candidate, root }
+}
+
+export function withProjectDirectoryIdentity<T>(
+  expected: Extract<ProjectDirectoryIdentity, { status: "project" }>,
+  operation: (root: string) => T,
+  homeDir: string = homedir(),
+): { ok: true; value: T } | { ok: false; reason: string } {
+  const current = projectDirectoryIdentity(expected.directory, homeDir)
+  if (current.status !== "project" || current.directory !== expected.directory || current.root !== expected.root)
+    return { ok: false, reason: "project alpha root identity drifted" }
+  // 与 main/CAS 同一 threat model：分类器重验与紧随的一次 I/O 之间仍有微秒级窗口；不引入 openat。
+  return { ok: true, value: operation(current.root) }
 }
 
 /** sidecar/ext 无 main 快照，必须只消费 main 已派生的 canonical root。 */

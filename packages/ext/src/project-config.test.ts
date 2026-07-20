@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { mergeProjectConfig, projectDirectoryIdentity, requireAlphaGlobalRoot } from "./project-config"
+import { mergeProjectConfig, projectDirectoryIdentity, requireAlphaGlobalRoot, withProjectDirectoryIdentity } from "./project-config"
 import { AlphaExt } from "./plugin"
 
 const j = (o: unknown) => JSON.stringify(o)
@@ -127,6 +127,55 @@ describe("project/root identity fail-closed", () => {
 
     expect(projectDirectoryIdentity(project, home).status).toBe("unknown")
     expect(projectDirectoryIdentity(join(retired, "nested"), home).status).toBe("retired-home")
+    expect(readFileSync(join(retired, "sentinel"), "utf8")).toBe("untouched")
+  })
+
+  test("退休 `~/.alpha` realpath 遇 EACCES → unknown，不回退词法放行", () => {
+    const locked = join(root, "locked")
+    mkdirSync(join(locked, "retired"), { recursive: true })
+    symlinkSync(join(locked, "retired"), join(home, ".alpha"), "dir")
+    chmodSync(locked, 0o000)
+    try {
+      expect(projectDirectoryIdentity(project, home)).toEqual({
+        status: "unknown",
+        reason: "retired global root identity cannot be confirmed",
+      })
+    } finally {
+      chmodSync(locked, 0o700)
+    }
+  })
+
+  test("分类后 `.alpha` 换链 → config 不读、alpha_register 不写、plugin 不 import", () => {
+    const retired = join(home, ".alpha")
+    const admittedRoot = join(project, ".alpha")
+    const moved = join(project, ".alpha-before-race")
+    mkdirSync(retired)
+    mkdirSync(admittedRoot)
+    writeFileSync(join(retired, "sentinel"), "untouched")
+    const expected = projectDirectoryIdentity(project, home)
+    expect(expected.status).toBe("project")
+    if (expected.status !== "project") return
+    renameSync(admittedRoot, moved)
+    symlinkSync(retired, admittedRoot, "dir")
+    const calls = { configRead: 0, registerWrite: 0, pluginImport: 0 }
+
+    const configRead = withProjectDirectoryIdentity(expected, () => {
+      calls.configRead++
+      return "retired config"
+    }, home)
+    const registerWrite = withProjectDirectoryIdentity(expected, () => {
+      calls.registerWrite++
+      writeFileSync(join(retired, "alpha.jsonc"), "must not write")
+    }, home)
+    const pluginImport = withProjectDirectoryIdentity(expected, () => {
+      calls.pluginImport++
+      return import("./plugin")
+    }, home)
+
+    expect(configRead.ok).toBe(false)
+    expect(registerWrite.ok).toBe(false)
+    expect(pluginImport.ok).toBe(false)
+    expect(calls).toEqual({ configRead: 0, registerWrite: 0, pluginImport: 0 })
     expect(readFileSync(join(retired, "sentinel"), "utf8")).toBe("untouched")
   })
 

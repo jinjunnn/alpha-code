@@ -156,9 +156,8 @@ function endSessionGrants(reason: SessionGrantsEndedEventWire["reason"]) {
 // 「上一代 child 的迟到 exit」;蓄意 kill 的信号 = killSidecar 先把 `server` 置 null 再 stop。
 let quittingApp = false
 let sidecarGen = 0
-// #395(Codex r6 B2/B3):startup reconcile 发现「本应禁用的扩展无法保证从引擎配置移除」(config 写
-// 失败 / 读不出 / legacy concat 残留 / skills 陈旧允许集)时置位 —— 首个 sidecar fork 前 fail-closed
-// 阻断,绝不让引擎带着「账本禁用但仍会加载」的项启动。
+// #395/#428:startup reconcile 发现「本应禁用的扩展无法保证从引擎配置移除」或退休桥无法确认
+// 已断链时置位 —— 首个 sidecar fork 前 fail-closed 阻断,绝不让引擎依赖未收敛的旧桥/配置启动。
 let bootEnforcementGap: string[] | null = null
 let selfHeal = initialSelfHealState()
 let selfHealTimer: NodeJS.Timeout | null = null
@@ -461,7 +460,8 @@ const main = Effect.gen(function* () {
       if (!outcome.skipped && outcome.bailedOut)
         logger.warn("[req059] engine config reconcile bailed out (kept legacy in place)", { reason: outcome.bailedOut })
     } catch (error) {
-      logger.warn("[req059] engine config reconcile failed (non-fatal)", error)
+      bootEnforcementGap = [`engine config reconcile failed: ${error instanceof Error ? error.message : String(error)}`]
+      logger.error("[req059] engine config reconcile failed — blocking sidecar (fail closed)", error)
     }
     // #395:startup reconcile —— 账本 desiredState 权威重投影回 alpha.jsonc(REQ-059 truth reconcile
     // 之后、首个 sidecar fork 读 config 之前;双向)。消除「账本 disabled / config enabled」崩溃残留
@@ -667,14 +667,13 @@ const main = Effect.gen(function* () {
       return
     }
 
-    // #395(Codex r6 B2/B3):startup reconcile 判定「本应关闭的扩展无法保证已从引擎配置移除」→
-    // fail-closed 拒绝 spawn 引擎(绝不让它带着「账本禁用但仍会加载」的项启动)。gap 细节已 error
-    // 记日志;对用户给通俗诊断 + 修复指引。只 gate 首次 spawn(respawn 不重跑 reconcile)。
+    // #395/#428:startup reconcile 判定配置禁用面或退休桥断链无法保证 → fail-closed 拒绝
+    // spawn 引擎。gap 细节已 error 记日志；只 gate 首次 spawn(respawn 不重跑 reconcile)。
     if (bootEnforcementGap) {
       logger.error("[req104-395] refusing to spawn sidecar — extension disable state cannot be guaranteed", { gap: bootEnforcementGap })
       dialog.showErrorBox(
         "扩展安全状态无法确保",
-        "有本应关闭的扩展无法确认已经关闭(可能因磁盘空间不足或配置文件损坏)。为避免它们被意外加载,已暂停启动。请检查磁盘空间后重新打开应用;若持续出现,请联系支持并附上日志。",
+        "扩展配置或历史桥接状态无法确认已经安全收敛(可能因磁盘空间、权限或配置文件损坏)。为避免旧桥或本应关闭的扩展被意外加载,已暂停启动。请检查磁盘与目录权限后重新打开应用;若持续出现,请联系支持并附上日志。",
       )
       app.exit(1)
       return

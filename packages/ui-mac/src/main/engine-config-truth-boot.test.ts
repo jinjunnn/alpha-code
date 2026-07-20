@@ -156,6 +156,52 @@ describe("reconcile — T3 ~/.opencode cleanup", () => {
     expect(fs.readdirSync(retired).sort()).toEqual(["agents", "commands", "skills"])
   })
 
+  test("退休桥目录不可写(EACCES)→ reconcile 抛错且不继续，桥与 truth 均不动", () => {
+    const retiredHome = path.join(tmp, "retired-home-eacces")
+    const retired = path.join(retiredHome, ".alpha", "skills")
+    fs.mkdirSync(retired, { recursive: true })
+    const bridge = path.join(homeTmp, "skills")
+    fs.symlinkSync(retired, bridge, "dir")
+    fs.chmodSync(homeTmp, 0o555)
+    try {
+      expect(() => reconcileEngineConfigTruth(undefined, { retiredHomeDir: retiredHome })).toThrow()
+      expect(fs.lstatSync(bridge).isSymbolicLink()).toBe(true)
+      expect(truthExists()).toBe(false)
+    } finally {
+      fs.chmodSync(homeTmp, 0o755)
+    }
+  })
+
+  test("退休桥在 unlink 紧邻重验时已换成非退休对象→ 跳过且不删竞争换位对象", () => {
+    const retiredHome = path.join(tmp, "retired-home-race")
+    const retired = path.join(retiredHome, ".alpha", "skills")
+    fs.mkdirSync(retired, { recursive: true })
+    const bridge = path.join(homeTmp, "skills")
+    fs.symlinkSync(retired, bridge, "dir")
+    let bridgeStats = 0
+    process.env.ALPHA_JSONC_TRUTH_DISABLE = "1"
+
+    const result = reconcileEngineConfigTruth(undefined, {
+      retiredHomeDir: retiredHome,
+      retiredBridgeFs: {
+        lstatSync: (file) => {
+          if (file === bridge && ++bridgeStats === 2) {
+            fs.unlinkSync(bridge)
+            fs.writeFileSync(bridge, "competitor")
+          }
+          return fs.lstatSync(file)
+        },
+        readlinkSync: (file) => fs.readlinkSync(file),
+        readdirSync: (directory) => fs.readdirSync(directory),
+        unlinkSync: (file) => fs.unlinkSync(file),
+      },
+    })
+
+    expect(result.skipped).toBe(true)
+    expect(fs.lstatSync(bridge).isFile()).toBe(true)
+    expect(fs.readFileSync(bridge, "utf8")).toBe("competitor")
+  })
+
   test("junk-only ~/.opencode removed after migration", () => {
     writeLegacy({ mcp: { markitdown: { type: "local" } } })
     writeLedger([mcpReceipt("markitdown")])

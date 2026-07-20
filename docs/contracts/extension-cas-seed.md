@@ -4,7 +4,7 @@ kind: contract
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-19
+last_reviewed: 2026-07-20
 review_after: 2026-10-13
 ---
 
@@ -38,9 +38,20 @@ review_after: 2026-10-13
 - 退休根执行**零迁移、零 dual-read、零兼容写**：除 denial 所需的 endpoint
   `lstat`/`realpath` 身份比较外，运行时不创建、读取内容、删除或遍历它；旧根内的状态、CAS、
   journal、receipt 和 rollback marker 都不导入到新 base。
+- 启动 reconcile 只摘除 `~/.opencode/{skills,agents,commands}` 中指向退休根的链本身，不跟随也
+  不读取退休目标。桥扫描/断链的 `lstat`、`readlink`、目录枚举或 `unlink` 仅容忍 `ENOENT`
+  （对象已消失）；其它错误一律使 reconcile 失败并阻断 sidecar 启动，不能在旧桥仍可能可读时
+  正常启动。每次 `unlink` 紧前必须再次以 `lstat` + `readlink` 确认 `dev/ino`、原始 target
+  与准入时相同且仍指向退休根；竞争换位为其它对象时跳过不删。
+- main/ext 项目三态分类器解析退休 `~/.alpha` 时仅 `ENOENT` 可回退词法路径；`EACCES`、
+  `ELOOP`、`EIO` 等均为 `unknown` 并拒绝。准入返回的 canonical project/root 不得跨
+  `ledgerReady`、adoption 或其它异步边界直接复用：main 项目读通道及 ext 的 project config
+  读取、`alpha_register` 写入、plugin fan-out 动态 import，都在实际路径 I/O 紧前复验仍为
+  同一已验证身份，漂移即拒绝该次操作。
 - 恢复/write gate、CAS GC、data-clear 与 ext 初始化在每个批次操作前紧邻复验 frozen root
   realpath；身份不能确认即整批拒绝。接受的残余仅为一次复验与单次文件操作之间的精确竞态，
-  与既有 threat model 一致，本合同不引入 `openat` 或长期 dev/ino 绑定。
+  与既有 #358 r3 threat model 一致；桥断链的残余窗口精确为紧邻 `lstat/readlink` 重验到单次
+  `unlink` 之间的微秒级竞态。上述路径均不引入 `openat` 或长期 dev/ino 绑定。
 
 CAS 补充语义:
 

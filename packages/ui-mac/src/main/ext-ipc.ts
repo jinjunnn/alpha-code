@@ -12,7 +12,7 @@ import * as path from "node:path"
 import { toolProbe } from "./platform"
 import { extensionsGranted, hasExtensionsDecision, listProjectExecutables, withExtensionsConsent } from "./alpha-ext-trust"
 import { assertProjectAlphaRootIdentity, readProjectPrefs, writeProjectPrefs } from "./alpha-workdir"
-import { projectIpcHandler, resolveProjectIpcEntry } from "./ext-project-entry"
+import { projectIpcHandler, resolveProjectIpcEntry, withProjectIpcEntryIdentity } from "./ext-project-entry"
 import type { InstallTarget } from "../preload/types"
 import { alphaGlobalRoot, listInstalls } from "./alpha-installs"
 import { claimMcpSecretVersionDir, mcpSecretVersionedRef, removeMcpSecretVersionDir, removeMcpServerSecrets, removeMcpServerSecretsStrict, writeMcpSecretVersioned } from "./alpha-mcp-secrets"
@@ -238,19 +238,24 @@ export function registerExtIpcHandlers(
     } catch (error) {
       getLogger().log(`[req099-adopt] adoption error (ledger untouched): ${error instanceof Error ? error.message : String(error)}`)
     }
-    const alphaDir = project.root
-    let jsoncText: string | null = null
-    try {
-      jsoncText = fs.readFileSync(path.join(alphaDir, "alpha.jsonc"), "utf8")
-    } catch {
-      /* 无项目配置 */
-    }
-    let pluginFiles: string[] = []
-    try {
-      pluginFiles = fs.readdirSync(path.join(alphaDir, "plugins"))
-    } catch {
-      /* 无 plugins 目录 */
-    }
+    const configRead = withProjectIpcEntryIdentity(project, homeDir, (current) => {
+      try {
+        return fs.readFileSync(path.join(current.root, "alpha.jsonc"), "utf8")
+      } catch {
+        return null
+      }
+    })
+    if (!configRead.ok) return { prompted: false, granted: false, reason: configRead.reason }
+    const pluginsRead = withProjectIpcEntryIdentity(project, homeDir, (current) => {
+      try {
+        return fs.readdirSync(path.join(current.root, "plugins"))
+      } catch {
+        return []
+      }
+    })
+    if (!pluginsRead.ok) return { prompted: false, granted: false, reason: pluginsRead.reason }
+    const jsoncText = configRead.value
+    const pluginFiles = pluginsRead.value
     const exec = listProjectExecutables(jsoncText, pluginFiles)
     if (exec.mcp.length === 0 && exec.plugins.length === 0) return { prompted: false, granted: false }
     const prefs = readProjectPrefs(directory)
@@ -737,7 +742,10 @@ export function registerExtIpcHandlers(
     const resolved = resolveProjectEntry(projectDir)
     if (!resolved.ok) return resolved
     await ledgerReady
-    return detectProjectCatalogResiduals(resolved.projectDir)
+    const checked = withProjectIpcEntryIdentity(resolved, homeDir, (current) =>
+      detectProjectCatalogResiduals(current.projectDir),
+    )
+    return checked.ok ? checked.value : checked
   })
   // ── #375:journal 管理面(诊断只读 + 显式 retire)。**刻意不进 GATED_WRITE_CHANNELS**
   // (恢复 gate 拒非终态 journal 是其本职,与 retire 对象语义相反;不写 ledger/config/store),
@@ -845,7 +853,10 @@ export function registerExtIpcHandlers(
     await ledgerReady // #309:读方同 barrier(迁移中途的半程视图不外泄)
     const global = readLedgerV2(alphaGlobalRoot())
     if (resolved && !resolved.ok) return { global, project: null, projectError: resolved.reason }
-    return { global, project: resolved ? readLedgerV2(resolved.root) : null }
+    if (!resolved) return { global, project: null }
+    const project = withProjectIpcEntryIdentity(resolved, homeDir, (current) => readLedgerV2(current.root))
+    if (!project.ok) return { global, project: null, projectError: project.reason }
+    return { global, project: project.value }
   })
   // REQ-103 slice 2a(#195):governance 只读查询 —— 逐扩展五维所有权 + 三态(slice 1 聚合面)。
   // 唯一的 governance 通道,零写面:核心是 electron-free 的 createInventoryQuery(纯读契约与

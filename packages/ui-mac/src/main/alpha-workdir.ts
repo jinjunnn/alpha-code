@@ -60,13 +60,16 @@ export function resolveProjectAlphaRoot(projectDir: string, homeDir: string = os
   const retiredLexical = path.join(home, ".alpha")
   const retired = (() => {
     try {
-      return path.normalize(fs.realpathSync(retiredLexical))
-    } catch {
-      return retiredLexical
+      return { ok: true as const, path: path.normalize(fs.realpathSync(retiredLexical)) }
+    } catch (error) {
+      if (!error || typeof error !== "object" || !("code" in error) || error.code !== "ENOENT")
+        return { ok: false as const }
+      return { ok: true as const, path: retiredLexical }
     }
   })()
+  if (!retired.ok) return { status: "unknown", reason: "retired global root identity cannot be confirmed" }
   const root = path.join(project, ".alpha")
-  if (sameOrInside(project, retired) || related(root, retiredLexical) || related(root, retired))
+  if (sameOrInside(project, retired.path) || related(root, retiredLexical) || related(root, retired.path))
     return { status: "retired-home", reason: "project alpha root is related to the retired global root" }
 
   try {

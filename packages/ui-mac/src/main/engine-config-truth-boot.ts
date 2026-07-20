@@ -94,16 +94,26 @@ export type ReconcileOptions = {
   factorySkillDirs?: string[]
   /** 仅用于测试隔离退休根；生产默认真实 home。 */
   retiredHomeDir?: string
+  /** 仅用于退休桥竞争测试；生产固定使用 node:fs。 */
+  retiredBridgeFs?: RetiredBridgeFs
+}
+
+type RetiredBridgeFs = {
+  lstatSync: (file: string) => fs.Stats
+  readlinkSync: (file: string) => string
+  readdirSync: (directory: string) => string[]
+  unlinkSync: (file: string) => void
 }
 
 /**
  * Migrate legacy engine config into the alpha truth file. Copy-don't-delete + idempotent.
- * Returns an outcome for logging/telemetry (never throws on a migration miss — reconcile is best-effort).
+ * Returns an outcome for logging/telemetry. Retirement bridge cleanup errors propagate so startup can
+ * fail closed; ordinary migration misses retain the existing best-effort outcome semantics.
  */
 export function reconcileEngineConfigTruth(log?: Logger, opts?: ReconcileOptions): ReconcileOutcome {
   // 退休桥断链与配置迁移完全独立：必须早于 escape hatch、truth 读失败、ownership bail-out 等
   // 任一提前返回。这里只 lstat/readlink 桥本身，不 realpath/读取/迁移退休目标。
-  unlinkRetiredOpencodeBridges(opts?.retiredHomeDir ?? os.homedir(), log)
+  unlinkRetiredOpencodeBridges(opts?.retiredHomeDir ?? os.homedir(), log, opts?.retiredBridgeFs)
   if (process.env.ALPHA_JSONC_TRUTH_DISABLE === "1" || process.env.ALPHA_LEGACY_INSTALL_ROOT === "1") {
     return { skipped: true, reason: "escape hatch set (ALPHA_JSONC_TRUTH_DISABLE / ALPHA_LEGACY_INSTALL_ROOT)" }
   }
@@ -203,42 +213,106 @@ export function reconcileEngineConfigTruth(log?: Logger, opts?: ReconcileOptions
   return { skipped: false, migrated, added }
 }
 
-function unlinkRetiredOpencodeBridges(homeDir: string, log?: Logger): void {
+type RetiredBridgeProbe =
+  | { status: "absent" }
+  | { status: "other"; stat: fs.Stats }
+  | { status: "retired"; dev: number; ino: number; target: string }
+
+function unlinkRetiredOpencodeBridges(homeDir: string, log?: Logger, injected?: RetiredBridgeFs): void {
+  const bridgeFs = injected ?? {
+    lstatSync: fs.lstatSync,
+    readlinkSync: fs.readlinkSync,
+    readdirSync: fs.readdirSync,
+    unlinkSync: fs.unlinkSync,
+  }
   const opencodeDir = opencodeHomeDir()
   const retiredRoot = path.resolve(homeDir, ".alpha")
   for (const kind of ["skills", "agents", "commands"] as const) {
     const kindPath = path.join(opencodeDir, kind)
-    try {
-      const stat = fs.lstatSync(kindPath)
-      if (stat.isSymbolicLink()) {
-        if (symlinkPointsInto(kindPath, retiredRoot)) {
-          fs.unlinkSync(kindPath)
-          log?.log(`[req098] retired ~/.opencode/${kind} bridge removed`)
-        }
-        continue
+    const kindProbe = probeRetiredBridge(kindPath, retiredRoot, bridgeFs)
+    if (kindProbe.status === "absent") continue
+    if (kindProbe.status === "retired") {
+      if (unlinkIfSameRetiredBridge(kindPath, retiredRoot, kindProbe, bridgeFs)) {
+        log?.log(`[req098] retired ~/.opencode/${kind} bridge removed`)
       }
-      if (!stat.isDirectory()) continue
-      for (const name of fs.readdirSync(kindPath)) {
-        const itemPath = path.join(kindPath, name)
-        try {
-          if (!fs.lstatSync(itemPath).isSymbolicLink() || !symlinkPointsInto(itemPath, retiredRoot)) continue
-          fs.unlinkSync(itemPath)
-          log?.log(`[req098] retired ~/.opencode/${kind}/${name} bridge removed`)
-        } catch {
-          // 条目消失/不可确认时不跟随、不猜测。
-        }
-      }
-    } catch {
-      // kind 缺失或不可确认：不跟随、不猜测。
+      continue
+    }
+    if (!kindProbe.stat.isDirectory()) continue
+    for (const name of readdirOrAbsent(kindPath, bridgeFs)) {
+      const itemPath = path.join(kindPath, name)
+      const itemProbe = probeRetiredBridge(itemPath, retiredRoot, bridgeFs)
+      if (itemProbe.status !== "retired") continue
+      if (unlinkIfSameRetiredBridge(itemPath, retiredRoot, itemProbe, bridgeFs))
+        log?.log(`[req098] retired ~/.opencode/${kind}/${name} bridge removed`)
     }
   }
 }
 
-function symlinkPointsInto(link: string, root: string): boolean {
-  const target = fs.readlinkSync(link)
+function probeRetiredBridge(link: string, root: string, bridgeFs: RetiredBridgeFs): RetiredBridgeProbe {
+  const stat = lstatOrAbsent(link, bridgeFs)
+  if (!stat) return { status: "absent" }
+  if (!stat.isSymbolicLink()) return { status: "other", stat }
+  const target = readlinkOrAbsent(link, bridgeFs)
+  if (target === null) return { status: "absent" }
   const resolved = path.resolve(path.dirname(link), target)
   const relative = path.relative(root, resolved)
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
+  if (relative !== "" && (relative.startsWith("..") || path.isAbsolute(relative))) return { status: "other", stat }
+  return { status: "retired", dev: stat.dev, ino: stat.ino, target }
+}
+
+function unlinkIfSameRetiredBridge(
+  link: string,
+  root: string,
+  expected: Extract<RetiredBridgeProbe, { status: "retired" }>,
+  bridgeFs: RetiredBridgeFs,
+): boolean {
+  const current = probeRetiredBridge(link, root, bridgeFs)
+  if (
+    current.status !== "retired" ||
+    current.dev !== expected.dev ||
+    current.ino !== expected.ino ||
+    current.target !== expected.target
+  ) return false
+  // #428 r2：删除前用 dev/ino + 原始 target 紧邻重验同一退休链。接受的残余仅为这次
+  // lstat/readlink 重验到单次 unlink 之间的微秒级竞态；与 #358 r3 同口径，不引入 openat。
+  try {
+    bridgeFs.unlinkSync(link)
+    return true
+  } catch (error) {
+    if (isEnoent(error)) return false
+    throw error
+  }
+}
+
+function lstatOrAbsent(file: string, bridgeFs: RetiredBridgeFs): fs.Stats | null {
+  try {
+    return bridgeFs.lstatSync(file)
+  } catch (error) {
+    if (isEnoent(error)) return null
+    throw error
+  }
+}
+
+function readlinkOrAbsent(file: string, bridgeFs: RetiredBridgeFs): string | null {
+  try {
+    return bridgeFs.readlinkSync(file)
+  } catch (error) {
+    if (isEnoent(error)) return null
+    throw error
+  }
+}
+
+function readdirOrAbsent(directory: string, bridgeFs: RetiredBridgeFs): string[] {
+  try {
+    return bridgeFs.readdirSync(directory)
+  } catch (error) {
+    if (isEnoent(error)) return []
+    throw error
+  }
+}
+
+function isEnoent(error: unknown): boolean {
+  return !!error && typeof error === "object" && "code" in error && error.code === "ENOENT"
 }
 
 /**

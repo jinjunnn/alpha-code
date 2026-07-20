@@ -146,6 +146,27 @@ describe("main project identity 三态", () => {
     }
   })
 
+  test("退休 `~/.alpha` realpath 遇 EACCES → unknown，不回退词法放行", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-main-retired-eacces-"))
+    const home = path.join(root, "home")
+    const project = path.join(root, "project")
+    const locked = path.join(root, "locked")
+    fs.mkdirSync(path.join(locked, "retired"), { recursive: true })
+    fs.mkdirSync(home)
+    fs.mkdirSync(project)
+    fs.symlinkSync(path.join(locked, "retired"), path.join(home, ".alpha"), "dir")
+    fs.chmodSync(locked, 0o000)
+    try {
+      expect(resolveProjectAlphaRoot(project, home)).toEqual({
+        status: "unknown",
+        reason: "retired global root identity cannot be confirmed",
+      })
+    } finally {
+      fs.chmodSync(locked, 0o700)
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   test("root-aware recovery 复验拒绝被换成 symlink 的 project root", () => {
     const root = alphaRoot(projectDir)!
     fs.mkdirSync(root)

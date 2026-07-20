@@ -3,7 +3,7 @@ import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import type { Plugin } from "@opencode-ai/plugin"
 import { tool } from "@opencode-ai/plugin"
-import { mergeProjectConfig, projectDirectoryIdentity, requireAlphaGlobalRoot } from "./project-config"
+import { mergeProjectConfig, projectDirectoryIdentity, requireAlphaGlobalRoot, withProjectDirectoryIdentity } from "./project-config"
 import { loadProjectPlugins, mergeHooks } from "./plugin-fanout"
 import { applyRegister, type RegisterType } from "./register"
 import { applyPromptTakeover } from "./alpha-prompts"
@@ -57,11 +57,25 @@ export const AlphaExt: Plugin = async (input) => {
         const project = projectRootFor(input.directory)
         if (project) {
           const f = join(project.root, "alpha.jsonc")
-          if (existsSync(f)) {
+          const present = withProjectDirectoryIdentity(project, (root) => existsSync(join(root, "alpha.jsonc")))
+          if (!present.ok) {
+            console.error(`[@alpha-code/ext] project config refused: ${present.reason}`)
+            return
+          }
+          if (present.value) {
             // 信任门:项目自带 mcp(可执行连接器)只在项目已 consent 时加载。consent 落 `.alpha/prefs.json`
             // 的 extensionsConsent(版本化,ADR-021 模式);未 consent → mcp 被 gated,记 loud 供 renderer 弹窗。
-            const trustExecutable = readProjectExtensionsConsent(project.root)
-            const { added, gatedExecutable } = mergeProjectConfig(cfg as Record<string, unknown>, readFileSync(f, "utf8"), {
+            const trustExecutable = readProjectExtensionsConsent(project)
+            if (trustExecutable === null) {
+              console.error("[@alpha-code/ext] project config refused: project alpha root identity drifted")
+              return
+            }
+            const configRead = withProjectDirectoryIdentity(project, (root) => readFileSync(join(root, "alpha.jsonc"), "utf8"))
+            if (!configRead.ok) {
+              console.error(`[@alpha-code/ext] project config refused: ${configRead.reason}`)
+              return
+            }
+            const { added, gatedExecutable } = mergeProjectConfig(cfg as Record<string, unknown>, configRead.value, {
               trustExecutable,
               directory: project.directory,
             })
@@ -174,15 +188,34 @@ export const AlphaExt: Plugin = async (input) => {
               return { title: "alpha_register", output: "refused: entry is not a valid JSON object string", metadata: { ok: false } }
             }
           }
-          const file = join(project.root, "alpha.jsonc")
-          const current = existsSync(file) ? readFileSync(file, "utf8") : null
+          const present = withProjectDirectoryIdentity(project, (root) => existsSync(join(root, "alpha.jsonc")))
+          if (!present.ok)
+            return { title: "alpha_register", output: `refused: ${present.reason}`, metadata: { ok: false } }
+          const currentRead = present.value
+            ? withProjectDirectoryIdentity(project, (root) => readFileSync(join(root, "alpha.jsonc"), "utf8"))
+            : { ok: true as const, value: null }
+          if (!currentRead.ok)
+            return { title: "alpha_register", output: `refused: ${currentRead.reason}`, metadata: { ok: false } }
+          const current = currentRead.value
           const r = applyRegister(current, args.type as RegisterType, args.name, entry)
           if (!r.ok) return { title: "alpha_register", output: `refused: ${r.reason}`, metadata: { ok: false } }
+          const trusted = args.type === "mcp" ? readProjectExtensionsConsent(project) : true
+          if (trusted === null)
+            return { title: "alpha_register", output: "refused: project alpha root identity drifted", metadata: { ok: false } }
           try {
-            mkdirSync(project.root, { recursive: true })
-            const tmp = file + ".tmp"
-            writeFileSync(tmp, r.next)
-            renameSync(tmp, file)
+            const created = withProjectDirectoryIdentity(project, (root) => mkdirSync(root, { recursive: true }))
+            if (!created.ok)
+              return { title: "alpha_register", output: `refused: ${created.reason}`, metadata: { ok: false } }
+            const written = withProjectDirectoryIdentity(project, (root) =>
+              writeFileSync(join(root, "alpha.jsonc.tmp"), r.next),
+            )
+            if (!written.ok)
+              return { title: "alpha_register", output: `refused: ${written.reason}`, metadata: { ok: false } }
+            const committed = withProjectDirectoryIdentity(project, (root) =>
+              renameSync(join(root, "alpha.jsonc.tmp"), join(root, "alpha.jsonc")),
+            )
+            if (!committed.ok)
+              return { title: "alpha_register", output: `refused: ${committed.reason}`, metadata: { ok: false } }
           } catch (error) {
             return {
               title: "alpha_register",
@@ -192,7 +225,7 @@ export const AlphaExt: Plugin = async (input) => {
           }
           pendingReloads.set(ctx.sessionID ?? "", { reason: `alpha_register ${args.type} ${args.name}`.trim(), at: Date.now() })
           const consentNote =
-            args.type === "mcp" && !readProjectExtensionsConsent(project.root)
+            args.type === "mcp" && !trusted
               ? "\nnote: this project has not yet been granted permission to load executable extensions — the connector stays gated until the user confirms the trust dialog (it appears when the project session is opened)."
               : ""
           return {
@@ -269,8 +302,13 @@ export const AlphaExt: Plugin = async (input) => {
   // REQ-060 plugin host fan-out:加载项目 `.alpha/plugins/*.js`(信任门:未 consent 不加载可执行物)
   // 并与 ownHooks 合并 return —— 项目插件的 hook 经引擎照常派发,项目零 `.opencode`/零 config.plugin[]。
   const project = projectRootFor(input.directory)
-  const trusted = !!project && readProjectExtensionsConsent(project.root)
-  const projectHooks = await loadProjectPlugins(project?.root ?? "", input, trusted, {
+  const consent = project ? readProjectExtensionsConsent(project) : false
+  if (consent === null) {
+    console.error("[@alpha-code/ext] project plugin fan-out refused: project alpha root identity drifted")
+    return ownHooks
+  }
+  const projectHooks = await loadProjectPlugins(project?.root ?? "", input, consent, {
+    verifyIdentity: () => !!project && withProjectDirectoryIdentity(project, () => true).ok,
     existsSync,
     readdirSync,
     importModule: (u) => import(u),
@@ -286,11 +324,16 @@ export const AlphaExt: Plugin = async (input) => {
 
 /** 项目扩展信任门 consent:`<dir>/.alpha/prefs.json` 的 `extensionsConsent.granted === true`(版本化,
  *  ADR-021 模式)。缺失/坏/未授 = 不信任(默认拒绝可执行物,安全红线)。 */
-function readProjectExtensionsConsent(root: string): boolean {
+function readProjectExtensionsConsent(
+  project: Extract<ReturnType<typeof projectDirectoryIdentity>, { status: "project" }>,
+): boolean | null {
+  const present = withProjectDirectoryIdentity(project, (root) => existsSync(join(root, "prefs.json")))
+  if (!present.ok) return null
+  if (!present.value) return false
   try {
-    const p = join(root, "prefs.json")
-    if (!existsSync(p)) return false
-    const prefs = JSON.parse(readFileSync(p, "utf8")) as { extensionsConsent?: { granted?: unknown } }
+    const read = withProjectDirectoryIdentity(project, (root) => readFileSync(join(root, "prefs.json"), "utf8"))
+    if (!read.ok) return null
+    const prefs = JSON.parse(read.value) as { extensionsConsent?: { granted?: unknown } }
     return prefs?.extensionsConsent?.granted === true
   } catch {
     return false

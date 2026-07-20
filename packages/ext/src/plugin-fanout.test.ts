@@ -48,6 +48,7 @@ describe("mergeHooks — host + project plugin hooks", () => {
 
 describe("loadProjectPlugins — trust gate + dynamic import", () => {
   const baseDeps = {
+    verifyIdentity: () => true,
     existsSync: () => true,
     readdirSync: () => ["a.js", "b.js", "notjs.ts"],
     pathToFileURL: (p: string) => `file://${p}`,
@@ -75,6 +76,18 @@ describe("loadProjectPlugins — trust gate + dynamic import", () => {
     })
     expect(seen).toEqual(["file:///proj/.alpha/plugins/a.js", "file:///proj/.alpha/plugins/b.js"]) // notjs.ts skipped
     expect(hooks.length).toBe(2)
+  })
+
+  test("dynamic import 紧前身份复验失败 → 整次 fan-out 拒绝且 import 零执行", async () => {
+    let imported = 0
+    let checks = 0
+    const hooks = await loadProjectPlugins("/proj/.alpha", {}, true, {
+      ...baseDeps,
+      verifyIdentity: () => ++checks < 3,
+      importModule: async () => (imported++, { default: async () => ({}) }),
+    })
+    expect(hooks).toEqual([])
+    expect(imported).toBe(0)
   })
 
   test("a broken plugin is skipped loud, others still load", async () => {
