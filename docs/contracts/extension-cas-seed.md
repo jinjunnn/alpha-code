@@ -203,7 +203,9 @@ CAS 补充语义:
 - **互斥与恢复语义**:GC 先持 CAS 级锁(GC 对 GC 串行),再逐环境根持 REQ-100 Bundle 锁 ——
   任一环境有活事务 → 整轮如实跳过(非阻塞);陈旧锁走 `ext-bundle-lock` 既有 stale 恢复。
   sweep 期间新事务无法启动;blob 彼此独立 ⇒ 任意崩溃点后 store 自洽,下一轮从头 mark。
-- **可观测**:`dryRun` 返回完整 sweep 计划(逐 digest/bytes)与 `keptByGrace` 计数,零删除。
+- **可观测**:`dryRun` 在 collector/main 边界返回完整 sweep 计划(逐 digest/bytes)与
+  `keptByGrace` 计数,零删除；该完整 report 不是 renderer wire 类型。Settings 消费面只收
+  [typed adapter 的 closed aggregate projection](settings-and-extension-storage-adapters.md)。
 - **生产触发(REQ-102 #318,`ext-cas-gc-scheduler.ts`)**:启动后 5 分钟首跑,此后 24 小时一轮
   (单次 schedule → spawn worker → await → finally 链式 rearm(#367),不重叠、异常不断链;
   睡眠错过的周期由下一 timer
@@ -236,6 +238,10 @@ CAS 补充语义:
   独立无序删,下一轮从头 mark)。**pid 残余差异(如实留痕)**:worker 与 main 同进程共享
   pid,锁记录与 pidAlive 语义不变;但 worker 致命终止绕过 finally 而 main 存活时,锁内
   pid 仍判活,最长等心跳超 staleMs(15min)后由 stale 恢复机接管。
+- **手动触发(REQ-090 #432)**:`extensionStorage.inspect/collect` 与生产 scheduler 复用同一 worker
+  入口及冻结配置；`inspect` 只改 `dryRun=true`，`collect` 使用 `dryRun=false`。手动轮次之间在
+  adapter 内单飞，跨定时轮次/进程/事务仍由上述 CAS/Bundle 锁裁决。renderer 只收到稳定状态码
+  与五项聚合计数，不收到 `reason`、digest、路径或 warning 明细。
 - **project 根不参与 mark = 合同行为**
   (ADR-030 / #362 裁决:project-scoped catalog/seed generation 已收回,受支持的 catalog
   generation 仅存在于 dev/prod/beta 环境根 —— 见 §6;#318 完成矩阵的 project 项由验收
@@ -261,6 +267,7 @@ CAS 补充语义:
 | seed 安装生产链(#317:e2e / 双真源漂移拒绝矩阵 / CAS 注错 abort / XOR / downgrade 门;#358:agent e2e / authorize 单 key / fresh-only 三态 / 装约定拒绝矩阵 / 卸载清授权账;#359:mcp e2e+liveMcp / 纯 validator 负测 / secret·workspace·Excel 拒 / plugin 确定性 staging / #352 三态矩阵 / npm 拒 / 篡改拒) | `packages/ui-mac/src/main/ext-seed-install.test.ts` |
 | file action 引擎语义(#358:file+config 原子 / 缺席≠零字节 / 崩溃恢复前滚·回滚 / 旁路改写 fail-closed) | `packages/ui-mac/src/main/ext-transaction-file.test.ts` |
 | GC 生产触发(#318:调度语义 / 权威配置取值点 / outcome 分类;promote 窗口 mtime 回归在 gc.test。#367:worker 事件终态矩阵(fake 驱动)+ workerData/摘要严格解码矩阵 + 真 worker 冒烟 + 构建入口 wiring 守卫) | `packages/ui-mac/src/main/ext-cas-gc-scheduler.test.ts` |
+| Settings/CAS-GC typed adapter(#432:校验、revision CAS、失败恢复、脱敏、手动轮次与 renderer 聚合白名单) | `packages/ui-mac/src/main/settings-adapters.test.ts` |
 | project 收回:catalog/seed/bundle 统一拒绝 + 遗留管理面 + generation teardown(#372) | `packages/ui-mac/src/main/ext-install-planner.test.ts` |
 | project 残留检测/显式清理(journal 在场 fail-closed / 幂等 / 移动项目单项拒) | `packages/ui-mac/src/main/ext-project-residuals.test.ts` |
 | 第一方六动作 wiring:installCatalog intent 恒 scope=global | `packages/ui-mac/src/renderer/extensions/install-scope-wiring.test.ts` |
