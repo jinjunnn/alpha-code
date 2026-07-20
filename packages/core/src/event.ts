@@ -386,12 +386,12 @@ export const layerWith = (options?: LayerOptions) =>
                   version: definition.durable.version,
                 },
               }
-              if (Object.isFrozen(event.data)) Object.freeze(event)
+              if (Object.isFrozen(event.data)) deepFreeze(event)
               yield* notify(event as Payload, true)
               return event
             }
           }
-          if (Object.isFrozen(event.data)) Object.freeze(event)
+          if (Object.isFrozen(event.data)) deepFreeze(event)
           yield* notify(event as Payload, false)
           return event
         })
@@ -638,3 +638,18 @@ export const layerWith = (options?: LayerOptions) =>
 
 const layer = layerWith()
 export const node = makeGlobalNode({ service: Service, layer: layer, deps: [Database.node] })
+
+function deepFreeze<T>(value: T, seen = new Set<object>()): T {
+  if (!value || typeof value !== "object" || seen.has(value)) return value
+  seen.add(value)
+  const descriptors = Object.getOwnPropertyDescriptors(value)
+  const keys = Reflect.ownKeys(descriptors)
+  for (let index = 0; index < keys.length; index++) {
+    if (!Object.hasOwn(keys, index)) throw new Error("Expected own freeze keys")
+    const descriptor = Object.getOwnPropertyDescriptor(descriptors, keys[index]!)?.value as
+      | PropertyDescriptor
+      | undefined
+    if (descriptor && Object.hasOwn(descriptor, "value")) deepFreeze(descriptor.value, seen)
+  }
+  return Object.isFrozen(value) ? value : Object.freeze(value)
+}

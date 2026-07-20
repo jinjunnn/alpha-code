@@ -199,7 +199,7 @@ describe("PermissionV2", () => {
     }),
   )
 
-  it.effect("replays a pre-admission reject receipt before evaluating current allow rules", () =>
+  it.effect("replays only an exact pre-admission receipt and records the admission fact", () =>
     Effect.gen(function* () {
       yield* setup()
       const original = yield* waitForRequest(assertion({ id: PermissionV2.ID.create("per_legacy_receipt") }))
@@ -216,13 +216,53 @@ describe("PermissionV2", () => {
       yield* setRules([{ action: "read", resource: "*", effect: "allow" }])
 
       const restarted = yield* restartPermission()
+      const conflict = yield* restarted
+        .ask(assertion({ id: original.request.id, action: "bash", resources: ["pwd"] }))
+        .pipe(Effect.flip)
+      expect(conflict).toEqual(new PermissionV2.ConflictError({ requestID: original.request.id }))
+      expect(yield* database.db.select().from(PermissionRequestTable).all()).toEqual([])
+
       expect(yield* restarted.ask(assertion({ id: original.request.id }))).toEqual({
         status: "decided",
         receipt,
       })
       expect((yield* restarted.assert(assertion({ id: original.request.id })).pipe(Effect.exit))._tag).toBe("Failure")
-      expect(yield* database.db.select().from(PermissionRequestTable).all()).toEqual([])
+      expect(yield* database.db.select().from(PermissionRequestTable).all()).toMatchObject([
+        {
+          request_id: original.request.id,
+          request_fingerprint: original.request.fingerprint,
+          outcome: "ask",
+        },
+      ])
       expect(yield* database.db.select().from(PermissionDecisionTable).all()).toHaveLength(1)
+    }),
+  )
+
+  it.effect("conflicts on a pre-admission receipt without a usable fingerprint", () =>
+    Effect.gen(function* () {
+      yield* setup()
+      const original = yield* waitForRequest(assertion({ id: PermissionV2.ID.create("per_unfingerprinted_receipt") }))
+      yield* original.service.reply(
+        decision(original.request, "once", PermissionV2.DecisionID.create("pdec_unfingerprinted_receipt")),
+      )
+      yield* Fiber.await(original.fiber)
+      const database = yield* Database.Service
+      yield* database.db
+        .delete(PermissionRequestTable)
+        .where(eq(PermissionRequestTable.request_id, original.request.id))
+        .run()
+        .pipe(Effect.orDie)
+      yield* database.db
+        .update(PermissionDecisionTable)
+        .set({ request_fingerprint: "" as never })
+        .where(eq(PermissionDecisionTable.request_id, original.request.id))
+        .run()
+        .pipe(Effect.orDie)
+
+      const conflict = yield* (yield* restartPermission()).ask(assertion({ id: original.request.id })).pipe(Effect.flip)
+
+      expect(conflict).toEqual(new PermissionV2.ConflictError({ requestID: original.request.id }))
+      expect(yield* database.db.select().from(PermissionRequestTable).all()).toEqual([])
     }),
   )
 
@@ -287,6 +327,49 @@ describe("PermissionV2", () => {
       expect(yield* database.db.select().from(PermissionTable).all()).toMatchObject([
         { action: "read", resource: "src/*" },
       ])
+    }),
+  )
+
+  it.effect("rejects -0 metadata before admission", () =>
+    Effect.gen(function* () {
+      yield* setup()
+      const service = yield* PermissionV2.Service
+      const result = yield* service
+        .ask(assertion({ id: PermissionV2.ID.create("per_negative_zero"), metadata: { value: -0 } }))
+        .pipe(Effect.exit)
+
+      expect(result._tag).toBe("Failure")
+      expect(yield* (yield* Database.Service).db.select().from(PermissionRequestTable).all()).toEqual([])
+    }),
+  )
+
+  it.effect("rejects non-canonical array properties without evaluating their values", () =>
+    Effect.gen(function* () {
+      yield* setup()
+      const service = yield* PermissionV2.Service
+      const negative = ["src/index.ts"]
+      const marker = { accessed: false }
+      Object.defineProperty(negative, "-1", {
+        enumerable: true,
+        get() {
+          marker.accessed = true
+          return "outside/project"
+        },
+      })
+      const notANumber = ["src/index.ts"]
+      Object.defineProperty(notANumber, "NaN", { enumerable: true, value: "outside/project" })
+
+      const negativeResult = yield* service
+        .ask(assertion({ id: PermissionV2.ID.create("per_negative_index"), resources: negative }))
+        .pipe(Effect.exit)
+      const notANumberResult = yield* service
+        .ask(assertion({ id: PermissionV2.ID.create("per_nan_index"), resources: notANumber }))
+        .pipe(Effect.exit)
+
+      expect(negativeResult._tag).toBe("Failure")
+      expect(notANumberResult._tag).toBe("Failure")
+      expect(marker.accessed).toBe(false)
+      expect(yield* (yield* Database.Service).db.select().from(PermissionRequestTable).all()).toEqual([])
     }),
   )
 
@@ -355,6 +438,68 @@ describe("PermissionV2", () => {
       expect(second.status).toBe("pending")
       if (first.status !== "pending" || second.status !== "pending") return
       expect(first.request.fingerprint).not.toBe(second.request.fingerprint)
+    }),
+  )
+
+  it.effect("keeps action in the fingerprint under Array prototype pollution", () =>
+    Effect.gen(function* () {
+      yield* setup()
+      const service = yield* PermissionV2.Service
+      const firstInput = assertion({ id: PermissionV2.ID.create("per_array_setter_first") })
+      const secondInput = assertion({ id: PermissionV2.ID.create("per_array_setter_second"), action: "bash" })
+      const retryInput = assertion({ id: firstInput.id, action: "bash" })
+      const indexDescriptor = Object.getOwnPropertyDescriptor(Array.prototype, "2")
+      const iteratorDescriptor = Object.getOwnPropertyDescriptor(Array.prototype, Symbol.iterator)!
+      const pushDescriptor = Object.getOwnPropertyDescriptor(Array.prototype, "push")!
+      const arrayIterator = Array.prototype[Symbol.iterator]
+      const arrayPush = Array.prototype.push
+      const restore = () => {
+        if (indexDescriptor) Object.defineProperty(Array.prototype, "2", indexDescriptor)
+        else Reflect.deleteProperty(Array.prototype, "2")
+        Object.defineProperty(Array.prototype, Symbol.iterator, iteratorDescriptor)
+        Object.defineProperty(Array.prototype, "push", pushDescriptor)
+      }
+      yield* Effect.addFinalizer(() => Effect.sync(restore))
+      Object.defineProperty(Array.prototype, "2", {
+        configurable: true,
+        set(value) {
+          Object.defineProperty(this, "2", {
+            configurable: true,
+            enumerable: true,
+            value: value === "action" ? "resources" : value,
+            writable: true,
+          })
+        },
+      })
+      Object.defineProperty(Array.prototype, Symbol.iterator, {
+        configurable: true,
+        value: function (this: unknown[]) {
+          if (this === firstInput.resources || this === secondInput.resources || this === retryInput.resources)
+            throw new Error("request arrays must use own-index iteration")
+          return Reflect.apply(arrayIterator, this, [])
+        },
+        writable: true,
+      })
+      Object.defineProperty(Array.prototype, "push", {
+        configurable: true,
+        value: function (this: unknown[], ...values: unknown[]) {
+          if (this === firstInput.resources || this === secondInput.resources || this === retryInput.resources)
+            throw new Error("request arrays must not use inherited push")
+          return Reflect.apply(arrayPush, this, values)
+        },
+        writable: true,
+      })
+
+      const first = yield* service.ask(firstInput)
+      const second = yield* service.ask(secondInput)
+      const conflict = yield* service.ask(retryInput).pipe(Effect.flip)
+      restore()
+
+      expect(first.status).toBe("pending")
+      expect(second.status).toBe("pending")
+      if (first.status !== "pending" || second.status !== "pending") return
+      expect(first.request.fingerprint).not.toBe(second.request.fingerprint)
+      expect(conflict).toEqual(new PermissionV2.ConflictError({ requestID: firstInput.id }))
     }),
   )
 
@@ -427,6 +572,61 @@ describe("PermissionV2", () => {
       expect(reads.count).toBe(0)
       expect(snapshot.metadata).toEqual({ nested: { value: "safe" } })
       expect(retry).toEqual({ status: "pending", request: snapshot })
+    }),
+  )
+
+  it.effect("sorts bounded metadata and rejects entry or depth overflow", () =>
+    Effect.gen(function* () {
+      yield* setup()
+      const service = yield* PermissionV2.Service
+      const bounded = Object.create(null) as Record<string, string>
+      for (let index = 255; index >= 0; index--) bounded[`key_${String(index).padStart(3, "0")}`] = String(index)
+      const accepted = yield* service.ask(
+        assertion({ id: PermissionV2.ID.create("per_metadata_bounded"), metadata: bounded }),
+      )
+
+      const tooMany = Object.create(null) as Record<string, string>
+      for (let index = 256; index >= 0; index--) tooMany[`key_${String(index).padStart(3, "0")}`] = String(index)
+      const entryOverflow = yield* service
+        .ask(assertion({ id: PermissionV2.ID.create("per_metadata_entries"), metadata: tooMany }))
+        .pipe(Effect.exit)
+
+      const boundedDepth: Record<string, unknown> = Object.create(null)
+      let boundedCursor = boundedDepth
+      for (let depth = 1; depth < 16; depth++) {
+        const next: Record<string, unknown> = Object.create(null)
+        boundedCursor.next = next
+        boundedCursor = next
+      }
+      boundedCursor.value = "accepted"
+      const depthAccepted = yield* service.ask(
+        assertion({
+          id: PermissionV2.ID.create("per_metadata_depth_bounded"),
+          metadata: boundedDepth as never,
+        }),
+      )
+
+      const tooDeep: Record<string, unknown> = Object.create(null)
+      let deepCursor = tooDeep
+      for (let depth = 1; depth <= 16; depth++) {
+        const next: Record<string, unknown> = Object.create(null)
+        deepCursor.next = next
+        deepCursor = next
+      }
+      deepCursor.value = "rejected"
+      const depthOverflow = yield* service
+        .ask(
+          assertion({
+            id: PermissionV2.ID.create("per_metadata_depth"),
+            metadata: tooDeep as never,
+          }),
+        )
+        .pipe(Effect.exit)
+
+      expect(accepted.status).toBe("pending")
+      expect(depthAccepted.status).toBe("pending")
+      expect(entryOverflow._tag).toBe("Failure")
+      expect(depthOverflow._tag).toBe("Failure")
     }),
   )
 

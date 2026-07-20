@@ -19,6 +19,8 @@ export { Effect, Rule, Ruleset } from "@opencode-ai/schema/permission"
 const missingAgentPermissions: Permission.Ruleset = [{ action: "*", resource: "*", effect: "deny" }]
 const stringCharCodeAt = String.prototype.charCodeAt
 const hex = "0123456789abcdef"
+const metadataMaxEntries = 256
+const metadataMaxDepth = 16
 
 export const ID = Permission.ID
 export type ID = typeof ID.Type
@@ -309,7 +311,11 @@ const layer = Layer.effect(
             if (admitted) {
               if (admitted.request_fingerprint !== fingerprint) return yield* new ConflictError({ requestID })
               const decided = yield* findReceipt(requestID)
-              if (decided) return { status: "decided" as const, receipt: decided }
+              if (decided) {
+                if (requiredOwn(decided, "requestFingerprint") !== fingerprint)
+                  return yield* new ConflictError({ requestID })
+                return { status: "decided" as const, receipt: decided }
+              }
               if (admitted.outcome !== "ask") return { status: "evaluated" as const, effect: admitted.outcome }
               const item = {
                 request: yield* requestSnapshot(admitted),
@@ -325,6 +331,19 @@ const layer = Layer.effect(
             const historical = yield* findReceipt(requestID)
             if (historical) {
               if (requiredOwn(historical, "sessionID") !== sessionID) return yield* new ConflictError({ requestID })
+              if (requiredOwn(historical, "requestFingerprint") !== fingerprint)
+                return yield* new ConflictError({ requestID })
+              yield* database.db
+                .insert(PermissionRequestTable)
+                .values({
+                  request_id: requestID,
+                  session_id: sessionID,
+                  request_fingerprint: fingerprint,
+                  request: value,
+                  outcome: "ask",
+                })
+                .run()
+                .pipe(Effect.orDie)
               return { status: "decided" as const, receipt: historical }
             }
 
@@ -665,6 +684,7 @@ function deepFreeze<T>(value: T): T {
   const descriptors = Object.getOwnPropertyDescriptors(value)
   const keys = Reflect.ownKeys(descriptors)
   for (let index = 0; index < keys.length; index++) {
+    if (!Object.hasOwn(keys, index)) throw new Error("Expected own freeze keys")
     const descriptor = descriptorAt(descriptors, keys[index]!)
     if (descriptor && Object.hasOwn(descriptor, "value")) deepFreeze(descriptor.value)
   }
@@ -681,12 +701,19 @@ function eventPayload<T>(value: T): T {
 
 function wireSnapshot<T>(value: T): T {
   const path = new Set<object>()
-  return visit(value) as T
+  let metadataEntries = 0
+  return visit(value, 0) as T
 
-  function visit(item: unknown): unknown {
+  function visit(item: unknown, depth: number, metadataDepth?: number): unknown {
     if (item === null || typeof item === "string" || typeof item === "boolean") return item
-    if (typeof item === "number" && Number.isFinite(item)) return item
+    if (typeof item === "number") {
+      if (!Number.isFinite(item) || Object.is(item, -0)) throw new Error("Expected a finite JSON number other than -0")
+      return item
+    }
     if (!item || typeof item !== "object" || path.has(item)) throw new Error("Expected an acyclic JSON wire value")
+    if (depth > metadataMaxDepth + 2) throw new Error("Expected a bounded JSON wire value")
+    if (metadataDepth !== undefined && metadataDepth > metadataMaxDepth)
+      throw new Error(`Expected metadata with at most ${metadataMaxDepth} nested containers`)
 
     const array = Array.isArray(item)
     const prototype = Object.getPrototypeOf(item)
@@ -704,32 +731,47 @@ function wireSnapshot<T>(value: T): T {
       const length = descriptorAt(descriptors, "length")?.value
       if (!Number.isSafeInteger(length) || length < 0) throw new Error("Expected a dense JSON array")
       const result: unknown[] = []
+      Object.setPrototypeOf(result, null)
       result.length = length
+      if (metadataDepth !== undefined) {
+        metadataEntries += length
+        if (metadataEntries > metadataMaxEntries)
+          throw new Error(`Expected metadata with at most ${metadataMaxEntries} entries`)
+      }
       for (let index = 0; index < keys.length; index++) {
+        if (!Object.hasOwn(keys, index)) throw new Error("Expected own array indices")
         const key = keys[index]!
         if (key === "length") continue
-        if (typeof key !== "string" || String(Number(key)) !== key || Number(key) >= length)
-          throw new Error("Expected a dense JSON array")
+        if (typeof key !== "string" || !isArrayIndex(key, length)) throw new Error("Expected a dense JSON array")
       }
       for (let index = 0; index < length; index++) {
         const descriptor = descriptorAt(descriptors, String(index))
         if (!descriptor?.enumerable || !Object.hasOwn(descriptor, "value"))
           throw new Error("Expected a dense JSON array")
-        result[index] = visit(descriptor.value)
+        result[index] = visit(descriptor.value, depth + 1, metadataDepth === undefined ? undefined : metadataDepth + 1)
       }
       path.delete(item)
-      Object.setPrototypeOf(result, null)
       return result
     }
 
     const result = Object.create(null) as Record<PropertyKey, unknown>
+    if (metadataDepth !== undefined) {
+      metadataEntries += keys.length
+      if (metadataEntries > metadataMaxEntries)
+        throw new Error(`Expected metadata with at most ${metadataMaxEntries} entries`)
+    }
     for (let index = 0; index < keys.length; index++) {
+      if (!Object.hasOwn(keys, index)) throw new Error("Expected own object keys")
       const key = keys[index]!
       if (typeof key !== "string") throw new Error("Expected string-keyed JSON objects")
       const descriptor = descriptorAt(descriptors, key)
       if (!descriptor?.enumerable || !Object.hasOwn(descriptor, "value"))
         throw new Error("Expected enumerable JSON data properties")
-      result[key] = visit(descriptor.value)
+      result[key] = visit(
+        descriptor.value,
+        depth + 1,
+        metadataDepth === undefined ? (depth === 0 && key === "metadata" ? 1 : undefined) : metadataDepth + 1,
+      )
     }
     path.delete(item)
     return result
@@ -741,25 +783,25 @@ function canonicalJson(value: unknown): string {
   if (typeof value === "string") return quoteJson(value)
   if (typeof value === "boolean") return value ? "true" : "false"
   if (typeof value === "number") {
-    if (!Number.isFinite(value)) throw new Error("Expected a finite JSON number")
-    return Object.is(value, -0) ? "0" : String(value)
+    if (!Number.isFinite(value) || Object.is(value, -0)) throw new Error("Expected a finite JSON number other than -0")
+    return String(value)
   }
   if (!value || typeof value !== "object") throw new Error("Expected a JSON wire value")
 
   if (Array.isArray(value)) {
-    const prototype = Object.getPrototypeOf(value)
-    if (prototype !== Array.prototype && prototype !== null) throw new Error("Expected a plain JSON array")
-    const descriptors = Object.getOwnPropertyDescriptors(value)
-    const keys = Reflect.ownKeys(descriptors)
-    for (let index = 0; index < keys.length; index++) {
-      const key = keys[index]!
-      if (key === "length") continue
-      if (typeof key !== "string" || String(Number(key)) !== key || Number(key) >= value.length)
-        throw new Error("Expected a dense JSON array")
+    if (Object.getPrototypeOf(value) !== null) throw new Error("Expected a prototype-free JSON array")
+    const length = Object.getOwnPropertyDescriptor(value, "length")?.value
+    if (!Number.isSafeInteger(length) || length < 0) throw new Error("Expected a dense JSON array")
+    let entries = 0
+    for (const key in value) {
+      if (!Object.hasOwn(value, key)) continue
+      if (!isArrayIndex(key, length)) throw new Error("Expected a dense JSON array")
+      entries++
     }
+    if (entries !== length) throw new Error("Expected a dense JSON array")
     let result = "["
-    for (let index = 0; index < value.length; index++) {
-      const descriptor = descriptorAt(descriptors, String(index))
+    for (let index = 0; index < length; index++) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index))
       if (!descriptor?.enumerable || !Object.hasOwn(descriptor, "value")) throw new Error("Expected a dense JSON array")
       if (index > 0) result += ","
       result += canonicalJson(descriptor.value)
@@ -768,32 +810,50 @@ function canonicalJson(value: unknown): string {
   }
   if (Object.getPrototypeOf(value) !== null) throw new Error("Expected a prototype-free JSON object")
 
-  const descriptors = Object.getOwnPropertyDescriptors(value)
-  const ownKeys = Reflect.ownKeys(descriptors)
-  const keys: string[] = []
-  for (let index = 0; index < ownKeys.length; index++) {
-    const key = ownKeys[index]
-    if (typeof key !== "string") throw new Error("Expected string-keyed JSON objects")
-    keys[index] = key
+  const keys = Object.create(null) as Record<number, string>
+  let length = 0
+  for (const key in value) {
+    if (!Object.hasOwn(value, key)) continue
+    const descriptor = Object.getOwnPropertyDescriptor(value, key)
+    if (!descriptor?.enumerable || !Object.hasOwn(descriptor, "value"))
+      throw new Error("Expected enumerable JSON data properties")
+    keys[length] = key
+    length++
   }
-  for (let index = 1; index < keys.length; index++) {
-    for (let cursor = index; cursor > 0 && keys[cursor - 1]! > keys[cursor]!; cursor--) {
-      const previous = keys[cursor - 1]!
-      keys[cursor - 1] = keys[cursor]!
-      keys[cursor] = previous
-    }
-  }
+  sortKeys(keys, length)
 
   let result = "{"
-  for (let index = 0; index < keys.length; index++) {
+  for (let index = 0; index < length; index++) {
     const key = keys[index]!
-    const descriptor = descriptorAt(descriptors, key)
+    const descriptor = Object.getOwnPropertyDescriptor(value, key)
     if (!descriptor?.enumerable || !Object.hasOwn(descriptor, "value"))
       throw new Error("Expected enumerable JSON data properties")
     if (index > 0) result += ","
     result += quoteJson(key) + ":" + canonicalJson(descriptor.value)
   }
   return result + "}"
+}
+
+function sortKeys(keys: Record<number, string>, length: number) {
+  const scratch = Object.create(null) as Record<number, string>
+  for (let width = 1; width < length; width *= 2) {
+    for (let start = 0; start < length; start += width * 2) {
+      const middle = Math.min(start + width, length)
+      const end = Math.min(start + width * 2, length)
+      let left = start
+      let right = middle
+      for (let target = start; target < end; target++) {
+        const takeLeft = right >= end || (left < middle && keys[left]! <= keys[right]!)
+        scratch[target] = takeLeft ? keys[left++]! : keys[right++]!
+      }
+    }
+    for (let index = 0; index < length; index++) keys[index] = scratch[index]!
+  }
+}
+
+function isArrayIndex(key: string, length: number) {
+  const index = Number(key)
+  return Number.isSafeInteger(index) && index >= 0 && String(index) === key && index < length
 }
 
 function quoteJson(value: string) {

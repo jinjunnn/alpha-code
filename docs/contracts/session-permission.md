@@ -29,21 +29,29 @@ owned by REQ-212.
 Admission first copies untrusted input exactly once from own property
 descriptors, then validates and decodes only that inert copy. Accessors, sparse
 arrays, custom prototypes, symbols, host objects such as `Date`, functions,
-`undefined`, non-finite numbers, and cyclic values are rejected fail-closed.
+`undefined`, non-finite numbers, negative zero, non-canonical array properties,
+and cyclic values are rejected fail-closed. Metadata is limited to 256 total
+enumerable entries, including nested array elements, and 16 nested containers;
+either overflow is rejected before admission.
 The service rebuilds the decoded internal snapshot with no prototypes and
 reads request fields only after an own-property check, then recursively freezes
 it before fingerprinting or evaluation. Service reads return detached copies;
-Permission event data is instead deeply frozen so every sequential listener
-observes the same facts and must clone before mutation.
+Permission event data and its event envelope, including `location`, metadata,
+and durable routing fields, are instead deeply frozen so every sequential
+listener and stream consumer observes the same facts and must clone before
+mutation.
 
 The fingerprint covers every request fact except `id`: Session, subject,
 action, resources, scope, expiry, save candidates, metadata, and source.
 Object keys are recursively sorted before hashing; array order is retained. A
-purpose-built deterministic JSON serializer visits only own enumerable data
-properties and never invokes `toJSON` or another value-controlled method. The
-hash is computed from the actual frozen public-wire snapshot and is checked
-again immediately before a decision commits. Request ID and fingerprint
-therefore form the immutable idempotency identity.
+purpose-built deterministic JSON serializer emits by string concatenation,
+stores sortable keys only in prototype-free indexed objects, and uses a
+deterministic O(n log n) merge sort. It visits array elements by checked own
+indices and never invokes `toJSON`, an inherited array method, or another
+value-controlled method. The hash is computed from the actual frozen
+public-wire snapshot and is checked again immediately before a decision
+commits. Request ID and fingerprint therefore form the immutable idempotency
+identity.
 
 `PermissionV2.DecisionCommand` contains `requestFingerprint`, `decisionID`,
 `decision`, and optional correction `message`. It is a discriminated union:
@@ -121,11 +129,13 @@ failed grant write therefore leaves no success receipt and keeps the request
 pending.
 
 Databases created before `permission_request` may contain receipts without a
-matching admission row. Admission checks such a same-Session receipt before
-consulting current rules and replays it as the durable authority; it does not
-attempt to reinterpret an older fingerprint through the current serializer or
-write a replacement outcome. A receipt owned by another Session conflicts
-without exposing its contents.
+matching admission row. Admission checks such a receipt before consulting
+current rules and replays it only when its Session and stored fingerprint match
+the current request exactly. Before returning the receipt it writes the missing
+`permission_request` fact with the original prompted (`ask`) outcome. A receipt
+whose fingerprint is missing, unusable, or different is not an exact replay:
+admission returns `Conflict` and the caller must use a new request ID. A receipt
+owned by another Session also conflicts without exposing its contents.
 
 A process crash before that transaction commits has no success fact and remains
 fail-closed. After commit, rebuilding the Permission service reads the receipt;
@@ -144,5 +154,6 @@ to. A reply without that re-admission remains not found and fail-closed.
 | 404    | `PermissionNotFoundError` | Neither a pending request nor an accessible receipt matches the Session and request ID. |
 | 409    | `ConflictError`           | A request ID or decision ID was reused with different immutable facts.                  |
 
-Cross-Session receipt lookup is reported as not found rather than exposing the
-existence of another Session's decision.
+Create/admission retries against a receipt owned by another Session return
+`Conflict`. Reply lookup for a receipt outside the supplied Session returns
+`PermissionNotFoundError` rather than exposing that decision's contents.
