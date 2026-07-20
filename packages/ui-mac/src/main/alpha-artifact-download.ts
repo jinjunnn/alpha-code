@@ -10,7 +10,8 @@
 //   ④ 流式写盘:response body → 同目录唯一后缀 `.part`,边写边计数 + 单遍 sha256(峰值内存 = 单 chunk,
 //      不随文件大小增长);长度未知/对端少报 → 累计首次越界即 abort,关文件、删 `.part`;
 //   ⑤ 校验:实收字节 vs Content-Length/descriptor.size;sha256 vs descriptor.sha256/ETag/Digest
-//      (多源 digest 互相矛盾 → 读前即拒);全部通过才原子 rename 落最终名,否则分类报错 + 删 `.part`;
+//      (多源 digest 互相矛盾 → 读前即拒);全部通过后必须经注入的 run/project 配额 finalizer,
+//      由它在原子准入临界区内 rename 落最终名,否则分类报错 + 删 `.part`;
 //   ⑥ 重试永不与旧 `.part` 相撞:后缀含 pid/时钟/序号/随机量,open 用 "wx" 保持 loud。
 //
 // 兼容窗口(REQ-092 交付 6;⏰ INLINE_ARTIFACT_COMPAT_REMOVAL = 2026-08-15 后与平台 flag 一起删):
@@ -54,6 +55,12 @@ export type ArtifactDownloadErrorCode =
 
 export type ArtifactDownloadProgress = { bytes: number; total?: number; percent?: number }
 
+export type ArtifactFinalizeInput = { partPath: string; targetPath: string; bytes: number }
+export type ArtifactFinalizeResult =
+  | { ok: true }
+  | { ok: false; error: "over-limit" | "disk"; detail: string }
+export type ArtifactFinalizer = (input: ArtifactFinalizeInput) => ArtifactFinalizeResult
+
 export type ArtifactDownloadOutcome =
   | {
       ok: true
@@ -86,6 +93,8 @@ export type ArtifactDownloadDeps = {
   /** 悬挂检测(alpha-cloud-events 同款纪律):响应头等待 / 相邻 chunk 间隔超时 → loud network 错误,
    *  绝不让 IPC promise 永久悬挂。默认 90s。 */
   idleTimeoutMs?: number
+  /** REQ-093/#279:唯一 final rename 权限;生产组装必须注入原子 run/project 配额准入。 */
+  finalize: ArtifactFinalizer
 }
 
 const DEFAULT_IDLE_TIMEOUT_MS = 90_000
@@ -258,6 +267,7 @@ type WriteCheckedOpts = {
   signal?: AbortSignal
   onProgress?: (p: ArtifactDownloadProgress) => void
   via: "stream" | "inline-compat"
+  finalize: ArtifactFinalizer
 }
 
 export async function writeChunksChecked(
@@ -358,7 +368,11 @@ export async function writeChunksChecked(
     await fh.sync()
     await fh.close()
     fh = null
-    fs.renameSync(part, opts.targetPath) // 同目录原子 rename —— 只有全部校验通过才出现最终文件
+    const finalized = opts.finalize({ partPath: part, targetPath: opts.targetPath, bytes })
+    if (!finalized.ok) {
+      await cleanup()
+      return finalized
+    }
   } catch (error) {
     await cleanup()
     return { ok: false, error: "disk", detail: sanitizeTransportError(errMsg(error)) }
@@ -499,6 +513,7 @@ async function streamStage(
     signal: req.signal,
     onProgress: req.onProgress,
     via: "stream",
+    finalize: deps.finalize,
   })
 }
 
@@ -642,5 +657,6 @@ async function inlineCompatStage(
     signal: req.signal,
     onProgress: req.onProgress,
     via: "inline-compat",
+    finalize: deps.finalize,
   })
 }

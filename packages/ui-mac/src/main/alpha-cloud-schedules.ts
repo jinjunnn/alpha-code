@@ -8,7 +8,7 @@
 //  · 云端执行走 **research 管线**(任务描述 = 调研问题;bounded-agent 档随 B service-token 演进);
 //  · schedule 只认 5 字段 cron:interval 每 N 分钟(N<60)转 `*/N * * * *`,once 不支持云档;
 //  · B 端预算硬帽(15 iter/150k tok/300s)、每租户 ≤10 条、最小间隔 5 分钟 —— 超限 B 拒绝,错误原样呈现。
-import { registerDownloadedArtifact } from "./artifact-service"
+import { finalizeArtifactWithQuota, registerDownloadedArtifact } from "./artifact-service"
 import type { AutomationTask } from "../shared/automation-types"
 import { scheduleToCron } from "../shared/automation-schedule"
 import { downloadCloudArtifactTo, getCloudJobStatus, listCloudArtifacts } from "./alpha-cloud-jobs"
@@ -146,7 +146,11 @@ async function doPull(): Promise<{ pulled: number } | { error: string }> {
         status: getCloudJobStatus,
         artifacts: listCloudArtifacts,
         // REQ-092:流式落盘(bearer 仅 main;.part + 限额前置 + sha256 + 原子 rename)。
-        download: (artifact, targetPath, jobId) => downloadCloudArtifactTo({ artifact, targetPath, jobId }),
+        download: (artifact, targetPath, jobId) =>
+          downloadCloudArtifactTo(
+            { artifact, targetPath, jobId },
+            (input) => finalizeArtifactWithQuota(task.target.projectDir, job.job_id, input),
+          ),
         // REQ-093:下载成功即入 manifest(依赖注入,见 SaveRunDeps.register)。
         register: (input) => registerDownloadedArtifact(task.target.projectDir, job.job_id, input),
       },

@@ -17,6 +17,7 @@ import {
   writeChunksChecked,
   type ArtifactDownloadDeps,
   type ArtifactDownloadOutcome,
+  type ArtifactFinalizer,
 } from "./alpha-artifact-download"
 import { ARTIFACT_SCHEMA_VERSION, INLINE_ARTIFACT_COMPAT_FLAG, type ArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
 
@@ -98,10 +99,20 @@ function okResponse(body: Uint8Array[] | null, headers: Record<string, string> =
 
 const utf8 = (s: string) => new TextEncoder().encode(s)
 
+const finalizeWithoutQuota: ArtifactFinalizer = (input) => {
+  try {
+    fs.renameSync(input.partPath, input.targetPath)
+    return { ok: true }
+  } catch {
+    return { ok: false, error: "disk", detail: "test final rename failed" }
+  }
+}
+
 const deps = (fetchImpl: typeof fetch, over: Partial<ArtifactDownloadDeps> = {}): ArtifactDownloadDeps => ({
   token: TOKEN,
   base: BASE,
   fetchImpl,
+  finalize: finalizeWithoutQuota,
   ...over,
 })
 
@@ -543,6 +554,7 @@ describe("helpers", () => {
       expectedSize: 4,
       onProgress: (p) => progress.push(p),
       via: "stream",
+      finalize: finalizeWithoutQuota,
     })
     expect(res.ok).toBe(true)
     expect(progress.at(-1)).toMatchObject({ bytes: 4, total: 4, percent: 100 })

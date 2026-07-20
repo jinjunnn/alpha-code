@@ -4,7 +4,7 @@ kind: contract
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-13
+last_reviewed: 2026-07-20
 review_after: 2026-10-13
 ---
 
@@ -70,6 +70,35 @@ Login activates platform mode and respawns the sidecar in place when a live
 window exists. Cold-start callbacks defer activation until the next normal
 sidecar start. Logout clears token state and re-forks without platform
 credentials.
+
+## Managed cloud artifact persistence
+
+Cloud artifact bytes remain in the main process and stream to a unique `.part`
+file below `<project>/.alpha/runs/<run>/artifacts/`. After length and digest
+verification, every production download must pass the project-owned artifact
+quota finalizer; no caller has direct final-rename authority.
+
+The finalizer serializes admission per managed project with a cross-process
+exclusive lock. While holding that lock, it derives committed usage from
+regular files on disk, including legacy files that are not in a manifest, and
+checks all of these limits before the atomic final rename:
+
+- 100 MiB per artifact;
+- 256 committed artifacts and 512 MiB per run; and
+- 5 GiB across the managed project.
+
+The usage check and rename are one synchronous critical section, so concurrent
+finalizers cannot both consume the same remaining capacity. Quota exhaustion,
+an unreadable usage root, or an unavailable admission lock fails closed and
+does not create a final file. Errors expose a stable category and bounded quota
+figures, not local paths, descriptor metadata, bearer values, or response
+content.
+
+Quota has no independent durable reservation counter. A crash before rename
+can leave only a uniquely named staging file, which is excluded from committed
+usage; a crash after rename leaves a regular final file, which the next disk
+scan charges automatically. A subsequent admission reclaims a dead or stale
+lock while preserving the old lock as local diagnostic evidence.
 
 ## Invariants
 

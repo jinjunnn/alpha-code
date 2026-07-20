@@ -8,17 +8,19 @@
 //   · resolveArtifact / verifyArtifact —— 按 id 取 descriptor;全量 sha256 复核(离线篡改检测,AC#4);
 //   · removeArtifact —— 本地删除 + manifest 原子更新(ADR-019 守卫;保留策略/自动清理是平台侧
 //     与 retention 专项的范围,这里只提供 GC 钩子,不做策略);
-//   · run/project 字节与件数核算 —— 从 manifest 派生数字;配额**执行**(前置拒绝)属写入端(#184)
-//     与平台侧闸门,本服务只诚实供数(REQ-093 §5 的基线常量集中在此供两端引用)。
+//   · run/project 字节与件数核算 + final rename 前的原子配额准入(REQ-093/#279);
+//     基线常量与执行点集中在此,不让供数与执法漂移。
 //
 // 内容鉴别诚实原则:claimedMime / detectedMime 并列呈现;冲突产 warning;本服务不重新推导 trust,
 // 也不基于扩展名"升级"任何结论(REQ-093 交付 4 的 A 侧表面;magic 检测本体在写入端/平台)。
 //
-// 并发模型:main 进程单线程 + 同步 fs,read-modify-write 天然串行;写入以 tmp+rename 原子落盘。
+// 并发模型:同一 managed project 的配额准入用跨进程 `wx` 锁串行;锁内同步执行
+// 严格盘面核算 + final rename,检查与提交之间没有 await/可插队窗口。
 
 import * as crypto from "node:crypto"
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { hostname } from "node:os"
 import { isSafeRunId, safeResolveInAlpha } from "./alpha-workdir"
 import {
   ARTIFACT_MANIFEST_VERSION,
@@ -33,20 +35,295 @@ import {
 } from "./artifact-manifest"
 
 // ---- 配额基线(REQ-093 §5)。单件/单 run 件数上限来自契约镜像(与平台同值);单 run 字节与
-// managed project 字节是 A 侧基线,集中在此。执行策略(越界前置拒绝)在写入端/平台,不在本服务。----
+// managed project 字节是 A 侧基线。单件上限由流式写入器执行,其余三项由本模块在 final rename 前执行。----
 import { ARTIFACT_MAX_BYTES, MAX_ARTIFACTS_PER_RUN } from "../shared/cloud-artifact-descriptor"
 export { ARTIFACT_MAX_BYTES, MAX_ARTIFACTS_PER_RUN }
 export const MAX_RUN_ARTIFACT_BYTES = 512 * 1024 * 1024
 export const MAX_PROJECT_ARTIFACT_BYTES = 5 * 1024 * 1024 * 1024
+
+export const ARTIFACT_QUOTA_LOCK_FILE = "artifact-quota.lock"
+const ARTIFACT_QUOTA_STALE_DIR = "artifact-quota-stale"
+const ARTIFACT_QUOTA_LOCK_STALE_MS = 15 * 60_000
+const ARTIFACT_PART_SUFFIX_RE = /\.[0-9a-z]+-[0-9a-z]+-[0-9a-z]+-[0-9a-f]{8}\.part$/
+
+export type ArtifactQuotaLimits = {
+  runMaxBytes: number
+  runMaxCount: number
+  projectMaxBytes: number
+}
+
+export type ArtifactQuotaFinalizeInput = {
+  partPath: string
+  targetPath: string
+  bytes: number
+}
+
+export type ArtifactQuotaFinalizeResult =
+  | { ok: true }
+  | { ok: false; error: "over-limit" | "disk"; detail: string }
+
+export type ArtifactQuotaFinalizeOptions = {
+  limits?: ArtifactQuotaLimits
+  now?: () => Date
+  pidAlive?: (pid: number) => boolean
+  lockStaleMs?: number
+}
+
+type ArtifactQuotaLockHolder = {
+  v: 1
+  pid: number
+  hostname: string
+  nonce: string
+  acquiredAt: string
+}
+
+type ArtifactQuotaLock = { release(): void }
+
+type CommittedArtifactUsage = {
+  totalBytes: number
+  runs: Map<string, { bytes: number; count: number }>
+}
+
+/** 专用于崩溃恢复证据/诊断;返回 null = project 身份不可确认。 */
+export function artifactQuotaLockPath(projectDir: string): string | null {
+  return safeResolveInAlpha(projectDir, ARTIFACT_QUOTA_LOCK_FILE)
+}
+
+/**
+ * REQ-093/#279 唯一 final rename 准入点。一把 project 锁内同步完成:盘面真相核算 →
+ * run 件数/run 字节/project 字节判定 → rename。超限与核算不可信都 fail closed,
+ * 且错误面不携带绝对路径、descriptor 或凭据。
+ *
+ * 没有独立持久化“已预留字节”计数:锁释放前 rename 就是提交。崩溃若发生在 rename 前,
+ * 只剩不计入 committed usage 的唯一 `.part`;发生在 rename 后,最终文件会被下次盘面扫描自然计费。
+ */
+export function finalizeArtifactWithQuota(
+  projectDir: string,
+  runId: string,
+  input: ArtifactQuotaFinalizeInput,
+  opts: ArtifactQuotaFinalizeOptions = {},
+): ArtifactQuotaFinalizeResult {
+  if (!isSafeRunId(runId)) return quotaDiskError("invalid run identity")
+  const artifactsDir = safeResolveInAlpha(projectDir, "runs", runId, RUN_ARTIFACTS_SUBDIR)
+  if (!artifactsDir) return quotaDiskError("project identity unavailable")
+  const targetPath = path.resolve(input.targetPath)
+  const partPath = path.resolve(input.partPath)
+  const relativeTarget = path.relative(artifactsDir, targetPath)
+  if (!relativeTarget || relativeTarget.startsWith(`..${path.sep}`) || path.isAbsolute(relativeTarget))
+    return quotaDiskError("target outside the managed artifact directory")
+  if (ARTIFACT_PART_SUFFIX_RE.test(path.basename(targetPath)))
+    return quotaDiskError("final target conflicts with the staging namespace")
+  if (safeResolveInAlpha(projectDir, "runs", runId, RUN_ARTIFACTS_SUBDIR, ...relativeTarget.split(path.sep)) !== targetPath)
+    return quotaDiskError("target identity unavailable")
+  if (
+    path.dirname(partPath) !== path.dirname(targetPath) ||
+    !partPath.startsWith(`${targetPath}.`) ||
+    !ARTIFACT_PART_SUFFIX_RE.test(path.basename(partPath))
+  )
+    return quotaDiskError("staging file identity unavailable")
+
+  try {
+    const staged = fs.lstatSync(partPath)
+    if (!staged.isFile() || staged.size !== input.bytes) return quotaDiskError("staging byte count changed")
+  } catch {
+    return quotaDiskError("staging file unavailable")
+  }
+
+  const acquired = acquireArtifactQuotaLock(projectDir, opts)
+  if (!acquired.ok) return quotaDiskError(acquired.reason)
+  try {
+    const existing = existingTargetSize(targetPath)
+    if (!existing.ok) return quotaDiskError(existing.reason)
+    const usage = scanCommittedArtifactUsage(projectDir)
+    const run = usage.runs.get(runId) ?? { bytes: 0, count: 0 }
+    const limits = opts.limits ?? {
+      runMaxBytes: MAX_RUN_ARTIFACT_BYTES,
+      runMaxCount: MAX_ARTIFACTS_PER_RUN,
+      projectMaxBytes: MAX_PROJECT_ARTIFACT_BYTES,
+    }
+    const nextRunCount = run.count - (existing.exists ? 1 : 0) + 1
+    if (nextRunCount > limits.runMaxCount)
+      return quotaOverLimit("run artifact count", nextRunCount, limits.runMaxCount)
+    const nextRunBytes = run.bytes - existing.bytes + input.bytes
+    if (nextRunBytes > limits.runMaxBytes) return quotaOverLimit("run bytes", nextRunBytes, limits.runMaxBytes)
+    const nextProjectBytes = usage.totalBytes - existing.bytes + input.bytes
+    if (nextProjectBytes > limits.projectMaxBytes)
+      return quotaOverLimit("project bytes", nextProjectBytes, limits.projectMaxBytes)
+    try {
+      fs.renameSync(partPath, targetPath)
+    } catch {
+      return quotaDiskError("final rename failed")
+    }
+    return { ok: true }
+  } catch {
+    return quotaDiskError("committed usage unavailable")
+  } finally {
+    acquired.lock.release()
+  }
+}
+
+function quotaOverLimit(scope: string, next: number, limit: number): ArtifactQuotaFinalizeResult {
+  return { ok: false, error: "over-limit", detail: `artifact quota exceeded (${scope}: next ${next}, limit ${limit})` }
+}
+
+function quotaDiskError(reason: string): ArtifactQuotaFinalizeResult {
+  return { ok: false, error: "disk", detail: `artifact quota admission unavailable (${reason})` }
+}
+
+function existingTargetSize(targetPath: string):
+  | { ok: true; exists: boolean; bytes: number }
+  | { ok: false; reason: string } {
+  try {
+    const existing = fs.lstatSync(targetPath)
+    if (!existing.isFile()) return { ok: false, reason: "final target is not a regular file" }
+    return { ok: true, exists: true, bytes: existing.size }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { ok: true, exists: false, bytes: 0 }
+    return { ok: false, reason: "final target is unreadable" }
+  }
+}
+
+function scanCommittedArtifactUsage(projectDir: string): CommittedArtifactUsage {
+  const runsDir = safeResolveInAlpha(projectDir, "runs")
+  if (!runsDir) throw new Error("invalid project")
+  const runs = new Map<string, { bytes: number; count: number }>()
+  for (const entry of readDirectory(runsDir)) {
+    if (!entry.isDirectory() || !isSafeRunId(entry.name)) continue
+    runs.set(entry.name, scanCommittedArtifacts(path.join(runsDir, entry.name, RUN_ARTIFACTS_SUBDIR)))
+  }
+  return { totalBytes: [...runs.values()].reduce((sum, run) => sum + run.bytes, 0), runs }
+}
+
+function scanCommittedArtifacts(dir: string): { bytes: number; count: number } {
+  return readDirectory(dir).reduce(
+    (usage, entry) => {
+      const target = path.join(dir, entry.name)
+      const stat = fs.lstatSync(target)
+      if (stat.isSymbolicLink()) return usage
+      if (stat.isDirectory()) {
+        const nested = scanCommittedArtifacts(target)
+        return { bytes: usage.bytes + nested.bytes, count: usage.count + nested.count }
+      }
+      if (!stat.isFile() || ARTIFACT_PART_SUFFIX_RE.test(entry.name)) return usage
+      return { bytes: usage.bytes + stat.size, count: usage.count + 1 }
+    },
+    { bytes: 0, count: 0 },
+  )
+}
+
+function readDirectory(dir: string): fs.Dirent[] {
+  try {
+    return fs.readdirSync(dir, { withFileTypes: true })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return []
+    throw error
+  }
+}
+
+function acquireArtifactQuotaLock(
+  projectDir: string,
+  opts: ArtifactQuotaFinalizeOptions,
+): { ok: true; lock: ArtifactQuotaLock } | { ok: false; reason: string } {
+  const file = artifactQuotaLockPath(projectDir)
+  if (!file) return { ok: false, reason: "project lock identity unavailable" }
+  const now = opts.now ?? (() => new Date())
+  const pidAlive = opts.pidAlive ?? defaultPidAlive
+  const staleMs = opts.lockStaleMs ?? ARTIFACT_QUOTA_LOCK_STALE_MS
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const holder: ArtifactQuotaLockHolder = {
+      v: 1,
+      pid: process.pid,
+      hostname: hostname(),
+      nonce: crypto.randomBytes(8).toString("hex"),
+      acquiredAt: now().toISOString(),
+    }
+    try {
+      fs.writeFileSync(file, JSON.stringify(holder) + "\n", { flag: "wx" })
+      return { ok: true, lock: artifactQuotaLock(file, holder) }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST")
+        return { ok: false, reason: "project lock cannot be created" }
+    }
+    const existing = readArtifactQuotaLock(file)
+    if (!artifactQuotaLockIsStale(file, existing, now, pidAlive, staleMs))
+      return { ok: false, reason: "project lock busy" }
+    try {
+      const staleDir = safeResolveInAlpha(projectDir, ARTIFACT_QUOTA_STALE_DIR)
+      if (!staleDir) return { ok: false, reason: "stale lock evidence unavailable" }
+      fs.mkdirSync(staleDir, { recursive: true })
+      fs.renameSync(file, path.join(staleDir, `artifact-quota-${now().getTime()}-${crypto.randomBytes(4).toString("hex")}.lock`))
+    } catch {
+      continue
+    }
+  }
+  return { ok: false, reason: "project lock contention" }
+}
+
+function artifactQuotaLock(file: string, holder: ArtifactQuotaLockHolder): ArtifactQuotaLock {
+  return {
+    release() {
+      const current = readArtifactQuotaLock(file)
+      if (!current || current.pid !== holder.pid || current.nonce !== holder.nonce) return
+      try {
+        fs.unlinkSync(file)
+      } catch {
+        // 已释放或目录异常:绝不扩大删除范围。
+      }
+    },
+  }
+}
+
+function readArtifactQuotaLock(file: string): ArtifactQuotaLockHolder | null {
+  try {
+    const holder = JSON.parse(fs.readFileSync(file, "utf8")) as ArtifactQuotaLockHolder
+    if (
+      holder?.v !== 1 ||
+      !Number.isInteger(holder.pid) ||
+      holder.pid <= 0 ||
+      typeof holder.hostname !== "string" ||
+      typeof holder.nonce !== "string" ||
+      typeof holder.acquiredAt !== "string"
+    )
+      return null
+    return holder
+  } catch {
+    return null
+  }
+}
+
+function artifactQuotaLockIsStale(
+  file: string,
+  holder: ArtifactQuotaLockHolder | null,
+  now: () => Date,
+  pidAlive: (pid: number) => boolean,
+  staleMs: number,
+): boolean {
+  if (holder?.hostname === hostname() && !pidAlive(holder.pid)) return true
+  try {
+    const timestamp = holder ? Date.parse(holder.acquiredAt) : fs.statSync(file).mtimeMs
+    return !Number.isFinite(timestamp) || now().getTime() - timestamp > staleMs
+  } catch {
+    return false
+  }
+}
+
+function defaultPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM"
+  }
+}
 
 // ---------------------------------------------------------------------------
 // 登记(#184 集成点)
 // ---------------------------------------------------------------------------
 
 /**
- * ⚠️ #184 集成点(唯一写入入口):流式下载器在 `.part` 写完、单遍 sha256 算得、原子 rename 到
- * `artifacts/<name>` 之后,以本函数登记。字节真相取自盘上 stat(不信调用方声明);descriptor 原样
- * 镜像存入(远端结论保留来源,本地只降级不改写)。
+ * ⚠️ #184 集成点(唯一登记入口):流式下载器在 `.part` 写完、单遍 sha256 算得、
+ * `finalizeArtifactWithQuota` 准入并原子 rename 到 `artifacts/<name>` 之后,以本函数登记。
+ * 字节真相取自盘上 stat(不信调用方声明);descriptor 原样镜像存入。
  */
 export type RegisterArtifactInput = {
   descriptor: ArtifactDescriptor
@@ -137,13 +414,6 @@ export function registerDownloadedArtifact(
   const idx = manifest.artifacts.findIndex((e) => e.descriptor.id === d.id)
   if (idx >= 0) manifest.artifacts[idx] = entry
   else manifest.artifacts.push(entry)
-
-  // 配额诚实供数:越过基线只 loud 记录(执行归写入端前置闸;这里不半途拒绝已落盘的文件,防"未登记 final 文件")。
-  if (manifest.artifacts.length > MAX_ARTIFACTS_PER_RUN)
-    warnings.push(`run artifact count ${manifest.artifacts.length} exceeds baseline ${MAX_ARTIFACTS_PER_RUN}`)
-  const runBytes = manifest.artifacts.reduce((sum, e) => sum + e.local.bytesOnDisk, 0)
-  if (runBytes > MAX_RUN_ARTIFACT_BYTES)
-    warnings.push(`run artifact bytes ${runBytes} exceed baseline ${MAX_RUN_ARTIFACT_BYTES}`)
 
   manifest.updatedAt = new Date().toISOString()
   const written = writeArtifactManifest(projectDir, runId, manifest)
@@ -526,7 +796,7 @@ export function removeArtifact(projectDir: string, runId: string, artifactId: st
 }
 
 // ---------------------------------------------------------------------------
-// 字节核算(quota/retention 供数;执行策略刻意不在此)
+// 字节核算(quota/retention 供数;quota 执行点在本文件上方 finalizer)
 // ---------------------------------------------------------------------------
 
 export type RunArtifactUsage = {
