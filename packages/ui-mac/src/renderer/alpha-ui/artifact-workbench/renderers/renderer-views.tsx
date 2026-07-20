@@ -36,6 +36,7 @@ function absolutePathOf(ctx: PreviewContext): string | null {
 }
 
 function openExternally(ctx: PreviewContext): void {
+  if (ctx.decision.externalOpen !== "allowed") return
   const p = absolutePathOf(ctx)
   if (p) void window.api.openPath(p)
 }
@@ -452,8 +453,11 @@ function HonestCard(props: PreviewProps & { title: string; note: string }) {
         <FactRow label="sha256" value={shortSha(d!.sha256)} />
         <FactRow label={t("alpha.wb.factTrust")} value={`${d!.trust} · ${d!.role}`} />
       </Show>
+      <Show when={props.ctx.decision.ooxmlSubtype}>
+        <FactRow label="OOXML" value={`${props.ctx.decision.ooxmlSubtype} · ${props.ctx.decision.effectiveMime}`} />
+      </Show>
       <div class="a-wb-toolbar">
-        <Show when={props.ctx.card.savedPath}>
+        <Show when={props.ctx.card.savedPath && props.ctx.decision.externalOpen === "allowed"}>
           <button type="button" class="a-wb-btn" data-variant="primary" onClick={() => openExternally(props.ctx)}>
             {t("alpha.wb.openExternal")}
           </button>

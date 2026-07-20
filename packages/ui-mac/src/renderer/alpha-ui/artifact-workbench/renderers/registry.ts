@@ -1,12 +1,15 @@
 // Artifact renderer registry — REQ-095 核心(alpha-code#187)。纯逻辑、零 DOM、零 IPC,bun:test 可全测。
 //
 // 确定性路由(优先级从高到低,同源内按 priority 降序、id 升序稳定裁决):
-//   ① detectedMime(magic 检测,local.detectedMime ?? descriptor.detectedMime)——
+//   ① 本地 OOXML 结构检测(central directory + [Content_Types].xml + actual main part)——
+//      只有检测成功且扩展名/claimed/detected 声称不冲突时,才允许外部 Office 特权打开;
+//      检测中、检测失败、畸形/超限容器、结构冲突一律 non-privileged fallback;
+//   ② detectedMime(magic 检测,local.detectedMime ?? descriptor.detectedMime)——
 //      一旦存在即**权威**:仅按它路由;它映射不到 renderer 就直接 fallback,
 //      绝不再退回 claimed/扩展名(检测说是 zip 的东西,不因声明是 text 就当文本打开);
-//   ② claimedMime(产出端按扩展名声明)—— 无检测结果时使用;
-//   ③ 文件扩展名 —— 无任何 MIME 时的最后猜测;
-//   ④ fallback renderer(descriptor 事实 + 外部打开)。
+//   ③ claimedMime(产出端按扩展名声明)—— 无检测结果时使用;
+//   ④ 文件扩展名 —— 无任何 MIME 时的最后猜测;
+//   ⑤ fallback renderer(descriptor 事实 + 外部打开)。
 // 冲突诚实(REQ-093 内容鉴别诚实原则):claimed 与 detected 不一致 → 按 detected 路由 + warning;
 // claimed 与扩展名指向不同 renderer(且无 detected)→ 按 claimed 路由 + warning。
 //
@@ -18,6 +21,8 @@
 //     深化;在此之前源码视图是唯一诚实且安全的呈现。
 //   · "image" renderer 只经 <img> + blob 呈现(被动解码,不执行脚本);声明为 image/* 的
 //     非图片内容最多解码失败 → 可恢复错误卡,不会执行。
+
+import { OOXML_SUBTYPES, type OoxmlDetection, type OoxmlSubtype } from "./ooxml"
 
 export type RendererId =
   | "markdown"
@@ -52,12 +57,17 @@ export type RouteDecision = {
   reason: string
   /** 诚实警告(MIME 冲突、扩展名不符等)—— UI 以 chip 呈现。 */
   warnings: string[]
+  /** 系统外部打开是 renderer 的特权动作;疑似 OOXML 必须先过结构闸。 */
+  externalOpen: "allowed" | "blocked"
+  /** 仅本地结构检测成功时存在;从不由扩展名/claimedMime 合成。 */
+  ooxmlSubtype?: OoxmlSubtype
 }
 
 export type RouteInput = {
   name: string
   claimedMime?: string | null
   detectedMime?: string | null
+  ooxml?: OoxmlDetection | null
 }
 
 // ---------------------------------------------------------------------------
@@ -143,6 +153,27 @@ export function mimeForName(name: string): string | null {
   return null
 }
 
+const OOXML_MIMES = new Set<string>(Object.values(OOXML_SUBTYPES).map((facts) => facts.mime))
+const OOXML_EXTENSIONS = new Set<OoxmlSubtype>(Object.keys(OOXML_SUBTYPES) as OoxmlSubtype[])
+const NEUTRAL_CONTAINER_MIMES = new Set(["application/zip", "application/octet-stream"])
+
+/** Workbench uses this pure predicate to decide whether it must read bytes before routing. */
+export function shouldDetectOoxml(input: Pick<RouteInput, "name" | "claimedMime" | "detectedMime">): boolean {
+  const extension = extensionOf(input.name)
+  if (extension && OOXML_EXTENSIONS.has(extension as OoxmlSubtype)) return true
+  return [normalizeMime(input.claimedMime), normalizeMime(input.detectedMime)].some(
+    (mime) => mime !== null && (OOXML_MIMES.has(mime) || mime === "application/zip"),
+  )
+}
+
+function hasOoxmlClaim(input: Pick<RouteInput, "name" | "claimedMime" | "detectedMime">): boolean {
+  const extension = extensionOf(input.name)
+  if (extension && OOXML_EXTENSIONS.has(extension as OoxmlSubtype)) return true
+  return [normalizeMime(input.claimedMime), normalizeMime(input.detectedMime)].some(
+    (mime) => mime !== null && OOXML_MIMES.has(mime),
+  )
+}
+
 // ---------------------------------------------------------------------------
 // 内置注册表(REQ-095 交付 2 的本切片:markdown / text / code / json / csv / image / pdf +
 // html 占位 + fallback;audio/video/Office 归 fallback,诚实外部打开 —— 见 workbench 报告)
@@ -183,6 +214,58 @@ export function routeArtifact(input: RouteInput): RouteDecision {
   const extMime = mimeForName(input.name)
   const warnings: string[] = []
 
+  // OOXML is the one format family whose privileged consumer is external Office. The local byte
+  // detector is the only authority:generic ZIP magic, an Office MIME, or a .docx/.xlsx/.pptx name
+  // merely requires the gate;none can grant it.
+  if (shouldDetectOoxml(input)) {
+    if (input.ooxml?.status === "detected") {
+      const extension = extensionOf(input.name)
+      const conflicts = [
+        extension && extension !== input.ooxml.subtype ? `扩展名 .${extension}` : null,
+        claimed && claimed !== input.ooxml.mime && !NEUTRAL_CONTAINER_MIMES.has(claimed) ? `声明 MIME ${claimed}` : null,
+        detected && detected !== input.ooxml.mime && !NEUTRAL_CONTAINER_MIMES.has(detected) ? `既有检测 MIME ${detected}` : null,
+      ].filter((value): value is string => value !== null)
+      if (conflicts.length > 0) {
+        warnings.push(`OOXML 结构为 ${input.ooxml.subtype},但与${conflicts.join("、")}冲突 —— 已阻止特权渲染`)
+        return {
+          rendererId: "fallback",
+          effectiveMime: input.ooxml.mime,
+          source: "detected",
+          reason: `OOXML ${input.ooxml.subtype} 结构与声称不符 → non-privileged fallback`,
+          warnings,
+          externalOpen: "blocked",
+          ooxmlSubtype: input.ooxml.subtype,
+        }
+      }
+
+      const id = pickRenderer({ mime: input.ooxml.mime, name: input.name })
+      return {
+        rendererId: id ?? "fallback",
+        effectiveMime: input.ooxml.mime,
+        source: "detected",
+        reason: id
+          ? `检测 OOXML ${input.ooxml.subtype} 结构(${input.ooxml.mime})→ ${id}`
+          : `检测 OOXML ${input.ooxml.subtype} 结构(${input.ooxml.mime});无内置 renderer → fallback`,
+        warnings,
+        externalOpen: "allowed",
+        ooxmlSubtype: input.ooxml.subtype,
+      }
+    }
+
+    if (hasOoxmlClaim(input)) {
+      const failure = input.ooxml ? input.ooxml.reason : "结构检测尚未完成"
+      warnings.push(`OOXML 结构未获证:${failure} —— 已阻止特权渲染`)
+      return {
+        rendererId: "fallback",
+        effectiveMime: detected ?? claimed ?? extMime,
+        source: detected ? "detected" : claimed ? "claimed" : extensionOf(input.name) ? "extension" : "none",
+        reason: `OOXML 结构未获证 → non-privileged fallback`,
+        warnings,
+        externalOpen: "blocked",
+      }
+    }
+  }
+
   if (detected && claimed && detected !== claimed)
     warnings.push(`MIME 冲突:声明 ${claimed},检测 ${detected} —— 按检测结果路由`)
 
@@ -190,13 +273,14 @@ export function routeArtifact(input: RouteInput): RouteDecision {
   if (detected) {
     const id = pickRenderer({ mime: detected, name: input.name })
     if (id)
-      return { rendererId: id, effectiveMime: detected, source: "detected", reason: `检测 MIME ${detected} → ${id}`, warnings }
+      return { rendererId: id, effectiveMime: detected, source: "detected", reason: `检测 MIME ${detected} → ${id}`, warnings, externalOpen: "allowed" }
     return {
       rendererId: "fallback",
       effectiveMime: detected,
       source: "detected",
       reason: `检测 MIME ${detected} 无内置 renderer → fallback`,
       warnings,
+      externalOpen: "allowed",
     }
   }
 
@@ -208,7 +292,7 @@ export function routeArtifact(input: RouteInput): RouteDecision {
       if (extId !== id) warnings.push(`扩展名(${extMime})与声明 MIME(${claimed})不一致,且无 magic 检测结果`)
     }
     if (id)
-      return { rendererId: id, effectiveMime: claimed, source: "claimed", reason: `声明 MIME ${claimed} → ${id}`, warnings }
+      return { rendererId: id, effectiveMime: claimed, source: "claimed", reason: `声明 MIME ${claimed} → ${id}`, warnings, externalOpen: "allowed" }
     // claimed 无映射 → 扩展名兜底(与 claimed 同保真度,都是名字派生)。
     if (extMime) {
       const extId = pickRenderer({ mime: extMime, name: input.name })
@@ -219,6 +303,7 @@ export function routeArtifact(input: RouteInput): RouteDecision {
           source: "extension",
           reason: `声明 MIME ${claimed} 无内置 renderer;按扩展名 ${extMime} → ${extId}`,
           warnings,
+          externalOpen: "allowed",
         }
     }
     return {
@@ -227,6 +312,7 @@ export function routeArtifact(input: RouteInput): RouteDecision {
       source: "claimed",
       reason: `声明 MIME ${claimed} 无内置 renderer → fallback`,
       warnings,
+      externalOpen: "allowed",
     }
   }
 
@@ -234,9 +320,9 @@ export function routeArtifact(input: RouteInput): RouteDecision {
   if (extMime) {
     const id = pickRenderer({ mime: extMime, name: input.name })
     if (id)
-      return { rendererId: id, effectiveMime: extMime, source: "extension", reason: `扩展名 MIME ${extMime} → ${id}`, warnings }
+      return { rendererId: id, effectiveMime: extMime, source: "extension", reason: `扩展名 MIME ${extMime} → ${id}`, warnings, externalOpen: "allowed" }
   }
 
   // ④ 确定 fallback。
-  return { rendererId: "fallback", effectiveMime: null, source: "none", reason: "无 MIME/扩展名线索 → fallback", warnings }
+  return { rendererId: "fallback", effectiveMime: null, source: "none", reason: "无 MIME/扩展名线索 → fallback", warnings, externalOpen: "allowed" }
 }

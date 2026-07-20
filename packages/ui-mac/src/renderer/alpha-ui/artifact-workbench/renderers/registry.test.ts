@@ -1,7 +1,16 @@
 // REQ-095(#187)registry 路由单测:确定性、优先级(detected > claimed > extension > fallback)、
 // 冲突诚实(warning chip)、恶意 fixture(html 冒充 image、带脚本 SVG、检测结论权威不回退)。
 import { describe, expect, test } from "bun:test"
-import { extensionOf, mimeForName, normalizeMime, routeArtifact, RENDERER_REGISTRY } from "./registry"
+import { OOXML_SUBTYPES, type OoxmlDetection } from "./ooxml"
+import { extensionOf, mimeForName, normalizeMime, routeArtifact, RENDERER_REGISTRY, shouldDetectOoxml } from "./registry"
+
+const DETECTED_XLSX: OoxmlDetection = {
+  status: "detected",
+  subtype: "xlsx",
+  mime: OOXML_SUBTYPES.xlsx.mime,
+  entryCount: 3,
+  uncompressedBytes: 1024,
+}
 
 describe("normalizeMime / extension helpers", () => {
   test("小写 + 去参数", () => {
@@ -58,6 +67,58 @@ describe("路由优先级", () => {
     const d = routeArtifact({ name: "notes.md", claimedMime: "application/x-unknown-thing" })
     expect(d.rendererId).toBe("markdown")
     expect(d.source).toBe("extension")
+  })
+})
+
+describe("OOXML 结构闸(REQ-093 #281)", () => {
+  test("Office 扩展名/MIME 与 generic ZIP magic 都要求结构检测", () => {
+    expect(shouldDetectOoxml({ name: "book.xlsx" })).toBe(true)
+    expect(shouldDetectOoxml({ name: "book", claimedMime: OOXML_SUBTYPES.xlsx.mime })).toBe(true)
+    expect(shouldDetectOoxml({ name: "book.bin", detectedMime: "application/zip" })).toBe(true)
+    expect(shouldDetectOoxml({ name: "notes.txt", detectedMime: "text/plain" })).toBe(false)
+  })
+
+  test("真实 xlsx 结构 + 一致声称:仍走既有 fallback,但允许外部 Office 打开", () => {
+    const decision = routeArtifact({
+      name: "book.xlsx",
+      claimedMime: OOXML_SUBTYPES.xlsx.mime,
+      detectedMime: "application/zip",
+      ooxml: DETECTED_XLSX,
+    })
+    expect(decision.rendererId).toBe("fallback")
+    expect(decision.effectiveMime).toBe(OOXML_SUBTYPES.xlsx.mime)
+    expect(decision.ooxmlSubtype).toBe("xlsx")
+    expect(decision.externalOpen).toBe("allowed")
+  })
+
+  test("改扩展名:xlsx 结构伪装 docx → non-privileged fallback", () => {
+    const decision = routeArtifact({
+      name: "renamed.docx",
+      claimedMime: OOXML_SUBTYPES.docx.mime,
+      detectedMime: "application/zip",
+      ooxml: DETECTED_XLSX,
+    })
+    expect(decision.rendererId).toBe("fallback")
+    expect(decision.ooxmlSubtype).toBe("xlsx")
+    expect(decision.externalOpen).toBe("blocked")
+    expect(decision.warnings.join(" ")).toContain("特权渲染")
+  })
+
+  test("结构与非中性 claimed/detected MIME 任一冲突都阻止特权渲染", () => {
+    for (const input of [
+      { name: "book.xlsx", claimedMime: "application/pdf", detectedMime: "application/zip" },
+      { name: "book.xlsx", claimedMime: OOXML_SUBTYPES.xlsx.mime, detectedMime: "text/html" },
+    ]) {
+      expect(routeArtifact({ ...input, ooxml: DETECTED_XLSX }).externalOpen).toBe("blocked")
+    }
+  })
+
+  test("检测中/非 OOXML/畸形或超限一律 fail-closed,普通非 OOXML 不受影响", () => {
+    const input = { name: "book.xlsx", claimedMime: OOXML_SUBTYPES.xlsx.mime }
+    expect(routeArtifact(input).externalOpen).toBe("blocked")
+    expect(routeArtifact({ ...input, ooxml: { status: "not-ooxml", reason: "no content types" } }).externalOpen).toBe("blocked")
+    expect(routeArtifact({ ...input, ooxml: { status: "rejected", reason: "ZIP entry limit exceeded" } }).externalOpen).toBe("blocked")
+    expect(routeArtifact({ name: "archive.bin" }).externalOpen).toBe("allowed")
   })
 })
 
