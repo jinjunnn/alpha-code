@@ -20,7 +20,7 @@ import type { UpdaterState } from "@opencode-ai/app/updater"
 import * as Sentry from "@sentry/solid"
 import type { AsyncStorage } from "@solid-primitives/storage"
 import { MemoryRouter } from "@solidjs/router"
-import { createEffect, createMemo, createResource, createSignal, onCleanup, onMount, Show } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, lazy, onCleanup, onMount, Show } from "solid-js"
 import { render } from "solid-js/web"
 import pkg from "../../package.json"
 import { initI18n, t } from "./i18n"
@@ -59,6 +59,10 @@ import { ArtifactWorkbench } from "./alpha-ui/artifact-workbench/artifact-workbe
 import { Splash } from "./logo-alpha"
 import { useTheme } from "@opencode-ai/ui/theme/context"
 import { ALPHA_THEME, ALPHA_THEME_ID } from "./theme-alpha"
+
+const DevSurfaceMapInspector = import.meta.env.DEV
+  ? lazy(() => import("./dev/surface-map-inspector"))
+  : () => null
 
 // First-run brand default: ship the orange Alpha theme. The theme context reads
 // `opencode-theme-id` from localStorage before it mounts, so seeding it here (only
@@ -518,6 +522,7 @@ render(() => {
               <AlphaBoundary name="ToastViewport">
                 <ToastViewport />
               </AlphaBoundary>
+              <DevSurfaceMapInspector resolved={resolvedSurfaces.latest} />
               {/* REQ-087 spike 容器侧探针:flag off ⇒ 恒 null(session-spike/spike-flag.ts) */}
               <AlphaBoundary name="SessionSpikeHost"><SessionSpikeHost /></AlphaBoundary>
             </AppInterface>

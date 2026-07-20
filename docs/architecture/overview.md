@@ -4,7 +4,7 @@ kind: architecture
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-13
+last_reviewed: 2026-07-20
 review_after: 2027-01-13
 ---
 
@@ -41,6 +41,8 @@ placed in tracked documentation.
 ## Sources of truth
 
 - Actual package/runtime behavior: current code, tests, schemas, and workflows.
+- Frontend route and non-route composition:
+  [`frontend-surfaces.md`](frontend-surfaces.md).
 - Upstream ownership and synchronization: [`upstream-integration.md`](upstream-integration.md).
 - Durable decisions: `.claude/rules/adrs/` indexed by
   [`.claude/rules/DECISIONS.md`](../../.claude/rules/DECISIONS.md).
