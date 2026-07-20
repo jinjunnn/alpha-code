@@ -3,11 +3,13 @@ import { join } from "node:path"
 import { writeChunksChecked } from "./alpha-artifact-download"
 import { finalizeArtifactWithQuota, type ArtifactQuotaLimits } from "./artifact-service"
 
-const [projectDir, runId, name, content, barrierDir, readyName, limitsJson, deadPidText] = process.argv.slice(2)
-if (!projectDir || !runId || !name || content === undefined || !barrierDir || !readyName || !limitsJson)
+const [projectDir, runId, name, content, barrierDir, markerName, limitsJson, deadlineText, deadPidText] = process.argv.slice(2)
+if (!projectDir || !runId || !name || content === undefined || !barrierDir || !markerName || !limitsJson || !deadlineText)
   throw new Error("artifact quota child: missing arguments")
 
 const limits = JSON.parse(limitsJson) as ArtifactQuotaLimits
+const deadline = Number(deadlineText)
+if (!Number.isSafeInteger(deadline) || deadline <= 0) throw new Error("artifact quota child: invalid deadline")
 const deadPid = deadPidText ? Number(deadPidText) : undefined
 if (deadPid !== undefined && (!Number.isInteger(deadPid) || deadPid <= 0))
   throw new Error("artifact quota child: invalid dead PID")
@@ -22,19 +24,22 @@ const result = await writeChunksChecked(
     maxBytes: 100,
     expectedSize: Buffer.byteLength(content),
     via: "stream",
-    finalize: (input) => {
-      writeFileSync(join(barrierDir, readyName), "ready\n", { flag: "wx" })
-      const deadline = Date.now() + 5_000
-      while (!existsSync(join(barrierDir, "start"))) {
-        if (Date.now() >= deadline) return { ok: false, error: "disk", detail: "child start barrier timed out" }
-        Atomics.wait(waiter, 0, 0, 10)
-      }
-      return finalizeArtifactWithQuota(projectDir, runId, input, {
+    finalize: (input) =>
+      finalizeArtifactWithQuota(projectDir, runId, input, {
         limits,
         ...(deadPid !== undefined ? { pidAlive: (pid: number) => (pid === deadPid ? false : undefined) } : {}),
-      })
-    },
+        testHooks: {
+          afterQuotaScan() {
+            writeFileSync(join(barrierDir, `scanned-${markerName}`), "scanned\n", { flag: "wx" })
+            while (!existsSync(join(barrierDir, "commit"))) {
+              if (Date.now() >= deadline) throw new Error("quota scan barrier timed out")
+              Atomics.wait(waiter, 0, 0, 10)
+            }
+          },
+        },
+      }),
   },
 )
 
+writeFileSync(join(barrierDir, `done-${markerName}`), "done\n", { flag: "wx" })
 process.stdout.write(JSON.stringify({ name, result }) + "\n")

@@ -42,8 +42,8 @@ export const MAX_RUN_ARTIFACT_BYTES = 512 * 1024 * 1024
 export const MAX_PROJECT_ARTIFACT_BYTES = 5 * 1024 * 1024 * 1024
 
 export const ARTIFACT_QUOTA_LOCK_FILE = "artifact-quota.lock"
-const ARTIFACT_QUOTA_RECOVERY_LOCK_FILE = "artifact-quota-recovery.lock"
 const ARTIFACT_QUOTA_STALE_DIR = "artifact-quota-stale"
+const ARTIFACT_QUOTA_LOCK_ATTEMPTS = 3
 const ARTIFACT_PART_SUFFIX_RE = /\.[0-9a-z]+-[0-9a-z]+-[0-9a-z]+-[0-9a-f]{8}\.part$/
 
 export type ArtifactQuotaLimits = {
@@ -66,24 +66,34 @@ export type ArtifactQuotaFinalizeOptions = {
   limits?: ArtifactQuotaLimits
   now?: () => Date
   pidAlive?: (pid: number) => boolean | undefined
-  /** 兼容旧调用形状;锁存活只看同机 PID,不再按年龄抢占。 */
-  lockStaleMs?: number
+  /** 仅供并发测试把竞态固定在扫描/判定完成与 final rename 之间;生产调用不得注入。 */
+  testHooks?: {
+    afterQuotaScan?: () => void
+    beforeStaleLockRevalidate?: () => void
+  }
 }
 
 type ArtifactQuotaLockHolder = {
   v: 1
   pid: number
-  hostname: string
+  hostId: string
   nonce: string
-  acquiredAt: string
+  startedAt: string
 }
 
-type ArtifactQuotaLock = { release(): void }
+type ArtifactQuotaLock = { owned(): boolean; release(): void }
+
+type ArtifactQuotaLockIdentity = { dev: bigint; ino: bigint }
 
 type ArtifactQuotaLockRead =
-  | { state: "present"; holder: ArtifactQuotaLockHolder }
+  | { state: "present"; holder: ArtifactQuotaLockHolder; identity: ArtifactQuotaLockIdentity }
   | { state: "missing" }
   | { state: "unknown" }
+
+type ArtifactQuotaLockCreate =
+  | { state: "created"; identity: ArtifactQuotaLockIdentity }
+  | { state: "exists" }
+  | { state: "failed" }
 
 type CommittedArtifactUsage = {
   totalBytes: number
@@ -156,6 +166,8 @@ export function finalizeArtifactWithQuota(
     const nextProjectBytes = usage.totalBytes - existing.bytes + input.bytes
     if (nextProjectBytes > limits.projectMaxBytes)
       return quotaOverLimit("project bytes", nextProjectBytes, limits.projectMaxBytes)
+    opts.testHooks?.afterQuotaScan?.()
+    if (!acquired.lock.owned()) return quotaDiskError("project lock busy")
     try {
       fs.renameSync(partPath, targetPath)
     } catch {
@@ -236,76 +248,107 @@ function acquireArtifactQuotaLock(
   if (!file) return { ok: false, reason: "project lock identity unavailable" }
   const now = opts.now ?? (() => new Date())
   const pidAlive = opts.pidAlive ?? defaultPidAlive
-  const holder = newArtifactQuotaLockHolder(now)
-  const created = tryCreateArtifactQuotaLock(file, holder)
-  if (created === "created") return { ok: true, lock: artifactQuotaLock(file, holder) }
-  if (created === "failed") return { ok: false, reason: "project lock cannot be created" }
+  for (let attempt = 0; attempt < ARTIFACT_QUOTA_LOCK_ATTEMPTS; attempt++) {
+    const holder = newArtifactQuotaLockHolder(now)
+    const created = tryCreateArtifactQuotaLock(file, holder)
+    if (created.state === "created")
+      return { ok: true, lock: artifactQuotaLock(file, holder, created.identity) }
+    if (created.state === "failed") return { ok: false, reason: "project lock cannot be created" }
 
-  const recoveryFile = path.join(path.dirname(file), ARTIFACT_QUOTA_RECOVERY_LOCK_FILE)
-  const recoveryHolder = newArtifactQuotaLockHolder(now)
-  // Recovery mutex 本身不做 stale 回收:没有更高一级 CAS 时抢它会递归引入同一 rename 竞态;
-  // 崩溃遗留一律 fail-closed,等待显式清理。
-  const recoveryCreated = tryCreateArtifactQuotaLock(recoveryFile, recoveryHolder)
-  if (recoveryCreated === "exists") return { ok: false, reason: "project lock busy" }
-  if (recoveryCreated === "failed") return { ok: false, reason: "project lock recovery unavailable" }
-
-  const recoveryLock = artifactQuotaLock(recoveryFile, recoveryHolder)
-  try {
     const existing = readArtifactQuotaLock(file)
     if (existing.state === "unknown") return { ok: false, reason: "project lock busy" }
-    if (existing.state === "present") {
-      if (!artifactQuotaLockHolderIsDead(existing.holder, pidAlive))
-        return { ok: false, reason: "project lock busy" }
-      try {
-        const staleDir = safeResolveInAlpha(projectDir, ARTIFACT_QUOTA_STALE_DIR)
-        if (!staleDir) return { ok: false, reason: "stale lock evidence unavailable" }
-        fs.mkdirSync(staleDir, { recursive: true })
-        fs.renameSync(
-          file,
-          path.join(staleDir, `artifact-quota-${now().getTime()}-${crypto.randomBytes(4).toString("hex")}.lock`),
-        )
-      } catch {
-        return { ok: false, reason: "project lock recovery unavailable" }
-      }
-    }
+    if (existing.state === "missing") continue
+    if (!artifactQuotaLockHolderIsDead(existing.holder, pidAlive))
+      return { ok: false, reason: "project lock busy" }
 
-    const replacement = tryCreateArtifactQuotaLock(file, holder)
-    if (replacement === "created") return { ok: true, lock: artifactQuotaLock(file, holder) }
-    if (replacement === "exists") return { ok: false, reason: "project lock busy" }
-    return { ok: false, reason: "project lock cannot be created" }
-  } finally {
-    recoveryLock.release()
+    try {
+      opts.testHooks?.beforeStaleLockRevalidate?.()
+    } catch {
+      return { ok: false, reason: "project lock recovery unavailable" }
+    }
+    const revalidated = artifactQuotaLockIdentityAtPath(file, existing.identity)
+    if (revalidated === "unknown") return { ok: false, reason: "project lock busy" }
+    if (revalidated === "changed") continue
+
+    const staleDir = safeResolveInAlpha(projectDir, ARTIFACT_QUOTA_STALE_DIR)
+    if (!staleDir) return { ok: false, reason: "stale lock evidence unavailable" }
+    const staleFile = path.join(
+      staleDir,
+      `artifact-quota-${now().getTime()}-${crypto.randomBytes(4).toString("hex")}.lock`,
+    )
+    try {
+      fs.mkdirSync(staleDir, { recursive: true })
+      fs.renameSync(file, staleFile)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue
+      return { ok: false, reason: "project lock recovery unavailable" }
+    }
+    if (artifactQuotaLockIdentityAtPath(staleFile, existing.identity) === "same") continue
+    if (!restoreDisplacedArtifactQuotaLock(staleFile, file))
+      return { ok: false, reason: "project lock busy" }
   }
+  return { ok: false, reason: "project lock busy" }
 }
 
 function newArtifactQuotaLockHolder(now: () => Date): ArtifactQuotaLockHolder {
   return {
     v: 1,
     pid: process.pid,
-    hostname: hostname(),
+    hostId: hostname(),
     nonce: crypto.randomBytes(8).toString("hex"),
-    acquiredAt: now().toISOString(),
+    startedAt: now().toISOString(),
   }
 }
 
 function tryCreateArtifactQuotaLock(
   file: string,
   holder: ArtifactQuotaLockHolder,
-): "created" | "exists" | "failed" {
+): ArtifactQuotaLockCreate {
+  let fd: number
   try {
-    fs.writeFileSync(file, JSON.stringify(holder) + "\n", { flag: "wx" })
-    return "created"
+    fd = fs.openSync(file, "wx")
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EEXIST" ? "exists" : "failed"
+    return (error as NodeJS.ErrnoException).code === "EEXIST" ? { state: "exists" } : { state: "failed" }
+  }
+  try {
+    fs.writeFileSync(fd, JSON.stringify(holder) + "\n")
+    const stat = fs.fstatSync(fd, { bigint: true })
+    return { state: "created", identity: { dev: stat.dev, ino: stat.ino } }
+  } catch {
+    try {
+      fs.unlinkSync(file)
+    } catch {
+      // 创建后写元数据失败:只清理这一精确 primary 路径,其余状态保持 fail-closed。
+    }
+    return { state: "failed" }
+  } finally {
+    try {
+      fs.closeSync(fd)
+    } catch {
+      // fd 关闭失败不扩大到其它文件。
+    }
   }
 }
 
-function artifactQuotaLock(file: string, holder: ArtifactQuotaLockHolder): ArtifactQuotaLock {
+function artifactQuotaLock(
+  file: string,
+  holder: ArtifactQuotaLockHolder,
+  identity: ArtifactQuotaLockIdentity,
+): ArtifactQuotaLock {
+  const owned = () => {
+    const current = readArtifactQuotaLock(file)
+    return (
+      current.state === "present" &&
+      current.identity.dev === identity.dev &&
+      current.identity.ino === identity.ino &&
+      current.holder.pid === holder.pid &&
+      current.holder.nonce === holder.nonce
+    )
+  }
   return {
+    owned,
     release() {
-      const current = readArtifactQuotaLock(file)
-      if (current.state !== "present" || current.holder.pid !== holder.pid || current.holder.nonce !== holder.nonce)
-        return
+      if (!owned()) return
       try {
         fs.unlinkSync(file)
       } catch {
@@ -316,21 +359,79 @@ function artifactQuotaLock(file: string, holder: ArtifactQuotaLockHolder): Artif
 }
 
 function readArtifactQuotaLock(file: string): ArtifactQuotaLockRead {
+  const opened = openArtifactQuotaLock(file)
+  if (opened.state !== "opened") return opened
   try {
-    const holder = JSON.parse(fs.readFileSync(file, "utf8")) as ArtifactQuotaLockHolder
+    const stat = fs.fstatSync(opened.fd, { bigint: true })
+    if (!stat.isFile() || stat.size > 4_096n) return { state: "unknown" }
+    const holder = JSON.parse(fs.readFileSync(opened.fd, "utf8")) as ArtifactQuotaLockHolder
     if (
       holder?.v !== 1 ||
       !Number.isInteger(holder.pid) ||
       holder.pid <= 0 ||
-      typeof holder.hostname !== "string" ||
+      typeof holder.hostId !== "string" ||
+      holder.hostId.length === 0 ||
       typeof holder.nonce !== "string" ||
-      typeof holder.acquiredAt !== "string"
+      holder.nonce.length === 0 ||
+      typeof holder.startedAt !== "string" ||
+      !Number.isFinite(Date.parse(holder.startedAt))
     )
       return { state: "unknown" }
-    return { state: "present", holder }
+    return { state: "present", holder, identity: { dev: stat.dev, ino: stat.ino } }
+  } catch {
+    return { state: "unknown" }
+  } finally {
+    try {
+      fs.closeSync(opened.fd)
+    } catch {
+      // read-only fd;关闭失败不改变 fail-closed 判定。
+    }
+  }
+}
+
+function openArtifactQuotaLock(
+  file: string,
+): { state: "opened"; fd: number } | { state: "missing" } | { state: "unknown" } {
+  const noFollow = typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0
+  const nonBlock = typeof fs.constants.O_NONBLOCK === "number" ? fs.constants.O_NONBLOCK : 0
+  try {
+    return { state: "opened", fd: fs.openSync(file, fs.constants.O_RDONLY | noFollow | nonBlock) }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return { state: "missing" }
     return { state: "unknown" }
+  }
+}
+
+function artifactQuotaLockIdentityAtPath(
+  file: string,
+  expected: ArtifactQuotaLockIdentity,
+): "same" | "changed" | "unknown" {
+  const opened = openArtifactQuotaLock(file)
+  if (opened.state === "missing") return "changed"
+  if (opened.state === "unknown") return "unknown"
+  try {
+    const stat = fs.fstatSync(opened.fd, { bigint: true })
+    if (!stat.isFile()) return "unknown"
+    return stat.dev === expected.dev && stat.ino === expected.ino ? "same" : "changed"
+  } catch {
+    return "unknown"
+  } finally {
+    try {
+      fs.closeSync(opened.fd)
+    } catch {
+      // read-only fd;关闭失败不扩大回收范围。
+    }
+  }
+}
+
+function restoreDisplacedArtifactQuotaLock(staleFile: string, file: string): boolean {
+  try {
+    fs.linkSync(staleFile, file)
+    fs.unlinkSync(staleFile)
+    return true
+  } catch {
+    // link 不覆盖并发创建的新 primary;失败时保留被搬文件作诊断且整体 fail-closed。
+    return false
   }
 }
 
@@ -338,7 +439,7 @@ function artifactQuotaLockHolderIsDead(
   holder: ArtifactQuotaLockHolder,
   pidAlive: (pid: number) => boolean | undefined,
 ): boolean {
-  if (holder.hostname !== hostname()) return false
+  if (holder.hostId !== hostname()) return false
   try {
     return pidAlive(holder.pid) === false
   } catch {

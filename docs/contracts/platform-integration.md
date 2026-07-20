@@ -78,27 +78,42 @@ file below `<project>/.alpha/runs/<run>/artifacts/`. After length and digest
 verification, every production download must pass the project-owned artifact
 quota finalizer; no caller has direct final-rename authority.
 
-The finalizer serializes admission per managed project with a cross-process
-exclusive lock. While holding that lock, it derives committed usage from
-regular files on disk, including legacy files that are not in a manifest, and
-checks all of these limits before the atomic final rename:
+The finalizer serializes admission per managed project with one cross-process
+primary lock created by exclusive `wx` open. Its immutable holder record is
+`{pid, hostId, nonce, startedAt}`. While holding that lock, the finalizer
+derives committed usage from regular files on disk, including legacy files
+that are not in a manifest, and checks all of these limits before the atomic
+final rename:
 
 - 100 MiB per artifact;
 - 256 committed artifacts and 512 MiB per run; and
 - 5 GiB across the managed project.
 
 The usage check and rename are one synchronous critical section, so concurrent
-finalizers cannot both consume the same remaining capacity. Quota exhaustion,
-an unreadable usage root, or an unavailable admission lock fails closed and
-does not create a final file. Errors expose a stable category and bounded quota
-figures, not local paths, descriptor metadata, bearer values, or response
-content.
+finalizers cannot both consume the same remaining capacity. Immediately before
+the final rename, the holder revalidates the primary path's file identity and
+nonce. Quota exhaustion, an unreadable usage root, or an unavailable admission
+lock fails closed and does not create a final file. Errors expose a stable
+category and bounded quota figures, not local paths, descriptor metadata,
+bearer values, or response content.
 
 Quota has no independent durable reservation counter. A crash before rename
 can leave only a uniquely named staging file, which is excluded from committed
 usage; a crash after rename leaves a regular final file, which the next disk
-scan charges automatically. A subsequent admission reclaims a dead or stale
-lock while preserving the old lock as local diagnostic evidence.
+scan charges automatically.
+
+There is no recovery mutex. On `EEXIST`, a contender opens the current primary
+once, reads its holder record, and records `dev`/`ino` from that same file
+descriptor. A foreign-host holder, malformed record, live local PID, or
+indeterminate PID probe remains busy. Only a local PID proven dead by `ESRCH`
+may be recovered: the contender reopens and revalidates the same `dev`/`ino`
+immediately before moving the lock into `artifact-quota-stale`, verifies the
+archived identity, and retries exclusive primary creation. A mismatched move
+is restored with a no-clobber operation when the primary remains absent; if a
+concurrent primary exists, recovery remains busy. Acquisition is bounded to
+three attempts; exhaustion remains a retryable busy result. Preserved lock
+evidence and fail-closed cases are handled by the
+[artifact quota lock recovery runbook](../runbooks/artifact-quota-lock-recovery.md).
 
 ## Invariants
 
