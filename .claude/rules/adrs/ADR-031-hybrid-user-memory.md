@@ -8,7 +8,7 @@ owners:
   - alpha-code maintainers
 last_reviewed: 2026-07-19
 review_after: 2027-01-19
-related: [ADR-025, REQ-121]
+related: [ADR-025, ADR-029, "alpha-work:REQ-121"]
 ---
 
 # 混合用户记忆
@@ -17,7 +17,12 @@ related: [ADR-025, REQ-121]
 
 [[ADR-025]] 已把 `~/Alpha/Memory/*.md` 定义为用户可见、可编辑的本地记忆落点，并把跨会话记忆能力另留独立需求。为了让用户在多设备和云任务中选择性使用记忆，Alpha 需要增加云发布和检索接缝，同时不能把既有本地文件、会话历史或整个 `~/Alpha` 静默上传。
 
-本 ADR 只窄修订 [[ADR-025]] §6 中对 Memory “不做同步/备份”的绝对边界：允许用户把明确选择的 Memory 条目或 scope 发布为版本化云快照。它不 supersede [[ADR-025]] 的其它决定，也不引入 iCloud、整个 `~/Alpha` 的通用同步/备份，Journal/Outputs 的同步，或实时双向文件同步。
+本 ADR 窄修订 [[ADR-025]] §6 治理边界中的**两条**结论，两条都只在 Memory 面生效：
+
+1. **「不做 iCloud/同步/备份」** —— 原条款作用域是整个 `~/Alpha` 可见区（含 `Journal/`、`Outputs/`）；本 ADR 只取其中属于 Memory 的部分，允许用户把明确选择的 Memory 条目或 scope 发布为版本化云快照。不引入 iCloud、整个 `~/Alpha` 的通用同步/备份、`Journal/`/`Outputs/` 的同步，或实时双向文件同步。
+2. **「alpha 自动写入只追加、不删改用户文件」** —— 拆为两段：**自动写入仍只追加**（自动化、云回流、agent 后台行为一律不得删改用户文件，该保证未被削弱）；**新增**用户显式请求且指明范围时可删除 Memory 文件的通道（见 §6，owner 2026-07-19 裁决）。
+
+本 ADR 不 supersede [[ADR-025]] 的其它决定。修订记录已同步落在 [[ADR-025]] 的「修订(2026-07-19)」段。
 
 ## 状态与适用性
 
@@ -55,13 +60,23 @@ related: [ADR-025, REQ-121]
 
 候选必须展示来源、摘要、建议 scope、敏感性和可能冲突。用户拒绝或忽略候选不会形成隐藏记录；候选过期后按合同清理。Secret、OAuth token、API key 和私钥不进入候选或 Memory，它们只属于 Vault。
 
-### 5. 通过现有 System Context 有界注入
+### 5. 有界注入；**接入方式待逐案裁决,本 ADR 不断言**
 
-Memory 作为新的 System Context source 接入现有 Registry/Context Epoch，沿用 baseline、update、removal、不可用和持久审计语义；不新建第二套 prompt 注入或会话历史引擎。
+**目标语义**（本 ADR 决定的部分）：Memory 注入应沿用现有 System Context 的 baseline、update、removal 与持久审计语义，**不新建第二套 prompt 注入或会话历史引擎**。
+
+**接入方式（本 ADR 不裁决，留给 [alpha-code#427](https://github.com/jinjunnn/alpha-code/issues/427)）**：初稿曾断言「作为新的 System Context source 接入现有 Registry/Context Epoch」。2026-07-19 勘破证明**该路径在本仓现行宪法下不可行**——System Context Registry 是上游内部服务，全部注册者静态编入 `packages/core/src/location-services.ts` 的 Layer 图，新增一个 source 必须修改该上游文件（north-star guard `M` 判红）；`packages/{plugin,sdk,protocol}` 对 systemContext 零命中；[[ARCHITECTURE]] 硬约束③的零-fork 接缝清单不含此类。而唯一现存的合法注入口 `experimental.chat.{system,messages}.transform` 已被 [[ADR-002]] 标注风险、并被 `NON_GOALS.md` #4 与 ARCHITECTURE 禁区禁止长期承载核心后端行为。
+
+⇒ 既走不了 L0，又不能长期走 experimental v1 hook。按 [[ADR-029]] 上游主权阶梯 §3，接入方式必须由一条**逐案主权 ADR** 裁决（载明勘探证据、级别选择、守卫/tripwire、回退方案，L3 另加放弃白嫖范围声明），或改由上游接缝解决。该裁决登记为 [alpha-code#427](https://github.com/jinjunnn/alpha-code/issues/427)。
+
+**在 #427 结论落地前，本 ADR 不声称 Memory 注入已有可用接缝。** owner 2026-07-19 定调：Memory 是核心能力、后续需要收回主权，但不着急现在做。
+
+### 5b. 注入的有界约束（不依赖接入方式，恒定成立）
 
 每次任务只请求用户显式允许且当前授权的 scope，并按数量、token、敏感级别、时效、相关性和费用预算选择少量条目。会话界面应能展示实际注入的来源、revision 和 `why_used`；撤销、停用或删除后通过 removal/失权语义停止后续使用。
 
 Memory 是上下文而不是指令或授权。当前用户请求、系统/开发者规则和实时权限判定优先于旧 Memory；Memory 不能批准工具调用、支付、连接器、文件写入、网络动作或其它副作用。
+
+**云端不可达必须降级，不得阻断会话。** 这是 §1「云端状态不能让本地文件失效」的执行细则：Memory 注入在云端不可达、超时或失权时，必须以「本地条目 + 空云端结果」继续，并在界面诚实标注云端部分不可用；**不得**使整个上下文初始化进入阻断态。现有 System Context 的 `unavailable` 语义是 fail-closed 阻断（任一 source 报 unavailable ⇒ `InitializationBlocked`，新会话开不起来），Memory source **不得**进入该集合——否则云端一次抖动就会让用户连本地会话都开不了，与本地优先承诺正面相撞。接入方式裁决（[#427](https://github.com/jinjunnn/alpha-code/issues/427)）必须满足本约束。
 
 ### 6. 用户控制
 
