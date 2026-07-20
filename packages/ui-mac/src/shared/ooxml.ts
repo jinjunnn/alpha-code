@@ -14,6 +14,14 @@ export const OOXML_LIMITS = {
   maxEntryNameBytes: 1024,
   maxCompressionRatio: 200,
   maxInflateMilliseconds: 5_000,
+  maxInflateInputChunkBytes: 16 * 1024,
+  // DEFLATE can emit at most 1,032 output bytes per compressed byte;the extra byte covers a
+  // partially buffered symbol at an append boundary. One fallback delivery is therefore bounded
+  // by 16,909,320 bytes. While zip.js joins its fragments, live unchecked inflated storage is at
+  // most fragments + result + its 32 KiB reusable buffer = 33,851,408 bytes. The sink checks every
+  // delivery before accepting another compressed chunk.
+  maxInflateDeliveryBytes: (16 * 1024 + 1) * 1_032,
+  maxUncheckedInflateMaterializedBytes: 2 * ((16 * 1024 + 1) * 1_032) + 2 * 16 * 1024,
 } as const
 
 export const OOXML_SUBTYPES = {
@@ -82,6 +90,7 @@ export type OoxmlErrorCode =
   | "ZIP_INFLATE_ENTRY_LIMIT"
   | "ZIP_INFLATE_TOTAL_LIMIT"
   | "ZIP_INFLATE_RATIO_LIMIT"
+  | "ZIP_INFLATE_INPUT_LIMIT"
   | "ZIP_INFLATE_TIMEOUT"
   | "ZIP_INFLATE_SIZE_MISMATCH"
   | "ZIP_DECOMPRESSION_FAILED"
@@ -126,6 +135,11 @@ export type OoxmlClaimInput = {
   detectedMime?: string | null
 }
 
+export type OoxmlDetectionOptions = {
+  /** Test/diagnostic observation after each bounded compressed-input delivery, before fallback inflate. */
+  onInflateInput?: (input: { filename: string; compressedBytes: number }) => void
+}
+
 const CONTENT_TYPES_NAME = "[Content_Types].xml"
 const ROOT_RELS_NAME = "_rels/.rels"
 const CONTENT_TYPES_NAMESPACE = "http://schemas.openxmlformats.org/package/2006/content-types"
@@ -148,36 +162,51 @@ const CP437 = Array.from(
     "└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ ",
 )
 
-const OOXML_GATE_EXTENSIONS = new Set([
-  "docx", "xlsx", "pptx", "docm", "dotx", "dotm", "xlsm", "xlsb", "xltx", "xltm", "xlam",
-  "pptm", "potx", "potm", "ppsx", "ppsm", "sldx", "sldm", "doc", "dot", "xls", "xlt", "xla",
-  "ppt", "pot", "pps", "zip",
-])
+// Single authority for native Word/Excel/PowerPoint formats that the OS may hand to Office.
+// Rows follow Microsoft's supported file-format tables and IANA's registered Office media types.
+// Legacy compiled add-ins have no dedicated registered media type, so they retain the family MIME;
+// extension matching remains independently authoritative. Only docx/xlsx/pptx can ever pass after
+// byte-level OOXML proof; every other row is deliberately denied external-open fallback.
+export const OFFICE_OPEN_GATE_FORMATS = [
+  { family: "word", kind: "document", extension: "docx", mime: OOXML_SUBTYPES.docx.mime },
+  { family: "word", kind: "template", extension: "dotx", mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.template" },
+  { family: "word", kind: "macro-document", extension: "docm", mime: "application/vnd.ms-word.document.macroEnabled.12" },
+  { family: "word", kind: "macro-template", extension: "dotm", mime: "application/vnd.ms-word.template.macroEnabled.12" },
+  { family: "word", kind: "legacy-binary-document", extension: "doc", mime: "application/msword" },
+  { family: "word", kind: "legacy-binary-template", extension: "dot", mime: "application/msword" },
+  { family: "word", kind: "legacy-binary-addin", extension: "wll", mime: "application/msword" },
+  { family: "excel", kind: "workbook", extension: "xlsx", mime: OOXML_SUBTYPES.xlsx.mime },
+  { family: "excel", kind: "template", extension: "xltx", mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.template" },
+  { family: "excel", kind: "macro-workbook", extension: "xlsm", mime: "application/vnd.ms-excel.sheet.macroEnabled.12" },
+  { family: "excel", kind: "macro-template", extension: "xltm", mime: "application/vnd.ms-excel.template.macroEnabled.12" },
+  { family: "excel", kind: "macro-addin", extension: "xlam", mime: "application/vnd.ms-excel.addin.macroEnabled.12" },
+  { family: "excel", kind: "binary-workbook", extension: "xlsb", mime: "application/vnd.ms-excel.sheet.binary.macroEnabled.12" },
+  { family: "excel", kind: "legacy-binary-workbook", extension: "xls", mime: "application/vnd.ms-excel" },
+  { family: "excel", kind: "legacy-binary-template", extension: "xlt", mime: "application/vnd.ms-excel" },
+  { family: "excel", kind: "legacy-binary-addin", extension: "xla", mime: "application/vnd.ms-excel" },
+  { family: "excel", kind: "legacy-binary-workbook", extension: "xlw", mime: "application/vnd.ms-excel" },
+  { family: "excel", kind: "legacy-macro-sheet", extension: "xlm", mime: "application/vnd.ms-excel" },
+  { family: "excel", kind: "compiled-addin", extension: "xll", mime: "application/vnd.ms-excel" },
+  { family: "powerpoint", kind: "presentation", extension: "pptx", mime: OOXML_SUBTYPES.pptx.mime },
+  { family: "powerpoint", kind: "template", extension: "potx", mime: "application/vnd.openxmlformats-officedocument.presentationml.template" },
+  { family: "powerpoint", kind: "slideshow", extension: "ppsx", mime: "application/vnd.openxmlformats-officedocument.presentationml.slideshow" },
+  { family: "powerpoint", kind: "slide", extension: "sldx", mime: "application/vnd.openxmlformats-officedocument.presentationml.slide" },
+  { family: "powerpoint", kind: "theme", extension: "thmx", mime: "application/vnd.ms-officetheme" },
+  { family: "powerpoint", kind: "macro-presentation", extension: "pptm", mime: "application/vnd.ms-powerpoint.presentation.macroEnabled.12" },
+  { family: "powerpoint", kind: "macro-template", extension: "potm", mime: "application/vnd.ms-powerpoint.template.macroEnabled.12" },
+  { family: "powerpoint", kind: "macro-slideshow", extension: "ppsm", mime: "application/vnd.ms-powerpoint.slideshow.macroEnabled.12" },
+  { family: "powerpoint", kind: "macro-slide", extension: "sldm", mime: "application/vnd.ms-powerpoint.slide.macroEnabled.12" },
+  { family: "powerpoint", kind: "macro-addin", extension: "ppam", mime: "application/vnd.ms-powerpoint.addin.macroEnabled.12" },
+  { family: "powerpoint", kind: "legacy-binary-presentation", extension: "ppt", mime: "application/vnd.ms-powerpoint" },
+  { family: "powerpoint", kind: "legacy-binary-template", extension: "pot", mime: "application/vnd.ms-powerpoint" },
+  { family: "powerpoint", kind: "legacy-binary-slideshow", extension: "pps", mime: "application/vnd.ms-powerpoint" },
+  { family: "powerpoint", kind: "legacy-binary-addin", extension: "ppa", mime: "application/vnd.ms-powerpoint" },
+] as const
 
-const OOXML_GATE_MIMES = new Set([
-  ...Object.values(OOXML_SUBTYPES).map((facts) => facts.mime),
-  "application/zip",
-  "application/x-zip-compressed",
-  "multipart/x-zip",
-  "application/msword",
-  "application/vnd.ms-excel",
-  "application/vnd.ms-powerpoint",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.template",
-  "application/vnd.openxmlformats-officedocument.presentationml.template",
-  "application/vnd.openxmlformats-officedocument.presentationml.slideshow",
-  "application/vnd.openxmlformats-officedocument.presentationml.slide",
-  "application/vnd.ms-word.document.macroenabled.12",
-  "application/vnd.ms-word.template.macroenabled.12",
-  "application/vnd.ms-excel.sheet.macroenabled.12",
-  "application/vnd.ms-excel.template.macroenabled.12",
-  "application/vnd.ms-excel.addin.macroenabled.12",
-  "application/vnd.ms-excel.sheet.binary.macroenabled.12",
-  "application/vnd.ms-powerpoint.presentation.macroenabled.12",
-  "application/vnd.ms-powerpoint.template.macroenabled.12",
-  "application/vnd.ms-powerpoint.slideshow.macroenabled.12",
-  "application/vnd.ms-powerpoint.slide.macroenabled.12",
-])
+const OFFICE_GATE_EXTENSIONS = new Set<string>(OFFICE_OPEN_GATE_FORMATS.map((format) => format.extension))
+const OFFICE_GATE_MIMES = new Set<string>(OFFICE_OPEN_GATE_FORMATS.map((format) => format.mime.toLowerCase()))
+const ZIP_GATE_EXTENSIONS = new Set<string>(["zip"])
+const ZIP_GATE_MIMES = new Set<string>(["application/zip", "application/x-zip-compressed", "multipart/x-zip"])
 
 const NEUTRAL_CONTAINER_MIMES = new Set([
   "application/zip",
@@ -218,9 +247,9 @@ class OoxmlLimitError extends Error {
 /** True whenever a ZIP/Office claim must not reach a privileged external consumer without this gate. */
 export function shouldGateOoxml(input: OoxmlClaimInput): boolean {
   const extension = extensionOf(input.name)
-  if (extension && OOXML_GATE_EXTENSIONS.has(extension)) return true
+  if (extension && (OFFICE_GATE_EXTENSIONS.has(extension) || ZIP_GATE_EXTENSIONS.has(extension))) return true
   return [normalizeMime(input.claimedMime), normalizeMime(input.detectedMime)].some(
-    (mime) => mime !== null && OOXML_GATE_MIMES.has(mime),
+    (mime) => mime !== null && (OFFICE_GATE_MIMES.has(mime) || ZIP_GATE_MIMES.has(mime)),
   )
 }
 
@@ -242,7 +271,10 @@ export function isPrivilegedOoxmlOpen(input: OoxmlClaimInput, detection: OoxmlDe
 }
 
 /** Detect docx/xlsx/pptx from canonical ZIP bytes. All malformed, ambiguous, or over-limit input fails closed. */
-export async function detectOoxmlContainer(bytes: Uint8Array): Promise<OoxmlDetection> {
+export async function detectOoxmlContainer(
+  bytes: Uint8Array,
+  options: OoxmlDetectionOptions = {},
+): Promise<OoxmlDetection> {
   if (bytes.byteLength > OOXML_LIMITS.maxCompressedBytes)
     return rejected("ZIP_COMPRESSED_LIMIT", `${bytes.byteLength} > ${OOXML_LIMITS.maxCompressedBytes}`)
 
@@ -261,7 +293,14 @@ export async function detectOoxmlContainer(bytes: Uint8Array): Promise<OoxmlDete
   let limitError: OoxmlLimitError | undefined
   try {
     if (now() > deadline) throw new OoxmlLimitError("ZIP_INFLATE_TIMEOUT", "budget exhausted before inflate")
-    const { Uint8ArrayReader, ZipReader } = await import("@zip.js/zip.js")
+    const { Uint8ArrayReader, ZipReader, configure } = await import("@zip.js/zip.js")
+    // zip.js otherwise aggregates reader chunks to its 512 KiB global default before the fallback's
+    // synchronous Inflate.append(). Pinning both the public chunk configuration and fallback path
+    // limits one unchecked append to OOXML_LIMITS.maxInflateDeliveryBytes and transient fallback
+    // storage to OOXML_LIMITS.maxUncheckedInflateMaterializedBytes. The sink checks that delivery
+    // before the pipeline can accept another compressed chunk;time can overrun by one bounded
+    // append, then the same boundary returns ZIP_INFLATE_TIMEOUT.
+    configure({ chunkSize: OOXML_LIMITS.maxInflateInputChunkBytes })
     const zipReader = new ZipReader(new Uint8ArrayReader(bytes), {
       useWebWorkers: false,
       decodeText: (value, encoding) => {
@@ -328,10 +367,26 @@ export async function detectOoxmlContainer(bytes: Uint8Array): Promise<OoxmlDete
         },
       })
       try {
+        let compressedRead = 0
         await entry.getData(writable, {
           checkSignature: true,
           signal: abort.signal,
           useWebWorkers: false,
+          useCompressionStream: false,
+          async onprogress(compressedBytes) {
+            if (compressedBytes - compressedRead > OOXML_LIMITS.maxInflateInputChunkBytes) {
+              limitError = new OoxmlLimitError("ZIP_INFLATE_INPUT_LIMIT", canonical.filename)
+              abort.abort("ZIP_INFLATE_INPUT_LIMIT")
+              throw limitError
+            }
+            compressedRead = compressedBytes
+            if (now() > deadline) {
+              limitError = new OoxmlLimitError("ZIP_INFLATE_TIMEOUT", canonical.filename)
+              abort.abort("ZIP_INFLATE_TIMEOUT")
+              throw limitError
+            }
+            options.onInflateInput?.({ filename: canonical.filename, compressedBytes })
+          },
         })
       } finally {
         clearTimeout(timer)

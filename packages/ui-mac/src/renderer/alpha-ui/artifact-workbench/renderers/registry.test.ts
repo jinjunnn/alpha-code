@@ -2,7 +2,12 @@
 // 冲突诚实(warning chip)、恶意 fixture(html 冒充 image、带脚本 SVG、检测结论权威不回退)。
 import { describe, expect, test } from "bun:test"
 import { TextReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js"
-import { OOXML_SUBTYPES, detectOoxmlContainer, type OoxmlDetection } from "./ooxml"
+import {
+  OFFICE_OPEN_GATE_FORMATS,
+  OOXML_SUBTYPES,
+  detectOoxmlContainer,
+  type OoxmlDetection,
+} from "./ooxml"
 import { extensionOf, mimeForName, normalizeMime, routeArtifact, RENDERER_REGISTRY, shouldDetectOoxml } from "./registry"
 
 const DETECTED_XLSX: OoxmlDetection = {
@@ -127,21 +132,28 @@ describe("OOXML 结构闸(REQ-093 #281)", () => {
     expect(routeArtifact({ name: "archive.bin" }).externalOpen).toBe("allowed")
   })
 
-  test("macro-enabled and other Office extensions/MIMEs all enter the gate and can never inherit fallback allow", () => {
-    for (const name of ["a.xlsm", "a.docm", "a.pptm", "a.xlsb", "a.dotm", "a.xltm", "a.potm", "a.doc", "a.xls", "a.ppt"])
-      expect(routeArtifact({ name }).externalOpen).toBe("blocked")
-    for (const claimedMime of [
-      "application/vnd.ms-excel.sheet.macroEnabled.12",
-      "application/vnd.ms-word.document.macroEnabled.12",
-      "application/vnd.ms-powerpoint.presentation.macroEnabled.12",
-      "application/vnd.ms-excel.sheet.binary.macroEnabled.12",
-      "application/msword",
-    ]) {
-      expect(shouldDetectOoxml({ name: "artifact", claimedMime })).toBe(true)
-      expect(routeArtifact({ name: "artifact", claimedMime }).externalOpen).toBe("blocked")
-    }
-    expect(routeArtifact({ name: "a.xlsm", ooxml: DETECTED_XLSX }).externalOpen).toBe("blocked")
+  test("authoritative table contains the native Word, Excel, and PowerPoint gate extensions", () => {
+    expect(OFFICE_OPEN_GATE_FORMATS.map((format) => format.extension)).toEqual([
+      "docx", "dotx", "docm", "dotm", "doc", "dot", "wll",
+      "xlsx", "xltx", "xlsm", "xltm", "xlam", "xlsb", "xls", "xlt", "xla", "xlw", "xlm", "xll",
+      "pptx", "potx", "ppsx", "sldx", "thmx", "pptm", "potm", "ppsm", "sldm", "ppam", "ppt", "pot", "pps", "ppa",
+    ])
   })
+
+  for (const format of OFFICE_OPEN_GATE_FORMATS) {
+    test(`${format.family} .${format.extension} ${format.kind}:missing,neutral,and corresponding MIME claims stay gated`, () => {
+      for (const claimedMime of [undefined, "application/octet-stream", format.mime]) {
+        const input = { name: `artifact.${format.extension}`, ...(claimedMime ? { claimedMime } : {}) }
+        expect(shouldDetectOoxml(input)).toBe(true)
+        expect(routeArtifact(input).externalOpen).toBe("blocked")
+      }
+      expect(shouldDetectOoxml({ name: "artifact", claimedMime: format.mime })).toBe(true)
+      expect(routeArtifact({ name: "artifact", claimedMime: format.mime }).externalOpen).toBe("blocked")
+      if (!["docx", "xlsx", "pptx"].includes(format.extension))
+        expect(routeArtifact({ name: `artifact.${format.extension}`, ooxml: DETECTED_XLSX }).externalOpen)
+          .toBe("blocked")
+    })
+  }
 })
 
 describe("确定性", () => {

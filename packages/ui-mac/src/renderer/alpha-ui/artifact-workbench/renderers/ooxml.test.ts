@@ -284,17 +284,32 @@ describe("declared and actual inflate budgets", () => {
     )
   })
 
-  test("Content Types uses a real-time sink when declared small but actual output is large", async () => {
-    const oversized = `<Types xmlns="${CONTENT_TYPES_NAMESPACE}"><!--${noise(OOXML_LIMITS.maxContentTypesBytes + 64 * 1024)}--></Types>`
+  test("Content Types receives only bounded compressed-input chunks before abort", async () => {
+    const oversized = `<Types xmlns="${CONTENT_TYPES_NAMESPACE}"><!--${"x".repeat(OOXML_LIMITS.maxContentTypesBytes + 64 * 1024)}${noise(128 * 1024)}--></Types>`
     const fixture = await makeZip([
       ["[Content_Types].xml", oversized],
       ["_rels/.rels", relationshipsXml("xl/workbook.xml")],
       ["xl/workbook.xml", mainPartXml("xlsx")],
     ])
-    await expectCode(
+    const record = centralRecord(fixture, "[Content_Types].xml")
+    expect(new DataView(fixture.buffer).getUint32(record.centralOffset + 20, true))
+      .toBeGreaterThan(OOXML_LIMITS.maxInflateInputChunkBytes)
+    const compressedInputs: number[] = []
+    const result = await detectOoxmlContainer(
       patchLocalAndCentral32(fixture, "[Content_Types].xml", 22, 24, 32),
-      "CONTENT_TYPES_INFLATE_LIMIT",
+      {
+        onInflateInput(input) {
+          if (input.filename === "[Content_Types].xml") compressedInputs.push(input.compressedBytes)
+        },
+      },
     )
+    expect(result.status).toBe("rejected")
+    if (result.status !== "rejected") return
+    expect(result.code).toBe("CONTENT_TYPES_INFLATE_LIMIT")
+    expect(compressedInputs.length).toBeGreaterThan(0)
+    expect(Math.max(...compressedInputs.map((value, index) => value - (compressedInputs[index - 1] ?? 0))))
+      .toBeLessThanOrEqual(OOXML_LIMITS.maxInflateInputChunkBytes)
+    expect(Math.max(...compressedInputs)).toBeLessThanOrEqual(OOXML_LIMITS.maxInflateInputChunkBytes * 2)
   })
 
   test("actual output must equal the declared uncompressed size", async () => {
@@ -330,12 +345,17 @@ describe("declared and actual inflate budgets", () => {
 
   test("non-retained parts are still streamed and CRC-checked", async () => {
     const fixture = await makeOoxmlFixture("xlsx")
-    const patched = fixture.slice()
-    const record = centralRecord(patched, "xl/workbook.xml")
-    const view = new DataView(patched.buffer)
-    const dataOffset = record.localOffset + 30 + view.getUint16(record.localOffset + 26, true) + view.getUint16(record.localOffset + 28, true)
-    patched[dataOffset] ^= 1
-    await expectCode(patched, "ZIP_DECOMPRESSION_FAILED")
+    const record = centralRecord(fixture, "xl/workbook.xml")
+    await expectCode(
+      patchLocalAndCentral32(
+        fixture,
+        "xl/workbook.xml",
+        14,
+        16,
+        new DataView(fixture.buffer).getUint32(record.centralOffset + 16, true) ^ 1,
+      ),
+      "ZIP_DECOMPRESSION_FAILED",
+    )
   })
 })
 

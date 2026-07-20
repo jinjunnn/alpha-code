@@ -5,7 +5,7 @@ import { dirname, join } from "node:path"
 import { tmpdir } from "node:os"
 import { TextReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js"
 import { artifactIdFor, type ArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
-import { OOXML_SUBTYPES } from "../shared/ooxml"
+import { OFFICE_OPEN_GATE_FORMATS, OOXML_SUBTYPES } from "../shared/ooxml"
 import { registerDownloadedArtifact } from "./artifact-service"
 import { isManagedRunArtifactPath, openRunArtifactExternal } from "./artifact-external-open"
 
@@ -51,6 +51,30 @@ describe("main-owned artifact external-open gate", () => {
     expect(opened).toBe(false)
   })
 
+  test("each authoritative Office extension is main-gated without ZIP magic for missing,neutral,and corresponding MIME claims", async () => {
+    let opened = false
+    for (const format of OFFICE_OPEN_GATE_FORMATS) {
+      for (const variant of [
+        { label: "missing" },
+        { label: "neutral", claimedMime: "application/octet-stream" },
+        { label: "claimed", claimedMime: format.mime },
+      ]) {
+        const descriptor = register(
+          `${format.extension}-${variant.label}.${format.extension}`,
+          new TextEncoder().encode("not a ZIP container"),
+          variant.claimedMime,
+          null,
+        )
+        const result = await openRunArtifactExternal(projectDir, RUN, descriptor.id, async () => {
+          opened = true
+        })
+        expect(result.ok).toBe(false)
+        if (!result.ok) expect(result.code).toBe("OOXML_REJECTED")
+      }
+    }
+    expect(opened).toBe(false)
+  })
+
   test("malformed OOXML is rejected by main even if renderer-side state was previously favorable", async () => {
     const bytes = await makeXlsxFixture("word/document.xml")
     const descriptor = register("book.xlsx", bytes, OOXML_SUBTYPES.xlsx.mime)
@@ -73,7 +97,12 @@ describe("generic open-path bypass classification", () => {
   })
 })
 
-function register(name: string, bytes: Uint8Array, claimedMime: string): ArtifactDescriptor {
+function register(
+  name: string,
+  bytes: Uint8Array,
+  claimedMime?: string,
+  detectedMime: string | null = "application/zip",
+): ArtifactDescriptor {
   artifactPath = join(projectDir, ".alpha", "runs", RUN, "artifacts", name)
   writeFileSync(artifactPath, bytes)
   const digest = createHash("sha256").update(bytes).digest("hex")
@@ -85,7 +114,7 @@ function register(name: string, bytes: Uint8Array, claimedMime: string): Artifac
     name,
     size: bytes.byteLength,
     sha256: digest,
-    claimedMime,
+    ...(claimedMime ? { claimedMime } : {}),
     trust: "sandboxed",
     role: "primary",
     contentRef: { kind: "http-stream", url: `/v1/cloud/artifacts/${id}/content`, auth: "bearer" },
@@ -96,7 +125,7 @@ function register(name: string, bytes: Uint8Array, claimedMime: string): Artifac
     descriptor,
     savedPath: `artifacts/${name}`,
     verifiedSha256: digest,
-    detectedMime: "application/zip",
+    ...(detectedMime ? { detectedMime } : {}),
   })
   if (!result.ok) throw new Error(result.reason)
   return descriptor
