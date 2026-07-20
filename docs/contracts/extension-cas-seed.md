@@ -42,7 +42,8 @@ review_after: 2026-10-13
   不读取退休目标。桥扫描/断链的 `lstat`、`readlink`、目录枚举或 `unlink` 仅容忍 `ENOENT`
   （对象已消失）；其它错误一律使 reconcile 失败并阻断 sidecar 启动，不能在旧桥仍可能可读时
   正常启动。每次 `unlink` 紧前必须再次以 `lstat` + `readlink` 确认 `dev/ino`、原始 target
-  与准入时相同且仍指向退休根；竞争换位为其它对象时跳过不删。
+  与准入身份相同且仍指向退休根；竞争换位为非退休对象才跳过不删，仍是退休链则以新身份
+  有界重验并删除，重试耗尽仍为退休链即失败。
 - main/ext 项目三态分类器解析退休 `~/.alpha` 时仅 `ENOENT` 可回退词法路径；`EACCES`、
   `ELOOP`、`EIO` 等均为 `unknown` 并拒绝。准入返回的 canonical project/root 不得跨
   `ledgerReady`、adoption 或其它异步边界直接复用：main 项目读通道及 ext 的 project config

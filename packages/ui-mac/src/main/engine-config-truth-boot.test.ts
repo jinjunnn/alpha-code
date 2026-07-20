@@ -172,6 +172,42 @@ describe("reconcile — T3 ~/.opencode cleanup", () => {
     }
   })
 
+  test("退休桥在 unlink 紧邻重验时换成另一条退休链→ 按新身份重验后删链，退休 truth 原封不动", () => {
+    const retiredHome = path.join(tmp, "retired-home-race-retired")
+    const retired = path.join(retiredHome, ".alpha")
+    const firstTarget = path.join(retired, "skills-first")
+    const replacementTarget = path.join(retired, "skills-replacement")
+    fs.mkdirSync(firstTarget, { recursive: true })
+    fs.mkdirSync(replacementTarget, { recursive: true })
+    fs.writeFileSync(path.join(firstTarget, "sentinel.txt"), "first truth")
+    fs.writeFileSync(path.join(replacementTarget, "sentinel.txt"), "replacement truth")
+    const bridge = path.join(homeTmp, "skills")
+    fs.symlinkSync(firstTarget, bridge, "dir")
+    let bridgeStats = 0
+    process.env.ALPHA_JSONC_TRUTH_DISABLE = "1"
+
+    const result = reconcileEngineConfigTruth(undefined, {
+      retiredHomeDir: retiredHome,
+      retiredBridgeFs: {
+        lstatSync: (file) => {
+          if (file === bridge && ++bridgeStats === 2) {
+            fs.unlinkSync(bridge)
+            fs.symlinkSync(replacementTarget, bridge, "dir")
+          }
+          return fs.lstatSync(file)
+        },
+        readlinkSync: (file) => fs.readlinkSync(file),
+        readdirSync: (directory) => fs.readdirSync(directory),
+        unlinkSync: (file) => fs.unlinkSync(file),
+      },
+    })
+
+    expect(result.skipped).toBe(true)
+    expect(fs.existsSync(bridge)).toBe(false)
+    expect(fs.readFileSync(path.join(firstTarget, "sentinel.txt"), "utf8")).toBe("first truth")
+    expect(fs.readFileSync(path.join(replacementTarget, "sentinel.txt"), "utf8")).toBe("replacement truth")
+  })
+
   test("退休桥在 unlink 紧邻重验时已换成非退休对象→ 跳过且不删竞争换位对象", () => {
     const retiredHome = path.join(tmp, "retired-home-race")
     const retired = path.join(retiredHome, ".alpha", "skills")
@@ -200,6 +236,7 @@ describe("reconcile — T3 ~/.opencode cleanup", () => {
     expect(result.skipped).toBe(true)
     expect(fs.lstatSync(bridge).isFile()).toBe(true)
     expect(fs.readFileSync(bridge, "utf8")).toBe("competitor")
+    expect(fs.readdirSync(retired)).toEqual([])
   })
 
   test("junk-only ~/.opencode removed after migration", () => {

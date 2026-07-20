@@ -218,6 +218,8 @@ type RetiredBridgeProbe =
   | { status: "other"; stat: fs.Stats }
   | { status: "retired"; dev: number; ino: number; target: string }
 
+const RETIRED_BRIDGE_UNLINK_ATTEMPTS = 3
+
 function unlinkRetiredOpencodeBridges(homeDir: string, log?: Logger, injected?: RetiredBridgeFs): void {
   const bridgeFs = injected ?? {
     lstatSync: fs.lstatSync,
@@ -232,7 +234,7 @@ function unlinkRetiredOpencodeBridges(homeDir: string, log?: Logger, injected?: 
     const kindProbe = probeRetiredBridge(kindPath, retiredRoot, bridgeFs)
     if (kindProbe.status === "absent") continue
     if (kindProbe.status === "retired") {
-      if (unlinkIfSameRetiredBridge(kindPath, retiredRoot, kindProbe, bridgeFs)) {
+      if (unlinkRetiredBridge(kindPath, retiredRoot, kindProbe, bridgeFs)) {
         log?.log(`[req098] retired ~/.opencode/${kind} bridge removed`)
       }
       continue
@@ -242,7 +244,7 @@ function unlinkRetiredOpencodeBridges(homeDir: string, log?: Logger, injected?: 
       const itemPath = path.join(kindPath, name)
       const itemProbe = probeRetiredBridge(itemPath, retiredRoot, bridgeFs)
       if (itemProbe.status !== "retired") continue
-      if (unlinkIfSameRetiredBridge(itemPath, retiredRoot, itemProbe, bridgeFs))
+      if (unlinkRetiredBridge(itemPath, retiredRoot, itemProbe, bridgeFs))
         log?.log(`[req098] retired ~/.opencode/${kind}/${name} bridge removed`)
     }
   }
@@ -260,28 +262,32 @@ function probeRetiredBridge(link: string, root: string, bridgeFs: RetiredBridgeF
   return { status: "retired", dev: stat.dev, ino: stat.ino, target }
 }
 
-function unlinkIfSameRetiredBridge(
+function unlinkRetiredBridge(
   link: string,
   root: string,
   expected: Extract<RetiredBridgeProbe, { status: "retired" }>,
   bridgeFs: RetiredBridgeFs,
 ): boolean {
-  const current = probeRetiredBridge(link, root, bridgeFs)
-  if (
-    current.status !== "retired" ||
-    current.dev !== expected.dev ||
-    current.ino !== expected.ino ||
-    current.target !== expected.target
-  ) return false
-  // #428 r2：删除前用 dev/ino + 原始 target 紧邻重验同一退休链。接受的残余仅为这次
-  // lstat/readlink 重验到单次 unlink 之间的微秒级竞态；与 #358 r3 同口径，不引入 openat。
-  try {
-    bridgeFs.unlinkSync(link)
-    return true
-  } catch (error) {
-    if (isEnoent(error)) return false
-    throw error
+  let admitted = expected
+  for (let attempt = 0; attempt < RETIRED_BRIDGE_UNLINK_ATTEMPTS; attempt++) {
+    const current = probeRetiredBridge(link, root, bridgeFs)
+    if (current.status !== "retired") return false
+    if (current.dev !== admitted.dev || current.ino !== admitted.ino || current.target !== admitted.target) {
+      // #428 r3：竞争换位只有变成非退休对象才跳过；换入另一条退休链则采用新身份继续重验删除。
+      admitted = current
+      continue
+    }
+    // 删除前用 dev/ino + 原始 target 紧邻重验同一退休链。接受的残余仅为这次
+    // lstat/readlink 重验到单次 unlink 之间的微秒级竞态；与 #358 r3 同口径，不引入 openat。
+    try {
+      bridgeFs.unlinkSync(link)
+      return true
+    } catch (error) {
+      if (isEnoent(error)) return false
+      throw error
+    }
   }
+  throw new Error(`retired bridge kept changing identity after ${RETIRED_BRIDGE_UNLINK_ATTEMPTS} attempts: ${link}`)
 }
 
 function lstatOrAbsent(file: string, bridgeFs: RetiredBridgeFs): fs.Stats | null {
