@@ -15,6 +15,8 @@ import eventSourcedSessionInputMigration from "@opencode-ai/core/database/migrat
 import contextEpochAgentMigration from "@opencode-ai/core/database/migration/20260605042240_add_context_epoch_agent"
 import simplifyIntegrationCredentialsMigration from "@opencode-ai/core/database/migration/20260611192811_lush_chimera"
 import simplifySessionInputMigration from "@opencode-ai/core/database/migration/20260622202450_simplify_session_input"
+import permissionDecisionReceiptMigration from "@opencode-ai/core/database/migration/20260720085655_permission-decision-receipt"
+import permissionRequestAdmissionMigration from "@opencode-ai/core/database/migration/20260720094009_permission-request-admission"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { EventV2 } from "@opencode-ai/core/event"
@@ -120,6 +122,45 @@ describe("DatabaseMigration", () => {
         }),
       ),
     ).rejects.toThrow("Database is not empty and has no session table")
+  })
+
+  test("preserves pre-admission permission receipts when adding request admission", async () => {
+    await run(
+      Effect.gen(function* () {
+        const db = yield* makeDb
+        yield* db.run(sql`CREATE TABLE session (id text PRIMARY KEY)`)
+        yield* db.run(sql`INSERT INTO session (id) VALUES ('ses_legacy')`)
+        yield* DatabaseMigration.applyOnly(db, [permissionDecisionReceiptMigration])
+        yield* db.run(sql`
+          INSERT INTO permission_decision (
+            decision_id,
+            request_id,
+            session_id,
+            request_fingerprint,
+            request,
+            decision,
+            resolved_request_ids,
+            committed_at
+          ) VALUES (
+            'pdec_legacy',
+            'per_legacy',
+            'ses_legacy',
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            '{}',
+            'reject',
+            '["per_legacy"]',
+            1
+          )
+        `)
+
+        yield* DatabaseMigration.applyOnly(db, [permissionRequestAdmissionMigration])
+
+        expect(yield* db.all(sql`SELECT request_id, decision FROM permission_decision`)).toEqual([
+          { request_id: "per_legacy", decision: "reject" },
+        ])
+        expect(yield* db.all(sql`SELECT request_id FROM permission_request`)).toEqual([])
+      }),
+    )
   })
 
   test("backfills existing Context Epoch rows to the build agent", async () => {

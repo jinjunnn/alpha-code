@@ -386,10 +386,12 @@ export const layerWith = (options?: LayerOptions) =>
                   version: definition.durable.version,
                 },
               }
+              if (Object.isFrozen(event.data)) Object.freeze(event)
               yield* notify(event as Payload, true)
               return event
             }
           }
+          if (Object.isFrozen(event.data)) Object.freeze(event)
           yield* notify(event as Payload, false)
           return event
         })

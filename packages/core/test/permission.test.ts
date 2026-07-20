@@ -199,6 +199,33 @@ describe("PermissionV2", () => {
     }),
   )
 
+  it.effect("replays a pre-admission reject receipt before evaluating current allow rules", () =>
+    Effect.gen(function* () {
+      yield* setup()
+      const original = yield* waitForRequest(assertion({ id: PermissionV2.ID.create("per_legacy_receipt") }))
+      const receipt = yield* original.service.reply(
+        decision(original.request, "reject", PermissionV2.DecisionID.create("pdec_legacy_receipt")),
+      )
+      yield* Fiber.await(original.fiber)
+      const database = yield* Database.Service
+      yield* database.db
+        .delete(PermissionRequestTable)
+        .where(eq(PermissionRequestTable.request_id, original.request.id))
+        .run()
+        .pipe(Effect.orDie)
+      yield* setRules([{ action: "read", resource: "*", effect: "allow" }])
+
+      const restarted = yield* restartPermission()
+      expect(yield* restarted.ask(assertion({ id: original.request.id }))).toEqual({
+        status: "decided",
+        receipt,
+      })
+      expect((yield* restarted.assert(assertion({ id: original.request.id })).pipe(Effect.exit))._tag).toBe("Failure")
+      expect(yield* database.db.select().from(PermissionRequestTable).all()).toEqual([])
+      expect(yield* database.db.select().from(PermissionDecisionTable).all()).toHaveLength(1)
+    }),
+  )
+
   it.effect("snapshots and freezes caller-owned request facts before admission", () =>
     Effect.gen(function* () {
       yield* setup()
@@ -263,6 +290,185 @@ describe("PermissionV2", () => {
     }),
   )
 
+  it.effect("ignores an inherited save grant when Object.prototype is polluted", () =>
+    Effect.gen(function* () {
+      yield* setup()
+      const descriptor = Object.getOwnPropertyDescriptor(Object.prototype, "save")
+      const restore = () =>
+        descriptor
+          ? Object.defineProperty(Object.prototype, "save", descriptor)
+          : Reflect.deleteProperty(Object.prototype, "save")
+      yield* Effect.addFinalizer(() => Effect.sync(restore))
+      Object.defineProperty(Object.prototype, "save", { configurable: true, value: ["*"], writable: true })
+
+      const service = yield* PermissionV2.Service
+      const result = yield* service.ask(assertion({ id: PermissionV2.ID.create("per_inherited_save") }))
+      expect(result.status).toBe("pending")
+      if (result.status !== "pending") return
+      const reply = yield* service.reply(decision(result.request, "always")).pipe(Effect.exit)
+      const database = yield* Database.Service
+      const grants = yield* database.db.select().from(PermissionTable).all()
+      restore()
+
+      expect(reply._tag).toBe("Failure")
+      expect(grants).toEqual([])
+    }),
+  )
+
+  it.effect("does not invoke inherited toJSON methods while fingerprinting", () =>
+    Effect.gen(function* () {
+      yield* setup()
+      const objectDescriptor = Object.getOwnPropertyDescriptor(Object.prototype, "toJSON")
+      const arrayDescriptor = Object.getOwnPropertyDescriptor(Array.prototype, "toJSON")
+      const restore = () => {
+        if (objectDescriptor) Object.defineProperty(Object.prototype, "toJSON", objectDescriptor)
+        else Reflect.deleteProperty(Object.prototype, "toJSON")
+        if (arrayDescriptor) Object.defineProperty(Array.prototype, "toJSON", arrayDescriptor)
+        else Reflect.deleteProperty(Array.prototype, "toJSON")
+      }
+      yield* Effect.addFinalizer(() => Effect.sync(restore))
+      Object.defineProperty(Object.prototype, "toJSON", {
+        configurable: true,
+        value: () => ({ collision: true }),
+        writable: true,
+      })
+      Object.defineProperty(Array.prototype, "toJSON", {
+        configurable: true,
+        value: () => ["collision"],
+        writable: true,
+      })
+
+      const service = yield* PermissionV2.Service
+      const first = yield* service.ask(
+        assertion({ id: PermissionV2.ID.create("per_fingerprint_first"), resources: ["src/first.ts"] }),
+      )
+      const second = yield* service.ask(
+        assertion({
+          id: PermissionV2.ID.create("per_fingerprint_second"),
+          action: "bash",
+          resources: ["pwd"],
+        }),
+      )
+      restore()
+
+      expect(first.status).toBe("pending")
+      expect(second.status).toBe("pending")
+      if (first.status !== "pending" || second.status !== "pending") return
+      expect(first.request.fingerprint).not.toBe(second.request.fingerprint)
+    }),
+  )
+
+  it.effect("does not trust a polluted Array.prototype every method", () =>
+    Effect.gen(function* () {
+      yield* setup()
+      const service = yield* PermissionV2.Service
+      const source = yield* service.ask(
+        assertion({
+          id: PermissionV2.ID.create("per_array_pollution_source"),
+          resources: ["src/a.ts"],
+          save: ["src/*"],
+        }),
+      )
+      const unrelated = yield* service.ask(
+        assertion({
+          id: PermissionV2.ID.create("per_array_pollution_unrelated"),
+          action: "bash",
+          resources: ["pwd"],
+        }),
+      )
+      expect(source.status).toBe("pending")
+      expect(unrelated.status).toBe("pending")
+      if (source.status !== "pending" || unrelated.status !== "pending") return
+
+      const descriptor = Object.getOwnPropertyDescriptor(Array.prototype, "every")
+      const restore = () => Object.defineProperty(Array.prototype, "every", descriptor!)
+      yield* Effect.addFinalizer(() => Effect.sync(restore))
+      Object.defineProperty(Array.prototype, "every", { configurable: true, value: () => true, writable: true })
+
+      const receipt = yield* service.reply(decision(source.request, "always"))
+      restore()
+
+      expect(receipt.resolvedRequestIDs).toEqual([source.request.id])
+      expect(yield* service.list()).toEqual([unrelated.request])
+      yield* service.reply(decision(unrelated.request, "reject"))
+    }),
+  )
+
+  it.effect("reads Proxy metadata only into the inert snapshot", () =>
+    Effect.gen(function* () {
+      yield* setup()
+      const service = yield* PermissionV2.Service
+      const reads = { count: 0 }
+      const metadata = {
+        nested: new Proxy(
+          { value: "safe" },
+          {
+            get(target, key, receiver) {
+              if (key === "value") {
+                reads.count++
+                return new Date("2026-07-20T00:00:00.000Z")
+              }
+              return Reflect.get(target, key, receiver)
+            },
+          },
+        ),
+      }
+      const input = assertion({
+        id: PermissionV2.ID.create("per_proxy_snapshot"),
+        metadata: metadata as never,
+      })
+
+      const result = yield* service.ask(input)
+      expect(result.status).toBe("pending")
+      if (result.status !== "pending") return
+      const snapshot = (yield* service.get(input.id))!
+      const retry = yield* service.ask(assertion({ id: input.id, metadata: { nested: { value: "safe" } } }))
+
+      expect(reads.count).toBe(0)
+      expect(snapshot.metadata).toEqual({ nested: { value: "safe" } })
+      expect(retry).toEqual({ status: "pending", request: snapshot })
+    }),
+  )
+
+  it.effect("freezes asked events across sequential listeners", () =>
+    Effect.gen(function* () {
+      yield* setup()
+      const events = yield* EventV2.Service
+      const mutations: boolean[] = []
+      const observed = yield* Deferred.make<PermissionV2.Request>()
+      const first = yield* events.listen((event) =>
+        event.type === PermissionV2.Event.Asked.type
+          ? Effect.sync(() => {
+              const request = event.data as PermissionV2.Request
+              mutations.push(Reflect.set(request, "action", "bash"))
+              mutations.push(Reflect.set(request.resources, 0, "pwd"))
+              mutations.push(Reflect.set(event, "data", { ...request, action: "bash", resources: ["pwd"] }))
+            })
+          : Effect.void,
+      )
+      const second = yield* events.listen((event) =>
+        event.type === PermissionV2.Event.Asked.type
+          ? Deferred.succeed(observed, event.data as PermissionV2.Request).pipe(Effect.asVoid)
+          : Effect.void,
+      )
+      yield* Effect.addFinalizer(() => Effect.all([first, second], { discard: true }))
+
+      const result = yield* (yield* PermissionV2.Service).ask(
+        assertion({ id: PermissionV2.ID.create("per_frozen_event"), metadata: { origin: "tool" } }),
+      )
+      const request = yield* Deferred.await(observed)
+
+      expect(result.status).toBe("pending")
+      expect(mutations).toEqual([false, false, false])
+      expect(request.action).toBe("read")
+      expect(request.resources).toEqual(["src/index.ts"])
+      expect(request.metadata).toEqual({ origin: "tool" })
+      expect(Object.isFrozen(request)).toBe(true)
+      expect(Object.isFrozen(request.resources)).toBe(true)
+      expect(Object.isFrozen(request.metadata)).toBe(true)
+    }),
+  )
+
   it.effect("detaches asked events and ask, get, list, and session-list results", () =>
     Effect.gen(function* () {
       yield* setup()
@@ -289,7 +495,7 @@ describe("PermissionV2", () => {
       const listed = (yield* service.list())[0]!
       const sessionListed = (yield* service.forSession(result.request.sessionID))[0]!
 
-      ;(eventRequest.save as string[])[0] = "*"
+      expect(Reflect.set(eventRequest.save as string[], 0, "*")).toBe(false)
       ;(result.request.save as string[])[0] = "event/*"
       ;(got.save as string[])[0] = "get/*"
       ;(listed.save as string[])[0] = "list/*"
@@ -300,7 +506,7 @@ describe("PermissionV2", () => {
       const command = decision(snapshot, "always")
       const receipt = yield* service.reply(command)
       const eventReceipt = yield* Deferred.await(replied)
-      Reflect.set(eventReceipt.resolvedRequestIDs, 0, "per_mutated")
+      expect(Reflect.set(eventReceipt.resolvedRequestIDs, 0, "per_mutated")).toBe(false)
       expect(yield* service.reply(command)).toEqual(receipt)
 
       const database = yield* Database.Service
@@ -629,6 +835,20 @@ describe("PermissionV2", () => {
       expect(yield* restarted.ask(assertion())).toEqual({ status: "decided", receipt: committed })
       yield* restarted.assert(assertion())
       expect(yield* restarted.list()).toEqual([])
+    }),
+  )
+
+  it.effect("rehydrates a pending request from its prototype-free admission snapshot", () =>
+    Effect.gen(function* () {
+      yield* setup()
+      const input = assertion({ id: PermissionV2.ID.create("per_pending_restart"), metadata: { origin: "tool" } })
+      const original = yield* (yield* PermissionV2.Service).ask(input)
+      expect(original.status).toBe("pending")
+      if (original.status !== "pending") return
+
+      const restarted = yield* restartPermission()
+      expect(yield* restarted.ask(input)).toEqual(original)
+      yield* restarted.reply(decision(original.request, "once"))
     }),
   )
 

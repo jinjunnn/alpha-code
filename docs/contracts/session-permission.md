@@ -26,17 +26,22 @@ owned by REQ-212.
   expire automatically; and
 - optional `save`, `metadata`, and tool-call `source` facts.
 
-Admission decodes those facts into JSON wire values, makes a service-owned
-copy, and recursively freezes that copy before fingerprinting or evaluation.
-`metadata` accepts only JSON primitives, arrays, and plain string-keyed JSON
-objects; host objects such as `Date`, functions, `undefined`, symbols,
-non-finite numbers, and cyclic values are rejected fail-closed. Events and all
-service reads return detached copies rather than the internal snapshot.
+Admission first copies untrusted input exactly once from own property
+descriptors, then validates and decodes only that inert copy. Accessors, sparse
+arrays, custom prototypes, symbols, host objects such as `Date`, functions,
+`undefined`, non-finite numbers, and cyclic values are rejected fail-closed.
+The service rebuilds the decoded internal snapshot with no prototypes and
+reads request fields only after an own-property check, then recursively freezes
+it before fingerprinting or evaluation. Service reads return detached copies;
+Permission event data is instead deeply frozen so every sequential listener
+observes the same facts and must clone before mutation.
 
 The fingerprint covers every request fact except `id`: Session, subject,
 action, resources, scope, expiry, save candidates, metadata, and source.
-Object keys are recursively sorted before hashing; array order is retained.
-The hash is computed from the actual frozen public-wire snapshot and is checked
+Object keys are recursively sorted before hashing; array order is retained. A
+purpose-built deterministic JSON serializer visits only own enumerable data
+properties and never invokes `toJSON` or another value-controlled method. The
+hash is computed from the actual frozen public-wire snapshot and is checked
 again immediately before a decision commits. Request ID and fingerprint
 therefore form the immutable idempotency identity.
 
@@ -114,6 +119,13 @@ and request ID. For `always`, the primary receipt, saved-rule inserts, derived
 receipts, and the primary `resolvedRequestIDs` are one SQLite transaction. A
 failed grant write therefore leaves no success receipt and keeps the request
 pending.
+
+Databases created before `permission_request` may contain receipts without a
+matching admission row. Admission checks such a same-Session receipt before
+consulting current rules and replays it as the durable authority; it does not
+attempt to reinterpret an older fingerprint through the current serializer or
+write a replacement outcome. A receipt owned by another Session conflicts
+without exposing its contents.
 
 A process crash before that transaction commits has no success fact and remains
 fail-closed. After commit, rebuilding the Permission service reads the receipt;

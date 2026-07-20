@@ -17,6 +17,8 @@ import { Wildcard } from "./util/wildcard"
 
 export { Effect, Rule, Ruleset } from "@opencode-ai/schema/permission"
 const missingAgentPermissions: Permission.Ruleset = [{ action: "*", resource: "*", effect: "deny" }]
+const stringCharCodeAt = String.prototype.charCodeAt
+const hex = "0123456789abcdef"
 
 export const ID = Permission.ID
 export type ID = typeof ID.Type
@@ -109,19 +111,23 @@ export class ConflictError extends Schema.TaggedErrorClass<ConflictError>()("Per
 export type Error = BlockedError | CorrectedError | ConflictError
 
 export function evaluate(action: string, resource: string, ...rulesets: Permission.Ruleset[]): Permission.Rule {
-  return (
-    rulesets
-      .flat()
-      .findLast((rule) => Wildcard.match(action, rule.action) && Wildcard.match(resource, rule.resource)) ?? {
-      action,
-      resource: "*",
-      effect: "ask",
+  for (let rulesetIndex = rulesets.length - 1; rulesetIndex >= 0; rulesetIndex--) {
+    const ruleset = rulesets[rulesetIndex]!
+    for (let ruleIndex = ruleset.length - 1; ruleIndex >= 0; ruleIndex--) {
+      const rule = ruleset[ruleIndex]!
+      if (Wildcard.match(action, rule.action) && Wildcard.match(resource, rule.resource)) return rule
     }
-  )
+  }
+  return { action, resource: "*", effect: "ask" }
 }
 
 export function merge(...rulesets: Permission.Ruleset[]): Permission.Ruleset {
-  return rulesets.flat()
+  const result: Permission.Rule[] = []
+  for (let rulesetIndex = 0; rulesetIndex < rulesets.length; rulesetIndex++) {
+    const ruleset = rulesets[rulesetIndex]!
+    for (let ruleIndex = 0; ruleIndex < ruleset.length; ruleIndex++) result[result.length] = ruleset[ruleIndex]!
+  }
+  return result
 }
 
 export interface Interface {
@@ -169,15 +175,29 @@ const layer = Layer.effect(
     )
 
     const savedRules = Effect.fnUntraced(function* () {
-      return (yield* saved.list({ projectID: location.project.id })).map(
+      return mapArray(
+        yield* saved.list({ projectID: location.project.id }),
         (item): Permission.Rule => ({ action: item.action, resource: item.resource, effect: "allow" }),
       )
     })
 
+    const assertInputSnapshot = Effect.fnUntraced(function* (input: AssertInput) {
+      const copied = yield* Effect.sync(() => wireSnapshot(input))
+      const decoded = yield* Schema.decodeUnknownEffect(AssertInput)(copied).pipe(Effect.orDie)
+      return deepFreeze(wireSnapshot(decoded))
+    })
+
+    const replyInputSnapshot = Effect.fnUntraced(function* (input: ReplyInput) {
+      const copied = yield* Effect.sync(() => wireSnapshot(input))
+      const decoded = yield* Schema.decodeUnknownEffect(ReplyInput)(copied).pipe(Effect.orDie)
+      return deepFreeze(wireSnapshot(decoded))
+    })
+
     const resolveInput = Effect.fn("PermissionV2.resolveInput")(function* (input: AssertInput) {
-      const session = yield* sessions.get(input.sessionID)
-      if (!session) return yield* new SessionV2.NotFoundError({ sessionID: input.sessionID })
-      const selection = yield* agents.select(input.agent ?? session.agent)
+      const sessionID = requiredOwn(input, "sessionID")
+      const session = yield* sessions.get(sessionID)
+      if (!session) return yield* new SessionV2.NotFoundError({ sessionID })
+      const selection = yield* agents.select(own(input, "agent") ?? session.agent)
       return {
         agentID: selection.id,
         rules: selection.info?.permissions ?? missingAgentPermissions,
@@ -190,41 +210,64 @@ const layer = Layer.effect(
     })
 
     function denied(input: Pick<AssertInput, "action" | "resources">, rules: Permission.Ruleset) {
-      return input.resources.some((resource) => evaluate(input.action, resource, rules).effect === "deny")
+      const action = requiredOwn(input, "action")
+      const resources = requiredOwn(input, "resources")
+      for (let index = 0; index < resources.length; index++) {
+        if (evaluate(action, resources[index]!, rules).effect === "deny") return true
+      }
+      return false
     }
 
     function relevant(input: Pick<AssertInput, "action">, rules: Permission.Ruleset) {
-      return rules.filter((rule) => Wildcard.match(input.action, rule.action))
+      const result: Permission.Rule[] = []
+      const action = requiredOwn(input, "action")
+      for (let index = 0; index < rules.length; index++) {
+        const rule = rules[index]!
+        if (Wildcard.match(action, rule.action)) result[result.length] = rule
+      }
+      return result
     }
 
     const evaluateInput = Effect.fnUntraced(function* (input: AssertInput, rules: Permission.Ruleset) {
       if (denied(input, rules)) return { effect: "deny" as const, rules }
-      const all = [...rules, ...(yield* savedRules())]
-      const effects = input.resources.map((resource) => evaluate(input.action, resource, all).effect)
-      const effect: Permission.Effect = effects.includes("deny") ? "deny" : effects.includes("ask") ? "ask" : "allow"
+      const all = merge(rules, yield* savedRules())
+      const action = requiredOwn(input, "action")
+      const resources = requiredOwn(input, "resources")
+      let effect: Permission.Effect = "allow"
+      for (let index = 0; index < resources.length; index++) {
+        const result = evaluate(action, resources[index]!, all).effect
+        if (result === "deny") return { effect: "deny" as const, rules: all }
+        if (result === "ask") effect = "ask"
+      }
       return { effect, rules: all }
     })
 
     const request = Effect.fnUntraced(function* (input: AssertInput, agentID: AgentV2.ID) {
-      if (input.metadata !== undefined && !isJsonWireValue(input.metadata))
-        return yield* Effect.die(new Error("Permission metadata must contain only plain JSON wire values"))
-      const facts = yield* Schema.decodeUnknownEffect(RequestFacts)({
-        sessionID: input.sessionID,
-        subject: { kind: "agent", id: agentID },
-        action: input.action,
-        resources: input.resources,
-        scope: { kind: "session", sessionID: input.sessionID },
-        expiresAt: null,
-        ...(input.save ? { save: input.save } : {}),
-        ...(input.metadata ? { metadata: input.metadata } : {}),
-        ...(input.source ? { source: input.source } : {}),
-      }).pipe(Effect.orDie)
-      const snapshot = structuredClone(facts)
-      return deepFreeze({
-        id: input.id ?? ID.create(),
-        fingerprint: requestFingerprint(snapshot),
-        ...snapshot,
-      })
+      const sessionID = requiredOwn(input, "sessionID")
+      const facts = yield* Schema.decodeUnknownEffect(RequestFacts)(
+        wireSnapshot({
+          sessionID,
+          subject: { kind: "agent", id: agentID },
+          action: requiredOwn(input, "action"),
+          resources: requiredOwn(input, "resources"),
+          scope: { kind: "session", sessionID },
+          expiresAt: null,
+          ...(Object.hasOwn(input, "save") ? { save: requiredOwn(input, "save") } : {}),
+          ...(Object.hasOwn(input, "metadata") ? { metadata: requiredOwn(input, "metadata") } : {}),
+          ...(Object.hasOwn(input, "source") ? { source: requiredOwn(input, "source") } : {}),
+        }),
+      ).pipe(Effect.orDie)
+      const snapshot = deepFreeze(wireSnapshot(facts))
+      return deepFreeze(
+        Object.assign(
+          Object.create(null),
+          {
+            id: own(input, "id") ?? ID.create(),
+            fingerprint: requestFingerprint(snapshot),
+          },
+          snapshot,
+        ) as Request,
+      )
     })
 
     const findRequest = Effect.fnUntraced(function* (requestID: ID) {
@@ -250,40 +293,48 @@ const layer = Layer.effect(
       value: Request,
       evaluate: () => Effect.Effect<{ readonly effect: Permission.Effect; readonly rules: Permission.Ruleset }>,
     ) {
+      const requestID = requiredOwn(value, "id")
+      const fingerprint = requiredOwn(value, "fingerprint")
+      const sessionID = requiredOwn(value, "sessionID")
       return yield* lock.withPermit(
         Effect.uninterruptible(
           Effect.gen(function* () {
-            const active = pending.get(value.id)
+            const active = pending.get(requestID)
             if (active) {
-              if (active.request.fingerprint !== value.fingerprint)
-                return yield* new ConflictError({ requestID: value.id })
+              if (requiredOwn(active.request, "fingerprint") !== fingerprint)
+                return yield* new ConflictError({ requestID })
               return { status: "pending" as const, item: active }
             }
-            const admitted = yield* findRequest(value.id)
+            const admitted = yield* findRequest(requestID)
             if (admitted) {
-              if (admitted.request_fingerprint !== value.fingerprint)
-                return yield* new ConflictError({ requestID: value.id })
-              const decided = yield* findReceipt(value.id)
+              if (admitted.request_fingerprint !== fingerprint) return yield* new ConflictError({ requestID })
+              const decided = yield* findReceipt(requestID)
               if (decided) return { status: "decided" as const, receipt: decided }
               if (admitted.outcome !== "ask") return { status: "evaluated" as const, effect: admitted.outcome }
               const item = {
                 request: yield* requestSnapshot(admitted),
                 deferred: yield* Deferred.make<void, DeclinedError | CorrectedError>(),
               }
-              pending.set(value.id, item)
+              pending.set(requestID, item)
               yield* events
-                .publish(Event.Asked, detached(item.request))
-                .pipe(Effect.onError(() => Effect.sync(() => pending.delete(value.id))))
+                .publish(Event.Asked, eventPayload(item.request))
+                .pipe(Effect.onError(() => Effect.sync(() => pending.delete(requestID))))
               return { status: "pending" as const, item }
+            }
+
+            const historical = yield* findReceipt(requestID)
+            if (historical) {
+              if (requiredOwn(historical, "sessionID") !== sessionID) return yield* new ConflictError({ requestID })
+              return { status: "decided" as const, receipt: historical }
             }
 
             const result = yield* evaluate()
             yield* database.db
               .insert(PermissionRequestTable)
               .values({
-                request_id: value.id,
-                session_id: value.sessionID,
-                request_fingerprint: value.fingerprint,
+                request_id: requestID,
+                session_id: sessionID,
+                request_fingerprint: fingerprint,
                 request: value,
                 outcome: result.effect,
               })
@@ -292,10 +343,10 @@ const layer = Layer.effect(
             if (result.effect !== "ask")
               return { status: "evaluated" as const, effect: result.effect, rules: result.rules }
             const item = { request: value, deferred: yield* Deferred.make<void, DeclinedError | CorrectedError>() }
-            pending.set(value.id, item)
+            pending.set(requestID, item)
             yield* events
-              .publish(Event.Asked, detached(value))
-              .pipe(Effect.onError(() => Effect.sync(() => pending.delete(value.id))))
+              .publish(Event.Asked, eventPayload(value))
+              .pipe(Effect.onError(() => Effect.sync(() => pending.delete(requestID))))
             return { status: "pending" as const, item }
           }),
         ),
@@ -303,19 +354,21 @@ const layer = Layer.effect(
     })
 
     const ask = Effect.fn("PermissionV2.ask")(function* (input: AssertInput) {
-      const resolved = yield* resolveInput(input)
-      const value = yield* request(input, resolved.agentID)
+      const snapshot = yield* assertInputSnapshot(input)
+      const resolved = yield* resolveInput(snapshot)
+      const value = yield* request(snapshot, resolved.agentID)
       const admitted = yield* admission(value, () => evaluateInput(value, resolved.rules))
       if (admitted.status === "pending") return { status: "pending" as const, request: detached(admitted.item.request) }
       if (admitted.status === "decided") return { status: "decided" as const, receipt: detached(admitted.receipt) }
-      return { status: "evaluated" as const, id: value.id, effect: admitted.effect }
+      return { status: "evaluated" as const, id: requiredOwn(value, "id"), effect: admitted.effect }
     })
 
     const assert = Effect.fn("PermissionV2.assert")((input: AssertInput) =>
       Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
-          const resolved = yield* resolveInput(input)
-          const value = yield* request(input, resolved.agentID)
+          const snapshot = yield* assertInputSnapshot(input)
+          const resolved = yield* resolveInput(snapshot)
+          const value = yield* request(snapshot, resolved.agentID)
           const admitted = yield* admission(value, () => evaluateInput(value, resolved.rules))
           if (admitted.status === "decided") return yield* apply(admitted.receipt)
           if (admitted.status === "evaluated") {
@@ -329,8 +382,12 @@ const layer = Layer.effect(
       ),
     )
 
-    const reply = Effect.fn("PermissionV2.reply")((input: ReplyInput) =>
-      lock.withPermit(
+    const reply = Effect.fn("PermissionV2.reply")(function* (input: ReplyInput) {
+      const snapshot = yield* replyInputSnapshot(input)
+      const requestID = requiredOwn(snapshot, "requestID")
+      const sessionID = requiredOwn(snapshot, "sessionID")
+      const command = requiredOwn(snapshot, "command")
+      return yield* lock.withPermit(
         Effect.uninterruptible(
           Effect.gen(function* () {
             const decided = yield* database.db
@@ -338,57 +395,57 @@ const layer = Layer.effect(
               .from(PermissionDecisionTable)
               .where(
                 or(
-                  eq(PermissionDecisionTable.request_id, input.requestID),
-                  eq(PermissionDecisionTable.decision_id, input.command.decisionID),
+                  eq(PermissionDecisionTable.request_id, requestID),
+                  eq(PermissionDecisionTable.decision_id, requiredOwn(command, "decisionID")),
                 ),
               )
               .all()
               .pipe(Effect.orDie)
-            const previous = decided.find((row) => row.request_id === input.requestID)
+            const previous = findArray(decided, (row) => row.request_id === requestID)
             if (previous) {
-              if (previous.session_id !== input.sessionID)
-                return yield* new NotFoundError({ requestID: input.requestID })
-              if (!sameDecision(previous, input.command))
-                return yield* new ConflictError({ requestID: input.requestID, decisionID: input.command.decisionID })
+              if (previous.session_id !== sessionID) return yield* new NotFoundError({ requestID })
+              if (!sameDecision(previous, command))
+                return yield* new ConflictError({ requestID, decisionID: requiredOwn(command, "decisionID") })
               return detached(receipt(previous))
             }
             if (decided.length > 0)
-              return yield* new ConflictError({ requestID: input.requestID, decisionID: input.command.decisionID })
+              return yield* new ConflictError({ requestID, decisionID: requiredOwn(command, "decisionID") })
 
-            const existing = pending.get(input.requestID)
-            if (!existing || existing.request.sessionID !== input.sessionID)
-              return yield* new NotFoundError({ requestID: input.requestID })
-            if (existing.request.fingerprint !== input.command.requestFingerprint)
-              return yield* new ConflictError({ requestID: input.requestID, decisionID: input.command.decisionID })
-            if (existing.request.fingerprint !== requestFingerprint(existing.request))
-              return yield* new ConflictError({ requestID: input.requestID, decisionID: input.command.decisionID })
+            const existing = pending.get(requestID)
+            if (!existing || requiredOwn(existing.request, "sessionID") !== sessionID)
+              return yield* new NotFoundError({ requestID })
+            if (requiredOwn(existing.request, "fingerprint") !== requiredOwn(command, "requestFingerprint"))
+              return yield* new ConflictError({ requestID, decisionID: requiredOwn(command, "decisionID") })
+            if (requiredOwn(existing.request, "fingerprint") !== requestFingerprint(existing.request))
+              return yield* new ConflictError({ requestID, decisionID: requiredOwn(command, "decisionID") })
+            const save = own(existing.request, "save")
             if (
-              isAlways(input.command) &&
-              (input.command.grantScope.projectID !== location.project.id || !existing.request.save?.length)
+              isAlways(command) &&
+              (requiredOwn(requiredOwn(command, "grantScope"), "projectID") !== location.project.id || !save?.length)
             )
-              return yield* new ConflictError({ requestID: input.requestID, decisionID: input.command.decisionID })
+              return yield* new ConflictError({ requestID, decisionID: requiredOwn(command, "decisionID") })
             const committedAt = Date.now()
-            const always = isAlways(input.command) ? input.command : undefined
+            const always = isAlways(command) ? command : undefined
             const batch = always ? [existing, ...(yield* eligible(existing, yield* savedRules()))] : [existing]
             const primary = makeReceipt(
               existing.request,
-              input.command,
+              command,
               committedAt,
-              batch.map((item) => item.request.id),
+              mapArray(batch, (item) => requiredOwn(item.request, "id")),
             )
             const secondary = always
-              ? batch.slice(1).map((item) =>
+              ? mapArray(sliceArray(batch, 1), (item) =>
                   makeReceipt(
                     item.request,
                     {
-                      requestFingerprint: item.request.fingerprint,
+                      requestFingerprint: requiredOwn(item.request, "fingerprint"),
                       decisionID: DecisionID.create(),
                       decision: "always",
-                      grantScope: always.grantScope,
+                      grantScope: requiredOwn(always, "grantScope"),
                       grantExpiresAt: null,
                     },
                     committedAt,
-                    [item.request.id],
+                    [requiredOwn(item.request, "id")],
                   ),
                 )
               : []
@@ -407,10 +464,10 @@ const layer = Layer.effect(
                     yield* tx
                       .insert(PermissionTable)
                       .values(
-                        existing.request.save!.map((resource) => ({
+                        mapArray(save!, (resource) => ({
                           id: PermissionSaved.ID.create(),
                           project_id: location.project.id,
-                          action: existing.request.action,
+                          action: requiredOwn(existing.request, "action"),
                           resource,
                         })),
                       )
@@ -421,20 +478,25 @@ const layer = Layer.effect(
                   const insertedSecondary = secondary.length
                     ? yield* tx
                         .insert(PermissionDecisionTable)
-                        .values(batch.slice(1).map((item, index) => decisionRow(item.request, secondary[index]!)))
+                        .values(
+                          mapArray(sliceArray(batch, 1), (item, index) => decisionRow(item.request, secondary[index]!)),
+                        )
                         .onConflictDoNothing()
                         .returning({ requestID: PermissionDecisionTable.request_id })
                         .all()
                     : []
-                  const resolvedRequestIDs = [inserted.requestID, ...insertedSecondary.map((row) => row.requestID)]
+                  const resolvedRequestIDs = [
+                    inserted.requestID,
+                    ...mapArray(insertedSecondary, (row) => row.requestID),
+                  ]
                   yield* tx
                     .update(PermissionDecisionTable)
                     .set({ resolved_request_ids: resolvedRequestIDs })
-                    .where(eq(PermissionDecisionTable.request_id, existing.request.id))
+                    .where(eq(PermissionDecisionTable.request_id, requiredOwn(existing.request, "id")))
                     .run()
                   return [
                     { ...primary, resolvedRequestIDs },
-                    ...secondary.filter((item) => resolvedRequestIDs.includes(item.requestID)),
+                    ...filterArray(secondary, (item) => includesArray(resolvedRequestIDs, item.requestID)),
                   ]
                 }),
               )
@@ -446,15 +508,14 @@ const layer = Layer.effect(
                 .from(PermissionDecisionTable)
                 .where(
                   or(
-                    eq(PermissionDecisionTable.request_id, input.requestID),
-                    eq(PermissionDecisionTable.decision_id, input.command.decisionID),
+                    eq(PermissionDecisionTable.request_id, requestID),
+                    eq(PermissionDecisionTable.decision_id, requiredOwn(command, "decisionID")),
                   ),
                 )
                 .get()
                 .pipe(Effect.orDie)
-              if (raced?.request_id === input.requestID && sameDecision(raced, input.command))
-                return detached(receipt(raced))
-              return yield* new ConflictError({ requestID: input.requestID, decisionID: input.command.decisionID })
+              if (raced?.request_id === requestID && sameDecision(raced, command)) return detached(receipt(raced))
+              return yield* new ConflictError({ requestID, decisionID: requiredOwn(command, "decisionID") })
             }
 
             yield* Effect.forEach(
@@ -473,7 +534,7 @@ const layer = Layer.effect(
                     }
                     pending.delete(item.requestID)
                   }
-                  yield* events.publish(Event.Replied, detached(item)).pipe(
+                  yield* events.publish(Event.Replied, eventPayload(item)).pipe(
                     Effect.catchCause((cause) =>
                       Effect.logError("Permission decision event listener failed", {
                         requestID: item.requestID,
@@ -488,30 +549,41 @@ const layer = Layer.effect(
             return detached(committed[0]!)
           }),
         ),
-      ),
-    )
+      )
+    })
 
     const eligible = Effect.fnUntraced(function* (source: Pending, rememberedRules: Permission.Ruleset) {
-      const granted = source.request.save!.map(
-        (resource): Permission.Rule => ({ action: source.request.action, resource, effect: "allow" }),
+      const sourceAction = requiredOwn(source.request, "action")
+      const granted = mapArray(
+        requiredOwn(source.request, "save")!,
+        (resource): Permission.Rule => ({ action: sourceAction, resource, effect: "allow" }),
       )
-      const candidates = Array.from(pending.values()).filter((item) => item.request.id !== source.request.id)
-      return (yield* Effect.forEach(candidates, (item) =>
-        configured(item.request.sessionID, item.request.subject.id).pipe(
-          Effect.map((rules) => {
-            if (denied(item.request, rules)) return undefined
-            const effective = [...rules, ...rememberedRules, ...granted]
-            if (
-              !item.request.resources.every(
-                (resource) => evaluate(item.request.action, resource, effective).effect === "allow",
-              )
-            )
-              return undefined
-            return item
-          }),
-          Effect.catchTag("Session.NotFoundError", () => Effect.succeed(undefined)),
+      const sourceID = requiredOwn(source.request, "id")
+      const candidates = filterArray(
+        Array.from(pending.values()),
+        (item) => requiredOwn(item.request, "id") !== sourceID,
+      )
+      return filterArray(
+        yield* Effect.forEach(candidates, (item) =>
+          configured(
+            requiredOwn(item.request, "sessionID"),
+            requiredOwn(requiredOwn(item.request, "subject"), "id"),
+          ).pipe(
+            Effect.map((rules) => {
+              if (denied(item.request, rules)) return undefined
+              const effective = merge(rules, rememberedRules, granted)
+              const action = requiredOwn(item.request, "action")
+              const resources = requiredOwn(item.request, "resources")
+              for (let index = 0; index < resources.length; index++) {
+                if (evaluate(action, resources[index]!, effective).effect !== "allow") return undefined
+              }
+              return item
+            }),
+            Effect.catchTag("Session.NotFoundError", () => Effect.succeed(undefined)),
+          ),
         ),
-      )).filter((item): item is Pending => item !== undefined)
+        (item): item is Pending => item !== undefined,
+      )
     })
 
     const list = Effect.fn("PermissionV2.list")(function* () {
@@ -524,48 +596,78 @@ const layer = Layer.effect(
     })
 
     const forSession = Effect.fn("PermissionV2.forSession")(function* (sessionID: SessionV2.ID) {
-      return Array.from(pending.values(), (item) => item.request)
-        .filter((request) => request.sessionID === sessionID)
-        .map(detached)
+      return mapArray(
+        filterArray(
+          Array.from(pending.values(), (item) => item.request),
+          (request) => requiredOwn(request, "sessionID") === sessionID,
+        ),
+        detached,
+      )
     })
 
     return Service.of({ ask, assert, reply, get, forSession, list })
   }),
 )
 
-function requestFingerprint(value: RequestFacts) {
-  return Fingerprint.make(
-    Hash.sha256(
-      JSON.stringify(
-        normalize({
-          sessionID: value.sessionID,
-          subject: value.subject,
-          action: value.action,
-          resources: value.resources,
-          scope: value.scope,
-          expiresAt: value.expiresAt,
-          ...(value.save === undefined ? {} : { save: value.save }),
-          ...(value.metadata === undefined ? {} : { metadata: value.metadata }),
-          ...(value.source === undefined ? {} : { source: value.source }),
-        }),
-      ),
-    ),
-  )
+function mapArray<A, B>(values: ReadonlyArray<A>, transform: (value: A, index: number) => B) {
+  const result: B[] = []
+  for (let index = 0; index < values.length; index++) result[index] = transform(values[index]!, index)
+  return result
 }
 
-function normalize(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(normalize)
-  if (!value || typeof value !== "object") return value
-  return Object.fromEntries(
-    Object.entries(value)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => [key, normalize(item)]),
-  )
+function filterArray<A, B extends A>(values: ReadonlyArray<A>, predicate: (value: A, index: number) => value is B): B[]
+function filterArray<A>(values: ReadonlyArray<A>, predicate: (value: A, index: number) => boolean): A[]
+function filterArray<A>(values: ReadonlyArray<A>, predicate: (value: A, index: number) => boolean) {
+  const result: A[] = []
+  for (let index = 0; index < values.length; index++) {
+    const value = values[index]!
+    if (predicate(value, index)) result[result.length] = value
+  }
+  return result
+}
+
+function findArray<A>(values: ReadonlyArray<A>, predicate: (value: A) => boolean) {
+  for (let index = 0; index < values.length; index++) {
+    if (predicate(values[index]!)) return values[index]
+  }
+}
+
+function sliceArray<A>(values: ReadonlyArray<A>, start: number) {
+  const result: A[] = []
+  for (let index = start; index < values.length; index++) result[result.length] = values[index]!
+  return result
+}
+
+function includesArray<A>(values: ReadonlyArray<A>, expected: A) {
+  for (let index = 0; index < values.length; index++) {
+    if (values[index] === expected) return true
+  }
+  return false
+}
+
+function requestFingerprint(value: RequestFacts) {
+  const facts = Object.assign(Object.create(null), {
+    sessionID: requiredOwn(value, "sessionID"),
+    subject: requiredOwn(value, "subject"),
+    action: requiredOwn(value, "action"),
+    resources: requiredOwn(value, "resources"),
+    scope: requiredOwn(value, "scope"),
+    expiresAt: requiredOwn(value, "expiresAt"),
+    ...(Object.hasOwn(value, "save") ? { save: requiredOwn(value, "save") } : {}),
+    ...(Object.hasOwn(value, "metadata") ? { metadata: requiredOwn(value, "metadata") } : {}),
+    ...(Object.hasOwn(value, "source") ? { source: requiredOwn(value, "source") } : {}),
+  })
+  return Fingerprint.make(Hash.sha256(canonicalJson(facts)))
 }
 
 function deepFreeze<T>(value: T): T {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) return value
-  Object.values(value).forEach(deepFreeze)
+  const descriptors = Object.getOwnPropertyDescriptors(value)
+  const keys = Reflect.ownKeys(descriptors)
+  for (let index = 0; index < keys.length; index++) {
+    const descriptor = descriptorAt(descriptors, keys[index]!)
+    if (descriptor && Object.hasOwn(descriptor, "value")) deepFreeze(descriptor.value)
+  }
   return Object.freeze(value)
 }
 
@@ -573,47 +675,171 @@ function detached<T>(value: T): T {
   return structuredClone(value)
 }
 
-function isJsonWireValue(value: unknown): value is Schema.Json {
-  const path = new Set<unknown>()
-  return visit(value)
+function eventPayload<T>(value: T): T {
+  return deepFreeze(wireSnapshot(value))
+}
 
-  function visit(item: unknown): boolean {
-    if (item === null || typeof item === "string" || typeof item === "boolean") return true
-    if (typeof item === "number") return Number.isFinite(item)
-    if (!item || typeof item !== "object" || path.has(item)) return false
+function wireSnapshot<T>(value: T): T {
+  const path = new Set<object>()
+  return visit(value) as T
+
+  function visit(item: unknown): unknown {
+    if (item === null || typeof item === "string" || typeof item === "boolean") return item
+    if (typeof item === "number" && Number.isFinite(item)) return item
+    if (!item || typeof item !== "object" || path.has(item)) throw new Error("Expected an acyclic JSON wire value")
+
+    const array = Array.isArray(item)
     const prototype = Object.getPrototypeOf(item)
-    if (!Array.isArray(item) && prototype !== Object.prototype && prototype !== null) return false
+    if (
+      (!array && prototype !== Object.prototype && prototype !== null) ||
+      (array && prototype !== Array.prototype && prototype !== null)
+    )
+      throw new Error("Expected a plain JSON wire value")
+
     const descriptors = Object.getOwnPropertyDescriptors(item)
-    if (Reflect.ownKeys(descriptors).some((key) => typeof key !== "string")) return false
+    const keys = Reflect.ownKeys(descriptors)
     path.add(item)
-    const valid = Array.isArray(item)
-      ? Reflect.ownKeys(descriptors).every(
-          (key) =>
-            key === "length" || (typeof key === "string" && /^(0|[1-9]\d*)$/.test(key) && Number(key) < item.length),
-        ) &&
-        Array.from({ length: item.length }, (_, index) => descriptors[index]).every(
-          (descriptor) =>
-            descriptor !== undefined && descriptor.enumerable && "value" in descriptor && visit(descriptor.value),
-        )
-      : Object.values(descriptors).every(
-          (descriptor) => descriptor.enumerable && "value" in descriptor && visit(descriptor.value),
-        )
+
+    if (array) {
+      const length = descriptorAt(descriptors, "length")?.value
+      if (!Number.isSafeInteger(length) || length < 0) throw new Error("Expected a dense JSON array")
+      const result: unknown[] = []
+      result.length = length
+      for (let index = 0; index < keys.length; index++) {
+        const key = keys[index]!
+        if (key === "length") continue
+        if (typeof key !== "string" || String(Number(key)) !== key || Number(key) >= length)
+          throw new Error("Expected a dense JSON array")
+      }
+      for (let index = 0; index < length; index++) {
+        const descriptor = descriptorAt(descriptors, String(index))
+        if (!descriptor?.enumerable || !Object.hasOwn(descriptor, "value"))
+          throw new Error("Expected a dense JSON array")
+        result[index] = visit(descriptor.value)
+      }
+      path.delete(item)
+      Object.setPrototypeOf(result, null)
+      return result
+    }
+
+    const result = Object.create(null) as Record<PropertyKey, unknown>
+    for (let index = 0; index < keys.length; index++) {
+      const key = keys[index]!
+      if (typeof key !== "string") throw new Error("Expected string-keyed JSON objects")
+      const descriptor = descriptorAt(descriptors, key)
+      if (!descriptor?.enumerable || !Object.hasOwn(descriptor, "value"))
+        throw new Error("Expected enumerable JSON data properties")
+      result[key] = visit(descriptor.value)
+    }
     path.delete(item)
-    return valid
+    return result
   }
 }
 
+function canonicalJson(value: unknown): string {
+  if (value === null) return "null"
+  if (typeof value === "string") return quoteJson(value)
+  if (typeof value === "boolean") return value ? "true" : "false"
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new Error("Expected a finite JSON number")
+    return Object.is(value, -0) ? "0" : String(value)
+  }
+  if (!value || typeof value !== "object") throw new Error("Expected a JSON wire value")
+
+  if (Array.isArray(value)) {
+    const prototype = Object.getPrototypeOf(value)
+    if (prototype !== Array.prototype && prototype !== null) throw new Error("Expected a plain JSON array")
+    const descriptors = Object.getOwnPropertyDescriptors(value)
+    const keys = Reflect.ownKeys(descriptors)
+    for (let index = 0; index < keys.length; index++) {
+      const key = keys[index]!
+      if (key === "length") continue
+      if (typeof key !== "string" || String(Number(key)) !== key || Number(key) >= value.length)
+        throw new Error("Expected a dense JSON array")
+    }
+    let result = "["
+    for (let index = 0; index < value.length; index++) {
+      const descriptor = descriptorAt(descriptors, String(index))
+      if (!descriptor?.enumerable || !Object.hasOwn(descriptor, "value")) throw new Error("Expected a dense JSON array")
+      if (index > 0) result += ","
+      result += canonicalJson(descriptor.value)
+    }
+    return result + "]"
+  }
+  if (Object.getPrototypeOf(value) !== null) throw new Error("Expected a prototype-free JSON object")
+
+  const descriptors = Object.getOwnPropertyDescriptors(value)
+  const ownKeys = Reflect.ownKeys(descriptors)
+  const keys: string[] = []
+  for (let index = 0; index < ownKeys.length; index++) {
+    const key = ownKeys[index]
+    if (typeof key !== "string") throw new Error("Expected string-keyed JSON objects")
+    keys[index] = key
+  }
+  for (let index = 1; index < keys.length; index++) {
+    for (let cursor = index; cursor > 0 && keys[cursor - 1]! > keys[cursor]!; cursor--) {
+      const previous = keys[cursor - 1]!
+      keys[cursor - 1] = keys[cursor]!
+      keys[cursor] = previous
+    }
+  }
+
+  let result = "{"
+  for (let index = 0; index < keys.length; index++) {
+    const key = keys[index]!
+    const descriptor = descriptorAt(descriptors, key)
+    if (!descriptor?.enumerable || !Object.hasOwn(descriptor, "value"))
+      throw new Error("Expected enumerable JSON data properties")
+    if (index > 0) result += ","
+    result += quoteJson(key) + ":" + canonicalJson(descriptor.value)
+  }
+  return result + "}"
+}
+
+function quoteJson(value: string) {
+  let result = '"'
+  for (let index = 0; index < value.length; index++) {
+    const code = Reflect.apply(stringCharCodeAt, value, [index])
+    if (code === 0x22) result += '\\"'
+    else if (code === 0x5c) result += "\\\\"
+    else if (code === 0x08) result += "\\b"
+    else if (code === 0x0c) result += "\\f"
+    else if (code === 0x0a) result += "\\n"
+    else if (code === 0x0d) result += "\\r"
+    else if (code === 0x09) result += "\\t"
+    else if (code < 0x20 || (code >= 0xd800 && code <= 0xdfff))
+      result += `\\u${hex[(code >> 12) & 0xf]}${hex[(code >> 8) & 0xf]}${hex[(code >> 4) & 0xf]}${hex[code & 0xf]}`
+    else result += value[index]
+  }
+  return result + '"'
+}
+
+function descriptorAt(descriptors: object, key: PropertyKey) {
+  return Object.getOwnPropertyDescriptor(descriptors, key)?.value as PropertyDescriptor | undefined
+}
+
+function own<T extends object, K extends keyof T>(value: T, key: K): T[K] | undefined {
+  if (!Object.hasOwn(value, key)) return undefined
+  return value[key]
+}
+
+function requiredOwn<T extends object, K extends keyof T>(value: T, key: K): T[K] {
+  if (!Object.hasOwn(value, key)) throw new Error(`Missing own permission field: ${String(key)}`)
+  return value[key]
+}
+
 function requestSnapshot(row: RequestRow) {
-  return Schema.decodeUnknownEffect(Request)(row.request).pipe(
+  return Effect.sync(() => wireSnapshot(row.request)).pipe(
+    Effect.flatMap(Schema.decodeUnknownEffect(Request)),
+    Effect.map((value) => deepFreeze(wireSnapshot(value))),
     Effect.filterOrFail(
       (value) =>
-        value.id === row.request_id &&
-        value.sessionID === row.session_id &&
-        value.fingerprint === row.request_fingerprint &&
-        value.fingerprint === requestFingerprint(value),
+        requiredOwn(value, "id") === row.request_id &&
+        requiredOwn(value, "sessionID") === row.session_id &&
+        requiredOwn(value, "fingerprint") === row.request_fingerprint &&
+        requiredOwn(value, "fingerprint") === requestFingerprint(value),
       () => new ConflictError({ requestID: row.request_id }),
     ),
-    Effect.map((value) => deepFreeze(detached(value))),
     Effect.orDie,
   )
 }
@@ -635,24 +861,25 @@ function receipt(row: DecisionRow): DecisionReceipt {
 
 function sameDecision(row: DecisionRow, command: DecisionCommand) {
   if (
-    row.request_fingerprint !== command.requestFingerprint ||
-    row.decision_id !== command.decisionID ||
-    row.decision !== command.decision ||
-    (row.message ?? undefined) !== command.message
+    row.request_fingerprint !== requiredOwn(command, "requestFingerprint") ||
+    row.decision_id !== requiredOwn(command, "decisionID") ||
+    row.decision !== requiredOwn(command, "decision") ||
+    (row.message ?? undefined) !== own(command, "message")
   )
     return false
-  if (command.decision !== "always")
+  if (requiredOwn(command, "decision") !== "always")
     return (
-      command.grantScope === undefined &&
-      command.grantExpiresAt === undefined &&
+      !Object.hasOwn(command, "grantScope") &&
+      !Object.hasOwn(command, "grantExpiresAt") &&
       row.grant_scope === null &&
       row.grant_expires_at === null
     )
   if (!isAlways(command)) return false
+  const grantScope = requiredOwn(command, "grantScope")
   return (
-    row.grant_scope?.kind === command.grantScope.kind &&
-    row.grant_scope.projectID === command.grantScope.projectID &&
-    row.grant_expires_at === command.grantExpiresAt
+    row.grant_scope?.kind === requiredOwn(grantScope, "kind") &&
+    row.grant_scope.projectID === requiredOwn(grantScope, "projectID") &&
+    row.grant_expires_at === requiredOwn(command, "grantExpiresAt")
   )
 }
 
@@ -662,14 +889,17 @@ function makeReceipt(
   committedAt: number,
   resolvedRequestIDs: ReadonlyArray<ID>,
 ): DecisionReceipt {
+  const message = own(command, "message")
   return {
-    requestID: request.id,
-    sessionID: request.sessionID,
-    requestFingerprint: request.fingerprint,
-    decisionID: command.decisionID,
-    decision: command.decision,
-    ...(command.message === undefined ? {} : { message: command.message }),
-    ...(isAlways(command) ? { grantScope: command.grantScope, grantExpiresAt: command.grantExpiresAt } : {}),
+    requestID: requiredOwn(request, "id"),
+    sessionID: requiredOwn(request, "sessionID"),
+    requestFingerprint: requiredOwn(request, "fingerprint"),
+    decisionID: requiredOwn(command, "decisionID"),
+    decision: requiredOwn(command, "decision"),
+    ...(message === undefined ? {} : { message }),
+    ...(isAlways(command)
+      ? { grantScope: requiredOwn(command, "grantScope"), grantExpiresAt: requiredOwn(command, "grantExpiresAt") }
+      : {}),
     committedAt,
     resolvedRequestIDs,
   }
@@ -692,12 +922,13 @@ function decisionRow(request: Request, value: DecisionReceipt): typeof Permissio
 }
 
 function apply(value: DecisionReceipt) {
-  if (value.decision !== "reject") return Effect.void
-  return Effect.die(value.message ? new CorrectedError({ feedback: value.message }) : new DeclinedError())
+  if (requiredOwn(value, "decision") !== "reject") return Effect.void
+  const message = own(value, "message")
+  return Effect.die(message ? new CorrectedError({ feedback: message }) : new DeclinedError())
 }
 
 function isAlways(command: DecisionCommand): command is AlwaysCommand {
-  return command.decision === "always"
+  return requiredOwn(command, "decision") === "always"
 }
 
 export const locationLayer = layer.pipe(Layer.provideMerge(AgentV2.locationLayer))
