@@ -4,7 +4,7 @@ import type {
   PermissionV2DecisionReceipt,
   PermissionV2Request,
 } from "@opencode-ai/sdk/v2/client"
-import { For, Show } from "solid-js"
+import { For, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "./Button"
 import { Dialog } from "./Dialog"
@@ -61,12 +61,12 @@ export function PermissionDialog(props: {
 
   const decide = (decision: PermissionV2Decision) => {
     if (state.submitting) return
-    if (decision !== "reject" && !facts.verified) return
-    if (decision === "always" && !canAlways()) return
+    const safeDecision = facts.verified ? decision : "reject"
+    if (safeDecision === "always" && !canAlways()) return
     const command =
-      state.failed?.command.decision === decision
+      state.failed?.command.decision === safeDecision
         ? state.failed.command
-        : createPermissionDecisionCommand(props.request, decision, props.projectID)
+        : createPermissionDecisionCommand(props.request, safeDecision, props.projectID)
 
     setState({ submitting: command, failed: undefined })
     props.onSubmit(command).then(
@@ -80,6 +80,10 @@ export function PermissionDialog(props: {
       },
     )
   }
+
+  onMount(() => {
+    if (!facts.verified) decide("reject")
+  })
 
   const actionLabel = (decision: PermissionV2Decision) => {
     const label = decision === "once" ? "允许一次" : decision === "always" ? "始终允许" : "拒绝"
@@ -285,7 +289,7 @@ function errorRecord(value: unknown) {
 }
 
 function permissionRequestFacts(request: PermissionV2Request) {
-  const subjectValue = errorRecord(request.subject)
+  const subjectValue = exactFactRecord(request.subject, ["kind", "id"])
   const subject =
     subjectValue?.kind === "agent" && typeof subjectValue.id === "string" && !!subjectValue.id.trim()
       ? { kind: "agent" as const, id: subjectValue.id }
@@ -295,15 +299,21 @@ function permissionRequestFacts(request: PermissionV2Request) {
     Array.isArray(request.resources) && request.resources.every((resource) => typeof resource === "string")
       ? request.resources
       : undefined
-  const scopeValue = errorRecord(request.scope)
+  const scopeValue = exactFactRecord(request.scope, [
+    "kind",
+    request.scope?.kind === "project" ? "projectID" : "sessionID",
+  ])
   const scope =
-    scopeValue?.kind === "session" && typeof scopeValue.sessionID === "string" && !!scopeValue.sessionID.trim()
+    scopeValue?.kind === "session" &&
+    typeof scopeValue.sessionID === "string" &&
+    scopeValue.sessionID.startsWith("ses")
       ? { kind: "session" as const, sessionID: scopeValue.sessionID }
       : scopeValue?.kind === "project" && typeof scopeValue.projectID === "string" && !!scopeValue.projectID.trim()
         ? { kind: "project" as const, projectID: scopeValue.projectID }
         : undefined
   const expiry =
-    request.expiresAt === null || (typeof request.expiresAt === "number" && Number.isFinite(request.expiresAt))
+    request.expiresAt === null ||
+    (typeof request.expiresAt === "number" && Number.isInteger(request.expiresAt) && request.expiresAt >= 0)
       ? { value: request.expiresAt }
       : undefined
   return {
@@ -314,6 +324,14 @@ function permissionRequestFacts(request: PermissionV2Request) {
     expiry,
     verified: !!subject && !!action && !!resources && !!scope && !!expiry,
   }
+}
+
+function exactFactRecord(value: unknown, expectedKeys: string[]) {
+  const record = errorRecord(value)
+  if (!record || Array.isArray(value)) return undefined
+  const keys = Reflect.ownKeys(record)
+  if (keys.length !== expectedKeys.length || expectedKeys.some((key) => !Object.hasOwn(record, key))) return undefined
+  return record
 }
 
 function scopeLabel(scope: PermissionV2Request["scope"]) {

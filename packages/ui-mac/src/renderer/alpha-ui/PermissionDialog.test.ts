@@ -83,10 +83,13 @@ function withoutFact(fact: "subject" | "action" | "resources" | "scope" | "expir
   return incomplete
 }
 
-function receipt(command: PermissionV2DecisionCommand): PermissionV2DecisionReceipt {
+function receipt(
+  command: PermissionV2DecisionCommand,
+  permissionRequest: PermissionV2Request = request,
+): PermissionV2DecisionReceipt {
   return {
-    requestID: request.id,
-    sessionID: request.sessionID,
+    requestID: permissionRequest.id,
+    sessionID: permissionRequest.sessionID,
     requestFingerprint: command.requestFingerprint,
     decisionID: command.decisionID,
     decision: command.decision,
@@ -94,7 +97,7 @@ function receipt(command: PermissionV2DecisionCommand): PermissionV2DecisionRece
       ? { grantScope: command.grantScope, grantExpiresAt: command.grantExpiresAt }
       : {}),
     committedAt: 1_893_456_000_001,
-    resolvedRequestIDs: [request.id],
+    resolvedRequestIDs: [permissionRequest.id],
   }
 }
 
@@ -249,7 +252,32 @@ describe("Alpha Permission real Solid render", () => {
 
     decision("once").click()
     decision("always").click()
-    decision("reject").click()
+    await flush()
+    expect(commands.map((command) => command.decision)).toEqual(["reject"])
+  })
+
+  test.each([
+    ["subject", { ...request, subject: { kind: "agent", id: "build-reviewer", unexpected: true } }],
+    ["action", { ...request, action: 42 }],
+    ["resources", { ...request, resources: ["pwd", 42] }],
+    ["scope", { ...request, scope: { kind: "session", sessionID: "not-a-session" } }],
+    ["expiresAt", { ...request, expiresAt: -1 }],
+  ] as const)("decide() denies a malformed %s fact and never allows it", async (_fact, malformedRequest) => {
+    const commands: PermissionV2DecisionCommand[] = []
+    mount(
+      async (command) => {
+        commands.push(command)
+        return receipt(command)
+      },
+      "prj_alpha",
+      malformedRequest as unknown as PermissionV2Request,
+    )
+    await flush()
+
+    expect(commands.map((command) => command.decision)).toEqual(["reject"])
+    expect(commands.some((command) => command.decision !== "reject")).toBeFalse()
+    decision("once").click()
+    decision("always").click()
     await flush()
     expect(commands.map((command) => command.decision)).toEqual(["reject"])
   })
@@ -315,6 +343,34 @@ describe("Alpha Permission real Solid render", () => {
 })
 
 describe("Alpha Permission watcher reconciliation", () => {
+  test("does not resurrect an auto-denied malformed request from stale snapshots or asked events", async () => {
+    const malformed = { ...request, id: "per_ui_malformed", expiresAt: -1 } as unknown as PermissionV2Request
+    const commands: PermissionV2DecisionCommand[] = []
+    let listeners: PermissionListeners | undefined
+    mountWatcher({
+      list: async () => [malformed],
+      reply: async (_requestID, command) => {
+        commands.push(command)
+        return receipt(command, malformed)
+      },
+      subscribe: (value) => {
+        listeners = value
+        return () => {}
+      },
+    })
+    await flush()
+
+    expect(commands.map((command) => command.decision)).toEqual(["reject"])
+    expect(document.querySelector("[role='dialog']")).toBeNull()
+
+    listeners!.asked(malformed)
+    listeners!.connected()
+    await flush()
+
+    expect(commands.map((command) => command.decision)).toEqual(["reject"])
+    expect(document.querySelector("[role='dialog']")).toBeNull()
+  })
+
   test("merges asked and replied events that arrive while the initial list is deferred", async () => {
     const fresh = { ...request, id: "per_ui_2", action: "edit", resources: ["src/new.ts"] }
     let settleList: ((requests: PermissionV2Request[]) => void) | undefined
