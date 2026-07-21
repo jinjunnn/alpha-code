@@ -21,7 +21,7 @@
 
 .a-html-preview-name {
   font-weight: 600;
-  color: var(--a-text-primary, inherit);
+  color: var(--a-text, inherit);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
