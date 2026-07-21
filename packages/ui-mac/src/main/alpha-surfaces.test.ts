@@ -9,8 +9,13 @@ mock.module("electron", () => ({
   BrowserWindow: class {},
   dialog: {},
   ipcMain: { handle: () => {} },
+  utilityProcess: {
+    fork: () => {
+      throw new Error("unexpected utilityProcess.fork")
+    },
+  },
 }))
-mock.module("./logging", () => ({ write: () => {}, getLogger: () => undefined }))
+mock.module("./logging", () => ({ write: () => {}, getLogger: () => undefined, rotateServerLogs: () => {} }))
 
 const { readSurfaceFile, recordSurfaceFailure, resolveSurfaces } = await import("./alpha-surfaces")
 const FILE = "alpha-surfaces.json"

@@ -15,6 +15,8 @@ import { isNushell, minimalProbeEnv, parseShellEnv } from "./shell-env"
 const FILE = "alpha-shell-env.json"
 const PROBE_TIMEOUT = 5_000
 
+type ShellEnvCacheLog = (message: string, extra?: Record<string, unknown>) => void
+
 // REQ-047 读侧兜底:这些键重定向 alpha/引擎的数据根、开调试端口、开迁移闸 —— 从缓存套用
 // 永远不是用户本意(真想用请在启动 env 里真 export,那一层「真 export 永远赢」照常生效)。
 // 主修在探针侧(minimalProbeEnv,毒进不来);本 blocklist 专治**存量已毒化**的缓存文件:
@@ -52,7 +54,11 @@ export function shellEnvCachePath(userDataPath: string): string {
 }
 
 /** 读缓存;缺失/坏 JSON/形状不对/shell 不匹配 → null(调用方回退同步探测)。 */
-export function readShellEnvCache(userDataPath: string, shell: string): Record<string, string> | null {
+export function readShellEnvCache(
+  userDataPath: string,
+  shell: string,
+  log?: ShellEnvCacheLog,
+): Record<string, string> | null {
   try {
     const parsed = JSON.parse(fs.readFileSync(shellEnvCachePath(userDataPath), "utf8")) as ShellEnvCache
     if (!parsed || typeof parsed !== "object" || parsed.shell !== shell) return null
@@ -61,7 +67,7 @@ export function readShellEnvCache(userDataPath: string, shell: string): Record<s
     for (const [k, v] of Object.entries(parsed.env)) if (typeof k !== "string" || typeof v !== "string") return null
     const { env, stripped } = sanitizeCachedShellEnv(parsed.env)
     if (stripped.length > 0)
-      console.log(`[server] [req047] stripped session-control keys from cached shell env: ${stripped.join(", ")}`)
+      log?.("req047: stripped session-control keys from cached shell env", { stripped })
     if (Object.keys(env).length === 0) return null
     return env
   } catch {
@@ -69,11 +75,17 @@ export function readShellEnvCache(userDataPath: string, shell: string): Record<s
   }
 }
 
-export function writeShellEnvCache(userDataPath: string, shell: string, env: Record<string, string>): void {
+export function writeShellEnvCache(
+  userDataPath: string,
+  shell: string,
+  env: Record<string, string>,
+  log?: ShellEnvCacheLog,
+): void {
   if (Object.keys(env).length === 0) return // 失败/空探测不缓存 —— 下次启动重试
   fs.mkdirSync(userDataPath, { recursive: true })
   const cache: ShellEnvCache = { probedAt: new Date().toISOString(), shell, env }
   fs.writeFileSync(shellEnvCachePath(userDataPath), JSON.stringify(cache))
+  log?.("req047: rebuilt shell env cache after successful probe")
 }
 
 /** 异步登录 shell 探测(镜像 shell-env.ts 的同步版:-il 优先,失败退 -l;nushell 跳过)。 */

@@ -66,6 +66,47 @@ describe("shell env cache", () => {
     expect(readShellEnvCache(tmp, "/bin/zsh")).toBeNull()
   })
 
+  test("REQ-051 剥离与自愈重建正式留痕,日志只含动作和控制键名", () => {
+    const logs: Array<{ message: string; extra: Record<string, unknown> | undefined }> = []
+    const log = (message: string, extra?: Record<string, unknown>) => logs.push({ message, extra })
+    writeShellEnvCache(tmp, "/bin/zsh", {
+      PATH: "/opt/req051-private/bin",
+      DEEPSEEK_API_KEY: "sk-req051-credential-do-not-log",
+      ALPHA_GLOBAL_DIR: "/tmp/req051-control-value-do-not-log",
+      ALPHA_CDP: "req051-debug-value-do-not-log",
+    })
+
+    expect(readShellEnvCache(tmp, "/bin/zsh", log)).toEqual({
+      PATH: "/opt/req051-private/bin",
+      DEEPSEEK_API_KEY: "sk-req051-credential-do-not-log",
+    })
+
+    const refreshed = { PATH: "/usr/bin", DEEPSEEK_API_KEY: "sk-req051-fresh-do-not-log" }
+    writeShellEnvCache(tmp, "/bin/zsh", refreshed, log)
+    expect(readShellEnvCache(tmp, "/bin/zsh")).toEqual(refreshed)
+    expect(logs).toEqual([
+      {
+        message: "req047: stripped session-control keys from cached shell env",
+        extra: { stripped: ["ALPHA_GLOBAL_DIR", "ALPHA_CDP"] },
+      },
+      {
+        message: "req047: rebuilt shell env cache after successful probe",
+        extra: undefined,
+      },
+    ])
+
+    const logged = JSON.stringify(logs)
+    expect(logged).toContain("ALPHA_GLOBAL_DIR")
+    expect(logged).toContain("ALPHA_CDP")
+    expect(logged).not.toContain("/opt/req051-private/bin")
+    expect(logged).not.toContain("/usr/bin")
+    expect(logged).not.toContain("sk-req051-credential-do-not-log")
+    expect(logged).not.toContain("/tmp/req051-control-value-do-not-log")
+    expect(logged).not.toContain("req051-debug-value-do-not-log")
+    expect(logged).not.toContain("sk-req051-fresh-do-not-log")
+    expect(logged).not.toContain("DEEPSEEK_API_KEY")
+  })
+
   test("sanitizeCachedShellEnv 纯函数:stripped 列表如实、干净输入原样返回(不复制)", () => {
     const dirty = sanitizeCachedShellEnv({ A: "1", ALPHA_CDP: "1", ALPHA_ENV_BASE_DIR: "/state", OPENCODE_CONFIG_DIR: "/x" })
     expect(dirty.env).toEqual({ A: "1" })

@@ -10,9 +10,9 @@ import * as path from "node:path"
 // Discipline (ADR-005/006/007): alpha's OWN file, zero upstream change. opencode itself does NOT
 // read .env files; this is the alpha shim that bridges a file into process.env.
 //
-// Precedence (strongest first): a real shell `export` > $ALPHA_ENV_FILE > <userData>/alpha.env >
-// <cwd>/alpha.env. We NEVER overwrite a variable that is already set, so shell exports always win
-// and earlier files win over later ones.
+// Precedence (strongest first): a real shell `export` > $ALPHA_ENV_FILE > <userData>/alpha.env.
+// We NEVER overwrite a variable that is already set, so shell exports always win and earlier files
+// win over later ones.
 //
 // File format: one `KEY=VALUE` per line. Blank lines and `#` comments are ignored. A leading
 // `export ` is tolerated. Surrounding single/double quotes are stripped. Example alpha.env:
@@ -30,7 +30,6 @@ export function loadAlphaSecrets(userDataPath: string, logger?: SecretsLogger) {
   const candidates = [
     process.env.ALPHA_ENV_FILE,
     path.join(userDataPath, "alpha.env"),
-    path.join(process.cwd(), "alpha.env"),
   ].filter((value): value is string => Boolean(value))
 
   for (const file of candidates) {

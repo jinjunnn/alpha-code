@@ -13,6 +13,11 @@ mock.module("electron", () => ({
   BrowserWindow: class {},
   dialog: {},
   ipcMain: { handle: () => {} },
+  utilityProcess: {
+    fork: () => {
+      throw new Error("unexpected utilityProcess.fork")
+    },
+  },
 }))
 
 const { agentInstallPresent, collectBuiltinAgentPayload, collectVendoredPluginPayload, installBuiltinSkill, removeFsInstall, resourcesRoot, stageVendoredPluginVersioned, writeAgent, writeSkill } = await import("./ext-fs-installer")

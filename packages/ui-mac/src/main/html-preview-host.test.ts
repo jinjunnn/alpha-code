@@ -130,12 +130,18 @@ mock.module("electron", () => ({
       ipcHandlers.set(channel, handler)
     },
   },
+  utilityProcess: {
+    fork: () => {
+      throw new Error("unexpected utilityProcess.fork")
+    },
+  },
 }))
 mock.module("./logging", () => ({
   write: (name: string, message: string, extra?: Record<string, unknown>, level?: string) => {
     logLines.push(JSON.stringify([name, message, extra ?? {}, level ?? "info"]))
   },
   getLogger: () => undefined,
+  rotateServerLogs: () => {},
 }))
 
 const {

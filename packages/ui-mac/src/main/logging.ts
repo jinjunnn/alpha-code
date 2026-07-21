@@ -155,16 +155,16 @@ function manifest() {
   }
 }
 
-function serverLogRoots() {
+export function serverLogRoots() {
   const xdgData = process.env.XDG_DATA_HOME || join(homedir(), ".local", "share")
   return [...new Set([join(xdgData, "opencode", "log"), join(app.getPath("userData"), "opencode", "log")])]
 }
 
 // The opencode server appends to a single fixed-name `opencode.log` that grows unbounded (observed 145MB);
-// the dated per-run `*.log` files self-rotate and are small. On startup — before the embedded server
-// respawns and reopens the file — archive an oversized `opencode.log` and keep only the most recent
-// N archives, so long-running installs stay bounded (C3). Failures are non-fatal (best-effort hygiene).
-function rotateServerLogs() {
+// the dated per-run `*.log` files self-rotate and are small. Before the embedded server opens the file,
+// archive an oversized `opencode.log` and keep only the most recent N archives. Every sidecar spawn calls
+// this before fork; initLogging keeps cold-start hygiene if startup exits before spawn. Failures are non-fatal.
+export function rotateServerLogs() {
   for (const dir of serverLogRoots()) {
     if (!existsSync(dir)) continue
     try {
