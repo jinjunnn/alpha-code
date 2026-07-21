@@ -8,6 +8,7 @@ import { For, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "./Button"
 import { Dialog } from "./Dialog"
+import { t } from "../i18n"
 import "./permission-dialog.css"
 
 export type PermissionDecisionSubmitError = {
@@ -86,16 +87,16 @@ export function PermissionDialog(props: {
   })
 
   const actionLabel = (decision: PermissionV2Decision) => {
-    const label = decision === "once" ? "允许一次" : decision === "always" ? "始终允许" : "拒绝"
-    if (state.submitting?.decision === decision) return "正在提交…"
-    return state.failed?.command.decision === decision ? `重试“${label}”` : label
+    const label = decision === "once" ? t("alpha.permission.once") : decision === "always" ? t("alpha.permission.always") : t("alpha.permission.reject")
+    if (state.submitting?.decision === decision) return t("alpha.permission.submitting")
+    return state.failed?.command.decision === decision ? t("alpha.permission.retryDecision", { label }) : label
   }
 
   return (
     <Dialog
       open
-      title="允许这次操作吗？"
-      description={<span>请核对下面的真实请求事实。作出决定前，工具保持暂停。</span>}
+      title={t("alpha.permission.title")}
+      description={<span>{t("alpha.permission.description")}</span>}
       size="md"
       dismissible={false}
       busy={!!state.submitting}
@@ -103,7 +104,7 @@ export function PermissionDialog(props: {
       onClose={() => {}}
       footer={
         <div class="a-permission-footer">
-          <small class="a-permission-grant-note">“始终允许”会为当前项目创建永久授权（grantExpiresAt = null）。</small>
+          <small class="a-permission-grant-note">{t("alpha.permission.alwaysNote")}</small>
           <div class="a-permission-actions">
             <Button
               type="button"
@@ -120,11 +121,11 @@ export function PermissionDialog(props: {
               disabled={!!state.submitting || !canAlways()}
               title={
                 !facts.verified
-                  ? "请求事实无法核实，不能授权"
+                  ? t("alpha.permission.unverified")
                   : !props.projectID?.trim()
-                    ? "无法核实当前项目，不能创建永久授权"
+                    ? t("alpha.permission.projectUnverified")
                     : !Array.isArray(props.request.save) || !props.request.save.length
-                      ? "请求未提供可保存资源，不能创建永久授权"
+                      ? t("alpha.permission.noSavedResources")
                       : undefined
               }
               onClick={() => decide("always")}
@@ -137,7 +138,7 @@ export function PermissionDialog(props: {
               variant="primary"
               autofocus
               disabled={!!state.submitting || !facts.verified}
-              title={!facts.verified ? "请求事实无法核实，不能授权" : undefined}
+              title={!facts.verified ? t("alpha.permission.unverified") : undefined}
               onClick={() => decide("once")}
               data-permission-decision="once"
             >
@@ -147,15 +148,15 @@ export function PermissionDialog(props: {
         </div>
       }
     >
-      <dl class="a-permission-facts" aria-label="权限请求事实">
+      <dl class="a-permission-facts" aria-label={t("alpha.permission.facts") }>
         <div class="a-permission-fact" data-permission-fact="subject">
-          <dt>主体 / 执行 Agent</dt>
+          <dt>{t("alpha.permission.subject")}</dt>
           <Show
             when={facts.subject}
             fallback={
               <>
-                <dd>无法核实</dd>
-                <small>请求未提供完整主体事实</small>
+                <dd>{t("alpha.permission.cannotVerify")}</dd>
+                <small>{t("alpha.permission.subjectMissing")}</small>
               </>
             }
           >
@@ -168,57 +169,57 @@ export function PermissionDialog(props: {
           </Show>
         </div>
         <div class="a-permission-fact" data-permission-fact="action">
-          <dt>Action / Capability</dt>
+          <dt>{t("alpha.permission.action")}</dt>
           <Show
             when={facts.action}
             fallback={
               <>
-                <dd>无法核实</dd>
-                <small>请求未提供有效 action</small>
+                <dd>{t("alpha.permission.cannotVerify")}</dd>
+                <small>{t("alpha.permission.actionMissing")}</small>
               </>
             }
           >
             {(action) => (
               <>
                 <dd>{action()}</dd>
-                <small>请求执行的能力</small>
+                <small>{t("alpha.permission.actionHint")}</small>
               </>
             )}
           </Show>
         </div>
         <div class="a-permission-fact a-permission-fact--wide" data-permission-fact="resources">
-          <dt>Resources</dt>
+          <dt>{t("alpha.permission.resources")}</dt>
           <Show
             when={facts.resources}
             fallback={
               <>
-                <dd>无法核实</dd>
-                <small>请求未提供有效 resources</small>
+                <dd>{t("alpha.permission.cannotVerify")}</dd>
+                <small>{t("alpha.permission.resourcesMissing")}</small>
               </>
             }
           >
             {(resources) => (
               <>
                 <dd>
-                  <Show when={resources().length > 0} fallback={<span>0 项资源</span>}>
+                  <Show when={resources().length > 0} fallback={<span>{t("alpha.permission.resourceCount", { count: 0 })}</span>}>
                     <span class="a-permission-resources">
                       <For each={resources()}>{(resource) => <code>{resource}</code>}</For>
                     </span>
                   </Show>
                 </dd>
-                <small>{resources().length} 项，由请求按原顺序提供</small>
+                <small>{t("alpha.permission.resourcesProvided", { count: resources().length })}</small>
               </>
             )}
           </Show>
         </div>
         <div class="a-permission-fact" data-permission-fact="scope">
-          <dt>Scope</dt>
+          <dt>{t("alpha.permission.scope")}</dt>
           <Show
             when={facts.scope}
             fallback={
               <>
-                <dd>无法核实</dd>
-                <small>请求未提供有效 scope</small>
+                <dd>{t("alpha.permission.cannotVerify")}</dd>
+                <small>{t("alpha.permission.scopeMissing")}</small>
               </>
             }
           >
@@ -231,13 +232,13 @@ export function PermissionDialog(props: {
           </Show>
         </div>
         <div class="a-permission-fact" data-permission-fact="expiry">
-          <dt>Expiry</dt>
+          <dt>{t("alpha.permission.expiry")}</dt>
           <Show
             when={facts.expiry}
             fallback={
               <>
-                <dd>无法核实</dd>
-                <small>请求未提供有效 expiresAt</small>
+                <dd>{t("alpha.permission.cannotVerify")}</dd>
+                <small>{t("alpha.permission.expiryMissing")}</small>
               </>
             }
           >
@@ -254,11 +255,11 @@ export function PermissionDialog(props: {
       <Show when={state.failed}>
         {(failed) => (
           <div ref={errorSummary} class="a-permission-error" data-kind={failed().error.kind} role="alert" tabIndex={-1}>
-            <strong>{failed().error.kind === "conflict" ? "这次选择与已提交决定冲突" : "未能提交你的选择"}</strong>
+            <strong>{failed().error.kind === "conflict" ? t("alpha.permission.conflictTitle") : t("alpha.permission.failedTitle")}</strong>
             <span>
               {failed().error.kind === "conflict"
-                ? "服务器保留了先提交的原子决定，本界面没有覆盖它。"
-                : "没有收到授权收据；本界面不会假定操作已经获准。"}
+                ? t("alpha.permission.conflictDetail")
+                : t("alpha.permission.failedDetail")}
             </span>
             <small>{failed().error.message}</small>
           </div>
@@ -280,7 +281,7 @@ function permissionDecisionSubmitError(error: unknown): PermissionDecisionSubmit
   )
   if (message) return { kind, message }
   if (typeof error === "string" && error.trim()) return { kind: "failed", message: error }
-  return { kind, message: conflict ? "Permission decision conflict" : "Permission decision failed" }
+  return { kind, message: conflict ? t("alpha.permission.conflictFallback") : t("alpha.permission.failedFallback") }
 }
 
 function errorRecord(value: unknown) {
@@ -335,7 +336,7 @@ function exactFactRecord(value: unknown, expectedKeys: string[]) {
 }
 
 function scopeLabel(scope: PermissionV2Request["scope"]) {
-  return scope.kind === "session" ? "本次会话" : "当前项目"
+  return scope.kind === "session" ? t("alpha.permission.scopeSession") : t("alpha.permission.scopeProject")
 }
 
 function scopeIdentity(scope: PermissionV2Request["scope"]) {
@@ -343,7 +344,7 @@ function scopeIdentity(scope: PermissionV2Request["scope"]) {
 }
 
 function expiryLabel(expiresAt: PermissionV2Request["expiresAt"]) {
-  if (expiresAt === null) return "不过期"
+  if (expiresAt === null) return t("alpha.permission.neverExpires")
   const date = new Date(expiresAt)
   if (Number.isNaN(date.valueOf())) return String(expiresAt)
   return date.toISOString().replace("T", " ").replace(".000Z", " UTC")

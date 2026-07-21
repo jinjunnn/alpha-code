@@ -11,7 +11,7 @@ import type { CatalogEntry, CloudPipelineSpec, McpInstallSpec, PluginInstallSpec
 import type { InstallReceipt, ExtInventory } from "../../preload/types"
 import type { ExtensionsApi, HubAgent } from "./use-extensions"
 import { CloudDispatchBox } from "./cloud-dispatch-box"
-import { iconFor, iconForRow, sourceLabel, typeLabel, Svg, LockIc } from "./ext-presentation"
+import { catalogDescription, iconFor, iconForRow, sourceLabel, typeLabel, Svg, LockIc } from "./ext-presentation"
 import { ExtGrantedCapRow } from "./ext-authz"
 import { inventoryRowFor, inventoryInstallRow, ownershipRows, trustRows, runtimeSurfaceLabelKey, supportTierLabelKey, type PresentRow } from "./ext-inventory-present"
 import { derivePackFacts, formatPackBytes } from "./ext-pack-facts"
@@ -291,7 +291,7 @@ export function ExtensionDetail(props: {
         source: e.source,
         type: e.type as string,
         license: e.license,
-        desc: e.description,
+        desc: catalogDescription(e),
       }
     }
     if (isCloudConnector()) {
@@ -655,7 +655,7 @@ export function ExtensionDetail(props: {
                 {(spec) => (
                   <>
                     <FactRow label={t("alpha.ext.detailInstallDir")}>{t("alpha.ext.scopeGlobal")}</FactRow>
-                    <FactRow label={t("alpha.ext.detailTrigger")}>{e().description}</FactRow>
+                    <FactRow label={t("alpha.ext.detailTrigger")}>{catalogDescription(e())}</FactRow>
                     <Show when={spec().builtinAssetKey} fallback={<p class="alpha-ext-dnote">{t("alpha.ext.skillNoAsset")}</p>}>
                       <div class="alpha-ext-dsub">
                         <div class="alpha-ext-dsub-t">{t("alpha.ext.detailSkillDoc")}</div>

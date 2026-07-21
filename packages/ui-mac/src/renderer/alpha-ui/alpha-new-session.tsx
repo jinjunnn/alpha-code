@@ -12,6 +12,7 @@ import { type AlphaProjectsApi } from "../sidebar/use-projects"
 import { projectLabel } from "../sidebar/route"
 import { AlphaComposer } from "./alpha-composer"
 import { Banner } from "./Banner"
+import { t } from "../i18n"
 import "./home.css"
 
 export function AlphaNewSession(props: {
@@ -41,25 +42,25 @@ export function AlphaNewSession(props: {
     <div class="a-ui a-home a-home--page" data-alpha-new-session>
       <div class="a-home-stage">
         <div class="a-home-ghost" aria-hidden="true">
-          ALPHA CODE
+          {t("alpha.brand.wordmark")}
         </div>
 
         <div class="a-home-center">
           <Show when={store.error}>
             <Banner
               kind="error"
-              title="项目列表加载失败"
-              detail="引擎连接异常或尚未就绪"
-              action={{ label: "重试", onClick: () => void props.projects.reload() }}
+              title={t("alpha.home.projectsFailed")}
+              detail={t("alpha.home.engineUnavailable")}
+              action={{ label: t("alpha.common.retry"), onClick: () => void props.projects.reload() }}
             />
           </Show>
           <h1 class="a-home-greet">
-            新会话<span class="a-home-greet-dim">{wsLabel() ? ` — ${wsLabel()}` : ""}</span>
+            {t("alpha.newSession.title")}<span class="a-home-greet-dim">{wsLabel() ? ` — ${wsLabel()}` : ""}</span>
           </h1>
 
           {/* THE shared composer(与首页/会话页同一组件,REQ-055);draft 提交 = 创建会话后
               经 seam promoteDraft 晋升(tab 交换、持久草稿清理、导航均由 upstream wrapper 承担)。 */}
-          <Show when={directory()} keyed fallback={<Banner kind="warning" title="草稿目录未就绪" detail="等待草稿状态加载" />}>
+          <Show when={directory()} keyed fallback={<Banner kind="warning" title={t("alpha.newSession.directoryPending")} detail={t("alpha.newSession.directoryLoading")} />}>
             {(dir) => (
               <AlphaComposer
                 mode="home"

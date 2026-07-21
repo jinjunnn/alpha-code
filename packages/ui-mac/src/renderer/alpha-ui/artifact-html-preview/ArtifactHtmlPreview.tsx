@@ -8,6 +8,7 @@
 import { createSignal, onCleanup, Show } from "solid-js"
 import type { ArtifactDescriptor } from "../../../shared/cloud-artifact-descriptor"
 import { canPreviewHtml } from "../../../shared/html-preview"
+import { t } from "../../i18n"
 import "./artifact-html-preview.css"
 
 export type ArtifactHtmlPreviewProps = {
@@ -51,7 +52,7 @@ export function ArtifactHtmlPreview(props: ArtifactHtmlPreviewProps) {
       if (res.ok) setPreviewId(res.previewId)
       else setError(res.reason)
     } catch {
-      setError("预览请求失败")
+      setError(t("alpha.htmlPreview.requestFailed"))
     } finally {
       setBusy(false)
     }
@@ -69,10 +70,10 @@ export function ArtifactHtmlPreview(props: ArtifactHtmlPreviewProps) {
         <span class="a-html-preview-name" title={props.savedPath}>
           {props.descriptor.name}
         </span>
-        <span class="a-html-preview-badge">隔离预览</span>
+        <span class="a-html-preview-badge">{t("alpha.htmlPreview.badge")}</span>
       </div>
       <p class="a-html-preview-hint">
-        静态 HTML 在独立沙箱窗口中显示:无脚本、无网络、无表单,与主应用零共享。
+        {t("alpha.htmlPreview.hint")}
       </p>
       <Show when={error()}>
         <p class="a-html-preview-error" role="alert">
@@ -81,7 +82,7 @@ export function ArtifactHtmlPreview(props: ArtifactHtmlPreviewProps) {
       </Show>
       <Show when={crashed()}>
         <p class="a-html-preview-error" role="alert">
-          预览窗口异常退出(仅影响预览本身,可重新打开)。
+          {t("alpha.htmlPreview.crashed")}
         </p>
       </Show>
       <div class="a-html-preview-actions">
@@ -89,18 +90,18 @@ export function ArtifactHtmlPreview(props: ArtifactHtmlPreviewProps) {
           when={previewId()}
           fallback={
             <button class="a-html-preview-btn primary" onClick={() => void open()} disabled={busy() || !supported()}>
-              {busy() ? "打开中…" : "在隔离窗口中预览"}
+              {busy() ? t("alpha.htmlPreview.opening") : t("alpha.htmlPreview.open")}
             </button>
           }
         >
-          <span class="a-html-preview-open-note">已在隔离窗口中打开</span>
+          <span class="a-html-preview-open-note">{t("alpha.htmlPreview.opened")}</span>
           <button class="a-html-preview-btn" onClick={() => void close()}>
-            关闭预览
+            {t("alpha.htmlPreview.close")}
           </button>
         </Show>
       </div>
       <Show when={!supported()}>
-        <p class="a-html-preview-unsupported">该产物未被鉴别为静态 HTML,不提供隔离预览。</p>
+        <p class="a-html-preview-unsupported">{t("alpha.htmlPreview.unsupported")}</p>
       </Show>
     </div>
   )

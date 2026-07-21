@@ -13,15 +13,16 @@ import { AlphaComposer } from "./alpha-composer"
 import { pushToast } from "./Toast"
 import { Banner } from "./Banner"
 import { useConfigHealth } from "./use-config-health"
+import { t } from "../i18n"
 import "./home.css"
 
 function greeting(): string {
   const h = new Date().getHours()
-  if (h < 5) return "夜深了"
-  if (h < 11) return "早上好"
-  if (h < 13) return "中午好"
-  if (h < 18) return "下午好"
-  return "晚上好"
+  if (h < 5) return t("alpha.home.greetingLate")
+  if (h < 11) return t("alpha.home.greetingMorning")
+  if (h < 13) return t("alpha.home.greetingNoon")
+  if (h < 18) return t("alpha.home.greetingAfternoon")
+  return t("alpha.home.greetingEvening")
 }
 
 export function AlphaHome(props: { projects: AlphaProjectsApi }) {
@@ -47,12 +48,12 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
   const activeWsLabel = createMemo(() => {
     const w = activeWs()
     const p = visibleProjects().find((x) => x.worktree === w)
-    return p?.name ?? (w ? projectLabel(w) : "选择工作区")
+    return p?.name ?? (w ? projectLabel(w) : t("alpha.home.chooseWorkspace"))
   })
 
   const onDoc = (e: MouseEvent) => {
-    const t = e.target as Element | null
-    if (t && t.closest(".a-pop-wrap")) return
+    const target = e.target as Element | null
+    if (target && target.closest(".a-pop-wrap")) return
     setWsOpen(false)
   }
   document.addEventListener("click", onDoc)
@@ -63,28 +64,28 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
     <div class="a-ui a-home a-home--page" data-alpha-home>
       <div class="a-home-stage">
         <div class="a-home-ghost" aria-hidden="true">
-          ALPHA CODE
+          {t("alpha.brand.wordmark")}
         </div>
 
         <div class="a-home-center">
           <Show when={store.error}>
             <Banner
               kind="error"
-              title="项目列表加载失败"
-              detail="引擎连接异常或尚未就绪"
-              action={{ label: "重试", onClick: () => void props.projects.reload() }}
+              title={t("alpha.home.projectsFailed")}
+              detail={t("alpha.home.engineUnavailable")}
+              action={{ label: t("alpha.common.retry"), onClick: () => void props.projects.reload() }}
             />
           </Show>
           <Show when={configHealth().broken}>
             <Banner
               kind="warning"
-              title="全局配置未生效"
+              title={t("alpha.home.configBroken")}
               detail={configHealth().reason}
-              action={{ label: "打开配置", onClick: () => void window.api.openPath(configHealth().path ?? "") }}
+              action={{ label: t("alpha.home.openConfig"), onClick: () => void window.api.openPath(configHealth().path ?? "") }}
             />
           </Show>
           <h1 class="a-home-greet">
-            {greeting()},<span class="a-home-greet-dim"> 在 workspace 里做点什么?</span>
+            {greeting()},<span class="a-home-greet-dim"> {t("alpha.home.prompt")}</span>
           </h1>
 
           {/* ── THE shared composer(与会话页同一组件,REQ-055)────────────── */}
@@ -95,7 +96,7 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
             onNeedWorkspace={() => {
               // 零工作区不留死点(REQ-054①):任何需要工作区的控件都引导到选择器
               setWsOpen(true)
-              pushToast({ kind: "info", title: "请先选择工作区" })
+              pushToast({ kind: "info", title: t("alpha.home.workspaceRequired") })
             }}
             onSubmitted={(id) => {
               const ws = activeWs()
@@ -118,7 +119,7 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
               </button>
               <Show when={wsOpen()}>
                 <div class="a-pop a-pop-up" onClick={stop} style={{ "min-width": "240px" }}>
-                  <div class="a-pop-label">工作区</div>
+                  <div class="a-pop-label">{t("alpha.home.workspace")}</div>
                   {/* REQ-071:默认工作目录 ~/Alpha 常驻可选(未注册为项目时也在) */}
                   <Show when={defaultWs() && !visibleProjects().some((p) => p.worktree === defaultWs())}>
                     <button
@@ -129,8 +130,8 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
                       <span class="a-pico" style={{ background: "var(--a-accent)" }}>
                         A
                       </span>
-                      Alpha
-                      <span class="a-pop-desc">默认工作区</span>
+                      {t("alpha.brand.short")}
+                      <span class="a-pop-desc">{t("alpha.home.defaultWorkspace")}</span>
                     </button>
                   </Show>
                   <For each={visibleProjects()}>
@@ -158,16 +159,16 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
                       // 引擎正式注册(chip 标签对未注册目录有 projectLabel 兜底)。取消 = 静默。
                       void (async () => {
                         try {
-                          const dir = await window.api.openDirectoryPicker({ title: "打开项目" })
+                          const dir = await window.api.openDirectoryPicker({ title: t("alpha.home.openProject") })
                           const picked = Array.isArray(dir) ? dir[0] : dir
                           if (typeof picked === "string" && picked) setChosenWs(picked)
                         } catch {
-                          pushToast({ kind: "error", title: "打开项目失败,请重试" })
+                          pushToast({ kind: "error", title: t("alpha.home.openProjectFailed") })
                         }
                       })()
                     }}
                   >
-                    <Plus /> 打开项目…
+                    <Plus /> {t("alpha.home.openProjectEllipsis")}
                   </button>
                 </div>
               </Show>

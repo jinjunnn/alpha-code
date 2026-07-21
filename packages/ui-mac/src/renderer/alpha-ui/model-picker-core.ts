@@ -1,6 +1,7 @@
 import type { ModelRef, ModelV2Info } from "@opencode-ai/sdk/v2/client"
 import type { EffectiveCatalog, ProviderKeyStatus, Tier } from "../../shared/alpha-model-types"
 import type { ComposerModel } from "./composer-state"
+import { t } from "../i18n"
 
 export type AccountState = "member" | "balance" | "empty" | "out" | "loading" | "error"
 export type ModelListState = "loading" | "ready" | "failed"
@@ -95,7 +96,7 @@ export function buildModelPickerRows(input: {
           pico: provider.pico,
           reasoning: false,
           availability: input.keyStatusState === "loading" ? "loading" : "unavailable",
-          reason: input.keyStatusState === "loading" ? "KEY 状态加载中…" : "KEY 状态读取失败",
+          reason: input.keyStatusState === "loading" ? t("alpha.model.keyLoading") : t("alpha.model.keyFailed"),
         },
       ]
     }
@@ -109,7 +110,7 @@ export function buildModelPickerRows(input: {
           pico: provider.pico,
           reasoning: false,
           availability: "needs-key",
-          reason: "未配置 KEY · 点击配置",
+          reason: t("alpha.model.keyMissing"),
         },
       ]
     }
@@ -123,7 +124,7 @@ export function buildModelPickerRows(input: {
           pico: provider.pico,
           reasoning: false,
           availability: input.listState === "loading" ? "loading" : "unavailable",
-          reason: input.listState === "loading" ? "已配置 · 模型加载中…" : "已配置 · 模型列表暂不可用",
+          reason: input.listState === "loading" ? t("alpha.model.configuredLoading") : t("alpha.model.configuredUnavailable"),
         },
       ]
     }
@@ -139,7 +140,7 @@ export function buildModelPickerRows(input: {
         pico: provider.pico,
         reasoning: !!display?.reasoning,
         availability: available ? "available" : "unavailable",
-        reason: available ? undefined : "当前不可用",
+        reason: available ? undefined : t("alpha.model.unavailable"),
       }
     })
   })
@@ -170,7 +171,7 @@ export function buildModelPickerRows(input: {
                   pico: { letter: providerID.slice(0, 1).toUpperCase() || "?", color: "var(--a-accent-solid)" },
                   reasoning: false,
                   availability: available ? "available" : "unavailable",
-                  reason: available ? undefined : "当前不可用",
+                  reason: available ? undefined : t("alpha.model.unavailable"),
                 }
               }),
           )
@@ -184,12 +185,12 @@ function platformAvailability(
   list: ModelListState,
   model: ModelV2Info | undefined,
 ): { kind: ModelAvailability; reason?: string } {
-  if (account === "out") return { kind: "needs-login", reason: "需登录" }
-  if (account === "empty") return { kind: "needs-credit", reason: "余额不足" }
-  if (account === "loading") return { kind: "loading", reason: "账户状态加载中" }
-  if (account === "error") return { kind: "unavailable", reason: "账户状态暂不可用" }
-  if (list === "loading") return { kind: "loading", reason: "模型加载中" }
-  if (list === "failed") return { kind: "unavailable", reason: "模型列表暂不可用" }
-  if (!model?.enabled || model.status === "deprecated") return { kind: "unavailable", reason: "当前不可用" }
+  if (account === "out") return { kind: "needs-login", reason: t("alpha.model.needsLogin") }
+  if (account === "empty") return { kind: "needs-credit", reason: t("alpha.model.needsCredit") }
+  if (account === "loading") return { kind: "loading", reason: t("alpha.model.accountLoading") }
+  if (account === "error") return { kind: "unavailable", reason: t("alpha.model.accountUnavailable") }
+  if (list === "loading") return { kind: "loading", reason: t("alpha.model.listLoading") }
+  if (list === "failed") return { kind: "unavailable", reason: t("alpha.model.listUnavailable") }
+  if (!model?.enabled || model.status === "deprecated") return { kind: "unavailable", reason: t("alpha.model.unavailable") }
   return { kind: "available" }
 }

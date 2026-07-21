@@ -7,6 +7,7 @@
 // 复验探针(dev/打包同在,零成本常驻):window.__alphaCrashProbe("<name>") 使对应边界的子树响应式
 // throw;__alphaCrashProbe(null) 复位后点「重载此区域」恢复 —— CDP / 真机批均可用。
 import { createSignal, ErrorBoundary, type JSX } from "solid-js"
+import { t } from "../i18n"
 import "./alpha-boundary.css"
 
 const [probeTarget, setProbeTarget] = createSignal<string | null>(null)
@@ -36,10 +37,10 @@ export function AlphaBoundary(props: { name: string; children: JSX.Element }) {
         console.error(`[alpha-boundary] ${props.name} crashed`, error)
         return (
           <div class="a-boundary" data-alpha-boundary={props.name}>
-            <span class="a-boundary-name">{props.name}</span>
+            <span class="a-boundary-name">{t("alpha.error.regionStopped", { name: props.name })}</span>
             <span class="a-boundary-msg">{String((error as Error)?.message ?? error)}</span>
             <button class="a-boundary-btn" onClick={reset}>
-              重载此区域
+              {t("alpha.error.reloadRegion")}
             </button>
           </div>
         )

@@ -44,6 +44,7 @@ import {
   type SourceTag,
   type TriggerView,
 } from "./composer-autocomplete-core"
+import { t } from "../i18n"
 
 type Client = ReturnType<typeof createOpencodeClient>
 type CommandApi = ReturnType<typeof useCommand>
@@ -259,7 +260,7 @@ export function createComposerAutocomplete(opts: {
     ]
     // REQ-072 B 案:单条 /agents 管理入口(引擎同名命令存在时让位,不造重名)
     if (!entries.some((e) => e.trigger === "agents"))
-      entries.push(toSlashItem({ id: AGENTS_ENTRY_ID, trigger: "agents", title: "Agent 管理", custom: false, origin: "builtin" }))
+      entries.push(toSlashItem({ id: AGENTS_ENTRY_ID, trigger: "agents", title: t("alpha.autocomplete.agentManagement"), custom: false, origin: "builtin" }))
     return buildSlashList(entries, v.query)
   })
   // REQ-073:装配弹窗数据(添加/AGENT/文件/扩展 四节)。agent 列表不再预滤 primary ——
@@ -479,6 +480,45 @@ export function createComposerAutocomplete(opts: {
     </svg>
   )
 
+  const slashDescription = (item: SlashItem) => {
+    const descriptions = {
+      init: "alpha.autocomplete.descInit",
+      review: "alpha.autocomplete.descReview",
+      agents: "alpha.autocomplete.descAgents",
+      "skill-creator": "alpha.autocomplete.descSkillCreator",
+      "agent-creator": "alpha.autocomplete.descAgentCreator",
+      "customize-alpha": "alpha.autocomplete.descCustomizeAlpha",
+      "integrate-project": "alpha.autocomplete.descIntegrateProject",
+      "alpha-workspace": "alpha.autocomplete.descAlphaWorkspace",
+    } as const
+    const key = descriptions[item.trigger as keyof typeof descriptions]
+    if (key) return t(key)
+    return displayDescription(item)
+  }
+  const actionLabel = (item: Extract<AssembleRow, { kind: "action" }>) => {
+    if (item.id === "attach") return t("alpha.autocomplete.attach")
+    if (item.id === "terminal") return t("alpha.autocomplete.openTerminal")
+    if (item.id === "ext-market") return t("alpha.autocomplete.extensionMarket")
+    return composerAgent() === "plan" ? t("alpha.autocomplete.disablePlan") : t("alpha.autocomplete.planMode")
+  }
+  const actionDescription = (item: Extract<AssembleRow, { kind: "action" }>) => {
+    if (item.disabled) return t("alpha.autocomplete.readonlyPlan")
+    if (item.id === "attach") return t("alpha.autocomplete.attachDesc")
+    if (item.id === "terminal") return t("alpha.autocomplete.openTerminalDesc")
+    if (item.id === "ext-market") return t("alpha.autocomplete.extensionMarketDesc")
+    return composerAgent() === "plan" ? t("alpha.autocomplete.disablePlanDesc") : t("alpha.autocomplete.planModeDesc")
+  }
+  const agentDescription = (item: Extract<AssembleRow, { kind: "agent" }>) => {
+    if (item.name === "general") return t("alpha.autocomplete.agentGeneral")
+    if (item.name === "explore") return t("alpha.autocomplete.agentExplore")
+    return item.desc
+  }
+  const groupHint = (hint: string | undefined) => {
+    if (!hint) return ""
+    if (hint.startsWith("git ")) return t("alpha.autocomplete.changedFilesHint")
+    return t("alpha.autocomplete.searchFilesHint")
+  }
+
   let scrollEl: HTMLDivElement | undefined
   // 键盘选中跟随滚动(全量列表配套;nearest 不跳动)
   createEffect(() => {
@@ -493,11 +533,11 @@ export function createComposerAutocomplete(opts: {
         <>
           <Ic d={SECTION_ICON[it.section]} />
           <span class="a-auto-trig">/{it.trigger}</span>
-          <span class="a-auto-desc" title={displayDescription(it)}>
-            {displayDescription(it)}
+          <span class="a-auto-desc" title={slashDescription(it)}>
+            {slashDescription(it)}
           </span>
           <span class="a-auto-tag" data-personal={it.tag === "个人" ? "" : undefined}>
-            {it.tag}
+            {sourceLabel(it.tag)}
           </span>
         </>
       )
@@ -505,9 +545,9 @@ export function createComposerAutocomplete(opts: {
       return (
         <>
           <Ic d={ACTION_ICON[it.id]} />
-          <span class="a-auto-nm">{it.label}</span>
-          <span class="a-auto-desc" title={it.disabled ?? it.desc}>
-            {it.disabled ?? it.desc}
+          <span class="a-auto-nm">{actionLabel(it)}</span>
+          <span class="a-auto-desc" title={actionDescription(it)}>
+            {actionDescription(it)}
           </span>
           <Show when={it.kbd}>
             <span class="a-auto-tag">{it.kbd}</span>
@@ -518,13 +558,13 @@ export function createComposerAutocomplete(opts: {
       return (
         <>
           <Ic d={ACTION_ICON.mode} />
-          <span class="a-auto-nm">{it.label}</span>
-          <span class="a-auto-desc" title={it.desc}>
-            {it.desc}
+          <span class="a-auto-nm">{t("alpha.autocomplete.mode", { name: it.id })}</span>
+          <span class="a-auto-desc" title={t("alpha.autocomplete.modeDesc")}>
+            {t("alpha.autocomplete.modeDesc")}
           </span>
           <Show when={it.on}>
             <span class="a-auto-tag" data-personal="">
-              已开启
+              {t("alpha.autocomplete.enabled")}
             </span>
           </Show>
         </>
@@ -534,11 +574,11 @@ export function createComposerAutocomplete(opts: {
         <>
           <Ic d={AT_ICON.agent} />
           <span class="a-auto-trig">@{it.name}</span>
-          <span class="a-auto-desc" title={it.desc}>
-            {it.desc}
+          <span class="a-auto-desc" title={agentDescription(it)}>
+            {agentDescription(it)}
           </span>
           <span class="a-auto-tag" data-personal={it.tag === "个人" ? "" : undefined}>
-            {it.tag}
+            {sourceLabel(it.tag)}
           </span>
         </>
       )
@@ -546,7 +586,7 @@ export function createComposerAutocomplete(opts: {
       <>
         <Ic d={AT_ICON.file} />
         <span class="a-auto-file">{it.path}</span>
-        <span class="a-auto-desc">文件</span>
+        <span class="a-auto-desc">{t("alpha.autocomplete.file")}</span>
       </>
     )
   }
@@ -592,7 +632,7 @@ export function createComposerAutocomplete(opts: {
             when={items().length > 0 || (view()?.mode === "at" && !view()?.query)}
             fallback={
               <div class="a-comp-empty">
-                <b>无匹配</b>试试更短的关键词,或按 esc 关闭
+                <b>{t("alpha.autocomplete.noMatches")}</b>{t("alpha.autocomplete.noMatchesHint")}
               </div>
             }
           >
@@ -603,9 +643,9 @@ export function createComposerAutocomplete(opts: {
                 <For each={assembleData()?.groups ?? []}>
                   {(g) => (
                     <>
-                      <div class="a-comp-sec">{g.label}</div>
+                      <div class="a-comp-sec">{groupLabel(g.label)}</div>
                       <Show when={g.hint}>
-                        <div class="a-comp-hint">{g.hint}</div>
+                        <div class="a-comp-hint">{groupHint(g.hint)}</div>
                       </Show>
                       <For each={g.rows}>{(it) => <Row it={it} idx={(assembleData()?.flat ?? []).indexOf(it)} />}</For>
                     </>
@@ -621,7 +661,7 @@ export function createComposerAutocomplete(opts: {
                 <For each={slashData()!.groups}>
                   {(g) => (
                     <>
-                      <div class="a-comp-sec">{g.label}</div>
+                      <div class="a-comp-sec">{groupLabel(g.label)}</div>
                       <For each={g.items}>{(it) => <Row it={it} idx={(slashData()?.flat ?? []).indexOf(it)} />}</For>
                     </>
                   )}
@@ -631,13 +671,13 @@ export function createComposerAutocomplete(opts: {
           </Show>
         </div>
         <div class="a-comp-foot">
-          <span>↑↓ 选择</span>
-          <span>↵ 确认</span>
-          <span>esc 关闭</span>
+          <span>{t("alpha.autocomplete.selectHint")}</span>
+          <span>{t("alpha.autocomplete.confirmHint")}</span>
+          <span>{t("alpha.autocomplete.closeHint")}</span>
           <span class="a-comp-foot-grow" />
-          <span class="a-comp-foot-hint">{view()?.mode === "slash" ? "@ 引用 Agent / 文件" : "/ 执行命令 · 技能"}</span>
+          <span class="a-comp-foot-hint">{view()?.mode === "slash" ? t("alpha.autocomplete.mentionHint") : t("alpha.autocomplete.commandHint")}</span>
           <Show when={items().length > 0}>
-            <span>{items().length} 项</span>
+            <span>{t("alpha.autocomplete.itemCount", { count: items().length })}</span>
           </Show>
         </div>
       </div>
@@ -645,4 +685,21 @@ export function createComposerAutocomplete(opts: {
   )
 
   return { open, onKeyDown, onInput, Menu, toggleAssemble }
+}
+
+function sourceLabel(tag: SourceTag) {
+  if (tag === "内置") return t("alpha.autocomplete.sourceBuiltin")
+  if (tag === "个人") return t("alpha.autocomplete.sourcePersonal")
+  if (tag === "项目") return t("alpha.autocomplete.sourceProject")
+  return tag
+}
+
+function groupLabel(label: string) {
+  if (label === "内置命令") return t("alpha.autocomplete.groupBuiltin")
+  if (label === "技能") return t("alpha.autocomplete.groupSkills")
+  if (label === "项目") return t("alpha.autocomplete.groupProject")
+  if (label === "添加") return t("alpha.autocomplete.groupAdd")
+  if (label === "文件") return t("alpha.autocomplete.groupFiles")
+  if (label === "扩展") return t("alpha.autocomplete.groupExtensions")
+  return label
 }

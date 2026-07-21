@@ -7,6 +7,7 @@
 
 import { createMemo, createSignal, For, onMount, Show } from "solid-js"
 import type { AlphaModelCatalog, ByokProvider, ProviderKeyStatus } from "../../shared/alpha-model-types"
+import { t } from "../i18n"
 
 function slug(s: string): string {
   return (
@@ -54,7 +55,7 @@ export function AddProvider(props: {
     if (!s || s === "custom") return undefined
     return props.keyStatus?.[(s as ByokProvider).id]
   })
-  const title = () => (sel() === "custom" ? "自定义端点" : sel() ? (sel() as ByokProvider).name : "添加节点 / 供应商")
+  const title = () => (sel() === "custom" ? t("alpha.provider.customEndpoint") : sel() ? (sel() as ByokProvider).name : t("alpha.provider.addTitle"))
 
   function openPreset(p: ByokProvider) {
     setSel(p)
@@ -100,7 +101,7 @@ export function AddProvider(props: {
 
   async function runTest() {
     if (!baseURL() || !apiKey() || models().length === 0) {
-      setTest({ s: "err", msg: "先填 Base URL / Key / 模型" })
+      setTest({ s: "err", msg: t("alpha.provider.testIncomplete") })
       return
     }
     setTest({ s: "testing", msg: "" })
@@ -110,18 +111,18 @@ export function AddProvider(props: {
       apiKey: apiKey(),
       model: models()[0],
     })
-    if (r.ok) setTest({ s: "ok", msg: `已接通 · ${r.ms}ms` })
+    if (r.ok) setTest({ s: "ok", msg: t("alpha.provider.testConnected", { ms: r.ms }) })
     else setTest({ s: "err", msg: r.reason })
   }
 
   async function save() {
     setError("")
     if (!name().trim()) {
-      setError("请填写供应商名称")
+      setError(t("alpha.provider.nameRequired"))
       return
     }
     if (models().length === 0) {
-      setError("至少需要一个模型 ID")
+      setError(t("alpha.provider.modelRequired"))
       return
     }
     const id = isCustom() ? slug(name()) : (sel() as ByokProvider).id
@@ -133,7 +134,7 @@ export function AddProvider(props: {
         props.onClose()
         return
       }
-      setError("请填写 API Key")
+      setError(t("alpha.provider.keyRequired"))
       return
     }
     setSaving(true)
@@ -165,7 +166,7 @@ export function AddProvider(props: {
     const p = s as ByokProvider
     const src = currentStatus()?.source
     if (src === "env") {
-      setError(`该 Key 来自环境变量,请在 alpha.env 中删除 ${p.keyEnv}`)
+      setError(t("alpha.provider.removeEnvKey", { key: p.keyEnv }))
       return
     }
     setSaving(true)
@@ -181,7 +182,7 @@ export function AddProvider(props: {
   return (
     <div class="a-mpa" onClick={(e) => e.stopPropagation()}>
       <div class="a-mpa-head">
-        <button class="a-mpa-back" onClick={back} aria-label="返回">
+        <button class="a-mpa-back" onClick={back} aria-label={t("alpha.common.back")}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="m15 18-6-6 6-6" />
           </svg>
@@ -192,7 +193,7 @@ export function AddProvider(props: {
       <div class="a-mpa-body">
         {/* Step 1 — choose provider */}
         <Show when={!inForm()}>
-          <p class="a-mpa-hint">选国内供应商一键接入(只填 Key),或自定义任意 OpenAI / Anthropic 兼容端点。</p>
+          <p class="a-mpa-hint">{t("alpha.provider.intro")}</p>
           <For each={presets()}>
             {(p) => (
               <button class="a-mpa-preset" onClick={() => openPreset(p)}>
@@ -201,10 +202,10 @@ export function AddProvider(props: {
                 </span>
                 <span class="a-mpa-pn">
                   <span class="nm">{p.name}</span>
-                  <span class="sb">{p.compat === "anthropic" ? "Anthropic 兼容" : "OpenAI 兼容"} · 填 Key 即用</span>
+                  <span class="sb">{t("alpha.provider.presetHint", { compat: p.compat === "anthropic" ? t("alpha.provider.anthropicCompatible") : t("alpha.provider.openaiCompatible") })}</span>
                 </span>
                 <Show when={props.keyStatus?.[p.id]?.configured}>
-                  <span class="a-mpa-pstate">已配置</span>
+                  <span class="a-mpa-pstate">{t("alpha.provider.configured")}</span>
                 </Show>
                 <Chevron />
               </button>
@@ -213,8 +214,8 @@ export function AddProvider(props: {
           <button class="a-mpa-preset custom" onClick={openCustom}>
             <span class="a-mpa-plus">+</span>
             <span class="a-mpa-pn">
-              <span class="nm">其他 / 自定义端点</span>
-              <span class="sb">OpenAI · Anthropic 兼容</span>
+              <span class="nm">{t("alpha.provider.otherEndpoint")}</span>
+              <span class="sb">{t("alpha.provider.compatibleSummary")}</span>
             </span>
             <Chevron />
           </button>
@@ -224,34 +225,34 @@ export function AddProvider(props: {
         <Show when={inForm()}>
           <div class="a-mpa-field">
             <label>
-              供应商名称 <span class="req">*</span>
+              {t("alpha.provider.name")} <span class="req">*</span>
             </label>
             <input
               class="a-mpa-input"
               value={name()}
               readOnly={!isCustom()}
               onInput={(e) => setName(e.currentTarget.value)}
-              placeholder="如 DeepSeek"
+              placeholder={t("alpha.provider.namePlaceholder")}
             />
           </div>
           <div class="a-mpa-field">
-            <label>兼容类型</label>
+            <label>{t("alpha.provider.compatibility")}</label>
             <div class="a-mpa-compat">
               <div class="opt" aria-pressed={compat() === "openai"} onClick={() => isCustom() && setCompat("openai")}>
-                OpenAI 兼容
+                {t("alpha.provider.openaiCompatible")}
               </div>
               <div
                 class="opt"
                 aria-pressed={compat() === "anthropic"}
                 onClick={() => isCustom() && setCompat("anthropic")}
               >
-                Anthropic 兼容
+                {t("alpha.provider.anthropicCompatible")}
               </div>
             </div>
           </div>
           <div class="a-mpa-field">
             <label>
-              Base URL <span class="req">*</span>
+              {t("alpha.provider.baseUrl")} <span class="req">*</span>
             </label>
             <input
               class="a-mpa-input mono"
@@ -260,33 +261,33 @@ export function AddProvider(props: {
               placeholder="https://api.example.com/v1"
             />
             <Show when={compat() === "anthropic"}>
-              <p class="a-mpa-hint">填到 /v1 结尾;实际请求 = Base URL + /messages(测试与会话同此规则)。</p>
+              <p class="a-mpa-hint">{t("alpha.provider.anthropicUrlHint")}</p>
             </Show>
           </div>
           <div class="a-mpa-field">
             <label>
-              API Key
+              {t("alpha.provider.apiKey")}
               <Show when={!currentStatus()?.configured}>
                 {" "}
                 <span class="req">*</span>
               </Show>
               <span class="a-mpa-keytoggle" onClick={() => setShowKey((v) => !v)}>
-                {showKey() ? "隐藏" : "明文"}
+                {showKey() ? t("alpha.provider.hideKey") : t("alpha.provider.showKey")}
               </span>
             </label>
             <Show when={currentStatus()?.configured}>
               <div class="a-mpa-keystate">
-                <span class="ks-badge">已配置 ••••{currentStatus()?.hint ?? ""}</span>
+                <span class="ks-badge">{t("alpha.provider.configuredKey", { hint: currentStatus()?.hint ?? "" })}</span>
                 <span class="ks-src">
                   {currentStatus()?.source === "keychain"
-                    ? "来源:钥匙串"
+                    ? t("alpha.provider.sourceKeychain")
                     : currentStatus()?.source === "env"
-                      ? "来源:环境变量"
-                      : "来源:配置"}
+                      ? t("alpha.provider.sourceEnv")
+                      : t("alpha.provider.sourceConfig")}
                 </span>
                 <Show when={currentStatus()?.source !== "env"}>
                   <button class="ks-remove" onClick={removeKey} disabled={saving()}>
-                    移除
+                    {t("alpha.common.remove")}
                   </button>
                 </Show>
               </div>
@@ -296,19 +297,18 @@ export function AddProvider(props: {
               type={showKey() ? "text" : "password"}
               value={apiKey()}
               onInput={(e) => setApiKey(e.currentTarget.value)}
-              placeholder={currentStatus()?.configured ? "留空 = 保留现有 Key,或粘贴新 Key 替换" : "sk-..."}
+              placeholder={currentStatus()?.configured ? t("alpha.provider.keyReplacePlaceholder") : "sk-..."}
             />
             <Show when={currentStatus()?.configured && currentStatus()?.source === "env"}>
               <p class="a-mpa-note">
-                该 Key 来自环境变量 {(sel() as ByokProvider).keyEnv}。保存新 Key 将写入配置并以其为准;要清除请删除
-                alpha.env 中该项。
+                {t("alpha.provider.envKeyNote", { key: (sel() as ByokProvider).keyEnv })}
               </p>
             </Show>
           </div>
           <div class="a-mpa-field">
             <label>
-              <Show when={isCustom()} fallback={`将启用的模型 (${models().length})`}>
-                模型 ID <span class="req">*</span>
+              <Show when={isCustom()} fallback={t("alpha.provider.enabledModels", { count: models().length })}>
+                {t("alpha.provider.modelId")} <span class="req">*</span>
               </Show>
             </label>
             <div class="a-mpa-modelchips">
@@ -334,17 +334,17 @@ export function AddProvider(props: {
                     addModel()
                   }
                 }}
-                placeholder="回车添加,如 deepseek-chat"
+                placeholder={t("alpha.provider.modelPlaceholder")}
                 style={{ "margin-top": "6px" }}
               />
             </Show>
             <Show when={!isCustom()}>
-              <p class="a-mpa-note">该供应商模型由 alpha 内置目录维护,填 Key 即用;保存后自动列出,无需手输。</p>
+              <p class="a-mpa-note">{t("alpha.provider.presetModelsNote")}</p>
             </Show>
           </div>
           <div class="a-mpa-testrow">
             <button class="a-mpa-testbtn" disabled={test().s === "testing"} onClick={runTest}>
-              {test().s === "testing" ? "测试中…" : "测试连接"}
+              {test().s === "testing" ? t("alpha.provider.testing") : t("alpha.provider.test")}
             </button>
             <Show when={test().s === "ok"}>
               <span class="a-mpa-teststatus ok">✓ {test().msg}</span>
@@ -362,10 +362,10 @@ export function AddProvider(props: {
       <Show when={inForm()}>
         <div class="a-mpa-foot">
           <button class="a-mpa-cancel" onClick={back}>
-            返回
+            {t("alpha.common.back")}
           </button>
           <button class="a-mpa-save" disabled={saving()} onClick={save}>
-            {saving() ? "保存中…" : "保存并启用"}
+            {saving() ? t("alpha.provider.saving") : t("alpha.provider.saveEnable")}
           </button>
         </div>
       </Show>

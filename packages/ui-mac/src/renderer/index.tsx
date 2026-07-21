@@ -391,7 +391,7 @@ render(() => {
       <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base">
         <Splash class="w-16 h-20 opacity-50 animate-pulse" />
         {/* B20:等待期原本零文案(最坏 ~60s 纯 logo);给一句状态,弱网/慢启动不再像死机 */}
-        <div class="mt-4 text-xs opacity-50">正在启动引擎…</div>
+        <div class="mt-4 text-xs opacity-50">{t("alpha.engine.starting")}</div>
       </div>
     )
 

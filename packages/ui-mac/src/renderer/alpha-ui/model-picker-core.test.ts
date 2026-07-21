@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { ModelV2Info } from "@opencode-ai/sdk/v2/client"
 import type { EffectiveCatalog, ProviderKeyStatus } from "../../shared/alpha-model-types"
+import { t } from "../i18n"
 import { buildModelPickerRows, composerModelFromRef, modelRefOf, withModelVariant } from "./model-picker-core"
 
 const catalog = {
@@ -82,8 +83,8 @@ describe("真实 alpha-models.json → picker 两组", () => {
     const loading = rows({ keyStatusState: "loading", keyStatus: {} })
     const failed = rows({ keyStatusState: "error", keyStatus: {} })
 
-    expect(loading.filter((row) => row.group === "byok").every((row) => row.reason === "KEY 状态加载中…")).toBe(true)
-    expect(failed.filter((row) => row.group === "byok").every((row) => row.reason === "KEY 状态读取失败")).toBe(true)
+    expect(loading.filter((row) => row.group === "byok").every((row) => row.reason === t("alpha.model.keyLoading"))).toBe(true)
+    expect(failed.filter((row) => row.group === "byok").every((row) => row.reason === t("alpha.model.keyFailed"))).toBe(true)
     expect([...loading, ...failed].some((row) => row.availability === "needs-key")).toBe(false)
   })
 
@@ -108,8 +109,8 @@ describe("真实 alpha-models.json → picker 两组", () => {
   test("contract 加载失败时 fail-closed：目录仍可辨认，但没有模型伪装可用", () => {
     const failed = rows({ listState: "failed", models: [] })
     expect(failed.some((row) => row.availability === "available")).toBe(false)
-    expect(failed.find((row) => row.model.providerID === "alpha")?.reason).toBe("模型列表暂不可用")
-    expect(failed.find((row) => row.model.providerID === "deepseek")?.reason).toBe("已配置 · 模型列表暂不可用")
+    expect(failed.find((row) => row.model.providerID === "alpha")?.reason).toBe(t("alpha.model.listUnavailable"))
+    expect(failed.find((row) => row.model.providerID === "deepseek")?.reason).toBe(t("alpha.model.configuredUnavailable"))
   })
 
   test("搜索无匹配时返回真实空态，而非回退到全量或假条目", () => {

@@ -10,33 +10,34 @@ import {
 import { Banner } from "./Banner"
 import { Button } from "./Button"
 import { settingsSurfaceApi, type SettingsSurfaceApi } from "./settings-authority-client"
+import { t } from "../i18n"
 import "./settings.css"
 
 type SettingsSection = "general" | "shortcuts" | "storage"
 
 const GENERAL_TOGGLES = [
-  { key: "autoSave", label: "自动保存文件", description: "编辑文件时自动写入磁盘。" },
-  { key: "releaseNotes", label: "显示版本说明", description: "更新后显示本版本的重要变化。" },
-  { key: "showReasoningSummaries", label: "显示推理摘要", description: "在时间线中显示模型提供的推理摘要。" },
-  { key: "showSessionProgressBar", label: "显示会话进度", description: "运行期间在会话顶部显示状态进度。" },
-  { key: "showCustomAgents", label: "显示自定义 Agent", description: "在可选 Agent 列表中显示本地自定义项。" },
+  { key: "autoSave", label: "alpha.settings.autoSave", description: "alpha.settings.autoSaveDesc" },
+  { key: "releaseNotes", label: "alpha.settings.releaseNotes", description: "alpha.settings.releaseNotesDesc" },
+  { key: "showReasoningSummaries", label: "alpha.settings.reasoning", description: "alpha.settings.reasoningDesc" },
+  { key: "showSessionProgressBar", label: "alpha.settings.progress", description: "alpha.settings.progressDesc" },
+  { key: "showCustomAgents", label: "alpha.settings.customAgents", description: "alpha.settings.customAgentsDesc" },
 ] as const
 
 const INTERFACE_TOGGLES = [
-  { key: "showFileTree", label: "文件树", description: "在会话工作区显示文件树入口。" },
-  { key: "showNavigation", label: "导航控件", description: "显示工作区导航控件。" },
-  { key: "showSearch", label: "搜索入口", description: "显示工作区搜索入口。" },
-  { key: "showStatus", label: "状态信息", description: "显示工作区状态信息。" },
-  { key: "showTerminal", label: "终端入口", description: "显示会话终端入口。" },
+  { key: "showFileTree", label: "alpha.settings.fileTree", description: "alpha.settings.fileTreeDesc" },
+  { key: "showNavigation", label: "alpha.settings.navigation", description: "alpha.settings.navigationDesc" },
+  { key: "showSearch", label: "alpha.settings.search", description: "alpha.settings.searchDesc" },
+  { key: "showStatus", label: "alpha.settings.status", description: "alpha.settings.statusDesc" },
+  { key: "showTerminal", label: "alpha.settings.terminal", description: "alpha.settings.terminalDesc" },
 ] as const
 
 const SHORTCUTS = [
-  { id: "settings.open", label: "打开设置", fallback: "⌘," },
-  { id: "command.palette", label: "打开命令面板", fallback: "⌘K" },
-  { id: "project.open", label: "打开项目", fallback: "⌘O" },
-  { id: "session.new", label: "新建会话", fallback: "⌘N" },
-  { id: "session.previous", label: "上一个会话", fallback: "⌥↑" },
-  { id: "session.next", label: "下一个会话", fallback: "⌥↓" },
+  { id: "settings.open", label: "alpha.settings.shortcutOpenSettings", fallback: "⌘," },
+  { id: "command.palette", label: "alpha.settings.shortcutCommands", fallback: "⌘K" },
+  { id: "project.open", label: "alpha.settings.shortcutOpenProject", fallback: "⌘O" },
+  { id: "session.new", label: "alpha.settings.shortcutNewSession", fallback: "⌘N" },
+  { id: "session.previous", label: "alpha.settings.shortcutPrevious", fallback: "⌥↑" },
+  { id: "session.next", label: "alpha.settings.shortcutNext", fallback: "⌥↓" },
 ] as const
 
 const STORAGE_FAILURE: ExtensionStorageResult = {
@@ -49,29 +50,29 @@ const STORAGE_FAILURE: ExtensionStorageResult = {
 }
 
 const STORAGE_FIELDS = [
-  { key: "blobsTotal", label: "缓存项目" },
-  { key: "sweepableCount", label: "可安全回收" },
-  { key: "sweptCount", label: "已回收" },
-  { key: "keptByGrace", label: "宽限期内保留" },
-  { key: "warningCount", label: "提醒" },
+  { key: "blobsTotal", label: "alpha.settings.storageCached" },
+  { key: "sweepableCount", label: "alpha.settings.storageSweepable" },
+  { key: "sweptCount", label: "alpha.settings.storageSwept" },
+  { key: "keptByGrace", label: "alpha.settings.storageGrace" },
+  { key: "warningCount", label: "alpha.settings.storageWarnings" },
 ] as const
 
-const STORAGE_CODE_LABEL: Record<ExtensionStorageResult["code"], string> = {
-  ok: "正常",
-  busy: "忙碌",
-  "fail-closed": "安全关闭",
-  "worker-failed": "工作进程失败",
+const storageCodeLabel = (code: ExtensionStorageResult["code"]) => {
+  if (code === "ok") return t("alpha.settings.storageOk")
+  if (code === "busy") return t("alpha.settings.storageBusy")
+  if (code === "fail-closed") return t("alpha.settings.storageFailClosed")
+  return t("alpha.settings.storageWorkerFailed")
 }
 const STORAGE_POLL_INTERVAL_MS = 100
 const STORAGE_POLL_ATTEMPTS = 100
 
 type SettingsWriteFailureCode = Extract<SettingsWriteResult, { ok: false }>["code"]
 
-const SETTINGS_ERROR_LABEL: Record<SettingsWriteFailureCode, string> = {
-  "invalid-input": "设置值没有通过校验。请修正后重试。",
-  "read-failed": "无法读取当前权威值。请稍后重试。",
-  "revision-conflict": "设置已在别处更新。草稿仍保留，请复核后重试保存。",
-  "write-failed": "无法确认更改已经持久保存。草稿仍保留，请重试。",
+const settingsErrorLabel = (code: SettingsWriteFailureCode) => {
+  if (code === "invalid-input") return t("alpha.settings.errorInvalid")
+  if (code === "read-failed") return t("alpha.settings.errorRead")
+  if (code === "revision-conflict") return t("alpha.settings.errorConflict")
+  return t("alpha.settings.errorWrite")
 }
 
 export function AlphaSettings(props: { open: boolean; onClose: () => void; api?: SettingsSurfaceApi }) {
@@ -108,8 +109,8 @@ export function AlphaSettings(props: { open: boolean; onClose: () => void; api?:
   const storageValue = (key: (typeof STORAGE_FIELDS)[number]["key"]) => {
     const snapshot = storage()
     if (snapshot.state === "ready") return String(snapshot.result[key])
-    if (snapshot.state === "checking" || snapshot.state === "collecting") return "处理中"
-    return "检查后显示"
+    if (snapshot.state === "checking" || snapshot.state === "collecting") return t("alpha.settings.processing")
+    return t("alpha.settings.shownAfterCheck")
   }
   const storageCode = () => storageResult()?.code ?? storage().state
   const canCollect = () => {
@@ -313,13 +314,13 @@ export function AlphaSettings(props: { open: boolean; onClose: () => void; api?:
             setExpectedRevision(result.authoritative.revision)
           }
           if (!result.authoritative && result.revision) setExpectedRevision(result.revision)
-          setSaveError(SETTINGS_ERROR_LABEL[result.code])
+          setSaveError(settingsErrorLabel(result.code))
           queueMicrotask(() => errorSummary?.focus())
         },
         () => {
           if (run !== loadRun || !props.open) return
           setSaving(false)
-          setSaveError(SETTINGS_ERROR_LABEL["write-failed"])
+          setSaveError(settingsErrorLabel("write-failed"))
           queueMicrotask(() => errorSummary?.focus())
         },
       )
@@ -380,7 +381,7 @@ export function AlphaSettings(props: { open: boolean; onClose: () => void; api?:
             ref={(element) => (closeButton = element)}
             type="button"
             class="alpha-settings-back"
-            aria-label="返回应用"
+            aria-label={t("alpha.settings.back")}
             onClick={close}
           >
             <svg aria-hidden="true" viewBox="0 0 24 24">
@@ -388,26 +389,26 @@ export function AlphaSettings(props: { open: boolean; onClose: () => void; api?:
             </svg>
           </button>
           <div>
-            <h1 id="alpha-settings-title">设置</h1>
+            <h1 id="alpha-settings-title">{t("alpha.settings.title")}</h1>
             <Show when={saveError()}>
-              <p>上次生效的权威值仍在使用</p>
+              <p>{t("alpha.settings.authorityStillActive")}</p>
             </Show>
           </div>
           <Show when={dirty()}>
             <span class="alpha-settings-unsaved">
               <i aria-hidden="true" />
-              有更改未保存
+              {t("alpha.settings.unsaved")}
             </span>
           </Show>
         </header>
 
         <div class="alpha-settings-layout">
-          <nav class="alpha-settings-nav" aria-label="设置类别">
+          <nav class="alpha-settings-nav" aria-label={t("alpha.settings.categories")}>
             <For
               each={[
-                { id: "general" as const, label: "通用" },
-                { id: "shortcuts" as const, label: "快捷键" },
-                { id: "storage" as const, label: "扩展存储" },
+                { id: "general" as const, label: t("alpha.settings.general") },
+                { id: "shortcuts" as const, label: t("alpha.settings.shortcuts") },
+                { id: "storage" as const, label: t("alpha.settings.extensionStorage") },
               ]}
             >
               {(item) => (
@@ -426,22 +427,22 @@ export function AlphaSettings(props: { open: boolean; onClose: () => void; api?:
           <main class="alpha-settings-main">
             <Show when={loadState() === "loading"}>
               <div class="alpha-settings-loading" role="status">
-                正在读取权威设置…
+                {t("alpha.settings.loading")}
               </div>
             </Show>
             <Show when={loadState() === "failed"}>
               <Banner
                 kind="error"
-                title="无法读取设置"
-                detail="没有显示或写入未经确认的值。请重试读取。"
-                action={{ label: "重试", onClick: loadSettings }}
+                title={t("alpha.settings.loadFailed")}
+                detail={t("alpha.settings.loadFailedDetail")}
+                action={{ label: t("alpha.common.retry"), onClick: loadSettings }}
               />
             </Show>
             <Show when={loadState() === "repair"}>
               <Banner
                 kind="warning"
-                title="已存设置无法校验"
-                detail="页面显示安全默认值。保存后会以 typed adapter 显式修复权威值。"
+                title={t("alpha.settings.invalidStored")}
+                detail={t("alpha.settings.invalidStoredDetail")}
               />
             </Show>
             <Show when={saveError()}>
@@ -449,15 +450,15 @@ export function AlphaSettings(props: { open: boolean; onClose: () => void; api?:
                 <div ref={(element) => (errorSummary = element)} tabIndex={-1}>
                   <Banner
                     kind="error"
-                    title="无法保存更改"
+                    title={t("alpha.settings.saveFailed")}
                     detail={message()}
-                    action={{ label: "重试保存", onClick: save }}
+                    action={{ label: t("alpha.settings.retrySave"), onClick: save }}
                   />
                 </div>
               )}
             </Show>
             <Show when={saved()}>
-              <Banner kind="success" title="设置已保存" detail="页面已切换到刚刚确认的权威值。" />
+              <Banner kind="success" title={t("alpha.settings.saved")} detail={t("alpha.settings.savedDetail")} />
             </Show>
 
             <Show when={section() === "general" && draft()}>
@@ -465,8 +466,8 @@ export function AlphaSettings(props: { open: boolean; onClose: () => void; api?:
                 <>
                   <div class="alpha-settings-section-head">
                     <div>
-                      <h2>通用</h2>
-                      <p>调整 Alpha 工作区的本机行为。</p>
+                      <h2>{t("alpha.settings.general")}</h2>
+                      <p>{t("alpha.settings.generalDetail")}</p>
                     </div>
                     <Button
                       variant="primary"
@@ -475,18 +476,18 @@ export function AlphaSettings(props: { open: boolean; onClose: () => void; api?:
                       data-settings-save
                       onClick={save}
                     >
-                      {saveError() ? "重试保存" : "保存更改"}
+                      {saveError() ? t("alpha.settings.retrySave") : t("alpha.settings.save")}
                     </Button>
                   </div>
 
                   <section class="alpha-settings-group" aria-labelledby="settings-behavior-title">
-                    <h3 id="settings-behavior-title">行为</h3>
+                    <h3 id="settings-behavior-title">{t("alpha.settings.behavior")}</h3>
                     <For each={GENERAL_TOGGLES}>
                       {(item) => (
                         <ToggleRow
                           checked={current().general[item.key] ?? ALPHA_SETTINGS_DEFAULTS.general[item.key] ?? false}
-                          label={item.label}
-                          description={item.description}
+                          label={t(item.label)}
+                          description={t(item.description)}
                           onChange={(value) => updateGeneral(item.key, value)}
                         />
                       )}
@@ -494,18 +495,18 @@ export function AlphaSettings(props: { open: boolean; onClose: () => void; api?:
                   </section>
 
                   <section class="alpha-settings-group" aria-labelledby="settings-interface-title">
-                    <h3 id="settings-interface-title">界面</h3>
+                    <h3 id="settings-interface-title">{t("alpha.settings.interface")}</h3>
                     <label class="alpha-settings-row">
                       <span class="alpha-settings-row-copy">
-                        <strong>字号</strong>
-                        <small>界面基础字号，允许 8–72。</small>
+                        <strong>{t("alpha.settings.fontSize")}</strong>
+                        <small>{t("alpha.settings.fontSizeDesc")}</small>
                       </span>
                       <input
                         class="alpha-settings-number"
                         type="number"
                         min="8"
                         max="72"
-                        aria-label="字号"
+                        aria-label={t("alpha.settings.fontSize")}
                         data-setting="font-size"
                         value={current().appearance.fontSize}
                         disabled={!readyToEdit() || saving()}
@@ -527,8 +528,8 @@ export function AlphaSettings(props: { open: boolean; onClose: () => void; api?:
                       {(item) => (
                         <ToggleRow
                           checked={current().general[item.key]}
-                          label={item.label}
-                          description={item.description}
+                          label={t(item.label)}
+                          description={t(item.description)}
                           onChange={(value) => updateGeneral(item.key, value)}
                         />
                       )}
@@ -536,11 +537,11 @@ export function AlphaSettings(props: { open: boolean; onClose: () => void; api?:
                   </section>
 
                   <section class="alpha-settings-group" aria-labelledby="settings-notifications-title">
-                    <h3 id="settings-notifications-title">通知与权限</h3>
+                    <h3 id="settings-notifications-title">{t("alpha.settings.notificationsPermissions")}</h3>
                     <ToggleRow
                       checked={current().permissions.autoApprove}
-                      label="自动批准权限"
-                      description="仅用于已有权限合同允许的请求；默认关闭。"
+                      label={t("alpha.settings.autoApprove")}
+                      description={t("alpha.settings.autoApproveDesc")}
                       onChange={(value) => {
                         setDraft((settings) =>
                           settings
@@ -556,16 +557,16 @@ export function AlphaSettings(props: { open: boolean; onClose: () => void; api?:
                     />
                     <For
                       each={[
-                        { key: "agent" as const, label: "Agent 完成通知" },
-                        { key: "permissions" as const, label: "权限请求通知" },
-                        { key: "errors" as const, label: "错误通知" },
+                        { key: "agent" as const, label: t("alpha.settings.notifyAgent") },
+                        { key: "permissions" as const, label: t("alpha.settings.notifyPermission") },
+                        { key: "errors" as const, label: t("alpha.settings.notifyError") },
                       ]}
                     >
                       {(item) => (
                         <ToggleRow
                           checked={current().notifications[item.key]}
                           label={item.label}
-                          description="在本机显示相应的系统通知。"
+                          description={t("alpha.settings.notifyDesc")}
                           onChange={(value) => updateNotification(item.key, value)}
                         />
                       )}
@@ -580,8 +581,8 @@ export function AlphaSettings(props: { open: boolean; onClose: () => void; api?:
                 <>
                   <div class="alpha-settings-section-head">
                     <div>
-                      <h2>快捷键</h2>
-                      <p>输入组合键名称；留空会恢复应用默认值。</p>
+                      <h2>{t("alpha.settings.shortcuts")}</h2>
+                      <p>{t("alpha.settings.shortcutsDetail")}</p>
                     </div>
                     <Button
                       variant="primary"
@@ -590,15 +591,15 @@ export function AlphaSettings(props: { open: boolean; onClose: () => void; api?:
                       data-settings-save
                       onClick={save}
                     >
-                      {saveError() ? "重试保存" : "保存更改"}
+                      {saveError() ? t("alpha.settings.retrySave") : t("alpha.settings.save")}
                     </Button>
                   </div>
-                  <section class="alpha-settings-group" aria-label="快捷键列表">
+                  <section class="alpha-settings-group" aria-label={t("alpha.settings.shortcutList")}>
                     <For each={SHORTCUTS}>
                       {(shortcut) => (
                         <label class="alpha-settings-row alpha-settings-shortcut-row">
                           <span class="alpha-settings-row-copy">
-                            <strong>{shortcut.label}</strong>
+                            <strong>{t(shortcut.label)}</strong>
                             <small>
                               <code>{shortcut.id}</code>
                             </small>
@@ -606,7 +607,7 @@ export function AlphaSettings(props: { open: boolean; onClose: () => void; api?:
                           <input
                             class="alpha-settings-shortcut"
                             type="text"
-                            aria-label={`${shortcut.label}快捷键`}
+                            aria-label={t("alpha.settings.shortcutLabel", { label: t(shortcut.label) })}
                             placeholder={shortcut.fallback}
                             value={current().keybinds[shortcut.id] ?? ""}
                             disabled={!readyToEdit() || saving()}
@@ -623,23 +624,23 @@ export function AlphaSettings(props: { open: boolean; onClose: () => void; api?:
             <Show when={section() === "storage"}>
               <div class="alpha-settings-section-head">
                 <div>
-                  <h2>扩展存储</h2>
-                  <p>检查扩展缓存，并安全回收不再被引用的内容。</p>
+                  <h2>{t("alpha.settings.extensionStorage")}</h2>
+                  <p>{t("alpha.settings.extensionStorageDetail")}</p>
                 </div>
               </div>
               <section class="alpha-settings-group alpha-settings-storage" aria-labelledby="extension-storage-title">
                 <div class="alpha-settings-storage-title">
                   <span>
-                    <strong id="extension-storage-title">缓存检查</strong>
-                    <small>只显示 renderer-safe 聚合计数</small>
+                    <strong id="extension-storage-title">{t("alpha.settings.storageCheck")}</strong>
+                    <small>{t("alpha.settings.storageSafeCounts")}</small>
                   </span>
-                  <span class="alpha-settings-local">本机</span>
+                  <span class="alpha-settings-local">{t("alpha.settings.local")}</span>
                 </div>
                 <div class="alpha-settings-usage-grid">
                   <For each={STORAGE_FIELDS}>
                     {(field) => (
                       <div class="alpha-settings-usage-card" data-storage-field={field.key}>
-                        <span>{field.label}</span>
+                        <span>{t(field.label)}</span>
                         <strong>{storageValue(field.key)}</strong>
                       </div>
                     )}
@@ -656,18 +657,18 @@ export function AlphaSettings(props: { open: boolean; onClose: () => void; api?:
                     when={storageResult()}
                     fallback={
                       <span>
-                        状态：
+                        {t("alpha.settings.storageStatus")}
                         {storage().state === "not-run"
-                          ? "尚未检查"
+                          ? t("alpha.settings.storageNotRun")
                           : storage().state === "checking"
-                            ? "正在检查"
-                            : "正在回收"}
+                            ? t("alpha.settings.storageChecking")
+                            : t("alpha.settings.storageCollecting")}
                       </span>
                     }
                   >
                     {(result) => (
                       <span>
-                        状态：{STORAGE_CODE_LABEL[result().code]} <code>{result().code}</code>
+                        {t("alpha.settings.storageStatus")}{storageCodeLabel(result().code)} <code>{result().code}</code>
                       </span>
                     )}
                   </Show>
@@ -676,13 +677,13 @@ export function AlphaSettings(props: { open: boolean; onClose: () => void; api?:
                   {(result) => (
                     <Banner
                       kind={result().code === "busy" ? "warning" : "error"}
-                      title={result().code === "busy" ? "扩展存储当前忙碌" : "本次操作未完成"}
-                      detail="没有清理未经可信摘要确认的内容。请稍后重新检查。"
+                      title={result().code === "busy" ? t("alpha.settings.storageBusyTitle") : t("alpha.settings.storageOperationFailed")}
+                      detail={t("alpha.settings.storageFailureDetail")}
                     />
                   )}
                 </Show>
                 <div class="alpha-settings-storage-actions">
-                  <p>先检查，再决定是否回收；已安装扩展不会被删除。</p>
+                  <p>{t("alpha.settings.storageActionNote")}</p>
                   <Button
                     variant="secondary"
                     loading={storage().state === "checking"}
@@ -690,7 +691,7 @@ export function AlphaSettings(props: { open: boolean; onClose: () => void; api?:
                     data-storage-inspect
                     onClick={() => runStorage("inspect")}
                   >
-                    {storageResult()?.code !== "ok" && storageResult() ? "重新检查" : "检查可回收项"}
+                    {storageResult()?.code !== "ok" && storageResult() ? t("alpha.settings.storageRecheck") : t("alpha.settings.storageInspect")}
                   </Button>
                   <Button
                     variant="primary"
@@ -699,12 +700,12 @@ export function AlphaSettings(props: { open: boolean; onClose: () => void; api?:
                     data-storage-collect
                     onClick={() => runStorage("collect")}
                   >
-                    立即回收
+                    {t("alpha.settings.storageCollect")}
                   </Button>
                 </div>
               </section>
               <p class="alpha-settings-storage-note">
-                这里只显示项目数量；具体文件、内部标识和完整提醒内容不会出现在设置中。
+                {t("alpha.settings.storagePrivacy")}
               </p>
             </Show>
           </main>

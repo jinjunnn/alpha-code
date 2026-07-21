@@ -36,7 +36,7 @@ import type { AuthorizationConfirmationWire, CapabilityDiffWire } from "../../sh
 import type { Catalog, CatalogEntry, InstalledState } from "./catalog-types"
 import type { AuthState, InstallReceipt, InstallReceiptType, ProvenanceRequest } from "../../preload/types"
 import { hubSection, setHubSection, type HubSection } from "./ext-hub-state"
-import { iconFor, iconForRow, sourceLabel, typeLabel, Svg, SearchIc, LockIc } from "./ext-presentation"
+import { catalogDescription, iconFor, iconForRow, sourceLabel, typeLabel, Svg, SearchIc, LockIc } from "./ext-presentation"
 import { inventoryInstallRow, healthPresentation } from "./ext-inventory-present"
 import { ExtensionDetail, type DetailTarget } from "./extension-detail"
 import { officeAdvisoryFor } from "../../shared/office-advisories"
@@ -1205,7 +1205,7 @@ export function ExtensionHub(props: {
             </div>
           </div>
         </div>
-        <p class="alpha-ext-card-desc">{e.description}</p>
+        <p class="alpha-ext-card-desc">{catalogDescription(e)}</p>
         <div class="alpha-ext-card-foot">
           <For each={metaPills(e, curated())}>
             {(m) => (
@@ -1366,7 +1366,7 @@ export function ExtensionHub(props: {
             </span>
           </div>
           <div class="alpha-ext-kit-desc">
-            {e.description}
+            {catalogDescription(e)}
             <span class="alpha-ext-kit-n"> · {t("alpha.ext.metaItems", { count: (e.bundleItems ?? []).length })}</span>
           </div>
         </div>
@@ -2275,7 +2275,7 @@ export function ExtensionHub(props: {
                   </span>
                   <span class="alpha-ext-confirm-type">{typeLabel(entry().type)}</span>
                 </div>
-                <p class="alpha-ext-confirm-desc">{entry().description}</p>
+                <p class="alpha-ext-confirm-desc">{catalogDescription(entry())}</p>
                 <div class="alpha-ext-install-box">
                   <For each={confirmItems(entry())}>
                     {(it) => {
@@ -2474,7 +2474,7 @@ export function ExtensionHub(props: {
                       <div class="alpha-ext-man">
                         <span class="alpha-ext-man-name">
                           {m.source}
-                          <span class="alpha-ext-chip">{m.target ?? "不映射"}</span>
+                          <span class="alpha-ext-chip">{m.target ?? t("alpha.ext.mapping.notMapped")}</span>
                         </span>
                         <small style={{ "margin-left": "auto", opacity: 0.7, "max-width": "60%" }}>{m.note}</small>
                       </div>
