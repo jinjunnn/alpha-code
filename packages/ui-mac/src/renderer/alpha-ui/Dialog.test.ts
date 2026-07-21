@@ -550,6 +550,60 @@ describe("Dialog stack and IME", () => {
     expect(external.hasAttribute("inert")).toBe(false)
   })
 
+  test("restores into the surviving outer dialog when the persistent anchor is inert", async () => {
+    const primed = mountDialog()
+    await flush()
+    primed.trigger.remove()
+    primed.setOpen(false)
+    await flush()
+    const anchor = document.querySelector<HTMLElement>("[data-dialog-focus-anchor]")!
+    expect(document.activeElement).toBe(anchor)
+
+    const host = document.createElement("div")
+    document.body.append(host)
+    const [innerOpen, setInnerOpen] = runtime.createSignal(false)
+    const innerTrigger = element("button", { autofocus: true }, "Open inner")
+    const outerAction = element("button", {}, "Outer action")
+
+    disposers.push(
+      runtime.render(
+        () => [
+          runtime.createComponent(runtime.Dialog, {
+            open: true,
+            onClose() {},
+            title: "Surviving outer dialog",
+            dismissible: false,
+            children: [innerTrigger, outerAction],
+          }),
+          runtime.createComponent(runtime.Dialog, {
+            get open() {
+              return innerOpen()
+            },
+            onClose: () => setInnerOpen(false),
+            title: "Closing inner dialog",
+            children: element("button", { autofocus: true }, "Inner action"),
+          }),
+        ],
+        host,
+      ),
+    )
+    await flush()
+
+    innerTrigger.focus()
+    setInnerOpen(true)
+    await flush()
+    innerTrigger.remove()
+    setInnerOpen(false)
+    await flush()
+
+    const outer = dialog()
+    expect(anchor.hasAttribute("inert")).toBe(true)
+    expect(document.activeElement).toBe(outerAction)
+    expect(outer.contains(document.activeElement)).toBe(true)
+    expect(document.activeElement).not.toBe(document.body)
+    expect(document.activeElement).not.toBe(anchor)
+  })
+
   test("clears lower-dialog composition by event target after the stack top changes", async () => {
     const host = document.createElement("div")
     document.body.append(host)

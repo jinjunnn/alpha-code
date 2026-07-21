@@ -233,7 +233,9 @@ function restoreDialogFocus(document: Document, restore: DialogRestoreRequest) {
   const explicit = restore.fallback()
   const target = typeof explicit === "function" ? explicit() : explicit
   if (isRestorable(target) && focusElement(target)) return
-  focusElement(focusAnchor(document))
+  if (focusElement(focusAnchor(document))) return
+  // A persistent anchor is inert while another dialog survives, so fail closed into its focus domain.
+  stacks.get(document)?.entries.at(-1)?.manager.containFocus()
 }
 
 function portalHost(root: HTMLElement, body: HTMLElement) {
