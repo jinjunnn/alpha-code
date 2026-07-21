@@ -67,7 +67,6 @@ function variantForColor(color: string): ProjectAvatarVariant {
       return "gray"
   }
 }
-
 function hashVariant(worktree: string): ProjectAvatarVariant {
   let h = 0
   for (let i = 0; i < worktree.length; i++) h = (Math.imul(h, 31) + worktree.charCodeAt(i)) >>> 0
@@ -253,6 +252,7 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
   const MenuCommon = () => (
     <>
       <button
+        type="button"
         class="alpha-acct-item"
         onClick={() => {
           setMenuOpen(false)
@@ -275,15 +275,17 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
         </span>
       </div>
       <button
+        type="button"
         class="alpha-acct-item"
         onClick={() => {
           setMenuOpen(false)
-          command.trigger("settings.open")
+          window.api.openLink("https://opencode.ai/desktop-feedback")
         }}
       >
         <span class="alpha-acct-ic">?</span>帮助与反馈
       </button>
       <button
+        type="button"
         class="alpha-acct-item"
         onClick={() => {
           setMenuOpen(false)

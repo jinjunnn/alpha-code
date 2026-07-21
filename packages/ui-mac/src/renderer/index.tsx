@@ -30,7 +30,6 @@ import { availableStartupServer, isEphemeralLocalServerUrl, readyWslConnections 
 import "./styles.css"
 import "./sidebar/sidebar.css"
 import "./sidebar/account-popover.css"
-import "./alpha-ui/settings-reskin.css"
 import "./alpha-ui/timeline-reskin.css"
 import "./alpha-ui/composer-reskin.css"
 import { ToastViewport } from "./alpha-ui/Toast"
@@ -50,7 +49,9 @@ import type { ResolvedSurfaces } from "../shared/alpha-surfaces"
 import { SessionSpikeHost } from "./alpha-ui/session-spike/session-spike-host" // REQ-087 spike 探针(默认恒 off,T7 清理)
 import { alphaSessionWorkspaceSurface } from "./alpha-ui/session-workspace/alpha-session-workspace" // REQ-088 T2
 import { AlphaOnboarding } from "./alpha-ui/AlphaOnboarding"
-import { setupSettingsBackButton } from "./alpha-ui/settings-back-button"
+import { AlphaSettings } from "./alpha-ui/settings"
+import { isSettingsAuthorityTarget, settingsAuthorityStorage } from "./alpha-ui/settings-authority-client"
+import { setSettingsOpen, settingsOpen } from "./alpha-ui/settings-state"
 import { ExtensionHub } from "./extensions/extension-hub"
 import { extHubOpen, setExtHubOpen } from "./extensions/ext-hub-state"
 import { AutomationPanel } from "./automations/automation-panel"
@@ -148,10 +149,14 @@ const createPlatform = (): Platform => {
     const cache = new Map<string, AsyncStorage>()
 
     const createStorage = (name: string) => {
+      const settings = settingsAuthorityStorage()
       const api: AsyncStorage = {
-        getItem: (key: string) => window.api.storeGet(name, key),
-        setItem: (key: string, value: string) => window.api.storeSet(name, key, value),
-        removeItem: (key: string) => window.api.storeDelete(name, key),
+        getItem: (key: string) =>
+          isSettingsAuthorityTarget(name, key) ? settings.getItem(key) : window.api.storeGet(name, key),
+        setItem: (key: string, value: string) =>
+          isSettingsAuthorityTarget(name, key) ? settings.setItem(key, value) : window.api.storeSet(name, key, value),
+        removeItem: (key: string) =>
+          isSettingsAuthorityTarget(name, key) ? settings.removeItem(key) : window.api.storeDelete(name, key),
         clear: () => window.api.storeClear(name),
         key: async (index: number) => (await window.api.storeKeys(name))[index],
         getLength: () => window.api.storeLength(name),
@@ -222,6 +227,10 @@ const createPlatform = (): Platform => {
 
     back() {
       window.history.back()
+    },
+
+    openSettings() {
+      setSettingsOpen(true)
     },
 
     forward() {
@@ -325,7 +334,6 @@ window.api.onMenuCommand((id) => {
   menuTrigger?.(id)
 })
 listenForDeepLinks()
-setupSettingsBackButton()
 
 render(() => {
   const platform = createPlatform()
@@ -482,6 +490,9 @@ render(() => {
                   (见上方 surfaceComponents);legacy 模式下 upstream Home 原样呈现。 */}
               <AlphaBoundary name="AlphaOnboarding">
                 <AlphaOnboarding />
+              </AlphaBoundary>
+              <AlphaBoundary name="AlphaSettings">
+                <AlphaSettings open={settingsOpen()} onClose={() => setSettingsOpen(false)} />
               </AlphaBoundary>
               <AlphaBoundary name="ExtensionHub">
                 <ExtensionHub server={sidebarServer} open={extHubOpen} onClose={() => setExtHubOpen(false)} />

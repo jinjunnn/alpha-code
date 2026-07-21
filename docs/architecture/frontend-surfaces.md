@@ -42,9 +42,15 @@ lifetime.
 
 Recovery has two lifecycle slots under one Alpha owner: a dedicated renderer window before the
 product window for DbSafety decisions, and one runtime overlay host for sidecar and surface
-incidents. Generic upstream Dialog consumers opt into the single Alpha Dialog host; Settings,
-Model/Provider, and Permission remain explicitly outside that migration until their owning lines
-replace them.
+incidents. Generic upstream Dialog consumers opt into the single Alpha Dialog host; Model/Provider
+and Permission remain explicitly outside that migration until their owning lines replace them.
+
+`overlay.settings` is an Alpha-owned full-page overlay with one renderer mount.
+The desktop platform's `openSettings` seam routes sidebar, command, menu, and
+fallback-home entrypoints to that owner, so the Alpha host never mounts an
+upstream Settings dialog or depends on its DOM. Its durable Settings authority
+is also excluded from the generic renderer store bridge and is reachable only
+through the typed Settings adapter.
 
 The inventory is intentionally limited to top-level ownership boundaries. Tabs,
 popovers, controls, and render helpers belong to their enclosing surface unless

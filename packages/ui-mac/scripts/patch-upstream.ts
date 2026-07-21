@@ -8,8 +8,8 @@ import type { Plugin } from "vite"
 // entry is an exact-substring replace keyed by the source path. A miss warns (drift signal) but
 // does not fail the build by default — update the patch when upstream reworks the line.
 //
-// Use this ONLY for behavior that genuinely cannot be reached through an additive seam (CSS,
-// settings, Portal). Inline `style={{ width: ... }}` computed in JS is exactly such a case.
+// Use this ONLY for behavior that genuinely cannot be reached through an additive seam.
+// Inline `style={{ width: ... }}` computed in JS is exactly such a case.
 
 const PATCHES: Record<string, ReadonlyArray<readonly [string, string]>> = {
   // Narrow the review / 审查 right panel. opencode clamps the CHAT panel's max width to 45% of the
@@ -34,23 +34,6 @@ const PATCHES: Record<string, ReadonlyArray<readonly [string, string]>> = {
     [
       "const DEFAULT_SESSION_WIDTH = 600",
       'const DEFAULT_SESSION_WIDTH = typeof window !== "undefined" ? Math.round(window.innerWidth * 0.64) : 600',
-    ],
-  ],
-
-  // Relocate "Help" from the alpha sidebar footer INTO the settings dialog's own left nav. The
-  // sidebar footer now shows Settings only; Help belongs beside the rest of configuration. CSS
-  // can't add a working button and there is no stable Portal mount inside this on-demand dialog,
-  // so we inject the nav row at the head of the existing footer (app name + version). It reuses
-  // `platform.openLink` and `language.t` already in scope, plus the upstream `sidebar.help` key
-  // (en "Help" / zh "帮助"). Styled by `.settings-v2-help-trigger` in sidebar.css to match the
-  // adjacent TabsV2 triggers. A miss only drops the row (cosmetic), never breaks the build.
-  "app/src/components/settings-v2/dialog-settings-v2.tsx": [
-    [
-      '<div class="settings-v2-nav-footer">',
-      '<div class="settings-v2-nav-footer">' +
-        '<button type="button" class="settings-v2-help-trigger" ' +
-        'onClick={() => platform.openLink("https://opencode.ai/desktop-feedback")}>' +
-        '<Icon name="help" /><span>{language.t("sidebar.help")}</span></button>',
     ],
   ],
 }

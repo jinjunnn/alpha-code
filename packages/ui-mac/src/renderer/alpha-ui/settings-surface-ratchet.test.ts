@@ -1,0 +1,70 @@
+import { describe, expect, test } from "bun:test"
+import { join } from "node:path"
+import { FRONTEND_SURFACE_MANIFEST } from "../../shared/frontend-surface-manifest"
+
+const root = join(import.meta.dir, "../../../")
+const rendererIndex = Bun.file(join(root, "src/renderer/index.tsx"))
+const settingsSurface = Bun.file(join(root, "src/renderer/alpha-ui/settings.tsx"))
+const mainIpc = Bun.file(join(root, "src/main/ipc.ts"))
+const upstreamPatch = Bun.file(join(root, "scripts/patch-upstream.ts"))
+const sidebarCss = Bun.file(join(root, "src/renderer/sidebar/sidebar.css"))
+const appLayout = Bun.file(join(root, "../app/src/pages/layout.tsx"))
+const appHome = Bun.file(join(root, "../app/src/pages/home.tsx"))
+const l2Harness = Bun.file(join(root, "../../docs/verification/2026-07-21-req090-settings-l2/harness.html"))
+const l2Readme = Bun.file(join(root, "../../docs/verification/2026-07-21-req090-settings-l2/README.md"))
+
+describe("Alpha Settings ownership ratchets", () => {
+  test("manifest registers one Alpha-owned overlay mount", () => {
+    const entries = FRONTEND_SURFACE_MANIFEST.filter((surface) => surface.id === "overlay.settings")
+    expect(entries).toHaveLength(1)
+    expect(entries[0]).toMatchObject({
+      owner: "alpha.settings",
+      lineage: "alpha",
+      mount: { kind: "overlay", host: "app-root" },
+      source: "packages/ui-mac/src/renderer/alpha-ui/settings.tsx",
+    })
+  })
+
+  test("deletes the observer/reskin path and mounts the Alpha surface exactly once", async () => {
+    expect(await Bun.file(join(root, "src/renderer/alpha-ui/settings-back-button.ts")).exists()).toBeFalse()
+    expect(await Bun.file(join(root, "src/renderer/alpha-ui/settings-reskin.css")).exists()).toBeFalse()
+    const source = await rendererIndex.text()
+    expect(source).not.toContain("setupSettingsBackButton")
+    expect(source).not.toContain("settings-reskin.css")
+    expect(source.match(/<AlphaSettings\b/g)).toHaveLength(1)
+    expect(source).toContain("openSettings()")
+    expect(await settingsSurface.text()).not.toContain("<Portal")
+    expect(await upstreamPatch.text()).not.toContain("settings-v2")
+    expect(await sidebarCss.text()).not.toContain("settings-v2")
+  })
+
+  test("all ui-mac Settings entrypoints short-circuit to the Alpha owner", async () => {
+    for (const source of [await appLayout.text(), await appHome.text()]) {
+      expect(source.indexOf("if (platform.openSettings) return platform.openSettings()")).toBeGreaterThan(-1)
+      expect(source.indexOf("if (platform.openSettings)")).toBeLessThan(source.indexOf("<x.DialogSettings />"))
+    }
+  })
+
+  test("Settings surface never reaches the generic store bridge", async () => {
+    const surface = await settingsSurface.text()
+    expect(surface).not.toMatch(/storeGet|storeSet|storeDelete|storeClear/)
+    expect(surface).not.toMatch(/default\.dat|settings\.v3/)
+
+    const ipc = await mainIpc.text()
+    expect(ipc).toContain('ipcMain.handle("store-get"')
+    expect(ipc).toContain('ipcMain.handle("store-set"')
+    expect(ipc.match(/assertGenericStoreAccess\(name, key\)/g)?.length).toBeGreaterThanOrEqual(3)
+    expect(ipc).toContain("assertGenericStoreAccess(name)")
+  })
+
+  test("L2 records four static states in both themes without forbidden report fields", async () => {
+    const harness = await l2Harness.text()
+    const readme = await l2Readme.text()
+    for (const state of ["default", "save-failed", "gc-running", "gc-failed"]) {
+      expect(harness).toContain(`data-l2-state="${state}"`)
+      expect(readme).toContain(`theme=light&state=${state}`)
+      expect(readme).toContain(`theme=dark&state=${state}`)
+    }
+    expect(harness).not.toMatch(/digest|finishedAt|warning detail|\/Users\/|\bMB\b/)
+  })
+})

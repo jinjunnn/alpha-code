@@ -64,6 +64,9 @@ type PlatformBase = {
   /** Storage mechanism, defaults to localStorage */
   storage?: (name?: string) => SyncStorage | AsyncStorage
 
+  /** Host-owned Settings surface. When present, upstream Settings dialogs are not mounted. */
+  openSettings?(): void
+
   /** Application-global desktop updater */
   updater?: UpdaterPlatform
 

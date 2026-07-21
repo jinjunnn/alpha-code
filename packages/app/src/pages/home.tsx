@@ -332,6 +332,7 @@ function HomeDesign() {
   }
 
   function openSettings() {
+    if (platform.openSettings) return platform.openSettings()
     void import("@/components/settings-v2").then((x) => {
       dialog.show(() => <x.DialogSettings />)
     })

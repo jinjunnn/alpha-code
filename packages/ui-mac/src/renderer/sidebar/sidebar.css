@@ -9,8 +9,8 @@
  *
  * COLOR: the sidebar's OWN elements (.alpha-*) consume alpha-ui design tokens (--a-*, see
  * alpha-ui/tokens.css) — cool graphite / porcelain. The upstream-chrome override rules below
- * (settings dialog help row, wordmark overlay) keep opencode's --v2-* tokens on purpose, so they
- * match the opencode surface they are embedded in.
+ * (wordmark overlay) keep opencode's --v2-* tokens on purpose, so they match the opencode surface
+ * they are embedded in.
  */
 
 :root {
@@ -55,8 +55,7 @@ body[data-alpha-sidebar] .relative.bg-v2-background-bg-deep.flex-1 {
 }
 
 /* Hide opencode's floating bottom-right "?" help button (dev-channel, components/help-button.tsx).
-   Help now lives in the settings dialog's left nav, so the floating button is redundant. Target the
-   fixed wrapper that holds the round Help trigger, plus the trigger itself as a fallback. */
+   Alpha's account menu owns the Help & Feedback entry. */
 body[data-alpha-sidebar] .fixed.bottom-4.right-4:has(button[aria-label="Help"]),
 body[data-alpha-sidebar] button[aria-label="Help"] {
   display: none !important;
@@ -81,7 +80,7 @@ body[data-alpha-sidebar="open"] .relative.bg-v2-background-bg-deep.flex-1 {
 }
 
 /* The V2 home repeats the project list in a 280px left column — redundant now that the sidebar
- * owns projects (and Settings/Help moved into the sidebar footer). Drop that column and let the
+ * owns projects and account actions. Drop that column and let the
  * recent-sessions section take the full width. Keyed on the home grid's literal track template. */
 body[data-alpha-sidebar] [class*="grid-cols-[280px"] {
   grid-template-columns: minmax(0, 1fr) !important;
@@ -89,55 +88,6 @@ body[data-alpha-sidebar] [class*="grid-cols-[280px"] {
 body[data-alpha-sidebar] [class*="grid-cols-[280px"] > aside {
   display: none !important;
 }
-
-/* ── settings dialog (opencode V2) ───────────────────────────────────────────────────────
- * Widen the dialog past upstream's x-large default (800px), and style the "Help" row that the
- * build-time transform (ui-mac/scripts/patch-upstream.ts) injects into the dialog's left nav —
- * Help was moved out of the sidebar footer and lives here now. Coupling = the upstream dialog
- * classes/slots; a rename only reverts the look (no merge conflict). */
-body[data-alpha-sidebar]
-  [data-component="dialog-v2"][data-variant="settings"][data-size="x-large"]
-  [data-slot="dialog-container"] {
-  /* Comfortable default on roomy windows, capped so it never sprawls; on a narrow window it falls
-     back to filling the viewport minus a small fixed margin. The modal is centred, so the viewport
-     term yields a symmetric gap on all four sides. min() picks whichever is smaller per axis: the
-     px cap wins when there's room, the viewport term wins when the window is tight. */
-  width: min(1160px, calc(100vw - 48px));
-  height: min(820px, calc(100vh - 56px));
-  max-width: none;
-  max-height: none;
-}
-
-/* The injected Help row — mirrors the settings TabsV2 trigger (28px, 4px radius, muted → base on
-   hover, icon + label, 6px gap) so it reads as a peer of the nav items above it. Stays on --v2-*
-   because it lives INSIDE opencode's settings dialog and must match that surface. */
-.settings-v2-help-trigger {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  height: 28px;
-  padding: 0 6px;
-  margin-bottom: 4px;
-  border: 0.5px solid transparent;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--v2-text-text-muted);
-  font: inherit;
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-}
-.settings-v2-help-trigger:hover {
-  background-color: var(--v2-background-bg-layer-03);
-  color: var(--v2-text-text-base);
-}
-.settings-v2-help-trigger :where(svg) {
-  width: 16px;
-  height: 16px;
-  flex: 0 0 auto;
-}
-
 /* Brand the upstream "opencode" wordmarks as ALPHA. Two variants exist:
  *  - the legacy/error pixelated Logo (viewBox 0 0 234 42)
  *  - the V2 home / new-chat backdrop wordmark (viewBox 0 0 720.002 129.001), inside a
