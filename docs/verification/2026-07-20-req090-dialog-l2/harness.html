@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>REQ-090 Alpha Dialog L2 harness</title>
+    <link rel="stylesheet" href="../../../packages/ui-mac/src/renderer/alpha-ui/base.css" />
+    <link rel="stylesheet" href="../../../packages/ui-mac/src/renderer/alpha-ui/button.css" />
+    <link rel="stylesheet" href="../../../packages/ui-mac/src/renderer/alpha-ui/dialog.css" />
+    <link rel="stylesheet" href="../../../packages/ui-mac/src/renderer/extensions/extension-hub.css" />
+    <style>
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: var(--a-bg-canvas);
+      }
+      .l2-windowbar {
+        display: flex;
+        align-items: center;
+        height: 40px;
+        padding: 0 16px;
+        border-bottom: 1px solid var(--a-border-faint);
+        background: var(--a-bg-canvas);
+        color: var(--a-text-secondary);
+        font-size: var(--a-text-xs);
+      }
+      .l2-dots {
+        display: flex;
+        gap: 7px;
+        margin-right: auto;
+      }
+      .l2-dots i {
+        width: 10px;
+        height: 10px;
+        border-radius: var(--a-radius-full);
+        background: var(--a-border-strong);
+      }
+      .l2-controls {
+        position: relative;
+        z-index: calc(var(--a-z-modal) + 1);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border: 1px solid var(--a-border-faint);
+        border-radius: var(--a-radius-lg);
+        background: var(--a-surface-raised);
+        box-shadow: var(--a-shadow-sm);
+      }
+      .l2-controls a {
+        padding: 5px 8px;
+        border-radius: var(--a-radius-md);
+        color: var(--a-text-secondary);
+        font-size: var(--a-text-xs);
+        text-decoration: none;
+      }
+      .l2-controls a[aria-current="true"] {
+        background: var(--a-bg-muted);
+        color: var(--a-text);
+        font-weight: var(--a-weight-semibold);
+      }
+      .l2-page {
+        min-height: calc(100% - 40px);
+        padding: 48px 64px;
+        background: var(--a-bg-subtle);
+      }
+      .l2-page-card {
+        width: min(760px, calc(100% - 128px));
+        margin: 24px auto;
+        padding: 28px;
+        border: 1px solid var(--a-border-faint);
+        border-radius: var(--a-radius-xl);
+        background: var(--a-surface);
+        box-shadow: var(--a-shadow-sm);
+      }
+      .l2-page-card h2 {
+        margin-bottom: 10px;
+        font-size: var(--a-text-xl);
+      }
+      .l2-page-card p {
+        margin: 0 0 18px;
+        color: var(--a-text-tertiary);
+      }
+      .l2-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        color: var(--a-text-secondary);
+        font-size: var(--a-text-sm);
+      }
+      .l2-spinner {
+        width: 13px;
+        height: 13px;
+        border: 2px solid var(--a-border-strong);
+        border-top-color: var(--a-accent);
+        border-radius: 50%;
+      }
+      .l2-nested-outer .a-dialog-panel {
+        width: min(760px, 94vw);
+        min-height: 460px;
+      }
+    </style>
+    <script>
+      const params = new URLSearchParams(location.search)
+      const theme = params.get("theme") === "dark" ? "dark" : "light"
+      const allowedStates = ["default", "busy", "locked", "nested"]
+      const state = allowedStates.includes(params.get("state")) ? params.get("state") : "default"
+      document.documentElement.dataset.colorScheme = theme
+      document.addEventListener("DOMContentLoaded", () => {
+        document.querySelectorAll("[data-l2-state]").forEach((node) => {
+          node.hidden = node.dataset.l2State !== state
+        })
+        document.querySelectorAll("[data-state-link]").forEach((link) => {
+          link.href = `?theme=${theme}&state=${link.dataset.stateLink}`
+          link.setAttribute("aria-current", String(link.dataset.stateLink === state))
+        })
+        const themeLink = document.querySelector("[data-theme-link]")
+        themeLink.href = `?theme=${theme === "dark" ? "light" : "dark"}&state=${state}`
+        themeLink.textContent = theme === "dark" ? "切到浅色" : "切到深色"
+        document.querySelector("[data-current]").textContent = `${theme} / ${state}`
+      })
+    </script>
+  </head>
+  <body class="a-ui">
+    <div class="l2-windowbar">
+      <span class="l2-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+      <nav class="l2-controls" aria-label="L2 状态选择">
+        <span data-current></span>
+        <a data-state-link="default">默认</a>
+        <a data-state-link="busy">Busy</a>
+        <a data-state-link="locked">不可关闭</a>
+        <a data-state-link="nested">嵌套</a>
+        <a data-theme-link></a>
+      </nav>
+    </div>
+    <main class="l2-page">
+      <section class="l2-page-card">
+        <h2>精选扩展</h2>
+        <p>以下扩展经过安全审核并按使用方式分组。</p>
+        <button class="a-btn" data-variant="secondary" data-size="md" type="button">启用</button>
+      </section>
+    </main>
+
+    <div class="a-ui a-dialog-root" data-beside-sidebar data-l2-state="default">
+      <div aria-hidden="true" class="a-dialog-backdrop"></div>
+      <div class="a-dialog-panel" data-size="sm" role="dialog" aria-modal="true" aria-labelledby="default-title" aria-describedby="default-description" tabindex="-1">
+        <span class="a-dialog-focus-guard" data-dialog-focus-guard="start" tabindex="0"></span>
+        <header class="a-dialog-header">
+          <div id="default-title" class="a-dialog-title">安全评审已过期</div>
+          <button type="button" class="a-dialog-close" aria-label="关闭">✕</button>
+        </header>
+        <div class="a-dialog-body">
+          <div id="default-description" class="a-dialog-description">
+            <p class="alpha-ext-dnote">该扩展的安全评审已到期，尚未完成复审。开启前请确认你仍信任它；已开启的不受影响。</p>
+          </div>
+        </div>
+        <footer class="a-dialog-footer">
+          <button autofocus class="a-btn" data-variant="ghost" data-size="md" type="button">取消</button>
+          <button class="a-btn" data-variant="primary" data-size="md" type="button">仍要启用</button>
+        </footer>
+        <span class="a-dialog-focus-guard" data-dialog-focus-guard="end" tabindex="0"></span>
+      </div>
+    </div>
+
+    <div class="a-ui a-dialog-root" data-beside-sidebar data-l2-state="busy">
+      <div aria-hidden="true" class="a-dialog-backdrop"></div>
+      <div class="a-dialog-panel" data-size="sm" role="dialog" aria-modal="true" aria-labelledby="busy-title" aria-describedby="busy-description" aria-busy="true" tabindex="-1">
+        <span class="a-dialog-focus-guard" data-dialog-focus-guard="start" tabindex="0"></span>
+        <header class="a-dialog-header">
+          <div id="busy-title" class="a-dialog-title">正在授权能力</div>
+        </header>
+        <div class="a-dialog-body">
+          <div id="busy-description" class="a-dialog-description">
+            <p>正在写入完整授权集并重新驱动安装。此操作没有安全取消通道。</p>
+            <span class="l2-status"><i class="l2-spinner" aria-hidden="true"></i>处理中，请稍候…</span>
+          </div>
+        </div>
+        <footer class="a-dialog-footer">
+          <button disabled class="a-btn" data-variant="ghost" data-size="md" type="button">取消</button>
+          <button disabled aria-busy="true" class="a-btn" data-variant="primary" data-size="md" data-loading type="button">授权并安装</button>
+        </footer>
+        <span class="a-dialog-focus-guard" data-dialog-focus-guard="end" tabindex="0"></span>
+      </div>
+    </div>
+
+    <div class="a-ui a-dialog-root" data-beside-sidebar data-l2-state="locked">
+      <div aria-hidden="true" class="a-dialog-backdrop"></div>
+      <div class="a-dialog-panel" data-size="sm" role="dialog" aria-modal="true" aria-labelledby="locked-title" aria-describedby="locked-description" tabindex="-1">
+        <span class="a-dialog-focus-guard" data-dialog-focus-guard="start" tabindex="0"></span>
+        <header class="a-dialog-header">
+          <div id="locked-title" class="a-dialog-title">确认运行时权限</div>
+        </header>
+        <div class="a-dialog-body">
+          <div id="locked-description" class="a-dialog-description">
+            <p>当前步骤不可通过 Escape、背景或关闭按钮退出；标题区不会显示伪关闭入口。</p>
+          </div>
+        </div>
+        <footer class="a-dialog-footer">
+          <button class="a-btn" data-variant="secondary" data-size="md" type="button">查看权限明细</button>
+          <button class="a-btn" data-variant="primary" data-size="md" type="button">继续</button>
+        </footer>
+        <span class="a-dialog-focus-guard" data-dialog-focus-guard="end" tabindex="0"></span>
+      </div>
+    </div>
+
+    <div class="a-ui a-dialog-root l2-nested-outer" data-beside-sidebar data-l2-state="nested" inert aria-hidden="true">
+      <div aria-hidden="true" class="a-dialog-backdrop"></div>
+      <div class="a-dialog-panel" data-size="lg" role="dialog" aria-labelledby="outer-title" tabindex="-1">
+        <span class="a-dialog-focus-guard" data-dialog-focus-guard="start" tabindex="0"></span>
+        <header class="a-dialog-header">
+          <div id="outer-title" class="a-dialog-title">安装扩展</div>
+        </header>
+        <div class="a-dialog-body"><p>下层 Dialog 已 inert，并从辅助技术的当前模态层级中隐藏。</p></div>
+        <footer class="a-dialog-footer"><button class="a-btn" data-variant="primary" data-size="md">安装</button></footer>
+        <span class="a-dialog-focus-guard" data-dialog-focus-guard="end" tabindex="0"></span>
+      </div>
+    </div>
+    <div class="a-ui a-dialog-root" data-beside-sidebar data-l2-state="nested">
+      <div aria-hidden="true" class="a-dialog-backdrop"></div>
+      <div class="a-dialog-panel" data-size="sm" role="dialog" aria-modal="true" aria-labelledby="inner-title" aria-describedby="inner-description" tabindex="-1">
+        <span class="a-dialog-focus-guard" data-dialog-focus-guard="start" tabindex="0"></span>
+        <header class="a-dialog-header">
+          <div id="inner-title" class="a-dialog-title">能力变更需确认</div>
+          <button type="button" class="a-dialog-close" aria-label="关闭">✕</button>
+        </header>
+        <div class="a-dialog-body"><div id="inner-description" class="a-dialog-description"><p>栈顶 Dialog 独占 aria-modal、Escape、背景与焦点圈禁。</p></div></div>
+        <footer class="a-dialog-footer">
+          <button autofocus class="a-btn" data-variant="ghost" data-size="md">取消</button>
+          <button class="a-btn" data-variant="primary" data-size="md">授权并安装</button>
+        </footer>
+        <span class="a-dialog-focus-guard" data-dialog-focus-guard="end" tabindex="0"></span>
+      </div>
+    </div>
+  </body>
+</html>

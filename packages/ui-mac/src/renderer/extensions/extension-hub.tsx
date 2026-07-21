@@ -31,7 +31,7 @@ import { pushToast } from "../alpha-ui/Toast"
 import { Banner } from "../alpha-ui/Banner"
 import type { ServerInfo } from "../sidebar/use-projects"
 import { useExtensions, isAuthzRequired, type ActionResult, type HubAgent } from "./use-extensions"
-import { ExtAuthzView, buildAuthzConfirmation, authzIsEscalation } from "./ext-authz"
+import { ExtAuthzView, ExtStandaloneAuthzDialog, buildAuthzConfirmation, authzIsEscalation } from "./ext-authz"
 import type { AuthorizationConfirmationWire, CapabilityDiffWire } from "../../shared/ext-capability-authorization"
 import type { Catalog, CatalogEntry, InstalledState } from "./catalog-types"
 import type { AuthState, InstallReceipt, InstallReceiptType, ProvenanceRequest } from "../../preload/types"
@@ -173,6 +173,7 @@ export function ExtensionHub(props: {
   open: Accessor<boolean>
   onClose: () => void
 }) {
+  let hubCloseButton: HTMLButtonElement | undefined
   // REQ-099(#307)项目上下文 = 当前路由的项目目录(与 composer-takeover 同款 parseRoute 先例;
   // 设计稿 Q1 采 A 案)。home/new-session 路由 = 无上下文 →「本项目」组不渲染。
   const loc = useLocation()
@@ -963,7 +964,7 @@ export function ExtensionHub(props: {
   }
   const authzFooter = () => (
     <>
-      <Button variant="ghost" disabled={authzBusy()} onClick={cancelAuthz}>
+      <Button variant="ghost" autofocus disabled={authzBusy()} onClick={cancelAuthz}>
         {t("alpha.ext.cancel")}
       </Button>
       <Button variant="primary" loading={authzBusy()} onClick={() => void confirmAuthz()}>
@@ -1627,6 +1628,7 @@ export function ExtensionHub(props: {
               </For>
             </div>
             <button
+              ref={(element) => (hubCloseButton = element)}
               class="alpha-ext-close"
               title={t("alpha.ext.close")}
               aria-label={t("alpha.ext.close")}
@@ -2194,9 +2196,11 @@ export function ExtensionHub(props: {
           besideSidebar
           size="sm"
           title={t("alpha.ext.expiredConfirmTitle")}
+          restoreFocus={() => hubCloseButton}
+          description={<p class="alpha-ext-dnote">{t("alpha.ext.expiredConfirmBody", { date: expiredConfirmDate() })}</p>}
           footer={
             <>
-              <Button variant="ghost" onClick={() => setExpiredConfirm(null)}>
+              <Button variant="ghost" autofocus onClick={() => setExpiredConfirm(null)}>
                 {t("alpha.ext.cancel")}
               </Button>
               <Button variant="primary" onClick={() => void proceedExpiredEnable()}>
@@ -2204,13 +2208,12 @@ export function ExtensionHub(props: {
               </Button>
             </>
           }
-        >
-          <p class="alpha-ext-dnote">{t("alpha.ext.expiredConfirmBody", { date: expiredConfirmDate() })}</p>
-        </Dialog>
+        />
         <Dialog
           open={!!confirming()}
           onClose={closeAuthz}
           dismissible={!confirmBusy() && !authzBusy()}
+          busy={confirmBusy() || authzBusy()}
           besideSidebar
           size="sm"
           title={
@@ -2220,12 +2223,13 @@ export function ExtensionHub(props: {
                 ? t("alpha.ext.confirmTitle", { name: confirming()!.displayName })
                 : ""
           }
+          restoreFocus={() => hubCloseButton}
           footer={
             authz()?.host === "confirm" ? (
               authzFooter()
             ) : (
               <>
-                <Button variant="ghost" disabled={confirmBusy()} onClick={closeAuthz}>
+                <Button variant="ghost" autofocus disabled={confirmBusy()} onClick={closeAuthz}>
                   {t("alpha.ext.cancel")}
                 </Button>
                 <Button
@@ -2329,19 +2333,22 @@ export function ExtensionHub(props: {
 
         {/* #348:独立授权框 —— skill 直装 / 更新扩权(无前置确认框的宿主)。busy 期间不可关
             (dismissible=false:IPC 无取消能力);取消零权威副作用、静默。 */}
-        <Dialog
-          open={authz()?.host === "standalone"}
-          onClose={cancelAuthz}
-          dismissible={!authzBusy()}
-          besideSidebar
-          size="sm"
-          title={authzTitle()}
-          footer={authzFooter()}
-        >
-          <Show when={authz()?.host === "standalone"}>
-            <ExtAuthzView name={authz()!.entry.displayName} isBundle={authz()!.entry.type === "bundle"} mode={authz()!.mode} diffs={authz()!.diffs} />
-          </Show>
-        </Dialog>
+        <ExtStandaloneAuthzDialog
+          state={
+            authz()?.host === "standalone"
+              ? {
+                  name: authz()!.entry.displayName,
+                  isBundle: authz()!.entry.type === "bundle",
+                  mode: authz()!.mode,
+                  diffs: authz()!.diffs,
+                }
+              : null
+          }
+          busy={authzBusy()}
+          onCancel={cancelAuthz}
+          onConfirm={() => void confirmAuthz()}
+          restoreFocus={() => hubCloseButton}
+        />
 
         {/* T6:导入输入弹窗(Git URL / npm 包名)。失败行内呈现于弹窗内(B11),成功 toast。 */}
         <Dialog
@@ -2353,6 +2360,7 @@ export function ExtensionHub(props: {
           besideSidebar
           size="sm"
           title={importDialog() === "git" ? t("alpha.ext.importGitTitle") : t("alpha.ext.importNpmTitle")}
+          restoreFocus={() => hubCloseButton}
           footer={
             <>
               <Button variant="ghost" onClick={() => setImportDialog(null)}>
@@ -2393,6 +2401,7 @@ export function ExtensionHub(props: {
           besideSidebar
           size="sm"
           title={t("alpha.ext.customMcpTitle")}
+          restoreFocus={() => hubCloseButton}
           footer={
             <>
               <Button variant="ghost" onClick={() => setCustomMcpOpen(false)}>
@@ -2441,6 +2450,7 @@ export function ExtensionHub(props: {
           besideSidebar
           size="md"
           title={t("alpha.ext.importAgentTitle")}
+          restoreFocus={() => hubCloseButton}
           footer={
             <>
               <Button variant="ghost" onClick={() => setAgentPreview(null)}>
