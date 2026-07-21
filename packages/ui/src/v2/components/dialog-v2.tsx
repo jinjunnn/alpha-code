@@ -1,5 +1,7 @@
 import { Dialog as Kobalte } from "@kobalte/core/dialog"
 import { type ComponentProps, type JSXElement, type ParentProps, Show, children, splitProps } from "solid-js"
+import { Dynamic } from "solid-js/web"
+import { useDialogHost } from "../../context/dialog"
 import "./dialog-v2.css"
 
 export interface DialogProps extends ParentProps {
@@ -18,6 +20,25 @@ export function DialogFooter(props: ParentProps) {
 }
 
 export function Dialog(props: DialogProps) {
+  const host = useDialogHost()
+  if (host) {
+    return (
+      <Dynamic
+        component={host.component}
+        open={host.open()}
+        onClose={host.close}
+        title={props.title}
+        description={props.description}
+        action={props.action}
+        size={props.size}
+        class={props.class}
+        classList={props.classList}
+        fit={props.fit}
+      >
+        {props.children}
+      </Dynamic>
+    )
+  }
   const [local] = splitProps(props, [
     "title",
     "description",
