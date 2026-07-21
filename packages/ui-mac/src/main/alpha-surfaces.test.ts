@@ -9,6 +9,11 @@ mock.module("electron", () => ({
   BrowserWindow: class {},
   dialog: {},
   ipcMain: { handle: () => {} },
+  utilityProcess: {
+    fork: () => {
+      throw new Error("unexpected utilityProcess.fork")
+    },
+  },
 }))
 mock.module("./logging", () => ({ write: () => {}, getLogger: () => undefined }))
 

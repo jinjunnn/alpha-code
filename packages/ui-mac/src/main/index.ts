@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import { mkdirSync, rmSync } from "node:fs"
 import * as http from "node:http"
 import { createServer } from "node:net"
-import { homedir, tmpdir } from "node:os"
+import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
@@ -65,6 +65,7 @@ import { productionCasGcConfig, startCasGcScheduler } from "./ext-cas-gc-schedul
 import { registerSettingsIpcHandlers } from "./settings-ipc"
 import { ensureAlphaLayoutDefault } from "./alpha-defaults"
 import { initialSelfHealState, noteSpawn, planSelfHeal } from "./sidecar-self-heal"
+import { ensureEngineScratchCwd } from "./engine-scratch-cwd"
 // #408:session-grant 生命周期接线(会话边界 = sidecar 运行期;栅栏语义见 ext-session-grants.ts)。
 import { sessionGrantRegistry } from "./ext-session-grants"
 import type { SessionGrantsEndedEventWire } from "../shared/ext-session-grant-wire"
@@ -233,11 +234,6 @@ function ensureLoopbackNoProxy() {
 const main = Effect.gen(function* () {
   contextMenu({ showSaveImageAs: true, showLookUpSelection: false, showSearchWithGoogle: false })
 
-  // on macOS apps run in `/` which can cause issues with ripgrep
-  try {
-    process.chdir(homedir())
-  } catch {}
-
   process.env.OPENCODE_DISABLE_EMBEDDED_WEB_UI = "true"
 
   const appId = app.isPackaged ? APP_IDS[CHANNEL] : "ai.opencode.desktop.dev"
@@ -274,6 +270,13 @@ const main = Effect.gen(function* () {
     onboardingTestRoot ? join(onboardingTestRoot, "desktop") : join(app.getPath("appData"), appId),
   )
   if (onboardingTestRoot) app.setPath("sessionData", join(onboardingTestRoot, "session"))
+  // macOS apps can start in `/`. Keep MAIN and directory-less sidecar work in an empty app-owned
+  // directory instead of HOME; if userData is unavailable this early, fail over to OS temp only.
+  try {
+    process.chdir(ensureEngineScratchCwd(app.getPath("userData")))
+  } catch {
+    process.chdir(ensureEngineScratchCwd(join(tmpdir(), "alpha-code")))
+  }
   logger = initLogging()
   initCrashReporter()
   recoveryService = createRecoveryService({

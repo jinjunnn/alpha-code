@@ -16,6 +16,7 @@ import { probeShellEnvAsync, readShellEnvCache, sanitizeCachedShellEnv, writeShe
 import { getStore } from "./store"
 import { DEFAULT_SERVER_URL_KEY } from "./store-keys"
 import { isEphemeralLocalServerUrl } from "../shared/ephemeral-server-url"
+import { ensureEngineScratchCwd } from "./engine-scratch-cwd"
 
 export type HealthCheck = { wait: Promise<void> }
 
@@ -35,6 +36,8 @@ type SpawnLocalServerOptions = {
   onStdout?: (message: string) => void
   onStderr?: (message: string) => void
   onExit?: (code: number) => void
+  healthCheck?: typeof checkHealth
+  fork?: typeof utilityProcess.fork
 }
 
 export function getDefaultServerUrl(): string | null {
@@ -160,8 +163,8 @@ export async function spawnLocalServer(
   // 直指 app 资源、.alpha 不再落出厂链;fork 前无需重复(app 路径仅跨重启变化)。
 
   const sidecar = join(dirname(fileURLToPath(import.meta.url)), "sidecar.js")
-  const child = utilityProcess.fork(sidecar, [], {
-    cwd: process.cwd(),
+  const child = (options.fork ?? utilityProcess.fork)(sidecar, [], {
+    cwd: ensureEngineScratchCwd(options.userDataPath),
     env: createSidecarEnv(),
     serviceName: SIDECAR_SERVICE_NAME,
     stdio: "pipe",
@@ -252,7 +255,7 @@ export async function spawnLocalServer(
     const ready = async () => {
       // D1: probe immediately, then back off ~100ms only after a failed check (was sleep-first,
       // costing every startup an upfront ~100ms). Mirrors wsl/startup.ts `pollWslHealth` ordering.
-      await pollUntilHealthy(() => checkHealth(url, password), 100)
+      await pollUntilHealthy(() => (options.healthCheck ?? checkHealth)(url, password), 100)
       healthy = true
     }
 

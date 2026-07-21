@@ -65,6 +65,11 @@ mock.module("electron", () => ({
     showMessageBox: async () => ({ response: 0 }),
     showErrorBox: () => {},
   },
+  utilityProcess: {
+    fork: () => {
+      throw new Error("unexpected utilityProcess.fork")
+    },
+  },
 }))
 mock.module("./windows", () => ({
   createRecoveryWindow: (onFatal: (reason: FatalReason) => void) => {
