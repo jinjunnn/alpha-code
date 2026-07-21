@@ -50,7 +50,7 @@ import { SessionSpikeHost } from "./alpha-ui/session-spike/session-spike-host" /
 import { alphaSessionWorkspaceSurface } from "./alpha-ui/session-workspace/alpha-session-workspace" // REQ-088 T2
 import { AlphaOnboarding } from "./alpha-ui/AlphaOnboarding"
 import { AlphaSettings } from "./alpha-ui/settings"
-import { isSettingsAuthorityTarget, settingsAuthorityStorage } from "./alpha-ui/settings-authority-client"
+import { settingsAuthorityCoordinator } from "./alpha-ui/settings-authority-client"
 import { setSettingsOpen, settingsOpen } from "./alpha-ui/settings-state"
 import { ExtensionHub } from "./extensions/extension-hub"
 import { extHubOpen, setExtHubOpen } from "./extensions/ext-hub-state"
@@ -149,14 +149,10 @@ const createPlatform = (): Platform => {
     const cache = new Map<string, AsyncStorage>()
 
     const createStorage = (name: string) => {
-      const settings = settingsAuthorityStorage()
       const api: AsyncStorage = {
-        getItem: (key: string) =>
-          isSettingsAuthorityTarget(name, key) ? settings.getItem(key) : window.api.storeGet(name, key),
-        setItem: (key: string, value: string) =>
-          isSettingsAuthorityTarget(name, key) ? settings.setItem(key, value) : window.api.storeSet(name, key, value),
-        removeItem: (key: string) =>
-          isSettingsAuthorityTarget(name, key) ? settings.removeItem(key) : window.api.storeDelete(name, key),
+        getItem: (key: string) => window.api.storeGet(name, key),
+        setItem: (key: string, value: string) => window.api.storeSet(name, key, value),
+        removeItem: (key: string) => window.api.storeDelete(name, key),
         clear: () => window.api.storeClear(name),
         key: async (index: number) => (await window.api.storeKeys(name))[index],
         getLength: () => window.api.storeLength(name),
@@ -182,6 +178,7 @@ const createPlatform = (): Platform => {
     platform: "desktop",
     os,
     version: pkg.version,
+    settings: settingsAuthorityCoordinator,
 
     async openDirectoryPickerDialog(opts) {
       return window.api.openDirectoryPicker({

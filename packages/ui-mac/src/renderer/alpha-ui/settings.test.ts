@@ -9,7 +9,10 @@ import { build } from "vite"
 import type { createComponent, createSignal } from "solid-js"
 import type { render } from "solid-js/web"
 import type { AlphaSettings } from "./settings"
-import type { SettingsSurfaceApi } from "./settings-authority-client"
+import {
+  createSettingsAuthorityCoordinator,
+  type SettingsSurfaceApi,
+} from "./settings-authority-client"
 import { ALPHA_SETTINGS_DEFAULTS, type AlphaSettings as AlphaSettingsValue } from "../../shared/settings-adapters"
 
 type TestRuntime = {
@@ -17,6 +20,7 @@ type TestRuntime = {
   createSignal: typeof createSignal
   render: typeof render
   AlphaSettings: typeof AlphaSettings
+  SettingsProductionHarness: typeof import("./settings-test-runtime").SettingsProductionHarness
 }
 
 const runtimeDirectory = mkdtempSync(join(tmpdir(), "alpha-settings-render-"))
@@ -24,11 +28,12 @@ await build({
   configFile: false,
   logLevel: "silent",
   plugins: [appPlugin.at(-1)!],
+  resolve: { alias: { "@": join(import.meta.dir, "../../../../app/src") } },
   build: {
     emptyOutDir: true,
     outDir: runtimeDirectory,
     lib: {
-      entry: join(import.meta.dir, "settings-test-runtime.ts"),
+      entry: join(import.meta.dir, "settings-test-runtime.tsx"),
       formats: ["es"],
       fileName: () => "settings-test-runtime.js",
     },
@@ -130,6 +135,20 @@ function mount(surfaceApi: SettingsSurfaceApi) {
   return { open, setOpen, onClose }
 }
 
+function mountProduction(
+  coordinator: ReturnType<typeof createSettingsAuthorityCoordinator>["coordinator"],
+  surfaceApi: SettingsSurfaceApi,
+) {
+  const host = document.createElement("div")
+  document.getElementById("root")!.append(host)
+  disposers.push(
+    runtime.render(
+      () => runtime.createComponent(runtime.SettingsProductionHarness, { coordinator, api: surfaceApi }),
+      host,
+    ),
+  )
+}
+
 function input(selector: string, next: string) {
   const element = document.querySelector<HTMLInputElement>(selector)!
   element.value = next
@@ -142,6 +161,54 @@ function click(selector: string) {
 }
 
 describe("Alpha Settings real Solid render", () => {
+  test("shares saved authority with the production context and rebases later context setters", async () => {
+    const authority = { value: value(), revision: "s1:initial" }
+    const revisions: string[] = []
+    const shared = createSettingsAuthorityCoordinator({
+      read: async () => ({ ok: true, value: structuredClone(authority.value), revision: authority.revision }),
+      validate: async () => ({ ok: true }),
+      write: async (input) => {
+        revisions.push(input.expectedRevision)
+        if (input.expectedRevision !== authority.revision) {
+          return {
+            ok: false,
+            code: "revision-conflict",
+            authoritative: { value: structuredClone(authority.value), revision: authority.revision },
+          }
+        }
+        authority.value = structuredClone(input.value)
+        authority.revision = `s1:saved-${revisions.length}`
+        return {
+          ok: true,
+          changed: true,
+          value: structuredClone(authority.value),
+          revision: authority.revision,
+        }
+      },
+    })
+    mountProduction(shared.coordinator, {
+      settings: shared.client,
+      extensionStorage: api().extensionStorage,
+    })
+    await flush()
+    await flush()
+
+    const autoSave = document.querySelector<HTMLInputElement>("input[type='checkbox']")!
+    autoSave.click()
+    click("[data-settings-save]")
+    await flush()
+    await flush()
+
+    expect(document.querySelector("[data-context-auto-save]")?.textContent).toBe("false")
+    click("[data-context-update-release-notes]")
+    await flush()
+    await flush()
+
+    expect(authority.value.general.autoSave).toBe(false)
+    expect(authority.value.general.releaseNotes).toBe(false)
+    expect(revisions).toEqual(["s1:initial", "s1:saved-1"])
+  })
+
   test("fails closed on read failure and recovers by reading authority again", async () => {
     const read = mock()
     read.mockImplementationOnce(async () => ({ ok: false, code: "read-failed" }) as const)
@@ -191,6 +258,38 @@ describe("Alpha Settings real Solid render", () => {
     expect(write).toHaveBeenCalledTimes(1)
     expect(write.mock.calls[0]![0].expectedRevision).toBe("s1:initial")
     expect(write.mock.calls[0]![0].value.appearance.fontSize).toBe(16)
+    expect(document.body.textContent).toContain("设置已保存")
+  })
+
+  test("submits safe defaults to repair invalid authority without requiring a field edit", async () => {
+    const write = mock(
+      async (payload: { value: AlphaSettingsValue; expectedRevision: string }) =>
+        ({
+          ok: true,
+          changed: true,
+          value: structuredClone(payload.value),
+          revision: "s1:repaired",
+        }) as const,
+    )
+    mount(
+      api({
+        read: async () => ({ ok: false, code: "authority-invalid", revision: "s1:invalid" }),
+        write,
+      }),
+    )
+    await flush()
+
+    const save = document.querySelector<HTMLButtonElement>("[data-settings-save]")!
+    expect(document.body.textContent).toContain("已存设置无法校验")
+    expect(save.disabled).toBe(false)
+    save.click()
+    await flush()
+
+    expect(write).toHaveBeenCalledTimes(1)
+    expect(write.mock.calls[0]![0]).toEqual({
+      value: ALPHA_SETTINGS_DEFAULTS,
+      expectedRevision: "s1:invalid",
+    })
     expect(document.body.textContent).toContain("设置已保存")
   })
 
@@ -345,6 +444,45 @@ describe("Alpha Settings real Solid render", () => {
     await flush()
     expect(inspect).toHaveBeenCalledTimes(1)
     expect(document.querySelector("[data-storage-code='ok']")).not.toBeNull()
+  })
+
+  test("polls a transitional snapshot after close and reopen without accepting the old operation", async () => {
+    const ready = {
+      code: "ok" as const,
+      blobsTotal: 7,
+      sweepableCount: 0,
+      sweptCount: 0,
+      keptByGrace: 2,
+      warningCount: 0,
+    }
+    const old = { ...ready, blobsTotal: 99 }
+    let finishInspect: ((result: typeof old) => void) | undefined
+    const inspect = mock(() => new Promise<typeof old>((resolve) => (finishInspect = resolve)))
+    const snapshot = mock()
+    snapshot.mockImplementationOnce(async () => ({ state: "not-run", result: null }) as const)
+    snapshot.mockImplementationOnce(async () => ({ state: "checking", result: null }) as const)
+    snapshot.mockImplementation(async () => ({ state: "ready", result: ready }) as const)
+    const mounted = mount(api({ inspect, snapshot: snapshot as SettingsSurfaceApi["extensionStorage"]["snapshot"] }))
+    await flush()
+
+    click("[data-settings-section='storage']")
+    click("[data-storage-inspect]")
+    mounted.setOpen(false)
+    await flush()
+    mounted.setOpen(true)
+    await flush()
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    await flush()
+    click("[data-settings-section='storage']")
+
+    expect(snapshot).toHaveBeenCalledTimes(3)
+    expect(document.querySelector("[data-storage-field='blobsTotal']")?.textContent).toContain("7")
+    expect(document.querySelector<HTMLButtonElement>("[data-storage-inspect]")?.disabled).toBe(false)
+
+    finishInspect?.(old)
+    await flush()
+    expect(document.querySelector("[data-storage-field='blobsTotal']")?.textContent).toContain("7")
+    expect(document.querySelector("[data-storage-field='blobsTotal']")?.textContent).not.toContain("99")
   })
 
   test("closes on Escape and restores the calling focus", async () => {

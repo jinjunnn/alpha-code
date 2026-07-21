@@ -6,6 +6,7 @@ const root = join(import.meta.dir, "../../../")
 const rendererIndex = Bun.file(join(root, "src/renderer/index.tsx"))
 const settingsSurface = Bun.file(join(root, "src/renderer/alpha-ui/settings.tsx"))
 const mainIpc = Bun.file(join(root, "src/main/ipc.ts"))
+const migration = Bun.file(join(root, "src/main/migrate.ts"))
 const upstreamPatch = Bun.file(join(root, "scripts/patch-upstream.ts"))
 const sidebarCss = Bun.file(join(root, "src/renderer/sidebar/sidebar.css"))
 const appLayout = Bun.file(join(root, "../app/src/pages/layout.tsx"))
@@ -36,6 +37,8 @@ describe("Alpha Settings ownership ratchets", () => {
     expect(await settingsSurface.text()).not.toContain("<Portal")
     expect(await upstreamPatch.text()).not.toContain("settings-v2")
     expect(await sidebarCss.text()).not.toContain("settings-v2")
+    expect(source).toContain("settings: settingsAuthorityCoordinator")
+    expect(source).not.toContain("settingsAuthorityStorage")
   })
 
   test("all ui-mac Settings entrypoints short-circuit to the Alpha owner", async () => {
@@ -55,6 +58,22 @@ describe("Alpha Settings ownership ratchets", () => {
     expect(ipc).toContain('ipcMain.handle("store-set"')
     expect(ipc.match(/assertGenericStoreAccess\(name, key\)/g)?.length).toBeGreaterThanOrEqual(3)
     expect(ipc).toContain("assertGenericStoreAccess(name)")
+    for (const channel of ["store-get", "store-set", "store-delete", "store-clear"]) {
+      const start = ipc.indexOf(`ipcMain.handle(\"${channel}\"`)
+      const end = ipc.indexOf("ipcMain.handle(\"", start + 20)
+      const handler = ipc.slice(start, end)
+      expect(handler.indexOf("assertGenericStoreAccess")).toBeGreaterThan(-1)
+      expect(handler.indexOf("getStore(name)")).toBeGreaterThan(handler.indexOf("assertGenericStoreAccess"))
+    }
+  })
+
+  test("Tauri migration rejects the reserved Settings authority before generic writes", async () => {
+    const source = await migration.text()
+    const guard = source.indexOf("isRendererSettingsAuthorityTarget(filename, key)")
+    const write = source.indexOf("target.set(key, value)")
+    expect(guard).toBeGreaterThan(-1)
+    expect(write).toBeGreaterThan(guard)
+    expect(source).toContain("tauri migration: skipped reserved default.dat/settings.v3")
   })
 
   test("L2 records four static states in both themes without forbidden report fields", async () => {

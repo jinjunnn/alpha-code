@@ -1,75 +1,104 @@
-import type { AlphaSettings, SettingsReadResult, SettingsWriteResult } from "../../shared/settings-adapters"
+import type {
+  Settings,
+  SettingsAuthorityCoordinator,
+  SettingsAuthoritySnapshot,
+} from "@opencode-ai/app"
+import type {
+  AlphaSettings,
+  SettingsAuthority,
+  SettingsReadResult,
+  SettingsWriteResult,
+} from "../../shared/settings-adapters"
 
-const SETTINGS_KEY = "settings.v3"
-const SETTINGS_STORE = "default.dat"
-const SETTINGS_ACCESS_ERROR = "Settings authority is available only through window.api.settings"
-
-let revision: string | undefined
-
-function trackRead(result: SettingsReadResult) {
-  if (result.ok) revision = result.revision
-  if (!result.ok) revision = result.code === "authority-invalid" ? result.revision : undefined
-  return result
+type SettingsAdapterApi = {
+  read: () => Promise<SettingsReadResult>
+  validate: (value: unknown) => Promise<{ ok: true } | { ok: false; code: "invalid-input" }>
+  write: (input: { value: AlphaSettings; expectedRevision: string }) => Promise<SettingsWriteResult>
 }
 
-function trackWrite(result: SettingsWriteResult) {
-  if (result.ok) revision = result.revision
-  if (!result.ok && result.authoritative) revision = result.authoritative.revision
-  if (!result.ok && result.revision) revision = result.revision
-  return result
-}
+export function createSettingsAuthorityCoordinator(api: SettingsAdapterApi) {
+  const state: { authority?: SettingsAuthority; tail: Promise<void> } = { tail: Promise.resolve() }
+  const listeners = new Set<(snapshot: SettingsAuthoritySnapshot) => void>()
 
-/** Shared renderer client: the Alpha surface and the app Settings context use the same CAS revision. */
-export const settingsAuthorityClient = {
-  read: () => window.api.settings.read().then(trackRead),
-  validate: (value: unknown) => window.api.settings.validate(value),
-  write: (input: { value: AlphaSettings; expectedRevision: string }) => window.api.settings.write(input).then(trackWrite),
-}
-
-export function isSettingsAuthorityTarget(name: string, key: string) {
-  return name === SETTINGS_STORE && key === SETTINGS_KEY
-}
-
-/**
- * Typed storage shape for the app Settings context. The generic store IPC is ratcheted shut for
- * this exact key; hydration and reactive exact-replay writes are translated to the typed adapter.
- */
-export function settingsAuthorityStorage() {
-  const assertKey = (key: string) => {
-    if (key === SETTINGS_KEY) return
-    throw new Error(SETTINGS_ACCESS_ERROR)
+  const enqueue = <Result>(operation: () => Promise<Result>) => {
+    const result = state.tail.then(operation)
+    state.tail = result.then(
+      () => undefined,
+      () => undefined,
+    )
+    return result
   }
-  const requireRevision = async () => {
-    if (revision) return revision
-    const result = await settingsAuthorityClient.read()
-    if (result.ok || result.code === "authority-invalid") return result.revision
+  const publish = (authority: SettingsAuthority) => {
+    state.authority = {
+      value: structuredClone(authority.value),
+      revision: authority.revision,
+    }
+    const snapshot: SettingsAuthoritySnapshot = {
+      value: structuredClone(authority.value),
+      revision: authority.revision,
+    }
+    listeners.forEach((listener) => listener(snapshot))
+    return snapshot
+  }
+  const trackRead = (result: SettingsReadResult) => {
+    if (result.ok) publish(result)
+    if (!result.ok && result.code === "authority-invalid") state.authority = undefined
+    return result
+  }
+  const trackWrite = (result: SettingsWriteResult) => {
+    if (result.ok) publish(result)
+    if (!result.ok && result.authoritative) publish(result.authoritative)
+    return result
+  }
+  const requireAuthority = (result: SettingsReadResult) => {
+    if (result.ok) return { value: structuredClone(result.value), revision: result.revision }
     throw new Error(`Settings authority unavailable: ${result.code}`)
   }
+  const commit = async (
+    change: (current: Settings) => Settings,
+    attempts: number,
+  ): Promise<SettingsAuthoritySnapshot> => {
+    const authority = state.authority ?? requireAuthority(trackRead(await api.read()))
+    const value = change(structuredClone(authority.value))
+    const validated = await api.validate(value)
+    if (!validated.ok) throw new Error(`Settings candidate rejected: ${validated.code}`)
+    const result = trackWrite(await api.write({ value, expectedRevision: authority.revision }))
+    if (result.ok) return { value: structuredClone(result.value), revision: result.revision }
+    if (result.code === "revision-conflict" && result.authoritative && attempts > 0) {
+      return commit(change, attempts - 1)
+    }
+    throw new Error(`Settings commit failed: ${result.code}`)
+  }
 
-  return {
-    getItem: async (key: string) => {
-      assertKey(key)
-      const result = await settingsAuthorityClient.read()
-      if (!result.ok) throw new Error(`Settings authority unavailable: ${result.code}`)
-      return JSON.stringify(result.value)
-    },
-    setItem: async (key: string, raw: string) => {
-      assertKey(key)
-      const value = JSON.parse(raw) as unknown
-      const validated = await settingsAuthorityClient.validate(value)
-      if (!validated.ok) throw new Error(`Settings candidate rejected: ${validated.code}`)
-      const result = await settingsAuthorityClient.write({
-        value: value as AlphaSettings,
-        expectedRevision: await requireRevision(),
-      })
-      if (!result.ok) throw new Error(`Settings commit failed: ${result.code}`)
-    },
-    removeItem: async (key: string) => {
-      assertKey(key)
-      throw new Error(SETTINGS_ACCESS_ERROR)
+  const client = {
+    read: () => enqueue(() => api.read().then(trackRead)),
+    validate: (value: unknown) => api.validate(value),
+    write: (input: { value: AlphaSettings; expectedRevision: string }) =>
+      enqueue(() => api.write(input).then(trackWrite)),
+  }
+  const coordinator: SettingsAuthorityCoordinator = {
+    read: () => client.read().then(requireAuthority),
+    update: (change) => enqueue(() => commit(change, 2)),
+    subscribe(listener) {
+      listeners.add(listener)
+      if (state.authority) {
+        listener({ value: structuredClone(state.authority.value), revision: state.authority.revision })
+      }
+      return () => listeners.delete(listener)
     },
   }
+
+  return { client, coordinator }
 }
+
+const authority = createSettingsAuthorityCoordinator({
+  read: () => window.api.settings.read(),
+  validate: (value) => window.api.settings.validate(value),
+  write: (input) => window.api.settings.write(input),
+})
+
+export const settingsAuthorityClient = authority.client
+export const settingsAuthorityCoordinator = authority.coordinator
 
 export type SettingsSurfaceApi = {
   settings: {

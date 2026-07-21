@@ -50,7 +50,12 @@ The desktop platform's `openSettings` seam routes sidebar, command, menu, and
 fallback-home entrypoints to that owner, so the Alpha host never mounts an
 upstream Settings dialog or depends on its DOM. Its durable Settings authority
 is also excluded from the generic renderer store bridge and is reachable only
-through the typed Settings adapter.
+through the typed Settings adapter. A desktop Platform coordinator serializes
+that adapter's reads and writes, then publishes each successful full value and
+opaque revision to both the Alpha overlay and the upstream `SettingsProvider`.
+Context setters submit field-level transforms through the same coordinator, so
+they rebase on the current authority instead of persisting a stale full-store
+snapshot.
 
 The inventory is intentionally limited to top-level ownership boundaries. Tabs,
 popovers, controls, and render helpers belong to their enclosing surface unless

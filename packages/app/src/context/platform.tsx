@@ -5,6 +5,7 @@ import type { DesktopMenuAction } from "../desktop-menu"
 import { ServerConnection } from "./server"
 import type { WslServersPlatform } from "../wsl/types"
 import type { UpdaterPlatform } from "../updater"
+import type { SettingsAuthorityCoordinator } from "./settings"
 
 type PickerPaths = string | string[] | null
 type OpenDirectoryPickerOptions = { title?: string; multiple?: boolean }
@@ -66,6 +67,9 @@ type PlatformBase = {
 
   /** Host-owned Settings surface. When present, upstream Settings dialogs are not mounted. */
   openSettings?(): void
+
+  /** Host-owned Settings authority shared by the upstream context and replacement surface. */
+  settings?: SettingsAuthorityCoordinator
 
   /** Application-global desktop updater */
   updater?: UpdaterPlatform

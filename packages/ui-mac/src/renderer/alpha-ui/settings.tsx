@@ -62,6 +62,8 @@ const STORAGE_CODE_LABEL: Record<ExtensionStorageResult["code"], string> = {
   "fail-closed": "安全关闭",
   "worker-failed": "工作进程失败",
 }
+const STORAGE_POLL_INTERVAL_MS = 100
+const STORAGE_POLL_ATTEMPTS = 100
 
 type SettingsWriteFailureCode = Extract<SettingsWriteResult, { ok: false }>["code"]
 
@@ -89,10 +91,12 @@ export function AlphaSettings(props: { open: boolean; onClose: () => void; api?:
   let restoreFocus: HTMLElement | null = null
   let loadRun = 0
   let storageRun = 0
+  let storagePoll: ReturnType<typeof setTimeout> | undefined
 
   const dirty = () => {
     const value = draft()
     if (!value) return false
+    if (loadState() === "repair") return true
     return JSON.stringify(value) !== JSON.stringify(authority()?.value ?? ALPHA_SETTINGS_DEFAULTS)
   }
   const readyToEdit = () => loadState() === "ready" || loadState() === "repair"
@@ -153,26 +157,47 @@ export function AlphaSettings(props: { open: boolean; onClose: () => void; api?:
       )
   }
 
+  const cancelStoragePoll = () => {
+    if (!storagePoll) return
+    clearTimeout(storagePoll)
+    storagePoll = undefined
+  }
+
   const loadStorage = () => {
     const run = ++storageRun
-    void api()
-      .extensionStorage.snapshot()
-      .then(
-        (result) => {
-          if (run !== storageRun || !props.open) return
-          setStorage(result)
-        },
-        () => {
-          if (run !== storageRun || !props.open) return
-          setStorage({ state: "ready", result: STORAGE_FAILURE })
-        },
-      )
+    cancelStoragePoll()
+    const poll = (attempts: number) => {
+      void api()
+        .extensionStorage.snapshot()
+        .then(
+          (result) => {
+            if (run !== storageRun || !props.open) return
+            setStorage(result)
+            if (result.state !== "checking" && result.state !== "collecting") return
+            if (attempts === 0) {
+              setStorage({ state: "ready", result: STORAGE_FAILURE })
+              return
+            }
+            storagePoll = setTimeout(() => {
+              storagePoll = undefined
+              if (run !== storageRun || !props.open) return
+              poll(attempts - 1)
+            }, STORAGE_POLL_INTERVAL_MS)
+          },
+          () => {
+            if (run !== storageRun || !props.open) return
+            setStorage({ state: "ready", result: STORAGE_FAILURE })
+          },
+        )
+    }
+    poll(STORAGE_POLL_ATTEMPTS)
   }
 
   createEffect(() => {
     if (!props.open) {
       loadRun += 1
       storageRun += 1
+      cancelStoragePoll()
       return
     }
     restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -218,7 +243,10 @@ export function AlphaSettings(props: { open: boolean; onClose: () => void; api?:
     }
   }
   document.addEventListener("keydown", onKeyDown)
-  onCleanup(() => document.removeEventListener("keydown", onKeyDown))
+  onCleanup(() => {
+    cancelStoragePoll()
+    document.removeEventListener("keydown", onKeyDown)
+  })
 
   const updateGeneral = <Key extends keyof AlphaSettings["general"]>(
     key: Key,
@@ -299,6 +327,7 @@ export function AlphaSettings(props: { open: boolean; onClose: () => void; api?:
 
   const runStorage = (kind: "inspect" | "collect") => {
     if (storageBusy()) return
+    cancelStoragePoll()
     const run = ++storageRun
     setStorage({ state: kind === "inspect" ? "checking" : "collecting", result: null })
     const operation = kind === "inspect" ? api().extensionStorage.inspect : api().extensionStorage.collect
