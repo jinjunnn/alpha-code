@@ -5,12 +5,21 @@ import { I18nProvider } from "@opencode-ai/ui/context"
 import { DialogProvider, type DialogHost } from "@opencode-ai/ui/context/dialog"
 import { FileComponentProvider } from "@opencode-ai/ui/context/file"
 import { MarkedProvider } from "@opencode-ai/ui/context/marked"
-import { File } from "@opencode-ai/ui/file"
+import { File } from "@opencode-ai/session-ui/file"
 import { Font } from "@opencode-ai/ui/font"
 import { Splash } from "@opencode-ai/ui/logo"
 import { ThemeProvider } from "@opencode-ai/ui/theme/context"
 import { MetaProvider } from "@solidjs/meta"
-import { type BaseRouterProps, Navigate, Route, Router, useParams, useSearchParams } from "@solidjs/router"
+import {
+  type BaseRouterProps,
+  Navigate,
+  Route,
+  Router,
+  useLocation,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "@solidjs/router"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import type {
   PermissionV2DecisionCommand,
@@ -22,6 +31,7 @@ import {
   type Component,
   createEffect,
   createMemo,
+  createRenderEffect,
   createResource,
   createSignal,
   ErrorBoundary,
@@ -33,38 +43,44 @@ import {
   Show,
 } from "solid-js"
 import { Dynamic } from "solid-js/web"
-import { CommandProvider } from "@/context/command"
+import { makeEventListener } from "@solid-primitives/event-listener"
+import { CommandProvider, useCommand, type CommandOption } from "@/context/command"
 import { CommentsProvider } from "@/context/comments"
 import { FileProvider } from "@/context/file"
 import { ServerSDKProvider } from "@/context/server-sdk"
-import { ServerSyncProvider } from "@/context/server-sync"
-import { GlobalProvider } from "@/context/global"
+import { ServerSyncProvider, useServerSync } from "@/context/server-sync"
+import { GlobalProvider, useGlobal } from "@/context/global"
 import { HighlightsProvider } from "@/context/highlights"
 import { LanguageProvider, type Locale, useLanguage } from "@/context/language"
 import { LayoutProvider } from "@/context/layout"
 import { ModelsProvider } from "@/context/models"
 import { NotificationProvider } from "@/context/notification"
 import { PermissionProvider } from "@/context/permission"
+import { usePlatform } from "@/context/platform"
 import { PromptProvider } from "@/context/prompt"
 import { ServerConnection, ServerProvider, serverName, useServer } from "@/context/server"
 import { SettingsProvider, useSettings } from "@/context/settings"
-import { TerminalProvider } from "@/context/terminal"
 import { TabsProvider, useTabs, type DraftTab } from "@/context/tabs"
 import { SDKProvider, useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { WslServersProvider } from "@/wsl/context"
 import DirectoryLayout, { DirectoryDataProvider } from "@/pages/directory-layout"
-import Layout from "@/pages/layout"
+import LegacyLayout from "@/pages/layout"
+import NewLayout from "@/pages/layout-new"
 import { ErrorPage } from "./pages/error"
 import { useCheckServerHealth } from "./utils/server-health"
+import { legacySessionHref, legacySessionServer, requireServerKey, sessionHref } from "./utils/session-route"
+import { createSessionLineage } from "@/pages/session/session-lineage"
 
-const HomeRoute = lazy(() => import("@/pages/home"))
+import { SessionProviders, SessionRouteErrorBoundary, TargetSessionRouteContent } from "@/pages/session"
+import { NewHome, LegacyHome } from "@/pages/home"
+
 const Session = lazy(() => import("@/pages/session"))
 const NewSession = lazy(() => import("@/pages/new-session"))
 
 // Alpha typed surface seam (ADR-027 / REQ-084). A surface is a narrow leaf-page
 // override: the host may replace the innermost page component while every existing
-// provider wrapper (SelectedServerLayout / DraftServerLayout / DirectoryDataProvider /
+// provider wrapper (LegacyServerLayout / target-server providers / DirectoryDataProvider /
 // SessionProviders / DraftProviders) keeps its default lifecycle. Surfaces are read
 // once when AppInterface mounts; swapping them afterwards requires a reload — the
 // provider tree must never hot-swap within one renderer lifetime.
@@ -105,51 +121,84 @@ export interface AppSurfaces {
   permission?: PermissionSurfaceComponent
 }
 
+function createPermissionSurfaceMount(PermissionSurface?: PermissionSurfaceComponent) {
+  return function PermissionSurfaceMount() {
+    const params = useParams()
+    const sdk = useSDK()
+    const sync = useSync()
+    const permissionClient: PermissionSurfaceClient = {
+      list: () =>
+        sdk()
+          .client.v2.session.permission.list({ sessionID: params.id! })
+          .then((result) => {
+            if (!result.data) throw new Error("Permission list response is missing data")
+            return result.data.data
+          }),
+      reply: (requestID, command) =>
+        sdk()
+          .client.v2.session.permission.reply({
+            sessionID: params.id!,
+            requestID,
+            permissionV2DecisionCommand: command,
+          })
+          .then((result) => {
+            if (!result.data) throw new Error("Permission reply response is missing DecisionReceipt")
+            return result.data.data
+          }),
+      subscribe: (listeners) => {
+        const stopAsked = sdk().event.on("permission.v2.asked", (event) => {
+          if (event.properties.sessionID !== params.id) return
+          listeners.asked(event.properties)
+        })
+        const stopReplied = sdk().event.on("permission.v2.replied", (event) => {
+          if (event.properties.sessionID !== params.id) return
+          listeners.replied(event.properties)
+        })
+        const stopConnected = sdk().event.on("server.connected", listeners.connected)
+        return () => {
+          stopAsked()
+          stopReplied()
+          stopConnected()
+        }
+      },
+    }
+
+    return (
+      <Show when={PermissionSurface && params.id} keyed>
+        {(sessionID) => (
+          <Dynamic
+            component={PermissionSurface}
+            sessionID={sessionID}
+            projectID={sync().project?.id}
+            client={permissionClient}
+          />
+        )}
+      </Show>
+    )
+  }
+}
+
 function createSessionRoute(Leaf: MaybePreloadableComponent, PermissionSurface?: PermissionSurfaceComponent) {
+  const PermissionSurfaceMount = createPermissionSurfaceMount(PermissionSurface)
   return Object.assign(
     () => {
       const settings = useSettings()
       const params = useParams()
       const [search] = useSearchParams<{ draftId?: string; prompt?: string }>()
       const sdk = useSDK()
-      const sync = useSync()
       const server = useServer()
       const tabs = useTabs()
-      const permissionClient: PermissionSurfaceClient = {
-        list: () =>
-          sdk()
-            .client.v2.session.permission.list({ sessionID: params.id! })
-            .then((result) => {
-              if (!result.data) throw new Error("Permission list response is missing data")
-              return result.data.data
-            }),
-        reply: (requestID, command) =>
-          sdk()
-            .client.v2.session.permission.reply({
-              sessionID: params.id!,
-              requestID,
-              permissionV2DecisionCommand: command,
-            })
-            .then((result) => {
-              if (!result.data) throw new Error("Permission reply response is missing DecisionReceipt")
-              return result.data.data
-            }),
-        subscribe: (listeners) => {
-          const stopAsked = sdk().event.on("permission.v2.asked", (event) => {
-            if (event.properties.sessionID !== params.id) return
-            listeners.asked(event.properties)
-          })
-          const stopReplied = sdk().event.on("permission.v2.replied", (event) => {
-            if (event.properties.sessionID !== params.id) return
-            listeners.replied(event.properties)
-          })
-          const stopConnected = sdk().event.on("server.connected", listeners.connected)
-          return () => {
-            stopAsked()
-            stopReplied()
-            stopConnected()
-          }
-        },
+
+      if (params.id && settings.general.newLayoutDesigns()) {
+        const sessionID = params.id
+        return (
+          <Show when={tabs.ready()}>
+            {(_) => {
+              const persisted = tabs.store.filter((item) => item.type === "session")
+              return <Navigate href={sessionHref(legacySessionServer(persisted, sessionID, server.key), sessionID)} />
+            }}
+          </Show>
+        )
       }
 
       // When the new layout is enabled, the legacy new-session route (/:dir/session with no id)
@@ -162,111 +211,172 @@ function createSessionRoute(Leaf: MaybePreloadableComponent, PermissionSurface?:
       })
 
       return (
-        <SessionProviders>
-          <Leaf />
-          <Show when={PermissionSurface && params.id} keyed>
-            {(sessionID) => (
-              <Dynamic
-                component={PermissionSurface}
-                sessionID={sessionID}
-                projectID={sync().project?.id}
-                client={permissionClient}
-              />
-            )}
-          </Show>
-        </SessionProviders>
+        <SessionRouteErrorBoundary sessionID={params.id}>
+          <SessionProviders>
+            <Leaf />
+            <PermissionSurfaceMount />
+          </SessionProviders>
+        </SessionRouteErrorBoundary>
       )
     },
     // Preload only the effective leaf: the default and an injected surface must never
     // be preloaded together.
-    { preload: () => Leaf.preload?.() },
+    {
+      preload: () => Leaf.preload?.(),
+      leaf: Leaf,
+      permissionSurface: PermissionSurface,
+    },
   )
 }
 
+function HomeRoute() {
+  const settings = useSettings()
+  return (
+    <Show when={settings.general.newLayoutDesigns()} fallback={<LegacyHome />}>
+      <NewHome />
+    </Show>
+  )
+}
+
+function TargetServerRoute(props: ParentProps) {
+  const params = useParams<{ serverKey: string; id: string }>()
+  const global = useGlobal()
+  const conn = createMemo(() => {
+    const key = requireServerKey(params.serverKey)
+    return global.servers.list().find((item) => ServerConnection.key(item) === key)
+  })
+
+  return (
+    // Owns the server-identity remount. Session changes must NOT remount this
+    // subtree (SessionRouteErrorBoundary resets and createSessionLineage
+    // re-resolves reactively instead); both rely on this key for server changes.
+    <Show when={requireServerKey(params.serverKey)} keyed>
+      <ServerSDKProvider server={conn}>
+        <ServerSyncProvider server={conn}>{props.children}</ServerSyncProvider>
+      </ServerSDKProvider>
+    </Show>
+  )
+}
+
+function createTargetSessionRoute(Leaf: MaybePreloadableComponent, PermissionSurface?: PermissionSurfaceComponent) {
+  const PermissionSurfaceMount = createPermissionSurfaceMount(PermissionSurface)
+  const Content = () => (
+    <>
+      <Leaf />
+      <PermissionSurfaceMount />
+    </>
+  )
+  return () => (
+    <TargetServerRoute>
+      <TargetSessionRouteContent content={Content} />
+    </TargetServerRoute>
+  )
+}
+
+function LegacyTargetSessionRoute() {
+  const params = useParams<{ serverKey: string; id: string }>()
+  return (
+    <TargetServerRoute>
+      <SessionRouteErrorBoundary sessionID={params.id} serverKey={requireServerKey(params.serverKey)}>
+        <LegacyTargetSessionRedirect />
+      </SessionRouteErrorBoundary>
+    </TargetServerRoute>
+  )
+}
+
+function LegacyTargetSessionRedirect() {
+  const params = useParams<{ id: string }>()
+  const navigate = useNavigate()
+  const sync = useServerSync()
+  const current = createSessionLineage(
+    () => params.id,
+    () => sync().session.lineage,
+  )
+
+  createEffect(() => {
+    const directory = current()?.session.directory
+    if (!directory) return
+    navigate(legacySessionHref(directory, params.id), { replace: true })
+  })
+
+  return null
+}
+
 // Wraps the non-draft routes. They are gated on (and keyed to) the globally selected
-// server via ServerKey, then provide the server-scoped shell (Permission/Layout/
-// Notification/Models + the visual Layout) for that server.
-function SelectedServerLayout(props: ParentProps) {
+// server via ServerKey, then provide the server-scoped shell for that server.
+function SelectedServerProviders(props: ParentProps) {
   return (
     <ServerKey>
       <ServerSDKProvider>
-        <ServerSyncProvider>
-          <ServerScopedShell>{props.children}</ServerScopedShell>
-        </ServerSyncProvider>
+        <ServerSyncProvider>{props.children}</ServerSyncProvider>
       </ServerSDKProvider>
     </ServerKey>
   )
 }
 
-// Wraps /new-session. It resolves the draft's target server and provides the
-// server-scoped shell for that server — without ServerKey, so the page never depends
-// on the globally "selected" server.
-function DraftServerLayout(props: ParentProps) {
-  const server = useServer()
-  const tabs = useTabs()
-  const [search] = useSearchParams<{ draftId?: string }>()
-  const conn = createMemo(() => {
-    const id = search.draftId
-    if (!id) return undefined
-    const draft = tabs.store.find((tab): tab is DraftTab => tab.type === "draft" && tab.draftID === id)
-    if (!draft) return undefined
-    return server.list.find((c) => ServerConnection.key(c) === draft.server)
-  })
-
+function LegacyServerLayout(props: ParentProps<{ serverScoped?: JSX.Element }>) {
   return (
-    <ServerSDKProvider server={conn}>
-      <ServerSyncProvider server={conn}>
-        <ServerScopedShell>{props.children}</ServerScopedShell>
-      </ServerSyncProvider>
-    </ServerSDKProvider>
+    <SelectedServerProviders>
+      <LegacyServerScopedShell serverScoped={props.serverScoped}>{props.children}</LegacyServerScopedShell>
+    </SelectedServerProviders>
   )
 }
 
 function createDraftRoute(Leaf: DraftSurfaceComponent) {
-  function ResolvedDraftRoute(props: { draftID: string }) {
+  function ResolvedDraftRoute(props: { draftID: string; draft: DraftTab }) {
     const tabs = useTabs()
-    const draft = createMemo(() =>
-      tabs.store.find((tab): tab is DraftTab => tab.type === "draft" && tab.draftID === props.draftID),
+    const global = useGlobal()
+    const conn = createMemo(() =>
+      global.servers.list().find((item) => ServerConnection.key(item) === props.draft.server),
     )
-
-    // Key on the directory so retargeting the draft's project re-instantiates the
-    // directory-scoped providers while keeping the same draft id. The draft's target
-    // server is provided by DraftServerLayout, so changing only the server updates the
-    // SDK/sync hooks without remounting the composer.
-    const directory = () => draft()?.directory
+    const directory = () => props.draft.directory
+    const serverKey = () => props.draft.server
 
     const promoteDraft: DraftSurfaceProps["promoteDraft"] = (session) => {
-      const current = draft()
-      if (!current) return
       tabs.promoteDraft(props.draftID, {
-        server: current.server,
-        dirBase64: base64Encode(session.directory),
+        server: props.draft.server,
         sessionId: session.sessionId,
       })
     }
 
     return (
-      <Show when={directory()} keyed>
-        {(dir) => (
-          <SDKProvider directory={dir}>
-            <DirectoryDataProvider directory={dir} draftID={props.draftID}>
-              <DraftProviders>
-                <Leaf draftId={props.draftID} promoteDraft={promoteDraft} />
-              </DraftProviders>
-            </DirectoryDataProvider>
-          </SDKProvider>
-        )}
+      <Show when={`${props.draft.server}\0${props.draft.directory}`} keyed>
+        <ServerSDKProvider server={conn}>
+          <ServerSyncProvider server={conn}>
+            <ModelsProvider directory={directory}>
+              <SDKProvider directory={directory}>
+                <DirectoryDataProvider directory={directory} server={serverKey}>
+                  <DraftProviders>
+                    <Leaf draftId={props.draftID} promoteDraft={promoteDraft} />
+                  </DraftProviders>
+                </DirectoryDataProvider>
+              </SDKProvider>
+            </ModelsProvider>
+          </ServerSyncProvider>
+        </ServerSDKProvider>
       </Show>
     )
   }
 
   return function DraftRoute() {
     const [search] = useSearchParams<{ draftId?: string }>()
+    const settings = useSettings()
     const tabs = useTabs()
     return (
       <Show when={tabs.ready()}>
-        <Show when={search.draftId} keyed fallback={<Navigate href="/" />}>
-          {(draftID) => <ResolvedDraftRoute draftID={draftID} />}
+        <Show
+          when={tabs.store.find((tab): tab is DraftTab => tab.type === "draft" && tab.draftID === search.draftId)}
+          keyed
+          fallback={<Navigate href="/" />}
+        >
+          {(draft) => (
+            <Show
+              when={settings.general.newLayoutDesigns()}
+              fallback={<Navigate href={`/${base64Encode(draft.directory)}/session`} />}
+            >
+              <ResolvedDraftRoute draftID={draft.draftID} draft={draft} />
+            </Show>
+          )}
         </Show>
       </Show>
     )
@@ -284,7 +394,7 @@ declare global {
       deepLinks?: string[]
     }
     api?: {
-      setTitlebar?: (theme: { mode: "light" | "dark" }) => Promise<void>
+      setTitlebar?: (theme: { mode: "light" | "dark"; scheme?: "system" | "light" | "dark" }) => Promise<void>
       exportDebugLogs?: () => Promise<string>
     }
   }
@@ -306,10 +416,11 @@ function QueryProvider(props: ParentProps) {
 function BodyDesignClass() {
   const settings = useSettings()
 
-  createEffect(() => {
+  createRenderEffect(() => {
     if (typeof document === "undefined") return
 
     const enabled = settings.general.newLayoutDesigns()
+    document.body.toggleAttribute("data-new-layout", enabled)
     document.body.classList.toggle("text-12-regular", !enabled)
     document.body.classList.toggle("font-(family-name:--font-family-text)", enabled)
     document.body.classList.toggle("text-[13px]", enabled)
@@ -323,41 +434,69 @@ function BodyDesignClass() {
 // shell (router root) so they stay mounted regardless of the active server/route.
 function SharedProviders(props: ParentProps) {
   return (
-    <SettingsProvider>
+    <>
       <BodyDesignClass />
       <CommandProvider>
+        <DesktopCommands />
         <HighlightsProvider>{props.children}</HighlightsProvider>
       </CommandProvider>
-    </SettingsProvider>
+    </>
   )
 }
 
-// Server-scoped providers plus the visual Layout (tabs/sidebar). These live inside
-// each per-route server layout so they resolve to that route's server (selected vs
-// draft). The Layout remounts when crossing between those groups.
-function ServerScopedShell(props: ParentProps) {
+function DesktopCommands() {
+  const command = useCommand()
+  const language = useLanguage()
+  const platform = usePlatform()
+
+  command.register("desktop", () => {
+    const commands: CommandOption[] = []
+    if (platform.platform === "desktop" && platform.exportDebugLogs) {
+      commands.push({
+        id: "logs.export",
+        title: "Export logs",
+        category: language.t("command.category.settings"),
+        onSelect: () => {
+          void platform.exportDebugLogs?.()
+        },
+      })
+    }
+    return commands
+  })
+
+  return null
+}
+
+// Server-scoped providers shared by the legacy shell and the top-level new shell.
+type ServerScopedShellProps = ParentProps<{
+  directory?: () => string | undefined
+  serverScoped?: JSX.Element
+}>
+
+function ServerScopedProviders(props: ServerScopedShellProps) {
   return (
-    <PermissionProvider>
-      <LayoutProvider>
-        <NotificationProvider>
-          <ModelsProvider>
-            <Layout>{props.children}</Layout>
-          </ModelsProvider>
-        </NotificationProvider>
-      </LayoutProvider>
-    </PermissionProvider>
+    <LayoutProvider>
+      {props.serverScoped}
+      <ModelsProvider directory={props.directory}>{props.children}</ModelsProvider>
+    </LayoutProvider>
   )
 }
 
-function SessionProviders(props: ParentProps) {
+function LegacyServerScopedShell(props: ServerScopedShellProps) {
   return (
-    <TerminalProvider>
-      <FileProvider>
-        <PromptProvider>
-          <CommentsProvider>{props.children}</CommentsProvider>
-        </PromptProvider>
-      </FileProvider>
-    </TerminalProvider>
+    <ServerScopedProviders directory={props.directory} serverScoped={props.serverScoped}>
+      <LegacyLayout>{props.children}</LegacyLayout>
+    </ServerScopedProviders>
+  )
+}
+
+function NewAppLayout(props: ParentProps<{ serverScoped?: JSX.Element }>) {
+  return (
+    <SelectedServerProviders>
+      <ServerScopedProviders serverScoped={props.serverScoped}>
+        <NewLayout>{props.children}</NewLayout>
+      </ServerScopedProviders>
+    </SelectedServerProviders>
   )
 }
 
@@ -378,8 +517,8 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale; dialogHos
     <MetaProvider>
       <Font />
       <ThemeProvider
-        onThemeApplied={(_, mode) => {
-          void window.api?.setTitlebar?.({ mode })
+        onThemeApplied={(_, mode, scheme) => {
+          void window.api?.setTitlebar?.({ mode, scheme })
         }}
       >
         <LanguageProvider locale={props.locale}>
@@ -407,7 +546,7 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale; dialogHos
   )
 }
 
-function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean }>) {
+function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean; startup?: Promise<void> }>) {
   const server = useServer()
   const checkServerHealth = useCheckServerHealth()
 
@@ -436,34 +575,45 @@ function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean }>) {
   const checking = createMemo(
     () => checkMode() === "blocking" && ["unresolved", "pending"].includes(startupHealthCheck.state),
   )
+  const [startup] = createResource(async () => {
+    if (!props.startup) return true
+    await props.startup.catch((error) => {
+      console.error("[startup] startup gate failed", error)
+    })
+    return true
+  })
+  const startupChecking = createMemo(
+    () => startupHealthCheck.latest === true && ["unresolved", "pending"].includes(startup.state),
+  )
+  const loading = createMemo(() => checking() || startupChecking())
 
   return (
-    <Show
-      when={!checking()}
-      fallback={
-        <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base">
+    <>
+      <Show when={!checking()}>
+        <Show
+          when={startupHealthCheck.latest}
+          fallback={
+            <ConnectionError
+              onRetry={() => {
+                if (checkMode() === "background") void healthCheckActions.refetch()
+              }}
+              onServerSelected={(key) => {
+                setCheckMode("blocking")
+                server.setActive(key)
+                void healthCheckActions.refetch()
+              }}
+            />
+          }
+        >
+          {props.children}
+        </Show>
+      </Show>
+      <Show when={loading()}>
+        <div class="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-background-base">
           <Splash class="w-16 h-20 opacity-50 animate-pulse" />
         </div>
-      }
-    >
-      <Show
-        when={startupHealthCheck.latest}
-        fallback={
-          <ConnectionError
-            onRetry={() => {
-              if (checkMode() === "background") void healthCheckActions.refetch()
-            }}
-            onServerSelected={(key) => {
-              setCheckMode("blocking")
-              server.setActive(key)
-              void healthCheckActions.refetch()
-            }}
-          />
-        }
-      >
-        {props.children}
       </Show>
-    </Show>
+    </>
   )
 }
 
@@ -530,20 +680,21 @@ export function AppInterface(props: {
   servers?: Array<ServerConnection.Any>
   router?: Component<BaseRouterProps>
   disableHealthCheck?: boolean
+  startup?: Promise<void>
+  serverScoped?: JSX.Element
   surfaces?: AppSurfaces
 }) {
   // Surfaces are resolved exactly once, before the route tree first mounts. Absent
   // overrides fall back to the upstream defaults with identical lazy/preload behavior.
   const HomeLeaf = props.surfaces?.home ?? HomeRoute
   const SessionRoute = createSessionRoute(props.surfaces?.session ?? Session, props.surfaces?.permission)
+  const TargetSessionRoute = createTargetSessionRoute(SessionRoute.leaf, SessionRoute.permissionSurface)
   // The upstream draft page reads its state from context and ignores the narrow
   // surface props, so it satisfies the contract without changes.
   const DraftRoute = createDraftRoute(props.surfaces?.newSession ?? (NewSession as unknown as DraftSurfaceComponent))
-  // The shared shell holds only server-agnostic providers (QueryClient + Settings/
-  // Command/Highlights) and stays mounted across every route. The server-scoped
-  // providers and the visual Layout live in the per-route layouts below, so they
-  // resolve to that route's server (selected for most routes, the draft's server for
-  // /new-session). appChildren is server-agnostic, so it renders here once.
+  // The visual new layout lives in the router root so it remains mounted across
+  // route changes. Draft and session routes override only their server-bound data
+  // providers beneath it.
   const ServerShell = (shellProps: ParentProps) => (
     <QueryProvider>
       <SharedProviders>
@@ -560,28 +711,101 @@ export function AppInterface(props: {
       servers={props.servers}
     >
       <GlobalProvider>
-        <ConnectionGate disableHealthCheck={props.disableHealthCheck}>
-          <Dynamic
-            component={props.router ?? Router}
-            root={(routerProps) => (
-              <TabsProvider>
-                <ServerShell>{routerProps.children}</ServerShell>
-              </TabsProvider>
-            )}
-          >
-            <Route component={SelectedServerLayout}>
-              <Route path="/" component={HomeLeaf} />
-              <Route path="/:dir" component={DirectoryLayout}>
-                <Route path="/" component={() => <Navigate href="session" />} />
-                <Route path="/session/:id?" component={SessionRoute} />
-              </Route>
-            </Route>
-            <Route component={DraftServerLayout}>
-              <Route path="/new-session" component={DraftRoute} />
-            </Route>
-          </Dynamic>
-        </ConnectionGate>
+        <SettingsProvider>
+          <ConnectionGate disableHealthCheck={props.disableHealthCheck} startup={props.startup}>
+            <Show when={useSettings().general.newLayoutDesigns().toString()} keyed>
+              <Dynamic
+                component={props.router ?? Router}
+                root={(routerProps) => (
+                  <TabsProvider>
+                    <PermissionProvider>
+                      <NotificationProvider>
+                        <ServerShell>
+                          <Show when={useSettings().general.newLayoutDesigns()} fallback={routerProps.children}>
+                            <NewAppLayout serverScoped={props.serverScoped}>{routerProps.children}</NewAppLayout>
+                          </Show>
+                        </ServerShell>
+                      </NotificationProvider>
+                    </PermissionProvider>
+                  </TabsProvider>
+                )}
+              >
+                <Routes
+                  serverScoped={props.serverScoped}
+                  home={HomeLeaf}
+                  session={SessionRoute}
+                  targetSession={TargetSessionRoute}
+                  draft={DraftRoute}
+                />
+              </Dynamic>
+            </Show>
+          </ConnectionGate>
+        </SettingsProvider>
       </GlobalProvider>
     </ServerProvider>
+  )
+}
+
+function Routes(props: {
+  serverScoped?: JSX.Element
+  home: MaybePreloadableComponent
+  session: MaybePreloadableComponent
+  targetSession: Component
+  draft: Component
+}) {
+  const settings = useSettings()
+  const HomeLeaf = props.home
+  const SessionRoute = props.session
+  const TargetSessionRoute = props.targetSession
+  const DraftRoute = props.draft
+
+  return (
+    <>
+      <Route
+        component={(routeProps) => (
+          <LegacyServerLayout serverScoped={props.serverScoped}>{routeProps.children}</LegacyServerLayout>
+        )}
+      >
+        <Show when={!settings.general.newLayoutDesigns()}>
+          {
+            <>
+              <Route path="/" component={HomeLeaf} />
+              <Route path="/server/:serverKey/session/:id" component={LegacyTargetSessionRoute} />
+            </>
+          }
+        </Show>
+        <Route path="/:dir" component={DirectoryLayout}>
+          <Route path="/" component={() => <Navigate href="session" />} />
+          <Route path="/session/:id?" component={SessionRoute} />
+        </Route>
+      </Route>
+      <Show when={settings.general.newLayoutDesigns()}>
+        <Route path="/" component={HomeLeaf} />
+        <Route path="/:dir/session/:id" component={NewLayoutLegacySessionRedirect} />
+        <Route path="/server/:serverKey/session/:id" component={TargetSessionRoute} />
+      </Show>
+      <Route path="/new-session" component={DraftRoute} />
+    </>
+  )
+}
+
+function NewLayoutLegacySessionRedirect() {
+  const server = useServer()
+  const tabs = useTabs()
+  const params = useParams<{ id: string }>()
+
+  return (
+    <Show when={tabs.ready()}>
+      <Navigate
+        href={sessionHref(
+          legacySessionServer(
+            tabs.store.filter((item) => item.type === "session"),
+            params.id,
+            server.key,
+          ),
+          params.id,
+        )}
+      />
+    </Show>
   )
 }

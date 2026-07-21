@@ -1,0 +1,1799 @@
+diff --git a/packages/app/package.json b/packages/app/package.json
+index faf01944..59ef9237 100644
+--- a/packages/app/package.json
++++ b/packages/app/package.json
+@@ -9,7 +9,8 @@
+     "./updater": "./src/updater.ts",
+     "./wsl/types": "./src/wsl/types.ts",
+     "./vite": "./vite.js",
+-    "./index.css": "./src/index.css"
++    "./index.css": "./src/index.css",
++    "./surface/session": "./src/pages/session.tsx"
+   },
+   "scripts": {
+     "typecheck": "tsgo -b",
+diff --git a/packages/app/src/app.tsx b/packages/app/src/app.tsx
+index b4496ba7..32fe1c10 100644
+--- a/packages/app/src/app.tsx
++++ b/packages/app/src/app.tsx
+@@ -1,7 +1,8 @@
+ import "@/index.css"
+ import * as Sentry from "@sentry/solid"
++import { base64Encode } from "@opencode-ai/core/util/encode"
+ import { I18nProvider } from "@opencode-ai/ui/context"
+-import { DialogProvider } from "@opencode-ai/ui/context/dialog"
++import { DialogProvider, type DialogHost } from "@opencode-ai/ui/context/dialog"
+ import { FileComponentProvider } from "@opencode-ai/ui/context/file"
+ import { MarkedProvider } from "@opencode-ai/ui/context/marked"
+ import { File } from "@opencode-ai/session-ui/file"
+@@ -20,8 +21,12 @@ import {
+   useSearchParams,
+ } from "@solidjs/router"
+ import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
++import type {
++  PermissionV2DecisionCommand,
++  PermissionV2DecisionReceipt,
++  PermissionV2Request,
++} from "@opencode-ai/sdk/v2/client"
+ import { Effect } from "effect"
+-import { base64Encode } from "@opencode-ai/core/util/encode"
+ import {
+   type Component,
+   createEffect,
+@@ -57,6 +62,7 @@ import { ServerConnection, ServerProvider, serverName, useServer } from "@/conte
+ import { SettingsProvider, useSettings } from "@/context/settings"
+ import { TabsProvider, useTabs, type DraftTab } from "@/context/tabs"
+ import { SDKProvider, useSDK } from "@/context/sdk"
++import { useSync } from "@/context/sync"
+ import { WslServersProvider } from "@/wsl/context"
+ import DirectoryLayout, { DirectoryDataProvider } from "@/pages/directory-layout"
+ import LegacyLayout from "@/pages/layout"
+@@ -66,44 +72,169 @@ import { useCheckServerHealth } from "./utils/server-health"
+ import { legacySessionHref, legacySessionServer, requireServerKey, sessionHref } from "./utils/session-route"
+ import { createSessionLineage } from "@/pages/session/session-lineage"
+ 
+-import { SessionPage, SessionRouteErrorBoundary, TargetSessionRouteContent } from "@/pages/session"
++import { SessionProviders, SessionRouteErrorBoundary, TargetSessionRouteContent } from "@/pages/session"
+ import { NewHome, LegacyHome } from "@/pages/home"
+ 
++const Session = lazy(() => import("@/pages/session"))
+ const NewSession = lazy(() => import("@/pages/new-session"))
+ 
+-const SessionRoute = () => {
+-  const settings = useSettings()
+-  const params = useParams()
+-  const [search] = useSearchParams<{ draftId?: string; prompt?: string }>()
+-  const sdk = useSDK()
+-  const server = useServer()
+-  const tabs = useTabs()
++// Alpha typed surface seam (ADR-027 / REQ-084). A surface is a narrow leaf-page
++// override: the host may replace the innermost page component while every existing
++// provider wrapper (LegacyServerLayout / target-server providers / DirectoryDataProvider /
++// SessionProviders / DraftProviders) keeps its default lifecycle. Surfaces are read
++// once when AppInterface mounts; swapping them afterwards requires a reload — the
++// provider tree must never hot-swap within one renderer lifetime.
++export type MaybePreloadableComponent = Component & { preload?: () => void }
++
++// The newSession leaf owns the draft page UI but not the draft lifecycle: the wrapper
++// keeps tab/draft semantics (target server, tab swap, persisted-draft cleanup) and
++// hands the leaf this narrow, context-free contract.
++export interface DraftSurfaceProps {
++  draftId: string
++  promoteDraft: (session: { directory: string; sessionId: string }) => void
++}
++
++export type DraftSurfaceComponent = Component<DraftSurfaceProps> & { preload?: () => void }
++
++export interface PermissionSurfaceClient {
++  list: () => Promise<PermissionV2Request[]>
++  reply: (requestID: string, command: PermissionV2DecisionCommand) => Promise<PermissionV2DecisionReceipt>
++  subscribe: (listeners: {
++    asked: (request: PermissionV2Request) => void
++    replied: (receipt: PermissionV2DecisionReceipt) => void
++    connected: () => void
++  }) => () => void
++}
++
++export interface PermissionSurfaceProps {
++  sessionID: string
++  projectID?: string
++  client: PermissionSurfaceClient
++}
++
++export type PermissionSurfaceComponent = Component<PermissionSurfaceProps>
++
++export interface AppSurfaces {
++  home?: MaybePreloadableComponent
++  newSession?: DraftSurfaceComponent
++  session?: MaybePreloadableComponent
++  permission?: PermissionSurfaceComponent
++}
++
++function createPermissionSurfaceMount(PermissionSurface?: PermissionSurfaceComponent) {
++  return function PermissionSurfaceMount() {
++    const params = useParams()
++    const sdk = useSDK()
++    const sync = useSync()
++    const permissionClient: PermissionSurfaceClient = {
++      list: () =>
++        sdk()
++          .client.v2.session.permission.list({ sessionID: params.id! })
++          .then((result) => {
++            if (!result.data) throw new Error("Permission list response is missing data")
++            return result.data.data
++          }),
++      reply: (requestID, command) =>
++        sdk()
++          .client.v2.session.permission.reply({
++            sessionID: params.id!,
++            requestID,
++            permissionV2DecisionCommand: command,
++          })
++          .then((result) => {
++            if (!result.data) throw new Error("Permission reply response is missing DecisionReceipt")
++            return result.data.data
++          }),
++      subscribe: (listeners) => {
++        const stopAsked = sdk().event.on("permission.v2.asked", (event) => {
++          if (event.properties.sessionID !== params.id) return
++          listeners.asked(event.properties)
++        })
++        const stopReplied = sdk().event.on("permission.v2.replied", (event) => {
++          if (event.properties.sessionID !== params.id) return
++          listeners.replied(event.properties)
++        })
++        const stopConnected = sdk().event.on("server.connected", listeners.connected)
++        return () => {
++          stopAsked()
++          stopReplied()
++          stopConnected()
++        }
++      },
++    }
+ 
+-  if (params.id && settings.general.newLayoutDesigns()) {
+-    const sessionID = params.id
+     return (
+-      <Show when={tabs.ready()}>
+-        {(_) => {
+-          const persisted = tabs.store.filter((item) => item.type === "session")
+-          return <Navigate href={sessionHref(legacySessionServer(persisted, sessionID, server.key), sessionID)} />
+-        }}
++      <Show when={PermissionSurface && params.id} keyed>
++        {(sessionID) => (
++          <Dynamic
++            component={PermissionSurface}
++            sessionID={sessionID}
++            projectID={sync().project?.id}
++            client={permissionClient}
++          />
++        )}
+       </Show>
+     )
+   }
++}
+ 
+-  // When the new layout is enabled, the legacy new-session route (/:dir/session with no id)
+-  // is replaced by a draft at /new-session?draftId=…
+-  createEffect(() => {
+-    if (!settings.general.newLayoutDesigns()) return
+-    if (params.id || search.draftId) return
+-    if (!tabs.ready() || !sdk().directory) return
+-    tabs.newDraft({ server: server.key, directory: sdk().directory }, search.prompt)
+-  })
++function createSessionRoute(Leaf: MaybePreloadableComponent, PermissionSurface?: PermissionSurfaceComponent) {
++  const PermissionSurfaceMount = createPermissionSurfaceMount(PermissionSurface)
++  return Object.assign(
++    () => {
++      const settings = useSettings()
++      const params = useParams()
++      const [search] = useSearchParams<{ draftId?: string; prompt?: string }>()
++      const sdk = useSDK()
++      const server = useServer()
++      const tabs = useTabs()
++
++      if (params.id && settings.general.newLayoutDesigns()) {
++        const sessionID = params.id
++        return (
++          <Show when={tabs.ready()}>
++            {(_) => {
++              const persisted = tabs.store.filter((item) => item.type === "session")
++              return <Navigate href={sessionHref(legacySessionServer(persisted, sessionID, server.key), sessionID)} />
++            }}
++          </Show>
++        )
++      }
++
++      // When the new layout is enabled, the legacy new-session route (/:dir/session with no id)
++      // is replaced by a draft at /new-session?draftId=…
++      createEffect(() => {
++        if (!settings.general.newLayoutDesigns()) return
++        if (params.id || search.draftId) return
++        if (!tabs.ready() || !sdk().directory) return
++        tabs.newDraft({ server: server.key, directory: sdk().directory }, search.prompt)
++      })
+ 
++      return (
++        <SessionRouteErrorBoundary sessionID={params.id}>
++          <SessionProviders>
++            <Leaf />
++            <PermissionSurfaceMount />
++          </SessionProviders>
++        </SessionRouteErrorBoundary>
++      )
++    },
++    // Preload only the effective leaf: the default and an injected surface must never
++    // be preloaded together.
++    {
++      preload: () => Leaf.preload?.(),
++      leaf: Leaf,
++      permissionSurface: PermissionSurface,
++    },
++  )
++}
++
++function HomeRoute() {
++  const settings = useSettings()
+   return (
+-    <SessionRouteErrorBoundary sessionID={params.id}>
+-      <SessionPage />
+-    </SessionRouteErrorBoundary>
++    <Show when={settings.general.newLayoutDesigns()} fallback={<LegacyHome />}>
++      <NewHome />
++    </Show>
+   )
+ }
+ 
+@@ -127,11 +258,20 @@ function TargetServerRoute(props: ParentProps) {
+   )
+ }
+ 
+-const TargetSessionRoute = () => (
+-  <TargetServerRoute>
+-    <TargetSessionRouteContent />
+-  </TargetServerRoute>
+-)
++function createTargetSessionRoute(Leaf: MaybePreloadableComponent, PermissionSurface?: PermissionSurfaceComponent) {
++  const PermissionSurfaceMount = createPermissionSurfaceMount(PermissionSurface)
++  const Content = () => (
++    <>
++      <Leaf />
++      <PermissionSurfaceMount />
++    </>
++  )
++  return () => (
++    <TargetServerRoute>
++      <TargetSessionRouteContent content={Content} />
++    </TargetServerRoute>
++  )
++}
+ 
+ function LegacyTargetSessionRoute() {
+   const params = useParams<{ serverKey: string; id: string }>()
+@@ -182,53 +322,65 @@ function LegacyServerLayout(props: ParentProps<{ serverScoped?: JSX.Element }>)
+   )
+ }
+ 
+-function DraftRoute() {
+-  const [search] = useSearchParams<{ draftId?: string }>()
+-  const settings = useSettings()
+-  const tabs = useTabs()
+-  return (
+-    <Show when={tabs.ready()}>
+-      <Show
+-        when={tabs.store.find((tab): tab is DraftTab => tab.type === "draft" && tab.draftID === search.draftId)}
+-        keyed
+-        fallback={<Navigate href="/" />}
+-      >
+-        {(draft) => (
+-          <Show
+-            when={settings.general.newLayoutDesigns()}
+-            fallback={<Navigate href={`/${base64Encode(draft.directory)}/session`} />}
+-          >
+-            <ResolvedDraftRoute draft={draft} />
+-          </Show>
+-        )}
+-      </Show>
+-    </Show>
+-  )
+-}
++function createDraftRoute(Leaf: DraftSurfaceComponent) {
++  function ResolvedDraftRoute(props: { draftID: string; draft: DraftTab }) {
++    const tabs = useTabs()
++    const global = useGlobal()
++    const conn = createMemo(() =>
++      global.servers.list().find((item) => ServerConnection.key(item) === props.draft.server),
++    )
++    const directory = () => props.draft.directory
++    const serverKey = () => props.draft.server
+ 
+-function ResolvedDraftRoute(props: { draft: DraftTab }) {
+-  const global = useGlobal()
+-  const conn = createMemo(() => global.servers.list().find((item) => ServerConnection.key(item) === props.draft.server))
+-  const directory = () => props.draft.directory
+-  const serverKey = () => props.draft.server
++    const promoteDraft: DraftSurfaceProps["promoteDraft"] = (session) => {
++      tabs.promoteDraft(props.draftID, {
++        server: props.draft.server,
++        sessionId: session.sessionId,
++      })
++    }
+ 
+-  return (
+-    <Show when={`${props.draft.server}\0${props.draft.directory}`} keyed>
+-      <ServerSDKProvider server={conn}>
+-        <ServerSyncProvider server={conn}>
+-          <ModelsProvider directory={directory}>
+-            <SDKProvider directory={directory}>
+-              <DirectoryDataProvider directory={directory} server={serverKey}>
+-                <DraftProviders>
+-                  <NewSession />
+-                </DraftProviders>
+-              </DirectoryDataProvider>
+-            </SDKProvider>
+-          </ModelsProvider>
+-        </ServerSyncProvider>
+-      </ServerSDKProvider>
+-    </Show>
+-  )
++    return (
++      <Show when={`${props.draft.server}\0${props.draft.directory}`} keyed>
++        <ServerSDKProvider server={conn}>
++          <ServerSyncProvider server={conn}>
++            <ModelsProvider directory={directory}>
++              <SDKProvider directory={directory}>
++                <DirectoryDataProvider directory={directory} server={serverKey}>
++                  <DraftProviders>
++                    <Leaf draftId={props.draftID} promoteDraft={promoteDraft} />
++                  </DraftProviders>
++                </DirectoryDataProvider>
++              </SDKProvider>
++            </ModelsProvider>
++          </ServerSyncProvider>
++        </ServerSDKProvider>
++      </Show>
++    )
++  }
++
++  return function DraftRoute() {
++    const [search] = useSearchParams<{ draftId?: string }>()
++    const settings = useSettings()
++    const tabs = useTabs()
++    return (
++      <Show when={tabs.ready()}>
++        <Show
++          when={tabs.store.find((tab): tab is DraftTab => tab.type === "draft" && tab.draftID === search.draftId)}
++          keyed
++          fallback={<Navigate href="/" />}
++        >
++          {(draft) => (
++            <Show
++              when={settings.general.newLayoutDesigns()}
++              fallback={<Navigate href={`/${base64Encode(draft.directory)}/session`} />}
++            >
++              <ResolvedDraftRoute draftID={draft.draftID} draft={draft} />
++            </Show>
++          )}
++        </Show>
++      </Show>
++    )
++  }
+ }
+ 
+ function UiI18nBridge(props: ParentProps) {
+@@ -360,7 +512,7 @@ function DraftProviders(props: ParentProps) {
+   )
+ }
+ 
+-export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
++export function AppBaseProviders(props: ParentProps<{ locale?: Locale; dialogHost?: DialogHost }>) {
+   return (
+     <MetaProvider>
+       <Font />
+@@ -379,7 +531,7 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
+             >
+               <QueryProvider>
+                 <WslServersProvider>
+-                  <DialogProvider>
++                  <DialogProvider host={props.dialogHost}>
+                     <MarkedProvider>
+                       <FileComponentProvider component={File}>{props.children}</FileComponentProvider>
+                     </MarkedProvider>
+@@ -530,7 +682,16 @@ export function AppInterface(props: {
+   disableHealthCheck?: boolean
+   startup?: Promise<void>
+   serverScoped?: JSX.Element
++  surfaces?: AppSurfaces
+ }) {
++  // Surfaces are resolved exactly once, before the route tree first mounts. Absent
++  // overrides fall back to the upstream defaults with identical lazy/preload behavior.
++  const HomeLeaf = props.surfaces?.home ?? HomeRoute
++  const SessionRoute = createSessionRoute(props.surfaces?.session ?? Session, props.surfaces?.permission)
++  const TargetSessionRoute = createTargetSessionRoute(SessionRoute.leaf, SessionRoute.permissionSurface)
++  // The upstream draft page reads its state from context and ignores the narrow
++  // surface props, so it satisfies the contract without changes.
++  const DraftRoute = createDraftRoute(props.surfaces?.newSession ?? (NewSession as unknown as DraftSurfaceComponent))
+   // The visual new layout lives in the router root so it remains mounted across
+   // route changes. Draft and session routes override only their server-bound data
+   // providers beneath it.
+@@ -569,7 +730,13 @@ export function AppInterface(props: {
+                   </TabsProvider>
+                 )}
+               >
+-                <Routes serverScoped={props.serverScoped} />
++                <Routes
++                  serverScoped={props.serverScoped}
++                  home={HomeLeaf}
++                  session={SessionRoute}
++                  targetSession={TargetSessionRoute}
++                  draft={DraftRoute}
++                />
+               </Dynamic>
+             </Show>
+           </ConnectionGate>
+@@ -579,8 +746,18 @@ export function AppInterface(props: {
+   )
+ }
+ 
+-function Routes(props: { serverScoped?: JSX.Element }) {
++function Routes(props: {
++  serverScoped?: JSX.Element
++  home: MaybePreloadableComponent
++  session: MaybePreloadableComponent
++  targetSession: Component
++  draft: Component
++}) {
+   const settings = useSettings()
++  const HomeLeaf = props.home
++  const SessionRoute = props.session
++  const TargetSessionRoute = props.targetSession
++  const DraftRoute = props.draft
+ 
+   return (
+     <>
+@@ -592,7 +769,7 @@ function Routes(props: { serverScoped?: JSX.Element }) {
+         <Show when={!settings.general.newLayoutDesigns()}>
+           {
+             <>
+-              <Route path="/" component={LegacyHome} />
++              <Route path="/" component={HomeLeaf} />
+               <Route path="/server/:serverKey/session/:id" component={LegacyTargetSessionRoute} />
+             </>
+           }
+@@ -603,7 +780,7 @@ function Routes(props: { serverScoped?: JSX.Element }) {
+         </Route>
+       </Route>
+       <Show when={settings.general.newLayoutDesigns()}>
+-        <Route path="/" component={NewHome} />
++        <Route path="/" component={HomeLeaf} />
+         <Route path="/:dir/session/:id" component={NewLayoutLegacySessionRedirect} />
+         <Route path="/server/:serverKey/session/:id" component={TargetSessionRoute} />
+       </Show>
+diff --git a/packages/app/src/components/dialog-release-notes.tsx b/packages/app/src/components/dialog-release-notes.tsx
+index d0a35b71..a0b3b851 100644
+--- a/packages/app/src/components/dialog-release-notes.tsx
++++ b/packages/app/src/components/dialog-release-notes.tsx
+@@ -43,12 +43,6 @@ export function DialogReleaseNotes(props: { highlights: Highlight[] }) {
+   }
+ 
+   function handleKeyDown(e: KeyboardEvent) {
+-    if (e.key === "Escape") {
+-      e.preventDefault()
+-      handleClose()
+-      return
+-    }
+-
+     if (!paged()) return
+     if (e.key === "ArrowLeft" && !isFirst()) {
+       e.preventDefault()
+@@ -62,6 +56,7 @@ export function DialogReleaseNotes(props: { highlights: Highlight[] }) {
+ 
+   return (
+     <Dialog
++      title={feature()?.title ?? "Release notes"}
+       size="large"
+       fit
+       class="w-[min(calc(100vw-40px),720px)] h-[min(calc(100vh-40px),400px)] -mt-20 min-h-0 overflow-hidden"
+diff --git a/packages/app/src/components/dialog-select-file.tsx b/packages/app/src/components/dialog-select-file.tsx
+index 905abe1e..d992a2be 100644
+--- a/packages/app/src/components/dialog-select-file.tsx
++++ b/packages/app/src/components/dialog-select-file.tsx
+@@ -104,7 +104,7 @@ function DialogSelectFileLegacy(props: { filesOnly: () => boolean; onOpenFile?:
+   }
+ 
+   return (
+-    <Dialog class="pt-3 pb-0 !max-h-[480px]" transition>
++    <Dialog title={language.t("command.file.open")} class="pt-3 pb-0 !max-h-[480px]" transition>
+       <List
+         class="px-3"
+         search={{
+diff --git a/packages/app/src/components/directory-picker.tsx b/packages/app/src/components/directory-picker.tsx
+index 31b15b7a..bc25db15 100644
+--- a/packages/app/src/components/directory-picker.tsx
++++ b/packages/app/src/components/directory-picker.tsx
+@@ -37,9 +37,9 @@ export function useDirectoryPicker() {
+       if (!selected) input.onSelect(null)
+     }
+     if (platform.platform === "desktop" && settings.general.newLayoutDesigns()) {
+-      dialog.show(() => <DialogSelectDirectoryV2 {...input} onSelect={onSelect} />, cancel)
++      dialog.show(() => <DialogSelectDirectoryV2 {...input} onSelect={onSelect} />, cancel, { host: true })
+       return
+     }
+-    dialog.show(() => <DialogSelectDirectory {...input} onSelect={onSelect} />, cancel)
++    dialog.show(() => <DialogSelectDirectory {...input} onSelect={onSelect} />, cancel, { host: true })
+   }
+ }
+diff --git a/packages/app/src/components/prompt-input.tsx b/packages/app/src/components/prompt-input.tsx
+index bcc5acc0..a20656ea 100644
+--- a/packages/app/src/components/prompt-input.tsx
++++ b/packages/app/src/components/prompt-input.tsx
+@@ -1489,7 +1489,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
+         <PromptImageAttachments
+           attachments={imageAttachments()}
+           onOpen={(attachment) =>
+-            dialog.show(() => <ImagePreview src={attachment.dataUrl} alt={attachment.filename} />)
++            dialog.show(() => <ImagePreview src={attachment.dataUrl} alt={attachment.filename} />, undefined, {
++              host: true,
++            })
+           }
+           onRemove={removeAttachment}
+           removeLabel={language.t("prompt.attachment.remove")}
+diff --git a/packages/app/src/components/settings-dialog.tsx b/packages/app/src/components/settings-dialog.tsx
+index 46dd89ad..3637c753 100644
+--- a/packages/app/src/components/settings-dialog.tsx
++++ b/packages/app/src/components/settings-dialog.tsx
+@@ -2,10 +2,12 @@ import { useParams } from "@solidjs/router"
+ import { onCleanup } from "solid-js"
+ import { useCommand } from "@/context/command"
+ import { useLanguage } from "@/context/language"
++import { usePlatform } from "@/context/platform"
+ import { useDialog } from "@opencode-ai/ui/context/dialog"
+ 
+ export function useSettingsDialog(defaultValue?: string) {
+   const dialog = useDialog()
++  const platform = usePlatform()
+   const params = useParams<{ id?: string }>()
+   let run = 0
+   let dead = false
+@@ -15,6 +17,7 @@ export function useSettingsDialog(defaultValue?: string) {
+   })
+ 
+   return () => {
++    if (platform.openSettings) return platform.openSettings()
+     const current = ++run
+     const sessionID = params.id
+     void import("@/components/settings-v2").then((module) => {
+diff --git a/packages/app/src/components/status-popover-body.tsx b/packages/app/src/components/status-popover-body.tsx
+index 68a3f6b2..1b3814ab 100644
+--- a/packages/app/src/components/status-popover-body.tsx
++++ b/packages/app/src/components/status-popover-body.tsx
+@@ -161,7 +161,7 @@ export function StatusPopoverServerBody() {
+           const run = ++dialogRun
+           void import("./dialog-select-server").then((x) => {
+             if (dialogDead || dialogRun !== run) return
+-            dialog.show(() => <x.DialogSelectServer />, defaultServer.refresh)
++            dialog.show(() => <x.DialogSelectServer />, defaultServer.refresh, { host: true })
+           })
+         },
+       }}
+@@ -377,7 +377,7 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
+                     const run = ++dialogRun
+                     void import("./dialog-select-server").then((x) => {
+                       if (dialogDead || dialogRun !== run) return
+-                      dialog.show(() => <x.DialogSelectServer />, defaultServer.refresh)
++                      dialog.show(() => <x.DialogSelectServer />, defaultServer.refresh, { host: true })
+                     })
+                   }}
+                 >
+diff --git a/packages/app/src/context/highlights.tsx b/packages/app/src/context/highlights.tsx
+index 058f7cc4..761b46f6 100644
+--- a/packages/app/src/context/highlights.tsx
++++ b/packages/app/src/context/highlights.tsx
+@@ -195,7 +195,7 @@ export const { use: useHighlights, provider: HighlightsProvider } = createSimple
+           timer = setTimeout(() => {
+             timer = undefined
+             markSeen()
+-            dialog.show(() => <DialogReleaseNotes highlights={highlights} />)
++            dialog.show(() => <DialogReleaseNotes highlights={highlights} />, undefined, { host: true })
+           }, 500)
+         })
+         .catch(() => undefined)
+diff --git a/packages/app/src/context/platform.tsx b/packages/app/src/context/platform.tsx
+index cf343bfa..6bb9ae19 100644
+--- a/packages/app/src/context/platform.tsx
++++ b/packages/app/src/context/platform.tsx
+@@ -5,6 +5,7 @@ import type { DesktopMenuAction } from "../desktop-menu"
+ import { ServerConnection } from "./server"
+ import type { WslServersPlatform } from "../wsl/types"
+ import type { UpdaterPlatform } from "../updater"
++import type { SettingsAuthorityCoordinator } from "./settings"
+ 
+ type PickerPaths = string | string[] | null
+ type OpenDirectoryPickerOptions = { title?: string; multiple?: boolean }
+@@ -70,6 +71,12 @@ type PlatformBase = {
+   /** Stable platform window identity for window-scoped persistence */
+   windowID?: string
+ 
++  /** Host-owned Settings surface. When present, upstream Settings dialogs are not mounted. */
++  openSettings?(): void
++
++  /** Host-owned Settings authority shared by the upstream context and replacement surface. */
++  settings?: SettingsAuthorityCoordinator
++
+   /** Application-global desktop updater */
+   updater?: UpdaterPlatform
+ 
+diff --git a/packages/app/src/context/settings.tsx b/packages/app/src/context/settings.tsx
+index c2b56804..ed440ade 100644
+--- a/packages/app/src/context/settings.tsx
++++ b/packages/app/src/context/settings.tsx
+@@ -1,5 +1,5 @@
+-import { createStore, reconcile } from "solid-js/store"
+-import { createEffect, createMemo, createSignal, onCleanup } from "solid-js"
++import { createStore, reconcile, type Store } from "solid-js/store"
++import { createEffect, createMemo, createSignal, onCleanup, type Accessor } from "solid-js"
+ import { createSimpleContext } from "@opencode-ai/ui/context"
+ import { persisted } from "@/utils/persist"
+ import { usePlatform } from "@/context/platform"
+@@ -53,6 +53,17 @@ export interface Settings {
+   sounds: SoundSettings
+ }
+ 
++export type SettingsAuthoritySnapshot = {
++  value: Settings
++  revision: string
++}
++
++export type SettingsAuthorityCoordinator = {
++  read(): Promise<SettingsAuthoritySnapshot>
++  update(change: (current: Settings) => Settings): Promise<SettingsAuthoritySnapshot>
++  subscribe(listener: (snapshot: SettingsAuthoritySnapshot) => void): () => void
++}
++
+ export const monoDefault = "System Mono"
+ export const sansDefault = "System Sans"
+ export const terminalDefault = "JetBrainsMono Nerd Font Mono"
+@@ -215,12 +226,66 @@ function withFallback<T>(read: () => T | undefined, fallback: T) {
+   return createMemo(() => read() ?? fallback)
+ }
+ 
++function cloneSettings(value: Settings) {
++  return JSON.parse(JSON.stringify(value)) as Settings
++}
++
++function createSettingsState(coordinator: SettingsAuthorityCoordinator | undefined): {
++  store: Store<Settings>
++  ready: Accessor<boolean>
++  update(change: (current: Settings) => Settings): void
++} {
++  if (!coordinator) {
++    const state = persisted("settings.v3", createStore<Settings>(defaultSettings))
++    return {
++      store: state[0],
++      ready: state[3],
++      update(change) {
++        state[1](reconcile(change(cloneSettings(state[0]))))
++      },
++    }
++  }
++
++  const [store, setStore] = createStore<Settings>(cloneSettings(defaultSettings))
++  const [ready, setReady] = createSignal(false)
++  const adopt = (snapshot: SettingsAuthoritySnapshot) => {
++    setStore(reconcile(cloneSettings(snapshot.value)))
++    setReady(true)
++  }
++  const unsubscribe = coordinator.subscribe(adopt)
++  onCleanup(unsubscribe)
++  void coordinator.read().then(adopt, () => undefined)
++
++  return {
++    store,
++    ready,
++    update(change) {
++      setStore(reconcile(change(cloneSettings(store))))
++      void coordinator.update(change).then(adopt, () => coordinator.read().then(adopt, () => undefined))
++    },
++  }
++}
++
+ export const { use: useSettings, provider: SettingsProvider } = createSimpleContext({
+   name: "Settings",
+   gate: false,
+   init: () => {
+     const platform = usePlatform()
+-    const [store, setStore, _, ready] = persisted("settings.v3", createStore<Settings>(defaultSettings))
++    const state = createSettingsState(platform.settings)
++    const store = state.store
++    const ready = state.ready
++    const setGeneral = <Key extends keyof Settings["general"]>(key: Key, value: Settings["general"][Key]) =>
++      state.update((current) => ({ ...current, general: { ...current.general, [key]: value } }))
++    const setAppearance = <Key extends keyof Settings["appearance"]>(
++      key: Key,
++      value: Settings["appearance"][Key],
++    ) => state.update((current) => ({ ...current, appearance: { ...current.appearance, [key]: value } }))
++    const setNotification = <Key extends keyof Settings["notifications"]>(
++      key: Key,
++      value: Settings["notifications"][Key],
++    ) => state.update((current) => ({ ...current, notifications: { ...current.notifications, [key]: value } }))
++    const setSound = <Key extends keyof Settings["sounds"]>(key: Key, value: Settings["sounds"][Key]) =>
++      state.update((current) => ({ ...current, sounds: { ...current.sounds, [key]: value } }))
+     const [launch, setLaunch, , launchReady] = persisted(
+       "app-version.v1",
+       createStore<{ version?: string }>({ version: undefined }),
+@@ -296,7 +361,7 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
+     createEffect(() => {
+       if (!ready() || !launchState.classified || launchState.migrationApplied) return
+       if (layoutUpgrade() && store.general?.newLayoutDesigns !== true) {
+-        setStore("general", "newLayoutDesigns", true)
++        setGeneral("newLayoutDesigns", true)
+       }
+       setLaunchState("migrationApplied", true)
+     })
+@@ -305,8 +370,7 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
+       if (!ready() || !launchState.classified) return
+       if (typeof store.general?.shouldDisplayTabsToast === "boolean") return
+       if (!launchState.previous && !layoutTransitionClassified()) return
+-      setStore(
+-        "general",
++      setGeneral(
+         "shouldDisplayTabsToast",
+         shouldDisplayTabsToast(launchState.previous, platform.version, layoutTransitionEligible()),
+       )
+@@ -315,7 +379,7 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
+     createEffect(() => {
+       if (!ready() || !oldInterfaceRetired()) return
+       if (store.general?.newLayoutDesigns === true) return
+-      setStore("general", "newLayoutDesigns", true)
++      setGeneral("newLayoutDesigns", true)
+     })
+ 
+     createEffect(() => {
+@@ -327,7 +391,7 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
+ 
+     createEffect(() => {
+       if (store.general?.followup !== "queue") return
+-      setStore("general", "followup", "steer")
++      setGeneral("followup", "steer")
+     })
+ 
+     return {
+@@ -338,92 +402,92 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
+       general: {
+         autoSave: withFallback(() => store.general?.autoSave, defaultSettings.general.autoSave),
+         setAutoSave(value: boolean) {
+-          setStore("general", "autoSave", value)
++          setGeneral("autoSave", value)
+         },
+         releaseNotes: withFallback(() => store.general?.releaseNotes, defaultSettings.general.releaseNotes),
+         setReleaseNotes(value: boolean) {
+-          setStore("general", "releaseNotes", value)
++          setGeneral("releaseNotes", value)
+         },
+         followup: withFallback(
+           () => (store.general?.followup === "queue" ? "steer" : store.general?.followup),
+           defaultSettings.general.followup,
+         ),
+         setFollowup(value: "queue" | "steer") {
+-          setStore("general", "followup", value === "queue" ? "steer" : value)
++          setGeneral("followup", value === "queue" ? "steer" : value)
+         },
+         showFileTree,
+         setShowFileTree(value: boolean) {
+-          setStore("general", "showFileTree", value)
++          setGeneral("showFileTree", value)
+         },
+         showNavigation: withFallback(() => store.general?.showNavigation, defaultSettings.general.showNavigation),
+         setShowNavigation(value: boolean) {
+-          setStore("general", "showNavigation", value)
++          setGeneral("showNavigation", value)
+         },
+         showSearch,
+         setShowSearch(value: boolean) {
+-          setStore("general", "showSearch", value)
++          setGeneral("showSearch", value)
+         },
+         showStatus,
+         setShowStatus(value: boolean) {
+-          setStore("general", "showStatus", value)
++          setGeneral("showStatus", value)
+         },
+         showTerminal: withFallback(() => store.general?.showTerminal, defaultSettings.general.showTerminal),
+         setShowTerminal(value: boolean) {
+-          setStore("general", "showTerminal", value)
++          setGeneral("showTerminal", value)
+         },
+         showReasoningSummaries: withFallback(
+           () => store.general?.showReasoningSummaries,
+           defaultSettings.general.showReasoningSummaries,
+         ),
+         setShowReasoningSummaries(value: boolean) {
+-          setStore("general", "showReasoningSummaries", value)
++          setGeneral("showReasoningSummaries", value)
+         },
+         shellToolPartsExpanded: withFallback(
+           () => store.general?.shellToolPartsExpanded,
+           defaultSettings.general.shellToolPartsExpanded,
+         ),
+         setShellToolPartsExpanded(value: boolean) {
+-          setStore("general", "shellToolPartsExpanded", value)
++          setGeneral("shellToolPartsExpanded", value)
+         },
+         editToolPartsExpanded: withFallback(
+           () => store.general?.editToolPartsExpanded,
+           defaultSettings.general.editToolPartsExpanded,
+         ),
+         setEditToolPartsExpanded(value: boolean) {
+-          setStore("general", "editToolPartsExpanded", value)
++          setGeneral("editToolPartsExpanded", value)
+         },
+         showCustomAgents,
+         setShowCustomAgents(value: boolean) {
+-          setStore("general", "showCustomAgents", value)
++          setGeneral("showCustomAgents", value)
+         },
+         mobileTitlebarPosition: withFallback(
+           () => store.general?.mobileTitlebarPosition,
+           defaultSettings.general.mobileTitlebarPosition,
+         ),
+         setMobileTitlebarPosition(value: "top" | "bottom") {
+-          setStore("general", "mobileTitlebarPosition", value)
++          setGeneral("mobileTitlebarPosition", value)
+         },
+         newLayoutDesigns,
+         setNewLayoutDesigns(value: boolean) {
+           const next = oldInterfaceRetired() ? true : value
+           if (newLayoutDesigns() === next) return
+-          setStore("general", "newLayoutDesigns", next)
++          setGeneral("newLayoutDesigns", next)
+           if (typeof window !== "undefined") setTimeout(() => window.location.reload())
+         },
+         layoutTransitionClassified,
+         setOldLayoutEligible(eligible: boolean) {
+           const current = store.general?.layoutTransitionEligible
+           if (typeof current === "boolean") return
+-          setStore("general", "layoutTransitionEligible", eligible)
++          setGeneral("layoutTransitionEligible", eligible)
+         },
+         layoutTransitionAvailable: createMemo(() => ready() && layoutTransition().available),
+         newInterfaceNoticeVisible: createMemo(() => ready() && layoutTransition().notice),
+         dismissNewInterfaceNotice() {
+-          setStore("general", "newInterfaceNoticeDismissed", true)
++          setGeneral("newInterfaceNoticeDismissed", true)
+         },
+         shouldDisplayTabsToast: withFallback(() => store.general?.shouldDisplayTabsToast, false),
+         dismissTabsToast() {
+-          setStore("general", "shouldDisplayTabsToast", false)
++          setGeneral("shouldDisplayTabsToast", false)
+         },
+       },
+       visibility: {
+@@ -435,85 +499,85 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
+       appearance: {
+         fontSize: withFallback(() => store.appearance?.fontSize, defaultSettings.appearance.fontSize),
+         setFontSize(value: number) {
+-          setStore("appearance", "fontSize", value)
++          setAppearance("fontSize", value)
+         },
+         font: withFallback(() => store.appearance?.mono, defaultSettings.appearance.mono),
+         setFont(value: string) {
+-          setStore("appearance", "mono", value.trim() ? value : "")
++          setAppearance("mono", value.trim() ? value : "")
+         },
+         uiFont: withFallback(() => store.appearance?.sans, defaultSettings.appearance.sans),
+         setUIFont(value: string) {
+-          setStore("appearance", "sans", value.trim() ? value : "")
++          setAppearance("sans", value.trim() ? value : "")
+         },
+         terminalFont: withFallback(() => store.appearance?.terminal, defaultSettings.appearance.terminal),
+         setTerminalFont(value: string) {
+-          setStore("appearance", "terminal", value.trim() ? value : "")
++          setAppearance("terminal", value.trim() ? value : "")
+         },
+       },
+       keybinds: {
+         get: (action: string) => store.keybinds?.[action],
+         set(action: string, keybind: string) {
+-          setStore("keybinds", action, keybind)
++          state.update((current) => ({ ...current, keybinds: { ...current.keybinds, [action]: keybind } }))
+         },
+         reset(action: string) {
+-          setStore("keybinds", (current) => {
+-            if (!Object.prototype.hasOwnProperty.call(current, action)) return current
+-            const next = { ...current }
+-            delete next[action]
+-            return next
++          state.update((current) => {
++            if (!Object.prototype.hasOwnProperty.call(current.keybinds, action)) return current
++            const keybinds = { ...current.keybinds }
++            delete keybinds[action]
++            return { ...current, keybinds }
+           })
+         },
+         resetAll() {
+-          setStore("keybinds", reconcile({}))
++          state.update((current) => ({ ...current, keybinds: {} }))
+         },
+       },
+       permissions: {
+         autoApprove: withFallback(() => store.permissions?.autoApprove, defaultSettings.permissions.autoApprove),
+         setAutoApprove(value: boolean) {
+-          setStore("permissions", "autoApprove", value)
++          state.update((current) => ({ ...current, permissions: { autoApprove: value } }))
+         },
+       },
+       notifications: {
+         agent: withFallback(() => store.notifications?.agent, defaultSettings.notifications.agent),
+         setAgent(value: boolean) {
+-          setStore("notifications", "agent", value)
++          setNotification("agent", value)
+         },
+         permissions: withFallback(() => store.notifications?.permissions, defaultSettings.notifications.permissions),
+         setPermissions(value: boolean) {
+-          setStore("notifications", "permissions", value)
++          setNotification("permissions", value)
+         },
+         errors: withFallback(() => store.notifications?.errors, defaultSettings.notifications.errors),
+         setErrors(value: boolean) {
+-          setStore("notifications", "errors", value)
++          setNotification("errors", value)
+         },
+       },
+       sounds: {
+         agentEnabled: withFallback(() => store.sounds?.agentEnabled, defaultSettings.sounds.agentEnabled),
+         setAgentEnabled(value: boolean) {
+-          setStore("sounds", "agentEnabled", value)
++          setSound("agentEnabled", value)
+         },
+         agent: withFallback(() => store.sounds?.agent, defaultSettings.sounds.agent),
+         setAgent(value: string) {
+-          setStore("sounds", "agent", value)
++          setSound("agent", value)
+         },
+         permissionsEnabled: withFallback(
+           () => store.sounds?.permissionsEnabled,
+           defaultSettings.sounds.permissionsEnabled,
+         ),
+         setPermissionsEnabled(value: boolean) {
+-          setStore("sounds", "permissionsEnabled", value)
++          setSound("permissionsEnabled", value)
+         },
+         permissions: withFallback(() => store.sounds?.permissions, defaultSettings.sounds.permissions),
+         setPermissions(value: string) {
+-          setStore("sounds", "permissions", value)
++          setSound("permissions", value)
+         },
+         errorsEnabled: withFallback(() => store.sounds?.errorsEnabled, defaultSettings.sounds.errorsEnabled),
+         setErrorsEnabled(value: boolean) {
+-          setStore("sounds", "errorsEnabled", value)
++          setSound("errorsEnabled", value)
+         },
+         errors: withFallback(() => store.sounds?.errors, defaultSettings.sounds.errors),
+         setErrors(value: string) {
+-          setStore("sounds", "errors", value)
++          setSound("errors", value)
+         },
+       },
+     }
+diff --git a/packages/app/src/index.ts b/packages/app/src/index.ts
+index d18e05fc..cd1d08ac 100644
+--- a/packages/app/src/index.ts
++++ b/packages/app/src/index.ts
+@@ -1,4 +1,14 @@
+-export { AppBaseProviders, AppInterface } from "./app"
++export {
++  AppBaseProviders,
++  AppInterface,
++  type AppSurfaces,
++  type DraftSurfaceComponent,
++  type DraftSurfaceProps,
++  type MaybePreloadableComponent,
++  type PermissionSurfaceClient,
++  type PermissionSurfaceComponent,
++  type PermissionSurfaceProps,
++} from "./app"
+ export { useLayout } from "./context/layout"
+ export { useServerSDK } from "./context/server-sdk"
+ export { useServerSync } from "./context/server-sync"
+@@ -8,6 +18,11 @@ export { useTabs } from "./context/tabs"
+ export { useProviders } from "./hooks/use-providers"
+ export { ACCEPTED_FILE_EXTENSIONS, ACCEPTED_FILE_TYPES, filePickerFilters } from "./constants/file-picker"
+ export { useCommand } from "./context/command"
++export {
++  type Settings,
++  type SettingsAuthorityCoordinator,
++  type SettingsAuthoritySnapshot,
++} from "./context/settings"
+ export { loadLocaleDict, normalizeLocale, type Locale } from "./context/language"
+ export { useWslServers } from "./wsl/context"
+ export { type DisplayBackend, type FatalRendererErrorLog, type Platform, PlatformProvider } from "./context/platform"
+diff --git a/packages/app/src/pages/home.tsx b/packages/app/src/pages/home.tsx
+index 215696d7..ca677b34 100644
+--- a/packages/app/src/pages/home.tsx
++++ b/packages/app/src/pages/home.tsx
+@@ -553,7 +553,7 @@ export function NewHome() {
+ 
+   function editProject(conn: ServerConnection.Any, project: LocalProject) {
+     void import("@/components/dialog-edit-project-v2").then((x) => {
+-      void dialog.show(() => <x.DialogEditProjectV2 server={conn} project={project} />)
++      void dialog.show(() => <x.DialogEditProjectV2 server={conn} project={project} />, undefined, { host: true })
+     })
+   }
+ 
+@@ -1753,7 +1753,7 @@ export function LegacyHome() {
+         size="large"
+         variant="ghost"
+         class="mt-4 mx-auto text-14-regular text-text-weak"
+-        onClick={() => dialog.show(() => <DialogSelectServer />)}
++        onClick={() => dialog.show(() => <DialogSelectServer />, undefined, { host: true })}
+       >
+         <div
+           classList={{
+diff --git a/packages/app/src/pages/layout.tsx b/packages/app/src/pages/layout.tsx
+index 812a479b..6e726163 100644
+--- a/packages/app/src/pages/layout.tsx
++++ b/packages/app/src/pages/layout.tsx
+@@ -1106,11 +1106,12 @@ export default function LegacyLayout(props: ParentProps) {
+     const run = ++dialogRun
+     void import("@/components/dialog-select-server").then((x) => {
+       if (dialogDead || dialogRun !== run) return
+-      dialog.show(() => <x.DialogSelectServer />)
++      dialog.show(() => <x.DialogSelectServer />, undefined, { host: true })
+     })
+   }
+ 
+   function openSettings() {
++    if (platform.openSettings) return platform.openSettings()
+     const run = ++dialogRun
+     const module = settings.general.newLayoutDesigns()
+       ? import("@/components/settings-v2")
+@@ -1348,7 +1349,7 @@ export default function LegacyLayout(props: ParentProps) {
+     const run = ++dialogRun
+     void import("@/components/dialog-edit-project").then((x) => {
+       if (dialogDead || dialogRun !== run) return
+-      dialog.show(() => <x.DialogEditProject server={conn} project={project} />)
++      dialog.show(() => <x.DialogEditProject server={conn} project={project} />, undefined, { host: true })
+     })
+   }
+ 
+@@ -1879,9 +1880,9 @@ export default function LegacyLayout(props: ParentProps) {
+     workspaceExpanded: (directory, local) => store.workspaceExpanded[directory] ?? local,
+     setWorkspaceExpanded: (directory, value) => setStore("workspaceExpanded", directory, value),
+     showResetWorkspaceDialog: (root, directory) =>
+-      dialog.show(() => <DialogResetWorkspace root={root} directory={directory} />),
++      dialog.show(() => <DialogResetWorkspace root={root} directory={directory} />, undefined, { host: true }),
+     showDeleteWorkspaceDialog: (root, directory) =>
+-      dialog.show(() => <DialogDeleteWorkspace root={root} directory={directory} />),
++      dialog.show(() => <DialogDeleteWorkspace root={root} directory={directory} />, undefined, { host: true }),
+     setScrollContainerRef: (el, mobile) => {
+       if (!mobile) scrollContainerRef = el
+     },
+diff --git a/packages/app/src/pages/session.tsx b/packages/app/src/pages/session.tsx
+index 3ce28416..02f4c33c 100644
+--- a/packages/app/src/pages/session.tsx
++++ b/packages/app/src/pages/session.tsx
+@@ -15,6 +15,7 @@ import {
+   createSignal,
+   on,
+   onMount,
++  type Component,
+   type ParentProps,
+   untrack,
+ } from "solid-js"
+@@ -155,7 +156,7 @@ export function SessionPage() {
+ // remount around the server-scoped providers. Nothing here may key on the
+ // session ID: session tabs on the same server share this route instance, and
+ // workspace-scoped state (terminal, directory providers) lives below.
+-export function TargetSessionRouteContent() {
++export function TargetSessionRouteContent(props: { content?: Component }) {
+   const params = useParams<{ serverKey: string; id: string }>()
+   const serverSync = useServerSync()
+   const directory = createMemo(() => serverSync().session.lineage.peek(params.id)?.session.directory)
+@@ -165,7 +166,7 @@ export function TargetSessionRouteContent() {
+     <TargetServerScopedProviders directory={directory} sessionID={() => params.id}>
+       <TargetSessionSettingsCommand />
+       <SessionRouteErrorBoundary sessionID={params.id} serverKey={requireServerKey(params.serverKey)} padded>
+-        <ResolvedTargetSessionRoute />
++        <ResolvedTargetSessionRoute content={props.content} />
+       </SessionRouteErrorBoundary>
+     </TargetServerScopedProviders>
+   )
+@@ -242,7 +243,7 @@ function SessionErrorFallback(props: { error: unknown; sessionID?: string; serve
+   return <ErrorPage error={props.error} />
+ }
+ 
+-function ResolvedTargetSessionRoute() {
++function ResolvedTargetSessionRoute(props: { content?: Component }) {
+   const params = useParams<{ serverKey: string; id: string }>()
+   const tabs = useTabs()
+   const sync = useServerSync()
+@@ -271,7 +272,7 @@ function ResolvedTargetSessionRoute() {
+     <Show when={directory()}>
+       <SDKProvider directory={targetDirectory}>
+         <DirectoryDataProvider directory={targetDirectory} server={serverKey}>
+-          <TargetSessionPage />
++          <TargetSessionPage content={props.content} />
+         </DirectoryDataProvider>
+       </SDKProvider>
+     </Show>
+@@ -281,12 +282,18 @@ function ResolvedTargetSessionRoute() {
+ // Owns the workspace-identity remount. Must not include the session ID in the
+ // key: SessionPage handles session changes reactively, and remounting here
+ // destroys workspace-scoped state (terminal PTYs, file/prompt providers).
+-function TargetSessionPage() {
++function TargetSessionPage(props: { content?: Component }) {
+   const sdk = useSDK()
+   const serverSDK = useServerSDK()
+   return (
+     <Show when={`${serverSDK().scope}\0${sdk().directory}`} keyed>
+-      <SessionPage />
++      <Show when={props.content} keyed fallback={<SessionPage />}>
++        {(Content) => (
++          <SessionProviders>
++            <Content />
++          </SessionProviders>
++        )}
++      </Show>
+     </Show>
+   )
+ }
+@@ -313,7 +320,7 @@ function MarkSessionNotificationsViewed(props: { sessionID?: () => string | unde
+   return null
+ }
+ 
+-function SessionProviders(props: ParentProps) {
++export function SessionProviders(props: ParentProps) {
+   return (
+     <TerminalProvider>
+       <FileProvider>
+diff --git a/packages/app/src/pages/session/composer/session-composer-region.tsx b/packages/app/src/pages/session/composer/session-composer-region.tsx
+index 600ff41e..4c8581e0 100644
+--- a/packages/app/src/pages/session/composer/session-composer-region.tsx
++++ b/packages/app/src/pages/session/composer/session-composer-region.tsx
+@@ -1,7 +1,6 @@
+ import { Show, type JSX } from "solid-js"
+ import { useLanguage } from "@/context/language"
+ import { useSettings } from "@/context/settings"
+-import { SessionPermissionDock } from "@/pages/session/composer/session-permission-dock"
+ import { SessionQuestionDock } from "@/pages/session/composer/session-question-dock"
+ import { SessionFollowupDock } from "@/pages/session/composer/session-followup-dock"
+ import { SessionRevertDock } from "@/pages/session/composer/session-revert-dock"
+@@ -44,21 +43,6 @@ export function SessionComposerRegion(props: {
+           )}
+         </Show>
+ 
+-        <Show when={controller.state.permissionRequest()} keyed>
+-          {(request) => (
+-            <div>
+-              <SessionPermissionDock
+-                request={request}
+-                responding={controller.state.permissionResponding()}
+-                onDecide={(response) => {
+-                  controller.onResponseSubmit()
+-                  controller.state.decide(response)
+-                }}
+-              />
+-            </div>
+-          )}
+-        </Show>
+-
+         <Show when={controller.showComposer()}>
+           <Show when={controller.dock()}>
+             <div
+diff --git a/packages/app/src/pages/session/composer/session-composer-state.ts b/packages/app/src/pages/session/composer/session-composer-state.ts
+index 45f5e4cb..7f757a98 100644
+--- a/packages/app/src/pages/session/composer/session-composer-state.ts
++++ b/packages/app/src/pages/session/composer/session-composer-state.ts
+@@ -1,14 +1,10 @@
+ import { createEffect, createMemo, on, onCleanup } from "solid-js"
+ import { createStore } from "solid-js/store"
+-import type { PermissionRequest, QuestionRequest, Todo } from "@opencode-ai/sdk/v2"
++import type { QuestionRequest, Todo } from "@opencode-ai/sdk/v2"
+ import { useParams } from "@solidjs/router"
+-import { showToast } from "@/utils/toast"
+ import { useServerSync } from "@/context/server-sync"
+-import { useLanguage } from "@/context/language"
+-import { usePermission } from "@/context/permission"
+-import { useSDK } from "@/context/sdk"
+ import { useSync } from "@/context/sync"
+-import { sessionPermissionRequest, sessionQuestionRequest } from "./session-request-tree"
++import { sessionQuestionRequest } from "./session-request-tree"
+ 
+ export const todoState = (input: {
+   count: number
+@@ -27,26 +23,17 @@ const idle = { type: "idle" as const }
+ 
+ export function createSessionComposerController(options?: { closeMs?: number | (() => number) }) {
+   const params = useParams()
+-  const sdk = useSDK()
+   const sync = useSync()
+   const serverSync = useServerSync()
+-  const language = useLanguage()
+-  const permission = usePermission()
+ 
+   const questionRequest = createMemo((): QuestionRequest | undefined => {
+     return sessionQuestionRequest(sync().data.session, sync().data.question, params.id)
+   })
+ 
+-  const permissionRequest = createMemo((): PermissionRequest | undefined => {
+-    return sessionPermissionRequest(sync().data.session, sync().data.permission, params.id, (item) => {
+-      return !permission.autoResponds(item, sdk().directory)
+-    })
+-  })
+-
+   const blocked = createMemo(() => {
+     const id = params.id
+     if (!id) return false
+-    return !!permissionRequest() || !!questionRequest()
++    return !!questionRequest()
+   })
+ 
+   const todos = createMemo((): Todo[] => {
+@@ -63,35 +50,11 @@ export function createSessionComposerController(options?: { closeMs?: number | (
+ 
+   const [store, setStore] = createStore({
+     sessionID: params.id,
+-    responding: undefined as string | undefined,
+     dock: todos().length > 0 && !done() && live(),
+     closing: false,
+     opening: false,
+   })
+ 
+-  const permissionResponding = createMemo(() => {
+-    const perm = permissionRequest()
+-    if (!perm) return false
+-    return store.responding === perm.id
+-  })
+-
+-  const decide = (response: "once" | "always" | "reject") => {
+-    const perm = permissionRequest()
+-    if (!perm) return
+-    if (store.responding === perm.id) return
+-
+-    setStore("responding", perm.id)
+-    sdk()
+-      .client.permission.respond({ sessionID: perm.sessionID, permissionID: perm.id, response })
+-      .catch((err: unknown) => {
+-        const description = err instanceof Error ? err.message : String(err)
+-        showToast({ title: language.t("common.requestFailed"), description })
+-      })
+-      .finally(() => {
+-        setStore("responding", (id) => (id === perm.id ? undefined : id))
+-      })
+-  }
+-
+   let timer: number | undefined
+   let raf: number | undefined
+ 
+@@ -188,9 +151,6 @@ export function createSessionComposerController(options?: { closeMs?: number | (
+   return {
+     blocked,
+     questionRequest,
+-    permissionRequest,
+-    permissionResponding,
+-    decide,
+     todos,
+     dock: () =>
+       store.sessionID === params.id
+diff --git a/packages/app/src/pages/session/composer/session-permission-dock.tsx b/packages/app/src/pages/session/composer/session-permission-dock.tsx
+deleted file mode 100644
+index 35a62f75..00000000
+--- a/packages/app/src/pages/session/composer/session-permission-dock.tsx
++++ /dev/null
+@@ -1,74 +0,0 @@
+-import { For, Show } from "solid-js"
+-import type { PermissionRequest } from "@opencode-ai/sdk/v2"
+-import { Button } from "@opencode-ai/ui/button"
+-import { DockPrompt } from "@opencode-ai/session-ui/dock-prompt"
+-import { Icon } from "@opencode-ai/ui/icon"
+-import { useLanguage } from "@/context/language"
+-
+-export function SessionPermissionDock(props: {
+-  request: PermissionRequest
+-  responding: boolean
+-  onDecide: (response: "once" | "always" | "reject") => void
+-}) {
+-  const language = useLanguage()
+-
+-  const toolDescription = () => {
+-    const key = `settings.permissions.tool.${props.request.permission}.description`
+-    const value = language.t(key as Parameters<typeof language.t>[0])
+-    if (value === key) return ""
+-    return value
+-  }
+-
+-  return (
+-    <DockPrompt
+-      kind="permission"
+-      header={
+-        <div data-slot="permission-row" data-variant="header">
+-          <span data-slot="permission-icon">
+-            <Icon name="warning" size="normal" />
+-          </span>
+-          <div data-slot="permission-header-title">{language.t("notification.permission.title")}</div>
+-        </div>
+-      }
+-      footer={
+-        <>
+-          <div />
+-          <div data-slot="permission-footer-actions">
+-            <Button variant="ghost" size="normal" onClick={() => props.onDecide("reject")} disabled={props.responding}>
+-              {language.t("ui.permission.deny")}
+-            </Button>
+-            <Button
+-              variant="secondary"
+-              size="normal"
+-              onClick={() => props.onDecide("always")}
+-              disabled={props.responding}
+-            >
+-              {language.t("ui.permission.allowAlways")}
+-            </Button>
+-            <Button variant="primary" size="normal" onClick={() => props.onDecide("once")} disabled={props.responding}>
+-              {language.t("ui.permission.allowOnce")}
+-            </Button>
+-          </div>
+-        </>
+-      }
+-    >
+-      <Show when={toolDescription()}>
+-        <div data-slot="permission-row">
+-          <span data-slot="permission-spacer" aria-hidden="true" />
+-          <div data-slot="permission-hint">{toolDescription()}</div>
+-        </div>
+-      </Show>
+-
+-      <Show when={props.request.patterns.length > 0}>
+-        <div data-slot="permission-row">
+-          <span data-slot="permission-spacer" aria-hidden="true" />
+-          <div data-slot="permission-patterns">
+-            <For each={props.request.patterns}>
+-              {(pattern) => <code class="text-12-regular text-text-base break-all">{pattern}</code>}
+-            </For>
+-          </div>
+-        </div>
+-      </Show>
+-    </DockPrompt>
+-  )
+-}
+diff --git a/packages/app/src/pages/session/session-side-panel.tsx b/packages/app/src/pages/session/session-side-panel.tsx
+index 571428e2..26ad6fdc 100644
+--- a/packages/app/src/pages/session/session-side-panel.tsx
++++ b/packages/app/src/pages/session/session-side-panel.tsx
+@@ -458,7 +458,11 @@ export function SessionSidePanel(props: {
+                                     class="!rounded-md"
+                                     onClick={() => {
+                                       void import("@/components/dialog-select-file").then((x) => {
+-                                        dialog.show(() => <x.DialogSelectFile mode="files" onOpenFile={showAllFiles} />)
++                                        dialog.show(
++                                          () => <x.DialogSelectFile mode="files" onOpenFile={showAllFiles} />,
++                                          undefined,
++                                          { host: true },
++                                        )
+                                       })
+                                     }}
+                                     aria-label={language.t("command.file.open")}
+diff --git a/packages/app/src/pages/session/timeline/message-timeline.tsx b/packages/app/src/pages/session/timeline/message-timeline.tsx
+index 2959e9f8..21ad01c0 100644
+--- a/packages/app/src/pages/session/timeline/message-timeline.tsx
++++ b/packages/app/src/pages/session/timeline/message-timeline.tsx
+@@ -1562,7 +1562,9 @@ export function MessageTimeline(props: {
+                                 </DropdownMenu.Item>
+                                 <DropdownMenu.Separator />
+                                 <DropdownMenu.Item
+-                                  onSelect={() => dialog.show(() => <DialogDeleteSession sessionID={id} />)}
++                                  onSelect={() =>
++                                    dialog.show(() => <DialogDeleteSession sessionID={id} />, undefined, { host: true })
++                                  }
+                                 >
+                                   <DropdownMenu.ItemLabel>{language.t("common.delete")}</DropdownMenu.ItemLabel>
+                                 </DropdownMenu.Item>
+@@ -1632,7 +1634,11 @@ export function MessageTimeline(props: {
+                                 {language.t("common.archive")}
+                               </MenuV2.Item>
+                               <MenuV2.Separator />
+-                              <MenuV2.Item onSelect={() => dialog.show(() => <DialogDeleteSession sessionID={id} />)}>
++                              <MenuV2.Item
++                                onSelect={() =>
++                                  dialog.show(() => <DialogDeleteSession sessionID={id} />, undefined, { host: true })
++                                }
++                              >
+                                 {language.t("common.delete")}...
+                               </MenuV2.Item>
+                             </MenuV2.Content>
+diff --git a/packages/app/src/pages/session/usage-exceeded-dialogs.tsx b/packages/app/src/pages/session/usage-exceeded-dialogs.tsx
+index d56fa3d1..fd38b0dd 100644
+--- a/packages/app/src/pages/session/usage-exceeded-dialogs.tsx
++++ b/packages/app/src/pages/session/usage-exceeded-dialogs.tsx
+@@ -66,38 +66,46 @@ export function useUsageExceededDialogs() {
+       if (goUpsellState[keys.dontShow]) return
+ 
+       if (action.reason === "free_tier_limit") {
+-        dialog.show(() => (
+-          <DialogUsageExceeded
+-            title={isEnglish() ? action.title : t("dialog.usageExceeded.freeTier.title")}
+-            description={isEnglish() ? action.message : t("dialog.usageExceeded.freeTier.description")}
+-            actionLabel={isEnglish() ? action.label : t("dialog.usageExceeded.freeTier.actionLabel")}
+-            link={action.link}
+-            onClose={(dontShowAgain) => {
+-              setGoUpsellState(keys.lastSeenAt, Date.now())
+-              if (dontShowAgain) setGoUpsellState(keys.dontShow, Date.now())
+-              else {
+-                void import("../../components/dialog-connect-provider").then((x) => {
+-                  const controller = x.useProviderConnectController()
+-                  controller.select("opencode-go")
+-                  void dialog.show(() => <x.DialogConnectProvider controller={controller} />)
+-                })
+-              }
+-            }}
+-          />
+-        ))
++        dialog.show(
++          () => (
++            <DialogUsageExceeded
++              title={isEnglish() ? action.title : t("dialog.usageExceeded.freeTier.title")}
++              description={isEnglish() ? action.message : t("dialog.usageExceeded.freeTier.description")}
++              actionLabel={isEnglish() ? action.label : t("dialog.usageExceeded.freeTier.actionLabel")}
++              link={action.link}
++              onClose={(dontShowAgain) => {
++                setGoUpsellState(keys.lastSeenAt, Date.now())
++                if (dontShowAgain) setGoUpsellState(keys.dontShow, Date.now())
++                else {
++                  void import("../../components/dialog-connect-provider").then((x) => {
++                    const controller = x.useProviderConnectController()
++                    controller.select("opencode-go")
++                    void dialog.show(() => <x.DialogConnectProvider controller={controller} />)
++                  })
++                }
++              }}
++            />
++          ),
++          undefined,
++          { host: true },
++        )
+       } else if (action.reason === "account_rate_limit") {
+-        dialog.show(() => (
+-          <DialogUsageExceeded
+-            title={isEnglish() ? action.title : t("dialog.usageExceeded.accountRateLimit.title")}
+-            description={isEnglish() ? action.message : t("dialog.usageExceeded.accountRateLimit.description")}
+-            actionLabel={isEnglish() ? action.label : t("dialog.usageExceeded.accountRateLimit.actionLabel")}
+-            link={action.link}
+-            onClose={(dontShowAgain) => {
+-              setGoUpsellState(keys.lastSeenAt, Date.now())
+-              if (dontShowAgain) setGoUpsellState(keys.dontShow, Date.now())
+-            }}
+-          />
+-        ))
++        dialog.show(
++          () => (
++            <DialogUsageExceeded
++              title={isEnglish() ? action.title : t("dialog.usageExceeded.accountRateLimit.title")}
++              description={isEnglish() ? action.message : t("dialog.usageExceeded.accountRateLimit.description")}
++              actionLabel={isEnglish() ? action.label : t("dialog.usageExceeded.accountRateLimit.actionLabel")}
++              link={action.link}
++              onClose={(dontShowAgain) => {
++                setGoUpsellState(keys.lastSeenAt, Date.now())
++                if (dontShowAgain) setGoUpsellState(keys.dontShow, Date.now())
++              }}
++            />
++          ),
++          undefined,
++          { host: true },
++        )
+       }
+     }),
+   )
+diff --git a/packages/app/src/pages/session/use-session-commands.tsx b/packages/app/src/pages/session/use-session-commands.tsx
+index 275e6ec4..bb4a5bc7 100644
+--- a/packages/app/src/pages/session/use-session-commands.tsx
++++ b/packages/app/src/pages/session/use-session-commands.tsx
+@@ -234,7 +234,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
+   const openFile = () => {
+     void openDialog(
+       () => import("@/components/dialog-select-file"),
+-      (x) => dialog.show(() => <x.DialogSelectFile onOpenFile={showAllFiles} />),
++      (x) => dialog.show(() => <x.DialogSelectFile onOpenFile={showAllFiles} />, undefined, { host: true }),
+     )
+   }
+ 
+@@ -280,7 +280,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
+   const chooseMcp = () => {
+     void openDialog(
+       () => import("@/components/dialog-select-mcp"),
+-      (x) => dialog.show(() => <x.DialogSelectMcp />),
++      (x) => dialog.show(() => <x.DialogSelectMcp />, undefined, { host: true }),
+     )
+   }
+ 
+@@ -385,7 +385,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
+   const fork = () => {
+     void openDialog(
+       () => import("@/components/dialog-fork"),
+-      (x) => dialog.show(() => <x.DialogFork />),
++      (x) => dialog.show(() => <x.DialogFork />, undefined, { host: true }),
+     )
+   }
+ 
+diff --git a/packages/ui/src/components/dialog.tsx b/packages/ui/src/components/dialog.tsx
+index 981e3f45..79fc5571 100644
+--- a/packages/ui/src/components/dialog.tsx
++++ b/packages/ui/src/components/dialog.tsx
+@@ -1,6 +1,8 @@
+ import { Dialog as Kobalte } from "@kobalte/core/dialog"
+ import { ComponentProps, JSXElement, Match, ParentProps, Show, Switch } from "solid-js"
++import { Dynamic } from "solid-js/web"
+ import { useI18n } from "../context/i18n"
++import { useDialogHost } from "../context/dialog"
+ import { IconButton } from "./icon-button"
+ 
+ export interface DialogProps extends ParentProps {
+@@ -15,6 +17,26 @@ export interface DialogProps extends ParentProps {
+ }
+ 
+ export function Dialog(props: DialogProps) {
++  const host = useDialogHost()
++  if (host) {
++    return (
++      <Dynamic
++        component={host.component}
++        open={host.open()}
++        onClose={host.close}
++        title={props.title}
++        description={props.description}
++        action={props.action}
++        size={props.size}
++        class={props.class}
++        classList={props.classList}
++        fit={props.fit}
++        transition={props.transition}
++      >
++        {props.children}
++      </Dynamic>
++    )
++  }
+   const i18n = useI18n()
+   return (
+     <div
+diff --git a/packages/ui/src/components/image-preview.tsx b/packages/ui/src/components/image-preview.tsx
+index 8462ce25..944dacd7 100644
+--- a/packages/ui/src/components/image-preview.tsx
++++ b/packages/ui/src/components/image-preview.tsx
+@@ -1,6 +1,8 @@
+ import { Dialog as Kobalte } from "@kobalte/core/dialog"
+ import { useI18n } from "../context/i18n"
+ import { IconButton } from "./icon-button"
++import { useDialogHost } from "../context/dialog"
++import { Dynamic } from "solid-js/web"
+ 
+ export interface ImagePreviewProps {
+   src: string
+@@ -9,6 +11,24 @@ export interface ImagePreviewProps {
+ 
+ export function ImagePreview(props: ImagePreviewProps) {
+   const i18n = useI18n()
++  const host = useDialogHost()
++  if (host) {
++    return (
++      <Dynamic
++        component={host.component}
++        open={host.open()}
++        onClose={host.close}
++        title={props.alt ?? i18n.t("ui.imagePreview.alt")}
++        size="large"
++      >
++        <div data-component="image-preview" data-alpha-hosted="">
++          <div data-slot="image-preview-body">
++            <img src={props.src} alt={props.alt ?? i18n.t("ui.imagePreview.alt")} data-slot="image-preview-image" />
++          </div>
++        </div>
++      </Dynamic>
++    )
++  }
+   return (
+     <div data-component="image-preview">
+       <div data-slot="image-preview-container">
+diff --git a/packages/ui/src/context/dialog.tsx b/packages/ui/src/context/dialog.tsx
+index 39ef8ea1..343854e9 100644
+--- a/packages/ui/src/context/dialog.tsx
++++ b/packages/ui/src/context/dialog.tsx
+@@ -7,6 +7,7 @@ import {
+   onCleanup,
+   type Owner,
+   type ParentProps,
++  type Component,
+   runWithOwner,
+   useContext,
+   type JSX,
+@@ -25,11 +26,35 @@ type Active = {
+   owner: Owner
+   onClose?: () => void
+   setClosing: (closing: boolean) => void
++  hosted: boolean
+ }
+ 
++export type DialogHostProps = {
++  open: boolean
++  onClose: () => void
++  title?: JSX.Element
++  description?: JSX.Element
++  action?: JSX.Element
++  size?: "normal" | "large" | "x-large"
++  class?: string
++  classList?: Record<string, boolean | undefined>
++  fit?: boolean
++  transition?: boolean
++  children?: JSX.Element
++}
++
++export type DialogHost = Component<DialogHostProps>
++export type DialogMountOptions = { host?: boolean }
++
++const HostContext = createContext<{
++  component: DialogHost
++  open: () => boolean
++  close: () => void
++}>()
++
+ const Context = createContext<ReturnType<typeof init>>()
+ 
+-function init() {
++function init(host: () => DialogHost | undefined = () => undefined) {
+   const [stack, setStack] = createSignal<Active[]>([])
+   const timer = { current: undefined as ReturnType<typeof setTimeout> | undefined }
+   const lock = { value: false }
+@@ -63,7 +88,8 @@ function init() {
+   }
+ 
+   createEffect(() => {
+-    if (stack().length === 0) return
++    const current = stack().at(-1)
++    if (!current || current.hosted) return
+ 
+     const onKeyDown = (event: KeyboardEvent) => {
+       if (event.key !== "Escape") return
+@@ -75,7 +101,13 @@ function init() {
+     makeEventListener(window, "keydown", onKeyDown, { capture: true })
+   })
+ 
+-  const mount = (element: DialogElement, owner: Owner, onClose: (() => void) | undefined, layer: number) => {
++  const mount = (
++    element: DialogElement,
++    owner: Owner,
++    onClose: (() => void) | undefined,
++    layer: number,
++    host: DialogHost | undefined,
++  ) => {
+     const id = Math.random().toString(36).slice(2)
+     const zIndex = 50 + layer * 10
+     let dispose: (() => void) | undefined
+@@ -86,6 +118,13 @@ function init() {
+         dispose = d
+         const [closing, setClosingSignal] = createSignal(false)
+         setClosing = setClosingSignal
++        if (host) {
++          return (
++            <HostContext.Provider value={{ component: host, open: () => !closing(), close: () => close(id) }}>
++              {element()}
++            </HostContext.Provider>
++          )
++        }
+         return (
+           <Kobalte
+             modal
+@@ -123,20 +162,20 @@ function init() {
+ 
+     if (!dispose || !setClosing) return
+ 
+-    const active: Active = { id, node, dispose, owner, onClose, setClosing }
++    const active: Active = { id, node, dispose, owner, onClose, setClosing, hosted: !!host }
+     setStack((items) => [...items, active])
+   }
+ 
+-  const push = (element: DialogElement, owner: Owner, onClose?: () => void) => {
++  const push = (element: DialogElement, owner: Owner, onClose?: () => void, host?: DialogHost) => {
+     if (timer.current !== undefined) {
+       clearTimeout(timer.current)
+       timer.current = undefined
+     }
+     lock.value = false
+-    mount(element, owner, onClose, stack().length)
++    mount(element, owner, onClose, stack().length, host)
+   }
+ 
+-  const show = (element: DialogElement, owner: Owner, onClose?: () => void) => {
++  const show = (element: DialogElement, owner: Owner, onClose?: () => void, host?: DialogHost) => {
+     for (const item of stack()) item.dispose()
+     setStack([])
+     if (timer.current !== undefined) {
+@@ -144,7 +183,7 @@ function init() {
+       timer.current = undefined
+     }
+     lock.value = false
+-    mount(element, owner, onClose, 0)
++    mount(element, owner, onClose, 0, host)
+   }
+ 
+   return {
+@@ -152,11 +191,12 @@ function init() {
+     close,
+     show,
+     push,
++    host,
+   }
+ }
+ 
+-export function DialogProvider(props: ParentProps) {
+-  const ctx = init()
++export function DialogProvider(props: ParentProps<{ host?: DialogHost }>) {
++  const ctx = init(() => props.host)
+   return (
+     <Context.Provider value={ctx}>
+       {props.children}
+@@ -182,16 +222,20 @@ export function useDialog() {
+     get active() {
+       return ctx.stack().at(-1)
+     },
+-    show(element: DialogElement, onClose?: () => void) {
++    show(element: DialogElement, onClose?: () => void, options?: DialogMountOptions) {
+       const base = ctx.stack().at(-1)?.owner ?? owner
+-      return startTransition(() => ctx.show(element, base, onClose))
++      return startTransition(() => ctx.show(element, base, onClose, options?.host ? ctx.host() : undefined))
+     },
+-    push(element: DialogElement, onClose?: () => void) {
++    push(element: DialogElement, onClose?: () => void, options?: DialogMountOptions) {
+       const base = ctx.stack().at(-1)?.owner ?? owner
+-      return startTransition(() => ctx.push(element, base, onClose))
++      return startTransition(() => ctx.push(element, base, onClose, options?.host ? ctx.host() : undefined))
+     },
+     close() {
+       ctx.close()
+     },
+   }
+ }
++
++export function useDialogHost() {
++  return useContext(HostContext)
++}
+diff --git a/packages/ui/src/v2/components/dialog-v2.tsx b/packages/ui/src/v2/components/dialog-v2.tsx
+index b9dd2521..cd6a501a 100644
+--- a/packages/ui/src/v2/components/dialog-v2.tsx
++++ b/packages/ui/src/v2/components/dialog-v2.tsx
+@@ -1,5 +1,7 @@
+ import { Dialog as Kobalte } from "@kobalte/core/dialog"
+ import { type ComponentProps, type JSXElement, type ParentProps, Show, children, splitProps } from "solid-js"
++import { Dynamic } from "solid-js/web"
++import { useDialogHost } from "../../context/dialog"
+ import "./dialog-v2.css"
+ 
+ export interface DialogProps extends ParentProps {
+@@ -80,6 +82,31 @@ export function DialogHeader(props: DialogHeaderProps) {
+ }
+ 
+ export function Dialog(props: DialogProps) {
++  const host = useDialogHost()
++  if (host) {
++    return (
++      <Kobalte
++        modal
++        open={host.open()}
++        onOpenChange={(open) => {
++          if (open) return
++          host.close()
++        }}
++      >
++        <Dynamic
++          component={host.component}
++          open={host.open()}
++          onClose={host.close}
++          size={props.size}
++          class={[props.containerClass, props.class].filter(Boolean).join(" ")}
++          classList={props.classList}
++          fit={props.fit}
++        >
++          {props.children}
++        </Dynamic>
++      </Kobalte>
++    )
++  }
+   const [local] = splitProps(props, ["size", "variant", "class", "containerClass", "classList", "fit", "children"])
+ 
+   return (
