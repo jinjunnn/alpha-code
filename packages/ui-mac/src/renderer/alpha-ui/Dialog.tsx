@@ -46,8 +46,16 @@ export function Dialog(props: {
 
   createEffect(() => {
     if (!props.open) return
-    const manager = createDialogFocusManager(panel, document.activeElement, () => props.restoreFocus)
-    const current = registerDialog({ root, panel, manager, canDismiss, onClose: () => props.onClose() })
+    const manager = createDialogFocusManager(panel)
+    const current = registerDialog({
+      root,
+      panel,
+      manager,
+      trigger: panel.ownerDocument.activeElement,
+      restoreFocus: () => props.restoreFocus,
+      canDismiss,
+      onClose: () => props.onClose(),
+    })
     registration = current
     queueMicrotask(() => {
       if (current.isTop()) manager.focusInitial()
@@ -55,7 +63,6 @@ export function Dialog(props: {
     onCleanup(() => {
       current.unregister()
       if (registration === current) registration = undefined
-      queueMicrotask(() => manager.restore())
     })
   })
 

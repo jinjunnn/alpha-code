@@ -2,10 +2,15 @@ export type DialogFocusTarget = HTMLElement | SVGElement
 export type DialogRestoreFocus = DialogFocusTarget | (() => DialogFocusTarget | null | undefined)
 
 type DialogFocusManager = ReturnType<typeof createDialogFocusManager>
+type DialogRestoreRequest = {
+  trigger: Element | null
+  fallback: () => DialogRestoreFocus | undefined
+}
 type DialogEntry = {
   root: HTMLElement
   panel: HTMLElement
   manager: DialogFocusManager
+  restore: DialogRestoreRequest
   canDismiss: () => boolean
   onClose: () => void
   composing: boolean
@@ -18,15 +23,12 @@ type DialogStack = {
   onFocusIn: (event: FocusEvent) => void
   onCompositionStart: (event: CompositionEvent) => void
   onCompositionEnd: (event: CompositionEvent) => void
+  observer: MutationObserver
 }
 
 const stacks = new WeakMap<Document, DialogStack>()
 
-export function createDialogFocusManager(
-  panel: HTMLElement,
-  trigger: Element | null,
-  restoreFocus: () => DialogRestoreFocus | undefined,
-) {
+export function createDialogFocusManager(panel: HTMLElement) {
   let tabDirection: 1 | -1 = 1
 
   const focusPanel = () => {
@@ -64,12 +66,12 @@ export function createDialogFocusManager(
       if (targets.some(focusElement)) return
       focusPanel()
     },
-    restore() {
-      if (isRestorable(trigger) && focusElement(trigger)) return
-      const explicit = restoreFocus()
-      const target = typeof explicit === "function" ? explicit() : explicit
-      if (isRestorable(target) && focusElement(target)) return
-      focusElement(focusAnchor(panel.ownerDocument))
+    containFocus() {
+      const active = panel.ownerDocument.activeElement
+      if ((active instanceof HTMLElement || active instanceof SVGElement) && isFocusableInPanel(active, panel)) return
+      const targets = tabbableElements(panel).filter((element) => !element.hasAttribute("data-dialog-focus-guard"))
+      if (targets.some(focusElement)) return
+      focusPanel()
     },
   }
 }
@@ -78,11 +80,21 @@ export function registerDialog(options: {
   root: HTMLElement
   panel: HTMLElement
   manager: DialogFocusManager
+  trigger: Element | null
+  restoreFocus: () => DialogRestoreFocus | undefined
   canDismiss: () => boolean
   onClose: () => void
 }) {
   const stack = dialogStack(options.panel.ownerDocument)
-  const entry: DialogEntry = { ...options, composing: false }
+  const entry: DialogEntry = {
+    root: options.root,
+    panel: options.panel,
+    manager: options.manager,
+    restore: { trigger: options.trigger, fallback: options.restoreFocus },
+    canDismiss: options.canDismiss,
+    onClose: options.onClose,
+    composing: false,
+  }
   stack.entries.push(entry)
   updateLayers(stack, options.panel.ownerDocument)
   const isTop = () => stack.entries.at(-1) === entry
@@ -97,13 +109,19 @@ export function registerDialog(options: {
       if (!registered) return
       registered = false
       const index = stack.entries.indexOf(entry)
-      if (index >= 0) stack.entries.splice(index, 1)
+      if (index < 0) return
+      const wasTop = index === stack.entries.length - 1
+      stack.entries.splice(index, 1)
+      // A surviving inner dialog inherits the removed lower dialog's return path.
+      if (!wasTop) stack.entries[index]!.restore = entry.restore
       updateLayers(stack, options.panel.ownerDocument)
+      if (wasTop) queueMicrotask(() => restoreDialogFocus(options.panel.ownerDocument, entry.restore))
       if (stack.entries.length > 0) return
       options.panel.ownerDocument.removeEventListener("keydown", stack.onKeyDown, true)
       options.panel.ownerDocument.removeEventListener("focusin", stack.onFocusIn, true)
       options.panel.ownerDocument.removeEventListener("compositionstart", stack.onCompositionStart, true)
       options.panel.ownerDocument.removeEventListener("compositionend", stack.onCompositionEnd, true)
+      stack.observer.disconnect()
       stacks.delete(options.panel.ownerDocument)
     },
   }
@@ -113,8 +131,10 @@ function dialogStack(document: Document) {
   const existing = stacks.get(document)
   if (existing) return existing
 
+  const entries: DialogEntry[] = []
+  const observer = new MutationObserver(() => entries.at(-1)?.manager.containFocus())
   const stack: DialogStack = {
-    entries: [],
+    entries,
     layers: new Map(),
     onKeyDown(event) {
       const top = stack.entries.at(-1)
@@ -124,7 +144,7 @@ function dialogStack(document: Document) {
         return
       }
       if (event.key !== "Escape") return
-      if (top.composing || event.isComposing) {
+      if (entryForTarget(stack, event.target)?.composing || event.isComposing) {
         event.stopImmediatePropagation()
         return
       }
@@ -138,13 +158,14 @@ function dialogStack(document: Document) {
       top.manager.focusInitial()
     },
     onCompositionStart(event) {
-      const top = stack.entries.at(-1)
-      if (top && event.target instanceof Node && top.panel.contains(event.target)) top.composing = true
+      const entry = entryForTarget(stack, event.target)
+      if (entry) entry.composing = true
     },
     onCompositionEnd(event) {
-      const top = stack.entries.at(-1)
-      if (top && event.target instanceof Node && top.panel.contains(event.target)) top.composing = false
+      const entry = entryForTarget(stack, event.target)
+      if (entry) entry.composing = false
     },
+    observer,
   }
   stacks.set(document, stack)
   document.addEventListener("keydown", stack.onKeyDown, true)
@@ -157,6 +178,8 @@ function dialogStack(document: Document) {
 function updateLayers(stack: DialogStack, document: Document) {
   const top = stack.entries.at(-1)
   const topHost = top ? portalHost(top.root, document.body) : undefined
+
+  stack.observer.disconnect()
 
   Array.from(document.body.children)
     .filter((element): element is HTMLElement => element instanceof HTMLElement)
@@ -189,12 +212,28 @@ function updateLayers(stack: DialogStack, document: Document) {
     entry.panel.removeAttribute("aria-modal")
   })
 
-  if (top) return
+  if (top) {
+    stack.observer.observe(top.panel, { attributes: true, childList: true, subtree: true })
+    return
+  }
   stack.layers.forEach((saved, element) => {
     setAttribute(element, "inert", saved.inert)
     setAttribute(element, "aria-hidden", saved.ariaHidden)
   })
   stack.layers.clear()
+}
+
+function entryForTarget(stack: DialogStack, target: EventTarget | null) {
+  if (!(target instanceof Node)) return undefined
+  return stack.entries.findLast((entry) => entry.panel.contains(target))
+}
+
+function restoreDialogFocus(document: Document, restore: DialogRestoreRequest) {
+  if (isRestorable(restore.trigger) && focusElement(restore.trigger)) return
+  const explicit = restore.fallback()
+  const target = typeof explicit === "function" ? explicit() : explicit
+  if (isRestorable(target) && focusElement(target)) return
+  focusElement(focusAnchor(document))
 }
 
 function portalHost(root: HTMLElement, body: HTMLElement) {
@@ -230,7 +269,11 @@ function tabbableElements(panel: HTMLElement) {
 }
 
 function isTabbable(element: HTMLElement | SVGElement, panel: HTMLElement) {
-  if (!panel.contains(element) || element.tabIndex < 0 || !isVisible(element)) return false
+  return element.tabIndex >= 0 && isFocusableInPanel(element, panel)
+}
+
+function isFocusableInPanel(element: HTMLElement | SVGElement, panel: HTMLElement) {
+  if (!panel.contains(element) || !isVisible(element)) return false
   if ((element as HTMLElement & { disabled?: boolean }).disabled) return false
   return !disabledByFieldset(element)
 }

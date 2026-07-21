@@ -402,6 +402,24 @@ describe("sentinel focus boundary", () => {
     guard(dialog(), "end").focus()
     expect(document.activeElement?.id).toBe("replacement")
   })
+
+  for (const mutation of ["disabled", "removed"] as const) {
+    test(`recaptures focus when the active button is ${mutation}`, async () => {
+      const active = element("button", { id: "active-action" }, "Active action")
+      const fallback = element("button", { id: "fallback-action" }, "Fallback action")
+      mountDialog({ dismissible: false, children: [active, fallback] })
+      await flush()
+
+      active.focus()
+      expect(document.activeElement).toBe(active)
+      if (mutation === "disabled") active.disabled = true
+      if (mutation === "removed") active.remove()
+      await flush()
+
+      expect(dialog().contains(document.activeElement)).toBe(true)
+      expect(document.activeElement).toBe(fallback)
+    })
+  }
 })
 
 describe("Dialog stack and IME", () => {
@@ -481,6 +499,106 @@ describe("Dialog stack and IME", () => {
     expect(outerClose).toHaveBeenCalledTimes(1)
     expect(document.activeElement).toBe(external)
     expect(external.hasAttribute("inert")).toBe(false)
+  })
+
+  test("preserves the outer trigger across non-LIFO dialog closure", async () => {
+    const external = element("button", { id: "outer-trigger" }, "Open outer")
+    document.body.append(external)
+    external.focus()
+    const host = document.createElement("div")
+    document.body.append(host)
+    const [outerOpen, setOuterOpen] = runtime.createSignal(true)
+    const [innerOpen, setInnerOpen] = runtime.createSignal(false)
+    const innerTrigger = element("button", { id: "inner-trigger" }, "Open inner")
+
+    disposers.push(
+      runtime.render(
+        () => [
+          runtime.createComponent(runtime.Dialog, {
+            get open() {
+              return outerOpen()
+            },
+            onClose: () => setOuterOpen(false),
+            title: "Outer dialog",
+            children: innerTrigger,
+          }),
+          runtime.createComponent(runtime.Dialog, {
+            get open() {
+              return innerOpen()
+            },
+            onClose: () => setInnerOpen(false),
+            title: "Inner dialog",
+            children: element("button", { autofocus: true }, "Inner action"),
+          }),
+        ],
+        host,
+      ),
+    )
+    await flush()
+
+    innerTrigger.focus()
+    setInnerOpen(true)
+    await flush()
+    setOuterOpen(false)
+    await flush()
+    expect(document.querySelectorAll("[role='dialog']")).toHaveLength(1)
+
+    setInnerOpen(false)
+    await flush()
+    expect(document.activeElement).toBe(external)
+    expect(document.activeElement).not.toBe(document.querySelector("[data-dialog-focus-anchor]"))
+    expect(external.hasAttribute("inert")).toBe(false)
+  })
+
+  test("clears lower-dialog composition by event target after the stack top changes", async () => {
+    const host = document.createElement("div")
+    document.body.append(host)
+    const [outerOpen, setOuterOpen] = runtime.createSignal(true)
+    const [innerOpen, setInnerOpen] = runtime.createSignal(false)
+    const outerClose = mock(() => setOuterOpen(false))
+    const innerClose = mock(() => setInnerOpen(false))
+    const input = element("input", { autofocus: true })
+
+    disposers.push(
+      runtime.render(
+        () => [
+          runtime.createComponent(runtime.Dialog, {
+            get open() {
+              return outerOpen()
+            },
+            onClose: outerClose,
+            title: "Outer composition dialog",
+            children: input,
+          }),
+          runtime.createComponent(runtime.Dialog, {
+            get open() {
+              return innerOpen()
+            },
+            onClose: innerClose,
+            title: "Inner composition dialog",
+            children: element("button", { autofocus: true }, "Inner action"),
+          }),
+        ],
+        host,
+      ),
+    )
+    await flush()
+
+    input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }))
+    setInnerOpen(true)
+    await flush()
+    const composing = keydown(input, "Escape")
+    expect(composing.defaultPrevented).toBe(false)
+    expect(innerClose).not.toHaveBeenCalled()
+
+    input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }))
+    keydown(document.querySelectorAll("[role='dialog']")[1]!, "Escape")
+    await flush()
+    expect(innerClose).toHaveBeenCalledTimes(1)
+
+    keydown(input, "Escape")
+    await flush()
+    expect(outerClose).toHaveBeenCalledTimes(1)
   })
 
   for (const title of ["Import", "Custom MCP", "Agent preview"]) {
