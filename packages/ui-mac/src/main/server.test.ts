@@ -36,7 +36,7 @@ mock.module("electron", () => ({
   dialog: {},
   ipcMain: { handle: () => {} },
 }))
-mock.module("./logging", () => ({ getLogger: () => undefined }))
+mock.module("./logging", () => ({ getLogger: () => undefined, write: () => {}, rotateServerLogs: () => {} }))
 mock.module("./store", () => ({ getStore: () => ({ get: () => null, set: () => {}, delete: () => {} }) }))
 mock.module("./alpha-secret-files", () => ({ syncSecretFiles: () => ({ written: [], removed: [] }) }))
 

@@ -141,6 +141,7 @@ mock.module("./logging", () => ({
     logLines.push(JSON.stringify([name, message, extra ?? {}, level ?? "info"]))
   },
   getLogger: () => undefined,
+  rotateServerLogs: () => {},
 }))
 
 const {

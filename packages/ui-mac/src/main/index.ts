@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { mkdirSync, rmSync } from "node:fs"
+import { mkdirSync, rmSync, statSync } from "node:fs"
 import * as http from "node:http"
 import { createServer } from "node:net"
 import { tmpdir } from "node:os"
@@ -32,7 +32,14 @@ import { syncLiveAllowlist } from "./alpha-platform-models"
 import { registerProviderIpcHandlers } from "./provider-ipc"
 import { setProviderLifecycleDeps } from "./provider-lifecycle"
 import { forwardInitializationFailure } from "./initialization"
-import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
+import {
+  exportDebugLogs,
+  initCrashReporter,
+  initLogging,
+  serverLogRoots,
+  startNetLog,
+  write as writeLog,
+} from "./logging"
 import { getStore } from "./store"
 import { GLOBAL_RENDERER_STORE, runTabsPreclean } from "./tabs-preclean"
 import { checkSessionExistsViaFetch } from "./tabs-preclean-io"
@@ -66,6 +73,14 @@ import { registerSettingsIpcHandlers } from "./settings-ipc"
 import { ensureAlphaLayoutDefault } from "./alpha-defaults"
 import { initialSelfHealState, noteSpawn, planSelfHeal } from "./sidecar-self-heal"
 import { ensureEngineScratchCwd } from "./engine-scratch-cwd"
+import {
+  ENGINE_RUNAWAY_WINDOW_MS,
+  armEngineRunawayGuard,
+  decideEngineRunawayGuard,
+  disarmEngineRunawayGuard,
+  initialEngineRunawayGuardState,
+  resetEngineRunawayGuard,
+} from "./engine-runaway-guard"
 // #408:session-grant 生命周期接线(会话边界 = sidecar 运行期;栅栏语义见 ext-session-grants.ts)。
 import { sessionGrantRegistry } from "./ext-session-grants"
 import type { SessionGrantsEndedEventWire } from "../shared/ext-session-grant-wire"
@@ -140,6 +155,7 @@ function emitDeepLinks(urls: string[]) {
 }
 
 async function killSidecar() {
+  stopEngineRunawayMeter()
   if (!server) return
   const current = server
   server = null
@@ -169,6 +185,8 @@ let sidecarGen = 0
 let bootEnforcementGap: string[] | null = null
 let selfHeal = initialSelfHealState()
 let selfHealTimer: NodeJS.Timeout | null = null
+let engineRunawayGuard = initialEngineRunawayGuardState()
+let engineRunawayTimer: NodeJS.Timeout | null = null
 let requestSidecarRespawn: (() => Promise<boolean>) | null = null
 let recoveryService: RecoveryService | null = null
 
@@ -177,6 +195,7 @@ function handleSidecarExit(gen: number, code: number) {
   if (quittingApp) return
   if (gen !== sidecarGen) return
   if (!server) return
+  stopEngineRunawayMeter()
   // #408:崩溃 = 会话结束(栅栏先行;respawn 后新会话从空集开始,grant 无从复活)。
   endSessionGrants("sidecar-exit")
   const plan = planSelfHeal(selfHeal, Date.now())
@@ -209,6 +228,73 @@ function handleSidecarExit(gen: number, code: number) {
     selfHealTimer = null
     void requestSidecarRespawn?.()
   }, plan.delayMs)
+}
+
+function stopEngineRunawayMeter() {
+  if (engineRunawayTimer) clearInterval(engineRunawayTimer)
+  engineRunawayTimer = null
+  engineRunawayGuard = disarmEngineRunawayGuard(engineRunawayGuard)
+}
+
+function armEngineRunawayMeter(gen: number) {
+  stopEngineRunawayMeter()
+  engineRunawayGuard = armEngineRunawayGuard(engineRunawayGuard)
+  const activeLog = join(serverLogRoots()[0], "opencode.log")
+  engineRunawayTimer = setInterval(() => {
+    if (gen !== sidecarGen || !server) {
+      stopEngineRunawayMeter()
+      return
+    }
+    const sample = (() => {
+      try {
+        return { status: "available" as const, size: statSync(activeLog).size }
+      } catch {
+        return { status: "unavailable" as const }
+      }
+    })()
+    const decision = decideEngineRunawayGuard(Date.now(), sample, engineRunawayGuard)
+    engineRunawayGuard = decision.state
+    if (decision.action === "none") return
+
+    stopEngineRunawayMeter()
+    const current = server
+    if (!current) return
+    if (decision.action === "kill-and-respawn") {
+      writeLog(
+        "utility",
+        "engine log runaway detected — killing sidecar for self-heal respawn",
+        { strikes: engineRunawayGuard.strikes },
+        "error",
+      )
+      current.kill()
+      return
+    }
+
+    writeLog(
+      "utility",
+      "engine repeatedly produced runaway logs — sidecar paused for explicit recovery",
+      { strikes: engineRunawayGuard.strikes },
+      "error",
+    )
+    server = null
+    endSessionGrants("sidecar-stop")
+    current.kill()
+    if (!recoveryService || !mainWindow || mainWindow.isDestroyed()) return
+    const plan = { action: "give-up" as const, state: selfHeal }
+    const incident = recoveryService.register({
+      source: { kind: "engine", plan },
+      senderID: mainWindow.webContents.id,
+      effects: {
+        [RECOVERY_ACTIONS.retryEngine]: async () => {
+          engineRunawayGuard = resetEngineRunawayGuard()
+          selfHeal = initialSelfHealState()
+          const applied = await requestSidecarRespawn?.()
+          return applied ? { applied: true } : { applied: false, retryable: true }
+        },
+      },
+    })
+    if (incident) mainWindow.webContents.send("alpha-recovery-incident", incident)
+  }, ENGINE_RUNAWAY_WINDOW_MS)
 }
 
 function ensureLoopbackNoProxy() {
@@ -753,6 +839,7 @@ const main = Effect.gen(function* () {
       }),
     )
     server = listener
+    armEngineRunawayMeter(spawnGen)
     sessionGrantRegistry.beginSession(spawnGen) // #408:新会话空集起步(grant 面绑本代)
     yield* Deferred.succeed(serverReady, {
       url,
@@ -820,6 +907,7 @@ const main = Effect.gen(function* () {
         onExit: (code) => handleSidecarExit(spawnGen, code),
       })
       server = listener
+      armEngineRunawayMeter(spawnGen)
       sessionGrantRegistry.beginSession(spawnGen) // #408:respawn = 新会话,grant 恒从空集开始
       // B5 验收②:未健康不 reload —— reload 进死后端只会白屏(REQ-014 同族),留旧 renderer 状态。
       const healthy = await Promise.race([
