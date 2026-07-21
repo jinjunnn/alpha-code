@@ -18,6 +18,7 @@ import { getPinchZoomEnabled, setPinchZoomEnabled, setTitlebar, updateTitlebar }
 import type { UpdaterController } from "./updater-controller"
 import { createUpdaterSubscriptions } from "./updater-subscriptions"
 import { isManagedRunArtifactPath } from "./artifact-external-open"
+import { assertGenericStoreAccess } from "./store-keys"
 
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
@@ -100,6 +101,7 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("auth-set-mode", (_event: IpcMainInvokeEvent, mode: AuthMode) => deps.auth.setMode(mode))
   ipcMain.handle("auth-enable-proxy", () => deps.auth.enableProxy())
   ipcMain.handle("store-get", async (_event: IpcMainInvokeEvent, name: string, key: string) => {
+    assertGenericStoreAccess(name, key)
     // REQ-014:renderer 恢复 tabs 路由的首读必须拿到预清后的数据(毒键 → 上游整屏崩,alpha 无 renderer
     // 侧恢复层)。只 gate 这两个键 —— 语言/其他键不受影响,窗口照常先开(A1 window-first 不回退)。
     if (name === GLOBAL_RENDERER_STORE && (key === TABS_KEY || key === TABS_RECENT_KEY) && deps.tabsPrecleanDone) {
@@ -115,12 +117,15 @@ export function registerIpcHandlers(deps: Deps) {
     }
   })
   ipcMain.handle("store-set", (_event: IpcMainInvokeEvent, name: string, key: string, value: string) => {
+    assertGenericStoreAccess(name, key)
     getStore(name).set(key, value)
   })
   ipcMain.handle("store-delete", (_event: IpcMainInvokeEvent, name: string, key: string) => {
+    assertGenericStoreAccess(name, key)
     getStore(name).delete(key)
   })
   ipcMain.handle("store-clear", (_event: IpcMainInvokeEvent, name: string) => {
+    assertGenericStoreAccess(name)
     getStore(name).clear()
   })
   ipcMain.handle("store-keys", (_event: IpcMainInvokeEvent, name: string) => {

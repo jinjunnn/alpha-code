@@ -1219,6 +1219,7 @@ export default function Layout(props: ParentProps) {
   }
 
   function openSettings() {
+    if (platform.openSettings) return platform.openSettings()
     const run = ++dialogRun
     const module = settings.general.newLayoutDesigns()
       ? import("@/components/settings-v2")

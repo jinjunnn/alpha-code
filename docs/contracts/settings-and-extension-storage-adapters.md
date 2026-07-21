@@ -4,15 +4,14 @@ kind: contract
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-20
+last_reviewed: 2026-07-21
 review_after: 2026-10-13
 ---
 
 # Settings 与扩展存储 typed adapters
 
-本文拥有 REQ-090 Settings 持久化 adapter 与 Settings 消费的扩展 CAS/GC adapter 合同。
-它只定义 main/preload 间的 typed 数据与命令，不定义 Settings UI，也不改变上游配置持久化
-内核或 CAS GC 算法。
+本文拥有 REQ-090 Settings 持久化 adapter、renderer 内共享协调点与 Settings 消费的扩展
+CAS/GC adapter 合同。它不定义 Settings UI，也不改变 CAS GC 算法。
 
 ## 1. Settings 权威值与接口
 
@@ -32,6 +31,12 @@ settings.write(input: {
 - `read` 对既有 Alpha 首启写入的 partial seed 补齐当前默认值，但不在读取时改盘；未知字段、
   错误类型和危险 key 均 fail closed。成功返回完整 typed value 与 opaque revision。
 - `validate` 是无副作用预检；`write` 必须再次执行相同校验，renderer 的预检结果不构成授权。
+- Electron renderer 的 Alpha Settings 与上游 `SettingsProvider` 必须使用同一个 Platform
+  coordinator。该 coordinator 串行化 typed `read`/`write`，只在成功读取、成功提交或冲突返回
+  typed authority 时更新其完整值与 opaque revision，并把快照同步广播给两类消费者。
+- `SettingsProvider` setter 不得把自己的完整内存 store 当成新权威值。每次 setter 只提交本字段
+  的 typed transform；coordinator 在当前完整 authority 上应用 transform，并以当前 revision 做
+  CAS。并发冲突只允许在返回的 typed authority 上重放同一个 transform，不能重放陈旧整包值。
 - `write` 先读当前权威值。目标与权威值完全相同时按 exact replay 幂等成功，哪怕调用方仍携带
   第一次提交前的 revision；已存在权威文件时，exact replay 也要求文件与父目录 fsync
   成功才返回成功。否则 revision 不匹配返回冲突且零写入。
@@ -50,6 +55,10 @@ settings.write(input: {
   [Settings storage recovery runbook](../runbooks/settings-storage-recovery.md) 的全共享范围静默判据。
 - 失败结果尽力附上重新读取的 `authoritative` 值，供消费者保留草稿并显示仍生效的值。进程
   重启后 `read` 重新从同一 `default.dat/settings.v3` 读取，不采信 renderer 内存或成功提示。
+- generic renderer store 入口在打开 store 前对文件名与 key 去除 NTFS ADS 后缀，再执行 ASCII
+  大小写折叠并删除 Windows 语义的尾点/尾空格，含路径分隔符的名称一律拒绝；任何规范化后
+  等价于 `default.dat` / `settings.v3` 的组合都不能执行 get/set/delete，也不能 clear 整个 store。Tauri 通用迁移同样在
+  `electron-store.set` 前稳定跳过 `default.dat/settings.v3` 并记录固定日志，不兼容迁移该键。
 
 稳定错误码：
 
@@ -106,7 +115,9 @@ warnings 明细或其它未知字段。warning 只允许聚合为 `warningCount`
 ## 3. 边界与验证
 
 - 无用户/租户参数；设置与扩展存储只作用于当前本机 app 环境。
-- 不提供通用设置注册框架，不修改上游 Settings UI、配置持久化内核或 GC collector。
+- 不提供通用设置注册框架，不修改上游 Settings UI 或 GC collector。无 Platform coordinator 的
+  web/legacy host 仍使用既有 persisted storage；Electron host 的上游 context 改由上述共享
+  coordinator 持有内存真相与 CAS revision。
 - adapter 契约测试位于
   `packages/ui-mac/src/main/settings-adapters.test.ts`，Settings 用例使用真实临时 `userData/default.dat`，
   并通过子进程重新打开验证成功提交。同步 fs 测试接缝记录写目标、open 路径与 flags、fd、fsync、

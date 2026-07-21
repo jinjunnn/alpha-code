@@ -5,8 +5,10 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import { CHANNEL } from "./constants"
 import { getStore } from "./store"
+import { isRendererSettingsAuthorityTarget } from "./store-keys"
 
 const TAURI_MIGRATED_KEY = "tauriMigrated"
+const RESERVED_SETTINGS_MIGRATION_LOG = "tauri migration: skipped reserved default.dat/settings.v3"
 
 // Resolve the directory where Tauri stored its .dat files for the given app identifier.
 // Mirrors Tauri's AppLocalData / AppData resolution per OS.
@@ -54,6 +56,11 @@ function migrateFile(datPath: string, filename: string) {
   const skipped: string[] = []
 
   for (const [key, value] of Object.entries(data)) {
+    if (isRendererSettingsAuthorityTarget(filename, key)) {
+      skipped.push(key)
+      log.warn(RESERVED_SETTINGS_MIGRATION_LOG)
+      continue
+    }
     // Don't overwrite values the user has already set in the Electron app.
     if (target.has(key)) {
       skipped.push(key)
