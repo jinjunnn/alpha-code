@@ -40,10 +40,10 @@ describe("RecoveryService main-owned incident identity", () => {
       if (persist.mock.calls.length === 1) throw new Error("/Users/alice/private sk-secret")
     })
     const request = { crashID: "crash-stable-001", surface: "home" as const }
-    const [first, second] = await Promise.all([
-      service.startSurface(request, 22, persist),
-      service.startSurface({ ...request }, 22, persist),
-    ])
+    const firstStart = service.startSurface(request, 22, persist)
+    const secondStart = service.startSurface({ ...request }, 22, persist)
+    expect(secondStart).toBe(firstStart)
+    const [first, second] = await Promise.all([firstStart, secondStart])
 
     expect(second).toBe(first)
     expect(first.plan.actions).toEqual([RECOVERY_ACTIONS.retryFailureSave])

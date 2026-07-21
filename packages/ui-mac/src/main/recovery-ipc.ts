@@ -1,19 +1,25 @@
 import { ipcMain } from "electron"
 import type { RecoveryAction, RecoveryIncidentWire } from "../shared/recovery"
+import { write as writeLog } from "./logging"
 import type { RecoveryService } from "./recovery-service"
-import { createRecoveryWindow } from "./windows"
+import { createRecoveryWindow, loadRecoveryWindow, type RecoveryWindowFatalReason } from "./windows"
+
+type BootRecoveryFatalReason = RecoveryWindowFatalReason | "current-ipc-rejected"
 
 export function registerRecoveryIpcHandlers(service: RecoveryService) {
   let boot:
     | {
         incident: RecoveryIncidentWire
         senderID: number
-        finish: (action: RecoveryAction) => void
+        finish: (action: RecoveryAction, reason?: BootRecoveryFatalReason) => void
       }
     | undefined
 
   ipcMain.handle("recovery-boot-current", (event) => {
-    if (!boot || boot.senderID !== event.sender.id) throw new Error("Boot Recovery is unavailable")
+    if (!boot || boot.senderID !== event.sender.id) {
+      boot?.finish("exit-app", "current-ipc-rejected")
+      throw new Error("Boot Recovery is unavailable")
+    }
     return boot.incident
   })
   ipcMain.handle("recovery-submit", async (event, request: { incident: string; action: unknown }) => {
@@ -32,24 +38,29 @@ export function registerRecoveryIpcHandlers(service: RecoveryService) {
   return {
     presentBoot(incident: RecoveryIncidentWire) {
       if (boot) return Promise.reject(new Error("Boot Recovery is already active"))
-      const win = createRecoveryWindow()
-      service.allow(incident.incident, win.webContents.id)
       return new Promise<RecoveryAction>((resolve) => {
-        let settled = false
-        const finish = (action: RecoveryAction) => {
-          if (settled) return
-          settled = true
-          boot = undefined
-          if (!win.isDestroyed()) win.destroy()
-          resolve(action)
+        const state = {
+          settled: false,
+          window: undefined as ReturnType<typeof createRecoveryWindow> | undefined,
         }
-        boot = { incident, senderID: win.webContents.id, finish }
-        win.once("closed", () => {
-          if (settled) return
-          settled = true
+        const finish = (action: RecoveryAction, reason?: BootRecoveryFatalReason) => {
+          if (state.settled) return
+          state.settled = true
           boot = undefined
-          resolve("exit-app")
-        })
+          if (state.window && !state.window.isDestroyed()) state.window.destroy()
+          resolve(action)
+          if (reason) writeLog("recovery", "Boot Recovery host failed", { reason }, "error")
+        }
+        const win = createRecoveryWindow((reason) => finish("exit-app", reason))
+        state.window = win
+        if (state.settled) {
+          if (!win.isDestroyed()) win.destroy()
+          return
+        }
+        service.allow(incident.incident, win.webContents.id)
+        boot = { incident, senderID: win.webContents.id, finish }
+        win.once("closed", () => finish("exit-app"))
+        loadRecoveryWindow(win)
       })
     },
   }

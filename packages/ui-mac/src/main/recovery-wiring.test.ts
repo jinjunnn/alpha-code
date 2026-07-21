@@ -15,14 +15,36 @@ describe("REQ-090 Recovery wiring ratchet", () => {
 
   test("the boot host uses its own minimal preload and explicit Electron isolation", () => {
     const windows = read("windows.ts")
-    const start = windows.indexOf("export function createRecoveryWindow()")
-    const recovery = windows.slice(start)
+    const start = windows.indexOf("export function createRecoveryWindow(")
+    const recovery = windows.slice(start, windows.indexOf("export function registerRendererProtocol", start))
     expect(recovery).toContain('preload: join(root, "../preload/recovery.js")')
     expect(recovery).toContain("contextIsolation: true")
     expect(recovery).toContain("nodeIntegration: false")
     expect(recovery).toContain("sandbox: true")
     expect(recovery).toContain("webviewTag: false")
     expect(recovery).toContain('loadWindow(win, "recovery.html")')
+  })
+
+  test("every fatal boot-host event emits only a fixed reason to the shared settlement path", () => {
+    const windows = read("windows.ts")
+    const index = read("index.ts")
+    const start = windows.indexOf("export function createRecoveryWindow(")
+    const recovery = windows.slice(start, windows.indexOf("export function registerRendererProtocol", start))
+    expect(recovery).toContain('onFatal("renderer-load-failed")')
+    expect(recovery).toContain('onFatal("preload-failed")')
+    expect(recovery).toContain('onFatal("renderer-process-gone")')
+    expect(recovery).not.toContain("writeLog(")
+    expect(index).toContain("if (isRecoveryWebContents(webContents)) return")
+  })
+
+  test("the active boot and close settlement are installed before its renderer starts loading", () => {
+    const ipc = read("recovery-ipc.ts")
+    expect(ipc.indexOf("boot = { incident, senderID: win.webContents.id, finish }")).toBeLessThan(
+      ipc.indexOf("loadRecoveryWindow(win)"),
+    )
+    expect(ipc.indexOf('win.once("closed", () => finish("exit-app"))')).toBeLessThan(
+      ipc.indexOf("loadRecoveryWindow(win)"),
+    )
   })
 
   test("startup DbSafety branches contain no native prompt and runtime Recovery has one mount", () => {

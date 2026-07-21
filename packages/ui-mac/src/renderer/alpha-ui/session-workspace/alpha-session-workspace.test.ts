@@ -115,6 +115,9 @@ describe("双闸 + seam 契约(发布态本期保持 legacy,T5 才升级)", () =
 describe("C4 携带项②/③ 的接线", () => {
   test("②跨 server 引导:识别不到的错误在 fallback 内同步 rethrow(SurfaceBoundary 兜底不变)", () => {
     expect(tsx).toContain("if (!isCrossServerSessionError(error)) throw error")
+    expect(tsx).toContain('console.warn("ALPHA_CROSS_SERVER_SESSION_BLOCKED")')
+    expect(tsx).not.toContain('console.warn("ALPHA_CROSS_SERVER_SESSION_BLOCKED", error)')
+    expect(tsx).toContain("onClick={() => navigate(hrefFor.home())}")
   })
 
   test("③侧栏预热:session 行 hover + 打开/新建路径接 preloadSessionLeaf(消 C4 冷入场 0ms 采样)", () => {

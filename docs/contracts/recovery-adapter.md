@@ -14,6 +14,19 @@ The desktop Recovery adapter is the only contract boundary that converts existin
 actions, and results into renderer-safe values. It does not choose a database recovery algorithm,
 restart the sidecar, mount Recovery UI, or implement a surface rebuild.
 
+## Boot host failure containment
+
+The dedicated boot Recovery host registers its active incident and close settlement before loading
+the renderer. A main-frame `did-fail-load` other than an aborted navigation, `preload-error`,
+`render-process-gone`, or a rejected `recovery-boot-current` admission while the boot is active is
+fatal. Every such event converges on the same once-only path: clear the active boot, destroy its
+window, and settle the startup action as `exit-app`. A failed host therefore cannot leave startup
+pending or permit creation of the product window.
+
+Fatal host logging contains exactly one fixed reason: `renderer-load-failed`, `preload-failed`,
+`renderer-process-gone`, or `current-ipc-rejected`. Load codes and descriptions, renderer URLs,
+preload paths, exception objects, and process-gone details are not logged for the Recovery host.
+
 ## Problem codes and actions
 
 | Existing source state                          | Stable code                 | Exposed actions                                         | Retryable |

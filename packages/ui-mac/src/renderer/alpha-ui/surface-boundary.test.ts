@@ -3,6 +3,10 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
 const tsx = readFileSync(join(import.meta.dir, "surface-boundary.tsx"), "utf8")
+const rendererRoot = join(import.meta.dir, "..")
+const rendererSources = [...new Bun.Glob("**/*.{ts,tsx,js,jsx}").scanSync(rendererRoot)]
+  .filter((file) => !/\.(test|spec)\.[jt]sx?$/.test(file))
+  .map((file) => ({ file, source: readFileSync(join(rendererRoot, file), "utf8") }))
 
 describe("SurfaceBoundary — Alpha-only Recovery ratchet", () => {
   test("one fallback creates one stable crashID and asks main for a safe incident", () => {
@@ -11,10 +15,23 @@ describe("SurfaceBoundary — Alpha-only Recovery ratchet", () => {
     expect(tsx).toContain("admitSurfaceRecovery")
   })
 
-  test("legacy reload and raw error presentation are deleted", () => {
-    expect(tsx).not.toContain("location.reload")
-    expect(tsx).not.toContain("重新加载")
-    expect(tsx).not.toContain("回退旧版")
+  test("legacy reload and fallback release state are absent from the entire renderer", () => {
+    const forbidden = [
+      {
+        name: "location.reload",
+        pattern: /\b(?:globalThis\.\s*|window\.\s*)?location\s*(?:\.\s*reload\b|\[\s*["']reload["']\s*\])/,
+      },
+      { name: "legacy fallback release state", pattern: /auto-fallback|crash-fallback|回退旧版/ },
+    ]
+    const offenders = rendererSources.flatMap((entry) =>
+      forbidden
+        .filter((rule) => rule.pattern.test(entry.source))
+        .map((rule) => ({ file: entry.file, rule: rule.name })),
+    )
+    expect(offenders).toEqual([])
+  })
+
+  test("raw error presentation is deleted from the isolated surface fallback", () => {
     expect(tsx).not.toContain("error.message")
     expect(tsx).not.toContain("error: failure")
     expect(tsx).not.toContain("{props.surface}")

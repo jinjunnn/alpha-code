@@ -2,7 +2,7 @@ import windowState from "electron-window-state"
 import { resolveThemeVariant } from "@opencode-ai/ui/theme/resolve"
 import type { DesktopTheme } from "@opencode-ai/ui/theme/types"
 import oc2ThemeJson from "../../../ui/src/theme/themes/oc-2.json"
-import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol, shell } from "electron"
+import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol, shell, type WebContents } from "electron"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import type { TitlebarTheme } from "../preload/types"
@@ -21,6 +21,7 @@ const rendererHost = "renderer"
 const clipboardWritePermission = "clipboard-sanitized-write"
 const notificationPermission = "notifications"
 const rendererPermissions = new Set([clipboardWritePermission, notificationPermission])
+const recoveryWebContents = new WeakSet<WebContents>()
 const oc2Theme = oc2ThemeJson as DesktopTheme
 const oc2Background = {
   light: resolveThemeVariant(oc2Theme.light, false)["background-base"],
@@ -292,8 +293,10 @@ export function createMainWindow() {
   return win
 }
 
+export type RecoveryWindowFatalReason = "renderer-load-failed" | "preload-failed" | "renderer-process-gone"
+
 /** REQ-090 boot Recovery host. It is created before the product window and exposes only preload IPC. */
-export function createRecoveryWindow() {
+export function createRecoveryWindow(onFatal: (reason: RecoveryWindowFatalReason) => void) {
   const win = new BrowserWindow({
     width: 720,
     height: 610,
@@ -317,19 +320,28 @@ export function createRecoveryWindow() {
     },
   })
 
+  recoveryWebContents.add(win.webContents)
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" as const }))
   win.webContents.on("will-navigate", (event, url) => {
     if (isRendererUrl(url)) return
     event.preventDefault()
   })
-  win.webContents.on("did-fail-load", (_event, code, description, url, mainFrame) => {
+  win.webContents.on("did-fail-load", (_event, code, _description, _url, mainFrame) => {
     if (!mainFrame || code === -3) return
-    writeLog("window", "Recovery renderer load failed", { code, description, url }, "error")
-    win.destroy()
+    onFatal("renderer-load-failed")
   })
-  loadWindow(win, "recovery.html")
+  win.webContents.on("preload-error", () => onFatal("preload-failed"))
+  win.webContents.on("render-process-gone", () => onFatal("renderer-process-gone"))
   win.once("ready-to-show", () => win.show())
   return win
+}
+
+export function loadRecoveryWindow(win: BrowserWindow) {
+  loadWindow(win, "recovery.html")
+}
+
+export function isRecoveryWebContents(webContents: WebContents) {
+  return recoveryWebContents.has(webContents)
 }
 
 export function registerRendererProtocol() {

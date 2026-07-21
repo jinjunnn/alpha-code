@@ -50,6 +50,7 @@ import {
 import { setupAutoUpdater, showUpdaterDialog } from "./updater"
 import {
   createMainWindow,
+  isRecoveryWebContents,
   registerRendererProtocol,
   setRelaunchHandler,
   setBackgroundColor,
@@ -417,6 +418,7 @@ const main = Effect.gen(function* () {
   })
 
   app.on("render-process-gone", (_event, webContents, details) => {
+    if (isRecoveryWebContents(webContents)) return
     writeLog("window", "app render process gone", { url: webContents.getURL(), details }, "error")
   })
 
@@ -562,12 +564,6 @@ const main = Effect.gen(function* () {
   registerIpcHandlers({
     tabsPrecleanDone: tabsPreclean.done,
     killSidecar: () => killSidecar(),
-    // B11 复扫行11:停手 banner 的「重试」—— 用户显式动作,阶梯清零重新给满自愈机会;respawn 走
-    // 既有互斥/合并入口(requestSidecarRespawn 在窗口建成时赋值;此前调用为 no-op)。
-    retrySidecar: async () => {
-      selfHeal = initialSelfHealState()
-      await requestSidecarRespawn?.()
-    },
     relaunch,
     awaitInitialization: Effect.fnUntraced(
       function* () {
