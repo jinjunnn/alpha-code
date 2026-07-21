@@ -7,7 +7,7 @@
 // 或隐藏上游选择器标签发布 —— 那一类「驱动隐藏上游控件」的机制全部退役。
 //
 // v1 诚实边界(见 requirements/REQ-055):附件/拖拽/图片粘贴不迁(+ 菜单沿用);上下文 ring 在会话页
-// 由 takeover 收养上游活节点(纯只读复用);BYOK 模型无档位数据 → effort 弹层如实说明(始终可点,无死点)。
+// 由 takeover 收养上游活节点(纯只读复用);BYOK 模型无档位数据 → 全链 ready 后 effort 弹层如实说明。
 
 import {
   createEffect,
@@ -350,8 +350,7 @@ function ModelChip(props: {
 }
 
 /* ── effort chip:档位定义取目录 variants；session 当前值是服务端 Model.Ref 的 UI 投影。
- *    任何状态都可点(REQ-055 验收⑤「无死点」,用户报障 2026-07-07「为什么不可以点击」):
- *    无模型 → 弹层内嵌模型选择器就地选;有模型无档位 → 弹层如实说明原因。── */
+ *    全链 ready 后才允许调档；无模型时弹层内嵌模型选择器就地选，有模型无档位时如实说明原因。── */
 function EffortChip(props: {
   contract: ReturnType<typeof createModelContract>
   directory: () => string | undefined
@@ -364,9 +363,19 @@ function EffortChip(props: {
   const variants = () => composerModel()?.variants ?? []
   const supported = () => variants().length > 0
   const current = () => composerEffortSel() ?? "默认"
+  const blocked = () => composerModelProjection().status !== "ready" || !props.modelChainReady()
+  const selectVariant = (variant: string | null) => {
+    const model = composerModel()
+    if (!model) return
+    void props
+      .onSelect(withModelVariant(model, variant))
+      .then(close)
+      .catch(() => {})
+  }
   const title = () => {
     if (composerModelProjection().status === "loading") return "推理强度 — 当前会话模型加载中"
     if (composerModelProjection().status === "error") return "推理强度 — 当前会话模型读取失败"
+    if (!props.modelChainReady()) return "推理强度 — 模型状态链尚未就绪"
     return !composerModel()
       ? "推理强度 — 选择模型后可用"
       : supported()
@@ -380,7 +389,7 @@ function EffortChip(props: {
         class="a-chip"
         data-muted={supported() ? undefined : ""}
         title={title()}
-        disabled={composerModelProjection().status !== "ready"}
+        disabled={blocked()}
         aria-haspopup="dialog"
         aria-expanded={isOpen()}
         onClick={(e) => (stop(e), toggle())}
@@ -402,14 +411,8 @@ function EffortChip(props: {
               <button
                 class="a-pop-item"
                 classList={{ "is-on": composerEffortSel() === null }}
-                onClick={() => {
-                  const model = composerModel()
-                  if (model)
-                    void props
-                      .onSelect(withModelVariant(model, null))
-                      .then(close)
-                      .catch(() => {})
-                }}
+                disabled={!props.modelChainReady()}
+                onClick={() => selectVariant(null)}
               >
                 默认 <span class="a-pop-desc">引擎默认档</span>
               </button>
@@ -418,14 +421,8 @@ function EffortChip(props: {
                   <button
                     class="a-pop-item"
                     classList={{ "is-on": composerEffortSel() === v }}
-                    onClick={() => {
-                      const model = composerModel()
-                      if (model)
-                        void props
-                          .onSelect(withModelVariant(model, v))
-                          .then(close)
-                          .catch(() => {})
-                    }}
+                    disabled={!props.modelChainReady()}
+                    onClick={() => selectVariant(v)}
                   >
                     {v}
                   </button>
@@ -608,9 +605,10 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   let chainDisposed = false
 
   const selectComposerModel = async (model: NonNullable<ReturnType<typeof composerModel>>) => {
+    // 未获全链 admission 时不能 supersede 正在完成 auth/KEY/account/list 的 owner，否则无人接管 loading。
+    if (modelChainState() !== "ready") throw new Error("model chain is not ready")
     const seq = ++chainSeq
     const sessionID = props.sessionID?.()
-    if (modelChainState() !== "ready") throw new Error("model chain is not ready")
     if (sessionID) {
       const projection = composerModelProjection()
       if (projection.status !== "ready" || projection.sessionID !== sessionID) {

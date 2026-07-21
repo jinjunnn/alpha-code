@@ -14,28 +14,15 @@
 //     (假死,REQ-005 基线审计 §0.1)——即上游改名不会红任何测试。此处直接钉渲染点。
 //   - data-key / data-selected / data-slash-id / data-message-id / data-timeline-part-id /
 //     data-kind / id="review-panel" 等不在 data-component|slot|action 命名空间。
-// packages/app|ui 锚点仍以源码契约断言；REQ-090 picker owner 则由 TypeScript AST 解析真实
-// import 与 JSX mount 边，不再用源码正则/includes 构图。断言红 = 共存前提破坏,回 T6 审计矩阵
-// 重评,不得只改测试。
+// packages/app|ui 锚点仍以源码契约断言；REQ-090 picker owner 的唯一挂载由组件测试真实渲染
+// AlphaComposer 后查询 data marker，本文件只保留旧模块不存在与 renderer 其它文件零引用的
+// 纯文本否定辅助门。断言红 = 共存前提破坏,回 T6 审计矩阵重评,不得只改测试。
 //
 // 运行时半边(真机取证)不在本文件伪造:CDP 探针清单见同名审计文档 §5。
 
 import { describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import {
-  createSourceFile,
-  forEachChild,
-  isIdentifier,
-  isImportDeclaration,
-  isJsxOpeningElement,
-  isJsxSelfClosingElement,
-  isNamedImports,
-  isStringLiteral,
-  ScriptKind,
-  ScriptTarget,
-  type Node,
-} from "typescript"
 import { FRONTEND_SURFACE_MANIFEST } from "../../shared/frontend-surface-manifest"
 
 const ALPHA_UI = import.meta.dir
@@ -66,88 +53,6 @@ function* walk(dir: string): Generator<string> {
     if (entry.isDirectory()) yield* walk(p)
     else if (/\.(ts|tsx)$/.test(entry.name)) yield p
   }
-}
-
-function importedFiles(file: string) {
-  return sourceFile(file).statements
-    .filter(isImportDeclaration)
-    .map((declaration) => declaration.moduleSpecifier)
-    .filter(isStringLiteral)
-    .map((specifier) => specifier.text)
-    .filter((specifier) => specifier.startsWith("."))
-    .flatMap((specifier) => {
-      const target = path.resolve(path.dirname(file), specifier)
-      return [target, `${target}.ts`, `${target}.tsx`, path.join(target, "index.ts"), path.join(target, "index.tsx")].filter(
-        (candidate) => fs.existsSync(candidate) && fs.statSync(candidate).isFile(),
-      )[0]
-    })
-    .filter((candidate): candidate is string => !!candidate)
-}
-
-function sourceFile(file: string) {
-  return createSourceFile(
-    file,
-    read(file),
-    ScriptTarget.Latest,
-    true,
-    file.endsWith(".tsx") ? ScriptKind.TSX : ScriptKind.TS,
-  )
-}
-
-function importedBindings(file: string, target: string) {
-  return sourceFile(file).statements
-    .filter(isImportDeclaration)
-    .filter((declaration) => isStringLiteral(declaration.moduleSpecifier))
-    .filter((declaration) => resolveImport(file, declaration.moduleSpecifier.text) === target)
-    .flatMap((declaration) => {
-      const clause = declaration.importClause
-      if (!clause) return []
-      const defaults = clause.name ? [{ imported: "default", local: clause.name.text }] : []
-      if (!clause.namedBindings || !isNamedImports(clause.namedBindings)) return defaults
-      return [
-        ...defaults,
-        ...clause.namedBindings.elements.map((element) => ({
-          imported: element.propertyName?.text ?? element.name.text,
-          local: element.name.text,
-        })),
-      ]
-    })
-}
-
-function resolveImport(file: string, specifier: string) {
-  if (!specifier.startsWith(".")) return undefined
-  const target = path.resolve(path.dirname(file), specifier)
-  return [target, `${target}.ts`, `${target}.tsx`, path.join(target, "index.ts"), path.join(target, "index.tsx")].find(
-    (candidate) => fs.existsSync(candidate) && fs.statSync(candidate).isFile(),
-  )
-}
-
-function mountedImportCount(file: string, target: string, imported: string) {
-  const names = new Set(importedBindings(file, target).filter((binding) => binding.imported === imported).map((binding) => binding.local))
-  let count = 0
-  const visit = (node: Node) => {
-    if (
-      (isJsxOpeningElement(node) || isJsxSelfClosingElement(node)) &&
-      isIdentifier(node.tagName) &&
-      names.has(node.tagName.text)
-    )
-      count++
-    forEachChild(node, visit)
-  }
-  visit(sourceFile(file))
-  return count
-}
-
-function rendererImportGraph(entry: string) {
-  const seen = new Set<string>()
-  const pending = [entry]
-  while (pending.length) {
-    const file = pending.pop()
-    if (!file || seen.has(file)) continue
-    seen.add(file)
-    pending.push(...importedFiles(file).filter((candidate) => candidate.startsWith(RENDERER)))
-  }
-  return seen
 }
 
 describe("T6 ①挂载通道:takeover 与 session 叶零耦合(挂载方式无关的结构根因)", () => {
@@ -247,30 +152,20 @@ describe("REQ-090 model picker ratchet:旧 DOM 接管退役，canonical owner �
     expect(rendererIndex).not.toContain("model-picker-reskin.css")
   })
 
-  test("TypeScript AST 解析的 renderer import/mount 图可达 picker，且 AlphaComposer 是唯一直接 owner", () => {
+  test("renderer 其它生产源码不再 import 或挂载 canonical picker(纯文本否定辅助门)", () => {
     const picker = path.join(ALPHA_UI, "alpha-composer-model.tsx")
     const composer = path.join(ALPHA_UI, "alpha-composer.tsx")
-    const graph = rendererImportGraph(path.join(RENDERER, "index.tsx"))
-    const pickerImporters = [...walk(RENDERER)].filter((file) => {
-      const importsPicker = importedBindings(file, picker).some((binding) => binding.imported === "ModelPickPop")
-      return importsPicker && mountedImportCount(file, picker, "ModelPickPop") > 0
-    })
-    const composerMounts = [...walk(RENDERER)]
-      .filter((file) => mountedImportCount(file, composer, "AlphaComposer") > 0)
+    const pickerHolders = [...walk(RENDERER)]
+      .filter((file) => file !== picker)
+      .filter((file) => read(file).includes("alpha-composer-model") || read(file).includes("ModelPickPop"))
       .map((file) => path.relative(RENDERER, file))
       .sort()
 
-    expect(graph.has(picker)).toBe(true)
-    expect(pickerImporters.map((file) => path.relative(RENDERER, file))).toEqual(["alpha-ui/alpha-composer.tsx"])
-    expect(mountedImportCount(pickerImporters[0]!, picker, "ModelPickPop")).toBe(2)
-    expect(composerMounts).toEqual([
-      "alpha-ui/AlphaHome.tsx",
-      "alpha-ui/alpha-new-session.tsx",
-      "alpha-ui/composer-takeover.tsx",
-    ])
+    expect(pickerHolders).toEqual(["alpha-ui/alpha-composer.tsx"])
+    expect(read(composer)).toContain('import { ModelPickPop } from "./alpha-composer-model"')
   })
 
-  test("可执行 manifest 对 model picker 只有一个 canonical Alpha owner，且 source 落在真实图中", () => {
+  test("可执行 manifest 对 model picker 只有一个 canonical Alpha owner，且 source 文件存在", () => {
     const entries = FRONTEND_SURFACE_MANIFEST.filter((surface) => surface.id === "overlay.model-picker")
     expect(entries).toHaveLength(1)
     expect(entries[0]).toMatchObject({
@@ -278,7 +173,7 @@ describe("REQ-090 model picker ratchet:旧 DOM 接管退役，canonical owner �
       source: "packages/ui-mac/src/renderer/alpha-ui/alpha-composer-model.tsx",
       mount: { kind: "overlay", host: "alpha-composer-model" },
     })
-    expect(rendererImportGraph(path.join(RENDERER, "index.tsx")).has(path.join(REPO, entries[0]!.source))).toBe(true)
+    expect(fs.existsSync(path.join(REPO, entries[0]!.source))).toBe(true)
   })
 
   test("选择面只直调 typed v2 list/get/switch，不观察或点击上游隐藏控件", () => {

@@ -287,7 +287,7 @@ export function ModelPickPop(props: {
   }
 
   return (
-    <div class="a-mpp" role="dialog" aria-label="选择模型">
+    <div class="a-mpp" data-alpha-picker-owner="alpha.composer-model" role="dialog" aria-label="选择模型">
       <div class="a-mpp-search">
         <input
           ref={search}

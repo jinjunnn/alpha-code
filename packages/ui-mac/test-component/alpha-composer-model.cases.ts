@@ -414,6 +414,97 @@ describe("AlphaComposer production model seam", () => {
     mounted.dispose()
   })
 
+  test("auth/list 窗口期的 Effort 入口 fail-closed，不能取消外层链并留下 loading 死点", async () => {
+    const pendingAuth = deferred<AuthState>()
+    let authReads = 0
+    installApi({
+      auth: async () => {
+        authReads++
+        if (authReads === 1) return loggedIn
+        return pendingAuth.promise
+      },
+    })
+    const [directory, setDirectory] = createSignal("/A")
+    const switches: Array<{ sessionID: string; model: ModelRef }> = []
+    const contract: ModelContract = {
+      list: async () => platformModels,
+      current: async () => ({ providerID: catalog.platformProvider.id, id: catalog.platformModels[0]!.id }),
+      switch: async (sessionID, model) => {
+        switches.push({ sessionID, model })
+      },
+    }
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "session",
+        projects,
+        directory,
+        sessionID: () => "A",
+        command,
+        modelContract: contract,
+        initialText: "hello",
+      }),
+    )
+
+    const effort = mounted.host.querySelector<HTMLButtonElement>('[data-kind="effort"] > button')!
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+    await waitFor(() => {
+      expect(effort.disabled).toBe(false)
+      expect(send.disabled).toBe(false)
+    })
+    click(effort)
+    const variant = () =>
+      [...document.body.querySelectorAll<HTMLButtonElement>(".a-pop-item")].find(
+        (button) => button.textContent?.trim() === Object.keys(catalog.platformModels[0]!.variants ?? {})[0],
+      )!
+    expect(variant()).toBeInstanceOf(HTMLButtonElement)
+
+    setDirectory("/B")
+    await waitFor(() => {
+      expect(composerModelProjection()).toEqual({ status: "ready", sessionID: "A" })
+      expect(effort.disabled).toBe(true)
+      expect(variant().disabled).toBe(true)
+      expect(send.disabled).toBe(true)
+    })
+    // 绕过原生 disabled 抑制，直接证伪 common admission 在 readiness 检查前递增 chainSeq 的旧实现。
+    variant().dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    pendingAuth.resolve(loggedIn)
+
+    await waitFor(() => {
+      expect(effort.disabled).toBe(false)
+      expect(send.disabled).toBe(false)
+      expect(mounted.host.querySelector('[role="alert"]')).toBeNull()
+    })
+    expect(switches).toEqual([])
+    mounted.dispose()
+  })
+
+  test("真实 composer 打开 picker 时恰好挂载一个 canonical owner 实例", async () => {
+    installApi()
+    const contract: ModelContract = {
+      list: async () => platformModels,
+      current: async () => ({ providerID: catalog.platformProvider.id, id: catalog.platformModels[0]!.id }),
+      switch: async () => {},
+    }
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "session",
+        projects,
+        directory: () => "/workspace",
+        sessionID: () => "A",
+        command,
+        modelContract: contract,
+      }),
+    )
+
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+    expect(document.body.querySelectorAll('[data-alpha-picker-owner="alpha.composer-model"]')).toHaveLength(0)
+    click(mounted.host.querySelector('[data-kind="model"] > button'))
+    await waitFor(() =>
+      expect(document.body.querySelectorAll('[data-alpha-picker-owner="alpha.composer-model"]')).toHaveLength(1),
+    )
+    mounted.dispose()
+  })
+
   for (const source of ["account", "key"] as const) {
     test(`${source} 读取失败由外层三态呈现并阻止提交；picker 重试会重跑整条链`, async () => {
       let failing = true
