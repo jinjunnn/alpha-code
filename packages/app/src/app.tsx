@@ -86,6 +86,7 @@ export interface PermissionSurfaceClient {
   subscribe: (listeners: {
     asked: (request: PermissionV2Request) => void
     replied: (receipt: PermissionV2DecisionReceipt) => void
+    connected: () => void
   }) => () => void
 }
 
@@ -142,9 +143,11 @@ function createSessionRoute(Leaf: MaybePreloadableComponent, PermissionSurface?:
             if (event.properties.sessionID !== params.id) return
             listeners.replied(event.properties)
           })
+          const stopConnected = sdk().event.on("server.connected", listeners.connected)
           return () => {
             stopAsked()
             stopReplied()
+            stopConnected()
           }
         },
       }

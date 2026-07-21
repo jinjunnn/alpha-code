@@ -44,14 +44,25 @@ export function PermissionDialog(props: {
   onSubmit: (command: PermissionV2DecisionCommand) => Promise<PermissionV2DecisionReceipt>
   onResolved?: (receipt: PermissionV2DecisionReceipt) => void
 }) {
+  const facts = permissionRequestFacts(props.request)
   const [state, setState] = createStore<{
     submitting?: PermissionV2DecisionCommand
     failed?: { command: PermissionV2DecisionCommand; error: PermissionDecisionSubmitError }
   }>({})
   let errorSummary: HTMLDivElement | undefined
 
+  const canAlways = () =>
+    facts.verified &&
+    typeof props.projectID === "string" &&
+    !!props.projectID.trim() &&
+    Array.isArray(props.request.save) &&
+    props.request.save.length > 0 &&
+    props.request.save.every((resource) => typeof resource === "string")
+
   const decide = (decision: PermissionV2Decision) => {
     if (state.submitting) return
+    if (decision !== "reject" && !facts.verified) return
+    if (decision === "always" && !canAlways()) return
     const command =
       state.failed?.command.decision === decision
         ? state.failed.command
@@ -76,8 +87,6 @@ export function PermissionDialog(props: {
     return state.failed?.command.decision === decision ? `重试“${label}”` : label
   }
 
-  const canAlways = () => !!props.projectID && !!props.request.save?.length
-
   return (
     <Dialog
       open
@@ -90,9 +99,7 @@ export function PermissionDialog(props: {
       onClose={() => {}}
       footer={
         <div class="a-permission-footer">
-          <small class="a-permission-grant-note">
-            “始终允许”会为当前项目创建永久授权（grantExpiresAt = null）。
-          </small>
+          <small class="a-permission-grant-note">“始终允许”会为当前项目创建永久授权（grantExpiresAt = null）。</small>
           <div class="a-permission-actions">
             <Button
               type="button"
@@ -108,11 +115,13 @@ export function PermissionDialog(props: {
               variant="secondary"
               disabled={!!state.submitting || !canAlways()}
               title={
-                !props.projectID
-                  ? "无法核实当前项目，不能创建永久授权"
-                  : !props.request.save?.length
-                    ? "请求未提供可保存资源，不能创建永久授权"
-                    : undefined
+                !facts.verified
+                  ? "请求事实无法核实，不能授权"
+                  : !props.projectID?.trim()
+                    ? "无法核实当前项目，不能创建永久授权"
+                    : !Array.isArray(props.request.save) || !props.request.save.length
+                      ? "请求未提供可保存资源，不能创建永久授权"
+                      : undefined
               }
               onClick={() => decide("always")}
               data-permission-decision="always"
@@ -123,7 +132,8 @@ export function PermissionDialog(props: {
               type="button"
               variant="primary"
               autofocus
-              disabled={!!state.submitting}
+              disabled={!!state.submitting || !facts.verified}
+              title={!facts.verified ? "请求事实无法核实，不能授权" : undefined}
               onClick={() => decide("once")}
               data-permission-decision="once"
             >
@@ -136,46 +146,110 @@ export function PermissionDialog(props: {
       <dl class="a-permission-facts" aria-label="权限请求事实">
         <div class="a-permission-fact" data-permission-fact="subject">
           <dt>主体 / 执行 Agent</dt>
-          <dd>{props.request.subject.id}</dd>
-          <small>subject.kind = {props.request.subject.kind}</small>
+          <Show
+            when={facts.subject}
+            fallback={
+              <>
+                <dd>无法核实</dd>
+                <small>请求未提供完整主体事实</small>
+              </>
+            }
+          >
+            {(subject) => (
+              <>
+                <dd>{subject().id}</dd>
+                <small>subject.kind = {subject().kind}</small>
+              </>
+            )}
+          </Show>
         </div>
         <div class="a-permission-fact" data-permission-fact="action">
           <dt>Action / Capability</dt>
-          <dd>{props.request.action}</dd>
-          <small>请求执行的能力</small>
+          <Show
+            when={facts.action}
+            fallback={
+              <>
+                <dd>无法核实</dd>
+                <small>请求未提供有效 action</small>
+              </>
+            }
+          >
+            {(action) => (
+              <>
+                <dd>{action()}</dd>
+                <small>请求执行的能力</small>
+              </>
+            )}
+          </Show>
         </div>
         <div class="a-permission-fact a-permission-fact--wide" data-permission-fact="resources">
           <dt>Resources</dt>
-          <dd>
-            <Show when={props.request.resources.length > 0} fallback={<span>0 项资源</span>}>
-              <span class="a-permission-resources">
-                <For each={props.request.resources}>{(resource) => <code>{resource}</code>}</For>
-              </span>
-            </Show>
-          </dd>
-          <small>{props.request.resources.length} 项，由请求按原顺序提供</small>
+          <Show
+            when={facts.resources}
+            fallback={
+              <>
+                <dd>无法核实</dd>
+                <small>请求未提供有效 resources</small>
+              </>
+            }
+          >
+            {(resources) => (
+              <>
+                <dd>
+                  <Show when={resources().length > 0} fallback={<span>0 项资源</span>}>
+                    <span class="a-permission-resources">
+                      <For each={resources()}>{(resource) => <code>{resource}</code>}</For>
+                    </span>
+                  </Show>
+                </dd>
+                <small>{resources().length} 项，由请求按原顺序提供</small>
+              </>
+            )}
+          </Show>
         </div>
         <div class="a-permission-fact" data-permission-fact="scope">
           <dt>Scope</dt>
-          <dd>{scopeLabel(props.request)}</dd>
-          <small>{scopeIdentity(props.request)}</small>
+          <Show
+            when={facts.scope}
+            fallback={
+              <>
+                <dd>无法核实</dd>
+                <small>请求未提供有效 scope</small>
+              </>
+            }
+          >
+            {(scope) => (
+              <>
+                <dd>{scopeLabel(scope())}</dd>
+                <small>{scopeIdentity(scope())}</small>
+              </>
+            )}
+          </Show>
         </div>
         <div class="a-permission-fact" data-permission-fact="expiry">
           <dt>Expiry</dt>
-          <dd>{expiryLabel(props.request.expiresAt)}</dd>
-          <small>{props.request.expiresAt === null ? "expiresAt = null" : String(props.request.expiresAt)}</small>
+          <Show
+            when={facts.expiry}
+            fallback={
+              <>
+                <dd>无法核实</dd>
+                <small>请求未提供有效 expiresAt</small>
+              </>
+            }
+          >
+            {(expiry) => (
+              <>
+                <dd>{expiryLabel(expiry().value)}</dd>
+                <small>{expiry().value === null ? "expiresAt = null" : String(expiry().value)}</small>
+              </>
+            )}
+          </Show>
         </div>
       </dl>
 
       <Show when={state.failed}>
         {(failed) => (
-          <div
-            ref={errorSummary}
-            class="a-permission-error"
-            data-kind={failed().error.kind}
-            role="alert"
-            tabIndex={-1}
-          >
+          <div ref={errorSummary} class="a-permission-error" data-kind={failed().error.kind} role="alert" tabIndex={-1}>
             <strong>{failed().error.kind === "conflict" ? "这次选择与已提交决定冲突" : "未能提交你的选择"}</strong>
             <span>
               {failed().error.kind === "conflict"
@@ -210,12 +284,44 @@ function errorRecord(value: unknown) {
   return value as Record<string, unknown>
 }
 
-function scopeLabel(request: PermissionV2Request) {
-  return request.scope.kind === "session" ? "本次会话" : "当前项目"
+function permissionRequestFacts(request: PermissionV2Request) {
+  const subjectValue = errorRecord(request.subject)
+  const subject =
+    subjectValue?.kind === "agent" && typeof subjectValue.id === "string" && !!subjectValue.id.trim()
+      ? { kind: "agent" as const, id: subjectValue.id }
+      : undefined
+  const action = typeof request.action === "string" && !!request.action.trim() ? request.action : undefined
+  const resources =
+    Array.isArray(request.resources) && request.resources.every((resource) => typeof resource === "string")
+      ? request.resources
+      : undefined
+  const scopeValue = errorRecord(request.scope)
+  const scope =
+    scopeValue?.kind === "session" && typeof scopeValue.sessionID === "string" && !!scopeValue.sessionID.trim()
+      ? { kind: "session" as const, sessionID: scopeValue.sessionID }
+      : scopeValue?.kind === "project" && typeof scopeValue.projectID === "string" && !!scopeValue.projectID.trim()
+        ? { kind: "project" as const, projectID: scopeValue.projectID }
+        : undefined
+  const expiry =
+    request.expiresAt === null || (typeof request.expiresAt === "number" && Number.isFinite(request.expiresAt))
+      ? { value: request.expiresAt }
+      : undefined
+  return {
+    subject,
+    action,
+    resources,
+    scope,
+    expiry,
+    verified: !!subject && !!action && !!resources && !!scope && !!expiry,
+  }
 }
 
-function scopeIdentity(request: PermissionV2Request) {
-  return request.scope.kind === "session" ? request.scope.sessionID : request.scope.projectID
+function scopeLabel(scope: PermissionV2Request["scope"]) {
+  return scope.kind === "session" ? "本次会话" : "当前项目"
+}
+
+function scopeIdentity(scope: PermissionV2Request["scope"]) {
+  return scope.kind === "session" ? scope.sessionID : scope.projectID
 }
 
 function expiryLabel(expiresAt: PermissionV2Request["expiresAt"]) {

@@ -14,13 +14,18 @@ import { build } from "vite"
 import type { createComponent } from "solid-js"
 import type { render } from "solid-js/web"
 import type { createPermissionDecisionCommand, PermissionDialog } from "./PermissionDialog"
+import type { PermissionWatcher } from "./permission-watcher"
 
 type TestRuntime = {
   createComponent: typeof createComponent
   render: typeof render
   createPermissionDecisionCommand: typeof createPermissionDecisionCommand
   PermissionDialog: typeof PermissionDialog
+  PermissionWatcher: typeof PermissionWatcher
 }
+
+type PermissionClient = Parameters<typeof PermissionWatcher>[0]["client"]
+type PermissionListeners = Parameters<PermissionClient["subscribe"]>[0]
 
 const runtimeDirectory = mkdtempSync(join(tmpdir(), "alpha-permission-render-"))
 await build({
@@ -48,7 +53,10 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
-  disposers.splice(0).reverse().forEach((dispose) => dispose())
+  disposers
+    .splice(0)
+    .reverse()
+    .forEach((dispose) => dispose())
   await flush()
 })
 
@@ -69,6 +77,12 @@ const request: PermissionV2Request = {
   save: ["src/**"],
 }
 
+function withoutFact(fact: "subject" | "action" | "resources" | "scope" | "expiresAt") {
+  const incomplete = { ...request }
+  Reflect.deleteProperty(incomplete, fact)
+  return incomplete
+}
+
 function receipt(command: PermissionV2DecisionCommand): PermissionV2DecisionReceipt {
   return {
     requestID: request.id,
@@ -86,7 +100,7 @@ function receipt(command: PermissionV2DecisionCommand): PermissionV2DecisionRece
 
 function mount(
   onSubmit: (command: PermissionV2DecisionCommand) => Promise<PermissionV2DecisionReceipt>,
-  projectID = "prj_alpha",
+  projectID: string | null = "prj_alpha",
   permissionRequest = request,
 ) {
   const composer = document.createElement("div")
@@ -99,11 +113,32 @@ function mount(
   document.body.append(host)
   disposers.push(
     runtime.render(
-      () => runtime.createComponent(runtime.PermissionDialog, { request: permissionRequest, projectID, onSubmit }),
+      () =>
+        runtime.createComponent(runtime.PermissionDialog, {
+          request: permissionRequest,
+          projectID: projectID ?? undefined,
+          onSubmit,
+        }),
       host,
     ),
   )
   return { textarea }
+}
+
+function mountWatcher(client: PermissionClient) {
+  const host = document.createElement("div")
+  document.body.append(host)
+  disposers.push(
+    runtime.render(
+      () =>
+        runtime.createComponent(runtime.PermissionWatcher, {
+          sessionID: request.sessionID,
+          projectID: "prj_alpha",
+          client,
+        }),
+      host,
+    ),
+  )
 }
 
 async function flush() {
@@ -176,6 +211,49 @@ describe("Alpha Permission real Solid render", () => {
     expect(decision("reject").disabled).toBeFalse()
   })
 
+  test("fails closed when the active project ID is unavailable for always", async () => {
+    mount(async (command) => receipt(command), null)
+    await flush()
+
+    expect(decision("always").disabled).toBeTrue()
+    expect(decision("always").title).toContain("无法核实当前项目")
+    expect(decision("once").disabled).toBeFalse()
+    expect(decision("reject").disabled).toBeFalse()
+  })
+
+  test.each([
+    ["subject", withoutFact("subject")],
+    ["action", withoutFact("action")],
+    ["resources", withoutFact("resources")],
+    ["scope", withoutFact("scope")],
+    ["expiresAt", withoutFact("expiresAt")],
+  ] as const)("fails closed without the %s fact while reject remains safe", async (fact, incompleteRequest) => {
+    const commands: PermissionV2DecisionCommand[] = []
+    mount(
+      async (command) => {
+        commands.push(command)
+        return receipt(command)
+      },
+      "prj_alpha",
+      incompleteRequest,
+    )
+    await flush()
+
+    expect(
+      document.querySelector(`[data-permission-fact="${fact === "expiresAt" ? "expiry" : fact}"]`)?.textContent,
+    ).toContain("无法核实")
+    expect(document.querySelector("[role='dialog']")?.textContent).not.toContain("undefined")
+    expect(decision("once").disabled).toBeTrue()
+    expect(decision("always").disabled).toBeTrue()
+    expect(decision("reject").disabled).toBeFalse()
+
+    decision("once").click()
+    decision("always").click()
+    decision("reject").click()
+    await flush()
+    expect(commands.map((command) => command.decision)).toEqual(["reject"])
+  })
+
   test("keeps the exact failed command for retry and focuses the honest failure summary", async () => {
     const commands: PermissionV2DecisionCommand[] = []
     mount(async (command) => {
@@ -233,5 +311,69 @@ describe("Alpha Permission real Solid render", () => {
     keydown(dialog, "Tab", { shiftKey: true })
     dialog.querySelector<HTMLElement>('[data-dialog-focus-guard="start"]')!.focus()
     expect((document.activeElement as HTMLElement | null)?.dataset.permissionDecision).toBe("once")
+  })
+})
+
+describe("Alpha Permission watcher reconciliation", () => {
+  test("merges asked and replied events that arrive while the initial list is deferred", async () => {
+    const fresh = { ...request, id: "per_ui_2", action: "edit", resources: ["src/new.ts"] }
+    let settleList: ((requests: PermissionV2Request[]) => void) | undefined
+    const initialList = new Promise<PermissionV2Request[]>((resolve) => {
+      settleList = resolve
+    })
+    let listeners: PermissionListeners | undefined
+    mountWatcher({
+      list: () => initialList,
+      reply: async (_requestID, command) => receipt(command),
+      subscribe: (value) => {
+        listeners = value
+        return () => {}
+      },
+    })
+
+    listeners!.asked(fresh)
+    listeners!.replied({
+      requestID: request.id,
+      sessionID: request.sessionID,
+      requestFingerprint: request.fingerprint,
+      decisionID: "pdec_initial_replied",
+      decision: "reject",
+      committedAt: 1_893_456_000_001,
+      resolvedRequestIDs: [request.id],
+    })
+    settleList!([request])
+    await flush()
+
+    expect(document.querySelector('[data-permission-fact="action"]')?.textContent).toContain("edit")
+    expect(document.querySelector('[data-permission-fact="resources"]')?.textContent).toContain("src/new.ts")
+    expect(document.querySelector("[role='dialog']")?.textContent).not.toContain("bash")
+  })
+
+  test("reconciles missed asked and replied events after server reconnects", async () => {
+    const stale = { ...request, id: "per_ui_stale", action: "bash", resources: ["old/**"] }
+    const fresh = { ...request, id: "per_ui_fresh", action: "edit", resources: ["new/**"] }
+    const snapshots = [[stale], [fresh]]
+    let listeners: PermissionListeners | undefined
+    let listCalls = 0
+    mountWatcher({
+      list: async () => {
+        listCalls += 1
+        return snapshots.shift() ?? []
+      },
+      reply: async (_requestID, command) => receipt(command),
+      subscribe: (value) => {
+        listeners = value
+        return () => {}
+      },
+    })
+    await flush()
+    expect(document.querySelector('[data-permission-fact="resources"]')?.textContent).toContain("old/**")
+
+    listeners!.connected()
+    await flush()
+
+    expect(listCalls).toBe(2)
+    expect(document.querySelector('[data-permission-fact="resources"]')?.textContent).toContain("new/**")
+    expect(document.querySelector("[role='dialog']")?.textContent).not.toContain("old/**")
   })
 })

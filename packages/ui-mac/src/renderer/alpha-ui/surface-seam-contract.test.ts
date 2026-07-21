@@ -21,6 +21,10 @@ describe("ADR-027 typed surface seam anchors (frozen packages/app)", () => {
     expect(appTsx).toContain("export interface PermissionSurfaceClient")
   })
 
+  test("permission surface reuses the existing SSE reconnect signal", () => {
+    expect(appTsx).toContain('sdk().event.on("server.connected", listeners.connected)')
+  })
+
   test("AppInterface accepts surfaces and resolves leaves once before route mount", () => {
     expect(appTsx).toContain("surfaces?: AppSurfaces")
     expect(appTsx).toContain("props.surfaces?.home ?? HomeRoute")
