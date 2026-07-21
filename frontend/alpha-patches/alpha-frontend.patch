@@ -495,7 +495,7 @@ index d0a35b71..a0b3b851 100644
        fit
        class="w-[min(calc(100vw-40px),720px)] h-[min(calc(100vh-40px),400px)] -mt-20 min-h-0 overflow-hidden"
 diff --git a/packages/app/src/components/dialog-select-file.tsx b/packages/app/src/components/dialog-select-file.tsx
-index 905abe1e..d992a2be 100644
+index 905abe1e..b3a9cffb 100644
 --- a/packages/app/src/components/dialog-select-file.tsx
 +++ b/packages/app/src/components/dialog-select-file.tsx
 @@ -104,7 +104,7 @@ function DialogSelectFileLegacy(props: { filesOnly: () => boolean; onOpenFile?:
@@ -503,7 +503,7 @@ index 905abe1e..d992a2be 100644
  
    return (
 -    <Dialog class="pt-3 pb-0 !max-h-[480px]" transition>
-+    <Dialog title={language.t("command.file.open")} class="pt-3 pb-0 !max-h-[480px]" transition>
++    <Dialog title={palette.language.t("command.file.open")} class="pt-3 pb-0 !max-h-[480px]" transition>
        <List
          class="px-3"
          search={{
