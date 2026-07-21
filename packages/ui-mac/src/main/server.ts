@@ -37,6 +37,7 @@ type SpawnLocalServerOptions = {
   onStderr?: (message: string) => void
   onExit?: (code: number) => void
   healthCheck?: typeof checkHealth
+  fork?: typeof utilityProcess.fork
 }
 
 export function getDefaultServerUrl(): string | null {
@@ -162,7 +163,7 @@ export async function spawnLocalServer(
   // 直指 app 资源、.alpha 不再落出厂链;fork 前无需重复(app 路径仅跨重启变化)。
 
   const sidecar = join(dirname(fileURLToPath(import.meta.url)), "sidecar.js")
-  const child = utilityProcess.fork(sidecar, [], {
+  const child = (options.fork ?? utilityProcess.fork)(sidecar, [], {
     cwd: ensureEngineScratchCwd(options.userDataPath),
     env: createSidecarEnv(),
     serviceName: SIDECAR_SERVICE_NAME,

@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from "node:fs"
+import { lstatSync, mkdirSync, readdirSync, rmSync } from "node:fs"
 import { homedir } from "node:os"
 import { join, parse, resolve } from "node:path"
 
@@ -16,11 +16,13 @@ export function resolveEngineScratchCwd(userDataPath: string, homeDir: string = 
 
 export function ensureEngineScratchCwd(userDataPath: string) {
   const directory = resolveEngineScratchCwd(userDataPath)
-  if (existsSync(directory) && lstatSync(directory).isSymbolicLink()) {
+  if (lstatSync(directory, { throwIfNoEntry: false })?.isSymbolicLink()) {
     throw new Error("refusing symlinked engine scratch cwd")
   }
 
   mkdirSync(directory, { recursive: true })
-  readdirSync(directory).forEach((entry) => rmSync(join(directory, entry), { recursive: true, force: true }))
+  readdirSync(directory).forEach((entry) =>
+    rmSync(join(directory, entry), { recursive: true, force: true, maxRetries: 3, retryDelay: 20 }),
+  )
   return directory
 }

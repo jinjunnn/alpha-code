@@ -28,11 +28,13 @@ mock.module("electron", () => ({
     off: appEvents.off.bind(appEvents),
   },
   utilityProcess: {
-    fork: (file: string, args: string[], options: Record<string, unknown>) => {
-      forkCalls.push({ file, args, options })
-      return new FakeChild()
+    fork: () => {
+      throw new Error("unexpected utilityProcess.fork")
     },
   },
+  BrowserWindow: class {},
+  dialog: {},
+  ipcMain: { handle: () => {} },
 }))
 mock.module("./logging", () => ({ getLogger: () => undefined }))
 mock.module("./store", () => ({ getStore: () => ({ get: () => null, set: () => {}, delete: () => {} }) }))
@@ -54,6 +56,10 @@ describe("spawnLocalServer", () => {
     const result = await spawnLocalServer("127.0.0.1", 4096, "password", {
       userDataPath,
       healthCheck: async () => true,
+      fork: ((file: string, args: string[], options: Record<string, unknown>) => {
+        forkCalls.push({ file, args, options })
+        return new FakeChild()
+      }) as unknown as typeof import("electron").utilityProcess.fork,
     })
     await result.health.wait
 

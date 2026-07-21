@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join, parse, resolve } from "node:path"
 import {
@@ -31,7 +31,7 @@ describe("engine scratch cwd", () => {
     expect(readdirSync(directory)).toEqual([])
   })
 
-  test("never resolves to HOME or a filesystem root, even for unsafe base inputs", () => {
+  test("keeps the scratch directory below HOME and filesystem-root base inputs", () => {
     const filesystemRoot = parse(resolve(root)).root
     const fromHome = resolveEngineScratchCwd(homedir())
     const fromRoot = resolveEngineScratchCwd(filesystemRoot)
@@ -42,5 +42,16 @@ describe("engine scratch cwd", () => {
       expect(directory).not.toBe(resolve(homedir()))
       expect(directory).not.toBe(filesystemRoot)
     })
+  })
+
+  test("refuses missing userData paths and pre-existing scratch symlinks", () => {
+    expect(() => resolveEngineScratchCwd("")).toThrow("userData path is required")
+    expect(() => resolveEngineScratchCwd("   ")).toThrow("userData path is required")
+
+    const userDataPath = join(root, "user-data")
+    mkdirSync(userDataPath)
+    symlinkSync(join(root, "missing-target"), join(userDataPath, ENGINE_SCRATCH_CWD_NAME))
+
+    expect(() => ensureEngineScratchCwd(userDataPath)).toThrow("refusing symlinked engine scratch cwd")
   })
 })
