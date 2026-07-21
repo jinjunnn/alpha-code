@@ -70,6 +70,9 @@ import type { SessionGrantsEndedEventWire } from "../shared/ext-session-grant-wi
 import { initEndpoints } from "./alpha-endpoints"
 import { registerEndpointsIpcHandlers } from "./endpoints-ipc"
 import { registerSurfaceIpc } from "./alpha-surfaces"
+import { createRecoveryService, type RecoveryService } from "./recovery-service"
+import { registerRecoveryIpcHandlers } from "./recovery-ipc"
+import { RECOVERY_ACTIONS } from "../shared/recovery"
 import { initByokKeys, injectByokKeysIntoEnv, setByokKeyDeps } from "./alpha-byok-keys"
 import { reconcileEngineConfigTruth } from "./engine-config-truth-boot"
 import { reconcileDesiredStateAtBoot } from "./ext-install-planner"
@@ -165,6 +168,7 @@ let bootEnforcementGap: string[] | null = null
 let selfHeal = initialSelfHealState()
 let selfHealTimer: NodeJS.Timeout | null = null
 let requestSidecarRespawn: (() => Promise<boolean>) | null = null
+let recoveryService: RecoveryService | null = null
 
 function handleSidecarExit(gen: number, code: number) {
   writeLog("utility", "sidecar exited", { code }, "warn")
@@ -176,9 +180,25 @@ function handleSidecarExit(gen: number, code: number) {
   const plan = planSelfHeal(selfHeal, Date.now())
   selfHeal = plan.state
   if (plan.action === "give-up") {
-    writeLog("utility", "sidecar crash-loop — self-heal gave up; login/proxy toggles still respawn manually", { attempts: selfHeal.attempts }, "error")
-    // B11 复扫行11:停手不再只留日志 —— 推给 renderer(侧栏持久 banner + toast;重试走 sidecar-retry)。
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("sidecar-fatal", { attempts: selfHeal.attempts })
+    writeLog(
+      "utility",
+      "sidecar crash-loop — self-heal gave up; login/proxy toggles still respawn manually",
+      { attempts: selfHeal.attempts },
+      "error",
+    )
+    if (!recoveryService || !mainWindow || mainWindow.isDestroyed()) return
+    const incident = recoveryService.register({
+      source: { kind: "engine", plan },
+      senderID: mainWindow.webContents.id,
+      effects: {
+        [RECOVERY_ACTIONS.retryEngine]: async () => {
+          selfHeal = initialSelfHealState()
+          const applied = await requestSidecarRespawn?.()
+          return applied ? { applied: true } : { applied: false, retryable: true }
+        },
+      },
+    })
+    if (incident) mainWindow.webContents.send("alpha-recovery-incident", incident)
     return
   }
   writeLog("utility", "sidecar self-heal scheduled", { delayMs: plan.delayMs, attempt: selfHeal.attempts }, "warn")
@@ -255,6 +275,9 @@ const main = Effect.gen(function* () {
   if (onboardingTestRoot) app.setPath("sessionData", join(onboardingTestRoot, "session"))
   logger = initLogging()
   initCrashReporter()
+  recoveryService = createRecoveryService({
+    log: (event, detail) => writeLog("recovery", event, detail, event === "recovery-action-failed" ? "warn" : "info"),
+  })
 
   const wslServers = createWslServersController(
     app.getVersion(),
@@ -456,10 +479,16 @@ const main = Effect.gen(function* () {
       // REQ-067:出厂默认禁项(− 用户治理解禁)同走 env → ext hook 内存注入,用户配置零明文
       process.env.ALPHA_FACTORY_DENY_SKILLS = JSON.stringify(effectiveFactoryDenied(readBuiltinPolicy()))
       if (factory.removed.length)
-        logger.log("[req065] factory-skills: stale .alpha links dismantled (factory content now served from app resources)", {
-          removed: factory.removed,
+        logger.log(
+          "[req065] factory-skills: stale .alpha links dismantled (factory content now served from app resources)",
+          {
+            removed: factory.removed,
+          },
+        )
+      if (factory.migrated.length)
+        logger.log("[req065] factory-skills: legacy ~/.opencode/skill direct links removed", {
+          migrated: factory.migrated,
         })
-      if (factory.migrated.length) logger.log("[req065] factory-skills: legacy ~/.opencode/skill direct links removed", { migrated: factory.migrated })
       for (const s of factory.skipped) logger.warn(`[req065] factory-skills: SKIPPED ${s.name} — ${s.reason}`)
     } catch (error) {
       logger.warn("[req065] factory-skills reconcile failed (non-fatal; skills.paths group left untouched)", error)
@@ -480,7 +509,10 @@ const main = Effect.gen(function* () {
     if (process.env.ALPHA_JSONC_TRUTH_DISABLE !== "1" && process.env.ALPHA_LEGACY_INSTALL_ROOT !== "1") {
       try {
         // #397:userDataPath/channel 供 session-grant 强制面(已验 catalog 同步读)使用。
-        const ds = reconcileDesiredStateAtBoot(alphaGlobalRoot(), { userDataPath: app.getPath("userData"), channel: catalogRegistryChannel() })
+        const ds = reconcileDesiredStateAtBoot(alphaGlobalRoot(), {
+          userDataPath: app.getPath("userData"),
+          channel: catalogRegistryChannel(),
+        })
         if (ds.skipped) logger.warn("[req104-395] desired-state reconcile skipped", { reason: ds.skipped })
         if (ds.applied.length > 0)
           logger.log("[req104-395] desired-state residue reprojected into alpha.jsonc", { applied: ds.applied })
@@ -488,11 +520,16 @@ const main = Effect.gen(function* () {
         // r6 B2/B3:有未能保证的禁用项 → 置 fail-closed 位(spawn 前阻断引擎)。
         if (ds.enforcementGap && ds.enforcementGap.length > 0) {
           bootEnforcementGap = ds.enforcementGap
-          logger.error("[req104-395] desired-state enforcement gap — disabled extensions cannot be guaranteed; blocking sidecar", { gap: ds.enforcementGap })
+          logger.error(
+            "[req104-395] desired-state enforcement gap — disabled extensions cannot be guaranteed; blocking sidecar",
+            { gap: ds.enforcementGap },
+          )
         }
       } catch (error) {
         // reconcile 自身抛错(不该发生 — 内部已捕获)= 无法确认禁用态 → fail-closed。
-        bootEnforcementGap = [`desired-state reconcile threw: ${error instanceof Error ? error.message : String(error)}`]
+        bootEnforcementGap = [
+          `desired-state reconcile threw: ${error instanceof Error ? error.message : String(error)}`,
+        ]
         logger.error("[req104-395] desired-state reconcile crashed — blocking sidecar (fail closed)", error)
       }
     }
@@ -569,7 +606,10 @@ const main = Effect.gen(function* () {
   // 一次注入,IPC/planner/预热同一份。
   const registryChannel = catalogRegistryChannel()
   // #390:解构出恢复-gate 包装的 global 技能安装器,传给首启 ecosystem gate(不绕恢复准入)。
-  const { ledgerReady: extLedgerReady, ecosystemGlobalSkillInstaller } = registerExtIpcHandlers(app.getPath("userData"), registryChannel)
+  const { ledgerReady: extLedgerReady, ecosystemGlobalSkillInstaller } = registerExtIpcHandlers(
+    app.getPath("userData"),
+    registryChannel,
+  )
   // REQ-032:启动预热远端 catalog(ETag 缓存;失败静默回退,进 hub 时再刷)
   void refreshRemoteCatalog(app.getPath("userData"), registryChannel).catch(() => {})
   // REQ-102 #318:CAS GC 生产触发(5min 首跑 + 24h 链式周期;锁忙/mark 根损坏 = 本轮跳过等下轮)。
@@ -595,8 +635,11 @@ const main = Effect.gen(function* () {
   registerModelsIpcHandlers(app.getPath("userData"))
   registerProviderIpcHandlers()
   registerEndpointsIpcHandlers()
-  // REQ-084:启动期 surface 选择(env > pin > 发布默认 + 崩溃降级);renderer 挂载路由树前读一次。
-  registerSurfaceIpc(app.getPath("userData"))
+  const recovery = recoveryService
+  if (!recovery) throw new Error("Recovery service is unavailable")
+  const recoveryIpc = registerRecoveryIpcHandlers(recovery)
+  // REQ-084/090:surface 选择与 crash admission 共用 main-owned Recovery incident registry。
+  registerSurfaceIpc(app.getPath("userData"), recovery)
   void updater.start()
   const updateTimer = setInterval(() => void updater.check(), 10 * 60 * 1000)
   updateTimer.unref()
@@ -605,15 +648,18 @@ const main = Effect.gen(function* () {
   // B2:token 保活 tick(每小时)。到提前量(7d token 提前 24h,见 alpha-auth-clock.ts)就轮换刷新;
   // 备胎:运行中 sidecar 在 fork 时冻住的 token 快死(<30min,即 app 连续跑满一个 token 寿命)时,
   // 续期 + 静默 respawn 换血——7d 寿命下极少发生,发生时接受一次界面重载并留日志。
-  const authTimer = setInterval(() => {
-    void (async () => {
-      await ensureFreshToken().catch(() => {})
-      if (sidecarTokenExpiresAt && sidecarTokenExpiresAt - Date.now() < 30 * 60 * 1000) {
-        logger.log("B2: sidecar's fork-time token near expiry — quiet respawn to rotate")
-        await respawnSidecar()
-      }
-    })()
-  }, 60 * 60 * 1000)
+  const authTimer = setInterval(
+    () => {
+      void (async () => {
+        await ensureFreshToken().catch(() => {})
+        if (sidecarTokenExpiresAt && sidecarTokenExpiresAt - Date.now() < 30 * 60 * 1000) {
+          logger.log("B2: sidecar's fork-time token near expiry — quiet respawn to rotate")
+          await respawnSidecar()
+        }
+      })()
+    },
+    60 * 60 * 1000,
+  )
   authTimer.unref()
   app.once("will-quit", () => clearInterval(authTimer))
   yield* Effect.promise(() => startNetLog()).pipe(
@@ -665,15 +711,19 @@ const main = Effect.gen(function* () {
 
     // S17 T3(C17+B14)DB 安全带预检:水位比对 → DB 超前阻断 / 将前进先备份 / 损坏走恢复
     // The DB safety belt runs only on the initial spawn (not respawn: startup already verified,
-    // 运行中水位不会倒退);守卫自身故障一律 fail-open 只 log,绝不把启动搞得更糟。
+    // 运行中水位不会倒退)；Recovery 接线自身故障 fail-closed，不能绕过安全选择继续启动。
     const dbPreflight = yield* Effect.promise(() =>
-      runDbPreflightBoot({ userDataPath: app.getPath("userData") }).catch((error) => {
-        logger.error("db-safety preflight crashed — fail-open", error)
-        return { proceed: true as const }
+      runDbPreflightBoot({
+        userDataPath: app.getPath("userData"),
+        recovery,
+        presentRecovery: recoveryIpc.presentBoot,
+      }).catch((error) => {
+        logger.error("db-safety preflight crashed — fail-closed", error)
+        return { proceed: false as const }
       }),
     )
     if (!dbPreflight.proceed) {
-      logger.log("db-safety: user chose quit at preflight")
+      logger.log("db-safety: preflight stopped startup")
       app.exit(0)
       return
     }
@@ -681,7 +731,9 @@ const main = Effect.gen(function* () {
     // #395/#428:startup reconcile 判定配置禁用面或退休桥断链无法保证 → fail-closed 拒绝
     // spawn 引擎。gap 细节已 error 记日志；只 gate 首次 spawn(respawn 不重跑 reconcile)。
     if (bootEnforcementGap) {
-      logger.error("[req104-395] refusing to spawn sidecar — extension disable state cannot be guaranteed", { gap: bootEnforcementGap })
+      logger.error("[req104-395] refusing to spawn sidecar — extension disable state cannot be guaranteed", {
+        gap: bootEnforcementGap,
+      })
       dialog.showErrorBox(
         "扩展安全状态无法确保",
         "扩展配置或历史桥接状态无法确认已经安全收敛(可能因磁盘空间、权限或配置文件损坏)。为避免旧桥或本应关闭的扩展被意外加载,已暂停启动。请检查磁盘与目录权限后重新打开应用;若持续出现,请联系支持并附上日志。",
@@ -772,7 +824,10 @@ const main = Effect.gen(function* () {
       sessionGrantRegistry.beginSession(spawnGen) // #408:respawn = 新会话,grant 恒从空集开始
       // B5 验收②:未健康不 reload —— reload 进死后端只会白屏(REQ-014 同族),留旧 renderer 状态。
       const healthy = await Promise.race([
-        health.wait.then(() => true, () => false),
+        health.wait.then(
+          () => true,
+          () => false,
+        ),
         new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 20000)),
       ])
       if (healthy && mainWindow && !mainWindow.isDestroyed()) {

@@ -315,7 +315,11 @@ export function SessionSidePanel(props: {
                               class="!rounded-md"
                               onClick={() => {
                                 void import("@/components/dialog-select-file").then((x) => {
-                                  dialog.show(() => <x.DialogSelectFile mode="files" onOpenFile={showAllFiles} />)
+                                  dialog.show(
+                                    () => <x.DialogSelectFile mode="files" onOpenFile={showAllFiles} />,
+                                    undefined,
+                                    { host: true },
+                                  )
                                 })
                               }}
                               aria-label={language.t("command.file.open")}

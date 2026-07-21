@@ -8,7 +8,7 @@
 //   - 叶在 seam 的 createSessionRoute 内挂载:SessionProviders/DirectoryLayout/ServerScopedShell
 //     全部保持上游默认生命周期,外框零 upstream context(只读版本化路由 ABI)。
 //   - surface override 与默认叶 XOR(app.tsx `props.surfaces?.session ?? Session`),结构上不存在
-//     双挂载;SurfaceBoundary 兜致命 render 错误 → 记录 + reload 回 legacy(C4 已真机实证,不改)。
+//     双挂载;SurfaceBoundary 兜致命 render 错误 → 留在 Alpha 区域并进入 Recovery。
 //   - 双闸:主进程 env-override `ALPHA_SURFACE_SESSION=alpha` + localStorage 闸(spike-flag),
 //     任一闸关 ⇒ 工厂返回 undefined = seam 走上游默认叶,零变化。发布态本期保持 legacy(T5 才升级)。
 //   - 宿主红线(T6 审计 §3;alpha-session-workspace.test.ts 钉死):
@@ -73,7 +73,7 @@ function WorkspaceChrome() {
 /**
  * 跨 server 会话缺失的有界引导(C4 S5 最小安全解)。只接住 isCrossServerSessionError 识别的
  * 错误族;其余在 fallback 渲染期同步 rethrow —— Solid 会把它交给上一层边界(SurfaceBoundary),
- * 致命链路(记录 → fallback → reload 回 legacy)保持 C4 实证语义。
+ * 其余错误交给外层 SurfaceBoundary，并进入 Alpha Recovery；不会切换 legacy surface。
  */
 function CrossServerGuard(props: { children: JSX.Element }) {
   const navigate = useNavigate()

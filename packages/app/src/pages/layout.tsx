@@ -1214,7 +1214,7 @@ export default function Layout(props: ParentProps) {
     const run = ++dialogRun
     void import("@/components/dialog-select-server").then((x) => {
       if (dialogDead || dialogRun !== run) return
-      dialog.show(() => <x.DialogSelectServer />)
+      dialog.show(() => <x.DialogSelectServer />, undefined, { host: true })
     })
   }
 
@@ -1456,7 +1456,7 @@ export default function Layout(props: ParentProps) {
     const run = ++dialogRun
     void import("@/components/dialog-edit-project").then((x) => {
       if (dialogDead || dialogRun !== run) return
-      dialog.show(() => <x.DialogEditProject server={conn} project={project} />)
+      dialog.show(() => <x.DialogEditProject server={conn} project={project} />, undefined, { host: true })
     })
   }
 
@@ -1987,9 +1987,9 @@ export default function Layout(props: ParentProps) {
     workspaceExpanded: (directory, local) => store.workspaceExpanded[directory] ?? local,
     setWorkspaceExpanded: (directory, value) => setStore("workspaceExpanded", directory, value),
     showResetWorkspaceDialog: (root, directory) =>
-      dialog.show(() => <DialogResetWorkspace root={root} directory={directory} />),
+      dialog.show(() => <DialogResetWorkspace root={root} directory={directory} />, undefined, { host: true }),
     showDeleteWorkspaceDialog: (root, directory) =>
-      dialog.show(() => <DialogDeleteWorkspace root={root} directory={directory} />),
+      dialog.show(() => <DialogDeleteWorkspace root={root} directory={directory} />, undefined, { host: true }),
     setScrollContainerRef: (el, mobile) => {
       if (!mobile) scrollContainerRef = el
     },

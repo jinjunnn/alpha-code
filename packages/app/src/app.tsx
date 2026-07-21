@@ -2,7 +2,7 @@ import "@/index.css"
 import * as Sentry from "@sentry/solid"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { I18nProvider } from "@opencode-ai/ui/context"
-import { DialogProvider } from "@opencode-ai/ui/context/dialog"
+import { DialogProvider, type DialogHost } from "@opencode-ai/ui/context/dialog"
 import { FileComponentProvider } from "@opencode-ai/ui/context/file"
 import { MarkedProvider } from "@opencode-ai/ui/context/marked"
 import { File } from "@opencode-ai/ui/file"
@@ -301,7 +301,7 @@ function DraftProviders(props: ParentProps) {
   )
 }
 
-export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
+export function AppBaseProviders(props: ParentProps<{ locale?: Locale; dialogHost?: DialogHost }>) {
   return (
     <MetaProvider>
       <Font />
@@ -320,7 +320,7 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
             >
               <QueryProvider>
                 <WslServersProvider>
-                  <DialogProvider>
+                  <DialogProvider host={props.dialogHost}>
                     <MarkedProvider>
                       <FileComponentProvider component={File}>{props.children}</FileComponentProvider>
                     </MarkedProvider>

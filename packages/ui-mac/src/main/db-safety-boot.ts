@@ -1,6 +1,6 @@
 // db-safety-boot —— DB 安全带的 electron 接线层(S17 T3;逻辑核在 db-safety.ts,本层只做 IO 组装)。
-// 预检对话框在主窗口创建前弹出(无 parent,app-modal);菜单动作供 menu.ts「数据」子菜单调用。
-// 文案中文硬编码:main 无 i18n 设施(ADR-022 先例,随后续 main-i18n 统一)。
+// 启动预检经 renderer-safe Recovery host 在产品窗口创建前呈现；菜单动作仍供 menu.ts「数据」
+// 子菜单调用，不属于启动恢复面。
 
 import { spawn } from "node:child_process"
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs"
@@ -8,8 +8,10 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import { app, dialog, Notification, shell, type BrowserWindow } from "electron"
 
+import { RECOVERY_ACTIONS, type RecoveryAction, type RecoveryIncidentWire } from "../shared/recovery"
 import { getLogger } from "./logging"
 import * as DbSafety from "./db-safety"
+import type { RecoveryService } from "./recovery-service"
 
 // spawn + 固定绝对路径 + 参数数组(无 shell)—— 无注入面;SQL 内路径由 db-safety.sqlQuote 转义
 const exec: DbSafety.Exec = (args) =>
@@ -47,7 +49,11 @@ function resolveTarget() {
 }
 
 // ── 启动预检(index.ts 初次 spawn sidecar 前调用;respawn 不重跑)────────────
-export async function runDbPreflightBoot(opts: { userDataPath: string }): Promise<{ proceed: boolean }> {
+export async function runDbPreflightBoot(opts: {
+  userDataPath: string
+  recovery: RecoveryService
+  presentRecovery: (incident: RecoveryIncidentWire) => Promise<RecoveryAction>
+}): Promise<{ proceed: boolean }> {
   const log = getLogger()
   if (!DbSafety.SQLITE3 || !existsSync(DbSafety.SQLITE3)) {
     // fail-open 但必须 loud(审计适配级):win32 = 平台策略性不可用(非异常);posix 缺文件 = 异常态
@@ -63,7 +69,8 @@ export async function runDbPreflightBoot(opts: { userDataPath: string }): Promis
     log?.log(`db-safety: skip — ${target.reason}`)
     return { proceed: true }
   }
-  const read = await DbSafety.readDbMigrationIds(target.path, exec, existsSync)
+  const dbPath = target.path
+  const read = await DbSafety.readDbMigrationIds(dbPath, exec, existsSync)
   const expected = DbSafety.loadExpectedIds({
     resourcesPath: process.resourcesPath,
     exists: existsSync,
@@ -85,7 +92,7 @@ export async function runDbPreflightBoot(opts: { userDataPath: string }): Promis
       // 引擎本次启动将前进迁移 → 最高价值备份时点(降级逃生快照,B14① 自动触发)
       log?.log(`db-safety: engine will migrate forward (${plan.pending.length} pending) — pre-migration backup`)
       const res = await DbSafety.createVerifiedBackup({
-        dbPath: target.path,
+        dbPath,
         backupDir,
         exec,
         fs: fsDeps,
@@ -96,54 +103,40 @@ export async function runDbPreflightBoot(opts: { userDataPath: string }): Promis
         return { proceed: true }
       }
       log?.error(`db-safety: pre-migration backup FAILED — ${res.error}`)
-      const { response } = await dialog.showMessageBox({
-        type: "warning",
-        title: "迁移前备份失败",
-        message: "本次启动将升级会话数据库,但迁移前备份失败了。",
-        detail: `继续升级后将没有可回退的快照。\n\n${res.error}`,
-        buttons: ["仍要继续", "退出"],
-        defaultId: 0,
-        cancelId: 0,
-      })
-      return { proceed: response !== 1 }
+      // #434 does not define a truthful action for pre-migration backup failure. Without a safe
+      // renderer contract, fail closed instead of reopening the removed native prompt.
+      return { proceed: false }
     }
 
     case "db-ahead": {
       // C17①:旧 app × 新 DB —— 不静默继续,继续权显式交用户
       log?.error(`db-safety: DB AHEAD of app — ${plan.unknown.length} unknown migrations (latest ${plan.latest})`)
-      const { response } = await dialog.showMessageBox({
-        type: "warning",
-        title: "会话数据库版本过新",
-        message: "此会话数据库由更新版本的 alpha-code 创建。",
-        detail: `检测到 ${plan.unknown.length} 个本版本不认识的迁移(最新:${plan.latest})。\n继续运行可能损坏数据,建议升级 alpha-code 后再打开。`,
-        buttons: ["退出(推荐)", "备份后继续", "直接继续"],
-        defaultId: 0,
-        cancelId: 0,
+      const incident = opts.recovery.register({
+        source: { kind: "database", plan, backupAvailable: false },
+        senderID: 0,
+        effects: {
+          [RECOVERY_ACTIONS.exitApp]: () => ({ applied: true }),
+          [RECOVERY_ACTIONS.continueStartup]: () => ({ applied: true }),
+          [RECOVERY_ACTIONS.backupAndContinue]: async () => {
+            const result = await DbSafety.createVerifiedBackup({
+              dbPath,
+              backupDir,
+              exec,
+              fs: fsDeps,
+              now: new Date(),
+            })
+            if (!result.ok) {
+              log?.error(`db-safety: backup before risky continue FAILED — ${result.error}`)
+              return { applied: false, retryable: false }
+            }
+            log?.log(`db-safety: backup before risky continue → ${result.path}`)
+            return { applied: true }
+          },
+        },
       })
-      if (response === 0) return { proceed: false }
-      if (response === 1) {
-        const res = await DbSafety.createVerifiedBackup({
-          dbPath: target.path,
-          backupDir,
-          exec,
-          fs: fsDeps,
-          now: new Date(),
-        })
-        if (res.ok) {
-          log?.log(`db-safety: backup before risky continue → ${res.path}`)
-        } else {
-          const second = await dialog.showMessageBox({
-            type: "error",
-            title: "备份失败",
-            message: "备份失败,未能创建快照。",
-            detail: res.error,
-            buttons: ["退出", "仍要继续"],
-            defaultId: 0,
-            cancelId: 0,
-          })
-          if (second.response === 0) return { proceed: false }
-        }
-      }
+      if (!incident) return { proceed: false }
+      const action = await opts.presentRecovery(incident)
+      if (action === RECOVERY_ACTIONS.exitApp) return { proceed: false }
       log?.warn("db-safety: user chose to continue with DB ahead of app — data risk accepted")
       return { proceed: true }
     }
@@ -153,51 +146,37 @@ export async function runDbPreflightBoot(opts: { userDataPath: string }): Promis
       log?.error(`db-safety: database corrupt — ${plan.detail}`)
       fsDeps.mkdir(backupDir)
       const newest = DbSafety.newestBackup(fsDeps.readdir(backupDir))
-      const buttons = newest ? ["从最近备份恢复", "退出", "仍要启动"] : ["退出", "仍要启动"]
-      const { response } = await dialog.showMessageBox({
-        type: "error",
-        title: "会话数据库已损坏",
-        message: "会话数据库无法读取(file is not a database)。",
-        detail: newest
-          ? `可从最近的备份恢复:${newest}\n损坏文件将改名保留,不会被删除。`
-          : `没有可用备份(${backupDir} 为空)。\n可退出后手工处理,或仍要启动(引擎可能启动失败)。`,
-        buttons,
-        defaultId: 0,
-        cancelId: newest ? 1 : 0,
+      const incident = opts.recovery.register({
+        source: { kind: "database", plan, backupAvailable: !!newest },
+        senderID: 0,
+        effects: {
+          [RECOVERY_ACTIONS.exitApp]: () => ({ applied: true }),
+          [RECOVERY_ACTIONS.continueStartup]: () => ({ applied: true }),
+          ...(newest
+            ? {
+                [RECOVERY_ACTIONS.restoreLatestBackup]: () => {
+                  const restored = DbSafety.restoreFromBackup({
+                    dbPath,
+                    backupPath: join(backupDir, newest),
+                    fs: fsDeps,
+                    now: new Date(),
+                  })
+                  if (!restored.ok) {
+                    log?.error(`db-safety: restore from backup FAILED — ${restored.error}`)
+                    return { applied: false as const, retryable: false }
+                  }
+                  log?.log(`db-safety: restored from ${newest}; damaged kept as ${restored.damagedPath}`)
+                  return { applied: true as const }
+                },
+              }
+            : {}),
+        },
       })
-      if (newest && response === 0) {
-        const restored = DbSafety.restoreFromBackup({
-          dbPath: target.path,
-          backupPath: join(backupDir, newest),
-          fs: fsDeps,
-          now: new Date(),
-        })
-        if (restored.ok) {
-          log?.log(`db-safety: restored from ${newest}; damaged kept as ${restored.damagedPath}`)
-          await dialog.showMessageBox({
-            type: "info",
-            title: "已恢复",
-            message: `已从备份恢复:${newest}`,
-            detail: `损坏文件保留为:\n${restored.damagedPath}`,
-            buttons: ["继续启动"],
-          })
-          return { proceed: true }
-        }
-        await dialog.showMessageBox({
-          type: "error",
-          title: "恢复失败",
-          message: "从备份恢复失败。",
-          detail: restored.error,
-          buttons: ["退出"],
-        })
-        return { proceed: false }
-      }
-      const continueAnyway = (newest && response === 2) || (!newest && response === 1)
-      if (continueAnyway) {
-        log?.warn("db-safety: starting with corrupt DB by user choice")
-        return { proceed: true }
-      }
-      return { proceed: false }
+      if (!incident) return { proceed: false }
+      const action = await opts.presentRecovery(incident)
+      if (action === RECOVERY_ACTIONS.exitApp) return { proceed: false }
+      if (action === RECOVERY_ACTIONS.continueStartup) log?.warn("db-safety: starting with corrupt DB by user choice")
+      return { proceed: true }
     }
   }
 }

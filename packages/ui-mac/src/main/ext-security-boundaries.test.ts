@@ -8,8 +8,8 @@
 //  ② 扩展不可读其它命名空间设置 —— ext-config 写面只触 `mcp[<name>]` 单叶(SAFE_NAME 先验);
 //     renderer/扩展可达的读面(configHealth)只回健康摘要,零配置内容。钉:跨叶字节不变 + 敌意名
 //     先验拒绝 + configHealth 不泄值。
-//  ③ 扩展拿不到主 renderer preload bridge、不可注入 renderer JS —— preload 静态打包、只 import
-//     electron/类型;主窗 contextIsolation+sandbox+nodeIntegration:false;隔离预览 host 刻意零
+//  ③ 扩展拿不到主 renderer preload bridge、不可注入 renderer JS —— 两个 preload 均静态打包、
+//     只 import electron/类型(Recovery 入口仅两条恢复 IPC);窗口 contextIsolation+sandbox+nodeIntegration:false;隔离预览 host 刻意零
 //     preload;安装管线(ext-config/ext-fs-installer)零窗口/preload 触点;CSP script-src 'self'
 //     (renderer-security.test 已钉)。钉:上述装载路径的源级锚点。
 //  ④ Electron <webview> 全仓禁用 —— Electron ≥5 默认禁,主窗与预览 host 显式 webviewTag:false。
@@ -83,9 +83,16 @@ describe("AC4② 扩展不可读/不可触其它命名空间设置(ext-config �
     try {
       // 预置「其它命名空间」:另一个 mcp 叶 + 一个携密顶键(合法 V1 键之外的内容不需要 —— 这里
       // 用 mcp.other 的 environment 值当「邻居的秘密」)。
-      expect(persistMcp("other", { type: "local", command: ["npx", "other-mcp"], environment: { OTHER_SECRET: "s3cr3t-neighbor" } }).ok).toBe(true)
+      expect(
+        persistMcp("other", {
+          type: "local",
+          command: ["npx", "other-mcp"],
+          environment: { OTHER_SECRET: "s3cr3t-neighbor" },
+        }).ok,
+      ).toBe(true)
       const cfgPath = path.join(tmp, "alpha", "alpha.jsonc")
-      const otherLeafBefore = (JSON.parse(fs.readFileSync(cfgPath, "utf8")) as { mcp: Record<string, unknown> }).mcp.other
+      const otherLeafBefore = (JSON.parse(fs.readFileSync(cfgPath, "utf8")) as { mcp: Record<string, unknown> }).mcp
+        .other
 
       // 安装/卸载另一个名字,邻居叶逐字节(结构)不变。
       expect(persistMcp("mine", { type: "local", command: ["npx", "my-mcp"] }).ok).toBe(true)
@@ -127,15 +134,22 @@ describe("AC4③ 扩展拿不到 preload bridge / 不可注入 renderer JS(装�
     // 本切片新通道的只读面:一条 invoke、零 send、零写通道姊妹(源级)。
     expect(preload.match(/"ext-inventory-view"/g)).toHaveLength(1)
     expect(preload).toContain('inventoryView: (projectDir) => ipcRenderer.invoke("ext-inventory-view", projectDir)')
+    const recovery = read("preload/recovery.ts")
+    const recoverySpecifiers = [...recovery.matchAll(/from "([^"]+)"/g)].map((match) => match[1]!)
+    expect(recoverySpecifiers).toEqual(["electron", "../shared/recovery"])
+    expect(recovery.match(/exposeInMainWorld/g)).toHaveLength(1)
+    expect(recovery).toContain('contextBridge.exposeInMainWorld("recovery", recovery)')
+    expect(recovery.match(/ipcRenderer\.invoke/g)).toHaveLength(2)
   })
 
-  test("主窗硬化:contextIsolation+sandbox+nodeIntegration:false,preload 为静态打包产物单点", () => {
+  test("主窗与 Recovery 窗口硬化；各自 preload 都是静态打包产物单点", () => {
     const windows = read("main/windows.ts")
     expect(windows).toContain("contextIsolation: true")
     expect(windows).toContain("nodeIntegration: false")
     expect(windows).toContain("sandbox: true")
     expect(windows.match(/preload: join\(root, "\.\.\/preload\/index\.js"\)/g)).toHaveLength(1)
-    expect(windows.match(/preload\s*:/g)).toHaveLength(1) // 唯一 preload 配置点
+    expect(windows.match(/preload: join\(root, "\.\.\/preload\/recovery\.js"\)/g)).toHaveLength(1)
+    expect(windows.match(/preload\s*:/g)).toHaveLength(2)
   })
 
   test("隔离预览 host 零 preload;安装管线(ext-config/ext-fs-installer)零窗口/preload 触点", () => {

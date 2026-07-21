@@ -14,7 +14,6 @@ import { Icon } from "@opencode-ai/ui/v2/icon"
 import { useTheme } from "@opencode-ai/ui/theme/context"
 import { t } from "../i18n"
 import { pushToast } from "../alpha-ui/Toast"
-import { Banner } from "../alpha-ui/Banner"
 import { Mark } from "../logo-alpha"
 import { ALPHA_PATHS } from "../../shared/alpha-config"
 import { useAlphaEndpoints } from "../use-alpha-endpoints"
@@ -96,7 +95,9 @@ async function copyText(text: string): Promise<boolean> {
   // Prefer the Electron main-process clipboard — it needs no transient user activation, so it
   // succeeds reliably (including under automated clicks). Renderer APIs are the fallback.
   try {
-    const ok = await (window as unknown as { api?: { writeClipboard?: (t: string) => Promise<boolean> } }).api?.writeClipboard?.(text)
+    const ok = await (
+      window as unknown as { api?: { writeClipboard?: (t: string) => Promise<boolean> } }
+    ).api?.writeClipboard?.(text)
     if (ok) return true
   } catch {
     /* fall through to the renderer clipboard paths */
@@ -154,26 +155,16 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
     }),
   )
 
-  // B11 复扫行11:sidecar 连崩自愈停手(main 只留日志 → 引擎死了 UI 却毫无表示)。持久 banner
-  // (Banner=持久态,侧栏常驻位)+ 即时 toast(侧栏收起时也看得见);重试清 banner,再停手会再推。
-  const [engineDown, setEngineDown] = createSignal(false)
-  onCleanup(
-    window.api.onSidecarFatal(() => {
-      setEngineDown(true)
-      pushToast({ kind: "error", title: t("alpha.engine.down"), detail: t("alpha.engine.downDetail") })
-    }),
-  )
-  const retryEngine = () => {
-    setEngineDown(false)
-    void window.api.retrySidecar()
-  }
-
   // 自动化 badge(REQ-021 A1.4):上次运行失败/超时的任务数。跟 automation-event 推送刷新。
   const [automationFailedCount, setAutomationFailedCount] = createSignal(0)
   const refreshAutomationBadge = () => {
     void window.api.automations
       .list()
-      .then((r) => setAutomationFailedCount(r.tasks.filter((x) => x.lastRun?.status === "failed" || x.lastRun?.status === "timeout").length))
+      .then((r) =>
+        setAutomationFailedCount(
+          r.tasks.filter((x) => x.lastRun?.status === "failed" || x.lastRun?.status === "timeout").length,
+        ),
+      )
       .catch(() => {})
   }
   refreshAutomationBadge()
@@ -242,10 +233,19 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
     const h = 24
     const max = Math.max(1, ...p.data)
     const n = p.data.length
-    const pts = p.data.map((v, i) => `${(i / Math.max(1, n - 1)) * w},${(h - 2 - (v / max) * (h - 4) + 2).toFixed(1)}`).join(" ")
+    const pts = p.data
+      .map((v, i) => `${(i / Math.max(1, n - 1)) * w},${(h - 2 - (v / max) * (h - 4) + 2).toFixed(1)}`)
+      .join(" ")
     return (
       <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-hidden="true">
-        <polyline points={pts} fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round" />
+        <polyline
+          points={pts}
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.4"
+          stroke-linejoin="round"
+          stroke-linecap="round"
+        />
       </svg>
     )
   }
@@ -301,7 +301,13 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
   const [menuFor, setMenuFor] = createSignal<string | null>(null)
   // Per-session "⋯" actions (rename inline / share / delete) — the user asked these move off the
   // session header into the sidebar row. Position is computed from the trigger, Portal-rendered.
-  const [sessionMenu, setSessionMenu] = createSignal<{ id: string; directory: string; title: string; top: number; right: number } | null>(null)
+  const [sessionMenu, setSessionMenu] = createSignal<{
+    id: string
+    directory: string
+    title: string
+    top: number
+    right: number
+  } | null>(null)
   const [editingSession, setEditingSession] = createSignal<string | null>(null)
   // Sidebar-native search: filters the project/session list in place (distinct from the "搜索"
   // nav item, which opens opencode's global command palette).
@@ -641,7 +647,11 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
               >
                 <svg class="alpha-project-menu-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                   <rect x="2.25" y="3" width="11.5" height="2.4" rx="0.6" stroke="currentColor" stroke-width="1.2" />
-                  <path d="M3.3 5.6h9.4V12a1 1 0 0 1-1 1H4.3a1 1 0 0 1-1-1V5.6Z" stroke="currentColor" stroke-width="1.2" />
+                  <path
+                    d="M3.3 5.6h9.4V12a1 1 0 0 1-1 1H4.3a1 1 0 0 1-1-1V5.6Z"
+                    stroke="currentColor"
+                    stroke-width="1.2"
+                  />
                   <path d="M6.4 8.4h3.2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
                 </svg>
                 <span>{t("alpha.sidebar.archive")}</span>
@@ -669,7 +679,12 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                 }}
               >
                 <svg class="alpha-project-menu-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <path d="M11.5 2.5a1.4 1.4 0 0 1 2 2L6 12l-3 .8.8-3 7.7-7.3Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" />
+                  <path
+                    d="M11.5 2.5a1.4 1.4 0 0 1 2 2L6 12l-3 .8.8-3 7.7-7.3Z"
+                    stroke="currentColor"
+                    stroke-width="1.2"
+                    stroke-linejoin="round"
+                  />
                 </svg>
                 <span>重命名</span>
               </button>
@@ -696,7 +711,13 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                 }}
               >
                 <svg class="alpha-project-menu-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <path d="M8 10V2.5M5.5 5 8 2.5 10.5 5M3 9v3.5a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+                  <path
+                    d="M8 10V2.5M5.5 5 8 2.5 10.5 5M3 9v3.5a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V9"
+                    stroke="currentColor"
+                    stroke-width="1.2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
                 </svg>
                 <span>分享</span>
               </button>
@@ -714,17 +735,19 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                       return
                     }
                     const ok = await copyText(text)
-                    pushToast(
-                      ok
-                        ? { kind: "success", title: "已复制整段对话" }
-                        : { kind: "error", title: "复制失败" },
-                    )
+                    pushToast(ok ? { kind: "success", title: "已复制整段对话" } : { kind: "error", title: "复制失败" })
                   })()
                 }}
               >
                 <svg class="alpha-project-menu-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                   <rect x="5" y="5" width="8" height="9" rx="1.3" stroke="currentColor" stroke-width="1.2" />
-                  <path d="M11 5V3.8a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1V11a1 1 0 0 0 1 1h1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+                  <path
+                    d="M11 5V3.8a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1V11a1 1 0 0 0 1 1h1"
+                    stroke="currentColor"
+                    stroke-width="1.2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
                 </svg>
                 <span>复制对话</span>
               </button>
@@ -742,7 +765,13 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                 }}
               >
                 <svg class="alpha-project-menu-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <path d="M3 4.5h10M6.5 4.5V3.4a.9.9 0 0 1 .9-.9h1.2a.9.9 0 0 1 .9.9V4.5M11.7 4.5 11.2 12a1 1 0 0 1-1 .95H5.8a1 1 0 0 1-1-.95L4.3 4.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+                  <path
+                    d="M3 4.5h10M6.5 4.5V3.4a.9.9 0 0 1 .9-.9h1.2a.9.9 0 0 1 .9.9V4.5M11.7 4.5 11.2 12a1 1 0 0 1-1 .95H5.8a1 1 0 0 1-1-.95L4.3 4.5"
+                    stroke="currentColor"
+                    stroke-width="1.2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
                 </svg>
                 <span>删除</span>
               </button>
@@ -772,7 +801,13 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
           onClick={() => navigate(-1)}
         >
           <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="M10 3.5 5.5 8l4.5 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+            <path
+              d="M10 3.5 5.5 8l4.5 4.5"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
           </svg>
         </button>
         <button
@@ -783,7 +818,13 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
           onClick={() => navigate(1)}
         >
           <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="M6 3.5 10.5 8 6 12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+            <path
+              d="M6 3.5 10.5 8 6 12.5"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
           </svg>
         </button>
       </div>
@@ -802,7 +843,13 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
           >
             <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <rect x="2" y="3" width="12" height="10" rx="1.6" stroke="currentColor" stroke-width="1.3" />
-              <path d="M4.8 6.4 6.8 8.4 4.8 10.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+              <path
+                d="M4.8 6.4 6.8 8.4 4.8 10.4"
+                stroke="currentColor"
+                stroke-width="1.3"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
               <path d="M8.3 10.6h2.7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
             </svg>
           </button>
@@ -836,17 +883,6 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
               <span class="alpha-sidebar-wordmark">ALPHA CODE</span>
             </button>
           </header>
-
-          <Show when={engineDown()}>
-            <div class="alpha-sidebar-engine-down">
-              <Banner
-                kind="error"
-                title={t("alpha.engine.down")}
-                detail={t("alpha.engine.downDetail")}
-                action={{ label: t("alpha.engine.retry"), onClick: retryEngine }}
-              />
-            </div>
-          </Show>
 
           <nav class="alpha-sidebar-nav">
             <button type="button" class="alpha-sidebar-nav-item" onClick={() => newChat()}>
@@ -996,8 +1032,13 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                           }
                         >
                           {(session) => (
-                            <div class="alpha-session-row" data-active={route().sessionId === session.id ? "" : undefined}>
-                              <Show when={isSessionUnread(session.id, session.updated) && route().sessionId !== session.id}>
+                            <div
+                              class="alpha-session-row"
+                              data-active={route().sessionId === session.id ? "" : undefined}
+                            >
+                              <Show
+                                when={isSessionUnread(session.id, session.updated) && route().sessionId !== session.id}
+                              >
                                 <span class="alpha-session-unread" aria-hidden="true" />
                               </Show>
                               <Show
@@ -1019,7 +1060,13 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                                       aria-label="会话操作"
                                       onClick={(e) => openSessionMenu(e, session)}
                                     >
-                                      <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
+                                      <svg
+                                        viewBox="0 0 16 16"
+                                        width="14"
+                                        height="14"
+                                        fill="currentColor"
+                                        aria-hidden="true"
+                                      >
                                         <circle cx="3.4" cy="8" r="1.2" />
                                         <circle cx="8" cy="8" r="1.2" />
                                         <circle cx="12.6" cy="8" r="1.2" />
@@ -1038,7 +1085,8 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                                       const v = e.currentTarget.value
                                       setEditingSession(null)
                                       void renameSession(session.id, v).then(
-                                        (ok) => ok || pushToast({ kind: "error", title: t("alpha.sidebar.renameFailed") }),
+                                        (ok) =>
+                                          ok || pushToast({ kind: "error", title: t("alpha.sidebar.renameFailed") }),
                                       )
                                     } else if (e.key === "Escape") {
                                       setEditingSession(null)
@@ -1048,7 +1096,8 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                                     const v = e.currentTarget.value
                                     setEditingSession(null)
                                     void renameSession(session.id, v).then(
-                                      (ok) => ok || pushToast({ kind: "error", title: t("alpha.sidebar.renameFailed") }),
+                                      (ok) =>
+                                        ok || pushToast({ kind: "error", title: t("alpha.sidebar.renameFailed") }),
                                     )
                                   }}
                                 />
@@ -1069,7 +1118,11 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
             <Show when={store.ready && !store.error && visibleProjects().length === 0 && archivedCount() === 0}>
               <div class="alpha-sidebar-empty alpha-sidebar-empty-projects">
                 <p>{t("alpha.sidebar.noProjects")}</p>
-                <button type="button" class="alpha-sidebar-open-project" onClick={() => command.trigger("project.open")}>
+                <button
+                  type="button"
+                  class="alpha-sidebar-open-project"
+                  onClick={() => command.trigger("project.open")}
+                >
                   {t("alpha.sidebar.openProject")}
                 </button>
               </div>
@@ -1157,7 +1210,8 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                       <Show when={summary()} fallback={<span class="alpha-acct-pending">{pendingText()}</span>}>
                         <Show when={activePlan()} fallback={<span class="alpha-acct-pending">按量计费</span>}>
                           <span class="alpha-acct-v">
-                            {activePlan()!.window5h.usedCredits.toLocaleString()} / {activePlan()!.window5h.limitCredits.toLocaleString()}
+                            {activePlan()!.window5h.usedCredits.toLocaleString()} /{" "}
+                            {activePlan()!.window5h.limitCredits.toLocaleString()}
                           </span>
                         </Show>
                       </Show>
@@ -1167,7 +1221,8 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                       <Show when={summary()} fallback={<span class="alpha-acct-pending">{pendingText()}</span>}>
                         <Show when={activePlan()} fallback={<span class="alpha-acct-pending">按量计费</span>}>
                           <span class="alpha-acct-v">
-                            {activePlan()!.window7d.usedCredits.toLocaleString()} / {activePlan()!.window7d.limitCredits.toLocaleString()}
+                            {activePlan()!.window7d.usedCredits.toLocaleString()} /{" "}
+                            {activePlan()!.window7d.limitCredits.toLocaleString()}
                           </span>
                         </Show>
                       </Show>
@@ -1225,11 +1280,21 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                   {authState().status === "logged-in" ? accountLabel() : t("alpha.auth.signIn")}
                 </span>
                 <span class="alpha-sidebar-account-sub">
-                  {authState().status === "logged-in" ? (acctIsPro() ? acctPlanName().toUpperCase() : "免费版") : "点此登录"}
+                  {authState().status === "logged-in"
+                    ? acctIsPro()
+                      ? acctPlanName().toUpperCase()
+                      : "免费版"
+                    : "点此登录"}
                 </span>
               </span>
               <svg class="alpha-acct-chev" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                <path d="M3 7.5L6 4.5L9 7.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+                <path
+                  d="M3 7.5L6 4.5L9 7.5"
+                  stroke="currentColor"
+                  stroke-width="1.4"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
               </svg>
             </button>
           </footer>

@@ -34,6 +34,7 @@ import "./alpha-ui/settings-reskin.css"
 import "./alpha-ui/timeline-reskin.css"
 import "./alpha-ui/composer-reskin.css"
 import "./alpha-ui/dialog-reskin.css"
+import "./alpha-ui/model-picker-reskin.css"
 import { ToastViewport } from "./alpha-ui/Toast"
 import { AlphaBoundary } from "./alpha-ui/alpha-boundary"
 import { ComposerTakeover } from "./alpha-ui/composer-takeover"
@@ -45,6 +46,8 @@ import { useAlphaProjects } from "./sidebar/use-projects"
 import { AlphaHome } from "./alpha-ui/AlphaHome"
 import { AlphaNewSession } from "./alpha-ui/alpha-new-session"
 import { SurfaceBoundary } from "./alpha-ui/surface-boundary"
+import { RuntimeRecoveryHost } from "./alpha-ui/RuntimeRecoveryHost"
+import { UpstreamDialogHost } from "./alpha-ui/UpstreamDialogHost"
 import type { ResolvedSurfaces } from "../shared/alpha-surfaces"
 import { SessionSpikeHost } from "./alpha-ui/session-spike/session-spike-host" // REQ-087 spike 探针(默认恒 off,T7 清理)
 import { alphaSessionWorkspaceSurface } from "./alpha-ui/session-workspace/alpha-session-workspace" // REQ-088 T2
@@ -439,7 +442,7 @@ render(() => {
 
     // REQ-085/086:alpha 模式的叶页面经 typed surface seam 注入(单一 page root,upstream 叶
     // 不挂载);legacy 模式不注入 = 严格 upstream 默认页面。surface 组件经 SurfaceBoundary 兜
-    // 致命 render 错误(记录 + 用户确认 reload 后回 legacy —— 一切 alpha 生效态均受该记录约束,#334)。
+    // 致命 render 错误(main 建立稳定 incident + Alpha Recovery；禁止回退 legacy)。
     const surfaceComponents = createMemo<AppSurfaces | undefined>(() => {
       const resolved = resolvedSurfaces.latest
       if (!resolved) return undefined
@@ -510,6 +513,7 @@ render(() => {
               <AlphaBoundary name="ToastViewport">
                 <ToastViewport />
               </AlphaBoundary>
+              <RuntimeRecoveryHost />
               <DevSurfaceMapInspector resolved={resolvedSurfaces.latest} />
               {/* REQ-087 spike 容器侧探针:flag off ⇒ 恒 null(session-spike/spike-flag.ts) */}
               <AlphaBoundary name="SessionSpikeHost">
@@ -531,7 +535,7 @@ render(() => {
 
   return (
     <PlatformProvider value={platform}>
-      <AppBaseProviders locale={locale.latest}>
+      <AppBaseProviders locale={locale.latest} dialogHost={UpstreamDialogHost}>
         <Show when={true}>{(_) => <App />}</Show>
       </AppBaseProviders>
     </PlatformProvider>

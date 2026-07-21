@@ -95,7 +95,9 @@ body[data-alpha-sidebar] [class*="grid-cols-[280px"] > aside {
  * build-time transform (ui-mac/scripts/patch-upstream.ts) injects into the dialog's left nav —
  * Help was moved out of the sidebar footer and lives here now. Coupling = the upstream dialog
  * classes/slots; a rename only reverts the look (no merge conflict). */
-body[data-alpha-sidebar] [data-component="dialog-v2"][data-variant="settings"][data-size="x-large"] [data-slot="dialog-container"] {
+body[data-alpha-sidebar]
+  [data-component="dialog-v2"][data-variant="settings"][data-size="x-large"]
+  [data-slot="dialog-container"] {
   /* Comfortable default on roomy windows, capped so it never sprawls; on a narrow window it falls
      back to filling the viewport minus a small fixed margin. The modal is centred, so the viewport
      term yields a symmetric gap on all four sides. min() picks whichever is smaller per axis: the
@@ -708,9 +710,4 @@ svg[viewBox="0 0 720.002 129.001"] {
   align-items: center;
   gap: 1px;
   /* drag handled by base.css via data-tauri-drag-region (buttons auto no-drag) */
-}
-
-/* B11 复扫行11:sidecar 连崩停手的持久呈现位(header 与 nav 之间) */
-.alpha-sidebar-engine-down {
-  padding: 0 8px 6px;
 }

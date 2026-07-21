@@ -2,13 +2,22 @@ import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
 import type { WslServersPlatform } from "@opencode-ai/app/wsl/types"
 import type { UpdaterState } from "@opencode-ai/app/updater"
 import type { AlphaEndpoints } from "../shared/alpha-config"
-import type { AuthorizationConfirmationWire, CapabilityDiffWire, TxStageNonAuthorizeWire } from "../shared/ext-capability-authorization"
+import type {
+  AuthorizationConfirmationWire,
+  CapabilityDiffWire,
+  TxStageNonAuthorizeWire,
+} from "../shared/ext-capability-authorization"
 import type { JournalAdminEntry, JournalRetireIntentWire, JournalRetireResult } from "../shared/ext-journal-admin"
-import type { SessionGrantResultWire, SessionGrantWire, SessionGrantsEndedEventWire } from "../shared/ext-session-grant-wire"
+import type {
+  SessionGrantResultWire,
+  SessionGrantWire,
+  SessionGrantsEndedEventWire,
+} from "../shared/ext-session-grant-wire"
 // #408:preload/index.ts 只许 import "./types"(ext-security-boundaries AC4③ 装载路径钉)—— wire 类型经此转口。
 export type { SessionGrantsEndedEventWire } from "../shared/ext-session-grant-wire"
 import type { ArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
 import type { ResolvedSurfaces, SurfaceId } from "../shared/alpha-surfaces"
+import type { RecoveryAction, RecoveryActionResult, RecoveryIncidentWire } from "../shared/recovery"
 import type {
   AlphaSettings,
   ExtensionStorageResult,
@@ -17,7 +26,12 @@ import type {
   SettingsValidateResult,
   SettingsWriteResult,
 } from "../shared/settings-adapters"
-import type { AutomationEvent, AutomationGlobalState, AutomationTask, AutomationSchedule } from "../shared/automation-types"
+import type {
+  AutomationEvent,
+  AutomationGlobalState,
+  AutomationTask,
+  AutomationSchedule,
+} from "../shared/automation-types"
 import type {
   AlphaModelCatalog,
   EffectiveCatalog,
@@ -156,9 +170,19 @@ export type SetStateKeyIntent = UninstallKeyIntent & {
   confirmExpiredReview?: boolean
 }
 /** #397:enable 闸的机器可判别拒绝码(过期确认 / 会话级拒持久启用 / 审核数据不可核实)。 */
-export type SetStateRefusalCodeWire = "session-grant-persistent-enable" | "expired-review-confirmation-required" | "curation-unverifiable"
+export type SetStateRefusalCodeWire =
+  | "session-grant-persistent-enable"
+  | "expired-review-confirmation-required"
+  | "curation-unverifiable"
 /** REQ-100 #313:generation 历史条目(安全元数据面;eligible = 有可读快照可离线回滚)。 */
-export type SkillGenerationInfo = { genId: string; current: boolean; version?: string; manifestDigest?: string; installedAt?: string; eligible: boolean }
+export type SkillGenerationInfo = {
+  genId: string
+  current: boolean
+  version?: string
+  manifestDigest?: string
+  installedAt?: string
+  eligible: boolean
+}
 /** Legacy installs found in the shared XDG config dir, offered for migration to .alpha (REQ-018 T3). */
 export type LegacyInventory = {
   root: string
@@ -227,18 +251,44 @@ export type CloudJobStatus = {
 export type CloudArtifactDescriptor = ArtifactDescriptor
 /** artifacts 列表条目:新平台 = 完整 descriptor + 便利字段(mime/content_url);旧部署 = 纯 meta。
  *  两种形态都零内容字段 —— 内容唯一经 main 的流式下载 IPC(REQ-092 AC#1/#5)。 */
-export type CloudArtifactMeta = { id: string; name?: string; mime?: string; size?: number; sha256?: string; content_url?: string } & Partial<
-  Omit<CloudArtifactDescriptor, "id" | "name" | "size" | "sha256">
->
-export type CloudArtifactList = { job_id: string; status: string; artifacts: CloudArtifactMeta[]; artifact_ids: string[]; result?: unknown }
+export type CloudArtifactMeta = {
+  id: string
+  name?: string
+  mime?: string
+  size?: number
+  sha256?: string
+  content_url?: string
+} & Partial<Omit<CloudArtifactDescriptor, "id" | "name" | "size" | "sha256">>
+export type CloudArtifactList = {
+  job_id: string
+  status: string
+  artifacts: CloudArtifactMeta[]
+  artifact_ids: string[]
+  result?: unknown
+}
 /** REQ-092:下载进度(main 推送;IPC 上只有计数,永远没有内容字节)。 */
-export type CloudArtifactProgress = { runId: string; artifactId: string; bytes: number; total?: number; percent?: number }
+export type CloudArtifactProgress = {
+  runId: string
+  artifactId: string
+  bytes: number
+  total?: number
+  percent?: number
+}
 /** REQ-092:下载结果 —— 落盘路径 + 完整性结论,或分类错误码(错误文案已剥 token)。 */
 export type CloudArtifactDownloadResult =
-  | { ok: true; path: string; bytes: number; sha256: string; verification: "verified" | "unverified"; via: "stream" | "inline-compat" }
+  | {
+      ok: true
+      path: string
+      bytes: number
+      sha256: string
+      verification: "verified" | "unverified"
+      via: "stream" | "inline-compat"
+    }
   | { ok: false; error: string; detail?: string }
 /** B3/ADR-019 artifact 回流:写 <projectDir>/.alpha/runs/<runId>/ 的结果清单(main 侧 alpha-workdir.ts)。 */
-export type CloudRunManifest = { ok: true; dir: string; files: string[]; warnings: string[] } | { ok: false; reason: string }
+export type CloudRunManifest =
+  | { ok: true; dir: string; files: string[]; warnings: string[] }
+  | { ok: false; reason: string }
 /** SSE 进度事件(job.snapshot / job.started / job.running / workflow.step.completed / job.completed|failed|cancelled / error)。 */
 export type CloudJobEvent = { event: string; data: unknown; id?: string }
 /** Same shape as AccountResult; distinct alias for the cloud jobs surface. */
@@ -309,9 +359,10 @@ export type AlphaEnvironmentInfo = {
 
 export type ElectronAPI = {
   killSidecar: () => Promise<void>
-  /** B11 复扫行11:sidecar 连崩自愈停手 → 侧栏持久 banner;重试重置阶梯并 in-place respawn。 */
-  retrySidecar: () => Promise<void>
-  onSidecarFatal: (cb: (e: { attempts: number }) => void) => () => void
+  recovery: {
+    onIncident: (cb: (incident: RecoveryIncidentWire) => void) => () => void
+    submit: (request: { incident: string; action: RecoveryAction }) => Promise<RecoveryActionResult>
+  }
   installCli: () => Promise<string>
   awaitInitialization: () => Promise<ServerReadyData>
   wslServers: WslServersAPI
@@ -382,12 +433,11 @@ export type ElectronAPI = {
   /** REQ-098:App 环境快照(只读)。main 启动时解析后冻结;此 IPC 无参数、无对应写面 —— renderer
    *  既不能伪造环境,也没有任何通道改写环境根(AC#6)。 */
   environment: () => Promise<AlphaEnvironmentInfo>
-  /** REQ-084:启动期 surface 选择。resolve 每次加载读一次(env > pin > 发布默认 + 崩溃降级);
-   *  reportFailure 只落盘供下次加载判定 —— 绝不热切换。#334 r1:其 promise 兑现 = main 已确认
-   *  原子落盘;reject = 未落盘(renderer 的 reload 门控据此不放行,不得伪装已记录)。 */
+  /** REQ-084/090:启动期 surface 选择 + crash admission。main 按 crashID 建立唯一 incident，
+   *  renderer 只能持有安全 Recovery DTO；失败 surface 留在 Alpha 区域，不得回退 legacy。 */
   surfaces: {
     resolve: () => Promise<ResolvedSurfaces>
-    reportFailure: (payload: { surface: SurfaceId; error: string }) => Promise<void>
+    reportFailure: (payload: { crashID: string; surface: SurfaceId }) => Promise<RecoveryIncidentWire>
   }
   getZoomFactor: () => Promise<number>
   setZoomFactor: (factor: number) => Promise<void>
@@ -431,17 +481,37 @@ export type ElectronAPI = {
     factorySkillIds: () => Promise<string[]>
     /** REQ-037 上游能力治理(真源 <current-environment-root>/governance.json;物化 home jsonc 受控叶子,apply 后
      *  renderer 需自行 refreshEngine() 使 dispose 热生效)。 */
-    builtinRead: () => Promise<{ gov: AlphaBuiltinPolicy; protection: { hard: string[]; alphaInjected: string[]; confirm: string[] }; factoryDenied: string[] }>
+    builtinRead: () => Promise<{
+      gov: AlphaBuiltinPolicy
+      protection: { hard: string[]; alphaInjected: string[]; confirm: string[] }
+      factoryDenied: string[]
+    }>
     builtinApply: (
       gov: AlphaBuiltinPolicy,
       visibleAgents: string[],
       confirmBuildDisable?: boolean,
-    ) => Promise<{ ok: boolean; reason?: string; violations: { kind: string; name: string; reason: string }[]; written: number; removedStale: number }>
+    ) => Promise<{
+      ok: boolean
+      reason?: string
+      violations: { kind: string; name: string; reason: string }[]
+      written: number
+      removedStale: number
+    }>
     builtinReset: () => Promise<{ ok: boolean; reason?: string }>
     /** REQ-033:agent 导入两段式(codex 审计后:preview 经 picker token 授权读,confirm 只收
      *  previewId —— 写入内容为 main 侧留存的 preview 产物,renderer 不可提供内容)。 */
-    importAgentPreview: (token: string, filePath: string) => Promise<
-      | { ok: true; previewId: string; name: string; format: "opencode" | "claude-code"; mapping: Array<{ source: string; value: string; target: string | null; note: string }>; composed: string }
+    importAgentPreview: (
+      token: string,
+      filePath: string,
+    ) => Promise<
+      | {
+          ok: true
+          previewId: string
+          name: string
+          format: "opencode" | "claude-code"
+          mapping: Array<{ source: string; value: string; target: string | null; note: string }>
+          composed: string
+        }
       | { ok: false; reason: string }
     >
     importAgentConfirm: (previewId: string) => Promise<{ ok: true; files?: string[] } | { ok: false; reason: string }>
@@ -449,7 +519,15 @@ export type ElectronAPI = {
      *  REQ-098 #302:通道 = main 冻结环境快照(renderer 无输入权);via = 传输面,channel = 内容通道
      *  (结构化,勿解析 via)。 */
     remoteCatalog: () => Promise<
-      | { source: "remote" | "cache"; catalog: unknown; version: string; fetchedAt: string; error?: string; via: string; channel: "stable" | "preview" | "dev" }
+      | {
+          source: "remote" | "cache"
+          catalog: unknown
+          version: string
+          fetchedAt: string
+          error?: string
+          via: string
+          channel: "stable" | "preview" | "dev"
+        }
       | { source: "none"; error: string }
     >
     /** REQ-104 #397:SBOM(kind="sbom")/ 来源溯源(kind="provenance")blob 按需拉取。
@@ -459,7 +537,9 @@ export type ElectronAPI = {
     curationBlob: (
       catalogId: string,
       kind: "sbom" | "provenance",
-    ) => Promise<{ ok: true; kind: "sbom" | "provenance"; sha256: string; data: unknown } | { ok: false; reason: string }>
+    ) => Promise<
+      { ok: true; kind: "sbom" | "provenance"; sha256: string; data: unknown } | { ok: false; reason: string }
+    >
     /** REQ-102 #316:packaged seed 浏览(main-owned 纯读安全投影 —— 零绝对路径/blob 布局/url;
      *  availability=bundled 与激活态正交;选装走 installCatalog 的 seed 意图,UI 归 REQ-103)。 */
     browseSeed: () => Promise<
@@ -468,7 +548,17 @@ export type ElectronAPI = {
           catalogVersion: string
           totalBytes: number
           hasNotice: boolean
-          assets: Array<{ id: string; type: string; version: string; license: string; source: string; bytes: number; fileCount: number; availability: "bundled"; platformCompatible: boolean }>
+          assets: Array<{
+            id: string
+            type: string
+            version: string
+            license: string
+            source: string
+            bytes: number
+            fileCount: number
+            availability: "bundled"
+            platformCompatible: boolean
+          }>
         }
       | { ok: false; reason: string }
     >
@@ -477,26 +567,49 @@ export type ElectronAPI = {
     /** REQ-100 #311 / REQ-099 #305:main-owned catalog 安装唯一入口(mcp/plugin/skill/agent/cloud/bundle)。
      *  liveMcp = 策略后配置 + 密钥真值(真值只可能是 renderer 本次 grants 交来的 —— 契约:main 绝不
      *  经此回传 keychain/main 侧来源的密钥),renderer 拿去 sdk.mcp.add 免重启连接。 */
-    installCatalog: (intent:
-      | {
-          catalogId: string
-          scope: { scope: "global" } | { scope: "project"; projectDir: string }
-          grants?: { secrets?: Record<string, string>; env?: Record<string, string>; workspace?: string; cnMirror?: boolean }
-          /** #348:stage="authorize" 确认后的重驱决定(只交 confirmed;decidedAt 由 main 打戳)。 */
-          authorization?: AuthorizationConfirmationWire
-        }
-      /** REQ-102 #317:选中随包 seed 资产安装(skill/global-only 首期);字节从共享 CAS 事务物化,
-       *  seedDir/清单/版本/receipt 语义全 main-owned。 */
-      | { source: "seed"; assetId: string; scope: { scope: "global" }; authorization?: AuthorizationConfirmationWire }
+    installCatalog: (
+      intent:
+        | {
+            catalogId: string
+            scope: { scope: "global" } | { scope: "project"; projectDir: string }
+            grants?: {
+              secrets?: Record<string, string>
+              env?: Record<string, string>
+              workspace?: string
+              cnMirror?: boolean
+            }
+            /** #348:stage="authorize" 确认后的重驱决定(只交 confirmed;decidedAt 由 main 打戳)。 */
+            authorization?: AuthorizationConfirmationWire
+          }
+        /** REQ-102 #317:选中随包 seed 资产安装(skill/global-only 首期);字节从共享 CAS 事务物化,
+         *  seedDir/清单/版本/receipt 语义全 main-owned。 */
+        | {
+            source: "seed"
+            assetId: string
+            scope: { scope: "global" }
+            authorization?: AuthorizationConfirmationWire
+          },
     ) => Promise<
-      | { ok: true; kind: string; name: string; manifestDigest?: string; liveMcp?: { name: string; config: Record<string, unknown> }; installedDisabled?: true; installed?: string[]; skipped?: Array<{ id: string; reason: string }>; warning?: string }
+      | {
+          ok: true
+          kind: string
+          name: string
+          manifestDigest?: string
+          liveMcp?: { name: string; config: Record<string, unknown> }
+          installedDisabled?: true
+          installed?: string[]
+          skipped?: Array<{ id: string; reason: string }>
+          warning?: string
+        }
       /** #348:capability 授权闸 —— 零权威副作用暂停,带逐 item diff;确认后带 authorization 重驱同一通道。
        *  真判别联合(review minor):非 authorize 分支的 stage 类型排除 "authorize",中间层丢 diff 过不了类型检查。 */
       | { ok: false; stage: "authorize"; reason: string; authorization: CapabilityDiffWire[] }
       | { ok: false; reason: string; stage?: TxStageNonAuthorizeWire }
     >
     // REQ-019 T3:详情页 SKILL.md 预览(只读,资产键校验 + 256KB 帽;未打包时诚实失败)
-    readBuiltinSkill: (builtinAssetKey: string) => Promise<{ ok: true; content: string } | { ok: false; reason: string }>
+    readBuiltinSkill: (
+      builtinAssetKey: string,
+    ) => Promise<{ ok: true; content: string } | { ok: false; reason: string }>
     // REQ-019 T6:导入。folder = main 自弹目录选择器,用户实选目录即来源(REQ-098 #255:renderer
     // 不再传 srcDir),校验 SKILL.md frontmatter → 复制入 .alpha + receipt(imported);git = https-only
     // 浅克隆临时目录 → 同校验。外来内容绝不执行,symlink 不复制。
@@ -519,18 +632,27 @@ export type ElectronAPI = {
     listInstalls: (projectDir?: string) => Promise<InstallLedgerView>
     /** REQ-100 #313:key-based v2 卸载 —— renderer 只提供 type/name/scope,receipt 事实由 main
      *  账本自查(ADR-028 §1);generation skill 走锁内 journaled store+ledger teardown。 */
-    uninstallV2: (intent: UninstallKeyIntent) => Promise<{ ok: true; files?: string[]; warning?: string } | { ok: false; reason: string }>
+    uninstallV2: (
+      intent: UninstallKeyIntent,
+    ) => Promise<{ ok: true; files?: string[]; warning?: string } | { ok: false; reason: string }>
     /** REQ-104 #395:key-based 启停 —— main 按账本自查。写序 = 账本翻转 + alpha.jsonc config 投影
      *  (两次写 + 失败补偿,非单事务);mcp/agent 的禁用**权威由 sidecar 注入 OPENCODE_CONFIG_CONTENT
      *  保证**(引擎最后加载 override),alpha.jsonc 投影仅 consistency;plugin 禁用 = 从 alpha.jsonc
      *  plugin[] 移除;skill 纯账本翻转(投影 = 引擎侧按账本注入)。enable 过 advisory 闸(R14)。 */
-    setInstallState: (intent: SetStateKeyIntent) => Promise<{ ok: true; warning?: string } | { ok: false; reason: string; code?: SetStateRefusalCodeWire }>
+    setInstallState: (
+      intent: SetStateKeyIntent,
+    ) => Promise<{ ok: true; warning?: string } | { ok: false; reason: string; code?: SetStateRefusalCodeWire }>
     /** #397 PR-B:浏览/推荐面的公示阻断事实(main 派生已验公示;ids = 拦新激活的条目)。 */
     advisoryActive: () => Promise<{ ids: string[]; fresh: boolean }>
     /** REQ-100 #313:某 skill 的 generation 历史(current + 保留代)。只透安全元数据,不外泄绝对路径。 */
-    listGenerations: (intent: UninstallKeyIntent) => Promise<{ ok: true; generations: SkillGenerationInfo[] } | { ok: false; reason: string }>
+    listGenerations: (
+      intent: UninstallKeyIntent,
+    ) => Promise<{ ok: true; generations: SkillGenerationInfo[] } | { ok: false; reason: string }>
     /** REQ-100 #313:两版离线回滚 —— 目标 gen 健康门 + 锁内翻指针 + receipt 修订;任一前置失败零变更。 */
-    rollback: (intent: UninstallKeyIntent, genId: string) => Promise<{ ok: true; previous: string | null } | { ok: false; reason: string }>
+    rollback: (
+      intent: UninstallKeyIntent,
+      genId: string,
+    ) => Promise<{ ok: true; previous: string | null } | { ok: false; reason: string }>
     // REQ-018 T3:存量迁移(旧 XDG 根 → .alpha)。scan 报告 legacy 清单 + enabled 门控;removeLegacy 删旧位。
     migrateScan: () => Promise<{ enabled: boolean; inventory: LegacyInventory }>
     // REQ-044:候选 provenance 终审(排除项 main.log [req044-provenance] 留痕)。
@@ -570,14 +692,24 @@ export type ElectronAPI = {
     >
     /** ADR-030(#372):显式清理(journal/账本失据 fail-closed;只删账本可证明的受控面)。
      *  #336:任一删账失败 → 整单 ok:false(cleaned/failed/reported 保留如实进度;幂等可重试)。 */
-    projectResidualsClean: (projectDir: string) => Promise<
+    projectResidualsClean: (
+      projectDir: string,
+    ) => Promise<
       | { ok: true; cleaned: string[]; reported: string[] }
-      | { ok: false; reason: string; cleaned?: string[]; failed?: Array<{ item: string; reason: string }>; reported?: string[] }
+      | {
+          ok: false
+          reason: string
+          cleaned?: string[]
+          failed?: Array<{ item: string; reason: string }>
+          reported?: string[]
+        }
     >
     /** REQ-100 #375:保留态 journal 只读诊断(global 三环境根恒聚合;projectDir 可选)。
      *  entries = 判别联合(kind: retained/already-quarantined/malformed-entry/unreadable-root/
      *  retire-incomplete);renderer 按 kind 分派(UI 归 Hub)。 */
-    journalRetainedList: (intent?: { projectDir?: string }) => Promise<{ entries: JournalAdminEntry[] } | { ok: false; reason: string }>
+    journalRetainedList: (intent?: {
+      projectDir?: string
+    }) => Promise<{ entries: JournalAdminEntry[] } | { ok: false; reason: string }>
     /** REQ-100 #375:显式 retire(entryId+fingerprint 定位;两个确认 flag 必须字面 true;
      *  UI 归 Hub —— 本通道只登记合同)。 */
     journalRetire: (intent: JournalRetireIntentWire) => Promise<JournalRetireResult>
@@ -589,10 +721,17 @@ export type ElectronAPI = {
      *  POST /mcp/:name/connect 热连;引擎 global.disposed 后须经本通道 re-assert(重校验失败 =
      *  旧 grant 已被 main 撤下,开关必须回落)。复审过期拒绝码 = expired-review-confirmation-required,
      *  带 confirmExpiredReview:true 重试。 */
-    sessionGrant: (input: { catalogId: string; directory: string; confirmExpiredReview?: boolean }) => Promise<SessionGrantResultWire>
+    sessionGrant: (input: {
+      catalogId: string
+      directory: string
+      confirmExpiredReview?: boolean
+    }) => Promise<SessionGrantResultWire>
     /** #408:撤销(幂等;directory 维度 —— 只撤该 instance 空间的授权,调用方随后对同 directory
      *  调 /mcp/:name/disconnect)。同条目多 directory 激活 = 多条 grant,经 sessionGrants 枚举可尽撤。 */
-    sessionGrantRevoke: (input: { catalogId: string; directory: string }) => Promise<{ ok: true } | { ok: false; reason: string; code: "session-grant-refused" }>
+    sessionGrantRevoke: (input: {
+      catalogId: string
+      directory: string
+    }) => Promise<{ ok: true } | { ok: false; reason: string; code: "session-grant-refused" }>
     /** #408:当前会话的 grant 全集(会话结束/未启动 = 空;含各 grant 的 directory)。 */
     sessionGrants: () => Promise<{ grants: SessionGrantWire[] }>
     /** #408:会话结束事件(蓄意停止 = sidecar-stop / 崩溃 = sidecar-exit)—— 收到即把全部会话
@@ -691,9 +830,11 @@ export type ElectronAPI = {
     /** A2:立即运行(不改 next-fire;占并发位;计日 cap)。 */
     runNow: (id: string) => Promise<{ ok: true } | { ok: false; reason: string }>
     /** A2:LLM 辅助解析(规则失败时用户显式触发;临时会话一次抽取即删)。 */
-    nlLlm: (text: string, projectDir: string) => Promise<
-      | { ok: true; name: string; schedule: AutomationSchedule; prompt: string }
-      | { ok: false; reason: string }
+    nlLlm: (
+      text: string,
+      projectDir: string,
+    ) => Promise<
+      { ok: true; name: string; schedule: AutomationSchedule; prompt: string } | { ok: false; reason: string }
     >
     /** A3:云侧状态回读(schedules=null 即离线)+ 错过 run 拉回。 */
     cloudSync: () => Promise<{
@@ -708,7 +849,9 @@ export type ElectronAPI = {
   // B 网关 edition 白名单收窄 + liveSync 来源标注);platformLive 拉取顺带刷新本地白名单缓存。
   models: {
     catalog: () => Promise<EffectiveCatalog>
-    platformLive: () => Promise<CloudResult<{ models: PlatformLiveModel[]; edition?: string; byokProviders: string[] | null }>>
+    platformLive: () => Promise<
+      CloudResult<{ models: PlatformLiveModel[]; edition?: string; byokProviders: string[] | null }>
+    >
   }
   // custom provider add/test (writes alpha.jsonc provider[], respawns sidecar; 1-token probe).
   providers: {
