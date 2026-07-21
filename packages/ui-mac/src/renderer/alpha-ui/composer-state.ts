@@ -1,21 +1,18 @@
-// composer-state — REQ-055:AlphaComposer 的本地状态核(单一真源,home + session 共用)。
+// composer-state — AlphaComposer 的轻量内存投影与提交纯核。
 //
 // 设计要点(用户拍板 2026-07-07:「自建、不再集成 opencode、不要止血」):
-// - 模型 / 推理档(variant)/ agent / 权限全部是 **alpha 本地状态**,提交时作为 SDK 显式参数
-//   (session.promptAsync 原生收 model/agent/variant)——彻底废除「驱动/观察上游隐藏控件」
-//   (agent.cycle 轮转、variant cycleTo、MutationObserver 标签发布)那一整类脆机制。
-// - 未显式选择时**不传参数**(引擎用自己的默认),保持最小干预;显式选过即持久(localStorage),
-//   两个界面、跨会话、跨重启永远一致。
+// - model / variant 统一使用 typed Model.Ref；session 以服务端 session state 为真源，本模块只保存
+//   已确认的 UI 投影。home 在创建会话前暂存选择，创建时直接写入 Session model。
+// - model / variant 不落 localStorage，避免与上游 session context 形成跨会话双真值。
 // - 纯函数(buildPromptRequest / routeSlash / filterAgents)与 signals 分离,前者可直接单测。
 
 import { createSignal } from "solid-js"
+import type { ModelRef } from "@opencode-ai/sdk/v2/client"
 
 /* ── 类型 ─────────────────────────────────────────────────────────────────── */
 
-export type ComposerModel = {
-  providerID: string
-  modelID: string
-  /** display name(catalog 有则用,BYOK 用 modelID) */
+export type ComposerModel = ModelRef & {
+  /** display name(catalog 有则用,BYOK 用 Model.Ref id) */
   name: string
   /** 该模型定义的推理档位名(alpha-models.json variants 键,如 低/中/高);空 = 不支持 */
   variants: string[]
@@ -34,55 +31,34 @@ export const INTERNAL_AGENTS = new Set(["alpha-automation", "alpha-automation-st
 
 /* ── signals(模块级 = 所有渲染面共享)──────────────────────────────────────── */
 
-const MODEL_KEY = "alpha.composer.model"
-const EFFORT_KEY = "alpha.composer.effort"
-
-function loadPersistedModel(): ComposerModel | null {
-  try {
-    const raw = localStorage.getItem(MODEL_KEY)
-    if (!raw) return null
-    const v = JSON.parse(raw)
-    if (v && typeof v.providerID === "string" && typeof v.modelID === "string")
-      return { providerID: v.providerID, modelID: v.modelID, name: v.name ?? v.modelID, variants: Array.isArray(v.variants) ? v.variants : [] }
-  } catch {
-    /* 损坏的持久值按未选择处理 */
-  }
-  return null
+const [model, setModelSignal] = createSignal<ComposerModel | null>(null)
+export type ComposerModelProjection = {
+  status: "loading" | "ready" | "error"
+  sessionID: string | null
 }
-
-const [model, setModelSignal] = createSignal<ComposerModel | null>(loadPersistedModel())
-const [effort, setEffortSignal] = createSignal<string | null>(
-  (() => {
-    try {
-      return localStorage.getItem(EFFORT_KEY)
-    } catch {
-      return null
-    }
-  })(),
-)
+const [modelProjection, setModelProjection] = createSignal<ComposerModelProjection>({
+  status: "ready",
+  sessionID: null,
+})
 const [perm, setPerm] = createSignal<PermMode>("ask")
 const [agent, setAgent] = createSignal<string | null>(null) // null = 引擎默认(build)
 const [agents, setAgents] = createSignal<ComposerAgent[]>([])
 
 export const composerModel = model
-export const composerEffortSel = effort
+export const composerModelProjection = modelProjection
+export const composerEffortSel = () => model()?.variant ?? null
 export const composerPerm = perm
 export const composerAgent = agent
 export const composerAgents = agents
 export { setPerm as setComposerPerm, setAgent as setComposerAgent, setAgents as setComposerAgents }
 
-/** 非持久默认模型:登录且代理可用时自动选中 catalog 默认档(用户报障 2026-07-07:「选择模型」
- *  占位 + effort 无档可点 = 死状态)。只在当前无选择时生效;**不落盘** —— 只有用户显式选择
- *  (setComposerModel)才持久,下次启动重算默认(catalog 换默认即时跟随)。 */
+/** 登录且代理可用时自动选中 catalog 默认档；只在当前无选择时生效。 */
 export function applyDefaultComposerModel(m: ComposerModel) {
   if (model()) return
   setModelSignal(m)
 }
 
-/* ── REQ-069:持久选择的挂起/恢复 ──────────────────────────────────────────────
- * 持久化的上次选择在当前状态不可用(登出后残留代理模型 / 账户无会员零余额 / BYOK provider
- * 已移除)时:**只清内存信号、不动 localStorage** —— 不静默沿用(会撞网关拒绝)也不静默删
- * (重新登录后冷启动应原样恢复,C28 反 placebo);挂起原因暴露给 picker 如实展示。 */
+/* ── REQ-069:当前选择的挂起/恢复 ────────────────────────────────────────────── */
 
 export type SuspendReason = "needs-login" | "needs-credit" | "provider-gone"
 export type SuspendedModel = { model: ComposerModel; reason: SuspendReason }
@@ -97,41 +73,36 @@ export function suspendComposerModel(reason: SuspendReason) {
   setModelSignal(null)
 }
 
-/** 挂起条件解除(如登录回来)时还原;当前已有选择则不覆盖。 */
-export function restoreSuspendedModel(): boolean {
-  const s = suspended()
-  if (!s || model()) return false
-  setSuspended(null)
-  setModelSignal(s.model)
-  return true
-}
-
 export function clearSuspendedModel() {
   setSuspended(null)
 }
 
 export function setComposerModel(m: ComposerModel | null) {
-  setModelSignal(m)
-  try {
-    if (m) localStorage.setItem(MODEL_KEY, JSON.stringify(m))
-    else localStorage.removeItem(MODEL_KEY)
-  } catch {
-    /* persistence best-effort */
-  }
-  // 换模型后旧档位未必存在:不存在则清掉(诚实回默认,不假装还在旧档)。
-  const e = effort()
-  if (m && e && !m.variants.includes(e)) setComposerEffort(null)
-  if (!m) setComposerEffort(null)
+  setModelSignal(m?.variant && !m.variants.includes(m.variant) ? { ...m, variant: undefined } : m)
 }
 
-export function setComposerEffort(v: string | null) {
-  setEffortSignal(v)
-  try {
-    if (v) localStorage.setItem(EFFORT_KEY, v)
-    else localStorage.removeItem(EFFORT_KEY)
-  } catch {
-    /* best-effort */
-  }
+/** Session 路由一进入新的同步 epoch 就先撤销旧投影，避免上一会话的 Ref 仍可被操作。 */
+export function invalidateComposerModelProjection(sessionID: string) {
+  setModelSignal(null)
+  setSuspended(null)
+  setModelProjection({ status: "loading", sessionID })
+}
+
+export function resolveComposerModelProjection(sessionID: string, next: ComposerModel | null) {
+  setComposerModel(next)
+  setSuspended(null)
+  setModelProjection({ status: "ready", sessionID })
+}
+
+export function failComposerModelProjection(sessionID: string) {
+  setModelSignal(null)
+  setSuspended(null)
+  setModelProjection({ status: "error", sessionID })
+}
+
+/** home 没有服务端 Session 投影；控件使用创建会话前的内存选择。 */
+export function resetComposerModelProjection() {
+  setModelProjection({ status: "ready", sessionID: null })
 }
 
 /* ── 纯函数(单测覆盖)────────────────────────────────────────────────────── */
@@ -155,9 +126,8 @@ export function filterAgents(
 
 export type PromptRequest = {
   parts: unknown[]
-  model?: { providerID: string; modelID: string }
+  model?: ModelRef
   agent?: string
-  variant?: string
 }
 
 /** 提交参数构造:
@@ -175,9 +145,13 @@ export function buildPromptRequest(input: {
   const req: PromptRequest = {
     parts: [{ type: "text", text: input.text }, ...(input.extraParts ?? [])],
   }
-  if (input.model) req.model = { providerID: input.model.providerID, modelID: input.model.modelID }
+  if (input.model)
+    req.model = {
+      id: input.model.id,
+      providerID: input.model.providerID,
+      ...(input.effort && input.model.variants.includes(input.effort) ? { variant: input.effort } : {}),
+    }
   if (input.perm === "readonly") req.agent = READONLY_AGENT
   else if (input.agent) req.agent = input.agent
-  if (input.model && input.effort && input.model.variants.includes(input.effort)) req.variant = input.effort
   return req
 }

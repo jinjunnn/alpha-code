@@ -297,10 +297,12 @@ td:first-child { color:var(--a-text);font-weight:var(--a-weight-medium); }
 .frame.is-narrow { max-width:430px;margin-inline:auto; }
 .mock-state { display:none;min-height:610px; }
 .frame[data-active="default"] .mock-state[data-state="default"],
+.frame[data-active="current-loading"] .mock-state[data-state="current-loading"],
 .frame[data-active="save-failed"] .mock-state[data-state="save-failed"],
 .frame[data-active="gc-running"] .mock-state[data-state="gc-running"],
 .frame[data-active="gc-failed"] .mock-state[data-state="gc-failed"],
 .frame[data-active="load-failed"] .mock-state[data-state="load-failed"],
+.frame[data-active="logged-out"] .mock-state[data-state="logged-out"],
 .frame[data-active="empty"] .mock-state[data-state="empty"],
 .frame[data-active="decision-failed"] .mock-state[data-state="decision-failed"],
 .frame[data-active="config"] .mock-state[data-state="config"],
@@ -861,7 +863,9 @@ td:first-child { color:var(--a-text);font-weight:var(--a-weight-medium); }
     <div class="demo-tabs" role="tablist" aria-label="Model 状态">
       <span>切换状态</span>
       <button type="button" role="tab" aria-selected="true" data-demo="modelDemo" data-state="default">当前 picker</button>
-      <button type="button" role="tab" aria-selected="false" data-demo="modelDemo" data-state="load-failed">引擎连接中</button>
+      <button type="button" role="tab" aria-selected="false" data-demo="modelDemo" data-state="current-loading">会话模型加载中</button>
+      <button type="button" role="tab" aria-selected="false" data-demo="modelDemo" data-state="load-failed">读取失败</button>
+      <button type="button" role="tab" aria-selected="false" data-demo="modelDemo" data-state="logged-out">未登录</button>
       <button type="button" role="tab" aria-selected="false" data-demo="modelDemo" data-state="empty">搜索为空</button>
     </div>
     <div class="frame" id="modelDemo" data-active="default">
@@ -889,18 +893,47 @@ td:first-child { color:var(--a-text);font-weight:var(--a-weight-medium); }
           </section>
         </div>
       </div>
+      <div class="mock-state" data-state="current-loading">
+        <div class="windowbar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="title">会话 · alpha-code</span></div>
+        <div class="session-bg"><div class="message">正在切换到另一会话。</div>
+          <div class="composer-ghost"><div class="composer-placeholder">询问任何问题…</div><div class="composer-controls"><button class="composer-chip" type="button" aria-expanded="true">正在读取模型…⌃</button><button class="composer-chip" type="button" aria-label="推理强度：当前会话模型加载中" disabled>—</button><button class="composer-send" type="button" aria-label="发送">↑</button></div></div>
+          <section class="model-panel" aria-label="选择模型">
+            <div class="model-list" style="min-height:330px">
+              <label class="searchbox"><svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input aria-label="搜索模型或供应商" placeholder="搜索模型 / 供应商" /></label>
+              <div class="inline-info" role="status"><strong>正在读取当前会话模型…</strong><br />读取完成前不会沿用其他会话的选择，模型行和推理强度保持不可操作。</div>
+              <div class="list-label">代理节点 · 经 ALPHA 代理</div>
+              <button class="model-row" type="button" disabled><span class="model-pico">α</span><span class="model-name"><b>Claude Opus 4.8</b><small>模型加载中</small></span></button>
+            </div>
+            <footer class="model-foot">＋ 添加自定义节点 / 供应商</footer>
+          </section>
+        </div>
+      </div>
       <div class="mock-state" data-state="load-failed">
         <div class="windowbar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="title">会话 · alpha-code</span></div>
-        <div class="session-bg"><div class="message">当前选择保持不变。</div>
-          <div class="composer-ghost"><div class="composer-placeholder">询问任何问题…</div><div class="composer-controls"><button class="composer-chip" type="button" aria-expanded="true">Claude Opus 4.8⌃</button><button class="composer-chip" type="button" aria-label="推理强度：中">中</button><button class="composer-send" type="button" aria-label="发送">↑</button></div></div>
+        <div class="session-bg"><div class="message">读取失败时不显示上一会话的模型。</div>
+          <div class="composer-ghost"><div class="composer-placeholder">询问任何问题…</div><div class="composer-controls"><button class="composer-chip" type="button" aria-expanded="true">模型读取失败⌃</button><button class="composer-chip" type="button" aria-label="推理强度：当前会话模型读取失败" disabled>—</button><button class="composer-send" type="button" aria-label="发送">↑</button></div></div>
           <section class="model-panel" aria-label="选择模型">
             <div class="model-list">
               <label class="searchbox"><svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input aria-label="搜索模型或供应商" placeholder="搜索模型 / 供应商" /></label>
-              <div class="inline-alert" role="alert"><span class="status-dot error" style="margin-top:6px"></span><div><strong>正在连接引擎（可能正在重启）…</strong>模型列表稍后自动恢复，无需重开此窗口。</div></div>
-              <div class="list-label">代理节点 · 经 ALPHA 代理</div>
-              <button class="model-row selected" type="button"><span class="model-pico">α</span><span class="model-name"><b>Claude Opus 4.8</b><small>claude-opus-4.8</small></span><span class="tag muted">旗舰 ×8</span></button>
+              <div class="inline-alert" role="alert"><span class="status-dot error" style="margin-top:6px"></span><div><strong>当前会话模型读取失败</strong>没有沿用其他会话的选择。<button class="ui-btn secondary" type="button" style="margin-top:8px">重试</button></div></div>
+              <div class="inline-alert" role="alert"><span class="status-dot error" style="margin-top:6px"></span><div><strong>账户 / KEY / 模型列表读取失败</strong>未知状态不会显示成“需登录”“余额不足”或“未配置 KEY”。</div></div>
               <div class="list-label">国内直连 · 自带 KEY (BYOK)</div>
-              <button class="model-row" type="button" disabled><span class="model-pico" style="background:#71717a">D</span><span class="model-name"><b>DeepSeek</b><small>已配置 · 模型加载中…</small></span></button>
+              <button class="model-row" type="button" disabled><span class="model-pico" style="background:#71717a">D</span><span class="model-name"><b>DeepSeek</b><small>KEY 状态读取失败</small></span></button>
+            </div>
+            <footer class="model-foot">＋ 添加自定义节点 / 供应商</footer>
+          </section>
+        </div>
+      </div>
+      <div class="mock-state" data-state="logged-out">
+        <div class="windowbar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="title">会话 · alpha-code</span></div>
+        <div class="session-bg">
+          <div class="composer-ghost"><div class="composer-placeholder">询问任何问题…</div><div class="composer-controls"><button class="composer-chip" type="button" aria-expanded="true">选择模型⌃</button><button class="composer-chip" type="button" aria-label="推理强度：先选择模型">—</button><button class="composer-send" type="button" aria-label="发送">↑</button></div></div>
+          <section class="model-panel" aria-label="选择模型">
+            <div class="model-list" style="min-height:330px">
+              <label class="searchbox"><svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input aria-label="搜索模型或供应商" placeholder="搜索模型 / 供应商" /></label>
+              <div class="model-account"><span class="status-dot warn"></span><span>登录解锁代理节点</span><button class="ui-btn secondary" type="button" style="margin-left:auto">登录</button></div>
+              <div class="list-label">国内直连 · 自带 KEY (BYOK)</div>
+              <button class="model-row" type="button"><span class="model-pico" style="background:#2563eb">D</span><span class="model-name"><b>DeepSeek V4 Flash</b><small>deepseek-v4-flash · DeepSeek</small></span></button>
             </div>
             <footer class="model-foot">＋ 添加自定义节点 / 供应商</footer>
           </section>

@@ -5,12 +5,15 @@
 import { ipcMain, type IpcMainInvokeEvent } from "electron"
 import type { ProviderInput, ProviderTestInput } from "../shared/alpha-model-types"
 import { getProviderKeyStatus } from "./alpha-provider-status"
-import { persistProvider, removeProvider } from "./ext-config"
+import { removeProvider } from "./ext-config"
 import { removeByokKey, setByokKey } from "./alpha-byok-keys"
+import { persistProviderAndRefresh } from "./provider-lifecycle"
 import { testProvider } from "./provider-test"
 
 export function registerProviderIpcHandlers() {
-  ipcMain.handle("providers-add", (_event: IpcMainInvokeEvent, input: ProviderInput) => persistProvider(input))
+  ipcMain.handle("providers-add", (_event: IpcMainInvokeEvent, input: ProviderInput) =>
+    persistProviderAndRefresh(input),
+  )
   ipcMain.handle("providers-test", (_event: IpcMainInvokeEvent, input: ProviderTestInput) => testProvider(input))
   // Read-only key-state for the picker's "需 Key / 已配置" gating. No secrets cross the boundary —
   // only { configured, source, hint(last4) } per provider id.

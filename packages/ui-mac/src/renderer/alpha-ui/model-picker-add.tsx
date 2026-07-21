@@ -2,7 +2,8 @@
 // picker popover (ADR-016: alpha owns this UI). Step 1: pick a known provider (filled from the catalog
 // — user only pastes a Key) or "其他/自定义" (manual model ids). Step 2: configure + 测试连接 (1-token
 // chat) + 保存. Save → preset keys go to alpha's encrypted keychain (providers.setKey); custom endpoints
-// persist to opencode.jsonc (providers.add). New nodes apply on the next sidecar (re)fork. Config-driven.
+// persist to alpha.jsonc (providers.add), then that IPC awaits the shared sidecar respawn so the new
+// provider enters enabled_providers before the picker refreshes the real model.list. Config-driven.
 
 import { createMemo, createSignal, For, onMount, Show } from "solid-js"
 import type { AlphaModelCatalog, ByokProvider, ProviderKeyStatus } from "../../shared/alpha-model-types"
@@ -103,7 +104,12 @@ export function AddProvider(props: {
       return
     }
     setTest({ s: "testing", msg: "" })
-    const r = await window.api.providers.test({ compat: compat(), baseURL: baseURL(), apiKey: apiKey(), model: models()[0] })
+    const r = await window.api.providers.test({
+      compat: compat(),
+      baseURL: baseURL(),
+      apiKey: apiKey(),
+      model: models()[0],
+    })
     if (r.ok) setTest({ s: "ok", msg: `已接通 · ${r.ms}ms` })
     else setTest({ s: "err", msg: r.reason })
   }
@@ -190,7 +196,7 @@ export function AddProvider(props: {
           <For each={presets()}>
             {(p) => (
               <button class="a-mpa-preset" onClick={() => openPreset(p)}>
-                <span class="a-mp-pico" style={{ background: p.pico.color }}>
+                <span class="a-pico" style={{ background: p.pico.color }}>
                   {p.pico.letter}
                 </span>
                 <span class="a-mpa-pn">
@@ -231,11 +237,7 @@ export function AddProvider(props: {
           <div class="a-mpa-field">
             <label>兼容类型</label>
             <div class="a-mpa-compat">
-              <div
-                class="opt"
-                aria-pressed={compat() === "openai"}
-                onClick={() => isCustom() && setCompat("openai")}
-              >
+              <div class="opt" aria-pressed={compat() === "openai"} onClick={() => isCustom() && setCompat("openai")}>
                 OpenAI 兼容
               </div>
               <div

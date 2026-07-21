@@ -2,25 +2,26 @@
 //
 // 用户报障(2026-07-08):未登录冷启动默认命中 member-only 代理模型 → 发第一条消息就被网关
 // 「预授权拒绝: member-only model 需 active 会员」原文糊脸。两条旁路绕过了 REQ-056 的默认门:
-//   ① localStorage 持久选择冷启动直接生效,不做当前可用性校验(登录期选过代理模型 → 登出残留);
+//   ① 旧 localStorage 选择曾在冷启动直接生效,不做当前可用性校验(登录期选过代理模型 → 登出残留);
 //   ② 自动默认只看 logged-in,不看账户 entitlement(登录但无会员/零余额同样默认到锁定模型)。
 //
 // 解析链(REQ-069 需求档,每级不满足才降级):
-//   1. 持久化的上次选择 —— 先过 checkPersistedModel;不可用 → 挂起(不删 localStorage,恢复条件
-//      满足即还原),绝不静默沿用、也不静默换(C28)。
+//   1. 当前 session 选择 —— 先过 checkSelectedModel;不可用 → 挂起并如实说明。
 //   2. 已登录 + 账户可用 + 代理已注册 → catalog 默认档(REQ-056 语义原样保留,含单测锁定的
 //      「绝不默认到 ×8 旗舰」兜底)。
 //   3. 已配 KEY 的 BYOK provider → 其引擎注册的第一个模型(「上次使用」排序由第 1 级承担,MVP 不重复)。
 //   4. 全无 → none:composer 保持引导占位,picker 内登录/配 KEY 双出口,发送前 preflight 拦截。
 
-export type EngineModelRef = { providerID: string; modelID: string }
+import type { ModelRef } from "@opencode-ai/sdk/v2/client"
 
-export type ResolvedModel = { providerID: string; modelID: string; name: string; variants: string[] }
+export type EngineModelRef = Pick<ModelRef, "providerID" | "id">
+
+export type ResolvedModel = ModelRef & { name: string; variants: string[] }
 
 export type ModelResolveCtx = {
   loggedIn: boolean
-  /** 账户可用于代理计费:会员 active 或钱包余额 > 0。summary 网络失败时调用方给 true(疑罪从无,
-   *  网关是最终裁决),summary 明确为空账户时 false(这才是要堵的坑)。 */
+  /** 账户可用于代理计费:会员 active 或钱包余额 > 0。summary 读取失败时调用方不进入解析链，
+   *  外层保持 error 并阻止提交；只有明确为空账户时才在此传 false。 */
   accountUsable: boolean
   platformProviderId: string | null
   /** 引擎实际注册的模型;空数组 = 引擎/sdk 未就绪(冷启动常态),解析返回 wait。 */
@@ -33,12 +34,12 @@ export type ModelResolveCtx = {
   } | null
 }
 
-export type PersistedVerdict = { ok: true } | { ok: false; reason: "needs-login" | "needs-credit" | "provider-gone" }
+export type SelectedVerdict = { ok: true } | { ok: false; reason: "needs-login" | "needs-credit" | "provider-gone" }
 
-/** 第 1 级:持久化选择的当前可用性。判定只依据**确定的负面事实**——代理模型看登录/entitlement
+/** 第 1 级:session 当前选择的可用性。判定只依据**确定的负面事实**——代理模型看登录/entitlement
  *  (auth 侧,冷启动即刻可得);BYOK 只有在引擎表已加载且查无此 provider 才判失效(空表 = 未就绪,
  *  不误杀)。代理模型不因「引擎尚未注册代理 provider」挂起 —— 那是 fork 时序,登录态下必然到来。 */
-export function checkPersistedModel(m: { providerID: string }, ctx: ModelResolveCtx): PersistedVerdict {
+export function checkSelectedModel(m: { providerID: string }, ctx: ModelResolveCtx): SelectedVerdict {
   if (ctx.platformProviderId && m.providerID === ctx.platformProviderId) {
     if (!ctx.loggedIn) return { ok: false, reason: "needs-login" }
     if (!ctx.accountUsable) return { ok: false, reason: "needs-credit" }
@@ -70,7 +71,12 @@ export function resolveDefaultModel(ctx: ModelResolveCtx): DefaultResolution {
       if (pick)
         return {
           kind: "model",
-          model: { providerID: pid, modelID: pick.id, name: pick.name, variants: pick.variants ? Object.keys(pick.variants) : [] },
+          model: {
+            providerID: pid,
+            id: pick.id,
+            name: pick.name,
+            variants: pick.variants ? Object.keys(pick.variants) : [],
+          },
         }
     }
     // 登录且可用但代理未注册:provider 与引擎模型表同来自一次 fork 的 config —— 表非空而代理缺席
@@ -81,7 +87,7 @@ export function resolveDefaultModel(ctx: ModelResolveCtx): DefaultResolution {
   for (const pid of ctx.configuredProviders) {
     if (pid === ctx.platformProviderId) continue
     const m = ctx.engineModels.find((e) => e.providerID === pid)
-    if (m) return { kind: "model", model: { providerID: m.providerID, modelID: m.modelID, name: m.modelID, variants: [] } }
+    if (m) return { kind: "model", model: { providerID: m.providerID, id: m.id, name: m.id, variants: [] } }
   }
 
   return { kind: "none" }

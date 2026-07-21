@@ -632,7 +632,8 @@ function removeMcpUnlocked(name: string): ConfigResult {
  * id must ALSO be merged into the injected enabled_providers allowlist at sidecar start
  * (alpha-models.ts → readUserProviderIds) — opencode replaces (doesn't union) the enabled_providers
  * array on merge, so a provider not in the injected allowlist is dropped (see build.md §6). The user
- * therefore sees a new custom provider after the next reconnect, not instantly.
+ * providers-add follows a successful write with the process-global sidecar respawn; that fork reads
+ * this id into enabled_providers before the renderer reconnects and refreshes model.list.
  */
 export function persistProvider(input: ProviderInput): ConfigResult {
   if (!SAFE_NAME.test(input.id)) return { ok: false, reason: "invalid provider id" }

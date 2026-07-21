@@ -30,6 +30,7 @@ import { pullCloudScheduleRuns } from "./alpha-cloud-schedules"
 import { registerModelsIpcHandlers } from "./models-ipc"
 import { syncLiveAllowlist } from "./alpha-platform-models"
 import { registerProviderIpcHandlers } from "./provider-ipc"
+import { setProviderLifecycleDeps } from "./provider-lifecycle"
 import { forwardInitializationFailure } from "./initialization"
 import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
 import { getStore } from "./store"
@@ -163,7 +164,7 @@ let sidecarGen = 0
 let bootEnforcementGap: string[] | null = null
 let selfHeal = initialSelfHealState()
 let selfHealTimer: NodeJS.Timeout | null = null
-let requestSidecarRespawn: (() => Promise<void>) | null = null
+let requestSidecarRespawn: (() => Promise<boolean>) | null = null
 
 function handleSidecarExit(gen: number, code: number) {
   writeLog("utility", "sidecar exited", { code }, "warn")
@@ -526,9 +527,9 @@ const main = Effect.gen(function* () {
     killSidecar: () => killSidecar(),
     // B11 复扫行11:停手 banner 的「重试」—— 用户显式动作,阶梯清零重新给满自愈机会;respawn 走
     // 既有互斥/合并入口(requestSidecarRespawn 在窗口建成时赋值;此前调用为 no-op)。
-    retrySidecar: () => {
+    retrySidecar: async () => {
       selfHeal = initialSelfHealState()
-      return requestSidecarRespawn?.() ?? Promise.resolve()
+      await requestSidecarRespawn?.()
     },
     relaunch,
     awaitInitialization: Effect.fnUntraced(
@@ -749,7 +750,7 @@ const main = Effect.gen(function* () {
   // reconnects (url/password unchanged → awaitInitialization stays valid) and re-fetches providers →
   // the proxy activates with zero clicks and no restart.
   const doRespawnSidecar = async () => {
-    if (quittingApp) return
+    if (quittingApp) return false
     try {
       logger.log("respawning sidecar (proxy activation)")
       // REQ-001:respawn 前刷新 edition 白名单缓存(登录刚建立 → 按租户 edition 收窄;8s 超时内置,
@@ -780,32 +781,35 @@ const main = Effect.gen(function* () {
       } else if (!healthy) {
         logger.error("sidecar respawned but health check failed — skipping renderer reload")
       }
+      return healthy
     } catch (error) {
       logger.error("sidecar respawn failed", error)
+      return false
     }
   }
   // B5(NEW-4):respawn 互斥 + 合并。触发面已扩大(登录/登出/enableProxy/setAuthMode/B2 tick/
   // B21 改键),并发触发会两个 fork 抢同一端口、renderer 双重 reload。单飞:在途时再触发只标记
-  // 一次排队,完成后补跑一轮(拿到最新 env/密钥状态,不会丢最后一次变更)。
-  let respawning: Promise<void> | null = null
+  // 一次排队；共享 Promise 覆盖补跑轮次(拿到最新 env/密钥/provider 状态,不会丢最后一次变更)。
+  let respawning: Promise<boolean> | null = null
   let respawnQueued = false
-  const respawnSidecar = async (): Promise<void> => {
+  const drainRespawns = async (): Promise<boolean> => {
+    respawnQueued = false
+    const healthy = await doRespawnSidecar()
+    if (!respawnQueued) return healthy
+    return drainRespawns()
+  }
+  const respawnSidecar = (): Promise<boolean> => {
     if (respawning) {
       respawnQueued = true
       return respawning
     }
-    respawning = doRespawnSidecar().finally(() => {
-      respawning = null
-      if (respawnQueued) {
-        respawnQueued = false
-        void respawnSidecar()
-      }
-    })
+    respawning = drainRespawns().finally(() => (respawning = null))
     return respawning
   }
 
   requestSidecarRespawn = respawnSidecar // B5:崩溃自愈复用同一互斥/合并入口
   setAuthDeps({ getWindow: () => mainWindow, respawn: respawnSidecar })
+  setProviderLifecycleDeps({ refreshRuntime: respawnSidecar })
   // B21:BYOK 改键/删键即时生效 —— 持久化成功后重注 env(自有注入权威覆盖/清除,用户值不动)+
   // respawn(fork 时 A6 syncSecretFiles 把新 env 镜像进 {file:} 通道 → 新 sidecar 即用新 key)。
   setByokKeyDeps({

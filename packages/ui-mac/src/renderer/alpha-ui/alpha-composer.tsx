@@ -2,14 +2,25 @@
 // 组件」「自建,不再集成 opencode」)。首页(mode="home")与会话页(mode="session",经
 // composer-takeover 顶替上游 prompt-input)渲染**同一个组件**,样式只来自 alpha-composer.css。
 //
-// 与旧世界的本质区别:模型/推理档/agent/权限是 **本地状态**(composer-state.ts),提交时作为 SDK
-// 显式参数(session.promptAsync 原生收 model/agent/variant)。不再有 agent.cycle 轮转、variant
-// cycleTo、MutationObserver 标签发布 —— 那一类「驱动隐藏上游控件」的机制全部退役(REQ-054 根除)。
+// 与旧世界的本质区别:session 的模型/推理档以 typed Session Model.Ref 为真源，composer-state
+// 只保留已确认的 UI 投影；agent/权限仍是轻量提交态。不再有 agent.cycle 轮转、variant cycleTo
+// 或隐藏上游选择器标签发布 —— 那一类「驱动隐藏上游控件」的机制全部退役。
 //
 // v1 诚实边界(见 requirements/REQ-055):附件/拖拽/图片粘贴不迁(+ 菜单沿用);上下文 ring 在会话页
-// 由 takeover 收养上游活节点(纯只读复用);BYOK 模型无档位数据 → effort 弹层如实说明(始终可点,无死点)。
+// 由 takeover 收养上游活节点(纯只读复用);BYOK 模型无档位数据 → 全链 ready 后 effort 弹层如实说明。
 
-import { createEffect, createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch, type JSX } from "solid-js"
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  Match,
+  onCleanup,
+  onMount,
+  Show,
+  Switch,
+  type JSX,
+} from "solid-js"
 import { Portal } from "solid-js/web"
 import { useCommand } from "./providers"
 import { setExtHubOpen } from "../extensions/ext-hub-state"
@@ -30,22 +41,34 @@ import type { AuthState } from "../../preload/types"
 import {
   applyDefaultComposerModel,
   buildPromptRequest,
+  clearSuspendedModel,
   composerAgent,
   composerEffortSel,
   composerModel,
+  composerModelProjection,
   composerModelSuspended,
   composerPerm,
-  restoreSuspendedModel,
+  failComposerModelProjection,
+  invalidateComposerModelProjection,
+  resetComposerModelProjection,
+  resolveComposerModelProjection,
   routeSlash,
   setComposerAgent,
-  setComposerEffort,
   setComposerModel,
   setComposerPerm,
   suspendComposerModel,
   type PermMode,
 } from "./composer-state"
-import { checkPersistedModel, preflightBlockReason, resolveDefaultModel, type EngineModelRef } from "./model-default-core"
+import {
+  checkSelectedModel,
+  preflightBlockReason,
+  resolveDefaultModel,
+  type EngineModelRef,
+} from "./model-default-core"
 import { ModelPickPop } from "./alpha-composer-model"
+import { createModelContract, type ModelContract } from "./model-contract"
+import { composerModelFromRef, modelRefOf, withModelVariant } from "./model-picker-core"
+import { ENGINE_FETCH_TIMEOUT_MS } from "./model-picker-logic"
 import "./alpha-composer.css"
 
 /* ── 单开注册表(全部 chips 共享;开新的自动关旧的)──────────────────────────── */
@@ -75,7 +98,13 @@ function useChip() {
 const stop = (e: Event) => e.stopPropagation()
 
 /* 逃出 overflow 裁剪的弹层(Portal 到 body、fixed 定位、朝上开)。 */
-function ChipPopover(props: { anchor: HTMLElement | undefined; align?: "left" | "right"; minWidth?: number; children: JSX.Element }) {
+function ChipPopover(props: {
+  anchor: HTMLElement | undefined
+  align?: "left" | "right"
+  minWidth?: number
+  onEscape?: () => void
+  children: JSX.Element
+}) {
   const a = props.anchor
   if (!a) return null
   const r = a.getBoundingClientRect()
@@ -92,7 +121,17 @@ function ChipPopover(props: { anchor: HTMLElement | undefined; align?: "left" | 
   else style.left = `${Math.round(Math.min(Math.max(8, r.left), vw - minW - 8))}px`
   return (
     <Portal>
-      <div class="a-ui a-pop a-pop-fixed" style={style} onClick={stop}>
+      <div
+        class="a-ui a-pop a-pop-fixed"
+        style={style}
+        onClick={stop}
+        onKeyDown={(event) => {
+          if (event.key !== "Escape") return
+          event.preventDefault()
+          props.onEscape?.()
+          a.focus()
+        }}
+      >
         {props.children}
       </div>
     </Portal>
@@ -160,7 +199,11 @@ const TermGlyph = () => (
  * (文档/PDF/表格/连接器全是同一个 setExtHubOpen 动作)随之收敛为弹窗单行「扩展市场…」。 */
 function AddButton(props: { onOpen: () => void }) {
   return (
-    <button class="a-chip a-chip-icon" title="装配:引用 · 附加 · 模式(与 @ 同一弹窗)" onClick={(e) => (stop(e), props.onOpen())}>
+    <button
+      class="a-chip a-chip-icon"
+      title="装配:引用 · 附加 · 模式(与 @ 同一弹窗)"
+      onClick={(e) => (stop(e), props.onOpen())}
+    >
       <Plus />
     </button>
   )
@@ -169,14 +212,15 @@ function AddButton(props: { onOpen: () => void }) {
 /* ── 权限 chip:full/ask 驱动引擎 autoaccept 命令;readonly = 提交时 agent 参数 ── */
 const PERM_LABEL: Record<PermMode, string> = { full: "完全访问", ask: "请求审批", readonly: "只读" }
 
-function PermChip() {
-  const command = useCommand()
+type CommandApi = ReturnType<typeof useCommand>
+
+function PermChip(props: { command: CommandApi }) {
   const { isOpen, toggle, close } = useChip()
   let btn: HTMLButtonElement | undefined
   const pick = (m: PermMode) => {
     setComposerPerm(m)
     try {
-      command.trigger(m === "full" ? "permissions.autoaccept.enable" : "permissions.autoaccept.disable")
+      props.command.trigger(m === "full" ? "permissions.autoaccept.enable" : "permissions.autoaccept.disable")
     } catch {
       /* command may be unregistered on home — perm 仍是提交参数的真源 */
     }
@@ -205,7 +249,11 @@ function PermChip() {
           <button class="a-pop-item" classList={{ "is-on": composerPerm() === "ask" }} onClick={() => pick("ask")}>
             <ShieldAsk /> 请求审批 <span class="a-pop-desc">逐次询问</span>
           </button>
-          <button class="a-pop-item" classList={{ "is-on": composerPerm() === "readonly" }} onClick={() => pick("readonly")}>
+          <button
+            class="a-pop-item"
+            classList={{ "is-on": composerPerm() === "readonly" }}
+            onClick={() => pick("readonly")}
+          >
             <ShieldEye /> 只读 <span class="a-pop-desc">不能改文件/执行命令</span>
           </button>
         </ChipPopover>
@@ -224,27 +272,48 @@ function PlanChip() {
       <button
         class="a-chip a-chip-plan"
         data-disabled={composerPerm() === "readonly" ? "" : undefined}
-        title={composerPerm() === "readonly" ? "只读权限档下模式不生效(退出只读后恢复)" : "计划模式开启 — 点击关闭(Shift+Tab 切换)"}
+        title={
+          composerPerm() === "readonly"
+            ? "只读权限档下模式不生效(退出只读后恢复)"
+            : "计划模式开启 — 点击关闭(Shift+Tab 切换)"
+        }
         onClick={(e) => (stop(e), setComposerAgent(null))}
       >
-        <span class="a-chip-x" aria-hidden="true">⊗</span>
+        <span class="a-chip-x" aria-hidden="true">
+          ⊗
+        </span>
         {label()}
       </button>
     </Show>
   )
 }
 
-/* ── 模型 chip:打开 alpha 自建 picker(本地选择;不再点上游隐藏按钮)──────────── */
-function ModelChip(props: { sdk: AlphaProjectsApi["sdk"]; onNeedWorkspace?: () => void; hasWorkspace: () => boolean }) {
+/* ── 模型 chip:打开 canonical alpha picker，选择经 typed model contract 提交。──────────── */
+function ModelChip(props: {
+  contract: ReturnType<typeof createModelContract>
+  directory: () => string | undefined
+  onSelect: (model: NonNullable<ReturnType<typeof composerModel>>) => Promise<void>
+  onRetryCurrent: () => void
+  modelChainReady: () => boolean
+  onNeedWorkspace?: () => void
+  hasWorkspace: () => boolean
+}) {
   const { isOpen, toggle, close } = useChip()
   let btn: HTMLButtonElement | undefined
-  const label = () => composerModel()?.name ?? "选择模型"
+  const label = () => {
+    const projection = composerModelProjection()
+    if (projection.status === "loading") return "正在读取模型…"
+    if (projection.status === "error") return "模型读取失败"
+    return composerModel()?.name ?? "选择模型"
+  }
   return (
     <div class="a-pop-wrap" data-kind="model">
       <button
         ref={btn}
         class="a-chip a-chip-model"
         title="选择模型"
+        aria-haspopup="dialog"
+        aria-expanded={isOpen()}
         onClick={(e) => {
           stop(e)
           if (!props.hasWorkspace()) {
@@ -255,34 +324,64 @@ function ModelChip(props: { sdk: AlphaProjectsApi["sdk"]; onNeedWorkspace?: () =
           toggle()
         }}
       >
-        <span class="a-pico" style={{ background: "var(--a-accent)" }}>α</span>
-        <span class="a-chip-label" title={label()}>{label()}</span>
+        <span class="a-pico" style={{ background: "var(--a-accent)" }}>
+          α
+        </span>
+        <span class="a-chip-label" title={label()}>
+          {label()}
+        </span>
         <Chevron />
       </button>
       <Show when={isOpen()}>
-        <ChipPopover anchor={btn} align="right" minWidth={360}>
-          <ModelPickPop sdk={props.sdk} onPicked={close} />
+        <ChipPopover anchor={btn} align="right" minWidth={360} onEscape={close}>
+          <ModelPickPop
+            contract={props.contract}
+            directory={props.directory}
+            selected={composerModel}
+            onSelect={props.onSelect}
+            onPicked={close}
+            onRetryCurrent={props.onRetryCurrent}
+            modelChainReady={props.modelChainReady}
+          />
         </ChipPopover>
       </Show>
     </div>
   )
 }
 
-/* ── effort chip:档位真源 = 当前模型的 variants(本地状态,提交时作 variant 参数)。
- *    任何状态都可点(REQ-055 验收⑤「无死点」,用户报障 2026-07-07「为什么不可以点击」):
- *    无模型 → 弹层内嵌模型选择器就地选;有模型无档位 → 弹层如实说明原因。── */
-function EffortChip(props: { sdk: AlphaProjectsApi["sdk"] }) {
+/* ── effort chip:档位定义取目录 variants；session 当前值是服务端 Model.Ref 的 UI 投影。
+ *    全链 ready 后才允许调档；无模型时弹层内嵌模型选择器就地选，有模型无档位时如实说明原因。── */
+function EffortChip(props: {
+  contract: ReturnType<typeof createModelContract>
+  directory: () => string | undefined
+  onSelect: (model: NonNullable<ReturnType<typeof composerModel>>) => Promise<void>
+  onRetryCurrent: () => void
+  modelChainReady: () => boolean
+}) {
   const { isOpen, toggle, close } = useChip()
   let btn: HTMLButtonElement | undefined
   const variants = () => composerModel()?.variants ?? []
   const supported = () => variants().length > 0
   const current = () => composerEffortSel() ?? "默认"
-  const title = () =>
-    !composerModel()
+  const blocked = () => composerModelProjection().status !== "ready" || !props.modelChainReady()
+  const selectVariant = (variant: string | null) => {
+    const model = composerModel()
+    if (!model) return
+    void props
+      .onSelect(withModelVariant(model, variant))
+      .then(close)
+      .catch(() => {})
+  }
+  const title = () => {
+    if (composerModelProjection().status === "loading") return "推理强度 — 当前会话模型加载中"
+    if (composerModelProjection().status === "error") return "推理强度 — 当前会话模型读取失败"
+    if (!props.modelChainReady()) return "推理强度 — 模型状态链尚未就绪"
+    return !composerModel()
       ? "推理强度 — 选择模型后可用"
       : supported()
         ? "推理强度(逐模型推理参数档)"
         : "当前模型不支持推理档"
+  }
   return (
     <div class="a-pop-wrap" data-kind="effort">
       <button
@@ -290,6 +389,9 @@ function EffortChip(props: { sdk: AlphaProjectsApi["sdk"] }) {
         class="a-chip"
         data-muted={supported() ? undefined : ""}
         title={title()}
+        disabled={blocked()}
+        aria-haspopup="dialog"
+        aria-expanded={isOpen()}
         onClick={(e) => (stop(e), toggle())}
       >
         <Bolt />
@@ -297,16 +399,31 @@ function EffortChip(props: { sdk: AlphaProjectsApi["sdk"] }) {
         <Chevron />
       </button>
       <Show when={isOpen()}>
-        <ChipPopover anchor={btn} align="right" minWidth={supported() ? 170 : composerModel() ? 260 : 360}>
+        <ChipPopover
+          anchor={btn}
+          align="right"
+          minWidth={supported() ? 170 : composerModel() ? 260 : 360}
+          onEscape={close}
+        >
           <Switch>
             <Match when={supported()}>
               <div class="a-pop-label">推理强度 · {composerModel()?.name}</div>
-              <button class="a-pop-item" classList={{ "is-on": composerEffortSel() === null }} onClick={() => (setComposerEffort(null), close())}>
+              <button
+                class="a-pop-item"
+                classList={{ "is-on": composerEffortSel() === null }}
+                disabled={!props.modelChainReady()}
+                onClick={() => selectVariant(null)}
+              >
                 默认 <span class="a-pop-desc">引擎默认档</span>
               </button>
               <For each={variants()}>
                 {(v) => (
-                  <button class="a-pop-item" classList={{ "is-on": composerEffortSel() === v }} onClick={() => (setComposerEffort(v), close())}>
+                  <button
+                    class="a-pop-item"
+                    classList={{ "is-on": composerEffortSel() === v }}
+                    disabled={!props.modelChainReady()}
+                    onClick={() => selectVariant(v)}
+                  >
                     {v}
                   </button>
                 )}
@@ -315,11 +432,21 @@ function EffortChip(props: { sdk: AlphaProjectsApi["sdk"] }) {
             <Match when={!composerModel()}>
               <div class="a-pop-label">推理强度 · 先选择模型</div>
               <div class="a-pop-note">推理档位随模型而定 —— 选好模型后这里即可调档:</div>
-              <ModelPickPop sdk={props.sdk} onPicked={() => {}} />
+              <ModelPickPop
+                contract={props.contract}
+                directory={props.directory}
+                selected={composerModel}
+                onSelect={props.onSelect}
+                onPicked={() => {}}
+                onRetryCurrent={props.onRetryCurrent}
+                modelChainReady={props.modelChainReady}
+              />
             </Match>
             <Match when={true}>
               <div class="a-pop-label">推理强度</div>
-              <div class="a-pop-note">「{composerModel()?.name}」未提供推理档位;换用带档位的模型(如代理节点的 α 系列)即可调节。</div>
+              <div class="a-pop-note">
+                「{composerModel()?.name}」未提供推理档位;换用带档位的模型(如代理节点的 α 系列)即可调节。
+              </div>
             </Match>
           </Switch>
         </ChipPopover>
@@ -345,11 +472,32 @@ export type AlphaComposerProps = {
   initialText?: string
 }
 
+type ReadState<T> = { status: "ready"; data: T } | { status: "error" }
+const readState = <T,>(promise: Promise<T>): Promise<ReadState<T>> =>
+  promise.then(
+    (data) => ({ status: "ready", data }),
+    () => ({ status: "error" }),
+  )
+
+const isErrorEnvelope = (value: unknown) => !!value && typeof value === "object" && "error" in value
+
 export function AlphaComposer(props: AlphaComposerProps) {
-  const command = useCommand()
+  return <AlphaComposerRuntime {...props} command={useCommand()} />
+}
+
+export type AlphaComposerRuntimeProps = AlphaComposerProps & {
+  command: CommandApi
+  /** 生产默认走 createModelContract；组件级 contract 驱动测试从同一接缝注入确定性实现。 */
+  modelContract?: ModelContract
+}
+
+export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
+  const command = props.command
+  const modelContract = props.modelContract ?? createModelContract(props.projects.sdk)
   const [text, setText] = createSignal(props.initialText ?? "")
   const [sending, setSending] = createSignal(false)
   const [busy, setBusy] = createSignal(false) // session:引擎侧运行中(status 轮询,见下)
+  const [modelChainState, setModelChainState] = createSignal<"loading" | "ready" | "error">("loading")
   const [mentions, setMentions] = createSignal<MentionPart[]>([])
   const [composing, setComposing] = createSignal(false)
   let taRef: HTMLTextAreaElement | undefined
@@ -390,14 +538,19 @@ export function AlphaComposer(props: AlphaComposerProps) {
     const merged = mergeAttachments(attachments(), accepted)
     setAttachments(merged.next)
     const bad = [...rejected, ...merged.rejected]
-    if (bad.length) pushToast({ kind: "error", title: "部分附件未添加", detail: bad.map((r) => `${r.name}:${r.reason}`).join("；") })
+    if (bad.length)
+      pushToast({ kind: "error", title: "部分附件未添加", detail: bad.map((r) => `${r.name}:${r.reason}`).join("；") })
   }
   const removeAttachment = (id: string) => setAttachments((xs) => xs.filter((a) => a.id !== id))
   const hasDragFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files")
 
   // REQ-073 拍板③:模式是会话级的 —— home 是新会话入口,挂载即回默认(build);会话页不重置。
   onMount(() => {
-    if (props.mode === "home") setComposerAgent(null)
+    if (props.mode !== "home") return
+    setComposerAgent(null)
+    setComposerModel(null)
+    clearSuspendedModel()
+    resetComposerModelProjection()
   })
 
   const auto = createComposerAutocomplete({
@@ -413,7 +566,9 @@ export function AlphaComposer(props: AlphaComposerProps) {
     onAttach: () => fileInputRef?.click(),
   })
 
-  const canSend = createMemo(() => text().trim().length > 0 && !!props.directory() && !sending())
+  const canSend = createMemo(
+    () => text().trim().length > 0 && !!props.directory() && modelChainState() === "ready" && !sending(),
+  )
   const hasWorkspace = () => !!props.directory()
 
   /* session 模式:忙态轮询(v1;v2 换 SSE)。只在本组件可见 + 已知会话时跑,2.5s 间隔,
@@ -439,106 +594,189 @@ export function AlphaComposer(props: AlphaComposerProps) {
   onMount(startPolling)
   onCleanup(() => statusTimer && clearInterval(statusTimer))
 
-  /* ── 默认模型解析链(REQ-069;纯核 = model-default-core.ts,REQ-056「登录+代理活自动默认」
-     收编为第②级,语义原样保留)──
-       ① 持久化上次选择:可用性校验;不可用 → 挂起(不删 localStorage,登录回来自动还原,
-          picker 如实展示原因)—— 堵住「登出后残留代理模型 → 发消息撞网关拒绝」(用户报障 2026-07-08);
-       ② 登录 + 账户可用(会员/有余额)+ 代理已注册 → catalog 默认档(非持久);
-       ③ 已配 KEY 的 BYOK provider → 其引擎注册的第一个模型(非持久);
-       ④ 全无 → 保持占位:picker 内登录/配 KEY 双出口,发送前 preflight 拦截。
-     显式选择才落盘;自动默认一律非持久(C28:不选锁定模型装可用)。 */
+  /* ── 默认模型解析链。session 先从 typed get 收敛真实 Model.Ref；随后 list 负责可用性与默认。
+     home 只保留创建会话前的内存选择，创建时把同一 Model.Ref 写进 Session。 */
   const [lastAuth, setLastAuth] = createSignal<AuthState | null>(null)
-  const [authKnown, setAuthKnown] = createSignal(false)
   const [platformId, setPlatformId] = createSignal<string | null>(null)
   const [hasConfiguredByok, setHasConfiguredByok] = createSignal(false)
+  const [authEpoch, setAuthEpoch] = createSignal(0)
+  const [modelRetryEpoch, setModelRetryEpoch] = createSignal(0)
   let chainSeq = 0
   let chainDisposed = false
 
-  // summary 拿不到/网络错 → 疑罪从无(维持 REQ-056 行为,网关是最终裁决);明确空账户才 false。
+  const selectComposerModel = async (model: NonNullable<ReturnType<typeof composerModel>>) => {
+    // 未获全链 admission 时不能 supersede 正在完成 auth/KEY/account/list 的 owner，否则无人接管 loading。
+    if (modelChainState() !== "ready") throw new Error("model chain is not ready")
+    const seq = ++chainSeq
+    const sessionID = props.sessionID?.()
+    if (sessionID) {
+      const projection = composerModelProjection()
+      if (projection.status !== "ready" || projection.sessionID !== sessionID) {
+        pushToast({ kind: "info", title: "当前会话模型尚未就绪", detail: "读取完成后再试；不会沿用其他会话的选择。" })
+        throw new Error("session model projection is not ready")
+      }
+      const switched = await readState(modelContract.switch(sessionID, modelRefOf(model)))
+      if (chainDisposed || seq !== chainSeq || props.sessionID?.() !== sessionID) {
+        throw new Error("session changed while switching model")
+      }
+      if (switched.status === "error") {
+        pushToast({ kind: "error", title: "切换模型失败", detail: "当前选择保持不变，请重试。" })
+        throw new Error("model switch failed")
+      }
+    }
+    setComposerModel(model)
+    clearSuspendedModel()
+  }
+
+  // 账户状态无法确认时 fail-closed；只有明确会员或有余额才允许代理模型。
   const summaryUsable = (r: unknown): boolean => {
-    if (!r || typeof r !== "object" || "error" in (r as Record<string, unknown>)) return true
+    if (!r || typeof r !== "object" || "error" in (r as Record<string, unknown>)) return false
     const s = r as { plan?: { status?: string }; balanceFen?: number }
     return s.plan?.status === "active" || (s.balanceFen ?? 0) > 0
   }
 
-  const runModelChain = async () => {
+  const runModelChain = async (directory: string, sessionID: string | undefined) => {
     const seq = ++chainSeq
-    try {
-      const [cat, auth, summary, keys] = await Promise.all([
-        window.api.models.catalog().catch(() => null),
-        window.api.auth.getState().catch(() => null),
-        window.api.account.summary().catch(() => null),
-        window.api.providers.keyStatus().catch(() => ({}) as Record<string, { configured?: boolean }>),
-      ])
-      if (chainDisposed || seq !== chainSeq) return
-      setLastAuth(auth)
-      setAuthKnown(true)
-      const pid = cat?.platformProvider.id ?? null
-      setPlatformId(pid)
-      const configured = Object.entries(keys ?? {})
-        .filter(([, v]) => (v as { configured?: boolean } | undefined)?.configured)
-        .map(([k]) => k)
-      setHasConfiguredByok(configured.some((id) => id !== pid))
-      const loggedIn = auth?.status === "logged-in"
-      const baseCtx = {
-        loggedIn,
-        accountUsable: loggedIn && summaryUsable(summary),
-        platformProviderId: pid,
-        configuredProviders: configured,
-        catalog: cat ? { defaultModel: cat.defaultModel, platformModels: cat.platformModels } : null,
-      }
+    setModelChainState("loading")
+    setLastAuth(null)
+    setPlatformId(null)
+    setHasConfiguredByok(false)
+    if (sessionID) invalidateComposerModelProjection(sessionID)
+    else resetComposerModelProjection()
 
-      // ① 代理模型的可用性只依赖 auth 侧事实,即刻可判(BYOK 的 provider-gone 需引擎表,在下方循环里判)
-      const current = composerModel()
-      if (current && pid && current.providerID === pid) {
-        const verdict = checkPersistedModel(current, { ...baseCtx, engineModels: [] })
-        if (verdict.ok) return
-        suspendComposerModel(verdict.reason) // 挂起后继续走②③给出替代默认
-      } else if (!current && loggedIn && composerModelSuspended()?.reason === "needs-login") {
-        if (restoreSuspendedModel()) return // 登录回来:还原挂起的上次选择(entitlement 型不自动还原)
-      }
+    const catalogRead = readState(window.api.models.catalog())
+    const authRead = readState(window.api.auth.getState())
+    const keysRead = readState(window.api.providers.keyStatus())
+    const currentRead = sessionID ? await readState(modelContract.current(sessionID)) : undefined
+    if (chainDisposed || seq !== chainSeq) return
+    if (sessionID && currentRead?.status === "error") {
+      failComposerModelProjection(sessionID)
+      setModelChainState("error")
+      return
+    }
+    if (sessionID && currentRead?.status === "ready") {
+      resolveComposerModelProjection(
+        sessionID,
+        currentRead.data ? composerModelFromRef(currentRead.data, null) : null,
+      )
+    }
 
-      // ②③ 需要引擎模型表:冷启动引擎/sdk 未就绪是常态,有界重试(≤20s),别一枪打空。
-      for (let i = 0; i < 20 && !chainDisposed && seq === chainSeq; i++) {
-        const c = props.projects.sdk()
-        if (c) {
-          const { data } = await c.config.providers({} as any).catch(() => ({ data: undefined }) as const)
-          const provs = Array.isArray((data as any)?.providers) ? (data as any).providers : Array.isArray(data) ? (data as any) : []
-          const engineModels: EngineModelRef[] = []
-          for (const p of provs) {
-            const ppid = p?.id ?? p?.providerID
-            const models = p?.models && typeof p.models === "object" ? Object.keys(p.models) : []
-            for (const mid of models) engineModels.push({ providerID: ppid, modelID: mid })
-          }
-          const cur = composerModel()
-          if (cur) {
-            // ① 的 BYOK 半边:引擎表非空才可判 provider-gone(空表 = 未就绪,不误杀)
-            if (engineModels.length) {
-              const v = checkPersistedModel(cur, { ...baseCtx, engineModels })
-              if (v.ok) return
-              suspendComposerModel(v.reason)
-            } else {
-              return // 有选择且引擎未就绪:等引擎自己收敛,不抢跑
-            }
-          }
-          const r = resolveDefaultModel({ ...baseCtx, engineModels })
-          if (r.kind === "model") {
-            applyDefaultComposerModel(r.model)
+    const cat = await catalogRead
+    if (chainDisposed || seq !== chainSeq) return
+    if (cat.status === "error") {
+      setModelChainState("error")
+      return
+    }
+    if (sessionID && currentRead?.status === "ready") {
+      resolveComposerModelProjection(
+        sessionID,
+        currentRead.data ? composerModelFromRef(currentRead.data, cat.data) : null,
+      )
+    }
+
+    const [auth, keys] = await Promise.all([authRead, keysRead])
+    if (chainDisposed || seq !== chainSeq) return
+    if (auth.status === "error" || keys.status === "error") {
+      setModelChainState("error")
+      return
+    }
+    const summary =
+      auth.data.status === "logged-in"
+        ? await readState(window.api.account.summary())
+        : ({ status: "ready", data: null } as const)
+    if (chainDisposed || seq !== chainSeq) return
+    if (summary.status === "error" || isErrorEnvelope(summary.data)) {
+      setModelChainState("error")
+      return
+    }
+
+    const authState = auth.data
+    setLastAuth(authState)
+    const pid = cat.data.platformProvider.id
+    setPlatformId(pid)
+    const configured = Object.entries(keys.data)
+      .filter(([, value]) => value.configured)
+      .map(([id]) => id)
+    setHasConfiguredByok(configured.some((id) => id !== pid))
+    const loggedIn = authState.status === "logged-in"
+    const baseCtx = {
+      loggedIn,
+      accountUsable: loggedIn && summaryUsable(summary.data),
+      platformProviderId: pid,
+      configuredProviders: configured,
+      catalog: { defaultModel: cat.data.defaultModel, platformModels: cat.data.platformModels },
+    }
+
+    // 只有认证/账户/KEY 都是确定事实时才允许把当前选择挂成业务否定态。
+    const current = composerModel()
+    if (current && current.providerID === pid) {
+      const verdict = checkSelectedModel(current, { ...baseCtx, engineModels: [] })
+      if (!verdict.ok) suspendComposerModel(verdict.reason)
+    }
+
+    for (let i = 0; i < 20 && !chainDisposed && seq === chainSeq; i++) {
+      try {
+        const listed = await modelContract.list(directory, AbortSignal.timeout(ENGINE_FETCH_TIMEOUT_MS))
+        if (chainDisposed || seq !== chainSeq) return
+        const engineModels: EngineModelRef[] = listed
+          .filter((model) => model.enabled && model.status !== "deprecated")
+          .map((model) => ({ providerID: model.providerID, id: model.id }))
+        const cur = composerModel()
+        if (cur) {
+          const available = engineModels.some((model) => model.providerID === cur.providerID && model.id === cur.id)
+          if (available) {
+            setModelChainState("ready")
             return
           }
-          if (r.kind === "none") return // ④ 空态:占位 + picker 引导 + preflight 兜底
+          suspendComposerModel("provider-gone")
         }
-        await new Promise((res) => setTimeout(res, 1000))
+        const resolved = resolveDefaultModel({ ...baseCtx, engineModels })
+        if (resolved.kind === "model") {
+          if (sessionID) {
+            const switched = await readState(modelContract.switch(sessionID, modelRefOf(resolved.model)))
+            if (chainDisposed || seq !== chainSeq || props.sessionID?.() !== sessionID) return
+            if (switched.status === "error") throw new Error("default model switch failed")
+          }
+          applyDefaultComposerModel(resolved.model)
+          setModelChainState("ready")
+          return
+        }
+        if (resolved.kind === "none") {
+          setModelChainState("ready")
+          return // ④ 空态:占位 + picker 引导 + preflight 兜底
+        }
+      } catch {
+        if (chainDisposed || seq !== chainSeq) return
+        setModelChainState("error")
+        // 冷启动 / respawn 窗口：保持当前选择，稍后重试；picker 同时呈现真实失败态。
       }
-    } catch {
-      /* 默认失败不打扰:保持占位,手选路径完好 */
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+      if (chainDisposed || seq !== chainSeq) return
     }
+    if (!chainDisposed && seq === chainSeq) setModelChainState("error")
+  }
+
+  createEffect(() => {
+    authEpoch()
+    modelRetryEpoch()
+    const directory = props.directory()
+    const sessionID = props.sessionID?.()
+    if (!directory) {
+      chainSeq++
+      setModelChainState("loading")
+      return
+    }
+    void runModelChain(directory, sessionID)
+  })
+
+  const retryCurrentModel = () => {
+    setModelChainState("loading")
+    setModelRetryEpoch((value) => value + 1)
   }
 
   onMount(() => {
-    void runModelChain()
-    // 登录态变化即重跑链:登出 → 挂起代理选择;登录 → 还原/自动默认(REQ-069)
-    const unsub = window.api.auth.subscribe(() => void runModelChain())
+    // 登录态变化递增 epoch；路由 directory/sessionID 由上面的 effect 直接跟踪。
+    const unsub = window.api.auth.subscribe(() => setAuthEpoch((value) => value + 1))
     onCleanup(() => {
       chainDisposed = true
       unsub?.()
@@ -563,22 +801,49 @@ export function AlphaComposer(props: AlphaComposerProps) {
       props.onNeedWorkspace?.()
       return
     }
-    // REQ-069 preflight:未登录 + 代理模型(或全无可用)→ 行内引导替代网关拒绝原文。
-    // 网关校验保留为兜底防线;authKnown 未就绪(极早期竞态)不拦,维持旧行为。
-    if (authKnown()) {
-      const block = preflightBlockReason(composerModel(), {
-        loggedIn: lastAuth()?.status === "logged-in",
-        platformProviderId: platformId(),
-        hasConfiguredByok: hasConfiguredByok(),
+    if (modelChainState() !== "ready") {
+      pushToast({
+        kind: modelChainState() === "error" ? "error" : "info",
+        title: modelChainState() === "error" ? "模型状态读取失败" : "正在读取模型状态",
+        detail: "读取完成前不会提交；请重试模型状态读取。",
       })
-      if (block) {
-        pushToast(
-          block === "platform-needs-login"
-            ? { kind: "info", title: "该模型需登录后使用", detail: "登录后零配置直用;或点右下角模型选择器,换用自己 API KEY 的模型。" }
-            : { kind: "info", title: "还没有可用的模型", detail: "登录即可零配置使用;或在模型选择器里添加自己的 API KEY。" },
-        )
-        return
-      }
+      return
+    }
+    const suspended = composerModelSuspended()
+    if (suspended && !composerModel()) {
+      pushToast({
+        kind: "info",
+        title: "当前模型不可用",
+        detail:
+          suspended.reason === "needs-login"
+            ? "登录后重新选择该模型，或改用已配置 KEY 的模型。"
+            : suspended.reason === "needs-credit"
+              ? "充值或恢复会员后重新选择，或改用已配置 KEY 的模型。"
+              : "请在模型选择器中改选当前可用的模型。",
+      })
+      return
+    }
+    // REQ-069 preflight:未登录 + 代理模型(或全无可用)→ 行内引导替代网关拒绝原文。
+    const block = preflightBlockReason(composerModel(), {
+      loggedIn: lastAuth()?.status === "logged-in",
+      platformProviderId: platformId(),
+      hasConfiguredByok: hasConfiguredByok(),
+    })
+    if (block) {
+      pushToast(
+        block === "platform-needs-login"
+          ? {
+              kind: "info",
+              title: "该模型需登录后使用",
+              detail: "登录后零配置直用;或点右下角模型选择器,换用自己 API KEY 的模型。",
+            }
+          : {
+              kind: "info",
+              title: "还没有可用的模型",
+              detail: "登录即可零配置使用;或在模型选择器里添加自己的 API KEY。",
+            },
+      )
+      return
     }
     const body = text().trim()
     // 斜杠命令走 session.command,不携带 parts —— 附件会被静默丢弃;如实拦下(C28),不装作发出去了。
@@ -600,7 +865,6 @@ export function AlphaComposer(props: AlphaComposerProps) {
         const id = await props.projects.startChat(dir, body, req.parts.slice(1), {
           model: req.model,
           agent: req.agent,
-          variant: req.variant,
         })
         if (!id) {
           pushToast({ kind: "error", title: "发送失败,请重试" })
@@ -621,9 +885,16 @@ export function AlphaComposer(props: AlphaComposerProps) {
       }
       const slash = routeSlash(body)
       if (slash) {
-        const { data: cmds } = await c.command.list({ directory: dir } as any).catch(() => ({ data: undefined }) as const)
+        const { data: cmds } = await c.command
+          .list({ directory: dir } as any)
+          .catch(() => ({ data: undefined }) as const)
         if (Array.isArray(cmds) && cmds.some((x: any) => x?.name === slash.name)) {
-          const { error } = await c.session.command({ sessionID: sid, directory: dir, command: slash.name, arguments: slash.args } as any)
+          const { error } = await c.session.command({
+            sessionID: sid,
+            directory: dir,
+            command: slash.name,
+            arguments: slash.args,
+          } as any)
           if (error) {
             pushToast({ kind: "error", title: "命令执行失败,请重试" })
             return
@@ -634,7 +905,12 @@ export function AlphaComposer(props: AlphaComposerProps) {
           return
         }
       }
-      const { error } = await c.session.promptAsync({ sessionID: sid, directory: dir, ...req } as any)
+      const { error } = await c.session.promptAsync({
+        sessionID: sid,
+        directory: dir,
+        parts: req.parts,
+        ...(req.agent ? { agent: req.agent } : {}),
+      } as any)
       if (error) {
         pushToast({ kind: "error", title: "发送失败,请重试" })
         return
@@ -739,21 +1015,49 @@ export function AlphaComposer(props: AlphaComposerProps) {
         onCompositionStart={() => setComposing(true)}
         onCompositionEnd={() => setComposing(false)}
       />
+      <Show when={modelChainState() === "error"}>
+        <div class="a-comp-model-alert" role="alert">
+          <span>账户、KEY 或模型目录读取失败；当前不会提交。</span>
+          <button type="button" onClick={retryCurrentModel}>
+            重试
+          </button>
+        </div>
+      </Show>
       <div class="a-comp-bar">
         <AddButton onOpen={() => auto.toggleAssemble()} />
-        <PermChip />
+        <PermChip command={command} />
         <PlanChip />
         <div class="a-comp-grow" />
         {/* 上下文用量 ring 停靠位(session:takeover 把上游活 ring 收养进来;home 无会话无用量,不渲染) */}
         <Show when={props.mode === "session"}>
           <span class="a-comp-usage" data-alpha-usage-host />
         </Show>
-        <ModelChip sdk={props.projects.sdk} onNeedWorkspace={props.onNeedWorkspace} hasWorkspace={hasWorkspace} />
-        <EffortChip sdk={props.projects.sdk} />
+        <ModelChip
+          contract={modelContract}
+          directory={props.directory}
+          onSelect={selectComposerModel}
+          onRetryCurrent={retryCurrentModel}
+          modelChainReady={() => modelChainState() === "ready"}
+          onNeedWorkspace={props.onNeedWorkspace}
+          hasWorkspace={hasWorkspace}
+        />
+        <EffortChip
+          contract={modelContract}
+          directory={props.directory}
+          onSelect={selectComposerModel}
+          onRetryCurrent={retryCurrentModel}
+          modelChainReady={() => modelChainState() === "ready"}
+        />
         <Show
           when={props.mode === "session" && busy()}
           fallback={
-            <button class="a-comp-send" data-ready={canSend() ? "" : undefined} disabled={!text().trim() || sending()} onClick={() => void submit()} title="发送">
+            <button
+              class="a-comp-send"
+              data-ready={canSend() ? "" : undefined}
+              disabled={!canSend()}
+              onClick={() => void submit()}
+              title="发送"
+            >
               <ArrowUp />
             </button>
           }

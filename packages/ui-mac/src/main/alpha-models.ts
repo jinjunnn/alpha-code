@@ -106,7 +106,8 @@ export function buildAlphaModelConfig(userDataPath: string): AlphaModelConfig | 
   // (3) User-added custom providers (via window.api.providers.add → opencode.jsonc provider[<id>]).
   // opencode REPLACES (not unions) enabled_providers on config merge and OPENCODE_CONFIG_CONTENT is
   // merged last, so a custom provider that isn't in THIS allowlist gets dropped. Merge the user's
-  // configured provider ids in so they survive (visible after the next reconnect). See build.md §6.
+  // configured provider ids in so they survive. providers-add immediately drives the shared respawn
+  // path, so this next-fork allowlist is reflected by the renderer's next real model.list. See build.md §6.
   for (const id of readUserProviderIds()) {
     if (!enabled.includes(id)) enabled.push(id)
   }
