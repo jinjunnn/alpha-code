@@ -8,11 +8,11 @@
 name: sync-upstream
 
 on:
-  # 定时同步已暂停(2026-07-21,owner 决策):现行 restore_frozen_frontend 每次 sync 都把 alpha 加进
-  # 冻结包的 seam 擦掉(已擦 #451/#452,待擦 #450),且丢弃上游前端更新——与"持续白嫖上游"诉求冲突。
-  # 待前端策略迁移到 B 方案(月更 pin + 补丁序列)后,由新机制取代本 cron。手动触发仍保留。
-  # schedule:
-  #   - cron: "0 6 * * *" # daily 06:00 UTC
+  # 定时同步重开(2026-07-21,ADR-034 B 方案迁移完成):日常 sync 只进引擎,apply_alpha_frontend_delta
+  # 把 app/ui 恒还原为 frontend-pin.lock 的 pin + SOT 补丁——不再擦 alpha seam、不再丢上游前端。
+  # 前端前进由月更 bump(见 frontend/README.md)。#465 曾暂停本 cron 止血,机制已 B-safe,恢复。
+  schedule:
+    - cron: "0 6 * * *" # daily 06:00 UTC
   workflow_dispatch: {}
 
 permissions:

@@ -23,7 +23,7 @@
 | [ADR-017](adrs/ADR-017-desktop-auth-deeplink.md) | 桌面授权深链:scheme 必须进 Info.plist + PKCE 落盘抗冷启动 | accepted | 2026-06-25 |
 | [ADR-018](adrs/ADR-018-req-lifecycle.md) | 历史本地需求流程；已由 `alpha-work/governance/ADR-001-github-delivery-sot.md` 取代 | superseded | 2026-07-03 |
 | [ADR-019](adrs/ADR-019-alpha-workdir.md) | `.alpha` 项目工作目录 + 环境级全局根(2026-07-19 #428 修订:`<appData>/alpha-code-state/env/{dev,prod,beta}`,共享 CAS 为兄弟目录;退休 home 根零迁移/零 dual-read) | accepted | 2026-07-03 |
-| [ADR-020](adrs/ADR-020-frontend-freeze.md) | 前端冻结:packages/{app,ui} 钉 frontend-freeze-base,每日 sync 只进引擎(E 路径,REQ-013 拍板;修订 ADR-004 守卫范围) | accepted | 2026-07-03 |
+| [ADR-020](adrs/ADR-020-frontend-freeze.md) | 前端冻结:packages/{app,ui} 钉 frontend-freeze-base,每日 sync 只进引擎(E 路径,REQ-013 拍板;修订 ADR-004 守卫范围)。**2026-07-21 被 ADR-034 supersede**(冻结丢弃上游前端更新 + 擦 alpha seam,与 owner「持续白嫖上游前端」诉求冲突) | **superseded by ADR-034** | 2026-07-03 |
 | [ADR-021](adrs/ADR-021-cloud-data-boundary.md) | 代码上云数据边界:diff-only 优先 + secrets 过滤 + 体积上限 + consent 挂钩 B16(C9,S11 T3;§2 三校验已实现 S14;§4 两挂钩点 B16 落地 S25) | accepted | 2026-07-04 |
 | [ADR-022](adrs/ADR-022-automations.md) | 自动化定时任务:本地调度器 + 只读 agent 静态权限档 + `.alpha` 落盘(REQ-021 A1;A2/A3 分期) | accepted(2026-07-05 真机批 PASS,REQ-016 S16;到点触发+readonly deny 零 ask+错过 skip) | 2026-07-04 |
 | [ADR-023](adrs/ADR-023-external-ecosystem-adaptation.md) | 外部生态适配 = 安装期转换器(不做运行时模拟)+ 插件包分发分层(npm 正源 / C 侧清单与精选资产) | accepted | 2026-07-05 |
@@ -36,6 +36,7 @@
 | [ADR-030](adrs/ADR-030-project-scope-generation-recall.md) | 收回 project-scope catalog/seed 受管安装:planner decode 后统一 policy guard fail-closed 拒(skill/agent 对称;wire 形状保留),新增安装策略与遗留可管理 kind 拆分,残留显式检测 + generation-aware 清理(journal 在场 fail-closed);项目技能能力走 `.alpha/skills` 非 generation 路径(#362 DECIDE,Codex 裁决) | accepted | 2026-07-15 |
 | [ADR-031](adrs/ADR-031-hybrid-user-memory.md) | 混合用户记忆——本地优先、选择性云发布与有界上下文 | proposed | 2026-07-19 |
 | [ADR-033](adrs/ADR-033-permission-kernel-takeover.md) | Permission 内核接管:REQ-090 #433 的 permission 引擎/契约面走 L3 冻结接管(ADR-029 §3;文件级守卫 `:(exclude)` 例外 + 生成文件整类移出;4 个 B 类连带退回 seam;放弃上游 permission 白嫖=单向门;逐文件审计 `docs/audits/2026-07-21-north-star-guard-upstream-delta.md`;#456 owner 拍板) | accepted | 2026-07-21 |
+| [ADR-034](adrs/ADR-034-frontend-rolling-pin.md) | 前端滚动 pin(B 方案):packages/{app,ui} 从「冻结钉 tag」迁到「pin + 补丁序列」持续白嫖上游前端(**supersede ADR-020**,反转 ADR-016 前提);`frontend-pin.lock` + `alpha-frontend.patch` SOT;日常 sync `apply_alpha_frontend_delta`(pin+补丁,不擦 seam/不丢上游);月更 bump 升 pin(人门禁,见 `frontend/README.md`);owner 2026-07-21 拍板 | accepted | 2026-07-21 |
 
 > 🔒 **编号预留**:产品所有权专项(见 [GitHub Issues](https://github.com/jinjunnn/alpha-code/issues) 与 [Alpha Delivery](https://github.com/users/jinjunnn/projects/2) §5)预留的 ADR-027/ADR-028 均已于 2026-07-12 按号落笔,预留清空;新 ADR 从 ADR-032 起编号。
 

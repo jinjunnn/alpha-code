@@ -1,10 +1,16 @@
 ---
 id: ADR-020
 title: 前端冻结:packages/{app,ui} 钉在 frontend-freeze-base,只同步引擎层
-status: accepted
+status: superseded
+superseded-by: ADR-034
 date: 2026-07-03
-related: ADR-016, ADR-004, ADR-005
+related: ADR-016, ADR-004, ADR-005, ADR-034
 ---
+
+> **⚠️ 已被 [ADR-034](ADR-034-frontend-rolling-pin.md) supersede(owner 2026-07-21)。** 冻结机制每次 sync
+> 丢弃上游前端更新、并擦掉 alpha 加进冻结包的 seam(#451/#452 已被擦),与 owner「持续白嫖上游 opencode
+> 前端」的诉求正面冲突;实测 seam 变更每周一次(非「罕见」),打地鼠成结构性。ADR-034 改为「pin + 补丁序列」
+> (月更跟随上游)。以下为历史记录。
 
 ## 背景
 546-commit 上游同步静默打断 reskin(证据:`docs/audits/2026-07-03-frontend-reskin-regression.md` 及其修正节);
