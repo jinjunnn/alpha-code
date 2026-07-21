@@ -9,7 +9,7 @@ import { syncSecretFiles } from "./alpha-secret-files"
 import { loadAlphaSecrets } from "./alpha-secrets"
 import { posixModesEffective } from "./platform"
 import { pollUntilHealthy } from "./health-poll"
-import { getLogger } from "./logging"
+import { getLogger, write } from "./logging"
 import { createSidecarEnv } from "./sidecar-env"
 import { getUserShell, loadShellEnv } from "./shell-env"
 import { probeShellEnvAsync, readShellEnvCache, sanitizeCachedShellEnv, writeShellEnvCache } from "./shell-env-cache"
@@ -63,12 +63,13 @@ export function setDefaultServerUrl(url: string | null) {
 
 export function preferAppEnv(userDataPath: string) {
   const logger = getLogger()
+  const logShellEnvCache = (message: string, extra?: Record<string, unknown>) => write("main", message, extra)
   const shell = process.platform === "win32" ? null : getUserShell()
   // 1. Login-shell env first -- a real `export` always wins over the secrets file and our defaults.
   // B1:缓存命中 → 0ms 套用 + 后台异步真探测(成功即更新缓存、按「真 export 赢」套差异,新值下次
   // fork 生效);未命中(首启/换 shell)→ 同步探测一次(fork 前必须有 PATH 等,宁可首启慢一次)。
   if (shell) {
-    const cached = readShellEnvCache(userDataPath, shell)
+    const cached = readShellEnvCache(userDataPath, shell, logShellEnvCache)
     if (cached) {
       Object.assign(process.env, cached)
       logger.log(`[server] Shell env from cache (${Object.keys(cached).length} vars) — refreshing in background`)
@@ -81,7 +82,7 @@ export function preferAppEnv(userDataPath: string) {
           const { env: cleanFresh, stripped } = sanitizeCachedShellEnv(fresh)
           if (stripped.length > 0)
             logger.log(`[server] [req301] stripped session-control keys from refreshed shell env: ${stripped.join(", ")}`)
-          writeShellEnvCache(userDataPath, shell, cleanFresh)
+          writeShellEnvCache(userDataPath, shell, cleanFresh, logShellEnvCache)
           Object.assign(process.env, cleanFresh)
           logger.log(`[server] Shell env refreshed in background (${Object.keys(cleanFresh).length} vars)`)
         })
@@ -89,7 +90,7 @@ export function preferAppEnv(userDataPath: string) {
     } else {
       const probed = loadShellEnv(shell, logger)
       Object.assign(process.env, probed ?? {})
-      if (probed) writeShellEnvCache(userDataPath, shell, probed)
+      if (probed) writeShellEnvCache(userDataPath, shell, probed, logShellEnvCache)
     }
   }
   // 2. Fill missing API keys (EXA_API_KEY, *_API_KEY, ...) from the alpha.env secrets file, so app
