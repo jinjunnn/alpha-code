@@ -3,11 +3,11 @@
 // DraftServerLayout / DirectoryDataProvider / DraftProviders 包装(server retarget 不重挂
 // composer、directory retarget 精确 remount 均由 wrapper 语义保证),本组件只拥有叶 UI。
 // draft 生命周期经 seam 的窄契约走:draftId + promoteDraft(不 deep import 私有 context);
-// 目录来自 @opencode-ai/ui 公开 DataProvider;composer 与 Home/Session 同源(REQ-055)。
+// 目录以 draftId 从 upstream Tabs authority 读取;composer 与 Home/Session 同源(REQ-055)。
 
 import { createMemo, Show, untrack } from "solid-js"
 import { useSearchParams } from "@solidjs/router"
-import { useData } from "@opencode-ai/ui/context"
+import { useTabs } from "@opencode-ai/app"
 import { type AlphaProjectsApi } from "../sidebar/use-projects"
 import { projectLabel } from "../sidebar/route"
 import { AlphaComposer } from "./alpha-composer"
@@ -19,11 +19,11 @@ export function AlphaNewSession(props: {
   draftId: string
   promoteDraft: (session: { directory: string; sessionId: string }) => void
 }) {
-  const data = useData()
+  const tabs = useTabs()
   const [searchParams, setSearchParams] = useSearchParams<{ prompt?: string }>()
   const { store } = props.projects
 
-  const directory = createMemo(() => data.directory)
+  const directory = createMemo(() => tabs.draft(props.draftId).directory)
   const wsLabel = createMemo(() => {
     const w = directory()
     const p = store.projects.find((x) => x.worktree === w)

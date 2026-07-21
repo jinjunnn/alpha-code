@@ -12,9 +12,13 @@ export type AlphaSettings = {
     showReasoningSummaries: boolean
     shellToolPartsExpanded: boolean
     editToolPartsExpanded: boolean
-    showSessionProgressBar: boolean
+    showSessionProgressBar?: boolean
     showCustomAgents: boolean
+    mobileTitlebarPosition: "top" | "bottom"
     newLayoutDesigns?: boolean
+    layoutTransitionEligible?: boolean
+    newInterfaceNoticeDismissed?: boolean
+    shouldDisplayTabsToast?: boolean
   }
   appearance: {
     fontSize: number
@@ -56,6 +60,7 @@ export const ALPHA_SETTINGS_DEFAULTS: AlphaSettings = {
     editToolPartsExpanded: false,
     showSessionProgressBar: true,
     showCustomAgents: false,
+    mobileTitlebarPosition: "top",
   },
   appearance: {
     fontSize: 14,
