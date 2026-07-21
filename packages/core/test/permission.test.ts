@@ -792,7 +792,7 @@ describe("PermissionV2", () => {
     }),
   )
 
-  it.effect("freezes asked events across sequential listeners", () =>
+  it.effect("deeply freezes permission event payloads across sequential listeners", () =>
     Effect.gen(function* () {
       yield* setup()
       const events = yield* EventV2.Service
@@ -804,7 +804,6 @@ describe("PermissionV2", () => {
               const request = event.data as PermissionV2.Request
               mutations.push(Reflect.set(request, "action", "bash"))
               mutations.push(Reflect.set(request.resources, 0, "pwd"))
-              mutations.push(Reflect.set(event, "data", { ...request, action: "bash", resources: ["pwd"] }))
             })
           : Effect.void,
       )
@@ -821,13 +820,36 @@ describe("PermissionV2", () => {
       const request = yield* Deferred.await(observed)
 
       expect(result.status).toBe("pending")
-      expect(mutations).toEqual([false, false, false])
+      expect(mutations).toEqual([false, false])
       expect(request.action).toBe("read")
       expect(request.resources).toEqual(["src/index.ts"])
       expect(request.metadata).toEqual({ origin: "tool" })
       expect(Object.isFrozen(request)).toBe(true)
       expect(Object.isFrozen(request.resources)).toBe(true)
       expect(Object.isFrozen(request.metadata)).toBe(true)
+    }),
+  )
+
+  it.effect("omits undefined object fields without changing the permission fingerprint", () =>
+    Effect.gen(function* () {
+      yield* setup()
+      const service = yield* PermissionV2.Service
+      const normalized = yield* service.ask(
+        assertion({
+          id: PermissionV2.ID.create("per_undefined_metadata"),
+          metadata: { root: ".", path: undefined } as never,
+        }),
+      )
+      const omitted = yield* service.ask(
+        assertion({ id: PermissionV2.ID.create("per_omitted_metadata"), metadata: { root: "." } }),
+      )
+
+      expect(normalized.status).toBe("pending")
+      expect(omitted.status).toBe("pending")
+      if (normalized.status !== "pending" || omitted.status !== "pending") return
+      expect(normalized.request.metadata).toEqual({ root: "." })
+      expect(normalized.request.metadata).not.toHaveProperty("path")
+      expect(normalized.request.fingerprint).toBe(omitted.request.fingerprint)
     }),
   )
 

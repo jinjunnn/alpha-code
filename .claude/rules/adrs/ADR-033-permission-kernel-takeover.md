@@ -63,9 +63,15 @@ opencode **存在** permission 接缝(`plugin/src/index.ts:261` 的 `permission.
 
 §1 被接管的 permission 引擎/契约面的**上游 churn 与安全修复不再自动进入 alpha**。吸收上游 permission 改进的唯一通道 = 受控 re-freeze(逐案评估)。这是单向门,**owner 2026-07-21 明示接受**(ADR-020 已实证此代价可控)。
 
-## 守卫盲区(留待独立裁决,非本 ADR 处置)
+## 守卫盲区(已裁决并补全,2026-07-21)
 
-同提交 `fd357d58` 还改了 `packages/{protocol,schema,client}` 内的 permission 源(`protocol/src/groups/permission.ts`、`schema/src/permission.ts`、`client/src/generated/**`),但这些包**不在 `UPSTREAM_PATHS`**,守卫看不到——故 permission wire 契约的一半 SOT 在守卫之外。另 `schema/src/agent.ts` 的改动是否属本次收编**不明确**,需单独判。**本 ADR 刻意不 expand `UPSTREAM_PATHS`**(避免把 7 个未裁决文件、含 `agent.ts` 疑点仓促拉进例外)。后续独立裁决:①判这 7 个文件(收编/真漏/生成随源);②据裁决把相关包纳入 `UPSTREAM_PATHS` 并对收编项加例外。跟踪:[#456](https://github.com/jinjunnn/alpha-code/issues/456)。
+同提交 `fd357d58` 还改了 `packages/{protocol,schema,client}` 内的 permission wire 契约 SOT,但这些包原不在 `UPSTREAM_PATHS`,守卫看不到——故 permission 契约的一半 SOT 曾在守卫之外。**#456 已逐条裁决这 7 个文件,全为收编(A)/生成随源,无真漏**:
+
+- `protocol/src/groups/permission.ts`、`schema/src/permission.ts` = permission 契约收编(A);
+- `schema/src/agent.ts` = 收编的共享类型连带(`AgentID` 抽到新 `agent-id.ts`[alpha 新增/Added],被 `schema/permission.ts` 依赖;退回会造成 AgentID 双定义,故随收编例外);
+- `schema/test/contract-hygiene.test.ts` 随源;`client/src/generated{,-effect}/**` 生成随源。
+
+处置(本 PR):`UPSTREAM_PATHS` **扩入 `packages/{protocol,schema,client}`**(补全守卫口径),并对上述 7 文件加 `:(exclude)`,与 §1/§4 同机制。跟踪:[#456](https://github.com/jinjunnn/alpha-code/issues/456)。
 
 ## 后果
 
@@ -73,4 +79,4 @@ opencode **存在** permission 接缝(`plugin/src/index.ts:261` 的 `permission.
 - ✅ 代码 PR 不再因 permission 收编而需 `--admin`;**B 类 4 文件退回落地后守卫完全绿**。
 - ⚠️ **单向门**:permission 引擎脱离上游同步(含安全修复),re-freeze 是唯一吸收通道。
 - ⚠️ `public.ts` 整文件例外 = 该文件未来非 permission 改动不被守卫(粗粒度代价,已接受)。
-- 🔭 待办:① B 类 4 文件退回(窄 bug 票,守卫全绿前置);② 守卫盲区 7 文件裁决 + `UPSTREAM_PATHS` 扩展(#456);③ 审计文档落库(本 PR)。
+- ✅ 已办:① B 类 4 文件退回 seam(#459,本 PR 一并落地,守卫核心 5 文件对 dev 零 diff);② 守卫盲区 7 文件裁决 + `UPSTREAM_PATHS` 扩入 protocol/schema/client + 例外(本 PR);③ 审计文档落库(#458)。守卫全绿后 #456 由 owner 确认 north-star 口径关闭。

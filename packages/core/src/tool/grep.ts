@@ -84,9 +84,9 @@ const layer = Layer.effectDiscard(
                 save: ["*"],
                 metadata: {
                   root: ".",
-                  ...(input.path === undefined ? {} : { path: input.path }),
-                  ...(input.include === undefined ? {} : { include: input.include }),
-                  ...(input.limit === undefined ? {} : { limit: input.limit }),
+                  path: input.path,
+                  include: input.include,
+                  limit: input.limit,
                 },
                 sessionID: context.sessionID,
                 agent: context.agent,

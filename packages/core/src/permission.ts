@@ -74,7 +74,16 @@ export const AssertInput = Schema.Struct({
   ...RequestFields,
   agent: AgentV2.ID.pipe(Schema.optional),
 }).annotate({ identifier: "PermissionV2.AssertInput" })
-export type AssertInput = typeof AssertInput.Type
+type InputJson =
+  | null
+  | boolean
+  | number
+  | string
+  | ReadonlyArray<InputJson>
+  | { readonly [key: string]: InputJson | undefined }
+export type AssertInput = Omit<typeof AssertInput.Type, "metadata"> & {
+  readonly metadata?: { readonly [key: string]: InputJson | undefined }
+}
 
 export const ReplyInput = Schema.Struct({
   requestID: ID,
@@ -188,7 +197,7 @@ const layer = Layer.effect(
       const snapshot = yield* Effect.sync(() => deepFreeze(wireSnapshot(input)))
       // Effect decoders may allocate prototype-bearing containers; only their accept/reject result is authoritative.
       yield* Schema.decodeUnknownEffect(AssertInput, validationOptions)(snapshot).pipe(Effect.orDie)
-      return snapshot
+      return snapshot as typeof AssertInput.Type
     })
 
     const replyInputSnapshot = Effect.fnUntraced(function* (input: ReplyInput) {
@@ -246,7 +255,7 @@ const layer = Layer.effect(
       return { effect, rules: all }
     })
 
-    const request = Effect.fnUntraced(function* (input: AssertInput, agentID: AgentV2.ID) {
+    const request = Effect.fnUntraced(function* (input: typeof AssertInput.Type, agentID: AgentV2.ID) {
       const sessionID = requiredOwn(input, "sessionID")
       const snapshot = deepFreeze(
         wireSnapshot({
@@ -757,11 +766,6 @@ function wireSnapshot<T>(value: T): T {
     }
 
     const result = Object.create(null) as Record<PropertyKey, unknown>
-    if (metadataDepth !== undefined) {
-      metadataEntries += keys.length
-      if (metadataEntries > metadataMaxEntries)
-        throw new Error(`Expected metadata with at most ${metadataMaxEntries} entries`)
-    }
     for (let index = 0; index < keys.length; index++) {
       if (!Object.hasOwn(keys, index)) throw new Error("Expected own object keys")
       const key = keys[index]!
@@ -769,6 +773,12 @@ function wireSnapshot<T>(value: T): T {
       const descriptor = descriptorAt(descriptors, key)
       if (!descriptor?.enumerable || !Object.hasOwn(descriptor, "value"))
         throw new Error("Expected enumerable JSON data properties")
+      if (descriptor.value === undefined) continue
+      if (metadataDepth !== undefined) {
+        metadataEntries++
+        if (metadataEntries > metadataMaxEntries)
+          throw new Error(`Expected metadata with at most ${metadataMaxEntries} entries`)
+      }
       result[key] = visit(
         descriptor.value,
         depth + 1,
