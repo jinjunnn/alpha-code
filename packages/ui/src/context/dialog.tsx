@@ -7,7 +7,6 @@ import {
   onCleanup,
   type Owner,
   type ParentProps,
-  type Component,
   runWithOwner,
   useContext,
   type JSX,
@@ -26,35 +25,11 @@ type Active = {
   owner: Owner
   onClose?: () => void
   setClosing: (closing: boolean) => void
-  hosted: boolean
 }
-
-export type DialogHostProps = {
-  open: boolean
-  onClose: () => void
-  title?: JSX.Element
-  description?: JSX.Element
-  action?: JSX.Element
-  size?: "normal" | "large" | "x-large"
-  class?: string
-  classList?: Record<string, boolean | undefined>
-  fit?: boolean
-  transition?: boolean
-  children?: JSX.Element
-}
-
-export type DialogHost = Component<DialogHostProps>
-export type DialogMountOptions = { host?: boolean }
-
-const HostContext = createContext<{
-  component: DialogHost
-  open: () => boolean
-  close: () => void
-}>()
 
 const Context = createContext<ReturnType<typeof init>>()
 
-function init(host: () => DialogHost | undefined = () => undefined) {
+function init() {
   const [stack, setStack] = createSignal<Active[]>([])
   const timer = { current: undefined as ReturnType<typeof setTimeout> | undefined }
   const lock = { value: false }
@@ -88,8 +63,7 @@ function init(host: () => DialogHost | undefined = () => undefined) {
   }
 
   createEffect(() => {
-    const current = stack().at(-1)
-    if (!current || current.hosted) return
+    if (stack().length === 0) return
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return
@@ -101,13 +75,7 @@ function init(host: () => DialogHost | undefined = () => undefined) {
     makeEventListener(window, "keydown", onKeyDown, { capture: true })
   })
 
-  const mount = (
-    element: DialogElement,
-    owner: Owner,
-    onClose: (() => void) | undefined,
-    layer: number,
-    host: DialogHost | undefined,
-  ) => {
+  const mount = (element: DialogElement, owner: Owner, onClose: (() => void) | undefined, layer: number) => {
     const id = Math.random().toString(36).slice(2)
     const zIndex = 50 + layer * 10
     let dispose: (() => void) | undefined
@@ -118,13 +86,6 @@ function init(host: () => DialogHost | undefined = () => undefined) {
         dispose = d
         const [closing, setClosingSignal] = createSignal(false)
         setClosing = setClosingSignal
-        if (host) {
-          return (
-            <HostContext.Provider value={{ component: host, open: () => !closing(), close: () => close(id) }}>
-              {element()}
-            </HostContext.Provider>
-          )
-        }
         return (
           <Kobalte
             modal
@@ -162,20 +123,20 @@ function init(host: () => DialogHost | undefined = () => undefined) {
 
     if (!dispose || !setClosing) return
 
-    const active: Active = { id, node, dispose, owner, onClose, setClosing, hosted: !!host }
+    const active: Active = { id, node, dispose, owner, onClose, setClosing }
     setStack((items) => [...items, active])
   }
 
-  const push = (element: DialogElement, owner: Owner, onClose?: () => void, host?: DialogHost) => {
+  const push = (element: DialogElement, owner: Owner, onClose?: () => void) => {
     if (timer.current !== undefined) {
       clearTimeout(timer.current)
       timer.current = undefined
     }
     lock.value = false
-    mount(element, owner, onClose, stack().length, host)
+    mount(element, owner, onClose, stack().length)
   }
 
-  const show = (element: DialogElement, owner: Owner, onClose?: () => void, host?: DialogHost) => {
+  const show = (element: DialogElement, owner: Owner, onClose?: () => void) => {
     for (const item of stack()) item.dispose()
     setStack([])
     if (timer.current !== undefined) {
@@ -183,7 +144,7 @@ function init(host: () => DialogHost | undefined = () => undefined) {
       timer.current = undefined
     }
     lock.value = false
-    mount(element, owner, onClose, 0, host)
+    mount(element, owner, onClose, 0)
   }
 
   return {
@@ -191,12 +152,11 @@ function init(host: () => DialogHost | undefined = () => undefined) {
     close,
     show,
     push,
-    host,
   }
 }
 
-export function DialogProvider(props: ParentProps<{ host?: DialogHost }>) {
-  const ctx = init(() => props.host)
+export function DialogProvider(props: ParentProps) {
+  const ctx = init()
   return (
     <Context.Provider value={ctx}>
       {props.children}
@@ -222,20 +182,16 @@ export function useDialog() {
     get active() {
       return ctx.stack().at(-1)
     },
-    show(element: DialogElement, onClose?: () => void, options?: DialogMountOptions) {
+    show(element: DialogElement, onClose?: () => void) {
       const base = ctx.stack().at(-1)?.owner ?? owner
-      return startTransition(() => ctx.show(element, base, onClose, options?.host ? ctx.host() : undefined))
+      return startTransition(() => ctx.show(element, base, onClose))
     },
-    push(element: DialogElement, onClose?: () => void, options?: DialogMountOptions) {
+    push(element: DialogElement, onClose?: () => void) {
       const base = ctx.stack().at(-1)?.owner ?? owner
-      return startTransition(() => ctx.push(element, base, onClose, options?.host ? ctx.host() : undefined))
+      return startTransition(() => ctx.push(element, base, onClose))
     },
     close() {
       ctx.close()
     },
   }
-}
-
-export function useDialogHost() {
-  return useContext(HostContext)
 }

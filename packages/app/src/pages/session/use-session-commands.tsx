@@ -215,7 +215,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
 
   const openFile = () => {
     void import("@/components/dialog-select-file").then((x) => {
-      dialog.show(() => <x.DialogSelectFile onOpenFile={showAllFiles} />, undefined, { host: true })
+      dialog.show(() => <x.DialogSelectFile onOpenFile={showAllFiles} />)
     })
   }
 
@@ -257,7 +257,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
 
   const chooseMcp = () => {
     void import("@/components/dialog-select-mcp").then((x) => {
-      dialog.show(() => <x.DialogSelectMcp />, undefined, { host: true })
+      dialog.show(() => <x.DialogSelectMcp />)
     })
   }
 
@@ -347,7 +347,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
 
   const fork = () => {
     void import("@/components/dialog-fork").then((x) => {
-      dialog.show(() => <x.DialogFork />, undefined, { host: true })
+      dialog.show(() => <x.DialogFork />)
     })
   }
 

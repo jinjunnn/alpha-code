@@ -66,44 +66,36 @@ export function useUsageExceededDialogs() {
       if (goUpsellState[keys.dontShow]) return
 
       if (action.reason === "free_tier_limit") {
-        dialog.show(
-          () => (
-            <DialogUsageExceeded
-              title={isEnglish() ? action.title : t("dialog.usageExceeded.freeTier.title")}
-              description={isEnglish() ? action.message : t("dialog.usageExceeded.freeTier.description")}
-              actionLabel={isEnglish() ? action.label : t("dialog.usageExceeded.freeTier.actionLabel")}
-              link={action.link}
-              onClose={(dontShowAgain) => {
-                setGoUpsellState(keys.lastSeenAt, Date.now())
-                if (dontShowAgain) setGoUpsellState(keys.dontShow, Date.now())
-                else {
-                  void import("../../components/dialog-connect-provider").then((x) =>
-                    dialog.show(() => <x.DialogConnectProvider provider="opencode-go" />),
-                  )
-                }
-              }}
-            />
-          ),
-          undefined,
-          { host: true },
-        )
+        dialog.show(() => (
+          <DialogUsageExceeded
+            title={isEnglish() ? action.title : t("dialog.usageExceeded.freeTier.title")}
+            description={isEnglish() ? action.message : t("dialog.usageExceeded.freeTier.description")}
+            actionLabel={isEnglish() ? action.label : t("dialog.usageExceeded.freeTier.actionLabel")}
+            link={action.link}
+            onClose={(dontShowAgain) => {
+              setGoUpsellState(keys.lastSeenAt, Date.now())
+              if (dontShowAgain) setGoUpsellState(keys.dontShow, Date.now())
+              else {
+                void import("../../components/dialog-connect-provider").then((x) =>
+                  dialog.show(() => <x.DialogConnectProvider provider="opencode-go" />),
+                )
+              }
+            }}
+          />
+        ))
       } else if (action.reason === "account_rate_limit") {
-        dialog.show(
-          () => (
-            <DialogUsageExceeded
-              title={isEnglish() ? action.title : t("dialog.usageExceeded.accountRateLimit.title")}
-              description={isEnglish() ? action.message : t("dialog.usageExceeded.accountRateLimit.description")}
-              actionLabel={isEnglish() ? action.label : t("dialog.usageExceeded.accountRateLimit.actionLabel")}
-              link={action.link}
-              onClose={(dontShowAgain) => {
-                setGoUpsellState(keys.lastSeenAt, Date.now())
-                if (dontShowAgain) setGoUpsellState(keys.dontShow, Date.now())
-              }}
-            />
-          ),
-          undefined,
-          { host: true },
-        )
+        dialog.show(() => (
+          <DialogUsageExceeded
+            title={isEnglish() ? action.title : t("dialog.usageExceeded.accountRateLimit.title")}
+            description={isEnglish() ? action.message : t("dialog.usageExceeded.accountRateLimit.description")}
+            actionLabel={isEnglish() ? action.label : t("dialog.usageExceeded.accountRateLimit.actionLabel")}
+            link={action.link}
+            onClose={(dontShowAgain) => {
+              setGoUpsellState(keys.lastSeenAt, Date.now())
+              if (dontShowAgain) setGoUpsellState(keys.dontShow, Date.now())
+            }}
+          />
+        ))
       }
     }),
   )

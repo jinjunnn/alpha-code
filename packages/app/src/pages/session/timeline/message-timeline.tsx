@@ -476,7 +476,7 @@ export function MessageTimeline(props: {
     resizeItem(index, size)
   }
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
-    item.end <= (instance.scrollOffset ?? 0)
+    item.end <= instance.getLogicalScrollOffset()
   const virtualItemByKey = createMemo(
     () => new Map(virtualizer.getVirtualItems().map((item) => [item.key, item] as const)),
   )
@@ -1449,9 +1449,7 @@ export function MessageTimeline(props: {
                             </DropdownMenu.Item>
                             <DropdownMenu.Separator />
                             <DropdownMenu.Item
-                              onSelect={() =>
-                                dialog.show(() => <DialogDeleteSession sessionID={id} />, undefined, { host: true })
-                              }
+                              onSelect={() => dialog.show(() => <DialogDeleteSession sessionID={id} />)}
                             >
                               <DropdownMenu.ItemLabel>{language.t("common.delete")}</DropdownMenu.ItemLabel>
                             </DropdownMenu.Item>
