@@ -55,9 +55,9 @@ settings.write(input: {
   [Settings storage recovery runbook](../runbooks/settings-storage-recovery.md) 的全共享范围静默判据。
 - 失败结果尽力附上重新读取的 `authoritative` 值，供消费者保留草稿并显示仍生效的值。进程
   重启后 `read` 重新从同一 `default.dat/settings.v3` 读取，不采信 renderer 内存或成功提示。
-- generic renderer store 入口在打开 store 前对文件名执行 ASCII 大小写折叠并删除 Windows
-  语义的尾点/尾空格，含路径分隔符的名称一律拒绝；任何规范化后等价于 `default.dat` 的名称
-  都不能对 `settings.v3` 执行 get/set/delete，也不能 clear 整个 store。Tauri 通用迁移同样在
+- generic renderer store 入口在打开 store 前对文件名与 key 去除 NTFS ADS 后缀，再执行 ASCII
+  大小写折叠并删除 Windows 语义的尾点/尾空格，含路径分隔符的名称一律拒绝；任何规范化后
+  等价于 `default.dat` / `settings.v3` 的组合都不能执行 get/set/delete，也不能 clear 整个 store。Tauri 通用迁移同样在
   `electron-store.set` 前稳定跳过 `default.dat/settings.v3` 并记录固定日志，不兼容迁移该键。
 
 稳定错误码：

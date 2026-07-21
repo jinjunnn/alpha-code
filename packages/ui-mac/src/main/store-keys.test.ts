@@ -32,8 +32,21 @@ describe("generic renderer store Settings ratchet", () => {
     }
   })
 
+  test("rejects NTFS ADS aliases across get, set, delete and clear", () => {
+    for (const [name, key] of [
+      ["default.dat:stream", RENDERER_SETTINGS_KEY],
+      [RENDERER_SETTINGS_STORE, "settings.v3:$DATA"],
+      ["default.dat::$DATA", RENDERER_SETTINGS_KEY],
+      ["DeFaUlT.DaT:StReAm", "SeTtInGs.V3:$dAtA"],
+    ]) {
+      expect(() => assertGenericStoreAccess(name, key)).toThrow(GENERIC_SETTINGS_ACCESS_ERROR)
+      expect(() => assertGenericStoreAccess(name)).toThrow(GENERIC_SETTINGS_ACCESS_ERROR)
+    }
+  })
+
   test("keeps unrelated stores and keys available", () => {
     expect(assertGenericStoreAccess(RENDERER_SETTINGS_STORE, "tabs.v1")).toBeUndefined()
+    expect(assertGenericStoreAccess(RENDERER_SETTINGS_STORE, "tabs.v1:scope")).toBeUndefined()
     expect(assertGenericStoreAccess("opencode.global.dat", RENDERER_SETTINGS_KEY)).toBeUndefined()
     expect(assertGenericStoreAccess("opencode.global.dat. ", RENDERER_SETTINGS_KEY)).toBeUndefined()
   })

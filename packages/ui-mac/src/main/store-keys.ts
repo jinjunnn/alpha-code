@@ -11,16 +11,21 @@ export const GENERIC_STORE_NAME_ERROR = "generic renderer store name must be a p
 
 export function normalizeGenericStoreName(name: string) {
   if (/[\\/]/.test(name)) throw new Error(GENERIC_STORE_NAME_ERROR)
-  return name.replace(/[ .]+$/u, "").toLowerCase()
+  return normalizeNtfsBaseComponent(name)
 }
 
 export function isRendererSettingsAuthorityTarget(name: string, key?: string) {
   if (normalizeGenericStoreName(name) !== RENDERER_SETTINGS_STORE) return false
-  return key === undefined || key === RENDERER_SETTINGS_KEY
+  return key === undefined || normalizeNtfsBaseComponent(key) === RENDERER_SETTINGS_KEY
 }
 
 /** The generic renderer store bridge must never read, mutate, delete, or clear Settings authority. */
 export function assertGenericStoreAccess(name: string, key?: string) {
   if (!isRendererSettingsAuthorityTarget(name, key)) return
   throw new Error(GENERIC_SETTINGS_ACCESS_ERROR)
+}
+
+function normalizeNtfsBaseComponent(value: string) {
+  const colon = value.indexOf(":")
+  return value.slice(0, colon < 0 ? value.length : colon).replace(/[ .]+$/u, "").toLowerCase()
 }
