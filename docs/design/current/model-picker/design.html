@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>模型选择器 · 交互重设计 v1 — alpha-code</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   alpha-ui design tokens (verbatim subset from tokens.css)
+   ============================================================ */
+:root{
+  --a-bg-canvas:#fff; --a-bg-subtle:#f6f7f9; --a-bg-muted:#eceef1; --a-bg-inset:#e3e6ea;
+  --a-surface:#fff; --a-surface-raised:#fff; --a-scrim:rgba(15,17,21,.45);
+  --a-border-faint:#eef0f3; --a-border:#e4e6ea; --a-border-strong:#ced2d9;
+  --a-text:#18181b; --a-text-secondary:#52525b; --a-text-tertiary:#7c7d85; --a-text-disabled:#b3b6bd; --a-text-on-accent:#fff;
+  --a-overlay-hover:rgba(15,17,21,.05); --a-overlay-active:rgba(15,17,21,.08);
+  --a-accent:#4f46e5; --a-accent-hover:#4338ca; --a-accent-active:#3730a3;
+  --a-accent-solid:#4f46e5; --a-accent-solid-hover:#4338ca; --a-accent-solid-active:#3730a3;
+  --a-send:#6366f1; --a-accent-subtle:rgba(79,70,229,.10); --a-accent-border:rgba(79,70,229,.35); --a-accent-ring:rgba(79,70,229,.45);
+  --a-success:#16a34a; --a-success-subtle:rgba(22,163,74,.12);
+  --a-warning:#d97706; --a-warning-subtle:rgba(217,119,6,.13);
+  --a-error:#dc2626; --a-error-subtle:rgba(220,38,38,.12);
+  --a-info:#2563eb;
+  --a-font-sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;
+  --a-font-mono:"JetBrains Mono","SF Mono","Menlo",ui-monospace,monospace;
+  --a-font-display:"Fraunces",Georgia,serif;
+  --a-text-2xs:10.5px; --a-text-xs:12px; --a-text-sm:13px; --a-text-base:14px; --a-text-md:15px; --a-text-lg:17px;
+  --a-tracking-tight:-.014em; --a-tracking-wide:.04em;
+  --a-radius-xs:4px; --a-radius-sm:6px; --a-radius-md:8px; --a-radius-lg:11px; --a-radius-xl:14px; --a-radius-2xl:18px; --a-radius-full:9999px;
+  --a-shadow-sm:0 1px 3px rgba(15,17,21,.07),0 1px 2px rgba(15,17,21,.04);
+  --a-shadow-md:0 4px 12px rgba(15,17,21,.08),0 2px 4px rgba(15,17,21,.05);
+  --a-shadow-lg:0 12px 32px rgba(15,17,21,.12),0 4px 8px rgba(15,17,21,.06);
+  --a-shadow-overlay:0 24px 64px rgba(15,17,21,.20),0 8px 16px rgba(15,17,21,.10);
+  --a-edge-light:inset 0 1px 0 rgba(255,255,255,.65);
+  --a-ring-focus:0 0 0 3px var(--a-accent-ring);
+  --a-dur-fast:130ms; --a-dur-base:190ms; --a-dur-slow:280ms;
+  --a-ease-out:cubic-bezier(.22,1,.36,1); --a-ease-spring:cubic-bezier(.34,1.56,.64,1);
+}
+[data-theme="dark"]{
+  --a-bg-canvas:#0a0b0d; --a-bg-subtle:#0e0f11; --a-bg-muted:#16171a; --a-bg-inset:#1e2024;
+  --a-surface:#121316; --a-surface-raised:#17181b; --a-scrim:rgba(0,0,0,.60);
+  --a-border-faint:#1b1c20; --a-border:#232428; --a-border-strong:#34363c;
+  --a-text:#fafafa; --a-text-secondary:#a1a1aa; --a-text-tertiary:#71727a; --a-text-disabled:#4f5158;
+  --a-overlay-hover:rgba(255,255,255,.055); --a-overlay-active:rgba(255,255,255,.09);
+  --a-accent:#818cf8; --a-accent-hover:#6366f1; --a-accent-active:#4f46e5;
+  --a-accent-solid:#4f46e5; --a-accent-solid-hover:#5b54ea;
+  --a-accent-subtle:rgba(99,102,241,.16); --a-accent-border:rgba(129,140,248,.35); --a-accent-ring:rgba(129,140,248,.45);
+  --a-success:#4ade80; --a-success-subtle:rgba(74,222,128,.14);
+  --a-warning:#fbbf24; --a-warning-subtle:rgba(251,191,36,.14);
+  --a-error:#f87171; --a-error-subtle:rgba(248,113,113,.14);
+  --a-edge-light:inset 0 1px 0 rgba(255,255,255,.06);
+  --a-shadow-overlay:0 24px 64px rgba(0,0,0,.55),0 8px 16px rgba(0,0,0,.4);
+}
+
+/* ============================================================
+   Page chrome (the audit document — not the product UI)
+   ============================================================ */
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  font-family:var(--a-font-sans); color:var(--a-text);
+  background:
+    radial-gradient(120% 80% at 12% -5%, color-mix(in srgb,var(--a-accent) 7%, transparent), transparent 55%),
+    var(--a-bg-subtle);
+  background-attachment:fixed;
+  -webkit-font-smoothing:antialiased; line-height:1.5;
+  padding:0 0 120px;
+}
+.wrap{max-width:1120px; margin:0 auto; padding:0 32px}
+header.doc{padding:64px 0 28px; border-bottom:1px solid var(--a-border-faint); margin-bottom:40px}
+.eyebrow{font-family:var(--a-font-mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--a-accent); margin:0 0 14px}
+h1.doc{font-family:var(--a-font-display); font-weight:500; font-size:clamp(34px,5vw,56px); line-height:1.04; letter-spacing:-.02em; margin:0 0 16px; max-width:18ch}
+h1.doc em{font-style:italic; color:var(--a-accent)}
+.lede{font-size:16px; color:var(--a-text-secondary); max-width:62ch; margin:0}
+.doc-meta{display:flex; gap:18px; flex-wrap:wrap; margin-top:22px; font-size:12px; color:var(--a-text-tertiary); font-family:var(--a-font-mono)}
+.doc-meta b{color:var(--a-text-secondary); font-weight:500}
+
+h2.sec{font-family:var(--a-font-display); font-weight:500; font-size:26px; letter-spacing:-.01em; margin:64px 0 6px; display:flex; align-items:baseline; gap:14px}
+h2.sec .n{font-family:var(--a-font-mono); font-size:13px; color:var(--a-accent); font-weight:500}
+.sec-sub{color:var(--a-text-secondary); font-size:14px; margin:0 0 26px; max-width:64ch}
+
+/* controls */
+.controls{position:sticky; top:0; z-index:50; display:flex; gap:10px; flex-wrap:wrap; align-items:center;
+  padding:12px 0; margin-bottom:8px; backdrop-filter:saturate(1.4) blur(12px);
+  background:color-mix(in srgb,var(--a-bg-subtle) 78%, transparent); border-bottom:1px solid var(--a-border-faint)}
+.seg{display:inline-flex; background:var(--a-bg-muted); border:1px solid var(--a-border-faint); border-radius:var(--a-radius-md); padding:3px}
+.seg button{font-family:var(--a-font-sans); font-size:12px; font-weight:500; color:var(--a-text-secondary); background:none; border:none; padding:6px 12px; border-radius:var(--a-radius-sm); cursor:pointer; transition:all var(--a-dur-fast)}
+.seg button[aria-pressed="true"]{background:var(--a-surface); color:var(--a-text); box-shadow:var(--a-shadow-sm)}
+.ctl-label{font-family:var(--a-font-mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--a-text-tertiary); margin-right:2px}
+.spacer{flex:1}
+
+/* stage for the live picker */
+.stage{position:relative; display:flex; gap:40px; align-items:flex-start; flex-wrap:wrap;
+  border:1px solid var(--a-border-faint); border-radius:var(--a-radius-2xl); padding:48px;
+  background:
+    var(--a-grain, none),
+    radial-gradient(90% 70% at 78% 8%, color-mix(in srgb,var(--a-accent) 5%, transparent), transparent 60%),
+    var(--a-bg-canvas);
+  box-shadow:var(--a-shadow-md); overflow:hidden}
+.stage::before{content:""; position:absolute; inset:0;
+  background-image:linear-gradient(var(--a-border-faint) 1px,transparent 1px),linear-gradient(90deg,var(--a-border-faint) 1px,transparent 1px);
+  background-size:28px 28px; opacity:.5; -webkit-mask-image:radial-gradient(80% 80% at 30% 30%,#000,transparent); pointer-events:none}
+.stage-info{position:relative; flex:1; min-width:230px; align-self:center}
+.stage-info h3{font-family:var(--a-font-display); font-weight:500; font-size:21px; margin:0 0 10px}
+.stage-info p{color:var(--a-text-secondary); font-size:13.5px; margin:0 0 16px; max-width:38ch}
+.statepill{display:inline-flex; align-items:center; gap:8px; font-family:var(--a-font-mono); font-size:11px; padding:5px 11px; border-radius:var(--a-radius-full); border:1px solid var(--a-border); color:var(--a-text-secondary); background:var(--a-surface)}
+.statepill .d{width:7px; height:7px; border-radius:50%}
+.toast{position:absolute; left:48px; bottom:24px; z-index:30; font-size:12.5px; padding:9px 14px; border-radius:var(--a-radius-md);
+  background:var(--a-text); color:var(--a-bg-canvas); box-shadow:var(--a-shadow-lg); opacity:0; transform:translateY(8px); transition:all var(--a-dur-base) var(--a-ease-out); pointer-events:none}
+.toast.show{opacity:1; transform:none}
+
+/* ============================================================
+   The Model Picker component (.mp-*) — product UI, all --a-* tokens
+   ============================================================ */
+.mp{position:relative; width:380px; flex:none; background:var(--a-surface); border:1px solid var(--a-border-faint);
+  border-radius:var(--a-radius-xl); box-shadow:var(--a-shadow-overlay),var(--a-edge-light); overflow:hidden;
+  display:flex; flex-direction:column; max-height:min(560px,72vh);
+  animation:pop var(--a-dur-base) var(--a-ease-out) both}
+@keyframes pop{from{opacity:0; transform:translateY(8px) scale(.985)} to{opacity:1; transform:none}}
+.mp-head{padding:12px 12px 0; flex:none}
+.mp-search{display:flex; align-items:center; gap:8px; background:var(--a-bg-subtle); border:1px solid transparent; border-radius:var(--a-radius-md); padding:0 10px; height:38px; transition:border-color var(--a-dur-fast),box-shadow var(--a-dur-fast)}
+.mp-search:focus-within{border-color:var(--a-accent-border); box-shadow:var(--a-ring-focus); background:var(--a-surface)}
+.mp-search svg{flex:none; color:var(--a-text-tertiary)}
+.mp-search input{flex:1; border:none; background:none; outline:none; font-family:var(--a-font-sans); font-size:var(--a-text-base); color:var(--a-text)}
+.mp-search input::placeholder{color:var(--a-text-tertiary)}
+.mp-testrow{display:flex; align-items:center; gap:10px}
+.mp-testbtn{height:32px; padding:0 14px; border:1px solid var(--a-border); border-radius:var(--a-radius-md); background:var(--a-bg-subtle); color:var(--a-text-secondary); font-family:var(--a-font-sans); font-size:var(--a-text-xs); font-weight:500; cursor:pointer; transition:all var(--a-dur-fast)}
+.mp-testbtn:hover{background:var(--a-overlay-hover); color:var(--a-text)}
+.mp-testbtn:disabled{opacity:.55; cursor:default}
+.mp-teststatus{font-size:var(--a-text-xs); font-weight:500}
+.mp-teststatus.testing{color:var(--a-text-tertiary)}
+.mp-teststatus.ok{color:var(--a-success)}
+.mp-teststatus.err{color:var(--a-error)}
+
+/* account banner */
+.mp-banner{margin:10px 12px 4px; display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:var(--a-radius-md); font-size:var(--a-text-xs); font-weight:500}
+.mp-banner .bi{flex:none; display:grid; place-items:center}
+.mp-banner .bt{flex:1; line-height:1.35}
+.mp-banner .bt small{display:block; font-weight:400; color:var(--a-text-tertiary); font-size:var(--a-text-2xs); margin-top:1px}
+.mp-banner.member{background:var(--a-success-subtle); color:var(--a-success)}
+.mp-banner.member .bt{color:var(--a-text)}
+.mp-banner.balance{background:var(--a-bg-muted); color:var(--a-text-secondary)}
+.mp-banner.balance .bt{color:var(--a-text)}
+.mp-banner.empty{background:var(--a-warning-subtle); color:var(--a-warning)}
+.mp-banner.empty .bt{color:var(--a-text)}
+.mp-banner.out{background:var(--a-bg-muted); color:var(--a-text-secondary)}
+.mp-banner.out .bt{color:var(--a-text)}
+.mp-bb{flex:none; font-family:var(--a-font-sans); font-size:var(--a-text-2xs); font-weight:600; padding:5px 11px; border-radius:var(--a-radius-sm); border:none; cursor:pointer; transition:all var(--a-dur-fast)}
+.mp-bb.solid{background:var(--a-accent-solid); color:#fff}
+.mp-bb.solid:hover{background:var(--a-accent-solid-hover)}
+.mp-bb.ghost{background:transparent; color:var(--a-text-secondary); border:1px solid var(--a-border)}
+.mp-bb.ghost:hover{background:var(--a-overlay-hover); color:var(--a-text)}
+
+/* list */
+.mp-scroll{flex:1; overflow-y:auto; padding:6px 8px 8px; scrollbar-width:thin}
+.mp-scroll::-webkit-scrollbar{width:8px}
+.mp-scroll::-webkit-scrollbar-thumb{background:var(--a-border); border-radius:99px; border:2px solid var(--a-surface)}
+.mp-group{margin-top:8px}
+.mp-ghead{display:flex; align-items:center; gap:8px; padding:7px 8px 5px}
+.mp-ghead .gt{font-size:var(--a-text-2xs); letter-spacing:var(--a-tracking-wide); text-transform:uppercase; color:var(--a-text-tertiary); font-weight:600}
+.mp-tag{font-size:9.5px; font-weight:600; letter-spacing:.02em; padding:2px 6px; border-radius:var(--a-radius-full); background:var(--a-accent-subtle); color:var(--a-accent)}
+.mp-lock{margin-left:auto; display:inline-flex; align-items:center; gap:4px; font-size:var(--a-text-2xs); color:var(--a-text-tertiary)}
+
+.mp-cta{margin:2px 6px 8px; display:flex; align-items:center; justify-content:center; gap:6px; padding:7px; border-radius:var(--a-radius-sm);
+  background:var(--a-accent-subtle); color:var(--a-accent); font-size:var(--a-text-xs); font-weight:600; cursor:pointer; transition:all var(--a-dur-fast)}
+.mp-cta:hover{background:color-mix(in srgb,var(--a-accent) 18%, transparent)}
+
+.mp-row{display:flex; align-items:center; gap:11px; padding:8px 8px; border-radius:var(--a-radius-md); cursor:pointer; position:relative; transition:background var(--a-dur-fast)}
+.mp-row:hover{background:var(--a-overlay-hover)}
+.mp-row[data-selected="true"]{background:var(--a-accent-subtle)}
+.mp-row[data-selected="true"]::before{content:""; position:absolute; left:0; top:7px; bottom:7px; width:2px; border-radius:2px; background:var(--a-accent)}
+.mp-row[data-locked="true"]{opacity:.5}
+.mp-row[data-locked="true"]:hover{background:var(--a-warning-subtle)}
+.mp-pico{flex:none; width:24px; height:24px; border-radius:var(--a-radius-sm); display:grid; place-items:center; color:#fff; font-size:12px; font-weight:600; box-shadow:var(--a-edge-light)}
+.mp-name{flex:1; min-width:0; display:flex; flex-direction:column; gap:1px}
+.mp-name .nm{display:block; font-size:var(--a-text-base); font-weight:500; color:var(--a-text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.mp-name .sb{display:block; font-family:var(--a-font-mono); font-size:var(--a-text-2xs); color:var(--a-text-tertiary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.mp-dot{flex:none; width:6px; height:6px; border-radius:50%; background:var(--a-accent); opacity:.8}
+.mp-tier{flex:none; font-size:var(--a-text-2xs); font-weight:600; padding:2px 7px; border-radius:var(--a-radius-full)}
+.mp-tier.flag{background:var(--a-warning-subtle); color:var(--a-warning)}
+.mp-tier.pro{background:var(--a-bg-inset); color:var(--a-text-secondary)}
+.mp-tier.std{background:var(--a-bg-muted); color:var(--a-text-tertiary)}
+.mp-mult{flex:none; font-family:var(--a-font-mono); font-size:var(--a-text-2xs); color:var(--a-text-tertiary); min-width:20px; text-align:right}
+.mp-keychip{flex:none; font-size:9.5px; font-weight:600; padding:3px 8px; border-radius:var(--a-radius-full); border:1px dashed var(--a-border-strong); color:var(--a-text-secondary); background:transparent}
+.mp-row:hover .mp-keychip{border-color:var(--a-accent-border); color:var(--a-accent)}
+.mp-empty{padding:34px 16px; text-align:center; color:var(--a-text-tertiary); font-size:var(--a-text-sm)}
+.mp-empty a{color:var(--a-accent); cursor:pointer; text-decoration:none; font-weight:500}
+
+.mp-foot{flex:none; border-top:1px solid var(--a-border-faint); padding:8px}
+.mp-addbtn{width:100%; display:flex; align-items:center; gap:9px; padding:9px 10px; border:none; background:none; border-radius:var(--a-radius-md); cursor:pointer; color:var(--a-text-secondary); font-family:var(--a-font-sans); font-size:var(--a-text-sm); font-weight:500; transition:all var(--a-dur-fast)}
+.mp-addbtn:hover{background:var(--a-bg-muted); color:var(--a-text)}
+.mp-addbtn .plus{width:22px; height:22px; flex:none; display:grid; place-items:center; border-radius:var(--a-radius-sm); background:var(--a-bg-muted); color:var(--a-text-secondary)}
+.mp-addbtn:hover .plus{background:var(--a-accent-subtle); color:var(--a-accent)}
+
+/* add view (slides over) */
+.mp-add{position:absolute; inset:0; background:var(--a-surface); display:flex; flex-direction:column;
+  transform:translateX(102%); transition:transform var(--a-dur-base) var(--a-ease-out); z-index:5}
+.mp.adding .mp-add{transform:none}
+.mp-addhead{flex:none; display:flex; align-items:center; gap:10px; padding:13px 12px; border-bottom:1px solid var(--a-border-faint)}
+.mp-back{width:30px; height:30px; flex:none; display:grid; place-items:center; border:none; background:none; border-radius:var(--a-radius-sm); cursor:pointer; color:var(--a-text-secondary)}
+.mp-back:hover{background:var(--a-overlay-hover); color:var(--a-text)}
+.mp-addhead .ti{font-size:var(--a-text-md); font-weight:600}
+.mp-addbody{flex:1; overflow-y:auto; padding:12px}
+.mp-addbody .hint{font-size:var(--a-text-xs); color:var(--a-text-secondary); margin:0 0 14px; line-height:1.45}
+.mp-preset{display:flex; align-items:center; gap:11px; padding:11px 10px; border-radius:var(--a-radius-md); border:1px solid var(--a-border-faint); cursor:pointer; margin-bottom:8px; transition:all var(--a-dur-fast)}
+.mp-preset:hover{border-color:var(--a-accent-border); background:var(--a-overlay-hover)}
+.mp-preset .pn{flex:1}
+.mp-preset .pn .nm{font-size:var(--a-text-base); font-weight:500}
+.mp-preset .pn .sb{font-size:var(--a-text-2xs); color:var(--a-text-tertiary); margin-top:1px}
+.mp-preset .ch{color:var(--a-text-tertiary)}
+.mp-preset.custom{border-style:dashed; margin-top:6px}
+.mp-preset.custom .pico-plus{width:24px;height:24px;flex:none;border-radius:var(--a-radius-sm);display:grid;place-items:center;background:var(--a-bg-muted);color:var(--a-text-secondary);font-size:16px}
+.mp-divider{height:1px; background:var(--a-border-faint); margin:14px 2px 12px}
+/* form */
+.mp-field{margin-bottom:13px}
+.mp-field label{display:block; font-size:var(--a-text-xs); font-weight:500; color:var(--a-text-secondary); margin-bottom:5px}
+.mp-field label .req{color:var(--a-error)}
+.mp-input{width:100%; height:36px; padding:0 11px; border-radius:var(--a-radius-md); border:1px solid var(--a-border); background:var(--a-bg-subtle); color:var(--a-text); font-family:var(--a-font-sans); font-size:var(--a-text-sm); outline:none; transition:all var(--a-dur-fast)}
+.mp-input:focus{border-color:var(--a-accent-border); box-shadow:var(--a-ring-focus); background:var(--a-surface)}
+.mp-input.mono{font-family:var(--a-font-mono); font-size:var(--a-text-xs)}
+.mp-input[readonly]{color:var(--a-text-tertiary); cursor:not-allowed}
+.mp-row2{display:flex; gap:8px}
+.mp-compat{display:flex; gap:6px}
+.mp-compat .opt{flex:1; text-align:center; font-size:var(--a-text-xs); font-weight:500; padding:8px; border-radius:var(--a-radius-md); border:1px solid var(--a-border); color:var(--a-text-secondary); cursor:pointer; transition:all var(--a-dur-fast)}
+.mp-compat .opt[aria-pressed="true"]{border-color:var(--a-accent-border); background:var(--a-accent-subtle); color:var(--a-accent)}
+.mp-modelchips{display:flex; flex-wrap:wrap; gap:6px; padding:7px; border:1px solid var(--a-border); border-radius:var(--a-radius-md); background:var(--a-bg-subtle); min-height:36px}
+.mp-mc{display:inline-flex; align-items:center; gap:5px; font-family:var(--a-font-mono); font-size:var(--a-text-2xs); padding:3px 8px; border-radius:var(--a-radius-full); background:var(--a-bg-inset); color:var(--a-text-secondary)}
+.mp-mc b{cursor:pointer; opacity:.6}
+.mp-mc b:hover{opacity:1}
+.mp-modelnote{margin:6px 0 0; font-size:var(--a-text-2xs); color:var(--a-text-tertiary); line-height:1.45}
+.mp-key-toggle{font-size:var(--a-text-2xs); color:var(--a-accent); cursor:pointer; float:right; font-weight:500}
+.mp-check{display:flex; align-items:center; gap:8px; font-size:var(--a-text-xs); color:var(--a-text-secondary); cursor:pointer; margin:6px 0 4px}
+.mp-check input{accent-color:var(--a-accent-solid)}
+.mp-addfoot{flex:none; border-top:1px solid var(--a-border-faint); padding:10px 12px; display:flex; gap:8px}
+.mp-save{flex:1; height:36px; border:none; border-radius:var(--a-radius-md); background:var(--a-accent-solid); color:#fff; font-family:var(--a-font-sans); font-size:var(--a-text-sm); font-weight:600; cursor:pointer; transition:all var(--a-dur-fast)}
+.mp-save:hover{background:var(--a-accent-solid-hover)}
+.mp-cancel{height:36px; padding:0 14px; border:1px solid var(--a-border); border-radius:var(--a-radius-md); background:transparent; color:var(--a-text-secondary); font-size:var(--a-text-sm); cursor:pointer}
+.mp-cancel:hover{background:var(--a-overlay-hover); color:var(--a-text)}
+.mp-formstep{display:none}
+.mp.step2 .mp-presets{display:none}
+.mp.step2 .mp-formstep{display:block}
+
+/* ============================================================
+   States board (static, audit-at-a-glance)
+   ============================================================ */
+.board{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:24px}
+.board-card{border:1px solid var(--a-border-faint); border-radius:var(--a-radius-xl); padding:24px; background:var(--a-bg-canvas); box-shadow:var(--a-shadow-sm)}
+.board-card .cap{display:flex; align-items:center; gap:9px; margin-bottom:16px}
+.board-card .cap .tt{font-family:var(--a-font-display); font-size:18px; font-weight:500}
+.board-card .cap .cd{font-family:var(--a-font-mono); font-size:10px; color:var(--a-text-tertiary); background:var(--a-bg-muted); padding:3px 7px; border-radius:var(--a-radius-full)}
+.board-card .desc{font-size:12.5px; color:var(--a-text-secondary); margin:14px 0 0; line-height:1.5}
+.board .mp{width:100%; max-height:none; animation:none; box-shadow:var(--a-shadow-md)}
+.board .mp-scroll{max-height:none}
+
+/* annotations / legend */
+.legend{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px; margin-top:28px}
+.lg{display:flex; gap:12px; padding:15px; border:1px solid var(--a-border-faint); border-radius:var(--a-radius-lg); background:var(--a-bg-canvas)}
+.lg .num{flex:none; width:24px; height:24px; border-radius:50%; background:var(--a-accent-subtle); color:var(--a-accent); display:grid; place-items:center; font-size:12px; font-weight:600; font-family:var(--a-font-mono)}
+.lg b{display:block; font-size:13.5px; margin-bottom:3px}
+.lg p{margin:0; font-size:12.5px; color:var(--a-text-secondary); line-height:1.45}
+
+.note{margin-top:22px; padding:16px 18px; border-left:3px solid var(--a-accent); background:var(--a-accent-subtle); border-radius:0 var(--a-radius-md) var(--a-radius-md) 0; font-size:13px; color:var(--a-text); line-height:1.55}
+.note b{color:var(--a-accent)}
+footer.doc{margin-top:80px; padding-top:28px; border-top:1px solid var(--a-border-faint); font-size:12px; color:var(--a-text-tertiary); font-family:var(--a-font-mono)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <p class="eyebrow">alpha-code · 交互重设计 · 2026-06-27</p>
+  <h1 class="doc">模型选择器<br><em>登录态感知</em> 的重构</h1>
+  <p class="lede">代理模型(alpha-platform)永远可见、按登录与额度分级解锁;国内四模型一键直连;其余任意兼容端点自助接入。下方原型可交互——切换主题、登录态,试搜索、过滤与「添加供应商」流程。</p>
+  <div class="doc-meta">
+    <span><b>诉求①</b> 显示代理模型 + 登录态</span>
+    <span><b>诉求②</b> 国内四模型 + 自定义输入</span>
+    <span><b>诉求③</b> 完整交互规格</span>
+    <span><b>规格</b> spec.md</span>
+  </div>
+</header>
+
+<!-- ============ live prototype ============ -->
+<h2 class="sec"><span class="n">01</span> 实时原型</h2>
+<p class="sec-sub">单一可交互实例。用上方控件切换浅/深色与四种账户态;搜索、行选中、底部「添加自定义节点 / 供应商」二级流程(含测试连接、保存后每个 model id 落成一行)均可操作。锁定态下点代理行会引导登录/充值。</p>
+
+<div class="controls">
+  <span class="ctl-label">主题</span>
+  <div class="seg" id="themeSeg">
+    <button data-theme-val="light" aria-pressed="true">浅色</button>
+    <button data-theme-val="dark" aria-pressed="false">深色</button>
+  </div>
+  <span class="spacer"></span>
+  <span class="ctl-label">账户态</span>
+  <div class="seg" id="stateSeg">
+    <button data-state="out" aria-pressed="false">未登录</button>
+    <button data-state="member" aria-pressed="true">PRO 会员</button>
+    <button data-state="balance" aria-pressed="false">按量</button>
+    <button data-state="empty" aria-pressed="false">余额不足</button>
+  </div>
+</div>
+
+<div class="stage">
+  <div class="stage-info">
+    <h3 id="stageTitle">PRO 会员</h3>
+    <p id="stageDesc">活跃订阅、本周期额度充足。代理节点全部解锁,banner 显绿色会员态。</p>
+    <span class="statepill"><span class="d" id="stageDot"></span><span id="stagePillTxt">plan.status = active</span></span>
+  </div>
+  <div id="liveHost"></div>
+  <div class="toast" id="toast"></div>
+</div>
+
+<div class="legend" id="legend"></div>
+
+<div class="note">
+  <b>关于美学方向：</b>本稿刻意走「精炼克制」(Linear / Raycast 调性)而非张扬的视觉冲击——因为它要嵌进 alpha-code 既有 cool-graphite 设计系统、与终端/会话共存。前端 design 技能的「大胆」在此体现为<b>信息架构的果断</b>(代理 / 直连 / 自定义三层、登录态四象限)与<b>细节的精确</b>(hairline 分隔、tabular 倍率、stagger 入场、token 化深色),而非花哨装饰。审计文档本身的标题用 Fraunces 衬线 + JetBrains Mono 标签,与产品 UI 的系统字体区分,标明「这是设计稿」。
+</div>
+
+<!-- ============ states board ============ -->
+<h2 class="sec"><span class="n">02</span> 登录态总览</h2>
+<p class="sec-sub">四种账户态并排,供一眼审计差异:banner 文案/色、代理组锁定与否、主行动按钮。BYOK 国内直连组在任何态都可用。</p>
+<div class="board" id="board"></div>
+
+<!-- ============ custom flow ============ -->
+<h2 class="sec"><span class="n">03</span> 自定义节点 / 供应商流程</h2>
+<p class="sec-sub">点上方原型底部「＋ 添加自定义节点 / 供应商」即可体验。四个国内供应商为快速预设(只需粘 Key),「其他 / 自定义」走全字段表单(OpenAI / Anthropic 兼容)。下面是流程要点。</p>
+<div class="legend">
+  <div class="lg"><span class="num">1</span><div><b>选供应商</b><p>DeepSeek / 智谱 / 通义千问 / Kimi 四个预设卡片,baseURL 与 model id 已内置;或「其他」自定义任意兼容端点。</p></div></div>
+  <div class="lg"><span class="num">2</span><div><b>填配置 + 测试</b><p>已知供应商只填 API Key——模型由 alpha 内置目录(provider→model-id 映射)自动列出,无需手输;只有自定义端点才手填 Base URL + model id。Key 支持明文;「测试连接」探活后再保存。</p></div></div>
+  <div class="lg"><span class="num">3</span><div><b>保存即用 · 一 id 一行</b><p>写用户 opencode.jsonc 的 provider[](经白名单 IPC,见 spec §11),provider.add 即时生效免重启;配置的每个 model id 各成一行,方便随时切换。</p></div></div>
+</div>
+
+<footer class="doc">
+  prototype.html · 模型选择器交互重设计 v1 · 配套 spec.md · 数据全走 SDK + window.api(auth/account) + alpha-models 注入 · 零改 opencode 源码
+</footer>
+
+</div>
+
+<script>
+/* ============================================================
+   Data
+   ============================================================ */
+// proxy: each row = one model id (友好名 + id 副标题). 经 ALPHA 代理 由组标题统一表达。
+const PROXY = [
+  {prov:'alpha',letter:'α',color:'#4f46e5',name:'Claude Opus 4.8',sub:'claude-opus-4.8',tier:'flag',mult:'×8',reason:true,proxy:true},
+  {prov:'alpha',letter:'α',color:'#4f46e5',name:'Claude Sonnet 4.6',sub:'claude-sonnet-4.6',tier:'pro',mult:'×3',reason:true,proxy:true},
+  {prov:'alpha',letter:'α',color:'#4f46e5',name:'GPT-5.4 Search',sub:'gpt-5.4-search',tier:'flag',mult:'×8',reason:true,proxy:true},
+  {prov:'alpha',letter:'α',color:'#4f46e5',name:'DeepSeek V4 Pro',sub:'deepseek-v4-pro',tier:'pro',mult:'×3',reason:true,proxy:true},
+  {prov:'alpha',letter:'α',color:'#4f46e5',name:'Claude Haiku 4.5',sub:'claude-haiku-4.5',tier:'pro',mult:'×3',reason:false,proxy:true},
+];
+// BYOK: 只列「已配置」的 model id,一个 model id 一行(name=id, sub=供应商)。未配置的供应商不在此显示,去「添加节点」接入。
+let DOMESTIC = [
+  {prov:'deepseek',letter:'D',color:'#2563eb',name:'deepseek-chat',sub:'DeepSeek',tier:'pro'},
+  {prov:'deepseek',letter:'D',color:'#2563eb',name:'deepseek-reasoner',sub:'DeepSeek · 推理',tier:'pro',reason:true},
+  {prov:'zhipuai',letter:'智',color:'#16a34a',name:'glm-5',sub:'智谱 GLM',tier:'pro'},
+];
+const PRESETS = [
+  {prov:'deepseek',letter:'D',color:'#2563eb',name:'DeepSeek',compat:'OpenAI 兼容',baseURL:'https://api.deepseek.com/v1',models:['deepseek-chat','deepseek-reasoner']},
+  {prov:'zhipuai',letter:'智',color:'#16a34a',name:'智谱 GLM',compat:'Anthropic 兼容',baseURL:'https://open.bigmodel.cn/api/anthropic',models:['glm-5','glm-4.5-air']},
+  {prov:'alibaba',letter:'通',color:'#7c3aed',name:'通义千问 Qwen',compat:'OpenAI 兼容',baseURL:'https://dashscope.aliyuncs.com/compatible-mode/v1',models:['qwen-plus','qwen3-coder-plus']},
+  {prov:'moonshot',letter:'K',color:'#111317',name:'Kimi (Moonshot)',compat:'OpenAI 兼容',baseURL:'https://api.moonshot.cn/v1',models:['kimi-k2','moonshot-v1-128k']},
+];
+
+const STATES = {
+  out:    {dot:'#7c7d85', title:'未登录', desc:'代理节点可见但锁定;点击代理行或 banner 引导登录(ADR-017 深链)。国内直连不受影响。', pill:'auth.status = logged-out'},
+  member: {dot:'#16a34a', title:'PRO 会员', desc:'活跃订阅、本周期额度充足。代理节点全部解锁,banner 显绿色会员态。', pill:'plan.status = active'},
+  balance:{dot:'#52525b', title:'按量(有余额)', desc:'已登录、钱包有余额但未订阅,按量扣费。代理解锁,banner 中性。', pill:'balanceFen > 0 · plan = none'},
+  empty:  {dot:'#d97706', title:'余额不足', desc:'已登录但余额为 0 且未订阅。代理锁定,banner amber + 充值/订阅。', pill:'balanceFen = 0 · plan = none'},
+};
+
+/* ============================================================
+   Icons
+   ============================================================ */
+const I = {
+  search:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
+  sliders:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="8" x2="20" y2="8"/><circle cx="9" cy="8" r="2.4" fill="var(--a-surface)"/><line x1="4" y1="16" x2="20" y2="16"/><circle cx="15" cy="16" r="2.4" fill="var(--a-surface)"/></svg>',
+  check:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg>',
+  card:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2.5"/><path d="M2 10h20"/></svg>',
+  lock:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
+  warn:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4m0 4h.01M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>',
+  plus:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>',
+  back:'<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>',
+  chev:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>',
+};
+
+/* ============================================================
+   Render helpers
+   ============================================================ */
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function locked(state){return state==='out'||state==='empty'}
+
+function rowHTML(m,state){
+  const isLocked = m.proxy && locked(state);
+  const tierName = {flag:'旗舰',pro:'高级',std:'标准'}[m.tier];
+  let right='';
+  if(m.reason) right+='<span class="mp-dot" title="支持推理"></span>';
+  right+=`<span class="mp-tier ${m.tier}">${tierName}</span>`;
+  if(m.proxy) right+=`<span class="mp-mult">${m.mult}</span>`;
+  return `<div class="mp-row" data-locked="${isLocked}" data-kind="${m.proxy?'proxy':'domestic'}" ${m.sel?'data-selected="true"':''}>
+    <span class="mp-pico" style="background:${m.color}">${m.letter}</span>
+    <span class="mp-name"><span class="nm">${esc(m.name)}</span><span class="sb">${esc(m.sub)}</span></span>
+    ${right}
+  </div>`;
+}
+
+function bannerHTML(state){
+  if(state==='member') return `<div class="mp-banner member"><span class="bi">${I.check}</span><span class="bt">Pro 会员 · 本周期额度充足<small>5h / 7d 额度充裕 · 点击查看用量</small></span></div>`;
+  if(state==='balance') return `<div class="mp-banner balance"><span class="bi">${I.card}</span><span class="bt">钱包余额 ¥2.50 · 未订阅<small>按量扣费</small></span><button class="mp-bb ghost" data-act="subscribe">订阅</button></div>`;
+  if(state==='empty') return `<div class="mp-banner empty"><span class="bi">${I.warn}</span><span class="bt">余额不足 · 充值后解锁代理<small>钱包 ¥0.00</small></span><button class="mp-bb ghost" data-act="subscribe">订阅</button><button class="mp-bb solid" data-act="recharge">充值</button></div>`;
+  return `<div class="mp-banner out"><span class="bi">${I.lock}</span><span class="bt">登录解锁代理节点<small>平台计费 · 旗舰模型直达</small></span><button class="mp-bb solid" data-act="login">登录</button></div>`;
+}
+
+function listHTML(state,query){
+  const q=(query||'').trim().toLowerCase();
+  const match=(m)=> !q || (m.name+' '+m.sub+' '+m.prov).toLowerCase().includes(q);
+  const proxy=PROXY.filter(match), dom=DOMESTIC.filter(match);
+  let html='';
+  if(!proxy.length && !dom.length){
+    return `<div class="mp-empty">无匹配模型<br><a data-act="add">＋ 添加自定义端点</a></div>`;
+  }
+  if(proxy.length){
+    const lk=locked(state);
+    html+=`<div class="mp-group"><div class="mp-ghead"><span class="gt">代理节点 · 经 ALPHA 代理</span><span class="mp-tag">推荐</span>${lk?`<span class="mp-lock">${I.lock} 已锁定</span>`:''}</div>`;
+    if(lk){
+      const cta = state==='out' ? '登录后解锁 8+ 旗舰代理模型 →' : '充值后继续使用代理模型 →';
+      html+=`<div class="mp-cta" data-act="${state==='out'?'login':'recharge'}">${I.lock} ${cta}</div>`;
+    }
+    html+=proxy.map(m=>rowHTML(m,state)).join('')+`</div>`;
+  }
+  if(dom.length){
+    html+=`<div class="mp-group"><div class="mp-ghead"><span class="gt">国内直连 · 自带 Key (BYOK)</span></div>`;
+    html+=dom.map(m=>rowHTML(m,state)).join('')+`</div>`;
+  }
+  return html;
+}
+
+function presetsHTML(){
+  return PRESETS.map((p,i)=>`<div class="mp-preset" data-preset="${i}">
+    <span class="mp-pico" style="background:${p.color}">${p.letter}</span>
+    <span class="pn"><span class="nm">${esc(p.name)}</span><span class="sb">${esc(p.compat)} · 填 Key 即用</span></span>
+    <span class="ch">${I.chev}</span></div>`).join('')
+    +`<div class="mp-preset custom" data-preset="-1"><span class="pico-plus">+</span><span class="pn"><span class="nm">其他 / 自定义端点</span><span class="sb">OpenAI · Anthropic 兼容</span></span><span class="ch">${I.chev}</span></div>`;
+}
+
+/* full picker markup */
+function pickerHTML(opts){
+  const {state,query=''}=opts;
+  return `<div class="mp" data-mp>
+    <div class="mp-head">
+      <div class="mp-search">
+        ${I.search}
+        <input type="text" placeholder="搜索模型 / 供应商" value="${esc(query)}" data-search>
+      </div>
+    </div>
+    <div data-banner>${bannerHTML(state)}</div>
+    <div class="mp-scroll" data-list>${listHTML(state,query)}</div>
+    <div class="mp-foot"><button class="mp-addbtn" data-act="add"><span class="plus">${I.plus}</span>添加自定义节点 / 供应商</button></div>
+
+    <div class="mp-add" data-addview>
+      <div class="mp-addhead"><button class="mp-back" data-act="back">${I.back}</button><span class="ti" data-addtitle>添加节点 / 供应商</span></div>
+      <div class="mp-addbody">
+        <div class="mp-presets" data-presets>
+          <p class="hint">选国内供应商一键接入,或自定义任意 OpenAI / Anthropic 兼容端点。</p>
+          ${presetsHTML()}
+        </div>
+        <div class="mp-formstep" data-form>
+          <div class="mp-field"><label>供应商名称 <span class="req">*</span></label><input class="mp-input" data-f="name" placeholder="如 DeepSeek"></div>
+          <div class="mp-field"><label>兼容类型</label><div class="mp-compat" data-compat>
+            <div class="opt" data-compat-val="openai" aria-pressed="true">OpenAI 兼容</div>
+            <div class="opt" data-compat-val="anthropic" aria-pressed="false">Anthropic 兼容</div></div></div>
+          <div class="mp-field"><label>Base URL <span class="req">*</span></label><input class="mp-input mono" data-f="baseURL" placeholder="https://api.example.com/v1"></div>
+          <div class="mp-field"><label>API Key <span class="req">*</span><span class="mp-key-toggle" data-act="peekkey">明文</span></label><input class="mp-input mono" type="password" data-f="key" placeholder="sk-..."></div>
+          <div class="mp-field"><label data-modellabel>模型 ID <span class="req">*</span></label><div class="mp-modelchips" data-modelchips></div><input class="mp-input mono" data-f="model" placeholder="回车添加,如 deepseek-chat" style="margin-top:6px"><p class="mp-modelnote" data-modelnote></p></div>
+          <div class="mp-field mp-testrow"><button class="mp-testbtn" type="button" data-act="test">测试连接</button><span class="mp-teststatus" data-teststatus></span></div>
+          <label class="mp-check"><input type="checkbox" data-f="default">保存后设为当前模型</label>
+        </div>
+      </div>
+      <div class="mp-addfoot" data-addfoot style="display:none">
+        <button class="mp-cancel" data-act="back">返回</button>
+        <button class="mp-save" data-act="save">保存并启用</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ============================================================
+   Live instance wiring
+   ============================================================ */
+const live = {state:'member', query:''};
+const host = document.getElementById('liveHost');
+const toastEl = document.getElementById('toast');
+let toastTimer;
+function toast(msg){clearTimeout(toastTimer); toastEl.textContent=msg; toastEl.classList.add('show'); toastTimer=setTimeout(()=>toastEl.classList.remove('show'),2400);}
+
+function renderLive(){
+  host.innerHTML=pickerHTML(live);
+  const mp=host.querySelector('[data-mp]');
+  wire(mp);
+  // stage info
+  const s=STATES[live.state];
+  document.getElementById('stageTitle').textContent=s.title;
+  document.getElementById('stageDesc').textContent=s.desc;
+  document.getElementById('stageDot').style.background=s.dot;
+  document.getElementById('stagePillTxt').textContent=s.pill;
+}
+
+function relist(mp){ mp.querySelector('[data-list]').innerHTML=listHTML(live.state,live.query); }
+
+function wire(mp){
+  // search
+  const search=mp.querySelector('[data-search]');
+  search.addEventListener('input',()=>{live.query=search.value; relist(mp);});
+  search.addEventListener('keydown',e=>{if(e.key==='Escape'){if(live.query){live.query='';search.value='';relist(mp);}}});
+  // delegated clicks
+  mp.addEventListener('click',e=>{
+    const act=e.target.closest('[data-act]')?.dataset.act;
+    if(act) return handleAct(mp,act,e);
+    const row=e.target.closest('.mp-row');
+    if(row) return handleRow(mp,row);
+    const preset=e.target.closest('[data-preset]');
+    if(preset) return openForm(mp, +preset.dataset.preset);
+  });
+  // model id chips input
+  const modelInput=mp.querySelector('[data-f="model"]');
+  if(modelInput) modelInput.addEventListener('keydown',e=>{
+    if(e.key==='Enter'&&modelInput.value.trim()){addModelChip(mp,modelInput.value.trim());modelInput.value='';}
+  });
+  mp.querySelectorAll('[data-compat-val]').forEach(o=>o.addEventListener('click',()=>{
+    mp.querySelectorAll('[data-compat-val]').forEach(x=>x.setAttribute('aria-pressed',x===o));
+  }));
+}
+
+function handleRow(mp,row){
+  if(row.dataset.locked==='true'){
+    const a = live.state==='out' ? 'login':'recharge';
+    flashBanner(mp); return handleAct(mp,a);
+  }
+  mp.querySelectorAll('.mp-row').forEach(r=>r.removeAttribute('data-selected'));
+  row.setAttribute('data-selected','true');
+  toast('已选择 · '+row.querySelector('.nm').textContent);
+}
+function flashBanner(mp){const b=mp.querySelector('.mp-banner'); if(!b)return; b.animate([{transform:'scale(1)'},{transform:'scale(1.03)'},{transform:'scale(1)'}],{duration:300,easing:'ease-out'});}
+
+function handleAct(mp,act,e){
+  switch(act){
+    case 'login':{toast('→ window.api.auth.start()  (登录中…)'); setTimeout(()=>{setState('member'); toast('登录成功 · 代理节点已解锁');},900); break;}
+    case 'recharge':{toast('→ 深链 web/wallet?tab=recharge'); break;}
+    case 'subscribe':{toast('→ 深链 web/wallet?tab=subscription'); break;}
+    case 'add':{mp.classList.add('adding'); break;}
+    case 'back':{ if(mp.classList.contains('step2')){mp.classList.remove('step2'); mp.querySelector('[data-addfoot]').style.display='none'; mp.querySelector('[data-addtitle]').textContent='添加节点 / 供应商';} else {mp.classList.remove('adding');} break;}
+    case 'peekkey':{const k=mp.querySelector('[data-f="key"]'); const on=k.type==='password'; k.type=on?'text':'password'; e.target.textContent=on?'隐藏':'明文'; break;}
+    case 'test':{
+      const st=mp.querySelector('[data-teststatus]'); const btn=e.target.closest('[data-act="test"]');
+      st.textContent='测试中…'; st.className='mp-teststatus testing'; btn.disabled=true;
+      setTimeout(()=>{ st.textContent='✓ 已接通 · 142ms'; st.className='mp-teststatus ok'; btn.disabled=false; },950);
+      break;
+    }
+    case 'save':{
+      const ids=[...mp.querySelectorAll('[data-modelchips] .mp-mc')].map(c=>c.textContent.replace('×','').trim()).filter(Boolean);
+      const idx=+(mp.getAttribute('data-presetidx')??-1);
+      const meta = idx>=0 ? PRESETS[idx] : {letter:'⚙',color:'#52525b'};
+      const provName = idx>=0 ? PRESETS[idx].name : (mp.querySelector('[data-f="name"]').value||'自定义端点');
+      // 每个 model id 落成「国内直连 / 自定义」里的一行(诉求:N 个 id → N 行)
+      ids.forEach(id=> DOMESTIC.push({prov:'custom',letter:meta.letter,color:meta.color,name:id,sub:provName,tier:'std'}));
+      toast(`→ window.api.providers.add()  已保存 ${ids.length} 个模型 · provider.add 即时生效`);
+      mp.classList.remove('step2','adding'); mp.querySelector('[data-addfoot]').style.display='none';
+      relist(mp);
+      break;
+    }
+  }
+}
+
+function openForm(mp,idx){
+  mp.classList.add('step2');
+  mp.setAttribute('data-presetidx', idx);
+  mp.querySelector('[data-addfoot]').style.display='flex';
+  const ts=mp.querySelector('[data-teststatus]'); if(ts){ts.textContent=''; ts.className='mp-teststatus';}
+  const title=mp.querySelector('[data-addtitle]');
+  const chips=mp.querySelector('[data-modelchips]');
+  const modelInput=mp.querySelector('[data-f="model"]');
+  const modelLabel=mp.querySelector('[data-modellabel]');
+  const modelNote=mp.querySelector('[data-modelnote]');
+  chips.innerHTML='';
+  const setRO=(sel,ro)=>{const el=mp.querySelector(sel); el.readOnly=ro;};
+  if(idx>=0){
+    // 已知供应商:模型由 alpha 内置目录提供(provider→model-id 映射),用户只填 Key,不手输模型 id
+    const p=PRESETS[idx];
+    title.textContent=p.name;
+    mp.querySelector('[data-f="name"]').value=p.name; setRO('[data-f="name"]',true);
+    mp.querySelector('[data-f="baseURL"]').value=p.baseURL; setRO('[data-f="baseURL"]',false);
+    mp.querySelectorAll('[data-compat-val]').forEach(o=>o.setAttribute('aria-pressed', o.dataset.compatVal===(p.compat.startsWith('Anthropic')?'anthropic':'openai')));
+    p.models.forEach(m=>addModelChip(mp,m,false));         // 只读预览,不可删
+    modelInput.style.display='none';
+    modelLabel.innerHTML='将启用的模型 ('+p.models.length+')';
+    modelNote.textContent='该供应商模型由 alpha 内置目录维护,填 Key 即用;保存后自动列出,无需手输。';
+    mp.querySelector('[data-f="key"]').focus?.();
+  } else {
+    // 自定义端点:只有这里需要手动输入 model id
+    title.textContent='自定义端点';
+    mp.querySelector('[data-f="name"]').value=''; setRO('[data-f="name"]',false);
+    mp.querySelector('[data-f="baseURL"]').value=''; setRO('[data-f="baseURL"]',false);
+    mp.querySelectorAll('[data-compat-val]').forEach((o,i)=>o.setAttribute('aria-pressed', i===0));
+    modelInput.style.display=''; modelInput.value='';
+    modelLabel.innerHTML='模型 ID <span class="req">*</span>';
+    modelNote.textContent='兼容端点无内置目录,请手动添加 model id(回车分隔多个)。';
+  }
+}
+function addModelChip(mp,id,removable=true){
+  const wrap=mp.querySelector('[data-modelchips]');
+  const c=document.createElement('span'); c.className='mp-mc'; c.innerHTML=esc(id)+(removable?' <b>×</b>':'');
+  if(removable) c.querySelector('b').addEventListener('click',()=>c.remove());
+  wrap.appendChild(c);
+}
+
+function setState(st){
+  live.state=st;
+  document.querySelectorAll('#stateSeg button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.state===st));
+  renderLive();
+}
+
+/* segmented controls */
+document.querySelectorAll('#stateSeg button').forEach(b=>b.addEventListener('click',()=>setState(b.dataset.state)));
+document.getElementById('themeSeg').addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b)return;
+  document.documentElement.setAttribute('data-theme',b.dataset.themeVal);
+  document.querySelectorAll('#themeSeg button').forEach(x=>x.setAttribute('aria-pressed',x===b));
+  renderBoard();
+});
+
+/* ============================================================
+   States board (static)
+   ============================================================ */
+function renderBoard(){
+  const board=document.getElementById('board');
+  board.innerHTML=Object.keys(STATES).map(st=>{
+    const s=STATES[st];
+    return `<div class="board-card">
+      <div class="cap"><span class="d" style="width:9px;height:9px;border-radius:50%;background:${s.dot}"></span><span class="tt">${s.title}</span><span class="cd">${st}</span></div>
+      ${pickerHTML({state:st,query:'',filter:'all'})}
+      <p class="desc">${s.desc}</p>
+    </div>`;
+  }).join('');
+  // make board pickers non-interactive (audit-only) but keep look
+  board.querySelectorAll('[data-mp]').forEach(mp=>{
+    mp.querySelector('[data-search]').setAttribute('readonly','');
+    mp.querySelectorAll('button,.mp-row,.mp-chip,.mp-cta').forEach(el=>el.style.pointerEvents='none');
+  });
+}
+
+/* legend for live prototype */
+document.getElementById('legend').innerHTML=[
+  ['①','搜索(无 chips)','只保留搜索,实时过滤模型名/id/供应商;分组本身承担「代理 / 直连」分类,去掉了过滤切换。'],
+  ['②','账户 banner','登录态唯一行动入口:登录/充值/订阅;四态 member·balance·empty·out。'],
+  ['③','代理组 · 经 ALPHA 代理','组标题统一表达「这些经 ALPHA 代理」,行内不再重复「经代理」;永远可见,未登录/余额不足时 dim + 点行触发登录/充值。'],
+  ['④','国内直连(只显已配置)','一个 model id 一行,便于切换;未配置的供应商不在此显示,经底部入口接入。'],
+  ['⑤','tier + 倍率','旗舰×8/高级×3/标准×1 规则化;仅代理显倍率(BYOK 自付不计)。'],
+  ['⑥','自定义 + 测试','已知供应商只填 Key——模型由内置目录(provider→id 映射)自动列出,无需手输;只有自定义端点才手填 model id;支持「测试连接」;保存后每个 id 一行。'],
+].map(([n,t,d])=>`<div class="lg"><span class="num">${n}</span><div><b>${t}</b><p>${d}</p></div></div>`).join('');
+
+renderLive();
+renderBoard();
+</script>
+</body>
+</html>
