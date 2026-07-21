@@ -8,11 +8,11 @@
 name: sync-upstream
 
 on:
-  # 定时同步已暂停(2026-07-21,owner 决策):现行 restore_frozen_frontend 每次 sync 都把 alpha 加进
-  # 冻结包的 seam 擦掉(已擦 #451/#452,待擦 #450),且丢弃上游前端更新——与"持续白嫖上游"诉求冲突。
-  # 待前端策略迁移到 B 方案(月更 pin + 补丁序列)后,由新机制取代本 cron。手动触发仍保留。
-  # schedule:
-  #   - cron: "0 6 * * *" # daily 06:00 UTC
+  # 定时同步重开(2026-07-21,ADR-034 B 方案迁移完成):日常 sync 只进引擎,apply_alpha_frontend_delta
+  # 把 app/ui 恒还原为 frontend-pin.lock 的 pin + SOT 补丁——不再擦 alpha seam、不再丢上游前端。
+  # 前端前进由月更 bump(见 frontend/README.md)。#465 曾暂停本 cron 止血,机制已 B-safe,恢复。
+  schedule:
+    - cron: "0 6 * * *" # daily 06:00 UTC
   workflow_dispatch: {}
 
 permissions:
@@ -91,29 +91,36 @@ jobs:
       - name: Merge `dev` into `alpha` (auto-resolve bun.lock only)
         run: |
           git checkout alpha
-          # ADR-020/ADR-027 前端冻结:packages/{app,ui} 钉在 frontend-freeze-base-3 tag(含
-          # Alpha typed surface seam + REQ-088 C1 `./surface/session` 窄导出),上游对它们的
-          # 改动会与冻结版冲突(预期内)——冲突取 ours,合并后统一还原为冻结基(含上游新增文件
-          # 的清除)。还原后必须校验 seam 存活:marker 缺失 = tag 误指/误移,loud-fail 阻断
-          # 整个 sync(ADR-027,禁止 warning 后继续)。
-          restore_frozen_frontend() {
+          # B 方案(月更 pin+补丁,supersede ADR-020 冻结;owner 2026-07-21 拍板):packages/{app,ui}
+          # 恒等于 `frontend/frontend-pin.lock` 记录的上游 pin + alpha 前端 SOT 补丁
+          # `frontend/alpha-patches/alpha-frontend.patch`。日常 sync 只进引擎;前端前进由月更 bump
+          # workflow 升 pin。每次 sync 合并后把 app/ui **还原为 pin+补丁态**(而非旧冻结基):不再丢
+          # 弃上游前端(pin 就是近期上游)、也不再擦 alpha seam(补丁是唯一 SOT,改 seam=改补丁)。
+          # 补丁 3-way apply 失败 = pin/补丁漂移,loud-fail 阻断整个 sync。seam marker 校验保留。
+          apply_alpha_frontend_delta() {
+            PIN="$(sed -n 's/^pin=\([0-9a-f]\{7,40\}\).*/\1/p' frontend/frontend-pin.lock)"
+            if [ -z "$PIN" ]; then echo "::error::frontend/frontend-pin.lock 缺 pin=<sha>,无法还原前端。Aborting sync."; exit 1; fi
             rm -rf packages/app packages/ui
-            git checkout frontend-freeze-base-3 -- packages/app packages/ui
+            git checkout "$PIN" -- packages/app packages/ui
+            if ! git apply --3way --whitespace=nowarn frontend/alpha-patches/alpha-frontend.patch; then
+              echo "::error::alpha 前端 SOT 补丁在 pin $PIN 上 3-way apply 失败 —— pin 与补丁漂移。需跑月更 bump 重生补丁。Aborting sync."
+              exit 1
+            fi
             if ! grep -q "AppSurfaces" packages/app/src/app.tsx; then
-              echo "::error::ADR-027 seam marker (AppSurfaces) missing after freeze restore — frontend-freeze-base-3 does not contain the typed surface seam. Aborting sync."
+              echo "::error::ADR-027/ADR-033 seam marker (AppSurfaces) missing after applying alpha frontend delta — pin/SOT drift. Aborting sync."
               exit 1
             fi
             if ! grep -qF '"./surface/session": "./src/pages/session.tsx"' packages/app/package.json; then
-              echo "::error::REQ-088 C1 marker (./surface/session narrow export) missing after freeze restore — frontend-freeze-base-3 does not contain the legalized session-leaf channel. Aborting sync."
+              echo "::error::REQ-088 C1 marker (./surface/session narrow export) missing after applying alpha frontend delta — pin/SOT drift. Aborting sync."
               exit 1
             fi
             git add packages/app packages/ui
             if ! git diff --cached --quiet -- packages/app packages/ui; then
-              git commit -m "chore(freeze): restore frozen frontend after sync (ADR-020/ADR-027)"
+              git commit -m "chore(frontend): re-apply alpha frontend delta on pinned upstream after sync (B: pin+patch)"
             fi
           }
           if git merge --no-edit --no-ff dev -m "chore(sync): merge upstream dev into alpha"; then
-            restore_frozen_frontend
+            apply_alpha_frontend_delta
             git push --no-verify origin alpha
             exit 0
           fi
@@ -124,19 +131,21 @@ jobs:
               echo "Resolving expected bun.lock conflict by regenerating the lockfile."
               git checkout --theirs -- bun.lock
             fi
-            # 冻结路径冲突:直接还原冻结基。不能用 `checkout --ours`——上游在 app/ui 下**新增**
-            # 的文件是 add/add 冲突、没有 ours 版本,--ours 报错跳过后,残留冲突标记的
-            # package.json 会令后续 bun install 直接失败(2026-07-07 run 28847116400 实锤)。
+            # app/ui 路径冲突(B:pin+补丁):不能用 `checkout --ours`——上游在 app/ui 下**新增**的
+            # 文件是 add/add 冲突、没有 ours 版本,--ours 报错跳过后残留冲突标记的 package.json 会令
+            # 后续 bun install 直接失败(2026-07-07 run 28847116400 实锤)。改为直接取 pin 的 app/ui
+            # 解冲突,SOT 补丁由下方 apply_alpha_frontend_delta 统一重贴。
             if echo "$conflicts" | grep -qE '^packages/(app|ui)/'; then
-              echo "Resolving frozen-frontend conflicts (ADR-020): restoring freeze base directly."
+              echo "Resolving app/ui conflicts (B: pin+patch): checking out pinned upstream app/ui; SOT patch re-applied below."
+              PIN_RES="$(sed -n 's/^pin=\([0-9a-f]\{7,40\}\).*/\1/p' frontend/frontend-pin.lock)"
               git rm -rf -q --ignore-unmatch -- packages/app packages/ui
-              git checkout frontend-freeze-base -- packages/app packages/ui
+              git checkout "$PIN_RES" -- packages/app packages/ui
               git add packages/app packages/ui
             fi
             bun install
             git add -A
             git commit --no-edit
-            restore_frozen_frontend
+            apply_alpha_frontend_delta
             git push --no-verify origin alpha
           else
             echo "::error::Unexpected merge conflicts — the only-add discipline was broken:"

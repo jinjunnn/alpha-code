@@ -25,11 +25,11 @@ import { COMPOSER_PLACEHOLDER, COMPOSER_PLACEHOLDER_UPSTREAM_LITERAL } from "../
 // Per-locale [from, to] pairs. `from` must be an exact substring of the upstream source.
 // Keyed by the locale dict path so we only ever touch the intended file.
 const REPLACEMENTS: Record<string, ReadonlyArray<readonly [string, string]>> = {
-  // In-session composer placeholder is a HARDCODED literal (not i18n) in upstream
-  // prompt-input.tsx:designPlaceholder(). Rewrite it to the SAME text the alpha home composer
-  // uses — ONE constant serves both surfaces (src/shared/composer-copy.ts, REQ-038 目标⑥).
-  // Zero disk edit (ADR-005/007).
-  "app/src/components/prompt-input.tsx": [
+  // In-session composer placeholder is a HARDCODED literal (not i18n). The 849c2598 frontend pin
+  // moved it out of prompt-input.tsx into prompt-input/placeholder.ts:promptDesignPlaceholder().
+  // Rewrite it to the SAME text the alpha home composer uses — ONE constant serves both surfaces
+  // (src/shared/composer-copy.ts, REQ-038 目标⑥). Zero disk edit (ADR-005/007).
+  "app/src/components/prompt-input/placeholder.ts": [
     [COMPOSER_PLACEHOLDER_UPSTREAM_LITERAL, JSON.stringify(COMPOSER_PLACEHOLDER)],
   ],
   // Crash screen (C28): rewrite the OpenCode-branded feedback link + Discord icon in the

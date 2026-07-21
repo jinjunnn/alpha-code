@@ -153,6 +153,7 @@ describe("Settings typed adapter", () => {
     if (!seeded.ok) return
     expect(seeded.value.general.newLayoutDesigns).toBe(true)
     expect(seeded.value.general.showCustomAgents).toBe(true)
+    expect(seeded.value.general.mobileTitlebarPosition).toBe("top")
     expect(seeded.value.appearance.fontSize).toBe(14)
   })
 
@@ -171,6 +172,18 @@ describe("Settings typed adapter", () => {
       ok: false,
       code: "invalid-input",
     })
+    expect(
+      adapter.validate({
+        ...settings(),
+        general: {
+          ...settings().general,
+          mobileTitlebarPosition: "bottom",
+          layoutTransitionEligible: true,
+          newInterfaceNoticeDismissed: true,
+          shouldDisplayTabsToast: false,
+        },
+      }),
+    ).toEqual({ ok: true })
   })
 
   test("save is durable before success and a child process reopens the authoritative value", () => {

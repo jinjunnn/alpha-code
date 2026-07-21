@@ -255,18 +255,45 @@ function decodeGeneral(value: unknown, allowMissing: boolean): AlphaSettings["ge
     "editToolPartsExpanded",
     "showSessionProgressBar",
     "showCustomAgents",
+    "mobileTitlebarPosition",
     "newLayoutDesigns",
+    "layoutTransitionEligible",
+    "newInterfaceNoticeDismissed",
+    "shouldDisplayTabsToast",
   ]
   if (!source || !keysAllowed(source, keys)) return
   const booleans = decodeBooleans(
     source,
-    keys.filter((key) => key !== "followup" && key !== "newLayoutDesigns"),
+    keys.filter(
+      (key) =>
+        key !== "followup" &&
+        key !== "mobileTitlebarPosition" &&
+        key !== "newLayoutDesigns" &&
+        key !== "layoutTransitionEligible" &&
+        key !== "newInterfaceNoticeDismissed" &&
+        key !== "shouldDisplayTabsToast",
+    ),
     ALPHA_SETTINGS_DEFAULTS.general,
     allowMissing,
   )
   const followup = stringValue(source, "followup", ALPHA_SETTINGS_DEFAULTS.general.followup, allowMissing)
+  const mobileTitlebarPosition = stringValue(
+    source,
+    "mobileTitlebarPosition",
+    ALPHA_SETTINGS_DEFAULTS.general.mobileTitlebarPosition,
+    allowMissing,
+  )
   if (!booleans || followup === INVALID || (followup !== "queue" && followup !== "steer")) return
+  if (
+    mobileTitlebarPosition === INVALID ||
+    (mobileTitlebarPosition !== "top" && mobileTitlebarPosition !== "bottom")
+  )
+    return
   if (source.newLayoutDesigns !== undefined && typeof source.newLayoutDesigns !== "boolean") return
+  if (source.layoutTransitionEligible !== undefined && typeof source.layoutTransitionEligible !== "boolean") return
+  if (source.newInterfaceNoticeDismissed !== undefined && typeof source.newInterfaceNoticeDismissed !== "boolean")
+    return
+  if (source.shouldDisplayTabsToast !== undefined && typeof source.shouldDisplayTabsToast !== "boolean") return
   return {
     autoSave: booleans.autoSave,
     releaseNotes: booleans.releaseNotes,
@@ -281,7 +308,17 @@ function decodeGeneral(value: unknown, allowMissing: boolean): AlphaSettings["ge
     editToolPartsExpanded: booleans.editToolPartsExpanded,
     showSessionProgressBar: booleans.showSessionProgressBar,
     showCustomAgents: booleans.showCustomAgents,
+    mobileTitlebarPosition,
     ...(typeof source.newLayoutDesigns === "boolean" ? { newLayoutDesigns: source.newLayoutDesigns } : {}),
+    ...(typeof source.layoutTransitionEligible === "boolean"
+      ? { layoutTransitionEligible: source.layoutTransitionEligible }
+      : {}),
+    ...(typeof source.newInterfaceNoticeDismissed === "boolean"
+      ? { newInterfaceNoticeDismissed: source.newInterfaceNoticeDismissed }
+      : {}),
+    ...(typeof source.shouldDisplayTabsToast === "boolean"
+      ? { shouldDisplayTabsToast: source.shouldDisplayTabsToast }
+      : {}),
   }
 }
 

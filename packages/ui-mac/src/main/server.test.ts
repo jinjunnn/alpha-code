@@ -38,7 +38,9 @@ mock.module("electron", () => ({
 }))
 mock.module("./logging", () => ({ getLogger: () => undefined, write: () => {}, rotateServerLogs: () => {} }))
 mock.module("./store", () => ({ getStore: () => ({ get: () => null, set: () => {}, delete: () => {} }) }))
-mock.module("./alpha-secret-files", () => ({ syncSecretFiles: () => ({ written: [], removed: [] }) }))
+// 不 mock ./alpha-secret-files:真 syncSecretFiles 对 test 的临时 userDataPath 是 temp-scoped(写
+// <tempdir>/alpha-secrets,无 ALPHA 密钥环境变量时 no-op,afterEach 清理)。全局 mock.module 会跨文件
+// 泄漏残缺导出面,撞坏 alpha-secret-files.test.ts 的 `import { secretFileRef, ... }`(2026-07-21 Linux CI 实锤)。
 
 const { spawnLocalServer } = await import("./server")
 

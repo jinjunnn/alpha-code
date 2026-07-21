@@ -1,12 +1,11 @@
 /* Alpha polish for opencode's v2 composer surface — CSS only, via stable data-component hooks.
  * The FULL alpha composer rebuild (usage ring, effort, premium toolbar, model selector) is Phase 1;
  * this interim pass lifts the existing v2 composer to alpha depth/edges so it stops reading "v2-gray".
- * COUPLING (cosmetic; re-point on upstream rename): session-composer / session-new-composer. */
+ * COUPLING (cosmetic; re-point on upstream rename): prompt-input-v2. */
 @import "./tokens.css";
 @import "./composer-shell.css"; /* shell visuals shared with the home composer (REQ-038 目标④) */
 
-[data-component="session-composer"],
-[data-component="session-new-composer"] {
+[data-component="prompt-input-v2"] {
   /* Shell visuals (bg/border/radius/shadow/focus) come from composer-shell.css — the single source
    * shared with AlphaHome's .a-comp. Session-only layout below:
    * Cap the docked composer to the SAME reading-measure column as the conversation content
@@ -79,15 +78,13 @@
 }
 
 /* +/attach icon buttons → soft alpha hover (never the send button). */
-[data-component="session-composer"] [data-slot="icon-button"]:not([data-action="prompt-submit"]):hover,
-[data-component="session-new-composer"] [data-slot="icon-button"]:not([data-action="prompt-submit"]):hover {
+[data-component="prompt-input-v2"] [data-slot="icon-button"]:not([data-action="prompt-submit"]):hover {
   background: var(--a-bg-muted) !important;
   border-radius: var(--a-radius-md) !important;
 }
 
 /* Model chip → soft alpha hover + rounded. */
-[data-component="session-composer"] [data-slot="button"]:hover,
-[data-component="session-new-composer"] [data-slot="button"]:hover {
+[data-component="prompt-input-v2"] [data-slot="button"]:hover {
   background: var(--a-bg-muted) !important;
   border-radius: var(--a-radius-md) !important;
 }
@@ -128,8 +125,7 @@
 /* Hide opencode's native "+" attach button — the alpha AddButton (same + menu as home) is injected in
  * its place so the "+" interaction is identical on both surfaces (#31). file.attach still works via
  * the menu's 文件与文件夹 (command, not the button). order:0 keeps the injected add at the far left. */
-[data-component="session-composer"] [data-action="prompt-attach"],
-[data-component="session-new-composer"] [data-action="prompt-attach"] {
+[data-component="prompt-input-v2"] [data-action="prompt-attach"] {
   display: none !important;
 }
 [data-alpha-composer-inject="add"] {
@@ -141,8 +137,7 @@
  * effort TWICE: native "High" (capitalize of "high") + alpha "高" — the double-effort bug the user
  * kept hitting. COUPLING (cosmetic): [data-component=prompt-variant-control] = opencode's effort select;
  * re-point on upstream rename. The alpha EffortChip remains the single effort control. */
-[data-component="session-composer"] [data-component="prompt-variant-control"],
-[data-component="session-new-composer"] [data-component="prompt-variant-control"] {
+[data-component="prompt-input-v2"] [data-component="prompt-variant-control"] {
   display: none !important;
 }
 
@@ -153,8 +148,7 @@
  * 1), the model wrapper floats right (order 2 + margin-left:auto), effort follows it (order 3); the
  * native send button sits outside the left-group on the far right already.
  * COUPLING (cosmetic): prompt-model action + the left-group being flex; re-point on upstream rename. */
-[data-component="session-composer"] :has(> [data-action="prompt-model"]),
-[data-component="session-new-composer"] :has(> [data-action="prompt-model"]) {
+[data-component="prompt-input-v2"] :has(> [data-action="prompt-model"]) {
   /* No margin-left:auto here — the usage host (order 2) owns the single auto-margin so the right
    * cluster [usage · model · effort] stays together with no gap between the ring and the model. */
   order: 3 !important;

@@ -55,10 +55,10 @@ describe("R2 chrome 全部 alpha 命名空间(不与上游锚点同名)", () => 
   })
 
   test("上游锚点名(REQ-012 manifest 内外)零出现 —— takeover/anchor-audit 不会误收 chrome", () => {
-    // T6 审计 §2 逐 takeover 依赖的选择器面:manifest 内(session-composer 等)+ manifest 外补钉。
+    // T6 审计 §2 逐 takeover 依赖的选择器面:manifest 内(prompt-input-v2 等)+ manifest 外补钉。
     const upstreamAnchorTokens = [
-      "session-composer",
-      "session-new-composer",
+      "session-prompt-dock",
+      "prompt-input-v2",
       "progress-circle",
       "a-chip-model",
       "terminal-panel",

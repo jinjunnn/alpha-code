@@ -10,8 +10,8 @@
 //   ③ 同 document 前提:adapter 模式经 `@opencode-ai/app/surface/session` 窄导出在
 //      同一 document 内渲染上游叶(无 iframe)—— ②的选择器/事件才可达。
 // 另补钉 takeover 依赖、但 REQ-012 锚点契约(upstream-anchors.json)覆盖不到的上游锚点:
-//   - `session-composer` 以三元字面量渲染,anchor-audit 字面量匹配不到 → 落在 knownDead
-//     (假死,REQ-005 基线审计 §0.1)——即上游改名不会红任何测试。此处直接钉渲染点。
+//   - session composer 现在由 app 的 `session-prompt-dock` 包住 session-ui 的
+//     `prompt-input-v2`。此处直接钉两段渲染链与 takeover 的组合选择器。
 //   - data-key / data-selected / data-slash-id / data-message-id / data-timeline-part-id /
 //     data-kind / id="review-panel" 等不在 data-component|slot|action 命名空间。
 // packages/app|ui 锚点仍以源码契约断言；REQ-090 picker owner 的唯一挂载由组件测试真实渲染
@@ -31,6 +31,7 @@ const REPO = path.resolve(RENDERER, "..", "..", "..", "..")
 const read = (p: string) => fs.readFileSync(p, "utf8")
 const app = (p: string) => read(path.join(REPO, "packages/app/src", p))
 const ui = (p: string) => read(path.join(REPO, "packages/ui/src", p))
+const sessionUi = (p: string) => read(path.join(REPO, "packages/session-ui/src", p))
 
 const composerTakeover = read(path.join(ALPHA_UI, "composer-takeover.tsx"))
 const timelineInject = read(path.join(ALPHA_UI, "timeline-inject.tsx"))
@@ -108,17 +109,21 @@ describe("T6 ③同 document 前提:窄导出消费者不得引入 iframe/独立
   })
 })
 
-describe("T6 ②a ComposerTakeover 锚点(REQ-012 manifest 假死缺口在此补钉)", () => {
-  test("选择器 [data-component=session-composer] ↔ 上游三元渲染点(prompt-input.tsx;改名此处必红)", () => {
-    // session-composer 在 upstream-anchors.json 里是 knownDead(假死:三元字面量匹配不到,
-    // REQ-005 基线 §0.1)——锚点契约测试对它改名不设防。这里直接钉住渲染表达式。
-    expect(app("components/prompt-input.tsx")).toContain(
-      `data-component={newSession() ? "session-new-composer" : "session-composer"}`,
+describe("T6 ②a ComposerTakeover 锚点(REQ-012 跨 app/session-ui 渲染链补钉)", () => {
+  test("组合选择器 ↔ session-prompt-dock 内的 prompt-input-v2(任一改名此处必红)", () => {
+    expect(app("pages/session/composer/session-composer-region.tsx")).toContain(
+      `data-component="session-prompt-dock"`,
+    )
+    expect(sessionUi("v2/components/prompt-input/index.tsx")).toContain(`data-component="prompt-input-v2"`)
+    expect(composerTakeover).toContain(
+      `const COMPOSER_SEL = '[data-component="session-prompt-dock"] [data-component="prompt-input-v2"]'`,
     )
   })
 
-  test("隐性前置:composer 锚点只在 newLayoutDesigns 分支渲染 + alpha 主进程种子恒 true", () => {
-    expect(app("components/prompt-input.tsx")).toContain("<Match when={props.controls.newLayoutDesigns}>")
+  test("隐性前置:session 页 newLayoutDesigns 分支渲染 PromptInputV2Composer + alpha 主进程种子恒 true", () => {
+    const session = app("pages/session.tsx")
+    expect(session).toContain("when={newSessionDesign()}")
+    expect(session).toContain("<PromptInputV2Composer")
     expect(read(path.join(REPO, "packages/ui-mac/src/main/alpha-defaults.ts"))).toContain(
       "general.newLayoutDesigns = true",
     )
@@ -128,10 +133,12 @@ describe("T6 ②a ComposerTakeover 锚点(REQ-012 manifest 假死缺口在此补
     expect(composerTakeover).toContain(`document.body.setAttribute("data-alpha-composer-takeover", "")`)
     expect(composerTakeover).toContain(`document.body.removeAttribute("data-alpha-composer-takeover")`)
     const css = read(path.join(ALPHA_UI, "alpha-composer.css"))
-    expect(css).toContain(`body[data-alpha-composer-takeover] [data-component="session-composer"]`)
+    expect(css).toContain(
+      `body[data-alpha-composer-takeover] [data-component="session-prompt-dock"] [data-component="prompt-input-v2"]`,
+    )
     // 隐藏而非移除:上游 composer 的状态/命令注册面必须保持存活(取代它的是视觉,不是生命周期)。
     expect(css).toMatch(
-      /body\[data-alpha-composer-takeover\] \[data-component="session-composer"\] \{\s*display: none !important;/,
+      /body\[data-alpha-composer-takeover\] \[data-component="session-prompt-dock"\] \[data-component="prompt-input-v2"\] \{\s*display: none !important;/,
     )
   })
 
@@ -215,7 +222,7 @@ describe("T6 ②c TimelineInject 锚点(REQ-012 manifest 命名空间外的补�
 
   test("消息身份锚点 data-message-id / data-timeline-part-id 仍由上游渲染(cmd chip 持久化的 key)", () => {
     expect(app("pages/session/timeline/message-timeline.tsx")).toContain("data-message-id={input.row().userMessageID}")
-    const messagePart = ui("components/message-part.tsx")
+    const messagePart = sessionUi("components/message-part.tsx")
     expect(messagePart).toContain(`data-component="user-message" data-timeline-part-id={textPart()?.id}`)
   })
 
@@ -225,7 +232,7 @@ describe("T6 ②c TimelineInject 锚点(REQ-012 manifest 命名空间外的补�
   })
 
   test("错误卡去重锚点 data-kind=tool-error-card 仍由上游渲染", () => {
-    expect(ui("components/tool-error-card.tsx")).toContain(`data-kind="tool-error-card"`)
+    expect(sessionUi("components/tool-error-card.tsx")).toContain(`data-kind="tool-error-card"`)
   })
 
   // 目录网格 <entries> 格式锁已随 #252 摘除(decorateDirOutput 死路径已删,无耦合可锁)。

@@ -484,7 +484,7 @@ export function AlphaSettings(props: { open: boolean; onClose: () => void; api?:
                     <For each={GENERAL_TOGGLES}>
                       {(item) => (
                         <ToggleRow
-                          checked={current().general[item.key]}
+                          checked={current().general[item.key] ?? ALPHA_SETTINGS_DEFAULTS.general[item.key] ?? false}
                           label={item.label}
                           description={item.description}
                           onChange={(value) => updateGeneral(item.key, value)}

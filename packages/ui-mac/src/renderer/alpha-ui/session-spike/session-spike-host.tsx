@@ -45,7 +45,11 @@ function sessionRouteOf(pathname: string) {
 
 function collectSample(pathname: string, commandIds: readonly string[]): SpikeSample {
   const route = sessionRouteOf(pathname)
-  const composers = [...document.querySelectorAll<HTMLElement>("[data-component=session-composer]")]
+  const composers = [
+    ...document.querySelectorAll<HTMLElement>(
+      '[data-component="session-prompt-dock"] [data-component="prompt-input-v2"]',
+    ),
+  ]
   return {
     at: Date.now(),
     pathname,
@@ -53,7 +57,7 @@ function collectSample(pathname: string, commandIds: readonly string[]): SpikeSa
     composersTotal: composers.length,
     composersVisible: composers.filter((el) => el.offsetParent !== null).length,
     terminalPanels: document.querySelectorAll("#terminal-panel").length,
-    promptDocks: document.querySelectorAll("[data-component=session-prompt-dock]").length,
+    promptDocks: document.querySelectorAll('[data-component="session-prompt-dock"]').length,
     commandOptions: commandIds.length,
     sessionScopedCommands: countSessionScopedCommands(commandIds),
   }

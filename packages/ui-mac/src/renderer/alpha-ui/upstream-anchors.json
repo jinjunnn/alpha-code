@@ -30,12 +30,14 @@
     "component:markdown",
     "component:markdown-code",
     "component:progress-circle",
+    "component:prompt-input-v2",
     "component:prompt-variant-control",
     "component:provider-icon",
     "component:question-answers",
     "component:radio-group",
     "component:reasoning-part",
     "component:select",
+    "component:session-prompt-dock",
     "component:session-review",
     "component:session-todo-dock",
     "component:session-turn",
@@ -175,8 +177,6 @@
   "knownDead": [
     "action:allow",
     "action:deny",
-    "component:session-composer",
-    "component:session-new-composer",
     "slot:button",
     "slot:icon-button"
   ]

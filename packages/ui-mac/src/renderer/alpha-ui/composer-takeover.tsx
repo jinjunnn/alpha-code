@@ -17,7 +17,7 @@ import { parseRoute } from "../../shared/legacy-route-abi"
 import type { AlphaProjectsApi } from "../sidebar/use-projects"
 import { AlphaComposer } from "./alpha-composer"
 
-const COMPOSER_SEL = "[data-component=session-composer]"
+const COMPOSER_SEL = '[data-component="session-prompt-dock"] [data-component="prompt-input-v2"]'
 
 function parseSessionRoute(pathname: string): { directory: string; sessionID: string } | null {
   const r = parseRoute(pathname)
