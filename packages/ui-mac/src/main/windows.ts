@@ -2,7 +2,7 @@ import windowState from "electron-window-state"
 import { resolveThemeVariant } from "@opencode-ai/ui/theme/resolve"
 import type { DesktopTheme } from "@opencode-ai/ui/theme/types"
 import oc2ThemeJson from "../../../ui/src/theme/themes/oc-2.json"
-import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol, shell } from "electron"
+import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol, shell, type WebContents } from "electron"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import type { TitlebarTheme } from "../preload/types"
@@ -21,6 +21,7 @@ const rendererHost = "renderer"
 const clipboardWritePermission = "clipboard-sanitized-write"
 const notificationPermission = "notifications"
 const rendererPermissions = new Set([clipboardWritePermission, notificationPermission])
+const recoveryWebContents = new WeakSet<WebContents>()
 const oc2Theme = oc2ThemeJson as DesktopTheme
 const oc2Background = {
   light: resolveThemeVariant(oc2Theme.light, false)["background-base"],
@@ -218,15 +219,16 @@ export function createMainWindow() {
   // alpha-code dev verification hook (env-gated, no effect in normal use):
   // ALPHA_SHOT=<png> captures the rendered window after ALPHA_SHOT_DELAY ms then quits.
   if (process.env.ALPHA_SHOT) {
-    setTimeout(async () => {
-      try {
-        const { writeFile } = await import("node:fs/promises")
-        // optional: click the "open project" button so we capture the populated
-        // project view (the picker is short-circuited by ALPHA_OPEN_DIR).
-        if (process.env.ALPHA_OPEN_DIR) {
-          const r = await win.webContents
-            .executeJavaScript(
-              `(()=>{
+    setTimeout(
+      async () => {
+        try {
+          const { writeFile } = await import("node:fs/promises")
+          // optional: click the "open project" button so we capture the populated
+          // project view (the picker is short-circuited by ALPHA_OPEN_DIR).
+          if (process.env.ALPHA_OPEN_DIR) {
+            const r = await win.webContents
+              .executeJavaScript(
+                `(()=>{
                 const all=[...document.querySelectorAll('button,[role=button],a,[data-component]')];
                 let el=all.find(e=>/folder-add/i.test(e.outerHTML||''))
                   || all.find(e=>/打开项目|添加项目|open\\s*project/i.test(e.textContent||''));
@@ -234,59 +236,112 @@ export function createMainWindow() {
                 if(el){el.click(); return 'clicked '+el.tagName+' "'+(el.textContent||'').trim().slice(0,16)+'"';}
                 return 'notfound';
               })()`,
-            )
-            .catch((e) => "err:" + e.message)
-          console.log("[alpha-open] folder-add:", JSON.stringify(r))
-          await new Promise((res) => setTimeout(res, 5000))
-          // then start a new session to land on the chat composer
-          const r2 = await win.webContents
-            .executeJavaScript(
-              `(()=>{const b=[...document.querySelectorAll('button,[role=button],a')].find(e=>/新建会话|new\\s*session/i.test(e.textContent||''));if(b){b.click();return 'clicked '+(e=>e.textContent.trim().slice(0,12))(b)}return 'no-new-session'})()`,
-            )
-            .catch((e) => "err:" + e.message)
-          console.log("[alpha-open] new-session:", JSON.stringify(r2))
-          await new Promise((res) => setTimeout(res, 5000))
+              )
+              .catch((e) => "err:" + e.message)
+            console.log("[alpha-open] folder-add:", JSON.stringify(r))
+            await new Promise((res) => setTimeout(res, 5000))
+            // then start a new session to land on the chat composer
+            const r2 = await win.webContents
+              .executeJavaScript(
+                `(()=>{const b=[...document.querySelectorAll('button,[role=button],a')].find(e=>/新建会话|new\\s*session/i.test(e.textContent||''));if(b){b.click();return 'clicked '+(e=>e.textContent.trim().slice(0,12))(b)}return 'no-new-session'})()`,
+              )
+              .catch((e) => "err:" + e.message)
+            console.log("[alpha-open] new-session:", JSON.stringify(r2))
+            await new Promise((res) => setTimeout(res, 5000))
+          }
+          // optional: click a button by visible text before capture (e.g. open the Extension Hub),
+          // so we can screenshot a surface that needs one interaction. Env-gated, no normal effect.
+          if (process.env.ALPHA_SHOT_CLICK) {
+            const want = process.env.ALPHA_SHOT_CLICK
+            const clicked = await win.webContents
+              .executeJavaScript(
+                `(()=>{const want=${JSON.stringify(want)};` +
+                  `const el=[...document.querySelectorAll('button,[role=button],a')]` +
+                  `.find(e=>((e.textContent||'').includes(want)));` +
+                  `if(el){el.click();return 'clicked:'+want}return 'notfound:'+want})()`,
+              )
+              .catch((e) => "err:" + e.message)
+            console.log("[alpha-shot] click:", JSON.stringify(clicked))
+            await new Promise((res) => setTimeout(res, 1800))
+          }
+          // optional: force the color scheme (light|dark) before capture, so dev verification can
+          // shoot both modes deterministically without toggling the OS appearance. alpha-ui tokens
+          // and opencode's CSS both key off documentElement[data-color-scheme]. Env-gated, no normal effect.
+          if (process.env.ALPHA_SHOT_SCHEME) {
+            await win.webContents
+              .executeJavaScript(
+                `document.documentElement.dataset.colorScheme=${JSON.stringify(process.env.ALPHA_SHOT_SCHEME)};` +
+                  `getComputedStyle(document.documentElement).getPropertyValue('--a-bg-subtle');`,
+              )
+              .catch((e) => "err:" + e.message)
+            await new Promise((res) => setTimeout(res, 700))
+          }
+          const img = await win.webContents.capturePage()
+          await writeFile(process.env.ALPHA_SHOT as string, img.toPNG())
+          console.log("[alpha-shot]", process.env.ALPHA_SHOT, JSON.stringify(img.getSize()))
+        } catch (e) {
+          console.error("[alpha-shot] failed", e)
+        } finally {
+          const { app } = await import("electron")
+          app.exit(0)
         }
-        // optional: click a button by visible text before capture (e.g. open the Extension Hub),
-        // so we can screenshot a surface that needs one interaction. Env-gated, no normal effect.
-        if (process.env.ALPHA_SHOT_CLICK) {
-          const want = process.env.ALPHA_SHOT_CLICK
-          const clicked = await win.webContents
-            .executeJavaScript(
-              `(()=>{const want=${JSON.stringify(want)};` +
-                `const el=[...document.querySelectorAll('button,[role=button],a')]` +
-                `.find(e=>((e.textContent||'').includes(want)));` +
-                `if(el){el.click();return 'clicked:'+want}return 'notfound:'+want})()`,
-            )
-            .catch((e) => "err:" + e.message)
-          console.log("[alpha-shot] click:", JSON.stringify(clicked))
-          await new Promise((res) => setTimeout(res, 1800))
-        }
-        // optional: force the color scheme (light|dark) before capture, so dev verification can
-        // shoot both modes deterministically without toggling the OS appearance. alpha-ui tokens
-        // and opencode's CSS both key off documentElement[data-color-scheme]. Env-gated, no normal effect.
-        if (process.env.ALPHA_SHOT_SCHEME) {
-          await win.webContents
-            .executeJavaScript(
-              `document.documentElement.dataset.colorScheme=${JSON.stringify(process.env.ALPHA_SHOT_SCHEME)};` +
-                `getComputedStyle(document.documentElement).getPropertyValue('--a-bg-subtle');`,
-            )
-            .catch((e) => "err:" + e.message)
-          await new Promise((res) => setTimeout(res, 700))
-        }
-        const img = await win.webContents.capturePage()
-        await writeFile(process.env.ALPHA_SHOT as string, img.toPNG())
-        console.log("[alpha-shot]", process.env.ALPHA_SHOT, JSON.stringify(img.getSize()))
-      } catch (e) {
-        console.error("[alpha-shot] failed", e)
-      } finally {
-        const { app } = await import("electron")
-        app.exit(0)
-      }
-    }, Number(process.env.ALPHA_SHOT_DELAY ?? 18000))
+      },
+      Number(process.env.ALPHA_SHOT_DELAY ?? 18000),
+    )
   }
 
   return win
+}
+
+export type RecoveryWindowFatalReason = "renderer-load-failed" | "preload-failed" | "renderer-process-gone"
+
+/** REQ-090 boot Recovery host. It is created before the product window and exposes only preload IPC. */
+export function createRecoveryWindow(onFatal: (reason: RecoveryWindowFatalReason) => void) {
+  const win = new BrowserWindow({
+    width: 720,
+    height: 610,
+    minWidth: 420,
+    minHeight: 520,
+    show: false,
+    closable: false,
+    minimizable: false,
+    maximizable: false,
+    autoHideMenuBar: true,
+    title: "alpha-code · Recovery",
+    icon: iconPath(),
+    backgroundColor: defaultBackgroundColor(),
+    ...(process.platform === "darwin" ? { titleBarStyle: "hidden" as const } : {}),
+    webPreferences: {
+      preload: join(root, "../preload/recovery.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webviewTag: false,
+    },
+  })
+
+  recoveryWebContents.add(win.webContents)
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" as const }))
+  win.webContents.on("will-navigate", (event, url) => {
+    if (isRendererUrl(url)) return
+    event.preventDefault()
+  })
+  win.webContents.on("did-fail-load", (_event, code, _description, _url, mainFrame) => {
+    if (!mainFrame || code === -3) return
+    onFatal("renderer-load-failed")
+  })
+  win.webContents.on("preload-error", () => onFatal("preload-failed"))
+  win.webContents.on("render-process-gone", () => onFatal("renderer-process-gone"))
+  win.once("ready-to-show", () => win.show())
+  return win
+}
+
+export function loadRecoveryWindow(win: BrowserWindow) {
+  loadWindow(win, "recovery.html")
+}
+
+export function isRecoveryWebContents(webContents: WebContents) {
+  return recoveryWebContents.has(webContents)
 }
 
 export function registerRendererProtocol() {

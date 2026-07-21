@@ -3,19 +3,16 @@
 //   env override  >  userData pin 文件  >  发布默认(shared/alpha-surfaces.ts)
 //   ALPHA_SURFACE_*    <userData>/alpha-surfaces.json
 //
-// 逐 surface 解析出生效模式;凡会产出 alpha 的态("alpha" 与 "auto-fallback",不论 env/pin/发布
-// 默认)都叠一层崩溃记录(#334 fail-safe):本 app 版本记录过致命渲染错误 → legacy(crash-fallback),
-// 旧版本的记录视为陈旧忽略(版本升级即自然失效;手动重置 = 删本文件的 failure 条目)。解析只在
-// 加载时进行 —— 运行中绝不热切换,任何改动下次 reload 才体现。
+// 逐 surface 解析出生效模式。REQ-090 裁决 C 后，崩溃记录只作脱敏诊断事实，绝不改变 composition
+// 或把 Alpha surface 降到 legacy。解析只在加载时进行，运行中不热切换。
 // 失败上报(alpha-surface-failure)落盘同一 JSON:原子写(同目录 tmp + fsync + rename,
-// ext-atomic-fs 原语)且 fail-closed —— 写入失败如实抛错(IPC reject),renderer 的 reload 门控
-// 只在确认落盘后放行(#334 r1:没有落盘记录就 reload = 回到同一个坏 alpha,crash-loop)。
-// 错误文本截断 500 字符并剥离绝对路径样式片段(userData 内容可能进日志导出包,不落用户路径)。
+// ext-atomic-fs 原语)且 fail-closed；写入失败由 Recovery adapter 映射为可重试的安全动作。
+// Renderer 不上传原始错误文本；诊断记录只落稳定码，路径/secret 不进入 IPC 或状态文件。
 // 文件损坏/不可读 → 按空处理(留一行日志)。
 
 import { app, ipcMain } from "electron"
-import * as fs from "node:fs"
-import * as path from "node:path"
+import { existsSync, readFileSync } from "node:fs"
+import { join } from "node:path"
 import { writeFileAtomicSync } from "./ext-atomic-fs"
 import {
   SURFACE_RELEASE_STATES,
@@ -25,31 +22,29 @@ import {
   type SurfaceReleaseState,
 } from "../shared/alpha-surfaces"
 import { getLogger } from "./logging"
+import { RECOVERY_CODES } from "../shared/recovery"
+import type { RecoveryService, SurfaceRecoveryRequest } from "./recovery-service"
 
 const SURFACE_IDS = ["home", "newSession", "session"] as const
-const RELEASE_STATES: readonly SurfaceReleaseState[] = ["alpha", "legacy", "auto-fallback"]
+const RELEASE_STATES: readonly SurfaceReleaseState[] = ["alpha", "legacy"]
 const ENV_KEYS: Record<SurfaceId, string> = {
   home: "ALPHA_SURFACE_HOME",
   newSession: "ALPHA_SURFACE_NEW_SESSION",
   session: "ALPHA_SURFACE_SESSION",
 }
 const FILE = "alpha-surfaces.json"
-/** 错误文本上限 —— 只为 fallback 判定与排障留因,不是完整报错落盘通道。 */
-const MAX_ERROR_CHARS = 500
-/** 绝对路径样式片段(win 盘符前缀 / macOS-linux 家目录路径)—— 持久化前剥离。 */
-const PATH_LIKE = /[A-Za-z]:\\|\/(Users|home)\/[^\s"']+/g
-
 export type SurfaceFailure = { at: string; appVersion: string; error: string }
 export type SurfaceFile = {
   pins?: Partial<Record<SurfaceId, SurfaceReleaseState>>
   failures?: Partial<Record<SurfaceId, SurfaceFailure>>
 }
 
-const isSurfaceId = (v: unknown): v is SurfaceId => typeof v === "string" && (SURFACE_IDS as readonly string[]).includes(v)
+const isSurfaceId = (v: unknown): v is SurfaceId =>
+  typeof v === "string" && (SURFACE_IDS as readonly string[]).includes(v)
 const isReleaseState = (v: unknown): v is SurfaceReleaseState =>
   typeof v === "string" && (RELEASE_STATES as readonly string[]).includes(v)
 
-const surfaceFilePath = (userDataPath: string) => path.join(userDataPath, FILE)
+const surfaceFilePath = (userDataPath: string) => join(userDataPath, FILE)
 
 // getLogger() 在单测(未 initLogging)下为 undefined —— 静默跳过,日志非契约。
 const log = (level: "info" | "warn", message: string) => getLogger()?.[level](message)
@@ -58,9 +53,9 @@ const log = (level: "info" | "warn", message: string) => getLogger()?.[level](me
  *  文件缺失 → 空;存在但损坏/不可读 → 空 + 一行日志(不含路径)。 */
 export function readSurfaceFile(userDataPath: string): SurfaceFile {
   const file = surfaceFilePath(userDataPath)
-  if (!fs.existsSync(file)) return {}
+  if (!existsSync(file)) return {}
   try {
-    const raw = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>
+    const raw = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>
     const out: SurfaceFile = {}
     const pins = raw.pins as Record<string, unknown> | undefined
     const failures = raw.failures as Record<string, unknown> | undefined
@@ -79,9 +74,8 @@ export function readSurfaceFile(userDataPath: string): SurfaceFile {
   }
 }
 
-/** 纯解析(可测:env / 文件内容 / app 版本全部注入)。每 surface:env > pin > 发布默认 定态;
- *  凡会产出 alpha 的态("alpha" 与 "auto-fallback")都查崩溃记录 —— 仅当记录的 appVersion 等于
- *  当前版本才降级(旧版本记录陈旧忽略)。#334:硬 alpha 不豁免,否则 fatal 后无 legacy 兜底 → crash-loop。 */
+/** 纯解析(可测:env / 文件内容 / app 版本全部注入)。每 surface:env > pin > 发布默认定态。
+ *  file 中的 failure 记录不参与 composition；Alpha 崩溃必须留在 Alpha Recovery surface。 */
 export function resolveSurfaces(opts: {
   env: Record<string, string | undefined>
   file: SurfaceFile
@@ -102,33 +96,24 @@ export function resolveSurfaces(opts: {
       reason = "release-default"
     }
     if (state === "legacy") return { mode: "legacy", reason }
-    // alpha 与 auto-fallback 同受崩溃记录约束(#334 fail-safe):本版本记录过致命渲染错误 → legacy;
-    // 否则照常上 alpha。硬 alpha(env/pin/发布默认)不豁免 —— 豁免即 crash-loop。
-    const failure = opts.file.failures?.[id]
-    if (failure && failure.appVersion === opts.appVersion) return { mode: "legacy", reason: "crash-fallback" }
     return { mode: "alpha", reason }
   }
   return { home: resolve("home"), newSession: resolve("newSession"), session: resolve("session") }
 }
 
-/** 记录一次 Alpha surface 的致命渲染错误(下次加载凡会产出 alpha 的态据此降 legacy)。
- *  未知 surface id 直接拒绝(throw → IPC promise reject);错误文本先剥路径再截 500。
+/** 记录一次 Alpha surface 的致命渲染错误(仅作脱敏诊断，不参与 composition)。
+ *  未知 surface id 直接拒绝(throw → IPC promise reject)；只落稳定码，不接收 renderer 错误文本。
  *  #334 r1:写入走 writeFileAtomicSync(同目录 tmp + fsync + rename——覆盖中断不会留半截文件)
- *  且 fail-closed:落盘失败同样 throw(重抛干净错误,不带文件路径)—— 绝不伪装成功,renderer
- *  的 reload 门控依赖本函数成功返回。 */
-export function recordSurfaceFailure(
-  userDataPath: string,
-  appVersion: string,
-  payload: { surface: SurfaceId; error: string },
-): void {
+ *  且 fail-closed:落盘失败同样 throw(重抛干净错误,不带文件路径)，由 Recovery 呈现保存失败动作。 */
+export function recordSurfaceFailure(userDataPath: string, appVersion: string, payload: { surface: SurfaceId }): void {
   if (!payload || !isSurfaceId(payload.surface)) throw new Error("alpha-surfaces: unknown surface id")
-  const error = String(payload.error ?? "")
-    .replace(PATH_LIKE, "")
-    .slice(0, MAX_ERROR_CHARS)
   const current = readSurfaceFile(userDataPath)
   const next: SurfaceFile = {
     ...current,
-    failures: { ...current.failures, [payload.surface]: { at: new Date().toISOString(), appVersion, error } },
+    failures: {
+      ...current.failures,
+      [payload.surface]: { at: new Date().toISOString(), appVersion, error: RECOVERY_CODES.surfaceCrashed },
+    },
   }
   try {
     writeFileAtomicSync(surfaceFilePath(userDataPath), JSON.stringify(next), { mode: 0o600 })
@@ -140,9 +125,13 @@ export function recordSurfaceFailure(
 
 /** 注册 surface IPC(index.ts 与其他 register*IpcHandlers 同点调用)。resolve 每次 invoke 现读
  *  文件 —— renderer 每次加载恰好取一次,天然满足「改动 reload 才生效」。 */
-export function registerSurfaceIpc(userDataPath: string) {
+export function registerSurfaceIpc(userDataPath: string, recovery: RecoveryService) {
   ipcMain.handle("alpha-surfaces-resolve", () => {
-    const resolved = resolveSurfaces({ env: process.env, file: readSurfaceFile(userDataPath), appVersion: app.getVersion() })
+    const resolved = resolveSurfaces({
+      env: process.env,
+      file: readSurfaceFile(userDataPath),
+      appVersion: app.getVersion(),
+    })
     for (const id of SURFACE_IDS) {
       const r = resolved[id]
       // 非默认命中留痕(排障:为什么这台机器是 legacy);只记 surface/模式/原因,绝不记文件路径。
@@ -150,9 +139,9 @@ export function registerSurfaceIpc(userDataPath: string) {
     }
     return resolved
   })
-  // resolve = 记录已确认落盘;recordSurfaceFailure 抛错 → promise reject —— renderer 的 reload
-  // 门控据此不放行(#334 r1)。
-  ipcMain.handle("alpha-surface-failure", (_event, payload: { surface: SurfaceId; error: string }) => {
-    recordSurfaceFailure(userDataPath, app.getVersion(), payload)
-  })
+  ipcMain.handle("alpha-surface-failure", (event, payload: SurfaceRecoveryRequest) =>
+    recovery.startSurface(payload, event.sender.id, (failure) =>
+      recordSurfaceFailure(userDataPath, app.getVersion(), failure),
+    ),
+  )
 }

@@ -8,7 +8,7 @@
 //   - 叶在 seam 的 createSessionRoute 内挂载:SessionProviders/DirectoryLayout/ServerScopedShell
 //     全部保持上游默认生命周期,外框零 upstream context(只读版本化路由 ABI)。
 //   - surface override 与默认叶 XOR(app.tsx `props.surfaces?.session ?? Session`),结构上不存在
-//     双挂载;SurfaceBoundary 兜致命 render 错误 → 记录 + reload 回 legacy(C4 已真机实证,不改)。
+//     双挂载;SurfaceBoundary 兜致命 render 错误 → 留在 Alpha 区域并进入 Recovery。
 //   - 双闸:主进程 env-override `ALPHA_SURFACE_SESSION=alpha` + localStorage 闸(spike-flag),
 //     任一闸关 ⇒ 工厂返回 undefined = seam 走上游默认叶,零变化。发布态本期保持 legacy(T5 才升级)。
 //   - 宿主红线(T6 审计 §3;alpha-session-workspace.test.ts 钉死):
@@ -18,8 +18,8 @@
 //       R7 三个 takeover 仍是 AppInterface children,绝不移进本外框;
 //       Stage C-1 前本外框**不自渲染 AlphaComposer**(那要求与 takeover gate 同 PR,见审计 §4.1)。
 //   - 跨 server 最小安全解(C4 S5 携带项②):alpha 侧栏恒 pin 本地 sidecar,active server 为他机时
-//     点其会话必然叶 throw ——CrossServerGuard 有界识别该错误族并给出引导(回首页 / 重新加载),
-//     不再落 surface 致命 fallback(避免污染崩溃记录 —— 该记录对一切 alpha 生效态降 legacy,#334);
+//     点其会话必然叶 throw ——CrossServerGuard 有界识别该错误族并给出返回首页引导,
+//     不再落 surface 致命 fallback(避免把可识别的跨 server 状态误记为 surface crash);
 //     识别不到的错误原样 rethrow,
 //     SurfaceBoundary 语义不变。
 //   - preloadSessionLeaf(C4 携带项③):alpha 侧栏 hover/点击时预热叶 lazy chunk,消 C4 实测的
@@ -73,7 +73,7 @@ function WorkspaceChrome() {
 /**
  * 跨 server 会话缺失的有界引导(C4 S5 最小安全解)。只接住 isCrossServerSessionError 识别的
  * 错误族;其余在 fallback 渲染期同步 rethrow —— Solid 会把它交给上一层边界(SurfaceBoundary),
- * 致命链路(记录 → fallback → reload 回 legacy)保持 C4 实证语义。
+ * 其余错误交给外层 SurfaceBoundary，并进入 Alpha Recovery；不会切换 legacy surface。
  */
 function CrossServerGuard(props: { children: JSX.Element }) {
   const navigate = useNavigate()
@@ -81,20 +81,21 @@ function CrossServerGuard(props: { children: JSX.Element }) {
     <ErrorBoundary
       fallback={(error) => {
         if (!isCrossServerSessionError(error)) throw error
-        console.warn("[alpha-workspace] cross-server session click intercepted", error)
+        console.warn("ALPHA_CROSS_SERVER_SESSION_BLOCKED")
         return (
           <div class="a-ui a-swk-guard" data-alpha-session-workspace-guard>
             <div class="a-swk-guard-card" role="alert">
               <div class="a-swk-guard-title">此会话不属于当前连接的服务器</div>
               <div class="a-swk-guard-desc">
                 Alpha 侧栏固定显示本地引擎的会话;当前窗口已切换到其他服务器,无法在这里打开它。
-                重新加载可回到本地引擎,或先返回首页。
+                请返回首页后重新选择本地会话。
               </div>
               <div class="a-swk-guard-actions">
-                <button type="button" class="a-swk-btn a-swk-btn--primary" onClick={() => location.reload()}>
-                  重新加载(回到本地引擎)
-                </button>
-                <button type="button" class="a-swk-btn" onClick={() => navigate(hrefFor.home())}>
+                <button
+                  type="button"
+                  class="a-swk-btn a-swk-btn--primary"
+                  onClick={() => navigate(hrefFor.home())}
+                >
                   返回首页
                 </button>
               </div>

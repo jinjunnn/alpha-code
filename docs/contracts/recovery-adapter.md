@@ -4,7 +4,7 @@ kind: contract
 status: active
 owners:
   - alpha-code
-last_reviewed: 2026-07-20
+last_reviewed: 2026-07-21
 review_after: 2027-01-16
 ---
 
@@ -14,16 +14,29 @@ The desktop Recovery adapter is the only contract boundary that converts existin
 actions, and results into renderer-safe values. It does not choose a database recovery algorithm,
 restart the sidecar, mount Recovery UI, or implement a surface rebuild.
 
+## Boot host failure containment
+
+The dedicated boot Recovery host registers its active incident and close settlement before loading
+the renderer. A main-frame `did-fail-load` other than an aborted navigation, `preload-error`,
+`render-process-gone`, or a rejected `recovery-boot-current` admission while the boot is active is
+fatal. Every such event converges on the same once-only path: clear the active boot, destroy its
+window, and settle the startup action as `exit-app`. A failed host therefore cannot leave startup
+pending or permit creation of the product window.
+
+Fatal host logging contains exactly one fixed reason: `renderer-load-failed`, `preload-failed`,
+`renderer-process-gone`, or `current-ipc-rejected`. Load codes and descriptions, renderer URLs,
+preload paths, exception objects, and process-gone details are not logged for the Recovery host.
+
 ## Problem codes and actions
 
-| Existing source state | Stable code | Exposed actions | Retryable |
-| --- | --- | --- | --- |
-| DbSafety `corrupt`, backup present | `RECOVERY_DATABASE_CORRUPT` | `restore-latest-backup`, `exit-app`, `continue-startup` | no |
-| DbSafety `corrupt`, no backup | `RECOVERY_DATABASE_CORRUPT` | `exit-app`, `continue-startup` | no |
-| DbSafety `db-ahead` | `RECOVERY_DATABASE_TOO_NEW` | `exit-app`, `backup-and-continue`, `continue-startup` | no |
-| sidecar self-heal `give-up` | `RECOVERY_ENGINE_STOPPED` | `retry-engine` | yes |
-| surface crash, failure record save failed | `RECOVERY_SURFACE_CRASHED` | `retry-failure-save` | yes |
-| surface crash, failure record pending or saved | `RECOVERY_SURFACE_CRASHED` | none | no |
+| Existing source state                          | Stable code                 | Exposed actions                                         | Retryable |
+| ---------------------------------------------- | --------------------------- | ------------------------------------------------------- | --------- |
+| DbSafety `corrupt`, backup present             | `RECOVERY_DATABASE_CORRUPT` | `restore-latest-backup`, `exit-app`, `continue-startup` | no        |
+| DbSafety `corrupt`, no backup                  | `RECOVERY_DATABASE_CORRUPT` | `exit-app`, `continue-startup`                          | no        |
+| DbSafety `db-ahead`                            | `RECOVERY_DATABASE_TOO_NEW` | `exit-app`, `backup-and-continue`, `continue-startup`   | no        |
+| sidecar self-heal `give-up`                    | `RECOVERY_ENGINE_STOPPED`   | `retry-engine`                                          | yes       |
+| surface crash, failure record save failed      | `RECOVERY_SURFACE_CRASHED`  | `retry-failure-save`                                    | yes       |
+| surface crash, failure record pending or saved | `RECOVERY_SURFACE_CRASHED`  | none                                                    | no        |
 
 DbSafety `skip`, `proceed`, and `migrate-ahead`, plus sidecar self-heal `heal`, are not Recovery
 problems and map to no DTO. The adapter never invents an action for them.
@@ -66,11 +79,17 @@ process has new identity and is outside this process-local guarantee.
   `RECOVERY_ACTION_CONFLICT` without running an effect. The original action continues to return its
   cached `RECOVERY_ACTION_FAILED` result.
 
-## Surface fallback boundary
+## Main incident ownership and Alpha-only surface recovery
 
-The current `SurfaceBoundary` still persists a crash record and then reloads into a legacy surface.
-Owner decision C requires all five surfaces to become alpha-only, with region rebuild, fail-closed
-handling, and boot Recovery instead. The legacy reload is therefore intentionally absent from the
-adapter action enum and remains production behavior for the separate UI line to remove. Until that
-line supplies a real replacement, a successfully saved surface crash is represented with no
-executable action and `retryable: false`; the adapter must not claim that region rebuild exists.
+The renderer supplies a per-boundary crash nonce only for retry reconciliation. Main owns the actual
+incident identifier, creates exactly one surface source object after the first persistence attempt,
+and stores the exact adapted plan plus action adapter in a process-local registry. Repeated IPC
+admission for the same sender, nonce, and surface returns the same main-side wire object; a nonce
+reused for another surface is rejected. This keeps `retry-failure-save` effect-once even though every
+IPC response is deserialized into a fresh renderer object.
+
+`SurfaceBoundary` never sends raw exception text and never reloads a legacy surface. Persisted
+diagnostics contain only `RECOVERY_SURFACE_CRASHED`, the app version, the surface key used by the
+main-owned store, and a timestamp. The renderer sees only the opaque incident ID and the adapter DTO.
+A successfully saved surface crash has no executable action and remains isolated; a failed save may
+offer only `retry-failure-save`. The adapter still does not claim that region rebuild exists.

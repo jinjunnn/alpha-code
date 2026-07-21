@@ -1,0 +1,35 @@
+.a-upstream-dialog-body {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  color: var(--a-text);
+}
+
+.a-upstream-dialog-body [data-slot="input-wrapper"]:focus-within {
+  border-color: var(--a-accent);
+  box-shadow: var(--a-ring-focus);
+}
+
+.a-upstream-dialog-body [data-slot="dialog-footer"] {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--a-space-2);
+  padding: var(--a-space-4);
+  border-top: 1px solid var(--a-border-faint);
+}
+
+.a-upstream-dialog-body [data-component="image-preview"] {
+  display: grid;
+  min-height: 0;
+  place-items: center;
+}
+
+.a-upstream-dialog-body [data-slot="image-preview-image"] {
+  display: block;
+  max-width: 100%;
+  max-height: 62vh;
+  object-fit: contain;
+}

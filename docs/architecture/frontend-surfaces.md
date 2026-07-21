@@ -4,7 +4,7 @@ kind: architecture
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-20
+last_reviewed: 2026-07-21
 review_after: 2027-01-20
 ---
 
@@ -33,12 +33,18 @@ Each entry separates two facts that must not be conflated:
   `hybrid`;
 - `releaseSurface` optionally links a route leaf to the startup resolver, whose
   effective `alpha` or `legacy` mode and reason can vary by release default,
-  environment override, pin, or crash fallback.
+  environment override, or pin. Surface crash diagnostics never change composition.
 
 An Alpha-looking takeover that still depends on an upstream DOM anchor is
 `hybrid`, not a completed Alpha replacement. A runtime `legacy` result does not
 rewrite the static lineage; it selects the upstream leaf for that renderer
 lifetime.
+
+Recovery has two lifecycle slots under one Alpha owner: a dedicated renderer window before the
+product window for DbSafety decisions, and one runtime overlay host for sidecar and surface
+incidents. Generic upstream Dialog consumers opt into the single Alpha Dialog host; Settings,
+Model/Provider, and Permission remain explicitly outside that migration until their owning lines
+replace them.
 
 The inventory is intentionally limited to top-level ownership boundaries. Tabs,
 popovers, controls, and render helpers belong to their enclosing surface unless

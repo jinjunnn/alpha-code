@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>REQ-090 Recovery L2</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #dfe2e8;
+        color: #18181b;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .matrix {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        min-height: 100vh;
+      }
+      .theme {
+        padding: 32px;
+        background: var(--canvas);
+        color: var(--text);
+      }
+      .light {
+        --canvas: #fff;
+        --surface: #fff;
+        --muted: #f6f7f9;
+        --border: #e4e6ea;
+        --text: #18181b;
+        --secondary: #52525b;
+        --accent: #4f46e5;
+        --warning: #d97706;
+        --shadow: 0 12px 32px rgba(15, 17, 21, 0.12);
+      }
+      .dark {
+        --canvas: #0a0b0d;
+        --surface: #17181b;
+        --muted: #16171a;
+        --border: #2c2e34;
+        --text: #fafafa;
+        --secondary: #a1a1aa;
+        --accent: #6366f1;
+        --warning: #fbbf24;
+        --shadow: 0 16px 42px rgba(0, 0, 0, 0.65);
+      }
+      h1 {
+        margin: 0 0 4px;
+        font-size: 22px;
+      }
+      .theme > p {
+        margin: 0 0 28px;
+        color: var(--secondary);
+        font-size: 13px;
+      }
+      .cards {
+        display: grid;
+        gap: 18px;
+      }
+      .card {
+        padding: 22px;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+      }
+      .eyebrow {
+        margin: 0 0 8px;
+        color: var(--accent);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+      }
+      h2 {
+        margin: 0;
+        font-size: 18px;
+      }
+      .detail {
+        min-height: 42px;
+        margin: 10px 0 18px;
+        color: var(--secondary);
+        font-size: 13px;
+        line-height: 1.55;
+      }
+      .code {
+        display: inline-block;
+        margin-bottom: 14px;
+        padding: 5px 8px;
+        border-radius: 6px;
+        background: var(--muted);
+        color: var(--secondary);
+        font:
+          11px ui-monospace,
+          monospace;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      button {
+        min-height: 36px;
+        padding: 0 14px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--muted);
+        color: var(--text);
+        font: inherit;
+      }
+      button:first-child {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: #fff;
+      }
+      .quiet {
+        color: var(--secondary);
+        font-size: 12px;
+      }
+      .dot {
+        color: var(--warning);
+      }
+      @media (max-width: 900px) {
+        .matrix {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="matrix">
+      <section class="theme light" aria-label="浅色 Recovery 状态">
+        <h1>Recovery · Light</h1>
+        <p>批准帧 05 · 680px 内容节奏 · 安全字段</p>
+        <div class="cards">
+          <article class="card">
+            <p class="eyebrow">DATA RECOVERY</p>
+            <h2><span class="dot">●</span> 会话数据需要恢复</h2>
+            <p class="detail">启动检查发现本地会话数据无法安全读取。损坏数据不会被静默删除。</p>
+            <span class="code">RECOVERY_DATABASE_CORRUPT</span>
+            <div class="actions">
+              <button>从最近备份恢复</button><button>退出应用</button><button>仍要继续启动</button>
+            </div>
+          </article>
+          <article class="card">
+            <p class="eyebrow">CONNECTION RECOVERY</p>
+            <h2><span class="dot">●</span> 本地引擎已停止</h2>
+            <p class="detail">自动恢复多次未能建立稳定连接。检查网络或本机运行环境后重试。</p>
+            <span class="code">RECOVERY_ENGINE_STOPPED</span>
+            <div class="actions"><button>重试本地引擎</button></div>
+          </article>
+          <article class="card">
+            <p class="eyebrow">SURFACE RECOVERY</p>
+            <h2><span class="dot">●</span> 页面暂时不可用</h2>
+            <p class="detail">脱敏错误记录已保存。当前区域保持隔离，不会加载 legacy 页面。</p>
+            <span class="code">RECOVERY_SURFACE_CRASHED</span>
+            <p class="quiet">无可执行动作（不虚构 region rebuild）</p>
+          </article>
+          <article class="card">
+            <p class="eyebrow">SAVE RECOVERY</p>
+            <h2><span class="dot">●</span> 错误记录保存失败</h2>
+            <p class="detail">安全错误记录尚未成功保存。不会显示或发送原始异常。</p>
+            <span class="code">RECOVERY_SURFACE_CRASHED</span>
+            <div class="actions"><button>重试保存错误记录</button></div>
+          </article>
+        </div>
+      </section>
+      <section class="theme dark" aria-label="深色 Recovery 状态">
+        <h1>Recovery · Dark</h1>
+        <p>相同结构与动作，仅切换 Alpha 暗色 token</p>
+        <div class="cards">
+          <article class="card">
+            <p class="eyebrow">DATA RECOVERY</p>
+            <h2><span class="dot">●</span> 会话数据需要恢复</h2>
+            <p class="detail">启动检查发现本地会话数据无法安全读取。损坏数据不会被静默删除。</p>
+            <span class="code">RECOVERY_DATABASE_CORRUPT</span>
+            <div class="actions">
+              <button>从最近备份恢复</button><button>退出应用</button><button>仍要继续启动</button>
+            </div>
+          </article>
+          <article class="card">
+            <p class="eyebrow">CONNECTION RECOVERY</p>
+            <h2><span class="dot">●</span> 本地引擎已停止</h2>
+            <p class="detail">自动恢复多次未能建立稳定连接。检查网络或本机运行环境后重试。</p>
+            <span class="code">RECOVERY_ENGINE_STOPPED</span>
+            <div class="actions"><button>重试本地引擎</button></div>
+          </article>
+          <article class="card">
+            <p class="eyebrow">SURFACE RECOVERY</p>
+            <h2><span class="dot">●</span> 页面暂时不可用</h2>
+            <p class="detail">脱敏错误记录已保存。当前区域保持隔离，不会加载 legacy 页面。</p>
+            <span class="code">RECOVERY_SURFACE_CRASHED</span>
+            <p class="quiet">无可执行动作（不虚构 region rebuild）</p>
+          </article>
+          <article class="card">
+            <p class="eyebrow">SAVE RECOVERY</p>
+            <h2><span class="dot">●</span> 错误记录保存失败</h2>
+            <p class="detail">安全错误记录尚未成功保存。不会显示或发送原始异常。</p>
+            <span class="code">RECOVERY_SURFACE_CRASHED</span>
+            <div class="actions"><button>重试保存错误记录</button></div>
+          </article>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

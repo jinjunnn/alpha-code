@@ -25,7 +25,7 @@ describe("surface map model", () => {
     expect(surfaceRuntimeState(home, resolved)).toEqual({
       mode: "Alpha",
       detail: "release-default",
-      release: "auto-fallback",
+      release: "alpha",
     })
     expect(surfaceRuntimeState(session, resolved)).toEqual({
       mode: "Legacy",

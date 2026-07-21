@@ -20,11 +20,13 @@ const updaterHandler = (_: unknown, state: UpdaterState) => {
 
 const api: ElectronAPI = {
   killSidecar: () => ipcRenderer.invoke("kill-sidecar"),
-  retrySidecar: () => ipcRenderer.invoke("sidecar-retry"),
-  onSidecarFatal: (cb) => {
-    const handler = (_: unknown, e: { attempts: number }) => cb(e)
-    ipcRenderer.on("sidecar-fatal", handler)
-    return () => ipcRenderer.removeListener("sidecar-fatal", handler)
+  recovery: {
+    onIncident: (cb) => {
+      const handler = (_: unknown, incident: Parameters<typeof cb>[0]) => cb(incident)
+      ipcRenderer.on("alpha-recovery-incident", handler)
+      return () => ipcRenderer.removeListener("alpha-recovery-incident", handler)
+    },
+    submit: (request) => ipcRenderer.invoke("recovery-submit", request),
   },
   installCli: () => ipcRenderer.invoke("install-cli"),
   awaitInitialization: () => ipcRenderer.invoke("await-initialization"),
@@ -173,14 +175,14 @@ const api: ElectronAPI = {
     },
   },
   ext: {
-    persistMcp: (name, server, secretVars) =>
-      ipcRenderer.invoke("ext-persist-mcp", name, server, secretVars),
+    persistMcp: (name, server, secretVars) => ipcRenderer.invoke("ext-persist-mcp", name, server, secretVars),
     removeMcp: (name) => ipcRenderer.invoke("ext-remove-mcp", name),
     checkRuntime: (tool) => ipcRenderer.invoke("ext-check-runtime", tool),
     configHealth: () => ipcRenderer.invoke("ext-config-health"),
     factorySkillIds: () => ipcRenderer.invoke("ext-factory-skill-ids"),
     builtinRead: () => ipcRenderer.invoke("builtin-read"),
-    builtinApply: (gov, visibleAgents, confirmBuildDisable) => ipcRenderer.invoke("builtin-apply", gov, visibleAgents, confirmBuildDisable),
+    builtinApply: (gov, visibleAgents, confirmBuildDisable) =>
+      ipcRenderer.invoke("builtin-apply", gov, visibleAgents, confirmBuildDisable),
     builtinReset: () => ipcRenderer.invoke("builtin-reset"),
     importAgentPreview: (token, filePath) => ipcRenderer.invoke("ext-import-agent-preview", token, filePath),
     importAgentConfirm: (previewId) => ipcRenderer.invoke("ext-import-agent-confirm", previewId),
@@ -229,7 +231,8 @@ const api: ElectronAPI = {
     cancel: (jobId) => ipcRenderer.invoke("cloud-cancel", jobId),
     artifacts: (jobId) => ipcRenderer.invoke("cloud-artifacts", jobId),
     // REQ-092:descriptor-only 下载通道(进度=事件订阅;内容字节永不过 IPC)。
-    downloadArtifact: (directory, runId, artifact) => ipcRenderer.invoke("cloud-artifact-download", directory, runId, artifact),
+    downloadArtifact: (directory, runId, artifact) =>
+      ipcRenderer.invoke("cloud-artifact-download", directory, runId, artifact),
     cancelArtifactDownload: (artifactId) => ipcRenderer.invoke("cloud-artifact-download-cancel", artifactId),
     onArtifactProgress: (cb) => {
       const h = (_e: unknown, p: CloudArtifactProgress) => cb(p)

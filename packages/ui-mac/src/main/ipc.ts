@@ -28,8 +28,6 @@ export const pickedFiles = createPickedFileAuthorizations() // REQ-033:agent 导
 
 type Deps = {
   killSidecar: () => Promise<void> | void
-  /** B11 复扫行11:sidecar 连崩停手后的用户显式重试(阶梯清零 + in-place respawn)。 */
-  retrySidecar: () => Promise<void> | void
   relaunch: () => void
   awaitInitialization: () => Promise<ServerReadyData>
   consumeInitialDeepLinks: () => Promise<string[]> | string[]
@@ -64,7 +62,6 @@ export function registerIpcHandlers(deps: Deps) {
   // 快照;不存在任何对应写面(环境只由 main 的构建事实解析,见 alpha-environment.ts)。
   ipcMain.handle("alpha-environment", () => getAlphaEnvironment())
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
-  ipcMain.handle("sidecar-retry", () => deps.retrySidecar())
   ipcMain.handle("await-initialization", () => deps.awaitInitialization())
   ipcMain.handle("consume-initial-deep-links", () => deps.consumeInitialDeepLinks())
   ipcMain.handle("get-default-server-url", () => deps.getDefaultServerUrl())
