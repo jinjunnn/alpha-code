@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="light dark" />
+<meta name="design-status" content="draft-for-owner-review" />
+<title>alpha-code · REQ-124 会话产物链接行与右栏预览联动 · 2026-07-21</title>
+<style>
+/* ════════════════════════════════════════════════════════════════════════
+   本稿是 2026-06-28-timeline-overhaul/timeline.html(已批)的增量。
+   tokens verbatim 沿用该原稿(含工具类型色板);零新 token。
+   新增仅两类构件:产物链接行(.artrow)+ 右栏预览 tab 的预览面元件。
+   ════════════════════════════════════════════════════════════════════════ */
+:root{
+  --a-bg-canvas:#ffffff;--a-bg-subtle:#f6f7f9;--a-bg-muted:#eceef1;--a-bg-inset:#e3e6ea;
+  --a-surface:#ffffff;--a-surface-raised:#ffffff;--a-scrim:rgba(15,17,21,.45);
+  --a-text:#18181b;--a-text-secondary:#52525b;--a-text-tertiary:#7c7d85;--a-text-disabled:#b3b6bd;--a-text-on-accent:#fff;
+  --a-border-faint:#eef0f3;--a-border:#e4e6ea;--a-border-strong:#ced2d9;
+  --a-overlay-hover:rgba(15,17,21,.045);--a-overlay-active:rgba(15,17,21,.08);
+  --a-accent:#4f46e5;--a-accent-hover:#4338ca;--a-accent-active:#3730a3;
+  --a-accent-solid:#4f46e5;
+  --a-accent-subtle:rgba(79,70,229,.10);--a-accent-border:rgba(79,70,229,.32);--a-accent-ring:rgba(79,70,229,.4);
+  --a-success:#16a34a;--a-warning:#d97706;--a-error:#dc2626;--a-info:#2563eb;--a-purple:#7c3aed;--a-orange:#ea7317;
+  --a-success-subtle:rgba(22,163,74,.12);--a-warning-subtle:rgba(217,119,6,.12);--a-error-subtle:rgba(220,38,38,.10);
+  --a-purple-subtle:rgba(124,58,237,.12);--a-orange-subtle:rgba(234,115,23,.13);
+  --a-radius-xs:4px;--a-radius-sm:6px;--a-radius-md:8px;--a-radius-lg:11px;--a-radius-xl:14px;--a-radius-2xl:18px;--a-radius-full:9999px;
+  --a-font-sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;
+  --a-font-mono:"SF Mono","JetBrains Mono","Menlo",ui-monospace,monospace;
+  --a-text-2xs:10.5px;--a-text-xs:11.5px;--a-text-sm:12.5px;--a-text-base:13px;--a-text-md:14px;--a-text-lg:16px;--a-text-xl:19px;--a-text-2xl:23px;
+  --a-leading-normal:1.58;--a-tracking-tight:-0.014em;--a-tracking-wide:0.045em;
+  --a-weight-normal:400;--a-weight-medium:500;--a-weight-semibold:600;--a-weight-bold:680;
+  --a-edge-light:0 1px 0 rgba(15,17,21,.02),0 1px 2px rgba(15,17,21,.05);
+  --a-shadow-xs:0 1px 2px rgba(15,17,21,.05);
+  --a-shadow-sm:0 1px 3px rgba(15,17,21,.07),0 1px 2px rgba(15,17,21,.04);
+  --a-shadow-md:0 4px 12px rgba(15,17,21,.08),0 2px 4px rgba(15,17,21,.05);
+  --a-shadow-lg:0 12px 32px rgba(15,17,21,.12),0 4px 8px rgba(15,17,21,.06);
+  --a-ring-focus:0 0 0 3px var(--a-accent-ring);
+  --a-dur-fast:130ms;--a-dur:200ms;--a-ease-out:cubic-bezier(.22,1,.36,1);
+  --t-read:#0891b2;--t-bash:#18181b;--t-edit:#16a34a;--t-write:#2563eb;--t-task:#d97706;
+  --t-web:#0ea5e9;--t-skill:#ea7317;--t-search:#7c3aed;--t-mcp:#7c3aed;--t-list:#0891b2;
+}
+html[data-theme="dark"]{
+  --a-bg-canvas:#0a0b0d;--a-bg-subtle:#101113;--a-bg-muted:#17181b;--a-bg-inset:#1e2024;
+  --a-surface:#121316;--a-surface-raised:#17181b;--a-scrim:rgba(0,0,0,.6);
+  --a-text:#fafafa;--a-text-secondary:#a1a1aa;--a-text-tertiary:#787982;--a-text-disabled:#4f5158;
+  --a-border-faint:#1b1c20;--a-border:#26272c;--a-border-strong:#383a41;
+  --a-overlay-hover:rgba(255,255,255,.05);--a-overlay-active:rgba(255,255,255,.09);
+  --a-accent:#818cf8;--a-accent-hover:#6366f1;--a-accent-active:#4f46e5;--a-accent-solid:#4f46e5;
+  --a-accent-subtle:rgba(129,140,248,.14);--a-accent-border:rgba(129,140,248,.34);--a-accent-ring:rgba(129,140,248,.4);
+  --a-success:#4ade80;--a-warning:#fbbf24;--a-error:#f87171;--a-info:#60a5fa;--a-purple:#a78bfa;--a-orange:#fb923c;
+  --a-success-subtle:rgba(74,222,128,.14);--a-warning-subtle:rgba(251,191,36,.14);--a-error-subtle:rgba(248,113,113,.13);
+  --a-purple-subtle:rgba(167,139,250,.16);--a-orange-subtle:rgba(251,146,60,.16);
+  --a-edge-light:0 1px 0 rgba(0,0,0,.3),0 1px 2px rgba(0,0,0,.4);
+  --a-shadow-md:0 4px 12px rgba(0,0,0,.5),0 2px 4px rgba(0,0,0,.4);
+  --a-shadow-lg:0 12px 32px rgba(0,0,0,.6),0 4px 8px rgba(0,0,0,.4);
+  --t-bash:#52525b;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--a-bg-subtle);color:var(--a-text);font-family:var(--a-font-sans);font-size:var(--a-text-base);line-height:var(--a-leading-normal);-webkit-font-smoothing:antialiased;font-feature-settings:"cv01","ss01"}
+h1,h2,h3,h4{margin:0;font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight)}
+button{font-family:inherit;cursor:pointer}
+svg{display:block}
+.ic{width:16px;height:16px;stroke:currentColor;stroke-width:1.7;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.ic.sm{width:13px;height:13px}.ic.xs{width:11px;height:11px}
+.mono{font-family:var(--a-font-mono)}
+:focus-visible{outline:none;box-shadow:var(--a-ring-focus)}
+
+/* ───────── doc chrome(原稿 verbatim)───────── */
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:16px;padding:11px 22px;background:color-mix(in srgb,var(--a-bg-canvas) 84%,transparent);backdrop-filter:blur(14px);border-bottom:1px solid var(--a-border-faint)}
+.topbar .brand{display:flex;align-items:center;gap:10px;font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight)}
+.topbar .brand small{color:var(--a-text-tertiary);font-weight:var(--a-weight-normal)}
+.topbar .mark{display:inline-grid;place-items:center;width:23px;height:23px;border-radius:7px;background:var(--a-accent-solid);color:#fff;font-weight:800;font-size:13px}
+.topbar .spacer{flex:1}
+.topbar nav{display:flex;gap:1px;overflow-x:auto;scrollbar-width:none}
+.topbar nav::-webkit-scrollbar{display:none}
+.topbar nav a{padding:5px 9px;border-radius:var(--a-radius-md);color:var(--a-text-secondary);text-decoration:none;font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);white-space:nowrap}
+.topbar nav a:hover{background:var(--a-bg-muted);color:var(--a-text)}
+.seg{display:inline-flex;padding:2px;background:var(--a-bg-muted);border-radius:var(--a-radius-md);gap:2px}
+.seg button{border:0;background:transparent;color:var(--a-text-secondary);font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);padding:5px 10px;border-radius:6px}
+.seg button.on{background:var(--a-surface);color:var(--a-text);box-shadow:var(--a-shadow-xs)}
+.wrap{max-width:1120px;margin:0 auto;padding:34px 24px 140px}
+.sec{margin-top:44px;scroll-margin-top:66px}
+.sec-kicker{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary);margin-top:8px}
+h2.t{font-size:var(--a-text-2xl);margin:6px 0 0;letter-spacing:-0.02em}
+p.lede{margin:9px 0 0;color:var(--a-text-secondary);font-size:var(--a-text-md);max-width:78ch}
+.note{margin:14px 0;padding:12px 14px;background:var(--a-bg-canvas);border:1px solid var(--a-border);border-left:3px solid var(--a-accent);border-radius:var(--a-radius-md);font-size:var(--a-text-sm);color:var(--a-text-secondary)}
+.note b{color:var(--a-text);font-weight:var(--a-weight-semibold)}
+.note.ok{border-left-color:var(--a-success)}
+.note.warn{border-left-color:var(--a-warning)}
+.hookchip{display:inline-block;font-family:var(--a-font-mono);font-size:var(--a-text-2xs);color:var(--a-accent);background:var(--a-accent-subtle);padding:1px 6px;border-radius:var(--a-radius-sm);margin-left:6px;vertical-align:middle}
+.label{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary);margin:24px 0 10px;display:flex;align-items:center;gap:8px}
+.label::after{content:"";flex:1;height:1px;background:var(--a-border-faint)}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:14px}
+@media (max-width:900px){.grid3{grid-template-columns:1fr}}
+.relcard{margin:0;padding:14px 16px}
+.relcard .rt{display:inline-block;margin-bottom:7px;color:var(--a-accent);font-size:var(--a-text-xs);font-weight:var(--a-weight-semibold)}
+.relcard ul{margin:0;padding-left:17px}
+.relcard li+li{margin-top:5px}
+table.aud{width:100%;border-collapse:collapse;margin-top:14px;font-size:var(--a-text-sm);border:1px solid var(--a-border);border-radius:var(--a-radius-lg);overflow:hidden;background:var(--a-surface)}
+.aud th{background:var(--a-bg-subtle);text-align:left;font-size:var(--a-text-2xs);text-transform:uppercase;letter-spacing:var(--a-tracking-wide);color:var(--a-text-tertiary);font-weight:var(--a-weight-semibold);padding:9px 12px}
+.aud td{padding:10px 12px;border-top:1px solid var(--a-border-faint);color:var(--a-text-secondary);vertical-align:top}
+.aud td:first-child{color:var(--a-text);font-weight:var(--a-weight-medium);white-space:nowrap}
+.aud code{font-family:var(--a-font-mono);font-size:var(--a-text-2xs);background:var(--a-bg-muted);border:1px solid var(--a-border-faint);border-radius:4px;padding:0 4px}
+.tag{display:inline-flex;align-items:center;min-height:21px;padding:1px 8px;border-radius:var(--a-radius-full);font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);white-space:nowrap}
+.tag.ok{color:var(--a-success);background:var(--a-success-subtle)}
+.tag.warn{color:var(--a-warning);background:var(--a-warning-subtle)}
+.tag.muted{color:var(--a-text-secondary);background:var(--a-bg-muted)}
+.tag.info{color:var(--a-accent);background:var(--a-accent-subtle)}
+.demo-tabs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:14px 0 10px}
+.demo-tabs span{margin-right:2px;color:var(--a-text-tertiary);font-size:var(--a-text-xs)}
+.demo-tabs button{min-height:32px;padding:0 11px;border:1px solid var(--a-border);border-radius:var(--a-radius-md);color:var(--a-text-secondary);background:var(--a-surface);font-size:var(--a-text-sm)}
+.demo-tabs button[aria-selected="true"]{color:var(--a-accent);border-color:var(--a-accent-border);background:var(--a-accent-subtle)}
+.cap{margin:9px 2px 0;color:var(--a-text-tertiary);font-size:var(--a-text-xs);line-height:1.5}
+.capset .cap{display:none}
+.capset .cap[data-on]{display:block}
+
+/* ───────── 帧 + 时间线列(原稿 verbatim)───────── */
+.frame{position:relative;border:1px solid var(--a-border);border-radius:var(--a-radius-xl);overflow:hidden;background:var(--a-bg-canvas);box-shadow:var(--a-shadow-md);margin-top:18px}
+.tl{padding:24px 26px;display:flex;flex-direction:column;gap:16px;position:relative}
+.tl.anim>*{animation:rise .5s var(--a-ease-out) both}
+@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.tl.anim>*:nth-child(1){animation-delay:.02s}.tl.anim>*:nth-child(2){animation-delay:.05s}
+.tl.anim>*:nth-child(3){animation-delay:.08s}.tl.anim>*:nth-child(4){animation-delay:.11s}
+.tl.anim>*:nth-child(n+5){animation-delay:.14s}
+@media (prefers-reduced-motion:reduce){.tl.anim>*{animation:none}}
+.measure{max-width:760px;width:100%}
+.turn-div{display:flex;align-items:center;gap:12px;margin:2px;color:var(--a-text-disabled);font-size:var(--a-text-2xs);font-variant-numeric:tabular-nums}
+.turn-div::before,.turn-div::after{content:"";height:1px;background:var(--a-border-faint);flex:1}
+.row-user{align-self:flex-end;max-width:82%;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.bubble{background:var(--a-accent-subtle);border:1px solid var(--a-accent-border);border-radius:var(--a-radius-lg);padding:10px 14px;font-size:var(--a-text-md);line-height:var(--a-leading-normal);color:var(--a-text)}
+.row-ai{align-self:flex-start;max-width:100%;width:100%;display:flex;flex-direction:column;gap:10px}
+.ai-md{font-size:var(--a-text-md);line-height:var(--a-leading-normal);color:var(--a-text)}
+.ai-md p{margin:0 0 10px}.ai-md p:last-child{margin:0}
+.ai-md :not(pre)>code{font-family:var(--a-font-mono);background:var(--a-bg-muted);padding:1px 5px;border-radius:5px;font-size:.92em}
+.meta{display:flex;align-items:center;gap:8px;font-size:var(--a-text-xs);color:var(--a-text-tertiary)}
+.meta .prov{display:inline-flex;align-items:center;gap:5px}
+.meta .pico{width:14px;height:14px;border-radius:4px;display:grid;place-items:center;font-size:8px;font-weight:800;color:#fff}
+.meta .agent{color:var(--a-text-secondary);font-weight:var(--a-weight-medium)}
+.meta .dot{width:3px;height:3px;border-radius:50%;background:var(--a-text-disabled)}
+.tc{border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);background:var(--a-surface);box-shadow:var(--a-edge-light);overflow:hidden}
+.tc-head{display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer}
+.tc-head:hover{background:var(--a-bg-subtle)}
+.tc-ico{width:23px;height:23px;border-radius:6px;display:grid;place-items:center;flex:none;color:#fff}
+.tc-ico svg{width:13px;height:13px}
+.tc-ico.skill{background:var(--t-skill)}
+.tc-tt{display:flex;align-items:baseline;gap:7px;min-width:0;flex:1}
+.tc-tt b{font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);white-space:nowrap}
+.tc-tt .tgt{font-family:var(--a-font-mono);color:var(--a-text-secondary);font-size:var(--a-text-xs);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.tc-st{display:inline-flex;align-items:center;gap:5px;font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);padding:2px 8px;border-radius:var(--a-radius-full);flex:none}
+.tc-st.muted{background:var(--a-bg-muted);color:var(--a-text-tertiary)}
+.tc-chev{color:var(--a-text-tertiary);flex:none}
+
+/* ═══ 新增构件 ①:产物链接行(.artrow)═══ */
+.artrows{display:flex;flex-direction:column;gap:2px;align-items:flex-start}
+.artrow{display:inline-flex;align-items:center;gap:7px;padding:4px 9px 4px 7px;border:1px solid transparent;border-radius:var(--a-radius-md);font-size:var(--a-text-sm);color:var(--a-accent);font-weight:var(--a-weight-medium);cursor:pointer;background:transparent;max-width:100%}
+.artrow .ic{width:14px;height:14px;flex:none}
+.artrow .fn{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.artrow:hover{background:var(--a-accent-subtle)}
+.artrow[data-active]{background:var(--a-accent-subtle);border-color:var(--a-accent-border)}
+.artrow[data-plain]{color:var(--a-text-secondary);font-weight:var(--a-weight-normal)}
+.artrow[data-plain]:hover{background:var(--a-bg-muted)}
+
+/* ═══ 新增构件 ②:右栏预览 tab 的预览面元件(与 req097 稿同语言)═══ */
+.twopane{display:flex;height:560px}
+.twopane .left{flex:1;min-width:0;border-right:1px solid var(--a-border-faint);padding:22px;overflow:auto;display:flex;flex-direction:column;gap:14px}
+.twopane .right{width:46%;flex:none;display:flex;flex-direction:column;background:var(--a-bg-subtle)}
+.rp-head{display:flex;align-items:center;gap:8px;height:46px;padding:0 14px;border-bottom:1px solid var(--a-border-faint);background:var(--a-bg-canvas)}
+.rp-tab{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:var(--a-radius-md);font-size:var(--a-text-sm);color:var(--a-text-secondary);cursor:pointer}
+.rp-tab.on{background:var(--a-bg-muted);color:var(--a-text);font-weight:var(--a-weight-medium)}
+.rp-tab .n{font-size:var(--a-text-2xs);color:var(--a-text-tertiary);font-variant-numeric:tabular-nums}
+.rp-body{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+.rp-doc{display:flex;align-items:center;gap:8px;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);color:var(--a-text)}
+.rp-doc .ic{width:14px;height:14px;color:var(--a-text-tertiary);flex:none}
+.chipx{display:inline-flex;align-items:center;gap:4px;padding:1px 7px;border-radius:var(--a-radius-full);font-size:var(--a-text-2xs);background:var(--a-bg-muted);color:var(--a-text-secondary);white-space:nowrap}
+.chipx[data-k="ok"]{background:var(--a-success-subtle);color:var(--a-success)}
+.wb-tabs{display:inline-flex;gap:2px;background:var(--a-bg-muted);border-radius:var(--a-radius-md);padding:2px;align-self:flex-start}
+.wb-tabs b{padding:3px 11px;border-radius:var(--a-radius-sm);font-size:var(--a-text-xs);font-weight:var(--a-weight-normal);color:var(--a-text-secondary)}
+.wb-tabs b[data-on]{background:var(--a-surface);color:var(--a-text);box-shadow:var(--a-shadow-xs)}
+/* 提取内容示例(直接渲染、零中间步骤;内部形态归独立交付,示例不约束) */
+.xdoc{border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);background:var(--a-bg-canvas);box-shadow:var(--a-shadow-xs);overflow:hidden}
+.xdoc-body{padding:13px 15px 11px;display:flex;flex-direction:column;gap:8px}
+.xdoc-body h4{font-size:var(--a-text-sm);font-weight:var(--a-weight-semibold)}
+.xdoc-body p{margin:0;color:var(--a-text-secondary);font-size:var(--a-text-xs);line-height:1.6}
+.xdoc table{width:auto;min-width:82%;border-collapse:collapse;font-size:var(--a-text-2xs);margin-top:1px}
+.xdoc th{padding:4px 10px;background:var(--a-bg-subtle);color:var(--a-text-tertiary);font-weight:var(--a-weight-semibold);text-align:left;border:1px solid var(--a-border-faint);white-space:nowrap}
+.xdoc td{padding:4px 10px;border:1px solid var(--a-border-faint);color:var(--a-text-secondary)}
+.xdoc-foot{padding:5px 15px;border-top:1px solid var(--a-border-faint);font-size:var(--a-text-2xs);color:var(--a-text-tertiary)}
+.wb-btn{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border:1px solid var(--a-border);border-radius:var(--a-radius-sm);background:var(--a-surface);color:var(--a-text);font-size:var(--a-text-sm)}
+.wb-btn[data-variant="primary"]{background:var(--a-accent-solid);border-color:var(--a-accent-solid);color:#fff}
+.wb-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.kbd{display:inline-flex;align-items:center;padding:0 6px;min-height:17px;border:1px solid var(--a-border);border-bottom-width:2px;border-radius:5px;background:var(--a-bg-subtle);color:var(--a-text-tertiary);font-size:var(--a-text-2xs)}
+.wb-btn[data-variant="primary"] .kbd{border-color:rgba(255,255,255,.4);background:transparent;color:rgba(255,255,255,.85)}
+.factx{display:flex;gap:10px;font-size:var(--a-text-sm);min-width:0}
+.factx span{flex:0 0 88px;color:var(--a-text-tertiary)}
+.factx b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:var(--a-weight-normal);font-family:var(--a-font-mono);color:var(--a-text)}
+.factx b.sans{font-family:var(--a-font-sans)}
+.noticex{display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;padding:8px 11px;border-radius:var(--a-radius-sm);font-size:var(--a-text-sm);background:var(--a-bg-muted);color:var(--a-text-secondary)}
+.srcbox{border:1px solid var(--a-border-faint);border-radius:var(--a-radius-md);background:var(--a-bg-canvas);padding:10px 13px;font-family:var(--a-font-mono);font-size:var(--a-text-xs);color:var(--a-text-secondary);line-height:1.7;overflow:hidden}
+.srcbox .dim{color:var(--a-text-disabled)}
+.mock-state{display:none}
+#frameD[data-active="office"] .mock-state[data-state="office"],
+#frameD[data-active="other"] .mock-state[data-state="other"]{display:block}
+.footer-note{margin-top:44px;padding-top:18px;border-top:1px solid var(--a-border);color:var(--a-text-tertiary);font-size:var(--a-text-xs)}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand"><span class="mark">α</span> REQ-124 会话产物链接行 <small>本地评审稿 · 2026-07-21</small></div>
+  <div class="spacer"></div>
+  <nav>
+    <a href="#lineage">与上一稿的关系</a>
+    <a href="#audit">现状审计</a>
+    <a href="#rows">链接行</a>
+    <a href="#linkage">右栏联动</a>
+    <a href="#types">类型与载体</a>
+    <a href="#a11y">交互契约</a>
+    <a href="#scope">不做的</a>
+  </nav>
+  <div class="seg" id="themeSeg"><button data-theme="light" class="on">浅色</button><button data-theme="dark">深色</button></div>
+</div>
+
+<div class="wrap">
+  <div class="sec-kicker">产品设计门 · 时间线 · 产物链接行与右栏预览联动</div>
+  <h2 class="t">产物在它诞生的回合里现身,一行链接,点开即看</h2>
+  <p class="lede">时间线目前不显示任何产物 —— 文件生成后要去侧栏的产物工作台里找。本稿只加一种行:在产生它的会话回合处,以「文档名 + 链接标记」的轻量行列出本地产物;点击后右栏预览面打开并聚焦该文件。不做卡片、不做缩略图,时间线保持安静与密度。</p>
+
+  <!-- ═══ 与上一稿的关系 ═══ -->
+  <section class="sec" id="lineage">
+    <div class="sec-kicker">增量声明 · 基线 = <span class="mono">2026-06-28-timeline-overhaul/timeline.html</span>(已批)+ 现役实现(alpha fd357d58)</div>
+    <h2 class="t">与上一稿的关系</h2>
+    <p class="lede">本稿是 2026-06-28 时间线全量稿的增量,不是新 timeline 形态。该原稿定下的回合结构、行高节奏、卡片语言、工具类型色板与右栏面板骨架全部沿用;本稿只插入一种新行类型,并给右栏补一个预览面。</p>
+    <div class="grid3">
+      <div class="note relcard"><span class="rt">沿用 · 06-28 原稿</span>
+        <ul>
+          <li>时间线列结构(24/26 内边距、16px 行距、<span class="mono">.measure</span> 760 上限)、入场节奏与 reduced-motion 纪律。</li>
+          <li>用户气泡 / 助手正文与脚注 / 工具卡 / 回合分隔的全部既有行类型,零改动。</li>
+          <li>tokens 与工具类型色板 verbatim;「安静、可扫读、密而不噪」的取向。</li>
+        </ul>
+      </div>
+      <div class="note relcard"><span class="rt">新增 · 仅一种行类型</span>
+        <ul>
+          <li><b>产物链接行</b>:链接标记 + 文档名,挂在产生它的助手回合内(正文之后、脚注之前)。</li>
+          <li>行高与原稿工具卡头一致的紧凑节奏;hover 轻底、选中带边 —— 复用原稿的强调语义,不新造视觉。</li>
+          <li>暂不支持预览的类型同样成行(中性色),点击右栏给文件信息与有界原文。</li>
+        </ul>
+      </div>
+      <div class="note relcard"><span class="rt">右栏联动 · 对原稿布局的关系</span>
+        <ul>
+          <li>沿用原稿右栏面板骨架(双栏 <span class="mono">.twopane</span> + tab 头):在既有「审查 / 终端」旁增设「预览」tab。</li>
+          <li>预览 tab 的内容 = 产物工作台预览列的同一形态(模式切换 + 状态 chip + 内容面),不另立预览语言;Office 形态与状态语言归 req097 稿(同日 r3)。</li>
+          <li>工作台保持管理/详情面身份不变 —— 右栏预览是「看一眼」,工作台是「管全部」。</li>
+        </ul>
+      </div>
+    </div>
+    <div class="note warn"><b>被否决的替代(帧外记录)</b>:时间线缩略图卡 / 大卡片 —— 信息密度差、时间线变重,owner 已否决;云端产物浏览面 —— 不重建,云端产物以认证链接外开,不进本面。</div>
+  </section>
+
+  <!-- ═══ 现状审计 ═══ -->
+  <section class="sec" id="audit">
+    <div class="sec-kicker">双基线审计 · 原稿(06-28)× 现役实现(alpha fd357d58)· 差异只注明,不裁决</div>
+    <h2 class="t">现状审计</h2>
+    <table class="aud">
+      <tr><th>#</th><th>事实</th><th>锚点</th><th>与本稿的关系</th></tr>
+      <tr><td>B1</td><td>原稿接缝表已大体落地:换肤 + 注入分层(六个分域样式 + 三项注入:斜杠 chip 分类、bash 退出码、回合分隔),不碰上游源码</td><td><code>alpha-ui/timeline-reskin.css</code>(660 行)、<code>alpha-ui/timeline/*.css</code>、<code>timeline-inject.tsx</code>(315 行)</td><td><span class="tag muted">沿用其分层纪律</span></td></tr>
+      <tr><td>B2</td><td>产物在两个基线中都不存在于时间线:原稿 52 构件无产物行,现役注入零 artifact 逻辑;产物首现于侧栏唤起的产物工作台(全页覆盖)</td><td><code>timeline-inject.tsx</code>(全文无 artifact)、<code>artifact-workbench.tsx:61-67</code>、ADR-032 背景节</td><td><span class="tag ok">本稿补这一行</span></td></tr>
+      <tr><td>B3</td><td>右栏 dock 现役 = 上游审查面板换肤(审查 / 终端 tab);原稿 ⑤ 节即其设计,预览 tab 在两个基线中都不存在</td><td>原稿 <code>#panel</code> 节、<code>alpha-ui/timeline/review.css</code></td><td><span class="tag ok">本稿增设预览 tab</span></td></tr>
+      <tr><td>B4</td><td>工作台预览列已有完整预览形态(预览/源文/元数据三模式 + renderer 路由 + 状态 chip)——右栏预览面锚定它,不重建 renderer</td><td><code>artifact-workbench.tsx:529-611</code>、<code>renderers/registry.ts</code></td><td><span class="tag muted">复用其形态与路由</span></td></tr>
+      <tr><td>B5</td><td>偏差注记:原稿右栏审查面板设计与现役换肤存在细部漂移(06-28 后代码演进,如 tab 计数、展开控件形态);本稿的预览 tab 只挂在 tab 头这一稳定接缝上,不依赖漂移部位</td><td>原稿 <code>#panel</code> vs <code>timeline/review.css</code> 现状</td><td><span class="tag warn">注明,不裁决</span></td></tr>
+    </table>
+  </section>
+
+  <!-- ═══ 链接行 ═══ -->
+  <section class="sec" id="rows">
+    <div class="sec-kicker">改动一 · 新行类型:产物链接行(插入原稿既有回合帧)</div>
+    <h2 class="t">链接行:文档名 + 链接标记,别的都不加</h2>
+    <p class="lede">帧内是原稿的回合结构原样:回合分隔、用户气泡、技能工具卡、助手正文与脚注都是既有行类型。新东西只有正文下方那一组链接行 —— 五类可预览文件与一个暂不支持预览的文件,形态完全相同,差别只在色彩权重。</p>
+    <div class="frame"><div class="tl anim">
+      <div class="turn-div">14:31 · 新一轮</div>
+      <div class="row-user"><div class="bubble">把季度分析整理成文档,配一张营收对比图,再出一版网页原型。</div></div>
+      <div class="tc"><div class="tc-head"><span class="tc-ico skill"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 3l1.8 4.6L18 9l-4.2 1.4L12 15l-1.8-4.6L6 9z"/></svg></span><div class="tc-tt"><b>技能 · 文档产出</b><span class="tgt">office-suite</span></div><span class="tc-st muted">完成</span><svg class="ic sm tc-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div></div>
+      <div class="row-ai measure">
+        <div class="ai-md"><p>已完成:分析写进了文档,配图与网页原型一并生成,数据底表和打印版也在下面。</p></div>
+        <div class="artrows" role="list" aria-label="本回合产物">
+          <button class="artrow" role="listitem" type="button"><svg class="ic" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg><span class="fn">季度经营分析.docx</span></button>
+          <button class="artrow" role="listitem" type="button"><svg class="ic" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg><span class="fn">营收对比图.png</span></button>
+          <button class="artrow" role="listitem" type="button"><svg class="ic" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg><span class="fn">网页原型.html</span></button>
+          <button class="artrow" role="listitem" type="button"><svg class="ic" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg><span class="fn">分析摘要.md</span></button>
+          <button class="artrow" role="listitem" type="button"><svg class="ic" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg><span class="fn">打印版.pdf</span></button>
+          <button class="artrow" role="listitem" type="button" data-plain><svg class="ic" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg><span class="fn">数据底表.parquet</span></button>
+        </div>
+        <div class="meta"><span class="prov"><span class="pico" style="background:#4d6bfe">B</span><span class="agent">Build</span></span><span class="dot"></span><span>14:32</span></div>
+      </div>
+    </div></div>
+    <p class="cap"><span class="tag ok">新增</span> 链接行 = 链接标记 + 文档名,一行一个,无卡片、无缩略图、无大小/状态徽标(那些是工作台与右栏预览面的事)。挂载位置:助手回合内、正文之后、脚注之前 —— 不打断原稿行距节奏。可预览类型 = 强调色 + medium 字重;暂不支持预览的类型(如 parquet)同一形态、中性色 —— 行本身不区分「能不能预览」,右栏如实回答。其余构件(回合分隔 / 气泡 / 技能卡 / 脚注)均为原稿既有行类型<span class="tag muted" style="margin:0 3px">零改动</span>。云端产物不出现在此(链接外开,见「不做的」)。</p>
+  </section>
+
+  <!-- ═══ 右栏联动 ═══ -->
+  <section class="sec" id="linkage">
+    <div class="sec-kicker">改动二 · 点击链接行 → 右栏预览面打开并聚焦(示意帧;布局 = 原稿 ⑤ 节双栏骨架)</div>
+    <h2 class="t">右栏联动:预览 tab 聚焦被点的那一个</h2>
+    <p class="lede">右栏沿用原稿的双栏面板骨架,tab 头在既有「审查 / 终端」旁多一个「预览」。点击时间线链接行:右栏切到预览 tab、载入该文件、焦点移入 —— 左侧时间线不滚动、不变形,被点的行保持高亮以示对应关系。</p>
+
+    <div class="demo-tabs" role="tablist" aria-label="联动示意切换" data-for="frameD">
+      <span>被点击的产物:</span>
+      <button type="button" role="tab" data-state="office" aria-selected="true">文档(可预览)</button>
+      <button type="button" role="tab" data-state="other" aria-selected="false">暂不支持预览的类型</button>
+    </div>
+
+    <div class="frame" id="frameD" data-active="office">
+      <div class="mock-state" data-state="office">
+        <div class="twopane">
+          <div class="left">
+            <div class="row-ai"><div class="ai-md"><p>已完成:分析写进了文档,配图与网页原型一并生成。</p></div></div>
+            <div class="artrows">
+              <button class="artrow" type="button" data-active><svg class="ic" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg><span class="fn">季度经营分析.docx</span></button>
+              <button class="artrow" type="button"><svg class="ic" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg><span class="fn">营收对比图.png</span></button>
+            </div>
+          </div>
+          <div class="right">
+            <div class="rp-head"><span class="rp-tab">审查 <span class="n">118</span></span><span class="rp-tab">终端</span><span class="rp-tab on">预览</span></div>
+            <div class="rp-body">
+              <div class="rp-doc"><svg class="ic" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg>季度经营分析.docx <span class="chipx" data-k="ok">结构安全</span></div>
+              <span class="wb-tabs"><b data-on>预览</b><b>源文</b><b>元数据</b></span>
+              <div class="xdoc">
+                <div class="xdoc-body">
+                  <h4>季度经营分析 · 第三季度</h4>
+                  <p>本季度整体营收保持增长,华东区贡献最大增量,线上渠道占比首次过半;毛利率环比改善 1.8 个百分点。</p>
+                  <table>
+                    <tr><th>地区</th><th>营收</th><th>同比</th></tr>
+                    <tr><td>华东</td><td>¥2,480 万</td><td>+12%</td></tr>
+                    <tr><td>华南</td><td>¥1,920 万</td><td>+8%</td></tr>
+                  </table>
+                  <p>第四季度重点是华南市场的渠道下沉,预算已在附表列明。</p>
+                </div>
+                <div class="xdoc-foot">排版与原件存在差异 · 完整排版用快速查看</div>
+              </div>
+              <div class="wb-toolbar">
+                <button class="wb-btn" type="button" data-variant="primary">快速查看 <span class="kbd">空格</span></button>
+                <button class="wb-btn" type="button">在系统中打开</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="mock-state" data-state="other">
+        <div class="twopane">
+          <div class="left">
+            <div class="row-ai"><div class="ai-md"><p>数据底表也一并导出,便于你自己再算。</p></div></div>
+            <div class="artrows">
+              <button class="artrow" type="button"><svg class="ic" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg><span class="fn">季度经营分析.docx</span></button>
+              <button class="artrow" type="button" data-plain data-active><svg class="ic" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg><span class="fn">数据底表.parquet</span></button>
+            </div>
+          </div>
+          <div class="right">
+            <div class="rp-head"><span class="rp-tab">审查 <span class="n">118</span></span><span class="rp-tab">终端</span><span class="rp-tab on">预览</span></div>
+            <div class="rp-body">
+              <div class="rp-doc"><svg class="ic" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg>数据底表.parquet</div>
+              <div class="noticex">该格式暂不支持内联预览 —— 以下为文件信息与原文节选。</div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <div class="factx"><span>大小</span><b>4.6 MiB</b></div>
+                <div class="factx"><span>状态</span><b class="sans">已验证</b></div>
+                <div class="factx"><span>产出</span><b>job_7f3a…c21e</b></div>
+              </div>
+              <div class="srcbox">PAR1 ▯▯▯▯ schema: quarter, revenue, region …<br /><span class="dim">原文节选(有界读取,前 4 KiB)· 二进制内容按十六进制摘要显示</span></div>
+              <div class="wb-toolbar">
+                <button class="wb-btn" type="button">打开 run 目录</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="capset" data-for="frameD">
+      <p class="cap" data-cap="office" data-on><span class="tag ok">新增</span> 布局 = 原稿 ⑤ 节 <span class="mono">.twopane</span> 骨架原样;tab 头只加「预览」一格(挂稳定接缝,B5)。预览面内容 = 工作台预览列同一形态:模式切换 + 状态 chip + 内容面 —— Office 帧内形态(结构安全 chip / 提取内容<b>直接渲染</b> / 快速查看 + 空格作旁路)整体引自 req097 稿 r4:点链接行即见内容,零中间步骤;帧内样例文档只表达这一交互事实,内容渲染的具体形态归 REQ-123(#438),<b>不约束提取视图内部设计</b>。图片/HTML/MD/PDF 走各自现役 renderer,同一面内切换。被点的链接行保持高亮,左侧不滚动。</p>
+      <p class="cap" data-cap="other"><span class="tag ok">新增</span> 暂不支持预览的类型:右栏如实给「文件信息 + 有界原文节选」,文案沿用工作台既有词(「该格式暂不支持内联预览」),不称"预览"、不伪造内容;动作只保留「打开 run 目录」。链接行在时间线里与可预览类型同形态(中性色),差异由右栏回答 —— 时间线不预判。</p>
+    </div>
+  </section>
+
+  <!-- ═══ 类型与载体 ═══ -->
+  <section class="sec" id="types">
+    <div class="sec-kicker">帧外 · 类型注册表(白名单枚举;域外不称"预览")· 载体均为现役,本稿只做联动接线</div>
+    <h2 class="t">类型与载体</h2>
+    <table class="aud">
+      <tr><th>类型</th><th>右栏载体</th><th>本稿改动</th></tr>
+      <tr><td>图片</td><td>现役受控图片渲染(blob + 被动解码)</td><td><span class="tag muted">仅联动接线</span></td></tr>
+      <tr><td>HTML</td><td>现役隔离 HTML 预览(独立进程 host)</td><td><span class="tag muted">仅联动接线</span></td></tr>
+      <tr><td>Markdown</td><td>现役渲染视图(净化模型)</td><td><span class="tag muted">仅联动接线</span></td></tr>
+      <tr><td>PDF</td><td>现役 PDF 独立 worker 查看器</td><td><span class="tag muted">仅联动接线</span></td></tr>
+      <tr><td>Office 三件套(无宏,结构闸 PASS)</td><td>提取视图(REQ-123/#438)为面内内容;快速查看为全保真通道;受控外开保底 —— 状态语言归 REQ-097(req097 稿 r3)</td><td><span class="tag info">引用,零重定义</span></td></tr>
+      <tr><td>白名单外</td><td>元数据 + 有界源文,不称"预览"(帧内词沿用现役「该格式暂不支持内联预览」)</td><td><span class="tag ok">本稿定形态</span></td></tr>
+      <tr><td>云端产物</td><td>不进本面 —— 认证链接外开(浏览器/portal);内容不进 status/MCP/IPC 契约不变</td><td><span class="tag muted">零 UI,帧外记录</span></td></tr>
+    </table>
+    <div class="note ok"><b>纪律</b>:REQ-124 不重建任何 renderer,只做链接行 + 右栏联动 + 类型注册表接线;Office 面内内容归 REQ-123,Office 状态与快速查看归 REQ-097。三者边界不重叠(ADR-032 实施归属)。</div>
+  </section>
+
+  <!-- ═══ 交互契约 ═══ -->
+  <section class="sec" id="a11y">
+    <div class="sec-kicker">帧外 · 交互与无障碍(沿用原稿时间线合同,只列增量)</div>
+    <h2 class="t">交互契约</h2>
+    <table class="aud">
+      <tr><th>面</th><th>合同</th></tr>
+      <tr><td>激活</td><td>链接行是真按钮:点击 / Enter 激活 → 右栏切预览 tab、载入并聚焦;再次激活同一行不重复加载。行进入 Tab 序,焦点环用既有 focus ring。</td></tr>
+      <tr><td>焦点移动</td><td>激活后焦点移入右栏预览面(面容器可聚焦);Esc 或关闭预览 tab 后焦点返回原链接行。左侧时间线滚动位置不变。</td></tr>
+      <tr><td>对应关系</td><td>被点行保持高亮(选中态)直至右栏切走;同回合多产物逐行独立,无组选择。</td></tr>
+      <tr><td>读屏</td><td>行组 aria-label「本回合产物」;右栏载入完成经既有 aria-live(polite)播报文档名;暂不支持预览的类型播报既有词「该格式暂不支持内联预览」。</td></tr>
+      <tr><td>动效</td><td>链接行入场跟随原稿时间线入场节奏,无独立动画;reduced-motion 下与原稿同规则静止。</td></tr>
+    </table>
+  </section>
+
+  <!-- ═══ 不做的 ═══ -->
+  <section class="sec" id="scope">
+    <div class="sec-kicker">范围栅栏(与 IA 裁决一致)</div>
+    <h2 class="t">不做的</h2>
+    <div class="grid3">
+      <div class="note"><b>不做缩略图卡 / 大卡片</b>:已被否决的替代;时间线只有轻量链接行,密度与安静优先。</div>
+      <div class="note"><b>不重建 renderer / 不重定义 Office 形态</b>:五类载体全部现役或归属他稿(提取视图、快速查看);本稿只做联动接线与白名单外形态。</div>
+      <div class="note"><b>云端产物不进本面</b>:桌面端不重建云端产物浏览;认证链接外开,产物内容不进 status/MCP/IPC 的契约不变。</div>
+    </div>
+    <p class="footer-note">评审稿 · 2026-07-21 · 基线 = 2026-06-28-timeline-overhaul/timeline.html(已批)+ 现役实现(alpha fd357d58)。本地打开即可交互(联动示意切换 / 主题切换)。帧内文案均为最终建议文案;帧外标注(新增 / 零改动 / 沿用 / 引用)不属于产品界面。数据为示意 fixture:文件名、大小、任务号皆为演示值。</p>
+  </section>
+</div>
+
+<script>
+document.querySelectorAll('#themeSeg button').forEach(function(b){b.onclick=function(){document.querySelectorAll('#themeSeg button').forEach(function(x){x.classList.remove('on')});b.classList.add('on');document.documentElement.setAttribute('data-theme',b.dataset.theme);};});
+document.querySelectorAll('.demo-tabs[data-for]').forEach(function(tabs){
+  var frame=document.getElementById(tabs.dataset.for);
+  var caps=document.querySelector('.capset[data-for="'+tabs.dataset.for+'"]');
+  tabs.addEventListener('click',function(e){
+    var btn=e.target.closest('button[data-state]');
+    if(!btn)return;
+    frame.dataset.active=btn.dataset.state;
+    tabs.querySelectorAll('button[data-state]').forEach(function(b){b.setAttribute('aria-selected',String(b===btn))});
+    if(caps)caps.querySelectorAll('.cap').forEach(function(c){
+      if(c.dataset.cap===btn.dataset.state)c.setAttribute('data-on','');else c.removeAttribute('data-on');
+    });
+  });
+});
+</script>
+</body>
+</html>

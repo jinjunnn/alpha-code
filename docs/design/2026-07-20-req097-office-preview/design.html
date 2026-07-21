@@ -1,0 +1,876 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="light dark" />
+<meta name="design-status" content="draft-for-owner-review" />
+<title>alpha-code · REQ-097 Office 结构检查与快速查看 · Workbench 增量稿 r3 · 2026-07-21</title>
+<style>
+/* ════════════════════════════════════════════════════════════════════════
+   tokens verbatim 沿用 2026-07-20-req090-alpha-surfaces(同期已批语言),
+   血统:v3(07-13)→ v4(07-17)→ v5(07-17)→ v6(07-18)→ req090(07-20)。
+   本稿零新 token。r2(2026-07-21):对齐 owner 重框 —— 云端半场挂起,
+   预览载体改为 macOS 系统快速查看。r3(2026-07-21):对齐已接受的呈现 IA
+   裁决(ADR-032)—— 右栏面内内容 = 结构化提取(独立交付,本稿留占位),
+   快速查看 = 全保真通道;timeline 链接行联动另立 timeline.html。
+   ════════════════════════════════════════════════════════════════════════ */
+:root {
+  --a-bg-canvas:#ffffff; --a-bg-subtle:#f6f7f9; --a-bg-muted:#eceef1; --a-bg-inset:#e3e6ea;
+  --a-surface:#ffffff; --a-surface-raised:#ffffff; --a-scrim:rgba(15,17,21,.48);
+  --a-border-faint:#eef0f3; --a-border:#e4e6ea; --a-border-strong:#ced2d9;
+  --a-text:#18181b; --a-text-secondary:#52525b; --a-text-tertiary:#71727a; --a-text-disabled:#a2a5ad;
+  --a-text-on-accent:#ffffff;
+  --a-overlay-hover:rgba(15,17,21,.05); --a-overlay-active:rgba(15,17,21,.08);
+  --a-overlay-selected:rgba(79,70,229,.07);
+  --a-accent:#4f46e5; --a-accent-solid:#4f46e5; --a-accent-solid-hover:#4338ca;
+  --a-accent-subtle:rgba(79,70,229,.10); --a-accent-border:rgba(79,70,229,.35); --a-accent-ring:rgba(79,70,229,.45);
+  --a-success:#15803d; --a-warning:#b45309; --a-error:#c81e1e; --a-info:#1d4ed8;
+  --a-success-subtle:rgba(22,163,74,.12); --a-warning-subtle:rgba(217,119,6,.12);
+  --a-error-subtle:rgba(220,38,38,.11); --a-info-subtle:rgba(37,99,235,.11);
+  --a-font-sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;
+  --a-font-mono:"SF Mono","JetBrains Mono","Menlo",ui-monospace,monospace;
+  --a-text-2xs:10.5px; --a-text-xs:11.5px; --a-text-sm:12.5px; --a-text-base:13px;
+  --a-text-md:14px; --a-text-lg:16px; --a-text-xl:19px; --a-text-2xl:23px;
+  --a-leading-tight:1.2; --a-leading-snug:1.4; --a-leading-normal:1.58;
+  --a-tracking-tight:-.014em; --a-tracking-wide:.04em;
+  --a-weight-normal:400; --a-weight-medium:500; --a-weight-semibold:600;
+  --a-radius-xs:4px; --a-radius-sm:6px; --a-radius-md:8px; --a-radius-lg:11px;
+  --a-radius-xl:14px; --a-radius-2xl:18px; --a-radius-full:9999px;
+  --a-shadow-xs:0 1px 2px rgba(15,17,21,.05);
+  --a-shadow-sm:0 1px 3px rgba(15,17,21,.08),0 1px 2px rgba(15,17,21,.04);
+  --a-shadow-md:0 4px 12px rgba(15,17,21,.08),0 2px 4px rgba(15,17,21,.05);
+  --a-shadow-lg:0 12px 32px rgba(15,17,21,.12),0 4px 8px rgba(15,17,21,.06);
+  --a-ring-focus:0 0 0 3px var(--a-accent-ring);
+  --a-edge-light:inset 0 1px 0 rgba(255,255,255,.65);
+  --a-dur-fast:130ms; --a-dur-base:190ms; --a-ease-out:cubic-bezier(.22,1,.36,1);
+}
+html[data-theme="dark"] {
+  --a-bg-canvas:#0a0b0d; --a-bg-subtle:#0e0f11; --a-bg-muted:#16171a; --a-bg-inset:#1e2024;
+  --a-surface:#121316; --a-surface-raised:#17181b; --a-scrim:rgba(0,0,0,.64);
+  --a-border-faint:#1b1c20; --a-border:#292a2f; --a-border-strong:#3d3f46;
+  --a-text:#fafafa; --a-text-secondary:#b1b1ba; --a-text-tertiary:#858690; --a-text-disabled:#62646d;
+  --a-overlay-hover:rgba(255,255,255,.055); --a-overlay-active:rgba(255,255,255,.09);
+  --a-overlay-selected:rgba(129,140,248,.10);
+  --a-accent:#a5adff; --a-accent-solid:#4f46e5; --a-accent-solid-hover:#5b54ea;
+  --a-accent-subtle:rgba(129,140,248,.14); --a-accent-border:rgba(129,140,248,.38); --a-accent-ring:rgba(129,140,248,.48);
+  --a-success:#4ade80; --a-warning:#fbbf24; --a-error:#fca5a5; --a-info:#93c5fd;
+  --a-success-subtle:rgba(74,222,128,.14); --a-warning-subtle:rgba(251,191,36,.14);
+  --a-error-subtle:rgba(248,113,113,.14); --a-info-subtle:rgba(96,165,250,.14);
+  --a-shadow-xs:0 1px 2px rgba(0,0,0,.4); --a-shadow-sm:0 1px 3px rgba(0,0,0,.5);
+  --a-shadow-md:0 4px 12px rgba(0,0,0,.5); --a-shadow-lg:0 12px 32px rgba(0,0,0,.6);
+  --a-edge-light:inset 0 1px 0 rgba(255,255,255,.06);
+}
+
+* { box-sizing:border-box; }
+html { scroll-behavior:smooth; }
+body {
+  margin:0; color:var(--a-text); background:var(--a-bg-subtle);
+  font-family:var(--a-font-sans); font-size:var(--a-text-base); line-height:var(--a-leading-normal);
+  -webkit-font-smoothing:antialiased;
+}
+button,input,select { font:inherit; }
+button { color:inherit; cursor:pointer; }
+a { color:var(--a-accent); }
+code,.mono { font-family:var(--a-font-mono); }
+svg { display:block; }
+:focus-visible { outline:none; box-shadow:var(--a-ring-focus); }
+.skip-link { position:fixed;left:12px;top:-80px;z-index:2000;padding:10px 14px;color:var(--a-text-on-accent);background:var(--a-accent-solid);border-radius:var(--a-radius-md); }
+.skip-link:focus { top:12px; }
+
+/* ── 评审外壳(不属于产品界面)── */
+.reviewbar {
+  position:sticky; top:0; z-index:1000; display:flex; align-items:center; gap:16px;
+  min-height:54px; padding:9px 20px; border-bottom:1px solid var(--a-border);
+  background:color-mix(in srgb,var(--a-surface) 91%,transparent); backdrop-filter:blur(14px);
+}
+.reviewbrand { display:flex;align-items:center;gap:10px;min-width:0;font-weight:var(--a-weight-semibold); }
+.alpha-mark { display:grid;place-items:center;width:26px;height:26px;flex:none;color:#fff;background:var(--a-accent-solid);border-radius:8px;font-weight:700; }
+.reviewbrand small { color:var(--a-text-tertiary);font-weight:var(--a-weight-normal); }
+.reviewnav { display:flex;align-items:center;gap:2px;overflow-x:auto;scrollbar-width:none; }
+.reviewnav::-webkit-scrollbar { display:none; }
+.reviewnav a { padding:6px 9px;color:var(--a-text-secondary);border-radius:var(--a-radius-md);text-decoration:none;font-size:var(--a-text-xs);white-space:nowrap; }
+.reviewnav a:hover { color:var(--a-text);background:var(--a-bg-muted); }
+.reviewtools { display:flex;gap:6px;margin-left:auto; }
+.reviewtools button,.demo-tabs button {
+  min-height:34px; padding:0 11px; border:1px solid var(--a-border); border-radius:var(--a-radius-md);
+  color:var(--a-text-secondary); background:var(--a-surface);
+}
+.reviewtools button[aria-pressed="true"],.demo-tabs button[aria-selected="true"] {
+  color:var(--a-accent); border-color:var(--a-accent-border); background:var(--a-accent-subtle);
+}
+.wrap { width:min(1180px,100%);margin:0 auto;padding:38px 24px 120px; }
+
+.hero { display:grid;grid-template-columns:minmax(0,1.35fr) minmax(280px,.65fr);gap:24px;align-items:end;margin-bottom:56px; }
+.kicker { margin:0 0 6px;color:var(--a-text-tertiary);font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase; }
+h1,h2,h3,h4 { margin:0;line-height:var(--a-leading-tight);letter-spacing:var(--a-tracking-tight); }
+h1 { max-width:840px;font-size:clamp(28px,4vw,42px); }
+h2 { font-size:var(--a-text-2xl); }
+h3 { font-size:var(--a-text-lg); }
+.lede { max-width:80ch;margin:10px 0 0;color:var(--a-text-secondary);font-size:var(--a-text-md); }
+.status-card,.note,.decision,.a11y-card { border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-surface);box-shadow:var(--a-shadow-xs); }
+.status-card { padding:16px 18px; }
+.status-line { display:flex;justify-content:space-between;gap:12px;padding:5px 0;color:var(--a-text-secondary);font-size:var(--a-text-sm); }
+.status-line b { color:var(--a-text);font-weight:var(--a-weight-medium);text-align:right; }
+.section { margin-bottom:64px;scroll-margin-top:74px; }
+.section-copy { max-width:84ch;margin:7px 0 0;color:var(--a-text-secondary);font-size:var(--a-text-md); }
+.grid-2 { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px; }
+.grid-3 { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px; }
+.note { padding:14px 16px;color:var(--a-text-secondary); }
+.note strong { color:var(--a-text); }
+.note[data-tone="ok"] { border-left:3px solid var(--a-success); }
+.note[data-tone="warn"] { border-left:3px solid var(--a-warning); }
+.note[data-tone="info"] { border-left:3px solid var(--a-accent); }
+.relationship-card { padding:18px; }
+.relationship-card .rel-tag { display:inline-block;margin-bottom:8px;color:var(--a-accent);font-size:var(--a-text-xs);font-weight:var(--a-weight-semibold); }
+.relationship-card h3 { margin-bottom:7px; }
+.relationship-card ul { margin:0;padding-left:18px;color:var(--a-text-secondary); }
+.relationship-card li + li { margin-top:6px; }
+.matrix-wrap { overflow-x:auto;border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-surface); }
+table { width:100%;border-collapse:collapse;font-size:var(--a-text-sm); }
+th { padding:11px 13px;color:var(--a-text-secondary);background:var(--a-bg-subtle);text-align:left;font-weight:var(--a-weight-semibold);white-space:nowrap; }
+td { padding:12px 13px;border-top:1px solid var(--a-border-faint);color:var(--a-text-secondary);vertical-align:top; }
+td:first-child { color:var(--a-text);font-weight:var(--a-weight-medium); }
+td code { font-size:var(--a-text-2xs);background:var(--a-bg-muted);border:1px solid var(--a-border-faint);border-radius:4px;padding:0 4px;white-space:nowrap; }
+.tag { display:inline-flex;align-items:center;min-height:22px;padding:1px 8px;border-radius:var(--a-radius-full);font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);white-space:nowrap; }
+.tag.ok { color:var(--a-success);background:var(--a-success-subtle); }
+.tag.warn { color:var(--a-warning);background:var(--a-warning-subtle); }
+.tag.err { color:var(--a-error);background:var(--a-error-subtle); }
+.tag.info { color:var(--a-accent);background:var(--a-accent-subtle); }
+.tag.muted { color:var(--a-text-secondary);background:var(--a-bg-muted); }
+.demo-tabs { display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:14px 0 10px; }
+.demo-tabs span { margin-right:2px;color:var(--a-text-tertiary);font-size:var(--a-text-xs); }
+.cap { margin:9px 2px 0;color:var(--a-text-tertiary);font-size:var(--a-text-xs);line-height:var(--a-leading-snug); }
+.capset .cap { display:none; }
+.capset .cap[data-on] { display:block; }
+
+/* ── 产品帧 ── */
+.frame {
+  position:relative; width:100%; overflow:hidden;
+  border:1px solid var(--a-border); border-radius:var(--a-radius-xl);
+  background:var(--a-bg-canvas); box-shadow:var(--a-shadow-md);
+}
+.mock-state { display:none; }
+#frameA[data-active="checking"] .mock-state[data-state="checking"],
+#frameA[data-active="ready"] .mock-state[data-state="ready"],
+#frameA[data-active="refused"] .mock-state[data-state="refused"],
+#frameA[data-active="degraded"] .mock-state[data-state="degraded"],
+#frameA[data-active="review"] .mock-state[data-state="review"],
+#frameB[data-active="entry"] .mock-state[data-state="entry"],
+#frameB[data-active="overlay"] .mock-state[data-state="overlay"] { display:block; }
+.windowbar {
+  display:flex; align-items:center; gap:9px; height:42px; padding:0 14px;
+  border-bottom:1px solid var(--a-border-faint); color:var(--a-text-tertiary);
+  background:var(--a-bg-subtle); font-size:var(--a-text-xs);
+}
+.windowbar .dots { display:flex;gap:6px; }
+.windowbar .dots i { display:block;width:9px;height:9px;border-radius:50%;background:var(--a-border-strong); }
+.windowbar .title { margin:auto; }
+
+/* 产物工作台帧内骨架(现役 alpha-wb-* / a-wb-* 的稿内等价物) */
+.wb { display:grid;grid-template-columns:188px 292px minmax(0,1fr);min-height:560px;background:var(--a-bg-canvas); }
+.wb-col { padding:12px;border-right:1px solid var(--a-border-faint);display:flex;flex-direction:column;gap:8px;min-width:0; }
+.wb-col:last-child { border-right:0;padding:12px 18px; }
+.wb-coltitle { font-size:var(--a-text-xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary);padding:2px 4px; }
+.wb-runrow { display:flex;flex-direction:column;gap:2px;padding:8px 10px;border:1px solid transparent;border-radius:var(--a-radius-md);text-align:left;background:none; }
+.wb-runrow[data-active] { background:var(--a-overlay-selected);border-color:var(--a-accent-border); }
+.wb-runid { font-family:var(--a-font-mono);font-size:var(--a-text-sm);color:var(--a-text); }
+.wb-runmeta { font-size:var(--a-text-xs);color:var(--a-text-tertiary); }
+.wb-usage { margin-top:auto;padding-top:10px;border-top:1px solid var(--a-border-faint);font-size:var(--a-text-xs);color:var(--a-text-secondary);display:flex;flex-direction:column;gap:4px; }
+.wb-card { display:flex;flex-direction:column;gap:3px;padding:9px 11px;border:1px solid var(--a-border-faint);border-radius:var(--a-radius-md);background:var(--a-surface); }
+.wb-card[data-active] { border-color:var(--a-accent-border);background:var(--a-overlay-selected); }
+.wb-cardname { font-weight:var(--a-weight-medium);font-size:var(--a-text-sm);color:var(--a-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.wb-cardmeta { display:flex;align-items:center;gap:6px;flex-wrap:wrap; }
+.wb-size { font-size:var(--a-text-xs);color:var(--a-text-tertiary); }
+.chipx { display:inline-flex;align-items:center;gap:4px;padding:1px 7px;border-radius:var(--a-radius-full);font-size:var(--a-text-2xs);background:var(--a-bg-muted);color:var(--a-text-secondary);white-space:nowrap; }
+.chipx[data-k="ok"] { background:var(--a-success-subtle);color:var(--a-success); }
+.chipx[data-k="warn"] { background:var(--a-warning-subtle);color:var(--a-warning); }
+.chipx[data-k="err"] { background:var(--a-error-subtle);color:var(--a-error); }
+.chipx[data-k="info"] { background:var(--a-info-subtle);color:var(--a-info); }
+.chipx[data-k="accent"] { background:var(--a-accent-subtle);color:var(--a-accent); }
+.chipx .spin { width:9px;height:9px;flex:none;border-radius:50%;border:1.5px solid currentColor;border-top-color:transparent;animation:wbspin .9s linear infinite; }
+@keyframes wbspin { to { transform:rotate(360deg); } }
+.wb-tabs { display:inline-flex;gap:2px;background:var(--a-bg-muted);border-radius:var(--a-radius-md);padding:2px; }
+.wb-tabs b { padding:4px 12px;border-radius:var(--a-radius-sm);font-size:var(--a-text-sm);font-weight:var(--a-weight-normal);color:var(--a-text-secondary); }
+.wb-tabs b[data-on] { background:var(--a-surface);color:var(--a-text);box-shadow:var(--a-shadow-xs); }
+.wb-prevhead { display:flex;align-items:center;gap:8px;flex-wrap:wrap; }
+.noticex { display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;padding:8px 11px;border-radius:var(--a-radius-sm);font-size:var(--a-text-sm);background:var(--a-bg-subtle);color:var(--a-text-secondary); }
+.noticex[data-k="warn"] { background:var(--a-warning-subtle);color:var(--a-warning); }
+.noticex[data-k="err"] { background:var(--a-error-subtle);color:var(--a-error); }
+.noticex b { font-weight:var(--a-weight-semibold); }
+.wb-btn { display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border:1px solid var(--a-border);border-radius:var(--a-radius-sm);background:var(--a-surface);color:var(--a-text);font-size:var(--a-text-sm); }
+.wb-btn[data-variant="primary"] { background:var(--a-accent-solid);border-color:var(--a-accent-solid);color:var(--a-text-on-accent); }
+.wb-btn:disabled { color:var(--a-text-disabled);background:var(--a-bg-muted);border-color:var(--a-border-faint);cursor:not-allowed; }
+.wb-toolbar { display:flex;align-items:center;gap:8px;flex-wrap:wrap; }
+.factcard { display:flex;flex-direction:column;gap:8px;max-width:520px;padding:16px;border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);background:var(--a-surface);box-shadow:var(--a-shadow-xs); }
+.factcard > b { font-size:var(--a-text-md); }
+.factcard > p { margin:0;color:var(--a-text-secondary);font-size:var(--a-text-sm); }
+.factx { display:flex;gap:10px;font-size:var(--a-text-sm);min-width:0; }
+.factx span { flex:0 0 96px;color:var(--a-text-tertiary); }
+.factx b { flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:var(--a-weight-normal);font-family:var(--a-font-mono); }
+.factx b.sans { font-family:var(--a-font-sans); }
+/* 来源块(帧内用户语言) */
+.origin { display:flex;flex-direction:column;gap:5px;max-width:520px;padding:11px 14px;border:1px solid var(--a-border-faint);border-radius:var(--a-radius-md);background:var(--a-bg-subtle); }
+.origin .ot { font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary); }
+.warnlist { display:flex;flex-direction:column;gap:6px;max-width:520px; }
+.warnitem { display:flex;gap:8px;align-items:flex-start;padding:8px 11px;border:1px solid color-mix(in srgb,var(--a-warning) 30%,var(--a-border));border-radius:var(--a-radius-md);background:var(--a-warning-subtle);font-size:var(--a-text-sm);color:var(--a-text); }
+.warnitem small { display:block;color:var(--a-text-secondary);font-size:var(--a-text-xs);margin-top:1px; }
+.diagrow { display:flex;align-items:center;gap:8px;font-size:var(--a-text-xs);color:var(--a-text-tertiary); }
+.diagrow code { background:var(--a-bg-muted);border:1px solid var(--a-border-faint);border-radius:4px;padding:0 5px;font-size:var(--a-text-2xs); }
+.wb-preview-body { display:flex;flex-direction:column;gap:10px;padding-top:2px; }
+/* 内容区占位:提取视图(内部形态归独立交付,本稿只留位) */
+.xtract { display:grid;place-items:center;min-height:170px;max-width:520px;padding:20px;border:1.5px dashed var(--a-border-strong);border-radius:var(--a-radius-lg);background:var(--a-bg-subtle);text-align:center;color:var(--a-text-tertiary);font-size:var(--a-text-sm);line-height:var(--a-leading-normal); }
+.xtract b { display:block;color:var(--a-text-secondary);font-size:var(--a-text-md);margin-bottom:5px; }
+/* 提取内容示例(直接渲染、零中间步骤;内部形态归独立交付,示例不约束) */
+.xdoc { max-width:520px;border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);background:var(--a-surface);box-shadow:var(--a-shadow-xs);overflow:hidden; }
+.xdoc-body { padding:16px 18px 14px;display:flex;flex-direction:column;gap:9px; }
+.xdoc-body h4 { font-size:var(--a-text-md);font-weight:var(--a-weight-semibold); }
+.xdoc-body p { margin:0;color:var(--a-text-secondary);font-size:var(--a-text-sm);line-height:1.62; }
+.xdoc table { width:auto;min-width:78%;border-collapse:collapse;font-size:var(--a-text-xs);margin-top:2px; }
+.xdoc th { padding:5px 12px;background:var(--a-bg-subtle);color:var(--a-text-tertiary);font-weight:var(--a-weight-semibold);text-align:left;border:1px solid var(--a-border-faint);white-space:nowrap; }
+.xdoc td { padding:5px 12px;border:1px solid var(--a-border-faint);color:var(--a-text-secondary); }
+.xdoc-foot { padding:6px 18px;border-top:1px solid var(--a-border-faint);font-size:var(--a-text-2xs);color:var(--a-text-tertiary); }
+.kbd { display:inline-flex;align-items:center;padding:0 6px;min-height:18px;border:1px solid var(--a-border);border-bottom-width:2px;border-radius:5px;background:var(--a-bg-subtle);color:var(--a-text-tertiary);font-size:var(--a-text-2xs);font-family:var(--a-font-sans); }
+
+/* 系统快速查看浮层 —— 示意轮廓(虚线 = 系统界面,本稿不设计其内部) */
+.ql-stage { position:relative;min-height:470px;background:var(--a-bg-subtle);overflow:hidden; }
+.ql-appghost { position:absolute;inset:18px;border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);background:var(--a-bg-canvas);opacity:.55; }
+.ql-scrim { position:absolute;inset:0;background:var(--a-scrim); }
+.ql-panel {
+  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+  width:min(500px,82%); height:76%; display:flex; flex-direction:column;
+  border:1.5px dashed var(--a-border-strong); border-radius:14px;
+  background:color-mix(in srgb,var(--a-surface) 94%,transparent); box-shadow:var(--a-shadow-lg);
+}
+.ql-titlebar { display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px dashed var(--a-border-strong);color:var(--a-text-secondary);font-size:var(--a-text-xs); }
+.ql-titlebar .x { width:11px;height:11px;border-radius:50%;border:1.5px dashed var(--a-border-strong);flex:none; }
+.ql-titlebar .t { margin:auto; }
+.ql-body { flex:1;display:grid;place-items:center;padding:22px;text-align:center;color:var(--a-text-tertiary);font-size:var(--a-text-sm);line-height:var(--a-leading-normal); }
+.ql-body b { display:block;color:var(--a-text-secondary);font-size:var(--a-text-md);margin-bottom:6px; }
+
+/* 状态机与可用性(帧外) */
+.lane { border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-surface);box-shadow:var(--a-shadow-xs);padding:16px 18px;margin-top:14px; }
+.lane h3 { display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap; }
+.lane h3 small { color:var(--a-text-tertiary);font-weight:var(--a-weight-normal);font-size:var(--a-text-xs); }
+.flow { display:flex;align-items:stretch;gap:10px;flex-wrap:wrap; }
+.flownode { flex:1;min-width:150px;padding:11px 13px;border:1px solid var(--a-border);border-radius:var(--a-radius-md);background:var(--a-bg-subtle);position:relative; }
+.flownode b { display:block;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium); }
+.flownode p { margin:3px 0 0;color:var(--a-text-tertiary);font-size:var(--a-text-xs); }
+.flownode[data-k="ok"] { border-color:color-mix(in srgb,var(--a-success) 32%,var(--a-border));background:var(--a-success-subtle); }
+.flownode[data-k="warn"] { border-color:color-mix(in srgb,var(--a-warning) 32%,var(--a-border));background:var(--a-warning-subtle); }
+.flownode[data-k="err"] { border-color:color-mix(in srgb,var(--a-error) 32%,var(--a-border));background:var(--a-error-subtle); }
+.flowarrow { align-self:center;color:var(--a-text-tertiary);font-size:16px;flex:none; }
+
+.a11y-card { margin-top:14px;padding:16px 18px; }
+.a11y-card h3 { margin-bottom:10px; }
+.a11y-grid { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px; }
+.a11y-item span { display:block;margin-bottom:3px;color:var(--a-text-tertiary);font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase; }
+.a11y-item p { margin:0;color:var(--a-text-secondary);font-size:var(--a-text-sm); }
+.decision { overflow:hidden;margin-top:14px; }
+.decision-head { padding:17px 18px;border-bottom:1px solid var(--a-border-faint); }
+.decision-head p { margin:5px 0 0;color:var(--a-text-secondary); }
+.choice { display:grid;grid-template-columns:30px minmax(0,1fr);gap:11px;padding:14px 18px;border-top:1px solid var(--a-border-faint); }
+.choice:first-child { border-top:0; }
+.choice .letter { display:grid;place-items:center;width:26px;height:26px;border:1px solid var(--a-border);border-radius:50%;color:var(--a-text-tertiary);font-size:var(--a-text-xs); }
+.choice.recommended { background:var(--a-accent-subtle); }
+.choice.recommended .letter { color:#fff;border-color:var(--a-accent-solid);background:var(--a-accent-solid); }
+.choice.obsolete { opacity:.72; }
+.choice.obsolete b { text-decoration:line-through;text-decoration-thickness:1px; }
+.choice b { display:block;font-weight:var(--a-weight-medium); }
+.choice p { margin:3px 0 0;color:var(--a-text-secondary);font-size:var(--a-text-sm); }
+.footer-note { margin-top:40px;padding-top:20px;border-top:1px solid var(--a-border);color:var(--a-text-tertiary);font-size:var(--a-text-xs); }
+
+@media (max-width:900px) {
+  .reviewbar { align-items:flex-start;flex-wrap:wrap; }
+  .reviewnav { order:3;width:100%; }
+  .hero { grid-template-columns:1fr; }
+  .grid-2,.grid-3,.a11y-grid { grid-template-columns:1fr; }
+  .wb { grid-template-columns:1fr; }
+  .wb-col { border-right:0;border-bottom:1px solid var(--a-border-faint); }
+}
+@media (prefers-reduced-motion:reduce) {
+  html { scroll-behavior:auto; }
+  *,*::before,*::after { transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important; }
+}
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到设计内容</a>
+
+<header class="reviewbar" aria-label="设计稿工具栏">
+  <div class="reviewbrand"><span class="alpha-mark">α</span><span>REQ-097 Office 预览状态 <small>本地评审稿 r3 · 2026-07-21 IA 对齐</small></span></div>
+  <nav class="reviewnav" aria-label="章节">
+    <a href="#lineage">与上一稿的关系</a>
+    <a href="#audit">现状审计</a>
+    <a href="#vocab">词汇表</a>
+    <a href="#machines">状态机与可用性</a>
+    <a href="#states">状态帧</a>
+    <a href="#switcher">预览入口与浮层</a>
+    <a href="#errors">失败分类</a>
+    <a href="#a11y">交互契约</a>
+    <a href="#decisions">待裁决</a>
+    <a href="#scope">不做的</a>
+  </nav>
+  <div class="reviewtools">
+    <button id="themeToggle" type="button" aria-pressed="false">深色</button>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+  <section class="hero" aria-labelledby="hero-title">
+    <div>
+      <p class="kicker">产品设计门 · 产物工作台 · Office 结构检查与快速查看</p>
+      <h1 id="hero-title">先证明打开是安全的,再让内容与全保真各归其位</h1>
+      <p class="lede">Office 文件由本地能力生成,"程序没报错"不等于"可以安全打开"。本稿把结构检查的每个真实状态诚实呈现 —— 检查中不装成功,失败给出可分类的原因;检查通过后,右栏面内以提取视图呈现文档内容(其内部形态归独立交付,本稿留占位),「快速查看」提供全保真的系统预览;快速查看不可用只降级,不阻断原件的保存与打开。</p>
+    </div>
+    <aside class="status-card" aria-label="评审范围">
+      <div class="status-line"><span>状态</span><b>Draft r3 · 等待 owner 裁决</b></div>
+      <div class="status-line"><span>修订</span><b>r3 · 2026-07-21 IA 裁决对齐</b></div>
+      <div class="status-line"><span>交付</span><b>单文件、本地可开、双主题</b></div>
+      <div class="status-line"><span>视觉基线</span><b>Cool Graphite(零新 token)</b></div>
+      <div class="status-line"><span>形制基线</span><b>现役 Workbench 三栏 + req090 组件语言</b></div>
+      <div class="status-line"><span>实现范围</span><b>零生产代码</b></div>
+    </aside>
+  </section>
+
+  <!-- ═══ 与上一稿的关系 ═══ -->
+  <section class="section" id="lineage" aria-labelledby="lineage-title">
+    <p class="kicker">增量声明 · 基线 = req090 稿(2026-07-20)+ 现役 Workbench(alpha fd357d58)+ req104 v6 方法论 · r2 重框 · r3 对齐 ADR-032 呈现 IA</p>
+    <h2 id="lineage-title">与上一稿的关系</h2>
+    <p class="section-copy">本稿不新增导航、不新增页面、不重排产物工作台的三栏信息架构。它是 req090 稿与现役 Workbench 实现之上的一层状态增量:所有新视觉都长在既有挂载点(中栏卡片 chip 位、右栏预览面板)上。</p>
+    <div class="note" data-tone="warn" style="margin-top:14px"><strong>2026-07-21 重框修订(r2)</strong>:owner 裁决 —— 云端验证/转换半场(平台侧结构验证、隔离转换、PDF/PNG 派生文件)整体挂起;当前产品现实是 Office 文件由本地能力生成、本地检查。预览载体改为 macOS 系统快速查看(系统级预览浮层)。相对 r1:六态收敛为四态 + 一降级,「待本地复核」与「预览生成失败」退场,「原件 / PDF 预览 / 页面图片」切换退场;下列沿用关系不变。</div>
+    <div class="note" data-tone="info" style="margin-top:14px"><strong>2026-07-21 IA 裁决修订(r3,ADR-032 已接受)</strong>:owner 统一了产物呈现 IA,Office 载体栈三分工 —— ① <b>面内内容</b> = 结构化提取预览(REQ-123/#438 独立交付,本稿只留占位块,不设计其内部);② <b>状态 + 快速查看</b> = 本稿(结构检查四态 + 一降级、「快速查看」全保真通道,含空格键唤起 —— 上轮 Q4 方案 A 已随 IA 采纳);③ <b>timeline 链接行 + 右栏联动</b> = 同目录 <code>timeline.html</code>(REQ-124/#449 基线)。相对 r2:frameB 从「预览入口卡」改为右栏预览面的 Office 形态(状态区 / 内容区占位 / 动作行),降级态更名「快速查看暂不可用」(面内内容不受通道故障影响)。</div>
+    <div class="grid-3" style="margin-top:14px">
+      <article class="note relationship-card">
+        <span class="rel-tag">沿用 · 2026-07-20 req090 稿</span>
+        <h3>组件语言与反馈层级</h3>
+        <ul>
+          <li>沿用 Cool Graphite tokens、状态点/chip 四色语义、inline-alert 与事实行版式,零新 token。</li>
+          <li>沿用「权威记录成功后才显示成功」:结构检查通过之前,任何绿色不出现。</li>
+          <li>沿用 Recovery/错误卡的「怎么回事 + 现在怎么办」两段式;本稿的失败卡是它的预览面板版,不另立骨架。</li>
+        </ul>
+      </article>
+      <article class="note relationship-card">
+        <span class="rel-tag">沿用并补强 · 现役产物工作台</span>
+        <h3>三栏形制与诚实卡片</h3>
+        <ul>
+          <li>沿用云任务列 / 产物列 / 预览面板三栏、预览-源文-元数据三 tab、已验证/未验证/校验不符 chip 词汇,零改动。</li>
+          <li>补强①:中栏 Office 卡片随检查进度携带一枚结构状态 chip(卡片版式不变,只加 chip)。</li>
+          <li>补强②:右栏对 Office 文件从单一 fallback 卡分化为四态 + 一降级(本稿主体)。</li>
+          <li>补强③:结构检查从一条警告文本升级为独立状态面 + 失败分类;既有「校验中…」「在系统中打开」「打开 run 目录」词汇原样保留。</li>
+        </ul>
+      </article>
+      <article class="note relationship-card">
+        <span class="rel-tag">沿用方法论 · 2026-07-18 req104 v6</span>
+        <h3>契约词到用户语言的翻译纪律</h3>
+        <ul>
+          <li>沿用「词汇表先行、帧内只出现用户语言」:快速查看/来源/结构检查替代内部字段名。</li>
+          <li>沿用「诚实状态绝不静默留白」:检查中、失败分类、降级各有明确视觉,不合并。</li>
+          <li>沿用「未知值按原样 mono 展示、fail-closed」:未知失败代码不猜翻译。</li>
+        </ul>
+      </article>
+    </div>
+    <div class="note" data-tone="info" style="margin-top:14px"><strong>净效果</strong>:界面上发生三件事 —— ① 中栏 Office 卡片随检查进度携带状态 chip;② 右栏对 Office 文件呈现四个状态加一个降级(检查中 / 可预览 / 已拒绝 / 需人工复核,加 快速查看暂不可用),任何一个都不冒充另一个;③ 结构安全后,右栏内容区显示提取视图(占位,内部归独立交付),动作行提供「快速查看」(按钮 + 空格键)与「在系统中打开」;快速查看不可用只降级通道,面内内容与原件不受影响。其余产物类型一切照旧。</div>
+  </section>
+
+  <!-- ═══ 现状审计 ═══ -->
+  <section class="section" id="audit" aria-labelledby="audit-title">
+    <p class="kicker">动笔前的代码审计 · alpha-code 主检出(branch alpha,fd357d58)· 处置列已按 r2 重框更新</p>
+    <h2 id="audit-title">现状审计:今天的界面长什么样,缺什么</h2>
+    <p class="section-copy">以下均为帧外事实,file:line 以主检出为准。本稿每个视觉都必须能指回这张表的某一行:要么沿用,要么补它的缺口。</p>
+    <div class="matrix-wrap" style="margin-top:14px">
+      <table>
+        <tr><th>#</th><th>现状</th><th>锚点</th><th>本稿处置</th></tr>
+        <tr><td>A1</td><td>三栏形制:云任务列表 / 产物卡片列 / 预览面板(预览·源文·元数据三 tab);状态 chip 词汇「已验证/未验证/校验不符/文件缺失/未登记/未下载」</td><td><code>artifact-workbench.tsx:341-618</code>、<code>i18n/zh.ts:650-719</code></td><td><span class="tag muted">零改动</span></td></tr>
+        <tr><td>A2</td><td>Office 文件的结构检测已存在且严格 fail-closed:选中即读有界字节做本地检测,检测三态 detected / not-ooxml / rejected,携带 70+ 个 typed 错误代码</td><td><code>artifact-workbench.tsx:214-244</code>、<code>shared/ooxml.ts:59-142</code></td><td><span class="tag info">沿用为唯一权威</span></td></tr>
+        <tr><td>A3</td><td>检测结果今天只影响两处:外部打开是否放行(<code>externalOpen</code>)+ fallback 卡一行事实;检测中/失败只呈现为一条警告文本,无分类、无重试面、无独立状态</td><td><code>registry.ts:202-246</code>、<code>renderer-views.tsx:440-472</code></td><td><span class="tag ok">本稿补齐(状态帧)</span></td></tr>
+        <tr><td>A4</td><td>跨端契约定义了原件/预览版关系与来源:<code>role: primary|preview</code>、<code>primaryId/previewIds</code>、<code>provenance</code>、<code>verification.status</code> 四态</td><td><code>cloud-artifact-descriptor.ts:44,51,73-79,95-96</code></td><td><span class="tag warn">形状保留;派生关系消费随云端半场挂起,本稿只消费 provenance</span></td></tr>
+        <tr><td>A5</td><td>中栏卡片平铺;role 只在元数据 tab 以 mono 行露出;结构检查进度在卡片上不可见</td><td><code>workbench-core.ts:43-97</code>、<code>artifact-workbench.tsx:620-665</code></td><td><span class="tag ok">补状态 chip(r1 的派生嵌套随重框退场)</span></td></tr>
+        <tr><td>A6</td><td>r1 审计基线(fd357d58)时 PDF 无内联查看器(PdfCard 诚实降级);已接受的 IA 裁决记载隔离预览基座已后续交付(隔离 HTML、PDF 独立 worker、图片预算、大文本虚拟化)</td><td><code>renderer-views.tsx:474-477</code>、ADR-032 背景节</td><td><span class="tag muted">PDF/图片/HTML/MD 归现役 renderer 联动(timeline 稿类型表);本稿只管 Office</span></td></tr>
+        <tr><td>A7</td><td>校验不符(mismatch)横幅、预览崩溃隔离、下载状态机、aria-live 播报均已存在</td><td><code>artifact-workbench.tsx:570-572,590-601,246-294</code></td><td><span class="tag muted">零改动,失败态复用</span></td></tr>
+        <tr><td>A8</td><td>供给侧现实(r1 审计发现,owner 已勘正确认):Office 文件本地 MCP/skill 生成、本地渲染;云端 office-report 仅框架代码,契约镜像注明「平台现不产预览 → previewIds 恒缺省」「pending 平台现不产生,预留」</td><td><code>cloud-artifact-descriptor.ts:50,96</code></td><td><span class="tag info">owner 已裁决:2026-07-21 重框依据</span></td></tr>
+      </table>
+    </div>
+    <div class="grid-2" style="margin-top:14px">
+      <div class="note" data-tone="ok"><strong>r1 张力的消解</strong>:r1 指出「受控句柄打开 PDF/PNG 派生文件」与 PDF 查看器缺位的矛盾(旧 Q1)——随重框整体消解:派生文件不再存在,预览载体为系统快速查看,应用不自建查看器。票面 Boundary 的 export 动作面依旧未被任何验收标准要求,本稿不新增。</div>
+      <div class="note" data-tone="info"><strong>既有词汇的一处开发味残留</strong>:现役预览头部露出内部渲染器代号 chip、元数据行含「Renderer」字样(<code>artifact-workbench.tsx:560-563,628</code>)。与「界面无开发术语」纪律相悖,但更名超出本票范围 —— 仅记录,本稿新帧内不引入同类词。</div>
+    </div>
+  </section>
+
+  <!-- ═══ 词汇表 ═══ -->
+  <section class="section" id="vocab" aria-labelledby="vocab-title">
+    <p class="kicker">契约概念 → 用户语言(帧内只出现右列;req104 v6 同一纪律)</p>
+    <h2 id="vocab-title">词汇表</h2>
+    <div class="matrix-wrap" style="margin-top:14px">
+      <table>
+        <tr><th>契约概念</th><th>帧内用户语言</th><th>语义与边界</th></tr>
+        <tr><td>macOS 系统预览浮层(previewFile)</td><td><span class="tag info">快速查看</span></td><td>与访达同名的系统功能;<b>全保真通道</b>(面内提取视图不承诺排版保真,它承诺);结构安全是唯一唤起前提;浮层样式与内容由系统生成,应用不定制、不重绘</td></tr>
+        <tr><td>Office 面内内容载体(结构化提取,独立交付)</td><td>「提取视图」/「文档内容」</td><td>右栏内容区以提取的文字与表格呈现文档,如实声明与原件排版存在差异;其内部形态不归本稿 —— 帧内只留占位块</td></tr>
+        <tr><td><code>role: primary</code></td><td>「原件」(行文用词)</td><td>本地运行产出的正式文件本体;云端半场挂起后无派生预览文件,故不再作身份 chip,仅在文案中使用</td></tr>
+        <tr><td>结构检查 pending(本地检测未完成)</td><td><span class="tag muted">结构检查中</span></td><td>与既有内容校验词「校验中…」并存不合并:校验说的是字节没被改,检查说的是结构能不能安全打开</td></tr>
+        <tr><td>结构检查 detected(通过)</td><td><span class="tag ok">结构安全</span></td><td>唯一允许出现绿色的前提;它只背书「能安全打开」,不背书「显示效果正确」</td></tr>
+        <tr><td>结构检查 rejected / not-ooxml(70+ typed 代码)</td><td><span class="tag err">已拒绝</span> + 分类句</td><td>终态,不可重试;不提供预览、不放行系统打开;分类句见失败分类表,原代码以 mono 附于详情</td></tr>
+        <tr><td>快速查看唤起失败</td><td><span class="tag warn">快速查看暂不可用</span></td><td>只降级全保真通道:面内提取内容不受影响,原件仍可保存、仍可用系统应用打开;可重试(幂等)</td></tr>
+        <tr><td>结构检查的非阻断提示(公式无缓存、媒体缺失等)</td><td><span class="tag warn">需人工复核</span> + 逐条差异</td><td>可快速查看,但以琥珀呈现不给绿;每条提示 = 差异类型 + 影响说明</td></tr>
+        <tr><td><code>provenance</code></td><td>「来源」块</td><td>哪次运行产出、何时何地检查;任务号以 mono 展示;不含路径、令牌或提示词</td></tr>
+        <tr><td>受控打开</td><td>(不出现)按钮就叫「快速查看」「在系统中打开」</td><td>机制帧外说明:动作只携带登记编号,主进程按登记关系解析文件后交系统 —— 界面永不接触路径或令牌</td></tr>
+        <tr><td>未知失败代码</td><td>结构侧按「已拒绝」/ 通道侧按「快速查看暂不可用」+ 原样 mono 代码</td><td>fail-closed:不猜翻译;结构侧不放行,通道侧允许重试(重试幂等无害)</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ═══ 状态机与可用性 ═══ -->
+  <section class="section" id="machines" aria-labelledby="machines-title">
+    <p class="kicker">帧外 · 状态模型(r2:一台状态机 + 一个推导出的可用性结论)</p>
+    <h2 id="machines-title">一台状态机,加一个可用性结论</h2>
+    <p class="section-copy">结构检查是唯一的状态机,回答「打开它安全吗」。预览可用性不是第二台机器 —— 它由结构结论与系统预览是否正常推导而来,失败只降级自己,永不回写结构结论。界面上两者各有 chip,永不合并成一个「状态」。</p>
+    <div class="lane">
+      <h3>结构检查(状态机)<small>本地检测是唯一权威;r1 的「云端自报待复核」态已随云端半场挂起</small></h3>
+      <div class="flow">
+        <div class="flownode"><b>结构检查中</b><p>选中即启动;完成前无预览、不放行打开</p></div>
+        <div class="flowarrow" aria-hidden="true">→</div>
+        <div class="flownode" data-k="ok"><b>结构安全</b><p>放行系统打开;快速查看入口出现</p></div>
+        <div class="flowarrow" aria-hidden="true">→</div>
+        <div class="flownode" data-k="err"><b>已拒绝(分类)</b><p>终态;重新产出文件后自动重检</p></div>
+      </div>
+    </div>
+    <div class="lane">
+      <h3>预览可用性(推导结论)<small>由结构结论 × 快速查看通道状况推导;不是独立状态机</small></h3>
+      <div class="flow">
+        <div class="flownode"><b>不提供</b><p>检查中或已拒绝;无内容区、无快速查看入口</p></div>
+        <div class="flowarrow" aria-hidden="true">·</div>
+        <div class="flownode" data-k="ok"><b>可预览</b><p>结构安全:面内提取内容 + 快速查看全保真</p></div>
+        <div class="flowarrow" aria-hidden="true">·</div>
+        <div class="flownode" data-k="warn"><b>快速查看暂不可用</b><p>通道故障;面内内容不受影响,可重试</p></div>
+        <div class="flowarrow" aria-hidden="true">·</div>
+        <div class="flownode" data-k="warn"><b>需人工复核</b><p>可看,但有结构提示;琥珀不给绿</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 主帧:四态 + 一降级 ═══ -->
+  <section class="section" id="states" aria-labelledby="states-title">
+    <p class="kicker">改动主体 · 产物工作台右栏 · 同一文件的四个状态与一个降级</p>
+    <h2 id="states-title">状态帧:四态 + 一降级</h2>
+    <p class="section-copy">帧内是现役三栏工作台。左两栏结构不变;中栏 Office 卡片按状态携带一枚结构状态 chip;右栏是本稿主体 —— 内容区的提取视图以占位块表达(内部形态归独立交付,帧外标注)。用下方切换器逐态查看。</p>
+
+    <div class="demo-tabs" role="tablist" aria-label="状态切换" data-for="frameA">
+      <span>状态:</span>
+      <button type="button" role="tab" data-state="checking" aria-selected="true">检查中</button>
+      <button type="button" role="tab" data-state="ready" aria-selected="false">可预览</button>
+      <button type="button" role="tab" data-state="refused" aria-selected="false">已拒绝</button>
+      <button type="button" role="tab" data-state="degraded" aria-selected="false">快速查看暂不可用</button>
+      <button type="button" role="tab" data-state="review" aria-selected="false">需人工复核</button>
+    </div>
+
+    <div class="frame" id="frameA" data-active="checking">
+
+      <!-- ── 状态 1:结构检查中 ── -->
+      <div class="mock-state" data-state="checking">
+        <div class="windowbar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="title">产物工作台</span></div>
+        <div class="wb">
+          <div class="wb-col">
+            <div class="wb-coltitle">云任务</div>
+            <div class="wb-runrow" data-active><span class="wb-runid">job_7f3a…c21e</span><span class="wb-runmeta">2 个产物 · 1.3 MiB</span></div>
+            <div class="wb-runrow"><span class="wb-runid">job_5d90…88aa</span><span class="wb-runmeta">2 个产物 · 356 KiB</span></div>
+            <div class="wb-usage"><div class="wb-coltitle" style="padding:0">用量</div><span>项目 48.6 MiB / 上限 2.0 GiB</span><span>当前 run 1.3 MiB / 上限 512 MiB</span></div>
+          </div>
+          <div class="wb-col">
+            <div class="wb-coltitle">产物</div>
+            <div class="wb-card" data-active>
+              <span class="wb-cardname">季度经营分析.docx</span>
+              <span class="wb-cardmeta"><span class="chipx" data-k="ok">已验证</span><span class="chipx"><span class="spin" aria-hidden="true"></span>结构检查中</span><span class="wb-size">1.2 MiB</span></span>
+            </div>
+            <div class="wb-card">
+              <span class="wb-cardname">经营数据.csv</span>
+              <span class="wb-cardmeta"><span class="chipx" data-k="ok">已验证</span><span class="wb-size">88 KiB</span></span>
+            </div>
+          </div>
+          <div class="wb-col">
+            <div class="wb-prevhead">
+              <span class="wb-tabs"><b data-on>预览</b><b>源文</b><b>元数据</b></span>
+              <span class="chipx"><span class="spin" aria-hidden="true"></span>结构检查中</span>
+            </div>
+            <div class="wb-preview-body">
+              <div class="noticex">正在检查这份文档的内部结构 —— 完成前不提供预览,也不会用系统应用打开。</div>
+              <div class="factcard">
+                <b>Word 文档</b>
+                <p>结构检查通过后可在这里快速查看;检查不通过会说明原因。</p>
+                <div class="factx"><span>名称</span><b class="sans">季度经营分析.docx</b></div>
+                <div class="factx"><span>大小</span><b>1.2 MiB</b></div>
+                <div class="factx"><span>状态</span><b class="sans">已验证 · 结构检查中</b></div>
+                <div class="wb-toolbar" style="margin-top:4px">
+                  <button class="wb-btn" type="button" disabled title="结构检查完成前不可打开">在系统中打开</button>
+                  <button class="wb-btn" type="button">打开 run 目录</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 状态 2:结构安全 · 可预览 ── -->
+      <div class="mock-state" data-state="ready">
+        <div class="windowbar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="title">产物工作台</span></div>
+        <div class="wb">
+          <div class="wb-col">
+            <div class="wb-coltitle">云任务</div>
+            <div class="wb-runrow" data-active><span class="wb-runid">job_7f3a…c21e</span><span class="wb-runmeta">2 个产物 · 1.3 MiB</span></div>
+            <div class="wb-runrow"><span class="wb-runid">job_5d90…88aa</span><span class="wb-runmeta">2 个产物 · 356 KiB</span></div>
+            <div class="wb-usage"><div class="wb-coltitle" style="padding:0">用量</div><span>项目 48.6 MiB / 上限 2.0 GiB</span><span>当前 run 1.3 MiB / 上限 512 MiB</span></div>
+          </div>
+          <div class="wb-col">
+            <div class="wb-coltitle">产物</div>
+            <div class="wb-card" data-active>
+              <span class="wb-cardname">季度经营分析.docx</span>
+              <span class="wb-cardmeta"><span class="chipx" data-k="ok">已验证</span><span class="chipx" data-k="ok">可预览</span><span class="wb-size">1.2 MiB</span></span>
+            </div>
+            <div class="wb-card">
+              <span class="wb-cardname">经营数据.csv</span>
+              <span class="wb-cardmeta"><span class="chipx" data-k="ok">已验证</span><span class="wb-size">88 KiB</span></span>
+            </div>
+          </div>
+          <div class="wb-col">
+            <div class="wb-prevhead">
+              <span class="wb-tabs"><b data-on>预览</b><b>源文</b><b>元数据</b></span>
+              <span class="chipx" data-k="ok">结构安全</span>
+            </div>
+            <div class="wb-preview-body">
+              <div class="xtract" role="img" aria-label="文档内容提取视图占位">
+                <span><b>文档内容(提取视图)</b>以提取的文字与表格呈现;排版与原件存在差异,完整效果请用快速查看。</span>
+              </div>
+              <div class="wb-toolbar">
+                <button class="wb-btn" type="button" data-variant="primary">快速查看 <span class="kbd">空格</span></button>
+                <button class="wb-btn" type="button">在系统中打开</button>
+                <button class="wb-btn" type="button">打开 run 目录</button>
+              </div>
+              <div class="origin">
+                <span class="ot">来源</span>
+                <div class="factx"><span>产出</span><b>job_7f3a…c21e</b><b class="sans" style="flex:none">(本地运行)</b></div>
+                <div class="factx"><span>结构检查</span><b class="sans">本机 · 今天 14:32 · 通过</b></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 状态 3:结构已拒绝 ── -->
+      <div class="mock-state" data-state="refused">
+        <div class="windowbar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="title">产物工作台</span></div>
+        <div class="wb">
+          <div class="wb-col">
+            <div class="wb-coltitle">云任务</div>
+            <div class="wb-runrow" data-active><span class="wb-runid">job_7f3a…c21e</span><span class="wb-runmeta">2 个产物 · 1.3 MiB</span></div>
+            <div class="wb-runrow"><span class="wb-runid">job_5d90…88aa</span><span class="wb-runmeta">2 个产物 · 356 KiB</span></div>
+            <div class="wb-usage"><div class="wb-coltitle" style="padding:0">用量</div><span>项目 48.6 MiB / 上限 2.0 GiB</span><span>当前 run 1.3 MiB / 上限 512 MiB</span></div>
+          </div>
+          <div class="wb-col">
+            <div class="wb-coltitle">产物</div>
+            <div class="wb-card" data-active>
+              <span class="wb-cardname">季度经营分析.docx</span>
+              <span class="wb-cardmeta"><span class="chipx" data-k="ok">已验证</span><span class="chipx" data-k="err">已拒绝</span><span class="wb-size">1.2 MiB</span></span>
+            </div>
+            <div class="wb-card">
+              <span class="wb-cardname">经营数据.csv</span>
+              <span class="wb-cardmeta"><span class="chipx" data-k="ok">已验证</span><span class="wb-size">88 KiB</span></span>
+            </div>
+          </div>
+          <div class="wb-col">
+            <div class="wb-prevhead">
+              <span class="wb-tabs"><b data-on>预览</b><b>源文</b><b>元数据</b></span>
+              <span class="chipx" data-k="err">已拒绝</span>
+            </div>
+            <div class="wb-preview-body">
+              <div class="noticex" data-k="err" role="alert"><b>无法安全打开这份文档。</b><span style="color:var(--a-text-secondary)">结构检查发现:文档包内含加密内容。</span></div>
+              <div class="factcard">
+                <b>结构检查未通过</b>
+                <p>检查在打开之前进行。被拒绝的文件不提供预览,也不会用系统应用打开;文件本身保留在盘上,未被修改。</p>
+                <div class="factx"><span>名称</span><b class="sans">季度经营分析.docx</b></div>
+                <div class="factx"><span>原因</span><b class="sans">文档包内含加密内容</b></div>
+                <div class="diagrow">诊断代码 <code>ZIP_ENCRYPTED</code>(报告问题时附上)</div>
+                <div class="factx"><span>下一步</span><b class="sans">重新产出该文件后会自动重新检查</b></div>
+                <div class="wb-toolbar" style="margin-top:4px">
+                  <button class="wb-btn" type="button">复制诊断信息</button>
+                  <button class="wb-btn" type="button">打开 run 目录</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 降级:结构安全 · 预览暂不可用 ── -->
+      <div class="mock-state" data-state="degraded">
+        <div class="windowbar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="title">产物工作台</span></div>
+        <div class="wb">
+          <div class="wb-col">
+            <div class="wb-coltitle">云任务</div>
+            <div class="wb-runrow" data-active><span class="wb-runid">job_7f3a…c21e</span><span class="wb-runmeta">2 个产物 · 1.3 MiB</span></div>
+            <div class="wb-runrow"><span class="wb-runid">job_5d90…88aa</span><span class="wb-runmeta">2 个产物 · 356 KiB</span></div>
+            <div class="wb-usage"><div class="wb-coltitle" style="padding:0">用量</div><span>项目 48.6 MiB / 上限 2.0 GiB</span><span>当前 run 1.3 MiB / 上限 512 MiB</span></div>
+          </div>
+          <div class="wb-col">
+            <div class="wb-coltitle">产物</div>
+            <div class="wb-card" data-active>
+              <span class="wb-cardname">季度经营分析.docx</span>
+              <span class="wb-cardmeta"><span class="chipx" data-k="ok">已验证</span><span class="chipx" data-k="ok">可预览</span><span class="wb-size">1.2 MiB</span></span>
+            </div>
+            <div class="wb-card">
+              <span class="wb-cardname">经营数据.csv</span>
+              <span class="wb-cardmeta"><span class="chipx" data-k="ok">已验证</span><span class="wb-size">88 KiB</span></span>
+            </div>
+          </div>
+          <div class="wb-col">
+            <div class="wb-prevhead">
+              <span class="wb-tabs"><b data-on>预览</b><b>源文</b><b>元数据</b></span>
+              <span class="chipx" data-k="ok">结构安全</span>
+              <span class="chipx" data-k="warn">快速查看暂不可用</span>
+            </div>
+            <div class="wb-preview-body">
+              <div class="noticex" data-k="warn" role="status"><b>快速查看暂时不可用。</b><span style="color:var(--a-text-secondary)">文档内容仍可在下方查看;原件不受影响,可保存或用系统应用打开。</span></div>
+              <div class="xtract" role="img" aria-label="文档内容提取视图占位">
+                <span><b>文档内容(提取视图)</b>以提取的文字与表格呈现;排版与原件存在差异。</span>
+              </div>
+              <div class="diagrow">诊断代码 <code>PREVIEW_UNAVAILABLE</code>(报告问题时附上)</div>
+              <div class="wb-toolbar">
+                <button class="wb-btn" type="button" data-variant="primary">重试快速查看</button>
+                <button class="wb-btn" type="button">在系统中打开</button>
+                <button class="wb-btn" type="button">打开 run 目录</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 状态 4:结构安全 · 需人工复核 ── -->
+      <div class="mock-state" data-state="review">
+        <div class="windowbar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="title">产物工作台</span></div>
+        <div class="wb">
+          <div class="wb-col">
+            <div class="wb-coltitle">云任务</div>
+            <div class="wb-runrow" data-active><span class="wb-runid">job_7f3a…c21e</span><span class="wb-runmeta">2 个产物 · 1.3 MiB</span></div>
+            <div class="wb-runrow"><span class="wb-runid">job_5d90…88aa</span><span class="wb-runmeta">2 个产物 · 356 KiB</span></div>
+            <div class="wb-usage"><div class="wb-coltitle" style="padding:0">用量</div><span>项目 48.6 MiB / 上限 2.0 GiB</span><span>当前 run 1.3 MiB / 上限 512 MiB</span></div>
+          </div>
+          <div class="wb-col">
+            <div class="wb-coltitle">产物</div>
+            <div class="wb-card" data-active>
+              <span class="wb-cardname">季度经营分析.docx</span>
+              <span class="wb-cardmeta"><span class="chipx" data-k="ok">已验证</span><span class="chipx" data-k="warn">需复核</span><span class="wb-size">1.2 MiB</span></span>
+            </div>
+            <div class="wb-card">
+              <span class="wb-cardname">经营数据.csv</span>
+              <span class="wb-cardmeta"><span class="chipx" data-k="ok">已验证</span><span class="wb-size">88 KiB</span></span>
+            </div>
+          </div>
+          <div class="wb-col">
+            <div class="wb-prevhead">
+              <span class="wb-tabs"><b data-on>预览</b><b>源文</b><b>元数据</b></span>
+              <span class="chipx" data-k="ok">结构安全</span>
+              <span class="chipx" data-k="warn">需人工复核</span>
+            </div>
+            <div class="wb-preview-body">
+              <div class="noticex" data-k="warn" role="status"><b>结构检查通过,但有 2 处需要留意。</b><span style="color:var(--a-text-secondary)">显示效果可能与预期不同,重要内容请打开文件核对。</span></div>
+              <div class="warnlist">
+                <div class="warnitem"><span aria-hidden="true">⚠</span><span>表格公式没有计算结果缓存<small>预览中相关数值可能显示为空或旧值;用系统应用打开并重新计算后才是最终数值。</small></span></div>
+                <div class="warnitem"><span aria-hidden="true">⚠</span><span>一处图片引用缺失<small>文档引用的一张图片没有随文件打包,该位置会显示为空白。</small></span></div>
+              </div>
+              <div class="xtract" role="img" aria-label="文档内容提取视图占位">
+                <span><b>文档内容(提取视图)</b>以提取的文字与表格呈现;排版与原件存在差异,上述提示对应的位置会如实标注。</span>
+              </div>
+              <div class="wb-toolbar">
+                <button class="wb-btn" type="button" data-variant="primary">快速查看 <span class="kbd">空格</span></button>
+                <button class="wb-btn" type="button">在系统中打开</button>
+                <button class="wb-btn" type="button">打开 run 目录</button>
+              </div>
+              <div class="origin">
+                <span class="ot">来源</span>
+                <div class="factx"><span>产出</span><b>job_7f3a…c21e</b><b class="sans" style="flex:none">(本地运行)</b></div>
+                <div class="factx"><span>结构检查</span><b class="sans">本机 · 今天 14:32 · 通过,2 处提示</b></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="capset" data-for="frameA">
+      <p class="cap" data-cap="checking" data-on><span class="tag ok">新增</span> 检查中 = 独立状态,不再是一条警告文本(补 A3 缺口)。「在系统中打开」置灰并给原因,而非隐藏 —— 能力存在、暂不放行;快速查看入口此态不出现。中栏 chip 带旋转指示;既有「已验证」内容校验 chip 并存不合并。</p>
+      <p class="cap" data-cap="ready"><span class="tag ok">新增(r3 形态)</span> 右栏三段式:状态区(chip)/ 内容区 / 动作行。内容区 = 提取视图<b>占位块</b> —— 其内部渲染归 REQ-123(#438)独立交付,本稿不设计;虚线即"此处有内容,形态另稿"。动作行「快速查看」为主动作(按钮 + 空格键,r2 的 Q4 方案 A 已随 IA 裁决采纳),唤起只携带登记编号(帧外机制,见词汇表);「在系统中打开」自此放行 —— 与现役外开闸门一致(A2/A3)。来源块进帧;csv 等其他产物<span class="tag muted" style="margin:0 3px">零改动</span>。</p>
+      <p class="cap" data-cap="refused"><span class="tag ok">新增</span> 拒绝 = 终态错误卡:分类句(用户语言)+ mono 诊断代码 + 「怎么回事 / 现在怎么办」两段式(req090 Recovery 语言)。无重试按钮 —— 对同一文件重试无意义,复检触发是「重新产出文件」。不提供预览、不放行打开,但明确文件仍在盘上未被修改。</p>
+      <p class="cap" data-cap="degraded"><span class="tag ok">新增(r3 更名自 r2「预览暂不可用」)</span> 通道级降级:「结构安全」绿 chip 保持,琥珀 chip 只描述快速查看通道 —— 面内提取内容照常显示(IA 三分工下,通道故障不清空内容区)。中栏卡片仍标「可预览」:通道故障是系统级瞬态,不是这份文件的状态,不在文件卡上留印。重试为主动作(幂等);横幅 role=status 而非 alert —— 没有东西坏了,只是全保真通道暂时不通。</p>
+      <p class="cap" data-cap="review"><span class="tag ok">新增(r2 重锚,r3 补内容区)</span> 提示来源 = 结构检查的非阻断观察(公式无缓存、媒体缺失等)。有提示的通过不给绿:横幅琥珀、逐条差异(类型加粗 + 影响说明小字);内容区占位块照常(提示位置在提取视图内如实标注 —— 具体形态归 REQ-123);快速查看仍可用。来源块追加提示计数。</p>
+    </div>
+  </section>
+
+  <!-- ═══ 预览入口与系统浮层 ═══ -->
+  <section class="section" id="switcher" aria-labelledby="switcher-title">
+    <p class="kicker">改动二 · r3 重做(IA 对齐:面内内容 + 全保真通道;r2 的「预览入口卡」退场)</p>
+    <h2 id="switcher-title">右栏预览面:Office 形态与系统浮层</h2>
+    <p class="section-copy">右栏预览面的 Office 形态是固定的三段式:上 = 结构检查状态区(chip 语言与状态帧同一套);中 = 内容区,提取内容<b>直接渲染</b> —— 打开即见,零中间步骤,不存在"先见空框再点按钮";下 = 动作行,「快速查看」(按钮 + 空格键)为全保真旁路、「在系统中打开」为受控外开。系统浮层是快速查看的去向,应用不定制、不重绘,只以示意轮廓表达。</p>
+
+    <div class="demo-tabs" role="tablist" aria-label="预览面视图切换" data-for="frameB">
+      <span>视图:</span>
+      <button type="button" role="tab" data-state="entry" aria-selected="true">Office 预览面</button>
+      <button type="button" role="tab" data-state="overlay" aria-selected="false">系统浮层(示意)</button>
+    </div>
+
+    <div class="frame" id="frameB" data-active="entry">
+      <div class="mock-state" data-state="entry">
+        <div class="windowbar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="title">产物工作台 · 右栏预览面(局部)</span></div>
+        <div style="padding:18px 22px;display:flex;flex-direction:column;gap:10px;min-height:430px">
+          <div class="wb-prevhead">
+            <span class="wb-tabs"><b data-on>预览</b><b>源文</b><b>元数据</b></span>
+            <span class="chipx" data-k="ok">结构安全</span>
+          </div>
+          <div class="xdoc">
+            <div class="xdoc-body">
+              <h4>季度经营分析 · 第三季度</h4>
+              <p>本季度整体营收保持增长,华东区贡献最大增量,线上渠道占比首次过半;毛利率环比改善 1.8 个百分点,主要来自供应链成本优化。</p>
+              <table>
+                <tr><th>地区</th><th>营收</th><th>同比</th></tr>
+                <tr><td>华东</td><td>¥2,480 万</td><td>+12%</td></tr>
+                <tr><td>华南</td><td>¥1,920 万</td><td>+8%</td></tr>
+              </table>
+              <p>第四季度重点是华南市场的渠道下沉,预算已在附表列明,需在十月前完成投放排期确认。</p>
+            </div>
+            <div class="xdoc-foot">排版与原件存在差异 · 完整排版用快速查看</div>
+          </div>
+          <div class="wb-toolbar">
+            <button class="wb-btn" type="button" data-variant="primary">快速查看 <span class="kbd">空格</span></button>
+            <button class="wb-btn" type="button">在系统中打开</button>
+          </div>
+        </div>
+      </div>
+      <div class="mock-state" data-state="overlay">
+        <div class="windowbar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="title">系统快速查看(示意)</span></div>
+        <div class="ql-stage">
+          <div class="ql-appghost" aria-hidden="true"></div>
+          <div class="ql-scrim" aria-hidden="true"></div>
+          <div class="ql-panel" role="img" aria-label="系统快速查看浮层示意">
+            <div class="ql-titlebar"><span class="x" aria-hidden="true"></span><span class="t">季度经营分析.docx</span></div>
+            <div class="ql-body">
+              <span><b>系统快速查看浮层</b>样式与内容由 macOS 生成,应用不定制。<br />按 Esc 或点击浮层外关闭,焦点回到「快速查看」按钮。</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="capset" data-for="frameB">
+      <p class="cap" data-cap="entry" data-on><span class="tag ok">新增(r3 形态,r4 内容区改直接渲染示例)</span> 三段式装配:<b>上</b> = 状态区,chip 语言与状态帧同一套(四态在此位轮换,帧内示结构安全);<b>中</b> = 内容区,提取内容<b>直接渲染</b>(帧内为样例文档)—— 交互事实是"打开即见内容、零点击",保真差异降为内容区底部一行细字;内容渲染的具体形态归 REQ-123(#438)独立交付,本稿示例只表达该交互事实,<b>不约束提取视图内部设计</b>;<b>下</b> = 动作行,「快速查看」保持次要位置 —— 它是全保真旁路,不是查看内容的步骤(r2 的 Q4 方案 A,owner 已随 ADR-032 采纳)。唤起动作只携带登记编号,主进程按登记关系解析文件后交系统浮层 —— 界面全程不接触路径或令牌。timeline 链接行点击后聚焦的正是本面(联动归 REQ-124,见 2026-07-21-req124-timeline-artifact-rows/timeline.html)。</p>
+      <p class="cap" data-cap="overlay"><span class="tag ok">沿用 r2 · 快速查看的去向说明</span> 虚线 = 系统界面轮廓,本稿刻意不重绘系统 UI 细节;浮层的真实样式、翻页与缩放行为以 macOS 为准。浮层期间应用不锁定;唤起失败落入「快速查看暂不可用」降级态(状态帧第四格),面内提取内容不受影响。</p>
+    </div>
+  </section>
+
+  <!-- ═══ 失败分类 ═══ -->
+  <section class="section" id="errors" aria-labelledby="errors-title">
+    <p class="kicker">帧外 · typed 失败 → 帧内分类句(帧内永不直接甩代码当标题)· r2:生成类退场,降级类进场</p>
+    <h2 id="errors-title">失败分类矩阵</h2>
+    <p class="section-copy">结构检查的 70+ 个 typed 代码(<code>shared/ooxml.ts:59-131</code>)收敛为六个用户语言分类;通道侧只有降级一类 —— 快速查看唤起失败不是内容失败,面内提取内容不受影响。分类句是帧内标题,原代码一律 mono 附于详情行。</p>
+    <div class="matrix-wrap" style="margin-top:14px">
+      <table>
+        <tr><th>分类(帧内句)</th><th>代表代码(mono 详情行)</th><th>台别</th><th>可重试</th><th>对原件的影响</th></tr>
+        <tr><td>这不是一份有效的 Office 文档</td><td><code>NOT_ZIP</code> <code>ZIP_EOCD_MISSING</code> 等</td><td>结构检查</td><td>否(重新产出后自动重检)</td><td>不放行打开、不提供预览</td></tr>
+        <tr><td>文档包内含加密内容</td><td><code>ZIP_ENCRYPTED</code></td><td>结构检查</td><td>否</td><td>同上</td></tr>
+        <tr><td>文档结构超出安全限额</td><td><code>ZIP_ENTRY_LIMIT</code> <code>ZIP_INFLATE_RATIO_LIMIT</code> <code>ZIP_DECLARED_TOTAL_LIMIT</code> 等</td><td>结构检查</td><td>否</td><td>同上</td></tr>
+        <tr><td>文档包内含不安全的文件路径</td><td><code>ZIP_ENTRY_PATH</code> <code>ZIP_SYMLINK_ENTRY</code></td><td>结构检查</td><td>否</td><td>同上</td></tr>
+        <tr><td>文档内部结构不完整或自相矛盾</td><td><code>CONTENT_TYPES_*</code> <code>ROOT_RELS_*</code> <code>OOXML_MAIN_*</code></td><td>结构检查</td><td>否</td><td>同上</td></tr>
+        <tr><td>文件声称的类型与实际结构不符</td><td>结构与声明冲突(既有冲突闸,<code>registry.ts:213-226</code>)</td><td>结构检查</td><td>否</td><td>同上;沿用既有警告语义</td></tr>
+        <tr><td>快速查看暂时不可用</td><td><code>PREVIEW_UNAVAILABLE</code>(示意,以实现落地为准)</td><td>快速查看通道</td><td>是(幂等)</td><td>无 —— 面内内容、保存与打开均不受影响</td></tr>
+        <tr><td>快速查看暂不可用(未知原因)</td><td>未知代码原样 mono 展示,不猜翻译</td><td>快速查看通道</td><td>是</td><td>无</td></tr>
+        <tr><td>下载失败 / 校验不符</td><td>既有呈现</td><td>传输·完整性</td><td>既有规则</td><td><span class="tag muted">零改动</span></td></tr>
+      </table>
+    </div>
+    <div class="note" data-tone="warn" style="margin-top:14px"><strong>fail-closed 纪律</strong>:结构台任何未知/新增代码一律按「已拒绝」呈现(不放行、不重试);快速查看通道任何唤起异常一律按「快速查看暂不可用」降级(可重试,不清空内容区、不阻断原件)。两侧的未知都保留原样 mono 代码 —— 绝不静默吞掉,也绝不部分采信。提取视图自身的失败形态归 REQ-123,不在本表。</div>
+  </section>
+
+  <!-- ═══ 交互契约 ═══ -->
+  <section class="section" id="a11y" aria-labelledby="a11y-title">
+    <p class="kicker">帧外 · 交互与无障碍(沿用现役 Workbench 合同,只列增量)</p>
+    <h2 id="a11y-title">交互契约</h2>
+    <div class="a11y-card">
+      <h3>键盘与焦点</h3>
+      <div class="a11y-grid">
+        <div class="a11y-item"><span>快速查看唤起与关闭</span><p>按钮 + 空格键双入口(方案 A,已随 IA 裁决采纳);空格仅在结构安全态响应,其余态无副作用。浮层是系统界面,浮层内交互由系统负责;关闭(Esc / 点击浮层外)后焦点回到「快速查看」按钮。</p></div>
+        <div class="a11y-item"><span>重试按钮</span><p>触发后焦点留在原按钮;按钮文字切换为进行中(「正在重试…」)并禁用,终态后恢复。拒绝横幅 role=alert;降级与复核横幅 role=status;检查完成经既有 aria-live(polite)播报。</p></div>
+        <div class="a11y-item"><span>状态 chip</span><p>chip 永远伴随文字,不做纯色点;检查中的旋转指示 aria-hidden,状态语义由 chip 文字承担。reduced-motion 下旋转停用,文字不变。</p></div>
+      </div>
+    </div>
+    <div class="a11y-card">
+      <h3>状态迁移的呈现规则</h3>
+      <div class="a11y-grid">
+        <div class="a11y-item"><span>不闪绿</span><p>检查中 → 通过的迁移直接换 chip,无成功动效;通过只是前提,不是成就。拒绝/降级迁移允许一次横幅进入动画(190ms,既有时长 token)。</p></div>
+        <div class="a11y-item"><span>选中即检查</span><p>沿用现役「选中即校验」节奏:结构检查随选中启动,一次一件;切走再切回不重复检查(结果按内容指纹缓存,文件变更即失效)。</p></div>
+        <div class="a11y-item"><span>系统浮层独立</span><p>快速查看崩溃或不可用不影响工作台自身 —— 应用侧只落入「预览暂不可用」降级态;源文与元数据 tab 始终可用(既有崩溃隔离,A7)。</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 待裁决 ═══ -->
+  <section class="section" id="decisions" aria-labelledby="decisions-title">
+    <p class="kicker">裁决记录 · r3:无在案待裁决项(Q1–Q3 随重框作废,Q4 已随 IA 裁决采纳)</p>
+    <h2 id="decisions-title">裁决记录</h2>
+
+    <div class="decision">
+      <div class="decision-head"><h3>已作废(2026-07-21 重框)</h3><p>r1 的三个裁决点全部随「云端半场挂起、载体改为快速查看」失去前提,不再需要裁决。</p></div>
+      <div class="choice obsolete"><span class="letter">Q1</span><div><b>PDF 预览的内联载体(页面图片内联 vs 诚实卡)</b><p><span class="tag muted" style="margin-right:6px">作废</span>无派生 PDF/PNG 文件;Office 面内内容归提取视图,全保真归快速查看。</p></div></div>
+      <div class="choice obsolete"><span class="letter">Q2</span><div><b>中栏原件-预览版的嵌套呈现</b><p><span class="tag muted" style="margin-right:6px">作废</span>无预览版行可嵌套;中栏只保留结构状态 chip 增量。</p></div></div>
+      <div class="choice obsolete"><span class="letter">Q3</span><div><b>云端自报结论的本地复核触发</b><p><span class="tag muted" style="margin-right:6px">作废</span>「待本地复核」态随云端半场挂起;本地检测是唯一权威,无自报结论可复核。</p></div></div>
+    </div>
+
+    <div class="decision">
+      <div class="decision-head"><h3>Q4 · 快速查看的唤起方式 <span class="tag ok" style="vertical-align:2px">已裁决 · 2026-07-21</span></h3><p>owner 随呈现 IA 裁决(ADR-032)采纳方案 A。</p></div>
+      <div class="choice recommended"><span class="letter">A</span><div><b>按钮 + 空格键(已采纳)</b><p>与访达一致:选中 Office 产物后按空格即唤起(仅结构安全态响应);按钮仍是可发现入口。成本 = 一个键盘监听,不与既有快捷键冲突。</p></div></div>
+      <div class="choice obsolete"><span class="letter">B</span><div><b>仅按钮</b><p><span class="tag muted" style="margin-right:6px">未采纳</span>更少快捷键面,但违背 macOS 用户对空格预览的肌肉记忆。</p></div></div>
+    </div>
+  </section>
+
+  <!-- ═══ 不做的 ═══ -->
+  <section class="section" id="scope" aria-labelledby="scope-title">
+    <p class="kicker">范围栅栏(与重框后票面一致)</p>
+    <h2 id="scope-title">不做的</h2>
+    <div class="grid-2" style="margin-top:14px">
+      <div class="note"><strong>不做云端半场</strong>:平台侧结构验证、隔离转换、PDF/PNG 派生管线已整体挂起;云端产物以链接外开,不进本面。本稿不为其保留任何 UI 双轨或占位。</div>
+      <div class="note"><strong>不碰系统预览内部,也不设计提取视图内部</strong>:快速查看是 macOS 系统界面,不定制其样式与行为;提取视图的内容渲染归独立交付票(本稿只留占位);不触碰通用渲染内部。</div>
+      <div class="note"><strong>不新增导航 / 路由 / 页面</strong>:一切改动长在现役产物工作台三栏之内;timeline 链接行与右栏联动归 REQ-124(同目录外的 timeline 稿),不在本稿。</div>
+      <div class="note"><strong>不做旧状态兼容</strong>:无历史用户,不保留旧 fallback 呈现或 r1/r2 形态的双轨;本稿落地即唯一形态。运行时视觉证据归打包验收票。</div>
+    </div>
+    <p class="footer-note">评审稿 r3(2026-07-21 IA 裁决对齐:面内提取内容 / 状态 + 快速查看 / 链接行联动 三分工)· 本地打开即可交互(状态切换 / 主题切换)。帧内文案均为最终建议文案;帧外标注(新增 / 零改动 / 沿用 / 作废)不属于产品界面。数据为示意 fixture:任务号、文件名、大小、时间皆为演示值。</p>
+  </section>
+</main>
+
+<script>
+(function () {
+  var themeBtn = document.getElementById("themeToggle");
+  var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  function setTheme(dark) {
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+    themeBtn.setAttribute("aria-pressed", String(dark));
+    themeBtn.textContent = dark ? "浅色" : "深色";
+  }
+  setTheme(prefersDark);
+  themeBtn.addEventListener("click", function () {
+    setTheme(document.documentElement.dataset.theme !== "dark");
+  });
+
+  document.querySelectorAll(".demo-tabs[data-for]").forEach(function (tabs) {
+    var frame = document.getElementById(tabs.dataset.for);
+    var caps = document.querySelector('.capset[data-for="' + tabs.dataset.for + '"]');
+    tabs.addEventListener("click", function (e) {
+      var btn = e.target.closest("button[data-state]");
+      if (!btn) return;
+      var state = btn.dataset.state;
+      frame.dataset.active = state;
+      tabs.querySelectorAll("button[data-state]").forEach(function (b) {
+        b.setAttribute("aria-selected", String(b === btn));
+      });
+      if (caps) caps.querySelectorAll(".cap").forEach(function (c) {
+        if (c.dataset.cap === state) c.setAttribute("data-on", "");
+        else c.removeAttribute("data-on");
+      });
+    });
+  });
+})();
+</script>
+</body>
+</html>
