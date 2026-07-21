@@ -60,23 +60,46 @@ observes the same facts and must clone before mutation.
 
 ### Prototype-boundary inventory
 
-Every container-creation point on the permission path has one of two roles:
-transport or output scratch that is never an authorization fact source (a), or
-a permission-owned container whose prototype is removed before indexed or
-named property assignment (b).
+The inventory distinguishes transport or output scratch that is never an
+authorization fact source (a), permission-owned containers whose prototype is
+removed before indexed or named property assignment (b), and the three noted
+residual third-party construction paths that neither classification covers.
 
 | Point | Classification and boundary |
 | --- | --- |
-| UI, SDK, generated-client request bodies, HTTP JSON parsing, protocol decoding, and handler DTO construction | (a) These are transport containers. Their object identity and decoder-produced containers are never admitted, fingerprinted, evaluated, or persisted directly. The Permission service reads only own data descriptors into its first `wireSnapshot`; that snapshot is the authorization boundary. JSON parsing itself defines own properties rather than invoking inherited assignment setters. |
+| UI, SDK, generated-client request bodies, HTTP JSON parsing, protocol decoding, and handler DTO construction | Effect Schema's third-party protocol/HTTP decoders construct ordinary output objects by assignment. If `Object.prototype` is polluted, an inherited setter can run during that library-internal assignment and rewrite a decoded field, for example changing `decision: "reject"` to `decision: "once"`, before the handler passes `ctx.payload` to Core; the first `wireSnapshot` then copies the rewritten value, which may enter authorization or persistence. The in-code prototype-free defenses begin after decoder construction and cannot cover that library-internal assignment. JSON parsing itself still defines own properties rather than invoking inherited assignment setters. |
 | `Object.getOwnPropertyDescriptors`, individual descriptors, and `Reflect.ownKeys` arrays | (a) These native-created ordinary inspection containers are read-only scratch. Permission code never assigns authorization fields into them and never retains their identity; it accepts only checked own enumerable data descriptors and copies their primitive or recursively visited values into `wireSnapshot`. |
 | `wireSnapshot` for create/assert and reply input | (b) Objects start as `Object.create(null)`. Arrays have their prototype removed before `length` or any index is assigned. The complete tree is frozen before schema validation. |
 | Effect decoders for `AssertInput`, `ReplyInput`, internal `RequestFacts`, and DB-restored `Request` | (a) Decoders may create ordinary structs and arrays with normal assignments. Their output is validation scratch only and is discarded; rejection still fails closed. Strict excess-property rejection and the identity-only checks enumerated above mean no accepted decoder conversion must be replayed. |
 | Internal request-fact and public-request construction | (b) Derived facts are copied through `wireSnapshot` before validation. The final request target is `Object.create(null)` before `id`, `fingerprint`, and the validated facts are assigned. |
 | Fingerprint canonicalization | (b) Canonical object-key and merge-sort scratch stores are created with `Object.create(null)` before assignment. Canonical arrays must already be prototype-free; only primitive strings and numbers are accumulated. |
 | Persistence insert envelopes and JSON serialization | (a) They are sinks populated from the frozen request/command facts after authorization checks, not a new source of authorization facts. Object-literal property creation does not invoke inherited assignment setters. |
-| SQLite/Drizzle row envelopes and JSON deserialization | (a) Raw row and `JSON.parse` containers are transport scratch, not admitted facts. A restored request is first rebuilt and frozen by `wireSnapshot`, then schema-validated with decoder output discarded, and its row IDs and recomputed fingerprint must agree before it can re-enter pending authorization state. Persisted receipt columns are compared to the already-snapshotted reply command before a retry is accepted. |
-| Receipt, saved-rule, batch, and event construction | (a) Their ordinary container identities are orchestration or output scratch, not authorization facts. Batch candidates retain references to already frozen requests and are independently re-evaluated from those request facts; saved-rule values are derived from the checked request and command. Event payload data is independently rebuilt through `wireSnapshot` and frozen, and the generic event envelope is frozen before listeners run. |
+| SQLite/Drizzle row envelopes and JSON deserialization | Third-party Drizzle row mapping constructs an ordinary top-level result object with property assignment. If `Object.prototype` is polluted, an inherited setter can run during that library-internal assignment and rewrite `row.decision`, which is read directly as the durable decision source and may therefore affect authorization or persistence. The in-code prototype-free defenses cannot cover that library-internal construction. `JSON.parse` itself still defines own properties rather than invoking inherited assignment setters. A restored request is first rebuilt and frozen by `wireSnapshot`, then schema-validated with decoder output discarded, and its row IDs and recomputed fingerprint must agree before it can re-enter pending authorization state. |
+| Receipt, saved-rule, batch, and event construction | Third-party `mapArray`, `filterArray`, and `sliceArray` helpers construct ordinary arrays and assign their indices. If `Array.prototype` is polluted, an inherited index setter can run during those library-internal assignments and rewrite values that drive batch inserts and `resolvedRequestIDs`, allowing the rewritten values to enter authorization or persistence. The in-code prototype-free defenses cannot cover those library-internal constructions. Batch candidates retain references to already frozen requests and are independently re-evaluated from those request facts; receipt and saved-rule values are derived from the checked request and command. Event payload data is independently rebuilt through `wireSnapshot` and frozen, and the generic event envelope is frozen before listeners run. |
 | `structuredClone` service/SDK response containers and client response decoding | (a) These are outward detached copies after authorization or replay selection. Mutating or setter-influencing them cannot change pending requests, fingerprints, persisted rows, or execution decisions. |
+
+### Known residual and precondition
+
+The prototype-pollution defense guaranteed by this contract has one explicit
+precondition: the runtime's built-in prototypes have not already been
+polluted. The three residual paths are the Effect Schema protocol/HTTP decoder
+output, Drizzle's top-level row mapping, and the ordinary arrays built by
+`mapArray`, `filterArray`, and `sliceArray` for the `always` batch. In each
+case, a pre-existing inherited setter can rewrite a value during third-party
+library construction before the permission-owned in-code defenses receive it.
+
+The current repository-wide review found no prototype-pollution injection
+point, such as a recursive merge that writes an attacker-controlled
+`__proto__` value into a prototype, so these three paths are currently
+unreachable. Removing the precondition at its root requires freezing the
+built-in prototypes during startup; that work is tracked by
+[#440](https://github.com/jinjunnn/alpha-code/issues/440).
+
+Until #440 is delivered, triggering this residual requires prototype pollution
+to exist before one of the three library constructions runs. Within this
+contract, the impact is limited to rewriting authorization-decision values,
+and the current absence of a reachable pollution-injection path mitigates that
+severity.
 
 The fingerprint covers every request fact except `id`: Session, subject,
 action, resources, scope, expiry, save candidates, metadata, and source.
