@@ -294,6 +294,7 @@ function ModelChip(props: {
   directory: () => string | undefined
   onSelect: (model: NonNullable<ReturnType<typeof composerModel>>) => Promise<void>
   onRetryCurrent: () => void
+  modelChainReady: () => boolean
   onNeedWorkspace?: () => void
   hasWorkspace: () => boolean
 }) {
@@ -340,6 +341,7 @@ function ModelChip(props: {
             onSelect={props.onSelect}
             onPicked={close}
             onRetryCurrent={props.onRetryCurrent}
+            modelChainReady={props.modelChainReady}
           />
         </ChipPopover>
       </Show>
@@ -354,6 +356,8 @@ function EffortChip(props: {
   contract: ReturnType<typeof createModelContract>
   directory: () => string | undefined
   onSelect: (model: NonNullable<ReturnType<typeof composerModel>>) => Promise<void>
+  onRetryCurrent: () => void
+  modelChainReady: () => boolean
 }) {
   const { isOpen, toggle, close } = useChip()
   let btn: HTMLButtonElement | undefined
@@ -437,6 +441,8 @@ function EffortChip(props: {
                 selected={composerModel}
                 onSelect={props.onSelect}
                 onPicked={() => {}}
+                onRetryCurrent={props.onRetryCurrent}
+                modelChainReady={props.modelChainReady}
               />
             </Match>
             <Match when={true}>
@@ -494,6 +500,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   const [text, setText] = createSignal(props.initialText ?? "")
   const [sending, setSending] = createSignal(false)
   const [busy, setBusy] = createSignal(false) // session:引擎侧运行中(status 轮询,见下)
+  const [modelChainState, setModelChainState] = createSignal<"loading" | "ready" | "error">("loading")
   const [mentions, setMentions] = createSignal<MentionPart[]>([])
   const [composing, setComposing] = createSignal(false)
   let taRef: HTMLTextAreaElement | undefined
@@ -562,7 +569,9 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     onAttach: () => fileInputRef?.click(),
   })
 
-  const canSend = createMemo(() => text().trim().length > 0 && !!props.directory() && !sending())
+  const canSend = createMemo(
+    () => text().trim().length > 0 && !!props.directory() && modelChainState() === "ready" && !sending(),
+  )
   const hasWorkspace = () => !!props.directory()
 
   /* session 模式:忙态轮询(v1;v2 换 SSE)。只在本组件可见 + 已知会话时跑,2.5s 间隔,
@@ -591,7 +600,6 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   /* ── 默认模型解析链。session 先从 typed get 收敛真实 Model.Ref；随后 list 负责可用性与默认。
      home 只保留创建会话前的内存选择，创建时把同一 Model.Ref 写进 Session。 */
   const [lastAuth, setLastAuth] = createSignal<AuthState | null>(null)
-  const [authKnown, setAuthKnown] = createSignal(false)
   const [platformId, setPlatformId] = createSignal<string | null>(null)
   const [hasConfiguredByok, setHasConfiguredByok] = createSignal(false)
   const [authEpoch, setAuthEpoch] = createSignal(0)
@@ -602,20 +610,20 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   const selectComposerModel = async (model: NonNullable<ReturnType<typeof composerModel>>) => {
     const seq = ++chainSeq
     const sessionID = props.sessionID?.()
+    if (modelChainState() !== "ready") throw new Error("model chain is not ready")
     if (sessionID) {
       const projection = composerModelProjection()
       if (projection.status !== "ready" || projection.sessionID !== sessionID) {
         pushToast({ kind: "info", title: "当前会话模型尚未就绪", detail: "读取完成后再试；不会沿用其他会话的选择。" })
         throw new Error("session model projection is not ready")
       }
-      try {
-        await modelContract.switch(sessionID, modelRefOf(model))
-      } catch (error) {
-        pushToast({ kind: "error", title: "切换模型失败", detail: "当前选择保持不变，请重试。" })
-        throw error
-      }
+      const switched = await readState(modelContract.switch(sessionID, modelRefOf(model)))
       if (chainDisposed || seq !== chainSeq || props.sessionID?.() !== sessionID) {
         throw new Error("session changed while switching model")
+      }
+      if (switched.status === "error") {
+        pushToast({ kind: "error", title: "切换模型失败", detail: "当前选择保持不变，请重试。" })
+        throw new Error("model switch failed")
       }
     }
     setComposerModel(model)
@@ -631,8 +639,8 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
 
   const runModelChain = async (directory: string, sessionID: string | undefined) => {
     const seq = ++chainSeq
+    setModelChainState("loading")
     setLastAuth(null)
-    setAuthKnown(false)
     setPlatformId(null)
     setHasConfiguredByok(false)
     if (sessionID) invalidateComposerModelProjection(sessionID)
@@ -645,6 +653,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     if (chainDisposed || seq !== chainSeq) return
     if (sessionID && currentRead?.status === "error") {
       failComposerModelProjection(sessionID)
+      setModelChainState("error")
       return
     }
     if (sessionID && currentRead?.status === "ready") {
@@ -656,83 +665,97 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
 
     const cat = await catalogRead
     if (chainDisposed || seq !== chainSeq) return
+    if (cat.status === "error") {
+      setModelChainState("error")
+      return
+    }
     if (sessionID && currentRead?.status === "ready") {
       resolveComposerModelProjection(
         sessionID,
-        currentRead.data ? composerModelFromRef(currentRead.data, cat.status === "ready" ? cat.data : null) : null,
+        currentRead.data ? composerModelFromRef(currentRead.data, cat.data) : null,
       )
     }
 
     const [auth, keys] = await Promise.all([authRead, keysRead])
     if (chainDisposed || seq !== chainSeq) return
+    if (auth.status === "error" || keys.status === "error") {
+      setModelChainState("error")
+      return
+    }
     const summary =
-      auth.status === "ready" && auth.data.status === "logged-in"
+      auth.data.status === "logged-in"
         ? await readState(window.api.account.summary())
         : ({ status: "ready", data: null } as const)
     if (chainDisposed || seq !== chainSeq) return
+    if (summary.status === "error" || isErrorEnvelope(summary.data)) {
+      setModelChainState("error")
+      return
+    }
 
-    const authReady = auth.status === "ready"
-    const summaryReady = summary.status === "ready" && !isErrorEnvelope(summary.data)
-    const keysReady = keys.status === "ready"
-    const factsReady = authReady && summaryReady && keysReady
-    const authState = auth.status === "ready" ? auth.data : null
+    const authState = auth.data
     setLastAuth(authState)
-    setAuthKnown(factsReady)
-    const pid = cat.status === "ready" ? cat.data.platformProvider.id : null
+    const pid = cat.data.platformProvider.id
     setPlatformId(pid)
-    const configured =
-      keys.status === "ready"
-        ? Object.entries(keys.data)
-            .filter(([, value]) => value.configured)
-            .map(([id]) => id)
-        : []
-    setHasConfiguredByok(keysReady && configured.some((id) => id !== pid))
-    const loggedIn = authState?.status === "logged-in"
+    const configured = Object.entries(keys.data)
+      .filter(([, value]) => value.configured)
+      .map(([id]) => id)
+    setHasConfiguredByok(configured.some((id) => id !== pid))
+    const loggedIn = authState.status === "logged-in"
     const baseCtx = {
       loggedIn,
-      accountUsable: loggedIn && summary.status === "ready" && summaryUsable(summary.data),
+      accountUsable: loggedIn && summaryUsable(summary.data),
       platformProviderId: pid,
       configuredProviders: configured,
-      catalog:
-        cat.status === "ready"
-          ? { defaultModel: cat.data.defaultModel, platformModels: cat.data.platformModels }
-          : null,
+      catalog: { defaultModel: cat.data.defaultModel, platformModels: cat.data.platformModels },
     }
 
     // 只有认证/账户/KEY 都是确定事实时才允许把当前选择挂成业务否定态。
     const current = composerModel()
-    if (factsReady && current && pid && current.providerID === pid) {
+    if (current && current.providerID === pid) {
       const verdict = checkSelectedModel(current, { ...baseCtx, engineModels: [] })
       if (!verdict.ok) suspendComposerModel(verdict.reason)
     }
 
     for (let i = 0; i < 20 && !chainDisposed && seq === chainSeq; i++) {
       try {
-        const engineModels: EngineModelRef[] = (
-          await modelContract.list(directory, AbortSignal.timeout(ENGINE_FETCH_TIMEOUT_MS))
-        )
+        const listed = await modelContract.list(directory, AbortSignal.timeout(ENGINE_FETCH_TIMEOUT_MS))
+        if (chainDisposed || seq !== chainSeq) return
+        const engineModels: EngineModelRef[] = listed
           .filter((model) => model.enabled && model.status !== "deprecated")
           .map((model) => ({ providerID: model.providerID, id: model.id }))
         const cur = composerModel()
         if (cur) {
           const available = engineModels.some((model) => model.providerID === cur.providerID && model.id === cur.id)
-          if (available) return
+          if (available) {
+            setModelChainState("ready")
+            return
+          }
           suspendComposerModel("provider-gone")
         }
-        if (!factsReady) return
         const resolved = resolveDefaultModel({ ...baseCtx, engineModels })
         if (resolved.kind === "model") {
-          if (sessionID) await modelContract.switch(sessionID, modelRefOf(resolved.model))
-          if (chainDisposed || seq !== chainSeq || props.sessionID?.() !== sessionID) return
+          if (sessionID) {
+            const switched = await readState(modelContract.switch(sessionID, modelRefOf(resolved.model)))
+            if (chainDisposed || seq !== chainSeq || props.sessionID?.() !== sessionID) return
+            if (switched.status === "error") throw new Error("default model switch failed")
+          }
           applyDefaultComposerModel(resolved.model)
+          setModelChainState("ready")
           return
         }
-        if (resolved.kind === "none") return // ④ 空态:占位 + picker 引导 + preflight 兜底
+        if (resolved.kind === "none") {
+          setModelChainState("ready")
+          return // ④ 空态:占位 + picker 引导 + preflight 兜底
+        }
       } catch {
+        if (chainDisposed || seq !== chainSeq) return
+        setModelChainState("error")
         // 冷启动 / respawn 窗口：保持当前选择，稍后重试；picker 同时呈现真实失败态。
       }
       await new Promise((resolve) => setTimeout(resolve, 1000))
+      if (chainDisposed || seq !== chainSeq) return
     }
+    if (!chainDisposed && seq === chainSeq) setModelChainState("error")
   }
 
   createEffect(() => {
@@ -742,12 +765,16 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     const sessionID = props.sessionID?.()
     if (!directory) {
       chainSeq++
+      setModelChainState("loading")
       return
     }
     void runModelChain(directory, sessionID)
   })
 
-  const retryCurrentModel = () => setModelRetryEpoch((value) => value + 1)
+  const retryCurrentModel = () => {
+    setModelChainState("loading")
+    setModelRetryEpoch((value) => value + 1)
+  }
 
   onMount(() => {
     // 登录态变化递增 epoch；路由 directory/sessionID 由上面的 effect 直接跟踪。
@@ -776,6 +803,14 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       props.onNeedWorkspace?.()
       return
     }
+    if (modelChainState() !== "ready") {
+      pushToast({
+        kind: modelChainState() === "error" ? "error" : "info",
+        title: modelChainState() === "error" ? "模型状态读取失败" : "正在读取模型状态",
+        detail: "读取完成前不会提交；请重试模型状态读取。",
+      })
+      return
+    }
     const suspended = composerModelSuspended()
     if (suspended && !composerModel()) {
       pushToast({
@@ -791,29 +826,26 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       return
     }
     // REQ-069 preflight:未登录 + 代理模型(或全无可用)→ 行内引导替代网关拒绝原文。
-    // 网关校验保留为兜底防线;authKnown 未就绪(极早期竞态)不拦,维持旧行为。
-    if (authKnown()) {
-      const block = preflightBlockReason(composerModel(), {
-        loggedIn: lastAuth()?.status === "logged-in",
-        platformProviderId: platformId(),
-        hasConfiguredByok: hasConfiguredByok(),
-      })
-      if (block) {
-        pushToast(
-          block === "platform-needs-login"
-            ? {
-                kind: "info",
-                title: "该模型需登录后使用",
-                detail: "登录后零配置直用;或点右下角模型选择器,换用自己 API KEY 的模型。",
-              }
-            : {
-                kind: "info",
-                title: "还没有可用的模型",
-                detail: "登录即可零配置使用;或在模型选择器里添加自己的 API KEY。",
-              },
-        )
-        return
-      }
+    const block = preflightBlockReason(composerModel(), {
+      loggedIn: lastAuth()?.status === "logged-in",
+      platformProviderId: platformId(),
+      hasConfiguredByok: hasConfiguredByok(),
+    })
+    if (block) {
+      pushToast(
+        block === "platform-needs-login"
+          ? {
+              kind: "info",
+              title: "该模型需登录后使用",
+              detail: "登录后零配置直用;或点右下角模型选择器,换用自己 API KEY 的模型。",
+            }
+          : {
+              kind: "info",
+              title: "还没有可用的模型",
+              detail: "登录即可零配置使用;或在模型选择器里添加自己的 API KEY。",
+            },
+      )
+      return
     }
     const body = text().trim()
     // 斜杠命令走 session.command,不携带 parts —— 附件会被静默丢弃;如实拦下(C28),不装作发出去了。
@@ -985,6 +1017,14 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         onCompositionStart={() => setComposing(true)}
         onCompositionEnd={() => setComposing(false)}
       />
+      <Show when={modelChainState() === "error"}>
+        <div class="a-comp-model-alert" role="alert">
+          <span>账户、KEY 或模型目录读取失败；当前不会提交。</span>
+          <button type="button" onClick={retryCurrentModel}>
+            重试
+          </button>
+        </div>
+      </Show>
       <div class="a-comp-bar">
         <AddButton onOpen={() => auto.toggleAssemble()} />
         <PermChip command={command} />
@@ -999,17 +1039,24 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
           directory={props.directory}
           onSelect={selectComposerModel}
           onRetryCurrent={retryCurrentModel}
+          modelChainReady={() => modelChainState() === "ready"}
           onNeedWorkspace={props.onNeedWorkspace}
           hasWorkspace={hasWorkspace}
         />
-        <EffortChip contract={modelContract} directory={props.directory} onSelect={selectComposerModel} />
+        <EffortChip
+          contract={modelContract}
+          directory={props.directory}
+          onSelect={selectComposerModel}
+          onRetryCurrent={retryCurrentModel}
+          modelChainReady={() => modelChainState() === "ready"}
+        />
         <Show
           when={props.mode === "session" && busy()}
           fallback={
             <button
               class="a-comp-send"
               data-ready={canSend() ? "" : undefined}
-              disabled={!text().trim() || sending()}
+              disabled={!canSend()}
               onClick={() => void submit()}
               title="发送"
             >

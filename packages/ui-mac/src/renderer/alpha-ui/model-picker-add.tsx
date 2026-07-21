@@ -2,7 +2,8 @@
 // picker popover (ADR-016: alpha owns this UI). Step 1: pick a known provider (filled from the catalog
 // — user only pastes a Key) or "其他/自定义" (manual model ids). Step 2: configure + 测试连接 (1-token
 // chat) + 保存. Save → preset keys go to alpha's encrypted keychain (providers.setKey); custom endpoints
-// persist to opencode.jsonc (providers.add). New nodes apply on the next sidecar (re)fork. Config-driven.
+// persist to alpha.jsonc (providers.add), then that IPC awaits the shared sidecar respawn so the new
+// provider enters enabled_providers before the picker refreshes the real model.list. Config-driven.
 
 import { createMemo, createSignal, For, onMount, Show } from "solid-js"
 import type { AlphaModelCatalog, ByokProvider, ProviderKeyStatus } from "../../shared/alpha-model-types"

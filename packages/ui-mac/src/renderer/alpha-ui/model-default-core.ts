@@ -20,8 +20,8 @@ export type ResolvedModel = ModelRef & { name: string; variants: string[] }
 
 export type ModelResolveCtx = {
   loggedIn: boolean
-  /** 账户可用于代理计费:会员 active 或钱包余额 > 0。summary 网络失败时调用方给 true(疑罪从无,
-   *  网关是最终裁决),summary 明确为空账户时 false(这才是要堵的坑)。 */
+  /** 账户可用于代理计费:会员 active 或钱包余额 > 0。summary 读取失败时调用方不进入解析链，
+   *  外层保持 error 并阻止提交；只有明确为空账户时才在此传 false。 */
   accountUsable: boolean
   platformProviderId: string | null
   /** 引擎实际注册的模型;空数组 = 引擎/sdk 未就绪(冷启动常态),解析返回 wait。 */

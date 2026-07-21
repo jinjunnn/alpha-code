@@ -1,7 +1,7 @@
 // ModelPickPop — canonical Alpha composer model picker. It owns the visible IA and talks only to the
 // generated SDK v2 model contract; no upstream picker DOM is mounted, hidden, observed, or clicked.
 
-import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import type { AccountSummary, AuthState } from "../../preload/types"
 import type { EffectiveCatalog, ProviderKeyStatus, Tier } from "../../shared/alpha-model-types"
 import { ALPHA_PATHS } from "../../shared/alpha-config"
@@ -34,6 +34,7 @@ export function ModelPickPop(props: {
   onSelect: (model: ComposerModel) => Promise<void>
   onPicked: () => void
   onRetryCurrent?: () => void
+  modelChainReady?: () => boolean
 }) {
   const [catalog, setCatalog] = createSignal<EffectiveCatalog | null>(null)
   const [catalogError, setCatalogError] = createSignal(false)
@@ -42,6 +43,7 @@ export function ModelPickPop(props: {
   const [keyStatus, setKeyStatus] = createSignal<LoadState<ProviderKeyStatus>>({ status: "loading" })
   const [models, setModels] = createSignal<Awaited<ReturnType<ModelContract["list"]>>>([])
   const [listState, setListState] = createSignal<ModelListState>("loading")
+  const [readyListEpoch, setReadyListEpoch] = createSignal<string | null>(null)
   const [query, setQuery] = createSignal("")
   const [addOpen, setAddOpen] = createSignal(false)
   const [configureId, setConfigureId] = createSignal<string | null>(null)
@@ -52,103 +54,149 @@ export function ModelPickPop(props: {
   let search: HTMLInputElement | undefined
   let retryTimer: ReturnType<typeof setTimeout> | undefined
   let retryAttempt = 0
+  let loadSeq = 0
+  let listSeq = 0
   let disposed = false
 
-  const loadCatalog = () => {
-    setCatalogError(false)
+  const epochKey = () => `${props.directory() ?? ""}\u0000${composerModelProjection().sessionID ?? ""}`
+  const isCurrent = (seq: number, epoch: string) => !disposed && seq === loadSeq && epoch === epochKey()
+
+  const loadCatalog = (seq: number, epoch: string) => {
     void window.api.models
       .catalog()
-      .then(setCatalog)
+      .then((next) => {
+        if (!isCurrent(seq, epoch)) return
+        setCatalog(next)
+      })
       .catch(() => {
+        if (!isCurrent(seq, epoch)) return
         setCatalog(null)
         setCatalogError(true)
       })
   }
 
-  const loadSummary = (state: AuthState) => {
+  const loadSummary = (state: AuthState, seq: number, epoch: string) => {
     if (state.status !== "logged-in") {
+      if (!isCurrent(seq, epoch)) return
       setSummary({ status: "ready", data: null })
       return
     }
-    setSummary({ status: "loading" })
     void window.api.account
       .summary()
       .then((result) => {
+        if (!isCurrent(seq, epoch)) return
         if (result && typeof result === "object" && "error" in result) {
           setSummary({ status: "error" })
           return
         }
         setSummary({ status: "ready", data: result as AccountSummary })
       })
-      .catch(() => setSummary({ status: "error" }))
+      .catch(() => {
+        if (!isCurrent(seq, epoch)) return
+        setSummary({ status: "error" })
+      })
   }
 
-  const scheduleRetry = () => {
-    if (disposed) return
+  const scheduleRetry = (seq: number, epoch: string) => {
+    if (!isCurrent(seq, epoch)) return
     clearTimeout(retryTimer)
-    retryTimer = setTimeout(loadModels, nextEngineRetryDelay(retryAttempt++))
+    retryTimer = setTimeout(() => loadModels(seq, epoch), nextEngineRetryDelay(retryAttempt++))
   }
 
-  const loadModels = () => {
+  const loadModels = (seq: number, epoch: string) => {
     const directory = props.directory()
-    if (!directory || disposed) {
+    const request = ++listSeq
+    if (!directory || !isCurrent(seq, epoch)) {
       setListState("failed")
       return
     }
     clearTimeout(retryTimer)
+    setModels([])
     setListState("loading")
+    setReadyListEpoch(null)
+    setSwitching(null)
+    setSwitchError(false)
     void props.contract
       .list(directory, AbortSignal.timeout(ENGINE_FETCH_TIMEOUT_MS))
       .then((next) => {
-        if (disposed) return
+        if (!isCurrent(seq, epoch) || request !== listSeq) return
         setModels(next)
         setListState("ready")
+        setReadyListEpoch(epoch)
         retryAttempt = 0
       })
       .catch(() => {
-        if (disposed) return
+        if (!isCurrent(seq, epoch) || request !== listSeq) return
         setListState("failed")
-        scheduleRetry()
+        scheduleRetry(seq, epoch)
       })
   }
 
-  const loadKeys = () => {
-    setKeyStatus({ status: "loading" })
+  const loadKeys = (seq: number, epoch: string) => {
     void window.api.providers
       .keyStatus()
-      .then((data) => setKeyStatus({ status: "ready", data }))
-      .catch(() => setKeyStatus({ status: "error" }))
+      .then((data) => {
+        if (!isCurrent(seq, epoch)) return
+        setKeyStatus({ status: "ready", data })
+      })
+      .catch(() => {
+        if (!isCurrent(seq, epoch)) return
+        setKeyStatus({ status: "error" })
+      })
   }
 
-  const refreshKeys = () => {
-    loadKeys()
-    loadModels()
-  }
-
-  const loadAuth = () => {
-    setAuth({ status: "loading" })
-    setSummary({ status: "loading" })
+  const loadAuth = (seq: number, epoch: string, known?: AuthState) => {
+    if (known) {
+      setAuth({ status: "ready", data: known })
+      loadSummary(known, seq, epoch)
+      return
+    }
     void window.api.auth
       .getState()
       .then((state) => {
+        if (!isCurrent(seq, epoch)) return
         setAuth({ status: "ready", data: state })
-        loadSummary(state)
+        loadSummary(state, seq, epoch)
       })
       .catch(() => {
+        if (!isCurrent(seq, epoch)) return
         setAuth({ status: "error" })
         setSummary({ status: "error" })
       })
   }
 
+  const loadAll = (knownAuth?: AuthState) => {
+    const seq = ++loadSeq
+    const epoch = epochKey()
+    clearTimeout(retryTimer)
+    retryAttempt = 0
+    setCatalog(null)
+    setCatalogError(false)
+    setAuth(knownAuth ? { status: "ready", data: knownAuth } : { status: "loading" })
+    setSummary({ status: "loading" })
+    setKeyStatus({ status: "loading" })
+    setModels([])
+    setListState("loading")
+    setReadyListEpoch(null)
+    loadCatalog(seq, epoch)
+    loadModels(seq, epoch)
+    loadKeys(seq, epoch)
+    loadAuth(seq, epoch, knownAuth)
+  }
+
+  const retryAll = () => {
+    props.onRetryCurrent?.()
+    loadAll()
+  }
+
+  createEffect(() => {
+    props.directory()
+    composerModelProjection().sessionID
+    loadAll()
+  })
+
   onMount(() => {
-    loadCatalog()
-    loadModels()
-    loadKeys()
-    loadAuth()
-    const unsubscribe = window.api.auth.subscribe((state) => {
-      setAuth({ status: "ready", data: state })
-      loadSummary(state)
-    })
+    const unsubscribe = window.api.auth.subscribe((state) => loadAll(state))
     queueMicrotask(() => search?.focus())
     onCleanup(() => unsubscribe?.())
   })
@@ -199,10 +247,15 @@ export function ModelPickPop(props: {
     const current = summary()
     return current.status === "ready" ? (current.data?.balanceFen ?? 0) : 0
   }
-  const selectionBlocked = () => composerModelProjection().status !== "ready"
+  const selectionBlocked = () =>
+    composerModelProjection().status !== "ready" ||
+    props.modelChainReady?.() === false ||
+    listState() !== "ready" ||
+    readyListEpoch() !== epochKey()
 
   const pick = async (row: ModelPickerRow) => {
     if (selectionBlocked()) return
+    if (!rows().includes(row)) return
     if (row.availability === "needs-key") {
       setConfigureId(row.model.providerID)
       setAddOpen(true)
@@ -217,15 +270,19 @@ export function ModelPickPop(props: {
       return
     }
     if (row.availability !== "available" || switching()) return
+    if (!models().some((model) => model.providerID === row.model.providerID && model.id === row.model.id)) return
+    const epoch = readyListEpoch()
     setSwitchError(false)
     setSwitching(row.key)
     try {
       await props.onSelect(row.model)
+      if (epoch !== readyListEpoch() || epoch !== epochKey()) return
       props.onPicked()
     } catch {
+      if (epoch !== readyListEpoch() || epoch !== epochKey()) return
       setSwitchError(true)
     } finally {
-      setSwitching(null)
+      if (epoch === readyListEpoch() && epoch === epochKey()) setSwitching(null)
     }
   }
 
@@ -273,14 +330,7 @@ export function ModelPickPop(props: {
       <Show when={accountState() === "error"}>
         <div class="a-acct-banner error" role="alert">
           <span class="bt">账户信息读取失败</span>
-          <button
-            type="button"
-            onClick={() => {
-              const current = auth()
-              if (current.status !== "ready") return loadAuth()
-              loadSummary(current.data)
-            }}
-          >
+          <button type="button" onClick={retryAll}>
             重试
           </button>
         </div>
@@ -296,7 +346,7 @@ export function ModelPickPop(props: {
         <div class="a-mpp-alert" role="alert">
           <strong>KEY 状态读取失败</strong>
           <span>当前不提供配置结论。</span>
-          <button type="button" onClick={loadKeys}>
+          <button type="button" onClick={retryAll}>
             重试
           </button>
         </div>
@@ -312,7 +362,7 @@ export function ModelPickPop(props: {
         <div class="a-mpp-alert" role="alert">
           <strong>当前会话模型读取失败</strong>
           <span>没有沿用其他会话的选择。</span>
-          <button type="button" onClick={() => props.onRetryCurrent?.()} disabled={!props.onRetryCurrent}>
+          <button type="button" onClick={retryAll} disabled={!props.onRetryCurrent}>
             重试
           </button>
         </div>
@@ -329,7 +379,7 @@ export function ModelPickPop(props: {
         <div class="a-mpp-alert" role="alert">
           <strong>模型目录加载失败</strong>
           <span>当前不提供推测列表。</span>
-          <button type="button" onClick={loadCatalog}>
+          <button type="button" onClick={retryAll}>
             重试
           </button>
         </div>
@@ -338,7 +388,7 @@ export function ModelPickPop(props: {
         <div class="a-mpp-alert" role="alert">
           <strong>正在连接引擎（可能正在重启）…</strong>
           <span>当前选择保持不变，模型列表稍后自动恢复。</span>
-          <button type="button" onClick={loadModels}>
+          <button type="button" onClick={retryAll}>
             立即重试
           </button>
         </div>
@@ -413,7 +463,7 @@ export function ModelPickPop(props: {
             setAddOpen(false)
             setConfigureId(null)
           }}
-          onSaved={refreshKeys}
+          onSaved={retryAll}
         />
       </Show>
     </div>
@@ -440,6 +490,7 @@ function ModelRow(props: {
     <button
       type="button"
       class="a-pop-item a-mpp-row"
+      data-group={props.row.group}
       classList={{
         selected: selected(),
         locked: props.row.availability !== "available",

@@ -41,6 +41,27 @@
   row-gap: 0;
   padding: 0 10px 0 8px;
 }
+.a-comp-model-alert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 12px 4px;
+  padding: 7px 9px;
+  border-radius: var(--a-radius-md);
+  background: var(--a-error-subtle);
+  color: var(--a-error);
+  font-size: var(--a-text-xs);
+}
+.a-comp-model-alert button {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: var(--a-weight-semibold);
+  cursor: pointer;
+}
 
 /* ── 附件 chips(REQ-078 T2:图片缩略 / PDF 图标 + 文件名 + 移除)── */
 .a-comp-atts {

@@ -710,7 +710,7 @@ export type ElectronAPI = {
     catalog: () => Promise<EffectiveCatalog>
     platformLive: () => Promise<CloudResult<{ models: PlatformLiveModel[]; edition?: string; byokProviders: string[] | null }>>
   }
-  // custom provider add/test (writes opencode.jsonc provider[]; 1-token-chat connectivity probe).
+  // custom provider add/test (writes alpha.jsonc provider[], respawns sidecar; 1-token probe).
   providers: {
     add: (input: ProviderInput) => Promise<ProviderResult>
     test: (input: ProviderTestInput) => Promise<ProviderTestResult>

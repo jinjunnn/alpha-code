@@ -12,6 +12,7 @@ import * as path from "node:path"
 import { writeLiveAllowlist } from "./alpha-live-allowlist"
 import { buildAlphaModelConfig, getModelCatalog } from "./alpha-models"
 import { secretFilePath, syncSecretFiles } from "./alpha-secret-files"
+import { persistProviderAndRefresh, setProviderLifecycleDeps } from "./provider-lifecycle"
 
 // Every env var this module reads — snapshot + restore so tests don't leak into each other or the host.
 const MANAGED = [
@@ -50,6 +51,7 @@ beforeEach(() => {
   userData = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-models-userdata-"))
 })
 afterEach(() => {
+  setProviderLifecycleDeps()
   for (const k of MANAGED) {
     if (saved[k] === undefined) delete process.env[k]
     else process.env[k] = saved[k]
@@ -183,6 +185,31 @@ describe("buildAlphaModelConfig — default model + user providers", () => {
     )
     const cfg = buildAlphaModelConfig(userData)!
     expect(cfg.enabled_providers).toContain("myco")
+  })
+
+  test("providers.add 的真实保存→respawn 装配链把 custom id 带进下一 fork enabled_providers", async () => {
+    let refreshed: ReturnType<typeof buildAlphaModelConfig>
+    let refreshes = 0
+    setProviderLifecycleDeps({
+      refreshRuntime: async () => {
+        refreshes++
+        refreshed = buildAlphaModelConfig(userData)
+        return true
+      },
+    })
+
+    const result = await persistProviderAndRefresh({
+      id: "custom-node",
+      name: "Custom Node",
+      compat: "openai",
+      baseURL: "https://custom.invalid/v1",
+      apiKey: "sk-test",
+      models: ["real-custom-model"],
+    })
+
+    expect(result).toEqual({ ok: true })
+    expect(refreshes).toBe(1)
+    expect(refreshed!.enabled_providers).toContain("custom-node")
   })
 })
 

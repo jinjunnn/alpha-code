@@ -14,14 +14,28 @@
 //     (假死,REQ-005 基线审计 §0.1)——即上游改名不会红任何测试。此处直接钉渲染点。
 //   - data-key / data-selected / data-slash-id / data-message-id / data-timeline-part-id /
 //     data-kind / id="review-panel" 等不在 data-component|slot|action 命名空间。
-// 形态同 surface-seam-contract.test.ts:冻结 packages/app|ui 无法在 bun test 直接 import,
-// 以源码文本断言。断言红 = 共存前提破坏,回 T6 审计矩阵重评,不得只改测试。
+// packages/app|ui 锚点仍以源码契约断言；REQ-090 picker owner 则由 TypeScript AST 解析真实
+// import 与 JSX mount 边，不再用源码正则/includes 构图。断言红 = 共存前提破坏,回 T6 审计矩阵
+// 重评,不得只改测试。
 //
 // 运行时半边(真机取证)不在本文件伪造:CDP 探针清单见同名审计文档 §5。
 
 import { describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as path from "node:path"
+import {
+  createSourceFile,
+  forEachChild,
+  isIdentifier,
+  isImportDeclaration,
+  isJsxOpeningElement,
+  isJsxSelfClosingElement,
+  isNamedImports,
+  isStringLiteral,
+  ScriptKind,
+  ScriptTarget,
+  type Node,
+} from "typescript"
 import { FRONTEND_SURFACE_MANIFEST } from "../../shared/frontend-surface-manifest"
 
 const ALPHA_UI = import.meta.dir
@@ -55,9 +69,12 @@ function* walk(dir: string): Generator<string> {
 }
 
 function importedFiles(file: string) {
-  return [...read(file).matchAll(/(?:from\s+|import\s*)["']([^"']+)["']/g)]
-    .map((match) => match[1])
-    .filter((specifier): specifier is string => !!specifier?.startsWith("."))
+  return sourceFile(file).statements
+    .filter(isImportDeclaration)
+    .map((declaration) => declaration.moduleSpecifier)
+    .filter(isStringLiteral)
+    .map((specifier) => specifier.text)
+    .filter((specifier) => specifier.startsWith("."))
     .flatMap((specifier) => {
       const target = path.resolve(path.dirname(file), specifier)
       return [target, `${target}.ts`, `${target}.tsx`, path.join(target, "index.ts"), path.join(target, "index.tsx")].filter(
@@ -65,6 +82,60 @@ function importedFiles(file: string) {
       )[0]
     })
     .filter((candidate): candidate is string => !!candidate)
+}
+
+function sourceFile(file: string) {
+  return createSourceFile(
+    file,
+    read(file),
+    ScriptTarget.Latest,
+    true,
+    file.endsWith(".tsx") ? ScriptKind.TSX : ScriptKind.TS,
+  )
+}
+
+function importedBindings(file: string, target: string) {
+  return sourceFile(file).statements
+    .filter(isImportDeclaration)
+    .filter((declaration) => isStringLiteral(declaration.moduleSpecifier))
+    .filter((declaration) => resolveImport(file, declaration.moduleSpecifier.text) === target)
+    .flatMap((declaration) => {
+      const clause = declaration.importClause
+      if (!clause) return []
+      const defaults = clause.name ? [{ imported: "default", local: clause.name.text }] : []
+      if (!clause.namedBindings || !isNamedImports(clause.namedBindings)) return defaults
+      return [
+        ...defaults,
+        ...clause.namedBindings.elements.map((element) => ({
+          imported: element.propertyName?.text ?? element.name.text,
+          local: element.name.text,
+        })),
+      ]
+    })
+}
+
+function resolveImport(file: string, specifier: string) {
+  if (!specifier.startsWith(".")) return undefined
+  const target = path.resolve(path.dirname(file), specifier)
+  return [target, `${target}.ts`, `${target}.tsx`, path.join(target, "index.ts"), path.join(target, "index.tsx")].find(
+    (candidate) => fs.existsSync(candidate) && fs.statSync(candidate).isFile(),
+  )
+}
+
+function mountedImportCount(file: string, target: string, imported: string) {
+  const names = new Set(importedBindings(file, target).filter((binding) => binding.imported === imported).map((binding) => binding.local))
+  let count = 0
+  const visit = (node: Node) => {
+    if (
+      (isJsxOpeningElement(node) || isJsxSelfClosingElement(node)) &&
+      isIdentifier(node.tagName) &&
+      names.has(node.tagName.text)
+    )
+      count++
+    forEachChild(node, visit)
+  }
+  visit(sourceFile(file))
+  return count
 }
 
 function rendererImportGraph(entry: string) {
@@ -176,19 +247,22 @@ describe("REQ-090 model picker ratchet:旧 DOM 接管退役，canonical owner �
     expect(rendererIndex).not.toContain("model-picker-reskin.css")
   })
 
-  test("实际 renderer import/mount 图可达 picker，且 AlphaComposer 是唯一直接 owner", () => {
+  test("TypeScript AST 解析的 renderer import/mount 图可达 picker，且 AlphaComposer 是唯一直接 owner", () => {
     const picker = path.join(ALPHA_UI, "alpha-composer-model.tsx")
     const composer = path.join(ALPHA_UI, "alpha-composer.tsx")
     const graph = rendererImportGraph(path.join(RENDERER, "index.tsx"))
-    const pickerImporters = [...walk(RENDERER)].filter((file) => importedFiles(file).includes(picker))
+    const pickerImporters = [...walk(RENDERER)].filter((file) => {
+      const importsPicker = importedBindings(file, picker).some((binding) => binding.imported === "ModelPickPop")
+      return importsPicker && mountedImportCount(file, picker, "ModelPickPop") > 0
+    })
     const composerMounts = [...walk(RENDERER)]
-      .filter((file) => importedFiles(file).includes(composer) && read(file).includes("<AlphaComposer"))
+      .filter((file) => mountedImportCount(file, composer, "AlphaComposer") > 0)
       .map((file) => path.relative(RENDERER, file))
       .sort()
 
     expect(graph.has(picker)).toBe(true)
     expect(pickerImporters.map((file) => path.relative(RENDERER, file))).toEqual(["alpha-ui/alpha-composer.tsx"])
-    expect(read(pickerImporters[0]!)).toContain("<ModelPickPop")
+    expect(mountedImportCount(pickerImporters[0]!, picker, "ModelPickPop")).toBe(2)
     expect(composerMounts).toEqual([
       "alpha-ui/AlphaHome.tsx",
       "alpha-ui/alpha-new-session.tsx",
@@ -217,7 +291,7 @@ describe("REQ-090 model picker ratchet:旧 DOM 接管退役，canonical owner �
       expect(source).not.toContain('data-slot="list-item"')
     }
     expect(composerModelPicker).toContain("await props.onSelect(row.model)")
-    expect(alphaComposer).toContain("await modelContract.switch(sessionID, modelRefOf(model))")
+    expect(alphaComposer).toContain("modelContract.switch(sessionID, modelRefOf(model))")
   })
 
   test("model/variant 不再落 localStorage 形成第二真值，picker 打开后聚焦 canonical 搜索框", () => {

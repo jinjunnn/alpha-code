@@ -4,21 +4,32 @@ import { transformAsync } from "@babel/core"
 import presetTypescript from "@babel/preset-typescript"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import presetSolid from "babel-preset-solid"
+import { mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { parse } from "jsonc-parser"
 import type { ModelRef, ModelV2Info } from "@opencode-ai/sdk/v2/client"
 import type { AccountSummary, AuthState } from "../src/preload/types"
-import type { EffectiveCatalog, ProviderKeyStatus } from "../src/shared/alpha-model-types"
+import type { EffectiveCatalog, ProviderInput, ProviderKeyStatus } from "../src/shared/alpha-model-types"
 import type { AlphaProjectsApi } from "../src/renderer/sidebar/use-projects"
 import type { AlphaComposerRuntimeProps } from "../src/renderer/alpha-ui/alpha-composer"
 import type { ComposerModel } from "../src/renderer/alpha-ui/composer-state"
 import type { ModelContract } from "../src/renderer/alpha-ui/model-contract"
+import { buildAlphaModelConfig } from "../src/main/alpha-models"
+import { readConfiguredProviderKeys } from "../src/main/ext-config"
+import { alphaJsoncPath } from "../src/main/engine-config-truth"
+import { persistProviderAndRefresh, setProviderLifecycleDeps } from "../src/main/provider-lifecycle"
 
 GlobalRegistrator.register()
 const solid = await import("solid-js/dist/solid.js")
 mock.module("solid-js", () => solid)
 const solidWeb = await import("solid-js/web/dist/web.js")
 mock.module("solid-js/web", () => solidWeb)
-const { createComponent, createSignal } = solid
+const { batch, createComponent, createSignal } = solid
 const { render } = solidWeb
+const savedAlphaGlobalDir = process.env.ALPHA_GLOBAL_DIR
+const savedOpencodeConfigDir = process.env.OPENCODE_CONFIG_DIR
+const tempDirs: string[] = []
 
 Bun.plugin({
   name: "solid-component-tests",
@@ -41,7 +52,13 @@ const command = { options: [], trigger: () => {} } as unknown as AlphaComposerRu
 mock.module("../src/renderer/alpha-ui/providers", () => ({ useCommand: () => command }))
 const { AlphaComposerRuntime } = await import("../src/renderer/alpha-ui/alpha-composer")
 const { ModelPickPop } = await import("../src/renderer/alpha-ui/alpha-composer-model")
-const { composerModel, composerModelProjection, resetComposerModelProjection, setComposerModel } = await import(
+const {
+  composerModel,
+  composerModelProjection,
+  composerModelSuspended,
+  resetComposerModelProjection,
+  setComposerModel,
+} = await import(
   "../src/renderer/alpha-ui/composer-state"
 )
 
@@ -179,6 +196,12 @@ function input(element: HTMLInputElement, value: string) {
 }
 
 afterEach(() => {
+  setProviderLifecycleDeps()
+  tempDirs.splice(0).forEach((dir) => rmSync(dir, { recursive: true, force: true }))
+  if (savedAlphaGlobalDir === undefined) delete process.env.ALPHA_GLOBAL_DIR
+  else process.env.ALPHA_GLOBAL_DIR = savedAlphaGlobalDir
+  if (savedOpencodeConfigDir === undefined) delete process.env.OPENCODE_CONFIG_DIR
+  else process.env.OPENCODE_CONFIG_DIR = savedOpencodeConfigDir
   document.body.replaceChildren()
   setComposerModel(null)
   resetComposerModelProjection()
@@ -186,6 +209,106 @@ afterEach(() => {
 afterAll(() => GlobalRegistrator.unregister())
 
 describe("AlphaComposer production model seam", () => {
+  test("A 的外层 list 迟到时先过 epoch，不挂起 B 投影也不向 A 提交默认切换", async () => {
+    installApi()
+    const [sessionID, setSessionID] = createSignal("A")
+    const [directory, setDirectory] = createSignal("/A")
+    const pendingA = deferred<ModelV2Info[]>()
+    const switches: Array<{ sessionID: string; model: ModelRef }> = []
+    const contract: ModelContract = {
+      list: async (dir) => (dir === "/A" ? pendingA.promise : platformModels),
+      current: async (id) => ({
+        providerID: catalog.platformProvider.id,
+        id: id === "A" ? catalog.platformModels[0]!.id : catalog.platformModels[1]!.id,
+      }),
+      switch: async (id, model) => {
+        switches.push({ sessionID: id, model })
+      },
+    }
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "session",
+        projects,
+        directory,
+        sessionID,
+        command,
+        modelContract: contract,
+      }),
+    )
+
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+    batch(() => {
+      setDirectory("/B")
+      setSessionID("B")
+    })
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[1]!.id))
+    pendingA.resolve([platformModels[0]!])
+    await flush()
+    await flush()
+
+    expect(composerModel()?.id).toBe(catalog.platformModels[1]!.id)
+    expect(composerModelSuspended()).toBeNull()
+    expect(switches).toEqual([])
+    mounted.dispose()
+  })
+
+  test("picker 打开时切 directory 会清空旧 epoch 行；旧 DOM 行紧邻提交校验拒绝", async () => {
+    const customA = info("custom-a", "a-only", "A Only")
+    installApi({ keyStatus: async () => ({ ...keys, "custom-a": { configured: true, source: "config" } }) })
+    const [sessionID, setSessionID] = createSignal("A")
+    const [directory, setDirectory] = createSignal("/A")
+    const pendingB = deferred<ModelV2Info[]>()
+    const switches: Array<{ sessionID: string; model: ModelRef }> = []
+    const contract: ModelContract = {
+      list: async (dir) => (dir === "/A" ? [...platformModels, customA] : pendingB.promise),
+      current: async (id) => ({
+        providerID: catalog.platformProvider.id,
+        id: id === "A" ? catalog.platformModels[0]!.id : catalog.platformModels[1]!.id,
+      }),
+      switch: async (id, model) => {
+        switches.push({ sessionID: id, model })
+      },
+    }
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "session",
+        projects,
+        directory,
+        sessionID,
+        command,
+        modelContract: contract,
+      }),
+    )
+
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+    click(mounted.host.querySelector('[data-kind="model"] > button'))
+    await waitFor(() => expect(document.body.textContent).toContain("A Only"))
+    const staleRow = [...document.body.querySelectorAll<HTMLButtonElement>(".a-mpp-row")].find((row) =>
+      row.textContent?.includes("a-only"),
+    )!
+
+    batch(() => {
+      setDirectory("/B")
+      setSessionID("B")
+    })
+    await waitFor(() => {
+      expect(composerModelProjection()).toEqual({ status: "ready", sessionID: "B" })
+      expect([...document.body.querySelectorAll<HTMLButtonElement>(".a-mpp-row")].every((row) => row.disabled)).toBe(true)
+    })
+    staleRow.click()
+    expect(switches).toEqual([])
+
+    pendingB.resolve(platformModels)
+    await waitFor(() => {
+      expect(document.body.textContent).not.toContain("A Only")
+      expect(
+        [...document.body.querySelectorAll<HTMLButtonElement>(".a-mpp-row")].some((row) => !row.disabled),
+      ).toBe(true)
+    })
+    expect(switches).toEqual([])
+    mounted.dispose()
+  })
+
   test("A→B 的 current deferred/rejected 会立即失效旧 Ref，控件不能用 A 改写 B，且可重试", async () => {
     installApi()
     const [sessionID, setSessionID] = createSignal("A")
@@ -290,6 +413,70 @@ describe("AlphaComposer production model seam", () => {
     expect(mounted.host.textContent).toContain(first.name)
     mounted.dispose()
   })
+
+  for (const source of ["account", "key"] as const) {
+    test(`${source} 读取失败由外层三态呈现并阻止提交；picker 重试会重跑整条链`, async () => {
+      let failing = true
+      let submissions = 0
+      installApi({
+        account: async () => {
+          if (source === "account" && failing) throw new Error("account failed")
+          return summary
+        },
+        keyStatus: async () => {
+          if (source === "key" && failing) throw new Error("key failed")
+          return keys
+        },
+      })
+      const contract: ModelContract = {
+        list: async () => platformModels,
+        current: async () => undefined,
+        switch: async () => {},
+      }
+      const mounted = mount(() =>
+        createComponent(AlphaComposerRuntime, {
+          mode: "home",
+          projects: {
+            ...projects,
+            startChat: async () => {
+              submissions++
+              return "session-new"
+            },
+          },
+          directory: () => "/workspace",
+          command,
+          modelContract: contract,
+          initialText: "hello",
+        }),
+      )
+
+      await waitFor(() => expect(mounted.host.textContent).toContain("账户、KEY 或模型目录读取失败"))
+      const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+      expect(send.disabled).toBe(true)
+      send.click()
+      expect(submissions).toBe(0)
+
+      click(mounted.host.querySelector('[data-kind="model"] > button'))
+      await waitFor(() =>
+        expect(document.body.textContent).toContain(source === "account" ? "账户信息读取失败" : "KEY 状态读取失败"),
+      )
+      failing = false
+      const picker = document.body.querySelector(".a-mpp")!
+      const retry = [...picker.querySelectorAll<HTMLButtonElement>('button')].find((button) => {
+        const alert = button.closest('[role="alert"]')
+        return alert?.textContent?.includes(source === "account" ? "账户信息读取失败" : "KEY 状态读取失败")
+      })
+      click(retry ?? null)
+
+      await waitFor(() => {
+        expect(mounted.host.textContent).not.toContain("账户、KEY 或模型目录读取失败")
+        expect(send.disabled).toBe(false)
+      })
+      send.click()
+      await waitFor(() => expect(submissions).toBe(1))
+      mounted.dispose()
+    })
+  }
 })
 
 describe("ModelPickPop production component", () => {
@@ -402,31 +589,55 @@ describe("ModelPickPop production component", () => {
     mounted.dispose()
   })
 
-  test("保存 Custom Provider 后刷新 KEY/list，并从正式 list 显示真实模型", async () => {
+  test("保存 Custom Provider 走真实持久化→next-fork allowlist→list 刷新并呈现可选行", async () => {
     resetComposerModelProjection()
-    let added = false
-    let addInput: unknown
-    installApi({
-      keyStatus: async () =>
-        added ? { ...keys, "custom-node": { configured: true, source: "config" } } : keys,
-      add: async (value) => {
-        addInput = value
-        added = true
-        return { ok: true }
+    const root = mkdtempSync(join(tmpdir(), "alpha-provider-component-"))
+    tempDirs.push(root)
+    process.env.ALPHA_GLOBAL_DIR = join(root, "environment")
+    process.env.OPENCODE_CONFIG_DIR = join(root, "xdg")
+    const userData = join(root, "user-data")
+    let runtimeModels = [...platformModels]
+    let refreshes = 0
+    setProviderLifecycleDeps({
+      refreshRuntime: async () => {
+        refreshes++
+        const nextFork = buildAlphaModelConfig(userData)!
+        expect(nextFork.enabled_providers).toContain("custom-node")
+        const persisted = parse(readFileSync(alphaJsoncPath(), "utf8")) as {
+          provider?: Record<string, { models?: Record<string, { name?: string }> }>
+        }
+        runtimeModels = [
+          ...platformModels,
+          ...Object.entries(persisted.provider?.["custom-node"]?.models ?? {}).map(([id, model]) =>
+            info("custom-node", id, model.name ?? id),
+          ),
+        ]
+        return true
       },
     })
-    const custom = info("custom-node", "real-custom-model", "Real Custom Model")
+    installApi({
+      keyStatus: async () => ({
+        ...keys,
+        ...Object.fromEntries(
+          [...readConfiguredProviderKeys()].map(([id]) => [id, { configured: true, source: "config" as const }]),
+        ),
+      }),
+      add: (value) => persistProviderAndRefresh(value as ProviderInput),
+    })
     const contract: ModelContract = {
-      list: async () => (added ? [...platformModels, custom] : platformModels),
+      list: async () => runtimeModels,
       current: async () => undefined,
       switch: async () => {},
     }
+    let selected: ComposerModel | null = null
     const mounted = mount(() =>
       createComponent(ModelPickPop, {
         contract,
         directory: () => "/workspace",
         selected: () => null,
-        onSelect: async () => {},
+        onSelect: async (model) => {
+          selected = model
+        },
         onPicked: () => {},
       }),
     )
@@ -452,12 +663,21 @@ describe("ModelPickPop production component", () => {
     modelInput.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Enter" }))
     click([...mounted.host.querySelectorAll("button")].find((button) => button.textContent?.includes("保存并启用")) ?? null)
 
-    await waitFor(() => expect(mounted.host.textContent).toContain("Real Custom Model"))
-    expect(addInput).toMatchObject({ id: "custom-node", models: ["real-custom-model"] })
+    await waitFor(() =>
+      expect(
+        [...mounted.host.querySelectorAll<HTMLButtonElement>(".a-mpp-row")].some((button) =>
+          button.textContent?.includes("real-custom-model"),
+        ),
+      ).toBe(true),
+    )
+    expect(refreshes).toBe(1)
     const row = [...mounted.host.querySelectorAll<HTMLButtonElement>(".a-mpp-row")].find((button) =>
       button.textContent?.includes("real-custom-model"),
     )
     expect(row?.disabled).toBe(false)
+    expect(row?.dataset.group).toBe("byok")
+    click(row ?? null)
+    await waitFor(() => expect(selected?.id).toBe("real-custom-model"))
     mounted.dispose()
   })
 })
