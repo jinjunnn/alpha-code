@@ -39,7 +39,9 @@ on:
 # (frontend-freeze-base tag),不再随上游同步,故移出守卫范围——它们相对 origin/dev 的 diff 是
 # 冻结的本意,不是北极星破坏。引擎/契约包(opencode/core/server/tui/sdk + session-ui 等)照旧只读。
 env:
-  UPSTREAM_PATHS: "packages/opencode packages/core packages/server packages/tui packages/sdk"
+  # ADR-033(#456,2026-07-21):补全守卫盲区——permission wire 契约的 SOT 有一半在
+  # protocol/schema/client(同提交 fd357d58 收编),纳入守卫范围;被接管/生成文件在下方 :(exclude)。
+  UPSTREAM_PATHS: "packages/opencode packages/core packages/server packages/tui packages/sdk packages/protocol packages/schema packages/client"
 
 concurrency:
   group: alpha-ci-${{ github.ref }}
@@ -130,6 +132,15 @@ jobs:
             ':(exclude)packages/core/src/database/schema.gen.ts'
             ':(exclude)packages/sdk/js/src/v2/gen/sdk.gen.ts'
             ':(exclude)packages/sdk/js/src/v2/gen/types.gen.ts'
+            # ADR-033 §守卫盲区(#456 裁决):permission wire 契约在 protocol/schema/client 的 SOT
+            # (同 fd357d58 收编)+ 生成随源。agent.ts = 抽出的共享 AgentID(被 schema/permission 依赖)。
+            ':(exclude)packages/protocol/src/groups/permission.ts'
+            ':(exclude)packages/schema/src/permission.ts'
+            ':(exclude)packages/schema/src/agent.ts'
+            ':(exclude)packages/schema/test/contract-hygiene.test.ts'
+            ':(exclude)packages/client/src/generated/client.ts'
+            ':(exclude)packages/client/src/generated-effect/client.ts'
+            ':(exclude)packages/client/src/generated/types.ts'
           )
           changed="$(git diff --diff-filter=DMR --name-only origin/dev...HEAD -- $UPSTREAM_PATHS "${excludes[@]}")"
           if [ -n "$changed" ]; then

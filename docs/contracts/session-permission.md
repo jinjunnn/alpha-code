@@ -4,7 +4,7 @@ kind: contract
 status: active
 owners:
   - alpha-code
-last_reviewed: 2026-07-20
+last_reviewed: 2026-07-21
 review_after: 2027-01-16
 ---
 
@@ -33,30 +33,34 @@ for an accept/reject result and discards every object or array returned by the
 decoder. Fingerprinting, evaluation, persistence, reply comparison, and event
 payload construction use only the first snapshot or a prototype-free object
 built from it. Accessors, sparse arrays, custom prototypes, symbols, host
-objects such as `Date`, functions, `undefined`, non-finite numbers, negative
-zero, non-canonical array properties, and cyclic values are rejected
-fail-closed. Metadata is limited to 256 total enumerable entries, including
-nested array elements, and 16 nested containers; either overflow is rejected
-before admission.
+objects such as `Date`, functions, non-finite numbers, negative zero,
+non-canonical array properties, and cyclic values are rejected fail-closed.
+Own enumerable object properties whose data value is `undefined` are
+normalized to omission before validation or fingerprinting; `undefined` at
+the root or in an array remains invalid. Metadata is limited to 256 retained
+enumerable entries, including nested array elements, and 16 nested containers;
+either overflow is rejected before admission.
 
 The applicable schemas perform no accepted authorization-relevant conversion
 that must be replayed after validation. Permission validation sets
 `onExcessProperty: "error"`, so a Struct never accepts an input whose decoder
 output would need unknown-key stripping. Branded IDs and fingerprints add
 checks but do not change strings; literal unions, integer bounds, arrays, JSON
-records, and struct fields only validate shape and values; optional keys remain
-absent or retain their supplied value, with no default; and there is no type
-coercion or normalization. Defaults and derived facts belong to the service,
-not the decoder: an omitted `agent` selects the Session agent, an omitted
-request `id` is generated only while constructing the final prototype-free
-request, and the service supplies `subject` from the selected agent, Session
-`scope`, and `expiresAt: null` before the prototype-free request-facts snapshot
-is taken.
+records, and struct fields only validate shape and values; and there is no type
+coercion. Before decoding, the permission-owned snapshot normalizes
+`undefined`-valued object properties to absent keys; other optional keys remain
+absent or retain their supplied value, with no default. Defaults and derived
+facts belong to the service, not the decoder: an omitted `agent` selects the
+Session agent, an omitted request `id` is generated only while constructing
+the final prototype-free request, and the service supplies `subject` from the
+selected agent, Session `scope`, and `expiresAt: null` before the
+prototype-free request-facts snapshot is taken.
 
-Service reads return detached response copies. Permission event data and its
-event envelope, including `location`, metadata, and durable routing fields, are
-instead deeply frozen so every sequential listener and stream consumer
-observes the same facts and must clone before mutation.
+Service reads return detached response copies. Permission event data is instead
+rebuilt and deeply frozen at the permission-owned publish call so every
+sequential listener and stream consumer observes the same permission facts and
+must clone the payload before mutation. The shared event envelope retains the
+generic event service's upstream behavior.
 
 ### Prototype-boundary inventory
 
@@ -75,7 +79,7 @@ residual third-party construction paths that neither classification covers.
 | Fingerprint canonicalization | (b) Canonical object-key and merge-sort scratch stores are created with `Object.create(null)` before assignment. Canonical arrays must already be prototype-free; only primitive strings and numbers are accumulated. |
 | Persistence insert envelopes and JSON serialization | (a) They are sinks populated from the frozen request/command facts after authorization checks, not a new source of authorization facts. Object-literal property creation does not invoke inherited assignment setters. |
 | SQLite/Drizzle row envelopes and JSON deserialization | Third-party Drizzle row mapping constructs an ordinary top-level result object with property assignment. If `Object.prototype` is polluted, an inherited setter can run during that library-internal assignment and rewrite `row.decision`, which is read directly as the durable decision source and may therefore affect authorization or persistence. The in-code prototype-free defenses cannot cover that library-internal construction. `JSON.parse` itself still defines own properties rather than invoking inherited assignment setters. A restored request is first rebuilt and frozen by `wireSnapshot`, then schema-validated with decoder output discarded, and its row IDs and recomputed fingerprint must agree before it can re-enter pending authorization state. |
-| Receipt, saved-rule, batch, and event construction | Third-party `mapArray`, `filterArray`, and `sliceArray` helpers construct ordinary arrays and assign their indices. If `Array.prototype` is polluted, an inherited index setter can run during those library-internal assignments and rewrite values that drive batch inserts and `resolvedRequestIDs`, allowing the rewritten values to enter authorization or persistence. The in-code prototype-free defenses cannot cover those library-internal constructions. Batch candidates retain references to already frozen requests and are independently re-evaluated from those request facts; receipt and saved-rule values are derived from the checked request and command. Event payload data is independently rebuilt through `wireSnapshot` and frozen, and the generic event envelope is frozen before listeners run. |
+| Receipt, saved-rule, batch, and event construction | Third-party `mapArray`, `filterArray`, and `sliceArray` helpers construct ordinary arrays and assign their indices. If `Array.prototype` is polluted, an inherited index setter can run during those library-internal assignments and rewrite values that drive batch inserts and `resolvedRequestIDs`, allowing the rewritten values to enter authorization or persistence. The in-code prototype-free defenses cannot cover those library-internal constructions. Batch candidates retain references to already frozen requests and are independently re-evaluated from those request facts; receipt and saved-rule values are derived from the checked request and command. Permission event payload data is independently rebuilt through `wireSnapshot` and frozen before the generic event service fans it out. |
 | `structuredClone` service/SDK response containers and client response decoding | (a) These are outward detached copies after authorization or replay selection. Mutating or setter-influencing them cannot change pending requests, fingerprints, persisted rows, or execution decisions. |
 
 ### Known residual and precondition
@@ -108,10 +112,11 @@ purpose-built deterministic JSON serializer emits by string concatenation,
 stores sortable keys only in prototype-free indexed objects, and uses a
 deterministic O(n log n) merge sort. It visits array elements by checked own
 indices and never invokes `toJSON`, an inherited array method, or another
-value-controlled method. The hash is computed from the actual frozen
-public-wire snapshot and is checked again immediately before a decision
-commits. Request ID and fingerprint therefore form the immutable idempotency
-identity.
+value-controlled method. Undefined-valued object fields are omitted by the
+wire snapshot before serialization, so they produce the same fingerprint as
+an absent field. The hash is computed from the actual frozen public-wire
+snapshot and is checked again immediately before a decision commits. Request
+ID and fingerprint therefore form the immutable idempotency identity.
 
 `PermissionV2.DecisionCommand` contains `requestFingerprint`, `decisionID`,
 `decision`, and optional correction `message`. It is a discriminated union:
@@ -120,6 +125,11 @@ identity.
 `grantExpiresAt: null`. The current saved-rule engine supports only a permanent
 grant for the active project; a different project or an `always` request
 without `save` resources fails closed.
+
+Alpha regenerates the legacy JavaScript SDK through
+`bun ./scripts/generate-alpha-sdk.ts`. That alpha-owned entry point runs the
+unchanged upstream generator, then applies a loud-fail post-generation step so
+the generated `once` and `reject` arms retain `never` grant fields.
 
 `PermissionV2.DecisionReceipt` contains the request and Session identities,
 request fingerprint, decision ID and value, committed time, optional grant
