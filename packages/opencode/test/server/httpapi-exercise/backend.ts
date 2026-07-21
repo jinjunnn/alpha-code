@@ -17,6 +17,10 @@ export function call(scenario: ActiveScenario, ctx: SeededContext<unknown>, opti
   )
 }
 
+export function callRequest(request: Request) {
+  return Effect.promise(async () => capture(await app(await runtime(), {}).request(request), "full"))
+}
+
 export function callAuthProbe(scenario: ActiveScenario, credentials: "missing" | "valid" = "missing") {
   return Effect.promise(async () => {
     const controller = new AbortController()

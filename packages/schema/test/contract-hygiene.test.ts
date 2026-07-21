@@ -3,6 +3,7 @@ import { Schema } from "effect"
 import { Agent } from "../src/agent"
 import { FileSystem } from "../src/filesystem"
 import { Model } from "../src/model"
+import { Permission } from "../src/permission"
 import { Project } from "../src/project"
 import { Pty } from "../src/pty"
 import { Question } from "../src/question"
@@ -26,6 +27,59 @@ describe("contract hygiene", () => {
       status: "waiting",
       priority: "urgent",
     })
+  })
+
+  test("permission metadata accepts only JSON values", () => {
+    const decode = Schema.decodeUnknownSync(Permission.Request.fields.metadata)
+    expect(decode({ nested: ["value", 1, true, null] })).toEqual({ nested: ["value", 1, true, null] })
+    expect(() => decode({ bigint: 1n })).toThrow()
+    expect(() => decode({ missing: undefined })).toThrow()
+    expect(() => decode({ callback: () => "value" })).toThrow()
+  })
+
+  test("permission decision commands discriminate persistent grant fields", () => {
+    const decode = Schema.decodeUnknownSync(Permission.DecisionCommand)
+    const fields = {
+      requestFingerprint: Schema.decodeUnknownSync(Permission.Fingerprint)("a".repeat(64)),
+      decisionID: Permission.DecisionID.create("pdec_test"),
+    }
+
+    expect(decode({ ...fields, decision: "once" })).toEqual({ ...fields, decision: "once" })
+    expect(decode({ ...fields, decision: "reject", message: "no" })).toEqual({
+      ...fields,
+      decision: "reject",
+      message: "no",
+    })
+    expect(
+      decode({
+        ...fields,
+        decision: "always",
+        grantScope: { kind: "project", projectID: Project.ID.global },
+        grantExpiresAt: null,
+      }),
+    ).toEqual({
+      ...fields,
+      decision: "always",
+      grantScope: { kind: "project", projectID: Project.ID.global },
+      grantExpiresAt: null,
+    })
+    expect(() => decode({ ...fields, decision: "always" })).toThrow()
+    expect(() =>
+      decode({
+        ...fields,
+        decision: "always",
+        grantScope: { kind: "project", projectID: Project.ID.global },
+        grantExpiresAt: 1,
+      }),
+    ).toThrow()
+    expect(() =>
+      decode({
+        ...fields,
+        decision: "once",
+        grantScope: { kind: "project", projectID: Project.ID.global },
+      }),
+    ).toThrow()
+    expect(() => decode({ ...fields, decision: "reject", grantExpiresAt: null })).toThrow()
   })
 
   test("current ID constructors expose create", () => {

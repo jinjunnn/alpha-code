@@ -2303,8 +2303,14 @@ export type PermissionsListRequestsOutput = {
   readonly data: ReadonlyArray<{
     readonly id: string
     readonly sessionID: string
+    readonly fingerprint: string
+    readonly subject: { readonly kind: "agent"; readonly id: string }
     readonly action: string
     readonly resources: ReadonlyArray<string>
+    readonly scope:
+      | { readonly kind: "session"; readonly sessionID: string }
+      | { readonly kind: "project"; readonly projectID: string }
+    readonly expiresAt: number | null
     readonly save?: ReadonlyArray<string>
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly source?: { readonly type: "tool"; readonly messageID: string; readonly callID: string }
@@ -2396,7 +2402,41 @@ export type PermissionsCreateInput = {
 }
 
 export type PermissionsCreateOutput = {
-  readonly data: { readonly id: string; readonly effect: "allow" | "deny" | "ask" }
+  readonly data:
+    | { readonly status: "evaluated"; readonly id: string; readonly effect: "allow" | "deny" }
+    | {
+        readonly status: "pending"
+        readonly request: {
+          readonly id: string
+          readonly sessionID: string
+          readonly fingerprint: string
+          readonly subject: { readonly kind: "agent"; readonly id: string }
+          readonly action: string
+          readonly resources: ReadonlyArray<string>
+          readonly scope:
+            | { readonly kind: "session"; readonly sessionID: string }
+            | { readonly kind: "project"; readonly projectID: string }
+          readonly expiresAt: number | null
+          readonly save?: ReadonlyArray<string>
+          readonly metadata?: { readonly [x: string]: JsonValue }
+          readonly source?: { readonly type: "tool"; readonly messageID: string; readonly callID: string }
+        }
+      }
+    | {
+        readonly status: "decided"
+        readonly receipt: {
+          readonly requestID: string
+          readonly sessionID: string
+          readonly requestFingerprint: string
+          readonly decisionID: string
+          readonly decision: "once" | "always" | "reject"
+          readonly message?: string
+          readonly grantScope?: { readonly kind: "project"; readonly projectID: string }
+          readonly grantExpiresAt?: number | null
+          readonly committedAt: number
+          readonly resolvedRequestIDs: ReadonlyArray<string>
+        }
+      }
 }["data"]
 
 export type PermissionsListInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
@@ -2405,8 +2445,14 @@ export type PermissionsListOutput = {
   readonly data: ReadonlyArray<{
     readonly id: string
     readonly sessionID: string
+    readonly fingerprint: string
+    readonly subject: { readonly kind: "agent"; readonly id: string }
     readonly action: string
     readonly resources: ReadonlyArray<string>
+    readonly scope:
+      | { readonly kind: "session"; readonly sessionID: string }
+      | { readonly kind: "project"; readonly projectID: string }
+    readonly expiresAt: number | null
     readonly save?: ReadonlyArray<string>
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly source?: { readonly type: "tool"; readonly messageID: string; readonly callID: string }
@@ -2422,8 +2468,14 @@ export type PermissionsGetOutput = {
   readonly data: {
     readonly id: string
     readonly sessionID: string
+    readonly fingerprint: string
+    readonly subject: { readonly kind: "agent"; readonly id: string }
     readonly action: string
     readonly resources: ReadonlyArray<string>
+    readonly scope:
+      | { readonly kind: "session"; readonly sessionID: string }
+      | { readonly kind: "project"; readonly projectID: string }
+    readonly expiresAt: number | null
     readonly save?: ReadonlyArray<string>
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly source?: { readonly type: "tool"; readonly messageID: string; readonly callID: string }
@@ -2433,11 +2485,39 @@ export type PermissionsGetOutput = {
 export type PermissionsReplyInput = {
   readonly sessionID: { readonly sessionID: string; readonly requestID: string }["sessionID"]
   readonly requestID: { readonly sessionID: string; readonly requestID: string }["requestID"]
-  readonly reply: { readonly reply: "once" | "always" | "reject"; readonly message?: string | undefined }["reply"]
-  readonly message?: { readonly reply: "once" | "always" | "reject"; readonly message?: string | undefined }["message"]
-}
+} & (
+  | {
+      readonly requestFingerprint: string
+      readonly decisionID: string
+      readonly message?: string
+      readonly decision: "once" | "reject"
+      readonly grantScope?: never
+      readonly grantExpiresAt?: never
+    }
+  | {
+      readonly requestFingerprint: string
+      readonly decisionID: string
+      readonly message?: string
+      readonly decision: "always"
+      readonly grantScope: { readonly kind: "project"; readonly projectID: string }
+      readonly grantExpiresAt: null
+    }
+)
 
-export type PermissionsReplyOutput = void
+export type PermissionsReplyOutput = {
+  readonly data: {
+    readonly requestID: string
+    readonly sessionID: string
+    readonly requestFingerprint: string
+    readonly decisionID: string
+    readonly decision: "once" | "always" | "reject"
+    readonly message?: string
+    readonly grantScope?: { readonly kind: "project"; readonly projectID: string }
+    readonly grantExpiresAt?: number | null
+    readonly committedAt: number
+    readonly resolvedRequestIDs: ReadonlyArray<string>
+  }
+}["data"]
 
 export type FilesListInput = {
   readonly location?: {

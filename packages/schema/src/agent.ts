@@ -6,8 +6,9 @@ import { Model } from "./model"
 import { Permission } from "./permission"
 import { Provider } from "./provider"
 import { PositiveInt, statics } from "./schema"
+import { AgentID } from "./agent-id"
 
-export const ID = Schema.String.pipe(Schema.brand("AgentV2.ID"))
+export const ID = AgentID
 export type ID = typeof ID.Type
 
 export const Color = Schema.Union([

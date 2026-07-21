@@ -1259,8 +1259,15 @@ export type GlobalEvent = {
         properties: {
           id: string
           sessionID: string
+          fingerprint: string
+          subject: {
+            kind: "agent"
+            id: string
+          }
           action: string
           resources: Array<string>
+          scope: PermissionV2Scope
+          expiresAt: PermissionV2ExpiresAt
           save?: Array<string>
           metadata?: {
             [key: string]: unknown
@@ -1272,9 +1279,16 @@ export type GlobalEvent = {
         id: string
         type: "permission.v2.replied"
         properties: {
-          sessionID: string
           requestID: string
-          reply: PermissionV2Reply
+          sessionID: string
+          requestFingerprint: string
+          decisionID: string
+          decision: PermissionV2Decision
+          message?: string
+          grantScope?: PermissionV2ProjectScope
+          grantExpiresAt?: PermissionV2ExpiresAt
+          committedAt: number
+          resolvedRequestIDs: Array<string>
         }
       }
     | {
@@ -3115,13 +3129,27 @@ export type RevertState = {
   files?: Array<FileDiff>
 }
 
+export type PermissionV2SessionScope = {
+  kind: "session"
+  sessionID: string
+}
+
+export type PermissionV2ProjectScope = {
+  kind: "project"
+  projectID: string
+}
+
+export type PermissionV2Scope = PermissionV2SessionScope | PermissionV2ProjectScope
+
+export type PermissionV2ExpiresAt = number | null
+
 export type PermissionV2Source = {
   type: "tool"
   messageID: string
   callID: string
 }
 
-export type PermissionV2Reply = "once" | "always" | "reject"
+export type PermissionV2Decision = "once" | "always" | "reject"
 
 export type QuestionV2Option = {
   /**
@@ -4979,8 +5007,15 @@ export type IntegrationAttemptStatus =
 export type PermissionV2Request = {
   id: string
   sessionID: string
+  fingerprint: string
+  subject: {
+    kind: "agent"
+    id: string
+  }
   action: string
   resources: Array<string>
+  scope: PermissionV2Scope
+  expiresAt: PermissionV2ExpiresAt
   save?: Array<string>
   metadata?: {
     [key: string]: unknown
@@ -4994,6 +5029,37 @@ export type PermissionSavedInfo = {
   action: string
   resource: string
 }
+
+export type PermissionV2DecisionReceipt = {
+  requestID: string
+  sessionID: string
+  requestFingerprint: string
+  decisionID: string
+  decision: PermissionV2Decision
+  message?: string
+  grantScope?: PermissionV2ProjectScope
+  grantExpiresAt?: PermissionV2ExpiresAt
+  committedAt: number
+  resolvedRequestIDs: Array<string>
+}
+
+export type PermissionV2DecisionCommand =
+  | {
+      requestFingerprint: string
+      decisionID: string
+      message?: string
+      decision: "once" | "reject"
+      grantScope?: never
+      grantExpiresAt?: never
+    }
+  | {
+      requestFingerprint: string
+      decisionID: string
+      message?: string
+      decision: "always"
+      grantScope: PermissionV2ProjectScope
+      grantExpiresAt: null
+    }
 
 export type FileSystemEntry = {
   path: string
@@ -5444,8 +5510,15 @@ export type PermissionV2Asked = {
   data: {
     id: string
     sessionID: string
+    fingerprint: string
+    subject: {
+      kind: "agent"
+      id: string
+    }
     action: string
     resources: Array<string>
+    scope: PermissionV2Scope
+    expiresAt: PermissionV2ExpiresAt
     save?: Array<string>
     metadata?: {
       [key: string]: unknown
@@ -5467,9 +5540,16 @@ export type PermissionV2Replied = {
   }
   location?: LocationRef
   data: {
-    sessionID: string
     requestID: string
-    reply: PermissionV2Reply
+    sessionID: string
+    requestFingerprint: string
+    decisionID: string
+    decision: PermissionV2Decision
+    message?: string
+    grantScope?: PermissionV2ProjectScope
+    grantExpiresAt?: PermissionV2ExpiresAt
+    committedAt: number
+    resolvedRequestIDs: Array<string>
   }
 }
 
@@ -6724,8 +6804,15 @@ export type EventPermissionV2Asked = {
   properties: {
     id: string
     sessionID: string
+    fingerprint: string
+    subject: {
+      kind: "agent"
+      id: string
+    }
     action: string
     resources: Array<string>
+    scope: PermissionV2Scope
+    expiresAt: PermissionV2ExpiresAt
     save?: Array<string>
     metadata?: {
       [key: string]: unknown
@@ -6738,9 +6825,16 @@ export type EventPermissionV2Replied = {
   id: string
   type: "permission.v2.replied"
   properties: {
-    sessionID: string
     requestID: string
-    reply: PermissionV2Reply
+    sessionID: string
+    requestFingerprint: string
+    decisionID: string
+    decision: PermissionV2Decision
+    message?: string
+    grantScope?: PermissionV2ProjectScope
+    grantExpiresAt?: PermissionV2ExpiresAt
+    committedAt: number
+    resolvedRequestIDs: Array<string>
   }
 }
 
@@ -12678,6 +12772,10 @@ export type V2SessionPermissionCreateErrors = {
    * SessionNotFoundError
    */
   404: SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
 }
 
 export type V2SessionPermissionCreateError = V2SessionPermissionCreateErrors[keyof V2SessionPermissionCreateErrors]
@@ -12687,10 +12785,20 @@ export type V2SessionPermissionCreateResponses = {
    * Success
    */
   200: {
-    data: {
-      id: string
-      effect: PermissionV2Effect
-    }
+    data:
+      | {
+          status: "evaluated"
+          id: string
+          effect: "allow" | "deny"
+        }
+      | {
+          status: "pending"
+          request: PermissionV2Request
+        }
+      | {
+          status: "decided"
+          receipt: PermissionV2DecisionReceipt
+        }
   }
 }
 
@@ -12736,10 +12844,7 @@ export type V2SessionPermissionGetResponses = {
 export type V2SessionPermissionGetResponse = V2SessionPermissionGetResponses[keyof V2SessionPermissionGetResponses]
 
 export type V2SessionPermissionReplyData = {
-  body: {
-    reply: PermissionV2Reply
-    message?: string
-  }
+  body: PermissionV2DecisionCommand
   path: {
     sessionID: string
     requestID: string
@@ -12761,15 +12866,21 @@ export type V2SessionPermissionReplyErrors = {
    * SessionNotFoundError | PermissionNotFoundError
    */
   404: PermissionNotFoundError | SessionNotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
 }
 
 export type V2SessionPermissionReplyError = V2SessionPermissionReplyErrors[keyof V2SessionPermissionReplyErrors]
 
 export type V2SessionPermissionReplyResponses = {
   /**
-   * <No Content>
+   * Success
    */
-  204: void
+  200: {
+    data: PermissionV2DecisionReceipt
+  }
 }
 
 export type V2SessionPermissionReplyResponse =

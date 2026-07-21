@@ -128,7 +128,7 @@ import type {
   PermissionRespondErrors,
   PermissionRespondResponses,
   PermissionRuleset,
-  PermissionV2Reply,
+  PermissionV2DecisionCommand,
   PermissionV2Source,
   ProjectCommands,
   ProjectCurrentErrors,
@@ -5282,14 +5282,13 @@ export class Permission2 extends HeyApiClient {
   /**
    * Reply to pending permission request
    *
-   * Respond to a pending permission request owned by a session.
+   * Atomically decide a permission request or return its exact persisted decision receipt.
    */
   public reply<ThrowOnError extends boolean = false>(
     parameters: {
       sessionID: string
       requestID: string
-      reply?: PermissionV2Reply
-      message?: string
+      permissionV2DecisionCommand: PermissionV2DecisionCommand
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -5300,8 +5299,7 @@ export class Permission2 extends HeyApiClient {
           args: [
             { in: "path", key: "sessionID" },
             { in: "path", key: "requestID" },
-            { in: "body", key: "reply" },
-            { in: "body", key: "message" },
+            { key: "permissionV2DecisionCommand", map: "body" },
           ],
         },
       ],

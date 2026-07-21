@@ -103,6 +103,40 @@ describe("EventV2", () => {
     }),
   )
 
+  it.effect("deeply freezes an owned event envelope before sequential fanout", () =>
+    Effect.gen(function* () {
+      const events = yield* EventV2.Service
+      const mutations = new Array<boolean>()
+      const unsubscribe = yield* events.listen((event) =>
+        Effect.sync(() => {
+          if (!event.location) return
+          mutations.push(Reflect.set(event.location, "directory", AbsolutePath.make("mutated")))
+          mutations.push(Reflect.set(event.metadata?.nested as object, "value", "mutated"))
+        }),
+      )
+      yield* Effect.addFinalizer(() => unsubscribe)
+      const wildcard = yield* events.all().pipe(Stream.take(1), Stream.runCollect, Effect.forkScoped)
+      yield* Effect.yieldNow
+
+      const published = yield* events.publish(Message, Object.freeze({ text: "hello" }), {
+        metadata: Object.freeze({ nested: { value: "original" } }),
+      })
+      const received = Array.from(yield* Fiber.join(wildcard))[0]!
+
+      expect(mutations).toEqual([false, false])
+      expect(received.location).toEqual({
+        directory: AbsolutePath.make("project"),
+        workspaceID: WorkspaceV2.ID.make("wrk_test"),
+      })
+      expect(received.metadata).toEqual({ nested: { value: "original" } })
+      expect(received).toBe(published)
+      expect(Object.isFrozen(received)).toBe(true)
+      expect(Object.isFrozen(received.location)).toBe(true)
+      expect(Object.isFrozen(received.metadata)).toBe(true)
+      expect(Object.isFrozen(received.metadata?.nested)).toBe(true)
+    }),
+  )
+
   itWithoutLocation.effect("omits location when no location is available", () =>
     Effect.gen(function* () {
       const events = yield* EventV2.Service

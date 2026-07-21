@@ -721,6 +721,43 @@ describe("HttpApiCodegen.generate", () => {
     ).toThrow("Multiple payload schemas: session.prompt")
   })
 
+  test("preserves same-field discriminated union payloads", () => {
+    const command = Schema.Union([
+      Schema.Struct({
+        decision: Schema.Literals(["once", "reject"]),
+        grant: Schema.Never.pipe(Schema.optional),
+      }),
+      Schema.Struct({ decision: Schema.Literal("always"), grant: Schema.String }),
+    ])
+    const contract = compileContract(
+      api(
+        HttpApiEndpoint.post("reply", "/session/:sessionID/reply", {
+          params: { sessionID: Schema.String },
+          payload: command,
+          success: Schema.String,
+        }),
+      ),
+    )
+    const promise = emitPromise(contract)
+    const effect = emitEffect(contract)
+    const imported = emitEffectImported(contract, { module: "./api", api: "Api" })
+
+    expect(promise.files.find((file) => file.path === "types.ts")?.content).toContain(
+      'export type SessionReplyInput = { readonly "sessionID": (',
+    )
+    expect(promise.files.find((file) => file.path === "types.ts")?.content).toContain('} & ({ readonly "decision":')
+    expect(effect.files.find((file) => file.path === "session.ts")?.content).toContain(
+      'type Endpoint0Input = { readonly "sessionID"',
+    )
+    expect(effect.files.find((file) => file.path === "session.ts")?.content).toContain(
+      "} & typeof Endpoint0Payload0.Type",
+    )
+    expect(effect.files.find((file) => file.path === "session.ts")?.content).toContain("as Endpoint0Request")
+    expect(imported.files.find((file) => file.path === "client.ts")?.content).toContain("as Endpoint0_0Request")
+    expect(imported.files.find((file) => file.path === "client.ts")?.content).toContain('"grant": input["grant"]')
+    expect(imported.files.find((file) => file.path === "client.ts")?.content).not.toContain("payload: input")
+  })
+
   test("unwraps an exact data success envelope", () => {
     const output = compile(
       api(
