@@ -7,7 +7,7 @@ describe("surface map model", () => {
     expect(filterSurfaceMap("", "alpha", "all").every((surface) => surface.lineage === "alpha")).toBeTrue()
     expect(filterSurfaceMap("", "all", "boot").map((surface) => surface.id)).toEqual(["boot.recovery"])
     expect(filterSurfaceMap("draftId", "all", "all").map((surface) => surface.id)).toContain("route.new-session")
-    expect(filterSurfaceMap("before-composer", "all", "all").map((surface) => surface.id)).toContain(
+    expect(filterSurfaceMap("alpha-permission-dialog", "all", "all").map((surface) => surface.id)).toContain(
       "inline.permission",
     )
   })

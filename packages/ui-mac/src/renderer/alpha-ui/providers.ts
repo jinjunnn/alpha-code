@@ -9,3 +9,4 @@
 // - useCommand — packages/app/src/context/command.tsx(命令面板触发,冻结树 ADR-020)
 
 export { useCommand } from "@opencode-ai/app"
+export type { PermissionSurfaceProps } from "@opencode-ai/app"

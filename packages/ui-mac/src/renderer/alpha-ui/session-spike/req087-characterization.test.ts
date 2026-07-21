@@ -62,10 +62,12 @@ describe("REQ-087 §2 route→layout 绑定(session-layout.ts 是 Layout 与 Ses
   })
   test("session 路由形状 /:dir/session/:id? + 叶包在 SessionProviders", () => {
     expect(appTsx).toContain(`<Route path="/session/:id?" component={SessionRoute} />`)
-    expect(appTsx).toMatch(/<SessionProviders>\s*<Leaf \/>\s*<\/SessionProviders>/)
+    expect(appTsx).toMatch(/<SessionProviders>\s*<Leaf \/>[\s\S]*PermissionSurface[\s\S]*<\/SessionProviders>/)
   })
   test("surface override 与默认叶 XOR(单挂载的结构保证)", () => {
-    expect(appTsx).toContain(`createSessionRoute(props.surfaces?.session ?? Session)`)
+    expect(appTsx).toContain(
+      `createSessionRoute(props.surfaces?.session ?? Session, props.surfaces?.permission)`,
+    )
   })
 })
 

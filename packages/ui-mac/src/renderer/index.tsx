@@ -36,6 +36,7 @@ import { ToastViewport } from "./alpha-ui/Toast"
 import { AlphaBoundary } from "./alpha-ui/alpha-boundary"
 import { ComposerTakeover } from "./alpha-ui/composer-takeover"
 import { TimelineInject } from "./alpha-ui/timeline-inject"
+import { PermissionWatcher } from "./alpha-ui/permission-watcher"
 import { CloudRunWatcher } from "./alpha-ui/cloud-run-watcher"
 import { ExtTrustWatcher } from "./alpha-ui/ext-trust-watcher"
 import { AlphaSidebar } from "./sidebar/alpha-sidebar"
@@ -448,8 +449,14 @@ render(() => {
     // 致命 render 错误(main 建立稳定 incident + Alpha Recovery；禁止回退 legacy)。
     const surfaceComponents = createMemo<AppSurfaces | undefined>(() => {
       const resolved = resolvedSurfaces.latest
-      if (!resolved) return undefined
-      const surfaces: AppSurfaces = {}
+      const surfaces: AppSurfaces = {
+        permission: (props) => (
+          <AlphaBoundary name="PermissionWatcher">
+            <PermissionWatcher {...props} />
+          </AlphaBoundary>
+        ),
+      }
+      if (!resolved) return surfaces
       if (resolved.home.mode === "alpha")
         surfaces.home = () => (
           <SurfaceBoundary surface="home">

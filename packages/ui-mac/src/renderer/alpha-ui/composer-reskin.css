@@ -182,35 +182,3 @@
 }
 /* (The injected menu itself is Portaled to <body> with a fixed anchor — the composer box clips
  * overflow, so an in-tree absolute menu would be invisible. See composer-slash-inject.tsx.) */
-
-/* Permission approval card → amber warning card (mockup .perm-card). Shown when the agent requests
- * permission to run a tool; clean hooks from dock-prompt. 允许一次=primary(accent), 总是/拒绝=neutral.
- * COUPLING (cosmetic): dock-prompt[data-kind=permission] + permission-* slots + button variants. */
-[data-component="dock-prompt"][data-kind="permission"] [data-dock-surface="shell"] {
-  border: 1px solid var(--a-warning) !important;
-  background: var(--a-warning-subtle) !important;
-  border-radius: var(--a-radius-lg) !important;
-}
-[data-component="dock-prompt"][data-kind="permission"] [data-slot="permission-icon"],
-[data-component="dock-prompt"][data-kind="permission"] [data-slot="permission-icon"] svg {
-  color: var(--a-warning) !important;
-}
-[data-component="dock-prompt"][data-kind="permission"] [data-slot="permission-header-title"] {
-  font-weight: var(--a-weight-semibold) !important;
-  color: var(--a-text) !important;
-}
-[data-component="dock-prompt"][data-kind="permission"] [data-slot="permission-patterns"] code {
-  font-family: var(--a-font-mono) !important;
-  background: var(--a-bg-canvas) !important;
-  padding: 2px 6px !important;
-  border-radius: 5px !important;
-  color: var(--a-text) !important;
-}
-[data-component="dock-prompt"][data-kind="permission"] [data-component="button"][data-variant="primary"] {
-  background: var(--a-accent-solid) !important;
-  color: var(--a-text-on-accent) !important;
-  border-radius: var(--a-radius-md) !important;
-}
-[data-component="dock-prompt"][data-kind="permission"] [data-component="button"][data-variant="primary"]:hover {
-  background: var(--a-accent-solid-hover) !important;
-}
