@@ -84,8 +84,9 @@ mock.module("./logging", () => ({
     logs.push({ name, message, extra, level })
   },
   // bun mock.module 跨测试文件泄漏(Linux 执行顺序下本文件的 ./logging mock 会覆盖他文件),
-  // 缺 getLogger 导出会让后续 import getLogger 的模块报「Export not found」。补全导出面避免泄漏破坏。
+  // 缺 getLogger/rotateServerLogs 等导出会让后续 import 它们的模块报「Export not found」。补全导出面避免泄漏破坏。
   getLogger: () => undefined,
+  rotateServerLogs: () => {},
 }))
 
 const { registerRecoveryIpcHandlers } = await import("./recovery-ipc")

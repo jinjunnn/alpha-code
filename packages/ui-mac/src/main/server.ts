@@ -9,7 +9,7 @@ import { syncSecretFiles } from "./alpha-secret-files"
 import { loadAlphaSecrets } from "./alpha-secrets"
 import { posixModesEffective } from "./platform"
 import { pollUntilHealthy } from "./health-poll"
-import { getLogger, write } from "./logging"
+import { getLogger, rotateServerLogs, write } from "./logging"
 import { createSidecarEnv } from "./sidecar-env"
 import { getUserShell, loadShellEnv } from "./shell-env"
 import { probeShellEnvAsync, readShellEnvCache, sanitizeCachedShellEnv, writeShellEnvCache } from "./shell-env-cache"
@@ -25,7 +25,7 @@ type SidecarMessage =
   | { type: "stopped" }
   | { type: "error"; error: { message: string; stack?: string } }
 
-export type SidecarListener = { stop: () => Promise<void> }
+export type SidecarListener = { stop: () => Promise<void>; kill: () => void }
 
 const SIDECAR_SERVICE_NAME = "opencode server"
 const SIDECAR_START_STALL_TIMEOUT = 60_000
@@ -163,6 +163,7 @@ export async function spawnLocalServer(
   // 直指 app 资源、.alpha 不再落出厂链;fork 前无需重复(app 路径仅跨重启变化)。
 
   const sidecar = join(dirname(fileURLToPath(import.meta.url)), "sidecar.js")
+  rotateServerLogs()
   const child = (options.fork ?? utilityProcess.fork)(sidecar, [], {
     cwd: ensureEngineScratchCwd(options.userDataPath),
     env: createSidecarEnv(),
@@ -266,6 +267,9 @@ export async function spawnLocalServer(
 
   return {
     listener: {
+      kill: () => {
+        if (!exited) child.kill()
+      },
       stop: () => {
         if (stopping) return stopping
         if (exited) return Promise.resolve()
