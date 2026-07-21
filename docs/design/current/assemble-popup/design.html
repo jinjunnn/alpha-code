@@ -1,0 +1,276 @@
+<title>REQ-073 · 统一装配弹窗设计稿</title>
+<style>
+  :root {
+    --a-bg-subtle:#f6f7f9; --a-bg-muted:#eceef1; --a-surface:#ffffff;
+    --a-border-faint:#eef0f3; --a-border:#e4e6ea; --a-border-strong:#ced2d9;
+    --a-text:#18181b; --a-text-secondary:#52525b; --a-text-tertiary:#7c7d85;
+    --a-overlay-hover:rgba(15,17,21,.05);
+    --a-accent:#4f46e5; --a-accent-subtle:rgba(79,70,229,.10); --a-accent-border:rgba(79,70,229,.35);
+    --a-warning-subtle:rgba(217,119,6,.12);
+    --a-font-sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;
+    --a-font-mono:"SF Mono","JetBrains Mono","Menlo",ui-monospace,monospace;
+    --a-shadow-lg:0 12px 32px rgba(15,17,21,.12),0 4px 8px rgba(15,17,21,.06);
+  }
+  @media (prefers-color-scheme: dark) { :root {
+    --a-bg-subtle:#0e0f11; --a-bg-muted:#16171a; --a-surface:#121316;
+    --a-border-faint:#1b1c20; --a-border:#232428; --a-border-strong:#34363c;
+    --a-text:#fafafa; --a-text-secondary:#a1a1aa; --a-text-tertiary:#71727a;
+    --a-overlay-hover:rgba(255,255,255,.055);
+    --a-accent:#818cf8; --a-accent-subtle:rgba(129,140,248,.14); --a-accent-border:rgba(129,140,248,.38);
+    --a-warning-subtle:rgba(251,191,36,.14);
+    --a-shadow-lg:0 12px 32px rgba(0,0,0,.5),0 4px 8px rgba(0,0,0,.35);
+  } }
+  :root[data-theme="light"] {
+    --a-bg-subtle:#f6f7f9; --a-bg-muted:#eceef1; --a-surface:#ffffff;
+    --a-border-faint:#eef0f3; --a-border:#e4e6ea; --a-border-strong:#ced2d9;
+    --a-text:#18181b; --a-text-secondary:#52525b; --a-text-tertiary:#7c7d85;
+    --a-overlay-hover:rgba(15,17,21,.05);
+    --a-accent:#4f46e5; --a-accent-subtle:rgba(79,70,229,.10); --a-accent-border:rgba(79,70,229,.35);
+    --a-warning-subtle:rgba(217,119,6,.12);
+    --a-shadow-lg:0 12px 32px rgba(15,17,21,.12),0 4px 8px rgba(15,17,21,.06);
+  }
+  :root[data-theme="dark"] {
+    --a-bg-subtle:#0e0f11; --a-bg-muted:#16171a; --a-surface:#121316;
+    --a-border-faint:#1b1c20; --a-border:#232428; --a-border-strong:#34363c;
+    --a-text:#fafafa; --a-text-secondary:#a1a1aa; --a-text-tertiary:#71727a;
+    --a-overlay-hover:rgba(255,255,255,.055);
+    --a-accent:#818cf8; --a-accent-subtle:rgba(129,140,248,.14); --a-accent-border:rgba(129,140,248,.38);
+    --a-warning-subtle:rgba(251,191,36,.14);
+    --a-shadow-lg:0 12px 32px rgba(0,0,0,.5),0 4px 8px rgba(0,0,0,.35);
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--a-bg-subtle); color:var(--a-text);
+         font:13px/1.55 var(--a-font-sans); -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:960px; margin:0 auto; padding:40px 24px 80px; }
+  .eyebrow { font-size:11.5px; letter-spacing:.04em; color:var(--a-text-tertiary); font-weight:600; }
+  h1 { font-size:23px; letter-spacing:-.014em; margin:6px 0 4px; text-wrap:balance; }
+  .sub { color:var(--a-text-secondary); margin:0 0 28px; max-width:66ch; }
+  h2 { font-size:16px; letter-spacing:-.01em; margin:44px 0 6px; }
+  h2 .no { color:var(--a-text-tertiary); font-weight:500; margin-right:8px; font-variant-numeric:tabular-nums; }
+  .note { color:var(--a-text-secondary); margin:0 0 16px; max-width:72ch; }
+  kbd { font:11px var(--a-font-mono); background:var(--a-bg-muted); border:1px solid var(--a-border);
+        border-bottom-width:2px; border-radius:4px; padding:1px 5px; color:var(--a-text-secondary); }
+  table { border-collapse:collapse; width:100%; font-size:12.5px; }
+  th { text-align:left; font-size:11px; letter-spacing:.04em; color:var(--a-text-tertiary);
+       font-weight:600; padding:8px 12px; border-bottom:1px solid var(--a-border); }
+  td { padding:9px 12px; border-bottom:1px solid var(--a-border-faint); vertical-align:top; }
+  td:first-child { white-space:nowrap; font-weight:500; }
+  .tbl-scroll { overflow-x:auto; }
+
+  /* ── 弹窗 mockup(实现规格)── */
+  .pop { max-width:660px; background:var(--a-surface); border:1px solid var(--a-border-faint);
+         border-radius:14px; box-shadow:var(--a-shadow-lg); overflow:hidden; display:flex; flex-direction:column; }
+  .pop-scroll { max-height:330px; overflow-y:auto; padding:6px; }
+  .pop-sec { position:sticky; top:-6px; z-index:1; background:var(--a-surface);
+             font-size:10.5px; letter-spacing:.04em; font-weight:600; color:var(--a-text-tertiary);
+             padding:8px 10px 4px; }
+  .row { display:flex; align-items:center; gap:10px; width:100%; text-align:left;
+         padding:7px 10px; border:0; border-radius:8px; background:none; font:inherit; color:inherit; cursor:pointer; }
+  .row:hover { background:var(--a-overlay-hover); }
+  .row.active { background:var(--a-accent-subtle); }
+  .row.active .nm, .row.active .ic { color:var(--a-accent); }
+  .ic { flex:none; width:16px; height:16px; color:var(--a-text-tertiary); }
+  .nm { flex:none; font-weight:500; }
+  .nm.mono { font:12.5px var(--a-font-mono); font-weight:500; }
+  .desc { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+          font-size:12.5px; color:var(--a-text-secondary); }
+  .tag { flex:none; font-size:11px; color:var(--a-text-tertiary); }
+  .tag.personal { color:var(--a-accent); opacity:.75; }
+  .kbd-cell { flex:none; }
+  .pop-hint { padding:8px 12px; font-size:12px; color:var(--a-text-tertiary); }
+  .pop-foot { display:flex; gap:14px; align-items:center; padding:7px 12px;
+              border-top:1px solid var(--a-border-faint); background:var(--a-bg-subtle);
+              font-size:11px; color:var(--a-text-tertiary); }
+  .grow { flex:1; }
+
+  /* ── composer bar mockup ── */
+  .bar-wrap { max-width:660px; margin-top:10px; background:var(--a-surface); border:1px solid var(--a-border);
+              border-radius:11px; padding:10px 12px; }
+  .bar-input { width:100%; border:0; outline:0; background:none; color:var(--a-text); font:14px var(--a-font-sans); margin-bottom:10px; }
+  .bar { display:flex; align-items:center; gap:8px; }
+  .chip { display:inline-flex; align-items:center; gap:5px; font-size:12px; color:var(--a-text-secondary);
+          background:var(--a-bg-muted); border:1px solid var(--a-border-faint); border-radius:999px;
+          padding:4px 10px; cursor:pointer; }
+  .chip:hover { border-color:var(--a-border-strong); }
+  .chip.plan { background:var(--a-accent-subtle); color:var(--a-accent); border-color:var(--a-accent-border); }
+  .chip.plan .x { cursor:pointer; font-weight:600; }
+  .send { margin-left:auto; width:30px; height:30px; border-radius:999px; border:0;
+          background:var(--a-accent); color:#fff; font-size:14px; cursor:default; }
+  .ghost { font-size:11px; color:var(--a-text-tertiary); border:1px dashed var(--a-border-strong);
+           border-radius:999px; padding:3px 9px; }
+  .hint-chips { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+  .hchip { font-size:11.5px; color:var(--a-text-secondary); background:var(--a-bg-muted);
+           border:1px solid var(--a-border-faint); border-radius:999px; padding:3px 10px; cursor:pointer; }
+  .hchip:hover { border-color:var(--a-border-strong); }
+  .ann { display:flex; gap:10px; align-items:baseline; font-size:12.5px; color:var(--a-text-secondary); margin:6px 0; }
+  .ann b { flex:none; display:inline-flex; align-items:center; justify-content:center;
+           width:18px; height:18px; border-radius:999px; background:var(--a-accent-subtle);
+           color:var(--a-accent); font-size:11px; font-weight:600; }
+  .ok { background:var(--a-warning-subtle); border-radius:8px; padding:12px 16px; font-size:12.5px; color:var(--a-text-secondary); }
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">REQ-073 · S33 设计稿 v1 · 待审核(7 拍板点已入稿)</div>
+  <h1>统一装配弹窗(@ / +)+ 计划模式 chip</h1>
+  <p class="sub">下面是<b>可操作模拟</b>:点「计划模式」看 chip 出现、点 chip 上的 ⊗ 关闭、在输入框按 <kbd>Shift</kbd>+<kbd>Tab</kbd> 切换、输入 <kbd>@ex</kbd> 过滤、↑↓ 键盘选择。composer 工具条上 <b>build 组件已移除</b>(虚线幽灵位示意)。</p>
+
+  <!-- ═══ 1. 可操作模拟 ═══ -->
+  <h2><span class="no">01</span>实机模拟(@ 与 + 打开同一弹窗)</h2>
+  <div class="pop" id="pop">
+    <div class="pop-scroll" id="list" role="listbox" aria-label="装配"></div>
+    <div class="pop-foot"><span>↑↓ 选择</span><span>↵ 确认</span><span>esc 关闭</span><span class="grow"></span><span>/ 执行命令 · 技能</span><span id="count"></span></div>
+  </div>
+  <div class="bar-wrap">
+    <input class="bar-input" id="input" placeholder="问点什么,输入 / 调命令,@ 引用上下文…" aria-label="输入" spellcheck="false">
+    <div class="bar">
+      <span class="chip" title="打开装配弹窗(与 @ 同一弹窗)">＋</span>
+      <span class="chip">🛡 请求审批 ⌄</span>
+      <span class="chip plan" id="planChip" style="display:none">计划 <span class="x" id="planX">⊗</span></span>
+      <span class="ghost" title="原 build 组件位置——已移除,默认即 build">build 组件已移除</span>
+      <span class="chip" style="margin-left:auto">ɑ glm-5.1 ⌄</span>
+      <button class="send" aria-label="发送">↑</button>
+    </div>
+  </div>
+  <div class="hint-chips">
+    <button class="hchip" data-act="reset">默认态</button>
+    <button class="hchip" data-act="plan">开计划模式 → 出 chip</button>
+    <button class="hchip" data-act="q" data-q="@ex">@ex 过滤</button>
+    <button class="hchip" data-act="q" data-q="@composer">@composer 搜文件</button>
+  </div>
+
+  <!-- ═══ 2. 交互细节 ═══ -->
+  <h2><span class="no">02</span>交互细节(实现规格)</h2>
+  <div class="ann"><b>1</b><span><b>两个触发器,一个弹窗</b>:输入 <kbd>@</kbd>(token 续输过滤,选「引用类」回填文本)或点 <kbd>＋</kbd>(按钮打开;选「引用类」直接插入文本)。键盘/滚动/空态/页脚与 / 菜单同族(REQ-072 底座)。</span></div>
+  <div class="ann"><b>2</b><span><b>计划模式 = 会话级 toggle</b>:开启 → 弹窗行变「关闭计划模式」+ composer 出「计划」chip + placeholder 提示;三路可关(⊗ / 再选一次 / <kbd>Shift</kbd>+<kbd>Tab</kbd>);发送带 plan 档参数,无 chip = 引擎默认 build(参数缺省)。</span></div>
+  <div class="ann"><b>3</b><span><b>只读权限档时</b>计划模式行禁用并如实说明(「只读档固定使用只读 agent」),不静默失效。</span></div>
+  <div class="ann"><b>4</b><span><b>内置子 agent 保留但降噪</b>(拍板⑦):general/explore 中文一句话简介 + 「内置」尾签;个人装的签「个人」淡紫;内部档(alpha-automation 系)绝不出现;build/plan 是模式、不在 Agent 节。</span></div>
+  <div class="ann"><b>5</b><span><b>第三方主档</b>(如自装 primary agent)动态出现在「添加」节模式区,选中后 chip 显示其名,交互同计划;没有则不出现(本模拟未含)。</span></div>
+  <div class="ann"><b>6</b><span><b>扩展节收敛</b>:原 + 弹窗「文档/PDF/表格/连接器」四行同一动作 → 收敛为单行「扩展市场…」。</span></div>
+
+  <!-- ═══ 3. 拍板对照 ═══ -->
+  <h2><span class="no">03</span>拍板对照</h2>
+  <div class="tbl-scroll"><table>
+    <tr><th>拍板</th><th>稿内呈现</th></tr>
+    <tr><td>① 语法分工 v2</td><td>/ = 执行;@/+ = 装配(引用·附加·模式)—— 页脚提示「/ 执行命令 · 技能」,GLOSSARY 已修订</td></tr>
+    <tr><td>② + 触发实现</td><td>同组件按钮打开,不往输入框偷插 @</td></tr>
+    <tr><td>③ 计划作用域</td><td>会话级;新会话默认 build</td></tr>
+    <tr><td>④ 扩展节收敛</td><td>单行「扩展市场…」</td></tr>
+    <tr><td>⑤ 第三方主档</td><td>「添加」节动态模式项</td></tr>
+    <tr><td>⑥ 默认参数</td><td>缺省(引擎默认 build),幽灵位仅本稿示意</td></tr>
+    <tr><td>⑦ 内置 agent</td><td>保留 + 中文简介 + 内置签(细节 02-4)</td></tr>
+  </table></div>
+
+  <h2><span class="no">04</span>请确认</h2>
+  <div class="ok">回复「通过」即按此实现(T1 统一弹窗 → T2 模式收编);点名任一处修改我先改稿。<br>
+  小点提示:计划 chip 放在「请求审批」右侧(本稿位置);若你想放输入框内左缘(Codex 是工具条左下),说一声即可。</div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var IC = {
+    clip:'<svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 7.5 8.2 12.3a3 3 0 0 1-4.2-4.2L9 3a2 2 0 0 1 2.9 2.9L7 10.8a1 1 0 0 1-1.5-1.5L10 4.8"/></svg>',
+    term:'<svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.5 3.5h11v9h-11z M4.5 6l2 2-2 2 M8 10.5h3"/></svg>',
+    plan:'<svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5.5 4h8 M5.5 8h8 M5.5 12h8 M2.3 3.4l.8.8 1.3-1.4 M2.3 7.4l.8.8 1.3-1.4 M2.5 12h.01"/></svg>',
+    agent:'<svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 8a2.6 2.6 0 1 0 0-5.2A2.6 2.6 0 0 0 8 8zm-5 5.4c.7-2.5 2.7-3.8 5-3.8s4.3 1.3 5 3.8"/></svg>',
+    file:'<svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 1.8h5.2L12 4.6v9.6H4zM9.2 1.8v2.8H12"/></svg>',
+    ext:'<svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 2.5H3.5A1 1 0 0 0 2.5 3.5V6M10 2.5h2.5a1 1 0 0 1 1 1V6M6 13.5H3.5a1 1 0 0 1-1-1V10M10 13.5h2.5a1 1 0 0 0 1-1V10"/></svg>'
+  };
+  var AGENTS = [
+    { n:"general", zh:"通用子任务:调研与多步骤执行", tag:"内置" },
+    { n:"explore", zh:"快速探索代码库、按模式找文件", tag:"内置" },
+    { n:"code-reviewer", zh:"代码审查(只读档)", tag:"个人" }
+  ];
+  var FILES = [
+    "packages/ui-mac/src/renderer/alpha-ui/alpha-composer.tsx",
+    "packages/ui-mac/src/renderer/alpha-ui/composer-autocomplete.tsx",
+    "docs/BACKLOG.md",
+    "docs/requirements/REQ-073-unified-assemble-popup.md"
+  ];
+  var input = document.getElementById("input"), list = document.getElementById("list"), count = document.getElementById("count");
+  var planChip = document.getElementById("planChip");
+  var planOn = false, active = 0, view = [];
+
+  function esc(s){ return s.replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];}); }
+  function query(){
+    var m = /@(\S*)$/.exec(input.value);
+    return m ? m[1].toLowerCase() : ""
+  }
+  function rows(){
+    var q = query();
+    var add = [
+      { k:"files", ic:IC.clip, nm:"文件和文件夹", desc:"选择文件作为附件", kbd:"↵" },
+      { k:"term", ic:IC.term, nm:"附加终端", desc:"把终端输出带进上下文" },
+      { k:"plan", ic:IC.plan, nm: planOn ? "关闭计划模式" : "计划模式", desc: planOn ? "回到默认(build)" : "先出方案再动手(plan 档)" }
+    ];
+    var ag = AGENTS.map(function(a){ return { k:"agent", ic:IC.agent, nm:"@"+a.n, mono:true, desc:a.zh, tag:a.tag }; });
+    var fs = (q ? FILES.filter(function(f){ return f.toLowerCase().includes(q); }) : []).map(function(f){ return { k:"file", ic:IC.file, nm:f.split("/").pop(), mono:true, desc:f }; });
+    var ext = [{ k:"ext", ic:IC.ext, nm:"扩展市场…", desc:"浏览连接器 / 技能 / 插件" }];
+    var hit = function(r){ return !q || (r.nm+" "+(r.desc||"")).toLowerCase().includes(q); };
+    return [
+      ["添加", add.filter(hit)],
+      ["AGENT", ag.filter(hit)],
+      ["文件", q ? fs : null],  // null = 显示提示行
+      ["扩展", ext.filter(hit)]
+    ];
+  }
+  function render(){
+    var html = "", idx = 0; view = [];
+    rows().forEach(function(sec){
+      var name = sec[0], items = sec[1];
+      if (items === null) { html += '<div class="pop-sec">文件</div><div class="pop-hint">输入 @关键词 搜索项目文件…</div>'; return; }
+      if (!items.length) return;
+      html += '<div class="pop-sec">' + name + "</div>";
+      items.forEach(function(r){
+        view.push(r);
+        html += '<button class="row' + (idx === active ? " active" : "") + '" data-i="' + idx + '">'
+          + r.ic
+          + '<span class="nm' + (r.mono ? " mono" : "") + '">' + esc(r.nm) + "</span>"
+          + '<span class="desc" title="' + esc(r.desc||"") + '">' + esc(r.desc||"") + "</span>"
+          + (r.tag ? '<span class="tag' + (r.tag === "个人" ? " personal" : "") + '">' + r.tag + "</span>" : "")
+          + (r.kbd ? '<span class="tag kbd-cell"><kbd>' + r.kbd + "</kbd></span>" : "")
+          + "</button>";
+        idx++;
+      });
+    });
+    list.innerHTML = html;
+    count.textContent = view.length + " 项";
+    var el = list.querySelector(".row.active"); if (el) el.scrollIntoView({ block:"nearest" });
+    planChip.style.display = planOn ? "" : "none";
+    input.placeholder = planOn ? "描述任务,先生成计划再执行…(Shift+Tab 切回)" : "问点什么,输入 / 调命令,@ 引用上下文…";
+  }
+  function pick(r){
+    if (r.k === "plan") { planOn = !planOn; render(); return; }
+    if (r.k === "agent" || r.k === "file") {
+      input.value = input.value.replace(/@\S*$/, "") ;
+      input.value += (r.k === "agent" ? r.nm : "@" + r.desc) + " ";
+      active = 0; render(); input.focus(); return;
+    }
+    // files/term/ext:动作示意(实机为 file.attach / terminal.new / 打开定制中心)
+  }
+  list.addEventListener("click", function(e){ var b = e.target.closest(".row"); if (b) pick(view[+b.dataset.i]); });
+  list.addEventListener("mousemove", function(e){ var b = e.target.closest(".row"); if (b && +b.dataset.i !== active) { active = +b.dataset.i; render(); } });
+  document.getElementById("planX").addEventListener("click", function(){ planOn = false; render(); });
+  input.addEventListener("input", function(){ active = 0; render(); });
+  input.addEventListener("keydown", function(e){
+    if (e.key === "Tab" && e.shiftKey) { e.preventDefault(); planOn = !planOn; render(); return; }
+    if (!view.length) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      active = (active + (e.key === "ArrowDown" ? 1 : view.length - 1)) % view.length;
+      render();
+    }
+    if (e.key === "Enter" && view[active]) { e.preventDefault(); pick(view[active]); }
+  });
+  document.querySelectorAll(".hchip").forEach(function(c){
+    c.addEventListener("click", function(){
+      var act = c.dataset.act;
+      if (act === "reset") { planOn = false; input.value = ""; }
+      if (act === "plan") { planOn = true; }
+      if (act === "q") { input.value = c.dataset.q; }
+      active = 0; render(); input.focus();
+    });
+  });
+  render();
+})();
+</script>

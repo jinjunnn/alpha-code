@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>alpha-code · 能力授权确认框设计稿 — stage="authorize" (2026-07-15)</title>
+<style>
+/* ════════════════════════════════════════════════════════════════════════
+   alpha-ui tokens — verbatim from renderer/alpha-ui/tokens.css
+   与上一稿的关系:基线 = 2026-07-04-extension-hub-v3-universal(approved-direction)
+   + 2026-07-04-ext-hub-m2 原型。视觉语言零改动;本稿新增 = stage="authorize"
+   能力授权确认视图(既有安装确认 Dialog 的第二阶段 / skill 直装时独立弹出)。
+   ════════════════════════════════════════════════════════════════════════ */
+:root{
+  --a-bg-canvas:#ffffff;--a-bg-subtle:#f6f7f9;--a-bg-muted:#eceef1;--a-bg-inset:#e3e6ea;
+  --a-surface:#ffffff;--a-surface-raised:#ffffff;--a-scrim:rgba(15,17,21,.45);
+  --a-border-faint:#eef0f3;--a-border:#e4e6ea;--a-border-strong:#ced2d9;
+  --a-text:#18181b;--a-text-secondary:#52525b;--a-text-tertiary:#7c7d85;--a-text-disabled:#b3b6bd;
+  --a-text-on-accent:#ffffff;--a-overlay-hover:rgba(15,17,21,.05);
+  --a-accent:#4f46e5;--a-accent-solid:#4f46e5;--a-accent-solid-hover:#4338ca;--a-accent-solid-active:#3730a3;
+  --a-accent-subtle:rgba(79,70,229,.10);--a-accent-border:rgba(79,70,229,.35);--a-accent-ring:rgba(79,70,229,.45);
+  --a-success:#16a34a;--a-warning:#d97706;--a-error:#dc2626;--a-info:#2563eb;
+  --a-success-subtle:rgba(22,163,74,.12);--a-warning-subtle:rgba(217,119,6,.12);--a-error-subtle:rgba(220,38,38,.12);--a-info-subtle:rgba(37,99,235,.12);
+  --a-font-sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;
+  --a-font-mono:"SF Mono","JetBrains Mono","Menlo",ui-monospace,monospace;
+  --a-text-2xs:10.5px;--a-text-xs:11.5px;--a-text-sm:12.5px;--a-text-base:13px;--a-text-md:14px;--a-text-lg:16px;--a-text-xl:19px;--a-text-2xl:23px;
+  --a-leading-tight:1.2;--a-leading-snug:1.4;--a-leading-normal:1.55;--a-tracking-tight:-0.014em;--a-tracking-wide:0.04em;
+  --a-weight-normal:400;--a-weight-medium:500;--a-weight-semibold:600;
+  --a-space-1:4px;--a-space-2:8px;--a-space-3:12px;--a-space-4:16px;--a-space-5:20px;--a-space-6:24px;--a-space-8:32px;
+  --a-radius-xs:4px;--a-radius-sm:6px;--a-radius-md:8px;--a-radius-lg:11px;--a-radius-xl:14px;--a-radius-2xl:18px;--a-radius-full:9999px;
+  --a-shadow-xs:0 1px 2px rgba(15,17,21,.05);
+  --a-shadow-sm:0 1px 3px rgba(15,17,21,.07),0 1px 2px rgba(15,17,21,.04);
+  --a-shadow-md:0 4px 12px rgba(15,17,21,.08),0 2px 4px rgba(15,17,21,.05);
+  --a-shadow-lg:0 12px 32px rgba(15,17,21,.12),0 4px 8px rgba(15,17,21,.06);
+  --a-shadow-overlay:0 24px 64px rgba(15,17,21,.20),0 8px 16px rgba(15,17,21,.10);
+  --a-ring-focus:0 0 0 3px var(--a-accent-ring);
+  --a-edge-light:inset 0 1px 0 rgba(255,255,255,.65);
+  --a-dur-instant:80ms;--a-dur-fast:130ms;--a-dur-base:190ms;--a-dur-slow:280ms;
+  --a-ease-out:cubic-bezier(.22,1,.36,1);--a-ease-spring:cubic-bezier(.34,1.56,.64,1);
+  --a-z-modal:900;--a-z-toast:1000;
+}
+html[data-theme="dark"]{
+  --a-bg-canvas:#0a0b0d;--a-bg-subtle:#0e0f11;--a-bg-muted:#16171a;--a-bg-inset:#1e2024;
+  --a-surface:#121316;--a-surface-raised:#17181b;--a-scrim:rgba(0,0,0,.60);
+  --a-border-faint:#1b1c20;--a-border:#232428;--a-border-strong:#34363c;
+  --a-text:#fafafa;--a-text-secondary:#a1a1aa;--a-text-tertiary:#71727a;--a-text-disabled:#4f5158;
+  --a-overlay-hover:rgba(255,255,255,.055);
+  --a-accent:#818cf8;--a-accent-solid:#4f46e5;--a-accent-solid-hover:#5b54ea;--a-accent-solid-active:#4338ca;
+  --a-accent-subtle:rgba(129,140,248,.14);--a-accent-border:rgba(129,140,248,.38);--a-accent-ring:rgba(129,140,248,.45);
+  --a-success:#4ade80;--a-warning:#fbbf24;--a-error:#f87171;--a-info:#60a5fa;
+  --a-success-subtle:rgba(74,222,128,.14);--a-warning-subtle:rgba(251,191,36,.14);--a-error-subtle:rgba(248,113,113,.14);--a-info-subtle:rgba(96,165,250,.14);
+  --a-shadow-overlay:0 24px 64px rgba(0,0,0,.7),0 8px 16px rgba(0,0,0,.5);
+  --a-edge-light:inset 0 1px 0 rgba(255,255,255,.06);
+}
+
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--a-font-sans);background:var(--a-bg-subtle);color:var(--a-text);-webkit-font-smoothing:antialiased}
+
+/* ── 设计稿外壳(非产品 UI)────────────────────────────────────────────── */
+.proto-bar{display:flex;align-items:center;gap:var(--a-space-4);flex-wrap:wrap;
+  padding:var(--a-space-3) var(--a-space-5);border-bottom:1px solid var(--a-border);
+  background:var(--a-surface);position:sticky;top:0;z-index:1100}
+.proto-title{font-size:var(--a-text-md);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight)}
+.proto-title small{color:var(--a-text-tertiary);font-weight:var(--a-weight-normal);margin-left:8px}
+.proto-seg{display:flex;background:var(--a-bg-muted);border-radius:var(--a-radius-md);padding:2px;gap:2px}
+.proto-seg button{border:none;background:transparent;color:var(--a-text-secondary);font:inherit;
+  font-size:var(--a-text-xs);padding:5px 10px;border-radius:var(--a-radius-sm);cursor:pointer;white-space:nowrap}
+.proto-seg button[data-on]{background:var(--a-surface);color:var(--a-text);box-shadow:var(--a-shadow-xs);font-weight:var(--a-weight-medium)}
+.proto-sw{margin-left:auto;display:flex;gap:var(--a-space-2)}
+.proto-sw button{border:1px solid var(--a-border);background:var(--a-surface);color:var(--a-text-secondary);
+  font:inherit;font-size:var(--a-text-xs);padding:5px 10px;border-radius:var(--a-radius-md);cursor:pointer}
+.proto-sw button[data-on]{border-color:var(--a-accent-border);color:var(--a-accent);background:var(--a-accent-subtle)}
+.proto-rel{max-width:1060px;margin:var(--a-space-4) auto 0;padding:var(--a-space-3) var(--a-space-4);
+  border:1px solid var(--a-border-faint);border-left:3px solid var(--a-accent);border-radius:var(--a-radius-md);
+  background:var(--a-surface);font-size:var(--a-text-xs);color:var(--a-text-secondary);line-height:var(--a-leading-snug)}
+.proto-rel b{color:var(--a-text)}
+
+/* ── 舞台:简化 Hub 背景 + 真尺寸 Dialog ─────────────────────────────── */
+.stage{position:relative;max-width:1060px;margin:var(--a-space-4) auto var(--a-space-6);
+  height:620px;border:1px solid var(--a-border);border-radius:var(--a-radius-xl);
+  overflow:hidden;background:var(--a-bg-canvas)}
+.hub{padding:var(--a-space-6) var(--a-space-8);height:100%}
+.hub-h{display:flex;align-items:center;gap:var(--a-space-3);margin-bottom:var(--a-space-5)}
+.hub-h h1{font-size:var(--a-text-xl);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight);margin:0}
+.hub-search{margin-left:auto;width:220px;height:28px;border:1px solid var(--a-border);border-radius:var(--a-radius-md);
+  background:var(--a-bg-subtle);color:var(--a-text-tertiary);font-size:var(--a-text-sm);display:flex;align-items:center;padding:0 10px}
+.hub-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--a-space-3)}
+.hub-card{border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);padding:var(--a-space-4);
+  background:var(--a-surface);box-shadow:var(--a-shadow-xs);display:flex;flex-direction:column;gap:6px}
+.hub-card .r1{display:flex;align-items:center;gap:8px}
+.hub-ic{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff;flex:none}
+.hub-card b{font-size:var(--a-text-base);font-weight:var(--a-weight-medium)}
+.hub-card p{margin:0;font-size:var(--a-text-xs);color:var(--a-text-tertiary);line-height:var(--a-leading-snug)}
+.hub-tag{margin-left:auto;font-size:var(--a-text-2xs);color:var(--a-text-tertiary);text-transform:uppercase;letter-spacing:var(--a-tracking-wide)}
+
+/* ── alpha-ui Dialog — verbatim 规格(dialog.css)───────────────────── */
+.a-dialog-root{position:absolute;inset:0;z-index:var(--a-z-modal);font-family:var(--a-font-sans)}
+.a-dialog-backdrop{position:absolute;inset:0;background:var(--a-scrim);backdrop-filter:blur(3px);
+  animation:a-dialog-fade var(--a-dur-base) var(--a-ease-out)}
+.a-dialog-panel{position:absolute;inset:0;margin:auto;display:flex;flex-direction:column;
+  width:min(420px,92%);height:max-content;max-height:84%;overflow:hidden;
+  background:var(--a-surface-raised);color:var(--a-text);border:1px solid var(--a-border-faint);
+  border-radius:var(--a-radius-2xl);box-shadow:var(--a-shadow-overlay),var(--a-edge-light);
+  animation:a-dialog-rise var(--a-dur-slow) var(--a-ease-spring)}
+.a-dialog-header{display:flex;align-items:center;gap:var(--a-space-3);padding:var(--a-space-4) var(--a-space-5);
+  border-bottom:1px solid var(--a-border-faint)}
+.a-dialog-title{flex:1;min-width:0;font-size:var(--a-text-lg);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight)}
+.a-dialog-close{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:30px;height:30px;
+  border:none;border-radius:var(--a-radius-md);background:transparent;color:var(--a-text-tertiary);cursor:pointer;font-size:15px;
+  transition:background var(--a-dur-fast) var(--a-ease-out),color var(--a-dur-fast) var(--a-ease-out)}
+.a-dialog-close:hover{background:var(--a-bg-muted);color:var(--a-text)}
+.a-dialog-body{flex:1;min-height:0;overflow-y:auto;padding:var(--a-space-5)}
+.a-dialog-footer{display:flex;align-items:center;justify-content:flex-end;gap:var(--a-space-2);
+  padding:var(--a-space-3) var(--a-space-5);border-top:1px solid var(--a-border-faint)}
+@keyframes a-dialog-fade{from{opacity:0}}
+@keyframes a-dialog-rise{from{opacity:0;transform:translateY(8px) scale(.985)}}
+
+/* alpha-ui Button — verbatim 规格(button.css)*/
+.a-btn{--_h:30px;display:inline-flex;align-items:center;justify-content:center;gap:var(--a-space-2);height:var(--_h);
+  padding:0 var(--a-space-3);border:1px solid transparent;border-radius:var(--a-radius-md);font-family:var(--a-font-sans);
+  font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);line-height:1;white-space:nowrap;cursor:pointer;user-select:none;
+  transition:background var(--a-dur-fast) var(--a-ease-out),border-color var(--a-dur-fast) var(--a-ease-out),
+  color var(--a-dur-fast) var(--a-ease-out),transform var(--a-dur-fast) var(--a-ease-out)}
+.a-btn:active:not(:disabled){transform:translateY(.5px) scale(.99)}
+.a-btn:disabled{cursor:default;opacity:.5}
+.a-btn[data-variant="primary"]{background:var(--a-accent-solid);color:var(--a-text-on-accent);box-shadow:var(--a-shadow-xs)}
+.a-btn[data-variant="primary"]:hover:not(:disabled){background:var(--a-accent-solid-hover)}
+.a-btn[data-variant="ghost"]{background:transparent;color:var(--a-text-secondary)}
+.a-btn[data-variant="ghost"]:hover:not(:disabled){background:var(--a-bg-muted);color:var(--a-text)}
+.a-spin{width:12px;height:12px;border-radius:50%;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;
+  animation:aspin .7s linear infinite}
+@keyframes aspin{to{transform:rotate(360deg)}}
+
+/* ── 既有安装确认 body(extension-hub.css 同构,S2 第一阶段)──────────── */
+.alpha-ext-confirm{display:flex;flex-direction:column;gap:12px}
+.alpha-ext-confirm-meta{display:flex;align-items:center;gap:8px}
+.alpha-ext-confirm-type{font-size:var(--a-text-sm);color:var(--a-text-tertiary)}
+.alpha-ext-confirm-desc{margin:0;font-size:var(--a-text-base);line-height:var(--a-leading-normal);color:var(--a-text-secondary)}
+.alpha-ext-install-box{border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);overflow:hidden}
+.alpha-ext-install-row{display:flex;align-items:center;gap:10px;padding:11px 14px;font-size:var(--a-text-sm)}
+.alpha-ext-install-row + .alpha-ext-install-row{border-top:1px solid var(--a-border-faint)}
+.alpha-ext-install-ic{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-size:10px;font-weight:700;color:#fff;flex:none}
+.alpha-ext-install-nm{font-weight:var(--a-weight-medium)}
+.alpha-ext-install-k{margin-left:auto;font-size:var(--a-text-2xs);color:var(--a-text-tertiary);text-transform:uppercase;letter-spacing:var(--a-tracking-wide)}
+.alpha-ext-confirm-note{font-size:var(--a-text-xs);color:var(--a-text-tertiary);margin:0;line-height:var(--a-leading-snug)}
+.alpha-ext-confirm-risk{margin:2px 0 0;font-size:var(--a-text-sm);color:var(--a-warning);line-height:var(--a-leading-snug)}
+.alpha-ext-key-field{display:flex;flex-direction:column;gap:3px}
+.alpha-ext-key-name{font-family:var(--a-font-mono);font-size:11.5px;color:var(--a-text-secondary)}
+.alpha-ext-key-input{width:100%;font-size:var(--a-text-sm);font-family:var(--a-font-mono);padding:6px 9px;
+  border:1px solid var(--a-border);border-radius:var(--a-radius-md);background:var(--a-bg-subtle);color:var(--a-text)}
+
+/* ════════════════════════════════════════════════════════════════════════
+   本稿新增:能力授权视图 .alpha-ext-authz(唯一新增的 CSS 家族)
+   ════════════════════════════════════════════════════════════════════════ */
+.alpha-ext-authz{display:flex;flex-direction:column;gap:12px}
+.alpha-ext-authz.enter{animation:authz-in var(--a-dur-base) var(--a-ease-out)}
+@keyframes authz-in{from{opacity:0;transform:translateX(14px)}}
+.alpha-ext-authz-intro{margin:0;font-size:var(--a-text-base);line-height:var(--a-leading-normal);color:var(--a-text-secondary)}
+.alpha-ext-authz-intro b{color:var(--a-text);font-weight:var(--a-weight-medium)}
+.alpha-ext-authz-box{border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);overflow:hidden}
+.alpha-ext-authz-cap{display:flex;align-items:center;gap:10px;padding:10px 14px;font-size:var(--a-text-sm)}
+.alpha-ext-authz-cap + .alpha-ext-authz-cap,.alpha-ext-authz-item + .alpha-ext-authz-cap{border-top:1px solid var(--a-border-faint)}
+.alpha-ext-authz-cap[data-muted]{opacity:.62}
+.alpha-ext-authz-ic{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;flex:none;
+  background:var(--a-bg-muted);color:var(--a-text-secondary)}
+.alpha-ext-authz-ic[data-tier="high"]{background:var(--a-warning-subtle);color:var(--a-warning);box-shadow:inset 0 0 0 1px var(--a-warning-subtle)}
+.alpha-ext-authz-ic svg{width:13px;height:13px}
+.alpha-ext-authz-nm{display:flex;flex-direction:column;gap:1px;min-width:0}
+.alpha-ext-authz-nm b{font-weight:var(--a-weight-medium);font-size:var(--a-text-sm)}
+.alpha-ext-authz-nm b s{text-decoration-color:var(--a-text-tertiary)}
+.alpha-ext-authz-nm small{font-size:var(--a-text-2xs);color:var(--a-text-tertiary)}
+.alpha-ext-authz-id{margin-left:auto;font-family:var(--a-font-mono);font-size:10.5px;color:var(--a-text-tertiary);
+  background:var(--a-bg-muted);border:1px solid var(--a-border-faint);padding:1px 6px;border-radius:5px;flex:none}
+.alpha-ext-authz-chip{flex:none;font-size:var(--a-text-2xs);font-weight:var(--a-weight-medium);
+  padding:2px 7px;border-radius:var(--a-radius-full);letter-spacing:var(--a-tracking-wide)}
+.alpha-ext-authz-chip[data-kind="new"]{background:var(--a-warning-subtle);color:var(--a-warning)}
+.alpha-ext-authz-chip[data-kind="granted"]{background:var(--a-bg-muted);color:var(--a-text-tertiary)}
+.alpha-ext-authz-chip[data-kind="removed"]{background:var(--a-success-subtle);color:var(--a-success)}
+.alpha-ext-authz-chip[data-kind="risk"]{background:var(--a-warning-subtle);color:var(--a-warning)}
+.alpha-ext-authz-item{display:flex;align-items:center;gap:8px;padding:8px 14px;background:var(--a-bg-subtle);
+  font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);color:var(--a-text-secondary)}
+.alpha-ext-authz-item + .alpha-ext-authz-item,.alpha-ext-authz-cap + .alpha-ext-authz-item{border-top:1px solid var(--a-border-faint)}
+.alpha-ext-authz-item .alpha-ext-install-ic{width:18px;height:18px;font-size:9px;border-radius:5px}
+.alpha-ext-authz-rest{padding:9px 14px;font-size:var(--a-text-xs);color:var(--a-text-tertiary);
+  border-top:1px solid var(--a-border-faint);background:var(--a-bg-subtle)}
+
+/* ── Toast(house:成功才 toast)──────────────────────────────────────── */
+.a-toast{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:var(--a-z-toast);
+  display:flex;align-items:center;gap:8px;background:var(--a-surface-raised);border:1px solid var(--a-border-faint);
+  border-radius:var(--a-radius-lg);box-shadow:var(--a-shadow-lg),var(--a-edge-light);padding:9px 14px;
+  font-size:var(--a-text-sm);animation:a-dialog-rise var(--a-dur-slow) var(--a-ease-spring)}
+.a-toast .dot{width:7px;height:7px;border-radius:50%;background:var(--a-success)}
+
+/* ── 标注(设计稿说明层,非产品)─────────────────────────────────────── */
+.note-ref{display:none;width:15px;height:15px;border-radius:50%;background:var(--a-accent);color:#fff;
+  font-size:10px;font-weight:700;line-height:15px;text-align:center;flex:none;margin-left:4px;vertical-align:2px}
+body[data-notes="on"] .note-ref{display:inline-block}
+.proto-notes{max-width:1060px;margin:0 auto var(--a-space-8);display:none;flex-direction:column;gap:6px}
+body[data-notes="on"] .proto-notes{display:flex}
+.proto-notes .n{display:flex;gap:10px;align-items:baseline;font-size:var(--a-text-sm);color:var(--a-text-secondary);
+  line-height:var(--a-leading-snug)}
+.proto-notes .n i{font-style:normal;flex:none;width:16px;height:16px;border-radius:50%;background:var(--a-accent);
+  color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center;transform:translateY(2px)}
+.proto-notes .n code{font-family:var(--a-font-mono);font-size:11px;background:var(--a-bg-muted);
+  border:1px solid var(--a-border-faint);padding:0 5px;border-radius:4px}
+.replay{position:absolute;inset:0;display:grid;place-items:center;z-index:5}
+.replay button{border:1px dashed var(--a-border-strong);background:var(--a-surface);color:var(--a-text-secondary);
+  font:inherit;font-size:var(--a-text-sm);padding:8px 16px;border-radius:var(--a-radius-md);cursor:pointer}
+.replay .hint{position:absolute;bottom:70px;left:0;right:0;text-align:center;font-size:var(--a-text-xs);color:var(--a-text-tertiary)}
+</style>
+</head>
+<body data-notes="on">
+
+<div class="proto-bar">
+  <div class="proto-title">能力授权确认框<small>stage="authorize" · REQ-100 #348 · 2026-07-15 draft-v1</small></div>
+  <div class="proto-seg" id="seg">
+    <button data-s="s1" data-on>S1 首装 · skill(直弹)</button>
+    <button data-s="s2">S2 首装 · MCP(两阶段)</button>
+    <button data-s="s3">S3 扩权 · 更新</button>
+    <button data-s="s4">S4 bundle · 多项</button>
+  </div>
+  <div class="proto-sw">
+    <button id="tgNotes" data-on>标注</button>
+    <button id="tgTheme">深色</button>
+  </div>
+</div>
+
+<div class="proto-rel">
+  <b>与上一稿的关系</b> — 基线 = <code>2026-07-04-extension-hub-v3-universal.md</code>(approved-direction)+
+  <code>2026-07-04-ext-hub-m2</code> 原型:视觉语言零改动(tokens / Dialog / Button / 确认框 body 全部沿用规格原文)。
+  本稿新增 = 引擎 <code>stage="authorize"</code> 返回后的授权视图 <code>.alpha-ext-authz</code>(唯一新增 CSS 家族):
+  MCP/plugin/bundle 作为既有确认框的<b>第二阶段</b>原地切换,skill 直装时独立弹出。整集确认、无逐能力开关(引擎防 TOCTOU 语义)。
+  规格与证据见同目录 <code>design.md</code>。
+</div>
+
+<div class="stage" id="stage"></div>
+<div class="proto-notes" id="notes"></div>
+
+<script>
+/* ── 能力词汇表(design.md §6)──────────────────────────────────────── */
+const IC = {
+  bubble:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" stroke-linejoin="round"/></svg>',
+  gear:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v2M8 12.2v2M1.8 8h2M12.2 8h2M3.6 3.6l1.4 1.4M11 11l1.4 1.4M12.4 3.6L11 5M5 11l-1.4 1.4"/></svg>',
+  code:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  term:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.8" y="2.8" width="12.4" height="10.4" rx="2"/><path d="M4.5 6l2 2-2 2M8.5 10.5h3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  globe:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.2"/><path d="M1.8 8h12.4M8 1.8c-3.6 3.4-3.6 9 0 12.4 3.6-3.4 3.6-9 0-12.4z"/></svg>',
+  cloud:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4.5 12.5a3 3 0 0 1-.4-6A4 4 0 0 1 12 7.6a2.5 2.5 0 0 1-.5 4.9z" stroke-linejoin="round"/></svg>'
+};
+const CAPS = {
+  "prompt:context":{nm:"注入提示词上下文",ds:"向会话注入文本(skill/agent)",tier:"low",ic:IC.bubble},
+  "engine:config":{nm:"写入引擎配置",ds:"新增/修改引擎配置条目",tier:"mid",ic:IC.gear},
+  "engine:plugin":{nm:"在引擎进程内运行代码",ds:"与引擎同权限执行 JS",tier:"high",ic:IC.code},
+  "process:spawn":{nm:"启动本机子进程",ds:"在你的电脑上运行本地程序(本地 MCP)",tier:"high",ic:IC.term},
+  "network:remote":{nm:"连接远程服务",ds:"与外部服务通信(远程 MCP)",tier:"mid",ic:IC.globe},
+  "cloud:dispatch":{nm:"派发云端任务",ds:"将任务发往云端管线(数据边界见 ADR-021)",tier:"mid",ic:IC.cloud}
+};
+const NOTE = "确认即授权上述完整能力集;授权仅在安装成功提交后生效。取消不会安装扩展或授予能力。";
+const RISK = "⚠ 含高风险能力:该扩展将能在本机运行程序/在引擎进程内执行代码。";
+
+function capRow(id, kind, ref){ // kind: new | granted | removed
+  const c = CAPS[id];
+  const muted = kind !== "new" ? " data-muted" : "";
+  const nm = kind === "removed" ? `<s>${c.nm}</s>` : c.nm;
+  const chip = {new:"新增",granted:"已授权",removed:"将收回"}[kind];
+  const risk = (kind === "new" && c.tier === "high") ? `<span class="alpha-ext-authz-chip" data-kind="risk">高风险</span>` : "";
+  return `<div class="alpha-ext-authz-cap"${muted}>
+    <span class="alpha-ext-authz-ic" data-tier="${kind==="new"?c.tier:"low"}">${c.ic}</span>
+    <span class="alpha-ext-authz-nm"><b>${nm}${ref||""}</b><small>${c.ds}</small></span>
+    <span class="alpha-ext-authz-id">${id}</span>${risk}
+    <span class="alpha-ext-authz-chip" data-kind="${kind}">${chip}</span>
+  </div>`;
+}
+function authzBody(sc){
+  let rows = "", risky = false;
+  if (sc.items){ // bundle
+    for (const it of sc.items){
+      rows += `<div class="alpha-ext-authz-item"><span class="alpha-ext-install-ic" style="background:${it.color}">${it.badge}</span>${it.name}</div>`;
+      for (const id of it.caps){ rows += capRow(id,"new"); if (CAPS[id].tier==="high") risky = true; }
+    }
+    rows += `<div class="alpha-ext-authz-rest">其余 ${sc.rest} 项能力无变化,无需确认<span class="note-ref">4</span></div>`;
+  } else {
+    for (const [id,kind] of sc.caps){ rows += capRow(id,kind, kind==="new"&&sc.refNew?`<span class="note-ref">${sc.refNew}</span>`:""); if (kind==="new"&&CAPS[id].tier==="high") risky = true; }
+  }
+  return `<div class="alpha-ext-authz enter">
+    <p class="alpha-ext-authz-intro">${sc.intro}</p>
+    <div class="alpha-ext-authz-box">${rows}</div>
+    ${risky?`<p class="alpha-ext-confirm-risk">${RISK}<span class="note-ref">2</span></p>`:""}
+    <p class="alpha-ext-confirm-note">${NOTE}<span class="note-ref">3</span></p>
+  </div>`;
+}
+
+/* ── 场景定义 ─────────────────────────────────────────────────────────── */
+const SCENARIOS = {
+  s1:{ title:"授权能力", cta:"授权并安装", toast:"已安装「代码审查」 · 已生效",
+    intro:`<b>「代码审查」</b>首次安装,请求以下能力:<span class="note-ref">1</span>`,
+    caps:[["prompt:context","new"]],
+    notes:[
+      ["1","<b>skill 直装路径</b>:卡片「添加」→ 卡片 spinner(首驱)→ 引擎返回 <code>stage=\"authorize\"</code> → 本框直接弹出(skill 现无安装前确认框)。首装 <code>previous===null</code>,全部能力标「新增」。"],
+      ["3","注释行申明契约语义:授权仅在事务 commit 后落盘(fail-closed);取消零副作用、静默关框,卡片回「未安装」,不弹错误。"],
+      ["5","footer = house 先例:ghost「取消」+ primary「授权并安装」;确认后按钮转 loading(重驱同一 <code>ext-install-catalog</code>,带 <code>authorization.confirmed</code>),成功走既有 toast。"]
+    ]},
+  s2:{ twoPhase:true, title1:"安装 GitHub MCP", title:"授权能力", cta1:"确认安装", cta:"授权并安装",
+    toast:"已安装「GitHub MCP」 · 已生效",
+    intro:`<b>「GitHub MCP」</b>首次安装,请求以下能力:`,
+    caps:[["process:spawn","new"],["engine:config","new"]],
+    notes:[
+      ["1","<b>两阶段同框</b>:第一阶段 = 既有安装确认框(清单 + 密钥采集,现产品原样);点「确认安装」→ 按钮 loading(首驱)→ 引擎返回 authorize → <b>同一 Dialog body 原地切换</b>为授权视图(横向滑入,<code>--a-dur-base</code>),标题随之改为「授权能力」。不连环弹两个框。"],
+      ["2","高风险能力(<code>process:spawn</code>/<code>engine:plugin</code>)icon 用 warning 色 + 「高风险」chip;并复用既有 <code>.alpha-ext-confirm-risk</code> ⚠ 行。中低风险保持中性,不加色(house 克制)。"],
+      ["5","取消在任一阶段都零副作用;第二阶段不设「返回」——授权即最后一问。"]
+    ]},
+  s3:{ title:"能力变更需确认", cta:"授权并更新", toast:"已更新「网页抓取」 · 已生效", refNew:1,
+    intro:`<b>「网页抓取」</b>的能力请求发生变化,请重新确认完整能力集:`,
+    caps:[["process:spawn","new"],["prompt:context","granted"],["network:remote","removed"]],
+    notes:[
+      ["1","<b>扩权(escalation)</b>:引擎 diff 三分层——「新增」是唯一视觉焦点(warning chip),「已授权」维持项弱化(muted),「将收回」删除线 + success chip(信息性,收缩本不需确认,只因新增连带展示)。"],
+      ["2","<code>added</code> 含高风险 → ⚠ 行出现。确认语义 = 整集覆盖(<code>requested ⊆ confirmed</code>):intro 与注释都强调「完整能力集」,对应引擎 silent-inheritance-refused。"],
+      ["5","主按钮场景化:「授权并更新」(vs 首装「授权并安装」)。开放问题 Q1:是否统一为「授权并继续」。"]
+    ]},
+  s4:{ title:"授权能力", cta:"授权并安装", toast:"已安装「前端开发套件」 · 已生效",
+    intro:`<b>「前端开发套件」</b>中 2 项需要能力授权:<span class="note-ref">1</span>`,
+    items:[
+      {name:"ESLint MCP", badge:"M", color:"#0ea5e9", caps:["process:spawn","engine:config"]},
+      {name:"格式化 Plugin", badge:"P", color:"#8b5cf6", caps:["engine:plugin","engine:config"]}
+    ], rest:3,
+    notes:[
+      ["1","<b>bundle</b>:仅展开 <code>requiresConfirmation</code> 的项(项头 = 既有 fan-out 行样式);引擎回传含全部项,未变化项折叠为一行(④),保住「展示什么确认什么」的完整图景。"],
+      ["4","折叠行只述事实,不可展开点击(自动通过项无决策可做)。"],
+      ["5","<b>全有或全无</b>:一个 primary 为所有需确认项按各自 requested 全集生成 <code>confirmed</code>;引擎无按项拒绝语义,部分拒绝 = 取消整个安装(开放问题 Q3)。"]
+    ]}
+};
+
+/* ── 渲染 ─────────────────────────────────────────────────────────────── */
+const stage = document.getElementById("stage");
+const notesEl = document.getElementById("notes");
+let cur = "s1", closed = false;
+
+function hubHtml(){
+  const cards = [
+    ["S","#16a34a","代码审查","按团队规范审查 diff,产出结构化意见","SKILL"],
+    ["M","#0ea5e9","GitHub MCP","Issue/PR 查询与操作(本地运行)","MCP"],
+    ["S","#16a34a","网页抓取","抓取网页正文供会话引用 · 可更新","SKILL"],
+    ["B","#f59e0b","前端开发套件","ESLint + 格式化 + 3 项常用工具","BUNDLE"],
+    ["A","#ef4444","重构助手","多文件重构规划 agent","AGENT"],
+    ["C","#6366f1","云端流水线","将长任务派发到云端执行","CLOUD"]
+  ].map(([b,c,n,d,t])=>`<div class="hub-card"><div class="r1"><span class="hub-ic" style="background:${c}">${b}</span><b>${n}</b><span class="hub-tag">${t}</span></div><p>${d}</p></div>`).join("");
+  return `<div class="hub"><div class="hub-h"><h1>定制中心</h1><div class="hub-search">搜索扩展…</div></div><div class="hub-grid">${cards}</div></div>`;
+}
+
+function dialogHtml(sc, phase){
+  const isP1 = sc.twoPhase && phase === 1;
+  const title = isP1 ? sc.title1 : sc.title;
+  const body = isP1 ? `
+    <div class="alpha-ext-confirm">
+      <div class="alpha-ext-confirm-meta"><span class="alpha-ext-install-ic" style="background:#0ea5e9">M</span>
+        <span class="alpha-ext-confirm-type">MCP · 本地<span class="note-ref">1</span></span></div>
+      <p class="alpha-ext-confirm-desc">Issue/PR 查询与操作。安装后立即连接,无需重启。</p>
+      <div class="alpha-ext-install-box">
+        <div class="alpha-ext-install-row"><span class="alpha-ext-install-ic" style="background:#0ea5e9">M</span>
+          <span class="alpha-ext-install-nm">github-mcp 服务进程</span><span class="alpha-ext-install-k">mcp</span></div>
+        <div class="alpha-ext-install-row"><span class="alpha-ext-install-ic" style="background:#64748b">C</span>
+          <span class="alpha-ext-install-nm">engine.mcp.github 配置项</span><span class="alpha-ext-install-k">config</span></div>
+      </div>
+      <div class="alpha-ext-key-field"><span class="alpha-ext-key-name">GITHUB_TOKEN</span>
+        <input class="alpha-ext-key-input" type="password" value="ghp_····················" readonly /></div>
+      <p class="alpha-ext-confirm-note">密钥密文落盘 userData/alpha-secrets,配置只存文件引用。</p>
+    </div>`
+    : authzBody(sc);
+  const cta = isP1 ? sc.cta1 : sc.cta;
+  return `
+  <div class="a-dialog-root">
+    <div class="a-dialog-backdrop" data-cancel></div>
+    <div class="a-dialog-panel" data-size="sm">
+      <div class="a-dialog-header"><div class="a-dialog-title">${title}</div>
+        <button class="a-dialog-close" data-cancel>✕</button></div>
+      <div class="a-dialog-body" id="dlgBody">${body}</div>
+      <div class="a-dialog-footer"><span class="note-ref">5</span>
+        <button class="a-btn" data-variant="ghost" data-cancel>取消</button>
+        <button class="a-btn" data-variant="primary" id="cta">${cta}</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function render(phase){
+  const sc = SCENARIOS[cur];
+  stage.innerHTML = hubHtml() + (closed ? "" : dialogHtml(sc, phase ?? (sc.twoPhase ? 1 : 2)));
+  notesEl.innerHTML = sc.notes.map(([i,t])=>`<div class="n"><i>${i}</i><span>${t}</span></div>`).join("");
+  if (closed) return;
+  stage.querySelectorAll("[data-cancel]").forEach(el=>el.addEventListener("click",()=>{
+    closed = true; render();
+    stage.insertAdjacentHTML("beforeend",
+      `<div class="replay"><button id="replay">▶ 重新演示</button><div class="hint">已取消 —— 零权威副作用(不装/不授权;已验载荷可留在可回收 CAS),静默关闭,卡片回原状态</div></div>`);
+    document.getElementById("replay").onclick = ()=>{ closed=false; render(); };
+  }));
+  const cta = document.getElementById("cta");
+  cta.addEventListener("click",()=>{
+    cta.disabled = true; cta.innerHTML = `<span class="a-spin"></span>${sc.twoPhase && phase!==2 ? "安装中…" : "授权中…"}`;
+    setTimeout(()=>{
+      if (sc.twoPhase && phase !== 2){ render(2); return; }   // 首驱返回 authorize → 同框切换
+      closed = true; render();                                  // 重驱成功 → 关框 + 成功 toast
+      stage.insertAdjacentHTML("beforeend", `<div class="a-toast"><span class="dot"></span>${sc.toast}</div>
+        <div class="replay" style="pointer-events:none"><button id="replay" style="pointer-events:auto">▶ 重新演示</button></div>`);
+      document.getElementById("replay").onclick = ()=>{ closed=false; render(); };
+    }, 650);
+  });
+}
+
+document.getElementById("seg").addEventListener("click",e=>{
+  const b = e.target.closest("button"); if (!b) return;
+  document.querySelectorAll("#seg button").forEach(x=>x.removeAttribute("data-on"));
+  b.setAttribute("data-on",""); cur = b.dataset.s; closed = false; render();
+});
+document.getElementById("tgNotes").addEventListener("click",e=>{
+  const on = document.body.dataset.notes === "on";
+  document.body.dataset.notes = on ? "off" : "on";
+  e.currentTarget.toggleAttribute("data-on", !on);
+});
+document.getElementById("tgTheme").addEventListener("click",e=>{
+  const dark = document.documentElement.dataset.theme === "dark";
+  document.documentElement.dataset.theme = dark ? "light" : "dark";
+  e.currentTarget.textContent = dark ? "深色" : "浅色";
+});
+render();
+</script>
+</body>
+</html>

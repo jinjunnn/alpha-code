@@ -30,6 +30,18 @@
 - 架构理解见 `docs/architecture/understanding.md`;扩展接缝手册见 `docs/architecture/extension-seams.md`;code-graph 见 `docs/architecture/diagrams/opencode-codegraph.svg`。
 - **交付治理**:GitHub Issues + [`Alpha Delivery`](https://github.com/users/jinjunnn/projects/2) 是活跃需求、状态、优先级与 Sprint 的唯一真源。单仓工作建在 `jinjunnn/alpha-code`;跨仓父需求建在 `jinjunnn/alpha-work`。旧交付追踪器(BACKLOG、requirements、sprints,已退役至 `docs/archive/DEPRECATED.md`)是迁移前历史,不得再翻状态或从中抽取新 Sprint。统一规则见 `jinjunnn/alpha-work/governance/delivery-standard.md`;用户可见发布历史仍写 `CHANGELOG.md`。
 
+## 前端设计(设计系统 + 入口铁律)
+
+改动任何界面前必须先加载上下文,禁止不知上下文就随意设计:
+
+1. **入口**:先读 [`docs/design/PAGE-MAP.md`](docs/design/PAGE-MAP.md) —— 找到该面的 alpha/opencode 状态、**代码入口文件**、当前设计稿;再读该面 `docs/design/current/<page>/design.html` 与需要时的日期历史。
+2. **设计系统**:读 [`docs/design/system/`](docs/design/system/)(`principles` 设计宪法 · `color` 用色宪法 · `tokens` · `components` · `patterns`)。
+3. **在现有面上优化**,禁止凭空另画一套 IA;新稿必须带"与上一稿的关系"块(继承什么 + 改什么)。
+4. **产出走技能**:一切界面产出(新/改设计稿、组件画廊)走 `frontend-design` skill,不手搓界面 HTML。
+5. **Token 纪律**:只用 `--a-*`,新值加进 `packages/ui-mac/src/renderer/alpha-ui/tokens.css`;绝不改 upstream `--v2-*` / 不 fork 上游 DOM;light+dark 双模 + WCAG 对比 + 可见 focus。UI 文案禁开发术语(REQ/票号)。
+
+完整契约见 [`docs/design/system/contributing.md`](docs/design/system/contributing.md);设计稿两层模型(current 活稿 / 日期历史)见 [`docs/design/README.md`](docs/design/README.md)。
+
 ## 跑起来
 ```
 bun install

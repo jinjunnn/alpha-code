@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>alpha-code · REQ-104 四级货架与供应链事实 v6 — #397 消费侧呈现 (2026-07-18)</title>
+<style>
+/* ════════════════════════════════════════════════════════════════════════
+   tokens verbatim 沿用 v3→v4→v5 血统(2026-07-13-req103-hub-governance →
+   2026-07-17-req103-remaining → 2026-07-17-req104-pack-facts)。
+   v6 = REQ-104 消费侧的收官章:v5 里标注「#397 阻塞,不入稿」的四级货架,
+   现在供给侧已交付(签名目录 2026-07-18.2 携带 10 条真实策展条目),本稿只画这一块。
+   ════════════════════════════════════════════════════════════════════════ */
+:root{
+  --a-bg-canvas:#ffffff;--a-bg-subtle:#f6f7f9;--a-bg-muted:#eceef1;--a-bg-inset:#e3e6ea;
+  --a-surface:#ffffff;--a-surface-raised:#ffffff;--a-scrim:rgba(15,17,21,.45);
+  --a-border-faint:#eef0f3;--a-border:#e4e6ea;--a-border-strong:#ced2d9;
+  --a-text:#18181b;--a-text-secondary:#52525b;--a-text-tertiary:#7c7d85;--a-text-disabled:#b3b6bd;
+  --a-overlay-hover:rgba(15,17,21,.05);
+  --a-accent:#4f46e5;--a-accent-solid:#4f46e5;--a-accent-solid-hover:#4338ca;
+  --a-accent-subtle:rgba(79,70,229,.10);--a-accent-ring:rgba(79,70,229,.45);
+  --a-success:#16a34a;--a-warning:#d97706;--a-error:#dc2626;--a-info:#2563eb;
+  --a-success-subtle:rgba(22,163,74,.12);--a-warning-subtle:rgba(217,119,6,.12);--a-error-subtle:rgba(220,38,38,.12);
+  --a-font-sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;
+  --a-font-mono:"SF Mono","JetBrains Mono","Menlo",ui-monospace,monospace;
+  --a-text-2xs:10.5px;--a-text-xs:11.5px;--a-text-sm:12.5px;--a-text-base:13px;--a-text-md:14px;--a-text-lg:16px;--a-text-xl:19px;--a-text-2xl:23px;
+  --a-leading-tight:1.2;--a-leading-snug:1.4;--a-leading-normal:1.55;--a-tracking-tight:-0.014em;--a-tracking-wide:0.04em;
+  --a-weight-normal:400;--a-weight-medium:500;--a-weight-semibold:600;
+  --a-radius-sm:6px;--a-radius-md:8px;--a-radius-lg:11px;--a-radius-xl:14px;--a-radius-2xl:18px;--a-radius-full:9999px;
+  --a-shadow-xs:0 1px 2px rgba(15,17,21,.05);--a-shadow-sm:0 1px 3px rgba(15,17,21,.07),0 1px 2px rgba(15,17,21,.04);
+  --a-shadow-md:0 4px 12px rgba(15,17,21,.08),0 2px 4px rgba(15,17,21,.05);--a-shadow-lg:0 12px 32px rgba(15,17,21,.12),0 4px 8px rgba(15,17,21,.06);
+  --a-shadow-overlay:0 24px 64px rgba(15,17,21,.20),0 8px 16px rgba(15,17,21,.10);--a-ring-focus:0 0 0 3px var(--a-accent-ring);--a-edge-light:inset 0 1px 0 rgba(255,255,255,.65);
+  --a-dur-fast:130ms;--a-dur-base:190ms;--a-ease-out:cubic-bezier(.22,1,.36,1);
+}
+html[data-theme="dark"]{
+  --a-bg-canvas:#0a0b0d;--a-bg-subtle:#0e0f11;--a-bg-muted:#16171a;--a-bg-inset:#1e2024;
+  --a-surface:#121316;--a-surface-raised:#17181b;--a-scrim:rgba(0,0,0,.60);
+  --a-text:#fafafa;--a-text-secondary:#a1a1aa;--a-text-tertiary:#71727a;--a-text-disabled:#4f5158;
+  --a-border-faint:#1b1c20;--a-border:#232428;--a-border-strong:#34363c;--a-overlay-hover:rgba(255,255,255,.055);
+  --a-accent:#818cf8;--a-accent-solid:#4f46e5;--a-accent-solid-hover:#5b54ea;--a-accent-subtle:rgba(129,140,248,.14);--a-accent-ring:rgba(129,140,248,.45);
+  --a-success:#4ade80;--a-warning:#fbbf24;--a-error:#f87171;--a-info:#60a5fa;
+  --a-success-subtle:rgba(74,222,128,.14);--a-warning-subtle:rgba(251,191,36,.14);--a-error-subtle:rgba(248,113,113,.14);
+  --a-shadow-xs:0 1px 2px rgba(0,0,0,.4);--a-shadow-sm:0 1px 3px rgba(0,0,0,.5);--a-shadow-md:0 4px 12px rgba(0,0,0,.5);--a-shadow-lg:0 12px 32px rgba(0,0,0,.6);--a-shadow-overlay:0 24px 64px rgba(0,0,0,.7);--a-edge-light:inset 0 1px 0 rgba(255,255,255,.06);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--a-bg-subtle);color:var(--a-text);font-family:var(--a-font-sans);font-size:var(--a-text-base);line-height:var(--a-leading-normal);-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{margin:0;font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight);line-height:var(--a-leading-tight)}
+button{font-family:inherit;cursor:pointer}svg{display:block}
+.mono{font-family:var(--a-font-mono)}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:16px;padding:12px 22px;background:color-mix(in srgb,var(--a-bg-canvas) 86%,transparent);backdrop-filter:blur(12px);border-bottom:1px solid var(--a-border-faint)}
+.topbar .brand{display:flex;align-items:center;gap:10px;font-weight:var(--a-weight-semibold)}
+.topbar .brand .m{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:7px;background:var(--a-accent-solid);color:#fff;font-weight:800;font-size:13px}
+.topbar .spacer{flex:1}.topbar nav{display:flex;gap:2px;flex-wrap:wrap}
+.topbar nav a{padding:6px 10px;border-radius:var(--a-radius-md);color:var(--a-text-secondary);text-decoration:none;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium)}
+.topbar nav a:hover{background:var(--a-bg-muted);color:var(--a-text)}
+.seg{display:inline-flex;padding:2px;background:var(--a-bg-muted);border-radius:var(--a-radius-md);gap:2px}
+.seg button{border:0;background:transparent;color:var(--a-text-secondary);font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);padding:5px 10px;border-radius:6px}
+.seg button.on{background:var(--a-surface);color:var(--a-text);box-shadow:var(--a-shadow-xs)}
+.wrap{max-width:1180px;margin:0 auto;padding:36px 24px 140px}
+.sec{margin-bottom:56px;scroll-margin-top:76px}
+.sec-kicker{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary)}
+.sec h2{font-size:var(--a-text-2xl);margin-top:6px}
+.sec p.lede{margin:8px 0 0;color:var(--a-text-secondary);font-size:var(--a-text-md);max-width:78ch}
+.note{margin-top:14px;padding:12px 14px;background:var(--a-bg-canvas);border:1px solid var(--a-border);border-left:3px solid var(--a-accent);border-radius:var(--a-radius-md);font-size:var(--a-text-sm);color:var(--a-text-secondary)}
+.note b{color:var(--a-text)}.note.ok{border-left-color:var(--a-success)}.note.warn{border-left-color:var(--a-warning)}
+.matrix-scroll{overflow-x:auto;margin-top:8px}
+table.matrix{width:100%;min-width:820px;border-collapse:separate;border-spacing:0;background:var(--a-surface);border:1px solid var(--a-border);border-radius:var(--a-radius-lg);overflow:hidden;font-size:var(--a-text-sm)}
+.matrix th{background:var(--a-bg-subtle);text-align:left;font-weight:var(--a-weight-semibold);font-size:var(--a-text-xs);color:var(--a-text-secondary);padding:10px 14px;border-bottom:1px solid var(--a-border)}
+.matrix td{padding:11px 14px;border-bottom:1px solid var(--a-border-faint);vertical-align:top;color:var(--a-text-secondary);line-height:var(--a-leading-snug)}
+.matrix tr:last-child td{border-bottom:0}.matrix td:first-child{white-space:nowrap;font-weight:var(--a-weight-semibold);color:var(--a-text)}
+.matrix td code,.note code,.cap code{font-family:var(--a-font-mono);font-size:var(--a-text-2xs);background:var(--a-bg-muted);border:1px solid var(--a-border-faint);border-radius:4px;padding:0 4px;white-space:nowrap}
+.tag{display:inline-block;font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);padding:1.5px 7px;border-radius:var(--a-radius-full);white-space:nowrap}
+.tag.zero{background:var(--a-bg-muted);color:var(--a-text-tertiary)}.tag.new{background:var(--a-accent-subtle);color:var(--a-accent)}.tag.blocked{background:var(--a-error-subtle);color:var(--a-error)}.tag.done{background:var(--a-success-subtle);color:var(--a-success)}
+.frame{position:relative;border:1px solid var(--a-border);border-radius:var(--a-radius-xl);overflow:hidden;background:var(--a-bg-canvas);box-shadow:var(--a-shadow-md);margin-top:16px}
+.cap{font-size:var(--a-text-xs);color:var(--a-text-tertiary);margin-top:10px;line-height:var(--a-leading-snug)}
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media (max-width:900px){.duo{grid-template-columns:1fr}}
+.chip{display:inline-block;font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);padding:1.5px 7px;border-radius:var(--a-radius-full);white-space:nowrap}
+.chip[data-src="official"]{background:color-mix(in srgb,var(--a-info) 14%,transparent);color:var(--a-info)}
+.chip[data-src="community"]{background:var(--a-warning-subtle);color:var(--a-warning)}
+.chip[data-src="type"]{background:var(--a-bg-muted);color:var(--a-text-secondary)}
+.chip[data-src="warn"]{background:var(--a-warning-subtle);color:var(--a-warning)}
+.chip[data-src="err"]{background:var(--a-error-subtle);color:var(--a-error)}
+.chip[data-src="off"]{background:var(--a-bg-muted);color:var(--a-text-tertiary)}
+/* 货架身份 chip:精选=accent、接入=info、实验室=warning、核心=success —— 四色即四货架 */
+.chip[data-shelf="core"]{background:var(--a-success-subtle);color:var(--a-success)}
+.chip[data-shelf="precache"]{background:var(--a-accent-subtle);color:var(--a-accent)}
+.chip[data-shelf="connector"]{background:color-mix(in srgb,var(--a-info) 14%,transparent);color:var(--a-info)}
+.chip[data-shelf="labs"]{background:var(--a-warning-subtle);color:var(--a-warning)}
+
+/* ── Hub 帧骨架(现役 .alpha-ext-* 的稿内等价物,v4 血统) ── */
+.hub{background:var(--a-bg-subtle)}
+.hub-tabbar{display:flex;align-items:center;gap:2px;padding:10px 18px 0;border-bottom:1px solid var(--a-border-faint);background:var(--a-bg-canvas);flex-wrap:wrap}
+.hub-tab{padding:7px 12px 9px;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);color:var(--a-text-secondary);border-bottom:2px solid transparent;cursor:default;white-space:nowrap}
+.hub-tab.on{color:var(--a-text);border-bottom-color:var(--a-accent-solid)}
+.hub-body{padding:20px 24px 26px;max-width:920px}
+.hub-h1{font-size:var(--a-text-xl);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight)}
+.hub-sub{font-size:var(--a-text-sm);color:var(--a-text-tertiary);margin-top:3px}
+.shelf-h{display:flex;align-items:baseline;gap:10px;margin:24px 0 4px}
+.shelf-h b{font-size:var(--a-text-md);font-weight:var(--a-weight-semibold)}
+.shelf-h span{font-size:var(--a-text-xs);color:var(--a-text-tertiary)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(255px,1fr));gap:11px;margin-top:10px}
+.card{display:flex;flex-direction:column;gap:8px;padding:13px 14px 12px;background:var(--a-surface);border:1px solid var(--a-border);border-radius:var(--a-radius-lg);box-shadow:var(--a-shadow-xs)}
+.card .top{display:flex;gap:10px;align-items:flex-start}
+.card .ic{width:34px;height:34px;border-radius:var(--a-radius-md);display:grid;place-items:center;color:#fff;font-size:12px;font-weight:700;flex:none}
+.card .hd{min-width:0}
+.card .nm{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.card .nm b{font-size:var(--a-text-sm);font-weight:var(--a-weight-semibold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .desc{font-size:var(--a-text-xs);color:var(--a-text-secondary);line-height:var(--a-leading-snug);margin:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card .foot{display:flex;align-items:center;gap:6px;margin-top:auto;flex-wrap:wrap}
+.meta{display:inline-flex;align-items:center;gap:4px;font-size:var(--a-text-2xs);color:var(--a-text-tertiary);background:var(--a-bg-muted);border-radius:var(--a-radius-full);padding:2px 8px}
+.add{display:inline-flex;align-items:center;height:26px;padding:0 12px;border-radius:var(--a-radius-md);border:0;background:var(--a-accent-solid);color:#fff;font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);margin-left:auto}
+.add[data-variant="session"]{background:transparent;color:var(--a-warning);border:1px solid var(--a-warning)}
+.add[data-variant="ghost"]{background:transparent;color:var(--a-text-secondary);border:1px solid var(--a-border)}
+.add:disabled{background:var(--a-bg-muted);color:var(--a-text-disabled);cursor:not-allowed}
+.cat-h{margin:22px 0 2px;font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary)}
+.group-note{font-size:var(--a-text-xs);color:var(--a-text-tertiary);margin:4px 0 0}
+
+/* ── 详情页帧骨架(现役 .alpha-ext-d*,v5 血统) ── */
+.det{padding:24px 26px;max-width:760px}
+.backrow{display:inline-flex;align-items:center;gap:5px;margin-bottom:16px;padding:5px 10px 5px 4px;border:0;border-radius:var(--a-radius-md);background:transparent;color:var(--a-text-secondary);font-size:var(--a-text-sm);font-weight:var(--a-weight-medium)}
+.dhead{display:flex;gap:14px;align-items:flex-start}
+.dhead .ico{width:48px;height:48px;border-radius:var(--a-radius-lg);display:grid;place-items:center;font-size:17px;font-weight:700;color:#fff;flex:none;box-shadow:var(--a-shadow-xs)}
+.dhead h3{font-size:var(--a-text-xl);display:inline;margin-right:6px}
+.dhead .titleline{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dsec{border-top:1px solid var(--a-border-faint);padding:16px 0 4px;margin-top:16px;position:relative}
+.dsec-t{font-size:var(--a-text-2xs);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-wide);text-transform:uppercase;color:var(--a-text-tertiary);margin-bottom:10px}
+.dnote{font-size:var(--a-text-xs);color:var(--a-text-tertiary);margin:8px 2px 0;line-height:var(--a-leading-snug)}
+.fact{display:flex;gap:12px;font-size:var(--a-text-sm);margin-bottom:8px}
+.fact .k{flex:0 0 88px;color:var(--a-text-tertiary)}.fact .v{min-width:0;color:var(--a-text)}
+.pills{display:flex;gap:6px;flex-wrap:wrap}
+.dom-list{margin-top:8px;border:1px solid var(--a-border-faint);border-radius:var(--a-radius-md);padding:9px 12px;font-family:var(--a-font-mono);font-size:var(--a-text-2xs);color:var(--a-text-secondary);line-height:1.8;background:var(--a-bg-subtle)}
+.sbom-row{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--a-border-faint);border-radius:var(--a-radius-md);margin-bottom:7px;font-size:var(--a-text-sm);background:var(--a-surface)}
+.sbom-row .st-ic{width:20px;height:20px;border-radius:6px;display:grid;place-items:center;flex:none;font-size:11px;font-weight:700}
+.sbom-row .st-ic.ok{background:var(--a-success-subtle);color:var(--a-success)}
+.sbom-row .st-ic.err{background:var(--a-error-subtle);color:var(--a-error)}
+.sbom-row .bd{min-width:0;flex:1}.sbom-row small{display:block;color:var(--a-text-tertiary);font-size:var(--a-text-2xs)}
+.warnbox{display:flex;gap:10px;padding:11px 13px;border:1px solid color-mix(in srgb,var(--a-warning) 34%,var(--a-border));background:var(--a-warning-subtle);border-radius:var(--a-radius-md);font-size:var(--a-text-sm);color:var(--a-text);line-height:var(--a-leading-snug);margin-bottom:10px}
+.errbox{display:flex;gap:10px;padding:11px 13px;border:1px solid color-mix(in srgb,var(--a-error) 34%,var(--a-border));background:var(--a-error-subtle);border-radius:var(--a-radius-md);font-size:var(--a-text-sm);color:var(--a-text);line-height:var(--a-leading-snug)}
+.ghost-btn{border:1px solid var(--a-border);background:transparent;color:var(--a-text-secondary);font-size:var(--a-text-xs);font-weight:var(--a-weight-medium);padding:4px 11px;border-radius:var(--a-radius-md)}
+
+/* ── 已安装行(现役 .alpha-ext-man,v4/v5 血统) ── */
+.man-row{display:flex;align-items:center;gap:13px;padding:13px 15px;border:1px solid var(--a-border);border-radius:var(--a-radius-lg);background:var(--a-surface);margin-bottom:9px}
+.man-row .ico{width:36px;height:36px;border-radius:var(--a-radius-md);display:grid;place-items:center;color:#fff;font-size:12px;font-weight:700;flex:none;box-shadow:var(--a-shadow-xs)}
+.man-row .body{min-width:0;flex:1}
+.man-row .nm{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.man-row .nm b{font-size:var(--a-text-md);font-weight:var(--a-weight-medium)}
+.man-row .st{font-size:var(--a-text-sm);color:var(--a-text-tertiary);margin-top:2px;display:flex;align-items:center;gap:6px}
+.man-row .st .dot{width:7px;height:7px;border-radius:50%;flex:none}
+.man-row .st .dot.ok{background:var(--a-success)}.man-row .st .dot.muted{background:var(--a-text-disabled)}.man-row .st .dot.warn{background:var(--a-warning)}
+.sw{width:36px;height:21px;border-radius:var(--a-radius-full);background:var(--a-bg-inset);position:relative;flex:none;cursor:pointer;border:0;padding:0}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:var(--a-shadow-xs);transition:left var(--a-dur-fast) var(--a-ease-out)}
+.sw.on{background:var(--a-accent-solid)}.sw.on::after{left:17px}
+.sw.session.on{background:var(--a-warning)}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand"><span class="m">α</span> REQ-104 四级货架与供应链事实 · v6</div>
+  <div class="spacer"></div>
+  <nav><a href="#lineage">与上一稿的关系</a><a href="#facts">契约与数据基线</a><a href="#vocab">词汇表</a><a href="#featured">推荐页</a><a href="#browse">浏览标识</a><a href="#detail">详情页</a><a href="#states">降级与失败态</a><a href="#policy">启用策略</a><a href="#packrel">与整包事实的关系</a><a href="#review">评审点</a></nav>
+  <div class="seg" id="themeSeg"><button data-t="light" class="on">浅色</button><button data-t="dark">深色</button></div>
+</div>
+
+<div class="wrap">
+
+<!-- ═══ 与上一稿的关系 ═══ -->
+<section class="sec" id="lineage">
+  <div class="sec-kicker">REQ-104 · #397(#196 收官)· 基线 = v5 已批稿 + 现行实现(alpha 21421c88)+ 签名目录 2026-07-18.2</div>
+  <h2>v5 留下的最后一块:四级货架,现在有真数据了</h2>
+  <p class="lede">基线谱系:<b>v3</b> 定 Hub 框架与详情页段顺序,<b>v4</b> 做实 scope 分组与「已授权能力」段,<b>v5</b>(2026-07-17 已批)交付整包事实段(#396)与第三方默认关(#395),并明确标注「<b>四级货架 #397 阻塞,不入稿</b>」。阻塞已解除:alpha-web 供给侧全链落地(#46 契约、#49 门闸、#51 首批 intake),线上 stable 目录(2026-07-18.2)已携带 <b>10 条真实策展条目</b>。本稿 = 兑现 v5 那一行空白,框架、tab、既有段顺序一寸不动。</p>
+  <div class="matrix-scroll"><table class="matrix">
+    <tr><th>#196 AC</th><th>现状</th><th>本稿</th></tr>
+    <tr><td>原子安装复用</td><td>REQ-100 存量已交付</td><td><span class="tag zero">零改动</span></td></tr>
+    <tr><td>Pack 权限/大小/依赖可见</td><td>#396 已合(整包事实段,v5 改动一)</td><td><span class="tag done">已交付 · §8 说明真源衔接</span></td></tr>
+    <tr><td>第三方非默认启用</td><td>#395 已合(保守规则:非 alpha 源默认关,squash 21421c88)</td><td><span class="tag done">已交付 · §7 说明策略切换</span></td></tr>
+    <tr><td>四级货架 + tier/评审/SBOM 消费</td><td>供给侧已交付,消费侧零实现:目录解码器尚无 <code>curation</code> 字段,Hub 无货架呈现</td><td><span class="tag new">本稿全部四处改动(#397)</span></td></tr>
+  </table></div>
+  <div class="note ok"><b>净效果</b>:界面上发生四件事 —— ① 推荐页从「手挑固定列表」变成按甄选分级自动生成的货架;② 浏览卡片多一枚分级 chip,归档条目禁新安装;③ 详情页事实段(边界/密钥/依赖/所有权)的真源切到签名目录的甄选摘要,并新增「组件与来源」供应链段;④ 启用策略从「非 alpha 源默认关」切到目录逐条声明(实验室条目 = 逐会话授权)。未分级条目一切照旧(#395 保守规则兜底)。</div>
+</section>
+
+<!-- ═══ 契约与数据基线 ═══ -->
+<section class="sec" id="facts">
+  <div class="sec-kicker">审计结论 · 契约 = alpha-web contracts/catalog-intake/CONTRACT.md §7(规范性,2026-07-18)</div>
+  <h2>契约与数据基线</h2>
+  <p class="lede">消费端不设计策略,只呈现契约已裁决的语义。§7.1 采信分级(撤销 &gt; advisory &gt; 无策展保守 &gt; 校验失败 fail-closed &gt; 采信)先于一切展示;§7.2 逐字段决策表是本稿每个视觉的对照物。</p>
+  <div class="matrix-scroll"><table class="matrix">
+    <tr><th>#</th><th>事实</th><th>锚点</th></tr>
+    <tr><td>F1</td><td>货架放置 = <code>tier</code> 一一对应(core/precache/connector/labs),消费端不得改判;启用策略 = <code>activationPolicy</code> 显式声明,<b>禁止从 tier/type 推导</b>(#397 票面「切到 tier 字段」措辞不精确,以契约为准)</td><td>CONTRACT §3/§7.2</td></tr>
+    <tr><td>F2</td><td>无 <code>curation</code> = 未策展:不进货架展示面、不推荐、默认关,走 #395 保守规则,<b>不是错误</b>;存在但未知 schema/未知键/校验失败 = fail-closed 同保守面 + 如实上报,绝不部分采信</td><td>CONTRACT §7.1 行 3/4</td></tr>
+    <tr><td>F3</td><td>摘要内联随 payload 签名(能力/域名/密钥标识/运行时依赖/体积),是展示真源,不得重算后静默替换;SBOM 与来源溯源为 content-addressed blob,<b>打开详情/评审面才拉取</b>,拉取失败不影响货架与启用判定但必须如实报错</td><td>CONTRACT §7.2/§7.3</td></tr>
+    <tr><td>F4</td><td><code>review.reviewBefore</code> 过期(排他截止)= 停止推荐 + 新启用需显式确认并展示过期事实,已装不强拆;<code>upstreamStatus archived</code> = 不推荐 + 禁新安装,<code>unmaintained</code> = 不推荐,<code>unknown</code> 中性;advisory/撤销永远赢过 curation 任何字段</td><td>CONTRACT §1/§7.2</td></tr>
+    <tr><td>F5</td><td>线上真数据(stable 2026-07-18.2,26 条目):<b>10 条已策展</b> = 精选 6(文件系统/网页抓取/浏览器自动化/Git 操作/视觉设计/品牌规范)+ 接入 2(GitHub/数据库)+ 实验室 2(文档读取/网页调试);<b>核心 0 条</b>;16 条未策展(全部套件/云能力/agent/部分 skill)</td><td>releases/2026-07-18.2/catalog.json</td></tr>
+    <tr><td>F6</td><td>真实边角:GitHub 连接器 <code>archived + supportTier none</code> + 环境密钥 PAT;数据库连接器 3 个环境密钥;网页调试(Chrome DevTools)能力面 5 项 + 域名 60 个;视觉设计 5.4MB 已知体积;其余体积 <code>null/unknown</code></td><td>同上(mcp.github/mcp.dbhub/mcp.chrome-devtools/skill.canvas-design)</td></tr>
+    <tr><td>F7</td><td>消费侧现状:<code>CatalogEntry</code> 无 curation 字段;推荐页 = 硬编码 4 连接器 + 前 3 套件;连接器 tab 按 category 分组;详情页边界/依赖/密钥段读 <code>installSpec</code>;45 个契约 testvectors 可直接复用</td><td><code>catalog-types.ts:101</code>、<code>extension-hub.tsx:93/467/479</code>、<code>extension-detail.tsx:791-871</code></td></tr>
+    <tr><td>F8</td><td>甄选能力词汇(<code>fs:read/fs:write/net:http/env:read/proc:spawn</code>,intake 观察面)≠ 本地授权账本词汇(<code>engine:plugin/process:spawn/…</code>,#348 授权面)—— 两套真源两种语义,不得静默合并</td><td>CONTRACT §3 vs <code>ext-capability-authorization.ts</code></td></tr>
+  </table></div>
+</section>
+
+<!-- ═══ 词汇表 ═══ -->
+<section class="sec" id="vocab">
+  <div class="sec-kicker">tier / 策略 / 状态 → 用户语言(帧内只出现右列)</div>
+  <h2>词汇表:契约字段的用户语言翻译</h2>
+  <div class="matrix-scroll"><table class="matrix">
+    <tr><th>契约值</th><th>用户语言(chip / 货架标题)</th><th>一句话解释(货架副标题 / 详情页事实)</th></tr>
+    <tr><td><code>tier: core</code></td><td><span class="chip" data-shelf="core">核心</span> · 货架「核心能力」</td><td>「随应用提供,自动开启」—— 唯一允许 <code>default-enabled</code> 的货架(当前目录暂无条目,货架空则整组隐藏,不造)</td></tr>
+    <tr><td><code>tier: precache</code></td><td><span class="chip" data-shelf="precache">精选</span> · 货架「精选扩展」</td><td>「已审核,添加后打开开关即可用,不需要账号」</td></tr>
+    <tr><td><code>tier: connector</code></td><td><span class="chip" data-shelf="connector">接入</span> · 货架「接入你的服务」</td><td>「连接你自己的服务(如 GitHub、数据库),需要提供密钥后才能工作」</td></tr>
+    <tr><td><code>tier: labs</code></td><td><span class="chip" data-shelf="labs">实验室</span> · 货架「实验室」</td><td>「按会话试用:每次会话单独开启,会话结束自动关闭」</td></tr>
+    <tr><td><code>activationPolicy</code></td><td colspan="2"><code>default-enabled</code>=「自动开启」(仅核心)· <code>default-disabled</code>=「安装后手动开启」· <code>session-grant</code>=「每次会话单独开启,会话结束自动失效」(实验室恒此值);按钮词:添加 / <b>本次会话启用</b></td></tr>
+    <tr><td><code>upstreamStatus</code></td><td colspan="2"><code>active</code>=不展示(正常即沉默)· <code>archived</code>=<span class="chip" data-src="err">上游已归档</span>+禁新安装 · <code>unmaintained</code>=<span class="chip" data-src="warn">上游不再维护</span>+不推荐 · <code>unknown</code>=不展示(中性)</td></tr>
+    <tr><td><code>supportTier</code></td><td colspan="2"><code>full</code>=完整支持 · <code>best-effort</code>=尽力支持 · <code>community</code>=社区维护 · <code>none</code>=<b>无支持承诺</b>(详情页所有权段「支持」行的新真源,替换按来源猜的旧口径)</td></tr>
+    <tr><td><code>reviewBefore</code> 过期</td><td colspan="2"><span class="chip" data-src="warn">评审已过期</span>:退出推荐;新启用弹显式确认「该扩展的安全评审已于 {日期} 过期,尚未复审。仍要启用吗?」;已装已启用不动</td></tr>
+    <tr><td><code>summaries.capabilities</code></td><td colspan="2"><code>fs:read</code>=读取本地文件 · <code>fs:write</code>=写入本地文件 · <code>net:http</code>=访问网络 · <code>env:read</code>=读取环境变量 · <code>proc:spawn</code>=启动本机子进程;未知 token 按原样 mono 展示(前向兼容,不猜翻译)</td></tr>
+    <tr><td><code>download.basis</code></td><td colspan="2"><code>catalog-assets/locked-packages/aggregate</code> + bytes=「下载约 5.4 MB」· <code>none</code>/bytes 0=「无需下载(仅写配置)」· <code>unknown</code>=「下载体积未知」(诚实,不估算 —— v5 整包事实同一口径)</td></tr>
+    <tr><td>SBOM / provenance</td><td colspan="2">「组件清单」/「来源快照」(帧内不出现 SBOM/provenance/blob 等词)</td></tr>
+  </table></div>
+</section>
+
+<!-- ═══ 改动一:推荐页四级货架 ═══ -->
+<section class="sec" id="featured">
+  <div class="sec-kicker">改动一 · 推荐 tab · 从手挑列表切到甄选驱动(数据 = F5 线上真实分布)</div>
+  <h2>推荐页 = 四级货架</h2>
+  <p class="lede">推荐 tab 的内容从「代码里手挑的 4 个连接器 + 前 3 个套件」切换为按签名目录的甄选分级自动生成:货架顺序固定 核心 → 精选 → 接入 → 实验室,每个货架一行用户语言标题 + 副标题。<b>只有通过校验的已策展条目进货架</b>;未策展条目(含当前全部套件)退出推荐页 —— 它们仍在各类型 tab 与搜索中。空货架整组隐藏:当前目录无核心条目,故帧内只见三个货架,不造数据。归档/不再维护/评审过期条目不进推荐(F4)。</p>
+  <div class="frame"><div class="hub">
+    <div class="hub-tabbar">
+      <div class="hub-tab on">推荐</div><div class="hub-tab">连接器</div><div class="hub-tab">技能</div><div class="hub-tab">Agent</div><div class="hub-tab">插件</div><div class="hub-tab">套件</div><div class="hub-tab">已安装</div><div class="hub-tab">导入</div><div class="hub-tab">云能力</div>
+    </div>
+    <div class="hub-body">
+      <div class="hub-h1">推荐</div>
+      <div class="hub-sub">以下扩展经过安全审核并按使用方式分组;每一项的构成与来源都可在详情页查验。</div>
+
+      <div class="shelf-h"><b>精选扩展</b><span>已审核,添加后打开开关即可用,不需要账号</span></div>
+      <div class="grid">
+        <div class="card"><div class="top"><span class="ic" style="background:#4f46e5">FS</span><div class="hd"><div class="nm"><b>文件系统</b><span class="chip" data-shelf="precache">精选</span></div></div></div><p class="desc">在白名单目录内读写本地文件。modelcontextprotocol 官方参考实现。</p><div class="foot"><span class="meta">官方</span><span class="meta">需 node</span><button class="add">添加</button></div></div>
+        <div class="card"><div class="top"><span class="ic" style="background:#2563eb">网</span><div class="hd"><div class="nm"><b>网页抓取(fetch)</b><span class="chip" data-shelf="precache">精选</span></div></div></div><p class="desc">抓取 URL 并转 Markdown,供研究/检索。官方参考实现。</p><div class="foot"><span class="meta">官方</span><span class="meta">需 python · uv</span><button class="add">添加</button></div></div>
+        <div class="card"><div class="top"><span class="ic" style="background:#7c3aed">▶</span><div class="hd"><div class="nm"><b>浏览器自动化</b><span class="chip" data-shelf="precache">精选</span></div></div></div><p class="desc">让 agent 真正操作浏览器:打开网页、点击、填表单、截图。Microsoft 官方。</p><div class="foot"><span class="meta">官方</span><span class="meta">需 node</span><button class="add">添加</button></div></div>
+        <div class="card"><div class="top"><span class="ic" style="background:#ea580c">Git</span><div class="hd"><div class="nm"><b>Git 操作</b><span class="chip" data-shelf="precache">精选</span></div></div></div><p class="desc">在仓库内执行 git 读写(status/log/diff/commit 等)。官方参考实现。</p><div class="foot"><span class="meta">官方</span><span class="meta">需 python · uv</span><button class="add">添加</button></div></div>
+        <div class="card"><div class="top"><span class="ic" style="background:#7c3aed">设</span><div class="hd"><div class="nm"><b>视觉/海报设计</b><span class="chip" data-shelf="precache">精选</span></div></div></div><p class="desc">用设计哲学产出 .png/.pdf 视觉作品(含 OFL 字体,安装时下载)。</p><div class="foot"><span class="meta">官方</span><span class="meta">下载约 5.3 MB</span><button class="add">添加</button></div></div>
+        <div class="card"><div class="top"><span class="ic" style="background:#16a34a">品</span><div class="hd"><div class="nm"><b>品牌规范应用</b><span class="chip" data-shelf="precache">精选</span></div></div></div><p class="desc">把品牌色彩/字体规范应用到各类产物。</p><div class="foot"><span class="meta">官方</span><span class="meta">下载 14 KB</span><button class="add">添加</button></div></div>
+      </div>
+
+      <div class="shelf-h"><b>接入你的服务</b><span>连接你自己的服务,需要提供密钥后才能工作</span></div>
+      <div class="grid">
+        <div class="card"><div class="top"><span class="ic" style="background:#0e7490">DB</span><div class="hd"><div class="nm"><b>数据库(DBHub)</b><span class="chip" data-shelf="connector">接入</span></div></div></div><p class="desc">只读档访问数据库:读库表结构、执行 SELECT 查询(PostgreSQL / MySQL / SQLite 等)。</p><div class="foot"><span class="meta">官方</span><span class="meta">需 3 项密钥</span><button class="add">添加</button></div></div>
+      </div>
+
+      <div class="shelf-h"><b>实验室</b><span>按会话试用:每次会话单独开启,会话结束自动关闭</span></div>
+      <div class="grid">
+        <div class="card"><div class="top"><span class="ic" style="background:#0f766e">文</span><div class="hd"><div class="nm"><b>文档读取</b><span class="chip" data-shelf="labs">实验室</span></div></div></div><p class="desc">把 PDF/Word/PPT/Excel/图片/HTML 转成 Markdown 供模型读取。Microsoft 官方。</p><div class="foot"><span class="meta">官方</span><span class="meta">需 python</span><button class="add" data-variant="session">本次会话启用</button></div></div>
+        <div class="card"><div class="top"><span class="ic" style="background:#dc2626">调</span><div class="hd"><div class="nm"><b>网页性能与调试</b><span class="chip" data-shelf="labs">实验室</span></div></div></div><p class="desc">用 Chrome 开发者工具排查网页:性能追踪、控制台报错、网络请求。Google 官方。</p><div class="foot"><span class="meta">官方</span><span class="meta">能力较多 · 详情页可查</span><button class="add" data-variant="session">本次会话启用</button></div></div>
+      </div>
+    </div>
+  </div></div>
+  <div class="cap">帧内 = 线上 stable 目录(2026-07-18.2)的真实 10 条分布,一条不多一条不少:核心货架 0 条 → 整组隐藏;GitHub 连接器因上游已归档<b>不出现在推荐</b>(它在连接器 tab 里如实展示,见改动二)。卡片结构零改动(现役 <code>.alpha-ext-card</code>),新增 = 分级 chip(名称行)+ 实验室按钮变体;meta pill 的密钥/体积事实真源切到甄选摘要。硬编码 <code>FEATURED_CONNECTORS</code> 与「前 3 套件」区块退场(未策展套件退出推荐,见评审点 Q1)。</div>
+</section>
+
+<!-- ═══ 改动二:浏览 tab 的分级标识 ═══ -->
+<section class="sec" id="browse">
+  <div class="sec-kicker">改动二 · 类型 tab(连接器帧为例)· category 分组保留,分级 = chip;未分级 = 尾组</div>
+  <h2>浏览卡片:分级 chip + 「未分级」尾组 + 归档禁装</h2>
+  <p class="lede">类型 tab 的分组轴不动(连接器仍按用途分组,技能/插件仍平铺)——货架身份以 chip 形式落在每张卡片名称行,四色四货架,与推荐页同一词汇。<b>未策展条目收进各 tab 末尾的「未分级」组</b>,组头一行诚实说明;它们可安装,走默认关闭的保守规则。归档条目如实展示但「添加」按钮置灰并给原因(F4:禁新安装是契约语义,不是视觉建议)。</p>
+  <div class="frame"><div class="hub">
+    <div class="hub-tabbar">
+      <div class="hub-tab">推荐</div><div class="hub-tab on">连接器</div><div class="hub-tab">技能</div><div class="hub-tab">Agent</div><div class="hub-tab">插件</div><div class="hub-tab">套件</div><div class="hub-tab">已安装</div><div class="hub-tab">导入</div><div class="hub-tab">云能力</div>
+    </div>
+    <div class="hub-body">
+      <div class="cat-h">研发</div>
+      <div class="grid">
+        <div class="card"><div class="top"><span class="ic" style="background:#4f46e5">FS</span><div class="hd"><div class="nm"><b>文件系统</b><span class="chip" data-shelf="precache">精选</span></div></div></div><p class="desc">在白名单目录内读写本地文件。modelcontextprotocol 官方参考实现。</p><div class="foot"><span class="meta">官方</span><span class="meta">需 node</span><button class="add">添加</button></div></div>
+        <div class="card"><div class="top"><span class="ic" style="background:#18181b">GH</span><div class="hd"><div class="nm"><b>GitHub</b><span class="chip" data-shelf="connector">接入</span><span class="chip" data-src="err">上游已归档</span></div></div></div><p class="desc">查询/操作 GitHub 仓库、PR、issue。需 Personal Access Token。</p><div class="foot"><span class="meta">官方</span><span class="meta">🔒 需密钥</span><button class="add" disabled title="上游仓库已归档,已停止提供新安装">不可安装</button></div></div>
+        <div class="card"><div class="top"><span class="ic" style="background:#0e7490">DB</span><div class="hd"><div class="nm"><b>数据库(DBHub)</b><span class="chip" data-shelf="connector">接入</span></div></div></div><p class="desc">只读档访问数据库:读库表结构、执行 SELECT 查询。</p><div class="foot"><span class="meta">官方</span><span class="meta">🔒 需 3 项密钥</span><button class="add">添加</button></div></div>
+        <div class="card"><div class="top"><span class="ic" style="background:#dc2626">调</span><div class="hd"><div class="nm"><b>网页性能与调试</b><span class="chip" data-shelf="labs">实验室</span></div></div></div><p class="desc">用 Chrome 开发者工具排查网页:性能追踪、控制台报错、网络请求。</p><div class="foot"><span class="meta">官方</span><span class="meta">需 node</span><button class="add" data-variant="session">本次会话启用</button></div></div>
+      </div>
+      <div class="cat-h">办公文档</div>
+      <div class="grid">
+        <div class="card"><div class="top"><span class="ic" style="background:#0f766e">文</span><div class="hd"><div class="nm"><b>文档读取</b><span class="chip" data-shelf="labs">实验室</span></div></div></div><p class="desc">把 PDF/Word/PPT/Excel/图片/HTML 转成 Markdown 供模型读取。</p><div class="foot"><span class="meta">官方</span><span class="meta">需 python</span><button class="add" data-variant="session">本次会话启用</button></div></div>
+      </div>
+      <div class="cat-h">未分级</div>
+      <p class="group-note">以下扩展尚未经安全审核分级:安装后默认关闭,请自行判断后手动开启。</p>
+      <div class="grid">
+        <div class="card"><div class="top"><span class="ic" style="background:#2563eb">X</span><div class="hd"><div class="nm"><b>Excel 表格读写</b></div></div></div><p class="desc">读写 xlsx 表格,支持公式与格式。</p><div class="foot"><span class="meta">社区</span><button class="add" data-variant="ghost">添加</button></div></div>
+      </div>
+    </div>
+  </div></div>
+  <div class="cap">分组轴保持现状(category)——货架是治理身份不是导航轴,一张卡片同时可读出「用途分组 + 分级 + 来源」三个正交事实(备选「按货架重组 tab 内分区」见评审点 Q2)。未分级组:无分级 chip(缺席即身份,不发明「未知级」徽章)、按钮降为 ghost 变体(可装但不促装)。归档卡:分级 chip 保留(评审事实)+ 归档 chip、按钮置灰带 tooltip。校验失败(fail-closed)条目与未分级同呈现,差异只在详情页如实上报(见 §6)。</div>
+</section>
+
+<!-- ═══ 改动三:详情页 ═══ -->
+<section class="sec" id="detail">
+  <div class="sec-kicker">改动三 · 详情页 · 事实段真源切换 + 新增「组件与来源」段(数据 = mcp.github 真实策展对象)</div>
+  <h2>详情页:甄选事实落位 + 供应链段</h2>
+  <p class="lede">段顺序不变(简介 → 类型槽 → 数据边界 → 运行时依赖 → 所需密钥 → 所有权 → 已授权能力 → 来源与签名),发生两类事:<b>①真源切换</b> —— 已策展条目的边界/依赖/密钥/支持等级改读签名目录的甄选摘要(契约:展示真源,不得重算替换),数据边界从一句概述升级为能力面 + 域名清单;所有权段并入评审事实(评审时间/上游状态/支持/复审期限)。<b>②新增一段「组件与来源」</b>,置于「来源与签名」之后 —— 组件清单与来源快照按需拉取、逐字节校验,失败如实报错(见 §6)。</p>
+  <div class="frame"><div class="det">
+    <button class="backrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M14 6l-6 6 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>连接器</button>
+    <div class="dhead"><div class="ico" style="background:#18181b">GH</div><div><div class="titleline"><h3>GitHub</h3><span class="chip" data-shelf="connector">接入</span><span class="chip" data-src="err">上游已归档</span><span class="chip" data-src="official">官方</span></div><div style="font-size:var(--a-text-sm);color:var(--a-text-tertiary);margin-top:6px">查询/操作 GitHub 仓库、PR、issue。需 Personal Access Token。· v1.0.0</div></div><button class="add" disabled style="margin-left:auto">不可安装</button></div>
+
+    <div class="warnbox"><span>⚠️</span><span>该连接器的上游仓库已归档(维护方停止开发),已停止提供新安装;此前的安装不受影响,可继续使用或卸载。</span></div>
+
+    <div class="dsec"><div class="dsec-t">简介</div><p style="font-size:var(--a-text-sm);color:var(--a-text-secondary);margin:0">(现行内容,零改动)</p></div>
+
+    <div class="dsec"><div class="dsec-t">数据边界</div>
+      <div class="pills">
+        <span class="meta">访问网络</span><span class="meta">读取环境变量</span>
+      </div>
+      <p class="dnote" style="margin-top:10px">审核时观察到的预期网络出口(5 个域名):</p>
+      <div class="dom-list">anthropic.com · api.github.com · docs.github.com · github.com · modelcontextprotocol.io</div>
+      <p class="dnote">以上为安全审核时的观察记录,随目录签名提供;实际行为仍受你的授权与系统边界约束。</p>
+    </div>
+
+    <div class="dsec"><div class="dsec-t">运行时依赖</div>
+      <div class="pills"><span class="meta">node ✓</span></div>
+    </div>
+
+    <div class="dsec"><div class="dsec-t">所需密钥</div>
+      <div class="pills"><span class="meta">🔒 GITHUB_PERSONAL_ACCESS_TOKEN</span></div>
+      <p class="dnote">来源:环境变量(启用前在安装确认框填入;此处只列名称,永不显示值)。</p>
+    </div>
+
+    <div class="dsec"><div class="dsec-t">所有权</div>
+      <div class="fact"><span class="k">作者</span><span class="v">上游开源项目(GitHub 官方)</span></div>
+      <div class="fact"><span class="k">甄选</span><span class="v">Alpha 精选目录 · 审核于 2026-07-18</span></div>
+      <div class="fact"><span class="k">上游状态</span><span class="v">已归档(审核时观察)<span class="chip" data-src="err" style="margin-left:6px">停止新安装</span></span></div>
+      <div class="fact"><span class="k">支持</span><span class="v">无支持承诺</span></div>
+      <div class="fact"><span class="k">复审期限</span><span class="v">2027-01-18 前有效</span></div>
+    </div>
+
+    <div class="dsec"><div class="dsec-t">已授权能力</div><p style="font-size:var(--a-text-sm);color:var(--a-text-secondary);margin:0">(现行段,零改动 —— 本地授权总账,与上面的审核观察分属两本账)</p></div>
+
+    <div class="dsec"><div class="dsec-t">来源与签名</div><p style="font-size:var(--a-text-sm);color:var(--a-text-secondary);margin:0">✓ 签名验证通过 · 通道 stable · 目录版本 2026-07-18.2(现行段,零改动)</p></div>
+
+    <div class="dsec"><div class="dsec-t">组件与来源</div>
+      <div class="sbom-row"><span class="st-ic ok">✓</span><div class="bd">组件清单 · 1 个组件 · 已校验<small>@modelcontextprotocol/server-github@2025.4.8 — 完整清单随审核发布,逐字节可验证</small></div><button class="ghost-btn">展开</button></div>
+      <div class="sbom-row"><span class="st-ic ok">✓</span><div class="bd">来源快照 · 已校验<small class="mono">npm:@modelcontextprotocol/server-github · sha512:Iy8qagP9…(锁定校验和)</small></div><button class="ghost-btn">展开</button></div>
+      <p class="dnote">审核时的进货记录:这套文件从哪来、锁定在哪个校验和。内容按需获取并逐字节校验后才显示。</p>
+    </div>
+  </div></div>
+  <div class="cap">帧内为 mcp.github 的<b>线上真实策展对象</b>(接入级 · 已归档 · 无支持承诺 · PAT 环境密钥 · 5 域名)。真源切换段(数据边界/运行时依赖/所需密钥/所有权)版式复用现役 <code>.alpha-ext-dpills</code>/<code>FactRows</code>,未策展条目继续走 <code>installSpec</code> 旧真源,两真源不混用;运行时依赖的 ✓ 仍是本地 which 实测(甄选摘要给「需要什么」,本地探测给「有没有」)。「组件与来源」row 版式 = 新增(校验态图标 + 摘要 + 展开),置段尾因其数据按需拉取、不参与任何判定(F3)。</div>
+
+  <div class="frame" style="margin-top:20px"><div class="det" style="padding-bottom:18px">
+    <div class="dhead"><div class="ico" style="background:#dc2626">调</div><div><div class="titleline"><h3>网页性能与调试</h3><span class="chip" data-shelf="labs">实验室</span><span class="chip" data-src="official">官方</span></div><div style="font-size:var(--a-text-sm);color:var(--a-text-tertiary);margin-top:6px">用 Chrome 开发者工具排查网页:性能追踪、控制台报错、网络请求。· v1.0.0</div></div><button class="add" data-variant="session" style="margin-left:auto">本次会话启用</button></div>
+    <div class="dsec"><div class="dsec-t">数据边界</div>
+      <div class="pills"><span class="meta">读取本地文件</span><span class="meta">写入本地文件</span><span class="meta">访问网络</span><span class="meta">读取环境变量</span><span class="meta">启动本机子进程</span></div>
+      <p class="dnote" style="margin-top:10px">审核时观察到的预期网络出口(60 个域名):</p>
+      <div class="dom-list">127.0.0.1 · chromeuxreport.googleapis.com · developer.chrome.com · github.com · registry.npmjs.org · source.chromium.org …<button class="ghost-btn" style="margin-left:8px;font-family:var(--a-font-sans)">展开全部 60 个</button></div>
+    </div>
+    <div class="dsec" style="border-bottom:0"><div class="dsec-t">启用方式</div>
+      <p style="font-size:var(--a-text-sm);color:var(--a-text-secondary);margin:0">实验室扩展按会话开启:点「本次会话启用」只对当前会话生效,会话结束自动关闭,下次使用需再次开启。可随时在「已安装」中卸载。</p>
+    </div>
+  </div></div>
+  <div class="cap">实验室详情(节选,mcp.chrome-devtools 真实数据):能力面 5 项全列(它是十条里最重的,如实展示就是卖点);域名 ≤6 全列、&gt;6 收敛为「前若干 + 展开全部 N 个」。新增「启用方式」一段仅实验室条目渲染,把 session-grant 语义讲成人话;按钮全局同词「本次会话启用」。</div>
+</section>
+
+<!-- ═══ 降级与失败态 ═══ -->
+<section class="sec" id="states">
+  <div class="sec-kicker">§6 · 三个必须如实的状态(契约 F2/F3/F4;绝不静默留白)</div>
+  <h2>降级与失败态</h2>
+  <div class="duo">
+    <div>
+      <div class="frame"><div style="padding:18px 22px">
+        <div class="dsec" style="border-top:0;padding-top:0;margin-top:0"><div class="dsec-t">组件与来源</div>
+          <div class="sbom-row"><span class="st-ic err">!</span><div class="bd">组件清单暂时无法获取<small>下载失败或内容未通过校验。这不影响本页其余信息 —— 上方事实随目录签名提供,与此无关。</small></div><button class="ghost-btn">重试</button></div>
+          <div class="sbom-row" style="margin-bottom:0"><span class="st-ic ok">✓</span><div class="bd">来源快照 · 已校验<small class="mono">npm:@modelcontextprotocol/server-github · sha512:Iy8qagP9…</small></div><button class="ghost-btn">展开</button></div>
+        </div>
+      </div></div>
+      <div class="cap">态一 · 拉取失败(F3):逐 blob 独立报错 + 重试,绝不整段消失或空白;明确告知不影响其余判定(货架/启用/摘要都来自已签 payload)。校验不过 = 同一失败态(digest/字节/格式任一不符即拒,不展示可疑内容)。</div>
+    </div>
+    <div>
+      <div class="frame"><div style="padding:18px 22px">
+        <div class="dhead"><div class="ico" style="background:#0f766e">文</div><div><div class="titleline"><h3 style="font-size:var(--a-text-lg)">文档读取</h3><span class="chip" data-shelf="labs">实验室</span><span class="chip" data-src="warn">评审已过期</span></div></div><button class="add" data-variant="session" style="margin-left:auto">本次会话启用</button></div>
+        <div class="warnbox" style="margin-top:14px;margin-bottom:0"><span>⚠️</span><span>该扩展的安全评审已于 2027-01-18 到期,尚未完成复审。开启前请确认你仍信任它;已开启的不受影响。</span></div>
+      </div></div>
+      <div class="cap">态二 · 复审过期(F4,排他截止):退出推荐、卡片与详情挂「评审已过期」chip;新启用需经这条显式确认(启用动作继续可用 —— 契约允许,只是要用户知情点头);已装已启用不强拆。时钟仅用于这一处比较。</div>
+    </div>
+  </div>
+  <div class="frame" style="margin-top:18px"><div style="padding:18px 22px">
+    <div class="dsec" style="border-top:0;padding-top:0;margin-top:0"><div class="dsec-t">分级</div>
+      <p style="font-size:var(--a-text-sm);color:var(--a-text-secondary);margin:0">该扩展的审核数据未通过完整性校验,已按「未分级」保守处理:不进推荐、默认关闭。其安装与启用仍可用,请自行判断。</p>
+    </div>
+  </div></div>
+  <div class="cap">态三 · fail-closed(F2,§7.1 行 4):curation 存在但未知 schema/未知键/校验失败 → 展示面与未分级完全一致(无分级 chip、不进货架、默认关),<b>差异只有这一行如实上报</b>(详情页「分级」小段,仅此态渲染)+ 结构化日志。绝不部分采信(不挑「看起来没坏」的字段用)。无 curation(F2 前半)= 正常未分级,连这行说明都没有 —— 缺席不是错误。advisory/撤销命中时上述一切让位于既有 advisory 呈现(权威排序,零改动)。</div>
+</section>
+
+<!-- ═══ 改动四:启用策略切换 ═══ -->
+<section class="sec" id="policy">
+  <div class="sec-kicker">改动四 · 启用策略真源切换 + 已安装页的实验室行(UI 面;#395 机制零改动)</div>
+  <h2>启用策略:从保守规则切到目录逐条声明</h2>
+  <p class="lede">#395 已交付「非 alpha 源默认关」的保守规则与全类型开关;本改动把<b>已策展条目</b>的初始 desiredState 真源切到 <code>activationPolicy</code>:自动开启(仅核心,当前无条目)/ 安装后手动开启 / 每次会话单独开启。未策展条目继续走保守规则(兜底面不动)。唯一新视觉 = 已安装页的实验室行:会话开关(琥珀色)+ 状态行讲清会话语义。</p>
+  <div class="frame"><div style="padding:20px 24px">
+    <div class="man-row"><div class="ico" style="background:#4f46e5">FS</div><div class="body"><div class="nm"><b>文件系统</b><span class="chip" data-shelf="precache">精选</span><span class="chip" data-src="off">已安装 · 未启用</span></div><div class="st"><span class="dot muted"></span>安装后默认关闭,打开开关后生效</div></div><button class="sw" role="switch" aria-checked="false"></button></div>
+    <div class="man-row"><div class="ico" style="background:#dc2626">调</div><div class="body"><div class="nm"><b>网页性能与调试</b><span class="chip" data-shelf="labs">实验室</span></div><div class="st"><span class="dot ok"></span>本次会话已启用 · 会话结束自动关闭</div></div><button class="sw session on" role="switch" aria-checked="true"></button></div>
+    <div class="man-row" style="margin-bottom:0"><div class="ico" style="background:#18181b">GH</div><div class="body"><div class="nm"><b>GitHub</b><span class="chip" data-shelf="connector">接入</span><span class="chip" data-src="err">上游已归档</span></div><div class="st"><span class="dot warn"></span>上游已归档 · 可继续使用或卸载,不再提供更新</div></div><button class="sw on" role="switch" aria-checked="true"></button></div>
+  </div></div>
+  <div class="cap">行结构/开关/健康点全部现役(v4/v5 血统)。新增:①名称行分级 chip(与浏览页同词);②实验室行 = 琥珀色会话开关 + 「本次会话已启用 · 会话结束自动关闭」状态语;会话结束后行保留、开关归位(卸载才消失)。③归档已装行如实警示(REQ-105 先例词汇),不强拆。已安装页不按货架重排 —— scope 分组(全局/本项目)是 v4 定的轴,分级只是 chip。</div>
+  <div class="matrix-scroll"><table class="matrix">
+    <tr><th>条目态</th><th>初始启用</th><th>真源</th></tr>
+    <tr><td>已策展 · 核心</td><td>自动开启(无用户动作)</td><td><code>activationPolicy=default-enabled</code>(契约保证仅核心可携带;当前目录无条目,不预造 UI 特例)</td></tr>
+    <tr><td>已策展 · 精选/接入</td><td>安装后默认关,手动开启</td><td><code>default-disabled</code>(与 #395 现状恰好同值,用户无感切换)</td></tr>
+    <tr><td>已策展 · 实验室</td><td>每次会话单独开启,会话结束失效</td><td><code>session-grant</code>(新语义,本改动唯一的行为增量)</td></tr>
+    <tr><td>未策展 / fail-closed</td><td>默认关</td><td>#395 保守规则(零改动,永久兜底)</td></tr>
+  </table></div>
+</section>
+
+<!-- ═══ 与整包事实段的关系 ═══ -->
+<section class="sec" id="packrel">
+  <div class="sec-kicker">§8 · 与 v5 整包事实段(#396 已交付)的真源衔接 —— 无新帧:当前目录无已策展套件,不造数据</div>
+  <h2>与整包事实段的关系:同版式,真源分层</h2>
+  <div class="matrix-scroll"><table class="matrix">
+    <tr><th>事实</th><th>未策展套件(现状,#396)</th><th>已策展套件(本稿定衔接规则,数据落地后生效)</th></tr>
+    <tr><td>体积</td><td>本地派生:钉死资产求和 + 未知计数</td><td>改读套件自身甄选摘要(<code>download.bytes/basis=aggregate</code>);「未知」口径与 v5 一致</td></tr>
+    <tr><td>密钥 / 依赖</td><td>本地派生自子项 <code>installSpec</code></td><td>改读甄选摘要(密钥含来源标注:环境变量/连接配置)</td></tr>
+    <tr><td>能力行</td><td>#348 授权词汇(engine:plugin 等)+ 来源子项标注</td><td><b>保持 #348 词汇不变</b>(安装确认与授权账本的词汇);甄选能力面(fs:read 等)只进数据边界段 —— 两套词汇两本账,不合并(F8,评审点 Q3)</td></tr>
+    <tr><td>支持等级</td><td>按来源猜的最低档</td><td>改读 <code>review.supportTier</code>(逐子项取最低档)</td></tr>
+    <tr><td>原子安装</td><td colspan="2">零改动;<code>deliveryMode=aggregate</code> 复用 REQ-100 原子事务(契约 §7.2 明文)</td></tr>
+  </table></div>
+  <div class="note"><b>规则一句话</b>:甄选摘要在场即为展示真源(契约禁止重算替换),本地派生只服务未策展条目;同一条目两真源并存时不混排 —— 整段整段切换,段内版式一个像素不动。<code>connection-only</code> 条目(远程服务仅连接描述,当前目录无)按契约「无需下载(仅写配置)」呈现,留待数据落地,不预造帧。</div>
+</section>
+
+<!-- ═══ 评审点 ═══ -->
+<section class="sec" id="review">
+  <div class="sec-kicker">待你拍板</div>
+  <h2>评审点</h2>
+  <div class="note"><b>Q1 推荐页严格化的过渡:未策展套件立即退出推荐?</b>稿采用 <b>A = 立即退出</b>(推荐 = 纯甄选驱动,fail-closed;套件仍在套件 tab 全量可见,策展后自动回归推荐)。备选 B = 保留「套件」区块直到套件完成策展(体验平滑,但推荐页出现两套准入标准,「推荐但未审核」自相矛盾)。当前四个套件全部未策展,选 A 意味着推荐页短期没有套件区块。</div>
+  <div class="note"><b>Q2 类型 tab 内的分组轴?</b>稿采用 <b>A = 保留 category 分组 + 分级 chip + 「未分级」尾组</b>(最小增量,货架身份不抢导航轴)。备选 B = tab 内按货架重组分区(治理轴更醒目,但连接器 tab 的用途分组被顶掉,且技能/插件 tab 从平铺变分组,IA 变动大)。</div>
+  <div class="note"><b>Q3 甄选能力面(fs:read 等)与授权账本(#348)的呈现关系?</b>稿采用 <b>A = 分置两段</b>:甄选能力面进「数据边界」(审核观察,装前可见),授权账本留「已授权能力」(本地事实,装后出现),互不合并(F8:两本账,词汇与语义都不同)。备选 B = 详情页只展示授权账本、甄选能力面仅进安装确认框(更简,但装前用户看不到能力面,削弱「装前看清代价」)。</div>
+  <div class="note"><b>Q4 归档条目在浏览面的去留?</b>稿采用 <b>A = 如实展示 + 禁新安装</b>(置灰按钮 + 归档 chip + 详情警示;与 REQ-105 已装归档处置同一诚实原则)。备选 B = 从浏览面隐藏(列表更「干净」,但已装用户找不到详情入口,且「悄悄下架」违背如实呈现)。</div>
+  <div class="note"><b>Q5 组件清单/来源快照的拉取时机?</b>稿采用 <b>A = 进详情页即拉取摘要行所需内容,校验通过才渲染</b>(打开详情 = 契约允许的拉取时点;两个 blob 合计通常 &lt; 1 KB,首屏即见校验态)。备选 B = 点「展开」才拉取(更省流量,但摘要行的「已校验 ✓」在点开前无法如实显示,只能显示「未获取」)。</div>
+  <div class="note warn"><b>硬约束(契约语义,不接受反转)</b>:货架 = tier 一一对应,消费端不得改判;启用策略只读 <code>activationPolicy</code>,绝不从 tier/type 推导;advisory/撤销永远赢过甄选字段;甄选摘要是展示真源,不重算替换;blob 拉取失败不影响货架与启用判定但必须如实报错;未知 schema/未知键/校验失败 = fail-closed 整体不采信 + 如实上报;复审过期 = 停止推荐 + 新启用显式确认;核心货架空则隐藏,不预造条目。</div>
+</section>
+
+</div>
+
+<script>
+document.querySelectorAll(".sw:not([disabled])").forEach(function(s){s.addEventListener("click",function(e){e.stopPropagation();s.classList.toggle("on")})});
+document.querySelectorAll("#themeSeg button").forEach(function(b){b.addEventListener("click",function(){document.querySelectorAll("#themeSeg button").forEach(function(x){x.classList.remove("on")});b.classList.add("on");document.documentElement.dataset.theme=b.dataset.t})});
+</script>
+</body>
+</html>

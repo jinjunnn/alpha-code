@@ -1,0 +1,1848 @@
+<!DOCTYPE html>
+<html lang="en" data-color-scheme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>alpha-ui · Living Styleguide</title>
+<style>
+/* ============================================================================
+ * SOURCE OF TRUTH — verbatim copy of
+ *   packages/ui-mac/src/renderer/alpha-ui/tokens.css
+ * The tokens.css in code remains authoritative; this is a mirror for the gallery.
+ * ==========================================================================*/
+
+:root {
+  /* ── Neutral spine (light) — cool porcelain ──────────────────────────── */
+  --a-bg-canvas: #ffffff;          /* app background / main content */
+  --a-bg-subtle: #f6f7f9;          /* recessed areas, sidebars (cool porcelain) */
+  --a-bg-muted: #eceef1;           /* hover fills, inset fields */
+  --a-bg-inset: #e3e6ea;           /* pressed / track */
+  --a-surface: #ffffff;            /* cards, panels, popovers */
+  --a-surface-raised: #ffffff;     /* modals (paired with shadow) */
+  --a-scrim: rgba(15, 17, 21, 0.45);
+
+  --a-border-faint: #eef0f3;       /* hairline dividers */
+  --a-border: #e4e6ea;             /* default control border */
+  --a-border-strong: #ced2d9;      /* emphasized / focus-adjacent */
+
+  --a-text: #18181b;               /* primary text */
+  --a-text-secondary: #52525b;     /* labels, secondary */
+  --a-text-tertiary: #7c7d85;      /* placeholder, meta */
+  --a-text-disabled: #b3b6bd;
+  --a-text-on-accent: #ffffff;
+
+  /* Layered-chrome overlays (sidebar / list rows) — translucent so hover/active/selected
+     read clean over any background. Selected = the indigo accent tint. */
+  --a-overlay-hover: rgba(15, 17, 21, 0.05);
+  --a-overlay-active: rgba(15, 17, 21, 0.08);
+  --a-overlay-selected: var(--a-accent-subtle);
+
+  /* ── Accent — single restrained indigo ──────────────────────────────── */
+  --a-accent: #4f46e5;
+  --a-accent-hover: #4338ca;
+  --a-accent-active: #3730a3;
+  /* Solid accent for FILLS (button backgrounds). In light it equals the accent; in dark it is
+     kept deep (unlike --a-accent which is a lighter indigo tuned for text/links on dark) so white
+     label text clears WCAG 4.5:1 on the fill. */
+  --a-accent-solid: var(--a-accent);
+  --a-accent-solid-hover: var(--a-accent-hover);
+  --a-accent-solid-active: var(--a-accent-active);
+  /* Send button fill — softer indigo (user-chosen; the full-saturation accent read garish as a solid
+     fill). Send-specific so the global accent stays the brand #4f46e5. Single source for both the home
+     and in-session send buttons. */
+  --a-send: #6366f1;
+  --a-send-hover: #4f46e5;
+  --a-accent-subtle: rgba(79, 70, 229, 0.10);   /* tinted fills */
+  --a-accent-border: rgba(79, 70, 229, 0.35);
+  --a-accent-ring: rgba(79, 70, 229, 0.45);      /* focus ring */
+
+  /* ── Functional semantics (kept multi-hue for legibility) ───────────── */
+  --a-success: #16a34a;
+  --a-warning: #d97706;
+  --a-error: #dc2626;
+  --a-info: #2563eb;
+  --a-success-subtle: rgba(22, 163, 74, 0.12);
+  --a-warning-subtle: rgba(217, 119, 6, 0.12);
+  --a-error-subtle: rgba(220, 38, 38, 0.12);
+  --a-info-subtle: rgba(37, 99, 235, 0.12);
+
+  /* ── Typography ──────────────────────────────────────────────────────── */
+  --a-font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --a-font-mono: "SF Mono", "JetBrains Mono", "Menlo", ui-monospace, monospace;
+  --a-font-display: var(--a-font-sans);
+
+  --a-text-2xs: 10.5px;
+  --a-text-xs: 11.5px;
+  --a-text-sm: 12.5px;
+  --a-text-base: 13px;
+  --a-text-md: 14px;
+  --a-text-lg: 16px;
+  --a-text-xl: 19px;
+  --a-text-2xl: 23px;
+  --a-text-3xl: 30px;
+
+  --a-leading-tight: 1.2;
+  --a-leading-snug: 1.4;
+  --a-leading-normal: 1.55;
+
+  --a-tracking-tight: -0.014em;   /* display / headings */
+  --a-tracking-normal: 0em;
+  --a-tracking-wide: 0.04em;      /* overline / small caps labels */
+
+  --a-weight-normal: 400;
+  --a-weight-medium: 500;
+  --a-weight-semibold: 600;
+  --a-weight-bold: 680;
+
+  /* ── Spacing (4px base) ──────────────────────────────────────────────── */
+  --a-space-1: 4px;
+  --a-space-2: 8px;
+  --a-space-3: 12px;
+  --a-space-4: 16px;
+  --a-space-5: 20px;
+  --a-space-6: 24px;
+  --a-space-8: 32px;
+  --a-space-10: 40px;
+  --a-space-12: 48px;
+  --a-space-16: 64px;
+
+  /* ── Radii ───────────────────────────────────────────────────────────── */
+  --a-radius-xs: 4px;
+  --a-radius-sm: 6px;
+  --a-radius-md: 8px;
+  --a-radius-lg: 11px;
+  --a-radius-xl: 14px;
+  --a-radius-2xl: 18px;
+  --a-radius-full: 9999px;
+
+  /* ── Elevation (soft, low-spread; tuned for light) ──────────────────── */
+  --a-shadow-xs: 0 1px 2px rgba(15, 17, 21, 0.05);
+  --a-shadow-sm: 0 1px 3px rgba(15, 17, 21, 0.07), 0 1px 2px rgba(15, 17, 21, 0.04);
+  --a-shadow-md: 0 4px 12px rgba(15, 17, 21, 0.08), 0 2px 4px rgba(15, 17, 21, 0.05);
+  --a-shadow-lg: 0 12px 32px rgba(15, 17, 21, 0.12), 0 4px 8px rgba(15, 17, 21, 0.06);
+  --a-shadow-overlay: 0 24px 64px rgba(15, 17, 21, 0.20), 0 8px 16px rgba(15, 17, 21, 0.10);
+  --a-ring-focus: 0 0 0 3px var(--a-accent-ring);
+
+  /* ── Premium polish (frontend-design pass) ───────────────────────────────
+     Quiet depth without color. Edge-light = a 1px "glass" top-highlight for raised /
+     tinted surfaces (composer, cards, modals, popovers) — barely there in light, the
+     signature lit-from-above edge in dark. Glow = an ≤4% accent wash for atmosphere
+     behind hero surfaces (home, empty states). Grain = a faint fractal-noise overlay
+     so the white canvas reads "crafted", not flat (Linear/Vercel register). */
+  --a-edge-light: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  --a-glow-accent: radial-gradient(58% 48% at 50% 38%, color-mix(in srgb, var(--a-accent) 4%, transparent), transparent 72%);
+  --a-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.022'/%3E%3C/svg%3E");
+
+  /* ── Motion ──────────────────────────────────────────────────────────── */
+  --a-dur-instant: 80ms;
+  --a-dur-fast: 130ms;
+  --a-dur-base: 190ms;
+  --a-dur-slow: 280ms;
+  --a-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --a-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --a-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ── Z-index scale ───────────────────────────────────────────────────── */
+  --a-z-base: 0;
+  --a-z-sticky: 100;
+  --a-z-dropdown: 400;
+  --a-z-overlay: 800;
+  --a-z-modal: 900;
+  --a-z-toast: 1000;
+}
+
+/* ── Dark theme ─────────────────────────────────────────────────────────── */
+/* Keyed off opencode's `document.documentElement.dataset.colorScheme` (= data-color-scheme),
+ * set by @opencode-ai/ui's theme context — so alpha-ui follows the app's light/dark toggle. */
+:root[data-color-scheme="dark"] {
+  /* ── Neutral spine (dark) — cool graphite ────────────────────────────── */
+  --a-bg-canvas: #0a0b0d;
+  --a-bg-subtle: #0e0f11;
+  --a-bg-muted: #16171a;
+  --a-bg-inset: #1e2024;
+  --a-surface: #121316;
+  --a-surface-raised: #17181b;
+  --a-scrim: rgba(0, 0, 0, 0.60);
+
+  --a-border-faint: #1b1c20;
+  --a-border: #232428;
+  --a-border-strong: #34363c;
+
+  --a-text: #fafafa;
+  --a-text-secondary: #a1a1aa;
+  --a-text-tertiary: #71727a;
+  --a-text-disabled: #4f5158;
+  --a-text-on-accent: #ffffff;
+
+  --a-overlay-hover: rgba(255, 255, 255, 0.055);
+  --a-overlay-active: rgba(255, 255, 255, 0.09);
+  --a-overlay-selected: var(--a-accent-subtle);
+
+  --a-accent: #818cf8;
+  --a-accent-hover: #6366f1;
+  --a-accent-active: #4f46e5;
+  /* Deep solid for dark button fills — white label clears 4.5:1 (bg 6.3:1, hover 5.3:1). */
+  --a-accent-solid: #4f46e5;
+  --a-accent-solid-hover: #5b54ea;
+  --a-accent-solid-active: #4338ca;
+  --a-accent-subtle: rgba(129, 140, 248, 0.14);
+  --a-accent-border: rgba(129, 140, 248, 0.38);
+  --a-accent-ring: rgba(129, 140, 248, 0.45);
+
+  --a-success: #4ade80;
+  --a-warning: #fbbf24;
+  --a-error: #f87171;
+  --a-info: #60a5fa;
+  --a-success-subtle: rgba(74, 222, 128, 0.14);
+  --a-warning-subtle: rgba(251, 191, 36, 0.14);
+  --a-error-subtle: rgba(248, 113, 113, 0.14);
+  --a-info-subtle: rgba(96, 165, 250, 0.14);
+
+  --a-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --a-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --a-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.4);
+  --a-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6), 0 4px 8px rgba(0, 0, 0, 0.4);
+  --a-shadow-overlay: 0 24px 64px rgba(0, 0, 0, 0.7), 0 8px 16px rgba(0, 0, 0, 0.5);
+  /* On dark the glass top-highlight is the signature premium edge on graphite surfaces. */
+  --a-edge-light: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* Follow the OS only when the app hasn't pinned a scheme (data-color-scheme set by opencode wins). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-color-scheme="light"]):not([data-color-scheme="dark"]) {
+    --a-bg-canvas: #0a0b0d;
+    --a-bg-subtle: #0e0f11;
+    --a-bg-muted: #16171a;
+    --a-bg-inset: #1e2024;
+    --a-surface: #121316;
+    --a-surface-raised: #17181b;
+    --a-scrim: rgba(0, 0, 0, 0.60);
+    --a-border-faint: #1b1c20;
+    --a-border: #232428;
+    --a-border-strong: #34363c;
+    --a-text: #fafafa;
+    --a-text-secondary: #a1a1aa;
+    --a-text-tertiary: #71727a;
+    --a-text-disabled: #4f5158;
+    --a-overlay-hover: rgba(255, 255, 255, 0.055);
+    --a-overlay-active: rgba(255, 255, 255, 0.09);
+    --a-overlay-selected: var(--a-accent-subtle);
+    --a-accent: #818cf8;
+    --a-accent-hover: #6366f1;
+    --a-accent-active: #4f46e5;
+    --a-accent-solid: #4f46e5;
+    --a-accent-solid-hover: #5b54ea;
+    --a-accent-solid-active: #4338ca;
+    --a-accent-subtle: rgba(129, 140, 248, 0.14);
+    --a-accent-border: rgba(129, 140, 248, 0.38);
+    --a-accent-ring: rgba(129, 140, 248, 0.45);
+    --a-success: #4ade80;
+    --a-warning: #fbbf24;
+    --a-error: #f87171;
+    --a-info: #60a5fa;
+    --a-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.4);
+    --a-shadow-overlay: 0 24px 64px rgba(0, 0, 0, 0.7), 0 8px 16px rgba(0, 0, 0, 0.5);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --a-dur-instant: 0ms;
+    --a-dur-fast: 0ms;
+    --a-dur-base: 0ms;
+    --a-dur-slow: 0ms;
+  }
+}
+
+/* ============================================================================
+ * COMPONENT CSS — verbatim from alpha-ui/*.css (only the local @import lines,
+ * which pull tokens.css, were dropped since the token layer is inlined above).
+ * ==========================================================================*/
+
+/* ── alpha-ui/base.css ───────────────────────────────────────────────────── */
+.a-ui,
+.a-ui * {
+  box-sizing: border-box;
+}
+.a-ui {
+  font-family: var(--a-font-sans);
+  font-size: var(--a-text-base);
+  line-height: var(--a-leading-normal);
+  color: var(--a-text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "cv01", "ss01";
+  font-variant-numeric: tabular-nums;
+  accent-color: var(--a-accent);
+}
+.a-ui :is(h1, h2, h3, h4) {
+  margin: 0;
+  font-family: var(--a-font-display);
+  font-weight: var(--a-weight-semibold);
+  letter-spacing: var(--a-tracking-tight);
+  line-height: var(--a-leading-tight);
+  color: var(--a-text);
+}
+.a-ui code,
+.a-ui kbd,
+.a-ui pre {
+  font-family: var(--a-font-mono);
+}
+.a-ui :focus {
+  outline: none;
+}
+.a-ui :focus-visible {
+  outline: none;
+  box-shadow: var(--a-ring-focus);
+}
+.a-ui ::selection {
+  background: var(--a-accent-subtle);
+}
+.a-ui ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.a-ui ::-webkit-scrollbar-thumb {
+  background: var(--a-border-strong);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: var(--a-radius-full);
+}
+.a-ui ::-webkit-scrollbar-thumb:hover {
+  background: var(--a-text-tertiary);
+  background-clip: padding-box;
+}
+.a-ui ::-webkit-scrollbar-track {
+  background: transparent;
+}
+.a-overline {
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-semibold);
+  letter-spacing: var(--a-tracking-wide);
+  text-transform: uppercase;
+  color: var(--a-text-tertiary);
+}
+.a-edge {
+  box-shadow: var(--a-edge-light);
+}
+.a-grain {
+  position: relative;
+  isolation: isolate;
+}
+.a-grain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--a-grain);
+  background-size: 140px 140px;
+  pointer-events: none;
+  z-index: 0;
+}
+.a-glow {
+  position: relative;
+}
+.a-glow::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--a-glow-accent);
+  pointer-events: none;
+  z-index: 0;
+}
+@keyframes a-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.a-rise {
+  animation: a-rise var(--a-dur-slow) var(--a-ease-out) both;
+  animation-delay: calc(var(--a-rise-i, 0) * 90ms);
+}
+@media (prefers-reduced-motion: reduce) {
+  .a-rise { animation: none; }
+}
+
+/* ── alpha-ui/button.css ─────────────────────────────────────────────────── */
+.a-btn {
+  --_h: 30px;
+  --_px: var(--a-space-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--a-space-2);
+  height: var(--_h);
+  padding: 0 var(--_px);
+  border: 1px solid transparent;
+  border-radius: var(--a-radius-md);
+  font-family: var(--a-font-sans);
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  -webkit-app-region: no-drag;
+  transition:
+    background var(--a-dur-fast) var(--a-ease-out),
+    border-color var(--a-dur-fast) var(--a-ease-out),
+    color var(--a-dur-fast) var(--a-ease-out),
+    transform var(--a-dur-fast) var(--a-ease-out),
+    box-shadow var(--a-dur-fast) var(--a-ease-out);
+}
+.a-btn:active:not(:disabled) {
+  transform: translateY(0.5px) scale(0.99);
+}
+.a-btn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.a-btn[data-block] {
+  display: flex;
+  width: 100%;
+}
+.a-btn[data-size="sm"] {
+  --_h: 26px;
+  --_px: var(--a-space-2);
+  font-size: var(--a-text-xs);
+}
+.a-btn[data-size="lg"] {
+  --_h: 38px;
+  --_px: var(--a-space-4);
+  font-size: var(--a-text-md);
+}
+.a-btn[data-variant="primary"] {
+  background: var(--a-accent-solid);
+  color: var(--a-text-on-accent);
+  box-shadow: var(--a-shadow-xs);
+}
+.a-btn[data-variant="primary"]:hover:not(:disabled) {
+  background: var(--a-accent-solid-hover);
+}
+.a-btn[data-variant="primary"]:active:not(:disabled) {
+  background: var(--a-accent-solid-active);
+}
+.a-btn[data-variant="secondary"] {
+  background: var(--a-surface);
+  border-color: var(--a-border);
+  color: var(--a-text);
+  box-shadow: var(--a-shadow-xs);
+}
+.a-btn[data-variant="secondary"]:hover:not(:disabled) {
+  background: var(--a-bg-muted);
+  border-color: var(--a-border-strong);
+}
+.a-btn[data-variant="ghost"] {
+  background: transparent;
+  color: var(--a-text-secondary);
+}
+.a-btn[data-variant="ghost"]:hover:not(:disabled) {
+  background: var(--a-bg-muted);
+  color: var(--a-text);
+}
+.a-btn[data-variant="danger"] {
+  background: transparent;
+  border-color: var(--a-border);
+  color: var(--a-error);
+}
+.a-btn[data-variant="danger"]:hover:not(:disabled) {
+  background: var(--a-error-subtle);
+  border-color: var(--a-error);
+}
+.a-btn[data-loading] {
+  color: transparent !important;
+  position: relative;
+  pointer-events: none;
+}
+.a-btn[data-loading]::after {
+  content: "";
+  position: absolute;
+  width: 13px;
+  height: 13px;
+  border-radius: var(--a-radius-full);
+  border: 1.5px solid currentcolor;
+  border-top-color: transparent;
+  color: var(--a-text-on-accent);
+  animation: a-btn-spin 0.6s linear infinite;
+}
+.a-btn[data-variant="secondary"][data-loading]::after,
+.a-btn[data-variant="ghost"][data-loading]::after {
+  color: var(--a-text-secondary);
+}
+@keyframes a-btn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── alpha-ui/input.css ──────────────────────────────────────────────────── */
+.a-field {
+  --_h: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--a-space-2);
+  height: var(--_h);
+  padding: 0 var(--a-space-3);
+  background: var(--a-bg-subtle);
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-md);
+  color: var(--a-text);
+  transition:
+    border-color var(--a-dur-fast) var(--a-ease-out),
+    background var(--a-dur-fast) var(--a-ease-out),
+    box-shadow var(--a-dur-fast) var(--a-ease-out);
+}
+.a-field[data-block] {
+  display: flex;
+  width: 100%;
+}
+.a-field[data-size="sm"] {
+  --_h: 28px;
+  padding: 0 var(--a-space-2);
+}
+.a-field:hover {
+  border-color: var(--a-border-strong);
+}
+.a-field:focus-within {
+  background: var(--a-surface);
+  border-color: var(--a-accent);
+  box-shadow: var(--a-ring-focus);
+}
+.a-field-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--a-text-tertiary);
+}
+.a-field-icon :is(svg) {
+  width: 15px;
+  height: 15px;
+}
+.a-field-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-family: var(--a-font-sans);
+  font-size: var(--a-text-sm);
+  line-height: 1;
+  outline: none;
+  padding: 0;
+}
+.a-field-input::placeholder {
+  color: var(--a-text-tertiary);
+}
+.a-field-input:disabled {
+  cursor: default;
+}
+
+/* ── alpha-ui/dialog.css ─────────────────────────────────────────────────── */
+.a-dialog-root {
+  position: fixed;
+  inset: 0;
+  z-index: var(--a-z-modal);
+  font-family: var(--a-font-sans);
+}
+.a-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--a-scrim);
+  backdrop-filter: blur(3px);
+  animation: a-dialog-fade var(--a-dur-base) var(--a-ease-out);
+}
+.a-dialog-panel {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 92vw);
+  height: max-content;
+  max-height: 84vh;
+  overflow: hidden;
+  background: var(--a-surface-raised);
+  color: var(--a-text);
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-2xl);
+  box-shadow: var(--a-shadow-overlay), var(--a-edge-light);
+  animation: a-dialog-rise var(--a-dur-slow) var(--a-ease-spring);
+}
+.a-dialog-panel[data-size="sm"] {
+  width: min(420px, 92vw);
+}
+.a-dialog-panel[data-size="lg"] {
+  width: min(880px, 94vw);
+  height: min(720px, 84vh);
+}
+.a-dialog-header {
+  display: flex;
+  align-items: center;
+  gap: var(--a-space-3);
+  padding: var(--a-space-4) var(--a-space-5);
+  border-bottom: 1px solid var(--a-border-faint);
+}
+.a-dialog-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--a-text-lg);
+  font-weight: var(--a-weight-semibold);
+  letter-spacing: var(--a-tracking-tight);
+}
+.a-dialog-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: var(--a-radius-md);
+  background: transparent;
+  color: var(--a-text-tertiary);
+  cursor: pointer;
+  font-size: 15px;
+  transition:
+    background var(--a-dur-fast) var(--a-ease-out),
+    color var(--a-dur-fast) var(--a-ease-out);
+}
+.a-dialog-close:hover {
+  background: var(--a-bg-muted);
+  color: var(--a-text);
+}
+.a-dialog-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--a-space-5);
+}
+.a-dialog-description {
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-sm);
+}
+.a-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--a-space-2);
+  padding: var(--a-space-3) var(--a-space-5);
+  border-top: 1px solid var(--a-border-faint);
+}
+@keyframes a-dialog-fade {
+  from { opacity: 0; }
+}
+@keyframes a-dialog-rise {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .a-dialog-backdrop,
+  .a-dialog-panel {
+    animation: none;
+  }
+}
+
+/* ── alpha-ui/toast.css ──────────────────────────────────────────────────── */
+.a-toast-viewport {
+  position: fixed;
+  right: var(--a-space-4);
+  bottom: var(--a-space-4);
+  z-index: var(--a-z-toast);
+  display: flex;
+  flex-direction: column;
+  gap: var(--a-space-2);
+  width: min(360px, calc(100vw - 32px));
+  pointer-events: none;
+}
+.a-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--a-space-3);
+  padding: 11px 13px;
+  background: var(--a-surface-raised);
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-lg);
+  box-shadow: var(--a-shadow-lg), var(--a-edge-light);
+  animation: a-toast-in var(--a-dur-base) var(--a-ease-spring) both;
+}
+@keyframes a-toast-in { from { opacity: 0; transform: translateY(8px); } }
+.a-toast-ico {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--a-radius-full);
+}
+.a-toast[data-kind="success"] .a-toast-ico { background: var(--a-success); }
+.a-toast[data-kind="error"] .a-toast-ico { background: var(--a-error); }
+.a-toast[data-kind="info"] .a-toast-ico { background: var(--a-info); }
+.a-toast-body { min-width: 0; flex: 1; }
+.a-toast-body b { display: block; font-size: var(--a-text-sm); font-weight: var(--a-weight-medium); }
+.a-toast-body small { font-size: var(--a-text-xs); color: var(--a-text-tertiary); }
+.a-toast-x {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--a-text-tertiary);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: var(--a-radius-sm);
+}
+.a-toast-x:hover { background: var(--a-bg-muted); color: var(--a-text); }
+@media (prefers-reduced-motion: reduce) { .a-toast { animation: none; } }
+
+/* ── alpha-ui/tooltip.css ────────────────────────────────────────────────── */
+.a-tip-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.a-tip {
+  position: absolute;
+  z-index: var(--a-z-toast);
+  pointer-events: none;
+  white-space: nowrap;
+  padding: 5px 9px;
+  border-radius: var(--a-radius-md);
+  background: var(--a-text);
+  color: var(--a-bg-canvas);
+  font-size: var(--a-text-xs);
+  font-weight: var(--a-weight-medium);
+  box-shadow: var(--a-shadow-md);
+  opacity: 0;
+  transform: translateY(2px) scale(0.97);
+  transition:
+    opacity var(--a-dur-fast) var(--a-ease-out),
+    transform var(--a-dur-fast) var(--a-ease-out);
+}
+.a-tip[data-placement="top"] { bottom: calc(100% + 6px); left: 50%; translate: -50% 0; }
+.a-tip[data-placement="bottom"] { top: calc(100% + 6px); left: 50%; translate: -50% 0; }
+.a-tip[data-placement="left"] { right: calc(100% + 6px); top: 50%; translate: 0 -50%; }
+.a-tip[data-placement="right"] { left: calc(100% + 6px); top: 50%; translate: 0 -50%; }
+.a-tip-wrap:hover .a-tip,
+.a-tip-wrap:focus-within .a-tip {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+@media (prefers-reduced-motion: reduce) { .a-tip { transition: none; } }
+
+/* ── alpha-ui/banner.css ─────────────────────────────────────────────────── */
+.a-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--a-space-3, 10px);
+  padding: 8px 12px;
+  border-radius: var(--a-radius-md, 8px);
+  border: 1px solid transparent;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.a-banner.info { background: var(--a-info-subtle); border-color: color-mix(in srgb, var(--a-info) 30%, transparent); }
+.a-banner.success { background: var(--a-success-subtle); border-color: color-mix(in srgb, var(--a-success) 30%, transparent); }
+.a-banner.warning { background: var(--a-warning-subtle); border-color: color-mix(in srgb, var(--a-warning) 30%, transparent); }
+.a-banner.error { background: var(--a-error-subtle); border-color: color-mix(in srgb, var(--a-error) 30%, transparent); }
+.a-banner-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.a-banner.info .a-banner-dot { background: var(--a-info); }
+.a-banner.success .a-banner-dot { background: var(--a-success); }
+.a-banner.warning .a-banner-dot { background: var(--a-warning); }
+.a-banner.error .a-banner-dot { background: var(--a-error); }
+.a-banner-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.a-banner-title { font-weight: 600; color: var(--a-text-primary, inherit); }
+.a-banner-detail { color: var(--a-text-secondary, inherit); opacity: 0.85; font-size: 12px; }
+.a-banner-action {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--a-radius-md, 8px);
+  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.a-banner-action:hover { background: color-mix(in srgb, currentColor 8%, transparent); }
+
+/* ============================================================================
+ * GALLERY CHROME — the styleguide's own layout. Tokens only (--a-*); no
+ * hardcoded colors, sizes, or radii. This is documentation furniture, not a
+ * component being documented.
+ * ==========================================================================*/
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: var(--a-font-sans);
+  font-size: var(--a-text-base);
+  line-height: var(--a-leading-normal);
+  color: var(--a-text);
+  background: var(--a-bg-subtle);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-variant-numeric: tabular-nums;
+  accent-color: var(--a-accent);
+}
+::selection { background: var(--a-accent-subtle); }
+:focus-visible { outline: none; box-shadow: var(--a-ring-focus); border-radius: var(--a-radius-xs); }
+a { color: var(--a-accent); text-decoration: none; }
+code, .mono { font-family: var(--a-font-mono); }
+
+/* ── Top bar ──────────────────────────────────────────────────────────── */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: var(--a-z-sticky);
+  display: flex;
+  align-items: center;
+  gap: var(--a-space-4);
+  padding: var(--a-space-3) var(--a-space-6);
+  background: color-mix(in srgb, var(--a-surface) 82%, transparent);
+  backdrop-filter: blur(12px) saturate(1.4);
+  border-bottom: 1px solid var(--a-border-faint);
+}
+.topbar .brand {
+  display: flex;
+  align-items: baseline;
+  gap: var(--a-space-2);
+  font-weight: var(--a-weight-bold);
+  font-size: var(--a-text-md);
+  letter-spacing: var(--a-tracking-tight);
+}
+.topbar .brand .mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--a-radius-sm);
+  background: var(--a-accent-solid);
+  color: var(--a-text-on-accent);
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-bold);
+  box-shadow: var(--a-shadow-xs), var(--a-edge-light);
+}
+.topbar .brand small {
+  font-weight: var(--a-weight-normal);
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-xs);
+  letter-spacing: var(--a-tracking-normal);
+}
+.topbar .spacer { flex: 1; }
+
+/* segmented light/dark/auto control */
+.seg {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  background: var(--a-bg-muted);
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-md);
+}
+.seg button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--a-text-secondary);
+  font: inherit;
+  font-size: var(--a-text-xs);
+  font-weight: var(--a-weight-medium);
+  padding: var(--a-space-1) var(--a-space-3);
+  border-radius: var(--a-radius-sm);
+  cursor: pointer;
+  transition: background var(--a-dur-fast) var(--a-ease-out), color var(--a-dur-fast) var(--a-ease-out);
+}
+.seg button:hover { color: var(--a-text); }
+.seg button[aria-pressed="true"] {
+  background: var(--a-surface);
+  color: var(--a-text);
+  box-shadow: var(--a-shadow-xs), var(--a-edge-light);
+}
+
+/* ── Shell ────────────────────────────────────────────────────────────── */
+.shell {
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr);
+  gap: var(--a-space-8);
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--a-space-8) var(--a-space-6) var(--a-space-16);
+}
+nav.toc {
+  position: sticky;
+  top: calc(52px + var(--a-space-6));
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: var(--a-text-sm);
+}
+nav.toc .toc-group {
+  margin-top: var(--a-space-4);
+  margin-bottom: var(--a-space-1);
+  padding: 0 var(--a-space-3);
+}
+nav.toc .toc-group:first-child { margin-top: 0; }
+nav.toc a {
+  display: block;
+  padding: var(--a-space-1) var(--a-space-3);
+  border-radius: var(--a-radius-sm);
+  color: var(--a-text-secondary);
+  transition: background var(--a-dur-fast) var(--a-ease-out), color var(--a-dur-fast) var(--a-ease-out);
+}
+nav.toc a:hover { background: var(--a-overlay-hover); color: var(--a-text); }
+nav.toc a.active { background: var(--a-overlay-selected); color: var(--a-accent); font-weight: var(--a-weight-medium); }
+
+main { min-width: 0; }
+
+/* ── Hero ─────────────────────────────────────────────────────────────── */
+.hero {
+  position: relative;
+  overflow: hidden;
+  padding: var(--a-space-10) var(--a-space-8);
+  margin-bottom: var(--a-space-10);
+  background: var(--a-surface);
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-2xl);
+  box-shadow: var(--a-shadow-sm), var(--a-edge-light);
+}
+.hero h1 {
+  margin: 0 0 var(--a-space-3);
+  font-size: var(--a-text-3xl);
+  font-weight: var(--a-weight-bold);
+  letter-spacing: var(--a-tracking-tight);
+  line-height: var(--a-leading-tight);
+  position: relative;
+}
+.hero p {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-md);
+  position: relative;
+}
+.hero p + p { margin-top: var(--a-space-3); }
+.hero .src {
+  margin-top: var(--a-space-5);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--a-space-2);
+  position: relative;
+}
+.hero .src code {
+  font-size: var(--a-text-xs);
+  color: var(--a-text-secondary);
+  background: var(--a-bg-muted);
+  border: 1px solid var(--a-border-faint);
+  padding: 3px var(--a-space-2);
+  border-radius: var(--a-radius-sm);
+}
+
+/* ── Section scaffolding ──────────────────────────────────────────────── */
+section.doc { margin-bottom: var(--a-space-12); scroll-margin-top: calc(52px + var(--a-space-6)); }
+.sec-head { margin-bottom: var(--a-space-5); }
+.sec-head h2 {
+  margin: 0;
+  font-size: var(--a-text-2xl);
+  font-weight: var(--a-weight-semibold);
+  letter-spacing: var(--a-tracking-tight);
+  line-height: var(--a-leading-tight);
+}
+.sec-head p {
+  margin: var(--a-space-2) 0 0;
+  max-width: 68ch;
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-md);
+}
+.subhead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--a-space-3);
+  margin: var(--a-space-8) 0 var(--a-space-4);
+}
+.subhead:first-of-type { margin-top: var(--a-space-5); }
+.subhead h3 {
+  margin: 0;
+  font-size: var(--a-text-md);
+  font-weight: var(--a-weight-semibold);
+  letter-spacing: var(--a-tracking-tight);
+}
+.subhead .file {
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-xs);
+  color: var(--a-text-tertiary);
+}
+.subhead .rule { flex: 1; height: 1px; background: var(--a-border-faint); }
+
+.card {
+  background: var(--a-surface);
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-xl);
+  box-shadow: var(--a-shadow-xs);
+}
+.pad { padding: var(--a-space-6); }
+
+/* ── Color swatches ───────────────────────────────────────────────────── */
+.swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--a-space-3);
+}
+.swatch {
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-lg);
+  overflow: hidden;
+  background: var(--a-surface);
+  box-shadow: var(--a-shadow-xs);
+}
+.swatch .chip {
+  height: 62px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--a-text-lg);
+  font-weight: var(--a-weight-semibold);
+  border-bottom: 1px solid var(--a-border-faint);
+}
+/* translucent tokens: reveal alpha over a light/dark diagonal split */
+.swatch .chip.alpha {
+  background:
+    linear-gradient(135deg, var(--a-bg-canvas) 0 50%, var(--a-text) 50% 100%);
+  position: relative;
+}
+.swatch .chip.alpha .fill {
+  position: absolute; inset: 0;
+}
+.swatch .meta { padding: var(--a-space-2) var(--a-space-3) var(--a-space-3); }
+.swatch .tname {
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-2xs);
+  color: var(--a-text);
+  word-break: break-all;
+  line-height: var(--a-leading-snug);
+}
+.swatch .vals {
+  display: flex;
+  gap: var(--a-space-1);
+  margin-top: var(--a-space-2);
+  flex-wrap: wrap;
+}
+.swatch .v {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--a-font-mono);
+  font-size: 9.5px;
+  color: var(--a-text-secondary);
+  background: var(--a-bg-muted);
+  padding: 2px 5px;
+  border-radius: var(--a-radius-xs);
+}
+.swatch .v b { color: var(--a-text-tertiary); font-weight: var(--a-weight-semibold); }
+
+/* ── Typography specimens ─────────────────────────────────────────────── */
+.type-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--a-space-4);
+  padding: var(--a-space-3) 0;
+  border-bottom: 1px solid var(--a-border-faint);
+}
+.type-row:last-child { border-bottom: 0; }
+.type-row .tag {
+  flex: 0 0 148px;
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-2xs);
+  color: var(--a-text-tertiary);
+}
+.type-row .tag b { color: var(--a-text-secondary); font-weight: var(--a-weight-semibold); }
+.type-row .specimen { flex: 1; min-width: 0; color: var(--a-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Space / radius / shadow / motion specimens ───────────────────────── */
+.spec-list { display: flex; flex-direction: column; gap: var(--a-space-1); }
+.space-row { display: flex; align-items: center; gap: var(--a-space-4); padding: var(--a-space-1) 0; }
+.space-row .tag { flex: 0 0 168px; font-family: var(--a-font-mono); font-size: var(--a-text-2xs); color: var(--a-text-tertiary); }
+.space-row .tag b { color: var(--a-text-secondary); }
+.space-bar { height: 12px; border-radius: var(--a-radius-xs); background: var(--a-accent-solid); box-shadow: var(--a-edge-light); }
+
+.tile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--a-space-4); }
+.tile { text-align: center; }
+.tile .box {
+  height: 78px;
+  background: var(--a-surface);
+  border: 1px solid var(--a-border);
+  margin-bottom: var(--a-space-2);
+}
+.tile .radius-box { background: var(--a-accent-subtle); border-color: var(--a-accent-border); }
+.tile .shadow-box { border-color: transparent; border-radius: var(--a-radius-lg); }
+.tile .tname { font-family: var(--a-font-mono); font-size: var(--a-text-2xs); color: var(--a-text); }
+.tile .tval { font-family: var(--a-font-mono); font-size: 9.5px; color: var(--a-text-tertiary); margin-top: 2px; }
+
+.atmos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--a-space-4); }
+.atmos {
+  height: 120px;
+  border-radius: var(--a-radius-lg);
+  border: 1px solid var(--a-border-faint);
+  background: var(--a-surface);
+  display: flex;
+  align-items: flex-end;
+  padding: var(--a-space-3);
+  overflow: hidden;
+}
+.atmos .lbl { font-family: var(--a-font-mono); font-size: var(--a-text-2xs); color: var(--a-text-secondary); position: relative; z-index: 1; }
+
+.motion-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: var(--a-space-4); }
+.motion-cell { padding: var(--a-space-4); border: 1px solid var(--a-border-faint); border-radius: var(--a-radius-lg); background: var(--a-surface); }
+.motion-cell .tname { font-family: var(--a-font-mono); font-size: var(--a-text-2xs); color: var(--a-text); }
+.motion-cell .tval { font-family: var(--a-font-mono); font-size: 9.5px; color: var(--a-text-tertiary); margin: 2px 0 var(--a-space-3); }
+.motion-track {
+  height: 22px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-bg-muted);
+  position: relative;
+}
+.motion-dot {
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 16px; height: 16px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-accent-solid);
+  box-shadow: var(--a-shadow-xs), var(--a-edge-light);
+  transition-property: transform;
+  transition-duration: var(--_d, 280ms);
+  transition-timing-function: var(--_e, ease);
+}
+.motion-grid.run .motion-dot { transform: translateX(calc(100% + var(--a-space-8))); }
+
+/* ── Component demo staging ───────────────────────────────────────────── */
+.demo {
+  background:
+    linear-gradient(0deg, var(--a-bg-subtle), var(--a-bg-subtle)),
+    var(--a-bg-canvas);
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-xl);
+  padding: var(--a-space-6);
+  box-shadow: var(--a-edge-light);
+}
+.demo.canvas { background: var(--a-bg-canvas); }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--a-space-3); }
+.col { display: flex; flex-direction: column; gap: var(--a-space-3); }
+.statecap {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--a-space-2);
+}
+.statecap .lbl { font-family: var(--a-font-mono); font-size: var(--a-text-2xs); color: var(--a-text-tertiary); }
+
+/* Forced pseudo-state mirrors — these RE-STATE each component's real
+   :hover/:active/:focus rules using ONLY the same --a-* tokens, so every
+   state is visible at once in a static page. No new values are introduced. */
+.a-btn.is-hover[data-variant="primary"] { background: var(--a-accent-solid-hover); }
+.a-btn.is-active[data-variant="primary"] { background: var(--a-accent-solid-active); }
+.a-btn.is-hover[data-variant="secondary"] { background: var(--a-bg-muted); border-color: var(--a-border-strong); }
+.a-btn.is-hover[data-variant="ghost"] { background: var(--a-bg-muted); color: var(--a-text); }
+.a-btn.is-hover[data-variant="danger"] { background: var(--a-error-subtle); border-color: var(--a-error); }
+.a-btn.is-active { transform: translateY(0.5px) scale(0.99); }
+.a-field.is-hover { border-color: var(--a-border-strong); }
+.a-field.is-focus { background: var(--a-surface); border-color: var(--a-accent); box-shadow: var(--a-ring-focus); }
+
+/* Dialog demo — neutralize the real fixed/full-screen overlay so the panel
+   can sit inside a contained stage. Visual chrome (surface/border/shadow) is
+   untouched. */
+.dialog-stage {
+  position: relative;
+  border-radius: var(--a-radius-2xl);
+  overflow: hidden;
+  min-height: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--a-space-8);
+  background: var(--a-bg-canvas);
+  border: 1px solid var(--a-border-faint);
+}
+.dialog-stage .a-dialog-backdrop { position: absolute; animation: none; }
+.dialog-stage .a-dialog-panel {
+  position: relative;
+  inset: auto;
+  margin: 0;
+  width: 100%;
+  max-width: 400px;
+  max-height: none;
+  animation: none;
+}
+
+/* Toast demo — render the real .a-toast out of its fixed viewport, in flow. */
+.toast-stack { display: flex; flex-direction: column; gap: var(--a-space-2); width: min(340px, 100%); }
+
+/* Tooltip demo — force the CSS-only label visible so all placements show at once. */
+.tip-static { padding: var(--a-space-8) var(--a-space-10); }
+.tip-static .a-tip { opacity: 1; transform: none; }
+.tip-anchor {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 92px; height: 30px;
+  border-radius: var(--a-radius-md);
+  background: var(--a-surface);
+  border: 1px solid var(--a-border);
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-xs);
+  box-shadow: var(--a-shadow-xs);
+}
+
+/* ── Notes / callouts (source-derived only) ───────────────────────────── */
+.note {
+  display: flex;
+  gap: var(--a-space-3);
+  padding: var(--a-space-3) var(--a-space-4);
+  border-radius: var(--a-radius-md);
+  border: 1px solid var(--a-border-faint);
+  background: var(--a-bg-subtle);
+  font-size: var(--a-text-sm);
+  color: var(--a-text-secondary);
+  margin-top: var(--a-space-4);
+}
+.note .ic { flex: none; font-weight: var(--a-weight-bold); }
+.note.warn { background: var(--a-warning-subtle); border-color: color-mix(in srgb, var(--a-warning) 30%, transparent); }
+.note.warn .ic { color: var(--a-warning); }
+.note.info { background: var(--a-info-subtle); border-color: color-mix(in srgb, var(--a-info) 30%, transparent); }
+.note.info .ic { color: var(--a-info); }
+.note.gap { background: var(--a-error-subtle); border-color: color-mix(in srgb, var(--a-error) 30%, transparent); }
+.note.gap .ic { color: var(--a-error); }
+.note b { color: var(--a-text); font-weight: var(--a-weight-semibold); }
+.note code { font-size: var(--a-text-xs); background: var(--a-bg-muted); padding: 1px 4px; border-radius: var(--a-radius-xs); color: var(--a-text); }
+
+.foot {
+  margin-top: var(--a-space-12);
+  padding-top: var(--a-space-6);
+  border-top: 1px solid var(--a-border-faint);
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-sm);
+}
+
+@media (max-width: 860px) {
+  .shell { grid-template-columns: 1fr; }
+  nav.toc { position: static; flex-direction: row; flex-wrap: wrap; margin-bottom: var(--a-space-4); }
+  nav.toc .toc-group { display: none; }
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <span class="brand">
+    <span class="mark">α</span>
+    alpha-ui
+    <small>living styleguide</small>
+  </span>
+  <span class="spacer"></span>
+  <div class="seg" role="group" aria-label="Color scheme">
+    <button data-mode="light" aria-pressed="true">Light</button>
+    <button data-mode="dark" aria-pressed="false">Dark</button>
+    <button data-mode="auto" aria-pressed="false">Auto</button>
+  </div>
+</header>
+
+<div class="shell">
+  <nav class="toc" aria-label="Sections">
+    <div class="toc-group a-overline">Foundations</div>
+    <a href="#color">Color</a>
+    <a href="#type">Typography</a>
+    <a href="#space">Space</a>
+    <a href="#radius">Radius</a>
+    <a href="#shadow">Shadow &amp; Atmosphere</a>
+    <a href="#motion">Motion</a>
+    <div class="toc-group a-overline">Components</div>
+    <a href="#button">Button</a>
+    <a href="#input">Input</a>
+    <a href="#dialog">Dialog</a>
+    <a href="#toast">Toast</a>
+    <a href="#tooltip">Tooltip</a>
+    <a href="#banner">Banner</a>
+  </nav>
+
+  <main>
+    <div class="hero a-grain a-glow a-rise">
+      <h1>Cool Graphite / Porcelain — the alpha-ui design system</h1>
+      <p>
+        A living styleguide, rendered straight from the real tokens and component CSS. The neutral
+        spine is a cool, slate-tinted porcelain (light) / graphite (dark); a single restrained indigo
+        carries every accent. Quiet, premium, Linear&nbsp;/&nbsp;Vercel&nbsp;/&nbsp;Raycast register.
+      </p>
+      <p>
+        Every color, size, radius, shadow, and motion value on this page resolves from
+        <code class="mono">var(--a-*)</code> — nothing is hardcoded. The component swatches use the
+        components' own CSS verbatim. <b>The <code class="mono">tokens.css</code> in code remains the
+        single source of truth;</b> this file is a generated mirror. If they disagree, the code wins.
+      </p>
+      <div class="src">
+        <code>packages/ui-mac/src/renderer/alpha-ui/tokens.css</code>
+        <code>alpha-ui/base.css · button · input · dialog · toast · tooltip · banner</code>
+      </div>
+    </div>
+
+    <!-- ================= COLOR ================= -->
+    <section class="doc" id="color">
+      <div class="sec-head">
+        <div class="a-overline">Foundations</div>
+        <h2>Color</h2>
+        <p>
+          The neutral ramp plus the single indigo accent and the multi-hue functional semantics. Each
+          swatch shows the resolved value in <b>both</b> light (<code class="mono">L</code>) and dark
+          (<code class="mono">D</code>); the chip itself follows the current toggle. Translucent tokens
+          are shown over a light/dark split so their alpha reads on either backing.
+        </p>
+      </div>
+
+      <div class="subhead"><h3>Neutral · surfaces &amp; backgrounds</h3><span class="rule"></span><span class="file">tokens.css</span></div>
+      <div class="swatch-grid" data-cgroup="bg"></div>
+
+      <div class="subhead"><h3>Borders</h3><span class="rule"></span><span class="file">tokens.css</span></div>
+      <div class="swatch-grid" data-cgroup="border"></div>
+
+      <div class="subhead"><h3>Text</h3><span class="rule"></span><span class="file">tokens.css</span></div>
+      <div class="swatch-grid" data-cgroup="text"></div>
+      <div class="note info"><span class="ic">i</span><span>WCAG targets stated in the visual system: body text&nbsp;&ge;&nbsp;4.5:1, secondary&nbsp;&ge;&nbsp;3:1. <code>--a-text-tertiary</code> lands ~4.5:1 (light) / ~4.2:1 (dark) — reserved for meta / placeholder, an accepted exception.</span></div>
+
+      <div class="subhead"><h3>Accent · indigo</h3><span class="rule"></span><span class="file">tokens.css</span></div>
+      <div class="swatch-grid" data-cgroup="accent"></div>
+      <div class="note warn"><span class="ic">!</span><span>Fills use <code>--a-accent-solid</code>, <b>not</b> <code>--a-accent</code>. In dark, <code>--a-accent</code> is a lighter indigo tuned for text/links; a solid fill of it under white would read ~2.6:1. <code>--a-accent-solid</code> is kept deep (<code>#4f46e5</code>) so a white label clears WCAG&nbsp;4.5:1 on the button. <code>--a-send</code> is a softer, send-only indigo — do not swap the brand accent for it.</span></div>
+
+      <div class="subhead"><h3>Overlays · layered chrome</h3><span class="rule"></span><span class="file">tokens.css</span></div>
+      <div class="swatch-grid" data-cgroup="overlay"></div>
+
+      <div class="subhead"><h3>Semantics</h3><span class="rule"></span><span class="file">tokens.css</span></div>
+      <div class="swatch-grid" data-cgroup="semantic"></div>
+    </section>
+
+    <!-- ================= TYPOGRAPHY ================= -->
+    <section class="doc" id="type">
+      <div class="sec-head">
+        <div class="a-overline">Foundations</div>
+        <h2>Typography</h2>
+        <p>Native system stack — SF&nbsp;Pro&nbsp;/&nbsp;-apple-system, never Inter. Tabular figures everywhere; tight tracking on headings for the refined-minimal register.</p>
+      </div>
+
+      <div class="subhead"><h3>Size scale</h3><span class="rule"></span><span class="file">--a-text-*</span></div>
+      <div class="card pad"><div id="type-sizes"></div></div>
+
+      <div class="subhead"><h3>Weights</h3><span class="rule"></span><span class="file">--a-weight-*</span></div>
+      <div class="card pad"><div id="type-weights"></div></div>
+
+      <div class="subhead"><h3>Leading &amp; tracking</h3><span class="rule"></span><span class="file">--a-leading-* · --a-tracking-*</span></div>
+      <div class="card pad"><div id="type-leading"></div></div>
+
+      <div class="subhead"><h3>Families</h3><span class="rule"></span><span class="file">--a-font-sans · --a-font-mono</span></div>
+      <div class="card pad">
+        <div class="type-row"><div class="tag"><b>--a-font-sans</b></div><div class="specimen" style="font-family:var(--a-font-sans);font-size:var(--a-text-lg)">The quick brown fox jumps · 0123456789</div></div>
+        <div class="type-row"><div class="tag"><b>--a-font-mono</b></div><div class="specimen" style="font-family:var(--a-font-mono);font-size:var(--a-text-lg)">const alpha = () =&gt; 0123456789;</div></div>
+        <div class="type-row"><div class="tag"><b>.a-overline</b></div><div class="specimen"><span class="a-overline">Overline label · small caps</span></div></div>
+      </div>
+    </section>
+
+    <!-- ================= SPACE ================= -->
+    <section class="doc" id="space">
+      <div class="sec-head">
+        <div class="a-overline">Foundations</div>
+        <h2>Space</h2>
+        <p>A 4px base scale. Bar length equals the token value.</p>
+      </div>
+      <div class="card pad"><div class="spec-list" id="space-list"></div></div>
+    </section>
+
+    <!-- ================= RADIUS ================= -->
+    <section class="doc" id="radius">
+      <div class="sec-head">
+        <div class="a-overline">Foundations</div>
+        <h2>Radius</h2>
+        <p>Corner radii from hairline chips to the modal shell.</p>
+      </div>
+      <div class="card pad"><div class="tile-grid" id="radius-grid"></div></div>
+    </section>
+
+    <!-- ================= SHADOW ================= -->
+    <section class="doc" id="shadow">
+      <div class="sec-head">
+        <div class="a-overline">Foundations</div>
+        <h2>Shadow &amp; Atmosphere</h2>
+        <p>Soft, low-spread elevation tuned per theme, plus the premium-polish utilities — glass edge-light, accent glow, and fractal grain.</p>
+      </div>
+
+      <div class="subhead"><h3>Elevation</h3><span class="rule"></span><span class="file">--a-shadow-*</span></div>
+      <div class="card pad" style="background:var(--a-bg-subtle)"><div class="tile-grid" id="shadow-grid"></div></div>
+
+      <div class="subhead"><h3>Atmosphere utilities</h3><span class="rule"></span><span class="file">base.css · .a-edge / .a-glow / .a-grain</span></div>
+      <div class="atmos-grid">
+        <div class="atmos a-edge"><span class="lbl">.a-edge · --a-edge-light</span></div>
+        <div class="atmos a-glow"><span class="lbl">.a-glow · --a-glow-accent</span></div>
+        <div class="atmos a-grain"><span class="lbl">.a-grain · --a-grain</span></div>
+        <div class="atmos" style="box-shadow:var(--a-ring-focus)"><span class="lbl">--a-ring-focus</span></div>
+      </div>
+    </section>
+
+    <!-- ================= MOTION ================= -->
+    <section class="doc" id="motion">
+      <div class="sec-head">
+        <div class="a-overline">Foundations</div>
+        <h2>Motion</h2>
+        <p>Durations 80–280ms with three eases. <button id="motion-play" class="a-btn" data-variant="secondary" data-size="sm" type="button" style="vertical-align:middle">Play</button></p>
+      </div>
+      <div class="motion-grid" id="motion-grid"></div>
+      <div class="note info"><span class="ic">i</span><span>Under <code>prefers-reduced-motion: reduce</code>, all four durations collapse to <code>0ms</code> at the token layer — every transition and keyframe that reads a <code>--a-dur-*</code> stops automatically.</span></div>
+    </section>
+
+    <!-- ================= BUTTON ================= -->
+    <section class="doc" id="button">
+      <div class="sec-head">
+        <div class="a-overline">Components</div>
+        <h2>Button</h2>
+        <p>The canonical action control. Variants: <b>primary</b> (indigo fill), <b>secondary</b> (bordered, default), <b>ghost</b> (text), <b>danger</b>. Sizes sm&nbsp;/&nbsp;md&nbsp;/&nbsp;lg. Hover / active states below are the component's own rules, re-stated with the same tokens so all states show at once; the live row reacts to real interaction.</p>
+      </div>
+
+      <div class="subhead"><h3>Variants &amp; states</h3><span class="rule"></span><span class="file">alpha-ui/button.css</span></div>
+      <div class="demo a-ui">
+        <div class="col" style="gap:var(--a-space-5)">
+          <div class="row">
+            <div class="statecap"><button class="a-btn" data-variant="secondary" data-size="md">Secondary</button><span class="lbl">default</span></div>
+            <div class="statecap"><button class="a-btn is-hover" data-variant="secondary" data-size="md">Secondary</button><span class="lbl">hover</span></div>
+            <div class="statecap"><button class="a-btn is-active" data-variant="secondary" data-size="md">Secondary</button><span class="lbl">active</span></div>
+            <div class="statecap"><button class="a-btn" data-variant="secondary" data-size="md" disabled>Secondary</button><span class="lbl">disabled</span></div>
+            <div class="statecap"><button class="a-btn" data-variant="secondary" data-size="md" data-loading disabled>Secondary</button><span class="lbl">loading</span></div>
+          </div>
+          <div class="row">
+            <div class="statecap"><button class="a-btn" data-variant="primary" data-size="md">Primary</button><span class="lbl">default</span></div>
+            <div class="statecap"><button class="a-btn is-hover" data-variant="primary" data-size="md">Primary</button><span class="lbl">hover</span></div>
+            <div class="statecap"><button class="a-btn is-active" data-variant="primary" data-size="md">Primary</button><span class="lbl">active</span></div>
+            <div class="statecap"><button class="a-btn" data-variant="primary" data-size="md" disabled>Primary</button><span class="lbl">disabled</span></div>
+            <div class="statecap"><button class="a-btn" data-variant="primary" data-size="md" data-loading disabled>Primary</button><span class="lbl">loading</span></div>
+          </div>
+          <div class="row">
+            <div class="statecap"><button class="a-btn" data-variant="ghost" data-size="md">Ghost</button><span class="lbl">default</span></div>
+            <div class="statecap"><button class="a-btn is-hover" data-variant="ghost" data-size="md">Ghost</button><span class="lbl">hover</span></div>
+            <div class="statecap"><button class="a-btn" data-variant="ghost" data-size="md" disabled>Ghost</button><span class="lbl">disabled</span></div>
+            <div class="statecap"><button class="a-btn" data-variant="danger" data-size="md">Danger</button><span class="lbl">default</span></div>
+            <div class="statecap"><button class="a-btn is-hover" data-variant="danger" data-size="md">Danger</button><span class="lbl">hover</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="subhead"><h3>Sizes · block · live</h3><span class="rule"></span><span class="file">data-size · data-block</span></div>
+      <div class="demo a-ui">
+        <div class="col" style="gap:var(--a-space-5)">
+          <div class="row" style="align-items:flex-end">
+            <div class="statecap"><button class="a-btn" data-variant="primary" data-size="sm">Small</button><span class="lbl">sm · 26px</span></div>
+            <div class="statecap"><button class="a-btn" data-variant="primary" data-size="md">Medium</button><span class="lbl">md · 30px</span></div>
+            <div class="statecap"><button class="a-btn" data-variant="primary" data-size="lg">Large</button><span class="lbl">lg · 38px</span></div>
+          </div>
+          <button class="a-btn" data-variant="primary" data-size="md" data-block>Block · full width</button>
+          <div class="row">
+            <button class="a-btn" data-variant="primary">Live primary</button>
+            <button class="a-btn" data-variant="secondary">Live secondary</button>
+            <button class="a-btn" data-variant="ghost">Live ghost</button>
+            <span class="a-overline">← hover / press / tab me</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= INPUT ================= -->
+    <section class="doc" id="input">
+      <div class="sec-head">
+        <div class="a-overline">Components</div>
+        <h2>Input</h2>
+        <p>The canonical single-line field, with an optional leading icon slot. Focus lifts the fill to <code class="mono">--a-surface</code>, switches the border to accent, and adds the focus ring.</p>
+      </div>
+      <div class="subhead"><h3>States</h3><span class="rule"></span><span class="file">alpha-ui/input.css</span></div>
+      <div class="demo a-ui">
+        <div class="col" style="gap:var(--a-space-4);max-width:320px">
+          <div class="statecap" style="align-items:stretch">
+            <div class="a-field" data-block><input class="a-field-input" placeholder="Default field" /></div>
+            <span class="lbl" style="align-self:flex-start">default</span>
+          </div>
+          <div class="statecap" style="align-items:stretch">
+            <div class="a-field is-hover" data-block><input class="a-field-input" placeholder="Hover" /></div>
+            <span class="lbl" style="align-self:flex-start">hover · border-strong</span>
+          </div>
+          <div class="statecap" style="align-items:stretch">
+            <div class="a-field is-focus" data-block>
+              <span class="a-field-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2 14 14" stroke-linecap="round"/></svg></span>
+              <input class="a-field-input" placeholder="Focused · with icon" />
+            </div>
+            <span class="lbl" style="align-self:flex-start">focus-within · surface + accent + ring</span>
+          </div>
+          <div class="statecap" style="align-items:stretch">
+            <div class="a-field" data-block><input class="a-field-input" placeholder="Disabled" disabled /></div>
+            <span class="lbl" style="align-self:flex-start">disabled</span>
+          </div>
+          <div class="statecap" style="align-items:stretch">
+            <div class="a-field" data-size="sm" data-block><input class="a-field-input" placeholder="Small (sm)" /></div>
+            <span class="lbl" style="align-self:flex-start">size sm · 28px</span>
+          </div>
+          <div class="row"><div class="a-field"><input class="a-field-input" placeholder="Live — click / tab" /></div></div>
+        </div>
+      </div>
+      <div class="note gap"><span class="ic">✕</span><span><b>No error state.</b> <code>input.css</code> defines only default / hover / focus-within / disabled — there is no validation/error styling in the source, so none is shown here (not fabricated).</span></div>
+    </section>
+
+    <!-- ================= DIALOG ================= -->
+    <section class="doc" id="dialog">
+      <div class="sec-head">
+        <div class="a-overline">Components</div>
+        <h2>Dialog</h2>
+        <p>The canonical modal: scrim + blurred backdrop, a raised surface with the 2xl radius, overlay shadow and glass edge-light, and a header / body / footer contract. The real component is a fixed full-screen overlay; this is a contained mock of the panel (sizes <code class="mono">sm</code> 420 · <code class="mono">md</code> 560 · <code class="mono">lg</code> 880).</p>
+      </div>
+      <div class="subhead"><h3>Panel mock</h3><span class="rule"></span><span class="file">alpha-ui/dialog.css</span></div>
+      <div class="dialog-stage a-ui">
+        <div class="a-dialog-backdrop"></div>
+        <div class="a-dialog-panel" data-size="sm" role="dialog" aria-modal="true" aria-label="Install extension">
+          <header class="a-dialog-header">
+            <div class="a-dialog-title">Install “graphite-lint”?</div>
+            <button type="button" class="a-dialog-close" aria-label="Close">✕</button>
+          </header>
+          <div class="a-dialog-body">
+            <div class="a-dialog-description">This extension will be granted the capabilities it declares. You can review them before confirming.</div>
+            <div style="margin-top:var(--a-space-4)" class="a-banner info">
+              <span class="a-banner-dot"></span>
+              <span class="a-banner-body"><span class="a-banner-title">Reads workspace files</span><span class="a-banner-detail">Scoped to the current project root.</span></span>
+            </div>
+          </div>
+          <footer class="a-dialog-footer">
+            <button class="a-btn" data-variant="ghost" data-size="md">Cancel</button>
+            <button class="a-btn" data-variant="primary" data-size="md">Install</button>
+          </footer>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= TOAST ================= -->
+    <section class="doc" id="toast">
+      <div class="sec-head">
+        <div class="a-overline">Components</div>
+        <h2>Toast</h2>
+        <p>Transient feedback in a fixed bottom-right viewport (shown here in flow). A colored dot marks the kind; a bold title over a muted detail line; a dismiss control.</p>
+      </div>
+      <div class="subhead"><h3>Kinds</h3><span class="rule"></span><span class="file">alpha-ui/toast.css</span></div>
+      <div class="demo a-ui">
+        <div class="toast-stack">
+          <div class="a-toast" data-kind="success" role="status">
+            <span class="a-toast-ico" aria-hidden="true"></span>
+            <div class="a-toast-body"><b>Extension installed</b><small>graphite-lint · ready to use</small></div>
+            <button class="a-toast-x" aria-label="Dismiss">×</button>
+          </div>
+          <div class="a-toast" data-kind="info" role="status">
+            <span class="a-toast-ico" aria-hidden="true"></span>
+            <div class="a-toast-body"><b>Signed in</b><small>Session restored</small></div>
+            <button class="a-toast-x" aria-label="Dismiss">×</button>
+          </div>
+          <div class="a-toast" data-kind="error" role="status">
+            <span class="a-toast-ico" aria-hidden="true"></span>
+            <div class="a-toast-body"><b>Install failed</b><small>Network unreachable — retry</small></div>
+            <button class="a-toast-x" aria-label="Dismiss">×</button>
+          </div>
+        </div>
+      </div>
+      <div class="note info"><span class="ic">i</span><span>The toast store types only three kinds — <code>info</code> · <code>success</code> · <code>error</code> (<code>ToastKind</code> in <code>Toast.tsx</code>; <code>.a-toast-ico</code> colors defined for those three). There is <b>no</b> <code>warning</code> toast — warning lives on <b>Banner</b>, the persistent counterpart.</span></div>
+    </section>
+
+    <!-- ================= TOOLTIP ================= -->
+    <section class="doc" id="tooltip">
+      <div class="sec-head">
+        <div class="a-overline">Components</div>
+        <h2>Tooltip</h2>
+        <p>CSS-only hover/focus label — inverted (text-colored background on canvas-colored text), four placements. Shown forced-visible below so all placements read at once; the last example is live on hover/focus.</p>
+      </div>
+      <div class="subhead"><h3>Placements</h3><span class="rule"></span><span class="file">alpha-ui/tooltip.css</span></div>
+      <div class="demo a-ui tip-static">
+        <div class="row" style="gap:var(--a-space-12);justify-content:center">
+          <span class="a-tip-wrap"><span class="tip-anchor">top</span><span class="a-tip" role="tooltip" data-placement="top">Tooltip · top</span></span>
+          <span class="a-tip-wrap"><span class="tip-anchor">bottom</span><span class="a-tip" role="tooltip" data-placement="bottom">Tooltip · bottom</span></span>
+          <span class="a-tip-wrap"><span class="tip-anchor">left</span><span class="a-tip" role="tooltip" data-placement="left">Tooltip · left</span></span>
+          <span class="a-tip-wrap"><span class="tip-anchor">right</span><span class="a-tip" role="tooltip" data-placement="right">Tooltip · right</span></span>
+        </div>
+      </div>
+      <div class="subhead"><h3>Live</h3><span class="rule"></span><span class="file">hover / focus</span></div>
+      <div class="demo a-ui">
+        <div class="row" style="justify-content:center;padding:var(--a-space-6) 0">
+          <span class="a-tip-wrap"><button class="a-btn" data-variant="secondary" data-size="md">Hover or tab to me</button><span class="a-tip" role="tooltip" data-placement="top">I appear on hover &amp; focus</span></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= BANNER ================= -->
+    <section class="doc" id="banner">
+      <div class="sec-head">
+        <div class="a-overline">Components</div>
+        <h2>Banner</h2>
+        <p>Persistent / blocking status — the counterpart to Toast's transient feedback. Four kinds, a tinted <code class="mono">-subtle</code> fill with a 30% semantic border (via <code class="mono">color-mix</code>), and an optional inline action.</p>
+      </div>
+      <div class="subhead"><h3>Kinds</h3><span class="rule"></span><span class="file">alpha-ui/banner.css</span></div>
+      <div class="demo a-ui">
+        <div class="col" style="max-width:520px">
+          <div class="a-banner info">
+            <span class="a-banner-dot"></span>
+            <span class="a-banner-body"><span class="a-banner-title">Update available</span><span class="a-banner-detail">Version 2.4 is ready to install.</span></span>
+            <button class="a-banner-action">Update</button>
+          </div>
+          <div class="a-banner success">
+            <span class="a-banner-dot"></span>
+            <span class="a-banner-body"><span class="a-banner-title">All checks passed</span><span class="a-banner-detail">Workspace is healthy.</span></span>
+          </div>
+          <div class="a-banner warning">
+            <span class="a-banner-dot"></span>
+            <span class="a-banner-body"><span class="a-banner-title">Rate limit near</span><span class="a-banner-detail">80% of the hourly budget used.</span></span>
+            <button class="a-banner-action">Details</button>
+          </div>
+          <div class="a-banner error">
+            <span class="a-banner-dot"></span>
+            <span class="a-banner-body"><span class="a-banner-title">Connection lost</span><span class="a-banner-detail">Reconnecting to the model endpoint…</span></span>
+            <button class="a-banner-action">Retry</button>
+          </div>
+        </div>
+      </div>
+      <div class="note gap"><span class="ic">✕</span><span><b>Missing token.</b> <code>banner.css</code> sets the title color to <code>var(--a-text-primary, inherit)</code>, but <code>--a-text-primary</code> is <b>not defined</b> in <code>tokens.css</code> (the primary text token is <code>--a-text</code>). It silently falls back to <code>inherit</code>, so the title just inherits <code>--a-text</code> here — functional, but the reference should be renamed to <code>--a-text</code>.</span></div>
+    </section>
+
+    <div class="foot">
+      Generated from <code class="mono">alpha-ui/tokens.css</code> + <code class="mono">alpha-ui/*.css</code>. Self-contained: no external fonts, scripts, or assets. The <code class="mono">tokens.css</code> in code is authoritative.
+    </div>
+  </main>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var root = document.documentElement;
+
+  /* ── Light / dark / auto toggle ─────────────────────────────────────── */
+  var segButtons = Array.prototype.slice.call(document.querySelectorAll(".seg button"));
+  function applyMode(mode) {
+    if (mode === "auto") root.removeAttribute("data-color-scheme");
+    else root.setAttribute("data-color-scheme", mode);
+    segButtons.forEach(function (b) {
+      b.setAttribute("aria-pressed", String(b.dataset.mode === mode));
+    });
+    refreshResolvedValues();
+  }
+  segButtons.forEach(function (b) {
+    b.addEventListener("click", function () { applyMode(b.dataset.mode); });
+  });
+
+  /* ── Resolve token values in BOTH modes via a probe element ─────────── */
+  var probe = document.createElement("span");
+  probe.style.cssText = "position:absolute;left:-9999px;top:-9999px;width:0;height:0;";
+  document.body.appendChild(probe);
+
+  function currentMode() {
+    return root.getAttribute("data-color-scheme") || "auto";
+  }
+  function toHex(str) {
+    var m = str.match(/[-\d.]+/g);
+    if (!m || m.length < 3) return str.trim();
+    var r = Math.round(+m[0]), g = Math.round(+m[1]), b = Math.round(+m[2]);
+    var a = m.length >= 4 ? +m[3] : 1;
+    function h(x) { return ("0" + (x & 255).toString(16)).slice(-2); }
+    var hex = "#" + h(r) + h(g) + h(b);
+    if (a < 1) hex += h(Math.round(a * 255));
+    return hex;
+  }
+  // Resolve a color token to its computed rgb/rgba in a given mode.
+  function resolveColor(token, mode) {
+    var prev = root.getAttribute("data-color-scheme");
+    if (mode === "auto") root.removeAttribute("data-color-scheme");
+    else root.setAttribute("data-color-scheme", mode);
+    probe.style.color = "var(" + token + ")";
+    var v = getComputedStyle(probe).color;
+    if (prev === null) root.removeAttribute("data-color-scheme");
+    else root.setAttribute("data-color-scheme", prev);
+    return v;
+  }
+  function isAlpha(str) {
+    var m = str.match(/[-\d.]+/g);
+    return !!(m && m.length >= 4 && +m[3] < 1);
+  }
+  function rawProp(name) {
+    return getComputedStyle(root).getPropertyValue(name).trim();
+  }
+
+  /* ── Color group definitions (token registry) ───────────────────────── */
+  var COLOR_GROUPS = {
+    bg: ["--a-bg-canvas","--a-bg-subtle","--a-bg-muted","--a-bg-inset","--a-surface","--a-surface-raised","--a-scrim"],
+    border: ["--a-border-faint","--a-border","--a-border-strong"],
+    text: ["--a-text","--a-text-secondary","--a-text-tertiary","--a-text-disabled","--a-text-on-accent"],
+    accent: ["--a-accent","--a-accent-hover","--a-accent-active","--a-accent-solid","--a-accent-solid-hover","--a-accent-solid-active","--a-send","--a-send-hover","--a-accent-subtle","--a-accent-border","--a-accent-ring"],
+    overlay: ["--a-overlay-hover","--a-overlay-active","--a-overlay-selected"],
+    semantic: ["--a-success","--a-warning","--a-error","--a-info","--a-success-subtle","--a-warning-subtle","--a-error-subtle","--a-info-subtle"]
+  };
+  var TEXT_TOKENS = { "--a-text":1,"--a-text-secondary":1,"--a-text-tertiary":1,"--a-text-disabled":1,"--a-text-on-accent":1 };
+
+  function buildSwatch(token) {
+    var lightVal = resolveColor(token, "light");
+    var alpha = isAlpha(lightVal);
+    var sw = document.createElement("div");
+    sw.className = "swatch";
+
+    var chip = document.createElement("div");
+    chip.className = "chip";
+    if (TEXT_TOKENS[token]) {
+      if (token === "--a-text-on-accent") {
+        chip.style.background = "var(--a-accent-solid)";
+      } else {
+        chip.style.background = "var(--a-surface)";
+      }
+      chip.style.color = "var(" + token + ")";
+      chip.textContent = "Ag";
+    } else if (alpha) {
+      chip.className = "chip alpha";
+      var fill = document.createElement("span");
+      fill.className = "fill";
+      fill.style.background = "var(" + token + ")";
+      chip.appendChild(fill);
+    } else {
+      chip.style.background = "var(" + token + ")";
+    }
+    sw.appendChild(chip);
+
+    var meta = document.createElement("div");
+    meta.className = "meta";
+    var tname = document.createElement("div");
+    tname.className = "tname";
+    tname.textContent = token;
+    meta.appendChild(tname);
+    var vals = document.createElement("div");
+    vals.className = "vals";
+    vals.dataset.token = token;
+    meta.appendChild(vals);
+    sw.appendChild(meta);
+    return sw;
+  }
+
+  Object.keys(COLOR_GROUPS).forEach(function (key) {
+    var host = document.querySelector('[data-cgroup="' + key + '"]');
+    if (!host) return;
+    COLOR_GROUPS[key].forEach(function (token) { host.appendChild(buildSwatch(token)); });
+  });
+
+  // Fill / refresh the L + D value pills for every rendered swatch.
+  function refreshResolvedValues() {
+    document.querySelectorAll(".vals[data-token]").forEach(function (vals) {
+      var token = vals.dataset.token;
+      var l = toHex(resolveColor(token, "light"));
+      var d = toHex(resolveColor(token, "dark"));
+      vals.innerHTML = "";
+      [["L", l], ["D", d]].forEach(function (pair) {
+        var span = document.createElement("span");
+        span.className = "v";
+        var b = document.createElement("b"); b.textContent = pair[0];
+        span.appendChild(b);
+        span.appendChild(document.createTextNode(pair[1]));
+        vals.appendChild(span);
+      });
+    });
+  }
+
+  /* ── Typography specimens ───────────────────────────────────────────── */
+  var SIZES = ["--a-text-2xs","--a-text-xs","--a-text-sm","--a-text-base","--a-text-md","--a-text-lg","--a-text-xl","--a-text-2xl","--a-text-3xl"];
+  var sizeHost = document.getElementById("type-sizes");
+  SIZES.forEach(function (t) {
+    var row = document.createElement("div"); row.className = "type-row";
+    row.innerHTML = '<div class="tag"><b>' + t + '</b> · ' + rawProp(t) + '</div>' +
+      '<div class="specimen" style="font-size:var(' + t + ')">Refined, quiet interfaces</div>';
+    sizeHost.appendChild(row);
+  });
+
+  var WEIGHTS = [["--a-weight-normal","400"],["--a-weight-medium","500"],["--a-weight-semibold","600"],["--a-weight-bold","680"]];
+  var wHost = document.getElementById("type-weights");
+  WEIGHTS.forEach(function (w) {
+    var row = document.createElement("div"); row.className = "type-row";
+    row.innerHTML = '<div class="tag"><b>' + w[0] + '</b> · ' + w[1] + '</div>' +
+      '<div class="specimen" style="font-size:var(--a-text-xl);font-weight:var(' + w[0] + ')">Cool graphite porcelain</div>';
+    wHost.appendChild(row);
+  });
+
+  var lHost = document.getElementById("type-leading");
+  [["--a-leading-tight","1.2"],["--a-leading-snug","1.4"],["--a-leading-normal","1.55"]].forEach(function (l) {
+    var row = document.createElement("div"); row.className = "type-row"; row.style.alignItems = "flex-start";
+    row.innerHTML = '<div class="tag"><b>' + l[0] + '</b> · ' + l[1] + '</div>' +
+      '<div class="specimen" style="white-space:normal;line-height:var(' + l[0] + ');color:var(--a-text-secondary);font-size:var(--a-text-base)">' +
+      'A single restrained indigo carries every accent across a cool, slate-tinted neutral spine, quiet and premium.</div>';
+    lHost.appendChild(row);
+  });
+  [["--a-tracking-tight","-0.014em"],["--a-tracking-normal","0em"],["--a-tracking-wide","0.04em"]].forEach(function (tr) {
+    var row = document.createElement("div"); row.className = "type-row";
+    var upper = tr[0] === "--a-tracking-wide";
+    row.innerHTML = '<div class="tag"><b>' + tr[0] + '</b> · ' + tr[1] + '</div>' +
+      '<div class="specimen" style="font-size:var(--a-text-lg);font-weight:var(--a-weight-semibold);letter-spacing:var(' + tr[0] + ')' + (upper ? ';text-transform:uppercase;font-size:var(--a-text-sm)' : '') + '">Alpha design language</div>';
+    lHost.appendChild(row);
+  });
+
+  /* ── Space ──────────────────────────────────────────────────────────── */
+  var SPACE = ["--a-space-1","--a-space-2","--a-space-3","--a-space-4","--a-space-5","--a-space-6","--a-space-8","--a-space-10","--a-space-12","--a-space-16"];
+  var spaceHost = document.getElementById("space-list");
+  SPACE.forEach(function (t) {
+    var row = document.createElement("div"); row.className = "space-row";
+    row.innerHTML = '<div class="tag"><b>' + t + '</b> · ' + rawProp(t) + '</div>' +
+      '<div class="space-bar" style="width:var(' + t + ')"></div>';
+    spaceHost.appendChild(row);
+  });
+
+  /* ── Radius ─────────────────────────────────────────────────────────── */
+  var RADIUS = ["--a-radius-xs","--a-radius-sm","--a-radius-md","--a-radius-lg","--a-radius-xl","--a-radius-2xl","--a-radius-full"];
+  var radiusHost = document.getElementById("radius-grid");
+  RADIUS.forEach(function (t) {
+    var tile = document.createElement("div"); tile.className = "tile";
+    tile.innerHTML = '<div class="box radius-box" style="border-radius:var(' + t + ')"></div>' +
+      '<div class="tname">' + t + '</div><div class="tval">' + rawProp(t) + '</div>';
+    radiusHost.appendChild(tile);
+  });
+
+  /* ── Shadow ─────────────────────────────────────────────────────────── */
+  var SHADOW = ["--a-shadow-xs","--a-shadow-sm","--a-shadow-md","--a-shadow-lg","--a-shadow-overlay"];
+  var shadowHost = document.getElementById("shadow-grid");
+  SHADOW.forEach(function (t) {
+    var tile = document.createElement("div"); tile.className = "tile";
+    tile.innerHTML = '<div class="box shadow-box" style="box-shadow:var(' + t + ')"></div>' +
+      '<div class="tname">' + t + '</div>';
+    shadowHost.appendChild(tile);
+  });
+
+  /* ── Motion ─────────────────────────────────────────────────────────── */
+  var DURS = [["--a-dur-instant","80ms"],["--a-dur-fast","130ms"],["--a-dur-base","190ms"],["--a-dur-slow","280ms"]];
+  var EASES = [["--a-ease-out","cubic-bezier(.22,1,.36,1)"],["--a-ease-in-out","cubic-bezier(.65,0,.35,1)"],["--a-ease-spring","cubic-bezier(.34,1.56,.64,1)"]];
+  var motionHost = document.getElementById("motion-grid");
+  function motionCell(name, val, dvar, evar) {
+    var cell = document.createElement("div"); cell.className = "motion-cell";
+    cell.innerHTML = '<div class="tname">' + name + '</div><div class="tval">' + val + '</div>' +
+      '<div class="motion-track"><div class="motion-dot" style="--_d:var(' + dvar + ');--_e:var(' + evar + ')"></div></div>';
+    return cell;
+  }
+  DURS.forEach(function (d) { motionHost.appendChild(motionCell(d[0], d[1] + " · ease-out", d[0], "--a-ease-out")); });
+  EASES.forEach(function (e) { motionHost.appendChild(motionCell(e[0], e[1] + " · dur-slow", "--a-dur-slow", e[0])); });
+
+  var playBtn = document.getElementById("motion-play");
+  playBtn.addEventListener("click", function () {
+    motionHost.classList.remove("run");
+    void motionHost.offsetWidth; // reflow to restart
+    motionHost.classList.add("run");
+    setTimeout(function () { motionHost.classList.remove("run"); }, 900);
+  });
+
+  /* ── Scroll-spy for the table of contents ───────────────────────────── */
+  var links = Array.prototype.slice.call(document.querySelectorAll("nav.toc a"));
+  var byId = {};
+  links.forEach(function (a) { byId[a.getAttribute("href").slice(1)] = a; });
+  if ("IntersectionObserver" in window) {
+    var obs = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) {
+          links.forEach(function (a) { a.classList.remove("active"); });
+          var a = byId[en.target.id];
+          if (a) a.classList.add("active");
+        }
+      });
+    }, { rootMargin: "-20% 0px -70% 0px", threshold: 0 });
+    document.querySelectorAll("section.doc").forEach(function (s) { obs.observe(s); });
+  }
+
+  /* ── Init ───────────────────────────────────────────────────────────── */
+  refreshResolvedValues();
+})();
+</script>
+</body>
+</html>
