@@ -22,7 +22,7 @@
 .a-banner.error .a-banner-dot { background: var(--a-error); }
 
 .a-banner-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
-.a-banner-title { font-weight: 600; color: var(--a-text-primary, inherit); }
+.a-banner-title { font-weight: 600; color: var(--a-text, inherit); }
 .a-banner-detail { color: var(--a-text-secondary, inherit); opacity: 0.85; font-size: 12px; }
 
 .a-banner-action {
