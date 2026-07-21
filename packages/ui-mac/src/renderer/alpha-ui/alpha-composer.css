@@ -278,7 +278,7 @@
 }
 
 /* ── 会话页接管:上游 composer 隐藏(保留 DOM,不接收输入)── */
-body[data-alpha-composer-takeover] [data-component="session-composer"] {
+body[data-alpha-composer-takeover] [data-component="session-prompt-dock"] [data-component="prompt-input-v2"] {
   display: none !important;
 }
 [data-alpha-composer-host] {

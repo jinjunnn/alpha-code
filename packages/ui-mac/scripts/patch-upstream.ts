@@ -12,6 +12,16 @@ import type { Plugin } from "vite"
 // Inline `style={{ width: ... }}` computed in JS is exactly such a case.
 
 const PATCHES: Record<string, ReadonlyArray<readonly [string, string]>> = {
+  // The new v2 composer moved image preview opening out of prompt-input.tsx and dropped the explicit
+  // hosted-dialog option. ui-mac supplies the canonical Alpha Dialog host, so keep this active v2
+  // entrypoint on the same host as the legacy composer without modifying the frozen app source.
+  "app/src/components/prompt-input-v2.tsx": [
+    [
+      "dialog.show(() => <ImagePreview src={attachment.dataUrl} alt={attachment.filename} />),",
+      "dialog.show(() => <ImagePreview src={attachment.dataUrl} alt={attachment.filename} />, undefined, { host: true }),",
+    ],
+  ],
+
   // Narrow the review / 审查 right panel. opencode clamps the CHAT panel's max width to 45% of the
   // window (packages/app/src/pages/session.tsx ResizeHandle), so the review panel (flex-1, fills
   // the remainder) can never be dragged narrower than ~55% of the window — too wide. Raising the

@@ -50,11 +50,12 @@ describe("REQ-087 §1 persist keys(迁移 = 破坏用户状态,先锁死)", () =
 })
 
 describe("REQ-087 §2 route→layout 绑定(session-layout.ts 是 Layout 与 Session 的耦合点)", () => {
-  test("sessionKey 由 route params + server scope 拼合", () => {
+  test("sessionKey 由 SDK directory + route session id + server scope 拼合", () => {
+    expect(sessionLayout).toContain(`const directory = createMemo(() => base64Encode(sdk().directory))`)
     expect(sessionLayout).toContain(
-      `SessionStateKey.from(scope(), SessionRouteKey.fromRoute(params.dir, params.id))`,
+      `SessionStateKey.from(scope(), SessionRouteKey.fromRoute(directory(), params.id))`,
     )
-    expect(sessionLayout).toContain(`SessionStateKey.from(scope(), SessionRouteKey.fromRoute(params.dir))`)
+    expect(sessionLayout).toContain(`SessionStateKey.from(scope(), SessionRouteKey.fromRoute(directory()))`)
   })
   test("tabs/view 是 layout context 按 sessionKey 的切片 —— adapter 不得复制该状态", () => {
     expect(sessionLayout).toContain(`tabs: createMemo(() => layout.tabs(sessionKey))`)
@@ -72,10 +73,11 @@ describe("REQ-087 §2 route→layout 绑定(session-layout.ts 是 Layout 与 Ses
 })
 
 describe("REQ-087 §3 terminal panel 依赖形状", () => {
-  test("依赖面:useLayout + useTerminal + useSessionLayout(+command/settings/language)", () => {
+  test("依赖面:useLayout + useTerminal + useSessionLayout(+sdk/command/settings/language)", () => {
     expect(terminalPanel).toContain(`const layout = useLayout()`)
     expect(terminalPanel).toContain(`const terminal = useTerminal()`)
-    expect(terminalPanel).toContain(`const { params, workspaceKey, view } = useSessionLayout()`)
+    expect(terminalPanel).toContain(`const sdk = useSDK()`)
+    expect(terminalPanel).toContain(`const { workspaceKey, view } = useSessionLayout()`)
   })
   test("DOM 锚点 #terminal-panel(spike 探针的单挂载口径)", () => {
     expect(terminalPanel).toContain(`id="terminal-panel"`)
@@ -121,9 +123,12 @@ describe("REQ-087 §5 timeline 关键机制锚点", () => {
   test("session 页事件订阅有清理(vcs watcher)", () => {
     expect(sessionPage).toContain(`onCleanup(stopVcs)`)
   })
-  test("键盘焦点路由:终端开着优先夺焦(adapter 不得截断该链路)", () => {
-    expect(sessionPage).toContain(`shouldFocusTerminalOnKeyDown(event) && focusTerminalById(id)`)
+  test("键盘焦点路由:全局 printable key 归 composer,终端仍经显式 focus helper 聚焦", () => {
+    expect(sessionPage).toContain(`const input = inputRef`)
+    expect(sessionPage).toContain(`input.focus()`)
     expect(sessionPage).toContain(`makeEventListener(document, "keydown", handleKeyDown)`)
+    expect(sessionPage).not.toContain(`shouldFocusTerminalOnKeyDown`)
+    expect(terminalPanel).toContain(`focusTerminalById(id)`)
   })
 })
 
@@ -136,11 +141,17 @@ describe("REQ-087 §6 通道结论锁定(REQ-088 C1 合法窄通道,不可静默
     expect(Object.keys(pkg.exports).sort()).toEqual(
       [".", "./desktop-menu", "./index.css", "./updater", "./vite", "./wsl/types", "./surface/session"].sort(),
     )
-    // 窄面锁死:该子路径只指向 session 叶源文件,且该模块仅有 default 一个导出(L3 逐案评审结论)。
+    // 窄面锁死:该子路径只指向 session 叶源文件,并只暴露上游路由组合所需的显式 allowlist。
     expect(pkg.exports["./surface/session"]).toBe("./src/pages/session.tsx")
     const sessionLeaf = src("pages/session.tsx")
     const exportStatements = sessionLeaf.match(/^export .*$/gm) ?? []
-    expect(exportStatements).toEqual(["export default function Page() {"])
+    expect(exportStatements).toEqual([
+      "export function SessionPage() {",
+      "export function TargetSessionRouteContent(props: { content?: Component }) {",
+      "export function SessionRouteErrorBoundary(",
+      "export function SessionProviders(props: ParentProps) {",
+      "export default function Page() {",
+    ])
   })
   test("窄导出全仓唯一消费点 = session-workspace/alpha-session-workspace.tsx(T2 正式化,spike host 已让渡)", () => {
     // 收敛点断言不再钉单文件字符串,而是全 renderer 源码步进扫描:恰好一个非测试文件消费窄导出。

@@ -467,14 +467,16 @@ export async function startWorld(): Promise<LiveWorld> {
 
 // ---------------------------------------------------------------------------
 // page helpers(选择器与上游 e2e/smoke 同源:.scroll-view__viewport / data-timeline-row /
-// data-timeline-part-id / data-message-id / session-composer / #terminal-panel / #review-panel)
+// data-timeline-part-id / data-message-id / session-prompt-dock + prompt-input-v2 /
+// #terminal-panel / #review-panel)
 // ---------------------------------------------------------------------------
 export const SEL = {
   timelineRow: "[data-timeline-row]",
   partRow: "[data-timeline-part-id]",
   messageRow: "[data-message-id]",
-  composer: '[data-component="session-composer"]',
-  composerInput: '[data-component="session-composer"] textarea, [data-component="session-composer"] [contenteditable="true"]',
+  composer: '[data-component="session-prompt-dock"] [data-component="prompt-input-v2"]',
+  composerInput:
+    '[data-component="session-prompt-dock"] [data-component="prompt-input-v2"] [contenteditable="true"]',
   terminalPanel: "#terminal-panel",
   reviewPanel: "#review-panel",
   permissionActions: '[data-slot="permission-footer-actions"]',
@@ -562,7 +564,11 @@ export function visiblePartIds(page: Page) {
 
 export function domCounts(page: Page) {
   return page.evaluate(() => {
-    const composers = [...document.querySelectorAll<HTMLElement>('[data-component="session-composer"]')]
+    const composers = [
+      ...document.querySelectorAll<HTMLElement>(
+        '[data-component="session-prompt-dock"] [data-component="prompt-input-v2"]',
+      ),
+    ]
     return {
       composersTotal: composers.length,
       composersVisible: composers.filter((el) => el.offsetParent !== null).length,

@@ -11,6 +11,9 @@ const upstreamPatch = Bun.file(join(root, "scripts/patch-upstream.ts"))
 const sidebarCss = Bun.file(join(root, "src/renderer/sidebar/sidebar.css"))
 const appLayout = Bun.file(join(root, "../app/src/pages/layout.tsx"))
 const appHome = Bun.file(join(root, "../app/src/pages/home.tsx"))
+const appNewSession = Bun.file(join(root, "../app/src/pages/new-session.tsx"))
+const appSession = Bun.file(join(root, "../app/src/pages/session.tsx"))
+const appSettingsDialog = Bun.file(join(root, "../app/src/components/settings-dialog.tsx"))
 const l2Harness = Bun.file(join(root, "../../docs/verification/2026-07-21-req090-settings-l2/harness.html"))
 const l2Readme = Bun.file(join(root, "../../docs/verification/2026-07-21-req090-settings-l2/README.md"))
 
@@ -42,9 +45,18 @@ describe("Alpha Settings ownership ratchets", () => {
   })
 
   test("all ui-mac Settings entrypoints short-circuit to the Alpha owner", async () => {
-    for (const source of [await appLayout.text(), await appHome.text()]) {
-      expect(source.indexOf("if (platform.openSettings) return platform.openSettings()")).toBeGreaterThan(-1)
-      expect(source.indexOf("if (platform.openSettings)")).toBeLessThan(source.indexOf("<x.DialogSettings />"))
+    const guard = "if (platform.openSettings) return platform.openSettings()"
+    const layout = await appLayout.text()
+    expect(layout.indexOf(guard)).toBeGreaterThan(-1)
+    expect(layout.indexOf(guard)).toBeLessThan(layout.indexOf("<x.DialogSettings />"))
+
+    const settingsDialog = await appSettingsDialog.text()
+    expect(settingsDialog.indexOf(guard)).toBeGreaterThan(-1)
+    expect(settingsDialog.indexOf(guard)).toBeLessThan(settingsDialog.indexOf('import("@/components/settings-v2")'))
+
+    for (const source of [await appHome.text(), await appNewSession.text(), await appSession.text()]) {
+      expect(source).toContain(`import { useSettingsCommand } from "@/components/settings-dialog"`)
+      expect(source).toContain("useSettingsCommand()")
     }
   })
 

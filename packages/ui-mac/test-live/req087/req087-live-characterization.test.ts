@@ -82,7 +82,7 @@ async function waitFor<T>(fn: () => Promise<T>, ok: (v: T) => boolean, timeoutMs
 function composerFocused(page: Page) {
   return page.evaluate(() => {
     const el = document.activeElement as HTMLElement | null
-    return !!el?.closest('[data-component="session-composer"]')
+    return !!el?.closest('[data-alpha-composer="session"], [data-component="prompt-input-v2"]')
   })
 }
 

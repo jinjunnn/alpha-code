@@ -9,7 +9,9 @@
 //   信号(双挂载 ≥2);持续 pending(650ms 复采样仍 0)经 summary.pendingSamples 暴露,不静默。
 //
 // 口径说明(与上游冻结 DOM 锚点对齐,见 req087-characterization.test.ts):
-//   - composer:`[data-component=session-composer]`(app/src/components/prompt-input.tsx:1517)。
+//   - composer:`[data-component=session-prompt-dock] [data-component=prompt-input-v2]`
+//     (app/src/pages/session/composer/session-composer-region.tsx +
+//     session-ui/src/v2/components/prompt-input/index.tsx)。
 //     keep-alive 的隐藏 timeline 各有一个 composer(composer-takeover.tsx 已实证),故 total
 //     可以 >1,但「可见」的必须 ≤1 —— 这才是双挂载信号。
 //   - terminal panel:`#terminal-panel`(app/src/pages/session/terminal-panel.tsx:198)。session
@@ -22,9 +24,9 @@ export interface SpikeSample {
   at: number
   pathname: string
   sessionID?: string
-  /** DOM 中全部 session composer(含 keep-alive 隐藏者)。 */
+  /** DOM 中全部 session prompt-input-v2(含 keep-alive 隐藏者)。 */
   composersTotal: number
-  /** offsetParent 可见的 session composer。 */
+  /** offsetParent 可见的 session prompt-input-v2。 */
   composersVisible: number
   /** `#terminal-panel` 元素数。 */
   terminalPanels: number
