@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import { mkdirSync, rmSync, statSync } from "node:fs"
 import * as http from "node:http"
 import { createServer } from "node:net"
-import { tmpdir } from "node:os"
+import { homedir, tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
@@ -71,7 +71,7 @@ import { catalogRegistryChannel, initAlphaEnvironment } from "./alpha-environmen
 import { productionCasGcConfig, startCasGcScheduler } from "./ext-cas-gc-scheduler"
 import { registerSettingsIpcHandlers } from "./settings-ipc"
 import { ensureAlphaLayoutDefault } from "./alpha-defaults"
-import { initialSelfHealState, noteSpawn, planSelfHeal } from "./sidecar-self-heal"
+import { initialSelfHealState, noteSpawn, planSelfHeal, SELF_HEAL_MAX_DELAY_MS } from "./sidecar-self-heal"
 import { ensureEngineScratchCwd } from "./engine-scratch-cwd"
 import {
   ENGINE_RUNAWAY_WINDOW_MS,
@@ -92,6 +92,9 @@ import { registerRecoveryIpcHandlers } from "./recovery-ipc"
 import { RECOVERY_ACTIONS } from "../shared/recovery"
 import { initByokKeys, injectByokKeysIntoEnv, setByokKeyDeps } from "./alpha-byok-keys"
 import { reconcileEngineConfigTruth } from "./engine-config-truth-boot"
+import { sweepEngineConfigDanglingUnlocked, type DanglingSweepOutcome } from "./engine-config-dangling"
+import { withConfigWriteLock } from "./ext-config"
+import { engineDataDir } from "./data-clear"
 import { reconcileDesiredStateAtBoot } from "./ext-install-planner"
 import { alphaGlobalRoot } from "./alpha-installs"
 import { factorySkillSources, reconcileFactorySkills } from "./factory-skills"
@@ -189,6 +192,16 @@ let engineRunawayGuard = initialEngineRunawayGuardState()
 let engineRunawayTimer: NodeJS.Timeout | null = null
 let requestSidecarRespawn: (() => Promise<boolean>) | null = null
 let recoveryService: RecoveryService | null = null
+
+function recordDanglingSweep(context: "boot" | "respawn", outcome: DanglingSweepOutcome) {
+  if (outcome.stripped.length > 0)
+    logger.warn("[req053-dangling-sweep] confirmed-absent Alpha config references stripped", {
+      context,
+      stripped: outcome.stripped.length,
+      files: outcome.changedFiles,
+    })
+  outcome.warnings.forEach((warning) => logger.warn(`[req053-dangling-sweep] ${context}: ${warning}`))
+}
 
 function handleSidecarExit(gen: number, code: number) {
   writeLog("utility", "sidecar exited", { code }, "warn")
@@ -624,6 +637,24 @@ const main = Effect.gen(function* () {
         logger.error("[req104-395] desired-state reconcile crashed — blocking sidecar (fail closed)", error)
       }
     }
+    try {
+      const dangling = sweepEngineConfigDanglingUnlocked({
+        phase: "boot",
+        userDataPath: app.getPath("userData"),
+        engineDataPath: engineDataDir(process.env, homedir()),
+      })
+      recordDanglingSweep("boot", dangling)
+      if (dangling.enforcementGap.length > 0) {
+        bootEnforcementGap = [...(bootEnforcementGap ?? []), ...dangling.enforcementGap]
+        logger.error("[req053-dangling-sweep] boot enforcement gap — blocking sidecar", {
+          gap: dangling.enforcementGap,
+        })
+      }
+    } catch (error) {
+      const gap = `dangling sweep crashed: ${error instanceof Error ? error.message : String(error)}`
+      bootEnforcementGap = [...(bootEnforcementGap ?? []), gap]
+      logger.error("[req053-dangling-sweep] boot sweep crashed — blocking sidecar (fail closed)", error)
+    }
   }
   ensureAlphaLayoutDefault()
   // Packaged builds only: on macOS this sets the user-level Launch Services handler pref to the
@@ -895,6 +926,33 @@ const main = Effect.gen(function* () {
       // 失败保留 last-known/内置 snapshot,不阻断 respawn)。
       await syncLiveAllowlist(app.getPath("userData")).catch(() => {})
       markSidecarTokenSnapshot() // B2:新 fork 冻住的是当前 token —— 重新打点
+      const lockedSweep = withConfigWriteLock(() => ({
+        acquired: true as const,
+        outcome: sweepEngineConfigDanglingUnlocked({
+          phase: "respawn",
+          userDataPath: app.getPath("userData"),
+          engineDataPath: engineDataDir(process.env, homedir()),
+        }),
+      }))
+      if (!("acquired" in lockedSweep)) {
+        const retryDelayMs = Math.min(1000 * 2 ** selfHeal.attempts, SELF_HEAL_MAX_DELAY_MS)
+        logger.error(
+          `[req053-dangling-sweep] respawn sweep skipped; retrying this spawn in ${retryDelayMs}ms: ${lockedSweep.reason}`,
+        )
+        if (selfHealTimer) clearTimeout(selfHealTimer)
+        selfHealTimer = setTimeout(() => {
+          selfHealTimer = null
+          void requestSidecarRespawn?.()
+        }, retryDelayMs)
+        return false
+      }
+      recordDanglingSweep("respawn", lockedSweep.outcome)
+      if (lockedSweep.outcome.enforcementGap.length > 0) {
+        logger.error("[req053-dangling-sweep] respawn enforcement gap — refusing this spawn", {
+          gap: lockedSweep.outcome.enforcementGap,
+        })
+        return false
+      }
       await killSidecar()
       ensureLoopbackNoProxy()
       useEnvProxy()
