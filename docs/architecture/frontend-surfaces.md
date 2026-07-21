@@ -18,7 +18,7 @@ It covers URL pages and non-URL surfaces because the Alpha renderer mounts both:
 
 - `route`: a page or compatibility redirect owned by the in-app router;
 - `overlay`: a full-page workspace, modal, or transient layer above the current route;
-- `inline`: a shell or route slot such as sidebar, composer, timeline, or permission;
+- `inline`: a shell or route slot such as sidebar, composer, or timeline;
 - `boot`: a recovery host that runs before or while the renderer starts.
 
 The manifest records durable implementation facts only. Requirement status,
@@ -60,6 +60,11 @@ snapshot.
 The inventory is intentionally limited to top-level ownership boundaries. Tabs,
 popovers, controls, and render helpers belong to their enclosing surface unless
 they acquire an independent host or navigation lifecycle.
+
+Permission confirmation is an Alpha-owned overlay mounted once inside the active
+session provider tree. Its narrow surface client reuses that session's current
+server/directory SDK and existing event emitter for pending-request list, asked/replied
+events, and atomic replies; it does not create a parallel SDK client or SSE stream.
 
 ## Navigation compatibility
 

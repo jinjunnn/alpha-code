@@ -12,6 +12,11 @@ import { ThemeProvider } from "@opencode-ai/ui/theme/context"
 import { MetaProvider } from "@solidjs/meta"
 import { type BaseRouterProps, Navigate, Route, Router, useParams, useSearchParams } from "@solidjs/router"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
+import type {
+  PermissionV2DecisionCommand,
+  PermissionV2DecisionReceipt,
+  PermissionV2Request,
+} from "@opencode-ai/sdk/v2/client"
 import { Effect } from "effect"
 import {
   type Component,
@@ -46,6 +51,7 @@ import { SettingsProvider, useSettings } from "@/context/settings"
 import { TerminalProvider } from "@/context/terminal"
 import { TabsProvider, useTabs, type DraftTab } from "@/context/tabs"
 import { SDKProvider, useSDK } from "@/context/sdk"
+import { useSync } from "@/context/sync"
 import { WslServersProvider } from "@/wsl/context"
 import DirectoryLayout, { DirectoryDataProvider } from "@/pages/directory-layout"
 import Layout from "@/pages/layout"
@@ -74,21 +80,77 @@ export interface DraftSurfaceProps {
 
 export type DraftSurfaceComponent = Component<DraftSurfaceProps> & { preload?: () => void }
 
+export interface PermissionSurfaceClient {
+  list: () => Promise<PermissionV2Request[]>
+  reply: (requestID: string, command: PermissionV2DecisionCommand) => Promise<PermissionV2DecisionReceipt>
+  subscribe: (listeners: {
+    asked: (request: PermissionV2Request) => void
+    replied: (receipt: PermissionV2DecisionReceipt) => void
+    connected: () => void
+  }) => () => void
+}
+
+export interface PermissionSurfaceProps {
+  sessionID: string
+  projectID?: string
+  client: PermissionSurfaceClient
+}
+
+export type PermissionSurfaceComponent = Component<PermissionSurfaceProps>
+
 export interface AppSurfaces {
   home?: MaybePreloadableComponent
   newSession?: DraftSurfaceComponent
   session?: MaybePreloadableComponent
+  permission?: PermissionSurfaceComponent
 }
 
-function createSessionRoute(Leaf: MaybePreloadableComponent) {
+function createSessionRoute(Leaf: MaybePreloadableComponent, PermissionSurface?: PermissionSurfaceComponent) {
   return Object.assign(
     () => {
       const settings = useSettings()
       const params = useParams()
       const [search] = useSearchParams<{ draftId?: string; prompt?: string }>()
       const sdk = useSDK()
+      const sync = useSync()
       const server = useServer()
       const tabs = useTabs()
+      const permissionClient: PermissionSurfaceClient = {
+        list: () =>
+          sdk()
+            .client.v2.session.permission.list({ sessionID: params.id! })
+            .then((result) => {
+              if (!result.data) throw new Error("Permission list response is missing data")
+              return result.data.data
+            }),
+        reply: (requestID, command) =>
+          sdk()
+            .client.v2.session.permission.reply({
+              sessionID: params.id!,
+              requestID,
+              permissionV2DecisionCommand: command,
+            })
+            .then((result) => {
+              if (!result.data) throw new Error("Permission reply response is missing DecisionReceipt")
+              return result.data.data
+            }),
+        subscribe: (listeners) => {
+          const stopAsked = sdk().event.on("permission.v2.asked", (event) => {
+            if (event.properties.sessionID !== params.id) return
+            listeners.asked(event.properties)
+          })
+          const stopReplied = sdk().event.on("permission.v2.replied", (event) => {
+            if (event.properties.sessionID !== params.id) return
+            listeners.replied(event.properties)
+          })
+          const stopConnected = sdk().event.on("server.connected", listeners.connected)
+          return () => {
+            stopAsked()
+            stopReplied()
+            stopConnected()
+          }
+        },
+      }
 
       // When the new layout is enabled, the legacy new-session route (/:dir/session with no id)
       // is replaced by a draft at /new-session?draftId=…
@@ -102,6 +164,16 @@ function createSessionRoute(Leaf: MaybePreloadableComponent) {
       return (
         <SessionProviders>
           <Leaf />
+          <Show when={PermissionSurface && params.id} keyed>
+            {(sessionID) => (
+              <Dynamic
+                component={PermissionSurface}
+                sessionID={sessionID}
+                projectID={sync().project?.id}
+                client={permissionClient}
+              />
+            )}
+          </Show>
         </SessionProviders>
       )
     },
@@ -463,7 +535,7 @@ export function AppInterface(props: {
   // Surfaces are resolved exactly once, before the route tree first mounts. Absent
   // overrides fall back to the upstream defaults with identical lazy/preload behavior.
   const HomeLeaf = props.surfaces?.home ?? HomeRoute
-  const SessionRoute = createSessionRoute(props.surfaces?.session ?? Session)
+  const SessionRoute = createSessionRoute(props.surfaces?.session ?? Session, props.surfaces?.permission)
   // The upstream draft page reads its state from context and ignores the narrow
   // surface props, so it satisfies the contract without changes.
   const DraftRoute = createDraftRoute(props.surfaces?.newSession ?? (NewSession as unknown as DraftSurfaceComponent))

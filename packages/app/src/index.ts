@@ -5,6 +5,9 @@ export {
   type DraftSurfaceComponent,
   type DraftSurfaceProps,
   type MaybePreloadableComponent,
+  type PermissionSurfaceClient,
+  type PermissionSurfaceComponent,
+  type PermissionSurfaceProps,
 } from "./app"
 export { ACCEPTED_FILE_EXTENSIONS, ACCEPTED_FILE_TYPES, filePickerFilters } from "./constants/file-picker"
 export { useCommand } from "./context/command"

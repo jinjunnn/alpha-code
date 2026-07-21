@@ -4,8 +4,13 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { RECOVERY_CODES } from "../shared/recovery"
 
-mock.module("electron", () => ({ app: { getVersion: () => "9.9.9" }, ipcMain: { handle: () => {} } }))
-mock.module("./logging", () => ({ getLogger: () => undefined }))
+mock.module("electron", () => ({
+  app: { getVersion: () => "9.9.9" },
+  BrowserWindow: class {},
+  dialog: {},
+  ipcMain: { handle: () => {} },
+}))
+mock.module("./logging", () => ({ write: () => {}, getLogger: () => undefined }))
 
 const { readSurfaceFile, recordSurfaceFailure, resolveSurfaces } = await import("./alpha-surfaces")
 const FILE = "alpha-surfaces.json"

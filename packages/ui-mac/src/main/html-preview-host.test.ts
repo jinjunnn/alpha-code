@@ -117,6 +117,7 @@ mock.module("electron", () => ({
     },
   },
   BrowserWindow: FakeBrowserWindow,
+  dialog: {},
   session: {
     fromPartition: (partition: string) => {
       const ses = new FakeSession(partition)

@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>REQ-090 Alpha Permission L2 harness</title>
+    <link rel="stylesheet" href="../../../packages/ui-mac/src/renderer/alpha-ui/base.css" />
+    <link rel="stylesheet" href="../../../packages/ui-mac/src/renderer/alpha-ui/button.css" />
+    <link rel="stylesheet" href="../../../packages/ui-mac/src/renderer/alpha-ui/dialog.css" />
+    <link rel="stylesheet" href="../../../packages/ui-mac/src/renderer/alpha-ui/permission-dialog.css" />
+    <style>
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: var(--a-bg-canvas);
+      }
+      .l2-windowbar {
+        position: relative;
+        z-index: calc(var(--a-z-modal) + 1);
+        display: flex;
+        align-items: center;
+        height: 40px;
+        padding: 0 16px;
+        border-bottom: 1px solid var(--a-border-faint);
+        background: var(--a-bg-canvas);
+        color: var(--a-text-secondary);
+        font-size: var(--a-text-xs);
+      }
+      .l2-dots {
+        display: flex;
+        gap: 7px;
+        margin-right: auto;
+      }
+      .l2-dots i {
+        width: 10px;
+        height: 10px;
+        border-radius: var(--a-radius-full);
+        background: var(--a-border-strong);
+      }
+      .l2-controls {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 10px;
+        border: 1px solid var(--a-border-faint);
+        border-radius: var(--a-radius-lg);
+        background: var(--a-surface-raised);
+      }
+      .l2-controls a {
+        padding: 5px 8px;
+        border-radius: var(--a-radius-md);
+        color: var(--a-text-secondary);
+        font-size: var(--a-text-xs);
+        text-decoration: none;
+      }
+      .l2-controls a[aria-current="true"] {
+        background: var(--a-bg-muted);
+        color: var(--a-text);
+        font-weight: var(--a-weight-semibold);
+      }
+      .l2-session {
+        min-height: calc(100% - 40px);
+        padding: 64px;
+        background: var(--a-bg-subtle);
+      }
+      .l2-message {
+        width: min(700px, 76vw);
+        height: 76px;
+        margin: 0 auto 18px;
+        border: 1px solid var(--a-border-faint);
+        border-radius: var(--a-radius-xl);
+        background: var(--a-surface);
+      }
+      [data-l2-state][hidden] {
+        display: none;
+      }
+    </style>
+    <script>
+      const params = new URLSearchParams(location.search)
+      const theme = params.get("theme") === "dark" ? "dark" : "light"
+      const state = params.get("state") === "failed" ? "failed" : "default"
+      document.documentElement.dataset.colorScheme = theme
+      document.addEventListener("DOMContentLoaded", () => {
+        document.querySelectorAll("[data-l2-state]").forEach((node) => {
+          node.hidden = node.dataset.l2State !== state
+        })
+        document.querySelectorAll("[data-state-link]").forEach((link) => {
+          link.href = `?theme=${theme}&state=${link.dataset.stateLink}`
+          link.setAttribute("aria-current", String(link.dataset.stateLink === state))
+        })
+        const themeLink = document.querySelector("[data-theme-link]")
+        themeLink.href = `?theme=${theme === "dark" ? "light" : "dark"}&state=${state}`
+        themeLink.textContent = theme === "dark" ? "切到浅色" : "切到深色"
+        document.querySelector("[data-current]").textContent = `${theme} / ${state}`
+      })
+    </script>
+  </head>
+  <body class="a-ui">
+    <div class="l2-windowbar">
+      <span class="l2-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+      <nav class="l2-controls" aria-label="L2 状态选择">
+        <span data-current></span>
+        <a data-state-link="default">完整事实 + 三态</a>
+        <a data-state-link="failed">提交失败</a>
+        <a data-theme-link></a>
+      </nav>
+    </div>
+    <main class="l2-session" aria-hidden="true">
+      <div class="l2-message"></div>
+      <div class="l2-message"></div>
+    </main>
+
+    <div class="a-ui a-dialog-root" data-l2-state="default">
+      <div aria-hidden="true" class="a-dialog-backdrop"></div>
+      <div class="a-dialog-panel" data-size="md" role="dialog" aria-modal="true" aria-labelledby="default-title" aria-describedby="default-description" tabindex="-1">
+        <span class="a-dialog-focus-guard" data-dialog-focus-guard="start" tabindex="0"></span>
+        <header class="a-dialog-header"><div id="default-title" class="a-dialog-title">允许这次操作吗？</div></header>
+        <div class="a-dialog-body">
+          <div id="default-description" class="a-dialog-description">请核对下面的真实请求事实。作出决定前，工具保持暂停。</div>
+          <dl class="a-permission-facts" aria-label="权限请求事实">
+            <div class="a-permission-fact" data-permission-fact="subject"><dt>主体 / 执行 Agent</dt><dd>build-reviewer</dd><small>subject.kind = agent</small></div>
+            <div class="a-permission-fact" data-permission-fact="action"><dt>Action / Capability</dt><dd>bash</dd><small>请求执行的能力</small></div>
+            <div class="a-permission-fact a-permission-fact--wide" data-permission-fact="resources"><dt>Resources</dt><dd><span class="a-permission-resources"><code>pwd</code><code>src/**</code></span></dd><small>2 项，由请求按原顺序提供</small></div>
+            <div class="a-permission-fact" data-permission-fact="scope"><dt>Scope</dt><dd>本次会话</dd><small>ses_ui_1</small></div>
+            <div class="a-permission-fact" data-permission-fact="expiry"><dt>Expiry</dt><dd>2030-01-01 00:00:00 UTC</dd><small>1893456000000</small></div>
+          </dl>
+        </div>
+        <footer class="a-dialog-footer">
+          <div class="a-permission-footer">
+            <small class="a-permission-grant-note">“始终允许”会为当前项目创建永久授权（grantExpiresAt = null）。</small>
+            <div class="a-permission-actions">
+              <button class="a-btn" data-variant="danger" data-size="md" data-permission-decision="reject" type="button">拒绝</button>
+              <button class="a-btn" data-variant="secondary" data-size="md" data-permission-decision="always" type="button">始终允许</button>
+              <button autofocus class="a-btn" data-variant="primary" data-size="md" data-permission-decision="once" type="button">允许一次</button>
+            </div>
+          </div>
+        </footer>
+        <span class="a-dialog-focus-guard" data-dialog-focus-guard="end" tabindex="0"></span>
+      </div>
+    </div>
+
+    <div class="a-ui a-dialog-root" data-l2-state="failed">
+      <div aria-hidden="true" class="a-dialog-backdrop"></div>
+      <div class="a-dialog-panel" data-size="md" role="dialog" aria-modal="true" aria-labelledby="failed-title" aria-describedby="failed-description" tabindex="-1">
+        <span class="a-dialog-focus-guard" data-dialog-focus-guard="start" tabindex="0"></span>
+        <header class="a-dialog-header"><div id="failed-title" class="a-dialog-title">允许这次操作吗？</div></header>
+        <div class="a-dialog-body">
+          <div id="failed-description" class="a-dialog-description">请核对下面的真实请求事实。作出决定前，工具保持暂停。</div>
+          <dl class="a-permission-facts" aria-label="权限请求事实">
+            <div class="a-permission-fact" data-permission-fact="subject"><dt>主体 / 执行 Agent</dt><dd>build-reviewer</dd><small>subject.kind = agent</small></div>
+            <div class="a-permission-fact" data-permission-fact="action"><dt>Action / Capability</dt><dd>bash</dd><small>请求执行的能力</small></div>
+            <div class="a-permission-fact a-permission-fact--wide" data-permission-fact="resources"><dt>Resources</dt><dd><span class="a-permission-resources"><code>pwd</code><code>src/**</code></span></dd><small>2 项，由请求按原顺序提供</small></div>
+            <div class="a-permission-fact" data-permission-fact="scope"><dt>Scope</dt><dd>本次会话</dd><small>ses_ui_1</small></div>
+            <div class="a-permission-fact" data-permission-fact="expiry"><dt>Expiry</dt><dd>2030-01-01 00:00:00 UTC</dd><small>1893456000000</small></div>
+          </dl>
+          <div class="a-permission-error" data-kind="failed" role="alert" tabindex="-1">
+            <strong>未能提交你的选择</strong>
+            <span>没有收到授权收据；本界面不会假定操作已经获准。</span>
+            <small>network unavailable</small>
+          </div>
+        </div>
+        <footer class="a-dialog-footer">
+          <div class="a-permission-footer">
+            <small class="a-permission-grant-note">“始终允许”会为当前项目创建永久授权（grantExpiresAt = null）。</small>
+            <div class="a-permission-actions">
+              <button class="a-btn" data-variant="danger" data-size="md" data-permission-decision="reject" type="button">拒绝</button>
+              <button class="a-btn" data-variant="secondary" data-size="md" data-permission-decision="always" type="button">始终允许</button>
+              <button autofocus class="a-btn" data-variant="primary" data-size="md" data-permission-decision="once" type="button">重试“允许一次”</button>
+            </div>
+          </div>
+        </footer>
+        <span class="a-dialog-focus-guard" data-dialog-focus-guard="end" tabindex="0"></span>
+      </div>
+    </div>
+  </body>
+</html>

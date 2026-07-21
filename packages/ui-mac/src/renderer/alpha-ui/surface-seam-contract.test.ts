@@ -17,12 +17,18 @@ describe("ADR-027 typed surface seam anchors (frozen packages/app)", () => {
     expect(appTsx).toContain("export type MaybePreloadableComponent")
     expect(appTsx).toContain("export interface DraftSurfaceProps")
     expect(appTsx).toContain("export type DraftSurfaceComponent")
+    expect(appTsx).toContain("export interface PermissionSurfaceProps")
+    expect(appTsx).toContain("export interface PermissionSurfaceClient")
+  })
+
+  test("permission surface reuses the existing SSE reconnect signal", () => {
+    expect(appTsx).toContain('sdk().event.on("server.connected", listeners.connected)')
   })
 
   test("AppInterface accepts surfaces and resolves leaves once before route mount", () => {
     expect(appTsx).toContain("surfaces?: AppSurfaces")
     expect(appTsx).toContain("props.surfaces?.home ?? HomeRoute")
-    expect(appTsx).toContain("createSessionRoute(props.surfaces?.session ?? Session)")
+    expect(appTsx).toContain("createSessionRoute(props.surfaces?.session ?? Session, props.surfaces?.permission)")
     expect(appTsx).toContain("createDraftRoute(props.surfaces?.newSession ??")
   })
 
@@ -37,7 +43,7 @@ describe("ADR-027 typed surface seam anchors (frozen packages/app)", () => {
 
   test("provider wrappers keep default lifecycles around the injected leaves", () => {
     // session leaf 仍包在 SessionProviders;draft 叶仍包在 SDKProvider/DirectoryDataProvider/DraftProviders。
-    expect(appTsx).toMatch(/<SessionProviders>\s*<Leaf \/>\s*<\/SessionProviders>/)
+    expect(appTsx).toMatch(/<SessionProviders>\s*<Leaf \/>[\s\S]*PermissionSurface[\s\S]*<\/SessionProviders>/)
     expect(appTsx).toMatch(/<DraftProviders>\s*<Leaf draftId=/)
   })
 

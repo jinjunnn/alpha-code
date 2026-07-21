@@ -8,7 +8,12 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 
-mock.module("electron", () => ({ app: { isPackaged: false } }))
+mock.module("electron", () => ({
+  app: { isPackaged: false },
+  BrowserWindow: class {},
+  dialog: {},
+  ipcMain: { handle: () => {} },
+}))
 
 const { agentInstallPresent, collectBuiltinAgentPayload, collectVendoredPluginPayload, installBuiltinSkill, removeFsInstall, resourcesRoot, stageVendoredPluginVersioned, writeAgent, writeSkill } = await import("./ext-fs-installer")
 const { readLedger } = await import("./alpha-installs")
