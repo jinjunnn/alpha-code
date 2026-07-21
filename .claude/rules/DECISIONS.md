@@ -35,6 +35,7 @@
 | [ADR-029](adrs/ADR-029-upstream-sovereignty-ladder.md) | 上游主权阶梯:「零改上游」铁律不修宪,主权升级走四级枚举通道(L0 接缝 → L1 变换 → L2 补丁 loud-fail → L3 冻结接管;逐案 ADR、永不设 L4 直接编辑;既有例外归位记账) | accepted(2026-07-12 同日拍板) | 2026-07-12 |
 | [ADR-030](adrs/ADR-030-project-scope-generation-recall.md) | 收回 project-scope catalog/seed 受管安装:planner decode 后统一 policy guard fail-closed 拒(skill/agent 对称;wire 形状保留),新增安装策略与遗留可管理 kind 拆分,残留显式检测 + generation-aware 清理(journal 在场 fail-closed);项目技能能力走 `.alpha/skills` 非 generation 路径(#362 DECIDE,Codex 裁决) | accepted | 2026-07-15 |
 | [ADR-031](adrs/ADR-031-hybrid-user-memory.md) | 混合用户记忆——本地优先、选择性云发布与有界上下文 | proposed | 2026-07-19 |
+| [ADR-033](adrs/ADR-033-permission-kernel-takeover.md) | Permission 内核接管:REQ-090 #433 的 permission 引擎/契约面走 L3 冻结接管(ADR-029 §3;文件级守卫 `:(exclude)` 例外 + 生成文件整类移出;4 个 B 类连带退回 seam;放弃上游 permission 白嫖=单向门;逐文件审计 `docs/audits/2026-07-21-north-star-guard-upstream-delta.md`;#456 owner 拍板) | accepted | 2026-07-21 |
 
 > 🔒 **编号预留**:产品所有权专项(见 [GitHub Issues](https://github.com/jinjunnn/alpha-code/issues) 与 [Alpha Delivery](https://github.com/users/jinjunnn/projects/2) §5)预留的 ADR-027/ADR-028 均已于 2026-07-12 按号落笔,预留清空;新 ADR 从 ADR-032 起编号。
 

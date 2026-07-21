@@ -110,14 +110,35 @@ jobs:
       - name: Fail on any modification to upstream package files
         if: needs.detect.outputs.code == 'true'
         run: |
-          changed="$(git diff --diff-filter=DMR --name-only origin/dev...HEAD -- $UPSTREAM_PATHS)"
+          # ADR-033(2026-07-21,owner 批准接管 #456):REQ-090 permission 内核走 L3 冻结接管。
+          # 下述被接管表面 + 生成/快照文件退出守卫范围——它们散在 core/server/opencode 等高 churn 包内,
+          # 故用文件级 :(exclude) 而非 ADR-020 的整包移出。守卫盲区(protocol/schema/client)留待独立
+          # 裁决(#456),本处刻意不 expand UPSTREAM_PATHS。新增收编须自己的 ADR,不得静默加 exclude。
+          excludes=(
+            # ADR-033 §1 被接管 permission 表面(L3)
+            ':(exclude)packages/core/src/permission.ts'
+            ':(exclude)packages/core/src/permission'
+            ':(exclude)packages/server/src/handlers/permission.ts'
+            ':(exclude)packages/opencode/src/server/routes/instance/httpapi/public.ts'
+            ':(exclude)packages/core/test/permission.test.ts'
+            ':(exclude)packages/core/test/database-migration.test.ts'
+            ':(exclude)packages/opencode/test/server/httpapi-exercise'
+            ':(exclude)packages/opencode/test/server/httpapi-public-openapi.test.ts'
+            # ADR-033 §4 生成/快照(SOT = alpha 拥有的迁移/协议/schema;静态 diff 会误报)
+            ':(exclude)packages/core/schema.json'
+            ':(exclude)packages/core/src/database/migration.gen.ts'
+            ':(exclude)packages/core/src/database/schema.gen.ts'
+            ':(exclude)packages/sdk/js/src/v2/gen/sdk.gen.ts'
+            ':(exclude)packages/sdk/js/src/v2/gen/types.gen.ts'
+          )
+          changed="$(git diff --diff-filter=DMR --name-only origin/dev...HEAD -- $UPSTREAM_PATHS "${excludes[@]}")"
           if [ -n "$changed" ]; then
             echo "::error::North star broken — alpha modified/deleted/renamed upstream files (fork-sync will conflict):"
             echo "$changed" | sed 's/^/  /'
-            echo "Fix: revert the edit; extend behaviour via alpha-owned files (packages/ext, packages/ui-mac) or the plugin/tool/MCP/sidecar seams (ADR-002/005)."
+            echo "Fix: revert the edit; extend behaviour via alpha-owned files (packages/ext, packages/ui-mac) or the plugin/tool/MCP/sidecar seams (ADR-002/005). Sanctioned takeovers are enumerated as :(exclude) above per ADR-029 §3 — a new takeover needs its own ADR, not a silent exclude."
             exit 1
           fi
-          echo "✓ zero upstream package edits — north star intact"
+          echo "✓ zero upstream package edits (ADR-033 permission takeover excepted) — north star intact"
 
   typecheck:
     name: typecheck (alpha packages)
