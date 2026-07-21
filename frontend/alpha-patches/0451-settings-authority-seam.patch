@@ -1,0 +1,373 @@
+diff --git a/packages/app/src/context/platform.tsx b/packages/app/src/context/platform.tsx
+index de12e8c3..d6679733 100644
+--- a/packages/app/src/context/platform.tsx
++++ b/packages/app/src/context/platform.tsx
+@@ -5,6 +5,7 @@ import type { DesktopMenuAction } from "../desktop-menu"
+ import { ServerConnection } from "./server"
+ import type { WslServersPlatform } from "../wsl/types"
+ import type { UpdaterPlatform } from "../updater"
++import type { SettingsAuthorityCoordinator } from "./settings"
+ 
+ type PickerPaths = string | string[] | null
+ type OpenDirectoryPickerOptions = { title?: string; multiple?: boolean }
+@@ -64,6 +65,12 @@ type PlatformBase = {
+   /** Storage mechanism, defaults to localStorage */
+   storage?: (name?: string) => SyncStorage | AsyncStorage
+ 
++  /** Host-owned Settings surface. When present, upstream Settings dialogs are not mounted. */
++  openSettings?(): void
++
++  /** Host-owned Settings authority shared by the upstream context and replacement surface. */
++  settings?: SettingsAuthorityCoordinator
++
+   /** Application-global desktop updater */
+   updater?: UpdaterPlatform
+ 
+diff --git a/packages/app/src/context/settings.tsx b/packages/app/src/context/settings.tsx
+index 21c845d0..99b83b55 100644
+--- a/packages/app/src/context/settings.tsx
++++ b/packages/app/src/context/settings.tsx
+@@ -1,7 +1,8 @@
+-import { createStore, reconcile } from "solid-js/store"
+-import { createEffect, createMemo } from "solid-js"
++import { createStore, reconcile, type Store } from "solid-js/store"
++import { createEffect, createMemo, createSignal, onCleanup, type Accessor } from "solid-js"
+ import { createSimpleContext } from "@opencode-ai/ui/context"
+ import { persisted } from "@/utils/persist"
++import { usePlatform } from "./platform"
+ 
+ export interface NotificationSettings {
+   agent: boolean
+@@ -49,6 +50,17 @@ export interface Settings {
+   sounds: SoundSettings
+ }
+ 
++export type SettingsAuthoritySnapshot = {
++  value: Settings
++  revision: string
++}
++
++export type SettingsAuthorityCoordinator = {
++  read(): Promise<SettingsAuthoritySnapshot>
++  update(change: (current: Settings) => Settings): Promise<SettingsAuthoritySnapshot>
++  subscribe(listener: (snapshot: SettingsAuthoritySnapshot) => void): () => void
++}
++
+ export const monoDefault = "System Mono"
+ export const sansDefault = "System Sans"
+ export const terminalDefault = "JetBrainsMono Nerd Font Mono"
+@@ -148,11 +160,64 @@ function withFallback<T>(read: () => T | undefined, fallback: T) {
+   return createMemo(() => read() ?? fallback)
+ }
+ 
++function cloneSettings(value: Settings) {
++  return JSON.parse(JSON.stringify(value)) as Settings
++}
++
++function createSettingsState(coordinator: SettingsAuthorityCoordinator | undefined): {
++  store: Store<Settings>
++  ready: Accessor<boolean>
++  update(change: (current: Settings) => Settings): void
++} {
++  if (!coordinator) {
++    const state = persisted("settings.v3", createStore<Settings>(defaultSettings))
++    return {
++      store: state[0],
++      ready: state[3],
++      update(change) {
++        state[1](reconcile(change(cloneSettings(state[0]))))
++      },
++    }
++  }
++
++  const [store, setStore] = createStore<Settings>(cloneSettings(defaultSettings))
++  const [ready, setReady] = createSignal(false)
++  const adopt = (snapshot: SettingsAuthoritySnapshot) => {
++    setStore(reconcile(cloneSettings(snapshot.value)))
++    setReady(true)
++  }
++  const unsubscribe = coordinator.subscribe(adopt)
++  onCleanup(unsubscribe)
++  void coordinator.read().then(adopt, () => undefined)
++
++  return {
++    store,
++    ready,
++    update(change) {
++      setStore(reconcile(change(cloneSettings(store))))
++      void coordinator.update(change).then(adopt, () => coordinator.read().then(adopt, () => undefined))
++    },
++  }
++}
++
+ export const { use: useSettings, provider: SettingsProvider } = createSimpleContext({
+   name: "Settings",
+   gate: false,
+   init: () => {
+-    const [store, setStore, _, ready] = persisted("settings.v3", createStore<Settings>(defaultSettings))
++    const state = createSettingsState(usePlatform().settings)
++    const store = state.store
++    const setGeneral = <Key extends keyof Settings["general"]>(key: Key, value: Settings["general"][Key]) =>
++      state.update((current) => ({ ...current, general: { ...current.general, [key]: value } }))
++    const setAppearance = <Key extends keyof Settings["appearance"]>(
++      key: Key,
++      value: Settings["appearance"][Key],
++    ) => state.update((current) => ({ ...current, appearance: { ...current.appearance, [key]: value } }))
++    const setNotification = <Key extends keyof Settings["notifications"]>(
++      key: Key,
++      value: Settings["notifications"][Key],
++    ) => state.update((current) => ({ ...current, notifications: { ...current.notifications, [key]: value } }))
++    const setSound = <Key extends keyof Settings["sounds"]>(key: Key, value: Settings["sounds"][Key]) =>
++      state.update((current) => ({ ...current, sounds: { ...current.sounds, [key]: value } }))
+     const showFileTree = withFallback(() => store.general?.showFileTree, defaultSettings.general.showFileTree)
+     const showSearch = withFallback(() => store.general?.showSearch, defaultSettings.general.showSearch)
+     const showStatus = withFallback(() => store.general?.showStatus, defaultSettings.general.showStatus)
+@@ -172,85 +237,85 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
+ 
+     createEffect(() => {
+       if (store.general?.followup !== "queue") return
+-      setStore("general", "followup", "steer")
++      setGeneral("followup", "steer")
+     })
+ 
+     return {
+-      ready,
++      ready: state.ready,
+       get current() {
+         return store
+       },
+       general: {
+         autoSave: withFallback(() => store.general?.autoSave, defaultSettings.general.autoSave),
+         setAutoSave(value: boolean) {
+-          setStore("general", "autoSave", value)
++          setGeneral("autoSave", value)
+         },
+         releaseNotes: withFallback(() => store.general?.releaseNotes, defaultSettings.general.releaseNotes),
+         setReleaseNotes(value: boolean) {
+-          setStore("general", "releaseNotes", value)
++          setGeneral("releaseNotes", value)
+         },
+         followup: withFallback(
+           () => (store.general?.followup === "queue" ? "steer" : store.general?.followup),
+           defaultSettings.general.followup,
+         ),
+         setFollowup(value: "queue" | "steer") {
+-          setStore("general", "followup", value === "queue" ? "steer" : value)
++          setGeneral("followup", value === "queue" ? "steer" : value)
+         },
+         showFileTree,
+         setShowFileTree(value: boolean) {
+-          setStore("general", "showFileTree", value)
++          setGeneral("showFileTree", value)
+         },
+         showNavigation: withFallback(() => store.general?.showNavigation, defaultSettings.general.showNavigation),
+         setShowNavigation(value: boolean) {
+-          setStore("general", "showNavigation", value)
++          setGeneral("showNavigation", value)
+         },
+         showSearch,
+         setShowSearch(value: boolean) {
+-          setStore("general", "showSearch", value)
++          setGeneral("showSearch", value)
+         },
+         showStatus,
+         setShowStatus(value: boolean) {
+-          setStore("general", "showStatus", value)
++          setGeneral("showStatus", value)
+         },
+         showTerminal: withFallback(() => store.general?.showTerminal, defaultSettings.general.showTerminal),
+         setShowTerminal(value: boolean) {
+-          setStore("general", "showTerminal", value)
++          setGeneral("showTerminal", value)
+         },
+         showReasoningSummaries: withFallback(
+           () => store.general?.showReasoningSummaries,
+           defaultSettings.general.showReasoningSummaries,
+         ),
+         setShowReasoningSummaries(value: boolean) {
+-          setStore("general", "showReasoningSummaries", value)
++          setGeneral("showReasoningSummaries", value)
+         },
+         shellToolPartsExpanded: withFallback(
+           () => store.general?.shellToolPartsExpanded,
+           defaultSettings.general.shellToolPartsExpanded,
+         ),
+         setShellToolPartsExpanded(value: boolean) {
+-          setStore("general", "shellToolPartsExpanded", value)
++          setGeneral("shellToolPartsExpanded", value)
+         },
+         editToolPartsExpanded: withFallback(
+           () => store.general?.editToolPartsExpanded,
+           defaultSettings.general.editToolPartsExpanded,
+         ),
+         setEditToolPartsExpanded(value: boolean) {
+-          setStore("general", "editToolPartsExpanded", value)
++          setGeneral("editToolPartsExpanded", value)
+         },
+         showSessionProgressBar: withFallback(
+           () => store.general?.showSessionProgressBar,
+           defaultSettings.general.showSessionProgressBar,
+         ),
+         setShowSessionProgressBar(value: boolean) {
+-          setStore("general", "showSessionProgressBar", value)
++          setGeneral("showSessionProgressBar", value)
+         },
+         showCustomAgents,
+         setShowCustomAgents(value: boolean) {
+-          setStore("general", "showCustomAgents", value)
++          setGeneral("showCustomAgents", value)
+         },
+         newLayoutDesigns,
+         setNewLayoutDesigns(value: boolean) {
+-          setStore("general", "newLayoutDesigns", value)
++          setGeneral("newLayoutDesigns", value)
+         },
+       },
+       visibility: {
+@@ -262,85 +327,85 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
+       appearance: {
+         fontSize: withFallback(() => store.appearance?.fontSize, defaultSettings.appearance.fontSize),
+         setFontSize(value: number) {
+-          setStore("appearance", "fontSize", value)
++          setAppearance("fontSize", value)
+         },
+         font: withFallback(() => store.appearance?.mono, defaultSettings.appearance.mono),
+         setFont(value: string) {
+-          setStore("appearance", "mono", value.trim() ? value : "")
++          setAppearance("mono", value.trim() ? value : "")
+         },
+         uiFont: withFallback(() => store.appearance?.sans, defaultSettings.appearance.sans),
+         setUIFont(value: string) {
+-          setStore("appearance", "sans", value.trim() ? value : "")
++          setAppearance("sans", value.trim() ? value : "")
+         },
+         terminalFont: withFallback(() => store.appearance?.terminal, defaultSettings.appearance.terminal),
+         setTerminalFont(value: string) {
+-          setStore("appearance", "terminal", value.trim() ? value : "")
++          setAppearance("terminal", value.trim() ? value : "")
+         },
+       },
+       keybinds: {
+         get: (action: string) => store.keybinds?.[action],
+         set(action: string, keybind: string) {
+-          setStore("keybinds", action, keybind)
++          state.update((current) => ({ ...current, keybinds: { ...current.keybinds, [action]: keybind } }))
+         },
+         reset(action: string) {
+-          setStore("keybinds", (current) => {
+-            if (!Object.prototype.hasOwnProperty.call(current, action)) return current
+-            const next = { ...current }
+-            delete next[action]
+-            return next
++          state.update((current) => {
++            if (!Object.prototype.hasOwnProperty.call(current.keybinds, action)) return current
++            const keybinds = { ...current.keybinds }
++            delete keybinds[action]
++            return { ...current, keybinds }
+           })
+         },
+         resetAll() {
+-          setStore("keybinds", reconcile({}))
++          state.update((current) => ({ ...current, keybinds: {} }))
+         },
+       },
+       permissions: {
+         autoApprove: withFallback(() => store.permissions?.autoApprove, defaultSettings.permissions.autoApprove),
+         setAutoApprove(value: boolean) {
+-          setStore("permissions", "autoApprove", value)
++          state.update((current) => ({ ...current, permissions: { autoApprove: value } }))
+         },
+       },
+       notifications: {
+         agent: withFallback(() => store.notifications?.agent, defaultSettings.notifications.agent),
+         setAgent(value: boolean) {
+-          setStore("notifications", "agent", value)
++          setNotification("agent", value)
+         },
+         permissions: withFallback(() => store.notifications?.permissions, defaultSettings.notifications.permissions),
+         setPermissions(value: boolean) {
+-          setStore("notifications", "permissions", value)
++          setNotification("permissions", value)
+         },
+         errors: withFallback(() => store.notifications?.errors, defaultSettings.notifications.errors),
+         setErrors(value: boolean) {
+-          setStore("notifications", "errors", value)
++          setNotification("errors", value)
+         },
+       },
+       sounds: {
+         agentEnabled: withFallback(() => store.sounds?.agentEnabled, defaultSettings.sounds.agentEnabled),
+         setAgentEnabled(value: boolean) {
+-          setStore("sounds", "agentEnabled", value)
++          setSound("agentEnabled", value)
+         },
+         agent: withFallback(() => store.sounds?.agent, defaultSettings.sounds.agent),
+         setAgent(value: string) {
+-          setStore("sounds", "agent", value)
++          setSound("agent", value)
+         },
+         permissionsEnabled: withFallback(
+           () => store.sounds?.permissionsEnabled,
+           defaultSettings.sounds.permissionsEnabled,
+         ),
+         setPermissionsEnabled(value: boolean) {
+-          setStore("sounds", "permissionsEnabled", value)
++          setSound("permissionsEnabled", value)
+         },
+         permissions: withFallback(() => store.sounds?.permissions, defaultSettings.sounds.permissions),
+         setPermissions(value: string) {
+-          setStore("sounds", "permissions", value)
++          setSound("permissions", value)
+         },
+         errorsEnabled: withFallback(() => store.sounds?.errorsEnabled, defaultSettings.sounds.errorsEnabled),
+         setErrorsEnabled(value: boolean) {
+-          setStore("sounds", "errorsEnabled", value)
++          setSound("errorsEnabled", value)
+         },
+         errors: withFallback(() => store.sounds?.errors, defaultSettings.sounds.errors),
+         setErrors(value: string) {
+-          setStore("sounds", "errors", value)
++          setSound("errors", value)
+         },
+       },
+     }
+diff --git a/packages/app/src/index.ts b/packages/app/src/index.ts
+index f07289f8..4399e92a 100644
+--- a/packages/app/src/index.ts
++++ b/packages/app/src/index.ts
+@@ -8,6 +8,11 @@ export {
+ } from "./app"
+ export { ACCEPTED_FILE_EXTENSIONS, ACCEPTED_FILE_TYPES, filePickerFilters } from "./constants/file-picker"
+ export { useCommand } from "./context/command"
++export {
++  type Settings,
++  type SettingsAuthorityCoordinator,
++  type SettingsAuthoritySnapshot,
++} from "./context/settings"
+ export { loadLocaleDict, normalizeLocale, type Locale } from "./context/language"
+ export { useWslServers } from "./wsl/context"
+ export { type DisplayBackend, type FatalRendererErrorLog, type Platform, PlatformProvider } from "./context/platform"
+diff --git a/packages/app/src/pages/home.tsx b/packages/app/src/pages/home.tsx
+index fa442ac5..3b366d76 100644
+--- a/packages/app/src/pages/home.tsx
++++ b/packages/app/src/pages/home.tsx
+@@ -332,6 +332,7 @@ function HomeDesign() {
+   }
+ 
+   function openSettings() {
++    if (platform.openSettings) return platform.openSettings()
+     void import("@/components/settings-v2").then((x) => {
+       dialog.show(() => <x.DialogSettings />)
+     })
+diff --git a/packages/app/src/pages/layout.tsx b/packages/app/src/pages/layout.tsx
+index 06cd7c5e..cab60cc9 100644
+--- a/packages/app/src/pages/layout.tsx
++++ b/packages/app/src/pages/layout.tsx
+@@ -1219,6 +1219,7 @@ export default function Layout(props: ParentProps) {
+   }
+ 
+   function openSettings() {
++    if (platform.openSettings) return platform.openSettings()
+     const run = ++dialogRun
+     const module = settings.general.newLayoutDesigns()
+       ? import("@/components/settings-v2")

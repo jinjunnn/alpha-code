@@ -11,6 +11,11 @@ export {
 } from "./app"
 export { ACCEPTED_FILE_EXTENSIONS, ACCEPTED_FILE_TYPES, filePickerFilters } from "./constants/file-picker"
 export { useCommand } from "./context/command"
+export {
+  type Settings,
+  type SettingsAuthorityCoordinator,
+  type SettingsAuthoritySnapshot,
+} from "./context/settings"
 export { loadLocaleDict, normalizeLocale, type Locale } from "./context/language"
 export { useWslServers } from "./wsl/context"
 export { type DisplayBackend, type FatalRendererErrorLog, type Platform, PlatformProvider } from "./context/platform"

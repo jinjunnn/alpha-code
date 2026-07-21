@@ -289,7 +289,7 @@ function HomeDesign() {
 
   function editProject(conn: ServerConnection.Any, project: LocalProject) {
     void import("@/components/dialog-edit-project").then((x) => {
-      dialog.show(() => <x.DialogEditProject server={conn} project={project} />)
+      dialog.show(() => <x.DialogEditProject server={conn} project={project} />, undefined, { host: true })
     })
   }
 
@@ -332,6 +332,7 @@ function HomeDesign() {
   }
 
   function openSettings() {
+    if (platform.openSettings) return platform.openSettings()
     void import("@/components/settings-v2").then((x) => {
       dialog.show(() => <x.DialogSettings />)
     })
@@ -1153,7 +1154,7 @@ function LegacyHome() {
         size="large"
         variant="ghost"
         class="mt-4 mx-auto text-14-regular text-text-weak"
-        onClick={() => dialog.show(() => <DialogSelectServer />)}
+        onClick={() => dialog.show(() => <DialogSelectServer />, undefined, { host: true })}
       >
         <div
           classList={{
