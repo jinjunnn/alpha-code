@@ -38,7 +38,16 @@ mock.module("electron", () => ({
 }))
 mock.module("./logging", () => ({ getLogger: () => undefined, write: () => {}, rotateServerLogs: () => {} }))
 mock.module("./store", () => ({ getStore: () => ({ get: () => null, set: () => {}, delete: () => {} }) }))
-mock.module("./alpha-secret-files", () => ({ syncSecretFiles: () => ({ written: [], removed: [] }) }))
+// bun mock.module 跨测试文件泄漏(Linux 执行顺序下本文件的 ./alpha-secret-files mock 会覆盖他文件)。
+// 必须补全导出面,否则 alpha-secret-files.test.ts 的 `import { secretFileRef, hasSecretFile, ... }` 报
+// 「Export named not found」(2026-07-21 CI 实锤)。
+mock.module("./alpha-secret-files", () => ({
+  syncSecretFiles: () => ({ written: [], removed: [] }),
+  secretEnvVars: () => [],
+  secretFilePath: () => "",
+  hasSecretFile: () => false,
+  secretFileRef: () => "",
+}))
 
 const { spawnLocalServer } = await import("./server")
 
