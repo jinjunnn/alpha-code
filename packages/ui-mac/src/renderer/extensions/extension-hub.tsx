@@ -963,7 +963,7 @@ export function ExtensionHub(props: {
   }
   const authzFooter = () => (
     <>
-      <Button variant="ghost" disabled={authzBusy()} onClick={cancelAuthz}>
+      <Button variant="ghost" autofocus disabled={authzBusy()} onClick={cancelAuthz}>
         {t("alpha.ext.cancel")}
       </Button>
       <Button variant="primary" loading={authzBusy()} onClick={() => void confirmAuthz()}>
@@ -2194,9 +2194,10 @@ export function ExtensionHub(props: {
           besideSidebar
           size="sm"
           title={t("alpha.ext.expiredConfirmTitle")}
+          description={<p class="alpha-ext-dnote">{t("alpha.ext.expiredConfirmBody", { date: expiredConfirmDate() })}</p>}
           footer={
             <>
-              <Button variant="ghost" onClick={() => setExpiredConfirm(null)}>
+              <Button variant="ghost" autofocus onClick={() => setExpiredConfirm(null)}>
                 {t("alpha.ext.cancel")}
               </Button>
               <Button variant="primary" onClick={() => void proceedExpiredEnable()}>
@@ -2204,13 +2205,12 @@ export function ExtensionHub(props: {
               </Button>
             </>
           }
-        >
-          <p class="alpha-ext-dnote">{t("alpha.ext.expiredConfirmBody", { date: expiredConfirmDate() })}</p>
-        </Dialog>
+        />
         <Dialog
           open={!!confirming()}
           onClose={closeAuthz}
           dismissible={!confirmBusy() && !authzBusy()}
+          busy={confirmBusy() || authzBusy()}
           besideSidebar
           size="sm"
           title={
@@ -2225,7 +2225,7 @@ export function ExtensionHub(props: {
               authzFooter()
             ) : (
               <>
-                <Button variant="ghost" disabled={confirmBusy()} onClick={closeAuthz}>
+                <Button variant="ghost" autofocus disabled={confirmBusy()} onClick={closeAuthz}>
                   {t("alpha.ext.cancel")}
                 </Button>
                 <Button
@@ -2333,6 +2333,7 @@ export function ExtensionHub(props: {
           open={authz()?.host === "standalone"}
           onClose={cancelAuthz}
           dismissible={!authzBusy()}
+          busy={authzBusy()}
           besideSidebar
           size="sm"
           title={authzTitle()}

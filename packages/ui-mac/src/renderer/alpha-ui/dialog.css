@@ -92,6 +92,10 @@ body[data-alpha-sidebar="open"] .a-dialog-root[data-beside-sidebar] .a-dialog-pa
   overflow-y: auto;
   padding: var(--a-space-5);
 }
+.a-dialog-description {
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-sm);
+}
 
 .a-dialog-footer {
   display: flex;
@@ -111,5 +115,12 @@ body[data-alpha-sidebar="open"] .a-dialog-root[data-beside-sidebar] .a-dialog-pa
   from {
     opacity: 0;
     transform: translateY(8px) scale(0.985);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .a-dialog-backdrop,
+  .a-dialog-panel {
+    animation: none;
   }
 }

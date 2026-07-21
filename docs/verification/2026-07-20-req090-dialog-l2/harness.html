@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>REQ-090 Alpha Dialog L2 harness</title>
+    <link rel="stylesheet" href="../../../packages/ui-mac/src/renderer/alpha-ui/base.css" />
+    <link rel="stylesheet" href="../../../packages/ui-mac/src/renderer/alpha-ui/button.css" />
+    <link rel="stylesheet" href="../../../packages/ui-mac/src/renderer/alpha-ui/dialog.css" />
+    <link rel="stylesheet" href="../../../packages/ui-mac/src/renderer/extensions/extension-hub.css" />
+    <style>
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: var(--a-bg-canvas);
+      }
+      .l2-windowbar {
+        display: flex;
+        align-items: center;
+        height: 40px;
+        padding: 0 16px;
+        border-bottom: 1px solid var(--a-border-faint);
+        background: var(--a-bg-canvas);
+        color: var(--a-text-secondary);
+        font-size: var(--a-text-xs);
+      }
+      .l2-dots {
+        display: flex;
+        gap: 7px;
+        margin-right: auto;
+      }
+      .l2-dots i {
+        width: 10px;
+        height: 10px;
+        border-radius: var(--a-radius-full);
+        background: var(--a-border-strong);
+      }
+      .l2-page {
+        min-height: calc(100% - 40px);
+        padding: 48px 64px;
+        background: var(--a-bg-subtle);
+      }
+      .l2-page-card {
+        width: min(760px, calc(100% - 128px));
+        margin: 24px auto;
+        padding: 28px;
+        border: 1px solid var(--a-border-faint);
+        border-radius: var(--a-radius-xl);
+        background: var(--a-surface);
+        box-shadow: var(--a-shadow-sm);
+      }
+      .l2-page-card h2 {
+        margin-bottom: 10px;
+        font-size: var(--a-text-xl);
+      }
+      .l2-page-card p {
+        margin: 0 0 18px;
+        color: var(--a-text-tertiary);
+      }
+    </style>
+    <script>
+      const theme = new URLSearchParams(location.search).get("theme") === "dark" ? "dark" : "light"
+      document.documentElement.dataset.colorScheme = theme
+    </script>
+  </head>
+  <body class="a-ui">
+    <div class="l2-windowbar">
+      <span class="l2-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span>扩展</span>
+    </div>
+    <main class="l2-page">
+      <section class="l2-page-card">
+        <h2>精选扩展</h2>
+        <p>以下扩展经过安全审核并按使用方式分组。</p>
+        <button class="a-btn" data-variant="secondary" data-size="md" type="button">启用</button>
+      </section>
+    </main>
+
+    <div class="a-ui a-dialog-root" data-beside-sidebar>
+      <div aria-hidden="true" class="a-dialog-backdrop"></div>
+      <div
+        class="a-dialog-panel"
+        data-size="sm"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="expired-title"
+        aria-describedby="expired-description"
+        tabindex="-1"
+      >
+        <header class="a-dialog-header">
+          <div id="expired-title" class="a-dialog-title">安全评审已过期</div>
+          <button type="button" class="a-dialog-close" aria-label="关闭">✕</button>
+        </header>
+        <div class="a-dialog-body">
+          <div id="expired-description" class="a-dialog-description">
+            <p class="alpha-ext-dnote">该扩展的安全评审已到期，尚未完成复审。开启前请确认你仍信任它；已开启的不受影响。仍要启用吗？</p>
+          </div>
+        </div>
+        <footer class="a-dialog-footer">
+          <button autofocus class="a-btn" data-variant="ghost" data-size="md" type="button">取消</button>
+          <button class="a-btn" data-variant="primary" data-size="md" type="button">仍要启用</button>
+        </footer>
+      </div>
+    </div>
+  </body>
+</html>

@@ -75,11 +75,19 @@ describe("#348 wiring:renderer 承接结构(源文本合同)", () => {
     expect(src).toContain("dismissible={!confirmBusy() && !authzBusy()}")
     expect(src).toContain("dismissible={!authzBusy()}")
   })
-  test("Dialog.tsx:dismissible=false 封死 backdrop/Esc/关闭按钮三条 dismiss 路径", () => {
+  test("Dialog:dismissible=false 封死 backdrop/Esc/关闭按钮三条 dismiss 路径", () => {
     const src = fs.readFileSync(path.join(here, "..", "alpha-ui", "Dialog.tsx"), "utf8")
-    expect(src).toContain('e.key === "Escape" && canDismiss()')
+    const core = fs.readFileSync(path.join(here, "..", "alpha-ui", "dialog-core.ts"), "utf8")
+    expect(core).toContain('event.key === "Escape"')
+    expect(core).toContain("if (dismissible) onClose()")
     expect(src).toContain("canDismiss() && props.onClose()")
     expect(src).toContain("<Show when={canDismiss()}>")
+  })
+  test("#348 安全初始焦点落取消;busy 同时声明且不可关", () => {
+    const src = read("extension-hub.tsx")
+    expect(src).toContain('<Button variant="ghost" autofocus disabled={authzBusy()} onClick={cancelAuthz}>')
+    expect(src).toContain("busy={confirmBusy() || authzBusy()}")
+    expect(src).toContain("busy={authzBusy()}")
   })
 })
 
