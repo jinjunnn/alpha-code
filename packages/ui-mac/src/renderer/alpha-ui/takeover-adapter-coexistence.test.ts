@@ -1,11 +1,11 @@
 // REQ-088 T6(#181):takeover × adapter 共存审计 —— 可静态钉住的锚点。
 //
-// 审计对象:ComposerTakeover / ModelPickerInject / TimelineInject 三个 DOM 级接管件。
+// 审计对象:ComposerTakeover / TimelineInject 两个遗留 DOM 接管件，以及 canonical composer picker。
 // 结论(详见 docs/audits/2026-07-13-s48-req088-t6-takeover-coexistence.md 审计矩阵):
 // 它们「挂载方式无关」的根因是三条结构不变量,本文件把每条钉成源码锚点 ——
 //   ① 挂载通道:takeover 作为 AppInterface children 在 router root 挂载一次,不在任何
 //      surface 工厂/session 叶内 —— adapter 换叶不触碰它们的生命周期;
-//   ② 观察面:全部经 document.body MutationObserver + document 级捕获事件工作,
+//   ② 遗留观察面:经 document.body MutationObserver 工作,
 //      只依赖上游叶渲染的 DOM 锚点,不依赖叶「怎么被挂进来」;
 //   ③ 同 document 前提:adapter 模式经 `@opencode-ai/app/surface/session` 窄导出在
 //      同一 document 内渲染上游叶(无 iframe)—— ②的选择器/事件才可达。
@@ -31,12 +31,15 @@ const app = (p: string) => read(path.join(REPO, "packages/app/src", p))
 const ui = (p: string) => read(path.join(REPO, "packages/ui/src", p))
 
 const composerTakeover = read(path.join(ALPHA_UI, "composer-takeover.tsx"))
-const modelPickerInject = read(path.join(ALPHA_UI, "model-picker-inject.tsx"))
 const timelineInject = read(path.join(ALPHA_UI, "timeline-inject.tsx"))
+const alphaComposer = read(path.join(ALPHA_UI, "alpha-composer.tsx"))
+const composerModelPicker = read(path.join(ALPHA_UI, "alpha-composer-model.tsx"))
+const modelContract = read(path.join(ALPHA_UI, "model-contract.ts"))
+const composerState = read(path.join(ALPHA_UI, "composer-state.ts"))
 const rendererIndex = read(path.join(RENDERER, "index.tsx"))
+const surfaceManifest = read(path.join(REPO, "packages/ui-mac/src/shared/frontend-surface-manifest.ts"))
 const takeovers: Record<string, string> = {
   "composer-takeover.tsx": composerTakeover,
-  "model-picker-inject.tsx": modelPickerInject,
   "timeline-inject.tsx": timelineInject,
 }
 
@@ -52,8 +55,8 @@ function* walk(dir: string): Generator<string> {
 }
 
 describe("T6 ①挂载通道:takeover 与 session 叶零耦合(挂载方式无关的结构根因)", () => {
-  test("三个 takeover 都作为 AppInterface children 挂载(AlphaBoundary 包裹,router root 单例)", () => {
-    for (const name of ["ComposerTakeover", "ModelPickerInject", "TimelineInject"]) {
+  test("两个遗留 takeover 作为 AppInterface children 挂载(AlphaBoundary 包裹,router root 单例)", () => {
+    for (const name of ["ComposerTakeover", "TimelineInject"]) {
       expect(rendererIndex).toContain(`<AlphaBoundary name="${name}">`)
     }
   })
@@ -65,7 +68,7 @@ describe("T6 ①挂载通道:takeover 与 session 叶零耦合(挂载方式无�
     }
   })
 
-  test("takeover 观察面 = document.body MutationObserver,每件恰一个(AC8 结构 observer 预算基线 = 3)", () => {
+  test("遗留 takeover 观察面 = document.body MutationObserver,每件恰一个(AC8 observer 预算 = 2)", () => {
     for (const [name, src] of Object.entries(takeovers)) {
       const observers = src.match(/new MutationObserver\(/g) ?? []
       expect({ name, observers: observers.length }).toEqual({ name, observers: 1 })
@@ -140,32 +143,51 @@ describe("T6 ②a ComposerTakeover 锚点(REQ-012 manifest 假死缺口在此补
   })
 })
 
-describe("T6 ②b ModelPickerInject 锚点(弹层在 body 级 portal,叶挂载方式天然无关)", () => {
-  test("上游 model picker 弹层经 Kobalte Portal 挂 body(不在 session 叶子树内)", () => {
-    expect(app("components/dialog-select-model.tsx")).toContain("<Kobalte.Portal>")
+describe("REQ-090 model picker ratchet:旧 DOM 接管退役，canonical owner 唯一", () => {
+  test("旧 inject/reskin 文件不存在且 renderer root 不再挂载或导入", () => {
+    expect(fs.existsSync(path.join(ALPHA_UI, "model-picker-inject.tsx"))).toBe(false)
+    expect(fs.existsSync(path.join(ALPHA_UI, "model-picker-reskin.css"))).toBe(false)
+    expect(rendererIndex).not.toContain("ModelPickerInject")
+    expect(rendererIndex).not.toContain("model-picker-reskin.css")
   })
 
-  test("native 行契约:list-item/list-scroll + data-key/data-selected(后两者在 REQ-012 命名空间外)", () => {
-    const list = ui("components/list.tsx")
-    expect(list).toContain(`data-slot="list-scroll"`)
-    expect(list).toContain(`data-slot="list-item"`)
-    expect(list).toContain("data-key={props.key(item)}")
-    expect(list).toContain("data-selected={item === props.current}")
+  test("surface manifest 对 model picker 只有一个 canonical Alpha owner", () => {
+    expect(surfaceManifest.match(/id: "overlay\.model-picker"/g)?.length).toBe(1)
+    expect(surfaceManifest).toContain('owner: "alpha.composer-model"')
+    expect(surfaceManifest).toContain('source: "packages/ui-mac/src/renderer/alpha-ui/alpha-composer-model.tsx"')
+    expect(surfaceManifest).not.toContain("alpha.model-picker-inject")
   })
 
-  test("选择通路 = 点击隐藏 native 行(model.set 留在上游 route-scoped context,inject 不复制状态)", () => {
-    expect(modelPickerInject).toContain(`[data-slot="list-item"][data-key=`)
-    expect(modelPickerInject).toContain("el?.click()")
+  test("选择面只直调 typed v2 list/get/switch，不观察或点击上游隐藏控件", () => {
+    expect(modelContract).toContain("client.v2.model")
+    expect(modelContract).toContain("client.v2.session.get")
+    expect(modelContract).toContain("client.v2.session.switchModel")
+    for (const source of [composerModelPicker, modelContract]) {
+      expect(source).not.toContain("MutationObserver")
+      expect(source).not.toContain("el?.click()")
+      expect(source).not.toContain('data-slot="list-item"')
+    }
+    expect(composerModelPicker).toContain("await props.onSelect(row.model)")
+    expect(alphaComposer).toContain("await modelContract.switch(sessionID, modelRefOf(model))")
+    expect(alphaComposer.indexOf("await modelContract.switch(sessionID, modelRefOf(model))")).toBeLessThan(
+      alphaComposer.indexOf("setComposerModel(model)"),
+    )
   })
 
-  test("接管后初始焦点归 alpha 搜索框(#250 r1:上游 autofocus 的原生搜索框被 reskin 隐藏)", () => {
-    // claimFocus:picker 打开即把焦点移到 alpha 搜索框,带重试(晚到的上游 autofocus 不能赢终局),
-    // 且不抢已在 picker 内的焦点(用户点行 / add-provider 表单)。
-    expect(modelPickerInject).toContain("const claimFocus = ()")
-    expect(modelPickerInject).toContain("searchEl.focus()")
-    expect(modelPickerInject).toContain("setTimeout(claimFocus, d)")
-    expect(modelPickerInject).toContain(`document.querySelector("[data-alpha-picker]")?.contains(active)`)
-    expect(modelPickerInject).toContain("ref={searchEl}")
+  test("model/variant 不再落 localStorage 形成第二真值，picker 打开后聚焦 canonical 搜索框", () => {
+    expect(composerState).not.toContain("alpha.composer.model")
+    expect(composerState).not.toContain("alpha.composer.effort")
+    expect(composerState).not.toMatch(/localStorage\.(getItem|setItem|removeItem)/)
+    expect(composerModelPicker).toContain("queueMicrotask(() => search?.focus())")
+    expect(composerModelPicker).toContain("ref={search}")
+  })
+
+  test("session 每轮以 typed get 的 Model.Ref 覆盖 UI 投影，消除 localStorage/context 双真值", () => {
+    expect(alphaComposer).toContain("const sessionID = props.sessionID?.()")
+    expect(alphaComposer).toContain("void runModelChain(directory, sessionID)")
+    expect(alphaComposer).toContain("const upstream = await modelContract.current(sessionID)")
+    expect(alphaComposer).toContain("setComposerModel(upstream ? composerModelFromRef(upstream, cat) : null)")
+    expect(alphaComposer).not.toContain("restoreSuspendedModel")
   })
 })
 
@@ -175,9 +197,7 @@ describe("T6 ②c TimelineInject 锚点(REQ-012 manifest 命名空间外的补�
   })
 
   test("消息身份锚点 data-message-id / data-timeline-part-id 仍由上游渲染(cmd chip 持久化的 key)", () => {
-    expect(app("pages/session/timeline/message-timeline.tsx")).toContain(
-      "data-message-id={input.row().userMessageID}",
-    )
+    expect(app("pages/session/timeline/message-timeline.tsx")).toContain("data-message-id={input.row().userMessageID}")
     const messagePart = ui("components/message-part.tsx")
     expect(messagePart).toContain(`data-component="user-message" data-timeline-part-id={textPart()?.id}`)
   })

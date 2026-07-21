@@ -6,7 +6,6 @@ import {
   composerModel,
   composerModelSuspended,
   filterAgents,
-  restoreSuspendedModel,
   routeSlash,
   setComposerModel,
   suspendComposerModel,
@@ -14,26 +13,31 @@ import {
   type ComposerModel,
 } from "./composer-state"
 
-const sonnet: ComposerModel = { providerID: "alpha", modelID: "claude-sonnet-4.6", name: "Claude Sonnet 4.6", variants: ["低", "中", "高"] }
-const flash: ComposerModel = { providerID: "alpha", modelID: "deepseek-v4-flash", name: "DeepSeek V4 Flash", variants: [] }
+const sonnet: ComposerModel = {
+  providerID: "alpha",
+  id: "claude-sonnet-4.6",
+  name: "Claude Sonnet 4.6",
+  variants: ["低", "中", "高"],
+}
+const flash: ComposerModel = { providerID: "alpha", id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", variants: [] }
 
 describe("buildPromptRequest", () => {
   test("未显式选择 → 只有 parts(引擎默认,最小干预)", () => {
     const r = buildPromptRequest({ text: "hi", model: null, effort: null, perm: "ask", agent: null })
     expect(r).toEqual({ parts: [{ type: "text", text: "hi" }] })
   })
-  test("模型+有效档 → 带 model 与 variant", () => {
+  test("模型+有效档 → 统一为一个 Model.Ref", () => {
     const r = buildPromptRequest({ text: "hi", model: sonnet, effort: "高", perm: "ask", agent: null })
-    expect(r.model).toEqual({ providerID: "alpha", modelID: "claude-sonnet-4.6" })
-    expect(r.variant).toBe("高")
+    expect(r.model).toEqual({ providerID: "alpha", id: "claude-sonnet-4.6", variant: "高" })
+    expect(r).not.toHaveProperty("variant")
   })
   test("无档模型 → 绝不携带 variant(C28:不发引擎不认识的档)", () => {
     const r = buildPromptRequest({ text: "hi", model: flash, effort: "高", perm: "ask", agent: null })
-    expect(r.variant).toBeUndefined()
+    expect(r.model).toEqual({ providerID: "alpha", id: "deepseek-v4-flash" })
   })
   test("档位不属于该模型 → 不携带", () => {
     const r = buildPromptRequest({ text: "hi", model: sonnet, effort: "极限", perm: "ask", agent: null })
-    expect(r.variant).toBeUndefined()
+    expect(r.model).toEqual({ providerID: "alpha", id: "claude-sonnet-4.6" })
   })
   test("只读权限 → agent 强制 alpha-readonly,压过手选 agent", () => {
     const r = buildPromptRequest({ text: "hi", model: null, effort: null, perm: "readonly", agent: "plan" })
@@ -91,24 +95,13 @@ describe("filterAgents — 治理口径守卫(REQ-066 T3)", () => {
   })
 })
 
-describe("suspend/restore — REQ-069:持久选择挂起(不删)与还原", () => {
-  test("挂起清内存信号、记录原因;还原原样恢复", () => {
+describe("suspend — session 选择不可用时只保留说明，不从本地恢复第二真值", () => {
+  test("挂起清 UI 投影并记录原因", () => {
     setComposerModel(sonnet)
     expect(composerModel()).toEqual(sonnet)
     suspendComposerModel("needs-login")
     expect(composerModel()).toBeNull()
     expect(composerModelSuspended()).toEqual({ model: sonnet, reason: "needs-login" })
-    expect(restoreSuspendedModel()).toBe(true)
-    expect(composerModel()).toEqual(sonnet)
-    expect(composerModelSuspended()).toBeNull()
-    setComposerModel(null) // 清场
-  })
-  test("已有新选择时不还原(不覆盖用户当前选择)", () => {
-    setComposerModel(sonnet)
-    suspendComposerModel("needs-credit")
-    setComposerModel(flash) // 用户改选了别的
-    expect(restoreSuspendedModel()).toBe(false)
-    expect(composerModel()).toEqual(flash)
     clearSuspendedModel()
     setComposerModel(null)
   })

@@ -103,7 +103,12 @@ export function AddProvider(props: {
       return
     }
     setTest({ s: "testing", msg: "" })
-    const r = await window.api.providers.test({ compat: compat(), baseURL: baseURL(), apiKey: apiKey(), model: models()[0] })
+    const r = await window.api.providers.test({
+      compat: compat(),
+      baseURL: baseURL(),
+      apiKey: apiKey(),
+      model: models()[0],
+    })
     if (r.ok) setTest({ s: "ok", msg: `已接通 · ${r.ms}ms` })
     else setTest({ s: "err", msg: r.reason })
   }
@@ -190,7 +195,7 @@ export function AddProvider(props: {
           <For each={presets()}>
             {(p) => (
               <button class="a-mpa-preset" onClick={() => openPreset(p)}>
-                <span class="a-mp-pico" style={{ background: p.pico.color }}>
+                <span class="a-pico" style={{ background: p.pico.color }}>
                   {p.pico.letter}
                 </span>
                 <span class="a-mpa-pn">
@@ -231,11 +236,7 @@ export function AddProvider(props: {
           <div class="a-mpa-field">
             <label>兼容类型</label>
             <div class="a-mpa-compat">
-              <div
-                class="opt"
-                aria-pressed={compat() === "openai"}
-                onClick={() => isCustom() && setCompat("openai")}
-              >
+              <div class="opt" aria-pressed={compat() === "openai"} onClick={() => isCustom() && setCompat("openai")}>
                 OpenAI 兼容
               </div>
               <div

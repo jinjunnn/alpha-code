@@ -12,7 +12,7 @@ import { createEffect, onCleanup, type Accessor } from "solid-js"
 // Import from the CLIENT subpath, not "@opencode-ai/sdk/v2": the v2 barrel re-exports the
 // server module too, which pulls in Node-only deps (process/which/child_process) that cannot
 // bundle for the renderer. The client subpath is browser-safe (opencode's own app uses it).
-import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
+import { createOpencodeClient, type ModelRef } from "@opencode-ai/sdk/v2/client"
 import { projectLabel } from "./route"
 import { hiddenProjects } from "./sidebar-state"
 import { isUnderSkippedWorktree, shouldSkipWorktree } from "./worktree-filter"
@@ -63,12 +63,12 @@ export interface AlphaProjectsApi {
   /** Create a session AND send the first message (the home composer's submit). `extraParts` are
    *  additional prompt parts (agent/file mentions from the home @ menu, upstream
    *  build-request-parts shapes) appended after the text part (REQ-038). `opts`(REQ-055)是
-   *  AlphaComposer 的显式提交参数(model/agent/variant),未选不传 = 引擎默认。 */
+   *  AlphaComposer 的显式提交参数(Model.Ref/agent),未选不传 = 引擎默认。 */
   startChat(
     worktree: string,
     text: string,
     extraParts?: unknown[],
-    opts?: { model?: { providerID: string; modelID: string }; agent?: string; variant?: string },
+    opts?: { model?: ModelRef; agent?: string },
   ): Promise<string | undefined>
   /** The live SDK v2 client (undefined until the server is ready). Exposed so alpha composer
    *  surfaces (home slash/@ menus, REQ-038) query command/agent/find with the SAME client + auth
@@ -307,13 +307,16 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
     worktree: string,
     text: string,
     extraParts?: unknown[],
-    opts?: { model?: { providerID: string; modelID: string }; agent?: string; variant?: string },
+    opts?: { model?: ModelRef; agent?: string },
   ): Promise<string | undefined> {
     const c = client
     if (!c) return undefined
     try {
       await ensureDefaultWorkspace(worktree)
-      const { data, error } = await c.session.create({ directory: worktree } as any)
+      const { data, error } = await c.session.create({
+        directory: worktree,
+        ...(opts?.model ? { model: opts.model } : {}),
+      } as any)
       if (error || !data) return undefined
       const id = (data as any).id as string
       if (worktreeIndex(worktree) < 0) await loadProjects()
@@ -330,20 +333,16 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
             .catch(() => ({ data: undefined, error: true }) as const)
           if (!cmdErr && Array.isArray(cmds) && cmds.some((x: any) => x?.name === name)) {
             ranCommand = true
-            await c.session
-              .command({ sessionID: id, command: name, arguments: tail.join(" ") } as any)
-              .catch(() => {
-                /* the session still exists; the user can retry from the session composer */
-              })
+            await c.session.command({ sessionID: id, command: name, arguments: tail.join(" ") } as any).catch(() => {
+              /* the session still exists; the user can retry from the session composer */
+            })
           }
         }
         if (!ranCommand) {
           await c.session
             .promptAsync({
               sessionID: id,
-              ...(opts?.model ? { model: opts.model } : {}),
               ...(opts?.agent ? { agent: opts.agent } : {}),
-              ...(opts?.variant ? { variant: opts.variant } : {}),
               parts: [{ type: "text", text: body }, ...(extraParts ?? [])],
             } as any)
             .catch(() => {
@@ -482,5 +481,15 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
     })
   })
 
-  return { store, reload: () => loadProjects(), createSession, startChat, sdk: () => client, renameSession, shareSession, deleteSession, copySession }
+  return {
+    store,
+    reload: () => loadProjects(),
+    createSession,
+    startChat,
+    sdk: () => client,
+    renameSession,
+    shareSession,
+    deleteSession,
+    copySession,
+  }
 }

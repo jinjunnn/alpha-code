@@ -33,12 +33,10 @@ import "./sidebar/account-popover.css"
 import "./alpha-ui/settings-reskin.css"
 import "./alpha-ui/timeline-reskin.css"
 import "./alpha-ui/composer-reskin.css"
-import "./alpha-ui/model-picker-reskin.css"
 import "./alpha-ui/dialog-reskin.css"
 import { ToastViewport } from "./alpha-ui/Toast"
 import { AlphaBoundary } from "./alpha-ui/alpha-boundary"
 import { ComposerTakeover } from "./alpha-ui/composer-takeover"
-import { ModelPickerInject } from "./alpha-ui/model-picker-inject"
 import { TimelineInject } from "./alpha-ui/timeline-inject"
 import { CloudRunWatcher } from "./alpha-ui/cloud-run-watcher"
 import { ExtTrustWatcher } from "./alpha-ui/ext-trust-watcher"
@@ -60,9 +58,7 @@ import { Splash } from "./logo-alpha"
 import { useTheme } from "@opencode-ai/ui/theme/context"
 import { ALPHA_THEME, ALPHA_THEME_ID } from "./theme-alpha"
 
-const DevSurfaceMapInspector = import.meta.env.DEV
-  ? lazy(() => import("./dev/surface-map-inspector"))
-  : () => null
+const DevSurfaceMapInspector = import.meta.env.DEV ? lazy(() => import("./dev/surface-map-inspector")) : () => null
 
 // First-run brand default: ship the orange Alpha theme. The theme context reads
 // `opencode-theme-id` from localStorage before it mounts, so seeding it here (only
@@ -471,12 +467,7 @@ render(() => {
       <Show when={ready()} fallback={splash}>
         <Show when={effectiveDefaultServer()} keyed>
           {(key) => (
-            <AppInterface
-              defaultServer={key}
-              servers={servers()}
-              router={MemoryRouter}
-              surfaces={surfaceComponents()}
-            >
+            <AppInterface defaultServer={key} servers={servers()} router={MemoryRouter} surfaces={surfaceComponents()}>
               {/* C28(S17 T4)崩溃边界下沉:上游 ErrorBoundary 在 AppBaseProviders 内包住全部 children,
                   alpha 任一注入件 throw 会整屏坠成上游 ErrorPage —— 逐个紧裹 AlphaBoundary(更内层先命中)
                   = 崩溃只降级该区域;TimelineInject(B22 疑源)自此有降落伞。探针 window.__alphaCrashProbe */}
@@ -506,9 +497,6 @@ render(() => {
               <AlphaBoundary name="ComposerTakeover">
                 <ComposerTakeover projects={alphaProjects} />
               </AlphaBoundary>
-              <AlphaBoundary name="ModelPickerInject">
-                <ModelPickerInject />
-              </AlphaBoundary>
               <AlphaBoundary name="TimelineInject">
                 <TimelineInject />
               </AlphaBoundary>
@@ -524,7 +512,9 @@ render(() => {
               </AlphaBoundary>
               <DevSurfaceMapInspector resolved={resolvedSurfaces.latest} />
               {/* REQ-087 spike 容器侧探针:flag off ⇒ 恒 null(session-spike/spike-flag.ts) */}
-              <AlphaBoundary name="SessionSpikeHost"><SessionSpikeHost /></AlphaBoundary>
+              <AlphaBoundary name="SessionSpikeHost">
+                <SessionSpikeHost />
+              </AlphaBoundary>
             </AppInterface>
           )}
         </Show>
