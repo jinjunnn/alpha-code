@@ -9,6 +9,9 @@
 import { For, Show } from "solid-js"
 import type { JSX } from "solid-js"
 import { t } from "../i18n"
+import { Button } from "../alpha-ui/Button"
+import { Dialog } from "../alpha-ui/Dialog"
+import type { DialogRestoreFocus } from "../alpha-ui/dialog-core"
 import type { AuthorizationConfirmationWire, CapabilityDiffWire } from "../../shared/ext-capability-authorization"
 
 type I18nKey = Parameters<typeof t>[0]
@@ -47,6 +50,56 @@ export function authzHasHighRisk(diffs: CapabilityDiffWire[]): boolean {
 /** 是否扩权场景(任一需确认项已有授权基线)——决定标题/intro/主按钮文案(Q1 场景化)。 */
 export function authzIsEscalation(diffs: CapabilityDiffWire[]): boolean {
   return diffs.some((d) => d.requiresConfirmation && d.previous !== null)
+}
+
+export type ExtAuthzDialogState = {
+  name: string
+  isBundle: boolean
+  mode: "install" | "update"
+  diffs: CapabilityDiffWire[]
+}
+
+/** Production standalone host for #348 direct-install/update authorization transitions. */
+export function ExtStandaloneAuthzDialog(props: {
+  state: ExtAuthzDialogState | null
+  busy: boolean
+  onCancel: () => void
+  onConfirm: () => void
+  restoreFocus?: DialogRestoreFocus
+}) {
+  const title = () => {
+    const state = props.state
+    if (!state) return t("alpha.ext.authz.titleFirst")
+    return authzIsEscalation(state.diffs) ? t("alpha.ext.authz.titleEscalation") : t("alpha.ext.authz.titleFirst")
+  }
+  return (
+    <Dialog
+      open={!!props.state}
+      onClose={props.onCancel}
+      dismissible={!props.busy}
+      busy={props.busy}
+      besideSidebar
+      size="sm"
+      title={title()}
+      restoreFocus={props.restoreFocus}
+      footer={
+        <>
+          <Button variant="ghost" autofocus disabled={props.busy} onClick={props.onCancel}>
+            {t("alpha.ext.cancel")}
+          </Button>
+          <Button variant="primary" loading={props.busy} onClick={props.onConfirm}>
+            {props.state?.mode === "update" ? t("alpha.ext.authz.confirmUpdate") : t("alpha.ext.authz.confirmInstall")}
+          </Button>
+        </>
+      }
+    >
+      <Show when={props.state}>
+        {(state) => (
+          <ExtAuthzView name={state().name} isBundle={state().isBundle} mode={state().mode} diffs={state().diffs} />
+        )}
+      </Show>
+    </Dialog>
+  )
 }
 
 type CapRowKind = "new" | "granted" | "removed"

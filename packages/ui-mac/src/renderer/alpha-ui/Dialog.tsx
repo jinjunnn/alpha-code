@@ -1,19 +1,22 @@
 import { Show, type JSX, createEffect, createUniqueId, onCleanup } from "solid-js"
 import { Portal } from "solid-js/web"
-import { createDialogFocusManager } from "./dialog-core"
+import {
+  createDialogFocusManager,
+  registerDialog,
+  type DialogRestoreFocus,
+} from "./dialog-core"
 import "./dialog.css"
 
+export const DIALOG_TITLE_ERROR = "Alpha Dialog requires a non-empty title"
+
 /**
- * alpha-ui Dialog — the canonical modal. The foundation for every alpha-owned dialog
- * (settings, model picker, etc.). Bug-proof by construction: the overlay only exists in the
- * DOM while `open` is true (mounted inside <Show> + <Portal>), so a closed dialog can NEVER
- * intercept clicks — the class of bug that broke the Extension Hub. Owns the complete modal focus,
- * keyboard, accessible-name, and dismissal contract without domain-specific behavior.
+ * alpha-ui Dialog — the canonical modal. The overlay exists only while `open` is true and owns
+ * the complete modal stack, focus, keyboard, accessible-name, and dismissal contract.
  */
 export function Dialog(props: {
   open: boolean
   onClose: () => void
-  title: JSX.Element
+  title: string
   description?: JSX.Element
   size?: "sm" | "md" | "lg"
   children?: JSX.Element
@@ -26,72 +29,95 @@ export function Dialog(props: {
   /** Processing state is announced independently from whether policy allows dismissal. */
   busy?: boolean
   closeLabel?: string
+  /** Stable calling-surface target used when the original trigger no longer accepts focus. */
+  restoreFocus?: DialogRestoreFocus
 }) {
   const canDismiss = () => props.dismissible !== false
+  const title = () => {
+    if (!props.open) return undefined
+    if (typeof props.title === "string" && props.title.trim()) return props.title
+    throw new Error(DIALOG_TITLE_ERROR)
+  }
   const titleId = createUniqueId()
   const descriptionId = createUniqueId()
+  let root!: HTMLDivElement
   let panel!: HTMLDivElement
-  let focusManager: ReturnType<typeof createDialogFocusManager> | undefined
+  let registration: ReturnType<typeof registerDialog> | undefined
 
   createEffect(() => {
     if (!props.open) return
-    const manager = createDialogFocusManager(panel, document.activeElement)
-    const onDocumentKeyDown = (event: KeyboardEvent) => {
-      if (event.target && panel.contains(event.target as Node)) return
-      manager.handleKeyDown(event, canDismiss(), props.onClose)
-    }
-    focusManager = manager
-    document.addEventListener("keydown", onDocumentKeyDown, true)
-    queueMicrotask(() => manager.focusInitial())
+    const manager = createDialogFocusManager(panel, document.activeElement, () => props.restoreFocus)
+    const current = registerDialog({ root, panel, manager, canDismiss, onClose: () => props.onClose() })
+    registration = current
+    queueMicrotask(() => {
+      if (current.isTop()) manager.focusInitial()
+    })
     onCleanup(() => {
-      document.removeEventListener("keydown", onDocumentKeyDown, true)
-      if (focusManager === manager) focusManager = undefined
+      current.unregister()
+      if (registration === current) registration = undefined
       queueMicrotask(() => manager.restore())
     })
   })
 
+  const requestClose = () => {
+    if (!registration?.isTop() || !canDismiss()) return
+    props.onClose()
+  }
+
   return (
-    <Show when={props.open}>
-      <Portal>
-        <div class="a-ui a-dialog-root" data-beside-sidebar={props.besideSidebar ? "" : undefined}>
-          <div aria-hidden="true" class="a-dialog-backdrop" onClick={() => canDismiss() && props.onClose()} />
-          <div
-            ref={panel}
-            class="a-dialog-panel"
-            data-size={props.size ?? "md"}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={titleId}
-            aria-describedby={props.description ? descriptionId : undefined}
-            aria-busy={props.busy ? "true" : undefined}
-            tabIndex={-1}
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(event) => focusManager?.handleKeyDown(event, canDismiss(), props.onClose)}
-          >
-            <header class="a-dialog-header">
-              <div id={titleId} class="a-dialog-title">
-                {props.title}
-              </div>
-              <Show when={canDismiss()}>
-                <button type="button" class="a-dialog-close" aria-label={props.closeLabel ?? "Close"} onClick={() => props.onClose()}>
-                  ✕
-                </button>
-              </Show>
-            </header>
-            <div class="a-dialog-body">
-              <Show when={props.description}>
-                <div id={descriptionId} class="a-dialog-description">
-                  {props.description}
+    <Show when={title()}>
+      {(accessibleTitle) => (
+        <Portal>
+          <div ref={(element) => (root = element)} class="a-ui a-dialog-root" data-beside-sidebar={props.besideSidebar ? "" : undefined}>
+            <div aria-hidden="true" class="a-dialog-backdrop" onClick={requestClose} />
+            <div
+              ref={(element) => (panel = element)}
+              class="a-dialog-panel"
+              data-size={props.size ?? "md"}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby={titleId}
+              aria-describedby={props.description ? descriptionId : undefined}
+              aria-busy={props.busy ? "true" : undefined}
+              tabIndex={-1}
+            >
+              <span
+                class="a-dialog-focus-guard"
+                data-dialog-focus-guard="start"
+                tabIndex={0}
+                onFocus={(event) => registration?.focusGuard(event.currentTarget)}
+              />
+              <header class="a-dialog-header">
+                <div id={titleId} class="a-dialog-title">
+                  {accessibleTitle()}
                 </div>
+                <Show when={canDismiss()}>
+                  <button type="button" class="a-dialog-close" aria-label={props.closeLabel ?? "Close"} onClick={requestClose}>
+                    ✕
+                  </button>
+                </Show>
+              </header>
+              <div class="a-dialog-body">
+                <Show when={props.description}>
+                  <div id={descriptionId} class="a-dialog-description">
+                    {props.description}
+                  </div>
+                </Show>
+                {props.children}
+              </div>
+              <Show when={props.footer}>
+                <footer class="a-dialog-footer">{props.footer}</footer>
               </Show>
-              {props.children}
+              <span
+                class="a-dialog-focus-guard"
+                data-dialog-focus-guard="end"
+                tabIndex={0}
+                onFocus={(event) => registration?.focusGuard(event.currentTarget)}
+              />
             </div>
-            <Show when={props.footer}>
-              <footer class="a-dialog-footer">{props.footer}</footer>
-            </Show>
           </div>
-        </div>
-      </Portal>
+        </Portal>
+      )}
     </Show>
   )
 }

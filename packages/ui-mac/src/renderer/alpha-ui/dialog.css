@@ -45,6 +45,16 @@
   height: min(720px, 84vh);
 }
 
+.a-dialog-focus-guard,
+.a-dialog-focus-anchor {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* Centre within the content area when the sidebar is open. */
 body[data-alpha-sidebar="open"] .a-dialog-root[data-beside-sidebar] .a-dialog-panel {
   left: var(--alpha-sidebar-w, 260px);
