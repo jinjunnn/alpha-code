@@ -44,6 +44,7 @@ const rows = (over: Partial<Parameters<typeof buildModelPickerRows>[0]> = {}) =>
       ...catalog.byokProviders.flatMap((provider) => provider.models.map((id) => info(provider.id, id))),
     ],
     listState: "ready",
+    keyStatusState: "ready",
     keyStatus: keys,
     accountState: "member",
     query: "",
@@ -66,17 +67,42 @@ describe("真实 alpha-models.json → picker 两组", () => {
     )
   })
 
-  test("disabled/deprecated、需登录、需 KEY 都按真实状态禁用或引导", () => {
+  test("disabled/deprecated 与需 KEY 都按真实状态禁用或引导", () => {
     const disabled = rows({
       models: platformModels.map((model) => (model.id === "claude-opus-4.8" ? { ...model, enabled: false } : model)),
     })
     expect(disabled.find((row) => row.model.id === "claude-opus-4.8")?.availability).toBe("unavailable")
 
     const loggedOut = rows({ accountState: "out", keyStatus: {} })
-    expect(loggedOut.filter((row) => row.group === "platform").every((row) => row.availability === "needs-login")).toBe(
-      true,
-    )
+    expect(loggedOut.filter((row) => row.group === "platform")).toEqual([])
     expect(loggedOut.filter((row) => row.group === "byok").every((row) => row.availability === "needs-key")).toBe(true)
+  })
+
+  test("KEY 状态未知或失败不伪装成未配置", () => {
+    const loading = rows({ keyStatusState: "loading", keyStatus: {} })
+    const failed = rows({ keyStatusState: "error", keyStatus: {} })
+
+    expect(loading.filter((row) => row.group === "byok").every((row) => row.reason === "KEY 状态加载中…")).toBe(true)
+    expect(failed.filter((row) => row.group === "byok").every((row) => row.reason === "KEY 状态读取失败")).toBe(true)
+    expect([...loading, ...failed].some((row) => row.availability === "needs-key")).toBe(false)
+  })
+
+  test("已配置的 off-catalog provider 只从正式 list 派生真实模型行", () => {
+    const custom = info("my-endpoint", "real-custom-model")
+    custom.name = "Real Custom Model"
+    custom.variants = [{ id: "fast", headers: {}, body: {} }]
+    const actual = rows({
+      keyStatus: { ...keys, "my-endpoint": { configured: true, source: "config" } },
+      models: [...platformModels, custom],
+    }).filter((row) => row.model.providerID === "my-endpoint")
+
+    expect(actual).toHaveLength(1)
+    expect(actual[0]?.model).toEqual({
+      providerID: "my-endpoint",
+      id: "real-custom-model",
+      name: "Real Custom Model",
+      variants: ["fast"],
+    })
   })
 
   test("contract 加载失败时 fail-closed：目录仍可辨认，但没有模型伪装可用", () => {

@@ -22,6 +22,7 @@
 import { describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { FRONTEND_SURFACE_MANIFEST } from "../../shared/frontend-surface-manifest"
 
 const ALPHA_UI = import.meta.dir
 const RENDERER = path.resolve(ALPHA_UI, "..")
@@ -37,7 +38,6 @@ const composerModelPicker = read(path.join(ALPHA_UI, "alpha-composer-model.tsx")
 const modelContract = read(path.join(ALPHA_UI, "model-contract.ts"))
 const composerState = read(path.join(ALPHA_UI, "composer-state.ts"))
 const rendererIndex = read(path.join(RENDERER, "index.tsx"))
-const surfaceManifest = read(path.join(REPO, "packages/ui-mac/src/shared/frontend-surface-manifest.ts"))
 const takeovers: Record<string, string> = {
   "composer-takeover.tsx": composerTakeover,
   "timeline-inject.tsx": timelineInject,
@@ -52,6 +52,31 @@ function* walk(dir: string): Generator<string> {
     if (entry.isDirectory()) yield* walk(p)
     else if (/\.(ts|tsx)$/.test(entry.name)) yield p
   }
+}
+
+function importedFiles(file: string) {
+  return [...read(file).matchAll(/(?:from\s+|import\s*)["']([^"']+)["']/g)]
+    .map((match) => match[1])
+    .filter((specifier): specifier is string => !!specifier?.startsWith("."))
+    .flatMap((specifier) => {
+      const target = path.resolve(path.dirname(file), specifier)
+      return [target, `${target}.ts`, `${target}.tsx`, path.join(target, "index.ts"), path.join(target, "index.tsx")].filter(
+        (candidate) => fs.existsSync(candidate) && fs.statSync(candidate).isFile(),
+      )[0]
+    })
+    .filter((candidate): candidate is string => !!candidate)
+}
+
+function rendererImportGraph(entry: string) {
+  const seen = new Set<string>()
+  const pending = [entry]
+  while (pending.length) {
+    const file = pending.pop()
+    if (!file || seen.has(file)) continue
+    seen.add(file)
+    pending.push(...importedFiles(file).filter((candidate) => candidate.startsWith(RENDERER)))
+  }
+  return seen
 }
 
 describe("T6 ①挂载通道:takeover 与 session 叶零耦合(挂载方式无关的结构根因)", () => {
@@ -151,11 +176,35 @@ describe("REQ-090 model picker ratchet:旧 DOM 接管退役，canonical owner �
     expect(rendererIndex).not.toContain("model-picker-reskin.css")
   })
 
-  test("surface manifest 对 model picker 只有一个 canonical Alpha owner", () => {
-    expect(surfaceManifest.match(/id: "overlay\.model-picker"/g)?.length).toBe(1)
-    expect(surfaceManifest).toContain('owner: "alpha.composer-model"')
-    expect(surfaceManifest).toContain('source: "packages/ui-mac/src/renderer/alpha-ui/alpha-composer-model.tsx"')
-    expect(surfaceManifest).not.toContain("alpha.model-picker-inject")
+  test("实际 renderer import/mount 图可达 picker，且 AlphaComposer 是唯一直接 owner", () => {
+    const picker = path.join(ALPHA_UI, "alpha-composer-model.tsx")
+    const composer = path.join(ALPHA_UI, "alpha-composer.tsx")
+    const graph = rendererImportGraph(path.join(RENDERER, "index.tsx"))
+    const pickerImporters = [...walk(RENDERER)].filter((file) => importedFiles(file).includes(picker))
+    const composerMounts = [...walk(RENDERER)]
+      .filter((file) => importedFiles(file).includes(composer) && read(file).includes("<AlphaComposer"))
+      .map((file) => path.relative(RENDERER, file))
+      .sort()
+
+    expect(graph.has(picker)).toBe(true)
+    expect(pickerImporters.map((file) => path.relative(RENDERER, file))).toEqual(["alpha-ui/alpha-composer.tsx"])
+    expect(read(pickerImporters[0]!)).toContain("<ModelPickPop")
+    expect(composerMounts).toEqual([
+      "alpha-ui/AlphaHome.tsx",
+      "alpha-ui/alpha-new-session.tsx",
+      "alpha-ui/composer-takeover.tsx",
+    ])
+  })
+
+  test("可执行 manifest 对 model picker 只有一个 canonical Alpha owner，且 source 落在真实图中", () => {
+    const entries = FRONTEND_SURFACE_MANIFEST.filter((surface) => surface.id === "overlay.model-picker")
+    expect(entries).toHaveLength(1)
+    expect(entries[0]).toMatchObject({
+      owner: "alpha.composer-model",
+      source: "packages/ui-mac/src/renderer/alpha-ui/alpha-composer-model.tsx",
+      mount: { kind: "overlay", host: "alpha-composer-model" },
+    })
+    expect(rendererImportGraph(path.join(RENDERER, "index.tsx")).has(path.join(REPO, entries[0]!.source))).toBe(true)
   })
 
   test("选择面只直调 typed v2 list/get/switch，不观察或点击上游隐藏控件", () => {
@@ -169,9 +218,6 @@ describe("REQ-090 model picker ratchet:旧 DOM 接管退役，canonical owner �
     }
     expect(composerModelPicker).toContain("await props.onSelect(row.model)")
     expect(alphaComposer).toContain("await modelContract.switch(sessionID, modelRefOf(model))")
-    expect(alphaComposer.indexOf("await modelContract.switch(sessionID, modelRefOf(model))")).toBeLessThan(
-      alphaComposer.indexOf("setComposerModel(model)"),
-    )
   })
 
   test("model/variant 不再落 localStorage 形成第二真值，picker 打开后聚焦 canonical 搜索框", () => {
@@ -185,8 +231,10 @@ describe("REQ-090 model picker ratchet:旧 DOM 接管退役，canonical owner �
   test("session 每轮以 typed get 的 Model.Ref 覆盖 UI 投影，消除 localStorage/context 双真值", () => {
     expect(alphaComposer).toContain("const sessionID = props.sessionID?.()")
     expect(alphaComposer).toContain("void runModelChain(directory, sessionID)")
-    expect(alphaComposer).toContain("const upstream = await modelContract.current(sessionID)")
-    expect(alphaComposer).toContain("setComposerModel(upstream ? composerModelFromRef(upstream, cat) : null)")
+    expect(alphaComposer).toContain("invalidateComposerModelProjection(sessionID)")
+    expect(alphaComposer).toContain("await readState(modelContract.current(sessionID))")
+    expect(alphaComposer).toContain("failComposerModelProjection(sessionID)")
+    expect(alphaComposer).toContain("resolveComposerModelProjection(")
     expect(alphaComposer).not.toContain("restoreSuspendedModel")
   })
 })

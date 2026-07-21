@@ -6,13 +6,19 @@ import type { AccountSummary, AuthState } from "../../preload/types"
 import type { EffectiveCatalog, ProviderKeyStatus, Tier } from "../../shared/alpha-model-types"
 import { ALPHA_PATHS } from "../../shared/alpha-config"
 import { useAlphaEndpoints } from "../use-alpha-endpoints"
-import { composerModelSuspended, type ComposerModel, type SuspendReason } from "./composer-state"
+import {
+  composerModelProjection,
+  composerModelSuspended,
+  type ComposerModel,
+  type SuspendReason,
+} from "./composer-state"
 import { ENGINE_FETCH_TIMEOUT_MS, nextEngineRetryDelay } from "./model-picker-logic"
 import type { ModelContract } from "./model-contract"
 import { buildModelPickerRows, type AccountState, type ModelListState, type ModelPickerRow } from "./model-picker-core"
 import { AddProvider } from "./model-picker-add"
 
 const fmtYuan = (fen: number) => `¥${(fen / 100).toFixed(2)}`
+type LoadState<T> = { status: "loading" } | { status: "ready"; data: T } | { status: "error" }
 
 const suspendText = (reason: SuspendReason) =>
   reason === "needs-login"
@@ -27,15 +33,13 @@ export function ModelPickPop(props: {
   selected: () => ComposerModel | null
   onSelect: (model: ComposerModel) => Promise<void>
   onPicked: () => void
+  onRetryCurrent?: () => void
 }) {
   const [catalog, setCatalog] = createSignal<EffectiveCatalog | null>(null)
   const [catalogError, setCatalogError] = createSignal(false)
-  const [auth, setAuth] = createSignal<AuthState | null>(null)
-  const [authError, setAuthError] = createSignal(false)
-  const [summary, setSummary] = createSignal<AccountSummary | null>(null)
-  const [summaryError, setSummaryError] = createSignal(false)
-  const [summaryLoading, setSummaryLoading] = createSignal(false)
-  const [keyStatus, setKeyStatus] = createSignal<ProviderKeyStatus>({})
+  const [auth, setAuth] = createSignal<LoadState<AuthState>>({ status: "loading" })
+  const [summary, setSummary] = createSignal<LoadState<AccountSummary | null>>({ status: "loading" })
+  const [keyStatus, setKeyStatus] = createSignal<LoadState<ProviderKeyStatus>>({ status: "loading" })
   const [models, setModels] = createSignal<Awaited<ReturnType<ModelContract["list"]>>>([])
   const [listState, setListState] = createSignal<ModelListState>("loading")
   const [query, setQuery] = createSignal("")
@@ -61,30 +65,22 @@ export function ModelPickPop(props: {
       })
   }
 
-  const loadSummary = () => {
-    if (auth()?.status !== "logged-in") {
-      setSummary(null)
-      setSummaryError(false)
-      setSummaryLoading(false)
+  const loadSummary = (state: AuthState) => {
+    if (state.status !== "logged-in") {
+      setSummary({ status: "ready", data: null })
       return
     }
-    setSummaryLoading(true)
+    setSummary({ status: "loading" })
     void window.api.account
       .summary()
       .then((result) => {
         if (result && typeof result === "object" && "error" in result) {
-          setSummary(null)
-          setSummaryError(true)
+          setSummary({ status: "error" })
           return
         }
-        setSummary(result as AccountSummary)
-        setSummaryError(false)
+        setSummary({ status: "ready", data: result as AccountSummary })
       })
-      .catch(() => {
-        setSummary(null)
-        setSummaryError(true)
-      })
-      .finally(() => setSummaryLoading(false))
+      .catch(() => setSummary({ status: "error" }))
   }
 
   const scheduleRetry = () => {
@@ -116,38 +112,42 @@ export function ModelPickPop(props: {
       })
   }
 
-  const refreshKeys = () => {
+  const loadKeys = () => {
+    setKeyStatus({ status: "loading" })
     void window.api.providers
       .keyStatus()
-      .then(setKeyStatus)
-      .catch(() => {})
+      .then((data) => setKeyStatus({ status: "ready", data }))
+      .catch(() => setKeyStatus({ status: "error" }))
+  }
+
+  const refreshKeys = () => {
+    loadKeys()
     loadModels()
   }
 
   const loadAuth = () => {
-    setAuth(null)
-    setAuthError(false)
+    setAuth({ status: "loading" })
+    setSummary({ status: "loading" })
     void window.api.auth
       .getState()
       .then((state) => {
-        setAuth(state)
-        loadSummary()
+        setAuth({ status: "ready", data: state })
+        loadSummary(state)
       })
-      .catch(() => setAuthError(true))
+      .catch(() => {
+        setAuth({ status: "error" })
+        setSummary({ status: "error" })
+      })
   }
 
   onMount(() => {
     loadCatalog()
     loadModels()
-    void window.api.providers
-      .keyStatus()
-      .then(setKeyStatus)
-      .catch(() => {})
+    loadKeys()
     loadAuth()
     const unsubscribe = window.api.auth.subscribe((state) => {
-      setAuth(state)
-      setAuthError(false)
-      loadSummary()
+      setAuth({ status: "ready", data: state })
+      loadSummary(state)
     })
     queueMicrotask(() => search?.focus())
     onCleanup(() => unsubscribe?.())
@@ -159,16 +159,21 @@ export function ModelPickPop(props: {
   })
 
   const accountState = createMemo<AccountState>(() => {
-    if (authError()) return "error"
-    if (!auth()) return "loading"
-    if (auth()?.status !== "logged-in") return "out"
-    if (summaryLoading()) return "loading"
-    if (summaryError()) return "error"
-    const current = summary()
-    if (!current) return "error"
+    const authValue = auth()
+    if (authValue.status === "loading") return "loading"
+    if (authValue.status === "error") return "error"
+    if (authValue.data.status !== "logged-in") return "out"
+    const summaryValue = summary()
+    if (summaryValue.status === "loading") return "loading"
+    if (summaryValue.status === "error" || !summaryValue.data) return "error"
+    const current = summaryValue.data
     if (current.plan.status === "active") return "member"
     return current.balanceFen > 0 ? "balance" : "empty"
   })
+  const readyKeyStatus = () => {
+    const current = keyStatus()
+    return current.status === "ready" ? current.data : {}
+  }
 
   const rows = createMemo(() => {
     const current = catalog()
@@ -177,7 +182,8 @@ export function ModelPickPop(props: {
       catalog: current,
       models: models(),
       listState: listState(),
-      keyStatus: keyStatus(),
+      keyStatusState: keyStatus().status,
+      keyStatus: readyKeyStatus(),
       accountState: accountState(),
       query: query(),
     })
@@ -185,11 +191,18 @@ export function ModelPickPop(props: {
   const platformRows = createMemo(() => rows().filter((row) => row.group === "platform"))
   const byokRows = createMemo(() => rows().filter((row) => row.group === "byok"))
   const memberPlanName = createMemo(() => {
-    const plan = summary()?.plan
+    const current = summary()
+    const plan = current.status === "ready" ? current.data?.plan : undefined
     return plan?.status === "active" ? plan.name : "Pro"
   })
+  const balance = () => {
+    const current = summary()
+    return current.status === "ready" ? (current.data?.balanceFen ?? 0) : 0
+  }
+  const selectionBlocked = () => composerModelProjection().status !== "ready"
 
   const pick = async (row: ModelPickerRow) => {
+    if (selectionBlocked()) return
     if (row.availability === "needs-key") {
       setConfigureId(row.model.providerID)
       setAddOpen(true)
@@ -236,7 +249,7 @@ export function ModelPickPop(props: {
       </Show>
       <Show when={accountState() === "balance"}>
         <div class="a-acct-banner balance">
-          <span class="bt">钱包余额 {fmtYuan(summary()?.balanceFen ?? 0)} · 按量扣费</span>
+          <span class="bt">钱包余额 {fmtYuan(balance())} · 按量扣费</span>
         </div>
       </Show>
       <Show when={accountState() === "empty"}>
@@ -247,6 +260,9 @@ export function ModelPickPop(props: {
       <Show when={accountState() === "out"}>
         <div class="a-acct-banner out">
           <span class="bt">登录解锁代理节点</span>
+          <button type="button" onClick={() => void window.api.auth.start()}>
+            登录
+          </button>
         </div>
       </Show>
       <Show when={accountState() === "loading"}>
@@ -257,7 +273,46 @@ export function ModelPickPop(props: {
       <Show when={accountState() === "error"}>
         <div class="a-acct-banner error" role="alert">
           <span class="bt">账户信息读取失败</span>
-          <button type="button" onClick={() => (authError() ? loadAuth() : loadSummary())}>
+          <button
+            type="button"
+            onClick={() => {
+              const current = auth()
+              if (current.status !== "ready") return loadAuth()
+              loadSummary(current.data)
+            }}
+          >
+            重试
+          </button>
+        </div>
+      </Show>
+
+      <Show when={keyStatus().status === "loading"}>
+        <div class="a-mpp-alert" role="status">
+          <strong>正在读取 KEY 状态…</strong>
+          <span>确认前不会把供应商标成未配置。</span>
+        </div>
+      </Show>
+      <Show when={keyStatus().status === "error"}>
+        <div class="a-mpp-alert" role="alert">
+          <strong>KEY 状态读取失败</strong>
+          <span>当前不提供配置结论。</span>
+          <button type="button" onClick={loadKeys}>
+            重试
+          </button>
+        </div>
+      </Show>
+
+      <Show when={composerModelProjection().status === "loading"}>
+        <div class="a-mpp-alert" role="status">
+          <strong>正在读取当前会话模型…</strong>
+          <span>读取完成前不会沿用其他会话的选择。</span>
+        </div>
+      </Show>
+      <Show when={composerModelProjection().status === "error"}>
+        <div class="a-mpp-alert" role="alert">
+          <strong>当前会话模型读取失败</strong>
+          <span>没有沿用其他会话的选择。</span>
+          <button type="button" onClick={() => props.onRetryCurrent?.()} disabled={!props.onRetryCurrent}>
             重试
           </button>
         </div>
@@ -304,6 +359,7 @@ export function ModelPickPop(props: {
                 row={row}
                 selected={props.selected}
                 switching={switching}
+                selectionBlocked={selectionBlocked}
                 onPick={pick}
                 tierLabel={tierLabel(catalog())}
               />
@@ -318,6 +374,7 @@ export function ModelPickPop(props: {
                 row={row}
                 selected={props.selected}
                 switching={switching}
+                selectionBlocked={selectionBlocked}
                 onPick={pick}
                 tierLabel={tierLabel(catalog())}
               />
@@ -339,7 +396,7 @@ export function ModelPickPop(props: {
       <button
         type="button"
         class="a-pop-item a-mpp-addrow"
-        disabled={!catalog()}
+        disabled={!catalog() || selectionBlocked()}
         onClick={() => {
           setConfigureId(null)
           setAddOpen(true)
@@ -351,7 +408,7 @@ export function ModelPickPop(props: {
         <AddProvider
           catalog={catalog()}
           initialId={configureId() ?? undefined}
-          keyStatus={keyStatus()}
+          keyStatus={keyStatus().status === "ready" ? readyKeyStatus() : undefined}
           onClose={() => {
             setAddOpen(false)
             setConfigureId(null)
@@ -367,6 +424,7 @@ function ModelRow(props: {
   row: ModelPickerRow
   selected: () => ComposerModel | null
   switching: () => string | null
+  selectionBlocked: () => boolean
   onPick: (row: ModelPickerRow) => Promise<void>
   tierLabel: (tier?: Tier) => string
 }) {
@@ -374,7 +432,8 @@ function ModelRow(props: {
     const current = props.selected()
     return current?.providerID === props.row.model.providerID && current.id === props.row.model.id
   }
-  const disabled = () => ["loading", "unavailable"].includes(props.row.availability) || !!props.switching()
+  const disabled = () =>
+    props.selectionBlocked() || ["loading", "unavailable"].includes(props.row.availability) || !!props.switching()
   const status = () =>
     props.row.reason ?? (props.row.tier ? `${props.tierLabel(props.row.tier)} ${props.row.mult ?? ""}`.trim() : "")
   return (

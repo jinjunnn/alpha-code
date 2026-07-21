@@ -32,11 +32,20 @@ export const INTERNAL_AGENTS = new Set(["alpha-automation", "alpha-automation-st
 /* ── signals(模块级 = 所有渲染面共享)──────────────────────────────────────── */
 
 const [model, setModelSignal] = createSignal<ComposerModel | null>(null)
+export type ComposerModelProjection = {
+  status: "loading" | "ready" | "error"
+  sessionID: string | null
+}
+const [modelProjection, setModelProjection] = createSignal<ComposerModelProjection>({
+  status: "ready",
+  sessionID: null,
+})
 const [perm, setPerm] = createSignal<PermMode>("ask")
 const [agent, setAgent] = createSignal<string | null>(null) // null = 引擎默认(build)
 const [agents, setAgents] = createSignal<ComposerAgent[]>([])
 
 export const composerModel = model
+export const composerModelProjection = modelProjection
 export const composerEffortSel = () => model()?.variant ?? null
 export const composerPerm = perm
 export const composerAgent = agent
@@ -70,6 +79,30 @@ export function clearSuspendedModel() {
 
 export function setComposerModel(m: ComposerModel | null) {
   setModelSignal(m?.variant && !m.variants.includes(m.variant) ? { ...m, variant: undefined } : m)
+}
+
+/** Session 路由一进入新的同步 epoch 就先撤销旧投影，避免上一会话的 Ref 仍可被操作。 */
+export function invalidateComposerModelProjection(sessionID: string) {
+  setModelSignal(null)
+  setSuspended(null)
+  setModelProjection({ status: "loading", sessionID })
+}
+
+export function resolveComposerModelProjection(sessionID: string, next: ComposerModel | null) {
+  setComposerModel(next)
+  setSuspended(null)
+  setModelProjection({ status: "ready", sessionID })
+}
+
+export function failComposerModelProjection(sessionID: string) {
+  setModelSignal(null)
+  setSuspended(null)
+  setModelProjection({ status: "error", sessionID })
+}
+
+/** home 没有服务端 Session 投影；控件使用创建会话前的内存选择。 */
+export function resetComposerModelProjection() {
+  setModelProjection({ status: "ready", sessionID: null })
 }
 
 /* ── 纯函数(单测覆盖)────────────────────────────────────────────────────── */

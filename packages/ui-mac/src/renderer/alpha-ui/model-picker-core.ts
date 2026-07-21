@@ -4,6 +4,7 @@ import type { ComposerModel } from "./composer-state"
 
 export type AccountState = "member" | "balance" | "empty" | "out" | "loading" | "error"
 export type ModelListState = "loading" | "ready" | "failed"
+export type KeyStatusState = "loading" | "ready" | "error"
 export type ModelAvailability = "available" | "needs-login" | "needs-credit" | "needs-key" | "loading" | "unavailable"
 
 export type ModelPickerRow = {
@@ -50,6 +51,7 @@ export function buildModelPickerRows(input: {
   catalog: EffectiveCatalog
   models: readonly ModelV2Info[]
   listState: ModelListState
+  keyStatusState: KeyStatusState
   keyStatus: ProviderKeyStatus
   accountState: AccountState
   query: string
@@ -59,7 +61,8 @@ export function buildModelPickerRows(input: {
   const matches = (row: ModelPickerRow) =>
     !query || `${row.model.name} ${row.model.id} ${row.providerName} ${row.reason ?? ""}`.toLowerCase().includes(query)
 
-  const platform = input.catalog.platformModels.map((model): ModelPickerRow => {
+  // 登录前沿用既有 IA：统一登录入口由组件呈现，不铺一整组逐模型锁定行。
+  const platform = (input.accountState === "out" ? [] : input.catalog.platformModels).map((model): ModelPickerRow => {
     const key = `${input.catalog.platformProvider.id}:${model.id}`
     const availability = platformAvailability(input.accountState, input.listState, actual.get(key))
     return {
@@ -82,6 +85,20 @@ export function buildModelPickerRows(input: {
   })
 
   const byok = input.catalog.byokProviders.flatMap((provider): ModelPickerRow[] => {
+    if (input.keyStatusState !== "ready") {
+      return [
+        {
+          key: `${provider.id}:key-status`,
+          group: "byok",
+          model: { id: provider.models[0] ?? "", providerID: provider.id, name: provider.name, variants: [] },
+          providerName: provider.name,
+          pico: provider.pico,
+          reasoning: false,
+          availability: input.keyStatusState === "loading" ? "loading" : "unavailable",
+          reason: input.keyStatusState === "loading" ? "KEY 状态加载中…" : "KEY 状态读取失败",
+        },
+      ]
+    }
     if (!(input.keyStatus[provider.id]?.configured ?? false)) {
       return [
         {
@@ -127,7 +144,39 @@ export function buildModelPickerRows(input: {
     })
   })
 
-  return [...platform, ...byok].filter(matches)
+  const catalogProviderIDs = new Set([
+    input.catalog.platformProvider.id,
+    ...input.catalog.byokProviders.map((provider) => provider.id),
+  ])
+  const custom =
+    input.keyStatusState === "ready" && input.listState === "ready"
+      ? Object.entries(input.keyStatus)
+          .filter(([providerID, status]) => status.configured && !catalogProviderIDs.has(providerID))
+          .flatMap(([providerID]): ModelPickerRow[] =>
+            input.models
+              .filter((model) => model.providerID === providerID)
+              .map((model) => {
+                const available = model.enabled && model.status !== "deprecated"
+                return {
+                  key: `${providerID}:${model.id}`,
+                  group: "byok",
+                  model: {
+                    id: model.id,
+                    providerID,
+                    name: model.name,
+                    variants: model.variants.map((variant) => variant.id),
+                  },
+                  providerName: providerID,
+                  pico: { letter: providerID.slice(0, 1).toUpperCase() || "?", color: "var(--a-accent-solid)" },
+                  reasoning: false,
+                  availability: available ? "available" : "unavailable",
+                  reason: available ? undefined : "当前不可用",
+                }
+              }),
+          )
+      : []
+
+  return [...platform, ...byok, ...custom].filter(matches)
 }
 
 function platformAvailability(
