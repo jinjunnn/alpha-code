@@ -104,7 +104,7 @@ function DialogSelectFileLegacy(props: { filesOnly: () => boolean; onOpenFile?: 
   }
 
   return (
-    <Dialog title={language.t("command.file.open")} class="pt-3 pb-0 !max-h-[480px]" transition>
+    <Dialog title={palette.language.t("command.file.open")} class="pt-3 pb-0 !max-h-[480px]" transition>
       <List
         class="px-3"
         search={{
