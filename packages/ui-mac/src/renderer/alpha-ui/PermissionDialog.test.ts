@@ -15,6 +15,7 @@ import type { createComponent } from "solid-js"
 import type { render } from "solid-js/web"
 import type { createPermissionDecisionCommand, PermissionDialog } from "./PermissionDialog"
 import type { PermissionWatcher } from "./permission-watcher"
+import type { setLocale } from "../i18n"
 
 type TestRuntime = {
   createComponent: typeof createComponent
@@ -22,6 +23,7 @@ type TestRuntime = {
   createPermissionDecisionCommand: typeof createPermissionDecisionCommand
   PermissionDialog: typeof PermissionDialog
   PermissionWatcher: typeof PermissionWatcher
+  setLocale: typeof setLocale
 }
 
 type PermissionClient = Parameters<typeof PermissionWatcher>[0]["client"]
@@ -47,6 +49,9 @@ await build({
 const disposers: Array<() => void> = []
 GlobalRegistrator.register()
 const runtime = (await import(pathToFileURL(join(runtimeDirectory, "permission-test-runtime.js")).href)) as TestRuntime
+// Assertions below are the zh product copy; pin the bundled i18n instance to zh so the real
+// render matches (else detectLocale() → "en" in happy-dom and every literal assertion drifts).
+runtime.setLocale("zh")
 
 beforeEach(() => {
   document.body.replaceChildren()
