@@ -13,12 +13,12 @@
 - 当前工作树分支：`feat/alpha-code-224`，跟踪 `origin/alpha`。
 - HEAD 与 `origin/alpha` 均为 `e6507b0127d9312af8b4419b5ba72d0e5f48f7f9`。
 - `origin/alpha...HEAD` 无差异，工作树无变更：**#224 尚未新增任何实现**。
-- [ALPHA.md](/Users/tide/app/alpha-code/.worktrees/224/ALPHA.md:1) 明确本仓是 anomalyco/opencode fork：
+- `ALPHA.md` 明确本仓是 anomalyco/opencode fork：
   - `[上游既有]` `packages/desktop` 是上游 Electron shell。
   - `[Alpha fork 既有]` `packages/ui-mac` 是 Alpha 实际桌面产品壳。
   - `[Alpha fork 既有]` `packages/ext` 是 Alpha 扩展与平台治理缝。
-- [architecture/overview.md](/Users/tide/app/alpha-code/.worktrees/224/docs/architecture/overview.md:15) 将本地信任边界归桌面，云、模型、计量归 alpha-platform。
-- [upstream-integration.md](/Users/tide/app/alpha-code/.worktrees/224/docs/architecture/upstream-integration.md:15) 要求 Alpha 自有 seam 优先，避免修改上游同步面。
+- `architecture/overview.md` 将本地信任边界归桌面，云、模型、计量归 alpha-platform。
+- `upstream-integration.md` 要求 Alpha 自有 seam 优先，避免修改上游同步面。
 
 因此，本票实现应落在 `packages/ui-mac`、`packages/ext` 和一个 Alpha 自有消费者包内，不改上游 `packages/desktop`。
 
@@ -26,14 +26,14 @@
 
 | 领域 | 现有真实行为 | 版本/兼容现状 |
 |---|---|---|
-| Identity/token | [alpha-auth.ts](/Users/tide/app/alpha-code/.worktrees/224/packages/ui-mac/src/main/alpha-auth.ts:37) 本地定义 `TokenResponse`；网络响应直接 cast；同一个 access token 同时写入 `ALPHA_API_KEY`、`ALPHA_CLOUD_TOKEN` | 无 `schema_version` 解码；无 `iss/aud/purpose/scope` route 校验；refresh 失败可能继续保留旧 token |
-| Endpoint discovery | [alpha-endpoints.ts](/Users/tide/app/alpha-code/.worktrees/224/packages/ui-mac/src/main/alpha-endpoints.ts:1) 顺序为环境变量、pin、discovery、默认值 | discovery 文件无 schema 版本；非法或部分数据会回落，失败可静默 |
-| Account | [alpha-account.ts](/Users/tide/app/alpha-code/.worktrees/224/packages/ui-mac/src/main/alpha-account.ts:24) 使用泛型 `authedGet<T>` 和 `.json() as T` | [preload/types.ts](/Users/tide/app/alpha-code/.worktrees/224/packages/ui-mac/src/preload/types.ts:96) 本地账户类型与已批 Ledger wire 不一致；无大小和版本校验 |
-| Model catalog | [alpha-platform-models.ts](/Users/tide/app/alpha-code/.worktrees/224/packages/ui-mac/src/main/alpha-platform-models.ts:24) 接受缺失 `byok_providers` 的旧形状；失败保留缓存 | [alpha-models.ts](/Users/tide/app/alpha-code/.worktrees/224/packages/ui-mac/src/main/alpha-models.ts:52) 可退回缓存或 packaged snapshot；契约不兼容也可能被掩盖 |
-| Cloud HTTP | [alpha-cloud-jobs.ts](/Users/tide/app/alpha-code/.worktrees/224/packages/ui-mac/src/main/alpha-cloud-jobs.ts:30) 泛型请求与 cast 响应 | 本地 [CloudJobEnvelope](/Users/tide/app/alpha-code/.worktrees/224/packages/ui-mac/src/preload/types.ts:216) 没有批准契约中的统一版本和 artifact 结构 |
-| Cloud admission | [cloud-envelope-guard.ts](/Users/tide/app/alpha-code/.worktrees/224/packages/ui-mac/src/main/cloud-envelope-guard.ts:13) 先检查敏感路径和 JSON 大小 | 当前上限为 1 MiB，不是批准的 `CONTROL_ENVELOPE_MAX_BYTES = 256 KiB` |
-| Cloud MCP | [sidecar.ts](/Users/tide/app/alpha-code/.worktrees/224/packages/ui-mac/src/main/sidecar.ts:361) 将远端 MCP 注册为 `cloud`；通用 MCP 代码将工具命名为 `cloud_<tool>` | 可绕过 Electron HTTP 适配层；目前没有 Alpha 契约前置/后置校验 |
-| Release | [updater.ts](/Users/tide/app/alpha-code/.worktrees/224/packages/ui-mac/src/main/updater.ts:14) 读取 electron-builder `app-update.yml`，校验 GitHub owner/repo/channel | 这是 GitHub 更新源保护，不是已版本化的 Alpha release wire |
+| Identity/token | `alpha-auth.ts` 本地定义 `TokenResponse`；网络响应直接 cast；同一个 access token 同时写入 `ALPHA_API_KEY`、`ALPHA_CLOUD_TOKEN` | 无 `schema_version` 解码；无 `iss/aud/purpose/scope` route 校验；refresh 失败可能继续保留旧 token |
+| Endpoint discovery | `alpha-endpoints.ts` 顺序为环境变量、pin、discovery、默认值 | discovery 文件无 schema 版本；非法或部分数据会回落，失败可静默 |
+| Account | `alpha-account.ts` 使用泛型 `authedGet<T>` 和 `.json() as T` | `preload/types.ts` 本地账户类型与已批 Ledger wire 不一致；无大小和版本校验 |
+| Model catalog | `alpha-platform-models.ts` 接受缺失 `byok_providers` 的旧形状；失败保留缓存 | `alpha-models.ts` 可退回缓存或 packaged snapshot；契约不兼容也可能被掩盖 |
+| Cloud HTTP | `alpha-cloud-jobs.ts` 泛型请求与 cast 响应 | 本地 `CloudJobEnvelope` 没有批准契约中的统一版本和 artifact 结构 |
+| Cloud admission | `cloud-envelope-guard.ts` 先检查敏感路径和 JSON 大小 | 当前上限为 1 MiB，不是批准的 `CONTROL_ENVELOPE_MAX_BYTES = 256 KiB` |
+| Cloud MCP | `sidecar.ts` 将远端 MCP 注册为 `cloud`；通用 MCP 代码将工具命名为 `cloud_<tool>` | 可绕过 Electron HTTP 适配层；目前没有 Alpha 契约前置/后置校验 |
+| Release | `updater.ts` 读取 electron-builder `app-update.yml`，校验 GitHub owner/repo/channel | 这是 GitHub 更新源保护，不是已版本化的 Alpha release wire |
 
 现有未知 cloud status 没有发现被显式映射成 `running` 的代码，这是应保留的好性质；但响应整体仍未经契约验证，尚不能视为 AC 已满足。
 
@@ -41,37 +41,37 @@
 
 以下均为 `[Alpha fork 既有]`，对应已关闭的 [#184](https://github.com/jinjunnn/alpha-code/issues/184)、[#185](https://github.com/jinjunnn/alpha-code/issues/185) 及后续配额工作 [#279](https://github.com/jinjunnn/alpha-code/issues/279)：
 
-- [cloud-artifact-descriptor.ts](/Users/tide/app/alpha-code/.worktrees/224/packages/ui-mac/src/shared/cloud-artifact-descriptor.ts:1)：
+- `cloud-artifact-descriptor.ts`：
   - 当前手写了一份 ArtifactDescriptor mirror 和宽松 validator。
   - 文件注释要求与平台“逐点同步”，正是 #224 应消除的漂移源。
   - 还保留 legacy compatibility 开关。
-- [alpha-artifact-download.test.ts](/Users/tide/app/alpha-code/.worktrees/224/packages/ui-mac/src/main/alpha-artifact-download.test.ts:292) 已覆盖：
+- `alpha-artifact-download.test.ts` 已覆盖：
   - 流式下载；
   - 未知 `schemaVersion` 在请求前拒绝；
   - foreign `contentRef` 不带 token；
   - 大小、hash、配额、流中断等失败。
-- [artifact-service.ts](/Users/tide/app/alpha-code/.worktrees/224/packages/ui-mac/src/main/artifact-service.ts) 已负责 main-owned artifact 操作。
-- [artifact-manifest.ts](/Users/tide/app/alpha-code/.worktrees/224/packages/ui-mac/src/main/artifact-manifest.ts:19) 已负责本地 manifest。
-- [alpha-workdir.ts](/Users/tide/app/alpha-code/.worktrees/224/packages/ui-mac/src/main/alpha-workdir.ts:202) 已复用下载与 manifest/service 链。
-- [cloud-ipc.ts](/Users/tide/app/alpha-code/.worktrees/224/packages/ui-mac/src/main/cloud-ipc.ts:102) 已在完成时校验并登记 artifact，但仍接受 legacy metadata。
-- [platform-integration.md](/Users/tide/app/alpha-code/.worktrees/224/docs/contracts/platform-integration.md:74) 已记录 streaming、descriptor-only IPC、100 MiB/256 个 artifact 等设计。
+- `artifact-service.ts` 已负责 main-owned artifact 操作。
+- `artifact-manifest.ts` 已负责本地 manifest。
+- `alpha-workdir.ts` 已复用下载与 manifest/service 链。
+- `cloud-ipc.ts` 已在完成时校验并登记 artifact，但仍接受 legacy metadata。
+- `platform-integration.md` 已记录 streaming、descriptor-only IPC、100 MiB/256 个 artifact 等设计。
 
 **#224 不得重新实现下载、hash、配额、manifest、ArtifactService 或 renderer artifact 模型。**只应将它们的入口 descriptor 校验切到统一的上游消费者，并删除不再允许的 legacy 契约回退。
 
 ### 1.4 构建、打包、CI 与测试
 
-- [packages/ui-mac/package.json](/Users/tide/app/alpha-code/.worktrees/224/packages/ui-mac/package.json:14)：
+- `packages/ui-mac/package.json`：
   - `bun test src`
   - typecheck
   - electron-vite build
   - macOS/Windows package 与 ship。
-- [prebuild.ts](/Users/tide/app/alpha-code/.worktrees/224/packages/ui-mac/scripts/prebuild.ts:6) 构建扩展和 opencode node server，并准备资源。
-- [electron.vite.config.ts](/Users/tide/app/alpha-code/.worktrees/224/packages/ui-mac/electron.vite.config.ts:36) 打包 main、sidecar、worker、preload、renderer。
-- [electron-builder.config.ts](/Users/tide/app/alpha-code/.worktrees/224/packages/ui-mac/electron-builder.config.ts:53) 定义 packaged 文件、extraResources、平台 target 和发布 channel。
-- [alpha-ci.yml](/Users/tide/app/alpha-code/.worktrees/224/.github/workflows/alpha-ci.yml:154) 当前执行 `ext`、`ui-mac` typecheck/test，但没有契约 fixture job。
-- [alpha-windows-build.yml](/Users/tide/app/alpha-code/.worktrees/224/.github/workflows/alpha-windows-build.yml:27) 可打包并检查 native 依赖，但没有 packaged contract smoke。
-- [alpha-check.sh](/Users/tide/app/alpha-code/.worktrees/224/scripts/alpha-check.sh:20) 只覆盖 upstream guard、typecheck 和现有测试。
-- [distribution.md](/Users/tide/app/alpha-code/.worktrees/224/docs/runbooks/distribution.md:31) 是当前 RC 构建、签名和人工 packaged 验证入口。
+- `prebuild.ts` 构建扩展和 opencode node server，并准备资源。
+- `electron.vite.config.ts` 打包 main、sidecar、worker、preload、renderer。
+- `electron-builder.config.ts` 定义 packaged 文件、extraResources、平台 target 和发布 channel。
+- `alpha-ci.yml` 当前执行 `ext`、`ui-mac` typecheck/test，但没有契约 fixture job。
+- `alpha-windows-build.yml` 可打包并检查 native 依赖，但没有 packaged contract smoke。
+- `alpha-check.sh` 只覆盖 upstream guard、typecheck 和现有测试。
+- `distribution.md` 是当前 RC 构建、签名和人工 packaged 验证入口。
 - 单测框架为 Bun test；`playwright-core` 已存在，但没有 Electron packaged contract harness。
 - 测试必须从具体 package 目录运行；typecheck 必须用 `bun typecheck`，不得在仓库根直接跑测试或调用 `tsc`。
 
@@ -201,7 +201,7 @@ packages/ui-mac/scripts/packaged-contract-smoke.ts
   - MCP 显示 tool error；
   - 应用不把不兼容数据当成功继续运行。
 
-该 smoke 属于 L3，每个 RC 执行一次，接入 [distribution.md](/Users/tide/app/alpha-code/.worktrees/224/docs/runbooks/distribution.md:89) 的共享 RC checklist；不要求每个 PR 都完成签名和完整 packaged 测试。
+该 smoke 属于 L3，每个 RC 执行一次，接入 `distribution.md` 的共享 RC checklist；不要求每个 PR 都完成签名和完整 packaged 测试。
 
 ### 2.8 被否决替代
 
@@ -302,10 +302,10 @@ packages/ui-mac/scripts/packaged-contract-smoke.ts
 - `packages/ext/src/plugin.ts`
 - `.github/workflows/alpha-ci.yml`
 - `scripts/alpha-check.sh`
-- [platform-integration.md](/Users/tide/app/alpha-code/.worktrees/224/docs/contracts/platform-integration.md:13)
-- [platform-endpoint-discovery.md](/Users/tide/app/alpha-code/.worktrees/224/docs/contracts/platform-endpoint-discovery.md:15)
-- [ci.md](/Users/tide/app/alpha-code/.worktrees/224/docs/runbooks/ci.md)
-- [distribution.md](/Users/tide/app/alpha-code/.worktrees/224/docs/runbooks/distribution.md)
+- `platform-integration.md`
+- `platform-endpoint-discovery.md`
+- `ci.md`
+- `distribution.md`
 
 不新增临时方案 tracker，不重写受保护的知识、设计、audit 或 `.claude/rules` 资产。
 
