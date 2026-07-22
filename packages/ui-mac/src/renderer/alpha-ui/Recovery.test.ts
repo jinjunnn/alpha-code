@@ -9,6 +9,7 @@ import { build } from "vite"
 import type { createComponent } from "solid-js"
 import type { render } from "solid-js/web"
 import type { RecoverySurface } from "./RecoverySurface"
+import type { setLocale } from "../i18n"
 import {
   RECOVERY_ACTIONS,
   RECOVERY_ACTION_RESULT_CODES,
@@ -21,6 +22,7 @@ type Runtime = {
   createComponent: typeof createComponent
   render: typeof render
   RecoverySurface: typeof RecoverySurface
+  setLocale: typeof setLocale
 }
 
 const runtimeDirectory = mkdtempSync(join(tmpdir(), "alpha-recovery-render-"))
@@ -43,6 +45,9 @@ await build({
 const disposers: Array<() => void> = []
 GlobalRegistrator.register()
 const runtime = (await import(pathToFileURL(join(runtimeDirectory, "recovery-test-runtime.js")).href)) as Runtime
+// Assertions below are the zh product copy; pin the bundled i18n instance so the real render
+// matches (else detectLocale() → "en" in happy-dom drifts every literal assertion — #475).
+runtime.setLocale("zh")
 
 beforeEach(() => document.body.replaceChildren())
 afterEach(() =>

@@ -27,6 +27,12 @@ const solidWeb = await import("solid-js/web/dist/web.js")
 mock.module("solid-js/web", () => solidWeb)
 const { batch, createComponent, createSignal } = solid
 const { render } = solidWeb
+// 断言为 zh 产品文案;pin i18n 到 zh(否则 happy-dom 里 detectLocale() → "en",#475 i18n 漂移)。
+// 必须在上面 mock.module("solid-js") 之后【动态】import —— i18n 依赖 solid-js,静态顶部 import 会在
+// mock 生效前加载错误的 solid server build(getNextContextId non-hydrating 报错)。组件在下方同样
+// 动态 import 共享此 i18n 实例。
+const { setLocale } = await import("../src/renderer/i18n")
+setLocale("zh")
 const savedAlphaGlobalDir = process.env.ALPHA_GLOBAL_DIR
 const savedOpencodeConfigDir = process.env.OPENCODE_CONFIG_DIR
 const tempDirs: string[] = []

@@ -9,6 +9,7 @@ import { build } from "vite"
 import type { createComponent, createSignal } from "solid-js"
 import type { render } from "solid-js/web"
 import type { AlphaSettings } from "./settings"
+import type { setLocale } from "../i18n"
 import {
   createSettingsAuthorityCoordinator,
   type SettingsSurfaceApi,
@@ -21,6 +22,7 @@ type TestRuntime = {
   render: typeof render
   AlphaSettings: typeof AlphaSettings
   SettingsProductionHarness: typeof import("./settings-test-runtime").SettingsProductionHarness
+  setLocale: typeof setLocale
 }
 
 const runtimeDirectory = mkdtempSync(join(tmpdir(), "alpha-settings-render-"))
@@ -44,6 +46,9 @@ await build({
 const disposers: Array<() => void> = []
 GlobalRegistrator.register()
 const runtime = (await import(pathToFileURL(join(runtimeDirectory, "settings-test-runtime.js")).href)) as TestRuntime
+// Assertions below are the zh product copy; pin the bundled i18n instance so the real render
+// matches (else detectLocale() → "en" in happy-dom drifts every literal assertion — #475).
+runtime.setLocale("zh")
 
 beforeEach(() => {
   document.body.replaceChildren()
