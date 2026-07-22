@@ -28,7 +28,7 @@
 import { createMemo, ErrorBoundary, lazy, Show, type JSX } from "solid-js"
 import { useLocation, useNavigate } from "@solidjs/router"
 import type { MaybePreloadableComponent } from "@opencode-ai/app"
-import { hrefFor, parseRoute } from "../../../shared/legacy-route-abi"
+import { hrefFor, parseRoute } from "../../../shared/route-manifest"
 import { SurfaceBoundary } from "../surface-boundary"
 import { isSessionSpikeEnabled } from "../session-spike/spike-flag"
 import { isCrossServerSessionError, workspaceContextOf } from "./session-workspace-core"
@@ -45,7 +45,7 @@ export function preloadSessionLeaf(): void {
   void upstreamLeafImport()
 }
 
-/** 正式 chrome:header/上下文条。零 upstream context —— 只读路由 ABI 的解析结果。 */
+/** 正式 chrome:header/上下文条。零 upstream context —— 只读 route manifest 的解析结果。 */
 function WorkspaceChrome() {
   const loc = useLocation()
   const context = createMemo(() => workspaceContextOf(parseRoute(loc.pathname)))

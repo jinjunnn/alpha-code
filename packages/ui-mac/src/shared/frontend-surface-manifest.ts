@@ -4,8 +4,8 @@
 // boundaries as routes, overlays, inline takeovers, and boot-time recovery hosts. Keep
 // mutable delivery state in GitHub; this file records only executable composition facts.
 
-import type { LegacyRoute } from "./legacy-route-abi"
 import type { SurfaceId } from "./alpha-surfaces"
+import type { Route } from "./route-manifest"
 
 export const FRONTEND_SURFACE_MANIFEST_VERSION = 1
 
@@ -339,11 +339,14 @@ export function frontendSurfacesPendingReplacement() {
   return FRONTEND_SURFACE_MANIFEST.filter((surface) => surface.target !== surface.lineage)
 }
 
-export function frontendSurfaceIdForRoute(route: LegacyRoute): FrontendSurfaceId | undefined {
-  if (route.kind === "home") return "route.home"
-  if (route.kind === "directory") return "route.directory"
-  if (route.kind === "newSession") return "route.new-session"
-  if (route.kind === "session" && route.id) return "route.session"
-  if (route.kind === "session") return "route.session-admission"
+export function frontendSurfaceIdForRoute(route: Route): FrontendSurfaceId | undefined {
+  if (route.identity.routeId === "home") return "route.home"
+  if (route.identity.routeId === "directory") return "route.directory"
+  if (route.identity.routeId === "session-admission") return "route.session-admission"
+  if (route.identity.routeId === "new-session") return "route.new-session"
+  if (route.identity.routeId === "session") return "route.session"
+  if (route.identity.routeId === "settings") return "overlay.settings"
+  if (route.identity.routeId === "dialog") return "overlay.dialog"
+  if (route.identity.routeId === "recovery") return "inline.surface-recovery"
   return undefined
 }

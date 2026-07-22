@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { resolve } from "node:path"
-import { parseRoute } from "./legacy-route-abi"
 import {
   FRONTEND_SURFACE_MANIFEST,
   FRONTEND_SURFACE_MANIFEST_VERSION,
   frontendSurfaceIdForRoute,
   frontendSurfacesPendingReplacement,
 } from "./frontend-surface-manifest"
+import { parseRoute } from "./route-manifest"
 
 describe("frontend surface manifest", () => {
   test("has one canonical entry per id and valid internal transition targets", () => {
@@ -33,13 +33,13 @@ describe("frontend surface manifest", () => {
     ).toEqual(FRONTEND_SURFACE_MANIFEST.map(() => true))
   })
 
-  test("maps the frozen route ABI into inspector surface ids", () => {
+  test("maps canonical route identities into inspector surface ids", () => {
     expect(frontendSurfaceIdForRoute(parseRoute("/"))).toBe("route.home")
     expect(frontendSurfaceIdForRoute(parseRoute("/L3RtcC9hbHBoYQ"))).toBe("route.directory")
     expect(frontendSurfaceIdForRoute(parseRoute("/L3RtcC9hbHBoYQ/session"))).toBe("route.session-admission")
     expect(frontendSurfaceIdForRoute(parseRoute("/new-session?draftId=draft-1"))).toBe("route.new-session")
     expect(frontendSurfaceIdForRoute(parseRoute("/L3RtcC9hbHBoYQ/session/ses-1"))).toBe("route.session")
-    expect(frontendSurfaceIdForRoute(parseRoute("/not/a/known/route"))).toBeUndefined()
+    expect(frontendSurfaceIdForRoute(parseRoute("/not/a/known/route"))).toBe("inline.surface-recovery")
   })
 
   test("covers all four composition mount kinds", () => {

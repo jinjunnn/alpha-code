@@ -2,7 +2,7 @@
 // 防未来无声回归。取证档:docs/audits/2026-07-13-s50-req103-slice2a-governance-ipc-ac3-ac4.md。
 //
 //  ① 第三方不可注册顶级路由 —— 路由组合真源 = 上游冻结 app/src/app.tsx 路由树(ADR-020 冻结面)
-//     + shared/legacy-route-abi.ts(版本化 ABI,唯一消费口)。结构性免疫:路由静态组合于打包产物,
+//     + shared/route-manifest.ts(版本化 manifest,唯一消费口)。结构性免疫:路由静态组合于打包产物,
 //     扩展内容(skill/agent/mcp/plugin/cloud)零 renderer 代码通道;renderer 无动态路由注册 API。
 //     钉:parseRoute 的封闭路由宇宙 + renderer 源无路由注册面。
 //  ② 扩展不可读其它命名空间设置 —— ext-config 写面只触 `mcp[<name>]` 单叶(SAFE_NAME 先验);
@@ -19,7 +19,7 @@ import { describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { fileURLToPath } from "node:url"
-import { parseRoute } from "../shared/legacy-route-abi"
+import { parseRoute } from "../shared/route-manifest"
 
 const mainDir = path.dirname(fileURLToPath(import.meta.url))
 const srcDir = path.resolve(mainDir, "..")
@@ -37,18 +37,21 @@ function walkSources(dir: string, exts = [".ts", ".tsx"]): string[] {
 
 // ── ① 顶级路由封闭宇宙 ─────────────────────────────────────────────────────────────────────────
 
-describe("AC4① 第三方不可注册顶级路由(真源:上游冻结路由树 + legacy-route-abi)", () => {
+describe("AC4① 第三方不可注册顶级路由(真源:上游冻结路由树 + route manifest)", () => {
   test("路由宇宙封闭:任意顶级段只会被解释为目录 slug / 非法目录 / unknown,永远不是新路由", () => {
     // 唯一的字面量顶级路由是 new-session;其余单段一律进目录 slug 解释(base64url 目录编码),
     // 一个「扩展想注册的路由名」没有任何通道成为顶级路由。
     for (const hostile of ["governance", "plugins", "extension-panel", "__ext", "admin", "settings2"]) {
       const route = parseRoute(`/${hostile}`)
-      expect(["directory", "invalidDirectory"]).toContain(route.kind)
+      expect(["directory", "recovery"]).toContain(route.kind)
     }
     // 多段:第二段非 "session" 一律 unknown —— 不存在 /<ext>/<page> 命名空间。
-    expect(parseRoute("/anything/panel").kind).toBe("unknown")
-    expect(parseRoute("/anything/session/id/extra").kind).toBe("unknown")
-    expect(parseRoute("/new-session/nested").kind).toBe("unknown")
+    expect(parseRoute("/anything/panel")).toMatchObject({ kind: "recovery", error: { code: "unknown-route" } })
+    expect(parseRoute("/anything/session/id/extra")).toMatchObject({
+      kind: "recovery",
+      error: { code: "unknown-route" },
+    })
+    expect(parseRoute("/new-session/nested")).toMatchObject({ kind: "recovery", error: { code: "unknown-route" } })
     // 既有宇宙不变(锚点):
     expect(parseRoute("/").kind).toBe("home")
     expect(parseRoute("/new-session?draftId=d").kind).toBe("newSession")

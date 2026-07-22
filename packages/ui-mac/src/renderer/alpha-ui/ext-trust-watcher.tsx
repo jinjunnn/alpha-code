@@ -12,7 +12,7 @@ import { createEffect, type Accessor } from "solid-js"
 import { useLocation } from "@solidjs/router"
 // CLIENT subpath only — the v2 barrel pulls Node-only deps that break the renderer (see ADR-008).
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
-import { parseRoute } from "../../shared/legacy-route-abi"
+import { parseRoute } from "../../shared/route-manifest"
 import type { ServerInfo } from "../sidebar/use-projects"
 import { pushToast } from "./Toast"
 import { t } from "../i18n"

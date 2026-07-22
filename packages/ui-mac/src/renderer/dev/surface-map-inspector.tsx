@@ -12,7 +12,7 @@ import {
   type FrontendSurfaceLineage,
   type FrontendSurfaceMount,
 } from "../../shared/frontend-surface-manifest"
-import { parseRoute } from "../../shared/legacy-route-abi"
+import { parseRoute } from "../../shared/route-manifest"
 import { workbenchOpen } from "../alpha-ui/artifact-workbench/workbench-state"
 import { automationOpen } from "../automations/automation-state"
 import { extHubOpen } from "../extensions/ext-hub-state"

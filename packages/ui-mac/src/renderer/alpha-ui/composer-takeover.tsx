@@ -8,12 +8,12 @@
 // - 上下文用量 ring:收养上游活的 progress-circle 按钮进 alpha 工具条的 [data-alpha-usage-host]
 //   (纯只读复用,v2 换 SSE 自建 —— 见 requirements/REQ-055 非目标)。
 //
-// 路由解析:/:b64dir/session/:id(legacy-route-abi,REQ-084 —— 与 hrefFor.session 对偶)。
+// 路由解析:/:b64dir/session/:id(route-manifest,REQ-089 —— 与 hrefFor.session 对偶)。
 
 import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import { useLocation } from "@solidjs/router"
-import { parseRoute } from "../../shared/legacy-route-abi"
+import { parseRoute } from "../../shared/route-manifest"
 import type { AlphaProjectsApi } from "../sidebar/use-projects"
 import { AlphaComposer } from "./alpha-composer"
 
