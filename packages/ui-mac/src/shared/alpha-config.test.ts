@@ -46,6 +46,7 @@ describe("ALPHA_PATHS", () => {
   test("the load-bearing routes are stable", () => {
     expect(ALPHA_PATHS.modelProxy).toBe("/v1")
     expect(ALPHA_PATHS.token).toBe("/auth/token")
+    expect(ALPHA_PATHS.uploadConsent).toBe("/auth/upload-consent")
     expect(ALPHA_PATHS.mcpGateway).toBe("/mcp")
     expect(ALPHA_PATHS.models).toBe("/v1/models")
   })

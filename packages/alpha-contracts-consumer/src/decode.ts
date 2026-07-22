@@ -4,7 +4,7 @@ import artifactDescriptorSchema from "../vendor/alpha-platform/contracts/v1/arti
 import wireSchema from "../vendor/alpha-platform/contracts/v1/alpha-wire-contracts.schema.json"
 import limits from "../vendor/alpha-platform/contracts/v1/limits.json"
 import { ContractIncompatibleError, type ContractSurface } from "./error"
-import type { ContractValues, RoutePurpose, TokenClaimsV1 } from "./types"
+import type { ContractValues, RoutePurpose, TokenClaimsV1, UploadConsentClaimsV1 } from "./types"
 
 export const ALPHA_CONTRACT_VERSION = 1 as const
 export const CONTROL_ENVELOPE_MAX_BYTES = limits.CONTROL_ENVELOPE_MAX_BYTES
@@ -17,6 +17,7 @@ ajv.addSchema(wireSchema)
 
 const validators = {
   TokenClaimsV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/TokenClaimsV1" }),
+  UploadManifestV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/UploadManifestV1" }),
   LedgerPageV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/LedgerPageV1" }),
   ModelCatalogV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/ModelCatalogV1" }),
   CloudJobRequestV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/CloudJobRequestV1" }),
@@ -40,6 +41,13 @@ export function decodeContract<Name extends ContractName>(
       reason: "schema-validation",
     })
   }
+  if (contract === "UploadManifestV1" && !uploadManifestInvariants(value)) {
+    throw new ContractIncompatibleError({
+      surface,
+      received_version: receivedVersion(value, "schema_version"),
+      reason: "schema-validation",
+    })
+  }
   return value as ContractValues[Name]
 }
 
@@ -60,13 +68,32 @@ export function decodeJsonContract<Name extends ContractName>(
 }
 
 export function decodeTokenClaims(token: string): TokenClaimsV1 {
-  const parts = token.split(".")
-  if (parts.length !== 3) {
-    throw new ContractIncompatibleError({ surface: "identity", received_version: "missing", reason: "schema-validation" })
-  }
   try {
-    const claims = decodeContract("TokenClaimsV1", JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")), "identity")
+    const claims = decodeContract("TokenClaimsV1", decodeJwtPayload(token), "identity")
     if (claims.token_use !== "platform_access" || claims.iss !== "alpha-web" || claims.aud !== "alpha-platform-api") {
+      throw new ContractIncompatibleError({
+        surface: "identity",
+        received_version: claims.schema_version,
+        reason: "schema-validation",
+      })
+    }
+    return claims
+  } catch (error) {
+    if (error instanceof ContractIncompatibleError) throw error
+    throw new ContractIncompatibleError({ surface: "identity", received_version: "unknown", reason: "schema-validation" })
+  }
+}
+
+export function decodeUploadConsentClaims(token: string): UploadConsentClaimsV1 {
+  try {
+    const claims = decodeContract("TokenClaimsV1", decodeJwtPayload(token), "identity") as unknown as UploadConsentClaimsV1
+    if (
+      claims.token_use !== "upload_consent" ||
+      claims.iss !== "alpha-web" ||
+      claims.aud !== "alpha-platform-upload" ||
+      claims.purpose !== "artifact.upload" ||
+      !claims.scope.includes("artifact.upload")
+    ) {
       throw new ContractIncompatibleError({
         surface: "identity",
         received_version: claims.schema_version,
@@ -104,4 +131,21 @@ function receivedVersion(value: unknown, field: "schema_version" | "schemaVersio
   if (!value || typeof value !== "object" || Array.isArray(value) || !(field in value)) return "missing" as const
   const version = (value as Record<string, unknown>)[field]
   return typeof version === "number" ? version : ("unknown" as const)
+}
+
+function decodeJwtPayload(token: string) {
+  const parts = token.split(".")
+  if (parts.length !== 3 || !parts[1]) {
+    throw new ContractIncompatibleError({ surface: "identity", received_version: "missing", reason: "schema-validation" })
+  }
+  return JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"))
+}
+
+function uploadManifestInvariants(value: unknown) {
+  const manifest = value as ContractValues["UploadManifestV1"]
+  return (
+    manifest.file_count === manifest.files.length &&
+    manifest.total_bytes === manifest.files.reduce((total, file) => total + file.size_bytes, 0) &&
+    new Set(manifest.files.map((file) => file.path)).size === manifest.files.length
+  )
 }

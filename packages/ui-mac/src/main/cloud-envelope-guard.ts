@@ -45,7 +45,7 @@ function scanValue(value: unknown, fieldPath: string, hits: SecretHit[]): void {
     return
   }
   if (value && typeof value === "object") {
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) scanValue(v, `${fieldPath}.${k}`, hits)
+    for (const [k, v] of Object.entries(value)) scanValue(v, `${fieldPath}.${k}`, hits)
   }
 }
 
@@ -60,6 +60,7 @@ export function scanEnvelopeSecrets(envelope: CloudJobEnvelope): SecretHit[] {
 export type GuardResult = { ok: true; envelope: CloudJobRequestV1 } | { ok: false; error: string }
 
 export function guardCloudEnvelope(envelope: CloudJobEnvelope): GuardResult {
+  if (containsReservedUploadControl(envelope)) return { ok: false, error: "upload-main-gate-required" }
   // ① denied_paths 缺省注入。「未显式声明」按无有效声明算:空数组零保护、也没有正当用例
   //   (真想送 .env 内容照样被 ③ 拦),一律视同未声明补默认。
   const declared = envelope.constraints?.denied_paths
@@ -97,4 +98,14 @@ export function guardCloudEnvelope(envelope: CloudJobEnvelope): GuardResult {
   } catch {
     return { ok: false, error: "contract-incompatible" }
   }
+}
+
+function containsReservedUploadControl(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(containsReservedUploadControl)
+  if (!value || typeof value !== "object") return false
+  return Object.entries(value).some(
+    ([key, nested]) =>
+      ["upload", "manifest", "upload_consent", "consent_token", "consentToken"].includes(key) ||
+      containsReservedUploadControl(nested),
+  )
 }

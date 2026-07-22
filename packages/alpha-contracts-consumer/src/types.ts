@@ -14,6 +14,45 @@ export type TokenClaimsV1 = {
   edition?: string
 }
 
+export type EgressDeclarationV1 =
+  | { egress_class: "explicit.file-upload"; enforcement: "required" }
+  | { egress_class: "input.diff"; enforcement: "grandfathered" }
+  | { egress_class: "code-review"; enforcement: "grandfathered" }
+
+export type UploadManifestV1 = {
+  schema_version: 1
+  manifest_id: string
+  tenant_id: string
+  created_at: string
+  retention_class: "standard" | "short" | "none"
+  consent_required: boolean
+  egress: EgressDeclarationV1[]
+  file_count: number
+  total_bytes: number
+  files: Array<{
+    path: string
+    size_bytes: number
+    sha256: string
+    media_type?: string
+  }>
+}
+
+export type UploadConsentClaimsV1 = {
+  schema_version: 1
+  iss: "alpha-web"
+  aud: "alpha-platform-upload"
+  sub: string
+  token_use: "upload_consent"
+  purpose: "artifact.upload"
+  scope: string[]
+  iat: number
+  exp: number
+  jti: string
+  manifest_id: string
+  manifest_sha256: string
+  egress: EgressDeclarationV1[]
+}
+
 export type LedgerEntryV1 = {
   schema_version: 1
   id: string
@@ -115,6 +154,7 @@ export type ArtifactListV1 = {
 
 export type ContractValues = {
   TokenClaimsV1: TokenClaimsV1
+  UploadManifestV1: UploadManifestV1
   LedgerPageV1: LedgerPageV1
   ModelCatalogV1: ModelCatalogV1
   CloudJobRequestV1: CloudJobRequestV1

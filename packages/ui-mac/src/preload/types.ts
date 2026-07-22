@@ -309,6 +309,37 @@ export type CloudRunManifest =
 export type CloudJobEvent = { event: string; data: unknown; id?: string }
 /** Same shape as AccountResult; distinct alias for the cloud jobs surface. */
 export type CloudResult<T> = T | { error: string }
+export type UploadFindingKind = "contact" | "identity" | "credential" | "protected" | "unknown"
+export type UploadPreview = {
+  pipeline: "code-review"
+  fileCount: number
+  totalBytes: number
+  files: Array<{ path: string; sizeBytes: number; sensitive: boolean }>
+  findings: Array<{ kind: UploadFindingKind; fileCount: number }>
+  purpose: "artifact.upload"
+  retentionClass: "standard"
+}
+export type CloudUploadIntent = { kind: "code-review" }
+export type CloudUploadResult =
+  | { status: "consent-required"; requestId: string; preview: UploadPreview }
+  | { status: "sent"; privacy: "clear" | "confirmed"; job: CloudDispatchResult; directory: string }
+  | { status: "cancelled" }
+  | {
+      status: "failed"
+      error:
+        | "not-authenticated"
+        | "upload-selection-invalid"
+        | "upload-file-limit"
+        | "upload-size-limit"
+        | "upload-control-limit"
+        | "upload-path-invalid"
+        | "upload-file-unreadable"
+        | "upload-not-text"
+        | "upload-consent-issuance-failed"
+        | "upload-consent-invalid"
+        | "upload-dispatch-failed"
+        | "upload-main-gate-required"
+    }
 /** B gateway /v1/models 的一条 live 模型(真相源 allowlist)。 */
 export type PlatformLiveModel = { id: string; provider?: string; minPlan?: string }
 
@@ -768,9 +799,12 @@ export type ElectronAPI = {
   // reaches the renderer). The MCP facade path (agent-triggered cloud.* tools) is wired separately via
   // sidecar.ts mcp.servers.cloud; this HTTP surface is for app-driven dispatch/status.
   cloud: {
-    /** directory:B16 显式通道 —— 提供项目目录时,首次派发弹 per-项目 PIPL 同意门(main 侧);
-     *  缺省则跳过 per-项目门(隐式告知由登录流承担)。 */
-    dispatch: (envelope: CloudJobEnvelope, directory?: string) => Promise<CloudResult<CloudDispatchResult>>
+    /** Grandfathered input.diff/code-review dispatch. Explicit files use upload below. */
+    dispatch: (envelope: CloudJobEnvelope) => Promise<CloudResult<CloudDispatchResult>>
+    /** Main picks, reads, classifies and freezes explicit files. Sensitive scope returns a preview only. */
+    upload: (intent: CloudUploadIntent) => Promise<CloudUploadResult>
+    confirmUpload: (requestId: string) => Promise<CloudUploadResult>
+    cancelUpload: (requestId: string) => Promise<CloudUploadResult>
     status: (jobId: string) => Promise<CloudResult<CloudJobStatus>>
     cancel: (jobId: string) => Promise<CloudResult<{ job_id: string; status: string }>>
     artifacts: (jobId: string) => Promise<CloudResult<CloudArtifactList>>

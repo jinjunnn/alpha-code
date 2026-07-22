@@ -7,21 +7,23 @@
 
 import { finalizeArtifactWithQuota, registerDownloadedArtifact } from "./artifact-service"
 import { validateArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
-import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from "electron"
+import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent, type OpenDialogOptions } from "electron"
 import { execFile } from "node:child_process"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { dispatchCloudJob, getCloudJobStatus, cancelCloudJob, listCloudArtifacts, downloadCloudArtifactTo } from "./alpha-cloud-jobs"
+import { dispatchCloudJob, dispatchExplicitCloudUpload, getCloudJobStatus, cancelCloudJob, listCloudArtifacts, downloadCloudArtifactTo } from "./alpha-cloud-jobs"
 import { isTerminalCloudEvent, subscribeCloudJobEvents } from "./alpha-cloud-events"
-import { ensureAlphaScaffold, isSafeRunId, readProjectPrefs, safeResolveInAlpha, sanitizeArtifactName, saveCloudRun, writeProjectPrefs } from "./alpha-workdir"
+import { ensureAlphaScaffold, isSafeRunId, safeResolveInAlpha, sanitizeArtifactName, saveCloudRun } from "./alpha-workdir"
 import { mirrorRunArtifacts } from "./alpha-user-workspace"
-import { hasCloudConsent, withCloudConsent } from "./alpha-cloud-consent"
 import { getLogger } from "./logging"
-import type { CloudJobEnvelope } from "../preload/types"
+import type { CloudJobEnvelope, CloudUploadIntent } from "../preload/types"
+import { getAccessTokenIdentity } from "./alpha-auth"
+import { requestUploadConsent } from "./alpha-web-upload-consent"
+import { assertSafeUploadResult, createMainUploadService } from "./alpha-upload"
 
 // REQ-020 T4(ADR-021 §1 diff-only):hub 的 code-review dispatch 入口只送 diff,不送全库。
 // 工作树有变更 → `git diff HEAD`(含 staged);干净 → 回退最近一次 commit 的 diff(e2e 常在干净树上跑)。
-// 只读操作(git diff 无副作用);超 8MB 直接砍 buffer 报错 —— 上限最终由 dispatch 的 1MB 信封帽把关。
+// 只读操作(git diff 无副作用);超 8MB 直接砍 buffer 报错 —— 上限最终由 dispatch 的 256KiB 信封帽把关。
 function gitDiff(directory: string): Promise<{ ok: true; diff: string; source: "worktree" | "last-commit" } | { ok: false; reason: string }> {
   const run = (args: string[]) =>
     new Promise<{ ok: boolean; out: string }>((resolve) => {
@@ -49,52 +51,53 @@ const subs = new Map<string, () => void>()
 // 进行中的 artifact 下载:key = `${webContentsId}:${artifactId}` → abort(取消 IPC + 窗口销毁自动清)。
 const downloads = new Map<string, AbortController>()
 
-// B16(ADR-021 §4 显式通道):首次云派发 per 项目弹一次 PIPL 同意门。文案中文硬编码(main 无 i18n,
-// ADR-022 先例)。诚实告知:出境内容(diff/任务文本)、去向(平台云)、可拒绝、per-项目记录。
-// 同意即写 .alpha/prefs.json;拒绝返回 false → 调用方回 consent-declined,不派发。
-async function ensureCloudConsent(event: IpcMainInvokeEvent, directory: string): Promise<boolean> {
-  if (hasCloudConsent(readProjectPrefs(directory))) return true
+const uploadService = createMainUploadService({
+  identity: () => getAccessTokenIdentity("cloud.dispatch"),
+  issue: requestUploadConsent,
+  dispatch: dispatchExplicitCloudUpload,
+  log: (message) => getLogger().warn(message),
+})
+const uploadCleanupSenders = new Set<number>()
+
+async function pickExplicitUpload(event: IpcMainInvokeEvent) {
   const parent = BrowserWindow.fromWebContents(event.sender) ?? undefined
-  const opts = {
-    type: "warning" as const,
-    title: "云执行数据出境告知(首次派发)",
-    message: "此操作会把本项目的内容发送到 alpha 平台云执行。",
-    detail:
-      "将出境的内容:本次派发的代码差异(git diff)或任务文本 —— 用于在云端执行并返回结果。\n" +
-      "· 仅本次选择的内容出境,不上传整个项目;密钥/大文件由本机校验拦截(体积上限 + 密钥扫描)。\n" +
-      "· 登录为平台代付模式时,对话内容本就经平台代理(详见登录时的隐私告知与官网隐私说明)。\n" +
-      "· 本同意按项目记录一次(存于本项目 .alpha/prefs.json),可随时不再使用云派发。\n\n" +
-      "同意后本项目将不再重复询问。",
-    buttons: ["同意并派发", "取消"],
-    defaultId: 1,
-    cancelId: 1,
-    checkboxLabel: "我已知悉上述内容出境",
-    checkboxChecked: false,
+  const projectOptions: OpenDialogOptions = { title: "选择项目目录", properties: ["openDirectory"] }
+  const project = parent
+    ? await dialog.showOpenDialog(parent, projectOptions)
+    : await dialog.showOpenDialog(projectOptions)
+  if (project.canceled || project.filePaths.length !== 1) return null
+  const fileOptions: OpenDialogOptions = {
+    title: "选择本次上传的文件",
+    defaultPath: project.filePaths[0],
+    properties: ["openFile", "multiSelections"],
   }
-  const res = parent ? await dialog.showMessageBox(parent, opts) : await dialog.showMessageBox(opts)
-  if (res.response !== 0 || !res.checkboxChecked) {
-    getLogger().log(`[b16-consent] declined for project (response=${res.response}, ack=${res.checkboxChecked})`)
-    return false
-  }
-  const written = writeProjectPrefs(directory, withCloudConsent(readProjectPrefs(directory), new Date().toISOString()))
-  if (!written.ok) {
-    // 写失败不静默放行:无法留痕的同意等于没同意(反 placebo)。loud 报错,本次拒绝。
-    getLogger().error(`[b16-consent] failed to persist consent: ${written.reason}`)
-    return false
-  }
-  getLogger().log("[b16-consent] granted + persisted for project")
-  return true
+  const files = parent ? await dialog.showOpenDialog(parent, fileOptions) : await dialog.showOpenDialog(fileOptions)
+  if (files.canceled || !files.filePaths.length) return null
+  return { projectDirectory: project.filePaths[0], files: files.filePaths }
 }
 
 export function registerCloudIpcHandlers() {
-  ipcMain.handle("cloud-dispatch", async (e: IpcMainInvokeEvent, envelope: CloudJobEnvelope, directory?: string) => {
-    // B16:有项目上下文(hub 派发)→ per-项目同意门;无 directory(无项目上下文的调用)→ 跳过
-    // per-项目门(无可记录的项目同意),隐式通道告知由登录流承担。
-    if (typeof directory === "string" && directory) {
-      if (!(await ensureCloudConsent(e, directory))) return { error: "consent-declined" }
+  // The existing input.diff/code-review route is grandfathered and does not mint an upload manifest.
+  ipcMain.handle("cloud-dispatch", (_event: IpcMainInvokeEvent, envelope: CloudJobEnvelope) => dispatchCloudJob(envelope))
+  ipcMain.handle("cloud-upload", async (event: IpcMainInvokeEvent, intent: CloudUploadIntent) => {
+    const selection = await pickExplicitUpload(event)
+    if (!selection) return assertSafeUploadResult({ status: "cancelled" as const })
+    if (!uploadCleanupSenders.has(event.sender.id)) {
+      const senderId = event.sender.id
+      uploadCleanupSenders.add(senderId)
+      event.sender.once("destroyed", () => {
+        uploadCleanupSenders.delete(senderId)
+        uploadService.clear(senderId)
+      })
     }
-    return dispatchCloudJob(envelope)
+    return assertSafeUploadResult(await uploadService.prepare(event.sender.id, intent, selection))
   })
+  ipcMain.handle("cloud-upload-confirm", async (event: IpcMainInvokeEvent, requestId: string) =>
+    assertSafeUploadResult(await uploadService.confirm(event.sender.id, requestId)),
+  )
+  ipcMain.handle("cloud-upload-cancel", (event: IpcMainInvokeEvent, requestId: string) =>
+    assertSafeUploadResult(uploadService.cancel(event.sender.id, requestId)),
+  )
   ipcMain.handle("cloud-status", (_e: IpcMainInvokeEvent, jobId: string) => getCloudJobStatus(jobId))
   ipcMain.handle("cloud-cancel", (_e: IpcMainInvokeEvent, jobId: string) => cancelCloudJob(jobId))
   ipcMain.handle("cloud-artifacts", (_e: IpcMainInvokeEvent, jobId: string) => listCloudArtifacts(jobId))

@@ -29,6 +29,9 @@ import { ALPHA_PATHS, type AlphaEndpoints } from "../shared/alpha-config"
 import { isTokenExpired, shouldRefreshToken } from "./alpha-auth-clock"
 import { decodeEndpointDiscovery, resolveEndpoints, setDiscoveredEndpoints } from "./alpha-endpoints"
 import { reportContractFailure } from "./alpha-contract-health"
+import { parseAccessTokenIdentity } from "./alpha-auth-identity"
+
+export { parseAccessTokenIdentity } from "./alpha-auth-identity"
 
 type StoredAuth = {
   mode: AuthMode
@@ -222,6 +225,11 @@ export function getAccessToken(purpose: RoutePurpose): string | undefined {
     reportContractFailure(error)
     throw error
   }
+}
+
+export function getAccessTokenIdentity(purpose: RoutePurpose) {
+  const token = getAccessToken(purpose)
+  return token ? parseAccessTokenIdentity(token, purpose) : undefined
 }
 
 function base64url(buf: Buffer) {
