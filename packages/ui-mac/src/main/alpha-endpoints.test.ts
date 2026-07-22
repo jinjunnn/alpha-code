@@ -6,21 +6,28 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
+import { ContractIncompatibleError } from "@alpha-code/contracts-consumer"
 import { ALPHA_ENDPOINTS } from "../shared/alpha-config"
 import { initEndpoints, resolveEndpoints, setDiscoveredEndpoints } from "./alpha-endpoints"
 
 const ENV_KEYS = ["ALPHA_WEB_URL", "ALPHA_PLATFORM_URL", "ALPHA_ACCOUNT_URL", "ALPHA_CLOUD_URL", "ALPHA_MCP_URL"]
 const saved: Record<string, string | undefined> = {}
+const contractFailures: unknown[] = []
 let tmp = ""
 
+const reportContractFailure = (error: unknown) => {
+  contractFailures.push(error)
+}
+
 beforeEach(() => {
+  contractFailures.length = 0
   for (const k of ENV_KEYS) {
     saved[k] = process.env[k]
     delete process.env[k]
   }
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "alpha-endpoints-"))
   // Reset module state to an empty userData dir (no pin, no discovery).
-  initEndpoints(tmp)
+  initEndpoints(tmp, reportContractFailure)
 })
 afterEach(() => {
   for (const k of ENV_KEYS) {
@@ -62,13 +69,13 @@ describe("env override precedence + guards", () => {
 describe("userData pin file", () => {
   test("honors an https pin", () => {
     fs.writeFileSync(path.join(tmp, "alpha-endpoints.json"), JSON.stringify({ platform: "https://pinned.example" }))
-    initEndpoints(tmp)
+    initEndpoints(tmp, reportContractFailure)
     expect(resolveEndpoints().platform).toBe("https://pinned.example")
   })
 
   test("rejects a plain-http pin → default", () => {
     fs.writeFileSync(path.join(tmp, "alpha-endpoints.json"), JSON.stringify({ platform: "http://evil.example" }))
-    initEndpoints(tmp)
+    initEndpoints(tmp, reportContractFailure)
     expect(resolveEndpoints().platform).toBe(ALPHA_ENDPOINTS.platform)
   })
 })
@@ -84,8 +91,34 @@ describe("login discovery persistence", () => {
     })
     expect(resolveEndpoints().account).toBe("https://acct.example")
     // was written to disk (survives a re-init)
-    initEndpoints(tmp)
+    initEndpoints(tmp, reportContractFailure)
     expect(resolveEndpoints().account).toBe("https://acct.example")
+  })
+
+  test("app start with an unversioned or corrupt persisted discovery file resolves default endpoints and surfaces a contract failure instead of crashing", () => {
+    const file = path.join(tmp, "alpha-discovered-endpoints.json")
+    const persisted = [
+      JSON.stringify({
+        web: "https://web.example",
+        platform: "https://platform.example",
+        account: "https://acct.example",
+        cloud: "https://cloud.example",
+      }),
+      '{"schema_version":1,"web":',
+    ]
+
+    persisted.forEach((contents) => {
+      fs.writeFileSync(file, contents)
+      expect(() => initEndpoints(tmp, reportContractFailure)).not.toThrow()
+      expect(resolveEndpoints()).toEqual(ALPHA_ENDPOINTS)
+      expect(fs.existsSync(file)).toBe(false)
+    })
+
+    expect(
+      contractFailures.map((error) =>
+        error instanceof ContractIncompatibleError ? error.failure.received_version : null,
+      ),
+    ).toEqual(["missing", "unknown"])
   })
 
   test("rejects an unversioned or invalid endpoint discovery payload without silent fallback", () => {

@@ -65,26 +65,35 @@ function readPartial(file: string): Partial<AlphaEndpoints> {
   }
 }
 
-function readDiscovery(file: string): Partial<AlphaEndpoints> {
+function readDiscovery(file: string, reportContractFailure: (error: unknown) => void): Partial<AlphaEndpoints> {
   if (!fs.existsSync(file)) return {}
   try {
     return decodeEndpointDiscovery(JSON.parse(fs.readFileSync(file, "utf8")))
   } catch (error) {
-    if (error instanceof ContractIncompatibleError) throw error
-    throw new ContractIncompatibleError({
-      surface: "endpoint-discovery",
-      received_version: "unknown",
-      reason: "schema-validation",
-    })
+    const failure =
+      error instanceof ContractIncompatibleError
+        ? error
+        : new ContractIncompatibleError({
+            surface: "endpoint-discovery",
+            received_version: "unknown",
+            reason: "schema-validation",
+          })
+    try {
+      fs.rmSync(file, { force: true })
+    } catch {
+      /* invalid persisted discovery remains untrusted even when cleanup is unavailable */
+    }
+    reportContractFailure(failure)
+    return {}
   }
 }
 
 /** Called once at startup (index.ts), AFTER preferAppEnv and BEFORE initAuthEnv — so applyAuthEnv
  *  resolves the proxy URL with the pin + persisted discovery already loaded. */
-export function initEndpoints(dataPath: string) {
+export function initEndpoints(dataPath: string, reportContractFailure: (error: unknown) => void) {
   userDataPath = dataPath
   override = readPartial(overrideFile())
-  discovered = readDiscovery(discoveredFile())
+  discovered = readDiscovery(discoveredFile(), reportContractFailure)
 }
 
 /** ① The alpha-web /auth/token response carries

@@ -86,7 +86,7 @@ import { sessionGrantRegistry } from "./ext-session-grants"
 import type { SessionGrantsEndedEventWire } from "../shared/ext-session-grant-wire"
 import { initEndpoints } from "./alpha-endpoints"
 import { registerEndpointsIpcHandlers } from "./endpoints-ipc"
-import { registerContractHealthIpcHandlers } from "./alpha-contract-health"
+import { registerContractHealthIpcHandlers, reportContractFailure } from "./alpha-contract-health"
 import { registerSurfaceIpc } from "./alpha-surfaces"
 import { createRecoveryService, type RecoveryService } from "./recovery-service"
 import { registerRecoveryIpcHandlers } from "./recovery-ipc"
@@ -461,7 +461,7 @@ const main = Effect.gen(function* () {
   })
   // Load the endpoint resolver (userData pin + persisted login discovery) BEFORE initAuthEnv, so the
   // proxy URL it derives reflects discovery/pin, not just the hardcoded default. See alpha-endpoints.ts.
-  initEndpoints(app.getPath("userData"))
+  initEndpoints(app.getPath("userData"), reportContractFailure)
   // ⚠️ initAuthEnv / initByokKeys 不能在这里调(REQ-002 联调实锤,2026-07-03):它们解密 safeStorage
   // 凭证,而 macOS 上 app ready 之前 safeStorage 不可用 → 解密静默失败 → 每次冷启动都"未登录"、
   // BYOK 钥匙库曾因此走明文兜底。已移至 whenReady 之后、sidecar fork 之前(见下)。

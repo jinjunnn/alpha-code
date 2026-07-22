@@ -44,9 +44,16 @@ Values may be overridden per deployment. Discovery is accepted atomically only
 when `schema_version` is exactly `1`, all required service bases are present,
 there are no unknown fields, and every base is HTTPS (or loopback HTTP for
 development). An unversioned, partial, future, or unsafe discovery payload is a
-`contract-incompatible` failure; it is not merged and does not fall through to
-the pin or bootstrap default. Valid discovery is normalized and persisted to
+`contract-incompatible` failure; it is not merged and does not change the
+current discovery state. Valid discovery is normalized and persisted to
 `<userData>/alpha-discovered-endpoints.json` with mode `0600`.
+
+The persisted copy is decoded just as strictly at startup and is never trusted
+as a legacy format. If it is unversioned, malformed, or otherwise incompatible,
+the desktop deletes it, records the contract failure for the persistent
+renderer alert, and continues endpoint resolution through the remaining
+environment, pin, and bootstrap-default layers. This fail-safe boot path does
+not accept or migrate the rejected data.
 
 The model gateway and Cloud Jobs/MCP service are separate Workers. If `mcp` is
 omitted, the client derives `${cloud}/mcp`; it must never derive MCP from the
