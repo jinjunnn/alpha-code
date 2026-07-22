@@ -1,6 +1,9 @@
 // Alpha's canonical route contract. The manifest owns route identity, parameter shape,
 // location encoding, and the single leaf/redirect composition seam. Router/provider/layout
 // ownership remains upstream; production route composition is derived in a later slice.
+// The upstream packages/app/src/pages/layout/deep-links.ts parseDeepLink / parseNewSessionDeepLink
+// functions are held at arm's length like its Route tree. Manifest-derived Alpha interception
+// before forwarding, without upstream edits, remains REQ-089 #496 scope rather than #494 scope.
 
 import type { SurfaceId } from "./alpha-surfaces"
 
