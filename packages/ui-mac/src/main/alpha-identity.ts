@@ -14,6 +14,17 @@ export interface AlphaCapabilities {
   cloudDispatch?: boolean
 }
 
+export function buildAlphaCapabilities(input: {
+  websearchDisabled: boolean
+  keylessWebsearch: boolean
+  cloudDispatch: boolean
+}): AlphaCapabilities {
+  return {
+    websearch: !input.websearchDisabled && (input.keylessWebsearch || input.cloudDispatch),
+    cloudDispatch: input.cloudDispatch,
+  }
+}
+
 export function buildAlphaIdentity(caps: AlphaCapabilities = {}): string {
   const out: string[] = [
     "# alpha-code",

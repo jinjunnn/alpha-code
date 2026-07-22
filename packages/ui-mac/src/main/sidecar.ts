@@ -5,7 +5,7 @@ import * as path from "node:path"
 import * as tls from "node:tls"
 import { ALPHA_BEHAVIOR_MD } from "./alpha-behavior"
 import { catalogRegistryChannel } from "./alpha-environment"
-import { buildAlphaIdentity } from "./alpha-identity"
+import { buildAlphaCapabilities, buildAlphaIdentity } from "./alpha-identity"
 import { buildAlphaModelConfig } from "./alpha-models"
 import { hasSecretFile, secretFileRef } from "./alpha-secret-files"
 import { applyCloudWebSearchDisable } from "./cloud-web-search"
@@ -186,13 +186,14 @@ function injectAlphaConfig(userDataPath: string, extPluginPath?: string) {
       if (wantIdentity) {
         // Capability facts the base prompt can't know — purely informational (ADR-009 / ADR-002).
         // The cloud token lives in the {file:} channel, never in this process's env (A6).
-        const caps = {
-          websearch:
-            process.env.ALPHA_WEBSEARCH_DISABLE !== "1" && process.env.OPENCODE_ENABLE_EXA !== "0",
-          cloudDispatch: Boolean(
-            process.env.ALPHA_CLOUD_MCP_URL && hasSecretFile(userDataPath, "ALPHA_CLOUD_TOKEN"),
-          ),
-        }
+        const cloudDispatch = Boolean(
+          process.env.ALPHA_CLOUD_MCP_URL && hasSecretFile(userDataPath, "ALPHA_CLOUD_TOKEN"),
+        )
+        const caps = buildAlphaCapabilities({
+          websearchDisabled: Boolean(process.env.ALPHA_WEBSEARCH_DISABLE),
+          keylessWebsearch: process.env.OPENCODE_ENABLE_EXA !== "0",
+          cloudDispatch,
+        })
         addInstruction("alpha-identity.md", buildAlphaIdentity(caps))
       }
 
