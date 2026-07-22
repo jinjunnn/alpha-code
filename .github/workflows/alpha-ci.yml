@@ -15,8 +15,8 @@
 #                     merge-base three-dot diff so it measures alpha's OWN delta and stays green when
 #                     dev is merely ahead. New files under packages/ext|ui-mac are alpha's and ignored;
 #                     root bun.lock (allowlisted) + .gitignore aren't under the guarded paths.
-#   typecheck       — tsgo on the two alpha packages a PR can actually touch.
-#   test            — bun unit tests (security-path guards: persistMcp RCE, endpoint exfil, fs escape).
+#   typecheck       — tsgo on the Alpha packages a PR can actually touch.
+#   test            — vendored contract hashes/fixtures plus alpha package unit tests.
 #   seed-assets     — B7: asserts electron-builder extraResources (REQ-023 vendored agent/plugin,
 #                     builtin skills, NOTICE.txt/B15, signing assets) exist; a silent deletion ships a
 #                     broken or license-non-compliant app that typecheck/tests never catch.
@@ -175,6 +175,9 @@ jobs:
         run: bun install
       # REQ-027: flags must come AFTER `run` — `bun --cwd X run Y` prints usage and
       # exits 0 WITHOUT executing the script on bun 1.3.x (placebo gate).
+      - name: typecheck @alpha-code/contracts-consumer
+        if: needs.detect.outputs.code == 'true'
+        run: bun run --cwd packages/alpha-contracts-consumer typecheck
       - name: typecheck @alpha-code/ext
         if: needs.detect.outputs.code == 'true'
         run: bun run --cwd packages/ext typecheck
@@ -183,7 +186,7 @@ jobs:
         run: bun run --cwd packages/ui-mac typecheck
 
   test:
-    name: unit tests (ui-mac)
+    name: unit tests (alpha packages)
     needs: detect
     runs-on: ubuntu-latest
     steps:
@@ -206,6 +209,13 @@ jobs:
       # REQ-027: same flag-order constraint as the typecheck job.
       # REQ-062: ext tests carry the prompt-rebrand drift lock (curated substrings asserted against
       # the upstream base prompts — a sync that rewrites them turns this red, per ADR-015 合并验证).
+      - name: verify immutable Alpha contract vendor lock
+        if: needs.detect.outputs.code == 'true'
+        run: bun run --cwd packages/alpha-contracts-consumer check:vendor
+      - name: bun test (contracts consumer fixtures)
+        if: needs.detect.outputs.code == 'true'
+        working-directory: packages/alpha-contracts-consumer
+        run: bun test
       - name: bun test (ext)
         if: needs.detect.outputs.code == 'true'
         working-directory: packages/ext

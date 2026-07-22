@@ -1,0 +1,17 @@
+{
+  "kind": "schema",
+  "contract": "CloudJobAcceptedV1",
+  "expect": "valid",
+  "value": {
+    "schema_version": 1,
+    "job_id": "job_fixture1",
+    "status": "queued",
+    "autonomy": "pipeline",
+    "kind": "code-review",
+    "urls": {
+      "status": "https://alpha-cloud.example.dev/v1/cloud/jobs/job_fixture1",
+      "events": "https://alpha-cloud.example.dev/v1/cloud/jobs/job_fixture1/events",
+      "result": "https://alpha-cloud.example.dev/v1/cloud/jobs/job_fixture1/artifacts"
+    }
+  }
+}

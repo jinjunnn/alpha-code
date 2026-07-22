@@ -18,9 +18,10 @@ import {
 } from "./artifact-manifest"
 
 let projectDir: string
+const RUN = "job_1234"
 beforeEach(() => {
   projectDir = fs.mkdtempSync(path.join(os.tmpdir(), "artifact-manifest-"))
-  fs.mkdirSync(path.join(projectDir, ".alpha", "runs", "job_1", "artifacts"), { recursive: true })
+  fs.mkdirSync(path.join(projectDir, ".alpha", "runs", RUN, "artifacts"), { recursive: true })
 })
 afterEach(() => {
   fs.rmSync(projectDir, { recursive: true, force: true })
@@ -30,7 +31,7 @@ const SHA = "a".repeat(64)
 
 function descriptor(overrides: Partial<ArtifactDescriptor> = {}): ArtifactDescriptor {
   const meta = { name: overrides.name ?? "report.md", size: overrides.size ?? 4, sha256: overrides.sha256 ?? SHA }
-  const id = overrides.id ?? artifactIdFor("job_1", 0, meta)
+  const id = overrides.id ?? artifactIdFor(RUN, 0, meta)
   return {
     schemaVersion: 1,
     id,
@@ -42,7 +43,7 @@ function descriptor(overrides: Partial<ArtifactDescriptor> = {}): ArtifactDescri
     role: "primary",
     contentRef: { kind: "http-stream", url: `/v1/cloud/artifacts/${id}/content`, auth: "bearer" },
     verification: { status: "verified" },
-    provenance: { producer: "pipeline", jobId: "job_1" },
+    provenance: { producer: "pipeline", jobId: RUN },
     ...overrides,
   }
 }
@@ -63,10 +64,10 @@ function entry(overrides: Partial<ManifestArtifactEntry["local"]> = {}, d: Artif
 }
 
 function manifest(entries: ManifestArtifactEntry[]): ArtifactManifestV1 {
-  return { schemaVersion: 1, runId: "job_1", updatedAt: "2026-07-12T00:00:00.000Z", artifacts: entries }
+  return { schemaVersion: 1, runId: RUN, updatedAt: "2026-07-12T00:00:00.000Z", artifacts: entries }
 }
 
-const manifestPath = () => path.join(projectDir, ".alpha", "runs", "job_1", ARTIFACT_MANIFEST_FILE)
+const manifestPath = () => path.join(projectDir, ".alpha", "runs", RUN, ARTIFACT_MANIFEST_FILE)
 
 describe("isSafeSavedPath", () => {
   test.each([["artifacts/report.md"], ["artifacts/sub/data.csv"], ["artifacts/中文 名.pdf"]])("accepts %p", (p) =>
@@ -92,18 +93,18 @@ describe("isSafeSavedPath", () => {
 describe("round-trip", () => {
   test("write → read returns the identical manifest", () => {
     const m = manifest([entry()])
-    const written = writeArtifactManifest(projectDir, "job_1", m)
+    const written = writeArtifactManifest(projectDir, RUN, m)
     expect(written.ok).toBe(true)
-    const read = readArtifactManifest(projectDir, "job_1")
+    const read = readArtifactManifest(projectDir, RUN)
     expect(read).toEqual({ ok: true, manifest: m })
   })
 
   test("no manifest yet → ok with null (writable empty)", () => {
-    expect(readArtifactManifest(projectDir, "job_1")).toEqual({ ok: true, manifest: null })
+    expect(readArtifactManifest(projectDir, RUN)).toEqual({ ok: true, manifest: null })
   })
 
   test("serialized manifest contains no absolute paths (relative-path invariant)", () => {
-    writeArtifactManifest(projectDir, "job_1", manifest([entry()]))
+    writeArtifactManifest(projectDir, RUN, manifest([entry()]))
     const raw = fs.readFileSync(manifestPath(), "utf8")
     expect(raw.includes(projectDir)).toBe(false)
     expect(raw.includes(os.tmpdir())).toBe(false)
@@ -117,30 +118,30 @@ describe("atomic write", () => {
   test("crash-sim: leftover tmp file is ignored by read and does not block the next write", () => {
     // 模拟上次写到一半崩溃:目录里躺着一个残缺 tmp
     fs.writeFileSync(manifestPath() + ".tmp-9999-dead", "{ half written")
-    expect(readArtifactManifest(projectDir, "job_1")).toEqual({ ok: true, manifest: null })
+    expect(readArtifactManifest(projectDir, RUN)).toEqual({ ok: true, manifest: null })
     const m = manifest([entry()])
-    expect(writeArtifactManifest(projectDir, "job_1", m).ok).toBe(true)
-    expect(readArtifactManifest(projectDir, "job_1")).toEqual({ ok: true, manifest: m })
+    expect(writeArtifactManifest(projectDir, RUN, m).ok).toBe(true)
+    expect(readArtifactManifest(projectDir, RUN)).toEqual({ ok: true, manifest: m })
     // 残留 tmp 不会被误当 manifest,最终文件是完整 JSON
     expect(JSON.parse(fs.readFileSync(manifestPath(), "utf8")).schemaVersion).toBe(1)
   })
 
   test("invalid manifest is refused loudly — nothing lands on disk", () => {
     const bad = manifest([entry({ savedPath: "../escape.md" })])
-    const res = writeArtifactManifest(projectDir, "job_1", bad)
+    const res = writeArtifactManifest(projectDir, RUN, bad)
     expect(res.ok).toBe(false)
     if (!res.ok) expect(res.reason).toContain("relative-path invariant")
     expect(fs.existsSync(manifestPath())).toBe(false)
   })
 
   test("absolute savedPath is refused", () => {
-    const bad = manifest([entry({ savedPath: path.join(projectDir, ".alpha", "runs", "job_1", "artifacts", "x") })])
-    expect(writeArtifactManifest(projectDir, "job_1", bad).ok).toBe(false)
+    const bad = manifest([entry({ savedPath: path.join(projectDir, ".alpha", "runs", RUN, "artifacts", "x") })])
+    expect(writeArtifactManifest(projectDir, RUN, bad).ok).toBe(false)
   })
 
   test("runId mismatch between manifest and target run is refused", () => {
     const m = { ...manifest([entry()]), runId: "job_other" }
-    expect(writeArtifactManifest(projectDir, "job_1", m).ok).toBe(false)
+    expect(writeArtifactManifest(projectDir, RUN, m).ok).toBe(false)
   })
 
   test("unsafe run id / escaping run id is refused", () => {
@@ -150,9 +151,9 @@ describe("atomic write", () => {
 
 describe("versioning + tamper detection", () => {
   test("unknown future version → read-only error, file untouched", () => {
-    const future = JSON.stringify({ schemaVersion: 2, runId: "job_1", updatedAt: "x", artifacts: [], newField: true })
+    const future = JSON.stringify({ schemaVersion: 2, runId: RUN, updatedAt: "x", artifacts: [], newField: true })
     fs.writeFileSync(manifestPath(), future)
-    const read = readArtifactManifest(projectDir, "job_1")
+    const read = readArtifactManifest(projectDir, RUN)
     expect(read).toEqual({ ok: false, reason: "unsupported-version", version: "2" })
     // 绝不静默重写(REQ-093 AC#8)
     expect(fs.readFileSync(manifestPath(), "utf8")).toBe(future)
@@ -160,31 +161,31 @@ describe("versioning + tamper detection", () => {
 
   test("writing a future-version manifest is refused", () => {
     const m = { ...manifest([]), schemaVersion: 2 } as unknown as ArtifactManifestV1
-    expect(writeArtifactManifest(projectDir, "job_1", m).ok).toBe(false)
+    expect(writeArtifactManifest(projectDir, RUN, m).ok).toBe(false)
   })
 
   test("corrupt JSON → corrupt (read-only), not silently replaced", () => {
     fs.writeFileSync(manifestPath(), "{ not json")
-    const read = readArtifactManifest(projectDir, "job_1")
+    const read = readArtifactManifest(projectDir, RUN)
     expect(read.ok).toBe(false)
     if (!read.ok) expect(read.reason).toBe("corrupt")
   })
 
   test("tampered entry (path traversal injected by hand) → corrupt", () => {
     const m = manifest([entry()])
-    writeArtifactManifest(projectDir, "job_1", m)
+    writeArtifactManifest(projectDir, RUN, m)
     const raw = JSON.parse(fs.readFileSync(manifestPath(), "utf8"))
     raw.artifacts[0].local.savedPath = "../../../etc/passwd"
     fs.writeFileSync(manifestPath(), JSON.stringify(raw))
-    const read = readArtifactManifest(projectDir, "job_1")
+    const read = readArtifactManifest(projectDir, RUN)
     expect(read.ok).toBe(false)
     if (!read.ok && read.reason === "corrupt") expect(read.detail).toContain("relative-path invariant")
   })
 
   test("manifest transplanted from another run (runId mismatch) → corrupt", () => {
-    const m = { ...manifest([entry()]), runId: "job_2" }
+    const m = { ...manifest([entry()]), runId: "job_5678" }
     fs.writeFileSync(manifestPath(), JSON.stringify(m))
-    const read = readArtifactManifest(projectDir, "job_1")
+    const read = readArtifactManifest(projectDir, RUN)
     expect(read.ok).toBe(false)
     if (!read.ok && read.reason === "corrupt") expect(read.detail).toContain("runId mismatch")
   })
@@ -207,12 +208,12 @@ describe("validateArtifactManifest", () => {
     if (!res.ok) expect(res.errors.join()).toContain("duplicate savedPath")
   })
 
-  test("absolute contentRef.url is refused (server-relative only,防凭据/域名落盘)", () => {
+  test("absolute contentRef.url is refused by the pinned descriptor schema", () => {
     const d = descriptor()
     d.contentRef = { kind: "http-stream", url: "https://cloud.example.com/v1/x/content", auth: "bearer" }
     const res = validateArtifactManifest(manifest([entry({}, d)]))
     expect(res.ok).toBe(false)
-    if (!res.ok) expect(res.errors.join()).toContain("server-relative")
+    if (!res.ok) expect(res.errors.join()).toContain("pinned schema validation")
   })
 
   test("bad descriptor enums / sha format are refused", () => {

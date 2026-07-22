@@ -47,7 +47,7 @@ export function createPromptModelSelection(input: { agent: () => { model?: Model
   const recentModels = createMemo(() =>
     models.recent
       .list()
-      .map(models.find)
+      .map((item: ModelKey) => models.find(item))
       .filter((item): item is NonNullable<typeof item> => !!item),
   )
 

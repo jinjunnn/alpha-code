@@ -4,7 +4,7 @@ kind: runbook
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-16
+last_reviewed: 2026-07-22
 review_after: 2026-10-14
 ---
 
@@ -91,6 +91,7 @@ curl -sL -o /dev/null -w "%{http_code}\n" \
 - **entitlements 收紧**(`resources/entitlements.plist`):移除 `disable-executable-page-protection`、`allow-dyld-environment-variables`、`disable-library-validation`(dylib 注入组合);保留 `allow-jit`/`allow-unsigned-executable-memory`(V8)+ `audio-input`。**若签名包 native 模块(node-pty/ghostty)加载失败 → 仅回补 `disable-library-validation` 一项并在此记账。**
 - **打包态 CSP + 回环-only CORS**(C24,`renderer-security.ts`):排障逃生 `ALPHA_CSP_DISABLE=1`。
 - 验证清单(每次签名发版):stapler validate + spctl ✓ → 启动 → 终端(WASM+PTY)→ diff → 流式会话 → 定制中心 → 登录/账户 → 更新器检查。
+- Alpha 契约 RC-L3:`packaged app rejects a token whose purpose does not match the route as a visible auth failure`。本项须在真实 packaged executable 上执行并把证据落 `docs/verification/`;#224 只提供 fixture、运行时断言与持久 `role=alert` 边界,不代跑打包。
 - **CAS GC worker(REQ-102 #367,L3 项;裁决 Q6 —— bench 总耗时不能证明 main 占用,须按下列五步)**:
   1. 确认 `app.asar/out/main/ext-cas-gc-worker.js` 存在(`npx @electron/asar list <app>/Contents/Resources/app.asar | grep ext-cas-gc-worker`);
   2. packaged app 对隔离 heavy fixture(可用 `packages/ui-mac/scripts/bench-cas-gc.ts` 的 heavy 档参数造店)实际触发一轮(等 5 分钟首跑或临时把 `CAS_GC_INITIAL_DELAY_MS` 建包为短值);

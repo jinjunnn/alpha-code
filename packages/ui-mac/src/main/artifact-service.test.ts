@@ -21,7 +21,7 @@ import {
 } from "./artifact-service"
 
 let projectDir: string
-const RUN = "job_1"
+const RUN = "job_1234"
 const runDir = () => path.join(projectDir, ".alpha", "runs", RUN)
 const artifactsDir = () => path.join(runDir(), "artifacts")
 const manifestPath = () => path.join(runDir(), ARTIFACT_MANIFEST_FILE)

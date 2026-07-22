@@ -4,7 +4,7 @@ kind: contract
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-20
+last_reviewed: 2026-07-22
 review_after: 2026-10-13
 ---
 
@@ -29,6 +29,22 @@ and
 Endpoint precedence is defined in
 [`platform-endpoint-discovery.md`](platform-endpoint-discovery.md).
 
+## Pinned Alpha contract consumer
+
+The desktop consumes Alpha Platform v1 through
+`packages/alpha-contracts-consumer`. Its
+`alpha-platform-contract.lock.json` pins repository
+`jinjunnn/alpha-platform` at immutable commit
+`bcc60bbf4870dd23ea5a63c9dca3107aa7a4b990` and records the SHA-256 of every
+vendored schema, limit document, producer fixture, consumer fixture, and
+negative fixture. This pin is independent of `bun.lock`.
+
+The package is a consumer only: its schemas and fixtures are byte copies of the
+pinned producer release, while its code supplies strict decoders and safe
+`contract-incompatible` errors. CI verifies the vendored bytes against the lock
+and runs both producer and consumer fixtures. Missing, unknown, future, or
+otherwise invalid versions fail closed; no compatibility shim is selected.
+
 ## Authentication flow
 
 1. The main process creates PKCE S256 verifier/challenge and state, then opens
@@ -38,15 +54,23 @@ Endpoint precedence is defined in
 2. Alpha Web authenticates the user and returns a one-time authorization code.
 3. The desktop validates state and exchanges the code and verifier at
    `POST <web>/auth/token`.
-4. Alpha Web returns a short-lived ES256 access JWT, rotating refresh token,
-   session ID, and endpoint discovery. The JWT channel claim is `scope=user`;
-   that is distinct from the OAuth grant metadata scope.
-5. The desktop persists credentials in the main-process auth store, using OS
+4. Alpha Web returns a short-lived access JWT, rotating refresh token, session
+   ID, and optionally a versioned endpoint discovery payload. Before
+   persistence, the desktop decodes the JWT payload as the platform-access
+   branch of `TokenClaimsV1` and requires v1 `iss`, `aud`, `token_use`,
+   `purpose`, and `scope` claims.
+5. The desktop does not request or mint purpose-specific tokens in this
+   requirement. It only consumes a received token, and each route asks for the
+   matching purpose. A purpose/scope mismatch fails the route and publishes a
+   persistent visible contract failure; the token is never repurposed.
+6. The desktop persists validated credentials in the main-process auth store, using OS
    `safeStorage` when available and restrictive file permissions for the
    documented fallback. Bearer values are never exposed to the renderer.
-6. Refresh rotates the refresh token. A rejected refresh degrades to logged
-   out/BYOK; transient network or server failure keeps the still-valid token
-   for a later retry.
+7. Refresh rotates the refresh token only after the new access claims validate.
+   A contract-incompatible refresh remains a visible failure and cannot replace
+   the last validated token. A rejected refresh degrades to logged out/BYOK;
+   transient network or server failure keeps the still-valid token for a later
+   retry.
 
 ## Runtime seams
 
@@ -58,9 +82,10 @@ Endpoint precedence is defined in
 - **MCP facade:** the sidecar receives the Cloud MCP URL and a `{file:...}`
   bearer reference. The MCP facade fronts the same Cloud Jobs model; it is not
   a second execution truth.
-- **Account:** the main process reads summary and transactions from the
-  desktop-facing account endpoint. The renderer receives typed results, never
-  the bearer.
+- **Account:** transactions are decoded as `LedgerPageV1`/`LedgerEntryV1`
+  before renderer projection. Account summary remains outside this pinned
+  contract until its producer publishes a schema and does not block the ledger
+  consumer.
 - **Secret transport:** on each sidecar fork, login and BYOK secrets are
   mirrored into `0600` secret files. The sidecar allowlist carries non-secret
   endpoint configuration, while provider/MCP configuration carries file
@@ -77,6 +102,11 @@ Cloud artifact bytes remain in the main process and stream to a unique `.part`
 file below `<project>/.alpha/runs/<run>/artifacts/`. After length and digest
 verification, every production download must pass the project-owned artifact
 quota finalizer; no caller has direct final-rename authority.
+
+The descriptor entering this existing alpha-work#1/#2 pipeline is decoded as
+the pinned `ArtifactDescriptorV1`. Artifact lists, HTTP results, and MCP results
+carry descriptors only. Legacy metadata or inline content is rejected, and a
+content-endpoint 404 does not trigger an inline compatibility request.
 
 The admission guarantee has a deployment precondition: the artifact root must
 be on a local filesystem with a locally coherent directory namespace. NFS,
@@ -244,8 +274,11 @@ The complete write surface for this artifact state machine is:
 - The renderer never receives access, refresh, provider, MCP, or account
   bearer values.
 - The model gateway and Cloud Jobs/MCP worker are separate endpoints.
-- Endpoint discovery accepts HTTPS or loopback HTTP only; malformed or unsafe
-  values fall through to the next precedence layer.
+- Versioned endpoint discovery accepts HTTPS or loopback HTTP only; an
+  unversioned, partial, future, malformed, or unsafe discovery payload fails
+  atomically without falling through to another precedence layer.
+- Contract failures are recorded without tokens or payloads, returned to the
+  caller, and exposed through a persistent renderer `role=alert` banner.
 - Any modification to synchronized upstream paths follows the sovereignty
   ladder in ADR-029. This contract does not reinstate the superseded claim that
   all integration must be additive-only.

@@ -1,0 +1,12 @@
+{
+  "kind": "schema",
+  "contract": "CloudJobRequestV1",
+  "expect": "valid",
+  "value": {
+    "schema_version": 1,
+    "autonomy": "pipeline",
+    "kind": "code-review",
+    "input": { "diff": "+const answer = 42;" },
+    "artifact_policy": { "delivery": "descriptor_only" }
+  }
+}

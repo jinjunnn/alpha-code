@@ -27,6 +27,7 @@
     "ship:windows": "bun run build && bun run package:win"
   },
   "dependencies": {
+    "@alpha-code/contracts-consumer": "workspace:*",
     "@zip.js/zip.js": "2.7.62",
     "jsonc-parser": "3.3.1",
     "effect": "catalog:",

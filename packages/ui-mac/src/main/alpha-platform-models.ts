@@ -7,6 +7,7 @@
 //   3. getEffectiveCatalog —— picker 的目录视图:内置 snapshot 按缓存收窄/富化 + liveSync 来源标注
 //      (live/cache/static,降级提示 B20;picker 永不空白)。
 import { resolveEndpoints } from "./alpha-endpoints"
+import { decodeJsonContract, isContractIncompatibleError } from "@alpha-code/contracts-consumer"
 import { getAccessToken } from "./alpha-auth"
 import { getLogger } from "./logging"
 import { ALPHA_PATHS } from "../shared/alpha-config"
@@ -14,6 +15,7 @@ import type { CloudResult, PlatformLiveModel } from "../preload/types"
 import type { EffectiveCatalog, PlatformModel } from "../shared/alpha-model-types"
 import { getModelCatalog } from "./alpha-models"
 import { readLiveAllowlist, writeLiveAllowlist } from "./alpha-live-allowlist"
+import { reportContractFailure } from "./alpha-contract-health"
 
 export type PlatformModelsResult = CloudResult<{
   models: PlatformLiveModel[]
@@ -21,29 +23,32 @@ export type PlatformModelsResult = CloudResult<{
   byokProviders: string[] | null
 }>
 
+let incompatibleCatalog: Error | null = null
+
 export async function fetchPlatformModels(): Promise<PlatformModelsResult> {
   const base = resolveEndpoints().platform
   if (!base) return { error: "no-platform-endpoint" }
-  const token = getAccessToken() // /v1/models 不强制鉴权;持登录态带上 → 网关按租户 edition 收窄
   try {
+    const token = getAccessToken("model.invoke") // /v1/models 不强制鉴权;持登录态带上 → 网关按租户 edition 收窄
     const res = await fetch(`${base}${ALPHA_PATHS.models}`, {
       headers: token ? { authorization: `Bearer ${token}` } : {},
       signal: AbortSignal.timeout(8000),
     })
     if (res.status === 401) return { error: "unauthorized" }
     if (!res.ok) return { error: `http-${res.status}` }
-    const j = (await res.json()) as {
-      data?: Array<{ id: string; provider?: string; minPlan?: string }>
-      edition?: string
-      byok_providers?: string[] | null
-    }
+    const j = decodeJsonContract("ModelCatalogV1", await res.text(), "model-catalog")
+    incompatibleCatalog = null
     return {
-      models: (j.data ?? []).map((m) => ({ id: m.id, provider: m.provider, minPlan: m.minPlan })),
-      edition: typeof j.edition === "string" ? j.edition : undefined,
-      // 旧网关无此字段 → null(不限制,向后兼容)
-      byokProviders: Array.isArray(j.byok_providers) ? j.byok_providers : null,
+      models: j.data.map((model) => ({ id: model.id, provider: model.provider, minPlan: model.min_plan })),
+      edition: j.edition,
+      byokProviders: j.byok_providers,
     }
   } catch (error) {
+    if (isContractIncompatibleError(error)) {
+      incompatibleCatalog = error
+      reportContractFailure(error)
+      return { error: "contract-incompatible" }
+    }
     getLogger().warn("alpha-platform-models: fetch failed", error)
     return { error: "network" }
   }
@@ -76,6 +81,7 @@ export async function syncLiveAllowlist(userDataPath: string): Promise<PlatformM
 
 /** picker 的目录视图(models-catalog IPC):snapshot 按缓存白名单收窄;缓存缺失 → 原样 snapshot(static)。 */
 export function getEffectiveCatalog(userDataPath: string): EffectiveCatalog {
+  if (incompatibleCatalog) throw incompatibleCatalog
   const cat = getModelCatalog()
   const live = readLiveAllowlist(userDataPath)
   if (!live) return { ...cat, liveSync: { status: "static" } }

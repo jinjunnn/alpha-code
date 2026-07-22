@@ -3,6 +3,7 @@ import type {
   AuthErrorCode,
   AuthState,
   CloudArtifactProgress,
+  ContractFailure,
   ElectronAPI,
   HtmlPreviewClosedEvent,
   WslServersEvent,
@@ -20,6 +21,14 @@ const updaterHandler = (_: unknown, state: UpdaterState) => {
 
 const api: ElectronAPI = {
   killSidecar: () => ipcRenderer.invoke("kill-sidecar"),
+  contracts: {
+    health: () => ipcRenderer.invoke("alpha-contract-health"),
+    subscribe: (cb) => {
+      const handler = (_: unknown, failure: ContractFailure) => cb(failure)
+      ipcRenderer.on("alpha-contract-failure", handler)
+      return () => ipcRenderer.removeListener("alpha-contract-failure", handler)
+    },
+  },
   recovery: {
     onIncident: (cb) => {
       const handler = (_: unknown, incident: Parameters<typeof cb>[0]) => cb(incident)

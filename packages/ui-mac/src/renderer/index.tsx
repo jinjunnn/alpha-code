@@ -33,7 +33,9 @@ import "./sidebar/account-popover.css"
 import "./alpha-ui/timeline-reskin.css"
 import "./alpha-ui/composer-reskin.css"
 import { ToastViewport } from "./alpha-ui/Toast"
+import { ContractFailureBanner } from "./alpha-ui/Banner"
 import { AlphaBoundary } from "./alpha-ui/alpha-boundary"
+import { ContractHealthProvider } from "./alpha-ui/providers"
 import { ComposerTakeover } from "./alpha-ui/composer-takeover"
 import { TimelineInject } from "./alpha-ui/timeline-inject"
 import { PermissionWatcher } from "./alpha-ui/permission-watcher"
@@ -526,6 +528,9 @@ render(() => {
               <AlphaBoundary name="ToastViewport">
                 <ToastViewport />
               </AlphaBoundary>
+              <AlphaBoundary name="ContractFailureBanner">
+                <ContractFailureBanner />
+              </AlphaBoundary>
               <RuntimeRecoveryHost />
               <DevSurfaceMapInspector resolved={resolvedSurfaces.latest} />
               {/* REQ-087 spike 容器侧探针:flag off ⇒ 恒 null(session-spike/spike-flag.ts) */}
@@ -548,9 +553,11 @@ render(() => {
 
   return (
     <PlatformProvider value={platform}>
-      <AppBaseProviders locale={locale.latest} dialogHost={UpstreamDialogHost}>
-        <Show when={true}>{(_) => <App />}</Show>
-      </AppBaseProviders>
+      <ContractHealthProvider>
+        <AppBaseProviders locale={locale.latest} dialogHost={UpstreamDialogHost}>
+          <Show when={true}>{(_) => <App />}</Show>
+        </AppBaseProviders>
+      </ContractHealthProvider>
     </PlatformProvider>
   )
 }, root!)

@@ -8,5 +8,24 @@
 // 当前借用面(新增须附上游落点注释):
 // - useCommand — packages/app/src/context/command.tsx(命令面板触发,冻结树 ADR-020)
 
+import type { ContractFailure } from "@alpha-code/contracts-consumer"
+import { createComponent, createContext, createSignal, onCleanup, onMount, useContext, type JSX } from "solid-js"
+
 export { useCommand } from "@opencode-ai/app"
 export type { PermissionSurfaceProps } from "@opencode-ai/app"
+
+const ContractHealthContext = createContext<() => ContractFailure | null>(() => null)
+
+export function ContractHealthProvider(props: { children: JSX.Element }) {
+  const [failure, setFailure] = createSignal<ContractFailure | null>(null)
+  onMount(() => {
+    void window.api.contracts.health().then(setFailure)
+    const unsubscribe = window.api.contracts.subscribe(setFailure)
+    onCleanup(unsubscribe)
+  })
+  return createComponent(ContractHealthContext.Provider, { value: failure, get children() { return props.children } })
+}
+
+export function useContractHealth() {
+  return useContext(ContractHealthContext)
+}

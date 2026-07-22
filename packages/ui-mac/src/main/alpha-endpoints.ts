@@ -14,6 +14,7 @@
 
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { ContractIncompatibleError } from "@alpha-code/contracts-consumer"
 import { ALPHA_ENDPOINTS, type AlphaEndpoints } from "../shared/alpha-config"
 
 const ENV_KEYS: Record<keyof AlphaEndpoints, string> = {
@@ -46,13 +47,16 @@ const strip = (u?: string | null): string | undefined => {
 }
 const overrideFile = () => path.join(userDataPath, "alpha-endpoints.json")
 const discoveredFile = () => path.join(userDataPath, "alpha-discovered-endpoints.json")
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === "object" && !Array.isArray(value)
 
 function readPartial(file: string): Partial<AlphaEndpoints> {
   try {
-    const d = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>
+    const d: unknown = JSON.parse(fs.readFileSync(file, "utf8"))
+    if (!isRecord(d)) return {}
     const out: Partial<AlphaEndpoints> = {}
     for (const k of KEYS) {
-      const s = strip(typeof d[k] === "string" ? (d[k] as string) : undefined)
+      const s = strip(typeof d[k] === "string" ? d[k] : undefined)
       if (s) out[k] = s
     }
     return out
@@ -61,33 +65,82 @@ function readPartial(file: string): Partial<AlphaEndpoints> {
   }
 }
 
+function readDiscovery(file: string, reportContractFailure: (error: unknown) => void): Partial<AlphaEndpoints> {
+  if (!fs.existsSync(file)) return {}
+  try {
+    return decodeEndpointDiscovery(JSON.parse(fs.readFileSync(file, "utf8")))
+  } catch (error) {
+    const failure =
+      error instanceof ContractIncompatibleError
+        ? error
+        : new ContractIncompatibleError({
+            surface: "endpoint-discovery",
+            received_version: "unknown",
+            reason: "schema-validation",
+          })
+    try {
+      fs.rmSync(file, { force: true })
+    } catch {
+      /* invalid persisted discovery remains untrusted even when cleanup is unavailable */
+    }
+    reportContractFailure(failure)
+    return {}
+  }
+}
+
 /** Called once at startup (index.ts), AFTER preferAppEnv and BEFORE initAuthEnv — so applyAuthEnv
  *  resolves the proxy URL with the pin + persisted discovery already loaded. */
-export function initEndpoints(dataPath: string) {
+export function initEndpoints(dataPath: string, reportContractFailure: (error: unknown) => void) {
   userDataPath = dataPath
   override = readPartial(overrideFile())
-  discovered = readPartial(discoveredFile())
+  discovered = readDiscovery(discoveredFile(), reportContractFailure)
 }
 
 /** ① The alpha-web /auth/token response carries
  *  `{ endpoints: { platform, account, cloud, mcp, web } }`. Persist accepted values so the next
- *  sidecar fork resolves the right services without a desktop release. Defaults still apply to
- *  omitted or rejected values. */
-export function setDiscoveredEndpoints(partial: Partial<Record<keyof AlphaEndpoints, unknown>> | undefined) {
-  if (!partial || typeof partial !== "object") return
-  const next: Partial<AlphaEndpoints> = {}
-  for (const k of KEYS) {
-    const s = strip(typeof partial[k] === "string" ? (partial[k] as string) : undefined)
-    if (s) next[k] = s
-  }
-  if (Object.keys(next).length === 0) return
-  discovered = { ...discovered, ...next }
+ *  sidecar fork resolves the right services without a desktop release. A present payload is
+ *  accepted atomically; an invalid version or endpoint throws without changing discovery state. */
+export function setDiscoveredEndpoints(payload: unknown) {
+  discovered = decodeEndpointDiscovery(payload)
   try {
     fs.mkdirSync(userDataPath, { recursive: true })
-    fs.writeFileSync(discoveredFile(), JSON.stringify(discovered), { encoding: "utf8", mode: 0o600 })
+    fs.writeFileSync(discoveredFile(), JSON.stringify({ schema_version: 1, ...discovered }), { encoding: "utf8", mode: 0o600 })
   } catch {
-    /* discovery is best-effort; defaults still resolve */
+    /* persistence is best-effort; the validated in-memory discovery remains authoritative */
   }
+}
+
+export function decodeEndpointDiscovery(payload: unknown): AlphaEndpoints {
+  const value = isRecord(payload) ? payload : null
+  const keys = value ? Object.keys(value) : []
+  const allowed = new Set(["schema_version", ...KEYS])
+  const web = strip(typeof value?.web === "string" ? value.web : undefined)
+  const platform = strip(typeof value?.platform === "string" ? value.platform : undefined)
+  const account = strip(typeof value?.account === "string" ? value.account : undefined)
+  const cloud = strip(typeof value?.cloud === "string" ? value.cloud : undefined)
+  const mcp = strip(typeof value?.mcp === "string" ? value.mcp : undefined)
+  if (
+    !value ||
+    value.schema_version !== 1 ||
+    keys.some((key) => !allowed.has(key)) ||
+    !web ||
+    !platform ||
+    !account ||
+    !cloud ||
+    (value.mcp !== undefined && !mcp)
+  ) {
+    throw new ContractIncompatibleError({
+      surface: "endpoint-discovery",
+      received_version:
+        value && "schema_version" in value
+          ? typeof value.schema_version === "number"
+            ? value.schema_version
+            : "unknown"
+          : "missing",
+      reason: "schema-validation",
+    })
+  }
+  return { web, platform, account, cloud, ...(mcp ? { mcp } : {}) }
 }
 
 /** Resolve all endpoints. Precedence (highest first): env override (dev/staging) > userData pin >

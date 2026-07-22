@@ -27,11 +27,11 @@ type CloudResult<T> = T | { error: string }
 const isErr = (r: unknown): r is { error: string } => !!r && typeof r === "object" && "error" in (r as object)
 
 async function authed<T>(path: string, init?: { method?: string; body?: unknown }): Promise<CloudResult<T>> {
-  const token = getAccessToken()
-  if (!token) return { error: "not-authenticated" }
-  const base = resolveEndpoints().cloud
-  if (!base) return { error: "no-cloud-endpoint" }
   try {
+    const token = getAccessToken(init?.method && init.method !== "GET" ? "cloud.dispatch" : "cloud.read")
+    if (!token) return { error: "not-authenticated" }
+    const base = resolveEndpoints().cloud
+    if (!base) return { error: "no-cloud-endpoint" }
     const res = await fetch(`${base}${path}`, {
       method: init?.method ?? "GET",
       headers: {

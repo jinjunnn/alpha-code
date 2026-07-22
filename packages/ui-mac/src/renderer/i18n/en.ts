@@ -422,6 +422,7 @@ export const dict = {
   "alpha.auth.errCallback": "Malformed callback — start sign-in again",
   "alpha.auth.errState": "Login state expired or mismatched — start sign-in again",
   "alpha.auth.errExchange": "Token exchange failed — check your network and try again",
+  "alpha.auth.errContract": "The received token is incompatible with this route",
   "alpha.engine.down": "Engine stopped",
   "alpha.engine.downDetail": "Auto-restart gave up after repeated crashes. Retry, or relaunch the app if it keeps failing.",
   "alpha.engine.retry": "Retry",

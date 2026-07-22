@@ -1,0 +1,26 @@
+{
+  "kind": "schema",
+  "contract": "ArtifactListV1",
+  "expect": "valid",
+  "value": {
+    "schema_version": 1,
+    "job_id": "job_fixture1",
+    "status": "completed",
+    "artifacts": [{
+      "schemaVersion": 1,
+      "id": "art_job_fixture1_0_deadbeef",
+      "source": "cloud",
+      "name": "review.md",
+      "size": 12,
+      "claimedMime": "text/markdown",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "trust": "sandboxed",
+      "role": "primary",
+      "contentRef": { "kind": "http-stream", "url": "/v1/cloud/artifacts/art_job_fixture1_0_deadbeef/content", "auth": "bearer" },
+      "verification": { "status": "verified" },
+      "provenance": { "producer": "pipeline", "jobId": "job_fixture1", "kind": "code-review" }
+    }],
+    "artifact_ids": ["art_job_fixture1_0_deadbeef"],
+    "result": { "summary": "ok" }
+  }
+}

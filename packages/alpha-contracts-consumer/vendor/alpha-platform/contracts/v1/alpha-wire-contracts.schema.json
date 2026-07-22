@@ -1,0 +1,1893 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "alpha-wire-contracts.schema.json",
+  "title": "Alpha Wire Contracts v1",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/TokenClaimsV1"
+    },
+    {
+      "$ref": "#/$defs/ModelCatalogV1"
+    },
+    {
+      "$ref": "#/$defs/CloudJobRequestV1"
+    },
+    {
+      "$ref": "#/$defs/CloudJobAcceptedV1"
+    },
+    {
+      "$ref": "#/$defs/CloudJobStatusV1"
+    },
+    {
+      "$ref": "#/$defs/ArtifactListV1"
+    },
+    {
+      "$ref": "#/$defs/ReservationRequestV1"
+    },
+    {
+      "$ref": "#/$defs/ReservationResultV1"
+    },
+    {
+      "$ref": "#/$defs/SettlementRequestV1"
+    },
+    {
+      "$ref": "#/$defs/SettlementQueueEnvelopeV1"
+    },
+    {
+      "$ref": "#/$defs/SettlementResultV1"
+    },
+    {
+      "$ref": "#/$defs/LedgerEntryV1"
+    },
+    {
+      "$ref": "#/$defs/LedgerPageV1"
+    },
+    {
+      "$ref": "#/$defs/UploadManifestV1"
+    },
+    {
+      "$ref": "#/$defs/AgentDispatchRequestV1"
+    },
+    {
+      "$ref": "#/$defs/AgentWorkflowParamsV1"
+    },
+    {
+      "$ref": "#/$defs/PipelineWorkflowParamsV1"
+    }
+  ],
+  "$defs": {
+    "TokenClaimsV1": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "schema_version": {
+              "type": "number",
+              "const": 1
+            },
+            "sub": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "scope": {
+              "minItems": 1,
+              "maxItems": 16,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "model.invoke",
+                  "cloud.dispatch",
+                  "cloud.read",
+                  "artifact.read",
+                  "account.read",
+                  "billing.reconcile",
+                  "artifact.upload",
+                  "billing.settle"
+                ]
+              }
+            },
+            "iat": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "exp": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "jti": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "iss": {
+              "type": "string",
+              "const": "alpha-web"
+            },
+            "aud": {
+              "type": "string",
+              "const": "alpha-platform-api"
+            },
+            "token_use": {
+              "type": "string",
+              "const": "platform_access"
+            },
+            "purpose": {
+              "type": "string",
+              "enum": [
+                "model.invoke",
+                "cloud.dispatch",
+                "cloud.read",
+                "artifact.read",
+                "account.read"
+              ]
+            },
+            "edition": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          "required": [
+            "schema_version",
+            "sub",
+            "scope",
+            "iat",
+            "exp",
+            "jti",
+            "iss",
+            "aud",
+            "token_use",
+            "purpose"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "schema_version": {
+              "type": "number",
+              "const": 1
+            },
+            "sub": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "scope": {
+              "minItems": 1,
+              "maxItems": 16,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "model.invoke",
+                  "cloud.dispatch",
+                  "cloud.read",
+                  "artifact.read",
+                  "account.read",
+                  "billing.reconcile",
+                  "artifact.upload",
+                  "billing.settle"
+                ]
+              }
+            },
+            "iat": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "exp": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "jti": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "iss": {
+              "type": "string",
+              "const": "alpha-web"
+            },
+            "aud": {
+              "type": "string",
+              "const": "alpha-platform-account"
+            },
+            "token_use": {
+              "type": "string",
+              "const": "billing_assertion"
+            },
+            "purpose": {
+              "type": "string",
+              "const": "billing.reconcile"
+            }
+          },
+          "required": [
+            "schema_version",
+            "sub",
+            "scope",
+            "iat",
+            "exp",
+            "jti",
+            "iss",
+            "aud",
+            "token_use",
+            "purpose"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "schema_version": {
+              "type": "number",
+              "const": 1
+            },
+            "sub": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "scope": {
+              "minItems": 1,
+              "maxItems": 16,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "model.invoke",
+                  "cloud.dispatch",
+                  "cloud.read",
+                  "artifact.read",
+                  "account.read",
+                  "billing.reconcile",
+                  "artifact.upload",
+                  "billing.settle"
+                ]
+              }
+            },
+            "iat": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "exp": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "jti": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "iss": {
+              "type": "string",
+              "const": "alpha-web"
+            },
+            "aud": {
+              "type": "string",
+              "const": "alpha-platform-upload"
+            },
+            "token_use": {
+              "type": "string",
+              "const": "upload_consent"
+            },
+            "purpose": {
+              "type": "string",
+              "const": "artifact.upload"
+            },
+            "manifest_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "manifest_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "egress": {
+              "minItems": 1,
+              "maxItems": 5,
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "egress_class": {
+                        "type": "string",
+                        "const": "explicit.file-upload"
+                      },
+                      "enforcement": {
+                        "type": "string",
+                        "const": "required"
+                      }
+                    },
+                    "required": [
+                      "egress_class",
+                      "enforcement"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "egress_class": {
+                        "type": "string",
+                        "const": "input.diff"
+                      },
+                      "enforcement": {
+                        "type": "string",
+                        "const": "grandfathered"
+                      }
+                    },
+                    "required": [
+                      "egress_class",
+                      "enforcement"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "egress_class": {
+                        "type": "string",
+                        "const": "code-review"
+                      },
+                      "enforcement": {
+                        "type": "string",
+                        "const": "grandfathered"
+                      }
+                    },
+                    "required": [
+                      "egress_class",
+                      "enforcement"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            }
+          },
+          "required": [
+            "schema_version",
+            "sub",
+            "scope",
+            "iat",
+            "exp",
+            "jti",
+            "iss",
+            "aud",
+            "token_use",
+            "purpose",
+            "manifest_id",
+            "manifest_sha256",
+            "egress"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "schema_version": {
+              "type": "number",
+              "const": 1
+            },
+            "sub": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "scope": {
+              "minItems": 1,
+              "maxItems": 16,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "model.invoke",
+                  "cloud.dispatch",
+                  "cloud.read",
+                  "artifact.read",
+                  "account.read",
+                  "billing.reconcile",
+                  "artifact.upload",
+                  "billing.settle"
+                ]
+              }
+            },
+            "iat": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "exp": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "jti": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "iss": {
+              "type": "string",
+              "const": "alpha-platform"
+            },
+            "aud": {
+              "type": "string",
+              "const": "alpha-platform-model"
+            },
+            "token_use": {
+              "type": "string",
+              "const": "job_token"
+            },
+            "purpose": {
+              "type": "string",
+              "const": "model.invoke"
+            },
+            "job_id": {
+              "type": "string",
+              "pattern": "^job_[a-z0-9_]{4,64}$"
+            }
+          },
+          "required": [
+            "schema_version",
+            "sub",
+            "scope",
+            "iat",
+            "exp",
+            "jti",
+            "iss",
+            "aud",
+            "token_use",
+            "purpose",
+            "job_id"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "schema_version": {
+              "type": "number",
+              "const": 1
+            },
+            "sub": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "scope": {
+              "minItems": 1,
+              "maxItems": 16,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "model.invoke",
+                  "cloud.dispatch",
+                  "cloud.read",
+                  "artifact.read",
+                  "account.read",
+                  "billing.reconcile",
+                  "artifact.upload",
+                  "billing.settle"
+                ]
+              }
+            },
+            "iat": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "exp": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "jti": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "iss": {
+              "type": "string",
+              "const": "alpha-platform"
+            },
+            "aud": {
+              "type": "string",
+              "const": "alpha-settle-queue"
+            },
+            "token_use": {
+              "type": "string",
+              "const": "settlement_capability"
+            },
+            "purpose": {
+              "type": "string",
+              "const": "billing.settle"
+            }
+          },
+          "required": [
+            "schema_version",
+            "sub",
+            "scope",
+            "iat",
+            "exp",
+            "jti",
+            "iss",
+            "aud",
+            "token_use",
+            "purpose"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ModelCatalogV1": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "number",
+          "const": 1
+        },
+        "object": {
+          "type": "string",
+          "const": "list"
+        },
+        "data": {
+          "maxItems": 512,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "object": {
+                "type": "string",
+                "const": "model"
+              },
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "deepseek",
+                  "openai",
+                  "openrouter",
+                  "anthropic",
+                  "zhipu",
+                  "alibaba"
+                ]
+              },
+              "min_plan": {
+                "type": "string",
+                "enum": [
+                  "free",
+                  "member"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "object",
+              "provider",
+              "min_plan"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "edition": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "byok_providers": {
+          "anyOf": [
+            {
+              "maxItems": 64,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "object",
+        "data",
+        "edition",
+        "byok_providers"
+      ],
+      "additionalProperties": false
+    },
+    "CloudJobRequestV1": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "schema_version": {
+              "type": "number",
+              "const": 1
+            },
+            "budget": {
+              "type": "object",
+              "properties": {
+                "max_iter": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 50
+                },
+                "max_tokens": {
+                  "type": "integer",
+                  "minimum": 1000,
+                  "maximum": 500000
+                },
+                "max_wall_clock_sec": {
+                  "type": "integer",
+                  "minimum": 10,
+                  "maximum": 1800
+                }
+              },
+              "additionalProperties": false
+            },
+            "constraints": {
+              "type": "object",
+              "properties": {
+                "allowed_tools": {
+                  "maxItems": 128,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                },
+                "denied_paths": {
+                  "maxItems": 256,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  }
+                },
+                "network": {
+                  "type": "string",
+                  "enum": [
+                    "none",
+                    "restricted",
+                    "open"
+                  ]
+                }
+              },
+              "additionalProperties": false
+            },
+            "output_schema": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "additionalProperties": {}
+            },
+            "artifact_policy": {
+              "type": "object",
+              "properties": {
+                "delivery": {
+                  "type": "string",
+                  "const": "descriptor_only"
+                }
+              },
+              "required": [
+                "delivery"
+              ],
+              "additionalProperties": false
+            },
+            "autonomy": {
+              "type": "string",
+              "const": "pipeline"
+            },
+            "kind": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "input": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "additionalProperties": {}
+            }
+          },
+          "required": [
+            "schema_version",
+            "autonomy",
+            "kind",
+            "input"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "schema_version": {
+              "type": "number",
+              "const": 1
+            },
+            "budget": {
+              "type": "object",
+              "properties": {
+                "max_iter": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 50
+                },
+                "max_tokens": {
+                  "type": "integer",
+                  "minimum": 1000,
+                  "maximum": 500000
+                },
+                "max_wall_clock_sec": {
+                  "type": "integer",
+                  "minimum": 10,
+                  "maximum": 1800
+                }
+              },
+              "additionalProperties": false
+            },
+            "constraints": {
+              "type": "object",
+              "properties": {
+                "allowed_tools": {
+                  "maxItems": 128,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                },
+                "denied_paths": {
+                  "maxItems": 256,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  }
+                },
+                "network": {
+                  "type": "string",
+                  "enum": [
+                    "none",
+                    "restricted",
+                    "open"
+                  ]
+                }
+              },
+              "additionalProperties": false
+            },
+            "output_schema": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "additionalProperties": {}
+            },
+            "artifact_policy": {
+              "type": "object",
+              "properties": {
+                "delivery": {
+                  "type": "string",
+                  "const": "descriptor_only"
+                }
+              },
+              "required": [
+                "delivery"
+              ],
+              "additionalProperties": false
+            },
+            "autonomy": {
+              "type": "string",
+              "const": "bounded-agent"
+            },
+            "objective": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32768
+            },
+            "capabilities": {
+              "maxItems": 128,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              }
+            }
+          },
+          "required": [
+            "schema_version",
+            "autonomy",
+            "objective",
+            "capabilities"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "CloudJobAcceptedV1": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "number",
+          "const": 1
+        },
+        "job_id": {
+          "type": "string",
+          "pattern": "^job_[a-z0-9_]{4,64}$"
+        },
+        "status": {
+          "type": "string",
+          "const": "queued"
+        },
+        "autonomy": {
+          "type": "string",
+          "enum": [
+            "pipeline",
+            "bounded-agent"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "urls": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "format": "uri"
+            },
+            "events": {
+              "type": "string",
+              "format": "uri"
+            },
+            "result": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          "required": [
+            "status",
+            "events",
+            "result"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "schema_version",
+        "job_id",
+        "status",
+        "autonomy",
+        "urls"
+      ],
+      "additionalProperties": false
+    },
+    "CloudJobStatusV1": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "number",
+          "const": 1
+        },
+        "job_id": {
+          "type": "string",
+          "pattern": "^job_[a-z0-9_]{4,64}$"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "queued",
+            "running",
+            "blocked",
+            "completed",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "autonomy": {
+          "type": "string",
+          "enum": [
+            "pipeline",
+            "bounded-agent"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "progress": {
+          "type": "object",
+          "properties": {
+            "phase": {
+              "type": "string",
+              "enum": [
+                "routing",
+                "sandbox.starting",
+                "agent.running",
+                "pipeline.running",
+                "completed",
+                "failed"
+              ]
+            },
+            "completed_steps": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "total_steps": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "phase"
+          ],
+          "additionalProperties": false
+        },
+        "counters": {
+          "type": "object",
+          "properties": {
+            "model_calls": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "tokens_in": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "tokens_out": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "cost_usd": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "model_calls",
+            "tokens_in",
+            "tokens_out",
+            "cost_usd"
+          ],
+          "additionalProperties": false
+        },
+        "artifact_ids": {
+          "maxItems": 256,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^art_job_[a-z0-9_]+_\\d+_[0-9a-f]{8}$"
+          }
+        },
+        "artifacts": {
+          "maxItems": 256,
+          "type": "array",
+          "items": {
+            "$ref": "artifact-descriptor.schema.json"
+          }
+        },
+        "result": {},
+        "error": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 32768
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "job_id",
+        "status",
+        "autonomy",
+        "progress",
+        "artifact_ids",
+        "error"
+      ],
+      "additionalProperties": false
+    },
+    "ArtifactListV1": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "number",
+          "const": 1
+        },
+        "job_id": {
+          "type": "string",
+          "pattern": "^job_[a-z0-9_]{4,64}$"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "queued",
+            "running",
+            "blocked",
+            "completed",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "artifacts": {
+          "maxItems": 256,
+          "type": "array",
+          "items": {
+            "$ref": "artifact-descriptor.schema.json"
+          }
+        },
+        "artifact_ids": {
+          "maxItems": 256,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^art_job_[a-z0-9_]+_\\d+_[0-9a-f]{8}$"
+          }
+        },
+        "result": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "job_id",
+        "status",
+        "artifacts",
+        "artifact_ids",
+        "result"
+      ],
+      "additionalProperties": false
+    },
+    "ReservationRequestV1": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "number",
+          "const": 1
+        },
+        "tenant_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "model_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "reservation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "estimated_cost_usd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "job_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "key_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "schema_version",
+        "tenant_id",
+        "model_id",
+        "reservation_id",
+        "estimated_cost_usd"
+      ],
+      "additionalProperties": false
+    },
+    "ReservationResultV1": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "number",
+          "const": 1
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": [
+        "schema_version",
+        "ok"
+      ],
+      "additionalProperties": false
+    },
+    "SettlementRequestV1": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "number",
+          "const": 1
+        },
+        "tenant_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "model_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "reservation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "tokens_in": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "tokens_out": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "cache_read_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "cache_write_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "web_search_requests": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "job_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "key_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "upstream_provider": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "schema_version",
+        "tenant_id",
+        "model_id",
+        "reservation_id",
+        "tokens_in",
+        "tokens_out",
+        "cache_read_tokens",
+        "cache_write_tokens",
+        "web_search_requests"
+      ],
+      "additionalProperties": false
+    },
+    "SettlementQueueEnvelopeV1": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "number",
+          "const": 1
+        },
+        "type": {
+          "type": "string",
+          "const": "settlement"
+        },
+        "capability_token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "payload": {
+          "$ref": "#/$defs/SettlementRequestV1"
+        }
+      },
+      "required": [
+        "schema_version",
+        "type",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "SettlementResultV1": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "number",
+          "const": 1
+        },
+        "billing_path": {
+          "type": "string",
+          "enum": [
+            "dev",
+            "membership",
+            "wallet"
+          ]
+        },
+        "cost_usd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "charged_fen": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "web_search_requests": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "idempotent": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "schema_version",
+        "billing_path",
+        "cost_usd",
+        "charged_fen",
+        "web_search_requests",
+        "idempotent"
+      ],
+      "additionalProperties": false
+    },
+    "LedgerEntryV1": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "number",
+          "const": 1
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "usage",
+            "recharge",
+            "bonus",
+            "subscription"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "amount_fen": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "created_at": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "success",
+            "failed"
+          ]
+        },
+        "key_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "schema_version",
+        "id",
+        "type",
+        "title",
+        "amount_fen",
+        "created_at",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "LedgerPageV1": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "number",
+          "const": 1
+        },
+        "transactions": {
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "schema_version": {
+                "type": "number",
+                "const": 1
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "usage",
+                  "recharge",
+                  "bonus",
+                  "subscription"
+                ]
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024
+              },
+              "amount_fen": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "created_at": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "success",
+                  "failed"
+                ]
+              },
+              "key_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "required": [
+              "schema_version",
+              "id",
+              "type",
+              "title",
+              "amount_fen",
+              "created_at",
+              "status"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "transactions"
+      ],
+      "additionalProperties": false
+    },
+    "UploadManifestV1": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "number",
+          "const": 1
+        },
+        "manifest_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "tenant_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "created_at": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "retention_class": {
+          "type": "string",
+          "enum": [
+            "standard",
+            "short",
+            "none"
+          ]
+        },
+        "consent_required": {
+          "type": "boolean"
+        },
+        "egress": {
+          "minItems": 1,
+          "maxItems": 5,
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "egress_class": {
+                    "type": "string",
+                    "const": "explicit.file-upload"
+                  },
+                  "enforcement": {
+                    "type": "string",
+                    "const": "required"
+                  }
+                },
+                "required": [
+                  "egress_class",
+                  "enforcement"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "egress_class": {
+                    "type": "string",
+                    "const": "input.diff"
+                  },
+                  "enforcement": {
+                    "type": "string",
+                    "const": "grandfathered"
+                  }
+                },
+                "required": [
+                  "egress_class",
+                  "enforcement"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "egress_class": {
+                    "type": "string",
+                    "const": "code-review"
+                  },
+                  "enforcement": {
+                    "type": "string",
+                    "const": "grandfathered"
+                  }
+                },
+                "required": [
+                  "egress_class",
+                  "enforcement"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "file_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 256
+        },
+        "total_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 104857600
+        },
+        "files": {
+          "maxItems": 256,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^(?!\\.\\.?(?:\\/|(?![\\s\\S])))[^/\\\\\\u0000]+(?:\\/(?!\\.\\.?(?:\\/|(?![\\s\\S])))[^/\\\\\\u0000]+)*(?![\\s\\S])"
+              },
+              "size_bytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 104857600
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "media_type": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              }
+            },
+            "required": [
+              "path",
+              "size_bytes",
+              "sha256"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "manifest_id",
+        "tenant_id",
+        "created_at",
+        "retention_class",
+        "consent_required",
+        "egress",
+        "file_count",
+        "total_bytes",
+        "files"
+      ],
+      "additionalProperties": false
+    },
+    "AgentDispatchRequestV1": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "number",
+          "const": 1
+        },
+        "job_id": {
+          "type": "string",
+          "pattern": "^job_[a-z0-9_]{4,64}$"
+        },
+        "contract": {
+          "type": "object",
+          "properties": {
+            "objective": {
+              "type": "string",
+              "minLength": 1
+            },
+            "capabilities": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "budget": {
+              "type": "object",
+              "properties": {
+                "maxIter": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 50
+                },
+                "maxTokens": {
+                  "type": "integer",
+                  "minimum": 1000,
+                  "maximum": 500000
+                },
+                "maxWallClockSec": {
+                  "type": "integer",
+                  "minimum": 10,
+                  "maximum": 1800
+                }
+              },
+              "required": [
+                "maxIter",
+                "maxTokens",
+                "maxWallClockSec"
+              ],
+              "additionalProperties": false
+            },
+            "allowedTools": {
+              "default": [],
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "deniedPaths": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "network": {
+              "type": "string",
+              "enum": [
+                "none",
+                "restricted",
+                "open"
+              ]
+            },
+            "successCriteria": {
+              "type": "string"
+            },
+            "outputSchema": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "required": [
+            "objective",
+            "capabilities",
+            "budget",
+            "allowedTools"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "schema_version",
+        "job_id",
+        "contract"
+      ],
+      "additionalProperties": false
+    },
+    "AgentWorkflowParamsV1": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "number",
+          "const": 1
+        },
+        "job_id": {
+          "type": "string",
+          "pattern": "^job_[a-z0-9_]{4,64}$"
+        },
+        "tenant_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "job_token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "contract": {
+          "type": "object",
+          "properties": {
+            "objective": {
+              "type": "string",
+              "minLength": 1
+            },
+            "capabilities": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "budget": {
+              "type": "object",
+              "properties": {
+                "maxIter": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 50
+                },
+                "maxTokens": {
+                  "type": "integer",
+                  "minimum": 1000,
+                  "maximum": 500000
+                },
+                "maxWallClockSec": {
+                  "type": "integer",
+                  "minimum": 10,
+                  "maximum": 1800
+                }
+              },
+              "required": [
+                "maxIter",
+                "maxTokens",
+                "maxWallClockSec"
+              ],
+              "additionalProperties": false
+            },
+            "allowedTools": {
+              "default": [],
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "deniedPaths": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "network": {
+              "type": "string",
+              "enum": [
+                "none",
+                "restricted",
+                "open"
+              ]
+            },
+            "successCriteria": {
+              "type": "string"
+            },
+            "outputSchema": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "required": [
+            "objective",
+            "capabilities",
+            "budget",
+            "allowedTools"
+          ],
+          "additionalProperties": false
+        },
+        "policy": {
+          "type": "object",
+          "properties": {
+            "maxIter": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "maxTokens": {
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 500000
+            },
+            "maxWallClockSec": {
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 1800
+            }
+          },
+          "required": [
+            "maxIter",
+            "maxTokens",
+            "maxWallClockSec"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "schema_version",
+        "job_id",
+        "tenant_ref",
+        "job_token",
+        "contract",
+        "policy"
+      ],
+      "additionalProperties": false
+    },
+    "PipelineWorkflowParamsV1": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "number",
+          "const": 1
+        },
+        "job_id": {
+          "type": "string",
+          "pattern": "^job_[a-z0-9_]{4,64}$"
+        },
+        "tenant_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "job_token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "input": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "schema_version",
+        "job_id",
+        "tenant_ref",
+        "job_token",
+        "kind",
+        "input"
+      ],
+      "additionalProperties": false
+    },
+    "WireLimitsV1": {
+      "type": "object",
+      "properties": {
+        "CONTROL_ENVELOPE_MAX_BYTES": {
+          "const": 262144
+        },
+        "NON_STREAMING_PAYLOAD_MAX_BYTES": {
+          "const": 524288
+        }
+      },
+      "required": [
+        "CONTROL_ENVELOPE_MAX_BYTES",
+        "NON_STREAMING_PAYLOAD_MAX_BYTES"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

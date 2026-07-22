@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "artifact-descriptor.schema.json",
+  "title": "ArtifactDescriptorV1",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^art_job_[a-z0-9_]+_\\d+_[0-9a-f]{8}$"
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "cloud",
+        "workspace",
+        "local",
+        "message",
+        "automation"
+      ]
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "size": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 104857600
+    },
+    "claimedMime": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "detectedMime": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "trust": {
+      "type": "string",
+      "enum": [
+        "sandboxed",
+        "platform",
+        "external",
+        "unverified"
+      ]
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "primary",
+        "preview",
+        "log",
+        "intermediate"
+      ]
+    },
+    "primaryId": {
+      "type": "string",
+      "pattern": "^art_job_[a-z0-9_]+_\\d+_[0-9a-f]{8}$"
+    },
+    "previewIds": {
+      "maxItems": 256,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^art_job_[a-z0-9_]+_\\d+_[0-9a-f]{8}$"
+      }
+    },
+    "contentRef": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "http-stream"
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^\\/v1\\/cloud\\/artifacts\\/[^/]+\\/content$"
+        },
+        "auth": {
+          "type": "string",
+          "const": "bearer"
+        }
+      },
+      "required": [
+        "kind",
+        "url",
+        "auth"
+      ],
+      "additionalProperties": false
+    },
+    "verification": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "verified",
+            "unverified",
+            "pending",
+            "mismatch"
+          ]
+        },
+        "detector": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "verifiedAt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "producer": {
+          "type": "string",
+          "enum": [
+            "pipeline",
+            "bounded-agent"
+          ]
+        },
+        "jobId": {
+          "type": "string",
+          "pattern": "^job_[a-z0-9_]{4,64}$"
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "step": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "producer",
+        "jobId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "id",
+    "source",
+    "name",
+    "trust",
+    "role",
+    "contentRef",
+    "verification",
+    "provenance"
+  ],
+  "additionalProperties": false
+}

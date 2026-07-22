@@ -17,11 +17,18 @@ import { createHash, randomBytes, randomUUID } from "node:crypto"
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { safeStorage, shell, type BrowserWindow } from "electron"
+import {
+  ContractIncompatibleError,
+  decodeTokenClaims,
+  requireTokenPurpose,
+  type RoutePurpose,
+} from "@alpha-code/contracts-consumer"
 import type { AuthErrorCode, AuthMode, AuthState } from "../preload/types"
 import { getLogger } from "./logging"
-import { ALPHA_PATHS } from "../shared/alpha-config"
+import { ALPHA_PATHS, type AlphaEndpoints } from "../shared/alpha-config"
 import { isTokenExpired, shouldRefreshToken } from "./alpha-auth-clock"
-import { resolveEndpoints, setDiscoveredEndpoints } from "./alpha-endpoints"
+import { decodeEndpointDiscovery, resolveEndpoints, setDiscoveredEndpoints } from "./alpha-endpoints"
+import { reportContractFailure } from "./alpha-contract-health"
 
 type StoredAuth = {
   mode: AuthMode
@@ -43,7 +50,7 @@ type TokenResponse = {
   plan?: string
   /** ① optional endpoint discovery — alpha-web may tell the app where the gateway/account live, so a
    *  moved backend updates clients without a release (see alpha-endpoints.ts). Producer side optional. */
-  endpoints?: { web?: string; platform?: string; account?: string; cloud?: string; mcp?: string }
+  endpoints?: { schema_version: 1 } & AlphaEndpoints
 }
 
 const CLIENT_ID = "alpha-code"
@@ -51,10 +58,9 @@ const REDIRECT_URI = "alpha-code://auth/callback"
 const AUTH_FILE = "alpha-auth.json"
 
 // Endpoints come from the resolver (alpha-endpoints.ts): env override > userData pin > login discovery
-// > shared/alpha-config default. webBase = alpha-web (C, identity/login/token); platformBase =
-// alpha-platform (B, model proxy /v1). Env overrides ALPHA_WEB_URL / ALPHA_PLATFORM_URL still win.
+// > shared/alpha-config default. webBase = alpha-web (C, identity/login/token).
+// Env overrides ALPHA_WEB_URL / ALPHA_PLATFORM_URL still win.
 const webBase = () => resolveEndpoints().web
-const platformBase = () => resolveEndpoints().platform
 
 let userDataPath = ""
 let getWindow: () => BrowserWindow | null = () => null
@@ -164,15 +170,24 @@ export function applyAuthEnv() {
   const token = devToken || (loggedInPlatform ? stored.accessToken : undefined)
   const ep = resolveEndpoints()
   const base = ep.platform
+  delete process.env.ALPHA_API_KEY
+  delete process.env.ALPHA_CLOUD_TOKEN
   if (!token || !base) return
   if (!process.env.ALPHA_BASE_URL) process.env.ALPHA_BASE_URL = `${base}${ALPHA_PATHS.modelProxy}`
   // mcp: a discovered/pinned mcp URL wins; else derive from the CLOUD worker base (ADR-016: the MCP
   // facade lives on `alpha-cloud`, NOT the model gateway which 404s /mcp). ep.cloud always resolves
   // (has a default), so this points at alpha-cloud/mcp instead of the old gateway/mcp 404.
   if (!process.env.ALPHA_CLOUD_MCP_URL) process.env.ALPHA_CLOUD_MCP_URL = ep.mcp ?? `${ep.cloud ?? base}${ALPHA_PATHS.mcpGateway}`
-  // Authoritative: the CURRENT login token always wins (fixes the stale-token-after-re-login bug).
-  process.env.ALPHA_API_KEY = token
-  process.env.ALPHA_CLOUD_TOKEN = token
+  // The consumer does not acquire a token for another purpose. It validates the received token,
+  // then exposes it only through the sidecar seam matching the issuer-selected purpose.
+  try {
+    const claims = decodeTokenClaims(token)
+    requireTokenPurpose(token, claims.purpose)
+    if (claims.purpose === "model.invoke") process.env.ALPHA_API_KEY = token
+    if (claims.purpose === "cloud.dispatch") process.env.ALPHA_CLOUD_TOKEN = token
+  } catch (error) {
+    reportContractFailure(error)
+  }
 }
 
 // Called once at startup, AFTER preferAppEnv() and BEFORE the sidecar forks (index.ts), so the
@@ -197,8 +212,16 @@ export function getAuthState(): AuthState {
 // Raw bearer token for direct authed reads (account-server). Mirrors applyAuthEnv's derivation —
 // the dev short-circuit wins, else the stored platform access token. MAIN-ONLY: never expose this
 // to the renderer; its only callers are main-process clients (alpha-account.ts).
-export function getAccessToken(): string | undefined {
-  return process.env.DEV_PLATFORM_TOKEN || stored.accessToken
+export function getAccessToken(purpose: RoutePurpose): string | undefined {
+  const token = process.env.DEV_PLATFORM_TOKEN || stored.accessToken
+  if (!token) return undefined
+  try {
+    requireTokenPurpose(token, purpose)
+    return token
+  } catch (error) {
+    reportContractFailure(error)
+    throw error
+  }
 }
 
 function base64url(buf: Buffer) {
@@ -265,7 +288,7 @@ export function handleAuthDeepLink(url: string): boolean {
   if (path === "auth/callback") {
     void completeAuth(parsed).catch((error) => {
       warn("alpha-auth: callback failed", error)
-      publishAuthError("exchange_failed")
+      publishAuthError(reportContractFailure(error) ? "contract_incompatible" : "exchange_failed")
     })
   } else {
     log("alpha-auth: ignoring non-auth deep link", { path })
@@ -297,7 +320,7 @@ async function completeAuth(parsed: URL) {
   const tokens = await exchangeCode(code, verifier)
   // ① Learn gateway/account/cloud locations from alpha-web's current token response so a moved
   // backend can update clients without a desktop release.
-  setDiscoveredEndpoints(tokens.endpoints)
+  if (tokens.endpoints) setDiscoveredEndpoints(tokens.endpoints)
   stored = {
     // The ALPHA proxy (代理节点) is the recommended path, so login opts into platform-pays BY DEFAULT
     // (ADR-016 product direction). applyAuthEnv() below writes the proxy env for the NEXT sidecar fork,
@@ -336,7 +359,41 @@ async function exchangeCode(code: string, verifier: string): Promise<TokenRespon
     }),
   })
   if (!res.ok) throw new Error(`token exchange failed: HTTP ${res.status}`)
-  return (await res.json()) as TokenResponse
+  return decodeTokenResponse(await res.json())
+}
+
+function decodeTokenResponse(value: unknown): TokenResponse {
+  if (!isRecord(value)) throw invalidTokenResponse()
+  const response = value
+  if (typeof response.access_token !== "string") throw invalidTokenResponse()
+  if (response.refresh_token !== undefined && typeof response.refresh_token !== "string") throw invalidTokenResponse()
+  if (response.session_id !== undefined && typeof response.session_id !== "string") throw invalidTokenResponse()
+  if (response.expires_in !== undefined && typeof response.expires_in !== "number") throw invalidTokenResponse()
+  if (response.email !== undefined && typeof response.email !== "string") throw invalidTokenResponse()
+  if (response.plan !== undefined && typeof response.plan !== "string") throw invalidTokenResponse()
+  decodeTokenClaims(response.access_token)
+  const endpoints = response.endpoints !== undefined ? decodeEndpointDiscovery(response.endpoints) : undefined
+  return {
+    access_token: response.access_token,
+    ...(response.refresh_token !== undefined ? { refresh_token: response.refresh_token } : {}),
+    ...(response.session_id !== undefined ? { session_id: response.session_id } : {}),
+    ...(response.expires_in !== undefined ? { expires_in: response.expires_in } : {}),
+    ...(response.email !== undefined ? { email: response.email } : {}),
+    ...(response.plan !== undefined ? { plan: response.plan } : {}),
+    ...(endpoints ? { endpoints: { schema_version: 1, ...endpoints } } : {}),
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value)
+}
+
+function invalidTokenResponse() {
+  return new ContractIncompatibleError({
+    surface: "identity",
+    received_version: "missing",
+    reason: "schema-validation",
+  })
 }
 
 // ── B2:refresh token 续期 ─────────────────────────────────────────────────────────────────────
@@ -391,12 +448,17 @@ async function doRefresh(): Promise<boolean> {
   }
   let tokens: TokenResponse
   try {
-    tokens = (await res.json()) as TokenResponse
-  } catch {
+    tokens = decodeTokenResponse(await res.json())
+  } catch (error) {
+    if (reportContractFailure(error)) {
+      warn("alpha-auth: refresh response contract incompatible — keeping the prior validated token")
+      publishAuthError("contract_incompatible")
+      return false
+    }
     warn("alpha-auth: refresh response unparsable — keeping current tokens")
     return false
   }
-  setDiscoveredEndpoints(tokens.endpoints)
+  if (tokens.endpoints) setDiscoveredEndpoints(tokens.endpoints)
   stored = {
     ...stored,
     accessToken: tokens.access_token,

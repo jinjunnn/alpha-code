@@ -1,15 +1,14 @@
-// A 侧镜像:跨端 `ArtifactDescriptor` 契约(REQ-092 / REQ-093;alpha-code#184/#185)。
+// Alpha ArtifactDescriptor helpers. The wire schema and runtime decoder come only from the pinned
+// alpha-platform contract consumer; this file retains alpha-work#1/#2's local ID/projection helpers.
 //
-// ⚠️ 真相源在平台仓(B),本文件是**逐字镜像**(verbatim mirror),不得在此加工:
-//   · 来源:alpha-platform `packages/gateway/src/lib/artifact-descriptor.ts`
-//     (merged via PR jinjunnn/alpha-platform#42;本镜像基于其 origin/main 形态,2026-07-12);
-//   · 该模块零依赖、全 JSON-serializable,平台侧注释原样保留(含平台视角的措辞);
-//   · 契约变更流程:先改平台真相源 → 平台合并 → 回此文件逐字同步(不接受只改镜像);
-//   · A 侧扩展(manifest / ArtifactService / `.alpha/runs` registry,REQ-093)放各自模块,
-//     **不放这里** —— 本文件保持与真相源可逐字 diff。
-// 消费纪律:未知 schemaVersion 只读/报错(validateArtifactDescriptor),不得静默按 v1 解释。
-// ---------------------------------------------------------------------------
-// ▼▼ 以下为平台真相源逐字镜像 ▼▼
+// Wire truth lives in the pinned consumer package. The remaining ID/projection helpers are the
+// existing alpha-work#1/#2 desktop implementation and are not a second wire-schema authority.
+import {
+  ContractIncompatibleError,
+  decodeContract,
+  type ArtifactDescriptorV1,
+} from "@alpha-code/contracts-consumer"
+
 // REQ-092 / REQ-093(alpha-platform#27 / #28)—— 跨端 `ArtifactDescriptor` 契约(平台侧单一真相源)。
 //
 // ⚠️ 本模块是 **A↔B 跨仓契约**:
@@ -79,25 +78,7 @@ export interface ArtifactProvenance {
 }
 
 // ---- descriptor 本体(REQ-092 建议最小字段全集)----
-export interface ArtifactDescriptor {
-  schemaVersion: typeof ARTIFACT_SCHEMA_VERSION;
-  // 稳定 ID。派生规则见 artifactIdFor():对同一 completed job 的不可变 result 是**确定性**的,
-  // 重复调用 / 进程重启 / list 与 content 两端各自派生均得到同一 ID(REQ-093「不再临时推导 list」)。
-  id: string;
-  source: ArtifactSource;
-  name: string;          // 产出文件名(未净化原名;下载文件名另经 sanitizeFilename)
-  size?: number;         // 字节数(已知时)。消费端限额判断的第一道输入(REQ-092 AC#3)
-  claimedMime?: string;  // 产出端按扩展名声明的 MIME(诊断用;不得单独作为高权限渲染依据)
-  detectedMime?: string; // magic-bytes 检测结果(见 verification.detector)。与 claimedMime 冲突时消费端应产 warning
-  sha256?: string;       // 内容 digest(hex 小写 64 位;产出端回收时单遍计算)
-  trust: ArtifactTrust;
-  role: ArtifactRole;
-  primaryId?: string;    // role="preview" 时指向其 primary artifact 的 id
-  previewIds?: string[]; // role="primary" 时其预览派生 id 列表(平台现不产预览 → 恒缺省)
-  contentRef: ArtifactContentRef;
-  verification: ArtifactVerification;
-  provenance: ArtifactProvenance;
-}
+export type ArtifactDescriptor = ArtifactDescriptorV1
 
 // ---- 集中配额(REQ-092 AC#3 / REQ-093 §5 基线;两端镜像同值)----
 // 单 artifact 内容上限:100 MiB。超限 fail-closed:产出端回收时前置拒绝(不 buffer)、
@@ -110,15 +91,6 @@ export const MAX_ARTIFACTS_PER_RUN = 256;
 export const ENVELOPE_MAX_BYTES = 256 * 1024;
 export const PUBLIC_RESULT_MAX_BYTES = 512 * 1024;
 
-// ---- 兼容窗口(REQ-092 交付 6)----
-// 迁移顺序:B(本仓)先上 descriptor-only 默认 + 新 content endpoint;A 切换(alpha-code#184)后删旧内联字段。
-// 窗口机制:HTTP status / artifacts 路由接受 `?compat=inline-artifacts-v0` 或 `x-alpha-compat: inline-artifacts-v0`
-//   → 恢复 legacy 内联 result(含 result.artifacts[].base64 /* REQ-092-compat:此行描述 legacy 字段,非重新引入 */)。
-// MCP / 模型 transcript 路径**无兼容开关**(兼容路径不得把 base64 转发给模型,REQ-092 交付 6)。
-// ⏰ 移除日期:**2026-08-15** 后删除该 flag 与 legacy 分支(见 docs/contracts/cloud-artifact-transport.md 记录)。
-export const INLINE_ARTIFACT_COMPAT_FLAG = "inline-artifacts-v0";
-export const INLINE_ARTIFACT_COMPAT_REMOVAL = "2026-08-15";
-
 // ---- 稳定 ID 派生 ----
 // 格式:art_<jobId>_<index>_<fp8>
 //   · jobId  = cloud job_id(job_<a-z0-9_>);
@@ -126,8 +98,7 @@ export const INLINE_ARTIFACT_COMPAT_REMOVAL = "2026-08-15";
 //              故 index 对同一 job 是确定性的(这就是"确定性派生"的锚点,文档化于此);
 //   · fp8    = fnv1a32(`${name}\n${size}\n${sha256}`) 8 位 hex 自校验指纹 —— content endpoint 回查时
 //              重新派生并比对,防 index 错位/陈旧 ID 命中错误内容(不匹配 → 404)。
-// legacy 形态 art_<jobId>_<index>(无 fp,2026-07 前发出)在兼容窗口内仍被接受(跳过指纹校验)。
-export const ARTIFACT_ID_RE = /^art_(job_[a-z0-9_]+)_(\d+)(?:_([0-9a-f]{8}))?$/;
+export const ARTIFACT_ID_RE = /^art_(job_[a-z0-9_]+)_(\d+)_([0-9a-f]{8})$/;
 
 // FNV-1a 32-bit(UTF-8 字节流);非加密,仅作 ID 自校验指纹。两端镜像同实现。
 export function fnv1a32Hex(input: string): string {
@@ -158,11 +129,11 @@ export function artifactIdFor(jobId: string, index: number, a: ArtifactMetaInput
   return `art_${jobId}_${index}_${artifactFingerprint(a)}`;
 }
 
-export interface ParsedArtifactId { jobId: string; index: number; fp?: string }
+export interface ParsedArtifactId { jobId: string; index: number; fp: string }
 export function parseArtifactId(id: string): ParsedArtifactId | null {
   const m = ARTIFACT_ID_RE.exec(id);
   if (!m) return null;
-  return { jobId: m[1], index: Number(m[2]), ...(m[3] ? { fp: m[3] } : {}) };
+  return { jobId: m[1], index: Number(m[2]), fp: m[3] };
 }
 
 // ---- descriptor 派生(list / status / MCP / content 各端共用的**唯一**派生实现)----
@@ -214,36 +185,24 @@ export function deriveArtifactDescriptors(
   });
 }
 
-// ---- 校验(手写,零依赖;A 侧镜像同规则)----
-const SOURCES: readonly string[] = ["cloud", "workspace", "local", "message", "automation"];
-const TRUSTS: readonly string[] = ["sandboxed", "platform", "external", "unverified"];
-const ROLES: readonly string[] = ["primary", "preview", "log", "intermediate"];
-const VSTATUS: readonly string[] = ["verified", "unverified", "pending", "mismatch"];
-const SHA256_RE = /^[0-9a-f]{64}$/;
-
 export type ValidateResult = { ok: true; value: ArtifactDescriptor } | { ok: false; errors: string[] };
 
 export function validateArtifactDescriptor(v: unknown): ValidateResult {
-  const errors: string[] = [];
-  const o = v as Record<string, unknown> | null;
-  if (!o || typeof o !== "object" || Array.isArray(o)) return { ok: false, errors: ["descriptor must be an object"] };
-  // 未知未来版本:只读/报错,不得静默按 v1 解释(REQ-093 AC#8)。
-  if (o.schemaVersion !== ARTIFACT_SCHEMA_VERSION) errors.push(`unsupported schemaVersion: ${String(o.schemaVersion)} (expected ${ARTIFACT_SCHEMA_VERSION})`);
-  if (typeof o.id !== "string" || !ARTIFACT_ID_RE.test(o.id)) errors.push("id must match art_<jobId>_<index>[_<fp8>]");
-  if (typeof o.source !== "string" || !SOURCES.includes(o.source)) errors.push("source invalid");
-  if (typeof o.name !== "string" || o.name.length === 0) errors.push("name required");
-  if (o.size !== undefined && (typeof o.size !== "number" || o.size < 0 || !Number.isFinite(o.size))) errors.push("size must be a non-negative number");
-  if (o.sha256 !== undefined && (typeof o.sha256 !== "string" || !SHA256_RE.test(o.sha256))) errors.push("sha256 must be 64 lowercase hex chars");
-  if (typeof o.trust !== "string" || !TRUSTS.includes(o.trust)) errors.push("trust invalid");
-  if (typeof o.role !== "string" || !ROLES.includes(o.role)) errors.push("role invalid");
-  const cr = o.contentRef as Record<string, unknown> | undefined;
-  if (!cr || cr.kind !== "http-stream" || typeof cr.url !== "string" || cr.auth !== "bearer") errors.push("contentRef must be {kind:'http-stream', url, auth:'bearer'}");
-  const vf = o.verification as Record<string, unknown> | undefined;
-  if (!vf || typeof vf.status !== "string" || !VSTATUS.includes(vf.status)) errors.push("verification.status invalid");
-  const pv = o.provenance as Record<string, unknown> | undefined;
-  if (!pv || (pv.producer !== "pipeline" && pv.producer !== "bounded-agent") || typeof pv.jobId !== "string") errors.push("provenance must have producer + jobId");
-  if (errors.length > 0) return { ok: false, errors };
-  return { ok: true, value: o as unknown as ArtifactDescriptor };
+  try {
+    return { ok: true, value: decodeContract("ArtifactDescriptorV1", v, "artifact") }
+  } catch (error) {
+    if (error instanceof ContractIncompatibleError) {
+      return {
+        ok: false,
+        errors: [
+          error.failure.received_version === ARTIFACT_SCHEMA_VERSION
+            ? "artifact descriptor failed pinned schema validation"
+            : `unsupported schemaVersion: ${error.failure.received_version} (expected ${ARTIFACT_SCHEMA_VERSION})`,
+        ],
+      }
+    }
+    return { ok: false, errors: ["artifact descriptor failed pinned schema validation"] }
+  }
 }
 
 // ---- 内联内容清洗(公共视图边界防线,REQ-092 AC#1)----

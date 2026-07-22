@@ -14,11 +14,6 @@
 //      由它在原子准入临界区内 rename 落最终名,否则分类报错 + 删 `.part`;
 //   ⑥ 重试永不与旧 `.part` 相撞:后缀含 pid/时钟/序号/随机量,open 用 "wx" 保持 loud。
 //
-// 兼容窗口(REQ-092 交付 6;⏰ INLINE_ARTIFACT_COMPAT_REMOVAL = 2026-08-15 后与平台 flag 一起删):
-//   已部署平台可能尚未认得带指纹的 artifact ID / 新 content endpoint → content 404 时在 MAIN 内部
-//   回退 legacy 内联路径(status?compat=inline-artifacts-v0),解码后走同一 `.part` 写入器 + 同限额 +
-//   同 sha256 校验 —— 内联内容永不转发给 renderer。
-//
 // token 卫生(REQ-092 AC#5):bearer 只进请求头;所有错误文案过 sanitizeTransportError(剥 token /
 // bearer 词形),错误面只携带分类码 + 净化后的 detail。
 
@@ -26,13 +21,7 @@ import * as crypto from "node:crypto"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import type { FileHandle } from "node:fs/promises"
-import { ALPHA_PATHS } from "../shared/alpha-config"
-import {
-  ARTIFACT_MAX_BYTES,
-  INLINE_ARTIFACT_COMPAT_FLAG,
-  parseArtifactId,
-  validateArtifactDescriptor,
-} from "../shared/cloud-artifact-descriptor"
+import { ARTIFACT_MAX_BYTES, validateArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
 
 export type ArtifactDownloadErrorCode =
   | "invalid-artifact" // 提供的 artifact 引用没有可用的 id/contentRef
@@ -40,11 +29,12 @@ export type ArtifactDownloadErrorCode =
   | "unsafe-url" // contentRef.url 逃出 cloud origin(敌意 descriptor 防 bearer 出走)
   | "unsafe-path" // 目标路径不是绝对路径(调用方必须先过 safeResolveInAlpha)
   | "not-authenticated"
+  | "contract-incompatible"
   | "no-cloud-endpoint"
   | "unauthorized"
   | "forbidden"
   | "not-found"
-  | "no-content" // compat:legacy 条目没有内联内容(产出端超限省略等)
+  | "no-content"
   | "over-limit"
   | "size-mismatch"
   | "sha256-mismatch"
@@ -75,16 +65,15 @@ export type ArtifactDownloadOutcome =
       sha256: string
       /** verified = 至少一个可信 digest(descriptor/ETag/Digest)比中;unverified = 无 digest 可比。 */
       verification: "verified" | "unverified"
-      via: "stream" | "inline-compat"
+      via: "stream"
     }
   | { ok: false; error: ArtifactDownloadErrorCode; detail?: string }
 
 export type ArtifactDownloadRequest = {
-  /** descriptor(schemaVersion=1,严格校验)或旧部署的 legacy meta(`{id, name?, size?, sha256?}`)。 */
+  /** Pinned ArtifactDescriptorV1. Legacy metadata is rejected without fallback. */
   artifact: unknown
   /** 绝对目标路径;调用方负责 sanitizeArtifactName + safeResolveInAlpha(ADR-019 守卫复用)。 */
   targetPath: string
-  /** compat 回退用的 job id 兜底(artifact id 可解析时以解析结果优先)。 */
   jobId?: string
   signal?: AbortSignal
   onProgress?: (p: ArtifactDownloadProgress) => void
@@ -132,38 +121,32 @@ export function uniquePartPath(target: string): string {
   return `${target}.${tag}.part`
 }
 
-// ---- artifact 引用归一(descriptor 严格校验;legacy meta 宽容但零内容字段)----
+// ---- artifact 引用归一(descriptor 严格校验)----
 type NormalizedRef = { id: string; name?: string; size?: number; sha256?: string; url: string }
 
 function normalizeArtifactRef(artifact: unknown): { ref: NormalizedRef } | { err: ArtifactDownloadOutcome } {
   if (!artifact || typeof artifact !== "object" || Array.isArray(artifact)) {
     return { err: { ok: false, error: "invalid-artifact" } }
   }
-  const o = artifact as Record<string, unknown>
-  if ("schemaVersion" in o || "contentRef" in o) {
-    const v = validateArtifactDescriptor(o)
-    if (!v.ok) {
-      const schemaErr = v.errors.some((e) => e.startsWith("unsupported schemaVersion"))
-      return {
-        err: {
-          ok: false,
-          error: schemaErr ? "unsupported-schema" : "invalid-artifact",
-          detail: v.errors.join("; "),
-        },
-      }
+  const v = validateArtifactDescriptor(artifact)
+  if (!v.ok) {
+    const schemaErr = v.errors.some((error) => error.startsWith("unsupported schemaVersion"))
+    return {
+      err: {
+        ok: false,
+        error: schemaErr ? "unsupported-schema" : "invalid-artifact",
+        detail: v.errors.join("; "),
+      },
     }
-    const d = v.value
-    return { ref: { id: d.id, name: d.name, size: d.size, sha256: d.sha256, url: d.contentRef.url } }
   }
-  // 旧部署 artifacts 列表条目(pre-REQ-092):{id, name?, mime?, size?} —— 内容路径按 ID 拼 content endpoint。
-  if (typeof o.id !== "string" || !o.id) return { err: { ok: false, error: "invalid-artifact" } }
+  const descriptor = v.value
   return {
     ref: {
-      id: o.id,
-      name: typeof o.name === "string" ? o.name : undefined,
-      size: typeof o.size === "number" && Number.isFinite(o.size) && o.size >= 0 ? o.size : undefined,
-      sha256: typeof o.sha256 === "string" && SHA256_HEX_RE.test(o.sha256) ? o.sha256 : undefined,
-      url: `${ALPHA_PATHS.cloudArtifacts}/${encodeURIComponent(o.id)}/content`,
+      id: descriptor.id,
+      name: descriptor.name,
+      size: descriptor.size,
+      sha256: descriptor.sha256,
+      url: descriptor.contentRef.url,
     },
   }
 }
@@ -244,22 +227,6 @@ async function* noChunks(): AsyncGenerator<Uint8Array> {
   return
 }
 
-/** compat 路径:内联编码文本按 4 字符对齐分片解码 → 与流路径共用同一写入器(单遍 sha/限额/.part)。 */
-async function* inlineCompatChunks(encoded: string): AsyncGenerator<Uint8Array> {
-  const STEP = 512 * 1024 // 4 的倍数:分片解码不破坏编码组边界
-  for (let i = 0; i < encoded.length; i += STEP) {
-    yield Buffer.from(encoded.slice(i, i + STEP), "base64") // REQ-092-compat:窗口期 legacy 内联解码(仅 main)
-  }
-}
-
-/** 解码后的字节数上界(用于在分配任何解码 buffer 之前做限额判断)。 */
-export function inlineDecodedBytes(encoded: string): number {
-  let pad = 0
-  if (encoded.endsWith("==")) pad = 2
-  else if (encoded.endsWith("=")) pad = 1
-  return Math.floor(encoded.length / 4) * 3 - pad + (encoded.length % 4 === 0 ? 0 : 3)
-}
-
 // ---- 核心写入器:chunk 流 → .part(计数 + 单遍 sha256)→ 校验 → 原子 rename ----
 type WriteCheckedOpts = {
   targetPath: string
@@ -272,7 +239,7 @@ type WriteCheckedOpts = {
   expectedSha256?: string
   signal?: AbortSignal
   onProgress?: (p: ArtifactDownloadProgress) => void
-  via: "stream" | "inline-compat"
+  via: "stream"
   finalize: ArtifactFinalizer
 }
 
@@ -475,11 +442,7 @@ async function streamStage(
   idleMs: number,
   res: Response,
 ): Promise<ArtifactDownloadOutcome> {
-  if (res.status === 404) {
-    // 已部署平台可能不认得带指纹的 ID / 尚未上新 content endpoint → 窗口期 legacy 内联回退(仅 main)。
-    await discardBody(res)
-    return fetchInlineCompat(req, ref, deps, maxBytes)
-  }
+  if (res.status === 404) return discardAnd(res, { ok: false, error: "not-found" })
   if (res.status === 401) return discardAnd(res, { ok: false, error: "unauthorized" })
   if (res.status === 403) return discardAnd(res, { ok: false, error: "forbidden" })
   if (res.status === 413) return discardAnd(res, { ok: false, error: "over-limit", detail: "platform rejected: artifact exceeds max size" })
@@ -533,136 +496,4 @@ async function discardBody(res: Response): Promise<void> {
 async function discardAnd(res: Response, outcome: ArtifactDownloadOutcome): Promise<ArtifactDownloadOutcome> {
   await discardBody(res)
   return outcome
-}
-
-// ---- 兼容窗口:legacy 内联回退(REQ-092 交付 6;⏰ 2026-08-15 移除,见 INLINE_ARTIFACT_COMPAT_REMOVAL)----
-// 旧内联 status JSON 会把内容放大 ~4/3,必须整份缓冲才能 JSON.parse —— 诚实缓解:响应缓冲带硬帽
-// (maxBytes*4/3 + 2MiB),Content-Length 前置判 + 边读边计数,越界即 abort。解码前再按解码字节数过限额,
-// 解码分片写入与流路径同一 writeChunksChecked(同限额、同 sha256、同 .part/rename)。
-async function fetchInlineCompat(
-  req: ArtifactDownloadRequest,
-  ref: NormalizedRef,
-  deps: ArtifactDownloadDeps,
-  maxBytes: number,
-): Promise<ArtifactDownloadOutcome> {
-  if (req.signal?.aborted) return { ok: false, error: "cancelled" }
-  const fetchImpl = deps.fetchImpl ?? fetch
-  const idleMs = deps.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS
-  const parsed = parseArtifactId(ref.id)
-  const jobId = parsed?.jobId ?? req.jobId
-  if (!jobId) {
-    return { ok: false, error: "not-found", detail: "content endpoint 404 and no job id available for legacy fallback" }
-  }
-  const statusUrl = resolveContentUrl(
-    `${ALPHA_PATHS.cloudJobs}/${encodeURIComponent(jobId)}?compat=${INLINE_ARTIFACT_COMPAT_FLAG}`,
-    deps.base,
-  )
-  if (!statusUrl) return { ok: false, error: "unsafe-url" }
-
-  const f = await authedFetch(
-    fetchImpl,
-    statusUrl,
-    { authorization: `Bearer ${deps.token}`, "x-alpha-compat": INLINE_ARTIFACT_COMPAT_FLAG },
-    req.signal,
-    idleMs,
-    deps.token,
-  )
-  if ("err" in f) return f.err
-  const res = f.res
-  try {
-    return await inlineCompatStage(req, ref, deps, maxBytes, idleMs, parsed, res)
-  } finally {
-    f.done()
-  }
-}
-
-async function inlineCompatStage(
-  req: ArtifactDownloadRequest,
-  ref: NormalizedRef,
-  deps: ArtifactDownloadDeps,
-  maxBytes: number,
-  idleMs: number,
-  parsed: ReturnType<typeof parseArtifactId>,
-  res: Response,
-): Promise<ArtifactDownloadOutcome> {
-  if (res.status === 401) return discardAnd(res, { ok: false, error: "unauthorized" })
-  if (res.status === 403) return discardAnd(res, { ok: false, error: "forbidden" })
-  if (res.status === 404) return discardAnd(res, { ok: false, error: "not-found" })
-  if (!res.ok) return discardAnd(res, { ok: false, error: `http-${res.status}` })
-
-  // 响应缓冲硬帽:Content-Length 前置判 + 边读边计数(内联 JSON ≈ 内容 * 4/3 + 信封)。
-  const cap = Math.ceil((maxBytes * 4) / 3) + 2 * 1024 * 1024
-  const lenRaw = res.headers.get("content-length")
-  if (lenRaw != null && lenRaw !== "") {
-    const n = Number(lenRaw)
-    if (Number.isFinite(n) && n > cap) {
-      return discardAnd(res, { ok: false, error: "over-limit", detail: `legacy status response ${n} bytes > cap ${cap}` })
-    }
-  }
-  const buf: Uint8Array[] = []
-  let got = 0
-  if (res.body) {
-    try {
-      for await (const chunk of bodyChunks(res.body, idleMs)) {
-        if (req.signal?.aborted) return { ok: false, error: "cancelled" }
-        got += chunk.byteLength
-        if (got > cap) {
-          return { ok: false, error: "over-limit", detail: `legacy status response exceeded cap ${cap}` }
-        }
-        buf.push(chunk)
-      }
-    } catch (error) {
-      if (req.signal?.aborted) return { ok: false, error: "cancelled" }
-      return { ok: false, error: "network", detail: sanitizeTransportError(errMsg(error), [deps.token]) }
-    }
-  }
-
-  let status: unknown
-  try {
-    status = JSON.parse(Buffer.concat(buf).toString("utf8"))
-  } catch {
-    return { ok: false, error: "not-found", detail: "legacy status response is not JSON" }
-  }
-  const result = (status as { result?: unknown } | null)?.result
-  const arts = (result as { artifacts?: unknown } | null)?.artifacts
-  if (!Array.isArray(arts)) return { ok: false, error: "not-found", detail: "legacy result carries no artifacts" }
-
-  // 定位条目:ID 内嵌 index 优先(名字都在时须一致),否则按名字匹配。
-  let entry: Record<string, unknown> | undefined
-  if (parsed && parsed.index >= 0 && parsed.index < arts.length) {
-    const cand = arts[parsed.index] as Record<string, unknown> | undefined
-    const candName = cand && typeof cand.name === "string" ? cand.name : undefined
-    if (cand && (ref.name === undefined || candName === undefined || candName === ref.name)) entry = cand
-  }
-  if (!entry && ref.name !== undefined) {
-    entry = arts.find((a): a is Record<string, unknown> => !!a && typeof a === "object" && (a as Record<string, unknown>).name === ref.name)
-  }
-  if (!entry) return { ok: false, error: "not-found", detail: "artifact not present in legacy result" }
-
-  const inline = entry.base64 // REQ-092-compat:窗口期 legacy 内联字段,仅 main 消费,永不进 renderer
-  if (typeof inline !== "string") {
-    return { ok: false, error: "no-content", detail: "legacy artifact entry has no inline content" }
-  }
-  // 限额(与流路径同值):按解码后字节数在分配任何解码 buffer 之前判断。
-  const decoded = inlineDecodedBytes(inline)
-  if (decoded > maxBytes) {
-    return { ok: false, error: "over-limit", detail: `legacy inline artifact ${decoded} bytes > max ${maxBytes}` }
-  }
-  const entrySha = typeof entry.sha256 === "string" && SHA256_HEX_RE.test(entry.sha256) ? entry.sha256 : undefined
-  const shaCandidates = [...new Set([ref.sha256, entrySha].filter((x): x is string => typeof x === "string"))]
-  if (shaCandidates.length > 1) {
-    return { ok: false, error: "sha256-mismatch", detail: "digest sources disagree (descriptor vs legacy entry)" }
-  }
-  const entrySize = typeof entry.size === "number" && Number.isFinite(entry.size) ? entry.size : undefined
-
-  return writeChunksChecked(inlineCompatChunks(inline), {
-    targetPath: req.targetPath,
-    maxBytes,
-    expectedSize: ref.size ?? entrySize,
-    expectedSha256: shaCandidates[0],
-    signal: req.signal,
-    onProgress: req.onProgress,
-    via: "inline-compat",
-    finalize: deps.finalize,
-  })
 }

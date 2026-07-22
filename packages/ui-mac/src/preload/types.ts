@@ -80,6 +80,16 @@ export type FatalRendererError = {
   os?: string
 }
 
+// Renderer/preload projection of the safe contract-health wire. The runtime authority and decoder
+// remain in @alpha-code/contracts-consumer; this type intentionally carries no producer payload.
+export type ContractFailure = {
+  code: "contract-incompatible"
+  surface: "identity" | "endpoint-discovery" | "account" | "model-catalog" | "cloud-http" | "cloud-mcp" | "artifact"
+  expected_version: 1
+  received_version: number | "missing" | "unknown"
+  reason: "schema-validation" | "size-limit" | "route-purpose-mismatch"
+}
+
 // alpha-code ↔ platform auth (see main/alpha-auth.ts + docs/contracts/platform-integration.md). Defined
 // here so main, preload and renderer share one shape (the established cross-bundle type pattern).
 export type AuthMode = "byok" | "platform"
@@ -91,7 +101,12 @@ export type AuthState = {
   expiresAt?: number
 }
 // B11 复扫行16:登录链失败原因(main 只送 code,文案由 renderer i18n 映射)。
-export type AuthErrorCode = "provider_error" | "invalid_callback" | "state_mismatch" | "exchange_failed"
+export type AuthErrorCode =
+  | "provider_error"
+  | "invalid_callback"
+  | "state_mismatch"
+  | "exchange_failed"
+  | "contract_incompatible"
 
 // alpha account summary — balance / membership / token usage, read from the alpha-platform (B)
 // in-region account-server using the stored JWT. Shared cross-bundle like AuthState. Contract:
@@ -121,7 +136,7 @@ export type AccountTransaction = {
   title: string
   amountFen: number
   createdAt: string
-  status: "success" | "pending"
+  status: "success" | "failed"
 }
 /** Result envelope: the payload, or an error code (not-authenticated / unauthorized / http-NNN / network). */
 export type AccountResult<T> = T | { error: string }
@@ -226,18 +241,18 @@ export type CloudJobEnvelope = {
   output_schema?: Record<string, unknown>
 }
 export type CloudDispatchResult = {
-  api_version: string
+  schema_version: 1
   job_id: string
-  status: string
-  autonomy: string
+  status: "queued"
+  autonomy: "pipeline" | "bounded-agent"
   kind?: string
   urls: { status: string; events: string; result: string }
 }
 export type CloudJobStatus = {
-  api_version: string
+  schema_version: 1
   job_id: string
   status: "queued" | "running" | "blocked" | "completed" | "failed" | "cancelled"
-  autonomy: string
+  autonomy: "pipeline" | "bounded-agent"
   kind?: string
   progress: { phase: string; completed_steps?: number; total_steps?: number }
   counters?: { model_calls: number; tokens_in: number; tokens_out: number; cost_usd: number }
@@ -260,11 +275,12 @@ export type CloudArtifactMeta = {
   content_url?: string
 } & Partial<Omit<CloudArtifactDescriptor, "id" | "name" | "size" | "sha256">>
 export type CloudArtifactList = {
+  schema_version: 1
   job_id: string
-  status: string
-  artifacts: CloudArtifactMeta[]
+  status: CloudJobStatus["status"]
+  artifacts: CloudArtifactDescriptor[]
   artifact_ids: string[]
-  result?: unknown
+  result: unknown
 }
 /** REQ-092:下载进度(main 推送;IPC 上只有计数,永远没有内容字节)。 */
 export type CloudArtifactProgress = {
@@ -282,7 +298,7 @@ export type CloudArtifactDownloadResult =
       bytes: number
       sha256: string
       verification: "verified" | "unverified"
-      via: "stream" | "inline-compat"
+      via: "stream"
     }
   | { ok: false; error: string; detail?: string }
 /** B3/ADR-019 artifact 回流:写 <projectDir>/.alpha/runs/<runId>/ 的结果清单(main 侧 alpha-workdir.ts)。 */
@@ -359,6 +375,10 @@ export type AlphaEnvironmentInfo = {
 
 export type ElectronAPI = {
   killSidecar: () => Promise<void>
+  contracts: {
+    health: () => Promise<ContractFailure | null>
+    subscribe: (cb: (failure: ContractFailure) => void) => () => void
+  }
   recovery: {
     onIncident: (cb: (incident: RecoveryIncidentWire) => void) => () => void
     submit: (request: { incident: string; action: RecoveryAction }) => Promise<RecoveryActionResult>

@@ -33,7 +33,13 @@ export function subscribeCloudJobEvents(jobId: string, sink: (ev: CloudJobEvent)
 
   async function loop() {
     while (!stopped) {
-      const token = getAccessToken()
+      let token: string | undefined
+      try {
+        token = getAccessToken("cloud.read")
+      } catch {
+        sink({ event: "error", data: { reason: "contract-incompatible" } })
+        return
+      }
       if (!token || !base) {
         sink({ event: "error", data: { reason: "not-authenticated" } })
         return

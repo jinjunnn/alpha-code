@@ -1,0 +1,18 @@
+{
+  "kind": "schema",
+  "contract": "TokenClaimsV1",
+  "expect": "valid",
+  "value": {
+    "schema_version": 1,
+    "iss": "alpha-web",
+    "aud": "alpha-platform-api",
+    "sub": "tenant_fixture",
+    "token_use": "platform_access",
+    "purpose": "cloud.dispatch",
+    "scope": ["cloud.dispatch", "cloud.read"],
+    "iat": 1800000000,
+    "exp": 1800003600,
+    "jti": "jti-access-fixture",
+    "edition": "cn"
+  }
+}
