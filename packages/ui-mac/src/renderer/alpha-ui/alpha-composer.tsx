@@ -101,10 +101,11 @@ function useChip() {
 const stop = (e: Event) => e.stopPropagation()
 
 /* 逃出 overflow 裁剪的弹层(Portal 到 body、fixed 定位、朝上开)。 */
-function ChipPopover(props: {
+export function ChipPopover(props: {
   anchor: HTMLElement | undefined
   align?: "left" | "right"
   minWidth?: number
+  role?: "menu"
   onEscape?: () => void
   children: JSX.Element
 }) {
@@ -113,6 +114,7 @@ function ChipPopover(props: {
   const r = a.getBoundingClientRect()
   const vw = window.innerWidth
   const minW = props.minWidth ?? 200
+  let popover: HTMLDivElement | undefined
   const style: JSX.CSSProperties = {
     position: "fixed",
     bottom: `${Math.round(window.innerHeight - r.top + 8)}px`,
@@ -122,15 +124,33 @@ function ChipPopover(props: {
   }
   if (props.align === "right") style.right = `${Math.round(Math.max(8, vw - r.right))}px`
   else style.left = `${Math.round(Math.min(Math.max(8, r.left), vw - minW - 8))}px`
+  onMount(() => {
+    queueMicrotask(() =>
+      (
+        popover?.querySelector<HTMLElement>(
+          "button:not(:disabled), [href], input:not(:disabled), [tabindex]:not([tabindex='-1'])",
+        ) ?? popover
+      )?.focus(),
+    )
+  })
+  onCleanup(() => {
+    const el = document.activeElement
+    if (!popover || popover.contains(el) || el === document.body || el === null)
+      queueMicrotask(() => a.isConnected && a.focus())
+  })
   return (
     <Portal>
       <div
+        ref={popover}
         class="a-ui a-pop a-pop-fixed"
+        role={props.role}
+        tabindex="-1"
         style={style}
         onClick={stop}
         onKeyDown={(event) => {
           if (event.key !== "Escape") return
           event.preventDefault()
+          event.stopPropagation()
           props.onEscape?.()
           a.focus()
         }}
@@ -200,11 +220,14 @@ const TermGlyph = () => (
 /* ── + 按钮:打开统一装配弹窗(REQ-073)—— 与 @ 同一弹窗,内容/键盘/分节见
  * composer-autocomplete(添加/AGENT/文件/扩展);旧 AddButton 的四条「扩展」占位行
  * (文档/PDF/表格/连接器全是同一个 setExtHubOpen 动作)随之收敛为弹窗单行「扩展市场…」。 */
-function AddButton(props: { onOpen: () => void }) {
+function AddButton(props: { onOpen: () => void; expanded: boolean }) {
   return (
     <button
       class="a-chip a-chip-icon"
       title={t("alpha.composer.assemble")}
+      aria-label={t("alpha.composer.assemble")}
+      aria-haspopup="listbox"
+      aria-expanded={props.expanded}
       onClick={(e) => (stop(e), props.onOpen())}
     >
       <Plus />
@@ -217,7 +240,7 @@ const permLabel = (mode: PermMode) => mode === "full" ? t("alpha.composer.permFu
 
 type CommandApi = ReturnType<typeof useCommand>
 
-function PermChip(props: { command: CommandApi }) {
+export function PermChip(props: { command: CommandApi }) {
   const { isOpen, toggle, close } = useChip()
   let btn: HTMLButtonElement | undefined
   const pick = (m: PermMode) => {
@@ -231,7 +254,14 @@ function PermChip(props: { command: CommandApi }) {
   }
   return (
     <div class="a-pop-wrap" data-kind="perm">
-      <button ref={btn} class="a-chip a-chip-perm" data-mode={composerPerm()} onClick={(e) => (stop(e), toggle())}>
+      <button
+        ref={btn}
+        class="a-chip a-chip-perm"
+        data-mode={composerPerm()}
+        aria-haspopup="menu"
+        aria-expanded={isOpen()}
+        onClick={(e) => (stop(e), toggle())}
+      >
         <Switch fallback={<ShieldAsk />}>
           <Match when={composerPerm() === "full"}>
             <ShieldSolid />
@@ -244,17 +274,31 @@ function PermChip(props: { command: CommandApi }) {
         <Chevron />
       </button>
       <Show when={isOpen()}>
-        <ChipPopover anchor={btn} align="left" minWidth={230}>
-          <div class="a-pop-label">{t("alpha.composer.permissions")}</div>
-          <button class="a-pop-item" classList={{ "is-on": composerPerm() === "full" }} onClick={() => pick("full")}>
+        <ChipPopover anchor={btn} align="left" minWidth={230} role="menu" onEscape={close}>
+          <div class="a-pop-label" role="presentation">{t("alpha.composer.permissions")}</div>
+          <button
+            class="a-pop-item"
+            classList={{ "is-on": composerPerm() === "full" }}
+            role="menuitemradio"
+            aria-checked={composerPerm() === "full"}
+            onClick={() => pick("full")}
+          >
             <ShieldSolid /> {t("alpha.composer.permFull")} <span class="a-pop-desc">{t("alpha.composer.permFullHint")}</span>
           </button>
-          <button class="a-pop-item" classList={{ "is-on": composerPerm() === "ask" }} onClick={() => pick("ask")}>
+          <button
+            class="a-pop-item"
+            classList={{ "is-on": composerPerm() === "ask" }}
+            role="menuitemradio"
+            aria-checked={composerPerm() === "ask"}
+            onClick={() => pick("ask")}
+          >
             <ShieldAsk /> {t("alpha.composer.permAsk")} <span class="a-pop-desc">{t("alpha.composer.permAskHint")}</span>
           </button>
           <button
             class="a-pop-item"
             classList={{ "is-on": composerPerm() === "readonly" }}
+            role="menuitemradio"
+            aria-checked={composerPerm() === "readonly"}
             onClick={() => pick("readonly")}
           >
             <ShieldEye /> {t("alpha.composer.permReadonly")} <span class="a-pop-desc">{t("alpha.composer.permReadonlyHint")}</span>
@@ -414,6 +458,7 @@ function EffortChip(props: {
               <button
                 class="a-pop-item"
                 classList={{ "is-on": composerEffortSel() === null }}
+                aria-current={composerEffortSel() === null ? "true" : undefined}
                 disabled={!props.modelChainReady()}
                 onClick={() => selectVariant(null)}
               >
@@ -424,6 +469,7 @@ function EffortChip(props: {
                   <button
                     class="a-pop-item"
                     classList={{ "is-on": composerEffortSel() === v }}
+                    aria-current={composerEffortSel() === v ? "true" : undefined}
                     disabled={!props.modelChainReady()}
                     onClick={() => selectVariant(v)}
                   >
@@ -993,7 +1039,12 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
                 <span class="a-comp-att-name" title={`${a.name} · ${(a.size / 1024 / 1024).toFixed(1)}MB`}>
                   {a.name}
                 </span>
-                <button class="a-comp-att-x" title={t("alpha.composer.removeAttachment")} onClick={() => removeAttachment(a.id)}>
+                <button
+                  class="a-comp-att-x"
+                  title={t("alpha.composer.removeAttachment")}
+                  aria-label={t("alpha.composer.removeAttachment")}
+                  onClick={() => removeAttachment(a.id)}
+                >
                   ×
                 </button>
               </span>
@@ -1006,6 +1057,12 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         class="a-comp-input"
         rows="1"
         placeholder={composerAgent() === "plan" ? t("alpha.composer.placeholderPlan") : t("alpha.composer.placeholder")}
+        aria-label={composerAgent() === "plan" ? t("alpha.composer.placeholderPlan") : t("alpha.composer.placeholder")}
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={auto.open()}
+        aria-controls={auto.listboxId}
+        aria-activedescendant={auto.activeDescendant()}
         value={text()}
         onInput={(e) => {
           setText(e.currentTarget.value)
@@ -1031,7 +1088,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         </div>
       </Show>
       <div class="a-comp-bar">
-        <AddButton onOpen={() => auto.toggleAssemble()} />
+        <AddButton expanded={auto.assembleOpen()} onOpen={() => auto.toggleAssemble()} />
         <PermChip command={command} />
         <PlanChip />
         <div class="a-comp-grow" />
@@ -1064,12 +1121,19 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
               disabled={!canSend()}
               onClick={() => void submit()}
               title={t("alpha.composer.send")}
+              aria-label={t("alpha.composer.send")}
             >
               <ArrowUp />
             </button>
           }
         >
-          <button class="a-comp-send a-comp-stop" data-ready onClick={() => void abort()} title={t("alpha.composer.abort")}>
+          <button
+            class="a-comp-send a-comp-stop"
+            data-ready
+            onClick={() => void abort()}
+            title={t("alpha.composer.abort")}
+            aria-label={t("alpha.composer.abort")}
+          >
             <StopSquare />
           </button>
         </Show>

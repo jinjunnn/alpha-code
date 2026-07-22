@@ -68,6 +68,7 @@ type Item = SlashItem | AssembleRow
 
 /** REQ-072 B 案:`/agents` 单条管理入口(agent 不平铺进 `/`,指派走 `@`,GLOSSARY「输入语法分工」)。 */
 const AGENTS_ENTRY_ID = "alpha.slash.agents"
+let autocompleteSeq = 0
 
 export function createComposerAutocomplete(opts: {
   text: Accessor<string>
@@ -89,6 +90,7 @@ export function createComposerAutocomplete(opts: {
    *  no-op —— 唯一消费方 AlphaComposer 恒传。 */
   onAttach?: () => void
 }) {
+  const listboxId = `a-composer-autocomplete-${++autocompleteSeq}`
   const [active, setActive] = createSignal(0)
   // Esc dismisses the menu for the CURRENT token only; typing anything re-opens (upstream parity).
   const [dismissed, setDismissed] = createSignal<string | null>(null)
@@ -289,16 +291,23 @@ export function createComposerAutocomplete(opts: {
   })
   // REQ-072 根因①修复:active 只在列表**内容**变化时归零。原实现对 items() 引用变化归零,而
   // onKeyDown 每键 bump → memo 重算出新引用 → ↑↓ 刚设的选中被微任务重置回 0(键盘导航貌似失效)。
-  const itemKey = (it: Item) =>
+  const itemIdentity = (it: Item) =>
     it.kind === "slash"
       ? `s:${it.id}`
       : it.kind === "action"
-        ? `x:${it.id}:${it.label}`
+        ? `x:${it.id}`
         : it.kind === "mode"
-          ? `m:${it.id}:${it.on}`
+          ? `m:${it.id}`
           : it.kind === "agent"
             ? `a:${it.name}`
             : `f:${it.path}`
+  const itemKey = (it: Item) =>
+    it.kind === "action"
+      ? `${itemIdentity(it)}:${it.label}`
+      : it.kind === "mode"
+        ? `${itemIdentity(it)}:${it.on}`
+        : itemIdentity(it)
+  const optionId = (item: Item) => `${listboxId}-option-${encodeURIComponent(itemIdentity(item))}`
   const itemsSig = createMemo(() => items().map(itemKey).join(" "))
   createEffect(on(itemsSig, () => setActive(0)))
 
@@ -308,6 +317,10 @@ export function createComposerAutocomplete(opts: {
     if (!v) return false
     if (items().length > 0) return true
     return v.query.length > 0
+  })
+  const activeDescendant = createMemo(() => {
+    const item = items()[active()]
+    return open() && item ? optionId(item) : undefined
   })
 
   // ── selection ───────────────────────────────────────────────────────────────
@@ -608,6 +621,7 @@ export function createComposerAutocomplete(opts: {
     const disabled = () => p.it.kind === "action" && !!p.it.disabled
     return (
       <button
+        id={optionId(p.it)}
         class="a-pop-item a-auto-row"
         classList={{ "is-active": p.idx === active() && !disabled() }}
         role="option"
@@ -626,12 +640,12 @@ export function createComposerAutocomplete(opts: {
 
   const Menu = (): JSX.Element => (
     <Show when={open()}>
-      <div class="a-pop a-comp-auto" role="listbox">
+      <div id={listboxId} class="a-pop a-comp-auto" role="listbox">
         <div class="a-comp-auto-scroll" ref={scrollEl}>
           <Show
             when={items().length > 0 || (view()?.mode === "at" && !view()?.query)}
             fallback={
-              <div class="a-comp-empty">
+              <div class="a-comp-empty" role="status">
                 <b>{t("alpha.autocomplete.noMatches")}</b>{t("alpha.autocomplete.noMatchesHint")}
               </div>
             }
@@ -643,7 +657,7 @@ export function createComposerAutocomplete(opts: {
                 <For each={assembleData()?.groups ?? []}>
                   {(g) => (
                     <>
-                      <div class="a-comp-sec">{groupLabel(g.label)}</div>
+                      <div class="a-comp-sec" role="presentation">{groupLabel(g.label)}</div>
                       <Show when={g.hint}>
                         <div class="a-comp-hint">{groupHint(g.hint)}</div>
                       </Show>
@@ -661,7 +675,7 @@ export function createComposerAutocomplete(opts: {
                 <For each={slashData()!.groups}>
                   {(g) => (
                     <>
-                      <div class="a-comp-sec">{groupLabel(g.label)}</div>
+                      <div class="a-comp-sec" role="presentation">{groupLabel(g.label)}</div>
                       <For each={g.items}>{(it) => <Row it={it} idx={(slashData()?.flat ?? []).indexOf(it)} />}</For>
                     </>
                   )}
@@ -684,7 +698,7 @@ export function createComposerAutocomplete(opts: {
     </Show>
   )
 
-  return { open, onKeyDown, onInput, Menu, toggleAssemble }
+  return { open, assembleOpen: buttonOpen, activeDescendant, listboxId, onKeyDown, onInput, Menu, toggleAssemble }
 }
 
 function sourceLabel(tag: SourceTag) {
