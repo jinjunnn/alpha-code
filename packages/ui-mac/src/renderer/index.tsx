@@ -49,7 +49,6 @@ import { SurfaceBoundary } from "./alpha-ui/surface-boundary"
 import { RuntimeRecoveryHost } from "./alpha-ui/RuntimeRecoveryHost"
 import { UpstreamDialogHost } from "./alpha-ui/UpstreamDialogHost"
 import type { ResolvedSurfaces } from "../shared/alpha-surfaces"
-import { SessionSpikeHost } from "./alpha-ui/session-spike/session-spike-host" // REQ-087 spike 探针(默认恒 off,T7 清理)
 import { alphaSessionWorkspaceSurface } from "./alpha-ui/session-workspace/alpha-session-workspace" // REQ-088 T2
 import { AlphaOnboarding } from "./alpha-ui/AlphaOnboarding"
 import { AlphaSettings } from "./alpha-ui/settings"
@@ -497,9 +496,7 @@ render(() => {
       const session = productionRoutes.session.mount(resolved)
       if (home) surfaces[productionRoutes.home.surface] = home
       if (newSession) surfaces[productionRoutes["new-session"].surface] = newSession
-      // REQ-088 T2:session 叶经 AlphaSessionWorkspace 正式外框注入(SurfaceBoundary + 窄导出叶)。
-      // 发布态本期仍 legacy(T5 才升级);双闸(ALPHA_SURFACE_SESSION=alpha env-override +
-      // localStorage ALPHA_SESSION_SPIKE)未全开时返回 undefined = 上游默认叶,零变化。
+      // REQ-088 T5:resolved session mode 是唯一挂载条件；legacy 保持上游默认叶。
       if (session) surfaces[productionRoutes.session.surface] = session
       return surfaces
     })
@@ -557,10 +554,6 @@ render(() => {
               </AlphaBoundary>
               <RecoverySurface />
               <DevSurfaceMapInspector resolved={resolvedSurfaces.latest} />
-              {/* REQ-087 spike 容器侧探针:flag off ⇒ 恒 null(session-spike/spike-flag.ts) */}
-              <AlphaBoundary name="SessionSpikeHost">
-                <SessionSpikeHost />
-              </AlphaBoundary>
             </AppInterface>
           )}
         </Show>

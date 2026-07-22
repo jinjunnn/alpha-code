@@ -20,7 +20,7 @@ export type ResolvedSurfaces = Record<SurfaceId, ResolvedSurface>
 export const SURFACE_RELEASE_STATES: Record<SurfaceId, SurfaceReleaseState> = {
   home: "alpha",
   newSession: "alpha",
-  session: "legacy", // REQ-088 not yet delivered
+  session: "alpha",
 }
 
 export const SURFACE_ABI_VERSION = 1

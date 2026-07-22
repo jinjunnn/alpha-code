@@ -133,8 +133,16 @@ describe("REQ-087 §5 timeline 关键机制锚点", () => {
 })
 
 describe("REQ-087 §6 通道结论锁定(REQ-088 C1 合法窄通道,不可静默漂移)", () => {
-  test("session surface 发布默认仍是 legacy(REQ-088 未交付,flags-off 零变化)", () => {
-    expect(SURFACE_RELEASE_STATES.session).toBe("legacy")
+  test("REQ-088 T5:session defaults to alpha and the spike host/localStorage gate are no longer mounted", () => {
+    expect(SURFACE_RELEASE_STATES.session).toBe("alpha")
+    const rendererIndex = readFileSync(join(import.meta.dir, "../../index.tsx"), "utf8")
+    const workspace = readFileSync(
+      join(import.meta.dir, "../session-workspace/alpha-session-workspace.tsx"),
+      "utf8",
+    )
+    expect(rendererIndex).not.toContain("SessionSpikeHost")
+    expect(workspace).not.toContain("isSessionSpikeEnabled")
+    expect(workspace).not.toContain("ALPHA_SESSION_SPIKE")
   })
   test("@opencode-ai/app exports map = 既有六条 + ./surface/session 窄导出(C1,ADR-027 修订)", () => {
     const pkg = JSON.parse(readFileSync(join(APP, "package.json"), "utf8")) as { exports: Record<string, string> }
