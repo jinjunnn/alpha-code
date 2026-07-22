@@ -50,16 +50,19 @@ const { hasSecretFile, syncSecretFiles } = await import("./alpha-secret-files")
 const { preferAppEnv, spawnLocalServer } = await import("./server")
 
 let userDataPath = ""
+const keylessWebSearchFlags = [
+  "OPENCODE_ENABLE_EXA",
+  "OPENCODE_EXPERIMENTAL_EXA",
+  "OPENCODE_ENABLE_PARALLEL",
+  "OPENCODE_EXPERIMENTAL_PARALLEL",
+] as const
 const managedEnv = [
   "SHELL",
   "ALPHA_CLOUD_MCP_URL",
   "ALPHA_ENV_FILE",
   "ALPHA_SECRETS_DISABLE",
   "ALPHA_WEBSEARCH_DISABLE",
-  "OPENCODE_ENABLE_EXA",
-  "OPENCODE_EXPERIMENTAL_EXA",
-  "OPENCODE_ENABLE_PARALLEL",
-  "OPENCODE_EXPERIMENTAL_PARALLEL",
+  ...keylessWebSearchFlags,
   "OPENCODE_EXPERIMENTAL",
 ] as const
 const savedEnv: Partial<Record<(typeof managedEnv)[number], string>> = {}
@@ -85,12 +88,7 @@ afterEach(() => {
 })
 
 function webSearchToolSnapshot() {
-  const local = [
-    process.env.OPENCODE_ENABLE_EXA,
-    process.env.OPENCODE_EXPERIMENTAL_EXA,
-    process.env.OPENCODE_ENABLE_PARALLEL,
-    process.env.OPENCODE_EXPERIMENTAL_PARALLEL,
-  ].some((value) => value === "1")
+  const local = keylessWebSearchFlags.some((key) => process.env[key] === "1")
   return [
     ...(local ? ["websearch"] : []),
     ...(process.env.ALPHA_CLOUD_MCP_URL && hasSecretFile(userDataPath, "ALPHA_CLOUD_TOKEN")
@@ -129,6 +127,29 @@ describe("preferAppEnv websearch selection", () => {
 
     expect(webSearchToolSnapshot()).toEqual(["cloud_web_search"])
     expect(process.env.OPENCODE_ENABLE_PARALLEL).toBe("0")
+  })
+
+  test.each(keylessWebSearchFlags)("disable overrides a shell-exported %s flag in every auth state", (flag) => {
+    process.env.ALPHA_WEBSEARCH_DISABLE = "1"
+    process.env[flag] = "1"
+
+    preferAppEnv(userDataPath)
+
+    expect(webSearchToolSnapshot()).toEqual([])
+    expect(Object.fromEntries(keylessWebSearchFlags.map((key) => [key, process.env[key]]))).toEqual(
+      Object.fromEntries(keylessWebSearchFlags.map((key) => [key, "0"])),
+    )
+  })
+
+  test("disable wins over all shell-exported keyless flags even when cloud is registered", () => {
+    process.env.ALPHA_WEBSEARCH_DISABLE = "1"
+    process.env.ALPHA_CLOUD_MCP_URL = "https://cloud.example/mcp"
+    Object.assign(process.env, Object.fromEntries(keylessWebSearchFlags.map((key) => [key, "1"])))
+    syncSecretFiles(userDataPath, { ALPHA_CLOUD_TOKEN: "token" })
+
+    preferAppEnv(userDataPath)
+
+    expect(keylessWebSearchFlags.map((key) => process.env[key])).toEqual(["0", "0", "0", "0"])
   })
 
   test("logged-out/BYOK exposes only the unchanged local keyless websearch", () => {

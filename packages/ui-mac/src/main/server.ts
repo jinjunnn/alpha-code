@@ -68,7 +68,11 @@ export function preferAppEnv(userDataPath: string) {
   const logger = getLogger()
   const logShellEnvCache = (message: string, extra?: Record<string, unknown>) => write("main", message, extra)
   const forceOffKeylessWebSearch = () => {
-    if (!process.env.ALPHA_CLOUD_MCP_URL || !hasSecretFile(userDataPath, "ALPHA_CLOUD_TOKEN")) return
+    if (
+      !process.env.ALPHA_WEBSEARCH_DISABLE &&
+      (!process.env.ALPHA_CLOUD_MCP_URL || !hasSecretFile(userDataPath, "ALPHA_CLOUD_TOKEN"))
+    )
+      return
     Object.assign(process.env, {
       OPENCODE_ENABLE_EXA: "0",
       OPENCODE_EXPERIMENTAL_EXA: "0",
@@ -78,7 +82,7 @@ export function preferAppEnv(userDataPath: string) {
   }
   const shell = process.platform === "win32" ? null : getUserShell()
   // 1. Login-shell env first -- a real `export` wins over the secrets file and ordinary defaults;
-  //    the platform-pays websearch selection below is an explicit local sovereignty override.
+  //    the websearch capability controls below are explicit local sovereignty overrides.
   // B1:缓存命中 → 0ms 套用 + 后台异步真探测(成功即更新缓存、按「真 export 赢」套差异,新值下次
   // fork 生效);未命中(首启/换 shell)→ 同步探测一次(fork 前必须有 PATH 等,宁可首启慢一次)。
   if (shell) {
@@ -113,8 +117,9 @@ export function preferAppEnv(userDataPath: string) {
   //    users never have to touch ~/.zshrc. Never overrides anything already set in step 1.
   loadAlphaSecrets(userDataPath, logger)
   // 3. Desktop defaults. Logged-out/BYOK keeps keyless websearch available to every provider;
-  //    platform-pays makes cloud_web_search authoritative by force-disabling every specific
-  //    Exa/Parallel flag, including values imported from the user's login shell.
+  //    platform-pays makes cloud_web_search authoritative, while ALPHA_WEBSEARCH_DISABLE is a
+  //    capability kill switch in every auth state. Both force-disable every specific Exa/Parallel
+  //    flag, including values imported from the user's login shell.
   // B12 拍板(2026-07-05,S17 T5):实验 flag 改 set-if-unset —— 默认开(filewatcher 供「外部变更
   // 感知」:外部编辑/外部 git 的文件树/分支刷新;agent 自身修改由工具主动发事件、不受影响),但尊重
   // 用户显式 export(=false 可关;此前 Object.assign 硬覆盖,与上方「真 export 赢」注释矛盾)。
