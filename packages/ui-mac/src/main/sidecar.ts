@@ -8,6 +8,7 @@ import { catalogRegistryChannel } from "./alpha-environment"
 import { buildAlphaIdentity } from "./alpha-identity"
 import { buildAlphaModelConfig } from "./alpha-models"
 import { hasSecretFile, secretFileRef } from "./alpha-secret-files"
+import { applyCloudWebSearchDisable } from "./cloud-web-search"
 import { alphaGlobalRoot, alphaJsoncPath } from "./engine-config-truth"
 import { injectDisabledOverrides } from "./ext-disabled-injection"
 
@@ -379,6 +380,11 @@ function injectAlphaConfig(userDataPath: string, extPluginPath?: string) {
         },
       }
     }
+
+    // Remote MCP config only toggles whole servers, but the engine's global permission layer filters
+    // individual registered MCP tool IDs from both ordinary and code-mode tool sets. Deny only the
+    // model-visible cloud_web_search ID and keep the cloud server plus sibling tools live.
+    applyCloudWebSearchDisable(config, process.env)
 
     // #395(Codex r11 pivot → 主权注入):把账本 disabled 的 mcp/agent 权威覆盖注入 OPENCODE_CONFIG_CONTENT
     // —— 它在引擎加载序 step 6(所有 in-scope 源之后:XDG / ~/.opencode / agent-md·plugin-script 自动
