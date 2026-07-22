@@ -16,16 +16,17 @@ import { ENGINE_FETCH_TIMEOUT_MS, nextEngineRetryDelay } from "./model-picker-lo
 import type { ModelContract } from "./model-contract"
 import { buildModelPickerRows, type AccountState, type ModelListState, type ModelPickerRow } from "./model-picker-core"
 import { AddProvider } from "./model-picker-add"
+import { t } from "../i18n"
 
 const fmtYuan = (fen: number) => `¥${(fen / 100).toFixed(2)}`
 type LoadState<T> = { status: "loading" } | { status: "ready"; data: T } | { status: "error" }
 
 const suspendText = (reason: SuspendReason) =>
   reason === "needs-login"
-    ? "需登录后使用，已暂停"
+    ? t("alpha.model.suspendedLogin")
     : reason === "needs-credit"
-      ? "需会员或钱包余额，已暂停"
-      : "对应节点或模型已不可用，已暂停"
+      ? t("alpha.model.suspendedCredit")
+      : t("alpha.model.suspendedUnavailable")
 
 export function ModelPickPop(props: {
   contract: ModelContract
@@ -287,13 +288,13 @@ export function ModelPickPop(props: {
   }
 
   return (
-    <div class="a-mpp" data-alpha-picker-owner="alpha.composer-model" role="dialog" aria-label="选择模型">
+    <div class="a-mpp" data-alpha-picker-owner="alpha.composer-model" role="dialog" aria-label={t("alpha.model.choose")}>
       <div class="a-mpp-search">
         <input
           ref={search}
           type="search"
-          aria-label="搜索模型或供应商"
-          placeholder="搜索模型 / 供应商"
+          aria-label={t("alpha.model.searchLabel")}
+          placeholder={t("alpha.model.searchPlaceholder")}
           value={query()}
           onInput={(event) => setQuery(event.currentTarget.value)}
         />
@@ -301,69 +302,69 @@ export function ModelPickPop(props: {
 
       <Show when={accountState() === "member"}>
         <div class="a-acct-banner member">
-          <span class="bt">{memberPlanName()} 会员 · 本周期额度充足</span>
+          <span class="bt">{t("alpha.model.memberCredit", { plan: memberPlanName() })}</span>
         </div>
       </Show>
       <Show when={accountState() === "balance"}>
         <div class="a-acct-banner balance">
-          <span class="bt">钱包余额 {fmtYuan(balance())} · 按量扣费</span>
+          <span class="bt">{t("alpha.model.walletBalance", { balance: fmtYuan(balance()) })}</span>
         </div>
       </Show>
       <Show when={accountState() === "empty"}>
         <div class="a-acct-banner empty">
-          <span class="bt">余额不足 · 充值后解锁代理</span>
+          <span class="bt">{t("alpha.model.creditEmpty")}</span>
         </div>
       </Show>
       <Show when={accountState() === "out"}>
         <div class="a-acct-banner out">
-          <span class="bt">登录解锁代理节点</span>
+          <span class="bt">{t("alpha.model.loginUnlock")}</span>
           <button type="button" onClick={() => void window.api.auth.start()}>
-            登录
+            {t("alpha.auth.signIn")}
           </button>
         </div>
       </Show>
       <Show when={accountState() === "loading"}>
         <div class="a-acct-banner balance" role="status">
-          <span class="bt">正在读取账户状态…</span>
+          <span class="bt">{t("alpha.model.accountReading")}</span>
         </div>
       </Show>
       <Show when={accountState() === "error"}>
         <div class="a-acct-banner error" role="alert">
-          <span class="bt">账户信息读取失败</span>
+          <span class="bt">{t("alpha.model.accountFailed")}</span>
           <button type="button" onClick={retryAll}>
-            重试
+            {t("alpha.common.retry")}
           </button>
         </div>
       </Show>
 
       <Show when={keyStatus().status === "loading"}>
         <div class="a-mpp-alert" role="status">
-          <strong>正在读取 KEY 状态…</strong>
-          <span>确认前不会把供应商标成未配置。</span>
+          <strong>{t("alpha.model.keyReading")}</strong>
+          <span>{t("alpha.model.keyReadingDetail")}</span>
         </div>
       </Show>
       <Show when={keyStatus().status === "error"}>
         <div class="a-mpp-alert" role="alert">
-          <strong>KEY 状态读取失败</strong>
-          <span>当前不提供配置结论。</span>
+          <strong>{t("alpha.model.keyReadFailed")}</strong>
+          <span>{t("alpha.model.keyReadFailedDetail")}</span>
           <button type="button" onClick={retryAll}>
-            重试
+            {t("alpha.common.retry")}
           </button>
         </div>
       </Show>
 
       <Show when={composerModelProjection().status === "loading"}>
         <div class="a-mpp-alert" role="status">
-          <strong>正在读取当前会话模型…</strong>
-          <span>读取完成前不会沿用其他会话的选择。</span>
+          <strong>{t("alpha.model.currentReading")}</strong>
+          <span>{t("alpha.model.currentReadingDetail")}</span>
         </div>
       </Show>
       <Show when={composerModelProjection().status === "error"}>
         <div class="a-mpp-alert" role="alert">
-          <strong>当前会话模型读取失败</strong>
-          <span>没有沿用其他会话的选择。</span>
+          <strong>{t("alpha.model.currentFailed")}</strong>
+          <span>{t("alpha.model.currentFailedDetail")}</span>
           <button type="button" onClick={retryAll} disabled={!props.onRetryCurrent}>
-            重试
+            {t("alpha.common.retry")}
           </button>
         </div>
       </Show>
@@ -371,38 +372,38 @@ export function ModelPickPop(props: {
       <Show when={composerModelSuspended()}>
         {(suspended) => (
           <div class="a-pop-note">
-            上次使用的「{suspended().model.name}」{suspendText(suspended().reason)}；恢复后可重新选择。
+            {t("alpha.model.suspended", { model: suspended().model.name, reason: suspendText(suspended().reason) })}
           </div>
         )}
       </Show>
       <Show when={catalogError()}>
         <div class="a-mpp-alert" role="alert">
-          <strong>模型目录加载失败</strong>
-          <span>当前不提供推测列表。</span>
+          <strong>{t("alpha.model.catalogFailed")}</strong>
+          <span>{t("alpha.model.catalogFailedDetail")}</span>
           <button type="button" onClick={retryAll}>
-            重试
+            {t("alpha.common.retry")}
           </button>
         </div>
       </Show>
       <Show when={!catalogError() && listState() === "failed"}>
         <div class="a-mpp-alert" role="alert">
-          <strong>正在连接引擎（可能正在重启）…</strong>
-          <span>当前选择保持不变，模型列表稍后自动恢复。</span>
+          <strong>{t("alpha.model.engineConnecting")}</strong>
+          <span>{t("alpha.model.engineConnectingDetail")}</span>
           <button type="button" onClick={retryAll}>
-            立即重试
+            {t("alpha.model.retryNow")}
           </button>
         </div>
       </Show>
       <Show when={switchError()}>
         <div class="a-mpp-alert" role="alert">
-          <strong>切换模型失败</strong>
-          <span>当前选择没有改变，请重试。</span>
+          <strong>{t("alpha.model.switchFailed")}</strong>
+          <span>{t("alpha.model.switchFailedDetail")}</span>
         </div>
       </Show>
 
       <div class="a-mpp-scroll">
         <Show when={platformRows().length}>
-          <div class="a-pop-label">代理节点 · 经 ALPHA 代理</div>
+          <div class="a-pop-label">{t("alpha.model.platformGroup")}</div>
           <For each={platformRows()}>
             {(row) => (
               <ModelRow
@@ -417,7 +418,7 @@ export function ModelPickPop(props: {
           </For>
         </Show>
         <Show when={byokRows().length}>
-          <div class="a-pop-label">国内直连 · 自带 KEY (BYOK)</div>
+          <div class="a-pop-label">{t("alpha.model.byokGroup")}</div>
           <For each={byokRows()}>
             {(row) => (
               <ModelRow
@@ -433,12 +434,12 @@ export function ModelPickPop(props: {
         </Show>
         <Show when={!catalog() && !catalogError()}>
           <div class="a-mpp-empty" role="status">
-            <strong>正在加载模型目录…</strong>
+            <strong>{t("alpha.model.catalogLoading")}</strong>
           </div>
         </Show>
         <Show when={!!catalog() && rows().length === 0}>
           <div class="a-mpp-empty">
-            <strong>无匹配模型</strong>
+            <strong>{t("alpha.model.noMatches")}</strong>
           </div>
         </Show>
       </div>
@@ -452,7 +453,7 @@ export function ModelPickPop(props: {
           setAddOpen(true)
         }}
       >
-        ＋ 添加自定义节点 / 供应商
+        {t("alpha.model.addProvider")}
       </button>
       <Show when={addOpen()}>
         <AddProvider
@@ -497,7 +498,11 @@ function ModelRow(props: {
         "is-switching": props.switching() === props.row.key,
       }}
       aria-current={selected() ? "true" : undefined}
-      aria-label={`${props.row.model.name}，${props.row.providerName}${status() ? `，${status()}` : ""}`}
+      aria-label={
+        status()
+          ? t("alpha.model.rowLabel", { model: props.row.model.name, provider: props.row.providerName, status: status() })
+          : t("alpha.model.rowLabelNoStatus", { model: props.row.model.name, provider: props.row.providerName })
+      }
       disabled={disabled()}
       onClick={() => void props.onPick(props.row)}
     >

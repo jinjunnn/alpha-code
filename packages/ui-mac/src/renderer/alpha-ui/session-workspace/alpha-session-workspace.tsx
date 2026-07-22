@@ -32,6 +32,7 @@ import { hrefFor, parseRoute } from "../../../shared/legacy-route-abi"
 import { SurfaceBoundary } from "../surface-boundary"
 import { isSessionSpikeEnabled } from "../session-spike/spike-flag"
 import { isCrossServerSessionError, workspaceContextOf } from "./session-workspace-core"
+import { t } from "../../i18n"
 import "./session-workspace.css"
 
 // —— 合法窄通道(REQ-088 C1):全仓唯一消费点。vite 解析到与上游 lazy("@/pages/session")
@@ -51,20 +52,20 @@ function WorkspaceChrome() {
   return (
     <header class="a-ui a-swk-chrome" data-alpha-session-workspace-chrome>
       <span class="a-swk-dot" aria-hidden="true" />
-      <Show when={context()} fallback={<span class="a-swk-project">会话</span>}>
+      <Show when={context()} fallback={<span class="a-swk-project">{t("alpha.session.session")}</span>}>
         {(ctx) => (
           <>
             <span class="a-swk-project">{ctx().project}</span>
             <span class="a-swk-sep" aria-hidden="true">
               /
             </span>
-            <span class="a-swk-session">{ctx().sessionShort ?? "新会话"}</span>
+            <span class="a-swk-session">{ctx().sessionShort ?? t("alpha.newSession.title")}</span>
           </>
         )}
       </Show>
       <span class="a-swk-spacer" aria-hidden="true" />
       <span class="a-swk-badge" data-alpha-session-workspace-badge>
-        Alpha
+        {t("alpha.brand.short")}
       </span>
     </header>
   )
@@ -85,10 +86,9 @@ function CrossServerGuard(props: { children: JSX.Element }) {
         return (
           <div class="a-ui a-swk-guard" data-alpha-session-workspace-guard>
             <div class="a-swk-guard-card" role="alert">
-              <div class="a-swk-guard-title">此会话不属于当前连接的服务器</div>
+              <div class="a-swk-guard-title">{t("alpha.session.crossServerTitle")}</div>
               <div class="a-swk-guard-desc">
-                Alpha 侧栏固定显示本地引擎的会话;当前窗口已切换到其他服务器,无法在这里打开它。
-                请返回首页后重新选择本地会话。
+                {t("alpha.session.crossServerDetail")}
               </div>
               <div class="a-swk-guard-actions">
                 <button
@@ -96,7 +96,7 @@ function CrossServerGuard(props: { children: JSX.Element }) {
                   class="a-swk-btn a-swk-btn--primary"
                   onClick={() => navigate(hrefFor.home())}
                 >
-                  返回首页
+                  {t("alpha.session.backHome")}
                 </button>
               </div>
             </div>

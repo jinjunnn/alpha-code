@@ -6,6 +6,7 @@
 import { createSignal, onCleanup, onMount, Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import type { AuthState } from "../../preload/types"
+import { t } from "../i18n"
 import "./onboarding.css"
 
 const DONE_KEY = "alpha.onboarding.done"
@@ -39,8 +40,8 @@ export function AlphaOnboarding() {
         <div class="a-ui a-ob" data-alpha-onboarding>
           <div class="a-ob-card">
             <div class="a-ob-mark">α</div>
-            <h3 class="a-ob-title">欢迎来到 alpha-code</h3>
-            <p class="a-ob-sub">三步开始你的第一个项目</p>
+            <h3 class="a-ob-title">{t("alpha.onboarding.title")}</h3>
+            <p class="a-ob-sub">{t("alpha.onboarding.subtitle")}</p>
             <div class="a-ob-steps">
               <div class="a-ob-step" classList={{ done: loggedIn(), now: !loggedIn() }}>
                 <span class="a-ob-n">
@@ -50,23 +51,23 @@ export function AlphaOnboarding() {
                     </svg>
                   </Show>
                 </span>
-                登录账号
-                <span class="a-ob-status" classList={{ accent: !loggedIn() }}>{loggedIn() ? "已完成" : "进行中"}</span>
+                {t("alpha.onboarding.signIn")}
+                <span class="a-ob-status" classList={{ accent: !loggedIn() }}>{loggedIn() ? t("alpha.onboarding.done") : t("alpha.onboarding.inProgress")}</span>
               </div>
               <div class="a-ob-step" classList={{ now: loggedIn() }}>
                 <span class="a-ob-n">2</span>
-                选择模型
+                {t("alpha.onboarding.chooseModel")}
                 <Show when={loggedIn()}>
-                  <span class="a-ob-status accent">进行中</span>
+                  <span class="a-ob-status accent">{t("alpha.onboarding.inProgress")}</span>
                 </Show>
               </div>
               <div class="a-ob-step">
                 <span class="a-ob-n">3</span>
-                打开第一个项目
+                {t("alpha.onboarding.openFirstProject")}
               </div>
             </div>
-            <button class="a-ob-btn" onClick={primary}>{loggedIn() ? "继续" : "登录"}</button>
-            <div class="a-ob-skip" onClick={finish}>跳过,用自带 Key(BYOK)</div>
+            <button class="a-ob-btn" onClick={primary}>{loggedIn() ? t("alpha.onboarding.continue") : t("alpha.onboarding.login")}</button>
+            <div class="a-ob-skip" onClick={finish}>{t("alpha.onboarding.skipByok")}</div>
           </div>
         </div>
       </Portal>

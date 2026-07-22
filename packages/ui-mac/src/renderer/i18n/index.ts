@@ -1,4 +1,5 @@
 import * as i18n from "@solid-primitives/i18n"
+import { createSignal } from "solid-js"
 
 import { dict as desktopEn } from "./en"
 import { dict as desktopZh } from "./zh"
@@ -163,16 +164,20 @@ function build(locale: Locale): Dictionary {
 
 const state = {
   locale: detectLocale(),
-  dict: base as Dictionary,
   init: undefined as Promise<Locale> | undefined,
 }
 
-state.dict = build(state.locale)
-
-const translate = i18n.translator(() => state.dict, i18n.resolveTemplate)
+const [dictionary, setDictionary] = createSignal(build(state.locale))
+const translate = i18n.translator(dictionary, i18n.resolveTemplate)
 
 export function t(key: keyof Dictionary, params?: Record<string, string | number>) {
-  return translate(key, params)
+  return translate(key, params) ?? key
+}
+
+export function setLocale(locale: Locale) {
+  state.locale = locale
+  setDictionary(build(locale))
+  return locale
 }
 
 export function initI18n(): Promise<Locale> {
@@ -184,9 +189,7 @@ export function initI18n(): Promise<Locale> {
     const value = parseStored(raw)
     const next = pickLocale(value) ?? state.locale
 
-    state.locale = next
-    state.dict = build(next)
-    return next
+    return setLocale(next)
   })().catch(() => state.locale)
 
   state.init = promise

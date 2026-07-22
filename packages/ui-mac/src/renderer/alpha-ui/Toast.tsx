@@ -1,5 +1,6 @@
 import { createSignal, For, type JSX } from "solid-js"
 import { Portal } from "solid-js/web"
+import { t } from "../i18n"
 import "./toast.css"
 
 /**
@@ -30,14 +31,14 @@ export function ToastViewport(): JSX.Element {
     <Portal>
       <div class="a-toast-viewport a-ui">
         <For each={items()}>
-          {(t) => (
-            <div class="a-toast" data-kind={t.kind} role="status" aria-live="polite">
+          {(toast) => (
+            <div class="a-toast" data-kind={toast.kind} role="status" aria-live="polite">
               <span class="a-toast-ico" aria-hidden="true" />
               <div class="a-toast-body">
-                <b>{t.title}</b>
-                {t.detail ? <small>{t.detail}</small> : null}
+                <b>{toast.title}</b>
+                {toast.detail ? <small>{toast.detail}</small> : null}
               </div>
-              <button class="a-toast-x" aria-label="关闭" onClick={() => dismissToast(t.id)}>
+              <button class="a-toast-x" aria-label={t("alpha.common.close")} onClick={() => dismissToast(toast.id)}>
                 ×
               </button>
             </div>

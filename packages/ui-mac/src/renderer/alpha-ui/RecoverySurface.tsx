@@ -7,6 +7,7 @@ import {
   type RecoveryPlanView,
 } from "../../shared/recovery"
 import "./recovery-surface.css"
+import { t } from "../i18n"
 
 export function RecoverySurface(props: {
   incident?: RecoveryIncidentWire
@@ -24,7 +25,7 @@ export function RecoverySurface(props: {
     const incident = props.incident
     if (!incident || submitting()) return
     setSubmitting(action)
-    setStatus("正在执行恢复操作…")
+    setStatus(t("alpha.recovery.running"))
     const result = await props.submit(incident.incident, action).catch(
       (): RecoveryActionResult => ({
         ok: false,
@@ -35,10 +36,10 @@ export function RecoverySurface(props: {
     )
     setSubmitting(undefined)
     if (!result.ok) {
-      setStatus(result.retryable ? "操作未完成，可以重试。" : "操作未完成，请选择其他安全选项。")
+      setStatus(result.retryable ? t("alpha.recovery.retryable") : t("alpha.recovery.notRetryable"))
       return
     }
-    setStatus(result.applied ? "恢复操作已完成。" : "该恢复操作已经完成。")
+    setStatus(result.applied ? t("alpha.recovery.completed") : t("alpha.recovery.alreadyCompleted"))
     props.onApplied?.(result)
   }
 
@@ -51,22 +52,22 @@ export function RecoverySurface(props: {
       aria-labelledby="alpha-recovery-title"
     >
       <div class="a-recovery-shell">
-        <header class="a-recovery-brand" aria-label="alpha-code">
+        <header class="a-recovery-brand" aria-label={t("alpha.brand.product")}>
           <span class="a-recovery-mark" aria-hidden="true">
             α
           </span>
-          <span>alpha-code</span>
+          <span>{t("alpha.brand.product")}</span>
         </header>
         <main class="a-recovery-main">
-          <p class="a-recovery-kicker">RECOVERY</p>
+          <p class="a-recovery-kicker">{t("alpha.recovery.kicker")}</p>
           <h1 id="alpha-recovery-title">
-            {props.pending ? "正在准备安全恢复…" : props.unavailable ? "恢复服务暂时不可用" : content().title}
+            {props.pending ? t("alpha.recovery.preparing") : props.unavailable ? t("alpha.recovery.unavailable") : content().title}
           </h1>
           <p class="a-recovery-summary">
             {props.pending
-              ? "正在确认错误记录状态。不会显示或传输路径、密钥和原始错误。"
+              ? t("alpha.recovery.pendingDetail")
               : props.unavailable
-                ? "为保护当前状态，发生故障的界面会保持隔离。请重新打开应用后再试。"
+                ? t("alpha.recovery.unavailableDetail")
                 : content().summary}
           </p>
           <Show when={!props.pending && !props.unavailable}>
@@ -107,7 +108,7 @@ export function RecoverySurface(props: {
           <p class="a-recovery-live" aria-live="polite" role="status">
             {status()}
           </p>
-          <p class="a-recovery-privacy">诊断信息已脱敏。此页面不会展示文件路径、凭据或原始异常。</p>
+          <p class="a-recovery-privacy">{t("alpha.recovery.privacy")}</p>
         </main>
       </div>
     </section>
@@ -124,51 +125,51 @@ type RecoveryContent = {
 function recoveryContent(plan?: RecoveryPlanView): RecoveryContent {
   if (plan?.category === "database-corrupt") {
     return {
-      title: "会话数据需要恢复",
-      summary: "启动检查发现本地会话数据库无法安全读取。DbSafety 已暂停引擎启动。",
-      cardTitle: "数据库损坏",
+      title: t("alpha.recovery.dbCorruptTitle"),
+      summary: t("alpha.recovery.dbCorruptSummary"),
+      cardTitle: t("alpha.recovery.dbCorruptCard"),
       detail: plan.actions.includes(RECOVERY_ACTIONS.restoreLatestBackup)
-        ? "可以从最近一次可用备份恢复；损坏的数据会保留，不会被静默删除。"
-        : "没有可确认的备份。建议退出应用并处理数据；仍可明确选择继续启动。",
+        ? t("alpha.recovery.dbCorruptBackup")
+        : t("alpha.recovery.dbCorruptNoBackup"),
     }
   }
   if (plan?.category === "database-too-new") {
     return {
-      title: "数据版本高于当前应用",
-      summary: "此数据由更新版本的 alpha-code 创建。继续运行可能造成不兼容写入。",
-      cardTitle: "版本不兼容",
-      detail: "建议退出并升级应用。若必须继续，可以先创建已验证备份。",
+      title: t("alpha.recovery.tooNewTitle"),
+      summary: t("alpha.recovery.tooNewSummary"),
+      cardTitle: t("alpha.recovery.tooNewCard"),
+      detail: t("alpha.recovery.tooNewDetail"),
     }
   }
   if (plan?.category === "engine-stopped") {
     return {
-      title: "本地引擎已停止",
-      summary: "自动恢复多次未能建立稳定连接。当前会话已暂停，但应用数据没有被删除。",
-      cardTitle: "Sidecar / 网络故障",
-      detail: "检查网络或本机运行环境后重试。重试会沿用现有受控重启流程。",
+      title: t("alpha.recovery.engineTitle"),
+      summary: t("alpha.recovery.engineSummary"),
+      cardTitle: t("alpha.recovery.engineCard"),
+      detail: t("alpha.recovery.engineDetail"),
     }
   }
   if (plan?.actions.includes(RECOVERY_ACTIONS.retryFailureSave)) {
     return {
-      title: "错误记录保存失败",
-      summary: "页面已停止运行，且安全错误记录尚未成功保存。当前状态保持关闭。",
-      cardTitle: "保存失败",
-      detail: "可以重试保存脱敏记录。不会重新加载旧版页面，也不会发送原始错误。",
+      title: t("alpha.recovery.saveTitle"),
+      summary: t("alpha.recovery.saveSummary"),
+      cardTitle: t("alpha.recovery.saveCard"),
+      detail: t("alpha.recovery.saveDetail"),
     }
   }
   return {
-    title: "页面暂时不可用",
-    summary: "Alpha 页面遇到无法继续的渲染错误。其他区域不会自动切换到旧版实现。",
-    cardTitle: "Surface 崩溃",
-    detail: "脱敏错误记录已保存。请关闭并重新打开当前调用面；当前版本不提供 legacy reload。",
+    title: t("alpha.recovery.surfaceTitle"),
+    summary: t("alpha.recovery.surfaceSummary"),
+    cardTitle: t("alpha.recovery.surfaceCard"),
+    detail: t("alpha.recovery.surfaceDetail"),
   }
 }
 
 function actionLabel(action: RecoveryAction) {
-  if (action === RECOVERY_ACTIONS.restoreLatestBackup) return "从最近备份恢复"
-  if (action === RECOVERY_ACTIONS.exitApp) return "退出应用（推荐）"
-  if (action === RECOVERY_ACTIONS.continueStartup) return "仍要继续启动"
-  if (action === RECOVERY_ACTIONS.backupAndContinue) return "备份后继续"
-  if (action === RECOVERY_ACTIONS.retryEngine) return "重试本地引擎"
-  return "重试保存错误记录"
+  if (action === RECOVERY_ACTIONS.restoreLatestBackup) return t("alpha.recovery.restoreBackup")
+  if (action === RECOVERY_ACTIONS.exitApp) return t("alpha.recovery.exit")
+  if (action === RECOVERY_ACTIONS.continueStartup) return t("alpha.recovery.continue")
+  if (action === RECOVERY_ACTIONS.backupAndContinue) return t("alpha.recovery.backupContinue")
+  if (action === RECOVERY_ACTIONS.retryEngine) return t("alpha.recovery.retryEngine")
+  return t("alpha.recovery.retrySave")
 }

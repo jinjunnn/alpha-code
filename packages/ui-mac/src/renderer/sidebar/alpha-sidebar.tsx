@@ -178,9 +178,9 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
   const isPro = () => /pro|plus|team|max|paid/i.test(plan())
   const acctInitial = () => (authState().account?.email ?? "A").trim().charAt(0).toUpperCase() || "A"
   const SCHEMES = [
-    { k: "light", l: "浅色" },
-    { k: "dark", l: "深色" },
-    { k: "system", l: "系统" },
+    { k: "light", l: "alpha.sidebar.themeLight" },
+    { k: "dark", l: "alpha.sidebar.themeDark" },
+    { k: "system", l: "alpha.sidebar.themeSystem" },
   ] as const
   // 钱包购买页(/wallet)按页签深链:充值 → 钱包充值页签;升级会员/管理订阅 → 会员月卡页签。
   const endpoints = useAlphaEndpoints()
@@ -259,16 +259,16 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
           command.trigger("settings.open")
         }}
       >
-        <span class="alpha-acct-ic">⚙</span>设置
+        <span class="alpha-acct-ic">⚙</span>{t("alpha.sidebar.settings")}
       </button>
       <div class="alpha-acct-item alpha-acct-appearance">
-        <span class="alpha-acct-ic">◐</span>外观
+        <span class="alpha-acct-ic">◐</span>{t("alpha.sidebar.appearance")}
         <span class="alpha-acct-spacer" />
         <span class="alpha-acct-seg">
           <For each={SCHEMES}>
             {(s) => (
               <button data-on={theme.colorScheme() === s.k ? "" : undefined} onClick={() => theme.setColorScheme(s.k)}>
-                {s.l}
+                {t(s.l)}
               </button>
             )}
           </For>
@@ -279,10 +279,10 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
         class="alpha-acct-item"
         onClick={() => {
           setMenuOpen(false)
-          window.api.openLink("https://opencode.ai/desktop-feedback")
+          window.api.openLink("https://alphacodeone.com/feedback")
         }}
       >
-        <span class="alpha-acct-ic">?</span>帮助与反馈
+        <span class="alpha-acct-ic">?</span>{t("alpha.sidebar.helpFeedback")}
       </button>
       <button
         type="button"
@@ -292,7 +292,7 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
           void window.api.updater.check()
         }}
       >
-        <span class="alpha-acct-ic">↑</span>检查更新
+        <span class="alpha-acct-ic">↑</span>{t("alpha.sidebar.checkUpdates")}
       </button>
     </>
   )
@@ -688,7 +688,7 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                     stroke-linejoin="round"
                   />
                 </svg>
-                <span>重命名</span>
+                <span>{t("alpha.sidebar.rename")}</span>
               </button>
               <button
                 type="button"
@@ -721,7 +721,7 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                     stroke-linejoin="round"
                   />
                 </svg>
-                <span>分享</span>
+                <span>{t("alpha.sidebar.share")}</span>
               </button>
               <button
                 type="button"
@@ -733,11 +733,11 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                   void (async () => {
                     const text = await copySession(id)
                     if (!text) {
-                      pushToast({ kind: "error", title: "没有可复制的内容" })
+                      pushToast({ kind: "error", title: t("alpha.sidebar.copyEmpty") })
                       return
                     }
                     const ok = await copyText(text)
-                    pushToast(ok ? { kind: "success", title: "已复制整段对话" } : { kind: "error", title: "复制失败" })
+                    pushToast(ok ? { kind: "success", title: t("alpha.sidebar.copyDone") } : { kind: "error", title: t("alpha.sidebar.copyFailed") })
                   })()
                 }}
               >
@@ -751,7 +751,7 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                     stroke-linejoin="round"
                   />
                 </svg>
-                <span>复制对话</span>
+                <span>{t("alpha.sidebar.copyConversation")}</span>
               </button>
               <button
                 type="button"
@@ -775,7 +775,7 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                     stroke-linejoin="round"
                   />
                 </svg>
-                <span>删除</span>
+                <span>{t("alpha.sidebar.delete")}</span>
               </button>
             </div>
           </>
@@ -882,7 +882,7 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
               onClick={() => navigate(homeHref())}
             >
               <Mark class="alpha-sidebar-mark" />
-              <span class="alpha-sidebar-wordmark">ALPHA CODE</span>
+              <span class="alpha-sidebar-wordmark">{t("alpha.brand.wordmark")}</span>
             </button>
           </header>
 
@@ -953,7 +953,7 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
               <input
                 class="alpha-sidebar-search-input"
                 type="text"
-                placeholder="搜索项目 / 会话…"
+                placeholder={t("alpha.sidebar.searchProjects")}
                 value={searchQuery()}
                 onInput={(e) => setSearchQuery(e.currentTarget.value)}
               />
@@ -961,7 +961,7 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                 <button
                   type="button"
                   class="alpha-sidebar-search-clear"
-                  aria-label="清除搜索"
+                  aria-label={t("alpha.sidebar.clearSearch")}
                   onClick={() => setSearchQuery("")}
                 >
                   ×
@@ -1059,7 +1059,7 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                                     <button
                                       type="button"
                                       class="alpha-session-menu-btn"
-                                      aria-label="会话操作"
+                                      aria-label={t("alpha.sidebar.sessionActions")}
                                       onClick={(e) => openSessionMenu(e, session)}
                                     >
                                       <svg
@@ -1115,7 +1115,7 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
             </For>
 
             <Show when={searchQuery().trim() !== "" && searchedProjects().length === 0}>
-              <div class="alpha-sidebar-empty">无匹配的项目或会话</div>
+              <div class="alpha-sidebar-empty">{t("alpha.sidebar.noMatches")}</div>
             </Show>
             <Show when={store.ready && !store.error && visibleProjects().length === 0 && archivedCount() === 0}>
               <div class="alpha-sidebar-empty alpha-sidebar-empty-projects">
@@ -1133,9 +1133,9 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                 never rendered anywhere). Surface it with a retry instead of a dead empty pane. */}
             <Show when={store.error}>
               <div class="alpha-sidebar-empty alpha-sidebar-empty-projects">
-                <p>项目加载失败</p>
+                <p>{t("alpha.sidebar.projectsFailed")}</p>
                 <button type="button" class="alpha-sidebar-open-project" onClick={() => void reload()}>
-                  重试
+                  {t("alpha.common.retry")}
                 </button>
               </div>
             </Show>
@@ -1163,8 +1163,8 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                       <div class="alpha-acct-head">
                         <span class="alpha-acct-av guest">?</span>
                         <div class="alpha-acct-id">
-                          <div class="alpha-acct-name">未登录</div>
-                          <div class="alpha-acct-email">登录后解锁云端能力</div>
+                          <div class="alpha-acct-name">{t("alpha.sidebar.signedOut")}</div>
+                          <div class="alpha-acct-email">{t("alpha.sidebar.loginCloud")}</div>
                         </div>
                       </div>
                       <button
@@ -1174,7 +1174,7 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                           void window.api.auth.start()
                         }}
                       >
-                        ⊕ 登录
+                        ⊕ {t("alpha.auth.signIn")}
                       </button>
                       <MenuCommon />
                     </>
@@ -1183,34 +1183,34 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                   <div class="alpha-acct-head">
                     <span class="alpha-acct-av">{acctInitial()}</span>
                     <div class="alpha-acct-id">
-                      <div class="alpha-acct-name">你的账户</div>
+                      <div class="alpha-acct-name">{t("alpha.sidebar.yourAccount")}</div>
                       <div class="alpha-acct-email">{accountLabel()}</div>
                     </div>
                     <span class="alpha-acct-plan" data-pro={acctIsPro() ? "" : undefined}>
-                      {acctIsPro() ? acctPlanName().toUpperCase() : "免费版"}
+                      {acctIsPro() ? acctPlanName().toUpperCase() : t("alpha.sidebar.freePlan")}
                     </span>
                   </div>
                   <div class="alpha-acct-card">
                     <div class="alpha-acct-row">
-                      <span class="alpha-acct-k">会员订阅</span>
+                      <span class="alpha-acct-k">{t("alpha.sidebar.subscription")}</span>
                       {/* B11:读取失败时不装「未订阅」(状态未知),与其余行一致显示 pending/错误占位 */}
                       <Show
                         when={summary() || summaryState() !== "error"}
                         fallback={<span class="alpha-acct-pending">{pendingText()}</span>}
                       >
-                        <span class="alpha-acct-v">{activePlan()?.name ?? (isPro() ? plan() : "未订阅")}</span>
+                        <span class="alpha-acct-v">{activePlan()?.name ?? (isPro() ? plan() : t("alpha.sidebar.notSubscribed"))}</span>
                       </Show>
                     </div>
                     <div class="alpha-acct-row">
-                      <span class="alpha-acct-k">可用余额</span>
+                      <span class="alpha-acct-k">{t("alpha.sidebar.balance")}</span>
                       <Show when={summary()} fallback={<span class="alpha-acct-pending">{pendingText()}</span>}>
                         <span class="alpha-acct-v">{fmtYuan(summary()!.balanceFen)}</span>
                       </Show>
                     </div>
                     <div class="alpha-acct-row">
-                      <span class="alpha-acct-k">5 小时额度</span>
+                      <span class="alpha-acct-k">{t("alpha.sidebar.fiveHour")}</span>
                       <Show when={summary()} fallback={<span class="alpha-acct-pending">{pendingText()}</span>}>
-                        <Show when={activePlan()} fallback={<span class="alpha-acct-pending">按量计费</span>}>
+                        <Show when={activePlan()} fallback={<span class="alpha-acct-pending">{t("alpha.sidebar.metered")}</span>}>
                           <span class="alpha-acct-v">
                             {activePlan()!.window5h.usedCredits.toLocaleString()} /{" "}
                             {activePlan()!.window5h.limitCredits.toLocaleString()}
@@ -1219,9 +1219,9 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                       </Show>
                     </div>
                     <div class="alpha-acct-row">
-                      <span class="alpha-acct-k">7 日额度</span>
+                      <span class="alpha-acct-k">{t("alpha.sidebar.sevenDay")}</span>
                       <Show when={summary()} fallback={<span class="alpha-acct-pending">{pendingText()}</span>}>
-                        <Show when={activePlan()} fallback={<span class="alpha-acct-pending">按量计费</span>}>
+                        <Show when={activePlan()} fallback={<span class="alpha-acct-pending">{t("alpha.sidebar.metered")}</span>}>
                           <span class="alpha-acct-v">
                             {activePlan()!.window7d.usedCredits.toLocaleString()} /{" "}
                             {activePlan()!.window7d.limitCredits.toLocaleString()}
@@ -1230,10 +1230,10 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                       </Show>
                     </div>
                     <div class="alpha-acct-row">
-                      <span class="alpha-acct-k">近 14 天</span>
+                      <span class="alpha-acct-k">{t("alpha.sidebar.fourteenDay")}</span>
                       <Show
                         when={summary() && summary()!.usageSeries.length > 0}
-                        fallback={<span class="alpha-acct-pending">{summary() ? "暂无数据" : pendingText()}</span>}
+                        fallback={<span class="alpha-acct-pending">{summary() ? t("alpha.sidebar.noData") : pendingText()}</span>}
                       >
                         <Sparkline data={summary()!.usageSeries.map((p) => p.tokens)} />
                       </Show>
@@ -1242,15 +1242,15 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                   <div class="alpha-acct-cta">
                     <Show when={!acctIsPro()}>
                       <button class="alpha-acct-btn primary" onClick={() => window.api.openLink(subscribeUrl())}>
-                        升级会员
+                        {t("alpha.sidebar.upgrade")}
                       </button>
                     </Show>
                     <button class="alpha-acct-btn" onClick={() => window.api.openLink(rechargeUrl())}>
-                      充值
+                      {t("alpha.sidebar.recharge")}
                     </button>
                     <Show when={acctIsPro()}>
                       <button class="alpha-acct-btn" onClick={() => window.api.openLink(subscribeUrl())}>
-                        管理订阅
+                        {t("alpha.sidebar.manageSubscription")}
                       </button>
                     </Show>
                   </div>
@@ -1263,7 +1263,7 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                       void window.api.auth.logout()
                     }}
                   >
-                    <span class="alpha-acct-ic">⎋</span>退出登录
+                    <span class="alpha-acct-ic">⎋</span>{t("alpha.sidebar.signOut")}
                   </button>
                 </Show>
               </div>
@@ -1285,8 +1285,8 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                   {authState().status === "logged-in"
                     ? acctIsPro()
                       ? acctPlanName().toUpperCase()
-                      : "免费版"
-                    : "点此登录"}
+                      : t("alpha.sidebar.freePlan")
+                    : t("alpha.sidebar.clickLogin")}
                 </span>
               </span>
               <svg class="alpha-acct-chev" viewBox="0 0 12 12" fill="none" aria-hidden="true">

@@ -28,12 +28,14 @@ import { createComposerAutocomplete } from "./composer-autocomplete"
 import { buildMentionParts, type MentionPart } from "./composer-autocomplete-core"
 import {
   ATTACH_ACCEPT,
+  ATTACH_MAX_COUNT,
   buildAttachmentParts,
   classifyAttachment,
+  IMAGE_MAX_BYTES,
   mergeAttachments,
+  PDF_MAX_BYTES,
   type ComposerAttachment,
 } from "./composer-attachments-core"
-import { COMPOSER_PLACEHOLDER, COMPOSER_PLACEHOLDER_PLAN } from "../../shared/composer-copy"
 import { pathHitsPopover } from "./popover-hit"
 import { pushToast } from "./Toast"
 import type { AlphaProjectsApi } from "../sidebar/use-projects"
@@ -69,6 +71,7 @@ import { ModelPickPop } from "./alpha-composer-model"
 import { createModelContract, type ModelContract } from "./model-contract"
 import { composerModelFromRef, modelRefOf, withModelVariant } from "./model-picker-core"
 import { ENGINE_FETCH_TIMEOUT_MS } from "./model-picker-logic"
+import { t } from "../i18n"
 import "./alpha-composer.css"
 
 /* ── 单开注册表(全部 chips 共享;开新的自动关旧的)──────────────────────────── */
@@ -201,7 +204,7 @@ function AddButton(props: { onOpen: () => void }) {
   return (
     <button
       class="a-chip a-chip-icon"
-      title="装配:引用 · 附加 · 模式(与 @ 同一弹窗)"
+      title={t("alpha.composer.assemble")}
       onClick={(e) => (stop(e), props.onOpen())}
     >
       <Plus />
@@ -210,7 +213,7 @@ function AddButton(props: { onOpen: () => void }) {
 }
 
 /* ── 权限 chip:full/ask 驱动引擎 autoaccept 命令;readonly = 提交时 agent 参数 ── */
-const PERM_LABEL: Record<PermMode, string> = { full: "完全访问", ask: "请求审批", readonly: "只读" }
+const permLabel = (mode: PermMode) => mode === "full" ? t("alpha.composer.permFull") : mode === "ask" ? t("alpha.composer.permAsk") : t("alpha.composer.permReadonly")
 
 type CommandApi = ReturnType<typeof useCommand>
 
@@ -237,24 +240,24 @@ function PermChip(props: { command: CommandApi }) {
             <ShieldEye />
           </Match>
         </Switch>
-        {PERM_LABEL[composerPerm()]}
+        {permLabel(composerPerm())}
         <Chevron />
       </button>
       <Show when={isOpen()}>
         <ChipPopover anchor={btn} align="left" minWidth={230}>
-          <div class="a-pop-label">运行权限</div>
+          <div class="a-pop-label">{t("alpha.composer.permissions")}</div>
           <button class="a-pop-item" classList={{ "is-on": composerPerm() === "full" }} onClick={() => pick("full")}>
-            <ShieldSolid /> 完全访问 <span class="a-pop-desc">允许全部</span>
+            <ShieldSolid /> {t("alpha.composer.permFull")} <span class="a-pop-desc">{t("alpha.composer.permFullHint")}</span>
           </button>
           <button class="a-pop-item" classList={{ "is-on": composerPerm() === "ask" }} onClick={() => pick("ask")}>
-            <ShieldAsk /> 请求审批 <span class="a-pop-desc">逐次询问</span>
+            <ShieldAsk /> {t("alpha.composer.permAsk")} <span class="a-pop-desc">{t("alpha.composer.permAskHint")}</span>
           </button>
           <button
             class="a-pop-item"
             classList={{ "is-on": composerPerm() === "readonly" }}
             onClick={() => pick("readonly")}
           >
-            <ShieldEye /> 只读 <span class="a-pop-desc">不能改文件/执行命令</span>
+            <ShieldEye /> {t("alpha.composer.permReadonly")} <span class="a-pop-desc">{t("alpha.composer.permReadonlyHint")}</span>
           </button>
         </ChipPopover>
       </Show>
@@ -266,7 +269,7 @@ function PermChip(props: { command: CommandApi }) {
  * (build,不出控件);"plan"/第三方主档 = chip 呈现,点击关闭;开关入口在统一装配弹窗,
  * Shift+Tab 快捷切换;perm=readonly 时模式不生效(buildPromptRequest 强制只读档),chip 如实置灰。 */
 function PlanChip() {
-  const label = () => (composerAgent() === "plan" ? "计划" : composerAgent())
+  const label = () => (composerAgent() === "plan" ? t("alpha.composer.plan") : composerAgent())
   return (
     <Show when={composerAgent()}>
       <button
@@ -274,8 +277,8 @@ function PlanChip() {
         data-disabled={composerPerm() === "readonly" ? "" : undefined}
         title={
           composerPerm() === "readonly"
-            ? "只读权限档下模式不生效(退出只读后恢复)"
-            : "计划模式开启 — 点击关闭(Shift+Tab 切换)"
+            ? t("alpha.composer.planReadonly")
+            : t("alpha.composer.planEnabled")
         }
         onClick={(e) => (stop(e), setComposerAgent(null))}
       >
@@ -302,16 +305,16 @@ function ModelChip(props: {
   let btn: HTMLButtonElement | undefined
   const label = () => {
     const projection = composerModelProjection()
-    if (projection.status === "loading") return "正在读取模型…"
-    if (projection.status === "error") return "模型读取失败"
-    return composerModel()?.name ?? "选择模型"
+    if (projection.status === "loading") return t("alpha.composer.modelReading")
+    if (projection.status === "error") return t("alpha.composer.modelFailed")
+    return composerModel()?.name ?? t("alpha.model.choose")
   }
   return (
     <div class="a-pop-wrap" data-kind="model">
       <button
         ref={btn}
         class="a-chip a-chip-model"
-        title="选择模型"
+        title={t("alpha.model.choose")}
         aria-haspopup="dialog"
         aria-expanded={isOpen()}
         onClick={(e) => {
@@ -362,7 +365,7 @@ function EffortChip(props: {
   let btn: HTMLButtonElement | undefined
   const variants = () => composerModel()?.variants ?? []
   const supported = () => variants().length > 0
-  const current = () => composerEffortSel() ?? "默认"
+  const current = () => composerEffortSel() ?? t("alpha.composer.default")
   const blocked = () => composerModelProjection().status !== "ready" || !props.modelChainReady()
   const selectVariant = (variant: string | null) => {
     const model = composerModel()
@@ -373,14 +376,14 @@ function EffortChip(props: {
       .catch(() => {})
   }
   const title = () => {
-    if (composerModelProjection().status === "loading") return "推理强度 — 当前会话模型加载中"
-    if (composerModelProjection().status === "error") return "推理强度 — 当前会话模型读取失败"
-    if (!props.modelChainReady()) return "推理强度 — 模型状态链尚未就绪"
+    if (composerModelProjection().status === "loading") return t("alpha.composer.effortModelLoading")
+    if (composerModelProjection().status === "error") return t("alpha.composer.effortModelFailed")
+    if (!props.modelChainReady()) return t("alpha.composer.effortChainPending")
     return !composerModel()
-      ? "推理强度 — 选择模型后可用"
+      ? t("alpha.composer.effortNeedsModel")
       : supported()
-        ? "推理强度(逐模型推理参数档)"
-        : "当前模型不支持推理档"
+        ? t("alpha.composer.effortTitle")
+        : t("alpha.composer.effortUnsupported")
   }
   return (
     <div class="a-pop-wrap" data-kind="effort">
@@ -407,14 +410,14 @@ function EffortChip(props: {
         >
           <Switch>
             <Match when={supported()}>
-              <div class="a-pop-label">推理强度 · {composerModel()?.name}</div>
+              <div class="a-pop-label">{t("alpha.composer.effortModel", { model: composerModel()?.name ?? "" })}</div>
               <button
                 class="a-pop-item"
                 classList={{ "is-on": composerEffortSel() === null }}
                 disabled={!props.modelChainReady()}
                 onClick={() => selectVariant(null)}
               >
-                默认 <span class="a-pop-desc">引擎默认档</span>
+                {t("alpha.composer.default")} <span class="a-pop-desc">{t("alpha.composer.engineDefault")}</span>
               </button>
               <For each={variants()}>
                 {(v) => (
@@ -430,8 +433,8 @@ function EffortChip(props: {
               </For>
             </Match>
             <Match when={!composerModel()}>
-              <div class="a-pop-label">推理强度 · 先选择模型</div>
-              <div class="a-pop-note">推理档位随模型而定 —— 选好模型后这里即可调档:</div>
+              <div class="a-pop-label">{t("alpha.composer.effortChooseModel")}</div>
+              <div class="a-pop-note">{t("alpha.composer.effortChooseHint")}</div>
               <ModelPickPop
                 contract={props.contract}
                 directory={props.directory}
@@ -443,9 +446,9 @@ function EffortChip(props: {
               />
             </Match>
             <Match when={true}>
-              <div class="a-pop-label">推理强度</div>
+              <div class="a-pop-label">{t("alpha.composer.effort")}</div>
               <div class="a-pop-note">
-                「{composerModel()?.name}」未提供推理档位;换用带档位的模型(如代理节点的 α 系列)即可调节。
+                {t("alpha.composer.effortUnavailableHint", { model: composerModel()?.name ?? "" })}
               </div>
             </Match>
           </Switch>
@@ -522,7 +525,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     const rejected: Array<{ name: string; reason: string }> = []
     const accepted: ComposerAttachment[] = []
     for (const f of Array.from(list)) {
-      const name = f.name || `粘贴内容-${attSeq + 1}`
+      const name = f.name || t("alpha.composer.pastedAttachment", { count: attSeq + 1 })
       const c = classifyAttachment({ name, type: f.type, size: f.size })
       if (!c.ok) {
         rejected.push({ name, reason: c.reason })
@@ -532,14 +535,18 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         const url = await readAsDataUrl(f)
         accepted.push({ id: `att-${++attSeq}`, name, mime: f.type, kind: c.kind, size: f.size, url })
       } catch {
-        rejected.push({ name, reason: "读取失败" })
+        rejected.push({ name, reason: t("alpha.composer.attachmentReadFailed") })
       }
     }
     const merged = mergeAttachments(attachments(), accepted)
     setAttachments(merged.next)
     const bad = [...rejected, ...merged.rejected]
     if (bad.length)
-      pushToast({ kind: "error", title: "部分附件未添加", detail: bad.map((r) => `${r.name}:${r.reason}`).join("；") })
+      pushToast({
+        kind: "error",
+        title: t("alpha.composer.attachmentsRejected"),
+        detail: bad.map((item) => `${item.name}: ${attachmentReason(item.reason)}`).join("; "),
+      })
   }
   const removeAttachment = (id: string) => setAttachments((xs) => xs.filter((a) => a.id !== id))
   const hasDragFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files")
@@ -612,7 +619,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     if (sessionID) {
       const projection = composerModelProjection()
       if (projection.status !== "ready" || projection.sessionID !== sessionID) {
-        pushToast({ kind: "info", title: "当前会话模型尚未就绪", detail: "读取完成后再试；不会沿用其他会话的选择。" })
+        pushToast({ kind: "info", title: t("alpha.composer.currentModelPending"), detail: t("alpha.composer.currentModelPendingDetail") })
         throw new Error("session model projection is not ready")
       }
       const switched = await readState(modelContract.switch(sessionID, modelRefOf(model)))
@@ -620,7 +627,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         throw new Error("session changed while switching model")
       }
       if (switched.status === "error") {
-        pushToast({ kind: "error", title: "切换模型失败", detail: "当前选择保持不变，请重试。" })
+        pushToast({ kind: "error", title: t("alpha.model.switchFailed"), detail: t("alpha.model.switchFailedDetail") })
         throw new Error("model switch failed")
       }
     }
@@ -790,7 +797,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     try {
       await c.session.abort({ sessionID: sid, directory: props.directory() } as any)
     } catch {
-      pushToast({ kind: "error", title: "中止失败,请重试" })
+      pushToast({ kind: "error", title: t("alpha.composer.abortFailed") })
     }
   }
 
@@ -804,8 +811,8 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     if (modelChainState() !== "ready") {
       pushToast({
         kind: modelChainState() === "error" ? "error" : "info",
-        title: modelChainState() === "error" ? "模型状态读取失败" : "正在读取模型状态",
-        detail: "读取完成前不会提交；请重试模型状态读取。",
+        title: modelChainState() === "error" ? t("alpha.composer.modelStateFailed") : t("alpha.composer.modelStateReading"),
+        detail: t("alpha.composer.modelStateDetail"),
       })
       return
     }
@@ -813,13 +820,13 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     if (suspended && !composerModel()) {
       pushToast({
         kind: "info",
-        title: "当前模型不可用",
+        title: t("alpha.composer.currentModelUnavailable"),
         detail:
           suspended.reason === "needs-login"
-            ? "登录后重新选择该模型，或改用已配置 KEY 的模型。"
+            ? t("alpha.composer.currentModelLogin")
             : suspended.reason === "needs-credit"
-              ? "充值或恢复会员后重新选择，或改用已配置 KEY 的模型。"
-              : "请在模型选择器中改选当前可用的模型。",
+              ? t("alpha.composer.currentModelCredit")
+              : t("alpha.composer.currentModelChoose"),
       })
       return
     }
@@ -834,13 +841,13 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         block === "platform-needs-login"
           ? {
               kind: "info",
-              title: "该模型需登录后使用",
-              detail: "登录后零配置直用;或点右下角模型选择器,换用自己 API KEY 的模型。",
+              title: t("alpha.composer.modelNeedsLogin"),
+              detail: t("alpha.composer.modelNeedsLoginDetail"),
             }
           : {
               kind: "info",
-              title: "还没有可用的模型",
-              detail: "登录即可零配置使用;或在模型选择器里添加自己的 API KEY。",
+              title: t("alpha.composer.noModel"),
+              detail: t("alpha.composer.noModelDetail"),
             },
       )
       return
@@ -848,7 +855,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     const body = text().trim()
     // 斜杠命令走 session.command,不携带 parts —— 附件会被静默丢弃;如实拦下(C28),不装作发出去了。
     if (attachments().length > 0 && body.startsWith("/")) {
-      pushToast({ kind: "info", title: "斜杠命令不携带附件", detail: "请先单独发送附件消息,或移除附件后再执行命令。" })
+      pushToast({ kind: "info", title: t("alpha.composer.commandNoAttachments"), detail: t("alpha.composer.commandNoAttachmentsDetail") })
       return
     }
     const req = buildPromptRequest({
@@ -867,7 +874,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
           agent: req.agent,
         })
         if (!id) {
-          pushToast({ kind: "error", title: "发送失败,请重试" })
+          pushToast({ kind: "error", title: t("alpha.composer.sendFailed") })
           return
         }
         setText("")
@@ -880,7 +887,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       const c = props.projects.sdk()
       const sid = props.sessionID?.()
       if (!c || !sid) {
-        pushToast({ kind: "error", title: "会话未就绪,请稍后重试" })
+        pushToast({ kind: "error", title: t("alpha.composer.sessionPending") })
         return
       }
       const slash = routeSlash(body)
@@ -896,7 +903,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
             arguments: slash.args,
           } as any)
           if (error) {
-            pushToast({ kind: "error", title: "命令执行失败,请重试" })
+            pushToast({ kind: "error", title: t("alpha.composer.commandFailed") })
             return
           }
           setText("")
@@ -912,7 +919,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         ...(req.agent ? { agent: req.agent } : {}),
       } as any)
       if (error) {
-        pushToast({ kind: "error", title: "发送失败,请重试" })
+        pushToast({ kind: "error", title: t("alpha.composer.sendFailed") })
         return
       }
       setText("")
@@ -986,7 +993,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
                 <span class="a-comp-att-name" title={`${a.name} · ${(a.size / 1024 / 1024).toFixed(1)}MB`}>
                   {a.name}
                 </span>
-                <button class="a-comp-att-x" title="移除附件" onClick={() => removeAttachment(a.id)}>
+                <button class="a-comp-att-x" title={t("alpha.composer.removeAttachment")} onClick={() => removeAttachment(a.id)}>
                   ×
                 </button>
               </span>
@@ -998,7 +1005,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         ref={taRef}
         class="a-comp-input"
         rows="1"
-        placeholder={composerAgent() === "plan" ? COMPOSER_PLACEHOLDER_PLAN : COMPOSER_PLACEHOLDER}
+        placeholder={composerAgent() === "plan" ? t("alpha.composer.placeholderPlan") : t("alpha.composer.placeholder")}
         value={text()}
         onInput={(e) => {
           setText(e.currentTarget.value)
@@ -1017,9 +1024,9 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       />
       <Show when={modelChainState() === "error"}>
         <div class="a-comp-model-alert" role="alert">
-          <span>账户、KEY 或模型目录读取失败；当前不会提交。</span>
+          <span>{t("alpha.composer.modelChainFailed")}</span>
           <button type="button" onClick={retryCurrentModel}>
-            重试
+            {t("alpha.common.retry")}
           </button>
         </div>
       </Show>
@@ -1056,17 +1063,27 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
               data-ready={canSend() ? "" : undefined}
               disabled={!canSend()}
               onClick={() => void submit()}
-              title="发送"
+              title={t("alpha.composer.send")}
             >
               <ArrowUp />
             </button>
           }
         >
-          <button class="a-comp-send a-comp-stop" data-ready onClick={() => void abort()} title="中止">
+          <button class="a-comp-send a-comp-stop" data-ready onClick={() => void abort()} title={t("alpha.composer.abort")}>
             <StopSquare />
           </button>
         </Show>
       </div>
     </div>
   )
+}
+
+function attachmentReason(reason: string) {
+  if (reason.startsWith("仅支持")) return t("alpha.composer.attachmentTypeUnsupported")
+  if (reason.startsWith("超过图片"))
+    return t("alpha.composer.attachmentImageTooLarge", { size: IMAGE_MAX_BYTES / 1024 / 1024 })
+  if (reason.startsWith("超过PDF"))
+    return t("alpha.composer.attachmentPdfTooLarge", { size: PDF_MAX_BYTES / 1024 / 1024 })
+  if (reason.startsWith("最多")) return t("alpha.composer.attachmentCountExceeded", { count: ATTACH_MAX_COUNT })
+  return reason
 }

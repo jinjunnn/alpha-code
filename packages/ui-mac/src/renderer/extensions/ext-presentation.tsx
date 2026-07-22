@@ -72,6 +72,12 @@ export function sourceLabel(source: CatalogSource): string {
   return t("alpha.ext.sourceAlpha")
 }
 
+export function catalogDescription(entry: CatalogEntry): string {
+  if (entry.id === "skill:alpha-upstream-sync") return t("alpha.ext.upstreamSyncDescription")
+  if (entry.id === "plugin:opencode-notify") return t("alpha.ext.notifyPluginDescription")
+  return entry.description
+}
+
 // Human label for an item's type, reusing the section labels (连接器/技能/Agent/插件/套件/云).
 export function typeLabel(type: InstallReceiptType | CatalogEntry["type"]): string {
   if (type === "mcp") return t("alpha.ext.tabConnectors")
