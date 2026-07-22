@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>C21 · AC4 对比度修正对照（focus ring + tertiary text）</title>
+<style>
+  /* This spec sheet dogfoods the real alpha-ui tokens (tokens.css @ pin 849c2598).
+     Register per docs/design/system/principles.md: cool graphite/porcelain, system
+     font stack (no webfont), single restrained indigo. Ratios are computed live in
+     JS below from the exact token values — nothing here is hand-typed. */
+  :root {
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+    --mono: "SF Mono", "JetBrains Mono", Menlo, ui-monospace, monospace;
+    --pass: #16a34a; --fail: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-font-smoothing: antialiased; }
+  body {
+    margin: 0; font-family: var(--font); color: #18181b; background: #f6f7f9;
+    line-height: 1.55; font-size: 13px;
+    padding: 40px clamp(16px, 5vw, 56px) 80px;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  header.doc { margin-bottom: 36px; }
+  h1 { font-size: 23px; letter-spacing: -0.014em; font-weight: 680; margin: 0 0 6px; }
+  .sub { color: #52525b; font-size: 13px; max-width: 74ch; }
+  .decision {
+    margin-top: 18px; padding: 14px 16px; border: 1px solid #e4e6ea; border-left: 3px solid #4f46e5;
+    border-radius: 8px; background: #fff; box-shadow: 0 1px 2px rgba(15,17,21,.05); max-width: 74ch;
+  }
+  .decision b { color: #4f46e5; }
+  h2 { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; margin: 44px 0 4px; }
+  h2 .n { color: #7c7d85; font-weight: 500; font-variant-numeric: tabular-nums; margin-right: 8px; }
+  .lead { color: #52525b; margin: 0 0 18px; max-width: 78ch; }
+  .themes { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 820px) { .themes { grid-template-columns: 1fr; } }
+
+  /* Each theme panel scopes the REAL alpha token values so samples render truthfully. */
+  .panel { border-radius: 14px; padding: 20px; border: 1px solid; }
+  .panel .cap { font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; margin: 0 0 16px; opacity: .7; }
+  .panel[data-theme="light"] {
+    --bg-canvas:#ffffff; --bg-subtle:#f6f7f9; --bg-muted:#eceef1; --surface:#ffffff;
+    --text:#18181b; --text-secondary:#52525b;
+    --tier-old:#7c7d85; --tier-new:#6a6b73;
+    --accent:#4f46e5; --ring-old:rgba(79,70,229,.45);
+    background:#ffffff; border-color:#e4e6ea; color:#18181b;
+    box-shadow: 0 4px 12px rgba(15,17,21,.06);
+  }
+  .panel[data-theme="dark"] {
+    --bg-canvas:#0a0b0d; --bg-subtle:#0e0f11; --bg-muted:#16171a; --surface:#121316;
+    --text:#fafafa; --text-secondary:#a1a1aa;
+    --tier-old:#71727a; --tier-new:#86878f;
+    --accent:#818cf8; --ring-old:rgba(129,140,248,.45);
+    background:#0a0b0d; border-color:#232428; color:#fafafa;
+    box-shadow: 0 4px 12px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.06);
+  }
+
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .col > .h { font-size:12.5px; font-weight:600; margin:0 0 12px; display:flex; align-items:center; gap:8px; }
+  .col > .h .tag { font-size:10.5px; font-weight:600; letter-spacing:.04em; padding:2px 7px; border-radius:9999px; }
+  .tag.old { background: color-mix(in srgb, currentColor 8%, transparent); }
+  .samples { display:flex; flex-direction:column; gap:14px; }
+
+  /* sample controls — shown in a permanent focus state so the ring is visible statically */
+  .ctl { font-family:var(--font); font-size:13px; border-radius:8px; border:1px solid; }
+  .btn { padding:8px 14px; font-weight:500; background:var(--accent); color:#fff; border-color:transparent; cursor:default; }
+  .field { padding:8px 12px; background:var(--bg-muted); color:var(--text); border-color:var(--bg-muted); min-width:170px; }
+  .chip { padding:5px 11px; background:transparent; color:var(--text-secondary); border-color:var(--bg-muted); border-radius:9999px; display:inline-flex; align-items:center; gap:6px; }
+  .chip .dot { width:6px; height:6px; border-radius:50%; background:var(--accent); }
+  .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+
+  /* CURRENT ring: 3px translucent accent halo (tokens.css --a-ring-focus @ α0.45) */
+  .ring-old { box-shadow: 0 0 0 3px var(--ring-old); }
+  /* PROPOSED ② : 1.5px solid accent outline (chips-style, per #478 candidate ②) */
+  .ring-new { box-shadow: 0 0 0 1.5px var(--accent); }
+
+  .swatch-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .swatch { border-radius:8px; padding:12px 12px 10px; border:1px solid color-mix(in srgb, currentColor 10%, transparent); }
+  .swatch.canvas { background:var(--bg-canvas); }
+  .swatch.subtle { background:var(--bg-subtle); }
+  .swatch.muted  { background:var(--bg-muted); }
+  .swatch.surface{ background:var(--surface); }
+  .swatch .bgname { font-size:10px; letter-spacing:.03em; text-transform:uppercase; color:var(--text-secondary); opacity:.75; margin-bottom:5px; }
+  .swatch .demo-old { color:var(--tier-old); font-size:12.5px; }
+  .swatch .demo-new { color:var(--tier-new); font-size:12.5px; }
+
+  .ratio { display:inline-flex; align-items:baseline; gap:5px; font-family:var(--mono); font-size:11px; margin-top:6px; }
+  .ratio b { font-size:12.5px; font-variant-numeric:tabular-nums; }
+  .badge { font-size:9.5px; font-weight:700; letter-spacing:.05em; padding:1px 6px; border-radius:9999px; color:#fff; }
+  .badge.pass { background:var(--pass); }
+  .badge.fail { background:var(--fail); }
+  .req { color:var(--text-secondary); font-size:10.5px; opacity:.8; }
+
+  /* token diff table */
+  table { border-collapse:collapse; width:100%; margin-top:6px; font-size:12.5px; }
+  th, td { text-align:left; padding:9px 12px; border-bottom:1px solid #e4e6ea; vertical-align:top; }
+  th { font-size:11px; letter-spacing:.03em; text-transform:uppercase; color:#7c7d85; font-weight:600; }
+  td code, .mono { font-family:var(--mono); font-size:11.5px; }
+  .old-val { color:#dc2626; } .new-val { color:#16a34a; font-weight:600; }
+  .note { color:#52525b; font-size:12px; margin-top:10px; max-width:80ch; }
+  .foot { margin-top:40px; color:#7c7d85; font-size:11.5px; border-top:1px solid #e4e6ea; padding-top:16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="doc">
+    <h1>对比度修正对照 · focus ring + tertiary 文本</h1>
+    <p class="sub">C21 无障碍基线 AC4（#478）的动笔前置对比稿。两个 token 在双主题下均未过 WCAG AA，需修正。下方样例用真实 <span class="mono">--a-*</span> token 值渲染；每个对比度数字由本页 JS 依 WCAG 公式实时计算（sRGB 相对亮度），非手填。</p>
+    <div class="decision">
+      推荐方向 = <b>候选 ②：焦点框改为 1.5px 细实色 <span class="mono">--a-accent</span> 描边</b>（chips 式）。理由：更轻、与既有 chips 描边一致、对比度余量最大，契合"克制"register，且不重现 2026-07-07 被否的"肥紫圈"。候选 ①（加重半透明紫圈）一并渲染供对照。
+    </div>
+  </header>
+
+  <h2><span class="n">01</span>焦点框（focus ring）</h2>
+  <p class="lead">键盘 <span class="mono">:focus-visible</span> 高亮。样例静态呈现在"已聚焦"态以便直接对照。焦点指示器为非文本元素，AA 阈值 = 与相邻底色 ≥ 3:1（WCAG 1.4.11）。</p>
+  <div class="themes">
+    <div class="panel" data-theme="light">
+      <p class="cap">Light · 浅色</p>
+      <div class="cols">
+        <div class="col">
+          <p class="h">改前 <span class="tag old">现状 · α0.45 光晕</span></p>
+          <div class="samples">
+            <div class="row">
+              <button class="ctl btn ring-old">发送</button>
+              <input class="ctl field ring-old" value="搜索会话…" readonly>
+            </div>
+            <div class="row"><span class="ctl chip ring-old"><span class="dot"></span>Claude Opus 4.8</span></div>
+            <div class="ratio" data-ring data-mode="old" data-theme="light"></div>
+          </div>
+        </div>
+        <div class="col">
+          <p class="h">改后 ② <span class="tag" style="background:var(--accent);color:#fff">1.5px 实色描边</span></p>
+          <div class="samples">
+            <div class="row">
+              <button class="ctl btn ring-new">发送</button>
+              <input class="ctl field ring-new" value="搜索会话…" readonly>
+            </div>
+            <div class="row"><span class="ctl chip ring-new"><span class="dot"></span>Claude Opus 4.8</span></div>
+            <div class="ratio" data-ring data-mode="new" data-theme="light"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="panel" data-theme="dark">
+      <p class="cap">Dark · 深色</p>
+      <div class="cols">
+        <div class="col">
+          <p class="h">改前 <span class="tag old">现状 · α0.45 光晕</span></p>
+          <div class="samples">
+            <div class="row">
+              <button class="ctl btn ring-old">发送</button>
+              <input class="ctl field ring-old" value="搜索会话…" readonly>
+            </div>
+            <div class="row"><span class="ctl chip ring-old"><span class="dot"></span>Claude Opus 4.8</span></div>
+            <div class="ratio" data-ring data-mode="old" data-theme="dark"></div>
+          </div>
+        </div>
+        <div class="col">
+          <p class="h">改后 ② <span class="tag" style="background:var(--accent);color:#fff">1.5px 实色描边</span></p>
+          <div class="samples">
+            <div class="row">
+              <button class="ctl btn ring-new">发送</button>
+              <input class="ctl field ring-new" value="搜索会话…" readonly>
+            </div>
+            <div class="row"><span class="ctl chip ring-new"><span class="dot"></span>Claude Opus 4.8</span></div>
+            <div class="ratio" data-ring data-mode="new" data-theme="dark"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="n">02</span>三级文本（<span class="mono" style="font-size:13px">--a-text-tertiary</span>）</h2>
+  <p class="lead">用于信息性 meta 文本（时间戳、计数、辅助说明），覆盖 60+ 处，非纯 placeholder，故不适用占位符豁免。文本 AA 阈值 = 与底色 ≥ 4.5:1。每个 token 在各相邻底色上取最差值判定。</p>
+  <div class="themes">
+    <div class="panel" data-theme="light">
+      <p class="cap">Light · 浅色</p>
+      <div class="cols">
+        <div class="col">
+          <p class="h">改前 <span class="tag old">#7c7d85</span></p>
+          <div class="swatch-grid" data-tier="old" data-theme="light"></div>
+        </div>
+        <div class="col">
+          <p class="h">改后 <span class="tag" style="background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent)">#6a6b73</span></p>
+          <div class="swatch-grid" data-tier="new" data-theme="light"></div>
+        </div>
+      </div>
+    </div>
+    <div class="panel" data-theme="dark">
+      <p class="cap">Dark · 深色</p>
+      <div class="cols">
+        <div class="col">
+          <p class="h">改前 <span class="tag old">#71727a</span></p>
+          <div class="swatch-grid" data-tier="old" data-theme="dark"></div>
+        </div>
+        <div class="col">
+          <p class="h">改后 <span class="tag" style="background:color-mix(in srgb,var(--accent) 20%,transparent);color:var(--accent)">#86878f</span></p>
+          <div class="swatch-grid" data-tier="new" data-theme="dark"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="n">03</span>Token 变更（<span class="mono" style="font-size:13px">tokens.css</span> — 三处主题块，勿漏 OS-fallback）</h2>
+  <table>
+    <thead><tr><th>Token</th><th>主题块</th><th>改前</th><th>改后 ②</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>--a-text-tertiary</code></td>
+        <td><code>:root</code>(浅) · <code>[data-color-scheme=dark]</code> · <code>@media prefers-color-scheme:dark</code></td>
+        <td class="old-val mono">#7c7d85 / #71727a</td>
+        <td class="new-val mono">#6a6b73 / #86878f</td>
+      </tr>
+      <tr>
+        <td><code>--a-accent-ring</code><span class="req"> → 供 --a-ring-focus</span></td>
+        <td>同上三块</td>
+        <td class="old-val mono">rgba(79,70,229,.45) / rgba(129,140,248,.45)</td>
+        <td class="new-val mono">改机制：1.5px solid <code>--a-accent</code> 描边（替换 3px 光晕）</td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="note">候选 ② 把 <code>--a-ring-focus</code> 从 <code>0 0 0 3px var(--a-accent-ring)</code> 改为 1.5px 实色描边（<code>--a-accent</code> 直接达标，无需再保留半透明 ring token）。三处主题块同步；<code>--a-text-tertiary</code> 有 ~164 处消费 × 双主题，一行改全域生效——落地时须依当时 rolling pin 的真实相邻底色重算最终 hex（若上游 bump 挪动了中性色）。实现 = 仅改 <code>tokens.css</code>，零组件 CSS、零上游 <code>--v2-*</code> 编辑。</p>
+
+  <div class="foot">
+    对比度由本页 JS 按 WCAG 2.x 相对亮度公式实时计算（半透明 ring 先与相邻底色做 alpha 合成再比）。判定阈值：文本 ≥ 4.5:1，焦点指示器 ≥ 3:1。样例控件文案为示意产品文案，不含开发术语（宪法 §7）。
+  </div>
+</div>
+
+<script>
+  // ---- WCAG contrast, computed from the real token values ----
+  const hex = h => { h = h.replace('#',''); if (h.length===3) h=h.split('').map(c=>c+c).join(''); return [0,2,4].map(i=>parseInt(h.slice(i,i+2),16)); };
+  const rgba = s => { const m = s.match(/[\d.]+/g).map(Number); return { rgb:[m[0],m[1],m[2]], a: m[3]===undefined?1:m[3] }; };
+  const lin = c => { c/=255; return c<=0.03928 ? c/12.92 : Math.pow((c+0.055)/1.055, 2.4); };
+  const lum = ([r,g,b]) => 0.2126*lin(r)+0.7152*lin(g)+0.0722*lin(b);
+  const ratio = (a,b) => { const L1=lum(a),L2=lum(b); const hi=Math.max(L1,L2),lo=Math.min(L1,L2); return (hi+0.05)/(lo+0.05); };
+  const over = (fg, a, bg) => fg.map((c,i)=> Math.round(c*a + bg[i]*(1-a))); // alpha composite
+
+  const TOK = {
+    light: { canvas:'#ffffff', subtle:'#f6f7f9', muted:'#eceef1', surface:'#ffffff',
+             accent:'#4f46e5', ringOld:'rgba(79,70,229,.45)', tierOld:'#7c7d85', tierNew:'#6a6b73' },
+    dark:  { canvas:'#0a0b0d', subtle:'#0e0f11', muted:'#16171a', surface:'#121316',
+             accent:'#818cf8', ringOld:'rgba(129,140,248,.45)', tierOld:'#71727a', tierNew:'#86878f' },
+  };
+  const fmt = r => r.toFixed(2)+':1';
+  const badge = ok => `<span class="badge ${ok?'pass':'fail'}">${ok?'PASS':'FAIL'}</span>`;
+
+  // ---- focus ring: contrast of the effective ring color vs the canvas it sits on ----
+  document.querySelectorAll('[data-ring]').forEach(el => {
+    const t = TOK[el.dataset.theme], mode = el.dataset.mode, bg = hex(t.canvas);
+    let ringRgb, label;
+    if (mode==='old') { const r = rgba(t.ringOld); ringRgb = over(r.rgb, r.a, bg); label='α0.45 光晕 合成'; }
+    else { ringRgb = hex(t.accent); label='实色描边'; }
+    const cr = ratio(ringRgb, bg), ok = cr>=3;
+    el.innerHTML = `<span class="req">${label} vs 底色</span> <b>${fmt(cr)}</b> ${badge(ok)} <span class="req">需 ≥3:1</span>`;
+  });
+
+  // ---- tertiary text: worst-case across the adjacent backgrounds ----
+  const BGS = [['canvas','app 背景'],['subtle','侧栏'],['muted','悬浮/输入'],['surface','卡片/弹层']];
+  document.querySelectorAll('[data-tier]').forEach(grid => {
+    const t = TOK[grid.dataset.theme], txt = hex(grid.dataset.tier==='old' ? t.tierOld : t.tierNew);
+    let worst = Infinity;
+    const cells = BGS.map(([k,name]) => {
+      const cr = ratio(txt, hex(t[k])); worst = Math.min(worst, cr); const ok = cr>=4.5;
+      return `<div class="swatch ${k}">
+        <div class="bgname">${name} · ${k}</div>
+        <div class="demo-${grid.dataset.tier==='old'?'old':'new'}">14:07 · 3 处引用</div>
+        <div class="ratio"><b>${fmt(cr)}</b> ${badge(ok)}</div>
+      </div>`;
+    }).join('');
+    grid.innerHTML = cells;
+    grid.insertAdjacentHTML('afterend', `<div class="ratio" style="margin-top:10px"><span class="req">最差底色</span> <b>${fmt(worst)}</b> ${badge(worst>=4.5)} <span class="req">需 ≥4.5:1</span></div>`);
+  });
+</script>
+</body>
+</html>

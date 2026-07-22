@@ -354,3 +354,62 @@
 **结论**:三重型引擎换肤 = **卡壳层基本完成、引擎内核按 ADR-016 保留、6 条边缘缺口**;
 timeline COUPLING 清单已按冻结语义重建并回勾;dev-plan 另两项如实未勾。本档 §1/§3 即
 REQ-087 spike 交付物①(timeline/diff/terminal/permission 段)的可直接消费输入。
+
+---
+
+## 7. 追加(2026-07-22):re-anchor + scope-recheck
+
+> append-only。本档 §1–§6 是 **frozen-base-2**(`42f14c6b`,ADR-020)期的一次性快照,
+> 不改写。本节声明其两处已过期前提,并把残项取证导向新 harness。
+
+### 7.1 scope re-check(消费者已变,残项仍在范围)
+- 头注 :10-12 的驱动方 **REQ-087 / #180 已关闭**并已消费 §1/§3,该 spike 用途**履约作废**。
+- owner 2026-07-22 **确认残项仍需要**:§5 未取证的 ~40-shot packaged 视觉证据,
+  **现行消费者 = REQ-088 结构接管**(§1.1 已把 T3/T4 归 REQ-088;结构接管前需真机「接管前观感」基线)。
+- DECIDE(残项是否在范围内?)= **YES,已裁决**;不再复议。
+
+### 7.2 live-path re-anchor(冻结已死 → 滚动 pin)
+- **ADR-020 冻结模型已死**:ADR-034 / PR#474(`107e4737`)把 `packages/{app,ui}` 迁到
+  **滚动 pin+补丁**,SOT = `frontend/frontend-pin.lock`(实测 `pin=849c2598`)。本档所有
+  file:line 是冻结期快照,**不能直接当今日真值**——取证前必须在 pin 849c2598 工作树跑
+  `upstream-anchors.test.ts` 三断言复验。
+- **锚集已漂移**:§0 记 `alive=176 / knownDead=6`;当前 `upstream-anchors.json` 实测
+  **`alive=172 / knownDead=4`**。§0.1 记为「假死」的 `component:session-composer` /
+  `component:session-new-composer` **已从清单整体消失——既不在 alive 也不在 knownDead**(json 内
+  零出现)。机制**不是「迁回 alive」**:composer 接管选择器已改写为
+  `[data-component="session-prompt-dock"] [data-component="prompt-input-v2"]`
+  (`composer-takeover.tsx:20`),不再引用旧两锚;无 alpha 资产引用 → `gen-upstream-anchors.ts`
+  不再纳入 manifest。**§0.1 的 knownDead 勘误结论就地作废**(前提锚已不在清单),取证以测试绿 +
+  实时 DOM 为准。
+- **§1.3 权限 dock 链已死(基线大前提翻转)**:pin 849c2598 上
+  `packages/ui/src/components/dock-prompt.tsx` 与
+  `packages/app/src/pages/session/composer/session-permission-dock.tsx` **均已不存在**,
+  `session-composer-region.tsx` 零 permission 引用,`composer-reskin.css` 无 `data-kind=permission`,
+  `session-composer-state.ts` 的 `blocked()` 只看 `questionRequest()`(:33-36)。权限确认已由
+  **REQ-090 / #433 PermissionV2**(`c87b7b81` PR#450)收编为 alpha 自有
+  `PermissionWatcher`+`PermissionDialog`(`packages/ui-mac/src/renderer/alpha-ui/`,SDK v2
+  `PermissionV2Request/Decision`)。基线 §1.3 P1–P5 的「上游 dock 换肤」判定**作废**;残项取证
+  的真面触发与 owner 归属再核见证据索引 §2.2。
+- **§0 包归属前提翻转**:§0 记「`packages/app` 实际 import `@opencode-ai/ui`」。当前唯一存活的
+  DockPrompt 面 `session-question-dock.tsx:5` **import 自 `@opencode-ai/session-ui`**(非
+  `@opencode-ai/ui`),故 §0「app 一律走 @opencode-ai/ui」不再成立。P6 question 锚今为
+  `[data-component="session-question-dock"]`(`session-question-dock.tsx:454`),非旧
+  `dock-prompt.tsx:15`。
+- **frozen 期引用勘误(§3.4 permission)**:autoAccept 持久键基线记
+  `Persist.serverGlobal(…,"permission")`(:62-83);live provider 已重写为多 server 形态,持久键升为
+  `Persist.serverGlobal(input.sdk.scope, "permission", ["permission.v3"])`(`permission.tsx:192`)。
+  `permission-auto-respond.ts` 现居 `packages/app/src/context/`(非 composer 目录)。
+
+### 7.3 残项取证 harness 落点
+- §5 四项残项(PTY T2-T4 真面板 / 权限卡 P1-P6 关 autoAccept / question dock P6 /
+  深色全组 + 40 构件回归 / packaged ship:mac)的精确触发与 per-shot→matrix-cell 映射,
+  移交 [`docs/verification/2026-07-22-req005-packaged-evidence-index.md`](../verification/2026-07-22-req005-packaged-evidence-index.md)。
+- §4 的 `ship:mac` 走 packaged-macOS-RC 方法(`docs/verification/2026-07-17-packaged-macos-rc-smoke.md`),
+  **非冻结基 CDP dev**。
+- §3.5 接缝安全结论(DOM-anchor 耦合 / persistence-key 无串味 / engine-boundary 经 props·SDK)
+  = 取证期必守不变量,原样保留。
+
+### 7.4 Source 指针勘误
+- 本档头注 :8 与 Issue #214 Source 均指 `docs/requirements/REQ-005-frontend-takeover-closeout.md`
+  ——该文件与整个 `docs/requirements/` **已删**(`d2f9cd08`,docs-governance v3)。结论现落
+  `docs/audits/` + `docs/verification/`。Issue Source 行的修正见 #214 评论。
