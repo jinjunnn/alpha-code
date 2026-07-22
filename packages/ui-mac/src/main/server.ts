@@ -5,7 +5,7 @@ import { app, utilityProcess } from "electron"
 import type { Details } from "electron"
 import { resolveExtPluginPath } from "./alpha-ext-plugin"
 import { applyEcosystemDefaultDeny } from "./ecosystem-import"
-import { syncSecretFiles } from "./alpha-secret-files"
+import { hasSecretFile, syncSecretFiles } from "./alpha-secret-files"
 import { loadAlphaSecrets } from "./alpha-secrets"
 import { posixModesEffective } from "./platform"
 import { pollUntilHealthy } from "./health-poll"
@@ -67,8 +67,18 @@ export function setDefaultServerUrl(url: string | null) {
 export function preferAppEnv(userDataPath: string) {
   const logger = getLogger()
   const logShellEnvCache = (message: string, extra?: Record<string, unknown>) => write("main", message, extra)
+  const forceOffKeylessWebSearch = () => {
+    if (!process.env.ALPHA_CLOUD_MCP_URL || !hasSecretFile(userDataPath, "ALPHA_CLOUD_TOKEN")) return
+    Object.assign(process.env, {
+      OPENCODE_ENABLE_EXA: "0",
+      OPENCODE_EXPERIMENTAL_EXA: "0",
+      OPENCODE_ENABLE_PARALLEL: "0",
+      OPENCODE_EXPERIMENTAL_PARALLEL: "0",
+    })
+  }
   const shell = process.platform === "win32" ? null : getUserShell()
-  // 1. Login-shell env first -- a real `export` always wins over the secrets file and our defaults.
+  // 1. Login-shell env first -- a real `export` wins over the secrets file and ordinary defaults;
+  //    the platform-pays websearch selection below is an explicit local sovereignty override.
   // B1:缓存命中 → 0ms 套用 + 后台异步真探测(成功即更新缓存、按「真 export 赢」套差异,新值下次
   // fork 生效);未命中(首启/换 shell)→ 同步探测一次(fork 前必须有 PATH 等,宁可首启慢一次)。
   if (shell) {
@@ -84,9 +94,12 @@ export function preferAppEnv(userDataPath: string) {
           // 并随 fork 传进 sidecar。此前仅缓存读路径净化,fresh 路径漏网(与冻结快照形成双真源)。
           const { env: cleanFresh, stripped } = sanitizeCachedShellEnv(fresh)
           if (stripped.length > 0)
-            logger.log(`[server] [req301] stripped session-control keys from refreshed shell env: ${stripped.join(", ")}`)
+            logger.log(
+              `[server] [req301] stripped session-control keys from refreshed shell env: ${stripped.join(", ")}`,
+            )
           writeShellEnvCache(userDataPath, shell, cleanFresh, logShellEnvCache)
           Object.assign(process.env, cleanFresh)
+          forceOffKeylessWebSearch()
           logger.log(`[server] Shell env refreshed in background (${Object.keys(cleanFresh).length} vars)`)
         })
         .catch(() => {})
@@ -99,9 +112,9 @@ export function preferAppEnv(userDataPath: string) {
   // 2. Fill missing API keys (EXA_API_KEY, *_API_KEY, ...) from the alpha.env secrets file, so app
   //    users never have to touch ~/.zshrc. Never overrides anything already set in step 1.
   loadAlphaSecrets(userDataPath, logger)
-  // 3. Desktop defaults. OPENCODE_ENABLE_EXA defaults ON so websearch is offered to EVERY provider
-  //    (opencode gates it as `providerID==opencode || exa || parallel`). An explicit
-  //    OPENCODE_ENABLE_EXA value, or ALPHA_WEBSEARCH_DISABLE=1, opts back out.
+  // 3. Desktop defaults. Logged-out/BYOK keeps keyless websearch available to every provider;
+  //    platform-pays makes cloud_web_search authoritative by force-disabling every specific
+  //    Exa/Parallel flag, including values imported from the user's login shell.
   // B12 拍板(2026-07-05,S17 T5):实验 flag 改 set-if-unset —— 默认开(filewatcher 供「外部变更
   // 感知」:外部编辑/外部 git 的文件树/分支刷新;agent 自身修改由工具主动发事件、不受影响),但尊重
   // 用户显式 export(=false 可关;此前 Object.assign 硬覆盖,与上方「真 export 赢」注释矛盾)。
@@ -121,6 +134,7 @@ export function preferAppEnv(userDataPath: string) {
     OPENCODE_DISABLE_MODELS_FETCH: process.env.OPENCODE_DISABLE_MODELS_FETCH ?? "1",
     ...(process.env.ALPHA_WEBSEARCH_DISABLE ? {} : { OPENCODE_ENABLE_EXA: process.env.OPENCODE_ENABLE_EXA ?? "1" }),
   })
+  forceOffKeylessWebSearch()
 }
 
 export async function spawnLocalServer(
