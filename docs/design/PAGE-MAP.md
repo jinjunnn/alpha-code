@@ -24,6 +24,13 @@ mock, history) and flags where design and implementation diverge. The status
 column below mirrors the manifest's `lineage` for at-a-glance reading — when they
 differ, **the manifest wins; fix this file.**
 
+Each surface's **intended end-state** (`target`) also lives in the manifest.
+`target !== lineage` = a surface still being replaced (the replacement backlog,
+`frontendSurfacesPendingReplacement()`); `target === lineage` = stable. The
+method for moving a surface up the ladder is
+[`system/replacing-opencode.md`](system/replacing-opencode.md); its **sequencing
+and priority live in GitHub Issues + the Alpha Delivery Project**, never here.
+
 ## Status legend
 
 - **alpha-ized** — alpha replaced an upstream opencode surface with its own.
@@ -46,14 +53,14 @@ is alpha-authored. "opencode" below means the surface is rendered by an upstream
 | Slash menu / 斜杠菜单 | alpha-ized | `ui-mac/src/renderer/alpha-ui/composer-autocomplete.tsx` | [`current/slash-menu/`](current/slash-menu/design.html) | 2026-07-09-slash-menu (REQ-072) |
 | Assemble popup / 装配弹窗 | alpha-new | `ui-mac/src/renderer/alpha-ui/composer-autocomplete.tsx` (`buildAssembleRows`) | [`current/assemble-popup/`](current/assemble-popup/design.html) | 2026-07-09-assemble-popup (REQ-073) |
 | Model picker / 模型选择器 | alpha-ized | `ui-mac/src/renderer/alpha-ui/alpha-composer-model.tsx` + `model-picker-add.tsx` | [`current/model-picker/`](current/model-picker/design.html) | model-picker-redesign; ADR-016 |
-| Conversation timeline / 时间线 | partial | `ui-mac/src/renderer/alpha-ui/timeline-inject.tsx` + `timeline/*.css` | [`current/conversation-timeline/`](current/conversation-timeline/design.html) | timeline-overhaul; **in-flight:** req124-timeline-artifact-rows (uncommitted) |
+| Conversation timeline / 时间线 | partial | `ui-mac/src/renderer/alpha-ui/timeline-inject.tsx` + `timeline/*.css` | [`current/conversation-timeline/`](current/conversation-timeline/design.html) | timeline-overhaul; artifact-rows 增量 = `2026-07-21-req124-timeline-artifact-rows/`(已批准;实现 #449 时并入 current)。manifest target = alpha |
 | Extension Hub / 定制中心 | alpha-new | `ui-mac/src/renderer/extensions/extension-hub.tsx` (+ `extension-detail.tsx`, …) | [`current/customization-center/`](current/customization-center/design.html) | hub-settings → ext-hub-m2 → req103-hub-governance → req103-remaining → req104-pack-facts → **req104-four-shelf (v6)**; ADR-014/028/030. MCP mgmt folds in here (连接器) |
 | Capability authorize / 能力授权 | alpha-new | `ui-mac/src/renderer/extensions/ext-authz.tsx` | [`current/capability-authorize/`](current/capability-authorize/design.html) | 2026-07-15-capability-authorize-dialog (REQ-100/#348) |
-| Artifact Workbench / 产物工作台 (Office 预览) | alpha-new | `ui-mac/src/renderer/alpha-ui/artifact-workbench/artifact-workbench.tsx` | — (**mock in-flight:** req097-office-preview, uncommitted) | REQ-094/#186; renderers csv/json/markdown/ooxml/html |
+| Artifact Workbench / 产物工作台 (Office 预览) | alpha-new | `ui-mac/src/renderer/alpha-ui/artifact-workbench/artifact-workbench.tsx` | [`current/artifact-workbench/`](current/artifact-workbench/design.html) | 外壳 REQ-094/#186 已合;Office 预览内容 REQ-097/#189 + REQ-123/#438 open;renderers csv/json/markdown/ooxml/html |
 | Automations / 自动化 | alpha-new | `ui-mac/src/renderer/automations/automation-panel.tsx` | — (**no mock — gap**) | — |
 | Onboarding / 首次引导 | alpha-new | `ui-mac/src/renderer/alpha-ui/AlphaOnboarding.tsx` | — (**no UI mock — gap**) | loosely 2026-06-29-llm-auth-routing (routing doc) |
-| Settings / 设置 | partial | `ui-mac/src/renderer/alpha-ui/settings-reskin.css` + `settings-back-button.ts` over upstream `app/src/components/dialog-settings.tsx` | [`current/settings/`](current/settings/design.html) | hub-settings-redesign; req090-alpha-surfaces. Alpha side = reskin only |
-| Permission confirm / 权限确认 | **opencode** | `app/src/pages/session/composer/session-permission-dock.tsx` (upstream) | — (mock exists, **no alpha impl — gap**) | req090-alpha-surfaces (Permission) |
+| Settings / 设置 | alpha-ized | `ui-mac/src/renderer/alpha-ui/settings.tsx` | [`current/settings/`](current/settings/design.html) | hub-settings-redesign; req090-alpha-surfaces。自渲染 Alpha overlay(不嵌上游 dialog-settings),只消费 typed adapters |
+| Permission confirm / 权限确认 | alpha-ized | `ui-mac/src/renderer/alpha-ui/permission-watcher.tsx` + `PermissionDialog.tsx` | — (设计=req090-alpha-surfaces Permission) | req090-alpha-surfaces。读 PermissionV2、经 Alpha Dialog 原子提交;不再挂上游 dock |
 | General Dialog / 通用弹窗 | partial | `ui-mac/src/renderer/alpha-ui/Dialog.tsx` | — | req090-alpha-surfaces (Dialog); alpha Dialog hosts only alpha consumers |
 | Boot / Surface recovery / 恢复 | partial | `ui-mac/src/main/db-safety-boot.ts` + `renderer/alpha-ui/surface-boundary.tsx` | — | req090-alpha-surfaces (Recovery); #334 |
 | Session workspace / 会话工作区 | partial | `ui-mac/src/renderer/alpha-ui/session-workspace/alpha-session-workspace.tsx` | — | composer-model-redesign; req090. **Gated OFF** (`SURFACE_RELEASE_STATES.session = "legacy"`) |
@@ -62,11 +69,14 @@ is alpha-authored. "opencode" below means the surface is rendered by an upstream
 
 ## Gaps
 
-**Design without implementation** (mock exists, still upstream / gated / reskin-only):
-- **Permission confirm** — cleanest gap: mock in req090, impl still upstream dock.
-- **Session workspace** — alpha frame built but gated `legacy`; ships upstream leaf.
-- **Settings** — mocks exist; alpha side is reskin CSS + back-button only.
-- **General Dialog / Recovery** — req090 mocks exist; impl is `hybrid`.
+**Replacement backlog** (`lineage !== target` in the manifest — hybrid surfaces
+owner-targeted for full alpha, 2026-07-21):
+- **Session workspace** (`route.session`) — alpha frame built but gated `legacy`; ships upstream leaf.
+- **Composer** (`inline.composer`) — alpha composer via takeover; promote to seam surface.
+- **Conversation timeline** (`inline.timeline`) — alpha render/style injected into upstream DOM; promote to typed leaf.
+- **General Dialog** (`overlay.dialog`) — hybrid host; bridges upstream + alpha consumers.
+
+(Settings, Permission, and Recovery are now `alpha` in the manifest — no longer gaps.)
 
 **Implementation without design** (alpha surface, no mock):
 - **Automations panel** — alpha-new full page, no mock.

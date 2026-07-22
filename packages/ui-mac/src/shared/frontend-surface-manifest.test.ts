@@ -5,6 +5,7 @@ import {
   FRONTEND_SURFACE_MANIFEST,
   FRONTEND_SURFACE_MANIFEST_VERSION,
   frontendSurfaceIdForRoute,
+  frontendSurfacesPendingReplacement,
 } from "./frontend-surface-manifest"
 
 describe("frontend surface manifest", () => {
@@ -44,6 +45,18 @@ describe("frontend surface manifest", () => {
   test("covers all four composition mount kinds", () => {
     expect(new Set(FRONTEND_SURFACE_MANIFEST.map((surface) => surface.mount.kind))).toEqual(
       new Set(["route", "overlay", "inline", "boot"]),
+    )
+  })
+
+  test("every surface declares a valid intended target lineage", () => {
+    const valid = new Set(["alpha", "opencode", "hybrid"])
+    expect(FRONTEND_SURFACE_MANIFEST.filter((surface) => !valid.has(surface.target))).toEqual([])
+  })
+
+  test("replacement backlog = surfaces whose target differs from current lineage", () => {
+    // owner-ratified 2026-07-21: the four remaining hybrids are targeted for full alpha ownership.
+    expect(new Set(frontendSurfacesPendingReplacement().map((surface) => surface.id))).toEqual(
+      new Set(["route.session", "inline.composer", "inline.timeline", "overlay.dialog"]),
     )
   })
 })
