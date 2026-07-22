@@ -13,7 +13,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { randomUUID } from "node:crypto"
 import { fileURLToPath } from "node:url"
-import { applyEdits, modify, parse, type ParseError } from "jsonc-parser"
+import { applyEdits, format, modify, parse, type ParseError } from "jsonc-parser"
 import type { ProviderInput } from "../shared/alpha-model-types"
 import type { InstallMeta } from "../preload/types"
 import { opencodeHomeDir } from "./alpha-bridge"
@@ -31,7 +31,7 @@ export type ConfigResult = { ok: true } | { ok: false; reason: string }
 // 不符走 fail-closed,用户看到「回滚未复原」)。覆盖面 = writeKey 汇点(值与现文件无关的键写)+
 // plugin 列表 RMW 整函数 + 治理直写;引擎事务自身走 ext-config-tx 独立通道,不会重入此锁。
 // 非阻塞:事务在途 → 如实 busy(引擎层同约,ext-bundle-lock 不隐式等待)。
-function withConfigWriteLock<T>(fn: () => T): T | { ok: false; reason: string } {
+export function withConfigWriteLock<T>(fn: () => T): T | { ok: false; reason: string } {
   const acquired = tryAcquireBundleLock(alphaGlobalRoot(), { txId: `cfg-${randomUUID()}` })
   if (!acquired.ok) return { ok: false, reason: `config busy: ${acquired.reason} — retry after the in-flight extension transaction` }
   try {
@@ -114,7 +114,7 @@ function alphaOpencodeConfigPath(): string {
 // mcp / plugin / 治理键 的写入目标。两级逃生:
 //   ALPHA_JSONC_TRUTH_DISABLE=1 → 回 REQ-018 行为(~/.opencode/opencode.jsonc);
 //   ALPHA_LEGACY_INSTALL_ROOT=1 → 回最旧行为(共享 XDG,不记账)。
-function mcpPluginTargetPath(): string {
+export function mcpPluginTargetPath(): string {
   if (process.env.ALPHA_LEGACY_INSTALL_ROOT === "1") return userConfigPath()
   if (process.env.ALPHA_JSONC_TRUTH_DISABLE === "1") return alphaOpencodeConfigPath()
   return alphaJsoncPath()
@@ -240,7 +240,7 @@ function applyBuiltinPolicyEditsUnlocked(edits: BuiltinPolicyEdit[]): BuiltinPol
     return { ok: true, applied }
   } catch (error) {
     try {
-      if (fs.existsSync(bak)) fs.copyFileSync(bak, target)
+      if (fs.existsSync(bak)) fs.unlinkSync(bak)
       if (fs.existsSync(tmp)) fs.unlinkSync(tmp)
     } catch {
       /* nothing more we can do */
@@ -337,8 +337,6 @@ function writeKey(target: string, keyPath: string[], value: unknown): ConfigResu
 /** 仅供已持配置写锁的调用方(plugin RMW 整函数锁内)使用;其余一律走 writeKey。 */
 function writeKeyUnlocked(target: string, keyPath: string[], value: unknown): ConfigResult {
   if (!ALLOWED_TOP_KEYS.has(keyPath[0])) return { ok: false, reason: `refused: unknown config key "${keyPath[0]}"` }
-  const bak = `${target}.bak`
-  const tmp = `${target}.tmp`
   let text = "{}"
   try {
     if (fs.existsSync(target)) text = fs.readFileSync(target, "utf8")
@@ -346,12 +344,76 @@ function writeKeyUnlocked(target: string, keyPath: string[], value: unknown): Co
     return { ok: false, reason: "failed to read config" }
   }
   try {
-    fs.mkdirSync(path.dirname(target), { recursive: true })
-    if (fs.existsSync(target)) fs.writeFileSync(bak, text)
     const edits = modify(text, keyPath, value, { formattingOptions: { tabSize: 2, insertSpaces: true } })
-    const result = applyEdits(text, edits)
+    return writeConfigTextAtomic(target, text, applyEdits(text, edits))
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "failed to write config" }
+  }
+}
+
+export type ConfigLeafEdit = { keyPath: Array<string | number>; value: undefined }
+
+/**
+ * Apply a planned set of leaf removals while the caller holds the config write lock (or during the
+ * single-threaded pre-fork boot window). The dangling-reference sweep needs a single commit across
+ * plugin and mcp edits, plus an exact before-image check so indices planned from one JSONC document
+ * cannot be applied to another. The final write shares writeKeyUnlocked's atomic commit primitive.
+ */
+export function writeConfigLeafEditsUnlocked(
+  target: string,
+  expectedText: string,
+  leafEdits: ConfigLeafEdit[],
+): ConfigResult {
+  if (leafEdits.length === 0) return { ok: true }
+  for (const edit of leafEdits) {
+    const pluginLeaf = edit.keyPath[0] === "plugin" && edit.keyPath.length === 2 && typeof edit.keyPath[1] === "number"
+    const mcpLeaf =
+      edit.keyPath[0] === "mcp" &&
+      edit.keyPath.length === 4 &&
+      typeof edit.keyPath[1] === "string" &&
+      (edit.keyPath[2] === "environment" || edit.keyPath[2] === "headers") &&
+      typeof edit.keyPath[3] === "string"
+    if (!pluginLeaf && !mcpLeaf)
+      return { ok: false, reason: `refused: dangling sweep path not allowed: ${edit.keyPath.join(".")}` }
+  }
+
+  let current: string
+  try {
+    current = fs.readFileSync(target, "utf8")
+  } catch {
+    return { ok: false, reason: "failed to read config" }
+  }
+  if (current !== expectedText) return { ok: false, reason: "config changed while dangling sweep was being planned" }
+
+  const beforeErrors: ParseError[] = []
+  parse(current, beforeErrors, { allowTrailingComma: true })
+  if (beforeErrors.length > 0) return { ok: false, reason: "config is not valid jsonc" }
+
+  const applyLeafEdits = (text: string) => leafEdits.reduce(
+    (next, edit) =>
+      applyEdits(next, modify(next, edit.keyPath, undefined, { formattingOptions: { tabSize: 2, insertSpaces: true } })),
+    text,
+  )
+  const first = applyLeafEdits(current)
+  const firstErrors: ParseError[] = []
+  parse(first, firstErrors)
+  // jsonc-parser 3.3 can emit an invalid intermediate when deleting several array entries from a
+  // one-line document. Formatting through the same parser preserves comments and gives modify stable
+  // token boundaries; the final parse gate below still decides whether anything may reach disk.
+  const result = firstErrors.length === 0
+    ? first
+    : applyLeafEdits(applyEdits(current, format(current, undefined, { tabSize: 2, insertSpaces: true })))
+  return writeConfigTextAtomic(target, current, result)
+}
+
+function writeConfigTextAtomic(target: string, before: string, result: string): ConfigResult {
+  const bak = `${target}.bak`
+  const tmp = `${target}.tmp`
+  try {
+    fs.mkdirSync(path.dirname(target), { recursive: true })
+    if (fs.existsSync(target)) fs.writeFileSync(bak, before)
     const errors: ParseError[] = []
-    parse(result, errors)
+    parse(result, errors, { allowTrailingComma: true })
     if (errors.length > 0) throw new Error("resulting config is not valid jsonc")
     fs.writeFileSync(tmp, result, "utf8")
     fs.renameSync(tmp, target)
@@ -364,9 +426,8 @@ function writeKeyUnlocked(target: string, keyPath: string[], value: unknown): Co
     }
     return { ok: true }
   } catch (error) {
-    // Roll back from the backup so a failed write never leaves a corrupt config.
     try {
-      if (fs.existsSync(bak)) fs.copyFileSync(bak, target)
+      if (fs.existsSync(bak)) fs.unlinkSync(bak)
       if (fs.existsSync(tmp)) fs.unlinkSync(tmp)
     } catch {
       /* nothing more we can do */

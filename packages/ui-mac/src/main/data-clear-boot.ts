@@ -8,8 +8,9 @@
 //   先备份提示(B14 验收④)→ 红色终确认(列将删项 + 体积 + 共享面 checkbox)→ 停引擎 → 清除 →
 //   退出(数据已清,无可重启的状态)。
 
-import { existsSync, lstatSync, readdirSync, readlinkSync, realpathSync, rmSync } from "node:fs"
+import { existsSync, lstatSync, readdirSync, readlinkSync, realpathSync, rmdirSync, rmSync } from "node:fs"
 import { homedir } from "node:os"
+import { join } from "node:path"
 import { app, dialog } from "electron"
 
 import { getLogger } from "./logging"
@@ -21,6 +22,8 @@ import { logout } from "./alpha-auth"
 import * as DataClear from "./data-clear"
 import { safeStorageBackend } from "./platform"
 import { assertAlphaEnvironmentIdentity } from "./alpha-environment"
+import { withConfigWriteLock } from "./ext-config"
+import { sweepEngineConfigDanglingUnlocked, type DanglingSweepOutcome } from "./engine-config-dangling"
 
 // REQ-076 T2:safeStorage 残留说明按托管后端分叉(darwin=钥匙串可手动清;win32=DPAPI 绑用户
 // 账户,加密文件删除后无独立残留项可清)——文案如实,不给 Windows 用户指一条不存在的「钥匙串」路。
@@ -81,6 +84,71 @@ function logResults(level: DataClear.ClearLevel, results: DataClear.ClearResultI
   }
 }
 
+function logDanglingSweep(level: DataClear.ClearLevel, outcome: DanglingSweepOutcome) {
+  const log = getLogger()
+  if (outcome.stripped.length > 0) {
+    const line = `[req053-dangling-sweep] level=${level} stripped=${outcome.stripped.length} files=${outcome.changedFiles.join(",")}`
+    log?.warn(line)
+    console.warn(line)
+  }
+  outcome.warnings.forEach((warning) => {
+    const line = `[req053-dangling-sweep] level=${level} warning=${warning}`
+    log?.warn(line)
+    console.warn(line)
+  })
+}
+
+function executeClearWithDanglingSweep(
+  level: DataClear.ClearLevel,
+  plan: DataClear.ClearPlan,
+  roots: DataClear.ClearRoots,
+  includeShared: boolean,
+) {
+  const results = DataClear.executeClear(fsDeps, plan, roots, { includeShared })
+  const locked = withConfigWriteLock(() => {
+    const sweep = (() => {
+      try {
+        return sweepEngineConfigDanglingUnlocked({
+          phase: level === "credentials" ? "credentials-clear" : "data-clear",
+          userDataPath: roots.userData,
+          engineDataPath: roots.engineData,
+        })
+      } catch (error) {
+        return {
+          changedFiles: [],
+          stripped: [],
+          warnings: [`sweep crashed after clear; boot sweep will retry (${error instanceof Error ? error.message : String(error)})`],
+          enforcementGap: [],
+        } satisfies DanglingSweepOutcome
+      }
+    })()
+    return { acquired: true as const, sweep }
+  })
+  if ("acquired" in locked) {
+    logDanglingSweep(level, locked.sweep)
+    // A data clear removed alphaGlobal before this post-clear lock was acquired. The lock correctly
+    // recreated only alphaGlobal/ext-tx; remove those directories iff they are still empty, so the
+    // reset does not leave its own lock scaffold and can never race-delete a new holder's file.
+    if (level === "data") {
+      try {
+        const txDir = join(roots.alphaGlobal, "ext-tx")
+        if (existsSync(txDir)) rmdirSync(txDir)
+        if (existsSync(roots.alphaGlobal)) rmdirSync(roots.alphaGlobal)
+      } catch (error) {
+        const line = `[req053-dangling-sweep] level=data lock scaffold cleanup skipped: ${error instanceof Error ? error.message : String(error)}`
+        getLogger()?.warn(line)
+        console.warn(line)
+      }
+    }
+    return results
+  }
+
+  const line = `[req053-dangling-sweep] level=${level} skipped: ${locked.reason}`
+  getLogger()?.warn(line)
+  console.warn(line)
+  return results
+}
+
 export type DataClearAction = { clearData(): void }
 
 export function createDataClearAction(opts: {
@@ -112,7 +180,7 @@ export function createDataClearAction(opts: {
     assertAlphaEnvironmentIdentity()
     clearByokKeys()
     for (const name of secretEnvVars()) delete process.env[name]
-    const results = DataClear.executeClear(fsDeps, plan, roots, { includeShared: true })
+    const results = executeClearWithDanglingSweep("credentials", plan, roots, true)
     logResults("credentials", results)
     await logout()
     const failed = results.filter((r) => r.outcome === "failed")
@@ -164,8 +232,8 @@ export function createDataClearAction(opts: {
         `· 应用数据(设置/日志/密钥/凭证):${DataClear.formatBytes(localBytes)}\n` +
         `· 当前环境安装物及其在 ~/.opencode 的桥接链接(${plan.bridgeLinks.length} 条)\n` +
         `· 引擎数据(会话数据库/项目元数据/引擎凭证):${DataClear.formatBytes(sharedBytes)} —— 见下方勾选\n\n` +
-        "不会触碰:你的项目文件、各项目内 .alpha/ 目录、~/.opencode 内你自建的内容、" +
-        "~/.opencode/opencode.jsonc(如经定制中心装过连接器/插件,建议先在定制中心卸载,或事后手动清理其条目)。\n" +
+        "不会触碰:你的项目文件、各项目内 .alpha/ 目录、~/.opencode 内你自建的内容。" +
+        "Alpha 自有配置中指向已清除数据的悬空连接器/插件引用会一并清理。\n" +
         safeStorageResidueNote(),
       checkboxLabel: "同时删除引擎数据(与独立安装的 opencode CLI 共享 —— 若你单独使用 opencode,请勿勾选)",
       checkboxChecked: true,
@@ -178,7 +246,7 @@ export function createDataClearAction(opts: {
     getLogger()?.warn("[c16-data-clear] full data clear confirmed — stopping sidecars")
     await opts.stopSidecars()
     assertAlphaEnvironmentIdentity()
-    const results = DataClear.executeClear(fsDeps, plan, roots, { includeShared: confirm.checkboxChecked })
+    const results = executeClearWithDanglingSweep("data", plan, roots, confirm.checkboxChecked)
     logResults("data", results)
     const failed = results.filter((r) => r.outcome === "failed")
     if (failed.length) {
