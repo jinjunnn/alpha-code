@@ -92,7 +92,9 @@ body[data-alpha-sidebar="open"] .a-home--page {
 @media (prefers-reduced-motion: reduce) {
   .a-home-hero,
   .a-home-section,
-  .a-home-empty { animation: none; }
+  .a-home-empty,
+  .a-home-greet,
+  [data-alpha-home] .a-comp { animation: none; }
 }
 
 /* ── Empty state ────────────────────────────────────────────────────────── */
