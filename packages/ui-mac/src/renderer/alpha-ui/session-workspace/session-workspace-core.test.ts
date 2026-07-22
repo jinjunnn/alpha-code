@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { parseRoute } from "../../../shared/legacy-route-abi"
+import { parseRoute } from "../../../shared/route-manifest"
 import { isCrossServerSessionError, workspaceContextOf } from "./session-workspace-core"
 
-/** URL-safe base64 目录段(与 legacy-route-abi encodeDirectory 同构;经 parseRoute 消费验证)。 */
+/** URL-safe base64 目录段(与 route-manifest encodeDirectory 同构;经 parseRoute 消费验证)。 */
 const slug = (dir: string) => btoa(dir).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
 
-describe("REQ-088 T2 chrome 展示模型(只读路由 ABI,零 upstream context)", () => {
+describe("REQ-088 T2 chrome 展示模型(只读 route manifest,零 upstream context)", () => {
   test("session 路由(带 id)→ 项目 basename + 会话尾 8 位", () => {
     const ctx = workspaceContextOf(parseRoute(`/${slug("/Users/tide/app/alpha-work")}/session/ses_0123456789abcdef`))
     expect(ctx).toEqual({

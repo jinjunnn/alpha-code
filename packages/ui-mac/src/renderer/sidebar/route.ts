@@ -1,9 +1,9 @@
 // URL helpers for the alpha Codex-style sidebar.
 //
-// 一切路由/目录编解码委托给 shared/legacy-route-abi(REQ-084 版本化契约,唯一事实源);
-// 本文件只保留既有导出名,importers 免改动。上游 bump 后如见路由 404,查 ABI 模块而非这里。
+// 一切路由/目录编解码委托给 shared/route-manifest(REQ-089 版本化契约,唯一事实源);
+// 本文件只保留既有导出名,importers 免改动。上游 bump 后如见路由 404,查 manifest 而非这里。
 
-import { decodeDirectory, encodeDirectory, hrefFor } from "../../shared/legacy-route-abi"
+import { decodeDirectory, encodeDirectory, hrefFor } from "../../shared/route-manifest"
 
 export function base64UrlEncode(value: string): string {
   return encodeDirectory(value)

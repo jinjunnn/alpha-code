@@ -4,8 +4,8 @@ kind: architecture
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-21
-review_after: 2027-01-20
+last_reviewed: 2026-07-22
+review_after: 2027-01-18
 ---
 
 # Frontend surface composition
@@ -13,8 +13,10 @@ review_after: 2027-01-20
 ## Authority
 
 [`frontend-surface-manifest.ts`](../../packages/ui-mac/src/shared/frontend-surface-manifest.ts)
-is the executable source of truth for top-level frontend composition boundaries.
-It covers URL pages and non-URL surfaces because the Alpha renderer mounts both:
+is the descriptive ledger for top-level frontend composition boundaries. It
+records lineage, target, mount, and source facts, but it does not register or
+decode routes. It covers URL pages and non-URL surfaces because the Alpha
+renderer mounts both:
 
 - `route`: a page or compatibility redirect owned by the in-app router;
 - `overlay`: a full-page workspace, modal, or transient layer above the current route;
@@ -24,6 +26,11 @@ It covers URL pages and non-URL surfaces because the Alpha renderer mounts both:
 The manifest records durable implementation facts only. Requirement status,
 priority, ownership assignment, and planned delivery remain in GitHub Issues and
 Alpha Delivery.
+
+[`route-manifest.ts`](../../packages/ui-mac/src/shared/route-manifest.ts) is the
+separate executable authority for formal route identity, parameter schemas,
+path/query encoding, and the single leaf-or-redirect composition seam. It is
+data and a contract, not a copy of the upstream Router runtime or page tree.
 
 ## Classification
 
@@ -66,30 +73,34 @@ session provider tree. Its narrow surface client reuses that session's current
 server/directory SDK and existing event emitter for pending-request list, asked/replied
 events, and atomic replies; it does not create a parallel SDK client or SSE stream.
 
-## Navigation compatibility
+## Route contract
 
-[`legacy-route-abi.ts`](../../packages/ui-mac/src/shared/legacy-route-abi.ts)
-remains the only codec for the frozen OpenCode-compatible URL vocabulary. The
-current application route chain includes:
+The versioned route manifest is the only Alpha codec for the current application
+URL vocabulary. Its parser, href builder, and navigation targets all consume the
+same path/query descriptors:
 
 ```text
 /                                      home
 /:dir                                 compatibility redirect
-/:dir/session                         draft admission
+/:dir/session?prompt=...              draft admission
 /new-session?draftId=...              draft page
 /:dir/session/:sessionId              durable session
 ```
+
+Settings, Dialog, and Recovery also have unique manifest identities and empty
+parameter schemas, but remain non-URL system surfaces. Invalid directory data,
+missing parameters, unknown routes, unsupported manifest or route versions, and
+corrupt links select the Recovery identity with a deterministic error code.
 
 The Electron renderer uses `MemoryRouter`, so the application route and the
 shell document path may differ. Code that decides product navigation reads the
 router location; shell diagnostics may read `window.location` but must not treat
 `/index.html` as the current product page.
 
-Changing the canonical route vocabulary is a separate compatibility change. It
-must preserve existing deep links through typed parsing/redirects and verify
-draft promotion, tab lifecycle, provider scope, and back/forward behavior. A
-primary workspace that needs deep links and navigation history belongs on a
-route; a transient confirmation or contextual picker remains an overlay.
+Router providers, layouts, and route registration remain upstream-owned and are
+not duplicated by this contract. A primary workspace that needs deep links and
+navigation history belongs on a route; a transient confirmation or contextual
+picker remains an overlay.
 
 ## Development inspector
 
@@ -109,7 +120,9 @@ It is not a product route and is absent from production builds.
 
 Any change that adds, removes, replaces, or relocates a top-level surface must
 update the manifest in the same change. The manifest tests enforce unique IDs,
-valid internal transition targets, real source files, frozen-route mapping, and
-coverage of every mount kind. Runtime mount tests remain responsible for the
-stronger XOR claim that an Alpha leaf and its upstream fallback are never active
-as competing owners at the same seam.
+valid internal transition targets, real source files, canonical route-identity
+mapping, and coverage of every mount kind. Route-manifest tests separately
+enforce route/version uniqueness, path/query round trips, and fail-closed
+recovery. Runtime mount tests remain responsible for the stronger XOR claim that
+an Alpha leaf and its upstream fallback are never active as competing owners at
+the same seam.

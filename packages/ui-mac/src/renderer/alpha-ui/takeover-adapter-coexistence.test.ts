@@ -85,8 +85,8 @@ describe("T6 ①挂载通道:takeover 与 session 叶零耦合(挂载方式无�
     expect(timelineInject).not.toContain("function captureSend")
   })
 
-  test("路由假设走版本化 legacy-route-abi,不手搓路由正则(adapter 不改路由形状,ABI 是唯一事实源)", () => {
-    expect(composerTakeover).toContain(`import { parseRoute } from "../../shared/legacy-route-abi"`)
+  test("路由假设走版本化 route manifest,不手搓路由正则(adapter 不改路由形状,manifest 是唯一事实源)", () => {
+    expect(composerTakeover).toContain(`import { parseRoute } from "../../shared/route-manifest"`)
   })
 })
 

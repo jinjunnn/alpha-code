@@ -20,7 +20,7 @@ import { createEffect, createMemo, createResource, createSignal, For, Show, onCl
 import { Portal } from "solid-js/web"
 import { useLocation } from "@solidjs/router"
 import { t } from "../i18n"
-import { parseRoute } from "../../shared/legacy-route-abi"
+import { parseRoute } from "../../shared/route-manifest"
 import { initialDesiredState } from "../../shared/ext-install-policy"
 import { projectLabel } from "../sidebar/route"
 import { BuiltinControlsPanel } from "./builtin-controls-panel"

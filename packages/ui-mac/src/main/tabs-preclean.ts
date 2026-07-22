@@ -10,12 +10,12 @@
 // 契约锚(上游冻结面,ADR-020 re-freeze 时按 §5 复查):
 //   store = "opencode.global.dat",键 "tabs" / "tabs.recent"(app/src/utils/persist.ts:26 GLOBAL_STORAGE);
 //   tabKey = `${server}\n/${dirBase64}/session/${sessionId}` | `draft:${draftID}`(app/src/context/tabs.tsx:36-39);
-//   dirBase64 形状 = shared/legacy-route-abi isDirectorySlug(REQ-084 版本化契约,不再本地复刻编码方案);
+//   dirBase64 形状 = shared/route-manifest isDirectorySlug(REQ-089 版本化契约,不再本地复刻编码方案);
 //   **worktree "/" → "Lw" 是合法全局约定(ADR-008),校验只看形状、绝不按解码值剔**。
 // 纪律:一切拿不准 = fail-open 保持原样(绝不越修越坏);每次剔除留痕(B11 反静默)。
 // 纯逻辑与编排分离:本文件不 import electron,全部依赖注入 → 可单测。
 
-import { isDirectorySlug } from "../shared/legacy-route-abi"
+import { isDirectorySlug } from "../shared/route-manifest"
 
 export type PrecleanDrop = { where: "tabs" | "recent"; reason: string; detail: string }
 

@@ -15,7 +15,7 @@
 import { createEffect, createSignal, on, onCleanup, Show } from "solid-js"
 import { useLocation } from "@solidjs/router"
 import { useCommand } from "@opencode-ai/app"
-import { parseRoute } from "../../../shared/legacy-route-abi"
+import { parseRoute } from "../../../shared/route-manifest"
 import { isSessionSpikeEnabled } from "./spike-flag"
 import {
   countSessionScopedCommands,

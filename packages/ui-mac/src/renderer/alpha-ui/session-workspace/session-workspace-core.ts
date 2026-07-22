@@ -1,15 +1,15 @@
 // REQ-088 T2 — AlphaSessionWorkspace 纯逻辑核(bun:test 可测;DOM/渲染在 alpha-session-workspace.tsx)。
 //
 // 两块职责:
-//   1. workspaceContextOf —— chrome 上下文条的展示模型,输入只有版本化路由 ABI 的解析结果
-//      (LegacyRoute),不消费任何 upstream context(REQ-087 spike 报告 §6 的窄 API 纪律)。
+//   1. workspaceContextOf —— chrome 上下文条的展示模型,输入只有版本化 route manifest 的解析结果
+//      (Route),不消费任何 upstream context(REQ-087 spike 报告 §6 的窄 API 纪律)。
 //   2. isCrossServerSessionError —— C4 S5 发现的跨 server 会话点击崩溃(alpha 侧栏恒 pin 本地
 //      sidecar,active server 为他机时上游叶 render throw「Session not found: <id>」,引擎侧
 //      control-plane 的错误文案)的**有界识别**。识别到 = 用户态引导(不是 surface 缺陷,不应
 //      污染 surface 崩溃诊断记录);识别不到 = 原样 rethrow 给 SurfaceBoundary 并进入
 //      Alpha Recovery。文案漂移的降级方向是安全的:识别失败只是进入 fail-closed 恢复面。
 
-import type { LegacyRoute } from "../../../shared/legacy-route-abi"
+import type { Route } from "../../../shared/route-manifest"
 import { projectLabel } from "../../sidebar/route"
 
 export interface WorkspaceContext {
@@ -22,7 +22,7 @@ export interface WorkspaceContext {
 }
 
 /** session 路由 → chrome 展示模型;其余路由(workspace 不该挂载的位置)返回 undefined。 */
-export function workspaceContextOf(route: LegacyRoute): WorkspaceContext | undefined {
+export function workspaceContextOf(route: Route): WorkspaceContext | undefined {
   if (route.kind !== "session") return undefined
   return {
     directory: route.directory,

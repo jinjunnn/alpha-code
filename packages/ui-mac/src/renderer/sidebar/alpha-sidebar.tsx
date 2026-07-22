@@ -18,7 +18,7 @@ import { Mark } from "../logo-alpha"
 import { ALPHA_PATHS } from "../../shared/alpha-config"
 import { useAlphaEndpoints } from "../use-alpha-endpoints"
 import { homeHref, newSessionHref, projectLabel, sessionHref } from "./route"
-import { parseRoute } from "../../shared/legacy-route-abi"
+import { parseRoute } from "../../shared/route-manifest"
 // REQ-088 T2(C4 携带项③):session 叶 lazy chunk 预热。C4 实测冷入场时 0ms 采样 panel=0
 // (侧栏是裸 <a>+navigate(),无路由级 hover preload)——hover/导航前预热消掉该窗口;
 // 窄导出与上游 lazy 同一模块 id,legacy 模式同样受益。
@@ -418,7 +418,7 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
   })
 
   // Decode the active project directory + session id from the current route
-  // (legacy-route-abi parseRoute,REQ-084). Drives the active-row highlight and "new chat" target.
+  // (route-manifest parseRoute,REQ-089). Drives the active-row highlight and "new chat" target.
   const route = createMemo<{ dir?: string; sessionId?: string }>(() => {
     const r = parseRoute(location.pathname)
     if (r.kind === "directory") return { dir: r.directory }
