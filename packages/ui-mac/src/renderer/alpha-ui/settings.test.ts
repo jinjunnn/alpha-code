@@ -14,6 +14,7 @@ import {
   type SettingsSurfaceApi,
 } from "./settings-authority-client"
 import { ALPHA_SETTINGS_DEFAULTS, type AlphaSettings as AlphaSettingsValue } from "../../shared/settings-adapters"
+import { dict as zh } from "../i18n/zh"
 
 type TestRuntime = {
   createComponent: typeof createComponent
@@ -217,7 +218,7 @@ describe("Alpha Settings real Solid render", () => {
     mount(surfaceApi)
     await flush()
 
-    expect(document.body.textContent).toContain("无法读取设置")
+    expect(document.body.textContent).toContain(zh["alpha.settings.loadFailed"])
     expect(document.querySelector("[data-setting='font-size']")).toBeNull()
     click(".a-banner-action")
     await flush()
@@ -250,7 +251,7 @@ describe("Alpha Settings real Solid render", () => {
     await flush()
     expect(validate).toHaveBeenCalledTimes(1)
     expect(write).not.toHaveBeenCalled()
-    expect(document.body.textContent).toContain("设置值没有通过校验")
+    expect(document.body.textContent).toContain(zh["alpha.settings.errorInvalid"])
 
     input("[data-setting='font-size']", "16")
     click("[data-settings-save]")
@@ -258,7 +259,7 @@ describe("Alpha Settings real Solid render", () => {
     expect(write).toHaveBeenCalledTimes(1)
     expect(write.mock.calls[0]![0].expectedRevision).toBe("s1:initial")
     expect(write.mock.calls[0]![0].value.appearance.fontSize).toBe(16)
-    expect(document.body.textContent).toContain("设置已保存")
+    expect(document.body.textContent).toContain(zh["alpha.settings.saved"])
   })
 
   test("submits safe defaults to repair invalid authority without requiring a field edit", async () => {
@@ -280,7 +281,7 @@ describe("Alpha Settings real Solid render", () => {
     await flush()
 
     const save = document.querySelector<HTMLButtonElement>("[data-settings-save]")!
-    expect(document.body.textContent).toContain("已存设置无法校验")
+    expect(document.body.textContent).toContain(zh["alpha.settings.invalidStored"])
     expect(save.disabled).toBe(false)
     save.click()
     await flush()
@@ -290,7 +291,7 @@ describe("Alpha Settings real Solid render", () => {
       value: ALPHA_SETTINGS_DEFAULTS,
       expectedRevision: "s1:invalid",
     })
-    expect(document.body.textContent).toContain("设置已保存")
+    expect(document.body.textContent).toContain(zh["alpha.settings.saved"])
   })
 
   test("keeps a failed draft, adopts returned authority revision, and recovers on retry", async () => {
@@ -322,14 +323,14 @@ describe("Alpha Settings real Solid render", () => {
     click("[data-settings-save]")
     await flush()
     expect(toggle.checked).toBe(false)
-    expect(document.body.textContent).toContain("草稿仍保留")
-    expect(document.body.textContent).toContain("有更改未保存")
+    expect(document.body.textContent).toContain(zh["alpha.settings.errorConflict"])
+    expect(document.body.textContent).toContain(zh["alpha.settings.unsaved"])
 
     click(".a-banner-action")
     await flush()
     expect(write).toHaveBeenCalledTimes(2)
     expect(write.mock.calls[1]![0].expectedRevision).toBe("s1:new-authority")
-    expect(document.body.textContent).toContain("设置已保存")
+    expect(document.body.textContent).toContain(zh["alpha.settings.saved"])
   })
 
   test("renders all five aggregate counts and drives inspect then manual collection", async () => {

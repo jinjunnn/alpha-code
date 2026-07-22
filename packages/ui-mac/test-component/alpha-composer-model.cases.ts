@@ -19,6 +19,7 @@ import { buildAlphaModelConfig } from "../src/main/alpha-models"
 import { readConfiguredProviderKeys } from "../src/main/ext-config"
 import { alphaJsoncPath } from "../src/main/engine-config-truth"
 import { persistProviderAndRefresh, setProviderLifecycleDeps } from "../src/main/provider-lifecycle"
+import { dict as zh } from "../src/renderer/i18n/zh"
 
 GlobalRegistrator.register()
 const solid = await import("solid-js/dist/solid.js")
@@ -346,7 +347,7 @@ describe("AlphaComposer production model seam", () => {
     await waitFor(() => {
       expect(composerModel()).toBeNull()
       expect(composerModelProjection()).toEqual({ status: "loading", sessionID: "B" })
-      expect(mounted.host.textContent).toContain("正在读取模型…")
+      expect(mounted.host.textContent).toContain(zh["alpha.composer.modelReading"])
     })
 
     const effort = mounted.host.querySelector<HTMLButtonElement>('button[title*="当前会话模型加载中"]')
@@ -364,7 +365,7 @@ describe("AlphaComposer production model seam", () => {
     await waitFor(() => {
       expect(composerModel()).toBeNull()
       expect(composerModelProjection()).toEqual({ status: "error", sessionID: "B" })
-      expect(document.body.textContent).toContain("当前会话模型读取失败")
+      expect(document.body.textContent).toContain(zh["alpha.model.currentFailed"])
     })
     const retryAlert = [...document.body.querySelectorAll(".a-mpp-alert")].find((node) =>
       node.textContent?.includes("当前会话模型读取失败"),
@@ -410,7 +411,7 @@ describe("AlphaComposer production model seam", () => {
         row.getAttribute("aria-label")?.startsWith(`${second.name},`),
       ) ?? null,
     )
-    await waitFor(() => expect(document.body.textContent).toContain("切换模型失败"))
+    await waitFor(() => expect(document.body.textContent).toContain(zh["alpha.model.switchFailed"]))
     expect(switches).toEqual([{ sessionID: "A", model: { providerID: catalog.platformProvider.id, id: second.id } }])
     expect(composerModel()?.id).toBe(first.id)
     expect(mounted.host.textContent).toContain(first.name)
@@ -544,7 +545,7 @@ describe("AlphaComposer production model seam", () => {
         }),
       )
 
-      await waitFor(() => expect(mounted.host.textContent).toContain("账户、KEY 或模型目录读取失败"))
+      await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.composer.modelChainFailed"]))
       const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
       expect(send.disabled).toBe(true)
       send.click()
@@ -552,7 +553,9 @@ describe("AlphaComposer production model seam", () => {
 
       click(mounted.host.querySelector('[data-kind="model"] > button'))
       await waitFor(() =>
-        expect(document.body.textContent).toContain(source === "account" ? "账户信息读取失败" : "KEY 状态读取失败"),
+        expect(document.body.textContent).toContain(
+          source === "account" ? zh["alpha.model.accountFailed"] : zh["alpha.model.keyReadFailed"],
+        ),
       )
       failing = false
       const picker = document.body.querySelector(".a-mpp")!
@@ -606,16 +609,16 @@ describe("ModelPickPop production component", () => {
     )
 
     await waitFor(() => {
-      expect(mounted.host.textContent).toContain("账户信息读取失败")
-      expect(mounted.host.textContent).toContain("KEY 状态读取失败")
-      expect(mounted.host.textContent).toContain("正在连接引擎")
+      expect(mounted.host.textContent).toContain(zh["alpha.model.accountFailed"])
+      expect(mounted.host.textContent).toContain(zh["alpha.model.keyReadFailed"])
+      expect(mounted.host.textContent).toContain(zh["alpha.model.engineConnecting"])
     })
     expect(mounted.host.textContent).not.toContain("未配置 KEY")
     expect(mounted.host.textContent).not.toContain("需登录")
     expect(mounted.host.textContent).not.toContain("余额不足")
-    for (const message of ["账户信息读取失败", "KEY 状态读取失败", "正在连接引擎"]) {
+    for (const message of [zh["alpha.model.accountFailed"], zh["alpha.model.keyReadFailed"], zh["alpha.model.engineConnecting"]]) {
       const alert = [...mounted.host.querySelectorAll('[role="alert"]')].find((node) => node.textContent?.includes(message))
-      expect(alert?.querySelector("button")?.textContent).toContain("重试")
+      expect(alert?.querySelector("button")?.textContent).toContain(zh["alpha.common.retry"])
     }
     const rows = [...mounted.host.querySelectorAll<HTMLButtonElement>(".a-mpp-row")]
     expect(rows.every((row) => row.disabled)).toBe(true)
@@ -645,7 +648,7 @@ describe("ModelPickPop production component", () => {
       }),
     )
 
-    await waitFor(() => expect(mounted.host.textContent).toContain("账户信息读取失败"))
+    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.model.accountFailed"]))
     expect(mounted.host.textContent).not.toContain("余额不足")
     const platform = mounted.host.querySelector<HTMLButtonElement>(`.a-mpp-row[aria-label^="${catalog.platformModels[0]!.name},"]`)
     expect(platform?.disabled).toBe(true)
@@ -668,7 +671,7 @@ describe("ModelPickPop production component", () => {
       }),
     )
 
-    await waitFor(() => expect(mounted.host.textContent).toContain("登录解锁代理节点"))
+    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.model.loginUnlock"]))
     expect(mounted.host.textContent).not.toContain("代理节点 · 经 ALPHA 代理")
     expect(
       [...mounted.host.querySelectorAll(".a-mpp-row")].filter((row) =>
@@ -736,7 +739,7 @@ describe("ModelPickPop production component", () => {
       }),
     )
 
-    await waitFor(() => expect(mounted.host.textContent).toContain("添加自定义节点 / 供应商"))
+    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.model.addProvider"]))
     click(
       [...mounted.host.querySelectorAll("button")].find((button) =>
         button.textContent?.includes("添加自定义节点 / 供应商"),
