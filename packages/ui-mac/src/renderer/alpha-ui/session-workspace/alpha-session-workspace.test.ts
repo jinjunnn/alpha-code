@@ -6,7 +6,7 @@
 //   R2 chrome 一律 alpha 命名空间(a-swk-* 类 + data-alpha-* 属性),不与上游锚点同名;
 //   R7 三个 takeover 不移进叶/workspace 内(挂载通道零耦合,另有 takeover-adapter-coexistence
 //      测试①钉 children 通道;此处钉 workspace 侧不 import)。
-// 另钉:双闸工厂形态、SurfaceBoundary 组合、跨 server 引导的 rethrow 纪律、窄导出唯一消费、
+// 另钉:单一 release-state seam、SurfaceBoundary 组合、跨 server 引导的 rethrow 纪律、窄导出唯一消费、
 // C4 携带项③ 的侧栏预热接线。断言红 = 红线破坏,回 T6 审计 §3 重评,不得只改测试。
 
 import { describe, expect, test } from "bun:test"
@@ -88,15 +88,38 @@ describe("R7 / Stage C-1:takeover 不进 workspace;本期不自渲染 AlphaCompo
   })
 })
 
-describe("双闸 + seam 契约(发布态本期保持 legacy,T5 才升级)", () => {
-  test("工厂:localStorage 闸关 ⇒ undefined(= surfaces.session 未注入,seam 走上游默认叶)", () => {
-    expect(tsx).toContain("if (!isSessionSpikeEnabled()) return undefined")
+describe("single release-state seam contract", () => {
+  test("factory returns a preloadable component without localStorage", () => {
+    const result = Bun.spawnSync({
+      cmd: [
+        process.execPath,
+        "--eval",
+        `import { mock } from "bun:test";
+mock.module("react/jsx-dev-runtime", () => ({ Fragment: Symbol(), jsxDEV: () => ({}) }));
+mock.module("@solidjs/router", () => ({ useLocation: () => ({ pathname: "" }), useNavigate: () => () => {} }));
+const module = await import("./src/renderer/alpha-ui/session-workspace/alpha-session-workspace.tsx");
+const component = module.alphaSessionWorkspaceSurface();
+console.log(JSON.stringify({ localStorage: typeof globalThis.localStorage, component: typeof component, preload: typeof component.preload }));`,
+      ],
+      cwd: join(here, "../../../.."),
+      env: process.env,
+    })
+    expect(result.stderr.toString()).toBe("")
+    expect(JSON.parse(result.stdout.toString())).toEqual({
+      localStorage: "undefined",
+      component: "function",
+      preload: "function",
+    })
+    expect(tsx).not.toContain("isSessionSpikeEnabled")
+    expect(tsx).not.toContain("ALPHA_SESSION_SPIKE")
   })
 
-  test("env-override 闸:index.tsx 只在 resolved.session.mode === alpha 时调用工厂", () => {
+  test("index.tsx calls the factory only when resolved.session.mode is alpha", () => {
     expect(rendererIndex).toContain(`if (resolved?.session.mode !== "alpha") return undefined`)
     expect(rendererIndex).toContain(`return alphaSessionWorkspaceSurface()`)
     expect(rendererIndex).toContain(`const session = productionRoutes.session.mount(resolved)`)
+    expect(rendererIndex.match(/return alphaSessionWorkspaceSurface\(\)/g)).toHaveLength(1)
+    expect(rendererIndex).not.toContain("SessionSpikeHost")
   })
 
   test("SurfaceBoundary 语义保持(C4 真机实证链路):workspace 最外层即 surface 边界", () => {

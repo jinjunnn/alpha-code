@@ -31,7 +31,7 @@ describe("resolveSurfaces — Alpha-only composition", () => {
     const defaults = resolveSurfaces({ env: {}, file: {}, appVersion: "1.0.0" })
     expect(defaults.home).toEqual({ mode: "alpha", reason: "release-default" })
     expect(defaults.newSession).toEqual({ mode: "alpha", reason: "release-default" })
-    expect(defaults.session).toEqual({ mode: "legacy", reason: "release-default" })
+    expect(defaults.session).toEqual({ mode: "alpha", reason: "release-default" })
 
     const pin = resolveSurfaces({ env: {}, file: { pins: { session: "alpha" } }, appVersion: "1.0.0" })
     expect(pin.session).toEqual({ mode: "alpha", reason: "pin" })
@@ -41,6 +41,12 @@ describe("resolveSurfaces — Alpha-only composition", () => {
       appVersion: "1.0.0",
     })
     expect(env.home).toEqual({ mode: "legacy", reason: "env-override" })
+    const sessionEnv = resolveSurfaces({
+      env: { ALPHA_SURFACE_SESSION: "legacy" },
+      file: { pins: { session: "alpha" } },
+      appVersion: "1.0.0",
+    })
+    expect(sessionEnv.session).toEqual({ mode: "legacy", reason: "env-override" })
   })
 
   test("a current or historical crash record never changes an Alpha surface to legacy", () => {
@@ -63,7 +69,7 @@ describe("resolveSurfaces — Alpha-only composition", () => {
       file: { pins: { session: "auto-fallback" as never } },
       appVersion: "1.0.0",
     })
-    expect(resolved.session).toEqual({ mode: "legacy", reason: "release-default" })
+    expect(resolved.session).toEqual({ mode: "alpha", reason: "release-default" })
   })
 })
 

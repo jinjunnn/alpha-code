@@ -19,7 +19,7 @@ describe("surface map model", () => {
     const resolved = {
       home: { mode: "alpha", reason: "release-default" },
       newSession: { mode: "alpha", reason: "release-default" },
-      session: { mode: "legacy", reason: "release-default" },
+      session: { mode: "alpha", reason: "release-default" },
     } as const
 
     expect(surfaceRuntimeState(home, resolved)).toEqual({
@@ -28,9 +28,9 @@ describe("surface map model", () => {
       release: "alpha",
     })
     expect(surfaceRuntimeState(session, resolved)).toEqual({
-      mode: "Legacy",
+      mode: "Alpha",
       detail: "release-default",
-      release: "legacy",
+      release: "alpha",
     })
     expect(surfaceRuntimeState(home, null).detail).toBe("resolver-error fallback")
   })

@@ -1,6 +1,6 @@
 // AlphaSessionWorkspace — REQ-088 T2(Issue #181):session surface 的正式 Alpha 外框。
 // REQ-087 spike 的 surface 侧原型(session-spike-host.tsx 旧 sessionSpikeSurface)在此转正;
-// 容器侧探针仍留在 session-spike/(T7 统一清理)。
+// 未挂载的容器侧探针模块仍留在 session-spike/(T7 统一清理)。
 //
 // 结构与纪律(变更任何一条先回 spike 报告 §6 / T6 审计 §3 重评):
 //   - 叶经 C1 合法窄导出(app 包 exports 的 ./surface/session 子路径,ADR-027 修订、
@@ -9,8 +9,8 @@
 //     全部保持上游默认生命周期,外框零 upstream context(只读版本化路由 ABI)。
 //   - surface override 与默认叶 XOR(app.tsx `props.surfaces?.session ?? Session`),结构上不存在
 //     双挂载;SurfaceBoundary 兜致命 render 错误 → 留在 Alpha 区域并进入 Recovery。
-//   - 双闸:主进程 env-override `ALPHA_SURFACE_SESSION=alpha` + localStorage 闸(spike-flag),
-//     任一闸关 ⇒ 工厂返回 undefined = seam 走上游默认叶,零变化。发布态本期保持 legacy(T5 才升级)。
+//   - 单一挂载条件:调用方仅在 resolved.session.mode === "alpha" 时注入本工厂返回的组件;
+//     legacy 解析结果不注入,由 seam 走上游默认叶。
 //   - 宿主红线(T6 审计 §3;alpha-session-workspace.test.ts 钉死):
 //       R1 活叶包裹保持普通流(flex:1 + min-height:0,不隐藏、不脱流)——takeover 的
 //          offsetParent 可见性口径依赖于此;
@@ -30,7 +30,6 @@ import { useLocation, useNavigate } from "@solidjs/router"
 import type { MaybePreloadableComponent } from "@opencode-ai/app"
 import { hrefFor, parseRoute } from "../../../shared/route-manifest"
 import { SurfaceBoundary } from "../surface-boundary"
-import { isSessionSpikeEnabled } from "../session-spike/spike-flag"
 import { isCrossServerSessionError, workspaceContextOf } from "./session-workspace-core"
 import { t } from "../../i18n"
 import "./session-workspace.css"
@@ -129,13 +128,10 @@ export function AlphaSessionWorkspace() {
 }
 
 /**
- * surface 工厂:双闸(localStorage 闸 + 主进程 ALPHA_SURFACE_SESSION=alpha,后者由调用方的
- * resolved.session.mode === "alpha" 前置保证)全开才返回组件,否则 undefined ⇒ surfaces.session
- * 维持未注入,seam 走上游默认叶(严格零变化)。localStorage 闸沿用 spike-flag(键
- * ALPHA_SESSION_SPIKE)——T5 发布态阶梯前不改口径,T7 统一裁决其去留。
+ * surface 工厂无条件返回 Alpha 组件。唯一挂载条件由调用方的
+ * resolved.session.mode === "alpha" 保证；legacy 解析结果保持上游默认叶。
  */
-export function alphaSessionWorkspaceSurface(): MaybePreloadableComponent | undefined {
-  if (!isSessionSpikeEnabled()) return undefined
+export function alphaSessionWorkspaceSurface(): MaybePreloadableComponent {
   const Comp: MaybePreloadableComponent = () => <AlphaSessionWorkspace />
   // 与 seam 的 preload 契约对齐(app.tsx `preload: () => Leaf.preload?.()`)。
   Comp.preload = preloadSessionLeaf
