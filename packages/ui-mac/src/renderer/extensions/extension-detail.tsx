@@ -1038,6 +1038,11 @@ export function ExtensionDetail(props: {
               </div>
             </Show>
           </Show>
+          <Show when={entry()?.id === "mcp:playwright"}>
+            <div class="alpha-ext-verify-note" data-info="">
+              <p>{t("alpha.ext.playwrightRuntimeNote")}</p>
+            </div>
+          </Show>
         </Section>
 
         {/* ── 所需密钥(#397:curated 改读甄选摘要 —— 名称 + 来源标注;永不显示值)── */}

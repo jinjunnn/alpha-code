@@ -571,6 +571,8 @@ export const dict = {
   "alpha.ext.detailMode": "模式",
   "alpha.ext.noSecrets": "无需密钥",
   "alpha.ext.noRuntimeDeps": "无额外运行时要求",
+  "alpha.ext.playwrightRuntimeNote":
+    "默认使用系统已安装的 Chrome，首次打开网页时不下载任何内容。如果系统没有 Chrome，或选择 Chromium 浏览器内核，首次打开网页时会从 cdn.playwright.dev 下载约 268 MB。下载或启动失败（包括受限网络或中国区网络问题）会直接报错，不会假装成功。",
   "alpha.ext.skillNoAsset": "该技能内容尚未随此版本打包,安装会诚实失败。",
   // ── REQ-103(#195)治理增量:详情页所有权/来源签名段 + 已安装三态 ──
   "alpha.ext.ownTitle": "所有权",
