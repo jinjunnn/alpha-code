@@ -42,6 +42,7 @@ import type { AuthState, AccountSummary } from "../../preload/types"
 import { extHubOpen, setExtHubOpen, toggleExtHub } from "../extensions/ext-hub-state"
 import { setAutomationOpen, toggleAutomation } from "../automations/automation-state"
 import { setWorkbenchOpen, toggleWorkbench, workbenchBadge } from "../alpha-ui/artifact-workbench/workbench-state"
+import { dismissMenu, dismissMenuOnEscape, focusFirstMenuItem } from "./menu-a11y"
 
 // Replicate opencode's getProjectAvatarVariant (context/layout.tsx) for projects that already
 // have a server-assigned color; otherwise pick a stable variant from the worktree so the
@@ -311,12 +312,15 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
     right: number
   } | null>(null)
   const [editingSession, setEditingSession] = createSignal<string | null>(null)
+  let projectMenuTrigger: HTMLElement | undefined
+  let sessionMenuTrigger: HTMLElement | undefined
   // Sidebar-native search: filters the project/session list in place (distinct from the "搜索"
   // nav item, which opens opencode's global command palette).
   const [searchQuery, setSearchQuery] = createSignal("")
   const openSessionMenu = (e: MouseEvent, session: { id: string; directory: string; title: string }) => {
     e.preventDefault()
     e.stopPropagation()
+    sessionMenuTrigger = e.currentTarget as HTMLElement
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
     setSessionMenu({
       id: session.id,
@@ -331,9 +335,10 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
   const openProjectMenu = (e: MouseEvent & { currentTarget: HTMLElement }, worktree: string) => {
     e.stopPropagation()
     if (menuFor() === worktree) {
-      setMenuFor(null)
+      dismissMenu(() => setMenuFor(null), projectMenuTrigger)
       return
     }
+    projectMenuTrigger = e.currentTarget
     const r = e.currentTarget.getBoundingClientRect()
     setMenuPos({ top: r.bottom + 3, right: Math.max(8, window.innerWidth - r.right) })
     setMenuFor(worktree)
@@ -614,7 +619,7 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
   }
 
   const archiveProject = (worktree: string) => {
-    setMenuFor(null)
+    dismissMenu(() => setMenuFor(null), projectMenuTrigger)
     hideProject(worktree)
     // B4(S17 T5):归档即从数据层剔除(use-projects 按 hidden 过滤)——reload 使其立即生效,
     // 此后该项目零请求(session.list 不再发起,引擎不再为其建 Instance)。
@@ -635,11 +640,13 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
       <Show when={menuFor()}>
         {(worktree) => (
           <>
-            <div class="alpha-menu-backdrop" onClick={() => setMenuFor(null)} />
+            <div class="alpha-menu-backdrop" onClick={() => dismissMenu(() => setMenuFor(null), projectMenuTrigger)} />
             <div
+              ref={focusFirstMenuItem}
               class="alpha-project-menu"
               role="menu"
               style={{ top: `${menuPos()?.top ?? 0}px`, right: `${menuPos()?.right ?? 8}px` }}
+              onKeyDown={(event) => dismissMenuOnEscape(event, () => setMenuFor(null), projectMenuTrigger)}
             >
               <button
                 type="button"
@@ -669,8 +676,14 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
       <Show when={sessionMenu()}>
         {(m) => (
           <>
-            <div class="alpha-menu-backdrop" onClick={() => setSessionMenu(null)} />
-            <div class="alpha-project-menu" role="menu" style={{ top: `${m().top}px`, right: `${m().right}px` }}>
+            <div class="alpha-menu-backdrop" onClick={() => dismissMenu(() => setSessionMenu(null), sessionMenuTrigger)} />
+            <div
+              ref={focusFirstMenuItem}
+              class="alpha-project-menu"
+              role="menu"
+              style={{ top: `${m().top}px`, right: `${m().right}px` }}
+              onKeyDown={(event) => dismissMenuOnEscape(event, () => setSessionMenu(null), sessionMenuTrigger)}
+            >
               <button
                 type="button"
                 class="alpha-project-menu-item"
@@ -696,7 +709,7 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                 role="menuitem"
                 onClick={() => {
                   const session = m()
-                  setSessionMenu(null)
+                  dismissMenu(() => setSessionMenu(null), sessionMenuTrigger)
                   void (async () => {
                     const url = await shareSession(session.id, session.directory)
                     if (!url) {
@@ -729,7 +742,7 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                 role="menuitem"
                 onClick={() => {
                   const id = m().id
-                  setSessionMenu(null)
+                  dismissMenu(() => setSessionMenu(null), sessionMenuTrigger)
                   void (async () => {
                     const text = await copySession(id)
                     if (!text) {
@@ -759,7 +772,7 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                 role="menuitem"
                 onClick={() => {
                   const id = m().id
-                  setSessionMenu(null)
+                  dismissMenu(() => setSessionMenu(null), sessionMenuTrigger)
                   void (async () => {
                     const ok = await deleteSession(id)
                     if (!ok) pushToast({ kind: "error", title: t("alpha.sidebar.deleteFailed") })
@@ -1060,6 +1073,8 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
                                       type="button"
                                       class="alpha-session-menu-btn"
                                       aria-label={t("alpha.sidebar.sessionActions")}
+                                      aria-haspopup="menu"
+                                      aria-expanded={sessionMenu()?.id === session.id}
                                       onClick={(e) => openSessionMenu(e, session)}
                                     >
                                       <svg

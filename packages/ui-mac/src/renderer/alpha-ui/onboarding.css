@@ -31,6 +31,12 @@ body[data-alpha-sidebar="open"] .a-ob {
   animation: a-rise 0.5s var(--a-ease-out) both;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .a-ob-card {
+    animation: none;
+  }
+}
+
 .a-ob-mark {
   width: 56px;
   height: 56px;
