@@ -94,7 +94,9 @@ describe("双闸 + seam 契约(发布态本期保持 legacy,T5 才升级)", () =
   })
 
   test("env-override 闸:index.tsx 只在 resolved.session.mode === alpha 时调用工厂", () => {
-    expect(rendererIndex).toContain(`if (resolved.session.mode === "alpha") surfaces.session = alphaSessionWorkspaceSurface()`)
+    expect(rendererIndex).toContain(`if (resolved?.session.mode !== "alpha") return undefined`)
+    expect(rendererIndex).toContain(`return alphaSessionWorkspaceSurface()`)
+    expect(rendererIndex).toContain(`const session = productionRoutes.session.mount(resolved)`)
   })
 
   test("SurfaceBoundary 语义保持(C4 真机实证链路):workspace 最外层即 surface 边界", () => {

@@ -65,7 +65,8 @@ describe("REQ-090 upstream Dialog migration ratchet", () => {
 
   test("the renderer provides one Alpha host and one runtime Recovery mount", () => {
     const renderer = read("ui-mac/src/renderer/index.tsx")
-    expect(renderer.match(/dialogHost=\{UpstreamDialogHost\}/g)).toHaveLength(1)
-    expect(renderer.match(/<RuntimeRecoveryHost \/>/g)).toHaveLength(1)
+    expect(renderer.match(/dialogHost=\{productionRoutes\.dialog\.mount\}/g)).toHaveLength(1)
+    expect(renderer.match(/recovery: RuntimeRecoveryHost/g)).toHaveLength(1)
+    expect(renderer.match(/<RecoverySurface \/>/g)).toHaveLength(1)
   })
 })

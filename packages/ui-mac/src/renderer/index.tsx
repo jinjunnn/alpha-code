@@ -42,7 +42,7 @@ import { PermissionWatcher } from "./alpha-ui/permission-watcher"
 import { CloudRunWatcher } from "./alpha-ui/cloud-run-watcher"
 import { ExtTrustWatcher } from "./alpha-ui/ext-trust-watcher"
 import { AlphaSidebar } from "./sidebar/alpha-sidebar"
-import { useAlphaProjects } from "./sidebar/use-projects"
+import { type AlphaProjectsApi, useAlphaProjects } from "./sidebar/use-projects"
 import { AlphaHome } from "./alpha-ui/AlphaHome"
 import { AlphaNewSession } from "./alpha-ui/alpha-new-session"
 import { SurfaceBoundary } from "./alpha-ui/surface-boundary"
@@ -62,6 +62,40 @@ import { ArtifactWorkbench } from "./alpha-ui/artifact-workbench/artifact-workbe
 import { Splash } from "./logo-alpha"
 import { useTheme } from "@opencode-ai/ui/theme/context"
 import { ALPHA_THEME, ALPHA_THEME_ID } from "./theme-alpha"
+import { composeRoutes } from "./route-composition"
+
+const productionRoutes = composeRoutes({
+  home: (resolved: ResolvedSurfaces | null | undefined, projects: AlphaProjectsApi) => {
+    if (resolved?.home.mode !== "alpha") return undefined
+    return () => (
+      <SurfaceBoundary surface="home">
+        <AlphaHome projects={projects} />
+      </SurfaceBoundary>
+    )
+  },
+  newSession: (resolved: ResolvedSurfaces | null | undefined, projects: AlphaProjectsApi) => {
+    if (resolved?.newSession.mode !== "alpha") return undefined
+    return (props: DraftSurfaceProps) => (
+      <SurfaceBoundary surface="newSession">
+        <AlphaNewSession projects={projects} draftId={props.draftId} promoteDraft={props.promoteDraft} />
+      </SurfaceBoundary>
+    )
+  },
+  session: (resolved: ResolvedSurfaces | null | undefined) => {
+    if (resolved?.session.mode !== "alpha") return undefined
+    return alphaSessionWorkspaceSurface()
+  },
+  settings: () => (
+    <AlphaBoundary name="AlphaSettings">
+      <AlphaSettings open={settingsOpen()} onClose={() => setSettingsOpen(false)} />
+    </AlphaBoundary>
+  ),
+  dialog: UpstreamDialogHost,
+  recovery: RuntimeRecoveryHost,
+})
+
+const SettingsSurface = productionRoutes.settings.mount
+const RecoverySurface = productionRoutes.recovery.mount
 
 const DevSurfaceMapInspector = import.meta.env.DEV ? lazy(() => import("./dev/surface-map-inspector")) : () => null
 
@@ -449,7 +483,7 @@ render(() => {
     // REQ-085/086:alpha 模式的叶页面经 typed surface seam 注入(单一 page root,upstream 叶
     // 不挂载);legacy 模式不注入 = 严格 upstream 默认页面。surface 组件经 SurfaceBoundary 兜
     // 致命 render 错误(main 建立稳定 incident + Alpha Recovery；禁止回退 legacy)。
-    const surfaceComponents = createMemo<AppSurfaces | undefined>(() => {
+    const surfaceComponents = createMemo<AppSurfaces>(() => {
       const resolved = resolvedSurfaces.latest
       const surfaces: AppSurfaces = {
         permission: (props) => (
@@ -458,23 +492,15 @@ render(() => {
           </AlphaBoundary>
         ),
       }
-      if (!resolved) return surfaces
-      if (resolved.home.mode === "alpha")
-        surfaces.home = () => (
-          <SurfaceBoundary surface="home">
-            <AlphaHome projects={alphaProjects} />
-          </SurfaceBoundary>
-        )
-      if (resolved.newSession.mode === "alpha")
-        surfaces.newSession = (p: DraftSurfaceProps) => (
-          <SurfaceBoundary surface="newSession">
-            <AlphaNewSession projects={alphaProjects} draftId={p.draftId} promoteDraft={p.promoteDraft} />
-          </SurfaceBoundary>
-        )
+      const home = productionRoutes.home.mount(resolved, alphaProjects)
+      const newSession = productionRoutes["new-session"].mount(resolved, alphaProjects)
+      const session = productionRoutes.session.mount(resolved)
+      if (home) surfaces[productionRoutes.home.surface] = home
+      if (newSession) surfaces[productionRoutes["new-session"].surface] = newSession
       // REQ-088 T2:session 叶经 AlphaSessionWorkspace 正式外框注入(SurfaceBoundary + 窄导出叶)。
       // 发布态本期仍 legacy(T5 才升级);双闸(ALPHA_SURFACE_SESSION=alpha env-override +
       // localStorage ALPHA_SESSION_SPIKE)未全开时返回 undefined = 上游默认叶,零变化。
-      if (resolved.session.mode === "alpha") surfaces.session = alphaSessionWorkspaceSurface()
+      if (session) surfaces[productionRoutes.session.surface] = session
       return surfaces
     })
 
@@ -497,9 +523,7 @@ render(() => {
               <AlphaBoundary name="AlphaOnboarding">
                 <AlphaOnboarding />
               </AlphaBoundary>
-              <AlphaBoundary name="AlphaSettings">
-                <AlphaSettings open={settingsOpen()} onClose={() => setSettingsOpen(false)} />
-              </AlphaBoundary>
+              <SettingsSurface />
               <AlphaBoundary name="ExtensionHub">
                 <ExtensionHub server={sidebarServer} open={extHubOpen} onClose={() => setExtHubOpen(false)} />
               </AlphaBoundary>
@@ -531,7 +555,7 @@ render(() => {
               <AlphaBoundary name="ContractFailureBanner">
                 <ContractFailureBanner />
               </AlphaBoundary>
-              <RuntimeRecoveryHost />
+              <RecoverySurface />
               <DevSurfaceMapInspector resolved={resolvedSurfaces.latest} />
               {/* REQ-087 spike 容器侧探针:flag off ⇒ 恒 null(session-spike/spike-flag.ts) */}
               <AlphaBoundary name="SessionSpikeHost">
@@ -554,7 +578,7 @@ render(() => {
   return (
     <PlatformProvider value={platform}>
       <ContractHealthProvider>
-        <AppBaseProviders locale={locale.latest} dialogHost={UpstreamDialogHost}>
+        <AppBaseProviders locale={locale.latest} dialogHost={productionRoutes.dialog.mount}>
           <Show when={true}>{(_) => <App />}</Show>
         </AppBaseProviders>
       </ContractHealthProvider>

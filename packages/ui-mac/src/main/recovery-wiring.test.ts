@@ -52,7 +52,8 @@ describe("REQ-090 Recovery wiring ratchet", () => {
     expect(boot).not.toContain("dialog.showMessageBox")
     expect(boot).not.toContain("dialog.showErrorBox")
     const renderer = read("../renderer/index.tsx")
-    expect(renderer.match(/<RuntimeRecoveryHost \/>/g)).toHaveLength(1)
+    expect(renderer.match(/recovery: RuntimeRecoveryHost/g)).toHaveLength(1)
+    expect(renderer.match(/<RecoverySurface \/>/g)).toHaveLength(1)
   })
 
   test("the static L2 harness covers four safe failure partitions in both themes", () => {
