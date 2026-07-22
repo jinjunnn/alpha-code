@@ -14,9 +14,9 @@ function clientReturning(result: unknown) {
   } as unknown as Client
 }
 
-function mcpTool() {
+function mcpTool(name = "screenshot") {
   return {
-    name: "screenshot",
+    name,
     description: "Take a screenshot",
     inputSchema: {
       type: "object",
@@ -47,6 +47,59 @@ describe("McpCatalog.convertTool", () => {
       structuredContent,
       content: [{ type: "text", text: JSON.stringify(structuredContent) }],
     })
+  })
+
+  test("surfaces a discernible cloud web search failure", async () => {
+    const converted = McpCatalog.convertTool(
+      mcpTool("cloud_web_search"),
+      clientReturning({
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ error: { code: "scope_forbidden", message: "tenant lacks models scope" } }),
+          },
+        ],
+      }),
+    )
+
+    await expect(converted.execute?.({}, options)).rejects.toThrow(
+      'cloud_web_search failed: scope forbidden. Cause: {"error":{"code":"scope_forbidden","message":"tenant lacks models scope"}}',
+    )
+  })
+
+  test("keeps an unexpected cloud web search decline loud", async () => {
+    const converted = McpCatalog.convertTool(
+      mcpTool("cloud_web_search"),
+      clientReturning({ isError: true, content: [{ type: "text", text: '{"error":{"code":"declined"}}' }] }),
+    )
+
+    await expect(converted.execute?.({}, options)).rejects.toThrow(
+      'cloud_web_search failed: unexpected cloud failure. Cause: {"error":{"code":"declined"}}',
+    )
+  })
+
+  test("keeps cloud web search failure categories distinct", async () => {
+    const outcomes = [
+      [{ error: { message: "unauthorized" } }, "unauthorized"],
+      [{ error: { code: "scope_forbidden", message: "forbidden" } }, "scope forbidden"],
+      [{ error: { message: "query is required" } }, "bad request"],
+      [{ error: { message: "upstream unavailable" } }, "upstream failure"],
+      [{ error: { code: "declined" } }, "unexpected cloud failure"],
+    ] as const
+
+    const failures = await Promise.all(
+      outcomes.map(async ([body]) => {
+        const converted = McpCatalog.convertTool(
+          mcpTool("cloud_web_search"),
+          clientReturning({ isError: true, content: [{ type: "text", text: JSON.stringify(body) }] }),
+        )
+        return converted.execute?.({}, options).catch((error: unknown) => String(error))
+      }),
+    )
+
+    for (const [index, [, category]] of outcomes.entries()) expect(failures[index]).toContain(category)
+    expect(new Set(failures).size).toBe(outcomes.length)
   })
 })
 

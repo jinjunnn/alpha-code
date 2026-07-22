@@ -3,10 +3,13 @@ import {
   CallToolResultSchema,
   ListToolsResultSchema,
   ToolSchema,
+  type CallToolResult,
   type Tool as MCPToolDef,
 } from "@modelcontextprotocol/sdk/types.js"
 import { dynamicTool, jsonSchema, type JSONSchema7, type Tool } from "ai"
-import { Effect } from "effect"
+import { Effect, Option, Schema } from "effect"
+
+const decodeJson = Schema.decodeUnknownOption(Schema.UnknownFromJsonString)
 
 const DEFAULT_TIMEOUT = 30_000
 const MAX_LIST_PAGES = 1_000
@@ -65,13 +68,7 @@ export function convertTool(mcpTool: MCPToolDef, client: Client, timeout?: numbe
           onprogress: () => {},
         },
       )
-      if (result.isError)
-        throw new Error(
-          result.content
-            .flatMap((item) => (item.type === "text" ? [item.text] : []))
-            .filter((text) => text.trim())
-            .join("\n\n") || "MCP tool returned an error",
-        )
+      if (result.isError) throw new Error(failureMessage(mcpTool.name, result.content))
       if (result.content.length > 0 || result.structuredContent === undefined || result.structuredContent === null)
         return result
       return {
@@ -80,6 +77,34 @@ export function convertTool(mcpTool: MCPToolDef, client: Client, timeout?: numbe
       }
     },
   })
+}
+
+export function failureMessage(name: string, content: CallToolResult["content"]) {
+  const detail = content
+    .flatMap((item) => (item.type === "text" ? [item.text.trim()] : []))
+    .filter(Boolean)
+    .join("\n\n")
+  if (name !== "cloud_web_search") return detail || `${name} returned an error without details`
+
+  const decoded = decodeJson(detail)
+  const error = Option.isSome(decoded) && isRecord(decoded.value) ? decoded.value.error : undefined
+  const code = isRecord(error) && typeof error.code === "string" ? error.code : undefined
+  const message = isRecord(error) && typeof error.message === "string" ? error.message : detail
+  const normalized = `${code ?? ""} ${message}`.toLowerCase()
+  const category = normalized.includes("scope_forbidden")
+    ? "scope forbidden"
+    : normalized.includes("unauthorized")
+      ? "unauthorized"
+      : /bad request|invalid json|query.+required/.test(normalized)
+        ? "bad request"
+        : /upstream|backend|unavailable/.test(normalized)
+          ? "upstream failure"
+          : "unexpected cloud failure"
+  return `cloud_web_search failed: ${category}. Cause: ${detail || "the cloud gateway returned no error details"}`
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
 }
 
 export function fetch<T extends { name: string }>(

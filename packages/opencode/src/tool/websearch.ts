@@ -6,6 +6,7 @@ import DESCRIPTION from "./websearch.txt"
 import { checksum } from "@opencode-ai/core/util/encode"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { ToolFailure } from "@opencode-ai/llm"
 
 export const Parameters = Schema.Struct({
   query: Schema.String.annotate({ description: "Websearch query" }),
@@ -130,14 +131,26 @@ export const WebSearchTool = Tool.define(
             },
           })
 
-          const result = yield* callProvider(http, provider, params, ctx)
+          const result = yield* callProvider(http, provider, params, ctx).pipe(
+            Effect.catch((error) =>
+              // Legacy tool execution crosses a Promise boundary; throwing the canonical failure lets both
+              // the AI SDK path and the native adapter settle it as a model-visible tool error.
+              Effect.die(
+                new ToolFailure({
+                  message: error.message,
+                  error,
+                  metadata: { provider },
+                }),
+              ),
+            ),
+          )
 
           return {
-            output: result ?? "No search results found. Please try a different query.",
+            output: result,
             title: `${title}: ${params.query}`,
             metadata: { provider },
           }
-        }).pipe(Effect.orDie),
+        }),
     }
   }),
 )
