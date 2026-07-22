@@ -10,6 +10,15 @@
   font-size: 12.5px;
   line-height: 1.45;
 }
+
+.a-contract-failure {
+  position: fixed;
+  z-index: 10000;
+  top: 12px;
+  left: 50%;
+  width: min(720px, calc(100vw - 32px));
+  transform: translateX(-50%);
+}
 .a-banner.info { background: var(--a-info-subtle); border-color: color-mix(in srgb, var(--a-info) 30%, transparent); }
 .a-banner.success { background: var(--a-success-subtle); border-color: color-mix(in srgb, var(--a-success) 30%, transparent); }
 .a-banner.warning { background: var(--a-warning-subtle); border-color: color-mix(in srgb, var(--a-warning) 30%, transparent); }

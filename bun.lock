@@ -490,10 +490,24 @@
         "vite": "catalog:",
       },
     },
+    "packages/alpha-contracts-consumer": {
+      "name": "@alpha-code/contracts-consumer",
+      "version": "0.0.0",
+      "dependencies": {
+        "ajv": "8.20.0",
+        "ajv-formats": "3.0.1",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "@types/node": "catalog:",
+        "@typescript/native-preview": "catalog:",
+      },
+    },
     "packages/ext": {
       "name": "@alpha-code/ext",
       "version": "0.0.0",
       "dependencies": {
+        "@alpha-code/contracts-consumer": "workspace:*",
         "@opencode-ai/plugin": "workspace:*",
       },
     },
@@ -1034,6 +1048,7 @@
       "name": "ui-mac",
       "version": "0.1.2",
       "dependencies": {
+        "@alpha-code/contracts-consumer": "workspace:*",
         "@zip.js/zip.js": "2.7.62",
         "effect": "catalog:",
         "electron-context-menu": "4.1.2",
@@ -1281,6 +1296,8 @@
     "@ai-sdk/xai": ["@ai-sdk/xai@3.0.102", "", { "dependencies": { "@ai-sdk/openai-compatible": "2.0.56", "@ai-sdk/provider": "3.0.13", "@ai-sdk/provider-utils": "4.0.35" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-NeQyOR7OCqDMgaLS4uNX/ep/HrwUzzFYLzXQSRoqLy2jsnqxAJhsgltRwAwf+ADjyPBIAKEOestWnIQA+LrLrQ=="],
 
     "@alloc/quick-lru": ["@alloc/quick-lru@5.2.0", "", {}, "sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw=="],
+
+    "@alpha-code/contracts-consumer": ["@alpha-code/contracts-consumer@workspace:packages/alpha-contracts-consumer"],
 
     "@alpha-code/ext": ["@alpha-code/ext@workspace:packages/ext"],
 

@@ -75,20 +75,48 @@ describe("userData pin file", () => {
 
 describe("login discovery persistence", () => {
   test("persists https discovery and resolves it", () => {
-    setDiscoveredEndpoints({ account: "https://acct.example" })
+    setDiscoveredEndpoints({
+      schema_version: 1,
+      web: "https://web.example",
+      platform: "https://platform.example",
+      account: "https://acct.example",
+      cloud: "https://cloud.example",
+    })
     expect(resolveEndpoints().account).toBe("https://acct.example")
     // was written to disk (survives a re-init)
     initEndpoints(tmp)
     expect(resolveEndpoints().account).toBe("https://acct.example")
   })
 
-  test("ignores a tampered http discovery value", () => {
-    setDiscoveredEndpoints({ account: "http://evil.example" })
+  test("rejects an unversioned or invalid endpoint discovery payload without silent fallback", () => {
+    expect(() =>
+      setDiscoveredEndpoints({
+        web: "https://web.example",
+        platform: "https://platform.example",
+        account: "https://acct.example",
+        cloud: "https://cloud.example",
+      }),
+    ).toThrow("Alpha contract incompatible")
+    expect(() =>
+      setDiscoveredEndpoints({
+        schema_version: 1,
+        web: "https://web.example",
+        platform: "https://platform.example",
+        account: "http://evil.example",
+        cloud: "https://cloud.example",
+      }),
+    ).toThrow("Alpha contract incompatible")
     expect(resolveEndpoints().account).toBe(ALPHA_ENDPOINTS.account)
   })
 
   test("env override beats discovery", () => {
-    setDiscoveredEndpoints({ account: "https://disco.example" })
+    setDiscoveredEndpoints({
+      schema_version: 1,
+      web: "https://web.example",
+      platform: "https://platform.example",
+      account: "https://disco.example",
+      cloud: "https://cloud.example",
+    })
     process.env.ALPHA_ACCOUNT_URL = "https://env.example"
     expect(resolveEndpoints().account).toBe("https://env.example")
   })

@@ -421,6 +421,7 @@ export const dict = {
   "alpha.auth.errCallback": "回调参数缺失,请重新发起登录",
   "alpha.auth.errState": "登录状态已过期或不匹配,请重新发起登录",
   "alpha.auth.errExchange": "凭证兑换失败,请检查网络后重试",
+  "alpha.auth.errContract": "收到的令牌与当前路由不兼容",
   "alpha.engine.down": "引擎已停止运行",
   "alpha.engine.downDetail": "连续崩溃后已停止自动重启。可重试启动;若反复失败请重启应用。",
   "alpha.engine.retry": "重试",

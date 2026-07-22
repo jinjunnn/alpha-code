@@ -1,6 +1,6 @@
 // REQ-092 A 侧单测 —— 流式 artifact 下载器(alpha-artifact-download.ts)。
 // 真实 temp dir + mock fetch(alpha-workdir.test.ts 同款纪律):空文件/正常文件/三道限额闸/
-// 长度欺骗/断流/取消/sha256 不符/重试不撞 .part/token 卫生/compat 内联回退等价性。
+// 长度欺骗/断流/取消/sha256 不符/重试不撞 .part/token 卫生/legacy 拒绝。
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as crypto from "node:crypto"
@@ -10,7 +10,6 @@ import * as path from "node:path"
 import {
   downloadArtifactToFile,
   expectedShaFromHeaders,
-  inlineDecodedBytes,
   resolveContentUrl,
   sanitizeTransportError,
   uniquePartPath,
@@ -19,7 +18,7 @@ import {
   type ArtifactDownloadOutcome,
   type ArtifactFinalizer,
 } from "./alpha-artifact-download"
-import { ARTIFACT_SCHEMA_VERSION, INLINE_ARTIFACT_COMPAT_FLAG, type ArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
+import { ARTIFACT_SCHEMA_VERSION, type ArtifactDescriptor } from "../shared/cloud-artifact-descriptor"
 
 const TOKEN = "TOKEN-MARKER-b0960ee3-SECRET"
 const BASE = "https://cloud.test"
@@ -42,14 +41,14 @@ function residueIn(d: string, expected: string[] = []): string[] {
 function descriptor(over: Partial<ArtifactDescriptor> = {}): ArtifactDescriptor {
   return {
     schemaVersion: ARTIFACT_SCHEMA_VERSION,
-    id: "art_job_abc_0_ab12cd34",
+    id: "art_job_abcd_0_ab12cd34",
     source: "cloud",
     name: "out.bin",
     trust: "sandboxed",
     role: "primary",
-    contentRef: { kind: "http-stream", url: "/v1/cloud/artifacts/art_job_abc_0_ab12cd34/content", auth: "bearer" },
+    contentRef: { kind: "http-stream", url: "/v1/cloud/artifacts/art_job_abcd_0_ab12cd34/content", auth: "bearer" },
     verification: { status: "unverified" },
-    provenance: { producer: "pipeline", jobId: "job_abc" },
+    provenance: { producer: "pipeline", jobId: "job_abcd" },
     ...over,
   }
 }
@@ -97,8 +96,6 @@ function okResponse(body: Uint8Array[] | null, headers: Record<string, string> =
   return fakeResponse(200, headers, body === null ? null : streamOf(body, streamOpts))
 }
 
-const utf8 = (s: string) => new TextEncoder().encode(s)
-
 const finalizeWithoutQuota: ArtifactFinalizer = (input) => {
   try {
     fs.renameSync(input.partPath, input.targetPath)
@@ -136,7 +133,7 @@ describe("streaming download (descriptor path)", () => {
     expect(fs.readFileSync(target())).toEqual(content)
     expect(residueIn(dir, ["out.bin"])).toEqual([])
     // bearer 只进请求头,URL 对 cloud origin 解析
-    expect(calls[0].url).toBe(`${BASE}/v1/cloud/artifacts/art_job_abc_0_ab12cd34/content`)
+    expect(calls[0].url).toBe(`${BASE}/v1/cloud/artifacts/art_job_abcd_0_ab12cd34/content`)
     expect(calls[0].headers.authorization).toBe(`Bearer ${TOKEN}`)
     const last = progress.at(-1)!
     expect(last.bytes).toBe(content.length)
@@ -156,12 +153,11 @@ describe("streaming download (descriptor path)", () => {
     expect(residueIn(dir, ["empty.bin"])).toEqual([])
   })
 
-  test("legacy meta {id,name}: URL derived from the artifacts content path", async () => {
-    const content = Buffer.from("legacy meta path")
-    const { fetchImpl, calls } = mockFetch(() => okResponse([new Uint8Array(content)]))
+  test("rejects legacy artifact metadata without issuing a request", async () => {
+    const { fetchImpl, calls } = mockFetch(() => okResponse([]))
     const res = await downloadArtifactToFile({ artifact: { id: "art_job_x_0", name: "a.txt" }, targetPath: target() }, deps(fetchImpl))
-    expect(res.ok).toBe(true)
-    expect(calls[0].url).toBe(`${BASE}/v1/cloud/artifacts/art_job_x_0/content`)
+    expect(res).toMatchObject({ ok: false, error: "unsupported-schema" })
+    expect(calls).toHaveLength(0)
   })
 
   test("descriptor.size over limit → rejected before any request (quota gate 1)", async () => {
@@ -305,7 +301,7 @@ describe("streaming download (descriptor path)", () => {
       { artifact: descriptor({ contentRef: { kind: "http-stream", url: "https://evil.example/steal", auth: "bearer" } }), targetPath: target() },
       deps(fetchImpl),
     )
-    expect(res).toMatchObject({ ok: false, error: "unsafe-url" })
+    expect(res).toMatchObject({ ok: false, error: "invalid-artifact" })
     expect(calls.length).toBe(0)
   })
 
@@ -391,122 +387,12 @@ describe("streaming download (descriptor path)", () => {
   })
 })
 
-describe("inline compat fallback (REQ-092 交付 6;移除日 2026-08-15)", () => {
-  const content = Buffer.from("compat artifact bytes — same writer, same quota, same hash")
-  const hex = sha(content)
-  const encoded = content.toString("base64") // REQ-092-compat:构造 legacy 响应 fixture
-
-  function legacyStatusBody(over: Record<string, unknown> = {}) {
-    return JSON.stringify({
-      job_id: "job_abc",
-      status: "completed",
-      result: { artifacts: [{ name: "out.bin", size: content.length, sha256: hex, base64: encoded, ...over }] }, // REQ-092-compat fixture
-    })
-  }
-
-  function compatRoute(over: Record<string, unknown> = {}): MockRoute {
-    return (url) => {
-      if (url.includes("/content")) return fakeResponse(404, {}, streamOf([utf8(JSON.stringify({ error: "not found" }))]))
-      return fakeResponse(200, { "content-type": "application/json" }, streamOf([utf8(legacyStatusBody(over))]))
-    }
-  }
-
-  test("content 404 → falls back to compat status, decodes in main through the same .part writer, byte+hash equal to stream path", async () => {
-    const calls: { url: string; headers: Record<string, string> }[] = []
-    const { fetchImpl } = mockFetch(compatRoute(), calls)
-    const res = await downloadArtifactToFile(
-      { artifact: descriptor({ sha256: hex, size: content.length }), targetPath: target("compat.bin") },
-      deps(fetchImpl),
-    )
-    expect(res).toEqual({
-      ok: true,
-      path: target("compat.bin"),
-      bytes: content.length,
-      sha256: hex,
-      verification: "verified",
-      via: "inline-compat",
-    })
-    expect(fs.readFileSync(target("compat.bin"))).toEqual(content)
-    expect(residueIn(dir, ["compat.bin"])).toEqual([])
-    // compat 请求形态:query flag + x-alpha-compat 头 + bearer;jobId 从 artifact id 解析
-    expect(calls[1].url).toBe(`${BASE}/v1/cloud/jobs/job_abc?compat=${INLINE_ARTIFACT_COMPAT_FLAG}`)
-    expect(calls[1].headers["x-alpha-compat"]).toBe(INLINE_ARTIFACT_COMPAT_FLAG)
-    expect(calls[1].headers.authorization).toBe(`Bearer ${TOKEN}`)
-
-    // 等价性:同一内容走流式路径,落盘字节与 sha 一致
-    const { fetchImpl: streamImpl } = mockFetch(() => okResponse([new Uint8Array(content)]))
-    const streamRes = await downloadArtifactToFile(
-      { artifact: descriptor({ sha256: hex, size: content.length }), targetPath: target("stream.bin") },
-      deps(streamImpl),
-    )
-    expect(streamRes.ok).toBe(true)
-    expect(fs.readFileSync(target("stream.bin"))).toEqual(fs.readFileSync(target("compat.bin")))
-    if (streamRes.ok && res.ok) expect(streamRes.sha256).toBe(res.sha256)
-  })
-
-  test("compat quota: oversized inline content rejected before any decode buffer, no residue", async () => {
-    const big = Buffer.alloc(200)
-    const { fetchImpl } = mockFetch(
-      compatRoute({ base64: big.toString("base64"), size: undefined, sha256: undefined }), // REQ-092-compat fixture
-    )
-    const res = await downloadArtifactToFile(
-      { artifact: { id: "art_job_abc_0", name: "out.bin" }, targetPath: target() },
-      deps(fetchImpl, { maxBytes: 100 }),
-    )
-    expect(res).toMatchObject({ ok: false, error: "over-limit" })
-    expect(residueIn(dir)).toEqual([])
-  })
-
-  test("compat sha256 mismatch → loud failure, no final file (same verification as stream path)", async () => {
-    const { fetchImpl } = mockFetch(compatRoute({ sha256: "c".repeat(64) }))
-    const res = await downloadArtifactToFile(
-      { artifact: { id: "art_job_abc_0", name: "out.bin" }, targetPath: target() },
-      deps(fetchImpl),
-    )
-    expect(res).toMatchObject({ ok: false, error: "sha256-mismatch" })
-    expect(fs.existsSync(target())).toBe(false)
-    expect(residueIn(dir)).toEqual([])
-  })
-
-  test("compat entry without inline content → no-content; absent artifact → not-found", async () => {
-    const { fetchImpl: noInline } = mockFetch(compatRoute({ base64: undefined })) // REQ-092-compat fixture
-    const r1 = await downloadArtifactToFile(
-      { artifact: { id: "art_job_abc_0", name: "out.bin" }, targetPath: target() },
-      deps(noInline),
-    )
-    expect(r1).toMatchObject({ ok: false, error: "no-content" })
-
-    const { fetchImpl: missing } = mockFetch((url) =>
-      url.includes("/content")
-        ? fakeResponse(404, {}, null)
-        : fakeResponse(200, {}, streamOf([utf8(JSON.stringify({ result: { artifacts: [] } }))])),
-    )
-    const r2 = await downloadArtifactToFile(
-      { artifact: { id: "art_job_abc_0", name: "out.bin" }, targetPath: target() },
-      deps(missing),
-    )
-    expect(r2).toMatchObject({ ok: false, error: "not-found" })
-  })
-
-  test("compat legacy status response over the buffered cap → over-limit before parsing (Content-Length gate)", async () => {
-    // cap 公式 = maxBytes*4/3 + 2MiB 余量;用超限的声明长度走前置闸(边读边计数闸与流路径共用 bodyChunks)。
-    const { fetchImpl } = mockFetch((url) =>
-      url.includes("/content")
-        ? fakeResponse(404, {}, null)
-        : fakeResponse(200, { "content-length": String(300 * 1024 * 1024) }, streamOf([new Uint8Array(8)])),
-    )
-    const res = await downloadArtifactToFile(
-      { artifact: { id: "art_job_abc_0", name: "out.bin" }, targetPath: target() },
-      deps(fetchImpl),
-    )
-    expect(res).toMatchObject({ ok: false, error: "over-limit" })
-  })
-
-  test("404 with unparseable artifact id and no jobId → honest not-found (no guessing)", async () => {
-    const { fetchImpl } = mockFetch(() => fakeResponse(404, {}, null))
-    const res = await downloadArtifactToFile({ artifact: { id: "weird-id", name: "x" }, targetPath: target() }, deps(fetchImpl))
-    expect(res).toMatchObject({ ok: false, error: "not-found" })
-  })
+test("content 404 fails loudly without an inline compatibility request", async () => {
+  const calls: { url: string; headers: Record<string, string> }[] = []
+  const { fetchImpl } = mockFetch(() => fakeResponse(404, {}, null), calls)
+  const result = await downloadArtifactToFile({ artifact: descriptor(), targetPath: target() }, deps(fetchImpl))
+  expect(result).toMatchObject({ ok: false, error: "not-found" })
+  expect(calls).toHaveLength(1)
 })
 
 describe("helpers", () => {
@@ -534,13 +420,6 @@ describe("helpers", () => {
     })
     expect(expectedShaFromHeaders(h)).toEqual({ etag: hex, digest: hex })
     expect(expectedShaFromHeaders(new Headers({ etag: `W/"weak-123"` }))).toEqual({})
-  })
-
-  test("inlineDecodedBytes matches Buffer decode length", () => {
-    for (const n of [0, 1, 2, 3, 4, 57, 100]) {
-      const buf = crypto.randomBytes(n)
-      expect(inlineDecodedBytes(buf.toString("base64"))).toBe(n) // REQ-092-compat:解码长度预算
-    }
   })
 
   test("writeChunksChecked emits progress with totals and rejects post-hoc size lies", async () => {

@@ -23,12 +23,18 @@ bash scripts/alpha-check.sh
 | 关 | 本地命令 | CI job | 失败含义 |
 |---|---|---|---|
 | **北极星守卫**(零改上游) | `scripts/alpha-check.sh` 内含;等价 `git diff --diff-filter=DMR --name-only origin/dev...HEAD -- <上游7包>` 必须空 | `north-star guard (zero upstream edits)` | 改了上游文件 → 下次 fork-sync 冲突,破北极星 |
-| **typecheck**(两个 alpha 包) | `bun --cwd packages/ext run typecheck` + `bun --cwd packages/ui-mac run typecheck` | `typecheck (alpha packages)` | 类型不过 |
-| **单元测试**(ui-mac) | `bun --cwd packages/ui-mac test` | `unit tests (ui-mac)` | 安全路径守卫等回归 |
+| **typecheck**(三个 alpha 包) | `bun run --cwd packages/alpha-contracts-consumer typecheck` + `bun run --cwd packages/ext typecheck` + `bun run --cwd packages/ui-mac typecheck` | `typecheck (alpha packages)` | 类型不过 |
+| **契约锁 + 单元测试** | `packages/alpha-contracts-consumer` 的 `check:vendor`/`bun test`,再从 `packages/ext`、`packages/ui-mac` 各跑 `bun test` | `unit tests (alpha packages)` | vendored hash、producer/consumer fixture 或运行时守卫回归 |
 
 - **上游 7 包** = `packages/{opencode,core,server,app,ui,tui,sdk}`(见 alpha-ci.yml `env.UPSTREAM_PATHS`)。
 - **bun 版本钉 `1.3.14`**(与 CI 一致,根 `package.json` 的 `packageManager`)。本机版本不同先对齐。
 - 根 `bun test` 被故意禁用(`do not run tests from root`)——测试按包跑,别在根跑。
+- Alpha Platform wire pin 不使用 `bun.lock`。`check:vendor` 要求
+  `alpha-platform-contract.lock.json` 的 repo/commit/file set 与每个正式
+  vendored 文件 SHA-256 一致；staged 源存在时还会逐文件与 staged bytes
+  对比。固定命名测试 `contract lock resolves to the exact immutable
+  alpha-platform commit` 与 `contract source lock matches vendored artifact
+  hashes` 是 CI 证据。
 
 ## 3. GitHub 上只跑两个 workflow(其余上游的已禁用)
 

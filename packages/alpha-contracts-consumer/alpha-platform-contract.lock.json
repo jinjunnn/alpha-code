@@ -1,0 +1,78 @@
+{
+  "repo": "jinjunnn/alpha-platform",
+  "commit": "bcc60bbf4870dd23ea5a63c9dca3107aa7a4b990",
+  "files": [
+    {
+      "path": "contracts/v1/alpha-wire-contracts.schema.json",
+      "sha256": "422ed794f09bd7b2706e5edec6651dc39e49ca754e771bc9b180c89e62c35928"
+    },
+    {
+      "path": "contracts/v1/artifact-descriptor.schema.json",
+      "sha256": "587a440c5fe5fff624327f1b91c028f4785bdb72336e891bfa5764f0b1d4612f"
+    },
+    {
+      "path": "contracts/v1/limits.json",
+      "sha256": "40e0c60f235a79e1d0f2f25376880c3e42a775756459c3cdcdd270476d54f10c"
+    },
+    {
+      "path": "contracts/v1/fixtures/producer/artifact-list.json",
+      "sha256": "2fa1ba2ddd61ff2048aba816f20ad266e96998148e64abc3d435bed74407c58d"
+    },
+    {
+      "path": "contracts/v1/fixtures/producer/cloud-job-accepted.json",
+      "sha256": "6c479ab320f70862e95987b5d549af852103b27c7665ce7413ecb949998c3c89"
+    },
+    {
+      "path": "contracts/v1/fixtures/producer/cloud-job-request.json",
+      "sha256": "5f7171c9bab69d3aa1c845e3e3742a993dcb712a73eb4e673b05aa4fba0ae133"
+    },
+    {
+      "path": "contracts/v1/fixtures/producer/cloud-job-status.json",
+      "sha256": "49e0d611728f6568cf51784cf66563dae0ee96e4010408507dcc917c9c447100"
+    },
+    {
+      "path": "contracts/v1/fixtures/producer/ledger-page.json",
+      "sha256": "751a0b8e32822d0f7d6f0ff054cbbc5849c2c3e2808c5a9579fd2216beb2824a"
+    },
+    {
+      "path": "contracts/v1/fixtures/producer/model-catalog.json",
+      "sha256": "95dd3d09ed0783ce0bb773963ffd874ca4bce41ad7015769b6cf76a63c560ce4"
+    },
+    {
+      "path": "contracts/v1/fixtures/consumers/alpha-code-224/cloud-and-artifact.json",
+      "sha256": "72293a4c1883a356a56c9df1c25766cc656ca8ac67406e7346491f0c916fd501"
+    },
+    {
+      "path": "contracts/v1/fixtures/consumers/alpha-web-22/platform-access-claims.json",
+      "sha256": "0c5a4e37653509d02250e6670484ee148cb0a35cd82d0252d65785277d1bb3a3"
+    },
+    {
+      "path": "contracts/v1/fixtures/invalid/artifact-inline-content.json",
+      "sha256": "ddf68159b3c6c7bf15336563f9b0b2ef187daaabefe390e6482cacc48fa4b77d"
+    },
+    {
+      "path": "contracts/v1/fixtures/invalid/cloud-missing-version.json",
+      "sha256": "cfe3b75600c6b0d912adbe07fa4e6bacd865f0359eb72dab8ab8919961d24f78"
+    },
+    {
+      "path": "contracts/v1/fixtures/invalid/cloud-unknown-field.json",
+      "sha256": "190380ddd922848ea33d4483c4f2b9d292b178efb9ed3c8de87c69d73395cd0c"
+    },
+    {
+      "path": "contracts/v1/fixtures/limits/envelope-max-exact.json",
+      "sha256": "528dbb6fabc2c29d3cb8b1a9e3df4c9e2c71da672e2809601539f82e6119063f"
+    },
+    {
+      "path": "contracts/v1/fixtures/limits/envelope-max-plus-one.json",
+      "sha256": "4a2d70ef89a2a395d63e08205a54bde3d050ba9be10ad812f30e1f45bbd3f2ee"
+    },
+    {
+      "path": "contracts/v1/fixtures/limits/payload-max-exact.json",
+      "sha256": "91e91cbf59d0499aab9169cd7ac5be889da272d4dd3d20be89dc836e46ad125f"
+    },
+    {
+      "path": "contracts/v1/fixtures/limits/payload-max-plus-one.json",
+      "sha256": "25bc6281271a38ef0bd528d51ab5016e8dbaba3174e075a2a69879c376f5d195"
+    }
+  ]
+}

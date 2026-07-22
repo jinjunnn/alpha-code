@@ -30,6 +30,7 @@ await build({
   logLevel: "silent",
   plugins: [appPlugin.at(-1)!],
   resolve: { alias: { "@": join(import.meta.dir, "../../../../app/src") } },
+  worker: { format: "es" },
   build: {
     emptyOutDir: true,
     outDir: runtimeDirectory,

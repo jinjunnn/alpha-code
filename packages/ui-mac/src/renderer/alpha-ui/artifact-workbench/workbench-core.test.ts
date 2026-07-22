@@ -15,7 +15,7 @@ import {
 } from "./workbench-core"
 import { recallSelection, rememberSelection } from "./workbench-state"
 
-const RUN = "job_wb1"
+const RUN = "job_wb12"
 
 function descriptorOf(name: string, index = 0, size = 12): ArtifactDescriptor {
   const id = artifactIdFor(RUN, index, { name, size })

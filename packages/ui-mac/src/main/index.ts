@@ -86,6 +86,7 @@ import { sessionGrantRegistry } from "./ext-session-grants"
 import type { SessionGrantsEndedEventWire } from "../shared/ext-session-grant-wire"
 import { initEndpoints } from "./alpha-endpoints"
 import { registerEndpointsIpcHandlers } from "./endpoints-ipc"
+import { registerContractHealthIpcHandlers } from "./alpha-contract-health"
 import { registerSurfaceIpc } from "./alpha-surfaces"
 import { createRecoveryService, type RecoveryService } from "./recovery-service"
 import { registerRecoveryIpcHandlers } from "./recovery-ipc"
@@ -751,6 +752,7 @@ const main = Effect.gen(function* () {
   registerModelsIpcHandlers(app.getPath("userData"))
   registerProviderIpcHandlers()
   registerEndpointsIpcHandlers()
+  registerContractHealthIpcHandlers(() => mainWindow)
   const recovery = recoveryService
   if (!recovery) throw new Error("Recovery service is unavailable")
   const recoveryIpc = registerRecoveryIpcHandlers(recovery)

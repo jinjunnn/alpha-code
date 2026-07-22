@@ -11,6 +11,7 @@ import { applyFactoryDeny } from "./factory-deny"
 import { injectFactorySkillPaths } from "./factory-paths"
 import { injectSkillGenerationPaths } from "./gen-skill-paths"
 import { rebrandSystem } from "./prompt-rebrand"
+import { validateCloudToolInput, validateCloudToolOutput } from "./cloud-contract-hook"
 
 /**
  * alpha-code backend isolation extension.
@@ -48,6 +49,12 @@ export const AlphaExt: Plugin = async (input) => {
   }
 
   const ownHooks: Awaited<ReturnType<Plugin>> = {
+    "tool.execute.before": async (hookInput, output) => {
+      validateCloudToolInput(hookInput.tool, output.args)
+    },
+    "tool.execute.after": async (hookInput, output) => {
+      validateCloudToolOutput(hookInput.tool, output)
+    },
     // REQ-060 项目级扩展物 `.alpha`-only:config hook 按 instance 读 `<directory>/.alpha/alpha.jsonc`
     // 并把项目级 mcp / agent / command / skills.paths 合并进 cfg —— 引擎经 config 消费,项目不产生
     // `.opencode`(零桥)。变异可见性由真机 spike 验(hook "Notify" 语义,T0 gate)。dispose 重建重

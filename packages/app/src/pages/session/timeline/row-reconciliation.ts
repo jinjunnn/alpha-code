@@ -1,4 +1,5 @@
 import { TimelineRow } from "./timeline-row"
+import type { PartRef } from "@opencode-ai/session-ui/message-part"
 
 type ContextRow = Extract<TimelineRow.TimelineRow, { _tag: "AssistantPart" }>
 type PriorContext = { index: number; row: ContextRow }
@@ -9,7 +10,7 @@ export function reuseTimelineRows(previous: TimelineRow.TimelineRow[] | undefine
   const contextByPart = new Map<string, PriorContext>()
   previous.forEach((row, index) => {
     if (row._tag !== "AssistantPart" || row.group.type !== "context") return
-    row.group.refs.forEach((ref) => contextByPart.set(`${row.userMessageID}:${ref.partID}`, { index, row }))
+    row.group.refs.forEach((ref: PartRef) => contextByPart.set(`${row.userMessageID}:${ref.partID}`, { index, row }))
   })
   const reserved = new Map<string, number>()
   rows.forEach((row, index) => {
@@ -36,7 +37,7 @@ function stabilizeContextKey(
   claimed: Set<string>,
 ) {
   if (row._tag !== "AssistantPart" || row.group.type !== "context") return row
-  const existing = row.group.refs.reduce<PriorContext | undefined>((result, ref) => {
+  const existing = row.group.refs.reduce<PriorContext | undefined>((result: PriorContext | undefined, ref: PartRef) => {
     const candidate = contextByPart.get(`${row.userMessageID}:${ref.partID}`)
     if (!candidate) return result
     const key = TimelineRow.key(candidate.row)

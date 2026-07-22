@@ -1,0 +1,6 @@
+{
+  "kind": "limit",
+  "limit": "NON_STREAMING_PAYLOAD_MAX_BYTES",
+  "wire_bytes": 524288,
+  "expect": "valid"
+}

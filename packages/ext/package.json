@@ -19,6 +19,7 @@
     "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
+    "@alpha-code/contracts-consumer": "workspace:*",
     "@opencode-ai/plugin": "workspace:*"
   }
 }

@@ -1,4 +1,4 @@
-// REQ-020 T1(ADR-021 §2)—— dispatch 上行三校验的纯逻辑单测:1MB 帽 / secrets 拒发指字段 /
+// REQ-020 T1(ADR-021 §2)—— dispatch 上行三校验的纯逻辑单测:256KiB 帽 / secrets 拒发指字段 /
 // denied_paths 缺省注入。真发路径(登录态 dispatch 被拒)在 S14 真机批验证。
 
 import { describe, expect, test } from "bun:test"
@@ -38,7 +38,7 @@ describe("① denied_paths 缺省注入", () => {
   })
 })
 
-describe("② 1MB 体积帽(loud,不截断)", () => {
+describe("② 256KiB 体积帽(loud,不截断)", () => {
   test("超限拒发,错误信息带实际字节数", () => {
     const r = guardCloudEnvelope(base({ input: { diff: "x".repeat(MAX_ENVELOPE_BYTES) } }))
     expect(r.ok).toBe(false)
@@ -49,9 +49,22 @@ describe("② 1MB 体积帽(loud,不截断)", () => {
     expect(r.ok).toBe(true)
   })
   test("多字节字符按 utf8 字节计,不按字符数", () => {
-    // 40 万个中文 ≈ 120 万 utf8 字节 > 1MB,字符数却只有 40 万
-    const r = guardCloudEnvelope(base({ input: { diff: "汉".repeat(400_000) } }))
+    // 10 万个中文 ≈ 300KiB utf8,字符数却只有 10 万
+    const r = guardCloudEnvelope(base({ input: { diff: "汉".repeat(100_000) } }))
     expect(r.ok).toBe(false)
+  })
+})
+
+describe("pinned v1 request shape", () => {
+  test("rejects an explicitly incompatible version instead of rewriting it to v1", () => {
+    expect(guardCloudEnvelope({ ...base(), schema_version: 2 })).toEqual({ ok: false, error: "contract-incompatible" })
+  })
+
+  test("rejects an incompatible artifact policy instead of rewriting it", () => {
+    expect(guardCloudEnvelope({ ...base(), artifact_policy: { delivery: "inline" } })).toEqual({
+      ok: false,
+      error: "contract-incompatible",
+    })
   })
 })
 

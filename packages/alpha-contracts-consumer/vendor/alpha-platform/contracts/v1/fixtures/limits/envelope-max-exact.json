@@ -1,0 +1,6 @@
+{
+  "kind": "limit",
+  "limit": "CONTROL_ENVELOPE_MAX_BYTES",
+  "wire_bytes": 262144,
+  "expect": "valid"
+}

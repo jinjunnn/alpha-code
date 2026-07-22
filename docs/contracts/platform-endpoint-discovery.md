@@ -4,7 +4,7 @@ kind: contract
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-13
+last_reviewed: 2026-07-22
 review_after: 2026-10-13
 ---
 
@@ -28,6 +28,7 @@ The current `alpha-web` authorization-code and refresh-token responses include:
 ```json
 {
   "endpoints": {
+    "schema_version": 1,
     "web": "https://alphacodeone.com",
     "platform": "https://alpha-gateway.tidelabs.click",
     "account": "https://account.alphacodeone.com",
@@ -39,9 +40,12 @@ The current `alpha-web` authorization-code and refresh-token responses include:
 
 The producer is
 [`lib/endpoints.ts`](https://github.com/jinjunnn/alpha-web/blob/main/lib/endpoints.ts).
-Values may be overridden per deployment. `alpha-code` strips trailing slashes,
-accepts HTTPS URLs (or loopback HTTP for development), ignores invalid values,
-and persists accepted discovery to
+Values may be overridden per deployment. Discovery is accepted atomically only
+when `schema_version` is exactly `1`, all required service bases are present,
+there are no unknown fields, and every base is HTTPS (or loopback HTTP for
+development). An unversioned, partial, future, or unsafe discovery payload is a
+`contract-incompatible` failure; it is not merged and does not fall through to
+the pin or bootstrap default. Valid discovery is normalized and persisted to
 `<userData>/alpha-discovered-endpoints.json` with mode `0600`.
 
 The model gateway and Cloud Jobs/MCP service are separate Workers. If `mcp` is
@@ -64,8 +68,10 @@ edition; `byok_providers` limits only the built-in BYOK catalog and does not
 block user-created providers. The gateway enforces the edition again on model
 calls, so client filtering is presentation, not authorization.
 
-`alpha-code` caches the last successful response in
-`<userData>/alpha-live-models.json`. A failed refresh retains the last-known
-catalog; a missing or invalid cache falls back to the packaged snapshot. Active
-model IDs and edition rules come from the current Alpha Platform registry and
-tests, not from examples in this document.
+`alpha-code` strictly decodes `ModelCatalogV1` from the pinned Alpha Platform v1
+contract before updating `<userData>/alpha-live-models.json`. A transient
+network failure may retain the last response that was already validated as v1.
+A contract mismatch is different: it raises the persistent contract-health
+failure and blocks cache/static catalog fallback for that process. Active model
+IDs and edition rules come from the current Alpha Platform registry and tests,
+not from examples in this document.

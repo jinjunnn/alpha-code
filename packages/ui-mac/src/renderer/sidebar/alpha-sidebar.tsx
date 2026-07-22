@@ -150,6 +150,7 @@ export function AlphaSidebar(props: { projects: AlphaProjectsApi }) {
         invalid_callback: t("alpha.auth.errCallback"),
         state_mismatch: t("alpha.auth.errState"),
         exchange_failed: t("alpha.auth.errExchange"),
+        contract_incompatible: t("alpha.auth.errContract"),
       }[e.code]
       pushToast({ kind: "error", title: t("alpha.auth.failed"), detail })
     }),

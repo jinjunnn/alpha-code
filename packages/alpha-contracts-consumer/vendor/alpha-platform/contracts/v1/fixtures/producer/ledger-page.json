@@ -1,0 +1,18 @@
+{
+  "kind": "schema",
+  "contract": "LedgerPageV1",
+  "expect": "valid",
+  "value": {
+    "schema_version": 1,
+    "transactions": [{
+      "schema_version": 1,
+      "id": "ledger_fixture1",
+      "type": "usage",
+      "title": "Cloud job usage",
+      "amount_fen": -12,
+      "created_at": "2026-07-22T00:00:00Z",
+      "status": "success",
+      "key_id": "key_fixture"
+    }]
+  }
+}

@@ -5,12 +5,17 @@
 // 三条规则,全部 loud-fail —— 绝不静默截断/改写内容(改写 = 送出损坏数据还装没事,反 placebo
 // 纪律 C28;ADR-021 §2 明文「不做静默改写」):
 //   ① denied_paths 缺省注入:contract 未带有效声明时补 `.env* / *.pem / .alpha/ / .git/`;
-//   ② 体积帽:注入后的实发序列化形态 >1MB 拒发(diff-only 优先,勿传全库);
+//   ② 体积帽:注入后的实发序列化形态 >256KiB 拒发(diff-only 优先,勿传全库);
 //   ③ secrets 扫描:input/objective 递归扫字符串,命中即拒发并指出字段路径。
 
 import type { CloudJobEnvelope } from "../preload/types"
+import {
+  CONTROL_ENVELOPE_MAX_BYTES,
+  decodeContract,
+  type CloudJobRequestV1,
+} from "@alpha-code/contracts-consumer"
 
-export const MAX_ENVELOPE_BYTES = 1_048_576 // 1MB(ADR-021 §2)
+export const MAX_ENVELOPE_BYTES = CONTROL_ENVELOPE_MAX_BYTES
 export const DEFAULT_DENIED_PATHS = [".env*", "*.pem", ".alpha/", ".git/"]
 
 // 高置信度密钥模式。定位是纵深一层、非唯一防线(A6 的 {file:} 通道才是密钥主防线);刻意收窄到
@@ -52,21 +57,25 @@ export function scanEnvelopeSecrets(envelope: CloudJobEnvelope): SecretHit[] {
   return hits
 }
 
-export type GuardResult = { ok: true; envelope: CloudJobEnvelope } | { ok: false; error: string }
+export type GuardResult = { ok: true; envelope: CloudJobRequestV1 } | { ok: false; error: string }
 
 export function guardCloudEnvelope(envelope: CloudJobEnvelope): GuardResult {
   // ① denied_paths 缺省注入。「未显式声明」按无有效声明算:空数组零保护、也没有正当用例
   //   (真想送 .env 内容照样被 ③ 拦),一律视同未声明补默认。
   const declared = envelope.constraints?.denied_paths
-  const guarded: CloudJobEnvelope =
-    declared && declared.length > 0
-      ? envelope
-      : { ...envelope, constraints: { ...(envelope.constraints ?? {}), denied_paths: DEFAULT_DENIED_PATHS } }
+  const versioned = {
+    schema_version: 1 as const,
+    artifact_policy: { delivery: "descriptor_only" as const },
+    ...envelope,
+    ...(declared && declared.length > 0
+      ? {}
+      : { constraints: { ...envelope.constraints, denied_paths: DEFAULT_DENIED_PATHS } }),
+  }
 
   // ② 体积帽 —— 以实际会发出的序列化形态计量;超限拒发,不截断。
   let serialized: string
   try {
-    serialized = JSON.stringify(guarded)
+    serialized = JSON.stringify(versioned)
   } catch {
     return { ok: false, error: "envelope-not-serializable" }
   }
@@ -76,12 +85,16 @@ export function guardCloudEnvelope(envelope: CloudJobEnvelope): GuardResult {
   }
 
   // ③ secrets 扫描 —— 命中拒发并指出字段;不静默改写。
-  const hits = scanEnvelopeSecrets(guarded)
+  const hits = scanEnvelopeSecrets(versioned)
   if (hits.length > 0) {
     const shown = hits.slice(0, 5).map((h) => `${h.field}(${h.pattern})`)
     const more = hits.length > shown.length ? ` +${hits.length - shown.length}` : ""
     return { ok: false, error: `secrets-detected: ${shown.join(", ")}${more} —— 移除密钥后重试(不做静默改写)` }
   }
 
-  return { ok: true, envelope: guarded }
+  try {
+    return { ok: true, envelope: decodeContract("CloudJobRequestV1", versioned, "cloud-http") }
+  } catch {
+    return { ok: false, error: "contract-incompatible" }
+  }
 }

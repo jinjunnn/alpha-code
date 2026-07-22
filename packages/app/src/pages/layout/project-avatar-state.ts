@@ -14,7 +14,9 @@ export function useSessionTabAvatarState(
   const notification = useNotification()
   const permission = usePermission()
   const permissionState = createMemo(() => permission.ensureServerState(server()))
-  const connection = createMemo(() => global.servers.list().find((item) => ServerConnection.key(item) === server()))
+  const connection = createMemo(() =>
+    global.servers.list().find((item: ServerConnection.Any) => ServerConnection.key(item) === server()),
+  )
   const sync = createMemo(() => {
     const conn = connection()
     if (conn) return global.ensureServerCtx(conn).sync

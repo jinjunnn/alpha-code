@@ -12,6 +12,11 @@
 // ALPHA_CLOUD_URL for dev/staging (consistent with ALPHA_ACCOUNT_URL; see shared/alpha-config.ts).
 
 import { ALPHA_PATHS } from "../shared/alpha-config"
+import {
+  decodeJsonContract,
+  isContractIncompatibleError,
+  type RoutePurpose,
+} from "@alpha-code/contracts-consumer"
 import { resolveEndpoints } from "./alpha-endpoints"
 import { getAccessToken } from "./alpha-auth"
 import { guardCloudEnvelope } from "./cloud-envelope-guard"
@@ -22,17 +27,23 @@ import {
   type ArtifactFinalizer,
 } from "./alpha-artifact-download"
 import { getLogger } from "./logging"
+import { reportContractFailure } from "./alpha-contract-health"
 import type { CloudResult, CloudJobEnvelope, CloudDispatchResult, CloudJobStatus, CloudArtifactList } from "../preload/types"
 
 // Resolved by alpha-endpoints (env ALPHA_CLOUD_URL > userData pin > login discovery > default).
 const cloudBase = () => resolveEndpoints().cloud
 
-async function authed<T>(path: string, init?: { method?: string; body?: unknown }): Promise<CloudResult<T>> {
-  const token = getAccessToken()
-  if (!token) return { error: "not-authenticated" }
-  const base = cloudBase()
-  if (!base) return { error: "no-cloud-endpoint" }
+async function authed<T>(
+  path: string,
+  purpose: RoutePurpose,
+  init: { method?: string; body?: unknown } | undefined,
+  decode: (text: string) => T,
+): Promise<CloudResult<T>> {
   try {
+    const token = getAccessToken(purpose)
+    if (!token) return { error: "not-authenticated" }
+    const base = cloudBase()
+    if (!base) return { error: "no-cloud-endpoint" }
     const res = await fetch(`${base}${path}`, {
       method: init?.method ?? "GET",
       headers: {
@@ -44,8 +55,12 @@ async function authed<T>(path: string, init?: { method?: string; body?: unknown 
     })
     if (res.status === 401) return { error: "unauthorized" }
     if (!res.ok) return { error: `http-${res.status}` }
-    return (await res.json()) as T
+    return decode(await res.text())
   } catch (error) {
+    if (isContractIncompatibleError(error)) {
+      reportContractFailure(error)
+      return { error: "contract-incompatible" }
+    }
     getLogger().warn("alpha-cloud-jobs: fetch failed", error)
     return { error: "network" }
   }
@@ -59,28 +74,52 @@ export const dispatchCloudJob = (envelope: CloudJobEnvelope): Promise<CloudResul
     getLogger().warn("alpha-cloud-jobs: envelope rejected by ADR-021 guard", guarded.error)
     return Promise.resolve({ error: guarded.error })
   }
-  return authed<CloudDispatchResult>(ALPHA_PATHS.cloudJobs, { method: "POST", body: guarded.envelope })
+  return authed(
+    ALPHA_PATHS.cloudJobs,
+    "cloud.dispatch",
+    { method: "POST", body: guarded.envelope },
+    (text) => decodeJsonContract("CloudJobAcceptedV1", text, "cloud-http"),
+  )
 }
 
 export const getCloudJobStatus = (jobId: string): Promise<CloudResult<CloudJobStatus>> =>
-  authed<CloudJobStatus>(`${ALPHA_PATHS.cloudJobs}/${encodeURIComponent(jobId)}`)
+  authed(
+    `${ALPHA_PATHS.cloudJobs}/${encodeURIComponent(jobId)}`,
+    "cloud.read",
+    undefined,
+    (text) => decodeJsonContract("CloudJobStatusV1", text, "cloud-http"),
+  )
 
 // 取消 job(消费 B 的 AR-17 soft-cancel:标记 cancelled + emit 终态事件;status/SSE 随后报 cancelled)。
 export const cancelCloudJob = (jobId: string): Promise<CloudResult<{ job_id: string; status: string }>> =>
-  authed<{ job_id: string; status: string }>(`${ALPHA_PATHS.cloudJobs}/${encodeURIComponent(jobId)}/cancel`, { method: "POST" })
+  authed(
+    `${ALPHA_PATHS.cloudJobs}/${encodeURIComponent(jobId)}/cancel`,
+    "cloud.dispatch",
+    { method: "POST" },
+    (text) => JSON.parse(text) as { job_id: string; status: string },
+  )
 
 export const listCloudArtifacts = (jobId: string): Promise<CloudResult<CloudArtifactList>> =>
-  authed<CloudArtifactList>(`${ALPHA_PATHS.cloudJobs}/${encodeURIComponent(jobId)}/artifacts`)
+  authed(
+    `${ALPHA_PATHS.cloudJobs}/${encodeURIComponent(jobId)}/artifacts`,
+    "cloud.read",
+    undefined,
+    (text) => decodeJsonContract("ArtifactListV1", text, "artifact"),
+  )
 
-// REQ-092:artifact 内容唯一入口 —— descriptor.contentRef 流式下载到磁盘(bearer 仅 main,renderer 零字节)。
-// 旧「arrayBuffer→Buffer→编码→Buffer」全缓冲链已删除;窗口期 legacy 内联回退在 alpha-artifact-download 内部
-// (同 .part 写入器 + 同限额 + 同 sha256 校验,⏰ 2026-08-15 随平台 compat flag 一并移除)。
+// REQ-092:artifact 内容唯一入口 —— pinned descriptor.contentRef 流式下载到磁盘
+// (bearer 仅 main,renderer 零字节);legacy inline metadata and fallback are rejected.
 // 失败只回分类码 + 净化 detail;此处日志也只落分类码(token 卫生,REQ-092 AC#5)。
 export async function downloadCloudArtifactTo(
   req: ArtifactDownloadRequest,
   finalize: ArtifactFinalizer,
 ): Promise<ArtifactDownloadOutcome> {
-  const token = getAccessToken()
+  let token: string | undefined
+  try {
+    token = getAccessToken("artifact.read")
+  } catch {
+    return { ok: false, error: "contract-incompatible" }
+  }
   if (!token) return { ok: false, error: "not-authenticated" }
   const base = cloudBase()
   if (!base) return { ok: false, error: "no-cloud-endpoint" }

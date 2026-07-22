@@ -3,6 +3,7 @@
 // 的 --a-{kind}/--a-{kind}-subtle。
 
 import { Show, type JSX } from "solid-js"
+import { useContractHealth } from "./providers"
 import "./banner.css"
 
 export type BannerKind = "info" | "success" | "warning" | "error"
@@ -32,5 +33,22 @@ export function Banner(props: {
         )}
       </Show>
     </div>
+  )
+}
+
+export function ContractFailureBanner() {
+  const failure = useContractHealth()
+  return (
+    <Show when={failure()} keyed>
+      {(value) => (
+        <div class="a-contract-failure" data-alpha-contract-failure={value.surface}>
+          <Banner
+            kind="error"
+            title="Alpha platform contract is incompatible"
+            detail={`${value.surface}: ${value.reason} (expected v${value.expected_version}, received ${value.received_version})`}
+          />
+        </div>
+      )}
+    </Show>
   )
 }
