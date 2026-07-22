@@ -9,6 +9,7 @@ import { build } from "vite"
 import type { createComponent } from "solid-js"
 import type { render } from "solid-js/web"
 import type { RecoverySurface } from "./RecoverySurface"
+import { dict as zh } from "../i18n/zh"
 import {
   RECOVERY_ACTIONS,
   RECOVERY_ACTION_RESULT_CODES,
@@ -142,7 +143,7 @@ describe("Recovery real Solid render — four partitions plus the surface save-f
       const buttons = [...surface.querySelectorAll<HTMLButtonElement>("button")]
       expect(buttons).toHaveLength(incident.plan.actions.length)
       if (buttons.length === 0) {
-        expect(surface.textContent).toContain("页面暂时不可用")
+        expect(surface.textContent).toContain(zh["alpha.recovery.surfaceTitle"])
         expect(submit).not.toHaveBeenCalled()
         return
       }
@@ -150,7 +151,7 @@ describe("Recovery real Solid render — four partitions plus the surface save-f
       await flush()
       expect(submit).toHaveBeenCalledTimes(1)
       expect(submit).toHaveBeenCalledWith(incident.plan.actions[0])
-      expect(surface.querySelector("[role='status']")?.textContent).toContain("已完成")
+      expect(surface.querySelector("[role='status']")?.textContent).toContain(zh["alpha.recovery.completed"])
     })
   }
 

@@ -20,6 +20,16 @@ import { dict as zht } from "./zht"
 import rawCatalog from "../extensions/alpha-catalog.json"
 import type { Catalog } from "../extensions/catalog-types"
 import { catalogDescription } from "../extensions/ext-presentation"
+import { GlobalRegistrator } from "@happy-dom/global-registrator"
+import appPlugin from "@opencode-ai/app/vite"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { pathToFileURL } from "node:url"
+import { build } from "vite"
+import type { createComponent } from "solid-js"
+import type { render } from "solid-js/web"
+import type { RecoverySurface } from "../alpha-ui/RecoverySurface"
+import { RECOVERY_ACTION_RESULT_CODES, type RecoveryAction, type RecoveryActionResult } from "../../shared/recovery"
 
 // Fresh C20 scan on 2026-07-21: these shipped surfaces contained user-visible
 // literals and are now registered here so a later edit cannot silently undo i18n.
@@ -134,4 +144,74 @@ describe("locale regression gate", () => {
       { file: "extensions/alpha-catalog.json", token: "OpenCodeNotifier.app" },
     ])
   })
+})
+
+// The gate above proves the dictionaries agree on keys and that t() resolves a zh value in
+// isolation. Neither proves a *rendered* component actually reaches the dictionary — the exact
+// blind spot #475 slipped through (self-consistent dict, but the shipped surface could have kept
+// a hardcoded literal). This smoke test builds the smallest real render runtime and asserts a zh
+// value lands in real DOM. The vite bundle inlines its own i18n instance, pinned to zh by the
+// ALPHA_UI_LOCALE preload, so the assertion is independent of the setLocale() calls above.
+describe("locale render smoke — dictionary self-consistency is not proof the render used it", () => {
+  test(
+    "a real alpha component renders a zh dictionary value into the DOM under the zh locale",
+    async () => {
+      const runtimeDirectory = mkdtempSync(join(tmpdir(), "alpha-locale-render-"))
+      try {
+        await build({
+          configFile: false,
+          logLevel: "silent",
+          plugins: [appPlugin.at(-1)!],
+          build: {
+            emptyOutDir: true,
+            outDir: runtimeDirectory,
+            lib: {
+              entry: join(import.meta.dir, "..", "alpha-ui", "recovery-test-runtime.ts"),
+              formats: ["es"],
+              fileName: () => "recovery-test-runtime.js",
+            },
+            rollupOptions: { output: { inlineDynamicImports: true } },
+          },
+        })
+
+        GlobalRegistrator.register()
+        try {
+          const runtime = (await import(pathToFileURL(join(runtimeDirectory, "recovery-test-runtime.js")).href)) as {
+            createComponent: typeof createComponent
+            render: typeof render
+            RecoverySurface: typeof RecoverySurface
+          }
+          const host = document.createElement("div")
+          document.body.append(host)
+          const dispose = runtime.render(
+            () =>
+              runtime.createComponent(runtime.RecoverySurface, {
+                unavailable: true,
+                submit: async (_incident: string, action: RecoveryAction): Promise<RecoveryActionResult> => ({
+                  ok: true,
+                  code: RECOVERY_ACTION_RESULT_CODES.applied,
+                  action,
+                  applied: true,
+                }),
+              }),
+            host,
+          )
+          await Promise.resolve()
+          await Promise.resolve()
+
+          // Real component → real DOM: the zh value must be present because the component's t()
+          // call resolved it, not because the dictionaries merely agree on keys.
+          expect(host.textContent).toContain(zh["alpha.recovery.unavailable"])
+          expect(host.querySelector("#alpha-recovery-title")?.textContent).toBe(zh["alpha.recovery.unavailable"])
+          dispose()
+          document.body.replaceChildren()
+        } finally {
+          await GlobalRegistrator.unregister()
+        }
+      } finally {
+        rmSync(runtimeDirectory, { recursive: true, force: true })
+      }
+    },
+    60_000,
+  )
 })

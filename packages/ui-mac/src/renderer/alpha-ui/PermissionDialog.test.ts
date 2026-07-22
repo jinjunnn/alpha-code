@@ -15,6 +15,7 @@ import type { createComponent } from "solid-js"
 import type { render } from "solid-js/web"
 import type { createPermissionDecisionCommand, PermissionDialog } from "./PermissionDialog"
 import type { PermissionWatcher } from "./permission-watcher"
+import { dict as zh } from "../i18n/zh"
 
 type TestRuntime = {
   createComponent: typeof createComponent
@@ -172,7 +173,7 @@ describe("Alpha Permission real Solid render", () => {
     expect(document.querySelector('[data-permission-fact="scope"]')?.textContent).toContain("ses_ui_1")
     expect(document.querySelector('[data-permission-fact="expiry"]')?.textContent).toContain("2030-01-01 00:00:00 UTC")
     expect(document.querySelector("[role='dialog']")?.textContent).not.toContain("待契约")
-    expect(document.querySelector(".a-permission-grant-note")?.textContent).toContain("当前项目创建永久授权")
+    expect(document.querySelector(".a-permission-grant-note")?.textContent).toContain(zh["alpha.permission.alwaysNote"])
   })
 
   test("submits once, always, and reject as #433 DecisionCommand values", async () => {
@@ -209,7 +210,7 @@ describe("Alpha Permission real Solid render", () => {
     await flush()
 
     expect(decision("always").disabled).toBeTrue()
-    expect(decision("always").title).toContain("未提供可保存资源")
+    expect(decision("always").title).toContain(zh["alpha.permission.noSavedResources"])
     expect(decision("once").disabled).toBeFalse()
     expect(decision("reject").disabled).toBeFalse()
   })
@@ -219,7 +220,7 @@ describe("Alpha Permission real Solid render", () => {
     await flush()
 
     expect(decision("always").disabled).toBeTrue()
-    expect(decision("always").title).toContain("无法核实当前项目")
+    expect(decision("always").title).toContain(zh["alpha.permission.projectUnverified"])
     expect(decision("once").disabled).toBeFalse()
     expect(decision("reject").disabled).toBeFalse()
   })
@@ -244,7 +245,7 @@ describe("Alpha Permission real Solid render", () => {
 
     expect(
       document.querySelector(`[data-permission-fact="${fact === "expiresAt" ? "expiry" : fact}"]`)?.textContent,
-    ).toContain("无法核实")
+    ).toContain(zh["alpha.permission.cannotVerify"])
     expect(document.querySelector("[role='dialog']")?.textContent).not.toContain("undefined")
     expect(decision("once").disabled).toBeTrue()
     expect(decision("always").disabled).toBeTrue()
@@ -293,10 +294,12 @@ describe("Alpha Permission real Solid render", () => {
     decision("once").click()
     await flush()
     const alert = document.querySelector<HTMLElement>('[role="alert"][data-kind="failed"]')!
-    expect(alert.textContent).toContain("没有收到授权收据")
+    expect(alert.textContent).toContain(zh["alpha.permission.failedDetail"])
     expect(alert.textContent).toContain("network unavailable")
     expect(document.activeElement?.getAttribute("role")).toBe("alert")
-    expect(decision("once").textContent).toContain("重试")
+    expect(decision("once").textContent).toContain(
+      zh["alpha.permission.retryDecision"].replace("{{label}}", zh["alpha.permission.once"]),
+    )
 
     decision("once").click()
     await flush()
@@ -314,8 +317,8 @@ describe("Alpha Permission real Solid render", () => {
     decision("reject").click()
     await flush()
     const alert = document.querySelector<HTMLElement>('[role="alert"][data-kind="conflict"]')!
-    expect(alert.textContent).toContain("与已提交决定冲突")
-    expect(alert.textContent).toContain("没有覆盖")
+    expect(alert.textContent).toContain(zh["alpha.permission.conflictTitle"])
+    expect(alert.textContent).toContain(zh["alpha.permission.conflictDetail"])
     expect(alert.textContent).toContain("different facts")
   })
 
