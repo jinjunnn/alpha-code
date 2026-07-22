@@ -24,6 +24,15 @@ export interface FrontendSurfaceEntry {
   description: string
   owner: string
   lineage: FrontendSurfaceLineage
+  /**
+   * Intended end-state lineage (设计意图,非当前态). `target !== lineage` marks a
+   * surface still being replaced — the replacement backlog, queryable via
+   * `frontendSurfacesPendingReplacement()`. `target === lineage` is stable (either
+   * already alpha-owned, or a deliberately kept upstream compat surface). Method:
+   * docs/design/system/replacing-opencode.md. Sequencing/priority live in Issues,
+   * never here.
+   */
+  target: FrontendSurfaceLineage
   mount: FrontendSurfaceMount
   availability: FrontendSurfaceAvailability
   source: string
@@ -44,6 +53,7 @@ export const FRONTEND_SURFACE_MANIFEST = [
     description: "Alpha 自有首页叶；发布默认启用，致命渲染错误进入 Alpha Recovery，不改变 composition。",
     owner: "alpha.home",
     lineage: "alpha",
+    target: "alpha",
     mount: { kind: "route", path: "/", host: "app-router", role: "page" },
     availability: "default",
     source: "packages/ui-mac/src/renderer/alpha-ui/AlphaHome.tsx",
@@ -62,6 +72,7 @@ export const FRONTEND_SURFACE_MANIFEST = [
     description: "冻结的上游兼容入口；将 /:dir 重定向到同一项目的 session admission。",
     owner: "opencode.router",
     lineage: "opencode",
+    target: "opencode",
     mount: { kind: "route", path: "/:dir", host: "app-router", role: "redirect" },
     availability: "default",
     source: "packages/app/src/app.tsx",
@@ -74,6 +85,7 @@ export const FRONTEND_SURFACE_MANIFEST = [
     description: "无 session id 的上游兼容路由；创建 draft/tab 后转入 Alpha 新会话页。",
     owner: "opencode.session-route",
     lineage: "opencode",
+    target: "opencode",
     mount: { kind: "route", path: "/:dir/session", host: "app-router", role: "redirect" },
     availability: "default",
     source: "packages/app/src/app.tsx",
@@ -86,6 +98,7 @@ export const FRONTEND_SURFACE_MANIFEST = [
     description: "Alpha 自有 draft 叶；保留上游 DraftProviders 与 tab 晋升生命周期。",
     owner: "alpha.new-session",
     lineage: "alpha",
+    target: "alpha",
     mount: { kind: "route", path: "/new-session?draftId=…", host: "app-router", role: "page" },
     availability: "default",
     source: "packages/ui-mac/src/renderer/alpha-ui/alpha-new-session.tsx",
@@ -100,6 +113,7 @@ export const FRONTEND_SURFACE_MANIFEST = [
     description: "发布默认仍是上游会话叶；Alpha 侧栏与 takeover 共存，双闸可启用 Alpha workspace 外框。",
     owner: "alpha.session-seam",
     lineage: "hybrid",
+    target: "alpha",
     mount: { kind: "route", path: "/:dir/session/:id", host: "app-router", role: "page" },
     availability: "gated",
     source: "packages/ui-mac/src/renderer/alpha-ui/session-workspace/alpha-session-workspace.tsx",
@@ -117,6 +131,7 @@ export const FRONTEND_SURFACE_MANIFEST = [
     description: "全路由常驻的 Alpha 导航壳，拥有项目、会话和非 URL 工作面的入口。",
     owner: "alpha.sidebar",
     lineage: "alpha",
+    target: "alpha",
     mount: { kind: "inline", route: "*", slot: "app-shell" },
     availability: "default",
     source: "packages/ui-mac/src/renderer/sidebar/alpha-sidebar.tsx",
@@ -135,6 +150,7 @@ export const FRONTEND_SURFACE_MANIFEST = [
     description: "Alpha 自有全局 onboarding overlay，不改变当前内存路由。",
     owner: "alpha.onboarding",
     lineage: "alpha",
+    target: "alpha",
     mount: { kind: "overlay", host: "app-root" },
     availability: "default",
     source: "packages/ui-mac/src/renderer/alpha-ui/AlphaOnboarding.tsx",
@@ -147,6 +163,7 @@ export const FRONTEND_SURFACE_MANIFEST = [
     description: "Alpha 自有全页 overlay；由模块级瞬态状态开合，URL 保持不变。",
     owner: "alpha.extension-hub",
     lineage: "alpha",
+    target: "alpha",
     mount: { kind: "overlay", host: "app-root" },
     availability: "default",
     source: "packages/ui-mac/src/renderer/extensions/extension-hub.tsx",
@@ -159,6 +176,7 @@ export const FRONTEND_SURFACE_MANIFEST = [
     description: "Alpha 自有全页 Portal；关闭回到原路由，打开运行记录可跳入会话。",
     owner: "alpha.automations",
     lineage: "alpha",
+    target: "alpha",
     mount: { kind: "overlay", host: "alpha-automations-root" },
     availability: "default",
     source: "packages/ui-mac/src/renderer/automations/automation-panel.tsx",
@@ -174,6 +192,7 @@ export const FRONTEND_SURFACE_MANIFEST = [
     description: "Alpha 自有全页 Portal；在当前路由之上浏览 run 与 artifact。",
     owner: "alpha.artifact-workbench",
     lineage: "alpha",
+    target: "alpha",
     mount: { kind: "overlay", host: "alpha-artifact-workbench-root" },
     availability: "default",
     source: "packages/ui-mac/src/renderer/alpha-ui/artifact-workbench/artifact-workbench.tsx",
@@ -186,6 +205,7 @@ export const FRONTEND_SURFACE_MANIFEST = [
     description: "Alpha Composer 通过 takeover 依赖上游会话锚点并隐藏旧 Composer，仍属混合组合。",
     owner: "alpha.composer-takeover",
     lineage: "hybrid",
+    target: "alpha",
     mount: { kind: "inline", route: "session", slot: "composer" },
     availability: "default",
     source: "packages/ui-mac/src/renderer/alpha-ui/composer-takeover.tsx",
@@ -198,6 +218,7 @@ export const FRONTEND_SURFACE_MANIFEST = [
     description: "Alpha Composer 锚定的自有 picker；通过 typed model list/switch contract 读取并切换。",
     owner: "alpha.composer-model",
     lineage: "alpha",
+    target: "alpha",
     mount: { kind: "overlay", host: "alpha-composer-model" },
     availability: "default",
     source: "packages/ui-mac/src/renderer/alpha-ui/alpha-composer-model.tsx",
@@ -210,6 +231,7 @@ export const FRONTEND_SURFACE_MANIFEST = [
     description: "Alpha 渲染与样式注入上游 timeline DOM；尚未成为独立 typed leaf。",
     owner: "alpha.timeline-inject",
     lineage: "hybrid",
+    target: "alpha",
     mount: { kind: "inline", route: "session", slot: "timeline" },
     availability: "default",
     source: "packages/ui-mac/src/renderer/alpha-ui/timeline-inject.tsx",
@@ -222,6 +244,7 @@ export const FRONTEND_SURFACE_MANIFEST = [
     description: "Alpha 自有全页 Settings overlay；通用、快捷键与扩展存储只消费 typed adapters。",
     owner: "alpha.settings",
     lineage: "alpha",
+    target: "alpha",
     mount: { kind: "overlay", host: "app-root" },
     availability: "default",
     source: "packages/ui-mac/src/renderer/alpha-ui/settings.tsx",
@@ -234,6 +257,7 @@ export const FRONTEND_SURFACE_MANIFEST = [
     description: "Alpha 自有确认面读取公开 PermissionV2 请求，并通过 Alpha Dialog 原子提交三态决定。",
     owner: "alpha.permission",
     lineage: "alpha",
+    target: "alpha",
     mount: { kind: "overlay", host: "alpha-permission-dialog" },
     availability: "default",
     source: "packages/ui-mac/src/renderer/alpha-ui/permission-watcher.tsx",
@@ -247,6 +271,7 @@ export const FRONTEND_SURFACE_MANIFEST = [
       "通用上游消费者显式进入唯一 Alpha Dialog host；Settings、Model、Provider 与 Permission 仍由各自迁移线负责。",
     owner: "alpha.dialog",
     lineage: "hybrid",
+    target: "alpha",
     mount: { kind: "overlay", host: "alpha-dialog-root" },
     availability: "default",
     source: "packages/ui-mac/src/renderer/alpha-ui/Dialog.tsx",
@@ -259,6 +284,7 @@ export const FRONTEND_SURFACE_MANIFEST = [
     description: "产品窗口创建前由独立、最小 preload 的 Alpha renderer 呈现 DbSafety 恢复动作。",
     owner: "alpha.recovery",
     lineage: "alpha",
+    target: "alpha",
     mount: { kind: "boot", host: "alpha-recovery-window", phase: "pre-window" },
     availability: "default",
     source: "packages/ui-mac/src/renderer/alpha-ui/RecoverySurface.tsx",
@@ -275,6 +301,7 @@ export const FRONTEND_SURFACE_MANIFEST = [
       "唯一运行时 Alpha Recovery host；承接 sidecar 停手、surface 崩溃与失败记录保存重试，绝不 reload legacy。",
     owner: "alpha.recovery",
     lineage: "alpha",
+    target: "alpha",
     mount: { kind: "overlay", host: "alpha-runtime-recovery-root" },
     availability: "default",
     source: "packages/ui-mac/src/renderer/alpha-ui/RuntimeRecoveryHost.tsx",
@@ -287,6 +314,7 @@ export const FRONTEND_SURFACE_MANIFEST = [
     description: "由本 Manifest 生成的开发检查面板；不加入产品路由，不进入生产构建。",
     owner: "alpha.dev-surface-map",
     lineage: "alpha",
+    target: "alpha",
     mount: { kind: "overlay", host: "dev-inspector-root" },
     availability: "development",
     source: "packages/ui-mac/src/renderer/dev/surface-map-inspector.tsx",
@@ -299,6 +327,16 @@ export type FrontendSurfaceId = (typeof FRONTEND_SURFACE_MANIFEST)[number]["id"]
 
 export function frontendSurfaceById(id: string) {
   return FRONTEND_SURFACE_MANIFEST.find((surface) => surface.id === id)
+}
+
+/**
+ * The replacement backlog: surfaces whose intended end-state differs from their
+ * current lineage (`target !== lineage`). Sequencing/priority is NOT here — it
+ * lives in GitHub Issues + the Alpha Delivery Project. See
+ * docs/design/system/replacing-opencode.md.
+ */
+export function frontendSurfacesPendingReplacement() {
+  return FRONTEND_SURFACE_MANIFEST.filter((surface) => surface.target !== surface.lineage)
 }
 
 export function frontendSurfaceIdForRoute(route: LegacyRoute): FrontendSurfaceId | undefined {

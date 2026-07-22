@@ -34,6 +34,7 @@ Design **intent** lives in these docs. The **implemented** values are code:
 | [`tokens.md`](tokens.md) | Every `--a-*` token category and scale |
 | [`components.md`](components.md) | Component library catalog (source + role + states) |
 | [`patterns.md`](patterns.md) | Composite patterns — seam/takeover, overlay, recovery, reskin |
+| [`replacing-opencode.md`](replacing-opencode.md) | 逐步替换上游前端的方法论 — the ladder, target dimension, primitives-first, per-surface recipe |
 | [`contributing.md`](contributing.md) | How to add/change design — the entry-point rule + frontend-design skill |
 | [`gallery.html`](gallery.html) | Rendered styleguide (light + dark) |
 
