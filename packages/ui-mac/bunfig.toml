@@ -1,0 +1,8 @@
+[test]
+# Pin the UI locale to zh before any test file evaluates. The real-Solid-render suites
+# (PermissionDialog / Recovery / settings) and the model-picker cases assert zh product
+# copy, but happy-dom's navigator makes detectLocale() fall to "en" (#475 externalised
+# the strings to t(...)). Setting the env here — one producer — is consumed by the single
+# detectLocale() override, covering both the inlined per-bundle i18n instances and the
+# subprocess in alpha-composer-model.component.test.ts (it inherits process.env).
+preload = ["./scripts/test-preload.ts"]

@@ -76,6 +76,15 @@ const LOCALES: readonly Locale[] = [
 ]
 
 function detectLocale(): Locale {
+  // Test/CI locale pin: an explicit ALPHA_UI_LOCALE env wins over navigator sniffing.
+  // Production never sets it, so the navigator path below is unchanged; the `typeof process`
+  // guard keeps this safe where `process` is absent (e.g. a locked-down renderer). parseLocale
+  // rejects illegal values so a stray env can only pin a known locale, never break detection.
+  if (typeof process !== "undefined") {
+    const override = parseLocale(process.env?.ALPHA_UI_LOCALE)
+    if (override) return override
+  }
+
   if (typeof navigator !== "object") return "en"
 
   const languages = navigator.languages?.length ? navigator.languages : [navigator.language]
