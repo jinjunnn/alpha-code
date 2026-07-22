@@ -197,7 +197,7 @@
         "runtimeDep": [
           "node"
         ],
-        "_verify": "首次浏览时 Playwright 需浏览器内核:默认下载 Chromium(~150MB,中国区 egress 慢),或在 command 末尾加 \"--browser\",\"chrome\" 复用系统已装 Chrome(免下载但需已装)。runtimeDep 只能 which 到 node,内核下载发生在运行时而非安装时 → A6 必须桌面实测首个 navigate 能否真起浏览器。"
+        "_verify": "实测结论(证据:docs/verification/2026-07-22-d5-playwright-kernel/verify.md):默认使用系统 Chrome,首次打开网页下载 0 字节;选择 Chromium 浏览器内核时,首次打开网页从 cdn.playwright.dev 下载约 268 MB。系统无 Chrome、下载或启动失败(含受限网络/中国区网络问题)都会直接报错,不会静默回退或伪装成功。默认安装配置已确认无需改变。中国区弱网格(需 sudo pfctl)与无 Chrome 设备的真机确认仍由用户后续补测。"
       },
       "tools": [
         {

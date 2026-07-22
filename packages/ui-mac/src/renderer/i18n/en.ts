@@ -572,6 +572,8 @@ export const dict = {
   "alpha.ext.detailMode": "Mode",
   "alpha.ext.noSecrets": "No keys required",
   "alpha.ext.noRuntimeDeps": "No extra runtime requirements",
+  "alpha.ext.playwrightRuntimeNote":
+    "By default, this connector uses Chrome already installed on your system and downloads nothing when it first opens a page. If Chrome is not installed or you choose the Chromium browser engine, it downloads about 268 MB from cdn.playwright.dev the first time it opens a page. Download or launch failures—including on restricted networks or in China—are shown as errors, never as success.",
   "alpha.ext.skillNoAsset": "This skill's content is not bundled with this build yet \u2014 installing will fail honestly.",
   "alpha.ext.ownTitle": "Ownership",
   "alpha.ext.ownAuthor": "Author",
