@@ -9,7 +9,10 @@ import {
   decodeContract,
   decodeJsonContract,
   decodeTokenClaims,
+  decodeUploadConsentClaims,
   requireTokenPurpose,
+  type UploadConsentClaimsV1,
+  type UploadManifestV1,
   validateFixture,
 } from "./index"
 
@@ -126,6 +129,57 @@ describe("identity, account, and artifact fail closed", () => {
     const invalid = await fixture("contracts/v1/fixtures/invalid/artifact-inline-content.json")
     expect(validateFixture(invalid)).toBe(true)
     expect(() => decodeContract("ArtifactDescriptorV1", invalid.value, "artifact")).toThrow(ContractIncompatibleError)
+  })
+
+  test("decodes the vendored alpha-web upload_consent branch and rejects a platform issuer", () => {
+    const value: UploadConsentClaimsV1 = {
+      schema_version: 1,
+      iss: "alpha-web",
+      aud: "alpha-platform-upload",
+      sub: "tenant-a",
+      token_use: "upload_consent",
+      purpose: "artifact.upload",
+      scope: ["artifact.upload"],
+      iat: 1,
+      exp: 2,
+      jti: "consent-1",
+      manifest_id: "manifest-1",
+      manifest_sha256: "a".repeat(64),
+      egress: [{ egress_class: "explicit.file-upload", enforcement: "required" }],
+    }
+    expect(decodeUploadConsentClaims(jwt(value))).toEqual(value)
+    expect(() => decodeUploadConsentClaims(jwt({ ...value, iss: "alpha-platform" }))).toThrow(
+      ContractIncompatibleError,
+    )
+  })
+})
+
+describe("UploadManifestV1 fail-closed invariants", () => {
+  const manifest = (): UploadManifestV1 => ({
+    schema_version: 1,
+    manifest_id: "manifest-1",
+    tenant_id: "tenant-a",
+    created_at: "2026-07-22T12:00:00.000Z",
+    retention_class: "standard",
+    consent_required: false,
+    egress: [{ egress_class: "explicit.file-upload", enforcement: "required" }],
+    file_count: 1,
+    total_bytes: 4,
+    files: [{ path: "src/a.ts", size_bytes: 4, sha256: "a".repeat(64) }],
+  })
+
+  test("accepts the vendored explicit.file-upload manifest shape", () => {
+    expect(decodeContract("UploadManifestV1", manifest(), "cloud-http")).toEqual(manifest())
+  })
+
+  test("rejects count total and path uniqueness drift not expressible in JSON Schema", () => {
+    expect(() => decodeContract("UploadManifestV1", { ...manifest(), file_count: 0 }, "cloud-http")).toThrow()
+    expect(() => decodeContract("UploadManifestV1", { ...manifest(), total_bytes: 5 }, "cloud-http")).toThrow()
+    const duplicate = manifest()
+    duplicate.file_count = 2
+    duplicate.total_bytes = 8
+    duplicate.files.push({ ...duplicate.files[0]! })
+    expect(() => decodeContract("UploadManifestV1", duplicate, "cloud-http")).toThrow()
   })
 })
 

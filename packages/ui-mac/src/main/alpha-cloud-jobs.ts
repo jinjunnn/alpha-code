@@ -29,6 +29,7 @@ import {
 import { getLogger } from "./logging"
 import { reportContractFailure } from "./alpha-contract-health"
 import type { CloudResult, CloudJobEnvelope, CloudDispatchResult, CloudJobStatus, CloudArtifactList } from "../preload/types"
+import type { createExplicitUploadRequest } from "./alpha-upload-manifest"
 
 // Resolved by alpha-endpoints (env ALPHA_CLOUD_URL > userData pin > login discovery > default).
 const cloudBase = () => resolveEndpoints().cloud
@@ -66,7 +67,7 @@ async function authed<T>(
   }
 }
 
-// ADR-021 §2(REQ-020 T1):上行硬校验单点 —— denied_paths 缺省注入 / 1MB 帽 / secrets 拒发,
+// ADR-021 §2(REQ-020 T1):上行硬校验单点 —— denied_paths 缺省注入 / 256KiB 帽 / secrets 拒发,
 // 全部 loud(错误原样回 renderer 行内呈现)。MCP facade 路径由 B 侧 schema 校验兜底(双层)。
 export const dispatchCloudJob = (envelope: CloudJobEnvelope): Promise<CloudResult<CloudDispatchResult>> => {
   const guarded = guardCloudEnvelope(envelope)
@@ -80,6 +81,37 @@ export const dispatchCloudJob = (envelope: CloudJobEnvelope): Promise<CloudResul
     { method: "POST", body: guarded.envelope },
     (text) => decodeJsonContract("CloudJobAcceptedV1", text, "cloud-http"),
   )
+}
+
+export async function dispatchExplicitCloudUpload(input: {
+  accessToken: string
+  body: ReturnType<typeof createExplicitUploadRequest>
+  uploadConsent?: string
+}): Promise<CloudResult<CloudDispatchResult>> {
+  try {
+    const base = cloudBase()
+    if (!base) return { error: "no-cloud-endpoint" }
+    const response = await fetch(`${base}${ALPHA_PATHS.cloudJobs}`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${input.accessToken}`,
+        "content-type": "application/json",
+        ...(input.uploadConsent ? { "x-alpha-upload-consent": input.uploadConsent } : {}),
+      },
+      body: JSON.stringify(input.body),
+      signal: AbortSignal.timeout(15000),
+    })
+    if (response.status === 401) return { error: "unauthorized" }
+    if (!response.ok) return { error: `http-${response.status}` }
+    return decodeJsonContract("CloudJobAcceptedV1", await response.text(), "cloud-http")
+  } catch (error) {
+    if (isContractIncompatibleError(error)) {
+      reportContractFailure(error)
+      return { error: "contract-incompatible" }
+    }
+    getLogger().warn("alpha-cloud-jobs: explicit upload failed code=network")
+    return { error: "network" }
+  }
 }
 
 export const getCloudJobStatus = (jobId: string): Promise<CloudResult<CloudJobStatus>> =>

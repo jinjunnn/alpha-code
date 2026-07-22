@@ -17,6 +17,7 @@ import { saveCloudRun } from "./alpha-workdir"
 import { mirrorRunArtifacts } from "./alpha-user-workspace"
 import { getLogger } from "./logging"
 import { getStore } from "./store"
+import { cloudScheduleEnvelopeFor, cloudScheduleRegistrationFor } from "./cloud-schedule-config"
 
 // 与 alpha-cloud-jobs 同一 authed 通道(bearer 不进 renderer)。为避免循环依赖,这里复制其极简
 // fetch 形状(同 endpoints/token 源)。
@@ -63,16 +64,11 @@ export type CloudScheduleView = {
 }
 
 
-function envelopeFor(task: AutomationTask): Record<string, unknown> {
-  // MVP:research 管线,任务描述 = 调研问题(表单已明示该映射)。
-  return { autonomy: "pipeline", kind: "research", input: { question: task.prompt } }
-}
-
 /** 保存云档任务时注册/更新 B schedule;返回 schedule id 或可读错误。 */
 export async function upsertCloudSchedule(task: AutomationTask): Promise<{ ok: true; scheduleId: string } | { ok: false; reason: string }> {
   const cron = scheduleToCron(task.schedule)
   if (!cron) return { ok: false, reason: "云档只支持 cron / 60 分钟内的间隔(once 与超长间隔请用本地档)" }
-  const body = { name: task.name, cron, envelope: envelopeFor(task), enabled: task.enabled }
+  const body = cloudScheduleRegistrationFor(task, cron)
   const r = task.cloudScheduleId
     ? await authed<CloudScheduleView>(`/v1/cloud/schedules/${encodeURIComponent(task.cloudScheduleId)}`, { method: "PATCH", body })
     : await authed<CloudScheduleView>("/v1/cloud/schedules", { method: "POST", body })
@@ -154,7 +150,7 @@ async function doPull(): Promise<{ pulled: number } | { error: string }> {
         // REQ-093:下载成功即入 manifest(依赖注入,见 SaveRunDeps.register)。
         register: (input) => registerDownloadedArtifact(task.target.projectDir, job.job_id, input),
       },
-      { autonomy: "pipeline", kind: "research", input: { question: task.prompt } } as never,
+      cloudScheduleEnvelopeFor(task) as never,
     ).catch(() => ({ ok: false as const, reason: "save failed" }))
     // REQ-071/ADR-025:~/Alpha 目标任务的交付物镜像到可见区 Outputs(best-effort,真源不变)。
     if (saved.ok && "files" in saved) mirrorRunArtifacts(task.target.projectDir, job.job_id, saved)

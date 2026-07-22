@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>alpha-code · 上云发送同意框设计稿 — upload consent (2026-07-22)</title>
+<style>
+/* ════════════════════════════════════════════════════════════════════════
+   alpha-ui tokens — verbatim from packages/ui-mac/src/renderer/alpha-ui/tokens.css
+   与上一稿的关系:视觉基线 = 2026-07-15-capability-authorize-dialog(accepted)。
+   同一 house Dialog / Button / token 家族零改动;本稿新增 = 发送到云端前的
+   「上传同意」body 视图 .alpha-upl-*(唯一新增 CSS 家族)。仅在这次发送真正
+   含受隐私保护信息时弹出;不含则静默直发,绝不打扰。
+   ════════════════════════════════════════════════════════════════════════ */
+:root{
+  --a-bg-canvas:#ffffff;--a-bg-subtle:#f6f7f9;--a-bg-muted:#eceef1;--a-bg-inset:#e3e6ea;
+  --a-surface:#ffffff;--a-surface-raised:#ffffff;--a-scrim:rgba(15,17,21,.45);
+  --a-border-faint:#eef0f3;--a-border:#e4e6ea;--a-border-strong:#ced2d9;
+  --a-text:#18181b;--a-text-secondary:#52525b;--a-text-tertiary:#7c7d85;--a-text-disabled:#b3b6bd;
+  --a-text-on-accent:#ffffff;--a-overlay-hover:rgba(15,17,21,.05);
+  --a-accent:#4f46e5;--a-accent-solid:#4f46e5;--a-accent-solid-hover:#4338ca;--a-accent-solid-active:#3730a3;
+  --a-accent-subtle:rgba(79,70,229,.10);--a-accent-border:rgba(79,70,229,.35);--a-accent-ring:rgba(79,70,229,.45);
+  --a-success:#16a34a;--a-warning:#d97706;--a-error:#dc2626;--a-info:#2563eb;
+  --a-success-subtle:rgba(22,163,74,.12);--a-warning-subtle:rgba(217,119,6,.12);--a-error-subtle:rgba(220,38,38,.12);--a-info-subtle:rgba(37,99,235,.12);
+  --a-font-sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;
+  --a-font-mono:"SF Mono","JetBrains Mono","Menlo",ui-monospace,monospace;
+  --a-text-2xs:10.5px;--a-text-xs:11.5px;--a-text-sm:12.5px;--a-text-base:13px;--a-text-md:14px;--a-text-lg:16px;--a-text-xl:19px;--a-text-2xl:23px;
+  --a-leading-tight:1.2;--a-leading-snug:1.4;--a-leading-normal:1.55;--a-tracking-tight:-0.014em;--a-tracking-wide:0.04em;
+  --a-weight-normal:400;--a-weight-medium:500;--a-weight-semibold:600;
+  --a-space-1:4px;--a-space-2:8px;--a-space-3:12px;--a-space-4:16px;--a-space-5:20px;--a-space-6:24px;--a-space-8:32px;
+  --a-radius-xs:4px;--a-radius-sm:6px;--a-radius-md:8px;--a-radius-lg:11px;--a-radius-xl:14px;--a-radius-2xl:18px;--a-radius-full:9999px;
+  --a-shadow-xs:0 1px 2px rgba(15,17,21,.05);
+  --a-shadow-sm:0 1px 3px rgba(15,17,21,.07),0 1px 2px rgba(15,17,21,.04);
+  --a-shadow-md:0 4px 12px rgba(15,17,21,.08),0 2px 4px rgba(15,17,21,.05);
+  --a-shadow-lg:0 12px 32px rgba(15,17,21,.12),0 4px 8px rgba(15,17,21,.06);
+  --a-shadow-overlay:0 24px 64px rgba(15,17,21,.20),0 8px 16px rgba(15,17,21,.10);
+  --a-ring-focus:0 0 0 3px var(--a-accent-ring);
+  --a-edge-light:inset 0 1px 0 rgba(255,255,255,.65);
+  --a-dur-instant:80ms;--a-dur-fast:130ms;--a-dur-base:190ms;--a-dur-slow:280ms;
+  --a-ease-out:cubic-bezier(.22,1,.36,1);--a-ease-spring:cubic-bezier(.34,1.56,.64,1);
+  --a-z-modal:900;--a-z-toast:1000;
+}
+html[data-theme="dark"]{
+  --a-bg-canvas:#0a0b0d;--a-bg-subtle:#0e0f11;--a-bg-muted:#16171a;--a-bg-inset:#1e2024;
+  --a-surface:#121316;--a-surface-raised:#17181b;--a-scrim:rgba(0,0,0,.60);
+  --a-border-faint:#1b1c20;--a-border:#232428;--a-border-strong:#34363c;
+  --a-text:#fafafa;--a-text-secondary:#a1a1aa;--a-text-tertiary:#71727a;--a-text-disabled:#4f5158;
+  --a-overlay-hover:rgba(255,255,255,.055);
+  --a-accent:#818cf8;--a-accent-solid:#4f46e5;--a-accent-solid-hover:#5b54ea;--a-accent-solid-active:#4338ca;
+  --a-accent-subtle:rgba(129,140,248,.14);--a-accent-border:rgba(129,140,248,.38);--a-accent-ring:rgba(129,140,248,.45);
+  --a-success:#4ade80;--a-warning:#fbbf24;--a-error:#f87171;--a-info:#60a5fa;
+  --a-success-subtle:rgba(74,222,128,.14);--a-warning-subtle:rgba(251,191,36,.14);--a-error-subtle:rgba(248,113,113,.14);--a-info-subtle:rgba(96,165,250,.14);
+  --a-shadow-overlay:0 24px 64px rgba(0,0,0,.7),0 8px 16px rgba(0,0,0,.5);
+  --a-edge-light:inset 0 1px 0 rgba(255,255,255,.06);
+}
+
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--a-font-sans);background:var(--a-bg-subtle);color:var(--a-text);-webkit-font-smoothing:antialiased}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+/* ── 设计稿外壳(非产品 UI)────────────────────────────────────────────── */
+.proto-bar{display:flex;align-items:center;gap:var(--a-space-4);flex-wrap:wrap;
+  padding:var(--a-space-3) var(--a-space-5);border-bottom:1px solid var(--a-border);
+  background:var(--a-surface);position:sticky;top:0;z-index:1100}
+.proto-title{font-size:var(--a-text-md);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight)}
+.proto-title small{color:var(--a-text-tertiary);font-weight:var(--a-weight-normal);margin-left:8px}
+.proto-seg{display:flex;background:var(--a-bg-muted);border-radius:var(--a-radius-md);padding:2px;gap:2px;flex-wrap:wrap}
+.proto-seg button{border:none;background:transparent;color:var(--a-text-secondary);font:inherit;
+  font-size:var(--a-text-xs);padding:5px 10px;border-radius:var(--a-radius-sm);cursor:pointer;white-space:nowrap}
+.proto-seg button[data-on]{background:var(--a-surface);color:var(--a-text);box-shadow:var(--a-shadow-xs);font-weight:var(--a-weight-medium)}
+.proto-sw{margin-left:auto;display:flex;gap:var(--a-space-2)}
+.proto-sw button{border:1px solid var(--a-border);background:var(--a-surface);color:var(--a-text-secondary);
+  font:inherit;font-size:var(--a-text-xs);padding:5px 10px;border-radius:var(--a-radius-md);cursor:pointer}
+.proto-sw button[data-on]{border-color:var(--a-accent-border);color:var(--a-accent);background:var(--a-accent-subtle)}
+.proto-rel{max-width:1060px;margin:var(--a-space-4) auto 0;padding:var(--a-space-3) var(--a-space-4);
+  border:1px solid var(--a-border-faint);border-left:3px solid var(--a-accent);border-radius:var(--a-radius-md);
+  background:var(--a-surface);font-size:var(--a-text-xs);color:var(--a-text-secondary);line-height:var(--a-leading-snug)}
+.proto-rel b{color:var(--a-text)}
+.proto-rel code{font-family:var(--a-font-mono);font-size:11px;background:var(--a-bg-muted);
+  border:1px solid var(--a-border-faint);padding:0 5px;border-radius:4px}
+
+/* ── 舞台:简化云 pipeline 详情页 + 真尺寸 Dialog ────────────────────── */
+.stage{position:relative;max-width:1060px;margin:var(--a-space-4) auto var(--a-space-6);
+  height:640px;border:1px solid var(--a-border);border-radius:var(--a-radius-xl);
+  overflow:hidden;background:var(--a-bg-canvas)}
+
+/* 背景:云 pipeline 详情页(cloud-dispatch-box.tsx 的宿主) */
+.cloud{padding:var(--a-space-6) var(--a-space-8);height:100%;display:flex;flex-direction:column;gap:var(--a-space-5)}
+.cloud-h{display:flex;align-items:center;gap:var(--a-space-3)}
+.cloud-h .ic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:#fff;background:#6366f1;flex:none}
+.cloud-h .ic svg{width:16px;height:16px}
+.cloud-h h1{font-size:var(--a-text-xl);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight);margin:0}
+.cloud-h .tag{margin-left:auto;font-size:var(--a-text-2xs);color:var(--a-text-tertiary);text-transform:uppercase;letter-spacing:var(--a-tracking-wide)}
+.cloud-sub{font-size:var(--a-text-base);color:var(--a-text-secondary);line-height:var(--a-leading-normal);margin:-8px 0 0;max-width:64ch}
+.cloud-facts{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--a-space-3)}
+.cloud-fact{border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);padding:var(--a-space-3) var(--a-space-4);background:var(--a-surface);box-shadow:var(--a-shadow-xs)}
+.cloud-fact .k{font-size:var(--a-text-2xs);color:var(--a-text-tertiary);text-transform:uppercase;letter-spacing:var(--a-tracking-wide)}
+.cloud-fact .v{margin-top:3px;font-size:var(--a-text-base);font-weight:var(--a-weight-medium)}
+
+/* dispatch box —— cloud-dispatch-box.tsx 同构 */
+.dsub{border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);padding:var(--a-space-4) var(--a-space-5);background:var(--a-surface);box-shadow:var(--a-shadow-xs);display:flex;flex-direction:column;gap:10px}
+.dsub-t{font-size:var(--a-text-md);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight)}
+.dsub-note{margin:0;font-size:var(--a-text-xs);color:var(--a-text-tertiary);line-height:var(--a-leading-snug);max-width:70ch}
+.dsub-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.dsub-btn{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 16px;border:1px solid transparent;
+  border-radius:var(--a-radius-md);background:var(--a-accent-solid);color:var(--a-text-on-accent);
+  font:inherit;font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);cursor:pointer;box-shadow:var(--a-shadow-xs)}
+.dsub-btn:hover{background:var(--a-accent-solid-hover)}
+.dsub-btn svg{width:14px;height:14px}
+.dsub-meta{font-size:var(--a-text-xs);color:var(--a-text-tertiary)}
+.dsub-meta[data-live]{color:var(--a-text-secondary)}
+.dsub-meta code{font-family:var(--a-font-mono);font-size:11px}
+
+/* 静默直发内联条(情形B:无隐私信息 —— 不弹框,只诚实告知一行,无按钮不阻断) */
+.dsub-silent{display:flex;align-items:center;gap:9px;padding:9px 12px;border-radius:var(--a-radius-md);
+  background:var(--a-success-subtle);color:var(--a-success);font-size:var(--a-text-xs);line-height:var(--a-leading-snug)}
+.dsub-silent svg{width:14px;height:14px;flex:none}
+.dsub-silent b{font-weight:var(--a-weight-medium)}
+.dsub-silent span{color:var(--a-text-secondary)}
+.dsub-progress{display:flex;align-items:center;gap:9px;font-size:var(--a-text-xs);color:var(--a-text-secondary)}
+.dsub-progress .bar{flex:1;max-width:260px;height:4px;border-radius:99px;background:var(--a-bg-inset);overflow:hidden}
+.dsub-progress .bar i{display:block;height:100%;width:46%;border-radius:99px;background:var(--a-accent-solid);animation:barpulse 1.6s var(--a-ease-out) infinite}
+@keyframes barpulse{0%{width:14%}50%{width:64%}100%{width:14%}}
+.dsub-progress code{font-family:var(--a-font-mono);font-size:11px}
+
+/* 内联错误(B11:失败一律行内,不弹框) */
+.dsub-err{display:flex;gap:9px;padding:11px 13px;border-radius:var(--a-radius-md);
+  background:var(--a-error-subtle);border:1px solid transparent;color:var(--a-error);font-size:var(--a-text-sm);line-height:var(--a-leading-snug)}
+.dsub-err svg{width:15px;height:15px;flex:none;margin-top:1px}
+.dsub-err b{font-weight:var(--a-weight-semibold);color:var(--a-error)}
+.dsub-err p{margin:2px 0 0;color:var(--a-text-secondary)}
+.dsub-err .retry{margin-top:8px;display:inline-flex;height:28px;padding:0 12px;align-items:center;border-radius:var(--a-radius-md);
+  border:1px solid var(--a-border);background:var(--a-surface);color:var(--a-text-secondary);font:inherit;font-size:var(--a-text-xs);cursor:pointer}
+
+/* ── alpha-ui Dialog — verbatim 规格(dialog.css;mock 内 fixed→absolute)── */
+.a-dialog-root{position:absolute;inset:0;z-index:var(--a-z-modal);font-family:var(--a-font-sans)}
+.a-dialog-backdrop{position:absolute;inset:0;background:var(--a-scrim);backdrop-filter:blur(3px);
+  animation:a-dialog-fade var(--a-dur-base) var(--a-ease-out)}
+.a-dialog-panel{position:absolute;inset:0;margin:auto;display:flex;flex-direction:column;
+  width:min(560px,92%);height:max-content;max-height:86%;overflow:hidden;
+  background:var(--a-surface-raised);color:var(--a-text);border:1px solid var(--a-border-faint);
+  border-radius:var(--a-radius-2xl);box-shadow:var(--a-shadow-overlay),var(--a-edge-light);
+  animation:a-dialog-rise var(--a-dur-slow) var(--a-ease-spring)}
+.a-dialog-header{display:flex;align-items:flex-start;gap:var(--a-space-3);padding:var(--a-space-4) var(--a-space-5);
+  border-bottom:1px solid var(--a-border-faint)}
+.a-dialog-titlewrap{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.a-dialog-title{font-size:var(--a-text-lg);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight)}
+.a-dialog-sub{font-size:var(--a-text-xs);color:var(--a-text-tertiary)}
+.a-dialog-hicon{width:32px;height:32px;border-radius:9px;flex:none;display:grid;place-items:center;
+  background:var(--a-accent-subtle);color:var(--a-accent)}
+.a-dialog-hicon svg{width:17px;height:17px}
+.a-dialog-close{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:30px;height:30px;
+  border:none;border-radius:var(--a-radius-md);background:transparent;color:var(--a-text-tertiary);cursor:pointer;font-size:15px;
+  transition:background var(--a-dur-fast) var(--a-ease-out),color var(--a-dur-fast) var(--a-ease-out)}
+.a-dialog-close:hover{background:var(--a-bg-muted);color:var(--a-text)}
+.a-dialog-body{flex:1;min-height:0;overflow-y:auto;padding:var(--a-space-5)}
+.a-dialog-footer{display:flex;align-items:center;gap:var(--a-space-2);
+  padding:var(--a-space-3) var(--a-space-5);border-top:1px solid var(--a-border-faint)}
+.a-dialog-footer .spacer{flex:1}
+@keyframes a-dialog-fade{from{opacity:0}}
+@keyframes a-dialog-rise{from{opacity:0;transform:translateY(8px) scale(.985)}}
+
+/* alpha-ui Button — verbatim 规格(button.css)*/
+.a-btn{--_h:30px;display:inline-flex;align-items:center;justify-content:center;gap:var(--a-space-2);height:var(--_h);
+  padding:0 var(--a-space-3);border:1px solid transparent;border-radius:var(--a-radius-md);font-family:var(--a-font-sans);
+  font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);line-height:1;white-space:nowrap;cursor:pointer;user-select:none;
+  transition:background var(--a-dur-fast) var(--a-ease-out),border-color var(--a-dur-fast) var(--a-ease-out),
+  color var(--a-dur-fast) var(--a-ease-out),transform var(--a-dur-fast) var(--a-ease-out)}
+.a-btn:active:not(:disabled){transform:translateY(.5px) scale(.99)}
+.a-btn:disabled{cursor:default;opacity:.5}
+.a-btn[data-variant="primary"]{background:var(--a-accent-solid);color:var(--a-text-on-accent);box-shadow:var(--a-shadow-xs)}
+.a-btn[data-variant="primary"]:hover:not(:disabled){background:var(--a-accent-solid-hover)}
+.a-btn[data-variant="ghost"]{background:transparent;color:var(--a-text-secondary)}
+.a-btn[data-variant="ghost"]:hover:not(:disabled){background:var(--a-bg-muted);color:var(--a-text)}
+.a-spin{width:12px;height:12px;border-radius:50%;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;
+  animation:aspin .7s linear infinite}
+@keyframes aspin{to{transform:rotate(360deg)}}
+
+/* ════════════════════════════════════════════════════════════════════════
+   本稿新增:上传同意 body 视图 .alpha-upl-*(唯一新增 CSS 家族,全 token 复用)
+   ════════════════════════════════════════════════════════════════════════ */
+.alpha-upl{display:flex;flex-direction:column;gap:14px}
+.alpha-upl-intro{margin:0;font-size:var(--a-text-base);line-height:var(--a-leading-normal);color:var(--a-text-secondary)}
+.alpha-upl-intro b{color:var(--a-text);font-weight:var(--a-weight-medium)}
+
+/* 隐私发现横幅(仅当含受保护信息时出现,是本框存在的理由) */
+.alpha-upl-flag{display:flex;gap:11px;padding:12px 14px;border-radius:var(--a-radius-lg);
+  background:var(--a-warning-subtle);line-height:var(--a-leading-snug)}
+.alpha-upl-flag .fic{width:26px;height:26px;border-radius:7px;flex:none;display:grid;place-items:center;
+  background:transparent;color:var(--a-warning)}
+.alpha-upl-flag .fic svg{width:16px;height:16px}
+.alpha-upl-flag .ft{display:flex;flex-direction:column;gap:5px;min-width:0}
+.alpha-upl-flag .ft b{font-size:var(--a-text-sm);font-weight:var(--a-weight-semibold);color:var(--a-text)}
+.alpha-upl-flag .ft ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:3px}
+.alpha-upl-flag .ft li{display:flex;align-items:center;gap:7px;font-size:var(--a-text-xs);color:var(--a-text-secondary)}
+.alpha-upl-flag .ft li::before{content:"";width:4px;height:4px;border-radius:50%;background:var(--a-warning);flex:none}
+
+/* 范围条:明确、有界的发送范围(缺失目录绝不隐式扩为整库) */
+.alpha-upl-scope{display:flex;align-items:center;gap:10px;padding:10px 13px;border-radius:var(--a-radius-md);
+  background:var(--a-bg-subtle);border:1px solid var(--a-border-faint);font-size:var(--a-text-sm)}
+.alpha-upl-scope .sic{width:20px;height:20px;flex:none;color:var(--a-text-tertiary)}
+.alpha-upl-scope .sic svg{width:16px;height:16px}
+.alpha-upl-scope .stxt{min-width:0}
+.alpha-upl-scope .stxt b{font-weight:var(--a-weight-medium)}
+.alpha-upl-scope .stxt small{display:block;font-size:var(--a-text-2xs);color:var(--a-text-tertiary);margin-top:1px}
+.alpha-upl-scope .scount{margin-left:auto;flex:none;font-size:var(--a-text-xs);color:var(--a-text-secondary);
+  background:var(--a-bg-muted);border:1px solid var(--a-border-faint);padding:2px 8px;border-radius:var(--a-radius-full)}
+
+/* 文件清单(preview:默认摘要 + 可展开逐文件) */
+.alpha-upl-box{border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);overflow:hidden}
+.alpha-upl-file{display:flex;align-items:center;gap:10px;padding:9px 13px;font-size:var(--a-text-sm)}
+.alpha-upl-file + .alpha-upl-file{border-top:1px solid var(--a-border-faint)}
+.alpha-upl-file .dic{width:18px;height:18px;flex:none;color:var(--a-text-tertiary)}
+.alpha-upl-file .dic svg{width:15px;height:15px}
+.alpha-upl-file .path{font-family:var(--a-font-mono);font-size:11.5px;color:var(--a-text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.alpha-upl-file .chip{flex:none;font-size:var(--a-text-2xs);font-weight:var(--a-weight-medium);
+  padding:1px 7px;border-radius:var(--a-radius-full);background:var(--a-warning-subtle);color:var(--a-warning);letter-spacing:var(--a-tracking-wide)}
+.alpha-upl-file .size{margin-left:auto;flex:none;font-family:var(--a-font-mono);font-size:10.5px;color:var(--a-text-tertiary)}
+.alpha-upl-file[data-flag] .dic{color:var(--a-warning)}
+.alpha-upl-more{display:flex;align-items:center;gap:8px;width:100%;padding:9px 13px;border:none;border-top:1px solid var(--a-border-faint);
+  background:var(--a-bg-subtle);color:var(--a-text-secondary);font:inherit;font-size:var(--a-text-xs);cursor:pointer;text-align:left}
+.alpha-upl-more:hover{background:var(--a-bg-muted);color:var(--a-text)}
+.alpha-upl-more svg{width:12px;height:12px;transition:transform var(--a-dur-fast) var(--a-ease-out)}
+.alpha-upl-more[data-open] svg{transform:rotate(90deg)}
+.alpha-upl-more .grow{flex:1}
+.alpha-upl-more .tot{font-family:var(--a-font-mono);font-size:10.5px;color:var(--a-text-tertiary)}
+
+/* 用途 / 保留 元信息 */
+.alpha-upl-meta{display:flex;flex-direction:column;gap:2px;border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);overflow:hidden}
+.alpha-upl-mrow{display:flex;align-items:flex-start;gap:10px;padding:10px 13px;font-size:var(--a-text-sm)}
+.alpha-upl-mrow + .alpha-upl-mrow{border-top:1px solid var(--a-border-faint)}
+.alpha-upl-mrow .mic{width:18px;height:18px;flex:none;color:var(--a-text-tertiary);margin-top:1px}
+.alpha-upl-mrow .mic svg{width:15px;height:15px}
+.alpha-upl-mrow .k{flex:none;width:52px;color:var(--a-text-tertiary);font-size:var(--a-text-xs);padding-top:1px}
+.alpha-upl-mrow .v{color:var(--a-text-secondary);line-height:var(--a-leading-snug)}
+.alpha-upl-mrow .v b{color:var(--a-text);font-weight:var(--a-weight-medium)}
+
+/* 撤回说明 + 同意契约说明 */
+.alpha-upl-withdraw{display:flex;gap:9px;font-size:var(--a-text-xs);color:var(--a-text-tertiary);line-height:var(--a-leading-snug)}
+.alpha-upl-withdraw svg{width:14px;height:14px;flex:none;margin-top:1px;color:var(--a-text-tertiary)}
+.alpha-upl-withdraw a{color:var(--a-accent);text-decoration:none}
+.alpha-upl-note{margin:0;font-size:var(--a-text-xs);color:var(--a-text-tertiary);line-height:var(--a-leading-snug)}
+.alpha-upl-note b{color:var(--a-text-secondary);font-weight:var(--a-weight-medium)}
+
+/* 同意后·准备安全发送失败(fail-closed 内联) */
+.alpha-upl-fail{display:flex;gap:10px;padding:12px 14px;border-radius:var(--a-radius-lg);background:var(--a-error-subtle);line-height:var(--a-leading-snug)}
+.alpha-upl-fail svg{width:16px;height:16px;flex:none;margin-top:1px;color:var(--a-error)}
+.alpha-upl-fail b{display:block;font-size:var(--a-text-sm);font-weight:var(--a-weight-semibold);color:var(--a-text)}
+.alpha-upl-fail p{margin:3px 0 0;font-size:var(--a-text-xs);color:var(--a-text-secondary)}
+
+/* ── Toast(house:成功才 toast)──────────────────────────────────────── */
+.a-toast{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:var(--a-z-toast);
+  display:flex;align-items:center;gap:8px;background:var(--a-surface-raised);border:1px solid var(--a-border-faint);
+  border-radius:var(--a-radius-lg);box-shadow:var(--a-shadow-lg),var(--a-edge-light);padding:9px 14px;
+  font-size:var(--a-text-sm);animation:a-dialog-rise var(--a-dur-slow) var(--a-ease-spring)}
+.a-toast .dot{width:7px;height:7px;border-radius:50%;background:var(--a-success)}
+
+/* ── 标注(设计稿说明层,非产品)─────────────────────────────────────── */
+.note-ref{display:none;width:15px;height:15px;border-radius:50%;background:var(--a-accent);color:#fff;
+  font-size:10px;font-weight:700;line-height:15px;text-align:center;flex:none;margin-left:4px;vertical-align:2px}
+body[data-notes="on"] .note-ref{display:inline-block}
+.proto-notes{max-width:1060px;margin:0 auto var(--a-space-8);display:none;flex-direction:column;gap:6px}
+body[data-notes="on"] .proto-notes{display:flex}
+.proto-notes .n{display:flex;gap:10px;align-items:baseline;font-size:var(--a-text-sm);color:var(--a-text-secondary);
+  line-height:var(--a-leading-snug)}
+.proto-notes .n i{font-style:normal;flex:none;width:16px;height:16px;border-radius:50%;background:var(--a-accent);
+  color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center;transform:translateY(2px)}
+.proto-notes .n code{font-family:var(--a-font-mono);font-size:11px;background:var(--a-bg-muted);
+  border:1px solid var(--a-border-faint);padding:0 5px;border-radius:4px}
+.replay{position:absolute;inset:0;display:grid;place-items:center;z-index:5;padding:24px;text-align:center}
+.replay button{border:1px dashed var(--a-border-strong);background:var(--a-surface);color:var(--a-text-secondary);
+  font:inherit;font-size:var(--a-text-sm);padding:8px 16px;border-radius:var(--a-radius-md);cursor:pointer}
+.replay .hint{position:absolute;bottom:64px;left:0;right:0;text-align:center;font-size:var(--a-text-xs);color:var(--a-text-tertiary);padding:0 40px}
+</style>
+</head>
+<body data-notes="on">
+
+<div class="proto-bar">
+  <div class="proto-title">上云发送同意框<small>upload consent · 2026-07-22 draft-v1</small></div>
+  <div class="proto-seg" id="seg">
+    <button data-s="s1" data-on>情形A · 含隐私信息(弹框)</button>
+    <button data-s="s2">情形B · 无隐私信息(静默直发)</button>
+    <button data-s="s3">已取消</button>
+    <button data-s="s4">无法安全发送(失败关闭)</button>
+  </div>
+  <div class="proto-sw">
+    <button id="tgNotes" data-on>标注</button>
+    <button id="tgTheme">深色</button>
+  </div>
+</div>
+
+<div class="proto-rel">
+  <b>与上一稿的关系</b> — 视觉基线 = <code>2026-07-15-capability-authorize-dialog</code>(accepted):同一 house
+  <code>Dialog</code> / <code>Button</code> / <code>--a-*</code> token 家族零改动。宿主入口 = 现产品
+  <code>cloud-dispatch-box.tsx</code>「选择项目并派发」。<b>行为增量</b> = 把现有「每个项目首次派发一律弹一次原生框」(ADR-021 §4)
+  换成<b>按内容条件触发</b>的结构化同意框:<b>只有这次发送真的含受隐私保护信息时才弹</b>,不含则静默直发、绝不打扰。
+  本稿唯一新增 CSS 家族 = <code>.alpha-upl-*</code>(发送清单 / 隐私发现 / 用途·保留 / 撤回)。字段名与内部术语只在同目录
+  <code>design.md</code>,不进画面。
+</div>
+
+<div class="stage" id="stage"></div>
+<div class="proto-notes" id="notes"></div>
+
+<script>
+/* ── 线性图标(16 viewbox · 1.5 stroke,与产品 alpha-ui 同规格)────────── */
+const IC = {
+  cloud:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M4.5 12.5a3 3 0 0 1-.4-6A4 4 0 0 1 12 7.6a2.5 2.5 0 0 1-.5 4.9z"/></svg>',
+  cloudUp:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.6 12.5a3 3 0 0 1-.4-6A4 4 0 0 1 12 7.6a2.5 2.5 0 0 1-.4 4.9"/><path d="M8 13V7.4M6 9.2 8 7.2l2 2"/></svg>',
+  shield:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M8 1.7 13 3.4v4.1c0 3.2-2.1 5.6-5 6.8-2.9-1.2-5-3.6-5-6.8V3.4z"/><path d="M5.9 8 7.4 9.5 10.2 6.4" stroke-linecap="round"/></svg>',
+  eye:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1.5 8S3.9 3.6 8 3.6 14.5 8 14.5 8 12.1 12.4 8 12.4 1.5 8 1.5 8z" stroke-linejoin="round"/><circle cx="8" cy="8" r="1.9"/></svg>',
+  folder:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M1.9 4.3c0-.7.5-1.2 1.2-1.2h2.6l1.3 1.5h5c.7 0 1.2.5 1.2 1.2v5.4c0 .7-.5 1.2-1.2 1.2H3.1c-.7 0-1.2-.5-1.2-1.2z"/></svg>',
+  file:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M4 1.8h5l3 3v9.4H4z"/><path d="M9 1.8v3h3"/></svg>',
+  target:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.2"/><circle cx="8" cy="8" r="3"/><circle cx="8" cy="8" r=".4" fill="currentColor"/></svg>',
+  clock:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.2"/><path d="M8 4.6V8l2.4 1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  undo:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5H9.5A3.5 3.5 0 0 1 9.5 13.5H6"/><path d="M6 3.5 3.5 6.5 6 9"/></svg>',
+  chevron:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l4 4-4 4"/></svg>',
+  check:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5 6.5 11.5 12.5 5"/></svg>',
+  alert:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.2 14.6 13.4H1.4z"/><path d="M8 6.6v3M8 11.6h.01"/></svg>',
+  x:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>'
+};
+
+/* ── 情形A 的发送清单(preview 展开的完整文件表)────────────────────── */
+const FILES = [
+  { path:"src/api/auth.ts",        size:"8.2 KB",  flag:true },
+  { path:"src/api/user-profile.ts",size:"12.4 KB", flag:true },
+  { path:"src/api/session.ts",     size:"6.0 KB",  flag:false },
+  { path:"src/lib/format.ts",      size:"3.1 KB",  flag:false },
+  { path:"src/lib/validate.ts",    size:"4.7 KB",  flag:false },
+  { path:"test/auth.spec.ts",      size:"5.3 KB",  flag:false },
+  { path:"README.md",              size:"2.9 KB",  flag:false }
+];
+
+const SCENARIOS = {
+  s1:{ kind:"consent",
+    title:"发送到 Alpha 云前,请确认",
+    sub:"代码审查 · 本次发送",
+    intro:`「<b>代码审查</b>」需要把你所选项目的<b>本次改动</b>发送到 Alpha 云执行。系统在其中发现了<b>受隐私保护的信息</b>,发送前需要你确认。<span class="note-ref">1</span>`,
+    findings:["1 个文件含疑似邮箱与电话号码","1 个文件含疑似个人身份信息"],
+    scopeLabel:"仅本次改动(未提交的工作树 diff)",
+    scopeHint:"整个项目的其余文件不会被发送",
+    scopeCount:"7 个文件 · 42.6 KB",
+    purpose:"代码审查 —— 分析这次改动并给出结构化意见。仅用于本次任务,不用于训练。",
+    retention:"任务完成后自动删除,最长保留 30 天。你可随时提前删除。",
+    cta:"同意并发送", toast:"已发送 · 云端审查进行中",
+    notes:[
+      ["1","<b>条件触发是本框存在的唯一理由</b>。main 侧在发送前为这次上传生成一份清单并逐文件做隐私分类;<b>仅当清单标记为「需同意」(含受法律保护的隐私信息)才弹此框</b>。不含 → 情形B 静默直发。判定发生在发送之前、任何字节离开本机之前。"],
+      ["2","<b>隐私发现横幅</b>用 warning-subtle(house 克制色阶),人话列出<b>发现了什么类别</b>,不显字段名/正则/内部分类码。这是「为什么要打扰你」的answer,放在最显眼处。"],
+      ["3","<b>范围有界、可核实</b>:范围行明确「只发这些、其余不发」。若所选目录读不到,<b>绝不</b>隐式回退成整库上传(见情形D / 失败关闭);缺目录 = 取消,不是「发全部」。"],
+      ["4","<b>preview</b>:默认给摘要(N 文件 / 总大小 / 范围),「查看清单」就地展开逐文件路径与大小;含隐私的文件带「含隐私信息」chip + warning 图标。同意前你能看清每一个将要离开本机的文件。"],
+      ["5","<b>用途 + 保留</b>两行是同意的实质内容:发去做什么、留多久、谁能删。均为人话,不出现 retention_class/purpose 等字段名。"],
+      ["6","<b>撤回</b>:底部常驻一句「设置 › 隐私 › 云端数据」入口,可事后撤回同意并请求删除已发送内容——同意不是一锤子买卖。"],
+      ["7","<b>同意=展示什么同意什么</b>(反 TOCTOU / 反越权):注释行申明「同意仅对上面列出的内容有效」。main 是唯一权威——同意令牌由 main 侧签发并绑定这份清单的指纹;renderer / agent 既不能预先替你勾同意,也不能在你同意后把范围偷偷放大。"],
+      ["8","<b>footer</b> = house 先例:ghost「取消」+ primary「同意并发送」。同意后按钮转 loading(main 绑定清单→取令牌→发送),成功走 house 成功 toast;取消零副作用静默关框(情形C)。"]
+    ]},
+  s2:{ kind:"silent",
+    notes:[
+      ["1","<b>无隐私信息 = 不打扰</b>。同一条发送路径,main 侧清单把这次上传分类为「无需同意」(未发现受法律保护的隐私信息)→ <b>不弹任何框</b>,直接发送。老方案「每个项目首次一律弹一次」在这里被淘汰:没有隐私风险就不该有确认摩擦。"],
+      ["2","<b>诚实但不阻断</b>:派发区就地显示一行「隐私检查已通过 · 未发现受保护信息」。这是<b>非阻断</b>的透明告知(无按钮、无需点击、不拦路),不是又一个要你确认的框。给克制的安全感,不制造弹窗疲劳。"],
+      ["3","隐私检查<b>始终运行</b>——静默 ≠ 不检查。区别只在结果:有 → 弹框问你;无 → 一行告知后直发。检查本身不可关。"]
+    ]},
+  s3:{ kind:"cancelled",
+    notes:[
+      ["1","<b>取消 = 零副作用</b>。在同意框里点「取消」/ 关闭 / Esc / 点背景 → 静默关框,<b>没有任何字节离开本机</b>:不发送、不签同意令牌、不留云端记录。派发区回到发送前原状。"],
+      ["2","不弹错误、不弹 toast(house:取消是静默的正常出口,不是失败)。用户随时可再次点「选择项目并派发」重来。"],
+      ["3","这对应现产品既有的 <code>consent-declined</code> 出口(<code>alpha.ext.cloudErrConsentDeclined</code>)的语义,但呈现为「已取消」的中性状态而非红色错误。"]
+    ]},
+  s4:{ kind:"error",
+    notes:[
+      ["1","<b>失败关闭(fail-closed)</b>。两类准备失败都走这条内联错误、都<b>不发送任何内容</b>:(a) 所选目录读不到 / 范围无法确定;(b) 你已同意,但 main 侧绑定清单或签发同意令牌失败。<b>同意本身不发送东西</b>——必须 main 成功绑定清单指纹并拿到令牌,才会有字节出境。"],
+      ["2","<b>缺目录绝不扩权</b>:范围无法确定时,系统<b>不会</b>退回成「那就发整个项目」。缺失 = 取消这次发送,而不是把同意悄悄放大到整库。这是安全红线。"],
+      ["3","错误一律<b>行内</b>呈现(B11,与 cloud-dispatch-box 的 <code>.alpha-ext-card-err</code> 同构),不再弹框。可「重试」;重试重新走清单→分类→(如仍含隐私)同意框。"],
+      ["4","令牌由 alpha-web 签发并绑定这份清单的指纹;renderer 无法伪造。签发不通(离线 / 过期 / 指纹不符)即在此关闭发送,而不是带着未验证的同意继续。"]
+    ]}
+};
+
+/* ── 云 pipeline 背景(dispatch box 的宿主)──────────────────────────── */
+function cloudHtml(inner){
+  return `<div class="cloud">
+    <div class="cloud-h"><span class="ic">${IC.cloud}</span><h1>代码审查</h1><span class="tag">云 PIPELINE</span></div>
+    <p class="cloud-sub">把所选项目的本次改动发到 Alpha 云做结构化审查,结果回流到项目的本地记录目录。</p>
+    <div class="cloud-facts">
+      <div class="cloud-fact"><div class="k">执行层</div><div class="v">云端 pipeline</div></div>
+      <div class="cloud-fact"><div class="k">发送范围</div><div class="v">本次改动(diff)</div></div>
+      <div class="cloud-fact"><div class="k">结果</div><div class="v">回流本地留档</div></div>
+    </div>
+    ${inner}
+  </div>`;
+}
+function dsub(inner){
+  return `<div class="dsub">
+    <div class="dsub-t">从这里派发</div>
+    <p class="dsub-note">取所选项目的本次改动;发送前自动做隐私检查。任务在云端执行,结果回流本地。</p>
+    ${inner}
+  </div>`;
+}
+
+/* ── 同意框 body(情形A / 情形D 复用外壳)───────────────────────────── */
+function fileRow(f){
+  return `<div class="alpha-upl-file"${f.flag?' data-flag':''}>
+    <span class="dic">${IC.file}</span>
+    <span class="path">${f.path}</span>
+    ${f.flag?'<span class="chip">含隐私信息</span>':''}
+    <span class="size">${f.size}</span>
+  </div>`;
+}
+function consentBody(sc, opts){
+  const open = opts && opts.preview;
+  const failed = opts && opts.failed;
+  const shown = open ? FILES : FILES.slice(0,3);
+  const rest = FILES.length - shown.length;
+  const list = shown.map(fileRow).join("") + (rest>0
+    ? `<button class="alpha-upl-more" id="moreBtn">${IC.chevron}<span>查看清单</span><span class="grow"></span><span class="tot">还有 ${rest} 个文件</span></button>`
+    : (open ? `<button class="alpha-upl-more" id="moreBtn" data-open>${IC.chevron}<span>收起清单</span><span class="grow"></span><span class="tot">共 ${FILES.length} 个文件</span></button>` : ""));
+  const findings = sc.findings.map(x=>`<li>${x}</li>`).join("");
+  return `<div class="alpha-upl">
+    <p class="alpha-upl-intro">${sc.intro}</p>
+
+    <div class="alpha-upl-flag">
+      <span class="fic">${IC.shield}</span>
+      <span class="ft"><b>这次发送包含受隐私保护的信息<span class="note-ref">2</span></b><ul>${findings}</ul></span>
+    </div>
+
+    <div class="alpha-upl-scope">
+      <span class="sic">${IC.folder}</span>
+      <span class="stxt"><b>${sc.scopeLabel}</b><small>${sc.scopeHint}</small></span>
+      <span class="scount">${sc.scopeCount}<span class="note-ref">3</span></span>
+    </div>
+
+    <div class="alpha-upl-box">${list}<span class="note-ref">4</span></div>
+
+    <div class="alpha-upl-meta">
+      <div class="alpha-upl-mrow"><span class="mic">${IC.target}</span><span class="k">用途</span><span class="v">${sc.purpose}</span></div>
+      <div class="alpha-upl-mrow"><span class="mic">${IC.clock}</span><span class="k">保留</span><span class="v">${sc.retention}</span></div>
+    </div>
+
+    <div class="alpha-upl-withdraw">${IC.undo}<span>随时可撤回:<b>设置 › 隐私 › 云端数据</b> 撤回同意并请求删除已发送内容。<span class="note-ref">6</span></span></div>
+
+    ${failed?`<div class="alpha-upl-fail">${IC.alert}<span><b>无法完成安全发送 —— 未发送任何内容</b><p>为这次发送准备安全凭据时失败(离线或凭据不可用)。没有任何字节离开本机;修复后可重试。<span class="note-ref">1</span></p></span></div>`:""}
+
+    <p class="alpha-upl-note"><b>同意仅对上面列出的内容有效。</b>取消不会发送任何内容,也不会留下云端记录。<span class="note-ref">7</span></p>
+  </div>`;
+}
+
+/* ── 渲染 ─────────────────────────────────────────────────────────────── */
+const stage = document.getElementById("stage");
+const notesEl = document.getElementById("notes");
+let cur = "s1";
+// 每场景的瞬态 UI 状态
+let st = { closed:false, preview:false, failed:false, sending:false };
+
+function resetState(){ st = { closed:false, preview:false, failed:false, sending:false }; }
+
+function render(){
+  const sc = SCENARIOS[cur];
+  notesEl.innerHTML = sc.notes.map(([i,t])=>`<div class="n"><i>${i}</i><span>${t}</span></div>`).join("");
+
+  if (sc.kind === "consent"){ renderConsent(sc); return; }
+  if (sc.kind === "silent"){ renderSilent(); return; }
+  if (sc.kind === "cancelled"){ renderCancelled(); return; }
+  if (sc.kind === "error"){ renderError(); return; }
+}
+
+/* 情形A:含隐私信息 → 弹同意框(preview / confirm / cancel 皆可交互) */
+function renderConsent(sc){
+  const bg = cloudHtml(dsub(`<div class="dsub-row"><button class="dsub-btn">${IC.cloudUp}选择项目并派发</button><span class="dsub-meta">diff 来源:工作树变更</span></div>`));
+  if (st.closed){ stage.innerHTML = bg; return; }
+  const cta = st.failed ? "重试" : sc.cta;
+  stage.innerHTML = bg + `
+    <div class="a-dialog-root">
+      <div class="a-dialog-backdrop" data-cancel></div>
+      <div class="a-dialog-panel">
+        <div class="a-dialog-header">
+          <span class="a-dialog-hicon">${IC.cloudUp}</span>
+          <span class="a-dialog-titlewrap"><span class="a-dialog-title">${sc.title}</span><span class="a-dialog-sub">${sc.sub}</span></span>
+          <button class="a-dialog-close" data-cancel>${IC.x}</button>
+        </div>
+        <div class="a-dialog-body">${consentBody(sc,{preview:st.preview,failed:st.failed})}</div>
+        <div class="a-dialog-footer">
+          <span class="note-ref">8</span><span class="spacer"></span>
+          <button class="a-btn" data-variant="ghost" data-cancel>取消</button>
+          <button class="a-btn" data-variant="primary" id="cta">${cta}</button>
+        </div>
+      </div>
+    </div>`;
+
+  const more = document.getElementById("moreBtn");
+  if (more) more.addEventListener("click",()=>{ st.preview = !st.preview; render(); });
+
+  stage.querySelectorAll("[data-cancel]").forEach(el=>el.addEventListener("click",()=>{
+    st.closed = true; render();
+    stage.insertAdjacentHTML("beforeend",
+      `<div class="replay"><button id="replay">▶ 重新演示</button><div class="hint">已取消 —— 未发送任何内容到云端(不发送 / 不签同意令牌 / 无云端记录),静默关闭,派发区回原状。</div></div>`);
+    document.getElementById("replay").onclick = ()=>{ resetState(); render(); };
+  }));
+
+  const cbr = document.getElementById("cta");
+  cbr.addEventListener("click",()=>{
+    // 演示钩子:S1 主路径成功;若想看「同意后准备失败」,切到情形D(它复用本 body 的 failed 态)。
+    cbr.disabled = true; cbr.innerHTML = `<span class="a-spin"></span>发送中…`;
+    setTimeout(()=>{
+      st.closed = true; render();
+      stage.insertAdjacentHTML("beforeend",
+        `<div class="a-toast"><span class="dot"></span>${sc.toast}</div>
+         <div class="replay" style="pointer-events:none"><button id="replay" style="pointer-events:auto">▶ 重新演示</button></div>`);
+      document.getElementById("replay").onclick = ()=>{ resetState(); render(); };
+    }, 720);
+  });
+}
+
+/* 情形B:无隐私信息 → 不弹框,静默直发 + 非阻断透明行 */
+function renderSilent(){
+  stage.innerHTML = cloudHtml(dsub(`
+    <div class="dsub-silent">${IC.shield}<b>隐私检查已通过</b><span>· 未发现受保护信息,已直接发送<span class="note-ref">2</span></span></div>
+    <div class="dsub-progress"><span class="bar"><i></i></span><code>job_7c1a…</code> · 审查进行中<span class="note-ref">1</span></div>
+    <p class="dsub-note">没有隐私风险,就没有确认框——检查始终运行,只在<b>发现</b>受保护信息时才会打断你。<span class="note-ref">3</span></p>
+  `));
+}
+
+/* 情形C:已取消(终态) */
+function renderCancelled(){
+  stage.innerHTML = cloudHtml(dsub(`<div class="dsub-row"><button class="dsub-btn">${IC.cloudUp}选择项目并派发</button><span class="dsub-meta">未发送任何内容<span class="note-ref">1</span></span></div>`));
+  stage.insertAdjacentHTML("beforeend",
+    `<div class="replay"><button id="replay">▶ 重新演示</button><div class="hint">已取消 —— 用户在同意框选择不发送。零副作用、静默返回;可再次派发重来(对应既有 consent-declined 出口,但呈现为中性「已取消」)。</div></div>`);
+  document.getElementById("replay").onclick = ()=>{ cur="s1"; setSeg("s1"); resetState(); render(); };
+}
+
+/* 情形D:无法安全发送(失败关闭)—— 内联错误,不弹框 */
+function renderError(){
+  stage.innerHTML = cloudHtml(dsub(`
+    <div class="dsub-row"><button class="dsub-btn">${IC.cloudUp}选择项目并派发</button><span class="dsub-meta">diff 来源:—</span></div>
+    <div class="dsub-err">${IC.alert}
+      <span><b>无法安全发送 —— 未发送任何内容</b>
+        <p>无法确定要发送的范围(所选目录读不到)。为避免把同意悄悄放大成整个项目,已<b>取消本次发送</b>——缺目录不会回退成上传整库。<span class="note-ref">2</span></p>
+        <button class="retry">重试</button>
+      </span>
+    </div>
+    <p class="dsub-note">失败一律行内呈现,不弹框;同意本身不发送任何东西——必须 main 成功绑定清单并取得同意令牌才会有字节出境。<span class="note-ref">1</span></p>
+  `));
+  const r = stage.querySelector(".retry");
+  if (r) r.addEventListener("click",()=>{ cur="s1"; setSeg("s1"); resetState(); render(); });
+}
+
+/* ── 外壳交互 ─────────────────────────────────────────────────────────── */
+function setSeg(s){
+  document.querySelectorAll("#seg button").forEach(x=>x.toggleAttribute("data-on", x.dataset.s===s));
+}
+document.getElementById("seg").addEventListener("click",e=>{
+  const b = e.target.closest("button"); if (!b) return;
+  setSeg(b.dataset.s); cur = b.dataset.s; resetState(); render();
+});
+document.getElementById("tgNotes").addEventListener("click",e=>{
+  const on = document.body.dataset.notes === "on";
+  document.body.dataset.notes = on ? "off" : "on";
+  e.currentTarget.toggleAttribute("data-on", !on);
+});
+document.getElementById("tgTheme").addEventListener("click",e=>{
+  const dark = document.documentElement.dataset.theme === "dark";
+  document.documentElement.dataset.theme = dark ? "light" : "dark";
+  e.currentTarget.textContent = dark ? "深色" : "浅色";
+});
+render();
+</script>
+</body>
+</html>

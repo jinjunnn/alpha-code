@@ -11,6 +11,7 @@ import { hasSecretFile, secretFileRef } from "./alpha-secret-files"
 import { applyCloudWebSearchDisable } from "./cloud-web-search"
 import { alphaGlobalRoot, alphaJsoncPath } from "./engine-config-truth"
 import { injectDisabledOverrides } from "./ext-disabled-injection"
+import { materializeCloudMcpConfig } from "./cloud-sidecar-config"
 
 // ADR-006 bridge ("two runtime worlds"). opencode's ToolRegistry dynamically imports a project's
 // raw-TS tools (.opencode/tool/*.ts), and packages whose TS entry does `import "./x.js"` (e.g.
@@ -372,13 +373,7 @@ function injectAlphaConfig(userDataPath: string, extPluginPath?: string) {
     if (mcpUrl && hasSecretFile(userDataPath, "ALPHA_CLOUD_TOKEN")) {
       config.mcp = {
         ...(config.mcp ?? {}),
-        cloud: {
-          type: "remote",
-          url: mcpUrl,
-          enabled: true,
-          headers: { Authorization: `Bearer ${secretFileRef(userDataPath, "ALPHA_CLOUD_TOKEN")}` },
-          oauth: false,
-        },
+        cloud: materializeCloudMcpConfig(mcpUrl, secretFileRef(userDataPath, "ALPHA_CLOUD_TOKEN")),
       }
     }
 

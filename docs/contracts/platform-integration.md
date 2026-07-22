@@ -18,6 +18,7 @@ integration. Service wire formats remain owned by their producer repositories.
 | Surface                                                          | Owner                            | Desktop seam                                 |
 | ---------------------------------------------------------------- | -------------------------------- | -------------------------------------------- |
 | Authorization code, refresh/session rotation, endpoint discovery | `alpha-web`                      | `alpha-auth.ts`, `alpha-endpoints.ts`        |
+| Manifest-bound `upload_consent` issuance                         | `alpha-web`                      | main-process upload issuer client            |
 | Model gateway and model registry                                 | `alpha-platform`                 | injected `alpha` provider                    |
 | Cloud Jobs HTTP/SSE, artifacts, schedules, MCP facade            | `alpha-platform`                 | main-process clients and injected MCP server |
 | Account summary and billing transactions                         | `alpha-platform` account service | main-process account client                  |
@@ -95,6 +96,66 @@ Login activates platform mode and respawns the sidecar in place when a live
 window exists. Cold-start callbacks defer activation until the next normal
 sidecar start. Logout clears token state and re-forks without platform
 credentials.
+
+## Explicit cloud file upload and conditional consent
+
+Only the desktop's explicit Cloud Jobs file picker enters the upload-consent
+protocol. Model prompts and attachments are not uploads under this contract.
+Existing `input.diff` and `code-review` dispatch remain the v1
+`grandfathered` egress classes: they are neither disabled nor retrofitted with
+an upload manifest. Cloud schedules, bounded-agent envelopes, and the MCP
+sidecar have no upload-consent field or token channel.
+
+The main process is the sole upload authority. The renderer can request a
+`code-review` file selection and can later confirm or cancel a main-issued
+opaque request ID. It cannot provide paths, file bytes, a manifest, a consent
+decision, or a token. Main asks the user for one project root and an explicit
+set of files, resolves the canonical paths, rejects missing, outside-root,
+symlinked, duplicate, non-regular, unreadable, and non-UTF-8 inputs, then reads
+and freezes the exact content in memory. An empty or unverifiable selection is
+cancelled; it never becomes a whole-project selection.
+
+For that immutable snapshot, main creates the vendored `UploadManifestV1` with
+the access-token `sub` as `tenant_id`, normalized relative paths, byte sizes,
+per-file SHA-256 summaries, total count and bytes, creation time,
+`retention_class`, the required `explicit.file-upload` egress declaration, and
+`consent_required`. It validates the schema plus count/total/path-uniqueness
+invariants and hashes the exact JSON string later sent to the Cloud Jobs
+gateway. Admission fails before issuance above 256 files, 100 MiB total, or
+the existing 256 KiB control-envelope limit. The latter is normally the
+tightest v1 bound because explicit UTF-8 contents travel inside that envelope.
+
+Client classification is intentionally broader than the platform fallback.
+It detects email, bare mainland-China mobile numbers, E.164 numbers (including
+sentence-final punctuation), Chinese identity-number shapes, private-key and
+credential patterns, and credential-sensitive paths. Pure code and unrelated
+numeric content do not become sensitive merely for containing numbers.
+Classifier exceptions or malformed results fail closed as sensitive. When no
+protected information is found, main dispatches immediately and the renderer
+shows one non-blocking transparency line. When protected information is found,
+the renderer uses the approved house Dialog/Button surface to show the bounded
+file preview, findings, purpose, and retention; cancel mints nothing and sends
+nothing.
+
+After confirmation, main reacquires a `cloud.dispatch` access token and
+requires the same valid `sub`, then calls the Alpha Web-owned
+`POST <web>/auth/upload-consent` issuance seam. The request carries the exact
+manifest JSON and its SHA-256. Alpha Web must return the vendored
+`upload_consent` JWT branch (`iss=alpha-web`, `aud=alpha-platform-upload`,
+`token_use=upload_consent`, `purpose=artifact.upload`). Main checks its subject,
+expiry, manifest ID, manifest SHA-256, and egress declaration before sending
+the frozen request to Cloud Jobs with `X-Alpha-Upload-Consent`. The desktop
+does not call or describe an Alpha Platform issuance API. Deployment of the
+real Alpha Web issuer remains an Alpha Web integration prerequisite; desktop
+tests use a mocked issuer response.
+
+Pending consent is one-shot process memory, scoped to the requesting renderer,
+and consumed before issuance begins. It is never stored in project prefs.
+Tokens, manifests, and file bytes never cross preload; handler return values
+are checked again at runtime. Upload errors log only a stable code and omit
+bearers, issuer responses, and absolute paths. Any attempt to inject upload
+control fields through an ordinary renderer or agent envelope fails with
+`upload-main-gate-required`.
 
 ## Managed cloud artifact persistence
 
