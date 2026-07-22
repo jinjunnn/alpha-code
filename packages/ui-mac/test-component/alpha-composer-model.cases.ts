@@ -27,6 +27,9 @@ const solidWeb = await import("solid-js/web/dist/web.js")
 mock.module("solid-js/web", () => solidWeb)
 const { batch, createComponent, createSignal } = solid
 const { render } = solidWeb
+// zh 产品文案的 locale pin 由 bunfig.toml 的 test preload(scripts/test-preload.ts 设
+// ALPHA_UI_LOCALE=zh)统一提供 —— 本文件被 alpha-composer-model.component.test.ts 以子进程
+// spawn,继承父进程 env,i18n 的 detectLocale() 直接读到 zh,无需再逐文件 setLocale。
 const savedAlphaGlobalDir = process.env.ALPHA_GLOBAL_DIR
 const savedOpencodeConfigDir = process.env.OPENCODE_CONFIG_DIR
 const tempDirs: string[] = []
@@ -404,7 +407,7 @@ describe("AlphaComposer production model seam", () => {
     await waitFor(() => expect(document.body.textContent).toContain(second.name))
     click(
       [...document.body.querySelectorAll<HTMLButtonElement>(".a-mpp-row")].find((row) =>
-        row.getAttribute("aria-label")?.startsWith(`${second.name}，`),
+        row.getAttribute("aria-label")?.startsWith(`${second.name},`),
       ) ?? null,
     )
     await waitFor(() => expect(document.body.textContent).toContain("切换模型失败"))
@@ -644,7 +647,7 @@ describe("ModelPickPop production component", () => {
 
     await waitFor(() => expect(mounted.host.textContent).toContain("账户信息读取失败"))
     expect(mounted.host.textContent).not.toContain("余额不足")
-    const platform = mounted.host.querySelector<HTMLButtonElement>(`.a-mpp-row[aria-label^="${catalog.platformModels[0]!.name}，"]`)
+    const platform = mounted.host.querySelector<HTMLButtonElement>(`.a-mpp-row[aria-label^="${catalog.platformModels[0]!.name},"]`)
     expect(platform?.disabled).toBe(true)
     platform?.click()
     expect(selectedCalls).toBe(0)
@@ -669,7 +672,7 @@ describe("ModelPickPop production component", () => {
     expect(mounted.host.textContent).not.toContain("代理节点 · 经 ALPHA 代理")
     expect(
       [...mounted.host.querySelectorAll(".a-mpp-row")].filter((row) =>
-        row.getAttribute("aria-label")?.includes(`，${catalog.platformProvider.name}`),
+        row.getAttribute("aria-label")?.includes(`,${catalog.platformProvider.name}`),
       ),
     ).toEqual([])
     const loginButtons = [...mounted.host.querySelectorAll("button")].filter((button) => button.textContent?.trim() === "登录")

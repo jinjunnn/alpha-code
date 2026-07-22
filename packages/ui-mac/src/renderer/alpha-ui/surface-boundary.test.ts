@@ -38,7 +38,10 @@ describe("SurfaceBoundary — Alpha-only Recovery ratchet", () => {
   })
 
   test("the failed region remains isolated while the sole Recovery host owns interaction", () => {
-    expect(tsx).toContain("请在 Recovery 面板中选择安全操作。")
+    // #475 externalised the fallback copy to i18n; the prompt now lives in the dictionary and the
+    // surface wires it via t("alpha.error.recoveryPrompt"). Assert the token is present (the copy
+    // itself is verified in the i18n dictionaries) rather than a raw locale-specific literal.
+    expect(tsx).toContain('t("alpha.error.recoveryPrompt")')
     expect(tsx).toContain('data-alpha-surface-error="isolated"')
   })
 })
