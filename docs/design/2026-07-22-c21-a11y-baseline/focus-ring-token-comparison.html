@@ -108,7 +108,7 @@
     <h1>对比度修正对照 · focus ring + tertiary 文本</h1>
     <p class="sub">C21 无障碍基线 AC4（#478）的动笔前置对比稿。两个 token 在双主题下均未过 WCAG AA，需修正。下方样例用真实 <span class="mono">--a-*</span> token 值渲染；每个对比度数字由本页 JS 依 WCAG 公式实时计算（sRGB 相对亮度），非手填。</p>
     <div class="decision">
-      推荐方向 = <b>候选 ②：焦点框改为 1.5px 细实色 <span class="mono">--a-accent</span> 描边</b>（chips 式）。理由：更轻、与既有 chips 描边一致、对比度余量最大，契合"克制"register，且不重现 2026-07-07 被否的"肥紫圈"。候选 ①（加重半透明紫圈）一并渲染供对照。
+      <b style="color:#16a34a">✅ 已批准并落地（#478，2026-07-23）</b> = <b>候选 ②：焦点框 1.5px 细实色 <span class="mono">--a-accent</span> 描边</b>（chips 式）。理由：更轻、与既有 chips 描边一致、对比度余量最大（≥6.3:1），契合"克制"register，且不重现 2026-07-07 被否的"肥紫圈"。tertiary 加深至 <span class="mono">#6a6b73 / #86878f</span>。全底色配对证据见同目录 <span class="mono">ac4-contrast-check.mjs</span>（20/20 PASS）。
     </div>
   </header>
 
