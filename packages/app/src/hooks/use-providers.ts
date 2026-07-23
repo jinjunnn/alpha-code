@@ -1,7 +1,7 @@
 import { useServerSync } from "@/context/server-sync"
 import { decode64 } from "@/utils/base64"
-import type { Provider } from "@opencode-ai/sdk/v2"
 import { useParams } from "@solidjs/router"
+import { Iterable, pipe } from "effect"
 import type { Accessor } from "solid-js"
 import { selectProviderCatalog } from "./provider-catalog"
 
@@ -40,19 +40,30 @@ export function useProviders(directory?: Accessor<string | undefined>) {
   return {
     all: () => providers().all,
     default: () => providers().default,
-    popular: () => Array.from(providers().all.values()).filter((provider: Provider) => popularProviderSet.has(provider.id)),
+    popular: () =>
+      pipe(
+        providers().all,
+        Iterable.map(([, p]) => p),
+        Iterable.filter((p) => popularProviderSet.has(p.id)),
+        (v) => Array.from(v),
+      ),
     connected: () => {
       const connected = new Set(providers().connected)
-      return Array.from(providers().all.values()).filter((provider: Provider) => connected.has(provider.id))
+      return pipe(
+        providers().all,
+        Iterable.map(([, p]) => p),
+        Iterable.filter((p) => connected.has(p.id)),
+        (v) => Array.from(v),
+      )
     },
     paid: () => {
       const connected = new Set(providers().connected)
       return [
-        ...Array.from(providers().all.entries()).filter(
-          ([id]: [string, Provider]) =>
+        ...Iterable.filter(
+          providers().all,
+          ([id]) =>
             connected.has(id) &&
-            (id !== "opencode" ||
-              Object.values(providers().all.get(id)?.models ?? {}).some((model) => model.cost?.input)),
+            (id !== "opencode" || Object.values(providers().all.get(id)?.models ?? {}).some((m) => m.cost?.input)),
         ),
       ]
     },

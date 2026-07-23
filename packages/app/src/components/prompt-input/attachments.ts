@@ -103,7 +103,7 @@ export function createPromptAttachmentsCore(input: PromptAttachmentsCoreInput) {
   const removeAttachment = (id: string) => {
     const target = input.capture()
     const current = target.current()
-    const next = current.filter((part: ContentPart) => part.type !== "image" || part.id !== id)
+    const next = current.filter((part) => part.type !== "image" || part.id !== id)
     target.set(next, target.cursor())
   }
 
