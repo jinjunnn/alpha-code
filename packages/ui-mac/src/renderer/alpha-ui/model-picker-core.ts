@@ -1,5 +1,6 @@
 import type { ModelRef, ModelV2Info } from "@opencode-ai/sdk/v2/client"
 import type { EffectiveCatalog, ProviderKeyStatus, Tier } from "../../shared/alpha-model-types"
+import { byokEngineId } from "../../shared/alpha-model-types"
 import type { ComposerModel } from "./composer-state"
 import { t } from "../i18n"
 
@@ -129,13 +130,18 @@ export function buildModelPickerRows(input: {
       ]
     }
     return provider.models.map((id): ModelPickerRow => {
-      const info = actual.get(`${provider.id}:${id}`)
+      // The engine injects BYOK nodes under `<id>-byok` (byokEngineId) to dodge the models.dev
+      // collision, so the engine's model list is keyed by the engine id — look it up there, and carry
+      // the engine id as the selectable model's providerID so inference routes to the injected node.
+      // Display id (provider.id) stays for keyStatus/pico/name/key above.
+      const engineProviderId = byokEngineId(provider.id)
+      const info = actual.get(`${engineProviderId}:${id}`)
       const display = input.catalog.platformModels.find((model) => model.id === id)
       const available = !!info?.enabled && info.status !== "deprecated"
       return {
         key: `${provider.id}:${id}`,
         group: "byok",
-        model: { id, providerID: provider.id, name: display?.name ?? id, variants: [] },
+        model: { id, providerID: engineProviderId, name: display?.name ?? id, variants: [] },
         providerName: provider.name,
         pico: provider.pico,
         reasoning: !!display?.reasoning,
