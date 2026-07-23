@@ -6,7 +6,7 @@
 //   ① 发起   startAuth(): 生成 PKCE(verifier+state) → shell.openExternal(<ALPHA_WEB_URL>/auth/authorize…)
 //   ② 回调   handleAuthDeepLink(url): manifest auth callback + code/state → 校验 state → 换 token
 //            → safeStorage 加密存(系统钥匙串,不落明文 alpha.env)。
-//   ③ 消费   applyAuthEnv(): 据 token+mode 写 process.env(ALPHA_BASE_URL/ALPHA_API_KEY →
+//   ③ 消费   applyAuthEnv(): 据 purpose-keyed token bundle+mode 写 process.env(ALPHA_BASE_URL/ALPHA_API_KEY →
 //            alpha-models.ts 的模型代理 provider;ALPHA_CLOUD_MCP_URL/ALPHA_CLOUD_TOKEN →
 //            sidecar.ts 的 mcp.cloud)。env 在 sidecar fork 前算一次(server.ts 注释),所以运行时
 //            切 platform-pays 需 relaunch 让新 sidecar 继承(MVP);prod 改 sidecar runtime 转发。
@@ -36,7 +36,7 @@ export { parseAccessTokenIdentity } from "./alpha-auth-identity"
 
 type StoredAuth = {
   mode: AuthMode
-  accessToken?: string
+  platformAccessTokens?: Partial<Record<RoutePurpose, string>>
   refreshToken?: string
   sessionId?: string
   expiresAt?: number
@@ -45,8 +45,8 @@ type StoredAuth = {
   account?: { email?: string; plan?: string }
 }
 
-type TokenResponse = {
-  access_token: string
+export type TokenResponse = {
+  platform_access_tokens: Record<RoutePurpose, string>
   refresh_token?: string
   session_id?: string
   expires_in?: number
@@ -56,6 +56,39 @@ type TokenResponse = {
    *  moved backend updates clients without a release (see alpha-endpoints.ts). Producer side optional. */
   endpoints?: { schema_version: 1 } & AlphaEndpoints
 }
+
+export type PlatformAccessTokenBundleErrorReason =
+  | "missing-bundle"
+  | "invalid-bundle"
+  | "empty-bundle"
+  | "unknown-purpose"
+  | "invalid-token"
+  | "missing-required-purpose"
+  | "purpose-key-mismatch"
+
+export class PlatformAccessTokenBundleError extends Error {
+  readonly code = "platform-access-token-bundle-invalid"
+
+  constructor(
+    readonly reason: PlatformAccessTokenBundleErrorReason,
+    readonly purpose?: RoutePurpose,
+  ) {
+    super(`Invalid platform_access_tokens bundle: ${reason}${purpose ? ` (${purpose})` : ""}`)
+    this.name = "PlatformAccessTokenBundleError"
+  }
+}
+
+const ROUTE_PURPOSES = [
+  "model.invoke",
+  "cloud.dispatch",
+  "cloud.read",
+  "artifact.read",
+  "account.read",
+] as const satisfies readonly RoutePurpose[]
+const AUTH_ENV_PURPOSES = [
+  ["model.invoke", "ALPHA_API_KEY"],
+  ["cloud.dispatch", "ALPHA_CLOUD_TOKEN"],
+] as const satisfies ReadonlyArray<readonly [RoutePurpose, "ALPHA_API_KEY" | "ALPHA_CLOUD_TOKEN"]>
 
 const CLIENT_ID = "alpha-code"
 const REDIRECT_URI = deepLinkFor.authCallback()
@@ -139,7 +172,8 @@ function load() {
 }
 
 function deriveState(): AuthState {
-  const loggedIn = Boolean(stored.accessToken) || Boolean(process.env.DEV_PLATFORM_TOKEN)
+  const loggedIn =
+    hasRequiredPlatformAccessTokens(stored.platformAccessTokens) || Boolean(process.env.DEV_PLATFORM_TOKEN)
   return {
     status: loggedIn ? "logged-in" : "logged-out",
     mode: stored.mode ?? "byok",
@@ -171,27 +205,30 @@ function publishAuthError(code: AuthErrorCode) {
 export function applyAuthEnv() {
   const devToken = process.env.DEV_PLATFORM_TOKEN
   const loggedInPlatform = deriveState().status === "logged-in" && (stored.mode === "platform" || Boolean(devToken))
-  const token = devToken || (loggedInPlatform ? stored.accessToken : undefined)
   const ep = resolveEndpoints()
   const base = ep.platform
   delete process.env.ALPHA_API_KEY
   delete process.env.ALPHA_CLOUD_TOKEN
-  if (!token || !base) return
+  if (!loggedInPlatform || !base) return
   if (!process.env.ALPHA_BASE_URL) process.env.ALPHA_BASE_URL = `${base}${ALPHA_PATHS.modelProxy}`
   // mcp: a discovered/pinned mcp URL wins; else derive from the CLOUD worker base (ADR-016: the MCP
   // facade lives on `alpha-cloud`, NOT the model gateway which 404s /mcp). ep.cloud always resolves
   // (has a default), so this points at alpha-cloud/mcp instead of the old gateway/mcp 404.
-  if (!process.env.ALPHA_CLOUD_MCP_URL) process.env.ALPHA_CLOUD_MCP_URL = ep.mcp ?? `${ep.cloud ?? base}${ALPHA_PATHS.mcpGateway}`
-  // The consumer does not acquire a token for another purpose. It validates the received token,
-  // then exposes it only through the sidecar seam matching the issuer-selected purpose.
-  try {
-    const claims = decodeTokenClaims(token)
-    requireTokenPurpose(token, claims.purpose)
-    if (claims.purpose === "model.invoke") process.env.ALPHA_API_KEY = token
-    if (claims.purpose === "cloud.dispatch") process.env.ALPHA_CLOUD_TOKEN = token
-  } catch (error) {
-    reportContractFailure(error)
-  }
+  if (!process.env.ALPHA_CLOUD_MCP_URL)
+    process.env.ALPHA_CLOUD_MCP_URL = ep.mcp ?? `${ep.cloud ?? base}${ALPHA_PATHS.mcpGateway}`
+  // DEV_PLATFORM_TOKEN remains the single-token development fallback and is attempted for both
+  // sidecar seams. Each attempt still requires the destination purpose, so a purpose-specific JWT
+  // is never silently repurposed. Normal logins source each seam from its keyed bundle entry.
+  AUTH_ENV_PURPOSES.forEach(([purpose, env]) => {
+    const token = devToken ?? stored.platformAccessTokens?.[purpose]
+    if (!token) return
+    try {
+      requireTokenPurpose(token, purpose)
+      process.env[env] = token
+    } catch (error) {
+      reportContractFailure(error)
+    }
+  })
 }
 
 // Called once at startup, AFTER preferAppEnv() and BEFORE the sidecar forks (index.ts), so the
@@ -217,7 +254,7 @@ export function getAuthState(): AuthState {
 // the dev short-circuit wins, else the stored platform access token. MAIN-ONLY: never expose this
 // to the renderer; its only callers are main-process clients (alpha-account.ts).
 export function getAccessToken(purpose: RoutePurpose): string | undefined {
-  const token = process.env.DEV_PLATFORM_TOKEN || stored.accessToken
+  const token = process.env.DEV_PLATFORM_TOKEN ?? stored.platformAccessTokens?.[purpose]
   if (!token) return undefined
   try {
     requireTokenPurpose(token, purpose)
@@ -331,7 +368,7 @@ async function completeAuth(parsed: URL) {
     // via enableProxy() (a controlled relaunch). We deliberately do NOT auto-relaunch on login: a
     // deep-link callback can cold-start the app, and ad-hoc-signed builds quit on relaunch (see ADR-017).
     mode: "platform",
-    accessToken: tokens.access_token,
+    platformAccessTokens: tokens.platform_access_tokens,
     refreshToken: tokens.refresh_token,
     sessionId: tokens.session_id,
     expiresAt: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
@@ -365,19 +402,53 @@ async function exchangeCode(code: string, verifier: string): Promise<TokenRespon
   return decodeTokenResponse(await res.json())
 }
 
-function decodeTokenResponse(value: unknown): TokenResponse {
+export function decodeTokenResponse(value: unknown): TokenResponse {
   if (!isRecord(value)) throw invalidTokenResponse()
   const response = value
-  if (typeof response.access_token !== "string") throw invalidTokenResponse()
+  if (response.platform_access_tokens === undefined) {
+    throw new PlatformAccessTokenBundleError("missing-bundle")
+  }
+  if (!isRecord(response.platform_access_tokens)) {
+    throw new PlatformAccessTokenBundleError("invalid-bundle")
+  }
+  const entries = Object.entries(response.platform_access_tokens).map(([purpose, token]) => {
+    if (!isRoutePurpose(purpose)) throw new PlatformAccessTokenBundleError("unknown-purpose")
+    if (typeof token !== "string" || !token) throw new PlatformAccessTokenBundleError("invalid-token", purpose)
+    return [purpose, token] as const
+  })
+  if (entries.length === 0) throw new PlatformAccessTokenBundleError("empty-bundle")
+  const purposes = new Set(entries.map(([purpose]) => purpose))
+  const missing = ROUTE_PURPOSES.find((purpose) => !purposes.has(purpose))
+  if (missing) throw new PlatformAccessTokenBundleError("missing-required-purpose", missing)
+  const platformAccessTokens: Record<RoutePurpose, string> = {
+    "model.invoke": "",
+    "cloud.dispatch": "",
+    "cloud.read": "",
+    "artifact.read": "",
+    "account.read": "",
+  }
+  entries.forEach(([purpose, token]) => {
+    // Keep token-schema failures as ContractIncompatibleError. Only a valid token filed under the
+    // wrong key becomes the distinct bundle-envelope error, so diagnostics identify the real layer.
+    decodeTokenClaims(token)
+    try {
+      requireTokenPurpose(token, purpose)
+    } catch (error) {
+      if (error instanceof ContractIncompatibleError && error.failure.reason === "route-purpose-mismatch") {
+        throw new PlatformAccessTokenBundleError("purpose-key-mismatch", purpose)
+      }
+      throw error
+    }
+    platformAccessTokens[purpose] = token
+  })
   if (response.refresh_token !== undefined && typeof response.refresh_token !== "string") throw invalidTokenResponse()
   if (response.session_id !== undefined && typeof response.session_id !== "string") throw invalidTokenResponse()
   if (response.expires_in !== undefined && typeof response.expires_in !== "number") throw invalidTokenResponse()
   if (response.email !== undefined && typeof response.email !== "string") throw invalidTokenResponse()
   if (response.plan !== undefined && typeof response.plan !== "string") throw invalidTokenResponse()
-  decodeTokenClaims(response.access_token)
   const endpoints = response.endpoints !== undefined ? decodeEndpointDiscovery(response.endpoints) : undefined
   return {
-    access_token: response.access_token,
+    platform_access_tokens: platformAccessTokens,
     ...(response.refresh_token !== undefined ? { refresh_token: response.refresh_token } : {}),
     ...(response.session_id !== undefined ? { session_id: response.session_id } : {}),
     ...(response.expires_in !== undefined ? { expires_in: response.expires_in } : {}),
@@ -389,6 +460,16 @@ function decodeTokenResponse(value: unknown): TokenResponse {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value)
+}
+
+function isRoutePurpose(value: string): value is RoutePurpose {
+  return ROUTE_PURPOSES.some((purpose) => purpose === value)
+}
+
+function hasRequiredPlatformAccessTokens(
+  tokens: Partial<Record<RoutePurpose, string>> | undefined,
+): tokens is Record<RoutePurpose, string> {
+  return ROUTE_PURPOSES.every((purpose) => typeof tokens?.[purpose] === "string" && tokens[purpose].length > 0)
 }
 
 function invalidTokenResponse() {
@@ -453,6 +534,14 @@ async function doRefresh(): Promise<boolean> {
   try {
     tokens = decodeTokenResponse(await res.json())
   } catch (error) {
+    if (error instanceof PlatformAccessTokenBundleError) {
+      warn("alpha-auth: refresh response token bundle invalid — keeping the prior validated bundle", {
+        reason: error.reason,
+        purpose: error.purpose,
+      })
+      publishAuthError("exchange_failed")
+      return false
+    }
     if (reportContractFailure(error)) {
       warn("alpha-auth: refresh response contract incompatible — keeping the prior validated token")
       publishAuthError("contract_incompatible")
@@ -464,7 +553,7 @@ async function doRefresh(): Promise<boolean> {
   if (tokens.endpoints) setDiscoveredEndpoints(tokens.endpoints)
   stored = {
     ...stored,
-    accessToken: tokens.access_token,
+    platformAccessTokens: tokens.platform_access_tokens,
     refreshToken: tokens.refresh_token ?? stored.refreshToken,
     sessionId: tokens.session_id ?? stored.sessionId,
     expiresAt: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : stored.expiresAt,
@@ -479,14 +568,14 @@ async function doRefresh(): Promise<boolean> {
 
 /** 到点才真的刷(提前量内);给启动路径和整点 tick 用。fork 前若已过期必须 await(死 token fork 无意义)。 */
 export async function ensureFreshToken(): Promise<void> {
-  if (!stored.accessToken || !stored.refreshToken) return
+  if (!hasRequiredPlatformAccessTokens(stored.platformAccessTokens) || !stored.refreshToken) return
   if (!shouldRefreshToken(stored.expiresAt, stored.lifetimeMs, Date.now())) return
   await refreshTokens()
 }
 
 /** 存储的 access token 已过期(启动路径据此决定 fork 前是否 await 续期)。 */
 export function isStoredTokenExpired(): boolean {
-  return Boolean(stored.accessToken) && isTokenExpired(stored.expiresAt, Date.now())
+  return hasRequiredPlatformAccessTokens(stored.platformAccessTokens) && isTokenExpired(stored.expiresAt, Date.now())
 }
 
 export async function logout(): Promise<void> {
