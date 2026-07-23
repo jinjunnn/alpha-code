@@ -1,6 +1,6 @@
 // AlphaSessionWorkspace — REQ-088 T2(Issue #181):session surface 的正式 Alpha 外框。
-// REQ-087 spike 的 surface 侧原型(session-spike-host.tsx 旧 sessionSpikeSurface)在此转正;
-// 未挂载的容器侧探针模块仍留在 session-spike/(T7 统一清理)。
+// REQ-087 spike 的 surface 侧原型(旧 sessionSpikeSurface)在此转正;未挂载的探针目录
+// session-spike/ 已随 T7(#502)删除,反回归断言见本文件 test 的 not.toContain 守卫。
 //
 // 结构与纪律(变更任何一条先回 spike 报告 §6 / T6 审计 §3 重评):
 //   - 叶经 C1 合法窄导出(app 包 exports 的 ./surface/session 子路径,ADR-027 修订、
