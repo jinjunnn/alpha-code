@@ -10,21 +10,32 @@ export const ALPHA_CONTRACT_VERSION = 1 as const
 export const CONTROL_ENVELOPE_MAX_BYTES = limits.CONTROL_ENVELOPE_MAX_BYTES
 export const NON_STREAMING_PAYLOAD_MAX_BYTES = limits.NON_STREAMING_PAYLOAD_MAX_BYTES
 
-const ajv = new Ajv2020({ strict: true, allErrors: true })
-addFormats(ajv)
-ajv.addSchema(artifactDescriptorSchema)
-ajv.addSchema(wireSchema)
+// Ajv compiles schemas with `new Function` (runtime eval). Building the validators
+// eagerly at module load would run that eval the moment this module is imported — fatal
+// in the renderer, whose CSP forbids `unsafe-eval` (a bare import via a shared module used
+// to blank the window with an Uncaught EvalError). Build them lazily on first decode so the
+// import itself never evals; the main process (Node, eval allowed) is unaffected.
+function buildValidators() {
+  const ajv = new Ajv2020({ strict: true, allErrors: true })
+  addFormats(ajv)
+  ajv.addSchema(artifactDescriptorSchema)
+  ajv.addSchema(wireSchema)
+  return {
+    TokenClaimsV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/TokenClaimsV1" }),
+    UploadManifestV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/UploadManifestV1" }),
+    LedgerPageV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/LedgerPageV1" }),
+    ModelCatalogV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/ModelCatalogV1" }),
+    CloudJobRequestV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/CloudJobRequestV1" }),
+    CloudJobAcceptedV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/CloudJobAcceptedV1" }),
+    CloudJobStatusV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/CloudJobStatusV1" }),
+    ArtifactListV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/ArtifactListV1" }),
+    ArtifactDescriptorV1: ajv.compile({ $ref: "artifact-descriptor.schema.json" }),
+  }
+}
 
-const validators = {
-  TokenClaimsV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/TokenClaimsV1" }),
-  UploadManifestV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/UploadManifestV1" }),
-  LedgerPageV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/LedgerPageV1" }),
-  ModelCatalogV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/ModelCatalogV1" }),
-  CloudJobRequestV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/CloudJobRequestV1" }),
-  CloudJobAcceptedV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/CloudJobAcceptedV1" }),
-  CloudJobStatusV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/CloudJobStatusV1" }),
-  ArtifactListV1: ajv.compile({ $ref: "alpha-wire-contracts.schema.json#/$defs/ArtifactListV1" }),
-  ArtifactDescriptorV1: ajv.compile({ $ref: "artifact-descriptor.schema.json" }),
+let _validators: ReturnType<typeof buildValidators> | undefined
+function getValidators() {
+  return (_validators ??= buildValidators())
 }
 
 export type ContractName = keyof ContractValues
@@ -34,7 +45,7 @@ export function decodeContract<Name extends ContractName>(
   value: unknown,
   surface: ContractSurface,
 ): ContractValues[Name] {
-  if (!validators[contract](value)) {
+  if (!getValidators()[contract](value)) {
     throw new ContractIncompatibleError({
       surface,
       received_version: receivedVersion(value, contract === "ArtifactDescriptorV1" ? "schemaVersion" : "schema_version"),
@@ -122,6 +133,7 @@ export function requireTokenPurpose(token: string, purpose: RoutePurpose): Token
 export function validateFixture(fixture: unknown): boolean {
   if (!fixture || typeof fixture !== "object" || Array.isArray(fixture)) return false
   const record = fixture as { contract?: unknown; expect?: unknown; value?: unknown }
+  const validators = getValidators()
   if (typeof record.contract !== "string" || !(record.contract in validators)) return false
   const valid = validators[record.contract as ContractName](record.value)
   return record.expect === "valid" ? valid : record.expect === "invalid" ? !valid : false
