@@ -6,7 +6,17 @@
 //   · pdf/未知格式 = 诚实卡片(descriptor 事实 + 外部打开),不伪造预览;
 //   · html = REQ-096 隔离预览(独立进程 host,零 preload bridge),不满足前置时回落诚实卡片。
 
-import { createResource, createSignal, For, onCleanup, Show, type Component, type JSX } from "solid-js"
+import {
+  createEffect,
+  createResource,
+  createSignal,
+  For,
+  onCleanup,
+  onMount,
+  Show,
+  type Component,
+  type JSX,
+} from "solid-js"
 import type { ArtifactReadRef } from "../../../../preload/types"
 import { t } from "../../../i18n"
 import type { ArtifactCard } from "../workbench-core"
@@ -16,6 +26,10 @@ import { parseCsvModel } from "./csv-model"
 import { parseJsonModel, type JsonNode } from "./json-model"
 import { parseMarkdownModel, type MdBlock, type MdInline } from "./markdown-model"
 import { extensionOf, type RendererId, type RouteDecision } from "./registry"
+import {
+  type OfficeRejectionCategory,
+  type OfficeStructurePresentation,
+} from "./office-structure"
 import { ArtifactHtmlPreview, canPreviewHtml } from "../../artifact-html-preview"
 
 export type PreviewContext = {
@@ -25,12 +39,12 @@ export type PreviewContext = {
   name: string
   decision: RouteDecision
   card: ArtifactCard
+  officeStructure: OfficeStructurePresentation | null
 }
 
 export type PreviewProps = { ctx: PreviewContext }
 
 function openExternally(ctx: PreviewContext): void {
-  if (ctx.decision.externalOpen !== "allowed") return
   if (!ctx.card.descriptor) return
   void window.api.runArtifacts.openExternal(ctx.directory, ctx.runId, ctx.card.descriptor.id)
 }
@@ -471,6 +485,254 @@ function HonestCard(props: PreviewProps & { title: string; note: string }) {
   )
 }
 
+const OFFICE_REJECTION_KEYS = {
+  "invalid-document": "alpha.wb.office.rejection.invalid",
+  encrypted: "alpha.wb.office.rejection.encrypted",
+  "safety-limit": "alpha.wb.office.rejection.limit",
+  "unsafe-path": "alpha.wb.office.rejection.path",
+  "incomplete-structure": "alpha.wb.office.rejection.incomplete",
+  "type-mismatch": "alpha.wb.office.rejection.type",
+} as const satisfies Record<OfficeRejectionCategory, Parameters<typeof t>[0]>
+
+export const OfficeArtifactView: Component<PreviewProps> = (props) => {
+  const [quickLookFailure, setQuickLookFailure] = createSignal<string | null>(null)
+  const [quickLookBusy, setQuickLookBusy] = createSignal(false)
+  const [externalOpenRefused, setExternalOpenRefused] = createSignal(false)
+  let quickLookButton: HTMLButtonElement | undefined
+  const rejection = () =>
+    props.ctx.officeStructure?.status === "rejected" ? props.ctx.officeStructure : undefined
+
+  createEffect(() => {
+    props.ctx.card.key
+    setQuickLookFailure(null)
+    setQuickLookBusy(false)
+    setExternalOpenRefused(false)
+  })
+
+  const quickLook = () => {
+    if (
+      props.ctx.officeStructure?.status !== "pass" ||
+      !props.ctx.card.descriptor ||
+      quickLookBusy()
+    )
+      return
+    quickLookButton?.focus()
+    setQuickLookBusy(true)
+    void window.api.runArtifacts
+      .quickLook({
+        directory: props.ctx.directory,
+        runId: props.ctx.runId,
+        artifactId: props.ctx.card.descriptor.id,
+      })
+      .then((result) => setQuickLookFailure(result.ok ? null : result.code))
+      .catch(() => setQuickLookFailure("PREVIEW_UNAVAILABLE"))
+      .finally(() => setQuickLookBusy(false))
+  }
+
+  const externalOpen = () => {
+    if (!props.ctx.card.descriptor) return
+    void window.api.runArtifacts
+      .openExternal(props.ctx.directory, props.ctx.runId, props.ctx.card.descriptor.id)
+      .then((result) => setExternalOpenRefused(!result.ok))
+      .catch(() => setExternalOpenRefused(true))
+  }
+
+  onMount(() => {
+    const onSpace = (event: KeyboardEvent) => {
+      if (
+        event.key !== " " ||
+        event.defaultPrevented ||
+        event.repeat ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.shiftKey ||
+        props.ctx.officeStructure?.status !== "pass" ||
+        !props.ctx.card.descriptor ||
+        quickLookBusy()
+      )
+        return
+      const target = event.target
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
+      )
+        return
+      if (
+        target instanceof HTMLButtonElement &&
+        target !== quickLookButton &&
+        !target.classList.contains("alpha-wb-card-main")
+      )
+        return
+      if (target === quickLookButton) return
+      event.preventDefault()
+      quickLook()
+    }
+    document.addEventListener("keydown", onSpace)
+    onCleanup(() => document.removeEventListener("keydown", onSpace))
+  })
+
+  return (
+    <div class="a-wb-office" data-office-status={props.ctx.officeStructure?.status}>
+      <Show when={props.ctx.officeStructure?.status === "checking"}>
+        <div class="a-wb-office-status" role="status">
+          <span class="a-wb-chip">
+            <span class="a-wb-spinner" aria-hidden="true" />
+            {t("alpha.wb.office.status.checking")}
+          </span>
+          <div>
+            <b>{t("alpha.wb.office.checkingTitle")}</b>
+            <p>{t("alpha.wb.office.checkingDetail")}</p>
+          </div>
+        </div>
+        <div class="a-wb-fallback">
+          <b>{t("alpha.wb.office.documentTitle")}</b>
+          <p>{t("alpha.wb.office.checkingNote")}</p>
+          <FactRow label={t("alpha.wb.factName")} value={props.ctx.name} />
+          <FactRow label={t("alpha.wb.factSize")} value={formatBytes(props.ctx.card.bytes)} />
+          <div class="a-wb-toolbar a-wb-office-actions">
+            <button
+              type="button"
+              class="a-wb-btn"
+              disabled
+              title={t("alpha.wb.office.openPending")}
+            >
+              {t("alpha.wb.openExternal")}
+            </button>
+            <button type="button" class="a-wb-btn" onClick={() => revealRunDir(props.ctx)}>
+              {t("alpha.wb.revealDir")}
+            </button>
+          </div>
+        </div>
+      </Show>
+
+      <Show when={props.ctx.officeStructure?.status === "rejected"}>
+        <div class="a-wb-office-status" data-kind="error" role="alert">
+          <span class="a-wb-chip" data-kind="error">{t("alpha.wb.office.status.rejected")}</span>
+          <div>
+            <b>{t("alpha.wb.office.rejectedTitle")}</b>
+            <p>
+              {t("alpha.wb.office.rejectedDetail", {
+                reason: t(OFFICE_REJECTION_KEYS[rejection()!.category]),
+              })}
+            </p>
+          </div>
+        </div>
+        <div class="a-wb-fallback" data-rejection-category={rejection()!.category}>
+          <b>{t("alpha.wb.office.structureFailed")}</b>
+          <FactRow label={t("alpha.wb.factName")} value={props.ctx.name} />
+          <FactRow
+            label={t("alpha.wb.office.reason")}
+            value={t(OFFICE_REJECTION_KEYS[rejection()!.category])}
+          />
+          <div class="a-wb-office-diagnostic">
+            <span>{t("alpha.wb.office.diagnostic")}</span>
+            <code>
+              {rejection()!.code}
+            </code>
+          </div>
+          <p>{t("alpha.wb.office.nextStep")}</p>
+          <div class="a-wb-toolbar a-wb-office-actions">
+            <Show when={props.ctx.card.descriptor}>
+              <button type="button" class="a-wb-btn" data-office-action="external-open" onClick={externalOpen}>
+                {t("alpha.wb.openExternal")}
+              </button>
+            </Show>
+            <button type="button" class="a-wb-btn" data-office-action="reveal-run" onClick={() => revealRunDir(props.ctx)}>
+              {t("alpha.wb.revealDir")}
+            </button>
+            <button
+              type="button"
+              class="a-wb-btn"
+              onClick={() => void window.api.writeClipboard(rejection()!.code)}
+            >
+              {t("alpha.wb.office.copyDiagnostic")}
+            </button>
+          </div>
+        </div>
+      </Show>
+
+      <Show when={props.ctx.officeStructure?.status === "pass"}>
+        <div class="a-wb-office-status" data-kind="success" role="status">
+          <span class="a-wb-chip" data-kind="success">{t("alpha.wb.office.status.pass")}</span>
+          <div>
+            <b>{t("alpha.wb.office.passTitle")}</b>
+            <p>{t("alpha.wb.office.passDetail")}</p>
+          </div>
+        </div>
+        <Show when={quickLookFailure()}>
+          {(code) => (
+            <div class="a-wb-notice a-wb-office-channel-notice" data-kind="warn" role="status">
+              <b>{t("alpha.wb.office.quickLookUnavailable")}</b>
+              <span>{t("alpha.wb.office.quickLookUnavailableDetail")}</span>
+              <code>{code()}</code>
+            </div>
+          )}
+        </Show>
+        <div
+          class="a-wb-office-placeholder"
+          role="img"
+          aria-label={t("alpha.wb.office.contentAria")}
+        >
+          <b>{t("alpha.wb.office.contentTitle")}</b>
+          <span>{t("alpha.wb.office.contentNote")}</span>
+        </div>
+        <div class="a-wb-toolbar a-wb-office-actions">
+          <Show when={props.ctx.card.descriptor}>
+            <button
+              ref={quickLookButton}
+              type="button"
+              class="a-wb-btn"
+              data-office-action="quick-look"
+              data-variant="primary"
+              disabled={quickLookBusy()}
+              onClick={quickLook}
+            >
+              {quickLookBusy()
+                ? quickLookFailure()
+                  ? t("alpha.wb.office.quickLookRetrying")
+                  : t("alpha.wb.office.quickLookOpening")
+                : quickLookFailure()
+                  ? t("alpha.wb.office.quickLookRetry")
+                  : t("alpha.wb.office.quickLook")}
+              <span class="a-wb-kbd" aria-hidden="true">{t("alpha.wb.office.space")}</span>
+            </button>
+          </Show>
+          <Show when={props.ctx.card.descriptor}>
+            <button type="button" class="a-wb-btn" data-office-action="external-open" onClick={externalOpen}>
+              {t("alpha.wb.openExternal")}
+            </button>
+          </Show>
+          <button type="button" class="a-wb-btn" data-office-action="reveal-run" onClick={() => revealRunDir(props.ctx)}>
+            {t("alpha.wb.revealDir")}
+          </button>
+        </div>
+        <Show when={props.ctx.card.descriptor}>
+          <div class="a-wb-office-origin">
+            <span>{t("alpha.wb.office.source")}</span>
+            <FactRow
+              label={t("alpha.wb.office.producedBy")}
+              value={props.ctx.card.descriptor!.provenance.jobId}
+            />
+            <FactRow
+              label={t("alpha.wb.office.structureCheck")}
+              value={t("alpha.wb.office.structurePassLocal")}
+            />
+          </div>
+        </Show>
+      </Show>
+
+      <Show when={externalOpenRefused()}>
+        <div class="a-wb-notice" data-kind="warn" role="status">
+          {t("alpha.wb.office.externalOpenRefused")}
+        </div>
+      </Show>
+    </div>
+  )
+}
+
 const PdfCard: Component<PreviewProps> = (props) => (
   // 诚实降级:未 ship PDF.js 隔离 worker 前不伪造内置查看器(REQ-095 非目标纪律)。
   <HonestCard ctx={props.ctx} title={t("alpha.wb.pdfTitle")} note={t("alpha.wb.pdfNote")} />
@@ -498,7 +760,12 @@ const HtmlCard: Component<PreviewProps> = (props) => (
 )
 
 const FallbackCard: Component<PreviewProps> = (props) => (
-  <HonestCard ctx={props.ctx} title={t("alpha.wb.fallbackTitle")} note={t("alpha.wb.fallbackNote")} />
+  <Show
+    when={props.ctx.officeStructure}
+    fallback={<HonestCard ctx={props.ctx} title={t("alpha.wb.fallbackTitle")} note={t("alpha.wb.fallbackNote")} />}
+  >
+    <OfficeArtifactView ctx={props.ctx} />
+  </Show>
 )
 
 // ---------------------------------------------------------------------------

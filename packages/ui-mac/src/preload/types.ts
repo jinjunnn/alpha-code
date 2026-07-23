@@ -355,6 +355,10 @@ import type {
   RunUsageResult,
 } from "../main/artifact-service"
 import type { ArtifactExternalOpenResult } from "../main/artifact-external-open"
+import type {
+  ArtifactQuickLookResult,
+  RunArtifactIdentity,
+} from "../main/artifact-quick-look"
 export type {
   ArtifactInspectResult,
   ArtifactReadRef,
@@ -855,6 +859,8 @@ export type ElectronAPI = {
     ) => Promise<ArtifactReadResult>
     /** Main-owned external open:identity-only input,manifest path re-resolution,and byte gate. */
     openExternal: (directory: string, runId: string, artifactId: string) => Promise<ArtifactExternalOpenResult>
+    /** Main-owned macOS Quick Look:one identity object in,manifest containment + OOXML PASS re-check. */
+    quickLook: (identity: RunArtifactIdentity) => Promise<ArtifactQuickLookResult>
   }
   // REQ-096(#188):隔离 HTML artifact preview 控制通道 —— main-owned 一次性静态 host
   // (html-preview-host.ts:独立 sandboxed 窗口、零 preload、一次性 partition/token)。
