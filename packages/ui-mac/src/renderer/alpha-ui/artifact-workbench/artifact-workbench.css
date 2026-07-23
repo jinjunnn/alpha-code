@@ -266,6 +266,10 @@ body[data-alpha-sidebar="open"] .alpha-wb-page {
   background: var(--a-success-subtle);
   color: var(--a-success);
 }
+.a-wb-chip[data-kind="success"] {
+  background: var(--a-success-subtle);
+  color: var(--a-success);
+}
 .a-wb-chip[data-state="mismatch"],
 .a-wb-chip[data-state="missing"],
 .a-wb-chip[data-kind="error"] {
@@ -281,6 +285,19 @@ body[data-alpha-sidebar="open"] .alpha-wb-page {
 .a-wb-chip[data-state="cloud-only"] {
   background: var(--a-info-subtle);
   color: var(--a-info);
+}
+.a-wb-spinner {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  margin-right: 4px;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: a-wb-spin 900ms linear infinite;
+}
+@keyframes a-wb-spin {
+  to { transform: rotate(360deg); }
 }
 
 /* ── 预览面板 ── */
@@ -565,6 +582,127 @@ body[data-alpha-sidebar="open"] .alpha-wb-page {
   margin-top: 6px;
 }
 
+/* Office 结构状态 + Quick Look(REQ-097/#189)。内容区只留提取视图占位,不解析 Office。 */
+.a-wb-office {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 520px;
+}
+.a-wb-office-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-md);
+  background: var(--a-bg-subtle);
+}
+.a-wb-office-status[data-kind="success"] {
+  border-color: color-mix(in srgb, var(--a-success) 28%, var(--a-border));
+  background: var(--a-success-subtle);
+}
+.a-wb-office-status[data-kind="error"] {
+  border-color: color-mix(in srgb, var(--a-error) 28%, var(--a-border));
+  background: var(--a-error-subtle);
+}
+.a-wb-office-status > div {
+  min-width: 0;
+}
+.a-wb-office-status b {
+  display: block;
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-semibold);
+}
+.a-wb-office-status p {
+  margin: 2px 0 0;
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-xs);
+}
+.a-wb-office-placeholder {
+  min-height: 170px;
+  display: grid;
+  place-content: center;
+  gap: 5px;
+  padding: 20px;
+  border: 1.5px dashed var(--a-border-strong);
+  border-radius: var(--a-radius-lg);
+  background: var(--a-bg-subtle);
+  color: var(--a-text-tertiary);
+  text-align: center;
+  font-size: var(--a-text-sm);
+}
+.a-wb-office-placeholder b {
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-md);
+}
+.a-wb-office-actions .a-wb-btn {
+  min-height: 34px;
+}
+.a-wb-btn:disabled {
+  color: var(--a-text-disabled);
+  background: var(--a-bg-muted);
+  border-color: var(--a-border-faint);
+  cursor: not-allowed;
+}
+.a-wb-kbd {
+  min-height: 18px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  font-size: var(--a-text-2xs);
+  opacity: 0.75;
+}
+.a-wb-office-diagnostic {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-xs);
+}
+.a-wb-office-diagnostic code {
+  padding: 1px 5px;
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-xs);
+  background: var(--a-bg-muted);
+  color: var(--a-text-secondary);
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-2xs);
+}
+.a-wb-office-channel-notice {
+  display: grid;
+  gap: 3px;
+}
+.a-wb-office-channel-notice code {
+  width: fit-content;
+  padding: 1px 5px;
+  border-radius: var(--a-radius-xs);
+  background: var(--a-bg-muted);
+  color: var(--a-text-secondary);
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-2xs);
+}
+.a-wb-office-origin {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 11px 14px;
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-md);
+  background: var(--a-bg-subtle);
+}
+.a-wb-office-origin > span {
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-semibold);
+  letter-spacing: var(--a-tracking-wide);
+  text-transform: uppercase;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .alpha-wb-page { animation: none; }
+  .a-wb-spinner { animation: none; }
 }

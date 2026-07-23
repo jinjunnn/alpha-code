@@ -6,11 +6,12 @@
 //     不删除(GC 钩子是 main 内部服务面,策略未定前不给 renderer 写面);
 //   · read(REQ-094/095,#186/#187)是唯一内容出口:只可寻址 run artifacts/ 内文件、text 2 MiB
 //     截断 + 诚实标记、bytes 20 MiB 超限拒绝 —— 决策记录见 artifact-service.readArtifactContent;
-//   · external-open 只接 directory/runId/artifactId,main 自行解析并复验受控字节;
+//   · external-open 只接 directory/runId/artifactId,Quick Look 只接同一 artifact identity;
+//     main 自行解析并复验受控字节;
 //   · 响应内无 bearer、无绝对路径 —— entry.local.savedPath 是 run 目录内相对路径,
 //     descriptor.contentRef.url 是 server-relative 路径(manifest 写入时已强制)。
 
-import { ipcMain, shell, type IpcMainInvokeEvent } from "electron"
+import { BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent } from "electron"
 import {
   listRunArtifacts,
   projectArtifactUsage,
@@ -21,6 +22,7 @@ import {
   type ArtifactReadRef,
 } from "./artifact-service"
 import { openRunArtifactExternal } from "./artifact-external-open"
+import { registerArtifactQuickLookIpcHandler } from "./artifact-quick-look"
 
 const str = (v: unknown): v is string => typeof v === "string" && v.length > 0
 
@@ -65,4 +67,13 @@ export function registerArtifactIpcHandlers() {
       ? openRunArtifactExternal(directory, runId, artifactId, (path) => shell.openPath(path))
       : { ok: false as const, code: "INVALID_ARGUMENTS" as const, reason: "INVALID_ARGUMENTS" },
   )
+  // REQ-097(#189):the renderer sends one identity object and never an artifact path. Main resolves
+  // the manifest entry, proves containment and OOXML PASS again, then asks the owning macOS window
+  // to open Quick Look. A missing owner window fails closed.
+  registerArtifactQuickLookIpcHandler({
+    handle: (channel, handler) => {
+      ipcMain.handle(channel, (event: IpcMainInvokeEvent, identity: unknown) => handler(event, identity))
+    },
+    ownerForEvent: (event) => BrowserWindow.fromWebContents(event.sender as IpcMainInvokeEvent["sender"]),
+  })
 }

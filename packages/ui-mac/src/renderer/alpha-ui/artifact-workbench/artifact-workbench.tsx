@@ -34,6 +34,10 @@ import {
 import { recallSelection, rememberSelection, setWorkbenchOpen, workbenchOpen } from "./workbench-state"
 import { detectOoxmlContainer, OOXML_LIMITS } from "./renderers/ooxml"
 import { routeArtifact, shouldDetectOoxml } from "./renderers/registry"
+import {
+  presentOfficeStructure,
+  type OfficeStructurePresentation,
+} from "./renderers/office-structure"
 import { RENDERER_COMPONENTS, SourceView, type PreviewContext } from "./renderers/renderer-views"
 import "./artifact-workbench.css"
 
@@ -309,13 +313,24 @@ export function ArtifactWorkbench(props: { projects: AlphaProjectsApi }) {
     const target = ooxmlTarget()
     const detected = ooxmlRes()
     const ooxml = !verifying() && target && detected?.key === target.key ? detected.detection : undefined
-    const decision = routeArtifact({
+    const claim = {
       name: card.savedPath ?? card.name,
       claimedMime: card.claimedMime,
       detectedMime: card.detectedMime,
+    }
+    const decision = routeArtifact({
+      ...claim,
       ooxml,
     })
-    return { directory: dir, runId: run, readRef, name: card.name, decision, card }
+    return {
+      directory: dir,
+      runId: run,
+      readRef,
+      name: card.name,
+      decision,
+      card,
+      officeStructure: presentOfficeStructure({ ...claim, detection: ooxml }),
+    }
   })
 
   // tablist 键盘语义(← → Home End;REQ-094 AC#6)
@@ -337,6 +352,11 @@ export function ArtifactWorkbench(props: { projects: AlphaProjectsApi }) {
   const selectedRunUsage = createMemo(() => runs().find((r) => r.runId === selectedRun()) ?? null)
 
   const stateLabel = (card: ArtifactCard) => t(STATE_LABEL_KEYS[card.state])
+  const officeStatusLabel = (status: OfficeStructurePresentation) => {
+    if (status.status === "checking") return t("alpha.wb.office.status.checking")
+    if (status.status === "pass") return t("alpha.wb.office.status.pass")
+    return t("alpha.wb.office.status.rejected")
+  }
 
   return (
     <Show when={workbenchOpen()}>
@@ -475,6 +495,25 @@ export function ArtifactWorkbench(props: { projects: AlphaProjectsApi }) {
                                       <span class="alpha-wb-card-name" title={card.name}>{card.name}</span>
                                       <span class="alpha-wb-card-meta">
                                         <span class="a-wb-chip" data-state={card.state}>{stateLabel(card)}</span>
+                                        <Show when={selectedKey() === card.key && previewCtx()?.officeStructure}>
+                                          {(status) => (
+                                            <span
+                                              class="a-wb-chip"
+                                              data-kind={
+                                                status().status === "pass"
+                                                  ? "success"
+                                                  : status().status === "rejected"
+                                                    ? "error"
+                                                    : undefined
+                                              }
+                                            >
+                                              <Show when={status().status === "checking"}>
+                                                <span class="a-wb-spinner" aria-hidden="true" />
+                                              </Show>
+                                              {officeStatusLabel(status())}
+                                            </span>
+                                          )}
+                                        </Show>
                                         <span class="alpha-wb-card-size">{formatBytes(card.bytes)}</span>
                                         <Show when={card.warnings.length > 0}>
                                           <span class="a-wb-chip" data-kind="warn" title={card.warnings.join("\n")}>
@@ -556,13 +595,32 @@ export function ArtifactWorkbench(props: { projects: AlphaProjectsApi }) {
                         <Show when={verifying()}>
                           <span class="a-wb-chip">{t("alpha.wb.verifying")}</span>
                         </Show>
-                        <Show when={previewCtx()}>
+                        <Show when={previewCtx() && !previewCtx()!.officeStructure}>
                           <span class="a-wb-chip" title={previewCtx()!.decision.reason}>
                             {previewCtx()!.decision.rendererId}
                           </span>
                         </Show>
+                        <Show when={previewCtx()?.officeStructure}>
+                          {(status) => (
+                            <span
+                              class="a-wb-chip"
+                              data-kind={
+                                status().status === "pass"
+                                  ? "success"
+                                  : status().status === "rejected"
+                                    ? "error"
+                                    : undefined
+                              }
+                            >
+                              <Show when={status().status === "checking"}>
+                                <span class="a-wb-spinner" aria-hidden="true" />
+                              </Show>
+                              {officeStatusLabel(status())}
+                            </span>
+                          )}
+                        </Show>
                       </div>
-                      <Show when={previewCtx()?.decision.warnings.length}>
+                      <Show when={!previewCtx()?.officeStructure && previewCtx()?.decision.warnings.length}>
                         <For each={previewCtx()!.decision.warnings}>
                           {(w) => <div class="a-wb-notice" data-kind="warn">{w}</div>}
                         </For>

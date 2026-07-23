@@ -271,6 +271,7 @@ const api: ElectronAPI = {
     read: (directory, runId, ref, opts) => ipcRenderer.invoke("run-artifact-read", directory, runId, ref, opts),
     openExternal: (directory, runId, artifactId) =>
       ipcRenderer.invoke("run-artifact-open-external", directory, runId, artifactId),
+    quickLook: (identity) => ipcRenderer.invoke("run-artifact-quick-look", identity),
   },
   // REQ-096(#188):隔离 HTML preview 控制通道 —— renderer 只拿 opaque previewId;一次性 host
   // 的 URL/token、文件字节与绝对路径永不过 IPC(host 本体 main/html-preview-host.ts)。
