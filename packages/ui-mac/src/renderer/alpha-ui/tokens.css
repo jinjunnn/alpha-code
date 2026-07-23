@@ -26,7 +26,7 @@
 
   --a-text: #18181b;               /* primary text */
   --a-text-secondary: #52525b;     /* labels, secondary */
-  --a-text-tertiary: #7c7d85;      /* placeholder, meta */
+  --a-text-tertiary: #6a6b73;      /* placeholder, meta — C21 AC4 (#478): AA ≥4.5:1, worst 4.56 on --a-bg-muted */
   --a-text-disabled: #b3b6bd;
   --a-text-on-accent: #ffffff;
 
@@ -120,7 +120,9 @@
   --a-shadow-md: 0 4px 12px rgba(15, 17, 21, 0.08), 0 2px 4px rgba(15, 17, 21, 0.05);
   --a-shadow-lg: 0 12px 32px rgba(15, 17, 21, 0.12), 0 4px 8px rgba(15, 17, 21, 0.06);
   --a-shadow-overlay: 0 24px 64px rgba(15, 17, 21, 0.20), 0 8px 16px rgba(15, 17, 21, 0.10);
-  --a-ring-focus: 0 0 0 3px var(--a-accent-ring);
+  /* C21 AC4 (#478): 1.5px solid accent outline (chips-style) replaces the α0.45 halo,
+     which failed WCAG 1.4.11 (2.1:1); solid --a-accent is ≥6.3:1 vs adjacent. --a-accent-ring now unused. */
+  --a-ring-focus: 0 0 0 1.5px var(--a-accent);
 
   /* ── Premium polish (frontend-design pass) ───────────────────────────────
      Quiet depth without color. Edge-light = a 1px "glass" top-highlight for raised /
@@ -169,7 +171,7 @@
 
   --a-text: #fafafa;
   --a-text-secondary: #a1a1aa;
-  --a-text-tertiary: #71727a;
+  --a-text-tertiary: #86878f;      /* C21 AC4 (#478): AA ≥4.5:1, worst 4.97 on --a-surface-raised */
   --a-text-disabled: #4f5158;
   --a-text-on-accent: #ffffff;
 
@@ -221,7 +223,7 @@
     --a-border-strong: #34363c;
     --a-text: #fafafa;
     --a-text-secondary: #a1a1aa;
-    --a-text-tertiary: #71727a;
+    --a-text-tertiary: #86878f;    /* C21 AC4 (#478): AA ≥4.5:1 (OS-fallback dark block) */
     --a-text-disabled: #4f5158;
     --a-overlay-hover: rgba(255, 255, 255, 0.055);
     --a-overlay-active: rgba(255, 255, 255, 0.09);
