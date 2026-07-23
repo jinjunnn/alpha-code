@@ -6,8 +6,6 @@ const sourceRoot = join(packageRoot, "src")
 const ratchetPath = join(import.meta.dir, "route-authority-ratchet.test.ts")
 const routeManifestPath = join(import.meta.dir, "route-manifest.ts")
 const surfaceLedgerPath = join(import.meta.dir, "frontend-surface-manifest.ts")
-const mainIndexPath = join(sourceRoot, "main/index.ts")
-const alphaAuthPath = join(sourceRoot, "main/alpha-auth.ts")
 
 interface SourceFile {
   path: string
@@ -73,28 +71,21 @@ function violationsFor(file: SourceFile) {
 
   if (/\.test\.[cm]?[jt]sx?$/.test(file.path)) return violations
 
-  const transportRemoved =
-    file.path === mainIndexPath
-      ? source
-          .replace(/arg\.startsWith\(\s*"opencode:\/\/"\s*\)/, "")
-          .replace(/arg\.startsWith\(\s*"alpha-code:\/\/"\s*\)/, "")
-      : file.path === alphaAuthPath
-        ? source
-            .replace(/const REDIRECT_URI = "alpha-code:\/\/auth\/callback"/, "")
-            .replace(/parsed\.protocol !== "alpha-code:"/, "")
-        : source
-
-  if (/["'`](?:opencode|alpha-code):\/\//.test(transportRemoved)) {
-    violations.push({ path, rule: "deep-link scheme literal outside the manifest or fixed transport boundary" })
-  }
-  if (/["'](?:opencode|alpha-code):["']/.test(transportRemoved)) {
-    violations.push({ path, rule: "deep-link protocol literal outside the manifest or fixed auth boundary" })
+  if (
+    file.path !== routeManifestPath &&
+    (/["'`](?:opencode|alpha-code):\/\//.test(source) ||
+      /["'`](?:opencode|alpha-code):["'`]/.test(source) ||
+      /\bsetAsDefaultProtocolClient\s*\(\s*["'`](?:opencode|alpha-code)["'`]/.test(source))
+  ) {
+    violations.push({ path, rule: "deep-link scheme literal outside the manifest" })
   }
 
   const parsesUrl = /\bnew URL\s*\(/.test(source)
-  const dispatchesHostname = /\.hostname\b/.test(source)
-  const isDeepLinkIngress = file.path === mainIndexPath || file.path.includes(`${join(sourceRoot, "renderer")}/`)
-  if (isDeepLinkIngress && parsesUrl && dispatchesHostname) {
+  const dispatchesHostname = /\.(?:hostname|host)\b/.test(source)
+  const dispatchesDeepLinkRoute = /["'`](?:new-session|open-project)["'`]/.test(source)
+  const isDeepLinkIngress =
+    file.path.includes(`${join(sourceRoot, "main")}/`) || file.path.includes(`${join(sourceRoot, "renderer")}/`)
+  if (isDeepLinkIngress && parsesUrl && dispatchesHostname && dispatchesDeepLinkRoute) {
     violations.push({ path, rule: "new URL plus hostname deep-link dispatch outside the manifest" })
   }
 
@@ -112,19 +103,20 @@ async function alphaSources() {
 }
 
 describe("Alpha route authority ratchet", () => {
-  test("the detector bites on an out-of-manifest href and scheme parser", () => {
+  test.each(["main", "renderer"])("the detector bites on an out-of-manifest href and scheme parser in %s", (layer) => {
     const source = `
       const href = "/new-session?draftId=parallel"
       navigate(href)
+      app.setAsDefaultProtocolClient("alpha-code")
       const parsed = new URL("opencode://new-session?directory=/tmp")
       if (parsed.hostname === "new-session") dispatch(parsed)
     `
 
-    expect(violationsFor({ path: join(sourceRoot, "renderer/fixture.ts"), source }).map((entry) => entry.rule)).toEqual(
+    expect(violationsFor({ path: join(sourceRoot, layer, "fixture.ts"), source }).map((entry) => entry.rule)).toEqual(
       [
         "href/to must use a manifest-derived href",
         "new-session path literals belong in the manifest",
-        "deep-link scheme literal outside the manifest or fixed transport boundary",
+        "deep-link scheme literal outside the manifest",
         "new URL plus hostname deep-link dispatch outside the manifest",
       ],
     )

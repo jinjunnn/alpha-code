@@ -3,11 +3,15 @@ import {
   ROUTE_MANIFEST,
   ROUTE_MANIFEST_VERSION,
   RouteManifestError,
+  deepLinkFor,
   decodeDirectory,
   encodeDirectory,
   hrefFor,
   isDirectorySlug,
+  isDeepLink,
+  matchAuthDeepLink,
   navFor,
+  parseDeepLink,
   parseRoute,
   resolveNavigation,
   routeIdentity,
@@ -39,6 +43,26 @@ describe("canonical route manifest", () => {
   test("has a versioned, unique identity and parameter schema for every formal route", () => {
     expect(ROUTE_MANIFEST_VERSION).toBe(1)
     expect(ROUTE_MANIFEST.version).toBe(ROUTE_MANIFEST_VERSION)
+    expect(ROUTE_MANIFEST.deepLinks.schemes).toEqual([
+      { id: "application", value: "opencode" },
+      { id: "auth", value: "alpha-code" },
+    ])
+    expect(
+      ROUTE_MANIFEST.deepLinks.routes.map((route) => ({
+        id: route.id,
+        scheme: route.scheme,
+        routeId: route.routeId,
+        query: route.location.query.map((parameter) => parameter.name),
+      })),
+    ).toEqual([
+      {
+        id: "new-session",
+        scheme: "application",
+        routeId: "session-admission",
+        query: ["directory", "prompt"],
+      },
+      { id: "open-project", scheme: "application", routeId: "directory", query: ["directory"] },
+    ])
     expect(ROUTE_MANIFEST.routes.map((route) => route.id)).toEqual([
       "home",
       "directory",
@@ -78,6 +102,81 @@ describe("canonical route manifest", () => {
       expect(navigation.href).toBeUndefined()
       expect(navigation.route.identity.routeId).toBe(fixture.routeId)
     })
+  })
+})
+
+describe("manifest-derived deep links", () => {
+  test("new-session parses through the shared location codec into the URL route", () => {
+    const result = parseDeepLink(
+      "opencode://new-session?directory=%2FUsers%2Fdev%2Fproj&prompt=continue%20here%20%26%20%E4%B8%AD%E6%96%87",
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.identity).toEqual({
+      manifestVersion: 1,
+      deepLinkId: "new-session",
+      deepLinkVersion: 1,
+      routeId: "session-admission",
+    })
+    expect(result.route).toEqual(parseRoute(hrefFor.sessionAdmission("/Users/dev/proj", "continue here & 中文")))
+    expect(result.routeHref).toBe(hrefFor.sessionAdmission("/Users/dev/proj", "continue here & 中文"))
+    expect(result.href).toBe(deepLinkFor.newSession("/Users/dev/proj", "continue here & 中文"))
+  })
+
+  test("open-project parses through the same codec into the directory route", () => {
+    const result = parseDeepLink("opencode://open-project?directory=C%3A%5CUsers%5Cdev%5Cproj")
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.identity).toEqual({
+      manifestVersion: 1,
+      deepLinkId: "open-project",
+      deepLinkVersion: 1,
+      routeId: "directory",
+    })
+    expect(result.route).toEqual(parseRoute(hrefFor.directory("C:\\Users\\dev\\proj")))
+    expect(result.routeHref).toBe(hrefFor.directory("C:\\Users\\dev\\proj"))
+    expect(result.href).toBe(deepLinkFor.openProject("C:\\Users\\dev\\proj"))
+  })
+
+  test("deep-link href and parse round-trip without a parallel parser", () => {
+    const fixtures = [
+      deepLinkFor.newSession("/家/项目", "build this + that"),
+      deepLinkFor.newSession("/tmp/empty-prompt", ""),
+      deepLinkFor.openProject("/w s/project"),
+    ]
+
+    expect(fixtures.every(isDeepLink)).toBe(true)
+    fixtures.forEach((href) => {
+      const parsed = parseDeepLink(href)
+      expect(parsed.ok).toBe(true)
+      if (!parsed.ok) return
+      expect(parsed.href).toBe(href)
+      expect(parseRoute(parsed.routeHref)).toEqual(parsed.route)
+    })
+    expect(isDeepLink("https://example.com/new-session")).toBe(false)
+  })
+
+  test("auth transport scheme and callback endpoint are manifest-derived", () => {
+    expect(deepLinkFor.authCallback()).toBe("alpha-code://auth/callback")
+    const callback = matchAuthDeepLink("alpha-code://auth/callback?code=one&state=two")
+    expect(callback.kind).toBe("callback")
+    if (callback.kind !== "callback") return
+    expect(callback.url.searchParams.get("code")).toBe("one")
+    expect(matchAuthDeepLink("alpha-code://other/path")).toEqual({ kind: "ignored", path: "other/path" })
+    expect(matchAuthDeepLink(deepLinkFor.openProject("/tmp"))).toEqual({ kind: "outside" })
+  })
+
+  test("unknown, malformed, and schema-breaking links fail closed", () => {
+    Array.of(
+      "opencode://unknown?directory=%2Ftmp",
+      "opencode://new-session",
+      "opencode://new-session?directory=%2Ftmp&directory=%2Fother",
+      "opencode://open-project?directory=%E0%A4%A",
+      "opencode://open-project?directory=%2Ftmp&prompt=unexpected",
+      "opencode://open-project?directory=%2Ftmp#fragment",
+    ).forEach((link) => expect(parseDeepLink(link).ok).toBe(false))
   })
 })
 
