@@ -4,7 +4,7 @@
 //
 // 三道接缝:
 //   ① 发起   startAuth(): 生成 PKCE(verifier+state) → shell.openExternal(<ALPHA_WEB_URL>/auth/authorize…)
-//   ② 回调   handleAuthDeepLink(url): alpha-code://auth/callback?code&state → 校验 state → 换 token
+//   ② 回调   handleAuthDeepLink(url): manifest auth callback + code/state → 校验 state → 换 token
 //            → safeStorage 加密存(系统钥匙串,不落明文 alpha.env)。
 //   ③ 消费   applyAuthEnv(): 据 token+mode 写 process.env(ALPHA_BASE_URL/ALPHA_API_KEY →
 //            alpha-models.ts 的模型代理 provider;ALPHA_CLOUD_MCP_URL/ALPHA_CLOUD_TOKEN →
@@ -26,6 +26,7 @@ import {
 import type { AuthErrorCode, AuthMode, AuthState } from "../preload/types"
 import { getLogger } from "./logging"
 import { ALPHA_PATHS, type AlphaEndpoints } from "../shared/alpha-config"
+import { deepLinkFor, matchAuthDeepLink } from "../shared/route-manifest"
 import { isTokenExpired, shouldRefreshToken } from "./alpha-auth-clock"
 import { decodeEndpointDiscovery, resolveEndpoints, setDiscoveredEndpoints } from "./alpha-endpoints"
 import { reportContractFailure } from "./alpha-contract-health"
@@ -57,7 +58,7 @@ type TokenResponse = {
 }
 
 const CLIENT_ID = "alpha-code"
-const REDIRECT_URI = "alpha-code://auth/callback"
+const REDIRECT_URI = deepLinkFor.authCallback()
 const AUTH_FILE = "alpha-auth.json"
 
 // Endpoints come from the resolver (alpha-endpoints.ts): env override > userData pin > login discovery
@@ -282,25 +283,19 @@ export async function startAuth(): Promise<void> {
   await shell.openExternal(url.toString())
 }
 
-// ② 回调:消费任何 alpha-code:// deep link(返回 true = 已吞,不转发给 renderer);只处理
-// auth/callback。其余 alpha-code:// 也吞掉(避免误投 renderer)。
+// ② 回调:消费 manifest auth scheme 的任何 deep link(返回 true = 已吞,不转发给 renderer);
+// callback endpoint 由 manifest 匹配,其余同 scheme 链接也吞掉(避免误投 renderer)。
 export function handleAuthDeepLink(url: string): boolean {
-  let parsed: URL
-  try {
-    parsed = new URL(url)
-  } catch {
-    return false
-  }
-  if (parsed.protocol !== "alpha-code:") return false
-  const path = `${parsed.host}${parsed.pathname}`.replace(/\/+$/, "").replace(/^\/+/, "")
-  if (path === "auth/callback") {
-    void completeAuth(parsed).catch((error) => {
+  const matched = matchAuthDeepLink(url)
+  if (matched.kind === "outside") return false
+  if (matched.kind === "callback") {
+    void completeAuth(matched.url).catch((error) => {
       warn("alpha-auth: callback failed", error)
       publishAuthError(reportContractFailure(error) ? "contract_incompatible" : "exchange_failed")
     })
-  } else {
-    log("alpha-auth: ignoring non-auth deep link", { path })
+    return true
   }
+  log("alpha-auth: ignoring non-auth deep link", { path: matched.path })
   return true
 }
 

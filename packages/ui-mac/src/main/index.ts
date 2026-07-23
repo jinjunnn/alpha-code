@@ -13,6 +13,7 @@ import { Deferred, Effect } from "effect"
 import contextMenu from "electron-context-menu"
 
 import type { ServerReadyData } from "../preload/types"
+import { DEEP_LINK_SCHEMES, isDeepLink, parseDeepLink } from "../shared/route-manifest"
 import { checkAppExists, resolveAppPath } from "./apps"
 import { CHANNEL } from "./constants"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand } from "./ipc"
@@ -150,9 +151,14 @@ function useEnvProxy() {
 }
 
 function emitDeepLinks(urls: string[]) {
-  // alpha-code://auth/* is consumed by the auth module (PKCE token exchange) and never forwarded
-  // to the renderer; every other deep link flows on as before.
-  const forwarded = urls.filter((url) => !handleAuthDeepLink(url))
+  // Auth transport is consumed by the PKCE module. Application routes are validated and
+  // canonicalized by the manifest before the arm's-length upstream renderer receives them.
+  const forwarded = urls
+    .filter((url) => !handleAuthDeepLink(url))
+    .flatMap((url) => {
+      const navigation = parseDeepLink(url)
+      return navigation.ok ? [navigation.href] : []
+    })
   if (forwarded.length === 0) return
   pendingDeepLinks.push(...forwarded)
   if (mainWindow) sendDeepLinks(mainWindow, forwarded)
@@ -466,7 +472,7 @@ const main = Effect.gen(function* () {
   // 凭证,而 macOS 上 app ready 之前 safeStorage 不可用 → 解密静默失败 → 每次冷启动都"未登录"、
   // BYOK 钥匙库曾因此走明文兜底。已移至 whenReady 之后、sidecar fork 之前(见下)。
 
-  // Auth callbacks arrive as alpha-code://auth/callback?code=...&state=... — strip the query before
+  // Auth callbacks contain a single-use PKCE code and CSRF state — strip the query before
   // logging so the single-use PKCE code / CSRF state never lands in main.log (exportDebugLogs ships it).
   const redactDeepLink = (u: string): string => {
     try {
@@ -478,7 +484,7 @@ const main = Effect.gen(function* () {
   }
 
   app.on("second-instance", (_event: Event, argv: string[]) => {
-    const urls = argv.filter((arg: string) => arg.startsWith("opencode://") || arg.startsWith("alpha-code://"))
+    const urls = argv.filter(isDeepLink)
     if (urls.length) {
       logger.log("deep link received via second-instance", { urls: urls.map(redactDeepLink) })
       emitDeepLinks(urls)
@@ -664,10 +670,8 @@ const main = Effect.gen(function* () {
   // installed app (until the installed app relaunches and re-registers). Dev deep-link testing:
   // ALPHA_DEV_PROTOCOL=1, and keep the dev instance running so open-url is delivered to it.
   if (app.isPackaged || process.env.ALPHA_DEV_PROTOCOL === "1") {
-    app.setAsDefaultProtocolClient("opencode")
-    // Own auth-callback scheme, registered alongside opencode:// (not replacing it), so a co-installed
-    // official opencode desktop can neither hijack nor be hijacked by our alpha-code://auth/callback.
-    app.setAsDefaultProtocolClient("alpha-code")
+    // Register every manifest-declared transport scheme; registration remains an OS/main concern.
+    DEEP_LINK_SCHEMES.forEach((scheme) => app.setAsDefaultProtocolClient(scheme))
   }
   registerRendererProtocol()
   setDockIcon()

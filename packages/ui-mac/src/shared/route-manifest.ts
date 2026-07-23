@@ -1,9 +1,7 @@
 // Alpha's canonical route contract. The manifest owns route identity, parameter shape,
 // location encoding, and the single leaf/redirect composition seam. Router/provider/layout
-// ownership remains upstream; production route composition is derived in a later slice.
-// The upstream packages/app/src/pages/layout/deep-links.ts parseDeepLink / parseNewSessionDeepLink
-// functions are held at arm's length like its Route tree. Manifest-derived Alpha interception
-// before forwarding, without upstream edits, remains REQ-089 #496 scope rather than #494 scope.
+// ownership remains upstream. The upstream packages/app deep-link parser is held at arm's length
+// like its Route tree; Alpha validates and canonicalizes ingress here before forwarding it.
 
 import type { SurfaceId } from "./alpha-surfaces"
 
@@ -21,6 +19,12 @@ export interface RouteQueryParameter {
   required: boolean
 }
 
+export interface RoutePathLocation {
+  kind: "path"
+  path: readonly RoutePathSegment[]
+  query: readonly RouteQueryParameter[]
+}
+
 export type RouteComposition =
   | { kind: "surface"; surface: SurfaceId | "settings" | "dialog" | "recovery" }
   | { kind: "redirect"; routeId: string }
@@ -28,18 +32,78 @@ export type RouteComposition =
 export interface RouteManifestEntry {
   id: string
   version: number
-  location:
-    | {
-        kind: "path"
-        path: readonly RoutePathSegment[]
-        query: readonly RouteQueryParameter[]
-      }
-    | { kind: "system"; params: readonly [] }
+  location: RoutePathLocation | { kind: "system"; params: readonly [] }
   composition: RouteComposition
+}
+
+export interface DeepLinkSchemeManifestEntry {
+  id: string
+  value: string
+}
+
+export interface DeepLinkRouteManifestEntry {
+  id: string
+  version: number
+  scheme: string
+  routeId: string
+  location: RoutePathLocation
+}
+
+export interface DeepLinkEndpointManifestEntry {
+  id: string
+  scheme: string
+  location: RoutePathLocation
 }
 
 export const ROUTE_MANIFEST = {
   version: ROUTE_MANIFEST_VERSION,
+  deepLinks: {
+    schemes: [
+      { id: "application", value: "opencode" },
+      { id: "auth", value: "alpha-code" },
+    ],
+    routes: [
+      {
+        id: "new-session",
+        version: 1,
+        scheme: "application",
+        routeId: "session-admission",
+        location: {
+          kind: "path",
+          path: [{ kind: "literal", value: "new-session" }],
+          query: [
+            { name: "directory", codec: "component", required: true },
+            { name: "prompt", codec: "component", required: false },
+          ],
+        },
+      },
+      {
+        id: "open-project",
+        version: 1,
+        scheme: "application",
+        routeId: "directory",
+        location: {
+          kind: "path",
+          path: [{ kind: "literal", value: "open-project" }],
+          query: [{ name: "directory", codec: "component", required: true }],
+        },
+      },
+    ],
+    endpoints: [
+      {
+        id: "auth-callback",
+        scheme: "auth",
+        location: {
+          kind: "path",
+          path: [
+            { kind: "literal", value: "auth" },
+            { kind: "literal", value: "callback" },
+          ],
+          query: [],
+        },
+      },
+    ],
+  },
   routes: [
     {
       id: "home",
@@ -116,9 +180,21 @@ export const ROUTE_MANIFEST = {
       composition: { kind: "surface", surface: "recovery" },
     },
   ],
-} as const satisfies { version: number; routes: readonly RouteManifestEntry[] }
+} as const satisfies {
+  version: number
+  deepLinks: {
+    schemes: readonly DeepLinkSchemeManifestEntry[]
+    routes: readonly DeepLinkRouteManifestEntry[]
+    endpoints: readonly DeepLinkEndpointManifestEntry[]
+  }
+  routes: readonly RouteManifestEntry[]
+}
 
 export type RouteId = (typeof ROUTE_MANIFEST.routes)[number]["id"]
+export type DeepLinkSchemeId = (typeof ROUTE_MANIFEST.deepLinks.schemes)[number]["id"]
+export type DeepLinkRouteId = (typeof ROUTE_MANIFEST.deepLinks.routes)[number]["id"]
+
+export const DEEP_LINK_SCHEMES = ROUTE_MANIFEST.deepLinks.schemes.map((scheme) => scheme.value)
 
 export interface RouteIdentity {
   manifestVersion: typeof ROUTE_MANIFEST_VERSION
@@ -175,9 +251,35 @@ export type RouteNavigation =
   | { ok: true; identity: RouteIdentity; route: ResolvedRoute; href?: string }
   | { ok: false; identity: RouteIdentity & { routeId: "recovery" }; route: RouteFailure; error: RouteError }
 
+export interface DeepLinkIdentity {
+  manifestVersion: typeof ROUTE_MANIFEST_VERSION
+  deepLinkId: DeepLinkRouteId
+  deepLinkVersion: number
+  routeId: RouteId
+}
+
+export type DeepLinkNavigation =
+  | { ok: true; identity: DeepLinkIdentity; route: ResolvedRoute; href: string; routeHref: string }
+  | { ok: false; route: RouteFailure; error: RouteError }
+
+export type AuthDeepLinkMatch =
+  | { kind: "outside" }
+  | { kind: "callback"; url: URL }
+  | { kind: "ignored"; path: string }
+
 type DefinedRoute = (typeof ROUTE_MANIFEST.routes)[number]
+type DefinedPathRoute = Extract<DefinedRoute, { location: { kind: "path" } }>
+type DefinedDeepLinkScheme = (typeof ROUTE_MANIFEST.deepLinks.schemes)[number]
+type DefinedDeepLinkRoute = (typeof ROUTE_MANIFEST.deepLinks.routes)[number]
+type DefinedDeepLinkEndpoint = (typeof ROUTE_MANIFEST.deepLinks.endpoints)[number]
 
 const ROUTE_DEFINITIONS: readonly DefinedRoute[] = ROUTE_MANIFEST.routes
+const ROUTE_PATH_DEFINITIONS: readonly DefinedPathRoute[] = ROUTE_MANIFEST.routes.filter(
+  (entry): entry is DefinedPathRoute => entry.location.kind === "path",
+)
+const DEEP_LINK_SCHEME_DEFINITIONS: readonly DefinedDeepLinkScheme[] = ROUTE_MANIFEST.deepLinks.schemes
+const DEEP_LINK_ROUTE_DEFINITIONS: readonly DefinedDeepLinkRoute[] = ROUTE_MANIFEST.deepLinks.routes
+const DEEP_LINK_ENDPOINT_DEFINITIONS: readonly DefinedDeepLinkEndpoint[] = ROUTE_MANIFEST.deepLinks.endpoints
 
 // ---------- Directory codec ----------
 
@@ -216,7 +318,7 @@ export function parseRoute(pathname: string, search?: string): Route {
   const segments = splitPath(path)
   if (!segments) return recovery({ code: "corrupt-deep-link" })
 
-  const candidates = ROUTE_DEFINITIONS.filter((entry) => entry.location.kind === "path").map((entry) => ({
+  const candidates = ROUTE_PATH_DEFINITIONS.map((entry) => ({
     entry,
     matched: matchPath(entry, segments),
   }))
@@ -233,6 +335,47 @@ export function parseRoute(pathname: string, search?: string): Route {
   if (invalidDirectory)
     return recovery({ code: "invalid-directory", routeId: invalidDirectory.entry.id, param: "directory" })
   return recovery({ code: "unknown-route" })
+}
+
+export function isDeepLink(input: string): boolean {
+  return parseDeepLinkUrl(input) !== undefined
+}
+
+export function parseDeepLink(input: string): DeepLinkNavigation {
+  const parsed = parseDeepLinkUrl(input)
+  if (!parsed) return failedDeepLink({ code: "corrupt-deep-link" })
+  if (parsed.url.username || parsed.url.password || parsed.url.port || parsed.url.hash)
+    return failedDeepLink({ code: "corrupt-deep-link" })
+
+  const segments = splitPath(deepLinkPath(parsed.url))
+  if (!segments) return failedDeepLink({ code: "corrupt-deep-link" })
+  const candidates = DEEP_LINK_ROUTE_DEFINITIONS.filter((entry) => entry.scheme === parsed.scheme.id).map(
+    (entry) => ({
+      entry,
+      matched: matchPath(entry, segments),
+    }),
+  )
+  const matched = candidates.find((candidate) => candidate.matched.kind === "match")
+  if (matched?.matched.kind === "match") {
+    const decoded = decodeQuery(matched.entry, parsed.url.search)
+    if (!decoded.ok) return failedDeepLink({ ...decoded.error, routeId: matched.entry.routeId })
+    return resolveDeepLink(matched.entry, { ...matched.matched.params, ...decoded.params })
+  }
+
+  const corrupt = candidates.find((candidate) => candidate.matched.kind === "corrupt")
+  if (corrupt) return failedDeepLink({ code: "corrupt-deep-link", routeId: corrupt.entry.routeId })
+  return failedDeepLink({ code: "unknown-route" })
+}
+
+export function matchAuthDeepLink(input: string): AuthDeepLinkMatch {
+  const parsed = parseDeepLinkUrl(input)
+  if (!parsed || parsed.scheme.id !== "auth") return { kind: "outside" }
+  const path = deepLinkPath(parsed.url)
+  const segments = splitPath(path)
+  const endpoint = DEEP_LINK_ENDPOINT_DEFINITIONS.find((candidate) => candidate.id === "auth-callback")!
+  if (endpoint.scheme === parsed.scheme.id && segments && matchPath(endpoint, segments).kind === "match")
+    return { kind: "callback", url: parsed.url }
+  return { kind: "ignored", path: path.slice(1).replace(/\/+$/, "") }
 }
 
 /** Resolve a persisted/transported route identity without trusting its version or parameters. */
@@ -320,6 +463,18 @@ export const hrefFor = {
   newSession: (draftId: string, prompt?: string) => requireHref(navFor.newSession(draftId, prompt)),
 } as const
 
+export const deepLinkFor = {
+  newSession: (directory: string, prompt?: string) =>
+    requireDeepLinkHref(resolveDeepLink(referenceForDeepLink("new-session"), { directory, prompt })),
+  openProject: (directory: string) =>
+    requireDeepLinkHref(resolveDeepLink(referenceForDeepLink("open-project"), { directory })),
+  authCallback: () =>
+    encodeDeepLinkLocation(
+      DEEP_LINK_ENDPOINT_DEFINITIONS.find((candidate) => candidate.id === "auth-callback")!,
+      {},
+    ),
+} as const
+
 function splitPath(pathname: string): string[] | undefined {
   if (pathname === "/") return []
   if (!pathname.startsWith("/") || pathname.endsWith("/") || pathname.includes("//") || pathname.includes("#"))
@@ -333,7 +488,7 @@ type PathMatch =
   | { kind: "invalid-directory" }
   | { kind: "corrupt" }
 
-function matchPath(entry: RouteManifestEntry, segments: string[]): PathMatch {
+function matchPath(entry: { location: RoutePathLocation }, segments: string[]): PathMatch {
   if (entry.location.kind !== "path" || entry.location.path.length !== segments.length) return { kind: "miss" }
   if (entry.location.path.some((part, index) => part.kind === "literal" && part.value !== segments[index]))
     return { kind: "miss" }
@@ -350,8 +505,7 @@ function matchPath(entry: RouteManifestEntry, segments: string[]): PathMatch {
 
 type QueryDecode = { ok: true; params: Record<string, string | undefined> } | { ok: false; error: RouteError }
 
-function decodeQuery(entry: RouteManifestEntry, search: string): QueryDecode {
-  if (entry.location.kind !== "path") return { ok: true, params: {} }
+function decodeQuery(entry: { location: RoutePathLocation }, search: string): QueryDecode {
   const schema = entry.location.query
   const query = search.startsWith("?") ? search.slice(1) : search
   if (query.includes("#")) return { ok: false, error: { code: "corrupt-deep-link" } }
@@ -384,7 +538,10 @@ type LocationEncode =
   | { ok: true; href?: string; params: Record<string, string | undefined> }
   | { ok: false; error: RouteError }
 
-function encodeLocation(entry: RouteManifestEntry, input: Readonly<Record<string, unknown>>): LocationEncode {
+function encodeLocation(
+  entry: { location: RouteManifestEntry["location"] },
+  input: Readonly<Record<string, unknown>>,
+): LocationEncode {
   const fields =
     entry.location.kind === "path"
       ? [...entry.location.path.filter((field) => field.kind === "parameter"), ...entry.location.query]
@@ -480,6 +637,56 @@ function routeFromParams(routeId: RouteId, params: Readonly<Record<string, strin
   return assertNever(routeId)
 }
 
+function parseDeepLinkUrl(input: string): { url: URL; scheme: DefinedDeepLinkScheme } | undefined {
+  if (!URL.canParse(input)) return undefined
+  const url = new URL(input)
+  const scheme = DEEP_LINK_SCHEME_DEFINITIONS.find((candidate) => url.protocol === `${candidate.value}:`)
+  if (!scheme) return undefined
+  return { url, scheme }
+}
+
+function deepLinkPath(url: URL): string {
+  return `/${url.hostname}${url.pathname}`
+}
+
+function referenceForDeepLink(deepLinkId: DeepLinkRouteId): DefinedDeepLinkRoute {
+  return DEEP_LINK_ROUTE_DEFINITIONS.find((candidate) => candidate.id === deepLinkId)!
+}
+
+function resolveDeepLink(
+  entry: DefinedDeepLinkRoute,
+  params: Readonly<Record<string, unknown>>,
+): DeepLinkNavigation {
+  const encoded = encodeLocation(entry, params)
+  if (!encoded.ok) return failedDeepLink({ ...encoded.error, routeId: entry.routeId })
+  const navigation = resolveNavigation(referenceFor(entry.routeId, encoded.params))
+  if (!navigation.ok) return failedDeepLink(navigation.error)
+  if (navigation.href === undefined) return failedDeepLink({ code: "corrupt-deep-link", routeId: entry.routeId })
+  return {
+    ok: true,
+    identity: {
+      manifestVersion: ROUTE_MANIFEST_VERSION,
+      deepLinkId: entry.id,
+      deepLinkVersion: entry.version,
+      routeId: entry.routeId,
+    },
+    route: navigation.route,
+    href: encodeDeepLinkLocation(entry, params),
+    routeHref: navigation.href,
+  }
+}
+
+function encodeDeepLinkLocation(
+  entry: DefinedDeepLinkRoute | DefinedDeepLinkEndpoint,
+  params: Readonly<Record<string, unknown>>,
+): string {
+  const encoded = encodeLocation(entry, params)
+  if (!encoded.ok) throw new RouteManifestError(encoded.error)
+  if (encoded.href === undefined) throw new RouteManifestError({ code: "corrupt-deep-link" })
+  const scheme = DEEP_LINK_SCHEME_DEFINITIONS.find((candidate) => candidate.id === entry.scheme)!
+  return `${scheme.value}://${encoded.href.slice(1)}`
+}
+
 function identityFor(entry: DefinedRoute): RouteIdentity {
   return {
     manifestVersion: ROUTE_MANIFEST_VERSION,
@@ -498,10 +705,19 @@ function failedNavigation(error: RouteError): RouteNavigation {
   return { ok: false, identity: route.identity, route, error }
 }
 
+function failedDeepLink(error: RouteError): DeepLinkNavigation {
+  return { ok: false, route: recovery(error), error }
+}
+
 function requireHref(result: RouteNavigation): string {
   if (!result.ok) throw new RouteManifestError(result.error)
   if (result.href === undefined)
     throw new RouteManifestError({ code: "corrupt-deep-link", routeId: result.identity.routeId })
+  return result.href
+}
+
+function requireDeepLinkHref(result: DeepLinkNavigation): string {
+  if (!result.ok) throw new RouteManifestError(result.error)
   return result.href
 }
 
