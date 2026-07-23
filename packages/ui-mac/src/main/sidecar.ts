@@ -4,7 +4,6 @@ import * as http from "node:http"
 import * as path from "node:path"
 import * as tls from "node:tls"
 import { ALPHA_BEHAVIOR_MD } from "./alpha-behavior"
-import { catalogRegistryChannel } from "./alpha-environment"
 import { buildAlphaCapabilities, buildAlphaIdentity } from "./alpha-identity"
 import { buildAlphaModelConfig } from "./alpha-models"
 import { hasSecretFile, secretFileRef } from "./alpha-secret-files"
@@ -12,6 +11,7 @@ import { applyCloudWebSearchDisable } from "./cloud-web-search"
 import { alphaGlobalRoot, alphaJsoncPath } from "./engine-config-truth"
 import { injectDisabledOverrides } from "./ext-disabled-injection"
 import { materializeCloudMcpConfig } from "./cloud-sidecar-config"
+import type { ChannelName } from "./catalog-channels"
 
 // ADR-006 bridge ("two runtime worlds"). opencode's ToolRegistry dynamically imports a project's
 // raw-TS tools (.opencode/tool/*.ts), and packages whose TS entry does `import "./x.js"` (e.g.
@@ -56,6 +56,11 @@ type StartCommand = {
   userDataPath: string
   /** B6(=G1):@alpha-code/ext 自包含 bundle 的绝对路径(main 解析,见 alpha-ext-plugin.ts);缺省不装载。 */
   extPluginPath?: string
+  /** #397 override 注入用的 catalog 通道。必须由 main 从冻结环境快照取好传入 —— 本进程从不跑
+   *  initAlphaEnvironment,在这里调 catalogRegistryChannel() 会抛,且曾把整个 injectAlphaConfig
+   *  连同 provider 注入一起炸掉(2026-07-23 打包端「全模型当前不可用」事故)。缺省 = loud 跳过
+   *  override 注入(fail-closed 权威在 boot reconcile,见 ext-disabled-injection.ts)。 */
+  registryChannel?: ChannelName
 }
 
 type StopCommand = { type: "stop" }
@@ -90,7 +95,7 @@ parentPort.on("message", (event) => {
 
 async function start(command: StartCommand) {
   try {
-    prepareSidecarEnv(command.password, command.userDataPath, command.extPluginPath)
+    prepareSidecarEnv(command.password, command.userDataPath, command.extPluginPath, command.registryChannel)
     ensureLoopbackNoProxy()
     useSystemCertificates()
     useEnvProxy()
@@ -120,13 +125,13 @@ async function stop() {
   }
 }
 
-function prepareSidecarEnv(password: string, userDataPath: string, extPluginPath?: string) {
+function prepareSidecarEnv(password: string, userDataPath: string, extPluginPath?: string, registryChannel?: ChannelName) {
   Object.assign(process.env, {
     OPENCODE_SERVER_USERNAME: "opencode",
     OPENCODE_SERVER_PASSWORD: password,
     XDG_STATE_HOME: process.env.XDG_STATE_HOME ?? userDataPath,
   })
-  injectAlphaConfig(userDataPath, extPluginPath)
+  injectAlphaConfig(userDataPath, extPluginPath, registryChannel)
 }
 
 // Inject alpha-code's customizations into opencode via OPENCODE_CONFIG_CONTENT. This env var is
@@ -148,7 +153,7 @@ function prepareSidecarEnv(password: string, userDataPath: string, extPluginPath
 //   4. B6(=G1):@alpha-code/ext 装载 —— main 解析好的自包含 bundle 绝对路径合并进 V1 `plugin`
 //      (单数键,见 opencode-config-v1-schema)数组,保留用户自己的 plugin 列表。zod 跨实例路径
 //      (ADR-006 caveat)的运行时证明 = alpha_ping 出现在工具表且能执行(真机批核验)。
-function injectAlphaConfig(userDataPath: string, extPluginPath?: string) {
+function injectAlphaConfig(userDataPath: string, extPluginPath?: string, registryChannel?: ChannelName) {
   try {
     // REQ-059 G1:引擎经 OPENCODE_CONFIG 加载当前环境的 alpha.jsonc(mcp/plugin/
     // provider/治理键)。文件通道 → dispose 重建重读文件 = 安装免重启;merge 序 XDG 后(压 provider)/
@@ -390,8 +395,14 @@ function injectAlphaConfig(userDataPath: string, extPluginPath?: string) {
     // plugin 是 union 无覆盖面,靠 alpha.jsonc 移除(无用户 = 无他源);cloud/skill 无此面。
     // 仅 global scope(项目 scope 由项目 config 面另管)。best-effort:账本不可读 → 跳过(alpha.jsonc
     // 投影仍在;主权注入是加固层)。#397:session-grant 记录在注入面强制按 disabled 处理
-    // (持久 enable 非法;判定读已验 catalog,userDataPath/channel 由此传入)。
-    injectDisabledOverrides(config, { userDataPath, channel: catalogRegistryChannel() })
+    // (持久 enable 非法;判定读已验 catalog,userDataPath/channel 由此传入)。channel 来自
+    // StartCommand(main 冻结快照)—— 本进程调 catalogRegistryChannel() 必抛(见 StartCommand 注释),
+    // 加固层的任何缺料只允许降级跳过,不允许波及上方 provider/identity/permission 注入。
+    if (registryChannel) injectDisabledOverrides(config, { userDataPath, channel: registryChannel })
+    else
+      console.error(
+        "[req104-397] registry channel missing from start command — skipping disabled-override injection (boot reconcile holds the fail-closed gate)",
+      )
 
     process.env.OPENCODE_CONFIG_CONTENT = JSON.stringify(config)
   } catch (error) {
@@ -454,6 +465,9 @@ function parseCommand(value: unknown): SidecarCommand | undefined {
     password: command.password,
     userDataPath: command.userDataPath,
     ...(typeof command.extPluginPath === "string" ? { extPluginPath: command.extPluginPath } : {}),
+    ...(command.registryChannel === "stable" || command.registryChannel === "preview" || command.registryChannel === "dev"
+      ? { registryChannel: command.registryChannel }
+      : {}),
   }
 }
 

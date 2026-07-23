@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url"
 import { app, utilityProcess } from "electron"
 import type { Details } from "electron"
 import { resolveExtPluginPath } from "./alpha-ext-plugin"
+import { tryGetAlphaEnvironment } from "./alpha-environment"
 import { applyEcosystemDefaultDeny } from "./ecosystem-import"
 import { hasSecretFile, syncSecretFiles } from "./alpha-secret-files"
 import { loadAlphaSecrets } from "./alpha-secrets"
@@ -251,6 +252,12 @@ export async function spawnLocalServer(
     child.on("message", onMessage)
     child.on("exit", onExit)
     refreshTimeout()
+    // #397:override 注入的 catalog 通道在 MAIN 侧从冻结快照取好随命令传入 —— sidecar 进程从不
+    // initAlphaEnvironment,自取必抛且曾整体炸掉 alpha 配置注入(2026-07-23)。boot 序保证 spawn 前
+    // 已 init;tryGet 仅为纯单测兜底(缺省 → sidecar loud 跳过 override 注入,boot reconcile 兜 fail-closed)。
+    const registryChannel = tryGetAlphaEnvironment()?.registryChannel
+    if (!registryChannel)
+      getLogger()?.warn("alpha environment not initialized at sidecar spawn — disabled-override injection will be skipped")
     child.postMessage({
       type: "start",
       hostname,
@@ -258,6 +265,7 @@ export async function spawnLocalServer(
       password,
       userDataPath: options.userDataPath,
       extPluginPath: ext.path,
+      registryChannel,
     })
   }).catch((error) => {
     if (!exited) child.kill()
