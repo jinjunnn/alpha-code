@@ -501,18 +501,21 @@ export function refreshTokens(): Promise<boolean> {
 }
 
 async function doRefresh(): Promise<boolean> {
-  const { refreshToken, sessionId } = stored
-  if (!refreshToken || !sessionId) return false
+  const { refreshToken } = stored
+  if (!refreshToken) return false
   let res: Response
   try {
     res = await fetch(`${webBase()}${ALPHA_PATHS.token}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
+      // #79 Breaking v1: refresh is keyed ONLY by the opaque rotating refresh_token.
+      // The issuer rejects any refresh request carrying a `sid` (Object.hasOwn(body,"sid")
+      // → invalid_request 400), so we must NOT send it. (Was sending `sid: sessionId`,
+      // which 400'd every refresh → forced logout right after a successful login.)
       body: JSON.stringify({
         grant_type: "refresh_token",
         client_id: CLIENT_ID,
         refresh_token: refreshToken,
-        sid: sessionId,
       }),
       signal: AbortSignal.timeout(10_000),
     })

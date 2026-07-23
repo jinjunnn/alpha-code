@@ -307,8 +307,10 @@ describe("refresh bundle rotation", () => {
     expect(requestBody).toMatchObject({
       grant_type: "refresh_token",
       refresh_token: "refresh-old",
-      sid: "session-old",
     })
+    // #79 Breaking v1: the issuer rejects any refresh request carrying `sid`
+    // (Object.hasOwn(body,"sid") → invalid_request 400). Lock that we never send it.
+    expect(requestBody).not.toHaveProperty("sid")
     PURPOSES.forEach((purpose) => expect(getAccessToken(purpose)).toBe(newBundle[purpose]))
     expect(process.env.ALPHA_API_KEY).toBe(newBundle["model.invoke"])
     expect(process.env.ALPHA_CLOUD_TOKEN).toBe(newBundle["cloud.dispatch"])
