@@ -59,7 +59,13 @@ const require = __cjs_mod__.createRequire(import.meta.url);
 `,
         },
       },
-      externalizeDeps: { include: [nodePtyPkg] },
+      // `@alpha-code/contracts-consumer` is a private, source-only workspace package
+      // (`exports: "./src/index.ts"`). If externalized it ships as raw .ts inside
+      // app.asar/node_modules, where Node refuses to strip types at runtime
+      // (ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING) and the main process crashes on
+      // launch. Exclude it so rollup bundles+transpiles it (and its ajv deps) into the
+      // main chunk. (`@alpha-code/ext` avoids this by shipping a built dist/plugin.js.)
+      externalizeDeps: { include: [nodePtyPkg], exclude: ["@alpha-code/contracts-consumer"] },
     },
     plugins: [
       {
