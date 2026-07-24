@@ -12,12 +12,22 @@
 
 import { createEffect, createSignal, onCleanup } from "solid-js"
 
-const [owner, setOwner] = createSignal<string | undefined>(undefined)
+/**
+ * 所有权 = sessionID + 每次 claim 独有的 token,登记为活跃 claim 集(审计第 2 轮 Major:
+ * owner 仅存 sessionID 时,同一会话先后 claim A/B,A 的迟到 release 会按字符串命中并清掉
+ * B 的持权,造成 watcher 误判无人持权 → 双呈现)。裁决序确定:release 只移除自己的 token,
+ * watcher 让位当且仅当该会话仍存在任一活跃 claim —— 重叠挂载按任意顺序建立/释放都不产生
+ * 双呈现窗口,同一会话任一时刻恰一个呈现者(有 claim = dock,无 claim = watcher)。
+ */
+type SessionApprovalClaim = { sessionID: string; token: symbol }
 
-/** dock 声明接管 sessionID 的审批呈现;返回释放函数(幂等,仅释放自己的声明)。 */
+const [claims, setClaims] = createSignal<readonly SessionApprovalClaim[]>([])
+
+/** dock 声明接管 sessionID 的审批呈现;返回释放函数(幂等,仅释放自己这次 claim)。 */
 export function claimSessionApprovalDock(sessionID: string): () => void {
-  setOwner(sessionID)
-  return () => setOwner((current) => (current === sessionID ? undefined : current))
+  const claim: SessionApprovalClaim = { sessionID, token: Symbol("session-approval-claim") }
+  setClaims((current) => [...current, claim])
+  return () => setClaims((current) => current.filter((item) => item.token !== claim.token))
 }
 
 /**
@@ -33,12 +43,12 @@ export function bindSessionApprovalClaim(input: { sessionID: () => string | unde
   })
 }
 
-/** 该会话的审批呈现是否已被 seam dock 接管(响应式)。 */
+/** 该会话的审批呈现是否已被 seam dock 接管(响应式;存在任一活跃 claim 即为接管)。 */
 export function sessionApprovalDockClaimed(sessionID: string | undefined): boolean {
-  return sessionID !== undefined && owner() === sessionID
+  return sessionID !== undefined && claims().some((item) => item.sessionID === sessionID)
 }
 
 /** 测试隔离用。 */
 export function resetSessionApprovalClaim(): void {
-  setOwner(undefined)
+  setClaims([])
 }

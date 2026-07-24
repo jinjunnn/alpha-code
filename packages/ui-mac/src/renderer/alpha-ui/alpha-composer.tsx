@@ -51,8 +51,11 @@ import {
   composerModelProjection,
   composerModelSuspended,
   composerPerm,
+  DEFAULT_AGENT,
   failComposerModelProjection,
   invalidateComposerModelProjection,
+  pushedAgentFor,
+  recordPushedAgent,
   resetComposerModelProjection,
   resolveComposerModelProjection,
   routeSlash,
@@ -532,6 +535,8 @@ export type ComposerSessionDockApi = {
   contextUsage: () => number | null
   /** 当前会话是否有挂起审批(驱动占位文案与权限 chip 琥珀态)。 */
   approvalPending: () => boolean
+  /** 会话当前档位(typed session info;undefined = 引擎默认)——档位协议的比对基准。 */
+  sessionAgent: () => string | undefined
   /** 斜杠命令发送成功后的捕获回调。 */
   onSlashCommand?: (capture: ComposerSlashCapture) => void
 }
@@ -1048,25 +1053,57 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       }
       // REQ-125 C7:会话发送走 v2 durable 输入队列(session.prompt + delivery),直连
       // promptAsync 退役。运行中 = "queue"(与占位文案「发送后排队」一致,含 Enter 路径);
-      // 空闲省略 delivery(引擎默认 steer,行为等价即时执行)。agent(计划/只读档)是
-      // v2 的会话级属性,发送前经 typed switchAgent 落到会话。
-      if (req.agent) {
+      // 空闲省略 delivery(引擎默认 steer,行为等价即时执行)。
+      //
+      // 档位协议(审计第 2/3 轮:可逆、原子、不污染 durable 队列)——v2 无 per-prompt
+      // agent(SessionInput 只存 prompt+delivery),档位是会话级属性:
+      // ① 空闲:发送前把会话档切到本次期望档;prompt 提交失败立即回滚,不留下已改档的会话。
+      // ② 运行中:切档会立刻作用于正在 drain 的回合 —— 需要改档的排队发送如实拒绝
+      //   (提示等当前任务结束);无档位变化的发送正常排队。
+      // ③ 退出 plan/readonly:期望档回空时,若会话档仍是本 composer 推送的档,切回引擎
+      //   默认档(账本只回滚自己写过的,不碰用户在别处设置的档)。
+      const agentNow = props.sessionDock?.sessionAgent()
+      const pushedBefore = pushedAgentFor(sid)
+      const desiredAgent = req.agent ?? (pushedBefore !== undefined && agentNow === pushedBefore ? DEFAULT_AGENT : undefined)
+      const needsAgentSwitch = desiredAgent !== undefined && desiredAgent !== (agentNow ?? DEFAULT_AGENT)
+      if (needsAgentSwitch && running()) {
+        pushToast({
+          kind: "info",
+          title: t("alpha.composer.agentQueueBlocked"),
+          detail: t("alpha.composer.agentQueueBlockedDetail"),
+        })
+        return
+      }
+      let rollbackAgent: string | undefined
+      if (needsAgentSwitch) {
         const switched = await c.v2.session
-          .switchAgent({ sessionID: sid, agent: req.agent })
+          .switchAgent({ sessionID: sid, agent: desiredAgent })
           .catch(() => ({ error: new Error("switch agent failed") }))
         if ((switched as { error?: unknown } | undefined)?.error !== undefined) {
           pushToast({ kind: "error", title: t("alpha.composer.sendFailed") })
           return
         }
+        rollbackAgent = agentNow ?? DEFAULT_AGENT
+        recordPushedAgent(sid, desiredAgent === DEFAULT_AGENT ? null : desiredAgent)
       }
       const admitted = await c.v2.session
         .prompt({
           sessionID: sid,
-          prompt: buildPromptInput({ text: body, worktree: dir, mentions: mentions(), attachments: attachments() }),
+          prompt: buildPromptInput({ text: body, mentions: mentions(), attachments: attachments() }),
           ...(running() ? { delivery: "queue" as const } : {}),
         })
         .catch(() => undefined)
       if (admitted === undefined || admitted.error !== undefined || !admitted.data) {
+        if (rollbackAgent !== undefined) {
+          // 提交失败 → 回滚档位;回滚也失败时账本保持与真实会话档一致(下次发送经账本自愈),
+          // 失败本身已如实提示,不静默。
+          const rolled = await c.v2.session
+            .switchAgent({ sessionID: sid, agent: rollbackAgent })
+            .catch(() => ({ error: new Error("switch agent rollback failed") }))
+          if ((rolled as { error?: unknown } | undefined)?.error === undefined) {
+            recordPushedAgent(sid, pushedBefore ?? null)
+          }
+        }
         pushToast({ kind: "error", title: t("alpha.composer.sendFailed") })
         return
       }

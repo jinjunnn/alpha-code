@@ -61,6 +61,8 @@ const {
   composerModelProjection,
   composerModelSuspended,
   resetComposerModelProjection,
+  resetPushedAgents,
+  setComposerAgent,
   setComposerModel,
 } = await import(
   "../src/renderer/alpha-ui/composer-state"
@@ -208,6 +210,8 @@ afterEach(() => {
   else process.env.OPENCODE_CONFIG_DIR = savedOpencodeConfigDir
   document.body.replaceChildren()
   setComposerModel(null)
+  setComposerAgent(null)
+  resetPushedAgents()
   resetComposerModelProjection()
 })
 afterAll(() => GlobalRegistrator.unregister())
@@ -786,11 +790,13 @@ describe("AlphaComposer v2 durable send + abort honesty (REQ-125 C7 audit round 
     switch: async () => {},
   })
 
-  function fakeSessionSdk(overrides?: { abort?: () => Promise<unknown> }) {
+  function fakeSessionSdk(overrides?: { abort?: () => Promise<unknown>; promptError?: () => boolean }) {
     const prompts: Array<Record<string, unknown>> = []
     const promptAsyncCalls: unknown[] = []
-    const agentSwitches: unknown[] = []
+    const agentSwitches: Array<{ sessionID: string; agent: string }> = []
     const abortCalls: unknown[] = []
+    // 引擎侧会话档回声:switchAgent 落档后,typed session info 会读到它(sessionAgent 基准)。
+    let engineAgent: string | undefined
     const client = {
       command: { list: async () => ({ data: [] }) },
       session: {
@@ -807,16 +813,18 @@ describe("AlphaComposer v2 durable send + abort honesty (REQ-125 C7 audit round 
         session: {
           prompt: async (args: Record<string, unknown>) => {
             prompts.push(args)
+            if (overrides?.promptError?.()) return { error: { status: 500 } }
             return { data: { id: "msg_admitted", admittedSeq: prompts.length, delivery: args.delivery ?? "steer" } }
           },
-          switchAgent: async (args: unknown) => {
+          switchAgent: async (args: { sessionID: string; agent: string }) => {
             agentSwitches.push(args)
+            engineAgent = args.agent
             return {}
           },
         },
       },
     }
-    return { client, prompts, promptAsyncCalls, agentSwitches, abortCalls }
+    return { client, prompts, promptAsyncCalls, agentSwitches, abortCalls, sessionAgent: () => engineAgent }
   }
 
   function sessionMount(sdk: ReturnType<typeof fakeSessionSdk>, running: () => boolean) {
@@ -833,6 +841,7 @@ describe("AlphaComposer v2 durable send + abort honesty (REQ-125 C7 audit round 
           running,
           contextUsage: () => null,
           approvalPending: () => false,
+          sessionAgent: sdk.sessionAgent,
         },
       }),
     )
@@ -895,5 +904,155 @@ describe("AlphaComposer v2 durable send + abort honesty (REQ-125 C7 audit round 
 
     mounted.dispose()
     toastHost.dispose()
+  })
+})
+
+describe("AlphaComposer 档位协议 (REQ-125 C7 audit round 3)", () => {
+  const readyContract = (): ModelContract => ({
+    list: async () => platformModels,
+    current: async () => ({ providerID: catalog.platformProvider.id, id: catalog.platformModels[0]!.id }),
+    switch: async () => {},
+  })
+
+  function fakeSessionSdk(overrides?: { promptError?: () => boolean }) {
+    const prompts: Array<Record<string, unknown>> = []
+    const agentSwitches: Array<{ sessionID: string; agent: string }> = []
+    let engineAgent: string | undefined
+    const client = {
+      command: { list: async () => ({ data: [] }) },
+      session: {
+        promptAsync: async () => ({}),
+        abort: async () => ({}),
+      },
+      v2: {
+        session: {
+          prompt: async (args: Record<string, unknown>) => {
+            prompts.push(args)
+            if (overrides?.promptError?.()) return { error: { status: 500 } }
+            return { data: { id: "msg_admitted", admittedSeq: prompts.length } }
+          },
+          switchAgent: async (args: { sessionID: string; agent: string }) => {
+            agentSwitches.push(args)
+            engineAgent = args.agent
+            return {}
+          },
+        },
+      },
+    }
+    return { client, prompts, agentSwitches, sessionAgent: () => engineAgent }
+  }
+
+  function agentMount(sdk: ReturnType<typeof fakeSessionSdk>, running: () => boolean) {
+    const sessionProjects = { ...projects, sdk: () => sdk.client as never } satisfies AlphaProjectsApi
+    return mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "session",
+        projects: sessionProjects,
+        directory: () => "/A",
+        sessionID: () => "A",
+        command,
+        modelContract: readyContract(),
+        sessionDock: {
+          running,
+          contextUsage: () => null,
+          approvalPending: () => false,
+          sessionAgent: sdk.sessionAgent,
+        },
+      }),
+    )
+  }
+
+  function typeText(host: HTMLElement, value: string) {
+    const textarea = host.querySelector("textarea")!
+    textarea.value = value
+    textarea.dispatchEvent(new InputEvent("input", { bubbles: true, data: value }))
+    return textarea
+  }
+
+  function pressEnter(textarea: HTMLTextAreaElement) {
+    textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+  }
+
+  async function waitReady(host: HTMLElement, text: string) {
+    const textarea = typeText(host, text)
+    await waitFor(() => expect(host.querySelector<HTMLButtonElement>(".a-comp-send")!.disabled).toBe(false))
+    return textarea
+  }
+
+  test("prompt 提交失败:档位切换立即回滚,会话档不残留(症状①)", async () => {
+    installApi()
+    let failPrompt = true
+    const sdk = fakeSessionSdk({ promptError: () => failPrompt })
+    const mounted = agentMount(sdk, () => false)
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+    setComposerAgent("plan")
+
+    const textarea = await waitReady(mounted.host, "按计划来")
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.prompts).toHaveLength(1))
+    // 先切 plan,提交失败后立即滚回默认档 —— 会话档位与发送前一致。
+    await waitFor(() => expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan", "build"]))
+    expect(sdk.sessionAgent()).toBe("build")
+    // 失败不吞输入:正文保留,可修正重发。
+    expect((mounted.host.querySelector("textarea") as HTMLTextAreaElement).value).toBe("按计划来")
+
+    // 修复后重发:重新落 plan 档并提交成功。
+    failPrompt = false
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.prompts).toHaveLength(2))
+    await waitFor(() => expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan", "build", "plan"]))
+    mounted.dispose()
+  })
+
+  test("运行中需要改档的发送如实拒绝:零切档零提交,当前 drain 档位不被污染(症状②)", async () => {
+    installApi()
+    const { ToastViewport } = await import("../src/renderer/alpha-ui/Toast")
+    const sdk = fakeSessionSdk()
+    const mounted = agentMount(sdk, () => true)
+    const toastHost = mount(() => createComponent(ToastViewport, {}))
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+    setComposerAgent("plan")
+
+    const textarea = typeText(mounted.host, "排队执行")
+    pressEnter(textarea)
+    await waitFor(() => expect(document.body.textContent).toContain(zh["alpha.composer.agentQueueBlocked"]))
+    expect(sdk.agentSwitches).toEqual([])
+    expect(sdk.prompts).toEqual([])
+
+    // 无档位变化的排队发送不受影响:delivery=queue 且依旧零切档。
+    setComposerAgent(null)
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.prompts).toHaveLength(1))
+    expect(sdk.prompts[0]).toMatchObject({ delivery: "queue" })
+    expect(sdk.agentSwitches).toEqual([])
+    mounted.dispose()
+    toastHost.dispose()
+  })
+
+  test("退出 plan 后首次发送把会话档收回默认;账本只回滚自己推送的档(症状③)", async () => {
+    installApi()
+    const sdk = fakeSessionSdk()
+    const mounted = agentMount(sdk, () => false)
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+
+    setComposerAgent("plan")
+    let textarea = await waitReady(mounted.host, "先按计划来")
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.prompts).toHaveLength(1))
+    expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"])
+
+    // 退出 plan:下一次普通发送先把会话档收回引擎默认,旧档不残留。
+    setComposerAgent(null)
+    textarea = await waitReady(mounted.host, "普通消息")
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.prompts).toHaveLength(2))
+    expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan", "build"])
+
+    // 已在默认档:再次普通发送零切档(幂等,不打扰用户在别处设置的档)。
+    textarea = await waitReady(mounted.host, "再来一条")
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.prompts).toHaveLength(3))
+    expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan", "build"])
+    mounted.dispose()
   })
 })

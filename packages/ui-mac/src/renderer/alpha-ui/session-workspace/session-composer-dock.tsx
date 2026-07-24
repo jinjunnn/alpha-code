@@ -163,6 +163,11 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
     running,
     contextUsage: usage,
     approvalPending: () => approval() !== undefined,
+    // 档位协议的比对基准:typed session info 的会话当前档(undefined = 引擎默认)。
+    sessionAgent: () => {
+      const bound = identity()
+      return bound ? serverSync().session.data.info[bound.sessionID]?.agent : undefined
+    },
     onSlashCommand: (capture: ComposerSlashCapture) => {
       const bound = identity()
       if (!bound || bound.sessionID !== capture.sessionID || bound.directory !== capture.directory) return

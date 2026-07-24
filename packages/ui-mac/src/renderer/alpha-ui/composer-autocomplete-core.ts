@@ -248,34 +248,39 @@ export type PromptInputPayload = {
   agents?: Array<{ name: string; source?: { start: number; end: number; text: string } }>
 }
 
-/** 会话发送(v2 session.prompt)的 PromptInput 构造:文本 + 仍在正文中的 mentions
- *  (agent → agents 携带 source 偏移;文件 → files 携带 file:// uri,per-segment 编码)+
- *  附件(data: uri)。被编辑掉的 mention 丢弃 —— 与 buildMentionParts 同一判定。 */
+/** v1 prompt 管线对 @agent mention 的合成引导文案(materialization 同文,端到端语义对齐)。 */
+export const AGENT_MENTION_STEER =
+  "Use the above message and context to generate a prompt and call the task tool with subagent: "
+
+/** 会话发送(v2 session.prompt)的 PromptInput 构造(审计第 2 轮 Major 收敛的端到端语义):
+ *  - 附件(data: uri)→ files:v2 媒体管线按 base64 data URL 校验通过,端到端可用;
+ *  - 文件 mention:**不上送 file:// 附件** —— v2 媒体管线只接受 data: 载荷,file:// 会在
+ *    durable admission 之后被 provider 整回合拒绝;路径引用保留在正文,由引擎侧工具按
+ *    权威解析读取(基线 §③.3);
+ *  - agent mention → agents 元数据(durable 入档,供时间线 chip)+ 正文追加与 v1
+ *    materialization 同文的 task/subagent 引导语,调用语义不静默丢失。
+ *  被编辑掉的 mention 丢弃 —— 与 buildMentionParts 同一判定。 */
 export function buildPromptInput(input: {
   text: string
-  worktree: string
   mentions: ReadonlyArray<MentionPart>
   attachments: ReadonlyArray<{ url: string; name: string }>
 }): PromptInputPayload {
   const files: NonNullable<PromptInputPayload["files"]> = []
   const agents: NonNullable<PromptInputPayload["agents"]> = []
+  const steers: string[] = []
   for (const m of input.mentions) {
     const start = input.text.indexOf(m.content)
     if (start < 0) continue
     if (m.type === "agent") {
       agents.push({ name: m.name, source: { start, end: start + m.content.length, text: m.content } })
-      continue
+      steers.push(`${AGENT_MENTION_STEER}${m.name}`)
     }
-    const abs = m.path.startsWith("/") ? m.path : `${input.worktree.replace(/\/$/, "")}/${m.path}`
-    const encoded = abs.split("/").map(encodeURIComponent).join("/")
-    const name = m.path.split("/").pop()
-    files.push({ uri: `file://${encoded}`, ...(name ? { name } : {}) })
   }
   for (const attachment of input.attachments) {
     files.push({ uri: attachment.url, name: attachment.name })
   }
   return {
-    text: input.text,
+    text: steers.length > 0 ? `${input.text}\n\n${steers.join("\n")}` : input.text,
     ...(files.length > 0 ? { files } : {}),
     ...(agents.length > 0 ? { agents } : {}),
   }

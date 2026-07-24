@@ -1066,6 +1066,8 @@ export const dict = {
   "alpha.composer.abort": "Stop",
   "alpha.composer.stopGenerating": "Stop generating",
   "alpha.composer.placeholderQueue": "Generating — keep typing, sends are queued…",
+  "alpha.composer.agentQueueBlocked": "Can't queue a mode change while running",
+  "alpha.composer.agentQueueBlockedDetail": "Plan/read-only modes switch the session agent, which would affect the task in progress. Send again after it finishes.",
   "alpha.composer.placeholderDecision": "Waiting for your decision…",
   "alpha.composer.contextUsage": "Context usage {{percent}}%",
 

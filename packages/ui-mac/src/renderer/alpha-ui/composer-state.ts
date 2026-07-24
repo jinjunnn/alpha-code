@@ -29,6 +29,37 @@ export const READONLY_AGENT = "alpha-readonly"
  *  它们仍可被程序化 prompt(调度器/只读档),隐藏只影响列表。 */
 export const INTERNAL_AGENTS = new Set(["alpha-automation", "alpha-automation-standard", READONLY_AGENT])
 
+/* ── 会话档位推送账本(REQ-125 C7 审计轮:switchAgent 可逆性)──────────────────
+ * v2 引擎无 per-prompt agent(SessionInput 只存 prompt+delivery),档位是会话级属性;
+ * composer 在发送前经 typed switchAgent 落档。本账本只记「composer 自己推送的非默认档」,
+ * 退出 plan/readonly 时据此把会话档收回默认 —— 只回滚自己写过的,不碰用户在别处设置的档。
+ * 有界(I7):超限丢最旧。 */
+
+/** 引擎默认档(core agents.select 的最终回退;composer 的 null 档语义即它)。 */
+export const DEFAULT_AGENT = "build"
+
+const pushedAgents = new Map<string, string>()
+const PUSHED_AGENT_LIMIT = 32
+
+export function recordPushedAgent(sessionID: string, agent: string | null): void {
+  pushedAgents.delete(sessionID)
+  if (agent === null || agent === DEFAULT_AGENT) return
+  pushedAgents.set(sessionID, agent)
+  if (pushedAgents.size > PUSHED_AGENT_LIMIT) {
+    const oldest = pushedAgents.keys().next().value
+    if (oldest !== undefined) pushedAgents.delete(oldest)
+  }
+}
+
+export function pushedAgentFor(sessionID: string): string | undefined {
+  return pushedAgents.get(sessionID)
+}
+
+/** 测试隔离用。 */
+export function resetPushedAgents(): void {
+  pushedAgents.clear()
+}
+
 /* ── signals(模块级 = 所有渲染面共享)──────────────────────────────────────── */
 
 const [model, setModelSignal] = createSignal<ComposerModel | null>(null)

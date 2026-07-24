@@ -1059,6 +1059,8 @@ export const dict = {
   "alpha.composer.abort": "中止",
   "alpha.composer.stopGenerating": "停止生成",
   "alpha.composer.placeholderQueue": "生成中,可继续输入,发送后排队…",
+  "alpha.composer.agentQueueBlocked": "运行中暂不能切换档位排队",
+  "alpha.composer.agentQueueBlockedDetail": "计划/只读档需要切换会话档位,会影响正在执行的任务;等当前任务结束后再发送。",
   "alpha.composer.placeholderDecision": "等待你的决定…",
   "alpha.composer.contextUsage": "上下文用量 {{percent}}%",
   "alpha.autocomplete.agentManagement": "Agent 管理",

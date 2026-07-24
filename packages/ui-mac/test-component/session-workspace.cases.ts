@@ -133,6 +133,40 @@ describe("REQ-125 session workspace real Solid mount", () => {
     claim.resetSessionApprovalClaim()
   })
 
+  test("same-session competing claims resolve to exactly one presenter (token ownership)", async () => {
+    claim.resetSessionApprovalClaim()
+    const [readyA, setReadyA] = solid.createSignal(false)
+    const [readyB, setReadyB] = solid.createSignal(false)
+    const dispose = solid.createRoot((dispose: () => void) => {
+      claim.bindSessionApprovalClaim({ sessionID: () => "ses_x", ready: readyA })
+      claim.bindSessionApprovalClaim({ sessionID: () => "ses_x", ready: readyB })
+      return dispose
+    })
+    await flush()
+    expect(claim.sessionApprovalDockClaimed("ses_x")).toBe(false)
+
+    setReadyA(true)
+    await flush()
+    expect(claim.sessionApprovalDockClaimed("ses_x")).toBe(true)
+
+    // 同会话第二个竞争者就绪:后立者胜,仍恰一个呈现者。
+    setReadyB(true)
+    await flush()
+    expect(claim.sessionApprovalDockClaimed("ses_x")).toBe(true)
+
+    // 先立者退出:它的(迟到)释放只对自己的 token 生效 —— B 仍持权,watcher 不得恢复呈现。
+    setReadyA(false)
+    await flush()
+    expect(claim.sessionApprovalDockClaimed("ses_x")).toBe(true)
+
+    setReadyB(false)
+    await flush()
+    expect(claim.sessionApprovalDockClaimed("ses_x")).toBe(false)
+
+    dispose()
+    claim.resetSessionApprovalClaim()
+  })
+
   test("topbar status renders the approved idle and generating states", async () => {
     const host = mount()
     await flush()
