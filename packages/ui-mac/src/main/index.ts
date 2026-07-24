@@ -7,7 +7,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event } from "electron"
-import { app, BrowserWindow, dialog } from "electron"
+import { app, BrowserWindow, dialog, powerMonitor } from "electron"
 
 import { Deferred, Effect } from "effect"
 import contextMenu from "electron-context-menu"
@@ -105,7 +105,9 @@ import { effectiveFactoryDenied, readBuiltinPolicy } from "./alpha-builtin-polic
 import {
   enableProxy,
   ensureFreshToken,
+  getAuthRenewalTiming,
   getAuthState,
+  getTokenGeneration,
   handleAuthDeepLink,
   initAuthEnv,
   isStoredTokenExpired,
@@ -115,6 +117,18 @@ import {
   startAuth,
 } from "./alpha-auth"
 import { errorOutcome, initStartupTimeline, markStartupTimeline } from "./startup-timeline"
+import {
+  awaitBootRenewalGrace,
+  createAuthRenewalScheduler,
+  createTokenRotationLatch,
+} from "./auth-renewal"
+import {
+  createSidecarRespawnQueue,
+  shouldReloadRenderer,
+  shouldRetryRespawn,
+  type SidecarRespawnReason,
+} from "./sidecar-lifecycle"
+import { createSidecarGenerationState, type SidecarGenerationState } from "./sidecar-generation"
 
 const APP_NAMES: Record<string, string> = {
   dev: "alpha-code",
@@ -132,13 +146,10 @@ const jsCallStackFeature = "DocumentPolicyIncludeJSCallStacksInCrashReports"
 let logger: ReturnType<typeof initLogging>
 let mainWindow: BrowserWindow | null = null
 let server: SidecarListener | null = null
-// B2:当前运行的 sidecar 在 fork 时冻住的 access token 的过期时刻(config {file:} 在加载时解析一次,
-// 之后 main 侧刷新传不进去)。整点 tick 据此做「快过期 → 静默 respawn 换血」的备胎。
-let sidecarTokenExpiresAt: number | undefined
-let authTickCount = 0
 let rendererReloadCount = 0
+let sidecarTokenGeneration = 0
 const markSidecarTokenSnapshot = () => {
-  sidecarTokenExpiresAt = getAuthState().expiresAt
+  sidecarTokenGeneration = getTokenGeneration()
 }
 
 const pendingDeepLinks: string[] = []
@@ -200,8 +211,32 @@ let selfHeal = initialSelfHealState()
 let selfHealTimer: NodeJS.Timeout | null = null
 let engineRunawayGuard = initialEngineRunawayGuardState()
 let engineRunawayTimer: NodeJS.Timeout | null = null
-let requestSidecarRespawn: (() => Promise<boolean>) | null = null
+let requestSidecarRespawn: ((reason: SidecarRespawnReason) => Promise<boolean>) | null = null
 let recoveryService: RecoveryService | null = null
+const sidecarGeneration = createSidecarGenerationState()
+
+function publishSidecarGeneration(next: SidecarGenerationState) {
+  sidecarGeneration.update(next)
+  markStartupTimeline("main.sidecar.generation.emit", {
+    generation: next.generation,
+    phase: next.status,
+    reason: next.reason,
+  })
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("sidecar-generation", next)
+}
+
+const tokenRotation = createTokenRotationLatch({
+  forkedGeneration: () => sidecarTokenGeneration,
+  canRespawn: () => Boolean(server && requestSidecarRespawn && !quittingApp),
+  respawn: (reason) => requestSidecarRespawn?.(reason) ?? Promise.resolve(false),
+  mark: (result, trigger, outcome) =>
+    markStartupTimeline("main.auth.rotation", {
+      generation: result.generation,
+      reason: trigger,
+      renewal: result.outcome,
+      outcome,
+    }),
+})
 
 function recordDanglingSweep(context: "boot" | "respawn", outcome: DanglingSweepOutcome) {
   if (outcome.stripped.length > 0)
@@ -237,7 +272,7 @@ function handleSidecarExit(gen: number, code: number) {
       effects: {
         [RECOVERY_ACTIONS.retryEngine]: async () => {
           selfHeal = initialSelfHealState()
-          const applied = await requestSidecarRespawn?.()
+          const applied = await requestSidecarRespawn?.("structural")
           return applied ? { applied: true } : { applied: false, retryable: true }
         },
       },
@@ -249,7 +284,7 @@ function handleSidecarExit(gen: number, code: number) {
   if (selfHealTimer) clearTimeout(selfHealTimer)
   selfHealTimer = setTimeout(() => {
     selfHealTimer = null
-    void requestSidecarRespawn?.()
+    void requestSidecarRespawn?.("structural")
   }, plan.delayMs)
 }
 
@@ -311,7 +346,7 @@ function armEngineRunawayMeter(gen: number) {
         [RECOVERY_ACTIONS.retryEngine]: async () => {
           engineRunawayGuard = resetEngineRunawayGuard()
           selfHeal = initialSelfHealState()
-          const applied = await requestSidecarRespawn?.()
+          const applied = await requestSidecarRespawn?.("structural")
           return applied ? { applied: true } : { applied: false, retryable: true }
         },
       },
@@ -340,15 +375,17 @@ function ensureLoopbackNoProxy() {
   upsert("no_proxy")
 }
 
-function observeEnsureFreshToken(path: "boot" | "hourly") {
+function observeEnsureFreshToken(path: "boot" | "scheduled") {
   const started = performance.now()
   markStartupTimeline(`main.auth.${path}.ensure.start`)
   const refreshing = ensureFreshToken()
   void refreshing.then(
-    () =>
+    (result) =>
       markStartupTimeline(`main.auth.${path}.ensure.end`, {
         durationMs: performance.now() - started,
         outcome: "ok",
+        result: result.outcome,
+        generation: result.generation,
       }),
     (error) =>
       markStartupTimeline(`main.auth.${path}.ensure.end`, {
@@ -573,6 +610,8 @@ const main = Effect.gen(function* () {
   }
 
   const serverReady = Deferred.makeUnsafe<ServerReadyData, unknown>()
+  let authScheduler: ReturnType<typeof createAuthRenewalScheduler> | null = null
+  let pendingAuthStructuralRespawn = false
 
   yield* Effect.promise(() => app.whenReady())
   markStartupTimeline("main.app.ready")
@@ -589,6 +628,27 @@ const main = Effect.gen(function* () {
   // 过 sidecar env 白名单;密钥不进 sidecar env,由 spawnLocalServer 在 fork 时经 syncSecretFiles
   // 落入 {file:} 通道(alpha-secret-files.ts)。
   initAuthEnv(app.getPath("userData"))
+  // 续期换血入口必须在任何网络续期开始前安装。冷启动时 structural 变化先记账；首 fork 若已
+  // 采用当前 generation 则自然消解，否则 respawn 入口建成后补一次 structural 换血。
+  setAuthDeps({
+    getWindow: () => mainWindow,
+    respawn: () => {
+      if (requestSidecarRespawn) {
+        void requestSidecarRespawn("structural")
+        return
+      }
+      pendingAuthStructuralRespawn = true
+    },
+    onRenewed: (result) => void tokenRotation.accept(result, "renewal"),
+    onChanged: () => authScheduler?.rearm("auth-change"),
+  })
+  // A′:过期 token 在恢复存储后立即开始续期和 1.2s hard grace，和迁移、配置预检、端口分配
+  // 并行。到首 fork 点只消费这个已运行的 race，绝不重新起一段宽限。
+  const storedTokenExpired = isStoredTokenExpired()
+  markStartupTimeline("main.auth.boot.token_check", { expired: storedTokenExpired })
+  const bootRenewalRace = storedTokenExpired
+    ? awaitBootRenewalGrace(observeEnsureFreshToken("boot"))
+    : null
   // Load alpha's encrypted BYOK key vault (migrates any key off opencode auth.json once) and bridge
   // each stored key into its provider's keyEnv in MAIN's env BEFORE the sidecar forks — that's the
   // source syncSecretFiles mirrors into the {file:} channel that buildAlphaModelConfig (sidecar)
@@ -722,6 +782,7 @@ const main = Effect.gen(function* () {
   registerIpcHandlers({
     tabsPrecleanDone: tabsPreclean.done,
     killSidecar: () => killSidecar(),
+    sidecarGenerationState: () => sidecarGeneration.get(),
     relaunch,
     awaitInitialization: Effect.fnUntraced(
       function* () {
@@ -800,24 +861,6 @@ const main = Effect.gen(function* () {
   updateTimer.unref()
   app.once("will-quit", () => clearInterval(updateTimer))
 
-  // B2:token 保活 tick(每小时)。到提前量(7d token 提前 24h,见 alpha-auth-clock.ts)就轮换刷新;
-  // 备胎:运行中 sidecar 在 fork 时冻住的 token 快死(<30min,即 app 连续跑满一个 token 寿命)时,
-  // 续期 + 静默 respawn 换血——7d 寿命下极少发生,发生时接受一次界面重载并留日志。
-  const authTimer = setInterval(
-    () => {
-      void (async () => {
-        markStartupTimeline("main.auth.hourly_tick.fire", { count: ++authTickCount })
-        await observeEnsureFreshToken("hourly").catch(() => {})
-        if (sidecarTokenExpiresAt && sidecarTokenExpiresAt - Date.now() < 30 * 60 * 1000) {
-          logger.log("B2: sidecar's fork-time token near expiry — quiet respawn to rotate")
-          await respawnSidecar()
-        }
-      })()
-    },
-    60 * 60 * 1000,
-  )
-  authTimer.unref()
-  app.once("will-quit", () => clearInterval(authTimer))
   yield* Effect.promise(() => startNetLog()).pipe(
     Effect.catch((error) =>
       Effect.sync(() => {
@@ -859,13 +902,23 @@ const main = Effect.gen(function* () {
     ensureLoopbackNoProxy()
     useEnvProxy()
 
-    // B2:存储的 access token 已过期(app 停机超过 token 寿命)→ fork 前 await 续期一次(fetch 10s
-    // 超时封顶)。死 token fork 出的 sidecar 每次模型调用都 401,先续再 fork 才有意义;仅过期才阻塞
-    // (未过期时的近期续期由整点 tick 异步做,不碰启动路径——B1 纪律)。
-    const storedTokenExpired = isStoredTokenExpired()
-    markStartupTimeline("main.auth.boot.token_check", { expired: storedTokenExpired })
-    if (storedTokenExpired) yield* Effect.promise(() => observeEnsureFreshToken("boot").catch(() => {}))
-    markSidecarTokenSnapshot()
+    // 快路径拿新 token 单 fork；慢路径先让 local-dir/BYOK 起服务，续期在后台完成后只经 token
+    // generation latch 请求一次换血。
+    if (bootRenewalRace) {
+      const race = yield* Effect.promise(() => bootRenewalRace)
+      markStartupTimeline("main.auth.boot.grace", {
+        outcome: race.completed ? race.result.outcome : "timeout",
+      })
+      if (!race.completed)
+        void race.pending.then(
+          (result) => tokenRotation.accept(result, "boot-grace"),
+          (error) =>
+            markStartupTimeline("main.auth.rotation", {
+              reason: "boot-grace",
+              outcome: errorOutcome(error),
+            }),
+        )
+    }
 
     // S17 T3(C17+B14)DB 安全带预检:水位比对 → DB 超前阻断 / 将前进先备份 / 损坏走恢复
     // The DB safety belt runs only on the initial spawn (not respawn: startup already verified,
@@ -902,7 +955,9 @@ const main = Effect.gen(function* () {
 
     logger.log("spawning sidecar", { url })
     const spawnGen = ++sidecarGen
+    publishSidecarGeneration({ status: "recovering", generation: spawnGen, reason: "boot" })
     selfHeal = noteSpawn(selfHeal, Date.now())
+    markSidecarTokenSnapshot()
     const { listener, health } = yield* Effect.promise(() => {
       const started = performance.now()
       markStartupTimeline("main.sidecar.boot.fork.start", { generation: spawnGen })
@@ -942,14 +997,17 @@ const main = Effect.gen(function* () {
       void wslServers.initialize().catch((error) => logger.error("wsl server initialization failed", error))
     }
 
-    yield* Effect.promise(() => health.wait).pipe(
-      Effect.timeout("30 seconds"),
-      Effect.catch((e) =>
-        Effect.sync(() => {
-          logger.error("sidecar health check failed", e.toString())
-        }),
-      ),
+    const healthy = yield* Effect.promise(() =>
+      Promise.race([
+        health.wait.then(
+          () => true,
+          () => false,
+        ),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 30_000)),
+      ]),
     )
+    if (healthy) publishSidecarGeneration({ status: "ready", generation: spawnGen, reason: "boot" })
+    else logger.error("sidecar health check failed")
 
     logger.log("loading task finished")
   }).pipe(forwardInitializationFailure(serverReady), Effect.forkChild)
@@ -972,20 +1030,17 @@ const main = Effect.gen(function* () {
       .catch((error) => logger.warn("[req063] global ecosystem gate failed (non-fatal)", error))
   }
 
-  // In-place sidecar respawn — NOT a full app relaunch (ad-hoc-signed builds quit on relaunch, ADR-017).
-  // Re-forks on the SAME host/port/password with freshly-derived state (login set ALPHA_BASE_URL +
-  // ALPHA_API_KEY in main's env → fork-time syncSecretFiles refreshes the {file:} channel →
-  // buildAlphaModelConfig injects provider.alpha), then reloads the renderer so it
-  // reconnects (url/password unchanged → awaitInitialization stays valid) and re-fetches providers →
-  // the proxy activates with zero clicks and no restart.
-  const doRespawnSidecar = async () => {
+  // In-place sidecar respawn — NOT a full app relaunch. Both reasons re-fork on the same
+  // host/port/password and refresh fork-time {file:} materialization. Structural changes keep the
+  // historical renderer reload; token-only rotation relies on generation notification + surgical
+  // SDK/SSE reconnection so the renderer tree remains mounted.
+  const doRespawnSidecar = async (reason: SidecarRespawnReason) => {
     if (quittingApp) return false
     try {
-      logger.log("respawning sidecar (proxy activation)")
+      logger.log("respawning sidecar", { reason })
       // REQ-001:respawn 前刷新 edition 白名单缓存(登录刚建立 → 按租户 edition 收窄;8s 超时内置,
       // 失败保留 last-known/内置 snapshot,不阻断 respawn)。
       await syncLiveAllowlist(app.getPath("userData")).catch(() => {})
-      markSidecarTokenSnapshot() // B2:新 fork 冻住的是当前 token —— 重新打点
       const lockedSweep = withConfigWriteLock(() => ({
         acquired: true as const,
         outcome: sweepEngineConfigDanglingUnlocked({
@@ -995,6 +1050,10 @@ const main = Effect.gen(function* () {
         }),
       }))
       if (!("acquired" in lockedSweep)) {
+        if (!shouldRetryRespawn(reason)) {
+          logger.error(`[req053-dangling-sweep] token rotation sweep skipped; keeping degraded state: ${lockedSweep.reason}`)
+          return false
+        }
         const retryDelayMs = Math.min(1000 * 2 ** selfHeal.attempts, SELF_HEAL_MAX_DELAY_MS)
         logger.error(
           `[req053-dangling-sweep] respawn sweep skipped; retrying this spawn in ${retryDelayMs}ms: ${lockedSweep.reason}`,
@@ -1002,7 +1061,7 @@ const main = Effect.gen(function* () {
         if (selfHealTimer) clearTimeout(selfHealTimer)
         selfHealTimer = setTimeout(() => {
           selfHealTimer = null
-          void requestSidecarRespawn?.()
+          void requestSidecarRespawn?.(reason)
         }, retryDelayMs)
         return false
       }
@@ -1013,13 +1072,15 @@ const main = Effect.gen(function* () {
         })
         return false
       }
+      const spawnGen = ++sidecarGen
+      publishSidecarGeneration({ status: "recovering", generation: spawnGen, reason })
       await killSidecar()
       ensureLoopbackNoProxy()
       useEnvProxy()
-      const spawnGen = ++sidecarGen
+      markSidecarTokenSnapshot()
       selfHeal = noteSpawn(selfHeal, Date.now())
       const started = performance.now()
-      markStartupTimeline("main.sidecar.respawn.fork.start", { generation: spawnGen })
+      markStartupTimeline("main.sidecar.respawn.fork.start", { generation: spawnGen, reason })
       const spawning = spawnLocalServer(hostname, port, password, {
         userDataPath: app.getPath("userData"),
         onStdout: (message) => writeLog("server", "stdout", { message }),
@@ -1032,12 +1093,14 @@ const main = Effect.gen(function* () {
           markStartupTimeline("main.sidecar.respawn.fork.end", {
             durationMs: performance.now() - started,
             generation: spawnGen,
+            reason,
             outcome: "ok",
           }),
         (error) =>
           markStartupTimeline("main.sidecar.respawn.fork.end", {
             durationMs: performance.now() - started,
             generation: spawnGen,
+            reason,
             outcome: errorOutcome(error),
           }),
       )
@@ -1053,14 +1116,24 @@ const main = Effect.gen(function* () {
         ),
         new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 20000)),
       ])
+      if (healthy) publishSidecarGeneration({ status: "ready", generation: spawnGen, reason })
       if (healthy && mainWindow && !mainWindow.isDestroyed()) {
-        markStartupTimeline("main.renderer.reload", {
-          candidate: "C",
-          count: ++rendererReloadCount,
-          trigger: "sidecar-respawn",
-        })
-        mainWindow.webContents.reload()
-        logger.log("sidecar respawned + renderer reloaded")
+        if (shouldReloadRenderer(reason)) {
+          markStartupTimeline("main.renderer.reload", {
+            candidate: "C",
+            count: ++rendererReloadCount,
+            trigger: "sidecar-respawn",
+          })
+          mainWindow.webContents.reload()
+          logger.log("sidecar respawned + renderer reloaded")
+        } else {
+          markStartupTimeline("main.renderer.reload.skipped", {
+            generation: spawnGen,
+            reason,
+            outcome: "continuity",
+          })
+          logger.log("sidecar token rotated without renderer reload")
+        }
       } else if (!healthy) {
         logger.error("sidecar respawned but health check failed — skipping renderer reload")
       }
@@ -1070,36 +1143,44 @@ const main = Effect.gen(function* () {
       return false
     }
   }
-  // B5(NEW-4):respawn 互斥 + 合并。触发面已扩大(登录/登出/enableProxy/setAuthMode/B2 tick/
-  // B21 改键),并发触发会两个 fork 抢同一端口、renderer 双重 reload。单飞:在途时再触发只标记
-  // 一次排队；共享 Promise 覆盖补跑轮次(拿到最新 env/密钥/provider 状态,不会丢最后一次变更)。
-  let respawning: Promise<boolean> | null = null
-  let respawnQueued = false
-  const drainRespawns = async (): Promise<boolean> => {
-    respawnQueued = false
-    const healthy = await doRespawnSidecar()
-    if (!respawnQueued) return healthy
-    return drainRespawns()
-  }
-  const respawnSidecar = (): Promise<boolean> => {
-    if (respawning) {
-      respawnQueued = true
-      return respawning
-    }
-    respawning = drainRespawns().finally(() => (respawning = null))
-    return respawning
-  }
+  // 单飞 + 一轮排队合并；排队中的 token-only 遇 structural 必升级，不能把需要 reload 的
+  // 配置/身份变化误吞成连续性换血。
+  const respawnSidecar = createSidecarRespawnQueue(doRespawnSidecar)
 
   requestSidecarRespawn = respawnSidecar // B5:崩溃自愈复用同一互斥/合并入口
-  setAuthDeps({ getWindow: () => mainWindow, respawn: respawnSidecar })
-  setProviderLifecycleDeps({ refreshRuntime: respawnSidecar })
+  if (pendingAuthStructuralRespawn && sidecarTokenGeneration !== getTokenGeneration())
+    void respawnSidecar("structural")
+  pendingAuthStructuralRespawn = false
+  setProviderLifecycleDeps({ refreshRuntime: () => respawnSidecar("structural") })
   // B21:BYOK 改键/删键即时生效 —— 持久化成功后重注 env(自有注入权威覆盖/清除,用户值不动)+
   // respawn(fork 时 A6 syncSecretFiles 把新 env 镜像进 {file:} 通道 → 新 sidecar 即用新 key)。
   setByokKeyDeps({
     onChanged: () => {
       injectByokKeysIntoEnv()
-      void respawnSidecar()
+      void respawnSidecar("structural")
     },
+  })
+  authScheduler = createAuthRenewalScheduler({
+    timing: getAuthRenewalTiming,
+    renew: () => observeEnsureFreshToken("scheduled"),
+    onArm: (reason, delayMs) =>
+      markStartupTimeline("main.auth.scheduler.arm", {
+        reason,
+        ...(delayMs === null ? { outcome: "idle" } : { delayMs, outcome: "armed" }),
+      }),
+    onResult: (result) =>
+      markStartupTimeline("main.auth.scheduler.result", {
+        generation: result.generation,
+        outcome: result.outcome,
+      }),
+  })
+  const onResume = () => authScheduler?.rearm("resume")
+  powerMonitor.on("resume", onResume)
+  authScheduler.rearm("startup")
+  void tokenRotation.flush()
+  app.once("will-quit", () => {
+    powerMonitor.removeListener("resume", onResume)
+    authScheduler?.stop()
   })
   if (mainWindow) {
     createMenu({

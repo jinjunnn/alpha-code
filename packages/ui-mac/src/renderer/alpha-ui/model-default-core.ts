@@ -20,8 +20,8 @@ export type ResolvedModel = ModelRef & { name: string; variants: string[] }
 
 export type ModelResolveCtx = {
   loggedIn: boolean
-  /** 账户可用于代理计费:会员 active 或钱包余额 > 0。summary 读取失败时调用方不进入解析链，
-   *  外层保持 error 并阻止提交；只有明确为空账户时才在此传 false。 */
+  /** 账户可用于代理计费:会员 active 或钱包余额 > 0。summary 未验证或恢复中时只能传 false；
+   *  该状态只门控平台代理,不能阻止已验证的本地/BYOK 目录进入解析链。 */
   accountUsable: boolean
   platformProviderId: string | null
   /** 引擎实际注册的模型;空数组 = 引擎/sdk 未就绪(冷启动常态),解析返回 wait。 */

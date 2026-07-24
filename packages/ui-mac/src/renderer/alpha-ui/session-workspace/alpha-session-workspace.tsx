@@ -2,6 +2,8 @@ import { ServerConnection, type MaybePreloadableComponent, useServerSDK, useServ
 import { useLocation } from "@solidjs/router"
 import { createContext, createMemo, type ParentProps, useContext } from "solid-js"
 import { parseRoute } from "../../../shared/route-manifest"
+import { SessionRailReviewPanel } from "../session-rail/review/review-panel"
+import { useAlphaTerminalEngineChannel } from "../session-rail/terminal/terminal-engine-adapter"
 import { AlphaSessionTimeline } from "../session-timeline/session-timeline"
 import { SurfaceBoundary } from "../surface-boundary"
 import { sameSessionIdentity, sessionLiveSnapshotOf } from "./session-workspace-core"
@@ -38,11 +40,19 @@ export function AlphaSessionWorkspace() {
     current,
     accepts: (identity) => sameSessionIdentity(identity, current()?.identity),
   }
+  // #554:真引擎 channel(I8 三元身份铸造)。TerminalProvider 随上游 SessionProviders 包住
+  // 本叶,适配器可直接消费;引擎或会话身份缺席时为 undefined,面板 fail-closed 空态。
+  const terminalChannel = useAlphaTerminalEngineChannel(current)
 
   return (
     <SurfaceBoundary surface="session">
       <SessionLiveProvider value={live}>
-        <SessionWorkspaceShell live={live} timeline={<AlphaSessionTimeline />} />
+        <SessionWorkspaceShell
+          live={live}
+          timeline={<AlphaSessionTimeline />}
+          rail={{ review: () => <SessionRailReviewPanel live={live} /> }}
+          terminalChannel={terminalChannel}
+        />
       </SessionLiveProvider>
     </SurfaceBoundary>
   )
