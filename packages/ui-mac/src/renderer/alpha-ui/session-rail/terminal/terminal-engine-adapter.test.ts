@@ -214,6 +214,6 @@ describe("REQ-125 #554 I1 whitelist channel static ratchets", () => {
       'import { useAlphaTerminalEngineChannel } from "../session-rail/terminal/terminal-engine-adapter"',
     )
     expect(workspaceSource).toContain("const terminalChannel = useAlphaTerminalEngineChannel(current)")
-    expect(workspaceSource).toContain("<SessionWorkspaceShell live={live} terminalChannel={terminalChannel} />")
+    expect(workspaceSource).toContain("terminalChannel={terminalChannel}")
   })
 })

@@ -4,9 +4,9 @@ import { byokEngineId } from "../../shared/alpha-model-types"
 import type { ComposerModel } from "./composer-state"
 import { t } from "../i18n"
 
-export type AccountState = "member" | "balance" | "empty" | "out" | "loading" | "error"
-export type ModelListState = "loading" | "ready" | "failed"
-export type KeyStatusState = "loading" | "ready" | "error"
+export type AccountState = "member" | "balance" | "empty" | "out" | "loading" | "recovering" | "failed"
+export type ModelListState = "loading" | "recovering" | "ready" | "failed"
+export type KeyStatusState = "loading" | "ready" | "failed"
 export type ModelAvailability = "available" | "needs-login" | "needs-credit" | "needs-key" | "loading" | "unavailable"
 
 export type ModelPickerRow = {
@@ -116,18 +116,22 @@ export function buildModelPickerRows(input: {
       ]
     }
     if (input.listState !== "ready") {
-      return [
-        {
-          key: `${provider.id}:loading`,
-          group: "byok",
-          model: { id: provider.models[0] ?? "", providerID: provider.id, name: provider.name, variants: [] },
-          providerName: provider.name,
-          pico: provider.pico,
-          reasoning: false,
-          availability: input.listState === "loading" ? "loading" : "unavailable",
-          reason: input.listState === "loading" ? t("alpha.model.configuredLoading") : t("alpha.model.configuredUnavailable"),
-        },
-      ]
+      const recovering = input.listState === "recovering"
+      return (recovering ? provider.models : [provider.models[0] ?? ""]).map((id) => ({
+        key: `${provider.id}:${id || "loading"}`,
+        group: "byok",
+        model: { id, providerID: provider.id, name: id || provider.name, variants: [] },
+        providerName: provider.name,
+        pico: provider.pico,
+        reasoning: false,
+        availability: input.listState === "failed" ? ("unavailable" as const) : ("loading" as const),
+        reason:
+          input.listState === "failed"
+            ? t("alpha.model.configuredUnavailable")
+            : recovering
+              ? t("alpha.model.syncing")
+              : t("alpha.model.configuredLoading"),
+      }))
     }
     return provider.models.map((id): ModelPickerRow => {
       // The engine injects BYOK nodes under `<id>-byok` (byokEngineId) to dodge the models.dev
@@ -156,14 +160,14 @@ export function buildModelPickerRows(input: {
     ...input.catalog.byokProviders.map((provider) => provider.id),
   ])
   const custom =
-    input.keyStatusState === "ready" && input.listState === "ready"
+    input.keyStatusState === "ready" && input.listState !== "failed"
       ? Object.entries(input.keyStatus)
           .filter(([providerID, status]) => status.configured && !catalogProviderIDs.has(providerID))
           .flatMap(([providerID]): ModelPickerRow[] =>
             input.models
               .filter((model) => model.providerID === providerID)
               .map((model) => {
-                const available = model.enabled && model.status !== "deprecated"
+                const available = input.listState === "ready" && model.enabled && model.status !== "deprecated"
                 return {
                   key: `${providerID}:${model.id}`,
                   group: "byok",
@@ -176,8 +180,13 @@ export function buildModelPickerRows(input: {
                   providerName: providerID,
                   pico: { letter: providerID.slice(0, 1).toUpperCase() || "?", color: "var(--a-accent-solid)" },
                   reasoning: false,
-                  availability: available ? "available" : "unavailable",
-                  reason: available ? undefined : t("alpha.model.unavailable"),
+                  availability: available ? "available" : input.listState === "recovering" ? "loading" : "unavailable",
+                  reason:
+                    available
+                      ? undefined
+                      : input.listState === "recovering"
+                        ? t("alpha.model.syncing")
+                        : t("alpha.model.unavailable"),
                 }
               }),
           )
@@ -193,9 +202,14 @@ function platformAvailability(
 ): { kind: ModelAvailability; reason?: string } {
   if (account === "out") return { kind: "needs-login", reason: t("alpha.model.needsLogin") }
   if (account === "empty") return { kind: "needs-credit", reason: t("alpha.model.needsCredit") }
-  if (account === "loading") return { kind: "loading", reason: t("alpha.model.accountLoading") }
-  if (account === "error") return { kind: "unavailable", reason: t("alpha.model.accountUnavailable") }
+  if (account === "loading" || account === "recovering")
+    return {
+      kind: "loading",
+      reason: account === "recovering" ? t("alpha.model.syncing") : t("alpha.model.accountLoading"),
+    }
+  if (account === "failed") return { kind: "unavailable", reason: t("alpha.model.accountUnavailable") }
   if (list === "loading") return { kind: "loading", reason: t("alpha.model.listLoading") }
+  if (list === "recovering") return { kind: "loading", reason: t("alpha.model.syncing") }
   if (list === "failed") return { kind: "unavailable", reason: t("alpha.model.listUnavailable") }
   if (!model?.enabled || model.status === "deprecated") return { kind: "unavailable", reason: t("alpha.model.unavailable") }
   return { kind: "available" }

@@ -1,4 +1,4 @@
-import { createSignal, type Accessor, Show } from "solid-js"
+import { createSignal, type Accessor, type JSX, Show } from "solid-js"
 import { t } from "../../i18n"
 import { acceptedEngineChannel, type AlphaTerminalEngineChannel } from "../session-rail/terminal/terminal-rail-core"
 import { TerminalRailPanel } from "../session-rail/terminal/terminal-rail-panel"
@@ -8,6 +8,9 @@ export interface AlphaSessionLiveContext {
   current: Accessor<AlphaSessionLiveSnapshot | undefined>
   accepts: (identity: AlphaSessionIdentity) => boolean
 }
+
+/** Right-rail panel slots; each C-ticket wires its panel here (C2: review). */
+export type SessionWorkspaceRailSlots = Partial<Record<"review" | "terminal", () => JSX.Element>>
 
 function WorkspaceTopbar(props: {
   live: AlphaSessionLiveContext
@@ -75,7 +78,8 @@ function WorkspaceTopbar(props: {
 
 export function SessionWorkspaceShell(props: {
   live: AlphaSessionLiveContext
-  /** 真引擎 channel(#554 适配器投影;缺席 = 面板 fail-closed 空态)。 */
+  rail?: SessionWorkspaceRailSlots
+  /** 真引擎 channel(#554 适配器投影;缺席 = 终端面板 fail-closed 空态)。 */
   terminalChannel?: Accessor<AlphaTerminalEngineChannel | undefined>
 }) {
   const [panel, setPanel] = createSignal<"review" | "terminal" | undefined>("review")
@@ -124,11 +128,13 @@ export function SessionWorkspaceShell(props: {
             data-alpha-session-rail-panel={activePanel()}
             aria-label={t("alpha.session.railHost")}
           >
-            <Show when={activePanel() === "terminal"}>
-              {/* C3-term:真引擎 channel 经 #554 适配器进入(alpha-session-workspace 接线)。
-                  I8:channel 身份必须过 live.accepts,会话切换后旧投影即刻失效。 */}
-              <TerminalRailPanel channel={props.terminalChannel?.()} accepts={props.live.accepts} />
-            </Show>
+            {props.rail?.[activePanel()]?.() ?? (
+              <Show when={activePanel() === "terminal"}>
+                {/* C3-term:真引擎 channel 经 #554 适配器进入(alpha-session-workspace 接线)。
+                    I8:channel 身份必须过 live.accepts,会话切换后旧投影即刻失效。 */}
+                <TerminalRailPanel channel={props.terminalChannel?.()} accepts={props.live.accepts} />
+              </Show>
+            )}
           </aside>
         )}
       </Show>

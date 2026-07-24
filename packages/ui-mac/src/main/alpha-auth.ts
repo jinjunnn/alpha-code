@@ -9,7 +9,7 @@
 //   ③ 消费   applyAuthEnv(): 据 purpose-keyed token bundle+mode 写 process.env(ALPHA_BASE_URL/ALPHA_API_KEY →
 //            alpha-models.ts 的模型代理 provider;ALPHA_CLOUD_MCP_URL/ALPHA_CLOUD_TOKEN →
 //            sidecar.ts 的 mcp.cloud)。env 在 sidecar fork 前算一次(server.ts 注释),所以运行时
-//            切 platform-pays 需 relaunch 让新 sidecar 继承(MVP);prod 改 sidecar runtime 转发。
+//            变化通过同 host/port/password 的受控 sidecar respawn 继承。
 //
 // dev:DEV_PLATFORM_TOKEN 把"已登录 + platform"静态短路,跳过 ①②(doc §A,不等 web)。
 
@@ -58,6 +58,13 @@ export type TokenResponse = {
   endpoints?: { schema_version: 1 } & AlphaEndpoints
 }
 
+export type RenewalOutcome = "refreshed" | "still-valid" | "transient-failure" | "invalid-grant"
+export type RenewalResult = {
+  outcome: RenewalOutcome
+  generation: number
+  expiresAt?: number
+}
+
 export type PlatformAccessTokenBundleErrorReason =
   | "missing-bundle"
   | "invalid-bundle"
@@ -102,9 +109,12 @@ const webBase = () => resolveEndpoints().web
 
 let userDataPath = ""
 let getWindow: () => BrowserWindow | null = () => null
-let respawnSidecar: () => void = () => {}
+let respawnSidecar: (reason: "structural") => void = () => {}
+let onRenewed: (result: RenewalResult) => void = () => {}
+let onAuthChanged: () => void = () => {}
 let stored: StoredAuth = { mode: "byok" }
 let pkce: { verifier: string; state: string } | null = null
+let tokenGeneration = 0
 
 function log(message: string, meta?: unknown) {
   try {
@@ -180,6 +190,11 @@ function deriveState(): AuthState {
     mode: stored.mode ?? "byok",
     account: stored.account,
     expiresAt: stored.expiresAt,
+    ...(loggedIn
+      ? {
+          platformStatus: isTokenExpired(stored.expiresAt, Date.now()) ? ("recovering" as const) : ("ready" as const),
+        }
+      : {}),
   }
 }
 
@@ -201,6 +216,7 @@ function publish() {
     mode: state.mode,
     email: state.account?.email,
     plan: state.account?.plan,
+    platformStatus: state.platformStatus,
   })
   if (sig === lastPublishedSig) return
   lastPublishedSig = sig
@@ -255,19 +271,40 @@ export function applyAuthEnv() {
 // derived platform env is present in the sidecar's inherited environment.
 export function initAuthEnv(dataPath: string) {
   userDataPath = dataPath
+  stored = { mode: "byok" }
   load()
+  tokenGeneration++
   applyAuthEnv()
 }
 
-// Called after the main window exists, so state pushes have a target + login can relaunch.
-export function setAuthDeps(deps: { getWindow: () => BrowserWindow | null; respawn: () => void }) {
+// Called after the main window exists, so state pushes have a target + login can respawn the sidecar.
+export function setAuthDeps(deps: {
+  getWindow: () => BrowserWindow | null
+  respawn: (reason: "structural") => void
+  onRenewed?: (result: RenewalResult) => void
+  onChanged?: () => void
+}) {
   getWindow = deps.getWindow
   respawnSidecar = deps.respawn
+  onRenewed = deps.onRenewed ?? (() => {})
+  onAuthChanged = deps.onChanged ?? (() => {})
   publish()
 }
 
 export function getAuthState(): AuthState {
   return deriveState()
+}
+
+export function getTokenGeneration(): number {
+  return tokenGeneration
+}
+
+export function getAuthRenewalTiming() {
+  return {
+    active: hasRequiredPlatformAccessTokens(stored.platformAccessTokens) && Boolean(stored.refreshToken),
+    expiresAt: stored.expiresAt,
+    lifetimeMs: stored.lifetimeMs,
+  }
 }
 
 // Raw bearer token for direct authed reads (account-server). Mirrors applyAuthEnv's derivation —
@@ -395,15 +432,17 @@ async function completeAuth(parsed: URL) {
     lifetimeMs: tokens.expires_in ? tokens.expires_in * 1000 : undefined,
     account: { email: tokens.email, plan: tokens.plan },
   }
+  tokenGeneration++
   persist()
   applyAuthEnv()
   publish()
+  onAuthChanged()
   log("alpha-auth: login complete", { plan: tokens.plan, mode: stored.mode })
   // Auto-activate the proxy in THIS session: respawn the sidecar in place (NOT a full app relaunch,
   // ADR-017) so the new fork inherits ALPHA_BASE_URL/ALPHA_API_KEY → provider.alpha appears with no
-  // "启用代理" click and no restart. Guarded on a live window (no-op on cold-start; the next normal
-  // launch already comes up with the proxy env applied by initAuthEnv).
-  respawnSidecar()
+  // "启用代理" click and no restart. The composition-root callback coalesces a cold-start callback
+  // with the first fork generation; a live sidecar takes the structural path below.
+  respawnSidecar("structural")
 }
 
 async function exchangeCode(code: string, verifier: string): Promise<TokenResponse> {
@@ -501,28 +540,41 @@ function invalidTokenResponse() {
 }
 
 // ── B2:refresh token 续期 ─────────────────────────────────────────────────────────────────────
-// alpha-web grant_type=refresh_token(需 sid + refresh_token;refresh 每次轮换)。桌面 token 寿命
-// 7*24h(用户 2026-07-03 拍板;web 侧 env 可调短供测试),提前量见 alpha-auth-clock.ts。
+// alpha-web grant_type=refresh_token(refresh 每次轮换)。生产 access token TTL = 15min，提前量与
+// expiresAt 驱动调度见 alpha-auth-clock.ts / auth-renewal.ts。
 // 失败语义(B2「失败降级」):
 //   - HTTP 400(invalid_grant:会话 revoked / refresh 已被轮换)→ 凭证死了,降级登出(logout():
 //     清 env + 删凭证 + respawn 停代理 + 发布 logged-out,renderer 账户面板即显示重新登录);
 //   - 网络/5xx(暂时性)→ 保留现有 token 静默重试下一轮,不打断用户。
-// 单飞:并发触发(整点 tick + 401 拦截同时到)只发一次请求。
+// 单飞:并发触发(到期调度 + 401 拦截同时到)只发一次请求。
 
-let refreshing: Promise<boolean> | null = null
+let refreshing: Promise<RenewalResult> | null = null
 
-/** 尝试续期一次;true = access token 已更新。并发调用合并为同一在途请求。 */
-export function refreshTokens(): Promise<boolean> {
+/** 尝试续期一次；并发调用合并为同一结果，失败分类不会坍缩成 boolean。 */
+export function refreshTokens(): Promise<RenewalResult> {
   if (refreshing) return refreshing
   const started = performance.now()
   markStartupTimeline("main.auth.refresh.start")
-  const attempt = doRefresh()
+  // 提前续期时旧 token 仍经验证且可用，不把平台误降成恢复中；只有已经过期的 token 才
+  // fail-closed 呈现 recovering，直到续期成功或 invalid-grant 登出。
+  publish()
+  const attempt = doRefresh().then((outcome): RenewalResult => {
+    const result = {
+      outcome,
+      generation: tokenGeneration,
+      ...(stored.expiresAt === undefined ? {} : { expiresAt: stored.expiresAt }),
+    }
+    if (outcome === "refreshed") onRenewed(result)
+    onAuthChanged()
+    return result
+  })
   void attempt.then(
     (result) =>
       markStartupTimeline("main.auth.refresh.end", {
         durationMs: performance.now() - started,
         outcome: "ok",
-        result,
+        result: result.outcome,
+        generation: result.generation,
       }),
     (error) =>
       markStartupTimeline("main.auth.refresh.end", {
@@ -536,9 +588,12 @@ export function refreshTokens(): Promise<boolean> {
   return refreshing
 }
 
-async function doRefresh(): Promise<boolean> {
-  const { refreshToken } = stored
-  if (!refreshToken) return false
+async function doRefresh(): Promise<Exclude<RenewalOutcome, "still-valid">> {
+  const refreshToken = stored.refreshToken
+  if (!refreshToken) {
+    publish()
+    return "transient-failure"
+  }
   let res: Response
   try {
     res = await fetch(`${webBase()}${ALPHA_PATHS.token}`, {
@@ -557,17 +612,19 @@ async function doRefresh(): Promise<boolean> {
     })
   } catch (error) {
     warn("alpha-auth: refresh network failure — keeping current tokens", error)
-    return false
+    publish()
+    return "transient-failure"
   }
   if (res.status === 400 || res.status === 401) {
     // invalid_grant:会话已 revoked,或 refresh 已被别处轮换(可能被盗用)。凭证不可恢复 → 降级登出。
     warn("alpha-auth: refresh rejected (session revoked / token rotated elsewhere) — degrading to logged-out")
     await logout()
-    return false
+    return "invalid-grant"
   }
   if (!res.ok) {
     warn(`alpha-auth: refresh failed HTTP ${res.status} — transient, keeping current tokens`)
-    return false
+    publish()
+    return "transient-failure"
   }
   let tokens: TokenResponse
   try {
@@ -579,15 +636,18 @@ async function doRefresh(): Promise<boolean> {
         purpose: error.purpose,
       })
       publishAuthError("exchange_failed")
-      return false
+      publish()
+      return "transient-failure"
     }
     if (reportContractFailure(error)) {
       warn("alpha-auth: refresh response contract incompatible — keeping the prior validated token")
       publishAuthError("contract_incompatible")
-      return false
+      publish()
+      return "transient-failure"
     }
     warn("alpha-auth: refresh response unparsable — keeping current tokens")
-    return false
+    publish()
+    return "transient-failure"
   }
   if (tokens.endpoints) setDiscoveredEndpoints(tokens.endpoints)
   stored = {
@@ -598,15 +658,16 @@ async function doRefresh(): Promise<boolean> {
     expiresAt: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : stored.expiresAt,
     lifetimeMs: tokens.expires_in ? tokens.expires_in * 1000 : stored.lifetimeMs,
   }
+  tokenGeneration++
   persist()
   applyAuthEnv()
   publish()
   log("alpha-auth: tokens refreshed", { expiresAt: stored.expiresAt })
-  return true
+  return "refreshed"
 }
 
-/** 到点才真的刷(提前量内);给启动路径和整点 tick 用。fork 前若已过期必须 await(死 token fork 无意义)。 */
-export async function ensureFreshToken(): Promise<void> {
+/** 到点才真的刷(提前量内)；给启动宽限与 expiresAt 调度使用。 */
+export async function ensureFreshToken(): Promise<RenewalResult> {
   const started = performance.now()
   markStartupTimeline("main.auth.ensure.start")
   if (!hasRequiredPlatformAccessTokens(stored.platformAccessTokens) || !stored.refreshToken) {
@@ -614,22 +675,32 @@ export async function ensureFreshToken(): Promise<void> {
       durationMs: performance.now() - started,
       outcome: "skipped:no-credentials",
     })
-    return
+    return {
+      outcome: "still-valid",
+      generation: tokenGeneration,
+      ...(stored.expiresAt === undefined ? {} : { expiresAt: stored.expiresAt }),
+    }
   }
   if (!shouldRefreshToken(stored.expiresAt, stored.lifetimeMs, Date.now())) {
     markStartupTimeline("main.auth.ensure.end", {
       durationMs: performance.now() - started,
       outcome: "skipped:not-due",
     })
-    return
+    return {
+      outcome: "still-valid",
+      generation: tokenGeneration,
+      ...(stored.expiresAt === undefined ? {} : { expiresAt: stored.expiresAt }),
+    }
   }
   try {
     const result = await refreshTokens()
     markStartupTimeline("main.auth.ensure.end", {
       durationMs: performance.now() - started,
       outcome: "ok",
-      result,
+      result: result.outcome,
+      generation: result.generation,
     })
+    return result
   } catch (error) {
     markStartupTimeline("main.auth.ensure.end", {
       durationMs: performance.now() - started,
@@ -639,13 +710,14 @@ export async function ensureFreshToken(): Promise<void> {
   }
 }
 
-/** 存储的 access token 已过期(启动路径据此决定 fork 前是否 await 续期)。 */
+/** 存储的 access token 已过期(启动路径据此进入有界续期宽限，而非无界阻塞 fork)。 */
 export function isStoredTokenExpired(): boolean {
   return hasRequiredPlatformAccessTokens(stored.platformAccessTokens) && isTokenExpired(stored.expiresAt, Date.now())
 }
 
 export async function logout(): Promise<void> {
   stored = { mode: "byok" }
+  tokenGeneration++
   // deriveState() also treats DEV_PLATFORM_TOKEN as a static platform login, so while it's set an
   // explicit logout would leave the state pinned to "logged-in" (the user sees nothing happen). Drop
   // it for this session so the logged-out state actually takes effect; it re-applies on next launch.
@@ -661,16 +733,17 @@ export async function logout(): Promise<void> {
   persist()
   applyAuthEnv()
   publish()
+  onAuthChanged()
   log("alpha-auth: logged out")
   // Re-fork the running sidecar IN PLACE so the proxy stops immediately. respawnSidecar is NOT
   // app.relaunch() (which closed the window / quit on ad-hoc-signed builds — the reason a full relaunch
   // was ruled out); it re-forks on the same host/port + reloads the renderer, so the new fork inherits
   // the now-cleared env → provider.alpha goes dark this session, not just on the next launch.
-  respawnSidecar()
+  respawnSidecar("structural")
 }
 
-// Switch BYOK ↔ platform-pays. platform-pays only takes effect after a relaunch (the sidecar reads
-// the proxy env at fork time) — MVP "respawn sidecar" via a full relaunch.
+// Switch BYOK ↔ platform-pays. The sidecar reads proxy env at fork time, so this uses the structural
+// in-place respawn below; structural changes intentionally retain the historical renderer reload.
 export async function setAuthMode(mode: AuthMode): Promise<void> {
   if (mode !== "byok" && mode !== "platform") return
   if (stored.mode === mode) return
@@ -678,14 +751,15 @@ export async function setAuthMode(mode: AuthMode): Promise<void> {
   persist()
   applyAuthEnv()
   publish()
+  onAuthChanged()
   log("alpha-auth: mode changed", { mode })
-  respawnSidecar()
+  respawnSidecar("structural")
 }
 
 // One-click "activate the ALPHA proxy in THIS running session". Login already defaults mode → platform
 // and applyAuthEnv() wrote the proxy env, but the sidecar that's currently running forked BEFORE that,
 // so provider.alpha only appears after a fresh fork. Force mode=platform (covers a pre-fix stored
-// "byok") and relaunch so the new sidecar inherits ALPHA_BASE_URL/ALPHA_API_KEY. Later launches pick it
+// "byok") and respawn so the new sidecar inherits ALPHA_BASE_URL/ALPHA_API_KEY. Later launches pick it
 // up automatically (initAuthEnv runs before the fork), so this is a one-time step after the first login.
 export function enableProxy() {
   if (stored.mode !== "platform") {
@@ -693,5 +767,6 @@ export function enableProxy() {
     persist()
   }
   applyAuthEnv()
-  respawnSidecar()
+  onAuthChanged()
+  respawnSidecar("structural")
 }

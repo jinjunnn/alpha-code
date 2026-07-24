@@ -2,6 +2,7 @@ import { ServerConnection, type MaybePreloadableComponent, useServerSDK, useServ
 import { useLocation } from "@solidjs/router"
 import { createContext, createMemo, type ParentProps, useContext } from "solid-js"
 import { parseRoute } from "../../../shared/route-manifest"
+import { SessionRailReviewPanel } from "../session-rail/review/review-panel"
 import { useAlphaTerminalEngineChannel } from "../session-rail/terminal/terminal-engine-adapter"
 import { SurfaceBoundary } from "../surface-boundary"
 import { sameSessionIdentity, sessionLiveSnapshotOf } from "./session-workspace-core"
@@ -45,7 +46,11 @@ export function AlphaSessionWorkspace() {
   return (
     <SurfaceBoundary surface="session">
       <SessionLiveProvider value={live}>
-        <SessionWorkspaceShell live={live} terminalChannel={terminalChannel} />
+        <SessionWorkspaceShell
+          live={live}
+          rail={{ review: () => <SessionRailReviewPanel live={live} /> }}
+          terminalChannel={terminalChannel}
+        />
       </SessionLiveProvider>
     </SurfaceBoundary>
   )
