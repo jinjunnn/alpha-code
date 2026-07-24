@@ -4,8 +4,8 @@
 // terminal-engine-adapter.tsx(唯一引擎 import 点,bun 下无法加载上游链 —— ghostty/vite
 // 别名,故以静态锚点钉死其粘合语义与 import 收敛面)。
 import { describe, expect, test } from "bun:test"
-import * as fs from "node:fs"
-import * as path from "node:path"
+import { readdirSync, readFileSync } from "node:fs"
+import { join, relative, resolve } from "node:path"
 import type { Component } from "solid-js"
 import { sameSessionIdentity, type AlphaSessionIdentity } from "../../session-workspace/session-workspace-core"
 import {
@@ -19,12 +19,12 @@ import {
 } from "./terminal-engine-adapter-core"
 import { acceptedEngineChannel } from "./terminal-rail-core"
 
-const RENDERER = path.resolve(import.meta.dir, "../..", "..")
+const RENDERER = resolve(import.meta.dir, "../..", "..")
 const ADAPTER_REL = "alpha-ui/session-rail/terminal/terminal-engine-adapter.tsx"
-const adapterSource = fs.readFileSync(path.join(RENDERER, ADAPTER_REL), "utf8")
-const coreSource = fs.readFileSync(path.join(import.meta.dir, "terminal-engine-adapter-core.ts"), "utf8")
-const workspaceSource = fs.readFileSync(
-  path.join(RENDERER, "alpha-ui/session-workspace/alpha-session-workspace.tsx"),
+const adapterSource = readFileSync(join(RENDERER, ADAPTER_REL), "utf8")
+const coreSource = readFileSync(join(import.meta.dir, "terminal-engine-adapter-core.ts"), "utf8")
+const workspaceSource = readFileSync(
+  join(RENDERER, "alpha-ui/session-workspace/alpha-session-workspace.tsx"),
   "utf8",
 )
 
@@ -55,6 +55,8 @@ function fakeEngine(all: TerminalEnginePTY[] = [pty("pty_1", { cols: 80, rows: 2
       return Promise.resolve()
     },
     new: (options) => void calls.push(`new:${options?.focus === true}`),
+    requestFocus: (id) => void calls.push(`requestFocus:${id ?? "unset"}`),
+    cancelFocus: () => void calls.push("cancelFocus"),
   }
   const EngineOutput: Component<{ instanceID: string }> = () => null
   const handle: TerminalEngineHandle = { surface, EngineOutput }
@@ -70,10 +72,10 @@ const codeLines = (source: string) =>
 
 /** renderer 下全部非测试 ts/tsx 源(用于扫窄导出消费者)。 */
 function* walk(dir: string): Generator<string> {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.name === "node_modules" || entry.name.startsWith(".")) continue
     if (/\.test\.(ts|tsx)$/.test(entry.name)) continue
-    const p = path.join(dir, entry.name)
+    const p = join(dir, entry.name)
     if (entry.isDirectory()) yield* walk(p)
     else if (/\.(ts|tsx)$/.test(entry.name)) yield p
   }
@@ -110,7 +112,18 @@ describe("REQ-125 #554 channel minting (I8 identity binding, fail-closed)", () =
     channel.open("pty_2")
     channel.close("pty_2")
     channel.create()
-    expect(calls).toEqual(["open:pty_2", "close:pty_2", "new:true"])
+    // #554 焦点交接请求端:open 先发聚焦请求再切激活(上游页签语义,请求须在重挂前就位)。
+    expect(calls).toEqual(["requestFocus:pty_2", "open:pty_2", "close:pty_2", "new:true"])
+  })
+
+  test("focus handoff request side delegates: request an instance, request the active one, cancel", () => {
+    const { handle, calls } = fakeEngine()
+    const channel = mintTerminalEngineChannel({ engine: handle, identity: identityOf("ses_a"), labels })!
+
+    channel.requestFocus("pty_2")
+    channel.requestFocus(undefined)
+    channel.cancelFocus()
+    expect(calls).toEqual(["requestFocus:pty_2", "requestFocus:unset", "cancelFocus"])
   })
 
   test("instances project engine data without fabrication: running is always false today", () => {
@@ -159,8 +172,8 @@ describe("REQ-125 #554 I1 whitelist channel static ratchets", () => {
   test("the narrow terminal export has exactly one renderer consumer: the adapter file", () => {
     const importers: string[] = []
     for (const file of walk(RENDERER)) {
-      if (codeLines(fs.readFileSync(file, "utf8")).includes("@opencode-ai/app/surface/terminal")) {
-        importers.push(path.relative(RENDERER, file))
+      if (codeLines(readFileSync(file, "utf8")).includes("@opencode-ai/app/surface/terminal")) {
+        importers.push(relative(RENDERER, file))
       }
     }
     expect(importers).toEqual([ADAPTER_REL])

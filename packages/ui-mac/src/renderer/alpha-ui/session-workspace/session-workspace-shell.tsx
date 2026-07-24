@@ -1,6 +1,6 @@
 import { createSignal, type Accessor, Show } from "solid-js"
 import { t } from "../../i18n"
-import type { AlphaTerminalEngineChannel } from "../session-rail/terminal/terminal-rail-core"
+import { acceptedEngineChannel, type AlphaTerminalEngineChannel } from "../session-rail/terminal/terminal-rail-core"
 import { TerminalRailPanel } from "../session-rail/terminal/terminal-rail-panel"
 import type { AlphaSessionIdentity, AlphaSessionLiveSnapshot } from "./session-workspace-core"
 
@@ -80,24 +80,23 @@ export function SessionWorkspaceShell(props: {
 }) {
   const [panel, setPanel] = createSignal<"review" | "terminal" | undefined>("review")
   const [lastPanel, setLastPanel] = createSignal<"review" | "terminal">("review")
-  const openPanel = (next: "review" | "terminal") => {
-    setLastPanel(next)
+  // #554 焦点交接请求端(上游 terminal.toggle 语义):终端面板从关到开 → 对当前激活实例发
+  // 聚焦请求(须先于面板挂载,上游 Terminal 挂载时一次性消费);从开到关 → 撤销未消费的
+  // 请求,防陈旧请求日后误触发。经 I8 闸:身份不被当前会话接受的 channel 一律不触碰。
+  const switchPanel = (next: "review" | "terminal" | undefined) => {
+    const prev = panel()
+    if ((prev === "terminal") !== (next === "terminal")) {
+      const channel = acceptedEngineChannel(props.terminalChannel?.(), props.live.accepts)
+      if (channel) {
+        if (next === "terminal") channel.requestFocus(channel.activeID())
+        else channel.cancelFocus()
+      }
+    }
+    if (next) setLastPanel(next)
     setPanel(next)
   }
-  const toggleTerminal = () => {
-    if (panel() === "terminal") {
-      setPanel(undefined)
-      return
-    }
-    openPanel("terminal")
-  }
-  const toggleRail = () => {
-    if (panel()) {
-      setPanel(undefined)
-      return
-    }
-    openPanel(lastPanel())
-  }
+  const toggleTerminal = () => switchPanel(panel() === "terminal" ? undefined : "terminal")
+  const toggleRail = () => switchPanel(panel() ? undefined : lastPanel())
 
   return (
     <div class="a-ui a-swk-root" data-alpha-session-workspace>

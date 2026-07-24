@@ -45,9 +45,14 @@ export interface AlphaTerminalEngineChannel {
   ready(): boolean
   instances(): AlphaTerminalInstance[]
   activeID(): string | undefined
+  /** 切激活实例;适配器内含焦点交接请求端(上游页签语义:先 requestFocus 再 open)。 */
   open(id: string): void
   close(id: string): void
   create(): void
+  /** 请求聚焦某实例(undefined = 聚焦当前/即将激活者);面板重开时的交接请求端(#554)。 */
+  requestFocus(id?: string): void
+  /** 撤销未消费的聚焦请求(面板关闭时防陈旧请求误触发;上游 terminal.toggle 语义)。 */
+  cancelFocus(): void
   footStatus(id: string): AlphaTerminalFootStatus
   /** 引擎渲染的输出区内容;alpha 只提供圆角深底外框。 */
   EngineOutput: Component<{ instanceID: string }>

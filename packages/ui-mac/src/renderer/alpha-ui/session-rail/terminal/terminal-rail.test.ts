@@ -81,7 +81,7 @@ describe("REQ-125 C3-term real Solid mount", () => {
     })
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
-    expect(output).toContain("8 pass")
+    expect(output).toContain("9 pass")
     expect(output).toContain("0 fail")
   })
 })

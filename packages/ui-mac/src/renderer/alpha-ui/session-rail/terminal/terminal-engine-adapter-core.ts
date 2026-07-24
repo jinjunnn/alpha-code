@@ -28,6 +28,8 @@ export interface TerminalEngineSurface {
   close(id: string): Promise<void>
   // 引号避免被解析成构造签名:这是上游 useTerminal() 返回值上名为 `new` 的方法。
   "new"(options?: { focus?: boolean }): void
+  requestFocus(id?: string): void
+  cancelFocus(): void
 }
 
 /** 已绑定引擎输出组件的引擎句柄(适配器文件铸造;引擎缺席时整个句柄缺席)。 */
@@ -84,10 +86,17 @@ export function mintTerminalEngineChannel(input: {
         running: false,
       })),
     activeID: () => engine.active(),
-    open: (id) => engine.open(id),
+    // 对齐上游页签点击语义(session-sortable-terminal-tab-v2):先发聚焦请求再切激活,
+    // 请求在 keyed 引擎输出重挂前就位,上游 Terminal 挂载时一次性消费(autoFocus)。
+    open: (id) => {
+      engine.requestFocus(id)
+      engine.open(id)
+    },
     close: (id) => void engine.close(id),
     // 对齐上游 terminal-panel 新建按钮语义:创建即请求聚焦新终端。
     create: () => engine.new({ focus: true }),
+    requestFocus: (id) => engine.requestFocus(id),
+    cancelFocus: () => engine.cancelFocus(),
     footStatus: (id) => terminalFootStatus(engine.all().find((pty) => pty.id === id)),
     EngineOutput: handle.EngineOutput,
   }
