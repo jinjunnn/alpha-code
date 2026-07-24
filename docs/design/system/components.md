@@ -39,12 +39,13 @@ surface each belongs to.
 
 ## Reskin layers (partial surfaces — CSS over upstream DOM)
 
-`composer-reskin.css`, `dialog-reskin.css`, `settings-reskin.css`,
-`timeline-reskin.css` re-skin **upstream opencode** DOM with `--a-*` values
-without forking it. They are not standalone components — they retint an inherited
-surface. See the reskin pattern in [`patterns.md`](patterns.md). Do not grow a
-reskin into a fork; if a surface needs to become truly alpha, build it as an
-alpha surface behind the seam.
+`composer-reskin.css` (the sole live reskin layer) re-skins **upstream opencode**
+DOM with `--a-*` values without forking it. It is not a standalone component — it
+retints an inherited surface. See the reskin pattern in
+[`patterns.md`](patterns.md). Do not grow a reskin into a fork; if a surface
+needs to become truly alpha, build it as an alpha surface behind the seam —
+`settings-reskin.css`, `dialog-reskin.css`, and `timeline-reskin.css` were all
+retired this way (REQ-090, REQ-125).
 
 ## Adding a component
 
