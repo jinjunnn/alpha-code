@@ -83,19 +83,21 @@ describe("ADR-027 typed surface seam anchors (frozen packages/app)", () => {
     expect(layoutNew.match(/<Titlebar/g)).toHaveLength(1)
   })
 
-  test("narrow terminal-engine channel stays a minimal pure re-export (REQ-125 #554, ADR-027 修订 2026-07-24)", () => {
+  test("narrow terminal-engine channel stays a minimal pure re-export (REQ-125 #554/#576, ADR-027 修订 2026-07-24)", () => {
     const pkg = JSON.parse(readFileSync(join(import.meta.dir, "../../../../app/package.json"), "utf8")) as {
       exports: Record<string, string>
     }
     expect(pkg.exports["./surface/terminal"]).toBe("./src/surface/terminal.ts")
 
-    // 窄面的可机械验证形态:re-export 模块恰好三个符号,逐行钉死,禁止悄悄扩面。
+    // 窄面的可机械验证形态:re-export 模块恰好四个符号,逐行钉死,禁止悄悄扩面。第四条
+    // (TerminalColors)是 #576 深底 seam:Terminal 的 `theme` palette 覆盖类型(ADR-027 修订)。
     const surfaceModule = readFileSync(join(APP_SRC, "surface/terminal.ts"), "utf8")
     const exportLines = surfaceModule.split("\n").filter((line) => line.startsWith("export"))
     expect(exportLines).toEqual([
       'export { useTerminal } from "@/context/terminal"',
       'export type { LocalPTY } from "@/context/terminal"',
       'export { Terminal } from "@/components/terminal"',
+      'export type { TerminalColors } from "@/components/terminal"',
     ])
 
     // 指向的引擎源仍导出这些符号(锚点:上游改名/搬文件时此处先于运行时红)。
@@ -104,5 +106,8 @@ describe("ADR-027 typed surface seam anchors (frozen packages/app)", () => {
     expect(terminalContext).toContain("export type LocalPTY")
     const terminalComponent = readFileSync(join(APP_SRC, "components/terminal.tsx"), "utf8")
     expect(terminalComponent).toContain("export const Terminal = (props: TerminalProps)")
+    // #576 深底 seam:palette 覆盖类型 + Terminal 接受可选 `theme` 覆盖 prop(缺省=零行为变)。
+    expect(terminalComponent).toContain("export type TerminalColors")
+    expect(terminalComponent).toContain("theme?: Partial<TerminalColors>")
   })
 })

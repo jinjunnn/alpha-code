@@ -6,7 +6,7 @@
 // 数据通道)。本文件只做粘合,不重实现引擎:铸 channel(I8 三元身份盖章,纯投影在
 // terminal-engine-adapter-core)+ 引擎输出组件(持久化回写、连接后 trim、连接失败一次性
 // clone 恢复 —— 语义对齐上游 terminal-panel 的既有粘合)。
-import { Terminal, useTerminal, type LocalPTY } from "@opencode-ai/app/surface/terminal"
+import { Terminal, useTerminal, type LocalPTY, type TerminalColors } from "@opencode-ai/app/surface/terminal"
 import { createEffect, createMemo, createSignal, onCleanup, Show, type Accessor, type Component } from "solid-js"
 import { t } from "../../../i18n"
 import type { AlphaSessionLiveSnapshot } from "../../session-workspace/session-workspace-core"
@@ -33,6 +33,20 @@ function resolveTerminalEngine(): TerminalEngine | undefined {
 
 /** clone 恢复的一次性标记 key(对齐上游 terminal-panel 的 terminalRecoveryKey)。 */
 const recoveryKey = (pty: LocalPTY) => String(pty.titleNumber || pty.title || pty.id)
+
+/**
+ * 终端输出区双主题恒深底(已批稿 SW §term:「输出区始终深底(引擎渲染)」;REQ-125 #576)。
+ * 勘破:CSS 改父容器改不了 Ghostty 画布自绘背景 —— 画布用 Terminal 拿到的 theme 绘制。故经
+ * 上游 Terminal 的 `theme` 覆盖 prop(#554/#576 patch 通道窄面)把画布 palette 钉成深底,浅色
+ * 主题下也深底。取值镜像 terminal-rail.css 的 --a-term-stage-* 深底锚(SOT 在 CSS,引擎 palette
+ * 必须内联字面量、读不到 CSS var,故此处随锚同步);CSS 外层 `!important` 保留作容器兜底。
+ */
+const ALPHA_TERMINAL_DARK_THEME: TerminalColors = {
+  background: "#0a0b0d", // --a-term-stage-bg
+  foreground: "#d4d4d8", // --a-term-stage-text
+  cursor: "#d4d4d8",
+  selectionBackground: "#d4d4d840", // --a-term-stage-text @ ~0.25 alpha
+}
 
 /**
  * 引擎输出组件:上游 Terminal 直挂进 alpha 输出区外框。粘合与上游 terminal-panel 同语义:
@@ -103,6 +117,7 @@ function createEngineOutput(engine: TerminalEngine): Component<{ instanceID: str
               {(epoch) => (
                 <Terminal
                   pty={current()}
+                  theme={ALPHA_TERMINAL_DARK_THEME}
                   autoFocus={engine.focusRequested(props.instanceID)}
                   onAutoFocus={() => engine.consumeFocus(props.instanceID)}
                   onConnect={() => {

@@ -11,6 +11,7 @@
     "component:prompt-variant-control",
     "component:provider-icon",
     "component:tabs",
+    "component:terminal",
     "slot:dialog-footer",
     "slot:image-preview-image",
     "slot:input-wrapper",

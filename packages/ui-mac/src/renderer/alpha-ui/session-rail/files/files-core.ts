@@ -106,6 +106,14 @@ export function toTreeEntries(parent: string, nodes: readonly unknown[] | undefi
     // canonicalize those separator forms; anything unprovable stays dropped fail-closed.
     const path = typeof node.path === "string" ? canonicalRelPath(node.path) : undefined
     if (!path) continue
+    // Hidden directories (.git, .github, .vscode, …) are workspace noise the approved frame
+    // omits (REQ-125 #576). Drop any entry that IS a dot-directory or lives inside one — check
+    // every *directory* segment of the canonical path (all segments for a directory; all but
+    // the leaf for a file) so an untrusted/fail-closed response like `src/.git/config` is
+    // dropped too, not just root-level dot dirs. Dotfiles (leaf `.gitignore`) stay visible.
+    // Mirrors the `.git` special-case already honored in watcherRefreshTarget.
+    const dirSegments = node.type === "directory" ? path.split("/") : path.split("/").slice(0, -1)
+    if (dirSegments.some((segment) => segment.startsWith("."))) continue
     if (prefix && !path.startsWith(prefix)) continue
     if (seen.has(path)) continue
     seen.add(path)

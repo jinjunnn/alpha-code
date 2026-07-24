@@ -74,6 +74,8 @@ const heldFlushes: Array<{ mountIndex: number; fire: (payload?: Partial<FakePTY>
 //    macrotask),载荷携带比挂载时前进了的 buffer/cursor(模拟活动中的终端)。 ──
 function FakeTerminal(props: {
   pty: FakePTY
+  // #576 深底 seam:上游 Terminal 的 palette 覆盖 prop——记录收到的值以证明 alpha 真传入。
+  theme?: { background?: string; foreground?: string; cursor?: string; selectionBackground?: string }
   autoFocus?: boolean
   onAutoFocus?: () => void
   onCleanup?: (next: Partial<FakePTY> & { id: string }) => void
@@ -99,6 +101,8 @@ function FakeTerminal(props: {
   el.setAttribute("data-fake-terminal", props.pty.id)
   el.setAttribute("data-autofocus", autoFocus ? "true" : "false")
   el.setAttribute("data-cursor", String(capturedCursor))
+  el.setAttribute("data-theme-bg", props.theme?.background ?? "")
+  el.setAttribute("data-theme-fg", props.theme?.foreground ?? "")
   return el
 }
 
@@ -313,5 +317,17 @@ describe("REQ-125 #554 keep-alive × autoFocus one-shot, two-phase remount (audi
     await flush()
     expect(mountLog).toEqual(["mount:pty_1:af=false:cursor=0", "mount:pty_1:af=true:cursor=0"])
     expect(currentEngine.focus()).toBeUndefined()
+  })
+
+  test("the adapter pins the embedded emulator to the always-dark stage palette (REQ-125 #576 深底)", async () => {
+    // 真 EngineOutput 挂载(非空 div 假绿):证明 alpha 把深底 palette 经 Terminal 的 theme 覆盖
+    // prop 真实传入引擎——画布自绘背景随之深底,浅色主题下也深底(SW §term「始终深底」合同)。
+    currentEngine = createFakeEngine([{ id: "pty_1", title: "终端 1", titleNumber: 1, cursor: 0 }])
+    const { host } = mountEngineOutput("pty_1")
+    await flush()
+
+    const term = host.querySelector("[data-fake-terminal]")!
+    expect(term.getAttribute("data-theme-bg")).toBe("#0a0b0d") // = --a-term-stage-bg
+    expect(term.getAttribute("data-theme-fg")).toBe("#d4d4d8") // = --a-term-stage-text
   })
 })

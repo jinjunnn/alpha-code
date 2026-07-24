@@ -159,9 +159,10 @@ describe("REQ-125 #554 channel minting (I8 identity binding, fail-closed)", () =
   test("foot status shares the alive semantics and passes persisted size through", () => {
     const { handle } = fakeEngine()
     const channel = mintTerminalEngineChannel({ engine: handle, identity: identityOf("ses_a"), labels })!
+    // 脚条 = 运行状态 + 尺寸(持久 cols×rows 有则出、任一维缺则整段省略)。
     expect(channel.footStatus("pty_1")).toEqual({ running: true, cols: 80, rows: 24 })
     expect(channel.footStatus("pty_2")).toEqual({ running: true, cols: undefined, rows: undefined })
-    // 实例缺席(已退出/未知 id)= false;shell 名今日无数据,缺项不伪造。
+    // 实例缺席(已退出/未知 id)= false;环境段本票不投影(descope #576,见评论),缺项不伪造。
     expect(channel.footStatus("pty_gone")).toEqual({ running: false, cols: undefined, rows: undefined })
     expect(terminalFootStatus(undefined)).toEqual({ running: false, cols: undefined, rows: undefined })
   })
@@ -256,7 +257,7 @@ describe("REQ-125 #554 I1 whitelist channel static ratchets", () => {
     })
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
-    expect(output).toContain("5 pass")
+    expect(output).toContain("6 pass")
     expect(output).toContain("0 fail")
   })
 

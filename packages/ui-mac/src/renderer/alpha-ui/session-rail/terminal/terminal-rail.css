@@ -170,6 +170,15 @@
   font-size: var(--a-text-sm);
 }
 
+/* 引擎输出容器双主题恒深底(已批稿 SW §term:「输出区始终深底(引擎渲染)」)。
+ * 勘破(#554):上游 Terminal 给自身容器打内联 background = 当前主题底色 —— 浅色主题下
+ * 为亮底,会盖掉舞台深底,违反合同(批1 发现1:浅色为白底)。alpha 按引擎稳定的
+ * data-component 契约把这层容器背景压回舞台深底锚:只协调外框容器背景(TL-39:只验
+ * 外框、不判内核渲染),内联样式须 !important 覆盖。深底锚不进主题、不受条件翻转。 */
+.a-term-output [data-component="terminal"] {
+  background-color: var(--a-term-stage-bg) !important;
+}
+
 /* ── 脚条:运行状态 · 环境 · 尺寸(mono 小字,恒居深底内)────── */
 
 .a-term-foot {
