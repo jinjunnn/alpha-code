@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { applyBuiltinPolicyEdits, configHealth, persistMcp, persistPlugin, persistProvider, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, readMcpLeafStrict, readAgentEntryStrict, readPluginArrayStrict } from "./ext-config"
+import { applyBuiltinPolicyEdits, configHealth, ensureGovernedMcpConnectTimeouts, persistMcp, persistPlugin, persistProvider, removeMcp, removeMcpConfigInLock, removePlugin, removePluginPath, readMcpLeafStrict, readAgentEntryStrict, readPluginArrayStrict } from "./ext-config"
 import { tryAcquireBundleLock } from "./ext-bundle-lock"
 import { addReceipt, findReceipt, readLedger } from "./alpha-installs"
 import { upsertRecordV2 } from "./ext-receipt-v2"
@@ -56,6 +56,88 @@ function readConfig(): Record<string, any> {
 function readUserConfig(): Record<string, any> {
   return readAlphaConfig()
 }
+
+function writeAlphaConfig(value: unknown): void {
+  fs.mkdirSync(alphaTmp, { recursive: true })
+  fs.writeFileSync(path.join(alphaTmp, "alpha.jsonc"), JSON.stringify(value, null, 2))
+}
+
+describe("ensureGovernedMcpConnectTimeouts — boot reconcile", () => {
+  test("local definition without timeout gets 5000 in the live alpha.jsonc", () => {
+    writeAlphaConfig({
+      mcp: {
+        local: { type: "local", command: ["uvx", "cold-package"] },
+      },
+    })
+
+    ensureGovernedMcpConnectTimeouts()
+
+    expect(readAlphaConfig().mcp.local).toEqual({
+      type: "local",
+      command: ["uvx", "cold-package"],
+      timeout: 5_000,
+    })
+  })
+
+  test("explicit timeout is preserved; remote, disabled local, and lone disabled leaf are untouched", () => {
+    const before = {
+      mcp: {
+        explicit: { type: "local", command: ["npx", "slow-package"], timeout: 0 },
+        remote: { type: "remote", url: "https://example.com/mcp" },
+        disabled: { type: "local", command: ["uvx", "disabled-package"], enabled: false },
+        loneDisabled: { enabled: false },
+      },
+    }
+    writeAlphaConfig(before)
+
+    expect(() => ensureGovernedMcpConnectTimeouts()).not.toThrow()
+
+    expect(readAlphaConfig()).toEqual(before)
+  })
+
+  test("missing and unparseable alpha.jsonc are loud no-ops", () => {
+    const logs: string[] = []
+    const target = path.join(alphaTmp, "alpha.jsonc")
+
+    ensureGovernedMcpConnectTimeouts({ logError: (message) => logs.push(message) })
+
+    expect(fs.existsSync(target)).toBe(false)
+    expect(logs).toHaveLength(1)
+    expect(logs[0]).toContain("config unreadable")
+
+    fs.mkdirSync(alphaTmp, { recursive: true })
+    fs.writeFileSync(target, '{"mcp":{"broken":')
+    const malformed = fs.readFileSync(target, "utf8")
+    ensureGovernedMcpConnectTimeouts({ logError: (message) => logs.push(message) })
+
+    expect(fs.readFileSync(target, "utf8")).toBe(malformed)
+    expect(logs).toHaveLength(2)
+    expect(logs[1]).toContain("config unparseable")
+  })
+
+  test("second run is byte-identical after the first atomic reconcile", () => {
+    writeAlphaConfig({
+      mcp: {
+        local: { type: "local", command: ["npx", "cold-package"] },
+      },
+    })
+
+    ensureGovernedMcpConnectTimeouts()
+    const first = fs.readFileSync(path.join(alphaTmp, "alpha.jsonc"), "utf8")
+    ensureGovernedMcpConnectTimeouts()
+
+    expect(fs.readFileSync(path.join(alphaTmp, "alpha.jsonc"), "utf8")).toBe(first)
+  })
+
+  test("main boot calls the reconcile before the first sidecar fork", () => {
+    const source = fs.readFileSync(path.join(import.meta.dir, "index.ts"), "utf8")
+    const reconcile = source.indexOf("  ensureGovernedMcpConnectTimeouts()")
+    const firstFork = source.indexOf("spawnLocalServer(hostname, port, password")
+
+    expect(reconcile).toBeGreaterThan(-1)
+    expect(firstFork).toBeGreaterThan(reconcile)
+  })
+})
 
 describe("persistMcp — name validation", () => {
   test.each([["../evil"], ["a/b"], [""], [".hidden"], ["has space"]])("rejects unsafe name %p", (name) => {

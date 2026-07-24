@@ -69,8 +69,16 @@ review_after: 2026-10-23
 - **G1 MCP 主权隔离**:fork 时枚举用户全局 opencode 配置的 mcp 键,不在
   alpha 治理集(alpha.jsonc 显式安装 + cloud MCP)内的经既有
   `injectDisabledOverrides` 通道注入 `enabled:false`(merge 终序必胜);
-  **G2**:注入面统一 mcp 连接超时防御值(~5s)。外部生态只经 consent 导入
-  (与 REQ-063/ADR-024 意图一致)。
+  **G2**:治理集 local MCP 统一 mcp 连接超时防御值(~5s)。
+  实现期修正(#535,2026-07-24 勘破):①CONTENT 注入面放不下 G2 ——
+  v1 schema 的 mcp 值 = `Union([完整定义(必带 type), {enabled:Boolean}])`,
+  孤立 `{timeout}` 叶会让整份 CONTENT 校验 throw(实例配置全灭);整叶拷贝
+  进静态 CONTENT 又会遮蔽 alpha.jsonc 热编辑/复活已卸载 server。故 G2 落在
+  main 侧 boot reconcile,把 `timeout:5000` 写进 alpha.jsonc 的完整 local
+  定义内(schema 合法、热编辑语义保留、单写者)。②per-server `timeout`
+  同时约束连接与工具请求(上游无 connect-only 旋钮)—— remote(含 cloud)
+  豁免,避免掐断合法长工具调用;显式 timeout 一律尊重。外部生态只经
+  consent 导入(与 REQ-063/ADR-024 意图一致)。
 
 被否决的替代(与理由):
 
