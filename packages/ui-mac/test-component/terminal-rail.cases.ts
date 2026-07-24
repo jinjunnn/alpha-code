@@ -119,6 +119,32 @@ describe("REQ-125 terminal rail panel real Solid mount", () => {
     ).toBe("idle")
   })
 
+  test("switching tabs hands focus through the channel: request precedes open, output consumes it (#554)", async () => {
+    const host = mount(() => runtime.TerminalRailHarness())
+    await flush()
+    // 初始挂载无未消费请求:不得凭空聚焦。
+    expect(runtime.channelCalls).toEqual([])
+    expect(
+      host
+        .querySelector("[data-alpha-terminal-engine-output='pty_1']")
+        ?.getAttribute("data-alpha-terminal-focus-consumed"),
+    ).toBeNull()
+
+    tabButton(host, "pty_2")!.click()
+    await flush()
+
+    // 请求端先于切激活发出(上游页签语义),随 keyed 重挂被引擎输出一次性消费。
+    const requestAt = runtime.channelCalls.indexOf("requestFocus:pty_2")
+    expect(requestAt).toBeGreaterThanOrEqual(0)
+    expect(requestAt).toBeLessThan(runtime.channelCalls.indexOf("open:pty_2"))
+    expect(runtime.channelCalls).toContain("focusConsumed:pty_2")
+    expect(
+      host
+        .querySelector("[data-alpha-terminal-engine-output='pty_2']")
+        ?.getAttribute("data-alpha-terminal-focus-consumed"),
+    ).toBe("true")
+  })
+
   test("create and close go through the channel and the active tab follows", async () => {
     const host = mount(() => runtime.TerminalRailHarness())
     await flush()

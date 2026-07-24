@@ -1138,6 +1138,7 @@ export const dict = {
   "alpha.session.backHome": "Back to home",
 
   "alpha.terminal.tabs": "Terminal tabs",
+  "alpha.terminal.titleNumbered": "Terminal {{number}}",
   "alpha.terminal.new": "New terminal",
   "alpha.terminal.close": "Close {{title}}",
   "alpha.terminal.emptyTitle": "No terminals yet",

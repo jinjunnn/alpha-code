@@ -1,5 +1,6 @@
 import { createSignal, type Accessor, type JSX, Show } from "solid-js"
 import { t } from "../../i18n"
+import { acceptedEngineChannel, type AlphaTerminalEngineChannel } from "../session-rail/terminal/terminal-rail-core"
 import { TerminalRailPanel } from "../session-rail/terminal/terminal-rail-panel"
 import type { AlphaSessionIdentity, AlphaSessionLiveSnapshot } from "./session-workspace-core"
 
@@ -75,27 +76,31 @@ function WorkspaceTopbar(props: {
   )
 }
 
-export function SessionWorkspaceShell(props: { live: AlphaSessionLiveContext; rail?: SessionWorkspaceRailSlots }) {
+export function SessionWorkspaceShell(props: {
+  live: AlphaSessionLiveContext
+  rail?: SessionWorkspaceRailSlots
+  /** 真引擎 channel(#554 适配器投影;缺席 = 终端面板 fail-closed 空态)。 */
+  terminalChannel?: Accessor<AlphaTerminalEngineChannel | undefined>
+}) {
   const [panel, setPanel] = createSignal<"review" | "terminal" | undefined>("review")
   const [lastPanel, setLastPanel] = createSignal<"review" | "terminal">("review")
-  const openPanel = (next: "review" | "terminal") => {
-    setLastPanel(next)
+  // #554 焦点交接请求端(上游 terminal.toggle 语义):终端面板从关到开 → 对当前激活实例发
+  // 聚焦请求(须先于面板挂载,上游 Terminal 挂载时一次性消费);从开到关 → 撤销未消费的
+  // 请求,防陈旧请求日后误触发。经 I8 闸:身份不被当前会话接受的 channel 一律不触碰。
+  const switchPanel = (next: "review" | "terminal" | undefined) => {
+    const prev = panel()
+    if ((prev === "terminal") !== (next === "terminal")) {
+      const channel = acceptedEngineChannel(props.terminalChannel?.(), props.live.accepts)
+      if (channel) {
+        if (next === "terminal") channel.requestFocus(channel.activeID())
+        else channel.cancelFocus()
+      }
+    }
+    if (next) setLastPanel(next)
     setPanel(next)
   }
-  const toggleTerminal = () => {
-    if (panel() === "terminal") {
-      setPanel(undefined)
-      return
-    }
-    openPanel("terminal")
-  }
-  const toggleRail = () => {
-    if (panel()) {
-      setPanel(undefined)
-      return
-    }
-    openPanel(lastPanel())
-  }
+  const toggleTerminal = () => switchPanel(panel() === "terminal" ? undefined : "terminal")
+  const toggleRail = () => switchPanel(panel() ? undefined : lastPanel())
 
   return (
     <div class="a-ui a-swk-root" data-alpha-session-workspace>
@@ -125,9 +130,9 @@ export function SessionWorkspaceShell(props: { live: AlphaSessionLiveContext; ra
           >
             {props.rail?.[activePanel()]?.() ?? (
               <Show when={activePanel() === "terminal"}>
-                {/* C3-term(#550):引擎通道待窄 export 落地后接入;缺席时面板 fail-closed 空态。
+                {/* C3-term:真引擎 channel 经 #554 适配器进入(alpha-session-workspace 接线)。
                     I8:channel 身份必须过 live.accepts,会话切换后旧投影即刻失效。 */}
-                <TerminalRailPanel accepts={props.live.accepts} />
+                <TerminalRailPanel channel={props.terminalChannel?.()} accepts={props.live.accepts} />
               </Show>
             )}
           </aside>
