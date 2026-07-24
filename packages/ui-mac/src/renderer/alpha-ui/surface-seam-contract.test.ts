@@ -54,17 +54,41 @@ describe("ADR-027 typed surface seam anchors (frozen packages/app)", () => {
   })
 
   test("narrow session-leaf channel survives (REQ-088 C1, frontend-freeze-base-3)", () => {
-    // exports map 恰好一条 surface 子路径,指向 session 叶源文件;不得扩成 ./surface/* 通配,
-    // 也不得新增 pages/context 子路径(ADR-027 修订 2026-07-13,ADR-029 L3 逐案纪律)。
+    // exports map 的 surface 子路径恰好两条(逐案评审的窄导出),指向源文件;不得扩成
+    // ./surface/* 通配,也不得新增 pages/context 子路径(ADR-027 修订 2026-07-13/2026-07-24,
+    // ADR-029 L3 逐案纪律)。
     const pkg = JSON.parse(readFileSync(join(import.meta.dir, "../../../../app/package.json"), "utf8")) as {
       exports: Record<string, string>
     }
     expect(pkg.exports["./surface/session"]).toBe("./src/pages/session.tsx")
     const surfaceSubpaths = Object.keys(pkg.exports).filter((key) => key.startsWith("./surface/"))
-    expect(surfaceSubpaths).toEqual(["./surface/session"])
+    expect(surfaceSubpaths).toEqual(["./surface/session", "./surface/terminal"])
     expect(Object.keys(pkg.exports).some((key) => key.includes("pages") || key.includes("context"))).toBe(false)
     // 该模块仅有 default 一个导出(session Page 组件)—— 窄面的可机械验证形态。
     const sessionLeaf = readFileSync(join(APP_SRC, "pages/session.tsx"), "utf8")
     expect(sessionLeaf).toContain("export default function Page()")
+  })
+
+  test("narrow terminal-engine channel stays a minimal pure re-export (REQ-125 #554, ADR-027 修订 2026-07-24)", () => {
+    const pkg = JSON.parse(readFileSync(join(import.meta.dir, "../../../../app/package.json"), "utf8")) as {
+      exports: Record<string, string>
+    }
+    expect(pkg.exports["./surface/terminal"]).toBe("./src/surface/terminal.ts")
+
+    // 窄面的可机械验证形态:re-export 模块恰好三个符号,逐行钉死,禁止悄悄扩面。
+    const surfaceModule = readFileSync(join(APP_SRC, "surface/terminal.ts"), "utf8")
+    const exportLines = surfaceModule.split("\n").filter((line) => line.startsWith("export"))
+    expect(exportLines).toEqual([
+      'export { useTerminal } from "@/context/terminal"',
+      'export type { LocalPTY } from "@/context/terminal"',
+      'export { Terminal } from "@/components/terminal"',
+    ])
+
+    // 指向的引擎源仍导出这些符号(锚点:上游改名/搬文件时此处先于运行时红)。
+    const terminalContext = readFileSync(join(APP_SRC, "context/terminal.tsx"), "utf8")
+    expect(terminalContext).toContain("export const { use: useTerminal, provider: TerminalProvider }")
+    expect(terminalContext).toContain("export type LocalPTY")
+    const terminalComponent = readFileSync(join(APP_SRC, "components/terminal.tsx"), "utf8")
+    expect(terminalComponent).toContain("export const Terminal = (props: TerminalProps)")
   })
 })

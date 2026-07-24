@@ -1,11 +1,14 @@
 // REQ-125 C7:会话审批 dock 的 PermissionV2 typed feed。
 //
-// 语义(基线 §③.4 / I3 / I8):
-// - fail-closed:`ready` 只在一次成功 list 之后为 true;读不到(list 失败/尚未返回)= 不呈现
-//   任何可放行的审批 UI,事件增量只缓冲/合并,绝不单独把 feed 视为可信。
-// - 回复绑 request ID:reply() 只接受「当前 ready 快照里仍然挂起」的请求,stale/重复回复在
-//   客户端就被拒绝,不发往引擎(切会话/已决请求回错单的整类事故在此闸死)。
-// - 与 PermissionWatcher(独立 Permission surface)共用同一 reconcile 语义;watcher 保持
+// 语义(基线 §③.4 / I3 / I8;Codex 审计 2026-07-24 Blocker-1 收紧):
+// - fail-closed:`ready` 仅在「最近一次 list 成功且尚无新拉取在途」时为 true。任何 load()
+//   (含重连 refetch)启动的瞬间即退出就绪态 —— 在途期间零呈现、零放行;事件增量只
+//   缓冲/合并,绝不单独把 feed 视为可信。
+// - 代次纪律:每次真正发出的 list 携带递增代次,旧代次的成功/失败结果一律丢弃,
+//   不得覆盖新代次的状态。
+// - 回复绑 request ID:reply() 只接受「当前 ready 快照里仍然挂起」的请求,stale/重复/
+//   在途期的回复在客户端就被拒绝,不发往引擎(切会话/已决请求回错单的整类事故在此闸死)。
+// - 与 PermissionWatcher(独立 Permission surface)共用同一 feed 实现;watcher 保持
 //   全局兜底,seam 会话页经 session-approval-claim 声明接管时才停渲对话框。
 
 import type {
@@ -46,7 +49,10 @@ export type PermissionFeedClient = {
 }
 
 export type PermissionFeedState = {
-  /** true 仅当最近一次 list 成功且尚未失效;false 时 UI 不得呈现任何可放行动作。 */
+  /**
+   * true 仅当最近一次 list 成功且没有新的拉取在途;false(含 refetch 在途期)时 UI 不得
+   * 呈现任何可放行动作,reply() 一律拒绝。
+   */
   ready: boolean
   requests: PermissionV2Request[]
 }
@@ -73,6 +79,7 @@ export function createPermissionV2Feed(client: PermissionFeedClient, options?: {
   let reloadQueued = false
   let retryTimer: ReturnType<typeof setTimeout> | undefined
   let disposed = false
+  let generation = 0
 
   const apply = (delta: PermissionFeedDelta) => {
     if (disposed) return
@@ -97,23 +104,30 @@ export function createPermissionV2Feed(client: PermissionFeedClient, options?: {
       reloadQueued = true
       return
     }
+    // fail-closed(Blocker-1):拉取一经启动立即退出就绪态 —— 在途期间零呈现、零放行;
+    // 旧代次的迟到结果按代次丢弃,不得覆盖新代次的状态。
+    const gen = ++generation
+    setState("ready", false)
     buffered = []
     client.list().then(
       (requests) => {
-        if (disposed) return
+        if (disposed || gen !== generation) return
         const deltas = buffered ?? []
         buffered = undefined
+        if (reloadQueued) {
+          // 在途期间又请求了刷新:本代次结果只并入列表,就绪态交给下一代次判定。
+          reloadQueued = false
+          setState("requests", reconcilePermissionRequests(requests, deltas, resolved))
+          load()
+          return
+        }
         setState({ ready: true, requests: reconcilePermissionRequests(requests, deltas, resolved) })
-        if (!reloadQueued) return
-        reloadQueued = false
-        load()
       },
       () => {
-        if (disposed) return
+        if (disposed || gen !== generation) return
         const deltas = buffered ?? []
         buffered = undefined
-        // fail-closed:快照读不到 → 不就绪;增量仍并入本地列表以便快照恢复后无缝接上。
-        setState("ready", false)
+        // 快照读不到 → 保持不就绪;增量仍并入本地列表以便快照恢复后无缝接上。
         setState("requests", (requests) => reconcilePermissionRequests(requests, deltas, resolved))
         if (reloadQueued) {
           reloadQueued = false

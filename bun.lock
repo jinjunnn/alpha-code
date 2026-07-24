@@ -27,6 +27,19 @@
         "turbo": "2.10.2",
       },
     },
+    "packages/alpha-contracts-consumer": {
+      "name": "@alpha-code/contracts-consumer",
+      "version": "0.0.0",
+      "dependencies": {
+        "ajv": "8.20.0",
+        "ajv-formats": "3.0.1",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "@types/node": "catalog:",
+        "@typescript/native-preview": "catalog:",
+      },
+    },
     "packages/app": {
       "name": "@opencode-ai/app",
       "version": "1.18.4",
@@ -37,7 +50,6 @@
         "@dnd-kit/helpers": "0.5.0",
         "@dnd-kit/solid": "0.5.0",
         "@kobalte/core": "catalog:",
-        "@opencode-ai/client": "file:vendor/opencode-ai-client-1.17.13.tgz",
         "@opencode-ai/core": "workspace:*",
         "@opencode-ai/schema": "workspace:*",
         "@opencode-ai/sdk": "workspace:*",
@@ -489,19 +501,6 @@
         "tailwindcss": "catalog:",
         "typescript": "catalog:",
         "vite": "catalog:",
-      },
-    },
-    "packages/alpha-contracts-consumer": {
-      "name": "@alpha-code/contracts-consumer",
-      "version": "0.0.0",
-      "dependencies": {
-        "ajv": "8.20.0",
-        "ajv-formats": "3.0.1",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "@types/node": "catalog:",
-        "@typescript/native-preview": "catalog:",
       },
     },
     "packages/ext": {
@@ -1069,6 +1068,7 @@
         "@lydell/node-pty": "catalog:",
         "@opencode-ai/app": "workspace:*",
         "@opencode-ai/sdk": "workspace:*",
+        "@opencode-ai/session-ui": "workspace:*",
         "@opencode-ai/ui": "workspace:*",
         "@sentry/solid": "catalog:",
         "@sentry/vite-plugin": "catalog:",
@@ -1081,6 +1081,7 @@
         "@typescript/native-preview": "catalog:",
         "@valibot/to-json-schema": "1.6.0",
         "babel-preset-solid": "1.9.12",
+        "diff": "catalog:",
         "electron": "42.3.3",
         "electron-builder": "26.15.2",
         "electron-vite": "^5",
@@ -6113,8 +6114,6 @@
     "@openauthjs/openauth/@standard-schema/spec": ["@standard-schema/spec@1.0.0-beta.3", "", {}, "sha512-0ifF3BjA1E8SY9C+nUew8RefNOIq0cDlYALPty4rhUm8Rrl6tCM8hBT4bhGhx7I7iXD0uAgt50lgo8dD73ACMw=="],
 
     "@openauthjs/openauth/jose": ["jose@5.9.6", "", {}, "sha512-AMlnetc9+CV9asI19zHmrgS/WYsWUwCn2R7RzlbJWD7F9eWYUTGyBmU9o6PxngtLGOiDGPRu+Uc4fhKzbpteZQ=="],
-
-    "@opencode-ai/app/@opencode-ai/client": ["@opencode-ai/client@vendor/opencode-ai-client-1.17.13.tgz", {}, "sha512-1cYJikTCrXNhnS2qQ3P3rtdbGqhvJKksswG0amJNqgaeUfz3xDlKEDx+YoIosT7Cqk/AtO18jtip0lYL3TVdHQ=="],
 
     "@opencode-ai/core/@ai-sdk/openai": ["@ai-sdk/openai@3.0.84", "", { "dependencies": { "@ai-sdk/provider": "3.0.14", "@ai-sdk/provider-utils": "4.0.38" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-cmgbeJL0bbY0yTJH4/AdmP5E7MjWRL9G8UdhIi0JlV/So03o82ORJofW8OzwCZPTORVQblFbpZXYGDcUd9NdUQ=="],
 

@@ -9,29 +9,17 @@
 //   额外绑 request ID(session-permission-feed 闸死 stale)。
 
 import { useServerSDK, useServerSync } from "@opencode-ai/app"
-import type {
-  createOpencodeClient,
-  ModelV2Info,
-  PermissionV2DecisionCommand,
-  PermissionV2Request,
-  QuestionRequest,
-  Todo,
-} from "@opencode-ai/sdk/v2/client"
+import type { createOpencodeClient, ModelV2Info, QuestionRequest, Todo } from "@opencode-ai/sdk/v2/client"
 import { useNavigate } from "@solidjs/router"
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js"
-import { createStore } from "solid-js/store"
+import { unwrap } from "solid-js/store"
 import { hrefFor } from "../../../shared/route-manifest"
 import { t } from "../../i18n"
 import type { AlphaProjectsApi } from "../../sidebar/use-projects"
 import type { ComposerSessionDockApi, ComposerSlashCapture } from "../alpha-composer"
 import { createModelContract } from "../model-contract"
-import {
-  createPermissionDecisionCommand,
-  permissionDecisionSubmitError,
-  permissionRequestFacts,
-  type PermissionDecisionSubmitError,
-} from "../PermissionDialog"
-import { claimSessionApprovalDock } from "./session-approval-claim"
+import { SessionApprovalHost } from "./session-approval-card"
+import { SessionComposerMount } from "./session-composer-mount"
 import {
   childParentHref,
   childSessionFacts,
@@ -40,10 +28,10 @@ import {
   headPendingQuestion,
   questionAnswersComplete,
   revertDockFacts,
+  sdkResultFailed,
   todoDockVisible,
   todoDone,
 } from "./session-dock-core"
-import { SessionComposerMount } from "./session-composer-mount"
 import { createPermissionV2Feed, type PermissionV2Feed } from "./session-permission-feed"
 import { recordSessionSlashOrigin } from "./session-slash-origin"
 import { type AlphaSessionIdentity, identityKey } from "./session-workspace-core"
@@ -90,7 +78,6 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
                 return result.data.data
               }),
         })
-        const releaseClaim = claimSessionApprovalDock(bound.sessionID)
         const stopAsked = sdk.event.on("permission.v2.asked", (event) => {
           if (event.properties.sessionID !== bound.sessionID || !accepted()) return
           nextFeed.apply({ type: "asked", request: event.properties })
@@ -107,17 +94,23 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
           stopReplied()
           stopConnected()
           nextFeed.dispose()
-          releaseClaim()
         })
       },
     ),
   )
 
+  // 呈现权先立后破 + 唯一 owner(审计第 2/3 轮):claim 与审批卡渲染封装在
+  // SessionApprovalHost —— 仅 feed 就绪才持 claim;多 dock 并存时按登记序恰一个 owner
+  // 渲染审批卡;list 在途/失败期间不夺权,watcher 凭自身通道继续兜底。
+
   // fail-closed:feed 未就绪(缺席/读不到)= 无审批可呈现,亦无任何放行动作。
+  // unwrap:store 代理的 $PROXY 符号会破坏 permissionRequestFacts 的严格键集核验,
+  // 必须以 raw 对象交给审批卡(与 PermissionWatcher 同一处置)。
   const approval = createMemo(() => {
     const active = feed()
     if (!active?.state.ready) return undefined
-    return active.state.requests[0]
+    const head = active.state.requests[0]
+    return head ? unwrap(head) : undefined
   })
 
   /* ── todo / question:typed sync 通道,读当前身份对应的会话 ─────────────────────── */
@@ -178,11 +171,12 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
     return contextUsagePercent(serverSync().session.data.message[bound.sessionID], listed.models)
   })
 
-  /* ── 「始终允许」授权所需的项目身份:worktree 与会话目录精确匹配,否则不可用 ────── */
+  /* ── 「始终允许」授权所需的项目身份:取会话自身的精确 projectID(typed session info,
+        与独立 Permission surface 的当前项目同源;sandbox 会话因此同样可用)────────────── */
   const projectID = createMemo(() => {
     const bound = identity()
     if (!bound) return undefined
-    return serverSync().data.project.find((project) => project.worktree === bound.directory)?.id
+    return serverSync().session.data.info[bound.sessionID]?.projectID
   })
 
   const dockApi: ComposerSessionDockApi = {
@@ -204,19 +198,17 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
 
   return (
     <div class="a-swk-dock" data-alpha-session-dock>
-      <Show when={approval()} keyed>
-        {(request) => (
-          <SessionApprovalCard
-            request={request}
-            projectID={projectID()}
-            onSubmit={(command) => {
-              const active = feed()
-              if (!active) return Promise.reject(new Error("permission feed is not ready"))
-              return active.reply(request.id, command).then(() => undefined)
-            }}
-          />
-        )}
-      </Show>
+      <SessionApprovalHost
+        sessionID={() => identity()?.sessionID}
+        ready={() => feed()?.state.ready ?? false}
+        approval={approval}
+        projectID={projectID}
+        onSubmit={(requestID, command) => {
+          const active = feed()
+          if (!active) return Promise.reject(new Error("permission feed is not ready"))
+          return active.reply(requestID, command).then(() => undefined)
+        }}
+      />
       <Show when={question()} keyed>
         {(request) => (
           <SessionQuestionCard
@@ -235,7 +227,7 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
       </Show>
       {/* 子会话与可发送 composer 互斥(对齐上游子会话语义):子会话(有 parentID)只呈现
           子会话条(运行指示 + 返回父会话入口)为主体,**不挂** composer——子会话零可发送路径,
-          新输入只能回到父会话。非子会话才经 SessionComposerMount 挂 composer(挂载定格身份键)。 */}
+          新输入只能回到父会话。非子会话才经 SessionComposerMount 挂 composer(按身份 keyed)。 */}
       <Show
         when={childSession()}
         keyed
@@ -263,114 +255,6 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
         )}
       </Show>
     </div>
-  )
-}
-
-/* ── 审批卡(已批稿「审批请求停靠」帧;决定逻辑与 PermissionDialog 同源)──────────── */
-function SessionApprovalCard(props: {
-  request: PermissionV2Request
-  projectID?: string
-  onSubmit: (command: PermissionV2DecisionCommand) => Promise<void>
-}) {
-  const facts = permissionRequestFacts(props.request)
-  const [state, setState] = createStore<{
-    submitting?: PermissionV2DecisionCommand
-    failed?: { command: PermissionV2DecisionCommand; error: PermissionDecisionSubmitError }
-  }>({})
-  let onceButton: HTMLButtonElement | undefined
-
-  const canAlways = () =>
-    facts.verified &&
-    typeof props.projectID === "string" &&
-    !!props.projectID.trim() &&
-    Array.isArray(props.request.save) &&
-    props.request.save.length > 0 &&
-    props.request.save.every((resource) => typeof resource === "string")
-
-  const decide = (decision: "once" | "always" | "reject") => {
-    if (state.submitting) return
-    // 事实核不实 = 只能拒绝(与 PermissionDialog 同一 fail-closed 语义)。
-    const safeDecision = facts.verified ? decision : "reject"
-    if (safeDecision === "always" && !canAlways()) return
-    const command =
-      state.failed?.command.decision === safeDecision
-        ? state.failed.command
-        : createPermissionDecisionCommand(props.request, safeDecision, props.projectID)
-    setState({ submitting: command, failed: undefined })
-    props.onSubmit(command).then(
-      () => setState("submitting", undefined),
-      (error) => setState({ submitting: undefined, failed: { command, error: permissionDecisionSubmitError(error) } }),
-    )
-  }
-
-  // 已批稿合同:审批卡出现时焦点移入首个动作;Esc 不等价拒绝(必须显式选择)。
-  createEffect(() => {
-    if (facts.verified) queueMicrotask(() => onceButton?.focus())
-  })
-  // 事实核不实的请求不给任何放行入口,直接以拒绝落档(与 PermissionDialog onMount 同款)。
-  createEffect(() => {
-    if (!facts.verified) decide("reject")
-  })
-
-  return (
-    <section
-      class="a-swk-card a-swk-approval"
-      data-alpha-session-approval={props.request.id}
-      role="group"
-      aria-live="assertive"
-      aria-label={t("alpha.session.approvalTitle")}
-    >
-      <header class="a-swk-approval-head">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" />
-        </svg>
-        <span>{t("alpha.session.approvalTitle")}</span>
-        <Show when={facts.action}>{(action) => <code>{action()}</code>}</Show>
-      </header>
-      <Show when={facts.resources?.length}>
-        <p class="a-swk-approval-body">
-          <For each={facts.resources}>{(resource) => <code>{resource}</code>}</For>
-        </p>
-      </Show>
-      <div class="a-swk-approval-actions">
-        <button
-          ref={onceButton}
-          type="button"
-          class="a-swk-btn a-swk-btn--primary"
-          disabled={!!state.submitting || !facts.verified}
-          onClick={() => decide("once")}
-          data-permission-decision="once"
-        >
-          {t("alpha.permission.once")}
-        </button>
-        <button
-          type="button"
-          class="a-swk-btn"
-          disabled={!!state.submitting || !canAlways()}
-          title={!canAlways() ? t("alpha.permission.projectUnverified") : undefined}
-          onClick={() => decide("always")}
-          data-permission-decision="always"
-        >
-          {t("alpha.permission.always")}
-        </button>
-        <button
-          type="button"
-          class="a-swk-btn"
-          disabled={!!state.submitting}
-          onClick={() => decide("reject")}
-          data-permission-decision="reject"
-        >
-          {t("alpha.permission.reject")}
-        </button>
-      </div>
-      <Show when={state.failed}>
-        {(failed) => (
-          <p class="a-swk-approval-error" role="alert">
-            {failed().error.kind === "conflict" ? t("alpha.permission.conflictTitle") : t("alpha.permission.failedTitle")}
-          </p>
-        )}
-      </Show>
-    </section>
   )
 }
 
@@ -422,7 +306,15 @@ function SessionQuestionCard(props: {
           })
         : client.v2.session.question.reject({ sessionID: bound.sessionID, requestID: props.request.id })
     call.then(
-      () => setSubmitting(false),
+      (result) => {
+        // throwOnError:false 档位的 { error } 信封同样是失败(审计 minor:4xx 不装成功)。
+        if (sdkResultFailed(result)) {
+          setSubmitting(false)
+          setFailed(true)
+          return
+        }
+        setSubmitting(false)
+      },
       () => {
         setSubmitting(false)
         setFailed(true)

@@ -26,7 +26,7 @@ import { Portal } from "solid-js/web"
 import { useCommand } from "./providers"
 import { setExtHubOpen } from "../extensions/ext-hub-state"
 import { createComposerAutocomplete } from "./composer-autocomplete"
-import { buildMentionParts, type MentionPart } from "./composer-autocomplete-core"
+import { buildMentionParts, buildPromptInput, type MentionPart } from "./composer-autocomplete-core"
 import {
   ATTACH_ACCEPT,
   ATTACH_MAX_COUNT,
@@ -51,8 +51,11 @@ import {
   composerModelProjection,
   composerModelSuspended,
   composerPerm,
+  DEFAULT_AGENT,
   failComposerModelProjection,
   invalidateComposerModelProjection,
+  pushedAgentFor,
+  recordPushedAgent,
   resetComposerModelProjection,
   resolveComposerModelProjection,
   routeSlash,
@@ -72,8 +75,10 @@ import { ModelPickPop } from "./alpha-composer-model"
 import { createModelContract, type ModelContract } from "./model-contract"
 import { composerModelFromRef, modelRefOf, withModelVariant } from "./model-picker-core"
 import { ENGINE_FETCH_TIMEOUT_MS } from "./model-picker-logic"
+import { accountResultState, createRetryWakeup } from "./model-recovery"
 import { t } from "../i18n"
 import { markStartupTimeline } from "../startup-timeline"
+import { subscribeRuntimeRecovery, subscribeSseReconnected } from "../runtime-recovery"
 import "./alpha-composer.css"
 
 /* ── 单开注册表(全部 chips 共享;开新的自动关旧的)──────────────────────────── */
@@ -563,7 +568,33 @@ const readState = <T,>(promise: Promise<T>): Promise<ReadState<T>> =>
     () => ({ status: "error" }),
   )
 
-const isErrorEnvelope = (value: unknown) => !!value && typeof value === "object" && "error" in value
+/** 权威档位读的有界超时(审计第 5 轮 Major:SDK client 关闭默认超时,无界 GET 悬挂会把
+ *  sending 永锁 —— 每次发送都暴露在该风险下)。 */
+export const SESSION_AGENT_READ_TIMEOUT_MS = 5_000
+
+/** 会话档位的权威实时读(审计第 4 轮 Major):档位决策(needsSwitch / CAS 回滚 / 账本
+ *  漂移)一律经 typed SDK GET 直读服务端 —— serverSync 缓存不消费 v2 切档事件、永不更新,
+ *  只可作 UI 展示,禁作决策源。
+ *  有界(审计第 5 轮 Major):signal 同时交给 SDK(网络层中止)并在本地竞速(即使传输层
+ *  忽略 signal,悬挂请求也在超时后按失败 settle)——超时/中止走既有诚实失败路径。 */
+async function readSessionAgent(
+  client: NonNullable<ReturnType<AlphaProjectsApi["sdk"]>>,
+  sessionID: string,
+  timeoutMs = SESSION_AGENT_READ_TIMEOUT_MS,
+): Promise<{ ok: true; agent: string | undefined } | { ok: false }> {
+  try {
+    const signal = AbortSignal.timeout(timeoutMs)
+    const call = client.v2.session.get({ sessionID }, { signal })
+    const result = await new Promise<Awaited<typeof call>>((resolve, reject) => {
+      signal.addEventListener("abort", () => reject(new Error("session agent read timed out")), { once: true })
+      call.then(resolve, reject)
+    })
+    if (result.error !== undefined || !result.data) return { ok: false }
+    return { ok: true, agent: result.data.data.agent }
+  } catch {
+    return { ok: false }
+  }
+}
 
 export function AlphaComposer(props: AlphaComposerProps) {
   return <AlphaComposerRuntime {...props} command={useCommand()} />
@@ -573,6 +604,8 @@ export type AlphaComposerRuntimeProps = AlphaComposerProps & {
   command: CommandApi
   /** 生产默认走 createModelContract；组件级 contract 驱动测试从同一接缝注入确定性实现。 */
   modelContract?: ModelContract
+  /** 权威档位读的超时上界(测试接缝;生产默认 SESSION_AGENT_READ_TIMEOUT_MS)。 */
+  agentReadTimeoutMs?: number
 }
 
 export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
@@ -590,7 +623,9 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     if (sending() && text() === submittedText) return
     props.onDraftCapture?.(text())
   })
-  const [modelChainState, setModelChainState] = createSignal<"loading" | "ready" | "error">("loading")
+  const [modelChainState, setModelChainState] = createSignal<"loading" | "recovering" | "ready" | "error">(
+    "loading",
+  )
   const [mentions, setMentions] = createSignal<MentionPart[]>([])
   const [composing, setComposing] = createSignal(false)
   let taRef: HTMLTextAreaElement | undefined
@@ -664,9 +699,6 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     onAttach: () => fileInputRef?.click(),
   })
 
-  const canSend = createMemo(
-    () => text().trim().length > 0 && !!props.directory() && modelChainState() === "ready" && !sending(),
-  )
   const hasWorkspace = () => !!props.directory()
 
   /* session 模式:运行态来自 sessionDock 注入的 live status typed 通道(REQ-125 C7,取代
@@ -687,14 +719,45 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   const [lastAuth, setLastAuth] = createSignal<AuthState | null>(null)
   const [platformId, setPlatformId] = createSignal<string | null>(null)
   const [hasConfiguredByok, setHasConfiguredByok] = createSignal(false)
+  const [platformPermission, setPlatformPermission] = createSignal<"out" | "recovering" | "ready" | "failed">(
+    "recovering",
+  )
   const [authEpoch, setAuthEpoch] = createSignal(0)
   const [modelRetryEpoch, setModelRetryEpoch] = createSignal(0)
   let chainSeq = 0
   let chainDisposed = false
+  let runtimeGenerationEpoch = 0
+  let lastAuthSignature: string | undefined
+  const modelRetryWakeup = createRetryWakeup({
+    onCancel: (reason, outcome) =>
+      markStartupTimeline("renderer.retry_backoff.cancel", {
+        reason,
+        outcome,
+        surface: "home",
+      }),
+  })
+  const accountRetryWakeup = createRetryWakeup()
+  const authSignature = (state: AuthState) =>
+    `${state.status}\u0000${state.mode}\u0000${state.platformStatus ?? "ready"}\u0000${state.account?.email ?? ""}`
+  const canSend = createMemo(() => {
+    const selected = composerModel()
+    const needsPlatform =
+      (!!selected && selected.providerID === platformId()) ||
+      (!selected && lastAuth()?.status === "logged-in" && !hasConfiguredByok())
+    return (
+      text().trim().length > 0 &&
+      !!props.directory() &&
+      modelChainState() === "ready" &&
+      (!needsPlatform || platformPermission() === "ready") &&
+      !sending()
+    )
+  })
 
   const selectComposerModel = async (model: NonNullable<ReturnType<typeof composerModel>>) => {
     // 未获全链 admission 时不能 supersede 正在完成 auth/KEY/account/list 的 owner，否则无人接管 loading。
     if (modelChainState() !== "ready") throw new Error("model chain is not ready")
+    if (model.providerID === platformId() && platformPermission() !== "ready")
+      throw new Error("platform permission is recovering")
     const seq = ++chainSeq
     const sessionID = props.sessionID?.()
     if (sessionID) {
@@ -729,13 +792,47 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     setLastAuth(null)
     setPlatformId(null)
     setHasConfiguredByok(false)
+    setPlatformPermission("recovering")
     if (sessionID) invalidateComposerModelProjection(sessionID)
     else resetComposerModelProjection()
 
     const catalogRead = readState(window.api.models.catalog())
     const authRead = readState(window.api.auth.getState())
     const keysRead = readState(window.api.providers.keyStatus())
-    const currentRead = sessionID ? await readState(modelContract.current(sessionID)) : undefined
+    const currentPromise = sessionID ? readState(modelContract.current(sessionID)) : undefined
+    let modelAttempt = 0
+    const readModels = () => {
+      const attempt = ++modelAttempt
+      const markModelList = props.mode === "home" && homeModelListMarkCount < 25
+      const started = markModelList ? performance.now() : 0
+      if (markModelList) {
+        homeModelListMarkCount++
+        markStartupTimeline("renderer.home.model_list.start", { attempt, chain: seq })
+      }
+      const listing = modelContract.list(directory, AbortSignal.timeout(ENGINE_FETCH_TIMEOUT_MS))
+      if (markModelList)
+        void listing.then(
+          (listed) =>
+            markStartupTimeline("renderer.home.model_list.end", {
+              attempt,
+              chain: seq,
+              count: listed.length,
+              durationMs: performance.now() - started,
+              outcome: "ok",
+            }),
+          () =>
+            markStartupTimeline("renderer.home.model_list.end", {
+              attempt,
+              chain: seq,
+              durationMs: performance.now() - started,
+              outcome: "error:request",
+            }),
+        )
+      return listing
+    }
+    // T3:directory SDK 可用就立刻发 model.list；账户读取在下面独立推进，不能成为目录前置门。
+    let modelListing = readModels()
+    const currentRead = currentPromise ? await currentPromise : undefined
     if (chainDisposed || seq !== chainSeq) return
     if (sessionID && currentRead?.status === "error") {
       failComposerModelProjection(sessionID)
@@ -764,118 +861,82 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
 
     const [auth, keys] = await Promise.all([authRead, keysRead])
     if (chainDisposed || seq !== chainSeq) return
-    if (auth.status === "error" || keys.status === "error") {
+    if (keys.status === "error") {
       setModelChainState("error")
       return
     }
-    const markAccountSummary = props.mode === "home" && auth.data.status === "logged-in"
-    const accountStarted = markAccountSummary ? performance.now() : 0
-    if (markAccountSummary) markStartupTimeline("renderer.home.account_summary.start", { chain: seq })
-    const summary =
-      auth.data.status === "logged-in"
-        ? await readState(window.api.account.summary())
-        : ({ status: "ready", data: null } as const)
-    if (markAccountSummary)
-      markStartupTimeline("renderer.home.account_summary.end", {
-        chain: seq,
-        durationMs: performance.now() - accountStarted,
-        outcome:
-          summary.status === "error" ? "error:request" : isErrorEnvelope(summary.data) ? "error:envelope" : "ok",
-      })
-    if (chainDisposed || seq !== chainSeq) return
-    if (summary.status === "error" || isErrorEnvelope(summary.data)) {
-      setModelChainState("error")
-      return
+    const authState = auth.status === "ready" ? auth.data : null
+    if (authState) {
+      lastAuthSignature = authSignature(authState)
+      setLastAuth(authState)
     }
-
-    const authState = auth.data
-    setLastAuth(authState)
     const pid = cat.data.platformProvider.id
     setPlatformId(pid)
     const configured = Object.entries(keys.data)
       .filter(([, value]) => value.configured)
       .map(([id]) => id)
     setHasConfiguredByok(configured.some((id) => id !== pid))
-    const loggedIn = authState.status === "logged-in"
-    const baseCtx = {
-      loggedIn,
-      accountUsable: loggedIn && summaryUsable(summary.data),
-      platformProviderId: pid,
-      configuredProviders: configured,
-      catalog: { defaultModel: cat.data.defaultModel, platformModels: cat.data.platformModels },
-    }
+    const loggedIn = authState?.status === "logged-in"
+    const platformAuthReady = loggedIn && (authState.platformStatus ?? "ready") === "ready"
+    if (!loggedIn) setPlatformPermission("out")
+    else if (!platformAuthReady) setPlatformPermission("recovering")
+    const accountResolution = platformAuthReady
+      ? (async () => {
+          let recovering = false
+          for (let attempt = 1; attempt <= 20 && !chainDisposed && seq === chainSeq; attempt++) {
+            const started = performance.now()
+            if (props.mode === "home")
+              markStartupTimeline("renderer.home.account_summary.start", { attempt, chain: seq })
+            const summary = await readState(window.api.account.summary())
+            const state = summary.status === "error" ? "recovering" : accountResultState(summary.data)
+            if (props.mode === "home")
+              markStartupTimeline("renderer.home.account_summary.end", {
+                attempt,
+                chain: seq,
+                durationMs: performance.now() - started,
+                outcome: state,
+              })
+            if (chainDisposed || seq !== chainSeq) return { status: "superseded" as const }
+            if (state === "ready" && summary.status === "ready") {
+              const usable = summaryUsable(summary.data)
+              setPlatformPermission(usable ? "ready" : "failed")
+              if (recovering && modelChainState() === "recovering")
+                modelRetryWakeup.wake("account-recovered")
+              accountRetryWakeup.clear()
+              return { status: "ready" as const, usable }
+            }
+            if (state === "failed") {
+              setPlatformPermission("failed")
+              accountRetryWakeup.clear()
+              return { status: "failed" as const }
+            }
+            recovering = true
+            setPlatformPermission("recovering")
+            await accountRetryWakeup.wait(1000)
+          }
+          // Transport retry budget exhaustion is still not a verified entitlement denial.
+          // Remain recovering until auth/generation/SSE or a manual retry starts a fresh chain.
+          return { status: "recovering" as const }
+        })()
+      : null
 
-    // 只有认证/账户/KEY 都是确定事实时才允许把当前选择挂成业务否定态。
-    const current = composerModel()
-    if (current && current.providerID === pid) {
-      const verdict = checkSelectedModel(current, { ...baseCtx, engineModels: [] })
-      if (!verdict.ok) suspendComposerModel(verdict.reason)
-    }
-
+    let engineModels: EngineModelRef[] = []
+    let modelsLoaded = false
     for (let i = 0; i < 20 && !chainDisposed && seq === chainSeq; i++) {
-      const markModelList = props.mode === "home" && homeModelListMarkCount < 25
-      const started = markModelList ? performance.now() : 0
-      if (markModelList) {
-        homeModelListMarkCount++
-        markStartupTimeline("renderer.home.model_list.start", { attempt: i + 1, chain: seq })
-      }
-      let retryReason = "no-default"
       try {
-        const listing = modelContract.list(directory, AbortSignal.timeout(ENGINE_FETCH_TIMEOUT_MS))
-        if (markModelList)
-          void listing.then(
-            (listed) =>
-              markStartupTimeline("renderer.home.model_list.end", {
-                attempt: i + 1,
-                chain: seq,
-                count: listed.length,
-                durationMs: performance.now() - started,
-                outcome: "ok",
-              }),
-            () =>
-              markStartupTimeline("renderer.home.model_list.end", {
-                attempt: i + 1,
-                chain: seq,
-                durationMs: performance.now() - started,
-                outcome: "error:request",
-              }),
-          )
-        const listed = await listing
+        const listed = await modelListing
         if (chainDisposed || seq !== chainSeq) return
-        const engineModels: EngineModelRef[] = listed
+        engineModels = listed
           .filter((model) => model.enabled && model.status !== "deprecated")
           .map((model) => ({ providerID: model.providerID, id: model.id }))
-        const cur = composerModel()
-        if (cur) {
-          const available = engineModels.some((model) => model.providerID === cur.providerID && model.id === cur.id)
-          if (available) {
-            setModelChainState("ready")
-            return
-          }
-          suspendComposerModel("provider-gone")
-        }
-        const resolved = resolveDefaultModel({ ...baseCtx, engineModels })
-        if (resolved.kind === "model") {
-          if (sessionID) {
-            const switched = await readState(modelContract.switch(sessionID, modelRefOf(resolved.model)))
-            if (chainDisposed || seq !== chainSeq || props.sessionID?.() !== sessionID) return
-            if (switched.status === "error") throw new Error("default model switch failed")
-          }
-          applyDefaultComposerModel(resolved.model)
-          setModelChainState("ready")
-          return
-        }
-        if (resolved.kind === "none") {
-          setModelChainState("ready")
-          return // ④ 空态:占位 + picker 引导 + preflight 兜底
-        }
+        modelsLoaded = true
+        modelRetryWakeup.clear()
+        break
       } catch {
-        retryReason = "request-error"
         if (chainDisposed || seq !== chainSeq) return
-        setModelChainState("error")
-        // 冷启动 / respawn 窗口：保持当前选择，稍后重试；picker 同时呈现真实失败态。
+        setModelChainState("recovering")
       }
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      const wait = await modelRetryWakeup.wait(1000)
       if (chainDisposed || seq !== chainSeq) return
       if (props.mode === "home" && i + 1 < 20 && homeModelRetryMarkCount < 25) {
         homeModelRetryMarkCount++
@@ -883,12 +944,72 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
           attempt: i + 2,
           chain: seq,
           count: homeModelRetryMarkCount,
-          delayMs: 1000,
-          reason: retryReason,
+          delayMs: wait === "cancelled" ? 0 : 1000,
+          reason: wait === "cancelled" ? "recovery-signal" : "request-error",
         })
       }
+      modelListing = readModels()
     }
-    if (!chainDisposed && seq === chainSeq) setModelChainState("error")
+    if (chainDisposed || seq !== chainSeq) return
+    if (!modelsLoaded) {
+      // An exhausted transport retry budget is not a hard catalog failure.
+      setModelChainState("recovering")
+      return
+    }
+    setHasConfiguredByok(
+      configured.some(
+        (id) =>
+          id !== pid &&
+          engineModels.some((model) => model.providerID === id || model.providerID === `${id}-byok`),
+      ),
+    )
+    const configuredEngineProviders = configured.flatMap((id) => {
+      if (engineModels.some((model) => model.providerID === id)) return [id]
+      const byokID = `${id}-byok`
+      return engineModels.some((model) => model.providerID === byokID) ? [byokID] : []
+    })
+
+    const resolveSelection = async (accountUsable: boolean, accountVerified: boolean) => {
+      if (chainDisposed || seq !== chainSeq) return
+      const current = composerModel()
+      const baseCtx = {
+        loggedIn: Boolean(platformAuthReady),
+        accountUsable,
+        platformProviderId: pid,
+        configuredProviders: configuredEngineProviders,
+        catalog: { defaultModel: cat.data.defaultModel, platformModels: cat.data.platformModels },
+        engineModels,
+      }
+      // 平台当前选择只有在账户事实已验证后才可挂起；恢复窗口不把未知误写成业务否定。
+      if (current) {
+        if (current.providerID === pid && !accountVerified) return
+        const verdict = checkSelectedModel(current, baseCtx)
+        if (!verdict.ok) suspendComposerModel(verdict.reason)
+        return
+      }
+      const resolved = resolveDefaultModel(baseCtx)
+      if (resolved.kind !== "model") return
+      if (sessionID) {
+        const switched = await readState(modelContract.switch(sessionID, modelRefOf(resolved.model)))
+        if (chainDisposed || seq !== chainSeq || props.sessionID?.() !== sessionID) return
+        if (switched.status === "error") {
+          setModelChainState("error")
+          return
+        }
+      }
+      applyDefaultComposerModel(resolved.model)
+    }
+
+    setModelChainState("ready")
+    if (!platformAuthReady) await resolveSelection(false, !loggedIn)
+    if (!platformAuthReady || chainDisposed || seq !== chainSeq) return
+    await resolveSelection(false, false)
+    if (chainDisposed || seq !== chainSeq) return
+
+    void accountResolution?.then(async (resolution) => {
+      if (chainDisposed || seq !== chainSeq || resolution.status !== "ready") return
+      await resolveSelection(resolution.usable, true)
+    })
   }
 
   createEffect(() => {
@@ -911,7 +1032,16 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
 
   onMount(() => {
     // 登录态变化递增 epoch；路由 directory/sessionID 由上面的 effect 直接跟踪。
-    const unsub = window.api.auth.subscribe(() =>
+    let receivedInitialAuth = false
+    const unsub = window.api.auth.subscribe((state) => {
+      const signature = authSignature(state)
+      if (!receivedInitialAuth) {
+        receivedInitialAuth = true
+        lastAuthSignature = signature
+        return
+      }
+      if (signature === lastAuthSignature) return
+      lastAuthSignature = signature
       setAuthEpoch((value) => {
         markStartupTimeline("renderer.composer.auth_epoch.increment", {
           candidate: "B",
@@ -919,11 +1049,49 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
           trigger: "auth-change",
         })
         return value + 1
-      }),
-    )
+      })
+    })
+    let receivedRuntimeState = false
+    const unsubscribeRuntime = subscribeRuntimeRecovery((state) => {
+      if (!receivedRuntimeState) {
+        receivedRuntimeState = true
+        if (state.status === "ready") return
+      }
+      if (state.status === "recovering") {
+        runtimeGenerationEpoch++
+        setModelChainState("recovering")
+        // C7:引擎运行态是 typed live 通道的派生值(sessionDock.running),重启后随
+        // session_status 自行归位 —— 本地只需复位在途提交并如实播报中断。
+        if (running() || sending()) {
+          markStartupTimeline("renderer.generation.interruption", {
+            generation: state.generation,
+            reason: state.reason,
+          })
+          setSending(false)
+          pushToast({
+            kind: "info",
+            title: t("alpha.composer.generationInterrupted"),
+            detail: t("alpha.composer.generationInterruptedDetail"),
+          })
+        }
+        return
+      }
+      modelRetryWakeup.wake("generation-ready")
+      if (modelChainState() === "recovering") setModelRetryEpoch((value) => value + 1)
+      accountRetryWakeup.wake("generation-ready")
+    })
+    const unsubscribeSse = subscribeSseReconnected(() => {
+      modelRetryWakeup.wake("sse-reconnected")
+      if (modelChainState() === "recovering") setModelRetryEpoch((value) => value + 1)
+      accountRetryWakeup.wake("sse-reconnected")
+    })
     onCleanup(() => {
       chainDisposed = true
       unsub?.()
+      unsubscribeRuntime()
+      unsubscribeSse()
+      modelRetryWakeup.dispose()
+      accountRetryWakeup.dispose()
     })
   })
 
@@ -932,7 +1100,9 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     const sid = props.sessionID?.()
     if (!c || !sid) return
     try {
-      await c.session.abort({ sessionID: sid, directory: props.directory() } as any)
+      const result = await c.session.abort({ sessionID: sid, directory: props.directory() } as any)
+      // throwOnError:false 档位的 { error } 信封同样是失败(审计 minor:4xx 不装停止成功)。
+      if ((result as { error?: unknown } | undefined)?.error !== undefined) throw new Error("abort rejected")
     } catch {
       pushToast({ kind: "error", title: t("alpha.composer.abortFailed") })
     }
@@ -969,7 +1139,8 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     }
     // REQ-069 preflight:未登录 + 代理模型(或全无可用)→ 行内引导替代网关拒绝原文。
     const block = preflightBlockReason(composerModel(), {
-      loggedIn: lastAuth()?.status === "logged-in",
+      loggedIn:
+        lastAuth()?.status === "logged-in" && (lastAuth()?.platformStatus ?? "ready") === "ready",
       platformProviderId: platformId(),
       hasConfiguredByok: hasConfiguredByok(),
     })
@@ -1003,6 +1174,8 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       perm: composerPerm(),
       agent: composerAgent(),
     })
+    const submissionGeneration = runtimeGenerationEpoch
+    const interrupted = () => submissionGeneration !== runtimeGenerationEpoch
     submittedText = text() // 已提交文本快照(在途未编辑判据)
     setSending(true)
     try {
@@ -1011,6 +1184,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
           model: req.model,
           agent: req.agent,
         })
+        if (interrupted()) return
         if (!id) {
           pushToast({ kind: "error", title: t("alpha.composer.sendFailed") })
           return
@@ -1033,6 +1207,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         const { data: cmds } = await c.command
           .list({ directory: dir } as any)
           .catch(() => ({ data: undefined }) as const)
+        if (interrupted()) return
         if (Array.isArray(cmds) && cmds.some((x: any) => x?.name === slash.name)) {
           const { data: commanded, error } = await c.session.command({
             sessionID: sid,
@@ -1040,6 +1215,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
             command: slash.name,
             arguments: slash.args,
           } as any)
+          if (interrupted()) return
           if (error) {
             pushToast({ kind: "error", title: t("alpha.composer.commandFailed") })
             return
@@ -1058,20 +1234,92 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
           return
         }
       }
-      const { error } = await c.session.promptAsync({
-        sessionID: sid,
-        directory: dir,
-        parts: req.parts,
-        ...(req.agent ? { agent: req.agent } : {}),
-      } as any)
-      if (error) {
+      // REQ-125 C7:会话发送走 v2 durable 输入队列(session.prompt + delivery),直连
+      // promptAsync 退役。运行中 = "queue"(与占位文案「发送后排队」一致,含 Enter 路径);
+      // 空闲省略 delivery(引擎默认 steer,行为等价即时执行)。
+      //
+      // 档位协议(审计第 2-5 轮:可逆、原子、不污染 durable 队列,决策源=权威实时读):
+      // ① 空闲:发送前把会话档切到本次期望档;prompt 提交失败经 CAS 权威核验后回滚,
+      //   不留下已改档的会话。
+      // ② 运行中:切档会立刻作用于正在 drain 的回合 —— 需要改档的排队发送如实拒绝
+      //   (提示等当前任务结束);无档位变化的发送正常排队。
+      // ③ 退出 plan/readonly:期望档回空时,若会话档仍是本 composer 推送的档,切回引擎
+      //   默认档(账本只回滚自己写过的,不碰用户在别处设置的档)。
+      // 发送前:权威实时读当前会话档(决策源;serverSync 缓存禁用于决策 —— 见 readSessionAgent)。
+      // 读不到 = 无法安全决策档位,按发送失败如实拦下(正文保留)。
+      const agentRead = await readSessionAgent(c, sid, props.agentReadTimeoutMs)
+      if (interrupted()) return
+      if (!agentRead.ok) {
+        pushToast({ kind: "error", title: t("alpha.composer.sendFailed") })
+        return
+      }
+      const agentNow = agentRead.agent
+      let entryBefore = pushedAgentFor(sid)
+      if (entryBefore !== undefined && agentNow !== entryBefore) {
+        // 权威漂移判定:会话档已被他处改写 → 弃权,不重新认领(含用户改回默认的情形)。
+        recordPushedAgent(sid, null)
+        entryBefore = undefined
+      }
+      const desiredAgent = req.agent ?? (entryBefore !== undefined ? DEFAULT_AGENT : undefined)
+      const needsAgentSwitch = desiredAgent !== undefined && desiredAgent !== (agentNow ?? DEFAULT_AGENT)
+      if (needsAgentSwitch && running()) {
+        pushToast({
+          kind: "info",
+          title: t("alpha.composer.agentQueueBlocked"),
+          detail: t("alpha.composer.agentQueueBlockedDetail"),
+        })
+        return
+      }
+      let rollbackAgent: string | undefined
+      if (needsAgentSwitch) {
+        const switched = await c.v2.session
+          .switchAgent({ sessionID: sid, agent: desiredAgent })
+          .catch(() => ({ error: new Error("switch agent failed") }))
+        if (interrupted()) return
+        if ((switched as { error?: unknown } | undefined)?.error !== undefined) {
+          pushToast({ kind: "error", title: t("alpha.composer.sendFailed") })
+          return
+        }
+        rollbackAgent = agentNow ?? DEFAULT_AGENT
+        recordPushedAgent(sid, desiredAgent === DEFAULT_AGENT ? null : desiredAgent)
+      }
+      const admitted = await c.v2.session
+        .prompt({
+          sessionID: sid,
+          prompt: buildPromptInput({ text: body, mentions: mentions(), attachments: attachments() }),
+          ...(running() ? { delivery: "queue" as const } : {}),
+        })
+        .catch(() => undefined)
+      if (interrupted()) return
+      if (admitted === undefined || admitted.error !== undefined || !admitted.data) {
+        if (rollbackAgent !== undefined) {
+          // CAS 回滚(审计第 3-5 轮 Major):回滚决策前经 typed SDK **权威实时读**当前会话档
+          // (不经 serverSync 缓存)——仍等于 composer 刚设的 desired 才回滚;读到其它值 =
+          // 用户并发改档,不覆盖用户选择,只放弃自己的账本;权威读不可得时不盲写回滚
+          // (宁可留下 desired 也不冒覆盖用户并发选择的险),账本保持与引擎最后受理状态一致,
+          // 后续发送经权威读自愈。发送失败本身已如实提示。
+          const verify = await readSessionAgent(c, sid, props.agentReadTimeoutMs)
+          if (interrupted()) return
+          if (verify.ok && verify.agent === desiredAgent) {
+            const rolled = await c.v2.session
+              .switchAgent({ sessionID: sid, agent: rollbackAgent })
+              .catch(() => ({ error: new Error("switch agent rollback failed") }))
+            if ((rolled as { error?: unknown } | undefined)?.error === undefined) {
+              recordPushedAgent(sid, entryBefore ?? null)
+            }
+          } else if (verify.ok) {
+            recordPushedAgent(sid, null)
+          }
+        }
         pushToast({ kind: "error", title: t("alpha.composer.sendFailed") })
         return
       }
       setText("")
       setMentions([])
       setAttachments([])
-      // 运行中发送 = 排队(queue/steer 语义):忙态由 live status typed 通道驱动,这里不再乐观置位。
+      // 忙态由 live status typed 通道驱动,这里不再乐观置位。
+    } catch {
+      if (!interrupted()) pushToast({ kind: "error", title: t("alpha.composer.sendFailed") })
     } finally {
       setSending(false)
       submittedText = undefined // 落定后复位:成功已清空、失败保留,此后一律按草稿捕获
@@ -1187,6 +1435,11 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
           <button type="button" onClick={retryCurrentModel}>
             {t("alpha.common.retry")}
           </button>
+        </div>
+      </Show>
+      <Show when={modelChainState() === "recovering"}>
+        <div class="a-comp-model-alert" role="status">
+          <span>{t("alpha.model.syncing")}</span>
         </div>
       </Show>
       <div class="a-comp-bar">

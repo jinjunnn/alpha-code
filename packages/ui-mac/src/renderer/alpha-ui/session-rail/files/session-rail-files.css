@@ -1,0 +1,390 @@
+/*
+ * REQ-125 C3-files — files panel skin. Token-only (--a-*); light/dark ride the token layer,
+ * focus rings come from base.css :focus-visible plus the filter's focus-within ring.
+ * Approved frame: docs/design/current/session-workspace/design.html §文件面板.
+ */
+
+@import "../../tokens.css";
+@import "../../base.css";
+
+.a-srf-root {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.a-srf-root svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+/* ── filter input ─────────────────────────────────────────────────────────────────────── */
+
+.a-srf-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  height: 30px;
+  margin: 10px 10px 6px;
+  padding: 0 10px;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-md);
+  background: var(--a-surface);
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-sm);
+  transition:
+    border-color var(--a-dur-fast) var(--a-ease-out),
+    box-shadow var(--a-dur-fast) var(--a-ease-out);
+}
+
+.a-srf-search:focus-within {
+  border-color: var(--a-accent);
+  box-shadow: var(--a-ring-focus);
+}
+
+.a-srf-search-icon {
+  flex: none;
+  width: 15px;
+  height: 15px;
+}
+
+.a-srf-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  box-shadow: none;
+  color: var(--a-text);
+  font-family: inherit;
+  font-size: var(--a-text-sm);
+}
+
+.a-srf-search input::placeholder {
+  color: var(--a-text-tertiary);
+}
+
+/* ── scroll body ──────────────────────────────────────────────────────────────────────── */
+
+.a-srf-scroll {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.a-srf-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: none;
+  padding: 4px 10px 2px;
+}
+
+.a-srf-label {
+  padding: 6px 4px 4px;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-semibold);
+  letter-spacing: var(--a-tracking-wide);
+  text-transform: uppercase;
+}
+
+/* ── opened tab group ─────────────────────────────────────────────────────────────────── */
+
+.a-srf-opentab {
+  display: flex;
+  align-items: center;
+  flex: none;
+  height: 28px;
+  border-radius: var(--a-radius-md);
+  color: var(--a-text-secondary);
+}
+
+.a-srf-opentab:hover {
+  background: var(--a-overlay-hover);
+}
+
+.a-srf-opentab--on {
+  background: var(--a-accent-subtle);
+  color: var(--a-accent);
+  font-weight: var(--a-weight-medium);
+}
+
+.a-srf-opentab-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 100%;
+  padding: 0 0 0 8px;
+  border: 0;
+  border-radius: var(--a-radius-md);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.a-srf-opentab-close {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0 5px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--a-radius-xs);
+  background: transparent;
+  color: var(--a-text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--a-dur-fast) var(--a-ease-out);
+}
+
+.a-srf-opentab:hover .a-srf-opentab-close,
+.a-srf-opentab--on .a-srf-opentab-close,
+.a-srf-opentab-close:focus-visible {
+  opacity: 1;
+}
+
+.a-srf-opentab-close:hover {
+  background: var(--a-bg-muted);
+  color: var(--a-text);
+}
+
+.a-srf-opentab-close svg {
+  width: 11px;
+  height: 11px;
+  stroke-width: 2;
+}
+
+/* ── workspace tree ───────────────────────────────────────────────────────────────────── */
+
+.a-srf-tree-section {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  padding: 4px 10px 14px;
+}
+
+.a-srf-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.a-srf-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--a-radius-md);
+  background: transparent;
+  color: var(--a-text-secondary);
+  font: inherit;
+  font-size: var(--a-text-sm);
+  cursor: pointer;
+  text-align: left;
+}
+
+.a-srf-row:hover {
+  background: var(--a-overlay-hover);
+  color: var(--a-text);
+}
+
+.a-srf-row--selected {
+  background: var(--a-accent-subtle);
+  color: var(--a-accent);
+  font-weight: var(--a-weight-medium);
+}
+
+.a-srf-row--selected:hover {
+  background: var(--a-accent-subtle);
+  color: var(--a-accent);
+}
+
+.a-srf-row--ignored {
+  opacity: 0.55;
+}
+
+.a-srf-caret {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--a-text-tertiary);
+  transition: transform var(--a-dur-fast) var(--a-ease-out);
+}
+
+.a-srf-row--open .a-srf-caret {
+  transform: rotate(90deg);
+}
+
+.a-srf-caret-spacer {
+  flex: none;
+  width: 13px;
+}
+
+.a-srf-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--a-text-tertiary);
+}
+
+.a-srf-icon--dir {
+  color: var(--a-accent);
+}
+
+.a-srf-name {
+  overflow: hidden;
+  min-width: 0;
+  color: inherit;
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.a-srf-badge {
+  flex: none;
+  margin-left: auto;
+  padding: 1px 7px;
+  border-radius: var(--a-radius-full);
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-bold);
+}
+
+.a-srf-badge[data-kind="added"] {
+  background: var(--a-success-subtle);
+  color: var(--a-success);
+}
+
+.a-srf-badge[data-kind="modified"] {
+  background: var(--a-warning-subtle);
+  color: var(--a-warning);
+}
+
+.a-srf-badge[data-kind="deleted"] {
+  background: var(--a-error-subtle);
+  color: var(--a-error);
+}
+
+.a-srf-indent {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-left: 16px;
+}
+
+.a-srf-indent::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: -2px;
+  width: 1px;
+  background: var(--a-border-faint);
+}
+
+/* ── states ───────────────────────────────────────────────────────────────────────────── */
+
+.a-srf-loading {
+  padding: 6px 8px;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-xs);
+}
+
+.a-srf-truncated {
+  padding: 5px 8px;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-2xs);
+}
+
+.a-srf-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-xs);
+}
+
+.a-srf-retry {
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--a-radius-sm);
+  background: transparent;
+  color: var(--a-accent);
+  font: inherit;
+  font-size: var(--a-text-xs);
+  cursor: pointer;
+}
+
+.a-srf-retry:hover {
+  background: var(--a-accent-subtle);
+}
+
+.a-srf-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 30px;
+  text-align: center;
+}
+
+.a-srf-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--a-radius-lg);
+  background: var(--a-bg-muted);
+  color: var(--a-text-tertiary);
+}
+
+.a-srf-empty-icon .a-srf-icon {
+  width: 19px;
+  height: 19px;
+  color: inherit;
+}
+
+.a-srf-empty b {
+  color: var(--a-text);
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+}
+
+.a-srf-empty p {
+  max-width: 30ch;
+  margin: 0;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-xs);
+  line-height: var(--a-leading-snug);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .a-srf-search,
+  .a-srf-caret,
+  .a-srf-opentab-close {
+    transition: none;
+  }
+}

@@ -43,7 +43,9 @@ import "./artifact-workbench.css"
 
 type PreviewMode = "preview" | "source" | "metadata"
 
-const STATE_LABEL_KEYS = {
+// Exported for the REQ-125 C4 right-rail artifacts host (session-rail/artifacts), which embeds
+// the approved workbench language verbatim instead of redefining it.
+export const STATE_LABEL_KEYS = {
   verified: "alpha.wb.state.verified",
   unverified: "alpha.wb.state.unverified",
   mismatch: "alpha.wb.state.mismatch",
@@ -52,7 +54,7 @@ const STATE_LABEL_KEYS = {
   "cloud-only": "alpha.wb.state.cloudOnly",
 } as const
 
-const TAB_LABEL_KEYS = {
+export const TAB_LABEL_KEYS = {
   preview: "alpha.wb.tab.preview",
   source: "alpha.wb.tab.source",
   metadata: "alpha.wb.tab.metadata",
@@ -676,7 +678,7 @@ export function ArtifactWorkbench(props: { projects: AlphaProjectsApi }) {
 }
 
 /** Metadata 模式:descriptor 事实 + 本地状态 + 路由决策(选中 renderer 与原因,REQ-095 AC#1)。 */
-function MetadataView(props: { ctx: PreviewContext }) {
+export function MetadataView(props: { ctx: PreviewContext }) {
   const d = () => props.ctx.card.descriptor
   const rows = createMemo<Array<[string, string]>>(() => {
     const out: Array<[string, string]> = [

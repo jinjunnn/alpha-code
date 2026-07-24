@@ -11,6 +11,7 @@ import {
   headPendingQuestion,
   questionAnswersComplete,
   revertDockFacts,
+  sdkResultFailed,
   todoDockVisible,
 } from "./session-dock-core"
 import {
@@ -112,6 +113,17 @@ describe("question:头部挂起请求与回答完备性", () => {
     expect(questionAnswersComplete([info({ custom: true })], [["自由回答"]])).toBe(true)
     expect(questionAnswersComplete([info({ custom: true })], [["  "]])).toBe(false)
     expect(questionAnswersComplete([], [])).toBe(false)
+  })
+})
+
+describe("sdkResultFailed:{ error } 信封与空结果一律按失败处理(审计 minor)", () => {
+  test("error 信封 / undefined / null → 失败;正常信封与 204 空体 → 成功", () => {
+    expect(sdkResultFailed({ error: { status: 409 } })).toBe(true)
+    expect(sdkResultFailed(undefined)).toBe(true)
+    expect(sdkResultFailed(null)).toBe(true)
+    expect(sdkResultFailed({ data: true })).toBe(false)
+    expect(sdkResultFailed({ data: undefined, error: undefined })).toBe(false)
+    expect(sdkResultFailed({})).toBe(false)
   })
 })
 
