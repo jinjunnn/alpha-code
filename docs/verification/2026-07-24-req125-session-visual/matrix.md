@@ -54,13 +54,55 @@ FAIL 转 bug 票挂父票 #538。
      mono 小字)。证据:`shots/D6-partial-*.png`。
   4. (隐私噪音,非视觉缺陷)PTY 提示符暴露本机主机名;后续批次采集前建议 PS1 化妆。
 
+## 批2 采集记录(2026-07-24,#547 第二批 · 组件 harness 路径)
+
+- 基点:alpha@`7281627ed`(#576 终端深底/.git 过滤已合)。证据等级:**组件级(-harness 后缀)**,
+  按 harness-plan「组件 harness」章执行 —— 真组件挂载(dev Vite server + 生产
+  `SessionTimelineView`/`tool-cards` + 生产 CSS + `MarkedProvider` 同产装配),fixture 对齐
+  CT 帧内演示值;harness 本体在同目录 `harness/timeline-harness.tsx`(不进生产 bundle,不改生产代码)。
+  截图 `shots/<行ID>-<light|dark>-harness.png`,900px 容器,明暗双通道
+  (`data-color-scheme` + emulated `prefers-color-scheme` 同置,批1 纪律)。
+- 复跑法:dev app 起(Vite :5173)→ 同源页 `import("/@fs/<repo>/docs/verification/2026-07-24-req125-session-visual/harness/timeline-harness.tsx")`
+  → `window.__harness.show(<state>)` / `.theme(light|dark)` → 截 `.a-tl-column`。
+- 覆盖:E1–E11(除 E8)、F1–F11、G1–G18、H1–H5、I1 = 45 行 × 明暗 = 90 帧;另
+  `C6-unknown-*-harness.png` 2 帧为未知工具 fail-closed 卡回归档(不入矩阵判定,判定走
+  `invariant-checks.md`)。**判定注**:harness 帧为形态证据;单元格「偏差(harness·发现N)」
+  = 形态与对照稿有出入,PASS/FAIL 终判与开票归 owner。
+- **真机重采(#576 回执,基点 7281627ed)**:A3-partial/D6-partial/D5-partial 四主题帧全部重采 ——
+  批1 发现1(终端浅色白底)**已修复**(双主题恒深底);发现2(树含 `.git`)**已修复**;
+  发现3 **部分**:尺寸段代码已落(`terminal-rail-panel.tsx` foot)但真机未出值
+  (engine pty 无 cols/rows,契约=缺失即整段省略 —— 是否达 #576 AC 归 owner),环境段已拆 #579;
+  发现4(PTY 提示符主机名)仍在。
+- 仍受阻(harness 不覆盖,等模型凭据/真机构造):A1–A4 主体、B2、C2、C3、D1、D2、D8、
+  E8(组件缺席,见发现9)、I2、I3、J1–J7。
+- 批2 视觉发现(只记不修,承接批1 编号;判定/开票归 owner):
+  5. **E1 展开体形态**:实现为展开区内再包一层用户气泡;设计 = 中性灰 pre-wrap 面板(CT ① `.cmd-body`)。
+  6. **斜杠 chip 无类型分型**(E3/E4):技能/MCP 均渲染为通用「运行命令」chip;设计有橙色技能、紫色 MCP 变体(TL-05 分类)。
+  7. **用户脚注无 hover 操作钮**(E5):复制/编辑重发缺席;另 agent/model 显示原始 id(`build`/`deepseek-reasoner`),设计为显示名。
+  8. **轻微一组**:附件卡角标无类型着色、元信息行仅扩展名(E6);提及 chip 无图标(E9/E10);已探索行图标无淡染底(H2);read 卡头无文件计数(G5);bash 卡头带 `bash` 工具名而设计仅命令(G2);webfetch URL 非强调色且未省略缩短(G13)。
+  9. **连接器 chip(TL-06)未实现**(E8):时间线行模型无此形态,harness 无法构造。
+  10. **推理折叠卡头无摘要**(F2):仅「思考 · N 秒」;设计 = 时长 + 摘要文案。
+  11. **Markdown 引擎层与稿差**(F3/F4/F5):表格无表头底色/斑马纹;代码块无语言标签+复制头条;链接与内联 code 配色走引擎(teal/绿)非 `--a-accent`,hr 极淡。另:引擎内容主题通道 = `prefers-color-scheme`,alpha 令牌 = `data-color-scheme`,两通道不同步时正文明暗错拍(采集必须双通道同置)。
+  12. **助手富脚注缺段**(F6):无 provider 图标、效率段、重试/分支钮(复制钮在,hover 出)。
+  13. **中断态形态**(F9):居中 warning 色 pill「已由你停止」,无「继续生成」动作;设计 = 左对齐安静行 + 续钮。
+  14. **工具级错误卡无动作**(G4):无「模型网关错误」类标题行、无复制/重试/换模型钮;仅红框卡 + 错误正文。
+  15. **list 卡无目录网格**(G6):纯文本输出体,无网格/图标/「共 N 项」计数(状态徽亦为「完成」)。
+  16. **grep 结果无高亮**(G7):无文件名/行号分色、无命中高亮,纯 mono 文本。
+  17. **技能执行卡形态**(G15):整宽工具卡,非设计的内联 chip(`.skill-chip`)形态。
+  18. **websearch 结果为裸 URL**(G17):无 favicon/标题/域名分列,头部无「来源 · N 条」。
+  19. **MCP 卡无分层**(G18):走 fail-closed 通用卡,mono 直出 `mcp__server__tool` 全名;设计 = 「MCP · server」+ tool 分层。
+  20. **task v2 细部**(G16,轻微):「打开子会话」在头下动作行非头内同排;环形为定态圆环非进度环。
+  21. **压缩分隔胶囊**(H4,轻微):无图标、无「保留要点」后缀、无展开指示。
+  22. **产物链接行 parquet 无中性态**(I1):六行全强调色,设计 parquet = 中性色同形态。
+  23. **重试卡文案结构**(F10,轻微):「自动重试中(第 N 次)… + message」两段式;设计单句内嵌。
+
 ## A · 整页 × 右栏四 tab(SW §full,1440 页幅)
 
 | ID | 待采帧 | 对照稿锚点 | 实现票 | 浅 | 暗 | 备注 |
 |---|---|---|---|---|---|---|
 | A1 | 整页 · 右栏=审查(主帧) | SW `#full` fitA | #539 #540 | 受阻(无模型) | 受阻(无模型) | 五大块齐;时间线代表性回合;批1 局部证据 `A1-partial-*`(五大块布局+空态成立) |
 | A2 | 整页 · 右栏=文件 | SW `#full` fitB | #539 #541 | 受阻(无模型) | 受阻(无模型) | 树类别标 + 已打开页签组;批1 局部证据 `A2-partial-*` |
-| A3 | 整页 · 右栏=终端 | SW `#full` fitC | #539 #550 #554 | 受阻(无模型) | 受阻(无模型) | 深底输出区在浅色主题下仍深底 —— **批1 发现1:浅色为白底,违约**;局部证据 `A3-partial-*` |
+| A3 | 整页 · 右栏=终端 | SW `#full` fitC | #539 #550 #554 | 受阻(无模型) | 受阻(无模型) | 深底输出区在浅色主题下仍深底 —— 批1 发现1 **已修复**(#576,批2 于 `7281627ed` 重采 `A3-partial-*` 证实双主题深底);整帧仍待模型凭据 |
 | A4 | 整页 · 右栏=产物(链接行联动) | SW `#full` fitD | #539 #542 | 受阻(无模型) | 受阻(无模型) | 被点产物行保持高亮,左侧不滚动;批1 局部证据 `A4-partial-*`(产物空态) |
 
 ## B · 顶栏两态(SW §wtopsec)
@@ -86,8 +128,8 @@ FAIL 转 bug 票挂父票 #538。
 | D2 | 审查 · 拆分视图 | SW `#review` 帧2 | #540 | 受阻(无模型) | 受阻(无模型) | 左旧右新,斜纹占位;<360px 退统一 |
 | D3 | 审查 · 空态「还没有版本管理」 | SW `#review` 空态×2 左 | #540 | PASS | PASS | `D3-{light,dark}.png`(非 git 目录会话);图标+双行措辞逐字对齐设计 |
 | D4 | 审查 · 空态「没有未提交的变更」 | SW `#review` 空态×2 右 | #540 | PASS | PASS | `D4-{light,dark}.png`;图标+双行措辞逐字对齐设计 |
-| D5 | 文件面板(过滤+已打开+工作区树) | SW `#files` | #541 | 部分 | 部分 | 类别标与审查联动;`D5-partial-*`:过滤框+树语言 PASS;已打开组/类别标受阻(需回合);**批1 发现2:树含 `.git`** |
-| D6 | 终端面板(页签+输出区+脚条) | SW `#term` | #550 #554 | 部分 | 部分 | 外框 alpha、内核引擎(TL-39);`D6-partial-*`:双实例页签+新建+运行点 PASS;**发现1 浅色白底、发现3 脚条缺环境/尺寸段** |
+| D5 | 文件面板(过滤+已打开+工作区树) | SW `#files` | #541 | 部分 | 部分 | 类别标与审查联动;`D5-partial-*`(批2 于 `7281627ed` 重采):过滤框+树语言 PASS;已打开组/类别标受阻(需回合);批1 发现2 **已修复**(树不再含 `.git`) |
+| D6 | 终端面板(页签+输出区+脚条) | SW `#term` | #550 #554 | 部分 | 部分 | 外框 alpha、内核引擎(TL-39);`D6-partial-*`(批2 于 `7281627ed` 重采):双实例页签+新建+运行点 PASS;发现1 **已修复**(双主题深底);发现3 **部分**:尺寸段代码在但真机未出值(engine 未报 cols/rows),环境段归 #579 |
 | D7 | 终端面板 · 空态 | SW `#term` 帧外注记(**无帧**,文字规格) | #550 | PASS | PASS | 「还没有终端…」+新建按钮;`D7-{light,dark}.png` 与文字合同逐字相符 |
 | D8 | 产物面板(列表卡+预览面) | SW `#arts` | #542 | 受阻(无模型) | 受阻(无模型) | 已批 workbench 形态 verbatim,零重定义;空态证据 `D8-partial-*` |
 | D9 | 右栏 tab 条(计数徽章+运行点)+拖宽热区 | SW `#railsec` | #539 各面板票 | 部分 | 部分 | 46px 对齐顶栏 PASS(`D9-*`);运行点已于 `A3-partial-*` 验得;计数徽章/大计数/拖宽热区受阻或未采 |
@@ -96,73 +138,73 @@ FAIL 转 bug 票挂父票 #538。
 
 | ID | 待采帧 | 对照稿锚点 | 实现票 | 浅 | 暗 | 备注 |
 |---|---|---|---|---|---|---|
-| E1 | 命令 chip · 内置(含展开体) | CT `#user` 帧1 | #544 #545 | | | ⚠ 帧内「查看展开提示词」与 2026-06-30 否决记录(tasks.md TL-05 冻结档)冲突;采集时先问 owner 以何为准 |
-| E2 | 命令 chip · 配置命令带 args | CT `#user` 帧1 | #544 #545 | | | 「运行命令 · review pr 12」 |
-| E3 | 技能 chip(用户侧) | CT `#user` 帧1 | #544 #545 | | | 与 G15 执行态技能卡分处两回合 |
-| E4 | MCP chip | CT `#user` 帧1 | #544 #545 | | | 紫;name+args |
-| E5 | 用户文本气泡+脚注(发往·model·时间+操作) | CT `#user` 帧2 | #543 | | | hover 复制/编辑重发 |
-| E6 | 附件卡 · 文件(v2 双行) | CT `#user` 帧2 | #544 | | | 由 v1 内联 chip 重锚(帧外注记) |
-| E7 | 附件卡 · 图片 | CT `#user` 帧2 | #544 | | | 缩略图+名+元信息 |
-| E8 | 连接器 chip(GH GitHub) | CT `#user` 帧2 | #544 | | | TL-06 |
-| E9 | 内联文件提及 | CT `#user` 帧2 | #543 | | | m-file chip |
-| E10 | 内联 agent 提及 | CT `#user` 帧2 | #543 | | | m-agent chip |
-| E11 | 内联代码评论卡(用户消息内) | CT `#user` 帧3(2026-07-23 补) | #544 | | | CommentCardV2 对应形态 |
+| E1 | 命令 chip · 内置(含展开体) | CT `#user` 帧1 | #544 #545 | 偏差(harness·发现5) | 偏差(harness·发现5) | ⚠ 帧内「查看展开提示词」与 2026-06-30 否决记录(tasks.md TL-05 冻结档)冲突;采集时先问 owner 以何为准;批2 harness 帧含展开体 |
+| E2 | 命令 chip · 配置命令带 args | CT `#user` 帧1 | #544 #545 | PASS(harness) | PASS(harness) | 「运行命令 · review pr 12」 |
+| E3 | 技能 chip(用户侧) | CT `#user` 帧1 | #544 #545 | 偏差(harness·发现6) | 偏差(harness·发现6) | 与 G15 执行态技能卡分处两回合 |
+| E4 | MCP chip | CT `#user` 帧1 | #544 #545 | 偏差(harness·发现6) | 偏差(harness·发现6) | 紫;name+args |
+| E5 | 用户文本气泡+脚注(发往·model·时间+操作) | CT `#user` 帧2 | #543 | 偏差(harness·发现7) | 偏差(harness·发现7) | hover 复制/编辑重发;气泡本体形态成立,hover 操作钮缺席 |
+| E6 | 附件卡 · 文件(v2 双行) | CT `#user` 帧2 | #544 | PASS(harness·发现8) | PASS(harness·发现8) | 由 v1 内联 chip 重锚(帧外注记) |
+| E7 | 附件卡 · 图片 | CT `#user` 帧2 | #544 | PASS(harness) | PASS(harness) | 缩略图+名+元信息 |
+| E8 | 连接器 chip(GH GitHub) | CT `#user` 帧2 | #544 | 受阻(组件缺席,发现9) | 受阻(组件缺席,发现9) | TL-06 |
+| E9 | 内联文件提及 | CT `#user` 帧2 | #543 | PASS(harness·发现8) | PASS(harness·发现8) | m-file chip |
+| E10 | 内联 agent 提及 | CT `#user` 帧2 | #543 | PASS(harness·发现8) | PASS(harness·发现8) | m-agent chip |
+| E11 | 内联代码评论卡(用户消息内) | CT `#user` 帧3(2026-07-23 补) | #544 | PASS(harness) | PASS(harness) | CommentCardV2 对应形态 |
 
 ## F · 时间线 §② 助手输出侧(CT `#ai`)
 
 | ID | 待采帧 | 对照稿锚点 | 实现票 | 浅 | 暗 | 备注 |
 |---|---|---|---|---|---|---|
-| F1 | Thinking 流式态(pill+三点) | CT `#ai` | #543 | | | |
-| F2 | 推理折叠卡(思考·时长·摘要) | CT `#ai` | #543 | | | |
-| F3 | 助手 Markdown 正文+表格 | CT `#ai` | #543 | | | 820 测量;表格边框/表头/斑马 |
-| F4 | 代码块(语言标签+复制头条) | CT `#ai` | #543 | | | |
-| F5 | Markdown 富元素(标题/列表/引用/hr/链接) | CT `#ai` | #543 | | | |
-| F6 | 助手富脚注(provider+agent+model+效率+时长+tokens+操作) | CT `#ai` | #543 | | | hover 复制/重试/分支 |
-| F7 | 媒体预览行(缩略图+文件名+尺寸) | CT `#ai`(2026-07-24 补) | #544 #542 | | | 点击→右栏产物聚焦(联动同 ⑥) |
-| F8 | 流式输出光标 | CT `#ai` | #543 | | | |
-| F9 | 中断态(已由你停止 · 继续生成) | CT `#ai` | #543 | | | |
-| F10 | 重试卡(429 自动重试) | CT `#ai` | #543 | | | |
-| F11 | 回合级错误卡(全宽,无动作钮) | CT `#ai`(2026-07-23 补) | #544 | | | 与工具级错误卡是两组件;未知 code 原样 mono(fail-closed) |
+| F1 | Thinking 流式态(pill+三点) | CT `#ai` | #543 | PASS(harness) | PASS(harness) | |
+| F2 | 推理折叠卡(思考·时长·摘要) | CT `#ai` | #543 | 偏差(harness·发现10) | 偏差(harness·发现10) | |
+| F3 | 助手 Markdown 正文+表格 | CT `#ai` | #543 | 偏差(harness·发现11) | 偏差(harness·发现11) | 820 测量;表格边框/表头/斑马 |
+| F4 | 代码块(语言标签+复制头条) | CT `#ai` | #543 | 偏差(harness·发现11) | 偏差(harness·发现11) | |
+| F5 | Markdown 富元素(标题/列表/引用/hr/链接) | CT `#ai` | #543 | 偏差(harness·发现11) | 偏差(harness·发现11) | |
+| F6 | 助手富脚注(provider+agent+model+效率+时长+tokens+操作) | CT `#ai` | #543 | 偏差(harness·发现12) | 偏差(harness·发现12) | hover 复制/重试/分支 |
+| F7 | 媒体预览行(缩略图+文件名+尺寸) | CT `#ai`(2026-07-24 补) | #544 #542 | PASS(harness) | PASS(harness) | 点击→右栏产物聚焦(联动同 ⑥) |
+| F8 | 流式输出光标 | CT `#ai` | #543 | PASS(harness) | PASS(harness) | |
+| F9 | 中断态(已由你停止 · 继续生成) | CT `#ai` | #543 | 偏差(harness·发现13) | 偏差(harness·发现13) | |
+| F10 | 重试卡(429 自动重试) | CT `#ai` | #543 | PASS(harness·发现23) | PASS(harness·发现23) | |
+| F11 | 回合级错误卡(全宽,无动作钮) | CT `#ai`(2026-07-23 补) | #544 | PASS(harness) | PASS(harness) | 与工具级错误卡是两组件;未知 code 原样 mono(fail-closed) |
 
 ## G · 时间线 §③ 工具卡(CT `#tools`)
 
 | ID | 待采帧 | 对照稿锚点 | 实现票 | 浅 | 暗 | 备注 |
 |---|---|---|---|---|---|---|
-| G1 | 工具卡 · 通用运行态 | CT `#tools` 帧1 | #544 | | | 强调边框+spinner chip(四态之一) |
-| G2 | bash · 完成态(退出0徽+描述行+输出体) | CT `#tools` | #544 | | | TL-17/18 |
-| G3 | bash · 流式运行态(实时增行+尾行光标) | CT `#tools`(2026-07-24 补) | #544 | | | 完成即翻「退出 N」,卡体不换 |
-| G4 | 工具级错误卡(重试/换模型) | CT `#tools` | #544 | | | |
-| G5 | read 卡(折叠头「读取 · N 个文件」) | CT `#tools` | #544 | | | 展开列表**无独立帧**,形态对齐 G8 的 .loaded 列表(锚点借用) |
-| G6 | list 目录网格(共 N 项) | CT `#tools` | #544 | | | |
-| G7 | grep 检索卡(文件:行+命中高亮+计数) | CT `#tools` | #544 | | | |
-| G8 | glob 匹配文件卡 | CT `#tools`(2026-07-23 补) | #544 | | | |
-| G9 | write 紧凑卡(+N·在面板打开·2 行预览) | CT `#tools` | #544 | | | TL-21/22 |
-| G10 | edit 紧凑 diff 卡(+N/−N) | CT `#tools` | #544 | | | |
-| G11 | apply_patch 多文件卡(新增/修改/删除标) | CT `#tools` | #544 | | | |
-| G12 | 文件行徽章 · 六态一览(读取/写入/移动/新增/修改/删除) | CT `#tools`(2026-07-24 补) | #544 | | | 徽章只表动作类别 |
-| G13 | webfetch 触发行(链接 subtitle) | CT `#tools` | #544 | | | |
-| G14 | 诊断列表(ERR loc msg) | CT `#tools` | #544 | | | |
-| G15 | 技能工具卡(执行态 · 已加载) | CT `#tools` | #544 | | | |
-| G16 | 子任务卡 v2(色点+环形进度+打开子会话,运行态) | CT `#tools` | #544 | | | 由 v1 重锚(帧外注记) |
-| G17 | websearch 结果列表(favicon+标题+域名) | CT `#tools` | #544 | | | |
-| G18 | MCP 通用工具卡(MCP · server · tool 分层) | CT `#tools` | #544 | | | |
+| G1 | 工具卡 · 通用运行态 | CT `#tools` 帧1 | #544 | PASS(harness) | PASS(harness) | 强调边框+spinner chip(四态之一) |
+| G2 | bash · 完成态(退出0徽+描述行+输出体) | CT `#tools` | #544 | PASS(harness·发现8) | PASS(harness·发现8) | TL-17/18 |
+| G3 | bash · 流式运行态(实时增行+尾行光标) | CT `#tools`(2026-07-24 补) | #544 | PASS(harness) | PASS(harness) | 完成即翻「退出 N」,卡体不换 |
+| G4 | 工具级错误卡(重试/换模型) | CT `#tools` | #544 | 偏差(harness·发现14) | 偏差(harness·发现14) | |
+| G5 | read 卡(折叠头「读取 · N 个文件」) | CT `#tools` | #544 | PASS(harness·发现8) | PASS(harness·发现8) | 展开列表**无独立帧**,形态对齐 G8 的 .loaded 列表(锚点借用) |
+| G6 | list 目录网格(共 N 项) | CT `#tools` | #544 | 偏差(harness·发现15) | 偏差(harness·发现15) | |
+| G7 | grep 检索卡(文件:行+命中高亮+计数) | CT `#tools` | #544 | 偏差(harness·发现16) | 偏差(harness·发现16) | |
+| G8 | glob 匹配文件卡 | CT `#tools`(2026-07-23 补) | #544 | PASS(harness) | PASS(harness) | |
+| G9 | write 紧凑卡(+N·在面板打开·2 行预览) | CT `#tools` | #544 | PASS(harness) | PASS(harness) | TL-21/22 |
+| G10 | edit 紧凑 diff 卡(+N/−N) | CT `#tools` | #544 | PASS(harness) | PASS(harness) | |
+| G11 | apply_patch 多文件卡(新增/修改/删除标) | CT `#tools` | #544 | PASS(harness) | PASS(harness) | |
+| G12 | 文件行徽章 · 六态一览(读取/写入/移动/新增/修改/删除) | CT `#tools`(2026-07-24 补) | #544 | PASS(harness) | PASS(harness) | 徽章只表动作类别 |
+| G13 | webfetch 触发行(链接 subtitle) | CT `#tools` | #544 | PASS(harness·发现8) | PASS(harness·发现8) | |
+| G14 | 诊断列表(ERR loc msg) | CT `#tools` | #544 | PASS(harness) | PASS(harness) | |
+| G15 | 技能工具卡(执行态 · 已加载) | CT `#tools` | #544 | 偏差(harness·发现17) | 偏差(harness·发现17) | |
+| G16 | 子任务卡 v2(色点+环形进度+打开子会话,运行态) | CT `#tools` | #544 | PASS(harness·发现20) | PASS(harness·发现20) | 由 v1 重锚(帧外注记) |
+| G17 | websearch 结果列表(favicon+标题+域名) | CT `#tools` | #544 | 偏差(harness·发现18) | 偏差(harness·发现18) | |
+| G18 | MCP 通用工具卡(MCP · server · tool 分层) | CT `#tools` | #544 | 偏差(harness·发现19) | 偏差(harness·发现19) | |
 
 ## H · 时间线 §④ 结构(CT `#struct`)
 
 | ID | 待采帧 | 对照稿锚点 | 实现票 | 浅 | 暗 | 备注 |
 |---|---|---|---|---|---|---|
-| H1 | 回合分隔条(HH:MM · 新一轮) | CT `#struct` | #543 | | | ⚠ 条件项:帧为设计意图;帧外注记定 v2 真机=不可见间隔,落地与否归 seam 实现。若 C5 实现为不可见间隔,判 `N/A(实现合同)` |
-| H2 | 已探索分组(头+计数+展开行) | CT `#struct` | #544 | | | TL-30;TL-31 计数动画静帧仅验配色 |
-| H3 | 本回合改动汇总 diffsum(头+文件行+徽) | CT `#struct` | #543 #544 | | | 行模型归属以实现为准 |
-| H4 | 上下文压缩分隔(居中胶囊) | CT `#struct` | #543 | | | |
-| H5 | 回到底部按钮(s2b) | CT `#struct` 帧右下 | #543 | | | 滚动锚定配套 |
+| H1 | 回合分隔条(HH:MM · 新一轮) | CT `#struct` | #543 | PASS(harness) | PASS(harness) | ⚠ 条件项:帧为设计意图;帧外注记定 v2 真机=不可见间隔,落地与否归 seam 实现。若 C5 实现为不可见间隔,判 `N/A(实现合同)`;批2:实现=可见分隔条,与设计意图帧一致,N/A 条款不触发 |
+| H2 | 已探索分组(头+计数+展开行) | CT `#struct` | #544 | PASS(harness·发现8) | PASS(harness·发现8) | TL-30;TL-31 计数动画静帧仅验配色 |
+| H3 | 本回合改动汇总 diffsum(头+文件行+徽) | CT `#struct` | #543 #544 | PASS(harness) | PASS(harness) | 行模型归属以实现为准 |
+| H4 | 上下文压缩分隔(居中胶囊) | CT `#struct` | #543 | 偏差(harness·发现21) | 偏差(harness·发现21) | |
+| H5 | 回到底部按钮(s2b) | CT `#struct` 帧右下 | #543 | PASS(harness) | PASS(harness) | 滚动锚定配套 |
 | H6 | 会话内空态(会话名+一句引导) | CT `#struct`(2026-07-24 补) | #543 | PASS | PASS | 与首页问候面分工(帧外注记);`H6-{light,dark}.png` 与 CT 帧逐字/逐元素对齐(会话名+引导句+下箭头) |
 
 ## I · 时间线 §⑥ 产物链接行与联动(CT `#artifacts`)
 
 | ID | 待采帧 | 对照稿锚点 | 实现票 | 浅 | 暗 | 备注 |
 |---|---|---|---|---|---|---|
-| I1 | 产物链接行(6 类型含 parquet 中性态) | CT `#artifacts` 帧1 | #542 #544 | | | 承接 REQ-124 #454;行不区分可否预览 |
+| I1 | 产物链接行(6 类型含 parquet 中性态) | CT `#artifacts` 帧1 | #542 #544 | 偏差(harness·发现22) | 偏差(harness·发现22) | 承接 REQ-124 #454;行不区分可否预览 |
 | I2 | 产物点击联动 · 可预览(office) | CT `#artifacts` frameD office 态 | #542 | | | 整页装配后归右栏产物面板(=A4/D8 语境) |
 | I3 | 产物点击联动 · 暂不支持预览(parquet) | CT `#artifacts` frameD other 态 | #542 | | | 文件信息+有界节选,不称"预览" |
 
@@ -182,7 +224,11 @@ FAIL 转 bug 票挂父票 #538。
 
 - 采集行 74(A4 B2 C3 D9 E11 F11 G18 H6 I3 J7)× 明/暗 = **148 帧**。
 - 有设计稿帧锚点 69 行;**无帧 5 行**(D7、J4–J7,按文字合同/实现基线判定);
-  条件项 1 行(H1);口径冲突登记 2 处(C2/J1 审批挂载位、E1 展开提示词)。
+  条件项 1 行(H1,批2 已解:实现=可见分隔条);口径冲突登记 2 处(C2/J1 审批挂载位、E1 展开提示词)。
+- 批次进度:批1(真机)已采 9 行全帧 + 8 行局部;批2(harness)已采 45 行 × 明暗 = 90 帧
+  (E 组 10、F 组 11、G 组 18、H 组 5、I1;E8 受阻)+ C6 回归档 2 帧 + 真机重采 12 帧
+  (A3/D6/D5-partial 双主题)。形态一致 26 行,偏差登记 19 行(发现5–23);
+  剩余待采 = 需模型凭据/dock 真机构造的 20 行(A1–A4、B2、C2、C3、D1、D2、D8、D9 余项、E8、I2、I3、J1–J7)。
 
 ## 40 构件清单逐条映射(TL-01–TL-40 → 矩阵行)
 
