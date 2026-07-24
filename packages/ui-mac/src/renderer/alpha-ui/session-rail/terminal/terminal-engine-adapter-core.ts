@@ -57,9 +57,13 @@ export function terminalInstanceTitle(
   return labels.untitled
 }
 
-/** 脚条投影:引擎今日不暴露运行信号与 shell 名 —— 缺数据 = false / 缺项,不伪造;尺寸透传持久值。 */
+/**
+ * 脚条投影(与 instances 同一存活语义):上游生命周期真相是 `pty.exited` 事件即从
+ * store 移除 —— 在列 = 存活;引擎不暴露更细的任务级活动信号。诚实映射:存活即
+ * running,实例缺席 = false;shell 名今日无数据,缺项不伪造;尺寸透传持久值。
+ */
 export function terminalFootStatus(pty: TerminalEnginePTY | undefined): AlphaTerminalFootStatus {
-  return { running: false, cols: pty?.cols, rows: pty?.rows }
+  return { running: pty !== undefined, cols: pty?.cols, rows: pty?.rows }
 }
 
 /**
@@ -82,8 +86,10 @@ export function mintTerminalEngineChannel(input: {
       engine.all().map((pty) => ({
         id: pty.id,
         title: terminalInstanceTitle(pty, input.labels),
-        // 引擎今日不暴露「该 PTY 是否有任务在跑」:缺数据 = false,不伪造(C550 合同)。
-        running: false,
+        // 上游生命周期真相(勘破 2026-07-24):`pty.exited` 事件即把 PTY 从 store 移除,
+        // 在列 = 存活;引擎不暴露更细的任务级活动信号。诚实映射 = 存活即 running
+        // (呼吸点语义:有存活终端;exited → 移除 → 灭),不硬编码 false 伪造空闲。
+        running: true,
       })),
     activeID: () => engine.active(),
     // 对齐上游页签点击语义(session-sortable-terminal-tab-v2):先发聚焦请求再切激活,

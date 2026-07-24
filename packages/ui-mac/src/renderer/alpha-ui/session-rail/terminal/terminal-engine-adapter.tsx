@@ -7,7 +7,7 @@
 // terminal-engine-adapter-core)+ 引擎输出组件(持久化回写、连接后 trim、连接失败一次性
 // clone 恢复 —— 语义对齐上游 terminal-panel 的既有粘合)。
 import { Terminal, useTerminal, type LocalPTY } from "@opencode-ai/app/surface/terminal"
-import { createMemo, Show, type Accessor, type Component } from "solid-js"
+import { createEffect, createMemo, createSignal, Show, type Accessor, type Component } from "solid-js"
 import { t } from "../../../i18n"
 import type { AlphaSessionLiveSnapshot } from "../../session-workspace/session-workspace-core"
 import {
@@ -44,25 +44,44 @@ function createEngineOutput(engine: TerminalEngine): Component<{ instanceID: str
   return (props) => {
     const ops = engine.bind()
     const pty = createMemo(() => engine.all().find((item) => item.id === props.instanceID))
+    // keep-alive × autoFocus 一次性(审计第 4 轮 Major-2):上游 Terminal 只在首挂消费
+    // autoFocus;shell 的 keep-alive 隐藏重显不重挂,重显时的聚焦请求会滞留不被消费。
+    // 挂载中收到本实例的聚焦请求 → 焦点代次 +1,keyed 重挂一次,让请求经原生 autoFocus
+    // 路径真实被消费(scrollback/尺寸/滚动由 onCleanup 回写 + 持久缓冲恢复,粘合已有)。
+    // 首挂自带的请求走首挂 autoFocus,不额外重挂;他实例请求(id 不匹配)不触发。
+    const [focusEpoch, setFocusEpoch] = createSignal(1)
+    let liveSinceFirstRun = false
+    createEffect(() => {
+      const requested = engine.focusRequested(props.instanceID)
+      if (!liveSinceFirstRun) {
+        liveSinceFirstRun = true
+        return
+      }
+      if (requested) setFocusEpoch((epoch) => epoch + 1)
+    })
     return (
       <Show when={pty()}>
         {(current) => (
-          <Terminal
-            pty={current()}
-            autoFocus={engine.focusRequested(props.instanceID)}
-            onAutoFocus={() => engine.consumeFocus(props.instanceID)}
-            onConnect={() => {
-              recovered.delete(recoveryKey(current()))
-              ops.trim(props.instanceID)
-            }}
-            onCleanup={(next) => ops.update(next)}
-            onConnectError={() => {
-              const key = recoveryKey(current())
-              if (recovered.has(key)) return
-              recovered.add(key)
-              void ops.clone(props.instanceID)
-            }}
-          />
+          <Show when={focusEpoch()} keyed>
+            {(_epoch) => (
+              <Terminal
+                pty={current()}
+                autoFocus={engine.focusRequested(props.instanceID)}
+                onAutoFocus={() => engine.consumeFocus(props.instanceID)}
+                onConnect={() => {
+                  recovered.delete(recoveryKey(current()))
+                  ops.trim(props.instanceID)
+                }}
+                onCleanup={(next) => ops.update(next)}
+                onConnectError={() => {
+                  const key = recoveryKey(current())
+                  if (recovered.has(key)) return
+                  recovered.add(key)
+                  void ops.clone(props.instanceID)
+                }}
+              />
+            )}
+          </Show>
         )}
       </Show>
     )
