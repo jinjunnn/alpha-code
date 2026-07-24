@@ -1,11 +1,21 @@
-// REQ-125 C5 — alpha 时间线视图(呈现层,数据源无关)。
+// REQ-125 C5/C6 — alpha 时间线视图(呈现层,数据源无关)。
 //
-// 形态权威 = docs/design/current/conversation-timeline/design.html ①②④ 节帧
-// (用户气泡/附件卡/内联评论卡/助手 Markdown/推理块/流式光标/回合分隔/会话内空态)。
+// 形态权威 = docs/design/current/conversation-timeline/design.html ①②③④⑥ 节帧
+// (用户气泡/附件卡/内联评论卡/助手 Markdown/推理块/流式光标/回合分隔/会话内空态,
+// 以及 C6 卡片全集:工具卡四态/折叠组/回合级错误/重试/媒体预览行/产物链接行)。
 // 数据经 props 注入(rows 来自 timeline-model 投影),本文件零上游 session DOM/选择器依赖,
-// CSS 只用 --a-* 令牌;工具/媒体等 part 渲染为占位行,C6 以真卡替换。
+// CSS 只用 --a-* 令牌;卡片交互经可选 intents(缺席即降级为纯展示,fail-closed)。
 import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from "solid-js"
 import { t } from "../../i18n"
+import {
+  ContextToolGroupCard,
+  RetryCard,
+  TimelineArtifactRows,
+  TimelineMediaRow,
+  TimelineToolCard,
+  TurnErrorCard,
+} from "./cards/tool-cards"
+import { TimelineIntentsContext, type TimelineIntents } from "./cards/timeline-intents"
 import { TimelineMarkdown } from "./timeline-markdown"
 import { boundedText, REASONING_MAX_CHARS, type TimelineComment, type TimelineRow } from "./timeline-model"
 import { anchorDelta, createPrependCoordinator, isAtBottom, shouldLoadOlder } from "./timeline-scroll"
@@ -50,6 +60,8 @@ export interface SessionTimelineViewProps {
   emptyTitle: string
   history: SessionTimelineHistory
   onLoadOlder: () => Promise<void>
+  /** C6 卡片交互意图(可选):focusArtifact 接线归收口;openSession 由绑定层供给。 */
+  intents?: TimelineIntents
 }
 
 const timeFormat = new Intl.DateTimeFormat(undefined, { timeStyle: "short" })
@@ -206,35 +218,41 @@ export function SessionTimelineView(props: SessionTimelineViewProps) {
 
   return (
     <div class="a-tl-root" data-alpha-session-timeline>
-      <div
-        class="a-tl-scroll"
-        ref={scrollRef}
-        role="log"
-        aria-label={t("alpha.session.timelineHost")}
-        tabindex="0"
-        onScroll={handleScroll}
-      >
-        <div class="a-tl-column" ref={columnRef}>
-          <Show when={props.rows.length > 0 && (props.history.more || props.history.loading)}>
-            <div class="a-tl-history" data-alpha-timeline-history data-loading={props.history.loading ? "true" : undefined}>
-              <Show
-                when={props.history.loading}
-                fallback={
-                  <button type="button" class="a-tl-history-button" onClick={triggerLoadOlder}>
-                    {t("alpha.timeline.loadOlder")}
-                  </button>
-                }
+      <TimelineIntentsContext.Provider value={props.intents ?? {}}>
+        <div
+          class="a-tl-scroll"
+          ref={scrollRef}
+          role="log"
+          aria-label={t("alpha.session.timelineHost")}
+          tabindex="0"
+          onScroll={handleScroll}
+        >
+          <div class="a-tl-column" ref={columnRef}>
+            <Show when={props.rows.length > 0 && (props.history.more || props.history.loading)}>
+              <div
+                class="a-tl-history"
+                data-alpha-timeline-history
+                data-loading={props.history.loading ? "true" : undefined}
               >
-                <span class="a-tl-history-loading">
-                  <span class="a-tl-spinner" aria-hidden="true" />
-                  {t("alpha.timeline.loadingOlder")}
-                </span>
-              </Show>
-            </div>
-          </Show>
-          <For each={props.rows}>{(row) => <TimelineRowView row={row} />}</For>
+                <Show
+                  when={props.history.loading}
+                  fallback={
+                    <button type="button" class="a-tl-history-button" onClick={triggerLoadOlder}>
+                      {t("alpha.timeline.loadOlder")}
+                    </button>
+                  }
+                >
+                  <span class="a-tl-history-loading">
+                    <span class="a-tl-spinner" aria-hidden="true" />
+                    {t("alpha.timeline.loadingOlder")}
+                  </span>
+                </Show>
+              </div>
+            </Show>
+            <For each={props.rows}>{(row) => <TimelineRowView row={row} />}</For>
+          </div>
         </div>
-      </div>
+      </TimelineIntentsContext.Provider>
       <Show when={props.ready && props.rows.length === 0}>
         <div class="a-tl-empty" data-alpha-timeline-empty>
           <div class="a-tl-empty-name">{props.emptyTitle}</div>
@@ -262,7 +280,12 @@ function TimelineRowView(props: { row: TimelineRow }) {
   if (row.kind === "user") return <UserRow row={row} />
   if (row.kind === "reasoning") return <ReasoningRow row={row} />
   if (row.kind === "markdown") return <MarkdownRow row={row} />
-  if (row.kind === "placeholder") return <PlaceholderRow row={row} />
+  if (row.kind === "tool") return <TimelineToolCard part={row.part} />
+  if (row.kind === "toolgroup") return <ContextToolGroupCard parts={row.parts} />
+  if (row.kind === "media") return <TimelineMediaRow part={row.part} />
+  if (row.kind === "artifacts") return <TimelineArtifactRows row={row} />
+  if (row.kind === "retry") return <RetryCard row={row} />
+  if (row.kind === "turnError") return <TurnErrorCard row={row} />
   if (row.kind === "divider") return <DividerRow row={row} />
   if (row.kind === "thinking") return <ThinkingRow row={row} />
   // fail-closed:未知行类型不渲染任何内容。
@@ -435,41 +458,11 @@ function MarkdownRow(props: { row: Extract<TimelineRow, { kind: "markdown" }> })
       ref={rootRef}
     >
       <Show when={engineLive()} fallback={<div class="a-tl-md-deferred" aria-hidden="true" />}>
-        <TimelineMarkdown text={props.row.part.text ?? ""} cacheKey={props.row.part.id} streaming={props.row.streaming} />
-      </Show>
-    </div>
-  )
-}
-
-function PlaceholderRow(props: { row: Extract<TimelineRow, { kind: "placeholder" }> }) {
-  const status = () => (props.row.part.type === "tool" ? props.row.part.state.status : undefined)
-  const statusLabel = () => {
-    const value = status()
-    if (value === "pending") return t("alpha.timeline.toolPending")
-    if (value === "running") return t("alpha.timeline.toolRunning")
-    if (value === "error") return t("alpha.timeline.toolError")
-    if (value === "completed") return t("alpha.timeline.toolCompleted")
-    return ""
-  }
-  const name = () => {
-    if (props.row.tool) return props.row.tool
-    if (props.row.part.type === "subtask") return t("alpha.timeline.subtask")
-    if (props.row.part.type === "file") return t("alpha.timeline.media")
-    return props.row.part.type
-  }
-  return (
-    <div
-      class="a-tl-row a-tl-part-pending"
-      data-alpha-timeline-row="placeholder"
-      data-part-type={props.row.part.type}
-      data-tool={props.row.tool}
-      data-status={status()}
-    >
-      <span class="a-tl-part-pending-name">{name()}</span>
-      <Show when={statusLabel()}>
-        <span class="a-tl-part-pending-status" data-status={status()}>
-          {statusLabel()}
-        </span>
+        <TimelineMarkdown
+          text={props.row.part.text ?? ""}
+          cacheKey={props.row.part.id}
+          streaming={props.row.streaming}
+        />
       </Show>
     </div>
   )

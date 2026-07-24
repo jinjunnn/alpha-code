@@ -1,12 +1,14 @@
-// REQ-125 C5 — alpha 时间线行模型(纯投影,零 DOM、零上游组件)。
+// REQ-125 C5/C6 — alpha 时间线行模型(纯投影,零 DOM、零上游组件)。
 //
 // 输入 = SDK typed 通道的地面真相(serverSync().session.data 的 message/part/session_status),
 // 输出 = 视图可直接 <For> 的行数组。设计:
 //   · 行对象只承载「结构」(kind/key/引用),内容(text/时长/工具状态)由视图经 solid store
 //     proxy 反应式读取 —— 流式 delta 不重建行 DOM;
 //   · reuseTimelineRows 以 key+rev+proxy 同一性做行复用,保证 <For> 的引用稳定;
-//   · 工具/子任务/媒体等非文本 part 一律投影为占位行(C6 换成真卡),消息流不断链;
-//   · 未知 part 类型 fail-closed:不渲染、不猜测(不注入任何内容);
+//   · 工具 part → tool 行(C6 真卡);连续已完成的探查类工具 ≥2 个 → toolgroup 折叠组;
+//     助手侧 file part → media 预览行;完成的 cloud_* 工具 → artifacts 产物链接行;
+//   · 回合级错误(非中断)→ turnError 行;session_status=retry → retry 行(对齐 v2 行模型);
+//   · 未知 part 类型 fail-closed:不渲染、不猜测(subtask 同上游 v1/v2 一致不渲染);
 //   · I7 有界:boundedText 把超大文本截断后才交给渲染管线(sanitizer/Shiki 不吃整串)。
 import type {
   AssistantMessage,
@@ -23,6 +25,8 @@ import type {
 export const MARKDOWN_MAX_CHARS = 60_000
 export const USER_TEXT_MAX_CHARS = 20_000
 export const REASONING_MAX_CHARS = 20_000
+export const TURN_ERROR_MAX_CHARS = 4_000
+export const RETRY_MESSAGE_MAX_CHARS = 500
 
 export function boundedText(text: string, max: number): { text: string; truncated: boolean } {
   if (text.length <= max) return { text, truncated: false }
@@ -49,6 +53,12 @@ export interface TimelineComment {
   endLine?: number
 }
 
+/** 产物链接行的一条链接(名字来自完成态 cloud 工具输出,fail-closed:解析不出即无行)。 */
+export interface TimelineArtifactLink {
+  runId: string
+  name: string
+}
+
 export type TimelineRow =
   | { kind: "turn"; key: string; rev: string; userMessageID: string; createdAt: number }
   | {
@@ -64,7 +74,12 @@ export type TimelineRow =
     }
   | { kind: "reasoning"; key: string; rev: string; part: ReasoningPart; streaming: boolean }
   | { kind: "markdown"; key: string; rev: string; part: TextPart; streaming: boolean }
-  | { kind: "placeholder"; key: string; rev: string; part: Part; tool?: string }
+  | { kind: "tool"; key: string; rev: string; part: ToolPart; tool: string }
+  | { kind: "toolgroup"; key: string; rev: string; parts: ToolPart[] }
+  | { kind: "media"; key: string; rev: string; part: FilePart }
+  | { kind: "artifacts"; key: string; rev: string; partID: string; links: TimelineArtifactLink[] }
+  | { kind: "retry"; key: string; rev: string; userMessageID: string; attempt: number; message: string }
+  | { kind: "turnError"; key: string; rev: string; userMessageID: string; name: string; message: string }
   | { kind: "divider"; key: string; rev: string; userMessageID: string; label: "compaction" | "interrupted" }
   | { kind: "thinking"; key: string; rev: string; userMessageID: string }
 
@@ -73,6 +88,8 @@ export interface TimelineProjectionInput {
   partsOf: (messageID: string) => readonly Part[]
   /** session_status[sessionID].type;缺省视为 "idle"。 */
   status: string
+  /** session_status[sessionID] 为 retry 时的载荷(attempt/message),对齐 v2 行模型的 Retry 行。 */
+  retry?: { attempt: number; message: string }
 }
 
 /** 用户消息里被 dock/审批面接管、时间线不渲染的工具。 */
@@ -158,7 +175,8 @@ function mentionSpans(parts: readonly Part[]) {
         spans.push({ start: textSource.start, end: textSource.end, kind: "file" })
       continue
     }
-    if (part.type === "agent" && part.source) spans.push({ start: part.source.start, end: part.source.end, kind: "agent" })
+    if (part.type === "agent" && part.source)
+      spans.push({ start: part.source.start, end: part.source.end, kind: "agent" })
   }
   return spans
 }
@@ -168,6 +186,71 @@ function renderableToolPart(part: ToolPart) {
   // question 的 pending/running 渲染在 composer dock(C7 领域),时间线只保留已回答的记录。
   if (part.tool === "question") return part.state.status !== "pending" && part.state.status !== "running"
   return true
+}
+
+/** 「已探索」折叠组的成员工具(与上游 CONTEXT_GROUP_TOOLS 同集合)。 */
+const CONTEXT_GROUP_TOOLS = new Set(["read", "glob", "grep", "list"])
+/** 连续多少个已完成探查工具起折叠成组(单个保留独立卡)。 */
+export const CONTEXT_GROUP_MIN = 2
+
+/** 只有「已完成」的探查工具进折叠组 —— 运行中/出错的工具保留独立卡,状态可见。 */
+function groupableToolPart(part: ToolPart) {
+  return CONTEXT_GROUP_TOOLS.has(part.tool) && part.state.status === "completed"
+}
+
+// ── 产物链接行(§⑥):完成态 cloud_* 工具输出里的产物名 → 链接行 ─────────────
+const CLOUD_TOOL_PREFIX = "cloud_"
+export const ARTIFACT_LINKS_MAX = 12
+const ARTIFACT_OUTPUT_PARSE_MAX = 100_000
+const artifactLinksCache = new WeakMap<object, { output: string; links: TimelineArtifactLink[] }>()
+
+function parseArtifactLinks(output: string): TimelineArtifactLink[] {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(output)
+  } catch {
+    return []
+  }
+  if (typeof parsed !== "object" || parsed === null) return []
+  const record = parsed as { job_id?: unknown; status?: unknown; artifacts?: unknown }
+  if (typeof record.job_id !== "string" || !record.job_id) return []
+  if (record.status !== "completed") return []
+  if (!Array.isArray(record.artifacts)) return []
+  const links: TimelineArtifactLink[] = []
+  for (const item of record.artifacts) {
+    if (links.length >= ARTIFACT_LINKS_MAX) break
+    if (typeof item === "string" && item) {
+      links.push({ runId: record.job_id, name: item })
+      continue
+    }
+    if (typeof item === "object" && item !== null) {
+      const name = (item as { name?: unknown }).name
+      if (typeof name === "string" && name) links.push({ runId: record.job_id, name })
+    }
+  }
+  return links
+}
+
+/** fail-closed:非 cloud 工具/未完成/输出超限/解析不出 artifacts 名字 → 空(不出行)。 */
+export function artifactLinksOf(part: ToolPart): TimelineArtifactLink[] {
+  if (!part.tool.startsWith(CLOUD_TOOL_PREFIX)) return []
+  if (part.state.status !== "completed") return []
+  const output = part.state.output
+  if (typeof output !== "string" || output.length === 0 || output.length > ARTIFACT_OUTPUT_PARSE_MAX) return []
+  const cached = artifactLinksCache.get(part)
+  if (cached && cached.output === output) return cached.links
+  const links = parseArtifactLinks(output)
+  artifactLinksCache.set(part, { output, links })
+  return links
+}
+
+/** 回合级错误(排除中断):读第一个出错助手消息的 name+message,均有界(I7)。 */
+export function turnErrorOf(assistants: readonly AssistantMessage[]): { name: string; message: string } | undefined {
+  const failed = assistants.find((message) => message.error && message.error.name !== "MessageAbortedError")
+  if (!failed?.error) return undefined
+  const data = (failed.error as { data?: { message?: unknown } }).data
+  const raw = typeof data?.message === "string" ? data.message : ""
+  return { name: failed.error.name, message: boundedText(raw, TURN_ERROR_MAX_CHARS).text }
 }
 
 export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow[] {
@@ -210,9 +293,7 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
       })
 
     const userParts = input.partsOf(userMessage.id)
-    const textPart = userParts.find(
-      (part): part is TextPart => part.type === "text" && !part.synthetic,
-    )
+    const textPart = userParts.find((part): part is TextPart => part.type === "text" && !part.synthetic)
     const rawText = textPart?.text ?? ""
     const { text, truncated } = boundedText(rawText, USER_TEXT_MAX_CHARS)
     const segments = segmentUserText(text, mentionSpans(userParts))
@@ -248,7 +329,38 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
       })
 
     let emitted = 0
-    for (const assistant of assistantsByParent.get(userMessage.id) ?? []) {
+    const assistants = assistantsByParent.get(userMessage.id) ?? []
+
+    // 连续已完成的探查工具缓冲:≥ CONTEXT_GROUP_MIN 折叠成「已探索」组,单个保留独立卡。
+    let contextRun: ToolPart[] = []
+    const pushToolRow = (part: ToolPart) => {
+      rows.push({ kind: "tool", key: `part:${part.id}`, rev: `tool:${part.tool}`, part, tool: part.tool })
+      const links = artifactLinksOf(part)
+      if (links.length > 0)
+        rows.push({
+          kind: "artifacts",
+          key: `artifacts:${part.id}`,
+          rev: links.map((link) => `${link.runId}/${link.name}`).join("|"),
+          partID: part.id,
+          links,
+        })
+    }
+    const flushContextRun = () => {
+      if (contextRun.length === 0) return
+      if (contextRun.length >= CONTEXT_GROUP_MIN) {
+        rows.push({
+          kind: "toolgroup",
+          key: `group:${contextRun[0]!.id}`,
+          rev: contextRun.map((part) => part.id).join("|"),
+          parts: contextRun,
+        })
+      } else {
+        contextRun.forEach(pushToolRow)
+      }
+      contextRun = []
+    }
+
+    for (const assistant of assistants) {
       const parts = input.partsOf(assistant.id)
       const streamingHere = streamingAssistant?.id === assistant.id
       const lastVisible = streamingHere
@@ -259,7 +371,6 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
                 (part.type === "text" && !!part.text?.trim()) ||
                 (part.type === "reasoning" && !!part.text?.trim()) ||
                 (part.type === "tool" && renderableToolPart(part)) ||
-                part.type === "subtask" ||
                 part.type === "file",
             )
         : undefined
@@ -267,6 +378,7 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
         switch (part.type) {
           case "text": {
             if (!part.text?.trim()) continue
+            flushContextRun()
             rows.push({
               kind: "markdown",
               key: `md:${part.id}`,
@@ -279,6 +391,7 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
           }
           case "reasoning": {
             if (!part.text?.trim()) continue
+            flushContextRun()
             rows.push({
               kind: "reasoning",
               key: `reason:${part.id}`,
@@ -291,21 +404,27 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
           }
           case "tool": {
             if (!renderableToolPart(part)) continue
-            rows.push({ kind: "placeholder", key: `part:${part.id}`, rev: `tool:${part.tool}`, part, tool: part.tool })
+            if (groupableToolPart(part)) contextRun.push(part)
+            else {
+              flushContextRun()
+              pushToolRow(part)
+            }
             emitted += 1
             continue
           }
-          case "subtask":
           case "file": {
-            rows.push({ kind: "placeholder", key: `part:${part.id}`, rev: part.type, part })
+            flushContextRun()
+            rows.push({ kind: "media", key: `part:${part.id}`, rev: part.mime, part })
             emitted += 1
             continue
           }
           default:
-            // agent/snapshot/retry/compaction 等非文本流 part:C5 无视觉合同,fail-closed 不渲染。
+            // agent/snapshot/subtask/retry/compaction 等非文本流 part:无视觉合同,fail-closed
+            // 不渲染(subtask 与上游 v1/v2 行为一致;retry 行由 session_status 驱动)。
             continue
         }
       }
+      flushContextRun()
       if (assistant.error?.name === "MessageAbortedError")
         rows.push({
           kind: "divider",
@@ -318,16 +437,36 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
 
     if (userMessage.id === activeUserID && input.status === "busy" && emitted === 0)
       rows.push({ kind: "thinking", key: `thinking:${userMessage.id}`, rev: "", userMessageID: userMessage.id })
+
+    if (userMessage.id === activeUserID && input.status === "retry" && input.retry) {
+      const message = boundedText(input.retry.message, RETRY_MESSAGE_MAX_CHARS).text
+      rows.push({
+        kind: "retry",
+        key: `retry:${userMessage.id}`,
+        rev: `${input.retry.attempt}§${message}`,
+        userMessageID: userMessage.id,
+        attempt: input.retry.attempt,
+        message,
+      })
+    }
+
+    const turnError = turnErrorOf(assistants)
+    if (turnError)
+      rows.push({
+        kind: "turnError",
+        key: `turn-error:${userMessage.id}`,
+        rev: `${turnError.name}§${turnError.message}`,
+        userMessageID: userMessage.id,
+        name: turnError.name,
+        message: turnError.message,
+      })
   })
 
   return rows
 }
 
 /** 行复用:key+kind+rev 相同且承载的 store proxy 同一 → 保留旧行对象(<For> 引用稳定,流式不重建 DOM)。 */
-export function reuseTimelineRows(
-  previous: readonly TimelineRow[] | undefined,
-  next: TimelineRow[],
-): TimelineRow[] {
+export function reuseTimelineRows(previous: readonly TimelineRow[] | undefined, next: TimelineRow[]): TimelineRow[] {
   if (!previous || previous.length === 0) return next
   const byKey = new Map(previous.map((row) => [row.key, row] as const))
   let reused = 0
@@ -336,6 +475,10 @@ export function reuseTimelineRows(
     if (!before || before.kind !== row.kind || before.rev !== row.rev) return row
     if ("part" in before && "part" in row && before.part !== row.part) return row
     if (before.kind === "user" && row.kind === "user" && before.message !== row.message) return row
+    if (before.kind === "toolgroup" && row.kind === "toolgroup") {
+      if (before.parts.length !== row.parts.length) return row
+      if (before.parts.some((part, index) => part !== row.parts[index])) return row
+    }
     reused += 1
     return before
   })

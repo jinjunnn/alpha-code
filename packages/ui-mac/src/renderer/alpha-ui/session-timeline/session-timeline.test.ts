@@ -16,8 +16,8 @@ const css = sources.get("session-timeline.css")!
 const workspace = readFileSync(join(dir, "../session-workspace/alpha-session-workspace.tsx"), "utf8")
 const shell = readFileSync(join(dir, "../session-workspace/session-workspace-shell.tsx"), "utf8")
 
-describe("REQ-125 C5 时间线真实 Solid 挂载(happy-dom 子进程)", () => {
-  test("空态/文本类行/历史驻点/连续锚定/引擎窗口化/截断冻结全部通过", () => {
+describe("REQ-125 C5/C6 时间线真实 Solid 挂载(happy-dom 子进程)", () => {
+  test("空态/文本类行/历史驻点/连续锚定/引擎窗口化/截断冻结/C6 卡片全集全部通过", () => {
     const result = Bun.spawnSync({
       cmd: [process.execPath, "test", resolve(dir, "../../../../test-component/session-timeline.cases.ts")],
       cwd: resolve(dir, "../../../.."),
@@ -25,7 +25,7 @@ describe("REQ-125 C5 时间线真实 Solid 挂载(happy-dom 子进程)", () => {
     })
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
-    expect(output).toContain("13 pass")
+    expect(output).toContain("21 pass")
     expect(output).toContain("0 fail")
   })
 })
@@ -72,7 +72,15 @@ describe("REQ-125 C5 I1 白名单静态棘轮", () => {
 describe("REQ-125 C5 I3/I6 安全渲染静态棘轮", () => {
   test("alpha 侧不存在绕过 sanitizer 管线的 HTML 注入路径", () => {
     // 下列 token 是「禁用清单」字面量(断言源码中不存在),不是调用。
-    const forbidden = ["innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval(", "new Function", "srcdoc"]
+    const forbidden = [
+      "innerHTML",
+      "outerHTML",
+      "insertAdjacentHTML",
+      "document.write",
+      "eval(",
+      "new Function",
+      "srcdoc",
+    ]
     forbidden.forEach((token) => expect(allSource).not.toContain(token))
   })
 

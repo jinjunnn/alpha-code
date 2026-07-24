@@ -10,12 +10,15 @@ import type {
   UserMessage,
 } from "@opencode-ai/sdk/v2/client"
 import {
+  artifactLinksOf,
   boundedText,
   commentOf,
   MARKDOWN_MAX_CHARS,
   projectTimelineRows,
   reuseTimelineRows,
   segmentUserText,
+  turnErrorOf,
+  TURN_ERROR_MAX_CHARS,
   USER_TEXT_MAX_CHARS,
 } from "./timeline-model"
 
@@ -83,38 +86,37 @@ function filePart(id: string, messageID: string, over: Partial<FilePart> = {}): 
   }
 }
 
-function project(messages: Message[], parts: Record<string, Part[]>, status = "idle") {
-  return projectTimelineRows({ messages, partsOf: (id) => parts[id] ?? [], status })
+function project(
+  messages: Message[],
+  parts: Record<string, Part[]>,
+  status = "idle",
+  retry?: { attempt: number; message: string },
+) {
+  return projectTimelineRows({ messages, partsOf: (id) => parts[id] ?? [], status, retry })
 }
 
 describe("REQ-125 C5 行模型投影:消息 → 行", () => {
-  test("完整回合投影为 用户气泡 → 推理块 → Markdown → 工具占位行,首回合无分隔", () => {
-    const rows = project(
-      [userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")],
-      {
-        msg_u1: [textPart("prt_u1", "msg_u1", "检查仓库结构")],
-        msg_a1: [
-          reasoningPart("prt_r1", "msg_a1", "先列目录看结构"),
-          textPart("prt_t1", "msg_a1", "**发现**:结构完好"),
-          toolPart("prt_o1", "msg_a1", "bash"),
-        ],
-      },
-    )
+  test("完整回合投影为 用户气泡 → 推理块 → Markdown → 工具卡行,首回合无分隔", () => {
+    const rows = project([userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")], {
+      msg_u1: [textPart("prt_u1", "msg_u1", "检查仓库结构")],
+      msg_a1: [
+        reasoningPart("prt_r1", "msg_a1", "先列目录看结构"),
+        textPart("prt_t1", "msg_a1", "**发现**:结构完好"),
+        toolPart("prt_o1", "msg_a1", "bash"),
+      ],
+    })
 
-    expect(rows.map((row) => row.kind)).toEqual(["user", "reasoning", "markdown", "placeholder"])
+    expect(rows.map((row) => row.kind)).toEqual(["user", "reasoning", "markdown", "tool"])
     expect(rows.map((row) => row.key)).toEqual(["user:msg_u1", "reason:prt_r1", "md:prt_t1", "part:prt_o1"])
-    const placeholder = rows[3]!
-    expect(placeholder.kind === "placeholder" && placeholder.tool).toBe("bash")
+    const tool = rows[3]!
+    expect(tool.kind === "tool" && tool.tool).toBe("bash")
   })
 
   test("第二回合前插入带时间戳的回合分隔", () => {
-    const rows = project(
-      [userMsg("msg_u1", 1000), userMsg("msg_u2", 2000)],
-      {
-        msg_u1: [textPart("prt_u1", "msg_u1", "第一问")],
-        msg_u2: [textPart("prt_u2", "msg_u2", "第二问")],
-      },
-    )
+    const rows = project([userMsg("msg_u1", 1000), userMsg("msg_u2", 2000)], {
+      msg_u1: [textPart("prt_u1", "msg_u1", "第一问")],
+      msg_u2: [textPart("prt_u2", "msg_u2", "第二问")],
+    })
 
     expect(rows.map((row) => row.kind)).toEqual(["user", "turn", "user"])
     const turn = rows[1]!
@@ -232,11 +234,7 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
   })
 
   test("思考中:busy + 活跃回合无可见输出 → thinking 行;有输出即不再出现", () => {
-    const thinking = project(
-      [userMsg("msg_u1", 1000)],
-      { msg_u1: [textPart("prt_u1", "msg_u1", "开始")] },
-      "busy",
-    )
+    const thinking = project([userMsg("msg_u1", 1000)], { msg_u1: [textPart("prt_u1", "msg_u1", "开始")] }, "busy")
     expect(thinking.map((row) => row.kind)).toEqual(["user", "thinking"])
 
     const withOutput = project(
@@ -251,27 +249,160 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
   })
 
   test("工具过滤:todowrite 与 pending/running question 不渲染;未知 part 类型 fail-closed 跳过", () => {
-    const rows = project(
-      [userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")],
-      {
-        msg_u1: [textPart("prt_u1", "msg_u1", "开始")],
-        msg_a1: [
-          toolPart("prt_o1", "msg_a1", "todowrite"),
-          toolPart("prt_o2", "msg_a1", "question", {
-            state: { status: "running", input: {}, title: "q", time: { start: 0 } },
-          }),
-          toolPart("prt_o3", "msg_a1", "question"),
-          { id: "prt_o4", sessionID: "ses_1", messageID: "msg_a1", type: "mystery" } as unknown as Part,
-        ],
-      },
-    )
+    const rows = project([userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")], {
+      msg_u1: [textPart("prt_u1", "msg_u1", "开始")],
+      msg_a1: [
+        toolPart("prt_o1", "msg_a1", "todowrite"),
+        toolPart("prt_o2", "msg_a1", "question", {
+          state: { status: "running", input: {}, title: "q", time: { start: 0 } },
+        }),
+        toolPart("prt_o3", "msg_a1", "question"),
+        { id: "prt_o4", sessionID: "ses_1", messageID: "msg_a1", type: "mystery" } as unknown as Part,
+        {
+          id: "prt_o5",
+          sessionID: "ses_1",
+          messageID: "msg_a1",
+          type: "subtask",
+          prompt: "p",
+          description: "d",
+          agent: "general",
+        } as Part,
+      ],
+    })
 
-    expect(rows.filter((row) => row.kind === "placeholder").map((row) => row.key)).toEqual(["part:prt_o3"])
+    expect(rows.filter((row) => row.kind === "tool").map((row) => row.key)).toEqual(["part:prt_o3"])
+    // subtask part 与上游 v1/v2 一致:无视觉合同,不渲染。
+    expect(rows.some((row) => "key" in row && row.key.includes("prt_o5"))).toBe(false)
+  })
+
+  test("折叠组:连续 ≥2 个已完成探查工具成组;运行中/穿插非探查工具打断分组", () => {
+    const rows = project([userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")], {
+      msg_u1: [textPart("prt_u1", "msg_u1", "开始")],
+      msg_a1: [
+        toolPart("prt_g1", "msg_a1", "read"),
+        toolPart("prt_g2", "msg_a1", "grep"),
+        toolPart("prt_g3", "msg_a1", "list"),
+        toolPart("prt_x1", "msg_a1", "bash"),
+        toolPart("prt_g4", "msg_a1", "glob"),
+        toolPart("prt_g5", "msg_a1", "read", {
+          state: { status: "running", input: {}, title: "read", time: { start: 0 } },
+        }),
+      ],
+    })
+
+    expect(rows.map((row) => row.kind)).toEqual(["user", "toolgroup", "tool", "tool", "tool"])
+    const group = rows[1]!
+    if (group.kind !== "toolgroup") throw new Error("expected toolgroup row")
+    expect(group.key).toBe("group:prt_g1")
+    expect(group.parts.map((part) => part.id)).toEqual(["prt_g1", "prt_g2", "prt_g3"])
+    // 单个已完成探查工具(glob)不成组;运行中的 read 保留独立卡。
+    expect(rows.slice(2).map((row) => (row.kind === "tool" ? row.part.id : ""))).toEqual(["prt_x1", "prt_g4", "prt_g5"])
+  })
+
+  test("媒体行:助手侧 file part 投影为 media 行", () => {
+    const rows = project([userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")], {
+      msg_u1: [textPart("prt_u1", "msg_u1", "截个图")],
+      msg_a1: [filePart("prt_f1", "msg_a1")],
+    })
+    expect(rows.map((row) => row.kind)).toEqual(["user", "media"])
+  })
+
+  test("产物链接行:完成态 cloud_* 工具输出解析出 artifacts 名单才出行(fail-closed)", () => {
+    const output = JSON.stringify({
+      job_id: "job_1",
+      status: "completed",
+      artifacts: [{ name: "季度分析.docx" }, "营收对比.png", { bogus: true }],
+    })
+    const cloudDone = toolPart("prt_c1", "msg_a1", "cloud_await", {
+      state: { status: "completed", input: {}, output, title: "await", metadata: {}, time: { start: 0, end: 1 } },
+    })
+    const rows = project([userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")], {
+      msg_u1: [textPart("prt_u1", "msg_u1", "跑云任务")],
+      msg_a1: [cloudDone],
+    })
+    expect(rows.map((row) => row.kind)).toEqual(["user", "tool", "artifacts"])
+    const artifacts = rows[2]!
+    if (artifacts.kind !== "artifacts") throw new Error("expected artifacts row")
+    expect(artifacts.links).toEqual([
+      { runId: "job_1", name: "季度分析.docx" },
+      { runId: "job_1", name: "营收对比.png" },
+    ])
+
+    // fail-closed 枚举:非 cloud 工具 / 非 completed run / 无 artifacts / 解析失败 → 无链接。
+    expect(artifactLinksOf(toolPart("prt_c2", "msg_a1", "bash"))).toEqual([])
+    expect(
+      artifactLinksOf(
+        toolPart("prt_c3", "msg_a1", "cloud_await", {
+          state: {
+            status: "completed",
+            input: {},
+            output: JSON.stringify({ job_id: "job_2", status: "running", artifacts: ["x"] }),
+            title: "await",
+            metadata: {},
+            time: { start: 0, end: 1 },
+          },
+        }),
+      ),
+    ).toEqual([])
+    expect(
+      artifactLinksOf(
+        toolPart("prt_c4", "msg_a1", "cloud_await", {
+          state: {
+            status: "completed",
+            input: {},
+            output: "not-json",
+            title: "await",
+            metadata: {},
+            time: { start: 0, end: 1 },
+          },
+        }),
+      ),
+    ).toEqual([])
+  })
+
+  test("回合级错误:非中断错误在回合末投影 turnError 行(有界),中断只出分隔", () => {
+    const failed = assistantMsg("msg_a1", "msg_u1", {
+      error: {
+        name: "ApiError",
+        data: { message: "x".repeat(TURN_ERROR_MAX_CHARS + 50) },
+      } as AssistantMessage["error"],
+    })
+    const rows = project([userMsg("msg_u1", 1000), failed], {
+      msg_u1: [textPart("prt_u1", "msg_u1", "开始")],
+      msg_a1: [textPart("prt_t1", "msg_a1", "半截回答")],
+    })
+    const last = rows.at(-1)!
+    if (last.kind !== "turnError") throw new Error("expected turnError row")
+    expect(last.name).toBe("ApiError")
+    expect(last.message.length).toBe(TURN_ERROR_MAX_CHARS)
+
+    expect(
+      turnErrorOf([
+        assistantMsg("msg_a2", "msg_u1", { error: { name: "MessageAbortedError", data: { message: "" } } }),
+      ]),
+    ).toBeUndefined()
+  })
+
+  test("重试:status=retry 且活跃回合 → retry 行(attempt + 有界 message)", () => {
+    const rows = project([userMsg("msg_u1", 1000)], { msg_u1: [textPart("prt_u1", "msg_u1", "开始")] }, "retry", {
+      attempt: 2,
+      message: "gateway 429",
+    })
+    const last = rows.at(-1)!
+    if (last.kind !== "retry") throw new Error("expected retry row")
+    expect(last.attempt).toBe(2)
+    expect(last.message).toBe("gateway 429")
+
+    const idle = project([userMsg("msg_u1", 1000)], { msg_u1: [textPart("prt_u1", "msg_u1", "开始")] }, "idle")
+    expect(idle.some((row) => row.kind === "retry")).toBe(false)
   })
 
   test("压缩与中断投影为对应分隔行", () => {
     const rows = project(
-      [userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1", { error: { name: "MessageAbortedError", data: { message: "" } } })],
+      [
+        userMsg("msg_u1", 1000),
+        assistantMsg("msg_a1", "msg_u1", { error: { name: "MessageAbortedError", data: { message: "" } } }),
+      ],
       {
         msg_u1: [
           textPart("prt_u1", "msg_u1", "开始"),
