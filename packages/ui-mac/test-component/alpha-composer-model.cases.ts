@@ -34,6 +34,7 @@ const { render } = solidWeb
 const savedAlphaGlobalDir = process.env.ALPHA_GLOBAL_DIR
 const savedOpencodeConfigDir = process.env.OPENCODE_CONFIG_DIR
 const tempDirs: string[] = []
+const activeDisposals: Array<() => void> = []
 
 Bun.plugin({
   name: "solid-component-tests",
@@ -56,6 +57,7 @@ const command = { options: [], trigger: () => {} } as unknown as AlphaComposerRu
 mock.module("../src/renderer/alpha-ui/providers", () => ({ useCommand: () => command }))
 const { AlphaComposerRuntime } = await import("../src/renderer/alpha-ui/alpha-composer")
 const { ModelPickPop } = await import("../src/renderer/alpha-ui/alpha-composer-model")
+const { ToastViewport } = await import("../src/renderer/alpha-ui/Toast")
 const {
   composerModel,
   composerModelProjection,
@@ -160,7 +162,15 @@ function installApi(fixture: ApiFixture = {}) {
 function mount(view: () => HTMLElement) {
   const host = document.createElement("div")
   document.body.append(host)
-  return { host, dispose: render(view, host) }
+  const dispose = render(view, host)
+  let active = true
+  const cleanup = () => {
+    if (!active) return
+    active = false
+    dispose()
+  }
+  activeDisposals.push(cleanup)
+  return { host, dispose: cleanup }
 }
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
@@ -200,6 +210,7 @@ function input(element: HTMLInputElement, value: string) {
 }
 
 afterEach(() => {
+  activeDisposals.splice(0).forEach((dispose) => dispose())
   setProviderLifecycleDeps()
   tempDirs.splice(0).forEach((dir) => rmSync(dir, { recursive: true, force: true }))
   if (savedAlphaGlobalDir === undefined) delete process.env.ALPHA_GLOBAL_DIR
@@ -284,7 +295,10 @@ describe("AlphaComposer production model seam", () => {
       }),
     )
 
-    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+    await waitFor(() => {
+      expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id)
+      expect(mounted.host.querySelector<HTMLButtonElement>('[data-kind="model"] > button')?.disabled).toBe(false)
+    })
     click(mounted.host.querySelector('[data-kind="model"] > button'))
     await waitFor(() => expect(document.body.textContent).toContain("A Only"))
     const staleRow = [...document.body.querySelectorAll<HTMLButtonElement>(".a-mpp-row")].find((row) =>
@@ -509,75 +523,193 @@ describe("AlphaComposer production model seam", () => {
     mounted.dispose()
   })
 
-  for (const source of ["account", "key"] as const) {
-    test(`${source} 读取失败由外层三态呈现并阻止提交；picker 重试会重跑整条链`, async () => {
-      let failing = true
-      let submissions = 0
-      installApi({
-        account: async () => {
-          if (source === "account" && failing) throw new Error("account failed")
-          return summary
-        },
-        keyStatus: async () => {
-          if (source === "key" && failing) throw new Error("key failed")
-          return keys
-        },
-      })
-      const contract: ModelContract = {
-        list: async () => platformModels,
-        current: async () => undefined,
-        switch: async () => {},
-      }
-      const mounted = mount(() =>
-        createComponent(AlphaComposerRuntime, {
-          mode: "home",
-          projects: {
-            ...projects,
-            startChat: async () => {
-              submissions++
-              return "session-new"
-            },
-          },
-          directory: () => "/workspace",
-          command,
-          modelContract: contract,
-          initialText: "hello",
-        }),
-      )
-
-      await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.composer.modelChainFailed"]))
-      const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
-      expect(send.disabled).toBe(true)
-      send.click()
-      expect(submissions).toBe(0)
-
-      click(mounted.host.querySelector('[data-kind="model"] > button'))
-      await waitFor(() =>
-        expect(document.body.textContent).toContain(
-          source === "account" ? zh["alpha.model.accountFailed"] : zh["alpha.model.keyReadFailed"],
-        ),
-      )
-      failing = false
-      const picker = document.body.querySelector(".a-mpp")!
-      const retry = [...picker.querySelectorAll<HTMLButtonElement>('button')].find((button) => {
-        const alert = button.closest('[role="alert"]')
-        return alert?.textContent?.includes(source === "account" ? "账户信息读取失败" : "KEY 状态读取失败")
-      })
-      click(retry ?? null)
-
-      await waitFor(() => {
-        expect(mounted.host.textContent).not.toContain("账户、KEY 或模型目录读取失败")
-        expect(send.disabled).toBe(false)
-      })
-      send.click()
-      await waitFor(() => expect(submissions).toBe(1))
-      mounted.dispose()
+  test("home 的 model.list 与账户目录并行，账户迟到不阻塞本地目录", async () => {
+    const account = deferred<AccountSummary>()
+    const models = deferred<ModelV2Info[]>()
+    let listReads = 0
+    let accountReads = 0
+    installApi({
+      account: () => {
+        accountReads++
+        return account.promise
+      },
     })
-  }
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects,
+        directory: () => "/workspace",
+        command,
+        modelContract: {
+          list: async () => {
+            listReads++
+            return models.promise
+          },
+          current: async () => undefined,
+          switch: async () => {},
+        },
+      }),
+    )
+
+    await waitFor(() => {
+      expect(listReads).toBe(1)
+      expect(accountReads).toBe(1)
+    })
+    expect(composerModel()).toBeNull()
+    models.resolve([...platformModels, info("deepseek-byok", "deepseek-v4-flash")])
+    await waitFor(() => expect(composerModel()?.providerID).toBe("deepseek-byok"))
+    account.resolve(summary)
+    await flush()
+    expect(composerModel()?.providerID).toBe("deepseek-byok")
+    mounted.dispose()
+  })
+
+  test("account 瞬态失败保持恢复中，SSE 恢复会取消退避并立即重试", async () => {
+    let failing = true
+    let submissions = 0
+    installApi({
+      account: async () => {
+        if (failing) throw new Error("account failed")
+        return summary
+      },
+    })
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects: {
+          ...projects,
+          startChat: async () => {
+            submissions++
+            return "session-new"
+          },
+        },
+        directory: () => "/workspace",
+        command,
+        modelContract: {
+          list: async () => platformModels,
+          current: async () => undefined,
+          switch: async () => {},
+        },
+        initialText: "hello",
+      }),
+    )
+
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+    await waitFor(() => expect(send.disabled).toBe(true))
+    click(mounted.host.querySelector('[data-kind="model"] > button'))
+    await waitFor(() => expect(document.body.textContent).toContain(zh["alpha.model.syncing"]))
+    expect(document.body.textContent).not.toContain(zh["alpha.model.accountFailed"])
+    expect(document.body.textContent).not.toContain("余额不足")
+    send.click()
+    expect(submissions).toBe(0)
+
+    failing = false
+    window.dispatchEvent(new Event("alpha:sse-reconnected"))
+    await waitFor(() => expect(send.disabled).toBe(false))
+    send.click()
+    await waitFor(() => expect(submissions).toBe(1))
+    mounted.dispose()
+  })
+
+  test("换血打断在途发送时保留草稿并显示明确中断状态", async () => {
+    const started = deferred<string>()
+    let submitted = 0
+    installApi({ auth: async () => loggedOut })
+    const toasts = mount(() => createComponent(ToastViewport, {}))
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects: {
+          ...projects,
+          startChat: async () => started.promise,
+        },
+        directory: () => "/workspace",
+        command,
+        modelContract: {
+          list: async () => [info("deepseek-byok", "deepseek-v4-flash")],
+          current: async () => undefined,
+          switch: async () => {},
+        },
+        initialText: "保留这段草稿",
+        onSubmitted: () => {
+          submitted++
+        },
+      }),
+    )
+
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+    await waitFor(() => expect(send.disabled).toBe(false))
+    send.click()
+    window.dispatchEvent(
+      new CustomEvent("alpha:runtime-recovery", {
+        detail: { status: "recovering", generation: 7, reason: "token-only" },
+      }),
+    )
+    started.resolve("session-new")
+
+    await waitFor(() => expect(document.body.textContent).toContain(zh["alpha.composer.generationInterrupted"]))
+    expect(mounted.host.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("保留这段草稿")
+    expect(submitted).toBe(0)
+    mounted.dispose()
+    toasts.dispose()
+  })
+
+  test("KEY 读取失败由外层失败态呈现并阻止提交；picker 重试会重跑整条链", async () => {
+    let failing = true
+    let submissions = 0
+    installApi({
+      keyStatus: async () => {
+        if (failing) throw new Error("key failed")
+        return keys
+      },
+    })
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "home",
+        projects: {
+          ...projects,
+          startChat: async () => {
+            submissions++
+            return "session-new"
+          },
+        },
+        directory: () => "/workspace",
+        command,
+        modelContract: {
+          list: async () => platformModels,
+          current: async () => undefined,
+          switch: async () => {},
+        },
+        initialText: "hello",
+      }),
+    )
+
+    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.composer.modelChainFailed"]))
+    const send = mounted.host.querySelector<HTMLButtonElement>('button[title="发送"]')!
+    expect(send.disabled).toBe(true)
+    send.click()
+    expect(submissions).toBe(0)
+
+    click(mounted.host.querySelector('[data-kind="model"] > button'))
+    await waitFor(() => expect(document.body.textContent).toContain(zh["alpha.model.keyReadFailed"]))
+    failing = false
+    const retry = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find((button) =>
+      button.closest('[role="alert"]')?.textContent?.includes("KEY 状态读取失败"),
+    )
+    click(retry ?? null)
+
+    await waitFor(() => {
+      expect(mounted.host.textContent).not.toContain("账户、KEY 或模型目录读取失败")
+      expect(send.disabled).toBe(false)
+    })
+    send.click()
+    await waitFor(() => expect(submissions).toBe(1))
+    mounted.dispose()
+  })
 })
 
 describe("ModelPickPop production component", () => {
-  test("list/KEY/auth 失败都显示错误与重试，不伪装成业务否定态", async () => {
+  test("list/auth 瞬态失败显示恢复中，KEY 硬失败显示重试，不伪装成业务否定态", async () => {
     resetComposerModelProjection()
     installApi({
       auth: async () => {
@@ -609,17 +741,22 @@ describe("ModelPickPop production component", () => {
     )
 
     await waitFor(() => {
-      expect(mounted.host.textContent).toContain(zh["alpha.model.accountFailed"])
+      expect(mounted.host.textContent).toContain(zh["alpha.model.syncing"])
       expect(mounted.host.textContent).toContain(zh["alpha.model.keyReadFailed"])
       expect(mounted.host.textContent).toContain(zh["alpha.model.engineConnecting"])
     })
+    expect(mounted.host.textContent).not.toContain(zh["alpha.model.accountFailed"])
     expect(mounted.host.textContent).not.toContain("未配置 KEY")
     expect(mounted.host.textContent).not.toContain("需登录")
     expect(mounted.host.textContent).not.toContain("余额不足")
-    for (const message of [zh["alpha.model.accountFailed"], zh["alpha.model.keyReadFailed"], zh["alpha.model.engineConnecting"]]) {
-      const alert = [...mounted.host.querySelectorAll('[role="alert"]')].find((node) => node.textContent?.includes(message))
-      expect(alert?.querySelector("button")?.textContent).toContain(zh["alpha.common.retry"])
-    }
+    const keyAlert = [...mounted.host.querySelectorAll('[role="alert"]')].find((node) =>
+      node.textContent?.includes(zh["alpha.model.keyReadFailed"]),
+    )
+    expect(keyAlert?.querySelector("button")?.textContent).toContain(zh["alpha.common.retry"])
+    const engineStatus = [...mounted.host.querySelectorAll('[role="status"]')].find((node) =>
+      node.textContent?.includes(zh["alpha.model.engineConnecting"]),
+    )
+    expect(engineStatus?.querySelector("button")?.textContent).toContain(zh["alpha.model.retryNow"])
     const rows = [...mounted.host.querySelectorAll<HTMLButtonElement>(".a-mpp-row")]
     expect(rows.every((row) => row.disabled)).toBe(true)
     rows[0]?.click()
@@ -628,7 +765,7 @@ describe("ModelPickPop production component", () => {
     mounted.dispose()
   })
 
-  test("account 读取失败保持 error，不降格为余额不足", async () => {
+  test("account 瞬态失败保持 recovering，不降格为余额不足或当前不可用", async () => {
     resetComposerModelProjection()
     installApi({
       account: async () => {
@@ -648,9 +785,14 @@ describe("ModelPickPop production component", () => {
       }),
     )
 
-    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.model.accountFailed"]))
+    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.model.syncing"]))
+    expect(mounted.host.textContent).not.toContain(zh["alpha.model.accountFailed"])
     expect(mounted.host.textContent).not.toContain("余额不足")
-    const platform = mounted.host.querySelector<HTMLButtonElement>(`.a-mpp-row[aria-label^="${catalog.platformModels[0]!.name},"]`)
+    const platformRows = platformModels.map((model) =>
+      mounted.host.querySelector<HTMLButtonElement>(`.a-mpp-row[aria-label^="${model.name},"]`),
+    )
+    expect(platformRows.every((row) => !row?.textContent?.includes("当前不可用"))).toBe(true)
+    const platform = platformRows[0]
     expect(platform?.disabled).toBe(true)
     platform?.click()
     expect(selectedCalls).toBe(0)
@@ -739,7 +881,12 @@ describe("ModelPickPop production component", () => {
       }),
     )
 
-    await waitFor(() => expect(mounted.host.textContent).toContain(zh["alpha.model.addProvider"]))
+    await waitFor(() => {
+      const add = [...mounted.host.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+        button.textContent?.includes("添加自定义节点 / 供应商"),
+      )
+      expect(add?.disabled).toBe(false)
+    })
     click(
       [...mounted.host.querySelectorAll("button")].find((button) =>
         button.textContent?.includes("添加自定义节点 / 供应商"),

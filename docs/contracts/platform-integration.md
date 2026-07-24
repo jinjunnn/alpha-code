@@ -4,7 +4,7 @@ kind: contract
 status: active
 owners:
   - alpha-code maintainers
-last_reviewed: 2026-07-22
+last_reviewed: 2026-07-24
 review_after: 2026-10-13
 ---
 
@@ -71,7 +71,17 @@ otherwise invalid versions fail closed; no compatibility shim is selected.
    A contract-incompatible refresh remains a visible failure and cannot replace
    the last validated token. A rejected refresh degrades to logged out/BYOK;
    transient network or server failure keeps the still-valid token for a later
-   retry.
+   retry. The desktop models refresh as `refreshed`, `still-valid`,
+   `transient-failure`, or `invalid-grant`. Scheduling is driven by the stored
+   `expiresAt`: the advance window is one third of the issued lifetime, capped
+   at five minutes, so a 15-minute token is due after about ten minutes.
+   Successful refresh, auth-state change, and system resume re-arm the
+   scheduler; a 30-second minimum wake interval prevents clock-skew loops.
+8. An expired token at cold start begins refresh immediately. The first
+   sidecar fork waits at most 1.2 seconds for that same request, then starts
+   local/BYOK availability while a slow refresh continues. A successful late
+   result may rotate the running sidecar once for its token generation.
+   Transient or invalid-grant results never enter a token-rotation loop.
 
 ## Runtime seams
 
@@ -86,16 +96,33 @@ otherwise invalid versions fail closed; no compatibility shim is selected.
 - **Account:** transactions are decoded as `LedgerPageV1`/`LedgerEntryV1`
   before renderer projection. Account summary remains outside this pinned
   contract until its producer publishes a schema and does not block the ledger
-  consumer.
+  consumer. A summary 401 performs one single-flight refresh and one retry;
+  successful refresh uses the same generation-latched sidecar token-rotation
+  entry as scheduled and cold-start refresh.
 - **Secret transport:** on each sidecar fork, login and BYOK secrets are
   mirrored into `0600` secret files. The sidecar allowlist carries non-secret
   endpoint configuration, while provider/MCP configuration carries file
   references rather than token values.
+- **Sidecar continuity:** main publishes token-free `recovering` and `ready`
+  states with a monotonically increasing sidecar generation. Pure token
+  rotation re-forks on the same URL and password, rebuilds renderer SDK/SSE
+  connections, and does not reload the page. Login, logout, auth-mode, proxy,
+  and provider-key changes remain structural respawns and retain the existing
+  renderer reload. Coalesced respawns escalate to structural when any queued
+  request is structural. If a generation boundary intersects an active
+  response, the renderer clears the local busy state, preserves an unsent
+  draft, and reports the interruption; this is not durable provider
+  continuation.
+- **Catalog and account readiness:** model directory loading starts as soon as
+  the directory SDK is available and runs in parallel with account summary.
+  Account state gates platform entitlement and platform send permission only;
+  it does not gate local/BYOK catalog rows. During transient recovery the
+  renderer keeps previously rendered rows with a syncing state. An expired,
+  unverified platform token is recovering and is never presented as usable.
 
-Login activates platform mode and respawns the sidecar in place when a live
-window exists. Cold-start callbacks defer activation until the next normal
-sidecar start. Logout clears token state and re-forks without platform
-credentials.
+Login activates platform mode through a structural sidecar respawn when the
+first fork does not already contain that auth generation. Logout clears token
+state and structurally re-forks without platform credentials.
 
 ## Explicit cloud file upload and conditional consent
 
