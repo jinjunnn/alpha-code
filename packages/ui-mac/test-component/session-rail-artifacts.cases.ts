@@ -95,8 +95,11 @@ function runUsage(runId: string) {
   }
 }
 
-function installFakeRunArtifacts(entriesByRun: Record<string, unknown[]>) {
-  const calls = { projectUsage: 0, list: [] as string[], verify: [] as string[] }
+function installFakeRunArtifacts(
+  entriesByRun: Record<string, unknown[]>,
+  options?: { verify?: (run: string, artifactId: string) => Promise<unknown> },
+) {
+  const calls = { projectUsage: 0, list: [] as string[], verify: [] as string[], read: 0 }
   ;(window as never as Record<string, unknown>).api = {
     runArtifacts: {
       projectUsage: async () => {
@@ -116,12 +119,23 @@ function installFakeRunArtifacts(entriesByRun: Record<string, unknown[]>) {
       },
       verify: async (_dir: string, run: string, artifactId: string) => {
         calls.verify.push(`${run}:${artifactId}`)
-        return { ok: true }
+        return options?.verify ? options.verify(run, artifactId) : { ok: true }
       },
-      read: async () => ({ ok: false, reason: "harness" }),
+      read: async () => {
+        calls.read += 1
+        return { ok: false, reason: "harness" }
+      },
     },
   }
   return calls
+}
+
+function unmountAll() {
+  disposers
+    .splice(0)
+    .reverse()
+    .forEach((dispose) => dispose())
+  document.body.replaceChildren()
 }
 
 describe("REQ-125 C4 artifacts view real Solid mount", () => {
@@ -262,5 +276,60 @@ describe("REQ-125 C4 artifacts container in the real shell (fake preload channel
     await flushTimers()
     expect(calls.projectUsage).toBe(2)
     expect(shell.rail().artifactTarget()).toBeUndefined()
+  })
+
+  test("verify-before-open is a real barrier: no byte read until the re-check passes", async () => {
+    let resolveVerify!: (value: unknown) => void
+    const gate = new Promise((resolve) => (resolveVerify = resolve))
+    const calls = installFakeRunArtifacts({ job_1: [manifestEntry("art-1", "架构说明.md")] }, { verify: () => gate })
+    const shell = runtime.createArtifactsShellHarness()
+    const host = mount(shell.Shell)
+    await flushTimers()
+    host.querySelector<HTMLButtonElement>("[data-alpha-session-rail-tab='artifacts']")!.click()
+    await flushTimers()
+
+    // Selection started the re-check; while it is pending nothing may read bytes and
+    // no preview routing exists — only the honest checking placeholder.
+    expect(calls.verify).toEqual(["job_1:art-1"])
+    expect(host.querySelector("[data-artifacts-verifying]")).not.toBeNull()
+    expect(calls.read).toBe(0)
+
+    resolveVerify({ ok: true })
+    await flushTimers()
+    await flushTimers()
+    expect(host.querySelector("[data-artifacts-verifying]")).toBeNull()
+    // Barrier open: the markdown renderer now reads through the bounded channel.
+    expect(calls.read).toBeGreaterThan(0)
+  })
+
+  test("a failed re-check renders honestly, keeps bytes closed, and is retryable", async () => {
+    let attempts = 0
+    const calls = installFakeRunArtifacts({ job_1: [manifestEntry("art-1", "架构说明.md")] }, {
+      verify: () => {
+        attempts += 1
+        return attempts === 1 ? Promise.reject(new Error("digest mismatch")) : Promise.resolve({ ok: true })
+      },
+    })
+    const shell = runtime.createArtifactsShellHarness()
+    const host = mount(shell.Shell)
+    await flushTimers()
+    host.querySelector<HTMLButtonElement>("[data-alpha-session-rail-tab='artifacts']")!.click()
+    await flushTimers()
+    await flushTimers()
+
+    // Failure is never stamped as done: honest notice, zero reads, no preview.
+    const failed = host.querySelector("[data-artifacts-verify-failed]")
+    expect(failed).not.toBeNull()
+    expect(failed!.textContent).toContain("digest mismatch")
+    expect(calls.read).toBe(0)
+
+    failed!.querySelector<HTMLButtonElement>(".a-wb-btn")!.click()
+    await flushTimers()
+    await flushTimers()
+    await flushTimers()
+    expect(calls.verify.length).toBe(2)
+    expect(host.querySelector("[data-artifacts-verify-failed]")).toBeNull()
+    expect(calls.read).toBeGreaterThan(0)
+    unmountAll()
   })
 })

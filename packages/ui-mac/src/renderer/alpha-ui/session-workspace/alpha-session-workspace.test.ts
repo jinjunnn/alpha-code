@@ -23,7 +23,7 @@ describe("REQ-125 C1b seam skeleton mount", () => {
     })
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
-    expect(output).toContain("7 pass")
+    expect(output).toContain("8 pass")
     expect(output).toContain("0 fail")
   })
 })

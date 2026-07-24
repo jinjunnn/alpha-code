@@ -7,6 +7,7 @@ import {
   REVIEW_FOLD_CHUNK,
   REVIEW_PATCH_MAX_LENGTH,
   REVIEW_PATCH_MAX_LINES,
+  reviewChangeCount,
   reviewFileChangeOf,
   reviewIdentityKeyOf,
   reviewPatchOversized,
@@ -236,5 +237,31 @@ describe("REQ-125 C2 panel phase and identity binding", () => {
     const b = reviewIdentityKeyOf({ serverKey: "s", directory: "/a", sessionID: "b c" })
     expect(a).not.toBe(b)
     expect(reviewIdentityKeyOf(undefined)).toBe("")
+  })
+})
+
+describe("REQ-125 C4 badge count shares the fail-closed narrowing (integration audit Major-4)", () => {
+  test("undefined channel = no badge; hostile non-array payloads = 0, never a throw", () => {
+    expect(reviewChangeCount(undefined)).toBeUndefined()
+    // Truthy but non-iterable / hostile payloads must silently fail closed.
+    expect(reviewChangeCount({ length: 3 })).toBe(0)
+    expect(reviewChangeCount("diffs")).toBe(0)
+    expect(reviewChangeCount(42)).toBe(0)
+    expect(reviewChangeCount(null)).toBe(0)
+    expect(reviewChangeCount({ [Symbol.iterator]: 1 })).toBe(0)
+  })
+
+  test("counts exactly the records that survive reviewFileChangeOf", () => {
+    expect(reviewChangeCount([])).toBe(0)
+    expect(
+      reviewChangeCount([
+        { file: "a.ts", additions: 1, deletions: 0, status: "modified" },
+        null,
+        "garbage",
+        { file: "", additions: 1 },
+        { file: "b.ts", patch: 42 },
+        { file: "c.ts" },
+      ]),
+    ).toBe(2)
   })
 })

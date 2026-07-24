@@ -34,6 +34,12 @@ export interface ReviewPanelViewProps {
   /** I8: any identity change resets panel-local view state. */
   resetKey: string
   onLineComment?: (intent: ReviewLineCommentIntent) => void
+  /**
+   * Approved files→review linkage: a badged file row targets this file's card —
+   * the card opens and receives focus. A fresh request object retriggers even
+   * for the same file (the container hands through the identity-gated target).
+   */
+  focusTarget?: { file: string }
 }
 
 function reducedMotion(): boolean {
@@ -150,6 +156,7 @@ function ReviewFileCard(props: {
   view: ReviewDiffView
   onToggle: () => void
   onLineComment?: ReviewPanelViewProps["onLineComment"]
+  registerHeader?: (el: HTMLButtonElement) => void
 }) {
   const kindKey = () =>
     props.change.kind === "added"
@@ -160,7 +167,13 @@ function ReviewFileCard(props: {
 
   return (
     <article class="a-rvw-file" classList={{ "a-rvw-file--open": props.open }} data-review-file={props.change.file}>
-      <button type="button" class="a-rvw-fhead" aria-expanded={props.open} onClick={props.onToggle}>
+      <button
+        type="button"
+        class="a-rvw-fhead"
+        aria-expanded={props.open}
+        onClick={props.onToggle}
+        ref={(el) => props.registerHeader?.(el)}
+      >
         <FileGlyph />
         <span class="a-rvw-fn">
           <Show when={props.change.dir}>
@@ -342,6 +355,25 @@ export function SessionRailReviewPanelView(props: ReviewPanelViewProps) {
     setSelectedView("unified")
   })
 
+  // Files→review linkage consumption: an incoming target opens its card and moves
+  // focus onto it. Tracks `changes` too, so a target minted before the diff set
+  // loaded applies as soon as its card exists; unknown files are a silent no-op.
+  const headerEls = new Map<string, HTMLButtonElement>()
+  createEffect(() => {
+    const target = props.focusTarget
+    if (!target) return
+    if (!props.changes.some((change) => change.file === target.file)) return
+    setOpenFiles((current) => {
+      if (current.get(target.file) === true) return current
+      const next = new Map(current)
+      next.set(target.file, true)
+      return next
+    })
+    const header = headerEls.get(target.file)
+    header?.scrollIntoView?.({ block: "nearest", behavior: reducedMotion() ? "auto" : "smooth" })
+    header?.focus()
+  })
+
   onMount(() => {
     if (typeof ResizeObserver === "undefined" || !rootEl) return
     const observer = new ResizeObserver((entries) => {
@@ -426,6 +458,7 @@ export function SessionRailReviewPanelView(props: ReviewPanelViewProps) {
                 view={view()}
                 onToggle={() => toggleFile(change.file)}
                 onLineComment={props.onLineComment}
+                registerHeader={(el) => headerEls.set(change.file, el)}
               />
             )}
           </For>

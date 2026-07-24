@@ -364,6 +364,10 @@
   }
 }
 
+/* Narrow windows compress the topbar only. The rail keeps the 320–560 width contract
+ * (single source of truth = rail-width.ts constants); on a viewport too narrow for a
+ * 320px rail the user collapses the rail — the contract is never silently undercut
+ * (integration audit Major-5). */
 @media (max-width: 860px) {
   .a-swk-project-label {
     max-width: 110px;
@@ -371,11 +375,6 @@
 
   .a-swk-status {
     display: none;
-  }
-
-  .a-swk-rail-host {
-    min-width: 280px;
-    max-width: 44vw;
   }
 }
 

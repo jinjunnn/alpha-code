@@ -26,7 +26,7 @@ describe("REQ-125 C4 artifacts panel real Solid mount", () => {
     })
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
-    expect(output).toContain("5 pass")
+    expect(output).toContain("7 pass")
     expect(output).toContain("0 fail")
   })
 })
@@ -98,6 +98,13 @@ describe("REQ-125 C4 verbatim workbench embed (I5) and channel discipline", () =
     expect(core).toContain("identity.serverKey, identity.directory, identity.sessionID")
   })
 
+  test("verify-before-open is a barrier ahead of every byte read (REQ-093 AC#4)", () => {
+    // The gate exists, failure is a first-class state, and both read paths consult it.
+    expect(wiring).toContain("VerifyGate")
+    expect(wiring).toContain(`{ status: "fail", reason`)
+    expect(wiring.match(/if \(!verifyPassed\(\)\) return null/g)).toHaveLength(2)
+  })
+
   test("rail chrome css is token-only", () => {
     expect(
       [...css.matchAll(/var\((--[^,)]+)/g)].map((match) => match[1]).filter((token) => !token!.startsWith("--a-")),
@@ -123,5 +130,22 @@ describe("REQ-125 C4 shell seam: fourth tab, badge, dot, grip, and the focus mou
     expect(shellCss).toContain(".a-swk-rail-tab-dot")
     expect(shellCss).toContain(".a-swk-rail-grip")
     expect(shellCss).toContain("@media (prefers-reduced-motion: reduce)")
+  })
+
+  test("the 320-560 width contract is never undercut by responsive rules (audit Major-5)", () => {
+    const railHost = shellCss.match(/\.a-swk-rail-host \{[^}]*\}/)?.[0] ?? ""
+    expect(railHost).toContain("min-width: 320px")
+    expect(railHost).toContain("max-width: 560px")
+    // No media query may re-declare the rail host's width bounds — the JS constants
+    // (rail-width.ts), storage clamp, ARIA range, and CSS must state one contract.
+    const mediaBlocks = shellCss.split("@media").slice(1)
+    mediaBlocks.forEach((block) => expect(block).not.toContain("a-swk-rail-host"))
+  })
+
+  test("the terminal dot consumes the panel-published projection by default (audit Major-2)", () => {
+    expect(shell).toContain("terminalRailAnyRunning")
+    const panel = readFileSync(join(import.meta.dir, "../terminal/terminal-rail-panel.tsx"), "utf8")
+    expect(panel).toContain("publishTerminalAnyRunning(anyTerminalRunning(instances()))")
+    expect(panel).toContain("onCleanup(() => publishTerminalAnyRunning(false))")
   })
 })

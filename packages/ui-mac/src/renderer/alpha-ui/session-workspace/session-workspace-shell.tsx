@@ -1,6 +1,7 @@
 import { createEffect, createSignal, For, Show, type Accessor, type JSX } from "solid-js"
 import { t } from "../../i18n"
 import { TerminalRailPanel } from "../session-rail/terminal/terminal-rail-panel"
+import { terminalRailAnyRunning } from "../session-rail/terminal/terminal-rail-state"
 import {
   clampRailWidth,
   RAIL_MAX_WIDTH,
@@ -53,11 +54,14 @@ export interface SessionRailApi {
 // context-free and harness-mountable.
 export type SessionRailPanelRenderers = Partial<Record<SessionRailPanel, (rail: SessionRailApi) => JSX.Element>>
 
-/** Tab-strip live decorations. Absent accessors fail closed: no badge, no running dot. */
+/** Tab-strip live decorations. Absent accessors fail closed: no badge, no dot override. */
 export interface SessionRailMeta {
   /** Review tab badge — changed-file count from the C2 typed diff channel. */
   reviewCount?: Accessor<number | undefined>
-  /** Terminal tab breathing dot — any terminal running (wired by the terminal lane). */
+  /**
+   * Terminal tab breathing dot — explicit override; when absent the shell consumes the
+   * panel-published projection (terminal-rail-state) fed by the identity-gated channel.
+   */
   terminalRunning?: Accessor<boolean>
 }
 
@@ -277,7 +281,9 @@ export function SessionWorkspaceShell(props: {
   }
 
   const reviewCount = () => props.railMeta?.reviewCount?.()
-  const terminalRunning = () => props.railMeta?.terminalRunning?.() === true
+  // Production state path (integration audit Major-2): the panel-published projection is
+  // the default truth; railMeta.terminalRunning stays the explicit override channel.
+  const terminalRunning = () => (props.railMeta?.terminalRunning?.() ?? terminalRailAnyRunning()) === true
 
   return (
     <div class="a-ui a-swk-root" data-alpha-session-workspace>

@@ -32,6 +32,8 @@ export interface ArtifactsPanelViewProps {
   onSelect: (key: string) => void
   onRetry: () => void
   verifying: boolean
+  /** REQ-093 AC#4: a failed pre-open re-check renders honestly instead of a preview. */
+  verifyFailure?: string
   previewCtx: PreviewContext | null
   /** Focus mount point (timeline linkage): each bump moves DOM focus to the selected card. */
   focusSeq: number
@@ -250,6 +252,27 @@ export function SessionRailArtifactsView(props: ArtifactsPanelViewProps) {
                 </Show>
                 <div id="a-rart-panel" role="tabpanel" aria-labelledby={`a-rart-tab-${mode()}`} class="a-rart-preview">
                   <Show
+                    when={!props.verifyFailure}
+                    fallback={
+                      <div class="a-rart-status" data-artifacts-verify-failed>
+                        <div class="a-wb-notice" data-kind="error" role="alert">
+                          {t("alpha.session.artifactsVerifyFailed")}:{props.verifyFailure}
+                        </div>
+                        <button type="button" class="a-wb-btn" onClick={props.onRetry}>
+                          {t("alpha.wb.retry")}
+                        </button>
+                      </div>
+                    }
+                  >
+                  <Show
+                    when={!props.verifying}
+                    fallback={
+                      <div class="a-rart-status" data-artifacts-verifying>
+                        {t("alpha.wb.verifying")}
+                      </div>
+                    }
+                  >
+                  <Show
                     when={props.previewCtx}
                     fallback={
                       <div class="alpha-wb-empty">
@@ -281,6 +304,8 @@ export function SessionRailArtifactsView(props: ArtifactsPanelViewProps) {
                         <MetadataView ctx={ctx()} />
                       </Show>
                     )}
+                  </Show>
+                  </Show>
                   </Show>
                 </div>
               </>

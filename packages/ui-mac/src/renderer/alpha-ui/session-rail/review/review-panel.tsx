@@ -8,12 +8,14 @@
 // upstream session components).
 import { useServerSync } from "@opencode-ai/app"
 import { createEffect, createMemo, untrack } from "solid-js"
-import type { AlphaSessionLiveContext } from "../../session-workspace/session-workspace-shell"
+import type { AlphaSessionLiveContext, SessionRailApi } from "../../session-workspace/session-workspace-shell"
 import { projectVcsFor, reviewFileChangeOf, reviewIdentityKeyOf, reviewPhaseOf } from "./review-core"
 import { SessionRailReviewPanelView, type ReviewLineCommentIntent } from "./review-panel-view"
 
 export function SessionRailReviewPanel(props: {
   live: AlphaSessionLiveContext
+  /** Rail linkage api: `reviewTarget` (identity-gated in the shell) opens + focuses a file card. */
+  rail?: Pick<SessionRailApi, "reviewTarget">
   onLineComment?: (intent: ReviewLineCommentIntent) => void
 }) {
   const serverSync = useServerSync()
@@ -63,6 +65,7 @@ export function SessionRailReviewPanel(props: {
       changes={rows()}
       resetKey={reviewIdentityKeyOf(identity())}
       onLineComment={props.onLineComment}
+      focusTarget={props.rail?.reviewTarget()}
     />
   )
 }

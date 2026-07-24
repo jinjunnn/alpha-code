@@ -9,7 +9,7 @@
 // switch remounts it and every in-flight async result dies with the old mount. The
 // timeline→artifacts linkage mount point consumes `rail.artifactTarget` (focusArtifact),
 // selecting and DOM-focusing the matching card; Esc returns focus to the stored origin.
-import { createEffect, createMemo, createResource, createSignal, Show } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, Show, untrack } from "solid-js"
 import type { ArtifactReadRef } from "../../../../preload/types"
 import { deriveCards, sortRunUsages, type ArtifactCard } from "../../artifact-workbench/workbench-core"
 import { detectOoxmlContainer, OOXML_LIMITS } from "../../artifact-workbench/renderers/ooxml"
@@ -36,7 +36,11 @@ function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRai
   // Under the keyed <Show> above the identity is fixed for this component's lifetime.
   const identity = props.live.current()!.identity
   const [tick, setTick] = createSignal(0)
-  const retry = () => setTick((n) => n + 1)
+  const retry = () => {
+    // A full reload re-evaluates everything, including failed/stale verify gates.
+    setVerifyGates({})
+    setTick((n) => n + 1)
+  }
 
   // Fetchers never throw (value semantics — an error becomes an honest phase, not a crash).
   const [usageRes] = createResource(
@@ -109,32 +113,66 @@ function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRai
     if (origin?.isConnected) origin.focus()
   }
 
-  // Verify-before-open (REQ-093 AC#4): manifest-backed selection verifies once, then the
-  // list is refetched so the state chip reflects the outcome.
-  const [verifying, setVerifying] = createSignal(false)
-  let verifiedFor: string | null = null
+  // Verify-before-open (REQ-093 AC#4) as a real barrier: a manifest-backed selection is
+  // re-checked (full digest) BEFORE any preview/ooxml byte read may fire; the gate only
+  // opens on an ok result, a failure renders honestly (no preview) and is retryable —
+  // never stamped as done (integration audit Major-3).
+  const [verifyGates, setVerifyGates] = createSignal<Record<string, VerifyGate>>({})
+  const needsVerify = (card: ArtifactCard) =>
+    card.descriptor !== undefined &&
+    card.state !== "legacy" &&
+    card.state !== "cloud-only" &&
+    card.state !== "missing"
+  const gateKey = (run: string, card: ArtifactCard) => `${run}:${card.key}`
+  const gateOf = (card: ArtifactCard | null): VerifyGate | undefined => {
+    const run = runId()
+    if (!card || !run) return undefined
+    if (!needsVerify(card)) return { status: "pass" }
+    return verifyGates()[gateKey(run, card)]
+  }
+  const setGate = (key: string, gate: VerifyGate) => setVerifyGates((gates) => ({ ...gates, [key]: gate }))
   createEffect(() => {
     const card = selectedCard()
-    if (!card || !card.descriptor) return
-    if (card.state === "legacy" || card.state === "cloud-only" || card.state === "missing") return
     const run = runId()
-    if (!run) return
-    const key = `${run}:${card.key}`
-    if (verifiedFor === key) return
-    verifiedFor = key
-    setVerifying(true)
-    void window.api.runArtifacts
-      .verify(identity.directory, run, card.descriptor.id)
-      .then(() => refetchList())
-      .catch(() => {})
-      .finally(() => setVerifying(false))
+    if (!card || !run || !needsVerify(card)) return
+    const key = gateKey(run, card)
+    // checking/pass/fail all stick until an explicit retry — no re-verify loop, and a
+    // failure is never silently upgraded.
+    if (untrack(() => verifyGates()[key]) !== undefined) return
+    setGate(key, { status: "checking" })
+    window.api.runArtifacts
+      .verify(identity.directory, run, card.descriptor!.id)
+      .then((result) => {
+        if (result && typeof result === "object" && "ok" in result && result.ok === true) {
+          setGate(key, { status: "pass" })
+          void refetchList() // state chip reflects the re-check outcome
+          return
+        }
+        const reason =
+          result && typeof result === "object" && "reason" in result && typeof result.reason === "string"
+            ? result.reason
+            : "verify failed"
+        setGate(key, { status: "fail", reason })
+      })
+      .catch((error) => {
+        setGate(key, { status: "fail", reason: error instanceof Error ? error.message : "ipc" })
+      })
   })
+  const verifying = () => gateOf(selectedCard())?.status === "checking"
+  const verifyFailure = () => {
+    const gate = gateOf(selectedCard())
+    return gate?.status === "fail" ? gate.reason : undefined
+  }
+  /** The open-barrier: byte reads and preview routing stay closed until the gate passes. */
+  const verifyPassed = () => gateOf(selectedCard())?.status === "pass"
 
   // OOXML structure detection (REQ-093 #281): same bounded bytes channel as the workbench.
+  // Gated behind the verify barrier — no byte leaves disk before the re-check passed.
   const ooxmlTarget = createMemo(() => {
     const card = selectedCard()
     const run = runId()
     if (!card || !run || !cardPreviewable(card) || card.state === "mismatch") return null
+    if (!verifyPassed()) return null
     if (!shouldDetectOoxml({ name: card.savedPath!, claimedMime: card.claimedMime, detectedMime: card.detectedMime }))
       return null
     const readRef: ArtifactReadRef =
@@ -163,11 +201,13 @@ function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRai
     return { key: target.key, detection: await detectOoxmlContainer(read.bytes) }
   })
 
-  // Preview context — registry-decided routing, verbatim workbench assembly (REQ-095).
+  // Preview context — registry-decided routing, verbatim workbench assembly (REQ-095);
+  // null until the verify barrier opened, so no renderer can read bytes early.
   const previewCtx = createMemo<PreviewContext | null>(() => {
     const card = selectedCard()
     const run = runId()
     if (!card || !run || !cardPreviewable(card)) return null
+    if (!verifyPassed()) return null
     const readRef: ArtifactReadRef =
       card.descriptor && card.state !== "legacy" ? { artifactId: card.descriptor.id } : { savedPath: card.savedPath! }
     const target = ooxmlTarget()
@@ -198,12 +238,16 @@ function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRai
       onSelect={setSelectedKey}
       onRetry={retry}
       verifying={verifying()}
+      verifyFailure={verifyFailure()}
       previewCtx={previewCtx()}
       focusSeq={focusSeq()}
       onEscape={onEscape}
     />
   )
 }
+
+/** REQ-093 AC#4 barrier state per `${runId}:${cardKey}`; only "pass" opens byte reads. */
+type VerifyGate = { status: "checking" } | { status: "pass" } | { status: "fail"; reason: string }
 
 interface ArtifactFocusApplied {
   request: unknown

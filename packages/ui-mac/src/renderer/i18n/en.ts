@@ -1134,6 +1134,7 @@ export const dict = {
   "alpha.session.artifactsTurn": "This turn's artifacts",
   "alpha.session.artifactsEmptyTitle": "No artifacts yet",
   "alpha.session.artifactsEmptyDetail": "Documents the assistant produces will appear here.",
+  "alpha.session.artifactsVerifyFailed": "Pre-open re-check failed",
   "alpha.session.filesFilter": "Filter files…",
   "alpha.session.filesOpened": "Open",
   "alpha.session.filesWorkspace": "Workspace",

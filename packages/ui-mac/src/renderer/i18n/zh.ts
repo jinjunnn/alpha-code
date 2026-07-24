@@ -1124,6 +1124,7 @@ export const dict = {
   "alpha.session.artifactsTurn": "本回合产物",
   "alpha.session.artifactsEmptyTitle": "还没有产物",
   "alpha.session.artifactsEmptyDetail": "助手生成的文档会出现在这里。",
+  "alpha.session.artifactsVerifyFailed": "打开前复核失败",
   "alpha.session.filesFilter": "过滤文件…",
   "alpha.session.filesOpened": "已打开",
   "alpha.session.filesWorkspace": "工作区",

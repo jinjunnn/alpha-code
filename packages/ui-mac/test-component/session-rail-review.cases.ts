@@ -306,6 +306,28 @@ describe("REQ-125 C2 review panel real Solid mount", () => {
     await flush()
     expect(host.querySelectorAll(".a-rvw-fbody")).toHaveLength(0)
   })
+
+  test("a files-panel focus target opens the file card and moves focus onto it", async () => {
+    const host = mount()
+    await flush()
+
+    const card = (file: string) => host.querySelector(`[data-review-file='${file}']`)!
+    expect(card("架构说明.md").classList.contains("a-rvw-file--open")).toBe(false)
+
+    runtime.setReviewFocusTarget("架构说明.md")
+    await flush()
+    expect(card("架构说明.md").classList.contains("a-rvw-file--open")).toBe(true)
+    expect(document.activeElement).toBe(card("架构说明.md").querySelector(".a-rvw-fhead"))
+
+    // A fresh jump to another badged file re-targets; unknown files are a no-op.
+    runtime.setReviewFocusTarget("alpha-ui/button.css")
+    await flush()
+    expect(card("alpha-ui/button.css").classList.contains("a-rvw-file--open")).toBe(true)
+    expect(document.activeElement).toBe(card("alpha-ui/button.css").querySelector(".a-rvw-fhead"))
+    runtime.setReviewFocusTarget("not-in-change-set.ts")
+    await flush()
+    expect(card("alpha-ui/button.css").classList.contains("a-rvw-file--open")).toBe(true)
+  })
 })
 
 describe("REQ-125 C2 data container against the typed channel (Major-2)", () => {

@@ -82,6 +82,20 @@ export function reviewFileChangeOf(input: unknown): ReviewFileChange | undefined
   }
 }
 
+/**
+ * Badge-side twin of the container's fail-closed narrowing (REQ-125 C4 tab count):
+ * `undefined` = channel not loaded (no badge yet), any non-array payload = 0
+ * (silently fail-closed — a hostile truthy non-iterable must not throw into the
+ * SurfaceBoundary), otherwise the count of records that survive `reviewFileChangeOf`.
+ */
+export function reviewChangeCount(diffs: unknown): number | undefined {
+  if (diffs === undefined) return undefined
+  if (!Array.isArray(diffs)) return 0
+  let count = 0
+  for (const diff of diffs) if (reviewFileChangeOf(diff)) count += 1
+  return count
+}
+
 export function reviewTotals(changes: readonly ReviewFileChange[]): {
   files: number
   additions: number

@@ -4,7 +4,7 @@ import { createContext, createEffect, createMemo, untrack, type ParentProps, use
 import { parseRoute } from "../../../shared/route-manifest"
 import { SessionRailArtifacts } from "../session-rail/artifacts/session-rail-artifacts"
 import { SessionRailFiles } from "../session-rail/files/session-rail-files"
-import { reviewFileChangeOf } from "../session-rail/review/review-core"
+import { reviewChangeCount } from "../session-rail/review/review-core"
 import { SessionRailReviewPanel } from "../session-rail/review/review-panel"
 import { SurfaceBoundary } from "../surface-boundary"
 import { sameSessionIdentity, sessionLiveSnapshotOf } from "./session-workspace-core"
@@ -43,16 +43,14 @@ export function AlphaSessionWorkspace() {
   }
 
   // Review tab badge = changed-file count from the same typed diff channel the review panel
-  // consumes (C2). Keyed by sessionID in the upstream store, so a session switch swaps the
-  // count with the session (I8); undefined until the diff set is known — no badge, fail-closed.
+  // consumes (C2), through the same fail-closed narrowing (`reviewChangeCount`: non-array
+  // payload = 0, never a throw into the SurfaceBoundary). Keyed by sessionID in the upstream
+  // store, so a session switch swaps the count with the session (I8); undefined until the
+  // diff set is known — no badge.
   const reviewCount = createMemo(() => {
     const identity = current()?.identity
     if (!identity) return undefined
-    const diffs = serverSync().session.data.session_diff[identity.sessionID]
-    if (!diffs) return undefined
-    let count = 0
-    for (const diff of diffs) if (reviewFileChangeOf(diff)) count += 1
-    return count
+    return reviewChangeCount(serverSync().session.data.session_diff[identity.sessionID])
   })
   // Idempotent badge-level load (same guard as the review panel's): the tab strip needs the
   // count even when the review panel has not been visited yet.
@@ -70,7 +68,7 @@ export function AlphaSessionWorkspace() {
         <SessionWorkspaceShell
           live={live}
           panels={{
-            review: () => <SessionRailReviewPanel live={live} />,
+            review: (rail) => <SessionRailReviewPanel live={live} rail={rail} />,
             files: (rail) => <SessionRailFiles live={live} rail={rail} />,
             artifacts: (rail) => <SessionRailArtifacts live={live} rail={rail} />,
           }}

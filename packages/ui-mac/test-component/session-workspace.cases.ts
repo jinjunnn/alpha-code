@@ -28,6 +28,7 @@ Bun.plugin({
 })
 
 const runtime = await import("../src/renderer/alpha-ui/session-workspace/session-workspace-test-runtime")
+const terminalPanelModule = await import("../src/renderer/alpha-ui/session-rail/terminal/terminal-rail-panel")
 const disposers: Array<() => void> = []
 
 beforeEach(() => {
@@ -174,6 +175,43 @@ describe("REQ-125 session workspace real Solid mount", () => {
     await flush()
     expect(reviewTab.querySelector("[data-alpha-session-review-count]")).toBeNull()
     expect(terminalTab.querySelector("[data-alpha-session-terminal-dot]")).toBeNull()
+  })
+
+  test("terminal dot follows the panel-published running state when no override is wired", async () => {
+    // No railMeta at all — the shell must fall back to the panel-published projection.
+    const host = mountPartial({ review: () => "review-only" })
+    await flush()
+    const dot = () =>
+      host.querySelector("[data-alpha-session-rail-tab='terminal'] [data-alpha-session-terminal-dot]")
+    expect(dot()).toBeNull()
+
+    // Mount the real terminal panel with an accepted, running engine channel — the
+    // production publisher (every renderer path mounts this same component).
+    const channel = {
+      identity: { serverKey: "sidecar", directory: "/tmp/workspace", sessionID: "ses_idle" },
+      ready: () => true,
+      instances: () => [{ id: "pty_1", title: "终端 1", running: true }],
+      activeID: () => "pty_1",
+      open() {},
+      close() {},
+      create() {},
+      footStatus: () => ({ running: true }),
+      EngineOutput: () => null,
+    }
+    const panelHost = document.createElement("div")
+    document.body.append(panelHost)
+    const disposePanel = solidWeb.render(
+      () => terminalPanelModule.TerminalRailPanel({ channel, accepts: () => true } as never),
+      panelHost,
+    )
+    await flush()
+    expect(dot()).not.toBeNull()
+
+    // Unmount resets the projection — the dot can never outlive the panel's session.
+    disposePanel()
+    await flush()
+    expect(dot()).toBeNull()
+    panelHost.remove()
   })
 
   test("width grip drags within 320-560, remembers per panel, and persists", async () => {
