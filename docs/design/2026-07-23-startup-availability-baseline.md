@@ -43,8 +43,13 @@ review_after: 2026-10-23
    TTL 15 分钟 ⇒ 运行中的 sidecar 可携带过期 token 数十分钟。account
    summary 401 触发的续期只更新 main 内存,不换已 fork sidecar 的静态
    `{file:}` 密钥;token-only respawn 现状执行 `webContents.reload()` 整页
-   重载。「首页闪一下」的候选:AlphaHome provisional workspace 切真实项目 /
-   composer epoch 重建 /(慢路径)respawn 整页 reload——由 T1 计时插桩定案。
+   重载。「首页闪一下」**已由 T1 真机插桩定案**(#530,证据
+   docs/verification/2026-07-24-req109-t1-startup-timelines.md):冷启动可见闪
+   = AlphaHome default→真实项目 workspace 切换(链路全量重跑);热启动可见闪
+   = 三候选之外的第四机制 —— surface admission(`resolvedSurfaces.latest`)随
+   引擎 init 迟到收敛变化导致路由树重建、composer 全量 remount(非 reload、
+   非 epoch);auth_epoch 首次 publish 固定 +1 是链双跑开销,非可见闪主因。
+   第四机制的治理归属(并入 T3 或另开票)待 owner 裁定。
 
 ## ② 选定方案与被否决的替代
 
