@@ -7,6 +7,7 @@ import { SessionRailFiles } from "../session-rail/files/session-rail-files"
 import { reviewChangeCount } from "../session-rail/review/review-core"
 import { SessionRailReviewPanel } from "../session-rail/review/review-panel"
 import { useAlphaTerminalEngineChannel } from "../session-rail/terminal/terminal-engine-adapter"
+import { AlphaSessionTimeline } from "../session-timeline/session-timeline"
 import { SurfaceBoundary } from "../surface-boundary"
 import { sameSessionIdentity, sessionLiveSnapshotOf } from "./session-workspace-core"
 import { type AlphaSessionLiveContext, SessionWorkspaceShell } from "./session-workspace-shell"
@@ -71,6 +72,7 @@ export function AlphaSessionWorkspace() {
       <SessionLiveProvider value={live}>
         <SessionWorkspaceShell
           live={live}
+          timeline={<AlphaSessionTimeline />}
           panels={{
             review: (rail) => <SessionRailReviewPanel live={live} rail={rail} />,
             files: (rail) => <SessionRailFiles live={live} rail={rail} />,
