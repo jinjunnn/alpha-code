@@ -9,8 +9,8 @@
   /* Shell visuals (bg/border/radius/shadow/focus) come from composer-shell.css — the single source
    * shared with AlphaHome's .a-comp. Session-only layout below:
    * Cap the docked composer to the SAME reading-measure column as the conversation content
-   * (820px, see timeline-reskin session-turn-message-container) and centre it, so the input box
-   * lines up with the messages above instead of spanning full width (#17). Auto-fits narrow windows. */
+   * (820px) and centre it, so the input box lines up with the messages above instead of
+   * spanning full width (#17). Auto-fits narrow windows. */
   max-width: 820px !important;
   margin-inline: auto !important;
 }

@@ -49,7 +49,7 @@ is alpha-authored. "opencode" below means the surface is rendered by an upstream
 | Shell / 侧栏 | alpha-ized | `ui-mac/src/renderer/sidebar/alpha-sidebar.tsx` | [`current/shell-sidebar/`](current/shell-sidebar/design.html) | composer-model-redesign (`shell.html`) |
 | Home / 首页 | alpha-ized | `ui-mac/src/renderer/alpha-ui/AlphaHome.tsx` | — (shares composer) | composer-model-redesign (`mockup.html`/`states.html`); release `auto-fallback` |
 | New session / 新会话 | alpha-ized | `ui-mac/src/renderer/alpha-ui/alpha-new-session.tsx` | — (shares composer) | no dedicated mock |
-| Composer / 输入框 | partial | `ui-mac/src/renderer/alpha-ui/composer-takeover.tsx` + `alpha-composer.tsx` | [`current/composer/`](current/composer/design.html) | composer-model-redesign; `hybrid` (session takes over upstream anchors) |
+| Composer / 输入框 | alpha-ized | `ui-mac/src/renderer/alpha-ui/session-workspace/session-composer-dock.tsx` + `alpha-composer.tsx` | [`current/composer/`](current/composer/design.html) | composer-model-redesign; 2026-07-24-session-seam-baseline (REQ-125 C7). seam 会话页直挂,零 Portal/零选择器;旧 composer-takeover 已删,manifest lineage = alpha |
 | Slash menu / 斜杠菜单 | alpha-ized | `ui-mac/src/renderer/alpha-ui/composer-autocomplete.tsx` | [`current/slash-menu/`](current/slash-menu/design.html) | 2026-07-09-slash-menu (REQ-072) |
 | Assemble popup / 装配弹窗 | alpha-new | `ui-mac/src/renderer/alpha-ui/composer-autocomplete.tsx` (`buildAssembleRows`) | [`current/assemble-popup/`](current/assemble-popup/design.html) | 2026-07-09-assemble-popup (REQ-073) |
 | Model picker / 模型选择器 | alpha-ized | `ui-mac/src/renderer/alpha-ui/alpha-composer-model.tsx` + `model-picker-add.tsx` | [`current/model-picker/`](current/model-picker/design.html) | model-picker-redesign; ADR-016 |
@@ -71,11 +71,11 @@ is alpha-authored. "opencode" below means the surface is rendered by an upstream
 
 **Replacement backlog** (`lineage !== target` in the manifest — hybrid surfaces
 owner-targeted for full alpha, 2026-07-21):
-- **Composer** (`inline.composer`) — alpha composer via takeover; promote to seam surface.
 - **General Dialog** (`overlay.dialog`) — hybrid host; bridges upstream + alpha consumers.
 
-(Settings, Permission, Recovery — and, since REQ-125 C8, Session workspace and
-Conversation timeline — are now `alpha` in the manifest; no longer gaps.)
+(Settings, Permission, Recovery — and, since REQ-125 C7/C8, Session workspace,
+Conversation timeline, and Composer — are now `alpha` in the manifest; no longer
+gaps.)
 
 **Implementation without design** (alpha surface, no mock):
 - **Automations panel** — alpha-new full page, no mock.

@@ -269,7 +269,7 @@ export function PermissionDialog(props: {
   )
 }
 
-function permissionDecisionSubmitError(error: unknown): PermissionDecisionSubmitError {
+export function permissionDecisionSubmitError(error: unknown): PermissionDecisionSubmitError {
   const value = errorRecord(error)
   const cause = errorRecord(value?.cause)
   const conflict = [value, cause].some(
@@ -289,7 +289,8 @@ function errorRecord(value: unknown) {
   return value as Record<string, unknown>
 }
 
-function permissionRequestFacts(request: PermissionV2Request) {
+/** 请求事实的严格核验(REQ-125 C7 起同时供会话审批 dock 复用 —— 单一安全逻辑源)。 */
+export function permissionRequestFacts(request: PermissionV2Request) {
   const subjectValue = exactFactRecord(request.subject, ["kind", "id"])
   const subject =
     subjectValue?.kind === "agent" && typeof subjectValue.id === "string" && !!subjectValue.id.trim()

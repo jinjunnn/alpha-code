@@ -145,6 +145,8 @@ export function SessionWorkspaceShell(props: {
   live: AlphaSessionLiveContext
   /** C5:时间线(挂进 timeline 宿主;缺省 = 空宿主,组件测试哨位)。 */
   timeline?: JSX.Element
+  /** C7:composer 停靠位内容(AlphaComposer 直挂,props 传入 —— 零 Portal/零选择器)。 */
+  composer?: () => JSX.Element
   panels?: SessionRailPanelRenderers
   railMeta?: SessionRailMeta
   /** 真引擎 channel(#554 适配器投影;缺席 = 终端面板 fail-closed 空态)。 */
@@ -326,7 +328,9 @@ export function SessionWorkspaceShell(props: {
           data-alpha-session-composer-dock
           aria-label={t("alpha.session.composerHost")}
         >
-          <div class="a-swk-composer-host" data-alpha-session-composer-host />
+          <div class="a-swk-composer-host" data-alpha-session-composer-host>
+            {props.composer?.()}
+          </div>
         </section>
       </main>
       <Show when={panel()}>

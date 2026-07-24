@@ -28,19 +28,21 @@ Alpha swaps an upstream page through the typed `AppSurfaces` seam
 
 ## Takeover / injection (augment an upstream surface in place)
 
-When a surface can't be cleanly swapped, alpha injects into upstream DOM:
-`composer-takeover.tsx` (takes over upstream composer anchors, hides
-`prompt-input`), `timeline-inject.tsx` (injects rendering + reskin into the
-upstream timeline). Lineage = `hybrid`. Injection targets stable upstream anchors
-— it does not fork upstream components.
+When a surface can't be cleanly swapped, alpha injects into upstream DOM.
+Lineage = `hybrid`. Injection targets stable upstream anchors — it does not fork
+upstream components. This pattern currently has **zero live instances**: its two
+long-lived users, `composer-takeover.tsx` and `timeline-inject.tsx`, were
+retired by REQ-125 (C7/C8) when the session page became a seam-owned alpha
+surface. Treat it as a documented last resort, not an active convention.
 
 ## Reskin (retint only)
 
-CSS-only restyling of upstream DOM with `--a-*` (`settings-reskin.css`,
-`timeline-reskin.css`) plus, at most, a small DOM observer
-(`settings-back-button.ts`). Use when the surface must stay upstream but look
-alpha. A reskin must not grow into a logic fork; when behavior must change,
-promote to a seam surface instead.
+CSS-only restyling of upstream DOM with `--a-*`. The one live instance is
+`composer-reskin.css` (retints the upstream v2 composer that legacy session mode
+still renders). Use when the surface must stay upstream but look alpha. A reskin
+must not grow into a logic fork; when behavior must change, promote to a seam
+surface instead — `settings-reskin.css`, `dialog-reskin.css`, and
+`timeline-reskin.css` were all retired this way (REQ-090, REQ-125).
 
 ## Full-page overlay (alpha-new surface)
 

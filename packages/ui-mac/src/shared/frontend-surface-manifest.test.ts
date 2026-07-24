@@ -55,10 +55,11 @@ describe("frontend surface manifest", () => {
   })
 
   test("replacement backlog = surfaces whose target differs from current lineage", () => {
-    // owner-ratified 2026-07-21 four-hybrid backlog; REQ-125 C8 flipped route.session and
-    // inline.timeline to alpha (C1–C6 landed). inline.composer flips with C7.
+    // owner-ratified 2026-07-21 four-hybrid backlog; REQ-125 C8 flipped route.session,
+    // inline.timeline, and inline.composer to alpha (C1–C7 landed). Only the general
+    // dialog host remains hybrid.
     expect(new Set(frontendSurfacesPendingReplacement().map((surface) => surface.id))).toEqual(
-      new Set(["inline.composer", "overlay.dialog"]),
+      new Set(["overlay.dialog"]),
     )
   })
 })
