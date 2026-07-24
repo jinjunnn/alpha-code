@@ -2,6 +2,7 @@ import { ServerConnection, type MaybePreloadableComponent, useServerSDK, useServ
 import { useLocation } from "@solidjs/router"
 import { createContext, createMemo, type ParentProps, useContext } from "solid-js"
 import { parseRoute } from "../../../shared/route-manifest"
+import { AlphaSessionTimeline } from "../session-timeline/session-timeline"
 import { SurfaceBoundary } from "../surface-boundary"
 import { sameSessionIdentity, sessionLiveSnapshotOf } from "./session-workspace-core"
 import { type AlphaSessionLiveContext, SessionWorkspaceShell } from "./session-workspace-shell"
@@ -41,7 +42,7 @@ export function AlphaSessionWorkspace() {
   return (
     <SurfaceBoundary surface="session">
       <SessionLiveProvider value={live}>
-        <SessionWorkspaceShell live={live} />
+        <SessionWorkspaceShell live={live} timeline={<AlphaSessionTimeline />} />
       </SessionLiveProvider>
     </SurfaceBoundary>
   )

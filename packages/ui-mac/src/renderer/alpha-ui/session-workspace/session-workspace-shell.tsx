@@ -1,4 +1,4 @@
-import { createSignal, type Accessor, Show } from "solid-js"
+import { createSignal, type Accessor, type JSX, Show } from "solid-js"
 import { t } from "../../i18n"
 import type { AlphaSessionIdentity, AlphaSessionLiveSnapshot } from "./session-workspace-core"
 
@@ -71,7 +71,7 @@ function WorkspaceTopbar(props: {
   )
 }
 
-export function SessionWorkspaceShell(props: { live: AlphaSessionLiveContext }) {
+export function SessionWorkspaceShell(props: { live: AlphaSessionLiveContext; timeline?: JSX.Element }) {
   const [panel, setPanel] = createSignal<"review" | "terminal" | undefined>("review")
   const [lastPanel, setLastPanel] = createSignal<"review" | "terminal">("review")
   const openPanel = (next: "review" | "terminal") => {
@@ -101,7 +101,9 @@ export function SessionWorkspaceShell(props: { live: AlphaSessionLiveContext }) 
           class="a-swk-timeline-host"
           data-alpha-session-timeline-host
           aria-label={t("alpha.session.timelineHost")}
-        />
+        >
+          {props.timeline}
+        </section>
         <section
           class="a-swk-composer-dock"
           data-alpha-session-composer-dock
