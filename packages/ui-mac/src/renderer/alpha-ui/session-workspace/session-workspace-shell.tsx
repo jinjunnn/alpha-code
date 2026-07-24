@@ -78,6 +78,8 @@ function WorkspaceTopbar(props: {
 
 export function SessionWorkspaceShell(props: {
   live: AlphaSessionLiveContext
+  /** C5:时间线(挂进 timeline 宿主;缺省 = 空宿主,组件测试哨位)。 */
+  timeline?: JSX.Element
   rail?: SessionWorkspaceRailSlots
   /** 真引擎 channel(#554 适配器投影;缺席 = 终端面板 fail-closed 空态)。 */
   terminalChannel?: Accessor<AlphaTerminalEngineChannel | undefined>
@@ -110,7 +112,9 @@ export function SessionWorkspaceShell(props: {
           class="a-swk-timeline-host"
           data-alpha-session-timeline-host
           aria-label={t("alpha.session.timelineHost")}
-        />
+        >
+          {props.timeline}
+        </section>
         <section
           class="a-swk-composer-dock"
           data-alpha-session-composer-dock

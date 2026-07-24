@@ -4,6 +4,7 @@ import { createContext, createMemo, type ParentProps, useContext } from "solid-j
 import { parseRoute } from "../../../shared/route-manifest"
 import { SessionRailReviewPanel } from "../session-rail/review/review-panel"
 import { useAlphaTerminalEngineChannel } from "../session-rail/terminal/terminal-engine-adapter"
+import { AlphaSessionTimeline } from "../session-timeline/session-timeline"
 import { SurfaceBoundary } from "../surface-boundary"
 import { sameSessionIdentity, sessionLiveSnapshotOf } from "./session-workspace-core"
 import { type AlphaSessionLiveContext, SessionWorkspaceShell } from "./session-workspace-shell"
@@ -48,6 +49,7 @@ export function AlphaSessionWorkspace() {
       <SessionLiveProvider value={live}>
         <SessionWorkspaceShell
           live={live}
+          timeline={<AlphaSessionTimeline />}
           rail={{ review: () => <SessionRailReviewPanel live={live} /> }}
           terminalChannel={terminalChannel}
         />
