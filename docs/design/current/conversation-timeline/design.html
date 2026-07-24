@@ -944,6 +944,7 @@ admission · 阈值边界 …<span class="cur"></span></div></div></div>
   <!-- ════════════════ MAP ════════════════ -->
   <div class="sec-kicker" id="map" style="margin-top:40px">实现接缝表 · 现状 → 钩子 → 接缝</div>
   <h2 class="t">40 项优化:CSS 36 · INJECT 3 · ENGINE 1(口径见 tasks.md)</h2>
+  <div class="note"><b>Superseded(2026-07-24)</b>:本节接缝口径(CSS/INJECT/ENGINE 落 <span class="mono">timeline-reskin.css</span> / <span class="mono">timeline-inject.tsx</span>)已被 <b>REQ-125 方案基线</b>(<span class="mono">docs/design/2026-07-24-session-seam-baseline.md</span>)取代:时间线整体升 seam surface,alpha 自持整页渲染,不再按 CSS/INJECT 注入落地。下表仅作 <b>40 构件完备性清单与历史参照</b>使用。</div>
   <p class="lede">完整逐条见 <span class="mono">audit.md</span>。下表是高优先(P0/P1)摘要。<span style="color:var(--a-success);font-weight:600">CSS</span>=零改源码;<span style="color:var(--a-warning);font-weight:600">INJECT</span>=复用 timeline-inject 加层;<span style="color:var(--a-text-tertiary);font-weight:600">ENGINE</span>=上游引擎只换外框。</p>
   <table class="imap">
     <thead><tr><th>构件</th><th>真机钩子</th><th>现状</th><th>接缝</th><th>优先级</th></tr></thead>
