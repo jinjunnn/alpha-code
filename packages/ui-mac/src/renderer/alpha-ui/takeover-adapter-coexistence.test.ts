@@ -1,21 +1,18 @@
-// REQ-088 T6(#181):takeover × adapter 共存审计 —— 可静态钉住的锚点。
+// REQ-088 T6(#181)→ REQ-125 C7:takeover × adapter 共存审计 —— 可静态钉住的锚点。
 //
-// 审计对象:ComposerTakeover / TimelineInject 两个遗留 DOM 接管件，以及 canonical composer picker。
-// 结论(详见 docs/audits/2026-07-13-s48-req088-t6-takeover-coexistence.md 审计矩阵):
-// 它们「挂载方式无关」的根因是三条结构不变量,本文件把每条钉成源码锚点 ——
-//   ① 挂载通道:takeover 作为 AppInterface children 在 router root 挂载一次,不在任何
+// 审计对象(C7 后):TimelineInject(最后一个遗留 DOM 接管件,C8 清理)与 canonical
+// composer picker。ComposerTakeover 已随 REQ-125 C7 删除 —— 会话页 composer 由 seam 会话页
+// (session-workspace/session-composer-dock.tsx)直挂 AlphaComposer,零 Portal/零选择器/
+// 零收养;本文件对其只保留「删除后零引用」的棘轮断言。
+// 结构不变量(详见 docs/audits/2026-07-13-s48-req088-t6-takeover-coexistence.md 审计矩阵):
+//   ① 挂载通道:遗留 takeover 作为 AppInterface children 在 router root 挂载一次,不在任何
 //      surface 工厂/session 叶内 —— adapter 换叶不触碰它们的生命周期;
 //   ② 遗留观察面:经 document.body MutationObserver 工作,
 //      只依赖上游叶渲染的 DOM 锚点,不依赖叶「怎么被挂进来」;
-//   ③ REQ-125 C1 后 alpha session surface 不再消费上游 session 叶；遗留 takeover
-//      仅保留到 C8 清理，且在 v2 alpha seam 下应零命中。
-// 另补钉 takeover 依赖、但 REQ-012 锚点契约(upstream-anchors.json)覆盖不到的上游锚点:
-//   - session composer 现在由 app 的 `session-prompt-dock` 包住 session-ui 的
-//     `prompt-input-v2`。此处直接钉两段渲染链与 takeover 的组合选择器。
-//   - data-key / data-selected / data-slash-id / data-message-id / data-timeline-part-id /
-//     data-kind / id="review-panel" 等不在 data-component|slot|action 命名空间。
-// packages/app|ui 锚点仍以源码契约断言；REQ-090 picker owner 的唯一挂载由组件测试真实渲染
-// AlphaComposer 后查询 data marker，本文件只保留旧模块不存在与 renderer 其它文件零引用的
+//   ③ REQ-125 C1 后 alpha session surface 不再消费上游 session 叶;遗留 TimelineInject
+//      仅保留到 C8 清理,且在 v2 alpha seam 下应零命中。
+// packages/app|ui 锚点仍以源码契约断言;REQ-090 picker owner 的唯一挂载由组件测试真实渲染
+// AlphaComposer 后查询 data marker,本文件只保留旧模块不存在与 renderer 其它文件零引用的
 // 纯文本否定辅助门。断言红 = 共存前提破坏,回 T6 审计矩阵重评,不得只改测试。
 //
 // 运行时半边(真机取证)不在本文件伪造:CDP 探针清单见同名审计文档 §5。
@@ -30,10 +27,8 @@ const RENDERER = path.resolve(ALPHA_UI, "..")
 const REPO = path.resolve(RENDERER, "..", "..", "..", "..")
 const read = (p: string) => fs.readFileSync(p, "utf8")
 const app = (p: string) => read(path.join(REPO, "packages/app/src", p))
-const ui = (p: string) => read(path.join(REPO, "packages/ui/src", p))
 const sessionUi = (p: string) => read(path.join(REPO, "packages/session-ui/src", p))
 
-const composerTakeover = read(path.join(ALPHA_UI, "composer-takeover.tsx"))
 const timelineInject = read(path.join(ALPHA_UI, "timeline-inject.tsx"))
 const alphaComposer = read(path.join(ALPHA_UI, "alpha-composer.tsx"))
 const composerModelPicker = read(path.join(ALPHA_UI, "alpha-composer-model.tsx"))
@@ -41,7 +36,6 @@ const modelContract = read(path.join(ALPHA_UI, "model-contract.ts"))
 const composerState = read(path.join(ALPHA_UI, "composer-state.ts"))
 const rendererIndex = read(path.join(RENDERER, "index.tsx"))
 const takeovers: Record<string, string> = {
-  "composer-takeover.tsx": composerTakeover,
   "timeline-inject.tsx": timelineInject,
 }
 
@@ -57,10 +51,8 @@ function* walk(dir: string): Generator<string> {
 }
 
 describe("T6 ①挂载通道:takeover 与 session 叶零耦合(挂载方式无关的结构根因)", () => {
-  test("两个遗留 takeover 作为 AppInterface children 挂载(AlphaBoundary 包裹,router root 单例)", () => {
-    for (const name of ["ComposerTakeover", "TimelineInject"]) {
-      expect(rendererIndex).toContain(`<AlphaBoundary name="${name}">`)
-    }
+  test("最后一个遗留 takeover 作为 AppInterface children 挂载(AlphaBoundary 包裹,router root 单例)", () => {
+    expect(rendererIndex).toContain(`<AlphaBoundary name="TimelineInject">`)
   })
 
   test("takeover 模块不 import @opencode-ai/app(不消费任何 upstream context/组件,只碰 document)", () => {
@@ -70,7 +62,7 @@ describe("T6 ①挂载通道:takeover 与 session 叶零耦合(挂载方式无�
     }
   })
 
-  test("遗留 takeover 观察面 = document.body MutationObserver,每件恰一个(AC8 observer 预算 = 2)", () => {
+  test("遗留 takeover 观察面 = document.body MutationObserver,每件恰一个(C7 后 observer 预算 = 1)", () => {
     for (const [name, src] of Object.entries(takeovers)) {
       const observers = src.match(/new MutationObserver\(/g) ?? []
       expect({ name, observers: observers.length }).toEqual({ name, observers: 1 })
@@ -79,14 +71,95 @@ describe("T6 ①挂载通道:takeover 与 session 叶零耦合(挂载方式无�
     }
   })
 
-  test("TimelineInject 不再挂发送捕获监听(#251:上游 composer 被 ComposerTakeover 隐藏,捕获路径已死)", () => {
+  test("TimelineInject 不再挂发送捕获监听(#251:用户真实输入在 AlphaComposer,DOM 捕获路径已死)", () => {
     expect(timelineInject).not.toContain(`document.addEventListener("keydown"`)
     expect(timelineInject).not.toContain(`document.addEventListener("click"`)
     expect(timelineInject).not.toContain("function captureSend")
   })
+})
 
-  test("路由假设走版本化 route manifest,不手搓路由正则(adapter 不改路由形状,manifest 是唯一事实源)", () => {
-    expect(composerTakeover).toContain(`import { parseRoute } from "../../shared/route-manifest"`)
+describe("REQ-125 C7:ComposerTakeover 删除后零引用(棘轮)", () => {
+  test("composer-takeover.tsx 不存在,renderer 生产源码零引用(组件名/文件名/body flag/收养停靠位)", () => {
+    expect(fs.existsSync(path.join(ALPHA_UI, "composer-takeover.tsx"))).toBe(false)
+    const forbidden = ["ComposerTakeover", "composer-takeover", "data-alpha-composer-takeover", "data-alpha-usage-host"]
+    const offenders: Array<{ file: string; token: string }> = []
+    for (const file of walk(RENDERER)) {
+      const src = read(file)
+      for (const token of forbidden) {
+        if (src.includes(token)) offenders.push({ file: path.relative(RENDERER, file), token })
+      }
+    }
+    expect(offenders).toEqual([])
+  })
+
+  test("takeover 的 CSS 面一并终结:不再隐藏上游 composer,不再保留收养容器规则", () => {
+    const css = read(path.join(ALPHA_UI, "alpha-composer.css"))
+    expect(css).not.toContain("data-alpha-composer-takeover")
+    expect(css).not.toContain("data-alpha-composer-host")
+    expect(css).not.toContain("data-alpha-usage-host")
+  })
+
+  test("审批呈现权协调走进程内 claim(零 DOM):dock 仅在 feed 就绪时接管,watcher 让位并保持兜底", () => {
+    const watcher = read(path.join(ALPHA_UI, "permission-watcher.tsx"))
+    expect(watcher).toContain("sessionApprovalDockClaimed(props.sessionID)")
+    // Blocker-2:兜底面与 dock 同一 fail-closed feed;呈现严格以 ready 为闸。
+    expect(watcher).toContain("createPermissionV2Feed(")
+    expect(watcher).toContain("feed.state.ready &&")
+    const dock = read(path.join(ALPHA_UI, "session-workspace", "session-composer-dock.tsx"))
+    // Major:先立后破 + 唯一 owner —— claim 绑定在自身 feed 就绪上,审批卡只由当选 owner
+    // 的 SessionApprovalHost 渲染(多 dock 并存恰一份审批 DOM)。
+    expect(dock).toContain("<SessionApprovalHost")
+    expect(dock).toContain("ready={() => feed()?.state.ready ?? false}")
+    const host = read(path.join(ALPHA_UI, "session-workspace", "session-approval-card.tsx"))
+    expect(host).toContain("bindSessionApprovalClaim({")
+    expect(host).toContain("owns() ? props.approval() : undefined")
+    const claim = read(path.join(ALPHA_UI, "session-workspace", "session-approval-claim.ts"))
+    expect(claim).not.toContain("document")
+    expect(claim).not.toContain("querySelector")
+    // Major(R4:决策源):档位决策(needsSwitch/CAS/漂移)一律权威实时读(typed GET),
+    // serverSync 缓存(不消费 v2 切档事件,永不更新)禁作决策源。
+    const composerSrc = read(path.join(ALPHA_UI, "alpha-composer.tsx"))
+    expect(composerSrc).toContain("async function readSessionAgent(")
+    // R5:权威读必须有界(signal 交给 SDK + 本地竞速),无界 GET 悬挂会把 sending 永锁。
+    expect(composerSrc).toContain("client.v2.session.get({ sessionID }, { signal })")
+    expect(composerSrc).toContain("AbortSignal.timeout(timeoutMs)")
+    expect(composerSrc).not.toContain("sessionAgent()")
+    expect(dock).not.toContain("observeSessionAgent")
+    expect(dock).not.toContain("sessionAgent")
+  })
+
+  test("审计修复轮棘轮:always 项目身份取会话精确 projectID;停止键走已批稿 accent 令牌", () => {
+    const dock = read(path.join(ALPHA_UI, "session-workspace", "session-composer-dock.tsx"))
+    // Major:与独立 Permission surface 同源的当前项目身份(SessionV2Info.projectID,
+    // typed session info),不再用 worktree 目录猜测(sandbox 会话不可误禁 always)。
+    expect(dock).toContain("serverSync().session.data.info[bound.sessionID]?.projectID")
+    expect(dock).not.toContain("project.worktree ===")
+    // minor:停止键配色 = 已批稿 --a-accent 系;禁 --a-danger 与裸色回退。
+    const css = read(path.join(ALPHA_UI, "alpha-composer.css"))
+    expect(css).not.toContain("--a-danger")
+    expect(css).toMatch(
+      /\.a-comp-stop\[data-ready\] \{\s*background: var\(--a-accent-subtle\);\s*color: var\(--a-accent\);\s*border: 1px solid var\(--a-accent-border\);/,
+    )
+    // Major:会话发送走 v2 durable 队列 delivery 契约;直连 promptAsync 调用全量退役(注释可提及)。
+    const composer = read(path.join(ALPHA_UI, "alpha-composer.tsx"))
+    expect(composer).not.toContain(".promptAsync(")
+    expect(composer).toMatch(/c\.v2\.session\s*\.prompt\(\{/)
+    expect(composer).toContain('delivery: "queue"')
+  })
+
+  test("会话 composer 由 seam 会话页直挂:session-workspace 源码零 Portal/零上游选择器/零收养", () => {
+    const dir = path.join(ALPHA_UI, "session-workspace")
+    for (const file of fs.readdirSync(dir).filter((name) => /\.(ts|tsx)$/.test(name) && !/\.test\./.test(name))) {
+      const src = read(path.join(dir, file))
+      for (const token of ["<Portal", "querySelector", "MutationObserver", "data-component="]) {
+        expect({ file, token, hit: src.includes(token) }).toEqual({ file, token, hit: false })
+      }
+    }
+    const workspace = read(path.join(dir, "alpha-session-workspace.tsx"))
+    expect(workspace).toContain("<SessionComposerDock live={live} projects={props.projects} />")
+    const dock = read(path.join(dir, "session-composer-dock.tsx"))
+    expect(dock).toContain('mode="session"')
+    expect(dock).toContain("sessionDock={dockApi}")
   })
 })
 
@@ -98,48 +171,6 @@ describe("REQ-125 C1 I1:上游 session 叶消费者归零", () => {
       if (src.includes("@opencode-ai/app/surface/session")) importers.push(f)
     }
     expect(importers.map((file) => path.relative(RENDERER, file))).toEqual([])
-  })
-})
-
-describe("T6 ②a ComposerTakeover 锚点(REQ-012 跨 app/session-ui 渲染链补钉)", () => {
-  test("组合选择器 ↔ session-prompt-dock 内的 prompt-input-v2(任一改名此处必红)", () => {
-    expect(app("pages/session/composer/session-composer-region.tsx")).toContain(
-      `data-component="session-prompt-dock"`,
-    )
-    expect(sessionUi("v2/components/prompt-input/index.tsx")).toContain(`data-component="prompt-input-v2"`)
-    expect(composerTakeover).toContain(
-      `const COMPOSER_SEL = '[data-component="session-prompt-dock"] [data-component="prompt-input-v2"]'`,
-    )
-  })
-
-  test("隐性前置:session 页 newLayoutDesigns 分支渲染 PromptInputV2Composer + alpha 主进程种子恒 true", () => {
-    const session = app("pages/session.tsx")
-    expect(session).toContain("when={newSessionDesign()}")
-    expect(session).toContain("<PromptInputV2Composer")
-    expect(read(path.join(REPO, "packages/ui-mac/src/main/alpha-defaults.ts"))).toContain(
-      "general.newLayoutDesigns = true",
-    )
-  })
-
-  test("样式假设:body flag 与 CSS 隐藏规则成对存在(设/清各一处,隐藏保留 DOM)", () => {
-    expect(composerTakeover).toContain(`document.body.setAttribute("data-alpha-composer-takeover", "")`)
-    expect(composerTakeover).toContain(`document.body.removeAttribute("data-alpha-composer-takeover")`)
-    const css = read(path.join(ALPHA_UI, "alpha-composer.css"))
-    expect(css).toContain(
-      `body[data-alpha-composer-takeover] [data-component="session-prompt-dock"] [data-component="prompt-input-v2"]`,
-    )
-    // 隐藏而非移除:上游 composer 的状态/命令注册面必须保持存活(取代它的是视觉,不是生命周期)。
-    expect(css).toMatch(
-      /body\[data-alpha-composer-takeover\] \[data-component="session-prompt-dock"\] \[data-component="prompt-input-v2"\] \{\s*display: none !important;/,
-    )
-  })
-
-  test("可见性口径 = offsetParent(与 spike 探针同口径;宿主 chrome 不得用 display:none 包叶)", () => {
-    expect(composerTakeover).toContain("offsetParent !== null")
-  })
-
-  test("usage-ring 收养锚点 progress-circle 仍由上游渲染", () => {
-    expect(ui("components/progress-circle.tsx")).toContain(`data-component="progress-circle"`)
   })
 })
 

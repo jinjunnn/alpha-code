@@ -202,13 +202,14 @@ export const FRONTEND_SURFACE_MANIFEST = [
   {
     id: "inline.composer",
     label: "会话 Composer",
-    description: "Alpha Composer 通过 takeover 依赖上游会话锚点并隐藏旧 Composer，仍属混合组合。",
-    owner: "alpha.composer-takeover",
+    description:
+      "AlphaComposer 在 seam 会话页直挂(REQ-125 C7,零 Portal/零选择器);lineage 翻转随 C8 与 session/timeline 一并登记。",
+    owner: "alpha.composer",
     lineage: "hybrid",
     target: "alpha",
     mount: { kind: "inline", route: "session", slot: "composer" },
     availability: "default",
-    source: "packages/ui-mac/src/renderer/alpha-ui/composer-takeover.tsx",
+    source: "packages/ui-mac/src/renderer/alpha-ui/session-workspace/session-composer-dock.tsx",
     entrypoints: ["会话工作区"],
     transitions: [{ label: "提交消息", target: "route.session" }],
   },

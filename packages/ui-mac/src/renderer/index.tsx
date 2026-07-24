@@ -36,7 +36,6 @@ import { ToastViewport } from "./alpha-ui/Toast"
 import { ContractFailureBanner } from "./alpha-ui/Banner"
 import { AlphaBoundary } from "./alpha-ui/alpha-boundary"
 import { ContractHealthProvider } from "./alpha-ui/providers"
-import { ComposerTakeover } from "./alpha-ui/composer-takeover"
 import { TimelineInject } from "./alpha-ui/timeline-inject"
 import { PermissionWatcher } from "./alpha-ui/permission-watcher"
 import { CloudRunWatcher } from "./alpha-ui/cloud-run-watcher"
@@ -81,9 +80,9 @@ const productionRoutes = composeRoutes({
       </SurfaceBoundary>
     )
   },
-  session: (resolved: ResolvedSurfaces | null | undefined) => {
+  session: (resolved: ResolvedSurfaces | null | undefined, projects: AlphaProjectsApi) => {
     if (resolved?.session.mode !== "alpha") return undefined
-    return alphaSessionWorkspaceSurface()
+    return alphaSessionWorkspaceSurface(projects)
   },
   settings: () => (
     <AlphaBoundary name="AlphaSettings">
@@ -494,7 +493,7 @@ render(() => {
       }
       const home = productionRoutes.home.mount(resolved, alphaProjects)
       const newSession = productionRoutes["new-session"].mount(resolved, alphaProjects)
-      const session = productionRoutes.session.mount(resolved)
+      const session = productionRoutes.session.mount(resolved, alphaProjects)
       if (home) surfaces[productionRoutes.home.surface] = home
       if (newSession) surfaces[productionRoutes["new-session"].surface] = newSession
       // REQ-088 T5:resolved session mode 是唯一挂载条件；legacy 保持上游默认叶。
@@ -532,11 +531,8 @@ render(() => {
               <AlphaBoundary name="ArtifactWorkbench">
                 <ArtifactWorkbench projects={alphaProjects} />
               </AlphaBoundary>
-              {/* REQ-055:会话页 composer = AlphaComposer(与首页同一组件);上游 composer 隐藏。
-                  旧 ComposerInject/SessionSlashInject(chips 移植 + slash 菜单接管)随之退役。 */}
-              <AlphaBoundary name="ComposerTakeover">
-                <ComposerTakeover projects={alphaProjects} />
-              </AlphaBoundary>
+              {/* REQ-125 C7:会话页 composer = AlphaComposer 经 seam 会话页直挂(session surface
+                  内部,零 Portal/零选择器);旧的 composer DOM 接管件与 ring 收养已删除。 */}
               <AlphaBoundary name="TimelineInject">
                 <TimelineInject />
               </AlphaBoundary>
