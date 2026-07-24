@@ -1,6 +1,8 @@
 // REQ-088 T6(#181):takeover × adapter 共存审计 —— 可静态钉住的锚点。
 //
-// 审计对象:ComposerTakeover / TimelineInject 两个遗留 DOM 接管件，以及 canonical composer picker。
+// 审计对象:ComposerTakeover 遗留 DOM 接管件，以及 canonical composer picker。
+// (TimelineInject 已随 REQ-125 C8 退役删除 —— alpha 时间线 C5/C6 后全自持,注入路径死亡;
+// 本文件剩余的 takeover 锚点随 C7 composer seam 化一并退役。)
 // 结论(详见 docs/audits/2026-07-13-s48-req088-t6-takeover-coexistence.md 审计矩阵):
 // 它们「挂载方式无关」的根因是三条结构不变量,本文件把每条钉成源码锚点 ——
 //   ① 挂载通道:takeover 作为 AppInterface children 在 router root 挂载一次,不在任何
@@ -34,7 +36,6 @@ const ui = (p: string) => read(path.join(REPO, "packages/ui/src", p))
 const sessionUi = (p: string) => read(path.join(REPO, "packages/session-ui/src", p))
 
 const composerTakeover = read(path.join(ALPHA_UI, "composer-takeover.tsx"))
-const timelineInject = read(path.join(ALPHA_UI, "timeline-inject.tsx"))
 const alphaComposer = read(path.join(ALPHA_UI, "alpha-composer.tsx"))
 const composerModelPicker = read(path.join(ALPHA_UI, "alpha-composer-model.tsx"))
 const modelContract = read(path.join(ALPHA_UI, "model-contract.ts"))
@@ -42,7 +43,6 @@ const composerState = read(path.join(ALPHA_UI, "composer-state.ts"))
 const rendererIndex = read(path.join(RENDERER, "index.tsx"))
 const takeovers: Record<string, string> = {
   "composer-takeover.tsx": composerTakeover,
-  "timeline-inject.tsx": timelineInject,
 }
 
 /** renderer 下全部非测试 ts/tsx 源(用于扫窄导出消费者)。 */
@@ -57,10 +57,16 @@ function* walk(dir: string): Generator<string> {
 }
 
 describe("T6 ①挂载通道:takeover 与 session 叶零耦合(挂载方式无关的结构根因)", () => {
-  test("两个遗留 takeover 作为 AppInterface children 挂载(AlphaBoundary 包裹,router root 单例)", () => {
-    for (const name of ["ComposerTakeover", "TimelineInject"]) {
-      expect(rendererIndex).toContain(`<AlphaBoundary name="${name}">`)
-    }
+  test("遗留 takeover 作为 AppInterface children 挂载(AlphaBoundary 包裹,router root 单例)", () => {
+    expect(rendererIndex).toContain(`<AlphaBoundary name="ComposerTakeover">`)
+  })
+
+  test("TimelineInject 已随 REQ-125 C8 退役:模块不存在,renderer root 零挂载零导入", () => {
+    expect(fs.existsSync(path.join(ALPHA_UI, "timeline-inject.tsx"))).toBe(false)
+    expect(fs.existsSync(path.join(ALPHA_UI, "timeline-reskin.css"))).toBe(false)
+    expect(fs.existsSync(path.join(ALPHA_UI, "timeline"))).toBe(false)
+    expect(rendererIndex).not.toContain("TimelineInject")
+    expect(rendererIndex).not.toContain("timeline-reskin.css")
   })
 
   test("takeover 模块不 import @opencode-ai/app(不消费任何 upstream context/组件,只碰 document)", () => {
@@ -70,19 +76,13 @@ describe("T6 ①挂载通道:takeover 与 session 叶零耦合(挂载方式无�
     }
   })
 
-  test("遗留 takeover 观察面 = document.body MutationObserver,每件恰一个(AC8 observer 预算 = 2)", () => {
+  test("遗留 takeover 观察面 = document.body MutationObserver,每件恰一个(TimelineInject 退役后 observer 预算 = 1)", () => {
     for (const [name, src] of Object.entries(takeovers)) {
       const observers = src.match(/new MutationObserver\(/g) ?? []
       expect({ name, observers: observers.length }).toEqual({ name, observers: 1 })
       expect(src).toContain("mo.observe(document.body, { childList: true, subtree: true })")
       expect(src).toContain("mo?.disconnect()")
     }
-  })
-
-  test("TimelineInject 不再挂发送捕获监听(#251:上游 composer 被 ComposerTakeover 隐藏,捕获路径已死)", () => {
-    expect(timelineInject).not.toContain(`document.addEventListener("keydown"`)
-    expect(timelineInject).not.toContain(`document.addEventListener("click"`)
-    expect(timelineInject).not.toContain("function captureSend")
   })
 
   test("路由假设走版本化 route manifest,不手搓路由正则(adapter 不改路由形状,manifest 是唯一事实源)", () => {
@@ -208,25 +208,4 @@ describe("REQ-090 model picker ratchet:旧 DOM 接管退役，canonical owner �
   })
 })
 
-describe("T6 ②c TimelineInject 锚点(REQ-012 manifest 命名空间外的补钉)", () => {
-  test("slash 菜单锚点 data-slash-id 仍由上游渲染(slash-popover.tsx)", () => {
-    expect(app("components/prompt-input/slash-popover.tsx")).toContain("data-slash-id={cmd.id}")
-  })
-
-  test("消息身份锚点 data-message-id / data-timeline-part-id 仍由上游渲染(cmd chip 持久化的 key)", () => {
-    expect(app("pages/session/timeline/message-timeline.tsx")).toContain("data-message-id={input.row().userMessageID}")
-    const messagePart = sessionUi("components/message-part.tsx")
-    expect(messagePart).toContain(`data-component="user-message" data-timeline-part-id={textPart()?.id}`)
-  })
-
-  test("审查面板通路:id=review-panel + header 的 aria-controls 开关仍存在(「在面板打开」pill 的通路)", () => {
-    expect(app("pages/session/session-side-panel.tsx")).toContain(`id="review-panel"`)
-    expect(app("components/session/session-header.tsx")).toContain(`aria-controls="review-panel"`)
-  })
-
-  test("错误卡去重锚点 data-kind=tool-error-card 仍由上游渲染", () => {
-    expect(sessionUi("components/tool-error-card.tsx")).toContain(`data-kind="tool-error-card"`)
-  })
-
-  // 目录网格 <entries> 格式锁已随 #252 摘除(decorateDirOutput 死路径已删,无耦合可锁)。
-})
+// T6 ②c TimelineInject 锚点补钉已随 REQ-125 C8 删除 —— 注入件退役后无耦合可锁。

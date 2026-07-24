@@ -30,14 +30,12 @@ import { availableStartupServer, isEphemeralLocalServerUrl, readyWslConnections 
 import "./styles.css"
 import "./sidebar/sidebar.css"
 import "./sidebar/account-popover.css"
-import "./alpha-ui/timeline-reskin.css"
 import "./alpha-ui/composer-reskin.css"
 import { ToastViewport } from "./alpha-ui/Toast"
 import { ContractFailureBanner } from "./alpha-ui/Banner"
 import { AlphaBoundary } from "./alpha-ui/alpha-boundary"
 import { ContractHealthProvider } from "./alpha-ui/providers"
 import { ComposerTakeover } from "./alpha-ui/composer-takeover"
-import { TimelineInject } from "./alpha-ui/timeline-inject"
 import { PermissionWatcher } from "./alpha-ui/permission-watcher"
 import { CloudRunWatcher } from "./alpha-ui/cloud-run-watcher"
 import { ExtTrustWatcher } from "./alpha-ui/ext-trust-watcher"
@@ -509,7 +507,7 @@ render(() => {
             <AppInterface defaultServer={key} servers={servers()} router={MemoryRouter} surfaces={surfaceComponents()}>
               {/* C28(S17 T4)崩溃边界下沉:上游 ErrorBoundary 在 AppBaseProviders 内包住全部 children,
                   alpha 任一注入件 throw 会整屏坠成上游 ErrorPage —— 逐个紧裹 AlphaBoundary(更内层先命中)
-                  = 崩溃只降级该区域;TimelineInject(B22 疑源)自此有降落伞。探针 window.__alphaCrashProbe */}
+                  = 崩溃只降级该区域。探针 window.__alphaCrashProbe */}
               <AlphaBoundary name="Inner">
                 <Inner />
               </AlphaBoundary>
@@ -536,9 +534,6 @@ render(() => {
                   旧 ComposerInject/SessionSlashInject(chips 移植 + slash 菜单接管)随之退役。 */}
               <AlphaBoundary name="ComposerTakeover">
                 <ComposerTakeover projects={alphaProjects} />
-              </AlphaBoundary>
-              <AlphaBoundary name="TimelineInject">
-                <TimelineInject />
               </AlphaBoundary>
               <AlphaBoundary name="CloudRunWatcher">
                 <CloudRunWatcher server={sidebarServer} projects={alphaProjects} />
