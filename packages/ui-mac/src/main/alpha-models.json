@@ -189,6 +189,7 @@
         "color": "#7c3aed"
       },
       "models": [
+        "qwen3.8-max-preview",
         "qwen-plus",
         "qwen3-coder-plus"
       ]
