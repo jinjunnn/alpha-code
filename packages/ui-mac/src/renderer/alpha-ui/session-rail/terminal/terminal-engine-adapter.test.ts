@@ -219,7 +219,7 @@ describe("REQ-125 #554 I1 whitelist channel static ratchets", () => {
     expect(adapterSource).toContain("function resolveTerminalEngine()")
     expect(adapterSource).toMatch(/try \{\s*return useTerminal\(\)\s*\} catch \{\s*return undefined\s*\}/)
     // 粘合语义对齐上游 terminal-panel:持久化回写、连接后 trim、一次性 clone 恢复、聚焦交接。
-    expect(adapterSource).toContain("onCleanup={persistCleanup}")
+    expect(adapterSource).toContain("persistCleanup(epoch, next)}")
     expect(adapterSource).toContain("ops.update(next)")
     expect(adapterSource).toContain("ops.trim(props.instanceID)")
     expect(adapterSource).toContain("void ops.clone(props.instanceID)")
@@ -227,17 +227,21 @@ describe("REQ-125 #554 I1 whitelist channel static ratchets", () => {
     expect(adapterSource).toContain("onAutoFocus={() => engine.consumeFocus(props.instanceID)}")
     // keep-alive × autoFocus 一次性(审计第 4 轮 Major-2):挂载中收到本实例请求 → 焦点
     // 代次 keyed 重挂,让请求经原生 autoFocus 真实被消费;DOM 级取证在 cases 文件。
-    expect(adapterSource).toContain("setFocusEpoch((epoch) => epoch + 1)")
+    expect(adapterSource).toContain("setFocusEpoch((current) => current + 1)")
     expect(adapterSource).toContain('<Show when={focusEpoch()} keyed>')
     // keyed Show 的 children 必须带参:Solid 以 children.length>0 区分「渲染回调」与静态
     // 子元素,零参回调不会随 key 重建(本轮实测踩坑,钉死防回归)。
-    expect(adapterSource).toContain("{(_epoch) => (")
+    expect(adapterSource).toContain("{(epoch) => (")
     // 两相位重挂(审计第 5 轮):pending 先卸旧渲 null,等本实例回写真实发生(或超时
     // 兜底)才挂新 —— 新实例必须捕获 flush 后的 store,不许同步销毁+同步挂新抢跑。
     expect(adapterSource).toContain('setRemountPhase("pending")')
     expect(adapterSource).toContain('<Show when={remountPhase() === "mounted"}>')
-    expect(adapterSource).toContain("if (next.id === props.instanceID) completeRemount()")
     expect(adapterSource).toContain("REMOUNT_FLUSH_TIMEOUT_MS")
+    // 代次 token(审计第 6 轮):回写与兜底都携带自己那一代;completeRemount 只认
+    // pending 正在等待的那一代,旧代次的迟到回写只落 store,推不动后来的 pending。
+    expect(adapterSource).toContain("if (next.id === props.instanceID) completeRemount(epoch)")
+    expect(adapterSource).toContain("if (epoch !== awaitingEpoch) return")
+    expect(adapterSource).toContain("setTimeout(() => completeRemount(epoch), REMOUNT_FLUSH_TIMEOUT_MS)")
   })
 
   test("engine output cases run green in a real Solid mount (one-shot autoFocus semantics)", () => {
@@ -252,7 +256,7 @@ describe("REQ-125 #554 I1 whitelist channel static ratchets", () => {
     })
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
-    expect(output).toContain("4 pass")
+    expect(output).toContain("5 pass")
     expect(output).toContain("0 fail")
   })
 

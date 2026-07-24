@@ -21,7 +21,7 @@ mock.module("solid-js/store", () => solidStore)
 //    ops.update 真实落 store,让新挂载能捕获回写后的 buffer/cursor) ──
 type FakePTY = { id: string; title: string; titleNumber: number; cols?: number; rows?: number; cursor?: number; buffer?: string }
 
-function createFakeEngine(initial: FakePTY[], options?: { silentCleanup?: boolean }) {
+function createFakeEngine(initial: FakePTY[], options?: { silentCleanup?: boolean; manualFlush?: boolean }) {
   const [focus, setFocus] = solid.createSignal<{ id?: string } | undefined>(undefined)
   const [all, setAll] = solid.createSignal<FakePTY[]>(initial)
   const opsCalls: string[] = []
@@ -54,11 +54,20 @@ function createFakeEngine(initial: FakePTY[], options?: { silentCleanup?: boolea
       },
     }),
   }
-  return { engine, focus, setAll, opsCalls, silentCleanup: options?.silentCleanup === true }
+  return {
+    engine,
+    focus,
+    setAll,
+    opsCalls,
+    silentCleanup: options?.silentCleanup === true,
+    manualFlush: options?.manualFlush === true,
+  }
 }
 
 let currentEngine: ReturnType<typeof createFakeEngine> | undefined
 const mountLog: string[] = []
+/** manualFlush 模式:被卸实例的回写由测试手动触发(可覆写载荷),复现迟到回写交错。 */
+const heldFlushes: Array<{ mountIndex: number; fire: (payload?: Partial<FakePTY>) => void }> = []
 
 // ── 假 Terminal:上游一次性 autoFocus 语义(挂载期读一次;true 即消费)+ 上游真实的
 //    异步回写语义 —— 卸载后 output.flush(finalize) 完成才回调 onCleanup(延迟一个
@@ -71,13 +80,20 @@ function FakeTerminal(props: {
 }) {
   const autoFocus = props.autoFocus === true
   const capturedCursor = props.pty.cursor ?? 0
+  const mountIndex = mountLog.length
   // 挂载即捕获当时 store 的 cursor:两相位正确性判据 —— 重挂的新实例必须拿到回写后的值。
   mountLog.push(`mount:${props.pty.id}:af=${autoFocus}:cursor=${capturedCursor}`)
   if (autoFocus) props.onAutoFocus?.()
   const liveCursor = capturedCursor + 100 // 挂载存活期间终端又前进了(回写前 store 是旧值)
   solid.onCleanup(() => {
     if (currentEngine?.silentCleanup) return
-    setTimeout(() => props.onCleanup?.({ id: props.pty.id, cursor: liveCursor, buffer: "flushed" }), 0)
+    const fire = (payload?: Partial<FakePTY>) =>
+      props.onCleanup?.({ id: props.pty.id, cursor: liveCursor, buffer: "flushed", ...payload })
+    if (currentEngine?.manualFlush) {
+      heldFlushes.push({ mountIndex, fire })
+      return
+    }
+    setTimeout(() => fire(), 0)
   })
   const el = document.createElement("div")
   el.setAttribute("data-fake-terminal", props.pty.id)
@@ -118,6 +134,7 @@ afterEach(() => {
     .forEach((dispose) => dispose())
   document.body.replaceChildren()
   mountLog.splice(0)
+  heldFlushes.splice(0)
   currentEngine = undefined
 })
 
@@ -233,6 +250,49 @@ describe("REQ-125 #554 keep-alive × autoFocus one-shot, two-phase remount (audi
     expect(mountLog).toEqual(["mount:pty_1:af=false:cursor=0"])
     // The request stays pending for its rightful instance.
     expect(currentEngine.engine.focusRequested("pty_2")).toBe(true)
+  })
+
+  test("a late write-back from an earlier generation never completes a newer pending (round-6 token)", async () => {
+    // 复现序:A 卸载但 flush 迟迟不回 → 300ms 兜底挂 B → B 再进 pending → A 的迟到
+    // 回写(同 PTY id)到达 —— 它绝不能误完成 B 的 pending;C 必须等到 B 的回写才挂。
+    currentEngine = createFakeEngine([{ id: "pty_1", title: "终端 1", titleNumber: 1, cursor: 0 }], {
+      manualFlush: true,
+    })
+    const { host, channel } = mountEngineOutput("pty_1")
+    await flush()
+    expect(mountLog).toEqual(["mount:pty_1:af=false:cursor=0"]) // A = 代次 1
+
+    // A 卸载,flush 被扣住;300ms 兜底后 B 挂载(store 未回写,诚实 cursor=0)。
+    channel().requestFocus("pty_1")
+    await flush()
+    expect(heldFlushes).toHaveLength(1)
+    await new Promise((resolve) => setTimeout(resolve, 350))
+    await flush()
+    expect(mountLog).toEqual(["mount:pty_1:af=false:cursor=0", "mount:pty_1:af=true:cursor=0"]) // B = 代次 2
+
+    // B 再进 pending(等待代次 2 的回写);B 的 flush 也被扣住。
+    channel().requestFocus("pty_1")
+    await flush()
+    expect(host.querySelectorAll("[data-fake-terminal]")).toHaveLength(0)
+    expect(heldFlushes).toHaveLength(2)
+
+    // A 的迟到回写到达:只落 store,绝不推 B 的 pending —— 不许挂出拿过期 cursor 的 C。
+    heldFlushes[0]!.fire({ cursor: 111 })
+    await flush()
+    expect(mountLog).toHaveLength(2)
+    expect(host.querySelectorAll("[data-fake-terminal]")).toHaveLength(0)
+    expect(currentEngine.opsCalls).toContain("update:pty_1:cursor=111")
+
+    // B 的回写到达:pending 才完成,C 捕获的是 B 回写后的 store。
+    heldFlushes[1]!.fire({ cursor: 222 })
+    await flush()
+    expect(mountLog).toEqual([
+      "mount:pty_1:af=false:cursor=0",
+      "mount:pty_1:af=true:cursor=0",
+      "mount:pty_1:af=true:cursor=222",
+    ])
+    expect(host.querySelector("[data-fake-terminal]")!.getAttribute("data-cursor")).toBe("222")
+    expect(currentEngine.focus()).toBeUndefined()
   })
 
   test("when the old instance never flushes, the timeout fallback still mounts and consumes", async () => {

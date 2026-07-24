@@ -57,25 +57,34 @@ function createEngineOutput(engine: TerminalEngine): Component<{ instanceID: str
     // 首挂路径(无旧实例)零延迟;pending 期间的再次请求合并,代次不叠加。
     const [focusEpoch, setFocusEpoch] = createSignal(1)
     const [remountPhase, setRemountPhase] = createSignal<"mounted" | "pending">("mounted")
+    // 代次 token(审计第 6 轮):pending 只等待「刚被卸载的那一代」的回写。A 超时后挂 B、
+    // B 再 pending 时,A 的迟到回写(同 PTY id)绝不能误推 B 的相位 —— 每次挂载把当代
+    // 代次闭包进该实例的 onCleanup;completeRemount 只认 awaitingEpoch 那一代,其余迟到
+    // 回写只落 store;超时兜底同样携带自己那一代,过期定时器推不动后来的 pending。
+    let awaitingEpoch: number | undefined
     let pendingTimer: ReturnType<typeof setTimeout> | undefined
-    const completeRemount = () => {
+    const completeRemount = (epoch: number) => {
       if (remountPhase() !== "pending") return
+      if (epoch !== awaitingEpoch) return // 迟到回写 / 过期兜底:不属于正在等待的一代
       clearTimeout(pendingTimer)
       pendingTimer = undefined
+      awaitingEpoch = undefined
       // 代次先行、相位随后:Terminal 只在相位翻回 mounted 时以新代次挂载一次。
-      setFocusEpoch((epoch) => epoch + 1)
+      setFocusEpoch((current) => current + 1)
       setRemountPhase("mounted")
     }
     const beginRemount = () => {
       if (remountPhase() === "pending") return // 合并:pending 期间的请求不叠加代次
+      const epoch = focusEpoch() // 即将卸载的这一代 —— pending 等的就是它的回写
+      awaitingEpoch = epoch
       setRemountPhase("pending")
-      pendingTimer = setTimeout(completeRemount, REMOUNT_FLUSH_TIMEOUT_MS)
+      pendingTimer = setTimeout(() => completeRemount(epoch), REMOUNT_FLUSH_TIMEOUT_MS)
     }
     onCleanup(() => clearTimeout(pendingTimer))
-    // 上游 onCleanup 载荷即回写事实:先落 store,再看是否正等着它进入挂载相位。
-    const persistCleanup = (next: Partial<LocalPTY> & { id: string }) => {
+    // 上游 onCleanup 载荷即回写事实:先落 store,再看它那一代是否正被等待。
+    const persistCleanup = (epoch: number, next: Partial<LocalPTY> & { id: string }) => {
       ops.update(next)
-      if (next.id === props.instanceID) completeRemount()
+      if (next.id === props.instanceID) completeRemount(epoch)
     }
     let liveSinceFirstRun = false
     createEffect(() => {
@@ -91,7 +100,7 @@ function createEngineOutput(engine: TerminalEngine): Component<{ instanceID: str
         {(current) => (
           <Show when={remountPhase() === "mounted"}>
             <Show when={focusEpoch()} keyed>
-              {(_epoch) => (
+              {(epoch) => (
                 <Terminal
                   pty={current()}
                   autoFocus={engine.focusRequested(props.instanceID)}
@@ -100,7 +109,7 @@ function createEngineOutput(engine: TerminalEngine): Component<{ instanceID: str
                     recovered.delete(recoveryKey(current()))
                     ops.trim(props.instanceID)
                   }}
-                  onCleanup={persistCleanup}
+                  onCleanup={(next: Partial<LocalPTY> & { id: string }) => persistCleanup(epoch, next)}
                   onConnectError={() => {
                     const key = recoveryKey(current())
                     if (recovered.has(key)) return
