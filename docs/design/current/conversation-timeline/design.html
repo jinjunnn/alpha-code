@@ -478,6 +478,31 @@ html[data-theme="dark"] .tok-k{color:#c4b5fd}html[data-theme="dark"] .tok-s{colo
 .task-agent i{width:6px;height:6px;border-radius:50%;background:var(--t-task)}
 .task-ring{width:16px;height:16px;border-radius:50%;background:conic-gradient(var(--t-task) 60%,var(--a-bg-inset) 0);position:relative;flex:none}
 .task-ring::after{content:"";position:absolute;inset:3.5px;border-radius:50%;background:var(--a-surface)}
+
+/* ═══ 2026-07-24 补帧:bash 流式输出 / 文件徽章六态 / 媒体预览行 / 会话内空态 ═══ */
+/* bash 运行中:终端流实时增行,尾行块状光标 */
+.term .cur{display:inline-block;width:7px;height:14px;background:var(--a-text-secondary);vertical-align:text-bottom;margin-left:1px;animation:caret 1.05s step-end infinite}
+/* 文件行徽章(六态一览) */
+.fbadge{font-size:var(--a-text-2xs);font-weight:700;padding:1px 7px;border-radius:var(--a-radius-full);flex:none}
+.fbadge.read{background:color-mix(in srgb,var(--t-read) 14%,transparent);color:var(--t-read)}
+.fbadge.write{background:color-mix(in srgb,var(--t-write) 14%,transparent);color:var(--t-write)}
+.fbadge.move{background:var(--a-purple-subtle);color:var(--a-purple)}
+.fbadge.addk{background:var(--a-success-subtle);color:var(--a-success)}
+.fbadge.modk{background:var(--a-warning-subtle);color:var(--a-warning)}
+.fbadge.delk{background:var(--a-error-subtle);color:var(--a-error)}
+/* 助手侧媒体预览行(工具产出的图片 / 截图) */
+.media-row{display:inline-flex;align-items:center;gap:11px;padding:7px 12px 7px 7px;background:var(--a-surface);border:1px solid var(--a-border-faint);border-radius:var(--a-radius-lg);box-shadow:var(--a-edge-light);cursor:pointer;align-self:flex-start;transition:border-color var(--a-dur-fast)}
+.media-row:hover{border-color:var(--a-border-strong)}
+.media-row .mthumb{width:76px;height:52px;border-radius:var(--a-radius-md);border:1px solid var(--a-border);background:linear-gradient(135deg,#c7d2fe,#a5b4fc);display:grid;place-items:center;color:rgba(255,255,255,.95);flex:none}
+.media-row .mthumb .ic{width:17px;height:17px}
+.media-row .nm{display:flex;flex-direction:column;min-width:0}
+.media-row .nm b{font-size:var(--a-text-sm);font-weight:var(--a-weight-medium);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.media-row .nm small{font-size:var(--a-text-2xs);color:var(--a-text-tertiary)}
+/* 会话内空态(轻着陆) */
+.sess-empty{display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;color:var(--a-text-tertiary);padding:20px}
+.sess-empty .se-name{font-size:var(--a-text-lg);font-weight:var(--a-weight-semibold);letter-spacing:var(--a-tracking-tight);color:var(--a-text)}
+.sess-empty p{margin:0;font-size:var(--a-text-sm);max-width:38ch;line-height:var(--a-leading-normal)}
+.sess-empty .down{color:var(--a-text-disabled);margin-top:2px}
 </style>
 </head>
 <body>
@@ -492,7 +517,7 @@ html[data-theme="dark"] .tok-k{color:#c4b5fd}html[data-theme="dark"] .tok-s{colo
   <div class="sec-kicker">P0 · 时间线全量重做</div>
   <h2 class="t">把整条时间线统一成一套克制、信息密度高的 alpha 卡片语言</h2>
   <p class="lede">本稿覆盖经真机 DOM 核对的 <b>全部 ~52 个构件</b>(取代旧稿只覆盖 1/3)。设计取向:开发者工具应当<strong>安静、可扫读、密而不噪</strong> —— 中性灰底 + 单一克制 indigo 强调,工具按类型着色,运动只用在状态变化的高价值瞬间。每块都标注了真机 <span class="mono">data-component/data-slot</span> 钩子 + 接缝 + 现状(<span class="badge-st done" style="margin:0">已优化</span> / <span class="badge-st part" style="margin:0">部分</span> / <span class="badge-st gap" style="margin:0">裸样式</span>),因此它也是落地 spec。详见同目录 <span class="mono">audit.md</span> / <span class="mono">tasks.md</span>。</p>
-  <div class="note"><b>本稿同时是时间线组件的全量活稿</b>:组件帧按 ①–⑤ 分区陈列;已批的「产物链接行与右栏预览联动」增量已并入 ⑥ 节(帧 verbatim 引自增量稿);各消息类型的帧覆盖情况与缺帧待补,见 ⑦「<a href="#inventory">组件索引与待补</a>」。整页装配(单一顶栏 / 右栏四面板 / 输入框停靠)见 <a href="../session-workspace/design.html">session-workspace 整页稿</a>;本稿只管时间线行类型本身,两稿表述冲突时组件形态以本稿为准。<br><b>2026-07-23 补帧更新</b>:新增回合级错误卡(②)、匹配文件卡(③)、用户消息内联代码评论卡(①)三帧;附件卡与子任务卡重锚 v2 形态(帧外注记「由 v1 形态更新」);渲染位 / 回合分隔 / 右栏历史参照三处帧外注记修正;待补清单同步。</div>
+  <div class="note"><b>本稿同时是时间线组件的全量活稿</b>:组件帧按 ①–⑤ 分区陈列;已批的「产物链接行与右栏预览联动」增量已并入 ⑥ 节(帧 verbatim 引自增量稿);各消息类型的帧覆盖情况与缺帧待补,见 ⑦「<a href="#inventory">组件索引与待补</a>」。整页装配(单一顶栏 / 右栏四面板 / 输入框停靠)见 <a href="../session-workspace/design.html">session-workspace 整页稿</a>;本稿只管时间线行类型本身,两稿表述冲突时组件形态以本稿为准。<br><b>2026-07-23 补帧更新</b>:新增回合级错误卡(②)、匹配文件卡(③)、用户消息内联代码评论卡(①)三帧;附件卡与子任务卡重锚 v2 形态(帧外注记「由 v1 形态更新」);渲染位 / 回合分隔 / 右栏历史参照三处帧外注记修正;待补清单同步。<br><b>2026-07-24 补帧更新</b>:新增 bash 流式输出帧(③)、文件行徽章六态一览(③)、助手侧媒体预览行(②)、会话内空态帧(④)四帧;待补仅剩「消息导航(代码未接线)」一项。</div>
 
   <!-- ════════════════ USER INPUT ════════════════ -->
   <div class="sec-kicker" id="user" style="margin-top:40px">① 用户输入侧</div>
@@ -581,6 +606,11 @@ html[data-theme="dark"] .tok-k{color:#c4b5fd}html[data-theme="dark"] .tok-s{colo
       <ol><li>探查目录结构</li><li>读关键文件</li><li>浓缩成一句话简介</li></ol>
     </div></div>
 
+    <div class="label">媒体预览行(工具产出的图片 / 截图)</div>
+
+    <!-- assistant-side media preview row (2026-07-24 补) -->
+    <div class="media-row" role="button" tabindex="0"><span class="mthumb"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="10" r="1.6"/><path d="M21 16l-5-5L6 20"/></svg></span><span class="nm"><b>界面截图.png</b><small>1440 × 900 · PNG · 240 KB</small></span></div>
+
     <!-- streaming -->
     <div class="row-ai measure"><div class="ai-md"><p>正在补 <code>data-loading</code> 态的 a11y 处理<span class="stream-cursor"></span></p></div></div>
 
@@ -597,6 +627,7 @@ html[data-theme="dark"] .tok-k{color:#c4b5fd}html[data-theme="dark"] .tok-s{colo
 
   </div></div>
   <div class="note"><b>新帧 · 回合级错误卡</b>:助手回合末的<b>全宽错误行</b>(限流 / 接口报错 / 上下文超限三类场景),纯文本、无重试与换模型按钮。与 ③ 的「工具级错误卡」是两个组件:回合级 = 行模型的错误行,挂在回合末,只陈述事实与下一步;工具级 = 内嵌在具体工具卡里、带动作按钮。未知错误代码按原样 mono 展示(fail-closed,不猜翻译)。</div>
+  <div class="note"><b>新帧 · 媒体预览行</b>:工具产出的图片 / 截图以「缩略图 + 文件名 + 尺寸元信息」成行,挂在产出它的助手回合内;点击 → 右栏「产物」面板聚焦该文件 —— 联动契约与产物链接行同一套(见 ⑥ 与 session-workspace 稿),此处只定行形态。</div>
 
   <!-- ════════════════ TOOLS ════════════════ -->
   <div class="sec-kicker" id="tools" style="margin-top:40px">③ 工具卡:通用外壳 + 4 态</div>
@@ -611,6 +642,14 @@ html[data-theme="dark"] .tok-k{color:#c4b5fd}html[data-theme="dark"] .tok-s{colo
       <div class="subdesc">列出当前目录全部文件</div>
       <div class="tc-body"><div class="term"><span class="pmt">$</span> ls -la
 app/  docs/  tests/  <span class="ok">docker-compose.yml</span>  pyproject.toml</div></div></div>
+
+    <!-- running bash with streaming output (2026-07-24 补) -->
+    <div class="tc running open"><div class="tc-head"><span class="tc-ico bash"><svg class="ic sm" viewBox="0 0 24 24"><path d="M4 17l6-6-6-6M12 19h8"/></svg></span><div class="tc-tt"><b><span class="tgt">bun test src</span></b></div><span class="tc-st run"><span class="sp"></span>运行中</span><svg class="ic sm tc-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div>
+      <div class="subdesc">跑一遍单元测试,输出实时可见</div>
+      <div class="tc-body"><div class="term"><span class="pmt">$</span> bun test src
+<span class="ok">✓</span> indicators · kama 收敛 (12ms)
+<span class="ok">✓</span> prompt_builder · 字段齐全 (8ms)
+admission · 阈值边界 …<span class="cur"></span></div></div></div>
 
     <!-- error tool card -->
     <div class="errcard"><div class="errcard-head"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M4.9 4.9l14.2 14.2"/></svg>模型网关错误<span class="sub">404 · Not Found</span><button class="copy"><svg class="ic xs" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button></div><pre>{"detail":"Not Found"} — 代理 baseURL 或模型 ID 不存在</pre><div class="acts"><button class="btn-ghost">重试</button><button class="btn-ghost">换模型</button></div></div>
@@ -668,6 +707,18 @@ app/  docs/  tests/  <span class="ok">docker-compose.yml</span>  pyproject.toml<
         <div class="dfrow"><span style="font-size:var(--a-text-2xs);font-weight:700;padding:1px 7px;border-radius:var(--a-radius-full);background:var(--a-error-subtle);color:var(--a-error);flex:none">删除</span><span class="fn"><span class="dir">src/main/ </span>legacy.ts</span><span class="stat" style="margin-left:auto"><span class="del">−10</span></span></div>
       </div></div>
 
+    <div class="label">文件行徽章 · 六态一览(2026-07-24 补齐 读取 / 写入 / 移动)</div>
+
+    <!-- file part badges · six variants (2026-07-24 补) -->
+    <div class="tc" style="padding:4px">
+      <div class="dfrow"><span class="fbadge read">读取</span><span class="fn"><span class="dir">app/ </span>prompt_builder.py</span><span class="stat" style="margin-left:auto"></span></div>
+      <div class="dfrow"><span class="fbadge write">写入</span><span class="fn">AGENTS.md</span><span class="stat" style="margin-left:auto"><span class="add">+96</span></span></div>
+      <div class="dfrow"><span class="fbadge move">移动</span><span class="fn"><span class="dir">src/legacy/ </span>util.ts → <span class="dir">src/main/ </span>util.ts</span></div>
+      <div class="dfrow"><span class="fbadge addk">新增</span><span class="fn"><span class="dir">src/main/ </span>proxy.ts</span><span class="stat" style="margin-left:auto"><span class="add">+30</span></span></div>
+      <div class="dfrow"><span class="fbadge modk">修改</span><span class="fn"><span class="dir">src/main/ </span>ipc.ts</span><span class="stat" style="margin-left:auto"><span class="add">+14</span><span class="del">−2</span></span></div>
+      <div class="dfrow"><span class="fbadge delk">删除</span><span class="fn"><span class="dir">src/main/ </span>legacy.ts</span><span class="stat" style="margin-left:auto"><span class="del">−10</span></span></div>
+    </div>
+
     <!-- webfetch (TL-27): 仅触发行,链接 subtitle -->
     <div class="tc"><div class="tc-head"><span class="tc-ico web"><svg class="ic sm" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg></span><div class="tc-tt"><b>抓取网页</b><span class="tgt" style="color:var(--a-accent)">developer.mozilla.org/…/aria-busy</span></div><span class="tc-st muted">完成</span><svg class="ic sm tc-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div></div>
 
@@ -695,6 +746,7 @@ app/  docs/  tests/  <span class="ok">docker-compose.yml</span>  pyproject.toml<
 
   </div></div>
   <div class="note"><b>由 v1 形态更新(子任务卡)</b>:子任务卡从通用 spinner 重锚为 v2 形态 —— agent 主题色点缀(名称旁色点)+ 环形进度指示 + 「打开子会话」跳转。<b>新帧(匹配文件)</b>:glob 工具卡,标题行 = 图标 + 「匹配文件」+ 模式 + 计数,展开为匹配列表,形态对齐既有读取 / 检索卡。</div>
+  <div class="note"><b>新帧 · bash 流式输出</b>:运行中的命令卡沿用通用运行态(强调边框 + 扫线 + 运行 chip),输出体 = 终端流实时增行、尾行块状光标;命令结束即转为其上方的完成态帧 —— 状态翻「退出 N」、光标消失、输出定格,卡片本体不换。<b>新帧 · 文件行徽章六态一览</b>:读取 / 写入 / 移动为本次补齐,新增 / 修改 / 删除与应用补丁卡同一套;徽章只表动作类别,统计徽标照旧。</div>
   <div class="note warn"><b>渲染位注记</b>:本节的「请求审批」待批卡、任务清单卡、提问可选项卡,真实渲染位为<b>输入框上方的停靠区</b>(不是时间线行);落地时挂载点以 <a href="../session-workspace/design.html">session-workspace 稿</a>的审批停靠帧为准。此处帧只定卡片形态。</div>
 
   <!-- ════════════════ STRUCTURE ════════════════ -->
@@ -719,6 +771,16 @@ app/  docs/  tests/  <span class="ok">docker-compose.yml</span>  pyproject.toml<
 
   </div><div class="s2b"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12l7 7 7-7"/></svg></div></div>
   <div class="note"><b>回合分隔注记</b>:带时间戳的回合分隔条在 v2 真机仅渲染为<b>不可见间隔</b>;此帧为设计意图(可见分隔),是否落地归 seam 实现时决定。</div>
+
+  <div class="label">会话内空态 · 刚进入的着陆形态(2026-07-24 补)</div>
+  <div class="frame"><div style="min-height:260px;display:grid;place-items:center;background:var(--a-bg-canvas)">
+    <div class="sess-empty">
+      <div class="se-name">整理架构说明</div>
+      <p>这个会话还没有内容 —— 在下方输入框说点什么,或用 / 调用命令开始。</p>
+      <svg class="ic down" viewBox="0 0 24 24"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+    </div>
+  </div></div>
+  <div class="note"><b>与首页空态的分工</b>:首页问候面(composer 稿)= 全局着陆,带问候语、最近项目与工作区选择;会话内空态 = 已建会话、零消息时的轻着陆 —— 只有会话名 + 一句指向下方输入框的引导,不复制问候面、不放快捷卡。输入框本体与停靠位置归 session-workspace 稿。</div>
 
   <!-- ════════════════ REVIEW PANEL ════════════════ -->
   <div class="sec-kicker" id="panel" style="margin-top:40px">⑤ 右侧审查面板(整块裸 → 接管换肤)</div>
@@ -870,12 +932,12 @@ app/  docs/  tests/  <span class="ok">docker-compose.yml</span>  pyproject.toml<
       <tr><td>右栏审查 / 终端(换肤基线)</td><td>⑤ 审查面板;整页四面板形态另见 session-workspace 稿</td><td><span class="badge-st done" style="margin:0">有帧</span></td></tr>
       <tr><td>产物链接行 + 右栏预览联动</td><td>⑥ 产物链接行</td><td><span class="badge-st done" style="margin:0">有帧</span></td></tr>
       <tr><td>glob(按模式匹配文件)工具卡</td><td>③ 工具卡(2026-07-23 补)</td><td><span class="badge-st done" style="margin:0">有帧</span></td></tr>
-      <tr><td>bash 运行中的流式输出子消息(终端流实时增行)</td><td>—(现有 bash 帧为完成态)</td><td><span class="badge-st gap" style="margin:0">待补</span></td></tr>
-      <tr><td>文件 part 徽章全集(读取 / 写入 / 移动;新增 / 修改 / 删除已有)</td><td>—(新增 / 修改 / 删除见 ③ 应用补丁卡)</td><td><span class="badge-st gap" style="margin:0">待补</span></td></tr>
-      <tr><td>助手侧截图 / 图片 / 媒体预览行</td><td>—(仅有用户附件缩略图,① 节)</td><td><span class="badge-st gap" style="margin:0">待补</span></td></tr>
+      <tr><td>bash 运行中的流式输出子消息(终端流实时增行)</td><td>③ 工具卡(2026-07-24 补,完成态帧旁)</td><td><span class="badge-st done" style="margin:0">有帧</span></td></tr>
+      <tr><td>文件 part 徽章全集(读取 / 写入 / 移动 / 新增 / 修改 / 删除)</td><td>③ 工具卡 · 六态一览条(2026-07-24 补齐)</td><td><span class="badge-st done" style="margin:0">有帧</span></td></tr>
+      <tr><td>助手侧截图 / 图片 / 媒体预览行</td><td>② 助手输出侧(2026-07-24 补)</td><td><span class="badge-st done" style="margin:0">有帧</span></td></tr>
       <tr><td>行内代码评论(用户消息内)</td><td>① 用户输入侧(2026-07-23 补);右栏审查侧评论见 session-workspace 稿</td><td><span class="badge-st done" style="margin:0">有帧</span></td></tr>
       <tr><td>消息导航(上一条 / 下一条跳转)</td><td>—(仅有「滚动到底」按钮,④ 节;上一条 / 下一条导航代码未接线)</td><td><span class="badge-st gap" style="margin:0">待补</span></td></tr>
-      <tr><td>空态(新会话欢迎面)</td><td>—(首页问候面归 composer 稿;会话内空态待补)</td><td><span class="badge-st gap" style="margin:0">待补</span></td></tr>
+      <tr><td>空态(会话内轻着陆)</td><td>④ 结构(2026-07-24 补);首页问候面归 composer 稿</td><td><span class="badge-st done" style="margin:0">有帧</span></td></tr>
     </tbody>
   </table>
 
