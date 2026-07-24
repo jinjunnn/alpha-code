@@ -1267,3 +1267,65 @@ describe("#568 本回合改动汇总(S2)", () => {
     expect(diffsum.querySelectorAll("div.a-diffsum-row")).toHaveLength(2)
   })
 })
+
+describe("#568 终局接线:C7 斜杠登记 → chip 渲染(端到端)", () => {
+  test("recordSessionSlashOrigin 登记经 sessionSlashOriginsFor 供给投影,chip 按稿渲染;他会话身份零供给", async () => {
+    const slash = await import("../src/renderer/alpha-ui/session-workspace/session-slash-origin")
+    slash.resetSessionSlashOrigins()
+    const identity = { serverKey: "sidecar", directory: "/tmp/workspace", sessionID: "ses_1" }
+    slash.recordSessionSlashOrigin({
+      identity,
+      command: "review",
+      arguments: "pr 12",
+      assistantMessageID: "msg_a1",
+      at: 1,
+    })
+
+    const host = mount()
+    runtime.setTimelineRows(
+      model.projectTimelineRows({
+        messages: [
+          {
+            id: "msg_u1",
+            sessionID: "ses_1",
+            role: "user",
+            time: { created: 1000 },
+            agent: "build",
+            model: { providerID: "deepseek", modelID: "deepseek-reasoner" },
+          },
+          {
+            id: "msg_a1",
+            sessionID: "ses_1",
+            role: "assistant",
+            time: { created: 10, completed: 20 },
+            parentID: "msg_u1",
+            modelID: "deepseek-reasoner",
+            providerID: "deepseek",
+            mode: "build",
+            agent: "build",
+            path: { cwd: "/tmp", root: "/tmp" },
+            cost: 0,
+            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          },
+        ] as never,
+        partsOf: (messageID: string) =>
+          (messageID === "msg_u1"
+            ? [{ id: "prt_u1", sessionID: "ses_1", messageID: "msg_u1", type: "text", text: "expanded prompt" }]
+            : []) as never,
+        status: "idle",
+        // 真供给:C7 registry 的读取口,workspace 装配同一函数。
+        slashOrigins: slash.sessionSlashOriginsFor(identity),
+      }),
+    )
+    await flush()
+
+    const chip = host.querySelector("[data-alpha-timeline-slash] .a-tl-cmd-chip")!
+    expect(chip).not.toBeNull()
+    expect(chip.querySelector(".a-tl-cmd-name")!.textContent).toBe("review")
+    expect(chip.querySelector(".a-tl-cmd-args")!.textContent).toBe("pr 12")
+
+    // I8:他会话身份读不到该登记(供给为空 → chip 不渲染的前提由 registry 保证)。
+    expect(slash.sessionSlashOriginsFor({ ...identity, sessionID: "ses_other" })).toHaveLength(0)
+    slash.resetSessionSlashOrigins()
+  })
+})

@@ -1,4 +1,4 @@
-// B3 云任务终态自动回流 watcher — headless AppInterface child(仿 TimelineInject/AlphaOnboarding:
+// B3 云任务终态自动回流 watcher — headless AppInterface child(仿 AlphaOnboarding:
 // 无 UI、app 启动即活、与路由无关)。agent 经 MCP facade 调 cloud_* 时 app 不知道 jobId,唯一发现
 // 通道是 opencode firehose 的 tool part(解析核 cloud-run-core.ts);发现终态 → main 侧
 // window.api.cloud.saveRun 把 status/artifacts 落 <worktree>/.alpha/runs/<runId>/(ADR-019)→ toast。

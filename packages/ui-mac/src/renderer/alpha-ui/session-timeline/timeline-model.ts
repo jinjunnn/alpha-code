@@ -69,16 +69,19 @@ export interface TimelineMediaSource {
   url: string
 }
 
-// ── 斜杠命令 chip 的可选 typed 数据源(#545 C7 提供;缺席零渲染 fail-closed) ──
-/** send 时 composer 捕获的一条命令来源登记(按 #545 交付口径)。 */
+// ── 斜杠命令 chip 的 typed 数据源(C7 session-slash-origin 登记;缺席零渲染) ──
+/**
+ * send 时 composer 捕获的一条命令来源登记(C7 SessionSlashOrigin 的消费面投影):
+ * assistantMessageID 缺席(send 响应未带)= 对不上任何回合,该登记不出 chip。
+ */
 export interface TimelineSlashOrigin {
   /** send 响应捕获的 assistant messageID(用于对齐所属回合)。 */
-  assistantMessageID: string
+  assistantMessageID?: string
   command: string
   arguments?: string
 }
 
-/** C7 的可选供给接口:按会话身份返回登记;本基线无供给方,消费侧零渲染。 */
+/** C7 的供给接口(sessionSlashOriginsFor);workspace 装配传入,缺席零渲染。 */
 export type SessionSlashOriginsFor = (identity: AlphaSessionIdentity) => readonly TimelineSlashOrigin[]
 
 /** 斜杠登记的字段帽与扫描预算(I7)。 */

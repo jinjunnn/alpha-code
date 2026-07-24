@@ -53,6 +53,8 @@ const EXTERNALIZED_SURFACES = [
   "alpha-ui/session-rail/terminal/terminal-rail-panel.tsx",
   "alpha-ui/session-timeline/session-timeline-view.tsx",
   "alpha-ui/session-workspace/alpha-session-workspace.tsx",
+  "alpha-ui/session-workspace/session-approval-card.tsx",
+  "alpha-ui/session-workspace/session-composer-dock.tsx",
   "alpha-ui/settings.tsx",
   "alpha-ui/surface-boundary.tsx",
   "dev/surface-map-inspector.tsx",

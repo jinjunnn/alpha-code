@@ -182,12 +182,356 @@
 .a-swk-composer-host {
   width: 100%;
   max-width: 860px;
-  height: 92px;
   margin: 0 auto;
-  border: 1px solid var(--a-border);
-  border-radius: var(--a-radius-xl);
+}
+
+/* ── composer 停靠区(REQ-125 C7:审批/提问/任务清单卡 + AlphaComposer 直挂)── */
+.a-swk-dock {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.a-swk-card {
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-lg);
   background: var(--a-surface);
-  box-shadow: var(--a-shadow-sm), var(--a-edge-light);
+  box-shadow: var(--a-edge-light);
+  padding: 12px 14px;
+}
+
+.a-swk-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-md);
+  background: var(--a-surface);
+  color: var(--a-text);
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+  cursor: pointer;
+}
+
+.a-swk-btn:hover:not(:disabled) {
+  background: var(--a-bg-muted);
+  border-color: var(--a-border-strong);
+}
+
+.a-swk-btn:disabled {
+  color: var(--a-text-disabled);
+  cursor: default;
+}
+
+.a-swk-btn--primary {
+  border: 0;
+  background: var(--a-accent-solid);
+  color: var(--a-text-on-accent);
+}
+
+.a-swk-btn--primary:hover:not(:disabled) {
+  background: var(--a-accent-solid-hover);
+  border-color: var(--a-accent-solid-hover);
+}
+
+.a-swk-btn--primary:disabled {
+  background: var(--a-bg-inset);
+  color: var(--a-text-disabled);
+}
+
+.a-swk-approval {
+  border-color: var(--a-warning);
+  background: var(--a-warning-subtle);
+}
+
+.a-swk-approval-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-semibold);
+}
+
+.a-swk-approval-head svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: var(--a-warning);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.a-swk-approval-head code,
+.a-swk-approval-body code {
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-xs);
+  background: var(--a-bg-canvas);
+  border-radius: var(--a-radius-xs);
+  padding: 2px 6px;
+  overflow-wrap: anywhere;
+}
+
+.a-swk-approval-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 12px;
+  font-size: var(--a-text-sm);
+  color: var(--a-text-secondary);
+}
+
+.a-swk-approval-actions,
+.a-swk-question-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.a-swk-approval-error {
+  margin: 8px 0 0;
+  font-size: var(--a-text-xs);
+  color: var(--a-error);
+}
+
+.a-swk-question-item + .a-swk-question-item {
+  margin-top: 10px;
+}
+
+.a-swk-question-head {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 8px;
+}
+
+.a-swk-question-kicker {
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-semibold);
+  letter-spacing: var(--a-tracking-wide);
+  text-transform: uppercase;
+  color: var(--a-text-tertiary);
+}
+
+.a-swk-question-text {
+  font-size: var(--a-text-sm);
+  color: var(--a-text);
+}
+
+.a-swk-question-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.a-swk-option {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-full);
+  background: var(--a-surface);
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-sm);
+  cursor: pointer;
+}
+
+.a-swk-option:hover:not(:disabled) {
+  border-color: var(--a-border-strong);
+  color: var(--a-text);
+}
+
+.a-swk-option[data-selected] {
+  border-color: var(--a-accent-border);
+  background: var(--a-accent-subtle);
+  color: var(--a-accent);
+  font-weight: var(--a-weight-medium);
+}
+
+.a-swk-question-custom {
+  width: 100%;
+  height: 30px;
+  margin-bottom: 10px;
+  padding: 0 10px;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-md);
+  background: var(--a-surface);
+  color: var(--a-text);
+  font-family: inherit;
+  font-size: var(--a-text-sm);
+}
+
+.a-swk-question-custom::placeholder {
+  color: var(--a-text-tertiary);
+}
+
+.a-swk-todos {
+  padding: 6px;
+}
+
+.a-swk-todo-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+}
+
+.a-swk-todo-head svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.a-swk-todo-progress {
+  margin-left: auto;
+  font-size: var(--a-text-2xs);
+  color: var(--a-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.a-swk-todo-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 168px;
+  overflow-y: auto;
+}
+
+.a-swk-todo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8px;
+  font-size: var(--a-text-sm);
+}
+
+.a-swk-todo-box {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--a-border-strong);
+  border-radius: var(--a-radius-xs);
+  color: var(--a-text-on-accent);
+}
+
+.a-swk-todo-box svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.a-swk-todo[data-status="completed"] .a-swk-todo-box {
+  background: var(--a-success);
+  border-color: var(--a-success);
+}
+
+.a-swk-todo[data-status="completed"] .a-swk-todo-text,
+.a-swk-todo[data-status="cancelled"] .a-swk-todo-text {
+  color: var(--a-text-tertiary);
+  text-decoration: line-through;
+}
+
+.a-swk-todo[data-status="in_progress"] .a-swk-todo-box {
+  border-color: var(--a-accent);
+}
+
+.a-swk-todo[data-status="in_progress"] .a-swk-todo-text {
+  color: var(--a-text);
+  font-weight: var(--a-weight-medium);
+}
+
+/* 身份解析前的 composer 轻占位(REQ-125 C558:identityKey 未定 → 不挂 composer,身份到达即挂;
+   仅占位避免布局塌陷,路由解析瞬时不构成可感知延迟)。 */
+.a-swk-composer-pending {
+  min-height: 96px;
+}
+
+/* ── 检查点回退条 / 子会话条(REQ-125 C558:紧凑停靠条,复用 dock 外壳)── */
+.a-swk-revert,
+.a-swk-child {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+}
+
+.a-swk-revert {
+  border-color: var(--a-accent-border);
+  background: var(--a-accent-subtle);
+}
+
+.a-swk-revert svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: var(--a-accent);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.a-swk-revert-text,
+.a-swk-child-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.a-swk-revert-title,
+.a-swk-child-title {
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+  color: var(--a-text);
+}
+
+.a-swk-revert-detail,
+.a-swk-child-parent {
+  font-size: var(--a-text-xs);
+  color: var(--a-text-tertiary);
+}
+
+.a-swk-child-parent {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.a-swk-child-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-text-disabled);
+}
+
+.a-swk-child-dot--running {
+  background: var(--a-accent);
+  animation: a-swk-status-pulse 1.4s var(--a-ease-in-out) infinite;
+}
+
+.a-swk-child-jump {
+  flex: none;
+  margin-left: auto;
 }
 
 .a-swk-rail-host {
@@ -380,7 +724,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .a-swk-status--running .a-swk-status-dot,
-  .a-swk-rail-tab-dot {
+  .a-swk-rail-tab-dot,
+  .a-swk-child-dot--running {
     animation: none;
   }
 

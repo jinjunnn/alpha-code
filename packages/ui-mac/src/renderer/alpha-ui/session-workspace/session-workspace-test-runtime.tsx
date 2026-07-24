@@ -60,6 +60,9 @@ export function SessionWorkspaceHarness() {
   return (
     <SessionWorkspaceShell
       live={liveContext()}
+      // C7:composer 停靠位走与生产同一条直挂通道(props 传入);harness 用标记桩替代真实
+      // SessionComposerDock(后者依赖 ServerSDK/ServerSync 上下文),直挂结构本身被真实断言。
+      composer={() => <div data-alpha-session-composer-stub />}
       panels={panels}
       railMeta={{ reviewCount, terminalRunning }}
       terminalChannel={() => terminalChannel}

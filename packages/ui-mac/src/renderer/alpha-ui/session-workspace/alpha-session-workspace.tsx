@@ -2,6 +2,7 @@ import { ServerConnection, type MaybePreloadableComponent, useServerSDK, useServ
 import { useLocation } from "@solidjs/router"
 import { createContext, createEffect, createMemo, untrack, type ParentProps, useContext } from "solid-js"
 import { parseRoute } from "../../../shared/route-manifest"
+import type { AlphaProjectsApi } from "../../sidebar/use-projects"
 import { SessionRailArtifacts } from "../session-rail/artifacts/session-rail-artifacts"
 import { SessionRailFiles } from "../session-rail/files/session-rail-files"
 import { reviewChangeCount } from "../session-rail/review/review-core"
@@ -9,6 +10,8 @@ import { SessionRailReviewPanel } from "../session-rail/review/review-panel"
 import { useAlphaTerminalEngineChannel } from "../session-rail/terminal/terminal-engine-adapter"
 import { AlphaSessionTimeline } from "../session-timeline/session-timeline"
 import { SurfaceBoundary } from "../surface-boundary"
+import { SessionComposerDock } from "./session-composer-dock"
+import { sessionSlashOriginsFor } from "./session-slash-origin"
 import { sameSessionIdentity, sessionLiveSnapshotOf } from "./session-workspace-core"
 import { type AlphaSessionLiveContext, SessionWorkspaceShell } from "./session-workspace-shell"
 import "./session-workspace.css"
@@ -25,7 +28,7 @@ function SessionLiveProvider(props: ParentProps<{ value: AlphaSessionLiveContext
   return <SessionLiveContext.Provider value={props.value}>{props.children}</SessionLiveContext.Provider>
 }
 
-export function AlphaSessionWorkspace() {
+export function AlphaSessionWorkspace(props: { projects: AlphaProjectsApi }) {
   const location = useLocation()
   const serverSDK = useServerSDK()
   const serverSync = useServerSync()
@@ -72,7 +75,8 @@ export function AlphaSessionWorkspace() {
       <SessionLiveProvider value={live}>
         <SessionWorkspaceShell
           live={live}
-          timeline={(rail) => <AlphaSessionTimeline rail={rail} />}
+          timeline={(rail) => <AlphaSessionTimeline rail={rail} slashOriginsFor={sessionSlashOriginsFor} />}
+          composer={() => <SessionComposerDock live={live} projects={props.projects} />}
           panels={{
             review: (rail) => <SessionRailReviewPanel live={live} rail={rail} />,
             files: (rail) => <SessionRailFiles live={live} rail={rail} />,
@@ -86,6 +90,6 @@ export function AlphaSessionWorkspace() {
   )
 }
 
-export function alphaSessionWorkspaceSurface(): MaybePreloadableComponent {
-  return () => <AlphaSessionWorkspace />
+export function alphaSessionWorkspaceSurface(projects: AlphaProjectsApi): MaybePreloadableComponent {
+  return () => <AlphaSessionWorkspace projects={projects} />
 }

@@ -4,6 +4,10 @@ import { join, resolve } from "node:path"
 
 const tsx = readFileSync(join(import.meta.dir, "alpha-session-workspace.tsx"), "utf8")
 const shell = readFileSync(join(import.meta.dir, "session-workspace-shell.tsx"), "utf8")
+const dock = readFileSync(join(import.meta.dir, "session-composer-dock.tsx"), "utf8")
+const composerMount = readFileSync(join(import.meta.dir, "session-composer-mount.tsx"), "utf8")
+const dockCore = readFileSync(join(import.meta.dir, "session-dock-core.ts"), "utf8")
+const permissionFeed = readFileSync(join(import.meta.dir, "session-permission-feed.ts"), "utf8")
 const css = readFileSync(join(import.meta.dir, "session-workspace.css"), "utf8")
 const rendererIndex = readFileSync(join(import.meta.dir, "../../index.tsx"), "utf8")
 const sidebar = readFileSync(join(import.meta.dir, "../../sidebar/alpha-sidebar.tsx"), "utf8")
@@ -23,7 +27,7 @@ describe("REQ-125 C1b seam skeleton mount", () => {
     })
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
-    expect(output).toContain("9 pass")
+    expect(output).toContain("11 pass")
     expect(output).toContain("0 fail")
   })
 })
@@ -42,7 +46,9 @@ describe("REQ-125 C1b I1 and Recovery static ratchets", () => {
       "UpstreamSessionLeaf",
       "SessionPage",
     ]
-    forbidden.forEach((token) => expect(`${tsx}\n${shell}`).not.toContain(token))
+    forbidden.forEach((token) =>
+      expect(`${tsx}\n${shell}\n${dock}\n${composerMount}\n${dockCore}\n${permissionFeed}`).not.toContain(token),
+    )
     expect(tsx).not.toContain("preloadSessionLeaf")
     expect(sidebar).not.toContain("preloadSessionLeaf")
     expect(tsx).toContain("useServerSDK")
@@ -60,10 +66,44 @@ describe("REQ-125 C1b I1 and Recovery static ratchets", () => {
     expect(css).toContain("@media (prefers-reduced-motion: reduce)")
   })
 
+  test("child-session state is mutually exclusive with a sendable composer (zero promptAsync path when child)", () => {
+    // SessionComposerMount hosts the only send surface (AlphaComposer). It must mount exactly
+    // once, and only as the fallback of the childSession() gate — so a child session renders
+    // just the child card, with no composer host and hence no reachable prompt/send/promptAsync
+    // path. The composer itself lives only inside the mount wrapper, never directly in the dock.
+    expect(dock.match(/<SessionComposerMount\b/g)).toHaveLength(1)
+    expect(dock).not.toContain("<AlphaComposer")
+    expect(dock).toMatch(
+      /when=\{childSession\(\)\}[\s\S]*?fallback=\{[\s\S]*?<SessionComposerMount\b[\s\S]*?SessionChildCard/,
+    )
+    expect(composerMount.match(/<AlphaComposer\b/g)).toHaveLength(1)
+  })
+
+  test("composer instance is keyed by identity; the per-identity stash captures/restores on remount (I8-bound)", () => {
+    // The gate unmounts the composer when a session turns out to be a child (info late). A
+    // per-identity draft stash captures the draft on that unmount and re-injects it on remount,
+    // so unmount is not unrecoverable loss.
+    expect(dock).toContain("createComposerDraftStash")
+    expect(dock).toMatch(/<SessionComposerMount\b[\s\S]*?drafts=\{draftStash\}/)
+    // Root fix (round 4): the composer instance is KEYED by identity — a same-workspace session
+    // switch tears down the old instance (its cleanup captures under its own keyed key) and
+    // mounts a fresh one for the new identity. Key and instance lifecycle are one, so there is no
+    // "frozen key vs reactive directory" split: continued edits after a switch land in the new key.
+    expect(composerMount).toMatch(/when=\{identityKey\(props\.identity\(\)\)\}/)
+    expect(composerMount).toContain("keyed")
+    // restore/capture use the keyed value (mountedKey), never a cleanup-time re-read of identity().
+    expect(composerMount).toMatch(/initialText=\{props\.drafts\.restore\(mountedKey\)\}/)
+    expect(composerMount).toMatch(/onDraftCapture=\{[^}]*props\.drafts\.capture\(mountedKey,\s*draft\)/)
+    expect(composerMount).not.toMatch(/capture\(identityKey\(/)
+    // Identity undefined ⇒ no composer, just a light placeholder (mounts once identity resolves;
+    // avoids the empty-key drop).
+    expect(composerMount).toContain("a-swk-composer-pending")
+  })
+
   test("keeps the release seam and existing Alpha Recovery boundary", () => {
     expect(rendererIndex).toContain(`if (resolved?.session.mode !== "alpha") return undefined`)
-    expect(rendererIndex).toContain(`return alphaSessionWorkspaceSurface()`)
-    expect(rendererIndex).toContain(`const session = productionRoutes.session.mount(resolved)`)
+    expect(rendererIndex).toContain(`return alphaSessionWorkspaceSurface(projects)`)
+    expect(rendererIndex).toContain(`const session = productionRoutes.session.mount(resolved, alphaProjects)`)
     expect(upstreamApp).toContain(`function createTargetSessionRoute(`)
     expect(upstreamApp).toContain(`<TargetSessionRouteContent content={Content} />`)
     expect(upstreamApp).toContain(`<Route path="/server/:serverKey/session/:id" component={TargetSessionRoute} />`)

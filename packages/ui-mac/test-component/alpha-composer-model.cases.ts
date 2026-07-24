@@ -56,13 +56,19 @@ Bun.plugin({
 const command = { options: [], trigger: () => {} } as unknown as AlphaComposerRuntimeProps["command"]
 mock.module("../src/renderer/alpha-ui/providers", () => ({ useCommand: () => command }))
 const { AlphaComposerRuntime } = await import("../src/renderer/alpha-ui/alpha-composer")
+const { SessionComposerMount } = await import("../src/renderer/alpha-ui/session-workspace/session-composer-mount")
+const { createComposerDraftStash } = await import("../src/renderer/alpha-ui/session-workspace/session-dock-core")
+const { identityKey } = await import("../src/renderer/alpha-ui/session-workspace/session-workspace-core")
 const { ModelPickPop } = await import("../src/renderer/alpha-ui/alpha-composer-model")
 const { ToastViewport } = await import("../src/renderer/alpha-ui/Toast")
 const {
   composerModel,
   composerModelProjection,
   composerModelSuspended,
+  observeSessionAgent,
   resetComposerModelProjection,
+  resetPushedAgents,
+  setComposerAgent,
   setComposerModel,
 } = await import(
   "../src/renderer/alpha-ui/composer-state"
@@ -219,6 +225,8 @@ afterEach(() => {
   else process.env.OPENCODE_CONFIG_DIR = savedOpencodeConfigDir
   document.body.replaceChildren()
   setComposerModel(null)
+  setComposerAgent(null)
+  resetPushedAgents()
   resetComposerModelProjection()
 })
 afterAll(() => GlobalRegistrator.unregister())
@@ -923,5 +931,780 @@ describe("ModelPickPop production component", () => {
     click(row ?? null)
     await waitFor(() => expect(selected?.id).toBe("real-custom-model"))
     mounted.dispose()
+  })
+})
+
+describe("AlphaComposer v2 durable send + abort honesty (REQ-125 C7 audit round 2)", () => {
+  const readyContract = (): ModelContract => ({
+    list: async () => platformModels,
+    current: async () => ({ providerID: catalog.platformProvider.id, id: catalog.platformModels[0]!.id }),
+    switch: async () => {},
+  })
+
+  function fakeSessionSdk(overrides?: { abort?: () => Promise<unknown>; promptError?: () => boolean }) {
+    const prompts: Array<Record<string, unknown>> = []
+    const promptAsyncCalls: unknown[] = []
+    const agentSwitches: Array<{ sessionID: string; agent: string }> = []
+    const abortCalls: unknown[] = []
+    // 引擎侧会话档回声:switchAgent 落档后,typed session info 会读到它(sessionAgent 基准)。
+    let engineAgent: string | undefined
+    const client = {
+      command: { list: async () => ({ data: [] }) },
+      session: {
+        promptAsync: async (args: unknown) => {
+          promptAsyncCalls.push(args)
+          return {}
+        },
+        abort: async (args: unknown) => {
+          abortCalls.push(args)
+          return overrides?.abort ? overrides.abort() : {}
+        },
+      },
+      v2: {
+        session: {
+          get: async (args: { sessionID: string }) => ({
+            data: { data: { id: args.sessionID, agent: engineAgent } },
+          }),
+          prompt: async (args: Record<string, unknown>) => {
+            prompts.push(args)
+            if (overrides?.promptError?.()) return { error: { status: 500 } }
+            return { data: { id: "msg_admitted", admittedSeq: prompts.length, delivery: args.delivery ?? "steer" } }
+          },
+          switchAgent: async (args: { sessionID: string; agent: string }) => {
+            agentSwitches.push(args)
+            engineAgent = args.agent
+            return {}
+          },
+        },
+      },
+    }
+    return { client, prompts, promptAsyncCalls, agentSwitches, abortCalls }
+  }
+
+  function sessionMount(sdk: ReturnType<typeof fakeSessionSdk>, running: () => boolean) {
+    const sessionProjects = { ...projects, sdk: () => sdk.client as never } satisfies AlphaProjectsApi
+    return mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "session",
+        projects: sessionProjects,
+        directory: () => "/A",
+        sessionID: () => "A",
+        command,
+        modelContract: readyContract(),
+        sessionDock: {
+          running,
+          contextUsage: () => null,
+          approvalPending: () => false,
+        },
+      }),
+    )
+  }
+
+  function typeText(host: HTMLElement, value: string) {
+    const textarea = host.querySelector("textarea")!
+    textarea.value = value
+    textarea.dispatchEvent(new InputEvent("input", { bubbles: true, data: value }))
+    return textarea
+  }
+
+  function pressEnter(textarea: HTMLTextAreaElement) {
+    textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+  }
+
+  test("会话发送走 v2 durable 队列:空闲省略 delivery,运行中 delivery=queue(Enter 同路径),promptAsync 退役", async () => {
+    installApi()
+    const sdk = fakeSessionSdk()
+    const [running, setRunning] = createSignal(false)
+    const mounted = sessionMount(sdk, running)
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+
+    const textarea = typeText(mounted.host, "跑一下测试")
+    await waitFor(() =>
+      expect(mounted.host.querySelector<HTMLButtonElement>(".a-comp-send")!.disabled).toBe(false),
+    )
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.prompts).toHaveLength(1))
+    expect(sdk.prompts[0]).toMatchObject({ sessionID: "A", prompt: { text: "跑一下测试" } })
+    expect("delivery" in sdk.prompts[0]!).toBe(false)
+
+    // 运行中:发送键换停止形态,Enter 仍发送且必须走 delivery:"queue"(文案「发送后排队」的真实语义)。
+    setRunning(true)
+    await waitFor(() => expect(mounted.host.querySelector(".a-comp-stop")).not.toBeNull())
+    pressEnter(typeText(mounted.host, "补一个用例"))
+    await waitFor(() => expect(sdk.prompts).toHaveLength(2))
+    expect(sdk.prompts[1]).toMatchObject({
+      sessionID: "A",
+      delivery: "queue",
+      prompt: { text: "补一个用例" },
+    })
+
+    expect(sdk.promptAsyncCalls).toEqual([])
+    expect(sdk.agentSwitches).toEqual([]) // 默认档(无 plan/readonly)不动会话 agent
+    mounted.dispose()
+  })
+
+  test("停止键:SDK { error } 信封按失败处理,如实提示中止失败", async () => {
+    installApi()
+    const { ToastViewport } = await import("../src/renderer/alpha-ui/Toast")
+    const sdk = fakeSessionSdk({ abort: async () => ({ error: { status: 409 } }) })
+    const mounted = sessionMount(sdk, () => true)
+    const toastHost = mount(() => createComponent(ToastViewport, {}))
+    await waitFor(() => expect(mounted.host.querySelector(".a-comp-stop")).not.toBeNull())
+
+    click(mounted.host.querySelector(".a-comp-stop"))
+    await waitFor(() => expect(sdk.abortCalls).toHaveLength(1))
+    await waitFor(() => expect(document.body.textContent).toContain(zh["alpha.composer.abortFailed"]))
+
+    mounted.dispose()
+    toastHost.dispose()
+  })
+})
+
+describe("AlphaComposer 档位协议 (REQ-125 C7 audit round 3)", () => {
+  const readyContract = (): ModelContract => ({
+    list: async () => platformModels,
+    current: async () => ({ providerID: catalog.platformProvider.id, id: catalog.platformModels[0]!.id }),
+    switch: async () => {},
+  })
+
+  function fakeSessionSdk(overrides?: { promptError?: () => boolean }) {
+    const prompts: Array<Record<string, unknown>> = []
+    const agentSwitches: Array<{ sessionID: string; agent: string }> = []
+    let engineAgent: string | undefined
+    const client = {
+      command: { list: async () => ({ data: [] }) },
+      session: {
+        promptAsync: async () => ({}),
+        abort: async () => ({}),
+      },
+      v2: {
+        session: {
+          get: async (args: { sessionID: string }) => ({
+            data: { data: { id: args.sessionID, agent: engineAgent } },
+          }),
+          prompt: async (args: Record<string, unknown>) => {
+            prompts.push(args)
+            if (overrides?.promptError?.()) return { error: { status: 500 } }
+            return { data: { id: "msg_admitted", admittedSeq: prompts.length } }
+          },
+          switchAgent: async (args: { sessionID: string; agent: string }) => {
+            agentSwitches.push(args)
+            engineAgent = args.agent
+            return {}
+          },
+        },
+      },
+    }
+    return { client, prompts, agentSwitches, sessionAgent: () => engineAgent }
+  }
+
+  function agentMount(sdk: ReturnType<typeof fakeSessionSdk>, running: () => boolean) {
+    const sessionProjects = { ...projects, sdk: () => sdk.client as never } satisfies AlphaProjectsApi
+    return mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "session",
+        projects: sessionProjects,
+        directory: () => "/A",
+        sessionID: () => "A",
+        command,
+        modelContract: readyContract(),
+        sessionDock: {
+          running,
+          contextUsage: () => null,
+          approvalPending: () => false,
+        },
+      }),
+    )
+  }
+
+  function typeText(host: HTMLElement, value: string) {
+    const textarea = host.querySelector("textarea")!
+    textarea.value = value
+    textarea.dispatchEvent(new InputEvent("input", { bubbles: true, data: value }))
+    return textarea
+  }
+
+  function pressEnter(textarea: HTMLTextAreaElement) {
+    textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+  }
+
+  async function waitReady(host: HTMLElement, text: string) {
+    const textarea = typeText(host, text)
+    await waitFor(() => expect(host.querySelector<HTMLButtonElement>(".a-comp-send")!.disabled).toBe(false))
+    return textarea
+  }
+
+  test("prompt 提交失败:档位切换立即回滚,会话档不残留(症状①)", async () => {
+    installApi()
+    let failPrompt = true
+    const sdk = fakeSessionSdk({ promptError: () => failPrompt })
+    const mounted = agentMount(sdk, () => false)
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+    setComposerAgent("plan")
+
+    const textarea = await waitReady(mounted.host, "按计划来")
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.prompts).toHaveLength(1))
+    // 先切 plan,提交失败后立即滚回默认档 —— 会话档位与发送前一致。
+    await waitFor(() => expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan", "build"]))
+    expect(sdk.sessionAgent()).toBe("build")
+    // 失败不吞输入:正文保留,可修正重发。
+    expect((mounted.host.querySelector("textarea") as HTMLTextAreaElement).value).toBe("按计划来")
+
+    // 修复后重发:重新落 plan 档并提交成功。
+    failPrompt = false
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.prompts).toHaveLength(2))
+    await waitFor(() => expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan", "build", "plan"]))
+    mounted.dispose()
+  })
+
+  test("运行中需要改档的发送如实拒绝:零切档零提交,当前 drain 档位不被污染(症状②)", async () => {
+    installApi()
+    const { ToastViewport } = await import("../src/renderer/alpha-ui/Toast")
+    const sdk = fakeSessionSdk()
+    const mounted = agentMount(sdk, () => true)
+    const toastHost = mount(() => createComponent(ToastViewport, {}))
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+    setComposerAgent("plan")
+
+    const textarea = typeText(mounted.host, "排队执行")
+    pressEnter(textarea)
+    await waitFor(() => expect(document.body.textContent).toContain(zh["alpha.composer.agentQueueBlocked"]))
+    expect(sdk.agentSwitches).toEqual([])
+    expect(sdk.prompts).toEqual([])
+
+    // 无档位变化的排队发送不受影响:delivery=queue 且依旧零切档。
+    setComposerAgent(null)
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.prompts).toHaveLength(1))
+    expect(sdk.prompts[0]).toMatchObject({ delivery: "queue" })
+    expect(sdk.agentSwitches).toEqual([])
+    mounted.dispose()
+    toastHost.dispose()
+  })
+
+  test("退出 plan 后首次发送把会话档收回默认;账本只回滚自己推送的档(症状③)", async () => {
+    installApi()
+    const sdk = fakeSessionSdk()
+    const mounted = agentMount(sdk, () => false)
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+
+    setComposerAgent("plan")
+    let textarea = await waitReady(mounted.host, "先按计划来")
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.prompts).toHaveLength(1))
+    expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"])
+
+    // 退出 plan:下一次普通发送先把会话档收回引擎默认,旧档不残留。
+    setComposerAgent(null)
+    textarea = await waitReady(mounted.host, "普通消息")
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.prompts).toHaveLength(2))
+    expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan", "build"])
+
+    // 已在默认档:再次普通发送零切档(幂等,不打扰用户在别处设置的档)。
+    textarea = await waitReady(mounted.host, "再来一条")
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.prompts).toHaveLength(3))
+    expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan", "build"])
+    mounted.dispose()
+  })
+})
+
+describe("AlphaComposer 档位决策权威读 (REQ-125 C7 audit round 5)", () => {
+  const readyContract = (): ModelContract => ({
+    list: async () => platformModels,
+    current: async () => ({ providerID: catalog.platformProvider.id, id: catalog.platformModels[0]!.id }),
+    switch: async () => {},
+  })
+
+  function fakeAgentSdk() {
+    const prompts: Array<Record<string, unknown>> = []
+    const agentSwitches: Array<{ sessionID: string; agent: string }> = []
+    const pendingGates: Array<(value: unknown) => void> = []
+    // engineAgent = 服务端权威档;syncAgent = serverSync 式滞后缓存(生产中不消费 v2 切档
+    // 事件、可无限落后)——协议不得消费它,本 fake 供「滞后两拍」对照断言。
+    let engineAgent: string | undefined
+    let syncAgent: string | undefined
+    let gateNext = false
+    let failGets = false
+    let hangGets = false
+    let getCalls = 0
+    const client = {
+      command: { list: async () => ({ data: [] }) },
+      session: { promptAsync: async () => ({}), abort: async () => ({}) },
+      v2: {
+        session: {
+          get: (args: { sessionID: string }) => {
+            getCalls++
+            // 悬挂模式:永不 settle 且无视 signal —— 复现 SDK 关闭默认超时下的挂死传输。
+            if (hangGets) return new Promise(() => {})
+            if (failGets) return Promise.resolve({ error: { status: 503 } })
+            return Promise.resolve({ data: { data: { id: args.sessionID, agent: engineAgent } } })
+          },
+          prompt: (args: Record<string, unknown>) => {
+            prompts.push(args)
+            if (gateNext) {
+              gateNext = false
+              return new Promise((resolve) => pendingGates.push(resolve))
+            }
+            return Promise.resolve({ data: { id: "msg_admitted", admittedSeq: prompts.length } })
+          },
+          switchAgent: async (args: { sessionID: string; agent: string }) => {
+            agentSwitches.push(args)
+            engineAgent = args.agent
+            return {}
+          },
+        },
+      },
+    }
+    return {
+      client,
+      prompts,
+      agentSwitches,
+      engineAgent: () => engineAgent,
+      syncAgent: () => syncAgent,
+      /** 服务端权威档直接变更(模拟用户在别处改档;滞后缓存刻意不动)。 */
+      setEngineAgent: (agent: string | undefined) => {
+        engineAgent = agent
+      },
+      /** 滞后缓存单独推进(永远可以落后服务端任意拍)。 */
+      setSyncAgent: (agent: string | undefined) => {
+        syncAgent = agent
+      },
+      setFailGets: (value: boolean) => {
+        failGets = value
+      },
+      setHangGets: (value: boolean) => {
+        hangGets = value
+      },
+      gateNextPrompt: () => {
+        gateNext = true
+      },
+      resolveGatedPrompt: (value: unknown) => {
+        pendingGates.shift()?.(value)
+      },
+      getCalls: () => getCalls,
+    }
+  }
+
+  function agentMount(
+    sdk: ReturnType<typeof fakeAgentSdk>,
+    running: () => boolean,
+    agentReadTimeoutMs?: number,
+  ) {
+    const sessionProjects = { ...projects, sdk: () => sdk.client as never } satisfies AlphaProjectsApi
+    return mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "session",
+        projects: sessionProjects,
+        directory: () => "/A",
+        sessionID: () => "A",
+        command,
+        modelContract: readyContract(),
+        agentReadTimeoutMs,
+        sessionDock: {
+          running,
+          contextUsage: () => null,
+          approvalPending: () => false,
+        },
+      }),
+    )
+  }
+
+  function typeText(host: HTMLElement, value: string) {
+    const textarea = host.querySelector("textarea")!
+    textarea.value = value
+    textarea.dispatchEvent(new InputEvent("input", { bubbles: true, data: value }))
+    return textarea
+  }
+
+  function pressEnter(textarea: HTMLTextAreaElement) {
+    textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+  }
+
+  async function waitReady(host: HTMLElement, text: string) {
+    const textarea = typeText(host, text)
+    await waitFor(() => expect(host.querySelector<HTMLButtonElement>(".a-comp-send")!.disabled).toBe(false))
+    return textarea
+  }
+
+  test("权威读悬挂(永不 settle 且无视 signal):有界超时后如实发送失败,sending 复位可重试(审计 R5)", async () => {
+    installApi()
+    const { ToastViewport } = await import("../src/renderer/alpha-ui/Toast")
+    const sdk = fakeAgentSdk()
+    sdk.setEngineAgent("build")
+    const mounted = agentMount(sdk, () => false, 40)
+    const toastHost = mount(() => createComponent(ToastViewport, {}))
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+
+    sdk.setHangGets(true)
+    const textarea = await waitReady(mounted.host, "发一条")
+    pressEnter(textarea)
+    // 悬挂 GET 在有界时间内按失败 settle:如实提示发送失败,零提交,正文保留。
+    await waitFor(() => expect(document.body.textContent).toContain(zh["alpha.composer.sendFailed"]))
+    expect(sdk.prompts).toHaveLength(0)
+    expect((mounted.host.querySelector("textarea") as HTMLTextAreaElement).value).toBe("发一条")
+    // sending 复位:发送键回到可用态(不锁死,无需重建页面)。
+    await waitFor(() => expect(mounted.host.querySelector<HTMLButtonElement>(".a-comp-send")!.disabled).toBe(false))
+
+    // 传输恢复后同一输入可直接重试成功。
+    sdk.setHangGets(false)
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.prompts).toHaveLength(1))
+    mounted.dispose()
+    toastHost.dispose()
+  })
+
+  test("CAS 弃权:sync 缓存滞后两拍下,失败回滚决策仍以权威读为准(用户并发 review 不被覆盖)", async () => {
+    installApi()
+    const sdk = fakeAgentSdk()
+    sdk.setEngineAgent("build")
+    // 滞后缓存停在两拍前的状态,协议不得消费它。
+    sdk.setSyncAgent(undefined)
+    const mounted = agentMount(sdk, () => false)
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+    setComposerAgent("plan")
+
+    const textarea = await waitReady(mounted.host, "按计划来")
+    sdk.gateNextPrompt()
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"]))
+    await waitFor(() => expect(sdk.prompts).toHaveLength(1))
+
+    // prompt 未决期间用户在别处把服务端档切到 review;滞后缓存依旧停在 undefined(落后两拍)。
+    sdk.setEngineAgent("review")
+    expect(sdk.syncAgent()).toBeUndefined()
+    sdk.resolveGatedPrompt({ error: { status: 500 } })
+    await flush()
+    await flush()
+
+    // CAS 权威读到第三值 review → 弃权不覆盖;零回滚写入。
+    expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"])
+    expect(sdk.engineAgent()).toBe("review")
+    expect(sdk.getCalls()).toBeGreaterThanOrEqual(2) // 发送前读 + CAS 核验读,均权威
+
+    // 弃权后随后的普通发送不会把 review 收回默认档。
+    setComposerAgent(null)
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.prompts).toHaveLength(2))
+    expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"])
+    expect(sdk.engineAgent()).toBe("review")
+    mounted.dispose()
+  })
+
+  test("CAS 回滚:权威读仍是 composer 刚设的 desired → 回滚生效(sync 缓存全程无关)", async () => {
+    installApi()
+    const sdk = fakeAgentSdk()
+    sdk.setEngineAgent("build")
+    const mounted = agentMount(sdk, () => false)
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+    setComposerAgent("plan")
+
+    const textarea = await waitReady(mounted.host, "按计划来")
+    sdk.gateNextPrompt()
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.prompts).toHaveLength(1))
+    sdk.resolveGatedPrompt({ error: { status: 500 } })
+    await flush()
+    await flush()
+
+    await waitFor(() => expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan", "build"]))
+    expect(sdk.engineAgent()).toBe("build")
+    mounted.dispose()
+  })
+
+  test("CAS 权威读不可得:不盲写回滚(宁留 desired 也不冒覆盖并发用户改档的险)", async () => {
+    installApi()
+    const sdk = fakeAgentSdk()
+    sdk.setEngineAgent("build")
+    const mounted = agentMount(sdk, () => false)
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+    setComposerAgent("plan")
+
+    const textarea = await waitReady(mounted.host, "按计划来")
+    sdk.gateNextPrompt()
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.prompts).toHaveLength(1))
+    sdk.setFailGets(true) // 失败窗口内权威读也不可得
+    sdk.resolveGatedPrompt({ error: { status: 500 } })
+    await flush()
+    await flush()
+
+    expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"]) // 零盲回滚
+    sdk.setFailGets(false)
+    mounted.dispose()
+  })
+
+  test("账本漂移弃权:服务端档被他处改写后,普通发送经权威读弃权、零重置(sync 缓存滞后无影响)", async () => {
+    installApi()
+    const sdk = fakeAgentSdk()
+    sdk.setEngineAgent("build")
+    const mounted = agentMount(sdk, () => false)
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+
+    setComposerAgent("plan")
+    let textarea = await waitReady(mounted.host, "先按计划来")
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.prompts).toHaveLength(1))
+    expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"])
+
+    // 用户在别处把服务端档改为 review;滞后缓存(两拍前)从未反映任何变化。
+    sdk.setEngineAgent("review")
+    expect(sdk.syncAgent()).toBeUndefined()
+
+    // 退出 plan 的普通发送:权威读到 review ≠ 账本 plan → 弃权,不重置用户选择。
+    setComposerAgent(null)
+    textarea = await waitReady(mounted.host, "普通消息")
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.prompts).toHaveLength(2))
+    expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"])
+    expect(sdk.engineAgent()).toBe("review")
+
+    // 弃权后再次普通发送依旧零切档(不重新认领他人设置)。
+    textarea = await waitReady(mounted.host, "再来一条")
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.prompts).toHaveLength(3))
+    expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"])
+    mounted.dispose()
+  })
+})
+
+// REQ-125 C558:seam dock 的 child-session 门翻转会卸载 composer(保持子会话零可发送路径);
+// per-identity 草稿暂存依赖 AlphaComposer 的两点契约 —— ①卸载时经 onDraftCapture 交回当前草稿,
+// ②initialText 注入即为 textarea 起始值(门翻回时还原)。这里对真实组件验这两点。
+describe("REQ-125 C558 composer draft capture/restore contract", () => {
+  const contract: ModelContract = {
+    list: async () => [],
+    current: async () => undefined,
+    switch: async () => {},
+  }
+
+  test("卸载时经 onDraftCapture 交回当前输入草稿(门翻转→child 不丢草稿)", async () => {
+    installApi()
+    const captured: string[] = []
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "session",
+        projects,
+        directory: () => "/A",
+        sessionID: () => "A",
+        command,
+        modelContract: contract,
+        onDraftCapture: (text) => captured.push(text),
+      }),
+    )
+    await flush()
+    const ta = mounted.host.querySelector<HTMLTextAreaElement>("textarea.a-comp-input")
+    expect(ta).not.toBeNull()
+    ta!.value = "half-written draft"
+    ta!.dispatchEvent(new Event("input", { bubbles: true }))
+    await flush()
+    mounted.dispose() // 门翻转 → child:composer 卸载
+    expect(captured).toEqual(["half-written draft"])
+  })
+
+  test("initialText 注入 → textarea 起始即为还原的草稿(门翻回)", async () => {
+    installApi()
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "session",
+        projects,
+        directory: () => "/A",
+        sessionID: () => "A",
+        command,
+        modelContract: contract,
+        initialText: "restored draft",
+      }),
+    )
+    await flush()
+    const ta = mounted.host.querySelector<HTMLTextAreaElement>("textarea.a-comp-input")
+    expect(ta?.value).toBe("restored draft")
+    mounted.dispose()
+  })
+})
+
+// REQ-125 C558 复审第4轮 Major(根修):composer 实例按身份 keyed —— 身份切换=旧实例卸载(用自身
+// keyed 键捕获)+ 新实例挂载(restore 新身份)。键与实例生命周期一致,消除「键定格 A、目录响应式
+// 切 B」的分裂。对真实 SessionComposerMount(内挂真实 AlphaComposer)验复审点名的三个序。
+describe("REQ-125 C558 SessionComposerMount 按身份 keyed:切会话草稿正确归属", () => {
+  const identityFor = (sessionID: string) => ({ serverKey: "sidecar", directory: "/ws", sessionID })
+  const dockApi = {
+    running: () => false,
+    contextUsage: () => null,
+    approvalPending: () => false,
+    onSlashCommand: () => {},
+  }
+  // SessionComposerMount 内部经 createModelContract(props.projects.sdk) 自建模型档,故需可用 sdk
+  // (否则 list 抛 ModelContractError,composer 不渲染)。这里只求 composer 挂起、textarea 可见。
+  const keyedProjects = {
+    ...projects,
+    sdk: () =>
+      ({
+        v2: {
+          model: { list: async () => ({ data: { data: platformModels } }) },
+          session: {
+            get: async ({ sessionID }: { sessionID: string }) => ({
+              data: { data: { id: sessionID, model: undefined, agent: undefined } },
+            }),
+            switchModel: async () => ({}),
+          },
+        },
+      }) as never,
+  } satisfies AlphaProjectsApi
+  const ta = (host: HTMLElement) => host.querySelector<HTMLTextAreaElement>("textarea.a-comp-input")
+  const type = (el: HTMLTextAreaElement, value: string) => {
+    el.value = value
+    el.dispatchEvent(new Event("input", { bubbles: true }))
+  }
+
+  test("① A 输入→切 B→继续在 B 编辑→卸载:B 草稿入 B 键、A 键仍是 A 的", async () => {
+    installApi()
+    const drafts = createComposerDraftStash()
+    const [identity, setIdentity] = createSignal(identityFor("A"))
+    const mounted = mount(() => createComponent(SessionComposerMount, { identity, projects: keyedProjects, dock: dockApi, drafts }))
+    await flush()
+    const taA = ta(mounted.host)!
+    expect(taA).not.toBeNull()
+    type(taA, "A-draft")
+    await flush()
+    setIdentity(identityFor("B")) // keyed 重挂:旧 A 实例卸载(捕获 A-draft@keyA)+ 新 B 实例挂载
+    await flush()
+    const taB = ta(mounted.host)!
+    expect(taB).not.toBe(taA) // 已是新实例的 textarea
+    expect(taB.value).toBe("") // B 首挂:无暂存
+    type(taB, "B-draft") // 继续在 B 编辑(根修前会误入 A 键)
+    await flush()
+    mounted.dispose() // 卸载 B 实例 → 捕获 B-draft@keyB
+    expect(drafts.restore(identityKey(identityFor("B")))).toBe("B-draft")
+    expect(drafts.restore(identityKey(identityFor("A")))).toBe("A-draft")
+  })
+
+  test("② undefined→B:B 键正常捕获(身份未定不挂 composer,无空键丢弃)", async () => {
+    installApi()
+    const drafts = createComposerDraftStash()
+    const [identity, setIdentity] = createSignal<ReturnType<typeof identityFor> | undefined>(undefined)
+    const mounted = mount(() => createComponent(SessionComposerMount, { identity, projects: keyedProjects, dock: dockApi, drafts }))
+    await flush()
+    expect(ta(mounted.host)).toBeNull() // 身份 undefined → 不挂 composer
+    expect(mounted.host.querySelector(".a-swk-composer-pending")).not.toBeNull() // 轻占位
+    setIdentity(identityFor("B")) // 身份到达 → 挂 B composer
+    await flush()
+    const taB = ta(mounted.host)!
+    expect(taB).not.toBeNull()
+    type(taB, "B-draft")
+    await flush()
+    mounted.dispose() // 捕获 B-draft@keyB(非空键)
+    expect(drafts.restore(identityKey(identityFor("B")))).toBe("B-draft")
+  })
+
+  test("③ A→B→回 A:重挂经 stash 往返恢复 A 草稿", async () => {
+    installApi()
+    const drafts = createComposerDraftStash()
+    const [identity, setIdentity] = createSignal(identityFor("A"))
+    const mounted = mount(() => createComponent(SessionComposerMount, { identity, projects: keyedProjects, dock: dockApi, drafts }))
+    await flush()
+    type(ta(mounted.host)!, "A-draft")
+    await flush()
+    setIdentity(identityFor("B")) // 旧 A 卸载 → A-draft@keyA
+    await flush()
+    setIdentity(identityFor("A")) // 回 A → 新实例 restore(keyA)=A-draft
+    await flush()
+    expect(ta(mounted.host)?.value).toBe("A-draft")
+    mounted.dispose()
+  })
+})
+
+// REQ-125 C558 复审第5-6轮 Major:v2 durable 发送(session.prompt)在途期间切会话,composer 卸载不能把
+// **正在发送的文本**当草稿捕获(否则翻回「复活」→ 重复发送);在途被改成新草稿则照常捕获(不丢)。修:
+// onCleanup 仅当 sending() 且 text()===submittedText(在途未编辑)才跳过。这里驱动真实 durable 发送验。
+describe("REQ-125 C558 发送在途与草稿捕获互斥(v2 durable)", () => {
+  const readyContract = (): ModelContract => ({
+    list: async () => platformModels,
+    current: async () => ({ providerID: catalog.platformProvider.id, id: catalog.platformModels[0]!.id }),
+    switch: async () => {},
+  })
+  // 最小假 sdk:session.get 供 readSessionAgent(权威档读),session.prompt 可控(挂起/失败)。
+  const fakeSdk = (prompt: (args: Record<string, unknown>) => Promise<unknown>) =>
+    ({
+      command: { list: async () => ({ data: [] }) },
+      session: { promptAsync: async () => ({}), abort: async () => ({}) },
+      v2: {
+        session: {
+          get: async ({ sessionID }: { sessionID: string }) => ({
+            data: { data: { id: sessionID, agent: undefined } },
+          }),
+          prompt,
+          switchAgent: async () => ({}),
+        },
+      },
+    }) as never
+  const draftMount = (sdk: unknown, onDraftCapture: (text: string) => void) =>
+    mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "session",
+        projects: { ...projects, sdk: () => sdk as never } satisfies AlphaProjectsApi,
+        directory: () => "/A",
+        sessionID: () => "A",
+        command,
+        modelContract: readyContract(),
+        onDraftCapture,
+      }),
+    )
+  const typeInto = (host: HTMLElement, value: string) => {
+    const el = host.querySelector<HTMLTextAreaElement>("textarea.a-comp-input")!
+    el.value = value
+    el.dispatchEvent(new InputEvent("input", { bubbles: true, data: value }))
+    return el
+  }
+  const enter = (el: HTMLTextAreaElement) =>
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+  const sendDisabled = (host: HTMLElement) => host.querySelector<HTMLButtonElement>(".a-comp-send")!.disabled
+
+  test("输入→发送挂起(in-flight)→卸载:跳过在途文本(不入 stash,不复活/不重发)", async () => {
+    installApi()
+    let release: (v: unknown) => void = () => {}
+    const captured: string[] = []
+    const mounted = draftMount(fakeSdk(() => new Promise((res) => (release = res))), (text) => captured.push(text))
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+    const el = typeInto(mounted.host, "in-flight message")
+    await waitFor(() => expect(sendDisabled(mounted.host)).toBe(false))
+    enter(el) // 发起 durable 发送 → sending=true,session.prompt 挂起
+    await waitFor(() => expect(sendDisabled(mounted.host)).toBe(true))
+    mounted.dispose() // 在途中卸载(切走会话)
+    expect(captured).toEqual([]) // 在途文本未被当草稿捕获 → 翻回不复活、不重发
+    release({ data: { id: "msg" } })
+  })
+
+  test("发 A 在途→改成新草稿 B→卸载:B 照常捕获(在途编辑不丢)", async () => {
+    installApi()
+    let release: (v: unknown) => void = () => {}
+    const captured: string[] = []
+    const mounted = draftMount(fakeSdk(() => new Promise((res) => (release = res))), (text) => captured.push(text))
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+    const el = typeInto(mounted.host, "message A")
+    await waitFor(() => expect(sendDisabled(mounted.host)).toBe(false))
+    enter(el) // 发 A → sending=true,submittedText="message A"
+    await waitFor(() => expect(sendDisabled(mounted.host)).toBe(true))
+    typeInto(mounted.host, "draft B") // 在途改成新草稿(textarea 仍可编辑)
+    await flush()
+    mounted.dispose() // text()="draft B" ≠ submittedText → 照常捕获
+    expect(captured).toEqual(["draft B"]) // 在途编辑的新草稿不丢
+    release({ data: { id: "msg" } })
+  })
+
+  test("发送失败→卸载:文本仍可恢复(sending 落回 false,capture 拿到失败保留文本)", async () => {
+    installApi()
+    const captured: string[] = []
+    const mounted = draftMount(fakeSdk(async () => ({ error: { status: 500 } })), (text) => captured.push(text))
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+    const el = typeInto(mounted.host, "will fail")
+    await waitFor(() => expect(sendDisabled(mounted.host)).toBe(false))
+    enter(el) // durable prompt 返回 error → 失败,文本保留(既有失败路径)
+    await waitFor(() => expect(el.value).toBe("will fail"))
+    await waitFor(() => expect(sendDisabled(mounted.host)).toBe(false)) // sending 落回 false
+    mounted.dispose() // 失败后卸载 → capture 拿到保留文本
+    expect(captured).toEqual(["will fail"])
   })
 })

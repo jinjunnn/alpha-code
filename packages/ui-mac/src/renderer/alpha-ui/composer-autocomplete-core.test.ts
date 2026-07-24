@@ -6,6 +6,7 @@ import { describe, expect, test } from "bun:test"
 import {
   applyMention,
   buildMentionParts,
+  buildPromptInput,
   buildSlashList,
   commandOrigin,
   COMMAND_ORIGIN_LABEL,
@@ -106,6 +107,39 @@ describe("buildMentionParts", () => {
   test("mention edited out of the text sends NO part", () => {
     const mentions: MentionPart[] = [{ type: "agent", name: "general", content: "@general" }]
     expect(buildMentionParts("do it yourself", ws, mentions)).toHaveLength(0)
+  })
+})
+
+describe("buildPromptInput — v2 durable 队列的 PromptInput 载荷(REQ-125 C7,端到端语义)", () => {
+  test("附件走 data: uri;文件 mention 不上送 file://(路径留正文);agent mention = 元数据 + v1 同文引导语", () => {
+    const original = "看 @src/a b.ts 交给 @general"
+    const payload = buildPromptInput({
+      text: original,
+      mentions: [
+        { type: "file", path: "src/a b.ts", content: "@src/a b.ts" },
+        { type: "agent", name: "general", content: "@general" },
+      ],
+      attachments: [{ url: "data:image/png;base64,AAAA", name: "shot.png" }],
+    })
+    // 文件 mention 不产生 files 条目:v2 媒体管线只接受 data: 载荷,file:// 会在 admission
+    // 后被 provider 整回合拒绝;路径引用保留在正文由引擎工具读取。
+    expect(payload.files).toEqual([{ uri: "data:image/png;base64,AAAA", name: "shot.png" }])
+    // agent mention:元数据(source 偏移指向原文)+ v1 materialization 同文引导语接续正文,
+    // task/subagent 调用语义不静默丢失。
+    expect(payload.agents).toEqual([
+      { name: "general", source: { start: original.indexOf("@general"), end: original.length, text: "@general" } },
+    ])
+    expect(payload.text).toBe(
+      `${original}\n\nUse the above message and context to generate a prompt and call the task tool with subagent: general`,
+    )
+  })
+  test("被编辑掉的 mention 不入载荷;空集合字段整体省略,正文不追加引导语", () => {
+    const payload = buildPromptInput({
+      text: "plain send",
+      mentions: [{ type: "agent", name: "general", content: "@general" }],
+      attachments: [],
+    })
+    expect(payload).toEqual({ text: "plain send" })
   })
 })
 
