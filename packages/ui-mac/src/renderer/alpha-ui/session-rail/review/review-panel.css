@@ -1,0 +1,468 @@
+/* REQ-125 C2 — review panel. Alpha-owned form: --a-* tokens only (I5); both
+ * themes come from the token layer; focus rings come from the shared
+ * `.a-ui :focus-visible` contract in base.css. */
+@import "../../tokens.css";
+@import "../../base.css";
+
+.a-rvw-root {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* SVG stroke defaults (overridden by more specific rules below). */
+.a-rvw-root svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+/* ── summary row ── */
+.a-rvw-sum {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  flex-wrap: wrap;
+  padding: 12px 14px 8px;
+}
+
+.a-rvw-sum-title {
+  color: var(--a-text);
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-semibold);
+}
+
+.a-rvw-stat {
+  display: inline-flex;
+  gap: 6px;
+  font-size: var(--a-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.a-rvw-stat-add {
+  color: var(--a-success);
+}
+
+.a-rvw-stat-del {
+  color: var(--a-error);
+}
+
+.a-rvw-grow {
+  flex: 1;
+}
+
+.a-rvw-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--a-radius-md);
+  background: var(--a-bg-muted);
+}
+
+.a-rvw-seg button {
+  padding: 3px 9px;
+  border: 0;
+  border-radius: var(--a-radius-sm);
+  background: transparent;
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-medium);
+  cursor: pointer;
+}
+
+.a-rvw-seg button.a-rvw-seg--on {
+  background: var(--a-surface);
+  color: var(--a-text);
+  box-shadow: var(--a-shadow-xs);
+}
+
+.a-rvw-expand {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border: 0;
+  border-radius: var(--a-radius-sm);
+  background: transparent;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-2xs);
+  cursor: pointer;
+}
+
+.a-rvw-expand:hover {
+  background: var(--a-bg-muted);
+  color: var(--a-text);
+}
+
+.a-rvw-expand-ic {
+  width: 11px;
+  height: 11px;
+}
+
+/* ── file cards ── */
+.a-rvw-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 10px 14px;
+}
+
+.a-rvw-file {
+  overflow: hidden;
+  border: 1px solid var(--a-border-faint);
+  border-radius: var(--a-radius-lg);
+  background: var(--a-surface);
+  box-shadow: var(--a-edge-light);
+}
+
+.a-rvw-fhead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 11px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.a-rvw-fhead:hover {
+  background: var(--a-bg-subtle);
+}
+
+.a-rvw-fic {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  color: var(--a-text-tertiary);
+}
+
+.a-rvw-fn {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--a-text);
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.a-rvw-dir {
+  color: var(--a-text-tertiary);
+}
+
+.a-rvw-kind {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: var(--a-radius-full);
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-bold);
+}
+
+.a-rvw-kind--added {
+  background: var(--a-success-subtle);
+  color: var(--a-success);
+}
+
+.a-rvw-kind--modified {
+  background: var(--a-warning-subtle);
+  color: var(--a-warning);
+}
+
+.a-rvw-kind--deleted {
+  background: var(--a-error-subtle);
+  color: var(--a-error);
+}
+
+.a-rvw-fhead .a-rvw-stat {
+  margin-left: auto;
+}
+
+.a-rvw-chev {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--a-text-tertiary);
+  transition: transform var(--a-dur-fast) var(--a-ease-out);
+}
+
+.a-rvw-file--open .a-rvw-chev {
+  transform: rotate(90deg);
+}
+
+.a-rvw-fbody {
+  border-top: 1px solid var(--a-border-faint);
+}
+
+.a-rvw-nodiff {
+  padding: 10px 11px;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-xs);
+}
+
+/* ── hunk (change block) navigation ── */
+.a-rvw-hunknav {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 11px;
+  border-bottom: 1px solid var(--a-border-faint);
+  background: var(--a-bg-subtle);
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-2xs);
+}
+
+.a-rvw-hunknum {
+  font-variant-numeric: tabular-nums;
+}
+
+.a-rvw-hunknav button {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: var(--a-radius-sm);
+  background: transparent;
+  color: var(--a-text-tertiary);
+  cursor: pointer;
+}
+
+.a-rvw-hunknav button:hover {
+  background: var(--a-bg-muted);
+  color: var(--a-text);
+}
+
+.a-rvw-hunknav button svg {
+  width: 11px;
+  height: 11px;
+}
+
+/* ── unified diff lines ── */
+.a-rvw-diff {
+  overflow-x: auto;
+  padding: 6px 0;
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-sm);
+  line-height: 1.55;
+}
+
+.a-rvw-dl {
+  display: flex;
+  position: relative;
+  padding: 0 10px;
+  white-space: pre;
+}
+
+.a-rvw-gut {
+  flex: none;
+  width: 34px;
+  padding-right: 10px;
+  color: var(--a-text-disabled);
+  font-size: var(--a-text-xs);
+  text-align: right;
+  user-select: none;
+}
+
+.a-rvw-sign {
+  flex: none;
+  width: 14px;
+}
+
+.a-rvw-dl--add {
+  background: var(--a-success-subtle);
+}
+
+.a-rvw-dl--add .a-rvw-gut,
+.a-rvw-dl--add .a-rvw-sign {
+  color: var(--a-success);
+}
+
+.a-rvw-dl--del {
+  background: var(--a-error-subtle);
+}
+
+.a-rvw-dl--del .a-rvw-gut,
+.a-rvw-dl--del .a-rvw-sign {
+  color: var(--a-error);
+}
+
+/* Inline comment entry: appears on row hover and on keyboard focus. */
+.a-rvw-cmt {
+  display: grid;
+  place-items: center;
+  position: absolute;
+  left: -2px;
+  top: 1px;
+  width: 17px;
+  height: 17px;
+  border: 0;
+  border-radius: var(--a-radius-xs);
+  background: var(--a-accent-solid);
+  color: var(--a-text-on-accent);
+  box-shadow: var(--a-shadow-sm);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.a-rvw-dl:hover .a-rvw-cmt,
+.a-rvw-cmt:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.a-rvw-cmt svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+}
+
+/* ── fold bars (unchanged runs) ── */
+.a-rvw-fold {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% - 20px);
+  margin: 2px 10px;
+  padding: 3px 10px;
+  border: 1px dashed var(--a-border);
+  border-radius: var(--a-radius-md);
+  background: var(--a-bg-subtle);
+  color: var(--a-text-tertiary);
+  font-family: var(--a-font-sans);
+  font-size: var(--a-text-2xs);
+  cursor: pointer;
+}
+
+.a-rvw-fold:hover:not(:disabled) {
+  border-color: var(--a-accent-border);
+  color: var(--a-accent);
+}
+
+.a-rvw-fold:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.a-rvw-fold-ic {
+  width: 11px;
+  height: 11px;
+}
+
+/* ── split view ── */
+.a-rvw-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid var(--a-border-faint);
+  border-bottom: 1px solid var(--a-border-faint);
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-xs);
+  line-height: 1.6;
+}
+
+.a-rvw-col {
+  overflow: hidden;
+  min-width: 0;
+}
+
+.a-rvw-col + .a-rvw-col {
+  border-left: 1px solid var(--a-border-faint);
+}
+
+.a-rvw-sl {
+  display: flex;
+  overflow: hidden;
+  padding: 0 8px;
+  white-space: pre;
+}
+
+.a-rvw-sl .a-rvw-gut {
+  width: 26px;
+  padding-right: 8px;
+}
+
+.a-rvw-sl--add {
+  background: var(--a-success-subtle);
+}
+
+.a-rvw-sl--add .a-rvw-gut {
+  color: var(--a-success);
+}
+
+.a-rvw-sl--del {
+  background: var(--a-error-subtle);
+}
+
+.a-rvw-sl--del .a-rvw-gut {
+  color: var(--a-error);
+}
+
+.a-rvw-sl--blank {
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 4px,
+    var(--a-bg-muted) 4px,
+    var(--a-bg-muted) 5px
+  );
+}
+
+/* ── empty states ── */
+.a-rvw-empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 30px;
+  text-align: center;
+}
+
+.a-rvw-empty-ic {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--a-radius-lg);
+  background: var(--a-bg-muted);
+  color: var(--a-text-tertiary);
+}
+
+.a-rvw-empty-ic svg {
+  width: 19px;
+  height: 19px;
+}
+
+.a-rvw-empty b {
+  color: var(--a-text);
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+}
+
+.a-rvw-empty p {
+  margin: 0;
+  max-width: 30ch;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-xs);
+  line-height: var(--a-leading-snug);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .a-rvw-chev {
+    transition: none;
+  }
+}

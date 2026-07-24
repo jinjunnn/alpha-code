@@ -1,4 +1,4 @@
-import { createSignal, type Accessor, Show } from "solid-js"
+import { createSignal, type Accessor, type JSX, Show } from "solid-js"
 import { t } from "../../i18n"
 import type { AlphaSessionIdentity, AlphaSessionLiveSnapshot } from "./session-workspace-core"
 
@@ -6,6 +6,9 @@ export interface AlphaSessionLiveContext {
   current: Accessor<AlphaSessionLiveSnapshot | undefined>
   accepts: (identity: AlphaSessionIdentity) => boolean
 }
+
+/** Right-rail panel slots; each C-ticket wires its panel here (C2: review). */
+export type SessionWorkspaceRailSlots = Partial<Record<"review" | "terminal", () => JSX.Element>>
 
 function WorkspaceTopbar(props: {
   live: AlphaSessionLiveContext
@@ -71,7 +74,7 @@ function WorkspaceTopbar(props: {
   )
 }
 
-export function SessionWorkspaceShell(props: { live: AlphaSessionLiveContext }) {
+export function SessionWorkspaceShell(props: { live: AlphaSessionLiveContext; rail?: SessionWorkspaceRailSlots }) {
   const [panel, setPanel] = createSignal<"review" | "terminal" | undefined>("review")
   const [lastPanel, setLastPanel] = createSignal<"review" | "terminal">("review")
   const openPanel = (next: "review" | "terminal") => {
@@ -118,7 +121,9 @@ export function SessionWorkspaceShell(props: { live: AlphaSessionLiveContext }) 
             data-alpha-session-rail-host
             data-alpha-session-rail-panel={activePanel()}
             aria-label={t("alpha.session.railHost")}
-          />
+          >
+            {props.rail?.[activePanel()]?.()}
+          </aside>
         )}
       </Show>
     </div>
