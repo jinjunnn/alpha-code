@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, on, Show, type Accessor, type JSX } from "solid-js"
+import { createEffect, createSignal, For, Show, type Accessor, type JSX } from "solid-js"
 import { t } from "../../i18n"
 import { TerminalRailPanel } from "../session-rail/terminal/terminal-rail-panel"
 import {
@@ -8,7 +8,7 @@ import {
   readRailWidths,
   rememberRailWidth,
 } from "./rail-width"
-import type { AlphaSessionIdentity, AlphaSessionLiveSnapshot } from "./session-workspace-core"
+import { sameSessionIdentity, type AlphaSessionIdentity, type AlphaSessionLiveSnapshot } from "./session-workspace-core"
 
 export interface AlphaSessionLiveContext {
   current: Accessor<AlphaSessionLiveSnapshot | undefined>
@@ -19,11 +19,23 @@ export interface AlphaSessionLiveContext {
 // rail strip, and (optionally) one injected renderer. C4 added "artifacts" as the fourth member.
 export type SessionRailPanel = "review" | "files" | "terminal" | "artifacts"
 
-/** C4 mount point for the approved timeline→artifacts linkage (rows land with #544/#449). */
+/**
+ * C4 mount point for the approved timeline→artifacts linkage (rows land with #544/#449).
+ * I8: the request carries the session identity it was minted for, mirroring
+ * SessionRailReviewTarget — it is only ever exposed while that identity is live.
+ */
 export interface ArtifactFocusRequest {
+  identity: AlphaSessionIdentity
   artifactId: string
   /** Focus origin at request time; Esc inside the artifacts panel returns focus here. */
   origin?: HTMLElement
+}
+
+// I8: a review target carries the session identity it was minted for; it is only ever
+// exposed while that identity is still the live one.
+export interface SessionRailReviewTarget {
+  identity: AlphaSessionIdentity
+  file: string
 }
 
 // Narrow api handed to injected panels. `jumpToReview` implements the approved linkage contract
@@ -31,7 +43,7 @@ export interface ArtifactFocusRequest {
 // `focusArtifact` is the C4 twin for timeline artifact rows; the artifacts panel consumes
 // `artifactTarget`. Both targets reset on session switch (I8).
 export interface SessionRailApi {
-  reviewTarget: Accessor<string | undefined>
+  reviewTarget: Accessor<SessionRailReviewTarget | undefined>
   jumpToReview: (file: string) => void
   artifactTarget: Accessor<ArtifactFocusRequest | undefined>
   focusArtifact: (artifactId: string) => void
@@ -145,8 +157,18 @@ export function SessionWorkspaceShell(props: {
   // Panels visited while the rail is open stay mounted (hidden) so switching tabs does not throw
   // away panel state (tree expansion, scroll…). Closing the rail unmounts everything.
   const [visited, setVisited] = createSignal<readonly SessionRailPanel[]>(firstAvailable ? [firstAvailable] : [])
-  const [reviewTarget, setReviewTarget] = createSignal<string>()
+  const [reviewTarget, setReviewTarget] = createSignal<SessionRailReviewTarget>()
   const [artifactTarget, setArtifactTarget] = createSignal<ArtifactFocusRequest>()
+  // I8: any change of the live session identity (including to undefined) invalidates every
+  // pending linkage target — none may ever be consumed by another session.
+  createEffect((previous: AlphaSessionIdentity | undefined) => {
+    const identity = props.live.current()?.identity
+    if (previous && !sameSessionIdentity(previous, identity)) {
+      setReviewTarget(undefined)
+      setArtifactTarget(undefined)
+    }
+    return identity
+  })
   // Per-panel rail width, persisted (approved contract: 320–560, remembered per panel).
   const [widths, setWidths] = createSignal<Record<string, number>>(readRailWidths())
   const [resizing, setResizing] = createSignal(false)
@@ -180,36 +202,30 @@ export function SessionWorkspaceShell(props: {
     if (next) openPanel(next)
   }
   const rail: SessionRailApi = {
-    reviewTarget,
+    // Consumer side stays fail-closed even between effect runs: a target whose identity is
+    // no longer accepted by the live context reads as absent.
+    reviewTarget: () => {
+      const target = reviewTarget()
+      return target && props.live.accepts(target.identity) ? target : undefined
+    },
     jumpToReview: (file) => {
-      setReviewTarget(file)
+      const identity = props.live.current()?.identity
+      if (!identity) return
+      setReviewTarget({ identity, file })
       openPanel("review")
     },
-    artifactTarget,
+    artifactTarget: () => {
+      const target = artifactTarget()
+      return target && props.live.accepts(target.identity) ? target : undefined
+    },
     focusArtifact: (artifactId) => {
+      const identity = props.live.current()?.identity
+      if (!identity) return
       const active = document.activeElement
-      setArtifactTarget({ artifactId, origin: active instanceof HTMLElement ? active : undefined })
+      setArtifactTarget({ identity, artifactId, origin: active instanceof HTMLElement ? active : undefined })
       openPanel("artifacts")
     },
   }
-
-  // I8: linkage targets are session-scoped — a session switch drops them so a stale jump can
-  // never land in another session's panel.
-  const identityKey = createMemo(() => {
-    const identity = props.live.current()?.identity
-    if (!identity) return undefined
-    return `${identity.serverKey}\u0000${identity.directory}\u0000${identity.sessionID}`
-  })
-  createEffect(
-    on(
-      identityKey,
-      () => {
-        setReviewTarget(undefined)
-        setArtifactTarget(undefined)
-      },
-      { defer: true },
-    ),
-  )
 
   const enabledPanels = () => RAIL_PANELS.filter(available)
   const onTabKey = (event: KeyboardEvent) => {

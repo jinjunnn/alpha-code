@@ -1138,6 +1138,7 @@ export const dict = {
   "alpha.session.filesOpened": "Open",
   "alpha.session.filesWorkspace": "Workspace",
   "alpha.session.filesLoading": "Loading…",
+  "alpha.session.filesTruncated": "Showing {{shown}} of {{total}} — filter to narrow down",
   "alpha.session.filesEmptyTitle": "No files in the workspace yet",
   "alpha.session.filesEmptyDetail": "Files appear here as soon as they are created.",
   "alpha.session.filesResults": "Results",

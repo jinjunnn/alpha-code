@@ -13,6 +13,7 @@ import {
 import {
   SessionWorkspaceShell,
   type AlphaSessionLiveContext,
+  type SessionRailApi,
   type SessionRailPanelRenderers,
 } from "../../session-workspace/session-workspace-shell"
 import type { FileChangeKind } from "./files-core"
@@ -32,6 +33,8 @@ export function createFilesHarness(options?: {
   listDir?: (path: string) => Promise<readonly unknown[]>
   findFiles?: (query: string, signal: AbortSignal) => Promise<readonly unknown[]>
   searchDebounceMs?: number
+  treeDirCap?: number
+  treeTotalCap?: number
 }) {
   const calls: FilesHarnessCalls = { listDir: [], findFiles: [], jumpToReview: [], open: [], close: [], setActive: [] }
   const [tabsAll, setTabsAll] = createSignal<string[]>([])
@@ -42,6 +45,8 @@ export function createFilesHarness(options?: {
   const io: FilesPanelIO = {
     root: "/tmp/workspace",
     stillCurrent,
+    treeDirCap: options?.treeDirCap,
+    treeTotalCap: options?.treeTotalCap,
     listDir: (path) => {
       calls.listDir.push(path)
       return (options?.listDir ?? (() => Promise.resolve([])))(path)
@@ -87,24 +92,24 @@ export function createFilesHarness(options?: {
 export function createShellHarness(panels: SessionRailPanelRenderers) {
   const identity: AlphaSessionIdentity = { serverKey: "sidecar", directory: "/tmp/workspace", sessionID: "ses_rail" }
   const snapshot: AlphaSessionLiveSnapshot = { identity, project: "workspace", title: "整理架构说明", activity: "idle" }
-  const [current] = createSignal<AlphaSessionLiveSnapshot | undefined>(snapshot)
+  const [current, setCurrent] = createSignal<AlphaSessionLiveSnapshot | undefined>(snapshot)
   const live: AlphaSessionLiveContext = {
     current,
     accepts: (candidate) => sameSessionIdentity(candidate, current()?.identity),
   }
   const Shell = () => <SessionWorkspaceShell live={live} panels={panels} />
-  return { Shell }
+  return { Shell, setSnapshot: setCurrent, identity }
 }
 
-/** Shell + fake rail panels for the rail-integration case (JSX lives here, in transformed code). */
+/** Shell + fake rail panels for the rail-integration cases (JSX lives here, in transformed code). */
 export function createShellCaseHarness() {
-  let railApi: { reviewTarget: () => string | undefined; jumpToReview: (path: string) => void } | undefined
+  let railApi: SessionRailApi | undefined
   const harness = createShellHarness({
     files: (rail) => {
       railApi = rail
       return <div data-fake-files-panel />
     },
-    review: (rail) => <div data-fake-review-panel>{rail.reviewTarget() ?? ""}</div>,
+    review: (rail) => <div data-fake-review-panel>{rail.reviewTarget()?.file ?? ""}</div>,
   })
-  return { Shell: harness.Shell, rail: () => railApi }
+  return { Shell: harness.Shell, rail: () => railApi, setSnapshot: harness.setSnapshot, identity: harness.identity }
 }

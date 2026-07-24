@@ -1128,6 +1128,7 @@ export const dict = {
   "alpha.session.filesOpened": "已打开",
   "alpha.session.filesWorkspace": "工作区",
   "alpha.session.filesLoading": "加载中…",
+  "alpha.session.filesTruncated": "已显示 {{shown}} / {{total}} — 用过滤缩小范围",
   "alpha.session.filesEmptyTitle": "工作区还没有文件",
   "alpha.session.filesEmptyDetail": "文件创建后会实时出现在这里。",
   "alpha.session.filesResults": "匹配结果",
