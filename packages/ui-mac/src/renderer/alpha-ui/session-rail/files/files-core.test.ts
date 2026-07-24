@@ -109,6 +109,36 @@ describe("REQ-125 C3 files-core — path discipline (baseline §③.3)", () => {
     ])
   })
 
+  test("toTreeEntries drops hidden (dot) directories and keeps dotfiles and regular entries", () => {
+    // REQ-125 #576 finding: the workspace tree carried `.git` (approved frame omits it).
+    const entries = toTreeEntries("", [
+      { name: ".git", path: ".git/", type: "directory", ignored: false },
+      { name: ".github", path: ".github/", type: "directory", ignored: false },
+      { name: ".vscode", path: ".vscode", type: "directory", ignored: true },
+      { name: "src", path: "src/", type: "directory", ignored: false },
+      // Dotfiles are meaningful, not noise — they stay visible.
+      { name: ".gitignore", path: ".gitignore", type: "file", ignored: false },
+      { name: "README.md", path: "README.md", type: "file", ignored: false },
+    ])
+    expect(entries).toEqual([
+      { name: "src", path: "src", type: "directory", ignored: false },
+      { name: ".gitignore", path: ".gitignore", type: "file", ignored: false },
+      { name: "README.md", path: "README.md", type: "file", ignored: false },
+    ])
+    expect(entries.some((entry) => entry.name.startsWith(".") && entry.type === "directory")).toBe(false)
+  })
+
+  test("toTreeEntries drops entries nested inside a hidden directory (fail-closed path segments)", () => {
+    // Untrusted / non-normalized responses can hand back nodes whose ancestor is a dot dir
+    // even when the leaf name is innocent; every directory segment is checked, not just the leaf.
+    const entries = toTreeEntries("src", [
+      { name: "config", path: "src/.git/config", type: "file", ignored: false },
+      { name: "hooks", path: "src\\.git\\hooks", type: "directory", ignored: false },
+      { name: "app.ts", path: "src/app.ts", type: "file", ignored: false },
+    ])
+    expect(entries).toEqual([{ name: "app.ts", path: "src/app.ts", type: "file", ignored: false }])
+  })
+
   test("statusByFile maps the session change set to relative paths with valid kinds only", () => {
     const map = statusByFile(
       [

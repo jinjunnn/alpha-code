@@ -140,3 +140,26 @@ seam 语义:
    `session-workspace.cases.ts`(真挂载 DOM 恰一个 header)。
 3. **回退**:从 patch 序列移除该条件与字段即蒸发(NewLayout 恢复无条件渲染 Titlebar);
    seam 契约测试先红,不会静默漂移。
+
+## 修订(2026-07-24,REQ-125 #576 —— `Terminal` 增可选 `theme` palette 覆盖 prop:终端输出区始终深底)
+
+批1 视觉采集(`docs/verification/2026-07-24-req125-session-visual/matrix.md` 发现1)+ 对抗审计
+勘破:已批稿 SW §term 合同「输出区始终深底(引擎渲染)」在浅色主题下失守 —— 上游 `Terminal`
+把 `terminalColors()`(随 app 主题)传入 Ghostty,**画布自绘背景**,alpha 仅用 CSS 改父容器
+改不动画布像素(#576 首版 `[data-component="terminal"]` `!important` 只钉住容器、假绿)。按最简
+条件经 [[ADR-034]] pin+patch 通道给引擎开一个 palette 覆盖口:
+
+1. **seam 形态**:`Terminal` 的 `TerminalProps` 增可选 `theme?: Partial<TerminalColors>`;
+   `TerminalColors` 类型 export 并经 `./surface/terminal` 透出(re-export 模块由三条增至
+   **四条**符号:`useTerminal`、`Terminal`、`type LocalPTY`、`type TerminalColors`)。有覆盖 →
+   合并进 `terminalColors()` memo,驱动 Ghostty theme(画布背景/前景/光标/选区)与容器背景;
+   缺省(`undefined`)= 现行行为逐字节不变(零回归)。
+2. **消费面**:唯一传入点 = ui-mac `terminal-engine-adapter.tsx` 的 `ALPHA_TERMINAL_DARK_THEME`
+   (镜像 `terminal-rail.css` 的 `--a-term-stage-*` 深底锚),经 `EngineOutput` 传给 `Terminal`。
+   `terminal-rail.css` 的 `[data-component="terminal"]` `!important` 容器钉底保留作兜底(登记进
+   `upstream-anchors.json` `component:terminal`,上游改名/删属性即红)。机械守卫:
+   `surface-seam-contract.test.ts`(四符号窄面 + `theme?` prop 锚点)、
+   `terminal-engine-adapter.cases.ts`(真 `EngineOutput` 挂载,假 `Terminal` 记录收到的深底
+   palette,取代首版空 `div` 假绿)。
+3. **回退**:从 patch 序列移除 `theme` prop / memo 合并 / 类型 export 即蒸发(引擎恢复只跟 app
+   主题);消费点 typecheck + seam 契约测试先红,不会静默漂移。

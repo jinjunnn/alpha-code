@@ -1,5 +1,5 @@
 diff --git a/packages/app/package.json b/packages/app/package.json
-index faf01944..98b79564 100644
+index faf019446..98b795648 100644
 --- a/packages/app/package.json
 +++ b/packages/app/package.json
 @@ -9,7 +9,9 @@
@@ -14,7 +14,7 @@ index faf01944..98b79564 100644
    "scripts": {
      "typecheck": "tsgo -b",
 diff --git a/packages/app/src/app.tsx b/packages/app/src/app.tsx
-index b4496ba7..5be1d956 100644
+index b4496ba7d..5be1d956f 100644
 --- a/packages/app/src/app.tsx
 +++ b/packages/app/src/app.tsx
 @@ -1,7 +1,8 @@
@@ -505,7 +505,7 @@ index b4496ba7..5be1d956 100644
          <Route path="/server/:serverKey/session/:id" component={TargetSessionRoute} />
        </Show>
 diff --git a/packages/app/src/components/dialog-release-notes.tsx b/packages/app/src/components/dialog-release-notes.tsx
-index d0a35b71..a0b3b851 100644
+index d0a35b71b..a0b3b8515 100644
 --- a/packages/app/src/components/dialog-release-notes.tsx
 +++ b/packages/app/src/components/dialog-release-notes.tsx
 @@ -43,12 +43,6 @@ export function DialogReleaseNotes(props: { highlights: Highlight[] }) {
@@ -530,7 +530,7 @@ index d0a35b71..a0b3b851 100644
        fit
        class="w-[min(calc(100vw-40px),720px)] h-[min(calc(100vh-40px),400px)] -mt-20 min-h-0 overflow-hidden"
 diff --git a/packages/app/src/components/dialog-select-file.tsx b/packages/app/src/components/dialog-select-file.tsx
-index 905abe1e..b3a9cffb 100644
+index 905abe1e2..b3a9cffbb 100644
 --- a/packages/app/src/components/dialog-select-file.tsx
 +++ b/packages/app/src/components/dialog-select-file.tsx
 @@ -104,7 +104,7 @@ function DialogSelectFileLegacy(props: { filesOnly: () => boolean; onOpenFile?:
@@ -543,7 +543,7 @@ index 905abe1e..b3a9cffb 100644
          class="px-3"
          search={{
 diff --git a/packages/app/src/components/directory-picker.tsx b/packages/app/src/components/directory-picker.tsx
-index 31b15b7a..bc25db15 100644
+index 31b15b7a6..bc25db15d 100644
 --- a/packages/app/src/components/directory-picker.tsx
 +++ b/packages/app/src/components/directory-picker.tsx
 @@ -37,9 +37,9 @@ export function useDirectoryPicker() {
@@ -559,7 +559,7 @@ index 31b15b7a..bc25db15 100644
    }
  }
 diff --git a/packages/app/src/components/prompt-input.tsx b/packages/app/src/components/prompt-input.tsx
-index bcc5acc0..a20656ea 100644
+index bcc5acc0b..a20656ea3 100644
 --- a/packages/app/src/components/prompt-input.tsx
 +++ b/packages/app/src/components/prompt-input.tsx
 @@ -1489,7 +1489,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
@@ -574,7 +574,7 @@ index bcc5acc0..a20656ea 100644
            onRemove={removeAttachment}
            removeLabel={language.t("prompt.attachment.remove")}
 diff --git a/packages/app/src/components/settings-dialog.tsx b/packages/app/src/components/settings-dialog.tsx
-index 46dd89ad..3637c753 100644
+index 46dd89ade..3637c7536 100644
 --- a/packages/app/src/components/settings-dialog.tsx
 +++ b/packages/app/src/components/settings-dialog.tsx
 @@ -2,10 +2,12 @@ import { useParams } from "@solidjs/router"
@@ -599,7 +599,7 @@ index 46dd89ad..3637c753 100644
      const sessionID = params.id
      void import("@/components/settings-v2").then((module) => {
 diff --git a/packages/app/src/components/status-popover-body.tsx b/packages/app/src/components/status-popover-body.tsx
-index 68a3f6b2..1b3814ab 100644
+index 68a3f6b22..1b3814aba 100644
 --- a/packages/app/src/components/status-popover-body.tsx
 +++ b/packages/app/src/components/status-popover-body.tsx
 @@ -161,7 +161,7 @@ export function StatusPopoverServerBody() {
@@ -620,8 +620,58 @@ index 68a3f6b2..1b3814ab 100644
                      })
                    }}
                  >
+diff --git a/packages/app/src/components/terminal.tsx b/packages/app/src/components/terminal.tsx
+index c512e782c..266572533 100644
+--- a/packages/app/src/components/terminal.tsx
++++ b/packages/app/src/components/terminal.tsx
+@@ -28,6 +28,14 @@ export interface TerminalProps extends ComponentProps<"div"> {
+   onCleanup?: (pty: Partial<LocalPTY> & { id: string }) => void
+   onConnect?: () => void
+   onConnectError?: (error: unknown) => void
++  /**
++   * Optional palette override (alpha seam, REQ-125 #576). When present, its fields are merged
++   * over the theme-derived `terminalColors()` and drive both the Ghostty theme (canvas
++   * background/foreground/cursor/selection) and the container background — letting a host pin
++   * the emulator to a fixed palette (e.g. the always-dark session-workspace terminal stage)
++   * regardless of the app light/dark theme. Absent (undefined) = current behavior verbatim.
++   */
++  theme?: Partial<TerminalColors>
+ }
+ 
+ let shared: Promise<{ mod: typeof import("ghostty-web"); ghostty: Ghostty }> | undefined
+@@ -43,7 +51,7 @@ const loadGhostty = () => {
+   return shared
+ }
+ 
+-type TerminalColors = {
++export type TerminalColors = {
+   background: string
+   foreground: string
+   cursor: string
+@@ -194,6 +202,7 @@ export const Terminal = (props: TerminalProps) => {
+     "onAutoFocus",
+     "onConnect",
+     "onConnectError",
++    "theme",
+   ])
+   const id = local.pty.id
+   const restore = typeof local.pty.buffer === "string" ? local.pty.buffer : ""
+@@ -276,7 +285,12 @@ export const Terminal = (props: TerminalProps) => {
+     }
+   }
+ 
+-  const terminalColors = createMemo(getTerminalColors)
++  // Host palette override (alpha seam, REQ-125 #576): merge over the theme-derived colors so a
++  // caller can pin the emulator to a fixed palette. No override → identical to before.
++  const terminalColors = createMemo<TerminalColors>(() => {
++    const base = getTerminalColors()
++    return local.theme ? { ...base, ...local.theme } : base
++  })
+ 
+   const scheduleFit = () => {
+     if (disposed) return
 diff --git a/packages/app/src/context/highlights.tsx b/packages/app/src/context/highlights.tsx
-index 058f7cc4..761b46f6 100644
+index 058f7cc4b..761b46f69 100644
 --- a/packages/app/src/context/highlights.tsx
 +++ b/packages/app/src/context/highlights.tsx
 @@ -195,7 +195,7 @@ export const { use: useHighlights, provider: HighlightsProvider } = createSimple
@@ -634,7 +684,7 @@ index 058f7cc4..761b46f6 100644
          })
          .catch(() => undefined)
 diff --git a/packages/app/src/context/platform.tsx b/packages/app/src/context/platform.tsx
-index cf343bfa..6bb9ae19 100644
+index cf343bfa7..6bb9ae19a 100644
 --- a/packages/app/src/context/platform.tsx
 +++ b/packages/app/src/context/platform.tsx
 @@ -5,6 +5,7 @@ import type { DesktopMenuAction } from "../desktop-menu"
@@ -659,7 +709,7 @@ index cf343bfa..6bb9ae19 100644
    updater?: UpdaterPlatform
  
 diff --git a/packages/app/src/context/settings.tsx b/packages/app/src/context/settings.tsx
-index c2b56804..ed440ade 100644
+index c2b568041..ed440ade9 100644
 --- a/packages/app/src/context/settings.tsx
 +++ b/packages/app/src/context/settings.tsx
 @@ -1,5 +1,5 @@
@@ -1011,7 +1061,7 @@ index c2b56804..ed440ade 100644
        },
      }
 diff --git a/packages/app/src/index.ts b/packages/app/src/index.ts
-index d18e05fc..cd1d08ac 100644
+index d18e05fc9..cd1d08ac6 100644
 --- a/packages/app/src/index.ts
 +++ b/packages/app/src/index.ts
 @@ -1,4 +1,14 @@
@@ -1043,7 +1093,7 @@ index d18e05fc..cd1d08ac 100644
  export { useWslServers } from "./wsl/context"
  export { type DisplayBackend, type FatalRendererErrorLog, type Platform, PlatformProvider } from "./context/platform"
 diff --git a/packages/app/src/pages/home.tsx b/packages/app/src/pages/home.tsx
-index 215696d7..ca677b34 100644
+index 215696d7d..ca677b349 100644
 --- a/packages/app/src/pages/home.tsx
 +++ b/packages/app/src/pages/home.tsx
 @@ -553,7 +553,7 @@ export function NewHome() {
@@ -1065,7 +1115,7 @@ index 215696d7..ca677b34 100644
          <div
            classList={{
 diff --git a/packages/app/src/pages/layout-new.tsx b/packages/app/src/pages/layout-new.tsx
-index c6fed8f6..4ce6fd51 100644
+index c6fed8f6d..4ce6fd511 100644
 --- a/packages/app/src/pages/layout-new.tsx
 +++ b/packages/app/src/pages/layout-new.tsx
 @@ -1,19 +1,26 @@
@@ -1123,7 +1173,7 @@ index c6fed8f6..4ce6fd51 100644
          <Suspense>{props.children}</Suspense>
        </main>
 diff --git a/packages/app/src/pages/layout.tsx b/packages/app/src/pages/layout.tsx
-index 812a479b..6e726163 100644
+index 812a479b2..6e7261633 100644
 --- a/packages/app/src/pages/layout.tsx
 +++ b/packages/app/src/pages/layout.tsx
 @@ -1106,11 +1106,12 @@ export default function LegacyLayout(props: ParentProps) {
@@ -1162,7 +1212,7 @@ index 812a479b..6e726163 100644
        if (!mobile) scrollContainerRef = el
      },
 diff --git a/packages/app/src/pages/session.tsx b/packages/app/src/pages/session.tsx
-index 3ce28416..02f4c33c 100644
+index 3ce284167..02f4c33c7 100644
 --- a/packages/app/src/pages/session.tsx
 +++ b/packages/app/src/pages/session.tsx
 @@ -15,6 +15,7 @@ import {
@@ -1240,7 +1290,7 @@ index 3ce28416..02f4c33c 100644
      <TerminalProvider>
        <FileProvider>
 diff --git a/packages/app/src/pages/session/composer/session-composer-region.tsx b/packages/app/src/pages/session/composer/session-composer-region.tsx
-index 600ff41e..4c8581e0 100644
+index 600ff41e3..4c8581e03 100644
 --- a/packages/app/src/pages/session/composer/session-composer-region.tsx
 +++ b/packages/app/src/pages/session/composer/session-composer-region.tsx
 @@ -1,7 +1,6 @@
@@ -1274,7 +1324,7 @@ index 600ff41e..4c8581e0 100644
            <Show when={controller.dock()}>
              <div
 diff --git a/packages/app/src/pages/session/composer/session-composer-state.ts b/packages/app/src/pages/session/composer/session-composer-state.ts
-index 45f5e4cb..7f757a98 100644
+index 45f5e4cb2..7f757a98a 100644
 --- a/packages/app/src/pages/session/composer/session-composer-state.ts
 +++ b/packages/app/src/pages/session/composer/session-composer-state.ts
 @@ -1,14 +1,10 @@
@@ -1370,7 +1420,7 @@ index 45f5e4cb..7f757a98 100644
        store.sessionID === params.id
 diff --git a/packages/app/src/pages/session/composer/session-permission-dock.tsx b/packages/app/src/pages/session/composer/session-permission-dock.tsx
 deleted file mode 100644
-index 35a62f75..00000000
+index 35a62f75c..000000000
 --- a/packages/app/src/pages/session/composer/session-permission-dock.tsx
 +++ /dev/null
 @@ -1,74 +0,0 @@
@@ -1449,7 +1499,7 @@ index 35a62f75..00000000
 -  )
 -}
 diff --git a/packages/app/src/pages/session/session-side-panel.tsx b/packages/app/src/pages/session/session-side-panel.tsx
-index 571428e2..26ad6fdc 100644
+index 571428e29..26ad6fdc6 100644
 --- a/packages/app/src/pages/session/session-side-panel.tsx
 +++ b/packages/app/src/pages/session/session-side-panel.tsx
 @@ -458,7 +458,11 @@ export function SessionSidePanel(props: {
@@ -1466,7 +1516,7 @@ index 571428e2..26ad6fdc 100644
                                      }}
                                      aria-label={language.t("command.file.open")}
 diff --git a/packages/app/src/pages/session/timeline/message-timeline.tsx b/packages/app/src/pages/session/timeline/message-timeline.tsx
-index 2959e9f8..21ad01c0 100644
+index 2959e9f8a..21ad01c06 100644
 --- a/packages/app/src/pages/session/timeline/message-timeline.tsx
 +++ b/packages/app/src/pages/session/timeline/message-timeline.tsx
 @@ -1562,7 +1562,9 @@ export function MessageTimeline(props: {
@@ -1494,7 +1544,7 @@ index 2959e9f8..21ad01c0 100644
                                </MenuV2.Item>
                              </MenuV2.Content>
 diff --git a/packages/app/src/pages/session/usage-exceeded-dialogs.tsx b/packages/app/src/pages/session/usage-exceeded-dialogs.tsx
-index d56fa3d1..fd38b0dd 100644
+index d56fa3d1f..fd38b0dd1 100644
 --- a/packages/app/src/pages/session/usage-exceeded-dialogs.tsx
 +++ b/packages/app/src/pages/session/usage-exceeded-dialogs.tsx
 @@ -66,38 +66,46 @@ export function useUsageExceededDialogs() {
@@ -1576,7 +1626,7 @@ index d56fa3d1..fd38b0dd 100644
      }),
    )
 diff --git a/packages/app/src/pages/session/use-session-commands.tsx b/packages/app/src/pages/session/use-session-commands.tsx
-index 275e6ec4..bb4a5bc7 100644
+index 275e6ec4b..bb4a5bc79 100644
 --- a/packages/app/src/pages/session/use-session-commands.tsx
 +++ b/packages/app/src/pages/session/use-session-commands.tsx
 @@ -234,7 +234,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
@@ -1608,21 +1658,23 @@ index 275e6ec4..bb4a5bc7 100644
  
 diff --git a/packages/app/src/surface/terminal.ts b/packages/app/src/surface/terminal.ts
 new file mode 100644
-index 00000000..0a2a5026
+index 000000000..5d279ad62
 --- /dev/null
 +++ b/packages/app/src/surface/terminal.ts
-@@ -0,0 +1,9 @@
-+// Alpha narrow surface (ADR-027 revision 2026-07-24, REQ-125 #554): terminal engine seam.
+@@ -0,0 +1,11 @@
++// Alpha narrow surface (ADR-027 revision 2026-07-24, REQ-125 #554/#576): terminal engine seam.
 +// Re-exports exactly the engine pieces the alpha session workspace may consume — the
-+// workspace-scoped PTY tab state (useTerminal), the Ghostty terminal embed (Terminal),
-+// and the pty record type (LocalPTY). Nothing else: no `./surface/*` wildcard, no
-+// pages/context subpaths. The single sanctioned consumer is the ui-mac terminal engine
-+// adapter; both sides are pinned by surface-seam-contract.test.ts.
++// workspace-scoped PTY tab state (useTerminal), the Ghostty terminal embed (Terminal), the
++// pty record type (LocalPTY), and the palette-override type (TerminalColors) the embed accepts
++// via its optional `theme` prop (REQ-125 #576, always-dark stage). Nothing else: no
++// `./surface/*` wildcard, no pages/context subpaths. The single sanctioned consumer is the
++// ui-mac terminal engine adapter; both sides are pinned by surface-seam-contract.test.ts.
 +export { useTerminal } from "@/context/terminal"
 +export type { LocalPTY } from "@/context/terminal"
 +export { Terminal } from "@/components/terminal"
++export type { TerminalColors } from "@/components/terminal"
 diff --git a/packages/ui/src/components/dialog.tsx b/packages/ui/src/components/dialog.tsx
-index 981e3f45..79fc5571 100644
+index 981e3f45d..79fc55712 100644
 --- a/packages/ui/src/components/dialog.tsx
 +++ b/packages/ui/src/components/dialog.tsx
 @@ -1,6 +1,8 @@
@@ -1662,7 +1714,7 @@ index 981e3f45..79fc5571 100644
    return (
      <div
 diff --git a/packages/ui/src/components/image-preview.tsx b/packages/ui/src/components/image-preview.tsx
-index 8462ce25..944dacd7 100644
+index 8462ce256..944dacd72 100644
 --- a/packages/ui/src/components/image-preview.tsx
 +++ b/packages/ui/src/components/image-preview.tsx
 @@ -1,6 +1,8 @@
@@ -1700,7 +1752,7 @@ index 8462ce25..944dacd7 100644
      <div data-component="image-preview">
        <div data-slot="image-preview-container">
 diff --git a/packages/ui/src/context/dialog.tsx b/packages/ui/src/context/dialog.tsx
-index 39ef8ea1..343854e9 100644
+index 39ef8ea1c..343854e94 100644
 --- a/packages/ui/src/context/dialog.tsx
 +++ b/packages/ui/src/context/dialog.tsx
 @@ -7,6 +7,7 @@ import {
@@ -1862,7 +1914,7 @@ index 39ef8ea1..343854e9 100644
 +  return useContext(HostContext)
 +}
 diff --git a/packages/ui/src/v2/components/dialog-v2.tsx b/packages/ui/src/v2/components/dialog-v2.tsx
-index b9dd2521..cd6a501a 100644
+index b9dd2521e..cd6a501a0 100644
 --- a/packages/ui/src/v2/components/dialog-v2.tsx
 +++ b/packages/ui/src/v2/components/dialog-v2.tsx
 @@ -1,5 +1,7 @@

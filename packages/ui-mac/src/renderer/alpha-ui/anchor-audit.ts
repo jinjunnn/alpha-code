@@ -55,7 +55,8 @@ export function extractReferencedAnchors(rendererDir: string): AnchorRef[] {
 export type AnchorCheck = { ref: AnchorRef; rendered: boolean }
 
 export type AnchorSources = {
-  /** 上游 packages/{app,ui}/src 全文(上游选择/渲染任一形态都算活——它选它必渲)。 */
+  /** 上游 packages/{app,ui}/src 全文;判据 = 非选择器形态的真实 `data-*` 属性(排除 `[data-…`
+   *  选择器 / querySelector 自证,与 alphaTsx 同一严格口径——防「删真实属性、留旧查询」假绿)。 */
   upstream: string
   /** alpha 自有 renderer 的 TSX/TS(**不含 CSS**):只认 JSX 属性渲染形态,排除 `[data-…` 选择器
    *  引用——否则 CSS/querySelector 里的引用串会自证存活(本模块首版踩过的假阳性)。 */
@@ -64,21 +65,16 @@ export type AnchorSources = {
 
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
-/** 存在性核对:上游宽匹配(属性字面量),alpha 自渲染须为非选择器形态的 JSX 属性。 */
+/**
+ * 存在性核对:「渲染存在」= 真实 JSX/DOM 属性(`data-kind="value"` 及花括号字面量形态),
+ * **不含** `[data-…` 选择器 / querySelector 自证。上游与 alpha 自渲染同一严格判据——否则
+ * 上游删掉真实属性、只剩旧 querySelector 或 CSS 选择器时,alive 红线会假绿(REQ-125 #576
+ * 审计 minor:上游侧原用宽 `.includes`,把 `[data-component="terminal"]` 查询也算渲染)。
+ */
 export function checkAnchors(refs: AnchorRef[], sources: AnchorSources): AnchorCheck[] {
   return refs.map((ref) => {
-    const attrForms = [
-      `data-${ref.kind}="${ref.value}"`,
-      `data-${ref.kind}='${ref.value}'`,
-      // JSX 属性值为字面量表达式:data-component={"x"} / data-component={cond ? "x" : …}
-      `data-${ref.kind}={"${ref.value}"`,
-      `data-${ref.kind}={'${ref.value}'`,
-    ]
-    const inUpstream = attrForms.some((n) => sources.upstream.includes(n))
-    const selfRendered = new RegExp(`(?<!\\[)data-${ref.kind}=(?:"|'|\\{"|\\{')${esc(ref.value)}(?:"|'|")`).test(
-      sources.alphaTsx,
-    )
-    return { ref, rendered: inUpstream || selfRendered }
+    const attrRe = new RegExp(`(?<!\\[)data-${ref.kind}=(?:"|'|\\{"|\\{')${esc(ref.value)}(?:"|'|")`)
+    return { ref, rendered: attrRe.test(sources.upstream) || attrRe.test(sources.alphaTsx) }
   })
 }
 

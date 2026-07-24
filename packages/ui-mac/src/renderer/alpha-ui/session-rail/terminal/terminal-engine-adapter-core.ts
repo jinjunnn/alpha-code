@@ -60,7 +60,10 @@ export function terminalInstanceTitle(
 /**
  * 脚条投影(与 instances 同一存活语义):上游生命周期真相是 `pty.exited` 事件即从
  * store 移除 —— 在列 = 存活;引擎不暴露更细的任务级活动信号。诚实映射:存活即
- * running,实例缺席 = false;shell 名今日无数据,缺项不伪造;尺寸透传持久值。
+ * running,实例缺席 = false;尺寸透传持久 cols×rows,任一维缺失即整段省略。
+ * 环境(shell)段本票不投影:真值是服务端 `Pty.Info.command`/`cwd`,而客户端 `LocalPTY`
+ * 只同步 title、丢弃 command/cwd —— 需客户端窄改经 patch 通道供给,已拆独立票(见 #576
+ * 评论)。今日缺数据,故不伪造环境段。
  */
 export function terminalFootStatus(pty: TerminalEnginePTY | undefined): AlphaTerminalFootStatus {
   return { running: pty !== undefined, cols: pty?.cols, rows: pty?.rows }
