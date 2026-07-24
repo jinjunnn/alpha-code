@@ -20,17 +20,10 @@ import { SessionTimelineView } from "./session-timeline-view"
 import {
   projectTimelineRows,
   reuseTimelineRows,
+  reviewPathOf,
   type SessionSlashOriginsFor,
   type TimelineRow,
 } from "./timeline-model"
-
-/** 工具目标是绝对路径、review 面板认 git 相对路径:身份目录为前缀则相对化,否则原样透传。 */
-export function reviewPathOf(path: string, directory: string): string {
-  const normalized = path.replaceAll("\\", "/")
-  const root = directory.replaceAll("\\", "/").replace(/\/+$/, "")
-  if (root && normalized.startsWith(`${root}/`)) return normalized.slice(root.length + 1)
-  return normalized
-}
 
 export interface AlphaSessionTimelineProps {
   /** C4 右栏联动 api(#568 接线);缺席 = pill/媒体/产物行降级纯展示。 */
@@ -131,15 +124,18 @@ export function AlphaSessionTimeline(props: AlphaSessionTimelineProps = {}) {
       if (!rail) return undefined
       return (intent: { name: string }) => rail.focusArtifact(intent.name)
     },
-    // write/edit pill 与 diffsum 行 → 右栏审查面板的文件卡(相对化后同一货币);
-    // 未知文件由 review 面板静默不聚焦(面板仍打开)。
+    // write/edit pill 与 diffsum 行 → 右栏审查面板的文件卡。路径必须先被证明为
+    // 安全 workspace-relative(reviewPathOf,审计 Major-2):证明不了 → 零动作,
+    // 不打面板、不递路径。未知但合法的文件由 review 面板静默不聚焦。
     get openFile() {
       const rail = props.rail
       if (!rail) return undefined
       return (intent: { path: string }) => {
         const identity = live.current()?.identity
         if (!identity) return
-        rail.jumpToReview(reviewPathOf(intent.path, identity.directory))
+        const relative = reviewPathOf(intent.path, identity.directory)
+        if (relative === undefined) return
+        rail.jumpToReview(relative)
       }
     },
   }

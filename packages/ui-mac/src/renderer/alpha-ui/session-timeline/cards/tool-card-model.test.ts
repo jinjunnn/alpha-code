@@ -5,6 +5,7 @@ import {
   boundedBlock,
   contextGroupSummaryOf,
   contextRowOf,
+  DIAG_FILES_SCAN_MAX,
   DIAG_MAX_ROWS,
   diagnosticsOf,
   extractHttpUrls,
@@ -511,5 +512,35 @@ describe("#568 diagnosticsOf(T19 诊断行)", () => {
       }),
     )
     expect(result.rows).toEqual([{ file: "x.ts", line: undefined, message: "broken" }])
+  })
+})
+
+describe("#568 审计修复:diagnostics 外层文件数扫描预算(Major-3)", () => {
+  const issue = { severity: 1, message: "boom", range: { start: { line: 0, character: 0 } } }
+
+  test("万文件诊断映射:需归一匹配的键落在预算外 → 提前终止,零渲染", () => {
+    const map: Record<string, unknown> = {}
+    for (let index = 0; index < 10_000; index += 1) map[`/proj/f${index}.ts`] = [issue]
+    expect(10_000).toBeGreaterThan(DIAG_FILES_SCAN_MAX)
+    // 目标键需要 \\→/ 归一才能命中,且按插入序落在 DIAG_FILES_SCAN_MAX 之外。
+    map["C:/ws/target.ts"] = [issue]
+    const result = diagnosticsOf(
+      part("edit", { input: { filePath: "C:\\ws\\target.ts" }, metadata: { diagnostics: map } }),
+    )
+    expect(result.rows).toEqual([])
+  })
+
+  test("精确键命中走 O(1) 快路,不受外层预算影响;预算内的归一匹配仍工作", () => {
+    const map: Record<string, unknown> = {}
+    for (let index = 0; index < 10_000; index += 1) map[`/proj/f${index}.ts`] = [issue]
+    map["/ws/exact.ts"] = [issue]
+    const exact = diagnosticsOf(part("edit", { input: { filePath: "/ws/exact.ts" }, metadata: { diagnostics: map } }))
+    expect(exact.rows).toHaveLength(1)
+
+    const small: Record<string, unknown> = { "C:/ws/win.ts": [issue] }
+    const normalized = diagnosticsOf(
+      part("write", { input: { filePath: "C:\\ws\\win.ts" }, metadata: { diagnostics: small } }),
+    )
+    expect(normalized.rows).toHaveLength(1)
   })
 })

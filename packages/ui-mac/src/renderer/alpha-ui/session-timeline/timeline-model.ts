@@ -369,14 +369,13 @@ function cappedField(value: unknown, max = FOOTNOTE_FIELD_MAX_CHARS): string | u
 }
 
 /**
- * 回合末脚注:取该回合最后一个「已完成且无错误」的助手消息;没有 → 无脚注
- * (流式中/出错回合不出脚注)。每个字段独立诚实缺席(I2 防御读取)。
+ * 回合末脚注:只认「回合尾态 = 成功完成」——回合**最后一个**助手消息必须已完成且
+ * 无错误,否则无脚注;不回溯早先的完成助手(成功→流式、成功→失败序列一律零脚注,
+ * 旧指标不得与未终结/失败内容混用;复制动作随行同门)。字段独立诚实缺席(I2)。
  */
 export function footnoteOf(assistants: readonly AssistantMessage[]): TimelineFootnote | undefined {
-  const source = [...assistants]
-    .reverse()
-    .find((message) => typeof message.time.completed === "number" && !message.error)
-  if (!source) return undefined
+  const source = assistants.at(-1)
+  if (!source || typeof source.time.completed !== "number" || source.error) return undefined
   const footnote: TimelineFootnote = {}
   footnote.agent = cappedField(source.agent)
   footnote.model = cappedField(source.modelID)
@@ -410,7 +409,16 @@ export function turnCopyText(
 }
 
 // ── 本回合改动汇总(S2):数据源 = userMessage.summary.diffs(服务端回合后写入) ──
-/** I2/I7 防御读取:非法条目丢弃,项数帽 + 扫描预算;解析不出任何合法行 → undefined。 */
+/** 非负有限数才合法;其余(含缺失/NaN/负数)= 畸形,整条丢弃(审计 minor)。 */
+function diffCountOf(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return undefined
+  return Math.floor(value)
+}
+
+/**
+ * I2/I7 防御读取:畸形条目**整条丢弃**——超长文件名不截断(截断会指向另一个路径)、
+ * 非法 ±行数不改写为 0(不伪造统计);项数帽 + 扫描预算;无合法行 → undefined。
+ */
 export function turnDiffsOf(message: UserMessage): {
   files: TimelineTurnDiffFile[]
   additions: number
@@ -430,13 +438,11 @@ export function turnDiffsOf(message: UserMessage): {
     if (typeof item !== "object" || item === null) continue
     const record = item as { file?: unknown; additions?: unknown; deletions?: unknown }
     if (typeof record.file !== "string" || record.file.length === 0) continue
-    const additions = typeof record.additions === "number" && Number.isFinite(record.additions) ? record.additions : 0
-    const deletions = typeof record.deletions === "number" && Number.isFinite(record.deletions) ? record.deletions : 0
-    files.push({
-      file: record.file.slice(0, TURN_DIFF_FILE_MAX_CHARS),
-      additions: Math.max(0, Math.floor(additions)),
-      deletions: Math.max(0, Math.floor(deletions)),
-    })
+    if (record.file.length > TURN_DIFF_FILE_MAX_CHARS) continue
+    const additions = diffCountOf(record.additions)
+    const deletions = diffCountOf(record.deletions)
+    if (additions === undefined || deletions === undefined) continue
+    files.push({ file: record.file, additions, deletions })
   }
   if (files.length === 0) return undefined
   return {
@@ -445,6 +451,28 @@ export function turnDiffsOf(message: UserMessage): {
     deletions: files.reduce((sum, row) => sum + row.deletions, 0),
     truncated,
   }
+}
+
+// ── 面板联动的路径纪律(I1,审计 Major-2) ───────────────────────────────────
+const DRIVE_LETTER_RE = /^[A-Za-z]:/
+
+/**
+ * 把「在面板打开」目标证明为安全的 workspace-relative 路径(review 面板货币):
+ * 只接受 ①位于 identity.directory 之下的绝对路径(剥前缀)②本就相对的路径;
+ * 归一(\→/)后不得残留 ".."/"."/空段/盘符/绝对残留。无法证明 → undefined,
+ * 消费侧零动作(pill/diffsum 同门;不把工作区外的路径递进 jumpToReview)。
+ */
+export function reviewPathOf(path: string, directory: string): string | undefined {
+  const normalized = path.replaceAll("\\", "/")
+  const root = directory.replaceAll("\\", "/").replace(/\/+$/, "")
+  let relative: string | undefined
+  if (root && normalized.startsWith(`${root}/`)) relative = normalized.slice(root.length + 1)
+  else if (!normalized.startsWith("/") && !DRIVE_LETTER_RE.test(normalized)) relative = normalized
+  if (!relative) return undefined
+  if (DRIVE_LETTER_RE.test(relative)) return undefined
+  const segments = relative.split("/")
+  if (segments.some((segment) => segment.length === 0 || segment === "." || segment === "..")) return undefined
+  return relative
 }
 
 // ── 斜杠命令 chip:登记按 assistant messageID 对齐所属回合 ───────────────────
@@ -684,8 +712,10 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
         })
     }
 
-    // 回合末富脚注(A6):只在回合完成(存在已完成且无错误的助手)且有可见内容时出行。
-    const footnote = emitted > 0 ? footnoteOf(assistants) : undefined
+    // 回合末富脚注(A6):只在回合尾态成功完成且有可见内容时出行;当前活跃回合
+    // (busy/retry 等非 idle)尾态未定,一律不出(审计 Major-1)。
+    const turnActive = userMessage.id === activeUserID && input.status !== "idle"
+    const footnote = emitted > 0 && !turnActive ? footnoteOf(assistants) : undefined
     if (footnote)
       rows.push({
         kind: "footnote",

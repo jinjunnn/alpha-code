@@ -17,6 +17,7 @@ import {
   MARKDOWN_MAX_CHARS,
   projectTimelineRows,
   reuseTimelineRows,
+  reviewPathOf,
   segmentUserText,
   SLASH_ARGUMENTS_MAX_CHARS,
   SLASH_COMMAND_MAX_CHARS,
@@ -696,5 +697,118 @@ describe("#568 斜杠命令来源(可选 typed 接口,C7 供给)", () => {
     )
     expect(long?.command).toHaveLength(SLASH_COMMAND_MAX_CHARS)
     expect(long?.arguments).toHaveLength(SLASH_ARGUMENTS_MAX_CHARS)
+  })
+})
+
+describe("#568 审计修复:脚注只认回合尾态成功完成(Major-1)", () => {
+  test("序列 成功→流式:早先完成助手不回溯,零脚注(复制动作随行同门缺席)", () => {
+    const rows = project(
+      [
+        userMsg("msg_u1", 1000),
+        assistantMsg("msg_a1", "msg_u1"),
+        assistantMsg("msg_a2", "msg_u1", { time: { created: 30 } }),
+      ],
+      {
+        msg_u1: [textPart("prt_u1", "msg_u1", "开始")],
+        msg_a1: [textPart("prt_t1", "msg_a1", "第一次完整回答")],
+        msg_a2: [textPart("prt_t2", "msg_a2", "重新生成中")],
+      },
+      "busy",
+    )
+    expect(rows.some((row) => row.kind === "footnote")).toBe(false)
+  })
+
+  test("序列 成功→失败:尾态失败,零脚注(旧指标不得与失败内容混用)", () => {
+    const rows = project(
+      [
+        userMsg("msg_u1", 1000),
+        assistantMsg("msg_a1", "msg_u1"),
+        assistantMsg("msg_a2", "msg_u1", {
+          time: { created: 30, completed: 40 },
+          error: { name: "rate_limit_exceeded", data: { message: "429" } } as never,
+        }),
+      ],
+      {
+        msg_u1: [textPart("prt_u1", "msg_u1", "开始")],
+        msg_a1: [textPart("prt_t1", "msg_a1", "第一次完整回答")],
+        msg_a2: [textPart("prt_t2", "msg_a2", "半截失败")],
+      },
+    )
+    expect(rows.some((row) => row.kind === "footnote")).toBe(false)
+    // footnoteOf 直接口径:最后一个助手不是成功完成 → undefined。
+    expect(
+      footnoteOf([assistantMsg("msg_a1", "msg_u1"), assistantMsg("msg_a2", "msg_u1", { time: { created: 30 } })]),
+    ).toBeUndefined()
+  })
+
+  test("活跃回合(busy 且尾助手已完成、新助手未落地)不出脚注;结算后出", () => {
+    const messages = [userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")]
+    const parts = {
+      msg_u1: [textPart("prt_u1", "msg_u1", "开始")],
+      msg_a1: [textPart("prt_t1", "msg_a1", "回答")],
+    }
+    expect(project(messages, parts, "busy").some((row) => row.kind === "footnote")).toBe(false)
+    expect(project(messages, parts, "idle").some((row) => row.kind === "footnote")).toBe(true)
+  })
+})
+
+describe("#568 审计修复:reviewPathOf 安全 workspace-relative 证明(Major-2)", () => {
+  const root = "/tmp/workspace"
+
+  test("合法:根下绝对路径剥前缀;本就相对的路径原样;Windows 分隔符归一", () => {
+    expect(reviewPathOf("/tmp/workspace/src/a.ts", root)).toBe("src/a.ts")
+    expect(reviewPathOf("AGENTS.md", root)).toBe("AGENTS.md")
+    expect(reviewPathOf("alpha-ui/button.css", root)).toBe("alpha-ui/button.css")
+    expect(reviewPathOf("/tmp/workspace/src/b.ts", "/tmp/workspace/")).toBe("src/b.ts")
+    expect(reviewPathOf("C:\\ws\\src\\a.ts", "C:\\ws")).toBe("src/a.ts")
+  })
+
+  test("四形态越根一律 undefined:外部绝对 / ../ 相对 / 盘符 / normalize 逃逸", () => {
+    expect(reviewPathOf("/etc/passwd", root)).toBeUndefined()
+    expect(reviewPathOf("../escape.ts", root)).toBeUndefined()
+    expect(reviewPathOf("src/../../escape.ts", root)).toBeUndefined()
+    expect(reviewPathOf("C:/evil/x.ts", root)).toBeUndefined()
+    expect(reviewPathOf("C:\\evil\\x.ts", root)).toBeUndefined()
+    expect(reviewPathOf("/tmp/workspace/../escape.ts", root)).toBeUndefined()
+  })
+
+  test("残留构件 fail-closed:空段 / . 段 / 根本身 / 空目录", () => {
+    expect(reviewPathOf("src//a.ts", root)).toBeUndefined()
+    expect(reviewPathOf("./a.ts", root)).toBeUndefined()
+    expect(reviewPathOf("/tmp/workspace", root)).toBeUndefined()
+    expect(reviewPathOf("/tmp/workspace/", root)).toBeUndefined()
+    expect(reviewPathOf("a.ts", "")).toBe("a.ts")
+  })
+})
+
+describe("#568 审计修复:diffsum 畸形条目整条丢弃(minor)", () => {
+  test("超长文件名不截断成另一路径、非法/缺失 ±行数不改写为 0 —— 整条丢弃", () => {
+    const result = turnDiffsOf(
+      userMsg("msg_u1", 1, {
+        summary: {
+          diffs: [
+            { file: "ok.ts", additions: 1, deletions: 0 },
+            { file: "x".repeat(500), additions: 1, deletions: 0 },
+            { file: "nan.ts", additions: Number.NaN, deletions: 0 },
+            { file: "neg.ts", additions: 1, deletions: -3 },
+            { file: "missing.ts", additions: 1 },
+            { file: "str.ts", additions: "9", deletions: 0 },
+          ] as never,
+        },
+      }),
+    )
+    expect(result?.files).toEqual([{ file: "ok.ts", additions: 1, deletions: 0 }])
+    expect(result?.additions).toBe(1)
+    expect(result?.deletions).toBe(0)
+  })
+
+  test("全部畸形 → undefined(不渲染空壳行)", () => {
+    expect(
+      turnDiffsOf(
+        userMsg("msg_u2", 1, {
+          summary: { diffs: [{ file: "y".repeat(401), additions: 1, deletions: 0 }] as never },
+        }),
+      ),
+    ).toBeUndefined()
   })
 })
