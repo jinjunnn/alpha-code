@@ -12,8 +12,10 @@ review_after: 2027-01-16
 
 How alpha surfaces attach to an app whose shell it inherited from opencode.
 alpha-code is a fork: `packages/ui-mac` (the Electron app) is alpha-authored and
-mounts upstream `@opencode-ai/app`, then replaces or overlays pieces. Every
-pattern below preserves the ability to **fall back to upstream**.
+mounts upstream `@opencode-ai/app`, then replaces or overlays pieces. The
+upstream leaf remains reachable only as a **boot-time escape valve** (env/pin →
+`legacy`); there is no runtime fallback — a crashed alpha surface enters Alpha
+Recovery, never the upstream leaf.
 
 ## Surface seam (replace an upstream leaf)
 
@@ -21,10 +23,14 @@ Alpha swaps an upstream page through the typed `AppSurfaces` seam
 (`home` / `newSession` / `session`), gated by
 `packages/ui-mac/src/shared/alpha-surfaces.ts`:
 
-- `SURFACE_RELEASE_STATES` = `auto-fallback` (ship alpha, fall back to upstream
-  on crash) or `legacy` (ship upstream; alpha built but off).
-- A seam surface is a real alpha component; if it throws, the app renders the
-  upstream leaf. Never replace a leaf without a fallback path.
+- `SURFACE_RELEASE_STATES` = per-surface release default, `alpha` (ship the
+  alpha leaf) or `legacy` (ship upstream; alpha built but off). Resolution
+  happens once in main before the route tree mounts (env > pin > release
+  default) and never hot-switches at runtime.
+- A seam surface is a real alpha component; if it throws,
+  `surface-boundary.tsx` records the crash once and admits **Alpha Recovery**
+  (REQ-090 one-way door) — the failed region never reloads and never swaps to
+  the legacy leaf.
 
 ## Takeover / injection (augment an upstream surface in place)
 
@@ -52,17 +58,18 @@ the shell: Extension Hub (`extensions/extension-hub.tsx`), Automations
 (`alpha-ui/artifact-workbench/`). These own their own layout and use the token
 system directly.
 
-## Recovery / fallback boundary
+## Recovery boundary
 
 Alpha surfaces are wrapped so a fatal error degrades instead of white-screening:
-`alpha-ui/surface-boundary.tsx` (records, then reloads and falls back to the
-upstream leaf per the resolver, #334) and `main/db-safety-boot.ts` (Electron-side
-boot recovery / DB safety). Design every alpha surface assuming it may be the
-thing that failed — provide an empty state, a loading state, and a degraded path.
+`alpha-ui/surface-boundary.tsx` admits the crash once (stable crashID → one
+process-local incident) into **Alpha Recovery** — no reload, no legacy swap —
+and `main/db-safety-boot.ts` handles Electron-side boot recovery / DB safety.
+Design every alpha surface assuming it may be the thing that failed — provide an
+empty state, a loading state, and a degraded path.
 
 ## Rollout is a state, not a flag day
 
-A surface moves `legacy → auto-fallback → (eventually) alpha` via
-`alpha-surfaces.ts`, not by deleting the upstream path. The upstream surface
-stays reachable until the alpha one is proven. This is why `../PAGE-MAP.md` marks
-several surfaces `partial`.
+A surface flips its release default `legacy → alpha` via `SURFACE_RELEASE_STATES`
+in `alpha-surfaces.ts`, not by deleting the upstream path; env/pin keep a
+per-deploy boot-time escape valve until the alpha surface is proven. This is why
+`../PAGE-MAP.md` marks a surface `partial` while its replacement is in flight.

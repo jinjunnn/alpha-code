@@ -47,7 +47,7 @@ is alpha-authored. "opencode" below means the surface is rendered by an upstream
 | Surface | Status | Code entry (`packages/…`) | Current design | Design history / owning REQ |
 | --- | --- | --- | --- | --- |
 | Shell / 侧栏 | alpha-ized | `ui-mac/src/renderer/sidebar/alpha-sidebar.tsx` | [`current/shell-sidebar/`](current/shell-sidebar/design.html) | composer-model-redesign (`shell.html`) |
-| Home / 首页 | alpha-ized | `ui-mac/src/renderer/alpha-ui/AlphaHome.tsx` | — (shares composer) | composer-model-redesign (`mockup.html`/`states.html`); release `auto-fallback` |
+| Home / 首页 | alpha-ized | `ui-mac/src/renderer/alpha-ui/AlphaHome.tsx` | — (shares composer) | composer-model-redesign (`mockup.html`/`states.html`); release default = alpha(崩溃进 Alpha Recovery,不回上游叶) |
 | New session / 新会话 | alpha-ized | `ui-mac/src/renderer/alpha-ui/alpha-new-session.tsx` | — (shares composer) | no dedicated mock |
 | Composer / 输入框 | alpha-ized | `ui-mac/src/renderer/alpha-ui/session-workspace/session-composer-dock.tsx` + `alpha-composer.tsx` | [`current/composer/`](current/composer/design.html) | composer-model-redesign; 2026-07-24-session-seam-baseline (REQ-125 C7). seam 会话页直挂,零 Portal/零选择器;旧 composer-takeover 已删,manifest lineage = alpha |
 | Slash menu / 斜杠菜单 | alpha-ized | `ui-mac/src/renderer/alpha-ui/composer-autocomplete.tsx` | [`current/slash-menu/`](current/slash-menu/design.html) | 2026-07-09-slash-menu (REQ-072) |
@@ -62,7 +62,7 @@ is alpha-authored. "opencode" below means the surface is rendered by an upstream
 | Settings / 设置 | alpha-ized | `ui-mac/src/renderer/alpha-ui/settings.tsx` | [`current/settings/`](current/settings/design.html) | hub-settings-redesign; req090-alpha-surfaces。自渲染 Alpha overlay(不嵌上游 dialog-settings),只消费 typed adapters |
 | Permission confirm / 权限确认 | alpha-ized | `ui-mac/src/renderer/alpha-ui/permission-watcher.tsx` + `PermissionDialog.tsx` | — (设计=req090-alpha-surfaces Permission) | req090-alpha-surfaces。读 PermissionV2、经 Alpha Dialog 原子提交;不再挂上游 dock |
 | General Dialog / 通用弹窗 | partial | `ui-mac/src/renderer/alpha-ui/Dialog.tsx` | — | req090-alpha-surfaces (Dialog); alpha Dialog hosts only alpha consumers |
-| Boot / Surface recovery / 恢复 | partial | `ui-mac/src/main/db-safety-boot.ts` + `renderer/alpha-ui/surface-boundary.tsx` | — | req090-alpha-surfaces (Recovery); #334 |
+| Boot / Surface recovery / 恢复 | alpha-ized | `ui-mac/src/main/db-safety-boot.ts` + `renderer/alpha-ui/surface-boundary.tsx` | — | req090-alpha-surfaces (Recovery); #334。两面(boot.recovery / inline.surface-recovery)manifest lineage 均 = alpha;Alpha Recovery 单向门,不回落 legacy |
 | Session workspace / 会话工作区 | alpha-ized | `ui-mac/src/renderer/alpha-ui/session-workspace/alpha-session-workspace.tsx` | [`current/session-workspace/`](current/session-workspace/design.html) | composer-model-redesign; req090; 2026-07-24-session-seam-baseline (REQ-125). release default = alpha,零消费上游 session 叶(时间线/右栏四面板已自持;composer 接线随 C7),manifest lineage = alpha |
 | Toast | alpha-new | `ui-mac/src/renderer/alpha-ui/Toast.tsx` | — (primitive, no mock) | — |
 | Command palette (Cmd-K) | opencode | `app/src/context/command.tsx` (upstream) | — | not reskinned by alpha |

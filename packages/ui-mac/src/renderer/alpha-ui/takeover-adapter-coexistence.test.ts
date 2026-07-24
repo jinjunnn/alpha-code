@@ -38,12 +38,23 @@ function* walk(dir: string): Generator<string> {
   }
 }
 
+/** renderer 下全部非测试生产文本(ts/tsx/css/html/json)—— 退役零引用棘轮的扫描面。 */
+function* walkText(dir: string): Generator<string> {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === "node_modules" || entry.name.startsWith(".")) continue
+    if (/\.test\.(ts|tsx)$/.test(entry.name)) continue
+    const p = path.join(dir, entry.name)
+    if (entry.isDirectory()) yield* walkText(p)
+    else if (/\.(ts|tsx|css|html|json)$/.test(entry.name)) yield p
+  }
+}
+
 describe("REQ-125 C7:ComposerTakeover 删除后零引用(棘轮)", () => {
-  test("composer-takeover.tsx 不存在,renderer 生产源码零引用(组件名/文件名/body flag/收养停靠位)", () => {
+  test("composer-takeover.tsx 不存在,renderer 生产文本零引用(组件名/文件名/body flag/收养停靠位)", () => {
     expect(fs.existsSync(path.join(ALPHA_UI, "composer-takeover.tsx"))).toBe(false)
     const forbidden = ["ComposerTakeover", "composer-takeover", "data-alpha-composer-takeover", "data-alpha-usage-host"]
     const offenders: Array<{ file: string; token: string }> = []
-    for (const file of walk(RENDERER)) {
+    for (const file of walkText(RENDERER)) {
       const src = read(file)
       for (const token of forbidden) {
         if (src.includes(token)) offenders.push({ file: path.relative(RENDERER, file), token })
@@ -132,10 +143,10 @@ describe("REQ-125 C8:TimelineInject 删除后零引用(棘轮)", () => {
     expect(rendererIndex).not.toContain("timeline-reskin.css")
   })
 
-  test("renderer 生产源码零引用(组件名/文件名/reskin 入口)", () => {
+  test("renderer 生产文本零引用(组件名/文件名/reskin 入口)", () => {
     const forbidden = ["TimelineInject", "timeline-inject", "timeline-reskin"]
     const offenders: Array<{ file: string; token: string }> = []
-    for (const file of walk(RENDERER)) {
+    for (const file of walkText(RENDERER)) {
       const src = read(file)
       for (const token of forbidden) {
         if (src.includes(token)) offenders.push({ file: path.relative(RENDERER, file), token })
