@@ -1,0 +1,93 @@
+/* REQ-125 C4 — right-rail artifacts host chrome.
+ * Only the embedding context is styled here (scroll column, caption, quiet empty state);
+ * every card/chip/tab/preview inside comes verbatim from artifact-workbench.css (I5 — the
+ * embedded engine keeps its internal language, this file never redefines a workbench
+ * selector). Tokens: --a-* only. */
+
+.a-rart-root {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.a-rart-scroll {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 12px 12px 14px;
+  overflow-y: auto;
+}
+
+.a-rart-caption {
+  padding: 2px 2px 0;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-2xs);
+  font-weight: var(--a-weight-semibold);
+  letter-spacing: var(--a-tracking-wide);
+  text-transform: uppercase;
+}
+
+.a-rart-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.a-rart-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-sm);
+}
+
+.a-rart-empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 30px;
+  text-align: center;
+}
+
+.a-rart-empty-ic {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--a-radius-lg);
+  background: var(--a-bg-muted);
+  color: var(--a-text-tertiary);
+}
+
+.a-rart-empty-ic svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.a-rart-empty b {
+  color: var(--a-text);
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+}
+
+.a-rart-empty p {
+  max-width: 30ch;
+  margin: 0;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-xs);
+  line-height: var(--a-leading-snug);
+}

@@ -64,6 +64,22 @@
   --a-warning-subtle: rgba(217, 119, 6, 0.12);
   --a-error-subtle: rgba(220, 38, 38, 0.12);
   --a-info-subtle: rgba(37, 99, 235, 0.12);
+  --a-purple: #7c3aed;
+  --a-purple-subtle: rgba(124, 58, 237, 0.12);
+  --a-orange: #ea7317;
+  --a-orange-subtle: rgba(234, 115, 23, 0.13);
+
+  /* ── Timeline tool type palette (REQ-125 C6; matches conversation-timeline 稿 --t-*) ── */
+  --a-tool-read: #0891b2;
+  --a-tool-list: #0891b2;
+  --a-tool-search: #7c3aed;
+  --a-tool-bash: #18181b;
+  --a-tool-edit: #16a34a;
+  --a-tool-write: #2563eb;
+  --a-tool-task: #d97706;
+  --a-tool-web: #0ea5e9;
+  --a-tool-skill: #ea7317;
+  --a-tool-mcp: #7c3aed;
 
   /* ── Typography ──────────────────────────────────────────────────────── */
   --a-font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
@@ -198,6 +214,11 @@
   --a-warning-subtle: rgba(251, 191, 36, 0.14);
   --a-error-subtle: rgba(248, 113, 113, 0.14);
   --a-info-subtle: rgba(96, 165, 250, 0.14);
+  --a-purple: #a78bfa;
+  --a-purple-subtle: rgba(167, 139, 250, 0.16);
+  --a-orange: #fb923c;
+  --a-orange-subtle: rgba(251, 146, 60, 0.16);
+  --a-tool-bash: #52525b;
 
   --a-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
   --a-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -241,6 +262,11 @@
     --a-warning: #fbbf24;
     --a-error: #f87171;
     --a-info: #60a5fa;
+    --a-purple: #a78bfa;
+    --a-purple-subtle: rgba(167, 139, 250, 0.16);
+    --a-orange: #fb923c;
+    --a-orange-subtle: rgba(251, 146, 60, 0.16);
+    --a-tool-bash: #52525b;
     --a-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.4);
     --a-shadow-overlay: 0 24px 64px rgba(0, 0, 0, 0.7), 0 8px 16px rgba(0, 0, 0, 0.5);
   }

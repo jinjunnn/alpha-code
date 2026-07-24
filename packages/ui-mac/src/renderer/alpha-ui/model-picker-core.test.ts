@@ -83,7 +83,7 @@ describe("真实 alpha-models.json → picker 两组", () => {
 
   test("KEY 状态未知或失败不伪装成未配置", () => {
     const loading = rows({ keyStatusState: "loading", keyStatus: {} })
-    const failed = rows({ keyStatusState: "error", keyStatus: {} })
+    const failed = rows({ keyStatusState: "failed", keyStatus: {} })
 
     expect(loading.filter((row) => row.group === "byok").every((row) => row.reason === t("alpha.model.keyLoading"))).toBe(true)
     expect(failed.filter((row) => row.group === "byok").every((row) => row.reason === t("alpha.model.keyFailed"))).toBe(true)
@@ -113,6 +113,19 @@ describe("真实 alpha-models.json → picker 两组", () => {
     expect(failed.some((row) => row.availability === "available")).toBe(false)
     expect(failed.find((row) => row.model.providerID === "alpha")?.reason).toBe(t("alpha.model.listUnavailable"))
     expect(failed.find((row) => row.model.providerID === "deepseek")?.reason).toBe(t("alpha.model.configuredUnavailable"))
+  })
+
+  test("恢复窗口保留已渲染目录行并全部标为同步中", () => {
+    const ready = rows()
+    const recovering = rows({ listState: "recovering" })
+    const previouslyAvailable = ready.filter((row) => row.availability === "available")
+    const recoveringAvailable = recovering.filter((row) =>
+      previouslyAvailable.some((previous) => previous.key === row.key),
+    )
+
+    expect(recovering.map((row) => row.key)).toEqual(ready.map((row) => row.key))
+    expect(recoveringAvailable.every((row) => row.availability === "loading")).toBe(true)
+    expect(recoveringAvailable.every((row) => row.reason === t("alpha.model.syncing"))).toBe(true)
   })
 
   test("搜索无匹配时返回真实空态，而非回退到全量或假条目", () => {

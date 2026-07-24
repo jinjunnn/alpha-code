@@ -5,7 +5,14 @@ import { app, BrowserWindow, Notification, clipboard, dialog, ipcMain, shell } f
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
 
-import type { AuthMode, AuthState, FatalRendererError, ServerReadyData, TitlebarTheme } from "../preload/types"
+import type {
+  AuthMode,
+  AuthState,
+  FatalRendererError,
+  ServerReadyData,
+  SidecarGenerationState,
+  TitlebarTheme,
+} from "../preload/types"
 import { getAlphaEnvironment } from "./alpha-environment"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { alphaUserWorkspaceDir, ensureUserWorkspaceDir } from "./alpha-user-workspace"
@@ -30,6 +37,7 @@ export const pickedFiles = createPickedFileAuthorizations() // REQ-033:agent 导
 
 type Deps = {
   killSidecar: () => Promise<void> | void
+  sidecarGenerationState: () => SidecarGenerationState
   relaunch: () => void
   awaitInitialization: () => Promise<ServerReadyData>
   consumeInitialDeepLinks: () => Promise<string[]> | string[]
@@ -65,6 +73,7 @@ export function registerIpcHandlers(deps: Deps) {
   // 快照;不存在任何对应写面(环境只由 main 的构建事实解析,见 alpha-environment.ts)。
   ipcMain.handle("alpha-environment", () => getAlphaEnvironment())
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
+  ipcMain.handle("sidecar-generation-state", () => deps.sidecarGenerationState())
   ipcMain.handle("await-initialization", () => deps.awaitInitialization())
   ipcMain.handle("consume-initial-deep-links", () => deps.consumeInitialDeepLinks())
   ipcMain.handle("get-default-server-url", () => deps.getDefaultServerUrl())
