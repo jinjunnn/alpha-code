@@ -60,6 +60,8 @@ export interface SessionTimelineViewProps {
   emptyTitle: string
   history: SessionTimelineHistory
   onLoadOlder: () => Promise<void>
+  /** settling 生命周期上限(测试注入用;缺省 SETTLE_TIMEOUT_MS)。 */
+  settleTimeoutMs?: number
   /** C6 卡片交互意图(可选):focusArtifact 接线归收口;openSession 由绑定层供给。 */
   intents?: TimelineIntents
 }
@@ -154,7 +156,11 @@ export function SessionTimelineView(props: SessionTimelineViewProps) {
     if (!scrollRef || !epoch || prepend.busy(epoch) || !props.history.more || props.history.loading) return
     prepend.begin(epoch)
     endSettling()
+    // settling 的生命周期上限在进入那一刻无条件建立,不依赖任何后续事件
+    // (load 挂起/中途换代都不会让 settling 泄漏);用户滚动重锚只换锚,
+    // 复用同一 timer,不重置时限。
     settling = { epoch, anchor: findAnchor(), loadDone: false, quiet: 0 }
+    settling.timer = setTimeout(endSettling, props.settleTimeoutMs ?? SETTLE_TIMEOUT_MS)
     void props
       .onLoadOlder()
       .catch(() => {})
@@ -169,10 +175,6 @@ export function SessionTimelineView(props: SessionTimelineViewProps) {
         // 同帧先复位一次(solid 同步渲染,新行已在 DOM);其余高度变化
         // (占位行进窗挂引擎等)由 RO 事件持续复位,直到稳定或超时。
         applySettling()
-        if (settling) {
-          if (settling.timer !== undefined) clearTimeout(settling.timer)
-          settling.timer = setTimeout(endSettling, SETTLE_TIMEOUT_MS)
-        }
       })
   }
 

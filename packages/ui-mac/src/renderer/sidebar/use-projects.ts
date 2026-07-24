@@ -13,9 +13,15 @@ import { createEffect, onCleanup, type Accessor } from "solid-js"
 // server module too, which pulls in Node-only deps (process/which/child_process) that cannot
 // bundle for the renderer. The client subpath is browser-safe (opencode's own app uses it).
 import { createOpencodeClient, type ModelRef } from "@opencode-ai/sdk/v2/client"
+import type { SidecarGenerationState } from "../../preload/types"
 import { projectLabel } from "./route"
 import { hiddenProjects } from "./sidebar-state"
 import { isUnderSkippedWorktree, shouldSkipWorktree } from "./worktree-filter"
+import {
+  hasRuntimeRecoveryBridge,
+  notifySseReconnected,
+  subscribeRuntimeRecovery,
+} from "../runtime-recovery"
 
 export interface ServerInfo {
   baseUrl: string
@@ -333,21 +339,24 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
             .catch(() => ({ data: undefined, error: true }) as const)
           if (!cmdErr && Array.isArray(cmds) && cmds.some((x: any) => x?.name === name)) {
             ranCommand = true
-            await c.session.command({ sessionID: id, command: name, arguments: tail.join(" ") } as any).catch(() => {
-              /* the session still exists; the user can retry from the session composer */
-            })
+            const command = await c.session
+              .command({ sessionID: id, command: name, arguments: tail.join(" ") } as any)
+              .catch(() => null)
+            if (!command || command.error) return undefined
           }
         }
         if (!ranCommand) {
-          await c.session
+          const prompted = await c.session
             .promptAsync({
               sessionID: id,
               ...(opts?.agent ? { agent: opts.agent } : {}),
               parts: [{ type: "text", text: body }, ...(extraParts ?? [])],
             } as any)
-            .catch(() => {
-              /* the session still exists; the user can retry from the session composer */
-            })
+            .catch(() => null)
+          // A sidecar generation boundary can sever admission before the request resolves. Returning
+          // undefined keeps the user's draft in the home composer and surfaces its existing send
+          // failure state instead of silently navigating as though the prompt were accepted.
+          if (!prompted || prompted.error) return undefined
         }
       }
       return id
@@ -426,47 +435,62 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
     if (!c) return
     const gen = generation
     const abort = abortRef
-    try {
-      const { stream } = await c.global.event({ signal: abort.signal } as any)
-      for await (const event of stream as AsyncIterable<any>) {
-        if (gen !== generation) break
-        const payload = event?.payload
-        const projectID: string | undefined = event?.project ?? payload?.properties?.info?.projectID
-        const directory: string | undefined = event?.directory
-        switch (payload?.type) {
-          case "session.created":
-          case "session.updated":
-            upsertSession(payload.properties?.info)
-            break
-          case "session.deleted":
-            removeSession(
-              payload.properties?.sessionID ?? payload.properties?.info?.id,
-              payload.properties?.info?.projectID ?? projectID,
-              payload.properties?.info?.directory ?? directory,
-            )
-            break
-          case "session.idle":
-            void reloadForSession(projectID, directory)
-            break
-          case "project.updated":
-          case "project.directories.updated":
-            void loadProjects()
-            break
+    let retry = 0
+    let connected = false
+    while (gen === generation && !abort.signal.aborted) {
+      try {
+        const { stream } = await c.global.event({ signal: abort.signal } as any)
+        if (gen !== generation || abort.signal.aborted) return
+        retry = 0
+        if (connected) notifySseReconnected()
+        connected = true
+        for await (const event of stream as AsyncIterable<any>) {
+          if (gen !== generation) return
+          const payload = event?.payload
+          const projectID: string | undefined = event?.project ?? payload?.properties?.info?.projectID
+          const directory: string | undefined = event?.directory
+          switch (payload?.type) {
+            case "session.created":
+            case "session.updated":
+              upsertSession(payload.properties?.info)
+              break
+            case "session.deleted":
+              removeSession(
+                payload.properties?.sessionID ?? payload.properties?.info?.id,
+                payload.properties?.info?.projectID ?? projectID,
+                payload.properties?.info?.directory ?? directory,
+              )
+              break
+            case "session.idle":
+              void reloadForSession(projectID, directory)
+              break
+            case "project.updated":
+            case "project.directories.updated":
+              void loadProjects()
+              break
+          }
         }
+      } catch {
+        // The sidecar generation bridge normally rebuilds the client. This bounded loop also covers
+        // an isolated SSE transport drop without requiring a page reload.
       }
-    } catch {
-      /* stream aborted on cleanup or transient error; SDK auto-reconnects internally */
+      if (gen !== generation || abort.signal.aborted) return
+      await new Promise((resolve) => setTimeout(resolve, Math.min(4_000, 250 * 2 ** retry++)))
     }
   }
 
   let abortRef = new AbortController()
+  let serverInfo: ServerInfo | undefined
+  let connectedSidecarGeneration = -1
+  let bridgeFallbackTimer: ReturnType<typeof setTimeout> | undefined
+  let runtimeStateReceived = false
+  let runtimeState: SidecarGenerationState | undefined
 
-  createEffect(() => {
-    const info = server()
-    if (!info) return
-
+  const connect = (info: ServerInfo, sidecarGeneration: number) => {
     const gen = ++generation
+    abortRef.abort()
     abortRef = new AbortController()
+    connectedSidecarGeneration = sidecarGeneration
     client = createOpencodeClient({
       baseUrl: info.baseUrl,
       headers: authHeaders(info),
@@ -474,11 +498,48 @@ export function useAlphaProjects(server: Accessor<ServerInfo | undefined>): Alph
 
     void loadProjects()
     void subscribe()
+    return gen
+  }
 
-    onCleanup(() => {
-      if (gen === generation) client = undefined
+  const unsubscribeRuntime = subscribeRuntimeRecovery((state) => {
+    runtimeStateReceived = true
+    runtimeState = state
+    clearTimeout(bridgeFallbackTimer)
+    if (state.status === "recovering") {
+      generation++
+      client = undefined
       abortRef.abort()
-    })
+      return
+    }
+    if (!serverInfo || state.generation === connectedSidecarGeneration) return
+    connect(serverInfo, state.generation)
+  })
+
+  createEffect(() => {
+    serverInfo = server()
+    if (!serverInfo) return
+    if (!hasRuntimeRecoveryBridge()) {
+      connect(serverInfo, 0)
+      return
+    }
+    if (runtimeState?.status === "ready") {
+      if (!client || runtimeState.generation !== connectedSidecarGeneration)
+        connect(serverInfo, runtimeState.generation)
+      return
+    }
+    if (runtimeStateReceived) return
+    clearTimeout(bridgeFallbackTimer)
+    bridgeFallbackTimer = setTimeout(() => {
+      if (serverInfo && !client) connect(serverInfo, connectedSidecarGeneration)
+    }, 1_000)
+  })
+
+  onCleanup(() => {
+    generation++
+    client = undefined
+    abortRef.abort()
+    clearTimeout(bridgeFallbackTimer)
+    unsubscribeRuntime()
   })
 
   return {

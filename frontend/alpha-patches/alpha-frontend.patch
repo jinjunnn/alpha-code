@@ -1,14 +1,15 @@
 diff --git a/packages/app/package.json b/packages/app/package.json
-index faf01944..59ef9237 100644
+index faf01944..98b79564 100644
 --- a/packages/app/package.json
 +++ b/packages/app/package.json
-@@ -9,7 +9,8 @@
+@@ -9,7 +9,9 @@
      "./updater": "./src/updater.ts",
      "./wsl/types": "./src/wsl/types.ts",
      "./vite": "./vite.js",
 -    "./index.css": "./src/index.css"
 +    "./index.css": "./src/index.css",
-+    "./surface/session": "./src/pages/session.tsx"
++    "./surface/session": "./src/pages/session.tsx",
++    "./surface/terminal": "./src/surface/terminal.ts"
    },
    "scripts": {
      "typecheck": "tsgo -b",
@@ -1513,6 +1514,21 @@ index 275e6ec4..bb4a5bc7 100644
      )
    }
  
+diff --git a/packages/app/src/surface/terminal.ts b/packages/app/src/surface/terminal.ts
+new file mode 100644
+index 00000000..0a2a5026
+--- /dev/null
++++ b/packages/app/src/surface/terminal.ts
+@@ -0,0 +1,9 @@
++// Alpha narrow surface (ADR-027 revision 2026-07-24, REQ-125 #554): terminal engine seam.
++// Re-exports exactly the engine pieces the alpha session workspace may consume — the
++// workspace-scoped PTY tab state (useTerminal), the Ghostty terminal embed (Terminal),
++// and the pty record type (LocalPTY). Nothing else: no `./surface/*` wildcard, no
++// pages/context subpaths. The single sanctioned consumer is the ui-mac terminal engine
++// adapter; both sides are pinned by surface-seam-contract.test.ts.
++export { useTerminal } from "@/context/terminal"
++export type { LocalPTY } from "@/context/terminal"
++export { Terminal } from "@/components/terminal"
 diff --git a/packages/ui/src/components/dialog.tsx b/packages/ui/src/components/dialog.tsx
 index 981e3f45..79fc5571 100644
 --- a/packages/ui/src/components/dialog.tsx

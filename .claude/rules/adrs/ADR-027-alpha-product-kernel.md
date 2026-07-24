@@ -94,3 +94,26 @@ spike 期以「受限 deep import + 锚点收敛」过渡)。按 ADR-029 L3 既�
    锚点测试先红,不会静默漂移);`frontend-freeze-base`/`frontend-freeze-base-2` 均保留不动。
 6. 本修订与 [[ADR-020]] 同日修订(§1 基点更新为 base-3)配套;`SURFACE_RELEASE_STATES.session`
    仍为 `legacy`,REQ-088 主实现(T2+)在 C2–C4 全绿前不得升出默认。
+
+## 修订(2026-07-24,REQ-125 #554 —— 增补 `./surface/terminal` 窄导出)
+
+REQ-125 会话页 seam 基线(`docs/design/2026-07-24-session-seam-baseline.md` §② 白名单
+口径:确缺能力才补窄 export;§④ C3-term 终端面板条目)裁定:右栏终端面板复用上游终端
+引擎 —— workspace 级 PTY 页签状态(`@/context/terminal` 的 `useTerminal`)+ Ghostty 嵌入
+(`@/components/terminal` 的 `Terminal`)—— 而两者今日均不在 `@opencode-ai/app` 公开面
+(#550 勘破)。按 L3 逐案纪律增补第二条 surface 子路径;载体走 [[ADR-034]] pin+patch
+通道(SOT = `frontend/alpha-patches/alpha-frontend.patch`,冻结 tag 机制已被 ADR-034
+取代,本修订不再铸基点):
+
+1. **新增 export**:`"./surface/terminal": "./src/surface/terminal.ts"`。指向的模块为纯
+   re-export,恰好三个符号:`useTerminal`、`Terminal`、`type LocalPTY`;不 re-export 未用
+   符号,不设 `./surface/*` 通配,不新增 `pages`/`context` 子路径。
+2. **消费面收敛**:窄导出全仓唯一消费点 = ui-mac
+   `alpha-ui/session-rail/terminal/terminal-engine-adapter.tsx`(把引擎收敛成
+   `AlphaTerminalEngineChannel` typed seam,铸造时盖会话三元身份,消费侧经
+   `live.accepts` fail-closed 把闸)。机械守卫:`surface-seam-contract.test.ts`
+   (exports map 集合断言更新为 `["./surface/session","./surface/terminal"]` +
+   re-export 模块窄面逐行断言)、`terminal-engine-adapter.test.ts`(renderer 全扫,
+   引擎 import 仅此一处)。
+3. **回退**:从 patch 序列移除该 export 行与 re-export 文件即蒸发;消费点 typecheck
+   TS2307 + seam 契约测试先红,不会静默漂移。

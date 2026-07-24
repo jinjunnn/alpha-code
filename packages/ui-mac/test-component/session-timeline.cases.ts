@@ -377,11 +377,18 @@ describe("REQ-125 C5 历史分页驻点", () => {
 
 describe("REQ-125 C5 Major-3:连续锚定(settling)", () => {
   /** 装配一条带锚行的时间线,并给滚动容器/锚行装可控几何(scrollTop 与 rect 联动)。 */
-  async function mountAnchored() {
+  async function mountAnchored(options?: { pendingLoad?: boolean; settleTimeoutMs?: number }) {
+    if (options?.pendingLoad) runtime.setLoadOlderPending(true)
+    if (options?.settleTimeoutMs !== undefined) runtime.setSettleTimeout(options.settleTimeoutMs)
     const host = mount()
     runtime.setTimelineRows(conversationRows())
     runtime.setTimelineHistory({ more: true, loading: false })
     await flush()
+
+    // 先吃掉挂载期(ready/epoch effect)调度的 scrollToEnd 帧,避免它在测试中途落地清零 scrollTop。
+    await new Promise((resolve) =>
+      typeof requestAnimationFrame === "function" ? requestAnimationFrame(() => resolve(0)) : setTimeout(resolve, 0),
+    )
 
     const scrollEl = host.querySelector(".a-tl-scroll") as HTMLElement
     const anchorRow = host.querySelector("[data-alpha-timeline-row]") as HTMLElement
@@ -438,6 +445,29 @@ describe("REQ-125 C5 Major-3:连续锚定(settling)", () => {
     ro.trigger()
     expect(scrollEl.scrollTop).toBe(70)
     expect(anchorRow.getBoundingClientRect().top).toBe(70)
+  })
+
+  test("④ 同 epoch 加载挂起超过时限 → settling 被超时终结,无残留复位", async () => {
+    // timer 在 settling 进入那一刻无条件建立:load 永挂起也必须到点终结。
+    const { scrollEl, geometry, ro } = await mountAnchored({ pendingLoad: true, settleTimeoutMs: 200 })
+
+    // 时限内:settling 正常复位(prepend 落地推锚 +100)。
+    geometry.rowBase = 110
+    ro.trigger()
+    expect(scrollEl.scrollTop).toBe(100)
+
+    // 超过时限(load 仍挂起):settling 被终结。
+    await new Promise((resolve) => setTimeout(resolve, 250))
+
+    // 终结后:再有高度变化不产生任何残留复位(follow 也被挂起的 in-flight 正确闸住)。
+    geometry.rowBase = 160
+    ro.trigger()
+    expect(scrollEl.scrollTop).toBe(100)
+
+    // 滞后放行挂起的 load:settling 已亡,load 收尾路径不得再触碰视口。
+    runtime.resolvePendingLoads()
+    await flush()
+    expect(scrollEl.scrollTop).toBe(100)
   })
 
   test("③ A 会话加载挂起时,B 会话的贴底跟随不被阻塞(I8 epoch 分片)", async () => {

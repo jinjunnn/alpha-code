@@ -61,6 +61,13 @@ export type ServerReadyData = {
   password: string | null
 }
 
+export type SidecarGenerationReason = "boot" | "token-only" | "structural"
+export type SidecarGenerationState = {
+  status: "recovering" | "ready"
+  generation: number
+  reason: SidecarGenerationReason
+}
+
 export const STARTUP_TIMELINE_CHANNEL = "startup-timeline-mark"
 export const RENDERER_STARTUP_MARK_NAMES = [
   "renderer.root.mount",
@@ -72,6 +79,10 @@ export const RENDERER_STARTUP_MARK_NAMES = [
   "renderer.home.model_list.start",
   "renderer.home.model_list.end",
   "renderer.home.model_list.retry_tick",
+  "renderer.sidecar.generation.received",
+  "renderer.sse.reconnected",
+  "renderer.retry_backoff.cancel",
+  "renderer.generation.interruption",
 ] as const
 export type RendererStartupMarkName = (typeof RENDERER_STARTUP_MARK_NAMES)[number]
 export type StartupTimelineValue = string | number | boolean | null
@@ -120,6 +131,8 @@ export type AuthState = {
   mode: AuthMode
   account?: { email?: string; plan?: string }
   expiresAt?: number
+  /** 登录态的平台代理凭证是否已经验证可用；过期续期与瞬态恢复窗口必须保持 recovering。 */
+  platformStatus?: "ready" | "recovering"
 }
 // B11 复扫行16:登录链失败原因(main 只送 code,文案由 renderer i18n 映射)。
 export type AuthErrorCode =
@@ -431,6 +444,10 @@ export type AlphaEnvironmentInfo = {
 
 export type ElectronAPI = {
   killSidecar: () => Promise<void>
+  sidecarGeneration: {
+    getState: () => Promise<SidecarGenerationState>
+    subscribe: (cb: (state: SidecarGenerationState) => void) => () => void
+  }
   startupTimeline: {
     mark: (name: RendererStartupMarkName, rendererNow: number, extra?: StartupTimelineExtra) => void
   }

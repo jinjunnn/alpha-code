@@ -65,7 +65,9 @@ const {
   getAuthState,
   initAuthEnv,
   isStoredTokenExpired,
+  ensureFreshToken,
   refreshTokens,
+  setAuthDeps,
 } = await import("./alpha-auth")
 
 const PURPOSES = [
@@ -85,6 +87,8 @@ const MANAGED_ENV = [
 const originalFetch = globalThis.fetch
 const savedEnv: Partial<Record<(typeof MANAGED_ENV)[number], string>> = {}
 let dataPath = ""
+let structuralRespawns = 0
+let renewedGenerations: number[] = []
 
 function jwt(purpose: RoutePurpose, generation = "old") {
   return `${Buffer.from("{}").toString("base64url")}.${Buffer.from(
@@ -152,6 +156,15 @@ function readStoredAuth() {
 
 beforeEach(() => {
   dataPath = mkdtempSync(join(tmpdir(), "alpha-auth-"))
+  structuralRespawns = 0
+  renewedGenerations = []
+  setAuthDeps({
+    getWindow: () => null,
+    respawn: () => {
+      structuralRespawns++
+    },
+    onRenewed: (result) => renewedGenerations.push(result.generation),
+  })
   MANAGED_ENV.forEach((key) => {
     savedEnv[key] = process.env[key]
     delete process.env[key]
@@ -263,8 +276,11 @@ describe("stored bundle consumption", () => {
   test("login and expiry require a complete bundle and use its shared expiresAt", () => {
     const bundle: Partial<Record<RoutePurpose, string>> = tokenBundle()
     storeAuth({ platformAccessTokens: bundle, expiresAt: 1 })
-    expect(getAuthState()).toMatchObject({ status: "logged-in", expiresAt: 1 })
+    expect(getAuthState()).toMatchObject({ status: "logged-in", expiresAt: 1, platformStatus: "recovering" })
     expect(isStoredTokenExpired()).toBe(true)
+
+    storeAuth({ platformAccessTokens: bundle, expiresAt: Date.now() + 60_000 })
+    expect(getAuthState()).toMatchObject({ status: "logged-in", platformStatus: "ready" })
 
     delete bundle["cloud.read"]
     storeAuth({ platformAccessTokens: bundle, expiresAt: 1 })
@@ -303,7 +319,8 @@ describe("refresh bundle rotation", () => {
       )
     }) as typeof fetch
 
-    expect(await refreshTokens()).toBe(true)
+    expect(await refreshTokens()).toMatchObject({ outcome: "refreshed" })
+    expect(renewedGenerations).toHaveLength(1)
     expect(requestBody).toMatchObject({
       grant_type: "refresh_token",
       refresh_token: "refresh-old",
@@ -345,12 +362,48 @@ describe("refresh bundle rotation", () => {
         { status: 200, headers: { "content-type": "application/json" } },
       )) as typeof fetch
 
-    expect(await refreshTokens()).toBe(false)
+    expect(await refreshTokens()).toMatchObject({ outcome: "transient-failure" })
+    expect(structuralRespawns).toBe(0)
+    expect(renewedGenerations).toEqual([])
     PURPOSES.forEach((purpose) => expect(getAccessToken(purpose)).toBe(oldBundle[purpose]))
     expect(readStoredAuth()).toMatchObject({
       platformAccessTokens: oldBundle,
       refreshToken: "refresh-old",
       sessionId: "session-old",
     })
+  })
+
+  test("a rejected refresh is modeled as invalid-grant and keeps the existing logout semantics", async () => {
+    storeAuth({
+      platformAccessTokens: tokenBundle(),
+      refreshToken: "refresh-revoked",
+      expiresAt: 1,
+      lifetimeMs: 1000,
+    })
+    globalThis.fetch = (async () => new Response("", { status: 400 })) as typeof fetch
+
+    expect(await refreshTokens()).toMatchObject({ outcome: "invalid-grant" })
+    expect(getAuthState().status).toBe("logged-out")
+    expect(structuralRespawns).toBe(1)
+    expect(renewedGenerations).toEqual([])
+  })
+
+  test("ensureFreshToken models a not-due token as still-valid without network or respawn", async () => {
+    storeAuth({
+      platformAccessTokens: tokenBundle(),
+      refreshToken: "refresh-current",
+      expiresAt: Date.now() + 15 * 60_000,
+      lifetimeMs: 15 * 60_000,
+    })
+    let requests = 0
+    globalThis.fetch = (async () => {
+      requests++
+      throw new Error("unexpected fetch")
+    }) as typeof fetch
+
+    expect(await ensureFreshToken()).toMatchObject({ outcome: "still-valid" })
+    expect(requests).toBe(0)
+    expect(structuralRespawns).toBe(0)
+    expect(renewedGenerations).toEqual([])
   })
 })
