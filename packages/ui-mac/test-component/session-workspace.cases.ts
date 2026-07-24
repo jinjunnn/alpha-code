@@ -105,6 +105,31 @@ describe("REQ-125 session workspace real Solid mount", () => {
     expect(host.querySelector("[data-alpha-session-rail-panel='terminal']")).not.toBeNull()
   })
 
+  test("terminal panel open/close hands focus through the channel (#554, upstream toggle semantics)", async () => {
+    const host = mount()
+    await flush()
+    const buttons = host.querySelectorAll<HTMLButtonElement>(".a-swk-panel-button")
+
+    // 初始(review 面板)不得触碰终端焦点。
+    expect(runtime.terminalChannelCalls).toEqual([])
+
+    // 终端面板从关到开:对当前激活实例发聚焦请求。
+    buttons[0]!.click()
+    await flush()
+    expect(runtime.terminalChannelCalls).toEqual(["requestFocus:pty_1"])
+
+    // 从开到关:撤销未消费的请求。
+    buttons[0]!.click()
+    await flush()
+    expect(runtime.terminalChannelCalls).toEqual(["requestFocus:pty_1", "cancelFocus"])
+
+    // 经右栏总开关重开(lastPanel = terminal):同样走请求端。
+    buttons[1]!.click()
+    await flush()
+    expect(host.querySelector("[data-alpha-session-rail-panel='terminal']")).not.toBeNull()
+    expect(runtime.terminalChannelCalls).toEqual(["requestFocus:pty_1", "cancelFocus", "requestFocus:pty_1"])
+  })
+
   test("topbar status renders the approved idle and generating states", async () => {
     const host = mount()
     await flush()

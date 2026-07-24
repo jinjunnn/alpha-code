@@ -1,5 +1,6 @@
 import { createEffect, createSignal, For, Show, type Accessor, type JSX } from "solid-js"
 import { t } from "../../i18n"
+import { acceptedEngineChannel, type AlphaTerminalEngineChannel } from "../session-rail/terminal/terminal-rail-core"
 import { TerminalRailPanel } from "../session-rail/terminal/terminal-rail-panel"
 import { terminalRailAnyRunning } from "../session-rail/terminal/terminal-rail-state"
 import {
@@ -144,14 +145,18 @@ export function SessionWorkspaceShell(props: {
   live: AlphaSessionLiveContext
   panels?: SessionRailPanelRenderers
   railMeta?: SessionRailMeta
+  /** 真引擎 channel(#554 适配器投影;缺席 = 终端面板 fail-closed 空态)。 */
+  terminalChannel?: Accessor<AlphaTerminalEngineChannel | undefined>
 }) {
   // Panel renderers: injected slot first; terminal falls back to the shell-built-in
-  // C550 panel (fail-closed empty state until the engine channel lands — I8 via
-  // live.accepts). Every other absent slot stays a disabled tab and no open path works.
+  // C550 panel fed by the #554 engine-channel projection (absent = fail-closed empty
+  // state; I8 via live.accepts). Every other absent slot stays a disabled tab and no
+  // open path works.
   const rendererFor = (kind: SessionRailPanel): ((rail: SessionRailApi) => JSX.Element) | undefined => {
     const injected = props.panels?.[kind]
     if (injected) return injected
-    if (kind === "terminal") return () => <TerminalRailPanel accepts={props.live.accepts} />
+    if (kind === "terminal")
+      return () => <TerminalRailPanel channel={props.terminalChannel?.()} accepts={props.live.accepts} />
     return undefined
   }
   const available = (kind: SessionRailPanel) => rendererFor(kind) !== undefined
@@ -180,13 +185,25 @@ export function SessionWorkspaceShell(props: {
     const kind = panel()
     return clampRailWidth(kind ? widths()[kind] : undefined)
   }
+  // #554 焦点交接请求端(上游 terminal.toggle 语义):终端面板从关到开 → 对当前激活实例发
+  // 聚焦请求(须先于面板挂载,上游 Terminal 挂载时一次性消费);从开到关 → 撤销未消费的
+  // 请求,防陈旧请求日后误触发。经 I8 闸:身份不被当前会话接受的 channel 一律不触碰。
+  const terminalFocusHandoff = (prev: SessionRailPanel | undefined, next: SessionRailPanel | undefined) => {
+    if ((prev === "terminal") === (next === "terminal")) return
+    const channel = acceptedEngineChannel(props.terminalChannel?.(), props.live.accepts)
+    if (!channel) return
+    if (next === "terminal") channel.requestFocus(channel.activeID())
+    else channel.cancelFocus()
+  }
   const openPanel = (next: SessionRailPanel) => {
     if (!available(next)) return
+    terminalFocusHandoff(panel(), next)
     setLastPanel(next)
     setPanel(next)
     setVisited((seen) => (seen.includes(next) ? seen : [...seen, next]))
   }
   const closeRail = () => {
+    terminalFocusHandoff(panel(), undefined)
     setPanel(undefined)
     setVisited([])
   }

@@ -7,6 +7,7 @@ import {
   type ElectronAPI,
   type HtmlPreviewClosedEvent,
   type RendererStartupMarkName,
+  type SidecarGenerationState,
   STARTUP_TIMELINE_CHANNEL,
   type StartupTimelineExtra,
   type WslServersEvent,
@@ -24,6 +25,18 @@ const updaterHandler = (_: unknown, state: UpdaterState) => {
 
 const api: ElectronAPI = {
   killSidecar: () => ipcRenderer.invoke("kill-sidecar"),
+  sidecarGeneration: {
+    getState: () => ipcRenderer.invoke("sidecar-generation-state"),
+    subscribe: (cb) => {
+      const handler = (_: unknown, state: SidecarGenerationState) => cb(state)
+      ipcRenderer.on("sidecar-generation", handler)
+      void ipcRenderer
+        .invoke("sidecar-generation-state")
+        .then((state: SidecarGenerationState) => cb(state))
+        .catch(() => {})
+      return () => ipcRenderer.removeListener("sidecar-generation", handler)
+    },
+  },
   startupTimeline: {
     mark: (name: RendererStartupMarkName, rendererNow: number, extra?: StartupTimelineExtra) =>
       ipcRenderer.send(STARTUP_TIMELINE_CHANNEL, { name, rendererNow, extra }),

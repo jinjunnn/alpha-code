@@ -967,6 +967,7 @@ export const dict = {
   "alpha.model.accountUnavailable": "Account status unavailable",
   "alpha.model.listLoading": "Models loading",
   "alpha.model.listUnavailable": "Model list unavailable",
+  "alpha.model.syncing": "Syncing…",
 
   "alpha.provider.customEndpoint": "Custom endpoint",
   "alpha.provider.addTitle": "Add endpoint / provider",
@@ -1056,6 +1057,8 @@ export const dict = {
   "alpha.composer.commandNoAttachments": "Slash commands do not carry attachments",
   "alpha.composer.commandNoAttachmentsDetail": "Send attachments separately, or remove them before running the command.",
   "alpha.composer.sendFailed": "Could not send. Try again.",
+  "alpha.composer.generationInterrupted": "This response was interrupted",
+  "alpha.composer.generationInterruptedDetail": "The connection was restored. Review the conversation, then retry.",
   "alpha.composer.sessionPending": "Session is not ready. Try again shortly.",
   "alpha.composer.commandFailed": "Command failed. Try again.",
   "alpha.composer.removeAttachment": "Remove attachment",
@@ -1162,6 +1165,7 @@ export const dict = {
   "alpha.session.backHome": "Back to home",
 
   "alpha.terminal.tabs": "Terminal tabs",
+  "alpha.terminal.titleNumbered": "Terminal {{number}}",
   "alpha.terminal.new": "New terminal",
   "alpha.terminal.close": "Close {{title}}",
   "alpha.terminal.emptyTitle": "No terminals yet",

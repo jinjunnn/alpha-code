@@ -42,6 +42,9 @@ const [instances, setInstances] = createSignal<FakeInstance[]>(initialInstances)
 const [activeID, setActiveID] = createSignal<string | undefined>("pty_1")
 const [ready, setReady] = createSignal(true)
 const [liveIdentity, setLiveIdentity] = createSignal<AlphaSessionIdentity>(identityOf("ses_a"))
+// #554 焦点交接:未消费的聚焦请求(id undefined = 聚焦即将激活者),假 EngineOutput 挂载时
+// 一次性消费 —— 与真适配器的 autoFocus/onAutoFocus 粘合同语义(上游 Terminal 挂载时消费)。
+const [focusRequest, setFocusRequest] = createSignal<{ id?: string } | undefined>(undefined)
 
 export const channelCalls: string[] = []
 
@@ -54,6 +57,9 @@ function makeChannel(identity: AlphaSessionIdentity): AlphaTerminalEngineChannel
     instances,
     activeID,
     open(id) {
+      // 对齐真适配器 channel.open 语义(#554):先发聚焦请求再切激活,请求在重挂前就位。
+      channelCalls.push(`requestFocus:${id}`)
+      setFocusRequest({ id })
       channelCalls.push(`open:${id}`)
       setActiveID(id)
     },
@@ -75,10 +81,32 @@ function makeChannel(identity: AlphaSessionIdentity): AlphaTerminalEngineChannel
       setInstances((all) => [...all, created])
       setActiveID(id)
     },
+    requestFocus(id) {
+      channelCalls.push(`requestFocus:${id ?? "active"}`)
+      setFocusRequest({ id })
+    },
+    cancelFocus() {
+      channelCalls.push("cancelFocus")
+      setFocusRequest(undefined)
+    },
     footStatus(id) {
       return instances().find((instance) => instance.id === id)?.foot ?? { running: false }
     },
-    EngineOutput: (props) => <div data-alpha-terminal-engine-output={props.instanceID} />,
+    EngineOutput: (props) => {
+      // 一次性消费(上游 Terminal 语义):挂载时有匹配的未消费请求即消费并清除。
+      const request = focusRequest()
+      const consumed = request !== undefined && (request.id === undefined || request.id === props.instanceID)
+      if (consumed) {
+        channelCalls.push(`focusConsumed:${props.instanceID}`)
+        setFocusRequest(undefined)
+      }
+      return (
+        <div
+          data-alpha-terminal-engine-output={props.instanceID}
+          data-alpha-terminal-focus-consumed={consumed ? "true" : undefined}
+        />
+      )
+    },
   }
 }
 
@@ -121,6 +149,7 @@ export function resetTerminalRailHarness() {
   setActiveID("pty_1")
   setReady(true)
   setLiveIdentity(identityOf("ses_a"))
+  setFocusRequest(undefined)
   setChannel(makeChannel(identityOf("ses_a")))
   nextCreated = 3
   channelCalls.splice(0)

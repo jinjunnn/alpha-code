@@ -6,6 +6,7 @@ import { SessionRailArtifacts } from "../session-rail/artifacts/session-rail-art
 import { SessionRailFiles } from "../session-rail/files/session-rail-files"
 import { reviewChangeCount } from "../session-rail/review/review-core"
 import { SessionRailReviewPanel } from "../session-rail/review/review-panel"
+import { useAlphaTerminalEngineChannel } from "../session-rail/terminal/terminal-engine-adapter"
 import { SurfaceBoundary } from "../surface-boundary"
 import { sameSessionIdentity, sessionLiveSnapshotOf } from "./session-workspace-core"
 import { type AlphaSessionLiveContext, SessionWorkspaceShell } from "./session-workspace-shell"
@@ -41,6 +42,9 @@ export function AlphaSessionWorkspace() {
     current,
     accepts: (identity) => sameSessionIdentity(identity, current()?.identity),
   }
+  // #554:真引擎 channel(I8 三元身份铸造)。TerminalProvider 随上游 SessionProviders 包住
+  // 本叶,适配器可直接消费;引擎或会话身份缺席时为 undefined,面板 fail-closed 空态。
+  const terminalChannel = useAlphaTerminalEngineChannel(current)
 
   // Review tab badge = changed-file count from the same typed diff channel the review panel
   // consumes (C2), through the same fail-closed narrowing (`reviewChangeCount`: non-array
@@ -73,6 +77,7 @@ export function AlphaSessionWorkspace() {
             artifacts: (rail) => <SessionRailArtifacts live={live} rail={rail} />,
           }}
           railMeta={{ reviewCount }}
+          terminalChannel={terminalChannel}
         />
       </SessionLiveProvider>
     </SurfaceBoundary>
