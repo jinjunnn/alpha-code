@@ -1,6 +1,6 @@
 // REQ-125 C7:composer dock 的纯逻辑核(typed 数据 → UI 判定,零 DOM)。
 
-import type { Message, ModelV2Info, QuestionInfo, QuestionRequest, Todo } from "@opencode-ai/sdk/v2/client"
+import type { Message, ModelV2Info, QuestionInfo, QuestionRequest, Session, Todo } from "@opencode-ai/sdk/v2/client"
 
 /**
  * 上下文用量百分比:最后一条带 token 的 assistant 消息的 token 总量 / 该消息模型的
@@ -63,4 +63,53 @@ export function questionAnswersComplete(questions: readonly QuestionInfo[], answ
     const labels = new Set(question.options.map((option) => option.label))
     return picked.every((value) => labels.has(value))
   })
+}
+
+/**
+ * 检查点回退条(REQ-125 #558):会话暂存的 `revert` 状态 → 紧凑投影。
+ * fail-closed:`revert` 缺席 / 畸形(无字符串 `messageID`)= undefined,不渲染。
+ * `discardCount` = 当前会话消息里锚点及其之后的**用户回合**数(与上游 rolled() 同口径,
+ * 发送后被丢弃),由调用方按 `sessionID` 取到的消息数组供给(I8)。
+ */
+export function revertDockFacts(
+  revert: Session["revert"] | undefined,
+  messages: readonly Message[] | undefined,
+): { messageID: string; discardCount: number } | undefined {
+  if (!revert || typeof revert.messageID !== "string" || revert.messageID.length === 0) return undefined
+  const anchor = revert.messageID
+  const discardCount = (messages ?? []).reduce(
+    (count, message) => (message.role === "user" && message.id >= anchor ? count + 1 : count),
+    0,
+  )
+  return { messageID: anchor, discardCount }
+}
+
+/**
+ * 子会话条(REQ-125 #558):当前会话的父级 linkage → 跳转投影。
+ * fail-closed:无字符串 `parentID`(即非子会话)= undefined,不渲染。父会话标题未加载时
+ * 回落 `parentID`,跳转仍可用。
+ */
+export function childSessionFacts(
+  session: Session | undefined,
+  parent: Session | undefined,
+): { parentID: string; parentTitle: string } | undefined {
+  const parentID = session?.parentID
+  if (typeof parentID !== "string" || parentID.length === 0) return undefined
+  const title = parent?.title?.trim()
+  return { parentID, parentTitle: title && title.length > 0 ? title : parentID }
+}
+
+/**
+ * 子会话跳转目标(I8):仅当发起身份仍是当前会话(`accepts`)时给出父会话 href,并绑
+ * 该身份的 `serverKey`;身份已切换或无 `parentID` = undefined,拒绝 stale 跳转。
+ */
+export function childParentHref<Identity extends { serverKey: string }>(input: {
+  bound: Identity
+  accepts: (identity: Identity) => boolean
+  parentID: string | undefined
+  hrefFor: (serverKey: string, sessionID: string) => string
+}): string | undefined {
+  if (!input.parentID || input.parentID.length === 0) return undefined
+  if (!input.accepts(input.bound)) return undefined
+  return input.hrefFor(input.bound.serverKey, input.parentID)
 }

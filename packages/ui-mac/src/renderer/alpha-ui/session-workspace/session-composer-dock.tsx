@@ -17,8 +17,10 @@ import type {
   QuestionRequest,
   Todo,
 } from "@opencode-ai/sdk/v2/client"
+import { useNavigate } from "@solidjs/router"
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js"
 import { createStore } from "solid-js/store"
+import { hrefFor } from "../../../shared/route-manifest"
 import { t } from "../../i18n"
 import type { AlphaProjectsApi } from "../../sidebar/use-projects"
 import { AlphaComposer, type ComposerSessionDockApi, type ComposerSlashCapture } from "../alpha-composer"
@@ -30,7 +32,16 @@ import {
   type PermissionDecisionSubmitError,
 } from "../PermissionDialog"
 import { claimSessionApprovalDock } from "./session-approval-claim"
-import { contextUsagePercent, headPendingQuestion, questionAnswersComplete, todoDockVisible, todoDone } from "./session-dock-core"
+import {
+  childParentHref,
+  childSessionFacts,
+  contextUsagePercent,
+  headPendingQuestion,
+  questionAnswersComplete,
+  revertDockFacts,
+  todoDockVisible,
+  todoDone,
+} from "./session-dock-core"
 import { createPermissionV2Feed, type PermissionV2Feed } from "./session-permission-feed"
 import { recordSessionSlashOrigin } from "./session-slash-origin"
 import type { AlphaSessionIdentity } from "./session-workspace-core"
@@ -42,6 +53,7 @@ const identityKey = (identity: AlphaSessionIdentity | undefined) =>
 export function SessionComposerDock(props: { live: AlphaSessionLiveContext; projects: AlphaProjectsApi }) {
   const serverSDK = useServerSDK()
   const serverSync = useServerSync()
+  const navigate = useNavigate()
   const identity = () => props.live.current()?.identity
   const running = () => props.live.current()?.activity === "running"
   // 目录作用域 SDK(typed 事件按类型分发;refcount 由 memo 的 onCleanup 管理)。
@@ -114,6 +126,22 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
   const question = createMemo(() => {
     const bound = identity()
     return bound ? headPendingQuestion(serverSync().session.data.question[bound.sessionID]) : undefined
+  })
+
+  /* ── revert / child-session:info(± message)typed 通道,读当前身份对应会话(I8)──── */
+  const revert = createMemo(() => {
+    const bound = identity()
+    if (!bound) return undefined
+    const sessions = serverSync().session.data
+    return revertDockFacts(sessions.info[bound.sessionID]?.revert, sessions.message[bound.sessionID])
+  })
+  const childSession = createMemo(() => {
+    const bound = identity()
+    if (!bound) return undefined
+    const info = serverSync().session.data.info
+    const session = info[bound.sessionID]
+    const parentID = session?.parentID
+    return childSessionFacts(session, parentID ? info[parentID] : undefined)
   })
 
   /* ── 上下文用量:messages(typed sync)× 模型目录(typed model contract) ─────────── */
@@ -199,6 +227,29 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
       </Show>
       <Show when={todoDockVisible({ todos: todos(), running: running() })}>
         <SessionTodoCard todos={todos()} />
+      </Show>
+      <Show when={revert()} keyed>
+        {(facts) => <SessionRevertCard facts={facts} />}
+      </Show>
+      <Show when={childSession()} keyed>
+        {(facts) => (
+          <SessionChildCard
+            facts={facts}
+            running={running}
+            onJump={() => {
+              const bound = identity()
+              const href = bound
+                ? childParentHref({
+                    bound,
+                    accepts: props.live.accepts,
+                    parentID: facts.parentID,
+                    hrefFor: hrefFor.session,
+                  })
+                : undefined
+              if (href) navigate(href)
+            }}
+          />
+        )}
       </Show>
       <AlphaComposer
         mode="session"
@@ -442,6 +493,62 @@ function SessionQuestionCard(props: {
           {t("alpha.session.questionFailed")}
         </p>
       </Show>
+    </section>
+  )
+}
+
+/* ── 检查点回退条(session.revert typed 事实;纯呈现 —— 发送/清空由 composer 流程处理)── */
+function SessionRevertCard(props: { facts: { messageID: string; discardCount: number } }) {
+  return (
+    <section
+      class="a-swk-card a-swk-revert"
+      data-alpha-session-revert={props.facts.messageID}
+      role="status"
+      aria-live="polite"
+      aria-label={t("alpha.session.revertTitle")}
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M9 14L4 9l5-5" />
+        <path d="M4 9h11a5 5 0 0 1 5 5v1" />
+      </svg>
+      <div class="a-swk-revert-text">
+        <span class="a-swk-revert-title">{t("alpha.session.revertTitle")}</span>
+        <Show when={props.facts.discardCount > 0}>
+          <span class="a-swk-revert-detail">
+            {t("alpha.session.revertDetail", { count: props.facts.discardCount })}
+          </span>
+        </Show>
+      </div>
+    </section>
+  )
+}
+
+/* ── 子会话条(session.parentID typed 事实;运行指示 + 跳转父会话,I8 绑 accepts+serverKey)── */
+function SessionChildCard(props: {
+  facts: { parentID: string; parentTitle: string }
+  running: () => boolean
+  onJump: () => void
+}) {
+  return (
+    <section
+      class="a-swk-card a-swk-child"
+      data-alpha-session-child={props.facts.parentID}
+      role="group"
+      aria-label={t("alpha.session.childTitle")}
+    >
+      <span
+        class="a-swk-child-dot"
+        classList={{ "a-swk-child-dot--running": props.running() }}
+        data-alpha-session-child-activity={props.running() ? "running" : "idle"}
+        aria-hidden="true"
+      />
+      <div class="a-swk-child-text">
+        <span class="a-swk-child-title">{t("alpha.session.childTitle")}</span>
+        <span class="a-swk-child-parent">{props.facts.parentTitle}</span>
+      </div>
+      <button type="button" class="a-swk-btn a-swk-child-jump" onClick={() => props.onJump()}>
+        {t("alpha.session.childBackToParent")}
+      </button>
     </section>
   )
 }

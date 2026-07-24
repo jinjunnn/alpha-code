@@ -458,6 +458,76 @@
   font-weight: var(--a-weight-medium);
 }
 
+/* ── 检查点回退条 / 子会话条(REQ-125 C558:紧凑停靠条,复用 dock 外壳)── */
+.a-swk-revert,
+.a-swk-child {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+}
+
+.a-swk-revert {
+  border-color: var(--a-accent-border);
+  background: var(--a-accent-subtle);
+}
+
+.a-swk-revert svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: var(--a-accent);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.a-swk-revert-text,
+.a-swk-child-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.a-swk-revert-title,
+.a-swk-child-title {
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+  color: var(--a-text);
+}
+
+.a-swk-revert-detail,
+.a-swk-child-parent {
+  font-size: var(--a-text-xs);
+  color: var(--a-text-tertiary);
+}
+
+.a-swk-child-parent {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.a-swk-child-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-text-disabled);
+}
+
+.a-swk-child-dot--running {
+  background: var(--a-accent);
+  animation: a-swk-status-pulse 1.4s var(--a-ease-in-out) infinite;
+}
+
+.a-swk-child-jump {
+  flex: none;
+  margin-left: auto;
+}
+
 .a-swk-rail-host {
   flex: none;
   width: min(400px, 38vw);
@@ -494,7 +564,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .a-swk-status--running .a-swk-status-dot {
+  .a-swk-status--running .a-swk-status-dot,
+  .a-swk-child-dot--running {
     animation: none;
   }
 

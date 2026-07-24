@@ -1,11 +1,14 @@
 // REQ-125 C7:dock 纯逻辑核 + 斜杠来源登记的契约。
 
 import { describe, expect, test } from "bun:test"
-import type { Message, ModelV2Info, QuestionInfo, Todo } from "@opencode-ai/sdk/v2/client"
+import type { Message, ModelV2Info, QuestionInfo, Session, Todo } from "@opencode-ai/sdk/v2/client"
 import {
+  childParentHref,
+  childSessionFacts,
   contextUsagePercent,
   headPendingQuestion,
   questionAnswersComplete,
+  revertDockFacts,
   todoDockVisible,
 } from "./session-dock-core"
 import {
@@ -106,6 +109,71 @@ describe("question:头部挂起请求与回答完备性", () => {
     expect(questionAnswersComplete([info({ custom: true })], [["自由回答"]])).toBe(true)
     expect(questionAnswersComplete([info({ custom: true })], [["  "]])).toBe(false)
     expect(questionAnswersComplete([], [])).toBe(false)
+  })
+})
+
+describe("revertDockFacts:检查点回退条,事实不足 = 不渲染(fail-closed)", () => {
+  const sessionMsgs = [
+    user("msg-1"),
+    assistant({ id: "msg-2", providerID: "a", modelID: "m" }),
+    user("msg-3"),
+    assistant({ id: "msg-4", providerID: "a", modelID: "m" }),
+    user("msg-5"),
+  ]
+
+  test("渲染:暂存 revert → 锚点 + 锚点及之后的用户回合数", () => {
+    // 锚点 msg-3:其后用户回合 = msg-3, msg-5(assistant 不计)。
+    expect(revertDockFacts({ messageID: "msg-3" }, sessionMsgs)).toEqual({ messageID: "msg-3", discardCount: 2 })
+    // 无消息通道时仍呈现回退状态,只是丢弃计数为 0。
+    expect(revertDockFacts({ messageID: "msg-3" }, undefined)).toEqual({ messageID: "msg-3", discardCount: 0 })
+  })
+
+  test("fail-closed:revert 缺席 / 无 messageID / 畸形 → undefined", () => {
+    expect(revertDockFacts(undefined, sessionMsgs)).toBeUndefined()
+    expect(revertDockFacts({ messageID: "" }, sessionMsgs)).toBeUndefined()
+    expect(revertDockFacts({} as Session["revert"], sessionMsgs)).toBeUndefined()
+  })
+
+  test("I8:丢弃计数只数调用方按 sessionID 供给的消息(不跨会话泄漏)", () => {
+    // 同一锚点,换另一会话的消息数组 → 计数随所供消息变化,不复用旧会话。
+    const otherSession = [user("msg-9")]
+    expect(revertDockFacts({ messageID: "msg-3" }, otherSession)).toEqual({ messageID: "msg-3", discardCount: 1 })
+    expect(revertDockFacts({ messageID: "msg-3" }, [])).toEqual({ messageID: "msg-3", discardCount: 0 })
+  })
+})
+
+describe("childSessionFacts + childParentHref:子会话条与跳转", () => {
+  const session = (input: Partial<Session>): Session => ({ id: "ses_c", title: "child", ...input }) as unknown as Session
+  const identity = (sessionID: string) => ({ serverKey: "sidecar", directory: "/tmp/ws", sessionID })
+  const href = (serverKey: string, sessionID: string) => `/server/${serverKey}/session/${sessionID}`
+
+  test("渲染:有 parentID → 父会话跳转目标(标题取父会话,未加载则回落 parentID)", () => {
+    const child = session({ parentID: "ses_parent" })
+    expect(childSessionFacts(child, session({ id: "ses_parent", title: "Parent task" }))).toEqual({
+      parentID: "ses_parent",
+      parentTitle: "Parent task",
+    })
+    expect(childSessionFacts(child, undefined)).toEqual({ parentID: "ses_parent", parentTitle: "ses_parent" })
+  })
+
+  test("fail-closed:非子会话 / 会话缺席 / parentID 畸形 → undefined", () => {
+    expect(childSessionFacts(session({}), undefined)).toBeUndefined()
+    expect(childSessionFacts(undefined, undefined)).toBeUndefined()
+    expect(childSessionFacts(session({ parentID: "" }), undefined)).toBeUndefined()
+  })
+
+  test("I8:身份仍是当前会话才给跳转 href(绑 serverKey);stale 身份 / 无 parentID → undefined", () => {
+    const bound = identity("ses_c")
+    const accepts = (candidate: ReturnType<typeof identity>) => candidate.sessionID === "ses_c"
+    expect(childParentHref({ bound, accepts, parentID: "ses_parent", hrefFor: href })).toBe(
+      "/server/sidecar/session/ses_parent",
+    )
+    // 身份已切换(accepts=false)→ 拒绝 stale 跳转。
+    expect(
+      childParentHref({ bound: identity("ses_stale"), accepts, parentID: "ses_parent", hrefFor: href }),
+    ).toBeUndefined()
+    // 无 parentID → 无跳转。
+    expect(childParentHref({ bound, accepts, parentID: undefined, hrefFor: href })).toBeUndefined()
   })
 })
 
