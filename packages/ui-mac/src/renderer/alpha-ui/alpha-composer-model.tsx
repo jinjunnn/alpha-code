@@ -1,7 +1,7 @@
 // ModelPickPop — canonical Alpha composer model picker. It owns the visible IA and talks only to the
 // generated SDK v2 model contract; no upstream picker DOM is mounted, hidden, observed, or clicked.
 
-import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, untrack } from "solid-js"
 import type { AccountSummary, AuthState } from "../../preload/types"
 import type { EffectiveCatalog, ProviderKeyStatus, Tier } from "../../shared/alpha-model-types"
 import { ALPHA_PATHS } from "../../shared/alpha-config"
@@ -16,10 +16,17 @@ import { ENGINE_FETCH_TIMEOUT_MS, nextEngineRetryDelay } from "./model-picker-lo
 import type { ModelContract } from "./model-contract"
 import { buildModelPickerRows, type AccountState, type ModelListState, type ModelPickerRow } from "./model-picker-core"
 import { AddProvider } from "./model-picker-add"
+import { accountResultState } from "./model-recovery"
 import { t } from "../i18n"
+import { markStartupTimeline } from "../startup-timeline"
+import { subscribeRuntimeRecovery, subscribeSseReconnected } from "../runtime-recovery"
 
 const fmtYuan = (fen: number) => `¥${(fen / 100).toFixed(2)}`
-type LoadState<T> = { status: "loading" } | { status: "ready"; data: T } | { status: "error" }
+type LoadState<T> =
+  | { status: "loading" }
+  | { status: "recovering" }
+  | { status: "ready"; data: T }
+  | { status: "failed" }
 
 const suspendText = (reason: SuspendReason) =>
   reason === "needs-login"
@@ -54,13 +61,22 @@ export function ModelPickPop(props: {
 
   let search: HTMLInputElement | undefined
   let retryTimer: ReturnType<typeof setTimeout> | undefined
+  let accountRetryTimer: ReturnType<typeof setTimeout> | undefined
   let retryAttempt = 0
+  let accountRetryAttempt = 0
   let loadSeq = 0
   let listSeq = 0
+  let summarySeq = 0
   let disposed = false
+  let loadedEpoch: string | undefined
+  let lastAuthSignature: string | undefined
+  let immediateRetryQueued = false
+  let retryImmediately = (_reason: string) => {}
 
   const epochKey = () => `${props.directory() ?? ""}\u0000${composerModelProjection().sessionID ?? ""}`
   const isCurrent = (seq: number, epoch: string) => !disposed && seq === loadSeq && epoch === epochKey()
+  const authSignature = (state: AuthState) =>
+    `${state.status}\u0000${state.mode}\u0000${state.platformStatus ?? "ready"}\u0000${state.account?.email ?? ""}`
 
   const loadCatalog = (seq: number, epoch: string) => {
     void window.api.models
@@ -77,30 +93,50 @@ export function ModelPickPop(props: {
   }
 
   const loadSummary = (state: AuthState, seq: number, epoch: string) => {
+    const request = ++summarySeq
+    clearTimeout(accountRetryTimer)
     if (state.status !== "logged-in") {
       if (!isCurrent(seq, epoch)) return
       setSummary({ status: "ready", data: null })
       return
     }
+    if (state.platformStatus === "recovering") {
+      if (isCurrent(seq, epoch)) setSummary({ status: "recovering" })
+      return
+    }
     void window.api.account
       .summary()
       .then((result) => {
-        if (!isCurrent(seq, epoch)) return
-        if (result && typeof result === "object" && "error" in result) {
-          setSummary({ status: "error" })
+        if (!isCurrent(seq, epoch) || request !== summarySeq) return
+        const resultState = accountResultState(result)
+        if (resultState !== "ready") {
+          setSummary({ status: resultState })
+          if (resultState === "recovering")
+            accountRetryTimer = setTimeout(
+              () => loadSummary(state, seq, epoch),
+              nextEngineRetryDelay(accountRetryAttempt++),
+            )
           return
         }
+        const recovered = summary().status === "recovering"
+        accountRetryAttempt = 0
         setSummary({ status: "ready", data: result as AccountSummary })
+        if (recovered) retryImmediately("account-recovered")
       })
       .catch(() => {
-        if (!isCurrent(seq, epoch)) return
-        setSummary({ status: "error" })
+        if (!isCurrent(seq, epoch) || request !== summarySeq) return
+        setSummary({ status: "recovering" })
+        accountRetryTimer = setTimeout(
+          () => loadSummary(state, seq, epoch),
+          nextEngineRetryDelay(accountRetryAttempt++),
+        )
       })
   }
 
   const scheduleRetry = (seq: number, epoch: string) => {
     if (!isCurrent(seq, epoch)) return
     clearTimeout(retryTimer)
+    setListState("recovering")
     retryTimer = setTimeout(() => loadModels(seq, epoch), nextEngineRetryDelay(retryAttempt++))
   }
 
@@ -112,8 +148,7 @@ export function ModelPickPop(props: {
       return
     }
     clearTimeout(retryTimer)
-    setModels([])
-    setListState("loading")
+    setListState(models().length > 0 ? "recovering" : "loading")
     setReadyListEpoch(null)
     setSwitching(null)
     setSwitchError(false)
@@ -128,9 +163,30 @@ export function ModelPickPop(props: {
       })
       .catch(() => {
         if (!isCurrent(seq, epoch) || request !== listSeq) return
-        setListState("failed")
+        setListState("recovering")
         scheduleRetry(seq, epoch)
       })
+  }
+
+  retryImmediately = (reason) => {
+    if (immediateRetryQueued || disposed) return
+    immediateRetryQueued = true
+    queueMicrotask(() => {
+      immediateRetryQueued = false
+      if (disposed) return
+      clearTimeout(retryTimer)
+      clearTimeout(accountRetryTimer)
+      retryAttempt = 0
+      accountRetryAttempt = 0
+      markStartupTimeline("renderer.retry_backoff.cancel", {
+        reason,
+        surface: "picker",
+      })
+      loadModels(loadSeq, epochKey())
+      const currentAuth = auth()
+      if (summary().status === "recovering" && currentAuth.status === "ready")
+        loadSummary(currentAuth.data, loadSeq, epochKey())
+    })
   }
 
   const loadKeys = (seq: number, epoch: string) => {
@@ -142,12 +198,13 @@ export function ModelPickPop(props: {
       })
       .catch(() => {
         if (!isCurrent(seq, epoch)) return
-        setKeyStatus({ status: "error" })
+        setKeyStatus({ status: "failed" })
       })
   }
 
   const loadAuth = (seq: number, epoch: string, known?: AuthState) => {
     if (known) {
+      lastAuthSignature = authSignature(known)
       setAuth({ status: "ready", data: known })
       loadSummary(known, seq, epoch)
       return
@@ -156,28 +213,33 @@ export function ModelPickPop(props: {
       .getState()
       .then((state) => {
         if (!isCurrent(seq, epoch)) return
+        lastAuthSignature = authSignature(state)
         setAuth({ status: "ready", data: state })
         loadSummary(state, seq, epoch)
       })
       .catch(() => {
         if (!isCurrent(seq, epoch)) return
-        setAuth({ status: "error" })
-        setSummary({ status: "error" })
+        setAuth({ status: "recovering" })
+        setSummary({ status: "recovering" })
       })
   }
 
   const loadAll = (knownAuth?: AuthState) => {
     const seq = ++loadSeq
     const epoch = epochKey()
+    const preserveRows = loadedEpoch === epoch
+    loadedEpoch = epoch
     clearTimeout(retryTimer)
+    clearTimeout(accountRetryTimer)
     retryAttempt = 0
+    accountRetryAttempt = 0
     setCatalog(null)
     setCatalogError(false)
     setAuth(knownAuth ? { status: "ready", data: knownAuth } : { status: "loading" })
     setSummary({ status: "loading" })
     setKeyStatus({ status: "loading" })
-    setModels([])
-    setListState("loading")
+    if (!preserveRows) setModels([])
+    setListState(preserveRows && models().length > 0 ? "recovering" : "loading")
     setReadyListEpoch(null)
     loadCatalog(seq, epoch)
     loadModels(seq, epoch)
@@ -193,28 +255,52 @@ export function ModelPickPop(props: {
   createEffect(() => {
     props.directory()
     composerModelProjection().sessionID
-    loadAll()
+    untrack(() => loadAll())
   })
 
   onMount(() => {
-    const unsubscribe = window.api.auth.subscribe((state) => loadAll(state))
+    const unsubscribe = window.api.auth.subscribe((state) => {
+      if (authSignature(state) === lastAuthSignature) return
+      lastAuthSignature = authSignature(state)
+      loadAll(state)
+    })
+    let receivedRuntimeState = false
+    const unsubscribeRuntime = subscribeRuntimeRecovery((state) => {
+      if (!receivedRuntimeState) {
+        receivedRuntimeState = true
+        if (state.status === "ready") return
+      }
+      if (state.status === "recovering") {
+        if (models().length > 0) setListState("recovering")
+        return
+      }
+      retryImmediately("generation-ready")
+    })
+    const unsubscribeSse = subscribeSseReconnected(() => retryImmediately("sse-reconnected"))
     queueMicrotask(() => search?.focus())
-    onCleanup(() => unsubscribe?.())
+    onCleanup(() => {
+      unsubscribe?.()
+      unsubscribeRuntime()
+      unsubscribeSse()
+    })
   })
 
   onCleanup(() => {
     disposed = true
     clearTimeout(retryTimer)
+    clearTimeout(accountRetryTimer)
   })
 
   const accountState = createMemo<AccountState>(() => {
     const authValue = auth()
     if (authValue.status === "loading") return "loading"
-    if (authValue.status === "error") return "error"
+    if (authValue.status === "recovering") return "recovering"
+    if (authValue.status === "failed") return "failed"
     if (authValue.data.status !== "logged-in") return "out"
     const summaryValue = summary()
     if (summaryValue.status === "loading") return "loading"
-    if (summaryValue.status === "error" || !summaryValue.data) return "error"
+    if (summaryValue.status === "recovering") return "recovering"
+    if (summaryValue.status === "failed" || !summaryValue.data) return "failed"
     const current = summaryValue.data
     if (current.plan.status === "active") return "member"
     return current.balanceFen > 0 ? "balance" : "empty"
@@ -222,6 +308,10 @@ export function ModelPickPop(props: {
   const readyKeyStatus = () => {
     const current = keyStatus()
     return current.status === "ready" ? current.data : {}
+  }
+  const pickerKeyStatus = () => {
+    const status = keyStatus().status
+    return status === "recovering" ? ("loading" as const) : status
   }
 
   const rows = createMemo(() => {
@@ -231,7 +321,7 @@ export function ModelPickPop(props: {
       catalog: current,
       models: models(),
       listState: listState(),
-      keyStatusState: keyStatus().status,
+      keyStatusState: pickerKeyStatus(),
       keyStatus: readyKeyStatus(),
       accountState: accountState(),
       query: query(),
@@ -323,12 +413,12 @@ export function ModelPickPop(props: {
           </button>
         </div>
       </Show>
-      <Show when={accountState() === "loading"}>
+      <Show when={accountState() === "loading" || accountState() === "recovering"}>
         <div class="a-acct-banner balance" role="status">
-          <span class="bt">{t("alpha.model.accountReading")}</span>
+          <span class="bt">{accountState() === "recovering" ? t("alpha.model.syncing") : t("alpha.model.accountReading")}</span>
         </div>
       </Show>
-      <Show when={accountState() === "error"}>
+      <Show when={accountState() === "failed"}>
         <div class="a-acct-banner error" role="alert">
           <span class="bt">{t("alpha.model.accountFailed")}</span>
           <button type="button" onClick={retryAll}>
@@ -343,7 +433,7 @@ export function ModelPickPop(props: {
           <span>{t("alpha.model.keyReadingDetail")}</span>
         </div>
       </Show>
-      <Show when={keyStatus().status === "error"}>
+      <Show when={keyStatus().status === "failed"}>
         <div class="a-mpp-alert" role="alert">
           <strong>{t("alpha.model.keyReadFailed")}</strong>
           <span>{t("alpha.model.keyReadFailedDetail")}</span>
@@ -385,12 +475,20 @@ export function ModelPickPop(props: {
           </button>
         </div>
       </Show>
-      <Show when={!catalogError() && listState() === "failed"}>
-        <div class="a-mpp-alert" role="alert">
+      <Show when={!catalogError() && listState() === "recovering"}>
+        <div class="a-mpp-alert" role="status">
           <strong>{t("alpha.model.engineConnecting")}</strong>
           <span>{t("alpha.model.engineConnectingDetail")}</span>
           <button type="button" onClick={retryAll}>
             {t("alpha.model.retryNow")}
+          </button>
+        </div>
+      </Show>
+      <Show when={!catalogError() && listState() === "failed"}>
+        <div class="a-mpp-alert" role="alert">
+          <strong>{t("alpha.model.catalogFailed")}</strong>
+          <button type="button" onClick={retryAll}>
+            {t("alpha.common.retry")}
           </button>
         </div>
       </Show>
