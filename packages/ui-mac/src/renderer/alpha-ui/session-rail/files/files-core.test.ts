@@ -5,6 +5,7 @@ import { createPathHelpers } from "../../../../../../app/src/context/file/path"
 import { SessionRouteKey, SessionStateKey, type ServerScope } from "../../../../../../app/src/utils/server-scope"
 import {
   base64UrlEncode,
+  canonicalRelPath,
   fileName,
   isSafeRelPath,
   normalizeToRel,
@@ -44,12 +45,36 @@ describe("REQ-125 C3 files-core — path discipline (baseline §③.3)", () => {
     expect(normalizeToRel(ROOT, "./src/app.ts")).toBe("src/app.ts")
     expect(normalizeToRel(ROOT, `file://${ROOT}/src/app.ts`)).toBe("src/app.ts")
 
+    // Real separator forms: directory trailing slash and Windows backslashes normalize.
+    expect(normalizeToRel(ROOT, `${ROOT}/src/`)).toBe("src")
+    expect(normalizeToRel(ROOT, "src/deep/")).toBe("src/deep")
+    expect(normalizeToRel("C:\\work\\ws", "C:\\work\\ws\\src\\app.ts")).toBe("src/app.ts")
+    expect(normalizeToRel("C:\\work\\ws", "src\\deep\\")).toBe("src/deep")
+
     // Foreign absolute paths, root escapes, and the bare root are all dropped fail-closed.
     expect(normalizeToRel(ROOT, "/etc/passwd")).toBeUndefined()
     expect(normalizeToRel(ROOT, `${ROOT}-sibling/file.ts`)).toBeUndefined()
     expect(normalizeToRel(ROOT, `${ROOT}/../escape.ts`)).toBeUndefined()
+    expect(normalizeToRel("C:\\work\\ws", "C:\\work\\ws\\..\\escape.ts")).toBeUndefined()
     expect(normalizeToRel(ROOT, ROOT)).toBeUndefined()
+    expect(normalizeToRel(ROOT, `${ROOT}/`)).toBeUndefined()
     expect(normalizeToRel(ROOT, "")).toBeUndefined()
+  })
+
+  test("canonicalRelPath normalizes real separator forms and stays fail-closed", () => {
+    expect(canonicalRelPath("src/")).toBe("src")
+    expect(canonicalRelPath("src//")).toBe("src")
+    expect(canonicalRelPath("src\\deep")).toBe("src/deep")
+    expect(canonicalRelPath("src\\deep\\")).toBe("src/deep")
+    expect(canonicalRelPath("./src/a.ts")).toBe("src/a.ts")
+
+    expect(canonicalRelPath("/")).toBeUndefined()
+    expect(canonicalRelPath("//")).toBeUndefined()
+    expect(canonicalRelPath("/etc/passwd")).toBeUndefined()
+    expect(canonicalRelPath("src\\..\\..\\etc")).toBeUndefined()
+    expect(canonicalRelPath("C:\\Windows")).toBeUndefined()
+    expect(canonicalRelPath("src//a.ts")).toBeUndefined()
+    expect(canonicalRelPath("")).toBeUndefined()
   })
 
   test("fileName / parentDir", () => {
@@ -60,11 +85,16 @@ describe("REQ-125 C3 files-core — path discipline (baseline §③.3)", () => {
   })
 
   test("toTreeEntries sanitizes raw nodes fail-closed and preserves server order", () => {
+    // Real server shapes: directories carry a trailing separator; Windows servers emit
+    // backslash separators. Both must land as canonical entries, not be dropped.
     const entries = toTreeEntries("src", [
       { name: "b.ts", path: "src/b.ts", type: "file", ignored: false },
-      { name: "a", path: "src/a", type: "directory", ignored: false },
+      { name: "a", path: "src/a/", type: "directory", ignored: false },
+      { name: "deep", path: "src\\deep\\", type: "directory", ignored: false },
+      { name: "win.ts", path: "src\\win.ts", type: "file", ignored: false },
       { name: "evil", path: "/etc/passwd", type: "file" },
       { name: "escape", path: "src/../../etc", type: "directory" },
+      { name: "winescape", path: "src\\..\\..\\etc", type: "directory" },
       { name: "outside", path: "lib/x.ts", type: "file" },
       { name: "bad/name", path: "src/bad", type: "file" },
       { name: "dup", path: "src/b.ts", type: "file" },
@@ -74,6 +104,8 @@ describe("REQ-125 C3 files-core — path discipline (baseline §③.3)", () => {
     expect(entries).toEqual([
       { name: "b.ts", path: "src/b.ts", type: "file", ignored: false },
       { name: "a", path: "src/a", type: "directory", ignored: false },
+      { name: "deep", path: "src/deep", type: "directory", ignored: false },
+      { name: "win.ts", path: "src/win.ts", type: "file", ignored: false },
     ])
   })
 

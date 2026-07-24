@@ -132,15 +132,24 @@ function DirRow(props: { state: FilesPanelState; entry: TreeEntry }) {
 function TreeLevel(props: { state: FilesPanelState; path: string }) {
   const entries = () => props.state.dirState(props.path)?.entries ?? []
   return (
-    <For each={entries()}>
-      {(entry) =>
-        entry.type === "directory" ? (
-          <DirRow state={props.state} entry={entry} />
-        ) : (
-          <FileRow state={props.state} entry={entry} />
-        )
-      }
-    </For>
+    <>
+      <For each={entries()}>
+        {(entry) =>
+          entry.type === "directory" ? (
+            <DirRow state={props.state} entry={entry} />
+          ) : (
+            <FileRow state={props.state} entry={entry} />
+          )
+        }
+      </For>
+      <Show when={props.state.dirState(props.path)?.truncated}>
+        {(info) => (
+          <div class="a-srf-truncated" role="note" data-alpha-srf-truncated={props.path}>
+            {t("alpha.session.filesTruncated", { shown: String(info().shown), total: String(info().total) })}
+          </div>
+        )}
+      </Show>
+    </>
   )
 }
 
@@ -153,7 +162,7 @@ function WorkspaceTree(props: { state: FilesPanelState }) {
         <Show when={root()?.entries} fallback={<LoadingRow />}>
           {(entries) => (
             <Show
-              when={entries().length > 0}
+              when={entries().length > 0 || props.state.dirState("")?.truncated}
               fallback={
                 <EmptyState title={t("alpha.session.filesEmptyTitle")} detail={t("alpha.session.filesEmptyDetail")} />
               }

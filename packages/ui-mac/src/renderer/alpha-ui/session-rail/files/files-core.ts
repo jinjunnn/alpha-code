@@ -49,6 +49,21 @@ export function isSafeRelPath(path: string): boolean {
 }
 
 /**
+ * Canonicalize a raw *relative* path: backslashes are treated as separators (Windows nodes),
+ * a "./" prefix and trailing separators (directory semantics, e.g. `src/`) are stripped.
+ * Returns `undefined` unless the result is a safe relative path (traversal, absolutes, and
+ * empty mid-segments stay refused fail-closed).
+ */
+export function canonicalRelPath(input: string): string | undefined {
+  if (typeof input !== "string" || input.length === 0) return undefined
+  let path = input.replace(/\\/g, "/")
+  if (path.startsWith("./")) path = path.slice(2)
+  while (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1)
+  if (path.endsWith("/")) return undefined
+  return isSafeRelPath(path) ? path : undefined
+}
+
+/**
  * Reduce an untrusted path (possibly absolute, file://-prefixed, or ./-prefixed) to a safe
  * workspace-relative path, or `undefined` when that cannot be proven (fail-closed).
  */
@@ -62,10 +77,9 @@ export function normalizeToRel(root: string, input: string): string | undefined 
     if (path === canonRoot) return undefined
     if (path.startsWith(`${canonRoot}/`)) path = path.slice(canonRoot.length + 1)
   }
-  if (path.startsWith("./")) path = path.slice(2)
   // Anything still absolute points outside the workspace — refuse, never reinterpret
-  // (isSafeRelPath rejects leading "/" and drive-letter prefixes).
-  return isSafeRelPath(path) ? path : undefined
+  // (canonicalRelPath ends in isSafeRelPath, which rejects leading "/" and drive letters).
+  return canonicalRelPath(path)
 }
 
 export function fileName(path: string): string {
@@ -87,12 +101,15 @@ export function toTreeEntries(parent: string, nodes: readonly unknown[] | undefi
     if (!raw || typeof raw !== "object") continue
     const node = raw as { name?: unknown; path?: unknown; type?: unknown; ignored?: unknown }
     if (typeof node.name !== "string" || node.name.length === 0 || node.name.includes("/")) continue
-    if (typeof node.path !== "string" || !isSafeRelPath(node.path)) continue
     if (node.type !== "file" && node.type !== "directory") continue
-    if (prefix && !node.path.startsWith(prefix)) continue
-    if (seen.has(node.path)) continue
-    seen.add(node.path)
-    entries.push({ name: node.name, path: node.path, type: node.type, ignored: node.ignored === true })
+    // Real servers emit trailing separators on directories and backslashes on Windows —
+    // canonicalize those separator forms; anything unprovable stays dropped fail-closed.
+    const path = typeof node.path === "string" ? canonicalRelPath(node.path) : undefined
+    if (!path) continue
+    if (prefix && !path.startsWith(prefix)) continue
+    if (seen.has(path)) continue
+    seen.add(path)
+    entries.push({ name: node.name, path, type: node.type, ignored: node.ignored === true })
   }
   return entries
 }

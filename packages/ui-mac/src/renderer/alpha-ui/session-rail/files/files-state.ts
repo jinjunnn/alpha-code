@@ -28,6 +28,8 @@ export interface DirState {
   loaded?: boolean
   error?: boolean
   entries?: TreeEntry[]
+  /** I7 bound: set when this level was truncated to the per-level/total node cap. */
+  truncated?: { shown: number; total: number }
 }
 
 export interface OpenedRow {
@@ -62,11 +64,16 @@ export interface FilesPanelIO {
   jumpToReview: (path: string) => void
   searchLimit?: number
   searchDebounceMs?: number
+  /** I7 bounds for the lazily loaded tree (tests inject small values). */
+  treeDirCap?: number
+  treeTotalCap?: number
 }
 
 export function createFilesPanelState(io: FilesPanelIO) {
   const searchLimit = io.searchLimit ?? 100
   const searchDebounceMs = io.searchDebounceMs ?? 150
+  const treeDirCap = io.treeDirCap ?? 500
+  const treeTotalCap = io.treeTotalCap ?? 2500
 
   const [tree, setTree] = createStore<{ dir: Record<string, DirState | undefined> }>({
     dir: { "": { expanded: true } },
@@ -79,6 +86,17 @@ export function createFilesPanelState(io: FilesPanelIO) {
 
   const ensureDir = (path: string) => {
     if (!tree.dir[path]) setTree("dir", path, { expanded: false })
+  }
+
+  // Nodes currently shown by every loaded level except `except` — the budget base for the
+  // total cap. Untracked plain read; called only inside async apply.
+  const shownCountExcept = (except: string) => {
+    let count = 0
+    for (const [key, state] of Object.entries(tree.dir)) {
+      if (key === except || !state?.entries) continue
+      count += state.entries.length
+    }
+    return count
   }
 
   const loadDir = (path: string, options?: { force?: boolean }) => {
@@ -99,6 +117,11 @@ export function createFilesPanelState(io: FilesPanelIO) {
       .listDir(path)
       .then((nodes) => {
         if (!io.stillCurrent()) return
+        const entries = toTreeEntries(path, nodes)
+        // I7: bound what a single level (and the tree as a whole) may render.
+        const budget = Math.max(0, treeTotalCap - shownCountExcept(path))
+        const cap = Math.min(treeDirCap, budget)
+        const shown = entries.length > cap ? entries.slice(0, cap) : entries
         setTree(
           "dir",
           path,
@@ -107,7 +130,8 @@ export function createFilesPanelState(io: FilesPanelIO) {
             draft.loading = false
             draft.loaded = true
             draft.error = undefined
-            draft.entries = toTreeEntries(path, nodes)
+            draft.entries = shown
+            draft.truncated = shown.length < entries.length ? { shown: shown.length, total: entries.length } : undefined
           }),
         )
       })

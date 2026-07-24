@@ -78,14 +78,17 @@ function deferred(): Deferred {
 }
 
 const file = (path: string) => ({ name: path.split("/").pop(), path, type: "file", ignored: false })
-const dir = (path: string) => ({ name: path.split("/").pop(), path, type: "directory", ignored: false })
+// Real server shape: directory nodes carry a trailing separator (e.g. "src/").
+const dir = (path: string) => ({ name: path.split("/").pop(), path: `${path}/`, type: "directory", ignored: false })
 
 describe("REQ-125 C3 files panel real Solid mount", () => {
   test("tree renders the root, lazy-loads directories, and opening a file adds a session tab", async () => {
     const harness = runtime.createFilesHarness({
       listDir: (path) => {
         if (path === "") return Promise.resolve([dir("alpha-ui"), file("README.md")])
-        if (path === "alpha-ui") return Promise.resolve([file("alpha-ui/button.css")])
+        // Windows server shape: backslash separators; must canonicalize, not vanish.
+        if (path === "alpha-ui")
+          return Promise.resolve([{ name: "button.css", path: "alpha-ui\\button.css", type: "file", ignored: false }])
         return Promise.resolve([])
       },
     })
@@ -232,6 +235,38 @@ describe("REQ-125 C3 files panel real Solid mount", () => {
     expect(host.querySelector(".a-srf-loading")).not.toBeNull()
   })
 
+  test("tree levels are capped (per-level and total) with a visible truncation hint (I7)", async () => {
+    const harness = runtime.createFilesHarness({
+      treeDirCap: 3,
+      treeTotalCap: 5,
+      listDir: (path) => {
+        if (path === "")
+          return Promise.resolve([dir("big"), file("r1.ts"), file("r2.ts"), file("r3.ts"), file("r4.ts")])
+        if (path === "big")
+          return Promise.resolve([file("big/c1.ts"), file("big/c2.ts"), file("big/c3.ts"), file("big/c4.ts")])
+        return Promise.resolve([])
+      },
+    })
+    const host = mount(harness.View)
+    await flushTimers()
+
+    // Root: 5 entries, per-level cap 3 → 3 rows + hint "3 / 5".
+    expect(host.querySelectorAll(".a-srf-tree > .a-srf-row")).toHaveLength(3)
+    const rootHint = host.querySelector("[data-alpha-srf-truncated='']")
+    expect(rootHint).not.toBeNull()
+    expect(rootHint!.textContent).toContain("3 / 5")
+    expect(rootHint!.textContent).toContain("过滤")
+
+    // Child level: total cap 5 leaves a budget of 2 → 2 rows + hint "2 / 4".
+    host.querySelector<HTMLButtonElement>("[data-alpha-srf-dir='big']")!.click()
+    await flushTimers()
+    const childRows = host.querySelectorAll(".a-srf-indent [data-alpha-srf-file]")
+    expect(childRows).toHaveLength(2)
+    const childHint = host.querySelector("[data-alpha-srf-truncated='big']")
+    expect(childHint).not.toBeNull()
+    expect(childHint!.textContent).toContain("2 / 4")
+  })
+
   test("shell rail strip: files tab mounts the panel, jump-to-review switches tabs and keeps files alive", async () => {
     const shell = runtime.createShellCaseHarness()
     const host = mount(shell.Shell)
@@ -277,5 +312,32 @@ describe("REQ-125 C3 files panel real Solid mount", () => {
     await flush()
     expect(host.querySelector("[data-alpha-session-rail-panel='review']")).not.toBeNull()
     expect(host.querySelector("[data-alpha-session-rail-panel-host='files']")).toBeNull()
+  })
+
+  test("review target is identity-bound and cleared on session switch (I8)", async () => {
+    const shell = runtime.createShellCaseHarness()
+    const host = mount(shell.Shell)
+    await flush()
+
+    // Session A mints a target — it carries A's identity triple.
+    host.querySelector<HTMLButtonElement>("[data-alpha-session-rail-tab='files']")!.click()
+    await flush()
+    shell.rail()!.jumpToReview("a.ts")
+    await flush()
+    expect(host.querySelector("[data-fake-review-panel]")!.textContent).toBe("a.ts")
+    const target = shell.rail()!.reviewTarget()
+    expect(target?.file).toBe("a.ts")
+    expect(target?.identity).toEqual(shell.identity)
+
+    // Switch to session B: the pending target must neither survive nor be consumable.
+    shell.setSnapshot({
+      identity: { serverKey: "sidecar", directory: "/tmp/workspace", sessionID: "ses_other" },
+      project: "workspace",
+      title: "另一个会话",
+      activity: "idle",
+    })
+    await flush()
+    expect(shell.rail()!.reviewTarget()).toBeUndefined()
+    expect(host.querySelector("[data-fake-review-panel]")!.textContent).toBe("")
   })
 })

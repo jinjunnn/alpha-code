@@ -26,7 +26,7 @@ describe("REQ-125 C3 files panel real Solid mount", () => {
     })
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
-    expect(output).toContain("6 pass")
+    expect(output).toContain("8 pass")
     expect(output).toContain("0 fail")
   })
 })
@@ -122,5 +122,17 @@ describe("REQ-125 C3 design-token and shell-seam ratchets", () => {
     expect(shell).toContain(`data-alpha-session-rail-tab={kind}`)
     expect(shell).toContain("jumpToReview")
     expect(workspace).toContain("SessionRailFiles")
+  })
+
+  test("review target stays identity-bound (I8): payload carries the triple, reads are gated by accepts", () => {
+    expect(shell).toContain("SessionRailReviewTarget")
+    expect(shell).toContain("props.live.accepts(target.identity)")
+    expect(shell).toContain("sameSessionIdentity(previous, identity)")
+  })
+
+  test("tree rendering is bounded (I7): per-level and total caps with a truncation hint", () => {
+    expect(state).toContain("treeDirCap")
+    expect(state).toContain("treeTotalCap")
+    expect(view).toContain("filesTruncated")
   })
 })

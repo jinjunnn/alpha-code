@@ -1,6 +1,6 @@
-import { createSignal, For, Show, type Accessor, type JSX } from "solid-js"
+import { createEffect, createSignal, For, Show, type Accessor, type JSX } from "solid-js"
 import { t } from "../../i18n"
-import type { AlphaSessionIdentity, AlphaSessionLiveSnapshot } from "./session-workspace-core"
+import { sameSessionIdentity, type AlphaSessionIdentity, type AlphaSessionLiveSnapshot } from "./session-workspace-core"
 
 export interface AlphaSessionLiveContext {
   current: Accessor<AlphaSessionLiveSnapshot | undefined>
@@ -11,10 +11,17 @@ export interface AlphaSessionLiveContext {
 // rail strip, and (optionally) one injected renderer. C4 adds "artifacts" as a fourth member.
 export type SessionRailPanel = "review" | "files" | "terminal"
 
+// I8: a review target carries the session identity it was minted for; it is only ever
+// exposed while that identity is still the live one.
+export interface SessionRailReviewTarget {
+  identity: AlphaSessionIdentity
+  file: string
+}
+
 // Narrow api handed to injected panels. `jumpToReview` implements the approved linkage contract
 // (badged file row → review panel's file card); the review lane consumes `reviewTarget`.
 export interface SessionRailApi {
-  reviewTarget: Accessor<string | undefined>
+  reviewTarget: Accessor<SessionRailReviewTarget | undefined>
   jumpToReview: (file: string) => void
 }
 
@@ -100,7 +107,14 @@ export function SessionWorkspaceShell(props: { live: AlphaSessionLiveContext; pa
   // Panels visited while the rail is open stay mounted (hidden) so switching tabs does not throw
   // away panel state (tree expansion, scroll…). Closing the rail unmounts everything.
   const [visited, setVisited] = createSignal<readonly SessionRailPanel[]>(["review"])
-  const [reviewTarget, setReviewTarget] = createSignal<string>()
+  const [reviewTarget, setReviewTarget] = createSignal<SessionRailReviewTarget>()
+  // I8: any change of the live session identity (including to undefined) invalidates a
+  // pending review target — it must never be consumed by another session.
+  createEffect((previous: AlphaSessionIdentity | undefined) => {
+    const identity = props.live.current()?.identity
+    if (previous && !sameSessionIdentity(previous, identity)) setReviewTarget(undefined)
+    return identity
+  })
   const openPanel = (next: SessionRailPanel) => {
     setLastPanel(next)
     setPanel(next)
@@ -125,9 +139,16 @@ export function SessionWorkspaceShell(props: { live: AlphaSessionLiveContext; pa
     openPanel(lastPanel())
   }
   const rail: SessionRailApi = {
-    reviewTarget,
+    // Consumer side stays fail-closed even between effect runs: a target whose identity is
+    // no longer accepted by the live context reads as absent.
+    reviewTarget: () => {
+      const target = reviewTarget()
+      return target && props.live.accepts(target.identity) ? target : undefined
+    },
     jumpToReview: (file) => {
-      setReviewTarget(file)
+      const identity = props.live.current()?.identity
+      if (!identity) return
+      setReviewTarget({ identity, file })
       openPanel("review")
     },
   }

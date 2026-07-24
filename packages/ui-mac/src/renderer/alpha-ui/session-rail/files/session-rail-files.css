@@ -311,6 +311,12 @@
   font-size: var(--a-text-xs);
 }
 
+.a-srf-truncated {
+  padding: 5px 8px;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-2xs);
+}
+
 .a-srf-error {
   display: flex;
   align-items: center;
