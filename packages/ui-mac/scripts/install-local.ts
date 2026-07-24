@@ -66,8 +66,19 @@ cpSync(SRC, DEST, { recursive: true })
 //    Loud-fail: never report "installed" for an app that cannot launch.
 const verify = spawnSync("codesign", ["--verify", "--deep", "--strict", DEST], { stdio: "ignore" })
 if (verify.status !== 0) {
-  console.log("  bundle unsigned/invalid — stamping ad-hoc signature (macOS launch requirement)")
-  const sign = spawnSync("codesign", ["--force", "--deep", "--sign", "-", DEST], { stdio: "inherit" })
+  // Prefer a STABLE identity over ad-hoc: an ad-hoc signature's designated requirement is a
+  // per-build binary hash, so every reinstall invalidates the keychain ACL on "alpha-code Safe
+  // Storage" — safeStorage access then re-prompts (or, when the prompt is hidden, blocks main in
+  // SecItemCopyMatching: page freeze + model picker stuck loading + key errors, 2026-07-23). A
+  // Developer ID signature keeps the requirement stable across rebuilds, so one "始终允许" holds
+  // forever. ALPHA_MAC_SIGN_IDENTITY overrides ("adhoc" forces the old behavior).
+  const identity = resolveSigningIdentity()
+  console.log(
+    identity === "-"
+      ? "  bundle unsigned/invalid — stamping ad-hoc signature (macOS launch requirement)"
+      : `  bundle unsigned/invalid — signing with stable identity: ${identity}`,
+  )
+  const sign = spawnSync("codesign", ["--force", "--deep", "--sign", identity, DEST], { stdio: "inherit" })
   const recheck = sign.status === 0 && spawnSync("codesign", ["--verify", "--deep", "--strict", DEST], { stdio: "ignore" }).status === 0
   if (!recheck) {
     console.error("✗ ad-hoc codesign failed — app would be SIGKILLed on launch (Code Signature Invalid). Aborting.")
@@ -94,3 +105,12 @@ spawnSync("mdimport", [DEST], { stdio: "ignore" })
 console.log(`✓ installed → ${DEST}`)
 console.log(`  removed redundant dist artifact (Spotlight now shows one app)`)
 console.log(`  Open with Cmd+Space → "alpha-code". (No dev instance needed.)`)
+
+function resolveSigningIdentity(): string {
+  const override = process.env.ALPHA_MAC_SIGN_IDENTITY
+  if (override === "adhoc") return "-"
+  if (override) return override
+  const out = spawnSync("security", ["find-identity", "-v", "-p", "codesigning"], { encoding: "utf8" })
+  const match = (out.stdout ?? "").match(/"(Developer ID Application: [^"]+)"/)
+  return match ? match[1] : "-"
+}
