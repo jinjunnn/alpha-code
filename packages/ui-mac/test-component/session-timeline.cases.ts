@@ -202,7 +202,11 @@ function conversationRows(status = "idle") {
             text: "note",
             synthetic: true,
             metadata: {
-              opencodeComment: { path: "button.css", comment: "焦点环别再隐藏", selection: { startLine: 42, endLine: 42 } },
+              opencodeComment: {
+                path: "button.css",
+                comment: "焦点环别再隐藏",
+                selection: { startLine: 42, endLine: 42 },
+              },
             },
           },
         ],
@@ -272,7 +276,7 @@ describe("REQ-125 C5 行 → DOM:文本类组件", () => {
     const kinds = [...host.querySelectorAll("[data-alpha-timeline-row]")].map((el) =>
       el.getAttribute("data-alpha-timeline-row"),
     )
-    expect(kinds).toEqual(["user", "reasoning", "placeholder", "markdown", "turn", "user"])
+    expect(kinds).toEqual(["user", "reasoning", "tool", "markdown", "turn", "user"])
 
     const bubble = host.querySelector(".a-tl-bubble")!
     expect(bubble.textContent).toContain("对照 README.md 改一版")
@@ -290,9 +294,10 @@ describe("REQ-125 C5 行 → DOM:文本类组件", () => {
     const markdown = host.querySelector("[data-alpha-timeline-row='markdown'] [data-md-stub]")!
     expect(markdown.textContent).toBe("**发现**:结构完好")
 
-    const placeholder = host.querySelector("[data-alpha-timeline-row='placeholder']")!
-    expect(placeholder.getAttribute("data-tool")).toBe("bash")
-    expect(placeholder.textContent).toContain("运行中")
+    const toolCard = host.querySelector("[data-alpha-timeline-row='tool']")!
+    expect(toolCard.getAttribute("data-tool")).toBe("bash")
+    expect(toolCard.getAttribute("data-status")).toBe("running")
+    expect(toolCard.textContent).toContain("运行中")
 
     expect(host.querySelector("[data-alpha-timeline-row='turn']")!.textContent).toContain("新一轮")
   })
@@ -333,9 +338,7 @@ describe("REQ-125 C5 行 → DOM:文本类组件", () => {
             model: { providerID: "deepseek", modelID: "deepseek-reasoner" },
           },
         ],
-        partsOf: () => [
-          { id: "prt_u9", sessionID: "ses_1", messageID: "msg_u9", type: "text", text: "开始" },
-        ],
+        partsOf: () => [{ id: "prt_u9", sessionID: "ses_1", messageID: "msg_u9", type: "text", text: "开始" }],
         status: "busy",
       }),
     )
@@ -578,9 +581,7 @@ describe("REQ-125 C5 Major-2:截断等值稳定 + streaming 冻结", () => {
         return text()
       },
     }
-    runtime.setTimelineRows([
-      { kind: "markdown", key: "md:prt_big", rev: "true", part, streaming: true },
-    ] as never)
+    runtime.setTimelineRows([{ kind: "markdown", key: "md:prt_big", rev: "true", part, streaming: true }] as never)
     await flush()
 
     // 未超限:流式活跃,光标在场。
@@ -607,5 +608,434 @@ describe("REQ-125 C5 Major-2:截断等值稳定 + streaming 冻结", () => {
     await flush()
     expect(engineRuns.count).toBe(frozenCount)
     expect(host.querySelector(".a-tl-truncated")).not.toBeNull()
+  })
+})
+
+// ═══════════════════ REQ-125 C6 — 卡片全集(工具/错误/重试/组/媒体/产物) ═══════════════════
+
+type SolidStore = { createStore: <T extends object>(v: T) => [T, (...args: never[]) => void] }
+const solidStore = (await import("solid-js/store/dist/store.js")) as unknown as SolidStore
+
+function toolPartFixture(id: string, tool: string, state: Record<string, unknown>) {
+  return { id, sessionID: "ses_1", messageID: "msg_a1", type: "tool", callID: `call_${id}`, tool, state }
+}
+
+function assistantFixture(rowsParts: unknown[], status = "idle") {
+  return model.projectTimelineRows({
+    messages: [
+      {
+        id: "msg_u1",
+        sessionID: "ses_1",
+        role: "user",
+        time: { created: 1000 },
+        agent: "build",
+        model: { providerID: "deepseek", modelID: "deepseek-reasoner" },
+      },
+      {
+        id: "msg_a1",
+        sessionID: "ses_1",
+        role: "assistant",
+        time: { created: 10, completed: 20 },
+        parentID: "msg_u1",
+        modelID: "deepseek-reasoner",
+        providerID: "deepseek",
+        mode: "build",
+        agent: "build",
+        path: { cwd: "/tmp", root: "/tmp" },
+        cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      },
+    ] as never,
+    partsOf: (messageID: string) =>
+      ((
+        ({
+          msg_u1: [{ id: "prt_u1", sessionID: "ses_1", messageID: "msg_u1", type: "text", text: "开始" }],
+          msg_a1: rowsParts,
+        }) as Record<string, unknown[]>
+      )[messageID] as never) ?? [],
+    status,
+  })
+}
+
+describe("REQ-125 C6 通用工具卡四态与分派", () => {
+  test("bash 流式:运行中输出实时增行 + 块状光标;完成翻「退出 0」、光标熄灭、卡不重建", async () => {
+    const host = mount()
+    const [state, setState] = solidStore.createStore<Record<string, unknown>>({
+      status: "running",
+      input: { command: "bun test src", description: "跑一遍单元测试" },
+      metadata: { output: "✓ one\n" },
+      time: { start: 0 },
+    })
+    runtime.setTimelineRows(assistantFixture([toolPartFixture("prt_b1", "bash", state as never)], "busy"))
+    await flush()
+
+    const card = host.querySelector("[data-alpha-tool-card][data-tool='bash']")!
+    expect(card.getAttribute("data-status")).toBe("running")
+    expect(card.getAttribute("data-open")).toBe("true")
+    const term = card.querySelector(".a-tc-term")!
+    expect(term.textContent).toContain("$ bun test src")
+    expect(term.textContent).toContain("✓ one")
+    expect(card.querySelector(".a-tc-cursor")).not.toBeNull()
+    expect(card.textContent).toContain("跑一遍单元测试")
+    const cardBefore = card
+
+    // 流式增行:同一 store proxy 的 delta,不重建卡 DOM。
+    setState("metadata", { output: "✓ one\n✓ two\n" } as never)
+    await flush()
+    expect(host.querySelector("[data-alpha-tool-card][data-tool='bash']")).toBe(cardBefore)
+    expect(card.querySelector(".a-tc-term")!.textContent).toContain("✓ two")
+
+    // 完成:退出 0 徽标,光标消失,输出定格(卡片本体不换 —— 行 rev 稳定)。
+    setState("status", "completed" as never)
+    setState("metadata", { output: "✓ one\n✓ two\n", exit: 0 } as never)
+    setState("output" as never, "✓ one\n✓ two\n2 pass" as never)
+    runtime.setTimelineRows(assistantFixture([toolPartFixture("prt_b1", "bash", state as never)], "idle"))
+    await flush()
+    const done = host.querySelector("[data-alpha-tool-card][data-tool='bash']")!
+    expect(done.getAttribute("data-status")).toBe("success")
+    expect(done.textContent).toContain("退出 0")
+    expect(done.querySelector(".a-tc-cursor")).toBeNull()
+  })
+
+  test("未知工具 fail-closed:mono 工具名 + 有界纯文本体;error 态成工具级错误卡;超帽错误体默认收起", async () => {
+    const host = mount()
+    runtime.setTimelineRows(
+      assistantFixture([
+        toolPartFixture("prt_m1", "context7_resolve-library-id", {
+          status: "completed",
+          input: {},
+          output: "raw output text",
+          title: "t",
+          metadata: {},
+          time: { start: 0, end: 1 },
+        }),
+        toolPartFixture("prt_m2", "cloud_dispatch", {
+          status: "error",
+          input: {},
+          error: "ENOTREACHABLE",
+          time: { start: 0, end: 1 },
+        }),
+        toolPartFixture("prt_m3", "cloud_big", {
+          status: "error",
+          input: {},
+          // 原长 4001 > 默认展开帽:判定按原始体量(截断标记),不用截后长度比。
+          error: "E".repeat(4_001),
+          time: { start: 0, end: 1 },
+        }),
+      ]),
+    )
+    await flush()
+
+    const unknown = host.querySelector("[data-alpha-tool-card][data-kind='unknown']")!
+    expect(unknown.querySelector(".a-tc-name")!.textContent).toBe("context7_resolve-library-id")
+    ;(unknown.querySelector(".a-tc-head") as HTMLButtonElement).click()
+    await flush()
+    expect(unknown.querySelector(".a-tc-out")!.textContent).toContain("raw output text")
+
+    const failed = host.querySelector("[data-alpha-tool-card][data-tool='cloud_dispatch']")!
+    expect(failed.getAttribute("data-open")).toBe("true")
+    expect(failed.querySelector(".a-tc-error-body")!.textContent).toContain("ENOTREACHABLE")
+    expect(failed.textContent).toContain("失败")
+
+    const bigError = host.querySelector("[data-alpha-tool-card][data-tool='cloud_big']")!
+    expect(bigError.getAttribute("data-status")).toBe("error")
+    expect(bigError.getAttribute("data-open")).toBeNull()
+    ;(bigError.querySelector(".a-tc-head") as HTMLButtonElement).click()
+    await flush()
+    expect(bigError.getAttribute("data-open")).toBe("true")
+  })
+
+  test("edit diff 视图:jsdiff 行渲染 ±行号与 +/− 行;write 显示预览与总行数;补丁卡出徽章行", async () => {
+    const host = mount()
+    runtime.setTimelineRows(
+      assistantFixture([
+        toolPartFixture("prt_e1", "edit", {
+          status: "completed",
+          input: { filePath: "/tmp/alpha-audit-test.txt" },
+          output: "ok",
+          title: "t",
+          metadata: {
+            diff: "--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n ctx\n-line two\n+hello world\n",
+            filediff: { file: "x", patch: "", additions: 1, deletions: 1 },
+          },
+          time: { start: 0, end: 1 },
+        }),
+        toolPartFixture("prt_w1", "write", {
+          status: "completed",
+          input: { filePath: "/AGENTS.md", content: "# AGENTS.md\n## Architecture\nbody\nmore" },
+          output: "ok",
+          title: "t",
+          metadata: {},
+          time: { start: 0, end: 1 },
+        }),
+        toolPartFixture("prt_p1", "apply_patch", {
+          status: "completed",
+          input: {},
+          output: "ok",
+          title: "t",
+          metadata: {
+            files: [
+              { relativePath: "src/main/proxy.ts", type: "add", additions: 30, deletions: 0 },
+              { relativePath: "src/main/legacy.ts", type: "delete", additions: 0, deletions: 10 },
+            ],
+          },
+          time: { start: 0, end: 1 },
+        }),
+      ]),
+    )
+    await flush()
+
+    const edit = host.querySelector("[data-alpha-tool-card][data-kind='edit']")!
+    expect(edit.textContent).toContain("+1")
+    expect(edit.textContent).toContain("−1")
+    ;(edit.querySelector(".a-tc-head") as HTMLButtonElement).click()
+    await flush()
+    const diffKinds = [...edit.querySelectorAll(".a-tc-diff-line")].map((el) => el.getAttribute("data-kind"))
+    expect(diffKinds).toEqual(["context", "del", "add"])
+    expect(edit.querySelector(".a-tc-diff-line[data-kind='add']")!.textContent).toContain("hello world")
+
+    const write = host.querySelector("[data-alpha-tool-card][data-kind='write']")!
+    expect(write.textContent).toContain("+4")
+    ;(write.querySelector(".a-tc-head") as HTMLButtonElement).click()
+    await flush()
+    expect(write.querySelector(".a-tc-out")!.textContent).toContain("# AGENTS.md")
+    expect(write.querySelector(".a-tc-write-note")!.textContent).toContain("4")
+
+    const patch = host.querySelector("[data-alpha-tool-card][data-kind='apply_patch']")!
+    ;(patch.querySelector(".a-tc-head") as HTMLButtonElement).click()
+    await flush()
+    const badges = [...patch.querySelectorAll(".a-tc-badge")].map((el) => el.getAttribute("data-badge"))
+    expect(badges).toEqual(["add", "delete"])
+    expect(patch.textContent).toContain("新增")
+    expect(patch.textContent).toContain("删除")
+  })
+
+  test("task v2 卡:agent 色点 + 运行环 + 打开子会话经 openSession intent;intent 缺席无按钮", async () => {
+    const host = mount()
+    runtime.setTimelineIntentsEnabled(true)
+    const taskPart = toolPartFixture("prt_t1", "task", {
+      status: "running",
+      input: { description: "校验 AGENTS.md", subagent_type: "general" },
+      metadata: { sessionId: "ses_child", parentSessionId: "ses_1" },
+      time: { start: 0 },
+    })
+    runtime.setTimelineRows(assistantFixture([taskPart], "busy"))
+    await flush()
+
+    const card = host.querySelector("[data-alpha-tool-card][data-kind='task']")!
+    expect(card.querySelector(".a-tc-agent")!.textContent).toContain("general")
+    expect(card.querySelector(".a-tc-ring")).not.toBeNull()
+    const open = card.querySelector(".a-tc-open") as HTMLButtonElement
+    expect(open.textContent).toContain("打开子会话")
+    open.click()
+    expect(runtime.getIntentLog().openSession).toEqual(["ses_child"])
+
+    runtime.setTimelineIntentsEnabled(false)
+    await flush()
+    expect(host.querySelector(".a-tc-open")).toBeNull()
+  })
+
+  test("read 列表行带「读取」徽章;write 预览带「写入」徽章行;大输出 bash 默认收起(I7)", async () => {
+    const host = mount()
+    runtime.setTimelineRows(
+      assistantFixture([
+        toolPartFixture("prt_rd1", "read", {
+          status: "completed",
+          input: { filePath: "/a/README.md" },
+          output: "ok",
+          title: "read",
+          metadata: { loaded: ["/a/AGENTS.md", "/a/CONTEXT.md"] },
+          time: { start: 0, end: 1 },
+        }),
+        toolPartFixture("prt_wb1", "write", {
+          status: "completed",
+          input: { filePath: "/a/NOTES.md", content: "第一行\n第二行\n第三行" },
+          output: "ok",
+          title: "write",
+          metadata: {},
+          time: { start: 0, end: 1 },
+        }),
+        toolPartFixture("prt_bb1", "bash", {
+          status: "completed",
+          input: { command: "cat big.log" },
+          output: "z".repeat(5_000),
+          title: "bash",
+          metadata: { exit: 0 },
+          time: { start: 0, end: 1 },
+        }),
+      ]),
+    )
+    await flush()
+
+    const read = host.querySelector("[data-alpha-tool-card][data-kind='read']")!
+    ;(read.querySelector(".a-tc-head") as HTMLButtonElement).click()
+    await flush()
+    const readBadges = [...read.querySelectorAll(".a-tc-badge")].map((el) => el.getAttribute("data-badge"))
+    expect(readBadges).toEqual(["read", "read"])
+    expect(read.querySelector(".a-tc-badge")!.textContent).toBe("读取")
+
+    const write = host.querySelector("[data-alpha-tool-card][data-kind='write']")!
+    ;(write.querySelector(".a-tc-head") as HTMLButtonElement).click()
+    await flush()
+    const writeBadge = write.querySelector(".a-tc-badge[data-badge='write']")!
+    expect(writeBadge.textContent).toBe("写入")
+    expect(write.textContent).toContain("NOTES.md")
+
+    // 输出体超过默认展开帽 → 默认收起(用户显式展开仍可用,内容仍有界)。
+    const bash = host.querySelector("[data-alpha-tool-card][data-tool='bash']")!
+    expect(bash.getAttribute("data-open")).toBeNull()
+    ;(bash.querySelector(".a-tc-head") as HTMLButtonElement).click()
+    await flush()
+    expect(bash.getAttribute("data-open")).toBe("true")
+    expect(bash.querySelector(".a-tc-term")).not.toBeNull()
+  })
+})
+
+describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
+  test("「已探索」折叠组:计数条默认折叠,展开出行(动词+目标+参数)", async () => {
+    const host = mount()
+    const completed = (id: string, tool: string, input: Record<string, unknown>) =>
+      toolPartFixture(id, tool, {
+        status: "completed",
+        input,
+        output: "",
+        title: tool,
+        metadata: {},
+        time: { start: 0, end: 1 },
+      })
+    runtime.setTimelineRows(
+      assistantFixture([
+        completed("prt_g1", "read", { filePath: "/a/README.md", limit: 30 }),
+        completed("prt_g2", "grep", { pattern: "image" }),
+      ]),
+    )
+    await flush()
+
+    const group = host.querySelector("[data-alpha-timeline-row='toolgroup']")!
+    expect(group.textContent).toContain("已探索")
+    expect(group.textContent).toContain("1 次读取")
+    expect(group.textContent).toContain("1 次搜索")
+    expect(group.querySelector(".a-explore-body")).toBeNull()
+    ;(group.querySelector(".a-explore-head") as HTMLButtonElement).click()
+    await flush()
+    const rows = [...group.querySelectorAll(".a-explore-row")]
+    expect(rows).toHaveLength(2)
+    expect(rows[0]!.textContent).toContain("README.md")
+    expect(rows[0]!.textContent).toContain("limit=30")
+    expect(rows[1]!.textContent).toContain("image")
+  })
+
+  test("回合级错误卡:全宽纯文本无动作,与工具级错误卡分离;重试卡显示第 N 次", async () => {
+    const host = mount()
+    runtime.setTimelineRows(
+      model.projectTimelineRows({
+        messages: [
+          {
+            id: "msg_u1",
+            sessionID: "ses_1",
+            role: "user",
+            time: { created: 1000 },
+            agent: "build",
+            model: { providerID: "deepseek", modelID: "deepseek-reasoner" },
+          },
+          {
+            id: "msg_a1",
+            sessionID: "ses_1",
+            role: "assistant",
+            time: { created: 10 },
+            parentID: "msg_u1",
+            modelID: "deepseek-reasoner",
+            providerID: "deepseek",
+            mode: "build",
+            agent: "build",
+            path: { cwd: "/tmp", root: "/tmp" },
+            cost: 0,
+            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+            error: { name: "rate_limit_exceeded", data: { message: "请求频率达到上限" } },
+          },
+        ] as never,
+        partsOf: (messageID: string) =>
+          (messageID === "msg_u1"
+            ? [{ id: "prt_u1", sessionID: "ses_1", messageID: "msg_u1", type: "text", text: "开始" }]
+            : []) as never,
+        status: "retry",
+        retry: { attempt: 2, message: "gateway 429" },
+      }),
+    )
+    await flush()
+
+    const err = host.querySelector("[data-alpha-timeline-row='turn-error']")!
+    expect(err.getAttribute("role")).toBe("alert")
+    expect(err.textContent).toContain("这轮回复没有完成")
+    expect(err.textContent).toContain("请求频率达到上限")
+    // fail-closed:未知错误代码按原样 mono 展示,不猜翻译。
+    expect(err.querySelector(".a-turn-err-code")!.textContent).toBe("rate_limit_exceeded")
+    expect(err.querySelector("button")).toBeNull()
+
+    const retry = host.querySelector("[data-alpha-timeline-row='retry']")!
+    expect(retry.textContent).toContain("第 2 次")
+    expect(retry.textContent).toContain("gateway 429")
+  })
+
+  test("媒体预览行:data:image 内联缩略,点击发 focusArtifact intent;intent 缺席降级纯展示", async () => {
+    const host = mount()
+    runtime.setTimelineIntentsEnabled(true)
+    runtime.setTimelineRows(
+      assistantFixture([
+        {
+          id: "prt_f1",
+          sessionID: "ses_1",
+          messageID: "msg_a1",
+          type: "file",
+          mime: "image/png",
+          filename: "界面截图.png",
+          url: "data:image/png;base64,eA==",
+        },
+      ]),
+    )
+    await flush()
+
+    const media = host.querySelector("[data-alpha-timeline-row='media']")!
+    expect(media.querySelector(".a-media-thumb img")).not.toBeNull()
+    expect(media.textContent).toContain("界面截图.png")
+    expect(media.textContent).toContain("PNG")
+    ;(media.querySelector("button.a-media-row") as HTMLButtonElement).click()
+    expect(runtime.getIntentLog().focusArtifact).toEqual([
+      { name: "界面截图.png", partID: "prt_f1", mime: "image/png" },
+    ])
+
+    runtime.setTimelineIntentsEnabled(false)
+    await flush()
+    expect(host.querySelector("[data-alpha-timeline-row='media'] button")).toBeNull()
+    expect(host.querySelector("[data-alpha-timeline-row='media'] .a-media-row")).not.toBeNull()
+  })
+
+  test("产物链接行:§⑥ 形态(链接图标+文档名),点击发 focusArtifact(runId+name)", async () => {
+    const host = mount()
+    runtime.setTimelineIntentsEnabled(true)
+    runtime.setTimelineRows(
+      assistantFixture([
+        toolPartFixture("prt_c1", "cloud_await", {
+          status: "completed",
+          input: {},
+          output: JSON.stringify({
+            job_id: "job_7f3a",
+            status: "completed",
+            artifacts: ["季度经营分析.docx", "营收对比图.png"],
+          }),
+          title: "await",
+          metadata: {},
+          time: { start: 0, end: 1 },
+        }),
+      ]),
+    )
+    await flush()
+
+    const rows = host.querySelector("[data-alpha-timeline-row='artifacts']")!
+    expect(rows.getAttribute("role")).toBe("list")
+    const links = [...rows.querySelectorAll(".a-artrow")]
+    expect(links.map((el) => el.textContent)).toEqual(["季度经营分析.docx", "营收对比图.png"])
+    ;(links[0] as HTMLButtonElement).click()
+    expect(runtime.getIntentLog().focusArtifact).toEqual([{ name: "季度经营分析.docx", runId: "job_7f3a" }])
   })
 })

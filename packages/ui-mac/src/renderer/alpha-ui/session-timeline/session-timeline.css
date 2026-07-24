@@ -479,51 +479,6 @@
   animation-delay: 0.3s;
 }
 
-/* ── 工具/媒体占位行(C6 以真卡替换) ────────────────────────────────── */
-.a-tl-part-pending {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  align-self: flex-start;
-  width: 100%;
-  max-width: 760px;
-  padding: 9px 12px;
-  border: 1px dashed var(--a-border);
-  border-radius: var(--a-radius-lg);
-  background: var(--a-bg-subtle);
-  color: var(--a-text-secondary);
-  font-size: var(--a-text-sm);
-}
-
-.a-tl-part-pending-name {
-  overflow: hidden;
-  font-family: var(--a-font-mono);
-  font-size: var(--a-text-xs);
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.a-tl-part-pending-status {
-  flex: none;
-  margin-left: auto;
-  padding: 2px 8px;
-  border-radius: var(--a-radius-full);
-  background: var(--a-bg-muted);
-  color: var(--a-text-tertiary);
-  font-size: var(--a-text-2xs);
-  font-weight: var(--a-weight-semibold);
-}
-
-.a-tl-part-pending-status[data-status="running"] {
-  background: var(--a-accent-subtle);
-  color: var(--a-accent);
-}
-
-.a-tl-part-pending-status[data-status="error"] {
-  background: var(--a-error-subtle);
-  color: var(--a-error);
-}
-
 /* ── 会话内空态(轻着陆) ────────────────────────────────────────────── */
 .a-tl-empty {
   position: absolute;
