@@ -11,6 +11,8 @@ import {
   effectiveDiffView,
   foldRevealCount,
   parseReviewPatch,
+  REVIEW_SPLIT_MIN_WIDTH,
+  reviewPatchOversized,
   reviewTotals,
   splitRowsOf,
   type ReviewDiffView,
@@ -186,8 +188,13 @@ function ReviewFileBody(props: {
   view: ReviewDiffView
   onLineComment?: ReviewPanelViewProps["onLineComment"]
 }) {
-  // Parsed only while the card is open (I7: collapsed cards cost nothing).
-  const parsed = createMemo(() => (props.change.patch ? parseReviewPatch(props.change.patch) : undefined))
+  // Oversized patches never reach the parser (I6/I7): bounded placeholder instead.
+  const oversized = () => !!props.change.patch && reviewPatchOversized(props.change.patch)
+  // Parsed only while the card is open (I7: collapsed cards cost nothing); the
+  // parsed file name must agree with the record's file (fail-closed).
+  const parsed = createMemo(() =>
+    props.change.patch && !oversized() ? parseReviewPatch(props.change.patch, props.change.file) : undefined,
+  )
   // Fold reveals and the block cursor are card-local: collapsing a card releases them.
   const [revealClicks, setRevealClicks] = createSignal<Record<number, number>>({})
   const [blockPos, setBlockPos] = createSignal(0)
@@ -254,6 +261,13 @@ function ReviewFileBody(props: {
 
   return (
     <div class="a-rvw-fbody">
+      <Show when={oversized()}>
+        <div class="a-rvw-nodiff" data-review-oversized>
+          {t("alpha.review.oversized")}
+          <StatPair additions={props.change.additions} deletions={props.change.deletions} />
+        </div>
+      </Show>
+      <Show when={!oversized()}>
       <Show when={parsed()} fallback={<div class="a-rvw-nodiff">{t("alpha.review.noTextDiff")}</div>}>
         {(diff) => (
           <>
@@ -281,6 +295,7 @@ function ReviewFileBody(props: {
             </div>
           </>
         )}
+      </Show>
       </Show>
     </div>
   )
@@ -315,13 +330,15 @@ function ReviewEmpty(props: { kind: "no-vcs" | "clean" }) {
 export function SessionRailReviewPanelView(props: ReviewPanelViewProps) {
   let rootEl: HTMLElement | undefined
   const [selectedView, setSelectedView] = createSignal<ReviewDiffView>("unified")
-  const [openFiles, setOpenFiles] = createSignal<Record<string, boolean>>({})
+  // A Map keeps attacker-controlled file names ("__proto__", "constructor", …)
+  // from ever reading through a prototype chain; membership is a strict boolean.
+  const [openFiles, setOpenFiles] = createSignal<ReadonlyMap<string, boolean>>(new Map())
   const [width, setWidth] = createSignal<number | undefined>(undefined)
 
   // I8: identity switches drop every piece of panel-local view state.
   createEffect(() => {
     props.resetKey
-    setOpenFiles({})
+    setOpenFiles(new Map())
     setSelectedView("unified")
   })
 
@@ -336,14 +353,26 @@ export function SessionRailReviewPanelView(props: ReviewPanelViewProps) {
     onCleanup(() => observer.disconnect())
   })
 
+  // Below the approved width the split view cannot apply: the seg control must
+  // show (and only offer) the state that is actually in effect.
+  const narrow = () => {
+    const measured = width()
+    return measured !== undefined && measured < REVIEW_SPLIT_MIN_WIDTH
+  }
   const view = () => effectiveDiffView(selectedView(), width())
   const totals = createMemo(() => reviewTotals(props.changes))
-  const allOpen = () => props.changes.length > 0 && props.changes.every((change) => openFiles()[change.file])
+  const isOpen = (file: string) => openFiles().get(file) === true
+  const allOpen = () => props.changes.length > 0 && props.changes.every((change) => isOpen(change.file))
   const toggleAll = () => {
     const next = !allOpen()
-    setOpenFiles(Object.fromEntries(props.changes.map((change) => [change.file, next])))
+    setOpenFiles(new Map(props.changes.map((change) => [change.file, next])))
   }
-  const toggleFile = (file: string) => setOpenFiles((current) => ({ ...current, [file]: !current[file] }))
+  const toggleFile = (file: string) =>
+    setOpenFiles((current) => {
+      const next = new Map(current)
+      next.set(file, current.get(file) !== true)
+      return next
+    })
 
   return (
     <section
@@ -367,16 +396,17 @@ export function SessionRailReviewPanelView(props: ReviewPanelViewProps) {
           <div class="a-rvw-seg" role="group" aria-label={t("alpha.review.viewMode")}>
             <button
               type="button"
-              classList={{ "a-rvw-seg--on": selectedView() === "unified" }}
-              aria-pressed={selectedView() === "unified"}
+              classList={{ "a-rvw-seg--on": view() === "unified" }}
+              aria-pressed={view() === "unified"}
               onClick={() => setSelectedView("unified")}
             >
               {t("alpha.review.viewUnified")}
             </button>
             <button
               type="button"
-              classList={{ "a-rvw-seg--on": selectedView() === "split" }}
-              aria-pressed={selectedView() === "split"}
+              classList={{ "a-rvw-seg--on": view() === "split" }}
+              aria-pressed={view() === "split"}
+              disabled={narrow()}
               onClick={() => setSelectedView("split")}
             >
               {t("alpha.review.viewSplit")}
@@ -392,7 +422,7 @@ export function SessionRailReviewPanelView(props: ReviewPanelViewProps) {
             {(change) => (
               <ReviewFileCard
                 change={change}
-                open={!!openFiles()[change.file]}
+                open={isOpen(change.file)}
                 view={view()}
                 onToggle={() => toggleFile(change.file)}
                 onLineComment={props.onLineComment}

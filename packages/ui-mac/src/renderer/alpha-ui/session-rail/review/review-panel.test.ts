@@ -22,7 +22,7 @@ describe("REQ-125 C2 review panel behavior", () => {
     })
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
-    expect(output).toContain("9 pass")
+    expect(output).toContain("15 pass")
     expect(output).toContain("0 fail")
   })
 })

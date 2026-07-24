@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, For, on, Show, type Accessor, type JSX } from "solid-js"
 import { t } from "../../i18n"
+import { TerminalRailPanel } from "../session-rail/terminal/terminal-rail-panel"
 import {
   clampRailWidth,
   RAIL_MAX_WIDTH,
@@ -128,9 +129,16 @@ export function SessionWorkspaceShell(props: {
   panels?: SessionRailPanelRenderers
   railMeta?: SessionRailMeta
 }) {
-  // Fail-closed tab availability: a panel whose lane has not landed a renderer cannot be
-  // opened — its tab renders disabled and every open path no-ops.
-  const available = (kind: SessionRailPanel) => props.panels?.[kind] !== undefined
+  // Panel renderers: injected slot first; terminal falls back to the shell-built-in
+  // C550 panel (fail-closed empty state until the engine channel lands — I8 via
+  // live.accepts). Every other absent slot stays a disabled tab and no open path works.
+  const rendererFor = (kind: SessionRailPanel): ((rail: SessionRailApi) => JSX.Element) | undefined => {
+    const injected = props.panels?.[kind]
+    if (injected) return injected
+    if (kind === "terminal") return () => <TerminalRailPanel accepts={props.live.accepts} />
+    return undefined
+  }
+  const available = (kind: SessionRailPanel) => rendererFor(kind) !== undefined
   const firstAvailable = RAIL_PANELS.find(available)
   const [panel, setPanel] = createSignal<SessionRailPanel | undefined>(firstAvailable)
   const [lastPanel, setLastPanel] = createSignal<SessionRailPanel | undefined>(firstAvailable)
@@ -319,7 +327,9 @@ export function SessionWorkspaceShell(props: {
                     onKeyDown={onTabKey}
                   >
                     <Show when={kind === "terminal" && terminalRunning()}>
-                      <span class="a-swk-rail-tab-dot" data-alpha-terminal-any-running aria-hidden="true" />
+                      {/* State arrives via railMeta.terminalRunning — the accessor twin of the
+                          C550 panel's data-alpha-terminal-any-running root attribute. */}
+                      <span class="a-swk-rail-tab-dot" data-alpha-session-terminal-dot aria-hidden="true" />
                     </Show>
                     {railPanelLabel(kind)}
                     <Show when={kind === "review" && (reviewCount() ?? 0) > 0}>
@@ -343,7 +353,7 @@ export function SessionWorkspaceShell(props: {
             </div>
             <For each={visited()}>
               {(kind) => {
-                const renderPanel = props.panels?.[kind]
+                const renderPanel = rendererFor(kind)
                 if (!renderPanel) return undefined
                 return (
                   <div

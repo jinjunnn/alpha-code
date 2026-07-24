@@ -28,10 +28,19 @@ Bun.plugin({
 })
 
 const runtime = await import("../src/renderer/alpha-ui/session-rail/review/review-test-runtime")
+
+// Major-2: run the real data container against a controllable fake of the
+// typed useServerSync channel (behavior assertions, not source strings).
+const fakeSync = await import("../src/renderer/alpha-ui/session-rail/review/review-fake-sync")
+mock.module("@opencode-ai/app", () => ({ useServerSync: fakeSync.useServerSync }))
+const containerRuntime = await import("../src/renderer/alpha-ui/session-rail/review/review-container-test-runtime")
+
 const disposers: Array<() => void> = []
 
 beforeEach(() => {
   runtime.resetReviewHarness()
+  fakeSync.resetFakeSync()
+  containerRuntime.resetContainerHarness()
   document.body.replaceChildren()
 })
 
@@ -53,6 +62,13 @@ function mount() {
   const host = document.createElement("div")
   document.body.append(host)
   disposers.push(solidWeb.render(() => runtime.ReviewPanelHarness(), host))
+  return host
+}
+
+function mountContainer() {
+  const host = document.createElement("div")
+  document.body.append(host)
+  disposers.push(solidWeb.render(() => containerRuntime.ReviewContainerHarness(), host))
   return host
 }
 
@@ -249,5 +265,131 @@ describe("REQ-125 C2 review panel real Solid mount", () => {
     expect(log).toHaveLength(1)
     expect(log[0]!.file).toBe("alpha-ui/button.css")
     expect(log[0]!.line).toMatchObject({ kind: "add", newLine: 4 })
+  })
+
+  test("oversized patches never parse and show the bounded placeholder with stats", async () => {
+    const host = mount()
+    await flush()
+    runtime.setReviewChanges([runtime.oversizedReviewChange()])
+    await flush()
+
+    headOf(host, "huge.bin.txt").click()
+    await flush()
+
+    const placeholder = host.querySelector("[data-review-oversized]")!
+    expect(placeholder.textContent).toContain("变更过大,已折叠")
+    expect(placeholder.querySelector(".a-rvw-stat-add")!.textContent).toBe("+9000")
+    expect(placeholder.querySelector(".a-rvw-stat-del")!.textContent).toBe("−4000")
+    expect(host.querySelectorAll(".a-rvw-dl")).toHaveLength(0)
+    expect(host.querySelectorAll("[data-review-fold]")).toHaveLength(0)
+  })
+
+  test("prototype-colliding file names keep strict boolean open state", async () => {
+    const host = mount()
+    await flush()
+    runtime.setReviewChanges(runtime.prototypeNamedReviewChanges())
+    await flush()
+
+    // With a plain-object map, reading "__proto__"/"constructor" walks the
+    // prototype chain and the cards would render pre-opened.
+    const heads = host.querySelectorAll<HTMLButtonElement>(".a-rvw-fhead")
+    expect(heads).toHaveLength(2)
+    heads.forEach((head) => expect(head.getAttribute("aria-expanded")).toBe("false"))
+    expect(host.querySelectorAll(".a-rvw-fbody")).toHaveLength(0)
+
+    heads[0]!.click()
+    await flush()
+    expect(heads[0]!.getAttribute("aria-expanded")).toBe("true")
+    expect(host.querySelectorAll(".a-rvw-fbody")).toHaveLength(1)
+
+    heads[0]!.click()
+    await flush()
+    expect(host.querySelectorAll(".a-rvw-fbody")).toHaveLength(0)
+  })
+})
+
+describe("REQ-125 C2 data container against the typed channel (Major-2)", () => {
+  test("loads the session diff once through the channel and renders arriving data", async () => {
+    const host = mountContainer()
+    await flush()
+
+    expect(fakeSync.fakeSyncDiffCalls()).toEqual(["ses_a"])
+    const root = host.querySelector<HTMLElement>("[data-alpha-session-review]")!
+    expect(root.getAttribute("data-review-phase")).toBe("loading")
+    expect(host.querySelectorAll("[data-review-file]")).toHaveLength(0)
+
+    fakeSync.fakeSyncSetSessionDiff("ses_a", [containerRuntime.containerDiffFixture()])
+    await flush()
+
+    expect(root.getAttribute("data-review-phase")).toBe("changes")
+    expect(host.querySelectorAll("[data-review-file]")).toHaveLength(1)
+    // Data arrival must not re-trigger the loader (idempotent load).
+    expect(fakeSync.fakeSyncDiffCalls()).toEqual(["ses_a"])
+  })
+
+  test("malformed channel payloads degrade to the clean empty state without crashing", async () => {
+    const host = mountContainer()
+    await flush()
+
+    fakeSync.fakeSyncSetSessionDiff("ses_a", [null, 42, {}, { file: "" }, { file: 7 }, { file: "ok.ts", patch: 9 }])
+    await flush()
+    const root = host.querySelector<HTMLElement>("[data-alpha-session-review]")!
+    expect(root.getAttribute("data-review-phase")).toBe("clean")
+    expect(host.querySelector('[data-review-empty="clean"]')).not.toBeNull()
+    expect(host.querySelectorAll("[data-review-file]")).toHaveLength(0)
+
+    // Even a non-array value in the keyed store must not throw.
+    fakeSync.fakeSyncSetSessionDiff("ses_a", { corrupt: true })
+    await flush()
+    expect(root.getAttribute("data-review-phase")).toBe("clean")
+    expect(host.querySelectorAll("[data-review-file]")).toHaveLength(0)
+  })
+
+  test("the comment intent flows out through the container wiring", async () => {
+    const host = mountContainer()
+    await flush()
+    fakeSync.fakeSyncSetSessionDiff("ses_a", [containerRuntime.containerDiffFixture()])
+    await flush()
+
+    host.querySelector<HTMLButtonElement>(".a-rvw-fhead")!.click()
+    await flush()
+    host.querySelector(".a-rvw-dl--add")!.querySelector<HTMLButtonElement>(".a-rvw-cmt")!.click()
+    await flush()
+
+    const intents = containerRuntime.containerIntents()
+    expect(intents).toHaveLength(1)
+    expect(intents[0]!.file).toBe("alpha-ui/button.css")
+    expect(intents[0]!.line).toMatchObject({ kind: "add", newLine: 1 })
+  })
+
+  test("a stale result for the previous session is never rendered after switching (I8)", async () => {
+    const host = mountContainer()
+    await flush()
+    expect(fakeSync.fakeSyncDiffCalls()).toEqual(["ses_a"])
+
+    // Switch to session B while A's load is still outstanding.
+    containerRuntime.setContainerSession("ses_b")
+    await flush()
+    expect(fakeSync.fakeSyncDiffCalls()).toEqual(["ses_a", "ses_b"])
+
+    fakeSync.fakeSyncSetSessionDiff("ses_b", [
+      { file: "b-file.ts", additions: 1, deletions: 0, status: "added" },
+    ])
+    await flush()
+
+    // A's stale result arrives late — it lands keyed under A and must not surface.
+    fakeSync.fakeSyncSetSessionDiff("ses_a", [
+      { file: "a-file.ts", additions: 3, deletions: 3, status: "modified" },
+      { file: "a2.ts", additions: 1, deletions: 1, status: "modified" },
+    ])
+    await flush()
+
+    const files = [...host.querySelectorAll("[data-review-file]")].map((el) => el.getAttribute("data-review-file"))
+    expect(files).toEqual(["b-file.ts"])
+    // Switching back reads A from the keyed store without a duplicate load.
+    containerRuntime.setContainerSession("ses_a")
+    await flush()
+    expect(fakeSync.fakeSyncDiffCalls()).toEqual(["ses_a", "ses_b"])
+    expect(host.querySelectorAll("[data-review-file]")).toHaveLength(2)
   })
 })

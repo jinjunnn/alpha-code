@@ -4,7 +4,7 @@
 // review-core.test.ts and stays out of the DOM harness.
 import { createSignal } from "solid-js"
 import { render } from "solid-js/web"
-import { reviewFileChangeOf, type ReviewFileChange, type ReviewPhase } from "./review-core"
+import { REVIEW_PATCH_MAX_LENGTH, reviewFileChangeOf, type ReviewFileChange, type ReviewPhase } from "./review-core"
 import { SessionRailReviewPanelView, type ReviewLineCommentIntent } from "./review-panel-view"
 
 const MODIFIED_PATCH = [
@@ -51,6 +51,27 @@ export function defaultReviewChanges(): ReviewFileChange[] {
 
 export function bigFoldReviewChange(): ReviewFileChange {
   return reviewFileChangeOf({ file: "big.txt", additions: 1, deletions: 1, status: "modified", patch: bigFoldPatch() })!
+}
+
+/** Patch text beyond the hard pre-parse limit — must never reach the parser. */
+export function oversizedReviewChange(): ReviewFileChange {
+  return reviewFileChangeOf({
+    file: "huge.bin.txt",
+    additions: 9000,
+    deletions: 4000,
+    status: "modified",
+    patch: "x".repeat(REVIEW_PATCH_MAX_LENGTH + 1),
+  })!
+}
+
+/** File names that collide with Object.prototype members must behave like any other. */
+export function prototypeNamedReviewChanges(): ReviewFileChange[] {
+  const patchFor = (file: string) =>
+    [`--- ${file}`, `+++ ${file}`, "@@ -1,1 +1,1 @@", "-old", "+new", ""].join("\n")
+  return [
+    reviewFileChangeOf({ file: "__proto__", additions: 1, deletions: 1, status: "modified", patch: patchFor("__proto__") })!,
+    reviewFileChangeOf({ file: "constructor", additions: 1, deletions: 1, status: "modified", patch: patchFor("constructor") })!,
+  ]
 }
 
 const [phase, setPhase] = createSignal<ReviewPhase>("changes")

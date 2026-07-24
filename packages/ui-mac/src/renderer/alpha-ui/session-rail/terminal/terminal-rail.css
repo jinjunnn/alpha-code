@@ -1,0 +1,299 @@
+/* REQ-125 C3-term(#550)· 右栏终端面板外壳 —— 已批稿 session-workspace §终端。
+ * 令牌纪律(I5):全部 var() 引用为 --a-*;唯一例外是 .a-term-stage 上定义的
+ * --a-term-stage-* 局部锚 —— 终端可读性约定要求输出区双主题恒深底(已批稿明文),
+ * 这些值不进全局主题、不受 [data-theme] 条件、不染 alpha chrome。
+ * 依赖全局 tokens.css/base.css(经 session-workspace.css 于 .a-ui 根注入)。 */
+
+.a-term-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+/* ── 实例页签条 ─────────────────────────────────────────────── */
+
+.a-term-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  min-width: 0;
+  padding: 8px 10px 0;
+  overflow-x: auto;
+}
+
+.a-term-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: var(--a-radius-md);
+  color: var(--a-text-secondary);
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+}
+
+.a-term-tab:hover {
+  background: var(--a-bg-muted);
+}
+
+.a-term-tab--on {
+  border-color: var(--a-border);
+  background: var(--a-surface);
+  box-shadow: var(--a-shadow-xs);
+  color: var(--a-text);
+}
+
+.a-term-tab-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  height: 100%;
+  padding: 0 3px 0 11px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.a-term-tab-label {
+  overflow: hidden;
+  max-width: 140px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.a-term-tab-close {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-right: 5px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--a-radius-xs);
+  background: transparent;
+  color: var(--a-text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--a-dur-fast) var(--a-ease-out);
+}
+
+.a-term-tab:hover .a-term-tab-close,
+.a-term-tab--on .a-term-tab-close,
+.a-term-tab-close:focus-visible {
+  opacity: 1;
+}
+
+.a-term-tab-close:hover {
+  background: var(--a-bg-muted);
+  color: var(--a-text);
+}
+
+.a-term-rundot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-success);
+  animation: a-term-pulse 1.4s var(--a-ease-in-out) infinite;
+}
+
+.a-term-add {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--a-radius-md);
+  background: transparent;
+  color: var(--a-text-tertiary);
+  cursor: pointer;
+}
+
+.a-term-add:hover {
+  background: var(--a-bg-muted);
+  color: var(--a-text);
+}
+
+.a-term-icon {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.a-term-tab-close .a-term-icon {
+  width: 11px;
+  height: 11px;
+}
+
+/* ── 输出区外框:圆角容器,双主题恒深底(引擎在内渲染)────────── */
+
+.a-term-stage {
+  --a-term-stage-bg: #0a0b0d;
+  --a-term-stage-text: #d4d4d8;
+  --a-term-stage-text-dim: #71727a;
+  --a-term-stage-border: rgba(255, 255, 255, 0.08);
+  --a-term-stage-success: #4ade80;
+
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  margin: 8px 10px 10px;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-lg);
+  overflow: hidden;
+  background: var(--a-term-stage-bg);
+}
+
+.a-term-output {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  color: var(--a-term-stage-text);
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-sm);
+}
+
+/* ── 脚条:运行状态 · 环境 · 尺寸(mono 小字,恒居深底内)────── */
+
+.a-term-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding: 6px 10px;
+  border-top: 1px solid var(--a-term-stage-border);
+  color: var(--a-term-stage-text-dim);
+  font-family: var(--a-font-mono);
+  font-size: var(--a-text-2xs);
+}
+
+.a-term-foot-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.a-term-foot-state i {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-term-stage-text-dim);
+}
+
+.a-term-foot-state--running {
+  color: var(--a-term-stage-success);
+}
+
+.a-term-foot-state--running i {
+  background: var(--a-term-stage-success);
+  animation: a-term-pulse 1.4s var(--a-ease-in-out) infinite;
+}
+
+.a-term-foot-size {
+  margin-left: auto;
+}
+
+/* ── 空态(无实例 / 引擎通道缺席 fail-closed)──────────────── */
+
+.a-term-empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 30px;
+  text-align: center;
+}
+
+.a-term-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--a-radius-lg);
+  background: var(--a-bg-muted);
+  color: var(--a-text-tertiary);
+}
+
+.a-term-empty-icon .a-term-icon {
+  width: 19px;
+  height: 19px;
+}
+
+.a-term-empty b {
+  color: var(--a-text);
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+}
+
+.a-term-empty p {
+  margin: 0;
+  max-width: 30ch;
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-xs);
+  line-height: var(--a-leading-snug);
+}
+
+.a-term-empty-new {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius-md);
+  background: var(--a-surface);
+  color: var(--a-text);
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+  cursor: pointer;
+}
+
+.a-term-empty-new:hover:not(:disabled) {
+  background: var(--a-bg-muted);
+}
+
+.a-term-empty-new:disabled {
+  color: var(--a-text-disabled);
+  cursor: default;
+}
+
+@keyframes a-term-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .a-term-rundot,
+  .a-term-foot-state--running i {
+    animation: none;
+  }
+
+  .a-term-tab-close {
+    transition: none;
+  }
+}

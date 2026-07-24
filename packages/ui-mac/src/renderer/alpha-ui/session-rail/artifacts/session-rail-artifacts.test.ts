@@ -118,7 +118,7 @@ describe("REQ-125 C4 shell seam: fourth tab, badge, dot, grip, and the focus mou
 
   test("tab decorations and the resize grip land in shell css with reduced-motion coverage", () => {
     expect(shell).toContain("data-alpha-session-review-count")
-    expect(shell).toContain("data-alpha-terminal-any-running")
+    expect(shell).toContain("data-alpha-session-terminal-dot")
     expect(shellCss).toContain(".a-swk-rail-tab-badge")
     expect(shellCss).toContain(".a-swk-rail-tab-dot")
     expect(shellCss).toContain(".a-swk-rail-grip")

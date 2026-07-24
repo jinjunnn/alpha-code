@@ -62,26 +62,23 @@ export function splitReviewPath(file: string): { dir: string; name: string } {
 }
 
 /** Narrow one SDK diff record at the consumption point; drop malformed entries (fail-closed). */
-export function reviewFileChangeOf(input: {
-  file?: string
-  patch?: string
-  additions?: number
-  deletions?: number
-  status?: string
-}): ReviewFileChange | undefined {
-  if (typeof input.file !== "string" || input.file.length === 0) return undefined
-  if (input.patch !== undefined && typeof input.patch !== "string") return undefined
-  const additions = typeof input.additions === "number" && Number.isFinite(input.additions) ? input.additions : 0
-  const deletions = typeof input.deletions === "number" && Number.isFinite(input.deletions) ? input.deletions : 0
-  const { dir, name } = splitReviewPath(input.file)
+export function reviewFileChangeOf(input: unknown): ReviewFileChange | undefined {
+  if (typeof input !== "object" || input === null) return undefined
+  const record = input as { file?: unknown; patch?: unknown; additions?: unknown; deletions?: unknown; status?: unknown }
+  if (typeof record.file !== "string" || record.file.length === 0) return undefined
+  if (record.patch !== undefined && typeof record.patch !== "string") return undefined
+  const additions = typeof record.additions === "number" && Number.isFinite(record.additions) ? record.additions : 0
+  const deletions = typeof record.deletions === "number" && Number.isFinite(record.deletions) ? record.deletions : 0
+  const status = typeof record.status === "string" ? record.status : ""
+  const { dir, name } = splitReviewPath(record.file)
   return {
-    file: input.file,
+    file: record.file,
     dir,
     name,
-    kind: KINDS[input.status ?? ""] ?? "modified",
+    kind: KINDS[status] ?? "modified",
     additions: Math.max(0, Math.floor(additions)),
     deletions: Math.max(0, Math.floor(deletions)),
-    patch: input.patch,
+    patch: record.patch,
   }
 }
 
@@ -101,18 +98,60 @@ export function reviewTotals(changes: readonly ReviewFileChange[]): {
 }
 
 /**
- * Parse a server-computed unified patch into fold/block segments.
- * Returns undefined when the patch cannot be parsed (binary or malformed);
- * the panel then renders a bounded "no text diff" notice instead of guessing.
+ * Hard pre-parse limits (I6/I7): a patch beyond either bound never reaches the
+ * parser — the panel shows a bounded "too large" placeholder instead. The
+ * length cap is in UTF-16 code units, a lower bound on the byte size, so the
+ * byte cost is bounded within 2x of it.
  */
-export function parseReviewPatch(patch: string): ReviewFileDiff | undefined {
-  let parsed
+export const REVIEW_PATCH_MAX_LENGTH = 1_500_000
+export const REVIEW_PATCH_MAX_LINES = 20_000
+
+export function reviewPatchOversized(patch: string): boolean {
+  if (patch.length > REVIEW_PATCH_MAX_LENGTH) return true
+  let lines = 1
+  for (let i = 0; i < patch.length; i += 1) {
+    if (patch.charCodeAt(i) === 10) {
+      lines += 1
+      if (lines > REVIEW_PATCH_MAX_LINES) return true
+    }
+  }
+  return false
+}
+
+/** A present patch file name matches only /dev/null or the expected path (± git a/ b/ prefix). */
+function patchNameMatches(name: string | undefined, expected: string): boolean {
+  if (!name) return true // absence is handled fail-closed by the both-missing check
+  if (name === "/dev/null") return true
+  return name === expected || name === `a/${expected}` || name === `b/${expected}`
+}
+
+/**
+ * Parse a server-computed unified patch into fold/block segments.
+ * Returns undefined when the patch cannot be parsed or fails a fail-closed
+ * check (oversized, binary, malformed, multiple patch files, or a file name
+ * that contradicts `expectedFile`); the panel then renders a bounded notice
+ * instead of guessing.
+ */
+export function parseReviewPatch(patch: string, expectedFile?: string): ReviewFileDiff | undefined {
+  if (reviewPatchOversized(patch)) return undefined
+  let files
   try {
-    parsed = parsePatch(patch)[0]
+    files = parsePatch(patch)
   } catch {
     return undefined
   }
+  // Exactly one patched file per SnapshotFileDiff record; anything else is rejected.
+  if (files.length !== 1) return undefined
+  const parsed = files[0]
   if (!parsed || parsed.hunks.length === 0) return undefined
+  if (expectedFile !== undefined) {
+    // Fail-closed: a patch with no file header on either side carries no
+    // evidence for the record's file and could bind to any card — reject.
+    if (!parsed.oldFileName && !parsed.newFileName) return undefined
+    if (!patchNameMatches(parsed.oldFileName, expectedFile) || !patchNameMatches(parsed.newFileName, expectedFile)) {
+      return undefined
+    }
+  }
 
   const segments: ReviewSegment[] = []
   let blockCount = 0

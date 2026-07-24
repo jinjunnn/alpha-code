@@ -5,8 +5,11 @@ import {
   parseReviewPatch,
   projectVcsFor,
   REVIEW_FOLD_CHUNK,
+  REVIEW_PATCH_MAX_LENGTH,
+  REVIEW_PATCH_MAX_LINES,
   reviewFileChangeOf,
   reviewIdentityKeyOf,
+  reviewPatchOversized,
   reviewPhaseOf,
   reviewTotals,
   splitReviewPath,
@@ -122,6 +125,58 @@ describe("REQ-125 C2 patch parsing (server patch is the single diff source)", ()
   test("malformed and empty patches fail closed to undefined", () => {
     expect(parseReviewPatch("")).toBeUndefined()
     expect(parseReviewPatch("not a patch")).toBeUndefined()
+  })
+
+  test("non-object diff records fail closed to undefined", () => {
+    expect(reviewFileChangeOf(null)).toBeUndefined()
+    expect(reviewFileChangeOf(undefined)).toBeUndefined()
+    expect(reviewFileChangeOf(42)).toBeUndefined()
+    expect(reviewFileChangeOf("diff")).toBeUndefined()
+    expect(reviewFileChangeOf([])).toBeUndefined()
+  })
+
+  test("oversized patches are refused before the parser runs (I6/I7)", () => {
+    expect(reviewPatchOversized("x".repeat(REVIEW_PATCH_MAX_LENGTH))).toBe(false)
+    expect(reviewPatchOversized("x".repeat(REVIEW_PATCH_MAX_LENGTH + 1))).toBe(true)
+    expect(reviewPatchOversized("\n".repeat(REVIEW_PATCH_MAX_LINES - 1))).toBe(false)
+    expect(reviewPatchOversized("\n".repeat(REVIEW_PATCH_MAX_LINES))).toBe(true)
+    expect(parseReviewPatch("x".repeat(REVIEW_PATCH_MAX_LENGTH + 1))).toBeUndefined()
+  })
+
+  test("a payload containing more than one patch file is refused", () => {
+    const twoFiles = [
+      "--- a/one.ts",
+      "+++ b/one.ts",
+      "@@ -1,1 +1,1 @@",
+      "-x",
+      "+y",
+      "--- a/two.ts",
+      "+++ b/two.ts",
+      "@@ -1,1 +1,1 @@",
+      "-p",
+      "+q",
+      "",
+    ].join("\n")
+    expect(parseReviewPatch(twoFiles)).toBeUndefined()
+    expect(parseReviewPatch(twoFiles, "one.ts")).toBeUndefined()
+  })
+
+  test("parsed patch file names must agree with the record's file", () => {
+    expect(parseReviewPatch(FULL_CONTEXT_PATCH, "alpha-ui/button.css")).toBeDefined()
+    expect(parseReviewPatch(FULL_CONTEXT_PATCH, "other.css")).toBeUndefined()
+
+    const gitStyle = ["--- a/x.ts", "+++ b/x.ts", "@@ -1,1 +1,1 @@", "-old", "+new", ""].join("\n")
+    expect(parseReviewPatch(gitStyle, "x.ts")).toBeDefined()
+    expect(parseReviewPatch(gitStyle, "y.ts")).toBeUndefined()
+
+    const added = ["--- /dev/null", "+++ b/new.ts", "@@ -0,0 +1,1 @@", "+hello", ""].join("\n")
+    expect(parseReviewPatch(added, "new.ts")).toBeDefined()
+    expect(parseReviewPatch(added, "stale.ts")).toBeUndefined()
+  })
+
+  test("a headerless patch carries no file evidence and cannot bind to any card", () => {
+    // Second-round audit repro: without this, "@@ …" patches attach to any file.
+    expect(parseReviewPatch("@@ -1,1 +1,1 @@\n-old\n+new\n", "victim.ts")).toBeUndefined()
   })
 })
 

@@ -10,9 +10,12 @@ import { useServerSync } from "@opencode-ai/app"
 import { createEffect, createMemo, untrack } from "solid-js"
 import type { AlphaSessionLiveContext } from "../../session-workspace/session-workspace-shell"
 import { projectVcsFor, reviewFileChangeOf, reviewIdentityKeyOf, reviewPhaseOf } from "./review-core"
-import { SessionRailReviewPanelView } from "./review-panel-view"
+import { SessionRailReviewPanelView, type ReviewLineCommentIntent } from "./review-panel-view"
 
-export function SessionRailReviewPanel(props: { live: AlphaSessionLiveContext }) {
+export function SessionRailReviewPanel(props: {
+  live: AlphaSessionLiveContext
+  onLineComment?: (intent: ReviewLineCommentIntent) => void
+}) {
   const serverSync = useServerSync()
   const identity = () => props.live.current()?.identity
 
@@ -21,19 +24,25 @@ export function SessionRailReviewPanel(props: { live: AlphaSessionLiveContext })
     if (!id) return undefined
     return serverSync().session.data.session_diff[id.sessionID]
   })
-  const rows = createMemo(() =>
-    (changes() ?? []).flatMap((diff) => {
+  // Fail-closed narrowing of the channel payload: a non-array or malformed
+  // record never reaches the view (it degrades to the clean empty state).
+  const rows = createMemo(() => {
+    const list = changes()
+    if (!Array.isArray(list)) return []
+    return list.flatMap((diff) => {
       const row = reviewFileChangeOf(diff)
       return row ? [row] : []
-    }),
-  )
+    })
+  })
   const phase = createMemo(() => {
     const id = identity()
     if (!id) return "loading" as const
     return reviewPhaseOf({
       ready: serverSync().ready,
       vcs: projectVcsFor(serverSync().data.project, id.directory),
-      diffs: changes(),
+      // Emptiness is judged on the narrowed rows; only a missing channel value
+      // means "still loading".
+      diffs: changes() === undefined ? undefined : rows(),
     })
   })
 
@@ -48,5 +57,12 @@ export function SessionRailReviewPanel(props: { live: AlphaSessionLiveContext })
     void serverSync().session.diff(id.sessionID)
   })
 
-  return <SessionRailReviewPanelView phase={phase()} changes={rows()} resetKey={reviewIdentityKeyOf(identity())} />
+  return (
+    <SessionRailReviewPanelView
+      phase={phase()}
+      changes={rows()}
+      resetKey={reviewIdentityKeyOf(identity())}
+      onLineComment={props.onLineComment}
+    />
+  )
 }

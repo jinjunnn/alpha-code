@@ -128,25 +128,30 @@ describe("REQ-125 session workspace real Solid mount", () => {
     expect(status().textContent).toContain("正在生成")
   })
 
-  test("tabs fail closed while a lane has not landed its renderer", async () => {
+  test("tabs fail closed while a lane has not landed its renderer; terminal has a built-in fallback", async () => {
     const host = mountPartial({ review: () => "review-only" })
     await flush()
 
     const tab = (kind: string) => host.querySelector<HTMLButtonElement>(`[data-alpha-session-rail-tab='${kind}']`)!
     expect(tab("review").disabled).toBe(false)
     expect(tab("files").disabled).toBe(true)
-    expect(tab("terminal").disabled).toBe(true)
     expect(tab("artifacts").disabled).toBe(true)
-
-    // The topbar terminal shortcut is the same dead end — disabled, not an empty panel.
+    // Terminal is never a dead tab: the shell carries the built-in C550 panel as fallback.
+    expect(tab("terminal").disabled).toBe(false)
     const topbarButtons = host.querySelectorAll<HTMLButtonElement>(".a-swk-panel-button")
-    expect(topbarButtons[0]!.disabled).toBe(true)
+    expect(topbarButtons[0]!.disabled).toBe(false)
 
     tab("artifacts").click()
     await flush()
     expect(host.querySelector("[data-alpha-session-rail-host]")?.getAttribute("data-alpha-session-rail-panel")).toBe(
       "review",
     )
+
+    tab("terminal").click()
+    await flush()
+    const terminalHost = host.querySelector("[data-alpha-session-rail-panel-host='terminal']")
+    expect(terminalHost).not.toBeNull()
+    expect(terminalHost!.querySelector("[data-alpha-terminal-panel]")).not.toBeNull()
   })
 
   test("review badge and terminal dot follow the rail meta channels, fail-closed by default", async () => {
@@ -156,19 +161,19 @@ describe("REQ-125 session workspace real Solid mount", () => {
     const terminalTab = host.querySelector<HTMLButtonElement>("[data-alpha-session-rail-tab='terminal']")!
 
     expect(reviewTab.querySelector("[data-alpha-session-review-count]")).toBeNull()
-    expect(terminalTab.querySelector("[data-alpha-terminal-any-running]")).toBeNull()
+    expect(terminalTab.querySelector("[data-alpha-session-terminal-dot]")).toBeNull()
 
     runtime.setSessionWorkspaceReviewCount(3)
     runtime.setSessionWorkspaceTerminalRunning(true)
     await flush()
     expect(reviewTab.querySelector("[data-alpha-session-review-count]")!.textContent).toBe("3")
-    expect(terminalTab.querySelector("[data-alpha-terminal-any-running]")).not.toBeNull()
+    expect(terminalTab.querySelector("[data-alpha-session-terminal-dot]")).not.toBeNull()
 
     runtime.setSessionWorkspaceReviewCount(0)
     runtime.setSessionWorkspaceTerminalRunning(false)
     await flush()
     expect(reviewTab.querySelector("[data-alpha-session-review-count]")).toBeNull()
-    expect(terminalTab.querySelector("[data-alpha-terminal-any-running]")).toBeNull()
+    expect(terminalTab.querySelector("[data-alpha-session-terminal-dot]")).toBeNull()
   })
 
   test("width grip drags within 320-560, remembers per panel, and persists", async () => {
