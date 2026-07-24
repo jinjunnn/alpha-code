@@ -10,6 +10,7 @@ import { hasSecretFile, secretFileRef } from "./alpha-secret-files"
 import { applyCloudWebSearchDisable } from "./cloud-web-search"
 import { alphaGlobalRoot, alphaJsoncPath } from "./engine-config-truth"
 import { injectDisabledOverrides } from "./ext-disabled-injection"
+import { injectMcpDefaultDeny } from "./mcp-default-deny"
 import { materializeCloudMcpConfig } from "./cloud-sidecar-config"
 import type { ChannelName } from "./catalog-channels"
 
@@ -171,6 +172,8 @@ function injectAlphaConfig(userDataPath: string, extPluginPath?: string, registr
 
     const existing = process.env.OPENCODE_CONFIG_CONTENT
     const config = existing ? JSON.parse(existing) : { $schema: "https://opencode.ai/config.json" }
+    // 只记录本轮函数自己新放进 mcp 的名字;继承来的 OPENCODE_CONFIG_CONTENT 不是治理授权。
+    const injectedMcpNames = new Set<string>()
 
     if (extPluginPath) {
       const plugins: string[] = Array.isArray(config.plugin) ? config.plugin : []
@@ -380,6 +383,7 @@ function injectAlphaConfig(userDataPath: string, extPluginPath?: string, registr
         ...(config.mcp ?? {}),
         cloud: materializeCloudMcpConfig(mcpUrl, secretFileRef(userDataPath, "ALPHA_CLOUD_TOKEN")),
       }
+      injectedMcpNames.add("cloud")
     }
 
     // Remote MCP config only toggles whole servers, but the engine's global permission layer filters
@@ -403,6 +407,14 @@ function injectAlphaConfig(userDataPath: string, extPluginPath?: string, registr
       console.error(
         "[req104-397] registry channel missing from start command — skipping disabled-override injection (boot reconcile holds the fail-closed gate)",
       )
+
+    // #535 / REQ-109 T6(基线 §② G1、§③):账本禁用覆盖落定后,枚举真实用户全局
+    // XDG config 的三个文件。非治理 MCP 以末序 enabled:false 压住;治理 MCP 不复制、不改写。
+    // 逐文件失败只 loud 跳过,不得破坏上方任何注入。
+    injectMcpDefaultDeny(config, {
+      alphaConfigPath: alphaJsoncPath(),
+      injectedMcpNames,
+    })
 
     process.env.OPENCODE_CONFIG_CONTENT = JSON.stringify(config)
     materializeV2EngineConfig(userDataPath, config)

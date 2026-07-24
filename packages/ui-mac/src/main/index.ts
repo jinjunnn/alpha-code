@@ -95,7 +95,7 @@ import { RECOVERY_ACTIONS } from "../shared/recovery"
 import { initByokKeys, injectByokKeysIntoEnv, setByokKeyDeps } from "./alpha-byok-keys"
 import { reconcileEngineConfigTruth } from "./engine-config-truth-boot"
 import { sweepEngineConfigDanglingUnlocked, type DanglingSweepOutcome } from "./engine-config-dangling"
-import { withConfigWriteLock } from "./ext-config"
+import { ensureGovernedMcpConnectTimeouts, withConfigWriteLock } from "./ext-config"
 import { engineDataDir } from "./data-clear"
 import { reconcileDesiredStateAtBoot } from "./ext-install-planner"
 import { alphaGlobalRoot } from "./alpha-installs"
@@ -663,6 +663,7 @@ const main = Effect.gen(function* () {
       logger.error("[req053-dangling-sweep] boot sweep crashed — blocking sidecar (fail closed)", error)
     }
   }
+  ensureGovernedMcpConnectTimeouts()
   ensureAlphaLayoutDefault()
   // Packaged builds only: on macOS this sets the user-level Launch Services handler pref to the
   // bundle the process runs from — in dev that is node_modules' bare Electron.app, which then hijacks

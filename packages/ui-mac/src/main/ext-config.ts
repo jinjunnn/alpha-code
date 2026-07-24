@@ -436,6 +436,72 @@ function writeConfigTextAtomic(target: string, before: string, result: string): 
   }
 }
 
+/**
+ * #535 / REQ-109 T6 G2:main-process boot reconcile, called once before the first sidecar fork.
+ * Local MCP startup can block for ~29s while uvx/npx fill a cold cache; catalog commands are config
+ * only (deriveMcpConfig does not materialize them). Put the 5s bound into each existing full local
+ * definition in alpha.jsonc so the engine schema accepts it and later live edits remain authoritative.
+ * Remote MCPs (including cloud) are deliberately exempt because this same engine field also caps
+ * legitimate long-running tool requests, not just connection setup.
+ */
+export function ensureGovernedMcpConnectTimeouts(
+  options: { logError?: (message: string) => void } = {},
+): void {
+  const target = mcpPluginTargetPath()
+  const logError = options.logError ?? ((message: string) => console.error(message))
+  let text: string
+  try {
+    text = fs.readFileSync(target, "utf8")
+  } catch (error) {
+    logError(
+      `[req109-535] local MCP timeout reconcile skipped; config unreadable: ${target} (${error instanceof Error ? error.message : String(error)})`,
+    )
+    return
+  }
+
+  const errors: ParseError[] = []
+  const parsed: unknown = parse(text, errors, { allowTrailingComma: true, disallowComments: false })
+  if (errors.length > 0) {
+    logError(
+      `[req109-535] local MCP timeout reconcile skipped; config unparseable: ${target} (${errors.length} error(s))`,
+    )
+    return
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    logError(`[req109-535] local MCP timeout reconcile skipped; config root is not an object: ${target}`)
+    return
+  }
+
+  const mcp = (parsed as Record<string, unknown>).mcp
+  if (mcp === undefined) return
+  if (!mcp || typeof mcp !== "object" || Array.isArray(mcp)) {
+    logError(`[req109-535] local MCP timeout reconcile skipped; config mcp key is not an object: ${target}`)
+    return
+  }
+  const names = Object.entries(mcp as Record<string, unknown>)
+    .filter(([, value]) => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return false
+      const leaf = value as Record<string, unknown>
+      return leaf.type === "local" && leaf.enabled !== false && !Object.hasOwn(leaf, "timeout")
+    })
+    .map(([name]) => name)
+  if (names.length === 0) return
+
+  const result = names.reduce(
+    (current, name) =>
+      applyEdits(
+        current,
+        modify(current, ["mcp", name, "timeout"], 5_000, {
+          formattingOptions: { tabSize: 2, insertSpaces: true },
+        }),
+      ),
+    text,
+  )
+  const written = writeConfigTextAtomic(target, text, result)
+  if (!written.ok)
+    logError(`[req109-535] local MCP timeout reconcile write failed: ${target} (${written.reason})`)
+}
+
 /** Persist an MCP server under mcp[<name>] in the alpha-owned engine config file (durable) + receipt. */
 export function persistMcp(name: string, server: Record<string, unknown>, meta?: InstallMeta): ConfigResult {
   if (!SAFE_NAME.test(name)) return { ok: false, reason: "invalid server name" }
