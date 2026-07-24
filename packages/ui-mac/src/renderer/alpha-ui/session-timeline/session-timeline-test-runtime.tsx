@@ -14,6 +14,8 @@ const [history, setHistory] = createSignal<SessionTimelineHistory>({ more: false
 const [epoch, setEpoch] = createSignal(initialEpoch)
 
 let loadOlderCalls = 0
+let pendingMode = false
+let pendingResolvers: Array<() => void> = []
 
 export { render }
 
@@ -25,11 +27,22 @@ export function SessionTimelineHarness() {
       epoch={epoch()}
       emptyTitle="整理架构说明"
       history={history()}
-      onLoadOlder={async () => {
+      onLoadOlder={() => {
         loadOlderCalls += 1
+        if (!pendingMode) return Promise.resolve()
+        return new Promise<void>((resolve) => pendingResolvers.push(resolve))
       }}
     />
   )
+}
+
+/** true = onLoadOlder 挂起不 resolve(模拟慢加载),用 resolvePendingLoads 手动放行。 */
+export function setLoadOlderPending(next: boolean) {
+  pendingMode = next
+}
+
+export function resolvePendingLoads() {
+  pendingResolvers.splice(0).forEach((resolve) => resolve())
 }
 
 export function setTimelineRows(next: TimelineRow[]) {
@@ -58,4 +71,6 @@ export function resetTimelineHarness() {
   setHistory({ more: false, loading: false })
   setEpoch(initialEpoch)
   loadOlderCalls = 0
+  pendingMode = false
+  resolvePendingLoads()
 }

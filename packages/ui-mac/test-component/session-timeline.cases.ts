@@ -35,6 +35,38 @@ class IntersectionObserverStub {
 }
 ;(globalThis as { IntersectionObserver?: unknown }).IntersectionObserver = IntersectionObserverStub
 
+// Major-3 契约的可控 ResizeObserver:手动 trigger 模拟「内容高度变化」事件
+// (settling 的驱动源);从不自动触发,既有用例不受影响。
+class ResizeObserverStub {
+  static instances: ResizeObserverStub[] = []
+  callback: () => void
+  constructor(callback: () => void) {
+    this.callback = callback
+    ResizeObserverStub.instances.push(this)
+  }
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+  trigger() {
+    this.callback()
+  }
+}
+;(globalThis as { ResizeObserver?: unknown }).ResizeObserver = ResizeObserverStub
+
+function rectOf(top: number, height: number) {
+  return {
+    top,
+    bottom: top + height,
+    height,
+    left: 0,
+    right: 0,
+    width: 0,
+    x: 0,
+    y: top,
+    toJSON: () => ({}),
+  } as DOMRect
+}
+
 // Major-2 契约的引擎侧计数器:count = 引擎收到的(text/streaming)更新次数。
 const engineRuns = { count: 0, lastStreaming: undefined as boolean | undefined }
 
@@ -337,6 +369,101 @@ describe("REQ-125 C5 历史分页驻点", () => {
     await flush()
 
     expect(host.querySelector("[data-alpha-timeline-history]")).toBeNull()
+  })
+})
+
+describe("REQ-125 C5 Major-3:连续锚定(settling)", () => {
+  /** 装配一条带锚行的时间线,并给滚动容器/锚行装可控几何(scrollTop 与 rect 联动)。 */
+  async function mountAnchored() {
+    const host = mount()
+    runtime.setTimelineRows(conversationRows())
+    runtime.setTimelineHistory({ more: true, loading: false })
+    await flush()
+
+    const scrollEl = host.querySelector(".a-tl-scroll") as HTMLElement
+    const anchorRow = host.querySelector("[data-alpha-timeline-row]") as HTMLElement
+    const geometry = { rowBase: 10 }
+    scrollEl.getBoundingClientRect = () => rectOf(0, 600)
+    anchorRow.getBoundingClientRect = () => rectOf(geometry.rowBase - scrollEl.scrollTop, 20)
+
+    // 触发历史加载:settling 从 prepend 开始锁锚(视口偏移 = 10);随后关掉 more,
+    // 防止 settling 期间的滚动事件再次触发加载。
+    ;(host.querySelector(".a-tl-history-button") as HTMLButtonElement).click()
+    runtime.setTimelineHistory({ more: false, loading: false })
+    await flush()
+
+    const ro = ResizeObserverStub.instances.at(-1)!
+    return { host, scrollEl, anchorRow, geometry, ro }
+  }
+
+  test("① 锚上方 deferred 行在补偿后长高 → 连续复位,视口内容不位移", async () => {
+    const { scrollEl, anchorRow, geometry, ro } = await mountAnchored()
+
+    // prepend 落地:锚行被新内容推下 100 → 复位 +100。
+    geometry.rowBase = 110
+    ro.trigger()
+    expect(scrollEl.scrollTop).toBe(100)
+
+    // 一次性补偿之后:锚上方 deferred Markdown 行进窗挂引擎又长高 50 ——
+    // 复审 NOT-FIXED 的根因场景,连续锚定必须继续复位。
+    geometry.rowBase = 160
+    ro.trigger()
+    expect(scrollEl.scrollTop).toBe(150)
+    // 视口内容不位移:锚的视口偏移始终回到锁定值 10。
+    expect(anchorRow.getBoundingClientRect().top).toBe(10)
+
+    // 稳定后不再位移。
+    ro.trigger()
+    ro.trigger()
+    expect(scrollEl.scrollTop).toBe(150)
+  })
+
+  test("② 加载期间用户滚动 → 重捕获新锚继续 settling,不拉拽用户", async () => {
+    const { scrollEl, anchorRow, geometry, ro } = await mountAnchored()
+
+    geometry.rowBase = 110
+    ro.trigger()
+    expect(scrollEl.scrollTop).toBe(100)
+
+    // 用户主动滚动到新位置:锚重捕获(首个可见行,偏移 110-40=70),不是放弃。
+    scrollEl.scrollTop = 40
+    scrollEl.dispatchEvent(new Event("scroll"))
+    await flush()
+
+    // 锚上方又长高 30(deferred 行进窗)→ 相对新锚继续复位,用户位置保持。
+    geometry.rowBase = 140
+    ro.trigger()
+    expect(scrollEl.scrollTop).toBe(70)
+    expect(anchorRow.getBoundingClientRect().top).toBe(70)
+  })
+
+  test("③ A 会话加载挂起时,B 会话的贴底跟随不被阻塞(I8 epoch 分片)", async () => {
+    runtime.setLoadOlderPending(true)
+    const host = mount()
+    runtime.setTimelineRows(conversationRows())
+    runtime.setTimelineHistory({ more: true, loading: false })
+    await flush()
+
+    const scrollEl = host.querySelector(".a-tl-scroll") as HTMLElement
+    ;(host.querySelector(".a-tl-history-button") as HTMLButtonElement).click()
+    await flush()
+    expect(runtime.getLoadOlderCalls()).toBe(1)
+
+    // 切到 B 会话(A 的加载仍挂起 in-flight)。
+    runtime.setTimelineEpoch("sidecar /tmp/workspace ses_other")
+    runtime.setTimelineHistory({ more: false, loading: false })
+    await flush()
+
+    // B 内容增长 → 贴底跟随必须工作(busy 按当前 epoch 判定,A 不阻塞 B)。
+    Object.defineProperty(scrollEl, "scrollHeight", { value: 500, configurable: true })
+    const ro = ResizeObserverStub.instances.at(-1)!
+    ro.trigger()
+    expect(scrollEl.scrollTop).toBe(500)
+
+    // 放行 A 的滞后完成:不得触碰 B 的视口。
+    runtime.resolvePendingLoads()
+    await flush()
+    expect(scrollEl.scrollTop).toBe(500)
   })
 })
 

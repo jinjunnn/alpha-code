@@ -75,41 +75,105 @@ export function SessionTimelineView(props: SessionTimelineViewProps) {
     else setTimeout(task, 0)
   }
 
-  // Major-3 锚元素:首个进入视口的行元素 + 其相对滚动容器的偏移。
+  // ── Major-3:连续锚定(settling) ─────────────────────────────────────────
+  // 一次性补偿会被窗口化绕过:锚上方的 deferred Markdown 行在补偿之后才实测高度。
+  // 因此 prepend 开始即锁锚进入 settling 窗口:凡内容高度变化(ResizeObserver)就
+  // 重算并再应用 anchorDelta,直到稳定(连续 2 次无位移)或超时;加载期间用户滚动
+  // → 以滚动后的首个可见行重捕获锚,继续 settling(不放弃、不拉拽)。
+  const SETTLE_QUIET_EVENTS = 2
+  const SETTLE_TIMEOUT_MS = 2000
+
+  type SettlingState = {
+    epoch: string
+    anchor: { el: Element; top: number } | undefined
+    loadDone: boolean
+    quiet: number
+    timer?: ReturnType<typeof setTimeout>
+  }
+  let settling: SettlingState | undefined
+
+  const endSettling = () => {
+    if (settling?.timer !== undefined) clearTimeout(settling.timer)
+    settling = undefined
+  }
+  onCleanup(endSettling)
+
+  // 锚 = 首个进入视口的「行」元素 + 其相对滚动容器的偏移(跳过历史驻点等非行子元素,
+  // 它们会随加载态消失,不配当锚)。
   const findAnchor = () => {
     if (!scrollRef || !columnRef) return undefined
     const containerTop = scrollRef.getBoundingClientRect().top
     for (const child of Array.from(columnRef.children)) {
+      if (!child.hasAttribute("data-alpha-timeline-row")) continue
       const rect = child.getBoundingClientRect()
       if (rect.bottom > containerTop) return { el: child, top: rect.top - containerTop }
     }
     return undefined
   }
 
+  /** 量一次锚、应用一次复位。返回 true = 本事件由 settling 消费(不再走贴底跟随)。 */
+  const applySettling = (): boolean => {
+    const state = settling
+    if (!state) return false
+    if (props.epoch !== state.epoch || !scrollRef) {
+      // I8:换代即终结,滞后的 settling 不得触碰新会话的视口。
+      endSettling()
+      return false
+    }
+    if (!state.anchor || !state.anchor.el.isConnected) state.anchor = findAnchor()
+    const anchor = state.anchor
+    if (!anchor) return true
+    const containerTop = scrollRef.getBoundingClientRect().top
+    const nextTop = anchor.el.getBoundingClientRect().top - containerTop
+    const delta = anchorDelta(anchor.top, nextTop)
+    if (delta !== 0) {
+      // 复位量只由锚偏移导出 —— 锚下方(底部流式)的增高不改变锚偏移,天然免疫。
+      scrollRef.scrollTop += delta
+      state.quiet = 0
+      return true
+    }
+    state.quiet += 1
+    if (state.loadDone && state.quiet >= SETTLE_QUIET_EVENTS) endSettling()
+    return true
+  }
+
   const triggerLoadOlder = () => {
     const epoch = props.epoch
     if (!scrollRef || !epoch || prepend.busy(epoch) || !props.history.more || props.history.loading) return
-    const anchor = findAnchor()
     prepend.begin(epoch)
+    endSettling()
+    settling = { epoch, anchor: findAnchor(), loadDone: false, quiet: 0 }
     void props
       .onLoadOlder()
       .catch(() => {})
       .finally(() => {
-        // I8:epoch 分片裁决;加载期间用户滚动 → 放弃补偿(不拉拽用户)。
-        if (prepend.finish(epoch, props.epoch) !== "compensate") return
-        if (!anchor || !anchor.el.isConnected || !scrollRef) return
-        // prepend 完成同帧内以锚复位:solid 同步渲染,此刻 DOM 已含新行;
-        // 复位量只由锚偏移导出,底部流式增高不进入计算。
-        const containerTop = scrollRef.getBoundingClientRect().top
-        const nextTop = anchor.el.getBoundingClientRect().top - containerTop
-        scrollRef.scrollTop += anchorDelta(anchor.top, nextTop)
+        prepend.finish(epoch)
+        if (!settling || settling.epoch !== epoch) return
+        if (props.epoch !== epoch) {
+          endSettling()
+          return
+        }
+        settling.loadDone = true
+        // 同帧先复位一次(solid 同步渲染,新行已在 DOM);其余高度变化
+        // (占位行进窗挂引擎等)由 RO 事件持续复位,直到稳定或超时。
+        applySettling()
+        if (settling) {
+          if (settling.timer !== undefined) clearTimeout(settling.timer)
+          settling.timer = setTimeout(endSettling, SETTLE_TIMEOUT_MS)
+        }
       })
   }
 
   const handleScroll = () => {
     const el = scrollRef
     if (!el) return
-    prepend.noteScroll(props.epoch)
+    if (settling) {
+      if (settling.epoch === props.epoch) {
+        // 审计口径:加载期间滚动 → 以滚动后的首个可见行为新锚,继续 settling。
+        settling.anchor = findAnchor()
+        settling.quiet = 0
+      } else endSettling()
+    }
     setAtBottom(isAtBottom(el.scrollTop, el.clientHeight, el.scrollHeight))
     if (shouldLoadOlder({ scrollTop: el.scrollTop, more: props.history.more, loading: props.history.loading }))
       triggerLoadOlder()
@@ -127,12 +191,14 @@ export function SessionTimelineView(props: SessionTimelineViewProps) {
     ),
   )
 
-  // 跟随流式:内容高度变化时,仅在贴底状态下续贴底;历史 prepend 期间不介入
-  // (prepend 引起的增高属于 Major-3 锚补偿的领域,不得混入贴底跟随)。
+  // 内容高度变化的统一入口:settling 活跃(当前 epoch)时归锚定复位;否则做贴底跟随。
+  // 贴底跟随按「当前 epoch」判定 in-flight(I8 minor):A 会话的滞后加载不得阻塞
+  // B 会话的贴底跟随。
   onMount(() => {
     if (typeof ResizeObserver === "undefined" || !columnRef) return
     const observer = new ResizeObserver(() => {
-      if (prepend.idle() && atBottom()) scrollToEnd()
+      if (applySettling()) return
+      if (!prepend.busy(props.epoch) && atBottom()) scrollToEnd()
     })
     observer.observe(columnRef)
     onCleanup(() => observer.disconnect())

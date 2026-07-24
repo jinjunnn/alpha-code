@@ -42,33 +42,23 @@ export function anchorDelta(prevAnchorTop: number, nextAnchorTop: number) {
 }
 
 /**
- * 历史 prepend 的并发/补偿协调器(纯状态机):
- *   · begin/finish 按 epoch 分片 —— 一个会话的 in-flight 不阻塞另一个会话(I8 minor);
- *   · noteScroll 记录加载期间的用户滚动 —— finish 时裁决是否补偿;
- *   · finish 校验完成时 epoch 未变 —— 切会话后的滞后完成一律 skip。
+ * 历史 prepend 的 in-flight 协调器(纯状态机),按 epoch 分片(I8 minor):
+ *   · busy(epoch) 只回答「这个会话」是否在加载 —— A 的滞后 in-flight 不阻塞 B 的
+ *     触发与贴底跟随(视图一律以 busy(currentEpoch) 判定,不存在全局 idle 语义);
+ *   · 补偿本身不在此裁决:Major-3 采用连续锚定(settling),用户滚动=重捕获锚,
+ *     不存在「放弃补偿」分支。
  */
 export function createPrependCoordinator() {
-  const inflight = new Map<string, { userScrolled: boolean }>()
+  const inflight = new Set<string>()
   return {
     busy(epoch: string) {
       return inflight.has(epoch)
     },
-    idle() {
-      return inflight.size === 0
-    },
     begin(epoch: string) {
-      inflight.set(epoch, { userScrolled: false })
+      inflight.add(epoch)
     },
-    noteScroll(epoch: string) {
-      const state = inflight.get(epoch)
-      if (state) state.userScrolled = true
-    },
-    finish(epoch: string, currentEpoch: string): "compensate" | "skip" {
-      const state = inflight.get(epoch)
+    finish(epoch: string) {
       inflight.delete(epoch)
-      if (!state) return "skip"
-      if (epoch !== currentEpoch) return "skip"
-      return state.userScrolled ? "skip" : "compensate"
     },
   }
 }
