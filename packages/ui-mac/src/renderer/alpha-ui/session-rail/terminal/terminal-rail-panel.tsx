@@ -12,7 +12,7 @@ import {
   resolveActiveInstance,
   type AlphaTerminalEngineChannel,
 } from "./terminal-rail-core"
-import { publishTerminalAnyRunning } from "./terminal-rail-state"
+import { registerTerminalRunningPublisher } from "./terminal-rail-state"
 import "./terminal-rail.css"
 
 const STAGE_ID = "alpha-terminal-stage"
@@ -37,10 +37,12 @@ export function TerminalRailPanel(props: {
   }
   const instances = createMemo(() => engine()?.instances() ?? [])
   // Any-running projection for the rr-tabs breathing dot (integration audit Major-2):
-  // instances are already identity-gated above, and unmount resets to false — the
-  // published state can never outlive this panel or its session.
-  createEffect(() => publishTerminalAnyRunning(anyTerminalRunning(instances())))
-  onCleanup(() => publishTerminalAnyRunning(false))
+  // this mount registers its own publisher entry — instances are already identity-gated
+  // above, and unmount removes only this entry, so concurrent panels/remounts never
+  // clobber each other's published state.
+  const runningPublisher = registerTerminalRunningPublisher()
+  createEffect(() => runningPublisher.publish(anyTerminalRunning(instances())))
+  onCleanup(() => runningPublisher.unregister())
   const active = createMemo(() => resolveActiveInstance(instances(), engine()?.activeID()))
   const foot = createMemo(() => {
     const current = active()

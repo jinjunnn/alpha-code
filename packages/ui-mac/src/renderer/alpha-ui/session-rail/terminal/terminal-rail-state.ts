@@ -1,23 +1,49 @@
-// REQ-125 C4(integration audit Major-2)—— 终端「任一实例在跑」的跨组件投影。
+// REQ-125 C4(integration audit Major-2, round-3 rework)—— 终端「任一实例在跑」的
+// 跨组件投影,按发布者注册表聚合。
 //
-// 生产状态通路:TerminalRailPanel(唯一知道 accepted channel instances 的组件)把
-// anyTerminalRunning 发布到本模块级信号;shell 的 rr-tabs 终端呼吸点消费之——
-// 无论面板由 shell 内建兜底渲染,还是未来 lane 经 panels.terminal 注入(两者都是
-// 同一 TerminalRailPanel 组件),链路都接通。railMeta.terminalRunning 仍是显式
-// 覆盖通道(workspace 侧一旦有更权威的状态源,以它为准)。
-//
-// I8:面板的 instances 已经过 acceptedEngineChannel 身份闸(会话切换 → 空列表 →
-// 发布 false);面板卸载时复位 false,信号永不携带过期会话的运行态。
+// 生产状态通路:每个 TerminalRailPanel 实例注册一个唯一发布者条目,持续发布自己的
+// anyTerminalRunning(instances 已过 acceptedEngineChannel 身份闸,I8);卸载 = 删除
+// 自身条目(而非无条件写 false)。any = 注册表中任意条目为 true —— 多面板并存、
+// 重挂、卸载次序交错都不会互踩。shell 的 rr-tabs 终端呼吸点消费聚合值;
+// railMeta.terminalRunning 仍是显式覆盖通道。
 import { createSignal } from "solid-js"
 
-const [anyRunning, setAnyRunning] = createSignal(false)
+const [publishers, setPublishers] = createSignal<ReadonlyMap<symbol, boolean>>(new Map())
 
-/** Shell 消费面:任一终端实例在跑(缺面板/缺 channel = false,fail-closed)。 */
+/** Shell 消费面:任一注册发布者报告 running(无发布者 = false,fail-closed)。 */
 export function terminalRailAnyRunning(): boolean {
-  return anyRunning()
+  for (const running of publishers().values()) if (running) return true
+  return false
 }
 
-/** 仅供 TerminalRailPanel(及测试)发布;其余代码只读。 */
-export function publishTerminalAnyRunning(value: boolean): void {
-  setAnyRunning(value)
+export interface TerminalRunningPublisher {
+  /** 发布本面板实例的 any-running 状态(幂等;同值重发不抖动聚合)。 */
+  publish(running: boolean): void
+  /** 注销:仅删除自身条目,其他发布者的状态不受影响。幂等。 */
+  unregister(): void
+}
+
+/** 仅供 TerminalRailPanel(及测试)使用;每次挂载注册一个唯一条目。 */
+export function registerTerminalRunningPublisher(): TerminalRunningPublisher {
+  const key = Symbol("terminal-rail-publisher")
+  let active = true
+  setPublishers((current) => new Map(current).set(key, false))
+  return {
+    publish: (running) => {
+      if (!active) return
+      setPublishers((current) => {
+        if (current.get(key) === running) return current
+        return new Map(current).set(key, running)
+      })
+    },
+    unregister: () => {
+      if (!active) return
+      active = false
+      setPublishers((current) => {
+        const next = new Map(current)
+        next.delete(key)
+        return next
+      })
+    },
+  }
 }

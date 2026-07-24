@@ -144,8 +144,25 @@ function ArtifactsPanel(props: { live: AlphaSessionLiveContext; rail: SessionRai
       .verify(identity.directory, run, card.descriptor!.id)
       .then((result) => {
         if (result && typeof result === "object" && "ok" in result && result.ok === true) {
-          setGate(key, { status: "pass" })
-          void refetchList() // state chip reflects the re-check outcome
+          // ok:true only means the re-check ran and persisted. The gate opens solely on a
+          // "verified" digest outcome; a real mismatch/missing/unverified result is a
+          // first-class failure — same honest path as a verify exception (audit round 3).
+          const state =
+            "entry" in result &&
+            result.entry &&
+            typeof result.entry === "object" &&
+            "local" in result.entry &&
+            result.entry.local &&
+            typeof result.entry.local === "object" &&
+            "state" in result.entry.local
+              ? result.entry.local.state
+              : undefined
+          void refetchList() // state chip reflects the persisted re-check outcome either way
+          if (state === "verified") {
+            setGate(key, { status: "pass" })
+            return
+          }
+          setGate(key, { status: "fail", reason: typeof state === "string" ? state : "unverified" })
           return
         }
         const reason =

@@ -26,7 +26,7 @@ describe("REQ-125 C4 artifacts panel real Solid mount", () => {
     })
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
-    expect(output).toContain("7 pass")
+    expect(output).toContain("8 pass")
     expect(output).toContain("0 fail")
   })
 })
@@ -103,6 +103,9 @@ describe("REQ-125 C4 verbatim workbench embed (I5) and channel discipline", () =
     expect(wiring).toContain("VerifyGate")
     expect(wiring).toContain(`{ status: "fail", reason`)
     expect(wiring.match(/if \(!verifyPassed\(\)\) return null/g)).toHaveLength(2)
+    // ok:true alone never opens the gate — only a "verified" digest outcome does; a real
+    // mismatch takes the same first-class failure path as a verify exception (round 3).
+    expect(wiring).toContain(`state === "verified"`)
   })
 
   test("rail chrome css is token-only", () => {
@@ -142,10 +145,16 @@ describe("REQ-125 C4 shell seam: fourth tab, badge, dot, grip, and the focus mou
     mediaBlocks.forEach((block) => expect(block).not.toContain("a-swk-rail-host"))
   })
 
-  test("the terminal dot consumes the panel-published projection by default (audit Major-2)", () => {
+  test("the terminal dot consumes the publisher-registry projection by default (audit Major-2)", () => {
     expect(shell).toContain("terminalRailAnyRunning")
     const panel = readFileSync(join(import.meta.dir, "../terminal/terminal-rail-panel.tsx"), "utf8")
-    expect(panel).toContain("publishTerminalAnyRunning(anyTerminalRunning(instances()))")
-    expect(panel).toContain("onCleanup(() => publishTerminalAnyRunning(false))")
+    // Per-mount publisher entry: publish own state, unregister own entry on unmount —
+    // never an unconditional global write that could clobber a concurrent panel.
+    expect(panel).toContain("registerTerminalRunningPublisher()")
+    expect(panel).toContain("runningPublisher.publish(anyTerminalRunning(instances()))")
+    expect(panel).toContain("onCleanup(() => runningPublisher.unregister())")
+    const state = readFileSync(join(import.meta.dir, "../terminal/terminal-rail-state.ts"), "utf8")
+    expect(state).not.toContain("publishTerminalAnyRunning")
+    expect(state).toContain("next.delete(key)")
   })
 })

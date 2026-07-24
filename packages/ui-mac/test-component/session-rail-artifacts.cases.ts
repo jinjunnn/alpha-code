@@ -119,7 +119,12 @@ function installFakeRunArtifacts(
       },
       verify: async (_dir: string, run: string, artifactId: string) => {
         calls.verify.push(`${run}:${artifactId}`)
-        return options?.verify ? options.verify(run, artifactId) : { ok: true }
+        if (options?.verify) return options.verify(run, artifactId)
+        // Honest default: the re-check returns the (verified) manifest entry, like main does.
+        const entry = (entriesByRun[run] ?? []).find(
+          (candidate) => (candidate as { descriptor?: { id?: string } }).descriptor?.id === artifactId,
+        )
+        return entry ? { ok: true, entry } : { ok: false, reason: "artifact not found" }
       },
       read: async () => {
         calls.read += 1
@@ -294,7 +299,7 @@ describe("REQ-125 C4 artifacts container in the real shell (fake preload channel
     expect(host.querySelector("[data-artifacts-verifying]")).not.toBeNull()
     expect(calls.read).toBe(0)
 
-    resolveVerify({ ok: true })
+    resolveVerify({ ok: true, entry: manifestEntry("art-1", "架构说明.md") })
     await flushTimers()
     await flushTimers()
     expect(host.querySelector("[data-artifacts-verifying]")).toBeNull()
@@ -307,7 +312,9 @@ describe("REQ-125 C4 artifacts container in the real shell (fake preload channel
     const calls = installFakeRunArtifacts({ job_1: [manifestEntry("art-1", "架构说明.md")] }, {
       verify: () => {
         attempts += 1
-        return attempts === 1 ? Promise.reject(new Error("digest mismatch")) : Promise.resolve({ ok: true })
+        return attempts === 1
+          ? Promise.reject(new Error("digest failed: read error"))
+          : Promise.resolve({ ok: true, entry: manifestEntry("art-1", "架构说明.md") })
       },
     })
     const shell = runtime.createArtifactsShellHarness()
@@ -320,7 +327,7 @@ describe("REQ-125 C4 artifacts container in the real shell (fake preload channel
     // Failure is never stamped as done: honest notice, zero reads, no preview.
     const failed = host.querySelector("[data-artifacts-verify-failed]")
     expect(failed).not.toBeNull()
-    expect(failed!.textContent).toContain("digest mismatch")
+    expect(failed!.textContent).toContain("digest failed")
     expect(calls.read).toBe(0)
 
     failed!.querySelector<HTMLButtonElement>(".a-wb-btn")!.click()
@@ -331,5 +338,29 @@ describe("REQ-125 C4 artifacts container in the real shell (fake preload channel
     expect(host.querySelector("[data-artifacts-verify-failed]")).toBeNull()
     expect(calls.read).toBeGreaterThan(0)
     unmountAll()
+  })
+
+  test("a real digest mismatch (ok:true, state=mismatch) is a first-class failure: zero reads, honest notice", async () => {
+    const mismatchEntry = manifestEntry("art-1", "架构说明.md")
+    ;(mismatchEntry.local as { state: string }).state = "mismatch"
+    const calls = installFakeRunArtifacts(
+      { job_1: [manifestEntry("art-1", "架构说明.md")] },
+      { verify: () => Promise.resolve({ ok: true, entry: mismatchEntry }) },
+    )
+    const shell = runtime.createArtifactsShellHarness()
+    const host = mount(shell.Shell)
+    await flushTimers()
+    host.querySelector<HTMLButtonElement>("[data-alpha-session-rail-tab='artifacts']")!.click()
+    await flushTimers()
+    await flushTimers()
+
+    // The re-check completed but did NOT come back "verified" — the barrier stays shut:
+    // failure notice on screen, not a preview, and not a single byte read.
+    const failed = host.querySelector("[data-artifacts-verify-failed]")
+    expect(failed).not.toBeNull()
+    expect(failed!.textContent).toContain("mismatch")
+    expect(host.querySelector("[data-artifacts-verifying]")).toBeNull()
+    expect(calls.read).toBe(0)
+    expect(calls.verify).toEqual(["job_1:art-1"])
   })
 })
