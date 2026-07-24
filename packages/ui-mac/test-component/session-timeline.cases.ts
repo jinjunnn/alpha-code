@@ -14,12 +14,40 @@ mock.module("solid-js", () => solid)
 const solidWeb = await import("solid-js/web/dist/web.js")
 mock.module("solid-js/web", () => solidWeb)
 
+// Major-1 契约的可控 IntersectionObserver:autoVisible=true 时 observe 即视为进窗
+// (等价于「行初始就在视口内」),Major-1 用例改为手动 trigger 驱动进窗/出窗。
+class IntersectionObserverStub {
+  static autoVisible = true
+  static instances: IntersectionObserverStub[] = []
+  callback: (entries: { target: Element; isIntersecting: boolean }[], observer: IntersectionObserverStub) => void
+  constructor(callback: IntersectionObserverStub["callback"]) {
+    this.callback = callback
+    IntersectionObserverStub.instances.push(this)
+  }
+  observe(el: Element) {
+    if (IntersectionObserverStub.autoVisible) this.callback([{ target: el, isIntersecting: true }], this)
+  }
+  unobserve() {}
+  disconnect() {}
+  trigger(el: Element, isIntersecting: boolean) {
+    this.callback([{ target: el, isIntersecting }], this)
+  }
+}
+;(globalThis as { IntersectionObserver?: unknown }).IntersectionObserver = IntersectionObserverStub
+
+// Major-2 契约的引擎侧计数器:count = 引擎收到的(text/streaming)更新次数。
+const engineRuns = { count: 0, lastStreaming: undefined as boolean | undefined }
+
 mock.module("@opencode-ai/session-ui/markdown", () => ({
   Markdown: (props: { text?: string; streaming?: boolean; class?: string }) => {
     const el = document.createElement("div")
     el.setAttribute("data-md-stub", "")
     if (props.class) el.className = props.class
-    el.textContent = props.text ?? ""
+    solid.createRenderEffect(() => {
+      engineRuns.count += 1
+      engineRuns.lastStreaming = props.streaming
+      el.textContent = props.text ?? ""
+    })
     return el
   },
 }))
@@ -48,6 +76,9 @@ const disposers: Array<() => void> = []
 
 beforeEach(() => {
   runtime.resetTimelineHarness()
+  IntersectionObserverStub.autoVisible = true
+  engineRuns.count = 0
+  engineRuns.lastStreaming = undefined
   document.body.replaceChildren()
 })
 
@@ -306,5 +337,118 @@ describe("REQ-125 C5 历史分页驻点", () => {
     await flush()
 
     expect(host.querySelector("[data-alpha-timeline-history]")).toBeNull()
+  })
+})
+
+describe("REQ-125 C5 Major-1:Markdown 引擎窗口化", () => {
+  function twoMarkdownRows() {
+    return model.projectTimelineRows({
+      messages: [
+        {
+          id: "msg_u1",
+          sessionID: "ses_1",
+          role: "user",
+          time: { created: 1000 },
+          agent: "build",
+          model: { providerID: "deepseek", modelID: "deepseek-reasoner" },
+        },
+        {
+          id: "msg_a1",
+          sessionID: "ses_1",
+          role: "assistant",
+          time: { created: 10, completed: 20 },
+          parentID: "msg_u1",
+          modelID: "deepseek-reasoner",
+          providerID: "deepseek",
+          mode: "build",
+          agent: "build",
+          path: { cwd: "/tmp", root: "/tmp" },
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+      ],
+      partsOf: (messageID: string) =>
+        ({
+          msg_u1: [{ id: "prt_u1", sessionID: "ses_1", messageID: "msg_u1", type: "text", text: "两段回答" }],
+          msg_a1: [
+            { id: "prt_t1", sessionID: "ses_1", messageID: "msg_a1", type: "text", text: "第一段" },
+            { id: "prt_t2", sessionID: "ses_1", messageID: "msg_a1", type: "text", text: "第二段" },
+          ],
+        })[messageID] ?? [],
+      status: "idle",
+    })
+  }
+
+  test("离屏零引擎实例;进窗恰一个;出窗即卸载(常驻实例数以窗口为上限)", async () => {
+    IntersectionObserverStub.autoVisible = false
+    const host = mount()
+    runtime.setTimelineRows(twoMarkdownRows())
+    await flush()
+
+    const mdRows = [...host.querySelectorAll("[data-alpha-timeline-row='markdown']")]
+    expect(mdRows).toHaveLength(2)
+    expect(host.querySelectorAll("[data-md-stub]")).toHaveLength(0)
+    expect(host.querySelectorAll(".a-tl-md-deferred")).toHaveLength(2)
+    expect(mdRows.map((el) => el.getAttribute("data-engine"))).toEqual(["deferred", "deferred"])
+    expect(engineRuns.count).toBe(0)
+
+    const observer = IntersectionObserverStub.instances.at(-1)!
+    observer.trigger(mdRows[0]!, true)
+    await flush()
+    expect(host.querySelectorAll("[data-md-stub]")).toHaveLength(1)
+    expect(mdRows[0]!.getAttribute("data-engine")).toBe("live")
+    expect(mdRows[1]!.getAttribute("data-engine")).toBe("deferred")
+
+    observer.trigger(mdRows[0]!, false)
+    await flush()
+    expect(host.querySelectorAll("[data-md-stub]")).toHaveLength(0)
+    expect(mdRows[0]!.getAttribute("data-engine")).toBe("deferred")
+    expect(host.querySelectorAll(".a-tl-md-deferred")).toHaveLength(2)
+  })
+})
+
+describe("REQ-125 C5 Major-2:截断等值稳定 + streaming 冻结", () => {
+  test("超过上限后任意多 delta:引擎零重处理,光标熄灭,截断提示在场", async () => {
+    const host = mount()
+    const limit = model.MARKDOWN_MAX_CHARS
+    const [text, setText] = solid.createSignal("a".repeat(limit - 10))
+    const part = {
+      id: "prt_big",
+      sessionID: "ses_1",
+      messageID: "msg_big",
+      type: "text",
+      get text() {
+        return text()
+      },
+    }
+    runtime.setTimelineRows([
+      { kind: "markdown", key: "md:prt_big", rev: "true", part, streaming: true },
+    ] as never)
+    await flush()
+
+    // 未超限:流式活跃,光标在场。
+    expect(engineRuns.lastStreaming).toBe(true)
+    expect(host.querySelector(".a-tl-cursor")).not.toBeNull()
+    const beforeCount = engineRuns.count
+    expect(beforeCount).toBeGreaterThan(0)
+
+    // 跨过上限:恰一次冻结更新(截断即完成态)。
+    setText("a".repeat(limit + 5))
+    await flush()
+    expect(engineRuns.count).toBe(beforeCount + 1)
+    expect(engineRuns.lastStreaming).toBe(false)
+    expect(host.querySelector(".a-tl-cursor")).toBeNull()
+    expect(host.querySelector(".a-tl-truncated")).not.toBeNull()
+    const frozenCount = engineRuns.count
+
+    // 任意多后续 delta:截断前缀恒等 → 零引擎重处理。
+    setText("a".repeat(limit + 500))
+    await flush()
+    setText("a".repeat(limit + 5_000))
+    await flush()
+    setText("a".repeat(limit * 2))
+    await flush()
+    expect(engineRuns.count).toBe(frozenCount)
+    expect(host.querySelector(".a-tl-truncated")).not.toBeNull()
   })
 })

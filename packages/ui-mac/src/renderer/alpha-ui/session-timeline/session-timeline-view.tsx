@@ -8,8 +8,33 @@ import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from "s
 import { t } from "../../i18n"
 import { TimelineMarkdown } from "./timeline-markdown"
 import { boundedText, REASONING_MAX_CHARS, type TimelineComment, type TimelineRow } from "./timeline-model"
-import { isAtBottom, restoreAfterPrepend, shouldLoadOlder } from "./timeline-scroll"
+import { anchorDelta, createPrependCoordinator, isAtBottom, shouldLoadOlder } from "./timeline-scroll"
 import "./session-timeline.css"
+
+// ── Major-1:Markdown 引擎窗口化 ─────────────────────────────────────────────
+// 引擎(parse/sanitize/Shiki/DOM)只在视口±overscan 内实例化:离屏行渲染占位并保留
+// 实测高度,进窗才挂引擎、出窗即卸载 —— 万行会话的常驻引擎实例数以窗口为上限。
+// 共享一个 IntersectionObserver;不可用时(降级环境)直接实例化,不改变正确性。
+const ENGINE_WINDOW_OVERSCAN = "800px 0px"
+const engineWindowCallbacks = new WeakMap<Element, (visible: boolean) => void>()
+let engineWindowObserver: IntersectionObserver | undefined
+
+function observeEngineWindow(el: Element, callback: (visible: boolean) => void) {
+  if (typeof IntersectionObserver === "undefined") {
+    callback(true)
+    return () => {}
+  }
+  engineWindowObserver ??= new IntersectionObserver(
+    (entries) => entries.forEach((entry) => engineWindowCallbacks.get(entry.target)?.(entry.isIntersecting)),
+    { rootMargin: ENGINE_WINDOW_OVERSCAN },
+  )
+  engineWindowCallbacks.set(el, callback)
+  engineWindowObserver.observe(el)
+  return () => {
+    engineWindowCallbacks.delete(el)
+    engineWindowObserver?.unobserve(el)
+  }
+}
 
 export interface SessionTimelineHistory {
   more: boolean
@@ -36,7 +61,7 @@ function formatTime(createdAt: number) {
 export function SessionTimelineView(props: SessionTimelineViewProps) {
   let scrollRef: HTMLDivElement | undefined
   let columnRef: HTMLDivElement | undefined
-  let olderInFlight = false
+  const prepend = createPrependCoordinator()
   const [atBottom, setAtBottom] = createSignal(true)
 
   const scrollToEnd = () => {
@@ -50,29 +75,41 @@ export function SessionTimelineView(props: SessionTimelineViewProps) {
     else setTimeout(task, 0)
   }
 
+  // Major-3 锚元素:首个进入视口的行元素 + 其相对滚动容器的偏移。
+  const findAnchor = () => {
+    if (!scrollRef || !columnRef) return undefined
+    const containerTop = scrollRef.getBoundingClientRect().top
+    for (const child of Array.from(columnRef.children)) {
+      const rect = child.getBoundingClientRect()
+      if (rect.bottom > containerTop) return { el: child, top: rect.top - containerTop }
+    }
+    return undefined
+  }
+
   const triggerLoadOlder = () => {
-    const el = scrollRef
-    if (!el || olderInFlight || !props.history.more || props.history.loading) return
     const epoch = props.epoch
-    const prevTop = el.scrollTop
-    const prevHeight = el.scrollHeight
-    olderInFlight = true
+    if (!scrollRef || !epoch || prepend.busy(epoch) || !props.history.more || props.history.loading) return
+    const anchor = findAnchor()
+    prepend.begin(epoch)
     void props
       .onLoadOlder()
       .catch(() => {})
       .finally(() => {
-        olderInFlight = false
-        if (props.epoch !== epoch) return
-        schedule(() => {
-          if (!scrollRef || props.epoch !== epoch) return
-          scrollRef.scrollTop = restoreAfterPrepend(prevTop, prevHeight, scrollRef.scrollHeight)
-        })
+        // I8:epoch 分片裁决;加载期间用户滚动 → 放弃补偿(不拉拽用户)。
+        if (prepend.finish(epoch, props.epoch) !== "compensate") return
+        if (!anchor || !anchor.el.isConnected || !scrollRef) return
+        // prepend 完成同帧内以锚复位:solid 同步渲染,此刻 DOM 已含新行;
+        // 复位量只由锚偏移导出,底部流式增高不进入计算。
+        const containerTop = scrollRef.getBoundingClientRect().top
+        const nextTop = anchor.el.getBoundingClientRect().top - containerTop
+        scrollRef.scrollTop += anchorDelta(anchor.top, nextTop)
       })
   }
 
   const handleScroll = () => {
     const el = scrollRef
     if (!el) return
+    prepend.noteScroll(props.epoch)
     setAtBottom(isAtBottom(el.scrollTop, el.clientHeight, el.scrollHeight))
     if (shouldLoadOlder({ scrollTop: el.scrollTop, more: props.history.more, loading: props.history.loading }))
       triggerLoadOlder()
@@ -90,11 +127,12 @@ export function SessionTimelineView(props: SessionTimelineViewProps) {
     ),
   )
 
-  // 跟随流式:内容高度变化时,仅在贴底状态下续贴底。
+  // 跟随流式:内容高度变化时,仅在贴底状态下续贴底;历史 prepend 期间不介入
+  // (prepend 引起的增高属于 Major-3 锚补偿的领域,不得混入贴底跟随)。
   onMount(() => {
     if (typeof ResizeObserver === "undefined" || !columnRef) return
     const observer = new ResizeObserver(() => {
-      if (atBottom()) scrollToEnd()
+      if (prepend.idle() && atBottom()) scrollToEnd()
     })
     observer.observe(columnRef)
     onCleanup(() => observer.disconnect())
@@ -302,11 +340,36 @@ function ReasoningRow(props: { row: Extract<TimelineRow, { kind: "reasoning" }> 
 }
 
 function MarkdownRow(props: { row: Extract<TimelineRow, { kind: "markdown" }> }) {
+  // Major-1:离屏不实例化引擎。占位保留最近一次实测高度,出窗卸载、进窗重挂
+  // (引擎的 block cache 使重挂只做增量工作);流式行在视口内,始终有引擎。
+  const [engineLive, setEngineLive] = createSignal(false)
+  const [reservedHeight, setReservedHeight] = createSignal<number>()
+  let rootRef: HTMLDivElement | undefined
+  onMount(() => {
+    const el = rootRef
+    if (!el) return
+    const dispose = observeEngineWindow(el, (visible) => {
+      if (visible) {
+        setEngineLive(true)
+        return
+      }
+      const height = el.getBoundingClientRect().height
+      if (height > 0) setReservedHeight(height)
+      setEngineLive(false)
+    })
+    onCleanup(dispose)
+  })
   return (
-    <div class="a-tl-row a-tl-ai" data-alpha-timeline-row="markdown" data-streaming={props.row.streaming ? "true" : undefined}>
-      <TimelineMarkdown text={props.row.part.text ?? ""} cacheKey={props.row.part.id} streaming={props.row.streaming} />
-      <Show when={props.row.streaming}>
-        <span class="a-tl-cursor" aria-hidden="true" />
+    <div
+      class="a-tl-row a-tl-ai"
+      data-alpha-timeline-row="markdown"
+      data-streaming={props.row.streaming ? "true" : undefined}
+      data-engine={engineLive() ? "live" : "deferred"}
+      style={!engineLive() && reservedHeight() ? { "min-height": `${reservedHeight()}px` } : undefined}
+      ref={rootRef}
+    >
+      <Show when={engineLive()} fallback={<div class="a-tl-md-deferred" aria-hidden="true" />}>
+        <TimelineMarkdown text={props.row.part.text ?? ""} cacheKey={props.row.part.id} streaming={props.row.streaming} />
       </Show>
     </div>
   )

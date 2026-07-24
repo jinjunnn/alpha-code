@@ -17,7 +17,7 @@ const workspace = readFileSync(join(dir, "../session-workspace/alpha-session-wor
 const shell = readFileSync(join(dir, "../session-workspace/session-workspace-shell.tsx"), "utf8")
 
 describe("REQ-125 C5 时间线真实 Solid 挂载(happy-dom 子进程)", () => {
-  test("空态/文本类行/历史驻点全部通过", () => {
+  test("空态/文本类行/历史驻点/引擎窗口化/截断冻结全部通过", () => {
     const result = Bun.spawnSync({
       cmd: [process.execPath, "test", resolve(dir, "../../../../test-component/session-timeline.cases.ts")],
       cwd: resolve(dir, "../../../.."),
@@ -25,7 +25,7 @@ describe("REQ-125 C5 时间线真实 Solid 挂载(happy-dom 子进程)", () => {
     })
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
-    expect(output).toContain("8 pass")
+    expect(output).toContain("10 pass")
     expect(output).toContain("0 fail")
   })
 })

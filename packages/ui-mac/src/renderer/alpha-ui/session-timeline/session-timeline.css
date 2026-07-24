@@ -19,6 +19,8 @@
   height: 100%;
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* Major-3:prepend 复位由锚元素法接管,关掉浏览器原生 scroll anchoring 防双重补偿。 */
+  overflow-anchor: none;
 }
 
 .a-tl-scroll:focus-visible {
@@ -327,6 +329,13 @@
   min-width: 0;
   max-width: 100%;
   overflow-wrap: break-word;
+}
+
+/* Major-1:离屏 Markdown 行的引擎占位(行高由 min-height 保留的实测值撑起)。 */
+.a-tl-md-deferred {
+  min-height: 20px;
+  border-radius: var(--a-radius-sm);
+  background: var(--a-bg-subtle);
 }
 
 .a-tl-cursor {
