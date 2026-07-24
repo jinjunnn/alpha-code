@@ -1079,16 +1079,19 @@ describe("AlphaComposer 档位决策权威读 (REQ-125 C7 audit round 5)", () =>
     let syncAgent: string | undefined
     let gateNext = false
     let failGets = false
+    let hangGets = false
     let getCalls = 0
     const client = {
       command: { list: async () => ({ data: [] }) },
       session: { promptAsync: async () => ({}), abort: async () => ({}) },
       v2: {
         session: {
-          get: async (args: { sessionID: string }) => {
+          get: (args: { sessionID: string }) => {
             getCalls++
-            if (failGets) return { error: { status: 503 } }
-            return { data: { data: { id: args.sessionID, agent: engineAgent } } }
+            // 悬挂模式:永不 settle 且无视 signal —— 复现 SDK 关闭默认超时下的挂死传输。
+            if (hangGets) return new Promise(() => {})
+            if (failGets) return Promise.resolve({ error: { status: 503 } })
+            return Promise.resolve({ data: { data: { id: args.sessionID, agent: engineAgent } } })
           },
           prompt: (args: Record<string, unknown>) => {
             prompts.push(args)
@@ -1123,6 +1126,9 @@ describe("AlphaComposer 档位决策权威读 (REQ-125 C7 audit round 5)", () =>
       setFailGets: (value: boolean) => {
         failGets = value
       },
+      setHangGets: (value: boolean) => {
+        hangGets = value
+      },
       gateNextPrompt: () => {
         gateNext = true
       },
@@ -1133,7 +1139,11 @@ describe("AlphaComposer 档位决策权威读 (REQ-125 C7 audit round 5)", () =>
     }
   }
 
-  function agentMount(sdk: ReturnType<typeof fakeAgentSdk>, running: () => boolean) {
+  function agentMount(
+    sdk: ReturnType<typeof fakeAgentSdk>,
+    running: () => boolean,
+    agentReadTimeoutMs?: number,
+  ) {
     const sessionProjects = { ...projects, sdk: () => sdk.client as never } satisfies AlphaProjectsApi
     return mount(() =>
       createComponent(AlphaComposerRuntime, {
@@ -1143,6 +1153,7 @@ describe("AlphaComposer 档位决策权威读 (REQ-125 C7 audit round 5)", () =>
         sessionID: () => "A",
         command,
         modelContract: readyContract(),
+        agentReadTimeoutMs,
         sessionDock: {
           running,
           contextUsage: () => null,
@@ -1168,6 +1179,33 @@ describe("AlphaComposer 档位决策权威读 (REQ-125 C7 audit round 5)", () =>
     await waitFor(() => expect(host.querySelector<HTMLButtonElement>(".a-comp-send")!.disabled).toBe(false))
     return textarea
   }
+
+  test("权威读悬挂(永不 settle 且无视 signal):有界超时后如实发送失败,sending 复位可重试(审计 R5)", async () => {
+    installApi()
+    const { ToastViewport } = await import("../src/renderer/alpha-ui/Toast")
+    const sdk = fakeAgentSdk()
+    sdk.setEngineAgent("build")
+    const mounted = agentMount(sdk, () => false, 40)
+    const toastHost = mount(() => createComponent(ToastViewport, {}))
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+
+    sdk.setHangGets(true)
+    const textarea = await waitReady(mounted.host, "发一条")
+    pressEnter(textarea)
+    // 悬挂 GET 在有界时间内按失败 settle:如实提示发送失败,零提交,正文保留。
+    await waitFor(() => expect(document.body.textContent).toContain(zh["alpha.composer.sendFailed"]))
+    expect(sdk.prompts).toHaveLength(0)
+    expect((mounted.host.querySelector("textarea") as HTMLTextAreaElement).value).toBe("发一条")
+    // sending 复位:发送键回到可用态(不锁死,无需重建页面)。
+    await waitFor(() => expect(mounted.host.querySelector<HTMLButtonElement>(".a-comp-send")!.disabled).toBe(false))
+
+    // 传输恢复后同一输入可直接重试成功。
+    sdk.setHangGets(false)
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.prompts).toHaveLength(1))
+    mounted.dispose()
+    toastHost.dispose()
+  })
 
   test("CAS 弃权:sync 缓存滞后两拍下,失败回滚决策仍以权威读为准(用户并发 review 不被覆盖)", async () => {
     installApi()

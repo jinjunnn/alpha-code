@@ -563,15 +563,27 @@ const readState = <T,>(promise: Promise<T>): Promise<ReadState<T>> =>
     () => ({ status: "error" }),
   )
 
+/** 权威档位读的有界超时(审计第 5 轮 Major:SDK client 关闭默认超时,无界 GET 悬挂会把
+ *  sending 永锁 —— 每次发送都暴露在该风险下)。 */
+export const SESSION_AGENT_READ_TIMEOUT_MS = 5_000
+
 /** 会话档位的权威实时读(审计第 4 轮 Major):档位决策(needsSwitch / CAS 回滚 / 账本
  *  漂移)一律经 typed SDK GET 直读服务端 —— serverSync 缓存不消费 v2 切档事件、永不更新,
- *  只可作 UI 展示,禁作决策源。 */
+ *  只可作 UI 展示,禁作决策源。
+ *  有界(审计第 5 轮 Major):signal 同时交给 SDK(网络层中止)并在本地竞速(即使传输层
+ *  忽略 signal,悬挂请求也在超时后按失败 settle)——超时/中止走既有诚实失败路径。 */
 async function readSessionAgent(
   client: NonNullable<ReturnType<AlphaProjectsApi["sdk"]>>,
   sessionID: string,
+  timeoutMs = SESSION_AGENT_READ_TIMEOUT_MS,
 ): Promise<{ ok: true; agent: string | undefined } | { ok: false }> {
   try {
-    const result = await client.v2.session.get({ sessionID })
+    const signal = AbortSignal.timeout(timeoutMs)
+    const call = client.v2.session.get({ sessionID }, { signal })
+    const result = await new Promise<Awaited<typeof call>>((resolve, reject) => {
+      signal.addEventListener("abort", () => reject(new Error("session agent read timed out")), { once: true })
+      call.then(resolve, reject)
+    })
     if (result.error !== undefined || !result.data) return { ok: false }
     return { ok: true, agent: result.data.data.agent }
   } catch {
@@ -589,6 +601,8 @@ export type AlphaComposerRuntimeProps = AlphaComposerProps & {
   command: CommandApi
   /** 生产默认走 createModelContract；组件级 contract 驱动测试从同一接缝注入确定性实现。 */
   modelContract?: ModelContract
+  /** 权威档位读的超时上界(测试接缝;生产默认 SESSION_AGENT_READ_TIMEOUT_MS)。 */
+  agentReadTimeoutMs?: number
 }
 
 export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
@@ -1078,7 +1092,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       //   默认档(账本只回滚自己写过的,不碰用户在别处设置的档)。
       // 发送前:权威实时读当前会话档(决策源;serverSync 缓存禁用于决策 —— 见 readSessionAgent)。
       // 读不到 = 无法安全决策档位,按发送失败如实拦下(正文保留)。
-      const agentRead = await readSessionAgent(c, sid)
+      const agentRead = await readSessionAgent(c, sid, props.agentReadTimeoutMs)
       if (!agentRead.ok) {
         pushToast({ kind: "error", title: t("alpha.composer.sendFailed") })
         return
@@ -1126,7 +1140,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
           // 用户并发改档,不覆盖用户选择,只放弃自己的账本;权威读不可得时不盲写回滚
           // (宁可留下 desired 也不冒覆盖用户并发选择的险),账本保持与引擎最后受理状态一致,
           // 后续发送经权威读自愈。发送失败本身已如实提示。
-          const verify = await readSessionAgent(c, sid)
+          const verify = await readSessionAgent(c, sid, props.agentReadTimeoutMs)
           if (verify.ok && verify.agent === desiredAgent) {
             const rolled = await c.v2.session
               .switchAgent({ sessionID: sid, agent: rollbackAgent })

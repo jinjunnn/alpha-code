@@ -120,7 +120,9 @@ describe("REQ-125 C7:ComposerTakeover 删除后零引用(棘轮)", () => {
     // serverSync 缓存(不消费 v2 切档事件,永不更新)禁作决策源。
     const composerSrc = read(path.join(ALPHA_UI, "alpha-composer.tsx"))
     expect(composerSrc).toContain("async function readSessionAgent(")
-    expect(composerSrc).toContain("client.v2.session.get({ sessionID })")
+    // R5:权威读必须有界(signal 交给 SDK + 本地竞速),无界 GET 悬挂会把 sending 永锁。
+    expect(composerSrc).toContain("client.v2.session.get({ sessionID }, { signal })")
+    expect(composerSrc).toContain("AbortSignal.timeout(timeoutMs)")
     expect(composerSrc).not.toContain("sessionAgent()")
     expect(dock).not.toContain("observeSessionAgent")
     expect(dock).not.toContain("sessionAgent")
