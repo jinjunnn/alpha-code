@@ -17,7 +17,7 @@ import {
   type TerminalEnginePTY,
   type TerminalEngineSurface,
 } from "./terminal-engine-adapter-core"
-import { acceptedEngineChannel } from "./terminal-rail-core"
+import { acceptedEngineChannel, anyTerminalRunning } from "./terminal-rail-core"
 
 const RENDERER = resolve(import.meta.dir, "../..", "..")
 const ADAPTER_REL = "alpha-ui/session-rail/terminal/terminal-engine-adapter.tsx"
@@ -126,25 +126,42 @@ describe("REQ-125 #554 channel minting (I8 identity binding, fail-closed)", () =
     expect(calls).toEqual(["requestFocus:pty_2", "requestFocus:unset", "cancelFocus"])
   })
 
-  test("instances project engine data without fabrication: running is always false today", () => {
+  test("instances project the honest lifecycle truth: listed = alive = running (audit round-4 Major-1)", () => {
     const { handle } = fakeEngine([
       pty("pty_1", { title: "构建产物" }),
       pty("pty_2", { title: "", titleNumber: 3 }),
       pty("pty_3", { title: "  ", titleNumber: 0 }),
     ])
     const channel = mintTerminalEngineChannel({ engine: handle, identity: identityOf("ses_a"), labels })!
+    // 上游把 exited PTY 从 store 移除:在列即存活 → running 恒为真实存活事实,不再硬编码 false。
     expect(channel.instances()).toEqual([
-      { id: "pty_1", title: "构建产物", running: false },
-      { id: "pty_2", title: "终端 3", running: false },
-      { id: "pty_3", title: "终端", running: false },
+      { id: "pty_1", title: "构建产物", running: true },
+      { id: "pty_2", title: "终端 3", running: true },
+      { id: "pty_3", title: "终端", running: true },
     ])
   })
 
-  test("foot status passes persisted size through and never invents running or shell data", () => {
+  test("pty.exited flips the projection off: removal from the engine list kills the breathing dot", () => {
+    const all = [pty("pty_1"), pty("pty_2")]
+    const { handle } = fakeEngine(all)
+    const channel = mintTerminalEngineChannel({ engine: handle, identity: identityOf("ses_a"), labels })!
+    expect(anyTerminalRunning(channel.instances())).toBe(true)
+
+    // 上游 `pty.exited` 处理 = removeExited → store 剔除;投影随列表移除立即翻转。
+    all.splice(0, 1)
+    expect(channel.instances()).toHaveLength(1)
+    expect(anyTerminalRunning(channel.instances())).toBe(true)
+    all.splice(0, 1)
+    expect(channel.instances()).toEqual([])
+    expect(anyTerminalRunning(channel.instances())).toBe(false)
+  })
+
+  test("foot status shares the alive semantics and passes persisted size through", () => {
     const { handle } = fakeEngine()
     const channel = mintTerminalEngineChannel({ engine: handle, identity: identityOf("ses_a"), labels })!
-    expect(channel.footStatus("pty_1")).toEqual({ running: false, cols: 80, rows: 24 })
-    expect(channel.footStatus("pty_2")).toEqual({ running: false, cols: undefined, rows: undefined })
+    expect(channel.footStatus("pty_1")).toEqual({ running: true, cols: 80, rows: 24 })
+    expect(channel.footStatus("pty_2")).toEqual({ running: true, cols: undefined, rows: undefined })
+    // 实例缺席(已退出/未知 id)= false;shell 名今日无数据,缺项不伪造。
     expect(channel.footStatus("pty_gone")).toEqual({ running: false, cols: undefined, rows: undefined })
     expect(terminalFootStatus(undefined)).toEqual({ running: false, cols: undefined, rows: undefined })
   })
@@ -202,11 +219,45 @@ describe("REQ-125 #554 I1 whitelist channel static ratchets", () => {
     expect(adapterSource).toContain("function resolveTerminalEngine()")
     expect(adapterSource).toMatch(/try \{\s*return useTerminal\(\)\s*\} catch \{\s*return undefined\s*\}/)
     // 粘合语义对齐上游 terminal-panel:持久化回写、连接后 trim、一次性 clone 恢复、聚焦交接。
-    expect(adapterSource).toContain("onCleanup={(next) => ops.update(next)}")
+    expect(adapterSource).toContain("persistCleanup(epoch, next)}")
+    expect(adapterSource).toContain("ops.update(next)")
     expect(adapterSource).toContain("ops.trim(props.instanceID)")
     expect(adapterSource).toContain("void ops.clone(props.instanceID)")
     expect(adapterSource).toContain("autoFocus={engine.focusRequested(props.instanceID)}")
     expect(adapterSource).toContain("onAutoFocus={() => engine.consumeFocus(props.instanceID)}")
+    // keep-alive × autoFocus 一次性(审计第 4 轮 Major-2):挂载中收到本实例请求 → 焦点
+    // 代次 keyed 重挂,让请求经原生 autoFocus 真实被消费;DOM 级取证在 cases 文件。
+    expect(adapterSource).toContain("setFocusEpoch((current) => current + 1)")
+    expect(adapterSource).toContain('<Show when={focusEpoch()} keyed>')
+    // keyed Show 的 children 必须带参:Solid 以 children.length>0 区分「渲染回调」与静态
+    // 子元素,零参回调不会随 key 重建(本轮实测踩坑,钉死防回归)。
+    expect(adapterSource).toContain("{(epoch) => (")
+    // 两相位重挂(审计第 5 轮):pending 先卸旧渲 null,等本实例回写真实发生(或超时
+    // 兜底)才挂新 —— 新实例必须捕获 flush 后的 store,不许同步销毁+同步挂新抢跑。
+    expect(adapterSource).toContain('setRemountPhase("pending")')
+    expect(adapterSource).toContain('<Show when={remountPhase() === "mounted"}>')
+    expect(adapterSource).toContain("REMOUNT_FLUSH_TIMEOUT_MS")
+    // 代次 token(审计第 6 轮):回写与兜底都携带自己那一代;completeRemount 只认
+    // pending 正在等待的那一代,旧代次的迟到回写只落 store,推不动后来的 pending。
+    expect(adapterSource).toContain("if (next.id === props.instanceID) completeRemount(epoch)")
+    expect(adapterSource).toContain("if (epoch !== awaitingEpoch) return")
+    expect(adapterSource).toContain("setTimeout(() => completeRemount(epoch), REMOUNT_FLUSH_TIMEOUT_MS)")
+  })
+
+  test("engine output cases run green in a real Solid mount (one-shot autoFocus semantics)", () => {
+    const result = Bun.spawnSync({
+      cmd: [
+        process.execPath,
+        "test",
+        resolve(import.meta.dir, "../../../../../test-component/terminal-engine-adapter.cases.ts"),
+      ],
+      cwd: resolve(import.meta.dir, "../../../../.."),
+      env: process.env,
+    })
+    const output = `${result.stdout.toString()}${result.stderr.toString()}`
+    if (result.exitCode !== 0) throw new Error(output)
+    expect(output).toContain("5 pass")
+    expect(output).toContain("0 fail")
   })
 
   test("the workspace wires the real channel into the shell", () => {

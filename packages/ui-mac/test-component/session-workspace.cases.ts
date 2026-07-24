@@ -28,10 +28,12 @@ Bun.plugin({
 })
 
 const runtime = await import("../src/renderer/alpha-ui/session-workspace/session-workspace-test-runtime")
+const terminalPanelModule = await import("../src/renderer/alpha-ui/session-rail/terminal/terminal-rail-panel")
 const disposers: Array<() => void> = []
 
 beforeEach(() => {
   runtime.resetSessionWorkspaceSnapshot()
+  localStorage.clear()
   document.body.replaceChildren()
 })
 
@@ -54,6 +56,17 @@ function mount() {
   document.body.append(host)
   disposers.push(solidWeb.render(() => runtime.SessionWorkspaceHarness(), host))
   return host
+}
+
+function mountPartial(panels: Parameters<typeof runtime.SessionWorkspacePartialHarness>[0]["panels"]) {
+  const host = document.createElement("div")
+  document.body.append(host)
+  disposers.push(solidWeb.render(() => runtime.SessionWorkspacePartialHarness({ panels }), host))
+  return host
+}
+
+function pointer(type: string, clientX: number) {
+  return new MouseEvent(type, { bubbles: true, cancelable: true, clientX })
 }
 
 describe("REQ-125 session workspace real Solid mount", () => {
@@ -139,5 +152,158 @@ describe("REQ-125 session workspace real Solid mount", () => {
 
     expect(status().dataset.alphaSessionStatus).toBe("running")
     expect(status().textContent).toContain("正在生成")
+  })
+
+  test("tabs fail closed while a lane has not landed its renderer; terminal has a built-in fallback", async () => {
+    const host = mountPartial({ review: () => "review-only" })
+    await flush()
+
+    const tab = (kind: string) => host.querySelector<HTMLButtonElement>(`[data-alpha-session-rail-tab='${kind}']`)!
+    expect(tab("review").disabled).toBe(false)
+    expect(tab("files").disabled).toBe(true)
+    expect(tab("artifacts").disabled).toBe(true)
+    // Terminal is never a dead tab: the shell carries the built-in C550 panel as fallback.
+    expect(tab("terminal").disabled).toBe(false)
+    const topbarButtons = host.querySelectorAll<HTMLButtonElement>(".a-swk-panel-button")
+    expect(topbarButtons[0]!.disabled).toBe(false)
+
+    tab("artifacts").click()
+    await flush()
+    expect(host.querySelector("[data-alpha-session-rail-host]")?.getAttribute("data-alpha-session-rail-panel")).toBe(
+      "review",
+    )
+
+    tab("terminal").click()
+    await flush()
+    const terminalHost = host.querySelector("[data-alpha-session-rail-panel-host='terminal']")
+    expect(terminalHost).not.toBeNull()
+    expect(terminalHost!.querySelector("[data-alpha-terminal-panel]")).not.toBeNull()
+  })
+
+  test("review badge and terminal dot follow the rail meta channels, fail-closed by default", async () => {
+    const host = mount()
+    await flush()
+    const reviewTab = host.querySelector<HTMLButtonElement>("[data-alpha-session-rail-tab='review']")!
+    const terminalTab = host.querySelector<HTMLButtonElement>("[data-alpha-session-rail-tab='terminal']")!
+
+    expect(reviewTab.querySelector("[data-alpha-session-review-count]")).toBeNull()
+    expect(terminalTab.querySelector("[data-alpha-session-terminal-dot]")).toBeNull()
+
+    runtime.setSessionWorkspaceReviewCount(3)
+    runtime.setSessionWorkspaceTerminalRunning(true)
+    await flush()
+    expect(reviewTab.querySelector("[data-alpha-session-review-count]")!.textContent).toBe("3")
+    expect(terminalTab.querySelector("[data-alpha-session-terminal-dot]")).not.toBeNull()
+
+    runtime.setSessionWorkspaceReviewCount(0)
+    runtime.setSessionWorkspaceTerminalRunning(false)
+    await flush()
+    expect(reviewTab.querySelector("[data-alpha-session-review-count]")).toBeNull()
+    expect(terminalTab.querySelector("[data-alpha-session-terminal-dot]")).toBeNull()
+  })
+
+  test("terminal dot aggregates the publisher registry; concurrent panels never clobber each other", async () => {
+    // No railMeta at all — the shell must fall back to the panel-published projection.
+    const host = mountPartial({ review: () => "review-only" })
+    await flush()
+    const dot = () =>
+      host.querySelector("[data-alpha-session-rail-tab='terminal'] [data-alpha-session-terminal-dot]")
+    expect(dot()).toBeNull()
+
+    // Two real terminal panels publish concurrently (every renderer path mounts this same
+    // component): A has a running instance, B is idle.
+    const channelFor = (running: boolean) => ({
+      identity: { serverKey: "sidecar", directory: "/tmp/workspace", sessionID: "ses_idle" },
+      ready: () => true,
+      instances: () => [{ id: "pty_1", title: "终端 1", running }],
+      activeID: () => "pty_1",
+      open() {},
+      close() {},
+      create() {},
+      footStatus: () => ({ running }),
+      EngineOutput: () => null,
+    })
+    const mountPanel = (running: boolean) => {
+      const panelHost = document.createElement("div")
+      document.body.append(panelHost)
+      const dispose = solidWeb.render(
+        () => terminalPanelModule.TerminalRailPanel({ channel: channelFor(running), accepts: () => true } as never),
+        panelHost,
+      )
+      return () => {
+        dispose()
+        panelHost.remove()
+      }
+    }
+
+    const disposeA = mountPanel(true)
+    const disposeB = mountPanel(false)
+    await flush()
+    // A(true) + B(false) → any = true; B's later idle publish must not clobber A.
+    expect(dot()).not.toBeNull()
+
+    // Unregistering B (idle) changes nothing.
+    disposeB()
+    await flush()
+    expect(dot()).not.toBeNull()
+
+    // Unregistering A removes the only running entry — projection drops to false.
+    disposeA()
+    await flush()
+    expect(dot()).toBeNull()
+  })
+
+  test("width grip drags within 320-560, remembers per panel, and persists", async () => {
+    const host = mount()
+    await flush()
+    const rail = () => host.querySelector<HTMLElement>("[data-alpha-session-rail-host]")!
+    const grip = () => host.querySelector<HTMLElement>(".a-swk-rail-grip")!
+    expect(rail().style.width).toBe("400px")
+    expect(grip().getAttribute("aria-valuenow")).toBe("400")
+
+    grip().dispatchEvent(pointer("pointerdown", 1000))
+    window.dispatchEvent(pointer("pointermove", 940))
+    await flush()
+    expect(rail().style.width).toBe("460px")
+    window.dispatchEvent(pointer("pointermove", 200))
+    await flush()
+    expect(rail().style.width).toBe("560px")
+    window.dispatchEvent(pointer("pointerup", 200))
+    await flush()
+    expect(JSON.parse(localStorage.getItem("alpha-session-rail-widths-v1")!)).toEqual({ review: 560 })
+
+    // Per-panel memory: the files panel keeps its own width.
+    host.querySelector<HTMLButtonElement>("[data-alpha-session-rail-tab='files']")!.click()
+    await flush()
+    expect(rail().style.width).toBe("400px")
+
+    // Keyboard resize on the separator, clamped at the floor.
+    grip().dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }))
+    await flush()
+    expect(rail().style.width).toBe("384px")
+    expect(JSON.parse(localStorage.getItem("alpha-session-rail-widths-v1")!)).toEqual({ review: 560, files: 384 })
+
+    // Back to review: remembered width is restored.
+    host.querySelector<HTMLButtonElement>("[data-alpha-session-rail-tab='review']")!.click()
+    await flush()
+    expect(rail().style.width).toBe("560px")
+  })
+
+  test("arrow keys move between enabled tabs only", async () => {
+    const host = mount()
+    await flush()
+    const tab = (kind: string) => host.querySelector<HTMLButtonElement>(`[data-alpha-session-rail-tab='${kind}']`)!
+
+    tab("review").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }))
+    await flush()
+    expect(tab("files").classList.contains("a-swk-rail-tab--on")).toBe(true)
+
+    tab("files").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }))
+    await flush()
+    expect(tab("review").classList.contains("a-swk-rail-tab--on")).toBe(true)
+
+    tab("review").dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true, cancelable: true }))
+    await flush()
+    expect(tab("artifacts").classList.contains("a-swk-rail-tab--on")).toBe(true)
   })
 })

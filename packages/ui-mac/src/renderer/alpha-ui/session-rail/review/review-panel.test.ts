@@ -22,7 +22,7 @@ describe("REQ-125 C2 review panel behavior", () => {
     })
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
-    expect(output).toContain("15 pass")
+    expect(output).toContain("16 pass")
     expect(output).toContain("0 fail")
   })
 })
@@ -74,9 +74,12 @@ describe("REQ-125 C2 I1 whitelist and token static ratchets", () => {
   })
 
   test("the shell exposes the rail slot and the workspace wires the review panel into it", () => {
-    expect(shell).toContain("SessionWorkspaceRailSlots")
-    expect(shell).toContain("props.rail?.[activePanel()]?.()")
+    expect(shell).toContain("SessionRailPanelRenderers")
+    expect(shell).toContain("renderPanel(rail)")
     expect(workspace).toContain("SessionRailReviewPanel")
-    expect(workspace).toContain("rail={{ review:")
+    // Production assembly must hand the rail api through, or the files→review
+    // linkage silently dies at the last joint (integration audit Major-1).
+    expect(workspace).toContain("review: (rail) => <SessionRailReviewPanel live={live} rail={rail} />")
+    expect(container).toContain("focusTarget={props.rail?.reviewTarget()}")
   })
 })

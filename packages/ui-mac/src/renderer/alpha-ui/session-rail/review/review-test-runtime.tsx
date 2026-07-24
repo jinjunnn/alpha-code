@@ -77,6 +77,7 @@ export function prototypeNamedReviewChanges(): ReviewFileChange[] {
 const [phase, setPhase] = createSignal<ReviewPhase>("changes")
 const [changes, setChanges] = createSignal<ReviewFileChange[]>(defaultReviewChanges())
 const [resetKey, setResetKey] = createSignal("identity-a")
+const [focusTarget, setFocusTarget] = createSignal<{ file: string } | undefined>(undefined)
 const commentLog: ReviewLineCommentIntent[] = []
 
 export { render }
@@ -88,8 +89,14 @@ export function ReviewPanelHarness() {
       changes={changes()}
       resetKey={resetKey()}
       onLineComment={(intent) => commentLog.push(intent)}
+      focusTarget={focusTarget()}
     />
   )
+}
+
+/** Files→review linkage: mint a fresh target object (same-file re-jumps retrigger). */
+export function setReviewFocusTarget(file: string | undefined) {
+  setFocusTarget(file === undefined ? undefined : { file })
 }
 
 export function setReviewPhase(next: ReviewPhase) {
@@ -112,5 +119,6 @@ export function resetReviewHarness() {
   setPhase("changes")
   setChanges(defaultReviewChanges())
   setResetKey("identity-a")
+  setFocusTarget(undefined)
   commentLog.length = 0
 }

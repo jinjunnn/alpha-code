@@ -157,8 +157,10 @@ describe("REQ-125 C3-term I1/I5 static ratchets", () => {
 
   test("shell mounts the terminal panel only for the terminal rail state, gated by live.accepts", () => {
     expect(shell).toContain(`import { TerminalRailPanel } from "../session-rail/terminal/terminal-rail-panel"`)
+    // Panels seam (C3/C4): the built-in terminal renderer is the fallback for the terminal
+    // slot only, fed by the #554 channel projection and the live.accepts identity gate.
     expect(shell).toMatch(
-      /activePanel\(\) === "terminal"[\s\S]{0,300}<TerminalRailPanel channel=\{props\.terminalChannel\?\.\(\)\} accepts=\{props\.live\.accepts\} \/>/,
+      /kind === "terminal"[\s\S]{0,300}<TerminalRailPanel channel=\{props\.terminalChannel\?\.\(\)\} accepts=\{props\.live\.accepts\} \/>/,
     )
   })
 })

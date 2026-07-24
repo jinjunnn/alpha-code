@@ -2,7 +2,7 @@
 // alpha 自持:实例页签条(白卡浮起 + 运行呼吸点 + 新建/关闭)、圆角深底输出区外框
 // (双主题恒深底)、脚条(运行状态 · 环境 · 尺寸)。输出区内容由引擎经
 // `AlphaTerminalEngineChannel` 渲染;channel 缺席或未就绪 → fail-closed 空态。
-import { For, Show, createMemo } from "solid-js"
+import { For, Show, createEffect, createMemo, onCleanup } from "solid-js"
 import { t } from "../../../i18n"
 import type { AlphaSessionIdentity } from "../../session-workspace/session-workspace-core"
 import {
@@ -12,6 +12,7 @@ import {
   resolveActiveInstance,
   type AlphaTerminalEngineChannel,
 } from "./terminal-rail-core"
+import { registerTerminalRunningPublisher } from "./terminal-rail-state"
 import "./terminal-rail.css"
 
 const STAGE_ID = "alpha-terminal-stage"
@@ -35,6 +36,13 @@ export function TerminalRailPanel(props: {
     return channel?.ready() ? channel : undefined
   }
   const instances = createMemo(() => engine()?.instances() ?? [])
+  // Any-running projection for the rr-tabs breathing dot (integration audit Major-2):
+  // this mount registers its own publisher entry — instances are already identity-gated
+  // above, and unmount removes only this entry, so concurrent panels/remounts never
+  // clobber each other's published state.
+  const runningPublisher = registerTerminalRunningPublisher()
+  createEffect(() => runningPublisher.publish(anyTerminalRunning(instances())))
+  onCleanup(() => runningPublisher.unregister())
   const active = createMemo(() => resolveActiveInstance(instances(), engine()?.activeID()))
   const foot = createMemo(() => {
     const current = active()
