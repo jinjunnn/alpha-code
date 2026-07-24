@@ -405,8 +405,50 @@ function injectAlphaConfig(userDataPath: string, extPluginPath?: string, registr
       )
 
     process.env.OPENCODE_CONFIG_CONTENT = JSON.stringify(config)
+    materializeV2EngineConfig(userDataPath, config)
   } catch (error) {
     console.warn("failed to inject alpha config", error)
+  }
+}
+
+// 2026-07-23 上游 sync 断层修补:v2 Config.Service(packages/core/config.ts)只读
+// `OPENCODE_CONFIG_DIR ?? ~/.config/opencode` 目录下的 opencode.json/opencode.jsonc 文件 ——
+// OPENCODE_CONFIG_CONTENT 与 OPENCODE_CONFIG(alpha.jsonc)它一概不读。而 picker 已切 v2
+// `/api/model`(model-contract.ts → catalog.model.available()),于是 v1 注入再成功,v2 目录里
+// 也没有 alpha/BYOK provider → 全部「当前不可用」。此桥把 v2 需要的最小子集物化成文件:
+//   opencode.json  ← alpha.jsonc 原样拷贝(用户自定义节点;先加载)
+//   opencode.jsonc ← { $schema, model, provider }(注入的 provider 表,后加载压过用户同名项)
+// 并设 OPENCODE_CONFIG_DIR 指向该 alpha 自有目录。v1 加载读的是 Global.Path.config 静态路径,
+// 不受此 env 影响;推理仍走 v1(有 {file:}/{env:} 解析),故 v2 文件一律剥掉 apiKey —— v2 无
+// 变量解析,catalog 可用性判定也不需要 key(no-integration 路径)。独立失败域:此桥再失败也
+// 只损失 v2 目录,绝不波及上方 v1 注入。
+function materializeV2EngineConfig(userDataPath: string, config: { model?: unknown; provider?: unknown }) {
+  try {
+    const dir = path.join(userDataPath, "alpha-engine-config")
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
+    const userCopy = path.join(dir, "opencode.json")
+    try {
+      fs.copyFileSync(alphaJsoncPath(), userCopy)
+    } catch {
+      fs.rmSync(userCopy, { force: true }) // 无真源(或读失败)则清掉旧拷贝,不留陈尸
+    }
+    const provider = Object.fromEntries(
+      Object.entries((config.provider ?? {}) as Record<string, { options?: Record<string, unknown> }>).map(
+        ([id, def]) => {
+          const { apiKey: _apiKey, ...options } = def.options ?? {}
+          return [id, { ...def, ...(Object.keys(options).length ? { options } : { options: undefined }) }]
+        },
+      ),
+    )
+    const v2 = {
+      $schema: "https://opencode.ai/config.json",
+      ...(typeof config.model === "string" ? { model: config.model } : {}),
+      provider,
+    }
+    fs.writeFileSync(path.join(dir, "opencode.jsonc"), JSON.stringify(v2, null, 2), { mode: 0o600 })
+    process.env.OPENCODE_CONFIG_DIR = dir
+  } catch (error) {
+    console.error("[v2-config-bridge] materialize failed — v2 model catalog will lack alpha/BYOK providers", error)
   }
 }
 
