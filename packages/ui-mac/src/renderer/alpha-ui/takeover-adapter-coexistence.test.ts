@@ -158,8 +158,12 @@ describe("REQ-125 C7:ComposerTakeover 删除后零引用(棘轮)", () => {
     const workspace = read(path.join(dir, "alpha-session-workspace.tsx"))
     expect(workspace).toContain("<SessionComposerDock live={live} projects={props.projects} />")
     const dock = read(path.join(dir, "session-composer-dock.tsx"))
-    expect(dock).toContain('mode="session"')
-    expect(dock).toContain("sessionDock={dockApi}")
+    // REQ-125 C558:AlphaComposer 经 SessionComposerMount(挂载定格身份键)直挂,仍是 props 传入、
+    // 零 Portal/零选择器/零收养 —— mode/sessionDock 契约随之移入 mount wrapper。
+    expect(dock).toContain("<SessionComposerMount")
+    const composerMount = read(path.join(dir, "session-composer-mount.tsx"))
+    expect(composerMount).toContain('mode="session"')
+    expect(composerMount).toContain("sessionDock={props.dock}")
   })
 })
 

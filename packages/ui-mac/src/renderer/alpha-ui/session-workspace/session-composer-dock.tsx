@@ -10,34 +10,42 @@
 
 import { useServerSDK, useServerSync } from "@opencode-ai/app"
 import type { createOpencodeClient, ModelV2Info, QuestionRequest, Todo } from "@opencode-ai/sdk/v2/client"
+import { useNavigate } from "@solidjs/router"
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js"
 import { unwrap } from "solid-js/store"
+import { hrefFor } from "../../../shared/route-manifest"
 import { t } from "../../i18n"
 import type { AlphaProjectsApi } from "../../sidebar/use-projects"
-import { AlphaComposer, type ComposerSessionDockApi, type ComposerSlashCapture } from "../alpha-composer"
+import type { ComposerSessionDockApi, ComposerSlashCapture } from "../alpha-composer"
 import { createModelContract } from "../model-contract"
 import { SessionApprovalHost } from "./session-approval-card"
+import { SessionComposerMount } from "./session-composer-mount"
 import {
+  childParentHref,
+  childSessionFacts,
   contextUsagePercent,
+  createComposerDraftStash,
   headPendingQuestion,
   questionAnswersComplete,
+  revertDockFacts,
   sdkResultFailed,
   todoDockVisible,
   todoDone,
 } from "./session-dock-core"
 import { createPermissionV2Feed, type PermissionV2Feed } from "./session-permission-feed"
 import { recordSessionSlashOrigin } from "./session-slash-origin"
-import type { AlphaSessionIdentity } from "./session-workspace-core"
+import { type AlphaSessionIdentity, identityKey } from "./session-workspace-core"
 import type { AlphaSessionLiveContext } from "./session-workspace-shell"
-
-const identityKey = (identity: AlphaSessionIdentity | undefined) =>
-  identity ? `${identity.serverKey}\u0000${identity.directory}\u0000${identity.sessionID}` : undefined
 
 export function SessionComposerDock(props: { live: AlphaSessionLiveContext; projects: AlphaProjectsApi }) {
   const serverSDK = useServerSDK()
   const serverSync = useServerSync()
+  const navigate = useNavigate()
   const identity = () => props.live.current()?.identity
   const running = () => props.live.current()?.activity === "running"
+  // per-identity 草稿暂存(I8):child-session 门翻转卸载 composer 时按身份捕获草稿,门翻回同一
+  // 身份时经 initialText 注入,避免 info 迟到→门翻转丢失正在输入的草稿。
+  const draftStash = createComposerDraftStash()
   // 目录作用域 SDK(typed 事件按类型分发;refcount 由 memo 的 onCleanup 管理)。
   const dirSDK = createMemo(() => {
     const bound = identity()
@@ -113,6 +121,22 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
   const question = createMemo(() => {
     const bound = identity()
     return bound ? headPendingQuestion(serverSync().session.data.question[bound.sessionID]) : undefined
+  })
+
+  /* ── revert / child-session:info(± message)typed 通道,读当前身份对应会话(I8)──── */
+  const revert = createMemo(() => {
+    const bound = identity()
+    if (!bound) return undefined
+    const sessions = serverSync().session.data
+    return revertDockFacts(sessions.info[bound.sessionID]?.revert, sessions.message[bound.sessionID])
+  })
+  const childSession = createMemo(() => {
+    const bound = identity()
+    if (!bound) return undefined
+    const info = serverSync().session.data.info
+    const session = info[bound.sessionID]
+    const parentID = session?.parentID
+    return childSessionFacts(session, parentID ? info[parentID] : undefined)
   })
 
   /* ── 上下文用量:messages(typed sync)× 模型目录(typed model contract) ─────────── */
@@ -198,13 +222,38 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
       <Show when={todoDockVisible({ todos: todos(), running: running() })}>
         <SessionTodoCard todos={todos()} />
       </Show>
-      <AlphaComposer
-        mode="session"
-        projects={props.projects}
-        directory={() => identity()?.directory}
-        sessionID={() => identity()?.sessionID}
-        sessionDock={dockApi}
-      />
+      <Show when={revert()} keyed>
+        {(facts) => <SessionRevertCard facts={facts} />}
+      </Show>
+      {/* 子会话与可发送 composer 互斥(对齐上游子会话语义):子会话(有 parentID)只呈现
+          子会话条(运行指示 + 返回父会话入口)为主体,**不挂** composer——子会话零可发送路径,
+          新输入只能回到父会话。非子会话才经 SessionComposerMount 挂 composer(按身份 keyed)。 */}
+      <Show
+        when={childSession()}
+        keyed
+        fallback={
+          <SessionComposerMount identity={identity} projects={props.projects} dock={dockApi} drafts={draftStash} />
+        }
+      >
+        {(facts) => (
+          <SessionChildCard
+            facts={facts}
+            running={running}
+            onJump={() => {
+              const bound = identity()
+              const href = bound
+                ? childParentHref({
+                    bound,
+                    accepts: props.live.accepts,
+                    parentID: facts.parentID,
+                    hrefFor: hrefFor.session,
+                  })
+                : undefined
+              if (href) navigate(href)
+            }}
+          />
+        )}
+      </Show>
     </div>
   )
 }
@@ -340,6 +389,63 @@ function SessionQuestionCard(props: {
           {t("alpha.session.questionFailed")}
         </p>
       </Show>
+    </section>
+  )
+}
+
+/* ── 检查点回退条(session.revert typed 事实;纯呈现 —— 发送/清空由 composer 流程处理)──
+   计数只在 revertDockFacts 拿到完整证据时给出;缺证据(消息未加载/分页未覆盖锚点)= 省略
+   计数区,只呈现回退事实,绝不显示可能错的数字。 */
+function SessionRevertCard(props: { facts: { messageID: string; discardCount?: number } }) {
+  return (
+    <section
+      class="a-swk-card a-swk-revert"
+      data-alpha-session-revert={props.facts.messageID}
+      role="status"
+      aria-live="polite"
+      aria-label={t("alpha.session.revertTitle")}
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M9 14L4 9l5-5" />
+        <path d="M4 9h11a5 5 0 0 1 5 5v1" />
+      </svg>
+      <div class="a-swk-revert-text">
+        <span class="a-swk-revert-title">{t("alpha.session.revertTitle")}</span>
+        {/* keyed:计数省略(undefined)或为 0 时不渲染;>0 时 count 收窄为 number。 */}
+        <Show when={props.facts.discardCount} keyed>
+          {(count) => <span class="a-swk-revert-detail">{t("alpha.session.revertDetail", { count })}</span>}
+        </Show>
+      </div>
+    </section>
+  )
+}
+
+/* ── 子会话条(session.parentID typed 事实;运行指示 + 跳转父会话,I8 绑 accepts+serverKey)── */
+function SessionChildCard(props: {
+  facts: { parentID: string; parentTitle: string }
+  running: () => boolean
+  onJump: () => void
+}) {
+  return (
+    <section
+      class="a-swk-card a-swk-child"
+      data-alpha-session-child={props.facts.parentID}
+      role="group"
+      aria-label={t("alpha.session.childTitle")}
+    >
+      <span
+        class="a-swk-child-dot"
+        classList={{ "a-swk-child-dot--running": props.running() }}
+        data-alpha-session-child-activity={props.running() ? "running" : "idle"}
+        aria-hidden="true"
+      />
+      <div class="a-swk-child-text">
+        <span class="a-swk-child-title">{t("alpha.session.childTitle")}</span>
+        <span class="a-swk-child-parent">{props.facts.parentTitle}</span>
+      </div>
+      <button type="button" class="a-swk-btn a-swk-child-jump" onClick={() => props.onJump()}>
+        {t("alpha.session.childBackToParent")}
+      </button>
     </section>
   )
 }

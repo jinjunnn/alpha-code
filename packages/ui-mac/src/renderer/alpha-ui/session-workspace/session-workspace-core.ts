@@ -59,3 +59,8 @@ export function sameSessionIdentity(
     left.sessionID === right.sessionID
   )
 }
+
+/** 会话身份三元组 → 稳定字符串 key(NUL 分隔,避免段间歧义);无身份 = undefined。 */
+export function identityKey(identity: AlphaSessionIdentity | undefined): string | undefined {
+  return identity ? `${identity.serverKey}\u0000${identity.directory}\u0000${identity.sessionID}` : undefined
+}

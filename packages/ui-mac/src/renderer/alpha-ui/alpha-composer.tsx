@@ -556,6 +556,9 @@ export type AlphaComposerProps = {
   onSubmitted?: (sessionID: string) => void
   /** REQ-086:一次性预填文本(deep link `?prompt=`),仅初始化时注入,不覆盖用户后续输入。 */
   initialText?: string
+  /** REQ-125 C558:卸载时回报当前草稿(seam dock per-identity 暂存用);门翻转卸载 composer
+   *  时据此捕获正在输入的草稿,门翻回时经 `initialText` 注入,使卸载不等于不可恢复的丢失。 */
+  onDraftCapture?: (text: string) => void
 }
 
 type ReadState<T> = { status: "ready"; data: T } | { status: "error" }
@@ -610,6 +613,16 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   const modelContract = props.modelContract ?? createModelContract(props.projects.sdk)
   const [text, setText] = createSignal(props.initialText ?? "")
   const [sending, setSending] = createSignal(false)
+  // 提交发起时记录的已提交文本快照:区分「在途未编辑(=正在交付)」与「在途被改成新草稿」。
+  let submittedText: string | undefined
+  // REQ-125 C558:卸载时把当前草稿交回宿主(seam dock 按身份暂存),避免门翻转卸载丢草稿。
+  // 仅当发送在途**且文本仍等于已提交快照**(未编辑,正在交付)才跳过——否则切走再翻回会「复活」
+  // 已发送文本、用户再发 = 重复发送。textarea 在途仍可编辑:改成不同内容即新草稿,照常捕获(不丢)。
+  // 失败保留走既有失败路径(sending 落回 false 后一律捕获,text 留在 composer 信号供原地重试)。
+  onCleanup(() => {
+    if (sending() && text() === submittedText) return
+    props.onDraftCapture?.(text())
+  })
   const [modelChainState, setModelChainState] = createSignal<"loading" | "recovering" | "ready" | "error">(
     "loading",
   )
@@ -1163,6 +1176,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     })
     const submissionGeneration = runtimeGenerationEpoch
     const interrupted = () => submissionGeneration !== runtimeGenerationEpoch
+    submittedText = text() // 已提交文本快照(在途未编辑判据)
     setSending(true)
     try {
       if (props.mode === "home") {
@@ -1308,6 +1322,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       if (!interrupted()) pushToast({ kind: "error", title: t("alpha.composer.sendFailed") })
     } finally {
       setSending(false)
+      submittedText = undefined // 落定后复位:成功已清空、失败保留,此后一律按草稿捕获
     }
   }
 
