@@ -18,6 +18,7 @@ import { getStore } from "./store"
 import { DEFAULT_SERVER_URL_KEY } from "./store-keys"
 import { isEphemeralLocalServerUrl } from "../shared/ephemeral-server-url"
 import { ensureEngineScratchCwd } from "./engine-scratch-cwd"
+import { markStartupTimeline } from "./startup-timeline"
 
 export type HealthCheck = { wait: Promise<void> }
 
@@ -39,6 +40,7 @@ type SpawnLocalServerOptions = {
   onExit?: (code: number) => void
   healthCheck?: typeof checkHealth
   fork?: typeof utilityProcess.fork
+  timelineContext?: "boot" | "respawn"
 }
 
 export function getDefaultServerUrl(): string | null {
@@ -231,6 +233,9 @@ export async function spawnLocalServer(
     const onMessage = (message: SidecarMessage) => {
       if (message.type === "ready") {
         if (done) return
+        markStartupTimeline("main.sidecar.ready_ipc", {
+          context: options.timelineContext ?? "other",
+        })
         done = true
         cleanup()
         resolve()

@@ -62,6 +62,7 @@ import { Splash } from "./logo-alpha"
 import { useTheme } from "@opencode-ai/ui/theme/context"
 import { ALPHA_THEME, ALPHA_THEME_ID } from "./theme-alpha"
 import { composeRoutes } from "./route-composition"
+import { markStartupTimeline } from "./startup-timeline"
 
 const productionRoutes = composeRoutes({
   home: (resolved: ResolvedSurfaces | null | undefined, projects: AlphaProjectsApi) => {
@@ -562,6 +563,7 @@ render(() => {
   }
 
   onMount(() => {
+    markStartupTimeline("renderer.root.mount")
     document.addEventListener("click", handleClick)
     onCleanup(() => {
       document.removeEventListener("click", handleClick)

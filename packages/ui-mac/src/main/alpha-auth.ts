@@ -31,6 +31,7 @@ import { isTokenExpired, shouldRefreshToken } from "./alpha-auth-clock"
 import { decodeEndpointDiscovery, resolveEndpoints, setDiscoveredEndpoints } from "./alpha-endpoints"
 import { reportContractFailure } from "./alpha-contract-health"
 import { parseAccessTokenIdentity } from "./alpha-auth-identity"
+import { errorOutcome, markStartupTimeline } from "./startup-timeline"
 
 export { parseAccessTokenIdentity } from "./alpha-auth-identity"
 
@@ -513,7 +514,23 @@ let refreshing: Promise<boolean> | null = null
 /** 尝试续期一次;true = access token 已更新。并发调用合并为同一在途请求。 */
 export function refreshTokens(): Promise<boolean> {
   if (refreshing) return refreshing
-  refreshing = doRefresh().finally(() => {
+  const started = performance.now()
+  markStartupTimeline("main.auth.refresh.start")
+  const attempt = doRefresh()
+  void attempt.then(
+    (result) =>
+      markStartupTimeline("main.auth.refresh.end", {
+        durationMs: performance.now() - started,
+        outcome: "ok",
+        result,
+      }),
+    (error) =>
+      markStartupTimeline("main.auth.refresh.end", {
+        durationMs: performance.now() - started,
+        outcome: errorOutcome(error),
+      }),
+  )
+  refreshing = attempt.finally(() => {
     refreshing = null
   })
   return refreshing
@@ -590,9 +607,36 @@ async function doRefresh(): Promise<boolean> {
 
 /** 到点才真的刷(提前量内);给启动路径和整点 tick 用。fork 前若已过期必须 await(死 token fork 无意义)。 */
 export async function ensureFreshToken(): Promise<void> {
-  if (!hasRequiredPlatformAccessTokens(stored.platformAccessTokens) || !stored.refreshToken) return
-  if (!shouldRefreshToken(stored.expiresAt, stored.lifetimeMs, Date.now())) return
-  await refreshTokens()
+  const started = performance.now()
+  markStartupTimeline("main.auth.ensure.start")
+  if (!hasRequiredPlatformAccessTokens(stored.platformAccessTokens) || !stored.refreshToken) {
+    markStartupTimeline("main.auth.ensure.end", {
+      durationMs: performance.now() - started,
+      outcome: "skipped:no-credentials",
+    })
+    return
+  }
+  if (!shouldRefreshToken(stored.expiresAt, stored.lifetimeMs, Date.now())) {
+    markStartupTimeline("main.auth.ensure.end", {
+      durationMs: performance.now() - started,
+      outcome: "skipped:not-due",
+    })
+    return
+  }
+  try {
+    const result = await refreshTokens()
+    markStartupTimeline("main.auth.ensure.end", {
+      durationMs: performance.now() - started,
+      outcome: "ok",
+      result,
+    })
+  } catch (error) {
+    markStartupTimeline("main.auth.ensure.end", {
+      durationMs: performance.now() - started,
+      outcome: errorOutcome(error),
+    })
+    throw error
+  }
 }
 
 /** 存储的 access token 已过期(启动路径据此决定 fork 前是否 await 续期)。 */

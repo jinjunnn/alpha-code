@@ -1,12 +1,15 @@
 import { contextBridge, ipcRenderer } from "electron"
-import type {
-  AuthErrorCode,
-  AuthState,
-  CloudArtifactProgress,
-  ContractFailure,
-  ElectronAPI,
-  HtmlPreviewClosedEvent,
-  WslServersEvent,
+import {
+  type AuthErrorCode,
+  type AuthState,
+  type CloudArtifactProgress,
+  type ContractFailure,
+  type ElectronAPI,
+  type HtmlPreviewClosedEvent,
+  type RendererStartupMarkName,
+  STARTUP_TIMELINE_CHANNEL,
+  type StartupTimelineExtra,
+  type WslServersEvent,
 } from "./types"
 import type { UpdaterState } from "@opencode-ai/app/updater"
 import type { SessionGrantsEndedEventWire } from "./types"
@@ -21,6 +24,10 @@ const updaterHandler = (_: unknown, state: UpdaterState) => {
 
 const api: ElectronAPI = {
   killSidecar: () => ipcRenderer.invoke("kill-sidecar"),
+  startupTimeline: {
+    mark: (name: RendererStartupMarkName, rendererNow: number, extra?: StartupTimelineExtra) =>
+      ipcRenderer.send(STARTUP_TIMELINE_CHANNEL, { name, rendererNow, extra }),
+  },
   contracts: {
     health: () => ipcRenderer.invoke("alpha-contract-health"),
     subscribe: (cb) => {

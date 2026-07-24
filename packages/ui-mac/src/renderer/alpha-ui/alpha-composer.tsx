@@ -72,11 +72,14 @@ import { createModelContract, type ModelContract } from "./model-contract"
 import { composerModelFromRef, modelRefOf, withModelVariant } from "./model-picker-core"
 import { ENGINE_FETCH_TIMEOUT_MS } from "./model-picker-logic"
 import { t } from "../i18n"
+import { markStartupTimeline } from "../startup-timeline"
 import "./alpha-composer.css"
 
 /* ── 单开注册表(全部 chips 共享;开新的自动关旧的)──────────────────────────── */
 const [openChipId, setOpenChipId] = createSignal<number | null>(null)
 let chipSeq = 0
+let homeModelListMarkCount = 0
+let homeModelRetryMarkCount = 0
 export const closeChips = () => setOpenChipId(null)
 
 function useChip() {
@@ -551,6 +554,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   const [composing, setComposing] = createSignal(false)
   let taRef: HTMLTextAreaElement | undefined
   const isImeComposing = (e: KeyboardEvent) => e.isComposing || composing() || e.keyCode === 229
+  onMount(() => markStartupTimeline("renderer.composer.mount", { mode: props.mode }))
 
   /* ── 附件真通道(REQ-078 T2:图片/PDF → dataUrl FilePart;纯核 = composer-attachments-core)──
      入口三通道:弹窗「添加附件」→ 隐藏 <input type=file>;textarea 粘贴;整框拖拽。
@@ -733,10 +737,20 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       setModelChainState("error")
       return
     }
+    const markAccountSummary = props.mode === "home" && auth.data.status === "logged-in"
+    const accountStarted = markAccountSummary ? performance.now() : 0
+    if (markAccountSummary) markStartupTimeline("renderer.home.account_summary.start", { chain: seq })
     const summary =
       auth.data.status === "logged-in"
         ? await readState(window.api.account.summary())
         : ({ status: "ready", data: null } as const)
+    if (markAccountSummary)
+      markStartupTimeline("renderer.home.account_summary.end", {
+        chain: seq,
+        durationMs: performance.now() - accountStarted,
+        outcome:
+          summary.status === "error" ? "error:request" : isErrorEnvelope(summary.data) ? "error:envelope" : "ok",
+      })
     if (chainDisposed || seq !== chainSeq) return
     if (summary.status === "error" || isErrorEnvelope(summary.data)) {
       setModelChainState("error")
@@ -768,8 +782,34 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     }
 
     for (let i = 0; i < 20 && !chainDisposed && seq === chainSeq; i++) {
+      const markModelList = props.mode === "home" && homeModelListMarkCount < 25
+      const started = markModelList ? performance.now() : 0
+      if (markModelList) {
+        homeModelListMarkCount++
+        markStartupTimeline("renderer.home.model_list.start", { attempt: i + 1, chain: seq })
+      }
+      let retryReason = "no-default"
       try {
-        const listed = await modelContract.list(directory, AbortSignal.timeout(ENGINE_FETCH_TIMEOUT_MS))
+        const listing = modelContract.list(directory, AbortSignal.timeout(ENGINE_FETCH_TIMEOUT_MS))
+        if (markModelList)
+          void listing.then(
+            (listed) =>
+              markStartupTimeline("renderer.home.model_list.end", {
+                attempt: i + 1,
+                chain: seq,
+                count: listed.length,
+                durationMs: performance.now() - started,
+                outcome: "ok",
+              }),
+            () =>
+              markStartupTimeline("renderer.home.model_list.end", {
+                attempt: i + 1,
+                chain: seq,
+                durationMs: performance.now() - started,
+                outcome: "error:request",
+              }),
+          )
+        const listed = await listing
         if (chainDisposed || seq !== chainSeq) return
         const engineModels: EngineModelRef[] = listed
           .filter((model) => model.enabled && model.status !== "deprecated")
@@ -799,12 +839,23 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
           return // ④ 空态:占位 + picker 引导 + preflight 兜底
         }
       } catch {
+        retryReason = "request-error"
         if (chainDisposed || seq !== chainSeq) return
         setModelChainState("error")
         // 冷启动 / respawn 窗口：保持当前选择，稍后重试；picker 同时呈现真实失败态。
       }
       await new Promise((resolve) => setTimeout(resolve, 1000))
       if (chainDisposed || seq !== chainSeq) return
+      if (props.mode === "home" && i + 1 < 20 && homeModelRetryMarkCount < 25) {
+        homeModelRetryMarkCount++
+        markStartupTimeline("renderer.home.model_list.retry_tick", {
+          attempt: i + 2,
+          chain: seq,
+          count: homeModelRetryMarkCount,
+          delayMs: 1000,
+          reason: retryReason,
+        })
+      }
     }
     if (!chainDisposed && seq === chainSeq) setModelChainState("error")
   }
@@ -829,7 +880,16 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
 
   onMount(() => {
     // 登录态变化递增 epoch；路由 directory/sessionID 由上面的 effect 直接跟踪。
-    const unsub = window.api.auth.subscribe(() => setAuthEpoch((value) => value + 1))
+    const unsub = window.api.auth.subscribe(() =>
+      setAuthEpoch((value) => {
+        markStartupTimeline("renderer.composer.auth_epoch.increment", {
+          candidate: "B",
+          epoch: value + 1,
+          trigger: "auth-change",
+        })
+        return value + 1
+      }),
+    )
     onCleanup(() => {
       chainDisposed = true
       unsub?.()

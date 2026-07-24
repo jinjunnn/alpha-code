@@ -5,7 +5,7 @@
 // 不再 Portal 覆盖 upstream Home(alpha 模式下 upstream Home 叶不挂载,单一 page root);
 // data + send go through the SDK (useAlphaProjects)。
 
-import { createMemo, createResource, createSignal, For, Show, onCleanup } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, For, Show, onCleanup } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import { type AlphaProjectsApi } from "../sidebar/use-projects"
 import { sessionHref, projectLabel } from "../sidebar/route"
@@ -14,6 +14,7 @@ import { pushToast } from "./Toast"
 import { Banner } from "./Banner"
 import { useConfigHealth } from "./use-config-health"
 import { t } from "../i18n"
+import { markStartupTimeline } from "../startup-timeline"
 import "./home.css"
 
 function greeting(): string {
@@ -45,6 +46,27 @@ export function AlphaHome(props: { projects: AlphaProjectsApi }) {
     }
   })
   const activeWs = createMemo(() => chosenWs() ?? visibleProjects()[0]?.worktree ?? defaultWs())
+  const activeWsSource = createMemo<"chosen" | "project" | "default" | "none">(() =>
+    chosenWs() ? "chosen" : visibleProjects()[0]?.worktree ? "project" : defaultWs() ? "default" : "none",
+  )
+  let previousWorkspace: { value: string | undefined; source: ReturnType<typeof activeWsSource> } | undefined
+  createEffect(() => {
+    const current = { value: activeWs(), source: activeWsSource() }
+    if (
+      previousWorkspace?.source === "default" &&
+      current.source === "project" &&
+      previousWorkspace.value &&
+      current.value &&
+      previousWorkspace.value !== current.value
+    )
+      markStartupTimeline("renderer.home.workspace.provisional_to_real", {
+        candidate: "A",
+        from: previousWorkspace.value,
+        to: current.value,
+        trigger: "projects-ready",
+      })
+    previousWorkspace = current
+  })
   const activeWsLabel = createMemo(() => {
     const w = activeWs()
     const p = visibleProjects().find((x) => x.worktree === w)

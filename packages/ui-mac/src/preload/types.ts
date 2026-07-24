@@ -61,6 +61,27 @@ export type ServerReadyData = {
   password: string | null
 }
 
+export const STARTUP_TIMELINE_CHANNEL = "startup-timeline-mark"
+export const RENDERER_STARTUP_MARK_NAMES = [
+  "renderer.root.mount",
+  "renderer.composer.mount",
+  "renderer.composer.auth_epoch.increment",
+  "renderer.home.workspace.provisional_to_real",
+  "renderer.home.account_summary.start",
+  "renderer.home.account_summary.end",
+  "renderer.home.model_list.start",
+  "renderer.home.model_list.end",
+  "renderer.home.model_list.retry_tick",
+] as const
+export type RendererStartupMarkName = (typeof RENDERER_STARTUP_MARK_NAMES)[number]
+export type StartupTimelineValue = string | number | boolean | null
+export type StartupTimelineExtra = Record<string, StartupTimelineValue>
+export type RendererStartupMarkPayload = {
+  name: RendererStartupMarkName
+  rendererNow: number
+  extra?: StartupTimelineExtra
+}
+
 export type WslServersAPI = WslServersPlatform
 export type UpdaterAPI = {
   subscribe: (cb: (state: UpdaterState) => void) => Promise<() => void>
@@ -410,6 +431,9 @@ export type AlphaEnvironmentInfo = {
 
 export type ElectronAPI = {
   killSidecar: () => Promise<void>
+  startupTimeline: {
+    mark: (name: RendererStartupMarkName, rendererNow: number, extra?: StartupTimelineExtra) => void
+  }
   contracts: {
     health: () => Promise<ContractFailure | null>
     subscribe: (cb: (failure: ContractFailure) => void) => () => void
