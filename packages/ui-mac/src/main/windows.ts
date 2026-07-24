@@ -13,6 +13,7 @@ import { HTML_PREVIEW_SCHEME } from "../shared/html-preview"
 import { getStore } from "./store"
 import { PINCH_ZOOM_ENABLED_KEY } from "./store-keys"
 import { createUnresponsiveSampler } from "./unresponsive"
+import { markStartupTimeline } from "./startup-timeline"
 
 const root = dirname(fileURLToPath(import.meta.url))
 const rendererRoot = join(root, "../renderer")
@@ -212,7 +213,9 @@ export function createMainWindow() {
   loadWindow(win, "index.html")
   wireZoom(win)
 
+  win.once("show", () => markStartupTimeline("main.window.first_show"))
   win.once("ready-to-show", () => {
+    markStartupTimeline("main.window.ready_to_show")
     win.show()
   })
 

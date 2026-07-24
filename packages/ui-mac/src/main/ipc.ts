@@ -19,6 +19,7 @@ import type { UpdaterController } from "./updater-controller"
 import { createUpdaterSubscriptions } from "./updater-subscriptions"
 import { isManagedRunArtifactPath } from "./artifact-external-open"
 import { assertGenericStoreAccess } from "./store-keys"
+import { registerStartupTimelineIpc } from "./startup-timeline"
 
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
@@ -58,6 +59,7 @@ type Deps = {
 export function registerIpcHandlers(deps: Deps) {
   const updaterSubscriptions = createUpdaterSubscriptions()
   app.once("will-quit", updaterSubscriptions.clear)
+  registerStartupTimelineIpc(ipcMain)
 
   // REQ-098(AC#6):环境快照只读 IPC —— 回调零参数(不读任何 renderer 输入),返回启动时冻结的
   // 快照;不存在任何对应写面(环境只由 main 的构建事实解析,见 alpha-environment.ts)。

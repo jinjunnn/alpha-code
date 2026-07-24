@@ -114,6 +114,7 @@ import {
   setAuthMode,
   startAuth,
 } from "./alpha-auth"
+import { errorOutcome, initStartupTimeline, markStartupTimeline } from "./startup-timeline"
 
 const APP_NAMES: Record<string, string> = {
   dev: "alpha-code",
@@ -134,6 +135,8 @@ let server: SidecarListener | null = null
 // B2:当前运行的 sidecar 在 fork 时冻住的 access token 的过期时刻(config {file:} 在加载时解析一次,
 // 之后 main 侧刷新传不进去)。整点 tick 据此做「快过期 → 静默 respawn 换血」的备胎。
 let sidecarTokenExpiresAt: number | undefined
+let authTickCount = 0
+let rendererReloadCount = 0
 const markSidecarTokenSnapshot = () => {
   sidecarTokenExpiresAt = getAuthState().expiresAt
 }
@@ -337,6 +340,25 @@ function ensureLoopbackNoProxy() {
   upsert("no_proxy")
 }
 
+function observeEnsureFreshToken(path: "boot" | "hourly") {
+  const started = performance.now()
+  markStartupTimeline(`main.auth.${path}.ensure.start`)
+  const refreshing = ensureFreshToken()
+  void refreshing.then(
+    () =>
+      markStartupTimeline(`main.auth.${path}.ensure.end`, {
+        durationMs: performance.now() - started,
+        outcome: "ok",
+      }),
+    (error) =>
+      markStartupTimeline(`main.auth.${path}.ensure.end`, {
+        durationMs: performance.now() - started,
+        outcome: errorOutcome(error),
+      }),
+  )
+  return refreshing
+}
+
 const main = Effect.gen(function* () {
   contextMenu({ showSaveImageAs: true, showLookUpSelection: false, showSearchWithGoogle: false })
 
@@ -384,6 +406,15 @@ const main = Effect.gen(function* () {
     process.chdir(ensureEngineScratchCwd(join(tmpdir(), "alpha-code")))
   }
   logger = initLogging()
+  initStartupTimeline((record) => {
+    queueMicrotask(() => {
+      try {
+        writeLog("startup-timeline", JSON.stringify(record))
+      } catch {
+        // Startup observation is intentionally best-effort.
+      }
+    })
+  })
   initCrashReporter()
   recoveryService = createRecoveryService({
     log: (event, detail) => writeLog("recovery", event, detail, event === "recovery-action-failed" ? "warn" : "info"),
@@ -544,6 +575,7 @@ const main = Effect.gen(function* () {
   const serverReady = Deferred.makeUnsafe<ServerReadyData, unknown>()
 
   yield* Effect.promise(() => app.whenReady())
+  markStartupTimeline("main.app.ready")
 
   const artifactQuotaEnvironment = yield* Effect.promise(() =>
     initializeArtifactQuotaEnvironment(app.getPath("userData")),
@@ -774,7 +806,8 @@ const main = Effect.gen(function* () {
   const authTimer = setInterval(
     () => {
       void (async () => {
-        await ensureFreshToken().catch(() => {})
+        markStartupTimeline("main.auth.hourly_tick.fire", { count: ++authTickCount })
+        await observeEnsureFreshToken("hourly").catch(() => {})
         if (sidecarTokenExpiresAt && sidecarTokenExpiresAt - Date.now() < 30 * 60 * 1000) {
           logger.log("B2: sidecar's fork-time token near expiry — quiet respawn to rotate")
           await respawnSidecar()
@@ -829,7 +862,9 @@ const main = Effect.gen(function* () {
     // B2:存储的 access token 已过期(app 停机超过 token 寿命)→ fork 前 await 续期一次(fetch 10s
     // 超时封顶)。死 token fork 出的 sidecar 每次模型调用都 401,先续再 fork 才有意义;仅过期才阻塞
     // (未过期时的近期续期由整点 tick 异步做,不碰启动路径——B1 纪律)。
-    if (isStoredTokenExpired()) yield* Effect.promise(() => ensureFreshToken().catch(() => {}))
+    const storedTokenExpired = isStoredTokenExpired()
+    markStartupTimeline("main.auth.boot.token_check", { expired: storedTokenExpired })
+    if (storedTokenExpired) yield* Effect.promise(() => observeEnsureFreshToken("boot").catch(() => {}))
     markSidecarTokenSnapshot()
 
     // S17 T3(C17+B14)DB 安全带预检:水位比对 → DB 超前阻断 / 将前进先备份 / 损坏走恢复
@@ -868,14 +903,32 @@ const main = Effect.gen(function* () {
     logger.log("spawning sidecar", { url })
     const spawnGen = ++sidecarGen
     selfHeal = noteSpawn(selfHeal, Date.now())
-    const { listener, health } = yield* Effect.promise(() =>
-      spawnLocalServer(hostname, port, password, {
+    const { listener, health } = yield* Effect.promise(() => {
+      const started = performance.now()
+      markStartupTimeline("main.sidecar.boot.fork.start", { generation: spawnGen })
+      const spawning = spawnLocalServer(hostname, port, password, {
         userDataPath: app.getPath("userData"),
         onStdout: (message) => writeLog("server", "stdout", { message }),
         onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
         onExit: (code) => handleSidecarExit(spawnGen, code),
-      }),
-    )
+        timelineContext: "boot",
+      })
+      void spawning.then(
+        () =>
+          markStartupTimeline("main.sidecar.boot.fork.end", {
+            durationMs: performance.now() - started,
+            generation: spawnGen,
+            outcome: "ok",
+          }),
+        (error) =>
+          markStartupTimeline("main.sidecar.boot.fork.end", {
+            durationMs: performance.now() - started,
+            generation: spawnGen,
+            outcome: errorOutcome(error),
+          }),
+      )
+      return spawning
+    })
     server = listener
     armEngineRunawayMeter(spawnGen)
     sessionGrantRegistry.beginSession(spawnGen) // #408:新会话空集起步(grant 面绑本代)
@@ -965,12 +1018,30 @@ const main = Effect.gen(function* () {
       useEnvProxy()
       const spawnGen = ++sidecarGen
       selfHeal = noteSpawn(selfHeal, Date.now())
-      const { listener, health } = await spawnLocalServer(hostname, port, password, {
+      const started = performance.now()
+      markStartupTimeline("main.sidecar.respawn.fork.start", { generation: spawnGen })
+      const spawning = spawnLocalServer(hostname, port, password, {
         userDataPath: app.getPath("userData"),
         onStdout: (message) => writeLog("server", "stdout", { message }),
         onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
         onExit: (code) => handleSidecarExit(spawnGen, code),
+        timelineContext: "respawn",
       })
+      void spawning.then(
+        () =>
+          markStartupTimeline("main.sidecar.respawn.fork.end", {
+            durationMs: performance.now() - started,
+            generation: spawnGen,
+            outcome: "ok",
+          }),
+        (error) =>
+          markStartupTimeline("main.sidecar.respawn.fork.end", {
+            durationMs: performance.now() - started,
+            generation: spawnGen,
+            outcome: errorOutcome(error),
+          }),
+      )
+      const { listener, health } = await spawning
       server = listener
       armEngineRunawayMeter(spawnGen)
       sessionGrantRegistry.beginSession(spawnGen) // #408:respawn = 新会话,grant 恒从空集开始
@@ -983,6 +1054,11 @@ const main = Effect.gen(function* () {
         new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 20000)),
       ])
       if (healthy && mainWindow && !mainWindow.isDestroyed()) {
+        markStartupTimeline("main.renderer.reload", {
+          candidate: "C",
+          count: ++rendererReloadCount,
+          trigger: "sidecar-respawn",
+        })
         mainWindow.webContents.reload()
         logger.log("sidecar respawned + renderer reloaded")
       } else if (!healthy) {
