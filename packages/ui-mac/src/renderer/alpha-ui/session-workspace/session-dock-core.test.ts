@@ -206,7 +206,7 @@ describe("childSessionFacts + childParentHref:子会话条与跳转", () => {
 })
 
 describe("createComposerDraftStash:per-identity 草稿暂存,门翻转不丢草稿(I8)", () => {
-  const key = (identity: AlphaSessionIdentity) => `${identity.serverKey} ${identity.directory} ${identity.sessionID}`
+  const key = (identity: AlphaSessionIdentity) => `${identity.serverKey}\u0000${identity.directory}\u0000${identity.sessionID}`
   const identity = (over: Partial<AlphaSessionIdentity> = {}): AlphaSessionIdentity => ({
     serverKey: "sidecar",
     directory: "/tmp/ws",
@@ -222,7 +222,15 @@ describe("createComposerDraftStash:per-identity 草稿暂存,门翻转不丢草�
     expect(stash.restore(x)).toBe("hello world") // 门翻回同一身份 → 草稿仍在
   })
 
-  test("空串清除暂存(已发送/清空的会话不残留陈旧草稿);无 key 不写", () => {
+  test("restore 取后即删(消费):还原一次后暂存清空,不留陈旧", () => {
+    const stash = createComposerDraftStash()
+    const x = key(identity())
+    stash.capture(x, "draft")
+    expect(stash.restore(x)).toBe("draft") // 门翻回还原(消费)
+    expect(stash.restore(x)).toBeUndefined() // 已删,不重复还原
+  })
+
+  test("空串清除;无 key 不写;forget 显式清理单键(身份离开)", () => {
     const stash = createComposerDraftStash()
     const x = key(identity())
     stash.capture(x, "draft")
@@ -230,6 +238,21 @@ describe("createComposerDraftStash:per-identity 草稿暂存,门翻转不丢草�
     expect(stash.restore(x)).toBeUndefined()
     stash.capture(undefined, "orphan") // 无身份 → 不写
     expect(stash.restore(undefined)).toBeUndefined()
+    stash.capture(x, "again")
+    stash.forget(x) // 身份离开 / live 换代 → 丢弃对应键
+    expect(stash.restore(x)).toBeUndefined()
+  })
+
+  test("有界(I7):容量帽 LRU 淘汰最旧 + 单条文本帽截断", () => {
+    const stash = createComposerDraftStash({ capacity: 3, maxTextLength: 5 })
+    stash.capture("k0", "a")
+    stash.capture("k1", "b")
+    stash.capture("k2", "c")
+    stash.capture("k3", "d") // 超容量 3 → 淘汰最旧 k0
+    expect(stash.restore("k0")).toBeUndefined()
+    expect(stash.restore("k3")).toBe("d")
+    stash.capture("kt", "0123456789") // 超文本帽 5 → 截断
+    expect(stash.restore("kt")).toBe("01234")
   })
 
   test("I8:草稿按身份三元组隔离,不跨会话/服务器/目录泄漏", () => {

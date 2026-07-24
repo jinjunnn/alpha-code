@@ -23,7 +23,7 @@ import { createStore } from "solid-js/store"
 import { hrefFor } from "../../../shared/route-manifest"
 import { t } from "../../i18n"
 import type { AlphaProjectsApi } from "../../sidebar/use-projects"
-import { AlphaComposer, type ComposerSessionDockApi, type ComposerSlashCapture } from "../alpha-composer"
+import type { ComposerSessionDockApi, ComposerSlashCapture } from "../alpha-composer"
 import { createModelContract } from "../model-contract"
 import {
   createPermissionDecisionCommand,
@@ -43,13 +43,11 @@ import {
   todoDockVisible,
   todoDone,
 } from "./session-dock-core"
+import { SessionComposerMount } from "./session-composer-mount"
 import { createPermissionV2Feed, type PermissionV2Feed } from "./session-permission-feed"
 import { recordSessionSlashOrigin } from "./session-slash-origin"
-import type { AlphaSessionIdentity } from "./session-workspace-core"
+import { type AlphaSessionIdentity, identityKey } from "./session-workspace-core"
 import type { AlphaSessionLiveContext } from "./session-workspace-shell"
-
-const identityKey = (identity: AlphaSessionIdentity | undefined) =>
-  identity ? `${identity.serverKey}\u0000${identity.directory}\u0000${identity.sessionID}` : undefined
 
 export function SessionComposerDock(props: { live: AlphaSessionLiveContext; projects: AlphaProjectsApi }) {
   const serverSDK = useServerSDK()
@@ -236,21 +234,13 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
         {(facts) => <SessionRevertCard facts={facts} />}
       </Show>
       {/* 子会话与可发送 composer 互斥(对齐上游子会话语义):子会话(有 parentID)只呈现
-          子会话条(运行指示 + 返回父会话入口)为主体,**不挂** AlphaComposer——子会话零可发送
-          路径,新输入只能回到父会话。非子会话才挂 composer。 */}
+          子会话条(运行指示 + 返回父会话入口)为主体,**不挂** composer——子会话零可发送路径,
+          新输入只能回到父会话。非子会话才经 SessionComposerMount 挂 composer(挂载定格身份键)。 */}
       <Show
         when={childSession()}
         keyed
         fallback={
-          <AlphaComposer
-            mode="session"
-            projects={props.projects}
-            directory={() => identity()?.directory}
-            sessionID={() => identity()?.sessionID}
-            sessionDock={dockApi}
-            initialText={draftStash.restore(identityKey(identity()))}
-            onDraftCapture={(draft) => draftStash.capture(identityKey(identity()), draft)}
-          />
+          <SessionComposerMount identity={identity} projects={props.projects} dock={dockApi} drafts={draftStash} />
         }
       >
         {(facts) => (

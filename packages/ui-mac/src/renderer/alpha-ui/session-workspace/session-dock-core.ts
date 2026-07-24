@@ -122,25 +122,45 @@ export function childParentHref<Identity extends { serverKey: string }>(input: {
 }
 
 /**
- * per-identity composer 草稿暂存(REQ-125 #558,I8)。
+ * per-identity composer 草稿暂存(REQ-125 #558,I8;有界 I7)。
  *
- * child-session 门翻转会**卸载** AlphaComposer(保持子会话零可发送路径);若 `info` 迟到——
- * 先挂 composer、`parentID` 到达后门翻转——正在输入的草稿会随卸载丢失。此暂存按会话身份
- * 三元组 key 在卸载时捕获草稿、门翻回同一身份时注入初值,使卸载不再等于不可恢复的丢失。
- * 空串即清除(已发送/清空的会话不残留陈旧草稿)。key 由调用方以身份三元组算出(I8)。
+ * child-session 门翻转会**卸载** composer(保持子会话零可发送路径);若 `info` 迟到——先挂
+ * composer、`parentID` 到达后门翻转——正在输入的草稿会随卸载丢失。此暂存按会话身份三元组 key
+ * 在卸载时捕获草稿、门翻回同一身份时注入初值,使卸载不再等于不可恢复的丢失。key 由调用方以
+ * **挂载时定格**的身份三元组算出(I8),空串清除。
+ *
+ * 有界(I7,防资源耗尽):`capacity` 条上限(LRU,超出淘汰最旧)、单条 `maxTextLength` 字符帽
+ * (超出截断)、`restore` **取后即删**(消费:门翻回还原后即从暂存移除,不留陈旧;身份长期
+ * 不回则由 LRU 淘汰)。`forget` 供显式清理单键(身份离开 / live 换代)。
  */
-export function createComposerDraftStash() {
+export function createComposerDraftStash(options?: { capacity?: number; maxTextLength?: number }) {
+  const capacity = Math.max(1, options?.capacity ?? 8)
+  const maxTextLength = Math.max(0, options?.maxTextLength ?? 20_000)
   const drafts = new Map<string, string>()
   return {
-    /** 卸载时按身份捕获草稿;无 key(无身份)不写,空串清除该身份的暂存。 */
+    /** 卸载时按定格身份键捕获草稿;无 key 不写,空串清除;超帽截断;超容量淘汰最旧(LRU)。 */
     capture(key: string | undefined, draft: string) {
       if (!key) return
-      if (draft.length > 0) drafts.set(key, draft)
-      else drafts.delete(key)
+      drafts.delete(key) // 重插到队尾(Map 保持插入序 → 队首=最旧,用作 LRU)
+      const bounded = draft.length > maxTextLength ? draft.slice(0, maxTextLength) : draft
+      if (bounded.length === 0) return // 空串 = 清除该身份暂存
+      drafts.set(key, bounded)
+      while (drafts.size > capacity) {
+        const oldest = drafts.keys().next().value
+        if (oldest === undefined) break
+        drafts.delete(oldest)
+      }
     },
-    /** 门翻回时按身份取回暂存草稿(无则 undefined,composer 起始为空)。 */
+    /** 门翻回时按身份取回暂存草稿并消费(取后即删);无则 undefined,composer 起始为空。 */
     restore(key: string | undefined): string | undefined {
-      return key ? drafts.get(key) : undefined
+      if (!key) return undefined
+      const draft = drafts.get(key)
+      if (draft !== undefined) drafts.delete(key)
+      return draft
+    },
+    /** 显式清理单键(身份离开 / live 换代时丢弃对应暂存)。 */
+    forget(key: string | undefined) {
+      if (key) drafts.delete(key)
     },
   }
 }

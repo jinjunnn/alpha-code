@@ -9,6 +9,6 @@ test("生产 model picker 的 Solid 组件状态机", () => {
   })
   const output = `${result.stdout.toString()}${result.stderr.toString()}`
   if (result.exitCode !== 0) throw new Error(output)
-  expect(output).toContain("14 pass")
+  expect(output).toContain("16 pass")
   expect(output).toContain("0 fail")
 })

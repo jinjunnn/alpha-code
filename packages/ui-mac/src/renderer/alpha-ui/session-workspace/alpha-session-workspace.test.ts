@@ -5,6 +5,7 @@ import { join, resolve } from "node:path"
 const tsx = readFileSync(join(import.meta.dir, "alpha-session-workspace.tsx"), "utf8")
 const shell = readFileSync(join(import.meta.dir, "session-workspace-shell.tsx"), "utf8")
 const dock = readFileSync(join(import.meta.dir, "session-composer-dock.tsx"), "utf8")
+const composerMount = readFileSync(join(import.meta.dir, "session-composer-mount.tsx"), "utf8")
 const dockCore = readFileSync(join(import.meta.dir, "session-dock-core.ts"), "utf8")
 const permissionFeed = readFileSync(join(import.meta.dir, "session-permission-feed.ts"), "utf8")
 const css = readFileSync(join(import.meta.dir, "session-workspace.css"), "utf8")
@@ -45,7 +46,9 @@ describe("REQ-125 C1b I1 and Recovery static ratchets", () => {
       "UpstreamSessionLeaf",
       "SessionPage",
     ]
-    forbidden.forEach((token) => expect(`${tsx}\n${shell}\n${dock}\n${dockCore}\n${permissionFeed}`).not.toContain(token))
+    forbidden.forEach((token) =>
+      expect(`${tsx}\n${shell}\n${dock}\n${composerMount}\n${dockCore}\n${permissionFeed}`).not.toContain(token),
+    )
     expect(tsx).not.toContain("preloadSessionLeaf")
     expect(sidebar).not.toContain("preloadSessionLeaf")
     expect(tsx).toContain("useServerSDK")
@@ -64,24 +67,31 @@ describe("REQ-125 C1b I1 and Recovery static ratchets", () => {
   })
 
   test("child-session state is mutually exclusive with a sendable composer (zero promptAsync path when child)", () => {
-    // AlphaComposer is the only send surface. It must mount exactly once, and only as the
-    // fallback of the childSession() gate — so when the session is a child (parentID present)
-    // the composer is not rendered at all and the child card is the body. No composer ⇒ no
-    // reachable prompt/send/promptAsync path in a child session (upstream child semantics).
-    expect(dock.match(/<AlphaComposer\b/g)).toHaveLength(1)
+    // SessionComposerMount hosts the only send surface (AlphaComposer). It must mount exactly
+    // once, and only as the fallback of the childSession() gate — so a child session renders
+    // just the child card, with no composer host and hence no reachable prompt/send/promptAsync
+    // path. The composer itself lives only inside the mount wrapper, never directly in the dock.
+    expect(dock.match(/<SessionComposerMount\b/g)).toHaveLength(1)
+    expect(dock).not.toContain("<AlphaComposer")
     expect(dock).toMatch(
-      /when=\{childSession\(\)\}[\s\S]*?fallback=\{[\s\S]*?<AlphaComposer\b[\s\S]*?SessionChildCard/,
+      /when=\{childSession\(\)\}[\s\S]*?fallback=\{[\s\S]*?<SessionComposerMount\b[\s\S]*?SessionChildCard/,
     )
+    expect(composerMount.match(/<AlphaComposer\b/g)).toHaveLength(1)
   })
 
-  test("gate flip preserves the composer draft via a per-identity stash (I8-bound)", () => {
-    // The gate unmounts the composer when a session turns out to be a child (info late).
-    // A per-identity draft stash captures the draft on that unmount and re-injects it via
-    // initialText on flip-back, so unmount is not unrecoverable loss. Both ends key off the
-    // full identity triple (identityKey), never sessionID alone.
+  test("gate flip preserves the composer draft via a per-identity stash keyed at mount (I8-bound)", () => {
+    // The gate unmounts the composer when a session turns out to be a child (info late). A
+    // per-identity draft stash captures the draft on that unmount and re-injects it via
+    // initialText on flip-back, so unmount is not unrecoverable loss.
     expect(dock).toContain("createComposerDraftStash")
-    expect(dock).toMatch(/initialText=\{draftStash\.restore\(identityKey\(identity\(\)\)\)\}/)
-    expect(dock).toMatch(/onDraftCapture=\{[^}]*draftStash\.capture\(identityKey\(identity\(\)\),\s*draft\)/)
+    expect(dock).toMatch(/<SessionComposerMount\b[\s\S]*?drafts=\{draftStash\}/)
+    // The identity key is FROZEN at mount (closure capture), so a same-workspace session switch
+    // (identity becomes B before A's composer unmounts) cannot write A's draft under B's key.
+    expect(composerMount).toContain("const mountedKey = identityKey(props.identity())")
+    expect(composerMount).toMatch(/initialText=\{props\.drafts\.restore\(mountedKey\)\}/)
+    expect(composerMount).toMatch(/onDraftCapture=\{[^}]*props\.drafts\.capture\(mountedKey,\s*draft\)/)
+    // No re-reading of identity() inside the capture closure (the round-3 bug).
+    expect(composerMount).not.toMatch(/capture\(identityKey\(identity/)
   })
 
   test("keeps the release seam and existing Alpha Recovery boundary", () => {

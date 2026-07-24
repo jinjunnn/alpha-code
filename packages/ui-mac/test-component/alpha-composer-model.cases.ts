@@ -55,6 +55,9 @@ Bun.plugin({
 const command = { options: [], trigger: () => {} } as unknown as AlphaComposerRuntimeProps["command"]
 mock.module("../src/renderer/alpha-ui/providers", () => ({ useCommand: () => command }))
 const { AlphaComposerRuntime } = await import("../src/renderer/alpha-ui/alpha-composer")
+const { SessionComposerMount } = await import("../src/renderer/alpha-ui/session-workspace/session-composer-mount")
+const { createComposerDraftStash } = await import("../src/renderer/alpha-ui/session-workspace/session-dock-core")
+const { identityKey } = await import("../src/renderer/alpha-ui/session-workspace/session-workspace-core")
 const { ModelPickPop } = await import("../src/renderer/alpha-ui/alpha-composer-model")
 const {
   composerModel,
@@ -829,6 +832,50 @@ describe("REQ-125 C558 composer draft capture/restore contract", () => {
     await flush()
     const ta = mounted.host.querySelector<HTMLTextAreaElement>("textarea.a-comp-input")
     expect(ta?.value).toBe("restored draft")
+    mounted.dispose()
+  })
+})
+
+// REQ-125 C558 复审第3轮 Major:同 workspace 切会话 composer 不重挂,cleanup 若重读 identity()
+// 会把 A 草稿写进 B 键。SessionComposerMount 在**挂载时定格**身份键(闭包定格),cleanup 用定格键。
+// 这里对真实 SessionComposerMount(内挂真实 AlphaComposer)验:切会话后卸载,草稿只落挂载时的键。
+describe("REQ-125 C558 SessionComposerMount 挂载定格身份键,切会话不串草稿", () => {
+  const identityFor = (sessionID: string) => ({ serverKey: "sidecar", directory: "/ws", sessionID })
+  const dockApi = {
+    running: () => false,
+    contextUsage: () => null,
+    approvalPending: () => false,
+    onSlashCommand: () => {},
+  }
+
+  test("A 输入→identity 切 B→卸载:草稿落挂载定格的 A 键、B 键无(B 门翻回不见 A 草稿)", async () => {
+    installApi()
+    const drafts = createComposerDraftStash()
+    const [identity, setIdentity] = createSignal(identityFor("A"))
+    const mounted = mount(() => createComponent(SessionComposerMount, { identity, projects, dock: dockApi, drafts }))
+    await flush()
+    const ta = mounted.host.querySelector<HTMLTextAreaElement>("textarea.a-comp-input")
+    expect(ta).not.toBeNull()
+    ta!.value = "A-draft"
+    ta!.dispatchEvent(new Event("input", { bubbles: true }))
+    await flush()
+    setIdentity(identityFor("B")) // 同 workspace 切会话:identity 先变 B
+    await flush()
+    mounted.dispose() // 再卸载 A 的 composer(门翻转 → child)
+    // 卸载用挂载定格的 A 键 → 草稿落 A、不落 B(证明不在 cleanup 重读 identity())。
+    expect(drafts.restore(identityKey(identityFor("B")))).toBeUndefined()
+    expect(drafts.restore(identityKey(identityFor("A")))).toBe("A-draft")
+  })
+
+  test("门翻回:挂载时按定格身份键 restore 注入初值", async () => {
+    installApi()
+    const drafts = createComposerDraftStash()
+    drafts.capture(identityKey(identityFor("A")), "restored-A")
+    const [identity] = createSignal(identityFor("A"))
+    const mounted = mount(() => createComponent(SessionComposerMount, { identity, projects, dock: dockApi, drafts }))
+    await flush()
+    const ta = mounted.host.querySelector<HTMLTextAreaElement>("textarea.a-comp-input")
+    expect(ta?.value).toBe("restored-A")
     mounted.dispose()
   })
 })
