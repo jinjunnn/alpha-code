@@ -276,7 +276,7 @@ describe("REQ-125 C5 行 → DOM:文本类组件", () => {
     const kinds = [...host.querySelectorAll("[data-alpha-timeline-row]")].map((el) =>
       el.getAttribute("data-alpha-timeline-row"),
     )
-    expect(kinds).toEqual(["user", "reasoning", "tool", "markdown", "turn", "user"])
+    expect(kinds).toEqual(["user", "reasoning", "tool", "markdown", "footnote", "turn", "user"])
 
     const bubble = host.querySelector(".a-tl-bubble")!
     expect(bubble.textContent).toContain("对照 README.md 改一版")
@@ -1037,5 +1037,233 @@ describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {
     expect(links.map((el) => el.textContent)).toEqual(["季度经营分析.docx", "营收对比图.png"])
     ;(links[0] as HTMLButtonElement).click()
     expect(runtime.getIntentLog().focusArtifact).toEqual([{ name: "季度经营分析.docx", runId: "job_7f3a" }])
+  })
+})
+
+// ═══════════════ #568 — 富脚注 / pill / 斜杠 chip / 诊断行 / 改动汇总 ═══════════════
+
+describe("#568 回合末富脚注(A6/A7)", () => {
+  test("完成回合渲染脚注(agent·model·时长),复制动作写剪贴板;流式回合无脚注", async () => {
+    const copied: string[] = []
+    Object.defineProperty(window.navigator, "clipboard", {
+      value: { writeText: (text: string) => (copied.push(text), Promise.resolve()) },
+      configurable: true,
+    })
+    const host = mount()
+    runtime.setTimelineRows(conversationRows())
+    await flush()
+
+    const footnote = host.querySelector("[data-alpha-timeline-row='footnote']")!
+    expect(footnote).not.toBeNull()
+    expect(footnote.querySelector(".a-tl-fn-agent")!.textContent).toContain("build")
+    expect(footnote.textContent).toContain("deepseek-reasoner")
+    // duration 10ms → 0 秒;零 tokens 诚实缺席。
+    expect(footnote.textContent).toContain("0 秒")
+    expect(footnote.textContent).not.toContain("tokens")
+
+    const copy = footnote.querySelector<HTMLButtonElement>(".a-tl-fn-actions button")!
+    expect(copy.getAttribute("aria-label")).toBe("复制回复")
+    copy.click()
+    await flush()
+    expect(copied).toEqual(["**发现**:结构完好"])
+
+    // 流式回合(assistant 未完成)不出脚注。
+    runtime.setTimelineRows(conversationRows("busy"))
+    await flush()
+    expect(host.querySelector("[data-alpha-timeline-row='footnote']")).toBeNull()
+  })
+})
+
+describe("#568 「在面板打开」pill(T8)", () => {
+  test("write/edit 卡头出 pill,点击发 openFile intent;intent 缺席零渲染;read 卡永无 pill", async () => {
+    const host = mount()
+    runtime.setTimelineIntentsEnabled(true)
+    runtime.setTimelineRows(
+      assistantFixture([
+        toolPartFixture("prt_w1", "write", {
+          status: "completed",
+          input: { filePath: "/repo/AGENTS.md", content: "# a\nb" },
+          output: "ok",
+          title: "write",
+          metadata: {},
+          time: { start: 0, end: 1 },
+        }),
+        toolPartFixture("prt_rd1", "read", {
+          status: "completed",
+          input: { filePath: "/repo/README.md" },
+          output: "ok",
+          title: "read",
+          metadata: {},
+          time: { start: 0, end: 1 },
+        }),
+      ]),
+    )
+    await flush()
+
+    const write = host.querySelector("[data-alpha-tool-card][data-kind='write']")!
+    const pill = write.querySelector<HTMLButtonElement>(".a-tc-openp")!
+    expect(pill.textContent).toContain("在面板打开")
+    pill.click()
+    expect(runtime.getIntentLog().openFile).toEqual([{ path: "/repo/AGENTS.md" }])
+    expect(host.querySelector("[data-alpha-tool-card][data-kind='read'] .a-tc-openp")).toBeNull()
+
+    // fail-closed:openFile handler 缺席 → pill 消失,卡头照常。
+    runtime.setTimelineIntentsEnabled(false)
+    await flush()
+    expect(host.querySelector(".a-tc-openp")).toBeNull()
+    expect(write.querySelector(".a-tc-head")).not.toBeNull()
+  })
+})
+
+describe("#568 斜杠命令 chip(消费可选 typed 接口)", () => {
+  function slashRows(withOrigin: boolean) {
+    return model.projectTimelineRows({
+      messages: [
+        {
+          id: "msg_u1",
+          sessionID: "ses_1",
+          role: "user",
+          time: { created: 1000 },
+          agent: "build",
+          model: { providerID: "deepseek", modelID: "deepseek-reasoner" },
+        },
+        {
+          id: "msg_a1",
+          sessionID: "ses_1",
+          role: "assistant",
+          time: { created: 10, completed: 20 },
+          parentID: "msg_u1",
+          modelID: "deepseek-reasoner",
+          providerID: "deepseek",
+          mode: "build",
+          agent: "build",
+          path: { cwd: "/tmp", root: "/tmp" },
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+      ] as never,
+      partsOf: (messageID: string) =>
+        (messageID === "msg_u1"
+          ? [{ id: "prt_u1", sessionID: "ses_1", messageID: "msg_u1", type: "text", text: "expanded prompt body" }]
+          : [{ id: "prt_t1", sessionID: "ses_1", messageID: "msg_a1", type: "text", text: "done" }]) as never,
+      status: "idle",
+      slashOrigins: withOrigin ? [{ assistantMessageID: "msg_a1", command: "review", arguments: "pr 12" }] : undefined,
+    })
+  }
+
+  test("登记在场:气泡换 chip(命令+参数),展开提示词默认折叠、点击展开;登记缺席零渲染", async () => {
+    const host = mount()
+    runtime.setTimelineRows(slashRows(true))
+    await flush()
+
+    const cmd = host.querySelector("[data-alpha-timeline-slash]")!
+    expect(cmd).not.toBeNull()
+    const chip = cmd.querySelector<HTMLButtonElement>("button.a-tl-cmd-chip")!
+    expect(chip.querySelector(".a-tl-cmd-name")!.textContent).toBe("review")
+    expect(chip.querySelector(".a-tl-cmd-args")!.textContent).toBe("pr 12")
+    expect(chip.getAttribute("aria-expanded")).toBe("false")
+    expect(cmd.querySelector(".a-tl-cmd-body")).toBeNull()
+    expect(host.textContent).not.toContain("expanded prompt body")
+
+    chip.click()
+    await flush()
+    expect(chip.getAttribute("aria-expanded")).toBe("true")
+    expect(cmd.querySelector(".a-tl-cmd-body")!.textContent).toContain("expanded prompt body")
+
+    runtime.setTimelineRows(slashRows(false))
+    await flush()
+    expect(host.querySelector("[data-alpha-timeline-slash]")).toBeNull()
+    expect(host.querySelector(".a-tl-bubble")!.textContent).toContain("expanded prompt body")
+  })
+})
+
+describe("#568 诊断行(T19)", () => {
+  test("edit 卡渲染本文件 ERROR 级诊断(mono 行,1 基行号);低级别与他文件忽略", async () => {
+    const host = mount()
+    runtime.setTimelineRows(
+      assistantFixture([
+        toolPartFixture("prt_e1", "edit", {
+          status: "completed",
+          input: { filePath: "/repo/app/prompt_builder.py" },
+          output: "ok",
+          title: "edit",
+          metadata: {
+            diagnostics: {
+              "/repo/app/prompt_builder.py": [
+                {
+                  severity: 1,
+                  message: '"kama_latest" is possibly unbound',
+                  range: { start: { line: 101, character: 4 } },
+                },
+                { severity: 2, message: "unused import", range: { start: { line: 3, character: 0 } } },
+              ],
+              "/repo/other.py": [{ severity: 1, message: "elsewhere", range: { start: { line: 0, character: 0 } } }],
+            },
+          },
+          time: { start: 0, end: 1 },
+        }),
+      ]),
+    )
+    await flush()
+
+    const rows = [...host.querySelectorAll(".a-tc-diag-row")]
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.querySelector(".a-tc-diag-lvl")!.textContent).toBe("ERR")
+    expect(rows[0]!.querySelector(".a-tc-diag-loc")!.textContent).toBe("prompt_builder.py:102")
+    expect(rows[0]!.querySelector(".a-tc-diag-msg")!.textContent).toBe('"kama_latest" is possibly unbound')
+  })
+})
+
+describe("#568 本回合改动汇总(S2)", () => {
+  function diffsumRows() {
+    return model.projectTimelineRows({
+      messages: [
+        {
+          id: "msg_u1",
+          sessionID: "ses_1",
+          role: "user",
+          time: { created: 1000 },
+          agent: "build",
+          model: { providerID: "deepseek", modelID: "deepseek-reasoner" },
+          summary: {
+            diffs: [
+              { file: "AGENTS.md", additions: 96, deletions: 0 },
+              { file: "alpha-ui/button.css", additions: 8, deletions: 2 },
+            ],
+          },
+        },
+      ] as never,
+      partsOf: () =>
+        [{ id: "prt_u1", sessionID: "ses_1", messageID: "msg_u1", type: "text", text: "改一版" }] as never,
+      status: "idle",
+    })
+  }
+
+  test("汇总头(计数+徽标)默认折叠;展开出文件行,点击经 openFile 联动;intent 缺席行降级纯展示", async () => {
+    const host = mount()
+    runtime.setTimelineIntentsEnabled(true)
+    runtime.setTimelineRows(diffsumRows())
+    await flush()
+
+    const diffsum = host.querySelector("[data-alpha-timeline-row='diffsum']")!
+    const head = diffsum.querySelector<HTMLButtonElement>(".a-diffsum-head")!
+    expect(head.textContent).toContain("本回合改动 · 2 个文件")
+    expect(head.textContent).toContain("+104")
+    expect(head.textContent).toContain("−2")
+    expect(head.getAttribute("aria-expanded")).toBe("false")
+    expect(diffsum.querySelector(".a-diffsum-body")).toBeNull()
+
+    head.click()
+    await flush()
+    const rows = [...diffsum.querySelectorAll<HTMLButtonElement>("button.a-diffsum-row")]
+    expect(rows).toHaveLength(2)
+    expect(rows[1]!.textContent).toContain("button.css")
+    rows[0]!.click()
+    expect(runtime.getIntentLog().openFile).toEqual([{ path: "AGENTS.md" }])
+
+    runtime.setTimelineIntentsEnabled(false)
+    await flush()
+    expect(diffsum.querySelector("button.a-diffsum-row")).toBeNull()
+    expect(diffsum.querySelectorAll("div.a-diffsum-row")).toHaveLength(2)
   })
 })

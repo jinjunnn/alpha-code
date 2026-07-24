@@ -13,10 +13,16 @@ import {
   artifactLinksOf,
   boundedText,
   commentOf,
+  footnoteOf,
   MARKDOWN_MAX_CHARS,
   projectTimelineRows,
   reuseTimelineRows,
   segmentUserText,
+  SLASH_ARGUMENTS_MAX_CHARS,
+  SLASH_COMMAND_MAX_CHARS,
+  slashOriginForTurn,
+  TURN_DIFF_FILES_MAX,
+  turnDiffsOf,
   turnErrorOf,
   TURN_ERROR_MAX_CHARS,
   USER_TEXT_MAX_CHARS,
@@ -106,8 +112,8 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
       ],
     })
 
-    expect(rows.map((row) => row.kind)).toEqual(["user", "reasoning", "markdown", "tool"])
-    expect(rows.map((row) => row.key)).toEqual(["user:msg_u1", "reason:prt_r1", "md:prt_t1", "part:prt_o1"])
+    expect(rows.map((row) => row.kind)).toEqual(["user", "reasoning", "markdown", "tool", "footnote"])
+    expect(rows.map((row) => row.key)).toEqual(["user:msg_u1", "reason:prt_r1", "md:prt_t1", "part:prt_o1", "footnote:msg_u1"])
     const tool = rows[3]!
     expect(tool.kind === "tool" && tool.tool).toBe("bash")
   })
@@ -290,13 +296,17 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
       ],
     })
 
-    expect(rows.map((row) => row.kind)).toEqual(["user", "toolgroup", "tool", "tool", "tool"])
+    expect(rows.map((row) => row.kind)).toEqual(["user", "toolgroup", "tool", "tool", "tool", "footnote"])
     const group = rows[1]!
     if (group.kind !== "toolgroup") throw new Error("expected toolgroup row")
     expect(group.key).toBe("group:prt_g1")
     expect(group.parts.map((part) => part.id)).toEqual(["prt_g1", "prt_g2", "prt_g3"])
     // 单个已完成探查工具(glob)不成组;运行中的 read 保留独立卡。
-    expect(rows.slice(2).map((row) => (row.kind === "tool" ? row.part.id : ""))).toEqual(["prt_x1", "prt_g4", "prt_g5"])
+    expect(rows.slice(2, -1).map((row) => (row.kind === "tool" ? row.part.id : ""))).toEqual([
+      "prt_x1",
+      "prt_g4",
+      "prt_g5",
+    ])
   })
 
   test("媒体行:助手侧 file part 投影为 media 行(快照含名字/mime/url)", () => {
@@ -304,7 +314,7 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
       msg_u1: [textPart("prt_u1", "msg_u1", "截个图")],
       msg_a1: [filePart("prt_f1", "msg_a1")],
     })
-    expect(rows.map((row) => row.kind)).toEqual(["user", "media"])
+    expect(rows.map((row) => row.kind)).toEqual(["user", "media", "footnote"])
     const media = rows[1]!
     if (media.kind !== "media") throw new Error("expected media row")
     expect(media.media).toMatchObject({ partID: "prt_f1", name: "screenshot.png", mime: "image/png" })
@@ -328,7 +338,7 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
       msg_a1: [withAttachment, toolPart("prt_r2", "msg_a1", "read"), toolPart("prt_r3", "msg_a1", "grep")],
     })
     // 带附件的 read 保留独立卡 + 媒体行;其后两个无附件探查工具正常成组。
-    expect(rows.map((row) => row.kind)).toEqual(["user", "tool", "media", "toolgroup"])
+    expect(rows.map((row) => row.kind)).toEqual(["user", "tool", "media", "toolgroup", "footnote"])
     const media = rows[2]!
     if (media.kind !== "media") throw new Error("expected media row")
     expect(media.key).toBe("media:prt_r1:0")
@@ -376,7 +386,7 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
       msg_u1: [textPart("prt_u1", "msg_u1", "跑云任务")],
       msg_a1: [cloudDone],
     })
-    expect(rows.map((row) => row.kind)).toEqual(["user", "tool", "artifacts"])
+    expect(rows.map((row) => row.kind)).toEqual(["user", "tool", "artifacts", "footnote"])
     const artifacts = rows[2]!
     if (artifacts.kind !== "artifacts") throw new Error("expected artifacts row")
     expect(artifacts.links).toEqual([
@@ -532,5 +542,159 @@ describe("REQ-125 C5 行复用:流式 delta 不重建行", () => {
     }
     const second = reuseTimelineRows(first, project(messages, replaced, "busy"))
     expect(second[1]).not.toBe(first[1]!)
+  })
+})
+
+// ═══════════════ #568 — 富脚注 / 本回合改动汇总 / 斜杠命令来源 ═══════════════
+
+describe("#568 回合末富脚注(A6)", () => {
+  test("完成回合出 footnote 行:agent/model/时长在场,零 tokens 诚实缺席;copyText 取全部助手正文", () => {
+    const rows = project([userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")], {
+      msg_u1: [textPart("prt_u1", "msg_u1", "开始")],
+      msg_a1: [textPart("prt_t1", "msg_a1", "第一段"), textPart("prt_t2", "msg_a1", "第二段")],
+    })
+    const last = rows.at(-1)!
+    if (last.kind !== "footnote") throw new Error("expected footnote row")
+    expect(last.footnote).toEqual({ agent: "build", model: "deepseek-reasoner", durationMs: 10, tokens: undefined })
+    expect(last.copyText()).toBe("第一段\n\n第二段")
+  })
+
+  test("tokens 合计 input+output+reasoning;非法数值字段丢弃不炸", () => {
+    const rows = project(
+      [
+        userMsg("msg_u1", 1000),
+        assistantMsg("msg_a1", "msg_u1", {
+          tokens: { input: 1200, output: 2000, reasoning: 100, cache: { read: 0, write: 0 } },
+        }),
+      ],
+      { msg_u1: [textPart("prt_u1", "msg_u1", "开始")], msg_a1: [textPart("prt_t1", "msg_a1", "答")] },
+    )
+    const last = rows.at(-1)!
+    expect(last.kind === "footnote" && last.footnote.tokens).toBe(3300)
+
+    const hostile = footnoteOf([
+      assistantMsg("msg_a2", "msg_u1", { tokens: { input: Number.NaN, output: "x", reasoning: -5 } as never }),
+    ])
+    expect(hostile?.tokens).toBeUndefined()
+  })
+
+  test("未完成/出错的回合不出脚注(流式中与错误回合都 fail-closed)", () => {
+    const streaming = project(
+      [userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1", { time: { created: 10 } })],
+      { msg_u1: [textPart("prt_u1", "msg_u1", "开始")], msg_a1: [textPart("prt_t1", "msg_a1", "写到一半")] },
+      "busy",
+    )
+    expect(streaming.some((row) => row.kind === "footnote")).toBe(false)
+
+    const failed = project(
+      [
+        userMsg("msg_u1", 1000),
+        assistantMsg("msg_a1", "msg_u1", { error: { name: "UnknownError", data: { message: "x" } } as never }),
+      ],
+      { msg_u1: [textPart("prt_u1", "msg_u1", "开始")], msg_a1: [textPart("prt_t1", "msg_a1", "半截")] },
+    )
+    expect(failed.some((row) => row.kind === "footnote")).toBe(false)
+  })
+})
+
+describe("#568 本回合改动汇总(S2)", () => {
+  test("userMessage.summary.diffs 投影为 diffsum 行:合计与文件行;非法条目丢弃", () => {
+    const rows = project(
+      [
+        userMsg("msg_u1", 1000, {
+          summary: {
+            diffs: [
+              { file: "AGENTS.md", additions: 96, deletions: 0 },
+              { file: "alpha-ui/button.css", additions: 8, deletions: 2 },
+              { additions: 1, deletions: 1 },
+              "junk",
+              null,
+            ] as never,
+          },
+        }),
+      ],
+      { msg_u1: [textPart("prt_u1", "msg_u1", "改一版")] },
+    )
+    const last = rows.at(-1)!
+    if (last.kind !== "diffsum") throw new Error("expected diffsum row")
+    expect(last.files).toEqual([
+      { file: "AGENTS.md", additions: 96, deletions: 0 },
+      { file: "alpha-ui/button.css", additions: 8, deletions: 2 },
+    ])
+    expect(last.additions).toBe(104)
+    expect(last.deletions).toBe(2)
+    expect(last.truncated).toBe(false)
+  })
+
+  test("fail-closed:summary 缺席/diffs 空/全非法 → 无 diffsum 行;超帽截断标记", () => {
+    expect(
+      project([userMsg("msg_u1", 1000)], { msg_u1: [textPart("prt_u1", "msg_u1", "无汇总")] }).some(
+        (row) => row.kind === "diffsum",
+      ),
+    ).toBe(false)
+    expect(turnDiffsOf(userMsg("msg_u2", 1, { summary: { diffs: [] } }))).toBeUndefined()
+    expect(turnDiffsOf(userMsg("msg_u3", 1, { summary: { diffs: [{}, null, 42] as never } }))).toBeUndefined()
+
+    const over = turnDiffsOf(
+      userMsg("msg_u4", 1, {
+        summary: {
+          diffs: Array.from({ length: TURN_DIFF_FILES_MAX + 5 }, (_, index) => ({
+            file: `f${index}.ts`,
+            additions: 1,
+            deletions: 0,
+          })),
+        },
+      }),
+    )
+    expect(over?.files).toHaveLength(TURN_DIFF_FILES_MAX)
+    expect(over?.truncated).toBe(true)
+  })
+})
+
+describe("#568 斜杠命令来源(可选 typed 接口,C7 供给)", () => {
+  test("登记按 assistant messageID 对齐到所属回合的用户行;其余回合不受影响", () => {
+    const rows = projectTimelineRows({
+      messages: [
+        userMsg("msg_u1", 1000),
+        assistantMsg("msg_a1", "msg_u1"),
+        userMsg("msg_u2", 2000),
+        assistantMsg("msg_a2", "msg_u2"),
+      ],
+      partsOf: (id) =>
+        ((
+          {
+            msg_u1: [textPart("prt_u1", "msg_u1", "普通消息")],
+            msg_u2: [textPart("prt_u2", "msg_u2", "expanded prompt body")],
+          } as Record<string, Part[]>
+        )[id] ?? []),
+      status: "idle",
+      slashOrigins: [{ assistantMessageID: "msg_a2", command: "review", arguments: "pr 12" }],
+    })
+    const users = rows.filter((row) => row.kind === "user")
+    expect(users[0]!.kind === "user" && users[0]!.slash).toBeUndefined()
+    const second = users[1]!
+    if (second.kind !== "user") throw new Error("expected user row")
+    expect(second.slash).toEqual({ command: "review", arguments: "pr 12" })
+  })
+
+  test("fail-closed:登记缺席/字段非法/对不上回合 → 无 chip;敌意超长字段被截断", () => {
+    expect(slashOriginForTurn(undefined, new Set(["msg_a1"]))).toBeUndefined()
+    expect(slashOriginForTurn([], new Set(["msg_a1"]))).toBeUndefined()
+    expect(
+      slashOriginForTurn([{ assistantMessageID: "msg_other", command: "init" }], new Set(["msg_a1"])),
+    ).toBeUndefined()
+    expect(
+      slashOriginForTurn([{ assistantMessageID: "msg_a1", command: "" }], new Set(["msg_a1"])),
+    ).toBeUndefined()
+    expect(
+      slashOriginForTurn([{ assistantMessageID: "msg_a1", command: 42 } as never], new Set(["msg_a1"])),
+    ).toBeUndefined()
+
+    const long = slashOriginForTurn(
+      [{ assistantMessageID: "msg_a1", command: "c".repeat(1000), arguments: "a".repeat(1000) }],
+      new Set(["msg_a1"]),
+    )
+    expect(long?.command).toHaveLength(SLASH_COMMAND_MAX_CHARS)
+    expect(long?.arguments).toHaveLength(SLASH_ARGUMENTS_MAX_CHARS)
   })
 })

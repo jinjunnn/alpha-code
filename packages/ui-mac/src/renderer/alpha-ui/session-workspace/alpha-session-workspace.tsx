@@ -72,7 +72,7 @@ export function AlphaSessionWorkspace() {
       <SessionLiveProvider value={live}>
         <SessionWorkspaceShell
           live={live}
-          timeline={<AlphaSessionTimeline />}
+          timeline={(rail) => <AlphaSessionTimeline rail={rail} />}
           panels={{
             review: (rail) => <SessionRailReviewPanel live={live} rail={rail} />,
             files: (rail) => <SessionRailFiles live={live} rail={rail} />,

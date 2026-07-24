@@ -1215,6 +1215,13 @@ export const dict = {
   "alpha.timeline.badgeMove": "Moved",
   "alpha.timeline.badgeRead": "Read",
   "alpha.timeline.badgeWrite": "Write",
+  "alpha.timeline.openInPanel": "Open in panel",
+  "alpha.timeline.copyResponse": "Copy response",
+  "alpha.timeline.tokens": "{{tokens}} tokens",
+  "alpha.timeline.turnDiffs": "Changes this turn · {{count}} files",
+  "alpha.timeline.slashCommand": "Ran command ·",
+  "alpha.timeline.slashViewPrompt": "View expanded prompt",
+  "alpha.timeline.diagError": "ERR",
 
   "alpha.terminal.tabs": "Terminal tabs",
   "alpha.terminal.titleNumbered": "Terminal {{number}}",

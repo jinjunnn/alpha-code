@@ -482,6 +482,75 @@ export function extractHttpUrls(text: string): string[] {
   return result
 }
 
+// ── 「在面板打开」pill(T8):write/edit 卡头的文件目标 ──────────────────────
+/** 路径帽:超长路径不进 intent(截断的路径指向错误目标,fail-closed 无 pill)。 */
+export const OPEN_TARGET_MAX_CHARS = 1_024
+
+/** write/edit 卡的面板打开目标 = 原始 input.filePath;其余工具/非法路径 → 无 pill。 */
+export function openTargetOf(part: ToolPart): string | undefined {
+  const kind = toolCardKindOf(part.tool)
+  if (kind !== "write" && kind !== "edit") return undefined
+  const filePath = inputOf(part).filePath
+  if (typeof filePath !== "string" || filePath.length === 0 || filePath.length > OPEN_TARGET_MAX_CHARS) return undefined
+  return filePath
+}
+
+// ── 诊断行(T19):edit/write 完成态 metadata.diagnostics 的有界投影 ─────────
+export const DIAG_MAX_ROWS = 8
+
+export interface DiagnosticRow {
+  file: string
+  line?: number
+  message: string
+}
+
+function normalizedPath(path: string): string {
+  return path.replaceAll("\\", "/")
+}
+
+/**
+ * 只取本卡文件的 ERROR 级(severity=1)诊断,与上游 report() 同口径;条数帽
+ * (DIAG_MAX_ROWS)+ 扫描预算(TOOL_LIST_SCAN_MAX)+ 单条帽(cappedItem),I7。
+ * 文件对不上/形状非法 → 空(fail-closed 不渲染)。
+ */
+export function diagnosticsOf(part: ToolPart): { rows: DiagnosticRow[]; truncated: boolean } {
+  const none = { rows: [], truncated: false }
+  const kind = toolCardKindOf(part.tool)
+  if (kind !== "write" && kind !== "edit") return none
+  if (part.state.status !== "completed") return none
+  const filePath = inputOf(part).filePath
+  if (typeof filePath !== "string" || filePath.length === 0) return none
+  const diagnostics = metadataOf(part).diagnostics
+  if (typeof diagnostics !== "object" || diagnostics === null) return none
+  const wanted = normalizedPath(filePath)
+  const entry = Object.entries(diagnostics as Record<string, unknown>).find(
+    ([key]) => normalizedPath(key) === wanted,
+  )?.[1]
+  if (!Array.isArray(entry)) return none
+  const file = cappedItem(basenameOf(filePath))
+  const rows: DiagnosticRow[] = []
+  let truncated = false
+  for (let index = 0; index < entry.length; index += 1) {
+    if (index >= TOOL_LIST_SCAN_MAX || rows.length >= DIAG_MAX_ROWS) {
+      truncated = true
+      break
+    }
+    const item = entry[index]
+    if (typeof item !== "object" || item === null) continue
+    const record = item as { severity?: unknown; message?: unknown; range?: { start?: { line?: unknown } } }
+    if (record.severity !== 1) continue
+    const message = stringOf(record.message)
+    if (!message) continue
+    const line = finiteOf(record.range?.start?.line)
+    rows.push({
+      file,
+      line: line === undefined ? undefined : Math.max(0, Math.floor(line)) + 1,
+      message: cappedItem(message),
+    })
+  }
+  return { rows, truncated }
+}
+
 // ── 分支专属信息 ────────────────────────────────────────────────────────────
 export interface TaskCardInfo {
   description?: string

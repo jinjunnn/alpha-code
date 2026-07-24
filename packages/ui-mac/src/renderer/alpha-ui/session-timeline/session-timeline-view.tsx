@@ -13,6 +13,7 @@ import {
   TimelineArtifactRows,
   TimelineMediaRow,
   TimelineToolCard,
+  TurnDiffSummaryRow,
   TurnErrorCard,
 } from "./cards/tool-cards"
 import { TimelineIntentsContext, type TimelineIntents } from "./cards/timeline-intents"
@@ -62,7 +63,7 @@ export interface SessionTimelineViewProps {
   onLoadOlder: () => Promise<void>
   /** settling 生命周期上限(测试注入用;缺省 SETTLE_TIMEOUT_MS)。 */
   settleTimeoutMs?: number
-  /** C6 卡片交互意图(可选):focusArtifact 接线归收口;openSession 由绑定层供给。 */
+  /** 卡片交互意图(可选):#568 起由绑定层接 C4 rail api;handler 缺席即降级纯展示。 */
   intents?: TimelineIntents
 }
 
@@ -290,6 +291,8 @@ function TimelineRowView(props: { row: TimelineRow }) {
   if (row.kind === "turnError") return <TurnErrorCard row={row} />
   if (row.kind === "divider") return <DividerRow row={row} />
   if (row.kind === "thinking") return <ThinkingRow row={row} />
+  if (row.kind === "footnote") return <FootnoteRow row={row} />
+  if (row.kind === "diffsum") return <TurnDiffSummaryRow row={row} />
   // fail-closed:未知行类型不渲染任何内容。
   return null
 }
@@ -298,6 +301,69 @@ function TurnRow(props: { row: Extract<TimelineRow, { kind: "turn" }> }) {
   return (
     <div class="a-tl-row a-tl-turn" data-alpha-timeline-row="turn">
       {formatTime(props.row.createdAt)} · {t("alpha.timeline.newTurn")}
+    </div>
+  )
+}
+
+// ── 回合末富脚注(A6/A7):agent·model·时长·tokens + hover 复制;字段诚实缺席 ──
+function formatDurationSeconds(ms: number): string {
+  const seconds = ms / 1000
+  if (seconds < 10) return (Math.round(seconds * 10) / 10).toString()
+  return Math.round(seconds).toString()
+}
+
+function formatTokens(count: number): string {
+  if (count >= 1000) return `${Math.round(count / 100) / 10}k`
+  return String(count)
+}
+
+function FootnoteRow(props: { row: Extract<TimelineRow, { kind: "footnote" }> }) {
+  const footnote = () => props.row.footnote
+  // 复制动作:剪贴板通道缺席即不渲染按钮(fail-closed);重试/分支无 typed 通道,登记跳过。
+  const canCopy = typeof navigator !== "undefined" && !!navigator.clipboard
+  const copy = () => {
+    try {
+      void navigator.clipboard.writeText(props.row.copyText()).catch(() => {})
+    } catch {
+      // 剪贴板拒绝(权限/环境)→ 静默;不阻断时间线。
+    }
+  }
+  return (
+    <div class="a-tl-row a-tl-footnote" data-alpha-timeline-row="footnote">
+      <Show when={footnote().agent}>
+        <span class="a-tl-fn-item a-tl-fn-agent">
+          <i aria-hidden="true">{footnote().agent!.slice(0, 1).toUpperCase()}</i>
+          {footnote().agent}
+        </span>
+      </Show>
+      <Show when={footnote().model}>
+        <span class="a-tl-fn-item">{footnote().model}</span>
+      </Show>
+      <Show when={footnote().durationMs !== undefined}>
+        <span class="a-tl-fn-item a-tl-fn-num">
+          {t("alpha.timeline.reasoningDuration", { seconds: formatDurationSeconds(footnote().durationMs!) })}
+        </span>
+      </Show>
+      <Show when={footnote().tokens !== undefined}>
+        <span class="a-tl-fn-item a-tl-fn-num">
+          {t("alpha.timeline.tokens", { tokens: formatTokens(footnote().tokens!) })}
+        </span>
+      </Show>
+      <Show when={canCopy}>
+        <span class="a-tl-fn-actions">
+          <button
+            type="button"
+            title={t("alpha.timeline.copyResponse")}
+            aria-label={t("alpha.timeline.copyResponse")}
+            onClick={copy}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="9" y="9" width="11" height="11" rx="2" />
+              <path d="M5 15V5a2 2 0 0 1 2-2h10" />
+            </svg>
+          </button>
+        </span>
+      </Show>
     </div>
   )
 }
@@ -319,6 +385,36 @@ function UserRow(props: { row: Extract<TimelineRow, { kind: "user" }> }) {
     ]
     return items.filter(Boolean).join(" · ")
   }
+  // 斜杠命令 chip(U 节):展开提示词默认折叠;正文缺席则 chip 不可展开。
+  const [promptOpen, setPromptOpen] = createSignal(false)
+  const bubbleInner = () => (
+    <>
+      <For each={props.row.segments}>
+        {(segment) => (
+          <Show when={segment.kind} fallback={<span>{segment.text}</span>}>
+            <span class="a-tl-mention" data-mention={segment.kind}>
+              {segment.text}
+            </span>
+          </Show>
+        )}
+      </For>
+      <Show when={props.row.truncated}>
+        <span class="a-tl-truncated-inline">{t("alpha.timeline.truncated")}</span>
+      </Show>
+    </>
+  )
+  const chipInner = (slash: { command: string; arguments?: string }) => (
+    <>
+      <span class="a-tl-cmd-slash" aria-hidden="true">
+        /
+      </span>
+      <span class="a-tl-cmd-lab">{t("alpha.timeline.slashCommand")}</span>
+      <span class="a-tl-cmd-name">{slash.command}</span>
+      <Show when={slash.arguments}>
+        <span class="a-tl-cmd-args">{slash.arguments}</span>
+      </Show>
+    </>
+  )
   return (
     <article class="a-tl-row a-tl-user" data-alpha-timeline-row="user">
       <Show when={props.row.attachments.length > 0}>
@@ -368,21 +464,39 @@ function UserRow(props: { row: Extract<TimelineRow, { kind: "user" }> }) {
           </For>
         </div>
       </Show>
-      <Show when={props.row.text}>
-        <div class="a-tl-bubble">
-          <For each={props.row.segments}>
-            {(segment) => (
-              <Show when={segment.kind} fallback={<span>{segment.text}</span>}>
-                <span class="a-tl-mention" data-mention={segment.kind}>
-                  {segment.text}
-                </span>
-              </Show>
-            )}
-          </For>
-          <Show when={props.row.truncated}>
-            <span class="a-tl-truncated-inline">{t("alpha.timeline.truncated")}</span>
+      <Show
+        when={props.row.slash}
+        fallback={
+          <Show when={props.row.text}>
+            <div class="a-tl-bubble">{bubbleInner()}</div>
           </Show>
-        </div>
+        }
+      >
+        {(slash) => (
+          <div class="a-tl-cmd" data-alpha-timeline-slash data-open={promptOpen() ? "true" : undefined}>
+            <Show when={props.row.text} fallback={<span class="a-tl-cmd-chip">{chipInner(slash())}</span>}>
+              <button
+                type="button"
+                class="a-tl-cmd-chip"
+                aria-expanded={promptOpen()}
+                onClick={() => setPromptOpen((value) => !value)}
+              >
+                {chipInner(slash())}
+                <span class="a-tl-cmd-more">
+                  {t("alpha.timeline.slashViewPrompt")}
+                  <svg class="a-tl-cmd-chev" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M9 6l6 6-6 6" />
+                  </svg>
+                </span>
+              </button>
+            </Show>
+            <Show when={promptOpen() && props.row.text}>
+              <div class="a-tl-cmd-body">
+                <div class="a-tl-bubble">{bubbleInner()}</div>
+              </div>
+            </Show>
+          </div>
+        )}
       </Show>
       <div class="a-tl-user-meta">{meta()}</div>
     </article>

@@ -4,7 +4,7 @@
 // C6:intents 可开关(记录调用),覆盖「handler 缺席 → 行降级纯展示」的 fail-closed 合同。
 import { createSignal } from "solid-js"
 import { render } from "solid-js/web"
-import type { TimelineFocusArtifactIntent } from "./cards/timeline-intents"
+import type { TimelineFocusArtifactIntent, TimelineOpenFileIntent } from "./cards/timeline-intents"
 import type { TimelineRow } from "./timeline-model"
 import { SessionTimelineView, type SessionTimelineHistory } from "./session-timeline-view"
 
@@ -20,9 +20,14 @@ const [intentsEnabled, setIntentsEnabled] = createSignal(false)
 let loadOlderCalls = 0
 let pendingMode = false
 let pendingResolvers: Array<() => void> = []
-const intentLog: { focusArtifact: TimelineFocusArtifactIntent[]; openSession: string[] } = {
+const intentLog: {
+  focusArtifact: TimelineFocusArtifactIntent[]
+  openSession: string[]
+  openFile: TimelineOpenFileIntent[]
+} = {
   focusArtifact: [],
   openSession: [],
+  openFile: [],
 }
 
 // 稳定对象 + 反应式 getter:开关翻转时,卡片内 <Show when={intents.x}> 立即重估
@@ -33,6 +38,9 @@ const harnessIntents = {
   },
   get openSession() {
     return intentsEnabled() ? (sessionID: string) => intentLog.openSession.push(sessionID) : undefined
+  },
+  get openFile() {
+    return intentsEnabled() ? (intent: TimelineOpenFileIntent) => intentLog.openFile.push(intent) : undefined
   },
 }
 
@@ -110,5 +118,6 @@ export function resetTimelineHarness() {
   pendingMode = false
   intentLog.focusArtifact.length = 0
   intentLog.openSession.length = 0
+  intentLog.openFile.length = 0
   resolvePendingLoads()
 }
