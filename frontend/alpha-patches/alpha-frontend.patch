@@ -14,7 +14,7 @@ index faf01944..98b79564 100644
    "scripts": {
      "typecheck": "tsgo -b",
 diff --git a/packages/app/src/app.tsx b/packages/app/src/app.tsx
-index b4496ba7..32fe1c10 100644
+index b4496ba7..5be1d956 100644
 --- a/packages/app/src/app.tsx
 +++ b/packages/app/src/app.tsx
 @@ -1,7 +1,8 @@
@@ -49,7 +49,7 @@ index b4496ba7..32fe1c10 100644
  import { WslServersProvider } from "@/wsl/context"
  import DirectoryLayout, { DirectoryDataProvider } from "@/pages/directory-layout"
  import LegacyLayout from "@/pages/layout"
-@@ -66,44 +72,169 @@ import { useCheckServerHealth } from "./utils/server-health"
+@@ -66,44 +72,175 @@ import { useCheckServerHealth } from "./utils/server-health"
  import { legacySessionHref, legacySessionServer, requireServerKey, sessionHref } from "./utils/session-route"
  import { createSessionLineage } from "@/pages/session/session-lineage"
  
@@ -73,7 +73,13 @@ index b4496ba7..32fe1c10 100644
 +// SessionProviders / DraftProviders) keeps its default lifecycle. Surfaces are read
 +// once when AppInterface mounts; swapping them afterwards requires a reload — the
 +// provider tree must never hot-swap within one renderer lifetime.
-+export type MaybePreloadableComponent = Component & { preload?: () => void }
++export type MaybePreloadableComponent = Component & {
++  preload?: () => void
++  // REQ-125 (#574): a session surface may statically declare that it renders the session
++  // page's only top bar (including the window drag region). NewLayout then skips the
++  // upstream Titlebar on session routes. Absent marker = upstream Titlebar unchanged.
++  ownsTitlebar?: boolean
++}
 +
 +// The newSession leaf owns the draft page UI but not the draft lifecycle: the wrapper
 +// keeps tab/draft semantics (target server, tab swap, persisted-draft cleanup) and
@@ -245,7 +251,7 @@ index b4496ba7..32fe1c10 100644
    )
  }
  
-@@ -127,11 +258,20 @@ function TargetServerRoute(props: ParentProps) {
+@@ -127,11 +264,20 @@ function TargetServerRoute(props: ParentProps) {
    )
  }
  
@@ -271,7 +277,7 @@ index b4496ba7..32fe1c10 100644
  
  function LegacyTargetSessionRoute() {
    const params = useParams<{ serverKey: string; id: string }>()
-@@ -182,53 +322,65 @@ function LegacyServerLayout(props: ParentProps<{ serverScoped?: JSX.Element }>)
+@@ -182,53 +328,65 @@ function LegacyServerLayout(props: ParentProps<{ serverScoped?: JSX.Element }>)
    )
  }
  
@@ -382,7 +388,21 @@ index b4496ba7..32fe1c10 100644
  }
  
  function UiI18nBridge(props: ParentProps) {
-@@ -360,7 +512,7 @@ function DraftProviders(props: ParentProps) {
+@@ -338,11 +496,11 @@ function LegacyServerScopedShell(props: ServerScopedShellProps) {
+   )
+ }
+ 
+-function NewAppLayout(props: ParentProps<{ serverScoped?: JSX.Element }>) {
++function NewAppLayout(props: ParentProps<{ serverScoped?: JSX.Element; sessionOwnsTitlebar?: boolean }>) {
+   return (
+     <SelectedServerProviders>
+       <ServerScopedProviders serverScoped={props.serverScoped}>
+-        <NewLayout>{props.children}</NewLayout>
++        <NewLayout sessionOwnsTitlebar={props.sessionOwnsTitlebar}>{props.children}</NewLayout>
+       </ServerScopedProviders>
+     </SelectedServerProviders>
+   )
+@@ -360,7 +518,7 @@ function DraftProviders(props: ParentProps) {
    )
  }
  
@@ -391,7 +411,7 @@ index b4496ba7..32fe1c10 100644
    return (
      <MetaProvider>
        <Font />
-@@ -379,7 +531,7 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
+@@ -379,7 +537,7 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
              >
                <QueryProvider>
                  <WslServersProvider>
@@ -400,7 +420,7 @@ index b4496ba7..32fe1c10 100644
                      <MarkedProvider>
                        <FileComponentProvider component={File}>{props.children}</FileComponentProvider>
                      </MarkedProvider>
-@@ -530,7 +682,16 @@ export function AppInterface(props: {
+@@ -530,7 +688,19 @@ export function AppInterface(props: {
    disableHealthCheck?: boolean
    startup?: Promise<void>
    serverScoped?: JSX.Element
@@ -414,10 +434,24 @@ index b4496ba7..32fe1c10 100644
 +  // The upstream draft page reads its state from context and ignores the narrow
 +  // surface props, so it satisfies the contract without changes.
 +  const DraftRoute = createDraftRoute(props.surfaces?.newSession ?? (NewSession as unknown as DraftSurfaceComponent))
++  // REQ-125 (#574): resolved once with the surfaces — when the injected session leaf owns its
++  // top bar, the shared NewLayout drops the upstream Titlebar on session routes (single header).
++  const sessionOwnsTitlebar = props.surfaces?.session?.ownsTitlebar === true
    // The visual new layout lives in the router root so it remains mounted across
    // route changes. Draft and session routes override only their server-bound data
    // providers beneath it.
-@@ -569,7 +730,13 @@ export function AppInterface(props: {
+@@ -561,7 +731,9 @@ export function AppInterface(props: {
+                       <NotificationProvider>
+                         <ServerShell>
+                           <Show when={useSettings().general.newLayoutDesigns()} fallback={routerProps.children}>
+-                            <NewAppLayout serverScoped={props.serverScoped}>{routerProps.children}</NewAppLayout>
++                            <NewAppLayout serverScoped={props.serverScoped} sessionOwnsTitlebar={sessionOwnsTitlebar}>
++                              {routerProps.children}
++                            </NewAppLayout>
+                           </Show>
+                         </ServerShell>
+                       </NotificationProvider>
+@@ -569,7 +741,13 @@ export function AppInterface(props: {
                    </TabsProvider>
                  )}
                >
@@ -432,7 +466,7 @@ index b4496ba7..32fe1c10 100644
                </Dynamic>
              </Show>
            </ConnectionGate>
-@@ -579,8 +746,18 @@ export function AppInterface(props: {
+@@ -579,8 +757,18 @@ export function AppInterface(props: {
    )
  }
  
@@ -452,7 +486,7 @@ index b4496ba7..32fe1c10 100644
  
    return (
      <>
-@@ -592,7 +769,7 @@ function Routes(props: { serverScoped?: JSX.Element }) {
+@@ -592,7 +780,7 @@ function Routes(props: { serverScoped?: JSX.Element }) {
          <Show when={!settings.general.newLayoutDesigns()}>
            {
              <>
@@ -461,7 +495,7 @@ index b4496ba7..32fe1c10 100644
                <Route path="/server/:serverKey/session/:id" component={LegacyTargetSessionRoute} />
              </>
            }
-@@ -603,7 +780,7 @@ function Routes(props: { serverScoped?: JSX.Element }) {
+@@ -603,7 +791,7 @@ function Routes(props: { serverScoped?: JSX.Element }) {
          </Route>
        </Route>
        <Show when={settings.general.newLayoutDesigns()}>
@@ -1030,6 +1064,64 @@ index 215696d7..ca677b34 100644
        >
          <div
            classList={{
+diff --git a/packages/app/src/pages/layout-new.tsx b/packages/app/src/pages/layout-new.tsx
+index c6fed8f6..4ce6fd51 100644
+--- a/packages/app/src/pages/layout-new.tsx
++++ b/packages/app/src/pages/layout-new.tsx
+@@ -1,19 +1,26 @@
+-import { createEffect, Suspense, type ParentProps } from "solid-js"
++import { createEffect, Show, Suspense, type ParentProps } from "solid-js"
+ import { createStore } from "solid-js/store"
+ import { useNavigate } from "@solidjs/router"
+ import { DebugBar } from "@/components/debug-bar"
+ import { TabsInfoPopup } from "@/components/help-button"
+ import { Titlebar, type TitlebarUpdate } from "@/components/titlebar"
++import { useLayout } from "@/context/layout"
+ import { usePlatform } from "@/context/platform"
+ import { setNavigate } from "@/utils/notification-click"
+ import { setV2Toast, ToastRegion } from "@/utils/toast"
+ 
+-export default function NewLayout(props: ParentProps) {
++export default function NewLayout(props: ParentProps<{ sessionOwnsTitlebar?: boolean }>) {
+   const platform = usePlatform()
++  const layout = useLayout()
+   const navigate = useNavigate()
+   setNavigate(navigate)
+   const [state, setState] = createStore({ debugTools: true })
+ 
++  // REQ-125 (#574): an injected session surface that owns its top bar replaces the Titlebar
++  // on session routes — exactly one header there. Every other route (home, drafts) and the
++  // no-marker default keep the upstream Titlebar untouched.
++  const titlebarHidden = () => props.sessionOwnsTitlebar === true && layout.route().type === "session"
++
+   createEffect(() => setV2Toast(true))
+ 
+   const update: TitlebarUpdate = {
+@@ -34,14 +41,16 @@ export default function NewLayout(props: ParentProps) {
+         "padding-bottom": "env(safe-area-inset-bottom, 0px)",
+       }}
+     >
+-      <Titlebar
+-        update={update}
+-        debugTools={
+-          import.meta.env.DEV
+-            ? { visible: state.debugTools, toggle: () => setState("debugTools", (value) => !value) }
+-            : undefined
+-        }
+-      />
++      <Show when={!titlebarHidden()}>
++        <Titlebar
++          update={update}
++          debugTools={
++            import.meta.env.DEV
++              ? { visible: state.debugTools, toggle: () => setState("debugTools", (value) => !value) }
++              : undefined
++          }
++        />
++      </Show>
+       <main class="flex-1 min-h-0 min-w-0 overflow-x-hidden flex flex-col items-start contain-strict">
+         <Suspense>{props.children}</Suspense>
+       </main>
 diff --git a/packages/app/src/pages/layout.tsx b/packages/app/src/pages/layout.tsx
 index 812a479b..6e726163 100644
 --- a/packages/app/src/pages/layout.tsx

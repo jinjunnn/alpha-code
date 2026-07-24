@@ -661,3 +661,17 @@ svg[viewBox="0 0 720.002 129.001"] {
   gap: 1px;
   /* drag handled by base.css via data-tauri-drag-region (buttons auto no-drag) */
 }
+
+/* #574 单一顶栏(alpha 会话工作区挂载时):
+ * 1) 这对浮动开关触发的 terminal.toggle / review.toggle 由上游 session 叶注册,alpha 会话面
+ *    该叶不挂载 = 死控件;工作区 46px 顶栏自带活的终端/右栏开关(session-workspace-shell),
+ *    浮动对隐藏,避免叠在唯一顶栏上。上游面(legacy session)不含工作区节点,零回归。 */
+body:has([data-alpha-session-workspace]) .alpha-topbar-right {
+  display: none;
+}
+/* 2) 侧栏折叠时,工作区顶栏成为窗口最上沿:左侧让位 macOS 红绿灯(trafficLightPosition
+ *    x:12,windows.ts)与本文件的浮动工具簇(其右缘 = sidebar 宽 − 10px)。内容起点对齐
+ *    侧栏展开态(sidebar 宽 + 顶栏自身 14px 左 padding),折叠/展开切换不跳字。 */
+body[data-alpha-sidebar="collapsed"] .a-swk-topbar {
+  padding-left: calc(var(--alpha-sidebar-w) + 14px);
+}

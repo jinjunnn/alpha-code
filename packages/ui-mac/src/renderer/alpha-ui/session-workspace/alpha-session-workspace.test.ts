@@ -100,6 +100,21 @@ describe("REQ-125 C1b I1 and Recovery static ratchets", () => {
     expect(composerMount).toContain("a-swk-composer-pending")
   })
 
+  test("workspace owns the single session-page titlebar and its drag region (#574)", () => {
+    // 静态标记:session surface 声明自带顶栏 → 上游 NewLayout(pin+patch 通道)在 session
+    // 路由跳过窗口 Titlebar;标记缺席(legacy / 上游默认叶)= Titlebar 原样。
+    expect(tsx).toContain("Surface.ownsTitlebar = true")
+    expect(upstreamApp).toContain("props.surfaces?.session?.ownsTitlebar === true")
+    // 顶栏即窗口拖拽区;交互件全部从拖拽区挖出。
+    expect(css.match(/\.a-swk-topbar \{[^}]*\}/)?.[0]).toContain("app-region: drag")
+    expect(css).toMatch(/\.a-swk-topbar :is\([^)]*button[^)]*\) \{[^}]*app-region: no-drag/)
+    // 浮动终端/审查开关(上游命令,alpha 会话面死控件)在工作区挂载时隐藏;
+    // 侧栏折叠时顶栏左侧让位红绿灯 + 浮动工具簇。
+    const sidebarCss = readFileSync(join(import.meta.dir, "../../sidebar/sidebar.css"), "utf8")
+    expect(sidebarCss).toContain("body:has([data-alpha-session-workspace]) .alpha-topbar-right")
+    expect(sidebarCss).toContain('body[data-alpha-sidebar="collapsed"] .a-swk-topbar')
+  })
+
   test("keeps the release seam and existing Alpha Recovery boundary", () => {
     expect(rendererIndex).toContain(`if (resolved?.session.mode !== "alpha") return undefined`)
     expect(rendererIndex).toContain(`return alphaSessionWorkspaceSurface(projects)`)

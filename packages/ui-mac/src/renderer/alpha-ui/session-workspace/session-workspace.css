@@ -30,6 +30,16 @@
   border-bottom: 1px solid var(--a-border-faint);
   background: var(--a-bg-canvas);
   white-space: nowrap;
+  /* REQ-125 issue 574 单一顶栏:上游窗口 Titlebar 在 alpha 会话路由不再渲染(ownsTitlebar
+   * 静态标记,经 pin+patch 的 NewLayout 条件),本顶栏承接窗口拖拽区。 */
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+/* 交互件全部从拖拽区挖出,点击不被 OS 当成窗口拖动吃掉。 */
+.a-swk-topbar :is(button, a, input, textarea, select, [role="button"], [contenteditable]) {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 .a-swk-project-pill {

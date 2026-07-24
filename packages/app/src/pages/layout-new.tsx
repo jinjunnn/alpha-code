@@ -1,18 +1,25 @@
-import { createEffect, Suspense, type ParentProps } from "solid-js"
+import { createEffect, Show, Suspense, type ParentProps } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useNavigate } from "@solidjs/router"
 import { DebugBar } from "@/components/debug-bar"
 import { TabsInfoPopup } from "@/components/help-button"
 import { Titlebar, type TitlebarUpdate } from "@/components/titlebar"
+import { useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
 import { setNavigate } from "@/utils/notification-click"
 import { setV2Toast, ToastRegion } from "@/utils/toast"
 
-export default function NewLayout(props: ParentProps) {
+export default function NewLayout(props: ParentProps<{ sessionOwnsTitlebar?: boolean }>) {
   const platform = usePlatform()
+  const layout = useLayout()
   const navigate = useNavigate()
   setNavigate(navigate)
   const [state, setState] = createStore({ debugTools: true })
+
+  // REQ-125 (#574): an injected session surface that owns its top bar replaces the Titlebar
+  // on session routes — exactly one header there. Every other route (home, drafts) and the
+  // no-marker default keep the upstream Titlebar untouched.
+  const titlebarHidden = () => props.sessionOwnsTitlebar === true && layout.route().type === "session"
 
   createEffect(() => setV2Toast(true))
 
@@ -34,14 +41,16 @@ export default function NewLayout(props: ParentProps) {
         "padding-bottom": "env(safe-area-inset-bottom, 0px)",
       }}
     >
-      <Titlebar
-        update={update}
-        debugTools={
-          import.meta.env.DEV
-            ? { visible: state.debugTools, toggle: () => setState("debugTools", (value) => !value) }
-            : undefined
-        }
-      />
+      <Show when={!titlebarHidden()}>
+        <Titlebar
+          update={update}
+          debugTools={
+            import.meta.env.DEV
+              ? { visible: state.debugTools, toggle: () => setState("debugTools", (value) => !value) }
+              : undefined
+          }
+        />
+      </Show>
       <main class="flex-1 min-h-0 min-w-0 overflow-x-hidden flex flex-col items-start contain-strict">
         <Suspense>{props.children}</Suspense>
       </main>

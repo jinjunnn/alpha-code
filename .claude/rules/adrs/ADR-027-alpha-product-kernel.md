@@ -117,3 +117,26 @@ REQ-125 会话页 seam 基线(`docs/design/2026-07-24-session-seam-baseline.md` 
    引擎 import 仅此一处)。
 3. **回退**:从 patch 序列移除该 export 行与 re-export 文件即蒸发;消费点 typecheck
    TS2307 + seam 契约测试先红,不会静默漂移。
+
+## 修订(2026-07-24,REQ-125 #574 —— surface 静态标记 `ownsTitlebar`:session 路由单一顶栏)
+
+Owner 真机验收发现 alpha 会话页 46px 顶栏之上仍叠着上游窗口 Titlebar(双层顶栏,违反已批稿
+「单一顶栏」)。勘破:上游 Titlebar 由 `NewLayout`(`pages/layout-new.tsx`)在 **router root**
+渲染、跨全部路由常驻,不在任何叶路由内 —— 叶挂载点上移绕不过它(且会丢失 `SessionProviders`/
+`TerminalProvider` 对 #554 终端适配器的包裹)。按最简条件经 [[ADR-034]] pin+patch 通道扩一档
+seam 语义:
+
+1. **seam 形态**:`MaybePreloadableComponent` 增可选静态字段 `ownsTitlebar?: boolean`。
+   session surface 组件声明 `ownsTitlebar = true` = 该 surface 自带会话页唯一顶栏(含窗口
+   拖拽区);`AppInterface` 随 surfaces 一次性解析(严格 `=== true`),经 `NewAppLayout`
+   传入 `NewLayout`,后者仅在「标记 ∧ `layout.route().type === "session"`」时跳过上游
+   Titlebar。标记缺席(上游默认叶 / 未注入模式)与其余路由(home/draft)= 上游 Titlebar
+   原样,fail-closed 零回归。
+2. **消费面**:唯一声明点 = ui-mac `alpha-session-workspace.tsx` 的
+   `alphaSessionWorkspaceSurface`(工作区顶栏同步承接 `-webkit-app-region: drag`,交互件
+   no-drag;侧栏折叠态给 macOS 红绿灯与浮动工具簇让位 —— 见 `session-workspace.css` /
+   `sidebar.css`)。机械守卫:`surface-seam-contract.test.ts`(标记形态 + NewLayout 条件 +
+   单 Titlebar 渲染点锚点)、`alpha-session-workspace.test.ts`(声明点 + 拖拽区 CSS 锚点)、
+   `session-workspace.cases.ts`(真挂载 DOM 恰一个 header)。
+3. **回退**:从 patch 序列移除该条件与字段即蒸发(NewLayout 恢复无条件渲染 Titlebar);
+   seam 契约测试先红,不会静默漂移。

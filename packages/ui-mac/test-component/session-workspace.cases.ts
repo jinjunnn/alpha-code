@@ -77,6 +77,10 @@ describe("REQ-125 session workspace real Solid mount", () => {
 
     expect(host.querySelectorAll("[data-alpha-session-workspace]")).toHaveLength(1)
     expect(host.querySelectorAll("[data-alpha-session-workspace-topbar]")).toHaveLength(1)
+    // #574 单一顶栏:会话工作区全 DOM 恰一个 header,且它就是拖拽条(topbar 标记落在
+    // header 元素本身,session-workspace.css 以此承接 app-region: drag)。
+    expect(document.querySelectorAll("header")).toHaveLength(1)
+    expect(host.querySelector("header")!.hasAttribute("data-alpha-session-workspace-topbar")).toBe(true)
     expect(host.querySelector("[data-alpha-session-timeline-host]")).not.toBeNull()
     expect(host.querySelector("[data-alpha-session-composer-dock]")).not.toBeNull()
     expect(host.querySelector("[data-alpha-session-composer-host]")).not.toBeNull()

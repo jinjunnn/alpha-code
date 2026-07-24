@@ -91,5 +91,10 @@ export function AlphaSessionWorkspace(props: { projects: AlphaProjectsApi }) {
 }
 
 export function alphaSessionWorkspaceSurface(projects: AlphaProjectsApi): MaybePreloadableComponent {
-  return () => <AlphaSessionWorkspace projects={projects} />
+  const Surface: MaybePreloadableComponent = () => <AlphaSessionWorkspace projects={projects} />
+  // #574 单一顶栏:工作区 46px 顶栏是会话页唯一 header(自带窗口拖拽区,见
+  // session-workspace.css)。静态声明后,上游 NewLayout 在 session 路由不再渲染窗口
+  // Titlebar;home/newSession 等其余路由与未注入模式保持上游 Titlebar 原样。
+  Surface.ownsTitlebar = true
+  return Surface
 }
