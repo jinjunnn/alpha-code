@@ -74,9 +74,9 @@ describe("REQ-125 C2 I1 whitelist and token static ratchets", () => {
   })
 
   test("the shell exposes the rail slot and the workspace wires the review panel into it", () => {
-    expect(shell).toContain("SessionWorkspaceRailSlots")
-    expect(shell).toContain("props.rail?.[activePanel()]?.()")
+    expect(shell).toContain("SessionRailPanelRenderers")
+    expect(shell).toContain("renderPanel(rail)")
     expect(workspace).toContain("SessionRailReviewPanel")
-    expect(workspace).toContain("rail={{ review:")
+    expect(workspace).toContain("review: () => <SessionRailReviewPanel live={live} />")
   })
 })

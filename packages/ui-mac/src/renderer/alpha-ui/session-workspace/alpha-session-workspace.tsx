@@ -1,7 +1,10 @@
 import { ServerConnection, type MaybePreloadableComponent, useServerSDK, useServerSync } from "@opencode-ai/app"
 import { useLocation } from "@solidjs/router"
-import { createContext, createMemo, type ParentProps, useContext } from "solid-js"
+import { createContext, createEffect, createMemo, untrack, type ParentProps, useContext } from "solid-js"
 import { parseRoute } from "../../../shared/route-manifest"
+import { SessionRailArtifacts } from "../session-rail/artifacts/session-rail-artifacts"
+import { SessionRailFiles } from "../session-rail/files/session-rail-files"
+import { reviewFileChangeOf } from "../session-rail/review/review-core"
 import { SessionRailReviewPanel } from "../session-rail/review/review-panel"
 import { SurfaceBoundary } from "../surface-boundary"
 import { sameSessionIdentity, sessionLiveSnapshotOf } from "./session-workspace-core"
@@ -39,10 +42,40 @@ export function AlphaSessionWorkspace() {
     accepts: (identity) => sameSessionIdentity(identity, current()?.identity),
   }
 
+  // Review tab badge = changed-file count from the same typed diff channel the review panel
+  // consumes (C2). Keyed by sessionID in the upstream store, so a session switch swaps the
+  // count with the session (I8); undefined until the diff set is known — no badge, fail-closed.
+  const reviewCount = createMemo(() => {
+    const identity = current()?.identity
+    if (!identity) return undefined
+    const diffs = serverSync().session.data.session_diff[identity.sessionID]
+    if (!diffs) return undefined
+    let count = 0
+    for (const diff of diffs) if (reviewFileChangeOf(diff)) count += 1
+    return count
+  })
+  // Idempotent badge-level load (same guard as the review panel's): the tab strip needs the
+  // count even when the review panel has not been visited yet.
+  createEffect(() => {
+    const identity = current()?.identity
+    if (!identity) return
+    if (!serverSync().ready) return
+    if (untrack(() => serverSync().session.data.session_diff[identity.sessionID] !== undefined)) return
+    void serverSync().session.diff(identity.sessionID)
+  })
+
   return (
     <SurfaceBoundary surface="session">
       <SessionLiveProvider value={live}>
-        <SessionWorkspaceShell live={live} rail={{ review: () => <SessionRailReviewPanel live={live} /> }} />
+        <SessionWorkspaceShell
+          live={live}
+          panels={{
+            review: () => <SessionRailReviewPanel live={live} />,
+            files: (rail) => <SessionRailFiles live={live} rail={rail} />,
+            artifacts: (rail) => <SessionRailArtifacts live={live} rail={rail} />,
+          }}
+          railMeta={{ reviewCount }}
+        />
       </SessionLiveProvider>
     </SurfaceBoundary>
   )

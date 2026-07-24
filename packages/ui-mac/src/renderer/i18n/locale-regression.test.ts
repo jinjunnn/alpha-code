@@ -47,6 +47,8 @@ const EXTERNALIZED_SURFACES = [
   "alpha-ui/composer-autocomplete.tsx",
   "alpha-ui/model-picker-add.tsx",
   "alpha-ui/model-picker-core.ts",
+  "alpha-ui/session-rail/artifacts/artifacts-panel-view.tsx",
+  "alpha-ui/session-rail/files/files-view.tsx",
   "alpha-ui/session-rail/review/review-panel-view.tsx",
   "alpha-ui/session-workspace/alpha-session-workspace.tsx",
   "alpha-ui/settings.tsx",

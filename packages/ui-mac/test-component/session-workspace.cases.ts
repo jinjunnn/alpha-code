@@ -32,6 +32,7 @@ const disposers: Array<() => void> = []
 
 beforeEach(() => {
   runtime.resetSessionWorkspaceSnapshot()
+  localStorage.clear()
   document.body.replaceChildren()
 })
 
@@ -54,6 +55,17 @@ function mount() {
   document.body.append(host)
   disposers.push(solidWeb.render(() => runtime.SessionWorkspaceHarness(), host))
   return host
+}
+
+function mountPartial(panels: Parameters<typeof runtime.SessionWorkspacePartialHarness>[0]["panels"]) {
+  const host = document.createElement("div")
+  document.body.append(host)
+  disposers.push(solidWeb.render(() => runtime.SessionWorkspacePartialHarness({ panels }), host))
+  return host
+}
+
+function pointer(type: string, clientX: number) {
+  return new MouseEvent(type, { bubbles: true, cancelable: true, clientX })
 }
 
 describe("REQ-125 session workspace real Solid mount", () => {
@@ -114,5 +126,102 @@ describe("REQ-125 session workspace real Solid mount", () => {
 
     expect(status().dataset.alphaSessionStatus).toBe("running")
     expect(status().textContent).toContain("正在生成")
+  })
+
+  test("tabs fail closed while a lane has not landed its renderer", async () => {
+    const host = mountPartial({ review: () => "review-only" })
+    await flush()
+
+    const tab = (kind: string) => host.querySelector<HTMLButtonElement>(`[data-alpha-session-rail-tab='${kind}']`)!
+    expect(tab("review").disabled).toBe(false)
+    expect(tab("files").disabled).toBe(true)
+    expect(tab("terminal").disabled).toBe(true)
+    expect(tab("artifacts").disabled).toBe(true)
+
+    // The topbar terminal shortcut is the same dead end — disabled, not an empty panel.
+    const topbarButtons = host.querySelectorAll<HTMLButtonElement>(".a-swk-panel-button")
+    expect(topbarButtons[0]!.disabled).toBe(true)
+
+    tab("artifacts").click()
+    await flush()
+    expect(host.querySelector("[data-alpha-session-rail-host]")?.getAttribute("data-alpha-session-rail-panel")).toBe(
+      "review",
+    )
+  })
+
+  test("review badge and terminal dot follow the rail meta channels, fail-closed by default", async () => {
+    const host = mount()
+    await flush()
+    const reviewTab = host.querySelector<HTMLButtonElement>("[data-alpha-session-rail-tab='review']")!
+    const terminalTab = host.querySelector<HTMLButtonElement>("[data-alpha-session-rail-tab='terminal']")!
+
+    expect(reviewTab.querySelector("[data-alpha-session-review-count]")).toBeNull()
+    expect(terminalTab.querySelector("[data-alpha-terminal-any-running]")).toBeNull()
+
+    runtime.setSessionWorkspaceReviewCount(3)
+    runtime.setSessionWorkspaceTerminalRunning(true)
+    await flush()
+    expect(reviewTab.querySelector("[data-alpha-session-review-count]")!.textContent).toBe("3")
+    expect(terminalTab.querySelector("[data-alpha-terminal-any-running]")).not.toBeNull()
+
+    runtime.setSessionWorkspaceReviewCount(0)
+    runtime.setSessionWorkspaceTerminalRunning(false)
+    await flush()
+    expect(reviewTab.querySelector("[data-alpha-session-review-count]")).toBeNull()
+    expect(terminalTab.querySelector("[data-alpha-terminal-any-running]")).toBeNull()
+  })
+
+  test("width grip drags within 320-560, remembers per panel, and persists", async () => {
+    const host = mount()
+    await flush()
+    const rail = () => host.querySelector<HTMLElement>("[data-alpha-session-rail-host]")!
+    const grip = () => host.querySelector<HTMLElement>(".a-swk-rail-grip")!
+    expect(rail().style.width).toBe("400px")
+    expect(grip().getAttribute("aria-valuenow")).toBe("400")
+
+    grip().dispatchEvent(pointer("pointerdown", 1000))
+    window.dispatchEvent(pointer("pointermove", 940))
+    await flush()
+    expect(rail().style.width).toBe("460px")
+    window.dispatchEvent(pointer("pointermove", 200))
+    await flush()
+    expect(rail().style.width).toBe("560px")
+    window.dispatchEvent(pointer("pointerup", 200))
+    await flush()
+    expect(JSON.parse(localStorage.getItem("alpha-session-rail-widths-v1")!)).toEqual({ review: 560 })
+
+    // Per-panel memory: the files panel keeps its own width.
+    host.querySelector<HTMLButtonElement>("[data-alpha-session-rail-tab='files']")!.click()
+    await flush()
+    expect(rail().style.width).toBe("400px")
+
+    // Keyboard resize on the separator, clamped at the floor.
+    grip().dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }))
+    await flush()
+    expect(rail().style.width).toBe("384px")
+    expect(JSON.parse(localStorage.getItem("alpha-session-rail-widths-v1")!)).toEqual({ review: 560, files: 384 })
+
+    // Back to review: remembered width is restored.
+    host.querySelector<HTMLButtonElement>("[data-alpha-session-rail-tab='review']")!.click()
+    await flush()
+    expect(rail().style.width).toBe("560px")
+  })
+
+  test("arrow keys move between enabled tabs only", async () => {
+    const host = mount()
+    await flush()
+    const tab = (kind: string) => host.querySelector<HTMLButtonElement>(`[data-alpha-session-rail-tab='${kind}']`)!
+
+    tab("review").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }))
+    await flush()
+    expect(tab("files").classList.contains("a-swk-rail-tab--on")).toBe(true)
+
+    tab("files").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }))
+    await flush()
+    expect(tab("review").classList.contains("a-swk-rail-tab--on")).toBe(true)
+
+    tab("review").dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true, cancelable: true }))
+    await flush()
+    expect(tab("artifacts").classList.contains("a-swk-rail-tab--on")).toBe(true)
   })
 })

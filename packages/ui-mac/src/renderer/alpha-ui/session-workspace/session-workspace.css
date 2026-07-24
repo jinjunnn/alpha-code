@@ -191,15 +191,166 @@
 }
 
 .a-swk-rail-host {
+  position: relative;
   display: flex;
   flex: none;
   flex-direction: column;
-  width: min(400px, 38vw);
+  width: 400px;
   min-width: 320px;
+  max-width: 560px;
   min-height: 0;
   overflow: hidden;
   border-left: 1px solid var(--a-border-faint);
   background: var(--a-bg-subtle);
+}
+
+/* Left-edge resize hot zone: 6px, accent hairline on hover/drag/focus (approved form). */
+.a-swk-rail-grip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 3;
+  width: 6px;
+  cursor: col-resize;
+}
+
+.a-swk-rail-grip::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  background: transparent;
+  transition: background var(--a-dur-fast) var(--a-ease-out);
+}
+
+.a-swk-rail-grip:hover::after,
+.a-swk-rail-grip:focus-visible::after,
+.a-swk-rail-grip--active::after {
+  background: var(--a-accent);
+}
+
+.a-swk-rail-grip:focus-visible {
+  outline: none;
+}
+
+/* Rail tab strip — the approved switching surface for the right-rail panels (审查/文件/终端). */
+.a-swk-rail-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  height: 46px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--a-border-faint);
+  background: var(--a-bg-canvas);
+}
+
+.a-swk-rail-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: var(--a-radius-md);
+  background: transparent;
+  color: var(--a-text-secondary);
+  font-family: inherit;
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+  cursor: pointer;
+  transition:
+    background var(--a-dur-fast) var(--a-ease-out),
+    color var(--a-dur-fast) var(--a-ease-out);
+}
+
+.a-swk-rail-tab:hover {
+  background: var(--a-bg-muted);
+  color: var(--a-text);
+}
+
+.a-swk-rail-tab--on {
+  background: var(--a-accent-subtle);
+  color: var(--a-accent);
+}
+
+/* Fail-closed mid-state: a panel whose lane has not landed renders as a disabled tab. */
+.a-swk-rail-tab:disabled {
+  background: transparent;
+  color: var(--a-text-disabled);
+  cursor: default;
+}
+
+/* Count badge (review = changed-file count); tinted along with the active capsule. */
+.a-swk-rail-tab-badge {
+  flex: none;
+  padding: 0 6px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-bg-muted);
+  color: var(--a-text-tertiary);
+  font-size: var(--a-text-2xs);
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+}
+
+.a-swk-rail-tab--on .a-swk-rail-tab-badge {
+  background: color-mix(in srgb, var(--a-accent) 16%, transparent);
+  color: var(--a-accent);
+}
+
+/* Terminal breathing dot: any terminal running. */
+.a-swk-rail-tab-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--a-radius-full);
+  background: var(--a-success);
+  animation: a-swk-status-pulse 1.4s var(--a-ease-in-out) infinite;
+}
+
+.a-swk-rail-close {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--a-radius-md);
+  background: transparent;
+  color: var(--a-text-tertiary);
+  cursor: pointer;
+}
+
+.a-swk-rail-close:hover {
+  background: var(--a-bg-muted);
+  color: var(--a-text);
+}
+
+.a-swk-rail-close svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.a-swk-rail-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.a-swk-rail-panel--hidden {
+  display: none;
 }
 
 @keyframes a-swk-status-pulse {
@@ -223,17 +374,20 @@
   }
 
   .a-swk-rail-host {
-    width: min(360px, 44vw);
     min-width: 280px;
+    max-width: 44vw;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .a-swk-status--running .a-swk-status-dot {
+  .a-swk-status--running .a-swk-status-dot,
+  .a-swk-rail-tab-dot {
     animation: none;
   }
 
-  .a-swk-panel-button {
+  .a-swk-panel-button,
+  .a-swk-rail-tab,
+  .a-swk-rail-grip::after {
     transition: none;
   }
 }

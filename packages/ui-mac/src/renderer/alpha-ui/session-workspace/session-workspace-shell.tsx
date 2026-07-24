@@ -1,5 +1,12 @@
-import { createSignal, type Accessor, type JSX, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, on, Show, type Accessor, type JSX } from "solid-js"
 import { t } from "../../i18n"
+import {
+  clampRailWidth,
+  RAIL_MAX_WIDTH,
+  RAIL_MIN_WIDTH,
+  readRailWidths,
+  rememberRailWidth,
+} from "./rail-width"
 import type { AlphaSessionIdentity, AlphaSessionLiveSnapshot } from "./session-workspace-core"
 
 export interface AlphaSessionLiveContext {
@@ -7,12 +14,53 @@ export interface AlphaSessionLiveContext {
   accepts: (identity: AlphaSessionIdentity) => boolean
 }
 
-/** Right-rail panel slots; each C-ticket wires its panel here (C2: review). */
-export type SessionWorkspaceRailSlots = Partial<Record<"review" | "terminal", () => JSX.Element>>
+// REQ-125 rail state machine. Panels are isomorphic: each is one union member, one tab in the
+// rail strip, and (optionally) one injected renderer. C4 added "artifacts" as the fourth member.
+export type SessionRailPanel = "review" | "files" | "terminal" | "artifacts"
+
+/** C4 mount point for the approved timeline→artifacts linkage (rows land with #544/#449). */
+export interface ArtifactFocusRequest {
+  artifactId: string
+  /** Focus origin at request time; Esc inside the artifacts panel returns focus here. */
+  origin?: HTMLElement
+}
+
+// Narrow api handed to injected panels. `jumpToReview` implements the approved linkage contract
+// (badged file row → review panel's file card); the review lane consumes `reviewTarget`.
+// `focusArtifact` is the C4 twin for timeline artifact rows; the artifacts panel consumes
+// `artifactTarget`. Both targets reset on session switch (I8).
+export interface SessionRailApi {
+  reviewTarget: Accessor<string | undefined>
+  jumpToReview: (file: string) => void
+  artifactTarget: Accessor<ArtifactFocusRequest | undefined>
+  focusArtifact: (artifactId: string) => void
+}
+
+// Panels are injected by the workspace (which owns the app contexts) so the shell itself stays
+// context-free and harness-mountable.
+export type SessionRailPanelRenderers = Partial<Record<SessionRailPanel, (rail: SessionRailApi) => JSX.Element>>
+
+/** Tab-strip live decorations. Absent accessors fail closed: no badge, no running dot. */
+export interface SessionRailMeta {
+  /** Review tab badge — changed-file count from the C2 typed diff channel. */
+  reviewCount?: Accessor<number | undefined>
+  /** Terminal tab breathing dot — any terminal running (wired by the terminal lane). */
+  terminalRunning?: Accessor<boolean>
+}
+
+const RAIL_PANELS: readonly SessionRailPanel[] = ["review", "files", "terminal", "artifacts"]
+
+function railPanelLabel(panel: SessionRailPanel) {
+  if (panel === "review") return t("alpha.session.review")
+  if (panel === "files") return t("alpha.session.files")
+  if (panel === "terminal") return t("alpha.session.terminal")
+  return t("alpha.session.artifacts")
+}
 
 function WorkspaceTopbar(props: {
   live: AlphaSessionLiveContext
-  panel: Accessor<"review" | "terminal" | undefined>
+  panel: Accessor<SessionRailPanel | undefined>
+  terminalAvailable: boolean
   toggleRail: () => void
   toggleTerminal: () => void
 }) {
@@ -49,6 +97,7 @@ function WorkspaceTopbar(props: {
         aria-label={t("alpha.session.terminal")}
         aria-pressed={props.panel() === "terminal"}
         aria-controls="alpha-session-rail-host"
+        disabled={!props.terminalAvailable}
         onClick={props.toggleTerminal}
       >
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -74,32 +123,148 @@ function WorkspaceTopbar(props: {
   )
 }
 
-export function SessionWorkspaceShell(props: { live: AlphaSessionLiveContext; rail?: SessionWorkspaceRailSlots }) {
-  const [panel, setPanel] = createSignal<"review" | "terminal" | undefined>("review")
-  const [lastPanel, setLastPanel] = createSignal<"review" | "terminal">("review")
-  const openPanel = (next: "review" | "terminal") => {
+export function SessionWorkspaceShell(props: {
+  live: AlphaSessionLiveContext
+  panels?: SessionRailPanelRenderers
+  railMeta?: SessionRailMeta
+}) {
+  // Fail-closed tab availability: a panel whose lane has not landed a renderer cannot be
+  // opened — its tab renders disabled and every open path no-ops.
+  const available = (kind: SessionRailPanel) => props.panels?.[kind] !== undefined
+  const firstAvailable = RAIL_PANELS.find(available)
+  const [panel, setPanel] = createSignal<SessionRailPanel | undefined>(firstAvailable)
+  const [lastPanel, setLastPanel] = createSignal<SessionRailPanel | undefined>(firstAvailable)
+  // Panels visited while the rail is open stay mounted (hidden) so switching tabs does not throw
+  // away panel state (tree expansion, scroll…). Closing the rail unmounts everything.
+  const [visited, setVisited] = createSignal<readonly SessionRailPanel[]>(firstAvailable ? [firstAvailable] : [])
+  const [reviewTarget, setReviewTarget] = createSignal<string>()
+  const [artifactTarget, setArtifactTarget] = createSignal<ArtifactFocusRequest>()
+  // Per-panel rail width, persisted (approved contract: 320–560, remembered per panel).
+  const [widths, setWidths] = createSignal<Record<string, number>>(readRailWidths())
+  const [resizing, setResizing] = createSignal(false)
+  const railWidth = () => {
+    const kind = panel()
+    return clampRailWidth(kind ? widths()[kind] : undefined)
+  }
+  const openPanel = (next: SessionRailPanel) => {
+    if (!available(next)) return
     setLastPanel(next)
     setPanel(next)
+    setVisited((seen) => (seen.includes(next) ? seen : [...seen, next]))
+  }
+  const closeRail = () => {
+    setPanel(undefined)
+    setVisited([])
   }
   const toggleTerminal = () => {
     if (panel() === "terminal") {
-      setPanel(undefined)
+      closeRail()
       return
     }
     openPanel("terminal")
   }
   const toggleRail = () => {
     if (panel()) {
-      setPanel(undefined)
+      closeRail()
       return
     }
-    openPanel(lastPanel())
+    const next = lastPanel() ?? firstAvailable
+    if (next) openPanel(next)
   }
+  const rail: SessionRailApi = {
+    reviewTarget,
+    jumpToReview: (file) => {
+      setReviewTarget(file)
+      openPanel("review")
+    },
+    artifactTarget,
+    focusArtifact: (artifactId) => {
+      const active = document.activeElement
+      setArtifactTarget({ artifactId, origin: active instanceof HTMLElement ? active : undefined })
+      openPanel("artifacts")
+    },
+  }
+
+  // I8: linkage targets are session-scoped — a session switch drops them so a stale jump can
+  // never land in another session's panel.
+  const identityKey = createMemo(() => {
+    const identity = props.live.current()?.identity
+    if (!identity) return undefined
+    return `${identity.serverKey}\u0000${identity.directory}\u0000${identity.sessionID}`
+  })
+  createEffect(
+    on(
+      identityKey,
+      () => {
+        setReviewTarget(undefined)
+        setArtifactTarget(undefined)
+      },
+      { defer: true },
+    ),
+  )
+
+  const enabledPanels = () => RAIL_PANELS.filter(available)
+  const onTabKey = (event: KeyboardEvent) => {
+    const list = enabledPanels()
+    const active = panel()
+    if (!active || list.length === 0) return
+    const index = Math.max(0, list.indexOf(active))
+    let next: number | null = null
+    if (event.key === "ArrowRight") next = (index + 1) % list.length
+    else if (event.key === "ArrowLeft") next = (index + list.length - 1) % list.length
+    else if (event.key === "Home") next = 0
+    else if (event.key === "End") next = list.length - 1
+    if (next === null) return
+    event.preventDefault()
+    const kind = list[next]!
+    openPanel(kind)
+    document.getElementById(`alpha-session-rail-tab-${kind}`)?.focus()
+  }
+
+  const applyWidth = (kind: SessionRailPanel, value: number) => {
+    setWidths((current) => ({ ...current, [kind]: clampRailWidth(value) }))
+  }
+  const startResize = (event: PointerEvent) => {
+    const kind = panel()
+    if (!kind) return
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = railWidth()
+    setResizing(true)
+    const move = (ev: PointerEvent) => applyWidth(kind, startWidth + (startX - ev.clientX))
+    const stop = () => {
+      window.removeEventListener("pointermove", move)
+      window.removeEventListener("pointerup", stop)
+      setResizing(false)
+      rememberRailWidth(kind, clampRailWidth(widths()[kind] ?? startWidth))
+    }
+    window.addEventListener("pointermove", move)
+    window.addEventListener("pointerup", stop)
+  }
+  const onGripKey = (event: KeyboardEvent) => {
+    const kind = panel()
+    if (!kind) return
+    const step = event.key === "ArrowLeft" ? 16 : event.key === "ArrowRight" ? -16 : 0
+    if (step === 0) return
+    event.preventDefault()
+    const next = clampRailWidth(railWidth() + step)
+    applyWidth(kind, next)
+    rememberRailWidth(kind, next)
+  }
+
+  const reviewCount = () => props.railMeta?.reviewCount?.()
+  const terminalRunning = () => props.railMeta?.terminalRunning?.() === true
 
   return (
     <div class="a-ui a-swk-root" data-alpha-session-workspace>
       <main class="a-swk-main">
-        <WorkspaceTopbar live={props.live} panel={panel} toggleRail={toggleRail} toggleTerminal={toggleTerminal} />
+        <WorkspaceTopbar
+          live={props.live}
+          panel={panel}
+          terminalAvailable={available("terminal")}
+          toggleRail={toggleRail}
+          toggleTerminal={toggleTerminal}
+        />
         <section
           class="a-swk-timeline-host"
           data-alpha-session-timeline-host
@@ -121,8 +286,79 @@ export function SessionWorkspaceShell(props: { live: AlphaSessionLiveContext; ra
             data-alpha-session-rail-host
             data-alpha-session-rail-panel={activePanel()}
             aria-label={t("alpha.session.railHost")}
+            style={{ width: `${railWidth()}px` }}
           >
-            {props.rail?.[activePanel()]?.()}
+            <div
+              class="a-swk-rail-grip"
+              classList={{ "a-swk-rail-grip--active": resizing() }}
+              role="separator"
+              aria-orientation="vertical"
+              aria-label={t("alpha.session.railResize")}
+              aria-valuemin={RAIL_MIN_WIDTH}
+              aria-valuemax={RAIL_MAX_WIDTH}
+              aria-valuenow={railWidth()}
+              tabIndex={0}
+              onPointerDown={startResize}
+              onKeyDown={onGripKey}
+            />
+            <div class="a-swk-rail-tabs" role="tablist" aria-label={t("alpha.session.railTabs")}>
+              <For each={RAIL_PANELS}>
+                {(kind) => (
+                  <button
+                    type="button"
+                    role="tab"
+                    id={`alpha-session-rail-tab-${kind}`}
+                    class="a-swk-rail-tab"
+                    classList={{ "a-swk-rail-tab--on": activePanel() === kind }}
+                    aria-selected={activePanel() === kind}
+                    aria-controls={`alpha-session-rail-panel-${kind}`}
+                    data-alpha-session-rail-tab={kind}
+                    disabled={!available(kind)}
+                    tabIndex={activePanel() === kind ? 0 : -1}
+                    onClick={() => openPanel(kind)}
+                    onKeyDown={onTabKey}
+                  >
+                    <Show when={kind === "terminal" && terminalRunning()}>
+                      <span class="a-swk-rail-tab-dot" data-alpha-terminal-any-running aria-hidden="true" />
+                    </Show>
+                    {railPanelLabel(kind)}
+                    <Show when={kind === "review" && (reviewCount() ?? 0) > 0}>
+                      <span class="a-swk-rail-tab-badge" data-alpha-session-review-count>
+                        {reviewCount()}
+                      </span>
+                    </Show>
+                  </button>
+                )}
+              </For>
+              <button
+                type="button"
+                class="a-swk-rail-close"
+                aria-label={t("alpha.session.closeRail")}
+                onClick={closeRail}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M9 6l6 6-6 6" />
+                </svg>
+              </button>
+            </div>
+            <For each={visited()}>
+              {(kind) => {
+                const renderPanel = props.panels?.[kind]
+                if (!renderPanel) return undefined
+                return (
+                  <div
+                    id={`alpha-session-rail-panel-${kind}`}
+                    class="a-swk-rail-panel"
+                    role="tabpanel"
+                    aria-labelledby={`alpha-session-rail-tab-${kind}`}
+                    data-alpha-session-rail-panel-host={kind}
+                    classList={{ "a-swk-rail-panel--hidden": panel() !== kind }}
+                  >
+                    {renderPanel(rail)}
+                  </div>
+                )
+              }}
+            </For>
           </aside>
         )}
       </Show>
