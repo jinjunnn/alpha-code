@@ -54,6 +54,7 @@ import {
   DEFAULT_AGENT,
   failComposerModelProjection,
   invalidateComposerModelProjection,
+  observeSessionAgent,
   pushedAgentFor,
   recordPushedAgent,
   resetComposerModelProjection,
@@ -1062,9 +1063,13 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       //   (提示等当前任务结束);无档位变化的发送正常排队。
       // ③ 退出 plan/readonly:期望档回空时,若会话档仍是本 composer 推送的档,切回引擎
       //   默认档(账本只回滚自己写过的,不碰用户在别处设置的档)。
-      const agentNow = props.sessionDock?.sessionAgent()
-      const pushedBefore = pushedAgentFor(sid)
-      const desiredAgent = req.agent ?? (pushedBefore !== undefined && agentNow === pushedBefore ? DEFAULT_AGENT : undefined)
+      // 发送前核验观测值:确认回声 / 判漂移(dock 的持续侦听之外的兜底;见 composer-state)。
+      const observedAgent = props.sessionDock?.sessionAgent()
+      observeSessionAgent(sid, observedAgent)
+      const entryBefore = pushedAgentFor(sid)
+      // 有效当前档:switchAgent 已被引擎受理但 typed sync 回声未达时,以账本为准。
+      const agentNow = entryBefore !== undefined && !entryBefore.confirmed ? entryBefore.agent : observedAgent
+      const desiredAgent = req.agent ?? (entryBefore !== undefined ? DEFAULT_AGENT : undefined)
       const needsAgentSwitch = desiredAgent !== undefined && desiredAgent !== (agentNow ?? DEFAULT_AGENT)
       if (needsAgentSwitch && running()) {
         pushToast({
@@ -1095,13 +1100,21 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         .catch(() => undefined)
       if (admitted === undefined || admitted.error !== undefined || !admitted.data) {
         if (rollbackAgent !== undefined) {
-          // 提交失败 → 回滚档位;回滚也失败时账本保持与真实会话档一致(下次发送经账本自愈),
-          // 失败本身已如实提示,不静默。
-          const rolled = await c.v2.session
-            .switchAgent({ sessionID: sid, agent: rollbackAgent })
-            .catch(() => ({ error: new Error("switch agent rollback failed") }))
-          if ((rolled as { error?: unknown } | undefined)?.error === undefined) {
-            recordPushedAgent(sid, pushedBefore ?? null)
+          // CAS 回滚(审计第 3 轮 Major):重读会话档,只有仍是 composer 刚设的 desired
+          // (或回声在途的发送前旧值)才回滚;期间用户在别处改档(第三值)则不覆盖用户
+          // 选择,只放弃自己的账本。回滚失败时账本与真实档保持一致(自愈),失败已如实提示。
+          const agentAtFailure = props.sessionDock?.sessionAgent()
+          const foreign =
+            agentAtFailure !== undefined && agentAtFailure !== desiredAgent && agentAtFailure !== rollbackAgent
+          if (foreign) {
+            recordPushedAgent(sid, null)
+          } else {
+            const rolled = await c.v2.session
+              .switchAgent({ sessionID: sid, agent: rollbackAgent })
+              .catch(() => ({ error: new Error("switch agent rollback failed") }))
+            if ((rolled as { error?: unknown } | undefined)?.error === undefined) {
+              recordPushedAgent(sid, entryBefore?.agent ?? null)
+            }
           }
         }
         pushToast({ kind: "error", title: t("alpha.composer.sendFailed") })

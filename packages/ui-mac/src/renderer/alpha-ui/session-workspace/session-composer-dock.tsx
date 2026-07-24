@@ -15,9 +15,9 @@ import { unwrap } from "solid-js/store"
 import { t } from "../../i18n"
 import type { AlphaProjectsApi } from "../../sidebar/use-projects"
 import { AlphaComposer, type ComposerSessionDockApi, type ComposerSlashCapture } from "../alpha-composer"
+import { observeSessionAgent } from "../composer-state"
 import { createModelContract } from "../model-contract"
-import { SessionApprovalCard } from "./session-approval-card"
-import { bindSessionApprovalClaim } from "./session-approval-claim"
+import { SessionApprovalHost } from "./session-approval-card"
 import {
   contextUsagePercent,
   headPendingQuestion,
@@ -92,12 +92,9 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
     ),
   )
 
-  // 呈现权先立后破(Major:无「两边都不呈现」窗口):仅当本 dock 的 feed 就绪、真能呈现
-  // 审批时才接管;list 在途/失败期间不夺权,watcher 凭自身通道继续兜底。
-  bindSessionApprovalClaim({
-    sessionID: () => identity()?.sessionID,
-    ready: () => feed()?.state.ready ?? false,
-  })
+  // 呈现权先立后破 + 唯一 owner(审计第 2/3 轮):claim 与审批卡渲染封装在
+  // SessionApprovalHost —— 仅 feed 就绪才持 claim;多 dock 并存时按登记序恰一个 owner
+  // 渲染审批卡;list 在途/失败期间不夺权,watcher 凭自身通道继续兜底。
 
   // fail-closed:feed 未就绪(缺席/读不到)= 无审批可呈现,亦无任何放行动作。
   // unwrap:store 代理的 $PROXY 符号会破坏 permissionRequestFacts 的严格键集核验,
@@ -151,6 +148,15 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
     return contextUsagePercent(serverSync().session.data.message[bound.sessionID], listed.models)
   })
 
+  /* ── 档位账本漂移侦听(审计第 3 轮 Major):持续观测 typed session info 的会话档,
+        composer 推送的档一经他处改写立即放弃所有权 —— 用户此后手动切回同名档不会被
+        误判为 composer 的旧写入(确认/漂移语义见 composer-state.observeSessionAgent)── */
+  createEffect(() => {
+    const bound = identity()
+    if (!bound) return
+    observeSessionAgent(bound.sessionID, serverSync().session.data.info[bound.sessionID]?.agent)
+  })
+
   /* ── 「始终允许」授权所需的项目身份:取会话自身的精确 projectID(typed session info,
         与独立 Permission surface 的当前项目同源;sandbox 会话因此同样可用)────────────── */
   const projectID = createMemo(() => {
@@ -183,19 +189,17 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
 
   return (
     <div class="a-swk-dock" data-alpha-session-dock>
-      <Show when={approval()} keyed>
-        {(request) => (
-          <SessionApprovalCard
-            request={request}
-            projectID={projectID()}
-            onSubmit={(command) => {
-              const active = feed()
-              if (!active) return Promise.reject(new Error("permission feed is not ready"))
-              return active.reply(request.id, command).then(() => undefined)
-            }}
-          />
-        )}
-      </Show>
+      <SessionApprovalHost
+        sessionID={() => identity()?.sessionID}
+        ready={() => feed()?.state.ready ?? false}
+        approval={approval}
+        projectID={projectID}
+        onSubmit={(requestID, command) => {
+          const active = feed()
+          if (!active) return Promise.reject(new Error("permission feed is not ready"))
+          return active.reply(requestID, command).then(() => undefined)
+        }}
+      />
       <Show when={question()} keyed>
         {(request) => (
           <SessionQuestionCard

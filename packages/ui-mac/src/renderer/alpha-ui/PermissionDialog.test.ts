@@ -15,7 +15,7 @@ import type { createComponent } from "solid-js"
 import type { render } from "solid-js/web"
 import type { createPermissionDecisionCommand, PermissionDialog } from "./PermissionDialog"
 import type { PermissionWatcher } from "./permission-watcher"
-import type { SessionApprovalCard } from "./session-workspace/session-approval-card"
+import type { SessionApprovalCard, SessionApprovalHost } from "./session-workspace/session-approval-card"
 import type {
   claimSessionApprovalDock,
   resetSessionApprovalClaim,
@@ -30,6 +30,7 @@ type TestRuntime = {
   PermissionDialog: typeof PermissionDialog
   PermissionWatcher: typeof PermissionWatcher
   SessionApprovalCard: typeof SessionApprovalCard
+  SessionApprovalHost: typeof SessionApprovalHost
   claimSessionApprovalDock: typeof claimSessionApprovalDock
   resetSessionApprovalClaim: typeof resetSessionApprovalClaim
   sessionApprovalDockClaimed: typeof sessionApprovalDockClaimed
@@ -471,11 +472,11 @@ describe("Alpha Permission watcher reconciliation", () => {
     expect(replies).toEqual([])
     expect(document.querySelector("[role='dialog']")).not.toBeNull()
 
-    const release = runtime.claimSessionApprovalDock(request.sessionID)
+    const claim = runtime.claimSessionApprovalDock(request.sessionID)
     await flush()
     expect(document.querySelector("[role='dialog']")).toBeNull()
 
-    release()
+    claim.release()
     await flush()
     expect(document.querySelector("[role='dialog']")).not.toBeNull()
     expect(replies).toEqual([])
@@ -507,6 +508,53 @@ describe("Alpha Permission watcher reconciliation", () => {
     expect(listCalls).toBe(2)
     expect(document.querySelector('[data-permission-fact="resources"]')?.textContent).toContain("new/**")
     expect(document.querySelector("[role='dialog']")?.textContent).not.toContain("old/**")
+  })
+})
+
+describe("Session approval host ownership (two docks, real Solid render)", () => {
+  function mountHost(sessionID: string, approval: () => PermissionV2Request | undefined) {
+    const host = document.createElement("div")
+    document.body.append(host)
+    const dispose = runtime.render(
+      () =>
+        runtime.createComponent(runtime.SessionApprovalHost, {
+          sessionID: () => sessionID,
+          ready: () => true,
+          approval,
+          projectID: () => "prj_alpha",
+          onSubmit: async () => {},
+        }),
+      host,
+    )
+    disposers.push(dispose)
+    return { host, dispose }
+  }
+
+  test("同会话双 dock 并存:恰一份审批 DOM;owner 卸载后继任者接管(审计 R3 Major)", async () => {
+    const approval = () => request
+    const first = mountHost(request.sessionID, approval)
+    const second = mountHost(request.sessionID, approval)
+    await flush()
+
+    // 双宿主同会话同请求:登记序首个当选 owner,审批卡恰一份。
+    expect(document.querySelectorAll(`[data-alpha-session-approval="${request.id}"]`)).toHaveLength(1)
+    expect(first.host.querySelector("[data-alpha-session-approval]")).not.toBeNull()
+    expect(second.host.querySelector("[data-alpha-session-approval]")).toBeNull()
+    // 接管期间 watcher 让位。
+    expect(runtime.sessionApprovalDockClaimed(request.sessionID)).toBe(true)
+
+    // owner 卸载 → 按登记序继任,仍恰一份审批 DOM,接管态不中断。
+    first.dispose()
+    await flush()
+    expect(document.querySelectorAll(`[data-alpha-session-approval="${request.id}"]`)).toHaveLength(1)
+    expect(second.host.querySelector("[data-alpha-session-approval]")).not.toBeNull()
+    expect(runtime.sessionApprovalDockClaimed(request.sessionID)).toBe(true)
+
+    // 末位宿主卸载 → 接管解除,watcher 恢复兜底资格。
+    second.dispose()
+    await flush()
+    expect(document.querySelectorAll("[data-alpha-session-approval]")).toHaveLength(0)
+    expect(runtime.sessionApprovalDockClaimed(request.sessionID)).toBe(false)
   })
 })
 

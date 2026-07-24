@@ -33,26 +33,47 @@ export const INTERNAL_AGENTS = new Set(["alpha-automation", "alpha-automation-st
  * v2 引擎无 per-prompt agent(SessionInput 只存 prompt+delivery),档位是会话级属性;
  * composer 在发送前经 typed switchAgent 落档。本账本只记「composer 自己推送的非默认档」,
  * 退出 plan/readonly 时据此把会话档收回默认 —— 只回滚自己写过的,不碰用户在别处设置的档。
+ *
+ * 所有权确认/漂移语义(审计第 3 轮 Major:字符串账本会在漂移后重新“认领”他人设置):
+ * 条目自带 confirmed 位 —— 推送后先处于未确认(typed sync 回声在途,期间观测到的旧值
+ * 不作漂移论);观测值一旦命中条目即确认;**确认后**观测到不同档 = 用户在别处改档 →
+ * 立即放弃所有权(删除条目),此后用户手动切回同名档也不会被误判为 composer 的旧写入。
  * 有界(I7):超限丢最旧。 */
 
 /** 引擎默认档(core agents.select 的最终回退;composer 的 null 档语义即它)。 */
 export const DEFAULT_AGENT = "build"
 
-const pushedAgents = new Map<string, string>()
+export type PushedAgentEntry = { agent: string; confirmed: boolean }
+
+const pushedAgents = new Map<string, PushedAgentEntry>()
 const PUSHED_AGENT_LIMIT = 32
 
 export function recordPushedAgent(sessionID: string, agent: string | null): void {
   pushedAgents.delete(sessionID)
   if (agent === null || agent === DEFAULT_AGENT) return
-  pushedAgents.set(sessionID, agent)
+  pushedAgents.set(sessionID, { agent, confirmed: false })
   if (pushedAgents.size > PUSHED_AGENT_LIMIT) {
     const oldest = pushedAgents.keys().next().value
     if (oldest !== undefined) pushedAgents.delete(oldest)
   }
 }
 
-export function pushedAgentFor(sessionID: string): string | undefined {
+export function pushedAgentFor(sessionID: string): PushedAgentEntry | undefined {
   return pushedAgents.get(sessionID)
+}
+
+/** typed sync 观测入口(dock 持续侦听 + composer 发送前核验):确认或判漂移。 */
+export function observeSessionAgent(sessionID: string, observed: string | undefined): void {
+  const entry = pushedAgents.get(sessionID)
+  if (!entry) return
+  // undefined = 会话从未显式落档(或 info 未载入),不据此判定。
+  if (observed === undefined) return
+  if (observed === entry.agent) {
+    entry.confirmed = true
+    return
+  }
+  // 已确认后的异值 = 他处改档 → 放弃所有权;未确认时的异值 = 回声在途的旧值,忽略。
+  if (entry.confirmed) pushedAgents.delete(sessionID)
 }
 
 /** 测试隔离用。 */

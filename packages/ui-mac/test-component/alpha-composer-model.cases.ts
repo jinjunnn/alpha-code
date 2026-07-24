@@ -60,6 +60,7 @@ const {
   composerModel,
   composerModelProjection,
   composerModelSuspended,
+  observeSessionAgent,
   resetComposerModelProjection,
   resetPushedAgents,
   setComposerAgent,
@@ -1053,6 +1054,157 @@ describe("AlphaComposer 档位协议 (REQ-125 C7 audit round 3)", () => {
     pressEnter(textarea)
     await waitFor(() => expect(sdk.prompts).toHaveLength(3))
     expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan", "build"])
+    mounted.dispose()
+  })
+})
+
+describe("AlphaComposer 档位所有权 CAS 与账本漂移 (REQ-125 C7 audit round 4)", () => {
+  const readyContract = (): ModelContract => ({
+    list: async () => platformModels,
+    current: async () => ({ providerID: catalog.platformProvider.id, id: catalog.platformModels[0]!.id }),
+    switch: async () => {},
+  })
+
+  function fakeAgentSdk() {
+    const prompts: Array<Record<string, unknown>> = []
+    const agentSwitches: Array<{ sessionID: string; agent: string }> = []
+    const pendingGates: Array<(value: unknown) => void> = []
+    let engineAgent: string | undefined
+    let gateNext = false
+    const client = {
+      command: { list: async () => ({ data: [] }) },
+      session: { promptAsync: async () => ({}), abort: async () => ({}) },
+      v2: {
+        session: {
+          prompt: (args: Record<string, unknown>) => {
+            prompts.push(args)
+            if (gateNext) {
+              gateNext = false
+              return new Promise((resolve) => pendingGates.push(resolve))
+            }
+            return Promise.resolve({ data: { id: "msg_admitted", admittedSeq: prompts.length } })
+          },
+          switchAgent: async (args: { sessionID: string; agent: string }) => {
+            agentSwitches.push(args)
+            engineAgent = args.agent
+            return {}
+          },
+        },
+      },
+    }
+    return {
+      client,
+      prompts,
+      agentSwitches,
+      sessionAgent: () => engineAgent,
+      setEngineAgent: (agent: string | undefined) => {
+        engineAgent = agent
+      },
+      /** 下一次 prompt 挂起,由测试择机 resolve(模拟失败窗口内的并发用户改档)。 */
+      gateNextPrompt: () => {
+        gateNext = true
+      },
+      resolveGatedPrompt: (value: unknown) => {
+        pendingGates.shift()?.(value)
+      },
+    }
+  }
+
+  function agentMount(sdk: ReturnType<typeof fakeAgentSdk>, running: () => boolean) {
+    const sessionProjects = { ...projects, sdk: () => sdk.client as never } satisfies AlphaProjectsApi
+    return mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "session",
+        projects: sessionProjects,
+        directory: () => "/A",
+        sessionID: () => "A",
+        command,
+        modelContract: readyContract(),
+        sessionDock: {
+          running,
+          contextUsage: () => null,
+          approvalPending: () => false,
+          sessionAgent: sdk.sessionAgent,
+        },
+      }),
+    )
+  }
+
+  function typeText(host: HTMLElement, value: string) {
+    const textarea = host.querySelector("textarea")!
+    textarea.value = value
+    textarea.dispatchEvent(new InputEvent("input", { bubbles: true, data: value }))
+    return textarea
+  }
+
+  function pressEnter(textarea: HTMLTextAreaElement) {
+    textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+  }
+
+  async function waitReady(host: HTMLElement, text: string) {
+    const textarea = typeText(host, text)
+    await waitFor(() => expect(host.querySelector<HTMLButtonElement>(".a-comp-send")!.disabled).toBe(false))
+    return textarea
+  }
+
+  test("CAS 回滚:build → composer plan → 用户并发改 review → prompt 失败 → 档位保持 review(审计 R3)", async () => {
+    installApi()
+    const sdk = fakeAgentSdk()
+    sdk.setEngineAgent("build")
+    const mounted = agentMount(sdk, () => false)
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+    setComposerAgent("plan")
+
+    const textarea = await waitReady(mounted.host, "按计划来")
+    sdk.gateNextPrompt()
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"]))
+    await waitFor(() => expect(sdk.prompts).toHaveLength(1))
+
+    // prompt 未决期间用户在别处把档切到 review。
+    sdk.setEngineAgent("review")
+    sdk.resolveGatedPrompt({ error: { status: 500 } })
+    await flush()
+    await flush()
+
+    // CAS:会话档是第三值(review)→ 不回滚不覆盖,只放弃自己的账本;零额外切档。
+    expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"])
+    expect(sdk.sessionAgent()).toBe("review")
+
+    // 账本已弃权:随后的普通发送不会把 review 收回默认档。
+    setComposerAgent(null)
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.prompts).toHaveLength(2))
+    expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"])
+    expect(sdk.sessionAgent()).toBe("review")
+    mounted.dispose()
+  })
+
+  test("账本漂移弃权:composer plan(已确认)→ 用户改 review → 用户手动切回同名 plan → 普通发送零重置(审计 R3)", async () => {
+    installApi()
+    const sdk = fakeAgentSdk()
+    sdk.setEngineAgent("build")
+    const mounted = agentMount(sdk, () => false)
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+
+    setComposerAgent("plan")
+    let textarea = await waitReady(mounted.host, "先按计划来")
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.prompts).toHaveLength(1))
+    expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"])
+
+    // dock 侦听回声:确认 plan 归 composer 所有 → 用户改 review(漂移,弃权)→ 用户手动切回 plan。
+    observeSessionAgent("A", "plan")
+    observeSessionAgent("A", "review")
+    sdk.setEngineAgent("plan")
+
+    // 退出 plan 后的普通发送:账本已弃权,不得把用户手动设置的同名 plan 误判为自己的旧写入。
+    setComposerAgent(null)
+    textarea = await waitReady(mounted.host, "普通消息")
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.prompts).toHaveLength(2))
+    expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"])
+    expect(sdk.sessionAgent()).toBe("plan")
     mounted.dispose()
   })
 })

@@ -13,34 +13,59 @@
 import { createEffect, createSignal, onCleanup } from "solid-js"
 
 /**
- * 所有权 = sessionID + 每次 claim 独有的 token,登记为活跃 claim 集(审计第 2 轮 Major:
- * owner 仅存 sessionID 时,同一会话先后 claim A/B,A 的迟到 release 会按字符串命中并清掉
- * B 的持权,造成 watcher 误判无人持权 → 双呈现)。裁决序确定:release 只移除自己的 token,
- * watcher 让位当且仅当该会话仍存在任一活跃 claim —— 重叠挂载按任意顺序建立/释放都不产生
- * 双呈现窗口,同一会话任一时刻恰一个呈现者(有 claim = dock,无 claim = watcher)。
+ * 所有权 = sessionID + 每次 claim 独有的 token,登记为**有序**活跃 claim 集(审计第 2/3 轮
+ * Major):
+ * - release 只移除自己的 token —— 同一会话先后 claim A/B 时,A 的迟到 release 不清掉 B;
+ * - watcher 让位当且仅当该会话仍存在任一活跃 claim;
+ * - **多 dock 并存时选出唯一 owner**:同一会话按登记序首个活跃 claim 为 owner,后来者
+ *   非 owner(不渲染审批卡);owner 释放时按登记序继任 —— 任一时刻同一会话恰一个呈现者
+ *   (owner dock;无 claim 时 = watcher),裁决序确定。
  */
 type SessionApprovalClaim = { sessionID: string; token: symbol }
 
 const [claims, setClaims] = createSignal<readonly SessionApprovalClaim[]>([])
 
-/** dock 声明接管 sessionID 的审批呈现;返回释放函数(幂等,仅释放自己这次 claim)。 */
-export function claimSessionApprovalDock(sessionID: string): () => void {
+export type SessionApprovalClaimHandle = {
+  /** 本次 claim 当前是否为该会话的呈现 owner(登记序首个活跃 claim;响应式)。 */
+  owns: () => boolean
+  /** 释放本次 claim(幂等,仅移除自己的 token)。 */
+  release: () => void
+}
+
+/** dock 声明接管 sessionID 的审批呈现;返回句柄(owner 判定 + 释放)。 */
+export function claimSessionApprovalDock(sessionID: string): SessionApprovalClaimHandle {
   const claim: SessionApprovalClaim = { sessionID, token: Symbol("session-approval-claim") }
   setClaims((current) => [...current, claim])
-  return () => setClaims((current) => current.filter((item) => item.token !== claim.token))
+  return {
+    owns: () => claims().find((item) => item.sessionID === sessionID)?.token === claim.token,
+    release: () => setClaims((current) => current.filter((item) => item.token !== claim.token)),
+  }
 }
 
 /**
- * 响应式 claim 绑定:仅当 `sessionID` 存在且 `ready()` 为 true 时持有呈现权;
- * ready 翻转 / 会话切换 / owner 树销毁均同步释放。必须在响应式 owner 内调用。
+ * 响应式 claim 绑定:仅当 `sessionID` 存在且 `ready()` 为 true 时持有 claim;
+ * ready 翻转 / 会话切换 / owner 树销毁均同步释放。返回「本绑定当前是否为呈现 owner」
+ * 的响应式判定,dock 据此决定是否渲染审批卡。必须在响应式 owner 内调用。
  */
-export function bindSessionApprovalClaim(input: { sessionID: () => string | undefined; ready: () => boolean }): void {
+export function bindSessionApprovalClaim(input: {
+  sessionID: () => string | undefined
+  ready: () => boolean
+}): () => boolean {
+  const [handle, setHandle] = createSignal<SessionApprovalClaimHandle | undefined>(undefined)
   createEffect(() => {
     const sessionID = input.sessionID()
-    if (!sessionID || !input.ready()) return
-    const release = claimSessionApprovalDock(sessionID)
-    onCleanup(release)
+    if (!sessionID || !input.ready()) {
+      setHandle(undefined)
+      return
+    }
+    const claim = claimSessionApprovalDock(sessionID)
+    setHandle(claim)
+    onCleanup(() => {
+      claim.release()
+      setHandle(undefined)
+    })
   })
+  return () => handle()?.owns() ?? false
 }
 
 /** 该会话的审批呈现是否已被 seam dock 接管(响应式;存在任一活跃 claim 即为接管)。 */

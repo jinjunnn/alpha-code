@@ -106,12 +106,18 @@ describe("REQ-125 C7:ComposerTakeover 删除后零引用(棘轮)", () => {
     expect(watcher).toContain("createPermissionV2Feed(")
     expect(watcher).toContain("feed.state.ready &&")
     const dock = read(path.join(ALPHA_UI, "session-workspace", "session-composer-dock.tsx"))
-    // Major:先立后破 —— claim 绑定在自身 feed 就绪上,而不是 list 前一次性夺权。
-    expect(dock).toContain("bindSessionApprovalClaim({")
-    expect(dock).toContain("ready: () => feed()?.state.ready ?? false")
+    // Major:先立后破 + 唯一 owner —— claim 绑定在自身 feed 就绪上,审批卡只由当选 owner
+    // 的 SessionApprovalHost 渲染(多 dock 并存恰一份审批 DOM)。
+    expect(dock).toContain("<SessionApprovalHost")
+    expect(dock).toContain("ready={() => feed()?.state.ready ?? false}")
+    const host = read(path.join(ALPHA_UI, "session-workspace", "session-approval-card.tsx"))
+    expect(host).toContain("bindSessionApprovalClaim({")
+    expect(host).toContain("owns() ? props.approval() : undefined")
     const claim = read(path.join(ALPHA_UI, "session-workspace", "session-approval-claim.ts"))
     expect(claim).not.toContain("document")
     expect(claim).not.toContain("querySelector")
+    // Major(账本漂移):dock 持续观测 typed 会话档,漂移即放弃所有权。
+    expect(dock).toContain("observeSessionAgent(bound.sessionID")
   })
 
   test("审计修复轮棘轮:always 项目身份取会话精确 projectID;停止键走已批稿 accent 令牌", () => {

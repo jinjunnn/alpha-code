@@ -16,6 +16,33 @@ import {
   permissionRequestFacts,
   type PermissionDecisionSubmitError,
 } from "../PermissionDialog"
+import { bindSessionApprovalClaim } from "./session-approval-claim"
+
+/**
+ * 审批呈现宿主(审计第 3 轮 Major:多 dock 并存时的唯一 owner)——把「claim 所有权判定 ×
+ * 审批卡渲染」封装为一个单元:仅当本实例是该会话按登记序当选的呈现 owner 时才渲染审批卡。
+ * 多实例并存(快速重挂重叠)时恰一份审批 DOM;owner 卸载后继任者按登记序接管。
+ */
+export function SessionApprovalHost(props: {
+  sessionID: () => string | undefined
+  ready: () => boolean
+  approval: () => PermissionV2Request | undefined
+  projectID: () => string | undefined
+  onSubmit: (requestID: string, command: PermissionV2DecisionCommand) => Promise<void>
+}) {
+  const owns = bindSessionApprovalClaim({ sessionID: props.sessionID, ready: props.ready })
+  return (
+    <Show when={owns() ? props.approval() : undefined} keyed>
+      {(request) => (
+        <SessionApprovalCard
+          request={request}
+          projectID={props.projectID()}
+          onSubmit={(command) => props.onSubmit(request.id, command)}
+        />
+      )}
+    </Show>
+  )
+}
 
 export function SessionApprovalCard(props: {
   request: PermissionV2Request
