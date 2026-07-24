@@ -191,7 +191,9 @@
 }
 
 .a-swk-rail-host {
+  display: flex;
   flex: none;
+  flex-direction: column;
   width: min(400px, 38vw);
   min-width: 320px;
   min-height: 0;

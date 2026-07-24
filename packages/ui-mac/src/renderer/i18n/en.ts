@@ -1134,6 +1134,14 @@ export const dict = {
   "alpha.session.crossServerDetail": "The Alpha sidebar shows local-engine sessions. This window is connected to another server, so the session cannot open here. Return home and choose a local session.",
   "alpha.session.backHome": "Back to home",
 
+  "alpha.terminal.tabs": "Terminal tabs",
+  "alpha.terminal.new": "New terminal",
+  "alpha.terminal.close": "Close {{title}}",
+  "alpha.terminal.emptyTitle": "No terminals yet",
+  "alpha.terminal.emptyBody": "Create one, or ask the assistant to run commands for you from the composer.",
+  "alpha.terminal.footRunning": "Running",
+  "alpha.terminal.footIdle": "Idle",
+
   "alpha.sidebar.appearance": "Appearance",
   "alpha.sidebar.themeLight": "Light",
   "alpha.sidebar.themeDark": "Dark",
