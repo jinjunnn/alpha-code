@@ -67,17 +67,24 @@ export function questionAnswersComplete(questions: readonly QuestionInfo[], answ
 
 /**
  * 检查点回退条(REQ-125 #558):会话暂存的 `revert` 状态 → 紧凑投影。
- * fail-closed:`revert` 缺席 / 畸形(无字符串 `messageID`)= undefined,不渲染。
- * `discardCount` = 当前会话消息里锚点及其之后的**用户回合**数(与上游 rolled() 同口径,
- * 发送后被丢弃),由调用方按 `sessionID` 取到的消息数组供给(I8)。
+ * fail-closed(整条):`revert` 缺席 / 畸形(无字符串 `messageID`)= undefined,不渲染。
+ * fail-closed(计数):`discardCount` 只在**有完整证据**时给出——消息通道是数组且已加载到
+ * 锚点(checkpoint 消息在数组中,证明其后的尾部消息也已加载)时,才计锚点及其之后的
+ * **用户回合**数(与上游 rolled() 同口径)。消息缺失/非数组/锚点不在已加载消息(分页未
+ * 覆盖 checkpoint)一律省略 `discardCount`——回退事实仍呈现,但绝不给可能错的数字。
+ * 消息数组由调用方按 `sessionID` 供给(I8)。
  */
 export function revertDockFacts(
   revert: Session["revert"] | undefined,
   messages: readonly Message[] | undefined,
-): { messageID: string; discardCount: number } | undefined {
+): { messageID: string; discardCount?: number } | undefined {
   if (!revert || typeof revert.messageID !== "string" || revert.messageID.length === 0) return undefined
   const anchor = revert.messageID
-  const discardCount = (messages ?? []).reduce(
+  // 计数须有完整证据:非数组,或锚点不在已加载消息中 → 只给回退事实,不给计数。
+  if (!Array.isArray(messages) || !messages.some((message) => message.id === anchor)) {
+    return { messageID: anchor }
+  }
+  const discardCount = messages.reduce(
     (count, message) => (message.role === "user" && message.id >= anchor ? count + 1 : count),
     0,
   )

@@ -2,6 +2,7 @@
 
 import { describe, expect, test } from "bun:test"
 import type { Message, ModelV2Info, QuestionInfo, Session, Todo } from "@opencode-ai/sdk/v2/client"
+import { hrefFor } from "../../../shared/route-manifest"
 import {
   childParentHref,
   childSessionFacts,
@@ -16,6 +17,7 @@ import {
   resetSessionSlashOrigins,
   sessionSlashOriginsFor,
 } from "./session-slash-origin"
+import { type AlphaSessionIdentity, sameSessionIdentity } from "./session-workspace-core"
 
 const assistant = (input: {
   id: string
@@ -112,7 +114,7 @@ describe("question:头部挂起请求与回答完备性", () => {
   })
 })
 
-describe("revertDockFacts:检查点回退条,事实不足 = 不渲染(fail-closed)", () => {
+describe("revertDockFacts:检查点回退条,计数缺完整证据即省略(fail-closed)", () => {
   const sessionMsgs = [
     user("msg-1"),
     assistant({ id: "msg-2", providerID: "a", modelID: "m" }),
@@ -121,31 +123,48 @@ describe("revertDockFacts:检查点回退条,事实不足 = 不渲染(fail-close
     user("msg-5"),
   ]
 
-  test("渲染:暂存 revert → 锚点 + 锚点及之后的用户回合数", () => {
-    // 锚点 msg-3:其后用户回合 = msg-3, msg-5(assistant 不计)。
+  test("渲染:锚点在已加载消息中 → 锚点及其之后的用户回合计数", () => {
+    // 锚点 msg-3(已加载)→ 其后用户回合 = msg-3, msg-5(assistant 不计)= 2。
     expect(revertDockFacts({ messageID: "msg-3" }, sessionMsgs)).toEqual({ messageID: "msg-3", discardCount: 2 })
-    // 无消息通道时仍呈现回退状态,只是丢弃计数为 0。
-    expect(revertDockFacts({ messageID: "msg-3" }, undefined)).toEqual({ messageID: "msg-3", discardCount: 0 })
   })
 
-  test("fail-closed:revert 缺席 / 无 messageID / 畸形 → undefined", () => {
+  test("fail-closed:revert 缺席 / 无 messageID / 畸形 → undefined(整条不渲染)", () => {
     expect(revertDockFacts(undefined, sessionMsgs)).toBeUndefined()
     expect(revertDockFacts({ messageID: "" }, sessionMsgs)).toBeUndefined()
     expect(revertDockFacts({} as Session["revert"], sessionMsgs)).toBeUndefined()
   })
 
-  test("I8:丢弃计数只数调用方按 sessionID 供给的消息(不跨会话泄漏)", () => {
-    // 同一锚点,换另一会话的消息数组 → 计数随所供消息变化,不复用旧会话。
-    const otherSession = [user("msg-9")]
-    expect(revertDockFacts({ messageID: "msg-3" }, otherSession)).toEqual({ messageID: "msg-3", discardCount: 1 })
-    expect(revertDockFacts({ messageID: "msg-3" }, [])).toEqual({ messageID: "msg-3", discardCount: 0 })
+  test("fail-closed:计数无完整证据即省略——消息缺失/非数组/锚点未加载 → 只给 messageID,不给可能错的数", () => {
+    // 消息通道缺失 / 非数组:回退事实仍在,计数省略(不装 0)。
+    expect(revertDockFacts({ messageID: "msg-3" }, undefined)).toEqual({ messageID: "msg-3" })
+    expect(revertDockFacts({ messageID: "msg-3" }, null as unknown as readonly Message[])).toEqual({
+      messageID: "msg-3",
+    })
+    // 锚点不在已加载消息(分页未覆盖 checkpoint,计数不完整):省略计数。
+    expect(revertDockFacts({ messageID: "msg-3" }, [])).toEqual({ messageID: "msg-3" })
+    expect(revertDockFacts({ messageID: "msg-3" }, [user("msg-1"), assistant({ id: "msg-2", providerID: "a", modelID: "m" })])).toEqual({
+      messageID: "msg-3",
+    })
+  })
+
+  test("I8:计数只认调用方按 sessionID 供给、且含本会话锚点的消息(不跨会话给错数)", () => {
+    // 另一会话的消息(不含本会话锚点 msg-3)→ 拒绝计数,不复用旧会话、不给错数。
+    const otherSessionMsgs = [user("msg-3-alt"), user("msg-4-alt")]
+    expect(revertDockFacts({ messageID: "msg-3" }, otherSessionMsgs)).toEqual({ messageID: "msg-3" })
+    // 本会话消息(含锚点)→ 完整计数。
+    expect(revertDockFacts({ messageID: "msg-3" }, sessionMsgs)).toEqual({ messageID: "msg-3", discardCount: 2 })
   })
 })
 
 describe("childSessionFacts + childParentHref:子会话条与跳转", () => {
   const session = (input: Partial<Session>): Session => ({ id: "ses_c", title: "child", ...input }) as unknown as Session
-  const identity = (sessionID: string) => ({ serverKey: "sidecar", directory: "/tmp/ws", sessionID })
-  const href = (serverKey: string, sessionID: string) => `/server/${serverKey}/session/${sessionID}`
+  // 真三元组工厂:三段可各自变化,身份等价用 sameSessionIdentity 全比(非仅 sessionID)。
+  const identity = (over: Partial<AlphaSessionIdentity> = {}): AlphaSessionIdentity => ({
+    serverKey: "sidecar",
+    directory: "/tmp/ws",
+    sessionID: "ses_c",
+    ...over,
+  })
 
   test("渲染:有 parentID → 父会话跳转目标(标题取父会话,未加载则回落 parentID)", () => {
     const child = session({ parentID: "ses_parent" })
@@ -162,18 +181,26 @@ describe("childSessionFacts + childParentHref:子会话条与跳转", () => {
     expect(childSessionFacts(session({ parentID: "" }), undefined)).toBeUndefined()
   })
 
-  test("I8:身份仍是当前会话才给跳转 href(绑 serverKey);stale 身份 / 无 parentID → undefined", () => {
-    const bound = identity("ses_c")
-    const accepts = (candidate: ReturnType<typeof identity>) => candidate.sessionID === "ses_c"
-    expect(childParentHref({ bound, accepts, parentID: "ses_parent", hrefFor: href })).toBe(
-      "/server/sidecar/session/ses_parent",
-    )
-    // 身份已切换(accepts=false)→ 拒绝 stale 跳转。
+  test("I8:身份等价用 sameSessionIdentity 全比,href 经真实 hrefFor.session 的 serverKey 编码", () => {
+    const bound = identity()
+    const accepts = (candidate: AlphaSessionIdentity) => sameSessionIdentity(candidate, bound)
+    // 当前身份 → 经真实 route-manifest 编码的父会话 href(serverKey 走 server codec)。
+    const expected = hrefFor.session(bound.serverKey, "ses_parent")
+    expect(childParentHref({ bound, accepts, parentID: "ses_parent", hrefFor: hrefFor.session })).toBe(expected)
+    // stale = 三元组任一段不同即拒绝(sameSessionIdentity 全比):sessionID 变。
     expect(
-      childParentHref({ bound: identity("ses_stale"), accepts, parentID: "ses_parent", hrefFor: href }),
+      childParentHref({ bound: identity({ sessionID: "ses_other" }), accepts, parentID: "ses_parent", hrefFor: hrefFor.session }),
+    ).toBeUndefined()
+    // stale:sessionID 相同但 serverKey 不同(证明非仅比 sessionID)。
+    expect(
+      childParentHref({ bound: identity({ serverKey: "other-server" }), accepts, parentID: "ses_parent", hrefFor: hrefFor.session }),
+    ).toBeUndefined()
+    // stale:sessionID/serverKey 相同但 directory 不同。
+    expect(
+      childParentHref({ bound: identity({ directory: "/tmp/other" }), accepts, parentID: "ses_parent", hrefFor: hrefFor.session }),
     ).toBeUndefined()
     // 无 parentID → 无跳转。
-    expect(childParentHref({ bound, accepts, parentID: undefined, hrefFor: href })).toBeUndefined()
+    expect(childParentHref({ bound, accepts, parentID: undefined, hrefFor: hrefFor.session })).toBeUndefined()
   })
 })
 

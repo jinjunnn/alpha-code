@@ -231,7 +231,22 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
       <Show when={revert()} keyed>
         {(facts) => <SessionRevertCard facts={facts} />}
       </Show>
-      <Show when={childSession()} keyed>
+      {/* 子会话与可发送 composer 互斥(对齐上游子会话语义):子会话(有 parentID)只呈现
+          子会话条(运行指示 + 返回父会话入口)为主体,**不挂** AlphaComposer——子会话零可发送
+          路径,新输入只能回到父会话。非子会话才挂 composer。 */}
+      <Show
+        when={childSession()}
+        keyed
+        fallback={
+          <AlphaComposer
+            mode="session"
+            projects={props.projects}
+            directory={() => identity()?.directory}
+            sessionID={() => identity()?.sessionID}
+            sessionDock={dockApi}
+          />
+        }
+      >
         {(facts) => (
           <SessionChildCard
             facts={facts}
@@ -251,13 +266,6 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
           />
         )}
       </Show>
-      <AlphaComposer
-        mode="session"
-        projects={props.projects}
-        directory={() => identity()?.directory}
-        sessionID={() => identity()?.sessionID}
-        sessionDock={dockApi}
-      />
     </div>
   )
 }
@@ -497,8 +505,10 @@ function SessionQuestionCard(props: {
   )
 }
 
-/* ── 检查点回退条(session.revert typed 事实;纯呈现 —— 发送/清空由 composer 流程处理)── */
-function SessionRevertCard(props: { facts: { messageID: string; discardCount: number } }) {
+/* ── 检查点回退条(session.revert typed 事实;纯呈现 —— 发送/清空由 composer 流程处理)──
+   计数只在 revertDockFacts 拿到完整证据时给出;缺证据(消息未加载/分页未覆盖锚点)= 省略
+   计数区,只呈现回退事实,绝不显示可能错的数字。 */
+function SessionRevertCard(props: { facts: { messageID: string; discardCount?: number } }) {
   return (
     <section
       class="a-swk-card a-swk-revert"
@@ -513,10 +523,9 @@ function SessionRevertCard(props: { facts: { messageID: string; discardCount: nu
       </svg>
       <div class="a-swk-revert-text">
         <span class="a-swk-revert-title">{t("alpha.session.revertTitle")}</span>
-        <Show when={props.facts.discardCount > 0}>
-          <span class="a-swk-revert-detail">
-            {t("alpha.session.revertDetail", { count: props.facts.discardCount })}
-          </span>
+        {/* keyed:计数省略(undefined)或为 0 时不渲染;>0 时 count 收窄为 number。 */}
+        <Show when={props.facts.discardCount} keyed>
+          {(count) => <span class="a-swk-revert-detail">{t("alpha.session.revertDetail", { count })}</span>}
         </Show>
       </div>
     </section>

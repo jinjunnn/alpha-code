@@ -63,6 +63,17 @@ describe("REQ-125 C1b I1 and Recovery static ratchets", () => {
     expect(css).toContain("@media (prefers-reduced-motion: reduce)")
   })
 
+  test("child-session state is mutually exclusive with a sendable composer (zero promptAsync path when child)", () => {
+    // AlphaComposer is the only send surface. It must mount exactly once, and only as the
+    // fallback of the childSession() gate — so when the session is a child (parentID present)
+    // the composer is not rendered at all and the child card is the body. No composer ⇒ no
+    // reachable prompt/send/promptAsync path in a child session (upstream child semantics).
+    expect(dock.match(/<AlphaComposer\b/g)).toHaveLength(1)
+    expect(dock).toMatch(
+      /when=\{childSession\(\)\}[\s\S]*?fallback=\{[\s\S]*?<AlphaComposer\b[\s\S]*?SessionChildCard/,
+    )
+  })
+
   test("keeps the release seam and existing Alpha Recovery boundary", () => {
     expect(rendererIndex).toContain(`if (resolved?.session.mode !== "alpha") return undefined`)
     expect(rendererIndex).toContain(`return alphaSessionWorkspaceSurface(projects)`)
