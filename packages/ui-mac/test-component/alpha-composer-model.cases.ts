@@ -812,6 +812,9 @@ describe("AlphaComposer v2 durable send + abort honesty (REQ-125 C7 audit round 
       },
       v2: {
         session: {
+          get: async (args: { sessionID: string }) => ({
+            data: { data: { id: args.sessionID, agent: engineAgent } },
+          }),
           prompt: async (args: Record<string, unknown>) => {
             prompts.push(args)
             if (overrides?.promptError?.()) return { error: { status: 500 } }
@@ -825,7 +828,7 @@ describe("AlphaComposer v2 durable send + abort honesty (REQ-125 C7 audit round 
         },
       },
     }
-    return { client, prompts, promptAsyncCalls, agentSwitches, abortCalls, sessionAgent: () => engineAgent }
+    return { client, prompts, promptAsyncCalls, agentSwitches, abortCalls }
   }
 
   function sessionMount(sdk: ReturnType<typeof fakeSessionSdk>, running: () => boolean) {
@@ -842,7 +845,6 @@ describe("AlphaComposer v2 durable send + abort honesty (REQ-125 C7 audit round 
           running,
           contextUsage: () => null,
           approvalPending: () => false,
-          sessionAgent: sdk.sessionAgent,
         },
       }),
     )
@@ -927,6 +929,9 @@ describe("AlphaComposer 档位协议 (REQ-125 C7 audit round 3)", () => {
       },
       v2: {
         session: {
+          get: async (args: { sessionID: string }) => ({
+            data: { data: { id: args.sessionID, agent: engineAgent } },
+          }),
           prompt: async (args: Record<string, unknown>) => {
             prompts.push(args)
             if (overrides?.promptError?.()) return { error: { status: 500 } }
@@ -957,7 +962,6 @@ describe("AlphaComposer 档位协议 (REQ-125 C7 audit round 3)", () => {
           running,
           contextUsage: () => null,
           approvalPending: () => false,
-          sessionAgent: sdk.sessionAgent,
         },
       }),
     )
@@ -1058,7 +1062,7 @@ describe("AlphaComposer 档位协议 (REQ-125 C7 audit round 3)", () => {
   })
 })
 
-describe("AlphaComposer 档位所有权 CAS 与账本漂移 (REQ-125 C7 audit round 4)", () => {
+describe("AlphaComposer 档位决策权威读 (REQ-125 C7 audit round 5)", () => {
   const readyContract = (): ModelContract => ({
     list: async () => platformModels,
     current: async () => ({ providerID: catalog.platformProvider.id, id: catalog.platformModels[0]!.id }),
@@ -1069,13 +1073,23 @@ describe("AlphaComposer 档位所有权 CAS 与账本漂移 (REQ-125 C7 audit ro
     const prompts: Array<Record<string, unknown>> = []
     const agentSwitches: Array<{ sessionID: string; agent: string }> = []
     const pendingGates: Array<(value: unknown) => void> = []
+    // engineAgent = 服务端权威档;syncAgent = serverSync 式滞后缓存(生产中不消费 v2 切档
+    // 事件、可无限落后)——协议不得消费它,本 fake 供「滞后两拍」对照断言。
     let engineAgent: string | undefined
+    let syncAgent: string | undefined
     let gateNext = false
+    let failGets = false
+    let getCalls = 0
     const client = {
       command: { list: async () => ({ data: [] }) },
       session: { promptAsync: async () => ({}), abort: async () => ({}) },
       v2: {
         session: {
+          get: async (args: { sessionID: string }) => {
+            getCalls++
+            if (failGets) return { error: { status: 503 } }
+            return { data: { data: { id: args.sessionID, agent: engineAgent } } }
+          },
           prompt: (args: Record<string, unknown>) => {
             prompts.push(args)
             if (gateNext) {
@@ -1096,17 +1110,26 @@ describe("AlphaComposer 档位所有权 CAS 与账本漂移 (REQ-125 C7 audit ro
       client,
       prompts,
       agentSwitches,
-      sessionAgent: () => engineAgent,
+      engineAgent: () => engineAgent,
+      syncAgent: () => syncAgent,
+      /** 服务端权威档直接变更(模拟用户在别处改档;滞后缓存刻意不动)。 */
       setEngineAgent: (agent: string | undefined) => {
         engineAgent = agent
       },
-      /** 下一次 prompt 挂起,由测试择机 resolve(模拟失败窗口内的并发用户改档)。 */
+      /** 滞后缓存单独推进(永远可以落后服务端任意拍)。 */
+      setSyncAgent: (agent: string | undefined) => {
+        syncAgent = agent
+      },
+      setFailGets: (value: boolean) => {
+        failGets = value
+      },
       gateNextPrompt: () => {
         gateNext = true
       },
       resolveGatedPrompt: (value: unknown) => {
         pendingGates.shift()?.(value)
       },
+      getCalls: () => getCalls,
     }
   }
 
@@ -1124,7 +1147,6 @@ describe("AlphaComposer 档位所有权 CAS 与账本漂移 (REQ-125 C7 audit ro
           running,
           contextUsage: () => null,
           approvalPending: () => false,
-          sessionAgent: sdk.sessionAgent,
         },
       }),
     )
@@ -1147,10 +1169,12 @@ describe("AlphaComposer 档位所有权 CAS 与账本漂移 (REQ-125 C7 audit ro
     return textarea
   }
 
-  test("CAS 回滚:build → composer plan → 用户并发改 review → prompt 失败 → 档位保持 review(审计 R3)", async () => {
+  test("CAS 弃权:sync 缓存滞后两拍下,失败回滚决策仍以权威读为准(用户并发 review 不被覆盖)", async () => {
     installApi()
     const sdk = fakeAgentSdk()
     sdk.setEngineAgent("build")
+    // 滞后缓存停在两拍前的状态,协议不得消费它。
+    sdk.setSyncAgent(undefined)
     const mounted = agentMount(sdk, () => false)
     await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
     setComposerAgent("plan")
@@ -1161,26 +1185,71 @@ describe("AlphaComposer 档位所有权 CAS 与账本漂移 (REQ-125 C7 audit ro
     await waitFor(() => expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"]))
     await waitFor(() => expect(sdk.prompts).toHaveLength(1))
 
-    // prompt 未决期间用户在别处把档切到 review。
+    // prompt 未决期间用户在别处把服务端档切到 review;滞后缓存依旧停在 undefined(落后两拍)。
     sdk.setEngineAgent("review")
+    expect(sdk.syncAgent()).toBeUndefined()
     sdk.resolveGatedPrompt({ error: { status: 500 } })
     await flush()
     await flush()
 
-    // CAS:会话档是第三值(review)→ 不回滚不覆盖,只放弃自己的账本;零额外切档。
+    // CAS 权威读到第三值 review → 弃权不覆盖;零回滚写入。
     expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"])
-    expect(sdk.sessionAgent()).toBe("review")
+    expect(sdk.engineAgent()).toBe("review")
+    expect(sdk.getCalls()).toBeGreaterThanOrEqual(2) // 发送前读 + CAS 核验读,均权威
 
-    // 账本已弃权:随后的普通发送不会把 review 收回默认档。
+    // 弃权后随后的普通发送不会把 review 收回默认档。
     setComposerAgent(null)
     pressEnter(textarea)
     await waitFor(() => expect(sdk.prompts).toHaveLength(2))
     expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"])
-    expect(sdk.sessionAgent()).toBe("review")
+    expect(sdk.engineAgent()).toBe("review")
     mounted.dispose()
   })
 
-  test("账本漂移弃权:composer plan(已确认)→ 用户改 review → 用户手动切回同名 plan → 普通发送零重置(审计 R3)", async () => {
+  test("CAS 回滚:权威读仍是 composer 刚设的 desired → 回滚生效(sync 缓存全程无关)", async () => {
+    installApi()
+    const sdk = fakeAgentSdk()
+    sdk.setEngineAgent("build")
+    const mounted = agentMount(sdk, () => false)
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+    setComposerAgent("plan")
+
+    const textarea = await waitReady(mounted.host, "按计划来")
+    sdk.gateNextPrompt()
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.prompts).toHaveLength(1))
+    sdk.resolveGatedPrompt({ error: { status: 500 } })
+    await flush()
+    await flush()
+
+    await waitFor(() => expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan", "build"]))
+    expect(sdk.engineAgent()).toBe("build")
+    mounted.dispose()
+  })
+
+  test("CAS 权威读不可得:不盲写回滚(宁留 desired 也不冒覆盖并发用户改档的险)", async () => {
+    installApi()
+    const sdk = fakeAgentSdk()
+    sdk.setEngineAgent("build")
+    const mounted = agentMount(sdk, () => false)
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+    setComposerAgent("plan")
+
+    const textarea = await waitReady(mounted.host, "按计划来")
+    sdk.gateNextPrompt()
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.prompts).toHaveLength(1))
+    sdk.setFailGets(true) // 失败窗口内权威读也不可得
+    sdk.resolveGatedPrompt({ error: { status: 500 } })
+    await flush()
+    await flush()
+
+    expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"]) // 零盲回滚
+    sdk.setFailGets(false)
+    mounted.dispose()
+  })
+
+  test("账本漂移弃权:服务端档被他处改写后,普通发送经权威读弃权、零重置(sync 缓存滞后无影响)", async () => {
     installApi()
     const sdk = fakeAgentSdk()
     sdk.setEngineAgent("build")
@@ -1193,18 +1262,23 @@ describe("AlphaComposer 档位所有权 CAS 与账本漂移 (REQ-125 C7 audit ro
     await waitFor(() => expect(sdk.prompts).toHaveLength(1))
     expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"])
 
-    // dock 侦听回声:确认 plan 归 composer 所有 → 用户改 review(漂移,弃权)→ 用户手动切回 plan。
-    observeSessionAgent("A", "plan")
-    observeSessionAgent("A", "review")
-    sdk.setEngineAgent("plan")
+    // 用户在别处把服务端档改为 review;滞后缓存(两拍前)从未反映任何变化。
+    sdk.setEngineAgent("review")
+    expect(sdk.syncAgent()).toBeUndefined()
 
-    // 退出 plan 后的普通发送:账本已弃权,不得把用户手动设置的同名 plan 误判为自己的旧写入。
+    // 退出 plan 的普通发送:权威读到 review ≠ 账本 plan → 弃权,不重置用户选择。
     setComposerAgent(null)
     textarea = await waitReady(mounted.host, "普通消息")
     pressEnter(textarea)
     await waitFor(() => expect(sdk.prompts).toHaveLength(2))
     expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"])
-    expect(sdk.sessionAgent()).toBe("plan")
+    expect(sdk.engineAgent()).toBe("review")
+
+    // 弃权后再次普通发送依旧零切档(不重新认领他人设置)。
+    textarea = await waitReady(mounted.host, "再来一条")
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.prompts).toHaveLength(3))
+    expect(sdk.agentSwitches.map((s) => s.agent)).toEqual(["plan"])
     mounted.dispose()
   })
 })

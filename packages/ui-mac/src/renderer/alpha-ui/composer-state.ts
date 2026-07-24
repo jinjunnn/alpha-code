@@ -34,46 +34,32 @@ export const INTERNAL_AGENTS = new Set(["alpha-automation", "alpha-automation-st
  * composer 在发送前经 typed switchAgent 落档。本账本只记「composer 自己推送的非默认档」,
  * 退出 plan/readonly 时据此把会话档收回默认 —— 只回滚自己写过的,不碰用户在别处设置的档。
  *
- * 所有权确认/漂移语义(审计第 3 轮 Major:字符串账本会在漂移后重新“认领”他人设置):
- * 条目自带 confirmed 位 —— 推送后先处于未确认(typed sync 回声在途,期间观测到的旧值
- * 不作漂移论);观测值一旦命中条目即确认;**确认后**观测到不同档 = 用户在别处改档 →
- * 立即放弃所有权(删除条目),此后用户手动切回同名档也不会被误判为 composer 的旧写入。
+ * 决策源纪律(审计第 4 轮 Major):账本比对与 CAS 判定一律以**权威实时读**为准
+ * (typed SDK `v2.session.get`,见 alpha-composer readSessionAgent)——serverSync 缓存
+ * 不消费 `session.next.agent.switched` 事件,永不更新,只可作 UI 展示,禁作决策源。
+ * 权威读到与账本不同的档 = 他处改档 → 立即弃权删条目。残余边界(已登记):v2 未暴露
+ * 档位变更版本号,两次发送之间的 out-and-back 同名改档(A→B→A)客户端不可判;当前
+ * alpha 会话页 composer 是唯一改档 surface,该窗口无真实写入方;引擎侧补版本号后收紧。
  * 有界(I7):超限丢最旧。 */
 
 /** 引擎默认档(core agents.select 的最终回退;composer 的 null 档语义即它)。 */
 export const DEFAULT_AGENT = "build"
 
-export type PushedAgentEntry = { agent: string; confirmed: boolean }
-
-const pushedAgents = new Map<string, PushedAgentEntry>()
+const pushedAgents = new Map<string, string>()
 const PUSHED_AGENT_LIMIT = 32
 
 export function recordPushedAgent(sessionID: string, agent: string | null): void {
   pushedAgents.delete(sessionID)
   if (agent === null || agent === DEFAULT_AGENT) return
-  pushedAgents.set(sessionID, { agent, confirmed: false })
+  pushedAgents.set(sessionID, agent)
   if (pushedAgents.size > PUSHED_AGENT_LIMIT) {
     const oldest = pushedAgents.keys().next().value
     if (oldest !== undefined) pushedAgents.delete(oldest)
   }
 }
 
-export function pushedAgentFor(sessionID: string): PushedAgentEntry | undefined {
+export function pushedAgentFor(sessionID: string): string | undefined {
   return pushedAgents.get(sessionID)
-}
-
-/** typed sync 观测入口(dock 持续侦听 + composer 发送前核验):确认或判漂移。 */
-export function observeSessionAgent(sessionID: string, observed: string | undefined): void {
-  const entry = pushedAgents.get(sessionID)
-  if (!entry) return
-  // undefined = 会话从未显式落档(或 info 未载入),不据此判定。
-  if (observed === undefined) return
-  if (observed === entry.agent) {
-    entry.confirmed = true
-    return
-  }
-  // 已确认后的异值 = 他处改档 → 放弃所有权;未确认时的异值 = 回声在途的旧值,忽略。
-  if (entry.confirmed) pushedAgents.delete(sessionID)
 }
 
 /** 测试隔离用。 */

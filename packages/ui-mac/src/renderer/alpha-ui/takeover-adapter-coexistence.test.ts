@@ -116,8 +116,14 @@ describe("REQ-125 C7:ComposerTakeover 删除后零引用(棘轮)", () => {
     const claim = read(path.join(ALPHA_UI, "session-workspace", "session-approval-claim.ts"))
     expect(claim).not.toContain("document")
     expect(claim).not.toContain("querySelector")
-    // Major(账本漂移):dock 持续观测 typed 会话档,漂移即放弃所有权。
-    expect(dock).toContain("observeSessionAgent(bound.sessionID")
+    // Major(R4:决策源):档位决策(needsSwitch/CAS/漂移)一律权威实时读(typed GET),
+    // serverSync 缓存(不消费 v2 切档事件,永不更新)禁作决策源。
+    const composerSrc = read(path.join(ALPHA_UI, "alpha-composer.tsx"))
+    expect(composerSrc).toContain("async function readSessionAgent(")
+    expect(composerSrc).toContain("client.v2.session.get({ sessionID })")
+    expect(composerSrc).not.toContain("sessionAgent()")
+    expect(dock).not.toContain("observeSessionAgent")
+    expect(dock).not.toContain("sessionAgent")
   })
 
   test("审计修复轮棘轮:always 项目身份取会话精确 projectID;停止键走已批稿 accent 令牌", () => {

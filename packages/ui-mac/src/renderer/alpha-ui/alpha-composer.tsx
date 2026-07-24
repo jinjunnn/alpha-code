@@ -54,7 +54,6 @@ import {
   DEFAULT_AGENT,
   failComposerModelProjection,
   invalidateComposerModelProjection,
-  observeSessionAgent,
   pushedAgentFor,
   recordPushedAgent,
   resetComposerModelProjection,
@@ -536,8 +535,6 @@ export type ComposerSessionDockApi = {
   contextUsage: () => number | null
   /** 当前会话是否有挂起审批(驱动占位文案与权限 chip 琥珀态)。 */
   approvalPending: () => boolean
-  /** 会话当前档位(typed session info;undefined = 引擎默认)——档位协议的比对基准。 */
-  sessionAgent: () => string | undefined
   /** 斜杠命令发送成功后的捕获回调。 */
   onSlashCommand?: (capture: ComposerSlashCapture) => void
 }
@@ -565,6 +562,22 @@ const readState = <T,>(promise: Promise<T>): Promise<ReadState<T>> =>
     (data) => ({ status: "ready", data }),
     () => ({ status: "error" }),
   )
+
+/** 会话档位的权威实时读(审计第 4 轮 Major):档位决策(needsSwitch / CAS 回滚 / 账本
+ *  漂移)一律经 typed SDK GET 直读服务端 —— serverSync 缓存不消费 v2 切档事件、永不更新,
+ *  只可作 UI 展示,禁作决策源。 */
+async function readSessionAgent(
+  client: NonNullable<ReturnType<AlphaProjectsApi["sdk"]>>,
+  sessionID: string,
+): Promise<{ ok: true; agent: string | undefined } | { ok: false }> {
+  try {
+    const result = await client.v2.session.get({ sessionID })
+    if (result.error !== undefined || !result.data) return { ok: false }
+    return { ok: true, agent: result.data.data.agent }
+  } catch {
+    return { ok: false }
+  }
+}
 
 const isErrorEnvelope = (value: unknown) => !!value && typeof value === "object" && "error" in value
 
@@ -1063,12 +1076,20 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       //   (提示等当前任务结束);无档位变化的发送正常排队。
       // ③ 退出 plan/readonly:期望档回空时,若会话档仍是本 composer 推送的档,切回引擎
       //   默认档(账本只回滚自己写过的,不碰用户在别处设置的档)。
-      // 发送前核验观测值:确认回声 / 判漂移(dock 的持续侦听之外的兜底;见 composer-state)。
-      const observedAgent = props.sessionDock?.sessionAgent()
-      observeSessionAgent(sid, observedAgent)
-      const entryBefore = pushedAgentFor(sid)
-      // 有效当前档:switchAgent 已被引擎受理但 typed sync 回声未达时,以账本为准。
-      const agentNow = entryBefore !== undefined && !entryBefore.confirmed ? entryBefore.agent : observedAgent
+      // 发送前:权威实时读当前会话档(决策源;serverSync 缓存禁用于决策 —— 见 readSessionAgent)。
+      // 读不到 = 无法安全决策档位,按发送失败如实拦下(正文保留)。
+      const agentRead = await readSessionAgent(c, sid)
+      if (!agentRead.ok) {
+        pushToast({ kind: "error", title: t("alpha.composer.sendFailed") })
+        return
+      }
+      const agentNow = agentRead.agent
+      let entryBefore = pushedAgentFor(sid)
+      if (entryBefore !== undefined && agentNow !== entryBefore) {
+        // 权威漂移判定:会话档已被他处改写 → 弃权,不重新认领(含用户改回默认的情形)。
+        recordPushedAgent(sid, null)
+        entryBefore = undefined
+      }
       const desiredAgent = req.agent ?? (entryBefore !== undefined ? DEFAULT_AGENT : undefined)
       const needsAgentSwitch = desiredAgent !== undefined && desiredAgent !== (agentNow ?? DEFAULT_AGENT)
       if (needsAgentSwitch && running()) {
@@ -1100,21 +1121,21 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
         .catch(() => undefined)
       if (admitted === undefined || admitted.error !== undefined || !admitted.data) {
         if (rollbackAgent !== undefined) {
-          // CAS 回滚(审计第 3 轮 Major):重读会话档,只有仍是 composer 刚设的 desired
-          // (或回声在途的发送前旧值)才回滚;期间用户在别处改档(第三值)则不覆盖用户
-          // 选择,只放弃自己的账本。回滚失败时账本与真实档保持一致(自愈),失败已如实提示。
-          const agentAtFailure = props.sessionDock?.sessionAgent()
-          const foreign =
-            agentAtFailure !== undefined && agentAtFailure !== desiredAgent && agentAtFailure !== rollbackAgent
-          if (foreign) {
-            recordPushedAgent(sid, null)
-          } else {
+          // CAS 回滚(审计第 3/4 轮 Major):回滚决策前经 typed SDK **权威实时读**当前会话档
+          // (不经 serverSync 缓存)——仍等于 composer 刚设的 desired 才回滚;读到其它值 =
+          // 用户并发改档,不覆盖用户选择,只放弃自己的账本;权威读不可得时不盲写回滚
+          // (宁可留下 desired 也不冒覆盖用户并发选择的险),账本保持与引擎最后受理状态一致,
+          // 后续发送经权威读自愈。发送失败本身已如实提示。
+          const verify = await readSessionAgent(c, sid)
+          if (verify.ok && verify.agent === desiredAgent) {
             const rolled = await c.v2.session
               .switchAgent({ sessionID: sid, agent: rollbackAgent })
               .catch(() => ({ error: new Error("switch agent rollback failed") }))
             if ((rolled as { error?: unknown } | undefined)?.error === undefined) {
-              recordPushedAgent(sid, entryBefore?.agent ?? null)
+              recordPushedAgent(sid, entryBefore ?? null)
             }
+          } else if (verify.ok) {
+            recordPushedAgent(sid, null)
           }
         }
         pushToast({ kind: "error", title: t("alpha.composer.sendFailed") })

@@ -15,7 +15,6 @@ import { unwrap } from "solid-js/store"
 import { t } from "../../i18n"
 import type { AlphaProjectsApi } from "../../sidebar/use-projects"
 import { AlphaComposer, type ComposerSessionDockApi, type ComposerSlashCapture } from "../alpha-composer"
-import { observeSessionAgent } from "../composer-state"
 import { createModelContract } from "../model-contract"
 import { SessionApprovalHost } from "./session-approval-card"
 import {
@@ -148,15 +147,6 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
     return contextUsagePercent(serverSync().session.data.message[bound.sessionID], listed.models)
   })
 
-  /* ── 档位账本漂移侦听(审计第 3 轮 Major):持续观测 typed session info 的会话档,
-        composer 推送的档一经他处改写立即放弃所有权 —— 用户此后手动切回同名档不会被
-        误判为 composer 的旧写入(确认/漂移语义见 composer-state.observeSessionAgent)── */
-  createEffect(() => {
-    const bound = identity()
-    if (!bound) return
-    observeSessionAgent(bound.sessionID, serverSync().session.data.info[bound.sessionID]?.agent)
-  })
-
   /* ── 「始终允许」授权所需的项目身份:取会话自身的精确 projectID(typed session info,
         与独立 Permission surface 的当前项目同源;sandbox 会话因此同样可用)────────────── */
   const projectID = createMemo(() => {
@@ -169,11 +159,6 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
     running,
     contextUsage: usage,
     approvalPending: () => approval() !== undefined,
-    // 档位协议的比对基准:typed session info 的会话当前档(undefined = 引擎默认)。
-    sessionAgent: () => {
-      const bound = identity()
-      return bound ? serverSync().session.data.info[bound.sessionID]?.agent : undefined
-    },
     onSlashCommand: (capture: ComposerSlashCapture) => {
       const bound = identity()
       if (!bound || bound.sessionID !== capture.sessionID || bound.directory !== capture.directory) return
