@@ -79,19 +79,25 @@ describe("REQ-125 C1b I1 and Recovery static ratchets", () => {
     expect(composerMount.match(/<AlphaComposer\b/g)).toHaveLength(1)
   })
 
-  test("gate flip preserves the composer draft via a per-identity stash keyed at mount (I8-bound)", () => {
+  test("composer instance is keyed by identity; the per-identity stash captures/restores on remount (I8-bound)", () => {
     // The gate unmounts the composer when a session turns out to be a child (info late). A
-    // per-identity draft stash captures the draft on that unmount and re-injects it via
-    // initialText on flip-back, so unmount is not unrecoverable loss.
+    // per-identity draft stash captures the draft on that unmount and re-injects it on remount,
+    // so unmount is not unrecoverable loss.
     expect(dock).toContain("createComposerDraftStash")
     expect(dock).toMatch(/<SessionComposerMount\b[\s\S]*?drafts=\{draftStash\}/)
-    // The identity key is FROZEN at mount (closure capture), so a same-workspace session switch
-    // (identity becomes B before A's composer unmounts) cannot write A's draft under B's key.
-    expect(composerMount).toContain("const mountedKey = identityKey(props.identity())")
+    // Root fix (round 4): the composer instance is KEYED by identity — a same-workspace session
+    // switch tears down the old instance (its cleanup captures under its own keyed key) and
+    // mounts a fresh one for the new identity. Key and instance lifecycle are one, so there is no
+    // "frozen key vs reactive directory" split: continued edits after a switch land in the new key.
+    expect(composerMount).toMatch(/when=\{identityKey\(props\.identity\(\)\)\}/)
+    expect(composerMount).toContain("keyed")
+    // restore/capture use the keyed value (mountedKey), never a cleanup-time re-read of identity().
     expect(composerMount).toMatch(/initialText=\{props\.drafts\.restore\(mountedKey\)\}/)
     expect(composerMount).toMatch(/onDraftCapture=\{[^}]*props\.drafts\.capture\(mountedKey,\s*draft\)/)
-    // No re-reading of identity() inside the capture closure (the round-3 bug).
-    expect(composerMount).not.toMatch(/capture\(identityKey\(identity/)
+    expect(composerMount).not.toMatch(/capture\(identityKey\(/)
+    // Identity undefined ⇒ no composer, just a light placeholder (mounts once identity resolves;
+    // avoids the empty-key drop).
+    expect(composerMount).toContain("a-swk-composer-pending")
   })
 
   test("keeps the release seam and existing Alpha Recovery boundary", () => {

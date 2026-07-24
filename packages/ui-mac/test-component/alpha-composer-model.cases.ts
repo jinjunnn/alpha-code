@@ -836,10 +836,10 @@ describe("REQ-125 C558 composer draft capture/restore contract", () => {
   })
 })
 
-// REQ-125 C558 复审第3轮 Major:同 workspace 切会话 composer 不重挂,cleanup 若重读 identity()
-// 会把 A 草稿写进 B 键。SessionComposerMount 在**挂载时定格**身份键(闭包定格),cleanup 用定格键。
-// 这里对真实 SessionComposerMount(内挂真实 AlphaComposer)验:切会话后卸载,草稿只落挂载时的键。
-describe("REQ-125 C558 SessionComposerMount 挂载定格身份键,切会话不串草稿", () => {
+// REQ-125 C558 复审第4轮 Major(根修):composer 实例按身份 keyed —— 身份切换=旧实例卸载(用自身
+// keyed 键捕获)+ 新实例挂载(restore 新身份)。键与实例生命周期一致,消除「键定格 A、目录响应式
+// 切 B」的分裂。对真实 SessionComposerMount(内挂真实 AlphaComposer)验复审点名的三个序。
+describe("REQ-125 C558 SessionComposerMount 按身份 keyed:切会话草稿正确归属", () => {
   const identityFor = (sessionID: string) => ({ serverKey: "sidecar", directory: "/ws", sessionID })
   const dockApi = {
     running: () => false,
@@ -847,35 +847,65 @@ describe("REQ-125 C558 SessionComposerMount 挂载定格身份键,切会话不�
     approvalPending: () => false,
     onSlashCommand: () => {},
   }
+  const ta = (host: HTMLElement) => host.querySelector<HTMLTextAreaElement>("textarea.a-comp-input")
+  const type = (el: HTMLTextAreaElement, value: string) => {
+    el.value = value
+    el.dispatchEvent(new Event("input", { bubbles: true }))
+  }
 
-  test("A 输入→identity 切 B→卸载:草稿落挂载定格的 A 键、B 键无(B 门翻回不见 A 草稿)", async () => {
+  test("① A 输入→切 B→继续在 B 编辑→卸载:B 草稿入 B 键、A 键仍是 A 的", async () => {
     installApi()
     const drafts = createComposerDraftStash()
     const [identity, setIdentity] = createSignal(identityFor("A"))
     const mounted = mount(() => createComponent(SessionComposerMount, { identity, projects, dock: dockApi, drafts }))
     await flush()
-    const ta = mounted.host.querySelector<HTMLTextAreaElement>("textarea.a-comp-input")
-    expect(ta).not.toBeNull()
-    ta!.value = "A-draft"
-    ta!.dispatchEvent(new Event("input", { bubbles: true }))
+    const taA = ta(mounted.host)!
+    expect(taA).not.toBeNull()
+    type(taA, "A-draft")
     await flush()
-    setIdentity(identityFor("B")) // 同 workspace 切会话:identity 先变 B
+    setIdentity(identityFor("B")) // keyed 重挂:旧 A 实例卸载(捕获 A-draft@keyA)+ 新 B 实例挂载
     await flush()
-    mounted.dispose() // 再卸载 A 的 composer(门翻转 → child)
-    // 卸载用挂载定格的 A 键 → 草稿落 A、不落 B(证明不在 cleanup 重读 identity())。
-    expect(drafts.restore(identityKey(identityFor("B")))).toBeUndefined()
+    const taB = ta(mounted.host)!
+    expect(taB).not.toBe(taA) // 已是新实例的 textarea
+    expect(taB.value).toBe("") // B 首挂:无暂存
+    type(taB, "B-draft") // 继续在 B 编辑(根修前会误入 A 键)
+    await flush()
+    mounted.dispose() // 卸载 B 实例 → 捕获 B-draft@keyB
+    expect(drafts.restore(identityKey(identityFor("B")))).toBe("B-draft")
     expect(drafts.restore(identityKey(identityFor("A")))).toBe("A-draft")
   })
 
-  test("门翻回:挂载时按定格身份键 restore 注入初值", async () => {
+  test("② undefined→B:B 键正常捕获(身份未定不挂 composer,无空键丢弃)", async () => {
     installApi()
     const drafts = createComposerDraftStash()
-    drafts.capture(identityKey(identityFor("A")), "restored-A")
-    const [identity] = createSignal(identityFor("A"))
+    const [identity, setIdentity] = createSignal<ReturnType<typeof identityFor> | undefined>(undefined)
     const mounted = mount(() => createComponent(SessionComposerMount, { identity, projects, dock: dockApi, drafts }))
     await flush()
-    const ta = mounted.host.querySelector<HTMLTextAreaElement>("textarea.a-comp-input")
-    expect(ta?.value).toBe("restored-A")
+    expect(ta(mounted.host)).toBeNull() // 身份 undefined → 不挂 composer
+    expect(mounted.host.querySelector(".a-swk-composer-pending")).not.toBeNull() // 轻占位
+    setIdentity(identityFor("B")) // 身份到达 → 挂 B composer
+    await flush()
+    const taB = ta(mounted.host)!
+    expect(taB).not.toBeNull()
+    type(taB, "B-draft")
+    await flush()
+    mounted.dispose() // 捕获 B-draft@keyB(非空键)
+    expect(drafts.restore(identityKey(identityFor("B")))).toBe("B-draft")
+  })
+
+  test("③ A→B→回 A:重挂经 stash 往返恢复 A 草稿", async () => {
+    installApi()
+    const drafts = createComposerDraftStash()
+    const [identity, setIdentity] = createSignal(identityFor("A"))
+    const mounted = mount(() => createComponent(SessionComposerMount, { identity, projects, dock: dockApi, drafts }))
+    await flush()
+    type(ta(mounted.host)!, "A-draft")
+    await flush()
+    setIdentity(identityFor("B")) // 旧 A 卸载 → A-draft@keyA
+    await flush()
+    setIdentity(identityFor("A")) // 回 A → 新实例 restore(keyA)=A-draft
+    await flush()
+    expect(ta(mounted.host)?.value).toBe("A-draft")
     mounted.dispose()
   })
 })

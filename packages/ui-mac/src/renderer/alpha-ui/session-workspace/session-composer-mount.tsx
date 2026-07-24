@@ -1,10 +1,13 @@
 // SessionComposerMount — REQ-125 C558:seam 会话页 composer 的挂载包装。
 //
-// child-session 门翻转会**卸载** composer(保持子会话零可发送路径)。草稿暂存的身份键必须在
-// **挂载时定格**:同 workspace 切会话不重挂,「先 identity=B 再卸 A 的 composer」的时序下,若在
-// cleanup 时重读 identity() 会把 A 的草稿写进 B 键。故本包装在 setup(挂载)一次性算出 mountedKey,
-// initialText / onDraftCapture 全程用定格键;directory/sessionID 仍随当前身份(composer 跟随会话)。
+// child-session 门翻转会**卸载** composer(保持子会话零可发送路径),per-identity 草稿暂存据此在
+// 卸载捕获、门翻回注入。关键:**composer 实例按身份 keyed**——外层 `<Show keyed>` 以 identityKey
+// 为 key。身份切换 = 旧实例卸载(cleanup 用它自身 keyed 定格的 mountedKey 捕获,归属天然正确)+
+// 新实例挂载(restore 新身份草稿)。键与实例生命周期一致,消除「键定格 A、目录响应式切 B」的分裂
+// (切 B 后继续编辑再卸载,草稿正确落 B 键)。身份 undefined 时不挂 composer(轻占位,身份到达即
+// 挂;路由解析瞬时,不构成可感知延迟,亦避免空键丢弃)。
 
+import { Show } from "solid-js"
 import type { AlphaProjectsApi } from "../../sidebar/use-projects"
 import { AlphaComposer, type ComposerSessionDockApi } from "../alpha-composer"
 import type { createComposerDraftStash } from "./session-dock-core"
@@ -16,17 +19,23 @@ export function SessionComposerMount(props: {
   dock: ComposerSessionDockApi
   drafts: ReturnType<typeof createComposerDraftStash>
 }) {
-  // 挂载即定格身份键(闭包定格,I8):卸载时用它捕获草稿,不在 cleanup 重读 identity()。
-  const mountedKey = identityKey(props.identity())
   return (
-    <AlphaComposer
-      mode="session"
-      projects={props.projects}
-      directory={() => props.identity()?.directory}
-      sessionID={() => props.identity()?.sessionID}
-      sessionDock={props.dock}
-      initialText={props.drafts.restore(mountedKey)}
-      onDraftCapture={(draft) => props.drafts.capture(mountedKey, draft)}
-    />
+    <Show
+      when={identityKey(props.identity())}
+      keyed
+      fallback={<div class="a-swk-composer-pending" aria-hidden="true" />}
+    >
+      {(mountedKey) => (
+        <AlphaComposer
+          mode="session"
+          projects={props.projects}
+          directory={() => props.identity()?.directory}
+          sessionID={() => props.identity()?.sessionID}
+          sessionDock={props.dock}
+          initialText={props.drafts.restore(mountedKey)}
+          onDraftCapture={(draft) => props.drafts.capture(mountedKey, draft)}
+        />
+      )}
+    </Show>
   )
 }

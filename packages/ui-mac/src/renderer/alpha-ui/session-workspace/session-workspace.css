@@ -458,6 +458,12 @@
   font-weight: var(--a-weight-medium);
 }
 
+/* 身份解析前的 composer 轻占位(REQ-125 C558:identityKey 未定 → 不挂 composer,身份到达即挂;
+   仅占位避免布局塌陷,路由解析瞬时不构成可感知延迟)。 */
+.a-swk-composer-pending {
+  min-height: 96px;
+}
+
 /* ── 检查点回退条 / 子会话条(REQ-125 C558:紧凑停靠条,复用 dock 外壳)── */
 .a-swk-revert,
 .a-swk-child {
