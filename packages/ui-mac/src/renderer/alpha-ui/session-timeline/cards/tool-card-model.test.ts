@@ -12,8 +12,11 @@ import {
   TOOL_BODY_MAX_CHARS,
   TOOL_BODY_MAX_LINES,
   TOOL_ERROR_MAX_CHARS,
+  TOOL_ITEM_MAX_CHARS,
   TOOL_LINKS_MAX,
   TOOL_LIST_MAX_ITEMS,
+  TOOL_SCAN_MAX_CHARS,
+  TOOL_URL_MAX_CHARS,
   toolCardBodyOf,
   toolCardHeadOf,
   toolCardKindOf,
@@ -74,6 +77,11 @@ describe("REQ-125 C6 分派表与四态", () => {
     Object.entries(table).forEach(([tool, kind]) =>
       expect({ tool, kind: toolCardKindOf(tool) }).toEqual({ tool, kind }),
     )
+  })
+
+  test("敌意工具名(原型继承键)不可能命中分派表,一律 fail-closed 落 unknown", () => {
+    const hostile = ["__proto__", "constructor", "prototype", "toString", "hasOwnProperty", "valueOf"]
+    hostile.forEach((tool) => expect({ tool, kind: toolCardKindOf(tool) }).toEqual({ tool, kind: "unknown" }))
   })
 
   test("四态映射:pending/running/error/completed→success", () => {
@@ -158,7 +166,7 @@ describe("REQ-125 C6 输出体(有界 + 分支)", () => {
     expect(body.truncated).toBe(true)
   })
 
-  test("read loaded 文件列表 / glob 匹配列表 有界;webfetch 无输出体", () => {
+  test("read loaded 文件列表(读取徽章)/ glob 匹配列表 有界;webfetch 无输出体", () => {
     const read = toolCardBodyOf(
       part("read", {
         status: "completed",
@@ -168,6 +176,7 @@ describe("REQ-125 C6 输出体(有界 + 分支)", () => {
     if (read.type !== "files") throw new Error("expected files body")
     expect(read.files.length).toBe(TOOL_LIST_MAX_ITEMS)
     expect(read.truncated).toBe(true)
+    expect(read.badge).toBe("read")
 
     const glob = toolCardBodyOf(
       part("glob", { status: "completed", output: "/a/x.ts\n/a/y.ts\n\n(Results are truncated…)" }),
@@ -179,7 +188,40 @@ describe("REQ-125 C6 输出体(有界 + 分支)", () => {
     })
   })
 
-  test("websearch:只认 http(s) URL,数量有界(I6/I7)", () => {
+  test("I7 单项帽:read 列表项 / glob 行 / 头部目标 逐项截断,不整串进 DOM", () => {
+    const longItem = "/a/" + "x".repeat(TOOL_ITEM_MAX_CHARS * 3)
+    const read = toolCardBodyOf(part("read", { status: "completed", metadata: { loaded: [longItem, 42, "/ok"] } }))
+    if (read.type !== "files") throw new Error("expected files body")
+    expect(read.files.length).toBe(2)
+    expect(read.files[0]!.length).toBe(TOOL_ITEM_MAX_CHARS)
+    expect(read.files[1]).toBe("/ok")
+
+    const glob = toolCardBodyOf(
+      part("glob", { status: "completed", output: `/a/${"y".repeat(TOOL_ITEM_MAX_CHARS * 3)}\n/a/ok.ts` }),
+    )
+    if (glob.type !== "files") throw new Error("expected files body")
+    expect(glob.files[0]!.length).toBeLessThanOrEqual(TOOL_ITEM_MAX_CHARS)
+    expect(glob.files[1]).toBe("/a/ok.ts")
+
+    const bash = toolCardHeadOf(
+      part("bash", { status: "completed", input: { command: "c".repeat(TOOL_ITEM_MAX_CHARS * 10) } }),
+    )
+    expect(bash.target!.length).toBe(TOOL_ITEM_MAX_CHARS)
+  })
+
+  test("I7 扫描预算:glob 行切与 websearch URL 扫描不吃超预算尾部", () => {
+    const glob = toolCardBodyOf(
+      part("glob", { status: "completed", output: "x".repeat(TOOL_SCAN_MAX_CHARS) + "\n/tail/after-budget.ts" }),
+    )
+    if (glob.type !== "files") throw new Error("expected files body")
+    expect(glob.truncated).toBe(true)
+    expect(glob.files.some((file) => file.includes("after-budget"))).toBe(false)
+
+    const urls = extractHttpUrls("x".repeat(TOOL_SCAN_MAX_CHARS) + " https://late.example/only-after-budget")
+    expect(urls).toEqual([])
+  })
+
+  test("websearch:只认 http(s) URL,数量有界,超长 URL 丢弃(I6/I7)", () => {
     const urls = Array.from({ length: TOOL_LINKS_MAX + 3 }, (_, i) => `https://site${i}.dev/page`).join("\n")
     const body = toolCardBodyOf(
       part("websearch", { status: "completed", output: `${urls}\njavascript:alert(1)\nfile:///etc/passwd` }),
@@ -189,9 +231,10 @@ describe("REQ-125 C6 输出体(有界 + 分支)", () => {
     expect(body.truncated).toBe(true)
     expect(body.urls.every((url) => url.startsWith("https://"))).toBe(true)
     expect(extractHttpUrls("javascript:x data:y vbscript:z")).toEqual([])
+    expect(extractHttpUrls(`https://long.example/${"p".repeat(TOOL_URL_MAX_CHARS)}`)).toEqual([])
   })
 
-  test("edit → diff 体;write → 前 2 行预览 + 总行数;apply_patch → 徽章文件行", () => {
+  test("edit → diff 体;write → 徽章路径 + 前 2 行预览 + 总行数;apply_patch → 徽章文件行", () => {
     const edit = toolCardBodyOf(
       part("edit", { status: "completed", metadata: { diff: "--- a\n+++ b\n@@ -1 +1 @@\n-x\n+y\n" } }),
     )
@@ -200,7 +243,7 @@ describe("REQ-125 C6 输出体(有界 + 分支)", () => {
     const write = toolCardBodyOf(
       part("write", { status: "completed", input: { filePath: "/t/a.md", content: "l1\nl2\nl3\nl4" } }),
     )
-    expect(write).toEqual({ type: "write", preview: ["l1", "l2"], totalLines: 4 })
+    expect(write).toEqual({ type: "write", path: "/t/a.md", preview: ["l1", "l2"], totalLines: 4, approx: false })
 
     const patch = toolCardBodyOf(
       part("apply_patch", {
@@ -218,6 +261,39 @@ describe("REQ-125 C6 输出体(有界 + 分支)", () => {
     )
     if (patch.type !== "patch") throw new Error("expected patch body")
     expect(patch.files.map((file) => file.badge)).toEqual(["add", "modify", "delete", "move"])
+  })
+
+  test("apply_patch 敌意 type(原型键)不产原型徽章,行被丢弃(fail-closed)", () => {
+    const patch = toolCardBodyOf(
+      part("apply_patch", {
+        status: "completed",
+        metadata: {
+          files: [
+            { relativePath: "a.ts", type: "__proto__", additions: 1, deletions: 0 },
+            { relativePath: "b.ts", type: "constructor", additions: 1, deletions: 0 },
+            { relativePath: "c.ts", type: "add", additions: 1, deletions: 0 },
+          ],
+        },
+      }),
+    )
+    if (patch.type !== "patch") throw new Error("expected patch body")
+    expect(patch.files.map((file) => [file.path, file.badge])).toEqual([["c.ts", "add"]])
+  })
+
+  test("I7 write:超扫描预算 → 总行数 approx、头部统计徽标诚实缺席", () => {
+    const big = "line\n".repeat(TOOL_SCAN_MAX_CHARS / 4)
+    const body = toolCardBodyOf(part("write", { status: "completed", input: { filePath: "/t/big.md", content: big } }))
+    if (body.type !== "write") throw new Error("expected write body")
+    expect(body.approx).toBe(true)
+    expect(body.preview).toEqual(["line", "line"])
+
+    const head = toolCardHeadOf(part("write", { status: "completed", input: { filePath: "/t/big.md", content: big } }))
+    expect(head.stat).toBeUndefined()
+
+    const small = toolCardHeadOf(
+      part("write", { status: "completed", input: { filePath: "/t/a.md", content: "a\nb" } }),
+    )
+    expect(small.stat).toEqual({ additions: 2, deletions: 0 })
   })
 
   test("未知工具 fail-closed:有界纯文本通用卡,超限截断", () => {

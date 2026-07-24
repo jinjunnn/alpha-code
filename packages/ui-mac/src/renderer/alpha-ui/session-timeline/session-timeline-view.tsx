@@ -282,7 +282,7 @@ function TimelineRowView(props: { row: TimelineRow }) {
   if (row.kind === "markdown") return <MarkdownRow row={row} />
   if (row.kind === "tool") return <TimelineToolCard part={row.part} />
   if (row.kind === "toolgroup") return <ContextToolGroupCard parts={row.parts} />
-  if (row.kind === "media") return <TimelineMediaRow part={row.part} />
+  if (row.kind === "media") return <TimelineMediaRow media={row.media} />
   if (row.kind === "artifacts") return <TimelineArtifactRows row={row} />
   if (row.kind === "retry") return <RetryCard row={row} />
   if (row.kind === "turnError") return <TurnErrorCard row={row} />

@@ -790,6 +790,61 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     await flush()
     expect(host.querySelector(".a-tc-open")).toBeNull()
   })
+
+  test("read 列表行带「读取」徽章;write 预览带「写入」徽章行;大输出 bash 默认收起(I7)", async () => {
+    const host = mount()
+    runtime.setTimelineRows(
+      assistantFixture([
+        toolPartFixture("prt_rd1", "read", {
+          status: "completed",
+          input: { filePath: "/a/README.md" },
+          output: "ok",
+          title: "read",
+          metadata: { loaded: ["/a/AGENTS.md", "/a/CONTEXT.md"] },
+          time: { start: 0, end: 1 },
+        }),
+        toolPartFixture("prt_wb1", "write", {
+          status: "completed",
+          input: { filePath: "/a/NOTES.md", content: "第一行\n第二行\n第三行" },
+          output: "ok",
+          title: "write",
+          metadata: {},
+          time: { start: 0, end: 1 },
+        }),
+        toolPartFixture("prt_bb1", "bash", {
+          status: "completed",
+          input: { command: "cat big.log" },
+          output: "z".repeat(5_000),
+          title: "bash",
+          metadata: { exit: 0 },
+          time: { start: 0, end: 1 },
+        }),
+      ]),
+    )
+    await flush()
+
+    const read = host.querySelector("[data-alpha-tool-card][data-kind='read']")!
+    ;(read.querySelector(".a-tc-head") as HTMLButtonElement).click()
+    await flush()
+    const readBadges = [...read.querySelectorAll(".a-tc-badge")].map((el) => el.getAttribute("data-badge"))
+    expect(readBadges).toEqual(["read", "read"])
+    expect(read.querySelector(".a-tc-badge")!.textContent).toBe("读取")
+
+    const write = host.querySelector("[data-alpha-tool-card][data-kind='write']")!
+    ;(write.querySelector(".a-tc-head") as HTMLButtonElement).click()
+    await flush()
+    const writeBadge = write.querySelector(".a-tc-badge[data-badge='write']")!
+    expect(writeBadge.textContent).toBe("写入")
+    expect(write.textContent).toContain("NOTES.md")
+
+    // 输出体超过默认展开帽 → 默认收起(用户显式展开仍可用,内容仍有界)。
+    const bash = host.querySelector("[data-alpha-tool-card][data-tool='bash']")!
+    expect(bash.getAttribute("data-open")).toBeNull()
+    ;(bash.querySelector(".a-tc-head") as HTMLButtonElement).click()
+    await flush()
+    expect(bash.getAttribute("data-open")).toBe("true")
+    expect(bash.querySelector(".a-tc-term")).not.toBeNull()
+  })
 })
 
 describe("REQ-125 C6 折叠组/错误/重试/媒体/产物行", () => {

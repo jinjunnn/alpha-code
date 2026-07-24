@@ -299,12 +299,68 @@ describe("REQ-125 C5 行模型投影:消息 → 行", () => {
     expect(rows.slice(2).map((row) => (row.kind === "tool" ? row.part.id : ""))).toEqual(["prt_x1", "prt_g4", "prt_g5"])
   })
 
-  test("媒体行:助手侧 file part 投影为 media 行", () => {
+  test("媒体行:助手侧 file part 投影为 media 行(快照含名字/mime/url)", () => {
     const rows = project([userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")], {
       msg_u1: [textPart("prt_u1", "msg_u1", "截个图")],
       msg_a1: [filePart("prt_f1", "msg_a1")],
     })
     expect(rows.map((row) => row.kind)).toEqual(["user", "media"])
+    const media = rows[1]!
+    if (media.kind !== "media") throw new Error("expected media row")
+    expect(media.media).toMatchObject({ partID: "prt_f1", name: "screenshot.png", mime: "image/png" })
+  })
+
+  test("媒体行(生产通道):完成态工具附件投影为 media 行,带附件的探查工具不进折叠组", () => {
+    const withAttachment = toolPart("prt_r1", "msg_a1", "read", {
+      state: {
+        status: "completed",
+        input: { filePath: "/a/shot.png" },
+        output: "Image read successfully",
+        title: "read",
+        metadata: {},
+        time: { start: 0, end: 1 },
+        // 生产形态(processor 完成时写入):附件可缺 id/filename。
+        attachments: [{ type: "file", mime: "image/png", url: "data:image/png;base64,eA==" }],
+      } as ToolPart["state"],
+    })
+    const rows = project([userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")], {
+      msg_u1: [textPart("prt_u1", "msg_u1", "读下截图")],
+      msg_a1: [withAttachment, toolPart("prt_r2", "msg_a1", "read"), toolPart("prt_r3", "msg_a1", "grep")],
+    })
+    // 带附件的 read 保留独立卡 + 媒体行;其后两个无附件探查工具正常成组。
+    expect(rows.map((row) => row.kind)).toEqual(["user", "tool", "media", "toolgroup"])
+    const media = rows[2]!
+    if (media.kind !== "media") throw new Error("expected media row")
+    expect(media.key).toBe("media:prt_r1:0")
+    expect(media.media).toMatchObject({ partID: "prt_r1", name: "image/png", mime: "image/png" })
+
+    // 畸形附件条目 fail-closed 丢弃。
+    const malformed = toolPart("prt_r9", "msg_a1", "read", {
+      state: {
+        status: "completed",
+        input: {},
+        output: "",
+        title: "read",
+        metadata: {},
+        time: { start: 0, end: 1 },
+        attachments: [null, { type: "file" }, { mime: "image/png" }, "junk"],
+      } as unknown as ToolPart["state"],
+    })
+    const failClosed = project([userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")], {
+      msg_u1: [textPart("prt_u1", "msg_u1", "x")],
+      msg_a1: [malformed],
+    })
+    expect(failClosed.some((row) => row.kind === "media")).toBe(false)
+  })
+
+  test("I7 折叠组成员上限:超长连续探查段切成多个组行", () => {
+    const many = Array.from({ length: 30 }, (_, index) => toolPart(`prt_g${index}`, "msg_a1", "read"))
+    const rows = project([userMsg("msg_u1", 1000), assistantMsg("msg_a1", "msg_u1")], {
+      msg_u1: [textPart("prt_u1", "msg_u1", "翻仓库")],
+      msg_a1: many,
+    })
+    const groups = rows.filter((row) => row.kind === "toolgroup")
+    expect(groups.map((group) => (group.kind === "toolgroup" ? group.parts.length : 0))).toEqual([24, 6])
   })
 
   test("产物链接行:完成态 cloud_* 工具输出解析出 artifacts 名单才出行(fail-closed)", () => {

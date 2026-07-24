@@ -6,10 +6,10 @@
 // 数据全部经 store proxy 反应式读取(行对象引用稳定);内容一律纯文本节点(I3),
 // 输出体有界(I7,tool-card-model 的双帽);CSS 只用 --a-* 令牌(I5)。
 // 未知工具 fail-closed:有界纯文本通用卡。
-import type { FilePart, ToolPart } from "@opencode-ai/sdk/v2/client"
+import type { ToolPart } from "@opencode-ai/sdk/v2/client"
 import { createMemo, createSignal, For, type JSX, Show } from "solid-js"
 import { t } from "../../../i18n"
-import type { TimelineRow } from "../timeline-model"
+import type { TimelineMediaSource, TimelineRow } from "../timeline-model"
 import {
   basenameOf,
   contextGroupSummaryOf,
@@ -17,6 +17,7 @@ import {
   dirnameOf,
   mediaLabelOf,
   mediaThumbable,
+  OPEN_DEFAULT_MAX_CHARS,
   taskCardInfoOf,
   toolCardBodyOf,
   toolCardHeadOf,
@@ -220,10 +221,17 @@ function CardBody(props: { head: ToolCardHead; body: ToolCardBody }) {
             <For each={body().files}>
               {(file) => (
                 <div class="a-tc-file-row">
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
-                    <path d="M14 3v6h6" />
-                  </svg>
+                  <Show
+                    when={body().badge}
+                    fallback={
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+                        <path d="M14 3v6h6" />
+                      </svg>
+                    }
+                  >
+                    <FileBadge badge={body().badge!} />
+                  </Show>
                   <span class="a-tc-file-dir">{dirnameOf(file)}</span>
                   <span class="a-tc-file-name">{basenameOf(file)}</span>
                 </div>
@@ -254,9 +262,21 @@ function CardBody(props: { head: ToolCardHead; body: ToolCardBody }) {
       <Show when={diff()}>{(body) => <DiffBody patch={body().patch} />}</Show>
       <Show when={write()}>
         {(body) => (
-          <div class="a-tc-out">
-            {body().preview.join("\n")}
-            <div class="a-tc-write-note">{t("alpha.timeline.writeLines", { count: body().totalLines })}</div>
+          <div class="a-tc-write">
+            <Show when={body().path}>
+              <div class="a-tc-file-row">
+                <FileBadge badge="write" />
+                <span class="a-tc-file-dir">{dirnameOf(body().path!)}</span>
+                <span class="a-tc-file-name">{basenameOf(body().path!)}</span>
+              </div>
+            </Show>
+            <div class="a-tc-out">
+              {body().preview.join("\n")}
+              <div class="a-tc-write-note">{t("alpha.timeline.writeLines", { count: body().totalLines })}</div>
+              <Show when={body().approx}>
+                <TruncatedNote />
+              </Show>
+            </div>
           </div>
         )}
       </Show>
@@ -340,9 +360,16 @@ export function TimelineToolCard(props: { part: ToolPart }) {
   const head = createMemo(() => toolCardHeadOf(props.part))
   const body = createMemo(() => toolCardBodyOf(props.part))
   const hasBody = () => body().type !== "none"
-  // 默认展开:终端流(bash)/错误体;其余折叠,用户可切换(状态机只认显式选择)。
+  // 默认展开:终端流(bash)/错误体,且体量在帽内(I7:大输出体默认收起,防多卡累积
+  // 常驻 DOM);其余折叠。用户显式选择永远优先。
   const [chosen, setChosen] = createSignal<boolean>()
-  const open = () => chosen() ?? (body().type === "term" || body().type === "error")
+  const defaultOpen = () => {
+    const value = body()
+    if (value.type === "term") return value.output.length <= OPEN_DEFAULT_MAX_CHARS
+    if (value.type === "error") return value.message.length <= OPEN_DEFAULT_MAX_CHARS
+    return false
+  }
+  const open = () => chosen() ?? defaultOpen()
   const description = () => {
     const input = props.part.state.input
     const value =
@@ -505,16 +532,14 @@ export function RetryCard(props: { row: Extract<TimelineRow, { kind: "retry" }> 
   )
 }
 
-// ── 助手侧媒体预览行 ────────────────────────────────────────────────────────
-export function TimelineMediaRow(props: { part: FilePart }) {
+// ── 助手侧媒体预览行(数据源 = 工具附件通道 / 顶层 file part 的快照) ────────
+export function TimelineMediaRow(props: { media: TimelineMediaSource }) {
   const intents = useTimelineIntents()
-  const name = () => props.part.filename?.trim() || props.part.mime
-  const label = () => mediaLabelOf(props.part.mime, name())
-  const inner = (
+  const inner = () => (
     <>
       <span class="a-media-thumb" aria-hidden="true">
         <Show
-          when={mediaThumbable(props.part.url)}
+          when={mediaThumbable(props.media.url)}
           fallback={
             <svg viewBox="0 0 24 24">
               <rect x="3" y="4" width="18" height="16" rx="2" />
@@ -523,24 +548,26 @@ export function TimelineMediaRow(props: { part: FilePart }) {
             </svg>
           }
         >
-          <img src={props.part.url} alt="" loading="lazy" />
+          <img src={props.media.url} alt="" loading="lazy" />
         </Show>
       </span>
       <span class="a-media-name">
-        <b>{name()}</b>
-        <small>{label()}</small>
+        <b>{props.media.name}</b>
+        <small>{mediaLabelOf(props.media.mime, props.media.name)}</small>
       </span>
     </>
   )
   return (
     <div class="a-tl-row a-media" data-alpha-timeline-row="media">
-      <Show when={intents.focusArtifact} fallback={<div class="a-media-row">{inner}</div>}>
+      <Show when={intents.focusArtifact} fallback={<div class="a-media-row">{inner()}</div>}>
         <button
           type="button"
           class="a-media-row"
-          onClick={() => intents.focusArtifact!({ name: name(), partID: props.part.id, mime: props.part.mime })}
+          onClick={() =>
+            intents.focusArtifact!({ name: props.media.name, partID: props.media.partID, mime: props.media.mime })
+          }
         >
-          {inner}
+          {inner()}
         </button>
       </Show>
     </div>

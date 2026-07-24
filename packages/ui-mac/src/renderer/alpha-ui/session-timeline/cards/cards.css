@@ -383,6 +383,15 @@ button.a-tc-head:focus-visible {
   font-size: var(--a-text-xs);
 }
 
+.a-tc-write {
+  display: flex;
+  flex-direction: column;
+}
+
+.a-tc-write > .a-tc-file-row {
+  margin: 6px 8px 0;
+}
+
 .a-tc-files,
 .a-tc-patch {
   padding: 6px 8px;

@@ -13,10 +13,23 @@ export const TOOL_LIST_MAX_ITEMS = 50
 export const TOOL_LINKS_MAX = 8
 export const WRITE_PREVIEW_LINES = 2
 export const TOOL_ERROR_MAX_CHARS = 4_000
+/** 单项(列表项/文件路径/URL/头部目标)字符帽:先截单项,再进过滤/映射。 */
+export const TOOL_ITEM_MAX_CHARS = 400
+/** 对完整输出做行切/URL 扫描前的扫描预算:超出部分不扫描(截断标记诚实呈现)。 */
+export const TOOL_SCAN_MAX_CHARS = 64_000
+/** URL 帽:超长 URL 直接丢弃(截断的 URL 指向错误目标,fail-closed 不渲染)。 */
+export const TOOL_URL_MAX_CHARS = 500
+/** 默认展开的输出体(bash 终端流/错误体)超过此帽 → 默认收起,防多卡累积驻留 DOM。 */
+export const OPEN_DEFAULT_MAX_CHARS = 4_000
 
 export interface BoundedBlock {
   text: string
   truncated: boolean
+}
+
+/** 单项帽:超限截断(展示层配 ellipsis;是否丢弃由调用方决定)。 */
+export function cappedItem(text: string, max = TOOL_ITEM_MAX_CHARS): string {
+  return text.length > max ? text.slice(0, max) : text
 }
 
 /** 字符 + 行数双帽;两者任一超限即截断(截断标记由渲染层显式呈现,不伪装完整)。 */
@@ -61,24 +74,26 @@ export type ToolCardKind =
   | "task"
   | "unknown"
 
-const TOOL_CARD_KINDS: Record<string, ToolCardKind> = {
-  read: "read",
-  list: "list",
-  glob: "glob",
-  grep: "grep",
-  webfetch: "webfetch",
-  websearch: "websearch",
-  bash: "bash",
-  edit: "edit",
-  write: "write",
-  apply_patch: "apply_patch",
-  skill: "skill",
-  task: "task",
-}
+// 分派表用 Map:敌意工具名(__proto__/constructor 等继承键)不可能命中原型成员,
+// 未登记键一律 fail-closed 落 unknown。
+const TOOL_CARD_KINDS = new Map<string, ToolCardKind>([
+  ["read", "read"],
+  ["list", "list"],
+  ["glob", "glob"],
+  ["grep", "grep"],
+  ["webfetch", "webfetch"],
+  ["websearch", "websearch"],
+  ["bash", "bash"],
+  ["edit", "edit"],
+  ["write", "write"],
+  ["apply_patch", "apply_patch"],
+  ["skill", "skill"],
+  ["task", "task"],
+])
 
 /** 分派:已知工具 → 专卡分支;其余一律 fail-closed 走未知工具通用卡。 */
 export function toolCardKindOf(tool: string): ToolCardKind {
-  return TOOL_CARD_KINDS[tool] ?? "unknown"
+  return TOOL_CARD_KINDS.get(tool) ?? "unknown"
 }
 
 export type ToolCardStatus = "pending" | "running" | "error" | "success"
@@ -159,71 +174,78 @@ const TITLE_KEYS: Partial<Record<ToolCardKind, string>> = {
   task: "alpha.timeline.tool.task",
 }
 
+/** 头部字符串一律先过单项帽(I7):恶意超长 命令/路径/模式 不整串进 DOM。 */
+function cappedStringOf(value: unknown): string | undefined {
+  const text = stringOf(value)
+  return text === undefined ? undefined : cappedItem(text)
+}
+
 export function toolCardHeadOf(part: ToolPart): ToolCardHead {
   const kind = toolCardKindOf(part.tool)
   const status = toolCardStatusOf(part.state)
   const input = inputOf(part)
   const metadata = metadataOf(part)
-  const head: ToolCardHead = { kind, status, titleKey: TITLE_KEYS[kind], toolName: part.tool }
+  const head: ToolCardHead = { kind, status, titleKey: TITLE_KEYS[kind], toolName: cappedItem(part.tool) }
 
   switch (kind) {
     case "read": {
-      const filePath = stringOf(input.filePath)
+      const filePath = cappedStringOf(input.filePath)
       if (filePath) {
-        head.target = basenameOf(filePath)
-        head.detail = dirnameOf(filePath)
+        head.target = cappedItem(basenameOf(filePath))
+        head.detail = cappedItem(dirnameOf(filePath))
       }
       return head
     }
     case "list": {
-      head.target = stringOf(input.path)
+      head.target = cappedStringOf(input.path)
       return head
     }
     case "glob": {
-      head.target = stringOf(input.pattern)
+      head.target = cappedStringOf(input.pattern)
       const count = finiteOf(metadata.count)
       if (count !== undefined) head.count = { unit: "files", value: Math.max(0, Math.floor(count)) }
       return head
     }
     case "grep": {
-      head.target = stringOf(input.pattern)
-      const include = stringOf(input.include)
+      head.target = cappedStringOf(input.pattern)
+      const include = cappedStringOf(input.include)
       if (include) head.detail = `include=${include}`
       const matches = finiteOf(metadata.matches)
       if (matches !== undefined) head.count = { unit: "matches", value: Math.max(0, Math.floor(matches)) }
       return head
     }
     case "webfetch": {
-      head.target = stringOf(input.url)
+      head.target = cappedStringOf(input.url)
       return head
     }
     case "websearch": {
-      head.target = stringOf(input.query)
+      head.target = cappedStringOf(input.query)
       return head
     }
     case "bash": {
-      head.target = stringOf(input.command)
+      head.target = cappedStringOf(input.command)
       const exit = finiteOf(metadata.exit)
       if (status === "success" && exit !== undefined) head.exit = exit
       return head
     }
     case "edit": {
-      const filePath = stringOf(input.filePath)
+      const filePath = cappedStringOf(input.filePath)
       if (filePath) {
-        head.target = basenameOf(filePath)
-        head.detail = dirnameOf(filePath)
+        head.target = cappedItem(basenameOf(filePath))
+        head.detail = cappedItem(dirnameOf(filePath))
       }
       head.stat = editStatOf(metadata)
       return head
     }
     case "write": {
-      const filePath = stringOf(input.filePath)
+      const filePath = cappedStringOf(input.filePath)
       if (filePath) {
-        head.target = basenameOf(filePath)
-        head.detail = dirnameOf(filePath)
+        head.target = cappedItem(basenameOf(filePath))
+        head.detail = cappedItem(dirnameOf(filePath))
       }
+      // I7:总行数只在扫描预算内计数才可信;超预算不出统计徽标(诚实缺席)。
       const content = stringOf(input.content)
-      if (content) head.stat = { additions: countLines(content), deletions: 0 }
+      if (content && content.length <= TOOL_SCAN_MAX_CHARS) head.stat = { additions: countLines(content), deletions: 0 }
       return head
     }
     case "apply_patch": {
@@ -238,11 +260,11 @@ export function toolCardHeadOf(part: ToolPart): ToolCardHead {
       return head
     }
     case "skill": {
-      head.target = stringOf(input.name) ?? stringOf(metadata.name)
+      head.target = cappedStringOf(input.name) ?? cappedStringOf(metadata.name)
       return head
     }
     case "task": {
-      head.target = stringOf(input.description)
+      head.target = cappedStringOf(input.description)
       return head
     }
     default:
@@ -277,9 +299,9 @@ export type ToolCardBody =
   | { type: "none" }
   | { type: "text"; text: string; truncated: boolean }
   | { type: "term"; output: string; truncated: boolean; streaming: boolean }
-  | { type: "files"; files: string[]; truncated: boolean }
+  | { type: "files"; files: string[]; truncated: boolean; badge?: "read" }
   | { type: "diff"; patch: string }
-  | { type: "write"; preview: string[]; totalLines: number }
+  | { type: "write"; path?: string; preview: string[]; totalLines: number; approx: boolean }
   | { type: "patch"; files: PatchFileRow[]; truncated: boolean }
   | { type: "links"; urls: string[]; truncated: boolean }
   | { type: "error"; message: string; truncated: boolean }
@@ -306,25 +328,39 @@ export function toolCardBodyOf(part: ToolPart): ToolCardBody {
 
   switch (kind) {
     case "read": {
-      const loaded = Array.isArray(metadata.loaded) ? metadata.loaded.filter((item) => typeof item === "string") : []
-      if (loaded.length === 0) return { type: "none" }
-      return {
-        type: "files",
-        files: loaded.slice(0, TOOL_LIST_MAX_ITEMS),
-        truncated: loaded.length > TOOL_LIST_MAX_ITEMS,
+      // I7:单趟早停迭代 —— 不对完整数组先 filter;逐项过单项帽后才收集。
+      const loaded = metadata.loaded
+      if (!Array.isArray(loaded)) return { type: "none" }
+      const files: string[] = []
+      let truncated = false
+      for (const item of loaded) {
+        if (typeof item !== "string" || item.length === 0) continue
+        if (files.length >= TOOL_LIST_MAX_ITEMS) {
+          truncated = true
+          break
+        }
+        files.push(cappedItem(item))
       }
+      if (files.length === 0) return { type: "none" }
+      return { type: "files", files, truncated, badge: "read" }
     }
     case "glob": {
-      const lines = outputOf(part)
-        .split("\n")
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0 && !line.startsWith("(") && line !== "No files found")
-      if (lines.length === 0) return { type: "none" }
-      return {
-        type: "files",
-        files: lines.slice(0, TOOL_LIST_MAX_ITEMS),
-        truncated: lines.length > TOOL_LIST_MAX_ITEMS || metadata.truncated === true,
+      // I7:先按扫描预算截整串,再行切;每行过单项帽后才进过滤。
+      const output = outputOf(part)
+      const scan = output.slice(0, TOOL_SCAN_MAX_CHARS)
+      const files: string[] = []
+      let overflow = output.length > scan.length
+      for (const rawLine of scan.split("\n")) {
+        if (files.length >= TOOL_LIST_MAX_ITEMS) {
+          overflow = true
+          break
+        }
+        const line = cappedItem(rawLine).trim()
+        if (line.length === 0 || line.startsWith("(") || line === "No files found") continue
+        files.push(line)
       }
+      if (files.length === 0) return { type: "none" }
+      return { type: "files", files, truncated: overflow || metadata.truncated === true }
     }
     case "grep":
     case "list": {
@@ -346,13 +382,23 @@ export function toolCardBodyOf(part: ToolPart): ToolCardBody {
       return { type: "diff", patch }
     }
     case "write": {
-      const content = stringOf(inputOf(part).content)
+      const input = inputOf(part)
+      const content = stringOf(input.content)
       if (!content) return { type: "none" }
-      const preview = content.split("\n", WRITE_PREVIEW_LINES + 1).slice(0, WRITE_PREVIEW_LINES)
+      // I7:预览只切开头一小段;总行数只在扫描预算内计数,超预算 approx(不伪装精确)。
+      const previewScan = content.slice(0, WRITE_PREVIEW_LINES * (TOOL_ITEM_MAX_CHARS + 1) + 1)
+      const preview = previewScan
+        .split("\n", WRITE_PREVIEW_LINES + 1)
+        .slice(0, WRITE_PREVIEW_LINES)
+        .map((line) => cappedItem(line))
+      const approx = content.length > TOOL_SCAN_MAX_CHARS
+      const filePath = cappedStringOf(input.filePath)
       return {
         type: "write",
-        preview: preview.map((line) => boundedBlock(line, 400, 1).text),
-        totalLines: countLines(content),
+        path: filePath,
+        preview,
+        totalLines: countLines(approx ? content.slice(0, TOOL_SCAN_MAX_CHARS) : content),
+        approx,
       }
     }
     case "apply_patch":
@@ -375,12 +421,13 @@ function patchBodyOf(part: ToolPart): ToolCardBody {
   return { type: "patch", files: files.rows, truncated: files.truncated }
 }
 
-const PATCH_BADGES: Record<string, PatchFileRow["badge"]> = {
-  add: "add",
-  update: "modify",
-  delete: "delete",
-  move: "move",
-}
+// 徽章表同样用 Map:敌意 type(__proto__/constructor 等)不可能命中原型成员 → 无徽章即丢行。
+const PATCH_BADGES = new Map<string, PatchFileRow["badge"]>([
+  ["add", "add"],
+  ["update", "modify"],
+  ["delete", "delete"],
+  ["move", "move"],
+])
 
 function patchFilesOf(part: ToolPart): { rows: PatchFileRow[]; truncated: boolean } {
   const files = metadataOf(part).files
@@ -396,8 +443,8 @@ function patchFilesOf(part: ToolPart): { rows: PatchFileRow[]; truncated: boolea
       additions?: unknown
       deletions?: unknown
     }
-    const path = stringOf(record.relativePath) ?? stringOf(record.filePath)
-    const badge = typeof record.type === "string" ? PATCH_BADGES[record.type] : undefined
+    const path = cappedStringOf(record.relativePath) ?? cappedStringOf(record.filePath)
+    const badge = typeof record.type === "string" ? PATCH_BADGES.get(record.type) : undefined
     if (!path || !badge) continue
     rows.push({
       badge,
@@ -409,13 +456,15 @@ function patchFilesOf(part: ToolPart): { rows: PatchFileRow[]; truncated: boolea
   return { rows, truncated: false }
 }
 
-/** I6:只认 http(s) 协议的裸 URL(展示为显式外开链接;导航裁决在主进程)。 */
+/** I6/I7:只认 http(s) 协议的裸 URL;扫描预算截整串,超长 URL 丢弃(不截半个 URL)。 */
 export function extractHttpUrls(text: string): string[] {
   if (!text) return []
+  const scan = text.slice(0, TOOL_SCAN_MAX_CHARS)
   const seen = new Set<string>()
   const result: string[] = []
-  for (const match of text.matchAll(/https?:\/\/[^\s<>"'`)\]]+/g)) {
+  for (const match of scan.matchAll(/https?:\/\/[^\s<>"'`)\]]+/g)) {
     const url = match[0].replace(/[),.;:!?]+$/, "")
+    if (url.length > TOOL_URL_MAX_CHARS) continue
     if (seen.has(url)) continue
     seen.add(url)
     result.push(url)
@@ -436,8 +485,8 @@ export function taskCardInfoOf(part: ToolPart): TaskCardInfo {
   const input = inputOf(part)
   const metadata = metadataOf(part)
   return {
-    description: stringOf(input.description),
-    agent: stringOf(input.subagent_type),
+    description: cappedStringOf(input.description),
+    agent: cappedStringOf(input.subagent_type),
     childSessionID: stringOf(metadata.sessionId),
     background: metadata.background === true,
   }
@@ -450,13 +499,13 @@ export interface ContextRowInfo {
   args: string[]
 }
 
-/** 「已探索」折叠组一行的动词/目标/参数(与上游 contextToolTrigger 同口径,防御读取)。 */
+/** 「已探索」折叠组一行的动词/目标/参数(与上游 contextToolTrigger 同口径,防御读取,单项帽)。 */
 export function contextRowOf(part: ToolPart): ContextRowInfo {
   const input = inputOf(part)
-  const pattern = stringOf(input.pattern)
-  const filePath = stringOf(input.filePath)
-  const path = stringOf(input.path)
-  const include = stringOf(input.include)
+  const pattern = cappedStringOf(input.pattern)
+  const filePath = cappedStringOf(input.filePath)
+  const path = cappedStringOf(input.path)
+  const include = cappedStringOf(input.include)
   const offset = finiteOf(input.offset)
   const limit = finiteOf(input.limit)
   const kind = toolCardKindOf(part.tool)
@@ -466,7 +515,12 @@ export function contextRowOf(part: ToolPart): ContextRowInfo {
       const args: string[] = []
       if (offset !== undefined) args.push(`offset=${offset}`)
       if (limit !== undefined) args.push(`limit=${limit}`)
-      return { tool: part.tool, titleKey: TITLE_KEYS.read, target: filePath ? basenameOf(filePath) : undefined, args }
+      return {
+        tool: part.tool,
+        titleKey: TITLE_KEYS.read,
+        target: filePath ? cappedItem(basenameOf(filePath)) : undefined,
+        args,
+      }
     }
     case "list":
       return { tool: part.tool, titleKey: TITLE_KEYS.list, target: path, args: [] }

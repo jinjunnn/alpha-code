@@ -59,6 +59,15 @@ export interface TimelineArtifactLink {
   name: string
 }
 
+/** 媒体预览行的数据快照(写一次:工具附件/顶层 file part 在完成后不再变)。 */
+export interface TimelineMediaSource {
+  /** 产生它的 part(顶层 file part 自身,或所属 tool part)。 */
+  partID: string
+  name: string
+  mime: string
+  url: string
+}
+
 export type TimelineRow =
   | { kind: "turn"; key: string; rev: string; userMessageID: string; createdAt: number }
   | {
@@ -76,7 +85,7 @@ export type TimelineRow =
   | { kind: "markdown"; key: string; rev: string; part: TextPart; streaming: boolean }
   | { kind: "tool"; key: string; rev: string; part: ToolPart; tool: string }
   | { kind: "toolgroup"; key: string; rev: string; parts: ToolPart[] }
-  | { kind: "media"; key: string; rev: string; part: FilePart }
+  | { kind: "media"; key: string; rev: string; media: TimelineMediaSource }
   | { kind: "artifacts"; key: string; rev: string; partID: string; links: TimelineArtifactLink[] }
   | { kind: "retry"; key: string; rev: string; userMessageID: string; attempt: number; message: string }
   | { kind: "turnError"; key: string; rev: string; userMessageID: string; name: string; message: string }
@@ -192,10 +201,54 @@ function renderableToolPart(part: ToolPart) {
 const CONTEXT_GROUP_TOOLS = new Set(["read", "glob", "grep", "list"])
 /** 连续多少个已完成探查工具起折叠成组(单个保留独立卡)。 */
 export const CONTEXT_GROUP_MIN = 2
+/** I7:单个折叠组的成员上限;超长连续段切成多个组行。 */
+export const CONTEXT_GROUP_MAX = 24
 
-/** 只有「已完成」的探查工具进折叠组 —— 运行中/出错的工具保留独立卡,状态可见。 */
+/**
+ * 只有「已完成、且无附件」的探查工具进折叠组 —— 运行中/出错的工具保留独立卡
+ * (状态可见);带附件(如 read 图片)的保留独立卡,媒体预览行不被折叠吞掉。
+ */
 function groupableToolPart(part: ToolPart) {
-  return CONTEXT_GROUP_TOOLS.has(part.tool) && part.state.status === "completed"
+  if (!CONTEXT_GROUP_TOOLS.has(part.tool)) return false
+  if (part.state.status !== "completed") return false
+  return toolMediaOf(part).length === 0
+}
+
+// ── 媒体预览行:工具附件是生产上图片/PDF 的真实通道(processor 完成时写入
+// ToolStateCompleted.attachments;顶层 file part 仅用户消息/兜底)。──────────
+export const TOOL_ATTACHMENTS_MAX = 6
+const MEDIA_NAME_MAX = 200
+
+/** 防御读取完成态工具附件(I2):非法条目丢弃;数量有界(I7)。 */
+export function toolMediaOf(part: ToolPart): TimelineMediaSource[] {
+  if (part.state.status !== "completed") return []
+  const attachments = part.state.attachments
+  if (!Array.isArray(attachments)) return []
+  const result: TimelineMediaSource[] = []
+  for (const item of attachments) {
+    if (result.length >= TOOL_ATTACHMENTS_MAX) break
+    if (typeof item !== "object" || item === null) continue
+    const record = item as { id?: unknown; mime?: unknown; url?: unknown; filename?: unknown }
+    if (typeof record.mime !== "string" || !record.mime) continue
+    if (typeof record.url !== "string" || !record.url) continue
+    const filename = typeof record.filename === "string" ? record.filename.trim() : ""
+    result.push({
+      partID: typeof record.id === "string" && record.id ? record.id : part.id,
+      name: (filename || record.mime).slice(0, MEDIA_NAME_MAX),
+      mime: record.mime,
+      url: record.url,
+    })
+  }
+  return result
+}
+
+export function mediaSourceOfFilePart(part: FilePart): TimelineMediaSource {
+  return {
+    partID: part.id,
+    name: (part.filename?.trim() || part.mime).slice(0, MEDIA_NAME_MAX),
+    mime: part.mime,
+    url: part.url,
+  }
 }
 
 // ── 产物链接行(§⑥):完成态 cloud_* 工具输出里的产物名 → 链接行 ─────────────
@@ -331,7 +384,8 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
     let emitted = 0
     const assistants = assistantsByParent.get(userMessage.id) ?? []
 
-    // 连续已完成的探查工具缓冲:≥ CONTEXT_GROUP_MIN 折叠成「已探索」组,单个保留独立卡。
+    // 连续已完成的探查工具缓冲:≥ CONTEXT_GROUP_MIN 折叠成「已探索」组,单个保留独立卡;
+    // 单组成员 ≤ CONTEXT_GROUP_MAX(I7),超长连续段切成多个组行。
     let contextRun: ToolPart[] = []
     const pushToolRow = (part: ToolPart) => {
       rows.push({ kind: "tool", key: `part:${part.id}`, rev: `tool:${part.tool}`, part, tool: part.tool })
@@ -344,20 +398,33 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
           partID: part.id,
           links,
         })
+      // 工具附件(生产上图片/PDF 的真实通道)→ 媒体预览行,挂在工具卡之后。
+      toolMediaOf(part).forEach((media, index) => {
+        rows.push({
+          kind: "media",
+          key: `media:${part.id}:${index}`,
+          rev: `${media.mime}§${media.name}§${media.url.length}`,
+          media,
+        })
+      })
     }
     const flushContextRun = () => {
       if (contextRun.length === 0) return
-      if (contextRun.length >= CONTEXT_GROUP_MIN) {
-        rows.push({
-          kind: "toolgroup",
-          key: `group:${contextRun[0]!.id}`,
-          rev: contextRun.map((part) => part.id).join("|"),
-          parts: contextRun,
-        })
-      } else {
-        contextRun.forEach(pushToolRow)
-      }
+      const run = contextRun
       contextRun = []
+      for (let start = 0; start < run.length; start += CONTEXT_GROUP_MAX) {
+        const chunk = run.slice(start, start + CONTEXT_GROUP_MAX)
+        if (chunk.length >= CONTEXT_GROUP_MIN) {
+          rows.push({
+            kind: "toolgroup",
+            key: `group:${chunk[0]!.id}`,
+            rev: chunk.map((part) => part.id).join("|"),
+            parts: chunk,
+          })
+        } else {
+          chunk.forEach(pushToolRow)
+        }
+      }
     }
 
     for (const assistant of assistants) {
@@ -414,7 +481,13 @@ export function projectTimelineRows(input: TimelineProjectionInput): TimelineRow
           }
           case "file": {
             flushContextRun()
-            rows.push({ kind: "media", key: `part:${part.id}`, rev: part.mime, part })
+            const media = mediaSourceOfFilePart(part)
+            rows.push({
+              kind: "media",
+              key: `part:${part.id}`,
+              rev: `${media.mime}§${media.name}§${media.url.length}`,
+              media,
+            })
             emitted += 1
             continue
           }

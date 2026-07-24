@@ -77,7 +77,7 @@ describe("REQ-125 C6 I3/I6 安全渲染静态棘轮(cards)", () => {
 
   test("媒体缩略只认受限 data:image(mediaThumbable 是唯一 img 来源开关)", () => {
     const cards = sources.get("tool-cards.tsx")!
-    expect(cards).toContain("mediaThumbable(props.part.url)")
+    expect(cards).toContain("mediaThumbable(props.media.url)")
     const model = sources.get("tool-card-model.ts")!
     expect(model).toContain(`url.startsWith("data:image/")`)
   })
