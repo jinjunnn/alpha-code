@@ -75,6 +75,53 @@ describe("fail-closed:PermissionV2 读不到 = 不放行", () => {
   })
 })
 
+describe("Blocker-1:refetch 启动即退出就绪态(在途期间零呈现零放行,旧代次结果丢弃)", () => {
+  test("首次成功后重连 refetch:ready 立即 false,在途期间 reply 拒收且零网络;新快照落地后恢复", async () => {
+    let replies = 0
+    const listResolvers: Array<(value: PermissionV2Request[]) => void> = []
+    const feed = createPermissionV2Feed({
+      list: () => new Promise<PermissionV2Request[]>((resolve) => listResolvers.push(resolve)),
+      reply: () => {
+        replies++
+        return Promise.resolve(receipt("req-a"))
+      },
+    })
+    feed.load()
+    listResolvers[0]!([request("req-a")])
+    await flush()
+    expect(feed.state.ready).toBe(true)
+
+    // 重连触发第二次 list:启动瞬间即退出就绪态,旧请求不可操作。
+    feed.load()
+    expect(feed.state.ready).toBe(false)
+    await expect(feed.reply("req-a", command)).rejects.toThrow("not ready")
+    expect(replies).toBe(0)
+
+    // 新快照落地才恢复就绪,呈现集 = 新快照。
+    listResolvers[1]!([request("req-b")])
+    await flush()
+    expect(feed.state.ready).toBe(true)
+    expect(feed.state.requests.map((item) => item.id)).toEqual(["req-b"])
+    await feed.reply("req-b", command)
+    expect(replies).toBe(1)
+    feed.dispose()
+  })
+
+  test("dispose 后旧代次结果丢弃:不复活状态", async () => {
+    const listResolvers: Array<(value: PermissionV2Request[]) => void> = []
+    const feed = createPermissionV2Feed({
+      list: () => new Promise<PermissionV2Request[]>((resolve) => listResolvers.push(resolve)),
+      reply: (requestID) => Promise.resolve(receipt(requestID)),
+    })
+    feed.load()
+    feed.dispose()
+    listResolvers[0]!([request("req-a")])
+    await flush()
+    expect(feed.state.ready).toBe(false)
+    expect(feed.state.requests).toEqual([])
+  })
+})
+
 describe("I8:回复绑 request ID,stale/重复回复拒收", () => {
   test("未知 request ID 直接拒绝,不发网络请求", async () => {
     let replies = 0

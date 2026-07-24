@@ -280,8 +280,15 @@
 .a-comp-send[data-ready]:active {
   transform: scale(0.94);
 }
+/* 停止形态(已批稿:强调淡底 + 方块;I5 令牌白名单,零裸色) */
 .a-comp-stop[data-ready] {
-  background: var(--a-danger, #dc2626);
+  background: var(--a-accent-subtle);
+  color: var(--a-accent);
+  border: 1px solid var(--a-accent-border);
+  box-shadow: none;
+}
+.a-comp-stop[data-ready]:hover {
+  background: var(--a-accent-subtle);
 }
 
 /* ── 自建模型弹层 ── */

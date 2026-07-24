@@ -28,6 +28,7 @@ Bun.plugin({
 })
 
 const runtime = await import("../src/renderer/alpha-ui/session-workspace/session-workspace-test-runtime")
+const claim = await import("../src/renderer/alpha-ui/session-workspace/session-approval-claim")
 const disposers: Array<() => void> = []
 
 beforeEach(() => {
@@ -95,6 +96,41 @@ describe("REQ-125 session workspace real Solid mount", () => {
     buttons[1]!.click()
     await flush()
     expect(host.querySelector("[data-alpha-session-rail-panel='terminal']")).not.toBeNull()
+  })
+
+  test("approval claim hands over first-establish-then-yield: only a ready dock holds presentation", async () => {
+    claim.resetSessionApprovalClaim()
+    const [ready, setReady] = solid.createSignal(false)
+    const [sessionID, setSessionID] = solid.createSignal<string | undefined>("ses_a")
+    const dispose = solid.createRoot((dispose: () => void) => {
+      claim.bindSessionApprovalClaim({ sessionID, ready })
+      return dispose
+    })
+    await flush()
+
+    // list 在途/失败期不夺权 —— watcher 保持可呈现,无「两边都不呈现」窗口。
+    expect(claim.sessionApprovalDockClaimed("ses_a")).toBe(false)
+
+    setReady(true)
+    await flush()
+    expect(claim.sessionApprovalDockClaimed("ses_a")).toBe(true)
+
+    // 失去就绪(重连 refetch / 通道失败)同步让权。
+    setReady(false)
+    await flush()
+    expect(claim.sessionApprovalDockClaimed("ses_a")).toBe(false)
+
+    setReady(true)
+    await flush()
+    setSessionID("ses_b")
+    await flush()
+    expect(claim.sessionApprovalDockClaimed("ses_a")).toBe(false)
+    expect(claim.sessionApprovalDockClaimed("ses_b")).toBe(true)
+
+    dispose()
+    await flush()
+    expect(claim.sessionApprovalDockClaimed("ses_b")).toBe(false)
+    claim.resetSessionApprovalClaim()
   })
 
   test("topbar status renders the approved idle and generating states", async () => {

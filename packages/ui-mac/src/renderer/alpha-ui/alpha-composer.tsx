@@ -26,7 +26,7 @@ import { Portal } from "solid-js/web"
 import { useCommand } from "./providers"
 import { setExtHubOpen } from "../extensions/ext-hub-state"
 import { createComposerAutocomplete } from "./composer-autocomplete"
-import { buildMentionParts, type MentionPart } from "./composer-autocomplete-core"
+import { buildMentionParts, buildPromptInput, type MentionPart } from "./composer-autocomplete-core"
 import {
   ATTACH_ACCEPT,
   ATTACH_MAX_COUNT,
@@ -919,7 +919,9 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
     const sid = props.sessionID?.()
     if (!c || !sid) return
     try {
-      await c.session.abort({ sessionID: sid, directory: props.directory() } as any)
+      const result = await c.session.abort({ sessionID: sid, directory: props.directory() } as any)
+      // throwOnError:false 档位的 { error } 信封同样是失败(审计 minor:4xx 不装停止成功)。
+      if ((result as { error?: unknown } | undefined)?.error !== undefined) throw new Error("abort rejected")
     } catch {
       pushToast({ kind: "error", title: t("alpha.composer.abortFailed") })
     }
@@ -1044,20 +1046,34 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
           return
         }
       }
-      const { error } = await c.session.promptAsync({
-        sessionID: sid,
-        directory: dir,
-        parts: req.parts,
-        ...(req.agent ? { agent: req.agent } : {}),
-      } as any)
-      if (error) {
+      // REQ-125 C7:会话发送走 v2 durable 输入队列(session.prompt + delivery),直连
+      // promptAsync 退役。运行中 = "queue"(与占位文案「发送后排队」一致,含 Enter 路径);
+      // 空闲省略 delivery(引擎默认 steer,行为等价即时执行)。agent(计划/只读档)是
+      // v2 的会话级属性,发送前经 typed switchAgent 落到会话。
+      if (req.agent) {
+        const switched = await c.v2.session
+          .switchAgent({ sessionID: sid, agent: req.agent })
+          .catch(() => ({ error: new Error("switch agent failed") }))
+        if ((switched as { error?: unknown } | undefined)?.error !== undefined) {
+          pushToast({ kind: "error", title: t("alpha.composer.sendFailed") })
+          return
+        }
+      }
+      const admitted = await c.v2.session
+        .prompt({
+          sessionID: sid,
+          prompt: buildPromptInput({ text: body, worktree: dir, mentions: mentions(), attachments: attachments() }),
+          ...(running() ? { delivery: "queue" as const } : {}),
+        })
+        .catch(() => undefined)
+      if (admitted === undefined || admitted.error !== undefined || !admitted.data) {
         pushToast({ kind: "error", title: t("alpha.composer.sendFailed") })
         return
       }
       setText("")
       setMentions([])
       setAttachments([])
-      // 运行中发送 = 排队(queue/steer 语义):忙态由 live status typed 通道驱动,这里不再乐观置位。
+      // 忙态由 live status typed 通道驱动,这里不再乐观置位。
     } finally {
       setSending(false)
     }

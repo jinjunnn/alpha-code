@@ -1,101 +1,51 @@
-import type {
-  PermissionV2DecisionCommand,
-  PermissionV2DecisionReceipt,
-  PermissionV2Request,
-} from "@opencode-ai/sdk/v2/client"
+// PermissionWatcher — 独立 Permission surface(REQ-090)。
+//
+// REQ-125 C7 / Codex 审计 Blocker-2:兜底面与 dock 共用同一 PermissionV2 feed 实现,
+// 因此持有同一 fail-closed 标准 —— list 失败或拉取在途 = 不呈现、不放行(不保留旧请求
+// 呈现,SSE 增量在 not-ready 期只并入本地列表,不单独成为可信来源);回复绑 request ID,
+// stale/在途期回复在客户端即被拒绝。
+// seam 会话页的 composer dock 接管当前会话的审批呈现时(进程内 claim,零 DOM 协调),
+// watcher 让位;dock 卸载/降级即恢复兜底 —— 不呈现 = 不放行,fail-closed 不变。
+
 import { onCleanup, Show } from "solid-js"
-import { createStore } from "solid-js/store"
+import { unwrap } from "solid-js/store"
 import type { PermissionSurfaceProps } from "./providers"
 import { PermissionDialog } from "./PermissionDialog"
 import { sessionApprovalDockClaimed } from "./session-workspace/session-approval-claim"
-import { reconcilePermissionRequests, type PermissionFeedDelta } from "./session-workspace/session-permission-feed"
-
-type PermissionDelta = PermissionFeedDelta
+import { createPermissionV2Feed } from "./session-workspace/session-permission-feed"
 
 export function PermissionWatcher(props: PermissionSurfaceProps) {
-  const [state, setState] = createStore({ requests: [] as PermissionV2Request[] })
-  const resolved = new Set<string>()
-  let buffered: PermissionDelta[] | undefined
-  let reconcileQueued = false
-  let retryTimer: ReturnType<typeof setTimeout> | undefined
-  let disposed = false
-
-  const apply = (delta: PermissionDelta) => {
-    if (buffered) {
-      buffered.push(delta)
-      return
-    }
-    setState("requests", (requests) => reconcilePermissionRequests(requests, [delta], resolved))
-  }
-
-  const add = (request: PermissionV2Request) => {
-    if (resolved.has(request.id)) return
-    apply({ type: "asked", request })
-  }
-
-  const resolve = (receipt: PermissionV2DecisionReceipt) => {
-    const ids = new Set([receipt.requestID, ...receipt.resolvedRequestIDs])
-    ids.forEach((id) => resolved.add(id))
-    apply({ type: "replied", receipt })
-  }
-
-  const load = () => {
-    if (disposed) return
-    if (retryTimer) clearTimeout(retryTimer)
-    retryTimer = undefined
-    if (buffered) {
-      reconcileQueued = true
-      return
-    }
-    buffered = []
-    props.client.list().then(
-      (requests) => {
-        if (disposed) return
-        const deltas = buffered ?? []
-        buffered = undefined
-        setState("requests", reconcilePermissionRequests(requests, deltas, resolved))
-        if (!reconcileQueued) return
-        reconcileQueued = false
-        void load()
-      },
-      () => {
-        if (disposed) return
-        const deltas = buffered ?? []
-        buffered = undefined
-        setState("requests", (requests) => reconcilePermissionRequests(requests, deltas, resolved))
-        if (reconcileQueued) {
-          reconcileQueued = false
-          void load()
-          return
-        }
-        retryTimer = setTimeout(() => void load(), 1_000)
-      },
-    )
-  }
-
-  const unsubscribe = props.client.subscribe({ asked: add, replied: resolve, connected: load })
-  void load()
+  const feed = createPermissionV2Feed({
+    list: () => props.client.list(),
+    reply: (requestID, command) => props.client.reply(requestID, command),
+  })
+  const unsubscribe = props.client.subscribe({
+    asked: (request) => feed.apply({ type: "asked", request }),
+    replied: (receipt) => feed.apply({ type: "replied", receipt }),
+    connected: () => feed.load(),
+  })
+  feed.load()
   onCleanup(() => {
-    disposed = true
     unsubscribe()
-    if (retryTimer) clearTimeout(retryTimer)
+    feed.dispose()
   })
 
-  const reply = (request: PermissionV2Request, command: PermissionV2DecisionCommand) =>
-    props.client.reply(request.id, command)
-
   return (
-    // REQ-125 C7:seam 会话页的 composer dock 接管当前会话的审批呈现时,watcher 让位
-    // (进程内 claim,零 DOM 协调);dock 卸载即恢复兜底 —— 不呈现 = 不放行,fail-closed 不变。
-    <Show when={!sessionApprovalDockClaimed(props.sessionID) && state.requests[0]} keyed>
-      {(request) => (
-        <PermissionDialog
-          request={request}
-          projectID={request.scope?.kind === "project" ? request.scope.projectID : props.projectID}
-          onSubmit={(command) => reply(request, command)}
-          onResolved={resolve}
-        />
-      )}
+    <Show when={feed.state.ready && !sessionApprovalDockClaimed(props.sessionID) && feed.state.requests[0]} keyed>
+      {(request) => {
+        // 呈现前必须还原 raw 对象:solid store 代理会把 $PROXY 等符号注入 Reflect.ownKeys,
+        // 而 permissionRequestFacts 的 exactFactRecord 是严格键集核验 —— 经代理传入会把
+        // 一切合法请求误判为「核不实」并触发自动拒绝(2026-07-24 审计修复轮实测)。
+        const raw = unwrap(request)
+        return (
+          <PermissionDialog
+            request={raw}
+            projectID={raw.scope?.kind === "project" ? raw.scope.projectID : props.projectID}
+            onSubmit={(command) => feed.reply(raw.id, command)}
+            onResolved={(receipt) => feed.apply({ type: "replied", receipt })}
+          />
+        )
+      }}
     </Show>
   )
 }

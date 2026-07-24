@@ -31,6 +31,16 @@ export function contextUsagePercent(
   return null
 }
 
+/**
+ * SDK 结果按失败处理的统一判据:Promise rejection 之外,throwOnError:false 档位的
+ * `{ error }` 信封同样是失败(Codex 审计 minor:4xx 不得被当作成功)。
+ */
+export function sdkResultFailed(result: unknown): boolean {
+  if (result === undefined || result === null) return true
+  if (typeof result !== "object") return false
+  return "error" in result && (result as { error?: unknown }).error !== undefined
+}
+
 export function todoDone(todo: Todo): boolean {
   return todo.status === "completed" || todo.status === "cancelled"
 }

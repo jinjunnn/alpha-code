@@ -15,6 +15,12 @@ import type { createComponent } from "solid-js"
 import type { render } from "solid-js/web"
 import type { createPermissionDecisionCommand, PermissionDialog } from "./PermissionDialog"
 import type { PermissionWatcher } from "./permission-watcher"
+import type { SessionApprovalCard } from "./session-workspace/session-approval-card"
+import type {
+  claimSessionApprovalDock,
+  resetSessionApprovalClaim,
+  sessionApprovalDockClaimed,
+} from "./session-workspace/session-approval-claim"
 import { dict as zh } from "../i18n/zh"
 
 type TestRuntime = {
@@ -23,6 +29,10 @@ type TestRuntime = {
   createPermissionDecisionCommand: typeof createPermissionDecisionCommand
   PermissionDialog: typeof PermissionDialog
   PermissionWatcher: typeof PermissionWatcher
+  SessionApprovalCard: typeof SessionApprovalCard
+  claimSessionApprovalDock: typeof claimSessionApprovalDock
+  resetSessionApprovalClaim: typeof resetSessionApprovalClaim
+  sessionApprovalDockClaimed: typeof sessionApprovalDockClaimed
 }
 
 type PermissionClient = Parameters<typeof PermissionWatcher>[0]["client"]
@@ -51,6 +61,7 @@ const runtime = (await import(pathToFileURL(join(runtimeDirectory, "permission-t
 
 beforeEach(() => {
   document.body.replaceChildren()
+  runtime.resetSessionApprovalClaim()
 })
 
 afterEach(async () => {
@@ -408,6 +419,68 @@ describe("Alpha Permission watcher reconciliation", () => {
     expect(document.querySelector("[role='dialog']")?.textContent).not.toContain("bash")
   })
 
+  test("fail-closed fallback: list failure presents nothing and grants nothing, SSE asked stays unpresented", async () => {
+    // Codex 审计 Blocker-2 复现:独立兜底面在 list 失败期间不得保留旧请求呈现、
+    // 不得把 SSE 增量单独合并成可放行的 UI;快照恢复后才恢复呈现。
+    let listCalls = 0
+    const replies: string[] = []
+    let listeners: PermissionListeners | undefined
+    mountWatcher({
+      list: async () => {
+        listCalls += 1
+        if (listCalls === 1) throw new Error("channel down")
+        return [request]
+      },
+      reply: async (requestID, command) => {
+        replies.push(requestID)
+        return receipt(command)
+      },
+      subscribe: (value) => {
+        listeners = value
+        return () => {}
+      },
+    })
+    await flush()
+
+    expect(document.querySelector("[role='dialog']")).toBeNull()
+
+    listeners!.asked({ ...request, id: "per_ui_live" })
+    await flush()
+    expect(document.querySelector("[role='dialog']")).toBeNull()
+    expect(replies).toEqual([])
+
+    listeners!.connected()
+    await flush()
+    expect(listCalls).toBe(2)
+    expect(document.querySelector("[role='dialog']")).not.toBeNull()
+    expect(document.querySelector('[data-permission-fact="action"]')?.textContent).toContain("bash")
+  })
+
+  test("yields presentation to a claimed session dock and resumes when the claim releases", async () => {
+    const replies: string[] = []
+    mountWatcher({
+      list: async () => [request],
+      reply: async (requestID, command) => {
+        replies.push(`${requestID}:${command.decision}`)
+        return receipt(command)
+      },
+      subscribe: () => () => {},
+    })
+    await flush()
+    // unwrap 回归半场:store 代理不得把合法请求误判为核不实而触发自动拒绝。
+    expect(replies).toEqual([])
+    expect(document.querySelector("[role='dialog']")).not.toBeNull()
+
+    const release = runtime.claimSessionApprovalDock(request.sessionID)
+    await flush()
+    expect(document.querySelector("[role='dialog']")).toBeNull()
+
+    release()
+    await flush()
+    expect(document.querySelector("[role='dialog']")).not.toBeNull()
+    expect(replies).toEqual([])
+  })
+
   test("reconciles missed asked and replied events after server reconnects", async () => {
     const stale = { ...request, id: "per_ui_stale", action: "bash", resources: ["old/**"] }
     const fresh = { ...request, id: "per_ui_fresh", action: "edit", resources: ["new/**"] }
@@ -434,5 +507,65 @@ describe("Alpha Permission watcher reconciliation", () => {
     expect(listCalls).toBe(2)
     expect(document.querySelector('[data-permission-fact="resources"]')?.textContent).toContain("new/**")
     expect(document.querySelector("[role='dialog']")?.textContent).not.toContain("old/**")
+  })
+})
+
+describe("Session approval card (composer dock) real Solid render", () => {
+  function mountCard(
+    onSubmit: (command: PermissionV2DecisionCommand) => Promise<void>,
+    permissionRequest: PermissionV2Request = request,
+    projectID: string | undefined = "prj_alpha",
+  ) {
+    const host = document.createElement("div")
+    document.body.append(host)
+    disposers.push(
+      runtime.render(
+        () =>
+          runtime.createComponent(runtime.SessionApprovalCard, {
+            request: permissionRequest,
+            projectID,
+            onSubmit,
+          }),
+        host,
+      ),
+    )
+    return host
+  }
+
+  test("unverified auto-reject is one-shot: a failing submission never loops network retries", async () => {
+    // Codex 审计 Major 复现:失败写回 failed 状态后不得再次自动 decide("reject")。
+    const attempts: PermissionV2DecisionCommand[] = []
+    const malformed = withoutFact("subject")
+    const host = mountCard(async (command) => {
+      attempts.push(command)
+      throw new Error("network down")
+    }, malformed)
+    await flush()
+    await flush()
+    await flush()
+
+    expect(attempts.map((command) => command.decision)).toEqual(["reject"])
+    expect(host.querySelector(".a-swk-approval-error")).not.toBeNull()
+    // 核不实:任何放行入口保持禁用,显式重试仍只能拒绝。
+    expect(host.querySelector<HTMLButtonElement>('[data-permission-decision="once"]')!.disabled).toBeTrue()
+    expect(host.querySelector<HTMLButtonElement>('[data-permission-decision="always"]')!.disabled).toBeTrue()
+  })
+
+  test("verified request focuses the first action and submits the bound decision once", async () => {
+    const attempts: PermissionV2DecisionCommand[] = []
+    const host = mountCard(async (command) => {
+      attempts.push(command)
+    })
+    await flush()
+
+    const once = host.querySelector<HTMLButtonElement>('[data-permission-decision="once"]')!
+    expect(document.activeElement).toBe(once)
+    // Major(projectID):精确项目身份在场 → 始终允许可用(sandbox 会话不再被误禁)。
+    expect(host.querySelector<HTMLButtonElement>('[data-permission-decision="always"]')!.disabled).toBeFalse()
+    once.click()
+    await flush()
+
+    expect(attempts.map((command) => command.decision)).toEqual(["once"])
+    expect(attempts[0]!.requestFingerprint).toBe(request.fingerprint)
   })
 })

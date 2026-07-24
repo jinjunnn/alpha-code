@@ -241,6 +241,46 @@ export function buildSlashList<T extends { trigger: string; description?: string
   return { flat: ranked, groups: [] }
 }
 
+/** REQ-125 C7:v2 durable 输入队列的 PromptInput 载荷(schema Prompt 形状:text + files + agents)。 */
+export type PromptInputPayload = {
+  text: string
+  files?: Array<{ uri: string; name?: string }>
+  agents?: Array<{ name: string; source?: { start: number; end: number; text: string } }>
+}
+
+/** 会话发送(v2 session.prompt)的 PromptInput 构造:文本 + 仍在正文中的 mentions
+ *  (agent → agents 携带 source 偏移;文件 → files 携带 file:// uri,per-segment 编码)+
+ *  附件(data: uri)。被编辑掉的 mention 丢弃 —— 与 buildMentionParts 同一判定。 */
+export function buildPromptInput(input: {
+  text: string
+  worktree: string
+  mentions: ReadonlyArray<MentionPart>
+  attachments: ReadonlyArray<{ url: string; name: string }>
+}): PromptInputPayload {
+  const files: NonNullable<PromptInputPayload["files"]> = []
+  const agents: NonNullable<PromptInputPayload["agents"]> = []
+  for (const m of input.mentions) {
+    const start = input.text.indexOf(m.content)
+    if (start < 0) continue
+    if (m.type === "agent") {
+      agents.push({ name: m.name, source: { start, end: start + m.content.length, text: m.content } })
+      continue
+    }
+    const abs = m.path.startsWith("/") ? m.path : `${input.worktree.replace(/\/$/, "")}/${m.path}`
+    const encoded = abs.split("/").map(encodeURIComponent).join("/")
+    const name = m.path.split("/").pop()
+    files.push({ uri: `file://${encoded}`, ...(name ? { name } : {}) })
+  }
+  for (const attachment of input.attachments) {
+    files.push({ uri: attachment.url, name: attachment.name })
+  }
+  return {
+    text: input.text,
+    ...(files.length > 0 ? { files } : {}),
+    ...(agents.length > 0 ? { agents } : {}),
+  }
+}
+
 /** Build the REAL prompt parts for the mentions still present in the submitted text (upstream
  *  build-request-parts.ts shapes — agent parts carry source offsets, file parts a file:// url).
  *  Mentions whose token was edited away are dropped. */

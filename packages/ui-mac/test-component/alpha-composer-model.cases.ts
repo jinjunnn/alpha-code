@@ -778,3 +778,122 @@ describe("ModelPickPop production component", () => {
     mounted.dispose()
   })
 })
+
+describe("AlphaComposer v2 durable send + abort honesty (REQ-125 C7 audit round 2)", () => {
+  const readyContract = (): ModelContract => ({
+    list: async () => platformModels,
+    current: async () => ({ providerID: catalog.platformProvider.id, id: catalog.platformModels[0]!.id }),
+    switch: async () => {},
+  })
+
+  function fakeSessionSdk(overrides?: { abort?: () => Promise<unknown> }) {
+    const prompts: Array<Record<string, unknown>> = []
+    const promptAsyncCalls: unknown[] = []
+    const agentSwitches: unknown[] = []
+    const abortCalls: unknown[] = []
+    const client = {
+      command: { list: async () => ({ data: [] }) },
+      session: {
+        promptAsync: async (args: unknown) => {
+          promptAsyncCalls.push(args)
+          return {}
+        },
+        abort: async (args: unknown) => {
+          abortCalls.push(args)
+          return overrides?.abort ? overrides.abort() : {}
+        },
+      },
+      v2: {
+        session: {
+          prompt: async (args: Record<string, unknown>) => {
+            prompts.push(args)
+            return { data: { id: "msg_admitted", admittedSeq: prompts.length, delivery: args.delivery ?? "steer" } }
+          },
+          switchAgent: async (args: unknown) => {
+            agentSwitches.push(args)
+            return {}
+          },
+        },
+      },
+    }
+    return { client, prompts, promptAsyncCalls, agentSwitches, abortCalls }
+  }
+
+  function sessionMount(sdk: ReturnType<typeof fakeSessionSdk>, running: () => boolean) {
+    const sessionProjects = { ...projects, sdk: () => sdk.client as never } satisfies AlphaProjectsApi
+    return mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "session",
+        projects: sessionProjects,
+        directory: () => "/A",
+        sessionID: () => "A",
+        command,
+        modelContract: readyContract(),
+        sessionDock: {
+          running,
+          contextUsage: () => null,
+          approvalPending: () => false,
+        },
+      }),
+    )
+  }
+
+  function typeText(host: HTMLElement, value: string) {
+    const textarea = host.querySelector("textarea")!
+    textarea.value = value
+    textarea.dispatchEvent(new InputEvent("input", { bubbles: true, data: value }))
+    return textarea
+  }
+
+  function pressEnter(textarea: HTMLTextAreaElement) {
+    textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+  }
+
+  test("会话发送走 v2 durable 队列:空闲省略 delivery,运行中 delivery=queue(Enter 同路径),promptAsync 退役", async () => {
+    installApi()
+    const sdk = fakeSessionSdk()
+    const [running, setRunning] = createSignal(false)
+    const mounted = sessionMount(sdk, running)
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+
+    const textarea = typeText(mounted.host, "跑一下测试")
+    await waitFor(() =>
+      expect(mounted.host.querySelector<HTMLButtonElement>(".a-comp-send")!.disabled).toBe(false),
+    )
+    pressEnter(textarea)
+    await waitFor(() => expect(sdk.prompts).toHaveLength(1))
+    expect(sdk.prompts[0]).toMatchObject({ sessionID: "A", prompt: { text: "跑一下测试" } })
+    expect("delivery" in sdk.prompts[0]!).toBe(false)
+
+    // 运行中:发送键换停止形态,Enter 仍发送且必须走 delivery:"queue"(文案「发送后排队」的真实语义)。
+    setRunning(true)
+    await waitFor(() => expect(mounted.host.querySelector(".a-comp-stop")).not.toBeNull())
+    pressEnter(typeText(mounted.host, "补一个用例"))
+    await waitFor(() => expect(sdk.prompts).toHaveLength(2))
+    expect(sdk.prompts[1]).toMatchObject({
+      sessionID: "A",
+      delivery: "queue",
+      prompt: { text: "补一个用例" },
+    })
+
+    expect(sdk.promptAsyncCalls).toEqual([])
+    expect(sdk.agentSwitches).toEqual([]) // 默认档(无 plan/readonly)不动会话 agent
+    mounted.dispose()
+  })
+
+  test("停止键:SDK { error } 信封按失败处理,如实提示中止失败", async () => {
+    installApi()
+    const { ToastViewport } = await import("../src/renderer/alpha-ui/Toast")
+    const sdk = fakeSessionSdk({ abort: async () => ({ error: { status: 409 } }) })
+    const mounted = sessionMount(sdk, () => true)
+    const toastHost = mount(() => createComponent(ToastViewport, {}))
+    await waitFor(() => expect(mounted.host.querySelector(".a-comp-stop")).not.toBeNull())
+
+    click(mounted.host.querySelector(".a-comp-stop"))
+    await waitFor(() => expect(sdk.abortCalls).toHaveLength(1))
+    await waitFor(() => expect(document.body.textContent).toContain(zh["alpha.composer.abortFailed"]))
+
+    mounted.dispose()
+    toastHost.dispose()
+  })
+})

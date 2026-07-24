@@ -99,14 +99,38 @@ describe("REQ-125 C7:ComposerTakeover 删除后零引用(棘轮)", () => {
     expect(css).not.toContain("data-alpha-usage-host")
   })
 
-  test("审批呈现权协调走进程内 claim(零 DOM):dock 声明接管,watcher 让位并保持兜底", () => {
+  test("审批呈现权协调走进程内 claim(零 DOM):dock 仅在 feed 就绪时接管,watcher 让位并保持兜底", () => {
     const watcher = read(path.join(ALPHA_UI, "permission-watcher.tsx"))
     expect(watcher).toContain("sessionApprovalDockClaimed(props.sessionID)")
+    // Blocker-2:兜底面与 dock 同一 fail-closed feed;呈现严格以 ready 为闸。
+    expect(watcher).toContain("createPermissionV2Feed(")
+    expect(watcher).toContain("feed.state.ready &&")
     const dock = read(path.join(ALPHA_UI, "session-workspace", "session-composer-dock.tsx"))
-    expect(dock).toContain("claimSessionApprovalDock(")
+    // Major:先立后破 —— claim 绑定在自身 feed 就绪上,而不是 list 前一次性夺权。
+    expect(dock).toContain("bindSessionApprovalClaim({")
+    expect(dock).toContain("ready: () => feed()?.state.ready ?? false")
     const claim = read(path.join(ALPHA_UI, "session-workspace", "session-approval-claim.ts"))
     expect(claim).not.toContain("document")
     expect(claim).not.toContain("querySelector")
+  })
+
+  test("审计修复轮棘轮:always 项目身份取会话精确 projectID;停止键走已批稿 accent 令牌", () => {
+    const dock = read(path.join(ALPHA_UI, "session-workspace", "session-composer-dock.tsx"))
+    // Major:与独立 Permission surface 同源的当前项目身份(SessionV2Info.projectID,
+    // typed session info),不再用 worktree 目录猜测(sandbox 会话不可误禁 always)。
+    expect(dock).toContain("serverSync().session.data.info[bound.sessionID]?.projectID")
+    expect(dock).not.toContain("project.worktree ===")
+    // minor:停止键配色 = 已批稿 --a-accent 系;禁 --a-danger 与裸色回退。
+    const css = read(path.join(ALPHA_UI, "alpha-composer.css"))
+    expect(css).not.toContain("--a-danger")
+    expect(css).toMatch(
+      /\.a-comp-stop\[data-ready\] \{\s*background: var\(--a-accent-subtle\);\s*color: var\(--a-accent\);\s*border: 1px solid var\(--a-accent-border\);/,
+    )
+    // Major:会话发送走 v2 durable 队列 delivery 契约;直连 promptAsync 调用全量退役(注释可提及)。
+    const composer = read(path.join(ALPHA_UI, "alpha-composer.tsx"))
+    expect(composer).not.toContain(".promptAsync(")
+    expect(composer).toMatch(/c\.v2\.session\s*\.prompt\(\{/)
+    expect(composer).toContain('delivery: "queue"')
   })
 
   test("会话 composer 由 seam 会话页直挂:session-workspace 源码零 Portal/零上游选择器/零收养", () => {

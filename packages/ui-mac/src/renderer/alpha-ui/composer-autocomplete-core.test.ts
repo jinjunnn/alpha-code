@@ -6,6 +6,7 @@ import { describe, expect, test } from "bun:test"
 import {
   applyMention,
   buildMentionParts,
+  buildPromptInput,
   buildSlashList,
   commandOrigin,
   COMMAND_ORIGIN_LABEL,
@@ -106,6 +107,41 @@ describe("buildMentionParts", () => {
   test("mention edited out of the text sends NO part", () => {
     const mentions: MentionPart[] = [{ type: "agent", name: "general", content: "@general" }]
     expect(buildMentionParts("do it yourself", ws, mentions)).toHaveLength(0)
+  })
+})
+
+describe("buildPromptInput — v2 durable 队列的 PromptInput 载荷(REQ-125 C7)", () => {
+  const ws = "/Users/me/proj"
+  test("文本 + 文件 mention(file:// 逐段编码)+ agent mention(source 偏移)+ 附件(data: uri)", () => {
+    const payload = buildPromptInput({
+      text: "看 @src/a b.ts 交给 @general",
+      worktree: ws,
+      mentions: [
+        { type: "file", path: "src/a b.ts", content: "@src/a b.ts" },
+        { type: "agent", name: "general", content: "@general" },
+      ],
+      attachments: [{ url: "data:image/png;base64,AAAA", name: "shot.png" }],
+    })
+    expect(payload.text).toBe("看 @src/a b.ts 交给 @general")
+    expect(payload.files).toEqual([
+      { uri: "file:///Users/me/proj/src/a%20b.ts", name: "a b.ts" },
+      { uri: "data:image/png;base64,AAAA", name: "shot.png" },
+    ])
+    expect(payload.agents).toEqual([
+      {
+        name: "general",
+        source: { start: payload.text.indexOf("@general"), end: payload.text.length, text: "@general" },
+      },
+    ])
+  })
+  test("被编辑掉的 mention 不入载荷;空集合字段整体省略", () => {
+    const payload = buildPromptInput({
+      text: "plain send",
+      worktree: ws,
+      mentions: [{ type: "agent", name: "general", content: "@general" }],
+      attachments: [],
+    })
+    expect(payload).toEqual({ text: "plain send" })
   })
 })
 
