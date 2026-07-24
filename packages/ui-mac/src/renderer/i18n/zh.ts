@@ -1124,6 +1124,7 @@ export const dict = {
   "alpha.session.crossServerDetail": "Alpha 侧栏固定显示本地引擎的会话;当前窗口已切换到其他服务器,无法在这里打开它。请返回首页后重新选择本地会话。",
   "alpha.session.backHome": "返回首页",
   "alpha.terminal.tabs": "终端页签",
+  "alpha.terminal.titleNumbered": "终端 {{number}}",
   "alpha.terminal.new": "新建终端",
   "alpha.terminal.close": "关闭 {{title}}",
   "alpha.terminal.emptyTitle": "还没有终端",

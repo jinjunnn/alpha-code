@@ -1,5 +1,6 @@
 import { createSignal, type Accessor, Show } from "solid-js"
 import { t } from "../../i18n"
+import type { AlphaTerminalEngineChannel } from "../session-rail/terminal/terminal-rail-core"
 import { TerminalRailPanel } from "../session-rail/terminal/terminal-rail-panel"
 import type { AlphaSessionIdentity, AlphaSessionLiveSnapshot } from "./session-workspace-core"
 
@@ -72,7 +73,11 @@ function WorkspaceTopbar(props: {
   )
 }
 
-export function SessionWorkspaceShell(props: { live: AlphaSessionLiveContext }) {
+export function SessionWorkspaceShell(props: {
+  live: AlphaSessionLiveContext
+  /** 真引擎 channel(#554 适配器投影;缺席 = 面板 fail-closed 空态)。 */
+  terminalChannel?: Accessor<AlphaTerminalEngineChannel | undefined>
+}) {
   const [panel, setPanel] = createSignal<"review" | "terminal" | undefined>("review")
   const [lastPanel, setLastPanel] = createSignal<"review" | "terminal">("review")
   const openPanel = (next: "review" | "terminal") => {
@@ -121,9 +126,9 @@ export function SessionWorkspaceShell(props: { live: AlphaSessionLiveContext }) 
             aria-label={t("alpha.session.railHost")}
           >
             <Show when={activePanel() === "terminal"}>
-              {/* C3-term(#550):引擎通道待窄 export 落地后接入;缺席时面板 fail-closed 空态。
+              {/* C3-term:真引擎 channel 经 #554 适配器进入(alpha-session-workspace 接线)。
                   I8:channel 身份必须过 live.accepts,会话切换后旧投影即刻失效。 */}
-              <TerminalRailPanel accepts={props.live.accepts} />
+              <TerminalRailPanel channel={props.terminalChannel?.()} accepts={props.live.accepts} />
             </Show>
           </aside>
         )}

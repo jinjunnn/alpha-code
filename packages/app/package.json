@@ -10,7 +10,8 @@
     "./wsl/types": "./src/wsl/types.ts",
     "./vite": "./vite.js",
     "./index.css": "./src/index.css",
-    "./surface/session": "./src/pages/session.tsx"
+    "./surface/session": "./src/pages/session.tsx",
+    "./surface/terminal": "./src/surface/terminal.ts"
   },
   "scripts": {
     "typecheck": "tsgo -b",

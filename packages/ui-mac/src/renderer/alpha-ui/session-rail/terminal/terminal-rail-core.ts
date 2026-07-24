@@ -4,13 +4,11 @@
 // alpha 只自持外壳(页签条 / 圆角深底输出区外框 / 脚条)。引擎经下方
 // `AlphaTerminalEngineChannel` typed seam 进入,本目录零 import 上游模块。
 //
-// 地面真相(2026-07-24 勘破):上游引擎 = `packages/app/src/components/terminal.tsx`
-// (ghostty-web WASM + PTY WebSocket 数据通道)+ `packages/app/src/context/terminal.tsx`
-// (workspace 级 PTY 页签状态,`SessionProviders` 已将其挂在 alpha session 叶之上)。
-// 两者今日均不在 `@opencode-ai/app` 公开面上 —— exports map 被
-// `surface-seam-contract.test.ts` 钉死为仅 `./surface/session`(ADR-027)。接入真实引擎
-// 需要一次窄 export(ADR-027 修订 + alpha-frontend.patch),归 owner 决策,不在本票擅动;
-// 在此之前 channel 缺席,面板 fail-closed 落空态。
+// 地面真相:上游引擎 = `packages/app/src/components/terminal.tsx`(ghostty-web WASM +
+// PTY WebSocket 数据通道)+ `packages/app/src/context/terminal.tsx`(workspace 级 PTY
+// 页签状态,`SessionProviders` 已将其挂在 alpha session 叶之上)。两者经 ADR-027 修订
+// (2026-07-24,#554)的窄导出 `./surface/terminal` 进入,唯一消费点 =
+// `terminal-engine-adapter.tsx`(静态断言钉死);channel 缺席时面板仍 fail-closed 落空态。
 //
 // I8:本面板不自持任何会话/工作区异步状态 —— 一切数据都是 channel 访问器的同步派生。
 // 但同 workspace 的会话切换不会重挂本子树,同步 accessor 本身证明不了背后的 PTY 状态
