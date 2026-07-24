@@ -580,12 +580,15 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   const modelContract = props.modelContract ?? createModelContract(props.projects.sdk)
   const [text, setText] = createSignal(props.initialText ?? "")
   const [sending, setSending] = createSignal(false)
+  // 提交发起时记录的已提交文本快照:区分「在途未编辑(=正在交付)」与「在途被改成新草稿」。
+  let submittedText: string | undefined
   // REQ-125 C558:卸载时把当前草稿交回宿主(seam dock 按身份暂存),避免门翻转卸载丢草稿。
-  // 但发送在途(sending)时 text() 是**正在交付的提交文本**、非草稿:跳过捕获,否则切走会话再
-  // 翻回会「复活」已发送文本、用户再发 = 重复发送。失败保留仍走既有失败路径(text 留在 composer
-  // 信号供原地重试,不入 stash)。
+  // 仅当发送在途**且文本仍等于已提交快照**(未编辑,正在交付)才跳过——否则切走再翻回会「复活」
+  // 已发送文本、用户再发 = 重复发送。textarea 在途仍可编辑:改成不同内容即新草稿,照常捕获(不丢)。
+  // 失败保留走既有失败路径(sending 落回 false 后一律捕获,text 留在 composer 信号供原地重试)。
   onCleanup(() => {
-    if (!sending()) props.onDraftCapture?.(text())
+    if (sending() && text() === submittedText) return
+    props.onDraftCapture?.(text())
   })
   const [modelChainState, setModelChainState] = createSignal<"loading" | "ready" | "error">("loading")
   const [mentions, setMentions] = createSignal<MentionPart[]>([])
@@ -1000,6 +1003,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       perm: composerPerm(),
       agent: composerAgent(),
     })
+    submittedText = text() // 已提交文本快照(在途未编辑判据)
     setSending(true)
     try {
       if (props.mode === "home") {
@@ -1070,6 +1074,7 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
       // 运行中发送 = 排队(queue/steer 语义):忙态由 live status typed 通道驱动,这里不再乐观置位。
     } finally {
       setSending(false)
+      submittedText = undefined // 落定后复位:成功已清空、失败保留,此后一律按草稿捕获
     }
   }
 

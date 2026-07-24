@@ -956,6 +956,38 @@ describe("REQ-125 C558 发送在途与草稿捕获互斥", () => {
     release({ data: {} }) // 收尾:让挂起的 promptAsync 落定(组件已卸载,无副作用)
   })
 
+  test("发 A 在途→改成新草稿 B→卸载:B 照常捕获(textarea 在途仍可编辑,新草稿不丢)", async () => {
+    installApi()
+    let release: (v: unknown) => void = () => {}
+    const sendProjects = {
+      ...projects,
+      sdk: () => ({ session: { promptAsync: () => new Promise((res) => (release = res)) } }) as any,
+    }
+    const captured: string[] = []
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "session",
+        projects: sendProjects,
+        directory: () => "/A",
+        sessionID: () => "A",
+        command,
+        modelContract: contract,
+        onDraftCapture: (text) => captured.push(text),
+      }),
+    )
+    await waitFor(() => expect(composerModel()?.id).toBe(catalog.platformModels[0]!.id))
+    const el = mounted.host.querySelector<HTMLTextAreaElement>("textarea.a-comp-input")!
+    typeInto(el, "message A")
+    await flush()
+    enter(el) // 发 A → sending=true,submittedText="message A",promptAsync 挂起
+    await flush()
+    typeInto(el, "draft B") // 在途期间改成新草稿(textarea 仍可编辑)
+    await flush()
+    mounted.dispose() // 卸载:text()="draft B" ≠ submittedText="message A" → 照常捕获
+    expect(captured).toEqual(["draft B"]) // 在途编辑的新草稿不丢
+    release({ data: {} })
+  })
+
   test("发送失败→卸载:文本仍可恢复(sending 落回 false,capture 拿到失败保留文本)", async () => {
     installApi()
     const sendProjects = {
