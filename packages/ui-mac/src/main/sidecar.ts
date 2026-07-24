@@ -4,7 +4,6 @@ import * as http from "node:http"
 import * as path from "node:path"
 import * as tls from "node:tls"
 import { ALPHA_BEHAVIOR_MD } from "./alpha-behavior"
-import { catalogRegistryChannel } from "./alpha-environment"
 import { buildAlphaCapabilities, buildAlphaIdentity } from "./alpha-identity"
 import { buildAlphaModelConfig } from "./alpha-models"
 import { hasSecretFile, secretFileRef } from "./alpha-secret-files"
@@ -12,6 +11,7 @@ import { applyCloudWebSearchDisable } from "./cloud-web-search"
 import { alphaGlobalRoot, alphaJsoncPath } from "./engine-config-truth"
 import { injectDisabledOverrides } from "./ext-disabled-injection"
 import { materializeCloudMcpConfig } from "./cloud-sidecar-config"
+import type { ChannelName } from "./catalog-channels"
 
 // ADR-006 bridge ("two runtime worlds"). opencode's ToolRegistry dynamically imports a project's
 // raw-TS tools (.opencode/tool/*.ts), and packages whose TS entry does `import "./x.js"` (e.g.
@@ -56,6 +56,11 @@ type StartCommand = {
   userDataPath: string
   /** B6(=G1):@alpha-code/ext 自包含 bundle 的绝对路径(main 解析,见 alpha-ext-plugin.ts);缺省不装载。 */
   extPluginPath?: string
+  /** #397 override 注入用的 catalog 通道。必须由 main 从冻结环境快照取好传入 —— 本进程从不跑
+   *  initAlphaEnvironment,在这里调 catalogRegistryChannel() 会抛,且曾把整个 injectAlphaConfig
+   *  连同 provider 注入一起炸掉(2026-07-23 打包端「全模型当前不可用」事故)。缺省 = loud 跳过
+   *  override 注入(fail-closed 权威在 boot reconcile,见 ext-disabled-injection.ts)。 */
+  registryChannel?: ChannelName
 }
 
 type StopCommand = { type: "stop" }
@@ -90,7 +95,7 @@ parentPort.on("message", (event) => {
 
 async function start(command: StartCommand) {
   try {
-    prepareSidecarEnv(command.password, command.userDataPath, command.extPluginPath)
+    prepareSidecarEnv(command.password, command.userDataPath, command.extPluginPath, command.registryChannel)
     ensureLoopbackNoProxy()
     useSystemCertificates()
     useEnvProxy()
@@ -120,13 +125,13 @@ async function stop() {
   }
 }
 
-function prepareSidecarEnv(password: string, userDataPath: string, extPluginPath?: string) {
+function prepareSidecarEnv(password: string, userDataPath: string, extPluginPath?: string, registryChannel?: ChannelName) {
   Object.assign(process.env, {
     OPENCODE_SERVER_USERNAME: "opencode",
     OPENCODE_SERVER_PASSWORD: password,
     XDG_STATE_HOME: process.env.XDG_STATE_HOME ?? userDataPath,
   })
-  injectAlphaConfig(userDataPath, extPluginPath)
+  injectAlphaConfig(userDataPath, extPluginPath, registryChannel)
 }
 
 // Inject alpha-code's customizations into opencode via OPENCODE_CONFIG_CONTENT. This env var is
@@ -148,7 +153,7 @@ function prepareSidecarEnv(password: string, userDataPath: string, extPluginPath
 //   4. B6(=G1):@alpha-code/ext 装载 —— main 解析好的自包含 bundle 绝对路径合并进 V1 `plugin`
 //      (单数键,见 opencode-config-v1-schema)数组,保留用户自己的 plugin 列表。zod 跨实例路径
 //      (ADR-006 caveat)的运行时证明 = alpha_ping 出现在工具表且能执行(真机批核验)。
-function injectAlphaConfig(userDataPath: string, extPluginPath?: string) {
+function injectAlphaConfig(userDataPath: string, extPluginPath?: string, registryChannel?: ChannelName) {
   try {
     // REQ-059 G1:引擎经 OPENCODE_CONFIG 加载当前环境的 alpha.jsonc(mcp/plugin/
     // provider/治理键)。文件通道 → dispose 重建重读文件 = 安装免重启;merge 序 XDG 后(压 provider)/
@@ -390,12 +395,60 @@ function injectAlphaConfig(userDataPath: string, extPluginPath?: string) {
     // plugin 是 union 无覆盖面,靠 alpha.jsonc 移除(无用户 = 无他源);cloud/skill 无此面。
     // 仅 global scope(项目 scope 由项目 config 面另管)。best-effort:账本不可读 → 跳过(alpha.jsonc
     // 投影仍在;主权注入是加固层)。#397:session-grant 记录在注入面强制按 disabled 处理
-    // (持久 enable 非法;判定读已验 catalog,userDataPath/channel 由此传入)。
-    injectDisabledOverrides(config, { userDataPath, channel: catalogRegistryChannel() })
+    // (持久 enable 非法;判定读已验 catalog,userDataPath/channel 由此传入)。channel 来自
+    // StartCommand(main 冻结快照)—— 本进程调 catalogRegistryChannel() 必抛(见 StartCommand 注释),
+    // 加固层的任何缺料只允许降级跳过,不允许波及上方 provider/identity/permission 注入。
+    if (registryChannel) injectDisabledOverrides(config, { userDataPath, channel: registryChannel })
+    else
+      console.error(
+        "[req104-397] registry channel missing from start command — skipping disabled-override injection (boot reconcile holds the fail-closed gate)",
+      )
 
     process.env.OPENCODE_CONFIG_CONTENT = JSON.stringify(config)
+    materializeV2EngineConfig(userDataPath, config)
   } catch (error) {
     console.warn("failed to inject alpha config", error)
+  }
+}
+
+// 2026-07-23 上游 sync 断层修补:v2 Config.Service(packages/core/config.ts)只读
+// `OPENCODE_CONFIG_DIR ?? ~/.config/opencode` 目录下的 opencode.json/opencode.jsonc 文件 ——
+// OPENCODE_CONFIG_CONTENT 与 OPENCODE_CONFIG(alpha.jsonc)它一概不读。而 picker 已切 v2
+// `/api/model`(model-contract.ts → catalog.model.available()),于是 v1 注入再成功,v2 目录里
+// 也没有 alpha/BYOK provider → 全部「当前不可用」。此桥把 v2 需要的最小子集物化成文件:
+//   opencode.json  ← alpha.jsonc 原样拷贝(用户自定义节点;先加载)
+//   opencode.jsonc ← { $schema, model, provider }(注入的 provider 表,后加载压过用户同名项)
+// 并设 OPENCODE_CONFIG_DIR 指向该 alpha 自有目录。v1 加载读的是 Global.Path.config 静态路径,
+// 不受此 env 影响;推理仍走 v1(有 {file:}/{env:} 解析),故 v2 文件一律剥掉 apiKey —— v2 无
+// 变量解析,catalog 可用性判定也不需要 key(no-integration 路径)。独立失败域:此桥再失败也
+// 只损失 v2 目录,绝不波及上方 v1 注入。
+function materializeV2EngineConfig(userDataPath: string, config: { model?: unknown; provider?: unknown }) {
+  try {
+    const dir = path.join(userDataPath, "alpha-engine-config")
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
+    const userCopy = path.join(dir, "opencode.json")
+    try {
+      fs.copyFileSync(alphaJsoncPath(), userCopy)
+    } catch {
+      fs.rmSync(userCopy, { force: true }) // 无真源(或读失败)则清掉旧拷贝,不留陈尸
+    }
+    const provider = Object.fromEntries(
+      Object.entries((config.provider ?? {}) as Record<string, { options?: Record<string, unknown> }>).map(
+        ([id, def]) => {
+          const { apiKey: _apiKey, ...options } = def.options ?? {}
+          return [id, { ...def, ...(Object.keys(options).length ? { options } : { options: undefined }) }]
+        },
+      ),
+    )
+    const v2 = {
+      $schema: "https://opencode.ai/config.json",
+      ...(typeof config.model === "string" ? { model: config.model } : {}),
+      provider,
+    }
+    fs.writeFileSync(path.join(dir, "opencode.jsonc"), JSON.stringify(v2, null, 2), { mode: 0o600 })
+    process.env.OPENCODE_CONFIG_DIR = dir
+  } catch (error) {
+    console.error("[v2-config-bridge] materialize failed — v2 model catalog will lack alpha/BYOK providers", error)
   }
 }
 
@@ -454,6 +507,9 @@ function parseCommand(value: unknown): SidecarCommand | undefined {
     password: command.password,
     userDataPath: command.userDataPath,
     ...(typeof command.extPluginPath === "string" ? { extPluginPath: command.extPluginPath } : {}),
+    ...(command.registryChannel === "stable" || command.registryChannel === "preview" || command.registryChannel === "dev"
+      ? { registryChannel: command.registryChannel }
+      : {}),
   }
 }
 

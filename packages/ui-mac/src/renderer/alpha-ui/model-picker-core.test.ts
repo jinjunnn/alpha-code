@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { ModelV2Info } from "@opencode-ai/sdk/v2/client"
 import type { EffectiveCatalog, ProviderKeyStatus } from "../../shared/alpha-model-types"
+import { byokEngineId } from "../../shared/alpha-model-types"
 import { t } from "../i18n"
 import { buildModelPickerRows, composerModelFromRef, modelRefOf, withModelVariant } from "./model-picker-core"
 
@@ -42,7 +43,8 @@ const rows = (over: Partial<Parameters<typeof buildModelPickerRows>[0]> = {}) =>
     catalog,
     models: [
       ...platformModels,
-      ...catalog.byokProviders.flatMap((provider) => provider.models.map((id) => info(provider.id, id))),
+      // The engine lists injected BYOK models under the engine id (`<id>-byok`), not the display id.
+      ...catalog.byokProviders.flatMap((provider) => provider.models.map((id) => info(byokEngineId(provider.id), id))),
     ],
     listState: "ready",
     keyStatusState: "ready",
@@ -60,7 +62,7 @@ describe("真实 alpha-models.json → picker 两组", () => {
 
     expect(platform.map((row) => row.model.id)).toEqual(catalog.platformModels.map((model) => model.id))
     expect(platform.find((row) => row.model.id === "claude-opus-4.8")?.model.variants).toEqual(["低", "中", "高"])
-    expect(byok.filter((row) => row.model.providerID === "deepseek").map((row) => row.model.id)).toEqual(
+    expect(byok.filter((row) => row.model.providerID === byokEngineId("deepseek")).map((row) => row.model.id)).toEqual(
       catalog.byokProviders.find((provider) => provider.id === "deepseek")?.models ?? [],
     )
     expect(byok.filter((row) => row.availability === "needs-key").map((row) => row.model.providerID)).toEqual(

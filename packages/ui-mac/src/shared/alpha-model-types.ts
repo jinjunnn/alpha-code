@@ -23,6 +23,19 @@ export type ByokProvider = {
   models: string[]
 }
 
+/** Engine-facing provider id for an injected BYOK direct node. We deliberately DON'T reuse the display
+ *  id (e.g. "deepseek") for the sidecar/opencode provider: those collide with the models.dev provider
+ *  ids, and opencode's ModelsDevPlugin registers an integration for every models.dev provider that has
+ *  env keys. The upstream availability gate (packages/core catalog) then only counts a key it finds in
+ *  `request.body.apiKey` — but the `@ai-sdk/openai-compatible` path puts the key in `api.settings.apiKey`
+ *  — so the provider is judged unavailable, its models never appear in /api/model, and the picker shows
+ *  "当前不可用". Injecting under a non-models.dev id (`<id>-byok`) takes the same "no integration →
+ *  available" path the platform `alpha` provider already uses. Display id, keyStatus, gateway allowlist
+ *  and the key store keep the plain id; only the engine provider id + the picker's engine lookup use this.
+ *  MUST stay in lockstep between the config injector (main/alpha-models.ts) and the picker
+ *  (renderer/model-picker-core.ts). */
+export const byokEngineId = (id: string): string => `${id}-byok`
+
 /** A model fronted by the alpha-platform proxy (代理节点). Visible always (locked when logged-out). */
 export type PlatformModel = {
   id: string

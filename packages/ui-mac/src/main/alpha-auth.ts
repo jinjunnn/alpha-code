@@ -182,9 +182,28 @@ function deriveState(): AuthState {
   }
 }
 
+// Broadcast IDENTITY changes only. doRefresh() calls publish() on every token rotation, but a
+// rotation changes only expiresAt — never status/mode/account — so an unguarded broadcast made every
+// auth-subscribed renderer surface (sidebar, model picker, model chain) re-fetch the account on every
+// refresh. When a downstream endpoint 401s (→ triggers a refresh → publish → refetch → 401 → refresh)
+// that closed into a ~50/s refresh/publish storm that flashed the whole UI. Suppress broadcasts whose
+// identity signature is unchanged: fresh renderers still get current state via the `auth-get-state`
+// invoke inside preload's subscribe(), so no subscriber is starved. expiresAt is intentionally NOT in
+// the signature — a bare token rotation must not wake the UI.
+let lastPublishedSig: string | undefined
 function publish() {
   const win = getWindow()
-  if (win && !win.isDestroyed()) win.webContents.send("auth-state", deriveState())
+  if (!win || win.isDestroyed()) return
+  const state = deriveState()
+  const sig = JSON.stringify({
+    status: state.status,
+    mode: state.mode,
+    email: state.account?.email,
+    plan: state.account?.plan,
+  })
+  if (sig === lastPublishedSig) return
+  lastPublishedSig = sig
+  win.webContents.send("auth-state", state)
 }
 
 // B11 复扫行16:登录整链失败不再只留日志 —— 推 auth-error 给 renderer(sidebar 订阅 → error toast),
@@ -501,18 +520,21 @@ export function refreshTokens(): Promise<boolean> {
 }
 
 async function doRefresh(): Promise<boolean> {
-  const { refreshToken, sessionId } = stored
-  if (!refreshToken || !sessionId) return false
+  const { refreshToken } = stored
+  if (!refreshToken) return false
   let res: Response
   try {
     res = await fetch(`${webBase()}${ALPHA_PATHS.token}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
+      // #79 Breaking v1: refresh is keyed ONLY by the opaque rotating refresh_token.
+      // The issuer rejects any refresh request carrying a `sid` (Object.hasOwn(body,"sid")
+      // → invalid_request 400), so we must NOT send it. (Was sending `sid: sessionId`,
+      // which 400'd every refresh → forced logout right after a successful login.)
       body: JSON.stringify({
         grant_type: "refresh_token",
         client_id: CLIENT_ID,
         refresh_token: refreshToken,
-        sid: sessionId,
       }),
       signal: AbortSignal.timeout(10_000),
     })

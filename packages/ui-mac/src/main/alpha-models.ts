@@ -23,6 +23,7 @@
 
 import catalog from "./alpha-models.json"
 import type { AlphaModelCatalog } from "../shared/alpha-model-types"
+import { byokEngineId } from "../shared/alpha-model-types"
 import { readLiveAllowlist } from "./alpha-live-allowlist"
 import { hasSecretFile, secretFileRef } from "./alpha-secret-files"
 import { readUserProviderIds } from "./ext-config"
@@ -66,13 +67,17 @@ export function buildAlphaModelConfig(userDataPath: string): AlphaModelConfig | 
     const npm = p.compat === "anthropic" ? "@ai-sdk/anthropic" : "@ai-sdk/openai-compatible"
     const models: Record<string, { name: string }> = {}
     for (const m of p.models) models[m] = { name: m }
-    provider[p.id] = {
+    // Inject under a non-models.dev engine id (`<id>-byok`) so opencode's availability gate doesn't
+    // filter these out via the models.dev integration collision (see byokEngineId). Display id, key
+    // status, gateway allowlist and the key store all keep the plain `p.id`.
+    const engineId = byokEngineId(p.id)
+    provider[engineId] = {
       npm,
       name: p.name,
       options: { baseURL: p.baseURL, apiKey: secretFileRef(userDataPath, p.keyEnv) },
       models,
     }
-    enabled.push(p.id)
+    enabled.push(engineId)
   }
 
   // (2) ALPHA platform gateway -- a custom OpenAI-compatible provider whose key is fronted by ALPHA

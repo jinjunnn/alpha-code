@@ -94,8 +94,8 @@ describe("buildAlphaModelConfig — BYOK direct nodes (only when the key FILE ex
   test("an openai-compat provider is injected only when its key file exists, with a {file:} ref", () => {
     plantSecret("DEEPSEEK_API_KEY", "sk-deepseek-123")
     const cfg = buildAlphaModelConfig(userData)!
-    expect(cfg.enabled_providers).toContain("deepseek")
-    const p = cfg.provider.deepseek as any
+    expect(cfg.enabled_providers).toContain("deepseek-byok")
+    const p = cfg.provider["deepseek-byok"] as any
     expect(p.npm).toBe("@ai-sdk/openai-compatible")
     // the ref is a path token, never the value — OPENCODE_CONFIG_CONTENT must stay secret-free (A6)
     expect(p.options.apiKey).toBe(`{file:${secretFilePath(userData, "DEEPSEEK_API_KEY")}}`)
@@ -105,7 +105,7 @@ describe("buildAlphaModelConfig — BYOK direct nodes (only when the key FILE ex
 
   test("zhipuai (catalog BYOK) is openai-compat with the paas/v4 endpoint", () => {
     plantSecret("ZHIPU_API_KEY", "sk-zhipu-xyz")
-    const p = buildAlphaModelConfig(userData)!.provider.zhipuai as any
+    const p = buildAlphaModelConfig(userData)!.provider["zhipuai-byok"] as any
     expect(p.npm).toBe("@ai-sdk/openai-compatible")
     expect(p.options.baseURL).toBe("https://open.bigmodel.cn/api/paas/v4")
     expect(p.options.apiKey).toBe(`{file:${secretFilePath(userData, "ZHIPU_API_KEY")}}`)
@@ -128,22 +128,22 @@ describe("buildAlphaModelConfig — BYOK direct nodes (only when the key FILE ex
   test("an env var ALONE no longer activates a provider (the sidecar env carries no keys, A6)", () => {
     process.env.DEEPSEEK_API_KEY = "sk-deepseek-123"
     const cfg = buildAlphaModelConfig(userData)!
-    expect(cfg.provider.deepseek).toBeUndefined()
-    expect(cfg.enabled_providers).not.toContain("deepseek")
+    expect(cfg.provider["deepseek-byok"]).toBeUndefined()
+    expect(cfg.enabled_providers).not.toContain("deepseek-byok")
   })
 
   test("keyless catalog providers are NOT injected", () => {
     const cfg = buildAlphaModelConfig(userData)!
-    expect(cfg.provider.deepseek).toBeUndefined()
-    expect(cfg.provider.moonshot).toBeUndefined()
+    expect(cfg.provider["deepseek-byok"]).toBeUndefined()
+    expect(cfg.provider["moonshot-byok"]).toBeUndefined()
   })
 
   test("syncSecretFiles(main) → buildAlphaModelConfig(sidecar) round-trips end to end", () => {
     syncSecretFiles(userData, { DEEPSEEK_API_KEY: "sk-rt" })
-    expect(buildAlphaModelConfig(userData)!.enabled_providers).toContain("deepseek")
+    expect(buildAlphaModelConfig(userData)!.enabled_providers).toContain("deepseek-byok")
     // revocation flows through: key removed → file deleted → provider gone on next fork
     syncSecretFiles(userData, {})
-    expect(buildAlphaModelConfig(userData)!.enabled_providers).not.toContain("deepseek")
+    expect(buildAlphaModelConfig(userData)!.enabled_providers).not.toContain("deepseek-byok")
   })
 })
 
@@ -221,9 +221,9 @@ describe("buildAlphaModelConfig — REQ-001 edition 白名单(live 缓存)", () 
     plantSecret("ZHIPU_API_KEY", "sk-2")
     writeLiveAllowlist(userData, { ...liveBase, byokProviders: ["deepseek"], models: [] })
     const cfg = buildAlphaModelConfig(userData)!
-    expect(cfg.enabled_providers).toContain("deepseek")
-    expect(cfg.provider.zhipuai).toBeUndefined()
-    expect(cfg.enabled_providers).not.toContain("zhipuai")
+    expect(cfg.enabled_providers).toContain("deepseek-byok")
+    expect(cfg.provider["zhipuai-byok"]).toBeUndefined()
+    expect(cfg.enabled_providers).not.toContain("zhipuai-byok")
   })
 
   test("byokProviders null = 不限制(两个 keyed 都注入)", () => {
@@ -231,8 +231,8 @@ describe("buildAlphaModelConfig — REQ-001 edition 白名单(live 缓存)", () 
     plantSecret("ZHIPU_API_KEY", "sk-2")
     writeLiveAllowlist(userData, { ...liveBase, byokProviders: null, models: [] })
     const cfg = buildAlphaModelConfig(userData)!
-    expect(cfg.enabled_providers).toContain("deepseek")
-    expect(cfg.enabled_providers).toContain("zhipuai")
+    expect(cfg.enabled_providers).toContain("deepseek-byok")
+    expect(cfg.enabled_providers).toContain("zhipuai-byok")
   })
 
   test("平台模型以 live 清单为准:snapshot 名称富化,未知 id 诚实用 id 本名", () => {
