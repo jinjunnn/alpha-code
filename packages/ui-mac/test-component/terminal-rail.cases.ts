@@ -181,6 +181,33 @@ describe("REQ-125 terminal rail panel real Solid mount", () => {
     ).toBe(true)
   })
 
+  test("same-directory session switch rejects the stale channel until re-projection (I8)", async () => {
+    const host = mount(() => runtime.TerminalRailHarness())
+    await flush()
+    expect(host.querySelectorAll("[data-alpha-terminal-tab]")).toHaveLength(2)
+
+    // 同 workspace(serverKey+directory 不变)切到另一会话:旧 channel 身份不再被 live.accepts
+    // 接受 → 面板即刻按 channel 缺席处理(空态 + 新建禁用),旧投影不得继续渲染。
+    runtime.setTerminalLiveSession("ses_b")
+    await flush()
+    expect(host.querySelector("[data-alpha-terminal-empty]")).not.toBeNull()
+    expect(host.querySelector("[role='tablist']")).toBeNull()
+    expect(host.querySelector("[data-alpha-terminal-output]")).toBeNull()
+    expect(host.querySelector("[data-alpha-terminal-engine-output='pty_1']")).toBeNull()
+    expect(
+      host.querySelector<HTMLButtonElement>("[data-alpha-terminal-empty] [data-alpha-terminal-new]")?.disabled,
+    ).toBe(true)
+
+    // 适配器按新会话身份重投影 → 面板恢复实例形态(workspace 级 PTY 状态共享)。
+    runtime.projectTerminalChannel("ses_b")
+    await flush()
+    expect(host.querySelector("[data-alpha-terminal-empty]")).toBeNull()
+    expect(host.querySelectorAll("[data-alpha-terminal-tab]")).toHaveLength(2)
+    expect(
+      host.querySelector("[data-alpha-terminal-output] [data-alpha-terminal-engine-output='pty_1']"),
+    ).not.toBeNull()
+  })
+
   test("a channel that is not ready is treated the same as absent (fail closed)", async () => {
     runtime.setTerminalChannelReady(false)
     const host = mount(() => runtime.TerminalRailHarness())

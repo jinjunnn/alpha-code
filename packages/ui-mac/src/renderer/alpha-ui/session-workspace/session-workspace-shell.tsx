@@ -121,8 +121,9 @@ export function SessionWorkspaceShell(props: { live: AlphaSessionLiveContext }) 
             aria-label={t("alpha.session.railHost")}
           >
             <Show when={activePanel() === "terminal"}>
-              {/* C3-term(#550):引擎通道待窄 export 落地后接入;缺席时面板 fail-closed 空态。 */}
-              <TerminalRailPanel />
+              {/* C3-term(#550):引擎通道待窄 export 落地后接入;缺席时面板 fail-closed 空态。
+                  I8:channel 身份必须过 live.accepts,会话切换后旧投影即刻失效。 */}
+              <TerminalRailPanel accepts={props.live.accepts} />
             </Show>
           </aside>
         )}

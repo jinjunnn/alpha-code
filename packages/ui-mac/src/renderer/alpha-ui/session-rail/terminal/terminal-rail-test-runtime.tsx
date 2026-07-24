@@ -1,8 +1,11 @@
 // REQ-125 C3-term(#550)—— 组件测试 runtime:假引擎通道驱动面板(形态同
 // session-workspace-test-runtime)。假通道只实现 seam 形状,行为与上游语义对齐:
 // open 切激活、close 移除并回落激活、create 追加并激活。
+// I8:channel 投影铸造时盖三元身份;accepts 用真 sameSessionIdentity 对当前 live
+// 身份校验 —— 同 workspace 切会话即拒收旧投影,重投影后恢复。
 import { createSignal } from "solid-js"
 import { render } from "solid-js/web"
+import { sameSessionIdentity, type AlphaSessionIdentity } from "../../session-workspace/session-workspace-core"
 import {
   type AlphaTerminalEngineChannel,
   type AlphaTerminalFootStatus,
@@ -15,6 +18,10 @@ export { render }
 interface FakeInstance extends AlphaTerminalInstance {
   foot: AlphaTerminalFootStatus
 }
+
+const WORKSPACE = { serverKey: "sidecar", directory: "/tmp/workspace" }
+
+const identityOf = (sessionID: string): AlphaSessionIdentity => ({ ...WORKSPACE, sessionID })
 
 const initialInstances: FakeInstance[] = [
   {
@@ -34,49 +41,67 @@ const initialInstances: FakeInstance[] = [
 const [instances, setInstances] = createSignal<FakeInstance[]>(initialInstances)
 const [activeID, setActiveID] = createSignal<string | undefined>("pty_1")
 const [ready, setReady] = createSignal(true)
+const [liveIdentity, setLiveIdentity] = createSignal<AlphaSessionIdentity>(identityOf("ses_a"))
 
 export const channelCalls: string[] = []
 
 let nextCreated = 3
 
-const fakeChannel: AlphaTerminalEngineChannel = {
-  ready,
-  instances,
-  activeID,
-  open(id) {
-    channelCalls.push(`open:${id}`)
-    setActiveID(id)
-  },
-  close(id) {
-    channelCalls.push(`close:${id}`)
-    setInstances((all) => all.filter((instance) => instance.id !== id))
-    setActiveID((current) => (current === id ? instances()[0]?.id : current))
-  },
-  create() {
-    channelCalls.push("create")
-    const id = `pty_${nextCreated}`
-    nextCreated += 1
-    const created: FakeInstance = {
-      id,
-      title: `终端 ${nextCreated - 1}`,
-      running: false,
-      foot: { running: false, shell: "zsh", cols: 80, rows: 24 },
-    }
-    setInstances((all) => [...all, created])
-    setActiveID(id)
-  },
-  footStatus(id) {
-    return instances().find((instance) => instance.id === id)?.foot ?? { running: false }
-  },
-  EngineOutput: (props) => <div data-alpha-terminal-engine-output={props.instanceID} />,
+function makeChannel(identity: AlphaSessionIdentity): AlphaTerminalEngineChannel {
+  return {
+    identity,
+    ready,
+    instances,
+    activeID,
+    open(id) {
+      channelCalls.push(`open:${id}`)
+      setActiveID(id)
+    },
+    close(id) {
+      channelCalls.push(`close:${id}`)
+      setInstances((all) => all.filter((instance) => instance.id !== id))
+      setActiveID((current) => (current === id ? instances()[0]?.id : current))
+    },
+    create() {
+      channelCalls.push("create")
+      const id = `pty_${nextCreated}`
+      nextCreated += 1
+      const created: FakeInstance = {
+        id,
+        title: `终端 ${nextCreated - 1}`,
+        running: false,
+        foot: { running: false, shell: "zsh", cols: 80, rows: 24 },
+      }
+      setInstances((all) => [...all, created])
+      setActiveID(id)
+    },
+    footStatus(id) {
+      return instances().find((instance) => instance.id === id)?.foot ?? { running: false }
+    },
+    EngineOutput: (props) => <div data-alpha-terminal-engine-output={props.instanceID} />,
+  }
 }
 
+const [channel, setChannel] = createSignal<AlphaTerminalEngineChannel>(makeChannel(identityOf("ses_a")))
+
+const accepts = (identity: AlphaSessionIdentity) => sameSessionIdentity(identity, liveIdentity())
+
 export function TerminalRailHarness() {
-  return <TerminalRailPanel channel={fakeChannel} />
+  return <TerminalRailPanel channel={channel()} accepts={accepts} />
 }
 
 export function TerminalRailHarnessWithoutEngine() {
-  return <TerminalRailPanel />
+  return <TerminalRailPanel accepts={accepts} />
+}
+
+/** 同 workspace 切会话:只换 live 三元组的 sessionID(serverKey+directory 不变)。 */
+export function setTerminalLiveSession(sessionID: string) {
+  setLiveIdentity(identityOf(sessionID))
+}
+
+/** 适配器语义:按给定会话身份重投影 channel(共享同一 workspace 级 PTY 状态)。 */
+export function projectTerminalChannel(sessionID: string) {
+  setChannel(makeChannel(identityOf(sessionID)))
 }
 
 export function setTerminalInstances(next: FakeInstance[]) {
@@ -95,6 +120,8 @@ export function resetTerminalRailHarness() {
   setInstances(initialInstances)
   setActiveID("pty_1")
   setReady(true)
+  setLiveIdentity(identityOf("ses_a"))
+  setChannel(makeChannel(identityOf("ses_a")))
   nextCreated = 3
   channelCalls.splice(0)
 }

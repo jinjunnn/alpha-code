@@ -2,10 +2,13 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join, resolve } from "node:path"
+import { sameSessionIdentity, type AlphaSessionIdentity } from "../../session-workspace/session-workspace-core"
 import {
+  acceptedEngineChannel,
   anyTerminalRunning,
   formatTerminalSize,
   resolveActiveInstance,
+  type AlphaTerminalEngineChannel,
   type AlphaTerminalInstance,
 } from "./terminal-rail-core"
 
@@ -41,6 +44,23 @@ describe("REQ-125 C3-term tab state machine", () => {
     expect(anyTerminalRunning([instance("a"), instance("b", true)])).toBe(true)
   })
 
+  test("engine channel is only consumable with an accepted identity triple (I8 fail-closed)", () => {
+    const identity: AlphaSessionIdentity = { serverKey: "sidecar", directory: "/tmp/workspace", sessionID: "ses_a" }
+    const channel = { identity } as AlphaTerminalEngineChannel
+    const acceptsOnly = (live: AlphaSessionIdentity) => (candidate: AlphaSessionIdentity) =>
+      sameSessionIdentity(candidate, live)
+
+    // channel 缺席 / 校验器缺席 → 一律拒绝(fail-closed)。
+    expect(acceptedEngineChannel(undefined, acceptsOnly(identity))).toBeUndefined()
+    expect(acceptedEngineChannel(channel, undefined)).toBeUndefined()
+
+    // 三元组任一维不符 → 拒绝;完全一致才放行。
+    expect(acceptedEngineChannel(channel, acceptsOnly({ ...identity, sessionID: "ses_b" }))).toBeUndefined()
+    expect(acceptedEngineChannel(channel, acceptsOnly({ ...identity, directory: "/tmp/other" }))).toBeUndefined()
+    expect(acceptedEngineChannel(channel, acceptsOnly({ ...identity, serverKey: "remote" }))).toBeUndefined()
+    expect(acceptedEngineChannel(channel, acceptsOnly(identity))).toBe(channel)
+  })
+
   test("foot size renders only from sane cols×rows", () => {
     expect(formatTerminalSize(80, 24)).toBe("80×24")
     expect(formatTerminalSize(undefined, 24)).toBeUndefined()
@@ -61,7 +81,7 @@ describe("REQ-125 C3-term real Solid mount", () => {
     })
     const output = `${result.stdout.toString()}${result.stderr.toString()}`
     if (result.exitCode !== 0) throw new Error(output)
-    expect(output).toContain("7 pass")
+    expect(output).toContain("8 pass")
     expect(output).toContain("0 fail")
   })
 })
@@ -88,6 +108,9 @@ describe("REQ-125 C3-term I1/I5 static ratchets", () => {
     ]
     forbidden.forEach((token) => expect(sources).not.toContain(token))
     expect(panel).toContain("AlphaTerminalEngineChannel")
+    // I8:channel 消费必须走身份闸,seam 上必须携带三元身份。
+    expect(panel).toContain("acceptedEngineChannel(props.channel, props.accepts)")
+    expect(core).toContain("identity: AlphaSessionIdentity")
   })
 
   test("panel copy is fully externalized to i18n with en/zh parity", () => {
@@ -132,8 +155,8 @@ describe("REQ-125 C3-term I1/I5 static ratchets", () => {
     expect(css.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*$/)?.[0]).toContain("animation: none")
   })
 
-  test("shell mounts the terminal panel only for the terminal rail state", () => {
+  test("shell mounts the terminal panel only for the terminal rail state, gated by live.accepts", () => {
     expect(shell).toContain(`import { TerminalRailPanel } from "../session-rail/terminal/terminal-rail-panel"`)
-    expect(shell).toMatch(/activePanel\(\) === "terminal"[\s\S]{0,200}<TerminalRailPanel \/>/)
+    expect(shell).toMatch(/activePanel\(\) === "terminal"[\s\S]{0,300}<TerminalRailPanel accepts=\{props\.live\.accepts\} \/>/)
   })
 })

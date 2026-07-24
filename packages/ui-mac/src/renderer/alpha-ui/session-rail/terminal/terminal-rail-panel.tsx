@@ -4,7 +4,9 @@
 // `AlphaTerminalEngineChannel` 渲染;channel 缺席或未就绪 → fail-closed 空态。
 import { For, Show, createMemo } from "solid-js"
 import { t } from "../../../i18n"
+import type { AlphaSessionIdentity } from "../../session-workspace/session-workspace-core"
 import {
+  acceptedEngineChannel,
   anyTerminalRunning,
   formatTerminalSize,
   resolveActiveInstance,
@@ -22,8 +24,16 @@ function PlusIcon() {
   )
 }
 
-export function TerminalRailPanel(props: { channel?: AlphaTerminalEngineChannel }) {
-  const engine = () => (props.channel?.ready() ? props.channel : undefined)
+export function TerminalRailPanel(props: {
+  channel?: AlphaTerminalEngineChannel
+  /** C1 live 上下文的身份校验(`live.accepts`);缺席 = fail-closed,channel 视为不存在。 */
+  accepts?: (identity: AlphaSessionIdentity) => boolean
+}) {
+  // I8:channel 必须携带被当前会话接受的三元身份,且 ready;任一不满足即落空态。
+  const engine = () => {
+    const channel = acceptedEngineChannel(props.channel, props.accepts)
+    return channel?.ready() ? channel : undefined
+  }
   const instances = createMemo(() => engine()?.instances() ?? [])
   const active = createMemo(() => resolveActiveInstance(instances(), engine()?.activeID()))
   const foot = createMemo(() => {

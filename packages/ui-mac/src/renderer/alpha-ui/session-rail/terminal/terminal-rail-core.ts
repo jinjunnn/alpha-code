@@ -12,9 +12,13 @@
 // 需要一次窄 export(ADR-027 修订 + alpha-frontend.patch),归 owner 决策,不在本票擅动;
 // 在此之前 channel 缺席,面板 fail-closed 落空态。
 //
-// I8:本面板不自持任何会话/工作区异步状态 —— 一切数据都是 channel 访问器的同步派生,
-// 工作区身份切换时上游 `TargetSessionPage` 按 `scope+directory` 整树重挂,无 stale 写入面。
+// I8:本面板不自持任何会话/工作区异步状态 —— 一切数据都是 channel 访问器的同步派生。
+// 但同 workspace 的会话切换不会重挂本子树,同步 accessor 本身证明不了背后的 PTY 状态
+// 属于当前会话:channel 投影必须在铸造时盖上 `serverKey+directory+sessionID` 三元身份
+// (`identity`),消费侧经 C1 `live.accepts(identity)` 校验;身份不符或校验器缺席一律
+// fail-closed 视为 channel 缺席(`acceptedEngineChannel`),旧 channel 无法继续渲染。
 import type { Component } from "solid-js"
+import type { AlphaSessionIdentity } from "../../session-workspace/session-workspace-core"
 
 /** 一条终端实例(引擎侧 PTY)的页签视图模型。 */
 export interface AlphaTerminalInstance {
@@ -35,8 +39,11 @@ export interface AlphaTerminalFootStatus {
 /**
  * 引擎通道 typed seam —— 面板消费的全部外部能力。
  * 未来适配器把上游 `useTerminal()`(状态)与 `Terminal`(Ghostty 嵌入)收敛成本形状。
+ * 适配器在投影时盖 `identity`(I8 三元组);消费侧必须经 `acceptedEngineChannel` 校验。
  */
 export interface AlphaTerminalEngineChannel {
+  /** 本 channel 投影所属的会话三元身份(serverKey+directory+sessionID),铸造时固定。 */
+  identity: AlphaSessionIdentity
   ready(): boolean
   instances(): AlphaTerminalInstance[]
   activeID(): string | undefined
@@ -46,6 +53,20 @@ export interface AlphaTerminalEngineChannel {
   footStatus(id: string): AlphaTerminalFootStatus
   /** 引擎渲染的输出区内容;alpha 只提供圆角深底外框。 */
   EngineOutput: Component<{ instanceID: string }>
+}
+
+/**
+ * I8 fail-closed 闸:channel 只有携带被当前 live 上下文接受的三元身份才可被消费。
+ * channel 缺席、校验器缺席、身份不符 —— 一律返回 undefined(面板落空态),
+ * 同 workspace 切会话后旧 channel 立即失效,直到适配器按新身份重投影。
+ */
+export function acceptedEngineChannel(
+  channel: AlphaTerminalEngineChannel | undefined,
+  accepts: ((identity: AlphaSessionIdentity) => boolean) | undefined,
+): AlphaTerminalEngineChannel | undefined {
+  if (!channel || !accepts) return undefined
+  if (!accepts(channel.identity)) return undefined
+  return channel
 }
 
 /** 激活实例解析:空列表 → undefined;activeID 失效(已关闭)→ 回落首个实例。 */
