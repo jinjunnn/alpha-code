@@ -191,12 +191,98 @@
 }
 
 .a-swk-rail-host {
+  display: flex;
   flex: none;
+  flex-direction: column;
   width: min(400px, 38vw);
   min-width: 320px;
   min-height: 0;
+  overflow: hidden;
   border-left: 1px solid var(--a-border-faint);
   background: var(--a-bg-subtle);
+}
+
+/* Rail tab strip — the approved switching surface for the right-rail panels (审查/文件/终端). */
+.a-swk-rail-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  height: 46px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--a-border-faint);
+  background: var(--a-bg-canvas);
+}
+
+.a-swk-rail-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: var(--a-radius-md);
+  background: transparent;
+  color: var(--a-text-secondary);
+  font-family: inherit;
+  font-size: var(--a-text-sm);
+  font-weight: var(--a-weight-medium);
+  cursor: pointer;
+  transition:
+    background var(--a-dur-fast) var(--a-ease-out),
+    color var(--a-dur-fast) var(--a-ease-out);
+}
+
+.a-swk-rail-tab:hover {
+  background: var(--a-bg-muted);
+  color: var(--a-text);
+}
+
+.a-swk-rail-tab--on {
+  background: var(--a-accent-subtle);
+  color: var(--a-accent);
+}
+
+.a-swk-rail-close {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--a-radius-md);
+  background: transparent;
+  color: var(--a-text-tertiary);
+  cursor: pointer;
+}
+
+.a-swk-rail-close:hover {
+  background: var(--a-bg-muted);
+  color: var(--a-text);
+}
+
+.a-swk-rail-close svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.a-swk-rail-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.a-swk-rail-panel--hidden {
+  display: none;
 }
 
 @keyframes a-swk-status-pulse {
@@ -230,7 +316,8 @@
     animation: none;
   }
 
-  .a-swk-panel-button {
+  .a-swk-panel-button,
+  .a-swk-rail-tab {
     transition: none;
   }
 }
