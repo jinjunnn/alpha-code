@@ -84,7 +84,13 @@ const NewSession = lazy(() => import("@/pages/new-session"))
 // SessionProviders / DraftProviders) keeps its default lifecycle. Surfaces are read
 // once when AppInterface mounts; swapping them afterwards requires a reload — the
 // provider tree must never hot-swap within one renderer lifetime.
-export type MaybePreloadableComponent = Component & { preload?: () => void }
+export type MaybePreloadableComponent = Component & {
+  preload?: () => void
+  // REQ-125 (#574): a session surface may statically declare that it renders the session
+  // page's only top bar (including the window drag region). NewLayout then skips the
+  // upstream Titlebar on session routes. Absent marker = upstream Titlebar unchanged.
+  ownsTitlebar?: boolean
+}
 
 // The newSession leaf owns the draft page UI but not the draft lifecycle: the wrapper
 // keeps tab/draft semantics (target server, tab swap, persisted-draft cleanup) and
@@ -490,11 +496,11 @@ function LegacyServerScopedShell(props: ServerScopedShellProps) {
   )
 }
 
-function NewAppLayout(props: ParentProps<{ serverScoped?: JSX.Element }>) {
+function NewAppLayout(props: ParentProps<{ serverScoped?: JSX.Element; sessionOwnsTitlebar?: boolean }>) {
   return (
     <SelectedServerProviders>
       <ServerScopedProviders serverScoped={props.serverScoped}>
-        <NewLayout>{props.children}</NewLayout>
+        <NewLayout sessionOwnsTitlebar={props.sessionOwnsTitlebar}>{props.children}</NewLayout>
       </ServerScopedProviders>
     </SelectedServerProviders>
   )
@@ -692,6 +698,9 @@ export function AppInterface(props: {
   // The upstream draft page reads its state from context and ignores the narrow
   // surface props, so it satisfies the contract without changes.
   const DraftRoute = createDraftRoute(props.surfaces?.newSession ?? (NewSession as unknown as DraftSurfaceComponent))
+  // REQ-125 (#574): resolved once with the surfaces — when the injected session leaf owns its
+  // top bar, the shared NewLayout drops the upstream Titlebar on session routes (single header).
+  const sessionOwnsTitlebar = props.surfaces?.session?.ownsTitlebar === true
   // The visual new layout lives in the router root so it remains mounted across
   // route changes. Draft and session routes override only their server-bound data
   // providers beneath it.
@@ -722,7 +731,9 @@ export function AppInterface(props: {
                       <NotificationProvider>
                         <ServerShell>
                           <Show when={useSettings().general.newLayoutDesigns()} fallback={routerProps.children}>
-                            <NewAppLayout serverScoped={props.serverScoped}>{routerProps.children}</NewAppLayout>
+                            <NewAppLayout serverScoped={props.serverScoped} sessionOwnsTitlebar={sessionOwnsTitlebar}>
+                              {routerProps.children}
+                            </NewAppLayout>
                           </Show>
                         </ServerShell>
                       </NotificationProvider>

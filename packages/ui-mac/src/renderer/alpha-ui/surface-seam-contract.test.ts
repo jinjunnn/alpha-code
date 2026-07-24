@@ -69,6 +69,20 @@ describe("ADR-027 typed surface seam anchors (frozen packages/app)", () => {
     expect(sessionLeaf).toContain("export default function Page()")
   })
 
+  test("session-surface titlebar ownership stays fail-closed (REQ-125 #574, 单一顶栏)", () => {
+    // 标记形态:surface 组件上的静态可选字段;判定严格 === true,缺席 = 上游 Titlebar 原样
+    // (上游面零回归的机械保证)。
+    expect(appTsx).toContain("ownsTitlebar?: boolean")
+    expect(appTsx).toContain("const sessionOwnsTitlebar = props.surfaces?.session?.ownsTitlebar === true")
+    expect(appTsx).toContain("sessionOwnsTitlebar={sessionOwnsTitlebar}")
+    // NewLayout 只在「标记 ∧ session 路由」同时成立时跳过上游 Titlebar;home/draft 等
+    // 其余路由照常渲染(Show 直接包住 Titlebar,别无第二渲染点)。
+    const layoutNew = readFileSync(join(APP_SRC, "pages/layout-new.tsx"), "utf8")
+    expect(layoutNew).toContain('props.sessionOwnsTitlebar === true && layout.route().type === "session"')
+    expect(layoutNew).toMatch(/<Show when=\{!titlebarHidden\(\)\}>\s*<Titlebar/)
+    expect(layoutNew.match(/<Titlebar/g)).toHaveLength(1)
+  })
+
   test("narrow terminal-engine channel stays a minimal pure re-export (REQ-125 #554, ADR-027 修订 2026-07-24)", () => {
     const pkg = JSON.parse(readFileSync(join(import.meta.dir, "../../../../app/package.json"), "utf8")) as {
       exports: Record<string, string>
