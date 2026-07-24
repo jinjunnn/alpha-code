@@ -12,6 +12,7 @@ const [rows, setRows] = createSignal<TimelineRow[]>([])
 const [ready, setReady] = createSignal(true)
 const [history, setHistory] = createSignal<SessionTimelineHistory>({ more: false, loading: false })
 const [epoch, setEpoch] = createSignal(initialEpoch)
+const [settleTimeoutMs, setSettleTimeoutMs] = createSignal<number | undefined>(undefined)
 
 let loadOlderCalls = 0
 let pendingMode = false
@@ -32,8 +33,14 @@ export function SessionTimelineHarness() {
         if (!pendingMode) return Promise.resolve()
         return new Promise<void>((resolve) => pendingResolvers.push(resolve))
       }}
+      settleTimeoutMs={settleTimeoutMs()}
     />
   )
+}
+
+/** settling 生命周期上限的测试注入(undefined = 生产默认)。 */
+export function setSettleTimeout(next: number | undefined) {
+  setSettleTimeoutMs(next)
 }
 
 /** true = onLoadOlder 挂起不 resolve(模拟慢加载),用 resolvePendingLoads 手动放行。 */
@@ -70,6 +77,7 @@ export function resetTimelineHarness() {
   setReady(true)
   setHistory({ more: false, loading: false })
   setEpoch(initialEpoch)
+  setSettleTimeoutMs(undefined)
   loadOlderCalls = 0
   pendingMode = false
   resolvePendingLoads()
