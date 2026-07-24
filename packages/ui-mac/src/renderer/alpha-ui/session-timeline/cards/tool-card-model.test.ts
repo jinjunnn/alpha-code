@@ -15,6 +15,7 @@ import {
   TOOL_ITEM_MAX_CHARS,
   TOOL_LINKS_MAX,
   TOOL_LIST_MAX_ITEMS,
+  TOOL_LIST_SCAN_MAX,
   TOOL_SCAN_MAX_CHARS,
   TOOL_URL_MAX_CHARS,
   toolCardBodyOf,
@@ -219,6 +220,50 @@ describe("REQ-125 C6 输出体(有界 + 分支)", () => {
 
     const urls = extractHttpUrls("x".repeat(TOOL_SCAN_MAX_CHARS) + " https://late.example/only-after-budget")
     expect(urls).toEqual([])
+  })
+
+  test("I6 跨扫描边界的 URL 整条丢弃(可能是半个 URL,fail-closed);边界内完整 URL 保留", () => {
+    // URL 起于边界前 30 字符、延伸过边界 → 截串后命中触达边界 → 丢弃。
+    const crossing = "x".repeat(TOOL_SCAN_MAX_CHARS - 30) + "https://cut.example/" + "a".repeat(60)
+    expect(extractHttpUrls(crossing)).toEqual([])
+
+    // 完整落在预算内(结束于边界之前)且原文更长 → 保留。
+    const inside = "x".repeat(TOOL_SCAN_MAX_CHARS - 60) + "https://ok.example/x " + "y".repeat(100)
+    expect(extractHttpUrls(inside)).toEqual(["https://ok.example/x"])
+
+    // 恰好整串就是一个 URL 且未被截(原文未超预算)→ 保留。
+    expect(extractHttpUrls("https://exact.example/end")).toEqual(["https://exact.example/end"])
+  })
+
+  test("I7 迭代预算:50 有效 + 海量非法尾提前终止(项数帽 + 总迭代帽双约束)", () => {
+    const valid = Array.from({ length: TOOL_LIST_MAX_ITEMS }, (_, i) => `/f${i}`)
+    const hugeInvalidTail = new Array<number>(100_000).fill(0)
+    expect(hugeInvalidTail.length).toBeGreaterThan(TOOL_LIST_SCAN_MAX)
+    const read = toolCardBodyOf(
+      part("read", { status: "completed", metadata: { loaded: [...valid, ...hugeInvalidTail] } }),
+    )
+    if (read.type !== "files") throw new Error("expected files body")
+    expect(read.files.length).toBe(TOOL_LIST_MAX_ITEMS)
+    expect(read.truncated).toBe(true)
+
+    // 有效项不足项数帽时,总迭代帽兜底(不全扫非法尾)。
+    const sparse = toolCardBodyOf(
+      part("read", { status: "completed", metadata: { loaded: ["/only", ...hugeInvalidTail] } }),
+    )
+    if (sparse.type !== "files") throw new Error("expected files body")
+    expect(sparse.files).toEqual(["/only"])
+    expect(sparse.truncated).toBe(true)
+
+    // 同类:apply_patch 文件数组的非法尾同样受迭代预算约束。
+    const patch = toolCardBodyOf(
+      part("apply_patch", {
+        status: "completed",
+        metadata: { files: [{ relativePath: "a.ts", type: "add", additions: 1, deletions: 0 }, ...hugeInvalidTail] },
+      }),
+    )
+    if (patch.type !== "patch") throw new Error("expected patch body")
+    expect(patch.files.map((file) => file.path)).toEqual(["a.ts"])
+    expect(patch.truncated).toBe(true)
   })
 
   test("websearch:只认 http(s) URL,数量有界,超长 URL 丢弃(I6/I7)", () => {

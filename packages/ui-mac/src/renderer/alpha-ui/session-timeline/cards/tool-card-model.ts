@@ -17,6 +17,8 @@ export const TOOL_ERROR_MAX_CHARS = 4_000
 export const TOOL_ITEM_MAX_CHARS = 400
 /** 对完整输出做行切/URL 扫描前的扫描预算:超出部分不扫描(截断标记诚实呈现)。 */
 export const TOOL_SCAN_MAX_CHARS = 64_000
+/** 不可信数组的总迭代预算(含非法项):项数帽之外的 CPU 帽 —— 海量非法尾不全扫。 */
+export const TOOL_LIST_SCAN_MAX = 500
 /** URL 帽:超长 URL 直接丢弃(截断的 URL 指向错误目标,fail-closed 不渲染)。 */
 export const TOOL_URL_MAX_CHARS = 500
 /** 默认展开的输出体(bash 终端流/错误体)超过此帽 → 默认收起,防多卡累积驻留 DOM。 */
@@ -328,17 +330,19 @@ export function toolCardBodyOf(part: ToolPart): ToolCardBody {
 
   switch (kind) {
     case "read": {
-      // I7:单趟早停迭代 —— 不对完整数组先 filter;逐项过单项帽后才收集。
+      // I7 双约束:项数帽(TOOL_LIST_MAX_ITEMS)+ 总迭代预算(TOOL_LIST_SCAN_MAX,
+      // 含非法项计数)—— 「50 有效 + 海量非法尾」不全扫,CPU 有界。
       const loaded = metadata.loaded
       if (!Array.isArray(loaded)) return { type: "none" }
       const files: string[] = []
       let truncated = false
-      for (const item of loaded) {
-        if (typeof item !== "string" || item.length === 0) continue
-        if (files.length >= TOOL_LIST_MAX_ITEMS) {
+      for (let index = 0; index < loaded.length; index += 1) {
+        if (index >= TOOL_LIST_SCAN_MAX || files.length >= TOOL_LIST_MAX_ITEMS) {
           truncated = true
           break
         }
+        const item = loaded[index]
+        if (typeof item !== "string" || item.length === 0) continue
         files.push(cappedItem(item))
       }
       if (files.length === 0) return { type: "none" }
@@ -433,8 +437,10 @@ function patchFilesOf(part: ToolPart): { rows: PatchFileRow[]; truncated: boolea
   const files = metadataOf(part).files
   if (!Array.isArray(files)) return { rows: [], truncated: false }
   const rows: PatchFileRow[] = []
-  for (const item of files) {
-    if (rows.length >= TOOL_LIST_MAX_ITEMS) return { rows, truncated: true }
+  // 同 read 列表的双约束:项数帽 + 总迭代预算(海量非法尾不全扫)。
+  for (let index = 0; index < files.length; index += 1) {
+    if (index >= TOOL_LIST_SCAN_MAX || rows.length >= TOOL_LIST_MAX_ITEMS) return { rows, truncated: true }
+    const item = files[index]
     if (typeof item !== "object" || item === null) continue
     const record = item as {
       relativePath?: unknown
@@ -460,9 +466,12 @@ function patchFilesOf(part: ToolPart): { rows: PatchFileRow[]; truncated: boolea
 export function extractHttpUrls(text: string): string[] {
   if (!text) return []
   const scan = text.slice(0, TOOL_SCAN_MAX_CHARS)
+  const clipped = text.length > scan.length
   const seen = new Set<string>()
   const result: string[] = []
   for (const match of scan.matchAll(/https?:\/\/[^\s<>"'`)\]]+/g)) {
+    // fail-closed:命中触达扫描边界且原文更长 → 可能是被截断的半个 URL,整条丢弃。
+    if (clipped && (match.index ?? 0) + match[0].length >= scan.length) continue
     const url = match[0].replace(/[),.;:!?]+$/, "")
     if (url.length > TOOL_URL_MAX_CHARS) continue
     if (seen.has(url)) continue

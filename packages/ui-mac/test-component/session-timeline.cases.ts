@@ -667,7 +667,7 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     expect(done.querySelector(".a-tc-cursor")).toBeNull()
   })
 
-  test("未知工具 fail-closed:mono 工具名 + 有界纯文本体;error 态成工具级错误卡", async () => {
+  test("未知工具 fail-closed:mono 工具名 + 有界纯文本体;error 态成工具级错误卡;超帽错误体默认收起", async () => {
     const host = mount()
     runtime.setTimelineRows(
       assistantFixture([
@@ -685,6 +685,13 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
           error: "ENOTREACHABLE",
           time: { start: 0, end: 1 },
         }),
+        toolPartFixture("prt_m3", "cloud_big", {
+          status: "error",
+          input: {},
+          // 原长 4001 > 默认展开帽:判定按原始体量(截断标记),不用截后长度比。
+          error: "E".repeat(4_001),
+          time: { start: 0, end: 1 },
+        }),
       ]),
     )
     await flush()
@@ -695,10 +702,17 @@ describe("REQ-125 C6 通用工具卡四态与分派", () => {
     await flush()
     expect(unknown.querySelector(".a-tc-out")!.textContent).toContain("raw output text")
 
-    const failed = host.querySelector("[data-alpha-tool-card][data-status='error']")!
+    const failed = host.querySelector("[data-alpha-tool-card][data-tool='cloud_dispatch']")!
     expect(failed.getAttribute("data-open")).toBe("true")
     expect(failed.querySelector(".a-tc-error-body")!.textContent).toContain("ENOTREACHABLE")
     expect(failed.textContent).toContain("失败")
+
+    const bigError = host.querySelector("[data-alpha-tool-card][data-tool='cloud_big']")!
+    expect(bigError.getAttribute("data-status")).toBe("error")
+    expect(bigError.getAttribute("data-open")).toBeNull()
+    ;(bigError.querySelector(".a-tc-head") as HTMLButtonElement).click()
+    await flush()
+    expect(bigError.getAttribute("data-open")).toBe("true")
   })
 
   test("edit diff 视图:jsdiff 行渲染 ±行号与 +/− 行;write 显示预览与总行数;补丁卡出徽章行", async () => {

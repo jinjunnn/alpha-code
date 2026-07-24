@@ -217,16 +217,19 @@ function groupableToolPart(part: ToolPart) {
 // ── 媒体预览行:工具附件是生产上图片/PDF 的真实通道(processor 完成时写入
 // ToolStateCompleted.attachments;顶层 file part 仅用户消息/兜底)。──────────
 export const TOOL_ATTACHMENTS_MAX = 6
+/** 附件数组的总迭代预算(含非法项)—— 与 cards 列表扫描同一双约束纪律。 */
+export const TOOL_ATTACHMENTS_SCAN_MAX = 50
 const MEDIA_NAME_MAX = 200
 
-/** 防御读取完成态工具附件(I2):非法条目丢弃;数量有界(I7)。 */
+/** 防御读取完成态工具附件(I2):非法条目丢弃;数量与迭代均有界(I7)。 */
 export function toolMediaOf(part: ToolPart): TimelineMediaSource[] {
   if (part.state.status !== "completed") return []
   const attachments = part.state.attachments
   if (!Array.isArray(attachments)) return []
   const result: TimelineMediaSource[] = []
-  for (const item of attachments) {
-    if (result.length >= TOOL_ATTACHMENTS_MAX) break
+  for (let index = 0; index < attachments.length; index += 1) {
+    if (index >= TOOL_ATTACHMENTS_SCAN_MAX || result.length >= TOOL_ATTACHMENTS_MAX) break
+    const item = attachments[index]
     if (typeof item !== "object" || item === null) continue
     const record = item as { id?: unknown; mime?: unknown; url?: unknown; filename?: unknown }
     if (typeof record.mime !== "string" || !record.mime) continue

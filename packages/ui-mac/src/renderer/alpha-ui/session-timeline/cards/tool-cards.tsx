@@ -360,13 +360,14 @@ export function TimelineToolCard(props: { part: ToolPart }) {
   const head = createMemo(() => toolCardHeadOf(props.part))
   const body = createMemo(() => toolCardBodyOf(props.part))
   const hasBody = () => body().type !== "none"
-  // 默认展开:终端流(bash)/错误体,且体量在帽内(I7:大输出体默认收起,防多卡累积
-  // 常驻 DOM);其余折叠。用户显式选择永远优先。
+  // 默认展开:终端流(bash)/错误体,且**原始**体量在帽内 —— 被截断过(truncated)
+  // 即视为超帽收起,不用截后长度比(I7:大输出体默认收起,防多卡累积常驻 DOM);
+  // 其余折叠。用户显式选择永远优先。
   const [chosen, setChosen] = createSignal<boolean>()
   const defaultOpen = () => {
     const value = body()
-    if (value.type === "term") return value.output.length <= OPEN_DEFAULT_MAX_CHARS
-    if (value.type === "error") return value.message.length <= OPEN_DEFAULT_MAX_CHARS
+    if (value.type === "term") return !value.truncated && value.output.length <= OPEN_DEFAULT_MAX_CHARS
+    if (value.type === "error") return !value.truncated && value.message.length <= OPEN_DEFAULT_MAX_CHARS
     return false
   }
   const open = () => chosen() ?? defaultOpen()
