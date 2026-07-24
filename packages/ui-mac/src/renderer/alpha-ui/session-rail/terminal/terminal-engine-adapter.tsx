@@ -7,7 +7,7 @@
 // terminal-engine-adapter-core)+ 引擎输出组件(持久化回写、连接后 trim、连接失败一次性
 // clone 恢复 —— 语义对齐上游 terminal-panel 的既有粘合)。
 import { Terminal, useTerminal, type LocalPTY } from "@opencode-ai/app/surface/terminal"
-import { createEffect, createMemo, createSignal, Show, type Accessor, type Component } from "solid-js"
+import { createEffect, createMemo, createSignal, onCleanup, Show, type Accessor, type Component } from "solid-js"
 import { t } from "../../../i18n"
 import type { AlphaSessionLiveSnapshot } from "../../session-workspace/session-workspace-core"
 import {
@@ -39,17 +39,44 @@ const recoveryKey = (pty: LocalPTY) => String(pty.titleNumber || pty.title || pt
  * 连接成功 → 清恢复标记 + trim 持久缓冲;卸载 → 回写缓冲/尺寸/滚动;连接失败 → 按
  * recovery key 一次性 clone(换新 PTY 保留页签),防止 clone 循环。
  */
+/** 两相位重挂的回写兜底:旧实例 flush 迟迟不回调(或根本没建立终端)时的挂载上限。 */
+const REMOUNT_FLUSH_TIMEOUT_MS = 300
+
 function createEngineOutput(engine: TerminalEngine): Component<{ instanceID: string }> {
   const recovered = new Set<string>()
   return (props) => {
     const ops = engine.bind()
     const pty = createMemo(() => engine.all().find((item) => item.id === props.instanceID))
-    // keep-alive × autoFocus 一次性(审计第 4 轮 Major-2):上游 Terminal 只在首挂消费
-    // autoFocus;shell 的 keep-alive 隐藏重显不重挂,重显时的聚焦请求会滞留不被消费。
-    // 挂载中收到本实例的聚焦请求 → 焦点代次 +1,keyed 重挂一次,让请求经原生 autoFocus
-    // 路径真实被消费(scrollback/尺寸/滚动由 onCleanup 回写 + 持久缓冲恢复,粘合已有)。
-    // 首挂自带的请求走首挂 autoFocus,不额外重挂;他实例请求(id 不匹配)不触发。
+    // keep-alive × autoFocus 一次性(审计第 4 轮 Major-2)+ 回写竞态(第 5 轮):
+    // 上游 Terminal 只在首挂消费 autoFocus,且其卸载回写(buffer/cursor/尺寸)在
+    // output.flush(finalize) 完成后才异步回调 —— 同步「销毁旧 + 挂新」会让新实例
+    // 抢先捕获旧 store(PTY 回放仅 2MiB,旧游标出窗 = scrollback 不可恢复缺口)。
+    // 故重挂走两相位:收到本实例聚焦请求 → pending(渲染 null,旧实例卸载并异步
+    // flush)→ 本实例的持久化回调真实发生(或超时兜底)→ 代次 +1 进入挂载相位,
+    // 新实例捕获 flush 后的新 store,并经原生 autoFocus 消费请求。
+    // 首挂路径(无旧实例)零延迟;pending 期间的再次请求合并,代次不叠加。
     const [focusEpoch, setFocusEpoch] = createSignal(1)
+    const [remountPhase, setRemountPhase] = createSignal<"mounted" | "pending">("mounted")
+    let pendingTimer: ReturnType<typeof setTimeout> | undefined
+    const completeRemount = () => {
+      if (remountPhase() !== "pending") return
+      clearTimeout(pendingTimer)
+      pendingTimer = undefined
+      // 代次先行、相位随后:Terminal 只在相位翻回 mounted 时以新代次挂载一次。
+      setFocusEpoch((epoch) => epoch + 1)
+      setRemountPhase("mounted")
+    }
+    const beginRemount = () => {
+      if (remountPhase() === "pending") return // 合并:pending 期间的请求不叠加代次
+      setRemountPhase("pending")
+      pendingTimer = setTimeout(completeRemount, REMOUNT_FLUSH_TIMEOUT_MS)
+    }
+    onCleanup(() => clearTimeout(pendingTimer))
+    // 上游 onCleanup 载荷即回写事实:先落 store,再看是否正等着它进入挂载相位。
+    const persistCleanup = (next: Partial<LocalPTY> & { id: string }) => {
+      ops.update(next)
+      if (next.id === props.instanceID) completeRemount()
+    }
     let liveSinceFirstRun = false
     createEffect(() => {
       const requested = engine.focusRequested(props.instanceID)
@@ -57,30 +84,32 @@ function createEngineOutput(engine: TerminalEngine): Component<{ instanceID: str
         liveSinceFirstRun = true
         return
       }
-      if (requested) setFocusEpoch((epoch) => epoch + 1)
+      if (requested) beginRemount()
     })
     return (
       <Show when={pty()}>
         {(current) => (
-          <Show when={focusEpoch()} keyed>
-            {(_epoch) => (
-              <Terminal
-                pty={current()}
-                autoFocus={engine.focusRequested(props.instanceID)}
-                onAutoFocus={() => engine.consumeFocus(props.instanceID)}
-                onConnect={() => {
-                  recovered.delete(recoveryKey(current()))
-                  ops.trim(props.instanceID)
-                }}
-                onCleanup={(next) => ops.update(next)}
-                onConnectError={() => {
-                  const key = recoveryKey(current())
-                  if (recovered.has(key)) return
-                  recovered.add(key)
-                  void ops.clone(props.instanceID)
-                }}
-              />
-            )}
+          <Show when={remountPhase() === "mounted"}>
+            <Show when={focusEpoch()} keyed>
+              {(_epoch) => (
+                <Terminal
+                  pty={current()}
+                  autoFocus={engine.focusRequested(props.instanceID)}
+                  onAutoFocus={() => engine.consumeFocus(props.instanceID)}
+                  onConnect={() => {
+                    recovered.delete(recoveryKey(current()))
+                    ops.trim(props.instanceID)
+                  }}
+                  onCleanup={persistCleanup}
+                  onConnectError={() => {
+                    const key = recoveryKey(current())
+                    if (recovered.has(key)) return
+                    recovered.add(key)
+                    void ops.clone(props.instanceID)
+                  }}
+                />
+              )}
+            </Show>
           </Show>
         )}
       </Show>

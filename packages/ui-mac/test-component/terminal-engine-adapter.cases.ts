@@ -17,10 +17,11 @@ mock.module("solid-js/web", () => solidWeb)
 const solidStore = await import("solid-js/store/dist/store.js")
 mock.module("solid-js/store", () => solidStore)
 
-// ── 假引擎:上游 useTerminal 的最小同形面(focus store 语义照搬 context/terminal.tsx) ──
-type FakePTY = { id: string; title: string; titleNumber: number; cols?: number; rows?: number }
+// ── 假引擎:上游 useTerminal 的最小同形面(focus store 语义照搬 context/terminal.tsx;
+//    ops.update 真实落 store,让新挂载能捕获回写后的 buffer/cursor) ──
+type FakePTY = { id: string; title: string; titleNumber: number; cols?: number; rows?: number; cursor?: number; buffer?: string }
 
-function createFakeEngine(initial: FakePTY[]) {
+function createFakeEngine(initial: FakePTY[], options?: { silentCleanup?: boolean }) {
   const [focus, setFocus] = solid.createSignal<{ id?: string } | undefined>(undefined)
   const [all, setAll] = solid.createSignal<FakePTY[]>(initial)
   const opsCalls: string[] = []
@@ -43,33 +44,45 @@ function createFakeEngine(initial: FakePTY[]) {
     },
     bind: () => ({
       trim: (id: string) => void opsCalls.push(`trim:${id}`),
-      update: (next: { id: string }) => void opsCalls.push(`update:${next.id}`),
+      update: (next: Partial<FakePTY> & { id: string }) => {
+        opsCalls.push(`update:${next.id}:cursor=${next.cursor ?? "unset"}`)
+        setAll((current) => current.map((pty) => (pty.id === next.id ? { ...pty, ...next } : pty)))
+      },
       clone: (id: string) => {
         opsCalls.push(`clone:${id}`)
         return Promise.resolve()
       },
     }),
   }
-  return { engine, focus, setAll, opsCalls }
+  return { engine, focus, setAll, opsCalls, silentCleanup: options?.silentCleanup === true }
 }
 
 let currentEngine: ReturnType<typeof createFakeEngine> | undefined
 const mountLog: string[] = []
 
-// ── 假 Terminal:上游一次性 autoFocus 语义(挂载期读一次;true 即消费) ──
+// ── 假 Terminal:上游一次性 autoFocus 语义(挂载期读一次;true 即消费)+ 上游真实的
+//    异步回写语义 —— 卸载后 output.flush(finalize) 完成才回调 onCleanup(延迟一个
+//    macrotask),载荷携带比挂载时前进了的 buffer/cursor(模拟活动中的终端)。 ──
 function FakeTerminal(props: {
   pty: FakePTY
   autoFocus?: boolean
   onAutoFocus?: () => void
-  onCleanup?: (next: { id: string }) => void
+  onCleanup?: (next: Partial<FakePTY> & { id: string }) => void
 }) {
   const autoFocus = props.autoFocus === true
-  mountLog.push(`mount:${props.pty.id}:af=${autoFocus}`)
+  const capturedCursor = props.pty.cursor ?? 0
+  // 挂载即捕获当时 store 的 cursor:两相位正确性判据 —— 重挂的新实例必须拿到回写后的值。
+  mountLog.push(`mount:${props.pty.id}:af=${autoFocus}:cursor=${capturedCursor}`)
   if (autoFocus) props.onAutoFocus?.()
-  solid.onCleanup(() => props.onCleanup?.({ id: props.pty.id }))
+  const liveCursor = capturedCursor + 100 // 挂载存活期间终端又前进了(回写前 store 是旧值)
+  solid.onCleanup(() => {
+    if (currentEngine?.silentCleanup) return
+    setTimeout(() => props.onCleanup?.({ id: props.pty.id, cursor: liveCursor, buffer: "flushed" }), 0)
+  })
   const el = document.createElement("div")
   el.setAttribute("data-fake-terminal", props.pty.id)
   el.setAttribute("data-autofocus", autoFocus ? "true" : "false")
+  el.setAttribute("data-cursor", String(capturedCursor))
   return el
 }
 
@@ -136,51 +149,73 @@ function mountEngineOutput(instanceID: string) {
   return { host, channel: () => channel! }
 }
 
-describe("REQ-125 #554 keep-alive × autoFocus one-shot (audit round-4 Major-2)", () => {
-  test("a focus request while mounted remounts once and is truly consumed", async () => {
-    currentEngine = createFakeEngine([{ id: "pty_1", title: "终端 1", titleNumber: 1 }])
+async function macrotask() {
+  await new Promise((resolve) => setTimeout(resolve, 1))
+  await flush()
+}
+
+describe("REQ-125 #554 keep-alive × autoFocus one-shot, two-phase remount (audit rounds 4-5)", () => {
+  test("remount waits for the old instance's async write-back; the new mount captures the flushed store", async () => {
+    currentEngine = createFakeEngine([{ id: "pty_1", title: "终端 1", titleNumber: 1, cursor: 0 }])
     const { host, channel } = mountEngineOutput("pty_1")
     await flush()
 
-    // First mount without a pending request: no autoFocus, nothing consumed.
-    expect(mountLog).toEqual(["mount:pty_1:af=false"])
-    expect(host.querySelector("[data-fake-terminal]")!.getAttribute("data-autofocus")).toBe("false")
+    // First mount without a pending request: no autoFocus, captures cursor 0.
+    expect(mountLog).toEqual(["mount:pty_1:af=false:cursor=0"])
 
     // Shell reshow handoff: request arrives while the output stays mounted (keep-alive).
     channel().requestFocus(channel().activeID())
     await flush()
 
-    // One keyed remount, autoFocus taken by the native path, request actually consumed.
-    expect(mountLog).toEqual(["mount:pty_1:af=false", "mount:pty_1:af=true"])
+    // Pending phase: the old instance is torn down and NOTHING mounts yet — a synchronous
+    // remount here would capture the stale cursor (the round-5 race).
+    expect(host.querySelectorAll("[data-fake-terminal]")).toHaveLength(0)
+    expect(mountLog).toHaveLength(1)
+
+    // A further request during pending coalesces — no epoch stacking.
+    channel().requestFocus("pty_1")
+    await flush()
+    expect(mountLog).toHaveLength(1)
+
+    // The async flush lands (one macrotask): write-back first, then exactly one new mount
+    // that captures the flushed cursor and consumes the request via native autoFocus.
+    await macrotask()
+    expect(currentEngine.opsCalls).toContain("update:pty_1:cursor=100")
+    expect(mountLog).toEqual(["mount:pty_1:af=false:cursor=0", "mount:pty_1:af=true:cursor=100"])
     const terminals = host.querySelectorAll("[data-fake-terminal]")
     expect(terminals).toHaveLength(1)
     expect(terminals[0]!.getAttribute("data-autofocus")).toBe("true")
+    expect(terminals[0]!.getAttribute("data-cursor")).toBe("100")
     expect(currentEngine.engine.focusRequested("pty_1")).toBe(false)
     expect(currentEngine.focus()).toBeUndefined()
-    // The teardown of the previous mount wrote state back (scrollback persistence glue).
-    expect(currentEngine.opsCalls).toContain("update:pty_1")
 
     // No self-sustaining remount loop after consumption.
-    await flush()
+    await macrotask()
     expect(mountLog).toHaveLength(2)
 
-    // Repeatability: every later reshow request is consumed the same way.
+    // Repeatability: the next reshow request runs the same two-phase cycle (cursor 100→200).
     channel().requestFocus("pty_1")
     await flush()
-    expect(mountLog).toEqual(["mount:pty_1:af=false", "mount:pty_1:af=true", "mount:pty_1:af=true"])
+    expect(mountLog).toHaveLength(2)
+    await macrotask()
+    expect(mountLog).toEqual([
+      "mount:pty_1:af=false:cursor=0",
+      "mount:pty_1:af=true:cursor=100",
+      "mount:pty_1:af=true:cursor=200",
+    ])
     expect(currentEngine.focus()).toBeUndefined()
   })
 
-  test("a request already pending at first mount uses the native autoFocus without an extra remount", async () => {
-    currentEngine = createFakeEngine([{ id: "pty_1", title: "终端 1", titleNumber: 1 }])
+  test("a request already pending at first mount uses the native autoFocus with zero delay", async () => {
+    currentEngine = createFakeEngine([{ id: "pty_1", title: "终端 1", titleNumber: 1, cursor: 0 }])
     currentEngine.engine.requestFocus("pty_1")
     const { host } = mountEngineOutput("pty_1")
     await flush()
 
-    expect(mountLog).toEqual(["mount:pty_1:af=true"])
+    expect(mountLog).toEqual(["mount:pty_1:af=true:cursor=0"])
     expect(host.querySelector("[data-fake-terminal]")!.getAttribute("data-autofocus")).toBe("true")
     expect(currentEngine.focus()).toBeUndefined()
-    await flush()
+    await macrotask()
     expect(mountLog).toHaveLength(1)
   })
 
@@ -191,12 +226,32 @@ describe("REQ-125 #554 keep-alive × autoFocus one-shot (audit round-4 Major-2)"
     ])
     const { channel } = mountEngineOutput("pty_1")
     await flush()
-    expect(mountLog).toEqual(["mount:pty_1:af=false"])
+    expect(mountLog).toEqual(["mount:pty_1:af=false:cursor=0"])
 
     channel().requestFocus("pty_2")
-    await flush()
-    expect(mountLog).toEqual(["mount:pty_1:af=false"])
+    await macrotask()
+    expect(mountLog).toEqual(["mount:pty_1:af=false:cursor=0"])
     // The request stays pending for its rightful instance.
     expect(currentEngine.engine.focusRequested("pty_2")).toBe(true)
+  })
+
+  test("when the old instance never flushes, the timeout fallback still mounts and consumes", async () => {
+    currentEngine = createFakeEngine([{ id: "pty_1", title: "终端 1", titleNumber: 1, cursor: 0 }], {
+      silentCleanup: true,
+    })
+    const { host, channel } = mountEngineOutput("pty_1")
+    await flush()
+    expect(mountLog).toEqual(["mount:pty_1:af=false:cursor=0"])
+
+    channel().requestFocus("pty_1")
+    await macrotask()
+    // No write-back will ever arrive — still pending well past the flush macrotask.
+    expect(host.querySelectorAll("[data-fake-terminal]")).toHaveLength(0)
+
+    // The 300ms fallback opens the mount phase so the panel can never wedge empty.
+    await new Promise((resolve) => setTimeout(resolve, 350))
+    await flush()
+    expect(mountLog).toEqual(["mount:pty_1:af=false:cursor=0", "mount:pty_1:af=true:cursor=0"])
+    expect(currentEngine.focus()).toBeUndefined()
   })
 })
