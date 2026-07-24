@@ -7,6 +7,7 @@ import {
   childParentHref,
   childSessionFacts,
   contextUsagePercent,
+  createComposerDraftStash,
   headPendingQuestion,
   questionAnswersComplete,
   revertDockFacts,
@@ -201,6 +202,47 @@ describe("childSessionFacts + childParentHref:子会话条与跳转", () => {
     ).toBeUndefined()
     // 无 parentID → 无跳转。
     expect(childParentHref({ bound, accepts, parentID: undefined, hrefFor: hrefFor.session })).toBeUndefined()
+  })
+})
+
+describe("createComposerDraftStash:per-identity 草稿暂存,门翻转不丢草稿(I8)", () => {
+  const key = (identity: AlphaSessionIdentity) => `${identity.serverKey} ${identity.directory} ${identity.sessionID}`
+  const identity = (over: Partial<AlphaSessionIdentity> = {}): AlphaSessionIdentity => ({
+    serverKey: "sidecar",
+    directory: "/tmp/ws",
+    sessionID: "ses_x",
+    ...over,
+  })
+
+  test("门翻转:卸载捕获 → 翻回同一身份 restore 拿回草稿", () => {
+    const stash = createComposerDraftStash()
+    const x = key(identity())
+    expect(stash.restore(x)).toBeUndefined() // 首挂:无暂存 → composer 起始为空
+    stash.capture(x, "hello world") // 门翻转卸载时捕获
+    expect(stash.restore(x)).toBe("hello world") // 门翻回同一身份 → 草稿仍在
+  })
+
+  test("空串清除暂存(已发送/清空的会话不残留陈旧草稿);无 key 不写", () => {
+    const stash = createComposerDraftStash()
+    const x = key(identity())
+    stash.capture(x, "draft")
+    stash.capture(x, "") // 清空后卸载 → 清除
+    expect(stash.restore(x)).toBeUndefined()
+    stash.capture(undefined, "orphan") // 无身份 → 不写
+    expect(stash.restore(undefined)).toBeUndefined()
+  })
+
+  test("I8:草稿按身份三元组隔离,不跨会话/服务器/目录泄漏", () => {
+    const stash = createComposerDraftStash()
+    stash.capture(key(identity()), "draft-x")
+    // 仅 sessionID 不同 → 隔离。
+    expect(stash.restore(key(identity({ sessionID: "ses_y" })))).toBeUndefined()
+    // 仅 serverKey 不同 → 隔离(证明非仅比 sessionID)。
+    expect(stash.restore(key(identity({ serverKey: "other" })))).toBeUndefined()
+    // 仅 directory 不同 → 隔离。
+    expect(stash.restore(key(identity({ directory: "/tmp/other" })))).toBeUndefined()
+    // 同一三元组 → 拿回。
+    expect(stash.restore(key(identity()))).toBe("draft-x")
   })
 })
 

@@ -36,6 +36,7 @@ import {
   childParentHref,
   childSessionFacts,
   contextUsagePercent,
+  createComposerDraftStash,
   headPendingQuestion,
   questionAnswersComplete,
   revertDockFacts,
@@ -56,6 +57,9 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
   const navigate = useNavigate()
   const identity = () => props.live.current()?.identity
   const running = () => props.live.current()?.activity === "running"
+  // per-identity 草稿暂存(I8):child-session 门翻转卸载 composer 时按身份捕获草稿,门翻回同一
+  // 身份时经 initialText 注入,避免 info 迟到→门翻转丢失正在输入的草稿。
+  const draftStash = createComposerDraftStash()
   // 目录作用域 SDK(typed 事件按类型分发;refcount 由 memo 的 onCleanup 管理)。
   const dirSDK = createMemo(() => {
     const bound = identity()
@@ -244,6 +248,8 @@ export function SessionComposerDock(props: { live: AlphaSessionLiveContext; proj
             directory={() => identity()?.directory}
             sessionID={() => identity()?.sessionID}
             sessionDock={dockApi}
+            initialText={draftStash.restore(identityKey(identity()))}
+            onDraftCapture={(draft) => draftStash.capture(identityKey(identity()), draft)}
           />
         }
       >

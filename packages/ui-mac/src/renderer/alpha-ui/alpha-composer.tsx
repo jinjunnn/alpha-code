@@ -551,6 +551,9 @@ export type AlphaComposerProps = {
   onSubmitted?: (sessionID: string) => void
   /** REQ-086:一次性预填文本(deep link `?prompt=`),仅初始化时注入,不覆盖用户后续输入。 */
   initialText?: string
+  /** REQ-125 C558:卸载时回报当前草稿(seam dock per-identity 暂存用);门翻转卸载 composer
+   *  时据此捕获正在输入的草稿,门翻回时经 `initialText` 注入,使卸载不等于不可恢复的丢失。 */
+  onDraftCapture?: (text: string) => void
 }
 
 type ReadState<T> = { status: "ready"; data: T } | { status: "error" }
@@ -576,6 +579,8 @@ export function AlphaComposerRuntime(props: AlphaComposerRuntimeProps) {
   const command = props.command
   const modelContract = props.modelContract ?? createModelContract(props.projects.sdk)
   const [text, setText] = createSignal(props.initialText ?? "")
+  // REQ-125 C558:卸载时把当前草稿交回宿主(seam dock 按身份暂存),避免门翻转卸载丢草稿。
+  onCleanup(() => props.onDraftCapture?.(text()))
   const [sending, setSending] = createSignal(false)
   const [modelChainState, setModelChainState] = createSignal<"loading" | "ready" | "error">("loading")
   const [mentions, setMentions] = createSignal<MentionPart[]>([])

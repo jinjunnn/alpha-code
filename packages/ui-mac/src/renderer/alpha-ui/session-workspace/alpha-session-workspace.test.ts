@@ -74,6 +74,16 @@ describe("REQ-125 C1b I1 and Recovery static ratchets", () => {
     )
   })
 
+  test("gate flip preserves the composer draft via a per-identity stash (I8-bound)", () => {
+    // The gate unmounts the composer when a session turns out to be a child (info late).
+    // A per-identity draft stash captures the draft on that unmount and re-injects it via
+    // initialText on flip-back, so unmount is not unrecoverable loss. Both ends key off the
+    // full identity triple (identityKey), never sessionID alone.
+    expect(dock).toContain("createComposerDraftStash")
+    expect(dock).toMatch(/initialText=\{draftStash\.restore\(identityKey\(identity\(\)\)\)\}/)
+    expect(dock).toMatch(/onDraftCapture=\{[^}]*draftStash\.capture\(identityKey\(identity\(\)\),\s*draft\)/)
+  })
+
   test("keeps the release seam and existing Alpha Recovery boundary", () => {
     expect(rendererIndex).toContain(`if (resolved?.session.mode !== "alpha") return undefined`)
     expect(rendererIndex).toContain(`return alphaSessionWorkspaceSurface(projects)`)

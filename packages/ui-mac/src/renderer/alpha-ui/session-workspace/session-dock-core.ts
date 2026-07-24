@@ -120,3 +120,27 @@ export function childParentHref<Identity extends { serverKey: string }>(input: {
   if (!input.accepts(input.bound)) return undefined
   return input.hrefFor(input.bound.serverKey, input.parentID)
 }
+
+/**
+ * per-identity composer 草稿暂存(REQ-125 #558,I8)。
+ *
+ * child-session 门翻转会**卸载** AlphaComposer(保持子会话零可发送路径);若 `info` 迟到——
+ * 先挂 composer、`parentID` 到达后门翻转——正在输入的草稿会随卸载丢失。此暂存按会话身份
+ * 三元组 key 在卸载时捕获草稿、门翻回同一身份时注入初值,使卸载不再等于不可恢复的丢失。
+ * 空串即清除(已发送/清空的会话不残留陈旧草稿)。key 由调用方以身份三元组算出(I8)。
+ */
+export function createComposerDraftStash() {
+  const drafts = new Map<string, string>()
+  return {
+    /** 卸载时按身份捕获草稿;无 key(无身份)不写,空串清除该身份的暂存。 */
+    capture(key: string | undefined, draft: string) {
+      if (!key) return
+      if (draft.length > 0) drafts.set(key, draft)
+      else drafts.delete(key)
+    },
+    /** 门翻回时按身份取回暂存草稿(无则 undefined,composer 起始为空)。 */
+    restore(key: string | undefined): string | undefined {
+      return key ? drafts.get(key) : undefined
+    },
+  }
+}

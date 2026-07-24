@@ -778,3 +778,57 @@ describe("ModelPickPop production component", () => {
     mounted.dispose()
   })
 })
+
+// REQ-125 C558:seam dock 的 child-session 门翻转会卸载 composer(保持子会话零可发送路径);
+// per-identity 草稿暂存依赖 AlphaComposer 的两点契约 —— ①卸载时经 onDraftCapture 交回当前草稿,
+// ②initialText 注入即为 textarea 起始值(门翻回时还原)。这里对真实组件验这两点。
+describe("REQ-125 C558 composer draft capture/restore contract", () => {
+  const contract: ModelContract = {
+    list: async () => [],
+    current: async () => undefined,
+    switch: async () => {},
+  }
+
+  test("卸载时经 onDraftCapture 交回当前输入草稿(门翻转→child 不丢草稿)", async () => {
+    installApi()
+    const captured: string[] = []
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "session",
+        projects,
+        directory: () => "/A",
+        sessionID: () => "A",
+        command,
+        modelContract: contract,
+        onDraftCapture: (text) => captured.push(text),
+      }),
+    )
+    await flush()
+    const ta = mounted.host.querySelector<HTMLTextAreaElement>("textarea.a-comp-input")
+    expect(ta).not.toBeNull()
+    ta!.value = "half-written draft"
+    ta!.dispatchEvent(new Event("input", { bubbles: true }))
+    await flush()
+    mounted.dispose() // 门翻转 → child:composer 卸载
+    expect(captured).toEqual(["half-written draft"])
+  })
+
+  test("initialText 注入 → textarea 起始即为还原的草稿(门翻回)", async () => {
+    installApi()
+    const mounted = mount(() =>
+      createComponent(AlphaComposerRuntime, {
+        mode: "session",
+        projects,
+        directory: () => "/A",
+        sessionID: () => "A",
+        command,
+        modelContract: contract,
+        initialText: "restored draft",
+      }),
+    )
+    await flush()
+    const ta = mounted.host.querySelector<HTMLTextAreaElement>("textarea.a-comp-input")
+    expect(ta?.value).toBe("restored draft")
+    mounted.dispose()
+  })
+})
